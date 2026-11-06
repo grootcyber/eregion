@@ -1072,8 +1072,7 @@ permissions d'application en lecture, posées à la main, hors de Terraform
 c'est l'identité de la VM, partagée par la watch, la console et le bot. Le code n'en fait que des GET
 (`glorfindel/providers/azure/graph.py`), mais aucun contrat ne relit ces droits au démarrage de la
 watch. Côté Orodruin, rien ne change : la watch lit `exercises` et écrit `watch` sur le canal, son
-identité est dans `EREGION_PROTECTED_IDENTITIES`, jamais une cible d'IDI1. Planifié : SEC-B (#634),
-V-28 (audit du 06/11).
+identité est dans `EREGION_PROTECTED_IDENTITIES`, jamais une cible d'IDI1. Planifié : #638.
 
 ## Questions ouvertes (pour Jonathan, à l'implémentation)
 

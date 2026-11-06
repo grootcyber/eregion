@@ -126,12 +126,15 @@ flowchart TB
 Une détection qui relie deux événements vaut plus que deux détections isolées. La corrélation
 (`glorfindel/correlation.py`, COR1, COR2) est une brique de Glorfindel : elle tourne dans le
 RulePoller, juste après le routage des lignes d'une règle vers leurs VM, avant tout signal. Aucun
-cycle n'est ouvert, aucun appel au modèle n'est fait, et le modèle ne voit jamais ce qu'elle lit.
+cycle n'est ouvert et aucun appel au modèle n'est fait. Le modèle ne voit pas la liste des origines
+et ne tranche pas l'écart : la ligne ne porte que le fait établi par le code (`SessionOrigin`, ou
+`Correlation` et `SuccessfulLogins`), et c'est elle qui part au modèle, ces champs compris (le
+[modèle de menace](design/modele-de-menace.md), §4).
 
 ```mermaid
 flowchart LR
     R["lignes d'une règle<br/>routées vers leur VM"] --> C{"corrélation<br/>par le code"}
-    SY[("Syslog auth, authpriv<br/>de la VM, 7 jours")] --> C
+    SY[("Syslog auth, authpriv de la VM<br/>7 jours, ou la fenêtre<br/>de la règle pour le brute force")] --> C
     SRC[("source hors de la VM<br/>Bastion ou flux, COR2")] -.-> C
     C -->|"shell root d'un admin attendu,<br/>toutes ses sessions d'une origine déclarée"| OK["écarté, journalisé"]
     C -->|"origine inconnue, non suivie,<br/>hors des origines, lecture coupée"| CARD["carte : SessionOrigin"]
@@ -342,7 +345,7 @@ flowchart LR
     REQ --> WV{"watch : clé épinglée EREGION_QUEUE_KEYS,<br/>fraîcheur, nonce, verbe du service,<br/>proposition signée, gardes rejouées"}
     PROP --> WV
     WV -->|"tient"| EXE["exécute sous le verrou de la VM,<br/>reçu signé"]
-    WV -->|"ne tient pas"| CRIT["carte critique"]
+    WV -->|"ne tient pas"| CRIT["reçu refused ;<br/>carte critique pour un refus grave,<br/>une par service et par heure au plus"]
     classDef blue fill:#2f6fd6,stroke:#1d4a9a,color:#ffffff
     classDef guard fill:#f2b33d,stroke:#b07a12,color:#2b1d00
     classDef warn fill:#fbe3e3,stroke:#d64545,color:#7a1f1f
@@ -383,8 +386,8 @@ partagent celle de la VM (le [modèle de menace](design/modele-de-menace.md), §
 | Identité | Ce qu'elle tient | Ce qu'elle ne tient jamais |
 |---|---|---|
 | la watch | la lecture des journaux, la réponse sur les groupes inscrits ; Microsoft Graph en lecture (IR1a, quatre permissions posées à la main, `docs/operations.md`) | une écriture sur Entra ID, le restore |
-| la console, le bot | leurs gestes sur Azure, le restore compris (la console isole ce qu'un humain approuve) ; avec la file, une demande signée | le bot : la coupure des sessions (il n'isole pas) |
-| l'exécuteur d'identité (IR1b) | son application, deux permissions de Graph (`Application.ReadWrite.OwnedBy`, `User.RevokeSessions.All`) et des rôles bornés à l'unité administrative du banc ; **désactivé par défaut** | l'identité de la VM (son propre certificat seulement), un droit hors de son contrat |
+| la console, le bot | leurs gestes sur Azure, le restore compris (hors H0, qui ne restaure pas ; la console isole ce qu'un humain approuve) ; avec la file, une demande signée | le bot : la coupure des sessions (il n'isole pas) |
+| l'exécuteur d'identité (IR1b) | son application, deux permissions de Graph (`Application.ReadWrite.OwnedBy`, `User.RevokeSessions.All`) ; User Administrator sur la seule unité administrative du banc, Directory Readers au tenant, Attribute Assignment Reader sur l'ensemble d'attributs d'Eregion ; Log Analytics Reader sur le workspace ; **désactivé par défaut** | l'identité de la VM (son propre certificat seulement), un droit hors de son contrat |
 | Orodruin | la lecture du groupe du banc, l'écriture sur chaque VM inscrite et chaque expérience ; Graph en lecture (IDI1), désactivé par défaut ; le binaire Stratus, lancé depuis Orodruin, emploie cette identité (R2b la sépare) | une écriture sur le groupe entier |
 
 **L'exécuteur d'identité** répondra à une identité volée d'Entra ID — retirer un identifiant ajouté,
