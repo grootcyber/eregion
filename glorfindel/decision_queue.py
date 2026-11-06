@@ -12,13 +12,21 @@ detection waited behind them for hours. Four bounds, before any call to the mode
   decision of the model, said on the watch's console and counted on that card, never in silence;
 - **the gravest first** (`gravity`): a critical detection, then one of a grave technique
   (`GRAVE_TTPS`), then the others — each class first come, first served; a grave detection never
-  waits behind a lower one (only behind the decision in flight, bounded by the model's timeout);
-- **one decision of the model per VM, rule and gravity in a window** (`DEDUP_WINDOW_S`): the other
-  detections of that rule on that VM in the window are deduplicated — a card that names them,
-  without a decision of the model, and no call;
-- **a ceiling of calls to the model per minute**, for the whole watch (`MODEL_CALLS_PER_MIN`), of
-  which the low class takes at most `LOW_CALLS_PER_MIN`: a burst of low detections never uses the
-  room of a grave one. Beyond: a card without a decision of the model, never an action.
+  waits behind a lower one (only behind the cycle in flight: its investigation, its draws, its
+  action and its check, each bounded);
+- **one decision of the model per VM, rule, gravity and source in a window** (`DEDUP_WINDOW_S`),
+  opened only by a decision that contained or put a card before a human: the other detections of
+  that rule on that VM in the window are deduplicated — a card that names them, and no call. A
+  critical one (COR1) is keyed by its address too: one decision per address;
+- **a ceiling of calls to the model per minute**, for the whole watch (`MODEL_CALLS_PER_MIN`),
+  each class counted apart, draws included: the low class at most `LOW_CALLS_PER_MIN`, the grave
+  ones the rest whatever the low class did. Beyond it a low detection is a card, never an action;
+  a grave one waits in its queue until the room comes back; a critical one is never held by it.
+
+What B3a's floor needs is never lost: a detection that confirms a fact on its VM (a brute force
+that succeeded, a sudo to root) writes it on the VM's incident even when it is held; and once both
+are confirmed on the VM, its detection is never held (one per pass of its rule and VM) — the floor,
+deterministic, plays outside the bounds.
 
 A detection with no decision of the model is a card `undecided_detection` (`record_undecided`):
 no action, no investigation, nothing in the memory; the card of a VM and a rule names the latest of
@@ -27,7 +35,6 @@ a card of the control plane or of an identity is decided by the code (AL1, C2), 
 """
 from __future__ import annotations
 
-import heapq
 import itertools
 import threading
 import time
@@ -54,6 +61,8 @@ CARD_ROWS = 20
 
 CRITICAL, GRAVE, LOW = 0, 1, 2
 _CLASS_WORD = {CRITICAL: "critique", GRAVE: "grave", LOW: "basse"}
+# B3a's pair: both confirmed on a VM, its floor isolates whatever the model chose.
+_FLOOR_PAIR = frozenset({"login_after_brute_force", "root_elevation"})
 
 
 def gravity(data: dict) -> int:
@@ -72,6 +81,12 @@ def _context(data: dict) -> dict:
     return ctx if isinstance(ctx, dict) else {}
 
 
+def _row(data: dict) -> dict:
+    raw = data.get("raw_signal") if isinstance(data.get("raw_signal"), dict) else {}
+    row = raw.get("first_result_row") or raw.get("detected_data") or {}
+    return row if isinstance(row, dict) else {}
+
+
 def calls_model(data: dict) -> bool:
     """A detection of the data plane: its decision is the model's. A card of the control plane or
     of an identity is decided by the code (AL1, C2)."""
@@ -84,11 +99,44 @@ def from_rulepoller(data: dict) -> bool:
     return str(ctx.get("run_id") or "").startswith("watch-") and bool(ctx.get("rule_name"))
 
 
+def facts_of(data: dict) -> list[str]:
+    """What this detection confirms on its VM (B3a, `agent.confirmed_facts`)."""
+    from glorfindel.agent import confirmed_facts
+    try:
+        return confirmed_facts(data)
+    except Exception:
+        return []
+
+
+def _source(data: dict) -> str:
+    from glorfindel.agent import _cycle_source
+    return _cycle_source(data)[0]
+
+
+def opens_window(state) -> bool:
+    """A decision the dedup's window may stand on: it contained (an isolation or a block that ran,
+    or the VM already contained) or it put a card before a human — never a cycle that failed, nor
+    a decision with no action and no card (a decoy line judged « nothing » never hides the next)."""
+    if not isinstance(state, dict) or state.get("cycle_error"):
+        return False
+    if state.get("escalate") or (state.get("outcome") or {}).get("status") == "escalated":
+        return True
+    if (state.get("outcome") or {}).get("executed") and state.get("action") in ("isolate_vm", "block_suspicious_ip"):
+        return True
+    try:
+        from glorfindel.agent import _contained_now
+        return bool(_contained_now(state.get("signal") or {})[0])
+    except Exception:
+        return False
+
+
 class DecisionQueue:
     """A VM's queue: the gravest first, first come first served in a class; bounded.
 
     `put` never blocks: beyond `maxsize`, the least grave and newest waiting detection — or the one
-    that comes, when it is no graver — is handed to `on_drop(item, why)`, which says it."""
+    that comes, when it is no graver — is handed to `on_drop(item, why)`, which says it. `put_back`
+    puts a detection back in its place, held until a moment (a grave one, the ceiling reached):
+    meanwhile, the others are taken."""
 
     def __init__(self, maxsize: int | None = None,
                  on_drop: Callable[[tuple, str], None] | None = None,
@@ -97,40 +145,78 @@ class DecisionQueue:
         self._on_drop = on_drop
         self._classify = classify or (lambda item: gravity(item[0]))
         self._heap: list[tuple[int, int, tuple]] = []
+        self._held: dict[int, float] = {}
         self._seq = itertools.count()
+        self._back = itertools.count(-1, -1)
         self._cond = threading.Condition()
         self.dropped = 0
 
-    def put(self, item: tuple) -> bool:
-        """False when the item did not enter (the queue full, and it is no graver)."""
-        cls = self._classify(item)
+    def _enter(self, entry: tuple[int, int, tuple]):
+        """Under the lock: the entry in, or the entry that leaves (None when none leaves)."""
+        cls = entry[0]
         dropped = None
-        with self._cond:
-            entry = (cls, next(self._seq), item)
-            if len(self._heap) >= self._max:
-                worst = max(self._heap)
-                if cls < worst[0]:
-                    self._heap.remove(worst)
-                    heapq.heapify(self._heap)
-                    heapq.heappush(self._heap, entry)
-                    dropped = worst
-                else:
-                    dropped = entry
-                self.dropped += 1
+        if len(self._heap) >= self._max:
+            worst = max(self._heap)
+            if cls < worst[0]:
+                self._heap.remove(worst)
+                self._held.pop(worst[1], None)
+                self._heap.append(entry)
+                dropped = worst
             else:
-                heapq.heappush(self._heap, entry)
-            self._cond.notify()
+                dropped = entry
+            self.dropped += 1
+        else:
+            self._heap.append(entry)
+        self._cond.notify()
+        return dropped
+
+    def _said(self, dropped) -> None:
         if dropped is not None and self._on_drop is not None:
             self._on_drop(dropped[2], (
                 f"la file de cette VM tient déjà {self._max} détections : celle-ci, de gravité "
                 f"{_CLASS_WORD.get(dropped[0], dropped[0])}, en sort sans décision du modèle"))
-        return dropped is None or dropped[2] is not item
+
+    def put(self, item: tuple) -> bool:
+        """False when the item did not enter (the queue full, and it is no graver)."""
+        entry = (self._classify(item), next(self._seq), item)
+        with self._cond:
+            dropped = self._enter(entry)
+            if dropped is entry:
+                self._held.pop(entry[1], None)
+        self._said(dropped)
+        return dropped is not entry
+
+    def put_back(self, item: tuple, hold_s: float) -> bool:
+        """`item` back in the queue, before the others of its class, not taken before `hold_s`."""
+        entry = (self._classify(item), next(self._back), item)
+        with self._cond:
+            self._held[entry[1]] = time.monotonic() + max(0.0, hold_s)
+            dropped = self._enter(entry)
+            if dropped is entry:
+                self._held.pop(entry[1], None)
+        self._said(dropped)
+        return dropped is not entry
+
+    def _ready(self, now: float):
+        ready = [e for e in self._heap if self._held.get(e[1], 0.0) <= now]
+        return min(ready) if ready else None
 
     def get(self, timeout: float | None = None) -> tuple:
+        deadline = None if timeout is None else time.monotonic() + timeout
         with self._cond:
-            if not self._cond.wait_for(lambda: self._heap, timeout):
-                raise TimeoutError("decision queue empty")
-            return heapq.heappop(self._heap)[2]
+            while True:
+                now = time.monotonic()
+                entry = self._ready(now)
+                if entry is not None:
+                    self._heap.remove(entry)
+                    self._held.pop(entry[1], None)
+                    return entry[2]
+                waits = [t - now for t in self._held.values()]
+                if deadline is not None:
+                    if now >= deadline:
+                        raise TimeoutError("decision queue empty")
+                    waits.append(deadline - now)
+                self._cond.wait(min(waits) if waits else None)
 
     def qsize(self) -> int:
         with self._cond:
@@ -141,9 +227,10 @@ class DecisionQueue:
 
 
 class DecisionGate:
-    """What may call the model now: the dedup by VM, rule and gravity, and the ceiling of calls per
-    minute — for every queue of the watch. `admit` reserves one call; `spent` adds the others a
-    decision drew (the draws of D-1)."""
+    """What may call the model now: the dedup by VM, rule, gravity and source, and the ceiling of
+    calls per minute — for every queue of the watch. `admit` reserves one call; `spent` adds the
+    others a decision drew (the draws of D-1), and opens the dedup's window when the decision
+    contained or put a card before a human."""
 
     def __init__(self, *, window_s: float | None = None, per_min: int | None = None,
                  low_per_min: int | None = None, clock: Callable[[], float] = time.monotonic) -> None:
@@ -153,58 +240,97 @@ class DecisionGate:
         self._clock = clock
         self._lock = threading.Lock()
         self._decided: dict[tuple, float] = {}
-        self._calls: deque[float] = deque()
+        self._floored: dict[tuple, float] = {}
+        # (moment, low class?) of each call of the last minute.
+        self._calls: deque[tuple[float, bool]] = deque()
 
     def _key(self, data: dict) -> tuple:
+        cls = gravity(data)
+        # COR1: one decision per address — a compromise from another address is another one.
+        addr = str(_row(data).get("SourceIP") or "") if cls == CRITICAL else ""
         return (str(data.get("resource_id") or "").lower(), str(_context(data).get("rule_name") or ""),
-                gravity(data))
+                cls, _source(data), addr)
 
-    def _recent_calls(self, now: float) -> int:
-        while self._calls and self._calls[0] <= now - 60.0:
+    def _recent(self, now: float) -> tuple[int, int]:
+        """(all the calls of the last minute, the low class's)."""
+        while self._calls and self._calls[0][0] <= now - 60.0:
             self._calls.popleft()
-        return len(self._calls)
+        return len(self._calls), sum(1 for _, low in self._calls if low)
 
-    def admit(self, data: dict) -> tuple[str, str]:
-        """("", "") when the detection may call the model (one call reserved); else (kind, why) —
-        `dedup` or `ceiling` — and it must not."""
+    def room_in(self) -> float:
+        """Seconds until a call of the last minute ages out (at least one tenth)."""
+        with self._lock:
+            if not self._calls:
+                return 0.1
+            return max(0.1, 60.0 - (self._clock() - self._calls[0][0]))
+
+    def _floor(self, data: dict, confirmed: list[str], now: float) -> bool:
+        """B3a's pair confirmed on the VM with this detection's facts: never held — once per pass
+        of its rule and VM (its moment)."""
+        if not _FLOOR_PAIR <= set(confirmed) | set(facts_of(data)):
+            return False
+        key = (str(data.get("resource_id") or "").lower(), str(_context(data).get("rule_name") or ""),
+               str(data.get("timestamp") or ""))
+        if key in self._floored:
+            return False
+        self._floored[key] = now
+        for k in [k for k, t in self._floored.items() if now - t >= self.window_s]:
+            del self._floored[k]
+        return True
+
+    def admit(self, data: dict, confirmed: list[str] | None = None) -> tuple[str, str]:
+        """("", "") when the detection may call the model (one call reserved); else (kind, why):
+        `same_pass`, `dedup`, `ceiling` — a card —, or `wait` — a grave one, the ceiling reached:
+        back in its queue until the room comes back. `confirmed`: what the VM's incident holds."""
         if not calls_model(data):
             return "", ""
         # V-13: the older lines of a pass, named beside its newest — never the model's.
         if _context(data).get("card_only"):
-            return "dedup", str(_context(data)["card_only"])
+            return "same_pass", str(_context(data)["card_only"])
         now = self._clock()
+        key = self._key(data)
+        cls = key[2]
         with self._lock:
-            key = self._key(data)
-            if from_rulepoller(data):
-                at = self._decided.get(key)
-                if at is not None and now - at < self.window_s:
-                    return "dedup", (
-                        f"dédoublonnée : la règle {key[1]} a déjà eu une décision du modèle sur cette VM "
-                        f"il y a {int(now - at)} s, pour une détection de même gravité (une par fenêtre "
-                        f"de {int(self.window_s)} s)")
-            cls = key[2]
-            limit = self.low_per_min if cls == LOW else self.per_min
-            n = self._recent_calls(now)
-            if n >= limit:
-                return "ceiling", (
-                    f"plafond des appels au modèle atteint ({n} dans la dernière minute ; au plus "
-                    f"{limit} pour une détection de gravité {_CLASS_WORD[cls]})")
-            self._calls.append(now)
-            if from_rulepoller(data):
-                self._decided[key] = now
-                for k in [k for k, t in self._decided.items() if now - t >= self.window_s]:
-                    del self._decided[k]
+            if not self._floor(data, confirmed or [], now):
+                if from_rulepoller(data):
+                    at = self._decided.get(key)
+                    if at is not None and now - at < self.window_s:
+                        return "dedup", (
+                            f"dédoublonnée : la règle {key[1]} a déjà eu une décision du modèle sur cette "
+                            f"VM il y a {int(now - at)} s, pour une détection de même gravité (une par "
+                            f"fenêtre de {int(self.window_s)} s)")
+                n, low = self._recent(now)
+                if cls == LOW:
+                    limit = self.low_per_min
+                    full = low >= limit or n >= self.per_min
+                elif cls == GRAVE:
+                    limit = self.per_min
+                    full = n >= limit and (n - low) >= self.per_min - self.low_per_min
+                else:
+                    limit, full = self.per_min, False          # COR1: never held by the ceiling
+                if full:
+                    return ("ceiling" if cls == LOW else "wait"), (
+                        f"plafond des appels au modèle atteint ({n} dans la dernière minute, dont {low} "
+                        f"de gravité basse ; au plus {limit} pour une détection de gravité "
+                        f"{_CLASS_WORD[cls]})")
+            self._calls.append((now, cls == LOW))
             return "", ""
 
     def spent(self, data: dict, state: dict | None) -> None:
-        """The calls a decision drew beyond the one `admit` reserved (the draws of D-1)."""
+        """The calls a decision drew beyond the one `admit` reserved (the draws of D-1); and the
+        dedup's window, opened by a decision that contained or put a card before a human."""
         if not calls_model(data) or not isinstance(state, dict):
             return
         more = max(0, len(state.get("decision_draws") or []) - 1)
-        if more:
-            now = self._clock()
-            with self._lock:
-                self._calls.extend([now] * more)
+        opens = from_rulepoller(data) and opens_window(state)
+        key = self._key(data) if opens else None
+        now = self._clock()
+        with self._lock:
+            self._calls.extend([(now, gravity(data) == LOW)] * more)
+            if key is not None:
+                self._decided[key] = now
+                for k in [k for k, t in self._decided.items() if now - t >= self.window_s]:
+                    del self._decided[k]
 
 
 # ── The card without a decision of the model ──────────────────────────────────────────────────
@@ -212,7 +338,8 @@ class DecisionGate:
 _SEEN_LOCK = threading.Lock()
 # (vm, rule, source) → the latest detections without a decision, and the count of each reason.
 _SEEN: dict[tuple, tuple[deque, dict]] = {}
-_KIND_WORD = {"dedup": "dédoublonnées", "ceiling": "au-delà du plafond", "full": "file pleine"}
+_KIND_WORD = {"dedup": "dédoublonnées", "same_pass": "même passe", "ceiling": "au-delà du plafond",
+              "full": "file pleine"}
 
 _LABEL_COLUMNS = ("SourceIP", "CallerIpAddress", "IPAddress", "LoginAccount", "Account", "TargetAccount",
                   "UserName", "AuditCommand", "SyslogMessage", "_ResourceId")
@@ -299,14 +426,45 @@ def record_undecided(data: dict, kind: str, why: str, *, dry_run: bool = False) 
     )
 
 
+
+def keep_facts(data: dict, incidents) -> None:
+    """A held detection's facts on its VM's incident (B3a): the floor of a later detection reads
+    them as it would have read a decided one's. Never raises."""
+    facts = facts_of(data)
+    if not facts or incidents is None:
+        return
+    rid = str(data.get("resource_id") or "")
+    try:
+        incidents.get_or_create(resource_id=rid, ttp=str(data.get("ttp") or ""))
+        incidents.confirm(rid, facts)
+    except Exception:
+        pass
+
+
+def _confirmed_on_vm(data: dict, incidents) -> list[str]:
+    if incidents is None or not calls_model(data):
+        return []
+    try:
+        inc = incidents.get_active(str(data.get("resource_id") or ""))
+    except Exception:
+        return []
+    kept = getattr(inc, "confirmed", None) if inc is not None else None
+    return list(kept) if isinstance(kept, list) else []
+
+
 def decide_or_card(data: dict, respond: Callable[[dict], dict], gate: DecisionGate, *,
-                   dry_run: bool = False) -> tuple[dict | None, str]:
-    """One detection taken from its queue: the decision (`respond`, the graph), or — dedup or
-    ceiling — its card without a decision of the model, and no call. (state, why)."""
-    kind, why = gate.admit(data)
+                   dry_run: bool = False, incidents=None) -> tuple[dict | None, str, float]:
+    """One detection taken from its queue: (state, why, wait_s). The decision (`respond`, the
+    graph); or — same pass, dedup, ceiling of the low class — its card without a decision of the
+    model, and no call; or — a grave one, the ceiling reached — `wait_s` > 0: back in its queue
+    until the room comes back. A held detection's facts go to its VM's incident (B3a)."""
+    kind, why = gate.admit(data, _confirmed_on_vm(data, incidents))
     if kind:
+        keep_facts(data, incidents)
+        if kind == "wait":
+            return None, why, gate.room_in()
         record_undecided(data, kind, why, dry_run=dry_run)
-        return None, why
+        return None, why, 0.0
     state = respond(data)
     gate.spent(data, state)
-    return state, ""
+    return state, "", 0.0

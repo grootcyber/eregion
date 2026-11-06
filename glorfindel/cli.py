@@ -629,6 +629,7 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
                 model, said here; never in silence."""
                 _data, _sig, _from_channel = item
                 try:
+                    _dq.keep_facts(_data, getattr(agent, "incidents", None))     # B3a: never lost
                     _dq.record_undecided(_data, "full", why, dry_run=dry_run)
                     with _output_lock:
                         console.print(f"[bold red]File pleine ({_esc_markup(str(resource_id))}) :[/bold red] "
@@ -651,6 +652,7 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
                     if item is None:
                         break
                     _data, _sig, _from_channel = item
+                    waiting = False
                     try:
                         with _output_lock:
                             console.rule(f"[bold cyan]Signal — {_sig.signal_id}[/bold cyan]")
@@ -662,11 +664,19 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
                                 f"  Event    : {_sig.event}  |  "
                                 f"Resource: {_sig.resource_type}\n"
                             )
-                        # SEC-A2: dedup and ceiling before any call — a card, never an action.
-                        state, why = _dq.decide_or_card(_data, agent.respond, _decision_gate,
-                                                        dry_run=dry_run)
+                        # SEC-A2: dedup and ceiling before any call — a card, never an action;
+                        # a grave detection past the ceiling waits in its queue for the room.
+                        state, why, wait_s = _dq.decide_or_card(
+                            _data, agent.respond, _decision_gate, dry_run=dry_run,
+                            incidents=getattr(agent, "incidents", None))
+                        if wait_s:
+                            q.put_back(item, wait_s)   # left at once if the queue is full: said, counted
+                            waiting = True
                         with _output_lock:
-                            if state is None:
+                            if wait_s:
+                                console.print(f"[yellow]En attente du plafond ({int(wait_s)} s) :[/yellow] "
+                                              f"{_esc_markup(why)}\n")
+                            elif state is None:
                                 console.print(f"[yellow]Non décidée par le modèle :[/yellow] "
                                               f"{_esc_markup(why)} — carte undecided_detection\n")
                             else:
@@ -678,7 +688,9 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
                                 f"[red]Error processing {_sig.signal_id}:[/red] {e}"
                             )
                     finally:
-                        if _from_channel:
+                        # Put back, it still waits (or left by `_left`, which counted it): its channel
+                        # line counts until it is decided.
+                        if _from_channel and not waiting:
                             with _channel_lock:
                                 _channel_waiting[key] = max(0, _channel_waiting.get(key, 0) - 1)
                         q.task_done()
