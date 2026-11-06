@@ -74,6 +74,7 @@ const ESC_LABELS = {
   compromise_unchecked: 'login after a brute force not checked',
   queue_tampered:      'action queue: a request its service did not write',
   queue_unavailable:   'action queue: the watch\'s register unreadable',
+  undecided_detection: 'not decided by the model (deduplicated, ceiling, queue full)',
 };
 
 // Cards anchored on a VM the detection does not name (an Activity Log row, an identity,
@@ -133,6 +134,7 @@ const _ESC_TITLES = {
   identity_change:      'Entra ID identity change',
   account_compromised:  'Account maybe compromised — always to a human (COR1)',
   compromise_unchecked: 'Login after a brute force not checked (COR1)',
+  undecided_detection:  'Detection not decided by the model — triage by hand',
 };
 
 // What a card is about, on one line: technique, confidence, severity (critical stands

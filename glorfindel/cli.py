@@ -472,7 +472,6 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
     Signals from different resource_ids are processed in parallel.
     Signals from the same resource_id are serialized (queue per resource).
     """
-    import queue as _queue
     import threading as _threading
 
     from eregion_core.signals import Signal
@@ -599,8 +598,12 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
     _rules_file = rules_file or _find_rules_file()
     _rule_poller: "RulePoller | None" = None
 
-    # per-resource dispatch: resource_id → Queue
-    _resource_queues: dict[str, _queue.Queue] = {}
+    # per-resource dispatch: resource_id → its decision queue — bounded, the gravest first
+    # (SEC-A2, glorfindel/decision_queue.py); one gate for the whole watch: one decision of the
+    # model per VM, rule and gravity in a window, a ceiling of calls per minute.
+    from glorfindel import decision_queue as _dq
+    _resource_queues: dict[str, _dq.DecisionQueue] = {}
+    _decision_gate = _dq.DecisionGate()
     _output_lock = _threading.Lock()
     # SEC8: what the runs/ channel may start — the searches in flight (one per VM and technique,
     # CHANNEL_POLLS in all), its lines waiting per VM (CHANNEL_QUEUED_PER_VM), the VMs it names
@@ -612,7 +615,7 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
     _channel_waiting: dict[str, int] = {}
     _channel_vms: set[str] = set()
 
-    def _get_or_start_worker(resource_id: str) -> _queue.Queue:
+    def _get_or_start_worker(resource_id: str) -> "_dq.DecisionQueue":
         """Return the resource queue, starting its worker thread if needed.
 
         Keyed case-insensitively: the RulePoller carries the lowercase id from the
@@ -620,7 +623,26 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
         ran two decisions in parallel instead of in series (real run, 2026-10-05)."""
         key = resource_id.lower()
         if key not in _resource_queues:
-            q: _queue.Queue = _queue.Queue()
+
+            def _left(item, why: str, key=key) -> None:
+                """SEC-A2: a detection out of a full queue — its card without a decision of the
+                model, said here; never in silence."""
+                _data, _sig, _from_channel = item
+                try:
+                    _dq.record_undecided(_data, "full", why, dry_run=dry_run)
+                    with _output_lock:
+                        console.print(f"[bold red]File pleine ({_esc_markup(str(resource_id))}) :[/bold red] "
+                                      f"{_esc_markup(_sig.signal_id)} — {_esc_markup(why)} ; carte "
+                                      "undecided_detection")
+                except Exception as e:
+                    with _output_lock:
+                        console.print(f"[red]Error recording {_esc_markup(_sig.signal_id)}:[/red] {e}")
+                finally:
+                    if _from_channel:
+                        with _channel_lock:
+                            _channel_waiting[key] = max(0, _channel_waiting.get(key, 0) - 1)
+
+            q = _dq.DecisionQueue(on_drop=_left)
             _resource_queues[key] = q
 
             def _worker(q=q):
@@ -640,10 +662,16 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
                                 f"  Event    : {_sig.event}  |  "
                                 f"Resource: {_sig.resource_type}\n"
                             )
-                        state = agent.respond(_data)
+                        # SEC-A2: dedup and ceiling before any call — a card, never an action.
+                        state, why = _dq.decide_or_card(_data, agent.respond, _decision_gate,
+                                                        dry_run=dry_run)
                         with _output_lock:
-                            _render_decision(state, dry_run)
-                            console.print()
+                            if state is None:
+                                console.print(f"[yellow]Non décidée par le modèle :[/yellow] "
+                                              f"{_esc_markup(why)} — carte undecided_detection\n")
+                            else:
+                                _render_decision(state, dry_run)
+                                console.print()
                     except Exception as e:
                         with _output_lock:
                             console.print(
