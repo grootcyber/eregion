@@ -113,6 +113,30 @@ def test_a_window_file_too_large_is_refused_never_read_whole(capsys):
     assert f"r1.json refused: never read: plus de {WINDOW_BYTES} octets" in capsys.readouterr().out
 
 
+def test_the_window_files_read_are_bounded_the_rest_said_once(monkeypatch, capsys):
+    """M4564: a flood of window files is read up to MAX_WINDOW_FILES at each read; the rest is
+    refused, said once."""
+    monkeypatch.setattr(exercise, "MAX_WINDOW_FILES", 3)
+    d = exercise.exercises_dir()
+    for i in range(5):
+        _put(d, _window(f"r{i}"))
+    assert [w["run_id"] for w in _quick(load_windows)] == ["r0", "r1", "r2"]
+    assert "2 window file(s) past MAX_WINDOW_FILES (3) never read" in capsys.readouterr().out
+    _quick(load_windows)
+    assert "MAX_WINDOW_FILES" not in capsys.readouterr().out
+
+
+def test_a_window_nested_too_deep_is_refused_never_fatal(capsys):
+    """M4566: a JSON nested past the interpreter's recursion limit raises RecursionError, not
+    ValueError: refused and said, the other windows read, the watch's loop goes on."""
+    d = exercise.exercises_dir()
+    _put(d, _window("r1"))
+    (d / "r0.json").write_text("[" * 30000 + "]" * 30000)
+    assert [w["run_id"] for w in _quick(load_windows)] == ["r1"]
+    assert "r0.json refused: unreadable (RecursionError)" in capsys.readouterr().out
+    assert exercise.close_window("r0", directory=d) is None
+
+
 def test_close_window_reads_its_window_as_runs_is_read(tmp_path):
     """The injector closing its run: a pipe in its window's place is refused, nothing blocks."""
     fifo = tmp_path / "r9.json"
@@ -216,6 +240,54 @@ def test_windows_older_than_the_horizon_no_longer_count():
     later = _window("late", start=_now() + timedelta(seconds=CHAIN_HORIZON_S), lasts=3600)
     assert "chained" in chain_refusal(ws[3], VM, ws)
     assert chain_refusal(later, VM, ws + [later]) == ""
+
+
+def test_the_chain_is_counted_once_per_vm_not_once_per_window():
+    """Review of SEC-A1: counted for each window, the chain cost 10 s a decision at 2 000 windows
+    (``source_of``, on the decision's path). Once per VM and list, sorted then swept: well under a
+    second, both for ``source_of`` and ``covering_runs``."""
+    import time
+    now = _now()
+    ws = [_window(f"w{i}", start=now - timedelta(minutes=5 * i), end=now - timedelta(minutes=5 * i - 3),
+                  lasts=600) for i in range(2000)]
+    t = time.monotonic()
+    source_of(VM, now - timedelta(minutes=1), windows=ws)
+    covering_runs(VM, now - timedelta(minutes=1), ws)
+    source_of(VM, now, run_id="w0", windows=ws)
+    assert time.monotonic() - t < 3
+
+
+def _seen_then(d, w, registry, *, at):
+    """The watch reads its windows every minute: this one written, then read, at ``at``."""
+    _put(d, w, written=at)
+    load_windows(d, now=at + timedelta(seconds=30), seen=registry)
+
+
+def test_the_watch_counts_the_windows_its_record_saw_their_files_deleted(tmp_path):
+    """M4563 (review of SEC-A1): an injector sets its files' mtime, and may delete its spent
+    windows and write the next under another run_id. At the watch, the chain is counted on its own
+    record (SEC14): each window as first seen — its start, its expiry, its targets — and its
+    closure; an entry counts still when its file is gone."""
+    d, registry = tmp_path / "x", tmp_path / "glorfindel" / "exercise_seen.json"
+    now = _now()
+    for i in range(4):                         # four runs of 1 h 50, every two hours
+        start = now - timedelta(hours=8) + timedelta(hours=2 * i)
+        w = _window(f"c{i}", start=start, lasts=7200)
+        _seen_then(d, w, registry, at=start)
+        _seen_then(d, {**w, "end": (start + timedelta(minutes=110)).isoformat()}, registry,
+                   at=start + timedelta(minutes=110))
+    entry = json.loads(registry.read_text())["c0"]
+    assert entry["targets"] == [VM] and entry["start"] and entry["expires"] and entry["end"]
+    for i in range(4):
+        (d / f"c{i}.json").unlink()            # the spent windows deleted
+    fresh = _window("fresh", start=now)
+    _put(d, fresh, written=now)
+    ws = load_windows(d, now=now + timedelta(seconds=30), seen=registry)
+    assert [w["run_id"] for w in ws] == ["fresh"]
+    assert source_of(VM, now + timedelta(minutes=5), windows=ws) == ("real", "")
+    # Without the record (another reader), only the files count: the bound is the watch's.
+    exercise._record_spans.clear()
+    assert source_of(VM, now + timedelta(minutes=5), windows=ws) == ("exercise", "fresh")
 
 
 # ── 4. The signals `glorfindel respond` reads (V-02) ────────────────────────────────────────

@@ -205,11 +205,13 @@ def _local(rid="r1", start=None, **kw):
 
 def test_a_local_window_dated_back_when_first_seen_is_refused(tmp_path, seen_record):
     d = tmp_path / "x"
-    _write(d, _local(start=_at(-110)), written=T0)        # written at T0, dated 110 min back
+    # Written at T0, dated 110 min back, its mtime set back too (as `touch -d` would).
+    _write(d, _local(start=_at(-110)), written=_at(-110))
     assert exercise.load_windows(d, now=T0, seen=seen_record) == []
     assert source_of(VM, _at(-100), windows=exercise.load_windows(d, now=T0, seen=seen_record)) == ("real", "")
-    # Without the record (as before SEC14), its file's mtime bounds it too (SEC-A1, V-21).
-    assert exercise.load_windows(d, now=T0) == []
+    # Without the record (as before SEC14), it is believed: its writer sets its file's mtime, the
+    # bound of the past holds only at the watch, by its record (SEC-A1 review).
+    assert [w["run_id"] for w in exercise.load_windows(d, now=T0)] == ["r1"]
 
 
 def test_a_local_window_seen_open_may_come_again_closed_and_nothing_else(tmp_path, seen_record):

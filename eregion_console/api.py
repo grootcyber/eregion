@@ -2740,6 +2740,9 @@ def _read_windows() -> list[dict]:
                         "targets": [t.lower() for t in targets if isinstance(t, str)],
                         # SEC18: held against its directory first
                         "refusal": runs_layout.window_refusal_of(path, w) or window_refusal(w, now, declared)})
+            # SEC-A1 (V-21): in an injector's directory, a window is local, whatever it says.
+            if not out[-1]["refusal"] and runs_layout.writer_of(path) in runs_layout.INJECTORS:
+                out[-1]["refusal"] = window_refusal(w, now, declared, local=True)
     return out
 
 

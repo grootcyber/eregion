@@ -47,8 +47,9 @@ MAX_DURATION_S still caps how long it lasts.
 SEC-A1 (V-02, V-21): each window's file is read as runs/ is read (``_read_window``, a regular file,
 never through a link, never blocking, bounded) — a pipe, a link, a file too large refused and said,
 never waited on by the watch's loop. A local window is bounded in the past by its file's mtime too
-(``window_refusal``, ``local``), for every reader, record or not; and the windows chained on one
-VM cover it at most CHAIN_MAX_S together (``chain_refusal``). And on a VM in zone ``production`` (its tags,
+(``window_refusal``, ``local``) — a mtime its writer sets: the past holds at the watch, by its
+record; and the windows chained on one VM cover it at most CHAIN_MAX_S together
+(``chain_refusals``), counted at the watch on its record, their files deleted or not. And on a VM in zone ``production`` (its tags,
 read by the watch), a window marks nothing unless it declares a technique that is not
 destructive (``kind: technique``, ``destructive: false``): the production rule of O0 — a
 destructive technique or a fault never runs there, so a window that says one did is a lie.
@@ -90,9 +91,14 @@ PURGE_AFTER_S = 7 * 24 * 3600
 # SEC-A1 (V-02): a window's file is read as runs/ is read — a regular file, never through a link,
 # never blocking, at most WINDOW_BYTES (eregion_core/channel_reader.py): a window is under 1 KiB.
 WINDOW_BYTES = 64 * 1024
-# SEC-A1 (V-21): the windows on one VM cover it, together, at most CHAIN_MAX_S among those that
-# start within CHAIN_HORIZON_S of each other (``chain_refusal``) — chained one after the other,
-# each within its own bounds, they would otherwise keep a VM in exercise for good.
+# SEC-A1: the window files one read reads, at most — the rest refused, said once. A week of
+# windows (PURGE_AFTER_S) at one run every five minutes on each injector is about 4 000: a busy
+# bench stays under it; a flood past it only refuses more windows (their cycles fall toward real).
+MAX_WINDOW_FILES = 4096
+# SEC-A1 (V-21): the windows on one VM cover it, together, at most CHAIN_MAX_S of the
+# CHAIN_HORIZON_S before each one starts (``chain_refusal``) — chained one after the other, each
+# within its own bounds, they would otherwise keep a VM in exercise for good. At the watch, the
+# windows it saw count too, their files deleted or not (its record, SEC14: ``_record_spans``).
 CHAIN_HORIZON_S = 24 * 3600
 CHAIN_MAX_S = 8 * 3600
 # The RulePoller names its synthetic runs ``watch-<rule>-<ts>``: a window of that name would
@@ -195,7 +201,7 @@ def close_window(run_id: str, *, injector: str = "", now: datetime | None = None
     path = (directory or exercises_dir(runs_layout.dir_of(injector))) / f"{run_id}.json"
     try:
         window = read_json(path, WINDOW_BYTES)   # SEC-A1: a regular file, bounded, never blocking
-    except (OSError, ValueError):
+    except (OSError, ValueError, RecursionError):
         return None
     if not isinstance(window, dict):
         return None
@@ -277,7 +283,7 @@ def _read_window(path: Path) -> tuple[object, datetime]:
     is read (SEC-A1, V-02): a regular file only, never through a link, never blocking, at most
     WINDOW_BYTES (``channel_reader.read_regular``) — a pipe, a link, a file too large raise
     Refused (an OSError), never block the watch's loop nor fill its memory. ValueError when it
-    is not JSON."""
+    is not JSON, RecursionError when it nests too deep."""
     data, st = read_regular(path, WINDOW_BYTES)
     return json.loads(data.decode("utf-8")), datetime.fromtimestamp(st.st_mtime, timezone.utc)
 
@@ -309,6 +315,29 @@ def seen_refusal(window: dict, entry: dict) -> str:
     if entry.get("end") is not None and window.get("end") != entry.get("end"):
         return "its end withdrawn or moved after the watch saw it closed"
     return ""
+
+
+def _span_of(window: dict) -> dict:
+    """What the watch's record keeps of a window for the chain (SEC-A1, V-21): its start, its
+    expiry and its targets, as first seen (its end comes with its closure)."""
+    return {"start": window.get("start"), "expires": window.get("expires"),
+            "targets": [t for t in window.get("targets") or [] if isinstance(t, str)]}
+
+
+# The spans of the windows in the watch's record, as ``_observe`` last read it, by run_id:
+# (targets, start, last moment). The chain counts them, their files deleted or not (SEC-A1).
+_record_spans: dict[str, tuple[frozenset, datetime, datetime]] = {}
+
+
+def _spans_of_record(seen: dict) -> dict[str, tuple[frozenset, datetime, datetime]]:
+    out = {}
+    for rid, entry in seen.items():
+        if not isinstance(entry, dict) or not isinstance(entry.get("targets"), list):
+            continue
+        start, last = _parse(entry.get("start")), last_moment(entry)
+        if start is not None and last is not None and last >= start:
+            out[str(rid)] = (frozenset(t.lower() for t in entry["targets"] if isinstance(t, str)), start, last)
+    return out
 
 
 def _update_seen(registry: Path, change) -> None:
@@ -350,7 +379,8 @@ def note_pulled(registry: Path | None, window: dict) -> None:
 
     def change(seen: dict) -> bool:
         seen[str(window["run_id"])] = {"seen": str(window.get(CHANNEL_CREATED) or ""), "channel": True,
-                                       "fields": _fields(window), "end": window.get("end")}
+                                       "fields": _fields(window), "end": window.get("end"),
+                                       **_span_of(window)}
         return True
     try:
         _update_seen(registry, change)
@@ -389,6 +419,7 @@ def _observe(windows: list[tuple[Path, dict]], now: datetime, registry: Path) ->
             entry = seen.get(rid)
             if not isinstance(entry, dict):
                 entry = seen[rid] = {"seen": now.isoformat(), "fields": _fields(w), "end": w.get("end")}
+                entry.update(_span_of(w))       # SEC-A1: what the chain counts, as first seen
                 changed = True
             if entry.get("channel") and w.get(CHANNEL_CREATED) != entry.get("seen"):
                 out[str(path)] = "its channel_created is not what the pull wrote down"
@@ -405,6 +436,8 @@ def _observe(windows: list[tuple[Path, dict]], now: datetime, registry: Path) ->
                     or (_parse(v.get("seen")) or now) < horizon]:
             del seen[rid]
             changed = True
+        global _record_spans
+        _record_spans = _spans_of_record(seen)
         return changed
     try:
         _update_seen(registry, change)
@@ -442,12 +475,17 @@ def load_windows(directory: Path | None = None, *, now: datetime | None = None,
         return []
     now = now or _now()
     read: list[tuple[Path, dict, datetime]] = []
-    for path in sorted(p for d in dirs for p in d.glob("*.json")):
+    paths = sorted(p for d in dirs for p in d.glob("*.json"))
+    if len(paths) > MAX_WINDOW_FILES:    # SEC-A1: the rest refused, said once (again when it changes)
+        _say_refused(own / "*.json", f"{len(paths) - MAX_WINDOW_FILES} window file(s) past "
+                     f"MAX_WINDOW_FILES ({MAX_WINDOW_FILES}) never read")
+        paths = paths[:MAX_WINDOW_FILES]
+    for path in paths:
         try:
             w, declared = _read_window(path)
         except FileNotFoundError:
             continue                     # gone since it was listed
-        except (OSError, ValueError) as e:
+        except (OSError, ValueError, RecursionError) as e:
             # Refused: a pipe, a link, a device, a file too large — in the reader's own words.
             _say_refused(path, f"never read: {e}" if isinstance(e, Refused)
                          else f"unreadable ({type(e).__name__})")
@@ -537,7 +575,11 @@ def is_enrolled(resource_id: str) -> bool:
 
 
 def _targets(window: dict, resource_id: str) -> bool:
-    """The VM is one of the window's targets, and the window is believed (H-1)."""
+    """The VM is one of the window's targets, and the window is believed (H-1) — nor refused by
+    the reader that read its file (``refusal``: the console's word, written over whatever the file
+    said, eregion_console/api.py ``_read_windows``; SEC-A1)."""
+    if window.get("refusal"):
+        return False
     return (resource_id.lower() in (window.get("targets") or [])
             and not window_refusal(window))
 
@@ -567,52 +609,82 @@ def zone_allows(window: dict, resource_id: str, enrolled=None) -> bool:
     return window.get("kind") == "technique" and window.get("destructive") is False
 
 
-def chain_refusal(window: dict, resource_id: str, windows: list[dict]) -> str:
-    """Why this window does not mark this VM for the windows chained before it — "" when it does
-    (SEC-A1, V-21). Each window is bounded on its own (MAX_DURATION_S, its dates); chained one after
-    the other, they would keep a VM in exercise for good. So the believed windows on the VM that
-    start within CHAIN_HORIZON_S before this one, this one included, cover it at most CHAIN_MAX_S
-    together (their spans, start to ``last_moment``, overlaps counted once); the window that goes
-    past marks it no more, nor any after it until the earlier ones fall out of the horizon. The
-    earlier windows keep their mark: a flood never takes a VM out of the real, only refuses more."""
-    rid, start = resource_id.lower(), _parse(window.get("start"))
-    if start is None:
-        return ""
-    key, since = (start, str(window.get("run_id"))), start - timedelta(seconds=CHAIN_HORIZON_S)
-    spans = []
-    for w in [*windows, window]:
+def chain_refusals(resource_id: str, windows: list[dict]) -> dict[str, str]:
+    """Why each window on this VM marks it no more for the windows chained before it, by run_id —
+    those it still marks are not there (SEC-A1, V-21). Each window is bounded on its own
+    (MAX_DURATION_S, its dates); chained one after the other, they would keep a VM in exercise for
+    good. So, in the order they start, the windows on the VM up to one, this one included, cover
+    the CHAIN_HORIZON_S before it starts, and after, at most CHAIN_MAX_S together (their spans,
+    start to ``last_moment``, overlaps counted once): the window that goes past marks it no more,
+    nor any after it until the earlier ones fall out of the horizon. The earlier windows keep their
+    mark: a flood never takes a VM out of the real, only refuses more. Counted: the believed
+    windows of the list and, at the watch, every window its record saw (``_record_spans``, SEC14),
+    their files deleted or not. Once for the list: sorted, then swept (O(n log n))."""
+    import bisect
+    rid = resource_id.lower()
+    spans: dict[str, tuple[datetime, datetime]] = {
+        r: (s, last) for r, (targets, s, last) in _record_spans.items() if rid in targets}
+    for w in windows:
         if not isinstance(w, dict) or rid not in (w.get("targets") or []) or window_refusal(w):
             continue
-        s, last = _parse(w.get("start")), last_moment(w)
-        if s is not None and last is not None and since <= s and (s, str(w.get("run_id"))) <= key:
-            spans.append((s, last))
-    covered, upto = 0.0, None
-    for s, last in sorted(spans):
-        if upto is None or s > upto:
-            covered, upto = covered + (last - s).total_seconds(), last
-        elif last > upto:
-            covered, upto = covered + (last - upto).total_seconds(), last
-    if covered > CHAIN_MAX_S:
-        return (f"the windows on this VM cover it {covered:.0f} s within {CHAIN_HORIZON_S} s "
-                f"(more than CHAIN_MAX_S, {CHAIN_MAX_S} s): chained")
-    return ""
+        r, s, last = str(w.get("run_id")), _parse(w.get("start")), last_moment(w)
+        if s is not None and last is not None and r not in spans:
+            spans[r] = (s, last)
+    # The union so far, as disjoint blocks in order: their ends, and what those before cover.
+    starts: list[float] = []
+    ends: list[float] = []
+    before: list[float] = []
+    out: dict[str, str] = {}
+    for (s, last), r in sorted((span, r) for r, span in spans.items()):
+        a, b = s.timestamp(), last.timestamp()
+        if ends and a <= ends[-1]:
+            ends[-1] = max(ends[-1], b)
+        else:
+            before.append(before[-1] + ends[-1] - starts[-1] if ends else 0.0)
+            starts.append(a)
+            ends.append(b)
+        since = a - CHAIN_HORIZON_S
+        k = bisect.bisect_right(ends, since)         # the first block that ends after `since`
+        if k == len(ends):
+            continue
+        covered = (before[-1] + ends[-1] - starts[-1]) - before[k] - max(0.0, since - starts[k])
+        if covered > CHAIN_MAX_S:
+            out[r] = (f"the windows on this VM cover it {covered:.0f} s of the {CHAIN_HORIZON_S} s "
+                      f"before it starts and after (more than CHAIN_MAX_S, {CHAIN_MAX_S} s): chained")
+    return out
 
 
-# What chain_refusal said, by (run_id, VM): said again only when it changes.
+def chain_refusal(window: dict, resource_id: str, windows: list[dict]) -> str:
+    """Why this window marks this VM no more for the windows chained before it — "" when it still
+    does (``chain_refusals``)."""
+    return chain_refusals(resource_id, [*windows, window]).get(str(window.get("run_id")), "")
+
+
+# What the chain said, by (run_id, VM): said again only when it changes.
 _chained: dict[tuple[str, str], str] = {}
 
 
-def _within_chain(window: dict, resource_id: str, windows: list[dict]) -> bool:
-    why = chain_refusal(window, resource_id, windows)
-    if why and _chained.get((str(window.get("run_id")), resource_id.lower())) != why:
-        _chained[(str(window.get("run_id")), resource_id.lower())] = why
-        print(f"[exercise] window {window.get('run_id')} marks {resource_id} no more: {why}")
-    return not why
+class _Chain:
+    """The chain's refusals on one VM, for one list of windows: computed once, at the first window
+    that would otherwise mark it (``covering_runs``, ``source_of``)."""
+
+    def __init__(self, resource_id: str, windows: list[dict]):
+        self.resource_id, self.windows, self._why = resource_id, windows, None
+
+    def allows(self, window: dict) -> bool:
+        if self._why is None:
+            self._why = chain_refusals(self.resource_id, self.windows)
+        rid = str(window.get("run_id"))
+        why = self._why.get(rid, "")
+        if why and _chained.get((rid, self.resource_id.lower())) != why:
+            _chained[(rid, self.resource_id.lower())] = why
+            print(f"[exercise] window {rid} marks {self.resource_id} no more: {why}")
+        return not why
 
 
-def _covers(window: dict, resource_id: str, when: datetime, enrolled, windows: list[dict]) -> bool:
+def _covers(window: dict, resource_id: str, when: datetime, enrolled, chain: _Chain) -> bool:
     return (_targets(window, resource_id) and live(window, when) and enrolled(resource_id)
-            and zone_allows(window, resource_id, enrolled) and _within_chain(window, resource_id, windows))
+            and zone_allows(window, resource_id, enrolled) and chain.allows(window))
 
 
 def covering_runs(resource_id: str, when, windows: list[dict], *, enrolled=None) -> list[str]:
@@ -622,7 +694,8 @@ def covering_runs(resource_id: str, when, windows: list[dict], *, enrolled=None)
     if not resource_id or at is None:
         return []
     enrolled = enrolled or is_enrolled
-    return [w["run_id"] for w in windows if _covers(w, resource_id, at, enrolled, windows)]
+    chain = _Chain(resource_id, windows)
+    return [w["run_id"] for w in windows if _covers(w, resource_id, at, enrolled, chain)]
 
 
 def source_of(resource_id: str, when=None, *, run_id: str = "",
@@ -636,15 +709,16 @@ def source_of(resource_id: str, when=None, *, run_id: str = "",
     """
     ws = load_windows() if windows is None else windows
     enrolled = enrolled or is_enrolled
+    chain = _Chain(resource_id or "", ws)
     if run_id and resource_id and any(
             w.get("run_id") == run_id and _targets(w, resource_id)
-            and zone_allows(w, resource_id, enrolled) and _within_chain(w, resource_id, ws) for w in ws) \
+            and zone_allows(w, resource_id, enrolled) and chain.allows(w) for w in ws) \
             and enrolled(resource_id):
         return EXERCISE, run_id
     at = _parse(when) if when is not None else _now()
     if not resource_id or at is None:
         return UNKNOWN, ""
     for w in ws:
-        if _covers(w, resource_id, at, enrolled, ws):
+        if _covers(w, resource_id, at, enrolled, chain):
             return EXERCISE, w["run_id"]
     return REAL, ""

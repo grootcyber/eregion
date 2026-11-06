@@ -7,6 +7,7 @@ channel's reads are stubbed. Requires the console extra.
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -61,7 +62,11 @@ def _window(runs, run_id, *, injector="annatar", kind="technique", experiment="T
          "targets": [t.lower() for t in targets], "start": _iso(start),
          "end": _iso(end) if end else None,
          "expires": _iso(expires or start + timedelta(hours=2))}
-    (runs / "exercises" / f"{run_id}.json").write_text(json.dumps(w))
+    path = runs / "exercises" / f"{run_id}.json"
+    path.write_text(json.dumps(w))
+    # As its injector wrote it: at its end, else its start (SEC-A1, V-21) — never in the future.
+    at = min((end or start).timestamp(), path.stat().st_mtime)
+    os.utime(path, (at, at))
     return w
 
 
@@ -608,3 +613,27 @@ def test_a_campaigns_report_reads_runs_as_the_watch_never_blocking_never_through
         assert [i.run_id for i in contained.incidents] == ["r1"]
     finally:
         stop.set()
+
+
+def test_a_window_in_an_injectors_directory_is_local_to_the_console_too(runs):
+    """SEC-A1 (V-21, M4565): a window in Annatar's directory carrying a channel_created of its own
+    is local — dated back, written now, the console shows it refused as the watch refuses it; and a
+    window the console refused attributes no cycle (``covering_runs``)."""
+    from eregion_core.exercise import covering_runs
+    start = NOW - timedelta(minutes=110)
+    w = {"run_id": "forged", "injector": "annatar", "kind": "technique", "experiment": "T1110.001 ssh",
+         "targets": [VM.lower()], "start": _iso(start), "end": None,
+         "expires": _iso(start + timedelta(hours=2)), "channel_created": _iso(start)}
+    d = runs.parent / "annatar" / "exercises"
+    d.mkdir(parents=True)
+    (d / "forged.json").write_text(json.dumps(w))
+    # The same window in the watch's own directory, where the pull writes: the blob's bound holds.
+    pulled = runs / "exercises" / "pulled.json"
+    pulled.write_text(json.dumps({**w, "run_id": "pulled"}))
+    os.utime(pulled, (NOW.timestamp(), NOW.timestamp()))
+    seen = {x["run_id"]: x for x in api._read_windows()}
+    assert "antedated" in seen["forged"]["refusal"]
+    assert seen["pulled"]["refusal"] == ""
+    at = NOW - timedelta(minutes=100)
+    assert covering_runs(VM, at, [seen["forged"]], enrolled=lambda r: True) == []
+    assert covering_runs(VM, at, [seen["pulled"]], enrolled=lambda r: True) == ["pulled"]

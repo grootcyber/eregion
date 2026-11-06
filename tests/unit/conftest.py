@@ -490,6 +490,9 @@ def isolated_exercise_windows(tmp_path, monkeypatch):
     from eregion_core import exercise
     monkeypatch.setattr(exercise, "_enrollment_check", lambda resource_id: True)
     monkeypatch.setattr(exercise, "_refused", {})
+    # SEC-A1: the spans of the watch's record, the chain's words said: fresh for every test.
+    monkeypatch.setattr(exercise, "_record_spans", {})
+    monkeypatch.setattr(exercise, "_chained", {})
     # Most tests write windows dated in the past, as if seen then: the watch's record of when it
     # saw each local window (SEC14, V-20) is off here, and tested on its own (test_exercise.py,
     # ``seen_record`` puts the real one back, in tmp).
@@ -497,7 +500,7 @@ def isolated_exercise_windows(tmp_path, monkeypatch):
     # And as written then (SEC-A1, V-21): a local window's last declared moment is bounded by its
     # file's mtime — the window an injector writes (``open_window``, ``close_window``) gets the
     # mtime it would have had, written at its start, then at its end. Tested on its own, with the
-    # real mtime (test_exercise_reads.py).
+    # real mtime (test_bounded_reads.py).
     real_write = exercise._write
 
     def written_then(path, window):
