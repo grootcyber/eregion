@@ -1,8 +1,9 @@
 # Architecture d'Eregion
 
 Ce document montre comment les pièces s'emboîtent : la boucle rouge/bleu, les processus et
-l'état qu'ils partagent, le graphe de décision, les gardes qui encadrent le LLM, la vie
-d'une isolation et la réaffirmation ; puis la cible de la 0.3 (composants, vocabulaire commun,
+l'état qu'ils partagent, la corrélation, le graphe de décision, les gardes qui encadrent le LLM,
+la vie d'une isolation et la réaffirmation, la clé de la watch et la file d'actions signée, les
+identités (l'exécuteur d'identité compris) ; puis la cible de la 0.3 (composants, vocabulaire commun,
 les trois zones, l'arborescence). Les schémas sont en Mermaid (rendus par GitHub), avec un code couleur
 commun : rouge = attaque (Annatar), bleu = Glorfindel, ambre = garde ou vérification, vert = humain ou succès,
 violet = Azure, rose = escalade ou échec, gris = données.
@@ -25,7 +26,8 @@ flowchart LR
         VM[("VM cible")] --> LAW[("Log Analytics<br/>Perf, Syslog, StorageBlobLogs")]
     end
     subgraph Blue["Glorfindel — bleu"]
-        RP["RulePoller<br/>une requête par règle"] --> INV["investigate<br/>requêtes ciblées"]
+        RP["RulePoller<br/>une requête par règle"] --> COR["corrélation<br/>par le code, sans modèle"]
+        COR --> INV["investigate<br/>requêtes ciblées"]
         INV --> DEC["decide<br/>LLM + mémoire RAG + exemples"]
         DEC --> G{"gardes<br/>déterministes"}
         G -->|autorisé| EX["execute_action"]
@@ -52,7 +54,7 @@ flowchart LR
     classDef data fill:#e9edf3,stroke:#8a96a8,color:#18212b
     class A1,A2 red
     class VM,LAW azure
-    class RP,INV,DEC,EX,ST,PR blue
+    class RP,COR,INV,DEC,EX,ST,PR blue
     class G,VER guard
     class ESC warn
     class H human
@@ -68,39 +70,92 @@ quand c'est le LLM qui les a écrites, elles restent des propositions qu'un huma
 
 ## Processus et état partagé
 
-Le watch, la console et la CLI sont trois processus distincts sur l'hôte de l'opérateur. Ils
-partagent l'état local et ne touchent une VM qu'un à la fois.
+La watch, la console, le bot et la CLI sont des processus distincts sur l'hôte de l'opérateur (ou
+sur H0). Ils partagent l'état local et ne touchent une VM qu'un à la fois.
 
 ```mermaid
 flowchart TB
-    subgraph Host["Hôte de l'opérateur"]
-        W["watch — conteneur<br/>RulePoller, découverte,<br/>préparation, réaffirmation"]
-        WR["Console — conteneur<br/>127.0.0.1:7007, jeton optionnel"]
+    subgraph Host["Hôte de l'opérateur, ou H0"]
+        W["watch — conteneur<br/>RulePoller, corrélation, découverte,<br/>préparation, réaffirmation"]
+        WR["Console — conteneur<br/>127.0.0.1:7007, jeton"]
+        BOT["bot Discord — conteneur<br/>profil bot"]
         CLI["CLI glorfindel"]
         S[("~/.glorfindel<br/>isolation/ et blocks/ par VM<br/>escalations.jsonl, readiness.json<br/>locks/")]
+        K[("~/.eregion/watch-key<br/>clé Ed25519, la watch seule")]
+        Q[("runs/console/queue/, runs/bot/queue/<br/>demandes signées, FS1")]
     end
     W <--> S
     WR <--> S
+    BOT <--> S
     CLI <--> S
-    W & WR & CLI -->|"un écrivain par VM<br/>verrou de fil + flock"| AZ["Azure<br/>NSG, cartes réseau, Compute, Backup"]
+    K --- W
+    WR -. "dépose, si EREGION_ACTION_QUEUE=1" .-> Q
+    BOT -. "dépose, si EREGION_ACTION_QUEUE=1" .-> Q
+    Q -. "relève, vérifie" .-> W
+    W & WR & BOT & CLI -->|"un écrivain par VM<br/>verrou de fil + flock"| AZ["Azure<br/>NSG, cartes réseau, Compute, Backup"]
     W -->|"KQL"| LAW[("Log Analytics")]
     W -->|"LiteLLM"| LLM["LLM<br/>Claude par défaut"]
+    W -->|"GET seulement, IR1a"| GR["Microsoft Graph<br/>en lecture"]
     classDef blue fill:#2f6fd6,stroke:#1d4a9a,color:#ffffff
     classDef human fill:#2e9e6a,stroke:#1d6b47,color:#ffffff
     classDef data fill:#e9edf3,stroke:#8a96a8,color:#18212b
     classDef azure fill:#7b5cd6,stroke:#4f3a99,color:#ffffff
     class W blue
-    class WR,CLI human
-    class S,LLM data
-    class AZ,LAW azure
+    class WR,BOT,CLI human
+    class S,K,Q,LLM data
+    class AZ,LAW,GR azure
     style Host fill:#f4f7fb,stroke:#aab4c3,color:#18212b
 ```
+
+- **Aujourd'hui, la console et le bot écrivent sur Azure eux-mêmes**, sous leur identité (sur H0,
+  celle de la VM, partagée par les trois conteneurs). Avec `EREGION_ACTION_QUEUE=1` (faux par
+  défaut), ils ne font plus que déposer une demande signée, que la watch juge et exécute
+  ([plus bas](#la-clé-de-la-watch-et-la-file-dactions-signée)).
+- **La watch lit Microsoft Graph, en lecture seule** (IR1a) : les paramètres du plan d'une carte
+  d'identité, et sa vérification après le geste d'un humain. Sans droit sur Graph, elle dit
+  « unreadable », jamais « held ». Elle n'écrit jamais sur Entra ID.
 
 - **Un fichier d'état par VM**, nommé `<nom>--<empreinte de l'ID>.json` en minuscules : deux VMs
   homonymes dans deux groupes ne se mélangent pas, et la casse de l'ID ne crée pas de doublon.
 - **Un écrivain par VM** : isoler, lever, bloquer, débloquer, `reset --from-azure` et la
   réaffirmation prennent le verrou de la VM (fil + `flock`, réentrant). Le `flock` est ce qui
   sépare les processus ; il est testé à part, sur de vrais processus (`tests/unit/test_locks.py`).
+
+## La corrélation, avant la décision
+
+Une détection qui relie deux événements vaut plus que deux détections isolées. La corrélation
+(`glorfindel/correlation.py`, COR1, COR2) est une brique de Glorfindel : elle tourne dans le
+RulePoller, juste après le routage des lignes d'une règle vers leurs VM, avant tout signal. Aucun
+cycle n'est ouvert, aucun appel au modèle n'est fait, et le modèle ne voit jamais ce qu'elle lit.
+
+```mermaid
+flowchart LR
+    R["lignes d'une règle<br/>routées vers leur VM"] --> C{"corrélation<br/>par le code"}
+    SY[("Syslog auth, authpriv<br/>de la VM, 7 jours")] --> C
+    SRC[("source hors de la VM<br/>Bastion ou flux, COR2")] -.-> C
+    C -->|"shell root d'un admin attendu,<br/>toutes ses sessions d'une origine déclarée"| OK["écarté, journalisé"]
+    C -->|"origine inconnue, non suivie,<br/>hors des origines, lecture coupée"| CARD["carte : SessionOrigin"]
+    C -->|"brute force puis connexion<br/>réussie de la même adresse"| CRIT["signal critique :<br/>Correlation, SuccessfulLogins"]
+    classDef blue fill:#2f6fd6,stroke:#1d4a9a,color:#ffffff
+    classDef guard fill:#f2b33d,stroke:#b07a12,color:#2b1d00
+    classDef warn fill:#fbe3e3,stroke:#d64545,color:#7a1f1f
+    classDef human fill:#2e9e6a,stroke:#1d6b47,color:#ffffff
+    classDef data fill:#e9edf3,stroke:#8a96a8,color:#18212b
+    class R blue
+    class C guard
+    class CARD,CRIT warn
+    class OK human
+    class SY,SRC data
+```
+
+- **Deux usages** : qualifier le shell root d'un administrateur attendu par l'origine de sa session
+  SSH (ADM1), et marquer un brute force SSH suivi d'une connexion réussie de la même adresse.
+- **Inconnu, donc carte** (A0) : une requête qui échoue, une lecture coupée, une ligne qui ne nomme
+  pas sa VM, aucune session trouvée, le plafond de requêtes atteint — le shell root reste une carte,
+  qui dit pourquoi. Une commande sensible reste une carte, quelle que soit l'origine.
+- **L'origine** est lue dans la VM ; avec une source déclarée (`expected_sudo.origin_proof`,
+  COR2), chaque session doit avoir sa trace hors de la VM. auditd (AUD1) ajoute les commandes d'un
+  shell root. Ce qu'elle lit, ses limites : [`design/correlation.md`](design/correlation.md).
 
 ## Le graphe de décision
 
@@ -262,6 +317,85 @@ sequenceDiagram
 Une isolation retirée par un `terraform apply` ou à la main est reposée une fois, puis
 Glorfindel alerte sans insister : il ne se bat pas contre un pipeline ou une décision humaine.
 
+## La clé de la watch et la file d'actions signée
+
+La watch tient une paire Ed25519 que seul son service monte (`~/.eregion/watch-key/`, jamais sous
+`~/.glorfindel` ni sous `runs/` ; `eregion_core/watch_key.py`). Une clé, trois usages, chacun signé
+sous son propre domaine : un battement ne se lit jamais comme une détection, ni comme une pièce de
+la file, ni l'inverse.
+
+```mermaid
+flowchart LR
+    subgraph Watch["watch"]
+        WK[("clé Ed25519<br/>~/.eregion/watch-key")]
+    end
+    subgraph Front["console, bot"]
+        SK[("clé du service<br/>~/.eregion/console, ~/.eregion/bot")]
+    end
+    WK -->|"eregion.watch-beat/1"| HB[("battement<br/>injecteurs, canal retour")]
+    WK -->|"eregion.watch-detection/1"| DET[("détection d'un run<br/>canal retour")]
+    WK -->|"eregion.action-queue/1"| PROP[("proposition d'une carte,<br/>reçu, statut")]
+    HB & DET --> INJ{"injecteur : clé épinglée<br/>EREGION_WATCH_KEY"}
+    INJ -->|"tient"| ACT["agit (V1) ;<br/>compte la détection"]
+    INJ -->|"ne tient pas"| REF["refus avant tout appel ;<br/>run unknown, jamais missed"]
+    SK -->|"eregion.action-request/1"| REQ[("demande<br/>runs/console/queue/, runs/bot/queue/")]
+    REQ --> WV{"watch : clé épinglée EREGION_QUEUE_KEYS,<br/>fraîcheur, nonce, verbe du service,<br/>proposition signée, gardes rejouées"}
+    PROP --> WV
+    WV -->|"tient"| EXE["exécute sous le verrou de la VM,<br/>reçu signé"]
+    WV -->|"ne tient pas"| CRIT["carte critique"]
+    classDef blue fill:#2f6fd6,stroke:#1d4a9a,color:#ffffff
+    classDef guard fill:#f2b33d,stroke:#b07a12,color:#2b1d00
+    classDef warn fill:#fbe3e3,stroke:#d64545,color:#7a1f1f
+    classDef human fill:#2e9e6a,stroke:#1d6b47,color:#ffffff
+    classDef red fill:#d64545,stroke:#9e2a2a,color:#ffffff
+    classDef data fill:#e9edf3,stroke:#8a96a8,color:#18212b
+    class WK,SK,HB,DET,PROP,REQ data
+    class INJ,WV guard
+    class ACT red
+    class EXE blue
+    class REF,CRIT warn
+    style Watch fill:#eaf1fd,stroke:#2f6fd6,color:#1d4a9a
+    style Front fill:#eef8f2,stroke:#2e9e6a,color:#1d6b47
+```
+
+- **Le battement** (SEC19) : la garde « jamais sans Glorfindel » ne croit qu'un battement signé par
+  la clé que l'injecteur épingle de son côté (`EREGION_WATCH_KEY`, jamais lue dans le canal), dont
+  le compteur monte. Il porte le périmètre de la watch, et la liste des détections qu'il couvre
+  (SEC21b).
+- **Les détections** (SEC21) : un injecteur ne compte une détection pour « vue » que signée par la
+  clé épinglée, pour son run et son signal. Un `missed` ne se conclut que sur un battement signé ;
+  sinon, le run est `unknown`. Détail : [`design/watch-key.md`](design/watch-key.md).
+- **La file d'actions signée** (FS1a à FS1c, derrière `EREGION_ACTION_QUEUE=1`, faux par défaut) :
+  la console et le bot déposent une demande signée par la clé de leur service, chacun dans son
+  répertoire de `runs/` ; la watch la vérifie avant tout appel au cloud (la clé épinglée de ce
+  répertoire, `EREGION_QUEUE_KEYS`, dans son seul environnement ; la fraîcheur ; le nonce ; un verbe
+  d'une liste fermée, permis à ce service ; une proposition qu'elle a elle-même signée sur la carte),
+  rejoue les gardes du geste et exécute avec son propre code. Le reçu est signé par la watch. Ce qui
+  reste avant de l'activer, et avant que seule la watch tienne le rôle d'écriture (FS1d à FS1f) :
+  [`design/file-actions-signee.md`](design/file-actions-signee.md), et le [modèle de
+  menace](design/modele-de-menace.md), §5.
+
+## Les identités
+
+Chaque service a l'identité de ce que son code appelle ; sur H0, la watch, la console et le bot
+partagent celle de la VM (le [modèle de menace](design/modele-de-menace.md), §5).
+
+| Identité | Ce qu'elle tient | Ce qu'elle ne tient jamais |
+|---|---|---|
+| la watch | la lecture des journaux, la réponse sur les groupes inscrits ; Microsoft Graph en lecture (IR1a, quatre permissions posées à la main, `docs/operations.md`) | une écriture sur Entra ID, le restore |
+| la console, le bot | leurs gestes sur Azure, le restore compris (la console isole ce qu'un humain approuve) ; avec la file, une demande signée | le bot : la coupure des sessions (il n'isole pas) |
+| l'exécuteur d'identité (IR1b) | son application, deux permissions de Graph (`Application.ReadWrite.OwnedBy`, `User.RevokeSessions.All`) et des rôles bornés à l'unité administrative du banc ; **désactivé par défaut** | l'identité de la VM (son propre certificat seulement), un droit hors de son contrat |
+| Orodruin | la lecture du groupe du banc, l'écriture sur chaque VM inscrite et chaque expérience ; Graph en lecture (IDI1), désactivé par défaut ; le binaire Stratus, lancé depuis Orodruin, emploie cette identité (R2b la sépare) | une écriture sur le groupe entier |
+
+**L'exécuteur d'identité** répondra à une identité volée d'Entra ID — retirer un identifiant ajouté,
+désactiver puis réactiver un principal, révoquer des sessions —, toujours sur l'approbation d'un
+humain, jamais seul ; la watch n'écrit jamais sur Entra ID. Son application est posée par
+`infra/glorfindel-host/identity_executor.tf`, désactivée par défaut. Son contrat est lu à son
+démarrage (`glorfindel/providers/azure/identity_contract.py`) : son jeton, puis ses droits relus
+dans Graph contre une liste fermée ; tout droit de plus le rend passif, et passif, il refuse de
+démarrer. Il n'a encore aucun verbe : c'est IR1c. Conception :
+[`design/reponse-identite.md`](design/reponse-identite.md).
+
 ## Vers la 0.3 : composants, vocabulaire et zones
 
 Cette section décrit la cible de la huitième passe (13/10, voir [`ROADMAP.md`](../ROADMAP.md),
@@ -275,7 +409,7 @@ Glorfindel est le produit ; le reste est l'atelier qui l'éprouve.
 | Composant | Rôle | Où | État |
 |---|---|---|---|
 | Glorfindel | détecter, enquêter, répondre ; son IA est l'IA sous test | `glorfindel/` | existe |
-| Annatar | attaques : ses scénarios aujourd'hui, puis des adaptateurs vers des bibliothèques publiques (R1 Atomic Red Team, R2 Stratus Red Team) | `annatar/`, interface d'injecteur dans `annatar/executors/` | existe, évolue |
+| Annatar | attaques : ses scénarios, et deux adaptateurs vers des bibliothèques publiques, appelées par identifiant — Atomic Red Team dans une VM (R1), Stratus Red Team sur le plan de contrôle Azure (R2a, fusionné ; son binaire épinglé n'est pas encore livré dans l'image, sa cible et son identité sont la conception R2b, [`design/stratus-cible.md`](design/stratus-cible.md)) | `annatar/`, interface d'injecteur dans `annatar/executors/`, adaptateurs dans `annatar/engines/` | existe, évolue |
 | Gothmog | pannes déclarées en code, exécutées par un moteur public (Chaos Studio d'abord) | `gothmog/` ; l'expérience dans `infra/terraform/chaos.tf` | G0 ✅ (19/10, arrêt de VM mesuré sur le banc) |
 | Orodruin | hôte d'exécution jetable des injecteurs : identité limitée, sortie réseau limitée, contrat vérifié au démarrage, arrêt d'urgence | `infra/orodruin/`, état Terraform séparé | O1 |
 | Celebrimbor | construit et inscrit les cibles du banc | `infra/terraform/` | existe |
@@ -449,7 +583,7 @@ semaine ; elle nourrit la couverture et l'âge de la dernière preuve (`docs/glo
 
 ```
 glorfindel/              le produit (existe)
-annatar/                 attaque (existe) ; executors/ devient l'interface d'injecteur (R1)
+annatar/                 attaque (existe) ; executors/ l'interface d'injecteur (R1), engines/ les adaptateurs Atomic (R1) et Stratus (R2a)
 gothmog/                 pannes (G0) : moteur Chaos Studio, sondes, exécuteur, signaux, rapport
 eregion_core/            inscription et périmètre (O0) ; validation des schémas d'expérience et du catalogue (E1) ; le run au format commun (C1) ; existent
 schemas/                 scenario.schema.json (existe) + experiment.schema.json + technique_catalog.schema.json (E1, existent)
