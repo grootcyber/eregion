@@ -38,6 +38,11 @@ Sept garanties. Chacune a un mécanisme, et une vérification qui ne demande **a
 | Arrêt d'urgence | révoquer l'identité, tout arrêter | essai à blanc en CI |
 | Audit | chaque appel d'un injecteur journalisé **avant** exécution, sur l'hôte puis dans le canal (SEC5) | l'écriture précède l'appel |
 
+Deux frontières voisines ne sont pas tenues par ces garanties : le binaire Stratus Red Team qu'un
+injecteur lance depuis Orodruin (R2a), et la lecture de Microsoft Graph par la watch (IR1a) —
+[« Ce que le contrat ne couvre pas »](#ce-que-le-contrat-ne-couvre-pas--stratus-et-la-lecture-de-graph-de-la-watch),
+plus bas.
+
 ### `orodruin-check` — la porte
 
 `orodruin-check` vérifie le contrat et rend un verdict à code stable, comme la préparation de
@@ -1035,6 +1040,40 @@ fenêtres ouvertes qu'il fermera et leurs cibles, et ce qui reste en vol (voir p
 - le premier exercice réel ;
 - la lecture des cartes, des sous-réseaux et de leurs NSG par l'identité d'Orodruin ;
 - le blob `orodruin/` tiré par H0.
+
+## Ce que le contrat ne couvre pas : Stratus et la lecture de Graph de la watch
+
+_SEC-D (#636), audit du 06/11. Deux frontières voisines, dites ici pour qu'on ne les croie pas
+tenues par le contrat ; leur page est le §5 du [modèle de menace](modele-de-menace.md)._
+
+**Le binaire Stratus Red Team (R2a, #79).** Annatar peut lancer depuis Orodruin le binaire public de
+Stratus Red Team, épinglé (`annatar/stratus/PIN`), pour une technique du plan de contrôle Azure.
+
+- **Ce qui le tient** : chaque phase (`warmup`, `detonate`, `revert`, `cleanup`) part d'un contrat
+  armé, journalisée avant de partir et comptée sous le plafond (`annatar/executors/stratus_host.py`) ;
+  le sha256 du binaire est revérifié avant chaque phase ; la technique est sur la liste fermée du
+  catalogue ; le groupe du banc est inscrit, en zone `bench` seule (`Engine._run_stratus`) ; la sortie
+  réseau d'Orodruin vaut pour lui (Terraform et ses fournisseurs sont préparés hors ligne,
+  `airgap_env`) ; l'arrêt d'urgence révoque l'identité d'Orodruin, celle qu'il emploie.
+- **Ce qui ne le tient pas** : Stratus n'a pas d'entrée de cible, il crée lui-même ce dont sa
+  technique a besoin ; son processus hérite de l'environnement d'Orodruin et obtient les jetons de son
+  identité (ARM, et Graph en lecture si les droits d'IDI1 sont posés). Sa portée réelle est le RBAC
+  de cette identité, que le contrat borne au banc ; l'inscription n'est relue que sur le groupe.
+- **Pas livré** : le binaire n'est ni dans l'image des injecteurs ni sur Orodruin ; sans lui, la
+  résolution d'une technique refuse. Aucune technique Stratus ne tourne aujourd'hui.
+- **La suite** : R2b (#608, [`stratus-cible.md`](stratus-cible.md)) fait tourner Stratus dans un
+  abonnement de test dédié, sous une identité propre, dans un bac à sable qui ne peut pas obtenir le
+  jeton d'Orodruin ; le contrat y gagne la lecture des droits de cette identité. R2c en écrit le code.
+
+**La lecture de Microsoft Graph par la watch (IR1a, #552).** Le contrat relit les droits Graph
+d'Orodruin (IDI1, plus haut), jamais ceux de la watch. L'identité de la watch peut recevoir quatre
+permissions d'application en lecture, posées à la main, hors de Terraform
+([`docs/operations.md`](../operations.md), « La lecture de Microsoft Graph par la watch ») ; sur H0,
+c'est l'identité de la VM, partagée par la watch, la console et le bot. Le code n'en fait que des GET
+(`glorfindel/providers/azure/graph.py`), mais aucun contrat ne relit ces droits au démarrage de la
+watch. Côté Orodruin, rien ne change : la watch lit `exercises` et écrit `watch` sur le canal, son
+identité est dans `EREGION_PROTECTED_IDENTITIES`, jamais une cible d'IDI1. Planifié : SEC-B (#634),
+V-28 (audit du 06/11).
 
 ## Questions ouvertes (pour Jonathan, à l'implémentation)
 
