@@ -11,7 +11,8 @@
 under [Unreleased], and removed in the same commit — no line lost, or nothing is written; the version of pyproject.toml
 — the package's only one: annatar.__version__ reads it — and the README's « **Status — vX.Y.Z.** »
 follow, and ROADMAP.md's line of X.Y.Z in « Les prochaines releases », if there is one, becomes
-« brouillon » (RM1: #roadmap shows that table); then the branch chore/release-X.Y.Z, its commit, pushed, and its pull request. Refused:
+« brouillon » (RM1: #roadmap shows that table); for a minor release (another X.Y), SECURITY.md's
+supported line becomes X.Y.x and its « older » line follows (SEC-D), a patch leaves it; then the branch chore/release-X.Y.Z, its commit, pushed, and its pull request. Refused:
 a tree not clean, a HEAD that is not origin/main, a version not greater than the current one,
 an empty [Unreleased] without a fragment, a fragment malformed, a branch or a tag vX.Y.Z that exists.
 
@@ -324,6 +325,24 @@ def roadmap_drafted(roadmap: str, version: str) -> str:
     return roadmap
 
 
+# SEC-D (#636, P-03): SECURITY.md's table names the one supported line, and the older ones.
+SUPPORTED = re.compile(r"(?m)^\| latest (\d+)\.(\d+)\.x \| yes \|$")
+OLDER = re.compile(r"(?m)^\| older [^|\n]* \| no — upgrade \|$")
+
+
+def security_follows(security: str, version: str) -> str:
+    """SECURITY.md with its supported line set to the version's minor (X.Y.x), and the « older »
+    line naming the line it replaces. A patch of the supported line (X.Y.Z+1) leaves it as is; so
+    does a file without exactly one supported line (said: the Orchestre holds it by hand)."""
+    new = semver(version)
+    found = SUPPORTED.findall(security)
+    if new is None or len(found) != 1 or (int(found[0][0]), int(found[0][1])) == new[:2]:
+        return security
+    line, prev = f"{new[0]}.{new[1]}", ".".join(found[0])
+    security = SUPPORTED.sub(f"| latest {line}.x | yes |", security, count=1)
+    return OLDER.sub(f"| older {line}.x, {prev}.x and before | no — upgrade |", security, count=1)
+
+
 # ── prepare: the version's pull request ─────────────────────────────────────────────
 
 def _remote_has(root: Path, kind: str, name: str) -> bool:
@@ -363,6 +382,10 @@ def prepare(root: Path, version: str, title: str, *, dry_run: bool = False, day:
         roadmap = (root / "ROADMAP.md").read_text(encoding="utf-8")
     except OSError:
         roadmap = ""
+    try:   # SEC-D: its supported line, for a minor release
+        security = (root / "SECURITY.md").read_text(encoding="utf-8")
+    except OSError:
+        security = ""
     current = version_of(pyproject)
     if new is not None and (semver(current) is None or new <= semver(current)):
         refused.append(f"{version} n'est pas plus grande que la version courante ({current or '—'})")
@@ -411,7 +434,17 @@ def prepare(root: Path, version: str, title: str, *, dry_run: bool = False, day:
     drafted = roadmap_drafted(roadmap, version) if new is not None else roadmap
     if edits and drafted != roadmap:
         edits["ROADMAP.md"] = drafted
+    followed = security_follows(security, version)
+    if edits and followed != security:
+        edits["SECURITY.md"] = followed
     staged = ["pyproject.toml", "CHANGELOG.md", "README.md"] + (["ROADMAP.md"] if "ROADMAP.md" in edits else [])
+    staged += ["SECURITY.md"] if "SECURITY.md" in edits else []
+    new_line = f"{new[0]}.{new[1]}.x" if new is not None else "—"
+    security_said = (f"SECURITY.md : la ligne suivie devient {new_line}" if followed != security else
+                     f"SECURITY.md : la ligne suivie reste {new_line} (un correctif)"
+                     if len(SUPPORTED.findall(security)) == 1 and new is not None else
+                     "SECURITY.md : pas une seule ligne « | latest X.Y.x | yes | » — l'Orchestre la tient "
+                     "à la main")
     roadmap_said = (f"ROADMAP.md : la ligne {version} des prochaines releases passe à « brouillon »"
                     if drafted != roadmap else
                     f"ROADMAP.md : pas de ligne {version} sous « Les prochaines releases » (ou un tableau "
@@ -425,7 +458,9 @@ def prepare(root: Path, version: str, title: str, *, dry_run: bool = False, day:
             f"(pyproject.toml, lue par annatar.__version__) et la ligne « Status » du README suivent"
             + (f" ; {len(removed)} fragment(s) de changes/ y sont assemblés, puis retirés" if removed else "")
             + (" ; dans ROADMAP.md, la ligne de la version passe à « brouillon » (« Les prochaines releases »)"
-               if "ROADMAP.md" in edits else "") + ".\n\n"
+               if "ROADMAP.md" in edits else "")
+            + (f" ; dans SECURITY.md, la ligne suivie devient {new_line}" if "SECURITY.md" in edits else "")
+            + ".\n\n"
             f"{GATE_SAID}\n\n"
             f"Après la fusion : make release-draft VERSION={version} — un brouillon, que Jonathan publie.")
     shown = [["git", "switch", "-c", branch],          # what runs below, call by call
@@ -439,13 +474,14 @@ def prepare(root: Path, version: str, title: str, *, dry_run: bool = False, day:
         say("")
         for name, text in edits.items():
             old = {"pyproject.toml": pyproject, "CHANGELOG.md": changelog, "README.md": readme,
-                   "ROADMAP.md": roadmap}[name]
+                   "ROADMAP.md": roadmap, "SECURITY.md": security}[name]
             say("".join(difflib.unified_diff(old.splitlines(True), text.splitlines(True),
                                              f"a/{name}", f"b/{name}", n=2)).rstrip("\n"))
         say(f"\n[{version}] reçoit {lines} lignes : {', '.join(sections_named(cut_text)) or '—'}")
         say(f"changes/ : {len(removed)} fragment(s) assemblé(s) puis retiré(s) — {', '.join(removed)}"
             if removed else "changes/ : aucun fragment")
         say(roadmap_said)
+        say(security_said)
         say(f"\n{GATE_SAID}")
         say("\nÀ blanc (DRY_RUN=1) — rien n'est écrit ni poussé. Lancerait :")
         for c in shown:
@@ -474,6 +510,7 @@ def prepare(root: Path, version: str, title: str, *, dry_run: bool = False, day:
     except (Refused, OSError) as e:
         raise Halfway(_halfway(step, branch, str(e), removed)) from None
     say(roadmap_said)
+    say(security_said)
     say(f"\nPR ouverte. {GATE_SAID}")
     say(f"Après sa fusion : make release-draft VERSION={version}")
     return 0

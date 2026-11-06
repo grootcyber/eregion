@@ -4,14 +4,14 @@ Eregion acts on cloud infrastructure: Glorfindel can isolate a VM and block an a
 
 ## Supported versions
 
-Eregion is before 1.0, maintained by one person. Fixes go into the **latest release of the current line**, today **0.5.x** (and `main`); an older release is not patched — upgrade to the latest one. When 0.6.0 is published, the supported line becomes 0.6.x. The versions and what changed: [`CHANGELOG.md`](CHANGELOG.md).
+Eregion is before 1.0, maintained by one person. Fixes go into the **latest release of the line marked *yes*** in the table below (and `main`); an older release is not patched — upgrade to the latest one. The versions and what changed: [`CHANGELOG.md`](CHANGELOG.md).
 
 | Version | Supported |
 |---|---|
 | latest 0.5.x | yes |
 | older 0.5.x, 0.4.x and before | no — upgrade |
 
-This table follows the releases: each new minor version (0.6.0, 0.7.0…) updates it in its own version pull request.
+This table follows the releases: each new minor version updates it in its own version pull request.
 
 ## How to report a vulnerability
 
