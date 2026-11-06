@@ -3,6 +3,7 @@ targets `exercise`, in the memory and on the card; the observation report leaves
 out; an exercise card never absorbs a real detection. Nothing reaches the model yet.
 """
 import json
+import os
 from datetime import datetime, timedelta, timezone
 
 from eregion_core import exercise
@@ -185,9 +186,14 @@ def seen_record(tmp_path, monkeypatch):
     return tmp_path / "glorfindel" / "exercise_seen.json"
 
 
-def _write(directory, window):
+def _write(directory, window, written=None):
+    """As its injector wrote it — at ``written``, else at its end, else its start (SEC-A1, V-21:
+    a local window's last declared moment is bounded by its file's mtime)."""
     directory.mkdir(parents=True, exist_ok=True)
-    (directory / f"{window['run_id']}.json").write_text(json.dumps(window))
+    path = directory / f"{window['run_id']}.json"
+    path.write_text(json.dumps(window))
+    at = (written or exercise._parse(window.get("end") or window.get("start"))).timestamp()
+    os.utime(path, (at, at))
 
 
 def _local(rid="r1", start=None, **kw):
@@ -199,11 +205,11 @@ def _local(rid="r1", start=None, **kw):
 
 def test_a_local_window_dated_back_when_first_seen_is_refused(tmp_path, seen_record):
     d = tmp_path / "x"
-    _write(d, _local(start=_at(-110)))                    # written now, dated 110 min back
+    _write(d, _local(start=_at(-110)), written=T0)        # written at T0, dated 110 min back
     assert exercise.load_windows(d, now=T0, seen=seen_record) == []
     assert source_of(VM, _at(-100), windows=exercise.load_windows(d, now=T0, seen=seen_record)) == ("real", "")
-    # Without the record (as before SEC14), it was believed: the bound is the record's.
-    assert [w["run_id"] for w in exercise.load_windows(d, now=T0)] == ["r1"]
+    # Without the record (as before SEC14), its file's mtime bounds it too (SEC-A1, V-21).
+    assert exercise.load_windows(d, now=T0) == []
 
 
 def test_a_local_window_seen_open_may_come_again_closed_and_nothing_else(tmp_path, seen_record):

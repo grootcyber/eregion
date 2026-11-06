@@ -494,6 +494,18 @@ def isolated_exercise_windows(tmp_path, monkeypatch):
     # saw each local window (SEC14, V-20) is off here, and tested on its own (test_exercise.py,
     # ``seen_record`` puts the real one back, in tmp).
     monkeypatch.setattr(exercise, "seen_path", lambda: None)
+    # And as written then (SEC-A1, V-21): a local window's last declared moment is bounded by its
+    # file's mtime — the window an injector writes (``open_window``, ``close_window``) gets the
+    # mtime it would have had, written at its start, then at its end. Tested on its own, with the
+    # real mtime (test_exercise_reads.py).
+    real_write = exercise._write
+
+    def written_then(path, window):
+        real_write(path, window)
+        latest = exercise._parse(window.get("end") or window.get("start"))
+        if latest is not None and latest.timestamp() < os.path.getmtime(path):
+            os.utime(path, (latest.timestamp(), latest.timestamp()))
+    monkeypatch.setattr(exercise, "_write", written_then)
 
 
 @pytest.fixture(autouse=True)

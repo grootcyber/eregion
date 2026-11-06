@@ -56,7 +56,10 @@ def _put(window, *, mtime=None):
     d.mkdir(parents=True, exist_ok=True)
     path = d / f"{window['run_id']}.json"
     path.write_text(json.dumps(window))
-    if mtime is not None:
+    # As its injector wrote it: at its end, else its start (SEC-A1, V-21: a local window's last
+    # declared moment is bounded by its file's mtime).
+    mtime = mtime or (isinstance(window, dict) and exercise._parse(window.get("end") or window.get("start")))
+    if mtime and mtime.timestamp() < path.stat().st_mtime:
         os.utime(path, (mtime.timestamp(), mtime.timestamp()))
     return path
 

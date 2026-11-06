@@ -43,7 +43,12 @@ that record says so — the pull writes it down there with its blob's creation
 (``note_pulled``); a ``channel_created`` the file carries alone is the word of whoever wrote the
 file, and the window is then local. A watch stopped more than FUTURE_SKEW_S during a local run
 sees its window late: refused, its cycles count as real — the safe side.
-MAX_DURATION_S still caps how long it lasts. And on a VM in zone ``production`` (its tags,
+MAX_DURATION_S still caps how long it lasts.
+SEC-A1 (V-02, V-21): each window's file is read as runs/ is read (``_read_window``, a regular file,
+never through a link, never blocking, bounded) — a pipe, a link, a file too large refused and said,
+never waited on by the watch's loop. A local window is bounded in the past by its file's mtime too
+(``window_refusal``, ``local``), for every reader, record or not; and the windows chained on one
+VM cover it at most CHAIN_MAX_S together (``chain_refusal``). And on a VM in zone ``production`` (its tags,
 read by the watch), a window marks nothing unless it declares a technique that is not
 destructive (``kind: technique``, ``destructive: false``): the production rule of O0 — a
 destructive technique or a fault never runs there, so a window that says one did is a lie.
@@ -67,6 +72,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from eregion_core import runs_layout
+from eregion_core.channel_reader import Refused, read_json, read_regular
 
 # A run that outlives this was not closed (the injector died): its window lapses. A window
 # declared longer is refused (H-1).
@@ -81,6 +87,14 @@ FUTURE_SKEW_S = 5 * 60
 # of a campaign up to MAX_WAIT_S after it ends (analysis/hosted_report.py), and a campaign of
 # many runs ends hours after its first window; a week leaves the margin (H-1).
 PURGE_AFTER_S = 7 * 24 * 3600
+# SEC-A1 (V-02): a window's file is read as runs/ is read — a regular file, never through a link,
+# never blocking, at most WINDOW_BYTES (eregion_core/channel_reader.py): a window is under 1 KiB.
+WINDOW_BYTES = 64 * 1024
+# SEC-A1 (V-21): the windows on one VM cover it, together, at most CHAIN_MAX_S among those that
+# start within CHAIN_HORIZON_S of each other (``chain_refusal``) — chained one after the other,
+# each within its own bounds, they would otherwise keep a VM in exercise for good.
+CHAIN_HORIZON_S = 24 * 3600
+CHAIN_MAX_S = 8 * 3600
 # The RulePoller names its synthetic runs ``watch-<rule>-<ts>``: a window of that name would
 # make a detection an exercise by its run_id (H-1).
 _WATCH_RUN_PREFIX = "watch-"
@@ -180,8 +194,10 @@ def close_window(run_id: str, *, injector: str = "", now: datetime | None = None
     injector's own directory (SEC18), as ``open_window`` wrote it."""
     path = (directory or exercises_dir(runs_layout.dir_of(injector))) / f"{run_id}.json"
     try:
-        window = json.loads(path.read_text(encoding="utf-8"))
+        window = read_json(path, WINDOW_BYTES)   # SEC-A1: a regular file, bounded, never blocking
     except (OSError, ValueError):
+        return None
+    if not isinstance(window, dict):
         return None
     window["end"] = (now or _now()).isoformat()
     _write(path, window)
@@ -190,7 +206,7 @@ def close_window(run_id: str, *, injector: str = "", now: datetime | None = None
 
 
 def window_refusal(window, now: datetime | None = None,
-                   declared_at: datetime | None = None) -> str:
+                   declared_at: datetime | None = None, *, local: bool = False) -> str:
     """Why this window is not believed — "" when it is (H-1). Its run_id must be a plain name
     and not the RulePoller's (``watch-…``); its targets a list of resource ids; its start and
     expiry readable, the expiry after the start and at most MAX_DURATION_S later; its end,
@@ -198,7 +214,12 @@ def window_refusal(window, now: datetime | None = None,
     was written: its file's mtime), it must not start more than FUTURE_SKEW_S after the
     earlier of the two — a window written today for tomorrow is refused for good. Pulled from
     the channel, it must start within FUTURE_SKEW_S of when its blob was created
-    (``channel_created``, SEC5 V-20): a window written now and dated back is refused too."""
+    (``channel_created``, SEC5 V-20): a window written now and dated back is refused too.
+    Written on this host (no ``channel_created``, or ``local``: its file in an injector's own
+    directory, where the channel never writes), it is bounded the same way by its file's mtime
+    (SEC-A1, V-21): the last moment it declares — its end, else its start — may not be more than
+    FUTURE_SKEW_S before ``declared_at``. An injector writes its window when it opens it and
+    again when it closes it, so an open window written now and dated back is refused."""
     if not isinstance(window, dict):
         return "not a JSON object"
     rid = str(window.get("run_id") or "")
@@ -227,6 +248,12 @@ def window_refusal(window, now: datetime | None = None,
             return (f"it starts {(created - start).total_seconds():.0f} s before the blob that "
                     f"carries it was created (more than FUTURE_SKEW_S, {FUTURE_SKEW_S} s): "
                     "antedated")
+    if declared_at is not None and (local or CHANNEL_CREATED not in window):
+        latest = _parse(window.get("end")) if window.get("end") is not None else start
+        if latest < declared_at - timedelta(seconds=FUTURE_SKEW_S):
+            return (f"its {'end' if window.get('end') is not None else 'start'} is "
+                    f"{(declared_at - latest).total_seconds():.0f} s before its file was written "
+                    f"(more than FUTURE_SKEW_S, {FUTURE_SKEW_S} s): antedated")
     refs = [t for t in (now, declared_at) if t is not None]
     if refs and start > min(refs) + timedelta(seconds=FUTURE_SKEW_S):
         return (f"it starts {(start - min(refs)).total_seconds():.0f} s after it was declared "
@@ -236,6 +263,23 @@ def window_refusal(window, now: datetime | None = None,
 
 # What load_windows said of a refused file, by path: said again only when it changes.
 _refused: dict[str, str] = {}
+
+
+def _say_refused(path: Path, why: str) -> None:
+    """A window not believed, or a file not read, said once — again only when why changes."""
+    if _refused.get(str(path)) != why:
+        _refused[str(path)] = why
+        print(f"[exercise] window {path.name} refused: {why}")
+
+
+def _read_window(path: Path) -> tuple[object, datetime]:
+    """(what the file holds, when it was written: the mtime of the very file read). Read as runs/
+    is read (SEC-A1, V-02): a regular file only, never through a link, never blocking, at most
+    WINDOW_BYTES (``channel_reader.read_regular``) — a pipe, a link, a file too large raise
+    Refused (an OSError), never block the watch's loop nor fill its memory. ValueError when it
+    is not JSON."""
+    data, st = read_regular(path, WINDOW_BYTES)
+    return json.loads(data.decode("utf-8")), datetime.fromtimestamp(st.st_mtime, timezone.utc)
 
 
 def seen_path() -> Path:
@@ -379,7 +423,8 @@ def observe(now: datetime | None = None) -> list[dict]:
 def load_windows(directory: Path | None = None, *, now: datetime | None = None,
                  seen: Path | None = None, pull: bool = True) -> list[dict]:
     """Every window believed (``window_refusal``, declared at its file's mtime); a
-    malformed or refused file is skipped — said once, never fatal — and a window whose last
+    malformed or refused file is skipped — said once, never fatal: each file is read as runs/ is
+    read (``_read_window``, SEC-A1) — and a window whose last
     moment is PURGE_AFTER_S old is purged (``_purge``). The default directory is refreshed
     from the exercise channel first, when one is configured. A local window (not pulled from
     the channel) is also held against what the watch saw of it (``seen``: the watch's record;
@@ -399,9 +444,13 @@ def load_windows(directory: Path | None = None, *, now: datetime | None = None,
     read: list[tuple[Path, dict, datetime]] = []
     for path in sorted(p for d in dirs for p in d.glob("*.json")):
         try:
-            w = json.loads(path.read_text(encoding="utf-8"))
-            declared = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc)
-        except (OSError, ValueError):
+            w, declared = _read_window(path)
+        except FileNotFoundError:
+            continue                     # gone since it was listed
+        except (OSError, ValueError) as e:
+            # Refused: a pipe, a link, a device, a file too large — in the reader's own words.
+            _say_refused(path, f"never read: {e}" if isinstance(e, Refused)
+                         else f"unreadable ({type(e).__name__})")
             continue
         if isinstance(w, dict) and w.get("purged_at"):
             continue                     # purged already: its tombstone (``_purge``)
@@ -413,12 +462,11 @@ def load_windows(directory: Path | None = None, *, now: datetime | None = None,
     out = []
     for path, w, declared in read:
         # SEC18: an injector's directory holds that injector's windows only.
-        why = (window_refusal(w, now, declared) or unseen.get(str(path), "")
+        # SEC-A1 (V-21): a window in an injector's directory is local, whatever it says.
+        why = (window_refusal(w, now, declared, local=path.parent != own) or unseen.get(str(path), "")
                or runs_layout.window_refusal_of(path, w))
         if why:
-            if _refused.get(str(path)) != why:
-                _refused[str(path)] = why
-                print(f"[exercise] window {path.name} refused: {why}")
+            _say_refused(path, why)
             continue
         last = last_moment(w)
         if last is not None and last < now - timedelta(seconds=PURGE_AFTER_S):
@@ -519,9 +567,52 @@ def zone_allows(window: dict, resource_id: str, enrolled=None) -> bool:
     return window.get("kind") == "technique" and window.get("destructive") is False
 
 
-def _covers(window: dict, resource_id: str, when: datetime, enrolled) -> bool:
+def chain_refusal(window: dict, resource_id: str, windows: list[dict]) -> str:
+    """Why this window does not mark this VM for the windows chained before it — "" when it does
+    (SEC-A1, V-21). Each window is bounded on its own (MAX_DURATION_S, its dates); chained one after
+    the other, they would keep a VM in exercise for good. So the believed windows on the VM that
+    start within CHAIN_HORIZON_S before this one, this one included, cover it at most CHAIN_MAX_S
+    together (their spans, start to ``last_moment``, overlaps counted once); the window that goes
+    past marks it no more, nor any after it until the earlier ones fall out of the horizon. The
+    earlier windows keep their mark: a flood never takes a VM out of the real, only refuses more."""
+    rid, start = resource_id.lower(), _parse(window.get("start"))
+    if start is None:
+        return ""
+    key, since = (start, str(window.get("run_id"))), start - timedelta(seconds=CHAIN_HORIZON_S)
+    spans = []
+    for w in [*windows, window]:
+        if not isinstance(w, dict) or rid not in (w.get("targets") or []) or window_refusal(w):
+            continue
+        s, last = _parse(w.get("start")), last_moment(w)
+        if s is not None and last is not None and since <= s and (s, str(w.get("run_id"))) <= key:
+            spans.append((s, last))
+    covered, upto = 0.0, None
+    for s, last in sorted(spans):
+        if upto is None or s > upto:
+            covered, upto = covered + (last - s).total_seconds(), last
+        elif last > upto:
+            covered, upto = covered + (last - upto).total_seconds(), last
+    if covered > CHAIN_MAX_S:
+        return (f"the windows on this VM cover it {covered:.0f} s within {CHAIN_HORIZON_S} s "
+                f"(more than CHAIN_MAX_S, {CHAIN_MAX_S} s): chained")
+    return ""
+
+
+# What chain_refusal said, by (run_id, VM): said again only when it changes.
+_chained: dict[tuple[str, str], str] = {}
+
+
+def _within_chain(window: dict, resource_id: str, windows: list[dict]) -> bool:
+    why = chain_refusal(window, resource_id, windows)
+    if why and _chained.get((str(window.get("run_id")), resource_id.lower())) != why:
+        _chained[(str(window.get("run_id")), resource_id.lower())] = why
+        print(f"[exercise] window {window.get('run_id')} marks {resource_id} no more: {why}")
+    return not why
+
+
+def _covers(window: dict, resource_id: str, when: datetime, enrolled, windows: list[dict]) -> bool:
     return (_targets(window, resource_id) and live(window, when) and enrolled(resource_id)
-            and zone_allows(window, resource_id, enrolled))
+            and zone_allows(window, resource_id, enrolled) and _within_chain(window, resource_id, windows))
 
 
 def covering_runs(resource_id: str, when, windows: list[dict], *, enrolled=None) -> list[str]:
@@ -531,7 +622,7 @@ def covering_runs(resource_id: str, when, windows: list[dict], *, enrolled=None)
     if not resource_id or at is None:
         return []
     enrolled = enrolled or is_enrolled
-    return [w["run_id"] for w in windows if _covers(w, resource_id, at, enrolled)]
+    return [w["run_id"] for w in windows if _covers(w, resource_id, at, enrolled, windows)]
 
 
 def source_of(resource_id: str, when=None, *, run_id: str = "",
@@ -547,13 +638,13 @@ def source_of(resource_id: str, when=None, *, run_id: str = "",
     enrolled = enrolled or is_enrolled
     if run_id and resource_id and any(
             w.get("run_id") == run_id and _targets(w, resource_id)
-            and zone_allows(w, resource_id, enrolled) for w in ws) \
+            and zone_allows(w, resource_id, enrolled) and _within_chain(w, resource_id, ws) for w in ws) \
             and enrolled(resource_id):
         return EXERCISE, run_id
     at = _parse(when) if when is not None else _now()
     if not resource_id or at is None:
         return UNKNOWN, ""
     for w in ws:
-        if _covers(w, resource_id, at, enrolled):
+        if _covers(w, resource_id, at, enrolled, ws):
             return EXERCISE, w["run_id"]
     return REAL, ""
