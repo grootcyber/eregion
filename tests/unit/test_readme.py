@@ -66,8 +66,13 @@ LINK = re.compile(r"\]\(([^)#\s]+)(?:#[^)]*)?\)")
 
 
 def test_security_md_says_where_to_report_without_an_address():
+    """SEC-D (P-03): the supported line is the package's own — it said « latest 0.4.x » at 0.5.7.
+    The version pull request of a minor release updates it with pyproject.toml."""
     text = (ROOT / "SECURITY.md").read_text(encoding="utf-8")
-    assert "Report a vulnerability" in text and "latest 0.4.x" in text
+    line = ".".join(_version().split(".")[:2])
+    assert "Report a vulnerability" in text
+    assert f"| latest {line}.x | yes |" in text
+    assert re.findall(r"\| latest (\d+\.\d+)\.x \| yes \|", text) == [line]   # one supported line
     assert re.findall(r"[\w.+-]+@[\w-]+\.[\w.]+", text) == []      # no e-mail address
     assert "human_only" in text                                   # what is not a vulnerability
 
