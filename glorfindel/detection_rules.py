@@ -1197,6 +1197,10 @@ def _gravity(row: dict) -> float:
 
 # The rows a summary card carries, the gravest first; beyond, it gives their number.
 _SUMMARY_ROWS_MAX = 50
+# SEC-A2 (V-13): the signal that names the older events of a pass, beside its newest — a card
+# without a decision of the model (glorfindel/decision_queue.py), never a call.
+_SAME_PASS = ("même passe : la ligne la plus récente de cette règle sur cette VM est la détection "
+              "que le modèle décide ; les autres lignes de la passe sont nommées sur cette carte")
 
 
 def _data_summary(rest: list[dict]) -> dict:
@@ -1650,7 +1654,7 @@ class RulePoller:
                     rest = ops[len(send):]
                     if rest:
                         send.append(_control_plane_summary(rest))
-                    plan.append((key, tgt, send))
+                    plan.append((key, tgt, send, []))
                     sent_ids[key] = [_row_identity(r) for r in new]
                     continue
                 sent_ids[key] = [_row_identity(r) for r in new]
@@ -1667,11 +1671,20 @@ class RulePoller:
                 # sent. Aggregated rows (one per attacker, per account…) each count.
                 events = [r for r in kept if r.get("TimeGenerated")]
                 send = [r for r in kept if not r.get("TimeGenerated")]
+                extra: list[dict] = []
                 if events and auditd.reads(rule.name, rule.ttp):
                     # AUD1: the newest exec, naming the others of this VM in its card.
                     send.append(auditd.fold(events))
                 elif events:
-                    send.append(max(events, key=lambda r: str(r["TimeGenerated"])))
+                    ordered = sorted(events, key=lambda r: str(r["TimeGenerated"]), reverse=True)
+                    send.append(ordered[0])
+                    # SEC-A2 (V-13): the others were marked sent unsaid — a decoy line written
+                    # just after the real one hid it. Now one more signal of this VM names them
+                    # (`_SAME_PASS`), for a card without a decision of the model: never seen by
+                    # the model, which sees the newest as before (glorfindel/decision_queue.py).
+                    others = ordered[1:]
+                    if others:
+                        extra.append(others[0] if len(others) == 1 else _data_summary(others))
                 # Capped per rule and poll (SEC2), as the control plane: the gravest rows
                 # first; the rest of this VM's in one card that names each of them.
                 send.sort(key=lambda r: (r.get("Correlation") == correlation.COMPROMISED, _gravity(r)), reverse=True)
@@ -1682,11 +1695,13 @@ class RulePoller:
                     send.append(rest[0])
                 elif rest:
                     send.append(_data_summary(rest))
-                plan.append((key, tgt, send))
+                plan.append((key, tgt, send, extra))
 
-        for key, tgt, send in plan:
-            for row in send:
+        for key, tgt, send, extra in plan:
+            for row, card_only in [(r, "") for r in send] + [(r, _SAME_PASS) for r in extra]:
                 sig = self._signal(rule, row, tgt, targets, now_iso)
+                if card_only:
+                    sig["context"]["card_only"] = card_only
                 signals.append(sig)
                 if not self._dry_run:
                     self._dispatch(sig)

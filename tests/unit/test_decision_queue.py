@@ -22,6 +22,7 @@ import pytest
 from glorfindel import decision_queue as dq
 from glorfindel import escalations
 from glorfindel.decision_queue import DecisionGate, DecisionQueue, decide_or_card
+from glorfindel.detection_rules import DetectionRule, RulePoller
 
 SUB = "00000000-0000-0000-0000-0000000000cc"
 
@@ -226,6 +227,46 @@ def test_the_ceiling_counts_the_draws_of_a_decision():
 
 # ── V-13: the older lines of a pass named on a card, the model sees the newest as before ────────
 
+class _Det:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def run_query(self, query, timespan=None):
+        return [dict(r) for r in self.rows]
+
+
+class _Registry:
+    def for_backend(self, _name):
+        return [type("A", (), {"name": "vm-example-01", "resource_id": _vm()})()]
+
+
+def test_a_decoy_line_after_the_real_one_never_hides_it():
+    rule = DetectionRule(name="t1053-003-cron-crontab-replace", source="azure_monitor", workspace_id="ws",
+                         query="Syslog | where TimeGenerated > ago(10m)", ttp="T1053.003", resource_id="",
+                         interval_s=30, auto_apply=True, monitoring_backend_name="law")
+    real = {"Computer": "vm-example-01", "_ResourceId": _vm(), "TimeGenerated": "2026-11-06T10:00:00Z",
+            "SyslogMessage": "(root) REPLACE (root) — /tmp/.x/payload"}
+    decoy = {"Computer": "vm-example-01", "_ResourceId": _vm(), "TimeGenerated": "2026-11-06T10:00:01Z",
+             "SyslogMessage": "(alice) REPLACE (alice)"}
+    sent: list = []
+    p = RulePoller([rule], sent.append)
+    p._detector = lambda _r: _Det([real, decoy])
+    p._registry = _Registry()
+    p.poll_once(rule)
+    q, gate, respond = DecisionQueue(), DecisionGate(clock=_Clock()), _Respond()
+    for s in sent:
+        q.put((s, None, False))
+    _drain(q, gate, respond)
+    # The model sees the newest line, as it is: nothing added to what it reads.
+    [seen] = respond.seen
+    assert seen["raw_signal"]["first_result_row"] == decoy
+    assert "card_only" not in seen["context"]
+    # The real one, marked sent, is named on a card — never said nowhere.
+    [card] = [c for c in _cards() if c["escalation_type"] == "undecided_detection"]
+    assert "/tmp/.x/payload" in card["reason"] and "même passe" in card["reason"]
+    assert card["rule_name"] == "t1053-003-cron-crontab-replace"
+
+
 def test_the_lines_of_a_pass_named_beside_the_newest_never_call_the_model():
     """Even when the newest is past the ceiling and the room comes back: the card-only signal is
     never the model's."""
@@ -236,6 +277,24 @@ def test_the_lines_of_a_pass_named_beside_the_newest_never_call_the_model():
                  card_only="même passe")
     state, why = decide_or_card(named, respond, gate)
     assert state is None and respond.seen == [] and why == "même passe"
+
+
+def test_a_pass_of_many_lines_names_them_on_the_card_and_counts_them():
+    rows = [{"Computer": "vm-example-01", "_ResourceId": _vm(), "TimeGenerated": f"2026-11-06T10:{i:02d}:00Z",
+             "SyslogMessage": f"useradd -m forged{i}"} for i in range(30)]
+    rule = DetectionRule(name="t1136-001-local-account-creation-linux-v1", source="azure_monitor",
+                         workspace_id="ws", query="Syslog", ttp="T1136.001", resource_id="", interval_s=30,
+                         auto_apply=True, monitoring_backend_name="law")
+    sent: list = []
+    p = RulePoller([rule], sent.append)
+    p._detector = lambda _r: _Det(rows)
+    p._registry = _Registry()
+    p.poll_once(rule)
+    assert len(sent) == 2
+    decide_or_card(sent[1], _Respond(), DecisionGate(clock=_Clock()))
+    [card] = [c for c in _cards() if c["escalation_type"] == "undecided_detection"]
+    assert "forged28" in card["reason"] and "29 dédoublonnées" in card["reason"]
+    assert "… et 9 ligne(s) de plus" in card["reason"]
 
 
 # ── The watch: its workers take their detections through the queue and the gate ───────────────

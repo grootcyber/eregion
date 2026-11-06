@@ -211,9 +211,12 @@ def test_the_ssh_simulation_is_still_detected():
 def test_the_sudo_simulation_is_still_detected():
     lines = _logged("privilege_escalation_sim.sh", ATTACKER_USER="svc-backup")
     rows = _sudo(lines)
-    # One row per distinct line since ADM1 (the poller sets the expected ones aside), one card.
+    # One row per distinct line since ADM1 (the poller sets the expected ones aside), one
+    # detection for the model; the pass's other lines named beside it, for a card (SEC-A2, V-13).
     assert rows and all("USER=root ; COMMAND=" in r["SyslogMessage"] for r in rows)
-    assert len(_poll(lines, "sudo-privilege-escalation")) == 1
+    sent = _poll(lines, "sudo-privilege-escalation")
+    assert len([s for s in sent if not s["context"].get("card_only")]) == 1
+    assert len(sent) == (2 if len(rows) > 1 else 1)
 
 
 def test_the_investigation_finds_the_simulation_s_root_commands():
