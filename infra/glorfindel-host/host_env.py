@@ -114,6 +114,9 @@ COPIED = ("AZURE_SUBSCRIPTION_ID", "AZURE_WORKSPACE_ID",
           # CAN2: the azurerm canary's appid, which the bench's copy of nsg-change-outside-glorfindel
           # takes from the watch's environment (`env_guids`) — an id, no secret.
           "EREGION_RULE_CANARY_APPID",
+          # REC1: the principals that restore from the workstation (their object ids or appIds) —
+          # whose Run Command, in the activity log, proves a neutralization to the watch. Ids, no secret.
+          "GLORFINDEL_RESTORE_PRINCIPALS",
           # NT1: who is never a target, read by the watch (eregion_core/never_target.py).
           *NEVER_TARGET)
 CANARY = "EREGION_RULE_CANARY_APPID"
