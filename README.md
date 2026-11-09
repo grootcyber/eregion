@@ -35,7 +35,7 @@ Three agents form a closed loop: Annatar attacks, Gothmog breaks, Glorfindel det
 - **The red side and the blue side**: Annatar's techniques and Gothmog's faults on the left; Glorfindel and the targets Celebrimbor enrolled, with their zone and autonomy mode, on the right.
 - **Draw a wire** from a red card to a target: the server judges it as Orodruin will (enrollment, zone, the production rule, a live watch) and says what to expect — the rule that detects, its delay, what Glorfindel may do — or why it is refused, with a stable code.
 - **« Request run from Orodruin »** writes a request and gives a command: you carry it to Orodruin, where the name of each destructive target is typed; Orodruin judges it again and runs the wires one after the other. The console launches nothing; « Stop all » gives Orodruin's kill switch.
-- **Glorfindel is never told**: it meets the exercise as a real attack. The Runs view shows what it made of it, and the last proof of every technique and fault.
+- **The model is never told**: it decides as on a real attack; Glorfindel marks the card and the cycle as an exercise, and never recalls one as a precedent. The Runs view shows what it made of it, and the last proof of every technique and fault.
 - **Sample data only**: these images are replayed from a fictitious bench (`make console-shots`), never a real one.
 
 ![Dagorlad's board on sample data: five wires drawn from the red cards to the enrolled targets, one refused by the production rule, one that will ask for the VM's name](docs/images/dagorlad/board.png)
