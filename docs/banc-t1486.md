@@ -118,7 +118,9 @@ commande. Le point à la demande est gardé 30 jours (`glorfindel/providers/azur
   - ou `docker exec eregion-war-room glorfindel release …`, dans le conteneur de la console
     (`docs/banc-bl1.md`, étape 5).
 
-  La levée est relue sur Azure, et l'état de H0 suit.
+  La levée est relue sur Azure, et l'état de H0 suit. Elle n'est pas reposée : elle marque la levée
+  en cours (`releasing_at`) sous le verrou de la VM, que la réaffirmation prend aussi avant de la
+  sauter (`glorfindel/reassert.py:141`, `:239-240`).
 
 ## Le manque : la boucle ne se ferme pas seule sur le banc
 
@@ -169,8 +171,9 @@ terraform -chdir=infra/glorfindel-host output restore_neutralize
 
 Ce qu'on doit voir :
 - **pour le principal de la console** : `Reader`, « Eregion Glorfindel Response » et « Eregion
-  Glorfindel Restore » sur `rg-celebrimbor` ; « Eregion Glorfindel Restore Neutralize » et
-  « Eregion Glorfindel Session Drain » à la portée de gondolin ;
+  Glorfindel Restore » sur `rg-celebrimbor` ; `Log Analytics Reader` sur le workspace du banc ;
+  « Eregion Glorfindel Restore Neutralize » et « Eregion Glorfindel Session Drain » à la portée de
+  gondolin (`docs/operations.md`, « Identités Azure ») ;
 - **dans la sortie Terraform** : la console et le bot, sur gondolin et bree.
 
 Si la neutralisation manque, le restore restaure quand même, mais sans neutraliser : voir l'étape
@@ -197,8 +200,10 @@ az monitor log-analytics query -w ${WS} --analytics-query "Perf | where TimeGene
 
 Ce qu'on doit voir :
 - **le Heartbeat** : un compte non nul ;
-- **les écritures** : `MaxMBs` sous 25. Au-dessus, attendre encore : c'est le seuil de la règle sur
-  un échantillonnage de 60 s ;
+- **les écritures** : `MaxMBs` sous 25. Au-dessus, attendre encore. Le banc échantillonne toutes
+  les 10 s (`perf_sampling_frequency`, `infra/terraform/config.yaml:115`) : la règle prend alors
+  une moyenne sur 20 s au-dessus de 45 MB/s. 25 est une marge prudente sous ce seuil (c'est aussi
+  celui d'un échantillonnage de 60 s) ;
 - **dans la console, page Glorfindel** : gondolin en `non_disruptive`, sa préparation `ready`, ni
   `ISOLATED` ni blocage. Une préparation qui n'est pas `ready` ferait retenir l'isolement
   (`mode_hold`) : ce serait une mesure, pas le confinement.
@@ -213,7 +218,7 @@ make glorfindel-host-ssh
 Sur H0 :
 
 ```bash
-RID=<la ligne copiée>
+RID=<la ligne copiée>              # snapshot veut l'id complet ; release et reset prennent le nom
 docker exec eregion-war-room glorfindel snapshot "$RID" --yes --wait
 exit
 ```
@@ -278,7 +283,8 @@ Ce qu'on doit voir sur Orodruin, dans l'ordre (`engine.py:368-470`) :
   `ISOLATED`. Une carte de restauration peut suivre, recommandée et jamais autonome. Elle est
   marquée exercice.
 - **Discord** : l'action autonome, par le bot.
-- **Sur H0** : `docker exec eregion-watch glorfindel list` montre gondolin `ISOLATED`, vérifiée.
+- **Sur H0** (`make glorfindel-host-ssh`, puis `exit`) : `docker exec eregion-watch glorfindel
+  list` montre gondolin `ISOLATED`, vérifiée.
 
 Autres issues, qui sont des mesures et non des échecs du banc :
 - une action retenue (`mode_hold`, la préparation, une confiance sous 0,7, des tirages en désaccord) ;
@@ -290,8 +296,19 @@ Discord : refusé, ce n'est pas son hôte.
 
 ### 6. La restauration, depuis le poste (15 à 30 min)
 
-D'abord, aucun job du coffre en cours sur gondolin. H0 a pu prendre un instantané après l'isolement
-(`glorfindel/agent.py:1971-1988`), et Azure refuse un restore pendant une sauvegarde :
+**Le prérequis du poste.** Le restore lit le coffre (`azure_backup_vault`) et son compte de transit
+(`restore_staging_storage`) dans la `glorfindel-config.yaml` du poste, à la racine du dépôt
+(`cli.py:1435`, `glorfindel/providers/azure/restore.py:124-139`). Sans compte de transit, le vrai
+run échoue, alors que l'essai à blanc ne le lit pas. Le fragment de `make celebrimbor-output` porte
+les deux :
+
+```zsh
+grep -A5 'type: azure_backup_vault' glorfindel-config.yaml   # vault_name, resource_group: rg-celebrimbor, restore_staging_storage
+```
+
+Ensuite, aucun job du coffre en cours sur gondolin. Si un cycle suivant de H0 a choisi `snapshot`
+(`glorfindel/agent.py:1971-1988`), sa sauvegarde peut encore tourner, et Azure refuse un restore
+pendant une sauvegarde :
 
 ```zsh
 az backup job list -g rg-celebrimbor -v rsv-celebrimbor-erebor -o table     # aucun InProgress sur gondolin
@@ -324,20 +341,33 @@ ses cartes réseau, pas sur ses disques.
 rejouer le chiffrement au démarrage. Le lire d'abord, avec ton `az login` :
 
 ```zsh
-az vm run-command invoke -g rg-celebrimbor -n vm-celebrimbor-gondolin --command-id RunShellScript --scripts 'ls -la /mnt/testdata'
+az vm run-command invoke -g rg-celebrimbor -n vm-celebrimbor-gondolin --command-id RunShellScript --scripts 'ls -la --time-style=full-iso /mnt/testdata'
 ```
 
-Attendu : les marqueurs seuls, ni `seed.dat` ni `enc_*.dat`. Cette commande devient la dernière
-Run Command, inoffensive.
+Attendu : le disque tel qu'il était au point de l'étape 2. `setup_testdata.sh` ne nettoie que dans
+le fil : un `seed.dat` ou des `enc_*.dat` datés d'avant ce point sont les restes d'un run précédent,
+restaurés avec lui. Datés d'après le redémarrage du restore, le chiffrement a été rejoué : ne pas
+lever. Cette commande devient la dernière Run Command, inoffensive.
 
-Puis la levée : **↩️ Release** sur gondolin, dans la console de H0, ou sur H0 :
+Puis la levée : **↩️ Release** sur gondolin, dans la console de H0, ou en ligne de commande. On se
+connecte d'abord depuis le poste :
+
+```zsh
+make glorfindel-host-ssh
+```
+
+Puis, sur H0 (le nom court suffit : `release` le résout par l'état de H0, `cli.py:172-202`) :
 
 ```bash
-docker exec eregion-war-room glorfindel release "$RID" --yes   # « ✓ Isolation released. »
+docker exec eregion-war-room glorfindel release vm-celebrimbor-gondolin --yes   # « ✓ Isolation released. »
 docker exec eregion-watch glorfindel list                     # gondolin n'est plus ISOLATED
 docker exec eregion-watch glorfindel pending                  # la carte de restauration, encore en attente
 docker exec eregion-war-room glorfindel ack <son id>          # le restore du poste n'a résolu que les cartes du poste (cli.py:1513)
 ```
+
+Cette levée-là n'est pas reposée. Elle note `releasing_at` dans l'état de H0 sous le verrou de la
+VM, et la réaffirmation, qui prend le même verrou, saute une levée en cours
+(`glorfindel/reassert.py:141`, `:239-240`). Seule une levée faite hors de H0 le serait.
 
 Dans la console, juger les cartes de l'exercice (TO JUDGE) : l'isolement, et la recommandation de
 restore. Le Heartbeat de gondolin revient en quelques minutes (la requête de l'étape 1).
@@ -351,11 +381,15 @@ Les trois temps se lisent à un seul endroit, sur H0, depuis les fichiers que la
   `outcome.verified_at` ;
 - **la levée** : `runs/console/manual_actions.jsonl`.
 
+Toujours sur H0 (sinon, `make glorfindel-host-ssh` d'abord) :
+
 ```bash
-docker exec -i -e RUN=<run_id> -e RID="$RID" eregion-watch python - <<'EOF'
-import glob, json, os
+docker exec -i -e RUN=<run_id> -e VM=vm-celebrimbor-gondolin eregion-watch python - <<'EOF'
+import glob, json, os, sys
 from datetime import datetime, timezone
-run, rid = os.environ["RUN"], os.environ["RID"].rstrip("/").lower()
+run, vm = os.environ.get("RUN", "").strip(), os.environ.get("VM", "").strip().lower()
+if not run or not vm or run.startswith("<"):
+    sys.exit("RUN ou VM vide : rien à mesurer")
 def t(s): return datetime.fromisoformat(str(s).replace("Z", "+00:00")).timestamp()
 def hm(e): return datetime.fromtimestamp(e, timezone.utc).strftime("%H:%M:%S")
 m = json.load(open(f"runs/glorfindel/{run}.json"))["metrics"]
@@ -377,7 +411,7 @@ f = "runs/console/manual_actions.jsonl"
 for line in (open(f) if os.path.exists(f) else []):
     d = json.loads(line)
     if (d.get("action") == "release_isolation" and t(d["timestamp"]) > t0
-            and str(d["signal"]["resource_id"]).rstrip("/").lower() == rid):
+            and str(d["signal"]["resource_id"]).rstrip("/").rsplit("/", 1)[-1].lower() == vm):
         print(f"levée       {hm(t(d['timestamp']))}  T0+{t(d['timestamp']) - t0:.0f} s  {d['outcome'].get('status')}")
 EOF
 ```
@@ -392,7 +426,7 @@ arrive sur H0 quand le fil a fini ; sur Orodruin, le même est dans `~/runs/anna
 | **T0** | le début de l'étape d'attaque, `record: T0` : la graine de 512 Mo puis le chiffrement (`engine.py:412-425`) | `attack_time` du rapport ; Orodruin, `Run:` |
 | **la détection** | T0 → la première détection de la watch pour ce run, lue sur le canal retour (`annatar/runner/detection.py:67-75`) | `detection_latency_s` ; « ✓ Glorfindel detected the attack N s » ; la chronologie de Dagorlad |
 | **la carte** | T0 → la carte de l'action, dans la console | le cycle `isolate_vm` (son horodatage) ; Discord |
-| **le confinement** | T0 → l'isolement relu sur Azure (`verified_at`), la définition de BL1 (`analysis/containment.py`) | la ligne `isolate_vm … verified=True T0+…` ; Dagorlad, « contained … » ; l'accueil, TIME TO CONTAIN |
+| **le confinement** | T0 → l'isolement relu sur Azure (`verified_at`), la définition de BL1 (`analysis/containment.py`) | la ligne `isolate_vm … verified=True T0+…` ; Dagorlad, « contained … » ; la page Annatar, « TIME TO CONTAIN · EXERCISES » (une médiane sur la période ; la tuile de l'accueil, « · REAL », exclut les exercices) |
 | **la restauration finie** | la fin de `restore --wait`, et sa durée | `restore_time` et l'heure notée à l'étape 6 |
 | **le service rendu** | T0 → la levée relue sur Azure, les gestes humains compris | la ligne `levée … T0+…` |
 | **au sens du README** | détection + isolement + `restore_time`, sans le temps de décision humaine (`cli.py:1510`) | la somme des trois |
@@ -402,11 +436,17 @@ remplaceront ceux du README, et la ligne T1486 de son tableau.
 
 ### 9. Remettre le banc en état (5 min)
 
-Sur H0 :
+Depuis le poste :
+
+```zsh
+make glorfindel-host-ssh
+```
+
+Puis, sur H0 :
 
 ```bash
 docker exec eregion-watch glorfindel list                                 # gondolin : ni ISOLATED ni BLOCKED
-docker exec eregion-war-room glorfindel reset "$RID" --from-azure --dry-run   # « Aucune règle Glorfindel de vm-celebrimbor-gondolin sur ses NSG. »
+docker exec eregion-war-room glorfindel reset vm-celebrimbor-gondolin --from-azure --dry-run   # « Aucune règle Glorfindel de vm-celebrimbor-gondolin sur ses NSG. »
 docker exec eregion-watch glorfindel pending                              # les cartes de l'exercice jugées ou acquittées
 exit
 ```
