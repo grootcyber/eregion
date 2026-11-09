@@ -544,6 +544,13 @@ ont parcouru (`GLORFINDEL_INVARIANT_STATS`) :
 
 Sous xdist (`-n 2`, `schedule`), les deux workers ont tiré la même graine, la conftest chargée ou non par
 le contrôleur, et le résumé du job ne l'a reçue qu'une fois. Sous un push, aucun test n'a de graine.
+**Où la graine est dite** : sous chaque test de propriétés ou machine en échec (pas sous un test simple,
+même rangé dans le fichier d'une machine), dans le résumé du job, et à la fin de pytest quand pytest
+reçoit des fichiers de `tests/unit/`. Sous `pytest tests/ -n N` (`invariants-rest` de la porte, la suite
+Linux de `ci.yml`), le contrôleur xdist ne charge pas la conftest, et la fin de la sortie ne la dit pas
+(relevé par la relecture, mesuré : `GITHUB_EVENT_NAME=schedule pytest tests/ -n 2 -k test_arm_urls`,
+aucune ligne ; une ligne sur `tests/unit/test_arm_urls.py -n 2`). Le résumé du job et chaque échec la
+portent. Une conftest à la racine l'y ferait dire ; ce lot ne l'ajoute pas.
 
 Le harnais comme la porte le lance (`CI=true`, `workflow_dispatch`), sur M19, M31 et M38 à 60 séquences,
 deux tours, `--jobs 2`. Deux exécutions sans `--seed` ont tiré 845608059 et 632860890 : M19 et M31 2/2,
@@ -560,12 +567,23 @@ mutée, à 60 :
 Les tests : `tests/unit/test_hypothesis_seed.py` (la règle, et sa mesure dans un pytest à part, sous
 `CI=true` : un push et une PR tirent la même chose et ne disent aucune graine, deux nuits deux choses,
 une graine donnée la même chose deux fois et rejoue la nuit qui l'a tirée, le test de propriétés comme la
-machine) et `tests/unit/test_mutation_shards.py` (un tour par graine, dite, écrite, rejouée).
+machine ; la section sous un test de propriétés en échec, et sous lui seul ; un `@seed` écrit sur un
+test gardé ; les deux workers de `-n 2 --dist each` sur la graine que le contrôleur a dite) et
+`tests/unit/test_mutation_shards.py` (un tour par graine, dite, écrite, rejouée). Mutants M4588–M4592,
+et M4597–M4599 de la relecture : 8/8 attrapés à chaque tour.
+
+**Rejouer une nuit.** La graine fixe la génération, pas ce qui la précède : la phase *reuse* rejoue
+d'abord la base des séquences en échec. Un rejeu se fait sous `CI=true` et avec la même base que
+l'exécution rejouée, ou aucune. Chaque exécution de pytest tire la sienne : la nuit, les machines Azure et
+AWS ont chacune leur graine. L'entrée `seed` du dispatch d'`invariants.yml` rejoue la machine dont c'est
+la graine, pas toute la nuit.
 
 **Ce qui reste ouvert.** Les tours de la porte sont maintenant deux chances, en CI aussi. Un mutant
 limite, attrapé par peu de séquences, peut y devenir `flaky`, donc rouge s'il n'est pas un survivant
 connu : la ligne « replay » du total le rejoue sur sa graine. La nuit macOS de `ci.yml` est un `schedule` :
-elle tire aussi. `EREGION_HYPOTHESIS_SEED=profile` l'en garderait, dans son workflow.
+elle tire aussi. `EREGION_HYPOTHESIS_SEED: profile` dans `ci.yml` l'en garderait, mais ce choix
+demanderait aussi de changer `tests/unit/test_workflows.py::test_a_pull_request_and_a_push_stay_derandomized`,
+qui refuse toute graine posée dans `ci.yml` et n'admet ailleurs que `draw` ou la graine d'un dispatch.
 
 ### Chaque mutant mesuré, sans le travail en double (CI10a)
 

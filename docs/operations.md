@@ -2959,20 +2959,34 @@ rejouaient les mêmes séquences, et la nuit la même chose chaque soir. Désorm
 - **`mutation_check.py`** tire la graine S de son exécution (ou prend `--seed S`) : le run non muté sur S,
   le tour r de chaque mutant sur S + r − 1. Deux tours, deux tirages, à la porte comme au lundi.
 
-La graine est dite : à la fin de pytest (« Hypothesis seed N … »), sous chaque test de propriétés en
-échec (la section « Hypothesis seed (SEED1) »), dans le résumé du job sur GitHub, et, pour la mutation, au
-début et à la fin de la sortie, dans le JSON de chaque tranche (`seed`, `round_seeds`) et dans le total
-(la graine de chaque tranche, et la commande qui rejoue un mutant rouge).
+La graine est dite sous chaque test de propriétés ou machine en échec (la section « Hypothesis seed
+(SEED1) »), dans le résumé du job sur GitHub, et à la fin de pytest (« Hypothesis seed N … ») quand
+pytest reçoit des fichiers de `tests/unit/` (`pytest tests/unit/test_invariants.py`, avec ou sans `-n`).
+Sous `pytest tests/ -n N` (le job `invariants-rest` de la porte, la suite Linux de `ci.yml`), le
+contrôleur xdist ne charge pas `tests/unit/conftest.py` : la fin de la sortie ne la dit pas (mesuré :
+`GITHUB_EVENT_NAME=schedule pytest tests/ -n 2 -k test_arm_urls`, aucune ligne), elle se lit dans le
+résumé du job et sous chaque échec. Pour la mutation, la graine est dite au début et à la fin de la
+sortie, dans le JSON de chaque tranche (`seed`, `round_seeds`) et dans le total (la graine de chaque
+tranche, et la commande qui rejoue un mutant rouge).
 
 **Rejouer un échec par sa graine** :
 ```bash
-# un test ou une machine (la nuit, la porte, n'importe où, CI=true compris)
-EREGION_HYPOTHESIS_SEED=570502938 GLORFINDEL_INVARIANT_EXAMPLES=10000 python -m pytest tests/unit/test_invariants.py -q
+# une machine, ou un test de propriétés : CI=true (le profil de la CI) et la même base que l'exécution
+# rejouée — ici aucune (GLORFINDEL_INVARIANT_DB non posée)
+CI=true EREGION_HYPOTHESIS_SEED=570502938 GLORFINDEL_INVARIANT_EXAMPLES=10000 python -m pytest tests/unit/test_invariants.py -q
 # un mutant, ses tours sur les mêmes graines (la ligne « replay » du total la donne toute faite)
 python scripts/mutation_check.py --only M38 --seed 845608059 --examples 500 --rounds 2
 ```
-Le budget (`GLORFINDEL_INVARIANT_EXAMPLES`, `--examples`) et la longueur des séquences doivent être ceux
-de l'exécution rejouée : la graine fixe le tirage, pas son nombre. `EREGION_HYPOTHESIS_SEED=draw` tire
+La graine fixe la génération, pas ce qui la précède : Hypothesis rejoue d'abord la base des séquences en
+échec (la phase *reuse*). Une exécution rejouée avec une autre base, ou en local sans `CI=true` (le
+profil `default` lit alors `.hypothesis/` pour les tests de propriétés), peut tirer autre chose : la base
+de la nuit (`GLORFINDEL_INVARIANT_DB`, le cache `invariants-db-`) telle qu'elle était, ou aucune. Chaque
+exécution de pytest tire sa graine : la nuit, la machine Azure et la machine AWS ont chacune la leur,
+dite à la fin de leur étape. L'entrée `seed` d'un dispatch d'`invariants.yml` (avec le patch des
+workflows) rejoue la machine dont c'est la graine ; l'autre tourne sur cette graine aussi, pas sur la
+sienne de la nuit. Le budget (`GLORFINDEL_INVARIANT_EXAMPLES`, `--examples`) et la longueur des
+séquences doivent être ceux de l'exécution rejouée : la graine fixe le tirage, pas son nombre.
+`EREGION_HYPOTHESIS_SEED=draw` tire
 une graine où que ce soit ; `EREGION_HYPOTHESIS_SEED=profile` garde la manière d'Hypothesis même là où
 l'exécution tirerait. `--hypothesis-seed=N` ne sert pas sous `CI=true` : mesuré, la dérandomisation
 passe avant elle (et, lu dans le code d'Hypothesis 6.170, elle coupe la base des séquences en échec).
