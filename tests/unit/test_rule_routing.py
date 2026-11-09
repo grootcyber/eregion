@@ -47,38 +47,77 @@ BY_HOST = "Syslog | where SyslogMessage has \"x\" | summarize count() by Compute
 
 # ── 1. V-04: the routing keys a query keeps ─────────────────────────────────────────────
 
-@pytest.mark.parametrize("query, routed", [
-    ("Syslog | where x", True),                              # a table: its _ResourceId
-    ("Syslog | summarize count() by Computer", False),
-    ("Syslog | summarize count() by Computer, _ResourceId", True),
-    ("Syslog | project Computer, SyslogMessage", False),
-    ("Syslog | project _ResourceId = tolower(_ResourceId), Computer", True),
-    ("Syslog | extend _ResourceId = Computer", False),       # the host name, under the key's name
-    ("Syslog | extend _ResourceId = strcat(_ResourceId, Computer)", False),
-    ("Syslog | project-away _ResourceId", False),
-    ("Syslog | project-away _*", False),
-    ("Syslog | project-keep _Res*", True),
-    ("Syslog | project-rename _ResourceId = Computer", False),
-    ("Syslog | summarize arg_max(TimeGenerated, *) by Computer", True),
-    ("Syslog | summarize arg_max(TimeGenerated, _ResourceId) by Computer", True),
-    ("Syslog | summarize take_any(_ResourceId) by Computer", False),   # named any__ResourceId
-    ("Syslog | summarize _ResourceId = take_any(_ResourceId) by Computer", True),
-    ("Syslog | distinct Computer", False),
-    ("Syslog | distinct Computer, _ResourceId", True),
-    ("Syslog | parse SyslogMessage with * 'x' _ResourceId:string", False),
-    ("Syslog | join kind=rightanti (Heartbeat | project Computer) on Computer", False),
-    ("Syslog | count", False),
-    ("Syslog | evaluate bag_unpack(x)", False),
-    ("datatable(x:string)['a'] | extend y = 1", False),
-    ("let t = Syslog | project Computer; t | where 1 == 1", False),
-    ("let t = Syslog | project Computer, _ResourceId; t", True),
-    ("union Syslog, Perf | where 1 == 1", True),
-    ('Syslog | where SyslogMessage has "| project Computer"', True),   # a string is no stage
-    ("Syslog // | project Computer\n| where 1 == 1", True),           # nor a comment
-    ("StorageBlobLogs | project CallerIpAddress = SourceIP", False),
-    ('StorageBlobLogs | extend CallerIpAddress = tostring(split(CallerIpAddress, ":")[0]) '
-     "| summarize n = count() by CallerIpAddress, AccountName", True),
-])
+# Refused: rows that name no VM, or a key that no longer holds what Azure wrote (B1, B2, C1 of
+# the review: each a way the first reader let V-04 back in, two stages at a time).
+REFUSED = [
+    "Syslog | summarize count() by Computer",
+    "Syslog | project Computer, SyslogMessage",
+    "Syslog | extend _ResourceId = Computer",                # the host name, under the key's name
+    "Syslog | extend _ResourceId = strcat(_ResourceId, Computer)",
+    "Syslog | project _ResourceId = tolower(_ResourceId), Computer",   # any write, whatever from
+    "Syslog | summarize _ResourceId = take_any(_ResourceId) by Computer",
+    "Syslog | extend _ResourceId = Computer | project _ResourceId",
+    "Syslog | extend _ResourceId = Computer | summarize count() by _ResourceId",
+    "Syslog | extend _ResourceId = Computer | distinct _ResourceId",
+    "Syslog | extend _ResourceId = Computer | summarize arg_max(TimeGenerated, _ResourceId) by Computer",
+    "Syslog | summarize arg_max(TimeGenerated, _ResourceId = Computer) by Computer",
+    "Syslog | project-rename _ResourceId = Computer | project _ResourceId",
+    "Syslog | project-rename X = _ResourceId | project _ResourceId",
+    "Syslog | extend ResourceId = Computer | project ResourceId",
+    "Syslog | extend _resourceid = Computer | project _ResourceId",     # whatever the case
+    "Syslog | extend CallerIpAddress = extract('(.*)', 1, SyslogMessage) | project CallerIpAddress",
+    "print _ResourceId = 1 | project _ResourceId",
+    "let _ResourceId = 1; Syslog | project _ResourceId",
+    "datatable(_ResourceId:string)['x']",
+    "datatable(x:string)['a'] | extend y = 1",
+    "union withsource=_ResourceId Syslog, Perf | project _ResourceId",
+    "union withsource=['_ResourceId'] Syslog | project _ResourceId",
+    "Syslog | extend ['_ResourceId'] = Computer",               # B2: a form it does not read
+    "Syslog | extend (_ResourceId, B) = (Computer, 1)",
+    "Syslog | summarize hint.strategy = shuffle count() by _ResourceId",
+    "Syslog | parse SyslogMessage with * 'x' _ResourceId:string",
+    "Syslog | parse SyslogMessage with * 'x' _ResourceId ' '",
+    "Syslog | parse SyslogMessage with * 'x' ['_ResourceId']:string",
+    "MyTable_CL | project CallerIpAddress",                    # C1: a custom table, root's word
+    "Syslog | extend CallerIpAddress = tostring(split(CallerIpAddress, ':')[0]) | project CallerIpAddress",
+    'StorageBlobLogs | extend CallerIpAddress = tostring(split(CallerIpAddress, "5")[0]) | project CallerIpAddress',
+    "union StorageBlobLogs, Syslog | project CallerIpAddress",
+    "Syslog | project-away _ResourceId",
+    "Syslog | project-away _*",
+    "Syslog | summarize take_any(_ResourceId) by Computer",   # named any__ResourceId
+    "Syslog | distinct Computer",
+    "Syslog | join kind=rightanti (Heartbeat | project Computer) on Computer",
+    "Syslog | join kind=RightSemi (Heartbeat) on Computer",
+    "Syslog | count",
+    "Syslog | evaluate bag_unpack(x)",
+    "let t = Syslog | project Computer; t | where 1 == 1",
+    "StorageBlobLogs | project CallerIpAddress = SourceIP",
+]
+ACCEPTED = [
+    "Syslog | where x",                                        # a table: its _ResourceId
+    "Syslog | where _ResourceId == 'x' | project _ResourceId",  # read, never written
+    "Syslog | summarize count() by Computer, _ResourceId",
+    "Syslog | summarize by Computer, _ResourceId",
+    "Syslog | project _ResourceId, Computer",
+    "Syslog | project-keep _Res*",
+    "Syslog | summarize arg_max(TimeGenerated, *) by Computer",
+    "Syslog | summarize arg_max(TimeGenerated, _ResourceId) by Computer",
+    "Syslog | distinct Computer, _ResourceId",
+    "Syslog | extend Vm = iff(isnotempty(_ResourceId), tolower(_ResourceId), Computer) | project _ResourceId",
+    "let t = Syslog | project Computer, _ResourceId; t",
+    "union Syslog, Perf | where 1 == 1",
+    "union kind=outer Syslog, Perf | project _ResourceId",
+    'Syslog | where SyslogMessage has "| project Computer"',  # a string is no stage
+    "Syslog // | project Computer\n| where 1 == 1",            # nor a comment
+    "StorageBlobLogs | project CallerIpAddress, AccountName",
+    "union StorageBlobLogs, StorageFileLogs | project CallerIpAddress",
+    # The one rewrite read as none: the port off the storage caller's address (data-exfiltration-blob).
+    'StorageBlobLogs | extend CallerIpAddress = tostring(split(CallerIpAddress, ":")[0]) '
+    "| summarize n = count() by CallerIpAddress, AccountName",
+]
+
+
+@pytest.mark.parametrize("query, routed", [(q, False) for q in REFUSED] + [(q, True) for q in ACCEPTED])
 def test_the_reader_keeps_the_keys_every_row_carries(query, routed):
     assert bool(rule_routing.routing_columns(query)) is routed
     assert (rule_routing.refusal(query) == "") is routed
@@ -87,6 +126,13 @@ def test_the_reader_keeps_the_keys_every_row_carries(query, routed):
 def test_a_query_that_cannot_be_read_is_refused_never_assumed():
     why = rule_routing.refusal('Syslog | where x == "not closed')
     assert why.startswith("requête illisible")
+
+
+def test_the_refusal_says_what_the_query_does():
+    assert "écrit la clé de routage `_ResourceId`" in rule_routing.refusal(
+        "Syslog | extend _ResourceId = Computer | project _ResourceId")
+    assert "forme illisible" in rule_routing.refusal("Syslog | extend ['_ResourceId'] = Computer")
+    assert "Computer" in rule_routing.refusal("MyTable_CL | project CallerIpAddress")
 
 
 def test_every_shipped_rule_loads_and_its_rows_name_their_vm():

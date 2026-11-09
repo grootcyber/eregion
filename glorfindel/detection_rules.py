@@ -1237,16 +1237,6 @@ def _data_summary(rest: list[dict]) -> dict:
         for r in rest[:_SUMMARY_ROWS_MAX]]}
 
 
-def _row_attribution(row: dict, resource_id: str, asset_name: str) -> bool | None:
-    """Does this row concern this asset? True/False when the row names a resource
-    (`_ResourceId` / `ResourceId`), None when it can't tell (a query aggregated by attacker IP
-    or storage account) — its `Computer` alone never tells (SEC-A4, V-04: root chooses it)."""
-    rid = row.get("_ResourceId") or row.get("ResourceId")
-    if isinstance(rid, str) and rid:
-        return rid.lower() == (resource_id or "").lower()
-    return None
-
-
 def rulepoller_recently_matched(ttp: str, within_s: float) -> bool:
     """Return True if a RulePoller rule for this TTP had a match within `within_s` seconds.
 

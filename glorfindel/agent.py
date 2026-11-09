@@ -325,7 +325,7 @@ def _row_reader(resource_id: str, ip_owners=None):
         owners = {ip: str(rid).lower() for ip, rid in ((ip_owners() if ip_owners else None) or {}).items()}
     except Exception as exc:            # unreadable: an address names no VM (held, never a guess)
         _console.print(f"  [yellow]IP privées des VMs illisibles ({_first_line(exc)}) — une ligne "
-                       "sans ressource ni nom d'hôte reste non attribuée[/yellow]")
+                       "sans ressource reste non attribuée[/yellow]")
         owners = {}
     # An appliance's address names no VM (SEC-A4): its owner is no target.
     known = {rid: (rid, rid.rstrip("/").split("/")[-1]) for rid in set(owners.values())
@@ -361,8 +361,9 @@ def resolve_attack_started(signal: dict, ip_owners=None) -> dict:
     detection the poll keeps the rows naming that VM or none (never one naming another
     VM); a row that does not name it is pinned to the VM all the same, `unattributed`: the
     attribution guard of `decide` holds the actions aimed at it. A row is read as the
-    RulePoller reads it (`detection_rules.RowAttribution`): its resource, its host name,
-    then the private IP that made the call — `ip_owners` (IP → VM id, the connector's
+    RulePoller reads it (`detection_rules.RowAttribution`): its resource, then the private IP
+    that made the call (never its host name, nor an appliance's address: SEC-A4) — `ip_owners`
+    (IP → VM id, the connector's
     `private_ip_owners`; none: an address names no VM).
     """
     from glorfindel.detectors import detector_for, is_control_plane_source, is_identity_source

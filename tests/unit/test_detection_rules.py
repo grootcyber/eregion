@@ -626,17 +626,6 @@ def test_poller_window_covers_late_ingestion():
     assert det.calls[0][0].timestamp() <= before - 600
 
 
-def test_row_attribution():
-    from glorfindel.detection_rules import _row_attribution
-    rid = _vm("vm1")
-    # SEC-A4 (V-04): a host name alone tells nothing — root on the VM chooses it.
-    assert _row_attribution({"Computer": "vm1"}, rid, "vm1") is None
-    assert _row_attribution({"Computer": "vm2.internal"}, rid, "vm1") is None
-    assert _row_attribution({"_ResourceId": _vm("vm2"), "Computer": "vm1"}, rid, "vm1") is False
-    assert _row_attribution({"_ResourceId": rid.upper()}, rid, "vm1") is True
-    assert _row_attribution({"CallerIpAddress": "10.0.0.4"}, rid, "vm1") is None
-
-
 def test_one_query_per_rule_whatever_the_number_of_vms():
     """It was one unfiltered query per (rule, VM), ~3 per cycle each: the volume grew
     with the VMs and hit Log Analytics limits around 20–25 VMs (third review, T10)."""

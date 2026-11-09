@@ -1,12 +1,13 @@
 """SEC-A4 (#633; audit of 06/11, V-04 and V-05): what a detection row is attributed by — never its
 host name (V-04: a rule whose rows carry neither `_ResourceId` nor `CallerIpAddress` refused at
 load and at approval), never an appliance's address (V-05: a VM that forwards packets is marked,
-every action held on a call made from behind it). M4540–M4544, measured by
-tests/unit/test_rule_routing.py. M1335 and M1363 (the host name's reading) retired with it."""
+every action held on a call made from behind it). M4540–M4544, and M4600–M4604 on the query's
+reader (the review's B1, B2, C1), measured by tests/unit/test_rule_routing.py. M1335 and M1363 (the host name's reading) retired with it."""
 READERS = "glorfindel/providers/azure/readers.py"
 RULES = "glorfindel/detection_rules.py"
 PROPOSED = "glorfindel/proposed_rules.py"
 AGENT = "glorfindel/agent.py"
+READER = "eregion_core/rule_routing.py"
 _T = "tests/unit/test_rule_routing.py"
 
 MUTANTS = [
@@ -36,6 +37,28 @@ MUTANTS = [
      "release run on the appliance, the card says nothing of where to look (SEC-A4, V-05)", AGENT,
      '    if ctx.get("attribution") == "unattributed" and ctx.get("attribution_via") == "appliance":\n',
      "    if False:\n"),
+    # The review's (B1, B2, C1): the query's reader, each way V-04 came back in two stages.
+    ("M4600", "`project`, `distinct`, `summarize by` keep a key they name though it is no longer "
+     "the one Azure wrote (SEC-A4, review B1)", READER,
+     "        if _assignment(item) is None and item in have:\n",
+     "        if _assignment(item) is None and item in ROUTING_COLUMNS:\n"),
+    ("M4601", "a query that writes a routing key read as any other: `extend _ResourceId = Computer` "
+     "then `project _ResourceId` routes by the host name (SEC-A4, review B1)", READER,
+     "    written = _KEY_WRITTEN.search(text)\n",
+     "    written = None\n"),
+    ("M4602", "an assignment of a form it does not read taken as none: `extend ['_ResourceId'] = "
+     "Computer` loads (SEC-A4, review B2)", READER,
+     "            if not _IDENT.match(name):\n"
+     "                raise _Refused(",
+     "            if False:\n"
+     "                raise _Refused("),
+    ("M4603", "`CallerIpAddress` believed on any table: a custom table fed from the VM routes by "
+     "root's word (SEC-A4, review C1)", READER,
+     "    return _STORAGE if name in STORAGE_TABLES else _TABLE\n",
+     "    return _STORAGE\n"),
+    ("M4604", "a `parse` that writes a key under its name read as a filter (SEC-A4, review B1)", READER,
+     "            if _KEY_NAMED.search(rest) or _BRACKETED.search(rest):\n",
+     "            if False:\n"),
 ]
 TESTS = {
     "M4540": f"{_T}::test_the_connector_marks_every_address_of_a_vm_that_forwards "
@@ -45,4 +68,6 @@ TESTS = {
     "M4543": f"{_T}::test_an_approval_of_a_rule_routed_by_its_host_name_is_refused_clearly",
     "M4544": f"{_T}::test_an_exfiltration_through_the_appliance_is_never_pinned_on_it "
              f"{_T}::test_an_attack_started_through_the_appliance_holds_everything",
+    **{mid: f"{_T}::test_the_reader_keeps_the_keys_every_row_carries"
+       for mid in ("M4600", "M4601", "M4602", "M4603", "M4604")},
 }
