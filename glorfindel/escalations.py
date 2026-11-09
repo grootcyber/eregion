@@ -164,6 +164,7 @@ _ESCALATION_LABELS = {
     "unverified": "non vérifiée (la vérification échoue)",
     "account_compromised": "compte peut-être compromis (brute force puis connexion réussie)",
     "compromise_unchecked": "connexion après brute force non vérifiée",
+    "undecided_detection": "détection non décidée par le modèle (dédoublonnée, plafond, file pleine)",
 }
 
 
@@ -259,6 +260,9 @@ def record(
                 # One origin, one card (I3G): what the reassertion says is said by its own card,
                 # with its text and its notification — never folded into the graph's.
                 and _reassertion(e.get("signal_id")) == _reassertion(signal_id)
+                # A detection without a decision of the model (SEC-A2): one card per VM and rule,
+                # never one rule's folded into another's.
+                and (escalation_type != "undecided_detection" or e.get("rule_name", "") == rule_name)
             ):
                 e["occurrences"] = int(e.get("occurrences", 1)) + 1
                 e["last_seen"] = now
@@ -272,6 +276,8 @@ def record(
                 rises = _SEVERITY_RANK.get(severity or "", 0) > _SEVERITY_RANK.get(e.get("severity") or "", 0)
                 said = COMPROMISE_MARK in (reason or "") and COMPROMISE_MARK not in (e.get("reason") or "")
                 material = material or rises or said
+                # SEC-A2: the card of the detections without a decision names the latest of them.
+                material = material or escalation_type == "undecided_detection"
                 if rises:
                     e["severity"] = severity
                 if material:

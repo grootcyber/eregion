@@ -760,11 +760,17 @@ def test_alternating_rows_are_not_redispatched_and_a_second_attacker_is_not_hidd
 
 
 def test_event_rows_make_one_signal_per_cycle():
+    """One signal of a cycle's events for the model, the newest — as before. SEC-A2 (V-13): the
+    others, marked sent, were never said; one more signal names them, for a card only."""
     rule = _auto_rule()
     rows = [{"Computer": "vm1", "TimeGenerated": f"2026-10-07T10:0{i}:00Z"} for i in range(3)]
     p, sent = _poller(_Det(rows), [rule], registry=_Registry("vm1"))
     p.poll_once(rule)
-    assert len(sent) == 1 and sent[0]["raw_signal"]["first_result_row"]["TimeGenerated"].endswith("02:00Z")
+    decided = [s for s in sent if not s["context"].get("card_only")]
+    assert len(decided) == 1 and decided[0]["raw_signal"]["first_result_row"]["TimeGenerated"].endswith("02:00Z")
+    [named] = [s for s in sent if s["context"].get("card_only")]
+    assert [r["TimeGenerated"] for r in named["raw_signal"]["first_result_row"]["OmittedRows"]] == [
+        "2026-10-07T10:01:00Z", "2026-10-07T10:00:00Z"]
 
 
 def test_dedup_survives_a_restart():
