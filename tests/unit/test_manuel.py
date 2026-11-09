@@ -172,6 +172,9 @@ def test_a_brick_without_lots_whose_issue_is_the_audit_s_is_security():
 def test_every_brick_whose_issue_is_the_audit_s_is_neutral():
     secu = set(DATA["issues_securite"])
     assert {630, 631, 632, 633, 634, 635, 636, 638, 642, 644, 654, 660} <= secu
+    assert {639, 643, 645, 653, 666} <= secu   # the known security pull requests (SEC-D … SEC-A4)
+    assert all(b.get("pr") is None or mn.sensible(b, secu) for b in DATA["briques"]
+               if set(mn._prs(b)) & secu)
     named = [b for b in DATA["briques"] if b.get("issue") in secu or set(mn._prs(b)) & secu]
     assert named, "the manual has bricks of the audit (SEC-A1, SEC-A2, SEC-A4, SEC-A4b, SEC-D)"
     for b in named:
@@ -463,6 +466,9 @@ def test_the_page_says_a_version_github_has_not_published_yet():
     assert 'return newer(version, latest.version) ? "a-publier" : "publiee";' in JS
     assert 'if (!latest || !version) return "inconnu";' in JS
     assert '"a-publier": "à publier", inconnu: "publiée selon le dépôt"' in JS
+    # The highest version GitHub has published, not the first one listed (a patch on an older line).
+    assert ".reduce((best, r) => (!best || newer(r.tag_name.slice(1), best.tag_name.slice(1)) ? r : best), null);" in JS
+    assert "list(releases).find(" not in JS
 
 
 def test_the_socle_s_bricks_show_their_state_on_the_diagram():

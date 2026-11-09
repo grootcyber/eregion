@@ -21,7 +21,8 @@ with PyYAML's on the real file.
 public ») is held here, by `problems`, so that the YAML itself never holds what the page must not
 show. A brick is a security one when its lots name an audit's finding or its lot (`SEC-…`, `V-<n>`,
 `P-0…`, whatever the case), when it says `securite: true`, or when its issue or one of its pull
-requests is in `issues_securite` (the audit's issues: their titles often carry the finding). Such a
+requests is in `issues_securite` (the audit's issues and the known security pull requests — GitHub
+numbers both in one sequence: their titles often carry the finding). Such a
 brick is named « Durcissement de sécurité », nothing else, without a note nor a document but
 SECURITY.md, and, until it is delivered, laid on a neutral station (`s-signer`) rather than the one of
 its weakness; the page shows neither its issue nor its pull request. No text of the manual names a

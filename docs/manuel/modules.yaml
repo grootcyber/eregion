@@ -20,9 +20,11 @@
 # guillemets droits, sans « " » ni « \ » dedans ; les versions toujours entre guillemets.
 # États d'une brique : prevue, dev, relecture, main, livree. D'une release : publiee, montage, prevue.
 
-# Les issues de l'audit de sécurité du 06/11 et de ses suites : leur titre porte souvent le constat.
-# Une brique dont l'issue ou la PR y figure est une brique de sécurité.
-issues_securite: [630, 631, 632, 633, 634, 635, 636, 638, 642, 644, 654, 660]
+# Les issues de l'audit de sécurité du 06/11 et de ses suites, puis les PR de sécurité connues
+# (SEC-D #639, SEC-A1 #643, SEC-A2 #645, SEC-A3 #653, SEC-A4 #666) : leur titre porte souvent le
+# constat. GitHub numérote issues et PR à la suite, un numéro ne désigne qu'une seule des deux. Une
+# brique dont l'issue ou l'une des PR y figure est une brique de sécurité.
+issues_securite: [630, 631, 632, 633, 634, 635, 636, 638, 642, 644, 654, 660, 639, 643, 645, 653, 666]
 
 composants:
   - id: glorfindel

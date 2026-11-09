@@ -90,8 +90,11 @@
     }));
     const items = list(issues).filter((i) => i && num(i.number));
     const openIssues = items.filter((i) => !i.pull_request).map((i) => i.number);
-    const rel = list(releases).find((r) => r && !r.draft && !r.prerelease
-      && typeof r.tag_name === "string" && /^v\d+\.\d+\.\d+$/.test(r.tag_name));
+    // The highest version published, not the last one created: a patch published on an older line
+    // must not make a newer version read « à publier ».
+    const rel = list(releases).filter((r) => r && !r.draft && !r.prerelease
+      && typeof r.tag_name === "string" && /^v\d+\.\d+\.\d+$/.test(r.tag_name))
+      .reduce((best, r) => (!best || newer(r.tag_name.slice(1), best.tag_name.slice(1)) ? r : best), null);
     const day = rel && typeof rel.published_at === "string" && /^\d{4}-\d{2}-\d{2}T/.test(rel.published_at)
       ? rel.published_at.slice(0, 10) : "";
     return { pulls: open, openIssues, complete: items.length < 100,
