@@ -12,9 +12,12 @@ under [Unreleased], and removed in the same commit — no line lost, or nothing 
 — the package's only one: annatar.__version__ reads it — and the README's « **Status — vX.Y.Z.** »
 follow, and ROADMAP.md's line of X.Y.Z in « Les prochaines releases », if there is one, becomes
 « brouillon » (RM1: #roadmap shows that table); for a minor release (another X.Y), SECURITY.md's
-supported line becomes X.Y.x and its « older » line follows (SEC-D), a patch leaves it; then the branch chore/release-X.Y.Z, its commit, pushed, and its pull request. Refused:
+supported line becomes X.Y.x and its « older » line follows (SEC-D), a patch leaves it; the public
+manual's bricks on main become delivered, with the version, and its JSON follows (MAN1,
+docs/manuel/modules.yaml, scripts/manuel.py); then the branch chore/release-X.Y.Z, its commit, pushed, and its pull request. Refused:
 a tree not clean, a HEAD that is not origin/main, a version not greater than the current one,
-an empty [Unreleased] without a fragment, a fragment malformed, a branch or a tag vX.Y.Z that exists.
+an empty [Unreleased] without a fragment, a fragment malformed, a public manual it cannot read or
+that its delivery would leave invalid, a branch or a tag vX.Y.Z that exists.
 
 `draft`, once that pull request is merged: the release vX.Y.Z as a DRAFT, on the full sha of
 origin/main (which must hold the version: its pyproject.toml and its CHANGELOG's [X.Y.Z]), with
@@ -343,6 +346,41 @@ def security_follows(security: str, version: str) -> str:
     return OLDER.sub(f"| older {line}.x, {prev}.x and before | no — upgrade |", security, count=1)
 
 
+# MAN1 (#664): the public manual. Its bricks on main are delivered by the version that cuts them.
+MANUAL_YAML = "docs/manuel/modules.yaml"
+MANUAL_JSON = "docs/manuel/modules.json"
+
+
+def manual_delivered(root: Path, version: str, day: str) -> tuple[dict, str, str]:
+    """The public manual once X.Y.Z is cut (scripts/manuel.py, `deliver`): each brick on `main`
+    becomes `livree`, with the version, and modules.json follows. Returns (its edits, what is
+    said, why it is refused — "" when it is not). Without a manual, nothing is edited, and said."""
+    path = root / MANUAL_YAML
+    if not path.is_file():
+        return {}, f"{MANUAL_YAML} : pas de manuel public, rien à livrer", ""
+    _scripts_dir()
+    import manuel
+    try:
+        text = path.read_text(encoding="utf-8")
+        out, delivered = manuel.deliver(text, version, day)
+    except (OSError, manuel.ManuelError) as e:
+        return {}, "", f"le manuel public ne se lit pas ({MANUAL_YAML}) : {e}"
+    data = manuel.load(out)
+    found = manuel.problems(data)
+    if found:
+        return {}, "", f"le manuel public est refusé ({MANUAL_YAML}) : {found[0]}"
+    try:
+        old_json = (root / MANUAL_JSON).read_text(encoding="utf-8")
+    except OSError:
+        old_json = None
+    edits = {MANUAL_YAML: out} if out != text else {}
+    if manuel.to_json(data) != old_json:
+        edits[MANUAL_JSON] = manuel.to_json(data)
+    said = (f"{MANUAL_YAML} : {len(delivered)} brique(s) sur main passent livrées en {version}"
+            + (f" — {', '.join(delivered)}" if delivered else ""))
+    return edits, said, ""
+
+
 # ── prepare: the version's pull request ─────────────────────────────────────────────
 
 def _remote_has(root: Path, kind: str, name: str) -> bool:
@@ -416,6 +454,11 @@ def prepare(root: Path, version: str, title: str, *, dry_run: bool = False, day:
             refused.append(f"le tag {tag} existe déjà")
     if not dry_run and shutil.which("gh") is None:
         refused.append("gh introuvable : la pull request s'ouvre avec gh")
+    # MAN1: the public manual's bricks on main delivered by this version (said whether refused or not).
+    manual_edits, manual_said, manual_refused = (manual_delivered(root, version, day) if new is not None
+                                                 else ({}, "", ""))
+    if manual_refused:
+        refused.append(manual_refused)
 
     say(f"Release {tag} — « {title} » ({day}), depuis {current or '—'}")
     for r in refused:
@@ -439,6 +482,9 @@ def prepare(root: Path, version: str, title: str, *, dry_run: bool = False, day:
         edits["SECURITY.md"] = followed
     staged = ["pyproject.toml", "CHANGELOG.md", "README.md"] + (["ROADMAP.md"] if "ROADMAP.md" in edits else [])
     staged += ["SECURITY.md"] if "SECURITY.md" in edits else []
+    if edits:
+        edits.update(manual_edits)
+        staged += [name for name in (MANUAL_YAML, MANUAL_JSON) if name in manual_edits]
     new_line = f"{new[0]}.{new[1]}.x" if new is not None else "—"
     security_said = (f"SECURITY.md : la ligne suivie devient {new_line}" if followed != security else
                      f"SECURITY.md : la ligne suivie reste {new_line} (un correctif)"
@@ -460,6 +506,8 @@ def prepare(root: Path, version: str, title: str, *, dry_run: bool = False, day:
             + (" ; dans ROADMAP.md, la ligne de la version passe à « brouillon » (« Les prochaines releases »)"
                if "ROADMAP.md" in edits else "")
             + (f" ; dans SECURITY.md, la ligne suivie devient {new_line}" if "SECURITY.md" in edits else "")
+            + (" ; dans le manuel public (docs/manuel/), les briques sur main passent livrées"
+               if MANUAL_YAML in edits else "")
             + ".\n\n"
             f"{GATE_SAID}\n\n"
             f"Après la fusion : make release-draft VERSION={version} — un brouillon, que Jonathan publie.")
@@ -474,7 +522,12 @@ def prepare(root: Path, version: str, title: str, *, dry_run: bool = False, day:
         say("")
         for name, text in edits.items():
             old = {"pyproject.toml": pyproject, "CHANGELOG.md": changelog, "README.md": readme,
-                   "ROADMAP.md": roadmap, "SECURITY.md": security}[name]
+                   "ROADMAP.md": roadmap, "SECURITY.md": security}.get(name)
+            if old is None:   # the manual's files (MAN1)
+                try:
+                    old = (root / name).read_text(encoding="utf-8")
+                except OSError:
+                    old = ""
             say("".join(difflib.unified_diff(old.splitlines(True), text.splitlines(True),
                                              f"a/{name}", f"b/{name}", n=2)).rstrip("\n"))
         say(f"\n[{version}] reçoit {lines} lignes : {', '.join(sections_named(cut_text)) or '—'}")
@@ -482,6 +535,8 @@ def prepare(root: Path, version: str, title: str, *, dry_run: bool = False, day:
             if removed else "changes/ : aucun fragment")
         say(roadmap_said)
         say(security_said)
+        if manual_said:
+            say(manual_said)
         say(f"\n{GATE_SAID}")
         say("\nÀ blanc (DRY_RUN=1) — rien n'est écrit ni poussé. Lancerait :")
         for c in shown:
@@ -511,6 +566,8 @@ def prepare(root: Path, version: str, title: str, *, dry_run: bool = False, day:
         raise Halfway(_halfway(step, branch, str(e), removed)) from None
     say(roadmap_said)
     say(security_said)
+    if manual_said:
+        say(manual_said)
     say(f"\nPR ouverte. {GATE_SAID}")
     say(f"Après sa fusion : make release-draft VERSION={version}")
     return 0

@@ -390,6 +390,64 @@ def test_security_md_without_one_supported_line_is_left_and_said(repo, capsys):
     assert "pas une seule ligne « | latest X.Y.x | yes | »" in capsys.readouterr().out
 
 
+# ── MAN1 (#664): the public manual's bricks on main delivered by the version ────────────
+
+MANUAL = (ROOT / "docs" / "manuel" / "modules.yaml").read_text(encoding="utf-8")
+MANUAL_FILES = ("docs/manuel/modules.yaml", "docs/manuel/modules.json")
+
+
+def _with_manual(work, text=MANUAL):
+    mn = _load("manuel")
+    (work / "docs" / "manuel").mkdir(parents=True, exist_ok=True)
+    (work / "docs" / "manuel" / "modules.yaml").write_text(text, encoding="utf-8")
+    (work / "docs" / "manuel" / "modules.json").write_text(mn.to_json(mn.load(MANUAL)), encoding="utf-8")
+    git(work, "add", "docs")
+    git(work, "commit", "-qm", "manual")
+    git(work, "push", "-q", "origin", "main")
+    return mn
+
+
+def test_a_release_delivers_the_manual_s_bricks_on_main_in_the_same_commit(repo, capsys):
+    mn = _with_manual(repo)
+    on_main = [b["id"] for b in mn.load(MANUAL)["briques"] if b["etat"] == "main"]
+    assert on_main
+    assert rel.main(["prepare", "0.6.0", "--title", "x"]) == 0, capsys.readouterr().out
+    out = capsys.readouterr().out
+    after = mn.load((repo / MANUAL_FILES[0]).read_text(encoding="utf-8"))
+    delivered = {b["id"]: b for b in after["briques"] if b["id"] in on_main}
+    assert all((b["etat"], b["version"], b["release"]) == ("livree", "0.6.0", "0.6") for b in delivered.values())
+    assert not [b for b in after["briques"] if b["etat"] == "main"]
+    assert (repo / MANUAL_FILES[1]).read_text(encoding="utf-8") == mn.to_json(after)   # the JSON follows
+    assert {s["version"]: s["etat"] for s in after["releases"]}["0.6"] == "publiee"
+    assert set(MANUAL_FILES) <= set(git(repo, "show", "--name-only", "--format=", "HEAD").split())
+    assert git(repo, "status", "--porcelain") == ""
+    assert f"{len(on_main)} brique(s) sur main passent livrées en 0.6.0" in out
+    assert "les briques sur main passent livrées" in git(repo, "log", "-1", "--format=%b")
+
+
+def test_a_dry_run_shows_the_manual_s_diff_and_writes_nothing(repo, tmp_path, capsys):
+    _with_manual(repo)
+    assert rel.main(["prepare", "0.6.0", "--title", "x", "--dry-run"]) == 0
+    out = capsys.readouterr().out
+    assert '+    etat: livree' in out and '+    version: "0.6.0"' in out
+    assert "docs/manuel/modules.yaml docs/manuel/modules.json" in out   # staged in the version's commit
+    assert (repo / MANUAL_FILES[0]).read_text(encoding="utf-8") == MANUAL and gh_calls(tmp_path) == []
+
+
+def test_a_manual_the_release_cannot_read_is_refused_and_nothing_is_written(repo, tmp_path, capsys):
+    _with_manual(repo, MANUAL.replace('    etat: main\n', "    etat: 'main'\n", 1))
+    before = files(repo)
+    assert rel.main(["prepare", "0.6.0", "--title", "x"]) == 1
+    assert refused(capsys.readouterr().out, "le manuel public ne se lit pas (docs/manuel/modules.yaml)")
+    assert files(repo) == before and git(repo, "branch", "--show-current") == "main" and gh_calls(tmp_path) == []
+
+
+def test_without_a_manual_the_release_says_so_and_goes_on(repo, capsys):
+    assert rel.main(["prepare", "0.4.4", "--title", "x"]) == 0
+    assert "docs/manuel/modules.yaml : pas de manuel public, rien à livrer" in capsys.readouterr().out
+    assert not (repo / "docs").exists()
+
+
 # ── RM1 (#406): the version's line in ROADMAP.md's « Les prochaines releases » ───────
 
 ROADMAP_MD = """# Roadmap
