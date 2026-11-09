@@ -125,7 +125,7 @@ Trois canaux, à ne pas confondre :
 
 | | Menace | Ce qui la tient |
 |---|---|---|
-| S | Une ligne de journal écrite par l'attaquant se fait passer pour une consigne (injection) | La réponse ne décide pas seule : mode par actif (`human_only` par défaut), garde destructive, porte de confiance, `never_block`, adresses protégées ; les règles ancrées ne lisent que les lignes du démon qui les écrit (SEC2) |
+| S | Une ligne de journal écrite par l'attaquant se fait passer pour une consigne (injection) | La réponse ne décide pas seule : mode par actif (`human_only` par défaut), garde destructive, porte de confiance, `never_block`, adresses protégées ; les règles ancrées filtrent sur l'étiquette que l'émetteur déclare (SEC2). **Ce qui reste** : une action autonome sur ces lignes — planifié : #632 (conception : [`corroboration.md`](corroboration.md)) |
 | T | Une réponse malformée, une confiance hors bornes | Confiance bornée à [0, 1], `NaN` retenu par la porte ; une action inconnue part en escalade (G2) |
 | R | Une décision qu'on ne peut plus expliquer | Chaque cycle écrit : signal, raisonnement, action, résultat (`*_debug.jsonl`, la mémoire) |
 | T | La mémoire sert de précédent à tort : un cycle d'exercice, de source inconnue, ou vieux d'un an pèse comme un vrai d'hier | Seuls les cycles réels, pour tout signal, chacun sous un identifiant tiré par la mémoire (SEC4a) ; seuls ceux rangés depuis moins de `memory.max_age_days` (90 jours, lu strictement), datés par l'hôte au rangement, jamais par ce qu'ils portent ; un cycle rangé avant SEC17, sans date, est daté par la borne de B2 (le 16/10/2026, avant laquelle aucun cycle n'est réel : un âge au moins le vrai, A0), rendu tant qu'elle est dans la borne — sur H0, jusque vers le 14/01/2027 ; rien n'est effacé, et `glorfindel report` dit combien la borne en écarte (SEC17, `glorfindel/memory.py`) |
@@ -140,7 +140,7 @@ Trois canaux, à ne pas confondre :
 
 L'origine d'une session confirmée hors de la VM (#427) n'est plus ouverte : **tenue quand une source est déclarée** (`expected_sudo.origin_proof`, COR2 — Bastion ou flux réseau, ses tables à mesurer au banc) ; sans source, l'origine reste lue dans la VM seulement, et dite ainsi (§5).
 
-**Ouvert** : la décision face à une réponse, une mémoire ou une ligne imprévues — planifié : #275 ; ce que la corrélation recopie d'une ligne Syslog vers le modèle — planifié : #632.
+**Ouvert** : la décision face à une réponse, une mémoire ou une ligne imprévues — planifié : #275 ; ce que la corrélation recopie d'une ligne Syslog vers le modèle — planifié : #632 ; une action autonome sur une ligne que la VM peut écrire — planifié : #632.
 
 ---
 

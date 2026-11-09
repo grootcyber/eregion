@@ -1,7 +1,7 @@
 # La corroboration avant toute action autonome (SEC-A3, #632) — conception
 
 > **Statut : conception, 09/11.** Rien n'est codé. Ce document prépare les lots SEC-A3a à SEC-A3e
-> (§7). Les sept questions du §6 attendent Jonathan, une à la fois. Les mesures du §5 sont ses
+> (§7). Les huit questions du §6 attendent Jonathan, une à la fois. Les mesures du §5 sont ses
 > gestes, au banc, avant le code : décision du 09/11, « mesurer au banc quelles sources sont
 > disponibles avant d'écrire le code ».
 >
@@ -17,7 +17,7 @@
 > **Règle de lecture.** Ce qui est lu dans le dépôt est une affirmation, avec son fichier et sa ligne
 > (au commit `eef16bc7`). Ce qui est dit de Linux (auditd, PAM, sshd, sudo), de l'agent Azure Monitor
 > et des journaux de flux vient de leur documentation publique : c'est une **hypothèse**, numérotée
-> CR1 à CR12 (§5), à mesurer au banc. Ces numéros ne se confondent ni avec A1–A13 d'AUD1, ni avec
+> CR1 à CR13 (§5), à mesurer au banc. Ces numéros ne se confondent ni avec A1–A13 d'AUD1, ni avec
 > B1–B5 et F1–F4 de COR2 (`docs/operations.md`), qu'ils réutilisent quand ils le peuvent.
 
 ## 0. En bref
@@ -39,10 +39,11 @@
   déjà les lire (`glorfindel/correlation.py:105`). Ils corroborent le brute force, et rien d'autre
   aujourd'hui.
 - **Le mécanisme.** Le code juge, jamais le modèle. Une étape du RulePoller cherche la preuve, hors du
-  verrou, comme COR1, COR2 et AUD1. Elle range un verdict dans l'enveloppe du signal, jamais dans la
-  ligne ni dans le prompt. Une garde de `decide` retient toute action disruptive dont le verdict
-  n'est pas « corroborée ». Un verdict absent, une source en panne, en retard ou muette : une carte
-  (A0).
+  verrou, comme COR1, COR2 et AUD1. Son verdict voyage à côté du signal, jamais dedans : il arrive
+  dans l'état du graphe (`GlorfindelState`), comme `telemetry_gaps`, et n'atteint jamais le prompt.
+  Une garde de `decide` retient toute action disruptive dont le verdict n'est pas « corroborée » pour
+  l'adresse et la VM qu'elle viserait. Un verdict absent, une source en panne, en retard ou muette :
+  une carte (A0).
 - **Le prix.** Le blocage autonome d'un brute force continue, mais 10 à 20 minutes plus tard
   (traffic analytics écrit par lots), avec une carte tout de suite (Q3). Le sudo vers root, la
   création de compte et la commande sensible d'AUD1 deviennent des cartes, jusqu'au canal d'audit
@@ -70,7 +71,8 @@ Les règles livrées filtrent sur l'étiquette depuis SEC2 et SEC4c (`ProcessNam
 Une action est autonome quand elle passe toutes les gardes de `decide` (`docs/glorfindel.md`, « Gates
 extraits en helpers ») et que la VM est en `non_disruptive` (`human_only` par défaut). Les actions
 disruptives sont `isolate_vm` et `block_suspicious_ip` (`_DISRUPTIVE_AUTONOMOUS`,
-`glorfindel/agent.py:745`). Le garde-fou du signal non caractérisé (`_apply_signal_guardrail`,
+`glorfindel/agent.py:745`, qui nomme aussi `revoke_temp_access`, retirée des actions autonomes et
+jamais exécutable). Le garde-fou du signal non caractérisé (`_apply_signal_guardrail`,
 `glorfindel/agent.py:1150`) les retient déjà sur une ligne qui ne porte aucun indicateur curé
 (`RECOGNIZED_INDICATOR_KEYS`, `glorfindel/detection_rules.py:185`). Une ligne caractérisée passe
 cette garde, et c'est alors le modèle, sa confiance et l'accord de ses tirages qui décident. Un
@@ -88,8 +90,8 @@ règle. « Disruptif seul » : une action disruptive peut partir sans humain auj
 |---|---|---|---|---|---|
 | `ransomware-disk-write` (T1486, l. 29) | `Perf` | non : l'agent lit les compteurs du noyau (CR3) | oui (`disk_write_rate_bps`) | aucune requise | — |
 | `data-exfiltration-blob` (T1041, l. 82) | `StorageBlobLogs` | non : écrite par Azure Storage | oui (`caller_ip`) | aucune requise | — |
-| `ssh-brute-force` (T1110.001, l. 104) | `Syslog` `auth`, `sshd` | **oui** | **oui** (`failed_auth_count`) : bloquer l'adresse que la ligne nomme | **flux réseau** : un flux TCP autorisé de l'adresse vers le port 22 de la VM, dans la fenêtre (`NTANetAnalytics`). En plus, si le canal d'audit existe : `USER_AUTH`/`USER_LOGIN` `res=failed` `addr=<adresse>` écrits par sshd (CR8) | **flux : oui** (VNet flow logs et traffic analytics 10 min). Audit : non |
-| `sudo-privilege-escalation` (T1548.003, l. 133) | `Syslog` `authpriv`, `sudo` | **oui** | **oui** (`privilege_escalation`) : isoler | **audit** : l'`execve` de la commande en root sous l'`auid` du compte (clé `root_command`, `exe` = le chemin de `COMMAND=`), à ±2 s ; à défaut, `USER_CMD` `res=success` écrit par sudo (CR8) | **non** : les règles d'audit d'AUD1 sont posables (drapeau désactivé), mais leur canal est `Syslog` (§2.3) |
+| `ssh-brute-force` (T1110.001, l. 104) | `Syslog` `auth`, `sshd` | **oui** | **oui** (`failed_auth_count`) : bloquer l'adresse que la ligne nomme | **flux réseau** : un flux TCP autorisé de l'adresse vers le port 22 de la VM, dans la fenêtre, **avec plus d'~1 Ko de la VM vers l'adresse** (`NTANetAnalytics`, CR13) : une connexion établie, qu'une source usurpée n'obtient pas (§3.10). En plus, si le canal d'audit existe : `USER_AUTH`/`USER_LOGIN` `res=failed` `addr=<adresse>` écrits par sshd (CR8) | **flux : oui** (VNet flow logs et traffic analytics 10 min). Audit : non |
+| `sudo-privilege-escalation` (T1548.003, l. 133) | `Syslog` `authpriv`, `sudo` | **oui** | **oui** (`privilege_escalation`) : isoler | **audit** : d'abord `USER_CMD` `res=success`, écrit par sudo lui-même (CR8) ; à défaut, l'`execve` de la commande avec **uid = 0 et euid = 0** sous l'`auid` du compte (clé `root_command`, `exe` = le chemin de `COMMAND=`), à ±2 s. Un `execve` à euid 0 seul ne suffit pas : un programme setuid (`passwd`, `chsh`, `mount`) lancé par n'importe quel compte en a un (§3.9) | **non** : les règles d'audit d'AUD1 sont posables (drapeau désactivé), mais leur canal est `Syslog` (§2.3) |
 | COR1 → B3a (`login_after_brute_force` + `root_elevation`, `glorfindel/agent.py:1272`) | `Syslog` (`Accepted` de sshd, sudo) | **oui**, les deux faits | **oui** : `isolate_vm` au moins | la connexion : `USER_LOGIN` `res=success` `addr=<adresse>` de sshd (CR8). Les flux ne distinguent pas un échec d'un succès. L'élévation : comme le sudo | **non** |
 | `t1136-001-local-account-creation-linux-v1` (l. 217) | `Syslog` `auth`, `useradd` | **oui** | possible : caractérisée (`account_creation`, `_CURATED_SYSLOG_PATTERNS`, l. 220) ; c'est la confiance qui tranche (35 % mesurés, BL1) | **audit** : la surveillance du CIS `-w /etc/passwd -p wa -k identity` (`exe=/usr/sbin/useradd`, `auid` non requis : Run Command est vu), ou `ADD_USER` écrit par useradd (CR8) | **non** : règle d'audit nouvelle et canal nouveau |
 | `auditd-sensitive-root-command` (T1059.004, l. 179) | `Syslog` `local6`, `audisp-syslog` | **oui** (AUD1 le dit) | **oui** (`root_command`) | **le même enregistrement par le canal d'audit** (même `msg=audit(<instant>:<numéro>)`), ou la règle qui lit directement la table d'audit (Q7) | **non** |
@@ -130,8 +132,11 @@ l'utilisateur local ne peut pas écrire :
 | D. `VMConnection` (VM insights, agent de dépendances) | son agent, en root | un agent de plus, sa DCR | réseau vu de la VM seulement : non retenu en premier |
 
 Le canal A tient contre un utilisateur sans privilège, pas contre root : root écrit le fichier. Les
-flux, eux, tiennent même contre root, puisqu'ils sont pris hors de la VM. Un root forgé reste un
-intrus déjà root. Les deux sources ne protègent donc pas la même chose : §3.9.
+flux sont pris hors de la VM, et root ne les écrit pas non plus. Mais **ils ne prouvent pas la source
+d'un paquet** : un SYN à adresse source usurpée passe `allow-ssh` (ouvert à `*`) et donne un flux
+autorisé au nom de n'importe quelle adresse. Seul un échange dans les deux sens, plus d'~1 Ko de la
+VM vers l'adresse, suppose une connexion TCP établie (CR13, §3.10). Les deux sources ne protègent donc
+pas la même chose : §3.9 et §3.10.
 
 ### 2.4 Ce qui est collecté, d'après le dépôt
 
@@ -155,14 +160,30 @@ continu. Le §5 s'en sert : il mesure la corroboration d'un vrai brute force san
 
 - **Le code, jamais le modèle.** La preuve est cherchée par une requête écrite dans le code, avec
   des valeurs vérifiées puis écrites en littéraux KQL (`kql.literal`, SEC4c). Le verdict n'entre
-  jamais dans le prompt : ni `_SYSTEM_PROMPT`, ni `_build_user_message()`, ni le few-shot ne
-  changent. Aucun run de bout en bout n'est donc requis.
-- **Quelles lignes la demandent : par la table lue, jamais par le nom de la règle.** Une liste fermée
-  de tables qu'un utilisateur local ne peut pas écrire : `Perf`, `StorageBlobLogs`,
-  `NTANetAnalytics`, la table d'audit du canal A, et les tables du plan de contrôle et des identités
-  (déjà jamais autonomes). Toute requête qui lit une autre table, `Syslog` d'abord, une table
-  inconnue, une règle du client ou une règle proposée, en a besoin. La lecture des tables se fait
-  comme `_reads_activity_table` et `_reads_entra_table` le font déjà (Q4).
+  jamais dans le prompt. `_build_user_message` écrit le signal entier (`json.dumps(signal)`,
+  `glorfindel/agent.py:2993`), et la watch passe ce signal entier au worker (`glorfindel/cli.py:735`,
+  `:803`). Le verdict n'est donc **jamais une clé du signal** : il voyage à côté et se range dans
+  l'état du graphe (§3.3). Ni `_SYSTEM_PROMPT`, ni `_build_user_message()`, ni le few-shot ne
+  changent. Un test l'exige : le message utilisateur est identique à l'octet avec et sans verdict.
+  Sans ce test, la règle de `CLAUDE.md` imposerait un run T1486 et un autre TTP.
+- **Quelles lignes la demandent : par la forme de la requête, en liste blanche, jamais par le nom
+  de la règle (Q4).** Une liste fermée de tables qu'un utilisateur local ne peut pas écrire : `Perf`,
+  `StorageBlobLogs`, `NTANetAnalytics`, la table d'audit du canal A, et les tables du plan de
+  contrôle et des identités (déjà jamais autonomes). Une requête est `not_required` seulement si :
+  - **chaque** table qu'elle lit est dans la liste ou liée par `let` à une expression qui n'en lit
+    que de sûres. Sont lues : la tête de la requête, celle de chaque `let x = <table> …`, la source
+    de chaque `join (…)` et `lookup (…)`, chaque nom d'un `union` ;
+  - aucune construction inconnue n'apparaît : `search`, `find`, `table(`, `workspace(`, `app(`,
+    `datatable`, `externaldata`, `print`, `evaluate`, une fonction enregistrée du workspace (un nom
+    qui n'est ni une table de la liste ni un `let`), ou une requête qui ne lit aucune table.
+
+  Sinon la ligne en a besoin : `Syslog` d'abord, une table inconnue, une règle du client ou une
+  règle proposée. Le jugement est **statique**, fait sur le texte de la requête (commentaires ôtés),
+  avant toute requête et sans aucune lecture. `ransomware-disk-write` (`let samples = Perf …;
+  samples | join (samples …)`) reste exempté ; `Perf | join (Syslog …)` ne l'est pas. Les regex de
+  `_reads_activity_table` et `_reads_entra_table`, qui trouvent un nom n'importe où dans le texte,
+  servent à durcir (un plan plus strict). Elles ne servent jamais à exempter : une simple mention
+  d'une table sûre n'exempte rien.
 - **Quelles actions.** Les actions disruptives autonomes (`_DISRUPTIVE_AUTONOMOUS`). L'instantané
   dépend de Q2. La levée d'isolation n'est pas concernée : elle n'est autonome que sur le
   `recovery_complete` de Glorfindel lui-même (SEC3).
@@ -178,30 +199,51 @@ continu. Le §5 s'en sert : il mesure la corroboration d'un vrai brute force san
    source **pour la VM du registre** (la ressource où la ligne a été routée), jamais pour celle
    qu'écrit la ligne, comme COR2. Elle fait une requête par VM et par source pour toutes les lignes
    de la passe, dans un plafond par règle et par passe (`QUERIES_PER_POLL`, à part de celui de la
-   corrélation). Au-delà du plafond : `unknown`.
+   corrélation). Au-delà du plafond : `unknown`. Une ligne de synthèse, qui en nomme d'autres
+   (`_data_summary`, `glorfindel/detection_rules.py:1206` ; `auditd.fold`), n'est jamais corroborée :
+   elle porte plusieurs adresses ou plusieurs commandes.
 2. **Le même jugement sur le chemin de `respond`.** `resolve_attack_started`
    (`glorfindel/agent.py:342`, `poll_alert` l. 430) ne passe pas par `poll_once`. Il appelle la même
-   fonction. Sans elle, le verdict manque, et un manque se lit « non corroborée » (ci-dessous).
-3. **La garde** `_apply_corroboration_guard` se place dans `decide` juste après
+   fonction. Sans elle, le verdict manque, et un manque se lit « non corroborée » (ci-dessous). **Ce
+   chemin n'attend pas la preuve** (§3.6 ne vaut que pour le RulePoller) : une ligne non corroborée
+   à l'instant où `poll_alert` la trouve reste une carte. L'effet sur les exercices est au §4.
+3. **Toute clé `corroboration` entrante est retirée.** Un signal lu dans `runs/` (le canal des
+   injecteurs, qui n'est pas de confiance), ou recopié par `resolve_attack_started` (qui renvoie
+   `{**signal, …}`), peut porter une telle clé. Elle est retirée et ignorée à l'entrée, et jamais
+   lue.
+4. **La garde** `_apply_corroboration_guard` se place dans `decide` juste après
    `_apply_signal_guardrail` et avant `_apply_attribution_guard`. Elle est de la même nature, la
    qualité de la preuve, et passe avant le mode et l'accord des tirages : une action qu'elle retient
-   ne paie pas de tirages. Elle lit seulement le verdict. Sur une action disruptive autonome dont le
-   verdict n'est ni `corroborated` ni `not_required`, elle met `escalate = True` et
+   ne paie pas de tirages. Elle lit seulement le verdict, dans l'état. **Le verdict est lié à sa
+   cible** : il porte l'adresse et le `resource_id` qu'il prouve. La garde les compare à ce que
+   l'action viserait : l'adresse que `block_suspicious_ip` bloquerait (`_extract_suspicious_ip`,
+   `glorfindel/agent.py:1881`, la même lecture que `execute_action`), la VM que `isolate_vm`
+   isolerait. Un écart, et l'action est retenue. Sur une action disruptive autonome dont le verdict
+   n'est ni `corroborated` ni `not_required` pour cette cible, elle met `escalate = True` et
    `held_by = "corroboration"`, qui donne le type `uncorroborated_signal` (`_HELD_BY_TYPE`, l. 756).
-   La carte est approuvable en un clic, comme `telemetry_gap` : l'humain approuve en sachant ce
-   qui n'a pas été prouvé. Une action déjà retenue par une garde plus tôt garde son type, et sa
-   raison gagne la phrase de la corroboration, comme le fait la garde de télémétrie.
+   L'approbation en un clic dépend de Q8 : `uncorroborated_signal` entre ou non dans
+   `eregion_core/action_queue.APPROVABLE_TYPES` (l. 72) et dans la liste de la console, que
+   `tests/unit/test_action_proposal.py` garde identiques. Une action déjà retenue par une garde
+   plus tôt garde son type, et sa raison gagne la phrase de la corroboration, comme le fait la garde
+   de télémétrie.
 
-### 3.3 Ce qu'elle ajoute au signal
+### 3.3 Ce qu'elle ajoute, et où
 
-Un champ d'**enveloppe**, `signal["corroboration"]`, posé par le code qui construit le signal. Il
-n'est **pas** une colonne de la ligne (`first_result_row`). Ainsi aucune requête, d'une règle du
-client ou proposée, ne peut le fournir en projetant une colonne du même nom. Il ne touche pas
-l'identité de dédoublonnage de la ligne, et il n'entre pas dans le prompt.
+Un **verdict**, jamais une clé du signal ni une colonne de la ligne (`first_result_row`). Le
+RulePoller le passe à côté du signal, avec lui dans la file du worker (`_dispatch`,
+`glorfindel/cli.py:735`). Le graphe le range dans un champ de `GlorfindelState`, `corroboration`,
+documenté comme `telemetry_gaps` (`glorfindel/agent.py:87`, « never shown to the model »). Ainsi :
+
+- aucune requête, d'une règle du client ou proposée, ne peut le fournir en projetant une colonne ;
+- aucun signal de `runs/` ne peut le fournir en portant une clé (§3.2, point 3) ;
+- il ne touche pas l'identité de dédoublonnage de la ligne ;
+- `json.dumps(signal)` ne le voit jamais.
 
 ```yaml
 corroboration:
   required: true                 # la requête lit une table hors de la liste sûre
+  resource_id: <id ARM de la VM du registre>
+  ip: 198.51.100.23              # l'adresse prouvée (brute force) ; vide pour un fait de la VM
   status: corroborated           # corroborated | uncorroborated | pending | unknown | not_required
   source: flows                  # flows | audit | none
   window: [<début UTC>, <fin UTC>]
@@ -212,9 +254,11 @@ corroboration:
 **Un verdict absent vaut `uncorroborated`** quand l'action est disruptive : c'est l'échec fermé.
 Seule l'étape écrit `not_required`, après avoir lu la requête.
 
-Les faits que `confirm_facts` inscrit sur l'incident (B3a) gagnent le même drapeau :
-`{"fact": "root_elevation", "corroborated": false}`. Un fait d'un ancien format, sans drapeau, se lit
-« non corroboré ».
+Les faits que `confirm_facts` inscrit sur l'incident (B3a) restent des chaînes : `Incident.confirmed`
+ne change pas de forme, et `decision_queue._floor` (`glorfindel/decision_queue.py:267`) et
+`_root_compromise_floor` (`glorfindel/agent.py:1290`) le lisent tels quels. Un ensemble parallèle,
+`Incident.corroborated`, nomme ceux qui sont corroborés. Un incident d'avant, sans cet ensemble, n'a
+aucun fait corroboré.
 
 ### 3.4 La fenêtre de temps
 
@@ -250,20 +294,29 @@ et le blocage autonome disparaîtrait. Proposition :
 - **La carte d'abord.** La passe où la ligne arrive sans preuve envoie le signal, `pending`. La
   garde le retient, et la carte part tout de suite : « en attente de corroboration (journaux de
   flux, jusqu'à 10:45 UTC) ».
-- **L'action quand la preuve arrive.** Le RulePoller garde la ligne en attente dans son état
-  (`rule_status.json`, `corroboration_pending`), borné en nombre et en durée (`wait_s` par source :
-  1 800 s pour les flux, 600 s pour l'audit, à fixer par la mesure CR5 et CR9). Il la relit au plus
-  toutes les 60 s, dans la même requête par VM. Quand la preuve arrive avant l'échéance, il émet un
-  **second signal**, `corroborated`, qui repasse par tout le chemin : file de décision, modèle,
-  gardes, mode, tirages.
-- **La file de décision (SEC-A2) ne doit pas l'avaler.** Une décision par VM, règle, gravité et
-  source dans `DEDUP_WINDOW_S` (`glorfindel/decision_queue.py:49`), ouverte par la carte du premier
-  signal, dédoublonnerait le second. Le signal corroboré est donc clé par sa preuve, comme une
+- **L'action quand la preuve arrive.** Le RulePoller garde l'entrée en attente dans son état
+  (`rule_status.json`, `corroboration_pending`). **Une entrée par (VM, règle, adresse)**, bornée en
+  durée (`wait_s` par source : 1 800 s pour les flux, 600 s pour l'audit, à fixer par CR5 et CR9) et
+  en nombre (`PENDING_MAX` par VM). Il la relit au plus toutes les 60 s, dans la même requête par VM.
+  Quand la preuve arrive avant l'échéance, il émet **un second signal au plus par entrée**,
+  `corroborated`, qui repasse par tout le chemin : file de décision, modèle, gardes, mode, tirages.
+  L'entrée est alors close.
+- **Une liste d'attente pleine** : la nouvelle entrée en chasse la plus ancienne. Celle-ci garde sa
+  carte, qui le dit (« attente abandonnée : liste pleine »). Rien ne part sans être dit.
+- **Le second signal est de classe basse** dans la file de décision (SEC-A2), sauf s'il porte une
+  compromission (COR1, critique). Sous le plafond d'appels au modèle, une détection basse retenue
+  est une carte sans décision, jamais une action : le blocage attend alors son humain.
+- **La file de décision ne doit pas l'avaler.** Une décision par VM, règle, gravité et source dans
+  `DEDUP_WINDOW_S` (`glorfindel/decision_queue.py:49`), ouverte par la carte du premier signal,
+  dédoublonnerait le second. Le signal corroboré est donc clé par (VM, règle, adresse), comme une
   compromission l'est par son adresse.
+- **Un humain d'abord.** Une carte acquittée, rejetée ou approuvée par un humain avant la preuve
+  **annule l'entrée** : aucun second signal. Approuvée, l'action a déjà eu lieu par l'humain ;
+  rejetée, rien ne la refait seul.
 - **La carte suit.** `escalations.record` tient l'arrivée de la preuve pour un changement matériel,
   comme la compromission de COR1. La carte en attente dit « corroborée à 10:21 UTC : action
-  autonome exécutée » ou « approuvée avant la preuve ». Si l'humain a déjà approuvé, le second signal
-  trouve l'adresse bloquée, lu dans l'état et jamais dans les cycles passés : rien de plus.
+  autonome exécutée ». Le second signal lit l'état (l'adresse déjà bloquée ?), jamais les cycles
+  passés.
 - **L'échéance passée sans preuve**, la carte reste et le dit : « aucune preuve avant 10:45 UTC ».
 
 ### 3.7 Ce qui est dit
@@ -292,6 +345,13 @@ l'élévation par l'audit (Q6). Sinon la carte propose `isolate_vm` et dit pourq
 déterministe (B3a) … ; faits non corroborés hors de Syslog ». La compromission est toujours dite à un
 humain (COR1), corroborée ou non.
 
+**Le plancher ne fait jamais moins que sans lui.** Cas : le modèle choisit `block_suspicious_ip`, le
+blocage est corroboré par les flux, le plancher le relève à `isolate_vm`, et l'isolation est retenue
+(faits non corroborés). Le choix proposé : le blocage corroboré part seul, et la carte propose
+`isolate_vm` en plus. C'est le mécanisme de `displaced` de B3a, à l'envers : l'action retenue
+attend son humain, l'action prouvée ne l'attend pas. L'autre choix serait de tout retenir, et
+l'adresse resterait libre pendant que la carte attend.
+
 ### 3.9 Lire un enregistrement d'audit strictement
 
 Le canal A ne laisse écrire personne d'autre que root. Mais un enregistrement contient des chaînes que
@@ -305,6 +365,18 @@ apparaît dans `name="addr=203.0.113.5"`. Le lecteur suit donc trois règles :
 - un enregistrement ambigu (deux fois le même champ, un type inattendu pour l'événement) ne
   corrobore rien.
 
+Deux règles de plus :
+
+- **un setuid n'est pas une élévation.** `passwd`, `chsh`, `mount` ou `su` lancés par un compte sans
+  privilège donnent un `execve` à euid 0 sous son `auid`. La preuve d'un sudo est d'abord
+  `USER_CMD res=success`, écrit par sudo. À défaut, un `execve` avec **uid = 0 et euid = 0** (sudo
+  pose les deux avant de lancer la commande ; un setuid ne pose que l'euid), sous l'`auid` du compte,
+  dont l'`exe` est le chemin de `COMMAND=` ;
+- **la partie brute d'abord.** Avec `log_format = ENRICHED` (AUD1), auditd ajoute après le séparateur
+  0x1d (ou `#035`, A7) des champs interprétés (`AUID="admin1"`, `UID="root"`). Le lecteur lit les
+  champs de la partie brute, avant le séparateur. La partie enrichie ne sert qu'à nommer le compte
+  sur la carte, jamais à prouver.
+
 C'est la même discipline que le lecteur d'AUD1 (`glorfindel/auditd.py`). Les `USER_*` (`USER_AUTH`,
 `USER_LOGIN`, `USER_CMD`, `ADD_USER`) sont envoyés au noyau par un programme qui tient
 `CAP_AUDIT_WRITE`. Un utilisateur sans privilège ne peut pas en émettre (CR7). Le noyau y ajoute
@@ -312,10 +384,17 @@ C'est la même discipline que le lecteur d'AUD1 (`glorfindel/auditd.py`). Les `U
 
 ### 3.10 Ce qu'elle ne fait pas
 
-- **Les flux prouvent qu'une adresse a parlé au port 22, pas qu'elle a échoué.** Un utilisateur local
-  peut écrire dix échecs au nom d'une adresse qui se connecte vraiment, un administrateur ou un
-  partenaire, et la faire bloquer. `never_block` protège les adresses déclarées. Le compte des
-  échecs par l'audit (`USER_AUTH`, Q5) ferme ce cas là où le canal A existe.
+- **Un flux autorisé ne prouve pas sa source.** `allow-ssh` est ouvert à `*`
+  (`infra/terraform/network.tf:34-42`). Un SYN à adresse source usurpée y passe et donne un flux `A`
+  au nom de n'importe quelle adresse. La réponse de la VM part vers l'adresse usurpée, et la
+  connexion ne s'établit jamais. Un flux qui porte plus d'~1 Ko de la VM vers la source (la bannière
+  et l'échange de clés de sshd ; `BytesDestToSrc`, `PacketsDestToSrc`, CR13) suppose une connexion
+  TCP établie, qu'une source usurpée ne peut pas obtenir. C'est la preuve recommandée (Q5).
+- **Les flux prouvent qu'une adresse a parlé au port 22, pas qu'elle a échoué.** Un compte local voit
+  les adresses vraiment connectées (`/proc/net/tcp`, `ss`). Il peut écrire dix échecs au nom de l'une
+  d'elles, un administrateur ou un partenaire, et la faire bloquer : ses flux sont réels et établis.
+  `never_block` protège les adresses déclarées. Le compte des échecs par l'audit (`USER_AUTH`, Q5)
+  ferme ce cas là où le canal A existe.
 - **L'audit ne tient pas contre root.** Un intrus root écrit `audit.log`. Il peut faire isoler sa
   propre VM (réversible) ou corroborer un sudo. Les flux, eux, restent hors de sa portée.
 - **Le modèle peut toujours être trompé.** L'enquête (`investigate`, `agent.py:697-702`) lit
@@ -333,7 +412,9 @@ C'est la même discipline que le lecteur d'AUD1 (`glorfindel/auditd.py`). Les `U
 | **Plancher B3a** | `isolate_vm` autonome | carte qui propose `isolate_vm` tant que les deux faits ne sont pas corroborés par l'audit |
 | **Collecte** | VNet flow logs et traffic analytics déjà en place au banc. Leur coût n'est pas relevé dans `docs/operations.md` (« Coûts réels ») : à relever sur la facture (§5, geste 1) | **rien de plus pour les flux.** Canal d'audit : l'ingestion Analytics, 2,99 USD le Go en West Europe au-delà des 5 Go gratuits du mois (même tarif qu'AUD1). Estimation pour une VM exposée : ~5 000 tentatives SSH par jour × 2 enregistrements × ~400 octets, soit ~0,12 Go par mois, plus les `execve` des deux clés d'AUD1. Le banc reste sous 1 USD par mois, à mesurer (CR10). Si le canal A remplace `local6` (Q7), le volume d'AUD1 dans `Syslog` disparaît |
 | **Requêtes** | — | une par VM, par source et par passe quand une ligne en a besoin, plus les relectures en attente (au plus une par minute et par VM). Gratuites sur le niveau Analytics |
-| **Appels au modèle** | — | aucun de plus pour la garde. Avec l'attente (SEC-A3c), une décision de plus quand la preuve arrive : un appel, plus les tirages d'une action disruptive |
+| **Appels au modèle** | — | aucun de plus pour la garde. Avec l'attente (SEC-A3c), une décision de plus **par adresse corroborée** (une entrée, un second signal au plus) : un appel, plus les tirages d'une action disruptive (`GLORFINDEL_DECISION_DRAWS`, 3 par défaut), dans la classe basse du plafond |
+| **Le chemin `attack_started` (`respond`, exercices)** | une détection d'exercice peut contenir seule en `non_disruptive` | **pas d'attente** sur ce chemin (§3.2) : un T1110 d'exercice (BL1, Annatar depuis Orodruin) est presque toujours vu avant ses flux, donc une carte. Le contenu seul d'un brute force ne se mesure plus par `respond` ; il se mesure par la watch (le RulePoller attend). Concevoir l'attente sur ce chemin est possible (relire jusqu'à `wait_s` après la détection), mais allonge l'exercice d'autant : non proposé ici, à décider si BL1 en a besoin. Un T1486 d'exercice (`Perf`) ne change pas |
+| **Instantanés sous un flot forgé** (si Q2 le garde autonome) | — | sans plafond, la file de décision seule laisse jusqu'à une décision par VM, règle, gravité et source toutes les 300 s : 288 par jour et par règle, ~1 150 par jour et par VM pour les quatre règles `Syslog` caractérisées, davantage par des compromissions forgées (une décision par adresse). Lecture du code, à vérifier dans SEC-A3b. Proposé : un instantané autonome **non corroboré au plus par VM et par heure**, soit 24 par jour et par VM ; les suivants sont dits sur la carte |
 | **Indicateurs** | — | « part contenue seule » baisse pour les techniques lues dans `Syslog` sur un déploiement sans source, et « temps pour contenir » s'allonge pour le brute force. C'est le prix de la décision. Le contenu seul du T1548.003, que mesure BL1, attend SEC-A3e |
 
 ## 5. Le protocole de mesure au banc (gestes de Jonathan)
@@ -350,7 +431,7 @@ noms sont à remplacer, `<…>` ; rien de réel dans ce dépôt.
 | **CR1** | Un utilisateur sans privilège écrit une ligne `auth` étiquetée `sshd` (et `authpriv`/`sudo`, `local6`/`audisp-syslog`) qui arrive dans `Syslog` indistincte d'une vraie (`Facility`, `ProcessName`, `ProcessID` à son choix) | étape 3, requête M2 | le constat V-01 est mesuré | une colonne distingue l'émetteur : la noter, elle change le §2.3 |
 | **CR2** | `_ResourceId` d'une ligne `Syslog` est posé par l'agent, jamais par la ligne. Un écrivain local n'atteint l'agent que par `/dev/log` ou par ses propres sockets | `ss -xlp`, `ss -tlnp` (les sockets de l'agent et leurs droits) ; une ligne au nom d'un autre hôte écrite sur `/dev/log`, puis M2 (`Computer`, `_ResourceId`) | rien | une ligne qui nomme une autre VM : un lot de routage, avant tout le reste |
 | **CR3** | Aucun point d'entrée local de l'agent n'accepte des compteurs (`Perf`) d'un utilisateur | les mêmes `ss` | `Perf` reste dans la liste sûre | `Perf` sort de la liste sûre (Q4) |
-| **CR4** | F1–F4 de COR2 valent pour les flux entrants d'Internet vers le port 22 : `SrcIp` publique, `DestVm` = `<groupe>/<vm>`, `DestPort == 22`, `FlowStatus == "A"` | requête F de `docs/operations.md`, sur 24 h | rien | corriger le lecteur des flux |
+| **CR4** | F1–F4 de COR2 valent pour les flux entrants d'Internet vers le port 22 : `DestVm` = `<groupe>/<vm>`, `DestPort == 22`, `FlowStatus == "A"`. L'adresse d'Internet peut être dans `SrcPublicIps` (une liste, sa forme à lire) plutôt que dans `SrcIp`, que COR2 lit seul | requête F de `docs/operations.md`, sur 24 h, avec `SrcPublicIps` | rien | lire `SrcPublicIps` aussi, dans le lecteur des flux (COR2 compris) |
 | **CR5** | Toute ligne d'un vrai brute force (la règle, sur 7 jours) a au moins un flux autorisé de son adresse vers le port 22 de la VM dans sa fenêtre élargie de 120 s ; le délai entre la ligne `Syslog` et la ligne de flux reste sous `wait_s` | requête M1 : la part corroborée et la distribution du délai (p50, p95, max) | `wait_s` = p95 arrondi | une part non corroborée : en comprendre la cause (port, NAT, IPv6) avant le code |
 | **CR6** | Une VM exposée a des lignes de flux à toute heure (test de vie) | requête M4 : les heures sans aucune ligne, sur 7 jours | le test de vie à 1 h | relever la durée du test de vie, ou le faire porter sur le VNet |
 | **CR7** | `/var/log/audit/audit.log` n'est écrit que par root (0600 ou 0640, `root:root` ou `root:adm`) ; un utilisateur sans privilège ne peut pas émettre d'enregistrement `USER_*` | `stat` du fichier et du répertoire ; en utilisateur sans privilège, `auditctl -m test` doit échouer (refus de l'outil ou du noyau), et rien ne doit apparaître dans `ausearch -m USER -ts recent` | le canal A tient contre un utilisateur local | le canal A n'est pas une corroboration : revoir Q1 |
@@ -359,6 +440,7 @@ noms sont à remplacer, `<…>` ; rien de réel dans ce dépôt.
 | **CR10** | Le volume du canal A, filtré par la transformation, reste sous ~0,5 Go par mois au banc | M3 sur 24 h, puis 7 jours (`_BilledSize`) | rien | restreindre les types gardés, ou les règles d'audit |
 | **CR11** | Une ligne forgée par `logger` n'apparaît pas dans la table d'audit | étape 3 refaite après SEC-A3d, M3 | le canal A tient | revoir Q1 |
 | **CR12** | L'instant de `msg=audit(…)` d'un `sudo` et celui de sa ligne `Syslog` tombent à 2 s au plus l'un de l'autre | M3 et M2 pour un même `sudo -n true` | `SKEW_S` = 2 | relever la tolérance de l'audit seule |
+| **CR13** | `NTANetAnalytics` porte les octets et paquets de chaque sens (`BytesDestToSrc`, `PacketsDestToSrc`). Une tentative de brute force, connexion établie, porte plus d'~1 Ko de la VM vers la source (bannière, échange de clés) ; un SYN sans suite en porte moins de quelques centaines d'octets | M1 (`Established`) sur les vrais brute force ; la distribution de `BytesDestToSrc` des flux de port 22, sur 7 jours | le seuil d'~1 Ko, réglé sur la mesure | colonnes absentes ou agrégées autrement : la preuve retombe sur `USER_AUTH` (Q5), et les flux seuls ne bloquent plus |
 
 ### 5.2 Les étapes
 
@@ -371,11 +453,10 @@ noms sont à remplacer, `<…>` ; rien de réel dans ce dépôt.
    `docs/operations.md`, « Coûts réels », par le lot SEC-A3b.
 2. **Le vrai brute force, sans attaque** : M1 sur 7 jours (CR4, CR5, CR6). C'est la preuve qu'un vrai
    brute force est corroboré : chaque ligne de la règle trouve ses flux.
-3. **La ligne forgée**, depuis un compte sans privilège (le compte d'administration sans `sudo`
-   suffit : `logger` n'en demande aucun), avec une adresse de documentation (RFC 5737), par exemple
-   `logger -p auth.info -t sshd "Invalid user <compte> from <198.51.100.x> port <n> ssh2"`, écrite dix
-   fois. Puis une ligne `authpriv`/`sudo` de la forme de sudo, et une ligne `local6`/`audisp-syslog`.
-   Ensuite :
+3. **La ligne forgée** : dix lignes de la forme d'un échec de sshd, écrites sous son étiquette par un
+   compte sans privilège (le compte d'administration sans `sudo` suffit), avec une adresse de
+   documentation (RFC 5737). Puis une ligne de la forme de sudo sous l'étiquette de sudo, et une ligne
+   sous l'étiquette d'`audisp-syslog`. Les commandes sont données à Jonathan hors du dépôt. Ensuite :
    - M2 : les trois lignes sont dans `Syslog`, indistinctes (CR1) ;
    - la règle `ssh-brute-force` les voit à la passe suivante (la carte, en `human_only`) ;
    - M1 restreinte à cette adresse : **aucun flux**. La ligne n'est pas corroborée ;
@@ -396,7 +477,7 @@ noms sont à remplacer, `<…>` ; rien de réel dans ce dépôt.
 | Cas | Attendu |
 |---|---|
 | Ligne `sshd` forgée par `logger`, adresse qui ne se connecte jamais | `uncorroborated` : carte, aucun blocage, en `non_disruptive` |
-| Vrai brute force d'Internet sur la VM exposée | `corroborated` (pour ≥ 95 % des lignes de M1, tolérance à fixer avec Jonathan) ; blocage autonome dans `wait_s` |
+| Vrai brute force d'Internet sur la VM exposée | `corroborated` (pour ≥ 95 % des fenêtres de M1, avec des flux établis au sens de CR13 ; tolérance à fixer avec Jonathan) ; blocage autonome dans `wait_s` |
 | Ligne `sudo` forgée | `uncorroborated` : carte, aucune isolation |
 | Ligne `audisp-syslog` forgée | absente de la table d'audit (CR11) ; carte sans action |
 | Vrai `sudo -i` | `corroborated` par l'`execve` de `root_command` à ±2 s |
@@ -414,20 +495,28 @@ let rows = Syslog
 | where _ResourceId =~ "<id de ressource de la VM>"
 | extend SourceIP = extract(@"from (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}) port \d+( ssh2)?( \[preauth\])?\]?\s*$", 1, SyslogMessage)
 | where isnotempty(SourceIP)
-| summarize Failed = count(), First = min(TimeGenerated), Last = max(TimeGenerated) by SourceIP
-| where Failed >= 10;
+// Comme la règle : au moins 10 échecs d'une adresse dans une fenêtre de 10 minutes (des fenêtres
+// fixes ici, glissantes dans la règle : une approximation).
+| summarize Failed = count() by SourceIP, WinStart = bin(TimeGenerated, 10m)
+| where Failed >= 10
+| extend WinEnd = WinStart + 10m;
 let flows = NTANetAnalytics
 | where TimeGenerated > ago(7d)
 | where SubType == "FlowLog" and DestPort == 22 and L4Protocol == "T" and FlowStatus == "A"
 | where DestVm =~ "<groupe>/<vm>"
-| summarize Flows = count(), FlowFirst = min(FlowStartTime), FlowLast = max(FlowEndTime),
-            Ingested = min(TimeGenerated) by SrcIp;
+// L'adresse d'Internet dans SrcIp ou dans SrcPublicIps (CR4 : la forme de cette colonne est à lire).
+| extend Src = iff(isnotempty(SrcIp), SrcIp, extract(@"^(\d{1,3}(?:\.\d{1,3}){3})", 1, tostring(SrcPublicIps)))
+| project Src, FlowStartTime, FlowEndTime, Ingested = TimeGenerated, BytesDestToSrc;
 rows
-| join kind=leftouter flows on $left.SourceIP == $right.SrcIp
-// Délai approximatif : la première ligne de flux ingérée pour l'adresse, moins le premier échec.
-| extend Corroborated = isnotnull(Flows) and FlowFirst <= Last + 120s and FlowLast >= First - 120s,
-         Delay = Ingested - First
-| summarize Lines = count(), Corroborated = countif(Corroborated),
+| join kind=leftouter flows on $left.SourceIP == $right.Src
+// Un flux qui recouvre la fenêtre à ±120 s ; « établi » au sens de CR13.
+| extend Overlaps = isnotnull(FlowStartTime) and FlowStartTime <= WinEnd + 120s and FlowEndTime >= WinStart - 120s
+| summarize Corroborated = countif(Overlaps) > 0, Established = countif(Overlaps and BytesDestToSrc > 1024) > 0,
+            FirstIngested = minif(Ingested, Overlaps)
+            by SourceIP, WinStart, WinEnd
+// Le délai : de la fin de la fenêtre à l'ingestion du premier flux qui la recouvre.
+| extend Delay = FirstIngested - WinEnd
+| summarize Windows = count(), Corroborated = countif(Corroborated), Established = countif(Established),
             p50 = percentile(Delay, 50), p95 = percentile(Delay, 95), Max = max(Delay)
 ```
 
@@ -474,9 +563,11 @@ Une à la fois, l'option recommandée en premier.
    - C. Pas d'audit : seuls les flux corroborent. Le sudo, la création de compte et B3a restent des
      cartes pour toujours.
 2. **L'instantané.** Il est autonome et ne contient rien.
-   - **(recommandé) Il reste autonome sans corroboration.** Il ne change rien de joignable et garde
-     la preuve. Une détection caractérisée garde sa carte (SEC4a), et la file de décision borne le
-     nombre de décisions.
+   - **(recommandé) Il reste autonome sans corroboration, plafonné.** Il ne change rien de joignable
+     et garde la preuve. Une détection caractérisée garde sa carte (SEC4a). Sous un flot forgé, la
+     file de décision seule laisserait ~1 150 instantanés par jour et par VM, davantage par des
+     compromissions forgées (§4) : un instantané non corroboré au plus par VM et par heure, soit 24
+     par jour.
    - Lui aussi exige la corroboration, et devient une carte sans elle.
 3. **Le moment.**
    - **(recommandé) La carte d'abord, l'action quand la preuve arrive**, dans un délai borné par
@@ -485,16 +576,23 @@ Une à la fois, l'option recommandée en premier.
    - Retenir la détection jusqu'à la preuve : la carte arrive 10 à 20 minutes plus tard.
    - Ne jamais attendre : une ligne non corroborée à la passe reste une carte, et l'action ne suit pas.
 4. **Quelles lignes demandent une corroboration.**
-   - **(recommandé) Toute requête qui lit une table hors d'une liste fermée de tables sûres** (`Perf`,
-     `StorageBlobLogs`, `NTANetAnalytics`, la table d'audit) : `Syslog`, une table inconnue, une
-     règle du client ou une règle proposée. L'échec est fermé pour ce qu'on ne connaît pas.
+   - **(recommandé) Une liste blanche, par la forme de la requête** (§3.1). Une requête est exemptée
+     seulement si chaque table qu'elle lit (sa tête, ses `let`, ses `join`, `lookup` et `union`) est
+     dans une liste fermée (`Perf`, `StorageBlobLogs`, `NTANetAnalytics`, la table d'audit), et
+     qu'aucune construction inconnue n'y apparaît (`search`, `table(`, `workspace(`, `externaldata`,
+     une fonction enregistrée…). Tout le reste demande une preuve : `Syslog`, une table inconnue, une
+     règle du client ou une règle proposée. Le jugement est statique, avant toute requête.
    - Seules les règles livrées qui lisent `Syslog`. Une règle du client sur une table inconnue
      agirait alors sans preuve.
 5. **La force de la preuve d'un brute force.**
-   - **(recommandé) Un flux TCP autorisé au moins**, de l'adresse vers le port 22 de la VM, dans la
-     fenêtre. Plus, là où le canal d'audit existe, des `USER_AUTH` en échec de cette adresse, pour
-     fermer le cas de l'adresse d'un administrateur nommée dans une ligne forgée (§3.10).
-   - Les flux seuls, toujours. Plus simple, mais ce cas reste ouvert, tenu seulement par `never_block`.
+   - **(recommandé) Un flux établi au moins** : un flux TCP autorisé de l'adresse vers le port 22 de
+     la VM, dans la fenêtre, avec plus d'~1 Ko de la VM vers l'adresse (CR13). Une source usurpée
+     n'obtient pas de connexion établie. Plus, là où le canal d'audit existe, des `USER_AUTH` en échec
+     de cette adresse : ils ferment le cas de l'adresse d'un administrateur, vraiment connectée,
+     nommée dans une ligne forgée (§3.10).
+   - Un flux autorisé, quels que soient ses octets. Un SYN à source usurpée corroborerait n'importe
+     quelle adresse.
+   - Les `USER_AUTH` seuls. Ils attendent le canal d'audit : d'ici là, aucun blocage autonome.
    - Un nombre de flux cohérent avec le nombre d'échecs (au moins ⌈échecs / `MaxAuthTries`⌉). Cela
      dépend d'une colonne de comptage des flux à mesurer, et sshd peut être réglé autrement.
 6. **Le plancher B3a.**
@@ -508,10 +606,17 @@ Une à la fois, l'option recommandée en premier.
      besoin de corroboration, et la facilité `local6` sort de la DCR (moins de volume).
    - Elles gardent `Syslog` et se font corroborer par la table, enregistrement par enregistrement :
      deux collectes du même fait.
+8. **L'approbation en un clic d'une carte `uncorroborated_signal`.**
+   - **(recommandé) En un clic pour `pending` et `unknown` seulement.** La preuve n'est pas encore
+     là, ou n'a pas pu être lue : l'humain juge sur le reste. Pour `uncorroborated`, une source
+     vivante a dit non : la carte propose l'action, mais l'approuver demande le geste explicite des
+     cartes non approuvables (comme une compromission), avec la raison sous les yeux.
+   - En un clic dans tous les cas, comme `telemetry_gap`.
+   - Jamais en un clic.
 
 ## 7. La suite en lots
 
-Mutants réservés : **M4530–M4539**. L'ordre :
+Mutants réservés : **M4530–M4539 et M4579–M4585**, répartis ci-dessous. L'ordre :
 
 1. les étapes 0 à 4 du §5 ;
 2. SEC-A3a, indépendant ;
@@ -520,16 +625,18 @@ Mutants réservés : **M4530–M4539**. L'ordre :
 5. SEC-A3e ;
 6. l'étape 6.
 
-Chaque lot met à jour la ligne « S » du §4 du modèle de menace pour ce qu'il ferme. #632 se ferme
-quand V-01 y passe dans « ce qui tient ».
+Chaque lot met à jour les **deux** lignes « S » du §4 du modèle de menace pour ce qu'il ferme :
+celle de l'injection (« les règles ancrées filtrent sur l'étiquette que l'émetteur déclare ») et
+celle de la corrélation (« l'étiquette `sshd` ne prouve pas l'émetteur »), ainsi que son point
+« Ouvert ». #632 se ferme quand V-01 y passe dans « ce qui tient ».
 
 | Lot | Session | Ce qu'il fait | Fini quand | Mutants |
 |---|---|---|---|---|
 | **SEC-A3a** — les bornes de la corrélation (commentaire de SEC-D sur #632) | Glorfindel | Borne à 64 caractères le service et le compte que la raison de `SessionOrigin` recopie, comme le sont ceux de `SuccessfulLogins`. Écrit pourquoi une ligne `session opened … by` est lue sous toute étiquette : elle ne peut qu'ajouter une carte (« compte pris par … »), jamais en retirer une, donc l'échec est fermé. | Tests : un service de 10 000 caractères est borné sur la raison ; une ligne de session forgée sous une étiquette étrangère fait une carte et n'écarte jamais un shell root. `correlation.md` dit le pourquoi. La ligne « S » du modèle de menace dit les bornes tenues. | M4530 (borne retirée) |
-| **SEC-A3b** — le cœur, et les flux pour le brute force | Glorfindel | `glorfindel/corroboration.py` : la liste sûre et la lecture des tables (Q4), l'étape dans `poll_once` et sur le chemin de `respond`, le verdict d'enveloppe (§3.3), la source `flows` (VM du registre, `kql.literal`, fenêtre §3.4, test de vie, plafond). Puis `_apply_corroboration_guard` et `uncorroborated_signal`, les faits corroborés de B3a, la clé `corroboration` de `glorfindel-config.yaml` (sources déclarées, lue strictement), les compteurs, la console, `report`. | Tests sur de faux journaux, en `non_disruptive`. Une ligne `sshd` sans flux donne une carte, aucun blocage. Avec flux, `block_suspicious_ip` est autonome comme avant. `Perf` et `StorageBlobLogs` ne changent pas. Un verdict absent, une requête en échec, coupée, au plafond, ou une source muette donnent une carte. Sur `respond`, même jugement. Une colonne `corroboration` projetée par une règle est sans effet. B3a sans audit donne une carte qui propose `isolate_vm`. Docs à jour : `glorfindel.md`, `correlation.md`, `operations.md` (déclarer la source, coût des flux), modèle de menace. `changes/SEC-A3b.md`. | M4531 (garde retirée), M4532 (verdict absent lu comme corroboré), M4533 (source en échec lue comme corroborée), M4534 (VM de la ligne au lieu de celle du registre) |
-| **SEC-A3c** — attendre la preuve (si Q3 tranche ainsi) | Glorfindel | L'état `pending` borné (nombre, `wait_s` par source), la relecture au plus par minute, le second signal clé par sa preuve dans la file de décision, la carte mise à jour, l'échéance dite. L'état survit à un redémarrage de la watch. | Tests. Une preuve qui arrive dans `wait_s` donne une action autonome et une carte mise à jour. Une preuve qui arrive après donne une carte « aucune preuve avant … » et aucune action. Le second signal n'est pas dédoublonné par SEC-A2. Une file d'attente pleine est dite et donne des cartes. Après un redémarrage, rien n'est perdu ni rejoué en double. | M4535 (attente non bornée), M4536 (second signal dédoublonné) |
+| **SEC-A3b** — le cœur, et les flux pour le brute force | Glorfindel | `glorfindel/corroboration.py` : la liste blanche par la forme de la requête (§3.1, Q4), l'étape dans `poll_once` et sur le chemin de `respond`, le verdict lié à son adresse et à sa VM et rangé dans `GlorfindelState` (§3.3), la clé entrante retirée, la source `flows` (VM du registre, `SrcIp` et `SrcPublicIps`, octets de CR13, `kql.literal`, fenêtre §3.4, test de vie, plafond). Puis `_apply_corroboration_guard` et `uncorroborated_signal` (dans `_HELD_BY_TYPE`, et dans `eregion_core/action_queue.APPROVABLE_TYPES` et la liste de la console selon Q8), `Incident.corroborated`, le plancher B3a qui ne fait jamais moins (§3.8), le plafond d'instantanés (Q2), la clé `corroboration` de `glorfindel-config.yaml` (sources déclarées, lue strictement ; la même lecture des flux que `expected_sudo.origin_proof: flows` de COR2, une seule fonction), les compteurs, la console, `report`. **Le geste de déploiement sur H0** : déclarer `corroboration: {flows: …}` dans le `glorfindel-config.yaml` de H0 avant la version qui porte le lot, sinon gondolin et bree perdent tout blocage autonome ; écrit dans `docs/operations.md`. | Tests sur de faux journaux, en `non_disruptive`. **Le message utilisateur de `_build_user_message` est identique à l'octet avec et sans verdict.** Une ligne `sshd` sans flux, ou avec un flux non établi (CR13), donne une carte, aucun blocage. Avec un flux établi, `block_suspicious_ip` est autonome comme avant. Un verdict pour une autre adresse ou une autre VM que la cible est retenu. `Perf` et `StorageBlobLogs` ne changent pas ; `ransomware-disk-write` est exempté ; une requête qui joint `Syslog`, nomme une table inconnue, une fonction, `search` ou `externaldata` ne l'est pas. Un verdict absent, une requête en échec, coupée, au plafond, une source muette, une ligne de synthèse donnent une carte. Sur `respond`, même jugement. Une colonne ou une clé `corroboration` venue d'une règle ou de `runs/` est sans effet. B3a sans audit : le blocage corroboré part, la carte propose `isolate_vm`. Docs à jour : `glorfindel.md`, `correlation.md`, `operations.md` (déclarer la source, coût des flux), modèle de menace. `changes/SEC-A3b.md`. | M4531 (garde retirée), M4532 (verdict absent lu comme corroboré), M4533 (source en échec lue comme corroborée), M4534 (VM de la ligne au lieu de celle du registre), M4579 (verdict laissé dans le signal donné au modèle), M4580 (exemption par simple mention d'une table sûre), M4581 (verdict non comparé à l'adresse et à la VM visées), M4582 (clé `corroboration` entrante non retirée), M4583 (seuil d'octets de CR13 retiré) |
+| **SEC-A3c** — attendre la preuve (si Q3 tranche ainsi) | Glorfindel | L'état `pending` borné (nombre, `wait_s` par source), la relecture au plus par minute, le second signal clé par sa preuve dans la file de décision, la carte mise à jour, l'échéance dite. L'état survit à un redémarrage de la watch. | Tests. Une preuve qui arrive dans `wait_s` donne une action autonome et une carte mise à jour. Une preuve qui arrive après donne une carte « aucune preuve avant … » et aucune action. **Une carte acquittée, rejetée ou approuvée par un humain avant la preuve annule l'action en attente.** Une entrée par (VM, règle, adresse), un second signal au plus par entrée, de classe basse ; il n'est pas dédoublonné par SEC-A2. Une liste d'attente pleine chasse l'entrée la plus ancienne, et sa carte le dit. Après un redémarrage, rien n'est perdu ni rejoué en double. | M4535 (attente non bornée), M4536 (second signal dédoublonné) |
 | **SEC-A3d** — le canal d'audit au banc (si Q1 = A) | Infra | Derrière un drapeau désactivé (`audit_channel_enabled`) : la DCR d'un journal texte sur `/var/log/audit/audit.log`, la table `EregionAudit_CL` et sa transformation (les types gardés), les règles d'audit qui manquent (`identity`). Le contrat est testé sans Azure (`terraform test`, `tests/unit/test_bench_auditd.py`). Les gestes et le retour en arrière vont dans `docs/operations.md`. Un fournisseur Terraform nouveau, s'il en faut un (azapi), suit CI4 : `make providers-lock`, une PR, le plan de Jonathan. | Le plan contre un faux azurerm montre l'ajout, et rien quand le drapeau est faux. Le contrat entre le script, la DCR et le lecteur est le même dans les trois. Le chemin `audit.log` et ses droits sont écrits. Jonathan applique ; l'étape 5 du §5 est faite. | — (Terraform : le contrat de `terraform test`) |
-| **SEC-A3e** — l'audit corrobore | Glorfindel | La source `audit` : la lecture stricte des enregistrements (§3.9), le sudo (`execve` de `root_command` ou `USER_CMD`), la création de compte (`identity` ou `ADD_USER`), la connexion de B3a (`USER_LOGIN`), les `USER_AUTH` du brute force (Q5). Puis les règles d'AUD1 et de VM3 qui lisent la table (Q7). | Tests sur de faux enregistrements. Un sudo forgé donne une carte ; un vrai sudo, une isolation possible. Un fichier nommé `addr=…`, un `comm` choisi ou un argument qui imite un champ ne corroborent rien. Un compte différent ou un instant à plus de 2 s ne corroborent rien. B3a est autonome seulement avec les deux faits corroborés. Les règles d'AUD1 donnent les mêmes cartes depuis la table. Docs et modèle de menace à jour : V-01 passe dans « ce qui tient ». | M4537 (sous-chaîne au lieu du champ), M4538 (compte non comparé), M4539 (tolérance de 2 s retirée) |
+| **SEC-A3e** — l'audit corrobore | Glorfindel | La source `audit` : la lecture stricte des enregistrements (§3.9), le sudo (`execve` de `root_command` ou `USER_CMD`), la création de compte (`identity` ou `ADD_USER`), la connexion de B3a (`USER_LOGIN`), les `USER_AUTH` du brute force (Q5). Puis les règles d'AUD1 et de VM3 qui lisent la table (Q7). | Tests sur de faux enregistrements. Un sudo forgé donne une carte ; un vrai sudo (`USER_CMD`, ou `execve` à uid = euid = 0), une isolation possible. **Un setuid (`passwd`, `chsh`) lancé par un compte sans privilège ne corrobore rien.** Un fichier nommé `addr=…`, un `comm` choisi, un argument qui imite un champ, ou un champ lu seulement dans la partie enrichie (après 0x1d) ne corroborent rien. Un compte différent ou un instant à plus de 2 s ne corroborent rien. B3a est autonome seulement avec les deux faits corroborés. Les règles d'AUD1 donnent les mêmes cartes depuis la table. Docs et modèle de menace à jour (les deux lignes « S ») : V-01 passe dans « ce qui tient ». | M4537 (sous-chaîne au lieu du champ), M4538 (compte non comparé), M4539 (tolérance de 2 s retirée), M4584 (uid réel non comparé : un setuid corrobore), M4585 (champ lu dans la partie enrichie) |
 | SEC-A3f — les flux à la minute (seulement si CR5 dépasse ~20 min) | Glorfindel, Infra | Lire les blobs des VNet flow logs (une minute) dans le compte de stockage, par un adaptateur `glorfindel/providers/azure/` et un rôle de lecture sur ce seul compte. | à écrire si la mesure le demande | à réserver |
 
 ## 8. Sources
