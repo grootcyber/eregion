@@ -217,6 +217,34 @@ def test_the_night_runs_both_machines_and_keeps_their_failures():
     assert sum(bounds) < job["timeout-minutes"], (bounds, job["timeout-minutes"])
 
 
+# SEED1 (#655): the run's Hypothesis seed (tests/unit/hypothesis_seed.py).
+SEED_VAR = "EREGION_HYPOTHESIS_SEED"
+
+
+def _seeds_set(doc: dict) -> list[tuple[str, object]]:
+    """(where, value) of each EREGION_HYPOTHESIS_SEED a workflow sets: its env, a job's, a step's."""
+    found = [("workflow", (doc.get("env") or {})[SEED_VAR])] if SEED_VAR in (doc.get("env") or {}) else []
+    for name, job in (doc.get("jobs") or {}).items():
+        if SEED_VAR in (job.get("env") or {}):
+            found.append((name, job["env"][SEED_VAR]))
+        for step in job.get("steps") or []:
+            if SEED_VAR in (step.get("env") or {}):
+                found.append((f"{name}: {step.get('name') or step.get('run')}", step["env"][SEED_VAR]))
+    return found
+
+
+def test_a_pull_request_and_a_push_stay_derandomized():
+    """Jonathan, 09/11: the CI of a pull request and of a push is stable — ci.yml asks for no seed, and
+    Hypothesis's `ci` profile derandomizes it (tests/unit/test_hypothesis_seed.py measures it). The
+    night and the gate draw: a workflow that sets the variable asks for a draw, or a seed given by
+    hand to a dispatch — never a fixed seed written in it, which would replay one set every run."""
+    assert _seeds_set(_load(ROOT / ".github" / "workflows" / "ci.yml")) == []
+    for path in WORKFLOWS:
+        for where, value in _seeds_set(_load(path)):
+            assert str(value) == "draw" or re.fullmatch(r"\$\{\{\s*inputs\.seed\s*\|\|\s*'draw'\s*\}\}", str(value)), (
+                path.name, where, value)
+
+
 def test_a_push_replays_the_failures_the_night_kept_on_both_machines():
     """ci.yml's Linux job restores the database and runs every test with it — both
     machines among them, at the push budget."""
@@ -1407,14 +1435,18 @@ def _gate_pytest(name: str) -> str:
 def test_the_gate_runs_every_test_with_2000_invariant_sequences_on_linux():
     """CI10b (#581, L6): in two jobs side by side, each test in exactly one — Azure's machine alone
     (one test, the longest), every other test in four processes beside it, the AWS machine among
-    them; both at 2 000 sequences, replaying first what the night kept."""
+    them; both at 2 000 sequences, replaying first what the night kept. SEED1 (#655): a seed drawn
+    for each, when the workflow asks it (`EREGION_HYPOTHESIS_SEED: draw`, Jonathan's patch) — never a
+    seed fixed there."""
     jobs = _gate()["jobs"]
     for name in GATE_TESTS:
         job = jobs[name]
         assert job["runs-on"] == "ubuntu-latest", name
         (step,) = [s for s in job["steps"] if "pytest" in (s.get("run") or "")]
-        assert step["env"] == {"GLORFINDEL_INVARIANT_EXAMPLES": "2000",
-                               "GLORFINDEL_INVARIANT_DB": ".hypothesis-invariants"}, name
+        env = dict(step["env"])
+        assert env.pop(SEED_VAR, "draw") == "draw", name
+        assert env == {"GLORFINDEL_INVARIANT_EXAMPLES": "2000",
+                       "GLORFINDEL_INVARIANT_DB": ".hypothesis-invariants"}, name
         assert "-o faulthandler_timeout=2400" in step["run"], name
         assert any("actions/cache/restore" in (s.get("uses") or "") and s["with"]["path"] == ".hypothesis-invariants"
                    and job["steps"].index(s) < job["steps"].index(step) for s in job["steps"]), name

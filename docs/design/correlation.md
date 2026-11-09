@@ -26,6 +26,11 @@ elle tourne avant tout signal :
 
 Elle lit les lignes Syslog `auth` et `authpriv` de la VM, que celle-ci soit désignée par
 `_ResourceId` ou par `Computer`. Les valeurs sont vérifiées puis écrites en littéraux KQL (SEC4c).
+Depuis SEC-A4 (#633), une ligne n'est rattachée à sa VM que par la ressource qu'Azure écrit
+(`_ResourceId`), jamais par son `Computer`, que root sur la VM choisit : une ligne corrélée a donc
+toujours sa ressource, et le repli sur `Computer` ne sert qu'à écrire la requête d'une ligne dont la
+ressource serait illisible, jamais à choisir la VM ([glorfindel.md](../glorfindel.md), « L'attribution
+d'une ligne »).
 
 | Ligne | Ce qu'elle en tire |
 |---|---|

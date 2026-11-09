@@ -87,7 +87,10 @@ GLORFINDEL_INVARIANT_DB keeps the failing sequences in that directory and replay
 first (the nightly run fills it, every push replays it);
 GLORFINDEL_INVARIANT_STATS=1 prints what the sequences went through (run with -s);
 GLORFINDEL_INVARIANT_NO_SHRINK=1 reports a failure as found, unshrunk (the mutation
-harness, scripts/mutation_check.py, only needs to know there is one).
+harness, scripts/mutation_check.py, only needs to know there is one);
+EREGION_HYPOTHESIS_SEED=N draws the sequences of seed N, CI=true included — the night and the
+release gate draw one and say it, a pull request and a push stay derandomized (SEED1,
+tests/unit/hypothesis_seed.py).
 """
 from __future__ import annotations
 

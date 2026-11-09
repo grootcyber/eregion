@@ -314,28 +314,34 @@ def _find_rule_for_ttp(ttp: str, glorfindel_cfg=None):
     return None
 
 
-def _row_reader(resource_id: str, ip_owners=None):
+def _row_reader(resource_id: str, ip_owners=None, keys=None):
     """`row → True/False/None`: does a detection row name this VM — True, another VM —
     False, none — None. The RulePoller's reading (`detection_rules.RowAttribution`), over
-    this VM and every VM whose private IP Azure lists (`ip_owners`): the host name of two
-    of them names neither, and a call made from this VM's private IP names it (T1041)."""
-    from glorfindel.detection_rules import RowAttribution
+    this VM and every VM whose private IP Azure lists (`ip_owners`): a call made from this VM's
+    private IP names it (T1041), one from an appliance's names none (SEC-A4), a host name never
+    does (SEC-A4). `names.appliance(row)`: the appliance whose address made the call, or ''.
+    `keys`: the routing keys the polled query proves (SEC-A4, review R1) — a row read by those only."""
+    from glorfindel.detection_rules import RowAttribution, appliance_of
     try:
         owners = {ip: str(rid).lower() for ip, rid in ((ip_owners() if ip_owners else None) or {}).items()}
     except Exception as exc:            # unreadable: an address names no VM (held, never a guess)
         _console.print(f"  [yellow]IP privées des VMs illisibles ({_first_line(exc)}) — une ligne "
-                       "sans ressource ni nom d'hôte reste non attribuée[/yellow]")
+                       "sans ressource reste non attribuée[/yellow]")
         owners = {}
-    known = {rid: (rid, rid.rstrip("/").split("/")[-1]) for rid in set(owners.values())}
+    # An appliance's address names no VM (SEC-A4): its owner is no target.
+    known = {rid: (rid, rid.rstrip("/").split("/")[-1]) for rid in set(owners.values())
+             if not appliance_of(rid)}
     if resource_id:
         known[resource_id.lower()] = (resource_id, resource_id.rstrip("/").split("/")[-1])
     index = RowAttribution(list(known.values()), lambda: owners)
+    index.keys = keys
 
     def names(row) -> bool | None:
         named, target = index.attribute(row)
         if not named:
             return None
         return target is not None and bool(resource_id) and target[0].lower() == resource_id.lower()
+    names.appliance = index.appliance        # type: ignore[attr-defined]  (SEC-A4)
     return names
 
 
@@ -357,8 +363,9 @@ def resolve_attack_started(signal: dict, ip_owners=None) -> dict:
     detection the poll keeps the rows naming that VM or none (never one naming another
     VM); a row that does not name it is pinned to the VM all the same, `unattributed`: the
     attribution guard of `decide` holds the actions aimed at it. A row is read as the
-    RulePoller reads it (`detection_rules.RowAttribution`): its resource, its host name,
-    then the private IP that made the call — `ip_owners` (IP → VM id, the connector's
+    RulePoller reads it (`detection_rules.RowAttribution`): its resource, then the private IP
+    that made the call (never its host name, nor an appliance's address: SEC-A4) — `ip_owners`
+    (IP → VM id, the connector's
     `private_ip_owners`; none: an address names no VM).
     """
     from glorfindel.detectors import detector_for, is_control_plane_source, is_identity_source
@@ -423,7 +430,11 @@ def resolve_attack_started(signal: dict, ip_owners=None) -> dict:
     data_plane = not (is_control_plane_source(source) or is_identity_source(source)
                       or entra_query or activity_query)
     vm_rid = signal.get("resource_id") or ""
-    names_vm = _row_reader(vm_rid, ip_owners) if data_plane else None
+    # SEC-A4 (review R1): the row read by the keys the polled query proves. A line of runs/ never
+    # brings a query of its own (SEC3, SEC8): it is a loaded rule's, already proven at load, or the
+    # operator's (`respond` on a file of his) — proven here the same way.
+    from glorfindel.detection_rules import proven_keys
+    names_vm = _row_reader(vm_rid, ip_owners, keys=proven_keys(query)) if data_plane else None
 
     _console.print(f"[cyan]->[/cyan] Polling {source} (timeout={int(timeout_s)}s)...")
     if data_plane:
@@ -451,6 +462,11 @@ def resolve_attack_started(signal: dict, ip_owners=None) -> dict:
             # VM is a guess — the same hold as an unattributed row of the RulePoller.
             context.update(attribution="unattributed", attribution_from="attack_started",
                            candidates=[vm_rid.rstrip("/").split("/")[-1] or "?"])
+            appliance = names_vm.appliance(detected_row)
+            if appliance:
+                # SEC-A4 (V-05): the call came from behind an appliance — every action held.
+                context.update(attribution_via="appliance",
+                               appliance=appliance.rstrip("/").split("/")[-1])
         return {
             **signal,
             **({"context": context} if context != (signal.get("context") or {}) else {}),
@@ -1179,10 +1195,28 @@ def _apply_attribution_guard(d: dict, signal: dict) -> None:
 
     The RulePoller anchors an unattributed detection (no VM named, no VM's private IP
     behind the call) on one monitored VM so it has a card. Isolating that VM — or
-    blocking the IP on its NSG only — would act on a guess (third review, L11/L13)."""
+    blocking the IP on its NSG only — would act on a guess (third review, L11/L13).
+
+    A call made from an appliance's address (`attribution_via: appliance`, a VM that forwards
+    packets: SEC-A4, V-05) holds every action, whatever the model or a gate before said: the
+    card may be anchored on the appliance itself — isolating it cuts a whole hub, and the VM
+    that exfiltrates, behind it, stays untouched. The card says where to look."""
+    ctx = signal.get("context") or {}
+    if ctx.get("attribution") == "unattributed" and ctx.get("attribution_via") == "appliance":
+        before = d.get("escalation_reason") if d["escalate"] else ""
+        d["escalate"] = True
+        d["held_by"] = "attribution"
+        d["escalation_reason"] = (
+            f"L'appel vient de l'adresse de {ctx.get('appliance') or '?'}, une VM qui fait suivre "
+            "les paquets (IP forwarding : un pare-feu, l'appliance d'un hub qui fait le SNAT) — la "
+            "VM source est derrière elle, à chercher dans les journaux de l'appliance. "
+            f"'{d['action']}' retenue pour revue humaine : aucune action sur l'appliance (on "
+            "couperait le hub entier) ni sur une autre VM."
+            + (f" — {before}" if before else "")
+        )
+        return
     if d["escalate"] or d["action"] not in _VM_TARGETED_ACTIONS | {"block_suspicious_ip"}:
         return
-    ctx = signal.get("context") or {}
     if ctx.get("attribution") != "unattributed":
         return
     candidates = ", ".join(ctx.get("candidates") or []) or "?"

@@ -150,15 +150,17 @@ class FakeAzure:
         return rid
 
     def add_vm(self, rg: str, name: str, nics: list[dict], os_type="Linux") -> str:
-        """nics: [{rg, name, ips, subnet, nsg, policy, location}] — `policy`: an Azure
-        Policy refusing any NSG on this NIC other than its own `nsg`."""
+        """nics: [{rg, name, ips, subnet, nsg, policy, location, forwarding}] — `policy`: an
+        Azure Policy refusing any NSG on this NIC other than its own `nsg`; `forwarding`: IP
+        forwarding on (`enable_ip_forwarding`: an appliance, a hub's firewall — SEC-A4)."""
         ids = []
         for n in nics:
             rid = nic_id(n["rg"], n["name"])
             self.nics[key(rid)] = {"id": rid, "location": n.get("location", "westeurope"),
                                    "nsg": n.get("nsg"),
                                    "design_nsg": n.get("nsg"), "ips": list(n["ips"]),
-                                   "subnet": n["subnet"], "policy": bool(n.get("policy"))}
+                                   "subnet": n["subnet"], "policy": bool(n.get("policy")),
+                                   "forwarding": bool(n.get("forwarding"))}
             ids.append(rid)
         rid = vm_id(rg, name)
         self.vms[key(rid)] = {"id": rid, "nics": ids, "os": os_type}
@@ -246,6 +248,7 @@ class _Nics:
             vm = next((v["id"] for v in self.az.vms.values() if key(n["id"]) in {key(x) for x in v["nics"]}), None)
             return SimpleNamespace(
                 id=n["id"], location=n["location"],
+                enable_ip_forwarding=n.get("forwarding", False),
                 virtual_machine=SimpleNamespace(id=vm) if vm else None,
                 network_security_group=SimpleNamespace(id=n["nsg"]) if n["nsg"] else None,
                 ip_configurations=[SimpleNamespace(private_ip_address=ip,

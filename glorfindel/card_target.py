@@ -307,19 +307,22 @@ def names_vm(row: dict, vm_id: str) -> bool:
 
 
 def of_row(row: dict, plane: str, tgt=None, targets=(), topology=None,
-           caller_unwatched: bool = False) -> dict:
+           caller_unwatched: bool = False, caller_appliance: str = "") -> dict:
     """The card's target for a row of the control plane or of an identity: the VM the RulePoller
     routed it to (`tgt`) when the row itself names it (a role on the VM), else what the row names.
     A VM the row was routed to by the address that made the call (`CallerIpAddress`: an NSG
     written from bree) is the caller, never the target: said in `via` (review, AL1c); a call
-    from a VM the rule does not watch (`caller_unwatched`), said without its name."""
+    from a VM the rule does not watch (`caller_unwatched`), said without its name; one from an
+    appliance's address (`caller_appliance`, IP forwarding: SEC-A4), said as coming from behind it."""
     if plane == "identity":
         return identity_target(row)
     if tgt is not None and names_vm(row, tgt[0]):
         return vm_target(tgt[0], tgt[1])
     t = control_target(row, targets, topology)
     caller = (f"appel depuis {tgt[1] or _short(tgt[0])}" if tgt is not None else
-              f"appel depuis une VM {_UNWATCHED_SHORT}" if caller_unwatched else "")
+              f"appel depuis une VM {_UNWATCHED_SHORT}" if caller_unwatched else
+              f"appel depuis l'adresse de {caller_appliance}, qui fait suivre les paquets : la VM "
+              "source est derrière elle" if caller_appliance else "")
     if caller:
         t["via"] = ", ".join(filter(None, [t.get("via"), caller]))
     return t

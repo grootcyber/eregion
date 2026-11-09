@@ -163,20 +163,32 @@ class ReadersMixin:
 
         Two VNets can reuse an address (10.0.0.4 in each): an IP held by several VMs is
         left out — the row it appears on stays unattributed, never a guess. The last VM
-        listed used to win, and an exfiltration could be pinned on the wrong VM (L21)."""
+        listed used to win, and an exfiltration could be pinned on the wrong VM (L21).
+
+        A VM one of whose NICs forwards packets (`enable_ip_forwarding`: a firewall, a hub's
+        appliance that SNATs toward a private endpoint) is marked (`appliance_owner`), each of
+        its addresses: the storage service sees the appliance's address, never the VM behind
+        it — the row names no VM, every action held, the source to find in the appliance's logs
+        (SEC-A4, V-05). Its other NICs too: the SNAT goes out by any of them."""
+        from glorfindel.detection_rules import appliance_owner
         if self.dry_run:
             return {}
         self._ensure_clients()
         holders: dict[str, dict[str, str]] = {}          # ip → {lower id: id}
+        forwarders: set[str] = set()                      # lower ids of the VMs that forward
         for nic in self._network.network_interfaces.list_all():
             vm = getattr(getattr(nic, "virtual_machine", None), "id", None)
             if not vm:
                 continue
+            if getattr(nic, "enable_ip_forwarding", None) is True:
+                forwarders.add(vm.rstrip("/").lower())
             for ipc in getattr(nic, "ip_configurations", None) or []:
                 ip = getattr(ipc, "private_ip_address", None)
                 if ip:
                     holders.setdefault(ip, {})[vm.rstrip("/").lower()] = vm
-        return {ip: next(iter(vms.values())) for ip, vms in holders.items() if len(vms) == 1}
+        return {ip: appliance_owner(vm) if low in forwarders else vm
+                for ip, vms in holders.items() if len(vms) == 1
+                for low, vm in vms.items()}
 
     def vm_os(self, resource_id: str) -> str:
         """"linux" / "windows" (lowercase os type of the OS disk), "" if unknown."""
