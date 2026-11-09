@@ -213,6 +213,8 @@ La preuve, à trois endroits :
 
 **Sans cible Make pour un run seul.** Un scénario seul se lance de la VM : `make orodruin-ssh`, puis le `docker run` d'un injecteur, durci (`infra/orodruin/README.md`). La campagne déclarée, elle, passe par des cibles Make.
 
+**Le rançongiciel (T1486)**, une technique destructive, se rejoue par une demande de Dagorlad, avec son restore et sa levée : [`banc-t1486.md`](../banc-t1486.md).
+
 ## 8. Tout démonter
 
 Dans cet ordre : Orodruin lit encore l'état de H0, et les trois modules lisent `terraform.tfvars`.
