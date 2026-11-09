@@ -440,6 +440,58 @@ l'ancien oracle et l'oracle corrigé l'attrape. M4413 (une suppression refusée 
 règle) et M4414 sont attrapés par la séquence figée : la machine tire trop rarement ensemble un 403, un
 échange d'adresse entre deux cartes et une règle retournée.
 
+### Trois mutants que la machine ne voyait plus qu'au hasard (MUT4)
+
+La porte de la 0.5.8 (run 42575826306) a rendu trois mutants `FIXED-ONLY`, 0/2 chacun : M19 (un blocage
+vérifié contre les adresses relevées au moment du blocage), M31 (la priorité d'un seul refus utilisée
+dans les deux sens) et M38 (un blocage disparu derrière la quarantaine, non signalé). Les portes 0.5.5 à
+0.5.7 les attrapaient.
+
+**Rien n'avait changé dans ce qu'ils mesurent.** Depuis `v0.5.7`, ni `verify_block.py`, ni `verify.py`, ni
+le faux Azure n'ont bougé ; la machine n'a changé que par I3K, un oracle du reset qui accepte un cas de
+plus. Sur le poste (Hypothesis tiré au hasard, 500 séquences, deux tours), `main` donne M19 2/2, M31 0/2,
+M38 1/2, et l'arbre de `v0.5.7` M19 2/2, M31 1/2, M38 2/2. Les deux arbres sont dans le même bruit,
+comme les mesures plus anciennes de ce document (M19 « 3/8 puis 1/8 », M38 « figé seulement » à 60).
+Chacun de ces bugs ne se montre qu'au bout de trois ou quatre pas précis, tirés un par un : la machine
+les rencontrait dans quelques séquences sur mille.
+
+**Pourquoi trois rouges d'un coup, et deux tours sur deux.** En CI, Hypothesis charge de lui-même son
+profil `ci` (la variable `CI` posée par GitHub Actions), qui met `derandomize=True`. Les réglages de
+`test_isolation_invariants` ne le défont pas. Une machine dérandomisée tire ses séquences d'une graine
+calculée sur le source de la classe `IsolationMachine` (`function_digest`). Deux tours de la porte
+rejouent donc les mêmes 500 séquences : ce ne sont pas deux chances. Toute retouche de la classe change
+la graine et tire un autre jeu. I3K a retouché la classe (`_held_for_itself`, `_kept_said`) : la 0.5.8 a
+tiré un autre jeu, et celui-là ne contenait les séquences d'aucun des trois mutants. Sur le poste, sous
+`CI=true`, M31 est attrapé sur l'arbre de `v0.5.7` et échappe à celui de `main`, comme à la porte. M19 et
+M38, eux, y sont attrapés sur `main`. Le jeu tiré dépend aussi du lieu, et rien ici ne dit encore de quoi.
+
+**Le correctif : rendre ces états courants.** Une règle composée, `a_hold_moved_under_it`, tire l'un des
+trois sur une VM tenue, sans panne :
+
+- `address` : la VM bloquée, puis le client change une adresse d'une de ses cartes (M19) ;
+- `moved` : la VM isolée par règles, l'opérateur ayant coupé la quarantaine comme `config_changes` peut le
+  faire. Parfois l'autorisation sortante du client posée d'abord à 2000 sur le NSG d'un de nos refus
+  sortants, à la priorité de `customer_adds_rule`. Puis ce refus descendu à 4000, derrière elle (M31). Le
+  cas du blocage demande une autorisation sortante vers Internet, qu'aucun modèle de la machine ne tire :
+  sa séquence figée le tient ;
+- `gone` : la VM bloquée, puis isolée par quarantaine, l'opérateur l'ayant allumée. Un `terraform apply`
+  retire ensuite les règles du blocage du NSG de sa carte, et la réaffirmation passe (M38).
+
+Les affirmations sont vérifiées après chaque changement, les oracles de la réaffirmation après sa passe.
+Aucun oracle n'est touché, aucun n'est ajouté.
+
+**Mesures.** À 20 séquences, six tirages chacun : M19 3/6, M31 2/6, M38 3/6. Une séquence sur trente à
+cinquante attrape donc chacun, et 500 séquences le manquent avec une probabilité d'environ 10⁻⁵ au pire
+(M31). À 500, au hasard puis sous `CI=true`, les trois sont attrapés en quelques secondes. Avant, un tour
+qui les manquait courait 100 à 200 s. Le harnais, au budget de la porte : voir le lot (#647).
+
+**Ce qui reste ouvert.** La dérandomisation en CI vaut pour chaque passage de la machine : la PR (200), le
+push (500), la nuit (10 000) et la porte. Tant que la classe ne change pas, la nuit rejoue les mêmes
+séquences. Et les tours de la porte ne sont deux chances que hors CI. La docstring de
+`mutation_check.py` dit pourtant que chaque tour tire de nouvelles graines (CI10a). Ce lot ne le change
+pas : rendre les tours indépendants en CI pourrait faire basculer d'autres mutants limites vers
+`flaky`. C'est une décision de la porte.
+
 ### Chaque mutant mesuré, sans le travail en double (CI10a)
 
 Décision de Jonathan du 05/11 (« Tout le paquet », #580), sur l'étude CI9 : la porte confirmait sans

@@ -1275,6 +1275,69 @@ class IsolationMachine(RuleBasedStateMachine):
             self._release(vm, rid, None)
 
     @rule(data=st.data())
+    def a_hold_moved_under_it(self, data):
+        """A rare state made common (MUT4, #647): a VM held — blocked or isolated, unfaulted —,
+        then the world moves under the hold in one of three ways, each of which the frozen
+        sequences alone saw at the 0.5.8 release gate (500 sequences, 2 rounds: M19, M31, M38,
+        FIXED-ONLY; the machine had caught them by chance, 1 to 2 rounds in 2, since L26 and A0).
+        Drawn one by one, the steps met in a few sequences in a thousand:
+
+        - `address`: the VM blocked, then the customer changes an address of one of its NICs —
+          the block is judged against the NIC as it is now (L26, M19);
+        - `moved`: the VM isolated by rules (the operator turns the quarantine off first, as
+          config_changes may), the customer's outbound allow at 2000 on the NSG of one of our
+          outbound denies (customer_adds_rule's own priority), then someone moves that deny down
+          to 4000, behind it — each direction judged against its own deny (A0, M31). The block's
+          case needs an allow out to the Internet, which no template of the machine draws: its
+          frozen sequence holds it;
+        - `gone`: the VM blocked, then isolated by quarantine (the operator turns it on first),
+          then the block's rules taken off its NIC's own NSG by a `terraform apply` there, and the
+          reassertion — a block gone behind the quarantine is said (A0, L1, M38).
+
+        The claims are checked after each change (_claims_after_a_change), the reassertion's
+        oracles after its pass: no oracle of this rule's own."""
+        vm, rid, _ = self._draw(data)
+        how = data.draw(st.sampled_from(["address", "moved", "gone"]), label="how it moves")
+        marks = {_nic_hash(n) for n in self.fake.vms[key(vm)]["nics"]}
+
+        def ours(prefix: str, out_only: bool = False) -> list:
+            return sorted((k, n) for k, g in self.fake.nsgs.items() for n, r in g["rules"].items()
+                          if n.startswith(prefix) and r["access"].lower() == "deny"
+                          and (not out_only or n.endswith("-out"))
+                          and n.removesuffix("-out").rsplit("-", 1)[-1] in marks)
+        if how == "address":
+            self._block(vm, rid, None, data.draw(st.sampled_from([22, None]), label="threat_port"))
+            nic = data.draw(st.sampled_from(sorted(key(n) for n in self.fake.vms[key(vm)]["nics"])), label="nic")
+            _note("a hold moved: an address changed under a block")
+            self.customer_changes_ip(_Drawn(data, nic=nic))
+            return
+        if how == "moved":
+            if self.config["quarantine"] or not self.config["readable"]:
+                self.config = {**self.config, "quarantine": False, "readable": True}
+                self._write_config()
+            self._isolate(vm, rid, None)
+            mine = [r for r in ours("glorfindel-iso-", out_only=True) if r[0] in self._customer_nsgs()]
+            if not mine:
+                return
+            nsg, name = data.draw(st.sampled_from(mine), label="our outbound deny")
+            if data.draw(st.booleans(), label="the customer's allow out first"):
+                self._customer_adds_rule(_Drawn(data, nsg=nsg, template="allow-lateral-out", priority=2000))
+            _note("a hold moved: our outbound deny moved down")
+            self.tamper_with_our_rule(_Drawn(data, how="priority", rule=(nsg, name)))
+            return
+        if not (self.config["quarantine"] and self.config["readable"]):
+            self.config = {**self.config, "quarantine": True, "readable": True}
+            self._write_config()
+        self._block(vm, rid, None, data.draw(st.sampled_from([22, None]), label="threat_port"))
+        self._isolate(vm, rid, None)
+        held = sorted({k for k, _ in ours("glorfindel-block-") if k in self._customer_nsgs()})
+        if not held or not self._in_quarantine(vm):
+            return
+        _note("a hold moved: a block's rules taken off behind the quarantine")
+        self.terraform_apply(_Drawn(data, nsg=st.sampled_from(held)))
+        self.reassert(_Drawn(data, fault=None))
+
+    @rule(data=st.data())
     def isolate_two(self, data):
         """Neighbours isolated one after the other (a tier NSG, a subnet): what one
         isolation leaves must not reach the other, now or when it comes back."""
