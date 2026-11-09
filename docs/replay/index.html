@@ -7,7 +7,7 @@
 <title>Eregion Ransomware Replay</title>
 <meta name="description" content="An interactive replay of Eregion's loop: a ransomware simulation on a bench VM, detected, isolated, verified and restored, in human_only, non_disruptive or the planned full_auto.">
 <meta property="og:title" content="Eregion Ransomware Replay">
-<meta property="og:description" content="Watch Eregion contain a ransomware simulation on a bench VM: detect, investigate, guard, isolate, verify, restore, remember.">
+<meta property="og:description" content="Watch Eregion contain a ransomware simulation on a bench VM: detect, investigate, guard, isolate, verify, restore, record.">
 <meta property="og:image" content="https://grootcyber.github.io/eregion/replay/preview.png">
 <meta property="og:type" content="website">
 <!-- Fonts are served from this folder (SIL Open Font License, fonts/OFL-*.txt): the page loads nothing from elsewhere. -->
@@ -329,7 +329,7 @@ code{font:500 11.5px var(--mono);color:var(--mithril)}
                 <li>The subscription guard measured on a second real subscription</li>
                 <li>Four weeks in human_only on a real fleet, wrong disruptive recommendations measured and judged acceptable</li>
               </ul>
-              <p class="fnote">Then activation VM by VM, starting with non-critical ones. Delete and wipe never act alone; a restore without a human is not decided (a separate setting, empty by default); no fault or destructive test ever runs on a real workload.</p>
+              <p class="fnote">Then activation VM by VM, starting with non-critical ones. Delete and wipe never act alone; a restore without a human is not decided: it would be a separate setting, empty by default and not read by the decision today; no fault or destructive test ever runs on a real workload.</p>
             </section>
             <section>
               <h3>On the road</h3>
@@ -465,7 +465,7 @@ function caption(){
  if(t<31)return h?(wa()?'Nothing changes on Azure until you approve. Glorfindel has said what it would do, and why.':'Approved. Glorfindel applies isolate_vm through the Azure API.'):'Every guard passed. Glorfindel applies isolate_vm through the Azure API, alone.';
  if(t<38)return 'Each network card swaps to Glorfindel’s quarantine NSG. Internet, VNet, Azure DNS and IMDS are denied. The VM keeps running, and your own NSG stays intact.';
  if(t<43)return 'Glorfindel reads Azure back: the quarantine NSG on every NIC, no allow rule ahead of the deny, open sessions cut.';
- if(t<47)return wa()?'Nothing is restored until you approve. The restore point is pre-filled: before the attack started.':FA()?'Shown here alone, but not decided: today a restore asks a human in every mode. Letting it run alone is a separate setting, allow_destructive, empty by default.':'Restoring from backup is destructive. Today a human decides, in every mode available.';
+ if(t<47)return wa()?'Nothing is restored until you approve. The restore point is pre-filled: before the attack started.':FA()?'Shown here alone, but not decided: today a restore asks a human in every mode. Letting it run alone would be a separate setting, allow_destructive, empty by default and not read by the decision today.':'Restoring from backup is destructive. Today a human decides, in every mode available.';
  if(t<55)return 'Azure Backup restores the disks from before the attack.';
  if(t<62){if(h)return t<57.02?'The restore is done. Glorfindel recommends lifting the quarantine, and waits for you.':'Approved. Your own NSG comes back on every NIC, and the network reconnects.';return 'The restore is done. Glorfindel lifts the quarantine alone, and only on its own recovery signal. Your NSG comes back on every NIC.'}
  const mem='The cycle is stored, marked as an exercise: only real incidents are recalled as precedents. ';
