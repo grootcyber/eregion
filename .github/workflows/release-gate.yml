@@ -37,6 +37,10 @@ jobs:
   # 2 000), every other test beside it in four processes (the AWS machine among them): one job of
   # 23 to 36 min held the gate once its shards were shorter. Each test runs in exactly one of them
   # (tests/unit/test_workflows.py).
+  # SEED1 (#655): EREGION_HYPOTHESIS_SEED=draw — a seed drawn for each run of the tests, said at its
+  # end and in the job's summary (tests/unit/hypothesis_seed.py). On the version's pull request
+  # (a pull_request event), Hypothesis's `ci` profile would replay the same sequences gate after gate;
+  # the mutation shards draw theirs through scripts/mutation_check.py, round by round.
   invariants-azure:
     name: tests, 2 000 invariant sequences — Azure's machine (Linux)
     if: ${{ github.event_name == 'workflow_dispatch' || (startsWith(github.head_ref, 'chore/release-') && github.event.pull_request.head.repo.full_name == github.repository) }}
@@ -78,6 +82,7 @@ jobs:
         env:
           GLORFINDEL_INVARIANT_EXAMPLES: "2000"
           GLORFINDEL_INVARIANT_DB: .hypothesis-invariants
+          EREGION_HYPOTHESIS_SEED: draw
         run: python -m pytest tests/unit/test_invariants.py -q -o faulthandler_timeout=2400
 
   invariants-rest:
@@ -126,6 +131,7 @@ jobs:
         env:
           GLORFINDEL_INVARIANT_EXAMPLES: "2000"
           GLORFINDEL_INVARIANT_DB: .hypothesis-invariants
+          EREGION_HYPOTHESIS_SEED: draw
         run: python -m pytest tests/ -q -n 4 --dist load --ignore=tests/unit/test_invariants.py -o faulthandler_timeout=2400
 
   # The mutants, in ten shards, each its whole targets (scripts/mutation_check.py, shard_of).
