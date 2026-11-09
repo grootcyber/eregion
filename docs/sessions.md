@@ -220,8 +220,8 @@ Décision de Jonathan du 06/11 : son manuel de pilotage reste à jour sans dépe
 session. C'est une page privée, avec sa base : chaque module y est une brique, avec son état (prévue, en
 développement, en relecture, au banc, sur main, livrée), sa release, son lot, sa PR et ce qu'elle
 attend, et un fil des événements.
-- **L'Orchestre seul l'écrit**, par l'outil `ArtifactData`, comme il est seul à écrire dans `collab/`.
-  Une session de rôle qui lance, rend ou fait fusionner un lot le lui dit ; un sous-agent n'y touche pas.
+- **L'Orchestre seul l'écrit**, par l'outil `ArtifactData` ; les sessions de rôle et les sous-agents n'y
+  écrivent pas. Une session de rôle qui lance, rend ou fait fusionner un lot le dit à l'Orchestre.
 - **À chaque étape d'un lot** (lancement, rendu, relecture, fusion) et d'une release (préparation,
   publication), il met à jour la brique et ajoute une ligne au fil. Après une publication, les briques
   sur main passent livrées avec leur version, et la release suivante passe en montage.
