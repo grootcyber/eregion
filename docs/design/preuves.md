@@ -483,7 +483,16 @@ Aucun oracle n'est touché, aucun n'est ajouté.
 **Mesures.** À 20 séquences, six tirages chacun : M19 3/6, M31 2/6, M38 3/6. Une séquence sur trente à
 cinquante attrape donc chacun, et 500 séquences le manquent avec une probabilité d'environ 10⁻⁵ au pire
 (M31). À 500, au hasard puis sous `CI=true`, les trois sont attrapés en quelques secondes. Avant, un tour
-qui les manquait courait 100 à 200 s. Le harnais, au budget de la porte : voir le lot (#647).
+qui les manquait courait 100 à 200 s. Le harnais, au budget de la porte (500 séquences, deux tours,
+`--jobs 2`) : 3/3 attrapés à chaque tour, au hasard puis sous `CI=true`.
+
+La machine non mutée : verte à 2 000 séquences sous `CI=true`, et dans six tirages au hasard à 2 000
+sur sept, plus deux à 1 500 où la règle pèse sept fois plus. Le septième a échoué une fois, sans
+réduction ni base : « L1: the block on …/rg-app1/…/web vanished from Azure; the reassertion neither put
+it back nor said so ». Aucun tirage ne l'a retrouvé, ni sur `main` sans la règle (un à 2 000).
+Énumérées une à une, les branches `gone` (quarantaine dans le groupe de la VM ou dans `rg-sec`, quatre
+accès d'investigation, trois NSG de carte, avec ou sans NSG de sous-réseau, deux ports, deux modes) sont
+vertes. Le cas reste ouvert : rien ne dit encore si la règle y prend part.
 
 **Ce qui reste ouvert.** La dérandomisation en CI vaut pour chaque passage de la machine : la PR (200), le
 push (500), la nuit (10 000) et la porte. Tant que la classe ne change pas, la nuit rejoue les mêmes
