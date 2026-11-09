@@ -2309,7 +2309,7 @@ def test_the_commands_json_is_what_the_cd_reads(agent, monkeypatch, tmp_path):
         return agent.read_rules_check(res.exit_code, res.stdout, res.stderr)
 
     before = check(("good", "Syslog | take 1"), ("bad", "Syslog | take 1"))
-    after = check(("good", "Syslog | take 1"), ("bad", "BROKEN("), ("slow", "Syslog // SLOW"))
+    after = check(("good", "Syslog | take 1"), ("bad", "Syslog | where BROKEN("), ("slow", "Syslog // SLOW"))
     proof = agent.verdict(after, before)
     assert "« bad »" in proof["why"] and "SYN0002" in proof["why"] and WS not in json.dumps(proof)
     assert "« slow »" in proof["orange"] and "limité (429)" in proof["orange"]
