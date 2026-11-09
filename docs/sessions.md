@@ -73,6 +73,11 @@ La réponse arrive par `SendMessage`, plus tard. N'attends pas sans rien faire :
      - une dépendance ajoutée à `pyproject.toml` demande `make lock` dans la même PR.
    - Un fichier neuf (code ou test) visé ou lu par un mutant : `git add -N` avant de mesurer, car le
      harnais ne copie que les fichiers suivis.
+   - **La brique du lot dans le manuel public** (MAN1, #664 ; plus bas, « Le manuel public ») : la PR
+     d'un lot met sa brique à jour dans `docs/manuel/modules.yaml`, la crée au besoin, puis `make manuel`.
+     Elle passe `main` (ce qu'elle sera une fois fusionnée), avec ses lots, son issue et sa PR.
+     `tests/unit/test_manuel.py` échoue sur un fragment `changes/<LOT>.md` qu'aucune brique `main` ne
+     nomme, et sur un `modules.json` qui n'est pas celui du YAML.
 4. **Avant de pousser.**
    - `git fetch origin`, puis fusionne `origin/main` en dernier, par un merge, jamais un rebase : réécrire
      une branche poussée demande un force-push.
@@ -197,7 +202,8 @@ release ») en est la preuve, et `make release-draft` la redemande.
    et macOS qui informe sans bloquer), 30 à 60 minutes. Pour une version mineure (`X.Y.0`),
    `make release` réécrit aussi, dans cette même PR, la ligne suivie de `SECURITY.md` (« Supported
    versions » : `X.Y.x` seule corrigée, la ligne « older » suit) ; un correctif n'y touche pas (SEC-D,
-   P-03). `tests/unit/test_readme.py` la compare à la version de `pyproject.toml`.
+   P-03). `tests/unit/test_readme.py` la compare à la version de `pyproject.toml`. Dans le même commit,
+   les briques `main` du manuel public passent `livree`, avec la version (MAN1, plus bas).
 2. **Elle attend la porte avant de fusionner.** La PR de version fusionne quand la CI est verte, que la
    relecture a rendu « ok » et que le check « release gate » est vert sur sa tête. Rouge, la release
    attend : on lit le run, on corrige par un lot, et la PR de version se refait sur le `main` corrigé.
@@ -238,6 +244,39 @@ attend, et un fil des événements.
 
 Le détail, étape par étape : `.claude/skills/elrond/SKILL.md` (« Le manuel », `run`, `status`, « Une
 release »).
+
+## Le manuel public (MAN1, #664)
+
+Le pendant public du manuel de pilotage, sur le site du projet : `docs/manuel/index.html`, servi par
+Pages (`https://grootcyber.github.io/eregion/manuel/`), lié depuis le README et `docs/index.html`.
+Jonathan en a validé l'aperçu le 06/11. Il ne lit rien du manuel privé : sa source est un fichier du
+dépôt, `docs/manuel/modules.yaml`.
+- **Ce qu'il tient** : les composants, les postes de leur chaîne, les étapes de release (0.2 … 1.0,
+  1.x) et les briques. Chaque brique a un état (`prevue`, `dev`, `relecture`, `main`, `livree`), une
+  release, ses lots, son issue, sa PR, sa doc ; sa version quand elle est livrée.
+- **Qui l'écrit** : la PR de chaque lot, pour sa brique (plus haut, « Le travail »). Une PR de
+  planification peut ajouter des briques `prevue`. `make release` passe chaque brique `main` en
+  `livree`, avec la version et sa release X.Y (si le manuel a cette étape). L'étape X.Y passe alors
+  `publiee`, avec sa dernière version et sa date, et si elle était en montage, l'étape suivante la
+  remplace (`scripts/release.py`, `scripts/manuel.py deliver`). Rien n'écrit le manuel public en dehors
+  d'une PR.
+- **Au chargement**, la page relit l'API publique de GitHub, sans jeton : les PR ouvertes, les issues
+  ouvertes et la dernière release, trois requêtes gardées dix minutes dans la session du navigateur
+  (la limite est de 60 par heure). Une PR ouverte sur une brique `prevue` ou `dev`, par son numéro ou
+  par sa branche `lot/<lot>-…`, la montre en relecture. Sans l'API (hors ligne, limite atteinte), la
+  page montre ce que dit le dépôt, et le dit.
+- **La règle publique**, tenue dans le YAML même par `scripts/manuel.py` et
+  `tests/unit/test_manuel.py` : le YAML public ne contient jamais un constat.
+  - Un lot de sécurité (`SEC-…`, `V-<n>`, `P-0…` dans ses lots) n'est qu'une brique au nom neutre,
+    « Durcissement de sécurité (#<issue>) », sans note ni autre document que `SECURITY.md`.
+  - Aucun geste de l'opérateur, aucune relecture : ces champs n'existent pas, et un champ hors du schéma
+    est refusé.
+  - Une note seulement sur une brique livrée.
+- **Le format** : un sous-ensemble strict de YAML, lu sans bibliothèque (`make release` tourne sur
+  `python3` seul), et un `modules.json` écrit par `make manuel`, que la page lit. Un YAML se lit mal sans
+  bibliothèque dans un navigateur, et la page n'en charge aucune. La page n'exécute que `manuel.js`, sous
+  une politique de contenu qui ne permet que `api.github.com` en plus d'elle-même. Elle n'écrit aucune
+  donnée lue comme du HTML.
 
 ## Ce qui reste à Jonathan
 
