@@ -142,8 +142,8 @@ def test_the_bench_infrastructure_code_collects_the_catalog_sources():
 def test_rules_read_the_client_layer_over_the_base(tmp_path):
     base, client = tmp_path / "base.yaml", tmp_path / "client.yaml"
     base.write_text(json.dumps({"rules": [
-        {"name": "a", "ttp": "T1"}, {"name": "b", "ttp": "T2"}, {"name": "c", "ttp": "T3"},
-        {"name": "d", "ttp": "T4", "enabled": False}]}))
+        {"name": "a", "ttp": "T1", "query": "Syslog"}, {"name": "b", "ttp": "T2", "query": "Syslog"},
+        {"name": "c", "ttp": "T3", "query": "Syslog"}, {"name": "d", "ttp": "T4", "enabled": False}]}))
     client.write_text(json.dumps({"disable": ["a"], "rules": [
         {"name": "b", "ttp": "T2", "enabled": False}, {"name": "c", "ttp": "T5", "query": "Syslog"}, {"name": "e", "ttp": "T6", "query": "Perf"}]}))
     enabled, _ = tg.rules(base, client)

@@ -82,7 +82,7 @@ COMPONENTS: dict[str, Component] = {
             "test_invariant_regressions.py", "test_invariant_regressions_aws.py", "test_invariants.py",
             "test_invariants_aws.py",
             "test_jobs.py", "test_llm_smoke.py", "test_locks.py", "test_memory_age.py", "test_orphan_sweep.py", "test_posture.py", "test_proposed_rules.py", "test_readiness.py",
-            "test_promotion_guard.py", "test_reassert.py", "test_reassert_reread.py", "test_reassert_status.py", "test_reassert_verified.py", "test_release_away.py", "test_restore_points.py", "test_root_floor.py", "test_rule_layers.py", "test_rules_check.py", "test_runs_channel.py", "test_tui_actions.py", "test_turned_names.py", "test_unexpected_decision.py", "test_unreadable_state.py",
+            "test_promotion_guard.py", "test_reassert.py", "test_reassert_reread.py", "test_reassert_status.py", "test_reassert_verified.py", "test_release_away.py", "test_restore_points.py", "test_root_floor.py", "test_rule_layers.py", "test_rule_routing.py", "test_rules_check.py", "test_runs_channel.py", "test_tui_actions.py", "test_turned_names.py", "test_unexpected_decision.py", "test_unreadable_state.py",
         ),
     ),
     # Annatar — its executors, engines (Atomic Red Team), campaigns, signals.
@@ -130,7 +130,7 @@ TOGETHER = (
     "test_run_channel.py", "test_runs_mounts.py", "test_red_mounts.py", "test_local_verdicts.py", "test_state_writes.py", "test_watch_channel.py", "test_watch_gate.py", "test_watch_key.py", "test_signed_detections.py", "test_beat_covers.py",
     "test_workflows.py", "test_readme.py", "test_image_check.py", "test_release.py", "test_published_image.py",
     "test_host_ssh.py", "test_host_client_rules.py", "test_azure_roles.py", "test_agent_token.py", "test_review_verdict.py",
-    "test_mutant_anchors.py", "test_mutation_shards.py", "test_doctor.py", "test_doc_anchors.py",
+    "test_mutant_anchors.py", "test_mutation_shards.py", "test_hypothesis_seed.py", "test_doctor.py", "test_doc_anchors.py",
 )
 
 # Modules of a component that exist to meet another one: each is imported only by a command

@@ -529,7 +529,7 @@ def _vm(name):
 
 def _auto_rule(**kw):
     base = dict(name="ransomware-disk-write", auto_apply=True, resource_id="",
-                query="Perf | where TimeGenerated > ago(10m) | summarize MaxWrite=max(CounterValue) by Computer")
+                query="Perf | where TimeGenerated > ago(10m) | summarize MaxWrite=max(CounterValue) by Computer, _ResourceId")
     base.update(kw)
     return _make_rule(**base)
 
@@ -626,15 +626,6 @@ def test_poller_window_covers_late_ingestion():
     assert det.calls[0][0].timestamp() <= before - 600
 
 
-def test_row_attribution():
-    from glorfindel.detection_rules import _row_attribution
-    rid = _vm("vm1")
-    assert _row_attribution({"Computer": "vm1"}, rid, "vm1") is True
-    assert _row_attribution({"Computer": "vm2.internal"}, rid, "vm1") is False
-    assert _row_attribution({"_ResourceId": rid.upper()}, rid, "vm1") is True
-    assert _row_attribution({"CallerIpAddress": "10.0.0.4"}, rid, "vm1") is None
-
-
 def test_one_query_per_rule_whatever_the_number_of_vms():
     """It was one unfiltered query per (rule, VM), ~3 per cycle each: the volume grew
     with the VMs and hit Log Analytics limits around 20–25 VMs (third review, T10)."""
@@ -647,9 +638,10 @@ def test_one_query_per_rule_whatever_the_number_of_vms():
 
 def test_rows_are_routed_to_the_vm_they_name():
     rule = _auto_rule()
-    p, sent = _poller(_Det([{"Computer": "vm1", "MaxWrite": 9e7},
-                            {"Computer": "vm2.contoso.internal", "MaxWrite": 8e7},
-                            {"Computer": "vm9", "MaxWrite": 9e7}]),      # not monitored
+    p, sent = _poller(_Det([{"Computer": "vm1", "_ResourceId": _vm("vm1"), "MaxWrite": 9e7},
+                            {"Computer": "vm2.contoso.internal", "_ResourceId": _vm("vm2").upper(),
+                             "MaxWrite": 8e7},
+                            {"Computer": "vm9", "_ResourceId": _vm("vm9"), "MaxWrite": 9e7}]),  # not monitored
                       [rule], registry=_Registry("vm1", "vm2"))
     p.poll_once(rule)
     assert sorted(s["resource_id"] for s in sent) == [_vm("vm1"), _vm("vm2")]
@@ -661,7 +653,7 @@ def test_an_excluded_vm_gets_nothing():
         def is_excluded(self, asset, rule):
             return asset == "vm2"
     rule = _auto_rule()
-    p, sent = _poller(_Det([{"Computer": "vm2", "MaxWrite": 9e7}]), [rule],
+    p, sent = _poller(_Det([{"Computer": "vm2", "_ResourceId": _vm("vm2"), "MaxWrite": 9e7}]), [rule],
                       registry=_Registry("vm1", "vm2"), cfg=Cfg())
     p.poll_once(rule)
     assert sent == []
@@ -786,7 +778,7 @@ def test_dedup_survives_a_restart():
 def test_dedup_reads_the_previous_state_shape():
     import glorfindel.detection_rules as dr
     rule = _auto_rule()
-    row = {"Computer": "vm1", "TimeGenerated": "2026-10-07T10:00:00Z"}
+    row = {"Computer": "vm1", "_ResourceId": _vm("vm1"), "TimeGenerated": "2026-10-07T10:00:00Z"}
     dr._save_status({rule.name: {"dispatched": {_vm("vm1").lower(): {"id": dr._row_identity(row), "at": time.time()}}}})
     p, sent = _poller(_Det([row]), [rule], registry=_Registry("vm1"))
     p.poll_once(rule)
@@ -798,7 +790,7 @@ def test_a_vm_discovered_later_is_covered_without_a_new_thread():
     on after the watch started used to have no poller for the life of the watch)."""
     rule = _auto_rule(interval_s=60)
     reg = _Registry("vm1")
-    det = _Det([{"Computer": "vm2", "MaxWrite": 9e7}])
+    det = _Det([{"Computer": "vm2", "_ResourceId": _vm("vm2"), "MaxWrite": 9e7}])
     p, sent = _poller(det, [rule], registry=reg)
     p.poll_once(rule)
     assert sent == []

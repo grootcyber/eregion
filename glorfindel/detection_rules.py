@@ -28,6 +28,7 @@ from glorfindel.detectors import (  # noqa: E402  (after optional deps)
     plane_of,
 )
 from glorfindel import auditd, card_target, correlation, expected_sudo  # noqa: E402
+from eregion_core import rule_routing  # noqa: E402
 
 logger = logging.getLogger("glorfindel.detection_rules")
 
@@ -467,7 +468,25 @@ def _invalid_client_entry(key: str, entry) -> str | None:
                 return f"`interval_s` doit être un nombre de secondes positif ({value!r})"
     if entry.get("enabled", True) and not entry.get("query"):
         return "n'a pas de requête"
+    if entry.get("enabled", True):
+        # SEC-A4 (V-04): its rows must say which VM they are about — never its host name. Skipped
+        # here, the base rule of its name loads instead, as for any invalid entry of the layer.
+        why = routing_refusal(entry.get("source") or "azure_monitor", entry["query"])
+        if why:
+            return why
     return None
+
+
+def routing_refusal(source: str, query: str) -> str:
+    """Why a rule cannot load for its routing (SEC-A4, V-04), '' when it can. A rule of the data
+    plane routes its rows by the resource they name (`_ResourceId`) or the address that made a
+    call (`CallerIpAddress`): one whose query keeps neither (`eregion_core/rule_routing.py`) fell
+    back on `Computer`, which root on a VM chooses — it is refused, approval included. The control
+    plane and identities are filed on what their rows name (AL1c): not concerned."""
+    from types import SimpleNamespace
+    if RulePoller._plane(SimpleNamespace(source=source or "azure_monitor", query=query or "")) != "data":
+        return ""
+    return rule_routing.refusal(query or "")
 
 
 _SHA256 = re.compile(r"[0-9a-f]{64}")
@@ -820,6 +839,11 @@ def load_config(path: str | Path, glorfindel_cfg=None, client_layer: str | Path 
     overrides: list[str] = []
     for item in data.get("rules", []):
         if not item.get("enabled", True):
+            continue
+        # SEC-A4 (V-04): a rule whose rows name no VM but by their host name — any layer.
+        refused = routing_refusal(item.get("source", "azure_monitor"), item.get("query") or "")
+        if refused:
+            notes.append(f"règle « {item['name']} » refusée : {refused}")
             continue
         replaces_base = layer_of.get(item["name"]) == "client" and item["name"] in base_names
         if replaces_base:
@@ -1213,21 +1237,6 @@ def _data_summary(rest: list[dict]) -> dict:
         for r in rest[:_SUMMARY_ROWS_MAX]]}
 
 
-def _row_attribution(row: dict, resource_id: str, asset_name: str) -> bool | None:
-    """Does this row concern this asset? True/False when the row names a resource
-    (`_ResourceId` / `ResourceId` / `Computer`), None when it can't tell (a query
-    aggregated by attacker IP or storage account)."""
-    rid = row.get("_ResourceId") or row.get("ResourceId")
-    if isinstance(rid, str) and rid:
-        return rid.lower() == (resource_id or "").lower()
-    computer = row.get("Computer")
-    if isinstance(computer, str) and computer:
-        host = computer.split(".")[0].lower()
-        names = {(asset_name or "").lower(), (resource_id or "").rstrip("/").split("/")[-1].lower()}
-        return host in names or computer.lower() in names
-    return None
-
-
 def rulepoller_recently_matched(ttp: str, within_s: float) -> bool:
     """Return True if a RulePoller rule for this TTP had a match within `within_s` seconds.
 
@@ -1295,6 +1304,53 @@ def shared_ip_owners(source: Callable[[], dict] | None) -> IpOwners | None:
 # caller is the VM itself (T1041 exfiltration via its managed identity).
 _VM_IP_COLUMNS = ("CallerIpAddress",)
 
+# SEC-A4 (V-05): in the private IP map, the owner of an address held by a VM that forwards
+# packets (a NIC with IP forwarding: a firewall, a hub's appliance that SNATs toward a private
+# endpoint). The storage service sees the appliance's address, never the VM behind it: such an
+# address names no VM — the call came from behind it, the source is in the appliance's logs.
+APPLIANCE_PREFIX = "appliance:"
+
+
+def appliance_owner(vm_id: str) -> str:
+    """The map's value for an address of the VM `vm_id` when it forwards packets."""
+    return APPLIANCE_PREFIX + str(vm_id)
+
+
+def appliance_of(owner) -> str:
+    """The appliance's VM id when `owner` (a value of the private IP map) marks one, else ''."""
+    text = str(owner or "")
+    return text[len(APPLIANCE_PREFIX):] if text.lower().startswith(APPLIANCE_PREFIX) else ""
+
+
+def proven_keys(query: str) -> frozenset:
+    """The routing keys a data-plane query's rows carry as Azure wrote them (SEC-A4, review R1):
+    what the load proved (`rule_routing.routing_columns`) — the only keys a row of it is read by.
+    A query that cannot be read proves none."""
+    try:
+        return rule_routing.routing_columns(query or "")
+    except rule_routing.Unreadable:
+        return frozenset()
+
+
+def _proven_row(row: dict, keys: frozenset | None) -> dict:
+    """The row without the routing columns its query does not prove (`keys`; None: the control
+    plane, read as it is). `ResourceId` is never proven: on the data plane it is never read — a
+    custom table fed from a VM (`_ResourceId` empty) would route by a value root writes."""
+    if keys is None or not isinstance(row, dict):
+        return row
+    return {k: v for k, v in row.items() if k not in rule_routing.ROUTING_COLUMNS or k in keys}
+
+
+def appliance_behind(row: dict, owners: Callable[[], dict] | None, keys: frozenset | None = None) -> str:
+    """The appliance whose address made this row's call (SEC-A4, V-05): its VM id, '' when the
+    row names its own VM (`_ResourceId`) or its caller is no appliance — read by the keys its
+    query proves (`keys`, the data plane)."""
+    row = _proven_row(row, keys)
+    if not isinstance(row, dict) or _names_vm_resource(row):
+        return ""
+    ip = _caller_ip(row)
+    return appliance_of(((owners() if owners else None) or {}).get(ip)) if ip else ""
+
 
 # A VM's own id in a longer one: an extension, a Run Command, a role assignment scoped on
 # the VM (AzureActivity, AL1) names the VM it concerns.
@@ -1314,6 +1370,11 @@ def _names_vm_resource(row: dict) -> bool:
     return isinstance(rid, str) and "/microsoft.compute/virtualmachines/" in rid.lower()
 
 
+def _short_id(resource_id: str) -> str:
+    """A resource id's last segment (a VM's name), '' for none."""
+    return str(resource_id or "").rstrip("/").split("/")[-1]
+
+
 def _caller_ip(row: dict) -> str:
     for col in _VM_IP_COLUMNS:
         v = row.get(col)
@@ -1329,41 +1390,43 @@ class RowAttribution:
 
       1. the resource it names, `_ResourceId` (or `ResourceId`) of a VM — a sub-resource
          (an extension, a Run Command, a role on the VM) brought back to its VM;
-      2. else its `Computer`, cut at the first dot — unless two targets carry that host
-         name (clones in two resource groups): the name can't tell which, never a guess;
-      3. else the address that made the call (`CallerIpAddress`, a storage call made FROM
-         a VM — T1041), when it is a private IP of exactly one VM (`owners()`: IP → id).
+      2. else the address that made the call (`CallerIpAddress`, a storage call made FROM
+         a VM — T1041), when it is a private IP of exactly one VM (`owners()`: IP → id) — and
+         that VM forwards no packets: an appliance's address names no VM (SEC-A4, V-05).
+
+    Never its `Computer` (SEC-A4, V-04): root on the VM chooses its host name, and a row
+    routed by it made Glorfindel isolate or block in another VM's name. A rule whose rows carry
+    neither key is refused at load (`routing_refusal`).
+
+    `keys` (SEC-A4, review R1): the routing keys the rule's query proves (`proven_keys`) — a row
+    of the data plane is read by those only: `_ResourceId` if proven, `CallerIpAddress` if proven,
+    `ResourceId` never. None: the control plane and identities, read as they are (AL1c).
 
     `attribute(row)` → (named, target): named False when the row names no VM; target None
     when the VM it names is not among the targets."""
 
-    def __init__(self, targets: list[tuple[str, str]], owners: Callable[[], dict] | None = None):
+    def __init__(self, targets: list[tuple[str, str]], owners: Callable[[], dict] | None = None,
+                 keys: frozenset | None = None):
         self._owners = owners or (lambda: {})
         self.by_rid = {rid.lower(): (rid, name) for rid, name in targets}
-        self.by_name: dict[str, set] = {}
-        for rid, name in targets:
-            for n in (name, rid.rstrip("/").split("/")[-1]):
-                if n:
-                    self.by_name.setdefault(n.split(".")[0].lower(), set()).add((rid, name))
+        self.keys = keys
 
     def attribute(self, row: dict) -> tuple[bool, tuple | None]:
+        row = _proven_row(row, self.keys)
         if not isinstance(row, dict):
             return False, None
         rid = row.get("_ResourceId") or row.get("ResourceId")
         if isinstance(rid, str) and "/microsoft.compute/virtualmachines/" in rid.lower():
             return True, self.by_rid.get(_vm_id_of(rid))
-        comp = row.get("Computer")
-        if isinstance(comp, str) and comp:
-            hits = self.by_name.get(comp.split(".")[0].lower(), set())
-            # Two watched VMs with this host name (clones in two resource
-            # groups): the name can't tell which — never a guess.
-            if len(hits) <= 1:
-                return True, next(iter(hits), None)
         ip = _caller_ip(row)
         owner = (self._owners() or {}).get(ip) if ip else None
-        if owner:
+        if owner and not appliance_of(owner):
             return True, self.by_rid.get(str(owner).lower())
         return False, None
+
+    def appliance(self, row: dict) -> str:
+        """The appliance whose address made this row's call, '' when none (SEC-A4, V-05)."""
+        return appliance_behind(row, self._owners, self.keys)
 
 
 class RulePoller:
@@ -1374,9 +1437,9 @@ class RulePoller:
     client-side: the query volume grew with the number of VMs (~8·N per 30 s for five
     rules, Log Analytics throttles around 20–25 VMs), a `limit` hid the other VMs,
     and a row naming no VM was dispatched once per VM. Now each cycle's rows are
-    routed: to the VM the row names (`_ResourceId`, `Computer`), or whose private IP
-    made the call (`CallerIpAddress` — T1041), and a row that can't be attributed is
-    dispatched once, flagged `unattributed`.
+    routed: to the VM the row names (`_ResourceId`; never `Computer`, SEC-A4), or whose private
+    IP made the call (`CallerIpAddress` — T1041; an appliance's address names none, SEC-A4), and a
+    row that can't be attributed is dispatched once, flagged `unattributed`.
     """
 
     # Every poller alive, so the tests can stop their threads before the redirected
@@ -1521,8 +1584,9 @@ class RulePoller:
         only when its own resource is a VM this rule doesn't watch (AL1) — never because the
         address that made the call is such a VM's (an NSG written from an excluded VM, or with
         no VM watched): that row stays, unattributed (third review, AL1c)."""
-        index = RowAttribution(targets, self._owners)
         control = self._plane(rule) != "data"
+        # SEC-A4 (review R1): a row of the data plane read by the keys its query proves only.
+        index = RowAttribution(targets, self._owners, keys=None if control else self._proven(rule))
         out: dict[str, tuple] = {}
         for row in rows:
             named, tgt = index.attribute(row)
@@ -1734,6 +1798,13 @@ class RulePoller:
             _save_status(self._status)
         return signals
 
+    def _proven(self, rule: DetectionRule) -> frozenset:
+        """The routing keys this rule's query proves (SEC-A4, review R1), read once per query."""
+        cache = self.__dict__.setdefault("_proven_cache", {})
+        if rule.query not in cache:
+            cache[rule.query] = proven_keys(rule.query)
+        return cache[rule.query]
+
     @staticmethod
     def _plane(rule: DetectionRule) -> str:
         """`data`, `control` or `identity`: the rule's source says it, and so does its query."""
@@ -1755,6 +1826,10 @@ class RulePoller:
         plane = self._plane(rule)
         control = plane in ("control", "identity")
         target = None
+        # SEC-A4 (V-05): the address that made the call is an appliance's (IP forwarding) — the
+        # VM behind it is unknown here: never the appliance, never an action.
+        appliance = appliance_behind(row, self._owners, None if control else self._proven(rule)) \
+            if tgt is None else ""
         if control:
             # AL1c (#597): the card is filed on what the row names — the NSG and the VMs it
             # covers, the VM of a disk, a role's scope, the group, the identity —, never on a VM
@@ -1762,10 +1837,11 @@ class RulePoller:
             # Routed to no VM, though a VM's address made the call: a VM this rule does not
             # watch — said, never named (third review, AL1c).
             ip = _caller_ip(row) if tgt is None else ""
-            unwatched = bool(ip and (self._owners() or {}).get(ip))
+            unwatched = bool(ip and (self._owners() or {}).get(ip)) and not appliance
             try:
                 target = card_target.of_row(row, plane, tgt, targets, self._topology,
-                                            caller_unwatched=unwatched)
+                                            caller_unwatched=unwatched,
+                                            caller_appliance=_short_id(appliance))
             except Exception as exc:  # a card is never lost to its target: the plane, said
                 logger.warning("detection rule '%s': target unreadable (%s)", rule.name, exc)
                 target = card_target.control_plane_target(
@@ -1777,6 +1853,14 @@ class RulePoller:
             # An identity's name is chosen by whoever registers it: its pseudo id, never its name.
             resource_id = target["id"]
             asset_name = target["id"] if target["kind"] == "identity" else target["name"]
+            attribution = "unattributed"
+        elif appliance:
+            # SEC-A4 (V-05): anchored on the appliance when this rule watches it (what the
+            # address names, said as such), else as any unattributed row; every action held
+            # (`decide`'s attribution guard), a rule bound to one asset included.
+            by_id = {rid.lower(): (rid, n) for rid, n in targets}
+            resource_id, asset_name = by_id.get(appliance.lower()) or (
+                targets[0] if not rule.auto_apply else sorted(targets, key=lambda t: t[1])[0])
             attribution = "unattributed"
         elif tgt is not None:
             resource_id, asset_name = tgt
@@ -1815,6 +1899,8 @@ class RulePoller:
                 "attribution": attribution,
                 **({"candidates": sorted(n for _, n in targets)}
                    if attribution == "unattributed" and not control else {}),
+                **({"attribution_via": "appliance", "appliance": _short_id(appliance)}
+                   if appliance and not control else {}),
                 **({"plane": plane} if control else {}),
                 **({"target": target} if target is not None else {}),
             },

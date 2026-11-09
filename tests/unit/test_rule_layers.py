@@ -51,7 +51,7 @@ rules:
     assets: [auto]
     interval_s: 60
     query: |
-      Syslog | where SyslogMessage has "Failed password" | summarize count() by Computer
+      Syslog | where SyslogMessage has "Failed password" | summarize count() by Computer, _ResourceId
   - name: account-creation
     ttp: T1136.001
     assets: [auto]
@@ -504,10 +504,10 @@ def test_migrate_rules_says_an_unreadable_config(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("query,said", [
-    ("Syslog | where ProcessName == 'sudo' | project TimeGenerated, Computer, SyslogMessage", True),
+    ("Syslog | where ProcessName == 'sudo' | project TimeGenerated, Computer, _ResourceId, SyslogMessage", True),
     ("Syslog | where SyslogMessage has 'USER=root' | project-away ProcessName", True),
-    ("Syslog | where ProcessName == 'sudo'\n// ProcessName kept\n| project Computer, SyslogMessage", True),
-    ("Syslog | where ProcessName == 'sudo' | project TimeGenerated, Computer, ProcessName, SyslogMessage", False),
+    ("Syslog | where ProcessName == 'sudo'\n// ProcessName kept\n| project Computer, _ResourceId, SyslogMessage", True),
+    ("Syslog | where ProcessName == 'sudo' | project TimeGenerated, Computer, _ResourceId, ProcessName, SyslogMessage", False),
     ("Syslog | where ProcessName == 'sudo'", False),
 ])
 def test_a_client_privilege_escalation_rule_without_its_emitter_is_said(tmp_path, query, said):
@@ -519,7 +519,7 @@ def test_a_client_privilege_escalation_rule_without_its_emitter_is_said(tmp_path
     client_rules_path().parent.mkdir(parents=True, exist_ok=True)
     client_rules_path().write_text(yaml.safe_dump({"rules": [
         {"name": "client-sudo", "ttp": "T1548.003", "assets": ["auto"], "query": query},
-        {"name": "client-ssh", "ttp": "T1110.001", "assets": ["auto"], "query": "Syslog | project Computer"}]}))
+        {"name": "client-ssh", "ttp": "T1110.001", "assets": ["auto"], "query": "Syslog | project Computer, _ResourceId"}]}))
     notes = [n for n in load_config(base).notes if "ProcessName" in n]
     assert bool(notes) is said and all("client-sudo" in n for n in notes), notes
 
