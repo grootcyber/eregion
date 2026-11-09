@@ -67,17 +67,8 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(-
 .ttl{font:600 16.5px/1.3 var(--body);margin-top:3px;text-wrap:balance}
 .caption{position:absolute;left:0;right:0;bottom:0;margin:0;padding:40px 24px 16px;text-align:center;background:linear-gradient(rgba(3,6,12,0),rgba(3,6,12,.93) 48%)}
 .caption span{display:inline-block;max-width:760px;font:400 15.5px/1.5 var(--body);text-wrap:balance;vertical-align:middle}
-.ask{position:absolute;left:50%;top:calc(100% - 132px);transform:translateX(-50%);width:min(780px,calc(100% - 28px));display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:16px;align-items:center;padding:13px 18px;background:rgba(19,15,5,.95);border:1px solid var(--gold);border-radius:12px;box-shadow:0 0 44px rgba(235,195,107,.22)}
 .seal{width:46px;height:46px;color:var(--gold);filter:drop-shadow(0 0 8px rgba(235,195,107,.5))}
-.ask-body{min-width:0}
-.ask-act{display:flex;flex-direction:column;align-items:center;gap:6px}
-.ask-k{font:600 10.5px var(--mono);letter-spacing:.14em;color:var(--gold);text-transform:uppercase}
-.ask-t{font:600 15.5px/1.35 var(--body);margin:3px 0 2px}
-.ask-t code{font-size:14px;color:var(--gold)}
-.ask-d{color:var(--gold-text);font-size:13px;line-height:1.5}
-.approve{background:var(--gold);color:var(--gold-ink);border:0;border-radius:8px;padding:10px 17px;white-space:nowrap;font:600 13.5px var(--body);animation:breathe 1.7s ease-in-out infinite}
 @keyframes breathe{50%{box-shadow:0 0 0 7px rgba(235,195,107,.16)}}
-.ask-f{font-size:11.5px;color:var(--gold-faint);white-space:nowrap}
 .cont{display:inline-block;vertical-align:middle;margin:0 0 0 16px;background:var(--panel-hi);border:1px solid var(--ice);color:var(--text);border-radius:8px;padding:8px 20px;font:600 13px var(--body);box-shadow:0 0 18px rgba(127,211,255,.18)}
 .cont:hover{background:var(--line)}
 .endcard{position:absolute;inset:0;z-index:4;display:grid;place-items:center;padding:16px;background:rgba(3,6,12,.6);backdrop-filter:blur(2px)}
@@ -221,6 +212,7 @@ code{font:500 11.5px var(--mono);color:var(--mithril)}
 .cc .ct{font:600 12.5px var(--body);color:var(--text);display:flex;gap:8px;align-items:baseline}
 .cc .ct small{margin-left:auto;font:400 11px var(--body);color:var(--ice)}
 .cc .cx{font:400 11px var(--mono);color:var(--faint);margin-top:2px}
+.xchip{font:600 9px var(--mono);letter-spacing:.08em;color:var(--forge);border:1px solid var(--forge);border-radius:3px;padding:0 4px;align-self:center}
 .cc .judge{font-size:11px;color:var(--ice);margin-left:auto;align-self:center}
 .tcap{margin:6px 0 0;font:400 13.5px/1.5 var(--body);color:var(--text);text-wrap:pretty}
 .tcap.side{position:absolute;left:16px;bottom:16px;z-index:2;margin:0;width:var(--capw,220px);font-size:13.5px;color:var(--text);text-shadow:0 1px 8px rgba(3,6,12,.9)}
@@ -259,8 +251,6 @@ code{font:500 11.5px var(--mono);color:var(--mithril)}
   #scene{position:relative;height:330px;order:2}
   .toast{position:static;order:1;max-width:none;border-radius:0;border-width:0 0 1px 3px;backdrop-filter:none}
   .ops{position:static;order:3;transform:none;width:auto;height:auto;max-height:340px;border-radius:0;border-width:1px 0 0}
-  .ask{position:static;order:3;width:auto;transform:none;border-radius:0;border-width:1px 0 0;grid-template-columns:auto minmax(0,1fr);gap:12px}
-  .ask-act{grid-column:1/-1;flex-direction:row;flex-wrap:wrap;gap:10px}
   .seal{width:36px;height:36px}
   .cont{display:block;margin:10px 0 0}
   .caption{position:static;order:4;background:none;padding:12px 14px 14px;text-align:left}
@@ -301,18 +291,6 @@ code{font:500 11.5px var(--mono);color:var(--mithril)}
     <section class="stage" aria-label="Replay of a ransomware incident on a bench VM">
       <canvas id="scene" role="img" aria-label="Isometric view: Annatar on the left attacks the bench VM AZ-VM-01 in the center; Glorfindel on the right detects, asks, isolates through Azure, verifies, restores and lifts the quarantine."></canvas>
       <div class="toast" id="toast"><div class="eyebrow" id="toastWho">Preflight</div><div class="ttl" id="toastTitle">Checks before any cloud call</div><p class="tcap" id="caption"></p><button class="cont" id="cont" type="button" hidden>Continue</button></div>
-      <div class="ask" id="ask" hidden role="group" aria-labelledby="askTitle">
-        <svg class="seal" viewBox="-24 -24 48 48" aria-hidden="true"><circle r="21" fill="none" stroke="currentColor" stroke-width="1.6"/><circle r="15.5" fill="none" stroke="currentColor" stroke-opacity=".4"/><polygon fill="currentColor" points="0,-9 2.5,-2.5 9,0 2.5,2.5 0,9 -2.5,2.5 -9,0 -2.5,-2.5"/></svg>
-        <div class="ask-body">
-          <div class="ask-k" id="askKind">Escalation</div>
-          <div class="ask-t" id="askTitle"></div>
-          <div class="ask-d" id="askDesc"></div>
-        </div>
-        <div class="ask-act">
-          <button class="approve" id="approve" type="button">Approve</button>
-          <div class="ask-f">You, in the console or on Discord</div>
-        </div>
-      </div>
       <div class="planned" id="planned" hidden title="The configuration refuses full_auto today; times past containment are not measured">Planned mode · not available today</div>
       <div class="ops" id="ops" aria-label="What you see: Discord and the Eregion console">
         <div class="ops-h"><svg class="seal" viewBox="-24 -24 48 48" aria-hidden="true"><circle r="21" fill="none" stroke="currentColor" stroke-width="1.6"/><circle r="15.5" fill="none" stroke="currentColor" stroke-opacity=".4"/><polygon fill="currentColor" points="0,-9 2.5,-2.5 9,0 2.5,2.5 0,9 -2.5,2.5 -9,0 -2.5,-2.5"/></svg><b>YOU</b>
@@ -325,7 +303,7 @@ code{font:500 11.5px var(--mono);color:var(--mithril)}
       <div class="endcard" id="endcard" hidden>
         <div>
           <div class="eyebrow" id="endWho" style="color:var(--ice)">Replay complete</div>
-          <h2 id="endTitle">Contained, restored, remembered</h2>
+          <h2 id="endTitle">Contained, restored, recorded</h2>
           <div class="stats" id="stats"></div>
           <div class="endbtns"><button class="btn primary" id="endReplay" type="button">Replay</button><button class="btn" id="endSwitch" type="button" data-mode="non_disruptive">Replay in non_disruptive</button><button class="btn" id="endSwitch2" type="button" data-mode="full_auto">Replay in full_auto</button></div>
         </div>
@@ -347,9 +325,11 @@ code{font:500 11.5px var(--mono);color:var(--mithril)}
                 <li>Reliable detection on the VMs it will defend</li>
                 <li>The ransomware threshold tuned on real benign traffic, across disk types</li>
                 <li>A real exercise on dedicated test VMs close to production: isolate, block, lift, back to the original state, verified</li>
+                <li>The suite measured: the harness above its threshold, the control set caught by half on every push and by three quarters at night</li>
+                <li>The subscription guard measured on a second real subscription</li>
                 <li>Four weeks in human_only on a real fleet, wrong disruptive recommendations measured and judged acceptable</li>
               </ul>
-              <p class="fnote">Then activation VM by VM, starting with non-critical ones. Delete and wipe never act alone, and no fault or destructive test ever runs on a real workload.</p>
+              <p class="fnote">Then activation VM by VM, starting with non-critical ones. Delete and wipe never act alone; a restore without a human is not decided (a separate setting, empty by default); no fault or destructive test ever runs on a real workload.</p>
             </section>
             <section>
               <h3>On the road</h3>
@@ -414,7 +394,7 @@ code{font:500 11.5px var(--mono);color:var(--mithril)}
     <div class="card">
       <h2>The loop<small>three agents, and the workshop around them</small></h2>
       <ul class="loop">
-        <li class="comp" style="--c:var(--ice)"><b>Glorfindel</b><span>The product. Detects, responds alone or with you, verifies through the cloud API, learns from every cycle.</span><em>In this replay: the defender</em></li>
+        <li class="comp" style="--c:var(--ice)"><b>Glorfindel</b><span>The product. Detects, responds alone or with you, verifies through the cloud API, learns from real incidents.</span><em>In this replay: the defender</em></li>
         <li class="comp" style="--c:var(--ember)"><b>Annatar</b><span>Real ATT&amp;CK techniques on enrolled targets. Refuses to act without a live Glorfindel.</span><em>In this replay: the attack</em></li>
         <li class="comp" style="--c:var(--storm)"><b>Gothmog</b><span>Declared faults through Azure Chaos Studio: noise Glorfindel must leave alone, its own dependencies failing.</span><em>Not in this replay</em></li>
         <li class="comp" style="--c:var(--forge)"><b>Orodruin</b><span>Hosts the injectors. They act only from an armed Orodruin, and one command stops them all.</span><em>In this replay: armed</em></li>
@@ -472,23 +452,24 @@ const CHS=[
  {t:38,key:'Verify',who:'Glorfindel · verify',col:C.verdant,title:'Read back from Azure'},
  {t:43,key:'Restore',who:'You and Glorfindel',col:C.gold,title:'Restore from backup'},
  {t:55,key:'Release',who:'Glorfindel · respond',col:C.verdant,title:'The quarantine is lifted'},
- {t:62,key:'Learn',who:'Glorfindel · memory',col:C.ice,title:'The cycle joins the memory'}];
+ {t:62,key:'Learn',who:'Glorfindel · memory',col:C.ice,title:'Stored, marked as an exercise'}];
 const chapterAt=x=>{let i=0;for(let j=0;j<CHS.length;j++)if(x>=CHS[j].t)i=j;return i};
 
 function caption(){
  const h=HO();
  if(t<5)return 'Before any cloud call, Annatar checks three things: Orodruin is armed, AZ-VM-01 is enrolled in the bench zone, and Glorfindel’s watch is alive.';
- if(t<12)return 'Annatar runs a ransomware simulation on the bench VM. Glorfindel is not told: it meets the exercise as a real attack.';
+ if(t<12)return 'Annatar runs a ransomware simulation on the bench VM. The model is not told: it decides as on a real attack. The card is marked as an exercise.';
  if(t<18)return 'Disk writes cross the rule, a 20-second average above 45 MB/s. Glorfindel has a detection.';
- if(t<24)return 'Before deciding, it asks the logs which process is writing and whether a backup agent is running. It recalls the three most similar past incidents.';
+ if(t<24)return 'Before deciding, it asks the logs which process is writing and whether a backup agent is running. It recalls the most similar real incidents as precedents; an exercise is never one.';
  if(t<30)return h?'The model recommends isolate_vm. The guards check the decision. In human_only, the default, Glorfindel stops there and asks you.':FA()?'The model recommends isolate_vm. In full_auto nobody is asked: the guards and three agreeing draws of the model are the only gate.':'The model recommends isolate_vm. The guards check it, and three draws of the model must agree before it acts alone.';
  if(t<31)return h?(wa()?'Nothing changes on Azure until you approve. Glorfindel has said what it would do, and why.':'Approved. Glorfindel applies isolate_vm through the Azure API.'):'Every guard passed. Glorfindel applies isolate_vm through the Azure API, alone.';
  if(t<38)return 'Each network card swaps to Glorfindel’s quarantine NSG. Internet, VNet, Azure DNS and IMDS are denied. The VM keeps running, and your own NSG stays intact.';
  if(t<43)return 'Glorfindel reads Azure back: the quarantine NSG on every NIC, no allow rule ahead of the deny, open sessions cut.';
- if(t<47)return wa()?'Nothing is restored until you approve. The restore point is pre-filled: before the attack started.':FA()?'In full_auto, Glorfindel restores from backup alone, to a point before the attack started. Planned: today a restore always asks a human.':'Restoring from backup is destructive. Today a human decides, in every mode available.';
+ if(t<47)return wa()?'Nothing is restored until you approve. The restore point is pre-filled: before the attack started.':FA()?'Shown here alone, but not decided: today a restore asks a human in every mode. Letting it run alone is a separate setting, allow_destructive, empty by default.':'Restoring from backup is destructive. Today a human decides, in every mode available.';
  if(t<55)return 'Azure Backup restores the disks from before the attack.';
  if(t<62){if(h)return t<57.02?'The restore is done. Glorfindel recommends lifting the quarantine, and waits for you.':'Approved. Your own NSG comes back on every NIC, and the network reconnects.';return 'The restore is done. Glorfindel lifts the quarantine alone, and only on its own recovery signal. Your NSG comes back on every NIC.'}
- return h?'The cycle joins Glorfindel’s memory. When you trust it on this VM, switch the VM to non_disruptive.':FA()?'The cycle joins Glorfindel’s memory. Nobody was asked; you were told at every step.':'The cycle joins Glorfindel’s memory. Measured on the bench: about a minute to contain, 21 min 29 s to restored service.';
+ const mem='The cycle is stored, marked as an exercise: only real incidents are recalled as precedents. ';
+ return mem+(h?'When you trust Glorfindel on this VM, switch it to non_disruptive.':FA()?'Nobody was asked; you were told at every step.':'Measured on the bench: about a minute to contain, 21 min 29 s to restored service.');
 }
 function benchRef(){
  const h=HO();
@@ -498,18 +479,14 @@ function benchRef(){
  if(t<31)return [h?'then it waits for your decision':'a few seconds later',0];
  if(t<43)return h?['contained when you approve',0]:['about 1 min to contain',1];
  if(t<62)return ['Azure Backup restore',0];
- return h?['restored after your approvals',0]:FA()?['planned, not measured yet',0]:['21 min 29 s to restored service, June 2026 run',1];
+ return h?['restored after your approvals',0]:FA()?['planned, not measured yet',0]:['21 min 29 s to restored service',1];
 }
-const ASK={
- isolate:{kind:'Escalation · mode_hold',title:'Glorfindel recommends <code>isolate_vm</code> on AZ-VM-01',desc:'Reversible. Each NIC gets the quarantine NSG; your own NSG stays intact and comes back when the quarantine is lifted.',btn:'Approve isolate_vm'},
- restore:{kind:'Escalation · destructive action',title:'<code>restore_from_backup</code> on AZ-VM-01',desc:'A human’s call today, in every mode available. Restore point, pre-filled: before T0, when the attack started.',btn:'Approve the restore'},
- release:{kind:'Escalation · mode_hold',title:'Glorfindel recommends <code>release_isolation</code>',desc:'The restore finished. Lifting the quarantine puts your own NSG back on every NIC.',btn:'Approve release_isolation'}};
 
 /* rows: v and st may depend on mode and time */
 const ROWS={
  inv:[{t:18.7,txt:'Which process is writing?',v:'KQL · found'},
       {t:19.7,txt:'Is a backup agent running?',v:'KQL · none'},
-      {t:20.9,txt:'Similar past incidents',v:'3 recalled'}],
+      {t:20.9,txt:'Similar real incidents',v:'3 · illustrative'}],
  guard:[{t:24.7,txt:'Reversible action',v:'isolate_vm'},
         {t:25.4,txt:'Confidence at least 0.7',v:'passed'},
         {t:26.1,txt:'Recognized indicator',v:'disk write rate'},
@@ -522,7 +499,7 @@ const ROWS={
         {t:40.3,txt:'Open sessions cut',v:'verified'},
         {t:54.7,txt:'Disks restored, before T0',v:'recovery_complete'},
         {t:59.8,txt:'Your NSG back on every NIC',v:'verified'},
-        {t:63.2,txt:'Cycle stored in memory',v:'ChromaDB'}]};
+        {t:63.2,txt:'Cycle stored, marked exercise',v:'never a precedent'}]};
 function rowState(r){if(t<r.t-.7)return 'pend';if(t<r.t)return 'run';return (typeof r.st==='function'?r.st():r.st)||'ok'}
 function rowVal(r){if(t<r.t)return '';return typeof r.v==='function'?r.v():r.v}
 
@@ -805,8 +782,8 @@ function drawOrb(){
  g.beginPath();g.arc(p[0],p[1],9*k,0,7);const og=g.createRadialGradient(p[0]-3*k,p[1]-3*k,1,p[0],p[1],9*k);og.addColorStop(0,'#e6f7ff');og.addColorStop(1,'#2f7fb8');g.fillStyle=og;g.globalAlpha=.55+.45*a;g.fill();g.globalAlpha=1;
  for(let i=0;i<3;i++){const an=amb*(.6+i*.25)+i*2.1;dot([p[0]+Math.cos(an)*15*k,p[1]+Math.sin(an)*6*k],1.3*k,C.ice,.5+.5*a)}
  if(!CP)txt('MEMORY',p[0]+16*k,p[1]+3*k,C.faint,8.5,{ls:1.5,align:'left'});
- if(!CP&&win(20.2,20.9,23,24,t)>.02)tag(p[0],p[1]-22*k,'3 SIMILAR CYCLES',C.ice,{px:9,al:win(20.2,20.9,23,24,t)});
- if(!CP&&win(63,63.6,66.5,67.6,t)>.02)tag(p[0],p[1]-22*k,'CYCLE STORED',C.ice,{px:9,al:win(63,63.6,66.5,67.6,t)});
+ if(!CP&&win(20.2,20.9,23,24,t)>.02)tag(p[0],p[1]-22*k,'REAL PRECEDENTS',C.ice,{px:9,al:win(20.2,20.9,23,24,t)});
+ if(!CP&&win(63,63.6,66.5,67.6,t)>.02)tag(p[0],p[1]-22*k,'STORED · EXERCISE',C.ice,{px:9,al:win(63,63.6,66.5,67.6,t)});
 }
 
 function heartbeat(){
@@ -923,8 +900,7 @@ let dragging=false;
 function ui(){
  const i=chapterAt(t),ch=CHS[i],w=waiting;
  const appr=wa(),step=!!w&&w.kind==='step';
- $('ask').hidden=true;$('cont').hidden=!step;$('ops').classList.toggle('asking',appr);opsUpdate();
- if(appr){const a=ASK[w.id],el=$('ask');if(!CP){const top=Math.round(YOUY)+'px';if(el.style.top!==top)el.style.top=top}setT($('askKind'),a.kind);setH($('askTitle'),a.title);setT($('askDesc'),a.desc);setT($('approve'),a.btn)}
+ $('cont').hidden=!step;$('ops').classList.toggle('asking',appr);opsUpdate();
  setT($('toastWho'),ch.who);$('toastWho').style.color=ch.col;$('toast').style.borderLeftColor=ch.col;setT($('toastTitle'),ch.title);
  setT($('caption'),caption());
  const net=t>=31.6&&t<58.8?['quarantined','chip q']:['network open','chip'];setT($('chipNet'),net[0]);setC($('chipNet'),net[1]);
@@ -940,8 +916,8 @@ function ui(){
  const end=t>=64.6;$('endcard').hidden=!end;
  if(end){const h=HO();setT($('endWho'),'Replay complete · '+mode);
   setH($('stats'),h?`<div class="stat"><b>55–71 s</b><span>to detect, then your call</span><span class="meas">measured</span></div><div class="stat"><b>3 clicks</b><span>isolate, restore, lift the quarantine</span></div><div class="stat"><b>0 changes</b><span>on Azure without your approval</span></div>`
-  :FA()?`<div class="stat"><b>0 clicks</b><span>nobody was asked</span></div><div class="stat"><b>3 notices</b><span>isolate, restore, lift the quarantine</span></div><div class="stat"><b>planned</b><span>not available today, not measured</span></div>`
-  :`<div class="stat"><b>~1 min</b><span>to contain, alone</span><span class="meas">measured</span></div><div class="stat"><b>21 min 29 s</b><span>to restored service</span><span class="meas">measured · June 2026</span></div><div class="stat"><b>1 click</b><span>approving the restore</span></div>`);
+  :FA()?`<div class="stat"><b>0 clicks</b><span>in this planned mode</span></div><div class="stat"><b>3 notices</b><span>isolate, restore, lift the quarantine</span></div><div class="stat"><b>not decided</b><span>a restore without a human; today it asks you</span></div>`
+  :`<div class="stat"><b>~1 min</b><span>to contain, alone</span><span class="meas">measured</span></div><div class="stat"><b>21 min 29 s</b><span>to restored service</span><span class="meas">measured</span></div><div class="stat"><b>1 click</b><span>approving the restore</span></div>`);
   /* the two other modes, whichever just played */
   const others=['human_only','non_disruptive','full_auto'].filter(m=>m!==mode);
   [$('endSwitch'),$('endSwitch2')].forEach((b,j)=>{b.dataset.mode=others[j];setT(b,'Replay in '+others[j])})}
@@ -957,15 +933,15 @@ const EXPL_RES='The VM is contained. Its files were encrypted during the attack:
 /* m: the modes a message appears in (h human_only, n non_disruptive, f full_auto); tab d Discord, c console */
 const OPS=[
  {t:30,m:'h',tab:'d',kind:'sys',text:'<b>Glorfindel</b> started a thread: <b>🔴 AZ-VM-01</b>'},
- {t:30,m:'h',tab:'d',kind:'emb',hold:'isolate',title:'🚨 Recommended: isolate the VM (not executed)',desc:EXPL_ISO,fields:[['Rule','ransomware-disk-write'],['Confidence','above the 0.7 gate'],['Context','T1486 · high · action held (human_only mode)']],btns:['✓ Right','✗ Wrong','? Unsure','✓ Acknowledge','📋 Command']},
- {t:30,m:'h',tab:'c',kind:'card',hold:'isolate',title:'Isolate VM — pending approval',ctx:'ransomware-disk-write · T1486 · high',btns:[['▶ Approve & execute','go'],'✓ Ack','📋 Cmd']},
- {t:31.4,m:'nf',tab:'d',kind:'hook',text:'🤖 <b>VM isolated from network</b> ✓ | <code>az-vm-01</code>',sub:'<code>isolate_vm</code> · T1486 · high',quote:EXPL_ISO},
+ {t:30,m:'h',tab:'d',kind:'emb',hold:'isolate',title:'🚨 Recommended: isolate the VM (not executed)',desc:EXPL_ISO,fields:[['Rule','ransomware-disk-write'],['Confidence','91 % · illustrative'],['Context','T1486 · high · action held (human_only mode)']],btns:['✓ Right','✗ Wrong','? Unsure','✓ Acknowledge','📋 Command']},
+ {t:30,m:'h',tab:'c',kind:'card',hold:'isolate',title:'Isolate VM (91%) — pending approval',ctx:'ransomware-disk-write · T1486 · high',btns:[['▶ Approve & execute','go'],'✓ Ack','📋 Cmd']},
+ {t:31.4,m:'nf',tab:'d',kind:'hook',text:'🤖 <b>VM isolated from network</b> ✓ | <code>az-vm-01</code>',sub:'<code>isolate_vm</code> · T1486 · high · 91% confidence (illustrative)',quote:EXPL_ISO},
  {t:43.3,m:'n',tab:'d',kind:'sys',text:'<b>Glorfindel</b> started a thread: <b>🔴 AZ-VM-01</b>'},
  {t:43.3,m:'hn',tab:'d',kind:'emb',hold:'restore',title:'🚨 Recommended: restore from backup (not executed)',desc:EXPL_RES,fields:[['Rule','ransomware-disk-write'],['Context','T1486 · high · destructive action']],btns:['✓ Right','✗ Wrong','? Unsure',['🔄 Restore','go'],'✓ Acknowledge','📋 Command']},
  {t:43.3,m:'hn',tab:'c',kind:'card',hold:'restore',title:'Restore from backup',ctx:'destructive action · T1486 · always a human’s call today',btns:[['🔄 Restore','go'],'✓ Ack','📋 Cmd']},
- {t:46.9,m:'f',tab:'d',kind:'hook',text:'🤖 <b>Restore from backup</b> ✓ | <code>az-vm-01</code>',sub:'<code>restore_from_backup</code> · T1486 · planned: today this card asks you',quote:EXPL_RES},
+ {t:46.9,m:'f',tab:'d',kind:'hook',text:'🤖 <b>Restore from backup</b> ✓ | <code>az-vm-01</code>',sub:'<code>restore_from_backup</code> · T1486 · not decided: today a restore asks you, in every mode',quote:EXPL_RES},
  {t:55.4,m:'h',tab:'d',kind:'emb',hold:'release',title:'🚨 Recommended: lift the isolation (not executed)',desc:'The restore finished (recovery_complete). Lifting the quarantine puts your own NSG back on every NIC.',fields:[['Context','T1486 · high · action held (human_only mode)']],btns:['✓ Right','✗ Wrong','? Unsure','✓ Acknowledge','📋 Command']},
- {t:55.4,m:'h',tab:'c',kind:'card',hold:'release',title:'Release isolation — pending approval',ctx:'recovery_complete · T1486',btns:[['▶ Approve & execute','go'],'✓ Ack','📋 Cmd']},
+ {t:55.4,m:'h',tab:'c',kind:'card',hold:'release',title:'Release isolation (90%) — pending approval',ctx:'recovery_complete · T1486',btns:[['▶ Approve & execute','go'],'✓ Ack','📋 Cmd']},
  {t:57.9,m:'nf',tab:'d',kind:'hook',text:'🤖 <b>Isolation lifted</b> ✓ | <code>az-vm-01</code>',sub:'<code>release_isolation</code> · T1486'}];
 const MK={human_only:'h',non_disruptive:'n',full_auto:'f'};
 let opsTab='d',opsSig='',opsSeen={d:0,c:0},modalOpen=null,lastWait=null;
@@ -986,7 +962,7 @@ function renderMsg(o){
  const modal=o.hold==='restore'&&modalOpen==='restore'&&st!=='done'?`<div class="modal"><b>Restore from backup.</b> Restore to a point before: <b>T0</b>, when this run’s attack started (pre-filled, never after the first detection).<div class="obtn"><button type="button" class="go live" data-go="restore">🔄 Confirm the restore</button><button type="button" data-cancel="1">Cancel</button></div></div>`:'';
  if(o.kind==='emb'){const state=st==='done'?'acknowledged':'pending';
   return `<div class="dm">${head}<div class="emb"><div class="et">${esc(o.title)}</div><div class="ed">${esc(o.desc)}</div><div class="ef">${o.fields.map(f=>`<div>${f[0]}<b>${esc(f[1])}</b></div>`).join('')}<div>State<b>${state}</b></div></div><div class="obtn">${o.btns.map(btn).join('')}${stamp}</div>${modal}</div></div></div>`}
- return `<div class="cc ${st==='done'?'done':'pending'}"><div class="ct">${esc(o.title)}${st==='done'?'<small>Approved — run</small>':''}</div><div class="cx">${esc(o.ctx)}</div><div class="obtn">${o.btns.map(btn).join('')}${stamp}${st!=='done'?'<span class="judge">to judge ▸</span>':''}</div>${o.hold==='restore'&&modalOpen==='restore'&&st!=='done'?modal:''}</div>`;
+ return `<div class="cc ${st==='done'?'done':'pending'}"><div class="ct">${esc(o.title)}<span class="xchip" title="An injector's exercise window covered this VM">EXERCISE</span>${st==='done'?'<small>Approved — run</small>':''}</div><div class="cx">${esc(o.ctx)}</div><div class="obtn">${o.btns.map(btn).join('')}${stamp}${st!=='done'?'<span class="judge">to judge ▸</span>':''}</div>${o.hold==='restore'&&modalOpen==='restore'&&st!=='done'?modal:''}</div>`;
 }
 function opsUpdate(){
  const vis=opsVisible();
@@ -1013,13 +989,11 @@ function setMode(m){if(m===mode)return;mode=m;drawMarks();restart()}
 $('play').addEventListener('click',()=>{if(waiting)approve();else if(t>=D)restart();else playing=!playing});
 $('restart').addEventListener('click',restart);
 $('speed').addEventListener('click',()=>{speed=speed===1?2:1;const b=$('speed');b.setAttribute('aria-pressed',String(speed===2));setT(b,speed===2?'1× speed':'2× speed')});
-$('approve').addEventListener('click',approve);
 $('cont').addEventListener('click',approve);
 function setStep(on){stepMode=on;$('stepBtn').setAttribute('aria-pressed',String(on));try{localStorage.setItem('eregion-replay-step',on?'1':'0')}catch(e){}
  if(!on&&waiting&&waiting.kind==='step'){waiting=null;playing=true}syncApprovals();drawMarks()}
 $('stepBtn').addEventListener('click',()=>setStep(!stepMode));
 $('endReplay').addEventListener('click',restart);
-const NEXT={human_only:'non_disruptive',non_disruptive:'full_auto',full_auto:'human_only'};
 $('endSwitch').addEventListener('click',e=>setMode(e.currentTarget.dataset.mode));
 $('endSwitch2').addEventListener('click',e=>setMode(e.currentTarget.dataset.mode));
 $('modeHuman').addEventListener('click',()=>setMode('human_only'));
@@ -1054,7 +1028,7 @@ function frame(now){
 /* a still frame on request, for previews: ?t=31&mode=non_disruptive or ?wait=isolate */
 try{const q=new URLSearchParams(location.search);
  if(q.has('future'))setTimeout(()=>openFuture(),0);
- if(APPROVALS[q.get('mode')])mode=q.get('mode');
+ if(Object.hasOwn(APPROVALS,q.get('mode')))mode=q.get('mode');
  if(q.has('step'))stepMode=true;
  if(q.has('t')){t=clamp(+q.get('t')||0,0,D);syncApprovals();playing=false;amb=t}
  if(q.has('wait')){const h=holds().find(h=>h.id===q.get('wait'));if(h){t=h.t;syncApprovals();approved.delete(h.id);waiting=h;playing=false;amb=t}}
