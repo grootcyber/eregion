@@ -71,6 +71,20 @@
   </nav>
 </header>
 
+<section aria-labelledby="replay">
+  <h2 id="replay">The loop, replayed</h2>
+  <p>A ransomware simulation on a bench VM, from the attack to the restored service: the detection, the
+  questions Glorfindel asks before deciding, the guards, the quarantine on every network card, the proof
+  read back from Azure, the restore and the memory. Play it in <code>human_only</code>, where you approve
+  each step, in <code>non_disruptive</code>, where Glorfindel contains alone, or in the planned
+  <code>full_auto</code>. Times marked measured come from the README's validated runs; the rest is illustrative.</p>
+  <figure>
+    <a href="replay/"><img src="replay/preview.png" width="1440" height="900" loading="lazy"
+         alt="The replay, in non_disruptive: Glorfindel swaps every NIC to its quarantine NSG through Azure Resource Manager, and the autonomous action reaches the operator's Discord"></a>
+    <figcaption><a href="replay/">Open the interactive replay</a>.</figcaption>
+  </figure>
+</section>
+
 <section aria-labelledby="console">
   <h2 id="console">The console</h2>
   <p>Observe-only by default: Glorfindel recommends, you decide, and you grant it autonomy per asset as
