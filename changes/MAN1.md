@@ -15,3 +15,8 @@
   - Tests: `tests/unit/test_manuel.py` (the schema, the rule, the page, and a fragment `changes/<LOT>.md`
     that no brick on `main` names fails).
 
+### Changed
+- **`make release` releases the manual's bricks on `main`** (MAN1, #664 ; `scripts/release.py`,
+  `scripts/manuel.py`). In the version's commit, each brick on `main` becomes released with the version,
+  its release step is published with its last version and its date, and `modules.json` follows; a manual
+  it cannot read is refused before anything is written. Tests: `tests/unit/test_release.py`.

@@ -1,6 +1,7 @@
 """MAN1 (#664): the public manual — the public rule held in docs/manuel/modules.yaml, a lot's pull
 request that moves its brick, a release that delivers the bricks on main. M4607–M4611."""
 MANUEL = "scripts/manuel.py"
+RELEASE = "scripts/release.py"
 _TEST = "tests/unit/test_manuel.py"
 
 MUTANTS = [
@@ -15,6 +16,9 @@ MUTANTS = [
      MANUEL,
      'on_main = {lot for b in data.get("briques") or [] if b.get("etat") == "main" for lot in b.get("lots") or []}',
      'on_main = {lot for b in data.get("briques") or [] for lot in b.get("lots") or []}'),
+    ("M4610", "the release leaves the manual's bricks on main: never delivered (MAN1)", RELEASE,
+     "        edits.update(manual_edits)\n",
+     ""),
     ("M4611", "a field for what a brick waits on (an operator's gesture) accepted on the public manual (MAN1)",
      MANUEL,
      '"doc": False, "note": False}',
@@ -24,5 +28,6 @@ TESTS = {
     "M4607": _TEST,
     "M4608": _TEST,
     "M4609": _TEST,
+    "M4610": "tests/unit/test_release.py::test_a_release_delivers_the_manual_s_bricks_on_main_in_the_same_commit",
     "M4611": _TEST,
 }
