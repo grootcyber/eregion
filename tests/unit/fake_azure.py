@@ -50,6 +50,7 @@ from types import SimpleNamespace
 from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
 
 SUB = "/subscriptions/s"
+RUN_COMMAND_ACTION = "Microsoft.Compute/virtualMachines/runCommand/action"
 
 
 class Crash(BaseException):
@@ -195,6 +196,17 @@ class FakeAzure:
         rid = f"{SUB}/resourceGroups/{rg}/providers/Microsoft.Compute/disks/{name}"
         self.disks[key(rid)] = {"id": rid, "time_created": created}
         return rid
+
+    def cut_run_command(self, vm: str, text: str, status: str = "Accepted") -> None:
+        """A Run Command by `caller` that never finished — cut by the deallocation (`Accepted`,
+        `Started`) or `Failed`: logged so, and its settings left in the VM model all the same (a
+        restored disk replays them); the guest said nothing of it."""
+        v = self.vms[key(vm)]
+        v["last_output"] = f"Enable succeeded:\n[stdout]\n{text}\n[stderr]\n"
+        at = self.clock()
+        for s in ("Started", status) if status != "Started" else ("Started",):
+            self.activity.append({"resource_id": v["id"], "op": RUN_COMMAND_ACTION, "status": s, "at": at,
+                                  "caller": self.caller})
 
     def activity_log(self, resource_id: str, since: str) -> list[dict]:
         """The activity log's events on a resource since a moment, as its REST API gives them."""
@@ -486,8 +498,9 @@ class _Vms:
             at = self.az.clock()
             v["last_output"] = message
             v["said"] = {"message": message, "time": at}
-            self.az.activity.append({"resource_id": v["id"], "op": "Microsoft.Compute/virtualMachines/runCommand/action",
-                                     "status": "Succeeded", "at": at, "caller": self.az.caller})
+            for status in ("Started", "Succeeded"):     # as ARM logs a long operation
+                self.az.activity.append({"resource_id": v["id"], "op": RUN_COMMAND_ACTION,
+                                         "status": status, "at": at, "caller": self.az.caller})
             return _Done(SimpleNamespace(value=[SimpleNamespace(message=message)]))
         return self.az.call("vm.run_command", True, run)
 

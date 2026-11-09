@@ -562,6 +562,63 @@ def test_a_command_of_another_after_the_restore_began_proves_nothing():
     assert _pass(c)[0][0]["raw_signal"]["run_command_neutralized"] is False
 
 
+@pytest.mark.parametrize("status", ["Accepted", "Started", "Failed"])
+def test_a_command_of_another_that_never_finished_after_the_neutralization_proves_nothing(status):
+    """Round 2, m1: an attacker's Run Command after the neutralization, cut by the deallocation or
+    failed, never logged Succeeded — its settings are in the VM model all the same, and the restored
+    disk replays them. Any status of another's command after the neutralization contradicts it."""
+    f, c, vm = _world()
+    _isolated(f, c, vm)
+    _points(f, vm)
+    f.caller = CONSOLE
+    c._neutralize_run_command("rg-app", "web", f.compute.virtual_machines.get("rg-app", "web"))
+    f.caller = ATTACKER
+    f.cut_run_command(vm, "glorfindel: run command neutralized", status=status)
+    f.caller = H0
+    f.restore(vm, "p-clean", _t(20), _t(40))
+    iso = _load_isolation_state(vm)["isolated_at"]
+    runs = c.observed_restore(vm, iso, vault=VAULT)["run_commands"]
+    assert any(r["status"] == status and ATTACKER in r["callers"] for r in runs)
+    assert _pass(c)[0][0]["raw_signal"]["run_command_neutralized"] is False
+
+
+def test_an_activity_log_longer_than_its_bound_is_unreadable_never_all_read(monkeypatch):
+    """Round 2, m2: pages left past the bound are an error (`run_commands_error`), the neutralization
+    unknown — never « nothing more »."""
+    import requests
+    from glorfindel.providers.azure import recovery
+
+    class Page:
+        ok, status_code, text = True, 200, ""
+
+        def __init__(self, last):
+            self.last = last
+
+        def json(self):
+            return {"value": [], **({} if self.last else {"nextLink": "https://management.azure.com/next"})}
+    pages = []
+
+    def get(url, **kw):
+        pages.append(url)
+        return Page(last=False)
+    monkeypatch.setattr(requests, "get", get)
+    f, c, vm = _world()
+    c._activity = None
+    c._credential = type("Cred", (), {"get_token": lambda self, scope: type("T", (), {"token": "t"})()})()
+    with pytest.raises(RuntimeError, match="pages"):
+        c._activity_events(vm, _t(0).isoformat())
+    assert len(pages) == recovery.ACTIVITY_PAGES
+    monkeypatch.setattr(requests, "get", lambda url, **kw: Page(last=True))
+    assert c._activity_events(vm, _t(0).isoformat()) == []
+    _isolated(f, c, vm)
+    _points(f, vm)
+    _from_the_workstation(f, c, vm)
+    monkeypatch.setattr(requests, "get", get)
+    iso = _load_isolation_state(vm)["isolated_at"]
+    assert "pages" in c.observed_restore(vm, iso, vault=VAULT)["run_commands_error"]
+    assert _pass(c)[0][0]["raw_signal"]["run_command_neutralized"] is None
+
+
 def test_without_restore_principals_or_the_activity_log_the_neutralization_is_unknown(monkeypatch):
     f, c, vm = _world()
     _isolated(f, c, vm)
@@ -600,6 +657,14 @@ def test_the_control_plane_reads_who_ran_each_command():
     assert decide({"run_commands": []}, start, trusted)[0] is False
     assert decide({"run_commands_error": "illisible"}, start, trusted) == (None, "illisible")
     assert decide({"run_commands": [ran(5, "oid-1")]}, start, frozenset())[0] is None
+    # Round 2, m1: another's command after the neutralization counts whatever its status; one before
+    # it, or one of ours that did not finish, does not; only a Succeeded one neutralizes.
+    cut = lambda at, who, st: {**ran(at, who), "status": st}  # noqa: E731
+    assert decide({"run_commands": [ran(5, "oid-1"), cut(6, "x", "Failed")]}, start, trusted)[0] is False
+    assert decide({"run_commands": [ran(5, "oid-1"), cut(25, "x", "Accepted")]}, start, trusted)[0] is False
+    assert decide({"run_commands": [cut(2, "x", "Failed"), ran(5, "oid-1")]}, start, trusted) == (True, "")
+    assert decide({"run_commands": [ran(5, "oid-1"), cut(6, "oid-1", "Failed")]}, start, trusted) == (True, "")
+    assert decide({"run_commands": [ran(3, "h0"), cut(5, "oid-1", "Failed")]}, start, trusted)[0] is False
 
 
 # ── M2, M4 (review) ─────────────────────────────────────────────────────────────────────────────
@@ -709,7 +774,7 @@ class RecoveryMachine(RuleBasedStateMachine):
         self.minutes += 1
         at = self._now()
         self.c.isolate_vm(vm)                         # its session drain: a Run Command by H0
-        self.cmds.setdefault(vm, []).append({"at": at, "by": H0})
+        self.cmds.setdefault(vm, []).append({"at": at, "by": H0, "done": True})
         from glorfindel.actions import _save_isolation_state
         state = _load_isolation_state(vm)
         _save_isolation_state(vm, {**state, "isolated_at": datetime.fromtimestamp(at, tz=timezone.utc).isoformat()})
@@ -729,7 +794,20 @@ class RecoveryMachine(RuleBasedStateMachine):
         vm = self.vms[i]
         self.minutes += 1
         _run(self.f, self.c, vm, "glorfindel: run command neutralized" if marker else "attacker", by)
-        self.cmds.setdefault(vm, []).append({"at": self._now(), "by": by})
+        self.cmds.setdefault(vm, []).append({"at": self._now(), "by": by, "done": True})
+
+    @rule(i=st.integers(0, 1), status=st.sampled_from(["Accepted", "Started", "Failed"]), marker=st.booleans())
+    def cut_command(self, i, status, marker):
+        """An attacker's Run Command that never finished (cut by a deallocation, or failed): no
+        Succeeded in the log, its settings in the VM model all the same (round 2, m1)."""
+        vm = self.vms[i]
+        self.minutes += 1
+        self.f.caller = ATTACKER
+        try:
+            self.f.cut_run_command(vm, "glorfindel: run command neutralized" if marker else "attacker", status)
+        finally:
+            self.f.caller = H0
+        self.cmds.setdefault(vm, []).append({"at": self._now(), "by": ATTACKER, "done": False})
 
     @rule(i=st.integers(0, 1))
     def hostile_guest(self, i):
@@ -820,11 +898,11 @@ class RecoveryMachine(RuleBasedStateMachine):
             if sig["raw_signal"]["run_command_neutralized"] is True:
                 event("recovery neutralized")
                 cmds = [c for c in self.cmds.get(vm, []) if c["at"] >= self.iso_at[vm]]
-                before = [c for c in cmds if c["at"] < last["start"]]
+                before = [c for c in cmds if c["done"] and c["at"] < last["start"]]
                 assert before and before[-1]["by"] == CONSOLE, (
                     f"R1: neutralized, yet the last Run Command before the restore was {before[-1:]}")
-                assert all(c["by"] == CONSOLE for c in cmds if c["at"] >= last["start"]), (
-                    f"R1: neutralized, yet another ran a Run Command after the restore began: {cmds}")
+                assert all(c["by"] == CONSOLE for c in cmds if c["at"] > before[-1]["at"]), (
+                    f"R1: neutralized, yet another ran a Run Command after it, finished or not: {cmds}")
             assert (vm, last["name"]) not in self.emitted, f"R2: twice for {last['name']}"
             self.emitted.append((vm, last["name"]))
             if sig["raw_signal"]["run_command_neutralized"] is True:

@@ -5,7 +5,8 @@ restore, never before. M4615–M4619, measured by tests/unit/test_recovery_watch
 and its machine, R1 and R2). After the review (B1, M2, M4), M4628–M4632: a restore in place proven by
 the control plane (its type, the VM's OS disk created during the job), the neutralization by the
 activity log (the last Run Command before the job a restoring principal's, none of another after),
-the job's container, a release running left alone."""
+the job's container, a release running left alone. Round 2 (m1, m2), M4639–M4641: another's command after the
+neutralization whatever its status, an activity log past its bound."""
 WATCH = "glorfindel/recovery_watch.py"
 READ = "glorfindel/providers/azure/recovery.py"
 _T = "tests/unit/test_recovery_watch.py"
@@ -58,6 +59,20 @@ MUTANTS = [
       '            if not state or state.get("isolated_at") != iso.get("isolated_at") or state.get("releasing_at"):\n'),
      ("    if not rid or isolated_at is None:\n",
       '            if not state or state.get("isolated_at") != iso.get("isolated_at"):\n')),
+    # The second review (round 2, m1, m2): a command that never finished, an activity log too long.
+    ("M4639", "the activity log's Run Commands kept only when they succeeded: an attacker's command cut "
+     "by the deallocation, or failed, after the neutralization — replayed by the restored disk — never "
+     "seen (REC1, round 2 m1)", READ,
+     "            if op != RUN_COMMAND_OP or rid != want or at is None:\n",
+     '            if op != RUN_COMMAND_OP or status != "Succeeded" or rid != want or at is None:\n'),
+    ("M4640", "an activity log longer than its bound read as all read: the last command, past the last "
+     "page, never seen (REC1, round 2 m2)", READ,
+     '        raise RuntimeError(f"journal d\'activité : plus de {ACTIVITY_PAGES} pages, la suite n\'est pas lue")\n',
+     "        return events\n"),
+    ("M4641", "another's Run Command read only after the job began: one between the neutralization and "
+     "the restore, the model's last, never seen (REC1, round 2 m1)", WATCH,
+     '    other = next((r for r in runs if _epoch(r["at"]) > neutralized_at and not ours(r)), None)\n',
+     '    other = next((r for r in runs if _epoch(r["at"]) >= job_start and not ours(r)), None)\n'),
 ]
 TESTS = {
     "M4615": f"{_T}::test_a_job_that_did_not_succeed_lifts_nothing {_MACHINE}",
@@ -73,4 +88,9 @@ TESTS = {
              f"{_T}::test_the_control_plane_reads_who_ran_each_command {_MACHINE}",
     "M4631": f"{_T}::test_a_job_naming_no_container_lifts_only_by_the_id_of_its_point {_MACHINE}",
     "M4632": f"{_T}::test_a_release_running_is_left_to_it",
+    "M4639": f"{_T}::test_a_command_of_another_that_never_finished_after_the_neutralization_proves_nothing "
+             f"{_MACHINE}",
+    "M4640": f"{_T}::test_an_activity_log_longer_than_its_bound_is_unreadable_never_all_read",
+    "M4641": f"{_T}::test_a_command_of_another_that_never_finished_after_the_neutralization_proves_nothing "
+             f"{_T}::test_the_control_plane_reads_who_ran_each_command {_MACHINE}",
 }

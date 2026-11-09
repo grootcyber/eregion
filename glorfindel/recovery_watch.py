@@ -158,16 +158,18 @@ def _card(resource_id: str, vm: str, job: str, kind: str, reason: str, steps: li
 
 def neutralized_by_the_control_plane(obs: dict, job_start: float, trusted: frozenset[str]):
     """(True | False | None, why) — the neutralization as the activity log says it: the last
-    succeeded Run Command on the VM before the job started made by a principal that restores, none
-    by anyone else since. False when another's is the last, or came after; None when it can't be
-    told (the log unreadable, no principal configured)."""
+    SUCCEEDED Run Command on the VM before the job started made by a principal that restores (the
+    neutralization), and no Run Command event by anyone else after it — whatever its status: one
+    that failed, or stayed Accepted or Started (cut by the deallocation), left its settings in the
+    VM model, which a restored disk may replay. False when another's is the last, or came after;
+    None when it can't be told (the log unreadable, no principal configured)."""
     if obs.get("run_commands_error"):
         return None, str(obs["run_commands_error"])
     if not trusted:
         return None, "GLORFINDEL_RESTORE_PRINCIPALS vide : qui a lancé la dernière Run Command ne se compare à rien"
     runs = [r for r in obs.get("run_commands") or [] if _epoch(r.get("at")) is not None]
-    before = [r for r in runs if _epoch(r["at"]) < job_start]
-    after = [r for r in runs if _epoch(r["at"]) >= job_start]
+    done = [r for r in runs if str(r.get("status") or "Succeeded") == "Succeeded"]
+    before = [r for r in done if _epoch(r["at"]) < job_start]
 
     def ours(r) -> bool:
         return bool(set(r.get("callers") or []) & trusted)
@@ -176,9 +178,11 @@ def neutralized_by_the_control_plane(obs: dict, job_start: float, trusted: froze
     if not ours(before[-1]):
         who = ", ".join(before[-1].get("callers") or []) or "?"
         return False, f"la dernière Run Command avant le restore vient de {who[:80]}, pas d'un principal qui restaure"
-    other = next((r for r in after if not ours(r)), None)
+    neutralized_at = _epoch(before[-1]["at"])
+    other = next((r for r in runs if _epoch(r["at"]) > neutralized_at and not ours(r)), None)
     if other is not None:
-        return False, f"une Run Command de {', '.join(other.get('callers') or ['?'])[:80]} après le début du restore"
+        return False, (f"une Run Command de {', '.join(other.get('callers') or ['?'])[:80]} "
+                       f"({other.get('status') or '?'}) après la neutralisation")
     return True, ""
 
 

@@ -37,6 +37,8 @@ _BAG_FORMATS = ("%m/%d/%Y %I:%M:%S %p", "%m/%d/%Y %H:%M:%S", "%d/%m/%Y %I:%M:%S 
 # their own, listed by _replayable_scripts.
 _RUN_COMMAND_V1 = ("runcommandlinux", "runcommandwindows")
 RUN_COMMAND_OP = "microsoft.compute/virtualmachines/runcommand/action"
+# The activity log read at most this many pages; one left past it is an error, never « all read ».
+ACTIVITY_PAGES = 20
 _OID_CLAIM = "http://schemas.microsoft.com/identity/claims/objectidentifier"
 
 
@@ -225,9 +227,11 @@ class RecoveryMixin:
             return {"os_disk_created": "", "os_disk_why": f"disque OS illisible : {str(exc)[:160]}"}
 
     def _run_commands_on(self, resource_id: str, since: str) -> list[dict]:
-        """The succeeded Run Commands (v1, `runCommand/action`) on this VM since `since`, from the
-        activity log — the control plane's word, never the guest's: [{"at", "callers"}], oldest
-        first. Raises when the log can't be read."""
+        """Every Run Command (v1, `runCommand/action`) event on this VM since `since`, from the
+        activity log — the control plane's word, never the guest's: [{"at", "callers", "status"}],
+        oldest first, whatever the status. A command that failed, or stayed Accepted or Started (cut
+        by the deallocation), left its settings in the VM model all the same: a restored disk may
+        replay it. Raises when the log can't be read."""
         events = self._activity_events(resource_id, since)
         out = []
         want = resource_id.rstrip("/").lower()
@@ -236,9 +240,9 @@ class RecoveryMixin:
             status = str((e.get("status") or {}).get("value") or "")
             rid = str(e.get("resourceId") or e.get("resourceUri") or want).rstrip("/").lower()
             at = _utc(e.get("eventTimestamp"))
-            if op != RUN_COMMAND_OP or status != "Succeeded" or rid != want or at is None:
+            if op != RUN_COMMAND_OP or rid != want or at is None:
                 continue
-            out.append({"at": at.isoformat(), "callers": _callers(e)})
+            out.append({"at": at.isoformat(), "callers": _callers(e), "status": status})
         return sorted(out, key=lambda e: e["at"])
 
     def _activity_events(self, resource_id: str, since: str) -> list[dict]:
@@ -256,7 +260,7 @@ class RecoveryMixin:
                   "$filter": f"eventTimestamp ge '{start:%Y-%m-%dT%H:%M:%SZ}' and resourceUri eq '{resource_id}'",
                   "$select": "caller,claims,operationName,eventTimestamp,status,resourceId"}
         events: list[dict] = []
-        for _ in range(20):                    # bounded: a VM's few hours of events
+        for _ in range(ACTIVITY_PAGES):        # bounded: a VM's few hours of events
             r = requests.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=20, params=params)
             if not r.ok:
                 raise RuntimeError(f"journal d'activité : {r.status_code} {r.text[:120]}")
@@ -264,8 +268,9 @@ class RecoveryMixin:
             events += list(body.get("value") or [])
             url, params = body.get("nextLink"), None
             if not url:
-                break
-        return events
+                return events
+        # Pages left past the bound: what they hold is unknown — the last command among them, maybe.
+        raise RuntimeError(f"journal d'activité : plus de {ACTIVITY_PAGES} pages, la suite n'est pas lue")
 
     @staticmethod
     def _power_of(view) -> str:
