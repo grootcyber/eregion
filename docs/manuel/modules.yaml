@@ -1020,6 +1020,16 @@ briques:
     lots: [WL1, CAN2]
     issue: 595
 
+  - id: c-couche-client-signin
+    composant: celebrimbor
+    poste: c-construire
+    nom: "La couche du client du banc : les connexions OIDC du canari"
+    etat: main
+    release: "0.6"
+    lots: [CAN3]
+    issue: 673
+    doc: infra/glorfindel-host/README.md
+
   - id: c-rancongiciel
     composant: celebrimbor
     poste: c-construire

@@ -127,3 +127,66 @@ rules:
             and Caller !contains "@")
       | project TimeGenerated, OperationNameValue, ActivityStatusValue, Succeeded, Callers, Caller, CallerIpAddress,
                 CallerAppId, CallerObjectId, _ResourceId, ResourceGroup, CorrelationId
+
+  # entra-sp-unusual-signin : la règle livrée, recopiée à l'identique, plus une exclusion — les
+  # connexions du canari azurerm (.github/workflows/canary-azurerm.yml) depuis les runners hébergés
+  # de GitHub, dont l'adresse change à chaque run, par le jeton OIDC que GitHub donne au job (P-04) :
+  # une carte à chaque passage sur H0. Décision de Jonathan, 09/11 (CAN3, #673). Écartée seulement
+  # si les deux tiennent : le principal est celui du canari (son appid, pris par `env_guids` dans
+  # l'environnement de la watch, la même variable que CAN2, jamais dans le dépôt) et la connexion
+  # est faite par un identifiant fédéré. Le même principal par un secret ou un certificat, et tout
+  # autre principal : une carte. Variable absente ou invalide : la copie est écartée, la règle
+  # livrée tourne — les cartes du canari reviennent, rien n'est caché.
+  - name: entra-sp-unusual-signin
+    description: >
+      Connexion réussie d'un principal de service depuis une adresse jamais vue dans sa base
+      (14 jours, la dernière heure exclue) — T1078.004 (Valid Accounts: Cloud Accounts : un
+      identifiant volé utilisé ailleurs). Seuils : le principal a un historique (vu au moins
+      MIN_BASELINE_DAYS jours de la base, sinon un principal nouveau, ou les premiers jours
+      après le paramètre de diagnostic, inonderaient) ; échecs écartés ; une carte par
+      principal et adresse. Exclusion : les identités managées (autre table, non lue) ; un
+      runner aux adresses tournantes s'exclut dans la couche du client.
+      (banc : sans les connexions OIDC du canari azurerm, CAN3)
+    enabled: true
+    source: azure_entra
+    ttp: T1078.004
+    assets: [auto]
+    interval_s: 300
+    expected_latency_s: 1800
+    base_sha256: 777e9b5a7e7d69c0e0c8536cc887b8cd08be6a9cc1643655fbfe0eebd320e785
+    env_guids: [EREGION_RULE_CANARY_APPID]
+    query: |
+      let baseline = AADServicePrincipalSignInLogs
+          | where TimeGenerated between (ago(14d) .. ago(1h))
+          | where ResultType == "0";
+      let known = baseline | distinct ServicePrincipalId, IPAddress;
+      let history = baseline
+          | summarize BaselineSignIns = count(), BaselineDays = dcount(bin(TimeGenerated, 1d)) by ServicePrincipalId;
+      AADServicePrincipalSignInLogs
+      | where TimeGenerated > ago(1h)
+      | where ResultType == "0"
+      | join kind=leftanti known on ServicePrincipalId, IPAddress
+      // CAN3 (#673), the bench only: the azurerm canary's sign-ins (.github/workflows/canary-azurerm.yml),
+      // from GitHub's hosted runners, whose address changes every run, with the OIDC token GitHub gives
+      // the job (P-04). Read on each sign-in line, before the lines are grouped by principal and address
+      // (one group's lines may differ in credential); the baseline above is the shipped rule's, untouched.
+      // Set aside only when both hold: the client application is the canary's — its appid, from the
+      // watch's environment (EREGION_RULE_CANARY_APPID, checked to be a GUID at load), without case —
+      // and the line was made with a federated identity credential: ClientCredentialType says so
+      // (federatedIdentityCredential, Microsoft Graph's value; the workspace's form is measured on the
+      // bench) and the line names that credential (FederatedCredentialId, written by Entra only then).
+      // The canary's principal with a secret, a certificate or a bare assertion, another value or an
+      // empty column, and any other principal: a card, as with the shipped rule.
+      | where not(AppId =~ "${EREGION_RULE_CANARY_APPID}"
+            and ClientCredentialType =~ "federatedIdentityCredential"
+            and isnotempty(FederatedCredentialId))
+      | summarize TimeGenerated = min(TimeGenerated), SignIns = count(), Resources = make_set(ResourceDisplayName, 5),
+                  ServicePrincipalName = take_any(ServicePrincipalName), AppId = take_any(AppId),
+                  Location = take_any(Location), CorrelationId = take_any(CorrelationId)
+                  by ServicePrincipalId, IPAddress
+      | join kind=inner history on ServicePrincipalId
+      | project TimeGenerated, EntraKind = "signin", EntraOperation = "Service principal sign-in",
+                EventId = strcat(ServicePrincipalId, "|", IPAddress), Result = "success",
+                ActorName = ServicePrincipalName, ActorId = ServicePrincipalId, ActorAppId = AppId,
+                ActorIp = IPAddress, Location, TargetName = strcat_array(Resources, ", "),
+                SignIns, BaselineSignIns, BaselineDays, CorrelationId

@@ -292,7 +292,7 @@ def test_the_variable_absent_or_invalid_sets_the_copy_aside_and_the_shipped_rule
     rule = next(r for r in cfg.rules if r.name == NAME)
     assert rule.layer == "base" and rule.query == SHIPPED[NAME]["query"]
     assert NAME not in cfg.overrides
-    [note] = [n for n in cfg.notes if VAR in n]
+    [note] = [n for n in cfg.notes if VAR in n and NAME in n]      # CAN3's copy says its own
     assert "la règle livrée tourne à sa place" in note
     value = environ.get(VAR, "").strip()
     assert not value or value not in note                           # never the value

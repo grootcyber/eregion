@@ -347,11 +347,14 @@ fichier reste), jusqu'au retour à une référence avec P1.
 ### La couche du client du banc (WL1)
 
 Les règles que le dépôt tient pour le banc sont dans `infra/glorfindel-host/client_rules.bench.yaml`.
-Aujourd'hui deux : `sudo-privilege-escalation`, la règle livrée recopiée, sans la maintenance
+Aujourd'hui trois : `sudo-privilege-escalation`, la règle livrée recopiée, sans la maintenance
 programmée de bree (décision de Jonathan, 06/11 ; `docs/glorfindel.md`, « La maintenance
-programmée de bree ») ; et `nsg-change-outside-glorfindel`, la règle livrée recopiée, sans les runs
+programmée de bree ») ; `nsg-change-outside-glorfindel`, la règle livrée recopiée, sans les runs
 du canari azurerm dans `rg-eregion-canary` sous son propre principal (CAN2, #605, décision de
-Jonathan du 06/11 ; `docs/glorfindel.md`, « Le canari azurerm »). Rien ne les pose seul sur H0 : ni le CD, ni `glorfindel-host-push`, ni
+Jonathan du 06/11 ; `docs/glorfindel.md`, « Le canari azurerm ») ; et `entra-sp-unusual-signin`,
+la règle livrée recopiée, sans les connexions OIDC du canari depuis les runners de GitHub (CAN3,
+#673, décision de Jonathan du 09/11 ; `docs/glorfindel.md`, « Les connexions OIDC du canari
+azurerm »). Rien ne les pose seul sur H0 : ni le CD, ni `glorfindel-host-push`, ni
 `glorfindel-host-start`. Le geste est celui de Jonathan, depuis le poste, **une fois déployée une
 release qui contient WL1** (avant, la watch ne connaît pas `base_sha256` : elle charge la
 copie, même périmée, sans jamais dire sa dérive). Une couche de H0 qui tiendrait encore une copie
@@ -426,6 +429,42 @@ lendemain (06:00 UTC), aucune carte `nsg-change-outside-glorfindel` sur `rg-ereg
 carte du canari, c'est que l'exclusion ne tient pas (l'appid n'est pas celui du principal du run, ou
 la variable manque à la watch) — reprendre l'étape 1. Pour revenir aux cartes du canari : vider la
 variable (étapes 1 et 2), ou retirer la règle de la couche de H0.
+
+**Les connexions OIDC du canari (CAN3)** : la copie d'`entra-sp-unusual-signin` écarte une
+connexion seulement si son application est celle du canari (le même `env_guids:
+[EREGION_RULE_CANARY_APPID]` que CAN2) **et** qu'elle est faite par un identifiant fédéré
+(`ClientCredentialType` vaut `federatedIdentityCredential` et `FederatedCredentialId` est
+renseigné) ; le même principal par un secret ou un certificat, et tout autre principal, font
+toujours leur carte. Aucun code : la copie demande une watch qui porte CAN2 (0.5.8 et après), et se
+pousse sans release. La variable est déjà dans `host.env` et dans l'environnement de la watch
+(CAN2, étapes 1 et 2 ci-dessus) : le geste de Jonathan, depuis le poste, est la seule cible.
+
+```bash
+make glorfindel-host-client-rules
+```
+
+`glorfindel rules` doit montrer `entra-sp-unusual-signin` en `client (remplace)`, avec la note
+« remplacée par celle de la couche du client », et aucune note « EREGION_RULE_CANARY_APPID absente,
+vide ou pas un GUID » (avec elle, la variable manque à la watch : les deux copies du canari sont
+écartées, reprendre les étapes 1 et 2 de CAN2). **Au passage suivant du canari** (06:00 UTC, ou un
+`workflow_dispatch` de `canary-azurerm`) : **aucune** carte `entra-sp-unusual-signin` pour
+`eregion-canary`. **À mesurer à ce passage** : la forme que le workspace écrit dans
+`ClientCredentialType` pour une connexion OIDC (la valeur retenue est celle de Microsoft Graph ; la
+page de la table n'en donne que des exemples en prose) et la présence de `FederatedCredentialId`.
+Une carte du canari, c'est que l'une des deux ne tient pas : lire ses lignes de la dernière heure,
+dans le workspace (des ids, aucun secret), puis corriger la copie dans le dépôt, et relancer la
+cible — sans release :
+
+```kusto
+AADServicePrincipalSignInLogs
+| where TimeGenerated > ago(1h) and ServicePrincipalName == "eregion-canary"
+| project TimeGenerated, IPAddress, ResultType, ClientCredentialType, FederatedCredentialId,
+          ServicePrincipalCredentialKeyId, ServicePrincipalCredentialThumbprint
+```
+
+Une carte du canari qui nomme un secret ou un certificat (`ServicePrincipalCredentialKeyId`,
+`…Thumbprint`) n'est pas l'exclusion qui manque : c'est la carte voulue — le canari n'a pas de
+secret (P-04). Pour revenir aux cartes de ses connexions : retirer la règle de la couche de H0.
 
 **Après une mise à jour de Glorfindel**, si une règle livrée recopiée a changé (n'importe quel
 champ : l'empreinte `base_sha256` est celle de la règle entière), la watch **écarte la copie** et
