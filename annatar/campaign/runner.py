@@ -7,7 +7,8 @@ hand-edited manifest cannot bypass them):
 
   - re-check scope per scenario (allowlist Celebrimbor);
   - destructive scenario only runs if budget.allow_destructive;
-  - stop at budget.max_scenarios; honour an externally-set kill_switch.
+  - stop at budget.max_scenarios; honour an externally-set kill_switch — and stop when it
+    cannot be read (KS1, #648: fail-closed), said once and recorded in the manifest.
 
 Annatar announces NOTHING to Glorfindel — it just runs and records detected/missed
 into the manifest (read post-hoc by the blue replay engine).
@@ -23,10 +24,12 @@ from pathlib import Path
 from typing import Callable
 
 from rich.console import Console
+from rich.markup import escape
 
 from annatar.campaign.manifest import CampaignManifest
 from annatar.runner.engine import Engine, RunOutcome
 from eregion_core import watch_gate
+from eregion_core.channel_reader import Refused, read_json
 
 console = Console()
 
@@ -40,6 +43,11 @@ TARGET_REFUSALS = ("safety:", "passive:")
 ENGINE_RAISED = "engine raised:"
 RAISED_NO_RESET = ("not run: the engine raised — whether it touched the target is unknown; "
                    "reset it by hand if it did (glorfindel reset <resource_id> --yes)")
+
+
+# KS1 (#648): why a campaign stops before its next run (the manifest's ``stop_reason``).
+KILL_SWITCH_SET = "kill switch set"
+KILL_SWITCH_UNREADABLE = "kill switch unreadable — stopped, fail-closed"
 
 
 class CampaignRefused(ValueError):
@@ -161,9 +169,13 @@ class CampaignRunner:
             if entry.status != "pending":
                 continue  # resume: skip already-processed scenarios
 
-            # kill switch — re-read from disk so an operator can stop mid-campaign
-            if self._kill_switch_set():
-                m.kill_switch = True
+            # kill switch — re-read from disk so an operator can stop mid-campaign; one that
+            # cannot be read stops it too (KS1): said here once, and in the manifest.
+            stop = self._stop_requested()
+            if stop is not None:
+                m.kill_switch = m.kill_switch or stop == KILL_SWITCH_SET
+                m.stop_reason = stop
+                console.print(f"[red]✗ campaign {escape(m.campaign_id)} stopped: {escape(stop)}[/red]")
                 aborted = True
                 break
 
@@ -289,11 +301,27 @@ class CampaignRunner:
         m.save(self.campaign_dir)
         return outcome
 
-    def _kill_switch_set(self) -> bool:
+    def _stop_requested(self) -> str | None:
+        """Why the campaign stops before its next run, or None — its manifest's ``kill_switch``,
+        re-read from disk so an operator can stop it mid-campaign. A manifest gone asks nothing
+        (None, as before: the runner writes it again). One that cannot be read stops the
+        campaign (KS1, #648: fail-closed — a stop never read is never taken for "go on"):
+        refused by the bounded reader (a pipe, a link, a file too large: SEC-A1), not JSON,
+        nested too deep, an I/O error, or a ``kill_switch`` that is neither true nor false."""
         try:
-            return CampaignManifest.load(self.campaign_dir).kill_switch
-        except Exception:
-            return False
+            doc = read_json(self.campaign_dir / "manifest.json")
+        except FileNotFoundError:
+            return None
+        except Refused as exc:
+            return f"{KILL_SWITCH_UNREADABLE} (refused: {exc})"
+        except Exception as exc:  # any other failure to read it stops it too
+            return f"{KILL_SWITCH_UNREADABLE} ({type(exc).__name__})"
+        switch = doc.get("kill_switch", False) if isinstance(doc, dict) else None
+        if switch is True:
+            return KILL_SWITCH_SET
+        if switch is False:
+            return None
+        return f"{KILL_SWITCH_UNREADABLE} (kill_switch is not true or false)"
 
     def _preview(self, m: CampaignManifest) -> None:
         console.print(f"[yellow]DRY RUN — campaign {m.campaign_id}[/yellow]")

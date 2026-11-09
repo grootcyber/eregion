@@ -383,6 +383,12 @@ annatar campaign plan --target <resource_id> [--llm]   # en local (banc) ; --llm
 #   DG-e : écrit aussi le drill de la campagne (auteur annatar), annatar-<id>.yaml à côté du
 #   manifeste — à coller dans Dagorlad, « Import YAML », puis « Save as drill » (docs/dagorlad.md)
 annatar campaign run <campaign_id> --yes               # ratifie le budget/scope et exécute
+#   L'arrêt d'une campagne (KS1, #648) : avant chaque run, le runner relit le kill_switch de son
+#   manifeste (lecteur borné de runs/, SEC-A1). true : la campagne s'arrête (« aborted », code 1).
+#   Un manifeste refusé (un tube, un lien, plus de 1 Mio) ou illisible (pas du JSON, imbriqué trop
+#   profond, une erreur d'E/S, un kill_switch ni true ni false) l'arrête aussi (échec fermé), dit
+#   une fois dans la sortie et inscrit au manifeste (stop_reason) ; un manifeste absent ne demande
+#   rien, la campagne continue et le réécrit.
 
 # Simulation locale sans Azure — les signaux d'un run dans un fichier temporaire, puis
 # `glorfindel respond <fichier> --dry-run` (pas de watch, pas runs/ : SEC3) ; une clé de modèle

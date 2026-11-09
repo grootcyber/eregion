@@ -3,6 +3,7 @@
 Engine + NSG reset are injected (no Azure, no LLM, no subprocess).
 """
 
+import os
 import subprocess
 
 import pytest
@@ -15,7 +16,7 @@ from annatar.campaign.manifest import (
     campaign_dir,
     new_campaign_id,
 )
-from annatar.campaign.runner import CampaignRunner
+from annatar.campaign.runner import KILL_SWITCH_SET, KILL_SWITCH_UNREADABLE, CampaignRunner
 from annatar.runner.engine import RunOutcome
 
 SANDBOX_VM = (
@@ -370,3 +371,113 @@ def test_a_campaign_with_its_own_runs_dir_still_takes_orodruins_one_lock(tmp_pat
     assert res.exit_code == 1 and "busy: request r-20261031T080000Z-abcdef" in " ".join(res.output.split())
     assert ran == [] and CampaignManifest.load(cdir).state == "planned"
     assert not list(elsewhere.rglob(".lock"))
+
+
+# ── KS1 (#648): the stop of a campaign, read fail-closed ─────────────────────────────────────
+# The kill switch is the manifest's, re-read before each run. Between the two scenarios, the
+# reset (`reset_fn`, returning None: the runner does not write the manifest after it) puts in its
+# place what an operator, or a hostile writer, could: the runner meets it before the second run.
+
+def _between(cdir, put):
+    def reset(_rid):
+        put(cdir / "manifest.json")
+    return reset
+
+
+def _run_two(tmp_path, put):
+    cdir = _make_campaign(tmp_path, [_entry(1, "T1110.001"), _entry(2, "T1041")])
+    engine = FakeEngine([RunOutcome("run-1", "detected"), RunOutcome("run-2", "missed")])
+    r = CampaignRunner(cdir, reset_fn=_between(cdir, put), engine_factory=lambda: engine).run()
+    return cdir, engine, r
+
+
+def _as_link(path):
+    """A link to a copy of the manifest that says "go on": never followed."""
+    copy = path.with_name("elsewhere.json")
+    path.replace(copy)
+    path.symlink_to(copy)
+
+
+def _as_pipe(path):
+    path.unlink()
+    os.mkfifo(path)
+
+
+def _too_large(path):
+    from eregion_core.channel_reader import DOC_BYTES
+    path.write_text(path.read_text() + " " * DOC_BYTES)
+
+
+@pytest.mark.parametrize("put", [_as_link, _as_pipe, _too_large], ids=["link", "pipe", "too-large"])
+def test_a_kill_switch_refused_by_the_bounded_reader_stops_the_campaign_and_says_so(tmp_path, capsys, put):
+    """KS1 (M4573): a manifest the bounded reader refuses (SEC-A1) is never read as "go on"."""
+    cdir, engine, r = _run_two(tmp_path, put)
+    assert len(engine.calls) == 1 and r.state == "aborted"
+    assert r.scenarios[1].status == "pending"
+    assert r.stop_reason.startswith(KILL_SWITCH_UNREADABLE) and "refused" in r.stop_reason
+    assert r.kill_switch is False          # nobody asked: it could not be read
+    out = " ".join(capsys.readouterr().out.split())
+    assert out.count(KILL_SWITCH_UNREADABLE) == 1
+    on_disk = CampaignManifest.load(cdir)  # the manifest, written again, says why
+    assert on_disk.state == "aborted" and on_disk.stop_reason == r.stop_reason
+
+
+def _not_json(path):
+    path.write_text("{not json")
+
+
+def _nested_too_deep(path):
+    path.write_text("[" * 200_000 + "]" * 200_000)
+
+
+def _not_a_switch(path):
+    path.write_text(path.read_text().replace('"kill_switch": false', '"kill_switch": "no"'))
+
+
+def _io_error(path, monkeypatch):
+    import errno
+
+    from annatar.campaign import runner as runner_mod
+
+    def fail(_path, *a, **k):
+        raise OSError(errno.EIO, "Input/output error")
+    monkeypatch.setattr(runner_mod, "read_json", fail)
+
+
+@pytest.mark.parametrize("put", [_not_json, _nested_too_deep, _not_a_switch, "io"],
+                         ids=["not-json", "nested-too-deep", "not-a-switch", "io-error"])
+def test_an_unreadable_kill_switch_stops_the_campaign_and_says_so(tmp_path, capsys, monkeypatch, put):
+    """KS1 (M4574): invalid JSON, a RecursionError, an I/O error, a switch neither true nor
+    false — the campaign stops, said once, never silently goes on."""
+    if put == "io":
+        put = lambda path: _io_error(path, monkeypatch)  # noqa: E731
+    cdir, engine, r = _run_two(tmp_path, put)
+    assert len(engine.calls) == 1 and r.state == "aborted"
+    assert r.stop_reason.startswith(KILL_SWITCH_UNREADABLE) and r.kill_switch is False
+    out = " ".join(capsys.readouterr().out.split())
+    assert out.count(KILL_SWITCH_UNREADABLE) == 1
+
+
+def test_an_io_error_names_its_kind(tmp_path, monkeypatch):
+    cdir, engine, r = _run_two(tmp_path, lambda path: _io_error(path, monkeypatch))
+    assert r.stop_reason == f"{KILL_SWITCH_UNREADABLE} (OSError)"
+
+
+def test_a_kill_switch_gone_asks_nothing_the_campaign_goes_on(tmp_path, capsys):
+    """KS1 (M4575): a manifest absent keeps its meaning — no stop asked; the runner writes it again."""
+    cdir, engine, r = _run_two(tmp_path, lambda path: path.unlink())
+    assert len(engine.calls) == 2 and r.state == "done"
+    assert r.stop_reason is None and r.kill_switch is False
+    assert KILL_SWITCH_UNREADABLE not in capsys.readouterr().out
+    assert CampaignManifest.load(cdir).state == "done"
+
+
+def test_a_kill_switch_set_mid_campaign_stops_it(tmp_path, capsys):
+    """KS1: the operator's stop, set between two runs, is taken before the next one."""
+    def kill(path):
+        path.write_text(path.read_text().replace('"kill_switch": false', '"kill_switch": true'))
+    cdir, engine, r = _run_two(tmp_path, kill)
+    assert len(engine.calls) == 1 and r.state == "aborted"
+    assert r.kill_switch is True and r.stop_reason == KILL_SWITCH_SET
+    assert " ".join(capsys.readouterr().out.split()).count(KILL_SWITCH_SET) == 1
+    assert CampaignManifest.load(cdir).stop_reason == KILL_SWITCH_SET

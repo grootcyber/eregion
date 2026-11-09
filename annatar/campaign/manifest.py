@@ -60,6 +60,9 @@ class CampaignManifest:
     scenarios: list[ScenarioEntry] = field(default_factory=list)
     state: str = "planned"
     kill_switch: bool = False
+    # KS1 (#648): why the runner stopped the campaign before its next run — the kill switch set,
+    # or the manifest that holds it unreadable (fail-closed). None when it did not stop there.
+    stop_reason: str | None = None
     # V1 (#214): run --without-glorfindel — set when it starts, resumed only the same way;
     # no detection measured, so no analysis report (eregion_core/watch_gate.py).
     without_glorfindel: bool = False
@@ -93,6 +96,7 @@ class CampaignManifest:
             "budget": asdict(self.budget),
             "state": self.state,
             "kill_switch": self.kill_switch,
+            "stop_reason": self.stop_reason,
             "without_glorfindel": self.without_glorfindel,
             "scenarios": [asdict(s) for s in self.scenarios],
             "results": self.results,
@@ -109,6 +113,7 @@ class CampaignManifest:
             scenarios=[ScenarioEntry(**s) for s in d.get("scenarios", [])],
             state=d.get("state", "planned"),
             kill_switch=d.get("kill_switch", False),
+            stop_reason=d.get("stop_reason") if isinstance(d.get("stop_reason"), str) else None,
             without_glorfindel=d.get("without_glorfindel") is True,
             schema_version=d.get("schema_version", SCHEMA_VERSION),
             created_by=d.get("created_by", "annatar-planner"),
