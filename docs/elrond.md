@@ -34,6 +34,8 @@ Dans le dépôt, depuis une session Claude Code :
 3. `/elrond run` lance les prochains lots prêts ; `/elrond run O1 R1` lance des lots précis.
 4. `/elrond status` donne l'avancement. `/elrond review <lot>` force une relecture.
 
+À chaque étape (lancement, rendu, relecture, fusion, release), la session principale tient aussi à jour le manuel de pilotage de Jonathan, une page privée, et le rattrape au `status` ([sessions.md](sessions.md), « Le manuel de pilotage »). Son adresse n'est que dans sa mémoire locale.
+
 Chaque lot produit une branche locale `lot/<id>-…`. Son entrée de CHANGELOG va dans `changes/<lot>.md` et ses mutants dans `scripts/mutants/<lot>.py` (CI5, [sessions.md](sessions.md), « Le travail ») : des lots qui tournent en parallèle n'écrivent jamais les mêmes lignes, et leurs PR fusionnent l'une après l'autre sans conflit. elrond ne pousse rien et n'ouvre aucune PR sans demande explicite dans la session. Pour les lots que Jonathan délègue, la session principale pousse, ouvre la PR et fusionne après une CI verte et une relecture Opus 5.5 « ok » ([sessions.md](sessions.md) ; seule exception, une relecture que la protection a arrêtée aussi : plus bas). La PR suit le modèle du dépôt, qui indique le modèle et le verdict de relecture.
 
 ## Le plan et le journal

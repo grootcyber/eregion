@@ -11,7 +11,8 @@ L'Orchestre est la session principale qui tient le plan elrond (`/elrond run`, [
   - le train des fusions ;
   - les plages de mutants ;
   - les issues des lots ;
-  - les releases en brouillon.
+  - les releases en brouillon ;
+  - le manuel de pilotage de Jonathan (plus bas, « Le manuel de pilotage »).
 - **Elle fait relire** chaque PR par un sous-agent Opus 5.5 (`elrond-reviewer`) et route les impacts transverses dans `collab/`.
 - **Il n'y en a qu'une à la fois.** Elle porte le nom de session « Orchestre », que Jonathan lui donne au
   démarrage. Elle ne lance que les lots que Jonathan a nommés ou délégués.
@@ -215,6 +216,28 @@ release ») en est la preuve, et `make release-draft` la redemande.
    dernière tentative d'un job relancé comptant ; un macOS rouge, annulé ou sans runner est dit. Le run de la PR de version compte après sa
    fusion : sa base se lit par toutes les PR de sa tête, fermées comprises, et aucune ne doit avoir
    changé de base (CI6c). Une PR de version s'ouvre vers `main` et n'en change jamais. Puis Jonathan publie.
+
+## Le manuel de pilotage (MAN0, #640)
+
+Décision de Jonathan du 06/11 : son manuel de pilotage reste à jour sans dépendre de la mémoire d'une
+session. C'est une page privée, avec sa base : chaque module y est une brique, avec son état (prévue, en
+développement, en relecture, au banc, sur main, livrée), sa release, son lot, sa PR et ce qu'elle
+attend, et un fil des événements.
+- **L'Orchestre seul l'écrit**, par l'outil `ArtifactData` ; les sessions de rôle et les sous-agents n'y
+  écrivent pas. Une session de rôle qui lance, rend ou fait fusionner un lot le dit à l'Orchestre.
+- **À chaque étape d'un lot** (lancement, rendu, relecture, fusion) et d'une release (préparation,
+  publication), il met à jour la brique et ajoute une ligne au fil. Après une publication, les briques
+  sur main passent livrées avec leur version, et la release suivante passe en montage.
+- **Au démarrage** (`/elrond status`), il compare le manuel avec le plan et GitHub (PR ouvertes, fusions
+  depuis le dernier tag, tags, issues fermées, dernière release), rattrape l'écart et le dit au fil.
+- **Il ne retient jamais un lot** : injoignable, l'Orchestre le dit à Jonathan et continue ; le
+  prochain démarrage rattrape.
+- **Aucun lien, identifiant ni adresse du manuel dans le dépôt**, une PR, une issue ou Discord : il est
+  privé, le dépôt est public. Son adresse est dans la mémoire locale de l'Orchestre
+  (`reference_manuel_eregion`).
+
+Le détail, étape par étape : `.claude/skills/elrond/SKILL.md` (« Le manuel », `run`, `status`, « Une
+release »).
 
 ## Ce qui reste à Jonathan
 
