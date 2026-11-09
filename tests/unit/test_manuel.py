@@ -111,7 +111,7 @@ def test_anything_outside_the_subset_is_refused_with_its_line(text, said):
 
 
 def test_the_reader_and_pyyaml_agree_on_every_form_it_takes():
-    text = ('briques:\n  - id: a-b\n    n: 12\n    s: "deux : « mots »"\n    l: [SEC-A4, D-1, CI6b]\n'
+    text = ('issues_securite: [630, 631]\nvide: []\nbriques:\n  - id: a-b\n    n: 12\n    pr: [659, 662]\n    s: "deux : « mots »"\n    l: [SEC-A4, D-1, CI6b]\n'
             '    e: []\n    z: null\n    t: true\n    p: docs/manuel/index.html\n')
     assert mn.load(text) == yaml.safe_load(text)
     for v in ("0.6", "texte", 42, None, ["A1", "MC0"], True):
@@ -120,30 +120,104 @@ def test_the_reader_and_pyyaml_agree_on_every_form_it_takes():
 
 # ── the public rule ────────────────────────────────────────────────────────────────────
 
+NEUTRAL = "Durcissement de sécurité"
+SECU = 633   # an issue of the audit, in issues_securite
+
+
+def _secure(**kw):
+    """A security brick as the manual must hold it: neutral, and laid on s-signer until delivered."""
+    return _brick(**{"composant": "socle", "poste": "s-signer", "nom": NEUTRAL, **kw})
+
+
 @pytest.mark.parametrize("lots", [["SEC-A4"], ["A1", "SEC-D"], ["V-28"], ["P-03"]])
 def test_a_security_brick_has_a_neutral_name_and_nothing_else(lots):
-    neutral = _brick(lots=lots, issue=633, nom="Durcissement de sécurité (#633)")
+    neutral = _secure(lots=lots, issue=SECU)
     assert mn.problems(_with(neutral)) == []
     for bad, said in ((dict(nom="L'attribution d'une ligne à une VM"), "s'appelle"),
                       (dict(note="Une appliance réseau passait."), "pas de note"),
                       (dict(doc="docs/design/modele-de-menace.md"), "SECURITY.md"),
-                      (dict(nom="Durcissement de sécurité (#634)"), "s'appelle")):
+                      (dict(nom="Durcissement de sécurité (#633)"), "s'appelle")):   # no number either
         found = mn.problems(_with({**neutral, **bad}))
         assert any(said in p for p in found), (bad, found)
     assert mn.problems(_with({**neutral, "doc": "SECURITY.md"})) == []
-    assert mn.problems(_with(_brick(lots=lots, nom="Durcissement de sécurité"))) == []   # no issue
+    assert mn.problems(_with(_secure(lots=lots))) == []   # no issue
+
+
+def test_a_lot_in_lower_case_is_refused_and_still_read_as_security():
+    """The review: `lots: [sec-a4]` with a descriptive name passed — the rule read capitals only."""
+    found = mn.problems(_with(_brick(lots=["sec-a4"], nom="L'attribution d'une ligne à une VM")))
+    assert any("une liste de noms de lot" in p for p in found), found
+    assert any("s'appelle « Durcissement de sécurité »" in p for p in found), found
+    assert mn.sensible({"lots": ["sec-a4"]}) and mn.sensible({"lots": ["v-05"]}) and mn.sensible({"lots": ["Sec-D"]})
+    for lot in ("A1", "SEC-A4", "SEC-A4b", "UI-1", "DG-a", "CI6b", "L1Qs", "PRES1b"):
+        assert mn.LOT.fullmatch(lot), lot
+    for lot in ("sec-a4", "Sec-A4", "a1", "ci6b"):
+        assert not mn.LOT.fullmatch(lot), lot
+
+
+def test_a_brick_without_lots_whose_issue_is_the_audit_s_is_security():
+    """The review: only `issue: 633` and a descriptive name passed."""
+    data = _with(_brick(issue=SECU, nom="L'attribution d'une ligne à une VM", etat="dev", version=None))
+    assert SECU in data["issues_securite"]
+    found = mn.problems(data)
+    assert any("s'appelle « Durcissement de sécurité »" in p for p in found), found
+    assert any("se pose sur s-signer" in p for p in found), found
+    pr_only = _with(_brick(pr=[700, SECU], nom="Une proposition de règle"))
+    assert any("s'appelle" in p for p in mn.problems(pr_only))
+    flagged = _with(_brick(securite=True, nom="Une ligne mal attribuée"))
+    assert any("s'appelle" in p for p in mn.problems(flagged))
+    assert mn.problems(_with(_secure(securite=True))) == []
+
+
+def test_every_brick_whose_issue_is_the_audit_s_is_neutral():
+    secu = set(DATA["issues_securite"])
+    assert {630, 631, 632, 633, 634, 635, 636, 638, 642, 644, 654, 660} <= secu
+    named = [b for b in DATA["briques"] if b.get("issue") in secu or set(mn._prs(b)) & secu]
+    assert named, "the manual has bricks of the audit (SEC-A1, SEC-A2, SEC-A4, SEC-A4b, SEC-D)"
+    for b in named:
+        assert mn.sensible(b, secu) and b["nom"] == NEUTRAL and "note" not in b, b
+
+
+@pytest.mark.parametrize("field, text", [
+    ("nom", "Une ligne de détection corrige V-05 : appliance réseau"),
+    ("note", "Corrige V-05 : une appliance réseau passait."),
+    ("note", "Ferme sec-a4, la ligne sans _ResourceId."),
+    ("nom", "Le suivi de P-02"),
+])
+def test_no_text_of_any_brick_names_a_finding(field, text):
+    """The review: a brick delivered, not a security one, whose note named « V-05 » passed."""
+    found = mn.problems(_with(_brick(**{field: text})))
+    assert any(f"« {field} » nomme un constat" in p for p in found), found
+
+
+def test_no_text_of_the_manual_names_a_finding():
+    data = json.loads(json.dumps(DATA))
+    data["releases"][0]["resume"] = "Les suites de V-12."
+    assert any("« resume » nomme un constat" in p for p in mn.problems(data))
+
+
+def test_a_security_brick_not_delivered_waits_on_the_neutral_station():
+    for etat in ("prevue", "dev", "relecture", "main"):
+        placed = _brick(lots=["SEC-A4"], nom=NEUTRAL, etat=etat, version=None, poste="g-detecter")
+        assert any("se pose sur s-signer" in p for p in mn.problems(_with(placed))), etat
+        assert mn.problems(_with(_secure(lots=["SEC-A4"], etat=etat, version=None))) == []
+    assert mn.problems(_with(_brick(lots=["SEC-A2"], nom=NEUTRAL, poste="g-decider"))) == []   # delivered
+    for b in DATA["briques"]:
+        if mn.sensible(b, DATA["issues_securite"]) and b["etat"] != "livree":
+            assert (b["composant"], b["poste"]) == ("socle", "s-signer"), b["id"]
 
 
 def test_every_security_brick_of_the_manual_is_neutral():
-    found = [b for b in DATA["briques"] if mn.sensible(b)]
-    assert found, "the manual has security lots in flight (SEC-A4, SEC-A4b)"
+    found = [b for b in DATA["briques"] if mn.sensible(b, DATA["issues_securite"])]
+    assert found, "the manual has security lots in flight (SEC-A4b)"
     for b in found:
-        assert b["nom"] == mn.neutral_name(b) and "note" not in b and b.get("doc") in (None, "SECURITY.md"), b
+        assert b["nom"] == NEUTRAL and "note" not in b and b.get("doc") in (None, "SECURITY.md"), b
 
 
 def test_the_rule_reads_a_finding_or_its_lot_and_nothing_else():
     assert mn.sensible({"lots": ["V-12"]}) and mn.sensible({"lots": ["SEC-A1b"]}) and mn.sensible({"lots": ["P-02"]})
     assert not mn.sensible({"lots": ["SEC12", "DEV-1", "VP1", "P1", "PRES1"]})
+    assert not mn.sensible({"lots": ["A1"], "issue": 700}, [633])
 
 
 @pytest.mark.parametrize("field", ["geste", "relecture", "attend", "attend_jonathan", "verdict"])
@@ -171,6 +245,8 @@ def test_no_brick_of_the_manual_says_anything_of_what_is_not_delivered():
     (dict(composant="saruman"), "n'existe pas"),
     (dict(poste="a-attaquer"), "est à annatar"),
     (dict(issue="633"), "un numéro"),
+    (dict(pr=[659, "x"]), "un numéro"),
+    (dict(securite=False), "true ou absent"),
     (dict(lots="SEC-A4"), "une liste"),
     (dict(doc="../outside.md"), "un chemin"),
     (dict(id="Pas Un Id"), "un id"),
@@ -354,7 +430,12 @@ def test_every_station_of_the_manual_has_its_place_on_the_diagram():
 
 
 def test_the_page_says_the_same_rule_as_the_manual():
-    assert mn.SENSIBLE.pattern in JS
+    """Its expression, case-insensitive like the manual's; `securite` and `issues_securite` read; and,
+    for a security brick, neither its issue nor its pull request shown."""
+    assert f"/{mn.SENSIBLE.pattern}/i;" in JS and mn.SENSIBLE.flags & re.I
+    assert "b.securite === true" in JS and "state.data.issues_securite" in JS
+    assert "const secret = sensible(b);" in JS and "if (!secret) {" in JS
+    assert 'sensible(b) ? "PR ouverte" : `PR #${b.livePr} ouverte`' in JS
     for state, label in (("livree", "Livrée"), ("main", "Sur main"), ("relecture", "En relecture"),
                          ("dev", "En développement"), ("prevue", "Prévue")):
         assert re.search(rf'{state}: "{label}', JS), state
@@ -373,6 +454,20 @@ def test_every_link_of_the_page_resolves():
                 assert (ROOT / u.path.removeprefix("/grootcyber/eregion/blob/main/")).exists(), href
         else:
             assert (MANUEL / href).resolve().exists(), href
+
+
+def test_the_page_says_a_version_github_has_not_published_yet():
+    """The review: a version the repository says cut, GitHub not published, reads « à publier »; without
+    the API, the page says it does not know."""
+    assert '"a-publier": ", à publier"' in JS and "publication non vérifiée sur GitHub" in JS
+    assert 'return newer(version, latest.version) ? "a-publier" : "publiee";' in JS
+    assert 'if (!latest || !version) return "inconnu";' in JS
+    assert '"a-publier": "à publier", inconnu: "publiée selon le dépôt"' in JS
+
+
+def test_the_socle_s_bricks_show_their_state_on_the_diagram():
+    """The review: on the socle's own colour, its bricks were invisible."""
+    assert re.search(r"\.socle \.mb \{ --c: #[0-9a-f]{6};", CSS)
 
 
 def test_the_readme_and_the_site_lead_to_the_manual():

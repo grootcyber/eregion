@@ -75,7 +75,9 @@ La réponse arrive par `SendMessage`, plus tard. N'attends pas sans rien faire :
      harnais ne copie que les fichiers suivis.
    - **La brique du lot dans le manuel public** (MAN1, #664 ; plus bas, « Le manuel public ») : la PR
      d'un lot met sa brique à jour dans `docs/manuel/modules.yaml`, la crée au besoin, puis `make manuel`.
-     Elle passe `main` (ce qu'elle sera une fois fusionnée), avec ses lots, son issue et sa PR.
+     Elle passe `main` (ce qu'elle sera une fois fusionnée), avec ses lots, son issue et sa PR. Un lot
+     qui prolonge une brique déjà livrée prend une **brique neuve**, sans toucher l'ancienne : la
+     version d'origine reste dite.
      `tests/unit/test_manuel.py` échoue sur un fragment `changes/<LOT>.md` qu'aucune brique `main` ne
      nomme, et sur un `modules.json` qui n'est pas celui du YAML.
 4. **Avant de pousser.**
@@ -263,12 +265,20 @@ dépôt, `docs/manuel/modules.yaml`.
 - **Au chargement**, la page relit l'API publique de GitHub, sans jeton : les PR ouvertes, les issues
   ouvertes et la dernière release, trois requêtes gardées dix minutes dans la session du navigateur
   (la limite est de 60 par heure). Une PR ouverte sur une brique `prevue` ou `dev`, par son numéro ou
-  par sa branche `lot/<lot>-…`, la montre en relecture. Sans l'API (hors ligne, limite atteinte), la
-  page montre ce que dit le dépôt, et le dit.
+  par sa branche `lot/<lot>-…`, la montre en relecture. Une version que le dépôt dit coupée, mais que
+  GitHub n'a pas encore publiée, se lit « à publier ». Sans l'API (hors ligne, limite atteinte), la
+  page montre ce que dit le dépôt, et dit qu'elle ne sait pas ce qui est publié.
 - **La règle publique**, tenue dans le YAML même par `scripts/manuel.py` et
   `tests/unit/test_manuel.py` : le YAML public ne contient jamais un constat.
-  - Un lot de sécurité (`SEC-…`, `V-<n>`, `P-0…` dans ses lots) n'est qu'une brique au nom neutre,
-    « Durcissement de sécurité (#<issue>) », sans note ni autre document que `SECURITY.md`.
+  - Une brique est de sécurité quand ses lots nomment un constat ou son lot (`SEC-…`, `V-<n>`, `P-0…`,
+    en toute casse), quand elle dit `securite: true`, ou quand son issue ou l'une de ses PR figure
+    dans `issues_securite`, en tête du YAML (les issues de l'audit du 06/11 et de ses suites : leur
+    titre porte souvent le constat).
+  - Elle s'appelle « Durcissement de sécurité », sans numéro, sans note ni autre document que
+    `SECURITY.md`. Tant qu'elle n'est pas livrée, elle se pose sur le poste neutre `s-signer`, jamais
+    sur l'étape de sa faiblesse. La page ne montre ni son issue, ni sa PR, ni ses lots.
+  - Aucun texte du manuel (nom, note, résumé, légende) ne nomme un constat ou un lot de sécurité.
+  - Les noms de lot ont leur préfixe en majuscules (`SEC-A4`, `CI6b`), et `sec-a4` est refusé.
   - Aucun geste de l'opérateur, aucune relecture : ces champs n'existent pas, et un champ hors du schéma
     est refusé.
   - Une note seulement sur une brique livrée.

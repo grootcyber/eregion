@@ -11,16 +11,22 @@ YAML badly — and a JSON written by hand would drift from it. The JSON is the Y
 by tests/unit/test_manuel.py.
 
 The YAML is a strict subset, read here without a library (make release runs on python3 alone,
-scripts/release.py reads it through `deliver`): top-level keys, each a list of flat mappings;
-values double-quoted strings without « \\ » nor « " », integers, `null`, `true`, `false`, plain words
-that start with a letter, and flow lists of plain words. Anything else is refused with its line;
-the test compares this reader with PyYAML's on the real file.
+scripts/release.py reads it through `deliver`): top-level keys, each a list of flat mappings or a
+flow list on its line (`issues_securite: [630, 631]`); values double-quoted strings without « \\ »
+nor « " », integers, `null`, `true`, `false`, plain words that start with a letter, and flow lists
+of plain words or integers. Anything else is refused with its line; the test compares this reader
+with PyYAML's on the real file.
 
 **The public rule** (the preview Jonathan validated on 06/11, `docs/sessions.md`, « Le manuel
 public ») is held here, by `problems`, so that the YAML itself never holds what the page must not
-show: a security lot (`SEC-…`, `V-<n>`, `P-0…` in its lots) is a brick under a neutral name only,
-« Durcissement de sécurité (#<issue>) », without a note nor a document; no brick has a field for an
-operator's gesture or a review (only the keys of BRICK_KEYS); a note only on a brick delivered.
+show. A brick is a security one when its lots name an audit's finding or its lot (`SEC-…`, `V-<n>`,
+`P-0…`, whatever the case), when it says `securite: true`, or when its issue or one of its pull
+requests is in `issues_securite` (the audit's issues: their titles often carry the finding). Such a
+brick is named « Durcissement de sécurité », nothing else, without a note nor a document but
+SECURITY.md, and, until it is delivered, laid on a neutral station (`s-signer`) rather than the one of
+its weakness; the page shows neither its issue nor its pull request. No text of the manual names a
+finding (`SEC-…`, `V-<n>`, `P-0…`). No brick has a field for an operator's gesture or a review (only
+the keys of BRICK_KEYS); a note only on a brick delivered.
 """
 from __future__ import annotations
 
@@ -43,20 +49,30 @@ POSTE_KEYS = {"id": True, "composant": True, "nom": True, "legende": True, "natu
               "chaine": False}
 STEP_KEYS = {"version": True, "nom": True, "etat": True, "derniere": False, "date": False, "resume": False}
 BRICK_KEYS = {"id": True, "composant": True, "poste": True, "nom": True, "etat": True, "release": True,
-              "version": False, "lots": False, "issue": False, "pr": False, "doc": False, "note": False}
+              "version": False, "lots": False, "issue": False, "pr": False, "securite": False,
+              "doc": False, "note": False}
 SECTIONS = {"composants": COMPONENT_KEYS, "postes": POSTE_KEYS, "releases": STEP_KEYS, "briques": BRICK_KEYS}
+SECURITY_ISSUES = "issues_securite"
+# Where a security brick waits until it is delivered: a station that names no weakness.
+NEUTRAL_POSTE = ("socle", "s-signer")
+# The texts read for a finding's name, in every item of every section.
+TEXTS = ("nom", "note", "role", "legende", "resume", "chaine")
 
-# The private manual's rule (its pubBrick), on the lots: a finding of an audit, or its lot.
-SENSIBLE = re.compile(r"(^|[^\w])(SEC-|V-\d|P-0)")
+# The private manual's rule (its pubBrick), on the lots and on every text: a finding of an audit,
+# or its lot — in any case (« sec-a4 » is SEC-A4).
+SENSIBLE = re.compile(r"(^|[^\w])(SEC-|V-\d|P-0)", re.I)
 NEUTRAL = "Durcissement de sécurité"
 ID = re.compile(r"[a-z][a-z0-9-]*")
-LOT = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+# A lot's name: its prefix in capitals (A1, SEC-A4, UI-1), a lower-case letter at its end at most
+# (CI6b, SEC-A4b, DG-a). « sec-a4 » is refused.
+LOT = re.compile(r"[A-Z][A-Z0-9]*(?:-[A-Za-z0-9]+)*[a-z]?")
 STEP = re.compile(r"\d+\.(?:\d+|x)")
 VERSION = re.compile(r"(\d+)\.(\d+)\.(\d+)")
 DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
 DOC = re.compile(r"[A-Za-z0-9][\w./-]*")
 
-_TOP = re.compile(r"([a-z]+):\s*")
+_TOP = re.compile(r"([a-z_]+):\s*")
+_TOPVAL = re.compile(r"([a-z_]+): (\[.*\])")
 _ITEM = re.compile(r"  - ([a-z_]+):(?: (.*))?")
 _FIELD = re.compile(r"    ([a-z_]+):(?: (.*))?")
 _PLAIN = re.compile(r"[A-Za-z][\w./-]*")
@@ -87,9 +103,9 @@ def _scalar(raw: str, where: str):
         inner = raw[1:-1].strip()
         items = [x.strip() for x in inner.split(",")] if inner else []
         for x in items:
-            if not _PLAIN.fullmatch(x) or x.lower() in _YAML_WORDS:
-                raise ManuelError(f"{where} : « {x} » — une liste ne tient que des mots simples")
-        return items
+            if not (re.fullmatch(r"0|[1-9]\d*", x) or (_PLAIN.fullmatch(x) and x.lower() not in _YAML_WORDS)):
+                raise ManuelError(f"{where} : « {x} » — une liste ne tient que des mots simples ou des nombres")
+        return [int(x) if re.fullmatch(r"0|[1-9]\d*", x) else x for x in items]
     if _PLAIN.fullmatch(raw) and raw.lower() not in _YAML_WORDS:
         return raw
     raise ManuelError(f"{where} : « {raw} » — entre guillemets droits, s'il n'est pas un mot simple")
@@ -110,6 +126,11 @@ def load(text: str) -> dict:
                 raise ManuelError(f"{where} : « {m.group(1)} » deux fois")
             section, item = m.group(1), None
             data[section] = []
+        elif m := _TOPVAL.fullmatch(line):
+            if m.group(1) in data:
+                raise ManuelError(f"{where} : « {m.group(1)} » deux fois")
+            section, item = None, None
+            data[m.group(1)] = _scalar(m.group(2), where)
         elif (m := _ITEM.fullmatch(line)) and section is not None:
             item = {}
             data[section].append(item)
@@ -132,7 +153,7 @@ def quote(value) -> str:
     if isinstance(value, int):
         return str(value)
     if isinstance(value, list):
-        return "[" + ", ".join(value) + "]"
+        return "[" + ", ".join(map(str, value)) + "]"
     if _PLAIN.fullmatch(value) and value.lower() not in _YAML_WORDS:
         return value   # a word (an état, an id), as the file writes it
     return f'"{value}"'
@@ -145,14 +166,18 @@ def to_json(data: dict) -> str:
 
 # ── the schema, and the public rule ─────────────────────────────────────────────────────
 
-def sensible(brick: dict) -> bool:
-    """A brick of a security lot: its lots name an audit's finding or its lot."""
-    return bool(SENSIBLE.search(" ".join(brick.get("lots") or [])))
+def _prs(brick: dict) -> list:
+    pr = brick.get("pr")
+    return pr if isinstance(pr, list) else [] if pr is None else [pr]
 
 
-def neutral_name(brick: dict) -> str:
-    issue = brick.get("issue")
-    return f"{NEUTRAL} (#{issue})" if isinstance(issue, int) else NEUTRAL
+def sensible(brick: dict, issues=()) -> bool:
+    """A brick of security: its lots name an audit's finding or its lot (any case), it says
+    `securite: true`, or its issue or one of its pull requests is one of `issues`
+    (`issues_securite`)."""
+    lots = brick.get("lots") if isinstance(brick.get("lots"), list) else []
+    return (bool(SENSIBLE.search(" ".join(map(str, lots)))) or brick.get("securite") is True
+            or brick.get("issue") in set(issues) or any(n in set(issues) for n in _prs(brick)))
 
 
 def _items(data: dict, name: str, problems: list[str]) -> list[dict]:
@@ -179,8 +204,12 @@ def _text(value) -> bool:
 def problems(data: dict, root: Path | None = None) -> list[str]:
     """Why this manual is refused — [] when it holds. With `root`, each document must exist there."""
     out: list[str] = []
-    if not isinstance(data, dict) or set(data) != set(SECTIONS):
-        return [f"les sections du manuel sont {', '.join(SECTIONS)}, et elles seules"]
+    if not isinstance(data, dict) or set(data) != set(SECTIONS) | {SECURITY_ISSUES}:
+        return [f"les sections du manuel sont {SECURITY_ISSUES}, {', '.join(SECTIONS)}, et elles seules"]
+    secu = data[SECURITY_ISSUES]
+    if not (isinstance(secu, list) and all(isinstance(n, int) and not isinstance(n, bool) and n > 0 for n in secu)):
+        out.append(f"{SECURITY_ISSUES} : une liste de numéros d'issue")
+        secu = []
     comps = _items(data, "composants", out)
     postes = _items(data, "postes", out)
     steps = _items(data, "releases", out)
@@ -243,9 +272,12 @@ def problems(data: dict, root: Path | None = None) -> list[str]:
         lots = b.get("lots")
         if lots is not None and not (isinstance(lots, list) and all(isinstance(x, str) and LOT.fullmatch(x) for x in lots)):
             out.append(f"{label} : ses lots, une liste de noms de lot")
-        for k in ("issue", "pr"):
-            if b.get(k) is not None and not (isinstance(b[k], int) and not isinstance(b[k], bool) and b[k] > 0):
+        numbers = [("issue", b.get("issue"))] + [("pr", n) for n in _prs(b)]
+        for k, n in numbers:
+            if n is not None and not (isinstance(n, int) and not isinstance(n, bool) and n > 0):
                 out.append(f"{label} : « {k} », un numéro")
+        if b.get("securite") is not None and b.get("securite") is not True:
+            out.append(f"{label} : « securite », true ou absent")
         doc = b.get("doc")
         if doc is not None:
             if not (isinstance(doc, str) and DOC.fullmatch(doc) and ".." not in doc):
@@ -257,13 +289,22 @@ def problems(data: dict, root: Path | None = None) -> list[str]:
         # The public rule: nothing said of what is not delivered, nothing of a security lot.
         if b.get("note") is not None and b.get("etat") != "livree":
             out.append(f"{label} : une note seulement sur une brique livrée")
-        if sensible(b):
-            if b.get("nom") != neutral_name(b):
-                out.append(f"{label} : un lot de sécurité s'appelle « {neutral_name(b)} », rien d'autre")
+        if sensible(b, secu):
+            if b.get("nom") != NEUTRAL:
+                out.append(f"{label} : un lot de sécurité s'appelle « {NEUTRAL} », rien d'autre")
             if b.get("note") is not None:
                 out.append(f"{label} : un lot de sécurité n'a pas de note")
             if doc is not None and doc != "SECURITY.md":
                 out.append(f"{label} : un lot de sécurité ne renvoie qu'à SECURITY.md")
+            if b.get("etat") != "livree" and (b.get("composant"), b.get("poste")) != NEUTRAL_POSTE:
+                out.append(f"{label} : un lot de sécurité pas encore livré se pose sur {NEUTRAL_POSTE[1]} "
+                           f"({NEUTRAL_POSTE[0]}), pas sur l'étape de sa faiblesse")
+    for name in SECTIONS:
+        for it in data.get(name) or []:
+            for k in TEXTS:
+                if isinstance(it.get(k), str) and SENSIBLE.search(it[k]):
+                    out.append(f"{name} {it.get('id') or it.get('version')} : « {k} » nomme un constat ou un "
+                               "lot de sécurité (SEC-…, V-<n>, P-0…)")
     for c in comps:
         doc = c.get("doc")
         if doc is not None and root is not None and not (isinstance(doc, str) and (root / doc).exists()):
@@ -286,7 +327,7 @@ def _blocks(lines: list[str], section: str) -> list[tuple[int, int]]:
     """Each item of `section`: (its first line, the line after its last), in `lines`."""
     out, start, inside = [], None, False
     for i, line in enumerate(lines):
-        if _TOP.fullmatch(line):
+        if _TOP.fullmatch(line) or _TOPVAL.fullmatch(line):
             if start is not None:
                 out.append((start, i))
                 start = None

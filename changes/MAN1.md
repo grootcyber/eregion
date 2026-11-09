@@ -10,8 +10,11 @@
   request on a brick shows it in review. Without the API, it shows what the repository says, and says so.
   The page runs only its own script, under a content policy that allows GitHub's API alone; nothing it
   reads is written as HTML; its fonts are the replay's.
-  - The public rule, held in the YAML itself: a security lot is a brick under a neutral title only, with no
-    note; there is no field for an operator's gesture or a review; a note only on a brick released.
+  - The public rule, held in the YAML itself: a security brick (its lots, in any case, a flag of its own, or
+    its issue or pull request in the list of the audit's issues) has a neutral title only, no note, and,
+    until released, a neutral place; the page shows neither its issue nor its pull request; no text of the
+    manual names a finding; there is no field for an operator's gesture or a review; a note only on a
+    brick released. A version cut but not yet published on GitHub reads « to publish ».
   - Tests: `tests/unit/test_manuel.py` (the schema, the rule, the page, and a fragment `changes/<LOT>.md`
     that no brick on `main` names fails).
 

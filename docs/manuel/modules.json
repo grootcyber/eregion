@@ -1,4 +1,18 @@
 {
+ "issues_securite": [
+  630,
+  631,
+  632,
+  633,
+  634,
+  635,
+  636,
+  638,
+  642,
+  644,
+  654,
+  660
+ ],
  "composants": [
   {
    "id": "glorfindel",
@@ -431,15 +445,28 @@
    "id": "g-entra",
    "composant": "glorfindel",
    "poste": "g-detecter",
-   "nom": "Entra ID en détection seule, des cartes d'identité prêtes à agir",
+   "nom": "Entra ID en détection seule",
    "etat": "livree",
    "release": "0.4",
-   "version": "0.4.7",
+   "version": "0.4.0",
    "lots": [
-    "C2",
-    "C2b"
+    "C2"
    ],
    "issue": 199,
+   "doc": "docs/glorfindel.md"
+  },
+  {
+   "id": "g-cartes-identite",
+   "composant": "glorfindel",
+   "poste": "g-detecter",
+   "nom": "Les cartes d'identité : chaque commande se colle telle quelle",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.8",
+   "lots": [
+    "C2b"
+   ],
+   "issue": 607,
    "doc": "docs/glorfindel.md"
   },
   {
@@ -458,10 +485,10 @@
    "issue": 597
   },
   {
-   "id": "g-sec-a4",
-   "composant": "glorfindel",
-   "poste": "g-detecter",
-   "nom": "Durcissement de sécurité (#633)",
+   "id": "s-sec-a4",
+   "composant": "socle",
+   "poste": "s-signer",
+   "nom": "Durcissement de sécurité",
    "etat": "main",
    "release": "0.6",
    "lots": [
@@ -562,7 +589,7 @@
    "id": "g-sec-a2",
    "composant": "glorfindel",
    "poste": "g-decider",
-   "nom": "Durcissement de sécurité (#631)",
+   "nom": "Durcissement de sécurité",
    "etat": "livree",
    "release": "0.5",
    "version": "0.5.8",
@@ -728,6 +755,21 @@
    "doc": "docs/design/file-actions-signee.md"
   },
   {
+   "id": "g-file-async",
+   "composant": "glorfindel",
+   "poste": "g-agir",
+   "nom": "La file signée, asynchrone, derrière un interrupteur",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.7",
+   "lots": [
+    "FS1c"
+   ],
+   "issue": 571,
+   "doc": "docs/design/file-actions-signee.md",
+   "note": "Éteinte par défaut : EREGION_ACTION_QUEUE=1 l'allume."
+  },
+  {
    "id": "g-file-defaut",
    "composant": "glorfindel",
    "poste": "g-agir",
@@ -852,10 +894,10 @@
    "issue": 86
   },
   {
-   "id": "g-sec-a4b",
-   "composant": "glorfindel",
-   "poste": "g-rediger",
-   "nom": "Durcissement de sécurité (#660)",
+   "id": "s-sec-a4b",
+   "composant": "socle",
+   "poste": "s-signer",
+   "nom": "Durcissement de sécurité",
    "etat": "dev",
    "release": "0.6",
    "lots": [
@@ -1513,7 +1555,7 @@
    "id": "s-release",
    "composant": "socle",
    "poste": "s-prouver",
-   "nom": "Une release en deux commandes, un brouillon que Jonathan publie",
+   "nom": "Une release en deux commandes, un brouillon, publié par un humain",
    "etat": "livree",
    "release": "0.4",
    "version": "0.4.4",
@@ -1661,7 +1703,7 @@
    "id": "s-sec-a1",
    "composant": "socle",
    "poste": "s-signer",
-   "nom": "Durcissement de sécurité (#630)",
+   "nom": "Durcissement de sécurité",
    "etat": "livree",
    "release": "0.5",
    "version": "0.5.8",
@@ -1674,7 +1716,7 @@
    "id": "s-sec-d",
    "composant": "socle",
    "poste": "s-documenter",
-   "nom": "Durcissement de sécurité (#636)",
+   "nom": "Durcissement de sécurité",
    "etat": "livree",
    "release": "0.5",
    "version": "0.5.8",
@@ -1738,7 +1780,10 @@
     "PRES1b"
    ],
    "issue": 658,
-   "pr": 659,
+   "pr": [
+    659,
+    662
+   ],
    "doc": "docs/replay/index.html"
   },
   {

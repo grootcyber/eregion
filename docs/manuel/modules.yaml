@@ -6,14 +6,23 @@
 # tests/unit/test_manuel.py. `make release` passe les briques `main` en `livree`, avec la version.
 #
 # La règle publique (aperçu validé par Jonathan le 06/11) :
-#   - un lot de sécurité (SEC-…, V-<n>, P-0…) n'a qu'un nom neutre, « Durcissement de sécurité
-#     (#<issue>) », ni note, ni document autre que SECURITY.md : jamais un constat ici ;
+#   - une brique de sécurité (ses lots SEC-…, V-<n>, P-0…, en toute casse ; `securite: true` ; ou son
+#     issue ou sa PR dans issues_securite) s'appelle « Durcissement de sécurité », sans note ni
+#     document autre que SECURITY.md ; tant qu'elle n'est pas livrée, elle se pose sur s-signer ; la
+#     page ne montre ni son issue ni sa PR : jamais un constat ici ;
+#   - aucun texte du manuel ne nomme un constat (SEC-…, V-<n>, P-0…) ;
 #   - aucun geste de l'opérateur, aucune relecture : ces champs n'existent pas ;
 #   - une note seulement sur une brique livrée.
+#
+# Un lot qui prolonge une brique déjà livrée prend une brique neuve : la version d'origine reste.
 #
 # Le format : un sous-ensemble strict de YAML (scripts/manuel.py, son en-tête). Les textes entre
 # guillemets droits, sans « " » ni « \ » dedans ; les versions toujours entre guillemets.
 # États d'une brique : prevue, dev, relecture, main, livree. D'une release : publiee, montage, prevue.
+
+# Les issues de l'audit de sécurité du 06/11 et de ses suites : leur titre porte souvent le constat.
+# Une brique dont l'issue ou la PR y figure est une brique de sécurité.
+issues_securite: [630, 631, 632, 633, 634, 635, 636, 638, 642, 644, 654, 660]
 
 composants:
   - id: glorfindel
@@ -347,12 +356,23 @@ briques:
   - id: g-entra
     composant: glorfindel
     poste: g-detecter
-    nom: "Entra ID en détection seule, des cartes d'identité prêtes à agir"
+    nom: "Entra ID en détection seule"
     etat: livree
     release: "0.4"
-    version: "0.4.7"
-    lots: [C2, C2b]
+    version: "0.4.0"
+    lots: [C2]
     issue: 199
+    doc: docs/glorfindel.md
+
+  - id: g-cartes-identite
+    composant: glorfindel
+    poste: g-detecter
+    nom: "Les cartes d'identité : chaque commande se colle telle quelle"
+    etat: livree
+    release: "0.5"
+    version: "0.5.8"
+    lots: [C2b]
+    issue: 607
     doc: docs/glorfindel.md
 
   - id: g-cartes-cible
@@ -365,10 +385,10 @@ briques:
     lots: [AL1c, AL1d, AL2]
     issue: 597
 
-  - id: g-sec-a4
-    composant: glorfindel
-    poste: g-detecter
-    nom: "Durcissement de sécurité (#633)"
+  - id: s-sec-a4
+    composant: socle
+    poste: s-signer
+    nom: "Durcissement de sécurité"
     etat: main
     release: "0.6"
     lots: [SEC-A4]
@@ -446,7 +466,7 @@ briques:
   - id: g-sec-a2
     composant: glorfindel
     poste: g-decider
-    nom: "Durcissement de sécurité (#631)"
+    nom: "Durcissement de sécurité"
     etat: livree
     release: "0.5"
     version: "0.5.8"
@@ -575,6 +595,18 @@ briques:
     issue: 413
     doc: docs/design/file-actions-signee.md
 
+  - id: g-file-async
+    composant: glorfindel
+    poste: g-agir
+    nom: "La file signée, asynchrone, derrière un interrupteur"
+    etat: livree
+    release: "0.5"
+    version: "0.5.7"
+    lots: [FS1c]
+    issue: 571
+    doc: docs/design/file-actions-signee.md
+    note: "Éteinte par défaut : EREGION_ACTION_QUEUE=1 l'allume."
+
   - id: g-file-defaut
     composant: glorfindel
     poste: g-agir
@@ -670,10 +702,10 @@ briques:
     lots: [P1]
     issue: 86
 
-  - id: g-sec-a4b
-    composant: glorfindel
-    poste: g-rediger
-    nom: "Durcissement de sécurité (#660)"
+  - id: s-sec-a4b
+    composant: socle
+    poste: s-signer
+    nom: "Durcissement de sécurité"
     etat: dev
     release: "0.6"
     lots: [SEC-A4b]
@@ -1186,7 +1218,7 @@ briques:
   - id: s-release
     composant: socle
     poste: s-prouver
-    nom: "Une release en deux commandes, un brouillon que Jonathan publie"
+    nom: "Une release en deux commandes, un brouillon, publié par un humain"
     etat: livree
     release: "0.4"
     version: "0.4.4"
@@ -1282,7 +1314,7 @@ briques:
   - id: s-sec-a1
     composant: socle
     poste: s-signer
-    nom: "Durcissement de sécurité (#630)"
+    nom: "Durcissement de sécurité"
     etat: livree
     release: "0.5"
     version: "0.5.8"
@@ -1292,7 +1324,7 @@ briques:
   - id: s-sec-d
     composant: socle
     poste: s-documenter
-    nom: "Durcissement de sécurité (#636)"
+    nom: "Durcissement de sécurité"
     etat: livree
     release: "0.5"
     version: "0.5.8"
@@ -1341,7 +1373,7 @@ briques:
     release: "0.6"
     lots: [PRES1, PRES1b]
     issue: 658
-    pr: 659
+    pr: [659, 662]
     doc: docs/replay/index.html
 
   - id: s-manuel

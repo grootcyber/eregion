@@ -13,8 +13,9 @@
     main: "Sur main, pas encore publiée", livree: "Livrée" };
   const MOVING = ["dev", "relecture", "main"];
   const STEP_LABEL = { publiee: "publiée", montage: "en montage", prevue: "prévue" };
-  // The public rule, the same as scripts/manuel.py: the YAML already holds a neutral name for these.
-  const SENSIBLE = /(^|[^\w])(SEC-|V-\d|P-0)/;
+  // The public rule, the same as scripts/manuel.py: the YAML already holds a neutral name for these;
+  // the page shows neither their lots, nor their issue, nor their pull request.
+  const SENSIBLE = /(^|[^\w])(SEC-|V-\d|P-0)/i;
   const CACHE = "eregion-manuel-live-v1";
   const CACHE_MS = 10 * 60 * 1000;
   const TIMEOUT_MS = 8000;
@@ -44,7 +45,22 @@
   const issueUrl = (n) => (num(n) ? `${REPO}/issues/${n}` : null);
   const pullUrl = (n) => (num(n) ? `${REPO}/pull/${n}` : null);
   const docUrl = (p) => (safePath(p) ? `${REPO}/blob/main/${p}` : null);
-  const sensible = (b) => SENSIBLE.test((Array.isArray(b.lots) ? b.lots : []).join(" "));
+  const prsOf = (b) => (Array.isArray(b.pr) ? b.pr : [b.pr]).filter(num);
+  const sensible = (b) => {
+    const secu = new Set(Array.isArray(state.data.issues_securite) ? state.data.issues_securite : []);
+    return SENSIBLE.test((Array.isArray(b.lots) ? b.lots : []).join(" ")) || b.securite === true
+      || secu.has(b.issue) || prsOf(b).some((n) => secu.has(n));
+  };
+  // A version against the last release GitHub shows: "publiee", "a-publier" (the repository says it is
+  // cut, GitHub has not published it yet), or "inconnu" (GitHub not read).
+  const parts = (v) => String(v).split(".").map((x) => parseInt(x, 10) || 0);
+  const newer = (a, b) => { const x = parts(a), y = parts(b); for (let i = 0; i < 3; i++) { if (x[i] !== y[i]) return x[i] > y[i]; } return false; };
+  const pubState = (version) => {
+    const latest = state.live && state.live.latest;
+    if (!latest || !version) return "inconnu";
+    return newer(version, latest.version) ? "a-publier" : "publiee";
+  };
+  const PUB_SAID = { publiee: "", "a-publier": ", à publier", inconnu: " (publication non vérifiée sur GitHub)" };
   const etatOf = (b) => (ETATS[b.shown] ? b.shown : "prevue");
   const pieceOf = (id) => (state.data.composants.find((c) => c.id === id) || { id, nom: id, role: "" });
   const posteOf = (id) => state.data.postes.find((p) => p.id === id);
@@ -117,7 +133,7 @@
       const v = { ...b, shown: b.etat, livePr: null, issueState: "" };
       if (!live) return v;
       const lots = Array.isArray(b.lots) ? b.lots : [];
-      const pr = live.pulls.find((p) => p.number === b.pr || (p.head && lots.some((l) => matchesLot(p.head, l))));
+      const pr = live.pulls.find((p) => prsOf(b).includes(p.number) || (p.head && lots.some((l) => matchesLot(p.head, l))));
       if (pr) {
         v.livePr = pr.number;
         if (b.etat === "prevue" || b.etat === "dev") v.shown = "relecture";
@@ -128,14 +144,16 @@
   }
 
   // ── rendering ───────────────────────────────────────────────────────────────────────
+  const label = (b) => (etatOf(b) === "livree" ? `${ETATS.livree} en ${b.version}${PUB_SAID[pubState(b.version)]}`
+    : ETATS[etatOf(b)]);
   function brick(b, extra = "") {
     return h("button", { type: "button", class: `brick ${etatOf(b)}${extra}`, "data-p": b.composant, "data-id": b.id,
-      title: ETATS[etatOf(b)] }, h("span", null, b.nom));
+      title: label(b) }, h("span", null, b.nom));
   }
   function mini(b) {
-    const label = `${b.nom} · ${ETATS[etatOf(b)]}`;
+    const said = `${b.nom} · ${label(b)}`;
     return h("button", { type: "button", class: `mb ${etatOf(b)}${hit(b)}`, "data-p": b.composant, "data-id": b.id,
-      title: label, "aria-label": label });
+      title: said, "aria-label": said });
   }
 
   function renderTop(view) {
@@ -144,8 +162,9 @@
     const mont = steps.find((s) => s.etat === "montage");
     const latest = state.live && state.live.latest;
     $("w-pub").textContent = latest ? latest.version : pub ? pub.derniere : "—";
-    $("w-pub-s").textContent = latest ? `sur GitHub${latest.day ? " · " + latest.day : ""}`
-      : pub ? `« ${pub.nom} »${pub.date ? " · " + pub.date : ""}` : "";
+    const ahead = latest && pub && newer(pub.derniere, latest.version) ? ` · ${pub.derniere} à publier` : "";
+    $("w-pub-s").textContent = latest ? `sur GitHub${latest.day ? " · " + latest.day : ""}${ahead}`
+      : pub ? `selon le dépôt, publication non vérifiée sur GitHub` : "";
     $("w-mont").textContent = mont ? mont.version : "—";
     $("w-mont-s").textContent = mont ? `« ${mont.nom} »` : "";
     const moving = view.filter((b) => MOVING.includes(b.shown));
@@ -183,7 +202,7 @@
       const items = view.filter((b) => b.shown === s);
       const body = items.length ? items.map((b) => h("div", { class: "item" }, brick(b),
         h("span", { class: "sub mono" }, [pieceOf(b.composant).nom, b.release ? `release ${b.release}` : "",
-          b.livePr ? `PR #${b.livePr} ouverte` : ""].filter(Boolean).join(" · "))))
+          b.livePr ? (sensible(b) ? "PR ouverte" : `PR #${b.livePr} ouverte`) : ""].filter(Boolean).join(" · "))))
         : [h("span", { class: "empty" }, "Rien en ce moment.")];
       return h("div", { class: "col card" }, h("div", { class: "col-h" }, h("span", { class: "kicker" }, ETATS[s]),
         h("span", { class: "n" }, String(items.length))), body);
@@ -219,6 +238,8 @@
 
   function renderSteps(view) {
     const steps = state.data.releases;
+    const stepLabel = (r, etat) => (etat !== "publiee" ? STEP_LABEL[etat]
+      : { publiee: "publiée", "a-publier": "à publier", inconnu: "publiée selon le dépôt" }[pubState(r.derniere)]);
     $("tl").replaceChildren(...steps.map((r) => {
       const etat = STEP_LABEL[r.etat] ? r.etat : "prevue";
       return h("div", { class: `tn ${etat}${r.version === "1.0" ? " diamond" : ""}` },
@@ -232,7 +253,7 @@
       return h("li", { class: `step ${etat}` }, h("span", { class: "num" }, String(i + 1)),
         h("div", { class: "step-body" },
           h("div", { class: "step-t" }, h("span", { class: "v" }, r.version), h("h3", null, r.nom),
-            h("span", { class: `pill ${etat}` }, STEP_LABEL[etat]),
+            h("span", { class: `pill ${etat}` }, stepLabel(r, etat)),
             r.derniere ? h("span", { class: "mono" }, `dernière : ${r.derniere}${r.date ? " · " + r.date : ""}`) : null),
           r.resume ? h("p", null, r.resume) : null,
           h("div", { class: "parts" }, parts.map((b) => brick(b)))));
@@ -246,25 +267,29 @@
     const poste = posteOf(b.poste);
     const links = [];
     const a = (href, text) => h("a", { href, target: "_blank", rel: "noopener" }, text);
-    const pr = b.livePr || b.pr;
-    if (pullUrl(pr)) links.push(a(pullUrl(pr), `PR #${pr}`));
-    if (issueUrl(b.issue)) links.push(a(issueUrl(b.issue), `issue #${b.issue}${b.issueState ? " (" + b.issueState + ")" : ""}`));
+    const secret = sensible(b);
+    const prs = [...new Set([b.livePr, ...prsOf(b)].filter(num))];
+    if (!secret) {
+      for (const n of prs) links.push(a(pullUrl(n), `PR #${n}`));
+      if (issueUrl(b.issue)) links.push(a(issueUrl(b.issue), `issue #${b.issue}${b.issueState ? " (" + b.issueState + ")" : ""}`));
+    }
     const doc = docUrl(b.doc) ? b.doc : docUrl(piece.doc) ? piece.doc : null;
     if (doc) links.push(a(docUrl(doc), doc));
     const row = (dt, dd, cls) => (dd ? [h("dt", null, dt), h("dd", cls ? { class: cls } : null, dd)] : []);
-    const lots = !sensible(b) && Array.isArray(b.lots) && b.lots.length ? b.lots.join(", ") : "";
-    const said = b.shown !== b.etat ? `${ETATS[etatOf(b)]} (une pull request ouverte sur GitHub)` : ETATS[etatOf(b)];
+    const lots = !secret && Array.isArray(b.lots) && b.lots.length ? b.lots.join(", ") : "";
+    const said = b.shown !== b.etat ? `${ETATS[etatOf(b)]} (une pull request ouverte sur GitHub)`
+      : b.etat === "livree" ? `${ETATS.livree} en ${b.version}${PUB_SAID[pubState(b.version)]}` : ETATS[etatOf(b)];
     const close = h("button", { type: "button", class: "close", id: "s-close" }, "Fermer");
     $("sheet-body").replaceChildren(
       h("div", { class: "sheet-h" }, h("div", null, h("span", { class: "kicker" }, piece.nom),
         h("h2", { id: "s-title" }, b.nom)), close),
       h("div", null, brick(b)),
       h("dl", null,
-        row("État", `${said}${b.version ? " · " + b.version : ""}`),
+        row("État", said),
         row("Release", b.release),
         row("Étape", poste ? `${poste.nom} — ${poste.legende}` : ""),
         row("Lots", lots, "mono"),
-        row("Note", b.etat === "livree" && !sensible(b) ? b.note : ""),
+        row("Note", b.etat === "livree" && !secret ? b.note : ""),
         links.length ? [h("dt", null, "Liens"), h("dd", null, links.flatMap((l, i) => (i ? [" · ", l] : [l])))] : []));
     const dlg = $("sheet");
     close.addEventListener("click", () => dlg.close());
