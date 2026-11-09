@@ -43,8 +43,13 @@ seul sur le banc, dans le mode de chaque VM.
     son Reader du groupe (le job fini, sur place, son point antérieur à l'incident, la VM qui
     tourne, la neutralisation lue dans le journal d'activité), et lève l'isolation elle-même (REC1,
     `docs/glorfindel.md`, « La reprise lue sur Azure »). Elle reconnaît le principal qui restaure
-    par `GLORFINDEL_RESTORE_PRINCIPALS` dans `host.env` (l'object id de la console, celui de
-    `restore_principals`) ; vide, chaque levée lue sur Azure est une carte. Mais son état Terraform porte, pour le banc, « Eregion Glorfindel Restore
+    par `GLORFINDEL_RESTORE_PRINCIPALS` : l'object id de la console, celui de `restore_principals`
+    (`az ad sp show --id "$EREGION_CONSOLE_AZURE_CLIENT_ID" --query id -o tsv`). Il se pose sur le
+    poste : dans le `.envrc`, que `make glorfindel-host-env` copie dans un `host.env` neuf ; sur un
+    H0 en place (`host_env.py` n'écrase pas un `host.env` existant : le jeton de la console
+    changerait), à la main dans `infra/glorfindel-host/host.env`, puis `make glorfindel-host-push`.
+    Pris au prochain démarrage de la watch. Vide, chaque levée lue sur Azure est une carte. La forme
+    du `caller` dans le journal d'activité (appId ou object id) reste à mesurer. Mais son état Terraform porte, pour le banc, « Eregion Glorfindel Restore
     Neutralize » (Run Command, sorti du rôle Restore) sur chaque VM de `restore_vms` (gondolin,
     bree — `restore.auto.tfvars`, commité), pour chaque principal qui restaure (`restore_principals` :
     la console et le bot, leurs object id dans `principals.auto.tfvars`, sur le poste,

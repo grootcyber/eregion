@@ -21,6 +21,10 @@ marqué ainsi :
   et sa sortie est celle qui est citée ;
 - **non vérifié** : ni l'un ni l'autre, à voir pendant la session.
 
+Les lignes citées sont celles de la 0.5.8 (`v0.5.8`), la version en service. REC1 décale celles de
+`glorfindel/cli.py` (+64) et de `glorfindel/providers/azure/restore.py` (+4), sans changer ce qu'elles
+font ; ce que REC1 ajoute est cité par son fichier.
+
 Jonathan lance chaque geste ; rien de cette page n'a encore été joué au banc.
 
 ## Ce que le code décide avant la session
@@ -88,12 +92,12 @@ commande. Le point à la demande est gardé 30 jours (`glorfindel/providers/azur
   gondolin.
 - **`--before` est obligatoire sur le poste.** Sans lui, la commande prend le moment de la carte en
   attente de la VM ; mais les cartes sont sur H0, pas sur le poste. Elle refuse alors, avant tout
-  appel à Azure (`glorfindel/cli.py:2351-2376`). *Vérifié à blanc* : « Moment de l'attaque inconnu
+  appel à Azure (`glorfindel/cli.py:2287-2312`). *Vérifié à blanc* : « Moment de l'attaque inconnu
   pour vm-celebrimbor-gondolin : aucune carte en attente de cette VM n'en donne un ». On lui donne
   le moment noté juste après le point propre (`AVANT`, étape 2) : le point le plus récent avant
   lui est celui-là. Un instantané que H0 prendrait seul après l'isolement est postérieur, donc écarté.
 - **La neutralisation (SEC17)** se fait sur gondolin, par le principal qui restaure, avant
-  l'échange des disques (`glorfindel/providers/azure/restore.py:149-154`). Une Run Command sans
+  l'échange des disques (`glorfindel/providers/azure/restore.py:145-150`). Une Run Command sans
   effet devient la dernière : un disque restauré rejouerait sinon `ransomware_sim.sh` au démarrage
   (vu le 05/10). Il faut « Eregion Glorfindel Restore Neutralize » sur gondolin, pour la console
   (`restore_vms`, `restore_principals` ; `docs/operations.md`, « Depuis un rôle Restore d'avant
@@ -120,7 +124,7 @@ git fetch -q origin && git cat-file -e ${SHA}:glorfindel/recovery_watch.py && pr
 
 - **`restore --wait` lève l'isolement dans son propre processus.** Il construit le
   `recovery_complete`, le garantit pour ce processus et le passe aussitôt au graphe
-  (`cli.py:1581-1594`). La levée autonome n'est permise que pour ce signal-là, ou pour celui relu par
+  (`cli.py:1517-1530`). La levée autonome n'est permise que pour ce signal-là, ou pour celui relu par
   `glorfindel respond` dans `~/.glorfindel/recovery_signals/` du même hôte
   (`glorfindel/signal_origin.py:29-35`, `glorfindel/agent.py:1449-1478`). **La watch de H0 ne lit
   jamais ce répertoire d'elle-même**, et celui du poste encore moins.
@@ -130,7 +134,7 @@ git fetch -q origin && git cat-file -e ${SHA}:glorfindel/recovery_watch.py && pr
 - **H0 reposerait l'isolement.** Sa réaffirmation relit chaque minute les isolations de son état.
   Elle trouverait les règles disparues et les reposerait une fois, gondolin étant en
   `non_disruptive` (`glorfindel/reassert.py:271-290`).
-- D'où `--keep-isolated` sur le poste (`cli.py:1581`). La levée se fait ensuite sur H0 :
+- D'où `--keep-isolated` sur le poste (`cli.py:1517`). La levée se fait ensuite sur H0 :
   - **↩️ Release** dans sa console ;
   - ou `docker exec eregion-war-room glorfindel release …`, dans le conteneur de la console
     (`docs/banc-bl1.md`, étape 5).
@@ -148,10 +152,17 @@ git fetch -q origin && git cat-file -e ${SHA}:glorfindel/recovery_watch.py && pr
   - son point, antérieur à l'incident ;
   - la VM qui tourne ;
   - **la neutralisation** : dans le journal d'activité, la dernière Run Command sur gondolin avant
-    le restore vient du principal qui restaure (`GLORFINDEL_RESTORE_PRINCIPALS`, dans `host.env` de H0 :
-    l'object id du principal de la console, celui de `restore_principals`), et aucune d'un autre
-    depuis. La parole de l'invité relue après le démarrage, la sortie inoffensive, est une
+    le restore vient du principal qui restaure, et aucune d'un autre après elle, quel que soit son
+    statut. La parole de l'invité relue après le démarrage, la sortie inoffensive, est une
     condition de plus, jamais suffisante seule.
+
+  Ce principal, `GLORFINDEL_RESTORE_PRINCIPALS`, est l'object id de la console, celui de
+  `restore_principals`. Le lire, `.envrc` chargé :
+  `az ad sp show --id "$EREGION_CONSOLE_AZURE_CLIENT_ID" --query id -o tsv`. Le poser sur le poste :
+  dans le `.envrc`, et, H0 étant en place, à la main dans `infra/glorfindel-host/host.env` (le
+  `host.env` existant n'est jamais réécrit : son jeton changerait), puis `make glorfindel-host-push`.
+  Il est pris au démarrage de la watch qui porte REC1. Sans lui, chaque levée est une carte. La
+  forme du `caller` dans le journal d'activité (appId ou object id) est à mesurer pendant la session.
 
   Elle émet alors son propre `recovery_complete`, et la levée suit : seule en `non_disruptive`, une
   carte en `human_only`. Elle ne lit jamais un fichier du poste. Ses droits : Reader sur le groupe
@@ -275,7 +286,7 @@ AVANT=$(date -u +%Y-%m-%dT%H:%M:%S+00:00); print -r -- ${AVANT}   # le moment du
 
 Ce qu'on doit voir :
 - **sur H0** : « ✓ Backup complete. Time: … », puis « ✓ Recovery point verified in vault. »
-  (`cli.py:1391-1405`) ;
+  (`cli.py:1327-1341`) ;
 - **dans la console** : aucune carte, puisque c'est l'identité de Glorfindel qui sauvegarde (A2,
   mesuré le 05/11 : `docs/operations.md`).
 
@@ -342,7 +353,7 @@ Discord : refusé, ce n'est pas son hôte.
 
 **Le prérequis du poste.** Le restore lit le coffre (`azure_backup_vault`) et son compte de transit
 (`restore_staging_storage`) dans la `glorfindel-config.yaml` du poste, à la racine du dépôt
-(`cli.py:1499`, `glorfindel/providers/azure/restore.py:128-143`). Sans compte de transit, le vrai
+(`cli.py:1435`, `glorfindel/providers/azure/restore.py:124-139`). Sans compte de transit, le vrai
 run échoue, alors que l'essai à blanc ne le lit pas. Le fragment de `make celebrimbor-output` porte
 les deux :
 
@@ -374,7 +385,7 @@ date -u +%H:%M:%S                  # la fin du restore
 - « Still restoring… », minute par minute ;
 - « ✓ Restore complete. restore_time: … » : **le noter** ;
 - « ✓ Run Command neutralisée avant le restore » ;
-- « --keep-isolated: VM stays isolated. » (`cli.py:1554-1582`).
+- « --keep-isolated: VM stays isolated. » (`cli.py:1490-1518`).
 
 La VM est désallouée, ses disques remplacés, puis redémarrée. Elle reste isolée : le NSG est sur
 ses cartes réseau, pas sur ses disques.
@@ -423,7 +434,7 @@ Puis, sur H0 (le nom court suffit : `release` le résout par l'état de H0, `cli
 docker exec eregion-war-room glorfindel release vm-celebrimbor-gondolin --yes   # « ✓ Isolation released. »
 docker exec eregion-watch glorfindel list                     # gondolin n'est plus ISOLATED
 docker exec eregion-watch glorfindel pending                  # la carte de restauration, encore en attente
-docker exec eregion-war-room glorfindel ack <son id>          # le restore du poste n'a résolu que les cartes du poste (cli.py:1577)
+docker exec eregion-war-room glorfindel ack <son id>          # le restore du poste n'a résolu que les cartes du poste (cli.py:1513)
 ```
 
 Cette levée-là n'est pas reposée. Elle note `releasing_at` dans l'état de H0 sous le verrou de la
@@ -499,7 +510,7 @@ arrive sur H0 quand le fil a fini ; sur Orodruin, le même est dans `~/runs/anna
 | **le confinement** | T0 → l'isolement relu sur Azure (`verified_at`), la définition de BL1 (`analysis/containment.py`) | la ligne `isolate_vm … verified=True T0+…` ; Dagorlad, « contained … » ; la page Annatar, « TIME TO CONTAIN · EXERCISES » (une médiane sur la période ; la tuile de l'accueil, « · REAL », exclut les exercices) |
 | **la restauration finie** | la fin de `restore --wait`, et sa durée | `restore_time` et l'heure notée à l'étape 6 |
 | **le service rendu** | T0 → la levée relue sur Azure, les gestes humains compris (deux sans REC1, le restore seul avec) | la ligne `levée … T0+…` ; avec REC1, `levée watch … T0+…` |
-| **au sens du README** | détection + isolement + `restore_time`, sans le temps de décision humaine (`cli.py:1574`) | la somme des trois |
+| **au sens du README** | détection + isolement + `restore_time`, sans le temps de décision humaine (`cli.py:1510`) | la somme des trois |
 
 Les chiffres vont dans l'issue #665, datés, avec le `run_id` et l'identifiant de la demande : ils
 remplaceront ceux du README, et la ligne T1486 de son tableau.
@@ -535,7 +546,7 @@ make glorfindel-host-cd-enable     # seulement s'il a été mis en pause à l'é
 - **Le disque de gondolin** est celui d'avant l'attaque. Le prochain fil refera son `setup` et son
   contrôle d'intégrité.
 - **Le reste à vérifier** : `glorfindel reset --dry-run` (sans `--from-azure`) ne lit que l'état
-  local ; `--from-azure` lit les NSG (`cli.py:2121-2159`).
+  local ; `--from-azure` lit les NSG (`cli.py:2057-2095`).
 
 ## Ce qui peut mal tourner
 

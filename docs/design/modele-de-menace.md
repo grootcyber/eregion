@@ -83,7 +83,7 @@ Chacun a son auteur :
 | une restauration **sur place** | le coffre (« Job Type » : « Replace disks ») et ARM (le disque OS de la VM créé pendant le job) | une restauration ailleurs (« Restore disks », une nouvelle VM) laisse le disque de la VM isolée : une carte qui dit « ne pas lever » |
 | le point restauré, antérieur à l'incident | le coffre (le sac de propriétés, rapporté aux points de la VM) | une lecture qui ne désigne pas exactement un point : une carte |
 | la VM qui tourne | ARM | — |
-| **la neutralisation** de la dernière Run Command | le journal d'activité (plan de contrôle) : la dernière Run Command réussie avant le job est d'un principal qui restaure (`GLORFINDEL_RESTORE_PRINCIPALS`), aucune d'un autre depuis | un script d'attaquant qui imprime la sortie inoffensive (elle est publique) ne passe pas : son auteur n'est pas celui qui restaure |
+| **la neutralisation** de la dernière Run Command | le journal d'activité (plan de contrôle) : la dernière Run Command réussie avant le job est d'un principal qui restaure (`GLORFINDEL_RESTORE_PRINCIPALS`), aucune d'un autre après elle, quel que soit son statut (échouée, coupée par la désallocation : ses réglages restent dans le modèle de VM) ; un journal plus long que sa borne est illisible, jamais « tout lu » | un script d'attaquant qui imprime la sortie inoffensive (elle est publique) ne passe pas : son auteur n'est pas celui qui restaure |
 | la sortie de la commande rejouée au démarrage | **l'invité** (l'agent l'écrit ; root peut l'écrire) | une condition de plus, jamais suffisante seule ; une parole d'avant le restore ne compte pas |
 
 Sans le fait du journal d'activité (illisible, aucun principal configuré), le `recovery_complete` dit
