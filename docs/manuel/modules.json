@@ -1,0 +1,1757 @@
+{
+ "composants": [
+  {
+   "id": "glorfindel",
+   "nom": "Glorfindel",
+   "role": "Le produit : détecte, enquête, décide, agit, vérifie, apprend.",
+   "doc": "docs/glorfindel.md"
+  },
+  {
+   "id": "annatar",
+   "nom": "Annatar",
+   "role": "L'attaque : des bibliothèques publiques, version épinglée, sur des cibles inscrites.",
+   "doc": "docs/architecture.md"
+  },
+  {
+   "id": "gothmog",
+   "nom": "Gothmog",
+   "role": "Les pannes déclarées, par un moteur public ; elles éprouvent d'abord Glorfindel.",
+   "doc": "gothmog/README.md"
+  },
+  {
+   "id": "orodruin",
+   "nom": "Orodruin",
+   "role": "L'hôte des injecteurs : rien n'agit hors d'un Orodruin armé.",
+   "doc": "docs/design/orodruin-contract.md"
+  },
+  {
+   "id": "celebrimbor",
+   "nom": "Celebrimbor",
+   "role": "Le banc : construit, inscrit, jetable.",
+   "doc": "infra/terraform"
+  },
+  {
+   "id": "console",
+   "nom": "Console et Dagorlad",
+   "role": "Ce que l'humain voit, juge et demande.",
+   "doc": "docs/design/console.md"
+  },
+  {
+   "id": "analyse",
+   "nom": "IA d'analyse",
+   "role": "Explique, trie, rapporte ; n'écrit jamais de règle.",
+   "doc": "docs/analysis.md"
+  },
+  {
+   "id": "socle",
+   "nom": "Socle et preuves",
+   "role": "Sous tout le reste : héberger, prouver, signer, documenter.",
+   "doc": "docs/design/preuves.md"
+  }
+ ],
+ "postes": [
+  {
+   "id": "g-detecter",
+   "composant": "glorfindel",
+   "nom": "Détecter",
+   "legende": "règles déterministes, en continu",
+   "nature": "code",
+   "schema": "g-detecter",
+   "chaine": "La boucle"
+  },
+  {
+   "id": "g-enqueter",
+   "composant": "glorfindel",
+   "nom": "Enquêter",
+   "legende": "requêtes ciblées avant de décider",
+   "nature": "code",
+   "schema": "g-enqueter",
+   "chaine": "La boucle"
+  },
+  {
+   "id": "g-decider",
+   "composant": "glorfindel",
+   "nom": "Décider",
+   "legende": "le modèle, borné par sa confiance",
+   "nature": "ia",
+   "schema": "g-decider",
+   "chaine": "La boucle"
+  },
+  {
+   "id": "g-garder",
+   "composant": "glorfindel",
+   "nom": "Garde-fous",
+   "legende": "en série, en code",
+   "nature": "garde",
+   "schema": "g-garder",
+   "chaine": "La boucle"
+  },
+  {
+   "id": "g-agir",
+   "composant": "glorfindel",
+   "nom": "Agir",
+   "legende": "réversible, VM par VM",
+   "nature": "code",
+   "schema": "g-agir",
+   "chaine": "La boucle"
+  },
+  {
+   "id": "g-verifier",
+   "composant": "glorfindel",
+   "nom": "Vérifier",
+   "legende": "contre l'état réel du cloud",
+   "nature": "code",
+   "schema": "g-verifier",
+   "chaine": "La boucle"
+  },
+  {
+   "id": "g-memoire",
+   "composant": "glorfindel",
+   "nom": "Mémoire",
+   "legende": "les cycles passés, exercice ou réel",
+   "nature": "ia",
+   "schema": "g-memoire",
+   "chaine": "Ce qu'elle apprend"
+  },
+  {
+   "id": "g-rediger",
+   "composant": "glorfindel",
+   "nom": "Rédiger une règle",
+   "legende": "quand une attaque passe, à valider",
+   "nature": "ia",
+   "schema": "g-rediger",
+   "chaine": "Ce qu'elle apprend"
+  },
+  {
+   "id": "p-charges",
+   "composant": "glorfindel",
+   "nom": "Charges réelles",
+   "legende": "observation, puis autonomie VM par VM",
+   "nature": "code",
+   "schema": "p-charges",
+   "chaine": "Chez le client"
+  },
+  {
+   "id": "p-inscrites",
+   "composant": "glorfindel",
+   "nom": "VM inscrites",
+   "legende": "techniques non destructives",
+   "nature": "code",
+   "schema": "p-inscrites",
+   "chaine": "Chez le client"
+  },
+  {
+   "id": "p-sentinelle",
+   "composant": "glorfindel",
+   "nom": "VM sentinelle",
+   "legende": "vide : toute la chaîne de réponse",
+   "nature": "code",
+   "schema": "p-sentinelle",
+   "chaine": "Chez le client"
+  },
+  {
+   "id": "p-jumeau",
+   "composant": "glorfindel",
+   "nom": "Jumeau",
+   "legende": "copie jetable : destructif et pannes",
+   "nature": "option",
+   "schema": "p-jumeau",
+   "chaine": "Chez le client"
+  },
+  {
+   "id": "a-choisir",
+   "composant": "annatar",
+   "nom": "Choisir",
+   "legende": "campagnes, dans un budget",
+   "nature": "ia",
+   "schema": "annatar"
+  },
+  {
+   "id": "a-garder",
+   "composant": "annatar",
+   "nom": "Se garder",
+   "legende": "jamais sans Glorfindel",
+   "nature": "garde",
+   "schema": "annatar"
+  },
+  {
+   "id": "a-attaquer",
+   "composant": "annatar",
+   "nom": "Attaquer",
+   "legende": "bibliothèques publiques, épinglées",
+   "nature": "code",
+   "schema": "annatar"
+  },
+  {
+   "id": "x-moteur",
+   "composant": "gothmog",
+   "nom": "Moteur",
+   "legende": "le chaos natif du cloud",
+   "nature": "code",
+   "schema": "gothmog"
+  },
+  {
+   "id": "x-eprouver",
+   "composant": "gothmog",
+   "nom": "Éprouver Glorfindel",
+   "legende": "bruit bénin, dépendances, reprise",
+   "nature": "code",
+   "schema": "gothmog"
+  },
+  {
+   "id": "o-inscrire",
+   "composant": "orodruin",
+   "nom": "Inscrire",
+   "legende": "cibles et zones",
+   "nature": "garde",
+   "schema": "orodruin"
+  },
+  {
+   "id": "o-armer",
+   "composant": "orodruin",
+   "nom": "Armer",
+   "legende": "contrat vérifié au démarrage",
+   "nature": "garde",
+   "schema": "orodruin"
+  },
+  {
+   "id": "o-executer",
+   "composant": "orodruin",
+   "nom": "Exécuter",
+   "legende": "journal avant chaque appel",
+   "nature": "code",
+   "schema": "orodruin"
+  },
+  {
+   "id": "o-rendre",
+   "composant": "orodruin",
+   "nom": "Rendre compte",
+   "legende": "canal retour, signé",
+   "nature": "code",
+   "schema": "orodruin"
+  },
+  {
+   "id": "c-construire",
+   "composant": "celebrimbor",
+   "nom": "Construire",
+   "legende": "cibles inscrites, jetables",
+   "nature": "code",
+   "schema": "celebrimbor"
+  },
+  {
+   "id": "c-acces",
+   "composant": "celebrimbor",
+   "nom": "Accès",
+   "legende": "lecture seule d'abord",
+   "nature": "garde",
+   "schema": "celebrimbor"
+  },
+  {
+   "id": "k-voir",
+   "composant": "console",
+   "nom": "Voir",
+   "legende": "cartes et indicateurs",
+   "nature": "humain",
+   "schema": "humain"
+  },
+  {
+   "id": "k-suivre",
+   "composant": "console",
+   "nom": "Suivre",
+   "legende": "Dagorlad, les exercices, la couverture",
+   "nature": "humain",
+   "schema": "humain"
+  },
+  {
+   "id": "k-juger",
+   "composant": "console",
+   "nom": "Juger",
+   "legende": "verdicts et demandes",
+   "nature": "humain",
+   "schema": "humain"
+  },
+  {
+   "id": "i-lire",
+   "composant": "analyse",
+   "nom": "Lire les runs",
+   "legende": "runs, catalogue, règles",
+   "nature": "code",
+   "schema": "analyse"
+  },
+  {
+   "id": "i-rapporter",
+   "composant": "analyse",
+   "nom": "Rapporter, trier",
+   "legende": "chaque affirmation cite son run",
+   "nature": "ia",
+   "schema": "analyse"
+  },
+  {
+   "id": "s-heberger",
+   "composant": "socle",
+   "nom": "Héberger",
+   "legende": "Glorfindel hébergé, son CD",
+   "nature": "code",
+   "schema": "socle"
+  },
+  {
+   "id": "s-prouver",
+   "composant": "socle",
+   "nom": "Prouver",
+   "legende": "invariants, mutation, porte de release",
+   "nature": "garde",
+   "schema": "socle"
+  },
+  {
+   "id": "s-signer",
+   "composant": "socle",
+   "nom": "Signer",
+   "legende": "verrous, signatures, revues",
+   "nature": "garde",
+   "schema": "socle"
+  },
+  {
+   "id": "s-documenter",
+   "composant": "socle",
+   "nom": "Documenter",
+   "legende": "modèle de menace, site, manuel",
+   "nature": "code",
+   "schema": "socle"
+  }
+ ],
+ "releases": [
+  {
+   "version": "0.2",
+   "nom": "la première release",
+   "etat": "publiee",
+   "derniere": "0.2.0",
+   "date": "2026-10-15",
+   "resume": "Glorfindel détecte et répond sur Azure, sous des garde-fous en code ; Annatar joue ses scénarios ; les invariants tiennent sur un faux Azure."
+  },
+  {
+   "version": "0.3",
+   "nom": "la boucle tourne",
+   "etat": "publiee",
+   "derniere": "0.3.1",
+   "date": "2026-10-27",
+   "resume": "Depuis un Orodruin armé, une technique publique et une panne déclarée sur des cibles inscrites ; Glorfindel hébergé à côté du banc ; le rapport de campagne s'écrit seul."
+  },
+  {
+   "version": "0.4",
+   "nom": "le chemin d'isolation tenu",
+   "etat": "publiee",
+   "derniere": "0.4.10",
+   "date": "2026-11-02",
+   "resume": "L'isolation tenue à ses invariants ; ses bords (console, journaux, canaux) et son cœur durcis ; publier une release, c'est déployer Glorfindel hébergé."
+  },
+  {
+   "version": "0.5",
+   "nom": "la boucle mesurée",
+   "etat": "publiee",
+   "derniere": "0.5.8",
+   "date": "2026-11-09",
+   "resume": "La boucle mesurée sur du vrai trafic, la corrélation, la file d'actions signée, des preuves signées de bout en bout."
+  },
+  {
+   "version": "0.6",
+   "nom": "l'identité défendue",
+   "etat": "montage",
+   "resume": "Les journaux d'activité et d'Entra ID mesurés au banc ; une technique publique sur l'identité de test, vue par Glorfindel ; la réponse à une identité volée, sur la carte."
+  },
+  {
+   "version": "0.x",
+   "nom": "la preuve chez le client",
+   "etat": "prevue",
+   "resume": "Détection seule en production, VM sentinelle, jumeau et rapport d'écart ; la précision mesurée sur données réelles."
+  },
+  {
+   "version": "1.0",
+   "nom": "le CDR prouvé",
+   "etat": "prevue",
+   "resume": "Les critères de maturité remplis, les contrats figés, les profils prouvés en CI, la preuve en production."
+  },
+  {
+   "version": "1.x",
+   "nom": "nouveaux clouds, nouveaux moteurs",
+   "etat": "prevue",
+   "resume": "AWS et GCP, Kubernetes, l'attaque pendant une panne."
+  }
+ ],
+ "briques": [
+  {
+   "id": "g-watch",
+   "composant": "glorfindel",
+   "poste": "g-detecter",
+   "nom": "Détection continue par règles, une requête par règle",
+   "etat": "livree",
+   "release": "0.2",
+   "version": "0.2.0",
+   "doc": "docs/glorfindel.md"
+  },
+  {
+   "id": "g-decouverte",
+   "composant": "glorfindel",
+   "poste": "g-detecter",
+   "nom": "Les actifs découverts par leur propre télémétrie",
+   "etat": "livree",
+   "release": "0.2",
+   "version": "0.2.0",
+   "doc": "docs/glorfindel.md"
+  },
+  {
+   "id": "g-sudo-attendus",
+   "composant": "glorfindel",
+   "poste": "g-detecter",
+   "nom": "Les sudo attendus des administrateurs, une liste par VM",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.0",
+   "lots": [
+    "ADM1"
+   ],
+   "issue": 284,
+   "doc": "docs/glorfindel.md"
+  },
+  {
+   "id": "g-plan-controle",
+   "composant": "glorfindel",
+   "poste": "g-detecter",
+   "nom": "Le plan de contrôle d'Azure lu, en détection seule",
+   "etat": "livree",
+   "release": "0.4",
+   "version": "0.4.0",
+   "lots": [
+    "AL1"
+   ],
+   "issue": 225,
+   "doc": "docs/glorfindel.md",
+   "note": "Un NSG modifié hors de Glorfindel, une attribution de rôle, un instantané : escaladés, jamais d'action autonome."
+  },
+  {
+   "id": "g-entra",
+   "composant": "glorfindel",
+   "poste": "g-detecter",
+   "nom": "Entra ID en détection seule, des cartes d'identité prêtes à agir",
+   "etat": "livree",
+   "release": "0.4",
+   "version": "0.4.7",
+   "lots": [
+    "C2",
+    "C2b"
+   ],
+   "issue": 199,
+   "doc": "docs/glorfindel.md"
+  },
+  {
+   "id": "g-cartes-cible",
+   "composant": "glorfindel",
+   "poste": "g-detecter",
+   "nom": "Les cartes du plan de contrôle rangées sur leur cible, les points de restauration",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.8",
+   "lots": [
+    "AL1c",
+    "AL1d",
+    "AL2"
+   ],
+   "issue": 597
+  },
+  {
+   "id": "g-sec-a4",
+   "composant": "glorfindel",
+   "poste": "g-detecter",
+   "nom": "Durcissement de sécurité (#633)",
+   "etat": "dev",
+   "release": "0.6",
+   "lots": [
+    "SEC-A4"
+   ],
+   "issue": 633
+  },
+  {
+   "id": "g-identite-mesuree",
+   "composant": "glorfindel",
+   "poste": "g-detecter",
+   "nom": "Les journaux d'activité et d'Entra ID allumés et mesurés au banc",
+   "etat": "prevue",
+   "release": "0.6",
+   "lots": [
+    "ID1"
+   ],
+   "issue": 281
+  },
+  {
+   "id": "g-charges-ia",
+   "composant": "glorfindel",
+   "poste": "g-detecter",
+   "nom": "Les charges IA d'Azure, en détection seule",
+   "etat": "prevue",
+   "release": "0.x",
+   "lots": [
+    "C3"
+   ],
+   "issue": 200
+  },
+  {
+   "id": "g-enquete",
+   "composant": "glorfindel",
+   "poste": "g-enqueter",
+   "nom": "Des requêtes d'enquête avant chaque décision",
+   "etat": "livree",
+   "release": "0.2",
+   "version": "0.2.0",
+   "doc": "docs/glorfindel.md"
+  },
+  {
+   "id": "g-correlation",
+   "composant": "glorfindel",
+   "poste": "g-enqueter",
+   "nom": "La corrélation : une session SSH derrière un shell root, un brute force qui réussit",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.0",
+   "lots": [
+    "COR1",
+    "COR2"
+   ],
+   "issue": 407,
+   "doc": "docs/design/correlation.md"
+  },
+  {
+   "id": "g-decision",
+   "composant": "glorfindel",
+   "poste": "g-decider",
+   "nom": "La décision par le modèle : signal enrichi, mémoire, exemples validés",
+   "etat": "livree",
+   "release": "0.2",
+   "version": "0.2.0",
+   "doc": "docs/glorfindel.md",
+   "note": "Sous 0,7 de confiance, ou si le modèle échoue, la décision revient à un humain."
+  },
+  {
+   "id": "g-stabilite",
+   "composant": "glorfindel",
+   "poste": "g-decider",
+   "nom": "Une décision stable d'un cycle à l'autre",
+   "etat": "livree",
+   "release": "0.3",
+   "version": "0.3.1",
+   "lots": [
+    "D-1"
+   ],
+   "issue": 186
+  },
+  {
+   "id": "g-imprevus",
+   "composant": "glorfindel",
+   "poste": "g-decider",
+   "nom": "La décision face à un modèle ou une mémoire imprévus",
+   "etat": "livree",
+   "release": "0.4",
+   "version": "0.4.4",
+   "lots": [
+    "SEC4a",
+    "SEC4b",
+    "SEC4c"
+   ],
+   "issue": 275
+  },
+  {
+   "id": "g-sec-a2",
+   "composant": "glorfindel",
+   "poste": "g-decider",
+   "nom": "Durcissement de sécurité (#631)",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.8",
+   "lots": [
+    "SEC-A2"
+   ],
+   "issue": 631
+  },
+  {
+   "id": "g-second-modele",
+   "composant": "glorfindel",
+   "poste": "g-decider",
+   "nom": "Un second modèle au harnais",
+   "etat": "prevue",
+   "release": "0.x",
+   "lots": [
+    "B1"
+   ],
+   "issue": 67
+  },
+  {
+   "id": "g-raisonnement",
+   "composant": "glorfindel",
+   "poste": "g-decider",
+   "nom": "Les deux faiblesses de raisonnement connues, traitées",
+   "etat": "prevue",
+   "release": "0.x",
+   "lots": [
+    "B3"
+   ],
+   "issue": 74
+  },
+  {
+   "id": "g-precision",
+   "composant": "glorfindel",
+   "poste": "g-decider",
+   "nom": "La précision mesurée sur données réelles",
+   "etat": "prevue",
+   "release": "0.x",
+   "lots": [
+    "B4"
+   ],
+   "issue": 75
+  },
+  {
+   "id": "g-gardes",
+   "composant": "glorfindel",
+   "poste": "g-garder",
+   "nom": "Des garde-fous déterministes autour du modèle",
+   "etat": "livree",
+   "release": "0.2",
+   "version": "0.2.0",
+   "doc": "docs/glorfindel.md",
+   "note": "Une action exécutable, un seuil de confiance, un signal caractérisé, une attribution : une action destructive n'est jamais autonome."
+  },
+  {
+   "id": "g-echec-ferme",
+   "composant": "glorfindel",
+   "poste": "g-garder",
+   "nom": "L'échec fermé quand une dépendance tombe",
+   "etat": "livree",
+   "release": "0.3",
+   "version": "0.3.0",
+   "lots": [
+    "G2"
+   ],
+   "issue": 77,
+   "doc": "docs/glorfindel.md",
+   "note": "Le modèle, l'API du cloud, la télémétrie, la configuration : une panne tient la VM en human_only, jamais plus hardi."
+  },
+  {
+   "id": "g-plancher-root",
+   "composant": "glorfindel",
+   "poste": "g-garder",
+   "nom": "Un brute force réussi puis root : au moins l'isolation",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.8",
+   "lots": [
+    "B3a"
+   ],
+   "issue": 609
+  },
+  {
+   "id": "g-isolation",
+   "composant": "glorfindel",
+   "poste": "g-agir",
+   "nom": "L'isolation réversible par un NSG de quarantaine, sur chaque carte réseau",
+   "etat": "livree",
+   "release": "0.2",
+   "version": "0.2.0",
+   "doc": "docs/azure.md",
+   "note": "Le NSG du client mis de côté puis rendu : compatible avec son Terraform, mesuré."
+  },
+  {
+   "id": "g-blocage",
+   "composant": "glorfindel",
+   "poste": "g-agir",
+   "nom": "Le blocage d'une adresse, la levée, l'instantané",
+   "etat": "livree",
+   "release": "0.2",
+   "version": "0.2.0",
+   "doc": "docs/azure.md"
+  },
+  {
+   "id": "g-isolation-tenue",
+   "composant": "glorfindel",
+   "poste": "g-agir",
+   "nom": "Isoler, bloquer, lever : jamais une autre VM coupée",
+   "etat": "livree",
+   "release": "0.4",
+   "version": "0.4.0",
+   "lots": [
+    "A3",
+    "I1F",
+    "I4F"
+   ],
+   "issue": 73,
+   "doc": "docs/design/preuves.md",
+   "note": "Les séquences trouvées par la machine à invariants, corrigées puis figées en tests."
+  },
+  {
+   "id": "g-fournisseurs",
+   "composant": "glorfindel",
+   "poste": "g-agir",
+   "nom": "Une interface de fournisseur : un cœur neutre, Azure en adaptateur",
+   "etat": "livree",
+   "release": "0.3",
+   "version": "0.3.1",
+   "lots": [
+    "A1",
+    "MC0"
+   ],
+   "issue": 71,
+   "doc": "docs/architecture.md"
+  },
+  {
+   "id": "g-aws-simule",
+   "composant": "glorfindel",
+   "poste": "g-agir",
+   "nom": "Un AWS simulé, et l'adaptateur écrit contre lui",
+   "etat": "livree",
+   "release": "0.3",
+   "version": "0.3.1",
+   "lots": [
+    "MC1"
+   ],
+   "issue": 92
+  },
+  {
+   "id": "g-file-signee",
+   "composant": "glorfindel",
+   "poste": "g-agir",
+   "nom": "La file d'actions signée : seule la watch écrit",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.6",
+   "lots": [
+    "FS1a",
+    "FS1b"
+   ],
+   "issue": 413,
+   "doc": "docs/design/file-actions-signee.md"
+  },
+  {
+   "id": "g-file-defaut",
+   "composant": "glorfindel",
+   "poste": "g-agir",
+   "nom": "La file signée par défaut, mesurée au banc",
+   "etat": "prevue",
+   "release": "0.x",
+   "lots": [
+    "FS1c"
+   ],
+   "issue": 571
+  },
+  {
+   "id": "g-identite-volee",
+   "composant": "glorfindel",
+   "poste": "g-agir",
+   "nom": "Une identité volée : le plan de réponse et « Vérifier » sur la carte",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.7",
+   "lots": [
+    "IR1a",
+    "IR1b"
+   ],
+   "issue": 552
+  },
+  {
+   "id": "g-identite-unique",
+   "composant": "glorfindel",
+   "poste": "g-agir",
+   "nom": "Une identité de VM unique, des prédicats à trois états",
+   "etat": "prevue",
+   "release": "0.x",
+   "lots": [
+    "A2"
+   ],
+   "issue": 72
+  },
+  {
+   "id": "g-aws",
+   "composant": "glorfindel",
+   "poste": "g-agir",
+   "nom": "L'adaptateur AWS et son banc",
+   "etat": "prevue",
+   "release": "1.x",
+   "lots": [
+    "MC2"
+   ],
+   "issue": 93
+  },
+  {
+   "id": "g-gcp",
+   "composant": "glorfindel",
+   "poste": "g-agir",
+   "nom": "L'adaptateur GCP et son banc",
+   "etat": "prevue",
+   "release": "1.x",
+   "lots": [
+    "MC3"
+   ],
+   "issue": 94
+  },
+  {
+   "id": "g-verification",
+   "composant": "glorfindel",
+   "poste": "g-verifier",
+   "nom": "Chaque action relue sur l'API du cloud",
+   "etat": "livree",
+   "release": "0.2",
+   "version": "0.2.0",
+   "doc": "docs/glorfindel.md"
+  },
+  {
+   "id": "g-reaffirmation",
+   "composant": "glorfindel",
+   "poste": "g-verifier",
+   "nom": "Une règle de blocage disparue est reposée, ou dite",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.2",
+   "lots": [
+    "L1G",
+    "L1P",
+    "L1Qs"
+   ],
+   "issue": 461
+  },
+  {
+   "id": "g-memoire-source",
+   "composant": "glorfindel",
+   "poste": "g-memoire",
+   "nom": "Chaque cycle en mémoire marqué exercice ou réel",
+   "etat": "livree",
+   "release": "0.3",
+   "version": "0.3.0",
+   "lots": [
+    "B2"
+   ],
+   "issue": 68,
+   "note": "Un cycle d'exercice n'est jamais rappelé comme précédent d'un vrai incident."
+  },
+  {
+   "id": "g-redaction",
+   "composant": "glorfindel",
+   "poste": "g-rediger",
+   "nom": "Une règle proposée quand une attaque passe, approuvée par un humain",
+   "etat": "livree",
+   "release": "0.2",
+   "version": "0.2.0",
+   "doc": "docs/glorfindel.md"
+  },
+  {
+   "id": "g-couches",
+   "composant": "glorfindel",
+   "poste": "g-rediger",
+   "nom": "Les règles du client dans leur couche, intactes aux mises à jour",
+   "etat": "livree",
+   "release": "0.3",
+   "version": "0.3.1",
+   "lots": [
+    "P1"
+   ],
+   "issue": 86
+  },
+  {
+   "id": "g-sec-a4b",
+   "composant": "glorfindel",
+   "poste": "g-rediger",
+   "nom": "Durcissement de sécurité (#660)",
+   "etat": "dev",
+   "release": "0.6",
+   "lots": [
+    "SEC-A4b"
+   ],
+   "issue": 660
+  },
+  {
+   "id": "g-remontee",
+   "composant": "glorfindel",
+   "poste": "g-rediger",
+   "nom": "Une règle du client remontée vers la base, anonyme",
+   "etat": "prevue",
+   "release": "0.x",
+   "lots": [
+    "P2"
+   ],
+   "issue": 87
+  },
+  {
+   "id": "g-modes",
+   "composant": "glorfindel",
+   "poste": "p-charges",
+   "nom": "L'autonomie par VM : human_only par défaut, non_disruptive",
+   "etat": "livree",
+   "release": "0.2",
+   "version": "0.2.0",
+   "doc": "docs/glorfindel.md",
+   "note": "Une VM ne quitte human_only qu'après son contrôle de préparation ; full_auto reste prévu."
+  },
+  {
+   "id": "g-observation",
+   "composant": "glorfindel",
+   "poste": "p-charges",
+   "nom": "L'observation : des cartes à juger, le rapport de la semaine",
+   "etat": "livree",
+   "release": "0.3",
+   "version": "0.3.0",
+   "lots": [
+    "H0"
+   ],
+   "issue": 114,
+   "doc": "docs/observation.md"
+  },
+  {
+   "id": "g-detection-seule",
+   "composant": "glorfindel",
+   "poste": "p-inscrites",
+   "nom": "La détection seule en production",
+   "etat": "prevue",
+   "release": "0.x",
+   "lots": [
+    "J1"
+   ],
+   "issue": 82
+  },
+  {
+   "id": "g-sentinelle",
+   "composant": "glorfindel",
+   "poste": "p-sentinelle",
+   "nom": "Une VM sentinelle vide dans le réseau de production",
+   "etat": "prevue",
+   "release": "0.x",
+   "lots": [
+    "J2"
+   ],
+   "issue": 83
+  },
+  {
+   "id": "g-ecart",
+   "composant": "glorfindel",
+   "poste": "p-jumeau",
+   "nom": "Le rapport d'écart entre le jumeau et la production",
+   "etat": "prevue",
+   "release": "0.x",
+   "lots": [
+    "J3"
+   ],
+   "issue": 84
+  },
+  {
+   "id": "g-jumeau",
+   "composant": "glorfindel",
+   "poste": "p-jumeau",
+   "nom": "Un jumeau composé depuis la découverte",
+   "etat": "prevue",
+   "release": "0.x",
+   "lots": [
+    "J4"
+   ],
+   "issue": 85
+  },
+  {
+   "id": "a-campagnes",
+   "composant": "annatar",
+   "poste": "a-choisir",
+   "nom": "Des campagnes génératives, dans un périmètre et un budget",
+   "etat": "livree",
+   "release": "0.2",
+   "version": "0.2.0",
+   "doc": "docs/architecture.md"
+  },
+  {
+   "id": "a-sans-glorfindel",
+   "composant": "annatar",
+   "poste": "a-garder",
+   "nom": "Jamais sans Glorfindel : le refus avant tout appel au cloud",
+   "etat": "livree",
+   "release": "0.3",
+   "version": "0.3.1",
+   "lots": [
+    "V1"
+   ],
+   "issue": 214,
+   "note": "Sans battement vivant de la watch, Annatar et Gothmog refusent ; une dérogation est un run de développement, dite au rapport."
+  },
+  {
+   "id": "a-arret",
+   "composant": "annatar",
+   "poste": "a-garder",
+   "nom": "L'arrêt d'une campagne, en échec fermé",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.8",
+   "lots": [
+    "KS1"
+   ],
+   "issue": 648
+  },
+  {
+   "id": "a-scenarios",
+   "composant": "annatar",
+   "poste": "a-attaquer",
+   "nom": "Des techniques MITRE ATT&CK validées en réel sur Azure",
+   "etat": "livree",
+   "release": "0.2",
+   "version": "0.2.0",
+   "doc": "docs/historique.md"
+  },
+  {
+   "id": "a-atomic",
+   "composant": "annatar",
+   "poste": "a-attaquer",
+   "nom": "Atomic Red Team, épinglé : un test appelé par son identifiant",
+   "etat": "livree",
+   "release": "0.3",
+   "version": "0.3.0",
+   "lots": [
+    "R1"
+   ],
+   "issue": 65
+  },
+  {
+   "id": "a-stratus-code",
+   "composant": "annatar",
+   "poste": "a-attaquer",
+   "nom": "L'adaptateur Stratus Red Team, côté code",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.8",
+   "lots": [
+    "R2a"
+   ],
+   "issue": 79
+  },
+  {
+   "id": "a-stratus",
+   "composant": "annatar",
+   "poste": "a-attaquer",
+   "nom": "Une technique Stratus sur l'identité de test, vue par Glorfindel",
+   "etat": "prevue",
+   "release": "0.6",
+   "lots": [
+    "R2",
+    "R2b",
+    "R2c"
+   ],
+   "issue": 79
+  },
+  {
+   "id": "a-pendant-panne",
+   "composant": "annatar",
+   "poste": "a-attaquer",
+   "nom": "Une attaque pendant une panne",
+   "etat": "prevue",
+   "release": "1.x",
+   "lots": [
+    "X1"
+   ],
+   "issue": 90
+  },
+  {
+   "id": "x-chaos",
+   "composant": "gothmog",
+   "poste": "x-moteur",
+   "nom": "Une panne déclarée par Chaos Studio, depuis un Orodruin armé",
+   "etat": "livree",
+   "release": "0.3",
+   "version": "0.3.0",
+   "lots": [
+    "G0"
+   ],
+   "issue": 66,
+   "doc": "gothmog/README.md"
+  },
+  {
+   "id": "x-kubernetes",
+   "composant": "gothmog",
+   "poste": "x-moteur",
+   "nom": "Un moteur Kubernetes, puis un moteur générique",
+   "etat": "prevue",
+   "release": "1.x",
+   "lots": [
+    "G4"
+   ],
+   "issue": 89
+  },
+  {
+   "id": "x-bruit",
+   "composant": "gothmog",
+   "poste": "x-eprouver",
+   "nom": "Le bruit bénin : écriture disque, CPU, redémarrage",
+   "etat": "livree",
+   "release": "0.4",
+   "version": "0.4.10",
+   "lots": [
+    "G1"
+   ],
+   "issue": 76,
+   "doc": "gothmog/README.md"
+  },
+  {
+   "id": "x-bruit-banc",
+   "composant": "gothmog",
+   "poste": "x-eprouver",
+   "nom": "Le bruit bénin joué au banc, son taux publié",
+   "etat": "prevue",
+   "release": "0.x",
+   "issue": 76
+  },
+  {
+   "id": "x-reprise",
+   "composant": "gothmog",
+   "poste": "x-eprouver",
+   "nom": "Un exercice de reprise : une VM détruite puis restaurée",
+   "etat": "prevue",
+   "release": "0.x",
+   "lots": [
+    "G3"
+   ],
+   "issue": 78
+  },
+  {
+   "id": "o-inscription",
+   "composant": "orodruin",
+   "poste": "o-inscrire",
+   "nom": "L'inscription et ses zones : un seul garde pour chaque injecteur",
+   "etat": "livree",
+   "release": "0.3",
+   "version": "0.3.0",
+   "lots": [
+    "O0"
+   ],
+   "issue": 62,
+   "doc": "docs/architecture.md",
+   "note": "En production, seules les techniques non destructives passent ; une cible sans zone est refusée."
+  },
+  {
+   "id": "o-identites",
+   "composant": "orodruin",
+   "poste": "o-inscrire",
+   "nom": "Une identité de test inscrite comme une VM",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.6",
+   "lots": [
+    "IDI1",
+    "IDI1b",
+    "IDI1s",
+    "IDI1p"
+   ],
+   "issue": 546,
+   "doc": "docs/design/orodruin-contract.md"
+  },
+  {
+   "id": "o-contrat",
+   "composant": "orodruin",
+   "poste": "o-armer",
+   "nom": "Le contrat vérifié au démarrage, l'arrêt d'urgence",
+   "etat": "livree",
+   "release": "0.3",
+   "version": "0.3.0",
+   "lots": [
+    "O1"
+   ],
+   "issue": 64,
+   "doc": "docs/design/orodruin-contract.md"
+  },
+  {
+   "id": "o-mise-a-jour",
+   "composant": "orodruin",
+   "poste": "o-armer",
+   "nom": "Orodruin se met à jour seul",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.5",
+   "lots": [
+    "OI3"
+   ],
+   "issue": 522,
+   "doc": "infra/orodruin/README.md"
+  },
+  {
+   "id": "o-kubernetes",
+   "composant": "orodruin",
+   "poste": "o-armer",
+   "nom": "Orodruin en mode Kubernetes",
+   "etat": "prevue",
+   "release": "1.x",
+   "lots": [
+    "O2"
+   ],
+   "issue": 91
+  },
+  {
+   "id": "o-experience",
+   "composant": "orodruin",
+   "poste": "o-executer",
+   "nom": "Un schéma d'expérience commun aux techniques et aux pannes",
+   "etat": "livree",
+   "release": "0.3",
+   "version": "0.3.0",
+   "lots": [
+    "E1"
+   ],
+   "issue": 63
+  },
+  {
+   "id": "o-drill",
+   "composant": "orodruin",
+   "poste": "o-executer",
+   "nom": "Un exercice planifié chaque semaine sur le banc",
+   "etat": "prevue",
+   "release": "0.x",
+   "lots": [
+    "DRL1"
+   ],
+   "issue": 613,
+   "doc": "docs/design/drill-banc.md"
+  },
+  {
+   "id": "o-canal",
+   "composant": "orodruin",
+   "poste": "o-rendre",
+   "nom": "Le canal retour : fenêtres d'exercice, battement, détections",
+   "etat": "livree",
+   "release": "0.3",
+   "version": "0.3.0",
+   "doc": "docs/design/orodruin-contract.md"
+  },
+  {
+   "id": "c-banc",
+   "composant": "celebrimbor",
+   "poste": "c-construire",
+   "nom": "Le banc en Terraform, jetable, ses cibles inscrites",
+   "etat": "livree",
+   "release": "0.2",
+   "version": "0.2.0",
+   "doc": "infra/terraform"
+  },
+  {
+   "id": "c-couche-client",
+   "composant": "celebrimbor",
+   "poste": "c-construire",
+   "nom": "La couche du client du banc : sa maintenance, son canari",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.8",
+   "lots": [
+    "WL1",
+    "CAN2"
+   ],
+   "issue": 595
+  },
+  {
+   "id": "c-lecture",
+   "composant": "celebrimbor",
+   "poste": "c-acces",
+   "nom": "Une identité en lecture seule pour la session du banc",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.8",
+   "lots": [
+    "BRO1"
+   ],
+   "issue": 614,
+   "doc": "docs/operations.md"
+  },
+  {
+   "id": "k-console",
+   "composant": "console",
+   "poste": "k-voir",
+   "nom": "La console Eregion : une section par agent",
+   "etat": "livree",
+   "release": "0.3",
+   "version": "0.3.1",
+   "lots": [
+    "UI-1"
+   ],
+   "issue": 205,
+   "doc": "docs/design/console.md"
+  },
+  {
+   "id": "k-indicateurs",
+   "composant": "console",
+   "poste": "k-voir",
+   "nom": "Les cinq indicateurs de la finalité sur l'accueil",
+   "etat": "livree",
+   "release": "0.4",
+   "version": "0.4.0",
+   "lots": [
+    "UI-2"
+   ],
+   "issue": 206
+  },
+  {
+   "id": "k-echappement",
+   "composant": "console",
+   "poste": "k-voir",
+   "nom": "Rien du dehors écrit brut, aucun script en ligne",
+   "etat": "livree",
+   "release": "0.4",
+   "version": "0.4.1"
+  },
+  {
+   "id": "k-discord",
+   "composant": "console",
+   "poste": "k-voir",
+   "nom": "L'atelier dans Discord : CI, PR, releases, feuille de route",
+   "etat": "livree",
+   "release": "0.4",
+   "version": "0.4.0",
+   "lots": [
+    "N1",
+    "N2",
+    "N3"
+   ],
+   "issue": 242,
+   "doc": "docs/atelier-discord.md"
+  },
+  {
+   "id": "k-overview",
+   "composant": "console",
+   "poste": "k-voir",
+   "nom": "L'Overview compte le réel, Dagorlad les exercices",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.0",
+   "lots": [
+    "OV1"
+   ],
+   "issue": 399
+  },
+  {
+   "id": "k-couverture",
+   "composant": "console",
+   "poste": "k-suivre",
+   "nom": "Un rapport de run unique, la matrice de couverture",
+   "etat": "livree",
+   "release": "0.4",
+   "version": "0.4.7",
+   "lots": [
+    "C1"
+   ],
+   "issue": 80
+  },
+  {
+   "id": "k-dagorlad",
+   "composant": "console",
+   "poste": "k-suivre",
+   "nom": "Dagorlad, le tableau des exercices",
+   "etat": "livree",
+   "release": "0.4",
+   "version": "0.4.8",
+   "lots": [
+    "DG-a",
+    "DG-b",
+    "DG-c",
+    "DG-d",
+    "DG-e"
+   ],
+   "doc": "docs/dagorlad.md"
+  },
+  {
+   "id": "k-verdicts",
+   "composant": "console",
+   "poste": "k-juger",
+   "nom": "Les verdicts, dans la console et sur Discord",
+   "etat": "livree",
+   "release": "0.3",
+   "version": "0.3.0",
+   "doc": "docs/observation.md"
+  },
+  {
+   "id": "k-detections-signees",
+   "composant": "console",
+   "poste": "k-juger",
+   "nom": "Chaque détection du canal retour marquée signée, ou refusée",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.6",
+   "lots": [
+    "CON-S"
+   ],
+   "issue": 534
+  },
+  {
+   "id": "k-verdict-propose",
+   "composant": "console",
+   "poste": "k-juger",
+   "nom": "Un verdict proposé sur une carte d'exercice attendue",
+   "etat": "prevue",
+   "release": "0.x",
+   "lots": [
+    "VP1"
+   ],
+   "issue": 615
+  },
+  {
+   "id": "i-separee",
+   "composant": "analyse",
+   "poste": "i-lire",
+   "nom": "Sa mémoire et son modèle, séparés de ceux de Glorfindel",
+   "etat": "livree",
+   "release": "0.4",
+   "version": "0.4.0",
+   "lots": [
+    "IA1"
+   ],
+   "issue": 88,
+   "doc": "docs/analysis.md"
+  },
+  {
+   "id": "i-comparaison",
+   "composant": "analyse",
+   "poste": "i-lire",
+   "nom": "Ce qui a changé depuis la campagne précédente, calculé par le code",
+   "etat": "livree",
+   "release": "0.3",
+   "version": "0.3.1",
+   "lots": [
+    "D-2"
+   ],
+   "issue": 184
+  },
+  {
+   "id": "i-rapport",
+   "composant": "analyse",
+   "poste": "i-rapporter",
+   "nom": "Le rapport de campagne : chaque affirmation cite son run",
+   "etat": "livree",
+   "release": "0.3",
+   "version": "0.3.0",
+   "lots": [
+    "IA0"
+   ],
+   "issue": 69,
+   "doc": "docs/analysis.md"
+  },
+  {
+   "id": "i-contenir",
+   "composant": "analyse",
+   "poste": "i-rapporter",
+   "nom": "Le temps pour contenir et la part contenue seule, calculés",
+   "etat": "livree",
+   "release": "0.4",
+   "version": "0.4.8",
+   "lots": [
+    "BL1"
+   ],
+   "issue": 280,
+   "doc": "docs/analysis.md"
+  },
+  {
+   "id": "s-heberge",
+   "composant": "socle",
+   "poste": "s-heberger",
+   "nom": "Glorfindel hébergé sur une VM dédiée, à côté du banc",
+   "etat": "livree",
+   "release": "0.3",
+   "version": "0.3.0",
+   "lots": [
+    "H0"
+   ],
+   "issue": 114,
+   "doc": "docs/operations.md"
+  },
+  {
+   "id": "s-cd",
+   "composant": "socle",
+   "poste": "s-heberger",
+   "nom": "Le CD : publier une release, c'est déployer Glorfindel hébergé",
+   "etat": "livree",
+   "release": "0.4",
+   "version": "0.4.2",
+   "lots": [
+    "H1",
+    "H1b",
+    "H1c",
+    "H1d"
+   ],
+   "issue": 244
+  },
+  {
+   "id": "s-profils",
+   "composant": "socle",
+   "poste": "s-heberger",
+   "nom": "Des profils d'usage, chaque composant seul en CI",
+   "etat": "livree",
+   "release": "0.4",
+   "version": "0.4.0",
+   "lots": [
+    "D1"
+   ],
+   "issue": 81,
+   "doc": "docs/profils/README.md"
+  },
+  {
+   "id": "s-invariants",
+   "composant": "socle",
+   "poste": "s-prouver",
+   "nom": "Les invariants sur un faux Azure qui bouge, mesurés par mutation",
+   "etat": "livree",
+   "release": "0.2",
+   "version": "0.2.0",
+   "lots": [
+    "A0"
+   ],
+   "doc": "docs/design/preuves.md"
+  },
+  {
+   "id": "s-hermetique",
+   "composant": "socle",
+   "poste": "s-prouver",
+   "nom": "Une suite hermétique : aucun appel au cloud ni au modèle",
+   "etat": "livree",
+   "release": "0.4",
+   "version": "0.4.0",
+   "lots": [
+    "HY1"
+   ],
+   "doc": "docs/design/preuves.md"
+  },
+  {
+   "id": "s-release",
+   "composant": "socle",
+   "poste": "s-prouver",
+   "nom": "Une release en deux commandes, un brouillon que Jonathan publie",
+   "etat": "livree",
+   "release": "0.4",
+   "version": "0.4.4",
+   "lots": [
+    "REL1",
+    "RM1"
+   ],
+   "issue": 269,
+   "doc": "docs/sessions.md"
+  },
+  {
+   "id": "s-mutants",
+   "composant": "socle",
+   "poste": "s-prouver",
+   "nom": "Chaque mutant attrapé, ou sa raison dite",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.4",
+   "lots": [
+    "MUT1",
+    "MUT3",
+    "MUT4"
+   ],
+   "doc": "docs/design/preuves.md"
+  },
+  {
+   "id": "s-porte",
+   "composant": "socle",
+   "poste": "s-prouver",
+   "nom": "La porte de release : la mesure la plus forte, sur l'arbre publié",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.5",
+   "lots": [
+    "CI5",
+    "CI6",
+    "CI6b",
+    "CI6c",
+    "CI6e",
+    "REL3"
+   ],
+   "issue": 514,
+   "doc": "docs/sessions.md"
+  },
+  {
+   "id": "s-graine",
+   "composant": "socle",
+   "poste": "s-prouver",
+   "nom": "Une graine tirée par tour pour la nuit et la porte de release, dite et rejouable",
+   "etat": "relecture",
+   "release": "0.6",
+   "lots": [
+    "SEED1"
+   ],
+   "issue": 655,
+   "pr": 663
+  },
+  {
+   "id": "s-verrous",
+   "composant": "socle",
+   "poste": "s-signer",
+   "nom": "Des dépendances verrouillées, des références épinglées",
+   "etat": "livree",
+   "release": "0.3",
+   "version": "0.3.1",
+   "lots": [
+    "M-3",
+    "DEP1",
+    "DEP2"
+   ],
+   "issue": 183,
+   "doc": "docs/operations.md"
+  },
+  {
+   "id": "s-revue",
+   "composant": "socle",
+   "poste": "s-signer",
+   "nom": "Une revue de sécurité externe, et ses suites",
+   "etat": "livree",
+   "release": "0.4",
+   "version": "0.4.3",
+   "lots": [
+    "SEC1",
+    "SEC2",
+    "SEC3",
+    "SEC4a",
+    "SEC5",
+    "SEC6",
+    "SEC7"
+   ],
+   "issue": 272,
+   "doc": "docs/design/modele-de-menace.md"
+  },
+  {
+   "id": "s-contre-audit",
+   "composant": "socle",
+   "poste": "s-signer",
+   "nom": "Un second contre-audit, et ses suites",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.0",
+   "lots": [
+    "SEC8",
+    "SEC9",
+    "SEC10",
+    "SEC13",
+    "SEC14",
+    "SEC15",
+    "SEC16",
+    "SEC17"
+   ],
+   "issue": 414,
+   "doc": "docs/design/modele-de-menace.md"
+  },
+  {
+   "id": "s-sessions",
+   "composant": "socle",
+   "poste": "s-signer",
+   "nom": "Une identité propre aux sessions d'agents, des règles du dépôt",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.0",
+   "lots": [
+    "SEC12"
+   ],
+   "issue": 418,
+   "doc": "docs/sessions.md"
+  },
+  {
+   "id": "s-signe",
+   "composant": "socle",
+   "poste": "s-signer",
+   "nom": "Le battement de la watch et ses détections, signés",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.3",
+   "lots": [
+    "SEC19",
+    "SEC21",
+    "SEC21b"
+   ],
+   "issue": 456
+  },
+  {
+   "id": "s-sec-a1",
+   "composant": "socle",
+   "poste": "s-signer",
+   "nom": "Durcissement de sécurité (#630)",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.8",
+   "lots": [
+    "SEC-A1"
+   ],
+   "issue": 630
+  },
+  {
+   "id": "s-sec-d",
+   "composant": "socle",
+   "poste": "s-documenter",
+   "nom": "Durcissement de sécurité (#636)",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.8",
+   "lots": [
+    "SEC-D"
+   ],
+   "issue": 636,
+   "doc": "SECURITY.md"
+  },
+  {
+   "id": "s-site",
+   "composant": "socle",
+   "poste": "s-documenter",
+   "nom": "Le site du projet, sur GitHub Pages",
+   "etat": "livree",
+   "release": "0.4",
+   "version": "0.4.9",
+   "lots": [
+    "DOC1"
+   ],
+   "issue": 365,
+   "doc": "docs/index.html"
+  },
+  {
+   "id": "s-guides",
+   "composant": "socle",
+   "poste": "s-documenter",
+   "nom": "Des guides de démarrage, rejoués depuis zéro",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.5",
+   "lots": [
+    "GS1"
+   ],
+   "issue": 520,
+   "doc": "docs/demarrer/bleu.md"
+  },
+  {
+   "id": "s-pilotage",
+   "composant": "socle",
+   "poste": "s-documenter",
+   "nom": "Le manuel de pilotage, tenu à chaque étape du cycle",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.8",
+   "lots": [
+    "MAN0"
+   ],
+   "issue": 640,
+   "doc": "docs/sessions.md"
+  },
+  {
+   "id": "s-replay",
+   "composant": "socle",
+   "poste": "s-documenter",
+   "nom": "La boucle rejouée, une page interactive sur le site",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "PRES1",
+    "PRES1b"
+   ],
+   "issue": 658,
+   "pr": 659,
+   "doc": "docs/replay/index.html"
+  },
+  {
+   "id": "s-manuel",
+   "composant": "socle",
+   "poste": "s-documenter",
+   "nom": "Le manuel public : l'état d'Eregion, composant par composant",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "MAN1"
+   ],
+   "issue": 664,
+   "doc": "docs/manuel/index.html"
+  }
+ ]
+}

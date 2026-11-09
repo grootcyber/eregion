@@ -148,7 +148,7 @@ DOCKER_GLORFINDEL_WATCH = $(WATCH_KEY_DIR) && $(RUNS_DIRS) && $(GLORFINDEL_AZURE
 	glorfindel-pending glorfindel-check-ttl \
 	glorfindel-start glorfindel-stop glorfindel-restart glorfindel-dev glorfindel-logs glorfindel-ui console-url console-rotate \
 	annatar-shell glorfindel-shell \
-	venv install lock audit test test-unit lint annatar-simulate annatar-simulate-gap clean release release-draft \
+	venv install lock audit test test-unit lint annatar-simulate annatar-simulate-gap clean release release-draft manuel \
 	canary-jit providers-lock celebrimbor-init celebrimbor-plan celebrimbor-up celebrimbor-down celebrimbor-output celebrimbor-stop celebrimbor-start \
 	celebrimbor-logs-plan celebrimbor-logs-up celebrimbor-auditd-plan celebrimbor-auditd-up \
 	celebrimbor-identity-plan celebrimbor-identity-up celebrimbor-unit-prepare celebrimbor-users-plan celebrimbor-users-up \
@@ -189,6 +189,7 @@ help:
 	@echo "Release (REL1) — a draft only: Jonathan publishes (publishing deploys H0)"
 	@echo "  make release VERSION=X.Y.Z TITLE=\"…\" [DRY_RUN=1]  The version's PR: CHANGELOG cut, version, README"
 	@echo "  make release-draft VERSION=X.Y.Z [NOTES=file] [DRY_RUN=1]  After its merge: the draft, seen on #agents and #releases"
+	@echo "  make manuel         The public manual: docs/manuel/modules.json written from modules.yaml (MAN1)"
 	@echo ""
 	@echo "Build"
 	@echo "  make build          Build both Docker images"
@@ -1755,6 +1756,11 @@ release release-draft: export EREGION_RELEASE_ORIGIN = $(foreach v,$(RELEASE_ARG
 release:
 	@case " $$EREGION_RELEASE_ORIGIN " in *:environment*) echo "VERSION, TITLE ou NOTES vient de l'environnement : rien n'est fait. Sur la ligne de commande : make release VERSION=X.Y.Z TITLE=\"…\"" >&2; exit 1;; esac
 	python3 scripts/release.py prepare$(if $(DRY_RUN), --dry-run)
+
+# MAN1 (#664) : le manuel public. La PR d'un lot met sa brique à jour dans docs/manuel/modules.yaml,
+# puis `make manuel` écrit modules.json, que la page lit (tests/unit/test_manuel.py le compare).
+manuel:
+	python3 scripts/manuel.py build
 
 release-draft:
 	@case " $$EREGION_RELEASE_ORIGIN " in *:environment*) echo "VERSION ou NOTES vient de l'environnement : rien n'est fait. Sur la ligne de commande : make release-draft VERSION=X.Y.Z" >&2; exit 1;; esac
