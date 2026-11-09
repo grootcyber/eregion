@@ -434,6 +434,10 @@ ORO_SSH_FINGERPRINT=SHA256:…        # V-32 (SEC14) : celle d'Orodruin, lue sur
                                     # toute commande vers Orodruin, jamais accept-new ; ORO_KNOWN_HOSTS : ~/.eregion/orodruin_known_hosts
 GLORFINDEL_KEEP_ISOLATED=1          # mode forensique
 GLORFINDEL_ISOLATION_TTL_H=4        # TTL isolation (défaut 4h) : au-delà, une carte ttl_exceeded — jamais de levée automatique
+GLORFINDEL_RECOVERY_INTERVAL_S=60   # REC1 : la watch relit sur Azure la reprise des VM qu'elle a isolées (0 : jamais) ;
+                                    # GLORFINDEL_RECOVERY_GRACE_S=300 (un job fini depuis moins attend), _START_WAIT_S=600
+                                    # (VM arrêtée au-delà : une carte), _REPLAY_WAIT_S=900 (parole de Run Command attendue)
+                                    # — docs/glorfindel.md, « La reprise lue sur Azure »
 EREGION_CONSOLE_HOSTS=nom,nom       # SEC1 : noms (sans port) sous lesquels la console répond, en plus de localhost / 127.0.0.1 / [::1] ; une
                                     # modification n'est acceptée que de l'origine de la console sous ce nom (compose la passe à la console)
 GLORFINDEL_APPROVAL_MAX_AGE_H=2     # âge max d'une carte exécutable en un clic (console, « Approve & execute ») ; nan/inf → 2 ; ≤0 → approbation en un clic fermée

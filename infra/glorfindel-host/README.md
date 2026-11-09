@@ -39,7 +39,10 @@ seul sur le banc, dans le mode de chaque VM.
     porte l'id de la VM) : elle la retrouve au prochain `make glorfindel-host-up` ; d'ici là, sa
     préparation dit `no_drain`, et elle agit en `human_only`.
   - **La neutralisation avant un restore, VM par VM** (SEC17). H0 ne restaure pas, et ne reçoit
-    jamais ce droit. Mais son état Terraform porte, pour le banc, « Eregion Glorfindel Restore
+    jamais ce droit. La restauration part du poste ; la watch de H0 la lit ensuite sur Azure, avec
+    son Reader du groupe (le job fini, son point antérieur à l'incident, la VM qui tourne, la
+    neutralisation relue après le restore), et lève l'isolation elle-même (REC1,
+    `docs/glorfindel.md`, « La reprise lue sur Azure »). Mais son état Terraform porte, pour le banc, « Eregion Glorfindel Restore
     Neutralize » (Run Command, sorti du rôle Restore) sur chaque VM de `restore_vms` (gondolin,
     bree — `restore.auto.tfvars`, commité), pour chaque principal qui restaure (`restore_principals` :
     la console et le bot, leurs object id dans `principals.auto.tfvars`, sur le poste,

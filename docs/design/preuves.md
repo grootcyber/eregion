@@ -106,6 +106,22 @@ Les propriétés, vérifiées après chaque étape :
 | L2 | un NSG de quarantaine que quelqu'un a modifié, et qui porte encore des cartes, est reposé ou signalé — l'état de ces cartes perdu compris (I1F) ; signalé, il le reste quand il sort de la liste : rôle retiré sur son groupe, notre tag retiré (I1S) |
 | U1 | une règle laissée par une carte qui n'existe plus, et qui coupe une carte vivante, est signalée, puis retirée par le balayage — sauf si une de nos règles retournée en autorisation se tient derrière elle : gardée et dite (I5Q) ; rien d'autre ne bouge ; en fin de séquence, chaque VM vivante revient à sa conception en entier (A3) |
 
+**La reprise lue sur Azure a sa propre machine (REC1, #668).** Elle est dans
+`tests/unit/test_recovery_watch.py`, pas dans celle-ci. Elle lit les jobs du coffre, les points,
+l'alimentation et la parole de Run Command, et non le réseau. Ses étapes : des isolations, des
+points (avant l'incident, pendant), des restaurations (chaque statut, chaque façon dont le job
+nomme son point, la VM laissée allumée ou éteinte), des commandes (l'inoffensive, celle d'un
+attaquant), des démarrages, le temps qui passe. Ajoutées ici, elles auraient dilué les séquences
+des NSG sans rien leur faire voir. Deux propriétés, jugées sur le journal du test :
+
+| | Ce qui doit tenir |
+|---|---|
+| R1 | jamais de `recovery_complete` sans reprise prouvée sur Azure : le dernier job de la VM depuis son isolement fini et réussi, son point antérieur à l'isolement, la VM qui tourne ; « neutralisée » seulement si le disque restauré a rejoué la commande inoffensive |
+| R2 | jamais deux `recovery_complete` pour un job, ni deux cartes pour un job et un motif, ni deux de ses cartes en attente sur une VM |
+
+Aux budgets de la CI (200 séquences), elle attrape seule les cinq mutants du lot (M4615–M4619) ;
+à 60, trois. Les tests ciblés du même fichier les attrapent tous.
+
 **Des oracles qui ne demandent rien au code.** Ce qu'une propriété juge vient du journal du test :
 la levée qu'il a demandée (I9), ce qu'il a perdu et quand (une carte « intraçable »), qui a écrit
 quoi (I2 par auteur). Lire les marqueurs que le code pose revenait à le croire sur parole : un bug
