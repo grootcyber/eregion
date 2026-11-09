@@ -8,6 +8,10 @@ from glorfindel.providers.azure.sdk import _enum_text, _is_iam_error, rest_post
 from glorfindel.response.ids import _parse_vm_resource_id
 from glorfindel.response.policy import _console, _ERR_MAX, _first_line
 
+# What the harmless command prints: the last Run Command of a VM whose restore neutralized it —
+# what the watch reads back on Azure after a restore another host ran (REC1, recovery.py).
+NEUTRALIZED_MARKER = "glorfindel: run command neutralized"
+
 # SEC17: why a restore did not neutralize the last Run Command on a VM outside the list.
 NEUTRALIZE_REFUSED = ("Run Command refusé sur cette VM : le rôle « Eregion Glorfindel Restore "
                       "Neutralize » n'y est pas (il se donne VM par VM, aux VM que le restore "
@@ -254,10 +258,10 @@ class RestoreMixin:
         os_type = _enum_text(getattr(getattr(vm.storage_profile, "os_disk", None), "os_type", "") or "")
         if "windows" in os_type.lower():
             cmd = RunCommandInput(command_id="RunPowerShellScript",
-                                  script=["Write-Output 'glorfindel: run command neutralized'"])
+                                  script=[f"Write-Output '{NEUTRALIZED_MARKER}'"])
         else:
             cmd = RunCommandInput(command_id="RunShellScript",
-                                  script=["echo 'glorfindel: run command neutralized'"])
+                                  script=[f"echo '{NEUTRALIZED_MARKER}'"])
         command_ran = False
         try:
             poller = self._compute.virtual_machines.begin_run_command(rg, vm_name, cmd)

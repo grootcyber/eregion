@@ -1283,7 +1283,8 @@ def test_a_shard_leaves_the_machines_only_to_a_gate_that_runs_them():
     import yaml
     machines = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "tests").rglob("test_*.py")
                       if mc.MACHINE.search(p.read_text(encoding="utf-8")))
-    assert machines == ["tests/unit/test_invariants.py", "tests/unit/test_invariants_aws.py"]
+    assert machines == ["tests/unit/test_invariants.py", "tests/unit/test_invariants_aws.py",
+                        "tests/unit/test_recovery_watch.py"]   # REC1: R1, R2 — run by `invariants-rest`
     gate = _jobs("release-gate.yml")
     if any("--skip-machine-baseline" in yaml.safe_dump(spec) for spec in gate.values()):
         needs = gate["gate"].get("needs") or []

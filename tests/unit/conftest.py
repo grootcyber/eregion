@@ -464,6 +464,8 @@ def isolated_glorfindel_home(tmp_path, monkeypatch):
     monkeypatch.setattr(signal_origin, "_VOUCHED", set())
     monkeypatch.setattr(signal_origin, "_REFUSED", {})
     monkeypatch.setattr(signal_origin, "REFUSALS_FILE", home / "channel_refusals.json")
+    import glorfindel.recovery_watch as recovery_watch   # REC1: what the watch did of each restore job
+    monkeypatch.setattr(recovery_watch, "RECOVERIES_FILE", home / "recoveries.json")
     import glorfindel.cli as glorfindel_cli          # the injectors' heartbeat directory (SEC3)
     monkeypatch.setattr(glorfindel_cli, "_INJECTORS_DIR", home / "injectors")
     try:

@@ -125,6 +125,7 @@ _ACTION_LABELS = {
     "investigate_detection_gap": "Détection empêchée — enquête requise",
     "activate_autonomy": "Réponse autonome en attente de confirmation",
     "review_isolation": "Isolation à revoir (TTL dépassé)",
+    "review_recovery": "Reprise à revoir (restauration lue sur Azure, levée retenue)",
     "review_bypass": "Contournement à revoir (règle d'un tiers)",
     "repair_local_state": "État local à réparer",
     "review_left_rule": "Règle laissée à revoir (elle vise une autre VM)",
