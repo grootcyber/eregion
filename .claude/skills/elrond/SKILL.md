@@ -90,7 +90,7 @@ Le manuel montre chaque module comme une brique : son état, sa release, son lot
      - Verdict `review-needed` : le modèle est `5.5+repli` et la relecture passe à `pending`. Lance un `elrond-reviewer` avec la description `elrond <ID> · relecture`. Note d'abord le commit à relire (ci-dessous). Donne-lui l'ID, la fiche, la branche, ce commit et la base, ainsi que chaque épisode de repli relevé par palantir : modèle, période, actions, fichiers écrits et, si `files_complete` vaut `false`, les commandes shell de l'épisode (leurs écritures ne sont pas listées).
    - **Noter le commit à relire, pour toute relecture** (la politique `always`, un verdict `review-needed`, chaque relance après `fix`, `review <lot>`) : `git fetch origin`, puis `reviewed=$(git rev-parse origin/<branche>)` pour une branche poussée, ou `git rev-parse <branche>` pour une branche locale. Donne-le au relecteur ; il le redit dans son rapport (« Commit relu »), et l'étape 6 ne vaut que pour lui.
    - Range les impacts transverses de son rapport dans `collab/inbox_<rôle>.md`, pour chaque session concernée.
-   - Mets à jour le manuel : la brique du lot passe `relecture` si une relecture part, sinon elle garde son état ; ce qu'elle attend dans `attend` (une relecture, une décision ; un geste au banc : `banc`, avec `attend_jonathan` vrai), et une ligne au fil de type `relecture` si une relecture part, sinon `note`.
+   - Mets à jour le manuel : la brique du lot passe `relecture` si une relecture part, sinon elle garde son état, sauf un geste au banc : elle passe `banc`, avec `attend_jonathan` vrai ; ce qu'elle attend dans `attend` (une relecture, une décision), et une ligne au fil de type `relecture` si une relecture part, sinon `note`.
 
 4. **Au retour d'un relecteur, lance aussi palantir.**
    - Vérifie qu'il ne laisse aucune tâche de fond (`ps`), comme au retour d'un exécutant.
@@ -143,7 +143,7 @@ Sans configuration, ces commandes ne font rien et sortent en 0.
 Lis `plan.md` et le journal de la session. Résume l'avancement par jalon, puis ce qui attend une relecture ou une décision de l'utilisateur.
 
 Puis **rattrape le manuel** : compare ses briques avec `plan.md` et GitHub, corrige l'écart et dis-le dans le fil (une ligne de type `note` par brique corrigée, « rattrapé : … »).
-- une PR ouverte → `dev`, ou `relecture` si une relecture est en cours ou rendue sur sa tête ;
+- une PR ouverte → `dev`, ou `relecture` si une relecture est en cours, ou rendue `ok` sur sa tête ;
 - une PR fusionnée depuis le dernier tag `v*` → `main` ;
 - un lot dans un tag → `livree`, avec la version de ce tag dans `version` ;
 - une issue de lot fermée : sa brique ne reste ni `prevue` ni `dev` ;
