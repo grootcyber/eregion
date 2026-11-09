@@ -11,7 +11,12 @@ Analytics, exact at the few values a rule counts —, several of them), `project
 case-insensitive, as in KQL — WL1), `contains`, `!contains` (case-insensitive — CAN2), `and`, `or`, `not(…)`; functions `ago()`, `extract()`,
 `iif()` (or `iff()`), `isempty()`, `isnotempty()`, `isnotnull()`, `strcat()`, `toint()`,
 `tolong()`, `tostring()`, `parse_json()`; a member (`.appid`) or an index (`["…"]`) on a column or on what a
-function returns — the Activity Log's `Claims`, AL2, AL1d. Anything
+function returns — the Activity Log's `Claims`, AL2, AL1d. For the Entra sign-in rule (CAN3):
+`let name = <tabular>;` statements, a let's name as a source, `distinct`, `join kind=inner` and
+`kind=leftanti` on a let's name (`on col, …`; a right column the left already has is suffixed
+`1`, as in KQL), `between (a .. b)` (both ends included), `project Name = expr`, the
+aggregations `dcount(f)` and `make_set(f[, n])`, the functions `bin(t, span)` (a datetime
+floored to the span, from the epoch) and `strcat_array(a, sep)`. Anything
 else raises NotImplementedError: a rule this reader cannot follow fails its test, never
 passes it by accident. `has` is KQL's term match (case-insensitive, at term boundaries);
 regexes are read by Python's `re` in ASCII mode (`\\d` is 0–9 only, as in RE2: AUD1's review —
@@ -32,7 +37,7 @@ _TOKEN = re.compile(r"""
   | (?P<str>"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')
   | (?P<span>\d+(?:\.\d+)?(?:d|h|m|s|ms|min|days?|hours?|minutes?|seconds?)\b)
   | (?P<num>\d+(?:\.\d+)?)
-  | (?P<op>==|!=|>=|<=|=~|!has\b|!contains\b|!in~|!in\b|in~|[|(),=<>*.\[\]])
+  | (?P<op>==|!=|>=|<=|=~|!has\b|!contains\b|!in~|!in\b|in~|\.\.|[|(),=<>*.\[\];])
   | (?P<ident>[A-Za-z_][A-Za-z0-9_]*)
 """, re.VERBOSE)
 
@@ -184,6 +189,15 @@ class _Parser:
             self.take("ident", "regex")
             pattern = re.compile(self.take("str")[1], re.ASCII)
             return lambda r: pattern.search(str(left(r) or "")) is not None
+        if op == "between" and tok[0] == "ident":
+            # KQL's range, both ends included (CAN3: the sign-in rule's baseline).
+            self.take()
+            self.take("op", "(")
+            low = self.expr()
+            self.take("op", "..")
+            high = self.expr()
+            self.take("op", ")")
+            return lambda r: left(r) is not None and low(r) <= left(r) <= high(r)
         return left
 
     def primary(self):
@@ -276,6 +290,20 @@ class _Parser:
             # its three ids as one value).
             fs = [f for _, f in args]
             return lambda r: "".join("" if f(r) is None else str(f(r)) for f in fs)
+        if name == "bin":
+            # KQL's bin on a datetime: floored to the span, counted from the epoch (CAN3: a day).
+            (_, f), (_, seconds) = args
+            epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+            def floor(r):
+                t = f(r)
+                if t is None:
+                    return None
+                return epoch + timedelta(seconds=((t - epoch).total_seconds() // seconds) * seconds)
+            return floor
+        if name == "strcat_array":
+            (_, f), (_, sep) = args
+            return lambda r: str(sep(r)).join("" if v is None else str(v) for v in (f(r) or []))
         if name == "tostring":
             (_, f), = args
             return lambda r: "" if f(r) is None else str(f(r))
@@ -297,11 +325,32 @@ class _Parser:
 def run(query: str, rows: list[dict], now: datetime | None = None) -> list[dict]:
     """The rows `query` returns over `rows` (dicts; TimeGenerated a datetime)."""
     now = now or datetime.now(timezone.utc)
-    stages = _stages(_tokens(query))
+    statements, cur, depth = [], [], 0
+    for tok in _tokens(query):
+        depth += (tok == ("op", "(")) - (tok == ("op", ")"))
+        if tok == ("op", ";") and depth == 0:
+            statements.append(cur)
+            cur = []
+        else:
+            cur.append(tok)
+    lets: dict[str, list[dict]] = {}
+    for st in statements:
+        # `let name = <tabular>;` (CAN3): a table the later statements read by its name.
+        if len(st) < 3 or st[0] != ("ident", "let") or st[1][0] != "ident" or st[2] != ("op", "="):
+            raise NotImplementedError(f"KQL subset: a statement other than `let name = …`: {st[:3]}")
+        lets[st[1][1]] = _pipeline(st[3:], rows, now, lets)
+    return _pipeline(cur, rows, now, lets)
+
+
+def _pipeline(tokens, rows: list[dict], now: datetime, lets: dict[str, list[dict]]) -> list[dict]:
+    stages = _stages(tokens)
     table = stages[0]
     if len(table) != 1 or table[0][0] != "ident":
         raise NotImplementedError(f"KQL subset: a table first, not {table}")
-    out = [dict(r) for r in rows if r.get("Type", table[0][1]) == table[0][1]]
+    if table[0][1] in lets:
+        out = [dict(r) for r in lets[table[0][1]]]
+    else:
+        out = [dict(r) for r in rows if r.get("Type", table[0][1]) == table[0][1]]
     for stage in stages[1:]:
         p = _Parser(stage, now)
         verb = p.take("ident")[1]
@@ -318,11 +367,28 @@ def run(query: str, rows: list[dict], now: datetime | None = None) -> list[dict]
                     break
                 p.take()
         elif verb == "project":
+            # A column as it is, or `Name = expr` (CAN3: the sign-in rule names its columns).
+            cols = []
+            while True:
+                col = p.take("ident")[1]
+                if p.peek() == ("op", "="):
+                    p.take()
+                    cols.append((col, p.expr()))
+                else:
+                    cols.append((col, (lambda c: lambda r: r.get(c))(col)))
+                if not p.at(","):
+                    break
+                p.take()
+            out = [{c: f(r) for c, f in cols} for r in out]
+        elif verb == "distinct":
             cols = [p.take("ident")[1]]
             while p.at(","):
                 p.take()
                 cols.append(p.take("ident")[1])
-            out = [{c: r.get(c) for c in cols} for r in out]
+            seen = dict.fromkeys(tuple(r.get(c) for c in cols) for r in out)
+            out = [dict(zip(cols, k)) for k in seen]
+        elif verb == "join":
+            out = _join(p, out, lets)
         elif verb in ("limit", "take"):
             out = out[:int(p.take("num")[1])]
         elif verb == "summarize":
@@ -338,6 +404,41 @@ def run(query: str, rows: list[dict], now: datetime | None = None) -> list[dict]
             raise NotImplementedError(f"KQL subset: operator {verb}")
         if not p.done():
             raise NotImplementedError(f"KQL subset: left unread in `{verb}`: {p.t[p.i:]}")
+    return out
+
+
+def _join(p: _Parser, left: list[dict], lets: dict[str, list[dict]]) -> list[dict]:
+    """`join kind=inner|leftanti <a let's name> on col, …` (CAN3): equality on the named columns.
+    inner: each matching pair, the right's columns added — one the left already has suffixed
+    `1`, as in KQL; leftanti: the left's rows that match none."""
+    p.take("ident", "kind")
+    p.take("op", "=")
+    kind = p.take("ident")[1]
+    if kind not in ("inner", "leftanti"):
+        raise NotImplementedError(f"KQL subset: join kind={kind}")
+    name = p.take("ident")[1]
+    if name not in lets:
+        raise NotImplementedError(f"KQL subset: join on {name!r}, not a let's name")
+    p.take("ident", "on")
+    keys = [p.take("ident")[1]]
+    while p.at(","):
+        p.take()
+        keys.append(p.take("ident")[1])
+    index: dict[tuple, list[dict]] = {}
+    for r in lets[name]:
+        index.setdefault(tuple(r.get(k) for k in keys), []).append(r)
+    out = []
+    for row in left:
+        matches = index.get(tuple(row.get(k) for k in keys), [])
+        if kind == "leftanti":
+            if not matches:
+                out.append(dict(row))
+            continue
+        for m in matches:
+            merged = dict(row)
+            for col, v in m.items():
+                merged[col + "1" if col in row else col] = v
+            out.append(merged)
     return out
 
 
@@ -402,8 +503,23 @@ def _make_set_if(members, f, pred, n):
     return out
 
 
+def _make_set(members, f, n=None):
+    """KQL's make_set: the distinct values (nulls left out), at most n (CAN3)."""
+    limit = n(members[0]) if n is not None and members else None
+    out = []
+    for r in members:
+        v = f(r)
+        if v is not None and v not in out and (limit is None or len(out) < limit):
+            out.append(v)
+    return out
+
+
 _AGGREGATES = {
     "count": lambda members: len(members),
+    # KQL's dcount (an estimate in Log Analytics, exact at the few values a rule counts): how many
+    # distinct values, nulls left out (CAN3: the days a principal was seen).
+    "dcount": lambda members, f: len({f(r) for r in members if f(r) is not None}),
+    "make_set": _make_set,
     "countif": lambda members, pred: sum(1 for r in members if pred(r)),
     "min": _min,
     "max": _max,
