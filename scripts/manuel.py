@@ -23,11 +23,17 @@ show. A brick is a security one when its lots name an audit's finding or its lot
 `P-0…`, whatever the case), when it says `securite: true`, or when its issue or one of its pull
 requests is in `issues_securite` (the audit's issues and the known security pull requests — GitHub
 numbers both in one sequence: their titles often carry the finding). Such a
-brick is named « Durcissement de sécurité », nothing else, without a note nor a document but
+brick is named « Security hardening », nothing else, without a note nor a document but
 SECURITY.md, and, until it is delivered, laid on a neutral station (`s-signer`) rather than the one of
 its weakness; the page shows neither its issue nor its pull request. No text of the manual names a
 finding (`SEC-…`, `V-<n>`, `P-0…`). No brick has a field for an operator's gesture or a review (only
 the keys of BRICK_KEYS); a note only on a brick delivered.
+
+**In English** (MAN1b, #676, Jonathan's decision of 09/11), like the rest of the public site: a text of
+the manual (TEXTS) that reads French is refused — an accented letter, a guillemet, a space before « : »
+or « ; », or one of the French words of FRENCH. The ids, the keys and the states (`prevue`, `livree`…)
+stay the repository's words, which scripts/release.py and the private manual read; the page translates
+them.
 """
 from __future__ import annotations
 
@@ -62,7 +68,10 @@ TEXTS = ("nom", "note", "role", "legende", "resume", "chaine")
 # The private manual's rule (its pubBrick), on the lots and on every text: a finding of an audit,
 # or its lot — in any case (« sec-a4 » is SEC-A4).
 SENSIBLE = re.compile(r"(^|[^\w])(SEC-|V-\d|P-0)", re.I)
-NEUTRAL = "Durcissement de sécurité"
+NEUTRAL = "Security hardening"
+# A text that reads French (MAN1b): the public manual is in English, as the rest of the site.
+FRENCH = re.compile(r"[àâäçéèêëîïôöûùüÿœæ«»]|\s[:;!?](?:\s|$)"
+                    r"|\b(?:le|la|les|des|du|une|et|est|pour|dans|avec|sans|qui|sur)\b", re.I)
 ID = re.compile(r"[a-z][a-z0-9-]*")
 # A lot's name: its prefix in capitals (A1, SEC-A4, UI-1), a lower-case letter at its end at most
 # (CI6b, SEC-A4b, DG-a). « sec-a4 » is refused.
@@ -306,6 +315,9 @@ def problems(data: dict, root: Path | None = None) -> list[str]:
                 if isinstance(it.get(k), str) and SENSIBLE.search(it[k]):
                     out.append(f"{name} {it.get('id') or it.get('version')} : « {k} » nomme un constat ou un "
                                "lot de sécurité (SEC-…, V-<n>, P-0…)")
+                if isinstance(it.get(k), str) and FRENCH.search(it[k]):
+                    out.append(f"{name} {it.get('id') or it.get('version')} : « {k} » est en français ; le "
+                               "manuel public est en anglais (docs/sessions.md, « Le manuel public »)")
     for c in comps:
         doc = c.get("doc")
         if doc is not None and root is not None and not (isinstance(doc, str) and (root / doc).exists()):

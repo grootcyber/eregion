@@ -9,13 +9,17 @@
 (() => {
   const REPO = "https://github.com/grootcyber/eregion";
   const API = "https://api.github.com/repos/grootcyber/eregion";
-  const ETATS = { prevue: "Prévue", dev: "En développement", relecture: "En relecture",
-    main: "Sur main, pas encore publiée", livree: "Livrée" };
+  // The states are the repository's words (modules.yaml, scripts/release.py); the page says them in
+  // English (MAN1b, #676).
+  const ETATS = { prevue: "Planned", dev: "In development", relecture: "In review",
+    main: "On main, not published yet", livree: "Released" };
   const MOVING = ["dev", "relecture", "main"];
-  const STEP_LABEL = { publiee: "publiée", montage: "en montage", prevue: "prévue" };
-  // The public rule, the same as scripts/manuel.py: the YAML already holds a neutral name for these;
-  // the page shows neither their lots, nor their issue, nor their pull request.
+  const STEP_LABEL = { publiee: "published", montage: "being assembled", prevue: "planned" };
+  // The public rule, the same as scripts/manuel.py: the YAML already holds a neutral name for these,
+  // and the page shows that name whatever the YAML says; neither their lots, nor their issue, nor their
+  // pull request.
   const SENSIBLE = /(^|[^\w])(SEC-|V-\d|P-0)/i;
+  const NEUTRAL = "Security hardening";
   const CACHE = "eregion-manuel-live-v1";
   const CACHE_MS = 10 * 60 * 1000;
   const TIMEOUT_MS = 8000;
@@ -51,8 +55,9 @@
     return SENSIBLE.test((Array.isArray(b.lots) ? b.lots : []).join(" ")) || b.securite === true
       || secu.has(b.issue) || prsOf(b).some((n) => secu.has(n));
   };
+  const nameOf = (b) => (sensible(b) ? NEUTRAL : b.nom);
   // A version against the last release GitHub shows: "publiee", "a-publier" (the repository says it is
-  // cut, GitHub has not published it yet), or "inconnu" (GitHub not read).
+  // cut, GitHub has not published it yet: "to be published"), or "inconnu" (GitHub not read).
   const parts = (v) => String(v).split(".").map((x) => parseInt(x, 10) || 0);
   const newer = (a, b) => { const x = parts(a), y = parts(b); for (let i = 0; i < 3; i++) { if (x[i] !== y[i]) return x[i] > y[i]; } return false; };
   const pubState = (version) => {
@@ -60,7 +65,7 @@
     if (!latest || !version) return "inconnu";
     return newer(version, latest.version) ? "a-publier" : "publiee";
   };
-  const PUB_SAID = { publiee: "", "a-publier": ", à publier", inconnu: " (publication non vérifiée sur GitHub)" };
+  const PUB_SAID = { publiee: "", "a-publier": ", to be published", inconnu: " (publication not checked on GitHub)" };
   const etatOf = (b) => (ETATS[b.shown] ? b.shown : "prevue");
   const pieceOf = (id) => (state.data.composants.find((c) => c.id === id) || { id, nom: id, role: "" });
   const posteOf = (id) => state.data.postes.find((p) => p.id === id);
@@ -91,7 +96,7 @@
     const items = list(issues).filter((i) => i && num(i.number));
     const openIssues = items.filter((i) => !i.pull_request).map((i) => i.number);
     // The highest version published, not the last one created: a patch published on an older line
-    // must not make a newer version read « à publier ».
+    // must not make a newer version read "to be published".
     const rel = list(releases).filter((r) => r && !r.draft && !r.prerelease
       && typeof r.tag_name === "string" && /^v\d+\.\d+\.\d+$/.test(r.tag_name))
       .reduce((best, r) => (!best || newer(r.tag_name.slice(1), best.tag_name.slice(1)) ? r : best), null);
@@ -127,8 +132,8 @@
     return head === l || head.startsWith(l + "-");
   };
 
-  // A brick as shown: the repository's state, with an open pull request on it read as « en
-  // relecture » when the repository still says it is planned or in development.
+  // A brick as shown: the repository's state, with an open pull request on it read as "in review"
+  // when the repository still says it is planned or in development.
   function shownBricks() {
     const live = state.live;
     const open = live ? new Set(live.openIssues) : null;
@@ -141,20 +146,20 @@
         v.livePr = pr.number;
         if (b.etat === "prevue" || b.etat === "dev") v.shown = "relecture";
       }
-      if (num(b.issue)) v.issueState = open.has(b.issue) ? "ouverte" : live.complete ? "fermée" : "";
+      if (num(b.issue)) v.issueState = open.has(b.issue) ? "open" : live.complete ? "closed" : "";
       return v;
     });
   }
 
   // ── rendering ───────────────────────────────────────────────────────────────────────
-  const label = (b) => (etatOf(b) === "livree" ? `${ETATS.livree} en ${b.version}${PUB_SAID[pubState(b.version)]}`
+  const label = (b) => (etatOf(b) === "livree" ? `${ETATS.livree} in ${b.version}${PUB_SAID[pubState(b.version)]}`
     : ETATS[etatOf(b)]);
   function brick(b, extra = "") {
     return h("button", { type: "button", class: `brick ${etatOf(b)}${extra}`, "data-p": b.composant, "data-id": b.id,
-      title: label(b) }, h("span", null, b.nom));
+      title: label(b) }, h("span", null, nameOf(b)));
   }
   function mini(b) {
-    const said = `${b.nom} · ${label(b)}`;
+    const said = `${nameOf(b)} · ${label(b)}`;
     return h("button", { type: "button", class: `mb ${etatOf(b)}${hit(b)}`, "data-p": b.composant, "data-id": b.id,
       title: said, "aria-label": said });
   }
@@ -165,14 +170,14 @@
     const mont = steps.find((s) => s.etat === "montage");
     const latest = state.live && state.live.latest;
     $("w-pub").textContent = latest ? latest.version : pub ? pub.derniere : "—";
-    const ahead = latest && pub && newer(pub.derniere, latest.version) ? ` · ${pub.derniere} à publier` : "";
-    $("w-pub-s").textContent = latest ? `sur GitHub${latest.day ? " · " + latest.day : ""}${ahead}`
-      : pub ? `selon le dépôt, publication non vérifiée sur GitHub` : "";
+    const ahead = latest && pub && newer(pub.derniere, latest.version) ? ` · ${pub.derniere} to be published` : "";
+    $("w-pub-s").textContent = latest ? `on GitHub${latest.day ? " · " + latest.day : ""}${ahead}`
+      : pub ? `as the repository says, publication not checked on GitHub` : "";
     $("w-mont").textContent = mont ? mont.version : "—";
-    $("w-mont-s").textContent = mont ? `« ${mont.nom} »` : "";
+    $("w-mont-s").textContent = mont ? `“${mont.nom}”` : "";
     const moving = view.filter((b) => MOVING.includes(b.shown));
-    $("w-moving").textContent = `${moving.length} brique${moving.length > 1 ? "s" : ""}`;
-    $("w-moving-s").textContent = "en développement, en relecture ou sur main";
+    $("w-moving").textContent = `${moving.length} brick${moving.length === 1 ? "" : "s"}`;
+    $("w-moving-s").textContent = "in development, in review or on main";
     $("live").classList.toggle("off", !state.live);
     $("live-t").textContent = state.said;
   }
@@ -183,7 +188,7 @@
   }
 
   function renderChips() {
-    const opts = [{ v: null, l: "Tout" }, ...state.data.releases.map((r) => ({ v: r.version, l: r.version }))];
+    const opts = [{ v: null, l: "All" },...state.data.releases.map((r) => ({ v: r.version, l: r.version }))];
     $("chips").replaceChildren(...opts.map((o) => h("button", { type: "button", class: "chip",
       "data-v": o.v ?? "", "aria-pressed": String(state.filtre === o.v) }, o.l)));
   }
@@ -205,8 +210,8 @@
       const items = view.filter((b) => b.shown === s);
       const body = items.length ? items.map((b) => h("div", { class: "item" }, brick(b),
         h("span", { class: "sub mono" }, [pieceOf(b.composant).nom, b.release ? `release ${b.release}` : "",
-          b.livePr ? (sensible(b) ? "PR ouverte" : `PR #${b.livePr} ouverte`) : ""].filter(Boolean).join(" · "))))
-        : [h("span", { class: "empty" }, "Rien en ce moment.")];
+          b.livePr ? (sensible(b) ? "PR open" : `PR #${b.livePr} open`) : ""].filter(Boolean).join(" · "))))
+        : [h("span", { class: "empty" }, "Nothing right now.")];
       return h("div", { class: "col card" }, h("div", { class: "col-h" }, h("span", { class: "kicker" }, ETATS[s]),
         h("span", { class: "n" }, String(items.length))), body);
     }));
@@ -242,11 +247,11 @@
   function renderSteps(view) {
     const steps = state.data.releases;
     const stepLabel = (r, etat) => (etat !== "publiee" ? STEP_LABEL[etat]
-      : { publiee: "publiée", "a-publier": "à publier", inconnu: "publiée selon le dépôt" }[pubState(r.derniere)]);
+      : { publiee: "published", "a-publier": "to be published", inconnu: "published, as the repository says" }[pubState(r.derniere)]);
     $("tl").replaceChildren(...steps.map((r) => {
       const etat = STEP_LABEL[r.etat] ? r.etat : "prevue";
       return h("div", { class: `tn ${etat}${r.version === "1.0" ? " diamond" : ""}` },
-        etat === "montage" ? h("span", { class: "here" }, "on est ici") : null,
+        etat === "montage" ? h("span", { class: "here" }, "we are here") : null,
         h("span", { class: "v" }, r.version), h("i", { class: "dot" }), h("b", null, r.nom),
         h("small", null, r.derniere ? `${r.derniere}${r.date ? " · " + r.date : ""}` : ""));
     }));
@@ -257,7 +262,7 @@
         h("div", { class: "step-body" },
           h("div", { class: "step-t" }, h("span", { class: "v" }, r.version), h("h3", null, r.nom),
             h("span", { class: `pill ${etat}` }, stepLabel(r, etat)),
-            r.derniere ? h("span", { class: "mono" }, `dernière : ${r.derniere}${r.date ? " · " + r.date : ""}`) : null),
+            r.derniere ? h("span", { class: "mono" }, `latest: ${r.derniere}${r.date ? " · " + r.date : ""}`) : null),
           r.resume ? h("p", null, r.resume) : null,
           h("div", { class: "parts" }, parts.map((b) => brick(b)))));
     }));
@@ -280,20 +285,20 @@
     if (doc) links.push(a(docUrl(doc), doc));
     const row = (dt, dd, cls) => (dd ? [h("dt", null, dt), h("dd", cls ? { class: cls } : null, dd)] : []);
     const lots = !secret && Array.isArray(b.lots) && b.lots.length ? b.lots.join(", ") : "";
-    const said = b.shown !== b.etat ? `${ETATS[etatOf(b)]} (une pull request ouverte sur GitHub)`
-      : b.etat === "livree" ? `${ETATS.livree} en ${b.version}${PUB_SAID[pubState(b.version)]}` : ETATS[etatOf(b)];
-    const close = h("button", { type: "button", class: "close", id: "s-close" }, "Fermer");
+    const said = b.shown !== b.etat ? `${ETATS[etatOf(b)]} (a pull request open on GitHub)`
+      : b.etat === "livree" ? `${ETATS.livree} in ${b.version}${PUB_SAID[pubState(b.version)]}` : ETATS[etatOf(b)];
+    const close = h("button", { type: "button", class: "close", id: "s-close" }, "Close");
     $("sheet-body").replaceChildren(
       h("div", { class: "sheet-h" }, h("div", null, h("span", { class: "kicker" }, piece.nom),
-        h("h2", { id: "s-title" }, b.nom)), close),
+        h("h2", { id: "s-title" }, nameOf(b))), close),
       h("div", null, brick(b)),
       h("dl", null,
-        row("État", said),
+        row("State", said),
         row("Release", b.release),
-        row("Étape", poste ? `${poste.nom} — ${poste.legende}` : ""),
+        row("Stage", poste ? `${poste.nom} — ${poste.legende}` : ""),
         row("Lots", lots, "mono"),
         row("Note", b.etat === "livree" && !secret ? b.note : ""),
-        links.length ? [h("dt", null, "Liens"), h("dd", null, links.flatMap((l, i) => (i ? [" · ", l] : [l])))] : []));
+        links.length ? [h("dt", null, "Links"),h("dd", null, links.flatMap((l, i) => (i ? [" · ", l] : [l])))] : []));
     const dlg = $("sheet");
     close.addEventListener("click", () => dlg.close());
     try { dlg.showModal(); } catch { dlg.setAttribute("open", ""); }
@@ -326,23 +331,23 @@
       if (!r.ok || !valid(d)) throw new Error("modules.json");
       state.data = d;
     } catch {
-      $("live-t").textContent = "le manuel ne se lit pas";
+      $("live-t").textContent = "the manual cannot be read";
       $("bench").replaceChildren(h("div", { class: "state-msg" },
-        "modules.json ne se lit pas ici. Ouvre la page sur le site du projet, ou lis le manuel dans le dépôt : ",
+        "modules.json cannot be read here. Open the page on the project's site, or read the manual in the repository: ",
         h("a", { href: `${REPO}/blob/main/docs/manuel/modules.yaml` }, "docs/manuel/modules.yaml"), "."));
       return;
     }
-    state.said = "l'état écrit dans le dépôt · lecture de GitHub…";
+    state.said = "the state written in the repository · reading GitHub…";
     renderAll();
     try {
       state.live = await loadLive();
-      const at = new Date(state.live.at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
-      state.said = `l'état du dépôt, et GitHub lu à ${at}`;
+      const at = new Date(state.live.at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+      state.said = `the repository's state, and GitHub read at ${at}`;
     } catch (e) {
       state.live = null;
       state.said = e && e.limited
-        ? "limite de l'API de GitHub atteinte : l'état écrit dans le dépôt"
-        : "GitHub ne répond pas : l'état écrit dans le dépôt";
+        ? "GitHub's API limit reached: the state written in the repository"
+        : "GitHub does not answer: the state written in the repository";
     }
     renderAll();
   }

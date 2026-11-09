@@ -75,7 +75,8 @@ La réponse arrive par `SendMessage`, plus tard. N'attends pas sans rien faire :
      harnais ne copie que les fichiers suivis.
    - **La brique du lot dans le manuel public** (MAN1, #664 ; plus bas, « Le manuel public ») : la PR
      d'un lot met sa brique à jour dans `docs/manuel/modules.yaml`, la crée au besoin, puis `make manuel`.
-     Elle passe `main` (ce qu'elle sera une fois fusionnée), avec ses lots, son issue et sa PR. Un lot
+     Elle l'écrit **en anglais**, comme le reste du site public (MAN1b, #676) : son nom, et sa note une
+     fois livrée. Elle passe `main` (ce qu'elle sera une fois fusionnée), avec ses lots, son issue et sa PR. Un lot
      qui prolonge une brique déjà livrée prend une **brique neuve**, sans toucher l'ancienne : la
      version d'origine reste dite.
      `tests/unit/test_manuel.py` échoue sur un fragment `changes/<LOT>.md` qu'aucune brique `main` ne
@@ -253,6 +254,13 @@ Le pendant public du manuel de pilotage, sur le site du projet : `docs/manuel/in
 Pages (`https://grootcyber.github.io/eregion/manuel/`), lié depuis le README et `docs/index.html`.
 Jonathan en a validé l'aperçu le 06/11. Il ne lit rien du manuel privé : sa source est un fichier du
 dépôt, `docs/manuel/modules.yaml`.
+- **En anglais** (MAN1b, #676, décision de Jonathan du 09/11), comme le replay, les fiches d'adoption,
+  l'accueil et le README ; le manuel privé de l'Orchestre reste en français. La page et chaque texte du
+  YAML (noms, notes, rôles, légendes, chaînes, résumés) sont en anglais : `scripts/manuel.py` refuse un
+  texte qui se lit en français (une lettre accentuée, un guillemet, une espace avant « : » ou « ; », un
+  mot français courant). Les identifiants, les clés et les états (`prevue`, `livree`, `publiee`,
+  `montage`…) restent les mots du dépôt, que `scripts/release.py` et le manuel privé lisent : la page
+  les traduit (planned, in development, in review, on main, released ; published, being assembled).
 - **Ce qu'il tient** : les composants, les postes de leur chaîne, les étapes de release (0.2 … 1.0,
   1.x) et les briques. Chaque brique a un état (`prevue`, `dev`, `relecture`, `main`, `livree`), une
   release, ses lots, son issue, sa PR, sa doc ; sa version quand elle est livrée.
@@ -266,7 +274,7 @@ dépôt, `docs/manuel/modules.yaml`.
   ouvertes et la dernière release, trois requêtes gardées dix minutes dans la session du navigateur
   (la limite est de 60 par heure). Une PR ouverte sur une brique `prevue` ou `dev`, par son numéro ou
   par sa branche `lot/<lot>-…`, la montre en relecture. Une version que le dépôt dit coupée, mais que
-  GitHub n'a pas encore publiée, se lit « à publier ». Sans l'API (hors ligne, limite atteinte), la
+  GitHub n'a pas encore publiée, se lit « to be published ». Sans l'API (hors ligne, limite atteinte), la
   page montre ce que dit le dépôt, et dit qu'elle ne sait pas ce qui est publié.
 - **La règle publique**, tenue dans le YAML même par `scripts/manuel.py` et
   `tests/unit/test_manuel.py` : le YAML public ne contient jamais un constat.
@@ -274,7 +282,7 @@ dépôt, `docs/manuel/modules.yaml`.
     en toute casse), quand elle dit `securite: true`, ou quand son issue ou l'une de ses PR figure
     dans `issues_securite`, en tête du YAML (les issues de l'audit du 06/11 et de ses suites : leur
     titre porte souvent le constat).
-  - Elle s'appelle « Durcissement de sécurité », sans numéro, sans note ni autre document que
+  - Elle s'appelle « Security hardening », sans numéro, sans note ni autre document que
     `SECURITY.md`. Tant qu'elle n'est pas livrée, elle se pose sur le poste neutre `s-signer`, jamais
     sur l'étape de sa faiblesse. La page ne montre ni son issue, ni sa PR, ni ses lots.
   - Aucun texte du manuel (nom, note, résumé, légende) ne nomme un constat ou un lot de sécurité.
