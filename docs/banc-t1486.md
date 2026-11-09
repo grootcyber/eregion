@@ -105,7 +105,7 @@ commande. Le point à la demande est gardé 30 jours (`glorfindel/providers/azur
   `recovery_complete`, le garantit pour ce processus et le passe aussitôt au graphe
   (`cli.py:1517-1530`). La levée autonome n'est permise que pour ce signal-là, ou pour celui relu par
   `glorfindel respond` dans `~/.glorfindel/recovery_signals/` du même hôte
-  (`glorfindel/signal_origin.py:29-35`, `glorfindel/agent.py:1415-1444`). **La watch de H0 ne lit
+  (`glorfindel/signal_origin.py:29-35`, `glorfindel/agent.py:1449-1478`). **La watch de H0 ne lit
   jamais ce répertoire d'elle-même**, et celui du poste encore moins.
 - **Sur le poste, ce processus déciderait seul.** Il appellerait le modèle avec la clé du poste et
   la configuration du poste (le mode de gondolin, sa préparation). Puis, s'il levait l'isolement,
@@ -291,7 +291,7 @@ Discord : refusé, ce n'est pas son hôte.
 ### 6. La restauration, depuis le poste (15 à 30 min)
 
 D'abord, aucun job du coffre en cours sur gondolin. H0 a pu prendre un instantané après l'isolement
-(`glorfindel/agent.py:1937-1953`), et Azure refuse un restore pendant une sauvegarde :
+(`glorfindel/agent.py:1971-1988`), et Azure refuse un restore pendant une sauvegarde :
 
 ```zsh
 az backup job list -g rg-celebrimbor -v rsv-celebrimbor-erebor -o table     # aucun InProgress sur gondolin
@@ -383,7 +383,7 @@ EOF
 ```
 
 *Vérifié à blanc* sur des fichiers fictifs de même forme (`RunReport.to_dict`,
-`agent.py:2465-2520`, `cli.py:24-54`) : une ligne T0, une ligne détection, une ligne par cycle du
+`agent.py:2500-2555`, `cli.py:24-54`) : une ligne T0, une ligne détection, une ligne par cycle du
 run (l'isolement : `isolate_vm escalate=False verified=True T0+…`), une ligne de levée. Le rapport
 arrive sur H0 quand le fil a fini ; sur Orodruin, le même est dans `~/runs/annatar/<run_id>.json`.
 
