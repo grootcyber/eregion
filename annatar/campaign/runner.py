@@ -7,7 +7,9 @@ hand-edited manifest cannot bypass them):
 
   - re-check scope per scenario (allowlist Celebrimbor);
   - destructive scenario only runs if budget.allow_destructive;
-  - stop at budget.max_scenarios; honour an externally-set kill_switch.
+  - stop at budget.max_scenarios; honour an externally-set kill_switch, re-read before each
+    run and before each write of the manifest, kept once seen — and stop when it cannot be
+    read or is gone (KS1, #648: fail-closed), said once and recorded in the manifest.
 
 Annatar announces NOTHING to Glorfindel — it just runs and records detected/missed
 into the manifest (read post-hoc by the blue replay engine).
@@ -23,10 +25,12 @@ from pathlib import Path
 from typing import Callable
 
 from rich.console import Console
+from rich.markup import escape
 
 from annatar.campaign.manifest import CampaignManifest
 from annatar.runner.engine import Engine, RunOutcome
 from eregion_core import watch_gate
+from eregion_core.channel_reader import Refused, read_json
 
 console = Console()
 
@@ -40,6 +44,11 @@ TARGET_REFUSALS = ("safety:", "passive:")
 ENGINE_RAISED = "engine raised:"
 RAISED_NO_RESET = ("not run: the engine raised — whether it touched the target is unknown; "
                    "reset it by hand if it did (glorfindel reset <resource_id> --yes)")
+
+
+# KS1 (#648): why a campaign stops before its next run (the manifest's ``stop_reason``).
+KILL_SWITCH_SET = "kill switch set"
+KILL_SWITCH_UNREADABLE = "kill switch unreadable — stopped, fail-closed"
 
 
 class CampaignRefused(ValueError):
@@ -97,9 +106,12 @@ class CampaignRunner:
         self.without_glorfindel = without_glorfindel
         self.engine_factory = engine_factory or (
             lambda: Engine(skip_preflight=False, without_glorfindel=without_glorfindel))
+        # KS1 (#648): the stop met at a write of the manifest, kept — never written over.
+        self._pending_stop: str | None = None
 
     def run(self) -> CampaignManifest:
         m = CampaignManifest.load(self.campaign_dir)
+        self._pending_stop = None
         scope = m.scope
         budget = m.budget
 
@@ -134,7 +146,7 @@ class CampaignRunner:
 
         m.without_glorfindel = self.without_glorfindel
         m.set_state("running")
-        m.save(self.campaign_dir)
+        self._save(m)
 
         # Multi-scenario advisory: an autonomous blue response (isolate_vm) mid-chain
         # persists and can break every downstream scenario (AMA/egress cut → no
@@ -161,9 +173,12 @@ class CampaignRunner:
             if entry.status != "pending":
                 continue  # resume: skip already-processed scenarios
 
-            # kill switch — re-read from disk so an operator can stop mid-campaign
-            if self._kill_switch_set():
-                m.kill_switch = True
+            # kill switch — re-read from disk so an operator can stop mid-campaign; one that
+            # cannot be read, or gone, stops it too (KS1); one seen at any write of the manifest
+            # (during a run, at its reset) is kept (`_pending_stop`). Said here once.
+            stop = self._pending_stop or self._stop_requested()
+            if stop is not None:
+                self._stopped(m, stop)
                 aborted = True
                 break
 
@@ -171,7 +186,7 @@ class CampaignRunner:
             if executed >= budget.max_scenarios:
                 entry.status = "skipped"
                 entry.error = "budget: max_scenarios reached"
-                m.save(self.campaign_dir)
+                self._save(m)
                 continue
 
             # scope re-check (defence against a hand-edited manifest)
@@ -179,7 +194,7 @@ class CampaignRunner:
             if not guard.allowed:
                 entry.status = "error"
                 entry.error = f"out of scope: {guard.reason}"
-                m.save(self.campaign_dir)
+                self._save(m)
                 continue
 
             refused_why = refused_targets.get(entry.target_resource_id.lower())
@@ -187,7 +202,7 @@ class CampaignRunner:
                 entry.status = "skipped"
                 entry.error = f"target refused earlier in this campaign: {refused_why}"
                 entry.reset = REFUSED_NO_RESET
-                m.save(self.campaign_dir)
+                self._save(m)
                 continue
 
             # destructive policy — the catalog's word, not the manifest's (SEC5, V-19): a
@@ -195,10 +210,15 @@ class CampaignRunner:
             if self._destructive(entry, self.campaign_dir) and not budget.allow_destructive:
                 entry.status = "skipped"
                 entry.error = "destructive but budget.allow_destructive is false"
-                m.save(self.campaign_dir)
+                self._save(m)
                 continue
 
             outcome = self._execute(entry, m)
+            if entry.status == "pending":
+                # A stop met as the run was written down (KS1): the engine was never called.
+                self._stopped(m, self._pending_stop)
+                aborted = True
+                break
             if entry.status == "executed":
                 executed += 1
             elif (entry.error or "").startswith("glorfindel:"):
@@ -209,7 +229,7 @@ class CampaignRunner:
                 # Raised: whether it touched the target is unknown — a reset could release an
                 # isolation on a VM the run never reached (its zone unread). None, and said.
                 entry.reset = RAISED_NO_RESET
-                m.save(self.campaign_dir)
+                self._save(m)
                 continue
             if outcome is not None and outcome.refused:
                 # Refused before it touched the target: nothing to reset, and the manifest
@@ -217,7 +237,7 @@ class CampaignRunner:
                 entry.reset = REFUSED_NO_RESET
                 if (entry.error or "").startswith(TARGET_REFUSALS):
                     refused_targets[entry.target_resource_id.lower()] = entry.error
-                m.save(self.campaign_dir)
+                self._save(m)
                 continue
 
             # NSG reset between scenarios (clean attribution for the next one). What happened
@@ -230,10 +250,17 @@ class CampaignRunner:
                     console.print(f"[yellow]NSG reset failed: {e}[/yellow]")
                 if isinstance(status, str):
                     entry.reset = status
-                    m.save(self.campaign_dir)
+                    self._save(m)
 
+        # A stop asked during the last run, or met at its last write: the campaign did not end
+        # as it was asked to — aborted, said once (KS1).
+        if not aborted:
+            stop = self._pending_stop or self._stop_requested()
+            if stop is not None:
+                self._stopped(m, stop)
+                aborted = True
         m.set_state("aborted" if aborted else "done")
-        m.save(self.campaign_dir)
+        self._save(m)
         return m
 
     # ── internals ────────────────────────────────────────────────────────────
@@ -260,7 +287,13 @@ class CampaignRunner:
         path = self.campaign_dir / entry.scenario_file
         entry.status = "running"
         entry.started_at = _utcnow()
-        m.save(self.campaign_dir)
+        self._save(m)
+        if self._pending_stop is not None:
+            # The stop read at this very write (KS1): the engine is not called, the entry left
+            # as it was.
+            entry.status, entry.started_at = "pending", None
+            self._save(m)
+            return None
 
         console.print(
             f"[cyan]==>[/cyan] [{entry.seq}] {entry.ttp} ({entry.tactic}) — {path.name}"
@@ -273,7 +306,7 @@ class CampaignRunner:
             entry.status = "error"
             entry.error = f"{ENGINE_RAISED} {e}"
             entry.finished_at = _utcnow()
-            m.save(self.campaign_dir)
+            self._save(m)
             return None
 
         entry.finished_at = _utcnow()
@@ -286,14 +319,56 @@ class CampaignRunner:
             entry.run_id = outcome.run_id
             entry.detection = outcome.detection
             entry.detection_latency_s = outcome.detection_latency_s
-        m.save(self.campaign_dir)
+        self._save(m)
         return outcome
 
-    def _kill_switch_set(self) -> bool:
+    def _stop(self, m: CampaignManifest, stop: str) -> None:
+        """Keep the stop met (the first one, never written over) and carry it into ``m``: the
+        operator's kill switch set stays set in what the runner writes next."""
+        if self._pending_stop is None:
+            self._pending_stop = stop
+        m.kill_switch = m.kill_switch or self._pending_stop == KILL_SWITCH_SET
+        m.stop_reason = self._pending_stop
+
+    def _stopped(self, m: CampaignManifest, stop: str) -> None:
+        """The campaign stops here: the stop carried into ``m``, said once."""
+        self._stop(m, stop)
+        console.print(f"[red]✗ campaign {escape(m.campaign_id)} stopped: "
+                      f"{escape(self._pending_stop)}[/red]")
+
+    def _save(self, m: CampaignManifest) -> None:
+        """Every write of the manifest by the runner (KS1): the stop on disk read first — a kill
+        switch set during a run, a pipe or a file that cannot be read put there, is kept and
+        carried into ``m``, never overwritten by what the runner holds in memory. A campaign
+        whose directory is gone is not written again (never recreated from the runner)."""
+        stop = self._pending_stop or self._stop_requested()
+        if stop is not None:
+            self._stop(m, stop)
+        if not self.campaign_dir.is_dir():
+            return
+        m.save(self.campaign_dir)
+
+    def _stop_requested(self) -> str | None:
+        """Why the campaign stops before its next run, or None — its manifest's ``kill_switch``,
+        re-read from disk so an operator can stop it mid-campaign. A manifest that cannot be
+        read stops the campaign (KS1, #648: fail-closed — a stop never read is never taken for
+        "go on"): gone (the runner never leaves it absent: deleted from outside), refused by the
+        bounded reader (a pipe, a link, a file too large: SEC-A1), not JSON, nested too deep,
+        an I/O error, not an object, or a ``kill_switch`` that is neither true nor false."""
         try:
-            return CampaignManifest.load(self.campaign_dir).kill_switch
-        except Exception:
-            return False
+            doc = read_json(self.campaign_dir / "manifest.json")
+        except FileNotFoundError:
+            return f"{KILL_SWITCH_UNREADABLE} (manifest gone)"
+        except Refused as exc:
+            return f"{KILL_SWITCH_UNREADABLE} (refused: {exc})"
+        except Exception as exc:  # any other failure to read it stops it too
+            return f"{KILL_SWITCH_UNREADABLE} ({type(exc).__name__})"
+        switch = doc.get("kill_switch", False) if isinstance(doc, dict) else None
+        if switch is True:
+            return KILL_SWITCH_SET
+        if switch is False:
+            return None
+        return f"{KILL_SWITCH_UNREADABLE} (kill_switch is not true or false)"
 
     def _preview(self, m: CampaignManifest) -> None:
         console.print(f"[yellow]DRY RUN — campaign {m.campaign_id}[/yellow]")
