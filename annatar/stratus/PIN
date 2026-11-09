@@ -1,14 +1,16 @@
-# Stratus Red Team — pinned binary + embedded warmup assets (R2)
+# Stratus Red Team — pinned binary + warmup assets to embed (R2)
 #
 # Source    : https://github.com/DataDog/stratus-red-team
 # Version   : v2.38.0   (released 2026-11-04)
 # License   : Apache-2.0 — https://github.com/DataDog/stratus-red-team/blob/main/LICENSE
 #
 # We do NOT vendor the binary in the repository (it is a large, per-platform Go binary): it is
-# staged into the Orodruin image and pinned. The adapter (annatar/engines/stratus.py) reads the
-# staged binary and checks its sha256 against the `stratus` line below BEFORE EVERY phase (not
-# only once per run; SEC5, like annatar/atomics/PIN) — a binary that is not the pinned one, or
-# one swapped mid-run, runs nothing.
+# to be staged into the Orodruin image and pinned — NOT DELIVERED YET (R2b, #608): it is in no
+# image and not on Orodruin, so the resolution refuses and no Stratus technique runs today.
+# The adapter (annatar/engines/stratus.py) reads the staged binary and checks its sha256
+# against the `stratus` line below BEFORE EVERY phase (not only once per run; SEC5, like
+# annatar/atomics/PIN) — a binary that is not the pinned one, or one swapped mid-run, runs
+# nothing.
 # `annatar run` never fetches Stratus; Orodruin has no Internet egress.
 #
 # ── The binary the adapter execs ──────────────────────────────────────────────────────
@@ -22,11 +24,12 @@
 # before extraction; the adapter checks the extracted binary above, which is what it execs.
 #   2f0a971c7d8f5fb32a598f70b79c954d7aee72740d352947a78d348b00fb09a3  stratus-red-team_Linux_x86_64.tar.gz
 #
-# ── Embedded warmup assets (Orodruin has no Internet) ───────────────────────────────────
+# ── Warmup assets to embed (Orodruin has no Internet; not delivered yet, R2b #608) ───────
 # Stratus's `warmup` provisions a technique's prerequisites with Terraform. Left to itself it
 # would download, on first run, the Terraform binary and the azurerm/azuread provider plugins
-# (docs/design/orodruin-contract.md forbids that egress). Both are staged into the image and
-# the adapter points Stratus at them offline (annatar/engines/stratus.py::airgap_env):
+# (docs/design/orodruin-contract.md forbids that egress). Both are to be staged into the image
+# (not delivered yet, R2b #608) and the adapter points Stratus at them offline
+# (annatar/engines/stratus.py::airgap_env):
 #   - Terraform (the exact version Stratus auto-installs, pkg/stratus/runner/terraform.go:
 #     TerraformVersion = "1.3.10"), pre-installed under the run-scoped HOME so Stratus finds it
 #     and never downloads one. sha256 of the upstream zip (releases.hashicorp.com):
@@ -34,8 +37,8 @@
 #   - the azurerm / azuread provider plugins each technique's lockfile pins, staged into a
 #     filesystem mirror (TF_CLI_CONFIG_FILE) + plugin cache (TF_PLUGIN_CACHE_DIR) so
 #     `terraform init` installs from disk, never the registry. Their sha256 are the ones in
-#     each technique's `.terraform.lock.hcl`, recorded by the staging step (make stratus-stage,
-#     annatar/stratus/README.md) — not invented here.
+#     each technique's `.terraform.lock.hcl`, to be recorded by the staging step (which does not
+#     exist yet: it comes with R2b, #608; annatar/stratus/README.md) — not invented here.
 #
 # To update Stratus: bump the version + date above, re-read the new release's checksums.txt,
 # replace the `stratus` and archive sha256, re-stage the assets, and run the harness (ID1).

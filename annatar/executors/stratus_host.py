@@ -23,7 +23,8 @@ console = Console()
 
 GRAPH = "https://graph.microsoft.com"
 
-# The staged layout inside the Orodruin image (annatar/stratus/README.md, make stratus-stage).
+# The layout to stage inside the Orodruin image (annatar/stratus/README.md) — not delivered yet:
+# the staging step comes with R2b (#608).
 # Env overrides so the image can place them where it likes; the tests point them at a fake tree.
 BINARY_ENV = "EREGION_STRATUS_BINARY"
 HOME_ENV = "EREGION_STRATUS_HOME"

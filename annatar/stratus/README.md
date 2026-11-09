@@ -7,6 +7,11 @@ its own prerequisites, detonates against the cloud API, and tears them down. Its
 up in the **Azure Activity Log** (`azure_activity`, detection lot AL1); the real bench
 measurement of that detection is **ID1 (#281)**, with Jonathan.
 
+**Not delivered yet.** The adapter is in the code (R2a), but the pinned Stratus binary and its
+warmup assets are in no image and not on Orodruin: without the binary, the resolution refuses,
+and **no Stratus technique runs today**. Staging them comes with **R2b (#608)**
+([`docs/design/stratus-cible.md`](../../docs/design/stratus-cible.md)).
+
 ## We call Stratus — we never write offensive logic
 
 The adapter [`annatar/engines/stratus.py`](../engines/stratus.py) is the *only* thing that
@@ -44,7 +49,8 @@ the probe can only read the directory, never change it.
 
 Orodruin has [no Internet egress](../../docs/design/orodruin-contract.md). Stratus's `warmup`
 provisions with Terraform, which would otherwise fetch the Terraform binary and the
-azurerm/azuread provider plugins. Both are **staged into the image and pinned** ([`PIN`](PIN)):
+azurerm/azuread provider plugins. Both are **to be staged into the image and pinned**
+([`PIN`](PIN)) — **not delivered yet** (R2b, #608). Once they are there:
 
 - the exact Terraform version Stratus auto-installs (`1.3.10`) is pre-installed under the
   run-scoped `HOME`, so Stratus finds it and never downloads one;
@@ -53,5 +59,6 @@ azurerm/azuread provider plugins. Both are **staged into the image and pinned** 
   (a `provider_installation { filesystem_mirror { … }; direct { exclude = ["*/*"] } }`) and
   `TF_PLUGIN_CACHE_DIR` (`annatar/engines/stratus.py::airgap_env`).
 
-`make stratus-stage` (ID1) downloads the pinned binary + assets, verifies each sha256 against
-[`PIN`](PIN), and lays them out for the image. The binary is never committed to the repository.
+The staging step — download the pinned binary + assets, verify each sha256 against
+[`PIN`](PIN), lay them out for the image — **does not exist yet**: it comes with R2b (#608),
+with a `make` target of its own. The binary is never committed to the repository.
