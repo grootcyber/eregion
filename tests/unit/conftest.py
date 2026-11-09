@@ -4,6 +4,19 @@ import os
 import pytest
 
 
+def _beside(name: str):
+    """A module of this folder, loaded by its path: this conftest is also copied alone, with its
+    companions, into a throwaway repository with no package (tests/unit/test_repo_hermetic.py)."""
+    spec = importlib.util.spec_from_file_location(f"_conftest_{name}", os.path.join(os.path.dirname(__file__),
+                                                                                    f"{name}.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+hypothesis_seed = _beside("hypothesis_seed")
+
+
 def _present(package: str) -> bool:
     """D1: a component's tests also run with the other components absent
     (scripts/component_check.py) — a fixture of an absent one has nothing to redirect."""
@@ -18,6 +31,46 @@ CONSOLE = _present("eregion_console")
 
 NICENESS = 10
 
+# SEED1 (#655): the run's Hypothesis seed (tests/unit/hypothesis_seed.py) — drawn for the night and
+# the release gate, given by scripts/mutation_check.py to each round, none on a pull request or a push.
+_SEED = pytest.StashKey()
+
+
+def _seed_the_run(config) -> None:
+    worker = getattr(config, "workerinput", None)
+    try:
+        seed, drew = hypothesis_seed.resolve(os.environ, (worker or {}).get("testrunuid"))
+    except ValueError as exc:
+        raise pytest.UsageError(str(exc)) from None
+    config.stash[_SEED] = seed
+    if seed is None:
+        return
+    # A process this run starts (an xdist worker, spawned after this) takes the same seed.
+    os.environ[hypothesis_seed.VAR] = str(seed)
+    if drew and os.environ.get("PYTEST_XDIST_WORKER", "gw0") == "gw0":
+        hypothesis_seed.write_summary(seed)
+
+
+def pytest_collection_modifyitems(config, items):
+    seed = config.stash.get(_SEED, None)
+    if seed is not None:
+        hypothesis_seed.apply(seed, [getattr(item, "obj", None) for item in items])
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    outcome = yield
+    report = outcome.get_result()
+    seed = item.config.stash.get(_SEED, None)
+    if seed is not None and report.failed and hypothesis_seed.runs_hypothesis(item):
+        report.sections.append(("Hypothesis seed (SEED1)", hypothesis_seed.said(seed)))
+
+
+def pytest_terminal_summary(terminalreporter, config):
+    seed = config.stash.get(_SEED, None)
+    if seed is not None:
+        terminalreporter.write_line(hypothesis_seed.said(seed))
+
 
 def pytest_configure(config):
     """The suite yields the CPU on a workstation, never in CI. Sub-agents run it side by side
@@ -25,7 +78,10 @@ def pytest_configure(config):
     extension host seven times in a day. Raised to NICENESS, never lowered, by every process that
     loads this conftest (it is not an initial conftest: each xdist worker raises itself as it
     collects; xdist's controller, which does not collect, keeps its priority). A CI runner runs one
-    suite: it keeps its priority."""
+    suite: it keeps its priority. Called without a config (tests/unit/test_suite_priority.py, the
+    priority alone), it seeds nothing."""
+    if config is not None:
+        _seed_the_run(config)
     if os.environ.get("CI") or not hasattr(os, "nice"):
         return
     try:

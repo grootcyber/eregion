@@ -10,13 +10,19 @@ mutant, the code moved) — never counted as caught.
     python scripts/mutation_check.py                       # push budget (60), 3 rounds
     python scripts/mutation_check.py --examples 1000 --rounds 2
     python scripts/mutation_check.py --only M04,M13
+    python scripts/mutation_check.py --only M04 --seed 123456789 --examples 500 --rounds 2   # a replay (SEED1)
     python scripts/mutation_check.py --examples 500 --rounds 2 --skip-machine-baseline --shard 3/10 --json m3.json   # the gate's
     python scripts/mutation_check.py --total DIR --shards 10 --control-shards 2 --examples 500 --rounds 2
     python scripts/mutation_check.py --machines --shard 3/14 --json m3.json                  # the Monday's (CI10b)
     python scripts/mutation_check.py --narrow tests/unit/test_host_cd.py --rounds 2 --jobs 4
 
-Each round draws new seeds — for Hypothesis only: a target no chance moves has one round (CI10a,
-rounds_of). The table says, per mutant, how many rounds caught it, of its rounds.
+Each round draws its own seed — for Hypothesis only: a target no chance moves has one round (CI10a,
+rounds_of). The run's seed S is drawn, or given (--seed S, to replay a run): round r (1 first) runs
+every Hypothesis test of its target on S + r - 1, the unmutated runs on S (SEED1, round_seeds) —
+in CI too, where Hypothesis's own `ci` profile would replay one set of sequences round after round.
+The seed is said at the start and at the end of the output and written in the JSON; the total says
+each shard's, and the command that replays a mutant that survived. The table says, per mutant, how
+many rounds caught it, of its rounds.
 A mutant the invariants can't see by construction says why: EQUIVALENT (no behaviour
 of the fake world tells it apart), MULTI-HOST (needs a second host writing between two of
 our calls — the locks are per host; a unit test covers it). Those two, and STALE, are not
@@ -40,6 +46,7 @@ import math
 import os
 import re
 import runpy
+import secrets
 import shutil
 import statistics
 import subprocess
@@ -10860,19 +10867,53 @@ def unmeasurable(stdout: str) -> str | None:
 # target holds it, by construction (M3186, M3585) — never a killer.
 MUTANT_RUN = "EREGION_MUTANT_RUN"
 
+# SEED1 (#655): the seed of every Hypothesis test of a run, read by tests/unit/conftest.py
+# (tests/unit/hypothesis_seed.py). In CI, Hypothesis loads its `ci` profile, derandomized: each
+# round of the gate replayed the first's sequences, and `--hypothesis-seed` changes nothing there
+# (measured, 09/11). A run draws its seed S, or takes the one given (--seed: a replay); round r
+# runs on S + r - 1. tests/unit/test_hypothesis_seed.py holds that this name is the conftest's.
+SEED_VAR = "EREGION_HYPOTHESIS_SEED"
+SEED_BOUND = 10**9
 
-def _pytest(copy: Path, examples: int, target: str, *more: str) -> subprocess.CompletedProcess:
-    """pytest on `target` (test paths, space-separated) in this copy, as the harness runs it."""
+
+def draw_seed() -> int:
+    """A run's seed, when none is given: short enough to read and type."""
+    return secrets.randbelow(SEED_BOUND)
+
+
+def round_seeds(seed: int, rounds: int) -> list[int]:
+    """The seed of each round, the first's the run's: S, S + 1, …"""
+    return [seed + r for r in range(max(0, rounds))]
+
+
+def _seed_arg(text: str) -> int:
+    """`--seed S`: a whole number, as the conftest reads it."""
+    if not re.fullmatch(r"\d{1,18}", text.strip()):
+        raise argparse.ArgumentTypeError(f"{text!r}: a seed, a whole number")
+    return int(text)
+
+
+def replay_of(mid: str, seed, examples: int, rounds: int) -> str:
+    """The command that measures a mutant again, its rounds on the same seeds."""
+    return f"python scripts/mutation_check.py --only {mid} --seed {seed} --examples {examples} --rounds {rounds}"
+
+
+def _pytest(copy: Path, examples: int, target: str, *more: str, seed: int | None = None) -> subprocess.CompletedProcess:
+    """pytest on `target` (test paths, space-separated) in this copy, as the harness runs it; its
+    Hypothesis tests on `seed` when one is given (SEED1) — never on one this process inherited."""
     env = {**os.environ, "GLORFINDEL_INVARIANT_EXAMPLES": str(examples), "GLORFINDEL_INVARIANT_NO_SHRINK": "1",
            "PYTHONPATH": str(copy), "PYTHONDONTWRITEBYTECODE": "1"}
     env[MUTANT_RUN] = "1"
+    env.pop(SEED_VAR, None)
+    if seed is not None:
+        env[SEED_VAR] = str(seed)
     return subprocess.run([sys.executable, "-m", "pytest", *target.split(), "-q", *more, "-p", "no:cacheprovider"],
                           cwd=copy, env=env, capture_output=True, text=True)
 
 
-def _run(copy: Path, examples: int, show: bool = False, target: str = INVARIANTS) -> bool:
+def _run(copy: Path, examples: int, show: bool = False, target: str = INVARIANTS, seed: int | None = None) -> bool:
     """True if `target` (test paths, space-separated) FAILS on this copy (the mutant is caught)."""
-    proc = _pytest(copy, examples, target, "-x")
+    proc = _pytest(copy, examples, target, "-x", seed=seed)
     missing = unmeasurable(proc.stdout)
     if missing:
         raise RuntimeError(f"{missing}\n{proc.stdout[-2000:]}")
@@ -11359,6 +11400,13 @@ def say_judged(unknown: list, no_more: list, mutants: list, say=print) -> None:
             f"({reasons[mid].partition(':')[0]}) off by hand — {title}")
 
 
+def say_replays(unknown: list, seed_of: dict, examples: int, rounds: int, say=print) -> None:
+    """SEED1: for each red, the command that measures it again on the seeds it survived on."""
+    for row in unknown:
+        if seed_of.get(row[0]) is not None:
+            say(f"    replay {row[0]}: {replay_of(row[0], seed_of[row[0]], examples, rounds)}")
+
+
 ROUNDS_CAUGHT = re.compile(r"(\d+)/(\d+)")      # a row's detail: "1/2 (9s)", rounds caught of rounds
 
 
@@ -11392,6 +11440,8 @@ def total(where: Path, shards: int, control_shards: int, examples: int, rounds: 
     machine (selected), each shard of theirs measured so: the others are not this total's."""
     problems: list[str] = []
     found: dict[bool, dict[int, list]] = {False: {}, True: {}}
+    seeds: dict[bool, dict[int, object]] = {False: {}, True: {}}     # SEED1: each shard's seed
+    seed_of: dict[str, object] = {}
     for path in sorted(where.rglob("*.json")):
         try:
             doc = json.loads(path.read_text(encoding="utf-8"))
@@ -11412,6 +11462,9 @@ def total(where: Path, shards: int, control_shards: int, examples: int, rounds: 
         if k in found[control]:
             problems.append(f"{path.name}: {name} shard {k} given twice")
         found[control].setdefault(k, []).extend(rows)
+        seeds[control].setdefault(k, doc.get("seed"))
+        if not control:
+            seed_of.update({r[0]: doc.get("seed") for r in rows})
     said = {}
     for control, n, every in ((False, shards, selected(MUTANTS, machines=machines)), (True, control_shards, CONTROL)):
         name = "control" if control else "mutants"
@@ -11441,7 +11494,13 @@ def total(where: Path, shards: int, control_shards: int, examples: int, rounds: 
     print(f"mutants: {caught}/{counted} caught in every round (equivalent and multi-host mutants aside); "
           f"{len(unknown)} survived a round outside the known survivors ({len(known(MUTANTS))} known)")
     print(f"control: {said[True][0]}/{said[True][1]} caught in every round (said, not held)")
+    for control in (False, True):
+        if seeds[control]:
+            print(f"Hypothesis seeds, {'control' if control else 'mutants'} (round r on S + r - 1, SEED1): "
+                  + ", ".join(f"shard {k} {seeds[control][k] if seeds[control][k] is not None else 'unsaid'}"
+                              for k in sorted(seeds[control])))
     say_judged(unknown, no_more, MUTANTS)
+    say_replays(unknown, seed_of, examples, rounds)
     say_never(mutant_rows, MUTANTS)
     for p in problems:
         print(f"  ✗ {p}")
@@ -11469,18 +11528,22 @@ def failures_of(xml: Path, file: str) -> list[tuple[float, str]]:
 
 
 def narrow(file: str, todo: list, examples: int, rounds: int, jobs: int, path: Path | None = None,
-           say=print) -> int:
+           say=print, seed: int | None = None) -> int:
     """`--narrow FILE` (CI10a): each mutant of `todo` (its target, whole, is FILE) on a copy, FILE
     run whole without -x; the fastest NARROW tests that catch it become its target if they catch it
-    in each of `rounds` rounds — else it keeps FILE whole. narrowed.json keeps the others' entries."""
+    in each of `rounds` rounds — else it keeps FILE whole. narrowed.json keeps the others' entries.
+    The whole runs on the seed (drawn when none is given), each round on its own (SEED1)."""
     path = NARROWED if path is None else path
+    seed = draw_seed() if seed is None else seed
+    seeds = round_seeds(seed, rounds)
+    say(f"Hypothesis seed {seed}: rounds on {', '.join(map(str, seeds))} (SEED1; --seed {seed} replays them)")
     with tempfile.TemporaryDirectory(prefix="glorfindel-narrow-") as tmp:
         # Each mutant's copy is made of the pristine one, never of the copy the unmutated run
         # wrote in (CI10a, review: as main() does, M4188).
         pristine, base = Path(tmp) / "pristine", Path(tmp) / "base"
         _copy_repo(pristine)
         shutil.copytree(pristine, base)
-        if _pytest(base, examples, file).returncode != 0:
+        if _pytest(base, examples, file, seed=seed).returncode != 0:
             say(f"{file} fails on the UNMUTATED code — fix that first")
             return 2
 
@@ -11492,12 +11555,12 @@ def narrow(file: str, todo: list, examples: int, rounds: int, jobs: int, path: P
                 if (stale := apply_mutant(mutant, copy)) is not None:
                     return mid, None, f"STALE ({stale}): keeps {file} whole"
                 xml = copy / "narrow.xml"
-                _pytest(copy, examples, file, f"--junitxml={xml}")
+                _pytest(copy, examples, file, f"--junitxml={xml}", seed=seed)
                 found = failures_of(xml, file) if xml.exists() else []
                 if not found:
                     return mid, None, f"caught by no test of {file}: keeps it whole"
                 tests = " ".join(node for _s, node in found[:NARROW])
-                caught = sum(_run(copy, examples, target=tests) for _ in range(rounds))
+                caught = sum(_run(copy, examples, target=tests, seed=s) for s in seeds)
                 if caught != rounds:
                     return mid, None, f"{len(found)} tests catch it, the fastest {caught}/{rounds}: keeps {file} whole"
                 return mid, tests, f"{len(found)} tests catch it: {tests}"
@@ -11603,6 +11666,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--skip-machine-baseline", action="store_true",
                     help="no unmutated run of an invariant machine in this shard: the release gate's "
                          "invariants job runs it on the same tree (CI10a)")
+    ap.add_argument("--seed", type=_seed_arg, default=None, metavar="S",
+                    help="the run's Hypothesis seed, round r on S + r - 1 (SEED1): given, a replay; "
+                         "drawn when none is given, and said")
     args = ap.parse_args(argv)
     if args.total:
         return total(Path(args.total), args.shards, args.control_shards, args.examples, args.rounds,
@@ -11612,7 +11678,7 @@ def main(argv: list[str] | None = None) -> int:
     only = {m.strip() for m in args.only.split(",") if m.strip()}
     if args.narrow:
         todo = [m for m in MUTANTS if WHOLE.get(m[0], TESTS.get(m[0])) == args.narrow and (not only or m[0] in only)]
-        return narrow(args.narrow, todo, args.examples, args.rounds, args.jobs)
+        return narrow(args.narrow, todo, args.examples, args.rounds, args.jobs, seed=args.seed)
     durations = load_durations()
     skip = args.skip_machine_baseline
     todo = [m for m in selected(CONTROL if args.control else MUTANTS, args.control, args.machines)
@@ -11620,6 +11686,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.plan:
         return say_plan(todo, args.plan, args.jobs, durations, skip=skip)
     k, n = parse_shard(args.shard) if args.shard else (1, 1)
+    # SEED1: one seed for the run, drawn unless given; round r of each mutant on S + r - 1.
+    seed = draw_seed() if args.seed is None else args.seed
+    seeds = round_seeds(seed, args.rounds)
+    print(f"Hypothesis seed {seed} ({'given' if args.seed is not None else 'drawn'}): the unmutated runs on "
+          f"{seed}, round r of each mutant on {seed} + r - 1 ({', '.join(map(str, seeds))}) — "
+          f"--seed {seed} replays them (SEED1)", flush=True)
 
     with tempfile.TemporaryDirectory(prefix="glorfindel-mutants-") as tmp:
         pristine = Path(tmp) / "pristine"        # each mutant's copy is made of it, never run in
@@ -11645,7 +11717,7 @@ def main(argv: list[str] | None = None) -> int:
 
         def unmutated(run):
             started = time.monotonic()
-            return _run(unmutated_copy, args.examples, show=True, target=run), time.monotonic() - started
+            return _run(unmutated_copy, args.examples, show=True, target=run, seed=seed), time.monotonic() - started
 
         def measure(mutant):
             mid, title = mutant[:2]
@@ -11656,10 +11728,10 @@ def main(argv: list[str] | None = None) -> int:
             started = time.monotonic()
             target = TESTS.get(mid, INVARIANTS)
             rounds = rounds_of(mutant, target, args.rounds, args.control)
-            caught = sum(_run(copy, args.examples, target=target) for _ in range(rounds))
+            caught = sum(_run(copy, args.examples, target=target, seed=s) for s in seeds[:rounds])
             # Caught by a fixed sequence only (tests/unit/test_invariant_regressions.py)?
             fixed = (caught == 0 and target == INVARIANTS
-                     and _run(copy, 0, target="tests/unit/test_invariant_regressions.py"))
+                     and _run(copy, 0, target="tests/unit/test_invariant_regressions.py", seed=seed))
             shutil.rmtree(copy, ignore_errors=True)
             verdict = "CAUGHT" if caught == rounds else ("flaky" if caught else ("FIXED-ONLY" if fixed else "SURVIVES"))
             if verdict != "CAUGHT" and mark(mutant):
@@ -11688,7 +11760,8 @@ def main(argv: list[str] | None = None) -> int:
         measured = [results[("mutant", m[0])] for m in todo]
         rows = sorted(row for row, _ in measured)
         seconds = {row[0]: s for row, s in measured}
-    print(f"\nbudget {args.examples} sequences, {args.rounds} rounds" + (f", shard {k}/{n}:" if n > 1 else ":"))
+    print(f"\nbudget {args.examples} sequences, {args.rounds} rounds, Hypothesis seed {seed}"
+          + (f", shard {k}/{n}:" if n > 1 else ":"))
     for mid, title, verdict, detail in rows:
         print(f"  {mid}  {verdict:8}  {detail:16}  {title}")
     caught, counted = caught_of(rows)
@@ -11701,12 +11774,15 @@ def main(argv: list[str] | None = None) -> int:
         unknown, no_more = judge(rows, MUTANTS)
         say_judged(unknown, no_more, MUTANTS)
         say_never(rows, MUTANTS)
+        say_replays(unknown, {r[0]: seed for r in rows}, args.examples, args.rounds)
         if unknown and args.json:
             print(f"{len(unknown)} survived a round outside the known survivors: the total (--total) holds it")
     if args.json:
         Path(args.json).write_text(json.dumps({
             "control": args.control, "shard": k, "shards": n, "examples": args.examples,
             "rounds": args.rounds, "machines": args.machines, "machine_baseline": not skip,
+            # SEED1: the run's seed, and each round's — `--seed` with it replays the shard.
+            "seed": seed, "round_seeds": seeds,
             "rows": [list(r) for r in rows],
             # CI6d: each mutant's measure (its copy included) and each unmutated run, in seconds.
             "seconds": {mid: round(seconds[mid], 1) for mid in sorted(seconds)},
