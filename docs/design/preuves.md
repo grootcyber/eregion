@@ -108,19 +108,25 @@ Les propriétés, vérifiées après chaque étape :
 
 **La reprise lue sur Azure a sa propre machine (REC1, #668).** Elle est dans
 `tests/unit/test_recovery_watch.py`, pas dans celle-ci. Elle lit les jobs du coffre, les points,
-l'alimentation et la parole de Run Command, et non le réseau. Ses étapes : des isolations, des
-points (avant l'incident, pendant), des restaurations (chaque statut, chaque façon dont le job
-nomme son point, la VM laissée allumée ou éteinte), des commandes (l'inoffensive, celle d'un
-attaquant), des démarrages, le temps qui passe. Ajoutées ici, elles auraient dilué les séquences
-des NSG sans rien leur faire voir. Deux propriétés, jugées sur le journal du test :
+l'alimentation, les disques, le journal d'activité et la parole de Run Command, et non le réseau.
+Ses étapes : des isolations, des points (avant l'incident, pendant), des restaurations (chaque
+statut, chaque façon dont le job nomme son point, sur place ou ailleurs, son conteneur nommé ou
+non, la VM laissée allumée ou éteinte), le geste du poste (la neutralisation par la console puis la
+restauration sur place, chacune de ses parties tirée autrement de temps en temps), des Run Commands
+par la console, par H0, par un attaquant (qui imprime ou non la sortie inoffensive), **un invité
+hostile** (root écrit lui-même la sortie inoffensive), des démarrages, le temps qui passe. Ajoutées
+ici, elles auraient dilué les séquences des NSG sans rien leur faire voir. Deux propriétés, jugées
+sur le journal du test, jamais sur la parole de l'invité :
 
 | | Ce qui doit tenir |
 |---|---|
-| R1 | jamais de `recovery_complete` sans reprise prouvée sur Azure : le dernier job de la VM depuis son isolement fini et réussi, son point antérieur à l'isolement, la VM qui tourne ; « neutralisée » seulement si le disque restauré a rejoué la commande inoffensive |
+| R1 | jamais de `recovery_complete` sans reprise prouvée sur Azure : le dernier job de la VM depuis son isolement fini et réussi, sur place, son conteneur nommé ou son point nommé par son identifiant, son point antérieur à l'isolement, la VM qui tourne ; « neutralisée » seulement si, au journal du test, la dernière Run Command avant le job est celle de la console et qu'aucune d'un autre n'a suivi — un attaquant qui imprime le marqueur, root qui l'écrit, ne comptent pas |
 | R2 | jamais deux `recovery_complete` pour un job, ni deux cartes pour un job et un motif, ni deux de ses cartes en attente sur une VM |
 
-Aux budgets de la CI (200 séquences), elle attrape seule les cinq mutants du lot (M4615–M4619) ;
-à 60, trois. Les tests ciblés du même fichier les attrapent tous.
+Les tests ciblés du même fichier attrapent les dix mutants du lot (M4615–M4619, M4628–M4632) à
+chaque tour. La machine seule en attrape une partie, qui varie d'un tirage à l'autre : sur un
+tirage, six des neuf qu'elle peut voir à 200 séquences et quatre à 60. M4632, une levée en cours,
+n'est vu que par son test.
 
 **Des oracles qui ne demandent rien au code.** Ce qu'une propriété juge vient du journal du test :
 la levée qu'il a demandée (I9), ce qu'il a perdu et quand (une carte « intraçable »), qui a écrit
