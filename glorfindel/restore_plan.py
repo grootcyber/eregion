@@ -120,6 +120,22 @@ def card_of(resource_id: str) -> dict | None:
     return min(cards, key=_first_seen) if cards else None
 
 
+def incident_start(resource_id: str) -> tuple[float | None, str]:
+    """When the incident on this VM began, as the defender itself recorded it (REC1, #668) — the
+    rule of `--before` without runs/: the earlier of the VM's isolation and the first detection
+    of its first-detected pending card. (epoch, why), or (None, why) when neither says. An older
+    card still pending moves it back: stricter, never past the incident."""
+    isolated_at, isolated = isolation_time(resource_id)
+    esc = card_of(resource_id)
+    first = _first_seen(esc) if esc else float("inf")
+    if first != float("inf") and (isolated_at is None or first < isolated_at):
+        return first, (f"première détection de la carte en attente "
+                       f"({datetime.fromtimestamp(first, tz=timezone.utc).isoformat()})")
+    if isolated_at is not None:
+        return isolated_at, f"isolation de la VM ({isolated})"
+    return None, "ni isolation ni carte en attente pour dater l'incident"
+
+
 def proposed_moment(resource_id: str, esc: dict | None = None, runs_dir=None,
                     read_runs: bool = True) -> dict:
     """What the restore field is filled with: {"before", "source", "why"}.

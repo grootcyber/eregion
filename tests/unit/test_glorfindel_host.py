@@ -698,6 +698,20 @@ def test_the_canary_s_appid_reaches_the_watch_and_the_console_alone():
                                                                  if k != "EREGION_RULE_CANARY_APPID"})
 
 
+RESTORER = "00000000-0000-0000-0000-0000000e5701"     # REC1: placeholder, never a real id
+
+
+def test_the_restoring_principals_reach_the_watch_alone():
+    """REC1 (#668): the watch compares the activity log's callers with them (recovery_watch.py):
+    copied from the operator's environment into host.env like the rest; no other service gets them."""
+    operator = {"AZURE_SUBSCRIPTION_ID": "sub", "ANTHROPIC_API_KEY": "fake-key",
+                "GLORFINDEL_RESTORE_PRINCIPALS": RESTORER}
+    dotenv = host_env.host_env(operator)
+    assert dotenv["GLORFINDEL_RESTORE_PRINCIPALS"] == RESTORER
+    rendered = {s: {k: _interpolate(v, dotenv) for k, v in e.items()} for s, e in _compose_env().items()}
+    assert {s for s, e in rendered.items() if RESTORER in e.values()} == {"watch"}
+
+
 @pytest.mark.parametrize("value, said", [
     (CANARY_APP, False), (f'"{CANARY_APP}"', False), ("", False),
     ("fake-not-a-guid", True), (CANARY_APP + "0", True),

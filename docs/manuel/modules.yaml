@@ -674,6 +674,16 @@ briques:
     lots: [L1G, L1P, L1Qs]
     issue: 461
 
+  - id: g-reprise-lue
+    composant: glorfindel
+    poste: g-verifier
+    nom: "La reprise d'une VM restaurée ailleurs lue sur Azure, et l'isolation levée seule"
+    etat: main
+    release: "0.6"
+    lots: [REC1]
+    issue: 668
+    doc: docs/glorfindel.md
+
   - id: g-memoire-source
     composant: glorfindel
     poste: g-memoire

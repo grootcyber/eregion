@@ -18,6 +18,7 @@ from glorfindel.providers.azure.older import OlderIsolationMixin
 from glorfindel.providers.azure.perimeter import PerimeterMixin
 from glorfindel.providers.azure.quarantine import QuarantineMixin
 from glorfindel.providers.azure.readers import ReadersMixin
+from glorfindel.providers.azure.recovery import RecoveryMixin
 from glorfindel.providers.azure.release import ReleaseMixin
 from glorfindel.providers.azure.reset_bare import ResetBareMixin
 from glorfindel.providers.azure.restore import RestoreMixin
@@ -46,6 +47,7 @@ class AzureConnector(
     PerimeterMixin,
     BackupMixin,
     RestoreMixin,
+    RecoveryMixin,
     SweepMixin,
     ResetBareMixin,
     ReadersMixin,
@@ -205,6 +207,7 @@ for _name in ("isolate_vm", "release_isolation", "block_suspicious_ip", "unblock
     setattr(AzureConnector, _name, _one_writer(getattr(AzureConnector, _name)))
 for _name in ("isolate_vm", "release_isolation", "verify_isolation", "verify_release",
               "block_suspicious_ip", "unblock_ip", "verify_block_ip", "snapshot",
-              "restore_from_backup", "drain_connections", "sweep_vm_rules", "check_permissions"):
+              "restore_from_backup", "drain_connections", "sweep_vm_rules", "check_permissions",
+              "observed_restore"):
     if hasattr(AzureConnector, _name):
         setattr(AzureConnector, _name, _same_subscription(getattr(AzureConnector, _name)))

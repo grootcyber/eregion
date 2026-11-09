@@ -447,6 +447,9 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
   recovery_signals/           → SEC3 (V-05) : le `recovery_complete` qu'écrit `glorfindel restore --wait` pour un
                                 `glorfindel respond` plus tard — seul endroit d'où ce signal lève une isolation seul
                                 (`glorfindel/signal_origin.py`) ; plus `runs/recovery/`, que les injecteurs écrivent
+  recoveries.json             → REC1 (#668) : ce que la watch a fait de chaque job de restauration lu sur Azure
+                                (émis, ou la carte écrite et son motif), par VM et par job : une fois par job
+                                (`glorfindel/recovery_watch.py`) ; les notes d'une VM qui n'est plus isolée tombent à l'écriture
   channel_refusals.json       → SEC3 (V-05) : les lignes de `runs/` que la watch a refusées, comptées par événement
                                 (la dernière : fichier, heure, raison)
   console_token               → ancien emplacement du jeton tiré de la console : retiré à son premier

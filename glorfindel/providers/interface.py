@@ -203,6 +203,14 @@ class CloudConnector(ABC):
         "vault_tier"}], newest first. A provider that can't list them says so."""
         raise NotImplementedError(f"{type(self).__name__}: no recovery points to list")
 
+    def observed_restore(self, resource_id: str, since: str, vault: str = "", vault_rg: str = "") -> dict:
+        """The last restore of this VM the provider ran since `since` (ISO 8601), read only
+        (REC1): {"job": None}, or facts each with its author — the job, its type, the point it
+        restored, the VM's power state and OS disk, the Run Commands of the control plane's log
+        and who ran them, what the guest last said — glorfindel/recovery_watch.py decides what
+        they prove. A provider that can't read it says so."""
+        raise NotImplementedError(f"{type(self).__name__}: no restore to observe")
+
     @abstractmethod
     def verify_block_ip(self, ip: str, resource_id: str) -> dict:
         """Confirm that the deny rule for this IP is active on the NSG."""

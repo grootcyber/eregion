@@ -430,6 +430,35 @@ def _watch_reassert_pass(connector, mode_override=None, lock=None, seen: dict | 
     return report
 
 
+def _watch_recovery_pass(connector, emit, lock=None, said: dict | None = None) -> list[dict]:
+    """One pass of the watch over the recoveries it can read on Azure (REC1, #668; its own
+    thread, every GLORFINDEL_RECOVERY_INTERVAL_S): a restore of an isolated VM proven there
+    hands its recovery_complete to `emit` (the VM's queue). Never raises. What it can't read is
+    said once until it changes (`said`, the watch's memory between passes)."""
+    import contextlib
+    from glorfindel.recovery_watch import recovery_pass
+    lock = lock if lock is not None else contextlib.nullcontext()
+    said = said if said is not None else {}
+    report: list[dict] = []
+    try:
+        report = recovery_pass(connector, emit)
+    except Exception as exc:
+        with lock:
+            console.print(f"[red]recovery pass failed:[/red] {_esc_markup(str(exc))}")
+        return report
+    for r in report:
+        if r["outcome"] == "wait":
+            continue
+        if r["outcome"] == "unreadable":
+            if said.get(r["vm"]) == r["detail"]:
+                continue
+            said[r["vm"]] = r["detail"]
+        with lock:
+            console.print(f"[cyan]reprise {_esc_markup(r['vm'])} {_esc_markup(r['job'])} → "
+                          f"{r['outcome']}[/cyan] {_esc_markup(r['detail'])}")
+    return report
+
+
 def _write_watch_heartbeat(path: Path, at) -> None:
     """The watch's heartbeat, written at once (SEC17): a temp file beside it, renamed over it —
     never opened in place, so a reader (the injectors' gate, the console, the CD of H0, a second
@@ -932,6 +961,36 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
     def _reassert_pass() -> None:
         _watch_reassert_pass(ttl_connector, mode_override, _output_lock, _reassert_seen)
 
+    # REC1 (#668): the recovery of a VM this watch isolated, read on Azure — a restore run from
+    # another host (H0 never restores, SEC17) proven there hands the VM's queue its own
+    # recovery_complete. In its own thread, one pass at a time.
+    try:
+        _recovery_every_s = float(os.environ.get("GLORFINDEL_RECOVERY_INTERVAL_S", "60"))
+    except ValueError:
+        _recovery_every_s = 60.0
+    _last_recovery = [0.0]
+    _recovery_thread: list = [None]
+    _recovery_said: dict = {}
+
+    def _emit_recovery(signal_data: dict) -> None:
+        from eregion_core.signals import Signal as _Signal
+        _dispatch(signal_data, _Signal(**{k: signal_data.get(k, "") for k in _Signal.__dataclass_fields__}))
+
+    def _recoveries() -> None:
+        if dry_run or _recovery_every_s <= 0:
+            return
+        if time.time() - _last_recovery[0] < _recovery_every_s:
+            return
+        t = _recovery_thread[0]
+        if t is not None and t.is_alive():
+            return
+        _last_recovery[0] = time.time()
+        import threading as _thr
+        _recovery_thread[0] = _thr.Thread(
+            target=lambda: _watch_recovery_pass(ttl_connector, _emit_recovery, _output_lock, _recovery_said),
+            daemon=True, name="recoveries")
+        _recovery_thread[0].start()
+
     _HEARTBEAT = Path.home() / ".glorfindel" / "watch_heartbeat"
 
     # Warn if another watch process appears to be running (shared ~/.glorfindel/)
@@ -1254,6 +1313,11 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
                     # Each task on its own: one that keeps failing (an old isolation the
                     # subscription guard refuses…) no longer skips the reassertion and the
                     # heartbeat at every pass — the watch looked dead (fourth review, Q12).
+                    try:
+                        _recoveries()       # REC1: its own thread, started here at most once a pass
+                    except Exception as exc:
+                        with _output_lock:
+                            console.print(f"[red]watch: _recoveries en erreur — {exc}[/red]")
                     for _task in (_check_ttl, _reconcile_jobs, _reassert, _write_heartbeat, _observe_windows):
                         try:
                             _task()

@@ -165,6 +165,10 @@ services:
       # nsg-change-outside-glorfindel. Un id, aucun secret, jamais dans le dépôt ; vide ou pas un GUID,
       # la règle livrée tourne (les cartes du canari reviennent) et la watch le dit.
       EREGION_RULE_CANARY_APPID: ${EREGION_RULE_CANARY_APPID:-}
+      # REC1 (#668) : les principaux qui restaurent depuis le poste (object id ou appId) ; leur Run
+      # Command, lue dans le journal d'activité, prouve à la watch une neutralisation. Des ids, aucun
+      # secret ; vide, aucune neutralisation n'est prouvée : chaque levée lue sur Azure est une carte.
+      GLORFINDEL_RESTORE_PRINCIPALS: ${GLORFINDEL_RESTORE_PRINCIPALS:-}
     volumes:
       # SEC18 : son répertoire en écriture (ses cycles ; sur H0, ce qu'elle tire du canal et les
       # rapports de campagne ; FS1b : ses reçus de la file et son statut, queue/) ; ceux des
