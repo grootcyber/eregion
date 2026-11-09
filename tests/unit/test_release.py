@@ -341,6 +341,55 @@ def test_the_readme_test_holds_on_what_release_wrote(repo, capsys):
     assert status == rel.version_of(text["pyproject.toml"]) == "0.5.0"
 
 
+# ── SEC-D (#636, P-03): SECURITY.md's supported line follows a minor release ─────────
+
+SECURITY = ("# Security policy\n\n| Version | Supported |\n|---|---|\n| latest 0.4.x | yes |\n"
+            "| older 0.4.x, 0.3.x and before | no — upgrade |\n\nThe rest.\n")
+
+
+def _with_security(work):
+    (work / "SECURITY.md").write_text(SECURITY, encoding="utf-8")
+    git(work, "add", "SECURITY.md")
+    git(work, "commit", "-qm", "security")
+    git(work, "push", "-q", "origin", "main")
+
+
+def test_a_minor_release_moves_security_md_to_its_line_in_the_same_commit(repo, capsys):
+    _with_security(repo)
+    assert rel.main(["prepare", "0.5.0", "--title", "x"]) == 0, capsys.readouterr().out
+    out = capsys.readouterr().out
+    text = (repo / "SECURITY.md").read_text(encoding="utf-8")
+    assert text == SECURITY.replace("| latest 0.4.x | yes |", "| latest 0.5.x | yes |").replace(
+        "| older 0.4.x, 0.3.x and before |", "| older 0.5.x, 0.4.x and before |")
+    assert "SECURITY.md" in git(repo, "show", "--name-only", "--format=", "HEAD").split()   # committed
+    assert git(repo, "status", "--porcelain") == ""
+    assert "SECURITY.md : la ligne suivie devient 0.5.x" in out
+
+
+def test_a_patch_release_leaves_security_md_as_it_is(repo, capsys):
+    _with_security(repo)
+    assert rel.main(["prepare", "0.4.4", "--title", "x"]) == 0, capsys.readouterr().out
+    assert (repo / "SECURITY.md").read_text(encoding="utf-8") == SECURITY
+    assert "SECURITY.md" not in git(repo, "show", "--name-only", "--format=", "HEAD").split()
+    assert "SECURITY.md : la ligne suivie reste 0.4.x" in capsys.readouterr().out
+
+
+def test_a_dry_run_shows_security_md_s_diff_and_writes_nothing(repo, capsys):
+    _with_security(repo)
+    assert rel.main(["prepare", "0.5.0", "--title", "x", "--dry-run"]) == 0
+    out = capsys.readouterr().out
+    assert "+| latest 0.5.x | yes |" in out and "-| latest 0.4.x | yes |" in out
+    assert (repo / "SECURITY.md").read_text(encoding="utf-8") == SECURITY
+
+
+def test_security_md_without_one_supported_line_is_left_and_said(repo, capsys):
+    """Two « yes » lines, or none: nothing is guessed — the Orchestre holds it by hand."""
+    assert rel.security_follows(SECURITY.replace("older 0.4.x, 0.3.x and before | no — upgrade",
+                                                 "latest 0.3.x | yes"), "0.5.0").count("0.5") == 0
+    assert rel.main(["prepare", "0.5.0", "--title", "x", "--dry-run"]) == 0   # no SECURITY.md at all
+    assert "pas une seule ligne « | latest X.Y.x | yes | »" in capsys.readouterr().out
+
+
 # ── RM1 (#406): the version's line in ROADMAP.md's « Les prochaines releases » ───────
 
 ROADMAP_MD = """# Roadmap

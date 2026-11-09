@@ -2548,7 +2548,10 @@ make release-draft VERSION=0.4.4 [NOTES=notes.md] [DRY_RUN=1]   # après sa fusi
   échoue sinon (SEC6). Dans `ROADMAP.md`, la ligne de la version sous « Les prochaines releases »
   passe à `brouillon` (RM1 : `#roadmap` montre ce tableau) ; sans ligne pour elle, ou dans un tableau
   que `#roadmap` ne lirait pas (en-tête changé), rien n'y change,
-  la commande le dit, et l'Orchestre tient le tableau à la main (`publiée` aussi, après la publication). Puis la branche `chore/release-X.Y.Z`, le commit
+  la commande le dit, et l'Orchestre tient le tableau à la main (`publiée` aussi, après la publication). Une
+  version mineure (un autre X.Y) réécrit aussi la table de `SECURITY.md` : la ligne suivie devient
+  `| latest X.Y.x | yes |`, la ligne « older » nomme celle qu'elle remplace ; un correctif n'y touche pas,
+  et la commande le dit (SEC-D ; `tests/unit/test_readme.py` les compare à `pyproject.toml`). Puis la branche `chore/release-X.Y.Z`, le commit
   `chore(release): X.Y.Z — CHANGELOG [X.Y.Z] « <titre> », version du paquet`, le push et la PR
   (`gh pr create`). Sa sortie et le corps de la PR disent que la porte de release tourne sur cette PR,
   30 à 60 minutes, et qu'elle doit être verte avant la fusion. Refusé, sans rien écrire :

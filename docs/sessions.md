@@ -193,7 +193,10 @@ publie. La porte de release (`.github/workflows/release-gate.yml`, `docs/operati
 release ») en est la preuve, et `make release-draft` la redemande.
 1. **L'Orchestre ouvre la PR de version** : `make release VERSION=X.Y.Z TITLE="…"`, depuis `origin/main`
    à jour. La porte part d'elle-même sur cette PR (2 000 invariants, la mutation complète, Terraform,
-   et macOS qui informe sans bloquer), 30 à 60 minutes.
+   et macOS qui informe sans bloquer), 30 à 60 minutes. Pour une version mineure (`X.Y.0`),
+   `make release` réécrit aussi, dans cette même PR, la ligne suivie de `SECURITY.md` (« Supported
+   versions » : `X.Y.x` seule corrigée, la ligne « older » suit) ; un correctif n'y touche pas (SEC-D,
+   P-03). `tests/unit/test_readme.py` la compare à la version de `pyproject.toml`.
 2. **Elle attend la porte avant de fusionner.** La PR de version fusionne quand la CI est verte, que la
    relecture a rendu « ok » et que le check « release gate » est vert sur sa tête. Rouge, la release
    attend : on lit le run, on corrige par un lot, et la PR de version se refait sur le `main` corrigé.
