@@ -9,7 +9,9 @@
   brick not delivered;
 - a lot's pull request moves its brick: a fragment ``changes/<LOT>.md`` with no brick on ``main``
   naming LOT fails, read from the same tree;
-- the page loads nothing from elsewhere but GitHub's public API, and writes nothing it reads as HTML.
+- the page loads nothing from elsewhere but GitHub's public API, and writes nothing it reads as HTML;
+- the manual in English (MAN1b, #676): a text of the YAML that reads French is refused, and the page
+  and its script say nothing in French.
 The release's side (main → livree) is in tests/unit/test_release.py.
 """
 from __future__ import annotations
@@ -46,7 +48,7 @@ DATA = mn.load(TEXT)
 
 
 def _brick(**kw):
-    b = {"id": "x-brique", "composant": "glorfindel", "poste": "g-agir", "nom": "Une brique", "etat": "livree",
+    b = {"id": "x-brique", "composant": "glorfindel", "poste": "g-agir", "nom": "A brick", "etat": "livree",
          "release": "0.5", "version": "0.5.8"}
     b.update(kw)
     return {k: v for k, v in b.items() if v is not None}
@@ -120,7 +122,7 @@ def test_the_reader_and_pyyaml_agree_on_every_form_it_takes():
 
 # ── the public rule ────────────────────────────────────────────────────────────────────
 
-NEUTRAL = "Durcissement de sécurité"
+NEUTRAL = "Security hardening"
 SECU = 633   # an issue of the audit, in issues_securite
 
 
@@ -133,10 +135,10 @@ def _secure(**kw):
 def test_a_security_brick_has_a_neutral_name_and_nothing_else(lots):
     neutral = _secure(lots=lots, issue=SECU)
     assert mn.problems(_with(neutral)) == []
-    for bad, said in ((dict(nom="L'attribution d'une ligne à une VM"), "s'appelle"),
-                      (dict(note="Une appliance réseau passait."), "pas de note"),
+    for bad, said in ((dict(nom="A log line attributed to a VM"), "s'appelle"),
+                      (dict(note="A network appliance got through."), "pas de note"),
                       (dict(doc="docs/design/modele-de-menace.md"), "SECURITY.md"),
-                      (dict(nom="Durcissement de sécurité (#633)"), "s'appelle")):   # no number either
+                      (dict(nom="Security hardening (#633)"), "s'appelle")):   # no number either
         found = mn.problems(_with({**neutral, **bad}))
         assert any(said in p for p in found), (bad, found)
     assert mn.problems(_with({**neutral, "doc": "SECURITY.md"})) == []
@@ -145,9 +147,9 @@ def test_a_security_brick_has_a_neutral_name_and_nothing_else(lots):
 
 def test_a_lot_in_lower_case_is_refused_and_still_read_as_security():
     """The review: `lots: [sec-a4]` with a descriptive name passed — the rule read capitals only."""
-    found = mn.problems(_with(_brick(lots=["sec-a4"], nom="L'attribution d'une ligne à une VM")))
+    found = mn.problems(_with(_brick(lots=["sec-a4"], nom="A log line attributed to a VM")))
     assert any("une liste de noms de lot" in p for p in found), found
-    assert any("s'appelle « Durcissement de sécurité »" in p for p in found), found
+    assert any("s'appelle « Security hardening »" in p for p in found), found
     assert mn.sensible({"lots": ["sec-a4"]}) and mn.sensible({"lots": ["v-05"]}) and mn.sensible({"lots": ["Sec-D"]})
     for lot in ("A1", "SEC-A4", "SEC-A4b", "UI-1", "DG-a", "CI6b", "L1Qs", "PRES1b"):
         assert mn.LOT.fullmatch(lot), lot
@@ -157,14 +159,14 @@ def test_a_lot_in_lower_case_is_refused_and_still_read_as_security():
 
 def test_a_brick_without_lots_whose_issue_is_the_audit_s_is_security():
     """The review: only `issue: 633` and a descriptive name passed."""
-    data = _with(_brick(issue=SECU, nom="L'attribution d'une ligne à une VM", etat="dev", version=None))
+    data = _with(_brick(issue=SECU, nom="A log line attributed to a VM", etat="dev", version=None))
     assert SECU in data["issues_securite"]
     found = mn.problems(data)
-    assert any("s'appelle « Durcissement de sécurité »" in p for p in found), found
+    assert any("s'appelle « Security hardening »" in p for p in found), found
     assert any("se pose sur s-signer" in p for p in found), found
-    pr_only = _with(_brick(pr=[700, SECU], nom="Une proposition de règle"))
+    pr_only = _with(_brick(pr=[700, SECU], nom="A rule proposal"))
     assert any("s'appelle" in p for p in mn.problems(pr_only))
-    flagged = _with(_brick(securite=True, nom="Une ligne mal attribuée"))
+    flagged = _with(_brick(securite=True, nom="A line attributed wrongly"))
     assert any("s'appelle" in p for p in mn.problems(flagged))
     assert mn.problems(_with(_secure(securite=True))) == []
 
@@ -182,10 +184,10 @@ def test_every_brick_whose_issue_is_the_audit_s_is_neutral():
 
 
 @pytest.mark.parametrize("field, text", [
-    ("nom", "Une ligne de détection corrige V-05 : appliance réseau"),
-    ("note", "Corrige V-05 : une appliance réseau passait."),
-    ("note", "Ferme sec-a4, la ligne sans _ResourceId."),
-    ("nom", "Le suivi de P-02"),
+    ("nom", "A detection line fixes V-05: network appliance"),
+    ("note", "Fixes V-05: a network appliance got through."),
+    ("note", "Closes sec-a4, the line without _ResourceId."),
+    ("nom", "The follow-up of P-02"),
 ])
 def test_no_text_of_any_brick_names_a_finding(field, text):
     """The review: a brick delivered, not a security one, whose note named « V-05 » passed."""
@@ -195,7 +197,7 @@ def test_no_text_of_any_brick_names_a_finding(field, text):
 
 def test_no_text_of_the_manual_names_a_finding():
     data = json.loads(json.dumps(DATA))
-    data["releases"][0]["resume"] = "Les suites de V-12."
+    data["releases"][0]["resume"] = "What followed V-12."
     assert any("« resume » nomme un constat" in p for p in mn.problems(data))
 
 
@@ -217,6 +219,59 @@ def test_every_security_brick_of_the_manual_is_neutral():
         assert b["nom"] == NEUTRAL and "note" not in b and b.get("doc") in (None, "SECURITY.md"), b
 
 
+@pytest.mark.parametrize("field, text", [
+    ("nom", "La détection continue par règles"),            # an accented letter
+    ("nom", "Le banc en Terraform, jetable"),                # a French word, no accent
+    ("note", "Escaladées, jamais autonomes."),
+    ("note", "Rien d'autre : une note"),                     # a space before the colon
+    ("legende", "les cycles passes, exercice ou reel"),      # « les »
+    ("resume", "La boucle mesurée sur du vrai trafic."),
+    ("chaine", "Chez le client"),
+    ("role", "Le produit : détecte, enquête."),
+    ("nom", "« Verify » on the card"),                       # a guillemet
+])
+def test_a_text_in_french_is_refused(field, text):
+    """MAN1b: the public manual is in English, as the site is; a lot's pull request writes its brick in
+    English (docs/sessions.md)."""
+    data = json.loads(json.dumps(DATA))
+    section = {"nom": "briques", "note": "briques", "legende": "postes", "resume": "releases", "chaine": "postes",
+               "role": "composants"}[field]
+    data[section][0][field] = text
+    if section == "briques":
+        data["briques"][0]["etat"] = "livree"
+    assert any(f"« {field} » est en français" in p for p in mn.problems(data)), (field, text)
+
+
+@pytest.mark.parametrize("text", [
+    "Isolate, block, lift: never another VM cut off",
+    "The customer's NSG set aside, then given back: compatible with their Terraform, measured.",
+    "Off by default: EREGION_ACTION_QUEUE=1 turns it on.",
+    "Autonomy per VM: human_only by default, non_disruptive",
+    "Release notes, a label, a set of rules",                # English words that start like French ones
+])
+def test_a_text_in_english_passes(text):
+    assert not mn.FRENCH.search(text), text
+
+
+def test_every_text_of_the_manual_and_of_its_page_is_in_english():
+    """The YAML (its comments too), the page and its script: the public manual reads English (MAN1b)."""
+    for name in mn.SECTIONS:
+        for it in DATA[name]:
+            for k in mn.TEXTS:
+                assert not (isinstance(it.get(k), str) and mn.FRENCH.search(it[k])), (name, it.get("id"), k)
+    comments = [line for line in TEXT.split("\n") if line.lstrip().startswith("#")]
+    assert comments and not [c for c in comments if re.search(r"[àâçéèêëîïôûùüœ]", c)]
+    html = (MANUEL / "index.html").read_text(encoding="utf-8")
+    assert '<html lang="en">' in html
+    p = _page()
+    assert not re.search(r"[àâçéèêëîïôûùüœ«»]", html), "the page's text"
+    assert not [a for _, a in p.tags for k, v in a.items() if k in ("title", "aria-label") and mn.FRENCH.search(v)]
+    strings = re.findall(r'"([^"\n]*)"|`([^`\n]*)`', JS)
+    said = [s for pair in strings for s in pair if s and not s.startswith(("${", "#", "."))]
+    assert not [s for s in said if re.search(r"[àâçéèêëîïôûùüœ«»]", s)], "the script's text"
+    assert '"en-GB"' in JS and '"fr-FR"' not in JS
+
+
 def test_the_rule_reads_a_finding_or_its_lot_and_nothing_else():
     assert mn.sensible({"lots": ["V-12"]}) and mn.sensible({"lots": ["SEC-A1b"]}) and mn.sensible({"lots": ["P-02"]})
     assert not mn.sensible({"lots": ["SEC12", "DEV-1", "VP1", "P1", "PRES1"]})
@@ -225,15 +280,15 @@ def test_the_rule_reads_a_finding_or_its_lot_and_nothing_else():
 
 @pytest.mark.parametrize("field", ["geste", "relecture", "attend", "attend_jonathan", "verdict"])
 def test_no_brick_has_a_field_for_a_gesture_or_a_review(field):
-    found = mn.problems(_with(_brick(**{field: "Jonathan applique le plan"})))
+    found = mn.problems(_with(_brick(**{field: "Jonathan applies the plan"})))
     assert any(f"« {field} » n'existe pas" in p for p in found), found
 
 
 @pytest.mark.parametrize("etat", ["prevue", "dev", "relecture", "main"])
 def test_no_note_on_a_brick_not_delivered(etat):
-    found = mn.problems(_with(_brick(etat=etat, version=None, note="Ce qui reste à faire.")))
+    found = mn.problems(_with(_brick(etat=etat, version=None, note="What remains to be done.")))
     assert any("une note seulement sur une brique livrée" in p for p in found), found
-    assert mn.problems(_with(_brick(note="Ce qui est livré."))) == []
+    assert mn.problems(_with(_brick(note="What is released."))) == []
 
 
 def test_no_brick_of_the_manual_says_anything_of_what_is_not_delivered():
@@ -438,11 +493,18 @@ def test_the_page_says_the_same_rule_as_the_manual():
     assert f"/{mn.SENSIBLE.pattern}/i;" in JS and mn.SENSIBLE.flags & re.I
     assert "b.securite === true" in JS and "state.data.issues_securite" in JS
     assert "const secret = sensible(b);" in JS and "if (!secret) {" in JS
-    assert 'sensible(b) ? "PR ouverte" : `PR #${b.livePr} ouverte`' in JS
-    for state, label in (("livree", "Livrée"), ("main", "Sur main"), ("relecture", "En relecture"),
-                         ("dev", "En développement"), ("prevue", "Prévue")):
+    assert 'sensible(b) ? "PR open" : `PR #${b.livePr} open`' in JS
+    for state, label in (("livree", "Released"), ("main", "On main"), ("relecture", "In review"),
+                         ("dev", "In development"), ("prevue", "Planned")):
         assert re.search(rf'{state}: "{label}', JS), state
-    assert set(mn.ETATS) == set(re.findall(r'(\w+): "(?:Prévue|En développement|En relecture|Sur main|Livrée)', JS))
+    assert set(mn.ETATS) == set(re.findall(r'(\w+): "(?:Planned|In development|In review|On main|Released)', JS))
+
+
+def test_the_page_names_a_security_brick_neutrally_whatever_the_yaml_says():
+    """MAN1b: the page's own neutral name, the manual's; every name it writes goes through it."""
+    assert f'const NEUTRAL = "{mn.NEUTRAL}";' in JS and mn.NEUTRAL == "Security hardening"
+    assert "const nameOf = (b) => (sensible(b) ? NEUTRAL : b.nom);" in JS
+    assert JS.count("b.nom") == 1 and JS.count("nameOf(b)") == 3   # the brick, the mini, the sheet
 
 
 def test_every_link_of_the_page_resolves():
@@ -460,12 +522,12 @@ def test_every_link_of_the_page_resolves():
 
 
 def test_the_page_says_a_version_github_has_not_published_yet():
-    """The review: a version the repository says cut, GitHub not published, reads « à publier »; without
-    the API, the page says it does not know."""
-    assert '"a-publier": ", à publier"' in JS and "publication non vérifiée sur GitHub" in JS
+    """The review: a version the repository says cut, GitHub not published, reads « to be published »;
+    without the API, the page says it does not know."""
+    assert '"a-publier": ", to be published"' in JS and "publication not checked on GitHub" in JS
     assert 'return newer(version, latest.version) ? "a-publier" : "publiee";' in JS
     assert 'if (!latest || !version) return "inconnu";' in JS
-    assert '"a-publier": "à publier", inconnu: "publiée selon le dépôt"' in JS
+    assert '"a-publier": "to be published", inconnu: "published, as the repository says"' in JS
     # The highest version GitHub has published, not the first one listed (a patch on an older line).
     assert ".reduce((best, r) => (!best || newer(r.tag_name.slice(1), best.tag_name.slice(1)) ? r : best), null);" in JS
     assert "list(releases).find(" not in JS

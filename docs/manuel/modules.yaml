@@ -1,323 +1,327 @@
-# Le manuel public d'Eregion (MAN1, #664) : l'état du projet, composant par composant.
-# La page docs/manuel/index.html le lit par modules.json, que `make manuel` écrit depuis ce fichier.
+# Eregion's public manual (MAN1, #664; in English since MAN1b, #676): the project's state, component by
+# component. The page docs/manuel/index.html reads it through modules.json, which `make manuel` writes from
+# this file.
 #
-# Qui l'écrit : la PR d'un lot met sa brique à jour (son état, sa release, ses lots, son issue, sa
-# PR) ; un fragment changes/<LOT>.md sans brique `main` qui nomme LOT fait échouer
-# tests/unit/test_manuel.py. `make release` passe les briques `main` en `livree`, avec la version.
+# Who writes it: a lot's pull request updates its brick (its state, its release, its lots, its issue, its
+# pull request), in English; a fragment changes/<LOT>.md without a brick on `main` naming LOT fails
+# tests/unit/test_manuel.py. `make release` moves the bricks on `main` to `livree`, with the version.
 #
-# La règle publique (aperçu validé par Jonathan le 06/11) :
-#   - une brique de sécurité (ses lots SEC-…, V-<n>, P-0…, en toute casse ; `securite: true` ; ou son
-#     issue ou sa PR dans issues_securite) s'appelle « Durcissement de sécurité », sans note ni
-#     document autre que SECURITY.md ; tant qu'elle n'est pas livrée, elle se pose sur s-signer ; la
-#     page ne montre ni son issue ni sa PR : jamais un constat ici ;
-#   - aucun texte du manuel ne nomme un constat (SEC-…, V-<n>, P-0…) ;
-#   - aucun geste de l'opérateur, aucune relecture : ces champs n'existent pas ;
-#   - une note seulement sur une brique livrée.
+# The public rule (the preview Jonathan validated on 06/11):
+#   - a security brick (its lots SEC-…, V-<n>, P-0…, in any case; `securite: true`; or its issue or its
+#     pull request in issues_securite) is named « Security hardening », without a note nor a document
+#     but SECURITY.md; until it is delivered, it sits on s-signer; the page shows neither its issue nor
+#     its pull request: never a finding here;
+#   - no text of the manual names a finding (SEC-…, V-<n>, P-0…);
+#   - no operator's gesture, no review: those fields do not exist;
+#   - a note only on a brick delivered;
+#   - every text in English (docs/sessions.md, « Le manuel public »).
 #
-# Un lot qui prolonge une brique déjà livrée prend une brique neuve : la version d'origine reste.
+# A lot that extends a brick already delivered takes a new brick: the original version stays said.
 #
-# Le format : un sous-ensemble strict de YAML (scripts/manuel.py, son en-tête). Les textes entre
-# guillemets droits, sans « " » ni « \ » dedans ; les versions toujours entre guillemets.
-# États d'une brique : prevue, dev, relecture, main, livree. D'une release : publiee, montage, prevue.
+# The format: a strict subset of YAML (scripts/manuel.py, its header). Texts between straight double
+# quotes, without « " » nor « \ » inside; versions always quoted. The ids, the keys and the states are
+# the repository's own words and stay as they are (scripts/release.py and the private manual read them).
+# A brick's states: prevue (planned), dev, relecture (in review), main, livree (released). A release's:
+# publiee (published), montage (being assembled), prevue (planned).
 
-# Les issues de l'audit de sécurité du 06/11 et de ses suites, puis les PR de sécurité connues
-# (SEC-D #639, SEC-A1 #643, SEC-A2 #645, SEC-A3 #653, SEC-A4 #666) : leur titre porte souvent le
-# constat. GitHub numérote issues et PR à la suite, un numéro ne désigne qu'une seule des deux. Une
-# brique dont l'issue ou l'une des PR y figure est une brique de sécurité.
+# The issues of the security audit of 06/11 and of its follow-ups, then the known security pull requests
+# (SEC-D #639, SEC-A1 #643, SEC-A2 #645, SEC-A3 #653, SEC-A4 #666): their titles often carry the finding.
+# GitHub numbers issues and pull requests in one sequence: a number names only one of the two. A brick
+# whose issue or one of whose pull requests is listed here is a security brick.
 issues_securite: [630, 631, 632, 633, 634, 635, 636, 638, 642, 644, 654, 660, 639, 643, 645, 653, 666]
 
 composants:
   - id: glorfindel
     nom: "Glorfindel"
-    role: "Le produit : détecte, enquête, décide, agit, vérifie, apprend."
+    role: "The product: detects, investigates, decides, acts, verifies, learns."
     doc: docs/glorfindel.md
   - id: annatar
     nom: "Annatar"
-    role: "L'attaque : des bibliothèques publiques, version épinglée, sur des cibles inscrites."
+    role: "The attack: public libraries, at a pinned version, on enrolled targets."
     doc: docs/architecture.md
   - id: gothmog
     nom: "Gothmog"
-    role: "Les pannes déclarées, par un moteur public ; elles éprouvent d'abord Glorfindel."
+    role: "Declared faults, run by a public engine; they test Glorfindel first."
     doc: gothmog/README.md
   - id: orodruin
     nom: "Orodruin"
-    role: "L'hôte des injecteurs : rien n'agit hors d'un Orodruin armé."
+    role: "The injectors' host: nothing acts outside an armed Orodruin."
     doc: docs/design/orodruin-contract.md
   - id: celebrimbor
     nom: "Celebrimbor"
-    role: "Le banc : construit, inscrit, jetable."
+    role: "The bench: built, enrolled, disposable."
     doc: infra/terraform
   - id: console
-    nom: "Console et Dagorlad"
-    role: "Ce que l'humain voit, juge et demande."
+    nom: "Console and Dagorlad"
+    role: "What the human sees, judges and asks for."
     doc: docs/design/console.md
   - id: analyse
-    nom: "IA d'analyse"
-    role: "Explique, trie, rapporte ; n'écrit jamais de règle."
+    nom: "Analysis AI"
+    role: "Explains, triages, reports; never writes a rule."
     doc: docs/analysis.md
   - id: socle
-    nom: "Socle et preuves"
-    role: "Sous tout le reste : héberger, prouver, signer, documenter."
+    nom: "Foundation and proofs"
+    role: "Under everything else: hosting, proving, signing, documenting."
     doc: docs/design/preuves.md
 
-# Les postes : les étapes de chaque composant, dans l'ordre où le flux les traverse. `schema` est la
-# case du schéma d'ensemble où ses briques se posent (data-slot de la page).
+# The stations (postes): each component's stages, in the order the flow goes through them. `schema` is
+# the box of the overall diagram where its bricks sit (the page's data-slot).
 postes:
   - id: g-detecter
     composant: glorfindel
-    nom: "Détecter"
-    legende: "règles déterministes, en continu"
+    nom: "Detect"
+    legende: "deterministic rules, continuously"
     nature: code
     schema: g-detecter
-    chaine: "La boucle"
+    chaine: "The loop"
   - id: g-enqueter
     composant: glorfindel
-    nom: "Enquêter"
-    legende: "requêtes ciblées avant de décider"
+    nom: "Investigate"
+    legende: "targeted queries before deciding"
     nature: code
     schema: g-enqueter
-    chaine: "La boucle"
+    chaine: "The loop"
   - id: g-decider
     composant: glorfindel
-    nom: "Décider"
-    legende: "le modèle, borné par sa confiance"
+    nom: "Decide"
+    legende: "the model, bounded by its confidence"
     nature: ia
     schema: g-decider
-    chaine: "La boucle"
+    chaine: "The loop"
   - id: g-garder
     composant: glorfindel
-    nom: "Garde-fous"
-    legende: "en série, en code"
+    nom: "Guardrails"
+    legende: "in series, in code"
     nature: garde
     schema: g-garder
-    chaine: "La boucle"
+    chaine: "The loop"
   - id: g-agir
     composant: glorfindel
-    nom: "Agir"
-    legende: "réversible, VM par VM"
+    nom: "Act"
+    legende: "reversible, VM by VM"
     nature: code
     schema: g-agir
-    chaine: "La boucle"
+    chaine: "The loop"
   - id: g-verifier
     composant: glorfindel
-    nom: "Vérifier"
-    legende: "contre l'état réel du cloud"
+    nom: "Verify"
+    legende: "against the cloud's real state"
     nature: code
     schema: g-verifier
-    chaine: "La boucle"
+    chaine: "The loop"
   - id: g-memoire
     composant: glorfindel
-    nom: "Mémoire"
-    legende: "les cycles passés, exercice ou réel"
+    nom: "Memory"
+    legende: "past cycles, exercise or real"
     nature: ia
     schema: g-memoire
-    chaine: "Ce qu'elle apprend"
+    chaine: "What it learns"
   - id: g-rediger
     composant: glorfindel
-    nom: "Rédiger une règle"
-    legende: "quand une attaque passe, à valider"
+    nom: "Write a rule"
+    legende: "when an attack gets through, for a human to approve"
     nature: ia
     schema: g-rediger
-    chaine: "Ce qu'elle apprend"
+    chaine: "What it learns"
   - id: p-charges
     composant: glorfindel
-    nom: "Charges réelles"
-    legende: "observation, puis autonomie VM par VM"
+    nom: "Real workloads"
+    legende: "observation, then autonomy VM by VM"
     nature: code
     schema: p-charges
-    chaine: "Chez le client"
+    chaine: "At the customer's"
   - id: p-inscrites
     composant: glorfindel
-    nom: "VM inscrites"
-    legende: "techniques non destructives"
+    nom: "Enrolled VMs"
+    legende: "non-destructive techniques"
     nature: code
     schema: p-inscrites
-    chaine: "Chez le client"
+    chaine: "At the customer's"
   - id: p-sentinelle
     composant: glorfindel
-    nom: "VM sentinelle"
-    legende: "vide : toute la chaîne de réponse"
+    nom: "Sentinel VM"
+    legende: "empty: the whole response chain"
     nature: code
     schema: p-sentinelle
-    chaine: "Chez le client"
+    chaine: "At the customer's"
   - id: p-jumeau
     composant: glorfindel
-    nom: "Jumeau"
-    legende: "copie jetable : destructif et pannes"
+    nom: "Twin"
+    legende: "disposable copy: destructive techniques and faults"
     nature: option
     schema: p-jumeau
-    chaine: "Chez le client"
+    chaine: "At the customer's"
   - id: a-choisir
     composant: annatar
-    nom: "Choisir"
-    legende: "campagnes, dans un budget"
+    nom: "Choose"
+    legende: "campaigns, within a budget"
     nature: ia
     schema: annatar
   - id: a-garder
     composant: annatar
-    nom: "Se garder"
-    legende: "jamais sans Glorfindel"
+    nom: "Hold back"
+    legende: "never without Glorfindel"
     nature: garde
     schema: annatar
   - id: a-attaquer
     composant: annatar
-    nom: "Attaquer"
-    legende: "bibliothèques publiques, épinglées"
+    nom: "Attack"
+    legende: "public libraries, pinned"
     nature: code
     schema: annatar
   - id: x-moteur
     composant: gothmog
-    nom: "Moteur"
-    legende: "le chaos natif du cloud"
+    nom: "Engine"
+    legende: "the cloud's native chaos"
     nature: code
     schema: gothmog
   - id: x-eprouver
     composant: gothmog
-    nom: "Éprouver Glorfindel"
-    legende: "bruit bénin, dépendances, reprise"
+    nom: "Test Glorfindel"
+    legende: "benign noise, dependencies, recovery"
     nature: code
     schema: gothmog
   - id: o-inscrire
     composant: orodruin
-    nom: "Inscrire"
-    legende: "cibles et zones"
+    nom: "Enroll"
+    legende: "targets and zones"
     nature: garde
     schema: orodruin
   - id: o-armer
     composant: orodruin
-    nom: "Armer"
-    legende: "contrat vérifié au démarrage"
+    nom: "Arm"
+    legende: "contract checked at startup"
     nature: garde
     schema: orodruin
   - id: o-executer
     composant: orodruin
-    nom: "Exécuter"
-    legende: "journal avant chaque appel"
+    nom: "Run"
+    legende: "logged before each call"
     nature: code
     schema: orodruin
   - id: o-rendre
     composant: orodruin
-    nom: "Rendre compte"
-    legende: "canal retour, signé"
+    nom: "Report back"
+    legende: "return channel, signed"
     nature: code
     schema: orodruin
   - id: c-construire
     composant: celebrimbor
-    nom: "Construire"
-    legende: "cibles inscrites, jetables"
+    nom: "Build"
+    legende: "enrolled, disposable targets"
     nature: code
     schema: celebrimbor
   - id: c-acces
     composant: celebrimbor
-    nom: "Accès"
-    legende: "lecture seule d'abord"
+    nom: "Access"
+    legende: "read-only first"
     nature: garde
     schema: celebrimbor
   - id: k-voir
     composant: console
-    nom: "Voir"
-    legende: "cartes et indicateurs"
+    nom: "See"
+    legende: "cards and indicators"
     nature: humain
     schema: humain
   - id: k-suivre
     composant: console
-    nom: "Suivre"
-    legende: "Dagorlad, les exercices, la couverture"
+    nom: "Follow"
+    legende: "Dagorlad, the exercises, the coverage"
     nature: humain
     schema: humain
   - id: k-juger
     composant: console
-    nom: "Juger"
-    legende: "verdicts et demandes"
+    nom: "Judge"
+    legende: "verdicts and requests"
     nature: humain
     schema: humain
   - id: i-lire
     composant: analyse
-    nom: "Lire les runs"
-    legende: "runs, catalogue, règles"
+    nom: "Read the runs"
+    legende: "runs, catalogue, rules"
     nature: code
     schema: analyse
   - id: i-rapporter
     composant: analyse
-    nom: "Rapporter, trier"
-    legende: "chaque affirmation cite son run"
+    nom: "Report, triage"
+    legende: "every claim cites its run"
     nature: ia
     schema: analyse
   - id: s-heberger
     composant: socle
-    nom: "Héberger"
-    legende: "Glorfindel hébergé, son CD"
+    nom: "Host"
+    legende: "Glorfindel hosted, its CD"
     nature: code
     schema: socle
   - id: s-prouver
     composant: socle
-    nom: "Prouver"
-    legende: "invariants, mutation, porte de release"
+    nom: "Prove"
+    legende: "invariants, mutation, release gate"
     nature: garde
     schema: socle
   - id: s-signer
     composant: socle
-    nom: "Signer"
-    legende: "verrous, signatures, revues"
+    nom: "Sign"
+    legende: "locks, signatures, reviews"
     nature: garde
     schema: socle
   - id: s-documenter
     composant: socle
-    nom: "Documenter"
-    legende: "modèle de menace, site, manuel"
+    nom: "Document"
+    legende: "threat model, site, manual"
     nature: code
     schema: socle
 
-# Les étapes de la route, dans l'ordre. Une release publiée dit sa dernière version.
+# The steps of the road, in order. A release published says its last version.
 releases:
   - version: "0.2"
-    nom: "la première release"
+    nom: "the first release"
     etat: publiee
     derniere: "0.2.0"
     date: "2026-10-15"
-    resume: "Glorfindel détecte et répond sur Azure, sous des garde-fous en code ; Annatar joue ses scénarios ; les invariants tiennent sur un faux Azure."
+    resume: "Glorfindel detects and responds on Azure, under guardrails in code; Annatar plays its scenarios; the invariants hold on a fake Azure."
   - version: "0.3"
-    nom: "la boucle tourne"
+    nom: "the loop runs"
     etat: publiee
     derniere: "0.3.1"
     date: "2026-10-27"
-    resume: "Depuis un Orodruin armé, une technique publique et une panne déclarée sur des cibles inscrites ; Glorfindel hébergé à côté du banc ; le rapport de campagne s'écrit seul."
+    resume: "From an armed Orodruin, a public technique and a declared fault on enrolled targets; Glorfindel hosted beside the bench; the campaign report writes itself."
   - version: "0.4"
-    nom: "le chemin d'isolation tenu"
+    nom: "the isolation path held"
     etat: publiee
     derniere: "0.4.10"
     date: "2026-11-02"
-    resume: "L'isolation tenue à ses invariants ; ses bords (console, journaux, canaux) et son cœur durcis ; publier une release, c'est déployer Glorfindel hébergé."
+    resume: "Isolation held to its invariants; its edges (console, logs, channels) and its core hardened; publishing a release deploys the hosted Glorfindel."
   - version: "0.5"
-    nom: "la boucle mesurée"
+    nom: "the measured loop"
     etat: publiee
     derniere: "0.5.8"
     date: "2026-11-09"
-    resume: "La boucle mesurée sur du vrai trafic, la corrélation, la file d'actions signée, des preuves signées de bout en bout."
+    resume: "The loop measured on real traffic, the correlation, the signed action queue, signed proofs from end to end."
   - version: "0.6"
-    nom: "l'identité défendue"
+    nom: "identity defended"
     etat: montage
-    resume: "Les journaux d'activité et d'Entra ID mesurés au banc ; une technique publique sur l'identité de test, vue par Glorfindel ; la réponse à une identité volée, sur la carte."
+    resume: "The Activity and Entra ID logs measured on the bench; a public technique against the test identity, seen by Glorfindel; the response to a stolen identity, on the card."
   - version: "0.x"
-    nom: "la preuve chez le client"
+    nom: "the proof at the customer's"
     etat: prevue
-    resume: "Détection seule en production, VM sentinelle, jumeau et rapport d'écart ; la précision mesurée sur données réelles."
+    resume: "Detection only in production, a sentinel VM, a twin and its gap report; precision measured on real data."
   - version: "1.0"
-    nom: "le CDR prouvé"
+    nom: "the CDR proven"
     etat: prevue
-    resume: "Les critères de maturité remplis, les contrats figés, les profils prouvés en CI, la preuve en production."
+    resume: "The maturity criteria met, the contracts frozen, the profiles proven in CI, the proof in production."
   - version: "1.x"
-    nom: "nouveaux clouds, nouveaux moteurs"
+    nom: "new clouds, new engines"
     etat: prevue
-    resume: "AWS et GCP, Kubernetes, l'attaque pendant une panne."
+    resume: "AWS and GCP, Kubernetes, the attack during a fault."
 
-# Les briques : une par chose qu'un lecteur comprend. `version` seulement quand elle est livrée.
+# The bricks: one per thing a reader understands. `version` only once it is delivered.
 briques:
   # ── Glorfindel ──────────────────────────────────────────────────────────────────────
   - id: g-watch
     composant: glorfindel
     poste: g-detecter
-    nom: "Détection continue par règles, une requête par règle"
+    nom: "Continuous detection by rules, one query per rule"
     etat: livree
     release: "0.2"
     version: "0.2.0"
@@ -326,7 +330,7 @@ briques:
   - id: g-decouverte
     composant: glorfindel
     poste: g-detecter
-    nom: "Les actifs découverts par leur propre télémétrie"
+    nom: "Assets discovered from their own telemetry"
     etat: livree
     release: "0.2"
     version: "0.2.0"
@@ -335,7 +339,7 @@ briques:
   - id: g-sudo-attendus
     composant: glorfindel
     poste: g-detecter
-    nom: "Les sudo attendus des administrateurs, une liste par VM"
+    nom: "The administrators' expected sudo, one list per VM"
     etat: livree
     release: "0.5"
     version: "0.5.0"
@@ -346,19 +350,19 @@ briques:
   - id: g-plan-controle
     composant: glorfindel
     poste: g-detecter
-    nom: "Le plan de contrôle d'Azure lu, en détection seule"
+    nom: "Azure's control plane read, detection only"
     etat: livree
     release: "0.4"
     version: "0.4.0"
     lots: [AL1]
     issue: 225
     doc: docs/glorfindel.md
-    note: "Un NSG modifié hors de Glorfindel, une attribution de rôle, un instantané : escaladés, jamais d'action autonome."
+    note: "An NSG changed outside Glorfindel, a role assignment, a snapshot: escalated, never an autonomous action."
 
   - id: g-entra
     composant: glorfindel
     poste: g-detecter
-    nom: "Entra ID en détection seule"
+    nom: "Entra ID, detection only"
     etat: livree
     release: "0.4"
     version: "0.4.0"
@@ -369,7 +373,7 @@ briques:
   - id: g-cartes-identite
     composant: glorfindel
     poste: g-detecter
-    nom: "Les cartes d'identité : chaque commande se colle telle quelle"
+    nom: "Identity cards: every command pastes as it is"
     etat: livree
     release: "0.5"
     version: "0.5.8"
@@ -380,7 +384,7 @@ briques:
   - id: g-cartes-cible
     composant: glorfindel
     poste: g-detecter
-    nom: "Les cartes du plan de contrôle rangées sur leur cible, les points de restauration"
+    nom: "Control-plane cards filed under their target, the restore points"
     etat: livree
     release: "0.5"
     version: "0.5.8"
@@ -390,7 +394,7 @@ briques:
   - id: s-sec-a4
     composant: socle
     poste: s-signer
-    nom: "Durcissement de sécurité"
+    nom: "Security hardening"
     etat: main
     release: "0.6"
     lots: [SEC-A4]
@@ -400,7 +404,7 @@ briques:
   - id: g-identite-mesuree
     composant: glorfindel
     poste: g-detecter
-    nom: "Les journaux d'activité et d'Entra ID allumés et mesurés au banc"
+    nom: "The Activity and Entra ID logs turned on and measured on the bench"
     etat: prevue
     release: "0.6"
     lots: [ID1]
@@ -409,7 +413,7 @@ briques:
   - id: g-charges-ia
     composant: glorfindel
     poste: g-detecter
-    nom: "Les charges IA d'Azure, en détection seule"
+    nom: "Azure's AI workloads, detection only"
     etat: prevue
     release: "0.x"
     lots: [C3]
@@ -418,7 +422,7 @@ briques:
   - id: g-enquete
     composant: glorfindel
     poste: g-enqueter
-    nom: "Des requêtes d'enquête avant chaque décision"
+    nom: "Investigation queries before every decision"
     etat: livree
     release: "0.2"
     version: "0.2.0"
@@ -427,7 +431,7 @@ briques:
   - id: g-correlation
     composant: glorfindel
     poste: g-enqueter
-    nom: "La corrélation : une session SSH derrière un shell root, un brute force qui réussit"
+    nom: "Correlation: an SSH session behind a root shell, a brute force that succeeds"
     etat: livree
     release: "0.5"
     version: "0.5.0"
@@ -438,17 +442,17 @@ briques:
   - id: g-decision
     composant: glorfindel
     poste: g-decider
-    nom: "La décision par le modèle : signal enrichi, mémoire, exemples validés"
+    nom: "The decision by the model: an enriched signal, memory, approved examples"
     etat: livree
     release: "0.2"
     version: "0.2.0"
     doc: docs/glorfindel.md
-    note: "Sous 0,7 de confiance, ou si le modèle échoue, la décision revient à un humain."
+    note: "Under 0.7 confidence, or if the model fails, the decision goes back to a human."
 
   - id: g-stabilite
     composant: glorfindel
     poste: g-decider
-    nom: "Une décision stable d'un cycle à l'autre"
+    nom: "A decision stable from one cycle to the next"
     etat: livree
     release: "0.3"
     version: "0.3.1"
@@ -458,7 +462,7 @@ briques:
   - id: g-imprevus
     composant: glorfindel
     poste: g-decider
-    nom: "La décision face à un modèle ou une mémoire imprévus"
+    nom: "The decision in the face of an unexpected model or memory"
     etat: livree
     release: "0.4"
     version: "0.4.4"
@@ -468,7 +472,7 @@ briques:
   - id: g-sec-a2
     composant: glorfindel
     poste: g-decider
-    nom: "Durcissement de sécurité"
+    nom: "Security hardening"
     etat: livree
     release: "0.5"
     version: "0.5.8"
@@ -478,7 +482,7 @@ briques:
   - id: g-second-modele
     composant: glorfindel
     poste: g-decider
-    nom: "Un second modèle au harnais"
+    nom: "A second model in the harness"
     etat: prevue
     release: "0.x"
     lots: [B1]
@@ -487,7 +491,7 @@ briques:
   - id: g-raisonnement
     composant: glorfindel
     poste: g-decider
-    nom: "Les deux faiblesses de raisonnement connues, traitées"
+    nom: "The two known reasoning flaws, addressed"
     etat: prevue
     release: "0.x"
     lots: [B3]
@@ -496,7 +500,7 @@ briques:
   - id: g-precision
     composant: glorfindel
     poste: g-decider
-    nom: "La précision mesurée sur données réelles"
+    nom: "Precision measured on real data"
     etat: prevue
     release: "0.x"
     lots: [B4]
@@ -505,29 +509,29 @@ briques:
   - id: g-gardes
     composant: glorfindel
     poste: g-garder
-    nom: "Des garde-fous déterministes autour du modèle"
+    nom: "Deterministic guardrails around the model"
     etat: livree
     release: "0.2"
     version: "0.2.0"
     doc: docs/glorfindel.md
-    note: "Une action exécutable, un seuil de confiance, un signal caractérisé, une attribution : une action destructive n'est jamais autonome."
+    note: "An executable action, a confidence threshold, a characterised signal, an attribution: a destructive action is never autonomous."
 
   - id: g-echec-ferme
     composant: glorfindel
     poste: g-garder
-    nom: "L'échec fermé quand une dépendance tombe"
+    nom: "Failing closed when a dependency goes down"
     etat: livree
     release: "0.3"
     version: "0.3.0"
     lots: [G2]
     issue: 77
     doc: docs/glorfindel.md
-    note: "Le modèle, l'API du cloud, la télémétrie, la configuration : une panne tient la VM en human_only, jamais plus hardi."
+    note: "The model, the cloud's API, the telemetry, the configuration: a failure holds the VM in human_only, never bolder."
 
   - id: g-plancher-root
     composant: glorfindel
     poste: g-garder
-    nom: "Un brute force réussi puis root : au moins l'isolation"
+    nom: "A successful brute force, then root: isolation at least"
     etat: livree
     release: "0.5"
     version: "0.5.8"
@@ -537,17 +541,17 @@ briques:
   - id: g-isolation
     composant: glorfindel
     poste: g-agir
-    nom: "L'isolation réversible par un NSG de quarantaine, sur chaque carte réseau"
+    nom: "Reversible isolation by a quarantine NSG, on every network interface"
     etat: livree
     release: "0.2"
     version: "0.2.0"
     doc: docs/azure.md
-    note: "Le NSG du client mis de côté puis rendu : compatible avec son Terraform, mesuré."
+    note: "The customer's NSG set aside, then given back: compatible with their Terraform, measured."
 
   - id: g-blocage
     composant: glorfindel
     poste: g-agir
-    nom: "Le blocage d'une adresse, la levée, l'instantané"
+    nom: "Blocking an address, lifting the isolation, the snapshot"
     etat: livree
     release: "0.2"
     version: "0.2.0"
@@ -556,19 +560,19 @@ briques:
   - id: g-isolation-tenue
     composant: glorfindel
     poste: g-agir
-    nom: "Isoler, bloquer, lever : jamais une autre VM coupée"
+    nom: "Isolate, block, lift: never another VM cut off"
     etat: livree
     release: "0.4"
     version: "0.4.0"
     lots: [A3, I1F, I4F]
     issue: 73
     doc: docs/design/preuves.md
-    note: "Les séquences trouvées par la machine à invariants, corrigées puis figées en tests."
+    note: "The sequences found by the invariant machine, fixed, then frozen as tests."
 
   - id: g-fournisseurs
     composant: glorfindel
     poste: g-agir
-    nom: "Une interface de fournisseur : un cœur neutre, Azure en adaptateur"
+    nom: "A provider interface: a neutral core, Azure as an adapter"
     etat: livree
     release: "0.3"
     version: "0.3.1"
@@ -579,7 +583,7 @@ briques:
   - id: g-aws-simule
     composant: glorfindel
     poste: g-agir
-    nom: "Un AWS simulé, et l'adaptateur écrit contre lui"
+    nom: "A simulated AWS, and the adapter written against it"
     etat: livree
     release: "0.3"
     version: "0.3.1"
@@ -589,7 +593,7 @@ briques:
   - id: g-file-signee
     composant: glorfindel
     poste: g-agir
-    nom: "La file d'actions signée : seule la watch écrit"
+    nom: "The signed action queue: only the watch writes"
     etat: livree
     release: "0.5"
     version: "0.5.6"
@@ -600,19 +604,19 @@ briques:
   - id: g-file-async
     composant: glorfindel
     poste: g-agir
-    nom: "La file signée, asynchrone, derrière un interrupteur"
+    nom: "The signed queue, asynchronous, behind a switch"
     etat: livree
     release: "0.5"
     version: "0.5.7"
     lots: [FS1c]
     issue: 571
     doc: docs/design/file-actions-signee.md
-    note: "Éteinte par défaut : EREGION_ACTION_QUEUE=1 l'allume."
+    note: "Off by default: EREGION_ACTION_QUEUE=1 turns it on."
 
   - id: g-file-defaut
     composant: glorfindel
     poste: g-agir
-    nom: "La file signée par défaut, mesurée au banc"
+    nom: "The signed queue by default, measured on the bench"
     etat: prevue
     release: "0.x"
     lots: [FS1c]
@@ -621,7 +625,7 @@ briques:
   - id: g-identite-volee
     composant: glorfindel
     poste: g-agir
-    nom: "Une identité volée : le plan de réponse et « Vérifier » sur la carte"
+    nom: "A stolen identity: the response plan and its Verify button on the card"
     etat: livree
     release: "0.5"
     version: "0.5.7"
@@ -631,7 +635,7 @@ briques:
   - id: g-identite-unique
     composant: glorfindel
     poste: g-agir
-    nom: "Une identité de VM unique, des prédicats à trois états"
+    nom: "A single VM identity, three-state predicates"
     etat: prevue
     release: "0.x"
     lots: [A2]
@@ -640,7 +644,7 @@ briques:
   - id: g-aws
     composant: glorfindel
     poste: g-agir
-    nom: "L'adaptateur AWS et son banc"
+    nom: "The AWS adapter and its bench"
     etat: prevue
     release: "1.x"
     lots: [MC2]
@@ -649,7 +653,7 @@ briques:
   - id: g-gcp
     composant: glorfindel
     poste: g-agir
-    nom: "L'adaptateur GCP et son banc"
+    nom: "The GCP adapter and its bench"
     etat: prevue
     release: "1.x"
     lots: [MC3]
@@ -658,7 +662,7 @@ briques:
   - id: g-verification
     composant: glorfindel
     poste: g-verifier
-    nom: "Chaque action relue sur l'API du cloud"
+    nom: "Every action read back from the cloud's API"
     etat: livree
     release: "0.2"
     version: "0.2.0"
@@ -667,7 +671,7 @@ briques:
   - id: g-reaffirmation
     composant: glorfindel
     poste: g-verifier
-    nom: "Une règle de blocage disparue est reposée, ou dite"
+    nom: "A blocking rule gone missing is put back, or reported"
     etat: livree
     release: "0.5"
     version: "0.5.2"
@@ -677,7 +681,7 @@ briques:
   - id: g-reprise-lue
     composant: glorfindel
     poste: g-verifier
-    nom: "La reprise d'une VM restaurée ailleurs lue sur Azure, et l'isolation levée seule"
+    nom: "The recovery of a VM restored elsewhere read on Azure, and the isolation lifted on its own"
     etat: main
     release: "0.6"
     lots: [REC1]
@@ -687,18 +691,18 @@ briques:
   - id: g-memoire-source
     composant: glorfindel
     poste: g-memoire
-    nom: "Chaque cycle en mémoire marqué exercice ou réel"
+    nom: "Every cycle in memory marked exercise or real"
     etat: livree
     release: "0.3"
     version: "0.3.0"
     lots: [B2]
     issue: 68
-    note: "Un cycle d'exercice n'est jamais rappelé comme précédent d'un vrai incident."
+    note: "An exercise cycle is never recalled as the precedent of a real incident."
 
   - id: g-redaction
     composant: glorfindel
     poste: g-rediger
-    nom: "Une règle proposée quand une attaque passe, approuvée par un humain"
+    nom: "A rule proposed when an attack gets through, approved by a human"
     etat: livree
     release: "0.2"
     version: "0.2.0"
@@ -707,7 +711,7 @@ briques:
   - id: g-couches
     composant: glorfindel
     poste: g-rediger
-    nom: "Les règles du client dans leur couche, intactes aux mises à jour"
+    nom: "The customer's rules in their own layer, intact through updates"
     etat: livree
     release: "0.3"
     version: "0.3.1"
@@ -717,7 +721,7 @@ briques:
   - id: s-sec-a4b
     composant: socle
     poste: s-signer
-    nom: "Durcissement de sécurité"
+    nom: "Security hardening"
     etat: dev
     release: "0.6"
     lots: [SEC-A4b]
@@ -726,7 +730,7 @@ briques:
   - id: g-remontee
     composant: glorfindel
     poste: g-rediger
-    nom: "Une règle du client remontée vers la base, anonyme"
+    nom: "A customer's rule sent up to the base, anonymised"
     etat: prevue
     release: "0.x"
     lots: [P2]
@@ -735,17 +739,17 @@ briques:
   - id: g-modes
     composant: glorfindel
     poste: p-charges
-    nom: "L'autonomie par VM : human_only par défaut, non_disruptive"
+    nom: "Autonomy per VM: human_only by default, non_disruptive"
     etat: livree
     release: "0.2"
     version: "0.2.0"
     doc: docs/glorfindel.md
-    note: "Une VM ne quitte human_only qu'après son contrôle de préparation ; full_auto reste prévu."
+    note: "A VM leaves human_only only after its readiness check; full_auto remains planned."
 
   - id: g-observation
     composant: glorfindel
     poste: p-charges
-    nom: "L'observation : des cartes à juger, le rapport de la semaine"
+    nom: "Observation: cards to judge, the week's report"
     etat: livree
     release: "0.3"
     version: "0.3.0"
@@ -756,7 +760,7 @@ briques:
   - id: g-detection-seule
     composant: glorfindel
     poste: p-inscrites
-    nom: "La détection seule en production"
+    nom: "Detection only, in production"
     etat: prevue
     release: "0.x"
     lots: [J1]
@@ -765,7 +769,7 @@ briques:
   - id: g-sentinelle
     composant: glorfindel
     poste: p-sentinelle
-    nom: "Une VM sentinelle vide dans le réseau de production"
+    nom: "An empty sentinel VM in the production network"
     etat: prevue
     release: "0.x"
     lots: [J2]
@@ -774,7 +778,7 @@ briques:
   - id: g-ecart
     composant: glorfindel
     poste: p-jumeau
-    nom: "Le rapport d'écart entre le jumeau et la production"
+    nom: "The gap report between the twin and production"
     etat: prevue
     release: "0.x"
     lots: [J3]
@@ -783,7 +787,7 @@ briques:
   - id: g-jumeau
     composant: glorfindel
     poste: p-jumeau
-    nom: "Un jumeau composé depuis la découverte"
+    nom: "A twin composed from discovery"
     etat: prevue
     release: "0.x"
     lots: [J4]
@@ -793,7 +797,7 @@ briques:
   - id: a-campagnes
     composant: annatar
     poste: a-choisir
-    nom: "Des campagnes génératives, dans un périmètre et un budget"
+    nom: "Generative campaigns, within a scope and a budget"
     etat: livree
     release: "0.2"
     version: "0.2.0"
@@ -802,18 +806,18 @@ briques:
   - id: a-sans-glorfindel
     composant: annatar
     poste: a-garder
-    nom: "Jamais sans Glorfindel : le refus avant tout appel au cloud"
+    nom: "Never without Glorfindel: the refusal before any call to the cloud"
     etat: livree
     release: "0.3"
     version: "0.3.1"
     lots: [V1]
     issue: 214
-    note: "Sans battement vivant de la watch, Annatar et Gothmog refusent ; une dérogation est un run de développement, dite au rapport."
+    note: "Without a live heartbeat from the watch, Annatar and Gothmog refuse; an override is a development run, stated in the report."
 
   - id: a-arret
     composant: annatar
     poste: a-garder
-    nom: "L'arrêt d'une campagne, en échec fermé"
+    nom: "Stopping a campaign, failing closed"
     etat: livree
     release: "0.5"
     version: "0.5.8"
@@ -823,7 +827,7 @@ briques:
   - id: a-scenarios
     composant: annatar
     poste: a-attaquer
-    nom: "Des techniques MITRE ATT&CK validées en réel sur Azure"
+    nom: "MITRE ATT&CK techniques validated live on Azure"
     etat: livree
     release: "0.2"
     version: "0.2.0"
@@ -832,7 +836,7 @@ briques:
   - id: a-atomic
     composant: annatar
     poste: a-attaquer
-    nom: "Atomic Red Team, épinglé : un test appelé par son identifiant"
+    nom: "Atomic Red Team, pinned: a test called by its identifier"
     etat: livree
     release: "0.3"
     version: "0.3.0"
@@ -842,7 +846,7 @@ briques:
   - id: a-stratus-code
     composant: annatar
     poste: a-attaquer
-    nom: "L'adaptateur Stratus Red Team, côté code"
+    nom: "The Stratus Red Team adapter, its code"
     etat: livree
     release: "0.5"
     version: "0.5.8"
@@ -852,7 +856,7 @@ briques:
   - id: a-stratus
     composant: annatar
     poste: a-attaquer
-    nom: "Une technique Stratus sur l'identité de test, vue par Glorfindel"
+    nom: "A Stratus technique against the test identity, seen by Glorfindel"
     etat: prevue
     release: "0.6"
     lots: [R2, R2b, R2c]
@@ -861,7 +865,7 @@ briques:
   - id: a-pendant-panne
     composant: annatar
     poste: a-attaquer
-    nom: "Une attaque pendant une panne"
+    nom: "An attack during a fault"
     etat: prevue
     release: "1.x"
     lots: [X1]
@@ -871,7 +875,7 @@ briques:
   - id: x-chaos
     composant: gothmog
     poste: x-moteur
-    nom: "Une panne déclarée par Chaos Studio, depuis un Orodruin armé"
+    nom: "A fault declared through Chaos Studio, from an armed Orodruin"
     etat: livree
     release: "0.3"
     version: "0.3.0"
@@ -882,7 +886,7 @@ briques:
   - id: x-kubernetes
     composant: gothmog
     poste: x-moteur
-    nom: "Un moteur Kubernetes, puis un moteur générique"
+    nom: "A Kubernetes engine, then a generic engine"
     etat: prevue
     release: "1.x"
     lots: [G4]
@@ -891,7 +895,7 @@ briques:
   - id: x-bruit
     composant: gothmog
     poste: x-eprouver
-    nom: "Le bruit bénin : écriture disque, CPU, redémarrage"
+    nom: "Benign noise: disk writes, CPU, reboot"
     etat: livree
     release: "0.4"
     version: "0.4.10"
@@ -902,7 +906,7 @@ briques:
   - id: x-bruit-banc
     composant: gothmog
     poste: x-eprouver
-    nom: "Le bruit bénin joué au banc, son taux publié"
+    nom: "Benign noise played on the bench, its rate published"
     etat: prevue
     release: "0.x"
     issue: 76
@@ -910,7 +914,7 @@ briques:
   - id: x-reprise
     composant: gothmog
     poste: x-eprouver
-    nom: "Un exercice de reprise : une VM détruite puis restaurée"
+    nom: "A recovery exercise: a VM destroyed, then restored"
     etat: prevue
     release: "0.x"
     lots: [G3]
@@ -920,19 +924,19 @@ briques:
   - id: o-inscription
     composant: orodruin
     poste: o-inscrire
-    nom: "L'inscription et ses zones : un seul garde pour chaque injecteur"
+    nom: "Enrollment and its zones: one guard for every injector"
     etat: livree
     release: "0.3"
     version: "0.3.0"
     lots: [O0]
     issue: 62
     doc: docs/architecture.md
-    note: "En production, seules les techniques non destructives passent ; une cible sans zone est refusée."
+    note: "In production, only non-destructive techniques pass; a target without a zone is refused."
 
   - id: o-identites
     composant: orodruin
     poste: o-inscrire
-    nom: "Une identité de test inscrite comme une VM"
+    nom: "A test identity enrolled like a VM"
     etat: livree
     release: "0.5"
     version: "0.5.6"
@@ -943,7 +947,7 @@ briques:
   - id: o-contrat
     composant: orodruin
     poste: o-armer
-    nom: "Le contrat vérifié au démarrage, l'arrêt d'urgence"
+    nom: "The contract checked at startup, the emergency stop"
     etat: livree
     release: "0.3"
     version: "0.3.0"
@@ -954,7 +958,7 @@ briques:
   - id: o-mise-a-jour
     composant: orodruin
     poste: o-armer
-    nom: "Orodruin se met à jour seul"
+    nom: "Orodruin updates itself"
     etat: livree
     release: "0.5"
     version: "0.5.5"
@@ -965,7 +969,7 @@ briques:
   - id: o-kubernetes
     composant: orodruin
     poste: o-armer
-    nom: "Orodruin en mode Kubernetes"
+    nom: "Orodruin in Kubernetes mode"
     etat: prevue
     release: "1.x"
     lots: [O2]
@@ -974,7 +978,7 @@ briques:
   - id: o-experience
     composant: orodruin
     poste: o-executer
-    nom: "Un schéma d'expérience commun aux techniques et aux pannes"
+    nom: "One experiment schema for techniques and faults alike"
     etat: livree
     release: "0.3"
     version: "0.3.0"
@@ -984,7 +988,7 @@ briques:
   - id: o-drill
     composant: orodruin
     poste: o-executer
-    nom: "Un exercice planifié chaque semaine sur le banc"
+    nom: "A scheduled exercise on the bench, every week"
     etat: prevue
     release: "0.x"
     lots: [DRL1]
@@ -994,7 +998,7 @@ briques:
   - id: o-canal
     composant: orodruin
     poste: o-rendre
-    nom: "Le canal retour : fenêtres d'exercice, battement, détections"
+    nom: "The return channel: exercise windows, heartbeat, detections"
     etat: livree
     release: "0.3"
     version: "0.3.0"
@@ -1004,7 +1008,7 @@ briques:
   - id: c-banc
     composant: celebrimbor
     poste: c-construire
-    nom: "Le banc en Terraform, jetable, ses cibles inscrites"
+    nom: "The bench in Terraform, disposable, its targets enrolled"
     etat: livree
     release: "0.2"
     version: "0.2.0"
@@ -1013,7 +1017,7 @@ briques:
   - id: c-couche-client
     composant: celebrimbor
     poste: c-construire
-    nom: "La couche du client du banc : sa maintenance, son canari"
+    nom: "The bench's customer layer: its maintenance, its canary"
     etat: livree
     release: "0.5"
     version: "0.5.8"
@@ -1023,7 +1027,7 @@ briques:
   - id: c-couche-client-signin
     composant: celebrimbor
     poste: c-construire
-    nom: "La couche du client du banc : les connexions OIDC du canari"
+    nom: "The bench's customer layer: the canary's OIDC sign-ins"
     etat: main
     release: "0.6"
     lots: [CAN3]
@@ -1033,7 +1037,7 @@ briques:
   - id: c-rancongiciel
     composant: celebrimbor
     poste: c-construire
-    nom: "Le rançongiciel rejoué au banc, son pas à pas"
+    nom: "The ransomware replayed on the bench, step by step"
     etat: main
     release: "0.6"
     lots: [RAN1]
@@ -1044,7 +1048,7 @@ briques:
   - id: c-lecture
     composant: celebrimbor
     poste: c-acces
-    nom: "Une identité en lecture seule pour la session du banc"
+    nom: "A read-only identity for the bench session"
     etat: livree
     release: "0.5"
     version: "0.5.8"
@@ -1052,11 +1056,11 @@ briques:
     issue: 614
     doc: docs/operations.md
 
-  # ── Console et Dagorlad ─────────────────────────────────────────────────────────────
+  # ── Console and Dagorlad ────────────────────────────────────────────────────────────
   - id: k-console
     composant: console
     poste: k-voir
-    nom: "La console Eregion : une section par agent"
+    nom: "The Eregion console: one section per agent"
     etat: livree
     release: "0.3"
     version: "0.3.1"
@@ -1067,7 +1071,7 @@ briques:
   - id: k-indicateurs
     composant: console
     poste: k-voir
-    nom: "Les cinq indicateurs de la finalité sur l'accueil"
+    nom: "The five outcome indicators on the home page"
     etat: livree
     release: "0.4"
     version: "0.4.0"
@@ -1077,7 +1081,7 @@ briques:
   - id: k-echappement
     composant: console
     poste: k-voir
-    nom: "Rien du dehors écrit brut, aucun script en ligne"
+    nom: "Nothing from outside written raw, no inline script"
     etat: livree
     release: "0.4"
     version: "0.4.1"
@@ -1085,7 +1089,7 @@ briques:
   - id: k-discord
     composant: console
     poste: k-voir
-    nom: "L'atelier dans Discord : CI, PR, releases, feuille de route"
+    nom: "The workshop in Discord: CI, pull requests, releases, roadmap"
     etat: livree
     release: "0.4"
     version: "0.4.0"
@@ -1096,7 +1100,7 @@ briques:
   - id: k-overview
     composant: console
     poste: k-voir
-    nom: "L'Overview compte le réel, Dagorlad les exercices"
+    nom: "The Overview counts what is real, Dagorlad the exercises"
     etat: livree
     release: "0.5"
     version: "0.5.0"
@@ -1106,7 +1110,7 @@ briques:
   - id: k-couverture
     composant: console
     poste: k-suivre
-    nom: "Un rapport de run unique, la matrice de couverture"
+    nom: "A single run report, the coverage matrix"
     etat: livree
     release: "0.4"
     version: "0.4.7"
@@ -1116,7 +1120,7 @@ briques:
   - id: k-dagorlad
     composant: console
     poste: k-suivre
-    nom: "Dagorlad, le tableau des exercices"
+    nom: "Dagorlad, the exercise board"
     etat: livree
     release: "0.4"
     version: "0.4.8"
@@ -1126,7 +1130,7 @@ briques:
   - id: k-verdicts
     composant: console
     poste: k-juger
-    nom: "Les verdicts, dans la console et sur Discord"
+    nom: "Verdicts, in the console and on Discord"
     etat: livree
     release: "0.3"
     version: "0.3.0"
@@ -1135,7 +1139,7 @@ briques:
   - id: k-detections-signees
     composant: console
     poste: k-juger
-    nom: "Chaque détection du canal retour marquée signée, ou refusée"
+    nom: "Every detection from the return channel marked signed, or refused"
     etat: livree
     release: "0.5"
     version: "0.5.6"
@@ -1145,17 +1149,17 @@ briques:
   - id: k-verdict-propose
     composant: console
     poste: k-juger
-    nom: "Un verdict proposé sur une carte d'exercice attendue"
+    nom: "A verdict proposed on an expected exercise card"
     etat: prevue
     release: "0.x"
     lots: [VP1]
     issue: 615
 
-  # ── IA d'analyse ────────────────────────────────────────────────────────────────────
+  # ── Analysis AI ─────────────────────────────────────────────────────────────────────
   - id: i-separee
     composant: analyse
     poste: i-lire
-    nom: "Sa mémoire et son modèle, séparés de ceux de Glorfindel"
+    nom: "Its memory and its model, separate from Glorfindel's"
     etat: livree
     release: "0.4"
     version: "0.4.0"
@@ -1166,7 +1170,7 @@ briques:
   - id: i-comparaison
     composant: analyse
     poste: i-lire
-    nom: "Ce qui a changé depuis la campagne précédente, calculé par le code"
+    nom: "What changed since the previous campaign, computed by the code"
     etat: livree
     release: "0.3"
     version: "0.3.1"
@@ -1176,7 +1180,7 @@ briques:
   - id: i-rapport
     composant: analyse
     poste: i-rapporter
-    nom: "Le rapport de campagne : chaque affirmation cite son run"
+    nom: "The campaign report: every claim cites its run"
     etat: livree
     release: "0.3"
     version: "0.3.0"
@@ -1187,7 +1191,7 @@ briques:
   - id: i-contenir
     composant: analyse
     poste: i-rapporter
-    nom: "Le temps pour contenir et la part contenue seule, calculés"
+    nom: "Time to contain and the share contained alone, computed"
     etat: livree
     release: "0.4"
     version: "0.4.8"
@@ -1195,11 +1199,11 @@ briques:
     issue: 280
     doc: docs/analysis.md
 
-  # ── Socle et preuves ────────────────────────────────────────────────────────────────
+  # ── Foundation and proofs ───────────────────────────────────────────────────────────
   - id: s-heberge
     composant: socle
     poste: s-heberger
-    nom: "Glorfindel hébergé sur une VM dédiée, à côté du banc"
+    nom: "Glorfindel hosted on a dedicated VM, beside the bench"
     etat: livree
     release: "0.3"
     version: "0.3.0"
@@ -1210,7 +1214,7 @@ briques:
   - id: s-cd
     composant: socle
     poste: s-heberger
-    nom: "Le CD : publier une release, c'est déployer Glorfindel hébergé"
+    nom: "The CD: publishing a release deploys the hosted Glorfindel"
     etat: livree
     release: "0.4"
     version: "0.4.2"
@@ -1220,7 +1224,7 @@ briques:
   - id: s-profils
     composant: socle
     poste: s-heberger
-    nom: "Des profils d'usage, chaque composant seul en CI"
+    nom: "Usage profiles, each component alone in CI"
     etat: livree
     release: "0.4"
     version: "0.4.0"
@@ -1231,7 +1235,7 @@ briques:
   - id: s-invariants
     composant: socle
     poste: s-prouver
-    nom: "Les invariants sur un faux Azure qui bouge, mesurés par mutation"
+    nom: "Invariants on a fake Azure that moves, measured by mutation"
     etat: livree
     release: "0.2"
     version: "0.2.0"
@@ -1241,7 +1245,7 @@ briques:
   - id: s-hermetique
     composant: socle
     poste: s-prouver
-    nom: "Une suite hermétique : aucun appel au cloud ni au modèle"
+    nom: "A hermetic suite: no call to the cloud or to the model"
     etat: livree
     release: "0.4"
     version: "0.4.0"
@@ -1251,7 +1255,7 @@ briques:
   - id: s-release
     composant: socle
     poste: s-prouver
-    nom: "Une release en deux commandes, un brouillon, publié par un humain"
+    nom: "A release in two commands, a draft, published by a human"
     etat: livree
     release: "0.4"
     version: "0.4.4"
@@ -1262,7 +1266,7 @@ briques:
   - id: s-mutants
     composant: socle
     poste: s-prouver
-    nom: "Chaque mutant attrapé, ou sa raison dite"
+    nom: "Every mutant caught, or its reason stated"
     etat: livree
     release: "0.5"
     version: "0.5.4"
@@ -1272,7 +1276,7 @@ briques:
   - id: s-porte
     composant: socle
     poste: s-prouver
-    nom: "La porte de release : la mesure la plus forte, sur l'arbre publié"
+    nom: "The release gate: the strongest measure, on the tree published"
     etat: livree
     release: "0.5"
     version: "0.5.5"
@@ -1283,7 +1287,7 @@ briques:
   - id: s-graine
     composant: socle
     poste: s-prouver
-    nom: "Une graine tirée par tour pour la nuit et la porte de release, dite et rejouable"
+    nom: "A seed drawn per round for the nightly run and the release gate, stated and replayable"
     etat: main
     release: "0.6"
     lots: [SEED1]
@@ -1293,7 +1297,7 @@ briques:
   - id: s-verrous
     composant: socle
     poste: s-signer
-    nom: "Des dépendances verrouillées, des références épinglées"
+    nom: "Locked dependencies, pinned references"
     etat: livree
     release: "0.3"
     version: "0.3.1"
@@ -1304,7 +1308,7 @@ briques:
   - id: s-revue
     composant: socle
     poste: s-signer
-    nom: "Une revue de sécurité externe, et ses suites"
+    nom: "An external security review, and its follow-ups"
     etat: livree
     release: "0.4"
     version: "0.4.3"
@@ -1315,7 +1319,7 @@ briques:
   - id: s-contre-audit
     composant: socle
     poste: s-signer
-    nom: "Un second contre-audit, et ses suites"
+    nom: "A second counter-audit, and its follow-ups"
     etat: livree
     release: "0.5"
     version: "0.5.0"
@@ -1326,7 +1330,7 @@ briques:
   - id: s-sessions
     composant: socle
     poste: s-signer
-    nom: "Une identité propre aux sessions d'agents, des règles du dépôt"
+    nom: "An identity of their own for agent sessions, repository rules"
     etat: livree
     release: "0.5"
     version: "0.5.0"
@@ -1337,7 +1341,7 @@ briques:
   - id: s-signe
     composant: socle
     poste: s-signer
-    nom: "Le battement de la watch et ses détections, signés"
+    nom: "The watch's heartbeat and its detections, signed"
     etat: livree
     release: "0.5"
     version: "0.5.3"
@@ -1347,7 +1351,7 @@ briques:
   - id: s-sec-a1
     composant: socle
     poste: s-signer
-    nom: "Durcissement de sécurité"
+    nom: "Security hardening"
     etat: livree
     release: "0.5"
     version: "0.5.8"
@@ -1357,7 +1361,7 @@ briques:
   - id: s-sec-d
     composant: socle
     poste: s-documenter
-    nom: "Durcissement de sécurité"
+    nom: "Security hardening"
     etat: livree
     release: "0.5"
     version: "0.5.8"
@@ -1368,7 +1372,7 @@ briques:
   - id: s-site
     composant: socle
     poste: s-documenter
-    nom: "Le site du projet, sur GitHub Pages"
+    nom: "The project's site, on GitHub Pages"
     etat: livree
     release: "0.4"
     version: "0.4.9"
@@ -1379,7 +1383,7 @@ briques:
   - id: s-guides
     composant: socle
     poste: s-documenter
-    nom: "Des guides de démarrage, rejoués depuis zéro"
+    nom: "Getting-started guides, replayed from scratch"
     etat: livree
     release: "0.5"
     version: "0.5.5"
@@ -1390,7 +1394,7 @@ briques:
   - id: s-pilotage
     composant: socle
     poste: s-documenter
-    nom: "Le manuel de pilotage, tenu à chaque étape du cycle"
+    nom: "The steering manual, kept up to date at every step of the cycle"
     etat: livree
     release: "0.5"
     version: "0.5.8"
@@ -1401,7 +1405,7 @@ briques:
   - id: s-replay
     composant: socle
     poste: s-documenter
-    nom: "La boucle rejouée, une page interactive sur le site"
+    nom: "The loop replayed, an interactive page on the site"
     etat: main
     release: "0.6"
     lots: [PRES1, PRES1b]
@@ -1412,17 +1416,17 @@ briques:
   - id: s-manuel
     composant: socle
     poste: s-documenter
-    nom: "Le manuel public : l'état d'Eregion, composant par composant"
+    nom: "The public manual: where Eregion stands, component by component"
     etat: main
     release: "0.6"
-    lots: [MAN1]
+    lots: [MAN1, MAN1b]
     issue: 664
     doc: docs/manuel/index.html
 
   - id: s-adoption
     composant: socle
     poste: s-documenter
-    nom: "Eregion par rôle : une fiche par lecteur, chaque chiffre daté et sourcé"
+    nom: "Eregion by role: one sheet per reader, every figure dated and sourced"
     etat: main
     release: "0.6"
     lots: [ADO2]

@@ -1,14 +1,14 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<!-- The public manual (MAN1, #664): nothing runs but manuel.js, nothing is fetched but modules.json
-     and GitHub's public API, read without a token (tests/unit/test_manuel.py). -->
+<!-- The public manual (MAN1, #664; in English since MAN1b, #676): nothing runs but manuel.js, nothing is
+     fetched but modules.json and GitHub's public API, read without a token (tests/unit/test_manuel.py). -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; connect-src 'self' https://api.github.com; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
-<title>Manuel d'Eregion</title>
-<meta name="description" content="L'état d'Eregion, composant par composant : ce qui est livré, ce qui est sur main, ce qui est en cours et ce qui est prévu, release par release.">
+<title>The Eregion manual</title>
+<meta name="description" content="Where Eregion stands, component by component: what is released, what is on main, what is in progress and what is planned, release by release.">
 <link rel="stylesheet" href="manuel.css">
 <script src="manuel.js" defer></script>
 </head>
@@ -17,154 +17,156 @@
   <header>
     <div class="top-row">
       <div class="brand">
-        <span class="kicker">Notice de montage · grootcyber/eregion</span>
-        <h1>Manuel d'Eregion</h1>
+        <span class="kicker">Assembly instructions · grootcyber/eregion</span>
+        <h1>The Eregion manual</h1>
       </div>
-      <span class="live off" id="live"><i></i><span id="live-t">lecture du manuel…</span></span>
+      <span class="live off" id="live"><i></i><span id="live-t">reading the manual…</span></span>
     </div>
-    <p class="lead">L'état du projet, composant par composant : chaque brique est un module, sa couleur dit sa pièce,
-    sa forme dit son état. Le manuel est un fichier du dépôt, mis à jour par la pull request de chaque lot ; l'état
-    des pull requests et des issues est relu sur GitHub au chargement.</p>
-    <p class="pub-note">Un lot de sécurité n'y paraît que sous un titre neutre, sans constat ; ni geste de
-    l'opérateur, ni relecture ; aucune note sur ce qui n'est pas encore livré.</p>
+    <p class="lead">Where the project stands, component by component: each brick is a module, its colour tells its
+    part, its shape tells its state. The manual is a file of the repository, updated by the pull request of each
+    lot; the state of the pull requests and issues is read again from GitHub when the page loads.</p>
+    <p class="pub-note">A security lot appears here only under a neutral title, with no finding; no operator's
+    gesture, no review; no note on what is not released yet.</p>
     <div class="where">
-      <div><span class="kicker">Publié</span><b id="w-pub">…</b><span id="w-pub-s"></span></div>
-      <div><span class="kicker">En montage</span><b id="w-mont">…</b><span id="w-mont-s"></span></div>
-      <div><span class="kicker">Sur l'établi</span><b id="w-moving">…</b><span id="w-moving-s"></span></div>
+      <div><span class="kicker">Published</span><b id="w-pub">…</b><span id="w-pub-s"></span></div>
+      <div><span class="kicker">Being assembled</span><b id="w-mont">…</b><span id="w-mont-s"></span></div>
+      <div><span class="kicker">On the workbench</span><b id="w-moving">…</b><span id="w-moving-s"></span></div>
     </div>
-    <nav class="links" aria-label="Le projet">
-      <a href="../">Le site</a>
+    <nav class="links" aria-label="The project">
+      <a href="../">The site</a>
       <a href="https://github.com/grootcyber/eregion#readme">README</a>
-      <a href="https://github.com/grootcyber/eregion/blob/main/ROADMAP.md">Feuille de route</a>
+      <a href="https://github.com/grootcyber/eregion/blob/main/ROADMAP.md">Roadmap (French)</a>
       <a href="https://github.com/grootcyber/eregion/blob/main/CHANGELOG.md">Changelog</a>
-      <a href="https://github.com/grootcyber/eregion/blob/main/docs/manuel/modules.yaml">Le manuel, en YAML</a>
+      <a href="https://github.com/grootcyber/eregion/blob/main/docs/manuel/modules.yaml">The manual, as YAML</a>
     </nav>
   </header>
 
   <section aria-labelledby="h-dia">
     <div class="sec-head">
-      <span class="kicker">Comment ça marche</span>
-      <h2 id="h-dia">Glorfindel est le produit ; le reste l'éprouve</h2>
-      <p>Le schéma d'ensemble, brique par brique. Un clic sur une brique ouvre sa fiche ; une release choisie
-      reste en lumière.</p>
+      <span class="kicker">How it works</span>
+      <h2 id="h-dia">Glorfindel is the product; the rest puts it to the test</h2>
+      <p>The overall diagram, brick by brick. A click on a brick opens its sheet; the release you pick stays
+      highlighted.</p>
     </div>
     <div class="legends">
       <div class="legend" id="legend-state"></div>
-      <div class="chips" id="chips" role="group" aria-label="Montrer les briques d'une release"></div>
+      <div class="chips" id="chips" role="group" aria-label="Show the bricks of a release"></div>
     </div>
     <div class="card">
       <div class="dia-wrap" id="dia-wrap">
         <div class="dia">
           <div class="bx k-humain hum">
-            <b>Humain · valide les règles, approuve toute action disruptive, lit les rapports, peut tout arrêter</b>
-            <span class="hum-side"><small class="mono">console et Dagorlad</small><span class="mbs" data-slot="humain"></span></span>
+            <b>Human · approves the rules, approves any disruptive action, reads the reports, can stop everything</b>
+            <span class="hum-side"><small class="mono">console and Dagorlad</small><span class="mbs" data-slot="humain"></span></span>
           </div>
-          <div class="vlink ga-a1"><i class="av up"></i>rapports</div>
-          <div class="vlink ga-a2"><i class="av both"></i>escalade, validation</div>
+          <div class="vlink ga-a1"><i class="av up"></i>reports</div>
+          <div class="vlink ga-a2"><i class="av both"></i>escalation, approval</div>
 
           <div class="bx k-orodruin ga-oro">
-            <header><b>Orodruin · l'atelier</b><small>exécution sous contrat</small></header>
+            <header><b>Orodruin · the workshop</b><small>execution under contract</small></header>
             <div class="mbs" data-slot="orodruin"></div>
-            <div class="bx k-annatar"><header><b>Annatar · attaque</b><small>bibliothèques publiques, épinglées</small></header><div class="mbs" data-slot="annatar"></div></div>
-            <div class="bx k-gothmog"><header><b>Gothmog · panne</b><small>chaos natif du cloud, durée bornée</small></header><div class="mbs" data-slot="gothmog"></div></div>
+            <div class="bx k-annatar"><header><b>Annatar · attack</b><small>public libraries, pinned</small></header><div class="mbs" data-slot="annatar"></div></div>
+            <div class="bx k-gothmog"><header><b>Gothmog · fault</b><small>the cloud's native chaos, for a bounded time</small></header><div class="mbs" data-slot="gothmog"></div></div>
             <div class="vlink runs"><i class="av down"></i>runs</div>
-            <div class="bx k-ia"><header><b>IA d'analyse · rapport</b><small>chaque affirmation cite son run</small></header><div class="mbs" data-slot="analyse"></div></div>
+            <div class="bx k-ia"><header><b>Analysis AI · report</b><small>every claim cites its run</small></header><div class="mbs" data-slot="analyse"></div></div>
           </div>
           <div class="gut ga-g1">
-            <div class="arr">exercices<i class="ah"></i></div>
-            <div class="arr">détections<i class="ah left dash"></i></div>
+            <div class="arr">exercises<i class="ah"></i></div>
+            <div class="arr">detections<i class="ah left dash"></i></div>
           </div>
 
           <div class="bx k-glorfindel main ga-glo">
-            <header><b>Glorfindel · le produit</b><small>le modèle décide, le code garde</small></header>
+            <header><b>Glorfindel · the product</b><small>the model decides, the code guards</small></header>
             <div class="steps-g">
-              <div class="srow k-code"><i>1</i><b>Détecter</b><small>requêtes continues</small><div class="mbs" data-slot="g-detecter"></div></div>
-              <div class="srow k-code"><i>2</i><b>Enquêter</b><small>requêtes ciblées</small><div class="mbs" data-slot="g-enqueter"></div></div>
-              <div class="srow k-ia"><i>3</i><b>Décider</b><small>IA bornée, confiance</small><div class="mbs" data-slot="g-decider"></div></div>
-              <div class="srow k-garde"><i>4</i><b>Garde-fous</b><small>en série, en code</small><div class="mbs" data-slot="g-garder"></div></div>
-              <div class="srow k-code"><i>5</i><b>Agir</b><small>réversible, VM par VM</small><div class="mbs" data-slot="g-agir"></div></div>
-              <div class="srow k-code"><i>6</i><b>Vérifier</b><small>contre l'état réel</small><div class="mbs" data-slot="g-verifier"></div></div>
+              <div class="srow k-code"><i>1</i><b>Detect</b><small>continuous queries</small><div class="mbs" data-slot="g-detecter"></div></div>
+              <div class="srow k-code"><i>2</i><b>Investigate</b><small>targeted queries</small><div class="mbs" data-slot="g-enqueter"></div></div>
+              <div class="srow k-ia"><i>3</i><b>Decide</b><small>bounded AI, confidence</small><div class="mbs" data-slot="g-decider"></div></div>
+              <div class="srow k-garde"><i>4</i><b>Guardrails</b><small>in series, in code</small><div class="mbs" data-slot="g-garder"></div></div>
+              <div class="srow k-code"><i>5</i><b>Act</b><small>reversible, VM by VM</small><div class="mbs" data-slot="g-agir"></div></div>
+              <div class="srow k-code"><i>6</i><b>Verify</b><small>against the real state</small><div class="mbs" data-slot="g-verifier"></div></div>
             </div>
-            <div class="bx k-ia"><header><b>Mémoire</b><small>cycles passés : exercice ou réel</small></header><div class="mbs" data-slot="g-memoire"></div></div>
-            <div class="bx k-ia"><header><b>Rédiger une règle</b><small>si une attaque passe, à valider</small></header><div class="mbs" data-slot="g-rediger"></div></div>
+            <div class="bx k-ia"><header><b>Memory</b><small>past cycles: exercise or real</small></header><div class="mbs" data-slot="g-memoire"></div></div>
+            <div class="bx k-ia"><header><b>Write a rule</b><small>if an attack gets through, for approval</small></header><div class="mbs" data-slot="g-rediger"></div></div>
           </div>
           <div class="gut ga-g2">
-            <div class="arr">protège<i class="ah"></i></div>
-            <div class="arr">télémétrie<i class="ah left"></i></div>
+            <div class="arr">protects<i class="ah"></i></div>
+            <div class="arr">telemetry<i class="ah left"></i></div>
           </div>
 
           <div class="bx k-celebrimbor plain ga-prd">
-            <header><b>Production du client</b><small>protéger, sans rien casser</small></header>
-            <div class="bx k-celebrimbor"><header><b>Charges réelles</b><small>Glorfindel : observation, puis autonomie VM par VM</small></header><div class="mbs" data-slot="p-charges"></div></div>
-            <div class="bx k-code"><header><b>VM inscrites</b><small>techniques non destructives</small></header><div class="mbs" data-slot="p-inscrites"></div></div>
-            <div class="bx k-code"><header><b>VM sentinelle</b><small>vide : toute la chaîne de réponse</small></header><div class="mbs" data-slot="p-sentinelle"></div></div>
-            <div class="bx opt"><header><b>Jumeau, en option</b><small>copie jetable : destructif et pannes, avec le rapport d'écart</small></header><div class="mbs" data-slot="p-jumeau"></div></div>
-            <span class="note">jamais de panne ni d'action destructive sur une charge réelle</span>
+            <header><b>Customer production</b><small>protect it, without breaking anything</small></header>
+            <div class="bx k-celebrimbor"><header><b>Real workloads</b><small>Glorfindel: observation, then autonomy VM by VM</small></header><div class="mbs" data-slot="p-charges"></div></div>
+            <div class="bx k-code"><header><b>Enrolled VMs</b><small>non-destructive techniques</small></header><div class="mbs" data-slot="p-inscrites"></div></div>
+            <div class="bx k-code"><header><b>Sentinel VM</b><small>empty: the whole response chain</small></header><div class="mbs" data-slot="p-sentinelle"></div></div>
+            <div class="bx opt"><header><b>Twin, optional</b><small>disposable copy: destructive techniques and faults, with the gap report</small></header><div class="mbs" data-slot="p-jumeau"></div></div>
+            <span class="note">never a fault nor a destructive action on a real workload</span>
           </div>
 
-          <div class="vlink ga-a3"><i class="av down"></i>cibles inscrites seulement</div>
+          <div class="vlink ga-a3"><i class="av down"></i>enrolled targets only</div>
           <div class="bx k-celebrimbor ga-cel">
-            <header><b>Celebrimbor · le banc</b><small>cibles inscrites, détruites après usage</small></header>
+            <header><b>Celebrimbor · the bench</b><small>enrolled targets, destroyed after use</small></header>
             <div class="mbs" data-slot="celebrimbor"></div>
           </div>
           <div class="gut ga-g3">
-            <div class="arr">télémétrie<i class="ah"></i></div>
+            <div class="arr">telemetry<i class="ah"></i></div>
           </div>
 
           <div class="socle">
-            <b>Socle et preuves · sous tout le reste</b>
-            <small>Glorfindel hébergé et son CD, porte de release, invariants et mutation, verrous et signatures, modèle de menace</small>
+            <b>Foundation and proofs · under everything else</b>
+            <small>Glorfindel hosted and its CD, release gate, invariants and mutation, locks and signatures, threat model</small>
             <div class="mbs" data-slot="socle"></div>
           </div>
         </div>
       </div>
       <div class="legend kinds">
-        <span><i class="sw k-ia"></i>IA : modèle ou mémoire</span>
-        <span><i class="sw k-garde"></i>garde-fous déterministes</span>
+        <span><i class="sw k-ia"></i>AI: a model or memory</span>
+        <span><i class="sw k-garde"></i>deterministic guardrails</span>
         <span><i class="sw k-code"></i>code</span>
-        <span><i class="sw k-humain"></i>humain</span>
-        <span><i class="sw opt"></i>option</span>
-        <span><i class="ah dash"></i>canal, sans lien direct</span>
+        <span><i class="sw k-humain"></i>human</span>
+        <span><i class="sw opt"></i>optional</span>
+        <span><i class="ah dash"></i>a channel, no direct link</span>
       </div>
     </div>
-    <p class="dia-note">L'atelier n'agit que sur des cibles inscrites du banc ; Glorfindel apprend des exercices sans
-    les confondre avec le réel. Sous 0,7 de confiance, ou si le modèle échoue, la décision revient à un humain.</p>
+    <p class="dia-note">The workshop acts only on enrolled targets of the bench; Glorfindel learns from the exercises
+    without mistaking them for the real thing. Under 0.7 confidence, or if the model fails, the decision goes back
+    to a human.</p>
   </section>
 
   <section aria-labelledby="h-bench">
     <div class="sec-head">
-      <span class="kicker">En ce moment</span>
-      <h2 id="h-bench">Sur l'établi</h2>
-      <p>Les briques qui bougent. Une pull request ouverte sur GitHub met sa brique en relecture.</p>
+      <span class="kicker">Right now</span>
+      <h2 id="h-bench">On the workbench</h2>
+      <p>The bricks that are moving. A pull request open on GitHub puts its brick in review.</p>
     </div>
-    <div class="bench" id="bench"><div class="state-msg">Le manuel arrive.</div></div>
+    <div class="bench" id="bench"><div class="state-msg">The manual is on its way.</div></div>
   </section>
 
   <section aria-labelledby="h-plan">
     <div class="sec-head">
-      <span class="kicker">De l'intérieur</span>
-      <h2 id="h-plan">Les vues éclatées</h2>
-      <p>Chaque pièce démontée en ses étapes, dans l'ordre où le flux les traverse ; les briques s'empilent dans
-      l'étape qu'elles servent.</p>
+      <span class="kicker">From the inside</span>
+      <h2 id="h-plan">Exploded views</h2>
+      <p>Each part taken apart into its stages, in the order the flow goes through them; the bricks stack on the
+      stage they serve.</p>
     </div>
     <div class="plan" id="plan"></div>
   </section>
 
   <section aria-labelledby="h-steps">
     <div class="sec-head">
-      <span class="kicker">La route</span>
-      <h2 id="h-steps">De la première release au CDR prouvé</h2>
-      <p>Une étape par release ; chacune liste les briques qu'elle pose.</p>
+      <span class="kicker">The road</span>
+      <h2 id="h-steps">From the first release to the CDR proven</h2>
+      <p>One step per release; each one lists the bricks it lays.</p>
     </div>
     <div class="card"><div class="tl-wrap"><div class="tl" id="tl"></div></div></div>
     <ol class="steps" id="steps"></ol>
   </section>
 
   <footer>
-    La source : <a href="https://github.com/grootcyber/eregion/blob/main/docs/manuel/modules.yaml">docs/manuel/modules.yaml</a>,
-    que la pull request de chaque lot met à jour ; une release passe les briques sur main en livrées, avec leur version.
-    L'état des pull requests, des issues et de la dernière release est lu dans l'API publique de GitHub, sans jeton ;
-    si elle ne répond pas, la page montre ce que dit le dépôt. Eregion est open source, sous licence Apache 2.0.
+    The source: <a href="https://github.com/grootcyber/eregion/blob/main/docs/manuel/modules.yaml">docs/manuel/modules.yaml</a>,
+    which the pull request of each lot updates; a release moves the bricks on main to released, with their version.
+    The state of the pull requests, of the issues and of the last release is read from GitHub's public API, without
+    a token; when it does not answer, the page shows what the repository says. Eregion is open source, under the
+    Apache 2.0 licence.
   </footer>
 </div>
 
