@@ -288,6 +288,27 @@ dépôt, `docs/manuel/modules.yaml`.
   une politique de contenu qui ne permet que `api.github.com` en plus d'elle-même. Elle n'écrit aucune
   donnée lue comme du HTML.
 
+## Les fiches d'adoption (ADO2, #671)
+
+« Eregion par rôle », sur le site du projet : `docs/adoption/index.html`, servi par Pages
+(`https://grootcyber.github.io/eregion/adoption/`), lié depuis le README et `docs/index.html`. En anglais
+(décision de Jonathan du 09/11), à partir de l'aperçu privé ADO1 du 06/11. Neuf fiches (RSSI, DSI, CTO,
+ingénieur sécurité, SRE, DPO, MSSP, auditeur ou assureur, direction), et ce que le projet ne promet pas.
+- **Un chiffre du site vient de `docs/proofs.json`, et de lui seul** : sa valeur, ce qu'il dit, sa date
+  (jour ou mois de la mesure), son genre (`measured`, `estimate`, `setting`, `to-remeasure`) et sa source :
+  un fichier du dépôt, la phrase qui donne le chiffre (`quote`), et le titre sous lequel elle est
+  (`anchor`, l'identifiant GitHub du titre) ou le run qu'elle nomme (`run`).
+- **La page le montre tel quel**, dans un élément `data-proof="<clé>"` : la valeur, le texte, la date et
+  le lien vers la source sont ceux du fichier. Un chiffre hors d'un tel élément (sauf l'identifiant d'une
+  technique et la licence) est refusé.
+- **`python3 scripts/adoption.py check`** (et `tests/unit/test_adoption.py`) refuse un chiffre sans date ni
+  source, une source absente du dépôt, une phrase que son fichier ne dit plus ou qui ne donne pas le
+  chiffre, et un chiffre qu'aucune page ne montre. Une PR qui change une phrase citée (une mesure reprise,
+  une ligne réécrite) met donc `docs/proofs.json` et la page à jour dans la même PR : le test dit laquelle.
+- **Rien de non livré présenté comme disponible** : une mesure d'avant l'architecture actuelle (le
+  rançongiciel du 09/06) porte `to-remeasure` et sa note, que la page affiche. Quand RAN1 aura rejoué le
+  rançongiciel, ses chiffres datés remplacent ces deux entrées.
+
 ## Ce qui reste à Jonathan
 
 Une session ne fait jamais ces gestes seule. Un accord lu ailleurs (une inbox, une mémoire, le message

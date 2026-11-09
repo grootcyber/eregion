@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- Eregion by role (ADO2, #671): no script, nothing loaded but adoption.css and the replay's fonts.
+     Every figure is shown in an element data-proof="<key>", the value, text, date and source of
+     docs/proofs.json; a digit anywhere else is refused (scripts/adoption.py, tests/unit/test_adoption.py). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<title>Eregion by role</title>
+<meta name="description" content="Eregion for those who judge it: one sheet per reader, with what they fear, what changes for them, three dated proofs, a short demo, their objection and the next step.">
+<link rel="stylesheet" href="adoption.css">
+</head>
+<body>
+<div class="wrap">
+<header>
+  <span class="kicker">Adoption · grootcyber/eregion · open source, Apache 2.0</span>
+  <h1>Eregion, for those who judge it</h1>
+  <p class="lead">Cloud detection and response for teams without a SOC, and the proof that it works. One sheet
+  per reader: what they fear, what changes for them, three proofs, what to show them in five minutes, their
+  objection and the next step.</p>
+  <div class="figures">
+    <p><strong>How to read the figures.</strong> Every figure on this page comes from one file of the repository,
+    <a href="https://github.com/grootcyber/eregion/blob/main/docs/proofs.json"><code>docs/proofs.json</code></a>,
+    with its date and its source: a page of the repository, the sentence of it that gives the figure, and the
+    heading it sits under or the run it comes from. A test refuses a figure without its date or its source.</p>
+    <p>Most are measured on the project's own bench, on small samples. An estimate, a setting of the code, or a
+    measure to take again says so beside its date. The documents the sources point to are mostly in French.</p>
+  </div>
+  <nav class="links" aria-label="The project">
+    <a href="../">The site</a>
+    <a href="../replay/">The loop, replayed</a>
+    <a href="../manuel/">Where each part stands (French)</a>
+    <a href="https://github.com/grootcyber/eregion#readme">README</a>
+    <a href="https://github.com/grootcyber/eregion/blob/main/ROADMAP.md">Roadmap (French)</a>
+    <a href="https://github.com/grootcyber/eregion/blob/main/docs/design/modele-de-menace.md">Threat model (French)</a>
+  </nav>
+</header>
+
+<nav class="toc" aria-labelledby="h-toc">
+  <h3 id="h-toc">The readers</h3>
+  <ol>
+    <li><a class="r-ciso" href="#ciso"><b>CISO</b><span>Stop promising; show the proof.</span></a></li>
+    <li><a class="r-cdio" href="#cdio"><b>CDIO</b><span>A SOC's work, without a SOC project.</span></a></li>
+    <li><a class="r-cto" href="#cto"><b>CTO</b><span>The model decides; the code checks.</span></a></li>
+    <li><a class="r-secu" href="#secu"><b>Security engineer</b><span>Every missed attack becomes a rule.</span></a></li>
+    <li><a class="r-sre" href="#sre"><b>SRE · platform</b><span>It does not cut what must keep running.</span></a></li>
+    <li><a class="r-dpo" href="#dpo"><b>DPO</b><span>What leaves is said in full.</span></a></li>
+    <li><a class="r-mssp" href="#mssp"><b>MSSP · MSP</b><span>A proof per customer.</span></a></li>
+    <li><a class="r-audit" href="#audit"><b>Auditor · insurer</b><span>Dated proof, not a declaration.</span></a></li>
+    <li><a class="r-cfo" href="#cfo"><b>Executive · CFO</b><span>Know whether it works.</span></a></li>
+  </ol>
+</nav>
+
+<section class="card limits" aria-labelledby="h-limits">
+  <h2 id="h-limits">What we do not promise</h2>
+  <ul>
+    <li><strong>Azure virtual machines, today.</strong> AWS and GCP: a provider interface is planned, nothing more.</li>
+    <li><strong>Identities and the control plane: detection only.</strong> Azure's Activity Log and Entra ID's logs
+    are watched, and every detection goes to a human. On an identity, the card carries a plan and a check read again
+    on Microsoft Graph; a human applies it. No action on an identity is written yet.</li>
+    <li><strong>Not a SOC.</strong> On-call humans and workstations stay with a team or a managed SOC.</li>
+    <li><strong><code>full_auto</code> is planned, not available</strong>: the configuration refuses it. Autonomy
+    today is <code>non_disruptive</code>, granted VM by VM once its readiness is checked: reversible actions alone,
+    a destructive one always waiting for a human. The default is <code>human_only</code>: nothing runs without a human.</li>
+    <li><strong>Autonomy on a real fleet is not recommended yet.</strong> The criteria the project set before it are
+    not all met — among them, four weeks of observation on a real fleet. Autonomy runs on the bench.</li>
+    <li><strong>The ransomware times come from a June run</strong>, before the hosted watch, Orodruin and Dagorlad;
+    they will be replayed. With the hosted watch, the restore is started from the operator's machine, and lifting the
+    isolation after it is a second human step today. Making the watch see the restore itself is in progress, not
+    delivered.</li>
+    <li><strong>A log line the monitored VM can write itself</strong> is not yet corroborated before an autonomous
+    action on it; that corroboration is planned (threat model, the model provider).</li>
+    <li><strong>Bench measures, on small samples</strong> — a single measure of the emergency stop, a single fault so
+    far. They show that the mechanism works; they are not statistics.</li>
+    <li><strong>No hosted offer, no multi-tenant console, no price.</strong> Eregion runs on your machine or in your VM.</li>
+  </ul>
+</section>
+
+<article class="card role r-ciso" id="ciso" aria-labelledby="h-ciso">
+  <div class="head">
+    <span class="kicker">CISO</span>
+    <h2 id="h-ciso">Stop promising. Show the proof.</h2>
+    <p class="fear"><b>The fear:</b> not knowing what the detection misses, and not being able to show that it works.</p>
+  </div>
+  <div class="stats">
+    <div class="stat" data-proof="wrong_disruptive"><b data-f="value">0 / 41</b><span data-f="says">isolations and blocks judged wrong, of those judged, over 30 days on the bench and on a bench VM that carries a real workload</span><small><time data-f="date" datetime="2026-11-02">2 Nov 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/ROADMAP.md#la-finalité-et-ses-cinq-indicateurs">ROADMAP.md</a></small></div>
+    <div class="stat" data-proof="coverage"><b data-f="value">4 / 5</b><span data-f="says">implemented techniques proven over the last 30 days on the bench</span><small><time data-f="date" datetime="2026-10-27">27 Oct 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/README.md">README.md</a></small></div>
+    <div class="stat" data-proof="blocked_alone"><b data-f="value">5</b><span data-f="says">blocks of SSH brute force from the Internet that Glorfindel made alone, in one weekend, on a bench VM that carries a real workload</span><small><time data-f="date" datetime="2026-11-01">1 Nov 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/ROADMAP.md#la-finalité-et-ses-cinq-indicateurs">ROADMAP.md</a></small></div>
+  </div>
+  <div class="grid2">
+    <div>
+      <h3>What changes</h3>
+      <ul>
+        <li>Detection, wrong actions and the age of the last proof are measured all the time, on the console's
+        overview, not once a year.</li>
+        <li>The tool's own risk is held in code: a closed list of reversible actions, autonomy granted VM by VM after
+        a readiness check, and a destructive action always waits for a human.</li>
+        <li>Dated evidence of detection and response, which an auditor or an insurer can read.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Show, in five minutes</h3>
+      <p class="demo">The console's overview: the five indicators, the coverage matrix, and the age of the last proof
+      of each technique.</p>
+      <h3>The objection</h3>
+      <div class="obj"><q>What if the AI gets it wrong?</q>
+        <p>It chooses among planned actions, and a series of guards in code follows: under its confidence threshold
+        it escalates; a disruptive action taken alone needs several draws of the model to agree; a model, a cloud API
+        or a telemetry that fails gives the hand back to a human, never to the action.</p></div>
+    </div>
+  </div>
+  <p class="next"><span class="kicker">Next step</span><b>Ask for four weeks of observation, in <code>human_only</code>,
+  on part of the fleet</b><a href="https://github.com/grootcyber/eregion/blob/main/docs/observation.md">docs/observation.md</a></p>
+</article>
+
+<article class="card role r-cdio" id="cdio" aria-labelledby="h-cdio">
+  <div class="head">
+    <span class="kicker">CDIO</span>
+    <h2 id="h-cdio">What a SOC would do on your cloud workloads, without a SOC project.</h2>
+    <p class="fear"><b>The fear:</b> one more project, people impossible to hire, a cost that drifts.</p>
+  </div>
+  <div class="stats">
+    <div class="stat" data-proof="hosted_chain"><b data-f="value">~2 min</b><span data-f="says">from an attack on the bench to its card in Discord, with Glorfindel on its own hosted VM</span><small><time data-f="date" datetime="2026-10-16">16 Oct 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/ROADMAP.md#les-lots">ROADMAP.md</a></small></div>
+    <div class="stat" data-proof="host_cost"><b data-f="value">~61 € / month</b><span data-f="says">the reference host of Glorfindel, running all the time, before its disk and address</span><small><time data-f="date" datetime="2026-11-04">4 Nov 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/docs/demarrer/banc.md#le-coût-et-le-temps">docs/demarrer/banc.md</a> · <em data-f="kind">estimate</em></small></div>
+    <div class="stat" data-proof="contain_ransom"><b data-f="value">~1 min</b><span data-f="says">to contain a ransomware VM, Glorfindel acting alone</span><small><time data-f="date" datetime="2026-06-09">9 Jun 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/docs/banc-t1486.md">docs/banc-t1486.md</a> · <em data-f="kind">to be re-measured</em></small><span class="note" data-f="note">a run from before the hosted watch, Orodruin and Dagorlad; to be replayed on the bench</span></div>
+  </div>
+  <div class="grid2">
+    <div>
+      <h3>What changes</h3>
+      <ul>
+        <li>Read-only from the first day: a principal that can only read, and the VMs discovered from their own
+        telemetry, with no inventory to keep.</li>
+        <li>It reads the telemetry already in place (Log Analytics) and alerts where the team already is: a webhook,
+        Discord.</li>
+        <li>Open source: the code, the roadmap and the threat model are public, and nothing locks you in.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Show, in five minutes</h3>
+      <p class="demo">The first posture cards: your VMs, what each one lacks to be defended (a network security
+      group, a backup, a log source) and the command that fixes it.</p>
+      <h3>The objection</h3>
+      <div class="obj"><q>Another tool to run?</q>
+        <p>One VM and one compose file, the same as the reference host. That host is deployed by a CD that checks
+        each image's signature and provenance before running it, and goes back when a check fails. In observation,
+        its identity can only read.</p></div>
+    </div>
+  </div>
+  <p class="next"><span class="kicker">Next step</span><b>Plug in the read-only observation: the step-by-step guide</b>
+  <a href="https://github.com/grootcyber/eregion/blob/main/docs/demarrer/bleu.md">docs/demarrer/bleu.md</a></p>
+</article>
+
+<article class="card role r-cto" id="cto" aria-labelledby="h-cto">
+  <div class="head">
+    <span class="kicker">CTO</span>
+    <h2 id="h-cto">The model decides. The code checks.</h2>
+    <p class="fear"><b>The fear:</b> a black box that acts on production.</p>
+  </div>
+  <div class="stats">
+    <div class="stat" data-proof="model_harness"><b data-f="value">36 / 36</b><span data-f="says">harness cases decided right by the model in service, and none wrong with high confidence</span><small><time data-f="date" datetime="2026-10-19">19 Oct 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/docs/observation.md#pré-observation-sur-le-banc-h0">docs/observation.md</a></small></div>
+    <div class="stat" data-proof="injection_logs"><b data-f="value">0 / 12</b><span data-f="says">decisions diverted by an attacker&#x27;s instruction planted in a log line (four cases, three draws each, the model of the time)</span><small><time data-f="date" datetime="2026-10-13">13 Oct 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/docs/historique.md#passes-de-revue-et-lots-livrés">docs/historique.md</a></small></div>
+    <div class="stat" data-proof="injection_memory"><b data-f="value">0 / 9</b><span data-f="says">decisions flipped by a memory full of exercises, or by a past cycle that carries an instruction</span><small><time data-f="date" datetime="2026-10-19">19 Oct 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/ROADMAP.md#les-lots">ROADMAP.md</a></small></div>
+  </div>
+  <div class="grid2">
+    <div>
+      <h3>What changes</h3>
+      <ul>
+        <li>To respond, the model is asked one thing: which planned action, with what confidence. Detecting,
+        investigating, guarding, acting and verifying are code, tested without a cloud and without a model.</li>
+        <li>The model is chosen by measure, in a harness of decision cases, and changed by one setting; the provider
+        is yours to pick, a local model included.</li>
+        <li>It fails closed: when the model, the cloud API, the telemetry or its own configuration fails, nothing
+        disruptive runs alone, and a card says what was missing.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Show, in five minutes</h3>
+      <p class="demo">Glorfindel from the inside: one cycle, from the log line to the action verified against
+      Azure's real state, in its decision file.</p>
+      <h3>The objection</h3>
+      <div class="obj"><q>And the day the model changes?</q>
+        <p>The harness is replayed before the change, overconfidence included; on the reference host, a new lock of
+        dependencies deploys only with the harness's signed attestation. Eregion trains no model on your data.</p></div>
+    </div>
+  </div>
+  <p class="next"><span class="kicker">Next step</span><b>Read Glorfindel from the inside, then the code</b>
+  <a href="https://github.com/grootcyber/eregion/blob/main/docs/glorfindel.md">docs/glorfindel.md</a></p>
+</article>
+
+<article class="card role r-secu" id="secu" aria-labelledby="h-secu">
+  <div class="head">
+    <span class="kicker">Security engineer</span>
+    <h2 id="h-secu">Every missed attack becomes a rule.</h2>
+    <p class="fear"><b>The fear:</b> a flood of alerts, and gaps nobody sees.</p>
+  </div>
+  <div class="stats">
+    <div class="stat" data-proof="detect_median"><b data-f="value">107 s</b><span data-f="says">median time to detect an attack on the bench, over 30 days</span><small><time data-f="date" datetime="2026-10-27">27 Oct 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/README.md">README.md</a></small></div>
+    <div class="stat" data-proof="detect_range"><b data-f="value">44.7 s – 144 s</b><span data-f="says">time to detect a first attack on the bench, from the quickest run to the slowest</span><small><time data-f="date" datetime="2026-10">Oct 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/docs/demarrer/banc.md#le-coût-et-le-temps">docs/demarrer/banc.md</a></small></div>
+    <div class="stat" data-proof="injection_logs"><b data-f="value">0 / 12</b><span data-f="says">decisions diverted by an attacker&#x27;s instruction planted in a log line (four cases, three draws each, the model of the time)</span><small><time data-f="date" datetime="2026-10-13">13 Oct 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/docs/historique.md#passes-de-revue-et-lots-livrés">docs/historique.md</a></small></div>
+  </div>
+  <div class="grid2">
+    <div>
+      <h3>What changes</h3>
+      <ul>
+        <li>When an attack slips through, Glorfindel proposes a rule grounded in the real schema of your log
+        tables; it runs only once you approve it, and then deterministically.</li>
+        <li>Targeted queries investigate before each decision; the card says what was asked and what came back.</li>
+        <li>Public ATT&amp;CK techniques (Atomic Red Team, pinned), replayed from a dedicated host on enrolled targets
+        only; injection through the logs and through the memory is part of the harness.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Show, in five minutes</h3>
+      <p class="demo">A full cycle in the console: the detection, the investigation, the card to judge.</p>
+      <h3>The objection</h3>
+      <div class="obj"><q>I want my own rules.</q>
+        <p>They live in your own layer, which an update never overwrites; the shipped base stays intact, and a rule
+        of yours can override or turn off one of it. Sharing a rule back to the base — with your consent,
+        generalised, stripped of identifiers — is planned, not built.</p></div>
+    </div>
+  </div>
+  <p class="next"><span class="kicker">Next step</span><b>Build the bench and replay a technique</b>
+  <a href="https://github.com/grootcyber/eregion/blob/main/docs/demarrer/banc.md">docs/demarrer/banc.md</a></p>
+</article>
+
+<article class="card role r-sre" id="sre" aria-labelledby="h-sre">
+  <div class="head">
+    <span class="kicker">SRE · platform</span>
+    <h2 id="h-sre">It does not cut what must keep running.</h2>
+    <p class="fear"><b>The fear:</b> a tool that isolates a healthy VM in the middle of the night.</p>
+  </div>
+  <div class="stats">
+    <div class="stat" data-proof="wrong_disruptive"><b data-f="value">0 / 41</b><span data-f="says">isolations and blocks judged wrong, of those judged, over 30 days on the bench and on a bench VM that carries a real workload</span><small><time data-f="date" datetime="2026-11-02">2 Nov 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/ROADMAP.md#la-finalité-et-ses-cinq-indicateurs">ROADMAP.md</a></small></div>
+    <div class="stat" data-proof="fault_mistaken"><b data-f="value">0 / 1</b><span data-f="says">declared fault taken for an attack, on the bench (a single fault so far)</span><small><time data-f="date" datetime="2026-10-31">31 Oct 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/ROADMAP.md#la-finalité-et-ses-cinq-indicateurs">ROADMAP.md</a></small></div>
+    <div class="stat" data-proof="kill_switch"><b data-f="value">&lt; 3 s</b><span data-f="says">from revoking the injectors&#x27; host identity to its first refused call, the attack side&#x27;s emergency stop (one measure)</span><small><time data-f="date" datetime="2026-10-19">19 Oct 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/docs/design/orodruin-contract.md#limplémentation-1910">docs/design/orodruin-contract.md</a></small></div>
+  </div>
+  <div class="grid2">
+    <div>
+      <h3>What changes</h3>
+      <ul>
+        <li>Restraint is measured: declared faults (a VM stopped, disk writes, CPU load) are played to check that
+        Glorfindel does not take them for attacks, and a bench VM with real crons, updates and backups runs under
+        its eye.</li>
+        <li>Every autonomous action is reversible and verified on the cloud API; a release brings each VM back to its
+        design, which property tests check against random customer networks.</li>
+        <li>Isolation coexists with your infrastructure code: Glorfindel writes only what is its own, and alerts when
+        something changes outside it.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Show, in five minutes</h3>
+      <p class="demo">A declared fault: a VM stopped, no isolation, and the return to normal checked.</p>
+      <h3>The objection</h3>
+      <div class="obj"><q>What if it breaks anyway?</q>
+        <p>Read-only by default; autonomy is granted VM by VM, and taken back in one click. Every isolation and every
+        block can be released. On the attack side, one command stops every injector: it revokes their identity and
+        stops their host.</p></div>
+    </div>
+  </div>
+  <p class="next"><span class="kicker">Next step</span><b>See how isolation coexists with your Terraform</b>
+  <a href="https://github.com/grootcyber/eregion/blob/main/docs/design/module-isolation-iac.md">docs/design/module-isolation-iac.md</a></p>
+</article>
+
+<article class="card role r-dpo" id="dpo" aria-labelledby="h-dpo">
+  <div class="head">
+    <span class="kicker">DPO</span>
+    <h2 id="h-dpo">What leaves is said in full; the rest stays with you.</h2>
+    <p class="fear"><b>The fear:</b> production data sent to a model, subprocessors, a retention nobody can state.</p>
+  </div>
+  <div class="stats">
+    <div class="stat" data-proof="memory_age"><b data-f="value">90 days</b><span data-f="says">the oldest past decision the model is shown from the local memory, and only real ones, never exercises</span><small><time data-f="date" datetime="2026-11-03">3 Nov 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/docs/design/modele-de-menace.md#4-le-fournisseur-du-modèle">docs/design/modele-de-menace.md</a> · <em data-f="kind">a setting</em></small></div>
+    <div class="stat" data-proof="injection_logs"><b data-f="value">0 / 12</b><span data-f="says">decisions diverted by an attacker&#x27;s instruction planted in a log line (four cases, three draws each, the model of the time)</span><small><time data-f="date" datetime="2026-10-13">13 Oct 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/docs/historique.md#passes-de-revue-et-lots-livrés">docs/historique.md</a></small></div>
+    <div class="stat" data-proof="injection_memory"><b data-f="value">0 / 9</b><span data-f="says">decisions flipped by a memory full of exercises, or by a past cycle that carries an instruction</span><small><time data-f="date" datetime="2026-10-19">19 Oct 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/ROADMAP.md#les-lots">ROADMAP.md</a></small></div>
+  </div>
+  <div class="grid2">
+    <div>
+      <h3>What changes</h3>
+      <ul>
+        <li>What goes to the model, at each decision: the detection's log lines (VM names, addresses, user and process
+        names, as the logs carry them), the investigation's results, the incident's context, a few similar past
+        decisions and the VM's isolation state. Identity and control-plane detections are decided by the code:
+        nothing of them goes to the model.</li>
+        <li>The memory and its embeddings run on your host. Eregion sends no telemetry to its authors, and trains no
+        model on your data.</li>
+        <li>The provider is yours to choose, under your own contract; or a local model, so that the logs never leave
+        — measured less reliable in the harness: keep it read-only.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Show, in five minutes</h3>
+      <p class="demo">The threat model's page on the model provider, and the message the model is actually sent, as
+      the code builds it.</p>
+      <h3>The objection</h3>
+      <div class="obj"><q>A model outside our jurisdiction?</q>
+        <p>It is replaced by one setting — a provider under your contract, in your region, or a local model — and
+        every model goes through the same harness before it decides.</p></div>
+    </div>
+  </div>
+  <p class="next"><span class="kicker">Next step</span><b>Read the threat model</b>
+  <a href="https://github.com/grootcyber/eregion/blob/main/docs/design/modele-de-menace.md">docs/design/modele-de-menace.md</a></p>
+</article>
+
+<article class="card role r-mssp" id="mssp" aria-labelledby="h-mssp">
+  <div class="head">
+    <span class="kicker">MSSP · MSP</span>
+    <h2 id="h-mssp">A proof per customer, without one more analyst.</h2>
+    <p class="fear"><b>The fear:</b> customers' clouds poorly covered, and nothing to show them.</p>
+  </div>
+  <div class="stats">
+    <div class="stat" data-proof="blocked_alone"><b data-f="value">5</b><span data-f="says">blocks of SSH brute force from the Internet that Glorfindel made alone, in one weekend, on a bench VM that carries a real workload</span><small><time data-f="date" datetime="2026-11-01">1 Nov 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/ROADMAP.md#la-finalité-et-ses-cinq-indicateurs">ROADMAP.md</a></small></div>
+    <div class="stat" data-proof="wrong_disruptive"><b data-f="value">0 / 41</b><span data-f="says">isolations and blocks judged wrong, of those judged, over 30 days on the bench and on a bench VM that carries a real workload</span><small><time data-f="date" datetime="2026-11-02">2 Nov 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/ROADMAP.md#la-finalité-et-ses-cinq-indicateurs">ROADMAP.md</a></small></div>
+    <div class="stat" data-proof="last_e2e"><b data-f="value">31 Oct</b><span data-f="says">the last run that proved detection and response end to end, on the bench (a technique and a declared fault in one campaign)</span><small><time data-f="date" datetime="2026-10-31">31 Oct 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/ROADMAP.md#la-finalité-et-ses-cinq-indicateurs">ROADMAP.md</a></small></div>
+  </div>
+  <div class="grid2">
+    <div>
+      <h3>What changes</h3>
+      <ul>
+        <li>One Glorfindel per customer, each with its own credentials, rules, memory and console: nothing shared,
+        nothing mixed.</li>
+        <li>The same five indicators for each one, and a campaign report whose figures are computed from the run's
+        files.</li>
+        <li>Open source, without a licence per seat.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Show, in five minutes</h3>
+      <p class="demo">A customer's console and its campaign report, each figure computed from the run's files.</p>
+      <h3>The objection</h3>
+      <div class="obj"><q>Several customers on one installation?</q>
+        <p>Today, one instance per customer, side by side on one host, each in its own folder. A multi-tenant console
+        belongs to a hosted offer, later.</p></div>
+    </div>
+  </div>
+  <p class="next"><span class="kicker">Next step</span><b>Pick an installation profile</b>
+  <a href="https://github.com/grootcyber/eregion/blob/main/docs/profils/README.md">docs/profils/README.md</a></p>
+</article>
+
+<article class="card role r-audit" id="audit" aria-labelledby="h-audit">
+  <div class="head">
+    <span class="kicker">Auditor · insurer</span>
+    <h2 id="h-audit">Dated proof, not a declaration.</h2>
+    <p class="fear"><b>The fear:</b> controls declared, never tested.</p>
+  </div>
+  <div class="stats">
+    <div class="stat" data-proof="last_e2e"><b data-f="value">31 Oct</b><span data-f="says">the last run that proved detection and response end to end, on the bench (a technique and a declared fault in one campaign)</span><small><time data-f="date" datetime="2026-10-31">31 Oct 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/ROADMAP.md#la-finalité-et-ses-cinq-indicateurs">ROADMAP.md</a></small></div>
+    <div class="stat" data-proof="proof_flag"><b data-f="value">30 days</b><span data-f="says">the age past which the console shows the last proof in red (amber from three weeks)</span><small><time data-f="date" datetime="2026-10-27">27 Oct 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/docs/design/console.md#les-cinq-indicateurs-ui-2-206">docs/design/console.md</a> · <em data-f="kind">a setting</em></small></div>
+    <div class="stat" data-proof="restore_ransom"><b data-f="value">21 min 29 s</b><span data-f="says">from the ransomware&#x27;s first action to the service restored from backup</span><small><time data-f="date" datetime="2026-06-09">9 Jun 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/docs/banc-t1486.md">docs/banc-t1486.md</a> · <em data-f="kind">to be re-measured</em></small><span class="note" data-f="note">a run from before the hosted watch, Orodruin and Dagorlad; to be replayed on the bench</span></div>
+  </div>
+  <div class="grid2">
+    <div>
+      <h3>What changes</h3>
+      <ul>
+        <li>Each campaign leaves dated evidence: what ran, what was detected, what was decided, and how long it took.</li>
+        <li>The console says the age of the last proof of each technique, and turns it red when it is too old.</li>
+        <li>The report's figures come from files, never from a model, which only explains them. Eregion is not a
+        compliance product: its evidence is there to be read.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Show, in five minutes</h3>
+      <p class="demo">A campaign report and the coverage matrix, with the date of each proof.</p>
+      <h3>The objection</h3>
+      <div class="obj"><q>Who guarantees the report tells the truth?</q>
+        <p>Its figures are computed from the runs' files; the watch's heartbeat and its detections are signed; the
+        code and the threat model are public, and a vulnerability is reported as <code>SECURITY.md</code> says.</p></div>
+    </div>
+  </div>
+  <p class="next"><span class="kicker">Next step</span><b>Read how the proofs are kept</b>
+  <a href="https://github.com/grootcyber/eregion/blob/main/docs/design/preuves.md">docs/design/preuves.md</a></p>
+</article>
+
+<article class="card role r-cfo" id="cfo" aria-labelledby="h-cfo">
+  <div class="head">
+    <span class="kicker">Executive · CFO</span>
+    <h2 id="h-cfo">Know whether it works, for the cost of a VM.</h2>
+    <p class="fear"><b>The fear:</b> paying without knowing whether it is effective.</p>
+  </div>
+  <div class="stats">
+    <div class="stat" data-proof="host_cost"><b data-f="value">~61 € / month</b><span data-f="says">the reference host of Glorfindel, running all the time, before its disk and address</span><small><time data-f="date" datetime="2026-11-04">4 Nov 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/docs/demarrer/banc.md#le-coût-et-le-temps">docs/demarrer/banc.md</a> · <em data-f="kind">estimate</em></small></div>
+    <div class="stat" data-proof="model_cost"><b data-f="value">$0.05–0.10</b><span data-f="says">the model&#x27;s calls for one attack run on the bench</span><small><time data-f="date" datetime="2026-11-04">4 Nov 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/docs/demarrer/banc.md#le-coût-et-le-temps">docs/demarrer/banc.md</a> · <em data-f="kind">estimate</em></small></div>
+    <div class="stat" data-proof="shadow_contained"><b data-f="value">3 / 5</b><span data-f="says">attacks detected over 30 days that Glorfindel would have contained alone, in observation (it acted on none)</span><small><time data-f="date" datetime="2026-10-27">27 Oct 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/README.md">README.md</a></small></div>
+  </div>
+  <div class="grid2">
+    <div>
+      <h3>What changes</h3>
+      <ul>
+        <li>A risk measured by the same five indicators, at any time, to show a board or an insurer.</li>
+        <li>A start without commitment: read-only, open source, on one VM.</li>
+        <li>Autonomy grows VM by VM, as the measures earn it.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Show, in five minutes</h3>
+      <p class="demo">The console's overview, indicator by indicator, each with where it is computed from.</p>
+      <h3>The objection</h3>
+      <div class="obj"><q>How much does it cost?</q>
+        <p>Self-hosted, the code is free: what remains is a VM, its logs and the model's calls — the estimates above,
+        from the bench. There is no hosted offer, and so no price.</p></div>
+    </div>
+  </div>
+  <p class="next"><span class="kicker">Next step</span><b>Read the road to the first stable version, and its five
+  indicators</b><a href="https://github.com/grootcyber/eregion/blob/main/ROADMAP.md">ROADMAP.md</a></p>
+</article>
+
+<footer>
+  Eregion is open source, under the Apache 2.0 license. Every figure of this page:
+  <a href="https://github.com/grootcyber/eregion/blob/main/docs/proofs.json"><code>docs/proofs.json</code></a>.
+  Report a vulnerability as <a href="https://github.com/grootcyber/eregion/blob/main/SECURITY.md">SECURITY.md</a> says.
+</footer>
+</div>
+</body>
+</html>
