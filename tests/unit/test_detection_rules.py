@@ -529,7 +529,7 @@ def _vm(name):
 
 def _auto_rule(**kw):
     base = dict(name="ransomware-disk-write", auto_apply=True, resource_id="",
-                query="Perf | where TimeGenerated > ago(10m) | summarize MaxWrite=max(CounterValue) by Computer")
+                query="Perf | where TimeGenerated > ago(10m) | summarize MaxWrite=max(CounterValue) by Computer, _ResourceId")
     base.update(kw)
     return _make_rule(**base)
 

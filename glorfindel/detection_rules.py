@@ -1322,9 +1322,30 @@ def appliance_of(owner) -> str:
     return text[len(APPLIANCE_PREFIX):] if text.lower().startswith(APPLIANCE_PREFIX) else ""
 
 
-def appliance_behind(row: dict, owners: Callable[[], dict] | None) -> str:
+def proven_keys(query: str) -> frozenset:
+    """The routing keys a data-plane query's rows carry as Azure wrote them (SEC-A4, review R1):
+    what the load proved (`rule_routing.routing_columns`) — the only keys a row of it is read by.
+    A query that cannot be read proves none."""
+    try:
+        return rule_routing.routing_columns(query or "")
+    except rule_routing.Unreadable:
+        return frozenset()
+
+
+def _proven_row(row: dict, keys: frozenset | None) -> dict:
+    """The row without the routing columns its query does not prove (`keys`; None: the control
+    plane, read as it is). `ResourceId` is never proven: on the data plane it is never read — a
+    custom table fed from a VM (`_ResourceId` empty) would route by a value root writes."""
+    if keys is None or not isinstance(row, dict):
+        return row
+    return {k: v for k, v in row.items() if k not in rule_routing.ROUTING_COLUMNS or k in keys}
+
+
+def appliance_behind(row: dict, owners: Callable[[], dict] | None, keys: frozenset | None = None) -> str:
     """The appliance whose address made this row's call (SEC-A4, V-05): its VM id, '' when the
-    row names its own VM (`_ResourceId`) or its caller is no appliance."""
+    row names its own VM (`_ResourceId`) or its caller is no appliance — read by the keys its
+    query proves (`keys`, the data plane)."""
+    row = _proven_row(row, keys)
     if not isinstance(row, dict) or _names_vm_resource(row):
         return ""
     ip = _caller_ip(row)
@@ -1377,14 +1398,21 @@ class RowAttribution:
     routed by it made Glorfindel isolate or block in another VM's name. A rule whose rows carry
     neither key is refused at load (`routing_refusal`).
 
+    `keys` (SEC-A4, review R1): the routing keys the rule's query proves (`proven_keys`) — a row
+    of the data plane is read by those only: `_ResourceId` if proven, `CallerIpAddress` if proven,
+    `ResourceId` never. None: the control plane and identities, read as they are (AL1c).
+
     `attribute(row)` → (named, target): named False when the row names no VM; target None
     when the VM it names is not among the targets."""
 
-    def __init__(self, targets: list[tuple[str, str]], owners: Callable[[], dict] | None = None):
+    def __init__(self, targets: list[tuple[str, str]], owners: Callable[[], dict] | None = None,
+                 keys: frozenset | None = None):
         self._owners = owners or (lambda: {})
         self.by_rid = {rid.lower(): (rid, name) for rid, name in targets}
+        self.keys = keys
 
     def attribute(self, row: dict) -> tuple[bool, tuple | None]:
+        row = _proven_row(row, self.keys)
         if not isinstance(row, dict):
             return False, None
         rid = row.get("_ResourceId") or row.get("ResourceId")
@@ -1398,7 +1426,7 @@ class RowAttribution:
 
     def appliance(self, row: dict) -> str:
         """The appliance whose address made this row's call, '' when none (SEC-A4, V-05)."""
-        return appliance_behind(row, self._owners)
+        return appliance_behind(row, self._owners, self.keys)
 
 
 class RulePoller:
@@ -1556,8 +1584,9 @@ class RulePoller:
         only when its own resource is a VM this rule doesn't watch (AL1) — never because the
         address that made the call is such a VM's (an NSG written from an excluded VM, or with
         no VM watched): that row stays, unattributed (third review, AL1c)."""
-        index = RowAttribution(targets, self._owners)
         control = self._plane(rule) != "data"
+        # SEC-A4 (review R1): a row of the data plane read by the keys its query proves only.
+        index = RowAttribution(targets, self._owners, keys=None if control else self._proven(rule))
         out: dict[str, tuple] = {}
         for row in rows:
             named, tgt = index.attribute(row)
@@ -1769,6 +1798,13 @@ class RulePoller:
             _save_status(self._status)
         return signals
 
+    def _proven(self, rule: DetectionRule) -> frozenset:
+        """The routing keys this rule's query proves (SEC-A4, review R1), read once per query."""
+        cache = self.__dict__.setdefault("_proven_cache", {})
+        if rule.query not in cache:
+            cache[rule.query] = proven_keys(rule.query)
+        return cache[rule.query]
+
     @staticmethod
     def _plane(rule: DetectionRule) -> str:
         """`data`, `control` or `identity`: the rule's source says it, and so does its query."""
@@ -1792,7 +1828,8 @@ class RulePoller:
         target = None
         # SEC-A4 (V-05): the address that made the call is an appliance's (IP forwarding) — the
         # VM behind it is unknown here: never the appliance, never an action.
-        appliance = appliance_behind(row, self._owners) if tgt is None else ""
+        appliance = appliance_behind(row, self._owners, None if control else self._proven(rule)) \
+            if tgt is None else ""
         if control:
             # AL1c (#597): the card is filed on what the row names — the NSG and the VMs it
             # covers, the VM of a disk, a role's scope, the group, the identity —, never on a VM

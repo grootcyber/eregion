@@ -337,9 +337,10 @@ def _started(**raw) -> dict:
             "raw_signal": {"attack_time": time.time() - 90, "detection_timeout_s": 1, **raw}}
 
 
-def _resolve(signal: dict, rows, owners: dict | None = None) -> tuple[dict, _Detector]:
+def _resolve(signal: dict, rows, owners: dict | None = None,
+             query: str = "Perf | where x") -> tuple[dict, _Detector]:
     det = _Detector(rows)
-    rule = MagicMock(source="azure_monitor", query="Perf | where x", workspace_id="ws",
+    rule = MagicMock(source="azure_monitor", query=query, workspace_id="ws",
                      expected_latency_s=0)
     rule.name = "ransomware-disk-write"
     with patch("glorfindel.agent._find_rule_for_ttp", return_value=rule), \
@@ -378,17 +379,22 @@ def test_a_row_naming_no_vm_holds_what_is_aimed_at_the_lines():
     assert _decide(out, _decision(action="snapshot"))["escalate"] is False
 
 
+# The storage table, where the caller's address is the storage service's (SEC-A4: a query of
+# another table never proves CallerIpAddress, and its rows are never read by it).
+STORAGE_Q = "StorageBlobLogs | where x"
+
+
 def test_an_exfiltration_row_is_attributed_by_the_private_ip_that_made_the_call():
     """data-exfiltration-blob (T1041) names no VM: its caller's private IP does, as the
     RulePoller reads it — the line's VM made the call, the isolation runs."""
     row = {"CallerIpAddress": "10.0.0.4:52114", "AccountName": "stacct", "PutBlobCount": 40}
-    out, _ = _resolve(_started(), [row], owners={"10.0.0.4": RID, "10.0.0.5": OTHER})
+    out, _ = _resolve(_started(), [row], owners={"10.0.0.4": RID, "10.0.0.5": OTHER}, query=STORAGE_Q)
     assert out["event"] == "detection" and "attribution" not in out["context"]
     assert _decide(out, _decision())["action"] == "isolate_vm"
     # Another VM's address: never this VM's row. An address no VM holds: unattributed.
-    out, _ = _resolve(_started(), [row], owners={"10.0.0.4": OTHER})
+    out, _ = _resolve(_started(), [row], owners={"10.0.0.4": OTHER}, query=STORAGE_Q)
     assert out["event"] == "detection_timeout"
-    out, _ = _resolve(_started(), [row], owners={})
+    out, _ = _resolve(_started(), [row], owners={}, query=STORAGE_Q)
     assert out["context"]["attribution"] == "unattributed"
 
 

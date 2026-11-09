@@ -314,12 +314,13 @@ def _find_rule_for_ttp(ttp: str, glorfindel_cfg=None):
     return None
 
 
-def _row_reader(resource_id: str, ip_owners=None):
+def _row_reader(resource_id: str, ip_owners=None, keys=None):
     """`row → True/False/None`: does a detection row name this VM — True, another VM —
     False, none — None. The RulePoller's reading (`detection_rules.RowAttribution`), over
     this VM and every VM whose private IP Azure lists (`ip_owners`): a call made from this VM's
     private IP names it (T1041), one from an appliance's names none (SEC-A4), a host name never
-    does (SEC-A4). `names.appliance(row)`: the appliance whose address made the call, or ''."""
+    does (SEC-A4). `names.appliance(row)`: the appliance whose address made the call, or ''.
+    `keys`: the routing keys the polled query proves (SEC-A4, review R1) — a row read by those only."""
     from glorfindel.detection_rules import RowAttribution, appliance_of
     try:
         owners = {ip: str(rid).lower() for ip, rid in ((ip_owners() if ip_owners else None) or {}).items()}
@@ -333,6 +334,7 @@ def _row_reader(resource_id: str, ip_owners=None):
     if resource_id:
         known[resource_id.lower()] = (resource_id, resource_id.rstrip("/").split("/")[-1])
     index = RowAttribution(list(known.values()), lambda: owners)
+    index.keys = keys
 
     def names(row) -> bool | None:
         named, target = index.attribute(row)
@@ -428,7 +430,11 @@ def resolve_attack_started(signal: dict, ip_owners=None) -> dict:
     data_plane = not (is_control_plane_source(source) or is_identity_source(source)
                       or entra_query or activity_query)
     vm_rid = signal.get("resource_id") or ""
-    names_vm = _row_reader(vm_rid, ip_owners) if data_plane else None
+    # SEC-A4 (review R1): the row read by the keys the polled query proves. A line of runs/ never
+    # brings a query of its own (SEC3, SEC8): it is a loaded rule's, already proven at load, or the
+    # operator's (`respond` on a file of his) — proven here the same way.
+    from glorfindel.detection_rules import proven_keys
+    names_vm = _row_reader(vm_rid, ip_owners, keys=proven_keys(query)) if data_plane else None
 
     _console.print(f"[cyan]->[/cyan] Polling {source} (timeout={int(timeout_s)}s)...")
     if data_plane:

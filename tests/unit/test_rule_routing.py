@@ -366,7 +366,8 @@ def test_the_appliance_unwatched_still_holds_everything():
 
 def test_an_attack_started_through_the_appliance_holds_everything():
     """`respond`'s reading is the RulePoller's: the line's VM, the appliance's address — held."""
-    out, _ = _resolve(_started(), [_exfil("10.0.0.4")], owners={"10.0.0.4": appliance_owner(RID)})
+    out, _ = _resolve(_started(), [_exfil("10.0.0.4")], owners={"10.0.0.4": appliance_owner(RID)},
+                      query="StorageBlobLogs | where x")
     assert out["context"]["attribution"] == "unattributed"
     assert out["context"]["attribution_via"] == "appliance" and out["context"]["appliance"] == "vm-s4"
     final = _decide(out, _decision(action="snapshot"))
@@ -385,3 +386,33 @@ def test_a_control_plane_card_says_the_call_came_from_behind_the_appliance():
     (sig,) = _poll(rule, [row], [HUB, SPOKE], _hub_and_spoke().private_ip_owners)
     assert "hub-fw" in sig["context"]["target"]["via"]
     assert agent._is_control_plane(sig)
+
+
+# ── 3. A row read by the keys its query proves (SEC-A4, review R1) ──────────────────────
+
+APP_Q = "App_CL | project TimeGenerated, _ResourceId, ResourceId, CallerIpAddress"
+BY_ROOT = [{"_ResourceId": "", "ResourceId": VM2, "MaxWrite": 9e7},   # a custom table fed from a VM
+           {"_ResourceId": "", "CallerIpAddress": "10.0.0.5", "MaxWrite": 8e7}]
+
+
+def test_a_row_is_read_by_the_keys_its_query_proves_only():
+    """The load proves `_ResourceId` for this query, nothing else: a row whose `_ResourceId` is
+    empty (the ingestion API) is never routed by a `ResourceId` or a `CallerIpAddress` root
+    writes — unattributed, the isolation held. The RulePoller and an attack_started alike."""
+    from glorfindel.detection_rules import RowAttribution, proven_keys
+    assert rule_routing.routing_columns(APP_Q) == {"_ResourceId"}
+    owners = {"10.0.0.5": VM2}
+    for row in BY_ROOT:
+        (sig,) = _poll(_rule(name="app", ttp="T1486", query=APP_Q), [row], [RID, VM2], lambda: owners)
+        assert sig["context"]["attribution"] == "unattributed", row
+        assert _decide(sig, _decision())["held_by"] == "attribution"
+        out, _ = _resolve(_started(), [row], owners={"10.0.0.5": RID}, query=APP_Q)
+        assert out["context"]["attribution"] == "unattributed", row
+    index = RowAttribution([(RID, "vm-s4"), (VM2, "vm-two")], lambda: owners, keys=proven_keys(APP_Q))
+    assert [index.attribute(r) for r in BY_ROOT] == [(False, None), (False, None)]
+    assert index.attribute({"_ResourceId": VM2}) == (True, (VM2, "vm-two"))
+    # What a storage query proves: the caller's address, as before.
+    storage = RowAttribution([(VM2, "vm-two")], lambda: owners, keys=proven_keys("StorageBlobLogs | where x"))
+    assert storage.attribute({"CallerIpAddress": "10.0.0.5:5000"}) == (True, (VM2, "vm-two"))
+    # The control plane reads its rows as they are (AL1c): no keys.
+    assert RowAttribution([(VM2, "vm-two")]).attribute({"ResourceId": VM2}) == (True, (VM2, "vm-two"))

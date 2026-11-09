@@ -1,8 +1,8 @@
 """SEC-A4 (#633; audit of 06/11, V-04 and V-05): what a detection row is attributed by — never its
 host name (V-04: a rule whose rows carry neither `_ResourceId` nor `CallerIpAddress` refused at
 load and at approval), never an appliance's address (V-05: a VM that forwards packets is marked,
-every action held on a call made from behind it). M4540–M4544, and M4600–M4604 on the query's
-reader (the review's B1, B2, C1), measured by tests/unit/test_rule_routing.py. M1335 and M1363 (the host name's reading) retired with it."""
+every action held on a call made from behind it). M4540–M4544, M4600–M4604 on the query's reader
+(the review's B1, B2, C1), M4605–M4606 on what a row is read by (R1), measured by tests/unit/test_rule_routing.py. M1335 and M1363 (the host name's reading) retired with it."""
 READERS = "glorfindel/providers/azure/readers.py"
 RULES = "glorfindel/detection_rules.py"
 PROPOSED = "glorfindel/proposed_rules.py"
@@ -39,7 +39,7 @@ MUTANTS = [
      "    if False:\n"),
     # The review's (B1, B2, C1): the query's reader, each way V-04 came back in two stages.
     ("M4600", "`project`, `distinct`, `summarize by` keep a key they name though it is no longer "
-     "the one Azure wrote (SEC-A4, review B1)", READER,
+     "there (SEC-A4, review B1)", READER,
      "        if _assignment(item) is None and item in have:\n",
      "        if _assignment(item) is None and item in ROUTING_COLUMNS:\n"),
     ("M4601", "a query that writes a routing key read as any other: `extend _ResourceId = Computer` "
@@ -59,6 +59,16 @@ MUTANTS = [
     ("M4604", "a `parse` that writes a key under its name read as a filter (SEC-A4, review B1)", READER,
      "            if _KEY_NAMED.search(rest) or _BRACKETED.search(rest):\n",
      "            if False:\n"),
+    # The second round (R1): the load proves a set of keys, the run reads those only.
+    ("M4605", "attribute reads a key its query does not prove: a custom table's `ResourceId` or "
+     "`CallerIpAddress`, written from the VM, routes the response (SEC-A4, review R1)", RULES,
+     "    def attribute(self, row: dict) -> tuple[bool, tuple | None]:\n"
+     "        row = _proven_row(row, self.keys)\n",
+     "    def attribute(self, row: dict) -> tuple[bool, tuple | None]:\n"),
+    ("M4606", "the RulePoller routes a data-plane row without the keys its rule proves (SEC-A4, "
+     "review R1)", RULES,
+     "        index = RowAttribution(targets, self._owners, keys=None if control else self._proven(rule))\n",
+     "        index = RowAttribution(targets, self._owners, keys=None)\n"),
 ]
 TESTS = {
     "M4540": f"{_T}::test_the_connector_marks_every_address_of_a_vm_that_forwards "
@@ -70,4 +80,5 @@ TESTS = {
              f"{_T}::test_an_attack_started_through_the_appliance_holds_everything",
     **{mid: f"{_T}::test_the_reader_keeps_the_keys_every_row_carries"
        for mid in ("M4600", "M4601", "M4602", "M4603", "M4604")},
+    **{mid: f"{_T}::test_a_row_is_read_by_the_keys_its_query_proves_only" for mid in ("M4605", "M4606")},
 }
