@@ -512,7 +512,7 @@ def test_a_shard_s_json_is_what_the_total_reads(tmp_path, monkeypatch, capsys):
         "".join(m[3] for m in mutants))))
     baselines = []
 
-    def run(copy, examples, show=False, target=mc.INVARIANTS):
+    def run(copy, examples, show=False, target=mc.INVARIANTS, seed=None):
         if copy.name == "base":
             baselines.append(target)
             return False
@@ -546,7 +546,7 @@ def test_a_shard_s_json_says_each_mutant_s_seconds_and_each_target_s(tmp_path, m
         "".join(m[3] for m in mutants))))
     clock = iter(range(0, 10_000, 5))
     monkeypatch.setattr(mc.time, "monotonic", lambda: float(next(clock)))
-    monkeypatch.setattr(mc, "_run", lambda copy, examples, show=False, target=mc.INVARIANTS: copy.name != "base")
+    monkeypatch.setattr(mc, "_run", lambda copy, examples, show=False, target=mc.INVARIANTS, seed=None: copy.name != "base")
     out = tmp_path / "m.json"
     assert mc.main(["--rounds", "1", "--jobs", "1", "--json", str(out)]) == 0
     doc = json.loads(out.read_text(encoding="utf-8"))
@@ -573,7 +573,7 @@ def test_a_shard_runs_its_heaviest_first(tmp_path, monkeypatch):
         "".join(m[3] for m in mutants))))
     order: list = []
 
-    def run(copy, examples, show=False, target=mc.INVARIANTS):
+    def run(copy, examples, show=False, target=mc.INVARIANTS, seed=None):
         order.append(("base" if copy.name == "base" else "mutant", target))
         return copy.name != "base"
     monkeypatch.setattr(mc, "_run", run)
@@ -608,7 +608,7 @@ def test_an_unmutated_target_that_fails_stops_the_shard(tmp_path, monkeypatch, c
     mutants = [("M1", "bug", "code.py", "a\n", "b\n")]
     monkeypatch.setattr(mc, "MUTANTS", mutants)
     monkeypatch.setattr(mc, "_copy_repo", lambda dest: (dest.mkdir(parents=True), (dest / "code.py").write_text("a\n")))
-    monkeypatch.setattr(mc, "_run", lambda copy, examples, show=False, target=mc.INVARIANTS: copy.name == "base")
+    monkeypatch.setattr(mc, "_run", lambda copy, examples, show=False, target=mc.INVARIANTS, seed=None: copy.name == "base")
     assert mc.main(["--json", str(tmp_path / "m.json")]) == 2
     assert "fails on the UNMUTATED code" in capsys.readouterr().out and not (tmp_path / "m.json").exists()
 
@@ -645,7 +645,7 @@ def _harness(monkeypatch, events: list, survives=("M3",)):
     monkeypatch.setattr(mc, "_copy_repo", lambda dest: (dest.mkdir(parents=True), (dest / "code.py").write_text(
         "".join(m[3] for m in mutants))))
 
-    def run(copy, examples, show=False, target=mc.INVARIANTS):
+    def run(copy, examples, show=False, target=mc.INVARIANTS, seed=None):
         events.append(("run", copy.name))
         if copy.name == "base":
             return False
@@ -979,7 +979,7 @@ def test_main_measures_a_deterministic_target_once(tmp_path, monkeypatch):
         "line 1\nline 2\n")))
     runs: list = []
 
-    def run(copy, examples, show=False, target=mc.INVARIANTS):
+    def run(copy, examples, show=False, target=mc.INVARIANTS, seed=None):
         runs.append((copy.name, target))
         return copy.name != "base"
     monkeypatch.setattr(mc, "_run", run)
@@ -1016,7 +1016,7 @@ def _two_kinds(monkeypatch, tmp_path):
         "line 0\nline 1\nline 2\n")))
     baselines: list = []
 
-    def run(copy, examples, show=False, target=mc.INVARIANTS):
+    def run(copy, examples, show=False, target=mc.INVARIANTS, seed=None):
         if copy.name == "base":
             baselines.append(target)
             return False
@@ -1115,7 +1115,7 @@ def test_unmutated_runs_write_nowhere_a_mutant_reads(tmp_path, monkeypatch):
         "line 0\nline 1\nline 2\n")))
     seen: list = []
 
-    def run(copy, examples, show=False, target=mc.INVARIANTS):
+    def run(copy, examples, show=False, target=mc.INVARIANTS, seed=None):
         if copy.name == "base":
             (copy / ".hypothesis").mkdir(exist_ok=True)
             return False
@@ -1184,7 +1184,7 @@ def _narrowing(monkeypatch, catches: dict, narrow_catches: dict):
     rounds of the narrowed target catch it."""
     monkeypatch.setattr(mc, "_copy_repo", lambda dest: (dest.mkdir(parents=True), (dest / "code.py").write_text("a\n")))
 
-    def pytest_(copy, examples, target, *more):
+    def pytest_(copy, examples, target, *more, seed=None):
         if copy.name != "base":
             xml = Path(more[0].split("=", 1)[1])
             _junit(xml, [("tests.unit.test_cd", n, t, "failure") for n, t in catches.get(copy.name, [])])
@@ -1192,7 +1192,7 @@ def _narrowing(monkeypatch, catches: dict, narrow_catches: dict):
     monkeypatch.setattr(mc, "_pytest", pytest_)
     left: dict = dict(narrow_catches)
 
-    def run(copy, examples, show=False, target=mc.INVARIANTS):
+    def run(copy, examples, show=False, target=mc.INVARIANTS, seed=None):
         left[copy.name] = left.get(copy.name, 0) - 1
         return left[copy.name] >= 0
     monkeypatch.setattr(mc, "_run", run)
@@ -1396,7 +1396,7 @@ def test_the_control_set_keeps_its_rounds_whatever_its_target(tmp_path, monkeypa
         "line 1\n")))
     runs: list = []
 
-    def run(copy, examples, show=False, target=mc.INVARIANTS):
+    def run(copy, examples, show=False, target=mc.INVARIANTS, seed=None):
         runs.append(copy.name)
         return copy.name != "base"
     monkeypatch.setattr(mc, "_run", run)
@@ -1413,7 +1413,7 @@ def test_narrow_copies_its_mutants_from_a_pristine_copy(tmp_path, monkeypatch):
     monkeypatch.setattr(mc, "_copy_repo", lambda dest: (dest.mkdir(parents=True), (dest / "code.py").write_text("a\n")))
     seen: list = []
 
-    def pytest_(copy, examples, target, *more):
+    def pytest_(copy, examples, target, *more, seed=None):
         if copy.name == "base":
             (copy / ".hypothesis").mkdir()
             return type("P", (), {"returncode": 0, "stdout": ""})()
@@ -1421,8 +1421,110 @@ def test_narrow_copies_its_mutants_from_a_pristine_copy(tmp_path, monkeypatch):
         _junit(Path(more[0].split("=", 1)[1]), [("tests.unit.test_cd", "test_a", 1.0, "failure")])
         return type("P", (), {"returncode": 1, "stdout": ""})()
     monkeypatch.setattr(mc, "_pytest", pytest_)
-    monkeypatch.setattr(mc, "_run", lambda copy, examples, show=False, target=mc.INVARIANTS: True)
+    monkeypatch.setattr(mc, "_run", lambda copy, examples, show=False, target=mc.INVARIANTS, seed=None: True)
     monkeypatch.setattr(mc, "MUTANTS", mutants)
     path = tmp_path / "narrowed.json"
     assert mc.narrow("tests/unit/test_cd.py", mutants, 60, 2, 1, path=path, say=lambda *a, **k: None) == 0
     assert seen == [False, False]
+
+
+# ── SEED1 (#655): each round on a seed of its own, said, written, replayed ──────────────────────
+
+def _seeded(monkeypatch, tmp_path, survives=()):
+    """Two mutants on a target that draws (two rounds), each run's seed recorded by copy."""
+    _files(monkeypatch, tmp_path, {"tests/unit/test_prop.py": _DRAWS})
+    mutants = _mutants(2, "M")
+    monkeypatch.setattr(mc, "MUTANTS", mutants)
+    monkeypatch.setattr(mc, "CONTROL", [])
+    monkeypatch.setattr(mc, "TESTS", {m[0]: "tests/unit/test_prop.py" for m in mutants})
+    monkeypatch.setattr(mc, "_copy_repo", lambda dest: (dest.mkdir(parents=True), (dest / "code.py").write_text(
+        "".join(m[3] for m in mutants))))
+    seeds: dict = {}
+
+    def run(copy, examples, show=False, target=mc.INVARIANTS, seed=None):
+        seeds.setdefault(copy.name, []).append(seed)
+        return copy.name != "base" and copy.name not in survives
+    monkeypatch.setattr(mc, "_run", run)
+    return mutants, seeds
+
+
+def test_each_round_runs_on_a_seed_of_its_own_said_and_written(tmp_path, monkeypatch, capsys):
+    """Two rounds of the gate are two draws: round r on S + r - 1, the unmutated run on S; the seed
+    said at the start and the end, and in the JSON."""
+    _, seeds = _seeded(monkeypatch, tmp_path)
+    out = tmp_path / "m.json"
+    assert mc.main(["--rounds", "2", "--jobs", "1", "--seed", "41", "--json", str(out)]) == 0
+    assert seeds == {"base": [41], "M000": [41, 42], "M001": [41, 42]}
+    doc = json.loads(out.read_text())
+    assert doc["seed"] == 41 and doc["round_seeds"] == [41, 42]
+    said = capsys.readouterr().out
+    assert "Hypothesis seed 41 (given)" in said and "--seed 41 replays them" in said
+    assert "2 rounds, Hypothesis seed 41:" in said
+
+
+def test_a_run_without_a_seed_draws_one_each_time(tmp_path, monkeypatch, capsys):
+    _seeded(monkeypatch, tmp_path)
+    drawn = []
+    for i in range(3):
+        out = tmp_path / f"m{i}.json"
+        assert mc.main(["--rounds", "2", "--jobs", "1", "--json", str(out)]) == 0
+        drawn.append(json.loads(out.read_text())["seed"])
+        assert json.loads(out.read_text())["round_seeds"] == [drawn[-1], drawn[-1] + 1]
+    assert len(set(drawn)) == 3 and all(0 <= s < mc.SEED_BOUND for s in drawn)
+    assert f"Hypothesis seed {drawn[0]} (drawn)" in capsys.readouterr().out
+
+
+def test_a_red_says_the_command_that_replays_it(tmp_path, monkeypatch, capsys):
+    _seeded(monkeypatch, tmp_path, survives=("M001",))
+    assert mc.main(["--rounds", "2", "--jobs", "1", "--seed", "7", "--examples", "500"]) == 1
+    assert ("replay M001: python scripts/mutation_check.py --only M001 --seed 7 --examples 500 --rounds 2"
+            in capsys.readouterr().out)
+
+
+@pytest.mark.parametrize("text", ["x", "-3", "1.5", ""])
+def test_a_seed_that_is_no_number_is_refused(text):
+    with pytest.raises(SystemExit):
+        mc.main(["--seed", text, "--plan", "1"])
+
+
+def test_each_run_gets_the_seed_given_and_never_one_it_inherited(tmp_path, monkeypatch):
+    """The conftest reads it (tests/unit/hypothesis_seed.py): given, it is the run's; none given,
+    none — never the harness's own environment's, which a run of the suite may have set."""
+    import subprocess
+    seen: list = []
+    monkeypatch.setattr(mc.subprocess, "run", lambda cmd, **kw: seen.append(kw["env"]) or
+                        subprocess.CompletedProcess(cmd, 0, stdout="", stderr=""))
+    monkeypatch.setenv(mc.SEED_VAR, "999")
+    mc._run(tmp_path, 1, target="tests/unit/test_x.py", seed=42)
+    mc._run(tmp_path, 1, target="tests/unit/test_x.py")
+    assert seen[0][mc.SEED_VAR] == "42" and mc.SEED_VAR not in seen[1]
+
+
+def test_the_total_says_each_shards_seed_and_replays_a_red(world, capsys):
+    mutants, _, results = world
+    for k in (1, 2):
+        doc_path = results / f"mutants-{k}" / f"mutants-{k}.json"
+        doc = json.loads(doc_path.read_text())
+        doc["seed"] = 100 * k
+        if k == 2:
+            doc["rows"][0] = list(_row(mutants[1], "SURVIVES"))
+        doc_path.write_text(json.dumps(doc), encoding="utf-8")
+    assert _total(results) == 1
+    out = capsys.readouterr().out
+    assert "Hypothesis seeds, mutants (round r on S + r - 1, SEED1): shard 1 100, shard 2 200" in out
+    assert "Hypothesis seeds, control (round r on S + r - 1, SEED1): shard 1 unsaid, shard 2 unsaid" in out
+    assert f"replay {mutants[1][0]}: python scripts/mutation_check.py --only {mutants[1][0]} --seed 200" in out
+
+
+def test_narrow_runs_each_round_on_its_seed(tmp_path, monkeypatch):
+    mutants = [("M0", "bug 0", "code.py", "a\n", "b\n")]
+    _narrowing(monkeypatch, {"M0": [("test_a", 1.0)]}, {"M0": 2})
+    seen: list = []
+    fake = mc._run
+    monkeypatch.setattr(mc, "_run", lambda copy, examples, show=False, target=mc.INVARIANTS, seed=None:
+                        seen.append(seed) or fake(copy, examples, show, target, seed))
+    monkeypatch.setattr(mc, "MUTANTS", mutants)
+    said: list = []
+    assert mc.narrow("tests/unit/test_cd.py", mutants, 60, 2, 1, path=tmp_path / "n.json", say=lambda m, **k: said.append(m),
+                     seed=11) == 0
+    assert seen == [11, 12] and "Hypothesis seed 11: rounds on 11, 12" in said[0]

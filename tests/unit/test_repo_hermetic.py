@@ -92,6 +92,8 @@ def _repo(tmp: Path, made: tuple[str, ...], test: str) -> Path:
     repo = tmp / "repo"
     (repo / "tests" / "unit").mkdir(parents=True)
     shutil.copy(ROOT / "tests" / "unit" / "conftest.py", repo / "tests" / "unit" / "conftest.py")
+    # Its companion (SEED1): the run's Hypothesis seed, loaded by its path beside it.
+    shutil.copy(ROOT / "tests" / "unit" / "hypothesis_seed.py", repo / "tests" / "unit" / "hypothesis_seed.py")
     (repo / "tests" / "unit" / "test_scenario.py").write_text(textwrap.dedent(test))
     (repo / ".gitignore").write_text("runs/\nbuild/\n__pycache__/\n.pytest_cache/\n")
     for rel in made:
