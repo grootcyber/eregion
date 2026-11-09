@@ -20,6 +20,10 @@ Three agents form a closed loop: Annatar attacks, Gothmog breaks, Glorfindel det
 > **Observe-only by default** — Glorfindel recommends, you decide. Grant it autonomy per asset as you build trust.
 > With autonomous containment enabled: **~1 min to contain a ransomware VM, 21m29s to restored service** — the only human step is approving the backup restore.
 
+**[Watch the loop: an interactive replay →](https://grootcyber.github.io/eregion/replay/)** A ransomware simulation on a bench VM, met in `human_only` (you approve each step), `non_disruptive` (Glorfindel contains alone, a human restores) or the planned `full_auto`. The guards, the quarantine, the proof read back from Azure, and what reaches you on Discord and in the console, in their real formats; times marked measured come from the runs below, the rest is illustrative.
+
+[![The replay, in non_disruptive: Glorfindel swaps every NIC to its quarantine NSG through Azure Resource Manager, and the autonomous action reaches the operator's Discord](docs/replay/preview.png)](https://grootcyber.github.io/eregion/replay/)
+
 ![The Eregion console's overview in observe-only: the five indicators of the finality, measured over 30 days, above a line per agent](docs/images/console-overview.png)
 
 *The Eregion console's overview on the Eregion bench, in observe-only (27 October 2026). Over 30 days: nothing contained alone — human-only —, but Glorfindel would have contained 3 of the 5 attacks it detected (shadow); detection in 107 s and a decision in 2 min (medians); 0 % of the 20 isolations and blocks it recommended on real traffic were judged wrong; 4 of the 5 implemented techniques proven in the last 30 days. Glorfindel's page holds the cards to judge; Annatar's and Gothmog's, what they ran and what Glorfindel made of it.*
