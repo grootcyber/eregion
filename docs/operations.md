@@ -2945,6 +2945,34 @@ total part même si une tranche a échoué, le run annulé à part : une tranche
 150 min de borne. Ses actions sont celles de la porte, épinglées par commit. Les entrées du dispatch
 passent par l'environnement, jamais dans le texte du script (SEC6).
 
+**Une graine par tour, rejouable** (SEED1, #655 ; décision de Jonathan du 09/11). En CI, Hypothesis
+charge de lui-même son profil `ci` (`derandomize=True`) : sans rien de plus, les deux tours de la porte
+rejouaient les mêmes séquences, et la nuit la même chose chaque soir. Désormais :
+- **une PR et un push restent dérandomisés** : la CI d'une PR est stable, reproductible, comme avant ;
+- **la nuit et une exécution à la main** (`schedule`, `workflow_dispatch` : `invariants.yml`, la porte,
+  la nuit macOS de `ci.yml`) tirent une graine nouvelle pour chaque exécution de pytest, la même pour
+  chaque test de propriétés et chaque machine d'invariants de cette exécution, et chaque worker xdist ;
+- **`mutation_check.py`** tire la graine S de son exécution (ou prend `--seed S`) : le run non muté sur S,
+  le tour r de chaque mutant sur S + r − 1. Deux tours, deux tirages, à la porte comme au lundi.
+
+La graine est dite : à la fin de pytest (« Hypothesis seed N … »), sous chaque test de propriétés en
+échec (la section « Hypothesis seed (SEED1) »), dans le résumé du job sur GitHub, et, pour la mutation, au
+début et à la fin de la sortie, dans le JSON de chaque tranche (`seed`, `round_seeds`) et dans le total
+(la graine de chaque tranche, et la commande qui rejoue un mutant rouge).
+
+**Rejouer un échec par sa graine** :
+```bash
+# un test ou une machine (la nuit, la porte, n'importe où, CI=true compris)
+EREGION_HYPOTHESIS_SEED=570502938 GLORFINDEL_INVARIANT_EXAMPLES=10000 python -m pytest tests/unit/test_invariants.py -q
+# un mutant, ses tours sur les mêmes graines (la ligne « replay » du total la donne toute faite)
+python scripts/mutation_check.py --only M38 --seed 845608059 --examples 500 --rounds 2
+```
+Le budget (`GLORFINDEL_INVARIANT_EXAMPLES`, `--examples`) et la longueur des séquences doivent être ceux
+de l'exécution rejouée : la graine fixe le tirage, pas son nombre. `EREGION_HYPOTHESIS_SEED=draw` tire
+une graine où que ce soit ; `EREGION_HYPOTHESIS_SEED=profile` garde la manière d'Hypothesis même là où
+l'exécution tirerait. `--hypothesis-seed=N` ne sert pas sous `CI=true` : mesuré, la dérandomisation
+passe avant elle (et, lu dans le code d'Hypothesis 6.170, elle coupe la base des séquences en échec).
+
 **Si elle est rouge.**
 - **Un vrai rouge** (un invariant, un mutant qui survit hors de la liste connue, un test) : la release
   attend. On le corrige par un lot, qui tue le mutant par un test ou écrit sa raison si elle est vraie

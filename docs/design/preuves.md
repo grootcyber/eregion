@@ -501,6 +501,68 @@ séquences. Et les tours de la porte ne sont deux chances que hors CI. La docstr
 pas : rendre les tours indépendants en CI pourrait faire basculer d'autres mutants limites vers
 `flaky`. C'est une décision de la porte.
 
+### Une graine par tour, dite et rejouable (SEED1)
+
+**La décision** (Jonathan, 09/11, sur le constat de MUT4) : une PR et un push restent dérandomisés, stables
+et reproductibles ; la nuit et la porte tirent une graine nouvelle à chaque tour, écrite dans le rapport,
+pour rejouer un échec.
+
+**Le mécanisme, choisi par la mesure.** Sous le profil `ci` (`CI=true`), `--hypothesis-seed=N` ne change
+rien : un test de propriétés tire les mêmes valeurs avec `--hypothesis-seed=1`, `=2` ou sans
+(`[0, 6936, 3449, 161, 1527]` trois fois, Hypothesis 6.170.10). Dans `get_random_for_wrapped_test`, la
+dérandomisation passe avant la graine globale. Ce qui passe avant elle, c'est la graine propre d'un test
+(`@seed`). `tests/unit/hypothesis_seed.py` la pose, depuis la conftest, sur chaque test de propriétés
+collecté et sur `RuleBasedStateMachine` (chaque machine en hérite : `run_state_machine_as_test` la lit sur
+la classe). Il ne touche pas aux réglages des tests : la base des machines (`GLORFINDEL_INVARIANT_DB`)
+reste lue et écrite. La graine se lit dans `EREGION_HYPOTHESIS_SEED` : un nombre (un rejeu, ou un tour
+du harnais), `draw`, `profile`. Rien de donné : tirée sur GitHub pour un `schedule` ou un
+`workflow_dispatch`, jamais pour une PR ni un push. Une graine tirée passe dans l'environnement, pour
+les processus que l'exécution démarre. Un worker xdist dont le contrôleur n'a pas chargé la conftest
+(`pytest tests/ -n 4`) la tire du `testrunuid` de l'exécution, le même pour chacun. Rien ne passe par un
+workflow : la porte et le lundi appellent `mutation_check.py`, qui la tire lui-même, et la nuit est un
+`schedule`.
+
+`mutation_check.py` tire la graine S de son exécution, ou prend `--seed S`. Le run non muté tourne sur
+S, le tour r de chaque mutant sur S + r − 1. La graine est dite au début et à la fin, écrite dans le JSON
+d'une tranche (`seed`, `round_seeds`), et le total dit celle de chaque tranche, avec la commande qui
+rejoue un mutant rouge.
+
+**Mesures** (09/11). La machine Azure à 10 séquences, sous `CI=true`, l'empreinte de ce que les séquences
+ont parcouru (`GLORFINDEL_INVARIANT_STATS`) :
+
+| exécution | graine dite | empreinte |
+|---|---|---|
+| push, deux fois ; PR | aucune | `33c5588acf42` les trois fois |
+| nuit (`schedule`), deux fois | 570502938, puis 780049194 | `71af7159ec7f`, puis `5684c43372cf` |
+| la première nuit rejouée sous un push (`EREGION_HYPOTHESIS_SEED=570502938`) | 570502938 | `71af7159ec7f` |
+| graine 1, deux fois (sous un push, puis sous un `schedule`) | 1 | `5c7f06d2a805` les deux fois |
+| graine 2 | 2 | `09ad60de1b1a` |
+
+Sous xdist (`-n 2`, `schedule`), les deux workers ont tiré la même graine, la conftest chargée ou non par
+le contrôleur, et le résumé du job ne l'a reçue qu'une fois. Sous un push, aucun test n'a de graine.
+
+Le harnais comme la porte le lance (`CI=true`, `workflow_dispatch`), sur M19, M31 et M38 à 60 séquences,
+deux tours, `--jobs 2`. Deux exécutions sans `--seed` ont tiré 845608059 et 632860890 : M19 et M31 2/2,
+**M38 1/2** les deux fois. Un 1/2 sous `CI=true` était impossible avant : les deux tours tiraient la même
+chose. Le rejeu `--seed 845608059` redonne M19 2/2, M31 2/2, M38 1/2. Tour par tour, M38 sur sa copie
+mutée, à 60 :
+
+| exécution | M38 |
+|---|---|
+| push sans graine (dérandomisé, comme avant SEED1), deux fois | survit, survit |
+| graine 845608059 (tour 1), puis 845608060 (tour 2) | survit, **attrapé** |
+| les mêmes, rejouées | survit, **attrapé** |
+
+Les tests : `tests/unit/test_hypothesis_seed.py` (la règle, et sa mesure dans un pytest à part, sous
+`CI=true` : un push et une PR tirent la même chose et ne disent aucune graine, deux nuits deux choses,
+une graine donnée la même chose deux fois et rejoue la nuit qui l'a tirée, le test de propriétés comme la
+machine) et `tests/unit/test_mutation_shards.py` (un tour par graine, dite, écrite, rejouée).
+
+**Ce qui reste ouvert.** Les tours de la porte sont maintenant deux chances, en CI aussi. Un mutant
+limite, attrapé par peu de séquences, peut y devenir `flaky`, donc rouge s'il n'est pas un survivant
+connu : la ligne « replay » du total le rejoue sur sa graine. La nuit macOS de `ci.yml` est un `schedule` :
+elle tire aussi. `EREGION_HYPOTHESIS_SEED=profile` l'en garderait, dans son workflow.
+
 ### Chaque mutant mesuré, sans le travail en double (CI10a)
 
 Décision de Jonathan du 05/11 (« Tout le paquet », #580), sur l'étude CI9 : la porte confirmait sans
