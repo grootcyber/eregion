@@ -21,7 +21,12 @@ isolation paths, with Azure's semantics where they matter:
   subscription-wide listing by the caller's rights, so `list_all` leaves them out
   WITHOUT an error, while a call on one of them (get, its rules, a write, a NIC joined
   to it) is refused (403);
-- Run Command's shell script doesn't run on a Windows VM (assumed).
+- Run Command's shell script doesn't run on a Windows VM (assumed);
+- Azure Backup (REC1, #668): a vault's restore jobs (`backup_jobs.list`, `job_details.get`, the
+  point a job restored in its property bag — by its time, US style with a trailing space in the
+  key, or by its id: both unmeasured), the VM's recovery points, its power state and what Run
+  Command v1 last said (the instance view: the output of the last command, written again when a
+  restored disk boots and replays it — measured once, 2026-10-05, the ransomware replayed).
 
 `open_flows` evaluates traffic as Azure does, independently of the connector's own
 helpers: inbound crosses the subnet's NSG then the NIC's, outbound the reverse; in each
@@ -37,6 +42,7 @@ from __future__ import annotations
 
 import copy
 import ipaddress
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
@@ -132,7 +138,13 @@ class FakeAzure:
         self.network = SimpleNamespace(
             network_interfaces=_Nics(self), network_security_groups=_Nsgs(self),
             security_rules=_Rules(self), subnets=_Subnets(self))
-        self.compute = SimpleNamespace(virtual_machines=_Vms(self))
+        self.compute = SimpleNamespace(virtual_machines=_Vms(self), virtual_machine_extensions=_Extensions(self),
+                                       virtual_machine_run_commands=_ManagedRunCommands(self))
+        # Azure Backup (REC1): one vault, its restore jobs, each VM's recovery points.
+        self.jobs: list[dict] = []
+        self.points: dict[str, list[dict]] = {}
+        self.backup = SimpleNamespace(backup_jobs=_Jobs(self), job_details=_JobDetails(self),
+                                      recovery_points=_Points(self), protected_items=_Items(self))
 
     # ── building the customer's world ──────────────────────────────────────────
 
@@ -163,8 +175,33 @@ class FakeAzure:
                                    "forwarding": bool(n.get("forwarding"))}
             ids.append(rid)
         rid = vm_id(rg, name)
-        self.vms[key(rid)] = {"id": rid, "nics": ids, "os": os_type}
+        self.vms[key(rid)] = {"id": rid, "nics": ids, "os": os_type, "power": "running",
+                              "last_output": "", "said": None, "extensions": [], "managed": []}
         return rid
+
+    # ── Azure Backup (REC1) ─────────────────────────────────────────────────────
+
+    def add_point(self, vm: str, name: str, at: datetime) -> None:
+        """A recovery point of the VM, taken at `at` (UTC)."""
+        self.points.setdefault(key(vm), []).append({"name": name, "time": at})
+
+    def restore(self, vm: str, point: str, start: datetime, end: datetime | None,
+                status: str = "Completed", bag: str = "time", power: str = "running",
+                boot_after_s: float = 60.0) -> str:
+        """The vault restores `point` on the VM, from start to end (None: still running). Done,
+        the VM is left `power`; running, its restored disk replays the last Run Command of the
+        VM model `boot_after_s` after the end — the agent writes its output again (2026-10-05).
+        `bag`: how the job names the point — "time" (« Recovery point time  », US style),
+        "id" (« Recovery Point Id »), "none". Returns the job's name."""
+        v = self.vms[key(vm)]
+        name = f"job-{len(self.jobs) + 1:04d}"
+        self.jobs.append({"name": name, "vm": key(vm), "status": status if end is not None else "InProgress",
+                          "start": start, "end": end, "point": point, "bag": bag})
+        if end is not None and status == "Completed":
+            v["power"] = power
+            if power == "running" and v["last_output"]:
+                v["said"] = {"message": v["last_output"], "time": end + timedelta(seconds=boot_after_s)}
+        return name
 
     def delete_nsg(self, rid: str) -> bool:
         """The customer deletes an NSG — refused while it governs a NIC or a subnet."""
@@ -397,12 +434,138 @@ class _Vms:
 
     def begin_run_command(self, rg, name, command):
         def run():
-            if self._get(rg, name)["os"] == "Windows" and getattr(command, "command_id", "") == "RunShellScript":
+            v = self._get(rg, name)
+            if v["os"] == "Windows" and getattr(command, "command_id", "") == "RunShellScript":
                 raise _error(HttpResponseError, 409,
                              f"(Conflict) RunShellScript is not supported on the Windows VM {name}")
-            return _Done(SimpleNamespace(value=[SimpleNamespace(
-                message="Enable succeeded:\n[stdout]\nglorfindel-drain-remaining=0\n[stderr]\n")]))
+            script = list(getattr(command, "script", None) or [])
+            # One `echo '<text>'` prints its text (the neutralization, REC1); anything else is the
+            # session drain, as before.
+            line = script[0] if len(script) == 1 else ""
+            said = (line.split("'", 2)[1] if line.startswith(("echo '", "Write-Output '")) and line.count("'") == 2
+                    else "glorfindel-drain-remaining=0")
+            message = f"Enable succeeded:\n[stdout]\n{said}\n[stderr]\n"
+            # The VM model's last command, and the agent's word of it (the instance view).
+            v["last_output"] = message
+            v["said"] = {"message": message, "time": datetime.now(timezone.utc)}
+            return _Done(SimpleNamespace(value=[SimpleNamespace(message=message)]))
         return self.az.call("vm.run_command", True, run)
+
+    def instance_view(self, rg, name):
+        def read():
+            v = self._get(rg, name)
+            handler = "RunCommandWindows" if v["os"] == "Windows" else "RunCommandLinux"
+            exts = [SimpleNamespace(name=handler, type=f"Microsoft.CPlat.Core.{handler}", statuses=[
+                SimpleNamespace(code="ProvisioningState/succeeded", message=v["said"]["message"],
+                                time=v["said"]["time"])])] if v.get("said") else []
+            return SimpleNamespace(statuses=[SimpleNamespace(code="ProvisioningState/succeeded"),
+                                             SimpleNamespace(code=f"PowerState/{v.get('power', 'running')}")],
+                                   extensions=exts)
+        return self.az.call("vm.instance_view", False, read)
+
+
+class _Extensions:
+    """The VM's extensions (`extensions`: [(name, publisher, type)]), Run Command's handler once it ran."""
+
+    def __init__(self, az: FakeAzure):
+        self.az = az
+
+    def list(self, rg, name):
+        def read():
+            v = self.az.compute.virtual_machines._get(rg, name)
+            items = [SimpleNamespace(name=n, as_dict=(lambda p=p, t=t: {"properties": {"publisher": p, "type": t}}))
+                     for n, p, t in v.get("extensions", [])]
+            if v.get("said"):
+                handler = "RunCommandWindows" if v["os"] == "Windows" else "RunCommandLinux"
+                items.append(SimpleNamespace(name=handler, as_dict=lambda h=handler: {
+                    "properties": {"publisher": "Microsoft.CPlat.Core", "type": h}}))
+            return SimpleNamespace(value=items)
+        return self.az.call("vm.extensions", False, read)
+
+
+class _ManagedRunCommands:
+    def __init__(self, az: FakeAzure):
+        self.az = az
+
+    def list_by_virtual_machine(self, rg, name):
+        return self.az.call("vm.run_commands", False, lambda: [
+            SimpleNamespace(name=n) for n in self.az.compute.virtual_machines._get(rg, name).get("managed", [])])
+
+
+def _vm_of_item(az: FakeAzure, item: str) -> dict:
+    """The VM a backup item names (`VM;iaasvmcontainerv2;<rg>;<vm>`), whatever its case."""
+    parts = str(item or "").split(";")
+    if len(parts) < 4:
+        raise not_found(f"protectedItems/{item}")
+    v = az.vms.get(key(vm_id(parts[-2], parts[-1])))
+    if v is None:
+        raise not_found(f"protectedItems/{item}")
+    return v
+
+
+class _Items:
+    def __init__(self, az: FakeAzure):
+        self.az = az
+
+    def get(self, vault, rg, fabric, container, item):
+        def read():
+            v = _vm_of_item(self.az, item)
+            vrg, vname = _rg_name(v["id"])
+            return SimpleNamespace(id=(f"{SUB}/resourceGroups/{rg}/providers/Microsoft.RecoveryServices/vaults/"
+                                       f"{vault}/backupFabrics/Azure/protectionContainers/"
+                                       f"IaasVMContainer;iaasvmcontainerv2;{vrg};{vname}/protectedItems/"
+                                       f"VM;iaasvmcontainerv2;{vrg};{vname}"))
+        return self.az.call("backup.item", False, read)
+
+
+class _Points:
+    def __init__(self, az: FakeAzure):
+        self.az = az
+
+    def list(self, vault, rg, fabric, container, item):
+        def read():
+            v = _vm_of_item(self.az, item)
+            return [SimpleNamespace(name=p["name"], properties=SimpleNamespace(
+                recovery_point_time=p["time"], recovery_point_tier_details=[]))
+                for p in self.az.points.get(key(v["id"]), [])]
+        return self.az.call("backup.points", False, read)
+
+
+def _job_view(az: FakeAzure, j: dict, details: bool = False):
+    v = az.vms[j["vm"]]
+    vrg, vname = _rg_name(v["id"])
+    bag = {}
+    if details:
+        at = next((p["time"] for p in az.points.get(j["vm"], []) if p["name"] == j["point"]), None)
+        if j["bag"] == "time" and at is not None:
+            bag = {"Job Type": "Replace disks", "Recovery point time ": at.strftime("%m/%d/%Y %I:%M:%S %p")}
+        elif j["bag"] == "id":
+            bag = {"Job Type": "Replace disks", "Recovery Point Id": j["point"]}
+    return SimpleNamespace(name=j["name"], properties=SimpleNamespace(
+        operation="Restore", status=j["status"], entity_friendly_name=vname,
+        container_name=f"iaasvmcontainerv2;{vrg};{vname}", start_time=j["start"], end_time=j["end"],
+        extended_info=SimpleNamespace(property_bag=bag) if details else None))
+
+
+class _Jobs:
+    def __init__(self, az: FakeAzure):
+        self.az = az
+
+    def list(self, vault, rg, filter=None):
+        return self.az.call("backup.jobs", False, lambda: [_job_view(self.az, j) for j in self.az.jobs])
+
+
+class _JobDetails:
+    def __init__(self, az: FakeAzure):
+        self.az = az
+
+    def get(self, vault, rg, name):
+        def read():
+            j = next((j for j in self.az.jobs if j["name"] == name), None)
+            if j is None:
+                raise not_found(f"backupJobs/{name}")
+            return _job_view(self.az, j, details=True)
+        return self.az.call("backup.job", False, read)
 
 
 def _rg_name(resource_id: str) -> tuple[str, str]:
