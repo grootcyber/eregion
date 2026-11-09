@@ -186,7 +186,7 @@ def test_rows_found_are_ok_too(tmp_path, backend, config):
 
 @pytest.mark.parametrize("marker, kind", [("BROKEN(", "syntax"), ("NoSuchTable", "table")])
 def test_an_invalid_query_is_an_error_said_without_the_infrastructure(tmp_path, backend, config, marker, kind):
-    base = BASE.replace('Syslog | where SyslogMessage has "USER=root"', f"{marker} | take 1")
+    base = BASE.replace('Syslog | where SyslogMessage has "USER=root"', f"Syslog | where {marker} | take 1")
     res = _check("--rules", _base(tmp_path, base), "--live", "--json")
     assert res.exit_code == 1
     out = _json(res)
@@ -344,7 +344,7 @@ def test_no_rule_loaded_is_an_error(tmp_path, backend, config):
 
 
 def test_the_terminal_says_each_rule(tmp_path, backend, config):
-    base = BASE.replace('Syslog | where SyslogMessage has "USER=root"', "BROKEN( | take 1")
+    base = BASE.replace('Syslog | where SyslogMessage has "USER=root"', "Syslog | where BROKEN( | take 1")
     res = _check("--rules", _base(tmp_path, base), "--live")
     assert res.exit_code == 1
     assert "ssh-brute-force" in res.output and "sudo-root" in res.output
@@ -426,7 +426,7 @@ def test_an_explicit_403_or_404_lasts(tmp_path, backend, config, marker, kind, c
 
 
 def test_with_json_the_full_words_go_to_stderr(tmp_path, backend, config):
-    base = BASE.replace('Syslog | where SyslogMessage has "USER=root"', "BROKEN( | take 1")
+    base = BASE.replace('Syslog | where SyslogMessage has "USER=root"', "Syslog | where BROKEN( | take 1")
     res = _check("--rules", _base(tmp_path, base), "--live", "--json")
     assert WS in res.stderr and "sudo-root [error/syntax]" in res.stderr      # the CD's journal keeps them
     assert WS not in res.stdout and _by_name(_json(res))["sudo-root"]["code"] == "SYN0002"

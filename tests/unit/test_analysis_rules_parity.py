@@ -11,7 +11,9 @@ import pytest
 from analysis import triage as tg
 from glorfindel import detection_rules as dr
 
-Q = "Syslog | summarize count() by Computer"
+Q = "Syslog | summarize count() by Computer, _ResourceId"
+# SEC-A4 (V-04): rows that name no VM but by their host name — refused at load, any layer.
+BY_HOST = "Syslog | summarize count() by Computer"
 BASE = {"rules": [
     {"name": "ssh", "ttp": "T1110.001", "query": Q},
     {"name": "disk", "ttp": "T1486", "query": Q},
@@ -49,6 +51,14 @@ LAYERS = {
     "rules not a list": {"rules": {"name": "ssh", "enabled": False}},
     "disable not a list": {"disable": "ssh"},
     "an unknown key": {"rulez": [{"name": "ssh", "enabled": False}]},
+    # SEC-A4 (V-04): routed by the host name — skipped, the base rule kept; the other planes
+    # are filed on what their rows name, never refused for it.
+    "a replacement routed by its host name": {"rules": [{"name": "ssh", "ttp": "T9", "query": BY_HOST}]},
+    "a new rule routed by its host name": {"rules": [{"name": "new", "ttp": "T1078", "query": BY_HOST}]},
+    "a rule of the control plane without _ResourceId": {"rules": [
+        {"name": "nsg", "ttp": "T1562", "source": "azure_activity", "query": "AzureActivity | project Caller"}]},
+    "an Entra table read by azure_monitor": {"rules": [
+        {"name": "sp", "ttp": "T1078", "query": "SigninLogs | project UserPrincipalName"}]},
     "valid and invalid together": {"disable": ["acct"], "rules": [
         {"name": "ssh"}, {"name": "disk", "ttp": "T1490", "query": Q}, {"name": "x", "query": Q, "interval_s": "1m"}]},
 }

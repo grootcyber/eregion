@@ -169,6 +169,16 @@ def _approve(proposal_id: str, rules_yaml_path: str | Path, rule_layers) -> dict
         proposal.setdefault("renamed_from", proposal["rule_name"])
         proposal["rule_name"] = name
     replaced = next((r for r in _client_layer_rules() if r.get("name") == name), None)
+    # SEC-A4 (V-04): a rule the watch would refuse at load is refused here, said — never written
+    # to the client's layer (where it would route by the host name root chooses). Read under its
+    # own source and under azure_monitor: the rule written may keep it or not (`rule_from_proposal`).
+    # The proposal stays pending: rejected, or proposed again.
+    from glorfindel.detection_rules import routing_refusal
+    query = str(proposal.get("query") or "")
+    refused = routing_refusal(proposal.get("source") or "azure_monitor", query) or routing_refusal("azure_monitor", query)
+    if refused:
+        raise ValueError(f"Règle « {name} » non approuvée : {refused}. La proposition reste en attente "
+                         "(la rejeter, ou la reproposer avec `_ResourceId` dans sa projection).")
     rule = rule_from_proposal(proposal, Path(rules_yaml_path))
     how = rule_layers.write_client_rule(rule)
 

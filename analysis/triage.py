@@ -248,7 +248,19 @@ def _invalid_client_rule(entry) -> str:
                 return "`interval_s` doit être positif"
     if entry.get("enabled", True) and not entry.get("query"):
         return "n'a pas de requête"
+    if entry.get("enabled", True):
+        return _unroutable(entry)
     return ""
+
+
+def _unroutable(rule: dict) -> str:
+    """Why the watch refuses this rule, of any layer, for its routing (SEC-A4, V-04: a rule of the
+    data plane whose rows name no VM but by their host name), "" when it loads."""
+    from eregion_core import rule_routing
+    source, query = rule.get("source") or "azure_monitor", rule.get("query") or ""
+    if not isinstance(source, str) or not isinstance(query, str) or not rule_routing.data_plane(source, query):
+        return ""
+    return rule_routing.refusal(query)
 
 
 def rules(base: Path = BASE_RULES, client: Path | None = None) -> tuple[list[dict], str]:
@@ -280,7 +292,7 @@ def rules(base: Path = BASE_RULES, client: Path | None = None) -> tuple[list[dic
                 merged.append({**entry, "layer": "client"})
             else:
                 merged[at] = {**entry, "layer": "client"}
-    out = [r for r in merged if r.get("enabled", True)]
+    out = [r for r in merged if r.get("enabled", True) and not _unroutable(r)]
     notes = [n for n in (why_b, why_c) if n]
     if not notes:
         layers = "base livrée et couche du client" if Path(client).is_file() else "base livrée (pas de couche du client)"

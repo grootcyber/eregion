@@ -3646,10 +3646,9 @@ MUTANTS += [
      "        return target is not None and bool(resource_id) and target[0].lower() == resource_id.lower()\n",
      "        return target is not None\n"),
     # The second pass (review 5.5, Jonathan's decisions): the RulePoller's reading, the
-    # floor reading the state, the confidence's range.
-    ("M1335", "two VMs with one host name: the row guessed onto one of them (SEC4a)", DRU,
-     "            if len(hits) <= 1:\n                return True, next(iter(hits), None)\n",
-     "            if hits:\n                return True, next(iter(hits), None)\n"),
+    # floor reading the state, the confidence's range. M1335 and M1363 (a host name read for two
+    # VMs, a dotted host name) retired by SEC-A4 (V-04): no row is routed by its host name any
+    # more — the mutant that brings that reading back is M4541 (scripts/mutants/SEC-A4.py).
     ("M1336", "an attack_started's row read without the private IPs: an exfiltration held (SEC4a)", AGT,
      "    index = RowAttribution(list(known.values()), lambda: owners)\n",
      "    index = RowAttribution(list(known.values()))\n"),
@@ -3668,9 +3667,6 @@ MUTANTS += [
     ("M1362", "a VM's sub-resource not brought back to the VM (SEC4a)", DRU,
      "            return True, self.by_rid.get(_vm_id_of(rid))\n",
      "            return True, self.by_rid.get(rid.lower())\n"),
-    ("M1363", "a dotted host name never matches its VM (SEC4a)", DRU,
-     '            hits = self.by_name.get(comp.split(".")[0].lower(), set())\n',
-     "            hits = self.by_name.get(comp.lower(), set())\n"),
     ("M1364", "the address that made the call never read: an exfiltration names no VM (SEC4a)", DRU,
      "        owner = (self._owners() or {}).get(ip) if ip else None\n",
      "        owner = None\n"),

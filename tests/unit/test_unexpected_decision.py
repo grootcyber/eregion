@@ -357,11 +357,11 @@ def test_a_row_naming_the_lines_vm_is_its_detection():
 
 def test_a_row_naming_another_vm_is_never_pinned_to_the_lines():
     """The rule found another VM's encryption: the poll keeps looking for this VM's."""
-    own = {"Computer": "vm-s4", "MaxWrite": 8e7}
+    own = {"Computer": "vm-s4", "_ResourceId": RID, "MaxWrite": 8e7}
     out, _ = _resolve(_started(), [{"Computer": "vm-other", "_ResourceId": OTHER, "MaxWrite": 9e7}, own])
-    assert out["raw_signal"]["detected_data"] == own
+    assert out["raw_signal"]["detected_data"] == own and "attribution" not in out["context"]
     out, _ = _resolve(_started(), [{"_ResourceId": OTHER + "/extensions/x", "MaxWrite": 9e7},
-                                   {"Computer": "vm-other.internal", "MaxWrite": 9e7}])
+                                   {"Computer": "vm-s4", "_ResourceId": OTHER.upper(), "MaxWrite": 9e7}])
     assert out["event"] == "detection_timeout"
 
 
@@ -392,9 +392,12 @@ def test_an_exfiltration_row_is_attributed_by_the_private_ip_that_made_the_call(
     assert out["context"]["attribution"] == "unattributed"
 
 
-def test_a_dotted_host_name_names_its_vm_and_two_homonyms_name_neither():
+def test_a_host_name_never_names_a_vm_its_resource_does():
+    """SEC-A4 (V-04): root on a VM chooses its host name — a row naming the line's VM by its
+    `Computer` alone is no attribution: held, never acted on."""
     out, _ = _resolve(_started(), [{"Computer": "vm-s4.internal.example", "MaxWrite": 9e7}])
-    assert out["event"] == "detection" and "attribution" not in out["context"]
+    assert out["event"] == "detection" and out["context"]["attribution"] == "unattributed"
+    assert _decide(out, _decision())["held_by"] == "attribution"
     # A sub-resource of the VM (an extension) names the VM.
     out, _ = _resolve(_started(), [{"_ResourceId": RID.lower() + "/extensions/x", "MaxWrite": 9e7}])
     assert out["event"] == "detection" and "attribution" not in out["context"]

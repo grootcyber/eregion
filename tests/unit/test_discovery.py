@@ -504,12 +504,15 @@ def test_expand_for_discovered_skips_disabled_rule(tmp_path):
 def test_an_excluded_asset_gets_no_detection(tmp_path):
     from glorfindel.config import GlorfindelConfig
     reg = AssetRegistry(path=tmp_path / "assets.json")
-    reg.update([_asset("vm-dev-1", backend="law", rid="/sub/vm-dev-1"),
-                _asset("vm-prod-1", backend="law", rid="/sub/vm-prod-1")])
+    vm = "/subscriptions/s/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/"
+    reg.update([_asset("vm-dev-1", backend="law", rid=vm + "vm-dev-1"),
+                _asset("vm-prod-1", backend="law", rid=vm + "vm-prod-1")])
     cfg = GlorfindelConfig(exceptions=[ExceptionConfig(asset_pattern="vm-dev-*", exclude_all=True)])
-    poller, rule, sent = _rows_poller(reg, [{"Computer": "vm-dev-1"}, {"Computer": "vm-prod-1"}], cfg=cfg)
+    # Each row names its VM by its resource (SEC-A4: never by its host name alone).
+    poller, rule, sent = _rows_poller(reg, [{"Computer": "vm-dev-1", "_ResourceId": vm + "vm-dev-1"},
+                                            {"Computer": "vm-prod-1", "_ResourceId": vm + "vm-prod-1"}], cfg=cfg)
     poller.poll_once(rule)
-    assert [s["resource_id"] for s in sent] == ["/sub/vm-prod-1"]
+    assert [s["resource_id"] for s in sent] == [vm + "vm-prod-1"]
 
 
 def test_an_evicted_asset_gets_no_detection(tmp_path):
