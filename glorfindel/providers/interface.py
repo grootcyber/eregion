@@ -205,9 +205,10 @@ class CloudConnector(ABC):
 
     def observed_restore(self, resource_id: str, since: str, vault: str = "", vault_rg: str = "") -> dict:
         """The last restore of this VM the provider ran since `since` (ISO 8601), read only
-        (REC1): {"job": None}, or the job, the point it restored, the VM's power state, what
-        its last Run Command said since — glorfindel/recovery_watch.py decides what it proves.
-        A provider that can't read it says so."""
+        (REC1): {"job": None}, or facts each with its author — the job, its type, the point it
+        restored, the VM's power state and OS disk, the Run Commands of the control plane's log
+        and who ran them, what the guest last said — glorfindel/recovery_watch.py decides what
+        they prove. A provider that can't read it says so."""
         raise NotImplementedError(f"{type(self).__name__}: no restore to observe")
 
     @abstractmethod

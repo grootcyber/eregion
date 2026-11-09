@@ -24,9 +24,11 @@ isolation paths, with Azure's semantics where they matter:
 - Run Command's shell script doesn't run on a Windows VM (assumed);
 - Azure Backup (REC1, #668): a vault's restore jobs (`backup_jobs.list`, `job_details.get`, the
   point a job restored in its property bag — by its time, US style with a trailing space in the
-  key, or by its id: both unmeasured), the VM's recovery points, its power state and what Run
-  Command v1 last said (the instance view: the output of the last command, written again when a
-  restored disk boots and replays it — measured once, 2026-10-05, the ransomware replayed).
+  key, or by its id: both unmeasured — and its « Job Type »), the VM's recovery points, its power
+  state, its OS disk and when it was created (a restore in place puts a new one), the activity log
+  (each Run Command, who ran it: `caller`), and what Run Command v1 last said (the instance view,
+  the GUEST's word: the output of the last command, written again when a restored disk boots and
+  replays it — measured once, 2026-10-05, the ransomware replayed —, or whatever root writes).
 
 `open_flows` evaluates traffic as Azure does, independently of the connector's own
 helpers: inbound crosses the subnet's NSG then the NIC's, outbound the reverse; in each
@@ -145,6 +147,14 @@ class FakeAzure:
         self.points: dict[str, list[dict]] = {}
         self.backup = SimpleNamespace(backup_jobs=_Jobs(self), job_details=_JobDetails(self),
                                       recovery_points=_Points(self), protected_items=_Items(self))
+        # The control plane's memory (REC1): each managed disk's creation, and the activity log —
+        # who ran each Run Command (`caller`: the identity the next calls are made under; the test
+        # sets it) and when (`clock`, which a test may move).
+        self.disks: dict[str, dict] = {}
+        self.activity: list[dict] = []
+        self.caller = "h0-identity"
+        self.clock = lambda: datetime.now(timezone.utc)
+        self.compute.disks = _Disks(self)
 
     # ── building the customer's world ──────────────────────────────────────────
 
@@ -175,9 +185,24 @@ class FakeAzure:
                                    "forwarding": bool(n.get("forwarding"))}
             ids.append(rid)
         rid = vm_id(rg, name)
+        disk = self._new_disk(rg, f"{name}-osdisk", datetime(2026, 1, 1, tzinfo=timezone.utc))
         self.vms[key(rid)] = {"id": rid, "nics": ids, "os": os_type, "power": "running",
-                              "last_output": "", "said": None, "extensions": [], "managed": []}
+                              "last_output": "", "said": None, "extensions": [], "managed": [],
+                              "os_disk": disk}
         return rid
+
+    def _new_disk(self, rg: str, name: str, created: datetime) -> str:
+        rid = f"{SUB}/resourceGroups/{rg}/providers/Microsoft.Compute/disks/{name}"
+        self.disks[key(rid)] = {"id": rid, "time_created": created}
+        return rid
+
+    def activity_log(self, resource_id: str, since: str) -> list[dict]:
+        """The activity log's events on a resource since a moment, as its REST API gives them."""
+        start = datetime.fromisoformat(since.replace("Z", "+00:00"))
+        return [{"caller": e["caller"], "claims": {"appid": e["caller"]},
+                 "operationName": {"value": e["op"]}, "status": {"value": e["status"]},
+                 "eventTimestamp": e["at"].isoformat(), "resourceId": e["resource_id"]}
+                for e in self.activity if key(e["resource_id"]) == key(resource_id) and e["at"] >= start]
 
     # ── Azure Backup (REC1) ─────────────────────────────────────────────────────
 
@@ -187,17 +212,27 @@ class FakeAzure:
 
     def restore(self, vm: str, point: str, start: datetime, end: datetime | None,
                 status: str = "Completed", bag: str = "time", power: str = "running",
-                boot_after_s: float = 60.0) -> str:
-        """The vault restores `point` on the VM, from start to end (None: still running). Done,
-        the VM is left `power`; running, its restored disk replays the last Run Command of the
-        VM model `boot_after_s` after the end — the agent writes its output again (2026-10-05).
-        `bag`: how the job names the point — "time" (« Recovery point time  », US style),
-        "id" (« Recovery Point Id »), "none". Returns the job's name."""
+                boot_after_s: float = 60.0, kind: str = "replace", container: bool = True) -> str:
+        """The vault restores `point` from start to end (None: still running). `kind`: "replace"
+        (« Replace disks », in place: new disks on the VM, created during the job; done, the VM
+        is left `power`; running, its restored disk replays the last Run Command of the VM model
+        `boot_after_s` after the end — the agent writes its output again, 2026-10-05), "disks"
+        (« Restore disks ») or "new_vm" (« Create new virtual machine »): elsewhere, the isolated
+        VM as it was. `bag`: how the job names the point — "time" (« Recovery point time  »,
+        US style), "id" (« Recovery Point Id »), "none". `container`: the job names its
+        container. Returns the job's name."""
         v = self.vms[key(vm)]
         name = f"job-{len(self.jobs) + 1:04d}"
         self.jobs.append({"name": name, "vm": key(vm), "status": status if end is not None else "InProgress",
-                          "start": start, "end": end, "point": point, "bag": bag})
-        if end is not None and status == "Completed":
+                          "start": start, "end": end, "point": point, "bag": bag, "kind": kind,
+                          "container": container})
+        if kind != "replace" or end is None:
+            return name
+        # Its disks swapped mid-job, whatever its end: a job that fails late (the VM not started
+        # again, a step after the swap) has replaced them too — assumed, never a proof of success.
+        rg = vm.split("/")[4]
+        v["os_disk"] = self._new_disk(rg, f"{vm.rsplit('/', 1)[-1]}-osdisk-{name}", start + (end - start) / 2)
+        if status == "Completed":
             v["power"] = power
             if power == "running" and v["last_output"]:
                 v["said"] = {"message": v["last_output"], "time": end + timedelta(seconds=boot_after_s)}
@@ -429,7 +464,8 @@ class _Vms:
                 id=v["id"],
                 network_profile=SimpleNamespace(network_interfaces=[
                     SimpleNamespace(id=n, primary=i == 0) for i, n in enumerate(v["nics"])]),
-                storage_profile=SimpleNamespace(os_disk=SimpleNamespace(os_type=v["os"])))
+                storage_profile=SimpleNamespace(os_disk=SimpleNamespace(
+                    os_type=v["os"], managed_disk=SimpleNamespace(id=v.get("os_disk")) if v.get("os_disk") else None)))
         return self.az.call("vm.get", False, read)
 
     def begin_run_command(self, rg, name, command):
@@ -445,9 +481,13 @@ class _Vms:
             said = (line.split("'", 2)[1] if line.startswith(("echo '", "Write-Output '")) and line.count("'") == 2
                     else "glorfindel-drain-remaining=0")
             message = f"Enable succeeded:\n[stdout]\n{said}\n[stderr]\n"
-            # The VM model's last command, and the agent's word of it (the instance view).
+            # The VM model's last command, the agent's word of it (the instance view), and the
+            # control plane's record of who ran it (the activity log, REC1).
+            at = self.az.clock()
             v["last_output"] = message
-            v["said"] = {"message": message, "time": datetime.now(timezone.utc)}
+            v["said"] = {"message": message, "time": at}
+            self.az.activity.append({"resource_id": v["id"], "op": "Microsoft.Compute/virtualMachines/runCommand/action",
+                                     "status": "Succeeded", "at": at, "caller": self.az.caller})
             return _Done(SimpleNamespace(value=[SimpleNamespace(message=message)]))
         return self.az.call("vm.run_command", True, run)
 
@@ -481,6 +521,19 @@ class _Extensions:
                     "properties": {"publisher": "Microsoft.CPlat.Core", "type": h}}))
             return SimpleNamespace(value=items)
         return self.az.call("vm.extensions", False, read)
+
+
+class _Disks:
+    def __init__(self, az: FakeAzure):
+        self.az = az
+
+    def get(self, rg, name):
+        def read():
+            d = self.az.disks.get(key(f"{SUB}/resourceGroups/{rg}/providers/Microsoft.Compute/disks/{name}"))
+            if d is None:
+                raise not_found(f"disks/{name}")
+            return SimpleNamespace(id=d["id"], time_created=d["time_created"])
+        return self.az.call("disk.get", False, read)
 
 
 class _ManagedRunCommands:
@@ -531,19 +584,26 @@ class _Points:
         return self.az.call("backup.points", False, read)
 
 
+# What a job's property bag calls each kind of restore (« Replace disks » as the fake has it since
+# REC1; the others as the portal names the options — unmeasured).
+_JOB_TYPES = {"replace": "Replace disks", "disks": "Restore disks", "new_vm": "Create new virtual machine"}
+
+
 def _job_view(az: FakeAzure, j: dict, details: bool = False):
     v = az.vms[j["vm"]]
     vrg, vname = _rg_name(v["id"])
     bag = {}
     if details:
         at = next((p["time"] for p in az.points.get(j["vm"], []) if p["name"] == j["point"]), None)
+        bag = {"Job Type": _JOB_TYPES[j.get("kind", "replace")]}
         if j["bag"] == "time" and at is not None:
-            bag = {"Job Type": "Replace disks", "Recovery point time ": at.strftime("%m/%d/%Y %I:%M:%S %p")}
+            bag["Recovery point time "] = at.strftime("%m/%d/%Y %I:%M:%S %p")
         elif j["bag"] == "id":
-            bag = {"Job Type": "Replace disks", "Recovery Point Id": j["point"]}
+            bag["Recovery Point Id"] = j["point"]
     return SimpleNamespace(name=j["name"], properties=SimpleNamespace(
         operation="Restore", status=j["status"], entity_friendly_name=vname,
-        container_name=f"iaasvmcontainerv2;{vrg};{vname}", start_time=j["start"], end_time=j["end"],
+        container_name=f"iaasvmcontainerv2;{vrg};{vname}" if j.get("container", True) else None,
+        start_time=j["start"], end_time=j["end"],
         extended_info=SimpleNamespace(property_bag=bag) if details else None))
 
 

@@ -1,16 +1,25 @@
-"""What Azure says of a VM's recovery, read only (REC1, #668): the last restore job of this VM
-in the vault since a moment, the recovery point it restored, the VM's power state, and what
-its last Run Command said since the restore.
+"""What Azure says of a VM's recovery, read only (REC1, #668): facts, each with its author —
+the control plane (the vault, ARM, the activity log) or the guest (what the VM's agent reports).
 
 H0 never restores (SEC17): a restore runs from the operator's workstation, and the
 `recovery_complete` it writes stays on that host. The watch that isolated the VM reads the
 recovery here instead — never from a file another host wrote, never from the model — and
-glorfindel/recovery_watch.py decides what it proves. Reads only, under Reader:
+glorfindel/recovery_watch.py decides what the facts prove. Read here:
+
+  the control plane  the VM's last restore job since a moment (the vault: its status, its type,
+                     its container, the point it restored); the VM's power state and the creation
+                     time of its OS disk (ARM: a restore in place puts new disks on it); the
+                     succeeded Run Commands on the VM and who ran them (the activity log);
+  the guest          what Run Command v1 last said (the instance view: the agent writes it, root
+                     on the VM can write it too) — never enough alone;
+
+and the scripts a restored disk may replay (`_replayable_scripts`). Reads only, under Reader:
 `Microsoft.RecoveryServices/vaults/backupJobs/read`, `.../recoveryPoints/read`,
-`Microsoft.Compute/virtualMachines/instanceView/read`, `.../extensions/read`,
-`.../runCommands/read` — all under `*/read`. Unmeasured on the bench (REC1): the property
-bag of a restore job (`Recovery point time`, its format), the instance view's word of Run
-Command v1 after a restored disk boots.
+`Microsoft.Compute/virtualMachines/read`, `.../instanceView/read`, `.../extensions/read`,
+`.../runCommands/read`, `Microsoft.Compute/disks/read`, `Microsoft.Insights/eventtypes/values/read`
+— all under `*/read`. Unmeasured on the bench (REC1): the property bag of a restore job (« Job
+Type », « Recovery point time », their values), the instance view's word of Run Command v1 after
+a restored disk boots, the identifiers the activity log gives a service principal as caller.
 """
 from __future__ import annotations
 
@@ -27,6 +36,8 @@ _BAG_FORMATS = ("%m/%d/%Y %I:%M:%S %p", "%m/%d/%Y %H:%M:%S", "%d/%m/%Y %I:%M:%S 
 # Run Command v1's handlers (a type, or the extension's name): v2's commands are resources of
 # their own, listed by _replayable_scripts.
 _RUN_COMMAND_V1 = ("runcommandlinux", "runcommandwindows")
+RUN_COMMAND_OP = "microsoft.compute/virtualmachines/runcommand/action"
+_OID_CLAIM = "http://schemas.microsoft.com/identity/claims/objectidentifier"
 
 
 def _utc(value) -> datetime | None:
@@ -77,6 +88,14 @@ def _sections(message: str) -> tuple[str, str]:
     return out.strip(), err.strip()
 
 
+def _callers(event: dict) -> list[str]:
+    """The identifiers of who made an activity log event, lowercased: its `caller` (a user's UPN, a
+    service principal's appId or object id depending on the token), and its claims' appid and oid."""
+    claims = event.get("claims") if isinstance(event.get("claims"), dict) else {}
+    ids = [event.get("caller"), claims.get("appid"), claims.get(_OID_CLAIM), claims.get("oid")]
+    return sorted({str(i).strip().lower() for i in ids if i and str(i).strip()})
+
+
 class RecoveryMixin:
     """A VM's recovery, read on Azure (part of AzureConnector)."""
 
@@ -91,12 +110,15 @@ class RecoveryMixin:
     def observed_restore(self, resource_id: str, since: str, vault: str = "", vault_rg: str = "") -> dict:
         """The last restore of this VM the vault ran since `since` (ISO 8601), read only.
 
-        {"job": None} when there is none. Else {"job": {"name", "status", "start", "end"}} —
-        and, the job ended (whatever its status: the watch judges it, glorfindel/recovery_watch.py):
-        "point" ({"name", "time"} or {"time": "", "why"}), "power" ("running", "deallocated",
-        "stopped", … or "unknown"), and, the VM running, "run_command" ({"neutralized": True |
-        False | None, "why"}) and "replay_vectors". Facts only: nothing here says the recovery is
-        proven. Raises when the vault or the VM can't be read."""
+        {"job": None} when there is none. Else {"job": {"name", "status", "start", "end",
+        "container_named"}} — and, the job ended (whatever its status: the watch judges it):
+        "point" ({"name", "time", "by": "id" | "time"} or {"time": "", "why"}); "job_type" (the
+        property bag's « Job Type », "" when absent); "os_disk_created" (ISO, "" when unreadable,
+        with "os_disk_why"); "power"; "run_commands" (the succeeded Run Commands on the VM since
+        `since`: [{"at", "callers"}], oldest first) or "run_commands_error"; and, the VM running,
+        "run_command" (the guest's word since the job's end: {"neutralized": True | False | None,
+        "why"}) and "replay_vectors". Facts only: nothing here says the recovery is proven. Raises
+        when the vault or the VM can't be read."""
         if self.dry_run:
             return {"job": None, "dry_run": True}
         if not vault:
@@ -112,7 +134,14 @@ class RecoveryMixin:
         out: dict = {"job": job}
         if not job["end"]:
             return out                         # still running: nothing ended to read
-        out["point"] = self._restored_point(client, vault, v_rg, rg, vm_name, job["name"])
+        bag = _bag(client.job_details.get(vault, v_rg, job["name"]))
+        out["job_type"] = bag.get("job type", "")
+        out["point"] = self._restored_point(client, bag, vault, v_rg, rg, vm_name)
+        out.update(self._os_disk_created(rg, vm_name))
+        try:
+            out["run_commands"] = self._run_commands_on(resource_id, since)
+        except Exception as exc:               # unreadable: the neutralization unknown, said
+            out["run_commands_error"] = f"journal d'activité illisible : {str(exc)[:160]}"
         view = self._compute.virtual_machines.instance_view(rg, vm_name)
         out["power"] = self._power_of(view)
         if out["power"] == "running":
@@ -123,8 +152,8 @@ class RecoveryMixin:
     def _last_restore_job(self, client, vault: str, v_rg: str, vm_rg: str, vm_name: str,
                           since: datetime | None) -> dict | None:
         """The newest Restore job of THIS VM started after `since`: its name in the vault
-        (`entity_friendly_name`), and its container when the job names one — two VMs of one
-        name in two groups share a vault."""
+        (`entity_friendly_name`), and its container — a job naming another group's is another
+        VM's (two VMs of one name share a vault); one naming none is said (`container_named`)."""
         if since is None:
             return None
         want = f";{vm_rg.lower()};{vm_name.lower()}"
@@ -142,19 +171,19 @@ class RecoveryMixin:
             if start is None or start <= since:
                 continue
             if best is None or start > best[0]:
-                best = (start, j, p)
+                best = (start, j, p, bool(container))
         if best is None:
             return None
-        start, j, p = best
+        start, j, p, named = best
         end = _utc(getattr(p, "end_time", None))
         return {"name": str(getattr(j, "name", "") or ""), "status": str(getattr(p, "status", "") or "Unknown"),
-                "start": start.isoformat(), "end": end.isoformat() if end else ""}
+                "start": start.isoformat(), "end": end.isoformat() if end else "", "container_named": named}
 
-    def _restored_point(self, client, vault: str, v_rg: str, vm_rg: str, vm_name: str, job_name: str) -> dict:
+    def _restored_point(self, client, bag: dict, vault: str, v_rg: str, vm_rg: str, vm_name: str) -> dict:
         """The recovery point a restore job restored, as the VM's recovery points give it: named
-        by the job's property bag, or found by the time the bag writes — each reading of it
-        must match exactly one point, to the second. Else {"time": "", "why"}."""
-        bag = _bag(client.job_details.get(vault, v_rg, job_name))
+        by the job's property bag (`by: "id"`), or found by the time the bag writes (`by:
+        "time"`) — each reading of it must match exactly one point, to the second. Else
+        {"time": "", "why"}."""
         container, item = self._resolve_backup_item_names(client, vault, v_rg, vm_rg, vm_name)
         points = {}
         for rp in client.recovery_points.list(vault, v_rg, "Azure", container, item):
@@ -166,7 +195,7 @@ class RecoveryMixin:
         if named:
             name = named.rstrip("/").rsplit("/", 1)[-1]
             if name in points:
-                return {"name": name, "time": points[name].isoformat()}
+                return {"name": name, "time": points[name].isoformat(), "by": "id"}
             return {"time": "", "why": f"le point {name[:60]} que nomme le job n'est pas parmi ceux de la VM"}
         said = bag.get("recovery point time", "")
         if not said:
@@ -174,9 +203,69 @@ class RecoveryMixin:
         hits = {n for n, t in points.items() for c in _bag_times(said) if abs((t - c).total_seconds()) < 1}
         if len(hits) == 1:
             name = hits.pop()
-            return {"name": name, "time": points[name].isoformat()}
+            return {"name": name, "time": points[name].isoformat(), "by": "time"}
         return {"time": "", "why": (f"« {said[:40]} » ne désigne "
                                     + ("aucun" if not hits else "pas un seul") + " point de la VM")}
+
+    def _os_disk_created(self, rg: str, vm_name: str) -> dict:
+        """When the VM's current OS disk was created (ARM): a restore in place puts new disks on the
+        VM; a restore elsewhere (« Restore disks », a new VM) leaves its disk as it was."""
+        try:
+            vm = self._compute.virtual_machines.get(rg, vm_name)
+            disk_id = str(getattr(getattr(getattr(vm.storage_profile, "os_disk", None), "managed_disk", None),
+                                  "id", "") or "")
+            if not disk_id:
+                return {"os_disk_created": "", "os_disk_why": "la VM ne nomme pas de disque OS managé"}
+            d_rg, d_name = _parse_vm_resource_id(disk_id)
+            created = _utc(getattr(self._compute.disks.get(d_rg, d_name), "time_created", None))
+            if created is None:
+                return {"os_disk_created": "", "os_disk_why": "la date de création du disque OS ne se lit pas"}
+            return {"os_disk_created": created.isoformat(), "os_disk": disk_id}
+        except Exception as exc:
+            return {"os_disk_created": "", "os_disk_why": f"disque OS illisible : {str(exc)[:160]}"}
+
+    def _run_commands_on(self, resource_id: str, since: str) -> list[dict]:
+        """The succeeded Run Commands (v1, `runCommand/action`) on this VM since `since`, from the
+        activity log — the control plane's word, never the guest's: [{"at", "callers"}], oldest
+        first. Raises when the log can't be read."""
+        events = self._activity_events(resource_id, since)
+        out = []
+        want = resource_id.rstrip("/").lower()
+        for e in events:
+            op = str((e.get("operationName") or {}).get("value") or "").lower()
+            status = str((e.get("status") or {}).get("value") or "")
+            rid = str(e.get("resourceId") or e.get("resourceUri") or want).rstrip("/").lower()
+            at = _utc(e.get("eventTimestamp"))
+            if op != RUN_COMMAND_OP or status != "Succeeded" or rid != want or at is None:
+                continue
+            out.append({"at": at.isoformat(), "callers": _callers(e)})
+        return sorted(out, key=lambda e: e["at"])
+
+    def _activity_events(self, resource_id: str, since: str) -> list[dict]:
+        """The activity log's events on this resource since `since` (REST, every page): the test's
+        fake when it gave one (`_activity`)."""
+        given = getattr(self, "_activity", None)
+        if given is not None:
+            return list(given(resource_id, since))
+        import requests
+        start = _utc(since)
+        token = self._credential.get_token("https://management.azure.com/.default").token
+        url = (f"https://management.azure.com/subscriptions/{self._subscription_id}"
+               "/providers/Microsoft.Insights/eventtypes/management/values")
+        params = {"api-version": "2015-04-01",
+                  "$filter": f"eventTimestamp ge '{start:%Y-%m-%dT%H:%M:%SZ}' and resourceUri eq '{resource_id}'",
+                  "$select": "caller,claims,operationName,eventTimestamp,status,resourceId"}
+        events: list[dict] = []
+        for _ in range(20):                    # bounded: a VM's few hours of events
+            r = requests.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=20, params=params)
+            if not r.ok:
+                raise RuntimeError(f"journal d'activité : {r.status_code} {r.text[:120]}")
+            body = r.json()
+            events += list(body.get("value") or [])
+            url, params = body.get("nextLink"), None
+            if not url:
+                break
+        return events
 
     @staticmethod
     def _power_of(view) -> str:
@@ -188,11 +277,10 @@ class RecoveryMixin:
 
     @staticmethod
     def _run_command_since(view, end: datetime | None) -> dict:
-        """What Run Command v1 last said on the VM, read after the restore's end: the harmless
-        command (NEUTRALIZED_MARKER, nothing on stderr) → neutralized; another word → not; no
-        word since the restore (the restored disk not yet booted, no handler) → None. A word
-        from before the restore proves nothing: written by the guest, the old disk's attacker
-        could have written it."""
+        """What Run Command v1 last said on the VM — the GUEST's word: its agent writes it, root on
+        the VM can too. Read after the restore's end: the harmless command (NEUTRALIZED_MARKER,
+        nothing on stderr) → neutralized; another word → not; no word since the restore → None.
+        One condition among others, never enough alone (recovery_watch: the activity log first)."""
         latest = None
         for ext in getattr(view, "extensions", None) or []:
             kind = f"{getattr(ext, 'type', '') or ''} {getattr(ext, 'name', '') or ''}".lower()
