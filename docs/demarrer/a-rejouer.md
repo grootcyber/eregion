@@ -61,6 +61,14 @@ Rien de ce guide n'a été rejoué de zéro. Les mesures citées sont celles des
 | 7 | ~25 min après : `make glorfindel-host-campaign-report CAMPAIGN=<id>` | le rapport ; la page Annatar de la console ; la preuve de T1136.001 datée sur l'accueil |
 | 8 | `orodruin-down`, `glorfindel-host-down`, `celebrimbor-down CONFIRM=default`, les rôles supprimés | plus aucun des trois groupes ; `az role definition list --custom-role-only true` sans les rôles d'Eregion |
 
+## Le rançongiciel au banc (RAN1)
+
+Les chiffres du README (« ~1 min to contain, 21m29s to restored service ») datent du 09/06, d'avant H0, Orodruin et Dagorlad. Le pas à pas : [`banc-t1486.md`](../banc-t1486.md).
+
+| Étape | Le geste | Ce qu'on doit voir |
+|---|---|---|
+| 2–9 | T1486 sur gondolin par Dagorlad et `make orodruin-exercise`, le restore du poste sous le principal de la console, la levée sur H0 | `detected`, `isolate_vm` seul et relu sur Azure, la restauration et la levée ; les trois temps datés dans #665 |
+
 ## Le cas sans H0
 
 Depuis WC1 (#523), la watch du poste peut écrire le canal retour d'Orodruin ([banc.md](banc.md#sans-h0--la-watch-de-ton-poste)). Codé et testé sans Azure ; la mesure au banc reste à faire : un run depuis Orodruin, la watch sur le poste, la garde qui passe avec sa clé épinglée et refuse une autre clé.
