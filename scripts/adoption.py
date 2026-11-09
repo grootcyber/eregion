@@ -4,18 +4,23 @@
   python3 scripts/adoption.py check    docs/proofs.json and the pages that show its figures
 
 `docs/proofs.json` is the one source of the figures the site shows. Each figure has its value,
-what it says, its date (the day or the month of the measure), its kind (measured, an estimate, a
-setting of the code, or a measure to take again) and its source: a file of the repository, the
-sentence of that file that gives the figure (`quote`), and the heading it sits under (`anchor`, a
-GitHub heading id) or the run it comes from (`run`). Held here, by `problems`:
+what it says, its date (the day or the month of the measure, or, when the source dates no
+measure, the day the source states it), its kind (measured, an estimate, a setting of the code, or
+a measure to take again) and its source: a file of the repository, the sentence of that file that
+gives the figure (`quote`, or several, `quotes`), and the heading it sits under (`anchor`, a GitHub
+heading id) or the run it comes from (`run`). Held here, by `problems`:
 - a figure without its date, its kind or its source is refused; so is a date to come;
 - a source the repository does not hold, a heading its file does not have, a run it does not name,
-  a quote its file (or its section) no longer says, or a quote that does not give the figure's
-  numbers, is refused: an edit that moves the figure in its source fails here, and says which;
+  a quote its file (or its section) no longer says, is refused; so is a number of the figure's
+  value, of what it says or of its note that no quote gives (in digits, or from two to ten in
+  words): an edit that moves the figure in its source fails here, and says which;
 - on a page (`docs/adoption/index.html`), a figure is shown in an element `data-proof="<key>"`,
-  whose value, text, date and source are the proof's own; any digit outside such an element — but
-  a technique's id (`T1486`) and the license (`Apache 2.0`) — is a figure that is not in the
-  source, and is refused; a proof no page shows is refused too.
+  whose value, text, date and source are the proof's own, and which says nothing outside its
+  fields (`data-f`) but separators; any digit elsewhere — in the text, a title, a label, an image's
+  text or a meta's content (the description), but a technique's id (`T1486`), the license
+  (`Apache 2.0`) and an issue's number in brackets — is a figure that is not in the source, and is
+  refused; a proof no page shows is refused too.
+On a failure, `check` says where to fix it: docs/proofs.json and the page, in the same pull request.
 
 The page's other rules (its content policy, no script, its links) are in tests/unit/test_adoption.py.
 Runs on python3 alone, without a library.
@@ -37,11 +42,18 @@ REPO_URL = "https://github.com/grootcyber/eregion/blob/main/"
 # kind → the label the page shows beside the date ("" for a measure: nothing more to say).
 KINDS = {"measured": "", "estimate": "estimate", "setting": "a setting", "to-remeasure": "to be re-measured"}
 PROOF_KEYS = {"value", "says", "date", "kind", "source", "note"}
-SOURCE_KEYS = {"path", "quote", "anchor", "run"}
+SOURCE_KEYS = {"path", "quote", "quotes", "anchor", "run"}
 DATE = re.compile(r"(\d{4})-(\d{2})(?:-(\d{2}))?")
 MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
-# Not a figure: a technique's id, the license. Anything else with a digit is.
-FREE = re.compile(r"\bT\d{4}(?:\.\d{3})?\b|\bApache 2\.0\b")
+# A source may write a small number in words (« cinq adresses »); not « un » nor « one », articles too.
+NUMBER_WORDS = {w: n for n, ws in enumerate(((), (), ("deux", "two"), ("trois", "three"), ("quatre", "four"),
+                                             ("cinq", "five"), ("six",), ("sept", "seven"), ("huit", "eight"),
+                                             ("neuf", "nine"), ("dix", "ten"))) for w in ws}
+# Not a figure: a technique's id, the license, an issue's number in brackets. Anything else with a digit is.
+FREE = re.compile(r"\bT\d{4}(?:\.\d{3})?\b|\bApache 2\.0\b|\(#\d+\)")
+# What a page tells about the place of each fix (scripts/adoption.py check prints it on a failure).
+HINT = ("update docs/proofs.json and the page in the same pull request "
+        "(docs/sessions.md, « Les fiches d'adoption »)")
 FIELDS = ("value", "says", "date", "source", "kind", "note")
 VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
 HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
@@ -51,8 +63,19 @@ def norm(text: str) -> str:
     return " ".join(text.split())
 
 
-def numbers(text: str) -> list[str]:
-    return re.findall(r"\d+", text)
+def numbers(text: str, words: bool = False) -> list[str]:
+    """The numbers a text writes in digits; with `words`, those it writes in words too (« cinq »)."""
+    found = re.findall(r"\d+", text)
+    if words:
+        found += [str(NUMBER_WORDS[w.lower()]) for w in re.findall(r"\w+", text) if w.lower() in NUMBER_WORDS]
+    return found
+
+
+def quotes(src: dict) -> list:
+    """The sentences a source cites: its `quote`, or each of its `quotes`."""
+    if "quotes" in src:
+        return src["quotes"] if isinstance(src["quotes"], list) else []
+    return [src.get("quote")]
 
 
 def parse_date(value) -> dt.date | None:
@@ -104,11 +127,14 @@ def _source_problems(key: str, src, root: Path) -> list[str]:
     if not isinstance(src, dict):
         return [f"{key} : la source est un objet (path, quote, anchor ou run)"]
     found = [f"{key} : « {k} » n'existe pas dans une source" for k in sorted(set(src) - SOURCE_KEYS)]
-    path, quote = src.get("path"), src.get("quote")
+    path = src.get("path")
     if not isinstance(path, str) or not path or path.startswith("/") or ".." in Path(path).parts:
         return found + [f"{key} : la source dit un chemin du dépôt"]
-    if not isinstance(quote, str) or not quote.strip():
-        return found + [f"{key} : la source cite la phrase qui donne le chiffre (quote)"]
+    if ("quote" in src) == ("quotes" in src):
+        return found + [f"{key} : la source cite la phrase qui donne le chiffre (quote), ou ses phrases (quotes)"]
+    said = quotes(src)
+    if not said or not all(isinstance(q, str) and q.strip() for q in said):
+        return found + [f"{key} : la source cite la phrase qui donne le chiffre (quote), ou ses phrases (quotes)"]
     file = root / path
     if not file.is_file():
         return found + [f"{key} : {path} n'existe pas dans le dépôt"]
@@ -121,8 +147,9 @@ def _source_problems(key: str, src, root: Path) -> list[str]:
         scope = f"{path}#{src['anchor']}"
     if src.get("run") is not None and (not isinstance(src["run"], str) or src["run"] not in text):
         found.append(f"{key} : {path} ne nomme pas le run {src.get('run')}")
-    if norm(quote) not in norm(where):
-        found.append(f"{key} : {scope} ne dit plus « {quote} »")
+    for quote in said:
+        if norm(quote) not in norm(where):
+            found.append(f"{key} : {scope} ne dit plus « {quote} »")
     return found
 
 
@@ -155,10 +182,14 @@ def proof_problems(proofs: dict, root: Path = ROOT, today: dt.date | None = None
             continue
         src_found = _source_problems(key, p["source"], root)
         found += src_found
-        if not src_found and isinstance(value, str):
-            missing = sorted(set(numbers(value)) - set(numbers(p["source"]["quote"])))
-            if missing:
-                found.append(f"{key} : la phrase citée ne donne pas {', '.join(missing)}")
+        if not src_found:
+            given = {n for q in quotes(p["source"]) for n in numbers(q, words=True)}
+            for field in ("value", "says", "note"):
+                if not isinstance(p.get(field), str):
+                    continue
+                missing = sorted(set(numbers(p[field])) - given, key=int)
+                if missing:
+                    found.append(f"{key} : « {field} » dit {', '.join(missing)}, que la phrase citée ne donne pas")
     return found
 
 
@@ -176,20 +207,21 @@ class _Page(HTMLParser):
 
     def handle_starttag(self, tag, attrs):
         a = {k: v or "" for k, v in attrs}
+        # What a reader is told without it being a field of a figure: a title, a label, an image's
+        # text, in a card or not; a meta's content (the description), but the viewport's.
+        self.outside += [a[k] for k in ("alt", "title", "aria-label") if a.get(k)]
+        if tag == "meta" and a.get("name", "").lower() != "viewport":
+            self.outside.append(a.get("content", ""))
         if tag in VOID:
-            if self._stat is None:
-                self.outside += [a[k] for k in ("alt", "title", "aria-label") if a.get(k)]
             return
         field = None
         if self._stat is None and "data-proof" in a:
-            self._stat = {"key": a["data-proof"], "fields": {}, "attrs": {}}
+            self._stat = {"key": a["data-proof"], "fields": {}, "attrs": {}, "loose": ""}
             self._depth = len(self._stack) + 1
         elif self._stat is not None and a.get("data-f") in FIELDS:
             field = a["data-f"]
             self._stat["fields"].setdefault(field, "")
             self._stat["attrs"][field] = a
-        elif self._stat is None:
-            self.outside += [a[k] for k in ("title", "aria-label") if a.get(k)]
         self._skip += tag in ("style", "script")
         self._stack.append((tag, field))
 
@@ -215,6 +247,8 @@ class _Page(HTMLParser):
             if field:
                 self._stat["fields"][field] += data
                 break
+        else:   # in the card, outside its fields: only the separators may be there
+            self._stat["loose"] += data
 
 
 def read_page(html: str) -> _Page:
@@ -236,6 +270,8 @@ def page_problems(proofs: dict, html: str, name: str = "la page") -> tuple[list[
             found.append(f"{name} : data-proof=« {key} » n'est pas dans {PROOFS}")
             continue
         shown.add(key)
+        if s["loose"].replace("·", "").strip():
+            found.append(f"{name} : {key} dit « {norm(s['loose'])} » hors de ses champs : un texte que la source ne dit pas")
         if f.get("value") != norm(str(p.get("value"))):
             found.append(f"{name} : {key} montre « {f.get('value')} », la source dit « {p.get('value')} »")
         if f.get("says") != norm(str(p.get("says"))):
@@ -284,7 +320,9 @@ def main(argv: list[str] | None = None) -> int:
     found = problems()
     for p in found:
         print(f"✗ {p}")
-    if not found:
+    if found:
+        print(f"→ {HINT}")
+    else:
         print(f"✓ {PROOFS} : chaque chiffre daté et sourcé, chaque page le montre tel quel")
     return 1 if found else 0
 

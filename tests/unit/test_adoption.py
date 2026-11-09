@@ -147,7 +147,36 @@ def test_a_source_the_repository_does_not_hold_is_refused(source, said):
 
 def test_a_quote_that_does_not_give_the_figure_is_refused():
     found = _found(_proof(value="0 / 42"))
-    assert any("ne donne pas 42" in p for p in found), found
+    assert any("« value » dit 42" in p for p in found), found
+
+
+@pytest.mark.parametrize("field, text", [
+    ("says", "isolations and blocks judged wrong, over 90 days"),   # the review: 30 days became 90, passed
+    ("note", "a run of 2025, to be replayed"),
+])
+def test_a_number_of_what_a_figure_says_or_of_its_note_that_no_quote_gives_is_refused(field, text):
+    found = _found(_proof(**{field: text}))
+    assert any(f"« {field} » dit" in p for p in found), found
+    assert _found(_proof(says="isolations and blocks judged wrong, over 30 days")) == []
+
+
+def test_several_quotes_give_the_numbers_together_and_each_must_be_said():
+    two = {"path": "README.md", "quotes": ["Over 30 days:", "detection in 107 s and a decision in 2 min (medians)"]}
+    assert _found(_proof(value="107 s", says="median time to detect, over 30 days", source=two)) == []
+    one = {"path": "README.md", "quote": "detection in 107 s and a decision in 2 min (medians)"}
+    assert any("« says » dit 30" in p for p in _found(_proof(value="107 s", says="over 30 days", source=one)))
+    lost = {"path": "README.md", "quotes": ["Over 30 days:", "detection in 106 s"]}
+    assert any("ne dit plus « detection in 106 s »" in p for p in _found(_proof(value="107 s", source=lost)))
+    for bad in ({"path": "README.md", "quotes": []}, {"path": "README.md", "quotes": "Over 30 days:"},
+                {"path": "README.md", "quote": "Over 30 days:", "quotes": ["Over 30 days:"]}):
+        assert any("cite la phrase" in p for p in _found(_proof(source=bad))), bad
+
+
+def test_a_number_a_source_writes_in_words_gives_it_but_not_an_article():
+    """docs/design/console.md says « cinq adresses » for the 5 blocks; « un » or « one » is no figure."""
+    assert ad.numbers("Glorfindel a bloqué seul cinq adresses", words=True) == ["5"]
+    assert ad.numbers("un instantané, one card, une carte", words=True) == []
+    assert PROOFS["blocked_alone"]["source"]["path"] == "docs/design/console.md"
 
 
 def test_a_quote_is_read_across_line_breaks_and_within_its_section():
@@ -195,6 +224,42 @@ def test_a_figure_of_the_page_not_in_the_source_is_refused():
     assert found == []
     found, _ = ad.page_problems({"x": _proof()}, "<style>.a{width:12px}</style><p>a</p>")
     assert found == []
+
+
+def test_a_card_says_nothing_outside_its_fields():
+    """The review: « 99% of attacks stopped. » in a card, outside any data-f, was thrown away unread."""
+    for loose in ("99% of attacks stopped.", "Stopped everything."):
+        card = _stat().replace("</small>", f"</small><p>{loose}</p>")
+        found, _ = ad.page_problems({"x": _proof()}, card)
+        assert any("hors de ses champs" in p for p in found), (loose, found)
+    found, _ = ad.page_problems({"x": _proof()}, _stat())
+    assert found == []   # the separators « · » only
+
+
+@pytest.mark.parametrize("html", [
+    '<div class="stat" data-proof="x" title="99% contained"></div>',
+    '<span aria-label="12 attacks blocked">x</span>',
+    '<div data-proof="x"><b data-f="value" aria-label="contained in 1 min">0 / 41</b></div>',
+    '<img alt="5 attacks" src="x.png">',
+    '<meta name="description" content="Eregion stops 99% of attacks.">',
+    '<meta property="og:description" content="contained in 1 minute">',
+])
+def test_a_figure_in_a_title_a_label_or_a_meta_is_refused(html):
+    found, _ = ad.page_problems({"x": _proof()}, html + _stat())
+    assert any("un chiffre hors de" in p for p in found), found
+
+
+def test_the_viewport_and_an_issue_s_number_are_no_figures():
+    html = '<meta name="viewport" content="width=device-width, initial-scale=1"><p>Planned (#668).</p>' + _stat()
+    assert ad.page_problems({"x": _proof()}, html)[0] == []
+    assert ad.page_problems({"x": _proof()}, "<p>Planned in 668 days.</p>" + _stat())[0]
+
+
+def test_check_says_where_to_fix_a_figure(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(ad, "problems", lambda: ["x : sans date"])
+    assert ad.main(["check"]) == 1
+    out = capsys.readouterr().out
+    assert "docs/proofs.json and the page in the same pull request" in out and "docs/sessions.md" in out
 
 
 def test_a_proof_no_page_shows_is_refused(tmp_path):
@@ -287,8 +352,10 @@ def test_the_page_has_a_sheet_per_reader_each_with_its_parts():
 def test_the_page_says_what_it_does_not_promise():
     limits = ad.norm(HTML.split('id="h-limits"', 1)[1].split("</section>", 1)[0])
     for said in ("<code>full_auto</code> is planned, not available", "detection only", "Not a SOC",
-                 "they will be replayed", "a second human step today", "not delivered", "No hosted offer"):
+                 "they will be replayed", "a second human step today", "is planned (#668)", "No hosted offer"):
         assert said in limits, said
+    assert "side by side" not in HTML, "several customers on one host: neither documented nor proven"
+    assert "in progress" not in limits
     assert "full_auto" not in HTML.replace("<code>full_auto</code> is planned, not available", "")
 
 
