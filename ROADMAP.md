@@ -78,9 +78,9 @@ Tenue par l'Orchestre (RM1, 02/11). Une ligne par release qui se prépare : sa v
 
 | Version | Titre | Contenu | État |
 |---|---|---|---|
-| 0.5.7 | le plan sur la carte | IR1a (le plan d'une identité volée, lu dans Graph, et « Vérifier »), IR1b (le contrat de l'exécuteur, désactivé), IDI1b et IDI1s (l'utilisateur de test, la garantie graph stricte), NT1 (la liste never_target jusqu'à la watch) ; FS1b et FS1c (la file signée, défaut faux) ; RW2 et RW3 (la repose relue) ; VM3 et VM3b ; CI6e, CI7, CI8, CI10a et CI10b (la porte en ~30 min), REL3 ; DEP2 (oauthlib 4.0.1) ; MUT3 (les 17 survivants de la porte) | publiée (06/11) |
-| 0.5.x | — | G1 au banc ; WL1 (la maintenance de bree), CAN2 (le canari azurerm), I3K ; MUT2, MAK2, OI4 | plus tard |
-| 0.6.0 | l'identité défendue | ID1 allumé et mesuré, IDI1 appliqué, R2 (une technique Stratus sur l'identité de test) vue par Glorfindel, IR1a (le plan et « Vérifier » sur la carte) — décidé par Jonathan le 05/11 | plus tard |
+| 0.5.8 | within bounds | SEC-A1 (les lectures bornées), SEC-A2 (la file de décision bornée), SEC-D (le modèle de menace et SECURITY.md, audit du 06/11) ; KS1 (l'arrêt d'une campagne en échec fermé), B3a (un brute force réussi puis root : au moins `isolate_vm`), AL1c, AL1d et AL2 (les cartes du plan de contrôle rangées sur leur cible, les points de restauration) ; WL1 et CAN2 (la couche du client du banc : la maintenance de bree, le canari azurerm), C2b, IDI1p, BRO1 ; NICE1, I3K, MUT4 ; conceptions : R2a et R2b (Stratus), DRL1 (le drill du banc) ; MAN0 | publiée (09/11) |
+| 0.5.x | — | G1 au banc ; MUT2, MAK2, OI4 | plus tard |
+| 0.6.0 | l'identité défendue | ID1 allumé et mesuré, IDI1 appliqué, R2 (une technique Stratus sur l'identité de test) vue par Glorfindel, IR1a (le plan et « Vérifier » sur la carte) — décidé par Jonathan le 05/11 ; R2c compris, visée le 13 ou le 16/11 (Jonathan, 09/11) | plus tard |
 
 ### Les lots
 
