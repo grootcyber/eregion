@@ -112,7 +112,7 @@ class CampaignManifest:
             budget=Budget(**d.get("budget", {})),
             scenarios=[ScenarioEntry(**s) for s in d.get("scenarios", [])],
             state=d.get("state", "planned"),
-            kill_switch=d.get("kill_switch", False),
+            kill_switch=d.get("kill_switch") is True,
             stop_reason=d.get("stop_reason") if isinstance(d.get("stop_reason"), str) else None,
             without_glorfindel=d.get("without_glorfindel") is True,
             schema_version=d.get("schema_version", SCHEMA_VERSION),
