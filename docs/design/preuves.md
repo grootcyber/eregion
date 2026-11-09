@@ -518,9 +518,13 @@ reste lue et écrite. La graine se lit dans `EREGION_HYPOTHESIS_SEED` : un nombr
 du harnais), `draw`, `profile`. Rien de donné : tirée sur GitHub pour un `schedule` ou un
 `workflow_dispatch`, jamais pour une PR ni un push. Une graine tirée passe dans l'environnement, pour
 les processus que l'exécution démarre. Un worker xdist dont le contrôleur n'a pas chargé la conftest
-(`pytest tests/ -n 4`) la tire du `testrunuid` de l'exécution, le même pour chacun. Rien ne passe par un
-workflow : la porte et le lundi appellent `mutation_check.py`, qui la tire lui-même, et la nuit est un
-`schedule`.
+(`pytest tests/ -n 4`) la tire du `testrunuid` de l'exécution, le même pour chacun. L'essentiel ne passe
+par aucun workflow : les tranches de la porte et du lundi appellent `mutation_check.py`, qui la tire
+lui-même, et la nuit est un `schedule`. Reste ce qu'un workflow doit dire, que Jonathan pousse (l'App des
+sessions n'a pas le droit Workflows) : `EREGION_HYPOTHESIS_SEED: draw` dans les deux jobs d'invariants de
+la porte, qui tournent d'ordinaire sur la PR de version, un `pull_request`, et l'entrée `seed` du dispatch
+d'`invariants.yml`, pour rejouer une nuit sur GitHub. `tests/unit/test_workflows.py` admet ces valeurs et
+seulement elles, et fige qu'aucune étape de `ci.yml` ne pose de graine.
 
 `mutation_check.py` tire la graine S de son exécution, ou prend `--seed S`. Le run non muté tourne sur
 S, le tour r de chaque mutant sur S + r − 1. La graine est dite au début et à la fin, écrite dans le JSON

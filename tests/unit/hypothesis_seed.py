@@ -16,8 +16,9 @@ What a run asks, by EREGION_HYPOTHESIS_SEED:
 - a number: that seed (a replay; scripts/mutation_check.py gives each round its own);
 - `draw`: a seed drawn for this run;
 - `profile`: Hypothesis's own way, even on a run that would draw (in CI, derandomized);
-- nothing: drawn on GitHub for a scheduled or dispatched run (the night's invariants, the release
-  gate) — a pull request and a push keep the `ci` profile, derandomized, stable (Jonathan, 09/11);
+- nothing: drawn on GitHub for a scheduled or dispatched run (the night's invariants, a gate run by
+  hand; on the version's pull request, the gate's workflow asks `draw`) — a pull request and a push
+  keep the `ci` profile, derandomized, stable (Jonathan, 09/11);
   anywhere else, Hypothesis's own way (in CI derandomized, on a workstation at random).
 A drawn seed goes into the environment, so that a process the run starts — an xdist worker — draws
 the same; an xdist worker whose controller did not load this conftest takes it from the run's id

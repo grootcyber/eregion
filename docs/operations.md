@@ -2949,9 +2949,13 @@ passent par l'environnement, jamais dans le texte du script (SEC6).
 charge de lui-même son profil `ci` (`derandomize=True`) : sans rien de plus, les deux tours de la porte
 rejouaient les mêmes séquences, et la nuit la même chose chaque soir. Désormais :
 - **une PR et un push restent dérandomisés** : la CI d'une PR est stable, reproductible, comme avant ;
-- **la nuit et une exécution à la main** (`schedule`, `workflow_dispatch` : `invariants.yml`, la porte,
-  la nuit macOS de `ci.yml`) tirent une graine nouvelle pour chaque exécution de pytest, la même pour
-  chaque test de propriétés et chaque machine d'invariants de cette exécution, et chaque worker xdist ;
+- **la nuit et une exécution à la main** (`schedule`, `workflow_dispatch` : `invariants.yml`, la porte
+  lancée à la main, la nuit macOS de `ci.yml`) tirent une graine nouvelle pour chaque exécution de
+  pytest, la même pour chaque test de propriétés et chaque machine d'invariants de cette exécution, et
+  chaque worker xdist. Les deux jobs d'invariants de la porte tournent d'ordinaire sur la PR de version,
+  un `pull_request` : ils tirent par `EREGION_HYPOTHESIS_SEED: draw` dans leur étape. L'App des sessions
+  n'a pas le droit Workflows : c'est Jonathan qui pousse cette ligne, avec l'entrée `seed` du dispatch
+  d'`invariants.yml` (rejouer une nuit sur GitHub) ;
 - **`mutation_check.py`** tire la graine S de son exécution (ou prend `--seed S`) : le run non muté sur S,
   le tour r de chaque mutant sur S + r − 1. Deux tours, deux tirages, à la porte comme au lundi.
 

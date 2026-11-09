@@ -12,7 +12,9 @@
   job's summary. `scripts/mutation_check.py` draws the run's seed S, or takes `--seed S`: the unmutated
   runs on S, round r on S + r − 1. The seed is said at the start and at the end, and written in each
   shard's JSON (`seed`, `round_seeds`). The total says each shard's, and the command that replays a
-  mutant that survived. No workflow changes: the gate and the Monday's measure call the harness, and
-  the night is a schedule. Measured at 60 sequences under `CI=true`: M38, which survives twice when
+  mutant that survived. The mutation shards (the gate's, the Monday's) and the night need no workflow
+  change; the gate's two invariant jobs, which run on the version's pull request, draw once their step
+  says `EREGION_HYPOTHESIS_SEED: draw` (a workflow edit, pushed by hand, with a `seed` input to replay
+  a night on GitHub). Measured at 60 sequences under `CI=true`: M38, which survives twice when
   derandomized, is caught by one round of two, and its replay by seed gives the same verdicts.
   - Tests: `tests/unit/test_hypothesis_seed.py`, `tests/unit/test_mutation_shards.py`.
