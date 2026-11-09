@@ -27,9 +27,10 @@ Fail closed, like the Atomic adapter:
 
 Orodruin has no Internet (docs/design/orodruin-contract.md). Stratus's ``warmup`` provisions
 with Terraform, which would otherwise download the Terraform binary and the provider plugins.
-Both are staged into the image and pinned (annatar/stratus/PIN); ``airgap_env`` points Stratus
-at them offline (a run-scoped ``HOME`` with the pre-installed Terraform, a filesystem mirror of
-the providers and the plugin cache), so ``terraform init`` never reaches the network.
+Both are to be staged into the image and pinned (annatar/stratus/PIN) — not delivered yet (R2b,
+#608): without the binary, ``resolve`` refuses. ``airgap_env`` points Stratus at them offline
+(a run-scoped ``HOME`` with the pre-installed Terraform, a filesystem mirror of the providers
+and the plugin cache), so once they are there ``terraform init`` never reaches the network.
 """
 from __future__ import annotations
 
