@@ -97,16 +97,15 @@ def apply(seed: int, functions) -> int:
 
 
 def runs_hypothesis(item) -> bool:
-    """A test of the run that draws through Hypothesis: a property test, or a test of a module
-    that defines an invariant machine."""
-    if is_property_test(getattr(getattr(item, "obj", None), "__func__", getattr(item, "obj", None))):
+    """A test of the run that draws through Hypothesis: a property test, or a test that runs an
+    invariant machine — its code calls `run_state_machine_as_test` (as a machine's `TestCase` does).
+    A plain test beside a machine, in its file, draws nothing: its failure says no seed."""
+    fn = getattr(item, "obj", None)
+    fn = getattr(fn, "__func__", fn)
+    if is_property_test(fn):
         return True
-    module = getattr(item, "module", None)
-    if module is None:
-        return False
-    from hypothesis.stateful import RuleBasedStateMachine
-    return any(isinstance(v, type) and issubclass(v, RuleBasedStateMachine) and v is not RuleBasedStateMachine
-               for v in vars(module).values())
+    code = getattr(fn, "__code__", None)
+    return code is not None and "run_state_machine_as_test" in code.co_names
 
 
 def said(seed: int) -> str:

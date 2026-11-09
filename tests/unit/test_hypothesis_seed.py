@@ -127,15 +127,48 @@ def test_probe_a_machine():
     _write_probe()
 
 
-def _probe(tmp_path: Path, env: dict) -> tuple[dict, str]:
-    """The probe in a pytest of its own, as GitHub runs it: (what it drew, its output)."""
+FAIL = "EREGION_SEED1_PROBE_FAIL"   # the failing probes fail only when it is set
+
+
+@settings(max_examples=3, database=None)
+@given(st.integers())
+def test_failing_probe_property(n):
+    assert not os.environ.get(FAIL), "a property test failing on purpose (SEED1's probe)"
+
+
+def test_failing_probe_plain():
+    assert not os.environ.get(FAIL), "a plain test failing on purpose (SEED1's probe)"
+
+
+@settings(max_examples=5, database=None)
+@given(st.integers(0, 10**12))
+def test_xdist_probe_draws(n):
+    """Under `--dist each`, every worker runs it: each writes the seed it holds and what it drew."""
+    path = os.environ.get(PROBE)
+    if path:
+        out = Path(f"{path}.{os.environ.get('PYTEST_XDIST_WORKER', 'none')}")
+        seen = (json.loads(out.read_text(encoding="utf-8")) if out.exists()
+                else {"seed": test_xdist_probe_draws._hypothesis_internal_use_seed, "draws": []})
+        seen["draws"].append(n)
+        out.write_text(json.dumps(seen), encoding="utf-8")
+
+
+def _run_probe(tmp_path: Path, env: dict, select: str, *more: str) -> tuple[subprocess.CompletedProcess, Path]:
+    """Probes of this file in a pytest of its own, as GitHub runs it — the outer run's GitHub, pytest
+    and seed variables left out: (the run, the file its probes write)."""
     out = tmp_path / f"draws-{len(list(tmp_path.iterdir()))}.json"
     base = {k: v for k, v in os.environ.items()
-            if not k.startswith(("GITHUB_", "PYTEST_", "HYPOTHESIS")) and k not in ("CI", hs.VAR)}
+            if not k.startswith(("GITHUB_", "PYTEST_", "HYPOTHESIS")) and k not in ("CI", hs.VAR, FAIL)}
     proc = subprocess.run(
-        [sys.executable, "-m", "pytest", f"{Path(__file__).relative_to(ROOT)}", "-k", "probe", "-q",
-         "-p", "no:cacheprovider", "-p", "no:xdist"],
+        [sys.executable, "-m", "pytest", f"{Path(__file__).relative_to(ROOT)}", "-k", select, "-q",
+         "-p", "no:cacheprovider", *(more or ("-p", "no:xdist"))],
         cwd=ROOT, env={**base, PROBE: str(out), **env}, capture_output=True, text=True, timeout=300)
+    return proc, out
+
+
+def _probe(tmp_path: Path, env: dict) -> tuple[dict, str]:
+    """The drawing probes: (what they drew, the run's output)."""
+    proc, out = _run_probe(tmp_path, env, "probe_a_")
     assert proc.returncode == 0, proc.stdout[-3000:] + proc.stderr[-2000:]
     return json.loads(out.read_text(encoding="utf-8")), proc.stdout
 
@@ -173,3 +206,58 @@ def test_measured_the_drawn_seed_reaches_the_step_summary_once(tmp_path):
     given_summary = tmp_path / "given.md"
     _probe(tmp_path, _gh("schedule", GITHUB_STEP_SUMMARY=str(given_summary), **{hs.VAR: "5"}))
     assert not given_summary.exists(), "a seed given (a round of the harness) writes no summary"
+
+
+def test_measured_a_failing_property_test_says_its_seed_under_its_failure(tmp_path):
+    """Under a failing property test, its section: the seed and how to replay it — under xdist the
+    only place the log says it (the controller does not load this conftest). Never under a plain
+    test's failure; never without a seed (a push)."""
+    proc, _ = _run_probe(tmp_path, _gh("push", **{hs.VAR: "5", FAIL: "1"}), "failing_probe")
+    assert proc.returncode == 1, proc.stdout[-3000:]
+    prop, plain = proc.stdout.split(" test_failing_probe_plain ", 1)
+    assert "test_failing_probe_property" in prop and "Hypothesis seed (SEED1)" in prop
+    assert "Hypothesis seed 5 for every property test" in prop and f"{hs.VAR}=5" in prop
+    assert "Hypothesis seed (SEED1)" not in plain.split("short test summary")[0]
+    pushed, _ = _run_probe(tmp_path, _gh("push", **{FAIL: "1"}), "failing_probe")
+    assert pushed.returncode == 1 and "Hypothesis seed" not in pushed.stdout
+
+
+def test_what_draws_through_hypothesis_says_its_seed_and_nothing_else():
+    from types import SimpleNamespace as Item
+    from . import test_invariants
+    assert hs.runs_hypothesis(Item(obj=test_probe_a_property))
+    assert hs.runs_hypothesis(Item(obj=test_probe_a_machine))          # it runs a machine
+    assert hs.runs_hypothesis(Item(obj=test_invariants.test_isolation_invariants))
+    assert not hs.runs_hypothesis(Item(obj=test_failing_probe_plain))  # beside a machine, draws nothing
+    assert not hs.runs_hypothesis(Item(obj=None))
+
+
+def test_a_test_seeded_by_its_own_hand_keeps_its_seed(monkeypatch):
+    """`@seed` written on a test is its author's replay: the run's seed never overwrites it."""
+    from hypothesis import seed as own_seed
+    monkeypatch.setattr(RuleBasedStateMachine, "_hypothesis_internal_use_seed",
+                        getattr(RuleBasedStateMachine, "_hypothesis_internal_use_seed", None), raising=False)
+
+    @own_seed(123)
+    @given(st.integers())
+    def kept(n):
+        pass
+
+    @given(st.integers())
+    def seeded(n):
+        pass
+
+    assert hs.apply(7, [kept, seeded, None, lambda: None]) == 1
+    assert kept._hypothesis_internal_use_seed == 123 and seeded._hypothesis_internal_use_seed == 7
+    assert RuleBasedStateMachine._hypothesis_internal_use_seed == 7
+
+
+def test_measured_every_xdist_worker_draws_on_the_seed_the_run_says(tmp_path):
+    """`-n 2 --dist each`, a night: both workers run the probe, both on the seed the controller drew
+    and said, and draw the same values."""
+    proc, out = _run_probe(tmp_path, _gh("schedule"), "xdist_probe", "-n", "2", "--dist", "each")
+    assert proc.returncode == 0, proc.stdout[-3000:] + proc.stderr[-2000:]
+    said = int(proc.stdout.split("Hypothesis seed ", 1)[1].split()[0])
+    gw0, gw1 = (json.loads(Path(f"{out}.{w}").read_text(encoding="utf-8")) for w in ("gw0", "gw1"))
+    assert gw0["seed"] == gw1["seed"] == said
+    assert gw0["draws"] == gw1["draws"] and gw0["draws"]
