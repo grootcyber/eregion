@@ -87,23 +87,31 @@ commande. Le point à la demande est gardé 30 jours (`glorfindel/providers/azur
   gondolin.
 - **`--before` est obligatoire sur le poste.** Sans lui, la commande prend le moment de la carte en
   attente de la VM ; mais les cartes sont sur H0, pas sur le poste. Elle refuse alors, avant tout
-  appel à Azure (`glorfindel/cli.py:2287-2312`). *Vérifié à blanc* : « Moment de l'attaque inconnu
+  appel à Azure (`glorfindel/cli.py:2351-2376`). *Vérifié à blanc* : « Moment de l'attaque inconnu
   pour vm-celebrimbor-gondolin : aucune carte en attente de cette VM n'en donne un ». On lui donne
   le moment noté juste après le point propre (`AVANT`, étape 2) : le point le plus récent avant
   lui est celui-là. Un instantané que H0 prendrait seul après l'isolement est postérieur, donc écarté.
 - **La neutralisation (SEC17)** se fait sur gondolin, par le principal qui restaure, avant
-  l'échange des disques (`glorfindel/providers/azure/restore.py:145-150`). Une Run Command sans
+  l'échange des disques (`glorfindel/providers/azure/restore.py:149-154`). Une Run Command sans
   effet devient la dernière : un disque restauré rejouerait sinon `ransomware_sim.sh` au démarrage
   (vu le 05/10). Il faut « Eregion Glorfindel Restore Neutralize » sur gondolin, pour la console
   (`restore_vms`, `restore_principals` ; `docs/operations.md`, « Depuis un rôle Restore d'avant
   SEC17 »). La sortie du restore dit si elle a eu lieu.
 - **`--keep-isolated`, toujours** (pourquoi : la section suivante).
 
-### La levée : sur H0, par un humain
+### La levée : sur H0, par sa watch (REC1)
 
+- **La watch de H0 lit la reprise sur Azure, et lève elle-même** (REC1, #668 ; `docs/glorfindel.md`,
+  « La reprise lue sur Azure »). À chaque minute, pour gondolin isolée, elle lit dans le coffre le
+  dernier job de restore depuis l'isolement. Elle vérifie qu'il est fini et `Completed`, que son
+  point précède l'incident (l'isolement, ou la première détection de la carte en attente si elle
+  est avant), que la VM tourne, et que la dernière parole de Run Command, **datée après le
+  restore**, est la commande inoffensive. Elle émet alors son propre `recovery_complete`, et la
+  levée suit : seule en `non_disruptive`, une carte en `human_only`. Elle ne lit jamais un fichier
+  du poste, et n'a besoin que de son Reader sur le groupe du banc, où est le coffre.
 - **`restore --wait` lève l'isolement dans son propre processus.** Il construit le
   `recovery_complete`, le garantit pour ce processus et le passe aussitôt au graphe
-  (`cli.py:1517-1530`). La levée autonome n'est permise que pour ce signal-là, ou pour celui relu par
+  (`cli.py:1581-1594`). La levée autonome n'est permise que pour ce signal-là, ou pour celui relu par
   `glorfindel respond` dans `~/.glorfindel/recovery_signals/` du même hôte
   (`glorfindel/signal_origin.py:29-35`, `glorfindel/agent.py:1449-1478`). **La watch de H0 ne lit
   jamais ce répertoire d'elle-même**, et celui du poste encore moins.
@@ -113,7 +121,10 @@ commande. Le point à la demande est gardé 30 jours (`glorfindel/providers/azur
 - **H0 reposerait l'isolement.** Sa réaffirmation relit chaque minute les isolations de son état.
   Elle trouverait les règles disparues et les reposerait une fois, gondolin étant en
   `non_disruptive` (`glorfindel/reassert.py:271-290`).
-- D'où `--keep-isolated` sur le poste (`cli.py:1517`). La levée se fait ensuite sur H0 :
+- D'où `--keep-isolated` sur le poste (`cli.py:1581`) : le poste ne lève pas, la watch de H0 lève
+  (ci-dessus, et l'étape 7). Si elle écrit une carte au lieu de lever (la neutralisation non
+  constatée, un point d'après l'isolement), la levée se fait à la main sur H0, après la vérification
+  de l'étape 7 :
   - **↩️ Release** dans sa console ;
   - ou `docker exec eregion-war-room glorfindel release …`, dans le conteneur de la console
     (`docs/banc-bl1.md`, étape 5).
@@ -122,31 +133,25 @@ commande. Le point à la demande est gardé 30 jours (`glorfindel/providers/azur
   en cours (`releasing_at`) sous le verrou de la VM, que la réaffirmation prend aussi avant de la
   sauter (`glorfindel/reassert.py:141`, `:239-240`).
 
-## Le manque : la boucle ne se ferme pas seule sur le banc
+## Le manque, comblé : un seul geste humain (REC1)
 
 Le README décrit une boucle où la seule étape humaine est d'approuver le restore, la levée
-autonome suivant le `recovery_complete`. **Sur le banc d'aujourd'hui, ce n'est pas vrai.** Il y a
-deux gestes humains, sur deux hôtes :
-- le restore, sur le poste, puisque H0 n'en a pas le droit ;
-- la levée, sur H0, puisque sa watch ne voit pas la reprise.
-
-Le temps du « service rendu » mesuré ici inclut donc le temps de ces deux gestes. On le donne aussi
-au sens du README, sans le temps de décision humaine (étape 8).
+autonome suivant le `recovery_complete`. Avant REC1, ce n'était pas vrai sur le banc : il fallait
+restaurer depuis le poste, puis lever sur H0, dont la watch ne voyait pas la reprise. **Depuis REC1,
+il ne reste qu'un geste humain** : le restore, sur le poste, puisque H0 n'en a pas le droit. La levée
+est celle de la watch de H0, une fois la reprise lue sur Azure. Le temps du « service rendu »
+mesuré ici inclut le temps de ce geste ; on le donne aussi au sens du README, sans le temps de
+décision humaine (étape 8).
 
 Porter à la main le signal du poste dans `~/.glorfindel/recovery_signals/` de H0, puis lancer
 `glorfindel respond`, passerait la précondition. Ce serait pourtant un humain qui écrit, dans le
-répertoire du défenseur, un signal que celui-ci croit sien (SEC3) : cette page ne le fait pas.
+répertoire du défenseur, un signal que celui-ci croit sien (SEC3) : cette page ne le fait pas, et
+REC1 le rend inutile.
 
-**Proposition de lot** (non construite) : que la watch de H0 constate elle-même la reprise d'une VM
-qu'elle a isolée, plutôt que d'attendre un signal d'un autre hôte. Elle lirait sur Azure, avec ses
-droits de lecture :
-- le job de restore fini ;
-- le point restauré, antérieur à l'isolement ;
-- la VM démarrée ;
-- la dernière Run Command, celle de la neutralisation.
-
-Puis elle émettrait son propre `recovery_complete`. L'autre piste : la file d'actions signée (FS1,
-`docs/design/file-actions-signee.md`), où le poste déposerait la reprise.
+**Non mesuré avant cette session** : ce que le coffre écrit d'un job de restore (le point restauré,
+dans son sac de propriétés), et la parole de Run Command après le démarrage d'un disque restauré.
+Si l'un manque, la watch écrit une carte qui le dit, sans lever : la levée se fait alors à la main
+(étape 7), et la carte va dans l'issue.
 
 Un second manque, plus petit : `make glorfindel-host-containment` ne calcule le temps pour contenir
 que d'une campagne (`Makefile:1042`). Pour un fil de Dagorlad, on le lit dans sa chronologie, ou
@@ -231,7 +236,7 @@ AVANT=$(date -u +%Y-%m-%dT%H:%M:%S+00:00); print -r -- ${AVANT}   # le moment du
 
 Ce qu'on doit voir :
 - **sur H0** : « ✓ Backup complete. Time: … », puis « ✓ Recovery point verified in vault. »
-  (`cli.py:1327-1341`) ;
+  (`cli.py:1391-1405`) ;
 - **dans la console** : aucune carte, puisque c'est l'identité de Glorfindel qui sauvegarde (A2,
   mesuré le 05/11 : `docs/operations.md`).
 
@@ -298,7 +303,7 @@ Discord : refusé, ce n'est pas son hôte.
 
 **Le prérequis du poste.** Le restore lit le coffre (`azure_backup_vault`) et son compte de transit
 (`restore_staging_storage`) dans la `glorfindel-config.yaml` du poste, à la racine du dépôt
-(`cli.py:1435`, `glorfindel/providers/azure/restore.py:124-139`). Sans compte de transit, le vrai
+(`cli.py:1499`, `glorfindel/providers/azure/restore.py:128-143`). Sans compte de transit, le vrai
 run échoue, alors que l'essai à blanc ne le lit pas. Le fragment de `make celebrimbor-output` porte
 les deux :
 
@@ -330,14 +335,33 @@ date -u +%H:%M:%S                  # la fin du restore
 - « Still restoring… », minute par minute ;
 - « ✓ Restore complete. restore_time: … » : **le noter** ;
 - « ✓ Run Command neutralisée avant le restore » ;
-- « --keep-isolated: VM stays isolated. » (`cli.py:1490-1518`).
+- « --keep-isolated: VM stays isolated. » (`cli.py:1554-1582`).
 
 La VM est désallouée, ses disques remplacés, puis redémarrée. Elle reste isolée : le NSG est sur
 ses cartes réseau, pas sur ses disques.
 
-### 7. La levée, sur H0 (5 min)
+### 7. La levée, par la watch de H0 (5 à 20 min)
 
-**Si la sortie disait « ⚠ Run Command non neutralisée »**, ne pas lever. Le disque restauré a pu
+Rien à faire d'abord : la watch de H0 lit la reprise sur Azure (REC1). Elle attend 5 min après la
+fin du job, le temps que `restore --wait` finisse sur le poste
+(`GLORFINDEL_RECOVERY_GRACE_S`). Elle attend aussi que le disque restauré ait démarré et rejoué la
+dernière Run Command, au plus 15 min (`GLORFINDEL_RECOVERY_REPLAY_WAIT_S`). Sur H0 :
+
+```bash
+docker logs --since 30m eregion-watch 2>&1 | grep -E "reprise|recovery_complete|release_isolation"
+docker exec eregion-watch glorfindel list                     # gondolin n'est plus ISOLATED
+```
+
+Attendu : « reprise vm-celebrimbor-gondolin job-… → emitted », puis le cycle du
+`recovery_complete`, `release_isolation` exécuté et vérifié. Discord dit la levée autonome.
+
+**Si une carte « Reprise à revoir » ou « levée retenue » arrive à la place**, elle dit pourquoi : le
+job pas `Completed`, un point qui ne précède pas l'incident, un point illisible, la VM arrêtée, ou
+la neutralisation non constatée. La noter dans l'issue, avec sa raison. Puis faire la vérification
+ci-dessous et lever à la main.
+
+**Si la sortie du restore disait « ⚠ Run Command non neutralisée »**, la watch ne lève pas seule, et
+il ne faut pas lever. Le disque restauré a pu
 rejouer le chiffrement au démarrage. Le lire d'abord, avec ton `az login` :
 
 ```zsh
@@ -349,8 +373,8 @@ le fil : un `seed.dat` ou des `enc_*.dat` datés d'avant ce point sont les reste
 restaurés avec lui. Datés d'après le redémarrage du restore, le chiffrement a été rejoué : ne pas
 lever. Cette commande devient la dernière Run Command, inoffensive.
 
-Puis la levée : **↩️ Release** sur gondolin, dans la console de H0, ou en ligne de commande. On se
-connecte d'abord depuis le poste :
+Puis la levée à la main, si la watch ne l'a pas faite : **↩️ Release** sur gondolin, dans la console
+de H0, ou en ligne de commande. On se connecte d'abord depuis le poste :
 
 ```zsh
 make glorfindel-host-ssh
@@ -362,7 +386,7 @@ Puis, sur H0 (le nom court suffit : `release` le résout par l'état de H0, `cli
 docker exec eregion-war-room glorfindel release vm-celebrimbor-gondolin --yes   # « ✓ Isolation released. »
 docker exec eregion-watch glorfindel list                     # gondolin n'est plus ISOLATED
 docker exec eregion-watch glorfindel pending                  # la carte de restauration, encore en attente
-docker exec eregion-war-room glorfindel ack <son id>          # le restore du poste n'a résolu que les cartes du poste (cli.py:1513)
+docker exec eregion-war-room glorfindel ack <son id>          # le restore du poste n'a résolu que les cartes du poste (cli.py:1577)
 ```
 
 Cette levée-là n'est pas reposée. Elle note `releasing_at` dans l'état de H0 sous le verrou de la
@@ -379,7 +403,8 @@ Les trois temps se lisent à un seul endroit, sur H0, depuis les fichiers que la
   et `detection_latency_s` ;
 - **ses cycles** : `*_debug.jsonl`, ceux qui portent `exercise_run = <run_id>`, avec
   `outcome.verified_at` ;
-- **la levée** : `runs/console/manual_actions.jsonl`.
+- **la levée** : le cycle du `recovery_complete` de la watch, dans ses `*_debug.jsonl` (REC1) ; à la
+  main, `runs/console/manual_actions.jsonl`.
 
 Toujours sur H0 (sinon, `make glorfindel-host-ssh` d'abord) :
 
@@ -401,6 +426,13 @@ for f in sorted(glob.glob("runs/glorfindel/*_debug.jsonl")):
         continue
     for line in open(f):
         d = json.loads(line)
+        s = d.get("signal") or {}
+        if (s.get("event") == "recovery_complete" and t(d["timestamp"]) > t0
+                and str(s.get("resource_id", "")).rstrip("/").rsplit("/", 1)[-1].lower() == vm):
+            o = d.get("outcome") or {}
+            print(f"levée watch {hm(t(d['timestamp']))}  {d.get('action') or '-'}  escalate={d.get('escalate')}"
+                  f"  verified={o.get('verified')}  T0+{t(o.get('verified_at') or d['timestamp']) - t0:.0f} s")
+            continue
         if d.get("exercise_run") != run:
             continue
         o = d.get("outcome") or {}
@@ -428,8 +460,8 @@ arrive sur H0 quand le fil a fini ; sur Orodruin, le même est dans `~/runs/anna
 | **la carte** | T0 → la carte de l'action, dans la console | le cycle `isolate_vm` (son horodatage) ; Discord |
 | **le confinement** | T0 → l'isolement relu sur Azure (`verified_at`), la définition de BL1 (`analysis/containment.py`) | la ligne `isolate_vm … verified=True T0+…` ; Dagorlad, « contained … » ; la page Annatar, « TIME TO CONTAIN · EXERCISES » (une médiane sur la période ; la tuile de l'accueil, « · REAL », exclut les exercices) |
 | **la restauration finie** | la fin de `restore --wait`, et sa durée | `restore_time` et l'heure notée à l'étape 6 |
-| **le service rendu** | T0 → la levée relue sur Azure, les gestes humains compris | la ligne `levée … T0+…` |
-| **au sens du README** | détection + isolement + `restore_time`, sans le temps de décision humaine (`cli.py:1510`) | la somme des trois |
+| **le service rendu** | T0 → la levée relue sur Azure, le geste humain du restore compris | la ligne `levée watch … T0+…` (REC1), ou `levée … T0+…` à la main |
+| **au sens du README** | détection + isolement + `restore_time`, sans le temps de décision humaine (`cli.py:1574`) | la somme des trois |
 
 Les chiffres vont dans l'issue #665, datés, avec le `run_id` et l'identifiant de la demande : ils
 remplaceront ceux du README, et la ligne T1486 de son tableau.
@@ -465,7 +497,7 @@ make glorfindel-host-cd-enable     # seulement s'il a été mis en pause à l'é
 - **Le disque de gondolin** est celui d'avant l'attaque. Le prochain fil refera son `setup` et son
   contrôle d'intégrité.
 - **Le reste à vérifier** : `glorfindel reset --dry-run` (sans `--from-azure`) ne lit que l'état
-  local ; `--from-azure` lit les NSG (`cli.py:2057-2095`).
+  local ; `--from-azure` lit les NSG (`cli.py:2121-2159`).
 
 ## Ce qui peut mal tourner
 
@@ -507,8 +539,9 @@ demande et le fil 15 min. Le restore prend 15 à 30 min (`cli.py`, `--wait`), la
    Sinon, ce qui l'a retenu.
 3. **La restauration** : le point choisi (celui de l'étape 2), `restore_time`, la neutralisation
    faite.
-4. **La levée** : relue sur Azure, gondolin plus `ISOLATED` ; le service rendu à T0+…, et la somme
-   au sens du README, à comparer à 21m29s.
+4. **La levée** : par la watch de H0 (REC1) ou, à défaut, à la main, avec la carte qui l'a retenue ;
+   relue sur Azure, gondolin plus `ISOLATED` ; le service rendu à T0+…, et la somme au sens du
+   README, à comparer à 21m29s.
 5. **Rien hors du périmètre** : aucune action sur bree, aucune carte inattendue. Sinon, la carte et
    sa ligne.
 6. **Les identifiants** : la demande, le `run_id`, la date. Puis la décision : les chiffres du README
