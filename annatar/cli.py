@@ -498,6 +498,16 @@ def campaign_plan(target, objective, max_scenarios, allow_destructive, use_llm, 
                       f"{', '.join(decl.faults)} (gothmog run <id>, docs/banc-bl1.md).[/dim]")
 
 
+def _load_manifest(manifest_cls, cdir):
+    """A campaign's manifest, or the refusal said and exit 1 (SEC-A1, V-02): read as runs/ is read,
+    a pipe, a link, a file too large is never read."""
+    try:
+        return manifest_cls.load(cdir)
+    except OSError as exc:
+        console.print(f"[red]Manifest refused:[/red] {cdir / 'manifest.json'} — {exc}; never read")
+        raise SystemExit(1) from None
+
+
 @campaign.command(name="run")
 @click.argument("campaign_id")
 @click.option("--yes", is_flag=True, help="Ratify the budget/scope and execute.")
@@ -522,7 +532,7 @@ def campaign_run(campaign_id, yes, dry_run, runs_dir, without_glorfindel, report
         console.print(f"[red]Campaign not found:[/red] {campaign_id}")
         raise SystemExit(1)
 
-    m = CampaignManifest.load(cdir)
+    m = _load_manifest(CampaignManifest, cdir)
     if m.state == "planned" and not (yes or dry_run):
         console.print(
             "[yellow]Campaign is 'planned' — ratify budget/scope with --yes "
@@ -675,7 +685,11 @@ def campaign_list(runs_dir):
     for d in sorted(root.iterdir()):
         if not (d / "manifest.json").exists():
             continue
-        m = CampaignManifest.load(d)
+        try:
+            m = CampaignManifest.load(d)
+        except OSError as exc:   # SEC-A1 (V-02): Refused — a pipe, a link, a file too large
+            console.print(f"[red]{d.name}: manifest refused[/red] — {exc}; never read")
+            continue
         r = m.results
         console.print(
             f"{m.campaign_id}  [{m.state}]  {len(m.scenarios)} scenario(s)  "
@@ -695,7 +709,7 @@ def campaign_show(campaign_id, runs_dir):
     if not (cdir / "manifest.json").exists():
         console.print(f"[red]Campaign not found:[/red] {campaign_id}")
         raise SystemExit(1)
-    m = CampaignManifest.load(cdir)
+    m = _load_manifest(CampaignManifest, cdir)
     console.print(f"[bold]{m.campaign_id}[/bold]  state={m.state}  objective={m.objective!r}")
     console.print(f"scope: {m.scope.allowed_resource_ids}")
     for e in m.scenarios:

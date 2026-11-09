@@ -135,8 +135,11 @@ class CampaignManifest:
 
     @classmethod
     def load(cls, campaign_dir: str | Path) -> "CampaignManifest":
-        path = Path(campaign_dir) / "manifest.json"
-        return cls.from_dict(json.loads(path.read_text()))
+        """Read as runs/ is read (SEC-A1, V-02: ``eregion_core.channel_reader.read_json``): a
+        regular file only, never through a link, never blocking, at most DOC_BYTES — a pipe, a
+        link, a file too large raise ``channel_reader.Refused`` (an OSError), never read."""
+        from eregion_core.channel_reader import read_json
+        return cls.from_dict(read_json(Path(campaign_dir) / "manifest.json"))
 
     # ── state transitions ────────────────────────────────────────────────────
     def set_state(self, state: str) -> None:

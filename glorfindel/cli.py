@@ -278,9 +278,13 @@ def cli():
 def respond(signals_file: str, dry_run: bool, model: str, memory_path: str | None):
     """Process all signals in a JSONL file and respond to each."""
     from glorfindel.agent import GlorfindelAgent
+    from eregion_core.channel_reader import Refused
     from glorfindel.signals import load_signals
 
-    signals = load_signals(signals_file)
+    try:
+        signals = load_signals(signals_file)
+    except Refused as exc:   # SEC-A1 (V-02): a pipe, a link, a file too large — never read
+        raise click.ClickException(f"{signals_file} refusé : {exc} — jamais lu") from None
     if not signals:
         console.print("[yellow]No signals found in file.[/yellow]")
         return
@@ -2727,6 +2731,9 @@ def replay_campaign_cmd(campaign_id, runs_dir, source, dry_run):
         console.print(f"[red]No manifest for campaign '{campaign_id}'[/red] "
                       f"under {runs_dir}/annatar/ nor {runs_dir}/glorfindel/campaigns/.")
         return
+    except OSError as exc:   # SEC-A1 (V-02): Refused — a pipe, a link, a file too large
+        console.print(f"[red]Manifest of campaign '{campaign_id}' refused:[/red] {exc} — never read")
+        raise SystemExit(1) from None
 
     replays = doc["replays"]
     if not replays:

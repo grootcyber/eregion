@@ -7,15 +7,18 @@ from eregion_core.signals import Signal
 
 
 def load_signals(path: str | Path) -> list[Signal]:
-    """Load all signals from a JSONL file produced by Annatar."""
+    """Load all signals from a JSONL file produced by Annatar — read as runs/ is read (SEC-A1,
+    V-02: ``eregion_core.channel_reader.read_text``): a regular file only, never through a link,
+    never blocking, at most FILE_BYTES. A pipe, a link, a file too large raise
+    ``channel_reader.Refused`` (an OSError), never read."""
+    from eregion_core.channel_reader import read_text
     signals = []
-    with open(path) as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            data = json.loads(line)
-            signals.append(Signal(**data))
+    for line in read_text(path).split("\n"):   # JSONL: \n ends a line, never U+2028
+        line = line.strip()
+        if not line:
+            continue
+        data = json.loads(line)
+        signals.append(Signal(**data))
     return signals
 
 

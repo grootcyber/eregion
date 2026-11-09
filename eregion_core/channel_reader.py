@@ -194,12 +194,19 @@ def read_file(path, max_bytes: int = FILE_BYTES) -> bytes:
     """The whole of a regular file of runs/ (``open_regular``: never blocks, never follows a link),
     at most ``max_bytes`` — a file larger is refused, never cut and read as if it were whole.
     Raises Refused, or OSError (gone)."""
+    return read_regular(path, max_bytes)[0]
+
+
+def read_regular(path, max_bytes: int = FILE_BYTES) -> tuple[bytes, os.stat_result]:
+    """``read_file``, and the ``fstat`` of the very file read — its mtime, when it was written —
+    never a second look at a name that may have changed in between (SEC-A1)."""
     fd = open_regular(path)
     with os.fdopen(fd, "rb") as f:
+        st = os.fstat(f.fileno())
         data = f.read(max_bytes + 1)
     if len(data) > max_bytes:
         raise Refused(f"plus de {max_bytes} octets")
-    return data
+    return data, st
 
 
 def read_text(path, max_bytes: int = FILE_BYTES) -> str:
