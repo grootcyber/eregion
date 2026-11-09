@@ -1283,6 +1283,20 @@
    "issue": 595
   },
   {
+   "id": "c-rancongiciel",
+   "composant": "celebrimbor",
+   "poste": "c-construire",
+   "nom": "Le rançongiciel rejoué au banc, son pas à pas",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "RAN1"
+   ],
+   "issue": 665,
+   "pr": 669,
+   "doc": "docs/banc-t1486.md"
+  },
+  {
    "id": "c-lecture",
    "composant": "celebrimbor",
    "poste": "c-acces",
