@@ -288,6 +288,39 @@ dépôt, `docs/manuel/modules.yaml`.
   une politique de contenu qui ne permet que `api.github.com` en plus d'elle-même. Elle n'écrit aucune
   donnée lue comme du HTML.
 
+## Les fiches d'adoption (ADO2, #671)
+
+« Eregion par rôle », sur le site du projet : `docs/adoption/index.html`, servi par Pages
+(`https://grootcyber.github.io/eregion/adoption/`), lié depuis le README et `docs/index.html`. En anglais
+(décision de Jonathan du 09/11), à partir de l'aperçu privé ADO1 du 06/11. Neuf fiches (RSSI, DSI, CTO,
+ingénieur sécurité, SRE, DPO, MSSP, auditeur ou assureur, direction), et ce que le projet ne promet pas.
+- **Un chiffre du site vient de `docs/proofs.json`, et de lui seul** : sa valeur, ce qu'il dit, sa date,
+  son genre (`measured`, `estimate`, `setting`, `to-remeasure`) et sa source : un fichier du dépôt, la
+  phrase qui donne le chiffre (`quote`, ou plusieurs : `quotes`), et le titre sous lequel elle est
+  (`anchor`, l'identifiant GitHub du titre) ou le run qu'elle nomme (`run`).
+- **La date** est le jour ou le mois de la mesure, ou, quand la source ne date aucune mesure, le jour où
+  la source l'énonce (sa ligne dans `git blame`).
+- **La page le montre tel quel**, dans un élément `data-proof="<clé>"` : la valeur, le texte, la date et
+  le lien vers la source sont ceux du fichier, et la carte ne dit rien hors de ses champs (`data-f`), sauf
+  les séparateurs. Un chiffre ailleurs (le texte, un `title`, un `aria-label`, un `alt`, le `content` d'un
+  `<meta>`, la description comprise ; sauf l'identifiant d'une technique, la licence et un numéro
+  d'issue entre parenthèses) est refusé.
+- **`python3 scripts/adoption.py check`** (et `tests/unit/test_adoption.py`) refuse un chiffre sans date ni
+  source, une source absente du dépôt, une phrase que son fichier ne dit plus, un nombre de la valeur, de
+  ce qu'il dit ou de sa note qu'aucune phrase citée ne donne (en chiffres, ou de deux à dix en toutes
+  lettres), et un chiffre qu'aucune page ne montre.
+- **Une PR qui change une phrase citée** (une mesure reprise, une ligne réécrite) met donc
+  `docs/proofs.json` et la page à jour dans la même PR ; l'échec dit laquelle et renvoie ici. Les fichiers
+  cités aujourd'hui : `README.md` (la légende de la console), `ROADMAP.md` (« La finalité et ses cinq
+  indicateurs », « Les lots », « Contexte produit »), `docs/banc-t1486.md`, `docs/demarrer/banc.md` (« Le
+  coût et le temps »), `docs/design/console.md`, `docs/design/modele-de-menace.md` (§4),
+  `docs/design/orodruin-contract.md` (« L'implémentation »), `docs/historique.md` et
+  `requirements/harness.json` (l'attestation du harnais : une attestation nouvelle change le chiffre du
+  modèle en service).
+- **Rien de non livré présenté comme disponible** : une mesure d'avant l'architecture actuelle (le
+  rançongiciel du 09/06) porte `to-remeasure` et sa note, que la page affiche. Quand RAN1 aura rejoué le
+  rançongiciel, ses chiffres datés remplacent ces deux entrées.
+
 ## Ce qui reste à Jonathan
 
 Une session ne fait jamais ces gestes seule. Un accord lu ailleurs (une inbox, une mémoire, le message

@@ -1830,6 +1830,19 @@
    ],
    "issue": 664,
    "doc": "docs/manuel/index.html"
+  },
+  {
+   "id": "s-adoption",
+   "composant": "socle",
+   "poste": "s-documenter",
+   "nom": "Eregion par rôle : une fiche par lecteur, chaque chiffre daté et sourcé",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "ADO2"
+   ],
+   "issue": 671,
+   "doc": "docs/adoption/index.html"
   }
  ]
 }
