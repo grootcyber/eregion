@@ -381,14 +381,22 @@ class AwsIsolationMachine(RuleBasedStateMachine):
                        for p in stt.get("placements") or [])
 
     def _holds_an_original(self, p: dict) -> bool:
-        """A placement of the state that records its ENI's original. `default` alone, when
-        the ENI is detached, records nothing: learned from where someone left it once
-        every record was lost, it is the AWS analog of the record of « none » for a bare
-        NIC, which Azure's machine reads as nothing (test_invariants._record_lost) — not
-        an original Glorfindel dropped (AWS1b, #708)."""
+        """A placement of the state, as the test sees it now, that records its ENI's
+        original. `default` alone, on an ENI someone left there, records nothing only when
+        nothing held the original as the state was seen: the tags of the quarantine noted
+        at its recording already lost by the test. Learned from where someone left it
+        once every record was gone, it is the AWS analog of the record of « none » for a
+        bare NIC, which Azure's machine reads as nothing (test_invariants._record_lost).
+        While the tag still held the original, `default` noted over it is an original
+        Glorfindel dropped (M606 by the tag) — the state seen then makes it traceable
+        (AWS1b, #708)."""
         groups, eni = p.get("original_groups"), self.fake.enis.get(p.get("nic_id") or "")
-        return bool(groups) and not (eni is not None and eni["id"] in self.detached
-                                     and sorted(groups) == [f"sg-default-{eni['vpc']}"])
+        if not groups:
+            return False
+        if eni is None or eni["id"] not in self.detached or sorted(groups) != [f"sg-default-{eni['vpc']}"]:
+            return True
+        rec = self.recorded_at.get(eni["id"])
+        return rec is None or self.tags_lost_at.get(rec[1], -1) <= rec[0]
 
     def _on_default(self, eni: dict) -> bool:
         return eni["groups"] == [f"sg-default-{eni['vpc']}"]

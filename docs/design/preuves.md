@@ -1039,13 +1039,21 @@ l'opérateur remet le groupe (`_recover_everything`). L'oracle AWS l'acceptait a
 ré-isolation n'avait pas écrit son état, puis lisait « un état a tenu son origine » dans ce `default`.
 Celle d'Azure ne lit rien dans une note « aucun » (`_record_lost`). **Ni l'adaptateur ni le faux
 n'avaient tort** : sans état ni tag, aucune origine n'est connaissable. **L'oracle ne compte plus pour
-une origine le `default` seul d'une ENI qu'on y a laissée** (`_holds_an_original`). Il ne refuse rien de
-moins ailleurs : un état qui a tenu la vraie origine rend l'ENI traçable, et une levée qui la laisse sur
-`default` échoue à I3. Deux séquences figées, la séquence et son pendant (l'état écrit, M606 attrapé par
-lui aussi), dans `tests/unit/test_invariant_regressions_aws.py`. Deux mutants de l'oracle, comme AWS1 :
-M4751 (le défaut revenu) et M4752 (le correctif tentant qui affaiblit : toute origine qui nomme
-`default` ne compte plus), dans `scripts/mutants/AWS1b.py`. Aucun mutant de l'adaptateur : il n'avait
-pas de défaut.
+une origine le `default` seul d'une ENI qu'on y a laissée, quand les tags de la quarantaine notée
+étaient déjà perdus au moment où il a vu l'état** (`_holds_an_original`) : rien ne tenait alors
+l'origine. Un premier correctif excusait ce `default` quel que soit ce moment, et la relecture l'a
+refusé : il affaiblissait I3. Une ré-isolation fautive à la M606, qui ignore le tag encore présent, y
+note `default` et l'écrase, suivie de la perte des tags, passait. L'oracle de la base l'attrapait.
+Borné au moment de la perte, l'oracle refuse ce que celui de la base refusait. Un état qui a tenu la vraie
+origine rend l'ENI traçable. Un `default` noté pendant que le tag la tenait encore la rend traçable
+aussi, ses tags perdus ensuite ou non. Une levée qui laisse l'ENI sur `default` échoue alors à I3.
+Quatre séquences figées dans `tests/unit/test_invariant_regressions_aws.py` : la séquence de la nuit ;
+son pendant par l'état (l'état écrit) ; son pendant par le tag (les tags perdus après la
+ré-isolation), qui attrapent tous deux M606 ; et l'oracle face au `default` noté par-dessus le tag.
+Aucun mutant de l'adaptateur : il n'avait pas de défaut. Trois mutants de l'oracle, comme AWS1, dans
+`scripts/mutants/AWS1b.py` : M4751 (le défaut revenu) et M4752 (un correctif qui affaiblit : toute
+origine qui nomme `default` ne compte plus), puis M4753 (l'excuse quel que soit le moment de la
+perte, le premier correctif).
 
 **Le jeu de contrôle sur AWS.** Seize bugs plausibles de l'adaptateur, M630–M645, écrits et commités
 avant la machine AWS (dans le même commit que l'adaptateur) et jamais utilisés pour l'orienter, dans la
