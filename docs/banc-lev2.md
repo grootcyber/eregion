@@ -43,7 +43,9 @@ mkdir -p "$LEV2"
 note() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >> "$LEV2/gestures.txt"; }
 NIC=$(az vm show -g $RG -n $VM --query 'networkProfile.networkInterfaces[0].id' -o tsv)
 NSG=$(az network nic show --ids $NIC --query 'networkSecurityGroup.id' -o tsv)   # vide : celui du sous-réseau
-SUBNET_NSG=$(az network vnet subnet show --ids "$(az network nic show --ids $NIC --query 'ipConfigurations[0].subnet.id' -o tsv)" --query 'networkSecurityGroup.id' -o tsv)
+SUBNET=$(az network nic show --ids $NIC --query 'ipConfigurations[0].subnet.id' -o tsv)
+SUBNET_NSG=$(az network vnet subnet show --ids "$SUBNET" --query 'networkSecurityGroup.id' -o tsv)
+az vm extension list -g $RG --vm-name $VM --query '[].{name:name, type:typePropertiesType}' -o table   # geste 3
 IP=$(az network nic show --ids $NIC --query 'ipConfigurations[0].privateIPAddress' -o tsv)
 DISK=$(az vm show -g $RG -n $VM --query 'storageProfile.osDisk.name' -o tsv)
 ```
@@ -69,23 +71,32 @@ session de code. Le lancer d'un terminal neuf du poste, sous le `az login` de Jo
 |---|---|---|---|
 | 1 | `…/virtualMachines/runCommand/action` | `note Microsoft.Compute/virtualMachines/runCommand/action run-command-v1-true` puis `az vm run-command invoke -g $RG -n $VM --command-id RunShellScript --scripts true` | rien : la commande `true` reste le dernier script du modèle de la VM, inoffensif (c'est aussi H7 : une extension écrite ?) |
 | 2 | `…/virtualMachines/runCommands/write` | `note Microsoft.Compute/virtualMachines/runCommands/write managed-true` puis `az vm run-command create -g $RG --vm-name $VM --name eregion-lev2 --script true` | `note Microsoft.Compute/virtualMachines/runCommands/delete managed-delete` puis `az vm run-command delete -g $RG --vm-name $VM --name eregion-lev2 --yes` |
-| 3 | `…/virtualMachines/extensions/write` | `note Microsoft.Compute/virtualMachines/extensions/write custom-script-true` puis `az vm extension set -g $RG --vm-name $VM --publisher Microsoft.Azure.Extensions --name CustomScript --settings '{"commandToExecute":"true"}'` | `note Microsoft.Compute/virtualMachines/extensions/delete custom-script-delete` puis `az vm extension delete -g $RG --vm-name $VM --name CustomScript` |
+| 3 | `…/virtualMachines/extensions/write` | la liste de l'étape 0 lue d'abord : **un type absent** de la VM, jamais `CustomScript` (une seule par VM Linux : c'est celle d'**`eregion-auditd`**, AUD1, `infra/terraform/auditd.tf` ; la viser remplacerait son script, et le retour la supprimerait). Par exemple l'agent de Network Watcher, s'il est absent : `note Microsoft.Compute/virtualMachines/extensions/write nw-agent` puis `az vm extension set -g $RG --vm-name $VM --publisher Microsoft.Azure.NetworkWatcher --name NetworkWatcherAgentLinux` | `note Microsoft.Compute/virtualMachines/extensions/delete nw-agent-delete` puis `az vm extension delete -g $RG --vm-name $VM --name NetworkWatcherAgentLinux` ; la liste relue : `eregion-auditd` toujours là, comme au début |
 | 4 | `…/virtualMachines/write` | `note Microsoft.Compute/virtualMachines/write vm-tag` puis `az vm update -g $RG -n $VM --set tags.eregion-lev2=1` | `az vm update -g $RG -n $VM --remove tags.eregion-lev2` |
 | 5 | `Microsoft.Resources/tags/write` | `note Microsoft.Resources/tags/write tags-api` puis `az tag update --resource-id $(az vm show -g $RG -n $VM --query id -o tsv) --operation merge --tags eregion-lev2=2` | `az tag update --resource-id … --operation delete --tags eregion-lev2=2` |
 | 6 | `…/resourceGroups/write` | `note Microsoft.Resources/subscriptions/resourceGroups/write group-tag` puis `az group update -n $RG --set tags.eregion-lev2=1` | `az group update -n $RG --remove tags.eregion-lev2` |
 | 7 | `Microsoft.Compute/disks/write` | `note Microsoft.Compute/disks/write disk-tag` puis `az disk update -g $RG -n $DISK --set tags.eregion-lev2=1` | `az disk update -g $RG -n $DISK --remove tags.eregion-lev2` |
-| 8 | `…/disks/beginGetAccess/action` | `note Microsoft.Compute/disks/beginGetAccess/action disk-sas` puis `az disk grant-access -g $RG -n $DISK --duration-in-seconds 60 --access-level Read` | attendu : **refusé** (un disque attaché à une VM qui tourne) ; l'essai doit pourtant se lire, avec son statut. Passé : `az disk revoke-access -g $RG -n $DISK` aussitôt |
+| 8 | `…/disks/beginGetAccess/action` | `note Microsoft.Compute/disks/beginGetAccess/action disk-sas` puis `az disk grant-access -g $RG -n $DISK --duration-in-seconds 60 --access-level Read` | attendu : **refusé** (un disque attaché à une VM qui tourne). Le rapport donne le statut et le code de l'échec, et ce qu'en fait Glorfindel : `Conflict` et `OperationNotAllowed`, un refus de la plateforme, **écarté** (REC1b) ; tout autre, **un échec qui compte**. Passé : `az disk revoke-access -g $RG -n $DISK` aussitôt |
 | 9 | `…/networkInterfaces/write` | `note Microsoft.Network/networkInterfaces/write nic-tag` puis `az network nic update --ids $NIC --set tags.eregion-lev2=1` | `az network nic update --ids $NIC --remove tags.eregion-lev2` |
-| 10 | `…/networkSecurityGroups/securityRules/write` | `note Microsoft.Network/networkSecurityGroups/securityRules/write deny-rule` puis `az network nsg rule create --nsg-name ${NSG##*/} -g ${${NSG#*/resourceGroups/}%%/*} -n eregion-lev2-deny --priority 4090 --direction Inbound --access Deny --protocol Tcp --source-address-prefixes 192.0.2.1/32 --destination-address-prefixes $IP --destination-port-ranges 9` (le NSG de la carte, sinon `$SUBNET_NSG`) | `az network nsg rule delete … -n eregion-lev2-deny` |
+| 10 | `…/networkSecurityGroups/securityRules/write` | `note Microsoft.Network/networkSecurityGroups/securityRules/write deny-rule` puis `az network nsg rule create --nsg-name ${NSG##*/} -g ${${NSG#*/resourceGroups/}%%/*} -n eregion-lev2-deny --priority 4090 --direction Inbound --access Deny --protocol Tcp --source-address-prefixes 192.0.2.1/32 --destination-address-prefixes $IP --destination-port-ranges 9` (le NSG de la carte, sinon `$SUBNET_NSG`) | `note Microsoft.Network/networkSecurityGroups/securityRules/delete deny-rule-delete` puis `az network nsg rule delete … -n eregion-lev2-deny` : le retrait d'une règle est un geste aussi (Q16) |
 | 11 | idem, sur le NSG **partagé** du sous-réseau, visant une **autre** adresse | `note Microsoft.Network/networkSecurityGroups/securityRules/write deny-rule-other-vm` puis la même règle sur `$SUBNET_NSG`, `--destination-address-prefixes 10.255.255.254/32` (aucune VM) | `az network nsg rule delete …` ; à lire : le corps de la requête est-il dans l'événement (`properties.requestbody`) ? Sinon la règle se juge sur ce qu'elle est sur Azure, ou compte |
 | 12 | `…/networkSecurityGroups/write` | `note Microsoft.Network/networkSecurityGroups/write nsg-tag` puis `az network nsg update --ids ${NSG:-$SUBNET_NSG} --set tags.eregion-lev2=1` | `az network nsg update --ids … --remove tags.eregion-lev2` |
-| 13 | `…/publicIPAddresses/join/action` (facultatif) | **seulement la carte en quarantaine** (gondolin isolée par H0, pendant les étapes 5 et 6 de [`banc-t1486.md`](banc-t1486.md)) : `az network public-ip create -g $RG -n eregion-lev2-pip --sku Standard`, puis `note Microsoft.Network/publicIPAddresses/join/action pip-join` et `az network nic ip-config update --ids $NIC/ipConfigurations/<nom> --public-ip-address eregion-lev2-pip` | `az network nic ip-config update --ids … --remove publicIPAddress`, puis `az network public-ip delete -g $RG -n eregion-lev2-pip` |
+| 13 | `…/publicIPAddresses/join/action` (facultatif) | **seulement la carte en quarantaine**, posé et retiré **pendant l'étape 5** de [`banc-t1486.md`](banc-t1486.md) (gondolin isolée par H0, avant tout restore) : `az network public-ip create -g $RG -n eregion-lev2-pip --sku Standard`, puis `note Microsoft.Network/publicIPAddresses/join/action pip-join` et `az network nic ip-config update --ids $NIC/ipConfigurations/<nom> --public-ip-address eregion-lev2-pip` | dans la même étape 5 : `az network nic ip-config update --ids … --remove publicIPAddress`, puis `az network public-ip delete -g $RG -n eregion-lev2-pip`. **Avant l'étape 6 (le restore)**, relire `az network nic show --ids $NIC --query 'ipConfigurations[].publicIPAddress' -o tsv` : vide, sinon ne pas restaurer. L'étape 7 lève seule : une IP restée sortirait de quarantaine avec gondolin (H8 n'est pas mesurée). Un doute : sauter ce geste |
 | 14 | `…/userAssignedIdentities/assign/action` (facultatif) | `az identity create -g $RG -n eregion-lev2-id`, puis `note Microsoft.ManagedIdentity/userAssignedIdentities/assign/action identity-assign` et `az vm identity assign -g $RG -n $VM --identities eregion-lev2-id` | `az vm identity remove -g $RG -n $VM --identities eregion-lev2-id`, puis `az identity delete -g $RG -n eregion-lev2-id` |
 | 15 | `…/attachDetachDataDisks/action` (facultatif) | `az disk create -g $RG -n eregion-lev2-disk --size-gb 4 --sku Standard_LRS`, puis `note Microsoft.Compute/virtualMachines/attachDetachDataDisks/action disk-attach` et `az vm disk attach -g $RG --vm-name $VM --name eregion-lev2-disk` | `az vm disk detach -g $RG --vm-name $VM --name eregion-lev2-disk`, puis `az disk delete -g $RG -n eregion-lev2-disk --yes` |
 | 16 | `Microsoft.SerialConsole/serialPorts/connect/action` (H6, facultatif) | si la console série est active : `note Microsoft.SerialConsole/serialPorts/connect/action serial` puis `az serial-console connect -g $RG -n $VM`, et la quitter aussitôt | rien |
+| 17 | `…/virtualNetworks/subnets/write` (Q16) | une écriture du sous-réseau qui ne change rien : `note Microsoft.Network/virtualNetworks/subnets/write subnet-same` puis `az network vnet subnet update --ids "$SUBNET" --network-security-group "$SUBNET_NSG"` (le NSG qu'il porte déjà ; sans NSG de sous-réseau, sauter ce geste : n'en poser aucun) | rien : rien n'a changé. Relire `az network vnet subnet show --ids "$SUBNET" --query 'networkSecurityGroup.id' -o tsv` : le même |
 
-Le geste 8 fait aussi la preuve qu'un échec se lit (le statut compte, §4.1). Le geste 11 répond à la
+Le geste 8 dit comment un échec se lit : son statut et son code, et s'il compte (§4.1). Le geste 11 répond à la
 question du NSG partagé : une règle qui ne couvre pas gondolin ne doit pas compter.
+
+**Pourquoi le geste 13 reste couplé à l'exercice T1486.** Il demande une carte déjà en quarantaine,
+et seul un isolement par H0 la met là. Aucun exercice non destructif du banc n'isole gondolin à coup
+sûr : le T1136.001 mesuré le 31/10 a escaladé un instantané à 35 %, sans isolement
+(`docs/banc-bl1.md`). Le geste se pose et se retire donc dans l'étape 5, et se relit avant le restore.
+
+Deux gestes d'une même opération (10 et 11, l'écriture d'une règle) se notent **à une minute d'écart
+au moins** : le rapport borne chacun au suivant de la même opération.
 
 ## 3. La lecture, puis le rapport (10 min)
 
@@ -122,7 +133,8 @@ lignes dans le rapport, sans identifiant.
 ## 5. Remettre en état (5 min)
 
 - Chaque retour en arrière du tableau fait ; `az vm show -g $RG -n $VM --query tags` ne porte plus
-  `eregion-lev2` ; ni règle `eregion-lev2-*`, ni IP, ni identité, ni disque `eregion-lev2-*` dans
+  `eregion-lev2` ; l'extension `eregion-auditd` toujours là (`az vm extension list`), aucune IP
+  publique sur la carte ; ni règle `eregion-lev2-*`, ni IP, ni identité, ni disque `eregion-lev2-*` dans
   `$RG`.
 - Les cartes d'AL1 levées par la session : acquittées sur la console de H0.
 - `make bench-preflight` : le banc comme au début.

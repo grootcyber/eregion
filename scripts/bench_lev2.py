@@ -41,8 +41,10 @@ import bench_shared as bs  # noqa: E402
 ARM = "https://management.azure.com"
 BOUND = 20                    # Glorfindel's bound (REC1b, LEV2)
 MEASURE_PAGES = 40            # read past it here, to know how far a group goes (H9)
-# A gesture's events are looked for from this long before its noted time to this long after.
-BEFORE_S, AFTER_S = 120, 3600
+# A gesture's events are looked for from this long before its noted time to this long after — and
+# never past the next gesture noted of the same operation, less SKEW_S (the workstation's clock is
+# not Azure's): two gestures of one operation are never read as one (review round 1).
+BEFORE_S, AFTER_S, SKEW_S = 120, 3600, 20
 RUN_COMMAND_V1 = "microsoft.compute/virtualmachines/runcommand/action"
 EXTENSION_WRITE = "microsoft.compute/virtualmachines/extensions/write"
 SAME_MOMENT_S = 120
@@ -67,13 +69,15 @@ def targets_of(vm: dict, nics: list[dict], subnets: dict[str, dict]) -> dict:
     storage = vm.get("storageProfile") or {}
     disks = [((storage.get("osDisk") or {}).get("managedDisk") or {}).get("id")]
     disks += [(d.get("managedDisk") or {}).get("id") for d in storage.get("dataDisks") or []]
-    nsgs, pips = [], []
+    nsgs, pips, subs = [], [], []
     for n in nics:
         if (n.get("networkSecurityGroup") or {}).get("id"):
             nsgs.append(n["networkSecurityGroup"]["id"])
         for c in n.get("ipConfigurations") or []:
             if (c.get("publicIPAddress") or {}).get("id"):
                 pips.append(c["publicIPAddress"]["id"])
+            if (c.get("subnet") or {}).get("id"):
+                subs.append(c["subnet"]["id"])
             sub = subnets.get(_k((c.get("subnet") or {}).get("id")))
             if sub and (sub.get("networkSecurityGroup") or {}).get("id"):
                 nsgs.append(sub["networkSecurityGroup"]["id"])
@@ -81,15 +85,17 @@ def targets_of(vm: dict, nics: list[dict], subnets: dict[str, dict]) -> dict:
     group = "/".join(vm_id.split("/")[:5])
     return {"vm": vm_id, "group": group, "nics": [n["id"] for n in nics], "disks": [d for d in disks if d],
             "nsgs": sorted(set(nsgs), key=str.lower), "public_ips": sorted(set(pips), key=str.lower),
-            "identities": sorted(((vm.get("identity") or {}).get("userAssignedIdentities") or {}))}
+            "identities": sorted(((vm.get("identity") or {}).get("userAssignedIdentities") or {})),
+            "subnets": sorted(set(subs), key=str.lower)}
 
 
 def reads_of(t: dict) -> list[tuple[str, str, str]]:
     """(how, what, value) of each read Glorfindel makes (glorfindel/providers/azure/door.py)."""
     exact = [("vm", t["vm"])] + [("nic", n) for n in t["nics"]] + [("disk", d) for d in t["disks"]]
     exact += [("nsg", n) for n in t["nsgs"]] + [("public_ip", p) for p in t["public_ips"]]
-    exact += [("identity", i) for i in t["identities"]]
-    groups = sorted({x.split("/")[4] for x in [t["vm"], *t["nsgs"], *t["nics"]] if len(x.split("/")) > 4},
+    exact += [("identity", i) for i in t["identities"]] + [("subnet", x) for x in t.get("subnets") or []]
+    groups = sorted({x.split("/")[4] for x in [t["vm"], *t["nsgs"], *t["nics"], *(t.get("subnets") or [])]
+                     if len(x.split("/")) > 4},
                     key=str.lower)
     return [("uri", what, rid) for what, rid in exact] + [("group", "group", g) for g in groups]
 
@@ -184,7 +190,8 @@ def read_gestures(text: str) -> list[dict]:
 
 def _door_targets(t: dict) -> dict:
     return {"vm": t["vm"], "group": t["group"], "nics": t["nics"], "disks": t["disks"],
-            "nsgs": {n: None for n in t["nsgs"]}, "public_ips": t["public_ips"], "identities": t["identities"]}
+            "nsgs": {n: None for n in t["nsgs"]}, "public_ips": t["public_ips"], "identities": t["identities"],
+            "subnets": t.get("subnets") or []}
 
 
 def _kind(rid: str, t: dict) -> str:
@@ -195,7 +202,40 @@ def _kind(rid: str, t: dict) -> str:
         return f"enfant de la VM ({rest[0]}{'/' + rest[-2] if len(rest) > 2 else ''})"
     return {"vm": "la VM", "disk": "un disque", "nic": "une carte", "nsg": "un NSG", "nsg_rule": "une règle de NSG",
             "public_ip": "une IP publique", "identity": "une identité", "group": "le groupe",
+            "subnet": "le sous-réseau",
             None: "une autre ressource"}.get(kind, str(kind))
+
+
+def window(gestures: list[dict], i: int) -> tuple[float, float]:
+    """[start, end) where gesture `i`'s events are looked for: from BEFORE_S before it (SKEW_S when a
+    gesture of the same operation came before), to AFTER_S after it, or to the next gesture of the
+    same operation, less SKEW_S."""
+    g = gestures[i]
+    same = sorted(x["at"] for x in gestures if x["op"] == g["op"])
+    before = [a for a in same if a < g["at"]]
+    after = [a for a in same if a > g["at"]]
+    start = g["at"] - (SKEW_S if before else BEFORE_S)
+    end = min([g["at"] + AFTER_S] + [a - SKEW_S for a in after])
+    return start, end
+
+
+def failure_said(events: list[dict]) -> str:
+    """What the gesture's failed events say (the guide's gesture 8): their HTTP status and code, and
+    whether Glorfindel counts them — a refusal of the platform (Conflict, OperationNotAllowed: REC1b)
+    is left out, any other failure counts. « — » without a failure."""
+    from glorfindel.providers.azure.recovery import _error_code, _refused, _refused_operations
+    failed = [e for e in events if str((e.get("status") or {}).get("value") or "").lower() == "failed"]
+    if not failed:
+        return "—"
+    refused = _refused_operations(events)
+    said = set()
+    for e in failed:
+        props = e.get("properties") if isinstance(e.get("properties"), dict) else {}
+        status = props.get("statusCode") or (e.get("subStatus") or {}).get("value") or "?"
+        code = _error_code(props.get("statusMessage")) or "?"
+        out = _refused(e) or str(e.get("operationId") or "").lower() in refused
+        said.add(f"{status} {code} : " + ("refus de la plateforme, écarté" if out else "un échec, il compte"))
+    return " ; ".join(sorted(said))
 
 
 def load_rounds(d: Path) -> list[list[dict]]:
@@ -223,22 +263,24 @@ def report(d: Path, gestures_text: str) -> str:
     # ── H7 and H12, gesture by gesture
     lines += ["## Les gestes (H7, H12)", "",
               "| Geste | Opération | Lu | Ressource de l'événement (H7) | Par quelle lecture | Statuts | "
+              "Un échec : son statut, son code, ce qu'il compte | "
               "Latence de la première lecture (H12) | eventTimestamp − geste | submission − event |",
-              "|---|---|---|---|---|---|---|---|---|"]
+              "|---|---|---|---|---|---|---|---|---|---|"]
     found_events: dict[int, list[tuple[dict, dict]]] = {}
     for gi, g in enumerate(gestures):
+        start, end = window(gestures, gi)
         first, hits = None, []
         for rnd in rounds:
             for rec in rnd:
                 for e in rec.get("events") or []:
                     at = _epoch(e.get("eventTimestamp"))
-                    if _op(e) == g["op"] and at is not None and g["at"] - BEFORE_S <= at <= g["at"] + AFTER_S:
+                    if _op(e) == g["op"] and at is not None and start <= at < end:
                         hits.append((rec, e))
                         if first is None:
                             first = _epoch(rec.get("fetched_at"))
         found_events[gi] = hits
         if not hits:
-            lines.append(f"| {bs.scrub(g['label'] or '—')} | `{g['op']}` | **non** | — | — | — | — | — | — |")
+            lines.append(f"| {bs.scrub(g['label'] or '—')} | `{g['op']}` | **non** | — | — | — | — | — | — | — |")
             continue
         kinds = sorted({_kind(e.get("resourceId"), t) for _, e in hits})
         how = sorted({("exacte " + rec["what"]) if rec["how"] == "uri" else "groupe" for rec, _ in hits})
@@ -247,7 +289,8 @@ def report(d: Path, gestures_text: str) -> str:
         subm = [(_epoch(e.get("submissionTimestamp")) or 0) - (_epoch(e.get("eventTimestamp")) or 0)
                 for _, e in hits if e.get("submissionTimestamp")]
         lines.append(f"| {bs.scrub(g['label'] or '—')} | `{g['op']}` | oui | {', '.join(kinds)} | {', '.join(how)} | "
-                     f"{', '.join(statuses)} | {bs.duration(first - g['at']) if first else '—'} | "
+                     f"{', '.join(statuses)} | {failure_said([e for _, e in hits])} | "
+                     f"{bs.duration(first - g['at']) if first else '—'} | "
                      f"{bs.duration(ev - g['at'])} | {bs.duration(max(subm)) if subm else '—'} |")
     # ── H7: a Run Command v1 and its extension write
     lines += ["", "## Une Run Command v1 écrit-elle aussi une extension ? (H7)", ""]

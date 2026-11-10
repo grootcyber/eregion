@@ -157,7 +157,8 @@ def test_fetch_reads_only_and_saves_each_read_of_each_round(tmp_path):
     t = json.loads((tmp_path / "reads" / "targets.json").read_text())
     assert t["nsgs"] == [NSG] and t["disks"] == [DISK]
     files = sorted(p.name for p in (tmp_path / "reads" / "round-001").iterdir())
-    assert files == ["00-uri-vm.json", "01-uri-nic.json", "02-uri-disk.json", "03-uri-nsg.json", "04-group-group.json"]
+    assert files == ["00-uri-vm.json", "01-uri-nic.json", "02-uri-disk.json", "03-uri-nsg.json", "04-uri-subnet.json",
+                     "05-group-group.json"]
     rec = json.loads((tmp_path / "reads" / "round-002" / "00-uri-vm.json").read_text())
     assert rec["pages"] == 2 and not rec["cut"] and len(rec["events"]) == 1
     url = next(a[4] for a in az.calls if a[:3] == ["rest", "--method", "get"])
@@ -191,3 +192,42 @@ def test_the_script_names_no_tool_that_writes():
     text = (ROOT / "scripts" / "bench_lev2.py").read_text()
     for verb in ('"create"', '"delete"', '"update"', '"invoke"', "--method put", "--method post", "--method patch"):
         assert verb not in text
+
+
+def _one_round(tmp_path: Path, events: list[dict]) -> Path:
+    d = tmp_path / "reads"
+    (d / "round-001").mkdir(parents=True)
+    (d / "targets.json").write_text(json.dumps(_targets()))
+    (d / "round-001" / "00-group-group.json").write_text(json.dumps({
+        "fetched_at": (T + timedelta(minutes=10)).isoformat(), "how": "group", "what": "group",
+        "value": "rg-celebrimbor", "pages": 1, "cut": False, "events": events}))
+    return d
+
+
+def test_two_gestures_of_one_operation_are_never_read_as_one(tmp_path):
+    """Review round 1: each gesture is bounded by the next one noted of the same operation."""
+    rule = "Microsoft.Network/networkSecurityGroups/securityRules/write"
+    d = _one_round(tmp_path, [_event(NSG + "/securityRules/a", rule, T + timedelta(seconds=3)),
+                              _event(VM, rule, T + timedelta(seconds=63))])
+    out = lev2.report(d, f"{T.isoformat()} {rule} first\n{(T + timedelta(seconds=60)).isoformat()} {rule} second\n")
+    rows = {ln.split("|")[1].strip(): ln for ln in out.splitlines() if ln.startswith("| ") and "`" in ln}
+    assert "une règle de NSG" in rows["first"] and "la VM" not in rows["first"]
+    assert "la VM" in rows["second"] and "une règle de NSG" not in rows["second"]
+
+
+def test_a_failure_says_its_status_its_code_and_whether_it_counts(tmp_path):
+    """The guide's gesture 8: a `grant-access` on an attached disk may come back Conflict; the report
+    says the status, the code, and the verdict Glorfindel gives it (REC1b's refusal, or a failure)."""
+    sas = "Microsoft.Compute/disks/beginGetAccess/action"
+
+    def failed(at, status, code, op_id):
+        e = _event(DISK, sas, at, status="Failed")
+        e.update({"operationId": op_id, "properties": {
+            "statusCode": status, "statusMessage": json.dumps({"error": {"code": code}})}})
+        return e
+    d = _one_round(tmp_path, [failed(T + timedelta(seconds=2), "Conflict", "OperationNotAllowed", "op-1"),
+                              failed(T + timedelta(seconds=62), "Conflict", "SomethingElse", "op-2")])
+    out = lev2.report(d, f"{T.isoformat()} {sas} refused\n{(T + timedelta(seconds=60)).isoformat()} {sas} failed\n")
+    rows = {ln.split("|")[1].strip(): ln for ln in out.splitlines() if ln.startswith("| ") and "`" in ln}
+    assert "Conflict operationnotallowed : refus de la plateforme, écarté" in rows["refused"]
+    assert "Conflict somethingelse : un échec, il compte" in rows["failed"]
