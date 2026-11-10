@@ -15,16 +15,19 @@
     and the bench measures how often. The activity log is read with its child resources (extensions,
     managed Run Commands, NSG rules, tags). Glorfindel and the restoring principals are excused only for
     their own operations, targets and windows, and expected callers only per operation (never a Run
-    Command, VMAccess or a disk export). The card carries the revocation plan in IR1a's form and a Verify
+    Command, VMAccess, an AAD login extension or a disk export); an extension written by a third party
+    counts whatever its type. The card carries the revocation plan in IR1a's form and a Verify
     button. A hold placed by the operator is removed only by a traced human gesture.
 
   The mode still decides who executes. Probation: 24 h by default. The administration ports are closed from
   the Internet by a named Glorfindel rule; its state is written before it, so that the control-plane
   detection, the reassertion, the orphan sweep and `reset` recognize it, and it is laid and read back before
   the quarantine is removed. Probation-only rules and thresholds live in the rules file. A detection in the
-  guest dated after the restore's end re-isolates, decided by code at the head of `decide`, guard by guard,
+  guest dated after the restore's end re-isolates according to the mode, decided by code at the head of
+  `decide`, guard by guard,
   without the model (a card in `human_only`); a control-plane detection is always a card, never a
   re-isolation alone (Jonathan's decisions of 10/11). These cycles never go to the memory. The original
   disks are named on every card as evidence, never touched. The model's input stays byte-identical. Also:
   the vocabulary (quarantine, probation), eight invariant properties, the bench exercise (T1486 "as a real
-  incident", then T1136.001 during probation), the lots LEV2 to LEV8, and the questions left for Jonathan.
+  incident", then T1136.001 during probation), the lots LEV2 to LEV8, and Jonathan's decision on every
+  question.
