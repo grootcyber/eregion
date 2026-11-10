@@ -179,6 +179,16 @@ def test_another_name_or_no_sends_nothing(answers):
     assert out is None
 
 
+def test_confirm_wants_a_terminal(tmp_path, capsys):
+    """MOB1: a name « typed » through a pipe is no name typed — nothing shown, nothing written."""
+    doc = _doc(wires=[{"experiment": "T1486", "target": VM, "rank": 1}])
+    (tmp_path / "r.json").write_text(json.dumps(doc))
+    typed = tmp_path / "r.typed.json"
+    assert xr.main(["confirm", str(tmp_path / "r.json"), str(typed), "--expect", doc["id"]], tty=False) == 1
+    err = capsys.readouterr()
+    assert "no terminal" in err.err and err.out == "" and not typed.exists()
+
+
 def test_check_id_says_a_bad_id(capsys):
     assert xr.main(["check-id", "r-20261030T075200Z-a1b2c3"]) == 0
     assert xr.main(["check-id", "../etc"]) == 1

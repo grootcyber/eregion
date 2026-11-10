@@ -60,17 +60,29 @@ def fake_hosts(tmp_path):
     return bindir, h0, oro, calls
 
 
-def _make(fake, *args, stdin="", env_extra=None):
+def _make(fake, *args, stdin="", env_extra=None, tty=True):
+    """The command run as the operator runs it: its stdin a terminal (MOB1: the names are typed, never
+    piped), the answers written to it beforehand, then end-of-file (^D) for any question left; `tty=False`:
+    a pipe, which the command refuses."""
     bindir = fake[0]
     env = {k: v for k, v in os.environ.items() if k not in ("REQUEST", "HOST_SSH_FINGERPRINT")}
     env.update({"PATH": f"{bindir}{os.pathsep}{env['PATH']}", "HOME": str(bindir.parent)},
                **(env_extra or {}))
     # The host key's check is known_host.sh's (tests/unit/test_host_ssh.py): taken as done here.
     fingerprint = [] if any(a.startswith("HOST_SSH_FINGERPRINT=") for a in args) else ["HOST_SSH_FINGERPRINT=SHA256:test"]
-    return subprocess.run(["make", "-s", "--no-print-directory", "-C", str(ROOT), "-o", "glorfindel-host-known", "-o", "orodruin-known",
-                           "orodruin-exercise", f"PYTHON={sys.executable}", "HOST_IP=10.0.0.4", "ORO_IP=10.0.0.5",
-                           *fingerprint, *args],
-                          capture_output=True, text=True, input=stdin, env=env, timeout=60)
+    argv = ["make", "-s", "--no-print-directory", "-C", str(ROOT), "-o", "glorfindel-host-known", "-o", "orodruin-known",
+            "orodruin-exercise", f"PYTHON={sys.executable}", "HOST_IP=10.0.0.4", "ORO_IP=10.0.0.5",
+            *fingerprint, *args]
+    if not tty:
+        return subprocess.run(argv, capture_output=True, text=True, input=stdin, env=env, timeout=60)
+    import pty
+    master, slave = pty.openpty()
+    try:
+        os.write(master, (stdin + "\x04" * 3).encode())
+        return subprocess.run(argv, capture_output=True, text=True, stdin=slave, env=env, timeout=60)
+    finally:
+        os.close(slave)
+        os.close(master)
 
 
 def _serve(h0: Path, doc=REQUEST):
@@ -117,6 +129,39 @@ def test_a_wrong_name_or_a_no_sends_nothing(fake_hosts, stdin, said):
     assert said in res.stdout + res.stderr
     assert [c["cmd"] for c in calls()] == ["ssh"]            # pulled, nothing else
     assert not any(oro.iterdir())
+
+
+@needs_make
+def test_names_piped_instead_of_typed_send_nothing(fake_hosts):
+    """`printf 'vm-…\\ny\\n' | make orodruin-exercise …`: no terminal, no name typed (MOB1, review round 1)."""
+    bindir, h0, oro, calls = fake_hosts
+    _serve(h0)
+    res = _make(fake_hosts, f"REQUEST={RID}", stdin="vm-celebrimbor-gondolin\ny\n", tty=False)
+    assert res.returncode != 0 and "pas de terminal" in res.stderr          # orodruin-exercise-guard, first
+    assert "Wire 2: type" not in res.stdout
+    assert calls() == []                                     # not even pulled from H0
+    assert not any(oro.iterdir())
+
+
+@needs_make
+@pytest.mark.parametrize("what", [f"REQUEST={RID}", "DRILL=bl1-reponse"])
+def test_without_a_terminal_nothing_is_read_before_the_refusal(tmp_path, what):
+    """MOB1 (review round 2): the refusal comes before glorfindel-host-known and orodruin-known — no
+    ssh to H0 for the request, no az for a drill's VMs, not even terraform for an address."""
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    log = tmp_path / "calls.log"
+    for name in ("ssh", "scp", "az", "terraform", "ssh-keyscan", "ssh-keygen", "curl"):
+        (bindir / name).write_text(f'#!/bin/sh\necho "{name} $*" >> "{log}"\n')
+        (bindir / name).chmod(0o755)
+    env = {k: v for k, v in os.environ.items() if k not in ("REQUEST", "DRILL", "TARGETS", "DRILL_VMS")}
+    env.update(PATH=f"{bindir}{os.pathsep}{env['PATH']}", HOME=str(tmp_path))
+    res = subprocess.run(["make", "-s", "--no-print-directory", "-C", str(ROOT), "orodruin-exercise",
+                          f"PYTHON={sys.executable}", "HOST_SSH_FINGERPRINT=SHA256:test", "ORO_SSH_FINGERPRINT=SHA256:test",
+                          what], capture_output=True, text=True, input="vm-celebrimbor-gondolin\ny\n", env=env,
+                         timeout=60)
+    assert res.returncode != 0 and "pas de terminal" in res.stderr
+    assert not log.exists() or log.read_text() == ""
 
 
 @needs_make
@@ -180,7 +225,7 @@ def test_the_target_is_phony_and_has_its_help_line():
 
 def test_h0_is_reached_only_once_its_host_key_is_checked():
     """V-32: the pull from H0 goes through glorfindel-host-known and HOST_SSH (its pinned key)."""
-    head = next(ln for ln in MAKEFILE.splitlines() if ln.startswith("orodruin-exercise: $(if"))
+    head = next(ln for ln in MAKEFILE.splitlines() if ln.startswith("orodruin-exercise: orodruin-exercise-guard $(if"))
     assert "glorfindel-host-known" in head
     recipe = MAKEFILE.split(head, 1)[1].split("\n\n", 1)[0]
     assert '$(HOST_SSH) "cat .eregion/console/requests/$$id.json"' in recipe

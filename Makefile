@@ -142,7 +142,7 @@ DOCKER_GLORFINDEL_WATCH = $(WATCH_KEY_DIR) && $(RUNS_DIRS) && $(GLORFINDEL_AZURE
 	$(IMAGE_GLORFINDEL) glorfindel
 
 .PHONY: help build build-annatar build-glorfindel fix-state-ownership check-azure-env azure-pairs-expiry runs-migrate runs-survey \
-	bench-preflight bench-report \
+	bench-preflight bench-report bench-run bench-run-go bench-restore bench-restore-go mobile-check \
 	annatar-run annatar-dry-run annatar-validate annatar-list \
 	glorfindel-respond glorfindel-dry-run glorfindel-watch \
 	glorfindel-release glorfindel-revert glorfindel-list \
@@ -161,7 +161,7 @@ DOCKER_GLORFINDEL_WATCH = $(WATCH_KEY_DIR) && $(RUNS_DIRS) && $(GLORFINDEL_AZURE
 	glorfindel-host-env glorfindel-host-report glorfindel-host-url glorfindel-host-status glorfindel-host-pull \
 	glorfindel-host-model glorfindel-host-campaign-report glorfindel-host-containment glorfindel-host-fault-rate glorfindel-host-known celebrimbor-workload \
 	orodruin-init orodruin-watch-guard orodruin-watch-principals orodruin-plan orodruin-up orodruin-lock orodruin-push orodruin-push-dev orodruin-check \
-	orodruin-stop orodruin-start orodruin-update orodruin-kill orodruin-down orodruin-ssh orodruin-exercise \
+	orodruin-stop orodruin-start orodruin-update orodruin-kill orodruin-down orodruin-ssh orodruin-exercise orodruin-exercise-guard \
 	orodruin-known orodruin-identity orodruin-identity-id orodruin-fingerprint watch-key glorfindel-host-watch-key queue-keys glorfindel-host-queue-keys harness-key harness-sign harness-verify \
 	gothmog-preflight gothmog-run \
 	orodruin-campaign-plan orodruin-campaign-run campaign-containment fault-rate \
@@ -297,9 +297,15 @@ help:
 	@echo "                                               inscrites (un drill livré attend TARGETS), en demande, puis comme REQUEST="
 	@echo "  make orodruin-down                           Détruit la VM et l'identité"
 	@echo ""
-	@echo "Le banc (BNC1) — lu, jamais écrit (docs/banc-t1486.md) :"
+	@echo "Le banc (BNC1 : lu, jamais écrit ; MOB1 : les gestes, tapés sur le poste) — docs/banc-t1486.md :"
 	@echo "  make bench-preflight [TARGET=<vm>] [POINT_MAX_H=24]  L'étape 0 en un verdict ✓/⚠/✗, code 1 sur un ✗"
 	@echo "  make bench-report RUN=<run_id> [TARGET=<vm>] [OUT=…]  La chronologie d'un run, en Markdown et en JSON (runs/bench/)"
+	@echo "  make bench-run TARGET=<vm> SCENARIO=<id> [DRY_RUN=1]  MOB1 : préflight, demande, nom tapé, lancement par Orodruin, rapport"
+	@echo "  make bench-restore TARGET=<vm> [BEFORE=…] [RUN=…] [DRY_RUN=1]  MOB1 : le restore du poste, paire de la console, nom tapé,"
+	@echo "                                               --before le T0 du run, --keep-isolated (la levée est celle de H0)"
+	@echo "  make mobile-check                            MOB1 : le poste ouvert au téléphone, lu (SSH à clé, tunnel local seul, écoutes, Tailscale)"
+	@echo "    La console sur le téléphone : son propre tunnel SSH vers 127.0.0.1:7007 du poste (make glorfindel-host-tunnel)"
+	@echo "    Les deux premières refusent dans une session d'agent — docs/demarrer/mobile.md"
 	@echo ""
 	@echo "Gothmog (G0, G1) — une panne déclarée, depuis Orodruin (gothmog/README.md) :"
 	@echo "  make gothmog-preflight [FAULT=vm-shutdown]   Contrat, cibles, état normal — rien d'écrit"
@@ -1398,6 +1404,54 @@ bench-preflight:
 bench-report:
 	@$(PYTHON) scripts/bench_report.py
 
+# MOB1 (#686) : piloter le banc depuis le téléphone — l'opérateur tape toujours la commande sur son
+# poste, seul le chemin téléphone → poste change (docs/demarrer/mobile.md). Orodruin n'écoute toujours
+# que le SSH du poste (DRL1), rien ne change sur H0. La console de H0 passe par le tunnel SSH que le
+# téléphone ouvre lui-même vers le 127.0.0.1:7007 du poste, où make glorfindel-host-tunnel tient celui de H0.
+# bench-run : le préflight (un ✗, rien ne part), la demande d'un fil SCENARIO → TARGET (l'id de la VM lu
+# sur Azure), le nom de la cible tapé dans un terminal, destructif ou non, puis la demande portée sur
+# Orodruin, qui la rejuge et la lance (comme orodruin-exercise), puis bench-report pour chaque run
+# (scripts/bench_run.py). bench-restore : le restore du poste, sous la paire de la console, le nom de la VM
+# tapé dans un terminal, --before le T0 du run (son attack_started, SEC4c : runs/bench/<run_id>.json, RUN=,
+# ou le seul rapport de TARGET) sauf BEFORE=, toujours --keep-isolated (la levée est celle de H0), à blanc
+# d'abord (scripts/bench_restore.py). DRY_RUN=1 : rien n'est envoyé ni restauré.
+# Le garde : tous deux refusent dans une session d'agent (EREGION_AGENT_SESSION, le worktree d'un lot).
+# bench-run et bench-restore ne développent avant lui que $(origin …) et $(PYTHON) : le garde tourne seul,
+# puis une sous-make lance la cible -go. Les cibles -go sont internes : appelées directement, make y
+# développe d'abord leurs export — HOST_IP et ORO_IP, lus par terraform output dans l'état local de H0 et
+# d'Orodruin, rien d'autre — puis refont le contrôle d'origine, puis le script refait le garde avant tout
+# ssh, az ou scp. TARGET, SCENARIO, BEFORE, RUN, POINT_MAX_H : sur la ligne de commande, jamais de
+# l'environnement (dans la sous-make, ils restent « command line »), jamais développés par make,
+# vérifiés par le script.
+unexport SCENARIO BEFORE
+MOB1_ORIGIN = case "$(origin TARGET) $(origin SCENARIO) $(origin BEFORE) $(origin RUN) $(origin POINT_MAX_H)" in *environment*) echo "TARGET, SCENARIO, BEFORE, RUN ou POINT_MAX_H vient de l'environnement : rien n'est fait. Sur la ligne de commande : make $(@:-go=) TARGET=<vm> …" >&2; exit 1;; esac
+bench-run bench-restore:
+	@$(MOB1_ORIGIN)
+	@$(PYTHON) scripts/$(subst -,_,$@).py --guard-only
+	@$(ORO_SUBMAKE) $@-go
+
+bench-run-go: export BENCH_H0_SSH = $(HOST_SSH)
+bench-run-go: export BENCH_ORO_SSH = $(ORO_SSH)
+bench-run-go: export BENCH_ORO_RUN = docker run --rm $(ORO_HARDEN) --env-file orodruin.env $(ORO_IMAGE)
+bench-run-go: export BENCH_ORO_RUN_REQUEST = $(ORO_RUN_REQUEST)
+bench-run-go: export BENCH_SCENARIO = $(value SCENARIO)
+bench-run-go: export BENCH_POINT_MAX_H = $(value POINT_MAX_H)
+bench-run-go bench-restore-go: export BENCH_TARGET = $(value TARGET)
+bench-run-go bench-restore-go: export BENCH_DRY_RUN = $(value DRY_RUN)
+bench-restore-go: export BENCH_BEFORE = $(value BEFORE)
+bench-restore-go: export BENCH_RUN = $(value RUN)
+bench-run-go bench-restore-go:
+	@$(MOB1_ORIGIN)
+	@$(PYTHON) scripts/$(subst -,_,$(@:-go=)).py
+
+# MOB1 : le poste, ouvert au téléphone, en lecture seule (scripts/mobile.py check) — le serveur SSH de WSL
+# n'écoute que sur l'adresse privée, mot de passe et clavier interactif fermés, la clé seule admise (son
+# fichier seul, aucune commande ni autorité de certificats), le tunnel local du téléphone vers
+# 127.0.0.1:7007 seul (AllowTcpForwarding local, PermitOpen, GatewayPorts no), le port de la console en
+# 127.0.0.1 seul, Tailscale SSH fermé. sshd -T par sudo -n : sudo -v d'abord.
+mobile-check:
+	@$(PYTHON) scripts/mobile.py check
+
 unexport ID
 orodruin-identity orodruin-identity-id: export EREGION_IDENTITY = $(value ID)
 orodruin-identity-id:
@@ -1492,9 +1546,17 @@ orodruin-exercise: export EREGION_REQUEST_ID = $(value REQUEST)
 orodruin-exercise: export EREGION_DRILL = $(value DRILL)
 orodruin-exercise: export EREGION_DRILL_TARGETS = $(value TARGETS)
 orodruin-exercise: export EREGION_DRILL_VMS = $(value DRILL_VMS)
-orodruin-exercise: $(if $(filter local,$(REQUEST_FROM)),,glorfindel-host-known) $(if $(DRY_RUN),,orodruin-known)
+# MOB1 (#686) : les noms se tapent dans un terminal. orodruin-exercise-guard, le premier prérequis, refuse
+# sans terminal sur l'entrée, après les contrôles d'origine et avant glorfindel-host-known et
+# orodruin-known : rien n'est lu, ni sur H0 (la demande), ni sur Azure (les VM d'un DRILL=), ni l'état
+# Terraform. Make construit les prérequis dans leur ordre (sans -j, comme toutes les cibles qui agissent).
+# Les contrôles d'origine de REQUEST, DRILL, TARGETS et DRILL_VMS y passent aussi, de la recette.
+orodruin-exercise-guard:
 	@case "$(origin REQUEST)" in environment*) echo "REQUEST vient de l'environnement : rien n'est fait. La donner sur la ligne de commande : make orodruin-exercise REQUEST=<id>." >&2; exit 1;; esac
 	@case "$(origin DRILL) $(origin TARGETS) $(origin DRILL_VMS)" in *environment*) echo "DRILL, TARGETS et DRILL_VMS viennent de l'environnement : rien n'est fait. Les donner sur la ligne de commande : make orodruin-exercise DRILL=<nom> [TARGETS=…]." >&2; exit 1;; esac
+	@[ -t 0 ] || { echo "✗ pas de terminal : les noms des cibles se tapent au clavier, jamais par un tube. Rien n'est lu, rien n'est envoyé." >&2; exit 1; }
+
+orodruin-exercise: orodruin-exercise-guard $(if $(filter local,$(REQUEST_FROM)),,glorfindel-host-known) $(if $(DRY_RUN),,orodruin-known)
 	@if [ -n "$$EREGION_REQUEST_ID" ] && [ -n "$$EREGION_DRILL" ]; then echo "REQUEST=<id> ou DRILL=<nom>, pas les deux : rien n'est fait." >&2; exit 1; fi
 	@case "$(REQUEST_FROM)" in h0|local) ;; *) echo "REQUEST_FROM=h0 ou local, pas « $(REQUEST_FROM) »" >&2; exit 1;; esac
 	@if [ "$(REQUEST_FROM)" = h0 ] && [ -z "$(HOST_SSH_FINGERPRINT)" ]; then echo "✗ HOST_SSH_FINGERPRINT requis : la demande vient de H0, sa clé d'hôte doit être vérifiée par son empreinte (infra/glorfindel-host/README.md, « SSH ») — jamais accept-new pour ce qui fait agir Orodruin. Rien n'est fait." >&2; exit 1; fi
