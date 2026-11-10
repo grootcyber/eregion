@@ -3076,6 +3076,50 @@ une graine où que ce soit ; `EREGION_HYPOTHESIS_SEED=profile` garde la manière
 l'exécution tirerait. `--hypothesis-seed=N` ne sert pas sous `CI=true` : mesuré, la dérandomisation
 passe avant elle (et, lu dans le code d'Hypothesis 6.170, elle coupe la base des séquences en échec).
 
+**Les mutants fragiles, chaque nuit** (MUT7, #699 ; décision de Jonathan du 10/11). Le soir de la
+0.5.9, la porte a été retenue cinq fois, un mutant après l'autre (M21, M606, M09, M13, M33). Seule une
+machine des invariants les tue, et certains tirages de la graine les laissent passer. On les découvrait
+le soir de la release. `.github/workflows/mutants-night.yml` (« Fragile mutants », `schedule` à 01:07
+UTC chaque nuit, ou un dispatch) les cherche avant. Il lance `scripts/mutation_night.py` sur la part de
+la nuit, à 500 séquences (le budget de la porte) et sur trois graines tirées, puis dit pour chaque
+mutant `CAUGHT n/n`, `flaky` ou `SURVIVES`. Un mutant fragile (`flaky` ou `SURVIVES`, hors des survivants
+connus) ouvre l'issue « Mutation : Mnn échappe à une graine de la machine des invariants », ou commente
+celle qui est ouverte. L'issue donne ses graines et la commande qui le rejoue. Le run est rouge quand une
+issue s'ouvre, ou quand la nuit n'a rien mesuré : le code non muté rouge sur une graine, ou une partie
+qui ne collecte aucun test. `notify.yml` l'annonce dans `#ci`. Le remède est décrit dans
+[preuves.md](design/preuves.md), « Les mutants fragiles, de la nuit à la séquence figée ».
+- **La liste** (`python scripts/mutation_night.py --list`, rien de mesuré) : chaque mutant compté dont la
+  cible atteint le test qui fait tourner une machine (Azure, AWS, celle de `test_recovery_watch.py`).
+  Sur l'arbre du 10/11 (a1f1860c, après MUT9), il y en a 241. Pour 42 d'entre eux, la cible ne fait
+  tourner que la machine (`alone`). Pour 199, elle a aussi des tests fixes (`beside`) : ces tests passent
+  d'abord, une fois, et s'ils attrapent le mutant, la machine n'est pas lancée sur lui (sauf s'ils tirent
+  au hasard ou font courir des fils : 45 d'entre eux, dont la cible entière tourne alors sur chaque
+  graine).
+- **La rotation** : la nuit d'un mutant ne dépend que de son identifiant (crc32 de l'id, modulo 7).
+  Chacun est donc mesuré une fois en sept nuits, et un mutant ajouté ou retiré n'en déplace aucun autre.
+  `--part auto` prend la nuit de la date UTC. Le prix de cette stabilité : des nuits inégales (de 24 à
+  47 mutants le 10/11).
+- **Le budget de minutes** (estimé sur les durées de la porte, `scripts/mutants/durations.json`, mesurées
+  à deux tours de la cible entière : un majorant). Entre 22 et 136 min de runner par nuit pour les
+  mutants à trois graines, environ 590 min sur la semaine. S'y ajoutent les runs non mutés : chaque
+  machine sur chaque graine, puis les tests fixes de la part une fois, soit environ 25 min de runner par
+  nuit. À quatre jobs sur un runner de 4 vCPU, une nuit prend de 15 à 45 min de mur, sous une borne de
+  120 min, sur un seul runner. Un dépôt public ne paie pas ses minutes de runner standard. **Estimé, pas
+  mesuré** : la première semaine de nuits donnera les vraies durées (l'artefact `mutants-night` garde le
+  JSON de chaque nuit 14 jours, avec ses secondes par mutant).
+- **Rejouer** : la ligne `replay` d'un mutant fragile, ou son issue, donne la commande de la porte sur la
+  graine où il a survécu ; `again` redonne la mesure de la nuit entière.
+```bash
+python scripts/mutation_check.py --only M21 --seed 89917386 --examples 500 --rounds 1     # comme la porte
+python scripts/mutation_night.py --only M21 --seed 89917386 --seeds 3 --examples 500     # comme la nuit
+```
+- **Le workflow est poussé par Jonathan** : l'App des sessions n'a pas le droit Workflows. Son patch
+  (`mutants-night.yml` et sa ligne dans `notify.yml`) accompagne la PR de MUT7. Sans lui,
+  `tests/unit/test_mutation_night.py` saute les tests du workflow, et `tests/unit/test_workflows.py`
+  n'admet le droit `issues: write` de son job `issues` que s'il est là. Ce job n'a ni checkout ni action,
+  son texte est fixe, il ne tourne que sur un `schedule` ou un dispatch, et il vérifie la forme de ce
+  que la nuit a dit avant de s'en servir.
+
 **Si elle est rouge.**
 - **Un vrai rouge** (un invariant, un mutant qui survit hors de la liste connue, un test) : la release
   attend. On le corrige par un lot, qui tue le mutant par un test ou écrit sa raison si elle est vraie

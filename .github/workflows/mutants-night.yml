@@ -1,0 +1,150 @@
+name: Fragile mutants
+
+# MUT7 (#699): the mutants that only an invariant machine kills, before the release gate finds them.
+# On 10/11 the gate of the 0.5.9 was held five times, one mutant after the other (M21, M606, M09,
+# M13, M33), each let through by some draws of the seed (SEED1 draws one per round) — found the
+# evening of the release. Each night, a share of those mutants (scripts/mutation_night.py: a
+# mutant's night is fixed by its id, the whole list in seven nights) at the gate's 500 sequences, on
+# three seeds drawn and said: CAUGHT n/n, flaky or SURVIVES. A fragile one (flaky or SURVIVES,
+# outside the known survivors) opens its issue, or comments the open one, with its seeds and the
+# command that replays it. The remedy: a frozen sequence linked by TESTS_ALSO (docs/design/preuves.md,
+# « Les mutants fragiles, de la nuit à la séquence figée »). Budget: docs/operations.md, « Les
+# mutants fragiles, chaque nuit ».
+#
+# Red when a human has something new to see — an issue opened (a comment on an open one is not) —
+# or when the night measured nothing (the unmutated code red on a seed, a part that collects no
+# test): notify.yml announces it in #ci. Its issues are written by a job of their own, `issues:
+# write` to it alone, without checkout nor action, its text fixed, on a schedule or a dispatch only
+# (tests/unit/test_workflows.py): the values it reads are checked against their form first.
+# Pushed by Jonathan: the sessions' App has no Workflows right.
+on:
+  schedule:
+    - cron: "7 1 * * *"
+  workflow_dispatch:
+    inputs:
+      part:
+        description: "auto (tonight's of 7), all, or K/7"
+        default: "auto"
+      seeds:
+        description: "Seeds drawn per mutant"
+        default: "3"
+      seed:
+        description: "The first seed to replay, as a night said it (empty: draw new ones)"
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutants-night
+  cancel-in-progress: false
+
+jobs:
+  # A night's share: about 30 mutants, 20 to 45 min on a runner at four jobs, the unmutated
+  # machines on each seed first (estimated from the gate's durations: docs/operations.md).
+  night:
+    name: the machines' own mutants, tonight's share, on seeds drawn
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    outputs:
+      fragile: ${{ steps.night.outputs.fragile }}
+      examples: ${{ steps.night.outputs.examples }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09   # v5.1.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1   # v6.3.0
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: |
+          bash scripts/retry.sh python -m pip install --require-hashes -r requirements/dev.txt
+          python -m pip install --no-deps --no-build-isolation -e .
+
+      # ChromaDB's embedding model, as the gate and the Monday restore it (CI6b, CI8).
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25   # v5.1.0
+        with:
+          path: ~/.cache/chroma
+          key: chroma-onnx-v1
+
+      - name: ChromaDB's embedding model (fetched when the cache misses, retried)
+        run: bash scripts/retry.sh python scripts/chroma_model.py
+
+      # The inputs go through the environment, never into the script's text (SEC6); the script
+      # checks their form (`--part`, `--seeds`, `--seed`).
+      - name: Each mutant of tonight's share, its machine on each seed
+        id: night
+        env:
+          PART: ${{ inputs.part || 'auto' }}
+          SEEDS: ${{ inputs.seeds || '3' }}
+          SEED: ${{ inputs.seed || '' }}
+        run: |
+          set --
+          if [ -n "$SEED" ]; then set -- --seed "$SEED"; fi
+          python scripts/mutation_night.py --part "$PART" --seeds "$SEEDS" --examples 500 --jobs 4 \
+            --json night.json --output "$GITHUB_OUTPUT" "$@"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9   # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: mutants-night
+          path: night.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  # Each fragile mutant: its issue opened, or the open one commented. Nothing of the repository runs
+  # here (no checkout, no action), and what the night said is checked against its form before use.
+  issues:
+    name: a fragile mutant, an issue
+    needs: night
+    if: ${{ !cancelled() && needs.night.result == 'success' && needs.night.outputs.fragile != '' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Open the issue of each fragile mutant, or comment the open one
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          FRAGILE: ${{ needs.night.outputs.fragile }}
+          EXAMPLES: ${{ needs.night.outputs.examples }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SHA: ${{ github.sha }}
+        run: |
+          entry='M[0-9]{1,6}:[0-9]{1,3}/[0-9]{1,3}:[0-9]{1,19}(,[0-9]{1,19}){0,99}'
+          if ! [[ "$FRAGILE" =~ ^$entry( $entry){0,199}$ ]] || ! [[ "$EXAMPLES" =~ ^[0-9]{1,6}$ ]]; then
+            echo "::error::the night's output is not of its form: nothing written"
+            exit 1
+          fi
+          opened=0
+          for item in $FRAGILE; do
+            mid="${item%%:*}"; rest="${item#*:}"; rounds="${rest%%:*}"; seeds="${rest#*:}"
+            title="Mutation : $mid échappe à une graine de la machine des invariants"
+            replays=""
+            for s in ${seeds//,/ }; do
+              replays="$replays"$'\n'"python scripts/mutation_check.py --only $mid --seed $s --examples $EXAMPLES --rounds 1"
+            done
+            body="La mesure de nuit des mutants que seule une machine des invariants tue (mutants-night.yml, MUT7) a vu $mid attrapé sur $rounds de ses graines, à $EXAMPLES séquences : il a survécu sur ${seeds//,/, }. Run : $RUN_URL (commit $SHA).
+
+          Rejouer, comme la porte le mesure :
+          \`\`\`$replays
+          \`\`\`
+
+          Le remède : une séquence figée dans tests/unit/test_invariant_regressions.py (ou test_invariant_regressions_aws.py), reliée au mutant par TESTS_ALSO, comme MUT5, MUT6 et MUT8 (docs/design/preuves.md, « Les mutants fragiles, de la nuit à la séquence figée »). Fermer l'issue quand le mutant est tué à chaque tour."
+            open=$(gh issue list --state open --author app/github-actions --limit 500 --json number,title \
+              | TITLE="$title" python3 -c 'import json, os, sys; print(next((str(i["number"]) for i in json.load(sys.stdin) if i["title"] == os.environ["TITLE"]), ""))')
+            if [ -n "$open" ]; then
+              gh issue comment "$open" --body "$body"
+            else
+              gh issue create --title "$title" --body "$body"
+              opened=1
+            fi
+          done
+          if [ "$opened" = 1 ]; then
+            echo "::error::a fragile mutant, a new issue: kill it by a frozen sequence (TESTS_ALSO)"
+            exit 1
+          fi
