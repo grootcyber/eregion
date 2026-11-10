@@ -45,7 +45,8 @@ others — a mutant added or removed moves no other one, and each is measured on
 seed, and the fixed tests of the share once: a red base makes the night no measure (exit 2).
 
 Exit: 0 measured — with `--json`, whatever it found (the workflow reads the file); without, 1 when a
-mutant is fragile; 2 when the unmutated code fails, or a part collects no test.
+mutant is fragile; 2 when the unmutated code fails, a part collects no test, or `--only` names a
+mutant the list does not hold (each said, with why).
 """
 from __future__ import annotations
 
@@ -291,6 +292,16 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     only = {m.strip() for m in args.only.split(",") if m.strip()}
     items = [i for i in chosen(mc.MUTANTS, mc.TESTS) if not only or i["mutant"][0] in only]
+    # An id asked that the list does not hold is said, never dropped in silence: a replay that
+    # measures nothing must not read as one that found nothing.
+    outside = sorted(only - {i["mutant"][0] for i in items})
+    if outside:
+        tree = {m[0] for m in mc.MUTANTS}
+        for mid in outside:
+            why = ("its target runs no invariant machine, or it is not counted (EQUIVALENT, MULTI-HOST)"
+                   if mid in tree else "no mutant of this tree")
+            print(f"  ✗ --only {mid}: not in the list — {why}")
+        return 2
     if args.list:
         return say_list(items, args.part[1] if args.part else PARTS, mc.load_durations(), args.seeds)
     if args.part:

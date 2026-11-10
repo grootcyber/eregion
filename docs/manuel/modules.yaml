@@ -1347,7 +1347,7 @@ briques:
     poste: s-prouver
     nom: "The mutants only an invariant machine kills, measured each night on seeds drawn"
     etat: main
-    release: "0.6"
+    release: "0.5"
     lots: [MUT7]
     issue: 699
     doc: docs/design/preuves.md

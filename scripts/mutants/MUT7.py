@@ -1,5 +1,6 @@
 """MUT7 (#699): the mutants only an invariant machine kills, measured each night on seeds drawn
-(scripts/mutation_night.py). M4731–M4735, measured by tests/unit/test_mutation_night.py."""
+(scripts/mutation_night.py). M4731–M4736 (M4736 from its review), measured by
+tests/unit/test_mutation_night.py."""
 _N = "scripts/mutation_night.py"
 _T = "tests/unit/test_mutation_night.py::"
 
@@ -21,6 +22,11 @@ MUTANTS = [
     ("M4735", "a fragile mutant's replay on the night's first seed, not the one it survived on (MUT7)", _N,
      "{mc.replay_of(r['id'], s, examples, 1)}",
      "{mc.replay_of(r['id'], seed, examples, 1)}"),
+    ("M4736", "a fixed part that draws taken for a fixed killer: run once, on the first seed, it says "
+              "CAUGHT n/n by its fixed tests a mutant it catches on that seed only — a false green "
+              "(MUT7, review)", _N,
+     "    if fixed and mc.chance(fixed):\n",
+     "    if False:\n"),
 ]
 TESTS = {
     "M4731": f"{_T}test_a_target_splits_into_what_runs_a_machine_and_its_fixed_tests",
@@ -28,4 +34,5 @@ TESTS = {
     "M4733": f"{_T}test_a_night_says_a_mutant_caught_on_every_seed_and_a_fragile_one_with_its_replay",
     "M4734": f"{_T}test_seven_nights_in_a_row_are_each_night_once",
     "M4735": f"{_T}test_a_night_says_a_mutant_caught_on_every_seed_and_a_fragile_one_with_its_replay",
+    "M4736": f"{_T}test_a_fixed_part_that_draws_is_no_fixed_killer_its_whole_target_runs_on_each_seed",
 }

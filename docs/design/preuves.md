@@ -680,10 +680,14 @@ par le test. La règle mot par mot y est tenue : un nœud simple d'un fichier de
 écarte la machine, une sous-classe de machine. La rotation aussi : sept nuits de suite donnent chaque
 part une fois. Un mutant attrapé sur chaque graine et un `flaky` y sont dits avec leur rejeu, sur les
 graines où il a survécu. Un `beside` dont les tests fixes attrapent le mutant ne lance pas la machine ;
-un `beside` dont les tests fixes le manquent est mesuré sur chaque graine. Une machine non mutée rouge
-sur une graine rend la nuit sans mesure. L'étape du workflow qui écrit l'issue y tourne contre un faux
-`gh` : ouverte, commentée, ou rien d'écrit quand la sortie n'a pas sa forme. Mutants M4731–M4735 :
-5/5 attrapés.
+un `beside` dont les tests fixes le manquent est mesuré sur chaque graine. Un `beside` dont la partie
+fixe tire (un fichier qui importe Hypothesis) n'a jamais de run de sa partie fixe seule : sa cible entière
+tourne sur chaque graine, sans quoi un mutant que cette partie n'attrape que sur la première graine
+serait dit `CAUGHT 3/3 by its fixed tests`, un faux vert (45 des 198 `beside` du 10/11 passent par là,
+relevé par la relecture). Un `--only` qui nomme un mutant hors de la liste le dit, avec pourquoi, et
+sort en 2 sans rien mesurer. Une machine non mutée rouge sur une graine rend la nuit sans mesure.
+L'étape du workflow qui écrit l'issue y tourne contre un faux `gh` : ouverte, commentée, ou rien d'écrit
+quand la sortie n'a pas sa forme. Mutants M4731–M4736 (M4736 de la relecture) : 6/6 attrapés.
 
 **Une mesure réelle** (10/11, sur le poste, `--only M33,M01 --seeds 3 --examples 100 --jobs 2`, graine
 tirée 758679988). M01 est `CAUGHT 3/3`. M33, encore `alone` avant MUT9, est `flaky 1/3` : il survit
@@ -692,8 +696,12 @@ sur 758679989 et 758679990. Le rejeu donné pour la première graine,
 machine : 0/1, `FIXED-ONLY`. À 100 séquences seulement : la nuit tourne à 500.
 
 **Ce qui reste ouvert.**
-- Le `-k` est lu comme `races` le lit : les mots de l'expression, et un test retenu dès qu'il en
-  contient un. Aucune cible du 10/11 n'a de `not`. Une cible qui en aurait un serait mal lue.
+- Le `-k` est lu à la main, comme `races` le lit : les mots de l'expression, et un test retenu dès que
+  son nom de fonction en contient un. Aucune cible du 10/11 n'a de `not` ; une cible qui en aurait un
+  serait mal lue. Cette lecture est aussi sensible à la casse et ne regarde que le nom de la fonction,
+  quand pytest compare sans tenir compte de la casse et lit aussi les noms du module et de la classe :
+  un `-k` qui ne retient la machine que par le nom de son fichier, ou par une autre casse, la ferait
+  lire absente. Aucune cible du 10/11 n'est dans ce cas ; ce lot ne change pas la lecture.
 - Les runs non mutés des tests fixes tournent sur S seulement. Une partie fixe qui tire est traitée à
   part (ci-dessus).
 - La nuit abaisse le risque à la porte, elle ne l'annule pas. Un mutant attrapé 3 fois sur 3 la nuit

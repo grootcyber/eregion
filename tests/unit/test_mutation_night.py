@@ -64,13 +64,22 @@ PLAIN_FILE = '''def test_c():
 def test_d():
     assert True
 '''
-M, F = "tests/unit/test_m.py", "tests/unit/test_f.py"
+# A fixed file that draws (Hypothesis, no machine): its first line written as MACHINE_FILE's.
+DRAWING_FILE = '''_FROM_ hypothesis import given, strategies
+
+
+@given(strategies.integers())
+def test_h(n):
+    assert True
+'''.replace("_FROM_", "from")
+M, F, H = "tests/unit/test_m.py", "tests/unit/test_f.py", "tests/unit/test_h.py"
 
 
 @pytest.fixture(autouse=True)
 def _sources(monkeypatch):
     """The test files the harness reads, the test's own; ChromaDB's model never prepared."""
-    monkeypatch.setattr(mc, "_SOURCES", {M: MACHINE_FILE, F: PLAIN_FILE, "tests/unit/gone.py": None})
+    monkeypatch.setattr(mc, "_SOURCES", {M: MACHINE_FILE, F: PLAIN_FILE, H: DRAWING_FILE,
+                                         "tests/unit/gone.py": None})
     monkeypatch.setattr(night, "_MACHINE_TESTS", {})
     monkeypatch.setattr(mc, "prepare_embedding_model", lambda say=print: None)
 
@@ -161,14 +170,17 @@ def test_a_part_that_is_not_one_is_refused(text):
 SEED = 100
 
 
-def _world(monkeypatch, tmp_path, catches: dict, fixed_catches=(), base_fails=None):
+def _world(monkeypatch, tmp_path, catches: dict, fixed_catches=(), base_fails=None, drawn=None):
     """main()'s copy and its pytest runs replaced. `catches`: {id: the seeds the machine catches it
-    on}; `fixed_catches`: the ids its fixed tests catch. Each run noted (copy, target, seed)."""
+    on}; `fixed_catches`: the ids its fixed tests catch. `drawn`: {id: the seeds a fixed part that
+    draws catches it on} — given, MH is there too, beside such a part. Each run noted (copy, target,
+    seed)."""
     mutants = [_mutant("MA"), _mutant("MB"), _mutant("MC"), _mutant("MD"), _mutant("ME", "TIMING: a race"),
-               _mutant("MF")]
+               _mutant("MF")] + ([_mutant("MH")] if drawn is not None else [])
+    drawn = drawn or {}
     monkeypatch.setattr(mc, "MUTANTS", mutants)
     monkeypatch.setattr(mc, "TESTS", {"MA": M, "MB": M, "MC": f"{M} {F}::test_c", "MD": f"{M} {F}::test_d",
-                                      "ME": M, "MF": f"{F}::test_c"})
+                                      "ME": M, "MF": f"{F}::test_c", "MH": f"{M} {H}::test_h"})
     monkeypatch.setattr(mc, "load_durations", lambda path=None, say=print: mc.no_durations())
     monkeypatch.setattr(mc, "_copy_repo", lambda dest: (dest.mkdir(parents=True), (dest / "code.py").write_text(
         "".join(m[3] for m in mutants))))
@@ -180,7 +192,8 @@ def _world(monkeypatch, tmp_path, catches: dict, fixed_catches=(), base_fails=No
             return types.SimpleNamespace(stdout="", returncode=1 if base_fails and base_fails(target, seed) else 0)
         code = (copy / "code.py").read_text()
         mid = next(m[0] for m in mutants if f"LINE {m[0]}" in code)
-        caught = (F in target and mid in fixed_catches) or (M in target and seed in catches.get(mid, ()))
+        caught = ((F in target and mid in fixed_catches) or (H in target and seed in drawn.get(mid, ()))
+                  or (M in target and seed in catches.get(mid, ())))
         return types.SimpleNamespace(stdout="", returncode=1 if caught else 0)
     monkeypatch.setattr(mc, "_pytest", pytest_)
     return runs
@@ -223,6 +236,28 @@ def test_a_mutant_its_fixed_tests_catch_never_runs_its_machine(tmp_path, monkeyp
     night.main(["--seed", str(SEED), "--json", str(tmp_path / "n.json")])
     assert [r for r in runs if r[0] == "MC"] == [("MC", f"{F}::test_c", 100)]
     assert [r for r in runs if r[0] == "MD"] == [("MD", f"{F}::test_d", 100)] + [("MD", M, s) for s in (100, 101, 102)]
+
+
+def test_a_fixed_part_that_draws_is_no_fixed_killer_its_whole_target_runs_on_each_seed(tmp_path, monkeypatch):
+    """M4736: a fixed part that draws (Hypothesis) catches the mutant on one seed only. Run once, on
+    the first, it would say it CAUGHT 3/3 by its fixed tests — a false green. It never runs alone:
+    the whole target runs on each seed, and the mutant is flaky."""
+    runs = _world(monkeypatch, tmp_path, CATCHES, fixed_catches={"MC"}, drawn={"MH": {100}})
+    out = tmp_path / "n.json"
+    assert night.main(["--seed", str(SEED), "--only", "MH", "--json", str(out)]) == 0
+    mine = [r for r in runs if r[0] == "MH"]
+    assert mine == [("MH", f"{H}::test_h {M}", s) for s in (100, 101, 102)]
+    (row,) = json.loads(out.read_text(encoding="utf-8"))["rows"]
+    assert (row["verdict"], row["detail"], row["by"], row["survived_on"]) == ("flaky", "1/3", "machine", [101, 102])
+
+
+@pytest.mark.parametrize("asked, why", [("MF", "runs no invariant machine"), ("MZ", "no mutant of this tree")])
+def test_an_only_outside_the_list_is_said_never_dropped_in_silence(tmp_path, monkeypatch, capsys, asked, why):
+    runs = _world(monkeypatch, tmp_path, CATCHES)
+    assert night.main(["--seed", str(SEED), "--only", f"MA,{asked}"]) == 2
+    said = capsys.readouterr().out
+    assert f"--only {asked}: not in the list" in said and why in said and "--only MA:" not in said
+    assert runs == []
 
 
 def test_without_a_file_a_fragile_mutant_makes_the_run_red(tmp_path, monkeypatch, capsys):
