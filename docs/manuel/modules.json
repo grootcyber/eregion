@@ -1693,7 +1693,8 @@
    "etat": "main",
    "release": "0.6",
    "lots": [
-    "SEED1"
+    "SEED1",
+    "MUT5"
    ],
    "issue": 655,
    "pr": 663

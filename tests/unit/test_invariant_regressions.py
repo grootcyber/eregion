@@ -103,6 +103,24 @@ def test_a_block_hidden_behind_the_quarantine_is_not_a_block(monkeypatch):
           "nsg-glorfindel-quarantine-westeurope"))
 
 
+def test_a_block_on_an_nsg_taken_off_its_nic_is_not_a_block(monkeypatch):
+    """The same block on the NIC's own NSG, the VM isolated by quarantine, then someone takes
+    the quarantine NSG off the NIC and leaves it bare: neither NSG governs it any more, the
+    attacker gets through, and a verification that counts the block's rules — present on the
+    NSG the quarantine took off — says blocked (M21).
+
+    From the 0.5.9 release gate (MUT5): M21 survived one round of two with 500 examples — the
+    machine alone lets it through on Hypothesis seed 89917386 and catches it on 89917387 (SEED1):
+    it reaches this sequence only when its draw does. Written by hand from the mutant's description, frozen with the sequence
+    above (L26), so that M21 is caught on every run, whatever the seed."""
+    _run(monkeypatch, _net(web_nic={"own": "dedicated"}),
+         ("block", WEB1, WEB1, None, 22),
+         ("config_changes", {"quarantine": True, "rg": "", "forensic": [], "readable": True}, True),
+         ("isolate", WEB1, WEB1, None),
+         ("someone_detaches_the_quarantine", _nic("rg-app1", "web-nic")),
+         ("verify", WEB1, WEB1, None))
+
+
 def test_a_second_release_never_empties_the_shared_quarantine_nsg(monkeypatch):
     """Two VMs in one quarantine NSG (a central quarantine group). A release that fails
     partway (a subnet it can't read)

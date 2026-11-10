@@ -52,6 +52,10 @@ TESTS_ALSO = {
     "M1963": f"{_REG}test_a_release_after_a_lost_state_and_a_cut_isolation_says_what_it_keeps",
     # Flaky (the machine found it one round in two): its fixed sequence is there already.
     "M41": f"{_REG}test_a_reset_sweeps_the_original_it_puts_back",
+    # Flaky at the 0.5.9 release gate (MUT5: survives the machine on seed 89917386, caught on 89917387):
+    # L26's sequence, and the bare NIC's that MUT5 froze beside it.
+    "M21": f"{_REG}test_a_block_hidden_behind_the_quarantine_is_not_a_block "
+           f"{_REG}test_a_block_on_an_nsg_taken_off_its_nic_is_not_a_block",
     # The unit test that holds its property, outside its target.
     "M36": "tests/unit/test_glorfindel.py::test_an_old_state_file_is_moved_before_it_is_rewritten",
     # Their tests of their own.
