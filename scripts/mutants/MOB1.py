@@ -3,8 +3,8 @@ workstation, in a terminal, never in an agent session, never without the target'
 restore before the run's T0 and keeping the isolation; `make orodruin-exercise` wanting a terminal too;
 `make mobile-check` that sees a listener on every interface, a password admitted, a key handed by a
 command, a forwarding wider than the phone's tunnel to 127.0.0.1:7007, a console port elsewhere than on
-127.0.0.1. M4696–M4705 and M4737–M4744 (review round 1: the console's tunnel on the private address went
-with its target; M4703 is the terminal of bench-run now), measured by tests/unit/test_bench_run.py,
+127.0.0.1. M4696–M4705, M4737–M4744 (review round 1: the console's tunnel on the private address went
+with its target; M4703 is the terminal of bench-run now) and M4756–M4758 (review round 2), measured by tests/unit/test_bench_run.py,
 tests/unit/test_bench_restore.py, tests/unit/test_mobile.py, tests/unit/test_exercise_request.py and
 tests/unit/test_makefile_exercise.py."""
 RUN = "scripts/bench_run.py"
@@ -91,6 +91,19 @@ MUTANTS = [
      "(MOB1, review round 1)", MOBILE,
      '    ("authorizedkeyscommand", "none"),\n',
      ''),
+    ("M4756", "orodruin-exercise's terminal checked only once the request is pulled from H0 and a drill's "
+     "VMs read on Azure (MOB1, review round 2)", MAKEFILE,
+     '\t@[ -t 0 ] || { echo "✗ pas de terminal : les noms des cibles',
+     '\t@true || { echo "✗ pas de terminal : les noms des cibles'),
+    ("M4757", "socket, agent and X11 forwarding left out of what mobile-check reads: an SSH server that "
+     "relays them passes (MOB1, review round 2)", MOBILE,
+     "    for key, want in REQUIRED + NO_RELAY:\n",
+     "    for key, want in REQUIRED:\n"),
+    ("M4758", "the origin of the variables not checked again in the internal -go targets: `make "
+     "bench-run-go` called directly takes TARGET or POINT_MAX_H from the environment (MOB1, review round 2)",
+     MAKEFILE,
+     "\t@$(MOB1_ORIGIN)\n\t@$(PYTHON) scripts/$(subst -,_,$(@:-go=)).py\n",
+     "\t@$(PYTHON) scripts/$(subst -,_,$(@:-go=)).py\n"),
 ]
 TESTS = {
     "M4696": f"{_RUN}::test_a_code_session_is_refused_before_any_step",
@@ -107,7 +120,7 @@ TESTS = {
     "M4705": f"{_MOB}::test_a_password_or_another_way_in_admitted_is_seen "
              f"{_MOB}::test_make_mobile_check_sees_every_interface_a_password_and_a_wide_tunnel",
     "M4737": f"{_RES}::test_without_a_terminal_nothing_is_read_and_nothing_is_restored",
-    "M4738": f"{_XR}::test_confirm_wants_a_terminal {_MX}::test_names_piped_instead_of_typed_send_nothing",
+    "M4738": f"{_XR}::test_confirm_wants_a_terminal",
     "M4739": f"{_RUN}::test_make_refuses_in_an_agent_session_before_anything_runs",
     "M4740": f"{_RUN}::test_a_code_session_is_refused_before_any_step "
              f"{_RES}::test_a_code_session_is_refused_before_any_step",
@@ -117,4 +130,8 @@ TESTS = {
              f"{_MOB}::test_make_mobile_check_sees_every_interface_a_password_and_a_wide_tunnel",
     "M4743": f"{_MOB}::test_the_console_s_port_listens_on_127_0_0_1_alone",
     "M4744": f"{_MOB}::test_a_password_or_another_way_in_admitted_is_seen",
+    "M4756": f"{_MX}::test_without_a_terminal_nothing_is_read_before_the_refusal "
+             f"{_MX}::test_names_piped_instead_of_typed_send_nothing",
+    "M4757": f"{_MOB}::test_a_password_or_another_way_in_admitted_is_seen",
+    "M4758": f"{_RUN}::test_the_internal_targets_refuse_a_variable_from_the_environment",
 }

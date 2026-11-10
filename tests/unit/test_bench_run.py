@@ -287,6 +287,26 @@ def test_make_refuses_in_an_agent_session_before_anything_runs(fake_world, tmp_p
 
 
 @needs_make
+@pytest.mark.parametrize("target,args,from_env", [
+    ("bench-run-go", ["SCENARIO=T1486"], {"TARGET": VM}),
+    ("bench-run-go", [f"TARGET={VM}", "SCENARIO=T1486"], {"POINT_MAX_H": "1"}),
+    ("bench-restore-go", [], {"TARGET": VM}),
+    ("bench-restore-go", [f"TARGET={VM}"], {"RUN": "r1"}),
+])
+def test_the_internal_targets_refuse_a_variable_from_the_environment(fake_world, tmp_path, target, args, from_env):
+    """`make bench-run-go` called directly: the origin checked again (review round 2). Make has read the
+    addresses (terraform output, said in the Makefile) — never an ssh, an scp nor an az."""
+    bindir, log = fake_world
+    env = {k: v for k, v in os.environ.items() if k not in ("TARGET", "SCENARIO", "BEFORE", "RUN", "POINT_MAX_H")}
+    env.update(PATH=f"{bindir}{os.pathsep}{os.environ['PATH']}", HOME=str(tmp_path), **from_env)
+    res = subprocess.run(["make", "-s", "--no-print-directory", "-C", str(ROOT), target, f"PYTHON={sys.executable}", *args],
+                         capture_output=True, text=True, env=env, timeout=60)
+    assert res.returncode != 0 and "vient de l'environnement" in res.stderr, res.stdout + res.stderr
+    calls = log.read_text().splitlines() if log.exists() else []
+    assert not [c for c in calls if c.split()[0] in ("ssh", "scp", "az")], calls
+
+
+@needs_make
 def test_make_refuses_a_target_from_the_environment(fake_world, tmp_path):
     bindir, log = fake_world
     env = {**os.environ, "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}", "HOME": str(tmp_path),

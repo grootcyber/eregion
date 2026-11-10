@@ -161,7 +161,7 @@ DOCKER_GLORFINDEL_WATCH = $(WATCH_KEY_DIR) && $(RUNS_DIRS) && $(GLORFINDEL_AZURE
 	glorfindel-host-env glorfindel-host-report glorfindel-host-url glorfindel-host-status glorfindel-host-pull \
 	glorfindel-host-model glorfindel-host-campaign-report glorfindel-host-containment glorfindel-host-fault-rate glorfindel-host-known celebrimbor-workload \
 	orodruin-init orodruin-watch-guard orodruin-watch-principals orodruin-plan orodruin-up orodruin-lock orodruin-push orodruin-push-dev orodruin-check \
-	orodruin-stop orodruin-start orodruin-update orodruin-kill orodruin-down orodruin-ssh orodruin-exercise \
+	orodruin-stop orodruin-start orodruin-update orodruin-kill orodruin-down orodruin-ssh orodruin-exercise orodruin-exercise-guard \
 	orodruin-known orodruin-identity orodruin-identity-id orodruin-fingerprint watch-key glorfindel-host-watch-key queue-keys glorfindel-host-queue-keys harness-key harness-sign harness-verify \
 	gothmog-preflight gothmog-run \
 	orodruin-campaign-plan orodruin-campaign-run campaign-containment fault-rate \
@@ -1546,9 +1546,17 @@ orodruin-exercise: export EREGION_REQUEST_ID = $(value REQUEST)
 orodruin-exercise: export EREGION_DRILL = $(value DRILL)
 orodruin-exercise: export EREGION_DRILL_TARGETS = $(value TARGETS)
 orodruin-exercise: export EREGION_DRILL_VMS = $(value DRILL_VMS)
-orodruin-exercise: $(if $(filter local,$(REQUEST_FROM)),,glorfindel-host-known) $(if $(DRY_RUN),,orodruin-known)
+# MOB1 (#686) : les noms se tapent dans un terminal. orodruin-exercise-guard, le premier prérequis, refuse
+# sans terminal sur l'entrée, après les contrôles d'origine et avant glorfindel-host-known et
+# orodruin-known : rien n'est lu, ni sur H0 (la demande), ni sur Azure (les VM d'un DRILL=), ni l'état
+# Terraform. Make construit les prérequis dans leur ordre (sans -j, comme toutes les cibles qui agissent).
+# Les contrôles d'origine de REQUEST, DRILL, TARGETS et DRILL_VMS y passent aussi, de la recette.
+orodruin-exercise-guard:
 	@case "$(origin REQUEST)" in environment*) echo "REQUEST vient de l'environnement : rien n'est fait. La donner sur la ligne de commande : make orodruin-exercise REQUEST=<id>." >&2; exit 1;; esac
 	@case "$(origin DRILL) $(origin TARGETS) $(origin DRILL_VMS)" in *environment*) echo "DRILL, TARGETS et DRILL_VMS viennent de l'environnement : rien n'est fait. Les donner sur la ligne de commande : make orodruin-exercise DRILL=<nom> [TARGETS=…]." >&2; exit 1;; esac
+	@[ -t 0 ] || { echo "✗ pas de terminal : les noms des cibles se tapent au clavier, jamais par un tube. Rien n'est lu, rien n'est envoyé." >&2; exit 1; }
+
+orodruin-exercise: orodruin-exercise-guard $(if $(filter local,$(REQUEST_FROM)),,glorfindel-host-known) $(if $(DRY_RUN),,orodruin-known)
 	@if [ -n "$$EREGION_REQUEST_ID" ] && [ -n "$$EREGION_DRILL" ]; then echo "REQUEST=<id> ou DRILL=<nom>, pas les deux : rien n'est fait." >&2; exit 1; fi
 	@case "$(REQUEST_FROM)" in h0|local) ;; *) echo "REQUEST_FROM=h0 ou local, pas « $(REQUEST_FROM) »" >&2; exit 1;; esac
 	@if [ "$(REQUEST_FROM)" = h0 ] && [ -z "$(HOST_SSH_FINGERPRINT)" ]; then echo "✗ HOST_SSH_FINGERPRINT requis : la demande vient de H0, sa clé d'hôte doit être vérifiée par son empreinte (infra/glorfindel-host/README.md, « SSH ») — jamais accept-new pour ce qui fait agir Orodruin. Rien n'est fait." >&2; exit 1; fi

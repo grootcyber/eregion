@@ -53,6 +53,9 @@ trustedusercakeys none
 allowtcpforwarding local
 permitopen 127.0.0.1:7007
 gatewayports no
+allowstreamlocalforwarding no
+allowagentforwarding no
+x11forwarding no
 permitrootlogin no
 """
 GOOD_SS = f"LISTEN 0 128 {PRIVATE}:22 0.0.0.0:*\nLISTEN 0 4096 127.0.0.53%lo:53 0.0.0.0:*\n"
@@ -151,6 +154,8 @@ def test_an_ssh_server_listening_elsewhere_than_the_private_address_is_seen(tmp_
     ("hostbasedauthentication", "yes"), ("pubkeyauthentication", "no"), ("gssapiauthentication", "yes"),
     ("gatewayports", "yes"), ("gatewayports", "clientspecified"),
     ("authorizedkeyscommand", "/usr/bin/sss_ssh_authorizedkeys"), ("trustedusercakeys", "/etc/ssh/ca.pub"),
+    ("allowstreamlocalforwarding", "yes"), ("allowstreamlocalforwarding", "local"),
+    ("allowagentforwarding", "yes"), ("x11forwarding", "yes"),
 ])
 def test_a_password_or_another_way_in_admitted_is_seen(tmp_path, key, value):
     code, text, lines = _check(tmp_path, sshd=_sshd(key, value))
@@ -210,6 +215,13 @@ def test_the_console_s_port_listens_on_127_0_0_1_alone(tmp_path, extra, mark):
     code, text, lines = _check(tmp_path, ss=GOOD_SS + extra)
     assert _marks(lines, "console : le port 7007") == [mark], text
     assert code == (1 if mark == mob.FAIL else 0)
+
+
+@pytest.mark.parametrize("prefs", ["", "not json", "[]", json.dumps({"RunSSH": "no"}), json.dumps({})])
+def test_tailscale_prefs_unread_is_a_fail_never_a_green_verdict(tmp_path, prefs):
+    code, text, lines = _check(tmp_path, prefs=prefs)
+    assert code == 1 and _marks(lines, "Tailscale SSH") == [mob.FAIL], text
+    assert "✓ le poste ne s'ouvre" not in text
 
 
 def test_tailscale_ssh_open_is_one_barrier_not_two(tmp_path):

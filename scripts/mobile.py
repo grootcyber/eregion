@@ -10,7 +10,7 @@ phone's secure chip. The console of H0 reaches the phone through the phone's own
 workstation's 127.0.0.1:7007, where `make glorfindel-host-tunnel` holds H0's (decision of Jonathan,
 10/11): the same two barriers, then the console's token. What `check` reads, and nothing else:
 
-  the tailnet     `tailscale ip -4`: one private address; `tailscale debug prefs`: Tailscale SSH off (on,
+  the tailnet     `tailscale ip -4`: one private address; `tailscale debug prefs`: Tailscale SSH off (unread: ✗; on,
                   it would let the tailnet into the workstation without the phone's key: one barrier, not two)
   the listeners   `ss -Hltn`: the SSH server's ports (`sshd -T`) listen on the private address only —
                   never on every interface (0.0.0.0, [::], *), a loopback (WSL shares it with Windows)
@@ -22,8 +22,10 @@ workstation's 127.0.0.1:7007, where `make glorfindel-host-tunnel` holds H0's (de
                   (or any: the others closed), AuthorizedKeysFile .ssh/authorized_keys alone,
                   AuthorizedKeysCommand none, TrustedUserCAKeys none; the phone's tunnel and nothing
                   more: AllowTcpForwarding local (yes, all or remote: ✗; no: ⚠, the tunnel does not
-                  open), PermitOpen 127.0.0.1:7007 alone, GatewayPorts no; PermitRootLogin no (a ⚠
-                  otherwise)
+                  open), PermitOpen 127.0.0.1:7007 alone, GatewayPorts no, AllowStreamLocalForwarding,
+                  AllowAgentForwarding and X11Forwarding no; PermitRootLogin no (a ⚠ otherwise). These
+                  bound sshd's own forwarding: with a shell, the phone relays as the operator does
+                  (`nc`), which the key's loss or a phone unlocked covers (the threat model, frontier 9)
   the keys        ~/.ssh/authorized_keys: how many, of which types — never a key printed; their options
                   (`from=`, `permitopen=`) are not read: the guide sets them
 
@@ -56,6 +58,12 @@ REQUIRED = (
     ("authorizedkeyscommand", "none"),
     ("trustedusercakeys", "none"),
     ("gatewayports", "no"),
+)
+# Nothing relayed by sshd beyond the phone's local tunnel: no socket, no agent, no X11.
+NO_RELAY = (
+    ("allowstreamlocalforwarding", "no"),
+    ("allowagentforwarding", "no"),
+    ("x11forwarding", "no"),
 )
 KEYS_FILES = (".ssh/authorized_keys", "%h/.ssh/authorized_keys")
 # Where the console's port may listen: the loopback ssh binds for `make glorfindel-host-tunnel`.
@@ -160,7 +168,7 @@ def parse_sshd(text: str) -> dict[str, list[str]]:
 
 def sshd_lines(conf: dict[str, list[str]], console_port: int = CONSOLE_PORT) -> list[tuple[str, str]]:
     lines = []
-    for key, want in REQUIRED:
+    for key, want in REQUIRED + NO_RELAY:
         got = (conf.get(key) or [""])[0].lower()
         if got == want:
             lines.append((OK, f"SSH : {key} {want}"))
@@ -226,11 +234,13 @@ def listener_lines(listeners: list[tuple[str, int]], private: set[str], ssh_port
 
 def tailscale_ssh_line(text: str, rc: int) -> tuple[str, str]:
     if rc != 0:
-        return WARN, "réseau privé : Tailscale SSH ne se lit pas (tailscale debug prefs) — off attendu"
+        return FAIL, "réseau privé : Tailscale SSH ne se lit pas (tailscale debug prefs) — off attendu, à vérifier"
     try:
         prefs = json.loads(text)
     except ValueError:
-        return WARN, "réseau privé : tailscale debug prefs illisible — Tailscale SSH off attendu"
+        return FAIL, "réseau privé : tailscale debug prefs illisible — Tailscale SSH off attendu, à vérifier"
+    if not isinstance(prefs, dict) or not isinstance(prefs.get("RunSSH"), bool):
+        return FAIL, "réseau privé : tailscale debug prefs ne dit pas RunSSH — Tailscale SSH off attendu, à vérifier"
     if prefs.get("RunSSH") is True:
         return FAIL, ("réseau privé : Tailscale SSH est ouvert — il ferait entrer sans la clé du téléphone "
                       "(tailscale set --ssh=false)")
