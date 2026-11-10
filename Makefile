@@ -141,7 +141,7 @@ DOCKER_GLORFINDEL_WATCH = $(WATCH_KEY_DIR) && $(RUNS_DIRS) && $(GLORFINDEL_AZURE
 	$(GLORFINDEL_VOLS) $(GLORFINDEL_STATE) $(WATCH_KEY_VOL) $(GLORFINDEL_ENV) \
 	$(IMAGE_GLORFINDEL) glorfindel
 
-.PHONY: help build build-annatar build-glorfindel fix-state-ownership check-azure-env runs-migrate runs-survey \
+.PHONY: help build build-annatar build-glorfindel fix-state-ownership check-azure-env azure-pairs-expiry runs-migrate runs-survey \
 	annatar-run annatar-dry-run annatar-validate annatar-list \
 	glorfindel-respond glorfindel-dry-run glorfindel-watch \
 	glorfindel-release glorfindel-revert glorfindel-list \
@@ -212,6 +212,7 @@ help:
 	@echo "  make glorfindel-ui              Rebuild + restart war-room only (watch untouched)"
 	@echo "  make console-url                The console's URL with its token (~/.eregion/console/token: never in the logs)"
 	@echo "  make console-rotate             A new drawn token: every session of the former one refused at once"
+	@echo "  make azure-pairs-expiry         When the secrets of the three pairs end (az login; warns under 14 days)"
 	@echo "  make glorfindel-logs            Tail service logs"
 	@echo "  make glorfindel-watch           Watch runs/ only (no web UI)"
 	@echo "  make glorfindel-respond         SIGNALS=... Process signal file"
@@ -525,6 +526,14 @@ check-azure-env:
 	  if [ "$$id" != "$$se" ]; then echo "⚠ $${v}_AZURE_CLIENT_ID / $${v}_AZURE_CLIENT_SECRET : paire incomplète — ce service n'aurait pas de principal valide (docs/operations.md, « Identités Azure »)."; \
 	  elif [ -z "$$id" ]; then echo "ℹ $$s : aucune paire $${v}_AZURE_CLIENT_* — ce service démarre sans principal de service (l'identité managée de la VM s'il y en a une, sinon aucune) ; AZURE_CLIENT_* n'est jamais un repli (SEC11)."; fi; \
 	done
+
+# RST1 (#680) : la date de fin des secrets des trois paires du poste (la watch, la console, le bot),
+# lue à la demande sous l'az login de l'opérateur (az ad app credential list : endDateTime seul,
+# jamais un secret ni un client id affiché). Avertit à moins de 14 jours, dit « aucune paire » pour
+# une paire absente ; sort en 1 sur une date illisible ou un secret expiré. check-azure-env et le
+# démarrage de Glorfindel n'appellent jamais Graph : c'est ici seulement.
+azure-pairs-expiry:
+	@python3 scripts/credential_expiry.py
 
 glorfindel-start: check-azure-env build-glorfindel runs-migrate
 	mkdir -p $(HOME)/.glorfindel $(HOME)/.glorfindel/injectors $(HOME)/.cache/chroma $(HOME)/.eregion/analysis $(HOME)/.eregion/console $(HOME)/.eregion/console/requests runs
