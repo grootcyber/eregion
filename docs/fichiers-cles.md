@@ -478,7 +478,9 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 CI : job macOS (APFS insensible à la casse) ; `main` protégée, checks requis.
                                 `disks_at_isolation` (LEV2) : les disques de la VM notés à l'isolement (`os`, `data`,
                                 `ids`), ceux de la première isolation gardés par une isolation de plus ; après un restore
-                                sur place, les disques d'origine, des preuves. Un état sans eux se relit (d'avant LEV2)
+                                sur place, les disques d'origine, des preuves. Un état sans eux se relit (d'avant LEV2).
+                                `nsg_rules_at_isolation` (Q16) : les règles de chaque NSG client que l'isolement a lues,
+                                par id de NSG ; vide sur le chemin du NSG de quarantaine
   blocks/<vm>--<h>.json       → IPs bloquées par VM (même clé)
                                 **Illisible = inconnu (SEC3, SEC4b)** : un fichier d'isolation ou de blocage qui ne se lit
                                 pas (JSON cassé, autre forme — dont des `placements` sans `resource_id` —, `unreadable_states`)

@@ -140,13 +140,15 @@ n'est ajouté, ni dans ARM, ni dans Graph.
 | La lecture | L'appel | Sa borne |
 |---|---|---|
 | la VM, ses cartes, leurs NSG (de la carte, du sous-réseau), ses disques, ses identités | `virtualMachines.get`, `networkInterfaces.get`, `subnets.get`, `networkSecurityGroups.get` (le SDK) | une lecture qui échoue : acteurs illisibles |
-| le journal, **exact** : chaque ressource (la VM, chaque carte, chaque disque, actuel ou noté à l'isolement, chaque NSG, chaque IP publique, chaque identité) | `GET …/providers/Microsoft.Insights/eventtypes/management/values`, `$filter` = `eventTimestamp ge … and eventTimestamp le … and resourceUri eq '<id>'` | 20 pages, comme REC1b ; une de plus : illisible |
-| le journal, **par groupe** : celui de la VM, et celui de chaque NSG ou carte qui vit ailleurs ; filtré par le code sur les enfants de la VM et des NSG (le préfixe de l'id, sans la casse) | le même, `resourceGroupName eq '<rg>'` | 20 pages ; un groupe chargé peut la dépasser (H9) : illisible, dit |
+| le journal, **exact** : chaque ressource (la VM, chaque carte, chaque disque, actuel ou noté à l'isolement, chaque NSG, chaque IP publique, chaque identité, chaque sous-réseau) | `GET …/providers/Microsoft.Insights/eventtypes/management/values`, `$filter` = `eventTimestamp ge … and eventTimestamp le … and resourceUri eq '<id>'` | 20 pages, comme REC1b ; une de plus : illisible |
+| le journal, **par groupe** : celui de la VM, et celui de chaque NSG, carte ou sous-réseau qui vit ailleurs ; filtré par le code sur les enfants de la VM et des NSG (le préfixe de l'id, sans la casse) | le même, `resourceGroupName eq '<rg>'` | 20 pages ; un groupe chargé peut la dépasser (H9) : illisible, dit |
 | les attributions, à chaque portée d'un geste | `GET {portée}/providers/Microsoft.Authorization/roleAssignments` (2022-04-01) | 20 pages ; une portée refusée : illisible |
 | les éligibilités PIM, à chaque portée | `GET {portée}/providers/Microsoft.Authorization/roleEligibilityScheduleInstances?$filter=atScope()` (2020-10-01) | 20 pages ; refusées (H2 tombée) : illisible |
 | la définition de chaque rôle qui touche l'acteur (le sien, celui d'un groupe) | `GET {roleDefinitionId}` | illisible : le verdict l'est |
 
 Chaque page suivante doit rester sur `management.azure.com` (SEC8), sinon la lecture est refusée.
+Une réponse d'une autre forme que celle qu'ARM documente (une page sans sa liste `value`, un
+`nextLink` qui n'est pas un texte, une définition sans ses `permissions`) est une erreur : illisible.
 La fenêtre va de 7 jours avant l'isolement jusqu'à la lecture (au plus 90 : la rétention du
 journal). Les droits : `Microsoft.Insights/eventtypes/values/read` et
 `Microsoft.Authorization/*/read`, tous deux sous `*/read`. **À mesurer** ([`banc-lev2.md`](banc-lev2.md)) :
