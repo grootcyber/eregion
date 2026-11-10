@@ -21,7 +21,8 @@ isolation paths, with Azure's semantics where they matter:
   subscription-wide listing by the caller's rights, so `list_all` leaves them out
   WITHOUT an error, while a call on one of them (get, its rules, a write, a NIC joined
   to it) is refused (403);
-- Run Command's shell script doesn't run on a Windows VM (assumed);
+- Run Command's shell script doesn't run on a Windows VM (assumed); held running on demand
+  (`hold_run_commands`, DRN1: 302 s under the quarantine, measured once, 09/11), ended by the test;
 - Azure Backup (REC1, #668): a vault's restore jobs (`backup_jobs.list`, `job_details.get`, the
   point a job restored in its property bag — by its time, US style with a trailing space in the
   key, or by its id: both unmeasured — and its « Job Type »), the VM's recovery points, its power
@@ -127,6 +128,34 @@ class _Done:
         return True
 
 
+class _Running:
+    """A Run Command Azure accepted and still runs (DRN1: 302 s under the quarantine, 09/11): not
+    done, its result the last poll's — no output, as `LROPoller.result(timeout)` gives it at its
+    deadline — until the test ends it (`FakeAzure.end_run_commands`)."""
+
+    def __init__(self, az, value, vm: dict, op: str):
+        self.az, self._value, self._vm, self._error, self._done, self._op = az, value, vm, None, False, op
+
+    def result(self, timeout=None):
+        if not self._done:
+            return SimpleNamespace(value=None)
+        if self._error is not None:
+            raise self._error
+        return self._value
+
+    def done(self):
+        return self._done
+
+    def status(self):
+        return ("Failed" if self._error is not None else "Succeeded") if self._done else "InProgress"
+
+    def end(self, error=None) -> None:
+        self._done, self._error = True, error
+        self.az.log_run_command(self._vm["id"], ("Failed" if error is not None else "Succeeded",),
+                                {"http": "Conflict", "message": str(error)} if error is not None else None,
+                                op=self._op)
+
+
 class FakeAzure:
     def __init__(self, chaos=None):
         self.chaos = chaos or (lambda op, phase, write: None)
@@ -164,6 +193,9 @@ class FakeAzure:
         self.view_run_command = False
         self.clock = lambda: datetime.now(timezone.utc)
         self.compute.disks = _Disks(self)
+        # DRN1: Run Commands held running until the test ends them (`end_run_commands`).
+        self.hold_run_commands = False
+        self.running: list[_Running] = []
 
     # ── building the customer's world ──────────────────────────────────────────
 
@@ -205,6 +237,12 @@ class FakeAzure:
         self.disks[key(rid)] = {"id": rid, "time_created": created}
         return rid
 
+    def end_run_commands(self, error=None) -> None:
+        """Every Run Command held running ends now: succeeded, or failed with `error` (DRN1)."""
+        for r in self.running:
+            r.end(error)
+        self.running.clear()
+
     def cut_run_command(self, vm: str, text: str, status: str = "Accepted",
                         http: str | None = None, message: str | None = None) -> None:
         """A Run Command by `caller` that never finished — cut by the deallocation (`Accepted`,
@@ -220,16 +258,20 @@ class FakeAzure:
         self.log_run_command(v["id"], ("Started", status) if status != "Started" else ("Started",),
                              failed if status == "Failed" else None)
 
-    def log_run_command(self, resource_id: str, statuses, failed: dict | None = None) -> None:
+    def log_run_command(self, resource_id: str, statuses, failed: dict | None = None,
+                        op: str | None = None) -> str:
         """One Run Command operation in the activity log, by `caller`, now: its events (`statuses`,
-        under one `operationId`), the `Failed` one carrying `failed` ({"http", "message"})."""
-        self.operations += 1
-        op = f"op-{self.operations:05d}"
+        under one `operationId`), the `Failed` one carrying `failed` ({"http", "message"}). `op`: an
+        operation already logged, its later events (DRN1: a Run Command held running, then ended)."""
+        if op is None:
+            self.operations += 1
+            op = f"op-{self.operations:05d}"
         at = self.clock()
         for s in statuses:
             self.activity.append({"resource_id": resource_id, "op": RUN_COMMAND_ACTION, "status": s, "at": at,
                                   "caller": self.caller, "op_id": op,
                                   "failed": failed if s == "Failed" else None})
+        return op
 
     def deallocate(self, vm: str) -> None:
         """The VM deallocated (`az vm deallocate`, what `glorfindel restore` does before the vault
@@ -550,6 +592,11 @@ class _Vms:
             # control plane's record of who ran it (the activity log, REC1).
             v["last_output"] = message
             v["said"] = {"message": message, "time": self.az.clock()}
+            value = SimpleNamespace(value=[SimpleNamespace(message=message)])
+            if self.az.hold_run_commands:               # DRN1: Started now, its end when the test ends it
+                op = self.az.log_run_command(v["id"], ("Started",))
+                self.az.running.append(_Running(self.az, value, v, op))
+                return self.az.running[-1]
             self.az.log_run_command(v["id"], ("Started", "Succeeded"))    # as ARM logs a long operation
             return _Done(SimpleNamespace(value=[SimpleNamespace(message=message)]))
         return self.az.call("vm.run_command", True, run)

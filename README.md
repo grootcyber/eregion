@@ -430,6 +430,8 @@ Glorfindel operates under strict autonomy rules. The graph enforces them regardl
 **Autonomous** (reversible, no human approval):
 `isolate_vm` (rules + open sessions cut), `release_isolation`, `snapshot`, `block_suspicious_ip`
 
+Under the quarantine, the cut of the open sessions (Run Command) can outlast the watch's 300 s wait (302 s on the bench, 09/11): the isolation is then verified on the NSG, and the cut followed on Azure, one card « session cut pending » until it ends, or a card that says it was refused, left sessions open, or never ended ([`docs/glorfindel.md`](docs/glorfindel.md), « La coupure suivie sur Azure »).
+
 **Human required** (destructive or irreversible):
 `restore_from_backup`, `delete_resource`, `wipe_storage`, `modify_network_rule`, `escalate_permissions`
 

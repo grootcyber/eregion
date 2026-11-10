@@ -413,6 +413,11 @@ def test_a_card_of_the_reassertion_is_never_grouped_nor_acked_with_one_of_anothe
     group = _js_function(js, "function _groupEscs(escs)")
     assert "const key = e.action === 'improve_detection' ? e.id   // rules stay separate\n" \
            "      : `${_fromReassertion(e) ? 'reassertion' : 'other'}|${e.action}`;" in group
+    # DRN1 review: the session cut's cards, an origin of their own — the store's prefix.
+    assert "const origin = _fromDrain(e) ? `drain|${key}` : key;" in group
+    assert "map.get(origin).push(e);" in group and "map.set(origin, [])" in group
+    assert re.search(r"const _DRAIN_FOLLOW = '([^']+)';", js).group(1) == escalations._DRAIN_FOLLOW
+    assert "startsWith(_DRAIN_FOLLOW)" in _js_function(js, "function _fromDrain(e)")
     acks = re.findall(r"_on\('click', '(?:doAckAll|ackAllAndClose)', ([^)]*)\)", js)
     assert acks and set(acks) == {"ids"}
     assert set(re.findall(r"const ids\s*= ([^;]*);", js)) == {"group.map(g => g.id).join(',')"}

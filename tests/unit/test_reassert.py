@@ -137,8 +137,10 @@ def test_a_bypassed_isolation_is_said_once_per_change_and_never_fixed():
     assert card["status"] == "pending" and card["action"] == "review_bypass" and card["resource_id"] == _RID
     assert "allow-ssh" in card["reason"] and "rg/nsg-subnet" in card["reason"] and card["severity"] == "high"
     assert card["occurrences"] == 1 and card["suggested_steps"]
+    # `followed_drains`: the drains this process follows, read in its memory — no Azure call (DRN1).
     assert {n for n, *_ in c.mock_calls} <= {"verify_isolation", "recent_changes", "nsg_listing",
-                                            "find_altered_quarantines", "find_orphan_rules"}, c.mock_calls
+                                            "find_altered_quarantines", "find_orphan_rules",
+                                            "followed_drains", "followed_drains().__iter__"}, c.mock_calls
     escalations.resolve(card["id"])                       # acknowledged
     assert reassert_active(c, _ACT) == [] and not _bypass_cards("pending")
 

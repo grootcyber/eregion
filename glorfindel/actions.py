@@ -63,6 +63,7 @@ _MODULES = tuple(_importlib.import_module(name) for name in (
     "glorfindel.providers.azure.narrow",
     "glorfindel.providers.azure.quarantine",
     "glorfindel.providers.azure.network",
+    "glorfindel.providers.azure.run_command",
     "glorfindel.providers.azure.isolation",
     "glorfindel.providers.azure.release",
     "glorfindel.providers.azure.gone",

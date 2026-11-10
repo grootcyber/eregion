@@ -128,7 +128,8 @@ glorfindel/
                           (tests/unit/test_provider_boundary.py, étape CI « Provider boundary ») :
                           connector.py (AzureConnector = un mixin par préoccupation + garde d'abonnement + verrou
                           de VM sur les écritures), nsg.py (règles lues par contenu), network.py, quarantine.py,
-                          isolation.py, release.py (+ gone.py : la VM supprimée, I7S), verify.py, blocks.py, verify_block.py, unblock.py, backup.py (+ restore_job_status,
+                          isolation.py (+ run_command.py : la Run Command attendue une fois, puis son statut relu sur
+                          Azure — la coupure `pending`, son poller gardé, DRN1), release.py (+ gone.py : la VM supprimée, I7S), verify.py, blocks.py, verify_block.py, unblock.py, backup.py (+ restore_job_status,
                           lu par jobs.py), restore.py (+ restore_rights.py : ses droits lus avant de toucher la VM, les refus dits sans id, RST1), sweep.py (+ reset_bare.py : ses cartes nues), readers.py (check_permissions, check_nsg_access,
                           list_nsgs, check_compute_access…), sdk.py (warm-up), capabilities.py, monitor.py
                           (AzureMonitorDetector, réexporté par detectors.py), activity.py (AzureActivityDetector, AL1 :
@@ -192,6 +193,11 @@ glorfindel/
                           say_unreadable_states (carte `state_unreadable`, state_alerts.json), say_left (I4A,
                           carte `rule_left`), say_unverified (SEC13, V-16 : une vérification qui lève, carte
                           `unverified` une fois, fermée quand elle repasse) ; L2C : une marque ne fait taire que la dernière carte, fermée par un humain
+  drain_watch.py        → DRN1 : la coupure des sessions encore en cours sur Azure après 300 s, relue à chaque passe
+                          de la réaffirmation ; une carte `drain_pending` tant qu'elle tourne, fermée quand elle
+                          aboutit, ou une carte `verification_failed` qui dit « coupure refusée », « sessions restées
+                          ouvertes » ou « coupure jamais aboutie » (30 min, ou la watch redémarrée, ou la VM isolée par un
+                          autre processus : `asked_at`, le nonce) ; la carte d'abord, puis l'état
   reassert_quarantine.py → I1F, I1S, ISU : les NSG de quarantaine modifiés, lus à chaque passe quel que soit
                           l'état local — _report_altered_quarantines, quarantine_alerts.json (sorti de
                           reassert.py par RB1, sans changement de comportement ; L2Q : un changement qui revient est redit)

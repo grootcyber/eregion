@@ -4,9 +4,10 @@ actions.py, A1).
 """
 from __future__ import annotations
 
-import re
 import threading
+import time
 
+from glorfindel.providers.azure import run_command
 from glorfindel.providers.azure.nsg import (
     _allows_passed_by_its_replacement,
     _describe_shadowing,
@@ -278,7 +279,9 @@ class IsolationMixin:
         Run Command still works on an isolated VM (platform address, not filtered by
         NSGs) and `ss -K` cut every session in the bench test. Linux only: on Windows
         the outcome says the sessions were not cut. Never raises — the isolation rules
-        are in place either way; the outcome tells whether open sessions survive.
+        are in place either way; the outcome tells whether open sessions survive. Still
+        running on Azure after its first wait (302 s under the quarantine, 09/11): `pending`,
+        never read as an output — `follow_drain` reads it again (DRN1, run_command.py).
         """
         if self.dry_run:
             return {"status": "dry_run"}
@@ -311,21 +314,15 @@ class IsolationMixin:
                 f"else echo glorfindel-drain-remaining=error; fi",
             ]
             _note_drain_asked()
-            res = self._compute.virtual_machines.begin_run_command(
-                rg, vm_name, RunCommandInput(command_id="RunShellScript", script=script),
-            ).result(timeout=300)   # an unresponsive VM agent must not hold the watch worker
-            text = " ".join(str(getattr(v, "message", "") or "") for v in (getattr(res, "value", None) or []))
-            if "glorfindel-drain-remaining=error" in text:
-                return {"status": "failed",
-                        "error": "sessions restantes non comptées (`ss` absent ou en erreur)"}
-            m = re.search(r"glorfindel-drain-remaining=(\d+)", text)
-            if m is None:
-                return {"status": "failed", "error": "sortie de Run Command illisible"}
-            remaining = int(m.group(1))
-            if remaining:
-                return {"status": "partial", "remaining": remaining,
-                        "error": f"{remaining} connexion(s) encore établie(s) après ss -K"}
-            return {"status": "drained"}
+            asked = time.time()
+            poller = self._compute.virtual_machines.begin_run_command(
+                rg, vm_name, RunCommandInput(command_id="RunShellScript", script=script))
+            # An unresponsive VM agent must not hold the watch worker: past the first wait, the
+            # drain is pending, its status read again on Azure by the reassertion (DRN1).
+            done, res = run_command.wait(poller, run_command.DRAIN_FIRST_WAIT_S)
+            if not done:
+                return run_command.pending(resource_id, poller, asked, run_command.DRAIN_FIRST_WAIT_S)
+            return run_command.drain_outcome(res)
         except Exception as e:
             if _is_iam_error(str(e)):
                 # SEC11 (R-03): Run Command is given VM by VM, to the VMs Glorfindel defends — refused here,
