@@ -1,6 +1,7 @@
 """RST1 (#680): the restore from the console — its rights read before the VM is touched, Azure's
 refusal said whole and without an id, no list of LUNs on a restore in place, a job already
-finished read with its error. M4654–M4663, measured by tests/unit/test_restore_console.py."""
+finished read with its error. M4654–M4663 and M4669–M4670, measured by
+tests/unit/test_restore_console.py."""
 RESTORE = "glorfindel/providers/azure/restore.py"
 RIGHTS = "glorfindel/providers/azure/restore_rights.py"
 BACKUP = "glorfindel/providers/azure/backup.py"
@@ -47,6 +48,14 @@ MUTANTS = [
      "                if status != \"InProgress\" and (start is None or start < finished_not_before):\n"
      "                    continue\n",
      ""),
+    ("M4669", "Run Command missing on the VM refuses the restore: a VM outside restore_vms is no "
+     "longer restored (SEC17, RST1)", RESTORE,
+     '        elif not rights["run_command"]:\n            # SEC17: not a refusal',
+     '        elif not rights["run_command"]:\n            raise RuntimeError("Run Command")\n            # SEC17: not a refusal'),
+    ("M4670", "a 5xx or a 409 at the trigger says « Aucun restore n'est parti » and to start the VM again, "
+     "though the request may have been applied (RST1 review)", RIGHTS,
+     "    return 400 <= int(status) < 500 and int(status) != 409\n",
+     "    return True\n"),
 ]
 TESTS = {
     "M4654": f"{_T}::test_a_missing_right_refuses_the_restore_before_any_write_on_the_vm_and_names_it",
@@ -61,4 +70,6 @@ TESTS = {
     "M4662": f"{_T}::test_a_restore_job_already_failed_is_read_with_its_error",
     "M4663": f"{_T}::test_a_previous_attempt_s_failed_job_is_never_taken_for_this_one "
              f"{_T}::test_a_finished_job_counts_up_to_thirty_seconds_before_the_trigger",
+    "M4669": f"{_T}::test_run_command_missing_on_the_vm_is_no_refusal",
+    "M4670": f"{_T}::test_only_a_refusal_of_authorization_or_validation_says_no_restore_left",
 }
