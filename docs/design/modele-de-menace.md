@@ -83,16 +83,22 @@ Chacun a son auteur :
 | une restauration **sur place** | le coffre (« Job Type » : « Replace disks ») et ARM (le disque OS de la VM créé pendant le job) | une restauration ailleurs (« Restore disks », une nouvelle VM) laisse le disque de la VM isolée : une carte qui dit « ne pas lever » |
 | le point restauré, antérieur à l'incident | le coffre (le sac de propriétés, rapporté aux points de la VM) | une lecture qui ne désigne pas exactement un point : une carte |
 | la VM qui tourne | ARM | — |
-| **la neutralisation** de la dernière Run Command | le journal d'activité (plan de contrôle) : la dernière Run Command réussie avant le job est d'un principal qui restaure (`GLORFINDEL_RESTORE_PRINCIPALS`), aucune d'un autre après elle, quel que soit son statut (échouée, coupée par la désallocation : ses réglages restent dans le modèle de VM) ; un journal plus long que sa borne est illisible, jamais « tout lu » | un script d'attaquant qui imprime la sortie inoffensive (elle est publique) ne passe pas : son auteur n'est pas celui qui restaure |
-| la sortie de la commande rejouée au démarrage | **l'invité** (l'agent l'écrit ; root peut l'écrire) | une condition de plus, jamais suffisante seule ; une parole d'avant le restore ne compte pas |
+| **la neutralisation** de la dernière Run Command — **décidée par ce fait seul** (REC1b, #679) | le journal d'activité (plan de contrôle) : la dernière Run Command réussie avant le job est d'un principal qui restaure (`GLORFINDEL_RESTORE_PRINCIPALS`), aucune d'un autre après elle, quel que soit son statut (échouée, coupée par la désallocation : ses réglages restent dans le modèle de VM) ; un journal plus long que sa borne est illisible, jamais « tout lu » | un script d'attaquant qui imprime la sortie inoffensive (elle est publique) ne passe pas : son auteur n'est pas celui qui restaure |
+| un **refus de la plateforme** (une Run Command tentée sur une VM désallouée) | le journal d'activité : `Failed`, statut HTTP `Conflict`, code `OperationNotAllowed`, sous le vrai appelant (mesuré le 09/11) ; le `Started` de la même opération, du même appelant, pas plus tard | il ne compte pas, quel que soit son appelant : il n'a jamais atteint l'invité ni changé le modèle de VM. Tout autre échec d'un autre principal reste une contradiction, un code illisible aussi. **Ce qui reste** : un attaquant qui ferait écrire par ARM ce statut et ce code pour une commande qui a pourtant atteint l'invité ; aucun chemin connu, ARM écrit seul le journal |
+| la sortie de la commande rejouée au démarrage | **l'invité** (l'agent l'écrit ; root peut l'écrire) | une information, jamais une preuve : absente, elle ne retient rien (la vue d'instance ne porte jamais Run Command v1, mesuré le 09/11) ; présente et autre que la sortie inoffensive, elle retient la levée ; une parole d'avant le restore ne compte pas |
 
 Sans le fait du journal d'activité (illisible, aucun principal configuré), le `recovery_complete` dit
-la neutralisation inconnue, et la précondition retient la levée : une carte. **À mesurer au banc** :
-les valeurs du « Job Type », la forme du point dans le sac, l'identifiant que le journal d'activité
-donne au principal qui restaure (son appId ou son object id : les deux sont comparés) ; un fait
-absent fait une carte, jamais une levée. **Ce qui reste, assumé** : la frontière tient autant que
-les identités qui restaurent, comme celle du poste ; la première détection n'est lue que sur une
-carte en attente, comme pour `--before`.
+la neutralisation inconnue, et la précondition retient la levée : une carte. **Mesuré au banc
+(09/11)** : le « Job Type » « Replace disks » ; la forme de l'appelant, la même pour une identité
+managée et pour un principal à secret (`caller` et `claims.oid` = object id, `claims.appid` =
+appId : les trois sont comparés). **À mesurer** : la forme du point dans le sac ; l'emplacement
+exact du statut et du code d'un refus dans l'événement (absents, le refus se lit comme un autre
+échec : la levée retenue). Un fait absent fait une carte, jamais une levée. **Une lecture
+d'intégrité par Run Command** se fait après la levée, ou sous un principal qui restaure : faite
+avant par un autre principal, elle retient la levée automatique, ce qui est voulu (rien ne
+distingue au journal la commande d'un humain de celle d'un attaquant). **Ce qui reste, assumé** :
+la frontière tient autant que les identités qui restaurent, comme celle du poste ; la première
+détection n'est lue que sur une carte en attente, comme pour `--before`.
 
 **Le rapport d'un run et la matrice de couverture (C1)** : un rapport de run arrive sur H0 par le canal d'exercice, écrit sur Orodruin. Un `missed` forgé peut faire passer une ligne de la matrice en `regressed` : c'est une **fausse alarme**, dite en rouge, **jamais une preuve** — une preuve exige l'enregistrement de la décision par la watch, que Glorfindel seul écrit, sur la VM que le rapport nomme et au plus près de la détection comptée. Un `detected` forgé compte dans la couverture des 30 jours, comme avant C1. Un run daté dans le futur (au-delà de `FUTURE_SKEW_S`) est écarté de la matrice et des indicateurs, et dit ; ce que le rapport nomme est imprimé sans caractère de contrôle par `eregion coverage`, et échappé dans la console (`eregion_console/coverage.py`).
 
