@@ -142,6 +142,7 @@ DOCKER_GLORFINDEL_WATCH = $(WATCH_KEY_DIR) && $(RUNS_DIRS) && $(GLORFINDEL_AZURE
 	$(IMAGE_GLORFINDEL) glorfindel
 
 .PHONY: help build build-annatar build-glorfindel fix-state-ownership check-azure-env azure-pairs-expiry runs-migrate runs-survey \
+	bench-preflight bench-report \
 	annatar-run annatar-dry-run annatar-validate annatar-list \
 	glorfindel-respond glorfindel-dry-run glorfindel-watch \
 	glorfindel-release glorfindel-revert glorfindel-list \
@@ -295,6 +296,10 @@ help:
 	@echo "  make orodruin-exercise DRILL=<nom> [TARGETS=<vm>,…|all] [DRY_RUN=1]  un drill (DG-d) : ses fils posés sur les VM"
 	@echo "                                               inscrites (un drill livré attend TARGETS), en demande, puis comme REQUEST="
 	@echo "  make orodruin-down                           Détruit la VM et l'identité"
+	@echo ""
+	@echo "Le banc (BNC1) — lu, jamais écrit (docs/banc-t1486.md) :"
+	@echo "  make bench-preflight [TARGET=<vm>] [POINT_MAX_H=24]  L'étape 0 en un verdict ✓/⚠/✗, code 1 sur un ✗"
+	@echo "  make bench-report RUN=<run_id> [TARGET=<vm>] [OUT=…]  La chronologie d'un run, en Markdown et en JSON (runs/bench/)"
 	@echo ""
 	@echo "Gothmog (G0, G1) — une panne déclarée, depuis Orodruin (gothmog/README.md) :"
 	@echo "  make gothmog-preflight [FAULT=vm-shutdown]   Contrat, cibles, état normal — rien d'écrit"
@@ -1372,6 +1377,27 @@ orodruin-check: orodruin-known
 # EREGION_PROTECTED_IDENTITIES). ID=<object id de l'application> sur la ligne de commande : vérifié
 # (un GUID, rien d'autre) avant tout ssh, jamais développé par make (passé par l'environnement).
 # L'ID est vérifié d'abord (orodruin-identity-id), la clé d'hôte ensuite (orodruin-known), puis le ssh.
+# BNC1 (#682) : le banc lisible par la machine, en lecture seule partout (docs/banc-t1486.md, étapes 0
+# et 8). bench-preflight : toute l'étape 0 en un verdict, une ligne ✓/⚠/✗ par contrôle, code 1 sur un
+# ✗ (scripts/bench_preflight.py) ; bench-report : la chronologie d'un run, en Markdown et en JSON
+# (runs/bench/<run_id>.json, ou OUT=), scripts/bench_report.py. Aucun identifiant affiché. Les commandes
+# ssh de H0 et d'Orodruin passent par l'environnement du script, jamais affichées ; TARGET, RUN, OUT et
+# POINT_MAX_H aussi, jamais développés par make ($(value …), unexport — comme REF), vérifiés par le
+# script. Le contrat d'Orodruin y est lu sans être publié (check() dans son conteneur durci, sans montage).
+unexport TARGET RUN OUT POINT_MAX_H
+bench-preflight bench-report: export BENCH_H0_SSH = $(HOST_SSH)
+bench-preflight bench-report: export BENCH_TARGET = $(value TARGET)
+bench-preflight: export BENCH_ORO_SSH = $(ORO_SSH)
+bench-preflight: export BENCH_ORO_RUN = docker run --rm $(ORO_HARDEN) --env-file orodruin.env $(ORO_IMAGE)
+bench-preflight: export BENCH_POINT_MAX_H = $(value POINT_MAX_H)
+bench-report: export BENCH_RUN = $(value RUN)
+bench-report: export BENCH_OUT = $(value OUT)
+bench-preflight:
+	@$(PYTHON) scripts/bench_preflight.py
+
+bench-report:
+	@$(PYTHON) scripts/bench_report.py
+
 unexport ID
 orodruin-identity orodruin-identity-id: export EREGION_IDENTITY = $(value ID)
 orodruin-identity-id:
