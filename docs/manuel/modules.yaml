@@ -708,6 +708,16 @@ briques:
     issue: 677
     doc: docs/glorfindel.md
 
+  - id: g-levee-probation
+    composant: glorfindel
+    poste: g-agir
+    nom: "Design: the lift after a restore, alone and on probation, unless the door is proven open"
+    etat: main
+    release: "0.6"
+    lots: [LEV1]
+    issue: 690
+    doc: docs/design/levee-probation.md
+
   - id: g-memoire-source
     composant: glorfindel
     poste: g-memoire

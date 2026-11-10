@@ -100,6 +100,12 @@ distingue au journal la commande d'un humain de celle d'un attaquant). **Ce qui 
 la frontière tient autant que les identités qui restaurent, comme celle du poste ; la première
 détection n'est lue que sur une carte en attente, comme pour `--before`.
 
+**La levée après un restore, en probation (LEV1, conception)** : un restore remet un état propre,
+mais ne ferme pas le vecteur d'entrée. La levée distinguera un exercice prouvé par le plan de
+contrôle (l'identité d'Orodruin, dans la fenêtre du run, sur sa cible ; jamais l'étiquette seule)
+d'un incident réel, levé en probation, sauf porte prouvée ouverte. Ce qui change à cette frontière,
+et ce qui reste assumé : [`levee-probation.md`](levee-probation.md), §9. Planifié : #690.
+
 **Le rapport d'un run et la matrice de couverture (C1)** : un rapport de run arrive sur H0 par le canal d'exercice, écrit sur Orodruin. Un `missed` forgé peut faire passer une ligne de la matrice en `regressed` : c'est une **fausse alarme**, dite en rouge, **jamais une preuve** — une preuve exige l'enregistrement de la décision par la watch, que Glorfindel seul écrit, sur la VM que le rapport nomme et au plus près de la détection comptée. Un `detected` forgé compte dans la couverture des 30 jours, comme avant C1. Un run daté dans le futur (au-delà de `FUTURE_SKEW_S`) est écarté de la matrice et des indicateurs, et dit ; ce que le rapport nomme est imprimé sans caractère de contrôle par `eregion coverage`, et échappé dans la console (`eregion_console/coverage.py`).
 
 **L'ancienne disposition (SEC18)** : des fichiers à plat dans `runs/` ne sont jamais lus. Ils sont déplacés une fois, sur l'hôte, vers le répertoire de leur écrivain quand il se reconnaît sans ambiguïté (son nom, ce que le fichier dit de lui, un marqueur du tirage) ; le reste est laissé, dit, rien n'est effacé ([`operations.md`](../operations.md), « `runs/` : un répertoire par écrivain »). La migration classe comme les lecteurs croyaient avant SEC18 : elle ne rend pas sûr ce qui avait été écrit avant ; ce qui tient, c'est ce qui s'écrit après.
