@@ -1449,7 +1449,7 @@ briques:
     nom: "The public manual: where Eregion stands, component by component"
     etat: main
     release: "0.6"
-    lots: [MAN1, MAN1b]
+    lots: [MAN1, MAN1b, REL4]
     issue: 664
     doc: docs/manuel/index.html
 

@@ -395,8 +395,24 @@ def test_security_md_without_one_supported_line_is_left_and_said(repo, capsys):
 MANUAL = (ROOT / "docs" / "manuel" / "modules.yaml").read_text(encoding="utf-8")
 MANUAL_FILES = ("docs/manuel/modules.yaml", "docs/manuel/modules.json")
 
+# The tree's manual plus a brick of its own on main, as it is and as a release leaves it (every
+# brick livree): what the release delivers never hangs on what the tree still holds (REL4, #694).
+ON_MAIN = """
+  - id: t-sur-main
+    composant: socle
+    poste: s-documenter
+    nom: "A brick on main, held by the release's tests"
+    etat: main
+    release: "0.6"
+"""
+MANUALS = {name: text.rstrip("\n") + "\n" + ON_MAIN for name, text in (
+    ("as-is", MANUAL),
+    ("released", _load("manuel").deliver(MANUAL, "0.5.9", "2026-11-10")[0]),
+    ("0.6-cut", _load("manuel").deliver(MANUAL, "0.6.0", "2026-11-16")[0]))}   # the step 0.6 published
+on_manuals = pytest.mark.parametrize("manual", MANUALS.values(), ids=MANUALS.keys())
 
-def _with_manual(work, text=MANUAL):
+
+def _with_manual(work, text):
     mn = _load("manuel")
     (work / "docs" / "manuel").mkdir(parents=True, exist_ok=True)
     (work / "docs" / "manuel" / "modules.yaml").write_text(text, encoding="utf-8")
@@ -407,10 +423,11 @@ def _with_manual(work, text=MANUAL):
     return mn
 
 
-def test_a_release_delivers_the_manual_s_bricks_on_main_in_the_same_commit(repo, capsys):
-    mn = _with_manual(repo)
-    on_main = [b["id"] for b in mn.load(MANUAL)["briques"] if b["etat"] == "main"]
-    assert on_main
+@on_manuals
+def test_a_release_delivers_the_manual_s_bricks_on_main_in_the_same_commit(repo, capsys, manual):
+    mn = _with_manual(repo, manual)
+    on_main = [b["id"] for b in mn.load(manual)["briques"] if b["etat"] == "main"]
+    assert "t-sur-main" in on_main
     assert rel.main(["prepare", "0.6.0", "--title", "x"]) == 0, capsys.readouterr().out
     out = capsys.readouterr().out
     after = mn.load((repo / MANUAL_FILES[0]).read_text(encoding="utf-8"))
@@ -425,17 +442,21 @@ def test_a_release_delivers_the_manual_s_bricks_on_main_in_the_same_commit(repo,
     assert "les briques sur main passent livrées" in git(repo, "log", "-1", "--format=%b")
 
 
-def test_a_dry_run_shows_the_manual_s_diff_and_writes_nothing(repo, tmp_path, capsys):
-    _with_manual(repo)
+@on_manuals
+def test_a_dry_run_shows_the_manual_s_diff_and_writes_nothing(repo, tmp_path, capsys, manual):
+    _with_manual(repo, manual)
     assert rel.main(["prepare", "0.6.0", "--title", "x", "--dry-run"]) == 0
     out = capsys.readouterr().out
     assert '+    etat: livree' in out and '+    version: "0.6.0"' in out
     assert "docs/manuel/modules.yaml docs/manuel/modules.json" in out   # staged in the version's commit
-    assert (repo / MANUAL_FILES[0]).read_text(encoding="utf-8") == MANUAL and gh_calls(tmp_path) == []
+    assert (repo / MANUAL_FILES[0]).read_text(encoding="utf-8") == manual and gh_calls(tmp_path) == []
 
 
-def test_a_manual_the_release_cannot_read_is_refused_and_nothing_is_written(repo, tmp_path, capsys):
-    _with_manual(repo, MANUAL.replace('    etat: main\n', "    etat: 'main'\n", 1))
+@on_manuals
+def test_a_manual_the_release_cannot_read_is_refused_and_nothing_is_written(repo, tmp_path, capsys, manual):
+    unreadable = manual.replace('    etat: main\n', "    etat: 'main'\n", 1)
+    assert unreadable != manual
+    _with_manual(repo, unreadable)
     before = files(repo)
     assert rel.main(["prepare", "0.6.0", "--title", "x"]) == 1
     assert refused(capsys.readouterr().out, "le manuel public ne se lit pas (docs/manuel/modules.yaml)")
