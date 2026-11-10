@@ -2334,8 +2334,10 @@ def _platform_note(outcome: dict) -> str:
         from glorfindel.actions import PLATFORM_OPEN_NOTE
         notes.append(f"{PLATFORM_OPEN_NOTE} — {', '.join(map(str, nics))}")
     drain = outcome.get("drain") if isinstance(outcome.get("drain"), dict) else {}
-    if drain.get("status") == "pending":
-        notes.append(str(drain.get("note") or "coupure des sessions en attente sur Azure"))
+    if drain.get("status") == "pending" and outcome.get("drain_followed") is not False:
+        # Only a drain the reassertion follows reaches a notification (not followed, the cycle is
+        # unverified: a card, policy.isolation_verdict).
+        notes.append(str(drain.get("note") or "coupure des sessions en attente sur Azure, suivie"))
     return " ; ".join(notes)
 
 

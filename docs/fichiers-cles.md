@@ -196,7 +196,8 @@ glorfindel/
   drain_watch.py        → DRN1 : la coupure des sessions encore en cours sur Azure après 300 s, relue à chaque passe
                           de la réaffirmation ; une carte `drain_pending` tant qu'elle tourne, fermée quand elle
                           aboutit, ou une carte `verification_failed` qui dit « coupure refusée », « sessions restées
-                          ouvertes » ou « coupure jamais aboutie » (30 min, ou la watch redémarrée)
+                          ouvertes » ou « coupure jamais aboutie » (30 min, ou la watch redémarrée, ou la VM isolée par un
+                          autre processus : `asked_at`, le nonce) ; la carte d'abord, puis l'état
   reassert_quarantine.py → I1F, I1S, ISU : les NSG de quarantaine modifiés, lus à chaque passe quel que soit
                           l'état local — _report_altered_quarantines, quarantine_alerts.json (sorti de
                           reassert.py par RB1, sans changement de comportement ; L2Q : un changement qui revient est redit)

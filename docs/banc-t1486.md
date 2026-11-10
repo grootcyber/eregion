@@ -387,7 +387,7 @@ sessions a pris 302 s le 09/11, et une coupure qui dépasse 300 s est suivie sur
   seule quand la coupure aboutit : sa note dit « isolement vérifié ». Si une carte
   `verification_failed` la remplace, sa raison dit le cas : « coupure refusée » (le rôle Session
   Drain manque sur gondolin), « sessions restées ouvertes », ou « coupure jamais aboutie » (toujours
-  en cours 30 min après, ou la watch a redémarré entre-temps). À noter dans l'issue, avec la durée
+  en cours 30 min après, ou la watch redémarrée, ou la VM isolée par un autre processus entre-temps). À noter dans l'issue, avec la durée
   lue au journal d'activité (Started → Succeeded).
 - **Discord** : l'action autonome, par le bot.
 - **Sur H0** (`make glorfindel-host-ssh`, puis `exit`) : `docker exec eregion-watch glorfindel

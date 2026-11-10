@@ -2109,9 +2109,13 @@ def _state_warnings(entry: dict, failed_key: str) -> list[str]:
     drain = entry.get("drain") or {}
     if drain.get("status") in ("failed", "partial", "unsupported"):
         out.append("open sessions not cut: " + str(drain.get("error") or drain.get("note") or drain["status"]))
-    elif drain.get("status") == "pending":     # DRN1: still running on Azure, followed by the watch
-        out.append("session cut pending: Run Command still running on Azure, followed by the watch"
-                   + (f" (asked {drain['asked_at']})" if drain.get("asked_at") else ""))
+    elif drain.get("status") == "pending":     # DRN1: still running on Azure at its last read
+        from glorfindel.response.policy import drain_followed
+        out.append("session cut pending: Run Command still running on Azure at its last read"
+                   + (f" (asked {drain['asked_at']})" if drain.get("asked_at") else "")
+                   + ("; the watch's reassertion pass reads it again" if drain_followed() else
+                      "; the reassertion is off (GLORFINDEL_REASSERT_INTERVAL_S): not followed — "
+                      "sessions perhaps still open"))
     found = [s for p in entry.get("placements") or [] for s in (p.get("shadowed_by") or [])]
     shadowed = [s for s in found if s.get("threat_port_open", True)]
     exposure = [s for s in found if not s.get("threat_port_open", True)]

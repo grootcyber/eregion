@@ -63,7 +63,7 @@ def azure(tmp_path, monkeypatch):
 
 
 def _drain_cards(kind: str | None = None) -> list[dict]:
-    return [e for e in escalations.pending() if e["signal_id"].startswith("reassert-drain-")
+    return [e for e in escalations.pending() if e["signal_id"].startswith("reassert-drain:")
             and (kind is None or e["escalation_type"] == kind)]
 
 
@@ -241,6 +241,101 @@ def test_the_drain_card_never_folds_into_another_card_of_the_reassertion(azure, 
     [other] = [e for e in escalations.pending() if e["id"] == gone]
     assert other["reason"] == "les règles ont disparu" and other.get("occurrences", 1) == 1
     assert len(_drain_cards("verification_failed")) == 1
+
+
+def test_a_vm_named_drain_web_keeps_its_reassertion_card_apart_from_its_cut(azure, monkeypatch):
+    """DRN1 review: with `reassert-drain-` as the prefix, the reassertion's card on a VM named
+    `drain-web` (`reassert-drain-web-<hash>`) was read as a card of the cut, and the two folded.
+    `:` is never in an Azure VM's name."""
+    from glorfindel.escalations import _drain_follow
+    from glorfindel.reassert import _alert_id
+    f, c = azure
+    rid = vm_id("rg-app1", "drain-web")
+    assert not _drain_follow(_alert_id("drain-web", rid))
+    assert _drain_follow(drain_watch.drain_sid("drain-web", rid))
+    gone = escalations.record(signal_id=_alert_id("drain-web", rid), resource_id=rid, action="isolate_vm",
+                              escalation_type="verification_failed", reason="les règles ont disparu")
+    cut = escalations.record(signal_id=drain_watch.drain_sid("drain-web", rid), resource_id=rid,
+                             action="isolate_vm", escalation_type="verification_failed",
+                             reason="coupure jamais aboutie")
+    assert gone != cut
+    assert {e["reason"] for e in escalations.pending() if e["resource_id"] == rid} == {
+        "les règles ont disparu", "coupure jamais aboutie"}
+
+
+def test_the_card_is_written_before_the_state(azure, monkeypatch):
+    """L1A (DRN1 review): the card refused (a full disk), the state still says pending and the poller
+    is kept — the next pass says the outcome; the pending card is never closed with a false note."""
+    f, c = azure
+    c.isolate_vm(_WEB)
+    reassert_pass(c, _ACT)
+    [pending] = _drain_cards("drain_pending")
+    f.end_run_commands(error=_error(HttpResponseError, 409, "(Conflict) agent"))
+    real = escalations.record
+
+    def full(**kw):
+        raise OSError(28, "No space left on device")
+    monkeypatch.setattr(escalations, "record", full)
+    reassert_pass(c, _ACT)
+    assert _load_isolation_state(_WEB)["drain"]["status"] == "pending"
+    assert [e["id"] for e in _drain_cards()] == [pending["id"]]           # still waits, not closed
+    monkeypatch.setattr(escalations, "record", real)
+    reassert_pass(c, _ACT)
+    [card] = _drain_cards()
+    assert card["escalation_type"] == "verification_failed" and "sessions restées ouvertes" in card["reason"]
+    assert _load_isolation_state(_WEB)["drain"]["status"] == "failed"
+    assert c.follow_drain(_WEB) is None
+
+
+def test_with_the_reassertion_off_a_pending_cut_is_not_verified(azure, monkeypatch):
+    """DRN1 review: nothing reads a pending cut again when the reassertion is off — the cycle says
+    « coupure en attente, non suivie », not verified, and `glorfindel list` says it is not followed."""
+    from glorfindel.cli import _state_warnings
+    f, c = azure
+    monkeypatch.setenv("GLORFINDEL_REASSERT_INTERVAL_S", "0")
+    out = c.isolate_vm(_WEB)
+    cycle = _cycle(c, out)
+    assert cycle["outcome"]["verified"] is False and cycle["escalate"] is True
+    assert "coupure en attente, non suivie" in cycle["escalation_reason"]
+    assert "coupure" not in _platform_note(cycle["outcome"])              # no « suivie » promised
+    [w] = [w for w in _state_warnings({"drain": out["drain"]}, "release_failed") if w.startswith("session cut")]
+    assert "not followed" in w
+    monkeypatch.setenv("GLORFINDEL_REASSERT_INTERVAL_S", "60")
+    [w] = [w for w in _state_warnings({"drain": out["drain"]}, "release_failed") if w.startswith("session cut")]
+    assert "reads it again" in w
+
+
+def test_another_process_s_isolation_is_never_read_from_this_poller(azure):
+    """DRN1 review: `glorfindel respond` isolates in its own process; its drain, pending in the state,
+    is not this watch's poller (the nonce `asked_at`) — never said « aboutie » from it."""
+    from glorfindel.actions import _save_isolation_state
+    f, c = azure
+    c.isolate_vm(_WEB)
+    state = _load_isolation_state(_WEB)
+    _save_isolation_state(_WEB, {**state, "drain": {**state["drain"], "asked_at": "2026-11-10T09:00:00+00:00"}})
+    f.end_run_commands()                                   # this watch's own drain ended, cut
+    reassert_pass(c, _ACT)
+    [card] = _drain_cards()
+    assert card["escalation_type"] == "verification_failed" and card["drain_case"] == "never"
+    assert "isolée par un autre processus" in card["reason"] and "glorfindel respond" in card["reason"]
+    assert "peut-être pas été coupées" in card["reason"]
+    assert not [e for e in escalations.all_escalations() if "isolement vérifié" in (e.get("resolution") or "")]
+
+
+def test_a_released_vm_s_poller_is_dropped(azure):
+    f, c = azure
+    c.isolate_vm(_WEB)
+    assert c.followed_drains() == [_WEB.lower()]
+    c.release_isolation(_WEB)
+    reassert_pass(c, _ACT)
+    assert c.followed_drains() == []
+
+
+def test_a_cut_never_read_is_said_perhaps_not_cut():
+    from glorfindel.response.policy import drain_said
+    said = drain_said({"status": "failed", "never": True, "error": "statut non relu"})
+    assert said.startswith("coupure jamais aboutie : ") and "peut-être pas été coupées" in said
+    assert "n'ont pas été coupées" not in said
 
 
 def test_a_dry_run_follows_nothing(azure):

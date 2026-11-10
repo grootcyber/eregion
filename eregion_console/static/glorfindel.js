@@ -581,14 +581,22 @@ function _fromReassertion(e) {
   return _REASSERTION.some(p => sid.startsWith(p));
 }
 
+// DRN1 (#677): the cards of the session cut followed on Azure (escalations._DRAIN_FOLLOW) — an origin
+// of their own: never grouped with another card of the reassertion on the VM (one title, one Ack).
+const _DRAIN_FOLLOW = 'reassert-drain:';
+function _fromDrain(e) {
+  return String(e.signal_id || '').toLowerCase().startsWith(_DRAIN_FOLLOW);
+}
+
 // Group escalations by action and origin, render each group as one item (N dupes = single Ack All)
 function _groupEscs(escs) {
   const map = new Map();
   escs.forEach(e => {
     const key = e.action === 'improve_detection' ? e.id   // rules stay separate
       : `${_fromReassertion(e) ? 'reassertion' : 'other'}|${e.action}`;
-    if (!map.has(key)) map.set(key, []);
-    map.get(key).push(e);
+    const origin = _fromDrain(e) ? `drain|${key}` : key;   // DRN1: the cut's cards, apart
+    if (!map.has(origin)) map.set(origin, []);
+    map.get(origin).push(e);
   });
   return [...map.values()];
 }

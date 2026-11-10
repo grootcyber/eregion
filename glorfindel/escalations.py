@@ -112,8 +112,9 @@ def _reassertion(signal_id) -> bool:
 
 # DRN1 (#677): the cards of the session drain followed by the reassertion (glorfindel/drain_watch.py)
 # — a card of its own on its VM, never folded into another card of the reassertion (a rule gone)
-# nor one of those into it: the reason of the one would overwrite the other's.
-_DRAIN_FOLLOW = "reassert-drain-"
+# nor one of those into it: the reason of the one would overwrite the other's. Its `:` is never in an
+# Azure VM's name: the reassertion's card on a VM named `drain-web` is not one (DRN1 review).
+_DRAIN_FOLLOW = "reassert-drain:"
 
 
 def _drain_follow(signal_id) -> bool:

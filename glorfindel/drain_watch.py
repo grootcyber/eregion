@@ -16,14 +16,19 @@ through the poller the watch kept, under the VM's lock:
 - refused, failed, sessions left open: a `verification_failed` card on `isolate_vm`, whose reason
   says « coupure refusée » or « sessions restées ouvertes » (`policy.drain_said`), the pending card
   closed in the same write;
-- still running DRAIN_DEADLINE_S after it was asked, or no longer followed (the watch restarted
-  and lost its poller): « coupure jamais aboutie », on the same kind of card.
+- still running DRAIN_DEADLINE_S after it was asked, or no longer followed — the watch restarted
+  and lost its poller, or another process isolated the VM (`glorfindel respond`: the state's
+  `asked_at`, the drain's nonce, is not the poller's): « coupure jamais aboutie », the sessions
+  « peut-être pas coupées », on the same kind of card.
 
-The state's `drain` takes the outcome, `drain_ended_at` its time. A VM released (or isolated
-again with a drain that ended) while its card waits: the card closes, said. What it does not hold:
-the follow rides the reassertion — off (`GLORFINDEL_REASSERT_INTERVAL_S=0`, read-only), a pending
-drain is not read again and its isolation keeps the rules' verdict; a restart loses the poller —
-said as never ended, though the cut may have succeeded: the activity log tells.
+The card first, then the state (L1A): the outcome said, the state takes it (`drain`,
+`drain_ended_at`) and the poller is dropped; a card refused (a full disk), the state still says
+pending and the poller is read again at the next pass. A VM released (or isolated again with a
+drain that ended) while its card waits: the card closes, said, and its poller is dropped. The
+reassertion off (`GLORFINDEL_REASSERT_INTERVAL_S=0`): nothing reads a pending drain again — the
+cycle's verdict says it then (« coupure en attente, non suivie »: `policy.isolation_verdict`).
+A restart loses the poller: said as never ended, though the cut may have succeeded — the activity
+log tells.
 """
 from __future__ import annotations
 
@@ -43,9 +48,12 @@ _LOCK_WAIT_S = 30
 
 
 def drain_sid(vm: str, rid: str) -> str:
-    """The id of the drain's cards on a VM: one per VM, its whole id in it (I3C), lowercase."""
+    """The id of the drain's cards on a VM: one per VM, its whole id in it (I3C), lowercase. Its
+    separator, `:`, is never in an Azure VM's name: a card of the reassertion on a VM named
+    `drain-web` (`reassert-drain-web-<hash>`) is never one of these (DRN1 review)."""
     from glorfindel.actions import _rid_hash
-    return f"reassert-drain-{vm}-{_rid_hash(rid)}".lower()
+    from glorfindel.escalations import _DRAIN_FOLLOW
+    return f"{_DRAIN_FOLLOW}{vm}-{_rid_hash(rid)}".lower()
 
 
 def _when(value) -> datetime | None:
@@ -86,7 +94,30 @@ def _follow_all(connector, report: list[dict]) -> None:
         except OSError as exc:
             waiting.add(drain_sid(vm, rid))
             report.append(unrecorded(vm, exc))
-    _close_the_others(waiting, report)
+    _close_the_others(connector, waiting, report)
+    # A poller this process keeps for a VM whose state no longer waits for it (released, the state
+    # lost): dropped, never read later as another drain's outcome.
+    followed = getattr(connector, "followed_drains", None)
+    for rid in (followed() if callable(followed) else []):
+        _drop_if_not_pending(connector, rid)
+
+
+def _drop_if_not_pending(connector, rid: str) -> None:
+    """Under the VM's lock (an isolation running holds it: its drain is asked before its state is
+    written), the poller dropped when the state no longer waits for a drain."""
+    from glorfindel.actions import _isolation_unreadable, _load_isolation_state, _vm_lock
+    drop = getattr(connector, "drop_drain", None)
+    if not callable(drop) or not rid:
+        return
+    try:
+        with _vm_lock(rid.rstrip("/").rsplit("/", 1)[-1], timeout=_LOCK_WAIT_S):
+            if _isolation_unreadable(rid):
+                return
+            drain = (_load_isolation_state(rid) or {}).get("drain")
+            if not isinstance(drain, dict) or drain.get("status") != "pending":
+                drop(rid)
+    except TimeoutError:
+        return
 
 
 def _follow_one(connector, vm: str, rid: str, report: list[dict]) -> bool:
@@ -94,10 +125,15 @@ def _follow_one(connector, vm: str, rid: str, report: list[dict]) -> bool:
     from glorfindel.actions import _load_isolation_state, _save_isolation_state
     state = _load_isolation_state(rid)
     drain = (state or {}).get("drain")
+    drop = getattr(connector, "drop_drain", None)
+    drop = drop if callable(drop) else (lambda _rid: None)
     if not isinstance(drain, dict) or drain.get("status") != "pending":
-        return False                              # released, or ended, meanwhile
+        drop(rid)                                 # released, or ended, meanwhile
+        return False
     follow = getattr(connector, "follow_drain", None)
-    got = follow(rid) if callable(follow) else None
+    # The drain the state waits for, by its nonce: another process's (`glorfindel respond`) is not
+    # this poller's (DRN1 review).
+    got = follow(rid, asked_at=drain.get("asked_at")) if callable(follow) else None
     got = got if isinstance(got, dict) else None
     now = datetime.now(timezone.utc)
     asked = _when(drain.get("asked_at"))
@@ -105,23 +141,23 @@ def _follow_one(connector, vm: str, rid: str, report: list[dict]) -> bool:
         (now - asked).total_seconds() if asked else None)
     if got is None:
         ended = {**drain, "status": "failed", "never": True,
-                 "error": ("statut non relu : la watch ne suit plus cette Run Command (redémarrée pendant "
-                           "la coupure) — lire son statut au journal d'activité de la VM")}
+                 "error": ("statut non relu : la watch ne suit pas cette Run Command (redémarrée pendant "
+                           "la coupure, ou isolée par un autre processus : `glorfindel respond`) — lire son "
+                           "statut au journal d'activité de la VM")}
     elif got.get("status") == "pending":
         if elapsed is None or elapsed < DRAIN_DEADLINE_S:
             _say_pending(vm, rid, drain, got, elapsed, report)
             return True
-        drop = getattr(connector, "drop_drain", None)
-        if callable(drop):
-            drop(rid)
         ended = {**drain, **got, "status": "failed", "never": True,
                  "error": (f"Run Command toujours en cours sur Azure après {int(elapsed)} s "
                            f"({got.get('azure_status') or 'statut non lu'}) — elle peut encore finir : "
                            "Azure l'arrête à 90 min ; lire le journal d'activité de la VM")}
     else:
         ended = {**got, "asked_at": drain.get("asked_at")}
-    _save_isolation_state(rid, {**state, "drain": ended, "drain_ended_at": now.isoformat()})
+    # The card first (L1A): refused, the state still says pending, the poller kept — read again.
     _say_ended(vm, rid, ended, report)
+    _save_isolation_state(rid, {**state, "drain": ended, "drain_ended_at": now.isoformat()})
+    drop(rid)
     return False
 
 
@@ -176,9 +212,9 @@ def _say_ended(vm: str, rid: str, ended: dict, report: list[dict]) -> None:
     report.append({"kind": "drain", "vm": vm, "outcome": case, "detail": reason})
 
 
-def _close_the_others(waiting: set[str], report: list[dict]) -> None:
+def _close_the_others(connector, waiting: set[str], report: list[dict]) -> None:
     """A pending card whose drain no longer waits — its VM released, or isolated again with a drain
-    that ended — closes, said."""
+    that ended — closes, said; its poller dropped."""
     from glorfindel import escalations
     from glorfindel.actions import _isolation_unreadable
     for e in escalations.pending():
@@ -189,5 +225,6 @@ def _close_the_others(waiting: set[str], report: list[dict]) -> None:
             continue                              # its state can't be read: said elsewhere (SEC4b)
         note = "Plus de coupure en attente : l'isolation a été levée, ou reprise, avant sa fin."
         escalations.resolve(e["id"], note=note)
+        _drop_if_not_pending(connector, e.get("resource_id") or "")
         vm = (e.get("resource_id") or "").rstrip("/").rsplit("/", 1)[-1]
         report.append({"kind": "drain", "vm": vm, "outcome": "closed", "detail": note})

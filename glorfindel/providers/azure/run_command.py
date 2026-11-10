@@ -7,8 +7,9 @@ returns at its deadline without raising, with what the last poll said — no out
 drain read « sortie de Run Command illisible »: the isolation unverified, the cut done 2 s later.
 
 An operation not done at the first wait is now said pending, never read. The drain's poller is
-kept in this process (the watch, which alone runs isolations: the agent, the action queue, the
-reassertion) and its status read again by the reassertion's pass (glorfindel/drain_watch.py)
+kept in this process (the watch: the agent, the action queue, the reassertion; `glorfindel
+respond` isolates in its own process, its drain never read here — the state's `asked_at` names
+it) and its status read again by the reassertion's pass (glorfindel/drain_watch.py)
 until it ends, or its deadline (drain_watch.DRAIN_DEADLINE_S). The first wait stays 300 s: the VM's
 worker is not held longer than before. A restart of the watch loses the poller: said, never
 read as a cut. The status is the poller's — it keeps polling Azure in its own thread.
@@ -81,12 +82,16 @@ _LOCK = threading.Lock()
 
 def pending(resource_id: str, poller, asked: float, waited_s: float) -> dict:
     """The drain not done at its first wait: its poller kept, the outcome says so."""
-    with _LOCK:
-        _FOLLOWED[resource_id.rstrip("/").lower()] = {"poller": poller, "asked": asked}
     from datetime import datetime, timezone
+    asked_at = datetime.fromtimestamp(asked, timezone.utc).isoformat()
+    with _LOCK:
+        # `asked_at`, the drain's nonce: the state names the drain it waits for, the entry the one
+        # this process asked — another process's isolation of the VM (`glorfindel respond`) writes
+        # its own, and this poller is never read as its outcome (DRN1 review).
+        _FOLLOWED[resource_id.rstrip("/").lower()] = {"poller": poller, "asked": asked, "asked_at": asked_at}
     status = azure_status(poller)
     return {"status": "pending", "waited_s": round(waited_s),
-            "asked_at": datetime.fromtimestamp(asked, timezone.utc).isoformat(),
+            "asked_at": asked_at,
             **({"azure_status": status} if status else {}),
             "note": (f"coupure en attente : Run Command toujours en cours sur Azure après "
                      f"{round(waited_s)} s ({status or 'statut non lu'}) — suivie, son statut relu "
@@ -96,14 +101,16 @@ def pending(resource_id: str, poller, asked: float, waited_s: float) -> dict:
 class DrainFollowMixin:
     """The drain's status read again on Azure after its first wait (part of AzureConnector)."""
 
-    def follow_drain(self, resource_id: str) -> dict | None:
-        """The drain of `resource_id` this process still follows: its outcome once it ended
-        (then forgotten), `{"status": "pending", …}` while it runs; None when this process
-        follows none (the watch restarted since, or no drain was pending)."""
+    def follow_drain(self, resource_id: str, asked_at: str | None = None) -> dict | None:
+        """The drain of `resource_id` this process still follows: its outcome once it ended,
+        `{"status": "pending", …}` while it runs; None when this process follows none — the watch
+        restarted since, or the drain the state waits for (`asked_at`, its nonce) is another
+        process's (`glorfindel respond`). Never forgotten here: the caller drops it once the
+        outcome is said and written (`drop_drain`) — a write refused, it is read again."""
         key = resource_id.rstrip("/").lower()
         with _LOCK:
             entry = _FOLLOWED.get(key)
-        if entry is None:
+        if entry is None or (asked_at is not None and entry.get("asked_at") != asked_at):
             return None
         poller = entry["poller"]
         elapsed = round(time.time() - entry["asked"])
@@ -112,16 +119,19 @@ class DrainFollowMixin:
         except Exception as e:
             # Accepted, then failed on Azure: not a refusal (that comes at the request).
             from glorfindel.response.policy import _ERR_MAX, _first_line
-            self.drop_drain(resource_id)
             return {"status": "failed", "after_s": elapsed, "azure_status": azure_status(poller) or "Failed",
                     "error": f"Run Command en échec sur Azure après {elapsed} s : {_first_line(e)}"[:_ERR_MAX]}
         if not done:
             status = azure_status(poller)
             return {"status": "pending", "after_s": elapsed, **({"azure_status": status} if status else {})}
-        self.drop_drain(resource_id)
         return {**drain_outcome(result), "after_s": elapsed}
 
     def drop_drain(self, resource_id: str) -> None:
-        """Stop following a drain (ended, given up, its VM released)."""
+        """Stop following a drain (ended and said, given up, its VM released)."""
         with _LOCK:
             _FOLLOWED.pop(resource_id.rstrip("/").lower(), None)
+
+    def followed_drains(self) -> list[str]:
+        """The VM ids (lowercase) whose drain this process still follows."""
+        with _LOCK:
+            return list(_FOLLOWED)

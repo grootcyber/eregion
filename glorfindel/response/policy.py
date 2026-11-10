@@ -106,9 +106,27 @@ def drain_said(drain: dict | None) -> str:
         return (f"{DRAIN_CASES[case]} : sessions déjà ouvertes non coupées ("
                 + (drain.get("note") or "OS non pris en charge")
                 + ") : un attaquant connecté garde la main — les couper à la main")
+    if case == "never":       # not read: perhaps cut, perhaps not — never said either way
+        return (f"{DRAIN_CASES[case]} : règles posées, mais les sessions déjà ouvertes n'ont peut-être pas "
+                f"été coupées ({drain.get('error', drain.get('status'))}) — un attaquant connecté garde "
+                f"peut-être la main. {_CUT_BY_HAND}")
     return (f"{DRAIN_CASES[case]} : règles posées, mais les sessions déjà ouvertes n'ont pas été "
             f"coupées ({drain.get('error', drain.get('status'))}) — un attaquant connecté garde la "
             f"main. {_CUT_BY_HAND}")
+
+
+def drain_followed() -> bool:
+    """A pending drain is read again: the watch's reassertion pass runs (`posture._reassertion_on`:
+    GLORFINDEL_REASSERT_INTERVAL_S > 0). Off, nothing reads it again (DRN1 review)."""
+    from glorfindel.posture import _reassertion_on
+    return _reassertion_on()
+
+
+# The cycle's word for a drain pending that nothing will read again (the reassertion off).
+DRAIN_UNFOLLOWED = ("coupure en attente, non suivie : la Run Command tourne encore sur Azure après sa "
+                    "première attente, et la réaffirmation est coupée (GLORFINDEL_REASSERT_INTERVAL_S) : "
+                    "son statut ne sera pas relu — un attaquant connecté garde peut-être la main. "
+                    + _CUT_BY_HAND)
 
 
 def isolation_verdict(verification: dict, outcome: dict) -> dict:
@@ -121,10 +139,14 @@ def isolation_verdict(verification: dict, outcome: dict) -> dict:
     A drain still running on Azure past its first wait (DRN1: 302 s under the quarantine) keeps
     the rules' verdict, and says it is pending (`drain_case`): its status is read again by the
     reassertion's pass (glorfindel/drain_watch.py), which closes its card once the cut ends, or
-    says on a card that it was refused, left sessions open, or never ended."""
+    says on a card that it was refused, left sessions open, or never ended. The reassertion off,
+    nothing reads it again: not verified (« coupure en attente, non suivie »)."""
     drain = (outcome or {}).get("drain") or {}
     case = drain_case(drain)
     if verification.get("verified") is True and case == "pending":
+        if not drain_followed():
+            return {**verification, "verified": False, "drain": drain, "drain_case": case,
+                    "drain_followed": False, "error": DRAIN_UNFOLLOWED}
         return {**verification, "drain": drain, "drain_case": case}
     if verification.get("verified") is True and case:
         return {**verification, "verified": False, "drain": drain, "drain_case": case,
