@@ -244,7 +244,8 @@ ne bloque pas. Ses contrôles (`scripts/bench_preflight.py`) :
   release qui tourne face à la dernière publiée) ;
 - **le poste** : aucune watch locale (`docker ps`) ;
 - **Orodruin** : son contrat lu sur lui, sans être publié (`check()` dans son conteneur durci),
-  armé et son plafond. Désallouée, c'est un ⚠ : son contrat se lit après `make orodruin-start` ;
+  armé et son plafond. Désallouée, c'est un ⚠ : son contrat se lit après `make orodruin-start`. Sans
+  `ORO_SSH_FINGERPRINT`, rien ne part vers Orodruin, ni vers H0 sans `HOST_SSH_FINGERPRINT` ;
 - **les paires** : celles de `make azure-pairs-expiry` (RST1). Celle de la console est exigée : absente
   ou incomplète, c'est un ✗ ;
 - **la cible** : une seule VM de ce nom, son groupe, son état ; sur H0, son mode (configuré et
@@ -258,7 +259,8 @@ ne bloque pas. Ses contrôles (`scripts/bench_preflight.py`) :
   - H0 et Orodruin, par leurs attributions et les définitions de leurs rôles, jokers et
     `notActions` compris : l'isolement, la coupure, le point de restauration et la lecture du journal
     pour H0 ; l'attaque (Run Command sur la cible) pour Orodruin. Leurs identifiants sont lus dans les
-    sorties Terraform d'`infra/glorfindel-host` et d'`infra/orodruin`, jamais affichés ;
+    sorties Terraform d'`infra/glorfindel-host` et d'`infra/orodruin`, jamais affichés. Une attribution
+    sur un groupe d'administration n'est pas lue : la ligne le dit, à vérifier à la main ;
 - **les dérives connues** : le rôle « Eregion Glorfindel Restore » du tenant qui porte encore
   `runCommand/action` (d'avant SEC17) donne un ⚠ ; « Eregion Glorfindel Restore Staging » absent de la
   console sur le compte de transit donne un ✗, le droit qui manquait le 09/11.
@@ -512,15 +514,19 @@ Azure, sur H0 ni sur Orodruin (`scripts/bench_report.py`) :
 - **les jobs du coffre**, et ce qui n'a pas pu être lu.
 
 Ses sources :
-- sur H0, par ssh, en lecture (`scripts/bench_h0_reader.py`, dans le conteneur de la watch) : le
-  rapport du run (`runs/glorfindel/<run_id>.json`, son T0, sa détection, la demande de Dagorlad dont il
-  est un fil), les cycles du run, le `recovery_complete` de la watch (REC1), les levées de
-  `manual_actions.jsonl` et l'état d'isolement de la cible s'il est encore là ;
-- le journal d'activité du groupe de la cible : ses Run Command, les écritures réseau de H0 (l'isolement,
-  quand l'état de H0 est levé), les désallocations et les démarrages ;
+- sur H0, par ssh, la clé d'hôte vérifiée par son empreinte (sinon rien ne part) : le rapport du run
+  (`runs/glorfindel/<run_id>.json`, son T0, sa détection, la demande de Dagorlad dont il est un fil),
+  les cycles du run, le `recovery_complete` de la watch (REC1), les levées de `manual_actions.jsonl`
+  et l'état d'isolement de la cible s'il est encore là. `scripts/bench_h0_reader.py` les lit dans un
+  conteneur jetable de l'image déployée, jamais dans la watch : sans réseau, sans capacité, chaque
+  montage en lecture seule (`docs/operations.md`, « Le banc lisible ») ;
+- le journal d'activité de la cible et de ses cartes réseau, chacune lue à part : ses Run Command,
+  l'écriture de H0 sur une de ses cartes (l'isolement, quand l'état de H0 est levé ; une isolation par
+  les seules règles d'un NSG n'y paraît pas), les désallocations et les démarrages ; une lecture qui
+  atteint le plafond est dite coupée ;
 - les jobs du coffre et la vue d'instance (l'agent `Ready`, relu au moment de composer).
 
-Le Markdown s'affiche, et s'écrit avec le JSON dans `runs/bench/<run_id>.json` (ou `OUT=`) : le JSON
+Le Markdown s'affiche, et s'écrit à côté du JSON (`runs/bench/<run_id>.json` et `.md`, ou `OUT=`) : le JSON
 alimentera plus tard `docs/proofs.json`. Un appelant devient un rôle, une ressource un nom du banc
 déjà public. Le `restore_time` de la CLI du poste ne se lit qu'à sa sortie (étape 6) : le noter à
 part. Le calcul à la main reste en annexe, pour un dépannage (« Annexe B »).
