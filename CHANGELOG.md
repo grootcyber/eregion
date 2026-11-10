@@ -4,6 +4,96 @@ Notable changes to Eregion. The format follows [Keep a Changelog](https://keepac
 
 ## [Unreleased]
 
+## [0.5.10] — 2026-11-10 — "within reach"
+
+### Security
+- **`make orodruin-exercise` wants a terminal for the names it has typed** (MOB1, #686): its first
+  prerequisite, `orodruin-exercise-guard`, refuses without one before `glorfindel-host-known` and
+  `orodruin-known` — nothing read from H0, nor a drill's VMs from Azure, nor Terraform's state; a name
+  piped into `eregion_core.exercise_request confirm` is refused too, nothing shown nor written.
+  - Tests: `tests/unit/test_exercise_request.py`, `tests/unit/test_makefile_exercise.py` (now run under
+    a pseudo-terminal).
+
+### Added
+- **Design: the lift after a restore, alone and on probation, unless the door is proven open** (LEV1, #690;
+  `docs/design/levee-probation.md`, linked from `docs/glorfindel.md` and the threat model). A design only,
+  nothing coded. One rule for every lift after a restore (the watch, `glorfindel release`, the console, the
+  bot; a human's lift reads the restore on Azure itself), with three verdicts, none given before the
+  restore job's end plus a margin for the activity log's latency:
+  - an exercise proven by the control plane (Orodruin's identity acting on the VM within the run's
+    published window, no third party), on the bench or the twin only (the zone noted at isolation, the
+    most cautious reading wins), never in production, lifts without probation;
+  - a real incident lifts into probation;
+  - the quarantine is kept, with a card, when a detection on the VM is dated after the restore's end (a
+    human alone lifts then), or when a third party that acted on the VM keeps its rights, a right that
+    grants rights included, or its rights cannot be read in full. No right is added to H0: a right
+    through a group, a PIM eligibility, a group's ownership or a deleted principal reads as unreadable,
+    and the bench measures how often. The activity log is read with its child resources (extensions,
+    managed Run Commands, NSG rules, tags). Glorfindel and the restoring principals are excused only for
+    their own operations, targets and windows, and expected callers only per operation (never a Run
+    Command, VMAccess, an AAD login extension or a disk export); an extension written by a third party
+    counts whatever its type. The card carries the revocation plan in IR1a's form and a Verify
+    button. A hold placed by the operator is removed only by a traced human gesture.
+
+  The mode still decides who executes. Probation: 24 h by default. The administration ports are closed from
+  the Internet by a named Glorfindel rule; its state is written before it, so that the control-plane
+  detection, the reassertion, the orphan sweep and `reset` recognize it, and it is laid and read back before
+  the quarantine is removed. Probation-only rules and thresholds live in the rules file. A detection in the
+  guest dated after the restore's end re-isolates according to the mode, decided by code at the head of
+  `decide`, guard by guard,
+  without the model (a card in `human_only`); a control-plane detection is always a card, never a
+  re-isolation alone (Jonathan's decisions of 10/11). These cycles never go to the memory. The original
+  disks are named on every card as evidence, never touched. The model's input stays byte-identical. Also:
+  the vocabulary (quarantine, probation), eight invariant properties, the bench exercise (T1486 "as a real
+  incident", then T1136.001 during probation), the lots LEV2 to LEV8, and Jonathan's decision on every
+  question.
+- **The door's facts, for information: who acted on an isolated VM by the control plane, and whether they keep their rights** (LEV2, #690 ; `docs/glorfindel.md`, « La porte, pour information » ; `docs/design/levee-probation.md` §4). Nothing lifts or holds on them yet: the lift, the release precondition and the model's message are unchanged, to the byte.
+  - `observed_actors` reads the closed table of gestures (a Run Command, any extension, a write of the VM, its disks, NICs, NSG rules, a public IP joined, an identity, the tags) in the activity log, whatever their status, a platform refusal aside: one exact read per resource and one read per group filtered on the VM's children, each bounded at 20 pages. On a shared NSG only a rule that covers the VM counts. A rule deleted and the VM's subnet written are gestures too (Q16, Jonathan's decision of 10/11): a rule deleted from a shared NSG does not count only when the rules the isolation noted (`nsg_rules_at_isolation`) show it never covered the VM. A user is known by its object id and UPN, never by its token's appid (the client tool's, the same for the whole tenant). A read cut or failed, or an answer not of the shape ARM documents, makes the actors **unreadable, never empty**.
+  - `observed_rights` reads the role assignments, PIM eligibilities and role definitions at each scope of a gesture, judged by `action_held` (wildcards, notActions, dataActions, and the rights that give one back): held, absent or unreadable — a group, an eligibility, a management group, a deleted principal, a principal of a type absent or unknown, a role without its permissions are unreadable. Read only, under the Reader H0 already holds: no right added, in ARM nor in Graph.
+  - The watch reads them for each isolated VM (`GLORFINDEL_DOOR_FACTS_INTERVAL_S`, 900 s) into `~/.glorfindel/door/`; the isolation card shows them, escaped. `glorfindel door <vm>` reads them on demand, writing nothing.
+  - The VM's disks (`disks_at_isolation`) and the rules of each customer NSG the isolation plan reads (`nsg_rules_at_isolation`) are noted at the isolation, from reads it already made; an older state reads back without them.
+  - Tests: `tests/unit/test_door_facts.py`, `tests/unit/test_door_console.py`, `tests/unit/test_recovery_watch.py` (the lift unchanged); the fake Azure gains the full activity log (pages, children, status, late events), assignments, definitions and eligibilities.
+- **The bench measure of H7, H9 and H12 prepared for Jonathan** (LEV2, #690 ; `docs/banc-lev2.md`): for each operation of the table, a no-effect write on gondolin and its rollback, then `scripts/bench_lev2.py`, a read-only reader (it refuses in a code session and outside the `bench` zone) whose report says, without an identifier, the resource of each event, whether the exact filter gives the children, the pages, and the latency. H1 and H2 by `glorfindel door` under H0's identity.
+  - Tests: `tests/unit/test_bench_lev2.py`, on sample logs and a fake `az`.
+- **The bench driven from the phone, always by commands typed on the workstation** (MOB1, #686;
+  `docs/demarrer/mobile.md`, `docs/operations.md`, the threat model's frontier 9). Only the path between
+  the phone and the workstation changes: Orodruin still listens to the workstation's SSH alone, nothing
+  changes on H0. Two independent barriers, for the terminal as for the console: a private network
+  (Tailscale, an access rule that opens only phone → workstation:22), then the workstation's SSH server
+  in WSL, by a key alone, kept in the phone's secure chip. The console of H0 reaches the phone through
+  the phone's own SSH tunnel to the workstation's 127.0.0.1:7007, where `make glorfindel-host-tunnel`
+  holds H0's: the console's `Host` stays `localhost`, its token still required.
+  - `make bench-run TARGET=<vm> SCENARIO=<id> [DRY_RUN=1]` (`scripts/bench_run.py`): a terminal on stdin
+    first (a name piped is no name typed), the preflight (one ✗ and nothing leaves), a one-wire request
+    read by the requests' one reader, the target's name typed — destructive or not — then the launch by
+    Orodruin as `make orodruin-exercise` does it (the name typed removed from Orodruin at the end), then
+    `make bench-report` for each run named, and the restore's command with its `RUN=`.
+  - `make bench-restore TARGET=<vm> [RUN=…] [BEFORE=…] [DRY_RUN=1]` (`scripts/bench_restore.py`): a
+    terminal, the console's pair (required), `--before` the run's T0 (its `attack_started`, as
+    `make bench-report` wrote it in `runs/bench/`: `RUN=`, else the target's one report — two or more are
+    listed and refused) unless `BEFORE=`, always `--keep-isolated` (the lift is H0's), the VM's name
+    typed, a dry run, then « [o/N] »; the repository's own `glorfindel`, under the console's pair alone.
+  - Both refuse inside an agent session (`EREGION_AGENT_SESSION`, a lot's worktree), the guard alone
+    first, before any command towards H0 or Orodruin is expanded; the internal `-go` targets check the
+    variables' origin again; `TARGET`, `SCENARIO`, `BEFORE`, `RUN` and `POINT_MAX_H` from the environment
+    are refused. A long-lived `tmux` session can be driven by any process of the same user: said in the
+    guide and the threat model, with the advice not to keep the pair loaded in it.
+  - `make mobile-check` (`scripts/mobile.py`), read-only: the SSH server listening on the private address
+    alone; password and keyboard-interactive closed, the key alone, from `.ssh/authorized_keys` alone, no
+    `AuthorizedKeysCommand`, no `TrustedUserCAKeys`; `AllowTcpForwarding local`, `PermitOpen
+    127.0.0.1:7007` alone, `GatewayPorts no`, no socket, agent nor X11 forwarding; the console's port on
+    127.0.0.1 alone; Tailscale SSH off (unread: a ✗); no address printed. These bound sshd's own
+    forwarding only: with a shell, the phone relays as the operator does.
+  - The workstation's models, applied by the operator: `infra/poste/sshd_config.d/00-eregion.conf`,
+    `infra/poste/ssh.service.d/eregion.conf`, `infra/poste/tailscale-acl.hujson`.
+  - Tests: `tests/unit/test_bench_run.py`, `tests/unit/test_bench_restore.py`, `tests/unit/test_mobile.py`;
+    mutants M4696–M4705, M4737–M4744 and M4756–M4758 (`scripts/mutants/MOB1.py`).
+- **The mutants only an invariant machine kills, measured each night before the release gate finds them** (MUT7, #699 ; `scripts/mutation_night.py`, `.github/workflows/mutants-night.yml`, `docs/operations.md`, `docs/design/preuves.md`). On 10/11 the 0.5.9 gate was held five times, one mutant after the other (M21, M606, M09, M13, M33), each let through by some draws of the seed. A mutant is taken when its target reaches the test that runs a machine, word by word: a plain test of a machine's file, or a `-k` that leaves the machine out, is no machine (file by file, `mutation_check.machine` counts nine such targets). `alone` when the target runs nothing else (42 on 10/11, after MUT9); `beside` when it also names fixed tests (199), which run first, once: if they catch the mutant, the machine is not run on it — unless they draw (Hypothesis) or race, then the whole target runs on each seed, never a false green. Each night takes a seventh of the list (a mutant's night is fixed by its id, the whole list in a week) at the gate's 500 sequences on three seeds drawn, after each unmutated machine on each seed. Each mutant is said `CAUGHT n/n`, `flaky` or `SURVIVES`; a fragile one comes with the seeds it survived on and, for each, the command that measures it as the gate does. The workflow, pushed by Jonathan (the sessions' App has no Workflows right), opens or comments a neutral issue per fragile mutant from a job of its own (`issues: write`, no checkout, no action, what the night said checked against its form first); the remedy is a frozen sequence linked by `TESTS_ALSO`, as MUT5, MUT6 and MUT8 did. Estimated budget: 15 to 45 min of wall time a night on one runner.
+  - Tests: `tests/unit/test_mutation_night.py`, `tests/unit/test_workflows.py`. Mutants M4731–M4736.
+
+### Fixed
+- **M33 is caught on every run, whatever the seed** (MUT9, #704 ; `scripts/mutants/MUT3.py`). The 0.5.9 release gate (500 examples, seed 637433567) saw M33 (« an unowned old fixed-name rule on a non-dedicated NSG ignored ») survive one round of two: the invariant machine alone catches it on seed 637433567 and lets it through on 637433568. A0's own frozen sequences already caught it without being linked to it — an older version's fixed-name deny-all, its state lost, on an NSG shared since, or whose sharing can't be read: the release must not say « released » while it cuts the VM off — and so did the unit test of a release without state that leaves the deny-all on another VM's NSG, said: the three are added to M33's tests (`TESTS_ALSO` of MUT3, as MUT5, MUT6 and MUT8 did); the mutant and its anchor do not change.
+
 ## [0.5.9] — 2026-11-10 — "one gesture"
 
 ### Security

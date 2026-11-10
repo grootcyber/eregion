@@ -367,7 +367,7 @@
    "version": "0.5",
    "nom": "the measured loop",
    "etat": "publiee",
-   "derniere": "0.5.9",
+   "derniere": "0.5.10",
    "date": "2026-11-10",
    "resume": "The loop measured on real traffic, the correlation, the signed action queue, signed proofs from end to end."
   },
@@ -910,8 +910,9 @@
    "composant": "glorfindel",
    "poste": "g-agir",
    "nom": "Design: the lift after a restore, alone and on probation, unless the door is proven open",
-   "etat": "main",
-   "release": "0.6",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.10",
    "lots": [
     "LEV1",
     "LEV2"
@@ -1393,8 +1394,9 @@
    "composant": "celebrimbor",
    "poste": "c-acces",
    "nom": "The bench driven from the phone: one command for a run, one for the restore, typed on the workstation",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.5",
+   "version": "0.5.10",
    "lots": [
     "MOB1"
    ],
@@ -1741,8 +1743,9 @@
    "composant": "socle",
    "poste": "s-prouver",
    "nom": "The mutants only an invariant machine kills, measured each night on seeds drawn",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.5",
+   "version": "0.5.10",
    "lots": [
     "MUT7"
    ],
@@ -1754,8 +1757,9 @@
    "composant": "socle",
    "poste": "s-prouver",
    "nom": "A mutant the machine catches one round in two, caught on every round by a frozen sequence",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.5",
+   "version": "0.5.10",
    "lots": [
     "MUT9"
    ],
