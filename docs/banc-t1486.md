@@ -151,22 +151,37 @@ git fetch -q origin && git cat-file -e ${SHA}:glorfindel/recovery_watch.py && pr
   - **sur place** : le type « Replace disks », et le disque OS de gondolin créé pendant le job ;
   - son point, antérieur à l'incident ;
   - la VM qui tourne ;
-  - **la neutralisation** : dans le journal d'activité, la dernière Run Command sur gondolin avant
-    le restore vient du principal qui restaure, et aucune d'un autre après elle, quel que soit son
-    statut. La parole de l'invité relue après le démarrage, la sortie inoffensive, est une
-    condition de plus, jamais suffisante seule.
+  - **la neutralisation, par ce seul journal** (REC1b, #679) : dans le journal d'activité, la
+    dernière Run Command sur gondolin avant le restore vient du principal qui restaure, et aucune
+    d'un autre après elle, quel que soit son statut. **Un refus de la plateforme ne compte pas** :
+    une Run Command tentée sur gondolin désallouée (`Failed`, `Conflict`, `OperationNotAllowed`,
+    comme les trois essais de la console le 09/11) n'a jamais atteint l'invité, qu'elle vienne de
+    la console ou d'un autre. Tout autre échec d'un autre principal retient la levée.
+  - **la parole de l'invité n'est qu'une information** : la vue d'instance ne porte jamais Run
+    Command v1 (mesuré le 09/11), et la watch ne l'attend pas. Si elle était là et disait une autre
+    commande que l'inoffensive, la levée serait retenue.
 
   Ce principal, `GLORFINDEL_RESTORE_PRINCIPALS`, est l'object id de la console, celui de
   `restore_principals`. Le lire, `.envrc` chargé :
   `az ad sp show --id "$EREGION_CONSOLE_AZURE_CLIENT_ID" --query id -o tsv`. Le poser sur le poste :
   dans le `.envrc`, et, H0 étant en place, à la main dans `infra/glorfindel-host/host.env` (le
   `host.env` existant n'est jamais réécrit : son jeton changerait), puis `make glorfindel-host-push`.
-  Il est pris au démarrage de la watch qui porte REC1. Sans lui, chaque levée est une carte. La
-  forme du `caller` dans le journal d'activité (appId ou object id) est à mesurer pendant la session.
+  Il est pris au démarrage de la watch qui porte REC1. Sans lui, chaque levée est une carte. Le
+  journal d'activité nomme la console par son object id dans `caller` et dans `claims.oid`, son
+  appId dans `claims.appid` (mesuré le 09/11, la même forme que pour H0 et Orodruin).
 
   Elle émet alors son propre `recovery_complete`, et la levée suit : seule en `non_disruptive`, une
   carte en `human_only`. Elle ne lit jamais un fichier du poste. Ses droits : Reader sur le groupe
   du banc, où est le coffre.
+- **Une version qui porte REC1 sans REC1b retient chaque levée** : elle attend la parole de
+  l'invité 15 min, ne la trouve jamais, et écrit une carte « levée retenue ». La levée se fait
+  alors à la main. Le dire, depuis le poste, le `SHA` de « La levée » en main :
+  `git show ${SHA}:glorfindel/providers/azure/recovery.py | grep -q _refused_operations && print -r -- "avec REC1b" || print -r -- "sans REC1b"`.
+- **La lecture d'intégrité par Run Command se fait après la levée**, ou sous un principal qui
+  restaure. Faite avant la levée sous l'`az login` d'un humain, c'est une Run Command d'un autre
+  principal après la neutralisation : elle retient la levée automatique, qui se fait alors à la
+  main. Run Command est lente sous la quarantaine (le 09/11 : 152 s pour la neutralisation, 302 s
+  pour la coupure) ; hors quarantaine, après la levée, la lecture d'intégrité a pris 11 s.
 - **`--keep-isolated` reste de rigueur sur le poste** : la levée est celle de H0, pas du poste.
 - Une carte « Reprise à revoir » ou « levée retenue » à la place dit pourquoi. La levée se fait
   alors à la main, comme sans REC1, après la vérification de l'étape 7.
@@ -423,8 +438,10 @@ ses cartes réseau, pas sur ses disques.
 Le cas : `make glorfindel-host-status`, puis le test de « La levée » (plus haut).
 
 **Avec REC1**, rien à faire d'abord : la watch de H0 lit la reprise sur Azure. Elle attend 5 min
-après la fin du job (`GLORFINDEL_RECOVERY_GRACE_S`) et la parole de Run Command du disque restauré,
-au plus 15 min (`GLORFINDEL_RECOVERY_REPLAY_WAIT_S`). Sur H0 :
+après la fin du job (`GLORFINDEL_RECOVERY_GRACE_S`), puis décide par le journal d'activité
+(REC1b : la parole de l'invité n'est plus attendue ; sans REC1b, elle l'attendait 15 min, puis
+retenait la levée). Aucune lecture d'intégrité par Run Command avant la levée, sauf sous un
+principal qui restaure : elle la retiendrait. Sur H0 :
 
 ```bash
 docker logs --since 30m eregion-watch 2>&1 | grep -E "reprise|recovery_complete|release_isolation"

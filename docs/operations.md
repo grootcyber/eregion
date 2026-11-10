@@ -436,7 +436,7 @@ GLORFINDEL_KEEP_ISOLATED=1          # mode forensique
 GLORFINDEL_ISOLATION_TTL_H=4        # TTL isolation (défaut 4h) : au-delà, une carte ttl_exceeded — jamais de levée automatique
 GLORFINDEL_RECOVERY_INTERVAL_S=60   # REC1 : la watch relit sur Azure la reprise des VM qu'elle a isolées (0 : jamais) ;
                                     # GLORFINDEL_RECOVERY_GRACE_S=300 (un job fini depuis moins attend), _START_WAIT_S=600
-                                    # (VM arrêtée au-delà : une carte), _REPLAY_WAIT_S=900 (parole de Run Command attendue)
+                                    # (VM arrêtée au-delà : une carte)
 GLORFINDEL_RESTORE_PRINCIPALS=oid   # REC1 : les principaux qui restaurent (object id ou appId, séparés par des virgules) ;
                                     # leur Run Command, au journal d'activité, prouve la neutralisation ; vide : une carte
                                     # — docs/glorfindel.md, « La reprise lue sur Azure »
