@@ -109,9 +109,9 @@ def test_a_block_on_an_nsg_taken_off_its_nic_is_not_a_block(monkeypatch):
     attacker gets through, and a verification that counts the block's rules — present on the
     NSG the quarantine took off — says blocked (M21).
 
-    From the 0.5.9 release gate (MUT5): M21 survived one round of two with 500 examples
-    (Hypothesis seeds 89917386 and 89917387, SEED1) — the machine reaches this sequence only
-    when its draw does. Written by hand from the mutant's description, frozen with the sequence
+    From the 0.5.9 release gate (MUT5): M21 survived one round of two with 500 examples — the
+    machine alone lets it through on Hypothesis seed 89917386 and catches it on 89917387 (SEED1):
+    it reaches this sequence only when its draw does. Written by hand from the mutant's description, frozen with the sequence
     above (L26), so that M21 is caught on every run, whatever the seed."""
     _run(monkeypatch, _net(web_nic={"own": "dedicated"}),
          ("block", WEB1, WEB1, None, 22),
