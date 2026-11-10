@@ -166,8 +166,7 @@ make glorfindel-host-env             # host.env depuis ton .envrc chargé (ou : 
 make glorfindel-host-push            # host.env → ~/eregion/.env ; la config locale, le défaut en human_only, les modes de H0 gardés (HUMAN_ONLY=1 : tout en human_only)
 make glorfindel-stop                 # arrête le Glorfindel local : deux watch = cartes en double
 make glorfindel-host-start REF=…     # un tag ou un commit (exigé), détaché ; construit l'image sur H0 (le chemin de secours), lance watch + console (war-room) + bot
-make glorfindel-host-tunnel          # affiche l'URL de la console avec son jeton, puis tient le tunnel (Ctrl+C)
-make glorfindel-host-tunnel-private  # le même, pour le téléphone : le port lié à la seule adresse privée du poste (Tailscale), sinon rien (MOB1, docs/demarrer/mobile.md)
+make glorfindel-host-tunnel          # affiche l'URL de la console avec son jeton, puis tient le tunnel (Ctrl+C) ; le téléphone y passe par son propre tunnel SSH vers le poste (MOB1, docs/demarrer/mobile.md)
 make glorfindel-host-url             # l'URL de la console avec son jeton, seule
 make glorfindel-host-logs            # vérifier « heartbeat → N VM(s) » et l'absence d'erreur d'identité
 make glorfindel-host-status          # tout tourne ? VMs, sauvegardes, services, erreurs 24 h, cartes à juger

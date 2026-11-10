@@ -409,7 +409,7 @@ Discord : refusé, ce n'est pas son hôte.
 
 ### 6. La restauration, depuis le poste (15 à 30 min)
 
-**En une commande (MOB1)** : `make bench-restore TARGET=vm-celebrimbor-gondolin [DRY_RUN=1]` fait ce qui suit — la
+**En une commande (MOB1)** : `make bench-restore TARGET=vm-celebrimbor-gondolin RUN=<run_id> [DRY_RUN=1]`, dans un terminal, fait ce qui suit — la
 paire de la console exigée, `--before` le T0 du run (`runs/bench/<run_id>.json`, que `make bench-report` écrit ;
 `BEFORE=${AVANT}` pour le point de l'étape 2), `--keep-isolated`, le nom de la VM tapé, l'essai à blanc, puis « [o/N] »
 (`scripts/bench_restore.py`, [le guide](demarrer/mobile.md)). Le prérequis du poste et le job du coffre, ci-dessous, restent
