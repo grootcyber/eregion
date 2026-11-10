@@ -1,0 +1,2 @@
+### Fixed
+- **The tests of the release and of the public manual no longer hang on the manual's current state** (REL4, #694 ; `tests/unit/test_manuel.py`, `tests/unit/test_release.py`). They read the tree's `docs/manuel/modules.yaml` and assumed a brick still on `main`, which the release itself passes to `livree`: the version's pull request turned four of them red. Each now runs on the manual as it is and as a release leaves it, with a brick of its own on `main`.

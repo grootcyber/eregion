@@ -46,6 +46,25 @@ cs = _load("console_shots")
 TEXT = (MANUEL / "modules.yaml").read_text(encoding="utf-8")
 DATA = mn.load(TEXT)
 
+# What a release delivers is tested on the manual of the tree plus a brick of its own on main: a
+# release passes every brick to livree, so the manual it leaves holds none (REL4, #694). Each such
+# test runs on both: the manual as it is, and the manual as a release leaves it.
+ON_MAIN = """
+  - id: t-sur-main
+    composant: socle
+    poste: s-documenter
+    nom: "A brick on main, held by the release's tests"
+    etat: main
+    release: "0.6"
+"""
+
+
+def _on_main(text):
+    return text.rstrip("\n") + "\n" + ON_MAIN
+
+
+MANUALS = {"as-is": _on_main(TEXT), "released": _on_main(mn.deliver(TEXT, "0.5.9", "2026-11-10")[0])}
+
 
 def _brick(**kw):
     b = {"id": "x-brique", "composant": "glorfindel", "poste": "g-agir", "nom": "A brick", "etat": "livree",
@@ -372,11 +391,13 @@ def test_check_says_the_lot_whose_brick_was_not_moved(tmp_path, monkeypatch, cap
 
 # ── the release delivers what is on main (scripts/release.py calls this) ────────────────
 
-def test_a_release_delivers_the_bricks_on_main_and_publishes_its_step():
-    out, delivered = mn.deliver(TEXT, "0.6.0", "2026-11-16")
+@pytest.mark.parametrize("manual", MANUALS.values(), ids=MANUALS.keys())
+def test_a_release_delivers_the_bricks_on_main_and_publishes_its_step(manual):
+    before = mn.load(manual)
+    out, delivered = mn.deliver(manual, "0.6.0", "2026-11-16")
     after = mn.load(out)
-    was = {b["id"]: b for b in DATA["briques"]}
-    assert delivered == [b["id"] for b in DATA["briques"] if b["etat"] == "main"] and delivered
+    was = {b["id"]: b for b in before["briques"]}
+    assert delivered == [b["id"] for b in before["briques"] if b["etat"] == "main"] and "t-sur-main" in delivered
     for b in after["briques"]:
         if b["id"] in delivered:
             assert (b["etat"], b["version"], b["release"]) == ("livree", "0.6.0", "0.6"), b
@@ -384,8 +405,13 @@ def test_a_release_delivers_the_bricks_on_main_and_publishes_its_step():
             assert b == was[b["id"]]
     steps = {s["version"]: s for s in after["releases"]}
     assert (steps["0.6"]["etat"], steps["0.6"]["derniere"], steps["0.6"]["date"]) == ("publiee", "0.6.0", "2026-11-16")
-    assert steps["0.x"]["etat"] == "montage" and steps["0.5"] == DATA["releases"][3]
-    assert mn.problems(after, ROOT) == [] and out.count("\n# ") == TEXT.count("\n# ")   # comments kept
+    assert steps["0.x"]["etat"] == "montage" and steps["0.5"] == before["releases"][3]
+    assert mn.problems(after, ROOT) == [] and out.count("\n# ") == manual.count("\n# ")   # comments kept
+
+
+def test_the_manual_a_release_leaves_holds_no_brick_on_main_but_the_tests_own():
+    """The second case above is the one a release makes (REL4, #694)."""
+    assert [b["id"] for b in mn.load(MANUALS["released"])["briques"] if b["etat"] == "main"] == ["t-sur-main"]
 
 
 def test_a_patch_delivers_into_its_own_line_and_leaves_the_step_in_progress():
