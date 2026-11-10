@@ -22,6 +22,7 @@ from glorfindel.providers.azure.recovery import RecoveryMixin
 from glorfindel.providers.azure.release import ReleaseMixin
 from glorfindel.providers.azure.reset_bare import ResetBareMixin
 from glorfindel.providers.azure.restore import RestoreMixin
+from glorfindel.providers.azure.run_command import DrainFollowMixin
 from glorfindel.providers.azure.sweep import SweepMixin
 from glorfindel.providers.azure.unblock import UnblockMixin
 from glorfindel.providers.azure.verify import VerifyMixin
@@ -36,6 +37,7 @@ class AzureConnector(
     NetworkMixin,
     QuarantineMixin,
     IsolationMixin,
+    DrainFollowMixin,
     ReleaseMixin,
     GoneVmMixin,
     AwayRulesMixin,

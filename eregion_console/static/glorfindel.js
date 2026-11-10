@@ -26,6 +26,7 @@ const ACTION_LABELS = {
   repair_local_state:   'Local state to repair',
   review_left_rule:     'Rule left to review (it aims at another VM)',
   review_unverified:    'Isolation or block not verified (the check fails)',
+  review_drain:         'Session cut pending (Run Command still running on Azure)',
 };
 
 // Verb forms — used for actions not yet executed (mode_hold: recommended, pending approval)
@@ -75,6 +76,7 @@ const ESC_LABELS = {
   queue_tampered:      'action queue: a request its service did not write',
   queue_unavailable:   'action queue: the watch\'s register unreadable',
   undecided_detection: 'not decided by the model (deduplicated, ceiling, queue full)',
+  drain_pending:       'session cut pending (the isolation holds, the cut is followed)',
 };
 
 // Cards anchored on a VM the detection does not name (an Activity Log row, an identity,
@@ -85,7 +87,7 @@ const _ANCHORED_TYPES = new Set(['control_plane_change', 'identity_change', 'una
 const _DETECTION_ONLY = new Set(['control_plane_change', 'identity_change']);
 const _NOT_DECISIONS = new Set(['posture_gap', 'orphan_rule', 'quarantine_altered', 'proposed_rule',
   'readiness_hold', 'ttl_exceeded', 'detection_blocked', 'bypassed', 'state_unreadable', 'rule_left',
-  'unverified', 'queue_tampered', 'queue_unavailable']);
+  'unverified', 'queue_tampered', 'queue_unavailable', 'drain_pending']);
 function _isAnchored(e) { return _ANCHORED_TYPES.has(e.escalation_type); }
 // A card on an NSG (a quarantine altered, an orphan rule no VM holds) gets an NSG tile.
 function _isNsgId(rid) { return /\/providers\/microsoft\.network\/networksecuritygroups\//i.test(rid || ''); }
@@ -130,6 +132,7 @@ const _ESC_TITLES = {
   state_unreadable:     'Local state unreadable',
   rule_left:            'Block rule left as it was',
   unverified:           'Isolation or block not verified',
+  drain_pending:        'Session cut pending — followed on Azure (DRN1)',
   control_plane_change: 'Control-plane change',
   identity_change:      'Entra ID identity change',
   account_compromised:  'Account maybe compromised — always to a human (COR1)',

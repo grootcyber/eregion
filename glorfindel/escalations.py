@@ -110,6 +110,16 @@ def _reassertion(signal_id) -> bool:
     return str(signal_id or "").lower().startswith(_REASSERTION)
 
 
+# DRN1 (#677): the cards of the session drain followed by the reassertion (glorfindel/drain_watch.py)
+# — a card of its own on its VM, never folded into another card of the reassertion (a rule gone)
+# nor one of those into it: the reason of the one would overwrite the other's.
+_DRAIN_FOLLOW = "reassert-drain-"
+
+
+def _drain_follow(signal_id) -> bool:
+    return str(signal_id or "").lower().startswith(_DRAIN_FOLLOW)
+
+
 _ACTION_LABELS = {
     "isolate_vm": "VM isolée du réseau",
     "release_isolation": "Isolation levée",
@@ -130,6 +140,7 @@ _ACTION_LABELS = {
     "repair_local_state": "État local à réparer",
     "review_left_rule": "Règle laissée à revoir (elle vise une autre VM)",
     "review_unverified": "Isolation ou blocage non vérifié (la vérification échoue)",
+    "review_drain": "Coupure des sessions en attente (Run Command en cours sur Azure)",
 }
 
 _ESCALATION_LABELS = {
@@ -166,6 +177,7 @@ _ESCALATION_LABELS = {
     "account_compromised": "compte peut-être compromis (brute force puis connexion réussie)",
     "compromise_unchecked": "connexion après brute force non vérifiée",
     "undecided_detection": "détection non décidée par le modèle (dédoublonnée, plafond, file pleine)",
+    "drain_pending": "coupure des sessions en attente (l'isolation tient, la coupure est suivie)",
 }
 
 
@@ -261,6 +273,7 @@ def record(
                 # One origin, one card (I3G): what the reassertion says is said by its own card,
                 # with its text and its notification — never folded into the graph's.
                 and _reassertion(e.get("signal_id")) == _reassertion(signal_id)
+                and _drain_follow(e.get("signal_id")) == _drain_follow(signal_id)
                 # A detection without a decision of the model (SEC-A2): one card per VM and rule,
                 # never one rule's folded into another's.
                 and (escalation_type != "undecided_detection" or e.get("rule_name", "") == rule_name)
@@ -664,7 +677,7 @@ DISRUPTIVE_ACTIONS = ("isolate_vm", "block_suspicious_ip")
 # Cards that are not a decision on a detection: posture, housekeeping, proposals.
 _NOT_DECISIONS = {"posture_gap", "orphan_rule", "quarantine_altered", "proposed_rule", "readiness_hold",
                   "ttl_exceeded", "detection_blocked", "bypassed", "state_unreadable", "rule_left",
-                  "unverified", "queue_tampered", "queue_unavailable"}
+                  "unverified", "queue_tampered", "queue_unavailable", "drain_pending"}
 
 
 def all_escalations() -> list[dict]:

@@ -4,6 +4,7 @@ never without knowing when it began (SEC4c) —, Run Command scripts neutralised
 """
 from __future__ import annotations
 
+from glorfindel.providers.azure import run_command
 from glorfindel.providers.azure.backup import FAILED_JOB_STATUSES, FINISHED_JOB_STATUSES, job_search_s
 from glorfindel.providers.azure.restore_rights import (explain_refusal, refused_outright, restore_rights,
                                                        restore_scopes, rights_refusal)
@@ -312,14 +313,15 @@ class RestoreMixin:
         command_ran = False
         try:
             poller = self._compute.virtual_machines.begin_run_command(rg, vm_name, cmd)
-            poller.result(timeout=600)
+            done, _ = run_command.wait(poller, run_command.NEUTRALIZE_WAIT_S)
             # SEC17 (review): past here a refusal is not the right of Run Command on this VM (the
             # harmless command ran) — a listing of the extensions refused is no « refused » flag.
             command_ran = True
             # result(timeout) returns at the deadline without raising: "neutralized"
-            # must mean the harmless command actually finished (third review, T13).
-            if not poller.done():
-                raise TimeoutError("la commande inoffensive n'a pas terminé en 600 s")
+            # must mean the harmless command actually finished (third review, T13). Not done,
+            # its status is read on Azure and said (DRN1): still running, it is no refusal.
+            if not done:
+                return self._neutralize_pending(poller)
             others = self._replayable_scripts(rg, vm_name)
             if others:
                 # Run Command v1 is neutralized, but these replay the same way on a
@@ -337,6 +339,19 @@ class RestoreMixin:
                 "disque restauré peut rejouer la dernière commande au démarrage.[/yellow]")
             return {"run_command_neutralized": False, "run_command_error": error,
                     **({"run_command_refused": True} if refused else {})}
+
+    def _neutralize_pending(self, poller) -> dict:
+        """The harmless command still running on Azure at the end of its wait: its status read
+        there and said (DRN1) — the deallocation that follows cuts it, the disk may replay."""
+        status = run_command.azure_status(poller) or "statut non lu"
+        error = (f"la commande inoffensive toujours en cours sur Azure après "
+                 f"{int(run_command.NEUTRALIZE_WAIT_S)} s (statut relu : {status}) — la "
+                 "désallocation qui suit l'interrompt")
+        _console.print(
+            f"  [yellow]Run Command non neutralisée ({error}) — le disque restauré peut rejouer la "
+            "dernière commande au démarrage.[/yellow]")
+        return {"run_command_neutralized": False, "run_command_pending": True,
+                "run_command_status": status, "run_command_error": error}
 
     # Extensions a restored disk may run again without Glorfindel vouching for a script:
     # agents that take no command from the VM model — monitoring, security, backup,

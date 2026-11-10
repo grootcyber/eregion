@@ -2326,12 +2326,17 @@ _CHECKED_ACTIONS = ("isolate_vm", "release_isolation", "block_suspicious_ip")
 
 
 def _platform_note(outcome: dict) -> str:
-    """What an isolation by rules left open, for its notification (sixth review, S7)."""
+    """What an isolation by rules left open, for its notification (sixth review, S7) — and a
+    session drain still running on Azure (DRN1): the rules hold, the cut is followed."""
+    notes = []
     nics = outcome.get("platform_open") or []
-    if not nics:
-        return ""
-    from glorfindel.actions import PLATFORM_OPEN_NOTE
-    return f"{PLATFORM_OPEN_NOTE} — {', '.join(map(str, nics))}"
+    if nics:
+        from glorfindel.actions import PLATFORM_OPEN_NOTE
+        notes.append(f"{PLATFORM_OPEN_NOTE} — {', '.join(map(str, nics))}")
+    drain = outcome.get("drain") if isinstance(outcome.get("drain"), dict) else {}
+    if drain.get("status") == "pending":
+        notes.append(str(drain.get("note") or "coupure des sessions en attente sur Azure"))
+    return " ; ".join(notes)
 
 
 def _cycle_source(signal: dict) -> tuple[str, str]:

@@ -21,7 +21,8 @@ isolation paths, with Azure's semantics where they matter:
   subscription-wide listing by the caller's rights, so `list_all` leaves them out
   WITHOUT an error, while a call on one of them (get, its rules, a write, a NIC joined
   to it) is refused (403);
-- Run Command's shell script doesn't run on a Windows VM (assumed);
+- Run Command's shell script doesn't run on a Windows VM (assumed); held running on demand
+  (`hold_run_commands`, DRN1: 302 s under the quarantine, measured once, 09/11), ended by the test;
 - Azure Backup (REC1, #668): a vault's restore jobs (`backup_jobs.list`, `job_details.get`, the
   point a job restored in its property bag — by its time, US style with a trailing space in the
   key, or by its id: both unmeasured — and its « Job Type »), the VM's recovery points, its power
@@ -124,6 +125,34 @@ class _Done:
         return True
 
 
+class _Running:
+    """A Run Command Azure accepted and still runs (DRN1: 302 s under the quarantine, 09/11): not
+    done, its result the last poll's — no output, as `LROPoller.result(timeout)` gives it at its
+    deadline — until the test ends it (`FakeAzure.end_run_commands`)."""
+
+    def __init__(self, az, value, vm: dict):
+        self.az, self._value, self._vm, self._error, self._done = az, value, vm, None, False
+
+    def result(self, timeout=None):
+        if not self._done:
+            return SimpleNamespace(value=None)
+        if self._error is not None:
+            raise self._error
+        return self._value
+
+    def done(self):
+        return self._done
+
+    def status(self):
+        return ("Failed" if self._error is not None else "Succeeded") if self._done else "InProgress"
+
+    def end(self, error=None) -> None:
+        self._done, self._error = True, error
+        self.az.activity.append({"resource_id": self._vm["id"], "op": RUN_COMMAND_ACTION,
+                                 "status": "Failed" if error is not None else "Succeeded",
+                                 "at": self.az.clock(), "caller": self.az.caller})
+
+
 class FakeAzure:
     def __init__(self, chaos=None):
         self.chaos = chaos or (lambda op, phase, write: None)
@@ -156,6 +185,9 @@ class FakeAzure:
         self.caller = "h0-identity"
         self.clock = lambda: datetime.now(timezone.utc)
         self.compute.disks = _Disks(self)
+        # DRN1: Run Commands held running until the test ends them (`end_run_commands`).
+        self.hold_run_commands = False
+        self.running: list[_Running] = []
 
     # ── building the customer's world ──────────────────────────────────────────
 
@@ -196,6 +228,12 @@ class FakeAzure:
         rid = f"{SUB}/resourceGroups/{rg}/providers/Microsoft.Compute/disks/{name}"
         self.disks[key(rid)] = {"id": rid, "time_created": created}
         return rid
+
+    def end_run_commands(self, error=None) -> None:
+        """Every Run Command held running ends now: succeeded, or failed with `error` (DRN1)."""
+        for r in self.running:
+            r.end(error)
+        self.running.clear()
 
     def cut_run_command(self, vm: str, text: str, status: str = "Accepted") -> None:
         """A Run Command by `caller` that never finished — cut by the deallocation (`Accepted`,
@@ -498,6 +536,12 @@ class _Vms:
             at = self.az.clock()
             v["last_output"] = message
             v["said"] = {"message": message, "time": at}
+            value = SimpleNamespace(value=[SimpleNamespace(message=message)])
+            if self.az.hold_run_commands:               # DRN1: Started now, Succeeded when it ends
+                self.az.activity.append({"resource_id": v["id"], "op": RUN_COMMAND_ACTION,
+                                         "status": "Started", "at": at, "caller": self.az.caller})
+                self.az.running.append(_Running(self.az, value, v))
+                return self.az.running[-1]
             for status in ("Started", "Succeeded"):     # as ARM logs a long operation
                 self.az.activity.append({"resource_id": v["id"], "op": RUN_COMMAND_ACTION,
                                          "status": status, "at": at, "caller": self.az.caller})
