@@ -727,7 +727,7 @@ briques:
     nom: "Design: the lift after a restore, alone and on probation, unless the door is proven open"
     etat: main
     release: "0.6"
-    lots: [LEV1]
+    lots: [LEV1, LEV2]
     issue: 690
     doc: docs/design/levee-probation.md
 
@@ -1350,6 +1350,16 @@ briques:
     lots: [SEED1, MUT5, MUT6, MUT8]
     issue: 655
     pr: 663
+
+  - id: s-fragiles
+    composant: socle
+    poste: s-prouver
+    nom: "The mutants only an invariant machine kills, measured each night on seeds drawn"
+    etat: main
+    release: "0.5"
+    lots: [MUT7]
+    issue: 699
+    doc: docs/design/preuves.md
 
   - id: s-graine-tours
     composant: socle

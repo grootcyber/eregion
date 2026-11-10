@@ -211,6 +211,21 @@ class CloudConnector(ABC):
         they prove. A provider that can't read it says so."""
         raise NotImplementedError(f"{type(self).__name__}: no restore to observe")
 
+    def observed_actors(self, resource_id: str, since: str, until: str = "", disks=()) -> dict:
+        """Who acted on the VM by the control plane since `since`, read only (LEV2): the gestures
+        of a closed table — on the VM, its children, disks, network cards, the rules of the
+        network groups that govern it, its identity —, each with its author, whatever its status.
+        {"verdict": "none" | "seen" | "unreadable", "actors", …}: a read cut or failed is
+        unreadable, never « nobody ». Facts only: the lift does not read them yet (LEV3)."""
+        raise NotImplementedError(f"{type(self).__name__}: no actors to observe")
+
+    def observed_rights(self, principal_ids, resource_id: str, scopes=(), deleted: bool | None = None,
+                        reading=None) -> dict:
+        """Whether an actor keeps a right on the VM that opens the door again, read only (LEV2):
+        {"verdict": "held" | "absent" | "unreadable", …}. What can't be read whole (a group, an
+        eligibility, a deleted principal) is unreadable, never absent."""
+        raise NotImplementedError(f"{type(self).__name__}: no rights to observe")
+
     @abstractmethod
     def verify_block_ip(self, ip: str, resource_id: str) -> dict:
         """Confirm that the deny rule for this IP is active on the NSG."""
