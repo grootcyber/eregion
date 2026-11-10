@@ -121,6 +121,22 @@ def test_a_block_on_an_nsg_taken_off_its_nic_is_not_a_block(monkeypatch):
          ("verify", WEB1, WEB1, None))
 
 
+def test_a_quarantine_whose_state_and_tag_are_lost_is_not_released_bare(monkeypatch):
+    """Q7: web isolated by quarantine on its own NSG, then the isolation's state and our
+    NSG's tags lost — its original known from nowhere. A missing tag is an unknown, never
+    « no NSG »: the release keeps the NIC in quarantine and says so (I7). Read as « none »
+    (M09), it takes our NSG off and leaves the NIC bare, its own NSG off it: Glorfindel set
+    an NSG the customer never had (I2).
+
+    From the 0.5.9 release gate (MUT6): M09 survived one round of two with 500 examples — the
+    machine alone catches it on Hypothesis seed 766752177 and lets it through on 766752178:
+    it reaches these steps only when its draw does. Written by hand from the mutant's
+    description, frozen so that M09 is caught on every run, whatever the seed."""
+    _run(monkeypatch, _net(quarantine=True, web_nic={"own": "dedicated"}),
+         ("lose_everything", WEB1, WEB1, None, WEB1, _Q1, "stop"),
+         ("release", WEB1, WEB1, None))
+
+
 def test_a_second_release_never_empties_the_shared_quarantine_nsg(monkeypatch):
     """Two VMs in one quarantine NSG (a central quarantine group). A release that fails
     partway (a subnet it can't read)
