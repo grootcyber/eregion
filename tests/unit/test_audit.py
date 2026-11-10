@@ -153,36 +153,38 @@ def test_backup_check_exposes_structured_points_protected():
 def test_run_checks_run_concurrently():
     """The 3 Azure checks run in parallel — total time ≈ slowest, not the sum.
 
-    Each connector check sleeps 0.3s; sequential would be ~0.9s, parallel ~0.3s.
-    Also asserts order is preserved (NSG, Backup, Compute) despite parallelism.
+    Proved without the runner's clock (MUT8): each connector check waits at a barrier
+    of three that only the other two, running at the same time, can open. Run in
+    parallel, all three meet and go on at once; run one after the other, the first
+    waits alone until the guard delay and the barrier breaks — whatever the runner's
+    speed. Also asserts order is preserved (NSG, Backup, Compute) despite parallelism.
     """
-    import time
+    import threading
 
-    def _slow(result):
+    meet = threading.Barrier(3)
+    alone = []
+
+    def _met(name, result):
         def _fn(*args, **kwargs):
-            time.sleep(0.3)
+            try:
+                meet.wait(timeout=10)     # generous: a slow runner still meets in time
+            except threading.BrokenBarrierError:
+                alone.append(name)
             return result
         return _fn
 
     c = MagicMock()
     c.dry_run = False
     c.read_only = False
-    c.check_nsg_access.side_effect = _slow({"ok": True, "nsg": "rg/nsg", "rules": 3})
-    c.check_backup_points.side_effect = _slow(
-        {"ok": True, "vault": "rsv-annatar", "points": 5, "latest_age_h": 12.0})
-    c.check_compute_access.side_effect = _slow(
-        {"ok": True, "vm": "vm", "disks": ["osdisk"]})
+    c.check_nsg_access.side_effect = _met("nsg", {"ok": True, "nsg": "rg/nsg", "rules": 3})
+    c.check_backup_points.side_effect = _met(
+        "backup", {"ok": True, "vault": "rsv-annatar", "points": 5, "latest_age_h": 12.0})
+    c.check_compute_access.side_effect = _met(
+        "compute", {"ok": True, "vm": "vm", "disks": ["osdisk"]})
 
-    # Pre-warm the Azure SDK import so it isn't counted in the concurrency timing
-    # (audit.run calls warm_up_azure_sdk() before the ThreadPool; idempotent).
-    from glorfindel.actions import warm_up_azure_sdk
-    warm_up_azure_sdk()
-
-    t0 = time.monotonic()
     result = run(RESOURCE_ID, c)
-    elapsed = time.monotonic() - t0
 
-    assert elapsed < 0.7, f"checks not concurrent — took {elapsed:.2f}s (sum would be ~0.9s)"
+    assert alone == [], f"checks not concurrent — {alone} waited alone at the barrier"
     assert [ch.name for ch in result.checks] == [
         "NSG access", "Backup vault", "Compute access", "Restore staging"]
 

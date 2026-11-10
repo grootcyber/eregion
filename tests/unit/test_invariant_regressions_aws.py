@@ -92,3 +92,26 @@ def test_the_oracle_sees_a_change_of_the_customers_entry_at_that_number(monkeypa
             m.design["acls"][_ACL]["entries"].pop((False, 99))   # the teardown judges what is left
             entries.pop((False, 99), None)
     _run(monkeypatch, _net(), *_NUMBER_TAKEN_AGAIN, then=then)
+
+
+def test_a_reisolation_of_an_eni_left_on_default_keeps_its_original(monkeypatch):
+    """U2 on AWS (MC1, M606): i-web1 on its own group, isolated; someone takes eni-web1 out
+    of the quarantine onto the VPC's `default` group (the analog of a NIC left bare, H2);
+    Glorfindel isolates it again. What it carries then is `default`, not its original:
+    the state keeps its own group, and the release puts that back. Recording `default`
+    instead leaves it on `default` after a release that says « released » (I3).
+
+    From the 0.5.9 release gate (MUT6): M606 survived both rounds with 500 examples (Hypothesis
+    seeds 276700698 and 276700699) — the AWS machine reaches these steps only when its draw
+    takes them in this order. Written by hand from the mutant's description, frozen so that
+    M606 is caught on every run, whatever the seed."""
+    def then(m):
+        e = m.fake.enis["eni-web1"]
+        assert e["groups"] == ["sg-default-vpc-a"] and e["design_groups"] == ["sg-own-eni-web1"]
+        m.isolate(Script("i-web1", None))
+        _check(m)
+        out, _ = m._release("i-web1", None)          # I3: « released » is the design back
+        assert out["status"] == "released" and e["groups"] == ["sg-own-eni-web1"]
+    net = _net(groups={**{e: [] for e in _ENIS}, "eni-web1": ["own"]},
+               config={"quarantine": True, "rg": "", "forensic": [], "readable": True})
+    _run(monkeypatch, net, ("isolate", "i-web1", None), ("someone_detaches_the_quarantine", "eni-web1"), then=then)
