@@ -295,8 +295,8 @@ releases:
   - version: "0.5"
     nom: "the measured loop"
     etat: publiee
-    derniere: "0.5.8"
-    date: "2026-11-09"
+    derniere: "0.5.9"
+    date: "2026-11-10"
     resume: "The loop measured on real traffic, the correlation, the signed action queue, signed proofs from end to end."
   - version: "0.6"
     nom: "identity defended"
@@ -395,8 +395,9 @@ briques:
     composant: socle
     poste: s-signer
     nom: "Security hardening"
-    etat: main
-    release: "0.6"
+    etat: livree
+    release: "0.5"
+    version: "0.5.9"
     lots: [SEC-A4]
     issue: 633
     pr: 666
@@ -682,8 +683,9 @@ briques:
     composant: glorfindel
     poste: g-verifier
     nom: "The recovery of a VM restored elsewhere read on Azure, and the isolation lifted on its own"
-    etat: main
-    release: "0.6"
+    etat: livree
+    release: "0.5"
+    version: "0.5.9"
     lots: [REC1, REC1b]
     issue: 668
     doc: docs/glorfindel.md
@@ -692,8 +694,9 @@ briques:
     composant: glorfindel
     poste: g-agir
     nom: "The restore from the console: its rights read before the VM is touched, a refusal said whole"
-    etat: main
-    release: "0.6"
+    etat: livree
+    release: "0.5"
+    version: "0.5.9"
     lots: [RST1]
     issue: 680
     doc: docs/azure.md
@@ -702,8 +705,9 @@ briques:
     composant: glorfindel
     poste: g-verifier
     nom: "The session cut under the quarantine followed on Azure: pending, refused, or sessions left open"
-    etat: main
-    release: "0.6"
+    etat: livree
+    release: "0.5"
+    version: "0.5.9"
     lots: [DRN1]
     issue: 677
     doc: docs/glorfindel.md
@@ -1048,8 +1052,9 @@ briques:
     composant: celebrimbor
     poste: c-construire
     nom: "The bench's customer layer: the canary's OIDC sign-ins"
-    etat: main
-    release: "0.6"
+    etat: livree
+    release: "0.5"
+    version: "0.5.9"
     lots: [CAN3]
     issue: 673
     doc: infra/glorfindel-host/README.md
@@ -1058,8 +1063,9 @@ briques:
     composant: celebrimbor
     poste: c-construire
     nom: "The ransomware replayed on the bench, step by step"
-    etat: main
-    release: "0.6"
+    etat: livree
+    release: "0.5"
+    version: "0.5.9"
     lots: [RAN1]
     issue: 665
     pr: 669
@@ -1069,8 +1075,9 @@ briques:
     composant: celebrimbor
     poste: c-construire
     nom: "The bench read by the machine: a preflight and a run report, composed alone"
-    etat: main
-    release: "0.6"
+    etat: livree
+    release: "0.5"
+    version: "0.5.9"
     lots: [BNC1]
     issue: 682
     doc: docs/banc-t1486.md
@@ -1318,8 +1325,9 @@ briques:
     composant: socle
     poste: s-prouver
     nom: "A seed drawn per round for the nightly run and the release gate, stated and replayable"
-    etat: main
-    release: "0.6"
+    etat: livree
+    release: "0.5"
+    version: "0.5.9"
     lots: [SEED1]
     issue: 655
     pr: 663
@@ -1436,8 +1444,9 @@ briques:
     composant: socle
     poste: s-documenter
     nom: "The loop replayed, an interactive page on the site"
-    etat: main
-    release: "0.6"
+    etat: livree
+    release: "0.5"
+    version: "0.5.9"
     lots: [PRES1, PRES1b]
     issue: 658
     pr: [659, 662]
@@ -1447,8 +1456,9 @@ briques:
     composant: socle
     poste: s-documenter
     nom: "The public manual: where Eregion stands, component by component"
-    etat: main
-    release: "0.6"
+    etat: livree
+    release: "0.5"
+    version: "0.5.9"
     lots: [MAN1, MAN1b, REL4]
     issue: 664
     doc: docs/manuel/index.html
@@ -1457,8 +1467,9 @@ briques:
     composant: socle
     poste: s-documenter
     nom: "Eregion by role: one sheet per reader, every figure dated and sourced"
-    etat: main
-    release: "0.6"
+    etat: livree
+    release: "0.5"
+    version: "0.5.9"
     lots: [ADO2]
     issue: 671
     doc: docs/adoption/index.html
