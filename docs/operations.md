@@ -3090,9 +3090,11 @@ qui ne collecte aucun test. `notify.yml` l'annonce dans `#ci`. Le remède est d�
 [preuves.md](design/preuves.md), « Les mutants fragiles, de la nuit à la séquence figée ».
 - **La liste** (`python scripts/mutation_night.py --list`, rien de mesuré) : chaque mutant compté dont la
   cible atteint le test qui fait tourner une machine (Azure, AWS, celle de `test_recovery_watch.py`).
-  Sur l'arbre du 10/11 (57c2375e), il y en a 241. Pour 43 d'entre eux, la cible ne fait tourner que la
-  machine (`alone`). Pour 198, elle a aussi des tests fixes (`beside`) : ces tests passent d'abord, une
-  fois, et s'ils attrapent le mutant, la machine n'est pas lancée sur lui.
+  Sur l'arbre du 10/11 (a1f1860c, après MUT9), il y en a 241. Pour 42 d'entre eux, la cible ne fait
+  tourner que la machine (`alone`). Pour 199, elle a aussi des tests fixes (`beside`) : ces tests passent
+  d'abord, une fois, et s'ils attrapent le mutant, la machine n'est pas lancée sur lui (sauf s'ils tirent
+  au hasard ou font courir des fils : 45 d'entre eux, dont la cible entière tourne alors sur chaque
+  graine).
 - **La rotation** : la nuit d'un mutant ne dépend que de son identifiant (crc32 de l'id, modulo 7).
   Chacun est donc mesuré une fois en sept nuits, et un mutant ajouté ou retiré n'en déplace aucun autre.
   `--part auto` prend la nuit de la date UTC. Le prix de cette stabilité : des nuits inégales (de 24 à

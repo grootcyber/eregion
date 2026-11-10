@@ -621,8 +621,8 @@ qui refuse toute graine posée dans `ci.yml` et n'admet ailleurs que `draw` ou l
 **Le constat** (Jonathan, 10/11, le soir de la 0.5.9). Ce que SEED1 laissait ouvert est arrivé : la porte
 tire une graine nouvelle à chaque tour, et elle a débusqué, l'un après l'autre, des mutants que seule une
 machine tue et que certains tirages à 500 séquences laissent passer. M21 a été figé par MUT5, M606 et M09
-par MUT6, M13 par MUT8 ; M33 l'est par MUT9 (#704, en cours). Chacun a été trouvé le soir de la
-release, jamais avant.
+par MUT6, M13 par MUT8, M33 par MUT9 (#704, #706). Chacun a été trouvé le soir de la release, jamais
+avant.
 
 **Les reconnaître.** La table des mutants (`TESTS` de `mutation_check.py` et des lots, plus leurs
 `TESTS_ALSO`) donne la cible de chaque mutant. La règle de l'issue disait : « leurs tests ne contiennent
@@ -651,7 +651,9 @@ D'où **la règle retenue** :
 - Les mutants non comptés (`EQUIVALENT`, `MULTI-HOST`) restent dehors. Un survivant connu (`TIMING`) est
   mesuré et dit, jamais fragile.
 
-Sur l'arbre du 10/11, la règle retient 241 mutants : 43 `alone`, 198 `beside`.
+Sur l'arbre du 10/11 (après MUT9, a1f1860c ; `mutation_night.py --list`), la règle retient 241
+mutants : 42 `alone`, 199 `beside`. M33, `alone` avant MUT9, est passé `beside` : ses séquences figées
+d'A0 et un test unitaire l'attrapent.
 
 **Le chemin d'un mutant fragile.**
 1. **La nuit** (`mutants-night.yml`, `docs/operations.md`, « Les mutants fragiles, chaque nuit ») mesure
@@ -683,14 +685,14 @@ graines où il a survécu. Un `beside` dont les tests fixes attrapent le mutant 
 un `beside` dont les tests fixes le manquent est mesuré sur chaque graine. Un `beside` dont la partie
 fixe tire (un fichier qui importe Hypothesis) n'a jamais de run de sa partie fixe seule : sa cible entière
 tourne sur chaque graine, sans quoi un mutant que cette partie n'attrape que sur la première graine
-serait dit `CAUGHT 3/3 by its fixed tests`, un faux vert (45 des 198 `beside` du 10/11 passent par là,
+serait dit `CAUGHT 3/3 by its fixed tests`, un faux vert (45 des 199 `beside` du 10/11 passent par là,
 relevé par la relecture). Un `--only` qui nomme un mutant hors de la liste le dit, avec pourquoi, et
 sort en 2 sans rien mesurer. Une machine non mutée rouge sur une graine rend la nuit sans mesure.
 L'étape du workflow qui écrit l'issue y tourne contre un faux `gh` : ouverte, commentée, ou rien d'écrit
 quand la sortie n'a pas sa forme. Mutants M4731–M4736 (M4736 de la relecture) : 6/6 attrapés.
 
 **Une mesure réelle** (10/11, sur le poste, `--only M33,M01 --seeds 3 --examples 100 --jobs 2`, graine
-tirée 758679988). M01 est `CAUGHT 3/3`. M33, encore `alone` avant MUT9, est `flaky 1/3` : il survit
+tirée 758679988). M01 est `CAUGHT 3/3`. M33, mesuré sur 57c2375e, avant MUT9, quand il était encore `alone`, est `flaky 1/3` : il survit
 sur 758679989 et 758679990. Le rejeu donné pour la première graine,
 `mutation_check.py --only M33 --seed 758679989 --examples 100 --rounds 1`, le redonne survivant de la
 machine : 0/1, `FIXED-ONLY`. À 100 séquences seulement : la nuit tourne à 500.
