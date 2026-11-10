@@ -1695,7 +1695,8 @@
    "lots": [
     "SEED1",
     "MUT5",
-    "MUT6"
+    "MUT6",
+    "MUT8"
    ],
    "issue": 655,
    "pr": 663

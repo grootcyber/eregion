@@ -63,6 +63,12 @@ TESTS_ALSO = {
     # and 276700699): U2's sequence on AWS, frozen by MUT6.
     "M606": "tests/unit/test_invariant_regressions_aws.py::"
             "test_a_reisolation_of_an_eni_left_on_default_keeps_its_original",
+    # Flaky at the 0.5.9 release gate (MUT8: survives the machine on seed 873889299, caught on
+    # 873889300): already caught by M35's frozen sequence (a reset cut off after its first write
+    # on Azure, then a reassertion) and by the unit tests of a release and an unblock in progress.
+    "M13": f"{_REG}test_an_interrupted_reset_is_a_release_under_way "
+           f"{_RE}test_a_release_in_progress_is_not_put_back "
+           f"{_RE}test_an_unblock_in_progress_is_not_put_back",
     # The unit test that holds its property, outside its target.
     "M36": "tests/unit/test_glorfindel.py::test_an_old_state_file_is_moved_before_it_is_rewritten",
     # Their tests of their own.
