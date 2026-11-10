@@ -66,6 +66,9 @@ from types import SimpleNamespace
 from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
 
 SUB = "/subscriptions/s"
+# The client tool of a USER's token (the Azure CLI, the portal): one appid for the whole tenant
+# (activity.py, `token_identities`), never the user's (LEV2, review round 1). A placeholder.
+TOOL_APPID = "0000c11a-0000-0000-0000-000000000000"
 RUN_COMMAND_ACTION = "Microsoft.Compute/virtualMachines/runCommand/action"
 
 
@@ -336,11 +339,19 @@ class FakeAzure:
 
     def log(self, resource_id: str, op: str, statuses=("Started", "Succeeded"), caller: str | None = None,
             at: datetime | None = None, delay_s: float = 0.0, body: dict | None = None,
-            failed: dict | None = None, claims: dict | None = None) -> str:
+            failed: dict | None = None, claims: dict | None = None, user: str | None = None) -> str:
         """One operation in the activity log, under `caller` (the next calls' by default), at `at`
         (now): its events under one operationId, the `Failed` one carrying `failed` ({"http",
         "message"}); `body`: the request body its events carry (a rule's write); `delay_s`: how
-        late it lands in the log; `claims`: the token's claims, as given (a user: no appid)."""
+        late it lands in the log; `claims`: the token's claims, as given. `user`: a USER's UPN, the
+        event's caller; `caller` is then its object id, and its token's appid the client tool's,
+        common to every user (TOOL_APPID: the shape documented for a delegated token, unmeasured)."""
+        if user is not None:
+            claims = {"appid": TOOL_APPID,
+                      "http://schemas.microsoft.com/identity/claims/objectidentifier": caller or self.caller,
+                      "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn": user,
+                      "http://schemas.microsoft.com/identity/claims/scope": "user_impersonation"}
+            caller = user
         self.operations += 1
         op_id = f"op-{self.operations:05d}"
         when = at or self.clock()

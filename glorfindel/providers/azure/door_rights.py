@@ -3,7 +3,7 @@ docs/design/levee-probation.md §4.4).
 
 With the Reader H0 already holds (`Microsoft.Authorization/*/read` is under `*/read`): NO right
 is added to H0, in ARM nor in Graph (Q11). At each scope where a gesture of the table is made
-(the VM, its NICs, disks, NSGs, identities):
+(the VM, its NICs, disks, NSGs, identities, subnets):
   - the role assignments, `GET {scope}/providers/Microsoft.Authorization/roleAssignments` — a
     listing at a scope also gives those of the scopes above it, the group and the subscription
     (hypothesis H1: read by the Reader of the group, to measure);
@@ -24,8 +24,10 @@ The verdict, for one actor:
               assignment to a GROUP that would give the door (its members are not read), a PIM
               ELIGIBILITY that would (to the actor or a group), an assignment at a MANAGEMENT
               GROUP that would, a DELETED principal with an assignment left (restorable from
-              Entra's recycle bin, hypothesis H11: an orphan reads `principalType: Unknown`), or
-              an actor known by no object id.
+              Entra's recycle bin, hypothesis H11: an orphan reads `principalType: Unknown`), an
+              assignment to a principal of a type absent or unknown that would give it (the
+              prudent way: as a group), an actor known by no object id, or an answer of ARM not of
+              its documented shape (a role without its permissions).
 Ignored, the prudent way: deny assignments, ABAC conditions, locks — they only take away.
 """
 from __future__ import annotations
@@ -116,10 +118,14 @@ class DoorRightsMixin:
         key = role.rstrip("/").lower()
         if key not in reading.definitions:
             try:
-                body = self._arm_get(f"{ARM}{role}", {"api-version": ASSIGNMENTS_API}) or {}
-                p = _props(body)
+                body = self._arm_get(f"{ARM}{role}", {"api-version": ASSIGNMENTS_API})
+                p = _props(body) if isinstance(body, dict) else {}
+                perms = p.get("permissions")
+                # A role without its list of permissions is no role read: never « gives nothing ».
+                if not isinstance(perms, list) or not all(isinstance(x, dict) for x in perms):
+                    raise RuntimeError("réponse d'ARM mal formée : une définition sans ses permissions")
                 reading.definitions[key] = {"name": str(p.get("roleName") or role.rsplit("/", 1)[-1]),
-                                            "perms": list(p.get("permissions") or [])}
+                                            "perms": list(perms)}
             except Exception as exc:
                 reading.definitions[key] = {"error": str(exc)[:120]}
         return reading.definitions[key]
@@ -153,7 +159,8 @@ def rights_verdict(reading: RightsReading, principal_ids, deleted, definition) -
     # Deleted: said by the caller, or an orphan of its object id (hypothesis H11).
     gone = bool(deleted) or any(a["principal"] in ids and a["type"] == "unknown" for a in every)
     for a in every:
-        mine, group = a["principal"] in ids, a["type"] == "group"
+        # A type absent or unknown, not the actor's, read as a group: who it holds is not known.
+        mine, group = a["principal"] in ids, a["type"] not in ("user", "serviceprincipal")
         if not (mine or group):
             continue
         if mine and gone and a["kind"] == "assignments":
@@ -178,6 +185,10 @@ def rights_verdict(reading: RightsReading, principal_ids, deleted, definition) -
                                      + (" (à un groupe)" if group and not mine else ""))
         elif mine:
             out["held"].append({**said, "assignment": a["id"]})
+        elif a["type"] != "group":
+            out["groups"].append(said)
+            out["unreadable"].append(f"« {role['name']} » sur {where} à un principal de type "
+                                     f"{a['type'] or 'absent'} : qui il porte ne se lit pas")
         else:
             out["groups"].append(said)
             out["unreadable"].append(f"« {role['name']} » sur {where} à un groupe : H0 n'en lit pas les membres")

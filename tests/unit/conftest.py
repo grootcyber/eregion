@@ -468,6 +468,7 @@ def isolated_glorfindel_home(tmp_path, monkeypatch):
     monkeypatch.setattr(recovery_watch, "RECOVERIES_FILE", home / "recoveries.json")
     import glorfindel.door_facts as door_facts           # LEV2: the door's facts of each isolated VM
     monkeypatch.setattr(door_facts, "FACTS_DIR", home / "door")
+    monkeypatch.setattr(door_facts, "_LAST_READ", {})
     import glorfindel.cli as glorfindel_cli          # the injectors' heartbeat directory (SEC3)
     monkeypatch.setattr(glorfindel_cli, "_INJECTORS_DIR", home / "injectors")
     try:

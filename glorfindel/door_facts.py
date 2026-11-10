@@ -25,6 +25,9 @@ FACTS_DIR = Path.home() / ".glorfindel" / "door"
 LOOKBACK_DAYS = 7.0
 # Rights read for at most this many actors in one pass (the reads are shared; the rest is said).
 MAX_ACTORS = 8
+# When each VM was last read, in this process, by its isolation: a file that can't be written
+# (a full disk) never makes the pass read Azure again at every round of the watch.
+_LAST_READ: dict[str, tuple[str, float]] = {}
 
 
 def interval_s() -> float:
@@ -81,7 +84,8 @@ def read_facts(connector, iso: dict, now: float) -> dict:
         return {**base, "verdict": "unreadable", "actors": [], "unreadable": ["moment de l'isolement illisible"]}
     try:
         until = datetime.fromtimestamp(now, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        seen = connector.observed_actors(rid, since, until=until, disks=disks)
+        seen = connector.observed_actors(rid, since, until=until, disks=disks,
+                                         rules_at_isolation=iso.get("nsg_rules_at_isolation") or None)
     except NotImplementedError:
         raise
     except Exception as exc:                  # whatever broke: unreadable, never « nobody »
@@ -125,14 +129,18 @@ def facts_pass(connector, now: float | None = None) -> list[dict]:
         rid = str(iso.get("resource_id") or "")
         if not rid or iso.get("releasing_at"):
             continue
-        last = load(rid)
+        last, key = load(rid), rid.rstrip("/").lower()
         if last and last.get("isolated_at") == iso.get("isolated_at") and \
                 now - (_epoch(last.get("read_at")) or 0) < every:
             continue
+        held = _LAST_READ.get(key)
+        if held and held[0] == iso.get("isolated_at") and now - held[1] < every:
+            continue                           # read this interval already: its file was not written
         try:
             facts = read_facts(connector, iso, now)
         except NotImplementedError:
             return report                      # the provider can't say: nothing written
+        _LAST_READ[key] = (str(iso.get("isolated_at") or ""), now)
         FACTS_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
         _atomic_write_text(_file(rid), json.dumps(facts, indent=1, sort_keys=True))
         report.append({"vm": rid.rsplit("/", 1)[-1], "verdict": facts["verdict"], "actors": len(facts["actors"])})

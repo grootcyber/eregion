@@ -8,6 +8,7 @@ import threading
 import time
 
 from glorfindel.providers.azure import run_command
+from glorfindel.providers.azure.noted import disks_at_isolation, nsg_rules_at_isolation
 from glorfindel.providers.azure.nsg import (
     _allows_passed_by_its_replacement,
     _describe_shadowing,
@@ -58,7 +59,11 @@ class IsolationMixin:
         targets = self._get_vm_nic_targets(rg, vm_name, allow_no_nsg=True, seen=seen)
         # The VM's disks as they are now, noted with the isolation (LEV2, §8): after a restore in
         # place, these are the original disks, evidence. From the read above, none more.
-        disks = disks_at_isolation(seen[0] if seen else None, _load_isolation_state(resource_id))
+        prior = _load_isolation_state(resource_id)
+        disks = disks_at_isolation(seen[0] if seen else None, prior)
+        # The rules of each customer NSG the plan reads anyway (Q16): a rule deleted later is judged
+        # on what it covered. The quarantine NSG's path reads none of them: nothing noted there.
+        rules_seen: dict = {}
         quarantine_on, _ = self._quarantine_settings()
 
         placements: list[dict] = []
@@ -82,7 +87,8 @@ class IsolationMixin:
                     if not t.get("nsg_name"):
                         failed = {"nic_id": t["nic_id"], "applied": [], "bumped": []}
                         partial = self._record_partial_isolation(
-                            vm_name, resource_id, placements, failed, exc, total=len(targets), disks=disks)
+                            vm_name, resource_id, placements, failed, exc, total=len(targets), disks=disks,
+                            rules=nsg_rules_at_isolation(rules_seen, prior, resource_id))
                         if partial is None:
                             raise
                         raise partial from exc
@@ -113,10 +119,12 @@ class IsolationMixin:
                 # NIC's other NSG if it has one: traffic must pass both, a deny in either
                 # holds. Plan both before writing anything.
                 plan = self._plan_isolation(t, nsg_rg, nsg_name, _scope_to_nic(t), assigned, pairs, guard, mates)
+                rules_seen[(nsg_rg, nsg_name)] = plan["existing"]
                 alt = t.get("alt_nsg")
                 if plan["shadowed"] and alt:
                     alt_plan = self._plan_isolation(t, alt["nsg_rg"], alt["nsg_name"], True, assigned, pairs,
                                                     guard, mates)
+                    rules_seen[(alt["nsg_rg"], alt["nsg_name"])] = alt_plan["existing"]
                     if not alt_plan["shadowed"]:
                         placement.update({
                             "nsg_rg": alt["nsg_rg"], "nsg_name": alt["nsg_name"],
@@ -157,7 +165,8 @@ class IsolationMixin:
                             {"nsg": f"{nsg_rg}/{nsg_name}", "rule": nm, "why": f"{nsg_rg}/{nsg_name}/{nm} n'a pas pu être retirée : {err}"})
             except Exception as exc:
                 partial = self._record_partial_isolation(
-                    vm_name, resource_id, placements, placement, exc, total=len(targets), disks=disks)
+                    vm_name, resource_id, placements, placement, exc, total=len(targets), disks=disks,
+                    rules=nsg_rules_at_isolation(rules_seen, prior, resource_id))
                 if partial is None:
                     raise
                 raise partial from exc
@@ -184,6 +193,7 @@ class IsolationMixin:
             "rule_names": [p["rule_in"] for p in placements] + [p["rule_out"] for p in placements],
             **({"original_unknown": unknown} if unknown else {}),
             "disks_at_isolation": disks,
+            "nsg_rules_at_isolation": nsg_rules_at_isolation(rules_seen, prior, resource_id),
             # An older version's record, its rules still on Azure: kept, never written over —
             # lost, its deny-all on an NSG shared since was « VM inconnue » for ever (I4E).
             **_kept_legacy(previous, rg),
@@ -341,7 +351,7 @@ class IsolationMixin:
 
     def _record_partial_isolation(
         self, vm_name: str, resource_id: str, done: list[dict], failed: dict,
-        exc: BaseException, *, total: int, disks: dict | None = None,
+        exc: BaseException, *, total: int, disks: dict | None = None, rules: dict | None = None,
     ) -> PartialActionError | None:
         """Persist what a failed isolation left on Azure; build the error to raise.
 
@@ -375,6 +385,7 @@ class IsolationMixin:
             "nsg_rg": first["nsg_rg"], "nsg_name": first["nsg_name"], "nsg_scope": first["scope"],
             "rule_names": [p["rule_in"] for p in kept] + [p["rule_out"] for p in kept],
             **({"disks_at_isolation": disks} if disks else {}),
+            **({"nsg_rules_at_isolation": rules} if rules else {}),
             **_kept_legacy(_load_isolation_state(resource_id), _parse_vm_resource_id(resource_id)[0]),
         })
         return PartialActionError(
@@ -436,31 +447,12 @@ class IsolationMixin:
         shadowed = _shadowing_rules(existing, priority, inbound_src=None, inbound_dst=ips,
                                     outbound_src=ips, outbound_dst=None)
         return {"nsg_key": nsg_key, "priority": priority, "ip_scoped": ip_scoped,
-                "shadowed": shadowed, "own": own, "left": left, "drop": drop}
+                "shadowed": shadowed, "own": own, "left": left, "drop": drop, "existing": existing}
 
 
 # What isolate_vm notes when its drain asks for its Run Command (SID1): set by isolate_vm
 # for the time of its drain, in its own thread — a drain called alone notes nothing.
 _DRAIN_ASKED = threading.local()
-
-
-def disks_at_isolation(vm, previous: dict | None) -> dict:
-    """The VM's managed disks, noted at its isolation (LEV2, docs/design/levee-probation.md §8):
-    {"os": id, "data": [ids], "ids": [all]} — or {"ids": [], "why"} when the VM read names none.
-    A state that already notes them keeps its own: a VM isolated again before its release has the
-    disks of its first isolation, those a restore in place leaves as evidence. Read from the VM
-    the isolation already read, never written to (Glorfindel never touches them)."""
-    kept = (previous or {}).get("disks_at_isolation")
-    if isinstance(kept, dict) and kept.get("ids"):
-        return kept
-    storage = getattr(vm, "storage_profile", None)
-    os_disk = str(getattr(getattr(getattr(storage, "os_disk", None), "managed_disk", None), "id", "") or "")
-    data = [str(getattr(getattr(d, "managed_disk", None), "id", "") or "")
-            for d in getattr(storage, "data_disks", None) or []]
-    data = [d for d in data if d]
-    if not os_disk and not data:
-        return {"ids": [], "why": "la VM lue à l'isolement ne nomme aucun disque managé"}
-    return {"os": os_disk, "data": data, "ids": [d for d in [os_disk, *data] if d]}
 
 
 def _note_drain_asked() -> None:

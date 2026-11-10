@@ -24,19 +24,25 @@ under `*/read` — the Reader H0 already holds):
 On a shared NSG only a rule that covers the VM counts: its destination (inbound) or its source
 (outbound) holds an address of the VM, `*`, a tag (`VirtualNetwork` and any other: a tag is not
 evaluated here, it counts), a prefix that holds one of its addresses, or an ASG of one of its
-NICs. The rule is read from the event's request body (hypothesis: Administrative events carry
-it), else as it is on Azure now; neither: it counts. On an NSG that governs this VM alone,
-every rule counts.
+NICs. A rule WRITTEN is read from the event's request body (hypothesis: Administrative events
+carry it), else as it is on Azure now; neither: it counts. A rule DELETED (Q16, Jonathan 10/11)
+is read from the rules the isolation noted (`nsg_rules_at_isolation`): it does not count only
+when that list shows it did not cover the VM — no list (an isolation before LEV2, or one made by
+the quarantine NSG, which reads no customer rule), or the rule not in it: it counts. On an NSG
+that governs this VM alone, every rule counts. The subnet of the VM written counts always (Q16).
+
+An answer of ARM that is not the shape it documents (a page without its `value` list, a `nextLink`
+that is no text, a role without its permissions) is an error: unreadable, never « nobody ».
 """
 from __future__ import annotations
 
-import ipaddress
-import json
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
+from glorfindel.providers.azure.activity import is_app_token, token_identities
 from glorfindel.providers.azure.recovery import (
-    ACTIVITY_PAGES, _callers, _fold, _refused, _refused_operations, _utc)
+    ACTIVITY_PAGES, _fold, _refused, _refused_operations, _utc)
+from glorfindel.providers.azure.door_rules import _k, _rule_fields, rule_covers
 from glorfindel.providers.azure.sdk import REST_TIMEOUT_S
 
 ARM = "https://management.azure.com"
@@ -46,7 +52,7 @@ ACTIVITY_SELECT = ("caller,claims,operationName,operationId,eventTimestamp,submi
 
 # §4.1, closed: (the operation, the kinds of resource its event names, why it is a door).
 # Kinds: vm (the VM itself), vm_child (`<vm>/…`), disk, nic, public_ip, nsg, nsg_rule
-# (`<nsg>/securityRules/<name>`), identity, group (the VM's resource group).
+# (`<nsg>/securityRules/<name>`), subnet (a subnet of its NICs), identity, group (the VM's group).
 DOOR_TABLE = (
     ("Microsoft.Compute/virtualMachines/runCommand/action", ("vm",),
      "du code dans l'invité, en root (Run Command v1)"),
@@ -74,6 +80,10 @@ DOOR_TABLE = (
      "une IP publique posée sur une carte (hypothèse H7 : sa ressource)"),
     ("Microsoft.Network/networkSecurityGroups/securityRules/write", ("nsg_rule",),
      "un port ouvert devant la VM"),
+    ("Microsoft.Network/networkSecurityGroups/securityRules/delete", ("nsg_rule",),
+     "une règle retirée devant la VM : un refus retiré rouvre un port (Q16)"),
+    ("Microsoft.Network/virtualNetworks/subnets/write", ("subnet",),
+     "le sous-réseau de la VM : un NSG ou une table de routes détachés ou changés (Q16)"),
     ("Microsoft.Network/networkSecurityGroups/write", ("nsg",), "le NSG de la VM réécrit"),
     ("Microsoft.ManagedIdentity/userAssignedIdentities/assign/action", ("identity",),
      "une identité donnée à la VM"),
@@ -84,6 +94,7 @@ DOOR_TABLE = (
 )
 DOOR_OPERATIONS = {op.lower(): (kinds, why) for op, kinds, why in DOOR_TABLE}
 _RULE_OP = "microsoft.network/networksecuritygroups/securityrules/write"
+_RULE_DELETE = "microsoft.network/networksecuritygroups/securityrules/delete"
 _RULES = "/securityrules/"
 # What the card may name, for information only (LEV3 decides who is excused, §4.2).
 _OWN_ENV = ("AZURE_CLIENT_ID", "GLORFINDEL_OWN_CALLERS")
@@ -92,10 +103,6 @@ _RESTORE_ENV = "GLORFINDEL_RESTORE_PRINCIPALS"
 
 class CutRead(RuntimeError):
     """A paged read left pages past its bound: what they hold is unknown."""
-
-
-def _k(resource_id) -> str:
-    return str(resource_id or "").strip().rstrip("/").lower()
 
 
 def _group_of(resource_id: str) -> str:
@@ -119,78 +126,6 @@ def _ids_env(*names: str) -> frozenset[str]:
 
 def _iso(dt: datetime) -> str:
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-# ── the rule of a shared NSG ─────────────────────────────────────────────────────
-
-def _side(rule: dict, side: str) -> tuple[list[str], list[str]]:
-    """(prefixes, ASG ids) of one side of a rule, from an SDK object's fields or a request body's."""
-    pre = [rule.get(f"{side}_address_prefix")] + list(rule.get(f"{side}_address_prefixes") or [])
-    asgs = [getattr(a, "id", None) if not isinstance(a, dict) else a.get("id")
-            for a in (rule.get(f"{side}_application_security_groups") or [])]
-    return [str(p) for p in pre if p], [_k(a) for a in asgs if a]
-
-
-def _rule_fields(source) -> dict | None:
-    """A rule as {direction, source_…, destination_…}: from an SDK object, or a request body
-    (`{"properties": {"direction", "sourceAddressPrefix", …}}`, camelCase). None: nothing read."""
-    if source is None:
-        return None
-    if isinstance(source, str):
-        try:
-            source = json.loads(source)
-        except ValueError:
-            return None
-    if isinstance(source, dict):
-        p = source.get("properties") if isinstance(source.get("properties"), dict) else source
-        camel = {"direction": "direction",
-                 "sourceAddressPrefix": "source_address_prefix",
-                 "sourceAddressPrefixes": "source_address_prefixes",
-                 "destinationAddressPrefix": "destination_address_prefix",
-                 "destinationAddressPrefixes": "destination_address_prefixes",
-                 "sourceApplicationSecurityGroups": "source_application_security_groups",
-                 "destinationApplicationSecurityGroups": "destination_application_security_groups"}
-        out = {snake: p.get(c, p.get(snake)) for c, snake in camel.items()}
-        return out if any(v for v in out.values()) else None
-    fields = ("direction", "source_address_prefix", "source_address_prefixes", "destination_address_prefix",
-              "destination_address_prefixes", "source_application_security_groups",
-              "destination_application_security_groups")
-    out = {f: getattr(source, f, None) for f in fields}
-    out["direction"] = str(getattr(out["direction"], "value", out["direction"]) or "")
-    return out
-
-
-def rule_covers(rule: dict | None, ips: list[str], asgs: set[str]) -> bool:
-    """The rule reaches the VM: its destination (inbound) or source (outbound) holds one of its
-    addresses, `*`, a tag (not evaluated: it counts), a prefix holding one, or one of its ASGs. A
-    rule that can't be read, or names neither side, counts."""
-    if not rule:
-        return True
-    d = str(rule.get("direction") or "").lower()
-    sides = ["destination"] if d == "inbound" else ["source"] if d == "outbound" else ["destination", "source"]
-    named = False
-    for side in sides:
-        prefixes, side_asgs = _side(rule, side)
-        named = named or bool(prefixes or side_asgs)
-        if set(side_asgs) & asgs:
-            return True
-        for p in prefixes:
-            if p.strip().lower() in ("*", "any"):
-                return True
-            try:
-                net = ipaddress.ip_network(p.strip(), strict=False)
-            except ValueError:
-                return True                   # a service tag: VirtualNetwork, or one not evaluated here
-            if any(_in(ip, net) for ip in ips):
-                return True
-    return not named
-
-
-def _in(ip: str, net) -> bool:
-    try:
-        return ipaddress.ip_address(ip) in net
-    except ValueError:
-        return False
 
 
 class DoorMixin:
@@ -225,9 +160,15 @@ class DoorMixin:
         for page in range(1, bound + 1):
             if not str(url).startswith(f"{ARM}/"):
                 raise RuntimeError("page suivante hors d'Azure Resource Manager, refusée")
-            body = self._arm_get(url, params) or {}
-            items += list(body.get("value") or [])
-            url, params = body.get("nextLink"), None
+            body = self._arm_get(url, params)
+            value = body.get("value") if isinstance(body, dict) else None
+            link = body.get("nextLink") if isinstance(body, dict) else None
+            # The documented shape, or an error: a page without its list never reads « nothing ».
+            if not isinstance(value, list) or not all(isinstance(i, dict) for i in value) \
+                    or not (link is None or isinstance(link, str)):
+                raise RuntimeError("réponse d'ARM mal formée : pas la liste `value` d'une page")
+            items += value
+            url, params = link, None
             if not url:
                 return items, page
         raise CutRead(f"plus de {bound} pages, la suite n'est pas lue")
@@ -246,7 +187,7 @@ class DoorMixin:
 
     # ── what the VM is made of ───────────────────────────────────────────────────
 
-    def _door_targets(self, resource_id: str, disks=()) -> dict:
+    def _door_targets(self, resource_id: str, disks=(), rules=None) -> dict:
         """The VM's resources, read now (ARM): its NICs, their NSGs (the NIC's and the subnet's),
         addresses, public IPs and ASGs, its disks and the ones given, its identities. Raises when
         the VM or a NIC can't be read: the gestures on what is unknown can't be told."""
@@ -257,7 +198,10 @@ class DoorMixin:
         storage = getattr(vm, "storage_profile", None)
         found = [getattr(getattr(getattr(storage, "os_disk", None), "managed_disk", None), "id", None)]
         found += [getattr(getattr(d, "managed_disk", None), "id", None) for d in getattr(storage, "data_disks", None) or []]
+        noted = {_k(n): {str(k).lower(): r for k, r in (v or {}).items()}
+                 for n, v in (rules or {}).items() if isinstance(v, dict)}
         out = {"vm": resource_id, "group": _group_id(resource_id), "nics": [], "nsgs": {}, "ips": [], "asgs": set(),
+               "subnets": [], "at_isolation": noted,
                "public_ips": [], "disks": sorted({str(d) for d in [*found, *disks] if d}, key=str.lower),
                "identities": sorted(str(i) for i in (getattr(getattr(vm, "identity", None),
                                                               "user_assigned_identities", None) or {}))}
@@ -276,6 +220,8 @@ class DoorMixin:
                 out["asgs"] |= {_k(getattr(a, "id", "")) for a in getattr(c, "application_security_groups", None) or []}
             sub = getattr(getattr((getattr(nic, "ip_configurations", None) or [None])[0], "subnet", None), "id", None)
             if sub:
+                if _k(sub) not in {_k(x) for x in out["subnets"]}:
+                    out["subnets"].append(sub)
                 parts = sub.split("/")
                 low = [p.lower() for p in parts]
                 s = self._network.subnets.get(parts[low.index("resourcegroups") + 1],
@@ -297,7 +243,8 @@ class DoorMixin:
 
     # ── the gestures ─────────────────────────────────────────────────────────────
 
-    def observed_actors(self, resource_id: str, since: str, until: str = "", disks=()) -> dict:
+    def observed_actors(self, resource_id: str, since: str, until: str = "", disks=(),
+                        rules_at_isolation=None) -> dict:
         """Who made a gesture of DOOR_TABLE on the VM since `since` (ISO 8601) until `until` (now),
         read only — facts, never a verdict of the lift (LEV2).
 
@@ -305,8 +252,10 @@ class DoorMixin:
         "gestures": [{"at", "operation", "resource", "kind", "status", "covers"?}]}], "reads":
         [{"how", "what", "pages", "events"} | {"how", "what", "error"}], "unreadable": [why],
         "scopes": [the resources where a gesture is made: the VM, its NICs, disks, NSGs,
-        identities], "notes": [...]}. `unreadable`: a read failed or was cut — the actors listed
-        are those seen, never all of them. `role`: "glorfindel", "restore" or "" — information."""
+        identities, subnets], "notes": [...]}. `unreadable`: a read failed or was cut — the actors
+        listed are those seen, never all of them. `role`: "glorfindel", "restore" or "" —
+        information. `rules_at_isolation`: the state's `nsg_rules_at_isolation` (a deleted rule of
+        a shared NSG, Q16)."""
         start, end = _utc(since), _utc(until) or datetime.now(timezone.utc)
         if self.dry_run:
             return {"verdict": "unreadable", "since": since, "until": until, "actors": [], "reads": [],
@@ -317,7 +266,7 @@ class DoorMixin:
         out = {"since": _iso(start), "until": _iso(end), "actors": [], "reads": [], "unreadable": [],
                "scopes": [], "notes": []}
         try:
-            t = self._door_targets(resource_id, disks)
+            t = self._door_targets(resource_id, disks, rules_at_isolation)
         except Exception as exc:
             out["unreadable"].append(f"la VM ou une de ses cartes ne se lit pas : {str(exc)[:160]}")
             out["verdict"] = "unreadable"
@@ -325,10 +274,10 @@ class DoorMixin:
         out["notes"] += [n["why"] for n in t["nsgs"].values() if n.get("why")]
         exact = [("vm", t["vm"])] + [("nic", n) for n in t["nics"]] + [("disk", d) for d in t["disks"]]
         exact += [("nsg", n) for n in t["nsgs"]] + [("public_ip", p) for p in t["public_ips"]]
-        exact += [("identity", i) for i in t["identities"]]
-        groups = sorted({_group_of(t["vm"])} | {_group_of(x) for x in [*t["nsgs"], *t["nics"]]} - {""},
+        exact += [("identity", i) for i in t["identities"]] + [("subnet", x) for x in t["subnets"]]
+        groups = sorted({_group_of(t["vm"])} | {_group_of(x) for x in [*t["nsgs"], *t["nics"], *t["subnets"]]} - {""},
                         key=str.lower)
-        out["scopes"] = [t["vm"], *t["nics"], *t["disks"], *t["nsgs"], *t["identities"]]
+        out["scopes"] = [t["vm"], *t["nics"], *t["disks"], *t["nsgs"], *t["identities"], *t["subnets"]]
         events: dict[str, dict] = {}
         reads = [("uri", what, rid) for what, rid in exact] + [("group", "group", g) for g in groups]
         for how, what, value in reads:
@@ -362,11 +311,18 @@ class DoorMixin:
         g = {"at": at.isoformat() if at else "", "operation": (e.get("operationName") or {}).get("value") or op,
              "resource": e.get("resourceId") or e.get("resourceUri") or "", "kind": kind,
              "status": str((e.get("status") or {}).get("value") or "")}
-        if op == _RULE_OP:
+        if op in (_RULE_OP, _RULE_DELETE):
             nsg = next((n for n in t["nsgs"] if rid.startswith(_k(n) + _RULES)), None)
             info = t["nsgs"].get(nsg) or {}
             if info.get("alone"):
                 g["covers"] = True
+            elif op == _RULE_DELETE:
+                # Q16: what it covered, as the isolation noted it; no list, or not in it: it counts.
+                listed = (t.get("at_isolation") or {}).get(_k(nsg)) if nsg else None
+                was = (listed or {}).get(rid.rsplit("/", 1)[-1]) if listed is not None else None
+                g["covers"] = True if was is None else rule_covers(was, t["ips"], t["asgs"])
+                if not g["covers"]:
+                    return None               # a rule that never covered the VM, of a shared NSG
             else:
                 body = (e.get("properties") or {}).get("requestbody") if isinstance(e.get("properties"), dict) else None
                 rule = _rule_fields(body) or (info.get("rules") or {}).get(rid.rsplit("/", 1)[-1])
@@ -402,17 +358,42 @@ def _kind_of(rid: str, t: dict) -> str | None:
         return "public_ip"
     if rid in {_k(i) for i in t["identities"]}:
         return "identity"
+    if rid in {_k(x) for x in t.get("subnets") or []}:
+        return "subnet"
     if rid == _k(t["group"]) or rid.startswith(_k(t["group"]) + "/providers/microsoft.resources/tags"):
         return "group"
     return None
 
 
+_UPN_CLAIMS = ("upn", "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn", "unique_name")
+_SCOPE_CLAIMS = ("scp", "http://schemas.microsoft.com/identity/claims/scope")
+
+
+def actor_ids(e: dict) -> set[str]:
+    """Who made an event, as AL1 reads a token (activity.py, `token_identities`): an application's
+    token (a service principal, a managed identity) by its appid, azp and oid; a USER's by its oid
+    and its caller (its UPN) only — its appid names the client tool (the Azure CLI, the portal), the
+    same for the whole tenant: two people under `az` are two actors, never one."""
+    raw = e.get("claims") if isinstance(e.get("claims"), dict) else {}
+    claims = {**raw, "upn": next((raw[k] for k in _UPN_CLAIMS if raw.get(k)), ""),
+              "scp": next((raw[k] for k in _SCOPE_CLAIMS if raw.get(k)), "")}
+    if not claims.get("oid"):
+        claims["oid"] = raw.get("http://schemas.microsoft.com/identity/claims/objectidentifier") or ""
+    caller = str(e.get("caller") or "").strip().lower()
+    if "@" in caller and not claims["upn"]:
+        claims["upn"] = caller                # a user's caller is its UPN
+    ids = token_identities(claims) if is_app_token(claims) else {
+        str(claims["oid"]).strip().lower()} - {""}
+    return ids | ({caller} if caller else set())
+
+
 def _by_actor(kept: list) -> list[dict]:
     """The gestures by who made them: ids that meet are one actor (a UPN and an object id of one
-    event). Oldest gesture first, actors by their first gesture."""
+    event; never a client tool's appid: actor_ids). Oldest gesture first, actors by their first
+    gesture."""
     actors: list[dict] = []
     for e, g in sorted(kept, key=lambda x: x[1]["at"]):
-        ids = set(_callers(e))
+        ids = actor_ids(e)
         mine = [a for a in actors if a["_ids"] & ids] if ids else []
         if mine:
             a = mine[0]
@@ -433,11 +414,3 @@ def _by_actor(kept: list) -> list[dict]:
         out.append({"ids": ids, "role": role, "gestures": sorted(a["gestures"], key=lambda g: g["at"])})
     return out
 
-
-def door_window(isolated_at: str, lookback_days: float) -> str:
-    """The start of the window read on the isolation card: `lookback_days` before the isolation
-    (§4.3 counts from the point restored; before a restore, the isolation is what is known)."""
-    at = _utc(isolated_at)
-    if at is None:
-        return ""
-    return _iso(at - timedelta(days=lookback_days))

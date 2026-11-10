@@ -324,17 +324,24 @@ def door(resource_id: str, days: float, as_json: bool):
     resource_id = _resolve_resource_id(resource_id)
     if "/" not in resource_id:
         raise click.ClickException(f"{resource_id} : ni isolée, ni bloquée, ni découverte — donner son id ARM")
+    from glorfindel.actions import _load_isolation_state
     connector = AzureConnector(dry_run=False)
     now = datetime.now(timezone.utc)
-    seen = connector.observed_actors(resource_id, (now - timedelta(days=days)).isoformat(), until=now.isoformat())
-    reading: dict = {}
-    for a in seen.get("actors") or []:
-        a["rights"] = connector.observed_rights(a.get("ids") or [], resource_id, scopes=seen.get("scopes") or (),
-                                                reading=reading)
-    seen["rights_reads"] = [r for v in reading.values() for r in (getattr(v, "reads", None) or [])]
-    if not seen.get("actors"):          # H1, H2: the rights read even with nobody, the VM's scopes
-        probe = connector.observed_rights([], resource_id, scopes=seen.get("scopes") or (), reading=reading)
-        seen["rights_reads"] = probe.get("reads") or []
+    iso = _load_isolation_state(resource_id) or {}
+    try:
+        seen = connector.observed_actors(resource_id, (now - timedelta(days=days)).isoformat(), until=now.isoformat(),
+                                         disks=((iso.get("disks_at_isolation") or {}).get("ids") or ()),
+                                         rules_at_isolation=iso.get("nsg_rules_at_isolation") or None)
+        reading: dict = {}
+        for a in seen.get("actors") or []:
+            a["rights"] = connector.observed_rights(a.get("ids") or [], resource_id, scopes=seen.get("scopes") or (),
+                                                    reading=reading)
+        seen["rights_reads"] = [r for v in reading.values() for r in (getattr(v, "reads", None) or [])]
+        if not seen.get("actors"):      # H1, H2: the rights read even with nobody, the VM's scopes
+            probe = connector.observed_rights([], resource_id, scopes=seen.get("scopes") or (), reading=reading)
+            seen["rights_reads"] = probe.get("reads") or []
+    except Exception as exc:            # an answer of a shape not read: said in a sentence, never a trace
+        raise click.ClickException(f"la porte ne se lit pas : {_esc_markup(str(exc))[:240]}")
     if as_json:
         click.echo(json.dumps(seen, indent=1, default=str))
         return

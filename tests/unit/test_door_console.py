@@ -21,7 +21,7 @@ EVIL = '<img src=x onerror="fetch(`/api/reset/web`)">'
 class _Reader:
     """A connector that reads an actor whose names are an attacker's."""
 
-    def observed_actors(self, resource_id, since, until="", disks=()):
+    def observed_actors(self, resource_id, since, until="", disks=(), rules_at_isolation=None):
         return {"verdict": "seen", "since": since, "until": NOW.isoformat(), "reads": [], "unreadable": [],
                 "notes": [], "scopes": [resource_id],
                 "actors": [{"ids": [EVIL, "11111111-1111-1111-1111-111111111111"], "role": "", "gestures": [

@@ -3,10 +3,14 @@ rights —, read only, for information; the disks noted at the isolation. A read
 unreadable, never empty; whatever its status a gesture counts, a refusal of the platform aside; the
 children of the VM are read through its group; on a shared NSG only a rule that covers the VM counts;
 a group, an eligibility, a deleted principal are unreadable; a VM isolated again keeps the disks of its
-first isolation. M4720–M4729, measured by tests/unit/test_door_facts.py."""
+first isolation. Review round 1: an answer of ARM not of its documented shape is unreadable; a user is
+known by its oid and UPN, never by its tool's appid; Q16 (Jonathan, 10/11): a rule deleted and the
+subnet written are gestures, a deleted rule of a shared NSG judged on the rules the isolation noted; a
+principal of a type absent or unknown read as a group. M4720–M4729 and M4745–M4750, measured by
+tests/unit/test_door_facts.py."""
 DOOR = "glorfindel/providers/azure/door.py"
 RIGHTS = "glorfindel/providers/azure/door_rights.py"
-ISOLATION = "glorfindel/providers/azure/isolation.py"
+NOTED = "glorfindel/providers/azure/noted.py"
 _T = "tests/unit/test_door_facts.py"
 
 MUTANTS = [
@@ -48,9 +52,34 @@ MUTANTS = [
      '        if mine and gone and a["kind"] == "assignments":\n',
      "        if False:\n"),
     ("M4729", "a VM isolated again notes its disks anew: after a restore in place, the original disks — the "
-     "evidence — replaced by the restored ones (LEV2, §8)", ISOLATION,
+     "evidence — replaced by the restored ones (LEV2, §8)", NOTED,
      '    if isinstance(kept, dict) and kept.get("ids"):\n        return kept\n',
      '    if False:\n        return kept\n'),
+    ("M4745", "a page of ARM taken whatever its shape: `200 {}` without its list read « nobody acted on the "
+     "VM », a third party's extension in the log (LEV2, review round 1)", DOOR,
+     "                raise RuntimeError(\"réponse d'ARM mal formée : pas la liste `value` d'une page\")\n",
+     "                value = []\n"),
+    ("M4746", "a role read without its permissions: a definition `{}` gives nothing, the Owner read « absent » "
+     "(LEV2, review round 1)", RIGHTS,
+     '                    raise RuntimeError("réponse d\'ARM mal formée : une définition sans ses permissions")\n',
+     "                    perms = []\n"),
+    ("M4747", "a user known by its token's appid, the client tool's: Jonathan and an attacker under `az` one "
+     "actor, the role `restore` of one hiding the other (LEV2, review round 1)", DOOR,
+     "    ids = token_identities(claims) if is_app_token(claims) else {\n",
+     '    ids = token_identities({**claims, "upn": "", "scp": "", "idtyp": "app"}) if True else {\n'),
+    ("M4748", "a rule deleted from a shared NSG without the isolation's list read as aimed elsewhere: a deny "
+     "taken off in front of the VM, never seen (LEV2, Q16)", DOOR,
+     '                g["covers"] = True if was is None else rule_covers(was, t["ips"], t["asgs"])\n',
+     '                g["covers"] = False if was is None else rule_covers(was, t["ips"], t["asgs"])\n'),
+    ("M4749", "the VM's subnet written out of the table: its NSG or its routes detached, never a gesture "
+     "(LEV2, Q16)", DOOR,
+     '    ("Microsoft.Network/virtualNetworks/subnets/write", ("subnet",),\n'
+     '     "le sous-réseau de la VM : un NSG ou une table de routes détachés ou changés (Q16)"),\n',
+     ""),
+    ("M4750", "a principal of a type absent or unknown ignored: an Owner without a type read « absent » "
+     "(LEV2, review round 1)", RIGHTS,
+     '        mine, group = a["principal"] in ids, a["type"] not in ("user", "serviceprincipal")\n',
+     '        mine, group = a["principal"] in ids, a["type"] == "group"\n'),
 ]
 TESTS = {
     "M4720": f"{_T}::test_a_busy_group_past_twenty_pages_is_unreadable_and_twenty_pages_are_read "
@@ -65,4 +94,11 @@ TESTS = {
     "M4728": f"{_T}::test_what_h0_cant_read_whole_is_unreadable_never_absent "
              f"{_T}::test_a_deleted_principal_with_nothing_left_is_absent",
     "M4729": f"{_T}::test_the_disks_are_noted_at_the_isolation_and_kept_by_an_isolation_again",
+    "M4745": f"{_T}::test_a_page_of_the_log_of_a_shape_not_documented_is_unreadable_never_none",
+    "M4746": f"{_T}::test_a_role_without_its_permissions_is_unreadable_never_absent",
+    "M4747": f"{_T}::test_two_users_under_one_client_tool_are_two_actors",
+    "M4748": f"{_T}::test_a_rule_deleted_from_a_shared_nsg_counts_unless_the_isolation_saw_it_aim_elsewhere "
+             f"{_T}::test_the_quarantine_path_notes_no_rules_and_a_deleted_rule_then_counts",
+    "M4749": f"{_T}::test_each_gesture_of_the_table_is_read_on_its_resource",
+    "M4750": f"{_T}::test_a_principal_of_a_type_absent_or_unknown_is_read_as_a_group",
 }

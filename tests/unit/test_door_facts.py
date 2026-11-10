@@ -22,7 +22,7 @@ from glorfindel.providers.azure.connector import AzureConnector
 from glorfindel.providers.azure.door import DOOR_TABLE, CutRead, rule_covers
 from glorfindel.providers.azure.door_rights import RightsReading, door_held
 
-from .fake_azure import SUB, FakeAzure, nsg_id
+from .fake_azure import SUB, TOOL_APPID, FakeAzure, nsg_id, subnet_id
 
 NOW = datetime(2026, 11, 10, 12, 0, tzinfo=timezone.utc)
 THIRD = "11111111-1111-1111-1111-111111111111"      # a third party: a service principal
@@ -71,7 +71,7 @@ def test_nobody_on_a_vm_read_whole_is_none_not_unreadable():
     assert seen["verdict"] == "none" and seen["actors"] == [] and seen["unreadable"] == []
     # Every resource of the VM read exactly, and each group read once (the NSG's lives elsewhere).
     kinds = sorted(r["what"] for r in seen["reads"])
-    assert kinds == ["disk", "disk", "group", "group", "identity", "nic", "nsg", "nsg", "public_ip", "vm"]
+    assert kinds == ["disk", "disk", "group", "group", "identity", "nic", "nsg", "nsg", "public_ip", "subnet", "vm"]
 
 
 def test_a_third_partys_extension_is_a_gesture_whatever_its_type_and_read_from_the_group():
@@ -158,6 +158,8 @@ def test_a_rule_of_the_vms_own_nsg_counts_whatever_it_aims_at():
     ("serial", "Microsoft.SerialConsole/serialPorts/connect/action"),
     ("managed", "Microsoft.Compute/virtualMachines/runCommands/write"),
     ("group", "Microsoft.Resources/subscriptions/resourceGroups/write"),
+    ("subnet", "Microsoft.Network/virtualNetworks/subnets/write"),
+    ("own-rule", "Microsoft.Network/networkSecurityGroups/securityRules/delete"),
     ("tags", "Microsoft.Resources/tags/write"),
 ])
 def test_each_gesture_of_the_table_is_read_on_its_resource(target, op):
@@ -168,7 +170,8 @@ def test_each_gesture_of_the_table_is_read_on_its_resource(target, op):
              "pip": n["pip"], "own": n["own"], "identity": n["identity"],
              "serial": vm + "/providers/Microsoft.SerialConsole/serialPorts/0",
              "managed": vm + "/runCommands/persist", "group": f"{SUB}/resourceGroups/rg-app",
-             "tags": vm + "/providers/Microsoft.Resources/tags/default"}[target]
+             "tags": vm + "/providers/Microsoft.Resources/tags/default",
+             "subnet": subnet_id("rg-net", "vnet", "app"), "own-rule": n["own"] + "/securityRules/a-deny"}[target]
     f.log(where, op, caller=THIRD, at=_at(-10))
     seen = c.observed_actors(vm, SINCE, disks=[noted])
     assert seen["verdict"] == "seen", seen
@@ -232,7 +235,7 @@ def test_every_read_cut_or_failed_makes_the_actors_unreadable_never_none(cut):
     f, c, vm, _ = _world()
     f.log(vm + "/extensions/x", "Microsoft.Compute/virtualMachines/extensions/write", caller=THIRD, at=_at(-5))
     reads = c.observed_actors(vm, SINCE)["reads"]
-    assert len(reads) == 10
+    assert len(reads) == 11
     real = c._activity_read
     for i in range(len(reads)):
         calls = []
@@ -282,7 +285,10 @@ def test_the_table_is_closed_and_names_the_design():
     ops = {op for op, _, _ in DOOR_TABLE}
     assert "Microsoft.Compute/virtualMachines/extensions/write" in ops
     assert "Microsoft.Compute/virtualMachines/start/action" not in ops
-    assert len(ops) == len(DOOR_TABLE) == 19
+    assert len(ops) == len(DOOR_TABLE) == 21
+    # Q16 (Jonathan, 10/11): a rule deleted, the VM's subnet written.
+    assert {"Microsoft.Network/networkSecurityGroups/securityRules/delete",
+            "Microsoft.Network/virtualNetworks/subnets/write"} <= ops
 
 
 def test_a_rule_that_names_nothing_counts_and_a_tag_not_evaluated_counts():
@@ -389,7 +395,7 @@ def test_every_scope_read_refused_or_cut_makes_the_rights_unreadable():
     the identity), assignments and eligibilities: one refused, the verdict unreadable."""
     f, c, vm, n = _world()
     scopes = c.observed_actors(vm, SINCE)["scopes"]
-    assert len(scopes) == 7
+    assert len(scopes) == 8
     for scope in scopes:
         for what in ("/roleAssignments", "/roleEligibilityScheduleInstances"):
             f.rest_denied = {scope.rstrip("/") + "/providers/Microsoft.Authorization" + what}
@@ -585,3 +591,187 @@ def test_the_door_command_reads_only_and_says_the_rights_reads(monkeypatch):
     out = CliRunner().invoke(cli, ["door", vm])
     assert out.exit_code == 0 and "lecture seule" in out.output
     assert f.journal == [] and not door_facts.FACTS_DIR.exists()
+
+
+# ── review round 1 ─────────────────────────────────────────────────────────────────────────────
+
+def _malformed(c, f, match, body):
+    """The fake's ARM, but the answers whose URL holds `match` are `body` — a shape ARM never
+    documents."""
+    real = f.rest
+
+    def rest(url, params):
+        if match in url.lower() and "/fake-next/" not in url:
+            return body
+        return real(url, params)
+    c._rest = rest
+
+
+@pytest.mark.parametrize("body", [{}, {"value": "x"}, {"value": [1]}, {"value": [], "nextLink": 3}, None, []])
+def test_a_page_of_the_log_of_a_shape_not_documented_is_unreadable_never_none(body):
+    """Round 1, finding 1: `200 {}` read « nobody » though a third party's extension is in the log."""
+    f, c, vm, _ = _world()
+    f.log(vm + "/extensions/x", "Microsoft.Compute/virtualMachines/extensions/write", caller=THIRD, at=_at(-5))
+    _malformed(c, f, "eventtypes", body)
+    seen = c.observed_actors(vm, SINCE)
+    assert seen["verdict"] == "unreadable" and all("error" in r for r in seen["reads"])
+
+
+@pytest.mark.parametrize("what", ["/roleassignments", "/roleeligibilityscheduleinstances"])
+@pytest.mark.parametrize("body", [{"odd": 1}, {"value": None}, {"value": ["x"]}, {"value": [], "nextLink": {}}])
+def test_a_listing_of_rights_of_a_shape_not_documented_is_unreadable_never_absent(what, body):
+    f, c, vm, _ = _world()
+    f.assign(SUB, THIRD, "Owner")
+    scopes = c.observed_actors(vm, SINCE)["scopes"]
+    _malformed(c, f, what, body)
+    r = c.observed_rights([THIRD], vm, scopes=scopes)
+    assert r["verdict"] in ("unreadable", "held") and r["unreadable"]
+    if what == "/roleassignments":
+        assert r["verdict"] == "unreadable"               # the Owner is in the listing that can't be read
+
+
+@pytest.mark.parametrize("body", [{}, {"properties": {}}, {"properties": {"permissions": "x"}},
+                                  {"properties": {"permissions": [1]}}, None])
+def test_a_role_without_its_permissions_is_unreadable_never_absent(body):
+    f, c, vm, _ = _world()
+    f.assign(SUB, THIRD, "Owner")
+    _malformed(c, f, "/roledefinitions/", body)
+    assert _rights(c, vm, [THIRD])["verdict"] == "unreadable"
+
+
+def test_two_users_under_one_client_tool_are_two_actors(monkeypatch):
+    """Round 1, finding 2: a user's appid is the client tool's (the Azure CLI), the same for the
+    whole tenant. Jonathan restoring under `az` and an attacker under `az` are two actors: the role
+    `restore` of one never hides the other."""
+    monkeypatch.setenv("GLORFINDEL_RESTORE_PRINCIPALS", ADMIN)
+    f, c, vm, _ = _world()
+    f.log(vm, "Microsoft.Compute/virtualMachines/runCommand/action", ("Succeeded",), caller=ADMIN,
+          user="ops@example.org", at=_at(-9))
+    f.log(vm + "/extensions/x", "Microsoft.Compute/virtualMachines/extensions/write", ("Succeeded",),
+          caller=THIRD, user="intruder@example.org", at=_at(-8))
+    seen = c.observed_actors(vm, SINCE)
+    assert len(seen["actors"]) == 2
+    assert [a["role"] for a in seen["actors"]] == ["restore", ""]
+    assert all(TOOL_APPID not in a["ids"] for a in seen["actors"])
+    assert set(seen["actors"][1]["ids"]) == {THIRD, "intruder@example.org"}
+
+
+def test_an_application_is_still_one_actor_by_its_appid_and_its_oid():
+    f, c, vm, _ = _world()
+    f.log(vm, "Microsoft.Compute/virtualMachines/write", ("Succeeded",), caller="app-1",
+          claims={"appid": "app-1", "oid": THIRD}, at=_at(-9))
+    f.log(vm, "Microsoft.Compute/virtualMachines/write", ("Succeeded",), caller=THIRD,
+          claims={"oid": THIRD}, at=_at(-8))
+    assert len(c.observed_actors(vm, SINCE)["actors"]) == 1
+
+
+def _noted(f, c, vm, rules_on_shared):
+    """The VM isolated by rules on its subnet's shared NSG (the quarantine off): what it noted."""
+    from types import SimpleNamespace
+    for r in rules_on_shared:
+        f._put_rule(f.nsgs[nsg_id("rg-net", "nsg-subnet").lower()], {
+            "name": r[0], "priority": r[1], "direction": "Inbound", "access": "Deny", "protocol": "Tcp",
+            "source_address_prefix": "*", "destination_address_prefix": r[2],
+            "source_address_prefixes": None, "destination_address_prefixes": None,
+            "source_port_range": "*", "destination_port_range": "9", "destination_port_ranges": None,
+            "source_application_security_groups": None, "destination_application_security_groups": None,
+            "description": None})
+    f.nics[(SUB + "/resourceGroups/rg-app/providers/Microsoft.Network/networkInterfaces/web-nic").lower()]["nsg"] = None
+    c._quarantine_settings = lambda: (False, "")
+    c.isolate_vm(vm)
+    del c._quarantine_settings
+    return _load_isolation_state(vm).get("nsg_rules_at_isolation") or {}, SimpleNamespace
+
+
+def test_the_rules_the_isolation_read_are_noted_with_it_and_no_call_more():
+    """Q16: the rules of each customer NSG the plan reads anyway, noted beside the disks."""
+    f, c, vm, n = _world()
+    calls = []
+    f.chaos = lambda op, phase, write: calls.append(op) if phase == "before" else None
+    noted, _ = _noted(f, c, vm, [("to-api", 3000, "10.0.1.5"), ("to-web", 3001, "10.0.1.4")])
+    assert list(noted) == [n["shared"].lower()]
+    assert {"to-api", "to-web"} <= set(noted[n["shared"].lower()])
+    assert noted[n["shared"].lower()]["to-api"]["destination_address_prefix"] == "10.0.1.5"
+    assert calls.count("rule.list") == 1 and "nsg.get" not in calls
+
+
+def test_the_quarantine_path_notes_no_rules_and_a_deleted_rule_then_counts():
+    f, c, vm, n = _world()
+    c.isolate_vm(vm)
+    state = _load_isolation_state(vm)
+    assert state["nsg_rules_at_isolation"] == {}
+    f.log(n["shared"] + "/securityRules/to-api", "Microsoft.Network/networkSecurityGroups/securityRules/delete",
+          caller=THIRD, at=_at(5))
+    f.clock = lambda: NOW + timedelta(minutes=10)
+    assert c.observed_actors(vm, SINCE, rules_at_isolation=state["nsg_rules_at_isolation"])["verdict"] == "seen"
+
+
+@pytest.mark.parametrize("rule,counts", [("to-api", False), ("to-web", True), ("made-after", True)])
+def test_a_rule_deleted_from_a_shared_nsg_counts_unless_the_isolation_saw_it_aim_elsewhere(rule, counts):
+    """Q16: on a shared NSG, a deleted rule does not count only when the list noted at the isolation
+    shows it did not cover the VM; a rule not in the list (written after), or no list: it counts."""
+    f, c, vm, n = _world()
+    noted, _ = _noted(f, c, vm, [("to-api", 3000, "10.0.1.5"), ("to-web", 3001, "10.0.1.4")])
+    f.log(n["shared"] + "/securityRules/" + rule, "Microsoft.Network/networkSecurityGroups/securityRules/delete",
+          caller=THIRD, at=_at(5))
+    f.clock = lambda: NOW + timedelta(minutes=10)
+    seen = c.observed_actors(vm, SINCE, rules_at_isolation=noted)
+    third = [a for a in seen["actors"] if THIRD in a["ids"]]
+    assert bool(third) is counts
+    # Without the list (an isolation before LEV2): it counts, whatever it was.
+    assert any(THIRD in a["ids"] for a in c.observed_actors(vm, SINCE)["actors"])
+
+
+def test_a_rule_deleted_from_the_vms_own_nsg_counts_always():
+    f, c, vm, n = _world()
+    f.log(n["own"] + "/securityRules/whatever", "Microsoft.Network/networkSecurityGroups/securityRules/delete",
+          caller=THIRD, at=_at(-5))
+    assert c.observed_actors(vm, SINCE, rules_at_isolation={n["own"].lower(): {}})["verdict"] == "seen"
+
+
+def test_the_rights_on_the_q16_operations_give_the_door():
+    assert door_held([{"actions": ["Microsoft.Network/virtualNetworks/subnets/write"]}])
+    assert door_held([{"actions": ["Microsoft.Network/networkSecurityGroups/securityRules/delete"]}])
+
+
+@pytest.mark.parametrize("kind", ["", "Unknown", "ForeignGroup", "Device"])
+def test_a_principal_of_a_type_absent_or_unknown_is_read_as_a_group(kind):
+    """Round 1, finding 6: an Owner without a type read « absent »; the prudent way, as a group."""
+    f, c, vm, _ = _world()
+    f.assign(SUB, "55555555-5555-5555-5555-555555555555", "Owner", principal_type=kind)
+    r = _rights(c, vm, [THIRD])
+    assert r["verdict"] == "unreadable" and r["groups"]
+    f.assignments[-1]["properties"]["roleDefinitionId"] = f.role_id("Reader")
+    assert _rights(c, vm, [THIRD])["verdict"] == "absent"
+
+
+def test_a_file_that_cant_be_written_never_makes_the_pass_read_azure_at_every_round(monkeypatch):
+    """Round 1, finding 7: the last read remembered in the process."""
+    import glorfindel.response.state as state
+    f, c, vm, _ = _world()
+    c.isolate_vm(vm)
+
+    def full(*a, **k):
+        raise OSError(28, "No space left on device")
+    monkeypatch.setattr(state, "_atomic_write_text", full)
+    with pytest.raises(OSError):
+        door_facts.facts_pass(c, now=NOW.timestamp())
+    calls = len(f.rest_calls)
+    assert door_facts.facts_pass(c, now=NOW.timestamp() + 60) == []
+    assert len(f.rest_calls) == calls
+    with pytest.raises(OSError):
+        door_facts.facts_pass(c, now=NOW.timestamp() + door_facts.interval_s() + 1)
+
+
+def test_the_door_command_says_an_answer_it_cant_read_without_a_trace(monkeypatch):
+    from click.testing import CliRunner
+    import glorfindel.actions as actions
+    from glorfindel.cli import cli
+    f, c, vm, _ = _world()
+
+    def broken(*a, **k):
+        raise ValueError("Expecting value: line 1 column 1")
+    c.observed_actors = broken
+    monkeypatch.setattr(actions, "AzureConnector", lambda dry_run=False: c)
+    out = CliRunner().invoke(cli, ["door", vm])
+    assert out.exit_code == 1 and "la porte ne se lit pas" in out.output and "Traceback" not in out.output
