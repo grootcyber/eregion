@@ -4,7 +4,7 @@ present and contrary it holds the release; a Run Command the platform refused (F
 OperationNotAllowed: on a deallocated VM, it never reached the guest) is none, whoever tried it —
 any other failure of another principal still holds (REC1's rule m1), a code that can't be read too;
 a refusal takes with it one Started at most, the closest before it, within a minute (review round 1).
-M4650–M4653, measured by tests/unit/test_recovery_watch.py (its targeted tests and its machine)."""
+M4650–M4653 and M4668 (the same caller, review round 1), measured by tests/unit/test_recovery_watch.py (its targeted tests and its machine)."""
 WATCH = "glorfindel/recovery_watch.py"
 READ = "glorfindel/providers/azure/recovery.py"
 _T = "tests/unit/test_recovery_watch.py"
@@ -31,6 +31,11 @@ MUTANTS = [
       "                left.remove(near[-1])          # the closest before it, and only it\n"),
      ("                    and _at(s) <= _at(r)]\n",
       "                left = [s for s in left if s not in near]\n")),
+    ("M4668", "the Started a refusal takes with it read whoever logged it: an attacker's command cut by the "
+     "deallocation, its Started alone in the log, hidden behind another principal's refusal under the same "
+     "operationId (REC1b, review round 1)", READ,
+     "            near = [s for s in left if _callers(s) == _callers(r)\n",
+     "            near = [s for s in left if True\n"),
 ]
 TESTS = {
     "M4650": f"{_T}::test_another_failure_of_another_principal_holds_the_release "
@@ -40,4 +45,5 @@ TESTS = {
              f"{_T}::test_the_bench_of_09_11_lifts_with_the_restore_alone",
     "M4653": f"{_T}::test_a_refusal_is_read_where_the_activity_log_carries_it "
              f"{_T}::test_a_cut_command_never_hides_behind_a_refusal_of_its_id",
+    "M4668": f"{_T}::test_a_refusal_is_read_where_the_activity_log_carries_it",
 }
