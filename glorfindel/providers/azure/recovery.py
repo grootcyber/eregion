@@ -8,18 +8,28 @@ glorfindel/recovery_watch.py decides what the facts prove. Read here:
 
   the control plane  the VM's last restore job since a moment (the vault: its status, its type,
                      its container, the point it restored); the VM's power state and the creation
-                     time of its OS disk (ARM: a restore in place puts new disks on it); the
-                     succeeded Run Commands on the VM and who ran them (the activity log);
+                     time of its OS disk (ARM: a restore in place puts new disks on it); each Run
+                     Command on the VM, who ran it, its status, and whether the platform refused it
+                     (the activity log) — enough to decide the neutralization (REC1b);
   the guest          what Run Command v1 last said (the instance view: the agent writes it, root
-                     on the VM can write it too) — never enough alone;
+                     on the VM can write it too) — information only: absent, it holds nothing;
+                     present and contrary, the watch holds the release;
 
 and the scripts a restored disk may replay (`_replayable_scripts`). Reads only, under Reader:
 `Microsoft.RecoveryServices/vaults/backupJobs/read`, `.../recoveryPoints/read`,
 `Microsoft.Compute/virtualMachines/read`, `.../instanceView/read`, `.../extensions/read`,
 `.../runCommands/read`, `Microsoft.Compute/disks/read`, `Microsoft.Insights/eventtypes/values/read`
-— all under `*/read`. Unmeasured on the bench (REC1): the property bag of a restore job (« Job
-Type », « Recovery point time », their values), the instance view's word of Run Command v1 after
-a restored disk boots, the identifiers the activity log gives a service principal as caller.
+— all under `*/read`. Measured on the bench (09/11, REC1b): the instance view never carries Run
+Command v1 (`RunCommandLinux` `Ready` in `vmAgent.extensionHandlers`, absent from
+`instanceView.extensions`, before and after a restore); the activity log names a managed identity
+and a principal with a secret alike (`caller` = object id, `claims.appid` = appId, `claims.oid` =
+object id); a Run Command tried on a deallocated VM is logged `Started` then `Failed`, `Conflict`,
+code `OperationNotAllowed`, under its real caller, the VM model left as it was; a restore in place
+has the « Job Type » « Replace disks ». Unmeasured: in which fields the event carries that status
+and that code (`_refused` reads `properties.statusCode`, else `subStatus`, then the error of
+`properties.statusMessage`); where an event's `operationId` comes from (ARM, or a client that
+could choose it: hence one `Started` at most per refusal, within a minute, `_refused_operations`);
+and how a job names its point.
 """
 from __future__ import annotations
 
@@ -40,6 +50,13 @@ RUN_COMMAND_OP = "microsoft.compute/virtualmachines/runcommand/action"
 # The activity log read at most this many pages; one left past it is an error, never « all read ».
 ACTIVITY_PAGES = 20
 _OID_CLAIM = "http://schemas.microsoft.com/identity/claims/objectidentifier"
+# A refusal of the platform (REC1b, measured 09/11 on a deallocated VM): the HTTP status and the
+# error code ARM gives a Run Command it never sent to the guest. Any other failure may have reached
+# it, and a code that can't be read is not this one.
+_REFUSED_STATUS = "conflict"
+_REFUSED_CODE = "operationnotallowed"
+# The `Started` that goes with a refusal comes at most this long before it (about 2 s on the bench).
+STARTED_WINDOW_S = 60
 
 
 def _utc(value) -> datetime | None:
@@ -98,6 +115,76 @@ def _callers(event: dict) -> list[str]:
     return sorted({str(i).strip().lower() for i in ids if i and str(i).strip()})
 
 
+def _fold(value) -> str:
+    return " ".join(str(value or "").split()).lower()
+
+
+def _status(event: dict) -> str:
+    return _fold((event.get("status") or {}).get("value"))
+
+
+def _error_code(message) -> str:
+    """The top-level error code of an event's status message — a JSON text (`{"error": {"code":
+    …}}`, or `{"status": "Failed", "error": {…}}`) or its object; "" when it can't be read. A code
+    under `details` is not the operation's own (a long operation that failed once begun)."""
+    import json
+    body = message
+    if isinstance(body, str):
+        try:
+            body = json.loads(body)
+        except ValueError:
+            return ""
+    err = body.get("error") if isinstance(body, dict) else None
+    return _fold(err.get("code")) if isinstance(err, dict) else ""
+
+
+def _refused(event: dict) -> bool:
+    """A Run Command the platform refused (REC1b): its event `Failed`, its HTTP status `Conflict`
+    (`properties.statusCode`, else `subStatus`), its error code `OperationNotAllowed` (the status
+    message). Measured on a deallocated VM: it never reached the guest, the VM model as it was.
+    Anything else — another code, another status, a message that can't be read — is not."""
+    if _status(event) != "failed":
+        return False
+    props = event.get("properties") if isinstance(event.get("properties"), dict) else {}
+    status = props.get("statusCode") or (event.get("subStatus") or {}).get("value")
+    return _fold(status) == _REFUSED_STATUS and _error_code(props.get("statusMessage")) == _REFUSED_CODE
+
+
+def _at(event: dict) -> datetime:
+    return _utc(event.get("eventTimestamp")) or datetime.min.replace(tzinfo=timezone.utc)
+
+
+def _refused_operations(events: list[dict]) -> set[str]:
+    """The operations (`operationId`) the platform refused: one of their events is a refusal, and
+    each other one is a `Started` that goes with one refusal — AT MOST ONE per refusal, by the same
+    callers, within STARTED_WINDOW_S before it (about 2 s on the bench, 09/11). A `Started` left
+    over, or out of the window, or any other status (`Accepted`, `Succeeded`: it went further): not
+    refused. The count and the window hold the boundary (which `Started` of the window is taken
+    bears nothing). They are there because the origin of `operationId` is unmeasured: if a client
+    could choose it, a command cut by the deallocation (its `Started` alone in the log) could hide
+    behind a later refusal under the same id — one `Started` within a minute of the refusal leaves
+    it no room."""
+    groups: dict[str, list[dict]] = {}
+    for e in events:
+        if _fold(e.get("operationId")):
+            groups.setdefault(_fold(e.get("operationId")), []).append(e)
+    out = set()
+    for op, group in groups.items():
+        refusals = sorted((e for e in group if _refused(e)), key=_at)
+        left = sorted((e for e in group if not _refused(e)), key=_at)
+        if not refusals or any(_status(e) != "started" for e in left):
+            continue                           # it went further than its Started: not refused
+        for r in refusals:
+            near = [s for s in left if _callers(s) == _callers(r)
+                    and _status(s) == "started"
+                    and 0 <= (_at(r) - _at(s)).total_seconds() <= STARTED_WINDOW_S]
+            if near:
+                left.remove(near[-1])          # one Started of the window, and only one
+        if not left:
+            out.add(op)
+    return out
+
+
 class RecoveryMixin:
     """A VM's recovery, read on Azure (part of AzureConnector)."""
 
@@ -116,11 +203,11 @@ class RecoveryMixin:
         "container_named"}} — and, the job ended (whatever its status: the watch judges it):
         "point" ({"name", "time", "by": "id" | "time"} or {"time": "", "why"}); "job_type" (the
         property bag's « Job Type », "" when absent); "os_disk_created" (ISO, "" when unreadable,
-        with "os_disk_why"); "power"; "run_commands" (the succeeded Run Commands on the VM since
-        `since`: [{"at", "callers"}], oldest first) or "run_commands_error"; and, the VM running,
-        "run_command" (the guest's word since the job's end: {"neutralized": True | False | None,
-        "why"}) and "replay_vectors". Facts only: nothing here says the recovery is proven. Raises
-        when the vault or the VM can't be read."""
+        with "os_disk_why"); "power"; "run_commands" (each Run Command event on the VM since
+        `since`: [{"at", "callers", "status", "refused"}], oldest first) or "run_commands_error";
+        and, the VM running, "run_command" (the guest's word since the job's end: {"neutralized":
+        True | False | None, "why"}) and "replay_vectors". Facts only: nothing here says the
+        recovery is proven. Raises when the vault or the VM can't be read."""
         if self.dry_run:
             return {"job": None, "dry_run": True}
         if not vault:
@@ -228,12 +315,14 @@ class RecoveryMixin:
 
     def _run_commands_on(self, resource_id: str, since: str) -> list[dict]:
         """Every Run Command (v1, `runCommand/action`) event on this VM since `since`, from the
-        activity log — the control plane's word, never the guest's: [{"at", "callers", "status"}],
-        oldest first, whatever the status. A command that failed, or stayed Accepted or Started (cut
-        by the deallocation), left its settings in the VM model all the same: a restored disk may
-        replay it. Raises when the log can't be read."""
+        activity log — the control plane's word, never the guest's: [{"at", "callers", "status",
+        "refused"}], oldest first, whatever the status. A command that failed, or stayed Accepted
+        or Started (cut by the deallocation), left its settings in the VM model all the same: a
+        restored disk may replay it. `refused`: the platform refused it (`_refused`, and the one
+        `Started` that goes with it, `_refused_operations`): it never reached the guest (REC1b). Raises when the log can't
+        be read."""
         events = self._activity_events(resource_id, since)
-        out = []
+        mine = []
         want = resource_id.rstrip("/").lower()
         for e in events:
             op = str((e.get("operationName") or {}).get("value") or "").lower()
@@ -242,7 +331,9 @@ class RecoveryMixin:
             at = _utc(e.get("eventTimestamp"))
             if op != RUN_COMMAND_OP or rid != want or at is None:
                 continue
-            out.append({"at": at.isoformat(), "callers": _callers(e), "status": status})
+            mine.append((e, {"at": at.isoformat(), "callers": _callers(e), "status": status}))
+        refused = _refused_operations([e for e, _ in mine])
+        out = [{**r, "refused": _refused(e) or _fold(e.get("operationId")) in refused} for e, r in mine]
         return sorted(out, key=lambda e: e["at"])
 
     def _activity_events(self, resource_id: str, since: str) -> list[dict]:
@@ -258,7 +349,8 @@ class RecoveryMixin:
                "/providers/Microsoft.Insights/eventtypes/management/values")
         params = {"api-version": "2015-04-01",
                   "$filter": f"eventTimestamp ge '{start:%Y-%m-%dT%H:%M:%SZ}' and resourceUri eq '{resource_id}'",
-                  "$select": "caller,claims,operationName,eventTimestamp,status,resourceId"}
+                  "$select": ("caller,claims,operationName,operationId,eventTimestamp,status,subStatus,"
+                              "properties,resourceId")}
         events: list[dict] = []
         for _ in range(ACTIVITY_PAGES):        # bounded: a VM's few hours of events
             r = requests.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=20, params=params)
@@ -285,7 +377,9 @@ class RecoveryMixin:
         """What Run Command v1 last said on the VM — the GUEST's word: its agent writes it, root on
         the VM can too. Read after the restore's end: the harmless command (NEUTRALIZED_MARKER,
         nothing on stderr) → neutralized; another word → not; no word since the restore → None.
-        One condition among others, never enough alone (recovery_watch: the activity log first)."""
+        Information, never a proof: the activity log decides, and a word present and contrary holds
+        the release (recovery_watch, REC1b). On the bench the instance view never carries Run
+        Command v1 (09/11): None."""
         latest = None
         for ext in getattr(view, "extensions", None) or []:
             kind = f"{getattr(ext, 'type', '') or ''} {getattr(ext, 'name', '') or ''}".lower()

@@ -16,17 +16,19 @@ neutralization by its own gesture and restores in place:
   - the recovery point it restored before the start of the incident — the isolation, or the
     first detection when it came before (`restore_plan.incident_start`, the rule of `--before`);
   - the VM running;
-  - the neutralization, by the control plane: in the activity log, the last succeeded Run
-    Command on the VM before the job started was made by a principal that restores
+  - the neutralization, by the control plane alone (REC1b): in the activity log, the last
+    succeeded Run Command on the VM before the job started was made by a principal that restores
     (GLORFINDEL_RESTORE_PRINCIPALS, their ids), after the isolation, and none by anyone else
-    since; then, a condition more and never enough alone, the guest's word after the restore
-    is the harmless one.
+    since — a command the platform refused (`Conflict`, `OperationNotAllowed`: on a deallocated
+    VM, it never reached the guest) is none. The guest's word after the restore is information:
+    absent, it holds nothing (the instance view never carries Run Command v1, measured 09/11);
+    present and contrary, it holds the release.
 
 Then it builds its own `recovery_complete` — the same fields as `glorfindel restore --wait` —,
 vouched for in this process, and hands it to the graph: the release follows as on the
 workstation (autonomous in the modes that allow it, a card otherwise; the release precondition
 of agent.py unchanged: without the control plane's fact the signal says `run_command_neutralized`
-unknown, and the release is held). A job that failed, not in place, of no named container, a
+unknown, contradicted it says it false, and the release is held). A job that failed, not in place, of no named container, a
 point not before the incident or unreadable: one card that says why (`release_hold`, nothing to
 approve), no release. A VM that does not run once the job is done: one card, and the watch keeps
 reading — started, the release follows.
@@ -76,12 +78,6 @@ def grace_s() -> float:
 def start_wait_s() -> float:
     """A VM that does not run this long after its job ended gets its card (600 s)."""
     return _env_s("GLORFINDEL_RECOVERY_START_WAIT_S", 600.0)
-
-
-def replay_wait_s() -> float:
-    """How long the watch waits for Run Command's word after the restore (900 s): past it, the
-    neutralization is unknown, and the release precondition holds the release."""
-    return _env_s("GLORFINDEL_RECOVERY_REPLAY_WAIT_S", 900.0)
 
 
 def restore_principals() -> frozenset[str]:
@@ -161,13 +157,16 @@ def neutralized_by_the_control_plane(obs: dict, job_start: float, trusted: froze
     SUCCEEDED Run Command on the VM before the job started made by a principal that restores (the
     neutralization), and no Run Command event by anyone else after it — whatever its status: one
     that failed, or stayed Accepted or Started (cut by the deallocation), left its settings in the
-    VM model, which a restored disk may replay. False when another's is the last, or came after;
-    None when it can't be told (the log unreadable, no principal configured)."""
+    VM model, which a restored disk may replay. One the platform refused (`refused`: `Conflict`,
+    `OperationNotAllowed`, the adapter reads it) never reached the guest nor the model: it is none
+    (REC1b). False when another's is the last, or came after; None when it can't be told (the log
+    unreadable, no principal configured)."""
     if obs.get("run_commands_error"):
         return None, str(obs["run_commands_error"])
     if not trusted:
         return None, "GLORFINDEL_RESTORE_PRINCIPALS vide : qui a lancé la dernière Run Command ne se compare à rien"
     runs = [r for r in obs.get("run_commands") or [] if _epoch(r.get("at")) is not None]
+    runs = [r for r in runs if r.get("refused") is not True]   # refused: never reached the guest (REC1b)
     done = [r for r in runs if str(r.get("status") or "Succeeded") == "Succeeded"]
     before = [r for r in done if _epoch(r["at"]) < job_start]
 
@@ -349,12 +348,12 @@ def _one(connector, emit, iso: dict, vault: str, vault_rg: str, now: float, repo
                     [f"Démarrer la VM : az vm start --ids {rid}",
                      "La watch lèvera alors l'isolation (dans les modes qui le permettent), ou le dira."])
     cp, cp_why = neutralized_by_the_control_plane(obs, start if start is not None else end, restore_principals())
-    word = (obs.get("run_command") or {}).get("neutralized")
-    if cp is True and word is None and now - end < replay_wait_s():
-        report.append({"vm": vm, "job": name, "outcome": "wait",
-                       "detail": (obs.get("run_command") or {}).get("why") or "Run Command"})
-        return
-    neutralized = cp if cp is not True else (True if word is True else (False if word is False else None))
+    # The guest's word is information (REC1b): absent, the control plane decides alone; present and
+    # contrary to it, the release is held.
+    word = obs.get("run_command") or {}
+    neutralized = cp
+    if cp is True and word.get("neutralized") is False:
+        neutralized, cp_why = False, f"le plan de contrôle prouve la neutralisation, l'invité dit autre chose : {word.get('why') or '?'}"
     if now - end < grace_s():
         report.append({"vm": vm, "job": name, "outcome": "wait", "detail": "délai après la fin du job"})
         return

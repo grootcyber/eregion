@@ -27,9 +27,12 @@ isolation paths, with Azure's semantics where they matter:
   point a job restored in its property bag — by its time, US style with a trailing space in the
   key, or by its id: both unmeasured — and its « Job Type »), the VM's recovery points, its power
   state, its OS disk and when it was created (a restore in place puts a new one), the activity log
-  (each Run Command, who ran it: `caller`), and what Run Command v1 last said (the instance view,
-  the GUEST's word: the output of the last command, written again when a restored disk boots and
-  replays it — measured once, 2026-10-05, the ransomware replayed —, or whatever root writes).
+  (each Run Command, who ran it: `caller`, its operation; one tried on a VM that does not run is
+  refused, logged Started then Failed, `Conflict`, `OperationNotAllowed`, the model as it was —
+  measured 09/11, REC1b), and what Run Command v1 last said (the GUEST's word: the output of the
+  last command, written again when a restored disk boots and replays it — measured once,
+  2026-10-05, the ransomware replayed —, or whatever root writes). The instance view carries it
+  only when a test sets `view_run_command`: on the bench (09/11), it never does.
 
 `open_flows` evaluates traffic as Azure does, independently of the connector's own
 helpers: inbound crosses the subnet's NSG then the NIC's, outbound the reverse; in each
@@ -130,8 +133,8 @@ class _Running:
     done, its result the last poll's — no output, as `LROPoller.result(timeout)` gives it at its
     deadline — until the test ends it (`FakeAzure.end_run_commands`)."""
 
-    def __init__(self, az, value, vm: dict):
-        self.az, self._value, self._vm, self._error, self._done = az, value, vm, None, False
+    def __init__(self, az, value, vm: dict, op: str):
+        self.az, self._value, self._vm, self._error, self._done, self._op = az, value, vm, None, False, op
 
     def result(self, timeout=None):
         if not self._done:
@@ -148,9 +151,9 @@ class _Running:
 
     def end(self, error=None) -> None:
         self._done, self._error = True, error
-        self.az.activity.append({"resource_id": self._vm["id"], "op": RUN_COMMAND_ACTION,
-                                 "status": "Failed" if error is not None else "Succeeded",
-                                 "at": self.az.clock(), "caller": self.az.caller})
+        self.az.log_run_command(self._vm["id"], ("Failed" if error is not None else "Succeeded",),
+                                {"http": "Conflict", "message": str(error)} if error is not None else None,
+                                op=self._op)
 
 
 class FakeAzure:
@@ -182,7 +185,12 @@ class FakeAzure:
         # sets it) and when (`clock`, which a test may move).
         self.disks: dict[str, dict] = {}
         self.activity: list[dict] = []
+        self.operations = 0
         self.caller = "h0-identity"
+        # Whether the instance view carries Run Command v1's word (`instanceView.extensions`):
+        # measured on the bench (09/11, REC1b), never — before a restore, after it, after a replayed
+        # neutralization. A test that reads the guest's word sets it.
+        self.view_run_command = False
         self.clock = lambda: datetime.now(timezone.utc)
         self.compute.disks = _Disks(self)
         # DRN1: Run Commands held running until the test ends them (`end_run_commands`).
@@ -235,24 +243,63 @@ class FakeAzure:
             r.end(error)
         self.running.clear()
 
-    def cut_run_command(self, vm: str, text: str, status: str = "Accepted") -> None:
+    def cut_run_command(self, vm: str, text: str, status: str = "Accepted",
+                        http: str | None = None, message: str | None = None) -> None:
         """A Run Command by `caller` that never finished — cut by the deallocation (`Accepted`,
-        `Started`) or `Failed`: logged so, and its settings left in the VM model all the same (a
-        restored disk replays them); the guest said nothing of it."""
+        `Started`) or `Failed` (`http`, `message`: its `properties.statusCode` and
+        `statusMessage`; by default an agent's failure once begun): logged so, and its settings
+        left in the VM model all the same (a restored disk replays them); the guest said nothing
+        of it."""
         v = self.vms[key(vm)]
         v["last_output"] = f"Enable succeeded:\n[stdout]\n{text}\n[stderr]\n"
+        failed = {"http": http, "message": message if message is not None else (
+            '{"status":"Failed","error":{"code":"VMAgentStatusCommunicationError",'
+            '"message":"VM has reported a failure when processing extension RunCommandLinux."}}')}
+        self.log_run_command(v["id"], ("Started", status) if status != "Started" else ("Started",),
+                             failed if status == "Failed" else None)
+
+    def log_run_command(self, resource_id: str, statuses, failed: dict | None = None,
+                        op: str | None = None) -> str:
+        """One Run Command operation in the activity log, by `caller`, now: its events (`statuses`,
+        under one `operationId`), the `Failed` one carrying `failed` ({"http", "message"}). `op`: an
+        operation already logged, its later events (DRN1: a Run Command held running, then ended)."""
+        if op is None:
+            self.operations += 1
+            op = f"op-{self.operations:05d}"
         at = self.clock()
-        for s in ("Started", status) if status != "Started" else ("Started",):
-            self.activity.append({"resource_id": v["id"], "op": RUN_COMMAND_ACTION, "status": s, "at": at,
-                                  "caller": self.caller})
+        for s in statuses:
+            self.activity.append({"resource_id": resource_id, "op": RUN_COMMAND_ACTION, "status": s, "at": at,
+                                  "caller": self.caller, "op_id": op,
+                                  "failed": failed if s == "Failed" else None})
+        return op
+
+    def deallocate(self, vm: str) -> None:
+        """The VM deallocated (`az vm deallocate`, what `glorfindel restore` does before the vault
+        restores): a Run Command on it is refused (REC1b)."""
+        self.vms[key(vm)]["power"] = "deallocated"
 
     def activity_log(self, resource_id: str, since: str) -> list[dict]:
-        """The activity log's events on a resource since a moment, as its REST API gives them."""
+        """The activity log's events on a resource since a moment, as its REST API gives them: the
+        caller as the bench measured it for every identity (09/11: `caller` and `claims.oid` the
+        object id, `claims.appid` its appId — the fake gives one id for both), and, on a failure,
+        `properties.statusCode`, `subStatus` and `properties.statusMessage` (their shape: assumed
+        from ARM's documented events, unmeasured)."""
         start = datetime.fromisoformat(since.replace("Z", "+00:00"))
-        return [{"caller": e["caller"], "claims": {"appid": e["caller"]},
-                 "operationName": {"value": e["op"]}, "status": {"value": e["status"]},
-                 "eventTimestamp": e["at"].isoformat(), "resourceId": e["resource_id"]}
-                for e in self.activity if key(e["resource_id"]) == key(resource_id) and e["at"] >= start]
+        out = []
+        for e in self.activity:
+            if key(e["resource_id"]) != key(resource_id) or e["at"] < start:
+                continue
+            ev = {"caller": e["caller"], "claims": {"appid": e["caller"], "oid": e["caller"]},
+                  "operationName": {"value": e["op"]}, "status": {"value": e["status"]},
+                  "operationId": e.get("op_id", ""), "eventTimestamp": e["at"].isoformat(),
+                  "resourceId": e["resource_id"], "subStatus": {"value": ""}, "properties": {}}
+            failed = e.get("failed")
+            if failed:
+                ev["properties"] = {"eventCategory": "Administrative", "statusMessage": failed["message"],
+                                    **({"statusCode": failed["http"]} if failed["http"] else {})}
+                ev["subStatus"] = {"value": failed["http"] or "", "localizedValue": failed["http"] or ""}
+            out.append(ev)
+        return out
 
     # ── Azure Backup (REC1) ─────────────────────────────────────────────────────
 
@@ -524,6 +571,16 @@ class _Vms:
             if v["os"] == "Windows" and getattr(command, "command_id", "") == "RunShellScript":
                 raise _error(HttpResponseError, 409,
                              f"(Conflict) RunShellScript is not supported on the Windows VM {name}")
+            if v.get("power", "running") != "running":
+                # Measured on the bench (09/11, REC1b): on a deallocated VM, ARM refuses the command —
+                # logged Started then Failed, Conflict, OperationNotAllowed, under its real caller —
+                # and the VM model is left as it was. The message's text is assumed.
+                text = (f"Operation 'RunCommand' is not allowed on VM '{name}' since the VM is "
+                        f"{v['power']}.")
+                self.az.log_run_command(v["id"], ("Started", "Failed"), {
+                    "http": "Conflict",
+                    "message": '{"error":{"code":"OperationNotAllowed","message":"' + text + '"}}'})
+                raise _error(HttpResponseError, 409, f"(OperationNotAllowed) {text}")
             script = list(getattr(command, "script", None) or [])
             # One `echo '<text>'` prints its text (the neutralization, REC1); anything else is the
             # session drain, as before.
@@ -533,18 +590,14 @@ class _Vms:
             message = f"Enable succeeded:\n[stdout]\n{said}\n[stderr]\n"
             # The VM model's last command, the agent's word of it (the instance view), and the
             # control plane's record of who ran it (the activity log, REC1).
-            at = self.az.clock()
             v["last_output"] = message
-            v["said"] = {"message": message, "time": at}
+            v["said"] = {"message": message, "time": self.az.clock()}
             value = SimpleNamespace(value=[SimpleNamespace(message=message)])
-            if self.az.hold_run_commands:               # DRN1: Started now, Succeeded when it ends
-                self.az.activity.append({"resource_id": v["id"], "op": RUN_COMMAND_ACTION,
-                                         "status": "Started", "at": at, "caller": self.az.caller})
-                self.az.running.append(_Running(self.az, value, v))
+            if self.az.hold_run_commands:               # DRN1: Started now, its end when the test ends it
+                op = self.az.log_run_command(v["id"], ("Started",))
+                self.az.running.append(_Running(self.az, value, v, op))
                 return self.az.running[-1]
-            for status in ("Started", "Succeeded"):     # as ARM logs a long operation
-                self.az.activity.append({"resource_id": v["id"], "op": RUN_COMMAND_ACTION,
-                                         "status": status, "at": at, "caller": self.az.caller})
+            self.az.log_run_command(v["id"], ("Started", "Succeeded"))    # as ARM logs a long operation
             return _Done(SimpleNamespace(value=[SimpleNamespace(message=message)]))
         return self.az.call("vm.run_command", True, run)
 
@@ -554,7 +607,7 @@ class _Vms:
             handler = "RunCommandWindows" if v["os"] == "Windows" else "RunCommandLinux"
             exts = [SimpleNamespace(name=handler, type=f"Microsoft.CPlat.Core.{handler}", statuses=[
                 SimpleNamespace(code="ProvisioningState/succeeded", message=v["said"]["message"],
-                                time=v["said"]["time"])])] if v.get("said") else []
+                                time=v["said"]["time"])])] if v.get("said") and self.az.view_run_command else []
             return SimpleNamespace(statuses=[SimpleNamespace(code="ProvisioningState/succeeded"),
                                              SimpleNamespace(code=f"PowerState/{v.get('power', 'running')}")],
                                    extensions=exts)
