@@ -616,6 +616,103 @@ elle tire aussi. `EREGION_HYPOTHESIS_SEED: profile` dans `ci.yml` l'en garderait
 demanderait aussi de changer `tests/unit/test_workflows.py::test_a_pull_request_and_a_push_stay_derandomized`,
 qui refuse toute graine posée dans `ci.yml` et n'admet ailleurs que `draw` ou la graine d'un dispatch.
 
+### Les mutants fragiles, de la nuit à la séquence figée (MUT7)
+
+**Le constat** (Jonathan, 10/11, le soir de la 0.5.9). Ce que SEED1 laissait ouvert est arrivé : la porte
+tire une graine nouvelle à chaque tour, et elle a débusqué, l'un après l'autre, des mutants que seule une
+machine tue et que certains tirages à 500 séquences laissent passer. M21 a été figé par MUT5, M606 et M09
+par MUT6, M13 par MUT8, M33 par MUT9 (#704, #706). Chacun a été trouvé le soir de la release, jamais
+avant.
+
+**Les reconnaître.** La table des mutants (`TESTS` de `mutation_check.py` et des lots, plus leurs
+`TESTS_ALSO`) donne la cible de chaque mutant. La règle de l'issue disait : « leurs tests ne contiennent
+qu'un fichier de machine, sans séquence figée ». Lue telle quelle, la table ne suffit pas, pour deux
+raisons.
+- **Fichier par fichier, une machine se lit mal.** `test_recovery_watch.py` définit une machine, et sept
+  cibles n'y nomment que des tests simples. Une cible qui donne un fichier de machine entier avec un
+  `-k` ne fait pas tourner la machine si le `-k` ne retient pas son test : c'est le cas de M1343 et de
+  M1550. `mutation_check.machine` les compte toutes les neuf. `scripts/mutation_night.py` lit mot par
+  mot. Un mot fait tourner une machine quand son fichier en définit une et que le mot atteint le test
+  qui la lance (`run_state_machine_as_test(…)`, ou un `TestX = Machine.TestCase`) : le fichier entier,
+  dont le `-k` retient ce test, ou un nœud qui le nomme.
+- **La table ne dit pas qui attrape.** Un lot nomme les tests qu'il veut. Sa mesure dit `CAUGHT` quel
+  que soit le test qui a échoué, et sous `-x`, la machine passe d'abord. Un test fixe nommé à côté
+  d'une machine peut ne jamais attraper le mutant.
+
+D'où **la règle retenue** :
+- **`alone`, par la table** : la cible ne fait tourner qu'une machine. Elle est le seul tueur que la
+  cible tienne, ou presque : le fichier entier d'une machine fait aussi tourner ses quelques tests
+  simples (celui du faux AWS, par exemple).
+- **`beside`, par la mesure** : la cible fait tourner une machine et des tests fixes. La nuit lance
+  d'abord les tests fixes, une fois, sur le mutant. S'ils l'attrapent, il est `CAUGHT` par eux, quelle
+  que soit la graine : la machine n'est pas lancée. Sinon, la machine seule le tue, et il est mesuré comme
+  un `alone`. Une partie fixe qui tire (Hypothesis) ou qui fait courir des fils (`chance`) n'est pas un
+  tueur fixe : sa cible entière tourne sur chaque graine.
+- Les mutants non comptés (`EQUIVALENT`, `MULTI-HOST`) restent dehors. Un survivant connu (`TIMING`) est
+  mesuré et dit, jamais fragile.
+
+Sur l'arbre du 10/11 (après MUT9, a1f1860c ; `mutation_night.py --list`), la règle retient 241
+mutants : 42 `alone`, 199 `beside`. M33, `alone` avant MUT9, est passé `beside` : ses séquences figées
+d'A0 et un test unitaire l'attrapent.
+
+**Le chemin d'un mutant fragile.**
+1. **La nuit** (`mutants-night.yml`, `docs/operations.md`, « Les mutants fragiles, chaque nuit ») mesure
+   un septième de la liste. Chaque mutant de la part tourne à 500 séquences sur trois graines, S, S + 1
+   et S + 2, la graine S tirée et dite (SEED1), après chaque machine non mutée sur chacune d'elles.
+2. **Le verdict** : `CAUGHT n/n`, `flaky` (attrapé sur certaines graines) ou `SURVIVES` (sur aucune).
+   Pour un fragile, la sortie donne les graines où il a survécu et, pour chacune, la commande qui le
+   mesure comme la porte (`mutation_check.py --only Mnn --seed G --examples 500 --rounds 1`).
+3. **L'issue** : « Mutation : Mnn échappe à une graine de la machine des invariants ». Elle est ouverte,
+   ou commentée si elle l'est déjà, avec les graines, les rejeux et le lien du run. Elle est neutre :
+   l'identifiant du mutant, rien de sa description.
+4. **Le remède** suit MUT5, MUT6 et MUT8. On rejoue le mutant sur sa graine, on lit la séquence qui le
+   tue (la description du mutant la nomme souvent), et on l'écrit dans
+   `tests/unit/test_invariant_regressions.py`, ou dans `test_invariant_regressions_aws.py` pour AWS.
+   Puis on l'ajoute à la cible du mutant par `TESTS_ALSO`, dans le fichier de son lot ou dans
+   `scripts/mutants/MUT3.py`. Le mutant et ses ancres ne changent pas.
+5. **Après** : le mutant est `beside`, sa séquence figée l'attrape. À sa nuit suivante, il est `CAUGHT`
+   par ses tests fixes, en un run, ce qui prouve que la séquence le tient toujours. À la porte, il est
+   attrapé à chaque tour, quelle que soit la graine. On ferme l'issue.
+
+Ne déclarer aucun mutant fragile « équivalent » pour faire taire la nuit : une graine qui le laisse
+passer prouve qu'une séquence le tue, puisqu'une autre graine l'attrape.
+
+**Les tests** : `tests/unit/test_mutation_night.py`, sur des mutants, des fichiers et des runs écrits
+par le test. La règle mot par mot y est tenue : un nœud simple d'un fichier de machine, un `-k` qui
+écarte la machine, une sous-classe de machine. La rotation aussi : sept nuits de suite donnent chaque
+part une fois. Un mutant attrapé sur chaque graine et un `flaky` y sont dits avec leur rejeu, sur les
+graines où il a survécu. Un `beside` dont les tests fixes attrapent le mutant ne lance pas la machine ;
+un `beside` dont les tests fixes le manquent est mesuré sur chaque graine. Un `beside` dont la partie
+fixe tire (un fichier qui importe Hypothesis) n'a jamais de run de sa partie fixe seule : sa cible entière
+tourne sur chaque graine, sans quoi un mutant que cette partie n'attrape que sur la première graine
+serait dit `CAUGHT 3/3 by its fixed tests`, un faux vert (45 des 199 `beside` du 10/11 passent par là,
+relevé par la relecture). Un `--only` qui nomme un mutant hors de la liste le dit, avec pourquoi, et
+sort en 2 sans rien mesurer. Une machine non mutée rouge sur une graine rend la nuit sans mesure.
+L'étape du workflow qui écrit l'issue y tourne contre un faux `gh` : ouverte, commentée, ou rien d'écrit
+quand la sortie n'a pas sa forme. Mutants M4731–M4736 (M4736 de la relecture) : 6/6 attrapés.
+
+**Une mesure réelle** (10/11, sur le poste, `--only M33,M01 --seeds 3 --examples 100 --jobs 2`, graine
+tirée 758679988). M01 est `CAUGHT 3/3`. M33, mesuré sur 57c2375e, avant MUT9, quand il était encore `alone`, est `flaky 1/3` : il survit
+sur 758679989 et 758679990. Le rejeu donné pour la première graine,
+`mutation_check.py --only M33 --seed 758679989 --examples 100 --rounds 1`, le redonne survivant de la
+machine : 0/1, `FIXED-ONLY`. À 100 séquences seulement : la nuit tourne à 500.
+
+**Ce qui reste ouvert.**
+- Le `-k` est lu à la main, comme `races` le lit : les mots de l'expression, et un test retenu dès que
+  son nom de fonction en contient un. Aucune cible du 10/11 n'a de `not` ; une cible qui en aurait un
+  serait mal lue. Cette lecture est aussi sensible à la casse et ne regarde que le nom de la fonction,
+  quand pytest compare sans tenir compte de la casse et lit aussi les noms du module et de la classe :
+  un `-k` qui ne retient la machine que par le nom de son fichier, ou par une autre casse, la ferait
+  lire absente. Aucune cible du 10/11 n'est dans ce cas ; ce lot ne change pas la lecture.
+- Les runs non mutés des tests fixes tournent sur S seulement. Une partie fixe qui tire est traitée à
+  part (ci-dessus).
+- La nuit abaisse le risque à la porte, elle ne l'annule pas. Un mutant attrapé 3 fois sur 3 la nuit
+  peut encore échapper aux deux tours d'une porte, avec une probabilité plus faible.
+- `mutation_check.machine`, qui lit fichier par fichier, compte encore les neuf cibles ci-dessus parmi
+  les machines : la mesure du lundi (`--machines`) les mesure pour rien, et `--skip-machine-baseline`
+  saute leur run non muté dans une tranche de la porte, que le job `invariants-rest` couvre. Ce lot ne
+  le change pas.
+
 ### Chaque mutant mesuré, sans le travail en double (CI10a)
 
 Décision de Jonathan du 05/11 (« Tout le paquet », #580), sur l'étude CI9 : la porte confirmait sans
