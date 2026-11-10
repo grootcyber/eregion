@@ -1218,3 +1218,37 @@ def test_the_watch_runs_the_pass_in_its_housekeeping():
     src = inspect.getsource(cli.watch.callback)
     assert "_recoveries()" in src and 'GLORFINDEL_RECOVERY_INTERVAL_S", "60"' in src
     assert "if dry_run or _recovery_every_s <= 0:" in src and 'name="recoveries"' in src
+
+
+# ── LEV2 (#690): the door's facts change no lift, nor what the model reads ────────────────────
+
+def test_the_door_facts_of_a_third_party_holding_its_rights_change_no_lift_nor_the_models_message():
+    """LEV2 reads who acted on the VM and their rights, for the isolation card only: a third party
+    that wrote an extension and still holds Owner — the door proven open in LEV1's words — lifts as
+    before (LEV3 will hold it), and the message to the model is the same to the byte with the facts
+    written or not."""
+    import json as _json
+    from glorfindel import door_facts
+    from glorfindel.agent import _build_user_message
+
+    f, c, vm = _world()
+    c._rest = f.rest
+    f.clock = lambda: _t(10)
+    _isolated(f, c, vm)
+    f.log(vm + "/extensions/VMAccessForLinux", "Microsoft.Compute/virtualMachines/extensions/write",
+          caller=ATTACKER, at=_t(5))
+    f.assign("/subscriptions/s", ATTACKER, "Owner")
+    [r] = door_facts.facts_pass(c, now=_NOW + 600)
+    facts = door_facts.load(vm)
+    third = next(a for a in facts["actors"] if ATTACKER in a["ids"])
+    assert third["rights"]["verdict"] == "held"
+    _points(f, vm)
+    _from_the_workstation(f, c, vm)
+    signals, report = _pass(c)
+    assert [x["outcome"] for x in report] == ["emitted"] and len(signals) == 1
+    sig = signals[0]
+    assert sig["raw_signal"]["run_command_neutralized"] is True
+    assert "door" not in _json.dumps(sig) and ATTACKER not in _json.dumps(sig)
+    with_facts = _build_user_message(sig, []).encode()
+    door_facts._file(vm).unlink()
+    assert _build_user_message(sig, []).encode() == with_facts

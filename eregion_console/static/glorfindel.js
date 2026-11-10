@@ -305,6 +305,34 @@ function _healthNote(s) {
   return out;
 }
 
+// LEV2 (#690): who acted on the VM by the control plane, and whether they keep their rights —
+// read by the watch, FOR INFORMATION only (the lift does not read it yet). Every text from Azure
+// goes through _attr; the chip's words are the page's own.
+const _DOOR_CHIP = {
+  none: { color: 'var(--dim)', label: 'no actor seen' },
+  seen: { color: 'var(--orange)', label: 'actors seen' },
+  unreadable: { color: 'var(--orange)', label: 'actors unreadable' },
+};
+function _doorNote(s) {
+  const d = s && s.door;
+  if (!d) return '';
+  const chip = _DOOR_CHIP[d.verdict] || _DOOR_CHIP.unreadable;
+  const n = Array.isArray(d.actors) ? Number(d.actors.length) : 0;
+  const lines = ['For information: the lift does not read these facts yet.',
+    'Read ' + (d.read_at || '?') + ', since ' + (d.since || '?') + '.'];
+  for (const w of d.unreadable || []) lines.push('Unreadable: ' + w);
+  for (const a of d.actors || []) {
+    lines.push((a.role ? a.role + ' ' : '') + (a.ids || []).join(', ') + ' — rights ' + (a.rights || '?'));
+    for (const g of a.gestures || []) lines.push('  ' + g.at + ' ' + g.operation + ' (' + g.kind + ', ' + g.status + ')');
+    for (const h of a.held || []) lines.push('  held: ' + h);
+    for (const w of a.why || []) lines.push('  ' + w);
+  }
+  if (Array.isArray(s.disks_at_isolation) && s.disks_at_isolation.length)
+    lines.push('Disks at the isolation (evidence, never deleted): ' + s.disks_at_isolation.join(', '));
+  const base = 'font-size:8px;font-weight:600;padding:0 4px;border-radius:3px;flex-shrink:0;border:1px solid var(--border)';
+  return ` <span style="${base};color:${chip.color}" title="${_attr(lines.join('\n'))}">⚑ ${chip.label}${n ? ' · ' + n : ''}</span>`;
+}
+
 // Last meaningful lines of a CLI run (release / reset print the rules still in place).
 function _cliTail(text, n = 4) {
   return (text || '').split('\n').map(l => l.trim()).filter(Boolean).slice(-n).join(' · ');
@@ -1557,7 +1585,7 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
     restoreInfo ? `<span class="badge restoring" style="font-size:9px">🔄 RESTORING · ${_attr(restoreInfo.elapsed_label)}</span>` : '',
     ...states.filter(s => s.type === 'isolated').map(s =>
       `<span class="badge isolated" style="font-size:9px${!isExpanded ? ';cursor:pointer' : ''}"
-           ${!isExpanded ? `${_on('click', 'showIsolationModal', vm_name)}` : ''}>ISOLATED · ${age(s.since)}</span>${_scopeNote(s)}${_nicNote(s, vm_name)}`),
+           ${!isExpanded ? `${_on('click', 'showIsolationModal', vm_name)}` : ''}>ISOLATED · ${age(s.since)}</span>${_scopeNote(s)}${_nicNote(s, vm_name)}${_doorNote(s)}`),
     ...(blocks.length > 1 ? [_blocksSummary(blocks, resource_id)] : blocks.map(s =>
       `<span class="badge blocked" style="font-size:9px${!isExpanded ? ';cursor:pointer' : ''}"
            ${!isExpanded ? `${_on('click', 'showIsolationModal', vm_name)}` : ''}>BLOCKED ${_attr(s.ip)} · ${age(s.since)}</span>${_scopeNote(s)}${_nicNote(s, vm_name)}`)),
@@ -1609,7 +1637,7 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
     let corrBtn = '';
     if (a.action === 'isolate_vm' && isIsolated) {
       const s = states.find(s => s.type === 'isolated');
-      badge   = s ? `<span class="badge isolated" style="font-size:9px;cursor:default">ISOLATED · ${age(s.since)}</span>${_scopeNote(s)}${_nicNote(s, vm_name)}` : '';
+      badge   = s ? `<span class="badge isolated" style="font-size:9px;cursor:default">ISOLATED · ${age(s.since)}</span>${_scopeNote(s)}${_nicNote(s, vm_name)}${_doorNote(s)}` : '';
       corrBtn = `<button class="action danger" ${_on('click', 'confirmRelease', vm_name)} style="font-size:9px;padding:2px 7px;margin-left:auto">↩️ Release</button>`;
     } else if (a.action === 'block_suspicious_ip' && isBlocked) {
       // The latest decision keeps its row; the blocks are all said, never the first one alone
@@ -1645,7 +1673,7 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
   if (isIsolated && !coveredByDec.has('isolate_vm')) {
     const s = states.find(s => s.type === 'isolated');
     fallbackRows.push(`<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-      <span class="badge isolated" style="font-size:9px;cursor:default">ISOLATED · ${age(s?.since)}</span>${_scopeNote(s)}${_nicNote(s, vm_name)}
+      <span class="badge isolated" style="font-size:9px;cursor:default">ISOLATED · ${age(s?.since)}</span>${_scopeNote(s)}${_nicNote(s, vm_name)}${_doorNote(s)}
       <button class="action danger" ${_on('click', 'confirmRelease', vm_name)} style="font-size:9px;padding:2px 7px">↩️ Release</button>
     </div>`);
   }

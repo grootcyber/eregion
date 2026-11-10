@@ -678,6 +678,16 @@ def _handled(now: datetime) -> list[dict]:
     return out
 
 
+def _door_view(resource_id: str) -> dict | None:
+    """The door's facts of an isolated VM as the watch last wrote them (LEV2), or None — a file
+    that can't be read is None too: information, never a reason to fail the state."""
+    try:
+        from glorfindel.door_facts import card_view
+        return card_view(resource_id)
+    except Exception:
+        return None
+
+
 @app.get("/api/state")
 async def state() -> dict:
     from glorfindel import escalations as esc_module
@@ -717,6 +727,11 @@ async def state() -> dict:
                 "verified_at": _iso.get("verified_at", ""),
                 # Open sessions cut after the rules? (drain: drained|partial|failed|unsupported)
                 "drain": _iso.get("drain") or {},
+                # LEV2: who acted on the VM by the control plane, and their rights — read by the
+                # watch, for information only (nothing here lifts or holds); None: not read yet.
+                "door": _door_view(resource_id),
+                # LEV2: its disks as noted at the isolation (evidence after a restore in place).
+                "disks_at_isolation": [str(d) for d in ((_iso.get("disks_at_isolation") or {}).get("ids") or [])],
             })
         for b in blocks.get(resource_id, []):
             states.append({

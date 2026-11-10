@@ -215,6 +215,8 @@ La preuve, à trois endroits :
 
 **Le rançongiciel (T1486)**, une technique destructive, se rejoue par une demande de Dagorlad, avec son restore et sa levée : [`banc-t1486.md`](../banc-t1486.md).
 
+**Ce que le journal d'activité dit des gestes sur une VM** (LEV2, avant la règle de levée de LEV3) : des écritures sans effet sur gondolin, chacune avec son retour, puis un rapport sans identifiant : [`banc-lev2.md`](../banc-lev2.md).
+
 ## 8. Tout démonter
 
 Dans cet ordre : Orodruin lit encore l'état de H0, et les trois modules lisent `terraform.tfvars`.
