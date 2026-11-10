@@ -1694,7 +1694,8 @@
    "release": "0.6",
    "lots": [
     "SEED1",
-    "MUT5"
+    "MUT5",
+    "MUT6"
    ],
    "issue": 655,
    "pr": 663

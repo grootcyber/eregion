@@ -56,6 +56,13 @@ TESTS_ALSO = {
     # L26's sequence, and the bare NIC's that MUT5 froze beside it.
     "M21": f"{_REG}test_a_block_hidden_behind_the_quarantine_is_not_a_block "
            f"{_REG}test_a_block_on_an_nsg_taken_off_its_nic_is_not_a_block",
+    # Flaky at the 0.5.9 release gate (MUT6: the machine alone catches it on seed 766752177,
+    # lets it through on 766752178): Q7's sequence, frozen by MUT6.
+    "M09": f"{_REG}test_a_quarantine_whose_state_and_tag_are_lost_is_not_released_bare",
+    # Survived the AWS machine at the 0.5.9 release gate (MUT6: both rounds, seeds 276700698
+    # and 276700699): U2's sequence on AWS, frozen by MUT6.
+    "M606": "tests/unit/test_invariant_regressions_aws.py::"
+            "test_a_reisolation_of_an_eni_left_on_default_keeps_its_original",
     # The unit test that holds its property, outside its target.
     "M36": "tests/unit/test_glorfindel.py::test_an_old_state_file_is_moved_before_it_is_rewritten",
     # Their tests of their own.
