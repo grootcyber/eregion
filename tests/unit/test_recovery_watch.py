@@ -480,7 +480,7 @@ def test_a_restore_elsewhere_lifts_nothing_and_says_the_vm_was_not_restored(kind
     """« Restore disks », a new VM: the operation is a Restore, named after the source VM, its
     container too — but the isolated VM keeps its disks. Root on it writes the harmless word: still
     nothing (REC1, review B1)."""
-    f, c, vm = _world()
+    f, c, vm = _world(view=True)              # the guest's forged word read
     _isolated(f, c, vm)
     _points(f, vm)
     _from_the_workstation(f, c, vm, kind=kind)
@@ -550,7 +550,7 @@ def test_an_attacker_command_after_the_neutralization_lifts_nothing():
 def test_root_rewriting_the_word_after_the_restore_proves_nothing():
     """No neutralization (H0's drain the last command); after the boot, root writes the harmless
     word in the agent's status: the control plane says otherwise."""
-    f, c, vm = _world()
+    f, c, vm = _world(view=True)              # the guest's forged word read
     _isolated(f, c, vm)
     _points(f, vm)
     _from_the_workstation(f, c, vm, neutralize=False)
@@ -561,7 +561,7 @@ def test_root_rewriting_the_word_after_the_restore_proves_nothing():
 
 
 def test_a_command_of_another_after_the_restore_began_proves_nothing():
-    f, c, vm = _world()
+    f, c, vm = _world(view=True)              # the guest's forged word read
     _isolated(f, c, vm)
     _points(f, vm)
     _from_the_workstation(f, c, vm)
@@ -840,6 +840,48 @@ def test_a_refusal_is_read_where_the_activity_log_carries_it():
     assert _refused_operations([{**started, "eventTimestamp": "2026-11-09T20:09:40Z"}, failed]) == set()
     assert _refused_operations([started, {**started, "status": {"value": "Succeeded"}}, failed]) == set()
     assert _refused_operations([{**started, "operationId": ""}, {**failed, "operationId": ""}]) == set()
+    # Review round 1: one Started at most per refusal, the closest before it, within a minute.
+    earlier = {**started, "eventTimestamp": "2026-11-09T20:09:20Z"}
+    assert _refused_operations([earlier, started, failed]) == set()           # two Started, one refusal
+    assert _refused_operations([{**started, "eventTimestamp": "2026-11-09T19:59:31Z"}, failed]) == set()
+    assert _refused_operations([{**started, "eventTimestamp": "2026-11-09T20:08:31Z"}, failed]) == {"op-1"}
+    assert _refused_operations([{**started, "eventTimestamp": "2026-11-09T20:08:30Z"}, failed]) == set()
+    again = {**failed, "eventTimestamp": "2026-11-09T20:09:41Z"}
+    assert _refused_operations([earlier, failed, {**started, "eventTimestamp": "2026-11-09T20:09:39Z"},
+                                again]) == {"op-1"}                          # two refusals, a Started each
+    assert _refused_operations([failed]) == {"op-1"}                          # its Started not logged
+
+
+def _log_by_hand(f, vm, caller: str, op: str, at: datetime, status: str, refused: bool = False) -> None:
+    """One activity log event written as a client choosing its `operationId` would leave it (the
+    review's hypothesis: its origin is unmeasured)."""
+    failed = ({"http": "Conflict", "message": '{"error":{"code":"OperationNotAllowed","message":"x"}}'}
+              if refused else None)
+    f.activity.append({"resource_id": vm, "op": "Microsoft.Compute/virtualMachines/runCommand/action",
+                       "status": status, "at": at, "caller": caller, "op_id": op, "failed": failed})
+
+
+@pytest.mark.parametrize("starts", [(-5, -2), (-600,)], ids=["two-started", "ten-minutes-before"])
+def test_a_cut_command_never_hides_behind_a_refusal_of_its_id(starts):
+    """Review round 1: an attacker's command cut by the deallocation leaves its Started alone; a
+    later refusal under the same operationId (a client choosing it) takes at most one Started, the
+    closest before it, within a minute — two Started for one refusal, or one ten minutes before,
+    hold the release."""
+    f, c, vm = _world()
+    at = _isolated(f, c, vm)
+    _points(f, vm)
+    f.caller, f.clock = CONSOLE, lambda: _after(at, 60)
+    c._neutralize_run_command("rg-app", "web", f.compute.virtual_machines.get("rg-app", "web"))
+    f.caller = H0
+    refused_at = 900
+    for s in starts:
+        _log_by_hand(f, vm, ATTACKER, "op-chosen", _after(at, refused_at + s), "Started")
+    _log_by_hand(f, vm, ATTACKER, "op-chosen", _after(at, refused_at), "Failed", refused=True)
+    f.restore(vm, "p-clean", _t(20), _t(40))
+    iso = _load_isolation_state(vm)["isolated_at"]
+    runs = [r for r in c.observed_restore(vm, iso, vault=VAULT)["run_commands"] if ATTACKER in r["callers"]]
+    assert not any(r["refused"] for r in runs if r["status"] == "Started")
+    assert _pass(c)[0][0]["raw_signal"]["run_command_neutralized"] is False
 
 
 def test_the_activity_log_is_asked_for_what_a_refusal_needs(monkeypatch):

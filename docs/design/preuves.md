@@ -133,8 +133,9 @@ tirage, six des neuf qu'elle peut voir à 200 séquences et quatre à 60. M4632,
 n'est vu que par son test. Les quatre de REC1b (M4650–M4653) aussi, à chaque tour ; la machine seule
 voit M4650 (un échec quelconque pris pour un refus) et M4651 (la parole contraire ignorée) sur une
 partie des tirages, à 200 et 300 séquences, l'un ou l'autre selon le tirage. M4652 (la parole
-exigée de nouveau) retient des levées, ce que R1 ne juge pas ; M4653 demande deux opérations d'un
-même identifiant, que le faux Azure ne tire pas.
+exigée de nouveau) retient des levées, ce que R1 ne juge pas ; M4653 (la borne du `Started` d'un
+refus levée, en nombre et en temps) demande un identifiant d'opération choisi par le client, que
+le faux Azure ne tire pas : ses tests ciblés l'écrivent à la main.
 
 **Des oracles qui ne demandent rien au code.** Ce qu'une propriété juge vient du journal du test :
 la levée qu'il a demandée (I9), ce qu'il a perdu et quand (une carte « intraçable »), qui a écrit

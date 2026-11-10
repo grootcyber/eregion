@@ -27,7 +27,9 @@ object id); a Run Command tried on a deallocated VM is logged `Started` then `Fa
 code `OperationNotAllowed`, under its real caller, the VM model left as it was; a restore in place
 has the « Job Type » « Replace disks ». Unmeasured: in which fields the event carries that status
 and that code (`_refused` reads `properties.statusCode`, else `subStatus`, then the error of
-`properties.statusMessage`), and how a job names its point.
+`properties.statusMessage`); where an event's `operationId` comes from (ARM, or a client that
+could choose it: hence one `Started` at most per refusal, within a minute, `_refused_operations`);
+and how a job names its point.
 """
 from __future__ import annotations
 
@@ -53,6 +55,8 @@ _OID_CLAIM = "http://schemas.microsoft.com/identity/claims/objectidentifier"
 # it, and a code that can't be read is not this one.
 _REFUSED_STATUS = "conflict"
 _REFUSED_CODE = "operationnotallowed"
+# The `Started` that goes with a refusal comes at most this long before it (about 2 s on the bench).
+STARTED_WINDOW_S = 60
 
 
 def _utc(value) -> datetime | None:
@@ -146,21 +150,34 @@ def _refused(event: dict) -> bool:
     return _fold(status) == _REFUSED_STATUS and _error_code(props.get("statusMessage")) == _REFUSED_CODE
 
 
+def _at(event: dict) -> datetime:
+    return _utc(event.get("eventTimestamp")) or datetime.min.replace(tzinfo=timezone.utc)
+
+
 def _refused_operations(events: list[dict]) -> set[str]:
     """The operations (`operationId`) the platform refused: one of their events is a refusal, and
-    every other one is a `Started` by the same callers, no later — none that went further."""
+    each other one is a `Started` that goes with one refusal — AT MOST ONE per refusal, the closest
+    before it, by the same callers, within STARTED_WINDOW_S (about 2 s on the bench, 09/11). A
+    `Started` left over, or out of the window, or any other status (it went further): not refused.
+    The bound is there because the origin of `operationId` is unmeasured: if a client could choose
+    it, a command cut by the deallocation (its `Started` alone in the log) could hide behind a later
+    refusal under the same id — one `Started` within a minute of the refusal leaves it no room."""
     groups: dict[str, list[dict]] = {}
     for e in events:
         if _fold(e.get("operationId")):
             groups.setdefault(_fold(e.get("operationId")), []).append(e)
     out = set()
     for op, group in groups.items():
-        refusals = [e for e in group if _refused(e)]
-        if not refusals:
+        refusals = sorted((e for e in group if _refused(e)), key=_at)
+        left = sorted((e for e in group if not _refused(e)), key=_at)
+        if not refusals or any(_status(e) != "started" for e in left):
             continue
-        by, until = _callers(refusals[0]), max(_utc(e.get("eventTimestamp")) for e in refusals)
-        if all(_refused(e) or (_status(e) == "started" and _callers(e) == by and _utc(e.get("eventTimestamp")) <= until)
-               for e in group):
+        for r in refusals:
+            near = [s for s in left if _callers(s) == _callers(r)
+                    and 0 <= (_at(r) - _at(s)).total_seconds() <= STARTED_WINDOW_S]
+            if near:
+                left.remove(near[-1])          # the closest before it, and only it
+        if not left:
             out.add(op)
     return out
 

@@ -180,7 +180,8 @@ git fetch -q origin && git cat-file -e ${SHA}:glorfindel/recovery_watch.py && pr
 - **La lecture d'intégrité par Run Command se fait après la levée**, ou sous un principal qui
   restaure. Faite avant la levée sous l'`az login` d'un humain, c'est une Run Command d'un autre
   principal après la neutralisation : elle retient la levée automatique, qui se fait alors à la
-  main. Sous la quarantaine, elle est lente (152 s le 09/11) ; après la levée, 11 s.
+  main. Run Command est lente sous la quarantaine (le 09/11 : 152 s pour la neutralisation, 302 s
+  pour la coupure) ; hors quarantaine, après la levée, la lecture d'intégrité a pris 11 s.
 - **`--keep-isolated` reste de rigueur sur le poste** : la levée est celle de H0, pas du poste.
 - Une carte « Reprise à revoir » ou « levée retenue » à la place dit pourquoi. La levée se fait
   alors à la main, comme sans REC1, après la vérification de l'étape 7.
