@@ -142,7 +142,7 @@ DOCKER_GLORFINDEL_WATCH = $(WATCH_KEY_DIR) && $(RUNS_DIRS) && $(GLORFINDEL_AZURE
 	$(IMAGE_GLORFINDEL) glorfindel
 
 .PHONY: help build build-annatar build-glorfindel fix-state-ownership check-azure-env azure-pairs-expiry runs-migrate runs-survey \
-	bench-preflight bench-report \
+	bench-preflight bench-report bench-run bench-run-go bench-restore bench-restore-go mobile-check glorfindel-host-tunnel-private \
 	annatar-run annatar-dry-run annatar-validate annatar-list \
 	glorfindel-respond glorfindel-dry-run glorfindel-watch \
 	glorfindel-release glorfindel-revert glorfindel-list \
@@ -297,9 +297,15 @@ help:
 	@echo "                                               inscrites (un drill livré attend TARGETS), en demande, puis comme REQUEST="
 	@echo "  make orodruin-down                           Détruit la VM et l'identité"
 	@echo ""
-	@echo "Le banc (BNC1) — lu, jamais écrit (docs/banc-t1486.md) :"
+	@echo "Le banc (BNC1 : lu, jamais écrit ; MOB1 : les gestes, tapés sur le poste) — docs/banc-t1486.md :"
 	@echo "  make bench-preflight [TARGET=<vm>] [POINT_MAX_H=24]  L'étape 0 en un verdict ✓/⚠/✗, code 1 sur un ✗"
 	@echo "  make bench-report RUN=<run_id> [TARGET=<vm>] [OUT=…]  La chronologie d'un run, en Markdown et en JSON (runs/bench/)"
+	@echo "  make bench-run TARGET=<vm> SCENARIO=<id> [DRY_RUN=1]  MOB1 : préflight, demande, nom tapé, lancement par Orodruin, rapport"
+	@echo "  make bench-restore TARGET=<vm> [BEFORE=…] [RUN=…] [DRY_RUN=1]  MOB1 : le restore du poste, paire de la console, nom tapé,"
+	@echo "                                               --before le T0 du run, --keep-isolated (la levée est celle de H0)"
+	@echo "  make glorfindel-host-tunnel-private          MOB1 : la console de H0 pour le téléphone, sur l'adresse privée du poste seule"
+	@echo "  make mobile-check                            MOB1 : le poste ouvert au téléphone, lu (SSH à clé, écoutes, Tailscale)"
+	@echo "    Les deux premières refusent dans une session d'agent — docs/demarrer/mobile.md"
 	@echo ""
 	@echo "Gothmog (G0, G1) — une panne déclarée, depuis Orodruin (gothmog/README.md) :"
 	@echo "  make gothmog-preflight [FAULT=vm-shutdown]   Contrat, cibles, état normal — rien d'écrit"
@@ -1397,6 +1403,61 @@ bench-preflight:
 
 bench-report:
 	@$(PYTHON) scripts/bench_report.py
+
+# MOB1 (#686) : piloter le banc depuis le téléphone — l'opérateur tape toujours la commande sur son
+# poste, seul le chemin téléphone → poste change (docs/demarrer/mobile.md). Orodruin n'écoute toujours
+# que le SSH du poste (DRL1), rien n'est installé sur H0.
+# bench-run : le préflight (un ✗, rien ne part), la demande d'un fil SCENARIO → TARGET (l'id de la VM lu
+# sur Azure), le nom de la cible tapé ici, destructif ou non, puis la demande portée sur Orodruin, qui la
+# rejuge et la lance (comme orodruin-exercise), puis bench-report pour chaque run (scripts/bench_run.py).
+# bench-restore : le restore du poste, sous la paire de la console, le nom de la VM tapé, --before le T0
+# du run (son attack_started, SEC4c : runs/bench/<run_id>.json, RUN= ou le dernier de TARGET) sauf
+# BEFORE=, toujours --keep-isolated (la levée est celle de H0), à blanc d'abord (scripts/bench_restore.py).
+# Tous deux refusent dans une session d'agent (EREGION_AGENT_SESSION, le worktree d'un lot) : le garde
+# tourne seul d'abord, avant qu'aucune commande de H0 ni d'Orodruin ne soit développée (une sous-make
+# ensuite). TARGET, SCENARIO, BEFORE, RUN : sur la ligne de commande, jamais de l'environnement, jamais
+# développés par make, vérifiés par le script. DRY_RUN=1 : rien n'est envoyé ni restauré.
+unexport SCENARIO BEFORE
+bench-run bench-restore:
+	@case "$(origin TARGET) $(origin SCENARIO) $(origin BEFORE) $(origin RUN)" in *environment*) echo "TARGET, SCENARIO, BEFORE ou RUN vient de l'environnement : rien n'est fait. Sur la ligne de commande : make $@ TARGET=<vm> …" >&2; exit 1;; esac
+	@$(PYTHON) scripts/$(subst -,_,$@).py --guard-only
+	@$(ORO_SUBMAKE) $@-go
+
+bench-run-go: export BENCH_H0_SSH = $(HOST_SSH)
+bench-run-go: export BENCH_ORO_SSH = $(ORO_SSH)
+bench-run-go: export BENCH_ORO_RUN = docker run --rm $(ORO_HARDEN) --env-file orodruin.env $(ORO_IMAGE)
+bench-run-go: export BENCH_ORO_RUN_REQUEST = $(ORO_RUN_REQUEST)
+bench-run-go: export BENCH_SCENARIO = $(value SCENARIO)
+bench-run-go: export BENCH_POINT_MAX_H = $(value POINT_MAX_H)
+bench-run-go bench-restore-go: export BENCH_TARGET = $(value TARGET)
+bench-run-go bench-restore-go: export BENCH_DRY_RUN = $(value DRY_RUN)
+bench-restore-go: export BENCH_BEFORE = $(value BEFORE)
+bench-restore-go: export BENCH_RUN = $(value RUN)
+bench-run-go bench-restore-go:
+	@$(PYTHON) scripts/$(subst -,_,$(@:-go=)).py
+
+# MOB1 : la console de H0 pour le téléphone, par le poste. Le tunnel SSH vers H0 (clé d'hôte épinglée :
+# HOST_SSH_FINGERPRINT exigée, jamais accept-new) lie le port de la console à la seule adresse privée du
+# poste (Tailscale, scripts/mobile.py private-ip : une adresse de 100.64.0.0/10) ; introuvable, rien ne
+# s'ouvre — jamais 0.0.0.0, jamais la boucle locale, que WSL partage avec Windows. ExitOnForwardFailure :
+# un port qui ne se lie pas ferme le tunnel. La console de H0 ne répond qu'aux noms qu'elle connaît : sans
+# l'adresse privée dans EREGION_CONSOLE_HOSTS (host.env, puis glorfindel-host-push), le téléphone a un 403.
+glorfindel-host-tunnel-private: glorfindel-host-known
+	@test -n "$(HOST_SSH_FINGERPRINT)" || { echo "✗ HOST_SSH_FINGERPRINT requis : le tunnel du téléphone n'accepte que la clé d'hôte épinglée de H0 (infra/glorfindel-host/README.md, « SSH »). Rien n'est ouvert." >&2; exit 1; }
+	@test -n "$(HOST_IP)" || { echo "✗ Pas de H0 (HOST_IP) : make glorfindel-host-up. Rien n'est ouvert." >&2; exit 1; }
+	@ip=$$($(PYTHON) scripts/mobile.py private-ip) || exit 1; \
+	 case "$$ip" in 100.*) ;; *) echo "✗ « $$ip » n'est pas une adresse du réseau privé : rien n'est ouvert" >&2; exit 1;; esac; \
+	 if [ -f $(HOST_ENV) ]; then t="$(CONSOLE_TOKEN)"; hosts=$$($(call HOST_ENV_VALUE,EREGION_CONSOLE_HOSTS) | tr -d ' '); \
+	   case ",$$hosts," in *",$$ip,"*) ;; *) echo "  ⚠ EREGION_CONSOLE_HOSTS ($(HOST_ENV)) ne liste pas l'adresse privée du poste : la console de H0 répondra 403 au téléphone. L'y ajouter, puis make glorfindel-host-push (docs/demarrer/mobile.md)";; esac; \
+	   if [ -n "$$t" ]; then echo "  Console (téléphone) → http://$$ip:7007/?token=$$t"; else echo "  ⚠ $(NO_CONSOLE_TOKEN)"; fi; fi; \
+	 echo "  Le port 7007 lié à l'adresse privée seule (Ctrl+C ferme le tunnel)"; \
+	 exec ssh $(HOST_SSH_OPTS) -N -o ExitOnForwardFailure=yes -o GatewayPorts=no -L "$$ip:7007:127.0.0.1:7007" $(HOST_USER)@$(HOST_IP)
+
+# MOB1 : le poste, ouvert au téléphone, en lecture seule (scripts/mobile.py check) — le serveur SSH de WSL
+# n'écoute que sur l'adresse privée, mot de passe et clavier interactif fermés, la clé seule admise, le
+# port de la console exposé nulle part ailleurs, Tailscale SSH fermé. sshd -T par sudo -n : sudo -v d'abord.
+mobile-check:
+	@$(PYTHON) scripts/mobile.py check
 
 unexport ID
 orodruin-identity orodruin-identity-id: export EREGION_IDENTITY = $(value ID)
