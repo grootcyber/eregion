@@ -1320,7 +1320,7 @@ briques:
     nom: "A seed drawn per round for the nightly run and the release gate, stated and replayable"
     etat: main
     release: "0.6"
-    lots: [SEED1, MUT5, MUT6]
+    lots: [SEED1, MUT5, MUT6, MUT8]
     issue: 655
     pr: 663
 
