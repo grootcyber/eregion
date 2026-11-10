@@ -466,6 +466,8 @@ def isolated_glorfindel_home(tmp_path, monkeypatch):
     monkeypatch.setattr(signal_origin, "REFUSALS_FILE", home / "channel_refusals.json")
     import glorfindel.recovery_watch as recovery_watch   # REC1: what the watch did of each restore job
     monkeypatch.setattr(recovery_watch, "RECOVERIES_FILE", home / "recoveries.json")
+    import glorfindel.door_facts as door_facts           # LEV2: the door's facts of each isolated VM
+    monkeypatch.setattr(door_facts, "FACTS_DIR", home / "door")
     import glorfindel.cli as glorfindel_cli          # the injectors' heartbeat directory (SEC3)
     monkeypatch.setattr(glorfindel_cli, "_INJECTORS_DIR", home / "injectors")
     try:
