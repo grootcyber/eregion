@@ -888,6 +888,19 @@
    "doc": "docs/azure.md"
   },
   {
+   "id": "g-coupure-suivie",
+   "composant": "glorfindel",
+   "poste": "g-verifier",
+   "nom": "The session cut under the quarantine followed on Azure: pending, refused, or sessions left open",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "DRN1"
+   ],
+   "issue": 677,
+   "doc": "docs/glorfindel.md"
+  },
+  {
    "id": "g-memoire-source",
    "composant": "glorfindel",
    "poste": "g-memoire",

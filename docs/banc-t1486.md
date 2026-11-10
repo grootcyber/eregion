@@ -351,6 +351,10 @@ Ce qu'on doit voir sur Orodruin, dans l'ordre (`engine.py:368-470`) :
 6. « ✓ Glorfindel detected the attack N s after it », dans les 330 s (le délai du catalogue, 90 s +
    120, plus 120 s d'attente : `synthesizer.py:220-225`, `engine.py:1160`).
 
+Le confinement, lui, peut se lire plus tard qu'en 0.5.8 : sous la quarantaine, la coupure des
+sessions a pris 302 s le 09/11, et une coupure qui dépasse 300 s est suivie sur Azure, puis dite
+(étape 5, DRN1). Le NSG est posé et vérifié avant.
+
 ### 5. Ce qu'on doit voir : la détection, l'isolement, la carte (pendant l'étape 4)
 
 - **Dagorlad, la chronologie de la demande** : le fil `RUNNING`, puis « ✓ detected +… · contained
@@ -358,7 +362,18 @@ Ce qu'on doit voir sur Orodruin, dans l'ordre (`engine.py:368-470`) :
   (`docs/dagorlad.md`, « Suivre une demande »).
 - **Console, page Glorfindel** : la carte de l'action autonome, `isolate_vm` vérifiée ; gondolin
   `ISOLATED`. Une carte de restauration peut suivre, recommandée et jamais autonome. Elle est
-  marquée exercice.
+  marquée exercice. Elle demande un cycle suivant, donc une nouvelle détection de gondolin, qui peut
+  ne pas venir sous la quarantaine : le 09/11, aucune n'a suivi (`docs/glorfindel.md`, « La coupure
+  suivie sur Azure »).
+- **La coupure des sessions (DRN1)** : sous la quarantaine, elle a pris 302 s le 09/11. La watch
+  l'attend 300 s. Finie avant, la carte de l'action autonome est vérifiée. Sinon, la notification
+  dit « coupure en attente », `glorfindel list` dit « session cut pending », et, dans la minute, une
+  carte **« session cut pending »** (`drain_pending`) apparaît, sans rien à approuver. Elle se ferme
+  seule quand la coupure aboutit : sa note dit « isolement vérifié ». Si une carte
+  `verification_failed` la remplace, sa raison dit le cas : « coupure refusée » (le rôle Session
+  Drain manque sur gondolin), « sessions restées ouvertes », ou « coupure jamais aboutie » (toujours
+  en cours 30 min après, ou la watch a redémarré entre-temps). À noter dans l'issue, avec la durée
+  lue au journal d'activité (Started → Succeeded).
 - **Discord** : l'action autonome, par le bot.
 - **Sur H0** (`make glorfindel-host-ssh`, puis `exit`) : `docker exec eregion-watch glorfindel
   list` montre gondolin `ISOLATED`, vérifiée.

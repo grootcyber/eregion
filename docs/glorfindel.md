@@ -307,12 +307,31 @@ Ce qui était déjà fermé avant G2, et le reste : le RulePoller note `last_err
 
 | Action | Vérification | État |
 |---|---|---|
-| `isolate_vm` | Règles NSG deny-all sur **chaque** NIC + sessions établies coupées (`drain`) | ✅ |
+| `isolate_vm` | Règles NSG deny-all sur **chaque** NIC + sessions établies coupées (`drain` ; en attente sur Azure après 300 s : suivie, ci-dessous) | ✅ |
 | `release_isolation` | `verify_release` : **aucune** règle d'isolation sur aucune NIC (une règle illisible = non vérifié) | ✅ |
 | `snapshot` | Job RSV (InProgress → `verified=None`, pas de claim) | ✅ |
 | `block_suspicious_ip` | Règles **entrante et sortante** pour l'IP sur chaque placement | ✅ |
 
 `verified=False` → escalade. `verified=None` → cycle stocké sans claim de succès.
+
+### La coupure suivie sur Azure (DRN1, #677, 10/11)
+
+**Le constat (banc, 09/11)** : sous la quarantaine, la coupure des sessions d'un isolement autonome a pris **302 s** sur Azure (Started → Accepted → Succeeded) ; la watch l'attendait 300 s. `LROPoller.result(timeout)` rend la main à l'échéance sans lever, avec ce que disait le dernier relevé — aucune sortie : « sortie de Run Command illisible », l'isolement déclaré non vérifié, alors que le NSG tenait et que la coupure a abouti 2 s plus tard. Les durées et l'hypothèse sur la cause (les règles 110 et 111 retiennent l'agent invité, non départagée) : `docs/azure.md`, L17.
+
+**Le choix : l'isolement se vérifie sur le NSG, comme avant ; la coupure se suit à part.** La watch traite les signaux d'une VM dans son propre fil (`glorf-<vm>`), et la réaffirmation repose une isolation dans le sien : une attente de 600 s y ferait attendre 10 min tout signal suivant de la VM — une détection, une levée sur reprise —, et, sur une repose, toutes les autres isolations et tous les blocages. Le fil de la VM attend donc **300 s, comme avant** (`run_command.DRAIN_FIRST_WAIT_S`) ; la neutralisation du restore, **600 s** (`NEUTRALIZE_WAIT_S`).
+
+- **Pas finie à 300 s** (`poller.done()` faux) : la coupure est `pending` (`providers/azure/run_command.py`), jamais lue comme une sortie ; son poller est gardé dans le processus de la watch (seule la watch isole : le graphe, la file d'actions, la réaffirmation), avec l'heure de la demande. `isolation_verdict` garde le verdict du NSG et note `drain_case: pending` ; la notification de l'action autonome le dit (« coupure en attente »), et `glorfindel list` aussi (« session cut pending »).
+- **Chaque passe de la réaffirmation** (`glorfindel/drain_watch.py`, à la fin de `_whatever_the_state`, sous le verrou de la VM) relit le statut de la Run Command sur Azure, par ce poller (il continue de relever Azure dans son propre fil) :
+  - toujours en cours : **une carte « coupure en attente »** (`drain_pending`, action `review_drain`, jamais une décision, rien à approuver), écrite une fois ;
+  - aboutie, sessions coupées : la carte se ferme, avec la note « Coupure aboutie sur Azure en N s : sessions coupées, isolement vérifié » ; l'état prend `drain: drained` et `drain_ended_at` ;
+  - refusée, en échec, sessions restantes : une carte `verification_failed` sur `isolate_vm`, qui dit **« coupure refusée »** ou **« sessions restées ouvertes »** (`policy.drain_said`), la carte d'attente fermée dans la même écriture ;
+  - toujours en cours **30 min** après la demande (`DRAIN_DEADLINE_S` : 302 s mesurées une fois, l'agent retenu 15 min 45 au démarrage sous la quarantaine ; Azure arrête une Run Command à 90 min), ou **plus suivie** (la watch a redémarré et perdu le poller) : **« coupure jamais aboutie »**, sur la même sorte de carte ; le suivi s'arrête.
+- **La même phrase dans le cycle** : une coupure finie dans les 300 s mais refusée (le rôle « Session Drain » absent de la VM) ou qui laisse des sessions fait toujours échouer la vérification du cycle, et sa raison commence par « coupure refusée : » ou « sessions restées ouvertes : ».
+- Les cartes de la coupure ont leur propre id (`reassert-drain-<vm>-<hash>`) : jamais fusionnées avec une autre carte de la réaffirmation sur la VM (une règle disparue), ni l'inverse (`escalations.record`). Une VM levée — ou isolée de nouveau avec une coupure aboutie — pendant que sa carte attend : la carte se ferme, dite.
+- **Pour BL1** (`analysis/containment.py`) : l'isolement vérifié sur le NSG compte, et la carte `verification_failed` d'une coupure qui finit mal ensuite le fait lire « contenu, puis l'isolation n'a pas tenu », jamais « contenu seul » ; la carte d'attente ne compte pas.
+- **Ce qu'elle ne tient pas** : le suivi passe par la réaffirmation — coupée (`GLORFINDEL_REASSERT_INTERVAL_S=0`, ou en lecture seule), une coupure en attente n'est pas relue et l'isolation garde le verdict du NSG ; un redémarrage perd le poller : la carte dit « jamais aboutie », même si la coupure a réussi — le journal d'activité le dit (Started → Succeeded). La fenêtre de SID1 (`DRAIN_AFTER_S`, 420 s après la demande) suppose la première ligne de l'opération présente : une coupure qui finit après, sans sa première ligne, serait une carte `outside_drain`. Tests : `tests/unit/test_drain_follow.py`, et la machine des invariants (L4 : `guest_agent_held`, `run_commands_end`) ; mutants M4646–M4649, M4672–M4675.
+
+**La recommandation de restore après l'isolement (constat du 09/11, non changé)** : au banc, aucune carte de recommandation de restore n'a suivi l'isolement en échec de vérification. Le graphe ne l'empêche pas : `verify_action` → `escalate_to_human` → `store_cycle` → fin, et **aucun cycle ne recommande le restore dans le même passage** — le few-shot dit « restore_from_backup escalated next cycle » : c'est un **cycle suivant**, sur une nouvelle détection de la VM, qui voit l'isolation (l'incident a noté `isolate_vm` même en échec de vérification : `execute_action` l'enregistre avant la vérification). Or sous la quarantaine, la VM ne devrait plus envoyer sa télémétrie au workspace (l'agent de supervision est coupé avec le reste : attendu, **non mesuré**), et la ligne agrégée de `ransomware-disk-write` reste dédupliquée tant qu'elle est dans la fenêtre de la règle (le RulePoller, ci-dessus) : le cycle suivant ne vient pas — le 09/11, seul le cycle de 16:48 a tourné. Une vérification en échec n'arrête donc pas la recommandation ; c'est l'absence d'un second signal. La faire suivre sans nouvelle détection (une recommandation de restore émise sur un isolement vérifié d'un T1486) touche au graphe et à ce que voit le modèle : hors de DRN1, à décider.
 
 ### La reprise lue sur Azure (REC1, #668)
 
