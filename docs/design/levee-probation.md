@@ -418,7 +418,8 @@ Un **tiers**, c'est tout appelant (`caller`, `claims.appid`, `claims.oid`, compa
 compare) qui n'est pas l'un de ceux-ci, **pour ce geste-là**. Aucun appelant n'est excusé pour
 tout : chacun ne l'est que pour ses propres opérations, sur ses propres cibles, dans sa fenêtre. C'est
 la règle d'AL1 et de SID1 (`glorfindel/providers/azure/activity.py`, son en-tête), reprise telle
-quelle.
+quelle. L'écriture d'extension qui accompagne une Run Command v1 de Glorfindel ou d'un principal qui
+restaure est excusée comme une partie de cette Run Command, jamais par son type (§4.1, hypothèse H7).
 
 | Appelant | Comment il est connu | Quand il n'est pas un tiers |
 |---|---|---|
@@ -1062,7 +1063,7 @@ Les oracles se tirent du journal du test, jamais des marqueurs du code (A0).
 
 | Propriété | Ce qu'elle dit |
 |---|---|
-| **LV1** | Jamais une levée seule (sans approbation humaine) après un restore, si un tiers qui a agi sur la VM dans la fenêtre garde ses droits (un droit qui en redonne un compris), ou si ses droits ne se lisent pas (un groupe, une éligibilité, un principal supprimé) ; et jamais un verdict avant la fin du job plus la marge du journal. Un tiers, c'est tout appelant hors de ses opérations excusées (§4.2) : un appelant attendu ne l'est que pour ses opérations déclarées, jamais pour une Run Command, VMAccess, une connexion AAD ou `beginGetAccess`. Une écriture d'extension par un tiers compte, quel que soit son type |
+| **LV1** | Jamais une levée seule (sans approbation humaine) après un restore, si un tiers qui a agi sur la VM dans la fenêtre garde ses droits (un droit qui en redonne un compris), ou si ses droits ne se lisent pas (un groupe, une éligibilité, un principal supprimé dont une portée n'est pas relue en entier) ; et jamais un verdict avant la fin du job plus la marge du journal. Un tiers, c'est tout appelant hors de ses opérations excusées (§4.2) : un appelant attendu ne l'est que pour ses opérations déclarées, jamais pour une Run Command, VMAccess, une connexion AAD ou `beginGetAccess`. Une écriture d'extension par un tiers compte, quel que soit son type |
 | **LV2** | Jamais une levée après le restore d'un incident non prouvé exercice sans probation, **quel que soit le chemin** (la watch, une levée humaine avant ou après sa passe) : son état écrit, la règle des ports posée et relue ou la retenue dite, dans la même opération. Seule l'absence d'un restore, lue sur le coffre, donne une levée sans probation |
 | **LV3** | Jamais une levée sans probation sur la seule étiquette : une fenêtre sans gestes de l'identité d'Orodruin dans le journal donne la règle d'un incident réel ; et jamais en zone `production` |
 | **LV4** | Une détection **dans l'invité** sur une VM en probation, d'un moment après la fin du job de restore : en `non_disruptive`, une isolation sans aucun appel au modèle ; en `human_only`, aucune écriture et une carte. Une détection **du plan de contrôle** sur une VM en probation : jamais une isolation sans approbation humaine, une carte `probation_signal`, quel que soit le mode. Une détection d'un moment antérieur à la fin du job ne réisole jamais. Une détection datée entre la fin du restore et la levée retient la levée, et seul un humain la lève |
@@ -1163,7 +1164,7 @@ Dans l'ordre. Chacun est vert seul, avec ses tests, ses mutants et sa doc.
 - LEV4 attend LEV3.
 - LEV5 et LEV6 peuvent tourner ensemble après LEV3, avec les types de carte figés par LEV3.
 - `hold_lift` par la file signée suit FS1 tel qu'il est (le chemin synchrone tant que la file est
-  éteinte) ; la réponse à Q12 le fixe.
+  éteinte) ; Q12 l'a fixé.
 - LEV7 attend LEV4, LEV5 et LEV6, et une release que H0 déploie.
 - LEV8 vient en dernier, pour que la doc ne décrive rien qui n'existe pas.
 - Le jalon reste la 0.6.0, avec l'identité défendue : LEV4 touche le RulePoller, LEV3 la carte d'IR1a.
@@ -1242,7 +1243,7 @@ l'option recommandée. Aucune question ne reste ouverte.
 | Q9 | Après une réinfection pendant la probation | la levée après le restore suivant est humaine (§6.5) |
 | Q10 | Une allow « étroite » du client | au plus /24 en IPv4 et /64 en IPv6 (§7.2) |
 | Q11 | L'appartenance aux groupes | aucun droit en plus pour H0, pas de Graph : un droit par un groupe (caché ou non), une éligibilité PIM, la propriété d'un groupe sont illisibles, et la quarantaine reste. Mesuré au banc (H10) ; trop fréquent, une lecture viendra par l'identité Graph dédiée de la 0.6.2 (§4.4) |
-| Q12 | La retenue `--keep-isolated` vers la watch | un verbe fermé `hold_lift` de la file signée de FS1, déposé par la console de H0 ; le poste te dit de le poser (§3.4) |
+| Q12 | La retenue `--keep-isolated` vers la watch | un verbe fermé `hold_lift` de la file signée de FS1, déposé par la console de H0 ; le poste te dit de le poser, et le relit (la forme est fixée dans LEV3, §3.4) |
 | Q13 | Une détection du plan de contrôle sur une VM en probation | une carte `probation_signal`, jamais une réisolation seule (§6.3) |
 | Q14 | La marge de latence du journal avant le verdict | 15 min après la fin du job, ajustées par la mesure de H12 (§3.1) |
 | Q15 | Qui retire une retenue | un humain seul, par un geste tracé sur H0 ; jamais la watch, jamais le bot, aucune expiration (§3.4) |
