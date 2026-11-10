@@ -48,7 +48,7 @@ DATA = mn.load(TEXT)
 
 # What a release delivers is tested on the manual of the tree plus a brick of its own on main: a
 # release passes every brick to livree, so the manual it leaves holds none (REL4, #694). Each such
-# test runs on both: the manual as it is, and the manual as a release leaves it.
+# test runs on each: the manual as it is, as the patch 0.5.9 leaves it, and once the step 0.6 is cut.
 ON_MAIN = """
   - id: t-sur-main
     composant: socle
@@ -63,7 +63,8 @@ def _on_main(text):
     return text.rstrip("\n") + "\n" + ON_MAIN
 
 
-MANUALS = {"as-is": _on_main(TEXT), "released": _on_main(mn.deliver(TEXT, "0.5.9", "2026-11-10")[0])}
+MANUALS = {"as-is": _on_main(TEXT), "released": _on_main(mn.deliver(TEXT, "0.5.9", "2026-11-10")[0]),
+           "0.6-cut": _on_main(mn.deliver(TEXT, "0.6.0", "2026-11-16")[0])}   # the step 0.6 published
 
 
 def _brick(**kw):
@@ -414,23 +415,34 @@ def test_the_manual_a_release_leaves_holds_no_brick_on_main_but_the_tests_own():
     assert [b["id"] for b in mn.load(MANUALS["released"])["briques"] if b["etat"] == "main"] == ["t-sur-main"]
 
 
-def test_a_patch_delivers_into_its_own_line_and_leaves_the_step_in_progress():
-    out, delivered = mn.deliver(TEXT, "0.5.9", "2026-11-10")
+@pytest.mark.parametrize("manual", MANUALS.values(), ids=MANUALS.keys())
+def test_a_patch_delivers_into_its_own_line_and_leaves_the_step_in_progress(manual):
+    """Whichever step the manual holds in progress (0.6 today, the next one once 0.6.0 is cut), a
+    patch of 0.5 moves its own line only: every other step is read back as it was."""
+    before = {s["version"]: s for s in mn.load(manual)["releases"]}
+    out, delivered = mn.deliver(manual, "0.5.9", "2026-11-10")
     after = mn.load(out)
+    assert "t-sur-main" in delivered
     for b in after["briques"]:
         if b["id"] in delivered:
-            assert (b["version"], b["release"]) == ("0.5.9", "0.5")
+            assert (b["etat"], b["version"], b["release"]) == ("livree", "0.5.9", "0.5")
     steps = {s["version"]: s for s in after["releases"]}
-    assert steps["0.5"]["derniere"] == "0.5.9" and steps["0.6"]["etat"] == "montage"
+    assert (steps["0.5"]["etat"], steps["0.5"]["derniere"]) == ("publiee", "0.5.9")
+    assert {v: s for v, s in steps.items() if v != "0.5"} == {v: s for v, s in before.items() if v != "0.5"}
     assert mn.problems(after, ROOT) == []
 
 
-def test_a_version_without_its_step_keeps_each_brick_s_release():
-    out, delivered = mn.deliver(TEXT, "0.7.0", "2026-12-01")
+@pytest.mark.parametrize("manual", MANUALS.values(), ids=MANUALS.keys())
+def test_a_version_without_its_step_keeps_each_brick_s_release(manual):
+    before = mn.load(manual)
+    out, delivered = mn.deliver(manual, "0.7.0", "2026-12-01")
     after = mn.load(out)
-    was = {b["id"]: b for b in DATA["briques"]}
+    assert "t-sur-main" in delivered   # never vacant: the tests' own brick is always delivered
+    was = {b["id"]: b for b in before["briques"]}
     assert all(b["release"] == was[b["id"]]["release"] for b in after["briques"])
-    assert [s for s in after["releases"]] == DATA["releases"]
+    mine = next(b for b in after["briques"] if b["id"] == "t-sur-main")
+    assert (mine["etat"], mine["version"], mine["release"]) == ("livree", "0.7.0", "0.6")
+    assert [s for s in after["releases"]] == before["releases"]
     assert mn.deliver(out, "0.7.1", "2026-12-02") == (out, [])   # nothing on main any more
 
 

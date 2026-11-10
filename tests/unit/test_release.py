@@ -405,8 +405,10 @@ ON_MAIN = """
     etat: main
     release: "0.6"
 """
-_RELEASED = _load("manuel").deliver(MANUAL, "0.5.9", "2026-11-10")[0]
-MANUALS = {"as-is": MANUAL.rstrip("\n") + "\n" + ON_MAIN, "released": _RELEASED.rstrip("\n") + "\n" + ON_MAIN}
+MANUALS = {name: text.rstrip("\n") + "\n" + ON_MAIN for name, text in (
+    ("as-is", MANUAL),
+    ("released", _load("manuel").deliver(MANUAL, "0.5.9", "2026-11-10")[0]),
+    ("0.6-cut", _load("manuel").deliver(MANUAL, "0.6.0", "2026-11-16")[0]))}   # the step 0.6 published
 on_manuals = pytest.mark.parametrize("manual", MANUALS.values(), ids=MANUALS.keys())
 
 
