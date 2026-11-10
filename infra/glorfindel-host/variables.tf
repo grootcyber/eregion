@@ -104,6 +104,18 @@ variable "restore_principals" {
   }
 }
 
+variable "restore_staging_storage" {
+  description = "RST1 : le compte de transit du restore (restore_staging_storage de la config de Glorfindel), dans le groupe du banc — « Eregion Glorfindel Restore Staging » (listKeys, le droit lié qu'un restore vérifie là) sur ce seul compte, pour chaque principal de restore_principals, jamais sur le groupe. Gardé dans restore.auto.tfvars (commité). Vide (défaut) : rien d'attribué. Le rôle doit exister dans le tenant (docs/operations.md, « Identités Azure »)."
+  type        = string
+  default     = ""
+
+  # Un nom de compte de stockage Azure (3 à 24 minuscules et chiffres), jamais un chemin ni un id.
+  validation {
+    condition     = var.restore_staging_storage == "" || can(regex("^[a-z0-9]{3,24}$", var.restore_staging_storage))
+    error_message = "restore_staging_storage : le nom d'un compte de stockage (3 à 24 minuscules et chiffres), jamais un chemin."
+  }
+}
+
 variable "bench_workspace" {
   description = "Log Analytics du banc."
   type        = string

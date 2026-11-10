@@ -237,14 +237,36 @@ make glorfindel-host-cd-status     # actif : ne publie aucune release pendant la
 docker ps --format '{{.Names}}'    # aucun eregion-watch : une watch du poste répondrait aussi
 az role assignment list --assignee ${EREGION_CONSOLE_AZURE_CLIENT_ID} --all -o table
 terraform -chdir=infra/glorfindel-host output restore_neutralize
+terraform -chdir=infra/glorfindel-host output restore_staging
 ```
 
 Ce qu'on doit voir :
 - **pour le principal de la console** : `Reader`, « Eregion Glorfindel Response » et « Eregion
   Glorfindel Restore » sur `rg-celebrimbor` ; `Log Analytics Reader` sur le workspace du banc ;
   « Eregion Glorfindel Restore Neutralize » et « Eregion Glorfindel Session Drain » à la portée de
-  gondolin (`docs/operations.md`, « Identités Azure ») ;
-- **dans la sortie Terraform** : la console et le bot, sur gondolin et bree.
+  gondolin ; « Eregion Glorfindel Restore Staging » à la portée du seul compte de transit
+  (`stcelebrimborstaging`), jamais du groupe (`docs/operations.md`, « Identités Azure ») ;
+- **dans la sortie Terraform** : la console et le bot, sur gondolin et bree ; puis `bot`, `console`
+  pour le compte de transit.
+
+**La paire de la console, sur ce poste** (RST1) : le restore de l'étape 6 la prend pour sa seule
+commande. Vide, il ne fait pas échouer : il prend une autre identité, sans le dire (le 09/11, elle
+était restée commentée dans `.envrc`). Trois vérifications, en lecture seule :
+
+```zsh
+echo ${#EREGION_CONSOLE_AZURE_CLIENT_ID} ${#EREGION_CONSOLE_AZURE_CLIENT_SECRET}   # deux longueurs non nulles, jamais les valeurs
+make azure-pairs-expiry            # « ✓ console : secret valable jusqu'au … », une seule date
+AZURE_CLIENT_ID=${EREGION_CONSOLE_AZURE_CLIENT_ID} AZURE_CLIENT_SECRET=${EREGION_CONSOLE_AZURE_CLIENT_SECRET} \
+  .venv/bin/glorfindel audit $(az vm show -g rg-celebrimbor -n vm-celebrimbor-gondolin --query id -o tsv)   # lecture seule
+```
+
+Ce qu'on doit voir :
+- **les longueurs** : 36 pour l'identifiant, une quarantaine pour le secret ; `0`, la paire n'est
+  pas chargée (`.envrc`, puis `source .envrc`) ;
+- **la date de fin** : une seule, à plus de 14 jours (un avertissement en dessous ; plusieurs
+  secrets sur l'application : la cible le dit, un seul est attendu) ;
+- **l'audit** : il répond sans erreur d'authentification. Le droit qui manque à un restore, lui, se
+  lit à l'étape 6 : le restore lit ses droits avant de toucher la VM et nomme celui qui manque.
 
 Si la neutralisation manque, le restore restaure quand même, mais sans neutraliser : voir l'étape
 7. Les gestes qui la donnent sont dans `docs/operations.md`, « Depuis un rôle Restore d'avant
@@ -395,7 +417,13 @@ date -u +%H:%M:%S                  # la fin du restore
 ```
 
 *Vérifié à blanc*, dans un `HOME` jetable : la première commande dit le coffre, `Before : <AVANT>
-(--before)`, puis « DRY RUN — no changes made. ». La seconde, sur Azure (**non vérifiée**) :
+(--before)`, puis « DRY RUN — no changes made. ». Elle dit aussi son identité (RST1) : `Identity :
+la paire de la console (AZURE_CLIENT_ID = EREGION_CONSOLE_AZURE_CLIENT_ID)` ; toute autre ligne
+(aucune paire, une paire incomplète, celle de la watch), arrêter et relire l'étape 0. La seconde, sur
+Azure (**non vérifiée**) :
+- avant tout geste sur la VM, la lecture de ses droits (RST1) : un droit qui manque arrête le restore
+  en le nommant, avec son rôle, la VM ni neutralisée ni désallouée ; « Droits du restore illisibles »
+  dit qu'elle n'a pas pu les lire, et le restore continue (**à mesurer** : la lecture sous `Reader`) ;
 - « Using pre-attack recovery point: … », qui doit être le point de l'étape 2 ;
 - « Still restoring… », minute par minute ;
 - « ✓ Restore complete. restore_time: … » : **le noter** ;
@@ -578,6 +606,9 @@ make glorfindel-host-cd-enable     # seulement s'il a été mis en pause à l'é
 | des cartes `control_plane_change` après le restore | **non vérifié** (hypothèse A3, `docs/operations.md`) : le restore, sous le principal de la console, peut écrire des opérations que les règles du journal d'activité lisent | les noter avec la sortie de la requête A2 ; ne pas changer la règle à la main |
 | la neutralisation refusée ou en échec | le rôle manque sur gondolin, ou Run Command ne répond pas sur une VM isolée (**non vérifié**) | l'étape 7, avant toute levée |
 | « Restore refusé » sur le poste | un autre restore de gondolin réclamé ou en cours, ou un job de sauvegarde | `az backup job list …` ; attendre |
+| « Restore refusé avant de toucher la VM : il manque … » | un droit du restore manque au principal de la console, lu avant tout geste (RST1) : le rôle nommé | poser ce rôle (`docs/operations.md`, « Identités Azure ») ; la VM n'a pas été touchée |
+| « Restore trigger failed — 403 … » et « la VM … reste désallouée » | Azure a refusé le déclenchement après la désallocation (un refus explicite que l'API des droits ne rend pas). Il ne laisse **aucune trace** au journal d'activité : seule la sortie le garde | la garder ; `az vm start -g rg-celebrimbor -n vm-celebrimbor-gondolin` ; poser le droit nommé, relancer |
+| « Restore job … Failed : code … » ou « not found after trigger » | le job a échoué tout de suite (son erreur est dite), ou n'est pas apparu en 2 min | lire les jobs du coffre (`az backup job list …`) **avant** de relancer ; la VM est désallouée : la redémarrer une fois sûr qu'aucun restore ne tourne |
 | quelque chose part de travers sur Orodruin | — | `make orodruin-kill` : il révoque l'identité d'Orodruin, annule le chaos, désalloue sa VM et ferme les fenêtres. Il ne lève rien sur gondolin. Ensuite, `make orodruin-lock` (plan relu) lui rend ses droits (`infra/orodruin/README.md`, « Urgence ») |
 | `make celebrimbor-up` pendant l'isolement | un apply retire les règles `glorfindel-*` des NSG à règles en ligne | ne pas l'appliquer tant que `glorfindel list` n'est pas vide |
 

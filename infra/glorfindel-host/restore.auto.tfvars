@@ -4,3 +4,8 @@
 # ôtée d'ici perd la neutralisation au prochain apply (le plan le montre) ; restaurée, elle l'est quand
 # même, la neutralisation refusée et dite sur la carte.
 restore_vms = ["vm-celebrimbor-gondolin", "vm-celebrimbor-bree"]
+
+# RST1 : le compte de transit du restore du banc (restore_staging_storage, `make celebrimbor-output`),
+# dans le groupe du banc — « Eregion Glorfindel Restore Staging » (listKeys) sur ce seul compte, pour
+# chaque principal de restore_principals, jamais sur le groupe (main.tf).
+restore_staging_storage = "stcelebrimborstaging"

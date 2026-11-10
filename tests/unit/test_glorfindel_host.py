@@ -3,6 +3,7 @@
 The config pushed to the VM is human_only whatever the local one says, and the VM's
 Terraform grants it read rights on the bench only, without enrolling it as a target.
 """
+import json
 import importlib.util
 import re
 from pathlib import Path
@@ -178,7 +179,8 @@ def test_the_modes_host_config_knows_are_glorfindel_s():
 def test_host_terraform_reads_the_bench_and_is_no_target():
     tf = (HOST / "main.tf").read_text(encoding="utf-8")
     roles = re.findall(r'role_definition_name\s*=\s*"([^"]+)"', tf)
-    assert sorted(roles) == ["Eregion Glorfindel Restore Neutralize", "Eregion Glorfindel Session Drain",
+    assert sorted(roles) == ["Eregion Glorfindel Restore Neutralize", "Eregion Glorfindel Restore Staging",
+                             "Eregion Glorfindel Session Drain",
                              "Eregion Glorfindel Session Drain", "Log Analytics Reader", "Reader"]
     # SEC11 (R-03, after its review): the session drain on each VM of an explicit list, each read
     # on Azure (a typo fails the plan), never on the group; the list kept in the repository.
@@ -188,7 +190,10 @@ def test_host_terraform_reads_the_bench_and_is_no_target():
     vms = tf.split('data "azurerm_virtual_machine" "session_drain"', 1)[1].split("\n}", 1)[0]
     assert "for_each            = toset(var.session_drain_vms)" in vms
     assert "resource_group_name = data.azurerm_resource_group.bench.name" in vms
-    assert "azurerm_resources" not in tf and "eregion-target\" =" not in tf
+    # Never the VMs found by a tag (the enrolment tag says where an injector acts, not what Glorfindel
+    # defends): the one azurerm_resources is the staging account's, by its type and name (RST1).
+    assert re.findall(r'data "azurerm_resources" "(\w+)"', tf) == ["restore_staging"]
+    assert "required_tags" not in tf and "eregion-target\" =" not in tf
     variables = (HOST / "variables.tf").read_text(encoding="utf-8")
     assert re.search(r'variable "session_drain_vms" \{[^}]*default\s*=\s*\[\]', variables)
     kept = (HOST / "session_drain.auto.tfvars").read_text(encoding="utf-8")
@@ -226,6 +231,37 @@ def test_the_restore_s_neutralization_goes_to_each_vm_it_defends_never_to_h0():
     assert not [ln for ln in ignore if "restore_principals" in ln and ln.startswith("!")]
     example = (HOST / "principals.auto.tfvars.example").read_text(encoding="utf-8")
     assert re.findall(r'"([0-9a-f-]{36})"', example) == ["00000000-0000-0000-0000-000000000000"] * 3
+
+
+def test_the_staging_account_s_keys_go_to_that_account_alone_for_each_principal_never_to_h0():
+    """RST1 (#680): a restore checks `listKeys` on the staging account (403
+    LinkedAuthorizationFailed on the bench, 09/11) — « Eregion Glorfindel Restore Staging » on that
+    one account, read on Azure in the bench's group, for each principal that restores; never on
+    the group (it holds other storage accounts), never H0's identity; the account kept in the
+    repository; the role file listKeys alone."""
+    tf = (HOST / "main.tf").read_text(encoding="utf-8")
+    res = tf.split('resource "azurerm_role_assignment" "restore_staging"', 1)[1].split("\n}\n", 1)[0]
+    assert 'for_each             = var.restore_staging_storage == "" ? {} : var.restore_principals' in res
+    assert "scope                = data.azurerm_resources.restore_staging[0].resources[0].id" in res
+    assert 'role_definition_name = "Eregion Glorfindel Restore Staging"' in res
+    assert "bench.id" not in res and "principal_id         = each.value\n" in res
+    assert "!= lower(azurerm_linux_virtual_machine.host.identity[0].principal_id)" in res
+    # Read by its type and name, never by azurerm_storage_account: that one reads the account's keys
+    # and would write them in H0's state (RST1 review); exactly one found, or the plan fails.
+    assert 'data "azurerm_storage_account"' not in tf
+    account = tf.split('data "azurerm_resources" "restore_staging"', 1)[1].split("\n}\n", 1)[0]
+    assert 'type                = "Microsoft.Storage/storageAccounts"' in account
+    assert "name                = var.restore_staging_storage" in account
+    assert "resource_group_name = data.azurerm_resource_group.bench.name" in account
+    assert "condition     = length(self.resources) == 1" in account
+    variables = (HOST / "variables.tf").read_text(encoding="utf-8")
+    block = variables.split('variable "restore_staging_storage"', 1)[1].split("\n}\n", 1)[0]
+    assert '  default     = ""\n' in block and 'regex("^[a-z0-9]{3,24}$"' in block
+    kept = (HOST / "restore.auto.tfvars").read_text(encoding="utf-8")
+    assert re.search(r'^restore_staging_storage = "stcelebrimborstaging"$', kept, re.M)
+    role = json.loads((HOST.parents[0] / "identities" / "glorfindel-restore-staging.json").read_text(encoding="utf-8"))
+    assert role["Name"] == "Eregion Glorfindel Restore Staging"
+    assert role["Actions"] == ["Microsoft.Storage/storageAccounts/listKeys/action"]
 
 
 def test_the_console_of_a_workstation_gets_the_session_drain_vm_by_vm():

@@ -44,7 +44,8 @@ export ANTHROPIC_API_KEY=sk-ant-...
 # « Identités Azure ».
 #   watch    Reader + Log Analytics Reader + « Eregion Glorfindel Response »
 #   console  Reader + Log Analytics Reader + Response + « Eregion Glorfindel Restore »
-#   bot      Reader + Response + Restore
+#            (+ Restore Neutralize par VM, Restore Staging sur le seul compte de transit)
+#   bot      Reader + Response + Restore (+ Restore Neutralize, Restore Staging)
 # Observe-only (évaluation) : un seul principal, Reader + Log Analytics Reader, et
 # GLORFINDEL_READ_ONLY=1 — aucune écriture.
 #
@@ -55,6 +56,9 @@ export ANTHROPIC_API_KEY=sk-ant-...
 #
 export GLORFINDEL_AZURE_CLIENT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 export GLORFINDEL_AZURE_CLIENT_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+# ⚠ Le poste qui restaure (glorfindel restore, docs/banc-t1486.md, étape 6) a besoin de la paire de
+# la console : décommenter et remplir ces deux lignes. Vide, le restore ne fait pas échouer, il prend
+# une autre identité sans le dire (RST1) ; make azure-pairs-expiry lit la date de fin de son secret.
 # export EREGION_CONSOLE_AZURE_CLIENT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 # export EREGION_CONSOLE_AZURE_CLIENT_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 # export GLORFINDEL_BOT_AZURE_CLIENT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx

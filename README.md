@@ -326,14 +326,14 @@ That sounds alarming but its blast radius is bounded **by design, not by trustin
 
 **Option A — local (dev)**
 
-Base install is the same `make install` as the eval section above. The difference for the sandbox: Glorfindel acts (isolates, blocks, snapshots, restores once you approve), so it needs write rights — only those, on the bench's resource groups. Three custom roles (`infra/identities/`) and one principal per service: the watch gets Reader + Log Analytics Reader + **Eregion Glorfindel Response**, and **Eregion Glorfindel Session Drain** (Run Command, to cut the sessions of a VM it isolates) on each VM it defends (an explicit list: `session_drain_vms` on H0), never on a group; the console and the bot also get **Eregion Glorfindel Restore** (a restore is always a human's) — the full commands, the rotation of the secrets and how to retire a former shared principal: [`docs/operations.md`](docs/operations.md), « Identités Azure ».
+Base install is the same `make install` as the eval section above. The difference for the sandbox: Glorfindel acts (isolates, blocks, snapshots, restores once you approve), so it needs write rights — only those, on the bench's resource groups. Five custom roles (`infra/identities/`) and one principal per service: the watch gets Reader + Log Analytics Reader + **Eregion Glorfindel Response**, and **Eregion Glorfindel Session Drain** (Run Command, to cut the sessions of a VM it isolates) on each VM it defends (an explicit list: `session_drain_vms` on H0), never on a group; the console and the bot also get **Eregion Glorfindel Restore** (a restore is always a human's), with **Restore Neutralize** on each VM the restore defends and **Restore Staging** (the staging account's keys) on that one account — the full commands, the rotation of the secrets and how to retire a former shared principal: [`docs/operations.md`](docs/operations.md), « Identités Azure ».
 
 ```bash
 git clone https://github.com/grootcyber/eregion && cd eregion && make install
 cp .envrc.example .envrc   # fill in ANTHROPIC_API_KEY + Azure creds
 
 SUB=<SUBSCRIPTION_ID>; RG=rg-celebrimbor
-for r in response restore session-drain; do
+for r in response restore session-drain restore-neutralize restore-staging; do
   sed "s|<SUBSCRIPTION_ID>|$SUB|" infra/identities/glorfindel-$r.json > /tmp/eregion-role-$r.json
   az role definition create --role-definition @/tmp/eregion-role-$r.json
 done

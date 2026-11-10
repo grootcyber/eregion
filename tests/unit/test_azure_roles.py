@@ -128,7 +128,8 @@ def test_the_response_role_holds_what_the_adapter_declares_and_nothing_broad():
     assert set(_role("session-drain")["Actions"]) == drain
     # The snapshot: an on-demand backup of the vault, never its restore.
     assert "Microsoft.RecoveryServices/Vaults/backupFabrics/protectionContainers/protectedItems/backup/action" in actions
-    for role in (response, _role("restore"), _role("session-drain"), _role("restore-neutralize")):
+    for role in (response, _role("restore"), _role("session-drain"), _role("restore-neutralize"),
+                 _role("restore-staging")):
         assert role["IsCustom"] is True and not role["DataActions"] and not role["NotActions"]
         for a in role["Actions"]:
             assert "*" not in a and not a.lower().startswith("microsoft.authorization/"), a
@@ -191,6 +192,31 @@ def test_the_restore_s_run_command_is_its_own_role_given_vm_by_vm_never_to_the_w
     restore_grants = [ln for ln in _logical_lines(ops) if '"Eregion Glorfindel Restore"' in ln
                       and "az role assignment create" in ln]
     assert restore_grants and not [ln for ln in restore_grants if "appId-watch" in ln]
+
+
+def test_the_staging_account_s_keys_are_their_own_role_given_on_that_account_alone():
+    """RST1 (#680): a restore checks `listKeys` on the staging account — refused on the bench on
+    09/11 without it (403 LinkedAuthorizationFailed). Its own role, listKeys alone, created with the
+    others, given to the console and the bot on that one account, never on a group (it holds other
+    storage accounts: their keys are their data), never to the watch."""
+    staging = _role("restore-staging")
+    assert staging["Name"] == "Eregion Glorfindel Restore Staging"
+    assert staging["Actions"] == ["Microsoft.Storage/storageAccounts/listKeys/action"]
+    assert "staging account only" in staging["Description"] and "never to the watch" in staging["Description"]
+    assert not any("listkeys" in a.lower() for a in _role("restore")["Actions"] + _role("response")["Actions"])
+    ops = (ROOT / "docs" / "operations.md").read_text(encoding="utf-8")
+    lines = _logical_lines(ops)
+    assert any("for r in response restore session-drain restore-neutralize restore-staging; do" in ln for ln in lines)
+    grants = [ln for ln in lines if "Eregion Glorfindel Restore Staging" in ln and "az role assignment create" in ln]
+    assert grants and all("--scope $staging" in ln for ln in grants), grants
+    assert not [ln for ln in grants if "appId-watch" in ln]
+    block = "\n".join(lines).split("staging=$(az storage account show", 1)[1].split("\ndone", 1)[0]
+    assert "for a in <appId-console> <appId-bot>; do" in block
+    # What the restore reads before it touches the VM is the role's right (restore_rights.py).
+    from glorfindel.providers.azure.restore_rights import RESTORE_NEEDS
+    assert ("staging", staging["Actions"][0], staging["Name"]) in RESTORE_NEEDS
+    restore = set(_role("restore")["Actions"])
+    assert {a for w, a, r in RESTORE_NEEDS if r == "Eregion Glorfindel Restore"} <= restore
 
 
 def _render(spec: str, env: dict) -> str:
@@ -283,7 +309,8 @@ def test_the_audit_and_the_readiness_advise_no_broad_role_and_never_the_restore_
     from glorfindel import audit, readiness
     names = {json.loads(p.read_text(encoding="utf-8"))["Name"] for p in ROLES.glob("*.json")}
     assert names == {"Eregion Glorfindel Response", "Eregion Glorfindel Restore",
-                     "Eregion Glorfindel Session Drain", "Eregion Glorfindel Restore Neutralize"}
+                     "Eregion Glorfindel Session Drain", "Eregion Glorfindel Restore Neutralize",
+                     "Eregion Glorfindel Restore Staging"}
     for module in (audit, readiness):
         text = re.sub(r"""["']\s*\n\s*f?["']""", "", inspect.getsource(module))
         roles = re.findall(r"--role\s+(?:'([^']+)'|(\S+))", text)
