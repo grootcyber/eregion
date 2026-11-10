@@ -1,4 +1,4 @@
-// Eregion (MOB1, #686) — the tailnet's access rule: the phone to the workstation, on two ports, and
+// Eregion (MOB1, #686) — the tailnet's access rule: the phone to the workstation's SSH server, and
 // nothing else. A model: pasted by the operator into the Tailscale admin console (Access controls), the
 // two addresses replaced by those of `tailscale ip -4` on each device (docs/demarrer/mobile.md).
 // Without a rule, Tailscale lets every device reach every other: this file replaces that default.
@@ -8,9 +8,9 @@
     "workstation": "100.64.0.1",
   },
   "acls": [
-    // 22: the workstation's SSH server, by key alone. 7007: the console of H0, through the tunnel the
-    // workstation binds to its private address (make glorfindel-host-tunnel-private).
-    {"action": "accept", "src": ["phone"], "dst": ["workstation:22,7007"]},
+    // 22: the workstation's SSH server, by key alone. The console of H0 goes through it too: the phone's
+    // own SSH tunnel to the workstation's 127.0.0.1:7007 (decision of Jonathan, 10/11).
+    {"action": "accept", "src": ["phone"], "dst": ["workstation:22"]},
   ],
   // Tailscale SSH stays off: it would let the tailnet into the workstation without the phone's key.
   "ssh": [],

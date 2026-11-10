@@ -6,15 +6,18 @@ the console's pair for this one command (docs/banc-t1486.md, step 6; docs/operat
 Azure »). Until FS1g and TOT1, the phone reaches it through the workstation's terminal
 (docs/demarrer/mobile.md): the hardware key of the SSH stands as the second factor. In order:
 
-  0  the guard     never in a code session (EREGION_AGENT_SESSION, a lot's worktree)
+  0  the guard     never in a code session (EREGION_AGENT_SESSION, a lot's worktree); a terminal on
+                   stdin, or nothing is read (a name through a pipe is no name typed)
   1  the pair      EREGION_CONSOLE_AZURE_CLIENT_ID and EREGION_CONSOLE_AZURE_CLIENT_SECRET both set
                    (RST1: an empty pair silently takes another identity) — their names said, never
                    their values; the restore runs with AZURE_CLIENT_ID / AZURE_CLIENT_SECRET set to
                    them, and nothing else changed
   2  the moment    BEFORE= wins; else the run's T0 — its attack_started, the rule of SEC4c — as
-                   `make bench-report` wrote it in runs/bench/<run_id>.json: RUN=, else the latest
-                   report of TARGET. The restored point is the newest one before it: the clean point
-                   of the step 2, never a snapshot taken after the attack. No moment: refused
+                   `make bench-report` wrote it in runs/bench/<run_id>.json: RUN= (what `make bench-run`
+                   prints), else the one report of TARGET there — two or more, refused, their runs
+                   listed: the latest is not the safe way. The restored point is the newest one before
+                   it: the clean point of the step 2, never a snapshot taken after the attack. No
+                   moment: refused
   3  the target    one VM of that name (az vm list, the operator's az login); the vault and its staging
                    account in the workstation's glorfindel-config.yaml (without the staging account
                    the real restore fails, the dry run does not read it)
@@ -63,8 +66,8 @@ class Steps:
 
     def restore(self, argv: list[str], env: dict) -> int:
         """`glorfindel restore …`, its output on the operator's terminal (it is his command)."""
-        exe = self.env.get("BENCH_GLORFINDEL") or str(bs.REPO / ".venv" / "bin" / "glorfindel")
-        return subprocess.run([exe, *argv], env=env, cwd=bs.REPO).returncode
+        return subprocess.run([str(bs.REPO / ".venv" / "bin" / "glorfindel"), *argv], env=env,
+                              cwd=bs.REPO).returncode
 
 
 def pair_env(env: dict) -> dict:
@@ -95,8 +98,9 @@ def _report(path: Path) -> dict | None:
 
 
 def run_moment(runs_dir: Path, target: str, run_id: str = "") -> tuple[str, str, str]:
-    """(the run's T0 as ISO, its run id, why not) from runs/bench/: RUN=, else the latest report of
-    TARGET by its T0. ('', '', why) when none says one."""
+    """(the run's T0 as ISO, its run id, why not) from runs/bench/: RUN=, else the one report of TARGET
+    there. ('', '', why) when none says one, or when two or more do: their runs listed, never the
+    latest taken for the operator (SEC4c's safe way is the earliest, and the run is his to name)."""
     if run_id:
         doc = _report(runs_dir / f"{run_id}.json")
         if doc is None:
@@ -106,7 +110,7 @@ def run_moment(runs_dir: Path, target: str, run_id: str = "") -> tuple[str, str,
             return "", "", f"le run {run_id} ne visait pas {target} : rien n'est restauré"
         t0 = str(doc.get("t0") or "")
         return (t0, run_id, "") if bs.epoch(t0) is not None else ("", "", f"le rapport du run {run_id} n'a pas de T0")
-    best: tuple[float, str, str] | None = None
+    found: list[tuple[float, str, str]] = []
     try:
         files = sorted(runs_dir.glob("*.json"))
     except OSError:
@@ -119,16 +123,21 @@ def run_moment(runs_dir: Path, target: str, run_id: str = "") -> tuple[str, str,
         rid = str(doc.get("run_id") or "")
         if t0 is None or not bs.RUN_ID.fullmatch(rid):
             continue
-        if best is None or t0 > best[0]:
-            best = (t0, str(doc.get("t0")), rid)
-    if best is None:
+        found.append((t0, str(doc.get("t0")), rid))
+    if not found:
         return "", "", (f"aucun rapport de {target} dans runs/bench/ : make bench-report RUN=<run_id> d'abord, "
                         "ou BEFORE=<instant>")
-    return best[1], best[2], ""
+    if len(found) > 1:
+        runs = ", ".join(f"{rid} (T0 {t})" for _, t, rid in sorted(found))
+        return "", "", (f"{len(found)} rapports de {target} dans runs/bench/ : RUN=<run_id> pour dire lequel "
+                        f"({runs}), ou BEFORE=<instant>. Rien n'est restauré")
+    (_, t0_text, rid), = found
+    return t0_text, rid, ""
 
 
 def main(argv: list[str] | None = None, env: dict | None = None, *, cwd=None, here=None, runs_dir=None,
-         ask=input, say=print, steps: Steps | None = None, now: float | None = None) -> int:
+         ask=input, say=print, steps: Steps | None = None, now: float | None = None,
+         tty: bool | None = None) -> int:
     env = dict(os.environ) if env is None else env
     p = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     p.add_argument("--target", default=env.get("BENCH_TARGET") or "")
@@ -145,6 +154,10 @@ def main(argv: list[str] | None = None, env: dict | None = None, *, cwd=None, he
         return 1
     if args.guard_only:
         return 0
+    if not (sys.stdin.isatty() if tty is None else tty):
+        say("✗ pas de terminal : le nom de la VM se tape au clavier, jamais par un tube. Rien n'est lu, "
+            "rien n'est restauré.")
+        return 1
     target, before, run_id = args.target.strip().lower(), args.before.strip(), args.run.strip()
     if not bs.VM_NAME.fullmatch(target):
         say("✗ TARGET=<vm> exigé : le nom de la VM à restaurer (make bench-restore TARGET=<vm> [BEFORE=…])")

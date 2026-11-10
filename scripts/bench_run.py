@@ -7,15 +7,16 @@ and the workstation is new: Orodruin still listens to the workstation's SSH alon
 is installed on H0. In order, each step stopping the next one:
 
   0  the guard     never in a code session (EREGION_AGENT_SESSION, a lot's worktree): a session never
-                   launches an attack (bench_shared.session_refusal, the rule of bench_reader.py)
+                   launches an attack (bench_shared.session_refusal, the rule of bench_reader.py); and a
+                   terminal on stdin, or nothing is read: a name « typed » through a pipe is no name typed
   1  the preflight `make bench-preflight` (scripts/bench_preflight.py, BNC1): one ✗ and nothing is
                    asked, nothing is sent
   2  the request   one wire, SCENARIO (a catalogue id) on TARGET, the VM's id read from Azure under the
                    operator's `az login` (one VM of that name, never two) — a request as Dagorlad
                    writes one (eregion_core/exercise_request.new), read back by its one reader
   3  the name      the request shown, then the target's name typed here, destructive or not, and
-                   compared to the name Azure gives; then « [o/N] ». Another name, nothing, or no
-                   terminal: nothing is sent
+                   compared to the name Azure gives; then « [o/N] ». Another name, or nothing: nothing
+                   is sent
   4  the launch    the request and the name typed carried to Orodruin by its pinned SSH (the
                    preflight ran `orodruin-known`), then run there by `eregion_core.exercise_runner`,
                    which judges it again (contract, watch, enrollment, zone, the name typed against
@@ -24,6 +25,8 @@ is installed on H0. In order, each step stopping the next one:
   5  the report    `make bench-report RUN=<run_id>` for each run Orodruin's output names (« Run: … »)
 
 DRY_RUN=1: 0 to 3, then what 4 would send — nothing sent, nothing run.
+A terminal holds the gesture against a mistake, not against a process of the same user that drives
+one (a long-lived tmux session, `tmux send-keys`: docs/demarrer/mobile.md, the threat model's frontier 9).
 TARGET, SCENARIO and DRY_RUN reach the script through the environment, never expanded by make, and
 are checked here; the ssh command of Orodruin and its container's too (BENCH_ORO_SSH,
 BENCH_ORO_RUN_REQUEST), never printed. Errors are said in a sentence; exit 0 only when the request
@@ -141,7 +144,7 @@ def _write(path: Path, doc: dict) -> None:
 
 
 def main(argv: list[str] | None = None, env: dict | None = None, *, cwd=None, here=None,
-         ask=input, say=print, steps: Steps | None = None) -> int:
+         ask=input, say=print, steps: Steps | None = None, tty: bool | None = None) -> int:
     env = dict(os.environ) if env is None else env
     p = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     p.add_argument("--target", default=env.get("BENCH_TARGET") or "")
@@ -157,6 +160,10 @@ def main(argv: list[str] | None = None, env: dict | None = None, *, cwd=None, he
         return 1
     if args.guard_only:
         return 0
+    if not (sys.stdin.isatty() if tty is None else tty):
+        say("✗ pas de terminal : le nom de la cible se tape au clavier, jamais par un tube. Rien n'est lu, "
+            "rien n'est lancé.")
+        return 1
     target, scenario = args.target.strip().lower(), args.scenario.strip()
     if not bs.VM_NAME.fullmatch(target):
         say("✗ TARGET=<vm> exigé : le nom d'une VM du banc (make bench-run TARGET=<vm> SCENARIO=<id>)")
@@ -218,7 +225,7 @@ def main(argv: list[str] | None = None, env: dict | None = None, *, cwd=None, he
     for run_id in runs:
         rc = steps.report(run_id, target)
         worst = worst or rc
-    say(f"Ensuite, le restore : make bench-restore TARGET={target} (le T0 du run, --keep-isolated).")
+    say(f"Ensuite, le restore : make bench-restore TARGET={target} RUN={runs[-1]} (le T0 du run, --keep-isolated).")
     return 0 if worst == 0 else 1
 
 

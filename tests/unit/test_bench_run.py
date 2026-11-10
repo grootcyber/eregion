@@ -71,7 +71,7 @@ class FakeSteps:
         return self._report
 
 
-def _main(steps, *answers, env=None, cwd=None, here=None, args=("--target", VM, "--scenario", "T1486")):
+def _main(steps, *answers, env=None, cwd=None, here=None, args=("--target", VM, "--scenario", "T1486"), tty=True):
     said: list[str] = []
     feed = list(answers)
 
@@ -81,7 +81,7 @@ def _main(steps, *answers, env=None, cwd=None, here=None, args=("--target", VM, 
             raise EOFError
         return feed.pop(0)
     code = brun.main(list(args), {**CLEAN, **(env or {})}, cwd=cwd or Path("/"), here=here or Path("/"),
-                     ask=ask, say=said.append, steps=steps)
+                     ask=ask, say=said.append, steps=steps, tty=tty)
     return code, "\n".join(said)
 
 
@@ -95,6 +95,15 @@ def test_a_code_session_is_refused_before_any_step(tmp_path, where):
     code, out = _main(steps, VM, "o", env={"EREGION_AGENT_SESSION": "1"} if where == "env" else None,
                       cwd=lot if where == "cwd" else tmp_path, here=lot if where == "here" else tmp_path)
     assert code == 1 and "refusé" in out and "jamais une attaque" in out
+    assert steps.calls == []
+
+
+def test_without_a_terminal_nothing_is_read_and_nothing_is_launched():
+    """A name « typed » through a pipe (`printf '<vm>\\no\\n' | make bench-run …`) is no name typed:
+    refused before the preflight (MOB1, review round 1)."""
+    steps = FakeSteps()
+    code, out = _main(steps, VM, "o", tty=False)
+    assert code == 1 and "pas de terminal" in out
     assert steps.calls == []
 
 
@@ -161,7 +170,8 @@ def test_the_request_and_the_name_typed_go_to_orodruin_then_each_run_is_reported
     assert [(w.experiment, w.target, w.rank) for w in req.wires] == [("T1486", VM_ID, 1)]
     assert xr.read_typed(steps.sent[f"{rid}.typed.json"], req) == {1: VM}
     assert steps.calls[3] == ("report", "20261110T101500Z-t1486", VM)
-    assert "DESTRUCTIVE" in out and "bench-restore" in out
+    assert "DESTRUCTIVE" in out
+    assert f"make bench-restore TARGET={VM} RUN=20261110T101500Z-t1486" in out      # the run named
 
 
 def test_dry_run_sends_nothing():

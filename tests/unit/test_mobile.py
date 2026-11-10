@@ -1,12 +1,13 @@
-"""The workstation reached from the phone (MOB1, #686): `make mobile-check` and the console's tunnel.
+"""The workstation reached from the phone (MOB1, #686): `make mobile-check`.
 
 `make mobile-check` reads, and only reads, what holds the two barriers — the private network, then the
 SSH server by key alone. It runs here on fakes of `tailscale`, `ss`, `sshd -T` and `sudo`, first on
-PATH: it must see a listener on every interface, a password admitted, a console exposed elsewhere,
-Tailscale SSH open. `make glorfindel-host-tunnel-private` binds the console's port to the private
-address alone, or opens nothing: never 0.0.0.0, never the loopback WSL shares with Windows. The
-model of the SSH server (infra/poste/sshd_config.d/00-eregion.conf) passes the checks it was written
-for. No address is printed by the check.
+PATH: it must see a listener on every interface, a password admitted, a key handed by a command or a
+certificate authority, a forwarding wider than the phone's local tunnel to 127.0.0.1:7007, a gateway
+port, a console port listening elsewhere than on 127.0.0.1, Tailscale SSH open. The console reaches the
+phone through the phone's own SSH tunnel (decision of Jonathan, 10/11): nothing changes on H0, nothing
+binds the private address. The model of the SSH server (infra/poste/sshd_config.d/00-eregion.conf)
+passes the checks it was written for. No address is printed.
 """
 from __future__ import annotations
 
@@ -46,6 +47,12 @@ hostbasedauthentication no
 gssapiauthentication no
 pubkeyauthentication yes
 authenticationmethods publickey
+authorizedkeysfile .ssh/authorized_keys
+authorizedkeyscommand none
+trustedusercakeys none
+allowtcpforwarding local
+permitopen 127.0.0.1:7007
+gatewayports no
 permitrootlogin no
 """
 GOOD_SS = f"LISTEN 0 128 {PRIVATE}:22 0.0.0.0:*\nLISTEN 0 4096 127.0.0.53%lo:53 0.0.0.0:*\n"
@@ -90,6 +97,12 @@ def _marks(lines, word):
     return [m for m, t in lines if word in t]
 
 
+def _sshd(key, value):
+    """GOOD_SSHD with one keyword's value replaced (or the keyword removed, value None)."""
+    out = [ln for ln in GOOD_SSHD.splitlines() if not ln.startswith(key + " ")]
+    return "\n".join(out + ([f"{key} {value}"] if value is not None else [])) + "\n"
+
+
 # ── the private address ──────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("out,ok", [
@@ -102,12 +115,10 @@ def test_the_private_address_is_one_tailnet_ipv4_or_none(out, ok):
     assert bool(ip) is ok and (ip == out.split()[0] if ok else why)
 
 
-def test_private_ip_prints_the_address_or_refuses(capsys):
-    assert mob.main(["private-ip"], fake_run(world())) == 0
-    assert capsys.readouterr().out.strip() == PRIVATE
-    assert mob.main(["private-ip"], fake_run(world(ip4_rc=1, ip4=""))) == 1
-    err = capsys.readouterr()
-    assert err.out == "" and "pas d'adresse privée" in err.err and "jamais sur toutes les interfaces" in err.err
+def test_a_lan_address_given_for_the_tailnet_s_is_never_the_private_one(tmp_path):
+    """The SSH server listening on a LAN address that `tailscale ip -4` would give: never read as private."""
+    code, text, lines = _check(tmp_path, ip4="192.168.1.10\n", ss="LISTEN 0 128 192.168.1.10:22 0.0.0.0:*\n")
+    assert code == 1 and any(m == mob.FAIL and "une autre adresse" in t for m, t in lines), text
 
 
 # ── mobile-check, on fakes ───────────────────────────────────────────────────
@@ -117,7 +128,7 @@ def test_a_workstation_in_order_passes(tmp_path):
     assert code == 0, text
     assert all(m == mob.OK for m, _ in lines), text
     assert "1 clé(s) admise(s) (1 ecdsa-sha2-nistp256)" in text
-    assert IP.findall(text) == [] and "AAAAE2Vj" not in text
+    assert IP.findall(text.replace("127.0.0.1", "")) == [] and "AAAAE2Vj" not in text
 
 
 @pytest.mark.parametrize("ss,said", [
@@ -132,43 +143,70 @@ def test_an_ssh_server_listening_elsewhere_than_the_private_address_is_seen(tmp_
     code, text, lines = _check(tmp_path, ss=ss)
     assert code == 1
     assert any(m == mob.FAIL and said in t for m, t in lines), text
-    assert IP.findall(text) == []
+    assert IP.findall(text.replace("127.0.0.1", "")) == []
 
 
 @pytest.mark.parametrize("key,value", [
     ("passwordauthentication", "yes"), ("kbdinteractiveauthentication", "yes"), ("permitemptypasswords", "yes"),
     ("hostbasedauthentication", "yes"), ("pubkeyauthentication", "no"), ("gssapiauthentication", "yes"),
+    ("gatewayports", "yes"), ("gatewayports", "clientspecified"),
+    ("authorizedkeyscommand", "/usr/bin/sss_ssh_authorizedkeys"), ("trustedusercakeys", "/etc/ssh/ca.pub"),
 ])
-def test_a_password_or_another_method_admitted_is_seen(tmp_path, key, value):
-    code, text, lines = _check(tmp_path, sshd=GOOD_SSHD.replace(f"{key} {'yes' if value == 'no' else 'no'}",
-                                                                f"{key} {value}"))
+def test_a_password_or_another_way_in_admitted_is_seen(tmp_path, key, value):
+    code, text, lines = _check(tmp_path, sshd=_sshd(key, value))
     assert code == 1
     assert _marks(lines, f"{key} {value}") == [mob.FAIL], text
+
+
+@pytest.mark.parametrize("value,mark", [(".ssh/authorized_keys", mob.OK), ("%h/.ssh/authorized_keys", mob.OK),
+                                        (".ssh/authorized_keys .ssh/authorized_keys2", mob.FAIL),
+                                        ("/etc/ssh/keys/%u", mob.FAIL), (None, mob.FAIL)])
+def test_the_keys_come_from_the_user_s_file_alone(tmp_path, value, mark):
+    code, text, lines = _check(tmp_path, sshd=_sshd("authorizedkeysfile", value))
+    assert _marks(lines, "authorizedkeysfile") == [mark], text
+
+
+@pytest.mark.parametrize("value,mark", [("local", mob.OK), ("no", mob.WARN), ("yes", mob.FAIL), ("all", mob.FAIL),
+                                        ("remote", mob.FAIL), (None, mob.FAIL)])
+def test_forwarding_is_the_phone_s_local_tunnel_alone(tmp_path, value, mark):
+    code, text, lines = _check(tmp_path, sshd=_sshd("allowtcpforwarding", value))
+    assert _marks(lines, "allowtcpforwarding") == [mark], text
+    assert code == (1 if mark == mob.FAIL else 0)
+
+
+@pytest.mark.parametrize("value,mark", [("127.0.0.1:7007", mob.OK), ("any", mob.FAIL), ("127.0.0.1:22", mob.FAIL),
+                                        ("127.0.0.1:7007 10.0.0.4:22", mob.FAIL), ("*:7007", mob.FAIL),
+                                        ("none", mob.FAIL), (None, mob.FAIL)])
+def test_the_tunnel_opens_onto_the_console_alone(tmp_path, value, mark):
+    code, text, lines = _check(tmp_path, sshd=_sshd("permitopen", value))
+    assert _marks(lines, "permitopen") == [mark], text
 
 
 @pytest.mark.parametrize("methods,ok", [("any", True), ("publickey", True), ("publickey,publickey", True),
                                         ("publickey,password", False), ("password", False),
                                         ("publickey keyboard-interactive", False)])
 def test_authentication_methods_the_key_alone(tmp_path, methods, ok):
-    code, text, lines = _check(tmp_path, sshd=GOOD_SSHD.replace("authenticationmethods publickey",
-                                                                f"authenticationmethods {methods}"))
+    code, text, lines = _check(tmp_path, sshd=_sshd("authenticationmethods", methods))
     assert _marks(lines, "authenticationmethods") == [mob.OK if ok else mob.FAIL]
 
 
 def test_an_absent_keyword_is_not_a_no(tmp_path):
-    code, text, lines = _check(tmp_path, sshd=GOOD_SSHD.replace("passwordauthentication no\n", ""))
+    code, text, lines = _check(tmp_path, sshd=_sshd("passwordauthentication", None))
     assert code == 1 and _marks(lines, "passwordauthentication") == [mob.FAIL]
 
 
 @pytest.mark.parametrize("extra,mark", [
+    ("LISTEN 0 128 127.0.0.1:7007 0.0.0.0:*\n", mob.OK),
+    ("LISTEN 0 128 127.0.0.1:7007 0.0.0.0:*\nLISTEN 0 128 [::1]:7007 [::]:*\n", mob.OK),
+    (f"LISTEN 0 128 {PRIVATE}:7007 0.0.0.0:*\n", mob.FAIL),
+    (f"LISTEN 0 128 [{V6}]:7007 [::]:*\n", mob.FAIL),
     ("LISTEN 0 128 0.0.0.0:7007 0.0.0.0:*\n", mob.FAIL),
     ("LISTEN 0 128 [::]:7007 [::]:*\n", mob.FAIL),
     ("LISTEN 0 128 192.168.1.10:7007 0.0.0.0:*\n", mob.FAIL),
-    ("LISTEN 0 128 127.0.0.1:7007 0.0.0.0:*\n", mob.WARN),
-    (f"LISTEN 0 128 {PRIVATE}:7007 0.0.0.0:*\n", mob.OK),
-    (f"LISTEN 0 128 [{V6}]:7007 [::]:*\n", mob.OK),
+    ("LISTEN 0 128 127.0.0.2:7007 0.0.0.0:*\n", mob.FAIL),
+    ("", mob.OK),
 ])
-def test_the_console_s_port_is_exposed_nowhere_but_the_private_address(tmp_path, extra, mark):
+def test_the_console_s_port_listens_on_127_0_0_1_alone(tmp_path, extra, mark):
     code, text, lines = _check(tmp_path, ss=GOOD_SS + extra)
     assert _marks(lines, "console : le port 7007") == [mark], text
     assert code == (1 if mark == mob.FAIL else 0)
@@ -192,7 +230,8 @@ def test_an_sshd_that_cannot_be_read_is_a_fail(tmp_path):
 
 
 @pytest.mark.parametrize("keys,mark", [(None, mob.WARN), ("", mob.WARN), ("# none\n", mob.WARN),
-                                       ('from="100.64.0.0/10" sk-ecdsa-sha2-nistp256@openssh.com AAAA x\n', mob.OK)])
+                                       ('from="100.64.0.0/10",permitopen="127.0.0.1:7007" '
+                                        'sk-ecdsa-sha2-nistp256@openssh.com AAAA x\n', mob.OK)])
 def test_the_keys_are_counted_never_printed(tmp_path, keys, mark):
     code, text, lines = _check(tmp_path, keys=keys)
     assert _marks(lines, "clés") == [mark]
@@ -212,19 +251,24 @@ def test_the_model_of_the_ssh_server_passes_the_checks_it_was_written_for():
     conf = mob.parse_sshd((ROOT / "infra/poste/sshd_config.d/00-eregion.conf").read_text(encoding="utf-8"))
     assert all(m == mob.OK for m, _ in mob.sshd_lines(conf)), mob.sshd_lines(conf)
     listen = conf["listenaddress"]
-    assert len(listen) == 1 and mob.kind(listen[0], set()) == "other"
-    assert mob.tailnet_ipv4(listen[0])[0] == listen[0]
-    for key in ("allowtcpforwarding", "allowagentforwarding", "x11forwarding", "permittunnel"):
+    assert len(listen) == 1 and mob.tailnet_ipv4(listen[0])[0] == listen[0]
+    for key in ("allowagentforwarding", "allowstreamlocalforwarding", "x11forwarding", "permittunnel"):
         assert conf[key] == ["no"]
+
+
+def test_the_access_rule_opens_the_ssh_server_alone():
+    text = (ROOT / "infra/poste/tailscale-acl.hujson").read_text(encoding="utf-8")
+    dst = re.findall(r'"dst":\s*\[([^\]]*)\]', text)
+    assert dst == ['"workstation:22"'] and '"ssh": []' in text
 
 
 # ── through make, on fake commands ───────────────────────────────────────────
 
 @pytest.fixture
 def fake_bin(tmp_path):
-    """`tailscale`, `ss`, `sshd`, `sudo` (which runs what follows -n) and `ssh` (which logs), first on
-    PATH; their answers read from files the test writes."""
-    b, log = tmp_path / "bin", tmp_path / "ssh.log"
+    """`tailscale`, `ss`, `sshd` and `sudo` (which runs what follows -n), first on PATH; their answers
+    read from files the test writes."""
+    b = tmp_path / "bin"
     b.mkdir()
     data = tmp_path / "data"
     data.mkdir()
@@ -235,84 +279,44 @@ def fake_bin(tmp_path):
                               "if not os.path.exists(p):\n    sys.exit(1)\n"
                               "sys.stdout.write(open(p).read())\n")
     (b / "sudo").write_text('#!/bin/sh\n[ "$1" = -n ] && shift\nexec "$@"\n')
-    (b / "ssh").write_text(f'#!/bin/sh\nfor a in "$@"; do printf "%s\\n" "$a"; done > "{log}"\n')
     for f in b.iterdir():
         f.chmod(0o755)
 
     def answer(**files):
         for k, v in files.items():
             (data / k).write_text(v)
-    return b, data, log, answer
+    return b, answer
 
 
 def _make(fake, target, *args):
     b = fake[0]
-    env = {k: v for k, v in os.environ.items() if k not in ("HOST_SSH_FINGERPRINT",)}
-    env.update(PATH=f"{b}{os.pathsep}{os.environ['PATH']}", HOME=str(b.parent))
+    env = {**os.environ, "PATH": f"{b}{os.pathsep}{os.environ['PATH']}", "HOME": str(b.parent)}
     return subprocess.run(["make", "-s", "--no-print-directory", "-C", str(ROOT), target, f"PYTHON={sys.executable}",
                            *args], capture_output=True, text=True, env=env, timeout=60)
 
 
 @needs_make
-def test_make_mobile_check_sees_every_interface_and_a_password(fake_bin):
-    _, _, _, answer = fake_bin
+def test_make_mobile_check_sees_every_interface_a_password_and_a_wide_tunnel(fake_bin):
+    _, answer = fake_bin
     answer(tailscale_ip_4=PRIVATE + "\n", tailscale_ip_6="", tailscale_debug_prefs='{"RunSSH": false}',
-           sshd_T=GOOD_SSHD.replace("passwordauthentication no", "passwordauthentication yes"),
-           ss_Hltn="LISTEN 0 128 0.0.0.0:22 0.0.0.0:*\n")
+           sshd_T=_sshd("passwordauthentication", "yes").replace("allowtcpforwarding local", "allowtcpforwarding yes")
+           .replace("permitopen 127.0.0.1:7007", "permitopen any"),
+           ss_Hltn="LISTEN 0 128 0.0.0.0:22 0.0.0.0:*\nLISTEN 0 128 0.0.0.0:7007 0.0.0.0:*\n")
     res = _make(fake_bin, "mobile-check")
     assert res.returncode != 0
-    assert "✗ SSH : le serveur écoute sur toutes les interfaces" in res.stdout
-    assert "✗ SSH : passwordauthentication yes, no attendu" in res.stdout
-    answer(sshd_T=GOOD_SSHD, ss_Hltn=GOOD_SS)
+    for said in ("✗ SSH : le serveur écoute sur toutes les interfaces", "✗ SSH : passwordauthentication yes, no attendu",
+                 "✗ SSH : allowtcpforwarding yes — local attendu", "✗ SSH : permitopen any",
+                 "✗ console : le port 7007 est exposé sur toutes les interfaces"):
+        assert said in res.stdout, res.stdout
+    answer(sshd_T=GOOD_SSHD, ss_Hltn=GOOD_SS + "LISTEN 0 128 127.0.0.1:7007 0.0.0.0:*\n")
     (fake_bin[0].parent / ".ssh").mkdir()
     (fake_bin[0].parent / ".ssh" / "authorized_keys").write_text("ecdsa-sha2-nistp256 AAAA phone\n")
     res = _make(fake_bin, "mobile-check")
     assert res.returncode == 0, res.stdout + res.stderr
-    assert IP.findall(res.stdout) == []
+    assert IP.findall(res.stdout.replace("127.0.0.1", "")) == []
 
 
-HOST = ("HOST_IP=10.0.0.4", "HOST_SSH_FINGERPRINT=SHA256:test")
-
-
-@needs_make
-@pytest.mark.parametrize("ip4", [None, "", "0.0.0.0\n", "127.0.0.1\n", "192.168.1.10\n", f"{PRIVATE}\n100.64.0.9\n"])
-def test_the_console_tunnel_opens_nothing_without_the_private_address(fake_bin, ip4):
-    _, _, log, answer = fake_bin
-    if ip4 is not None:
-        answer(tailscale_ip_4=ip4)
-    res = _make(fake_bin, "glorfindel-host-tunnel-private", "-o", "glorfindel-host-known", *HOST,
-                "HOST_ENV=/nonexistent")
-    assert res.returncode != 0 and "pas d'adresse privée" in res.stderr
-    assert not log.exists()
-
-
-@needs_make
-def test_the_console_tunnel_binds_the_private_address_alone(fake_bin, tmp_path):
-    _, _, log, answer = fake_bin
-    answer(tailscale_ip_4=PRIVATE + "\n")
-    env_file = tmp_path / "host.env"
-    env_file.write_text("EREGION_CONSOLE_TOKEN=tok123\nEREGION_CONSOLE_HOSTS=h0.example\n")
-    res = _make(fake_bin, "glorfindel-host-tunnel-private", "-o", "glorfindel-host-known", *HOST,
-                f"HOST_ENV={env_file}")
-    assert res.returncode == 0, res.stderr
-    argv = log.read_text().splitlines()
-    forwards = [argv[i + 1] for i, a in enumerate(argv) if a == "-L"]
-    assert forwards == [f"{PRIVATE}:7007:127.0.0.1:7007"]
-    assert "ExitOnForwardFailure=yes" in argv and "GatewayPorts=no" in argv and "StrictHostKeyChecking=yes" in argv
-    assert not any("0.0.0.0" in a or a.startswith("7007:") or a.startswith("localhost") for a in argv)
-    assert f"http://{PRIVATE}:7007/?token=tok123" in res.stdout
-    assert "EREGION_CONSOLE_HOSTS" in res.stdout                 # the private address not listed: said
-    env_file.write_text(f"EREGION_CONSOLE_TOKEN=tok123\nEREGION_CONSOLE_HOSTS=h0.example, {PRIVATE}\n")
-    res = _make(fake_bin, "glorfindel-host-tunnel-private", "-o", "glorfindel-host-known", *HOST,
-                f"HOST_ENV={env_file}")
-    assert res.returncode == 0 and "EREGION_CONSOLE_HOSTS" not in res.stdout
-
-
-@needs_make
-def test_the_console_tunnel_wants_h0_s_pinned_host_key(fake_bin):
-    _, _, log, answer = fake_bin
-    answer(tailscale_ip_4=PRIVATE + "\n")
-    res = _make(fake_bin, "glorfindel-host-tunnel-private", "-o", "glorfindel-host-known", "HOST_IP=10.0.0.4",
-                "HOST_ENV=/nonexistent")
-    assert res.returncode != 0 and "HOST_SSH_FINGERPRINT requis" in res.stderr
-    assert not log.exists()
+def test_nothing_binds_the_console_on_the_private_address_any_more():
+    """The tunnel on the private address is gone with the decision of 10/11: no target binds it."""
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    assert "glorfindel-host-tunnel-private" not in makefile and "private-ip" not in makefile

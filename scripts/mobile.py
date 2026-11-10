@@ -1,31 +1,34 @@
 #!/usr/bin/env python3
 """mobile — the workstation reached from the phone, held by two barriers (MOB1, #686; docs/demarrer/mobile.md).
 
-  mobile.py private-ip                     the workstation's private address on the tailnet: one IPv4 of
-                                           100.64.0.0/10 that `tailscale ip -4` gives, on stdout — or exit 1,
-                                           said; never 0.0.0.0, never a loopback, never another address
   mobile.py check [--console-port 7007]    `make mobile-check`: read-only, one line ✓/⚠/✗ per check, exit 1
                                            on a ✗
 
 The two barriers: the private network (Tailscale: the account with MFA, an access rule that opens only
-phone → workstation:22 and the console's port), then the workstation's SSH server, in WSL, by key alone
-— a key kept in the phone's secure chip. What `check` reads, and nothing else:
+phone → workstation:22), then the workstation's SSH server, in WSL, by key alone — a key kept in the
+phone's secure chip. The console of H0 reaches the phone through the phone's own SSH tunnel to the
+workstation's 127.0.0.1:7007, where `make glorfindel-host-tunnel` holds H0's (decision of Jonathan,
+10/11): the same two barriers, then the console's token. What `check` reads, and nothing else:
 
   the tailnet     `tailscale ip -4`: one private address; `tailscale debug prefs`: Tailscale SSH off (on,
                   it would let the tailnet into the workstation without the phone's key: one barrier, not two)
   the listeners   `ss -Hltn`: the SSH server's ports (`sshd -T`) listen on the private address only —
                   never on every interface (0.0.0.0, [::], *), a loopback (WSL shares it with Windows)
-                  or another address; the console's port nowhere but the private address (a loopback
-                  listener, the desktop's tunnel, is a ⚠: WSL shares it with Windows)
+                  or another address; the console's port on 127.0.0.1 (and ::1, ssh's other loopback)
+                  alone — never the private address, every interface or another one
   the SSH server  `sshd -T` (by sudo -n when not root: `sudo -v` first): PasswordAuthentication no,
                   KbdInteractiveAuthentication no, PermitEmptyPasswords no, HostbasedAuthentication no,
                   GSSAPIAuthentication no, PubkeyAuthentication yes, AuthenticationMethods publickey
-                  (or any: the others closed), PermitRootLogin no (a ⚠ otherwise)
-  the keys        ~/.ssh/authorized_keys: how many, of which types — never a key printed
+                  (or any: the others closed), AuthorizedKeysFile .ssh/authorized_keys alone,
+                  AuthorizedKeysCommand none, TrustedUserCAKeys none; the phone's tunnel and nothing
+                  more: AllowTcpForwarding local (yes, all or remote: ✗; no: ⚠, the tunnel does not
+                  open), PermitOpen 127.0.0.1:7007 alone, GatewayPorts no; PermitRootLogin no (a ⚠
+                  otherwise)
+  the keys        ~/.ssh/authorized_keys: how many, of which types — never a key printed; their options
+                  (`from=`, `permitopen=`) are not read: the guide sets them
 
-No address is printed by `check` (the lines say « the private address », « every interface »);
-`private-ip` prints the one the tunnel binds. Nothing is written, nothing is installed. The global
-configuration only: a `Match` block can change it for one connection (said in the guide).
+No address is printed. Nothing is written, nothing is installed. The global configuration only: a
+`Match` block can change it for one connection (said in the guide).
 """
 from __future__ import annotations
 
@@ -43,10 +46,20 @@ OK, WARN, FAIL = "✓", "⚠", "✗"
 TAILNET_V4 = ipaddress.ip_network("100.64.0.0/10")
 TAILNET_V6 = ipaddress.ip_network("fd7a:115c:a1e0::/48")
 CONSOLE_PORT = 7007
-# What the SSH server must say (sshd -T, lowercase): the key alone.
-REQUIRED = (("passwordauthentication", "no"), ("kbdinteractiveauthentication", "no"),
-            ("permitemptypasswords", "no"), ("hostbasedauthentication", "no"),
-            ("pubkeyauthentication", "yes"))
+# What the SSH server must say (sshd -T, lowercase): the key alone, from the user's own file alone.
+REQUIRED = (
+    ("passwordauthentication", "no"),
+    ("kbdinteractiveauthentication", "no"),
+    ("permitemptypasswords", "no"),
+    ("hostbasedauthentication", "no"),
+    ("pubkeyauthentication", "yes"),
+    ("authorizedkeyscommand", "none"),
+    ("trustedusercakeys", "none"),
+    ("gatewayports", "no"),
+)
+KEYS_FILES = (".ssh/authorized_keys", "%h/.ssh/authorized_keys")
+# Where the console's port may listen: the loopback ssh binds for `make glorfindel-host-tunnel`.
+CONSOLE_LOOPBACK = ("127.0.0.1", "::1")
 # Said only by a server built with it: closed when it is there.
 IF_PRESENT = (("gssapiauthentication", "no"), ("challengeresponseauthentication", "no"))
 
@@ -145,7 +158,7 @@ def parse_sshd(text: str) -> dict[str, list[str]]:
     return out
 
 
-def sshd_lines(conf: dict[str, list[str]]) -> list[tuple[str, str]]:
+def sshd_lines(conf: dict[str, list[str]], console_port: int = CONSOLE_PORT) -> list[tuple[str, str]]:
     lines = []
     for key, want in REQUIRED:
         got = (conf.get(key) or [""])[0].lower()
@@ -158,6 +171,21 @@ def sshd_lines(conf: dict[str, list[str]]) -> list[tuple[str, str]]:
             got = conf[key][0].lower()
             lines.append((OK, f"SSH : {key} {want}") if got == want
                          else (FAIL, f"SSH : {key} {got}, {want} attendu"))
+    keys = (conf.get("authorizedkeysfile") or [""])[0]
+    lines.append((OK, "SSH : authorizedkeysfile .ssh/authorized_keys seul") if keys in KEYS_FILES
+                 else (FAIL, f"SSH : authorizedkeysfile {keys or '(absent)'} — .ssh/authorized_keys seul attendu"))
+    fwd = (conf.get("allowtcpforwarding") or [""])[0].lower()
+    if fwd == "local":
+        lines.append((OK, "SSH : allowtcpforwarding local — le tunnel du téléphone, aucun port ouvert sur le poste"))
+    elif fwd == "no":
+        lines.append((WARN, "SSH : allowtcpforwarding no — le tunnel du téléphone vers la console ne s'ouvre pas"))
+    else:
+        lines.append((FAIL, f"SSH : allowtcpforwarding {fwd or '(absent)'} — local attendu"))
+    opens = (conf.get("permitopen") or [""])[0].lower().split()
+    if opens == [f"127.0.0.1:{console_port}"]:
+        lines.append((OK, f"SSH : permitopen 127.0.0.1:{console_port} seul — la console, rien d'autre"))
+    else:
+        lines.append((FAIL, f"SSH : permitopen {' '.join(opens) or '(absent)'} — 127.0.0.1:{console_port} seul attendu"))
     methods = (conf.get("authenticationmethods") or ["any"])[0].lower()
     lists = [m.split(",") for m in methods.split()]
     if methods == "any" or all(all(step.split(":", 1)[0] == "publickey" for step in lst) for lst in lists):
@@ -182,16 +210,15 @@ def listener_lines(listeners: list[tuple[str, int]], private: set[str], ssh_port
                       + " — ListenAddress <l'adresse privée> seule (infra/poste/sshd_config.d/00-eregion.conf)"))
     else:
         lines.append((OK, "SSH : le serveur n'écoute que sur l'adresse privée"))
-    console = [kind(a, private) for a, p in listeners if p == console_port]
-    worst = set(console) - {"private"}
-    if worst - {"loopback"}:
+    console = [a for a, p in listeners if p == console_port]
+    bad = sorted({kind(a, private) for a in console if a not in CONSOLE_LOOPBACK})
+    if bad:
+        said = {**SAID, "private": "l'adresse privée (le téléphone passe par son tunnel SSH)",
+                "loopback": "une autre boucle que 127.0.0.1"}
         lines.append((FAIL, f"console : le port {console_port} est exposé sur "
-                      + ", ".join(SAID[b] for b in sorted(worst - {"loopback"}))))
-    elif "loopback" in worst:
-        lines.append((WARN, f"console : le port {console_port} écoute sur {SAID['loopback']} — le tunnel du "
-                      "bureau (make glorfindel-host-tunnel) ; pour le téléphone, make glorfindel-host-tunnel-private"))
+                      + ", ".join(said[b] for b in bad) + " — 127.0.0.1 seul (make glorfindel-host-tunnel)"))
     elif console:
-        lines.append((OK, f"console : le port {console_port} n'écoute que sur l'adresse privée"))
+        lines.append((OK, f"console : le port {console_port} n'écoute qu'en 127.0.0.1 — le tunnel du poste vers H0"))
     else:
         lines.append((OK, f"console : le port {console_port} n'est ouvert nulle part"))
     return lines
@@ -268,7 +295,7 @@ def check(console_port: int = CONSOLE_PORT, run=_run, home: Path | None = None) 
         ports = {22}
     else:
         ports = {int(p) for p in conf.get("port", ["22"]) if p.isdigit()} or {22}
-        lines += sshd_lines(conf)
+        lines += sshd_lines(conf, console_port)
     rc, out, err = run(["ss", "-Hltn"])
     if rc != 0:
         lines.append((FAIL, f"les écoutes ne se lisent pas (ss -Hltn : code {rc})"))
@@ -291,20 +318,11 @@ def render(lines: list[tuple[str, str]]) -> tuple[str, int]:
 
 
 def main(argv: list[str] | None = None, run=_run, home: Path | None = None) -> int:
-    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    p = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     sub = p.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("private-ip")
     c = sub.add_parser("check")
     c.add_argument("--console-port", type=int, default=CONSOLE_PORT)
     args = p.parse_args(argv)
-    if args.cmd == "private-ip":
-        ip, why = private_ipv4(run)
-        if not ip:
-            print(f"✗ pas d'adresse privée : {why}. Rien n'est ouvert — jamais sur toutes les interfaces "
-                  "ni sur la boucle locale partagée (docs/demarrer/mobile.md)", file=sys.stderr)
-            return 1
-        print(ip)
-        return 0
     text, code = render(check(args.console_port, run, home))
     print(text)
     return code

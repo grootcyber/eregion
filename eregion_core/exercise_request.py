@@ -307,9 +307,11 @@ def confirm(request: Request, catalog: dict, *, ask=input, say=print, expect: st
     return {"request": request.id, "typed": typed}
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, tty: bool | None = None) -> int:
     """``python -m eregion_core.exercise_request confirm <request.json> <typed.json>`` (the
-    operator's machine, ``make orodruin-exercise``); ``check-id <id>``."""
+    operator's machine, ``make orodruin-exercise``); ``check-id <id>``. ``confirm`` wants a terminal
+    on stdin (MOB1): a name « typed » through a pipe is no name typed, and nothing is shown nor
+    written."""
     import argparse
 
     ap = argparse.ArgumentParser(prog="python -m eregion_core.exercise_request")
@@ -326,6 +328,10 @@ def main(argv: list[str] | None = None) -> int:
         if valid_id(args.id):
             return 0
         print(f"✗ REQUEST={args.id!r}: not a request id (r-<YYYYMMDDTHHMMSSZ>-<6 hex>)", file=sys.stderr)
+        return 1
+    if not (sys.stdin.isatty() if tty is None else tty):
+        print("✗ no terminal: the names are typed at the keyboard, never through a pipe — nothing is sent",
+              file=sys.stderr)
         return 1
     from eregion_core.exercise_plan import load_catalog
     try:

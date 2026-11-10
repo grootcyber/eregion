@@ -72,7 +72,7 @@ def runs(tmp_path):
     return d, report
 
 
-def _main(steps, runs_dir, *answers, env=None, cwd=None, here=None, args=("--target", VM)):
+def _main(steps, runs_dir, *answers, env=None, cwd=None, here=None, args=("--target", VM), tty=True):
     said: list[str] = []
     feed = list(answers)
 
@@ -83,7 +83,7 @@ def _main(steps, runs_dir, *answers, env=None, cwd=None, here=None, args=("--tar
         return feed.pop(0)
     base = {"PATH": "/usr/bin", **PAIR}
     code = brs.main(list(args), {**base, **(env or {})}, cwd=cwd or Path("/"), here=here or Path("/"),
-                    runs_dir=runs_dir, ask=ask, say=said.append, steps=steps, now=NOW)
+                    runs_dir=runs_dir, ask=ask, say=said.append, steps=steps, now=NOW, tty=tty)
     return code, "\n".join(said)
 
 
@@ -118,9 +118,16 @@ def test_without_the_console_s_pair_nothing_is_restored(runs, missing):
     assert CONSOLE_SECRET not in out and steps.calls == []
 
 
-def test_before_defaults_to_the_t0_of_the_latest_run_of_the_target(runs):
+def test_without_a_terminal_nothing_is_read_and_nothing_is_restored(runs):
     d, report = runs
-    report("r-old", t0="2025-11-09T10:00:00+00:00")
+    report("r1")
+    steps = FakeSteps()
+    code, out = _main(steps, d, VM, "o", tty=False)
+    assert code == 1 and "pas de terminal" in out and steps.calls == []
+
+
+def test_before_defaults_to_the_t0_of_the_one_run_of_the_target(runs):
+    d, report = runs
     report("r-new")
     report("r-bree", target="vm-celebrimbor-bree", t0="2025-11-10T17:00:00+00:00")
     steps = FakeSteps()
@@ -129,7 +136,19 @@ def test_before_defaults_to_the_t0_of_the_latest_run_of_the_target(runs):
     dry, real = _restores(steps)
     assert dry[1] == ["restore", VM_ID, "--before", T0, "--keep-isolated", "--dry-run"]
     assert real[1] == ["restore", VM_ID, "--before", T0, "--keep-isolated", "--wait", "--yes"]
-    assert "le T0 du run r-new" in out
+    said = out.index("le T0 du run r-new")
+    assert said < out.index("Tape le nom de la VM")                  # the run shown before the name
+
+
+def test_two_runs_of_the_target_are_listed_never_chosen(runs):
+    """The latest report is not the safe way of SEC4c: the operator names the run (MOB1, review round 1)."""
+    d, report = runs
+    report("r-old", t0="2025-11-09T10:00:00+00:00")
+    report("r-new")
+    steps = FakeSteps()
+    code, out = _main(steps, d, VM, "o")
+    assert code == 1 and "2 rapports" in out and "r-old" in out and "r-new" in out and "RUN=" in out
+    assert steps.calls == []
 
 
 def test_run_names_its_report_and_before_wins(runs):
