@@ -204,8 +204,8 @@ journal d'activité donne au principal qui restaure. Si l'un manque, la watch é
 dit, sans lever ; la levée se fait alors à la main.
 
 Un second manque, plus petit : `make glorfindel-host-containment` ne calcule le temps pour contenir
-que d'une campagne (`Makefile:1042`). Pour un fil de Dagorlad, on le lit dans sa chronologie, ou
-dans les lignes de la watch (étape 8).
+que d'une campagne (`Makefile:1042`). Pour un fil de Dagorlad, `make bench-report RUN=…` le compose
+(BNC1, étape 8) ; on le lit aussi dans sa chronologie de Dagorlad.
 
 ## Le déroulé (environ 1 h à 1 h 30)
 
@@ -217,41 +217,44 @@ après `make glorfindel-host-ssh` (bash). `ORO_SSH_FINGERPRINT` et `HOST_SSH_FIN
 
 ```zsh
 source .envrc
-make glorfindel-host-status        # « ✓ référence déployée : v0.5.8 », les trois conteneurs ✓, aucune erreur
-make glorfindel-host-cd-status     # actif : ne publie aucune release pendant la session (ou make glorfindel-host-cd-disable)
-docker ps --format '{{.Names}}'    # aucun eregion-watch : une watch du poste répondrait aussi
-az role assignment list --assignee ${EREGION_CONSOLE_AZURE_CLIENT_ID} --all -o table
-terraform -chdir=infra/glorfindel-host output restore_neutralize
-terraform -chdir=infra/glorfindel-host output restore_staging
+make bench-preflight TARGET=vm-celebrimbor-gondolin   # une ligne ✓/⚠/✗ par contrôle, puis le verdict
 ```
 
-Ce qu'on doit voir :
-- **pour le principal de la console** : `Reader`, « Eregion Glorfindel Response » et « Eregion
-  Glorfindel Restore » sur `rg-celebrimbor` ; `Log Analytics Reader` sur le workspace du banc ;
-  « Eregion Glorfindel Restore Neutralize » et « Eregion Glorfindel Session Drain » à la portée de
-  gondolin ; « Eregion Glorfindel Restore Staging » à la portée du seul compte de transit
-  (`stcelebrimborstaging`), jamais du groupe (`docs/operations.md`, « Identités Azure ») ;
-- **dans la sortie Terraform** : la console et le bot, sur gondolin et bree ; puis `bot`, `console`
-  pour le compte de transit.
+*Vérifié sur des faux* (BNC1, #682 : `tests/unit/test_bench_preflight.py`). La cible lit tout ce que
+cette étape lisait à la main, sans rien écrire nulle part, et n'affiche aucun identifiant : ni
+abonnement, ni object id, ni appId, ni IP, ni UPN. Elle sort en 0 si aucune ligne n'est ✗ ; un ⚠
+ne bloque pas. Ses contrôles (`scripts/bench_preflight.py`) :
+- **H0** : la référence déployée et les trois conteneurs, tels que `make glorfindel-host-status`
+  les dit, et ce qu'il marque ✗ ; le CD, par `make glorfindel-host-cd-status` (le minuteur, la
+  release qui tourne face à la dernière publiée) ;
+- **le poste** : aucune watch locale (`docker ps`) ;
+- **Orodruin** : son contrat lu sur lui, sans être publié (`check()` dans son conteneur durci),
+  armé et son plafond. Désallouée, c'est un ⚠ : son contrat se lit après `make orodruin-start` ;
+- **les paires** : celles de `make azure-pairs-expiry` (RST1). Celle de la console est exigée : absente
+  ou incomplète, c'est un ✗ ;
+- **la cible** : une seule VM de ce nom, son groupe, son état ; sur H0, son mode (configuré et
+  effectif), sa préparation et la quarantaine, et aucune isolation déjà posée ;
+- **le point de restauration** : l'âge du plus récent au coffre, ⚠ au-delà de 24 h
+  (`POINT_MAX_H=…`) ;
+- **les droits effectifs** :
+  - la console, sous sa paire, par `Microsoft.Authorization/permissions`, avec le lecteur du restore
+    (`glorfindel/providers/azure/restore_rights.py`) : le restore sur le coffre, `deallocate` et
+    `start` sur la VM, `listKeys` sur le compte de transit, et la neutralisation (Run Command) ;
+  - H0 et Orodruin, par leurs attributions et les définitions de leurs rôles, jokers et
+    `notActions` compris : l'isolement, la coupure, le point de restauration et la lecture du journal
+    pour H0 ; l'attaque (Run Command sur la cible) pour Orodruin. Leurs identifiants sont lus dans les
+    sorties Terraform d'`infra/glorfindel-host` et d'`infra/orodruin`, jamais affichés ;
+- **les dérives connues** : le rôle « Eregion Glorfindel Restore » du tenant qui porte encore
+  `runCommand/action` (d'avant SEC17) donne un ⚠ ; « Eregion Glorfindel Restore Staging » absent de la
+  console sur le compte de transit donne un ✗, le droit qui manquait le 09/11.
 
-**La paire de la console, sur ce poste** (RST1) : le restore de l'étape 6 la prend pour sa seule
-commande. Vide, il ne fait pas échouer : il prend une autre identité, sans le dire (le 09/11, elle
-était restée commentée dans `.envrc`). Trois vérifications, en lecture seule :
+**Deux passes.** À cette étape, Orodruin et gondolin sont souvent désallouées : leurs lignes sont des
+⚠. Relancer `make bench-preflight` à la fin de l'étape 1, Orodruin armé et gondolin démarrée, avant
+la demande de l'étape 3 : là, tout doit être ✓.
 
-```zsh
-echo ${#EREGION_CONSOLE_AZURE_CLIENT_ID} ${#EREGION_CONSOLE_AZURE_CLIENT_SECRET}   # deux longueurs non nulles, jamais les valeurs
-make azure-pairs-expiry            # « ✓ console : secret valable jusqu'au … », une seule date
-AZURE_CLIENT_ID=${EREGION_CONSOLE_AZURE_CLIENT_ID} AZURE_CLIENT_SECRET=${EREGION_CONSOLE_AZURE_CLIENT_SECRET} \
-  .venv/bin/glorfindel audit $(az vm show -g rg-celebrimbor -n vm-celebrimbor-gondolin --query id -o tsv)   # lecture seule
-```
-
-Ce qu'on doit voir :
-- **les longueurs** : 36 pour l'identifiant, une quarantaine pour le secret ; `0`, la paire n'est
-  pas chargée (`.envrc`, puis `source .envrc`) ;
-- **la date de fin** : une seule, à plus de 14 jours (un avertissement en dessous ; plusieurs
-  secrets sur l'application : la cible le dit, un seul est attendu) ;
-- **l'audit** : il répond sans erreur d'authentification. Le droit qui manque à un restore, lui, se
-  lit à l'étape 6 : le restore lit ses droits avant de toucher la VM et nomme celui qui manque.
+Ce que la cible ne lit pas : les deny assignments, les verrous, les conditions ABAC et PIM (l'API des
+droits ne les rend pas), ni l'audit de la console sous sa paire (`glorfindel audit`, à la main).
+Les commandes qu'elle remplace restent en annexe, pour un dépannage (« Annexe A »).
 
 Si la neutralisation manque, le restore restaure quand même, mais sans neutraliser : voir l'étape
 7. Les gestes qui la donnent sont dans `docs/operations.md`, « Depuis un rôle Restore d'avant
@@ -474,61 +477,36 @@ restore. Le Heartbeat de gondolin revient en quelques minutes (la requête de l'
 
 ### 8. Mesurer (10 min)
 
-Les trois temps se lisent à un seul endroit, sur H0, depuis les fichiers que la watch tient :
-- **le rapport du run**, tiré du canal : `runs/glorfindel/<run_id>.json`, son `attack_time` (T0)
-  et `detection_latency_s` ;
-- **ses cycles** : `*_debug.jsonl`, ceux qui portent `exercise_run = <run_id>`, avec
-  `outcome.verified_at` ;
-- **la levée** : sans REC1, `runs/console/manual_actions.jsonl` ; avec REC1, le cycle du
-  `recovery_complete` de la watch, dans ses `*_debug.jsonl` (ou `manual_actions.jsonl` si elle a
-  écrit une carte).
+Depuis le poste, une fois la levée faite :
 
-Toujours sur H0 (sinon, `make glorfindel-host-ssh` d'abord) :
-
-```bash
-docker exec -i -e RUN=<run_id> -e VM=vm-celebrimbor-gondolin eregion-watch python - <<'EOF'
-import glob, json, os, sys
-from datetime import datetime, timezone
-run, vm = os.environ.get("RUN", "").strip(), os.environ.get("VM", "").strip().lower()
-if not run or not vm or run.startswith("<"):
-    sys.exit("RUN ou VM vide : rien à mesurer")
-def t(s): return datetime.fromisoformat(str(s).replace("Z", "+00:00")).timestamp()
-def hm(e): return datetime.fromtimestamp(e, timezone.utc).strftime("%H:%M:%S")
-m = json.load(open(f"runs/glorfindel/{run}.json"))["metrics"]
-t0 = float(m["attack_time"])
-print(f"T0          {hm(t0)} UTC (attack_time du run)")
-print(f"détection   {m.get('detection')}, {m.get('detection_latency_s')} s après T0")
-for f in sorted(glob.glob("runs/glorfindel/*_debug.jsonl")):
-    if os.path.getmtime(f) < t0 - 600:
-        continue
-    for line in open(f):
-        d = json.loads(line)
-        s = d.get("signal") or {}
-        if (s.get("event") == "recovery_complete" and t(d["timestamp"]) > t0
-                and str(s.get("resource_id", "")).rstrip("/").rsplit("/", 1)[-1].lower() == vm):
-            o = d.get("outcome") or {}   # REC1 : la levée de la watch ; sans REC1, aucune ligne
-            print(f"levée watch {hm(t(d['timestamp']))}  {d.get('action') or '-'}  escalate={d.get('escalate')}"
-                  f"  verified={o.get('verified')}  T0+{t(o.get('verified_at') or d['timestamp']) - t0:.0f} s")
-            continue
-        if d.get("exercise_run") != run:
-            continue
-        o = d.get("outcome") or {}
-        end = o.get("verified_at") or d["timestamp"]
-        print(f"cycle       {hm(t(d['timestamp']))}  {d.get('action') or '-'}  escalate={d.get('escalate')}"
-              f"  verified={o.get('verified')}  T0+{t(end) - t0:.0f} s")
-f = "runs/console/manual_actions.jsonl"
-for line in (open(f) if os.path.exists(f) else []):
-    d = json.loads(line)
-    if (d.get("action") == "release_isolation" and t(d["timestamp"]) > t0
-            and str(d["signal"]["resource_id"]).rstrip("/").rsplit("/", 1)[-1].lower() == vm):
-        print(f"levée       {hm(t(d['timestamp']))}  T0+{t(d['timestamp']) - t0:.0f} s  {d['outcome'].get('status')}")
-EOF
+```zsh
+make bench-report RUN=<run_id>     # TARGET=vm-celebrimbor-gondolin par défaut ; OUT=… pour le JSON ailleurs
 ```
 
-*Vérifié à blanc* sur des fichiers fictifs de même forme (`RunReport.to_dict`,
-`agent.py:2500-2555`, `cli.py:24-54`) : une ligne T0, une ligne détection, une ligne par cycle du
-run (l'isolement : `isolate_vm escalate=False verified=True T0+…`), une ligne de levée. Le rapport
-arrive sur H0 quand le fil a fini ; sur Orodruin, le même est dans `~/runs/annatar/<run_id>.json`.
+*Vérifié sur des faux* (BNC1 : `tests/unit/test_bench_report.py`, sur les formes mesurées le 09/11).
+La cible compose la chronologie du run, dans la forme du compte rendu du 09/11, sans rien écrire sur
+Azure, sur H0 ni sur Orodruin (`scripts/bench_report.py`) :
+- **« Les chiffres »**, depuis T0 : la détection, l'isolement, la coupure demandée et aboutie, la
+  vérification relue, la neutralisation, le job de restore, le démarrage, la levée et l'agent invité ;
+- **le `restore_time` en deux nombres** : le job, puis le démarrage, et s'il a été retenu par la
+  quarantaine jusqu'à la levée ;
+- **« La chronologie »**, puis **les Run Command de la cible** : leur début, leur fin, leur statut,
+  leur durée, et leur appelant par son rôle (la console, le bot, H0, Orodruin, un humain, inconnu) ;
+- **les jobs du coffre**, et ce qui n'a pas pu être lu.
+
+Ses sources :
+- sur H0, par ssh, en lecture (`scripts/bench_h0_reader.py`, dans le conteneur de la watch) : le
+  rapport du run (`runs/glorfindel/<run_id>.json`, son T0, sa détection, la demande de Dagorlad dont il
+  est un fil), les cycles du run, le `recovery_complete` de la watch (REC1), les levées de
+  `manual_actions.jsonl` et l'état d'isolement de la cible s'il est encore là ;
+- le journal d'activité du groupe de la cible : ses Run Command, les écritures réseau de H0 (l'isolement,
+  quand l'état de H0 est levé), les désallocations et les démarrages ;
+- les jobs du coffre et la vue d'instance (l'agent `Ready`, relu au moment de composer).
+
+Le Markdown s'affiche, et s'écrit avec le JSON dans `runs/bench/<run_id>.json` (ou `OUT=`) : le JSON
+alimentera plus tard `docs/proofs.json`. Un appelant devient un rôle, une ressource un nom du banc
+déjà public. Le `restore_time` de la CLI du poste ne se lit qu'à sa sortie (étape 6) : le noter à
+part. Le calcul à la main reste en annexe, pour un dépannage (« Annexe B »).
 
 | Le chiffre | Sa définition | Où le lire |
 |---|---|---|
@@ -626,3 +604,98 @@ demande et le fil 15 min. Le restore prend 15 à 30 min (`cli.py`, `--wait`), la
    sa ligne.
 6. **Les identifiants** : la demande, le `run_id`, la date. Puis la décision : les chiffres du README
    remplacés (avec leur source), ou le run à rejouer.
+
+## Annexe A — l'étape 0 à la main (dépannage)
+
+Ce que `make bench-preflight` lit, commande par commande, quand une ligne de la cible demande d'y
+regarder de plus près. Ces sorties-là affichent des identifiants : ne pas les recopier.
+
+```zsh
+source .envrc
+make glorfindel-host-status        # « ✓ référence déployée : v0.5.8 », les trois conteneurs ✓, aucune erreur
+make glorfindel-host-cd-status     # actif : ne publie aucune release pendant la session (ou make glorfindel-host-cd-disable)
+docker ps --format '{{.Names}}'    # aucun eregion-watch : une watch du poste répondrait aussi
+az role assignment list --assignee ${EREGION_CONSOLE_AZURE_CLIENT_ID} --all -o table
+terraform -chdir=infra/glorfindel-host output restore_neutralize
+terraform -chdir=infra/glorfindel-host output restore_staging
+```
+
+Ce qu'on doit voir :
+- **pour le principal de la console** : `Reader`, « Eregion Glorfindel Response » et « Eregion
+  Glorfindel Restore » sur `rg-celebrimbor` ; `Log Analytics Reader` sur le workspace du banc ;
+  « Eregion Glorfindel Restore Neutralize » et « Eregion Glorfindel Session Drain » à la portée de
+  gondolin ; « Eregion Glorfindel Restore Staging » à la portée du seul compte de transit
+  (`stcelebrimborstaging`), jamais du groupe (`docs/operations.md`, « Identités Azure ») ;
+- **dans la sortie Terraform** : la console et le bot, sur gondolin et bree ; puis `bot`, `console`
+  pour le compte de transit.
+
+**La paire de la console, sur ce poste** (RST1) : le restore de l'étape 6 la prend pour sa seule
+commande. Vide, il ne fait pas échouer : il prend une autre identité, sans le dire (le 09/11, elle
+était restée commentée dans `.envrc`). Trois vérifications, en lecture seule :
+
+```zsh
+echo ${#EREGION_CONSOLE_AZURE_CLIENT_ID} ${#EREGION_CONSOLE_AZURE_CLIENT_SECRET}   # deux longueurs non nulles, jamais les valeurs
+make azure-pairs-expiry            # « ✓ console : secret valable jusqu'au … », une seule date
+AZURE_CLIENT_ID=${EREGION_CONSOLE_AZURE_CLIENT_ID} AZURE_CLIENT_SECRET=${EREGION_CONSOLE_AZURE_CLIENT_SECRET} \
+  .venv/bin/glorfindel audit $(az vm show -g rg-celebrimbor -n vm-celebrimbor-gondolin --query id -o tsv)   # lecture seule
+```
+
+Ce qu'on doit voir :
+- **les longueurs** : 36 pour l'identifiant, une quarantaine pour le secret ; `0`, la paire n'est
+  pas chargée (`.envrc`, puis `source .envrc`) ;
+- **la date de fin** : une seule, à plus de 14 jours (un avertissement en dessous ; plusieurs
+  secrets sur l'application : la cible le dit, un seul est attendu) ;
+- **l'audit** : il répond sans erreur d'authentification. Le droit qui manque à un restore, lui, se
+  lit à l'étape 6 : le restore lit ses droits avant de toucher la VM et nomme celui qui manque.
+
+## Annexe B — la mesure de l'étape 8 à la main (dépannage)
+
+Ce que `make bench-report` compose, lu directement sur H0, quand le journal d'activité ou le coffre
+ne se lisent pas depuis le poste.
+
+Toujours sur H0 (sinon, `make glorfindel-host-ssh` d'abord) :
+
+```bash
+docker exec -i -e RUN=<run_id> -e VM=vm-celebrimbor-gondolin eregion-watch python - <<'EOF'
+import glob, json, os, sys
+from datetime import datetime, timezone
+run, vm = os.environ.get("RUN", "").strip(), os.environ.get("VM", "").strip().lower()
+if not run or not vm or run.startswith("<"):
+    sys.exit("RUN ou VM vide : rien à mesurer")
+def t(s): return datetime.fromisoformat(str(s).replace("Z", "+00:00")).timestamp()
+def hm(e): return datetime.fromtimestamp(e, timezone.utc).strftime("%H:%M:%S")
+m = json.load(open(f"runs/glorfindel/{run}.json"))["metrics"]
+t0 = float(m["attack_time"])
+print(f"T0          {hm(t0)} UTC (attack_time du run)")
+print(f"détection   {m.get('detection')}, {m.get('detection_latency_s')} s après T0")
+for f in sorted(glob.glob("runs/glorfindel/*_debug.jsonl")):
+    if os.path.getmtime(f) < t0 - 600:
+        continue
+    for line in open(f):
+        d = json.loads(line)
+        s = d.get("signal") or {}
+        if (s.get("event") == "recovery_complete" and t(d["timestamp"]) > t0
+                and str(s.get("resource_id", "")).rstrip("/").rsplit("/", 1)[-1].lower() == vm):
+            o = d.get("outcome") or {}   # REC1 : la levée de la watch ; sans REC1, aucune ligne
+            print(f"levée watch {hm(t(d['timestamp']))}  {d.get('action') or '-'}  escalate={d.get('escalate')}"
+                  f"  verified={o.get('verified')}  T0+{t(o.get('verified_at') or d['timestamp']) - t0:.0f} s")
+            continue
+        if d.get("exercise_run") != run:
+            continue
+        o = d.get("outcome") or {}
+        end = o.get("verified_at") or d["timestamp"]
+        print(f"cycle       {hm(t(d['timestamp']))}  {d.get('action') or '-'}  escalate={d.get('escalate')}"
+              f"  verified={o.get('verified')}  T0+{t(end) - t0:.0f} s")
+f = "runs/console/manual_actions.jsonl"
+for line in (open(f) if os.path.exists(f) else []):
+    d = json.loads(line)
+    if (d.get("action") == "release_isolation" and t(d["timestamp"]) > t0
+            and str(d["signal"]["resource_id"]).rstrip("/").rsplit("/", 1)[-1].lower() == vm):
+        print(f"levée       {hm(t(d['timestamp']))}  T0+{t(d['timestamp']) - t0:.0f} s  {d['outcome'].get('status')}")
+EOF
+```
+
+*Vérifié à blanc* sur des fichiers fictifs de même forme (`RunReport.to_dict`,
+`agent.py:2500-2555`, `cli.py:24-54`) : une ligne T0, une ligne détection, une ligne par cycle du
+run (l'isolement : `isolate_vm escalate=False verified=True T0+…`), une ligne de levée. Le rapport
+arrive sur H0 quand le fil a fini ; sur Orodruin, le même est dans `~/runs/annatar/<run_id>.json`.
