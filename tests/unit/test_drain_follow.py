@@ -197,25 +197,7 @@ def test_a_cut_that_fails_on_azure_after_its_first_wait_says_the_sessions_stayed
     assert "Conflict" in card["reason"]
 
 
-def test_a_failure_after_the_first_wait_counts_as_a_containment_that_did_not_hold(azure):
-    """BL1 (analysis/containment.py): the cycle verified on the NSG, then the cut that failed —
-    never counted « contenu seul »."""
-    from analysis.containment import not_holding
-    f, c = azure
-    c.isolate_vm(_WEB)
-    f.end_run_commands(error=_error(HttpResponseError, 409, "(Conflict) agent"))
-    reassert_pass(c, _ACT)
-    assert not_holding(_WEB, 0.0, 4e9, escalations.all_escalations()) is not None
-
-
-def test_a_pending_card_never_counts_against_the_containment(azure):
-    from analysis.containment import not_holding
-    f, c = azure
-    c.isolate_vm(_WEB)
-    reassert_pass(c, _ACT)
-    f.end_run_commands()
-    reassert_pass(c, _ACT)
-    assert not_holding(_WEB, 0.0, 4e9, escalations.all_escalations()) is None
+# What BL1 reads of these cards (analysis/containment.py): tests/unit/test_drain_containment.py (D1).
 
 
 def test_a_vm_released_while_its_cut_waits_closes_the_card(azure):
