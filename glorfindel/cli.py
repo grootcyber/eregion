@@ -309,6 +309,65 @@ def respond(signals_file: str, dry_run: bool, model: str, memory_path: str | Non
         console.print()
 
 
+@cli.command("door")
+@click.argument("resource_id")
+@click.option("--days", type=click.FloatRange(0.01, 90.0), default=7.0, show_default=True,
+              help="How far back the activity log is read (90 days at most: its retention).")
+@click.option("--json", "as_json", is_flag=True, help="The facts as JSON (ids included: this terminal only).")
+def door(resource_id: str, days: float, as_json: bool):
+    """Who acted on a VM by the control plane, and whether they keep their rights — READ ONLY, under
+    this host's identity (LEV2, #690). Nothing is written, on Azure or here; nothing lifts or holds.
+    On H0, the reads its Reader can make (H1, H2: docs/banc-lev2.md)."""
+    from datetime import datetime, timedelta, timezone
+    from glorfindel.actions import AzureConnector
+
+    resource_id = _resolve_resource_id(resource_id)
+    if "/" not in resource_id:
+        raise click.ClickException(f"{resource_id} : ni isolée, ni bloquée, ni découverte — donner son id ARM")
+    from glorfindel.actions import _load_isolation_state
+    connector = AzureConnector(dry_run=False)
+    now = datetime.now(timezone.utc)
+    iso = _load_isolation_state(resource_id) or {}
+    try:
+        seen = connector.observed_actors(resource_id, (now - timedelta(days=days)).isoformat(), until=now.isoformat(),
+                                         disks=((iso.get("disks_at_isolation") or {}).get("ids") or ()),
+                                         rules_at_isolation=iso.get("nsg_rules_at_isolation") or None)
+        reading: dict = {}
+        for a in seen.get("actors") or []:
+            a["rights"] = connector.observed_rights(a.get("ids") or [], resource_id, scopes=seen.get("scopes") or (),
+                                                    reading=reading)
+        seen["rights_reads"] = [r for v in reading.values() for r in (getattr(v, "reads", None) or [])]
+        if not seen.get("actors"):      # H1, H2: the rights read even with nobody, the VM's scopes
+            probe = connector.observed_rights([], resource_id, scopes=seen.get("scopes") or (), reading=reading)
+            seen["rights_reads"] = probe.get("reads") or []
+    except Exception as exc:            # an answer of a shape not read: said in a sentence, never a trace
+        raise click.ClickException(f"la porte ne se lit pas : {_esc_markup(str(exc))[:240]}")
+    if as_json:
+        click.echo(json.dumps(seen, indent=1, default=str))
+        return
+    console.rule("[bold]Glorfindel — la porte (lecture seule, pour information)[/bold]")
+    console.print(f"  {_esc_markup(resource_id.rsplit('/', 1)[-1])} · {seen.get('since')} → {seen.get('until')} "
+                  f"· [bold]{seen.get('verdict')}[/bold]")
+    for w in seen.get("unreadable") or []:
+        console.print(f"  [orange1]illisible[/orange1] : {_esc_markup(str(w))}")
+    for a in seen.get("actors") or []:
+        r = a.get("rights") or {}
+        console.print(f"  · {_esc_markup(', '.join(a.get('ids') or []))} {_esc_markup(a.get('role') or '')} "
+                      f"— droits [bold]{r.get('verdict')}[/bold]")
+        for g in a.get("gestures") or []:
+            console.print(f"      {g['at']} {_esc_markup(g['operation'])} ({g['kind']}, {_esc_markup(g['status'])})")
+        for w in r.get("unreadable") or []:
+            console.print(f"      {_esc_markup(str(w))}")
+    for r in seen.get("reads") or []:
+        console.print(f"  lecture {r.get('how')} {r.get('what')} : "
+                      + (f"[red]{_esc_markup(str(r['error']))}[/red]" if r.get("error") else
+                         f"{r.get('pages')} page(s), {r.get('events')} événement(s)"))
+    for r in seen.get("rights_reads") or []:
+        console.print(f"  droits {r.get('what')} sur {_esc_markup(str(r.get('scope')))} : "
+                      + (f"[red]{_esc_markup(str(r['error']))}[/red]" if r.get("error") else
+                         f"{r.get('items')} lue(s), dont {r.get('inherited')} d'une autre portée"))
+
+
 @cli.command()
 @click.argument("resource_id")
 @click.option("--dry-run", is_flag=True, help="Show what would be done without executing.")
@@ -456,6 +515,30 @@ def _watch_recovery_pass(connector, emit, lock=None, said: dict | None = None) -
         with lock:
             console.print(f"[cyan]reprise {_esc_markup(r['vm'])} {_esc_markup(r['job'])} → "
                           f"{r['outcome']}[/cyan] {_esc_markup(r['detail'])}")
+    return report
+
+
+def _watch_door_pass(connector, lock=None, said: dict | None = None) -> list[dict]:
+    """One pass of the door's facts (LEV2, #690): who acted on each isolated VM, and their rights,
+    written for its isolation card — information only, nothing lifts or holds. Never raises; what
+    it read is said once until it changes (`said`)."""
+    import contextlib
+    from glorfindel.door_facts import facts_pass
+    lock = lock if lock is not None else contextlib.nullcontext()
+    said = said if said is not None else {}
+    try:
+        report = facts_pass(connector)
+    except Exception as exc:
+        with lock:
+            console.print(f"[red]door facts pass failed:[/red] {_esc_markup(str(exc))}")
+        return []
+    for r in report:
+        if said.get(r["vm"]) == (r["verdict"], r["actors"]):
+            continue
+        said[r["vm"]] = (r["verdict"], r["actors"])
+        with lock:
+            console.print(f"[cyan]porte {_esc_markup(r['vm'])} → {r['verdict']} "
+                          f"({r['actors']} acteur(s), pour information)[/cyan]")
     return report
 
 
@@ -991,6 +1074,25 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
             daemon=True, name="recoveries")
         _recovery_thread[0].start()
 
+    # LEV2 (#690): the door's facts of each isolated VM — who acted on it by the control plane,
+    # and whether they keep their rights — read on Azure and written for its isolation card, for
+    # information only: nothing here lifts or holds. Its own thread, one pass at a time; how often
+    # each VM is read again is the pass's (GLORFINDEL_DOOR_FACTS_INTERVAL_S, 900 s; 0: off).
+    _door_thread: list = [None]
+    _door_said: dict = {}
+
+    def _door_facts() -> None:
+        from glorfindel.door_facts import interval_s as _door_every
+        if dry_run or _door_every() <= 0:
+            return
+        t = _door_thread[0]
+        if t is not None and t.is_alive():
+            return
+        import threading as _thr
+        _door_thread[0] = _thr.Thread(target=lambda: _watch_door_pass(ttl_connector, _output_lock, _door_said),
+                                      daemon=True, name="door-facts")
+        _door_thread[0].start()
+
     _HEARTBEAT = Path.home() / ".glorfindel" / "watch_heartbeat"
 
     # Warn if another watch process appears to be running (shared ~/.glorfindel/)
@@ -1318,6 +1420,11 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
                     except Exception as exc:
                         with _output_lock:
                             console.print(f"[red]watch: _recoveries en erreur — {exc}[/red]")
+                    try:
+                        _door_facts()       # LEV2: information on the isolation card, its own thread
+                    except Exception as exc:
+                        with _output_lock:
+                            console.print(f"[red]watch: _door_facts en erreur — {exc}[/red]")
                     for _task in (_check_ttl, _reconcile_jobs, _reassert, _write_heartbeat, _observe_windows):
                         try:
                             _task()

@@ -32,7 +32,18 @@ isolation paths, with Azure's semantics where they matter:
   measured 09/11, REC1b), and what Run Command v1 last said (the GUEST's word: the output of the
   last command, written again when a restored disk boots and replays it — measured once,
   2026-10-05, the ransomware replayed —, or whatever root writes). The instance view carries it
-  only when a test sets `view_run_command`: on the bench (09/11), it never does.
+  only when a test sets `view_run_command`: on the bench (09/11), it never does;
+- the door of the lift (LEV2, #690; docs/design/levee-probation.md §4): the activity log read
+  through its REST API (`rest`: `eventtypes/management/values`, `$filter` on `resourceUri` or
+  `resourceGroupName` and the window, pages of `page_size` linked by `nextLink`), every operation
+  under its caller and its status, children of the VM and rules of an NSG under their own id, an
+  event that lands late (`delay_s`); the role assignments at every scope (a listing gives those at,
+  above and below it), their definitions (wildcards, notActions, dataActions), the PIM
+  eligibilities; a read refused (`rest_denied`: 403, a scope H0 does not read). HYPOTHESES, to
+  measure on the bench (LEV2): the exact filter on `resourceUri` gives the resource alone, never
+  its children (H9; `uri_children` plays the other answer); each operation is logged under the
+  resource the table of §4.1 names (H7); an orphan assignment reads `principalType: Unknown`
+  (H11); the event of a rule's write carries its request body (`properties.requestbody`).
 
 `open_flows` evaluates traffic as Azure does, independently of the connector's own
 helpers: inbound crosses the subnet's NSG then the NIC's, outbound the reverse; in each
@@ -48,12 +59,16 @@ from __future__ import annotations
 
 import copy
 import ipaddress
+import json
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
 
 SUB = "/subscriptions/s"
+# The client tool of a USER's token (the Azure CLI, the portal): one appid for the whole tenant
+# (activity.py, `token_identities`), never the user's (LEV2, review round 1). A placeholder.
+TOOL_APPID = "0000c11a-0000-0000-0000-000000000000"
 RUN_COMMAND_ACTION = "Microsoft.Compute/virtualMachines/runCommand/action"
 
 
@@ -196,6 +211,19 @@ class FakeAzure:
         # DRN1: Run Commands held running until the test ends them (`end_run_commands`).
         self.hold_run_commands = False
         self.running: list[_Running] = []
+        # LEV2: the REST surface read by the door's facts — the activity log in pages, the role
+        # assignments, their definitions, the eligibilities; `rest_denied`: substrings of a path
+        # whose read answers 403 (a scope H0 does not read); `rest_calls`: every GET, in order.
+        self.page_size = 50
+        self.uri_children = False
+        self.rest_denied: set[str] = set()
+        self.rest_calls: list[tuple[str, dict]] = []
+        self._next: dict[str, tuple[list, int]] = {}
+        self.assignments: list[dict] = []
+        self.eligibilities: list[dict] = []
+        self.roles: dict[str, dict] = {}
+        for name, perms in BUILTIN_ROLES.items():
+            self.define_role(name, **perms)
 
     # ── building the customer's world ──────────────────────────────────────────
 
@@ -212,10 +240,13 @@ class FakeAzure:
         self.subnets[key(rid)] = {"id": rid, "nsg": nsg}
         return rid
 
-    def add_vm(self, rg: str, name: str, nics: list[dict], os_type="Linux") -> str:
-        """nics: [{rg, name, ips, subnet, nsg, policy, location, forwarding}] — `policy`: an
-        Azure Policy refusing any NSG on this NIC other than its own `nsg`; `forwarding`: IP
-        forwarding on (`enable_ip_forwarding`: an appliance, a hub's firewall — SEC-A4)."""
+    def add_vm(self, rg: str, name: str, nics: list[dict], os_type="Linux", data_disks: int = 0,
+               identities=()) -> str:
+        """nics: [{rg, name, ips, subnet, nsg, policy, location, forwarding, public_ips, asgs}] —
+        `policy`: an Azure Policy refusing any NSG on this NIC other than its own `nsg`;
+        `forwarding`: IP forwarding on (`enable_ip_forwarding`: an appliance, a hub's firewall —
+        SEC-A4); `public_ips`, `asgs`: ids on its IP configuration (LEV2). `data_disks`: how many
+        managed data disks; `identities`: the user-assigned identities it carries (LEV2)."""
         ids = []
         for n in nics:
             rid = nic_id(n["rg"], n["name"])
@@ -223,13 +254,16 @@ class FakeAzure:
                                    "nsg": n.get("nsg"),
                                    "design_nsg": n.get("nsg"), "ips": list(n["ips"]),
                                    "subnet": n["subnet"], "policy": bool(n.get("policy")),
-                                   "forwarding": bool(n.get("forwarding"))}
+                                   "forwarding": bool(n.get("forwarding")),
+                                   "public_ips": list(n.get("public_ips") or []), "asgs": list(n.get("asgs") or [])}
             ids.append(rid)
         rid = vm_id(rg, name)
         disk = self._new_disk(rg, f"{name}-osdisk", datetime(2026, 1, 1, tzinfo=timezone.utc))
+        data = [self._new_disk(rg, f"{name}-data{i}", datetime(2026, 1, 1, tzinfo=timezone.utc))
+                for i in range(data_disks)]
         self.vms[key(rid)] = {"id": rid, "nics": ids, "os": os_type, "power": "running",
                               "last_output": "", "said": None, "extensions": [], "managed": [],
-                              "os_disk": disk}
+                              "os_disk": disk, "data_disks": data, "identities": list(identities)}
         return rid
 
     def _new_disk(self, rg: str, name: str, created: datetime) -> str:
@@ -300,6 +334,133 @@ class FakeAzure:
                 ev["subStatus"] = {"value": failed["http"] or "", "localizedValue": failed["http"] or ""}
             out.append(ev)
         return out
+
+    # ── the door's facts (LEV2) ─────────────────────────────────────────────────
+
+    def log(self, resource_id: str, op: str, statuses=("Started", "Succeeded"), caller: str | None = None,
+            at: datetime | None = None, delay_s: float = 0.0, body: dict | None = None,
+            failed: dict | None = None, claims: dict | None = None, user: str | None = None) -> str:
+        """One operation in the activity log, under `caller` (the next calls' by default), at `at`
+        (now): its events under one operationId, the `Failed` one carrying `failed` ({"http",
+        "message"}); `body`: the request body its events carry (a rule's write); `delay_s`: how
+        late it lands in the log; `claims`: the token's claims, as given. `user`: a USER's UPN, the
+        event's caller; `caller` is then its object id, and its token's appid the client tool's,
+        common to every user (TOOL_APPID: the shape documented for a delegated token, unmeasured)."""
+        if user is not None:
+            claims = {"appid": TOOL_APPID,
+                      "http://schemas.microsoft.com/identity/claims/objectidentifier": caller or self.caller,
+                      "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn": user,
+                      "http://schemas.microsoft.com/identity/claims/scope": "user_impersonation"}
+            caller = user
+        self.operations += 1
+        op_id = f"op-{self.operations:05d}"
+        when = at or self.clock()
+        for s in statuses:
+            self.activity.append({"resource_id": resource_id, "op": op, "status": s, "at": when,
+                                  "caller": caller or self.caller, "op_id": op_id,
+                                  "failed": failed if s == "Failed" else None, "body": body,
+                                  "delay_s": delay_s, "claims": claims})
+        return op_id
+
+    def define_role(self, name: str, actions=(), not_actions=(), data_actions=(), not_data_actions=()) -> str:
+        rid = f"{SUB}/providers/Microsoft.Authorization/roleDefinitions/role-{name.lower().replace(' ', '-')}"
+        self.roles[key(rid)] = {"id": rid, "properties": {"roleName": name, "permissions": [{
+            "actions": list(actions), "notActions": list(not_actions), "dataActions": list(data_actions),
+            "notDataActions": list(not_data_actions)}]}}
+        return rid
+
+    def role_id(self, name: str) -> str:
+        return next(r["id"] for r in self.roles.values() if r["properties"]["roleName"] == name)
+
+    def assign(self, scope: str, principal: str, role: str, principal_type: str = "ServicePrincipal",
+               eligible: bool = False) -> str:
+        """A role assignment (or, `eligible`, a PIM eligibility) of `role` to `principal` at `scope`."""
+        into = self.eligibilities if eligible else self.assignments
+        aid = f"{scope.rstrip('/')}/providers/Microsoft.Authorization/{'roleEligibilityScheduleInstances' if eligible else 'roleAssignments'}/a-{len(into) + 1:04d}"
+        into.append({"id": aid, "properties": {"scope": scope, "principalId": principal,
+                                               "principalType": principal_type, "roleDefinitionId": self.role_id(role)}})
+        return aid
+
+    def _event(self, e: dict) -> dict:
+        claims = e.get("claims") if e.get("claims") is not None else {"appid": e["caller"], "oid": e["caller"]}
+        ev = {"caller": e["caller"], "claims": claims,
+              "operationName": {"value": e["op"]}, "status": {"value": e["status"]},
+              "operationId": e.get("op_id", ""), "eventTimestamp": e["at"].isoformat(),
+              "submissionTimestamp": (e["at"] + timedelta(seconds=e.get("delay_s") or 0)).isoformat(),
+              "resourceId": e["resource_id"], "resourceGroupName": _group(e["resource_id"]),
+              "eventDataId": f"{e.get('op_id', '')}-{e['status']}-{key(e['resource_id'])}",
+              "subStatus": {"value": ""}, "properties": {}}
+        if e.get("body") is not None:
+            ev["properties"]["requestbody"] = json.dumps(e["body"])
+        failed = e.get("failed")
+        if failed:
+            ev["properties"].update({"eventCategory": "Administrative", "statusMessage": failed["message"],
+                                     **({"statusCode": failed["http"]} if failed["http"] else {})})
+            ev["subStatus"] = {"value": failed["http"] or "", "localizedValue": failed["http"] or ""}
+        return ev
+
+    def rest(self, url: str, params: dict | None) -> dict:
+        """A GET on ARM, as AzureConnector._arm_get makes it: a page, and its nextLink."""
+        self.rest_calls.append((url, dict(params or {})))
+        self.chaos("rest.get", "before", False)
+        path = url.removeprefix("https://management.azure.com")
+        if path.startswith("/fake-next/"):
+            token = path.split("/")[2]
+            items, at = self._next.pop(token)
+            return self._page(items, at)
+        for denied in self.rest_denied:
+            if denied.lower() in path.lower():
+                raise RuntimeError("HTTP 403 AuthorizationFailed")
+        low = path.lower()
+        if low.endswith("/providers/microsoft.insights/eventtypes/management/values"):
+            return self._page(self._activity_rest(params or {}), 0)
+        if low.endswith("/providers/microsoft.authorization/roleassignments"):
+            return self._page(_at_scope(self.assignments, path.rsplit("/providers/", 1)[0]), 0)
+        if low.endswith("/providers/microsoft.authorization/roleeligibilityscheduleinstances"):
+            return self._page(_at_scope(self.eligibilities, path.rsplit("/providers/", 1)[0], above_only=True), 0)
+        if "/providers/microsoft.authorization/roledefinitions/" in low:
+            role = self.roles.get(key(path))
+            if role is None:
+                raise RuntimeError("HTTP 404 RoleDefinitionDoesNotExist")
+            return copy.deepcopy(role)
+        raise RuntimeError(f"HTTP 400 the fake does not read {path}")
+
+    def _page(self, items: list, at: int) -> dict:
+        page = items[at:at + self.page_size]
+        out = {"value": copy.deepcopy(page)}
+        if at + self.page_size < len(items):
+            token = f"t{len(self.rest_calls):05d}"
+            self._next[token] = (items, at + self.page_size)
+            out["nextLink"] = f"https://management.azure.com/fake-next/{token}"
+        return out
+
+    def _activity_rest(self, params: dict) -> list[dict]:
+        import re
+        f = params.get("$filter", "")
+        ge = re.search(r"eventTimestamp ge '([^']+)'", f)
+        le = re.search(r"eventTimestamp le '([^']+)'", f)
+        uri = re.search(r"resourceUri eq '([^']+)'", f)
+        group = re.search(r"resourceGroupName eq '([^']+)'", f)
+        if not ge or not (uri or group):
+            raise RuntimeError("HTTP 400 BadRequest: the filter needs eventTimestamp and a resource")
+        start = datetime.fromisoformat(ge.group(1).replace("Z", "+00:00"))
+        end = datetime.fromisoformat(le.group(1).replace("Z", "+00:00")) if le else None
+        now = self.clock()
+        out = []
+        for e in self.activity:
+            if e["at"] < start or (end is not None and e["at"] > end):
+                continue
+            if e["at"] + timedelta(seconds=e.get("delay_s") or 0) > now:
+                continue                       # not in the log yet
+            rid = key(e["resource_id"])
+            if uri:
+                want = key(uri.group(1))
+                if not (rid == want or (self.uri_children and rid.startswith(want + "/"))):
+                    continue
+            elif _group(e["resource_id"]).lower() != group.group(1).lower():
+                continue
+            out.append(self._event(e))
+        return sorted(out, key=lambda ev: ev["eventTimestamp"], reverse=True)   # the newest first
 
     # ── Azure Backup (REC1) ─────────────────────────────────────────────────────
 
@@ -420,9 +581,12 @@ class _Nics:
                 enable_ip_forwarding=n.get("forwarding", False),
                 virtual_machine=SimpleNamespace(id=vm) if vm else None,
                 network_security_group=SimpleNamespace(id=n["nsg"]) if n["nsg"] else None,
-                ip_configurations=[SimpleNamespace(private_ip_address=ip,
-                                                   subnet=SimpleNamespace(id=n["subnet"]))
-                                   for ip in n["ips"]])
+                ip_configurations=[SimpleNamespace(
+                    private_ip_address=ip, subnet=SimpleNamespace(id=n["subnet"]),
+                    public_ip_address=(SimpleNamespace(id=n["public_ips"][i])
+                                       if i < len(n.get("public_ips") or []) else None),
+                    application_security_groups=[SimpleNamespace(id=a) for a in n.get("asgs") or []])
+                    for i, ip in enumerate(n["ips"])])
         return self.az.call("nic.get", False, read)
 
     def begin_create_or_update(self, rg, name, nic):
@@ -562,7 +726,10 @@ class _Vms:
                 network_profile=SimpleNamespace(network_interfaces=[
                     SimpleNamespace(id=n, primary=i == 0) for i, n in enumerate(v["nics"])]),
                 storage_profile=SimpleNamespace(os_disk=SimpleNamespace(
-                    os_type=v["os"], managed_disk=SimpleNamespace(id=v.get("os_disk")) if v.get("os_disk") else None)))
+                    os_type=v["os"], managed_disk=SimpleNamespace(id=v.get("os_disk")) if v.get("os_disk") else None),
+                    data_disks=[SimpleNamespace(managed_disk=SimpleNamespace(id=d)) for d in v.get("data_disks") or []]),
+                identity=SimpleNamespace(user_assigned_identities={i: SimpleNamespace() for i in v.get("identities") or []})
+                if v.get("identities") else None)
         return self.az.call("vm.get", False, read)
 
     def begin_run_command(self, rg, name, command):
@@ -736,6 +903,44 @@ class _JobDetails:
                 raise not_found(f"backupJobs/{name}")
             return _job_view(self.az, j, details=True)
         return self.az.call("backup.job", False, read)
+
+
+def _group(resource_id: str) -> str:
+    parts = str(resource_id or "").split("/")
+    low = [p.lower() for p in parts]
+    return parts[low.index("resourcegroups") + 1] if "resourcegroups" in low else ""
+
+
+def _at_scope(items: list[dict], scope: str, above_only: bool = False) -> list[dict]:
+    """What a listing at `scope` gives: the items at it and above it (the group, the
+    subscription) — and below it, without `atScope()` (hypothesis H1: read whole by a Reader)."""
+    s = key(scope)
+    out = []
+    for i in items:
+        at = key(i["properties"]["scope"])
+        if s == at or s.startswith(at + "/") or (not above_only and at.startswith(s + "/")):
+            out.append(i)
+    return out
+
+
+# The built-in roles the tests assign: their permissions as Azure documents them (abridged).
+BUILTIN_ROLES = {
+    "Owner": {"actions": ["*"]},
+    "Contributor": {"actions": ["*"], "not_actions": [
+        "Microsoft.Authorization/*/Delete", "Microsoft.Authorization/*/Write",
+        "Microsoft.Authorization/elevateAccess/Action"]},
+    "Reader": {"actions": ["*/read"]},
+    "User Access Administrator": {"actions": ["*/read", "Microsoft.Authorization/*"]},
+    "Virtual Machine Contributor": {"actions": ["Microsoft.Compute/virtualMachines/*", "Microsoft.Compute/disks/*",
+                                                "Microsoft.Network/networkInterfaces/*"]},
+    "Virtual Machine Administrator Login": {"actions": ["Microsoft.Compute/virtualMachines/read"],
+                                            "data_actions": ["Microsoft.Compute/virtualMachines/login/action",
+                                                             "Microsoft.Compute/virtualMachines/loginAsAdmin/action"]},
+    "Network Contributor": {"actions": ["Microsoft.Network/*"]},
+    "Compute Reader, writes taken back": {"actions": ["Microsoft.Compute/*"],
+                                          "not_actions": ["Microsoft.Compute/*/write", "Microsoft.Compute/*/action",
+                                                          "Microsoft.Compute/*/delete"]},
+}
 
 
 def _rg_name(resource_id: str) -> tuple[str, str]:

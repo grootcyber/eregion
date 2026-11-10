@@ -718,7 +718,7 @@ briques:
     nom: "Design: the lift after a restore, alone and on probation, unless the door is proven open"
     etat: main
     release: "0.6"
-    lots: [LEV1]
+    lots: [LEV1, LEV2]
     issue: 690
     doc: docs/design/levee-probation.md
 

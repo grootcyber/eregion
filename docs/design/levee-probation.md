@@ -6,6 +6,30 @@ Jonathan du 10/11 sont dans l'issue, et ce sont ses commentaires qui font foi ; 
 ci-dessous. Jonathan a tranché le 10/11 chaque question du §15 : Q1, Q11 et Q13 d'abord, puis toutes
 les autres selon l'option recommandée. Les lots de code (§12) partent de ces décisions._
 
+> **Ce que LEV2 a posé (10/11, #690)** — les faits, sans rien changer à la levée :
+> - `observed_actors` (`glorfindel/providers/azure/door.py`) : la table du §4.1, fermée, lue comme
+>   le dit le §4.1 (une lecture exacte par ressource, une lecture du groupe filtrée sur les enfants,
+>   chacune bornée à 20 pages ; coupée ou en échec : illisible, jamais vide). La règle d'un NSG
+>   partagé se juge sur le corps de la requête de l'événement, sinon sur la règle telle qu'elle est,
+>   sinon elle compte ;
+> - `observed_rights` (`door_rights.py`) : le §4.4, en lecture seule, aucun droit ajouté. Écarts
+>   prudents : une attribution **à un groupe d'administration** qui donnerait la porte est illisible,
+>   même directe ; un principal supprimé est illisible dès qu'**une** attribution lui reste, quel que
+>   soit son rôle (« restauré, il ne retrouverait rien », pris à la lettre) ;
+> - `disks_at_isolation` dans l'état (§8), tiré de la lecture de la VM que l'isolement faisait déjà ;
+> - la carte d'isolement dit les acteurs et leurs droits, pour information (§13, point 6). Sa fenêtre
+>   part de 7 jours avant l'**isolement** : avant un restore, c'est le moment connu ; LEV3 relira à la
+>   levée, depuis 7 jours avant le point restauré ;
+> - le faux Azure gagne le journal complet, les attributions, les définitions et les éligibilités ;
+> - la mesure de H7, H9, H12, et de H1 et H2, préparée pour Jonathan : `docs/banc-lev2.md`. **Les
+>   hypothèses restent ouvertes** jusqu'à la mesure.
+>
+> - **Q16, tranchée par Jonathan (10/11)** et posée par la correction de LEV2 : `securityRules/delete`
+>   et `virtualNetworks/subnets/write` entrent dans la table (§4.1). La liste des règles de chaque NSG
+>   client que l'isolement lit déjà est notée à côté des disques (`nsg_rules_at_isolation`), sans
+>   appel de plus. **Le chemin du NSG de quarantaine n'en lit aucune** : la liste y est vide, et une
+>   règle retirée d'un NSG partagé compte alors toujours.
+
 > **Décisions de Jonathan (10/11, révisées le même jour).**
 > - **Un exercice prouvé par le plan de contrôle** (un run d'Orodruin, cause connue) : la levée reste
 >   seule, comme aujourd'hui. Le banc garde son geste unique.
@@ -389,6 +413,8 @@ pas : il n'a rien atteint.
 | `Microsoft.Network/networkInterfaces/write` | chaque carte de la VM | une carte changée : une adresse, une IP publique, un autre NSG |
 | `Microsoft.Network/publicIPAddresses/join/action` | l'IP publique, ou la carte (hypothèse, H7) | une IP publique posée sur la carte |
 | `Microsoft.Network/networkSecurityGroups/securityRules/write`, `…/networkSecurityGroups/write` | **enfant** : la règle `<nsg>/securityRules/<nom>`, ou le NSG | un port ouvert devant la VM. **Sur un NSG partagé**, seule une règle qui couvre la VM compte : sa destination (entrante) ou sa source (sortante) contient une adresse de la VM, ou `*`, `VirtualNetwork`, un préfixe qui la contient, une ASG d'une de ses cartes. Une règle visant une autre VM d'un NSG partagé n'est pas un geste sur celle-ci |
+| `Microsoft.Network/networkSecurityGroups/securityRules/delete` (Q16) | **enfant** : la règle `<nsg>/securityRules/<nom>` | une règle retirée : un refus retiré rouvre un port. Sur un NSG qui gouverne la VM seule, il compte toujours. **Sur un NSG partagé**, il ne compte pas seulement si la liste des règles relevée à l'isolement (`nsg_rules_at_isolation`) montre que la règle supprimée ne couvrait pas la VM ; sans cette liste (une isolation d'avant LEV2, ou par le NSG de quarantaine), ou la règle absente de la liste, il compte |
+| `Microsoft.Network/virtualNetworks/subnets/write` (Q16) | le sous-réseau d'une carte de la VM | un NSG ou une table de routes détachés ou changés : il compte toujours |
 | `Microsoft.ManagedIdentity/userAssignedIdentities/assign/action` | l'identité | une identité donnée à la VM |
 | `Microsoft.Resources/tags/write`, `Microsoft.Resources/subscriptions/resourceGroups/write` (et les tags par `virtualMachines/write`) | la VM, ou son groupe | les tags d'inscription et de zone changés (`eregion-target`, `eregion-zone`) : la zone d'une VM décide si un exercice peut lever sans probation (§5.1) |
 
@@ -1247,6 +1273,7 @@ l'option recommandée. Aucune question ne reste ouverte.
 | Q13 | Une détection du plan de contrôle sur une VM en probation | une carte `probation_signal`, jamais une réisolation seule (§6.3) |
 | Q14 | La marge de latence du journal avant le verdict | 15 min après la fin du job, ajustées par la mesure de H12 (§3.1) |
 | Q15 | Qui retire une retenue | un humain seul, par un geste tracé sur H0 ; jamais la watch, jamais le bot, aucune expiration (§3.4) |
+| Q16 | Le retrait d'une règle de NSG, et l'écriture du sous-réseau (10/11, à la relecture de LEV2) | deux gestes de plus dans la table du §4.1, au sens prudent. `securityRules/delete` : sur un NSG qui gouverne la VM, il compte toujours ; sur un NSG partagé, il ne compte pas seulement si la liste des règles relevée à l'isolement montre que la règle supprimée ne couvrait pas la VM, et sans cette liste il compte. `virtualNetworks/subnets/write`, sur le sous-réseau de la VM : il compte toujours. Les droits du tiers se lisent aussi sur ces opérations |
 
 **Points ouverts, hors de LEV1** :
 - une probation après une levée humaine **sans** restore (un incident réel nettoyé à la main) ;
