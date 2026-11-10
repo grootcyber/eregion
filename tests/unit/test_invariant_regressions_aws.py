@@ -115,3 +115,61 @@ def test_a_reisolation_of_an_eni_left_on_default_keeps_its_original(monkeypatch)
     net = _net(groups={**{e: [] for e in _ENIS}, "eni-web1": ["own"]},
                config={"quarantine": True, "rg": "", "forensic": [], "readable": True})
     _run(monkeypatch, net, ("isolate", "i-web1", None), ("someone_detaches_the_quarantine", "eni-web1"), then=then)
+
+
+def test_an_eni_left_on_default_whose_original_nothing_holds_is_released_on_default(monkeypatch):
+    """I3 on AWS (AWS1b, #708): i-web2 on `default` and its own group, isolated — its
+    original on the quarantine group's tag, the state never written (a full disk at the
+    state write); someone takes eni-web2 out onto `default`; the tags of the quarantine
+    group are lost. Nothing records its original any more: Glorfindel isolates it again
+    from `default` and notes `default`, the release puts `default` back and says
+    « released » — the AWS analog of a NIC left bare, re-isolated as bare (U2): the
+    operator puts its group back.
+
+    From the night of 10/11 (« Invariants (deep) », macOS, 10 000 examples, seed
+    894570835): four failures, one sequence — I3 « release said released, not back to its
+    design », and « verify_release True ». The oracle was wrong, not the adapter: once the
+    re-isolation had written its state, the test read « a state held its original » from
+    that `default`, where Azure's machine reads a record of « none » as nothing. A record
+    of `default` learned from an ENI someone left there says nothing either."""
+    def then(m):
+        e, q = m.fake.enis["eni-web2"], m._ours_ids()[0]
+        assert m._state("i-web2") is None and e["groups"] == [q]          # the fault hit the state write
+        assert m.fake.sgs[q]["tags"]["glorfindel-orig-eni-web2"] == "sg-default-vpc-a,sg-own-eni-web2"
+        m.someone_detaches_the_quarantine(Script("eni-web2"))
+        _check(m)
+        m.tags_lost(Script(q))
+        _check(m)
+        m.isolate(Script("i-web2", None))
+        _check(m)
+        assert [p["original_groups"] for p in m._state("i-web2")["placements"]] == [["sg-default-vpc-a"]]
+        assert m._untraceable("i-web2", e) is False and "eni-web2" not in m.state_had   # in quarantine
+        out, _ = m._release("i-web2", None)
+        assert out["status"] == "released" and e["groups"] == ["sg-default-vpc-a"]
+        m._check_claims("i-web2")                     # verify_release True on `default`: judged so
+        _check(m)
+    net = _net(groups={**{e: [] for e in _ENIS}, "eni-web2": ["default", "own"]},
+               config={"quarantine": True, "rg": "", "forensic": [], "readable": True})
+    _run(monkeypatch, net, ("isolate", "i-web2", (13, "before-429")), then=then)
+
+
+def test_the_oracle_still_holds_an_original_a_state_had(monkeypatch):
+    """The other side (A0: the oracle refuses more, never less): the same steps, the state
+    written this time. After the tags are lost, the state still holds eni-web2's own
+    original: traceable. The re-isolation from `default` keeps it (U2, M606), and the
+    release puts both groups back — a release that left `default` alone would fail I3."""
+    def then(m):
+        e, q = m.fake.enis["eni-web2"], m._ours_ids()[0]
+        m.someone_detaches_the_quarantine(Script("eni-web2"))
+        m.tags_lost(Script(q))
+        _check(m)
+        assert m.state_had.get("eni-web2") == m.recorded_at["eni-web2"][0]
+        assert m._untraceable("i-web2", e) is False
+        m.isolate(Script("i-web2", None))
+        _check(m)
+        out, _ = m._release("i-web2", None)
+        assert out["status"] == "released"
+        assert sorted(e["groups"]) == ["sg-default-vpc-a", "sg-own-eni-web2"]
+    net = _net(groups={**{e: [] for e in _ENIS}, "eni-web2": ["default", "own"]},
+               config={"quarantine": True, "rg": "", "forensic": [], "readable": True})
+    _run(monkeypatch, net, ("isolate", "i-web2", None), then=then)

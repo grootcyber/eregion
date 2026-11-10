@@ -377,8 +377,18 @@ class AwsIsolationMachine(RuleBasedStateMachine):
         if self.state_had.get(eni["id"]) == at:
             return False
         stt = self._state(vm) or {}
-        return not any(p.get("nic_id") == eni["id"] and p.get("original_groups")
+        return not any(p.get("nic_id") == eni["id"] and self._holds_an_original(p)
                        for p in stt.get("placements") or [])
+
+    def _holds_an_original(self, p: dict) -> bool:
+        """A placement of the state that records its ENI's original. `default` alone, when
+        the ENI is detached, records nothing: learned from where someone left it once
+        every record was lost, it is the AWS analog of the record of « none » for a bare
+        NIC, which Azure's machine reads as nothing (test_invariants._record_lost) — not
+        an original Glorfindel dropped (AWS1b, #708)."""
+        groups, eni = p.get("original_groups"), self.fake.enis.get(p.get("nic_id") or "")
+        return bool(groups) and not (eni is not None and eni["id"] in self.detached
+                                     and sorted(groups) == [f"sg-default-{eni['vpc']}"])
 
     def _on_default(self, eni: dict) -> bool:
         return eni["groups"] == [f"sg-default-{eni['vpc']}"]
@@ -1184,7 +1194,7 @@ class AwsIsolationMachine(RuleBasedStateMachine):
         for vm in self.live:
             for p in (self._state(vm) or {}).get("placements") or []:
                 nk = p.get("nic_id") or ""
-                if p.get("original_groups") and nk in self.recorded_at:
+                if self._holds_an_original(p) and nk in self.recorded_at:
                     self.state_had[nk] = self.recorded_at[nk][0]
 
     @invariant()
