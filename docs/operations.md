@@ -4342,7 +4342,8 @@ make glorfindel-host-tunnel                                    # la console de H
 sudo -v && make mobile-check                                   # le poste ouvert au téléphone, lu
 ```
 
-- **`bench-run`** (`scripts/bench_run.py`) : un terminal sur l'entrée, sinon rien n'est lu ;
+- **`bench-run`** (`scripts/bench_run.py`) : un terminal sur l'entrée, sinon le script refuse, avant
+  tout ssh, az ou scp — la sous-make a seulement lu l'état Terraform local (`terraform output`) ;
   `make bench-preflight` (un ✗, rien ne part) ; un fil `SCENARIO` → `TARGET`, l'id de la VM lu sur
   Azure (une seule de ce nom), en une demande du seul lecteur des demandes
   (`eregion_core/exercise_request.py`) ; le nom de la cible tapé, destructif ou non, puis « [o/N] » ; la
@@ -4350,7 +4351,8 @@ sudo -v && make mobile-check                                   # le poste ouvert
   `make bench-report` pour chaque run nommé, puis la commande du restore avec `RUN=`. La demande est
   écrite sur le poste, pas dans le répertoire de la console : Dagorlad ne suit pas sa chronologie (le
   run, ses cartes et son rapport, si). `make orodruin-exercise` exige aussi un terminal, dès son premier
-  prérequis (`orodruin-exercise-guard`), avant de lire la demande sur H0 ou les VM d'un drill.
+  prérequis (`orodruin-exercise-guard`), avant de lire la demande sur H0 ou les VM d'un drill — avec un
+  make sans `-j`, qui construit les prérequis dans leur ordre.
 - **`bench-restore`** (`scripts/bench_restore.py`) : un terminal ; la paire de la console exigée
   (RST1) ; `--before` le T0 du run, son `attack_started` (SEC4c), lu dans `runs/bench/<run_id>.json` —
   celui de `RUN=`, sinon le seul rapport de `TARGET` ; plusieurs : refusé, leurs runs listés —, sauf
