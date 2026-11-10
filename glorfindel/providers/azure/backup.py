@@ -3,9 +3,29 @@ recovery points and items, a restore job's status (moved from actions.py, A1).
 """
 from __future__ import annotations
 
+from glorfindel.providers.azure.restore_rights import explain_refusal, job_error_text
 from glorfindel.providers.azure.sdk import _backup_item_names, _is_iam_error, rest_post
 from glorfindel.response.ids import _is_backupable_vm, _parse_vm_resource_id
 from glorfindel.response.policy import _console
+
+# RST1 (f): a job that fails at once (bench, 09/11: the restore's in 4.5 s, code 400625) is the
+# trigger's job all the same — kept, its errorDetails said, never « not found ». A job counts as
+# this trigger's when it started after it: FINISHED_SKEW_S of clock skew for a finished one (a
+# finished job started more than 30 s before the trigger — a previous attempt's, minutes before —
+# is not taken), 2 min for one in progress, as before.
+FAILED_JOB_STATUSES = ("Failed", "Cancelled", "CompletedWithWarnings")
+FINISHED_JOB_STATUSES = ("Completed", *FAILED_JOB_STATUSES)
+FINISHED_SKEW_S = 30
+# How long a trigger's job is looked for, by operation (attempts, seconds between them). The
+# restore: at least 2 min (on 09/11 the job was not seen in 45 s; looked for 2 min, it was). The
+# snapshot: short, as before (3 × 10 s) — the watch's autonomous action, one VM at a time: a
+# ransomware's signal waits behind it (time to contain). A job already finished is read in both.
+JOB_SEARCH = {"Restore": (8, 15.0), "Backup": (3, 10.0)}
+
+
+def job_search_s(operation: str) -> int:
+    attempts, delay_s = JOB_SEARCH[operation]
+    return round(attempts * delay_s)
 
 
 class BackupMixin:
@@ -63,12 +83,19 @@ class BackupMixin:
         triggered_at = datetime.now(timezone.utc)
         r = rest_post(url, "Déclenchement de l'instantané", json=payload, headers=headers)
         if r.status_code not in (200, 202):
-            raise RuntimeError(f"Snapshot trigger failed ({r.status_code}): {r.text[:300]}")
+            raise RuntimeError(f"Snapshot trigger failed — {explain_refusal(r.status_code, r.text)}")
 
         backup_job = self._find_backup_job(
             backup_client, vault, v_rg, "Backup", vm_name, triggered_at)
         if backup_job is None:
-            raise RuntimeError(f"Backup job for {vm_name} not found after trigger")
+            raise RuntimeError(
+                f"Backup job for {vm_name} not found after trigger ({job_search_s('Backup')} s) — un job a pu "
+                f"partir : lire les jobs du coffre avant de relancer (az backup job list -g {v_rg} "
+                f"-v {vault} -o table).")
+        status = getattr(backup_job.properties, "status", "")
+        if status in FAILED_JOB_STATUSES:
+            raise RuntimeError(f"Backup job {backup_job.name} {status} : "
+                               f"{self._job_error(backup_client, vault, v_rg, backup_job)}")
 
         snap_id = f"rsv:{vault}/{v_rg}/{backup_job.name}"
         _console.print(
@@ -84,11 +111,12 @@ class BackupMixin:
             job = backup_client.job_details.get(vault, v_rg, backup_job.name)
             status = getattr(job.properties, "status", "Unknown")
             _console.print(f"  [dim]Backup in progress... {elapsed}s — {status}[/dim]")
-            if status in ("Completed", "Failed", "Cancelled"):
+            if status in FINISHED_JOB_STATUSES:
                 break
 
         if status != "Completed":
-            raise RuntimeError(f"Backup job ended with status: {status}")
+            raise RuntimeError(f"Backup job ended with status: {status} — "
+                               f"{self._job_error(backup_client, vault, v_rg, job)}")
 
         return snap_id
 
@@ -116,19 +144,26 @@ class BackupMixin:
 
     def _find_backup_job(
         self, client, vault: str, vault_rg: str, operation: str, vm_name: str,
-        triggered_at, attempts: int = 3, delay_s: float = 10.0,
+        triggered_at, attempts: int | None = None, delay_s: float | None = None,
     ):
-        """The InProgress job this trigger created, for THIS VM.
+        """The job this trigger created, for THIS VM — in progress, or already finished (RST1).
 
         Taking the first InProgress job of the vault cross-wired concurrent jobs: two
         snapshots (watch + CLI + War Room) could each track the other VM's job. Filter
         on the VM (entity_friendly_name) and on a start time not older than the trigger,
-        newest first. Jobs show up a few seconds after the trigger: retry a few times.
+        newest first. Jobs show up a few seconds after the trigger: retry, as long as JOB_SEARCH
+        says for the operation (2 min for a restore, 30 s for a snapshot).
+        A job that failed at once is kept too (its errorDetails are said by the caller): only
+        InProgress was, and a restore refused by the vault in 4.5 s read « not found ».
         """
         import time
         from datetime import timedelta
 
+        default_attempts, default_delay = JOB_SEARCH.get(operation, JOB_SEARCH["Backup"])
+        attempts = default_attempts if attempts is None else attempts
+        delay_s = default_delay if delay_s is None else delay_s
         not_before = triggered_at - timedelta(minutes=2)  # tolerate clock skew
+        finished_not_before = triggered_at - timedelta(seconds=FINISHED_SKEW_S)
         for attempt in range(attempts):
             time.sleep(delay_s)
             candidates = []
@@ -138,11 +173,14 @@ class BackupMixin:
                     continue
                 if getattr(p, "operation", "") != operation:
                     continue
-                if getattr(p, "status", "") != "InProgress":
+                status = getattr(p, "status", "")
+                if status not in ("InProgress", *FINISHED_JOB_STATUSES):
                     continue
                 if (getattr(p, "entity_friendly_name", "") or "").lower() != vm_name.lower():
                     continue
                 start = getattr(p, "start_time", None)
+                if status != "InProgress" and (start is None or start < finished_not_before):
+                    continue
                 if start is not None and start < not_before:
                     continue
                 candidates.append((start, j))
@@ -150,6 +188,17 @@ class BackupMixin:
                 candidates.sort(key=lambda c: (c[0] is not None, c[0]), reverse=True)
                 return candidates[0][1]
         return None
+
+    def _job_error(self, client, vault: str, vault_rg: str, job) -> str:
+        """A finished job's errorDetails, masked: from the listing, else from the job's details
+        (the listing may leave them out) — « aucun détail d'erreur lu » when neither gives one."""
+        said = job_error_text(job)
+        if not said:
+            try:
+                said = job_error_text(client.job_details.get(vault, vault_rg, job.name))
+            except Exception:
+                said = ""
+        return said or "aucun détail d'erreur lu"
 
     def verify_snapshot(self, snap_id: str) -> dict:
         if self.dry_run:

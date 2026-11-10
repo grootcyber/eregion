@@ -4,6 +4,9 @@ never without knowing when it began (SEC4c) —, Run Command scripts neutralised
 """
 from __future__ import annotations
 
+from glorfindel.providers.azure.backup import FAILED_JOB_STATUSES, FINISHED_JOB_STATUSES, job_search_s
+from glorfindel.providers.azure.restore_rights import (explain_refusal, refused_outright, restore_rights,
+                                                       restore_scopes, rights_refusal)
 from glorfindel.providers.azure.sdk import _enum_text, _is_iam_error, rest_post
 from glorfindel.response.ids import _parse_vm_resource_id
 from glorfindel.response.policy import _console, _ERR_MAX, _first_line
@@ -145,6 +148,21 @@ class RestoreMixin:
             f"/subscriptions/{sub}/resourceGroups/{rg}"
             f"/providers/Microsoft.Storage/storageAccounts/{staging_storage}"
         )
+        token = self._credential.get_token("https://management.azure.com/.default").token
+
+        # RST1: the rights read before the VM is touched — a refusal at the trigger used to leave
+        # it neutralized and deallocated, unsaid (bench, 09/11: three hours).
+        rights = restore_rights(token, restore_scopes(sub, rg, vm_name, v_rg, vault, staging_storage))
+        if not rights["readable"]:
+            _console.print(f"  [yellow]Droits du restore illisibles ({rights['error']}) — le restore "
+                           "continue sans cette lecture ; un refus d'Azure sera dit en entier.[/yellow]")
+        elif rights["missing"]:
+            raise RuntimeError(rights_refusal(rights["missing"]))
+        elif not rights["run_command"]:
+            # SEC17: not a refusal — a VM outside restore_vms is restored all the same.
+            _console.print("  [yellow]Run Command absent sur cette VM : la neutralisation sera "
+                           "refusée (rôle « Eregion Glorfindel Restore Neutralize »), la VM restaurée "
+                           "quand même.[/yellow]")
 
         # Before the disks are swapped: the restored disk would otherwise REPLAY the last
         # Run Command at boot (real run, 2026-10-05: ransomware_sim.sh re-encrypted the
@@ -152,8 +170,9 @@ class RestoreMixin:
         neutralize = self._neutralize_run_command(rg, vm_name, vm)
 
         self._compute.virtual_machines.begin_deallocate(rg, vm_name).result()
+        restart = f"az vm start -g {rg} -n {vm_name}"
+        jobs = f"az backup job list -g {v_rg} -v {vault} -o table"
 
-        token = self._credential.get_token("https://management.azure.com/.default").token
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
         container_enc = container_name.replace(";", "%3B")
         item_enc = item_name.replace(";", "%3B")
@@ -164,7 +183,11 @@ class RestoreMixin:
             f"/protectedItems/{item_enc}/recoveryPoints/{latest.name}/restore"
             f"?api-version=2021-10-01"
         )
-        data_luns = [d.lun for d in (vm.storage_profile.data_disks or [])]
+        # RST1 (e): no restoreDiskLunList on OriginalLocation (« Replace disks »). Azure refuses it
+        # now, even complete — job failed in 4.5 s, code 400625, « selective disk restore is not
+        # supported for this restore type » (bench, 09/11) — while the same payload, [10], passed
+        # twice on 05/10: a validation hardened between the two. Every disk of the point is
+        # restored. The field belongs to « Restore disks », if that restore ever comes.
         payload = {
             "properties": {
                 "objectType": "IaasVMRestoreRequest",
@@ -179,19 +202,40 @@ class RestoreMixin:
                 "skipPreOLRBackup": True,
                 "targetVirtualMachineId": None,
                 "targetResourceGroupId": None,
-                "restoreDiskLunList": data_luns,
             }
         }
 
         triggered_at = datetime.now(timezone.utc)
-        r = rest_post(url, "Déclenchement du restore (VM désallouée)", json=payload, headers=headers)
+        try:
+            r = rest_post(url, "Déclenchement du restore (VM désallouée)", json=payload, headers=headers)
+        except RuntimeError as e:
+            raise RuntimeError(f"{e} ({jobs}). La VM {vm_name} est désallouée : ne la redémarrer "
+                               f"qu'une fois sûr qu'aucun restore ne tourne ({restart}).") from None
         if r.status_code not in (200, 202):
-            raise RuntimeError(f"Restore trigger failed ({r.status_code}): {r.text[:300]}")
+            said = explain_refusal(r.status_code, r.text)
+            if refused_outright(r.status_code):
+                raise RuntimeError(
+                    f"Restore trigger failed — {said}. Aucun restore n'est parti, la VM {vm_name} reste "
+                    f"désallouée : la redémarrer ({restart}), ou relancer le restore une fois le droit posé.")
+            # A 5xx or a 409 may have been applied (or names a job already running): as a timeout.
+            raise RuntimeError(
+                f"Restore trigger failed — {said}. La demande a pu être prise en compte : lire les jobs "
+                f"du coffre ({jobs}) avant de relancer. La VM {vm_name} est désallouée : ne la redémarrer "
+                f"qu'une fois sûr qu'aucun restore ne tourne ({restart}).")
 
         restore_job = self._find_backup_job(
-            backup_client, vault, v_rg, "Restore", vm_name, triggered_at, delay_s=15.0)
+            backup_client, vault, v_rg, "Restore", vm_name, triggered_at)
         if restore_job is None:
-            raise RuntimeError(f"Restore job for {vm_name} not found after trigger")
+            raise RuntimeError(
+                f"Restore job for {vm_name} not found after trigger ({job_search_s('Restore')} s) — un job a pu "
+                f"partir : lire les jobs du coffre avant de relancer ({jobs}). La VM {vm_name} est "
+                f"désallouée : ne la redémarrer qu'une fois sûr qu'aucun restore ne tourne ({restart}).")
+        status = getattr(restore_job.properties, "status", "")
+        if status in FAILED_JOB_STATUSES:
+            raise RuntimeError(
+                f"Restore job {restore_job.name} {status} : "
+                f"{self._job_error(backup_client, vault, v_rg, restore_job)}. La VM {vm_name} reste "
+                f"désallouée : lire le job dans le coffre ({jobs}), puis la redémarrer ({restart}).")
 
         _console.print(f"  [dim]Tracking job {restore_job.name} (15-30 min expected)...[/dim]")
 
@@ -220,11 +264,14 @@ class RestoreMixin:
             job = backup_client.job_details.get(vault, v_rg, restore_job.name)
             status = getattr(job.properties, "status", "Unknown")
             _console.print(f"  [dim]Still restoring... {elapsed // 60}min elapsed — {status}[/dim]")
-            if status in ("Completed", "Failed", "Cancelled"):
+            if status in FINISHED_JOB_STATUSES:
                 break
 
         if status != "Completed":
-            raise RuntimeError(f"Restore ended with status: {status}")
+            raise RuntimeError(
+                f"Restore ended with status: {status} — {self._job_error(backup_client, vault, v_rg, job)}. "
+                f"La VM {vm_name} reste désallouée : lire le job dans le coffre ({jobs}), puis la "
+                f"redémarrer ({restart}).")
 
         _console.print("  [dim]Starting VM after restore...[/dim]")
         self._compute.virtual_machines.begin_start(rg, vm_name).result()

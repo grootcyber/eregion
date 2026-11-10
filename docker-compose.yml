@@ -86,15 +86,20 @@ x-azure: &azure
   # Glorfindel (AL1), pas une carte du plan de contrôle chacune. Les vides sont ignorés.
   GLORFINDEL_OWN_CALLERS: ${GLORFINDEL_OWN_CALLERS:-},${EREGION_CONSOLE_AZURE_CLIENT_ID:-},${GLORFINDEL_BOT_AZURE_CLIENT_ID:-}
 
+# GLORFINDEL_AZURE_PAIR (RST1) : le nom de la paire que porte ce conteneur, une constante — ni un
+# id ni un secret. `glorfindel restore`, lancé par la console ou le bot, dit sous quelle paire il
+# restaure (« Identity : ») ; la watch n'en reçoit pas : elle ne restaure jamais.
 x-console-azure: &console-azure
   AZURE_CLIENT_ID: ${EREGION_CONSOLE_AZURE_CLIENT_ID:-}
   AZURE_CLIENT_SECRET: ${EREGION_CONSOLE_AZURE_CLIENT_SECRET:-}
   AZURE_TENANT_ID: ${AZURE_TENANT_ID:-}
+  GLORFINDEL_AZURE_PAIR: console
 
 x-bot-azure: &bot-azure
   AZURE_CLIENT_ID: ${GLORFINDEL_BOT_AZURE_CLIENT_ID:-}
   AZURE_CLIENT_SECRET: ${GLORFINDEL_BOT_AZURE_CLIENT_SECRET:-}
   AZURE_TENANT_ID: ${AZURE_TENANT_ID:-}
+  GLORFINDEL_AZURE_PAIR: bot
 
 x-models: &models
   ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}

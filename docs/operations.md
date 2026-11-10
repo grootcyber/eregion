@@ -527,8 +527,8 @@ services de Glorfindel, trois principaux, chacun avec ce que son code appelle vr
 | Service | Ce qu'il appelle sur Azure | Rôles, portée : les groupes inscrits |
 |---|---|---|
 | la watch | lit (journaux, NSG, NIC, coffre) ; isole, lève, bloque, débloque, instantané — seule, dans son mode ; coupe les sessions d'une VM qu'elle isole | `Reader`, `Log Analytics Reader` (le workspace), **Eregion Glorfindel Response** ; **Eregion Glorfindel Session Drain** sur chaque VM qu'elle défend |
-| la console | lit (audit, préparation, jobs) ; ce qu'un humain approuve : isoler, bloquer, instantané (dans son processus), lever, reset, restore (par la CLI qu'elle lance) | `Reader`, `Log Analytics Reader`, **Response**, **Eregion Glorfindel Restore** ; **Session Drain** sur chaque VM que Glorfindel défend (elle isole elle-même ce qu'un humain approuve, donc coupe les sessions) ; **Eregion Glorfindel Restore Neutralize** sur chaque VM que le restore défend |
-| le bot | lit les points de restauration ; ses boutons lancent la CLI : Restore, Revert (levée et déblocage) | `Reader`, **Response**, **Restore** ; **Restore Neutralize** sur chaque VM que le restore défend |
+| la console | lit (audit, préparation, jobs) ; ce qu'un humain approuve : isoler, bloquer, instantané (dans son processus), lever, reset, restore (par la CLI qu'elle lance) | `Reader`, `Log Analytics Reader`, **Response**, **Eregion Glorfindel Restore** ; **Session Drain** sur chaque VM que Glorfindel défend (elle isole elle-même ce qu'un humain approuve, donc coupe les sessions) ; **Eregion Glorfindel Restore Neutralize** sur chaque VM que le restore défend ; **Eregion Glorfindel Restore Staging** sur le seul compte de transit du restore |
+| le bot | lit les points de restauration ; ses boutons lancent la CLI : Restore, Revert (levée et déblocage) | `Reader`, **Response**, **Restore** ; **Restore Neutralize** sur chaque VM que le restore défend ; **Restore Staging** sur le seul compte de transit |
 
 - **Eregion Glorfindel Response** (`infra/identities/glorfindel-response.json`) : les écritures
   de la réponse, rien d'autre — les droits que l'adaptateur déclare
@@ -578,6 +578,19 @@ services de Glorfindel, trois principaux, chacun avec ce que son code appelle vr
   dit, et la carte de la levée retenue aussi (« Run Command refusé sur cette VM : le rôle … n'y est
   pas »). H0 n'a jamais ce rôle : il ne restaure pas, et son plan refuse son identité parmi
   `restore_principals`.
+- **Eregion Glorfindel Restore Staging** (`infra/identities/glorfindel-restore-staging.json`,
+  RST1, #680) : `Microsoft.Storage/storageAccounts/listKeys/action` seul, les clés du compte de
+  transit (`restore_staging_storage`). Un restore depuis le coffre vérifie ce droit lié sur le
+  compte : sans lui, Azure refuse le déclenchement (403 `LinkedAuthorizationFailed`, mesuré au
+  banc le 09/11, le premier restore sous le principal de la console ; le 05/10, l'ancien principal
+  partagé avait `Contributor`). **Attribué sur le seul compte de transit**, aux principaux qui
+  restaurent — la console et le bot —, jamais sur le groupe (il tient d'autres comptes de stockage,
+  et les clés d'un compte sont ses données), jamais à la watch, jamais à l'identité de H0. Un rôle à
+  part du rôle Restore, qui va sur des groupes entiers. Sur le banc, c'est le Terraform de H0 qui
+  l'attribue (`restore_staging_storage`, `infra/glorfindel-host/restore.auto.tfvars`, commité) ;
+  ailleurs, la commande ci-dessous. Le restore lit ce droit avant de toucher la VM, comme ceux du
+  coffre et de la VM (`docs/azure.md`, « Le restore depuis la console ») : sans lui, il refuse en le
+  nommant, la VM ni neutralisée ni désallouée.
 - Les **lectures** : `Reader` sur chaque groupe qui tient une VM inscrite, ses NIC, NSG et
   VNet, et sur celui du coffre ; `Log Analytics Reader` sur le workspace. À mesurer sur une
   portée de groupe (ci-dessous) : ce que rendent les listes à l'échelle de l'abonnement
@@ -601,6 +614,12 @@ services de Glorfindel, trois principaux, chacun avec ce que son code appelle vr
     de la console : il restaure. Un restore depuis la CLI du poste prend la paire de la console
     pour cette commande seulement
     (`AZURE_CLIENT_ID=$EREGION_CONSOLE_AZURE_CLIENT_ID AZURE_CLIENT_SECRET=… glorfindel restore …`).
+    **Une paire vide ne fait pas échouer** (RST1, mesuré au banc le 09/11) : si
+    `EREGION_CONSOLE_AZURE_CLIENT_*` n'est pas chargée, la commande reçoit des valeurs vides et
+    `DefaultAzureCredential` passe à la suite de sa chaîne — l'identité managée, l'`az login` de
+    l'opérateur —, sans le dire. `glorfindel restore` affiche donc son identité (`Identity :` : la
+    paire de la console, celle du bot, celle de la watch, une autre, ou aucune paire complète),
+    jamais un id ; elle doit dire « la paire de la console ».
   - **Une instance d'équipe** (`team.env.example`) : la paire de sa watch et celle de sa console,
     le même principal `Reader` pouvant servir aux deux.
   - **Les injecteurs ne prennent jamais `AZURE_CLIENT_*`** : `x-injector` dans le compose, et
@@ -645,7 +664,7 @@ services de Glorfindel, trois principaux, chacun avec ce que son code appelle vr
 ```bash
 SUB=<SUBSCRIPTION_ID>; RG=<groupe des VM inscrites>; VAULT_RG=<groupe du coffre>
 LAW=<id de ressource du workspace>
-for r in response restore session-drain restore-neutralize; do
+for r in response restore session-drain restore-neutralize restore-staging; do
   sed "s|<SUBSCRIPTION_ID>|$SUB|" infra/identities/glorfindel-$r.json > /tmp/eregion-role-$r.json
   az role definition create --role-definition @/tmp/eregion-role-$r.json
 done
@@ -660,7 +679,7 @@ du rôle existant, puis l'attribuer comme ci-dessous :
 ```bash
 SUB2=<SECOND_SUBSCRIPTION_ID>
 for r in "Eregion Glorfindel Response" "Eregion Glorfindel Restore" "Eregion Glorfindel Session Drain" \
-         "Eregion Glorfindel Restore Neutralize"; do
+         "Eregion Glorfindel Restore Neutralize" "Eregion Glorfindel Restore Staging"; do
   az role definition list --name "$r" --scope /subscriptions/$SUB --query '[0]' -o json \
     | python3 -c 'import json,sys; d=json.load(sys.stdin); d["assignableScopes"].append(sys.argv[1]); print(json.dumps(d))' \
         "/subscriptions/$SUB2" > /tmp/eregion-role.json
@@ -699,7 +718,14 @@ for vm in <id de chaque VM que le restore défend>; do
     az role assignment create --assignee $a --role "Eregion Glorfindel Restore Neutralize" --scope $vm
   done
 done
-# Le compte de transit du restore (restore_staging_storage), s'il est dans un autre groupe :
+# Les clés du compte de transit (RST1) : à la console et au bot, sur ce seul compte, jamais sur le
+# groupe, jamais à la watch. Sur le banc, c'est le Terraform de H0 qui les donne
+# (restore_staging_storage, restore_principals : ci-dessous) ; ailleurs :
+staging=$(az storage account show -g $RG -n <restore_staging_storage> --query id -o tsv)
+for a in <appId-console> <appId-bot>; do
+  az role assignment create --assignee $a --role "Eregion Glorfindel Restore Staging" --scope $staging
+done
+# Le compte de transit du restore, s'il est dans un autre groupe :
 #   for a in <appId-console> <appId-bot>; do
 #     az role assignment create --assignee $a --role "Eregion Glorfindel Restore" --scope <son groupe>
 #   done
@@ -712,8 +738,56 @@ Audit) — un droit manquant y est nommé.
 
 **À mesurer sur le banc** avant de retirer l'ancien principal : une isolation et sa levée sur
 une VM du banc qui porte une IP publique (les contrôles liés d'une écriture de NIC), un
-instantané, un restore depuis la console ; un 403 nomme l'action qui manque, à ajouter au
-fichier du rôle (`az role definition update --role-definition @…`).
+instantané ; un 403 nomme l'action qui manque, à ajouter au fichier du rôle (`az role definition
+update --role-definition @…`). **Le restore depuis la console, mesuré le 09/11** (RST1) : il lui
+manquait `listKeys` sur le compte de transit, le rôle « Restore Staging » ci-dessus ; avec lui, le
+déclenchement est accepté. Ce que la CLI fait depuis :
+- elle **lit les droits avant de toucher la VM** (`Microsoft.Authorization/permissions` sur le
+  coffre, la VM et le compte de transit) et refuse en nommant celui qui manque, avec son rôle ;
+  illisibles, elle le dit et continue comme avant (une hypothèse : `Reader` sur le groupe les lit) ;
+- **un refus d'Azure est dit en entier** : l'action et le type de portée, jamais un id. Après la
+  désallocation, la sortie dit que la VM est désallouée, et le geste pour la redémarrer ;
+- **un déclenchement refusé ne laisse aucune trace au journal d'activité** du groupe (relu 2 h 40
+  après, au banc) : seule la sortie de la CLI le garde. La lire, et la garder ;
+- `glorfindel restore` dit **sous quelle identité** il restaure (`Identity :`, jamais un id) : la
+  paire de la console, celle du bot (dans leurs conteneurs, `GLORFINDEL_AZURE_PAIR`), ou aucune paire complète — `DefaultAzureCredential` prend
+  alors une autre identité, sans le dire (ci-dessus, « `AZURE_CLIENT_*`, le venv seulement »).
+
+**Depuis un rôle « Restore Staging » posé à la main** (le banc, le 09/11 : le rôle créé dans le
+tenant, puis attribué à la console sur le seul compte de transit) : le Terraform de H0 reprend
+l'attribution de la console, sans fenêtre où elle manque, et donne celle du bot —
+
+1. **le rôle** : le relire (`az role definition list --name "Eregion Glorfindel Restore Staging"
+   --query '[0].permissions[0].actions'`, `listKeys` seul), puis l'aligner sur le fichier du dépôt
+   (`az role definition update --role-definition @…`, ci-dessous) ;
+2. **l'attribution à la main**, relue : `az role assignment list --role "Eregion Glorfindel Restore
+   Staging" --all -o table` — une seule, pour la console, à la portée du compte de transit ;
+3. **l'importer** dans l'état de H0, sous la clé de la console (`restore_principals`), plutôt que la
+   supprimer puis la recréer : `terraform import` prend l'id de l'attribution (`--query
+   '[0].id'`) ;
+4. **le plan**, relu : `make glorfindel-host-plan` — une création, `restore_staging["bot"]`, rien
+   d'autre (ni `restore_staging["console"]`, importée, ni la VM de H0 remplacée) ;
+5. **l'application** : `make glorfindel-host-up`, sans `YES` ; puis `terraform -chdir=infra/glorfindel-host
+   output restore_staging` (`bot`, `console`) et la même liste `az role assignment list`, deux
+   attributions à la portée du compte, aucune de groupe.
+
+Sans l'import, l'apply échoue sur la console : Azure refuse une seconde attribution du même rôle, au
+même principal, sur la même portée (409 `RoleAssignmentExists`). Rien n'est perdu, l'attribution à la
+main reste ; l'importer, puis relancer.
+
+```bash
+sed "s|<SUBSCRIPTION_ID>|$SUB|" infra/identities/glorfindel-restore-staging.json > /tmp/eregion-role-restore-staging.json
+az role definition update --role-definition @/tmp/eregion-role-restore-staging.json      # 1
+id=$(az role assignment list --role "Eregion Glorfindel Restore Staging" --all --query '[0].id' -o tsv)   # 2 : une seule
+ARM_SUBSCRIPTION_ID=$SUB terraform -chdir=infra/glorfindel-host import -var-file=../terraform/terraform.tfvars \
+  -var="operator_cidr=<ton IP>/32" 'azurerm_role_assignment.restore_staging["console"]' "$id"           # 3 : les variables du plan
+make glorfindel-host-plan                                                                 # 4 : une création, le bot
+make glorfindel-host-up                                                                   # 5 : sans YES
+terraform -chdir=infra/glorfindel-host output restore_staging
+```
+
+Un tenant neuf n'a rien à migrer : le rôle se crée avec les autres (« Créer »), et le premier `make
+glorfindel-host-up` donne les deux attributions.
 
 **Depuis un rôle de la réponse d'avant SEC11** (il tient Run Command, sur tout le groupe — c'est
 le cas de H0 aujourd'hui) : dans cet ordre, pour qu'aucune VM défendue ne perde la coupure entre
@@ -804,7 +878,12 @@ prochain `make glorfindel-host-up` les reprend ; une VM que Celebrimbor reconstr
 
 **Faire tourner un secret** (un an par défaut) : `az ad sp credential reset --id <appId>` rend
 un nouveau `password` ; le poser dans `.envrc`, `make glorfindel-restart`. L'ancien cesse à la
-réinitialisation : un service à la fois.
+réinitialisation : un service à la fois. **Quand le faire** : `make azure-pairs-expiry` (RST1) lit,
+sous ton `az login`, la date de fin des secrets des trois paires du poste (`az ad app credential
+list`, la date seule : jamais un secret, ni un id affiché) ; il avertit à moins de 14 jours, dit
+« aucune paire » pour une paire absente, dit un ancien secret expiré à côté d'un valable (« à retirer ») et sort en 1 sur une date illisible ou quand aucun secret n'est valable.
+`check-azure-env` et le démarrage de Glorfindel n'appellent jamais Graph : la lecture se fait à la
+demande, avant une session du banc (`docs/banc-t1486.md`, étape 0).
 
 **Retirer l'ancien principal partagé** (`Contributor` sur l'abonnement, l'option A d'avant) :
 

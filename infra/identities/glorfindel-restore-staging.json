@@ -1,0 +1,12 @@
+{
+  "Name": "Eregion Glorfindel Restore Staging",
+  "IsCustom": true,
+  "Description": "RST1: the staging account's keys, the one right a restore from the vault checks there (a linked authorization: refused on the bench on 09/11 without it, LinkedAuthorizationFailed). Assigned on the staging account only (restore_staging_storage, infra/glorfindel-host), to the principals that restore (the console's, the bot's) - never on the resource group, which holds other storage accounts, never to the watch, never to H0's identity. Out of Eregion Glorfindel Restore, which goes on whole groups: the keys of every account of a group are its data.",
+  "Actions": [
+    "Microsoft.Storage/storageAccounts/listKeys/action"
+  ],
+  "NotActions": [],
+  "DataActions": [],
+  "NotDataActions": [],
+  "AssignableScopes": ["/subscriptions/<SUBSCRIPTION_ID>"]
+}

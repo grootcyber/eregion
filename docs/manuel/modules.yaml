@@ -688,6 +688,16 @@ briques:
     issue: 668
     doc: docs/glorfindel.md
 
+  - id: g-restore-console
+    composant: glorfindel
+    poste: g-agir
+    nom: "The restore from the console: its rights read before the VM is touched, a refusal said whole"
+    etat: main
+    release: "0.6"
+    lots: [RST1]
+    issue: 680
+    doc: docs/azure.md
+
   - id: g-memoire-source
     composant: glorfindel
     poste: g-memoire
