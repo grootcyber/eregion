@@ -24,6 +24,7 @@ The code that lived here (4 394 lines) is split by concern, nothing changed in i
     blocks.py, unblock.py       IP blocks
     perimeter.py                a perimeter block merged with a VM block (RB1)
     backup.py, restore.py       restore points
+    restore_rights.py           a restore's rights read first, Azure's refusals said whole (RST1)
     sweep.py, readers.py        reset and orphans; rights, inventory, audit reads
     reset_bare.py               the reset's bare NICs, their original put back
     sdk.py                      SDK warm-up, error and enum helpers
@@ -72,6 +73,7 @@ _MODULES = tuple(_importlib.import_module(name) for name in (
     "glorfindel.providers.azure.verify_block",
     "glorfindel.providers.azure.unblock",
     "glorfindel.providers.azure.perimeter",
+    "glorfindel.providers.azure.restore_rights",
     "glorfindel.providers.azure.backup",
     "glorfindel.providers.azure.restore",
     "glorfindel.providers.azure.recovery",

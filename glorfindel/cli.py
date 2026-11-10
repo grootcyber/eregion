@@ -1501,6 +1501,9 @@ def restore(resource_id: str, vault: str, dry_run: bool, yes: bool, keep_isolate
     console.rule("[bold yellow]Glorfindel — Restore from Backup[/bold yellow]")
     console.print(f"  Resource : {resource_id}")
     console.print(f"  Vault    : {vault}")
+    identity, restores = _restore_identity()
+    console.print(f"  Identity : {'' if restores else '[yellow]'}{_esc_markup(identity)}"
+                  f"{'' if restores else '[/yellow]'}")
     before, why_before = _restore_before(resource_id, before)
     if before:
         console.print(f"  Before   : {before}  [dim]({_esc_markup(why_before)})[/dim]")
@@ -2374,6 +2377,36 @@ def _restore_before(resource_id: str, before: str | None) -> tuple[str, str]:
                 "n'en donne un (sa première détection, ou pour un exercice la ligne "
                 "attack_started de son run). Le point le plus récent peut être postérieur à "
                 "l'attaque : passer --before <ISO8601>, un instant avant son début." + hint)
+
+
+# RST1 (h): the pairs a restore may run under, by the variable that holds each one's client id.
+_RESTORE_PAIRS = (("EREGION_CONSOLE_AZURE_CLIENT_ID", "la paire de la console", True),
+                  ("GLORFINDEL_BOT_AZURE_CLIENT_ID", "la paire du bot", True),
+                  ("GLORFINDEL_AZURE_CLIENT_ID", "la paire de la watch — elle ne restaure pas "
+                                                 "(aucun rôle Restore) : un refus est attendu", False))
+
+
+def _restore_identity() -> tuple[str, bool]:
+    """(the kind of identity this restore runs under, whether it is a pair that restores) —
+    never an id (RST1, h). DefaultAzureCredential takes AZURE_TENANT_ID, AZURE_CLIENT_ID and
+    AZURE_CLIENT_SECRET when all three are set; otherwise it goes down its chain (a managed
+    identity, the operator's `az login`…) without saying so: a console pair left empty on the
+    workstation restored as someone else (bench, 09/11)."""
+    def env(name: str) -> str:
+        return os.environ.get(name, "").strip()
+    cid, secret, tenant = env("AZURE_CLIENT_ID"), env("AZURE_CLIENT_SECRET"), env("AZURE_TENANT_ID")
+    other = ("DefaultAzureCredential prend une autre identité (une identité managée, l'az login de "
+             "l'opérateur…), sans le dire — pas forcément celle de la console")
+    if not (cid or secret):
+        return f"aucune paire AZURE_CLIENT_* dans l'environnement : {other}", False
+    if not (cid and secret and tenant):
+        empty = ", ".join(n for n, v in (("AZURE_CLIENT_ID", cid), ("AZURE_CLIENT_SECRET", secret),
+                                         ("AZURE_TENANT_ID", tenant)) if not v)
+        return f"paire de l'environnement incomplète ({empty} vide) : {other}", False
+    for var, said, restores in _RESTORE_PAIRS:
+        if env(var) and env(var) == cid:
+            return f"{said} (AZURE_CLIENT_ID = {var})", restores
+    return "une paire AZURE_CLIENT_* de l'environnement, ni celle de la console ni celle du bot", False
 
 
 @contextlib.contextmanager
