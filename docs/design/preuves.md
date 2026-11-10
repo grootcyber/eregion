@@ -130,7 +130,7 @@ jamais sur la parole de l'invité comme preuve :
 Les tests ciblés du même fichier attrapent les dix mutants du lot (M4615–M4619, M4628–M4632) à
 chaque tour. La machine seule en attrape une partie, qui varie d'un tirage à l'autre : sur un
 tirage, six des neuf qu'elle peut voir à 200 séquences et quatre à 60. M4632, une levée en cours,
-n'est vu que par son test. Les cinq de REC1b (M4650–M4653, M4668 : le même appelant) aussi, à chaque tour ; la machine seule
+n'est vu que par son test. Les six de REC1b (M4650–M4653, M4668 : le même appelant, M4671 : le statut des autres événements) aussi, à chaque tour ; la machine seule
 voit M4650 (un échec quelconque pris pour un refus) et M4651 (la parole contraire ignorée) sur une
 partie des tirages, à 200 et 300 séquences, l'un ou l'autre selon le tirage. M4652 (la parole
 exigée de nouveau) retient des levées, ce que R1 ne juge pas ; M4653 (la borne du `Started` d'un

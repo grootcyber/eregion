@@ -156,12 +156,14 @@ def _at(event: dict) -> datetime:
 
 def _refused_operations(events: list[dict]) -> set[str]:
     """The operations (`operationId`) the platform refused: one of their events is a refusal, and
-    each other one is a `Started` that goes with one refusal — AT MOST ONE per refusal, the closest
-    before it, by the same callers, within STARTED_WINDOW_S (about 2 s on the bench, 09/11). A
-    `Started` left over, or out of the window, or any other status (it went further): not refused.
-    The bound is there because the origin of `operationId` is unmeasured: if a client could choose
-    it, a command cut by the deallocation (its `Started` alone in the log) could hide behind a later
-    refusal under the same id — one `Started` within a minute of the refusal leaves it no room."""
+    each other one is a `Started` that goes with one refusal — AT MOST ONE per refusal, by the same
+    callers, within STARTED_WINDOW_S before it (about 2 s on the bench, 09/11). A `Started` left
+    over, or out of the window, or any other status (`Accepted`, `Succeeded`: it went further): not
+    refused. The count and the window hold the boundary (which `Started` of the window is taken
+    bears nothing). They are there because the origin of `operationId` is unmeasured: if a client
+    could choose it, a command cut by the deallocation (its `Started` alone in the log) could hide
+    behind a later refusal under the same id — one `Started` within a minute of the refusal leaves
+    it no room."""
     groups: dict[str, list[dict]] = {}
     for e in events:
         if _fold(e.get("operationId")):
@@ -171,12 +173,13 @@ def _refused_operations(events: list[dict]) -> set[str]:
         refusals = sorted((e for e in group if _refused(e)), key=_at)
         left = sorted((e for e in group if not _refused(e)), key=_at)
         if not refusals or any(_status(e) != "started" for e in left):
-            continue
+            continue                           # it went further than its Started: not refused
         for r in refusals:
             near = [s for s in left if _callers(s) == _callers(r)
+                    and _status(s) == "started"
                     and 0 <= (_at(r) - _at(s)).total_seconds() <= STARTED_WINDOW_S]
             if near:
-                left.remove(near[-1])          # the closest before it, and only it
+                left.remove(near[-1])          # one Started of the window, and only one
         if not left:
             out.add(op)
     return out
@@ -315,8 +318,8 @@ class RecoveryMixin:
         activity log — the control plane's word, never the guest's: [{"at", "callers", "status",
         "refused"}], oldest first, whatever the status. A command that failed, or stayed Accepted
         or Started (cut by the deallocation), left its settings in the VM model all the same: a
-        restored disk may replay it. `refused`: the platform refused it (`_refused`, and the
-        `Started` of its operation): it never reached the guest (REC1b). Raises when the log can't
+        restored disk may replay it. `refused`: the platform refused it (`_refused`, and the one
+        `Started` that goes with it, `_refused_operations`): it never reached the guest (REC1b). Raises when the log can't
         be read."""
         events = self._activity_events(resource_id, since)
         mine = []

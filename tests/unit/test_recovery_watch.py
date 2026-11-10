@@ -850,6 +850,10 @@ def test_a_refusal_is_read_where_the_activity_log_carries_it():
     assert _refused_operations([earlier, failed, {**started, "eventTimestamp": "2026-11-09T20:09:39Z"},
                                 again]) == {"op-1"}                          # two refusals, a Started each
     assert _refused_operations([failed]) == {"op-1"}                          # its Started not logged
+    # Review round 2: an operation that went further than its Started — an Accepted, a Succeeded of
+    # the same caller within the window, with no Started beside it — is not refused.
+    for went in ("Accepted", "Succeeded"):
+        assert _refused_operations([{**started, "status": {"value": went}}, failed]) == set(), went
 
 
 def _log_by_hand(f, vm, caller: str, op: str, at: datetime, status: str, refused: bool = False) -> None:
