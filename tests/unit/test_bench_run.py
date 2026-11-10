@@ -124,7 +124,7 @@ def test_a_red_preflight_asks_nothing_and_sends_nothing():
     assert steps.calls == [("preflight", VM)]
 
 
-@pytest.mark.parametrize("answers", [(), ("",), ("vm-celebrimbor-bree",), ("VM-CELEBRIMBOR-GONDOLIN",),
+@pytest.mark.parametrize("answers", [(), ("", "o"), ("vm-celebrimbor-bree", "o"), ("VM-CELEBRIMBOR-GONDOLIN", "o"),
                                      (VM, "n"), (VM,)])
 def test_without_the_target_s_name_typed_nothing_is_sent(answers):
     steps = FakeSteps()

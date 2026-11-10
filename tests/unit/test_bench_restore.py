@@ -66,7 +66,9 @@ def runs(tmp_path):
     d.mkdir(parents=True)
 
     def report(run_id, target=VM, t0=T0):
-        (d / f"{run_id}.json").write_text(json.dumps({"format": 1, "run_id": run_id, "target": target, "t0": t0}))
+        # composed_at: when `make bench-report` wrote it, after the attack — never the moment.
+        (d / f"{run_id}.json").write_text(json.dumps({"format": 1, "run_id": run_id, "target": target, "t0": t0,
+                                                      "composed_at": "2025-11-10T18:30:00+00:00"}))
     return d, report
 
 
@@ -169,7 +171,7 @@ def test_a_report_that_is_a_link_is_never_read(runs, tmp_path):
 
 # ── the target, the name typed ────────────────────────────────────────────────
 
-@pytest.mark.parametrize("answers", [(), ("",), ("vm-celebrimbor-bree",), ("Vm-Celebrimbor-Gondolin",)])
+@pytest.mark.parametrize("answers", [(), ("", "o"), ("vm-celebrimbor-bree", "o"), ("Vm-Celebrimbor-Gondolin", "o")])
 def test_without_the_vm_s_name_typed_nothing_is_restored(runs, answers):
     d, report = runs
     report("r1")
