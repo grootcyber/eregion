@@ -1893,7 +1893,8 @@
    "release": "0.6",
    "lots": [
     "MAN1",
-    "MAN1b"
+    "MAN1b",
+    "REL4"
    ],
    "issue": 664,
    "doc": "docs/manuel/index.html"
