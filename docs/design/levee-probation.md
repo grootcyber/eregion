@@ -1,8 +1,10 @@
 # La levée après un restore : seule et en probation, sauf porte prouvée ouverte (LEV1, #690) — conception
 
-_Conception — 10/11 (LEV1, #690) — statut : **conception seulement**. Rien n'est codé ni mesuré. Les
-décisions de Jonathan du 10/11 sont dans l'issue, et ce sont ses commentaires qui font foi ; elles sont
-reprises ci-dessous. Les questions qui restent sont au §15._
+_Conception — 10/11 (LEV1, #690), corrigée après la première relecture en Opus 5.5 (10/11) — statut :
+**conception seulement**. Rien n'est codé ni mesuré. Les décisions de Jonathan du 10/11 sont dans
+l'issue, et ce sont ses commentaires qui font foi ; elles sont reprises ci-dessous. Jonathan a tranché
+Q1 le 10/11 (la réisolation en probation, décidée par le code) ; les questions qui restent sont au
+§15._
 
 > **Décisions de Jonathan (10/11, révisées le même jour).**
 > - **Un exercice prouvé par le plan de contrôle** (un run d'Orodruin, cause connue) : la levée reste
@@ -34,20 +36,27 @@ scénarios, deux modes) est la référence : là où ce document s'en écarte, i
 ## 0. En bref
 
 - **Une seule règle de levée après un restore**, dans un module neutre (`glorfindel/response/lift.py`,
-  à écrire). La watch, `glorfindel release`, la console et le bot passent tous par elle. Elle rend
-  un verdict parmi trois :
+  à écrire). La watch, `glorfindel release`, la console et le bot passent tous par elle. Une levée
+  humaine lit elle-même sur Azure s'il y a eu un restore depuis l'isolement : elle n'attend pas le
+  verdict de la watch. La règle rend un verdict parmi trois :
   - **exercice** : lever, sans probation ;
   - **probation** : lever, puis mettre en probation ;
   - **retenue** : garder la quarantaine, et une carte qui dit pourquoi.
 
   Le mode décide ensuite qui exécute : H0 seul en `non_disruptive`, un humain en `human_only`.
+- **Une détection sur la VM après la fin du restore**, avant la levée, retient la levée : la VM
+  restaurée a démarré sous la quarantaine, et ce qu'elle a fait au démarrage compte.
 - **La porte prouvée ouverte** : un tiers a agi sur la VM par le plan de contrôle. Cela veut dire une
   Run Command, une extension (VMAccess comprise), une écriture de la VM, de ses disques, de ses cartes
-  réseau, de son NSG ou de son identité. Le journal d'activité le dit, sur une fenêtre qui commence
-  7 jours avant le point restauré. Et ce tiers **garde ses droits** sur la VM : ses attributions de
-  rôle et leurs définitions, relues en lecture seule par le Reader que H0 tient déjà.
+  réseau, de son NSG ou de son identité. Le journal d'activité le dit, ressources enfants comprises
+  (une extension, une Run Command managée, la console série), sur une fenêtre qui commence 7 jours
+  avant le point restauré. Et ce tiers **garde ses droits** sur la VM : ses attributions de rôle et
+  leurs définitions, relues en lecture seule par le Reader que H0 tient déjà.
+  - Glorfindel et les principaux de restore ne sont pas des tiers **seulement** pour leurs propres
+    opérations, sur leurs propres cibles, dans leur fenêtre. Hors de là, ce sont des tiers.
   - Des droits qui ne se lisent pas entièrement ne prouvent pas la porte fermée : la quarantaine
-    reste (Q2).
+    reste (Q2). Un groupe dont H0 ne lit pas l'appartenance, ou un principal supprimé (restaurable
+    depuis la corbeille d'Entra), sont illisibles.
   - La carte propose la révocation sous la forme du plan d'IR1a : des étapes exactes, puis un bouton
     **Verify**.
   - Une fois les droits relus absents, la watch lève, en probation.
@@ -58,20 +67,25 @@ scénarios, deux modes) est la référence : là où ce document s'en écarte, i
   - **Aucun tiers** sur la VM pendant la fenêtre de lecture.
 
   Une étiquette « exercice » sans ces faits ne vaut rien : le cas est traité comme un incident réel.
-  L'option « comme un incident réel » d'une demande ne fait qu'ajouter des gardes.
+  Le verdict « exercice » n'existe qu'en zone `bench` ou `twin`, jamais en `production`. L'option
+  « comme un incident réel » d'une demande ne fait qu'ajouter des gardes.
 - **La probation, 24 h par défaut** (Q3).
   - Les ports d'administration (22, 3389, 5985, 5986) sont fermés depuis Internet par une règle de
-    Glorfindel, réversible, nommée, que la réaffirmation et le balayage des orphelines reconnaissent.
+    Glorfindel, réversible, nommée. Son état est écrit avant elle, pour que tout ce qui reconnaît les
+    règles de Glorfindel la reconnaisse : la détection du plan de contrôle (AL1), la réaffirmation, le
+    balayage des orphelines, `reset`. Elle est posée et relue **avant** que la quarantaine soit
+    retirée.
   - Des règles et des seuils propres à la probation, par règle de détection, dans le fichier des
     règles, jamais dans le prompt.
-  - **La réisolation au moindre signal, décidée par le code, sans le modèle**. En `non_disruptive`,
-    H0 réisole seul. En `human_only`, une carte haute, poussée, avec l'isolement approuvable en un
-    clic.
+  - **La réisolation au moindre signal, décidée par le code, sans le modèle** (décidé par Jonathan,
+    Q1). Un nœud de code en tête de `decide`, garde par garde (§6.3). En `non_disruptive`, H0 réisole
+    seul. En `human_only`, une carte haute, poussée, avec l'isolement approuvable en un clic. Ces
+    cycles ne vont jamais en mémoire.
 - **Les disques d'origine** : leurs identifiants sont notés à l'isolement. Après le restore, ils sont
   nommés sur la carte et dans le rapport comme preuves, à ne pas supprimer. Glorfindel ne les touche
   jamais.
 - **La preuve** :
-  - six propriétés pour la machine des invariants (§10), sur un faux Azure qui gagne les attributions
+  - huit propriétés pour la machine des invariants (§10), sur un faux Azure qui gagne les attributions
     de rôle et le journal d'activité complet ;
   - au banc, un T1486 « comme un incident réel », puis un T1136.001 pendant la probation, et la
     réisolation mesurée par `make bench-report`.
@@ -190,18 +204,24 @@ aujourd'hui, et rien ne change là.
 | # | Cas | Verdict | Ce que dit la carte |
 |---|---|---|---|
 | 1 | une condition de REC1 ou de REC1b manque | **retenue** (inchangé) | `release_hold`, sa raison |
-| 2 | la VM est marquée « levée humaine après restore » (§3.4) | **retenue** | « Levée humaine demandée pour cette VM » ; les disques d'origine ; la levée approuvable |
-| 3 | **exercice prouvé** (§5), sans l'option « comme un incident réel » | **exercice** : lever, sans probation | — (comme aujourd'hui) |
-| 4 | **la porte n'est pas prouvée fermée** : un tiers a agi sur la VM (§4.1), et ses droits sont lus comme tenus, ou ne se lisent pas entièrement | **retenue** | `lift_door_open` : qui, quoi, quand ; ses droits ; le plan de révocation ; Verify |
-| 5 | une réinfection pendant une probation précède ce restore (§6.5) | **retenue** | « Seconde reprise après une réinfection : levée humaine » |
-| 6 | sinon (aucun tiers, ou un tiers dont les droits sont relus absents) | **probation** : lever, puis mettre en probation | `probation_started` : la durée, la règle des ports, les disques d'origine |
+| 2 | **une détection sur la VM datée après la fin du restore** (§6.3, la borne) | **retenue** | `lift_signal_after_restore` : la règle, le moment ; « le disque restauré a peut-être rejoué quelque chose au démarrage » |
+| 3 | la VM est marquée « levée humaine après restore », ou une retenue est posée (§3.4) | **retenue** | « Levée humaine demandée pour cette VM » ; les disques d'origine ; la levée approuvable |
+| 4 | **exercice prouvé** (§5), en zone `bench` ou `twin`, sans l'option « comme un incident réel » | **exercice** : lever, sans probation | — (comme aujourd'hui) |
+| 5 | **la porte n'est pas prouvée fermée** : un tiers a agi sur la VM (§4.1, §4.2), et ses droits sont lus comme tenus, ou ne se lisent pas entièrement | **retenue** | `lift_door_open` : qui, quoi, quand ; ses droits ; le plan de révocation ; Verify |
+| 6 | une réinfection pendant une probation précède ce restore (§6.5) | **retenue** | « Seconde reprise après une réinfection : levée humaine » |
+| 7 | la règle des ports doit être posée (une exposition, §7.1) et ne l'est pas, ou ne se relit pas | **retenue** | « Ports d'administration exposés depuis Internet, règle non posée : <pourquoi> » ; « Lift into probation (ports open) », approuvable par un humain |
+| 8 | sinon (aucun tiers, ou un tiers dont les droits sont relus absents) | **probation** : lever, puis mettre en probation | `probation_started` : la durée, la règle des ports, les disques d'origine |
 
-Le cas 4 sépare deux situations, que la carte dit autrement :
+Le cas 5 sépare deux situations, que la carte dit autrement :
 - **la porte prouvée ouverte** : les droits sont lus, et ils tiennent encore ;
 - **la porte non prouvée fermée** : un droit ne se lit pas (§4.4).
 
 La décision de l'issue parle de la porte « prouvée ouverte ». Ce document retient aussi le second cas
 (Q2) : un tiers a agi, ce qui prouve qu'une porte a existé, et rien ne prouve qu'elle est fermée.
+
+Le cas 2 est relu à chaque passe, comme le cas 5 : il n'est pas terminal. Une détection d'après le
+restore est aussi un signal pour la décision ordinaire (le modèle, la VM étant encore en quarantaine),
+qui n'est pas changée.
 
 ### 3.2 Par mode
 
@@ -213,7 +233,7 @@ mode est le mode effectif, celui de la préparation (L6).
 |---|---|---|
 | exercice | carte `mode_hold` : l'humain lève, sans probation | H0 lève seul, sans probation |
 | probation | carte `mode_hold` « Lever en probation » : l'humain lève, puis la probation commence | H0 lève seul, puis la probation commence |
-| retenue | la carte, la quarantaine reste | la carte, la quarantaine reste ; la porte relue fermée (cas 4) : H0 lève seul, en probation |
+| retenue | la carte, la quarantaine reste | la carte, la quarantaine reste ; la porte relue fermée (cas 5) : H0 lève seul, en probation |
 | un signal pendant la probation | carte haute, poussée, `probation_signal` : l'isolement approuvable en un clic | H0 réisole seul ; une carte `probation_reisolated` le dit |
 
 **En `human_only`, « Lever en probation » est un seul geste.** Le bouton approuve la levée et la règle
@@ -260,8 +280,8 @@ précondition tient déjà. C'est la question Q8.
 
 - **La watch** : seule à lever d'elle-même après un restore. `recovery_watch` applique la règle après
   les conditions de REC1 :
-  - un verdict **retenue** écrit sa carte. Le cas 4 n'est **pas terminal** : la watch relit les droits
-    à chaque passe, comme elle relit une VM arrêtée, et lève quand ils sont relus absents ;
+  - un verdict **retenue** écrit sa carte. Les cas 2, 5 et 7 ne sont **pas terminaux** : la watch les
+    relit à chaque passe, comme elle relit une VM arrêtée, et lève quand ils tombent ;
   - un verdict **exercice** ou **probation** émet le `recovery_complete` et note le verdict.
 - **`glorfindel restore --wait` ne lève plus dans son processus** (Q5). Il attend le job, dit ce qu'il
   a vu (le point, la neutralisation), puis dit que la levée est celle de la watch qui tient
@@ -269,33 +289,45 @@ précondition tient déjà. C'est la question Q8.
   une watch qui la tienne : la réaffirmation de la règle des ports, la réisolation, la fin. Un
   processus de poste qui lève, puis s'arrête, ne la tient pas. Sur un poste qui a aussi sa watch, le
   délai `GLORFINDEL_RECOVERY_GRACE_S` n'a plus d'objet pour ce cas : la watch lève à sa passe suivante.
-- **`--keep-isolated` reste, pour l'opérateur qui le veut**, et atteint enfin la watch qui lève :
-  - sur le poste, `restore --keep-isolated` pose une **retenue** sur la watch qui tient l'isolation,
-    avant de lancer le restore. Vers H0, par SSH, la clé d'hôte vérifiée (comme `make bench-report`),
-    une commande de la CLI de H0 qui n'écrit que la retenue. La forme exacte se fixe dans LEV3 ;
-  - la retenue ne fait qu'ajouter une garde : forgée, elle garde une VM en quarantaine, jamais ne la
-    lève. Elle vit dans `~/.glorfindel/lift_holds.json`, que seul Glorfindel écrit (la watch, la
-    console, la CLI de l'hôte) ;
-  - si la retenue ne peut pas être posée (H0 injoignable), la commande le dit en rouge
-    avant de lancer le restore, et demande de confirmer ;
-  - même effet : la VM marquée « levée humaine après restore » (ci-dessous), ou le bouton **Keep in
-    quarantine** sur la carte d'isolement de la console.
-- **La console, le bot et `glorfindel release`** : la levée d'un humain passe par le même module.
-  - Une VM dont le dernier restore a le verdict **probation** ou **retenue** est levée **en
-    probation** : la probation suit toute levée après le restore d'un incident réel.
-  - Le bouton dit « Lift into probation ». Sur une carte `lift_door_open`, il demande de confirmer :
-    la porte est ouverte.
-  - Il n'y a pas de « lever sans probation » en un clic. Un humain qui veut finir la probation le fait
-    ensuite, par un geste tracé (§6.4).
-  - Le bot montre la carte et propose les mêmes boutons que pour une levée aujourd'hui.
+- **`--keep-isolated` reste, pour l'opérateur qui le veut**, et atteint enfin la watch qui lève. Il
+  pose une **retenue** (`hold_lift`) sur la VM, que la watch lit au cas 3. La retenue ne fait
+  qu'ajouter une garde : forgée, elle garde une VM en quarantaine, jamais ne la lève.
+  - **Par la file d'actions signée** (Q12, recommandé) : `hold_lift` est un verbe fermé de la file de
+    FS1 (`docs/design/file-actions-signee.md`). La console et le bot déposent la demande signée, la
+    watch la juge et l'écrit dans `~/.glorfindel/lift_holds.json`, qu'elle seule écrit. Tant que la file
+    est éteinte par défaut (`EREGION_ACTION_QUEUE`), la demande passe par la route de la console comme
+    les autres actions aujourd'hui (FS1c, le chemin synchrone).
+  - **Sur le poste**, `restore --keep-isolated` n'a pas de clé de la file. Il dit, avant de lancer le
+    restore, qu'il faut poser la retenue sur la console de H0 (le bouton **Keep in quarantine** de la
+    carte d'isolement), ou marquer la VM « levée humaine après restore », et demande de confirmer. Il
+    relit ensuite la retenue (lecture seule, l'état publié de la watch) et le dit.
+  - L'autre option (Q12) : une commande de la CLI de H0 par SSH, la clé d'hôte vérifiée, qui écrit la
+    retenue. Elle donne au poste une écriture dans l'état de la watch, à rebours de FS1.
+- **La console, le bot et `glorfindel release`** : la levée d'un humain passe par le même module, et
+  **lit elle-même le restore** :
+  - avant de lever, elle lit sur Azure, comme la watch (`observed_restore`), s'il y a un job de
+    restore de la VM fini depuis l'isolement. Elle n'attend pas que la watch ait noté son verdict :
+    une levée humaine qui précède la passe de la watch suit la même règle ;
+  - **un restore lu, ou une lecture qui échoue** : la levée est **en probation**. La probation suit
+    toute levée après le restore d'un incident réel, et une lecture qui échoue ne prouve rien ;
+  - **un exercice prouvé** (le même calcul que la watch, §5) : la levée est sans probation ;
+  - **l'absence prouvée d'un restore** (le coffre lu, aucun job depuis l'isolement) : la levée est
+    sans probation, comme aujourd'hui (un faux positif levé par un humain) ;
+  - le bouton dit « Lift into probation ». Sur une carte `lift_door_open`, il demande de confirmer :
+    la porte est ouverte ;
+  - il n'y a pas de « lever sans probation » en un clic. Un humain qui veut finir la probation le fait
+    ensuite, par un geste tracé (§6.4) ;
+  - le bot montre la carte et propose les mêmes boutons que pour une levée aujourd'hui.
 - **L'option par VM « levée humaine après restore »** vit dans la ligne des modes d'autonomie :
   `autonomy.lift_human: [<motifs>]` dans `glorfindel-config.yaml`. Les noms se résolvent comme
   `autonomy.assets` : `fnmatchcase` en minuscules, et deux entrées en désaccord donnent la plus
   prudente. Le sélecteur de la console l'écrit. C'est une garde : elle ne fait que retenir.
 
-**Hors de cette règle** : une levée **sans restore**. C'est le cas d'un faux positif levé par un
-humain, ou d'une VM nettoyée à la main. Elle ne met pas en probation : une probation après une levée
-humaine sans restore est un autre sujet, à décider hors de LEV1 (§15, points ouverts).
+**Hors de cette règle** : une levée **sans restore**, prouvée sans restore. C'est le cas d'un faux
+positif levé par un humain, ou d'une VM nettoyée à la main. Elle ne met pas en probation : une
+probation après une levée humaine sans restore est un autre sujet, à décider hors de LEV1 (§15,
+points ouverts). **Une VM dont la probation est suspendue** (réisolée pendant sa probation, §6.5) en
+est l'exception : levée sans restore, elle reprend sa probation.
 
 ---
 
@@ -304,25 +336,42 @@ humaine sans restore est un autre sujet, à décider hors de LEV1 (§15, points 
 ### 4.1 Ce qui compte comme « a agi sur la VM »
 
 Un **geste**, c'est un événement du journal d'activité (`Microsoft.Insights/eventtypes/values`, la
-lecture de REC1b) dont la ressource est la VM, un de ses disques, une de ses cartes réseau, un NSG
-qui la gouverne, ou une identité qu'elle porte. Et dont l'opération est dans la table ci-dessous. Il
-compte **quel que soit son statut**, comme REC1b compte une Run Command : un essai qui a échoué dit
-qu'un principal a tenté, et ses droits sont alors lus. Seul un **refus de la plateforme**
-(`Conflict`, `OperationNotAllowed`, la lecture de REC1b) ne compte pas : il n'a rien atteint.
+lecture de REC1b) dont la ressource est la VM ou une de ses ressources enfants, un de ses disques, une
+de ses cartes réseau, une règle d'un NSG qui la gouverne, ou une identité qu'elle porte. Et dont
+l'opération est dans la table ci-dessous. Il compte **quel que soit son statut**, comme REC1b compte
+une Run Command : un essai qui a échoué dit qu'un principal a tenté, et ses droits sont alors lus.
+Seul un **refus de la plateforme** (`Conflict`, `OperationNotAllowed`, la lecture de REC1b) ne compte
+pas : il n'a rien atteint.
 
-| Opération (ARM) | Pourquoi c'est une porte |
-|---|---|
-| `Microsoft.Compute/virtualMachines/runCommand/action` | du code dans l'invité, en root (Run Command v1) |
-| `Microsoft.Compute/virtualMachines/runCommands/write`, `/delete` | idem, Run Command managé (v2), rejoué au démarrage |
-| `Microsoft.Compute/virtualMachines/extensions/write`, `/delete` | une extension : Custom Script, **VMAccess** (un mot de passe ou une clé SSH remis), tout agent. Une extension de la liste blanche de `_replayable_scripts` (`glorfindel/providers/azure/restore.py:399`) ne compte pas, VMAccess n'y est jamais |
-| `Microsoft.Compute/virtualMachines/write` | le profil d'OS, `userData`, `customData`, une identité attachée, un disque attaché |
-| `Microsoft.Compute/virtualMachines/attachDetachDataDisks/action`, `…/reimage/action`, `…/redeploy/action` | un disque ou un état remplacé hors du restore |
-| `Microsoft.Compute/disks/write`, `…/beginGetAccess/action` | un disque de la VM écrit, ou exporté par un SAS |
-| `Microsoft.SerialConsole/serialPorts/connect/action` | une console interactive sur la VM (hypothèse : le journal la porte sous cette opération) |
-| `Microsoft.Network/networkInterfaces/write` | une carte changée : une adresse, une IP publique, un autre NSG |
-| `Microsoft.Network/publicIPAddresses/join/action` | une IP publique posée sur la carte |
-| `Microsoft.Network/networkSecurityGroups/securityRules/write`, `…/networkSecurityGroups/write` (sur un NSG qui gouverne la VM) | un port ouvert devant la VM |
-| `Microsoft.ManagedIdentity/userAssignedIdentities/assign/action` | une identité donnée à la VM |
+| Opération (ARM) | La ressource de l'événement | Pourquoi c'est une porte |
+|---|---|---|
+| `Microsoft.Compute/virtualMachines/runCommand/action` | la VM | du code dans l'invité, en root (Run Command v1) |
+| `Microsoft.Compute/virtualMachines/runCommands/write`, `/delete` | **enfant** : `<vm>/runCommands/<nom>` | idem, Run Command managé (v2), rejoué au démarrage |
+| `Microsoft.Compute/virtualMachines/extensions/write`, `/delete` | **enfant** : `<vm>/extensions/<nom>` | une extension : Custom Script, **VMAccess** (un mot de passe ou une clé SSH remis), tout agent. Une extension de la liste blanche de `_replayable_scripts` (`glorfindel/providers/azure/restore.py:399`) ne compte pas, VMAccess n'y est jamais |
+| `Microsoft.Compute/virtualMachines/write` | la VM | le profil d'OS, `userData`, `customData`, une identité attachée, un disque attaché |
+| `Microsoft.Compute/virtualMachines/attachDetachDataDisks/action`, `…/reimage/action`, `…/redeploy/action` | la VM | un disque ou un état remplacé hors du restore |
+| `Microsoft.Compute/disks/write`, `…/beginGetAccess/action` | chaque disque de la VM (et de `disks_at_isolation`, §8) | un disque de la VM écrit, ou exporté par un SAS |
+| `Microsoft.SerialConsole/serialPorts/connect/action` | **enfant** : `<vm>/providers/Microsoft.SerialConsole/serialPorts/<n>` (hypothèse, H6) | une console interactive sur la VM |
+| `Microsoft.Network/networkInterfaces/write` | chaque carte de la VM | une carte changée : une adresse, une IP publique, un autre NSG |
+| `Microsoft.Network/publicIPAddresses/join/action` | l'IP publique, ou la carte (hypothèse, H7) | une IP publique posée sur la carte |
+| `Microsoft.Network/networkSecurityGroups/securityRules/write`, `…/networkSecurityGroups/write` | **enfant** : la règle `<nsg>/securityRules/<nom>`, ou le NSG | un port ouvert devant la VM. **Sur un NSG partagé**, seule une règle qui couvre la VM compte : sa destination (entrante) ou sa source (sortante) contient une adresse de la VM, ou `*`, `VirtualNetwork`, un préfixe qui la contient, une ASG d'une de ses cartes. Une règle visant une autre VM d'un NSG partagé n'est pas un geste sur celle-ci |
+| `Microsoft.ManagedIdentity/userAssignedIdentities/assign/action` | l'identité | une identité donnée à la VM |
+
+**La lecture, ressource par ressource.** REC1b lit avec `resourceUri eq '<vm>'`. Une ressource enfant
+(une extension, une Run Command managée, une règle de NSG, la console série) a son propre
+`resourceUri`, et ce filtre ne la rend pas (hypothèse H9, à mesurer avant LEV3 : que le filtre soit
+exact, ou qu'il rende les enfants). La lecture de LEV2 est donc :
+- **une lecture exacte par ressource** : la VM, chaque carte, chaque disque, chaque NSG qui la
+  gouverne, et l'identité qu'elle porte ;
+- **une lecture du groupe de la VM** (`resourceGroupName eq '<rg>'`), filtrée par le code sur les
+  enfants de la VM et de ses NSG (le préfixe de leur id, insensible à la casse) ; et celle du groupe
+  de chaque NSG ou carte qui vit ailleurs ;
+- **chacune avec sa propre borne** : 20 pages, comme REC1b. Une lecture coupée rend les acteurs
+  **illisibles** (cas 5). La lecture d'un groupe chargé peut dépasser la borne : c'est une retenue,
+  dite, et la borne se mesure au banc (H9) ;
+- **une opération dont l'événement ne nomme pas la ressource attendue** (H7) se cherche par la lecture
+  du groupe ; si aucune lecture ne la rend au banc, elle sort de la table et devient un vecteur dans
+  l'invité.
 
 **Hors de la table**, et donc pas des gestes : la lecture, le démarrage, l'arrêt, la désallocation
 (ils ne posent rien dans la VM), et les sauvegardes. La liste est fermée et vit dans l'adaptateur : une
@@ -331,22 +380,26 @@ opération qui manque se signale par un lot, jamais par le modèle.
 ### 4.2 Qui n'est pas un tiers
 
 Un **tiers**, c'est tout appelant (`caller`, `claims.appid`, `claims.oid`, comparés comme REC1b les
-compare) qui n'est pas l'un de ceux-ci :
+compare) qui n'est pas l'un de ceux-ci, **pour ce geste-là**. Aucun appelant n'est excusé pour
+tout : chacun ne l'est que pour ses propres opérations, sur ses propres cibles, dans sa fenêtre. C'est
+la règle d'AL1 et de SID1 (`glorfindel/providers/azure/activity.py`, son en-tête), reprise telle
+quelle.
 
 | Appelant | Comment il est connu | Quand il n'est pas un tiers |
 |---|---|---|
-| Glorfindel (la watch, H0) | `GLORFINDEL_OWN_CALLERS`, `AZURE_CLIENT_ID` | toujours : l'isolement, la coupure, la neutralisation de H0 |
-| un principal qui restaure | `GLORFINDEL_RESTORE_PRINCIPALS` | toujours : la neutralisation, le restore |
-| Azure Backup | l'application du service de sauvegarde de Microsoft, son appId lu au banc (hypothèse : c'est lui qui écrit les disques d'un « Replace disks ») | pendant le job seulement, de son début à sa fin |
-| Orodruin | `GLORFINDEL_INJECTOR_PRINCIPALS` (nouveau : la sortie `principal_id` d'`infra/orodruin`, dans `host.env`) | **dans une fenêtre d'exercice prouvée qui nomme la VM** (§5). Hors d'elle, Orodruin est un tiers : son identité volée agit comme une autre |
-| un appelant attendu, déclaré par l'opérateur | `lift.expected_callers: [<object id>]` (nouveau, dans `glorfindel-config.yaml`, comme `expected_sudo.admins`) | toujours, et la carte le dit : « X, attendu, a agi à T » (Q6) |
+| Glorfindel (la watch, H0) | `GLORFINDEL_OWN_CALLERS`, `AZURE_CLIENT_ID` | pour une opération que ses capacités déclarent (`CAPABILITIES`, `glorfindel/providers/azure/capabilities.py`), sur une cible que son état nomme comme sienne (`owned_target`, `activity.py:193` : le NSG de quarantaine, une règle d'une isolation, d'un blocage ou d'une probation, une carte mise en quarantaine). Sa Run Command, seulement la coupure d'une isolation de son état, dans `drains_at` (SID1). Tout autre geste sous son identité est un tiers, et la carte le dit en critique : son identifiant est peut-être dans d'autres mains |
+| un principal qui restaure | `GLORFINDEL_RESTORE_PRINCIPALS` | pour la neutralisation (la dernière Run Command avant le job, après l'isolement, la règle de REC1b) et pour le restore lui-même (les écritures de la VM et de ses disques pendant le job). Tout autre geste, ou hors de ces moments, est un tiers |
+| Azure Backup | l'application du service de sauvegarde de Microsoft, son appId lu au banc (hypothèse H4 : c'est lui qui écrit les disques d'un « Replace disks ») | pendant le job seulement, de son début à sa fin, et pour les écritures de la VM et de ses disques |
+| Orodruin | `GLORFINDEL_INJECTOR_PRINCIPALS` (nouveau : la sortie `principal_id` d'`infra/orodruin`, dans `host.env`) | **dans une fenêtre d'exercice prouvée qui nomme la VM** (§5), en zone `bench` ou `twin`. Hors d'elle, Orodruin est un tiers : son identité volée agit comme une autre |
+| un appelant attendu, déclaré par l'opérateur | `lift.expected_callers` (nouveau, dans `glorfindel-config.yaml`), **par opération** (Q6) | pour les opérations que l'opérateur lui a déclarées, et elles seules. **Jamais** pour une Run Command (v1 ou v2), une extension VMAccess, ni `beginGetAccess` : du code dans l'invité, un accès remis, un disque exporté ne sont jamais la routine. La carte le dit toujours : « X, attendu pour <opération>, a agi à T » |
 
-**Pourquoi des appelants attendus.** Chez un client, un pipeline ou un administrateur agit sur ses VM
-chaque semaine. Une politique `DeployIfNotExists` y pose même l'agent de supervision par une
-extension. Sans cette liste, chaque incident réel sur une telle VM serait une porte « ouverte », et la
-levée seule par défaut ne servirait jamais. Le prix est écrit : **un appelant attendu dont l'identité
-est volée passe pour un attendu**. La carte le nomme toujours, et la probation couvre ce cas comme un
-vecteur dans l'invité.
+**Pourquoi des appelants attendus.** Chez un client, un pipeline écrit la VM ou ses cartes chaque
+semaine, et une politique `DeployIfNotExists` y pose l'agent de supervision par une extension. Sans
+cette liste, chaque incident réel sur une telle VM serait une porte « ouverte », et la levée seule par
+défaut ne servirait jamais. Une liste **par opération** borne le prix : un pipeline excusé pour
+`virtualMachines/write` ne l'est pas pour une Run Command. Le prix restant est écrit : **un appelant
+attendu dont l'identité est volée passe pour attendu, pour ses opérations déclarées**. La carte le
+nomme toujours, et la probation couvre ce cas comme un vecteur dans l'invité.
 
 ### 4.3 La fenêtre
 
@@ -358,7 +411,7 @@ plus 90 : la rétention du journal d'activité). Q4.
   intrusion qui précède le chiffrement de quelques jours y entre. Une plus ancienne échappe au plan de
   contrôle, comme un vecteur dans l'invité : la probation la couvre.
 - **La lecture est bornée** comme celle de REC1b : au plus 20 pages, une page de plus est une erreur.
-  Une lecture coupée ou en échec rend les acteurs **illisibles** : retenue, cas 4.
+  Une lecture coupée ou en échec rend les acteurs **illisibles** : retenue, cas 5.
 
 **L'écart dit sur la carte** (la persistance possible) : le point restauré, la première activité
 suspecte connue (la première détection, le premier geste d'un tiers) et l'écart entre les deux. Un geste
@@ -370,34 +423,50 @@ contrôle ne voit pas est le rôle de la probation.
 ### 4.4 Le tiers garde-t-il ses droits
 
 **Lu en lecture seule, avec le Reader que H0 tient déjà sur le groupe du banc** (`infra/glorfindel-host/main.tf:203`).
-`Microsoft.Authorization/*/read` est sous `*/read` : rien n'est ajouté à H0.
+`Microsoft.Authorization/*/read` est sous `*/read` : rien n'est ajouté à H0 dans ARM.
 
-1. **Les attributions qui touchent la VM** : `GET {vm}/providers/Microsoft.Authorization/roleAssignments`.
-   Une liste à une portée rend aussi celles des portées au-dessus, le groupe et l'abonnement
-   (hypothèse : lu par le Reader du groupe, à mesurer). On garde celles dont le `principalId` est un
-   des identifiants du tiers.
+1. **Les attributions qui touchent la VM**, lues **à chaque portée où un geste du §4.1 se fait** : la VM,
+   chaque carte, chaque disque, chaque NSG qui la gouverne (souvent dans un autre groupe), l'identité
+   qu'elle porte. `GET {portée}/providers/Microsoft.Authorization/roleAssignments`. Une liste à une
+   portée rend aussi celles des portées au-dessus, le groupe et l'abonnement (hypothèse H1 : lu par le
+   Reader du groupe, à mesurer). Une portée que H0 ne lit pas (le NSG d'un autre groupe, sans Reader)
+   est **illisible**.
 2. **Leurs définitions** : `GET …/roleDefinitions/{id}`. Une attribution donne la porte si sa
-   définition tient une des opérations du §4.1. La lecture est celle d'`action_held` : les jokers, les
-   `notActions` et les `dataActions`.
-3. **Le verdict des droits** :
-   - **tenus** : une attribution au moins donne une opération du §4.1 ;
-   - **absents** : la liste est lue entièrement et aucune ne la donne ;
-   - **illisibles** : une lecture échoue, ou une portée échappe à H0.
+   définition tient une des opérations du §4.1, **à la portée de l'attribution**. La lecture est celle
+   d'`action_held` : les jokers, les `notActions` et les `dataActions`.
+3. **Le principal** : on garde les attributions dont le `principalId` est un des identifiants du tiers,
+   et celles **d'un groupe** (`principalType: Group`) dont il serait membre.
+4. **Le verdict des droits** :
+   - **tenus** : une attribution au moins donne une opération du §4.1 au tiers ;
+   - **absents** : chaque portée est lue entièrement, aucune attribution directe ne la donne, et chaque
+     attribution à un groupe qui la donnerait est lue **sans** le tiers parmi ses membres ;
+   - **illisibles** : une lecture échoue, une portée échappe à H0, ou l'appartenance à un groupe ne se
+     lit pas.
+
+**Les groupes, le point dur.** Chez un client, un groupe porte presque toujours un rôle qui écrit les
+VM (« Contributeur » sur l'abonnement, à un groupe d'administrateurs). Lire l'appartenance demande
+Microsoft Graph, que H0 ne lit pas aujourd'hui (`glorfindel/providers/azure/graph.py`, « Without
+them — H0 today —, every read is `Unreadable` »). **Sans cette lecture, tout tiers retient la
+quarantaine dès qu'un groupe porte un tel rôle** : la retenue devient presque universelle, et la levée
+seule par défaut ne sert qu'aux VM sans groupe privilégié. Deux sorties (Q11) :
+- **une lecture d'appartenance pour H0** (recommandée) : `POST /directoryObjects/{tiers}/checkMemberGroups`
+  avec les groupes des attributions lues, sous `GroupMember.Read.All` (hypothèse H10, la permission la
+  plus étroite pour cet appel, à mesurer), en lecture seule, par le module Graph qui n'a qu'un `GET`
+  aujourd'hui (il gagnerait ce seul `POST` de lecture, nommé) ; un consentement de Jonathan ;
+- **accepter la retenue sur tout tiers** quand un groupe porte la porte : simple, mais bruyant.
 
 **Ce qui reste illisible depuis H0**, et fait donc une retenue quand le tiers est là :
-- **un groupe** : une attribution à un groupe dont le tiers serait membre. Lire l'appartenance demande
-  Microsoft Graph, que H0 ne lit pas (`glorfindel/providers/azure/graph.py`, « Without them — H0
-  today —, every read is `Unreadable` »). Une attribution à un groupe qui donne la porte, sans
-  l'appartenance lue, est **illisible**, jamais absente ;
+- **un groupe**, sans la lecture ci-dessus ;
 - **une éligibilité PIM** (`roleEligibilityScheduleInstances`) : un droit qu'on active à la demande.
-  Lisible sous `*/read` d'après la documentation (hypothèse) ; illisible, c'est une retenue ;
+  Lisible sous `*/read` d'après la documentation (hypothèse H2) ; illisible, c'est une retenue ;
 - **un groupe d'administration** : une attribution au-dessus de l'abonnement, que BNC1 dit déjà ne
   pas lire ;
+- **un principal supprimé** : un objet supprimé reste restaurable depuis la corbeille d'Entra
+  (30 jours, d'après la documentation, hypothèse H11), avec ses attributions orphelines qui reprennent
+  effet. Ses droits sont **illisibles**, jamais absents. La carte le dit : « principal supprimé,
+  restaurable ; supprimer ses attributions orphelines ferme la porte » ;
 - **une attribution de refus** (`denyAssignments`), une condition ABAC ou un verrou : ils ne font que
   retirer. Ignorés, ils peuvent faire lire « tenus » ce qui ne l'est plus. C'est le sens prudent.
-
-**Un tiers qui n'existe plus** (un principal supprimé, que l'annuaire ne connaît plus) : ses
-attributions orphelines ne donnent rien. Ses droits sont **absents**, et la carte le dit.
 
 **Pourquoi « illisible » retient** (Q2) : la règle « un fait absent fait une carte, jamais une levée »
 est celle de REC1. Un tiers a agi : la porte a existé. Une levée seule sur une lecture incomplète
@@ -433,11 +502,16 @@ ouverte) dit :
 
 - **La watch relit les droits à chaque passe** (`GLORFINDEL_RECOVERY_INTERVAL_S`, 60 s), tant que la
   carte attend. Verify ne fait que relire plus tôt, à la demande.
-- **Relus absents**, la watch attend encore `lift.settle_s` (600 s par défaut). La documentation de
-  Microsoft dit qu'un changement d'attribution peut prendre jusqu'à 10 minutes à s'appliquer
-  (hypothèse, à mesurer). Un jeton déjà émis survit aussi à la révocation de ses sessions, 60 à
-  90 minutes par défaut (`reponse-identite.md`, §0). Puis elle relit une dernière fois et lève, en
-  probation (en `non_disruptive`), ou change la carte en « Lift into probation » (en `human_only`).
+- **Relus absents**, la watch attend encore `lift.settle_s` (600 s par défaut), puis relit une
+  dernière fois et lève, en probation (en `non_disruptive`), ou change la carte en « Lift into
+  probation » (en `human_only`). Le délai couvre **la propagation d'ARM** : ARM évalue les attributions
+  à chaque requête, avec un cache, et la documentation de Microsoft dit qu'un changement peut prendre
+  jusqu'à 10 minutes (hypothèse H3, à mesurer). Un jeton déjà émis ne porte pas les rôles d'ARM : il ne
+  garde pas un droit retiré au-delà de cette propagation.
+- **La vie d'un jeton** est un autre sujet : un jeton d'Entra vit 60 à 90 minutes par défaut, et
+  survit à la révocation des sessions (`reponse-identite.md`, §0). Il sert à Graph et aux autres API
+  qu'il ouvre, pas aux rôles d'ARM retirés. La carte le dit, pour les étapes d'identité du plan (§4.5),
+  et la probation couvre ce qui reste.
 - **Un nouveau geste du tiers** pendant ce temps : la carte le dit, et le délai repart.
 
 Le replay fait lever une minute après la révocation ; ce délai l'allonge à dix (§13).
@@ -468,21 +542,29 @@ Le replay fait lever une minute après la révocation ; ce délai l'allonge à d
 | **les gestes de l'attaque sur cette VM, sous l'identité d'Orodruin, dans la fenêtre**, lus au journal d'activité (au moins un geste du §4.1, une Run Command pour T1486 ou T1136.001) | ARM, qui écrit seul le journal | `GLORFINDEL_INJECTOR_PRINCIPALS`, comparé comme REC1b compare |
 | **aucun tiers** sur la VM pendant toute la fenêtre de lecture (§4.3), et **aucun geste d'Orodruin hors d'une fenêtre** qui nomme la VM | ARM | la lecture du §4 |
 
+**Et la zone** : la VM est en zone `bench` ou `twin`, lue sur ses tags et ceux de son groupe par la
+watch (O0, `eregion_core/inscription.py`). **En `production`, le verdict « exercice » n'existe pas** :
+un restore y suit toujours la règle d'un incident réel. La règle de production n'y admet ni panne ni
+technique destructive, donc aucun exercice n'y mène à un restore ; une fenêtre qui le dirait ment. Et
+une levée sans probation sur une charge réelle ne doit jamais reposer sur l'identité d'Orodruin, qui
+écrit aussi la fenêtre (§9).
+
 **La cible de la demande** : la watch ne lit jamais la demande de Dagorlad (`docs/dagorlad.md`, « Il
 ne voit pas le plan »), et LEV1 ne change pas ça. La cible prouvée est celle de la fenêtre, qu'Orodruin
 écrit depuis le fil de la demande. Le journal d'activité, lui, prouve que l'identité d'Orodruin a agi
 **sur cette VM**, et pas sur une autre.
 
-**Une fenêtre locale** (une watch de poste, sans canal) : la fenêtre n'est pas tirée du canal. La
-preuve repose alors sur le seul journal d'activité : les gestes de l'identité qui lance l'injecteur
-(`GLORFINDEL_INJECTOR_PRINCIPALS`, sur ce poste) dans la fenêtre. Sans principal configuré, aucun
-exercice n'est jamais prouvé : chaque restore suit la règle d'un incident réel, ce qui est le sens
-prudent.
+**Une fenêtre locale** (une watch de poste, sans canal) : elle vaut **pour le développement seulement,
+jamais sur H0**. Sur H0, seule une fenêtre tirée du canal compte pour la preuve ; une fenêtre locale y
+est refusée pour le verdict « exercice », dite. Sur un poste, la preuve repose sur le seul journal
+d'activité : les gestes de l'identité qui lance l'injecteur (`GLORFINDEL_INJECTOR_PRINCIPALS`, sur ce
+poste) dans la fenêtre. Sans principal configuré, aucun exercice n'est jamais prouvé : chaque restore
+suit la règle d'un incident réel, ce qui est le sens prudent.
 
 ### 5.2 Ce qui défait la preuve
 
 - **Un tiers** dans la fenêtre de lecture : pendant un exercice, un vrai intrus a pu agir. La levée
-  suit alors la règle d'un incident réel (cas 4 ou 6).
+  suit alors la règle d'un incident réel (cas 5 ou 8).
 - **Orodruin hors de sa fenêtre** : un geste de son identité qui n'est couvert par aucune fenêtre
   nommant la VM. Son identité est alors lue comme celle d'un tiers.
 - **Une fenêtre refusée** par B2, ou absente : il n'y a pas d'exercice.
@@ -499,13 +581,13 @@ Sinon, un exercice prouvé lève sans probation, et la probation ne se mesure ja
 - **Où elle se pose** : par fil, dans la demande de Dagorlad. Une case « as a real incident » sur un
   fil, puis la commande `make orodruin-exercise REQUEST=…`. Orodruin l'écrit dans la fenêtre,
   `as_real: true`, avec l'identifiant de la demande.
-- **Ce qu'elle fait** : l'exercice reste prouvé (§5.1), mais le cas 3 ne s'applique pas. La règle
+- **Ce qu'elle fait** : l'exercice reste prouvé (§5.1), mais le cas 4 ne s'applique pas. La règle
   passe à la porte, puis à la probation.
 - **La porte, pendant un exercice « comme un incident réel »** : Orodruin a agi, et garde ses droits
   (c'est l'injecteur du banc). Compté comme un tiers, il retiendrait toujours la quarantaine, et le
   scénario « vecteur dans l'invité » ne se jouerait jamais. Il n'est donc **pas un tiers dans sa
   fenêtre prouvée** (§4.2), comme pour un exercice ordinaire ; tout autre appelant l'est. C'est plus
-  prudent que le cas 3, qui lève sans probation : l'option n'enlève aucune garde.
+  prudent que le cas 4, qui lève sans probation : l'option n'enlève aucune garde.
 - **Le scénario « porte ouverte »** se joue alors autrement : un **second principal du banc**, déclaré
   pour ça, agit sur la VM avant l'attaque (Q7). Ce n'est pas dans le premier exercice de LEV7.
 - **Forgée, elle ne retire jamais une garde** :
@@ -570,26 +652,74 @@ couche du client peut en déclarer.
 
 ### 6.3 La réisolation au moindre signal
 
-**Oui, de façon déterministe, sans les tirages du modèle** (Q1).
+**Décidé par Jonathan (10/11, Q1) : la réisolation est décidée par le code, sans le modèle ; en
+`human_only`, c'est une carte.**
 
-- **Le routage** : une détection dont la VM est en probation passe par un nœud de code, `probation_gate`,
-  avant `decide`. Il construit la décision : `isolate_vm`, `decided_by: probation`, la raison (la règle,
-  le moment, la probation). Aucun appel au modèle, et le cycle le note (`store_cycle`).
-- **Puis les gardes, telles qu'elles sont** : la couche du mode (en `human_only`, `mode_hold` et une
-  carte haute, poussée), le verrou de préparation, la garde destructive. Le code ne remplace que le
-  tirage du modèle, jamais une garde.
-- **Ce qui compte comme un signal** :
-  - une détection d'une règle, de base ou de probation, sur la VM ;
-  - une détection du plan de contrôle qui nomme la VM (son NSG changé hors de Glorfindel, une
-    attribution à sa portée) ;
-  - **et seulement un signal dont le moment est après le début de la probation**. Une détection de
-    l'incident d'origine qui arrive en retard (l'ingestion, la déduplication du RulePoller) ne
-    réisole pas.
+**La place exacte : en tête de `decide`**, comme les décisions construites par le code d'AL1 et de C2
+(`glorfindel/agent.py`, le début de `decide` : `_is_identity` → `_identity_decision`, puis
+`_is_control_plane` → `_control_plane_decision`). Dans l'ordre :
+1. `_is_identity(signal)` → `_identity_decision` (inchangé : une détection d'identité ancrée sur la VM
+   n'est pas un signal de la VM) ;
+2. **`_in_probation(signal)` → `_probation_decision`** (nouveau) ;
+3. `_is_control_plane(signal)` → `_control_plane_decision` (inchangé, pour une VM qui n'est pas en
+   probation).
 
-  Une détection d'identité ancrée sur la VM n'est pas un signal de la VM (son ancre n'est qu'une
-  ancre, comme pour B2).
-- **Un exercice pendant la probation** (le T1136.001 du banc) réisole aussi : l'étiquette n'abaisse
-  aucune garde.
+Le graphe route ce signal comme AL1 : **sans enquête** (`investigate` ne tourne pas, la réisolation
+n'attend pas des requêtes), sans appel au modèle. `_probation_decision` construit `isolate_vm`,
+`decided_by: probation`, la raison (la règle, le moment, la probation), puis résout le mode et la
+préparation **par le même code que `decide`** (le mode de l'asset, `--mode`, la config illisible
+tenue en `human_only`, le verrou de préparation), et passe les gardes une à une :
+
+| Garde (`glorfindel/agent.py`) | Sur une décision de probation | Pourquoi |
+|---|---|---|
+| `_apply_executable_guard` (action implémentée) | **appliquée** | `isolate_vm` l'est : elle passe ; la garde reste, en cas d'erreur de code |
+| `_apply_confidence_gate` | **sans objet** | aucune confiance de modèle ; la décision porte `confidence: null`, et le cycle le dit |
+| `_apply_signal_guardrail` (un indicateur de menace reconnu) | **appliquée** | une action disruptive sur un signal sans indicateur reconnu est retenue, même en probation. Chaque règle de probation (§6.2) doit déclarer ses colonnes d'indicateur (`_INDICATOR_COLUMNS`) : un lot qui en ajoute une le fait dans la même PR |
+| `_apply_attribution_guard` | **appliquée** | une détection non attribuée, ou venue d'une appliance, n'isole jamais la VM d'ancrage, en probation comme ailleurs |
+| `_apply_never_block_guard` | **sans objet** | elle ne porte que sur un blocage d'adresse |
+| `_apply_telemetry_guard` | **sans objet** | elle retient ce que le modèle a lu vide ; aucune requête d'enquête n'est lue ici |
+| `_apply_agreement_guard` (D-1, l'accord des tirages) | **disparaît** | il n'y a pas de tirage |
+| `_apply_release_precondition` | **sans objet** | la décision n'est pas une levée |
+| la couche du mode (`_apply_autonomy_mode`) | **appliquée** | en `human_only`, `mode_hold` : la carte `probation_signal`, haute, poussée, l'isolement approuvable en un clic ; `probation.on_signal: card` par VM fait de même en `non_disruptive` |
+| le verrou de préparation (mode effectif, L6) | **appliqué** | une VM retenue par sa préparation est en `human_only` effectif : une carte |
+| la garde destructive | **sans objet** | `isolate_vm` n'est pas destructive |
+
+**Ce qui compte comme un signal** :
+- une détection d'une règle, de base ou de probation, sur la VM ;
+- une détection du plan de contrôle dont la cible est la VM, une de ses cartes, un de ses disques ou
+  une règle d'un NSG qui la gouverne (son NSG changé hors de Glorfindel, une attribution à sa portée).
+  Les écritures de Glorfindel lui-même n'en sont pas : AL1 les écarte déjà, et la règle des ports y est
+  reconnue (§7.3) ;
+- **et seulement un signal dont le moment est après la fin du job de restore**, ou la création du
+  disque OS restauré si elle est plus tôt (`os_disk_created`, lu par REC1). Pas après le début de la
+  probation : la VM restaurée démarre **sous la quarantaine** (REC1 exige qu'elle tourne avant la
+  levée), et une persistance `@reboot` s'y déclenche avant la levée. Sa télémétrie peut arriver après
+  la levée, avec un moment d'avant ; elle compte. Une détection de l'incident d'origine, datée d'avant
+  la fin du job, arrivée en retard (l'ingestion, la déduplication du RulePoller), ne réisole pas.
+
+Une détection datée entre la fin du restore et la levée retient la levée (§3.1, cas 2) ; arrivée
+après la levée, elle réisole.
+
+**Une détection d'une règle de probation, ou d'une variante `probation_query`, ne va jamais au
+modèle**, même si la probation a fini entre la requête et la décision : elle est décidée par le code.
+La probation finie, c'est une carte sans action (« détection d'une règle de probation après sa fin »),
+jamais un appel au modèle. Une règle de probation n'a pas été écrite pour ce que le modèle lit.
+
+**Un exercice pendant la probation** (le T1136.001 du banc) réisole aussi : l'étiquette n'abaisse
+aucune garde.
+
+**Rien de la probation ne va au modèle, ni en mémoire.**
+- **Les cycles `decided_by: probation` ne vont jamais dans ChromaDB** : `store_cycle` les écarte comme il
+  écarte les cycles d'AL1 et de C2 (`glorfindel/agent.py`, la condition avant `memory.store`). Décidés
+  par le code, ils seraient servis au modèle comme des précédents d'une décision de données. Leur ligne
+  de `debug.jsonl` est écrite. Un test le tient.
+- **L'état de probation n'est jamais rangé comme une isolation ni comme un blocage** : son fichier vit à
+  part (`~/.glorfindel/probation/`), et ni `active_isolations` ni `_load_block_entries` ne le lisent.
+  Ces deux lectures nourrissent « ## État actuel de la VM » dans `_build_user_message()` : la probation
+  n'y entre pas.
+- **Le test du message à l'octet** (§3.3) s'étend : une VM en probation, puis une VM réisolée par la
+  probation. Le message d'un cycle ultérieur sur elle est celui d'une VM isolée par le chemin ordinaire,
+  à l'octet.
 
 **Le risque de bruit, et ce qui le borne.**
 - **Le bruit attendu** : les vérifications de l'opérateur après la levée.
@@ -602,13 +732,15 @@ couche du client peut en déclarer.
   - **la réversibilité** : la réisolation est une isolation, levée par le même chemin ;
   - **les exceptions** qui existent déjà (`expected_sudo.admins`) ;
   - **une carte de probation qui dit comment vérifier** sans réisoler : par Run Command sous un
-    principal qui restaure, ou par SSH d'un administrateur déclaré ;
+    principal qui restaure, ou par SSH **depuis une source étroite que le NSG du client admet** (son
+    bastion, son VPN : la règle des ports ne la ferme pas, §7.2) et d'un administrateur déclaré. Le
+    port 22 depuis Internet, lui, est fermé ;
   - **la mesure** : une réisolation de probation qu'un humain juge à tort compte dans « actions
     disruptives à tort », un des cinq indicateurs ;
   - **un mode de probation par VM**, `probation.on_signal: card`, qui fait de la réisolation une carte
     même en `non_disruptive`, pour une charge où le bruit coûterait trop.
-- **Pas de grâce au début de la probation** : la persistance `@reboot` se déclenche dans les
-  premières minutes. C'est la fenêtre où la probation sert le plus.
+- **Pas de grâce au début de la probation** : c'est la fenêtre où une persistance se manifeste, et la
+  borne ci-dessus prend déjà ce qui s'est passé sous la quarantaine.
 
 ### 6.4 La fin, et les gestes
 
@@ -641,11 +773,15 @@ couche du client peut en déclarer.
 - **Le début de l'incident**, pour le restore suivant, reste celui de l'incident d'origine. La règle
   de `--before` (`restore_plan.incident_start`) le lit sur l'état de probation, et non à la
   réisolation : il faut un point plus ancien.
-- **La levée après le restore suivant est humaine** (cas 5, Q9) : la boucle s'est corrigée une fois,
+- **La levée après le restore suivant est humaine** (cas 6, Q9) : la boucle s'est corrigée une fois,
   et ne lève pas seule deux fois de suite sur le même incident. Le replay s'arrête là, sur le choix de
   l'humain : un point plus ancien, ou la quarantaine gardée pour l'enquête.
 - **La règle des ports reste posée** pendant la quarantaine : inutile, mais sans danger. L'état de
-  probation passe à `suspended` ; la levée suivante décide de nouveau.
+  probation passe à `suspended`.
+- **Une levée sans restore d'une VM `suspended`** (le signal jugé à tort, levé par un humain) :
+  **la probation reprend**, pour une durée entière depuis la levée. La règle des ports, restée posée,
+  est relue avant de retirer la quarantaine (§7.5). Une VM suspendue ne quitte jamais la quarantaine
+  sans probation, sauf par le geste `glorfindel probation end` (§6.4), tracé.
 
 ---
 
@@ -678,30 +814,37 @@ de plus pour son Terraform.
 | une allow **étroite** (son bureau, son bastion, son VPN : un préfixe d'au plus /24 en IPv4, /64 en IPv6, Q10) | elle reste : la règle se pose **après** elle. Ses administrateurs gardent l'accès |
 | une allow **large** (`*`, `Internet`, `0.0.0.0/0`, un préfixe plus large que le seuil) | la règle se pose **avant** elle, à la première priorité libre. Une règle du client n'est jamais déplacée (L3) |
 | un deny déjà en place sur ces ports depuis Internet | rien à poser |
-| aucune priorité libre entre les deux, sur aucun des deux NSG | rien n'est posé. La probation commence quand même (surveillance, réisolation) et la carte dit « ports d'administration non fermés : <la règle du client qui l'empêche> » |
-| une allow large **avant** une allow étroite | la règle se pose avant l'allow large si une priorité est libre ; sinon, comme ci-dessus |
+| aucune priorité libre entre les deux, sur aucun des deux NSG | **rien n'est posé**, et c'est une retenue (§3.1, cas 7) : « ports d'administration exposés, la règle ne trouve pas de place : <la règle du client> ». Un humain peut lever en probation, ports ouverts, en le sachant |
+| une allow large **avant** une allow étroite, sur les mêmes ports | **rien n'est posé** sur ce NSG : un deny avant l'allow large couperait aussi la source étroite, que le client admet. Sur l'autre NSG, la règle se pose si elle y trouve sa place ; sinon, la retenue du cas 7, qui le dit. LV5 tient : la probation ne coupe jamais une allow étroite |
+| `isolation.forensic_sources` | elles vivent dans le NSG de quarantaine, qui part à la levée. Pendant la probation, l'accès des enquêteurs est celui que le NSG du client admet. S'il ne les admet que par une allow large, la règle des ports les coupe : la carte de probation le dit, avec la sortie (`glorfindel probation end`, ou une allow étroite du client) |
 
 Le seuil « étroit » est une question (Q10). Celui des sources forensiques (au plus 256 adresses,
 `config.validate_forensic_sources`) est le précédent du dépôt.
 
-### 7.3 La réaffirmation et les orphelines
+### 7.3 Ce qui reconnaît la règle : AL1, la réaffirmation, les orphelines
 
-- **La réaffirmation** (`glorfindel/reassert.py`) lit l'état de probation comme elle lit un blocage :
-  - la règle en place : `verified_at` ;
-  - la règle disparue : reposée **une fois** hors de `human_only`, puis une alerte seule, sans se
-    battre (L5) ;
-  - en `human_only`, une alerte seule.
+**L'état d'abord, puis la règle.** L'état de probation (§6.4) nomme chaque placement (le NSG, le nom,
+la priorité, la carte) **avant** que la règle soit écrite, comme une isolation note son intention.
+Sans cet ordre, l'écriture de la règle par H0 se lirait comme une écriture de Glorfindel sur une cible
+qui n'est pas la sienne : une détection AL1, donc un signal de probation, donc une réisolation de la VM
+qu'on vient de lever.
 
-  Une règle devenue allow (quelqu'un l'a retournée) est dite, jamais corrigée (V-16). Une allow du
-  client posée avant elle pendant la probation est dite aussi : c'est un geste sur le NSG de la VM,
-  que la règle `nsg-change-outside-glorfindel` voit déjà, et donc un signal de probation (§6.3).
-- **Le balayage des orphelines** (`glorfindel/orphans.py`, `glorfindel/providers/azure/sweep.py:314`)
-  prend aussi le préfixe `glorfindel-probation-`. Une règle de probation laissée par une carte qui
-  n'existe plus vise une adresse qu'Azure a pu donner à une autre VM. Elle est traitée comme les
-  autres : une carte, puis le retrait seul en `non_disruptive`. Elle ne coupe que les ports
-  d'administration depuis Internet, mais elle n'appartient plus à personne.
-- **`glorfindel reset`** (`sweep_vm_rules`) retire aussi les règles de probation de la VM, par leur nom,
-  avec ou sans état.
+Chaque endroit qui reconnaît les règles de Glorfindel la reconnaît, et LEV4 les nomme un par un :
+
+| Où | Ce qui change |
+|---|---|
+| AL1 : `recorded_targets` (`glorfindel/providers/azure/activity.py:140`) et `owned_target` (`:193`) | les placements de l'état de probation sont des cibles de Glorfindel, comme ceux d'une isolation ou d'un blocage. Une écriture de H0 sur eux est écartée ; celle d'un autre est `GlorfindelManaged`, la plus grave |
+| `CAPABILITIES` (`glorfindel/providers/azure/capabilities.py`) | la capacité `network_rules` déclare aussi la probation (`start_probation`, `end_probation`) : ses droits sont ceux d'un blocage (`securityRules/write`, `/delete`). La préparation et `tests/unit/test_provider_boundary.py` suivent |
+| les règles retournées : `_TURNED_NAMES` (`glorfindel/providers/azure/turned.py:18`) | gagne `glorfindel-probation-` : une règle de probation retournée en allow est dite, jamais corrigée (V-16, I5Q) |
+| le balayage des orphelines : les préfixes de `glorfindel/providers/azure/sweep.py:314` | gagne `glorfindel-probation-` |
+| le balayage : `state_nics` et `live_names` | les cartes et les noms de l'état de probation en font partie : une règle de probation d'une carte vivante n'est jamais une orpheline |
+| `glorfindel reset` (`sweep_vm_rules`) | retire aussi les règles de probation de la VM, par leur nom, avec ou sans état |
+| la réaffirmation (`glorfindel/reassert.py`) | lit l'état de probation comme un blocage : la règle en place, `verified_at` ; disparue, reposée **une fois** hors de `human_only`, puis une alerte seule, sans se battre (L5) ; en `human_only`, une alerte seule. Une allow du client posée avant elle pendant la probation est dite ; c'est un geste sur le NSG de la VM, que la règle `nsg-change-outside-glorfindel` voit, donc un signal de probation (§6.3) |
+
+Une règle de probation laissée par une carte qui n'existe plus vise une adresse qu'Azure a pu donner à
+une autre VM. Elle est traitée comme les autres orphelines : une carte, puis le retrait seul en
+`non_disruptive`. Elle ne coupe que les ports d'administration depuis Internet, mais elle n'appartient
+plus à personne.
 
 ### 7.4 Le Terraform du client, et le module d'isolation
 
@@ -715,18 +858,34 @@ Le seuil « étroit » est une question (Q10). Celui des sources forensiques (au
 - **Le module d'isolation (L8, pas encore construit)** gagne une troisième ancre, déclarée une fois
   dans le code du client :
   - une ASG `glorfindel-probation` par VNet ;
-  - dans chaque NSG qui gouverne des VM défendues, une règle en **priorité 102** : deny entrant
-    depuis `Internet`, sur les ports d'administration, vers l'ASG `glorfindel-probation` ;
+  - dans chaque NSG qui gouverne des VM défendues, une règle deny entrante depuis `Internet`, sur les
+    ports d'administration, vers l'ASG `glorfindel-probation` ;
+  - **sa priorité est celle que le client choisit** (`probation_priority`, une variable du module),
+    **après** ses allows étroites sur ces ports et **avant** ses allows larges. Elle n'est pas dans la
+    plage réservée 100–101 : une ancre en tête couperait les allows étroites du client, ce que la
+    probation ne fait jamais (LV5). Le module la refuse si elle tombe dans 100–101 ;
   - pendant la probation, Glorfindel ajoute les ipConfigurations de la VM à l'ASG, et les en retire à
     la fin. Terraform n'y voit aucune dérive (l'appartenance à une ASG, `module-isolation-iac.md`).
 
-  Un client qui veut garder ses allows étroites les met avant 102. La plage réservée devient
-  **100–102**, visible dans son code et dans ses revues.
+  L'audit relit la place de l'ancre : une allow large du client avant elle la rend inutile, et c'est dit.
 - **Sans ancre**, Glorfindel garde le mécanisme par défaut, et l'audit le dit, comme pour les deux
   autres ancres.
 
-### 7.5 Le retrait
+### 7.5 La pose, avant la levée ; le retrait
 
+- **La pose, avant de retirer la quarantaine.** La levée en probation se fait dans cet ordre, sous le
+  verrou de la VM :
+  1. l'état de probation écrit, avec ses placements (§7.3) ;
+  2. la règle des ports posée sur le NSG du client : celui de la carte, mis de côté pendant la
+     quarantaine (une règle s'écrit sur un NSG détaché), ou celui du sous-réseau ;
+  3. la règle **relue** sur Azure, sa préséance comprise ;
+  4. puis seulement la levée (`release_isolation`) ;
+  5. la préséance relue une fois la carte rendue à son NSG.
+
+  Sans cet ordre, la levée ouvrirait une fenêtre où les ports d'administration sont joignables depuis
+  Internet, entre la quarantaine retirée et la règle posée. **Un échec à la pose ou à la relecture**
+  arrête avant la levée : la quarantaine reste, et c'est la retenue du cas 7 (§3.1), relue à la passe
+  suivante. Une levée qui échoue après la pose laisse la règle (sans danger) et l'état, qui le dit.
 - **À la fin de la probation**, ou par `glorfindel probation end` : le même chemin qu'un déblocage. Sous
   le verrou de la VM, l'intention est notée d'abord (`ending_at`), puis la règle est retirée de chaque
   placement et relue. L'état se vide une fois la règle relue absente. Un retrait en échec garde l'état
@@ -767,18 +926,23 @@ levée lue sur Azure » (`docs/design/modele-de-menace.md`, §2). Ce qui s'ajout
 | | Menace | Ce qui la tiendra |
 |---|---|---|
 | E | Une fenêtre d'exercice forgée fait lever seule une VM après un vrai incident | La levée sans probation demande les gestes de l'identité d'Orodruin sur la VM, dans la fenêtre, au journal d'activité, et aucun tiers. L'étiquette seule donne la règle d'un incident réel (§5) |
+| E | **L'identité d'Orodruin volée** : elle écrit la fenêtre (elle rédige le conteneur `exercises`) **et** agit sur la VM dans cette fenêtre. Les deux premiers faits du §5.1 tiennent alors | **Jamais en `production`** : le verdict « exercice » n'existe qu'en `bench` et `twin` (§5.1) ; sur une charge réelle, la levée est toujours en probation, ou retenue. Sur le banc, **assumé** : une levée sans probation sur une VM jetable. Le contrat d'Orodruin (inscrites seulement, révocable par `orodruin-kill`) borne ce que l'identité peut viser |
 | E | Un `as_real` forgé, ou retiré | Posé, il rend la levée plus prudente ; retiré, l'exercice reste à prouver. Le champ est figé à la première lecture (§5.3) |
-| E | Un attaquant qui tient l'identité d'Orodruin agit sur une VM | Hors d'une fenêtre qui nomme la VM, Orodruin est un tiers : sa porte est lue comme celle d'un autre (§4.2) |
-| E | Un attaquant qui tient un appelant attendu | Il passe pour attendu, et la carte le nomme. Seules la probation et la réisolation le couvrent. **Assumé**, écrit (§4.2) |
-| T | Une retenue (`lift_holds.json`) forgée | Elle garde une VM en quarantaine, jamais ne la lève. C'est un déni de service sur une VM déjà coupée, dit sur sa carte |
+| E | Un attaquant qui tient l'identité d'Orodruin agit hors d'une fenêtre | Orodruin y est un tiers : sa porte est lue comme celle d'un autre (§4.2) |
+| E | Un attaquant qui tient l'identité de Glorfindel, ou d'un principal qui restaure | Il n'est excusé que pour leurs opérations, sur leurs cibles, dans leur fenêtre (§4.2) : tout autre geste est un tiers, dit en critique |
+| E | Un attaquant qui tient un appelant attendu | Il passe pour attendu, **pour les opérations déclarées seulement**, jamais pour une Run Command, VMAccess ou un export de disque ; la carte le nomme. La probation et la réisolation couvrent le reste. **Assumé**, écrit (§4.2) |
+| T | Une retenue (`lift_holds.json`) forgée | Elle garde une VM en quarantaine, jamais ne la lève. Seule la watch l'écrit, sur une demande de la file signée (§3.4) : forgée ailleurs, c'est un déni de service sur une VM déjà coupée, dit sur sa carte |
 | T | La règle de probation retirée par un tiers pendant la probation | La réaffirmation la repose une fois, puis alerte ; le retrait est un geste sur le NSG de la VM, donc un signal de probation |
+| T | La règle de probation, écrite par H0, prise pour l'écriture d'un autre | L'état écrit avant la règle ; AL1 la reconnaît comme une cible de Glorfindel (§7.3) |
+| I | Les ports d'administration joignables pendant la levée | La règle posée et relue avant que la quarantaine parte (§7.5) |
 | D | Un bruit qui réisole sans fin une VM en probation | Chaque réisolation est une carte. Après une réinfection, la levée suivante est humaine (§6.5). `probation.on_signal: card` par VM |
 | I | Les disques d'origine supprimés pour effacer la trace | Glorfindel n'a pas ce droit et ne les touche pas. Leur absence est dite en rouge. Le verrou est le geste de l'humain (§8) |
 
-**Ce qui reste, assumé** : un vecteur dans l'invité, un appelant attendu volé, une persistance plus
-lente que la probation, un droit par un groupe que H0 ne lit pas (il retient, ce qui est sûr mais
-bruyant). La frontière tient autant que les identités qu'elle croit : celles qui restaurent, celle
-d'Orodruin dans sa fenêtre, les appelants attendus.
+**Ce qui reste, assumé** : un vecteur dans l'invité, un appelant attendu volé pour ses opérations, une
+persistance plus lente que la probation, un droit par un groupe que H0 ne lit pas (il retient, ce qui
+est sûr mais bruyant, Q11), l'identité d'Orodruin volée sur le banc. La frontière tient autant que les
+identités qu'elle croit : celles qui restaurent, celle d'Orodruin dans sa fenêtre et sa zone, les
+appelants attendus pour leurs opérations.
 
 ---
 
@@ -787,19 +951,24 @@ d'Orodruin dans sa fenêtre, les appelants attendus.
 ### 10.1 La machine des invariants
 
 Le faux Azure (`tests/unit/fake_azure.py`) gagne :
-- les attributions de rôle à chaque portée (la VM, le groupe, l'abonnement) et leurs définitions,
-  jokers et `notActions` compris ;
-- des principaux : un tiers, un groupe, une éligibilité ;
-- le journal d'activité de chaque opération du §4.1, sous son appelant ;
-- l'identité d'Orodruin et ses fenêtres ;
-- la règle de probation évaluée comme Azure évalue un NSG.
+- les attributions de rôle à chaque portée (la VM, une carte, un disque, un NSG d'un autre groupe, le
+  groupe, l'abonnement) et leurs définitions, jokers et `notActions` compris ;
+- des principaux : un tiers, un groupe et ses membres (lisibles ou non), une éligibilité, un principal
+  supprimé ;
+- le journal d'activité de chaque opération du §4.1, sous son appelant, ressources enfants comprises,
+  lu comme ARM le rend (le filtre exact, et la lecture du groupe) ;
+- l'identité d'Orodruin et ses fenêtres, la zone de la VM ;
+- la règle de probation évaluée comme Azure évalue un NSG, la quarantaine retirée après elle.
 
 Le monde bouge :
-- un tiers agit avant ou après le point ;
-- ses droits sont retirés, ou jamais ;
-- une lecture échoue ;
-- une fenêtre est forgée, ou `as_real` posé ;
-- une détection arrive pendant la probation, avant elle, en retard ;
+- un tiers agit avant ou après le point, sur la VM ou sur un enfant ;
+- Glorfindel ou un principal de restore agit hors de ses opérations ;
+- ses droits sont retirés, ou jamais ; une lecture échoue ;
+- une fenêtre est forgée, ou `as_real` posé ; la VM passe en `production` ;
+- une détection arrive avant la fin du restore, entre le restore et la levée, pendant la probation,
+  en retard ;
+- un humain lève avant la passe de la watch ;
+- la pose de la règle des ports échoue ;
 - un `terraform apply` retire la règle ;
 - la VM est supprimée.
 
@@ -807,17 +976,20 @@ Les oracles se tirent du journal du test, jamais des marqueurs du code (A0).
 
 | Propriété | Ce qu'elle dit |
 |---|---|
-| **LV1** | Jamais une levée seule (sans approbation humaine) après un restore, si un tiers qui a agi sur la VM dans la fenêtre garde ses droits, ou si ses droits ne se lisent pas |
-| **LV2** | Jamais une levée après le restore d'un incident non prouvé exercice sans probation : son état écrit, et la règle des ports posée ou son absence dite, dans la même opération |
-| **LV3** | Jamais une levée sans probation sur la seule étiquette : une fenêtre sans gestes de l'identité d'Orodruin dans le journal donne la règle d'un incident réel |
-| **LV4** | Une détection sur une VM en probation, d'un moment après le début de la probation : en `non_disruptive`, une isolation sans aucun appel au modèle ; en `human_only`, aucune écriture et une carte. Une détection d'un moment antérieur ne réisole jamais |
+| **LV1** | Jamais une levée seule (sans approbation humaine) après un restore, si un tiers qui a agi sur la VM dans la fenêtre garde ses droits, ou si ses droits ne se lisent pas. Un tiers, c'est tout appelant hors de ses opérations excusées (§4.2) : un appelant attendu ne l'est que pour ses opérations déclarées, jamais pour une Run Command, VMAccess ou `beginGetAccess` |
+| **LV2** | Jamais une levée après le restore d'un incident non prouvé exercice sans probation, **quel que soit le chemin** (la watch, une levée humaine avant ou après sa passe) : son état écrit, la règle des ports posée et relue ou la retenue dite, dans la même opération. Seule l'absence d'un restore, lue sur le coffre, donne une levée sans probation |
+| **LV3** | Jamais une levée sans probation sur la seule étiquette : une fenêtre sans gestes de l'identité d'Orodruin dans le journal donne la règle d'un incident réel ; et jamais en zone `production` |
+| **LV4** | Une détection sur une VM en probation, d'un moment après la fin du job de restore : en `non_disruptive`, une isolation sans aucun appel au modèle ; en `human_only`, aucune écriture et une carte. Une détection d'un moment antérieur à la fin du job ne réisole jamais. Une détection datée entre la fin du restore et la levée retient la levée |
 | **LV5** | Jamais une règle `glorfindel-probation-*` sur Azure pour une VM dont la probation est finie, une passe après la fin ; jamais une règle de probation qui coupe une allow étroite du client, ni une allow écrite |
 | **LV6** | Les disques d'origine jamais écrits ni supprimés par Glorfindel, et nommés sur chaque carte de levée |
+| **LV7** | Jamais un moment, entre la quarantaine et la probation, où un port d'administration exposé est joignable depuis Internet : la règle relue avant que la quarantaine parte, ou la quarantaine reste |
+| **LV8** | Jamais un cycle `decided_by: probation` dans la mémoire, ni l'état de probation dans le message au modèle ; et l'écriture de la règle des ports par Glorfindel ne fait jamais de détection AL1 |
 
 Plus, au niveau des tests de l'unité :
-- le message au modèle identique à l'octet, avec et sans verdict noté (§3.3) ;
+- le message au modèle identique à l'octet, avec et sans verdict noté, pour une VM en probation et
+  pour une VM réisolée (§3.3, §6.3) ;
 - `restore --wait` qui ne lève plus ;
-- `--keep-isolated` qui pose la retenue sur la watch.
+- `hold_lift` qui ne fait que retenir, et `--keep-isolated` qui le dit.
 
 Les mutants sont dans chaque lot de code (`scripts/mutants/<lot>.py`), une plage demandée à
 l'Orchestre. Ce lot de conception n'en a pas.
@@ -846,9 +1018,10 @@ l'Orchestre. Ce lot de conception n'en a pas.
    - le temps de l'injection à la réisolation par H0 (en `non_disruptive`) ;
    - la carte `probation_reisolated` ;
    - l'absence d'appel au modèle sur ce cycle (`decided_by: probation`).
-7. **La fin** : pas de restore, rien n'est chiffré. La levée est humaine et sans restore, donc sans
-   nouvelle probation (§3.4). Puis `glorfindel probation end` vide l'état suspendu, et la remise en
-   état suit.
+7. **La fin** : pas de restore, rien n'est chiffré. D'abord `glorfindel probation end`, le geste tracé
+   qui finit la probation suspendue et retire la règle des ports. Puis la levée humaine : sans restore
+   et sans probation suspendue, elle est sans probation (§3.4, §6.5). La remise en état suit (le compte
+   créé par T1136.001 retiré, comme le fait déjà le nettoyage de l'atomic).
 8. **Le rapport** : `make bench-report RUN=…` compose la chronologie, qui gagne les événements de
    probation (le début, la règle, le signal, la réisolation, la fin). Le replay privé de LEV1 et le
    replay public (`docs/replay/`) gagnent ce cas, avec les chiffres mesurés.
@@ -878,7 +1051,7 @@ Chaque lot de code met à jour la doc de ce qu'il change. Le vocabulaire se pose
 | le manuel public (`docs/manuel/modules.yaml`) | les briques des lots de code, en anglais (*quarantine*, *probation*) |
 | le replay public (`docs/replay/index.html`) | son texte dit déjà « the quarantine is lifted ». Il gagne la probation après la levée d'un incident réel, et le cas mesuré au banc |
 | `docs/adoption/index.html` | la ligne sur « a second human step » (#668) à revoir |
-| les cartes (`glorfindel/escalations.py`, `recovery_watch.py`) | les textes en français, avec *quarantaine* et *probation* ; les types `lift_door_open`, `probation_started`, `probation_signal`, `probation_reisolated`, `probation_ended` |
+| les cartes (`glorfindel/escalations.py`, `recovery_watch.py`) | les textes en français, avec *quarantaine* et *probation* ; les types `lift_door_open`, `lift_signal_after_restore`, `probation_started`, `probation_signal`, `probation_reisolated`, `probation_ended` |
 | la console (`eregion_console/static/glorfindel.js`) | le libellé de chaque nouveau type de carte (`ESC_LABELS`, sinon le type brut s'affiche) ; la tuile `PROBATION · until HH:MM` à côté d'`ISOLATED` ; « Lift into probation », « Keep in quarantine » |
 | le bot (`glorfindel/bot.py`) | « lever l'isolation » devient « lever la quarantaine » ; « mettre en probation » |
 | `glorfindel list` (`glorfindel/cli.py:2067`), la TUI (`glorfindel/tui.py:282`) | `ISOLATED` reste (le mot d'API, en anglais), et `PROBATION` s'ajoute |
@@ -891,21 +1064,25 @@ Dans l'ordre. Chacun est vert seul, avec ses tests, ses mutants et sa doc.
 
 | Lot | Session | Ce qu'il fait | Ce qu'il prouve |
 |---|---|---|---|
-| **LEV2** — les faits | Glorfindel | `observed_actors` et `observed_rights` dans l'adaptateur (§4.1, §4.4) ; `disks_at_isolation` dans l'état ; le faux Azure gagne les attributions, les définitions et le journal complet ; la carte d'isolement dit les acteurs, pour information. **Aucun changement de levée** | les lectures justes sur le faux, aux formes mesurées au banc (les mêmes que BNC1) ; une lecture coupée est illisible, jamais vide |
-| **LEV3** — la règle | Glorfindel | `glorfindel/response/lift.py` ; les cas 1 à 6 dans `recovery_watch` ; le verdict noté à côté ; la précondition qui le relit ; la preuve de l'exercice (`GLORFINDEL_INJECTOR_PRINCIPALS`) ; `autonomy.lift_human` ; `restore --wait` qui ne lève plus ; `--keep-isolated` et `lift_holds.json` ; la carte `lift_door_open` et son plan, Verify. **La probation n'est encore qu'un état** (pas de règle des ports, pas de réisolation) | LV1, LV3 ; le message au modèle identique à l'octet ; un exercice prouvé lève seul, un incident réel donne une levée en probation, une étiquette sans preuve donne la règle d'un incident réel |
-| **LEV4** — la probation | Glorfindel | la règle des ports (pose, préséance, allows étroites), sa réaffirmation, les orphelines, `reset`, la fin ; `probation_gate` et la réisolation sans modèle ; `assets: [probation]` et `probation_query` dans le RulePoller ; la réinfection ; `glorfindel probation …` | LV2, LV4, LV5, LV6 ; la règle n'ouvre rien et ne coupe pas une allow étroite, sur le faux qui évalue comme Azure |
+| **LEV2** — les faits | Glorfindel, puis Tests avec Jonathan | `observed_actors` et `observed_rights` dans l'adaptateur (§4.1, §4.4), les ressources enfants et chaque portée comprises ; `disks_at_isolation` dans l'état ; le faux Azure gagne les attributions, les définitions et le journal complet ; la carte d'isolement dit les acteurs, pour information. **Aucun changement de levée.** Puis **la mesure au banc de H7 et H9** (la ressource de chaque événement, le filtre exact ou non, la borne de pages), avec Jonathan, **avant LEV3** | les lectures justes sur le faux, aux formes mesurées ; une lecture coupée est illisible, jamais vide |
+| **LEV3** — la règle | Glorfindel | `glorfindel/response/lift.py` ; les cas 1 à 8 dans `recovery_watch` ; le verdict noté à côté ; la précondition qui le relit ; la levée humaine qui lit le restore elle-même ; la preuve de l'exercice (`GLORFINDEL_INJECTOR_PRINCIPALS`, la zone) ; les appelants excusés par opération ; `autonomy.lift_human` ; `restore --wait` qui ne lève plus ; `hold_lift` (FS1) et `lift_holds.json` ; la carte `lift_door_open` et son plan, Verify. **La probation n'est encore qu'un état** (pas de règle des ports, pas de réisolation) | LV1, LV3 ; le message au modèle identique à l'octet ; un exercice prouvé lève seul, un incident réel donne une levée en probation, une étiquette sans preuve ou une VM en `production` donne la règle d'un incident réel |
+| **LEV4** — la probation | Glorfindel | la règle des ports (pose et relecture avant la levée, préséance, allows étroites), sa reconnaissance partout (§7.3), sa réaffirmation, `reset`, la fin ; `_probation_decision` en tête de `decide`, garde par garde, hors de la mémoire ; `assets: [probation]` et `probation_query` dans le RulePoller ; la borne de la fin du restore ; la réinfection et `suspended` ; `glorfindel probation …` | LV2, LV4, LV5, LV6, LV7, LV8 ; la règle n'ouvre rien et ne coupe pas une allow étroite, sur le faux qui évalue comme Azure |
 | **LEV5** — ce que voit l'humain | Console | la tuile, les cartes et leurs libellés, « Lift into probation », « Keep in quarantine », Verify, le sélecteur de `lift_human` ; le bot ; `glorfindel list` | les textes échappés (#254), aucun script en ligne ; les boutons qui ne font qu'ajouter une garde |
 | **LEV6** — l'exercice « comme un incident réel » | Annatar, Orodruin, Console (Dagorlad) | la case d'un fil, `as_real` dans la demande et dans la fenêtre, lu par la watch, figé à la première lecture | forgé, il n'enlève aucune garde ; Dagorlad reste aveugle (`test_dagorlad_blind.py`) |
 | **LEV7** — au banc | Tests, avec Jonathan | le guide `docs/banc-probation.md` ; `bench-preflight` et `bench-report` qui gagnent la probation ; le run, puis la mesure ; les replays mis à jour | une réisolation pendant la probation, mesurée |
 | **LEV8** — le vocabulaire | General | le §11, ce que les lots n'ont pas déjà posé : `docs/architecture.md`, README, le manuel, l'accueil, le replay public | `tests/unit/test_docs_budget.py`, `test_manuel.py` |
 
 **Dépendances** :
-- LEV3 attend LEV2.
+- LEV3 attend LEV2 et sa mesure au banc.
 - LEV4 attend LEV3.
 - LEV5 et LEV6 peuvent tourner ensemble après LEV3, avec les types de carte figés par LEV3.
+- `hold_lift` par la file signée suit FS1 tel qu'il est (le chemin synchrone tant que la file est
+  éteinte) ; la réponse à Q12 le fixe.
 - LEV7 attend LEV4, LEV5 et LEV6, et une release que H0 déploie.
 - LEV8 vient en dernier, pour que la doc ne décrive rien qui n'existe pas.
 - Le jalon reste la 0.6.0, avec l'identité défendue : LEV4 touche le RulePoller, LEV3 la carte d'IR1a.
+  La lecture Graph d'appartenance (Q11), si elle est retenue, est un geste de Jonathan (le
+  consentement) avant LEV3.
 
 ---
 
@@ -913,20 +1090,26 @@ Dans l'ordre. Chacun est vert seul, avec ses tests, ses mutants et sa doc.
 
 Le replay privé (10/11) est suivi pour les quatre scénarios et les deux modes. Les écarts :
 
-1. **La porte non prouvée fermée retient aussi** (§3.1, cas 4). Le replay ne montre que la porte
+1. **La porte non prouvée fermée retient aussi** (§3.1, cas 5). Le replay ne montre que la porte
    prouvée ouverte. Un tiers dont les droits ne se lisent pas entièrement retient ici la quarantaine
    (Q2).
-2. **Dix minutes entre la révocation et la levée** (§4.6). Le replay lève une minute après : la
+2. **Une détection entre la fin du restore et la levée retient la levée** (§3.1, cas 2). Le replay
+   lève dès la reprise prouvée.
+3. **La règle des ports est posée avant la levée**, et son échec retient (§3.1, cas 7, §7.5). Le replay
+   montre la levée puis la probation.
+4. **Dix minutes entre la révocation et la levée** (§4.6). Le replay lève une minute après : la
    propagation d'une attribution retirée peut prendre jusqu'à dix minutes.
-3. **La probation dure 24 h** (§6.1), contre 6 h illustratives dans le replay (Q3).
-4. **La lecture du journal à +3 min** : le replay montre H0 qui lit le journal d'activité juste après
+5. **La probation dure 24 h** (§6.1), contre 6 h illustratives dans le replay (Q3).
+6. **La lecture du journal à +3 min** : le replay montre H0 qui lit le journal d'activité juste après
    l'isolement. Ici, cette lecture n'est qu'une **information** sur la carte d'isolement (LEV2). Le
    verdict se décide à la levée, sur une lecture de toute la fenêtre jusqu'à ce moment-là.
-5. **Après une réinfection, la levée suivante est humaine** (§6.5). Le replay s'arrête sur le choix
+7. **Après une réinfection, la levée suivante est humaine** (§6.5). Le replay s'arrête sur le choix
    de l'humain ; ce document le rend explicite (Q9).
-6. **`make bench-restore` et `make bench-run`** n'existent pas encore (MOB1, #686). Le restore passe
+8. **`make bench-restore` et `make bench-run`** n'existent pas encore (MOB1, #686). Le restore passe
    aujourd'hui par `glorfindel restore` sur le poste, et la demande par `make orodruin-exercise`.
-7. **Un exercice en `human_only`** : comme dans le replay, la levée est une carte, sans probation.
+9. **Un exercice en `human_only`** : comme dans le replay, la levée est une carte, sans probation.
+10. **Un exercice prouvé ne lève sans probation qu'en `bench` et `twin`** (§5.1). Le replay ne joue
+    que le banc.
 
 ---
 
@@ -939,24 +1122,25 @@ Le replay privé (10/11) est suivi pour les quatre scénarios et les deux modes.
 | H3 | Un changement d'attribution s'applique en 10 min au plus | retirer une attribution au banc, essayer l'opération toutes les minutes | ajuster `lift.settle_s` |
 | H4 | L'appelant des écritures de disques d'un « Replace disks » est le service de sauvegarde, son appId | le journal du restore du banc (`make bench-report`) | l'exclure par sa forme réelle |
 | H5 | Les disques d'origine restent dans le groupe, non attachés, sous leur nom | le restore du banc | les nommer par ce que le job rapporte |
-| H6 | La console série et Bastion : leurs opérations au journal d'activité | une connexion au banc | la table du §4.1 change |
-| H7 | Le journal d'activité porte chaque opération du §4.1 sous la ressource de la VM, de sa carte ou de son NSG | une écriture de chaque sorte au banc, puis la lecture | la table change ; une opération non portée est un vecteur dans l'invité |
+| H6 | La console série et Bastion : leurs opérations au journal d'activité, et leur ressource | une connexion au banc | la table du §4.1 change |
+| H7 | Le journal d'activité porte chaque opération du §4.1 sous la ressource que la table nomme | une écriture de chaque sorte au banc, puis la lecture (LEV2, avant LEV3) | la table change ; une opération jamais rendue est un vecteur dans l'invité |
 | H8 | Gondolin n'a ni IP publique ni allow depuis Internet sur un port d'administration | le NSG du banc | la règle des ports se pose au banc, et se mesure |
+| H9 | `resourceUri eq '<vm>'` est exact et ne rend pas les ressources enfants ; la lecture du groupe tient dans la borne de pages | les mêmes écritures, lues des deux façons (LEV2, avant LEV3) | la lecture d'enfants change ; une borne trop courte retient trop |
+| H10 | `checkMemberGroups` d'un principal se lit sous `GroupMember.Read.All` | un appel sous une identité de test au banc, après le consentement | une autre permission, à nommer pour Jonathan |
+| H11 | Un principal supprimé reste restaurable 30 jours, avec ses attributions orphelines qui reprennent effet | la documentation, puis un principal de test supprimé et restauré au banc | ses droits restent illisibles de toute façon : le texte de la carte change |
 
 ---
 
 ## 15. Questions pour Jonathan
 
-Chacune a son option recommandée en premier. Une à la fois.
+Chacune a son option recommandée en premier, en une ou deux phrases. Une à la fois.
 
-- **Q1 — La réisolation en probation.**
-  1. **(recommandée)** Décidée par le code, sans le modèle, sur tout signal de la VM d'après le début
-     de la probation ; en `human_only`, une carte.
-  2. Le modèle décide, comme hors probation.
-  3. Le code, mais seulement sur les règles de probation.
+- **Q1 — La réisolation en probation : tranchée (10/11).** Décidée par le code, sans le modèle, sur
+  tout signal de la VM daté après la fin du restore ; en `human_only`, une carte (§6.3).
 - **Q2 — Un tiers a agi, et ses droits ne se lisent pas entièrement** (un groupe, PIM, un groupe
-  d'administration).
-  1. **(recommandée)** La quarantaine reste : rien ne prouve la porte fermée.
+  d'administration, un principal supprimé).
+  1. **(recommandée)** La quarantaine reste : rien ne prouve la porte fermée. Sans la lecture de Q11,
+     c'est le cas de presque tout tiers dès qu'un groupe porte un rôle qui écrit les VM.
   2. Levée en probation, la carte le dit.
 - **Q3 — La durée de la probation.**
   1. **(recommandée)** 24 h : le démarrage, l'horaire et le quotidien.
@@ -970,8 +1154,10 @@ Chacune a son option recommandée en premier. Une à la fois.
   1. **(recommandée)** Il ne lève plus lui-même : la levée est celle de la watch qui tient l'isolation.
   2. Il applique la même règle dans son processus.
 - **Q6 — Les appelants attendus** (un pipeline, un administrateur, une politique qui pose un agent).
-  1. **(recommandée)** Une liste déclarée, jamais une porte, toujours nommée sur la carte.
-  2. Tout appelant compte : chaque geste d'un humain retient la quarantaine.
+  1. **(recommandée)** Une liste **par opération**, toujours nommée sur la carte ; une Run Command,
+     VMAccess et un export de disque ne sont jamais excusés.
+  2. Une liste pour toutes les opérations.
+  3. Aucune liste : tout appelant compte, et chaque geste d'un humain retient la quarantaine.
 - **Q7 — Le scénario « porte ouverte » au banc.**
   1. **(recommandée)** Plus tard, avec un second principal du banc déclaré pour ça.
   2. Dans le premier exercice de LEV7, Orodruin compté comme la porte.
@@ -985,6 +1171,15 @@ Chacune a son option recommandée en premier. Une à la fois.
   1. **(recommandée)** Au plus /24 en IPv4 et /64 en IPv6.
   2. Au plus 256 adresses, comme les sources forensiques.
   3. Aucune exception : tout Internet est fermé sur ces ports.
+- **Q11 — L'appartenance aux groupes, lue par H0.**
+  1. **(recommandée)** H0 lit l'appartenance par `checkMemberGroups`, sous `GroupMember.Read.All` en
+     lecture seule, avec ton consentement : la porte se lit fermée quand le tiers n'est dans aucun
+     groupe privilégié.
+  2. Rien de plus pour H0 : une attribution à un groupe retient la quarantaine dès qu'un tiers a agi.
+- **Q12 — La retenue `--keep-isolated` vers la watch.**
+  1. **(recommandée)** Un verbe fermé `hold_lift` de la file signée de FS1, déposé par la console de
+     H0 ou le bot ; le poste te dit de le poser et le relit.
+  2. Une commande de la CLI de H0 par SSH, qui écrit la retenue depuis le poste.
 
 **Points ouverts, hors de LEV1** :
 - une probation après une levée humaine **sans** restore (un incident réel nettoyé à la main) ;
