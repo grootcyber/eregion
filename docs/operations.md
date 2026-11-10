@@ -4277,6 +4277,48 @@ make bench-report RUN=<run_id> [TARGET=…] [OUT=runs/bench/<run_id>.json]  # l'
 
 DRL1 (`docs/design/drill-banc.md`) pourra appeler les deux cibles autour de chaque occurrence.
 
+## Piloter le banc depuis le téléphone (MOB1, #686)
+
+C'est toujours l'opérateur qui tape la commande **sur son poste** ; seul le chemin téléphone → poste
+change, par deux barrières indépendantes : le réseau privé (Tailscale, une règle d'accès qui n'ouvre
+que téléphone → poste), puis le serveur SSH du poste, dans WSL, à clé seule, la clé dans la puce du
+téléphone. Orodruin n'écoute toujours que le SSH du poste (DRL1) ; rien n'est installé sur H0. Le
+guide, de l'installation à la perte du téléphone : [`docs/demarrer/mobile.md`](demarrer/mobile.md) ;
+les modèles du poste : `infra/poste/` ; la frontière : `docs/design/modele-de-menace.md`, frontière 9.
+
+```zsh
+make bench-run TARGET=<vm> SCENARIO=<id> [DRY_RUN=1]           # préflight, demande, nom tapé, Orodruin, rapport
+make bench-restore TARGET=<vm> [BEFORE=…] [RUN=…] [DRY_RUN=1]  # le restore du poste, paire de la console
+make glorfindel-host-tunnel-private                            # la console de H0 sur l'adresse privée du poste
+sudo -v && make mobile-check                                   # le poste ouvert au téléphone, lu
+```
+
+- **`bench-run`** (`scripts/bench_run.py`) : `make bench-preflight` (un ✗, rien ne part) ; un fil
+  `SCENARIO` → `TARGET`, l'id de la VM lu sur Azure (une seule de ce nom), en une demande du seul
+  lecteur des demandes (`eregion_core/exercise_request.py`) ; le nom de la cible tapé, destructif ou
+  non, puis « [o/N] » ; la demande portée sur Orodruin et lancée comme `make orodruin-exercise` (le
+  nom tapé retiré à la fin) ; `make bench-report` pour chaque run nommé. La demande est écrite sur le
+  poste, pas dans le répertoire de la console : Dagorlad ne suit pas sa chronologie (le run, ses
+  cartes et son rapport, si).
+- **`bench-restore`** (`scripts/bench_restore.py`) : la paire de la console exigée (RST1) ;
+  `--before` le T0 du run, son `attack_started` (SEC4c), lu dans `runs/bench/<run_id>.json` (`RUN=`,
+  sinon le dernier rapport de `TARGET`), sauf `BEFORE=` ; le coffre et le compte de transit du poste ;
+  le nom de la VM tapé ; l'essai à blanc, puis « [o/N] », puis `glorfindel restore … --keep-isolated
+  --wait --yes` sous la paire. `--keep-isolated` toujours : la levée est celle de H0.
+- **Le garde** : les deux refusent dans une session d'agent (`EREGION_AGENT_SESSION`, le worktree
+  d'un lot), seul d'abord, avant qu'aucune commande de H0 ni d'Orodruin ne soit développée par make
+  (`bench_shared.session_refusal`, la règle de `scripts/bench_reader.py`). `TARGET`, `SCENARIO`,
+  `BEFORE`, `RUN` : sur la ligne de commande, jamais de l'environnement.
+- **`glorfindel-host-tunnel-private`** : la clé d'hôte de H0 épinglée exigée ; le port 7007 lié à
+  l'adresse que donne `tailscale ip -4` (`scripts/mobile.py private-ip`, une adresse de
+  100.64.0.0/10), sinon rien ne s'ouvre ; `ExitOnForwardFailure=yes`. La console de H0 doit lister
+  cette adresse dans `EREGION_CONSOLE_HOSTS` (`host.env`, push, `docker compose up -d war-room`) :
+  sans elle, un 403, et la cible le dit.
+- **`mobile-check`** (`scripts/mobile.py check`), en lecture seule : Tailscale (une adresse, Tailscale
+  SSH fermé), `sshd -T` (mot de passe, clavier interactif, `hostbased`, GSSAPI fermés, la clé seule,
+  pas de root), `ss -Hltn` (le serveur SSH sur l'adresse privée seule, le port de la console nulle
+  part ailleurs), `~/.ssh/authorized_keys` (compté, jamais affiché). Aucune adresse n'est affichée.
+
 ## auditd au banc (AUD1, #408)
 
 ADM1 et COR1 jugent un `sudo` vers root ; ce qui se fait ensuite dans un shell root, sudo ne l'écrit

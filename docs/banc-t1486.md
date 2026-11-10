@@ -44,6 +44,7 @@ T1486 est une technique **destructive** du catalogue (`destructive: true`,
 |---|---|---|
 | **Dagorlad** : le fil T1486 → gondolin, « Request run from Orodruin », puis `make orodruin-exercise REQUEST=…` | le nom de la cible tapé sur le poste, comparé par Orodruin au nom qu'Azure lui donne (`annatar/runner/engine.py:267-274`) ; le scénario construit depuis le catalogue, son `setup` compris (`annatar/campaign/synthesizer.py:188-196`) ; l'identifiant de la demande dans la fenêtre et le rapport ; la chronologie de Dagorlad | **le chemin prévu, mesuré** |
 | `annatar run annatar/scenarios/azure/ransomware-vm.yaml --yes` dans le `docker run` durci d'Orodruin (`make orodruin-ssh`) | les mêmes gardes d'inscription, de zone et de watch, la fenêtre et le rapport publiés (`annatar/cli.py:89`) ; **pas** de nom tapé (la garde ne joue que pour une demande, `engine.py:267`), pas de chronologie dans Dagorlad | un repli, mesuré aussi, moins gardé |
+| **`make bench-run TARGET=… SCENARIO=T1486`** (MOB1, #686) : depuis le poste, au clavier ou depuis le téléphone ([le guide](demarrer/mobile.md)) | le préflight d'abord (un ✗ : rien ne part), la demande d'un fil écrite sur le poste par le même lecteur que celles de Dagorlad, le nom de la cible tapé, puis le même lancement que `make orodruin-exercise` et `make bench-report` pour le run (`scripts/bench_run.py`) ; la demande n'est pas dans le répertoire de la console : **pas** de chronologie de la demande dans Dagorlad (le run, ses cartes et son rapport, si) | le même chemin gardé, en une commande |
 | une campagne déclarée (`make orodruin-campaign-plan CAMPAIGN_DECLARED=…`) | refusée deux fois : T1486 est un script maison et destructif (`annatar/campaign/declared.py:119-122`) ; `orodruin-campaign-plan` ne passe jamais `--allow-destructive` (`Makefile:1546`) | **écartée** |
 
 Aucun de ces chemins n'est un run de développement tant que `--without-glorfindel` n'est pas donné.
@@ -407,6 +408,12 @@ humain, et il se mesure comme tel. **Ne pas cliquer 🔄 Restore**, ni dans la c
 Discord : refusé, ce n'est pas son hôte.
 
 ### 6. La restauration, depuis le poste (15 à 30 min)
+
+**En une commande (MOB1)** : `make bench-restore TARGET=vm-celebrimbor-gondolin [DRY_RUN=1]` fait ce qui suit — la
+paire de la console exigée, `--before` le T0 du run (`runs/bench/<run_id>.json`, que `make bench-report` écrit ;
+`BEFORE=${AVANT}` pour le point de l'étape 2), `--keep-isolated`, le nom de la VM tapé, l'essai à blanc, puis « [o/N] »
+(`scripts/bench_restore.py`, [le guide](demarrer/mobile.md)). Le prérequis du poste et le job du coffre, ci-dessous, restent
+à vérifier avant.
 
 **Le prérequis du poste.** Le restore lit le coffre (`azure_backup_vault`) et son compte de transit
 (`restore_staging_storage`) dans la `glorfindel-config.yaml` du poste, à la racine du dépôt

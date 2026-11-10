@@ -18,6 +18,7 @@ _SEC6 (#277), 28/10, sur la 0.4.3. Une page par frontière : qui y est de confia
 | [6. La CI et le CD](#6-la-ci-et-le-cd-github-release-tags) | le mainteneur, `main` protégée | code des PR, événements GitHub, secrets, releases vers H0 |
 | [7. Les sessions d'agents → `main` → le CD](#7-les-sessions-dagents--main--le-cd) | le mainteneur (tags `v*`, release, réglages) ; les sessions, pour le code qu'elles fusionnent | branches, PR, fusions, verdicts de relecture, releases en brouillon |
 | [8. La session Banc](#8-la-session-banc-et-lidentité-de-lecture-du-banc) | Jonathan (la paire de clés, l'apply, le profil) ; la session Banc, pour lire | requêtes KQL vers le workspace du banc, leurs résultats vers le modèle |
+| [9. Le téléphone](#9-le-téléphone-et-son-chemin-vers-le-poste) | l'opérateur, son téléphone (la clé dans sa puce) et son compte Tailscale | un terminal SSH vers le poste, les commandes du banc qu'il y tape, la console de H0 par le tunnel du poste |
 
 ---
 
@@ -431,6 +432,45 @@ _BRO1 (#614), 06/11. Décision de Jonathan : une session Claude « Banc » lit l
 - une règle de refus des sessions de code sur le dossier du lecteur — planifié : #614
 - un utilisateur Unix propre aux sessions — planifié
 - le rôle et la connexion mesurés au banc — planifié : #614
+
+---
+
+## 9. Le téléphone et son chemin vers le poste
+
+_MOB1 (#686), 10/11. Décision de Jonathan, « security by design » : piloter un run du banc à la main depuis son téléphone, et ouvrir la console de H0. C'est toujours l'opérateur qui tape la commande sur son poste ; seul le chemin entre le téléphone et le poste change. Orodruin n'écoute toujours que le SSH du poste (DRL1), rien n'est installé sur H0. Le guide : [`docs/demarrer/mobile.md`](../demarrer/mobile.md)._
+
+**De confiance** : l'opérateur, son téléphone déverrouillé par sa biométrie, la clé gardée dans la puce sécurisée du téléphone, son compte Tailscale (MFA). **Pas de confiance** : le réseau où se trouve le téléphone (un Wi-Fi public, l'opérateur mobile), les autres appareils du tailnet, les autres processus de Windows sur l'hôte du poste, un téléphone perdu ou volé.
+
+**Ce qui la traverse** : une session SSH du téléphone vers le serveur SSH du poste, dans WSL, et ce qu'on y tape (`make bench-run`, `make bench-restore`, qui font agir Orodruin et le restore sous la paire de la console) ; la console de H0, en HTTP, du navigateur du téléphone vers le port que le poste lie à son adresse privée, puis par le tunnel SSH du poste vers H0.
+
+**Deux barrières indépendantes**, l'une tenue sans l'autre :
+1. **le réseau privé** : Tailscale, le compte avec MFA, une règle d'accès qui n'ouvre que téléphone → poste:22 et le port de la console (`infra/poste/tailscale-acl.hujson`), Tailscale SSH fermé ;
+2. **le serveur SSH du poste** : il n'écoute que sur l'adresse privée, à clé seule — aucun mot de passe, aucun clavier interactif —, la clé non exportable, dans la puce du téléphone, débloquée par biométrie (`infra/poste/sshd_config.d/00-eregion.conf`).
+
+| | Menace | Ce qui la tient |
+|---|---|---|
+| S | Quelqu'un sur le réseau du téléphone, ou sur Internet, se connecte au poste | Le serveur SSH n'écoute que sur l'adresse privée, que seul le tailnet joint ; la règle d'accès n'y admet que le téléphone. `make mobile-check` lit les écoutes (`ss`) : une écoute sur toutes les interfaces, la boucle locale ou une autre adresse est un ✗ (`scripts/mobile.py`, `tests/unit/test_mobile.py`, M4704) |
+| S | Un mot de passe deviné, une clé copiée | Mot de passe, clavier interactif, mot de passe vide, `hostbased` fermés, `AuthenticationMethods publickey` ; `mobile-check` lit ce que `sshd` applique (`sshd -T`), pas le fichier (M4705). La clé ne quitte pas la puce du téléphone ; elle se débloque par biométrie ; sa ligne d'`authorized_keys` la borne au tailnet (`from=`) et lui retire toute redirection |
+| S | Un appareil du tailnet, ou Tailscale SSH, entre sans la clé | La règle d'accès ne nomme que le téléphone ; Tailscale SSH fermé — ouvert, il ferait entrer le tailnet sans la clé, une barrière au lieu de deux : `mobile-check` le dit ✗ |
+| E | Une session d'agent du poste lance une attaque ou un restore par ces commandes | `make bench-run` et `make bench-restore` refusent dans une session d'agent (`EREGION_AGENT_SESSION`, le worktree d'un lot), le garde seul d'abord, avant qu'aucune commande de H0 ni d'Orodruin ne soit développée (`bench_shared.session_refusal`, M4696, M4699) ; `TARGET`, `SCENARIO`, `BEFORE`, `RUN` venus de l'environnement sont refusés. Un garde-fou contre l'erreur, pas contre une session qui le veut : même utilisateur Unix (frontière 8) |
+| T | Une commande lancée sur la mauvaise cible, ou sans qu'on l'ait voulue | Le nom de la cible tapé, destructif ou non, comparé au nom qu'Azure donne, puis « [o/N] » ; un préflight rouge n'envoie rien (M4697, M4698, M4700). Orodruin rejuge la demande comme celles de Dagorlad : contrat, watch vivante, inscription, zone, le nom tapé comparé au nom qu'il lit, plafond (DG-b) |
+| T | Un restore qui restaure le mauvais point, ou qui lève l'isolement depuis le poste | `--before` vaut le T0 du run, son `attack_started` (SEC4c), lu dans le rapport du run que le poste a composé (M4702), ou `BEFORE=` ; jamais un instant à venir. `--keep-isolated` toujours : la levée est celle de H0 (REC1, REC1b) (M4701). Le restore part sous la paire de la console seule, et lit ses droits avant de toucher la VM (RST1) |
+| I | Le port de la console exposé au-delà du téléphone | `make glorfindel-host-tunnel-private` lie le port à la seule adresse privée du poste (`tailscale ip -4`, une adresse de 100.64.0.0/10) ; introuvable, rien ne s'ouvre, jamais `0.0.0.0` ni la boucle locale que WSL partage avec Windows (M4703) ; la clé d'hôte de H0 épinglée ; `ExitOnForwardFailure`. `mobile-check` voit le port exposé ailleurs. Le jeton de la console reste exigé ; la console ne répond qu'à l'adresse listée dans `EREGION_CONSOLE_HOSTS` (SEC1) |
+| I | Le trafic de la console lu en chemin | Le HTTP du navigateur ne quitte pas le tunnel chiffré de Tailscale jusqu'au poste, puis le tunnel SSH jusqu'à H0 ; le cookie de session n'est pas `Secure` (HTTP), il ne passe que par ces deux tunnels |
+| D | Le poste injoignable (en veille, WSL arrêté), une commande coupée par le réseau | Le Windows de l'hôte ne se met pas en veille (le guide) ; les commandes longues tournent dans `tmux` et survivent à la coupure du téléphone |
+| R | Un geste du téléphone sans trace | Ce sont les mêmes commandes qu'au clavier du poste, avec leurs traces : la demande et sa fenêtre sur Orodruin, le rapport du run, le journal d'activité d'Azure sous la paire de la console. Le journal du serveur SSH du poste dit chaque connexion et sa clé |
+| E | Un téléphone perdu ou volé | Deux gestes, chacun suffisant : retirer l'appareil du tailnet, retirer sa clé d'`authorized_keys` ; puis tourner le jeton de la console que son navigateur a vu (le guide, « La perte du téléphone ») |
+
+**Où c'est** : `scripts/bench_run.py`, `scripts/bench_restore.py`, `scripts/mobile.py`, `scripts/bench_shared.py` (`session_refusal`), le `Makefile` (`bench-run`, `bench-restore`, `glorfindel-host-tunnel-private`, `mobile-check`), `infra/poste/` ; tests `tests/unit/test_bench_run.py`, `tests/unit/test_bench_restore.py`, `tests/unit/test_mobile.py`. Le guide : [`docs/demarrer/mobile.md`](../demarrer/mobile.md).
+
+**Ce qui reste, assumé** :
+- Un téléphone déverrouillé, l'application ouverte et la session reprise, est l'opérateur : la biométrie débloque la clé, pas chaque commande. Les gestes qui comptent font taper un nom.
+- Le restore depuis le téléphone passe par le terminal du poste, la clé matérielle du SSH tenant lieu de second facteur, jusqu'à FS1g et TOT1 (#685).
+- `make mobile-check` lit la configuration globale de `sshd` : un bloc `Match` la change pour une connexion ; le modèle n'en a pas. Il ne lit ni la règle d'accès de Tailscale (sa console seule la montre), ni le pare-feu de Windows, ni le réseau de WSL en mode *mirrored*.
+
+**Ouvert** :
+- les gestes de Jonathan qui ouvrent cette frontière — planifié : #686
+- un run lancé et la console ouverte depuis le téléphone — planifié : #686
 
 ---
 
