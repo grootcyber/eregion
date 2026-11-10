@@ -69,6 +69,13 @@ TESTS_ALSO = {
     "M13": f"{_REG}test_an_interrupted_reset_is_a_release_under_way "
            f"{_RE}test_a_release_in_progress_is_not_put_back "
            f"{_RE}test_an_unblock_in_progress_is_not_put_back",
+    # Flaky at the 0.5.9 release gate (MUT9: survives the machine on seed 637433568, caught on
+    # 637433567): A0's own frozen sequences — an older version's fixed-name deny-all, its state
+    # lost, on an NSG shared since or whose sharing can't be read — and the unit test of a release
+    # without state that leaves it, said, on another VM's NSG.
+    "M33": f"{_REG}test_an_old_isolation_on_an_nsg_shared_since_is_not_released "
+           f"{_REG}test_an_old_isolation_is_not_released_when_its_nsg_cant_be_read "
+           "tests/unit/test_glorfindel.py::test_release_isolation_without_state_sweeps_every_nic",
     # The unit test that holds its property, outside its target.
     "M36": "tests/unit/test_glorfindel.py::test_an_old_state_file_is_moved_before_it_is_rewritten",
     # Their tests of their own.
