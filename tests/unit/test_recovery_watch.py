@@ -1029,12 +1029,12 @@ class RecoveryMachine(RuleBasedStateMachine):
             self.f.caller = H0
         self.cmds.setdefault(vm, []).append({"at": self._now(), "by": ATTACKER, "done": False, "refused": False})
 
-    @rule(i=st.integers(0, 1))
-    def hostile_guest(self, i):
-        """Root on the VM writes the harmless word in the agent's status: no Run Command, nothing
-        in the activity log."""
+    @rule(i=st.integers(0, 1), marker=st.booleans())
+    def hostile_guest(self, i, marker):
+        """Root on the VM writes a word in the agent's status — the harmless one, or another: no Run
+        Command, nothing in the activity log."""
         v = self.f.vms[key(self.vms[i])]
-        v["said"] = {"message": "Enable succeeded:\n[stdout]\nglorfindel: run command neutralized\n[stderr]\n",
+        v["said"] = {"message": f"Enable succeeded:\n[stdout]\n{NEUTRALIZED_MARKER if marker else 'rooted'}\n[stderr]\n",
                      "time": datetime.fromtimestamp(self._now(), tz=timezone.utc)}
 
     @rule(i=st.integers(0, 1), data=st.data(), start=st.sampled_from([-10, 2, 10]),
@@ -1063,18 +1063,30 @@ class RecoveryMachine(RuleBasedStateMachine):
           kind=st.sampled_from(["replace", "replace", "replace", "disks"]),
           container=st.sampled_from([True, True, True, False]),
           power=st.sampled_from(["running", "running", "running", "deallocated"]),
-          hostile=st.booleans(), during=st.sampled_from([False, False, False, True]))
-    def workstation(self, i, start, neutralize, status, kind, container, power, hostile, during):
+          hostile=st.sampled_from([None, None, "marker", "other"]),
+          during=st.sampled_from([False, False, False, True]),
+          between=st.sampled_from(["none", "none", "refused", "cut"]),
+          refused_by=st.sampled_from([CONSOLE, ATTACKER, H0]))
+    def workstation(self, i, start, neutralize, status, kind, container, power, hostile, during, between,
+                    refused_by):
         """What `glorfindel restore` does from the workstation — the console's harmless Run Command,
         then an in-place restore of the clean point taken before the isolation: the case to prove —
         each part of it drawn otherwise once in a while: no neutralization, an attacker's command
         printing the marker, a failed job, a restore elsewhere, no container named, the VM left off,
-        a point of the incident, root writing the harmless word after the boot."""
+        a point of the incident, root writing a word after the boot (the harmless one, or another);
+        and, between the neutralization and the deallocation that precedes the restore, an
+        attacker's command that failed or was cut, or, after it, a Run Command the platform refuses
+        (REC1b: the restore tried again, by the console or by another)."""
         vm = self.vms[i]
         if vm not in self.iso_at:
             return
         if neutralize != "none":
             self.run_command(i, CONSOLE if neutralize == "console" else ATTACKER, True)
+        if between == "cut":
+            self.cut_command(i, "Failed", False)
+        self.f.deallocate(vm)                         # as `glorfindel restore` does before the vault
+        if between == "refused":
+            self.run_command(i, refused_by, True)
         pts = sorted(self.f.points[key(vm)], key=lambda p: p["time"])
         point = pts[-1] if during else pts[0]
         begin = self._now() + start * 60
@@ -1085,9 +1097,9 @@ class RecoveryMachine(RuleBasedStateMachine):
                           "point": point["time"].timestamp(), "named": True, "kind": kind,
                           "container": container, "by_id": False})
         if hostile:
-            self.f.vms[key(vm)]["said"] = {
-                "message": "Enable succeeded:\n[stdout]\nglorfindel: run command neutralized\n[stderr]\n",
-                "time": datetime.fromtimestamp(begin + 960, tz=timezone.utc)}
+            word = NEUTRALIZED_MARKER if hostile == "marker" else "rooted"
+            self.f.vms[key(vm)]["said"] = {"message": f"Enable succeeded:\n[stdout]\n{word}\n[stderr]\n",
+                                           "time": datetime.fromtimestamp(begin + 960, tz=timezone.utc)}
 
     @rule(i=st.integers(0, 1))
     def start_vm(self, i):
