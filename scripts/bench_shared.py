@@ -109,10 +109,23 @@ def remote(base: list[str], command: str) -> list[str]:
 
 
 def host_key_pinned(base: list[str]) -> bool:
-    """The ssh command accepts only a host key already verified (StrictHostKeyChecking=yes, the
-    Makefile's when the fingerprint is given): never accept-new, never a prompt."""
-    joined = " ".join(base)
-    return "StrictHostKeyChecking=yes" in joined and "accept-new" not in joined
+    """The ssh command accepts only a host key already verified — the Makefile's when the fingerprint
+    is given: its `-o` options read in order, as ssh reads them (the first value of an option wins),
+    the first StrictHostKeyChecking `yes` and a UserKnownHostsFile given. Never accept-new, never a
+    prompt."""
+    options: dict[str, str] = {}
+    words = list(base[1:-1])
+    for i, w in enumerate(words):
+        if w == "-o" and i + 1 < len(words):
+            pair = words[i + 1]
+        elif w.startswith("-o") and len(w) > 2:
+            pair = w[2:]
+        else:
+            continue
+        key, _, value = pair.replace(" ", "=", 1).partition("=")
+        options.setdefault(key.strip().lower(), value.strip())
+    return (options.get("stricthostkeychecking", "").lower() == "yes"
+            and bool(options.get("userknownhostsfile")))
 
 
 # The watch's mounts the reader needs, read-only in its own container: (target, required).
@@ -132,7 +145,9 @@ def reader_command(mounts: list[dict], image: str, ask: str, vm: str, run_id: st
     on a mount or an image it does not recognize."""
     if not _IMAGE_ID.fullmatch(image or ""):
         raise RuntimeError("l'image de la watch de H0 ne se lit pas (docker inspect)")
-    by_target = {str(m.get("Destination") or ""): str(m.get("Source") or "") for m in mounts if isinstance(m, dict)}
+    # Bind mounts only: a volume or a tmpfs names no host path of the watch's.
+    by_target = {str(m.get("Destination") or ""): str(m.get("Source") or "") for m in mounts
+                 if isinstance(m, dict) and m.get("Type") == "bind"}
     words = ["docker", "run", *READER_HARDEN]
     for target, required in READER_MOUNTS:
         source = by_target.get(target, "")

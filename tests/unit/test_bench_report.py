@@ -306,8 +306,11 @@ def test_the_h0_reader_runs_in_a_disposable_container_of_the_deployed_image(tmp_
 
 @pytest.mark.parametrize("mounts,why", [
     ([], "ne monte pas /app/runs/glorfindel"),
-    ([{"Source": "/home/x/runs/glorfindel,type=volume", "Destination": "/app/runs/glorfindel"}], "pas un chemin attendu"),
-    ([{"Source": "/home/x/../../etc", "Destination": "/app/runs/glorfindel"}], "pas un chemin attendu"),
+    ([{"Type": "bind", "Source": "/home/x/runs/glorfindel,type=volume", "Destination": "/app/runs/glorfindel"}],
+     "pas un chemin attendu"),
+    ([{"Type": "volume", "Source": "/var/lib/docker/volumes/x/_data", "Destination": "/app/runs/glorfindel"}],
+     "ne monte pas /app/runs/glorfindel"),
+    ([{"Type": "bind", "Source": "/home/x/../../etc", "Destination": "/app/runs/glorfindel"}], "pas un chemin attendu"),
 ])
 def test_the_reader_s_mounts_are_refused_when_they_are_not_the_watch_s(mounts, why):
     with pytest.raises(RuntimeError, match=why):
@@ -319,7 +322,9 @@ def test_the_reader_s_mounts_are_refused_when_they_are_not_the_watch_s(mounts, w
 @pytest.mark.parametrize("ssh,known_rc", [
     (f"ssh -o StrictHostKeyChecking=accept-new glorfindel@{bw.H0_IP}", 0),
     (f"ssh glorfindel@{bw.H0_IP}", 0),
-    (f"ssh -o StrictHostKeyChecking=yes glorfindel@{bw.H0_IP}", 1),
+    (f"ssh {bw.PINNED} glorfindel@{bw.H0_IP}", 1),
+    (f"ssh -o StrictHostKeyChecking=no {bw.PINNED} glorfindel@{bw.H0_IP}", 0),
+    (f"ssh -o StrictHostKeyChecking=yes glorfindel@{bw.H0_IP}", 0),
 ])
 def test_an_unverified_h0_host_key_sends_nothing(tmp_path, ssh, known_rc):
     w = _world_0911(tmp_path)

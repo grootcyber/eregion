@@ -453,10 +453,20 @@ def _safe(check, ctx: Context) -> list:
         return [line(bs.FAIL, f"{name} : illisible ({type(e).__name__}: {bs.scrub(str(e))[:200]})")]
 
 
+H0_UNPINNED = "H0 : sa clé d'hôte n'est pas vérifiée par son empreinte (HOST_SSH_FINGERPRINT) : rien n'est envoyé"
+# What reaches H0 by ssh: none of it without its host key verified (the make targets included: they
+# would connect in accept-new).
+H0_CHECKS = ("check_h0", "check_cd", "check_target_on_h0")
+
+
 def preflight(ctx: Context) -> list:
     lines: list = []
+    h0_pinned = bs.host_key_pinned(bs.ssh_argv("BENCH_H0_SSH", ctx.env))
+    if not h0_pinned:
+        lines.append(line(bs.FAIL, H0_UNPINNED))
     for check in CHECKS:
-        lines += _safe(check, ctx)
+        if h0_pinned or check.__name__ not in H0_CHECKS:
+            lines += _safe(check, ctx)
     if not ctx.sub:
         lines.append(line(bs.FAIL, "la cible : AZURE_SUBSCRIPTION_ID vide (.envrc)"))
         return lines
@@ -470,7 +480,8 @@ def preflight(ctx: Context) -> list:
         lines.append(line(bs.FAIL, "les contrôles de la cible : sautés, sa VM ne se trouve pas"))
         return lines
     for check in TARGET_CHECKS:
-        lines += _safe(check, ctx)
+        if h0_pinned or check.__name__ not in H0_CHECKS:
+            lines += _safe(check, ctx)
     return lines
 
 

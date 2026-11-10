@@ -4249,7 +4249,10 @@ make bench-report RUN=<run_id> [TARGET=…] [OUT=runs/bench/<run_id>.json]  # l'
   `~/.glorfindel` et `glorfindel-config.yaml` montés `readonly` (`--mount` : une source absente est
   refusée, jamais créée). Sans réseau : ni IMDS, ni jeton, ni cloud. Il ne renvoie ni raisonnement, ni
   signal brut, ni id. Rien ne part tant que la clé d'hôte de H0 n'est pas vérifiée par son empreinte
-  (`HOST_SSH_FINGERPRINT`, `StrictHostKeyChecking=yes`) ; de même pour Orodruin. La suite possible :
+  (`HOST_SSH_FINGERPRINT` : la première option `StrictHostKeyChecking` vaut `yes`, comme ssh la lit,
+  et un `UserKnownHostsFile` est donné) ; de même pour Orodruin. Sans elle, le préflight ne lance pas
+  non plus `make glorfindel-host-status` ni `glorfindel-host-cd-status`, qui se connecteraient en
+  `accept-new` : une seule ligne ✗ le dit. Le lecteur ne prend que les montages `bind` de la watch. La suite possible :
   une sous-commande de lecture livrée dans l'image, à la place du script venu du checkout du poste.
 - **`bench-report`** (`scripts/bench_report.py`) : sur H0, le rapport du run, ses cycles, les levées,
   l'état d'isolement ; sur Azure, le journal d'activité des seules ressources de la cible, chacune lue

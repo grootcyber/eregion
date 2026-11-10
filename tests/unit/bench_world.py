@@ -42,6 +42,9 @@ HUMAN_UPN = "operator@example.com"
 H0_IP, ORO_IP, LEAKED_IP = "192.0.2.10", "192.0.2.20", "203.0.113.9"
 
 IMAGE = "sha256:" + "0" * 63 + "1"      # the deployed watch's image, by its id
+# The Makefile's ssh options when the fingerprint is given (HOST_SSH_OPTS, SSH_OPTS).
+PINNED = ("-o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/operator/.eregion/h0_known_hosts "
+          "-o HostKeyAlgorithms=ssh-ed25519")
 RUN = "20261109T164009Z-0a0a"
 REQUEST = "r-20261109T163409Z-000aaa"
 DAY = "2026-11-09"
@@ -160,8 +163,8 @@ class World:
                 if not k.startswith(("AZURE_", "EREGION_", "GLORFINDEL_", "BENCH_", "ARM_"))}
         return {**base, "PATH": f"{self.bin}{os.pathsep}{os.environ['PATH']}",
                 "BENCH_FAKE_PLAN": str(self.plan_file), "BENCH_FAKE_LOG": str(self.log),
-                "BENCH_H0_SSH": f"ssh -o StrictHostKeyChecking=yes glorfindel@{H0_IP}",
-                "BENCH_ORO_SSH": f"ssh -o StrictHostKeyChecking=yes orodruin@{ORO_IP}",
+                "BENCH_H0_SSH": f"ssh {PINNED} glorfindel@{H0_IP}",
+                "BENCH_ORO_SSH": f"ssh {PINNED} orodruin@{ORO_IP}",
                 "BENCH_ORO_RUN": "docker run --rm --read-only --env-file orodruin.env eregion-annatar:orodruin",
                 "AZURE_SUBSCRIPTION_ID": SUB, "AZURE_TENANT_ID": TENANT,
                 "EREGION_CONSOLE_AZURE_CLIENT_ID": CONSOLE_APP, "EREGION_CONSOLE_AZURE_CLIENT_SECRET": SECRET,

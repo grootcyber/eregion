@@ -1,6 +1,6 @@
 """BNC1 (#682): the bench read by the machine — `make bench-preflight` (the step 0 in one verdict) and
 `make bench-report` (a run's chronology, composed alone), read only, no identifier printed.
-M4676–M4685 and M4706–M4709, measured by tests/unit/test_bench_preflight.py and tests/unit/test_bench_report.py."""
+M4676–M4685, M4706–M4709 and M4730, measured by tests/unit/test_bench_preflight.py and tests/unit/test_bench_report.py."""
 PRE = "scripts/bench_preflight.py"
 REP = "scripts/bench_report.py"
 SHARED = "scripts/bench_shared.py"
@@ -65,6 +65,11 @@ MUTANTS = [
      SHARED,
      '    if not host_key_pinned(base):\n',
      '    if False:\n'),
+    # The review's second round.
+    ("M4730", "H0's status and CD read through make without a verified host key: the make targets "
+     "connect in accept-new (BNC1 review 2)", PRE,
+     '    for check in CHECKS:\n        if h0_pinned or check.__name__ not in H0_CHECKS:\n',
+     '    for check in CHECKS:\n        if True:\n'),
 ]
 TESTS = {
     "M4676": f"{_P}::test_h0_s_rights_read_wildcards_and_not_actions",
@@ -81,4 +86,5 @@ TESTS = {
     "M4707": f"{_R}::test_the_h0_reader_runs_in_a_disposable_container_of_the_deployed_image",
     "M4708": f"{_R}::test_the_0911_chronology_is_composed_again",
     "M4709": f"{_R}::test_an_unverified_h0_host_key_sends_nothing",
+    "M4730": f"{_P}::test_an_unpinned_host_key_sends_nothing_to_orodruin_nor_h0",
 }

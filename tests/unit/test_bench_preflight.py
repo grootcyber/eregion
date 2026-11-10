@@ -396,16 +396,47 @@ def test_a_management_group_assignment_is_said_unread(tmp_path, monkeypatch):
                                     "à la main)") for f in fails)
 
 
-def test_an_unpinned_host_key_sends_nothing_to_orodruin_nor_h0(tmp_path, monkeypatch):
+H0_TARGETS = ("glorfindel-host-status", "glorfindel-host-cd-status")
+
+
+@pytest.mark.parametrize("h0_ssh", [
+    f"ssh -o StrictHostKeyChecking=accept-new glorfindel@{bw.H0_IP}",       # the Makefile's, no fingerprint
+    f"ssh -o StrictHostKeyChecking=no {bw.PINNED} glorfindel@{bw.H0_IP}",   # ssh keeps the first value
+    f"ssh -o StrictHostKeyChecking=yes glorfindel@{bw.H0_IP}",              # no known_hosts file of its own
+])
+def test_an_unpinned_host_key_sends_nothing_to_orodruin_nor_h0(tmp_path, monkeypatch, h0_ssh):
+    """Nothing reaches H0 by ssh — the reader, nor `make glorfindel-host-status` and
+    `glorfindel-host-cd-status`, which would connect in accept-new: one ✗, and make never called for them."""
     w = _world(tmp_path, **_IN_ORDER)
     code, out, _ = _preflight(w, arm_in_order(), monkeypatch,
                               BENCH_ORO_SSH=f"ssh -o StrictHostKeyChecking=accept-new orodruin@{bw.ORO_IP}",
-                              BENCH_H0_SSH=f"ssh -o StrictHostKeyChecking=accept-new glorfindel@{bw.H0_IP}")
+                              BENCH_H0_SSH=h0_ssh)
     assert code == 1
     fails = _marked(out, bs.FAIL)
     assert "Orodruin : sa clé d'hôte n'est pas épinglée (StrictHostKeyChecking=yes) : rien n'est envoyé" in fails
-    assert any(f.startswith("la cible sur H0 : la clé d'hôte de H0 n'est pas vérifiée") for f in fails)
+    assert [f for f in fails if f.startswith(("H0", "la cible sur H0"))] == [
+        "H0 : sa clé d'hôte n'est pas vérifiée par son empreinte (HOST_SSH_FINGERPRINT) : rien n'est envoyé"]
     assert not [c for c in w.calls() if c[0] == "ssh"]
+    assert not [c for c in w.calls() if c[0] == "make" and any(t in c for t in H0_TARGETS)]
+
+
+def test_a_pinned_host_key_reads_h0_s_status_through_make(tmp_path, monkeypatch):
+    w = _world(tmp_path, **_IN_ORDER)
+    _preflight(w, arm_in_order(), monkeypatch)
+    made = [t for c in w.calls() if c[0] == "make" for t in H0_TARGETS if t in c]
+    assert made == list(H0_TARGETS)
+
+
+@pytest.mark.parametrize("opts,pinned", [
+    (bw.PINNED, True),
+    ("-o StrictHostKeyChecking=no " + bw.PINNED, False),
+    ("-oStrictHostKeyChecking=yes -oUserKnownHostsFile=/k", True),
+    ("-o StrictHostKeyChecking=yes", False),
+    ("-o UserKnownHostsFile=/k -o StrictHostKeyChecking=accept-new -o StrictHostKeyChecking=yes", False),
+    ("-o stricthostkeychecking=YES -o userknownhostsfile=/k", True),
+])
+def test_the_host_key_options_are_read_as_ssh_reads_them(opts, pinned):
+    assert bs.host_key_pinned(["ssh", *opts.split(), "glorfindel@h0"]) is pinned
 
 
 def test_an_autonomous_mode_as_configured_is_the_run_s_mode(tmp_path, monkeypatch):
