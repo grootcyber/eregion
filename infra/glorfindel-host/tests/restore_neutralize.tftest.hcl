@@ -21,6 +21,12 @@ mock_provider "azurerm" {
       id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-celebrimbor/providers/Microsoft.OperationalInsights/workspaces/law-celebrimbor"
     }
   }
+  # RST1 : le compte de transit de restore.auto.tfvars, relu sur Azure (restore_staging.tftest.hcl).
+  mock_data "azurerm_storage_account" {
+    defaults = {
+      id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-celebrimbor/providers/Microsoft.Storage/storageAccounts/stcelebrimborstaging"
+    }
+  }
 }
 
 # IR1b : le module lit azuread (identity_executor.tf, désactivé) : un faux, jamais Graph.
@@ -148,7 +154,8 @@ run "h0_s_own_identity_never_restores" {
     }
   }
 
-  expect_failures = [azurerm_role_assignment.restore_neutralize]
+  # RST1 : les clés du compte de transit, du même principal, refusées de même.
+  expect_failures = [azurerm_role_assignment.restore_neutralize, azurerm_role_assignment.restore_staging]
 }
 
 run "a_restore_vm_named_twice_whatever_its_case_is_refused" {

@@ -77,11 +77,11 @@ make celebrimbor-output        # le fragment de glorfindel-config.yaml : l'espac
 - son Terraform lui donne `Reader` sur le groupe du banc et `Log Analytics Reader` sur son espace ;
 - il donne aussi « Eregion Glorfindel Session Drain » sur chaque VM de `session_drain_vms` (gondolin et bree, `infra/glorfindel-host/session_drain.auto.tfvars`).
 
-Ce rôle personnalisé doit exister avant le plan de H0 : le Terraform le nomme. Une fois par tenant, les quatre rôles de `infra/identities/` :
+Ce rôle personnalisé doit exister avant le plan de H0 : le Terraform le nomme. Une fois par tenant, les cinq rôles de `infra/identities/` (le Terraform de H0 nomme aussi « Restore Neutralize » et « Restore Staging », dès que `principals.auto.tfvars` donne les principaux qui restaurent) :
 
 ```bash
 SUB=$AZURE_SUBSCRIPTION_ID
-for r in response restore session-drain restore-neutralize; do
+for r in response restore session-drain restore-neutralize restore-staging; do
   sed "s|<SUBSCRIPTION_ID>|$SUB|" infra/identities/glorfindel-$r.json > /tmp/eregion-role-$r.json
   az role definition create --role-definition @/tmp/eregion-role-$r.json
 done
@@ -226,7 +226,7 @@ make orodruin-down             # la VM, son identité, ses rôles, le compte des
 make glorfindel-host-down      # la VM de H0 et son état (sa mémoire comprise : make glorfindel-host-pull avant, pour la garder)
 make celebrimbor-down CONFIRM=default    # le banc entier, baseline compris (sans CONFIRM, refusé)
 for r in "Eregion Glorfindel Response" "Eregion Glorfindel Restore" "Eregion Glorfindel Session Drain" \
-         "Eregion Glorfindel Restore Neutralize"; do az role definition delete --name "$r"; done
+         "Eregion Glorfindel Restore Neutralize" "Eregion Glorfindel Restore Staging"; do az role definition delete --name "$r"; done
 rm -f infra/orodruin/orodruin.env infra/glorfindel-host/host.env ~/.eregion/orodruin_known_hosts ~/.eregion/h0_known_hosts
 ```
 

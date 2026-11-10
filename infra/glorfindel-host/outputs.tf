@@ -27,6 +27,11 @@ output "restore_neutralize" {
   value       = sort(keys(azurerm_role_assignment.restore_neutralize))
 }
 
+output "restore_staging" {
+  description = "RST1 : à qui les clés du compte de transit sont attribuées (« Eregion Glorfindel Restore Staging »), sur le seul compte restore_staging_storage — les noms de restore_principals."
+  value       = sort(keys(azurerm_role_assignment.restore_staging))
+}
+
 output "principal_id" {
   description = "Identité managée de la VM (Reader sur le banc, Log Analytics Reader sur son workspace ; la coupure des sessions sur chaque VM de session_drain_vms)."
   value       = azurerm_linux_virtual_machine.host.identity[0].principal_id

@@ -61,6 +61,16 @@ seul sur le banc, dans le mode de chaque VM.
     restore_neutralize` dit où elle est donnée. Une VM hors de la liste est restaurée quand même ;
     sa neutralisation est refusée, et dite sur la carte.
     Le test du module la tient (`tests/session_drain.tftest.hcl`).
+  - **Les clés du compte de transit du restore, sur ce seul compte** (RST1, #680). Un restore
+    depuis le coffre vérifie `listKeys` sur le compte de transit : sans lui, Azure a refusé le
+    restore de la console au banc, le 09/11 (403 `LinkedAuthorizationFailed`). L'état porte
+    « Eregion Glorfindel Restore Staging » (`listKeys` seul) à la portée du seul compte
+    `restore_staging_storage` (`stcelebrimborstaging`, `restore.auto.tfvars`, commité ; relu sur
+    Azure dans le groupe du banc), pour chaque principal de `restore_principals` — jamais sur le
+    groupe, qui tient d'autres comptes de stockage, jamais l'identité de H0 (le plan la refuse).
+    `terraform output restore_staging` dit à qui. Un rôle posé à la main avant (le banc, le 09/11) :
+    `docs/operations.md`, « Depuis un rôle « Restore Staging » posé à la main » (l'importer). Le
+    test du module la tient (`tests/restore_staging.tftest.hcl`).
   - **L'application de l'exécuteur d'identité** (IR1b, #572), **désactivée par défaut** : son
     principal à lui, jamais l'identité de la VM (celle de la watch), avec deux permissions
     d'application de Microsoft Graph, `Application.ReadWrite.OwnedBy` et `User.RevokeSessions.All`,

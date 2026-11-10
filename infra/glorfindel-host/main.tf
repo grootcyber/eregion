@@ -7,9 +7,10 @@
 # l'isoler. Son identité managée lit le banc ici (Reader, Log Analytics Reader) ; le rôle de la
 # réponse sur le groupe du banc lui est attribué à la main, hors de cet état (la posture de H0,
 # BL1c : README.md, « Ce que la VM est »). La coupure des sessions, elle, est ici : VM par VM, aux
-# VM que Glorfindel défend (session_drain_vms, SEC11) ; et la neutralisation avant un restore, VM
-# par VM, aux principaux qui restaurent (restore_vms, restore_principals, SEC17). README.md pour
-# le déroulé.
+# VM que Glorfindel défend (session_drain_vms, SEC11) ; la neutralisation avant un restore, VM
+# par VM, aux principaux qui restaurent (restore_vms, restore_principals, SEC17) ; et les clés du
+# seul compte de transit du restore, aux mêmes principaux (restore_staging_storage, RST1). README.md
+# pour le déroulé.
 
 terraform {
   required_providers {
@@ -294,6 +295,36 @@ resource "azurerm_role_assignment" "restore_neutralize" {
   lifecycle {
     precondition {
       condition     = lower(each.value.principal) != lower(azurerm_linux_virtual_machine.host.identity[0].principal_id)
+      error_message = "restore_principals nomme l'identité de H0 : Glorfindel hébergé ne restaure pas."
+    }
+  }
+}
+
+# ── Les clés du compte de transit, aux principaux qui restaurent, sur ce seul compte (RST1) ─────
+# Un restore depuis le coffre vérifie un droit lié sur le compte de transit : ses clés
+# (Microsoft.Storage/storageAccounts/listKeys/action). Sans lui, le banc a refusé le restore de la
+# console le 09/11 (403 LinkedAuthorizationFailed). « Eregion Glorfindel Restore Staging »
+# (infra/identities/glorfindel-restore-staging.json, créé une fois par tenant), attribué à la
+# portée du seul compte restore_staging_storage (restore.auto.tfvars, commité), pour chaque
+# principal de restore_principals — jamais sur le groupe du banc, qui tient d'autres comptes de
+# stockage (leurs clés sont leurs données), jamais l'identité de H0. Le compte est relu sur Azure
+# dans le groupe du banc : une faute de frappe échoue au plan. Vide : rien d'attribué.
+data "azurerm_storage_account" "restore_staging" {
+  count               = var.restore_staging_storage == "" ? 0 : 1
+  name                = var.restore_staging_storage
+  resource_group_name = data.azurerm_resource_group.bench.name
+}
+
+resource "azurerm_role_assignment" "restore_staging" {
+  for_each             = var.restore_staging_storage == "" ? {} : var.restore_principals
+  scope                = data.azurerm_storage_account.restore_staging[0].id
+  role_definition_name = "Eregion Glorfindel Restore Staging"
+  principal_id         = each.value
+  principal_type       = "ServicePrincipal"
+
+  lifecycle {
+    precondition {
+      condition     = lower(each.value) != lower(azurerm_linux_virtual_machine.host.identity[0].principal_id)
       error_message = "restore_principals nomme l'identité de H0 : Glorfindel hébergé ne restaure pas."
     }
   }
