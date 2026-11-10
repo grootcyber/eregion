@@ -1,6 +1,6 @@
 # Le banc complet : d'une attaque à sa preuve
 
-[← README](../../README.md) · le guide d'avant : [observer en lecture seule](bleu.md) · ce qui reste à rejouer sur Azure : [a-rejouer.md](a-rejouer.md)
+[← README](../../README.md) · le guide d'avant : [observer en lecture seule](bleu.md) · ce qui reste à rejouer sur Azure : [a-rejouer.md](a-rejouer.md) · depuis le téléphone : [mobile.md](mobile.md)
 
 **Pour qui.** Un ingénieur infra ou sécurité qui veut voir la boucle entière : une attaque réelle, publique et épinglée, lancée sur une cible jetable, et ce que Glorfindel en a fait. On le mesure par le verdict (`detected`, `missed` ou `unknown`), le rapport de la campagne et la console.
 

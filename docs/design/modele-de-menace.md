@@ -18,6 +18,7 @@ _SEC6 (#277), 28/10, sur la 0.4.3. Une page par frontière : qui y est de confia
 | [6. La CI et le CD](#6-la-ci-et-le-cd-github-release-tags) | le mainteneur, `main` protégée | code des PR, événements GitHub, secrets, releases vers H0 |
 | [7. Les sessions d'agents → `main` → le CD](#7-les-sessions-dagents--main--le-cd) | le mainteneur (tags `v*`, release, réglages) ; les sessions, pour le code qu'elles fusionnent | branches, PR, fusions, verdicts de relecture, releases en brouillon |
 | [8. La session Banc](#8-la-session-banc-et-lidentité-de-lecture-du-banc) | Jonathan (la paire de clés, l'apply, le profil) ; la session Banc, pour lire | requêtes KQL vers le workspace du banc, leurs résultats vers le modèle |
+| [9. Le téléphone](#9-le-téléphone-et-son-chemin-vers-le-poste) | l'opérateur, son téléphone (la clé dans sa puce) et son compte Tailscale | un terminal SSH vers le poste, les commandes du banc qu'il y tape, la console de H0 par le tunnel SSH du téléphone |
 
 ---
 
@@ -434,12 +435,59 @@ _BRO1 (#614), 06/11. Décision de Jonathan : une session Claude « Banc » lit l
 - La clé est lisible par toute session qui tourne sous le même utilisateur Unix. Le droit la borne : une lecture, sur un seul workspace, pour 90 jours au plus, révocable en désactivant le principal.
 - « Le seul workspace » n'est pas « les seules données du banc ». Ce que la session lit entre dans le contexte du modèle (frontière 4). Avec AL1, `AzureActivity` porte l'activité de tout l'abonnement (H0, Orodruin, les noms de compte, les adresses) ; avec C2 et ID1 (`entra_logs_enabled`), `AuditLogs` et `AADServicePrincipalSignInLogs` celles du tenant entier. Ces noms et ces adresses partent chez le fournisseur du modèle choisi.
 - Une ligne de journal peut tromper la session (injection). Elle ne peut alors qu'écrire du texte : elle n'a aucun droit d'écriture.
+- Une session `tmux` que l'opérateur garde ouverte (le téléphone, frontière 9) est un terminal que toute session de code, même utilisateur Unix, peut piloter (`tmux send-keys`) : hors de son worktree et sans `EREGION_AGENT_SESSION`, elle y tape comme lui, et le garde des commandes du banc ne la voit pas. Avec la paire de la console chargée, un restore. Ce qui le borne : ne pas y garder `.envrc` chargé, quitter la session après le geste (`docs/demarrer/mobile.md`).
 
 **Ouvert** :
 - les gestes de Jonathan qui ouvrent cette frontière — planifié : #614
 - une règle de refus des sessions de code sur le dossier du lecteur — planifié : #614
 - un utilisateur Unix propre aux sessions — planifié
 - le rôle et la connexion mesurés au banc — planifié : #614
+
+---
+
+## 9. Le téléphone et son chemin vers le poste
+
+_MOB1 (#686), 10/11. Décision de Jonathan, « security by design » : piloter un run du banc à la main depuis son téléphone, et ouvrir la console de H0. C'est toujours l'opérateur qui tape la commande sur son poste ; seul le chemin entre le téléphone et le poste change. Orodruin n'écoute toujours que le SSH du poste (DRL1), rien ne change sur H0. La console passe par le tunnel SSH que le téléphone ouvre lui-même (décision du 10/11, sur la relecture de MOB1). Le guide : [`docs/demarrer/mobile.md`](../demarrer/mobile.md)._
+
+**De confiance** : l'opérateur, son téléphone déverrouillé par sa biométrie, la clé gardée dans la puce sécurisée du téléphone, son compte Tailscale (MFA). **Pas de confiance** : le réseau où se trouve le téléphone (un Wi-Fi public, l'opérateur mobile), les autres appareils du tailnet, les autres processus de Windows sur l'hôte du poste, les autres processus du même utilisateur sur le poste (une session d'agent), un téléphone perdu ou volé.
+
+**Ce qui la traverse** : une session SSH du téléphone vers le serveur SSH du poste, dans WSL, et ce qu'on y tape (`make bench-run`, `make bench-restore`, qui font agir Orodruin et le restore sous la paire de la console) ; dans cette même connexion, la redirection locale du téléphone vers le `127.0.0.1:7007` du poste, où `make glorfindel-host-tunnel` tient le tunnel SSH vers la console de H0.
+
+**Deux barrières indépendantes**, l'une tenue sans l'autre, pour le terminal comme pour la console :
+1. **le réseau privé** : Tailscale, le compte avec MFA, une règle d'accès qui n'ouvre que téléphone → poste:22 (`infra/poste/tailscale-acl.hujson`), Tailscale SSH fermé ;
+2. **le serveur SSH du poste** : il n'écoute que sur l'adresse privée, à clé seule — aucun mot de passe, aucun clavier interactif, aucune commande ni autorité qui fournisse des clés —, la clé non exportable, dans la puce du téléphone, débloquée par biométrie ; une seule redirection, locale, vers `127.0.0.1:7007` (`infra/poste/sshd_config.d/00-eregion.conf`).
+
+La console tient donc par le tailnet **et** la clé matérielle, puis par son jeton (SEC1, SEC10).
+
+| | Menace | Ce qui la tient |
+|---|---|---|
+| S | Quelqu'un sur le réseau du téléphone, ou sur Internet, se connecte au poste | Le serveur SSH n'écoute que sur l'adresse privée, que seul le tailnet joint ; la règle d'accès n'y admet que le téléphone, sur le port 22 seul. `make mobile-check` lit les écoutes (`ss`) : une écoute sur toutes les interfaces, la boucle locale ou une autre adresse est un ✗ (`scripts/mobile.py`, `tests/unit/test_mobile.py`, M4704) |
+| S | Un mot de passe deviné, une clé copiée, une clé fournie d'ailleurs | Mot de passe, clavier interactif, mot de passe vide, `hostbased` fermés, `AuthenticationMethods publickey` ; les clés du seul `~/.ssh/authorized_keys`, ni `AuthorizedKeysCommand` ni `TrustedUserCAKeys` ; `mobile-check` lit ce que `sshd` applique (`sshd -T`), pas le fichier (M4705, M4744). La clé ne quitte pas la puce du téléphone ; elle se débloque par biométrie |
+| S | Un appareil du tailnet, ou Tailscale SSH, entre sans la clé | La règle d'accès ne nomme que le téléphone ; Tailscale SSH fermé — ouvert, il ferait entrer le tailnet sans la clé, une barrière au lieu de deux : `mobile-check` le dit ✗ |
+| E | Une session d'agent du poste lance une attaque ou un restore par ces commandes | `make bench-run` et `make bench-restore` refusent dans une session d'agent (`EREGION_AGENT_SESSION`, le worktree d'un lot, `bench_shared.session_refusal`, M4696, M4699, M4740). Le garde tourne seul : ces deux cibles ne développent avant lui que `$(origin …)` et `$(PYTHON)` (M4739). Les cibles internes `-go`, appelées directement, développent d'abord leurs `export` (les adresses de H0 et d'Orodruin, lues par `terraform output` dans leur état local), puis refont le contrôle d'origine et le garde avant tout ssh, az ou scp. `TARGET`, `SCENARIO`, `BEFORE`, `RUN` et `POINT_MAX_H` venus de l'environnement sont refusés. Un garde-fou contre l'erreur, pas contre une session qui le veut : même utilisateur Unix (frontière 8) |
+| T | Un geste tapé par un autre que l'opérateur : un tube, un script, un processus | Le nom de la cible se tape dans un terminal : sans terminal sur l'entrée, `bench-run`, `bench-restore` et `orodruin-exercise` refusent sans qu'aucun ssh, az ni scp ne parte. `bench-restore` ne lit rien avant. `bench-run` refuse dans son script, après que sa sous-make a lu l'état Terraform local de H0 et d'Orodruin (`terraform output`, leurs adresses) (M4703, M4737). `orodruin-exercise` refuse dans son premier prérequis, `orodruin-exercise-guard`, avant `glorfindel-host-known` et `orodruin-known` : ni la demande sur H0, ni les VM d'un drill, ni l'état Terraform — avec un make sans `-j`, qui construit les prérequis dans leur ordre (M4756 ; `confirm` le refait, M4738). **Une session `tmux` qui dure ne tient pas** : tout processus du même utilisateur la pilote (`tmux send-keys`), une session d'agent comprise, hors de son worktree et sans sa variable — le garde, le nom tapé et le terminal ne voient que l'opérateur. Avec la paire de la console chargée dans cette session, un restore. Le guide le dit : la paire sourcée dans la seule commande, la session quittée après le geste |
+| T | Une commande lancée sur la mauvaise cible, ou sans qu'on l'ait voulue | Le nom de la cible tapé, destructif ou non, comparé au nom qu'Azure donne, puis « [o/N] » ; un préflight rouge n'envoie rien (M4697, M4698, M4700). Orodruin rejuge la demande comme celles de Dagorlad : contrat, watch vivante, inscription, zone, le nom tapé comparé au nom qu'il lit, plafond (DG-b) |
+| T | Un restore qui restaure le mauvais point, ou qui lève l'isolement depuis le poste | `--before` vaut le T0 du run, son `attack_started` (SEC4c), lu dans le rapport du run que le poste a composé (M4702) : celui de `RUN=`, que `bench-run` donne ; sans lui, le seul rapport de la cible, et plusieurs sont refusés et listés, jamais le plus récent choisi ; ou `BEFORE=` ; jamais un instant à venir. `--keep-isolated` toujours : la levée est celle de H0 (REC1, REC1b) (M4701). Le restore part sous la paire de la console seule, par le binaire du dépôt, et lit ses droits avant de toucher la VM (RST1) |
+| E | Le téléphone se sert du poste comme d'un relais : une redirection vers H0, Orodruin, le réseau | `AllowTcpForwarding local` (`yes`, `all`, `remote` : ✗), `PermitOpen 127.0.0.1:7007` seul, `GatewayPorts no` (M4741, M4742) ; ni socket, ni agent, ni X11 (`AllowStreamLocalForwarding`, `AllowAgentForwarding`, `X11Forwarding` à `no`, lus par `mobile-check`, M4757). La ligne de la clé du téléphone le répète (`from="100.64.0.0/10"`, `permitopen="127.0.0.1:7007"`) : **posé par le guide, non lu par `mobile-check`**. **Une borne de la seule connexion SSH** : avec un shell, le téléphone relaie comme l'opérateur (`ssh poste nc …`) ; ce cas est celui d'un téléphone déverrouillé, qui est l'opérateur, ou perdu ou volé (les lignes plus bas) |
+| I | Le port de la console exposé au-delà du poste | Le poste ne le lie qu'en `127.0.0.1` (`make glorfindel-host-tunnel`, inchangé) ; `mobile-check` voit le port écouter ailleurs (l'adresse privée, toutes les interfaces, une autre adresse : ✗, M4743). La clé d'hôte de H0 épinglée. Rien ne change sur H0 : le `Host` reste `localhost`, `EREGION_CONSOLE_HOSTS` tel quel, le jeton exigé (SEC1) |
+| I | Le trafic de la console lu en chemin | Le HTTP du navigateur ne quitte pas le tunnel SSH du téléphone, dans le tunnel chiffré de Tailscale, puis le tunnel SSH du poste jusqu'à H0 ; le cookie de session n'est pas `Secure` (HTTP), il ne passe que par ces tunnels |
+| D | Le poste injoignable (en veille, WSL arrêté), une commande ou la console coupée | Le Windows de l'hôte ne se met pas en veille (le guide) ; les commandes longues tournent dans `tmux` et survivent à la coupure du téléphone. Sur iOS, l'application mise en arrière-plan peut couper la redirection : on y revient, le tunnel se rouvre |
+| R | Un geste du téléphone sans trace | Ce sont les mêmes commandes qu'au clavier du poste, avec leurs traces : la demande et sa fenêtre sur Orodruin, le rapport du run, le journal d'activité d'Azure sous la paire de la console. Le journal du serveur SSH du poste dit chaque connexion et sa clé |
+| E | Un téléphone perdu ou volé | Deux gestes, chacun suffisant, pour le terminal comme pour la console : retirer l'appareil du tailnet, retirer sa clé d'`authorized_keys` ; puis tourner le jeton de la console que son navigateur a vu (le guide, « La perte du téléphone ») |
+
+**Où c'est** : `scripts/bench_run.py`, `scripts/bench_restore.py`, `scripts/mobile.py`, `scripts/bench_shared.py` (`session_refusal`), `eregion_core/exercise_request.py` (le terminal de `confirm`), le `Makefile` (`bench-run`, `bench-restore`, `mobile-check`), `infra/poste/` ; tests `tests/unit/test_bench_run.py`, `tests/unit/test_bench_restore.py`, `tests/unit/test_mobile.py`, `tests/unit/test_makefile_exercise.py`, `tests/unit/test_exercise_request.py`. Le guide : [`docs/demarrer/mobile.md`](../demarrer/mobile.md).
+
+**Ce qui reste, assumé** :
+- Un téléphone déverrouillé, l'application ouverte et la session reprise, est l'opérateur : la biométrie débloque la clé, pas chaque commande. Les gestes qui comptent font taper un nom.
+- Une session `tmux` qui dure se pilote par tout processus du même utilisateur : le terminal, le nom tapé et le garde n'y tiennent pas. Le guide conseille de ne pas y garder la paire de la console chargée.
+- Le jeton de la console s'affiche dans le terminal du téléphone, comme dans celui du bureau.
+- Le `127.0.0.1:7007` du poste est celui que WSL partage avec Windows : un processus de Windows y joint la console, jeton exigé, comme pour le tunnel du bureau.
+- Le restore depuis le téléphone passe par le terminal du poste, la clé matérielle du SSH tenant lieu de second facteur, jusqu'à FS1g et TOT1 (#685).
+- `make mobile-check` lit la configuration globale de `sshd` : un bloc `Match` la change pour une connexion ; le modèle n'en a pas. Il ne lit ni les options de la ligne de la clé, ni la règle d'accès de Tailscale (sa console seule la montre), ni le pare-feu de Windows, ni le réseau de WSL en mode *mirrored*.
+
+**Ouvert** :
+- les gestes de Jonathan qui ouvrent cette frontière — planifié : #686
+- un run lancé et la console ouverte depuis le téléphone — planifié : #686
 
 ---
 

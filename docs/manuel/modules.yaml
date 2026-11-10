@@ -1101,6 +1101,16 @@ briques:
     issue: 682
     doc: docs/banc-t1486.md
 
+  - id: c-telephone
+    composant: celebrimbor
+    poste: c-acces
+    nom: "The bench driven from the phone: one command for a run, one for the restore, typed on the workstation"
+    etat: main
+    release: "0.5"
+    lots: [MOB1]
+    issue: 686
+    doc: docs/demarrer/mobile.md
+
   - id: c-lecture
     composant: celebrimbor
     poste: c-acces
