@@ -8,11 +8,15 @@ written on Azure, on H0 nor on Orodruin:
   on H0, by ssh   the run's report (runs/glorfindel/<run_id>.json: T0, the detection, the Dagorlad
                   request it was a wire of), the watch's cycles of the run, its own recovery_complete
                   (REC1), the lifts of runs/console|bot/manual_actions.jsonl, the target's isolation
-                  state if it is still isolated (scripts/bench_h0_reader.py);
-  the activity log  the target's group (`az monitor activity-log list`): each Run Command on the
-                  target, its start, its end, its status, its caller as a role (the console, the bot,
-                  H0, Orodruin, a human, unknown) and its duration; H0's network writes (the
-                  isolation, when its state is gone); the target's deallocations and starts;
+                  state if it is still isolated (scripts/bench_h0_reader.py, in a disposable,
+                  network-less container of the deployed image, its mounts read-only); only once
+                  H0's host key is verified by its fingerprint;
+  the activity log  the target's own resources, each read apart (`--resource-id`: the VM, its NICs),
+                  never the whole group: each Run Command on the target, its start, its end, its
+                  status, its caller as a role (the console, the bot, H0, Orodruin, a human,
+                  unknown) and its duration; H0's write on a NIC of the target (the isolation, when
+                  its state is gone: an isolation by an NSG's rules alone does not show there); the
+                  target's deallocations and starts. A read that reaches MAX_EVENTS is said cut;
   the vault       its jobs on the target (`az backup job list`): the operation, start, end, status;
   the instance view  the guest agent's status (`az vm get-instance-view`), read once, when composed.
 
@@ -44,8 +48,10 @@ DEFAULT_TARGET = "vm-celebrimbor-gondolin"
 # preparations of Orodruin.
 BEFORE_T0_S = 3 * 3600
 TERMINAL = ("succeeded", "failed", "canceled")
-NETWORK_WRITES = ("microsoft.network/networkinterfaces/write", "microsoft.network/networksecuritygroups/write",
-                  "microsoft.network/networksecuritygroups/securityrules/write")
+# The isolation, once H0's state is gone: H0 puts the quarantine NSG on each of the target's NICs.
+NIC_WRITE = "microsoft.network/networkinterfaces/write"
+# What one activity-log read returns at most: a read that reaches it may be cut, and says so.
+MAX_EVENTS = 5000
 START_OP = "microsoft.compute/virtualmachines/start/action"
 DEALLOCATE_OP = "microsoft.compute/virtualmachines/deallocate/action"
 # The attack's Run Command: Orodruin's, submitted within this of T0 (09/11: one second after).
@@ -123,8 +129,9 @@ def _what(rc: dict, attack: dict | None, neutralization: dict | None) -> str:
 
 
 def compose(run_id: str, target: str, h0: dict, events: list[dict], jobs: list[dict], view: dict | None,
-            roles: bs.Roles, now: datetime, gaps: list[str] | None = None) -> dict:
-    """The report as data: its figures from T0, its chronology, its Run Commands, its jobs."""
+            roles: bs.Roles, now: datetime, gaps: list[str] | None = None, nics=()) -> dict:
+    """The report as data: its figures from T0, its chronology, its Run Commands, its jobs. `nics`:
+    the names of the target's NICs, where H0's quarantine is put (the isolation, its state gone)."""
     gaps = list(gaps or [])
     run = h0.get("run")
     if not isinstance(run, dict):
@@ -168,13 +175,16 @@ def compose(run_id: str, target: str, h0: dict, events: list[dict], jobs: list[d
     if isolated is not None:
         fig("isolation", "Isolement exécuté (NSG de quarantaine posé)", isolated, "`isolated_at`, l'état d'isolation de H0", tenth=True)
     else:
-        net = next((o for o in ops if o["role"] == "h0" and o["op"] in NETWORK_WRITES and o["start"] >= t0
-                    and o["status"].lower() == "succeeded"), None)
+        mine = {str(n).lower() for n in nics}
+        net = next((o for o in ops if o["role"] == "h0" and o["op"] == NIC_WRITE and o["resource"] in mine
+                    and o["start"] >= t0 and o["status"].lower() == "succeeded"), None)
         if net is not None:
-            fig("isolation", "Isolement exécuté (écriture réseau de H0)", net["end"],
-                "journal d'activité : la première écriture réseau de H0 après T0 (l'état de H0 est levé)")
+            fig("isolation", "Isolement exécuté (carte réseau de la cible écrite par H0)", net["end"],
+                "journal d'activité : la première écriture de H0 sur une carte réseau de la cible après T0 "
+                "(l'état de H0 est levé ; une isolation par les seules règles d'un NSG n'y paraît pas)")
         else:
-            gaps.append("l'isolement : ni l'état de H0 (levé ?) ni une écriture réseau de H0 au journal d'activité")
+            gaps.append("l'isolement : ni l'état de H0 (levé ?) ni une écriture de H0 sur une carte réseau de la "
+                        "cible au journal d'activité")
     drain = next((r for r in rcs if r["role"] == "h0" and r["start"] >= t0), None)
     drains = [d for d in (bs.epoch(x) for x in (st or {}).get("drains_at") or []) if d is not None and d >= t0 - 60]
     if drains:
@@ -348,31 +358,51 @@ def scrubbed(doc):
 
 # ── the reads ─────────────────────────────────────────────────────────────────
 
-def gather(run_id: str, target: str, env: dict, config: str, now: datetime) -> tuple[dict, list, list, dict | None, list]:
-    """(H0's view, the activity log's events, the vault's jobs, the instance view, what failed)."""
+def gather(run_id: str, target: str, env: dict, config: str, now: datetime) -> tuple[dict, list, list, dict | None, list, list]:
+    """(H0's view, the activity log's events, the vault's jobs, the instance view, what failed, the
+    target's NICs). H0 is read only once its host key is verified: else nothing is sent."""
     gaps: list[str] = []
     known = bs.run(["make", "-s", "--no-print-directory", "glorfindel-host-known"], timeout=60)
     if not known.ok:
-        gaps.append("la clé d'hôte de H0 n'est pas vérifiée par son empreinte (HOST_SSH_FINGERPRINT)")
+        raise RuntimeError("la clé d'hôte de H0 n'est pas vérifiée par son empreinte (HOST_SSH_FINGERPRINT, "
+                           f"make glorfindel-host-known : {known.first_error()}) : rien n'est envoyé")
     h0 = bs.read_h0("report", target, run_id, env=env)
     t0 = bs.epoch((h0.get("run") or {}).get("attack_time"))
     if t0 is None:
-        return h0, [], [], None, gaps
+        return h0, [], [], None, gaps, []
     hits = bs.locate_vm(target)
     if len(hits) != 1:
         gaps.append(f"{len(hits)} VM nommée(s) {target} : le journal d'activité, le coffre et la vue d'instance ne sont pas lus")
-        return h0, [], [], None, gaps
-    rg = hits[0]["rg"]
+        return h0, [], [], None, gaps, []
+    rg, vm_id = hits[0]["rg"], hits[0]["id"]
     start = datetime.fromtimestamp(t0 - BEFORE_T0_S, timezone.utc)
-    events: list = []
+    nic_ids: list = []
     try:
-        events = bs.az_json(["monitor", "activity-log", "list", "--resource-group", rg,
-                             "--start-time", start.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                             "--end-time", now.strftime("%Y-%m-%dT%H:%M:%SZ"), "--max-events", "5000"], timeout=300) or []
+        nic_ids = [str(n) for n in bs.az_json(["vm", "show", "--ids", vm_id, "--query",
+                                               "networkProfile.networkInterfaces[].id"]) or []]
     except RuntimeError as e:
-        gaps.append(f"le journal d'activité : illisible ({e})")
+        gaps.append(f"les cartes réseau de la cible : illisibles ({e})")
+    # The target's own resources, each read apart (the VM, its NICs): never the whole group.
+    events: list = []
+    for rid in [vm_id, *nic_ids]:
+        try:
+            got = bs.az_json(["monitor", "activity-log", "list", "--resource-id", rid,
+                              "--start-time", start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                              "--end-time", now.strftime("%Y-%m-%dT%H:%M:%SZ"), "--max-events", str(MAX_EVENTS)],
+                             timeout=300) or []
+        except RuntimeError as e:
+            gaps.append(f"le journal d'activité de {_name(rid)} : illisible ({e})")
+            continue
+        if len(got) >= MAX_EVENTS:
+            gaps.append(f"le journal d'activité de {_name(rid)} : {MAX_EVENTS} événements lus, le plafond — la suite "
+                        "n'est pas lue, la chronologie peut être coupée")
+        events += got
     jobs: list = []
-    vault, vault_rg, _ = bs.local_vault(config)
+    try:
+        vault, vault_rg, _ = bs.local_vault(config)
+    except Exception as e:  # noqa: BLE001 — its message may repeat the file's values: only its type
+        vault, vault_rg = "", ""
+        gaps.append(f"la configuration du poste : illisible ({type(e).__name__}) — les jobs du coffre ne sont pas lus")
     if vault:
         try:
             jobs = bs.az_json(["backup", "job", "list", "-g", vault_rg or rg, "-v", vault,
@@ -380,14 +410,14 @@ def gather(run_id: str, target: str, env: dict, config: str, now: datetime) -> t
                                "--end-date", now.strftime("%d-%m-%Y")]) or []
         except RuntimeError as e:
             gaps.append(f"les jobs du coffre : illisibles ({e})")
-    else:
+    elif not any(g.startswith("la configuration du poste") for g in gaps):
         gaps.append("les jobs du coffre : aucun coffre dans la configuration du poste")
     view = None
     try:
         view = bs.az_json(["vm", "get-instance-view", "-g", rg, "-n", target])
     except RuntimeError as e:
         gaps.append(f"la vue d'instance : illisible ({e})")
-    return h0, events, jobs, view, gaps
+    return h0, events, jobs, view, gaps, [_name(n) for n in nic_ids]
 
 
 def main(argv: list[str] | None = None, env: dict | None = None, now: datetime | None = None) -> int:
@@ -407,18 +437,24 @@ def main(argv: list[str] | None = None, env: dict | None = None, now: datetime |
         return 2
     now = now or datetime.now(timezone.utc)
     try:
-        h0, events, jobs, view, gaps = gather(run_id, target, env, args.config, now)
-        doc = scrubbed(compose(run_id, target, h0, events, jobs, view, bs.Roles.from_environment(env), now, gaps))
+        h0, events, jobs, view, gaps, nics = gather(run_id, target, env, args.config, now)
+        doc = scrubbed(compose(run_id, target, h0, events, jobs, view, bs.Roles.from_environment(env), now, gaps,
+                               nics=nics))
+        text = markdown(doc)
     except RuntimeError as e:
         print(f"✗ {bs.scrub(str(e))}", file=sys.stderr)
         return 1
-    out = Path(args.out) if args.out else bs.REPO / "runs" / "bench" / f"{run_id}.json"
-    text = markdown(doc)
+    except Exception as e:  # noqa: BLE001 — never a Python trace, never an unmasked word
+        print(f"✗ le rapport n'a pas pu être composé ({type(e).__name__}: {bs.scrub(str(e))[:300]})", file=sys.stderr)
+        return 1
+    # The JSON and the Markdown side by side, never one over the other (OUT=x.md included).
+    base = Path(args.out) if args.out else bs.REPO / "runs" / "bench" / f"{run_id}.json"
+    out, md = base.with_suffix(".json"), base.with_suffix(".md")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    out.with_suffix(".md").write_text(text, encoding="utf-8")
+    md.write_text(text, encoding="utf-8")
     print(text)
-    print(f"→ {out} et {out.with_suffix('.md').name}", file=sys.stderr)
+    print(f"→ {out} et {md.name}", file=sys.stderr)
     return 0
 
 

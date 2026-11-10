@@ -1,6 +1,6 @@
 """BNC1 (#682): the bench read by the machine — `make bench-preflight` (the step 0 in one verdict) and
 `make bench-report` (a run's chronology, composed alone), read only, no identifier printed.
-M4676–M4685, measured by tests/unit/test_bench_preflight.py and tests/unit/test_bench_report.py."""
+M4676–M4685 and M4706–M4709, measured by tests/unit/test_bench_preflight.py and tests/unit/test_bench_report.py."""
 PRE = "scripts/bench_preflight.py"
 REP = "scripts/bench_report.py"
 SHARED = "scripts/bench_shared.py"
@@ -48,6 +48,23 @@ MUTANTS = [
      READER,
      '            "outcome": {k: o[k] for k in _OUTCOME_KEYS if k in o}}\n',
      '            "outcome": dict(o)}\n'),
+    # The review's first round: M4706–M4709.
+    ("M4706", "the console's own ✗ (no answer, its token refused) taken for a container's line: the "
+     "preflight lets the run go with a silent console (BNC1 review)", PRE,
+     '    others = [f for f in failed if not re.match(r"(watch|console|bot)\\s+eregion-", f)]\n',
+     '    others = [f for f in failed if not re.match(r"(watch|console|bot)\\s", f)]\n'),
+    ("M4707", "the reader's container on H0's network: IMDS, a token, the cloud within its reach "
+     "(BNC1 review)", SHARED,
+     'READER_HARDEN = ("--rm", "-i", "--network", "none", "--read-only",',
+     'READER_HARDEN = ("--rm", "-i", "--read-only",'),
+    ("M4708", "H0's write on any NIC dated as the target's isolation: bree's block taken for "
+     "gondolin's quarantine (BNC1 review)", REP,
+     '        net = next((o for o in ops if o["role"] == "h0" and o["op"] == NIC_WRITE and o["resource"] in mine\n',
+     '        net = next((o for o in ops if o["role"] == "h0" and o["op"] == NIC_WRITE\n'),
+    ("M4709", "the reader sent to H0 over an ssh that accepts any host key (accept-new) (BNC1 review)",
+     SHARED,
+     '    if not host_key_pinned(base):\n',
+     '    if False:\n'),
 ]
 TESTS = {
     "M4676": f"{_P}::test_h0_s_rights_read_wildcards_and_not_actions",
@@ -60,4 +77,8 @@ TESTS = {
     "M4683": f"{_R}::test_the_run_commands_say_their_callers_as_roles",
     "M4684": f"{_R}::test_the_0911_chronology_is_composed_again",
     "M4685": f"{_R}::test_the_h0_reader_sends_back_names_never_ids",
+    "M4706": f"{_P}::test_a_silent_console_stops_the_run",
+    "M4707": f"{_R}::test_the_h0_reader_runs_in_a_disposable_container_of_the_deployed_image",
+    "M4708": f"{_R}::test_the_0911_chronology_is_composed_again",
+    "M4709": f"{_R}::test_an_unverified_h0_host_key_sends_nothing",
 }

@@ -21,7 +21,9 @@ stop the run), 1 otherwise. Everything is read, nothing is written — on Azure,
                 reader, glorfindel/providers/azure/restore_rights.py): what a restore reads, and the
                 neutralization's Run Command; H0 and Orodruin by their role assignments and the roles'
                 definitions (wildcards and `notActions` read as Azure reads them, the same
-                `action_held`), their ids from Terraform's outputs, read locally;
+                `action_held`), their ids from Terraform's outputs, read locally; an assignment
+                at a management group is not read (a missing right then says so: a false ✗,
+                never a false ✓);
   the drifts    « Eregion Glorfindel Restore » that still holds `runCommand/action` (before SEC17): ⚠;
                 « Eregion Glorfindel Restore Staging » not on the console at the staging account: ✗.
 
@@ -159,7 +161,7 @@ def check_h0(ctx: Context) -> list:
     down = [n for n in ("watch", "console", "bot") if up.get(n) != bs.OK]
     out.append(line(bs.FAIL, f"H0 : conteneur(s) arrêté(s) ou absent(s) : {', '.join(down)}") if down
                else line(bs.OK, "H0 : watch, console et bot en marche"))
-    others = [f for f in failed if not re.match(r"(watch|console|bot)\s", f)]
+    others = [f for f in failed if not re.match(r"(watch|console|bot)\s+eregion-", f)]
     if others:
         out.append(line(bs.FAIL, "H0 : " + " ; ".join(others[:4])[:300]))
     return out
@@ -221,6 +223,8 @@ def check_orodruin(ctx: Context) -> list:
     prefix = (ctx.env.get("BENCH_ORO_RUN") or "").strip()
     if not base or not prefix:
         return [line(bs.FAIL, "Orodruin : BENCH_ORO_SSH ou BENCH_ORO_RUN vide (lancer par make)")]
+    if not bs.host_key_pinned(base):
+        return [line(bs.FAIL, "Orodruin : sa clé d'hôte n'est pas épinglée (StrictHostKeyChecking=yes) : rien n'est envoyé")]
     res = bs.run(bs.remote(base, f"{prefix} python -c {shlex.quote(ORO_CHECK)}"), timeout=180)
     try:
         doc = json.loads(res.out.strip().splitlines()[-1])
@@ -281,7 +285,7 @@ def check_target_on_h0(ctx: Context) -> list:
     if t.get("config_error"):
         return [line(bs.FAIL, f"la cible sur H0 : sa configuration ne se lit pas ({t['config_error']})")]
     configured, effective = t.get("configured") or "?", t.get("effective") or "?"
-    if effective == "non_disruptive":
+    if effective == configured and effective not in ("human_only", "?"):
         out.append(line(bs.OK, f"son mode sur H0 : {effective}"))
     elif configured != effective:
         out.append(line(bs.FAIL, f"son mode sur H0 : {configured} configuré, retenu en {effective} "
@@ -337,8 +341,8 @@ def pair_token(tenant: str, client_id: str, secret: str, post=None) -> str:
     goes in the request's body only, never in a line."""
     import requests
     post = post or requests.post
-    if not re.fullmatch(r"[A-Za-z0-9.-]{1,100}", tenant or ""):
-        raise RuntimeError("AZURE_TENANT_ID vide ou invalide")
+    if not bs.GUID.fullmatch(tenant or ""):
+        raise RuntimeError("AZURE_TENANT_ID vide ou invalide (l'id du tenant, un GUID)")
     r = post(f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token",
              data={"grant_type": "client_credentials", "client_id": client_id, "client_secret": secret,
                    "scope": TOKEN_SCOPE}, timeout=30)
@@ -390,7 +394,11 @@ def _principal_rights(ctx: Context, who: str, module: str, needs: list) -> list:
         if not held_by_assignments(assignments, roles, scopes[where], action):
             missing.setdefault(what, []).append(action)
     if missing:
-        return [line(bs.FAIL, f"droits · {who} : pour {what}, il manque {', '.join(actions)}")
+        unread = any("/providers/microsoft.management/managementgroups/" in str(a.get("scope") or "").lower()
+                     for a in assignments)
+        note = (" (une attribution à un groupe d'administration n'est pas lue : à vérifier à la main)"
+                if unread else "")
+        return [line(bs.FAIL, f"droits · {who} : pour {what}, il manque {', '.join(actions)}{note}")
                 for what, actions in missing.items()]
     said = ", ".join(dict.fromkeys(w for w, _, _ in needs))
     return [line(bs.OK, f"droits · {who} : {said}")]

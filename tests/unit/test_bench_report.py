@@ -91,7 +91,9 @@ def _world_0911(tmp_path, isolated: bool = False) -> bw.World:
         bw.rule("terraform", ["~infra/orodruin", "principal_id"], bw.ORO_OID),
         bw.rule("az", ["vm", "list"], [{"name": bw.VM, "rg": bw.RG, "id": bw.RID},
                                        {"name": "vm-celebrimbor-bree", "rg": bw.RG, "id": bw.BREE}]),
-        bw.rule("az", ["monitor", "activity-log", "list"], bw.activity_0911()),
+        bw.rule("az", ["vm", "show", "--ids", bw.RID], [bw.NIC]),
+        bw.rule("az", ["monitor", "activity-log", "list", "--resource-id", bw.RID], bw.activity_of(bw.RID)),
+        bw.rule("az", ["monitor", "activity-log", "list", "--resource-id", bw.NIC], bw.activity_of(bw.NIC)),
         bw.rule("az", ["backup", "job", "list"], bw.jobs_0911()),
         bw.rule("az", ["vm", "get-instance-view"], bw.VIEW_0911),
     ]
@@ -197,7 +199,7 @@ def test_no_identifier_leaves_the_report(tmp_path):
         assert leaks(text) == [], leaks(text)
     # the reader itself sent back no reasoning, no raw signal, no error text, no resource id
     calls = [c for c in w.calls() if c[0] == "ssh"]
-    assert calls and all("eregion-watch" in c[-1] for c in calls)
+    assert calls and all("reasoning" not in c[-1] for c in calls)
 
 
 def test_the_h0_reader_sends_back_names_never_ids(tmp_path):
@@ -234,7 +236,8 @@ def test_what_could_not_be_read_is_said(tmp_path):
     code, md, _, _ = _report(w)
     assert code == 0
     assert "## Ce qui n'a pas pu être lu" in md
-    assert "le journal d'activité : illisible (ERROR: AuthorizationFailed for <upn> on <ressource>)" in md
+    assert ("le journal d'activité de vm-celebrimbor-gondolin : illisible (ERROR: AuthorizationFailed for <upn> on "
+            "<ressource>)") in md
     assert "la vue d'instance : illisible" in md
     assert leaks(md) == []
 
@@ -269,3 +272,107 @@ def test_the_target_composes_the_command_without_expanding_it(tmp_path):
     assert res.returncode == 0, res.stderr
     assert res.stdout.strip() == ".venv/bin/python scripts/bench_report.py"
     assert not (tmp_path / "never").exists()
+
+
+# ── the review's findings (BNC1, round 1) ──────────────────────────────────────
+
+def _h0_ssh(w: bw.World) -> list[list[str]]:
+    import shlex
+    return [shlex.split(c[-1]) for c in w.calls() if c[0] == "ssh" and any(bw.H0_IP in a for a in c)]
+
+
+def test_the_h0_reader_runs_in_a_disposable_container_of_the_deployed_image(tmp_path):
+    """Never inside the watch: `docker inspect` reads its image and mounts, then a `docker run` of that
+    image, without network (no IMDS, no token), without capability, read-only, each mount readonly."""
+    w = _world_0911(tmp_path)
+    code, _, err, _ = _report(w)
+    assert code == 0, err
+    inspect, run = _h0_ssh(w)
+    assert inspect[:2] == ["docker", "inspect"] and inspect[-1] == "eregion-watch"
+    assert run[:2] == ["docker", "run"] and "exec" not in run
+    i = run.index(bw.IMAGE)
+    opts, after = run[:i], run[i:]
+    assert after == [bw.IMAGE, "-", "report", bw.VM, bw.RUN]
+    for pair in (["--network", "none"], ["--cap-drop", "ALL"], ["--security-opt", "no-new-privileges"],
+                 ["--entrypoint", "python"]):
+        assert any(opts[k:k + 2] == pair for k in range(len(opts))), pair
+    assert "--rm" in opts and "--read-only" in opts and "-v" not in opts and "--privileged" not in opts
+    mounts = [opts[k + 1] for k, o in enumerate(opts) if o == "--mount"]
+    assert mounts and all(m.endswith(",readonly") and m.startswith("type=bind,") for m in mounts)
+    targets = sorted(m.split("target=")[1].split(",")[0] for m in mounts)
+    assert targets == ["/app/glorfindel-config.yaml", "/app/runs/bot", "/app/runs/console", "/app/runs/glorfindel",
+                       "/root/.glorfindel"]
+
+
+@pytest.mark.parametrize("mounts,why", [
+    ([], "ne monte pas /app/runs/glorfindel"),
+    ([{"Source": "/home/x/runs/glorfindel,type=volume", "Destination": "/app/runs/glorfindel"}], "pas un chemin attendu"),
+    ([{"Source": "/home/x/../../etc", "Destination": "/app/runs/glorfindel"}], "pas un chemin attendu"),
+])
+def test_the_reader_s_mounts_are_refused_when_they_are_not_the_watch_s(mounts, why):
+    with pytest.raises(RuntimeError, match=why):
+        bs.reader_command(mounts, bw.IMAGE, "report", bw.VM, bw.RUN)
+    with pytest.raises(RuntimeError, match="image"):
+        bs.reader_command([], "eregion-glorfindel:latest", "report", bw.VM)
+
+
+@pytest.mark.parametrize("ssh,known_rc", [
+    (f"ssh -o StrictHostKeyChecking=accept-new glorfindel@{bw.H0_IP}", 0),
+    (f"ssh glorfindel@{bw.H0_IP}", 0),
+    (f"ssh -o StrictHostKeyChecking=yes glorfindel@{bw.H0_IP}", 1),
+])
+def test_an_unverified_h0_host_key_sends_nothing(tmp_path, ssh, known_rc):
+    w = _world_0911(tmp_path)
+    w.rules.insert(0, bw.rule("make", ["glorfindel-host-known"], rc=known_rc,
+                              err=f"✗ HOST_SSH_FINGERPRINT requis : la clé d'hôte de {bw.H0_IP}\n"))
+    code, md, err, out = _report(w, env_extra={"BENCH_H0_SSH": ssh})
+    assert code == 1 and md == "" and not out.exists()
+    assert "clé d'hôte de H0 n'est pas vérifiée" in err and bw.H0_IP not in err
+    assert not [c for c in w.calls() if c[0] == "ssh"]
+
+
+def test_out_md_never_writes_over_the_json(tmp_path, monkeypatch):
+    w = _world_0911(tmp_path)
+    env = w.env()
+    for k in ("PATH", "BENCH_FAKE_PLAN", "BENCH_FAKE_LOG"):
+        monkeypatch.setenv(k, env[k])
+    out = tmp_path / "out" / "x.md"
+    import io
+    from contextlib import redirect_stderr, redirect_stdout
+    with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+        code = br.main(["--run", bw.RUN, "--out", str(out), "--config", str(w.config)], env=env, now=NOW)
+    assert code == 0
+    assert json.loads((tmp_path / "out" / "x.json").read_text())["run_id"] == bw.RUN
+    assert out.read_text().startswith("# Rapport du banc")
+
+
+def test_a_cut_activity_log_is_said(tmp_path, monkeypatch):
+    monkeypatch.setattr(br, "MAX_EVENTS", 3)
+    w = _world_0911(tmp_path)
+    code, md, _, _ = _report(w)
+    assert code == 0
+    assert ("le journal d'activité de vm-celebrimbor-gondolin : 3 événements lus, le plafond — la suite n'est pas "
+            "lue, la chronologie peut être coupée") in md
+    reads = [c for c in w.calls() if c[0] == "az" and "activity-log" in c]
+    assert len(reads) == 2 and all("--resource-id" in c and "--resource-group" not in c for c in reads)
+
+
+def test_an_unreadable_workstation_config_is_said_without_its_values(tmp_path):
+    w = _world_0911(tmp_path)
+    w.config.write_text(f"autonomy:\n  default: {bw.HUMAN_UPN}\nunknown_{bw.CONSOLE_APP.replace('-', '_')}: 1\n")
+    code, md, err, _ = _report(w)
+    assert code == 0, err
+    assert "la configuration du poste : illisible (ConfigError) — les jobs du coffre ne sont pas lus" in md
+    assert leaks(md + err) == []
+
+
+def test_any_failure_is_said_masked_never_a_trace(tmp_path, monkeypatch):
+    w = _world_0911(tmp_path)
+
+    def broken(*a, **k):
+        raise KeyError(f"{bw.HUMAN_UPN} {bw.RID} {bw.H0_OID}")
+    monkeypatch.setattr(br, "compose", broken)
+    code, md, err, out = _report(w)
+    assert code == 1 and md == "" and not out.exists()
+    assert err.startswith("✗ le rapport n'a pas pu être composé (KeyError: ") and "Traceback" not in err
+    assert leaks(err) == []

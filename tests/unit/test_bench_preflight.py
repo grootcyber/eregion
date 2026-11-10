@@ -301,7 +301,7 @@ def test_orodruin_deallocated_is_a_warning_and_its_contract_is_never_published(t
     code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
     assert code == 0
     assert any(x.startswith("Orodruin : deallocated — son contrat se lit une fois démarrée") for x in _marked(out, bs.WARN))
-    assert not [c for c in w.calls() if c[0] == "ssh" and "orodruin" in " ".join(c)]
+    assert not [c for c in w.calls() if c[0] == "ssh" and any(bw.ORO_IP in a for a in c)]
     # running, the contract is read by check(), never by `python -m eregion_core.orodruin` (it publishes)
     w2 = _world(tmp_path / "b", point_age_h=3, staging_assigned=True)
     _preflight(w2, arm_in_order(), monkeypatch)
@@ -354,3 +354,71 @@ def test_the_deployed_reference_keeps_its_mark(tmp_path, monkeypatch, ref, mark)
                               "  ✓ bot      eregion-bot  running\n"))
     _, out, _ = _preflight(w, arm_in_order(), monkeypatch)
     assert "H0 : v0.5.8 (0123456789ab) déployée" in _marked(out, mark)
+
+
+# ── the review's findings (BNC1, round 1) ──────────────────────────────────────
+
+_IN_ORDER = dict(point_age_h=3, staging_assigned=True,
+                 restore_role=json.loads((ROOT / "infra/identities/glorfindel-restore.json").read_text())["Actions"])
+
+
+@pytest.mark.parametrize("said", ["console : pas de réponse", "console : jeton refusé, ou réponse inattendue"])
+def test_a_silent_console_stops_the_run(tmp_path, monkeypatch, said):
+    """The containers' lines are said apart; the console's own ✗ (no answer, its token refused) is not
+    one of them: it stays a failure."""
+    w = _world(tmp_path, **_IN_ORDER)
+    w.rules.insert(0, bw.rule("make", ["glorfindel-host-status"],
+                              "  ✓ référence déployée : v0.5.8 (0123456789ab)\n"
+                              "  ✓ watch    eregion-watch  running\n  ✓ console  eregion-war-room  running\n"
+                              f"  ✓ bot      eregion-bot  running\n  ✗ {said}\n"))
+    code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
+    assert code == 1
+    assert f"H0 : {said}" in _marked(out, bs.FAIL)
+
+
+def test_a_tenant_that_is_not_a_guid_is_refused_before_any_request(tmp_path, monkeypatch):
+    w = _world(tmp_path, **_IN_ORDER)
+    arm = arm_in_order()
+    code, out, _ = _preflight(w, arm, monkeypatch, AZURE_TENANT_ID="contoso.example.com")
+    assert code == 1 and arm.posted == []
+    assert "droits · console : AZURE_TENANT_ID vide ou invalide (l'id du tenant, un GUID)" in _marked(out, bs.FAIL)
+    assert "contoso" not in out
+
+
+def test_a_management_group_assignment_is_said_unread(tmp_path, monkeypatch):
+    mg = "/providers/Microsoft.Management/managementGroups/mg-bench"
+    w = _world(tmp_path, **_IN_ORDER, h0_rights=[_assign("Reader", RG_SCOPE, 1),
+                                                 _assign("Eregion Glorfindel Response", mg, 5)])
+    code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
+    assert code == 1
+    fails = [f for f in _marked(out, bs.FAIL) if f.startswith("droits · H0")]
+    assert fails and all(f.endswith("(une attribution à un groupe d'administration n'est pas lue : à vérifier "
+                                    "à la main)") for f in fails)
+
+
+def test_an_unpinned_host_key_sends_nothing_to_orodruin_nor_h0(tmp_path, monkeypatch):
+    w = _world(tmp_path, **_IN_ORDER)
+    code, out, _ = _preflight(w, arm_in_order(), monkeypatch,
+                              BENCH_ORO_SSH=f"ssh -o StrictHostKeyChecking=accept-new orodruin@{bw.ORO_IP}",
+                              BENCH_H0_SSH=f"ssh -o StrictHostKeyChecking=accept-new glorfindel@{bw.H0_IP}")
+    assert code == 1
+    fails = _marked(out, bs.FAIL)
+    assert "Orodruin : sa clé d'hôte n'est pas épinglée (StrictHostKeyChecking=yes) : rien n'est envoyé" in fails
+    assert any(f.startswith("la cible sur H0 : la clé d'hôte de H0 n'est pas vérifiée") for f in fails)
+    assert not [c for c in w.calls() if c[0] == "ssh"]
+
+
+def test_an_autonomous_mode_as_configured_is_the_run_s_mode(tmp_path, monkeypatch):
+    """full_auto (deferred, refused by the config today) or non_disruptive: as configured, a ✓."""
+    w = _world(tmp_path, **_IN_ORDER)
+    monkeypatch.setattr(bs, "read_h0", lambda *a, **k: {"target": {
+        "configured": "full_auto", "effective": "full_auto", "readiness": "ready", "quarantine_nsg": True}})
+    code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
+    assert code == 0, out
+    assert "son mode sur H0 : full_auto" in _marked(out, bs.OK)
+
+
+def test_ssh_s_warning_is_not_the_error_said():
+    res = bs.Result(255, "", f"Warning: Permanently added '{bw.H0_IP}' (ED25519) to the list of known hosts.\n"
+                             "Permission denied (publickey).\n")
+    assert res.first_error() == "Permission denied (publickey)."

@@ -59,7 +59,9 @@ class Result:
         return self.rc == 0
 
     def first_error(self) -> str:
-        lines = (self.err or self.out or "").strip().splitlines()
+        # ssh's « Warning: Permanently added … » is no error: the first line that says one.
+        lines = [ln for ln in (self.err or self.out or "").strip().splitlines()
+                 if ln.strip() and not ln.lstrip().startswith("Warning:")]
         return scrub(lines[0][:200]) if lines else f"code {self.rc}"
 
 
@@ -106,19 +108,71 @@ def remote(base: list[str], command: str) -> list[str]:
     return [*base[:-1], "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", base[-1], command]
 
 
+def host_key_pinned(base: list[str]) -> bool:
+    """The ssh command accepts only a host key already verified (StrictHostKeyChecking=yes, the
+    Makefile's when the fingerprint is given): never accept-new, never a prompt."""
+    joined = " ".join(base)
+    return "StrictHostKeyChecking=yes" in joined and "accept-new" not in joined
+
+
+# The watch's mounts the reader needs, read-only in its own container: (target, required).
+READER_MOUNTS = (("/app/runs/glorfindel", True), ("/app/runs/console", False), ("/app/runs/bot", False),
+                 ("/root/.glorfindel", True), ("/app/glorfindel-config.yaml", True))
+_SAFE_PATH = re.compile(r"/[A-Za-z0-9._/-]{1,250}")
+_IMAGE_ID = re.compile(r"sha256:[0-9a-f]{64}")
+# The disposable container of the reader: no network (no IMDS, no token), no capability, no
+# privilege gained, its root read-only, each mount read-only — read-only by construction.
+READER_HARDEN = ("--rm", "-i", "--network", "none", "--read-only", "--tmpfs", "/tmp", "--cap-drop", "ALL",
+                 "--security-opt", "no-new-privileges", "-e", "PYTHONDONTWRITEBYTECODE=1", "-w", "/app")
+
+
+def reader_command(mounts: list[dict], image: str, ask: str, vm: str, run_id: str = "") -> list[str]:
+    """`docker run` of the reader: the deployed watch's image, its mounts the reader needs, each
+    `readonly` (`--mount`: a source that is not there is refused, never created). Raises RuntimeError
+    on a mount or an image it does not recognize."""
+    if not _IMAGE_ID.fullmatch(image or ""):
+        raise RuntimeError("l'image de la watch de H0 ne se lit pas (docker inspect)")
+    by_target = {str(m.get("Destination") or ""): str(m.get("Source") or "") for m in mounts if isinstance(m, dict)}
+    words = ["docker", "run", *READER_HARDEN]
+    for target, required in READER_MOUNTS:
+        source = by_target.get(target, "")
+        if not source:
+            if required:
+                raise RuntimeError(f"la watch de H0 ne monte pas {target}")
+            continue
+        if not _SAFE_PATH.fullmatch(source) or ".." in source.split("/"):
+            raise RuntimeError(f"le montage de {target} sur H0 n'est pas un chemin attendu")
+        words += ["--mount", f"type=bind,source={source},target={target},readonly"]
+    return [*words, "--entrypoint", "python", image, "-", ask, vm, *([run_id] if run_id else [])]
+
+
 def read_h0(ask: str, vm: str, run_id: str = "", env: dict | None = None, timeout: float = 120) -> dict:
-    """The watch's files on H0, through bench_h0_reader.py on the ssh's stdin. Raises RuntimeError
-    when H0 can't be read (said by the caller)."""
+    """The watch's files on H0, read by bench_h0_reader.py (on the ssh's stdin) in a disposable
+    container of the deployed watch's image — never inside the watch (`docker exec`): two ssh, the
+    watch's image and mounts read (`docker inspect`), then the reader run. Raises RuntimeError when
+    H0 can't be read (said by the caller), or when its host key is not verified."""
     base = ssh_argv("BENCH_H0_SSH", env)
     if not base:
         raise RuntimeError("BENCH_H0_SSH vide : lancer par make (la commande ssh de H0 vient du Makefile)")
+    if not host_key_pinned(base):
+        raise RuntimeError("la clé d'hôte de H0 n'est pas vérifiée par son empreinte (HOST_SSH_FINGERPRINT, "
+                           "make glorfindel-host-known) : rien n'est envoyé")
     if not VM_NAME.fullmatch(vm) or (run_id and not RUN_ID.fullmatch(run_id)):
         raise RuntimeError("nom de VM ou run_id invalide")
-    words = ["docker", "exec", "-i", "eregion-watch", "python", "-", ask, vm, *([run_id] if run_id else [])]
+    inspect = ["docker", "inspect", "--format", "{{json .Mounts}}|{{.Image}}", "eregion-watch"]
+    seen = run(remote(base, " ".join(shlex.quote(w) for w in inspect)), timeout=60)
+    if not seen.ok:
+        raise RuntimeError(f"H0 ne répond pas par ssh ({seen.first_error()})")
+    try:
+        mounts_text, image = seen.out.strip().splitlines()[-1].rsplit("|", 1)
+        mounts = json.loads(mounts_text)
+    except (ValueError, IndexError) as e:
+        raise RuntimeError("la watch de H0 ne se lit pas (docker inspect)") from e
+    words = reader_command(mounts if isinstance(mounts, list) else [], image.strip(), ask, vm, run_id)
     res = run(remote(base, " ".join(shlex.quote(w) for w in words)),
               stdin=READER.read_text(encoding="utf-8"), timeout=timeout)
     if not res.ok:
-        raise RuntimeError(f"H0 ne répond pas par ssh ({res.first_error()})")
+        raise RuntimeError(f"la lecture de H0 a échoué ({res.first_error()})")
     try:
         doc = json.loads(res.out.strip().splitlines()[-1])
     except (ValueError, IndexError) as e:

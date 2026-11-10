@@ -26,6 +26,7 @@ VM = "vm-celebrimbor-gondolin"
 RID = f"/subscriptions/{SUB}/resourceGroups/{RG}/providers/Microsoft.Compute/virtualMachines/{VM}"
 BREE = f"/subscriptions/{SUB}/resourceGroups/{RG}/providers/Microsoft.Compute/virtualMachines/vm-celebrimbor-bree"
 NIC = f"/subscriptions/{SUB}/resourceGroups/{RG}/providers/Microsoft.Network/networkInterfaces/nic-celebrimbor-gondolin"
+NIC_BREE = f"/subscriptions/{SUB}/resourceGroups/{RG}/providers/Microsoft.Network/networkInterfaces/nic-celebrimbor-bree"
 ORO_VM = f"/subscriptions/{SUB}/resourceGroups/rg-orodruin/providers/Microsoft.Compute/virtualMachines/vm-orodruin"
 VAULT, STAGING = "rsv-celebrimbor-erebor", "stcelebrimborstaging"
 
@@ -40,6 +41,7 @@ HUMAN_OID = "00000000-0000-4000-8000-0000000000f0"
 HUMAN_UPN = "operator@example.com"
 H0_IP, ORO_IP, LEAKED_IP = "192.0.2.10", "192.0.2.20", "203.0.113.9"
 
+IMAGE = "sha256:" + "0" * 63 + "1"      # the deployed watch's image, by its id
 RUN = "20261109T164009Z-0a0a"
 REQUEST = "r-20261109T163409Z-000aaa"
 DAY = "2026-11-09"
@@ -50,14 +52,50 @@ name, args = os.path.basename(sys.argv[0]), sys.argv[1:]
 plan = json.load(open(os.environ["BENCH_FAKE_PLAN"]))
 with open(os.environ["BENCH_FAKE_LOG"], "a") as f:
     f.write(json.dumps([name, *args]) + "\n")
-if name == "ssh":
+def readonly(paths, on):
+    # each mounted source read-only for the reader's time, as `readonly` makes it in docker
+    for top in paths:
+        for root, dirs, files in os.walk(top) if os.path.isdir(top) else [(os.path.dirname(top), [], [os.path.basename(top)])]:
+            for d in dirs:
+                os.chmod(os.path.join(root, d), 0o555 if on else 0o755)
+            for f in files:
+                os.chmod(os.path.join(root, f), 0o444 if on else 0o644)
+        if os.path.isdir(top):
+            os.chmod(top, 0o555 if on else 0o755)
+if name == "ssh" and plan.get("h0"):
     cmd = args[-1]
-    if "eregion-watch python -" in cmd and plan.get("h0"):
-        words = shlex.split(cmd)
-        rest = words[words.index("-") + 1:]
-        h0 = plan["h0"]
-        env = {**os.environ, "HOME": h0["home"], "PYTHONPATH": h0["pythonpath"]}
-        sys.exit(subprocess.run([sys.executable, "-", *rest], stdin=sys.stdin, cwd=h0["app"], env=env).returncode)
+    words = shlex.split(cmd)
+    h0 = plan["h0"]
+    if "exec" in words and "eregion-watch" in words:
+        sys.stderr.write("fake ssh: docker exec in the watch refused\n")
+        sys.exit(97)
+    if words[:2] == ["docker", "inspect"] and "eregion-watch" in words:
+        print(json.dumps(h0["mounts"]) + "|" + h0["image"])
+        sys.exit(0)
+    if words[:2] == ["docker", "run"] and h0["image"] in words:
+        mounts = [words[i + 1] for i, w in enumerate(words) if w == "--mount"]
+        ctr = h0["ctr"]
+        sources = []
+        for m in mounts:
+            kv = dict(p.split("=", 1) for p in m.split(",") if "=" in p)
+            if "readonly" not in m.split(","):
+                sys.stderr.write("fake docker: a mount not readonly: %s\n" % m)
+                sys.exit(98)
+            dst = ctr + kv["target"]
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            if not os.path.lexists(dst):
+                os.symlink(kv["source"], dst)
+            sources.append(kv["source"])
+        os.makedirs(ctr + "/app", exist_ok=True)
+        os.makedirs(ctr + "/root", exist_ok=True)
+        rest = words[words.index(h0["image"]) + 1:]
+        env = {**os.environ, "HOME": ctr + "/root", "PYTHONPATH": h0["pythonpath"], "PYTHONDONTWRITEBYTECODE": "1"}
+        readonly(sources, True)
+        try:
+            code = subprocess.run([sys.executable, *rest], stdin=sys.stdin, cwd=ctr + "/app", env=env).returncode
+        finally:
+            readonly(sources, False)
+        sys.exit(code)
 def holds(w):
     return any(w[1:] in a for a in args) if w.startswith("~") else w in args
 for rule in plan["rules"]:
@@ -89,7 +127,9 @@ class World:
         self.log.write_text("")
         self.app, self.home = tmp / "h0" / "app", tmp / "h0" / "home"
         (self.app / "runs" / "glorfindel" / "orodruin").mkdir(parents=True)
-        (self.app / "runs" / "console").mkdir(parents=True)
+        for x in ("console", "bot", "annatar"):
+            (self.app / "runs" / x).mkdir(parents=True)
+        (self.app / "glorfindel-config.yaml").write_text("")
         (self.home / ".glorfindel" / "isolation").mkdir(parents=True)
         fake = self.bin / "fake"
         fake.write_text(_FAKE.replace("#!PYTHON", f"#!{sys.executable}"))
@@ -102,10 +142,20 @@ class World:
             "action_backends:\n  - name: vault\n    type: azure_backup_vault\n"
             f"    vault_name: {VAULT}\n    resource_group: {RG}\n    restore_staging_storage: {STAGING}\n")
 
+    def mounts(self) -> list[dict]:
+        """The watch's mounts as `docker inspect` gives them on H0: the host's sources, its targets."""
+        a, h = self.app, self.home
+        return [{"Type": "bind", "Source": str(a / "runs" / x), "Destination": f"/app/runs/{x}", "RW": x == "glorfindel"}
+                for x in ("glorfindel", "annatar", "console", "bot")] + [
+            {"Type": "bind", "Source": str(h / ".glorfindel"), "Destination": "/root/.glorfindel", "RW": True},
+            {"Type": "bind", "Source": str(h / ".cache" / "chroma"), "Destination": "/root/.cache/chroma", "RW": True},
+            {"Type": "bind", "Source": str(a / "glorfindel-config.yaml"), "Destination": "/app/glorfindel-config.yaml",
+             "RW": False}]
+
     def env(self, **extra) -> dict:
         self.plan_file.write_text(json.dumps({
             "rules": self.rules,
-            "h0": {"app": str(self.app), "home": str(self.home), "pythonpath": str(ROOT)}}))
+            "h0": {"mounts": self.mounts(), "image": IMAGE, "ctr": str(self.tmp / "ctr"), "pythonpath": str(ROOT)}}))
         base = {k: v for k, v in os.environ.items()
                 if not k.startswith(("AZURE_", "EREGION_", "GLORFINDEL_", "BENCH_", "ARM_"))}
         return {**base, "PATH": f"{self.bin}{os.pathsep}{os.environ['PATH']}",
@@ -175,7 +225,18 @@ def activity_0911() -> list[dict]:
                     f"/subscriptions/{SUB}/resourceGroups/{RG}/providers/Microsoft.Storage/storageAccounts/stother",
                     "17:01:00", "17:01:01", "Succeeded", "unknown", "u1")
     ev += operation(RC, BREE, "16:50:00", "16:50:20", "Succeeded", "h0", "b1")
+    # H0 writing bree's NIC (a block) before gondolin's: not the target's isolation
+    ev += operation("Microsoft.Network/networkInterfaces/write", NIC_BREE, "16:42:50", "16:42:51", "Succeeded", "h0", "n0")
     return ev
+
+
+def activity_of(rid: str) -> list[dict]:
+    """What `az monitor activity-log list --resource-id <rid>` gives: the events on that resource —
+    and, for gondolin's NIC, bree's too, as a filter that let it through would."""
+    every = activity_0911()
+    if rid == NIC:
+        return [e for e in every if e["resourceId"] in (NIC, NIC_BREE)]
+    return [e for e in every if e["resourceId"] in (rid, BREE)]
 
 
 def job(op: str, status: str, start: str, end: str | None, vm: str = VM) -> dict:

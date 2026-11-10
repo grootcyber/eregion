@@ -1,9 +1,12 @@
 """bench_h0_reader — what the bench's two targets read on H0, sent by ssh (BNC1, #682).
 
-Sent on stdin to `docker exec -i eregion-watch python - <ask> <vm> [<run_id>]` by
-scripts/bench_shared.py (`read_h0`): it runs in the watch's container (its working directory /app,
-its ~/.glorfindel), reads files, writes nothing, calls no cloud and no model. It prints one JSON
-object on stdout, and only what the two targets need:
+Sent on stdin by scripts/bench_shared.py (`read_h0`), never into the watch itself: it runs in a
+disposable container of the deployed watch's image (`docker run --rm --network none --read-only
+--cap-drop ALL --security-opt no-new-privileges`), with the watch's runs/, its ~/.glorfindel and its
+glorfindel-config.yaml mounted `readonly` — read-only by construction: no network (no IMDS, no
+token), no capability, nothing it could write. It reads files, calls no cloud and no model, and
+prints one JSON object on stdout, only what the two targets need (a later step: a read-only
+sub-command shipped in the image, in place of this script from the workstation's checkout):
 
   preflight   the target as H0 sees it: its configured and effective mode, its readiness (verdict
               and codes), the quarantine NSG enabled or not, its isolation if any; Orodruin's
