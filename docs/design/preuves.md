@@ -114,19 +114,28 @@ statut, chaque façon dont le job nomme son point, sur place ou ailleurs, son co
 non, la VM laissée allumée ou éteinte), le geste du poste (la neutralisation par la console puis la
 restauration sur place, chacune de ses parties tirée autrement de temps en temps), des Run Commands
 par la console, par H0, par un attaquant (qui imprime ou non la sortie inoffensive), **un invité
-hostile** (root écrit lui-même la sortie inoffensive), des démarrages, le temps qui passe. Ajoutées
-ici, elles auraient dilué les séquences des NSG sans rien leur faire voir. Deux propriétés, jugées
-sur le journal du test, jamais sur la parole de l'invité :
+hostile** (root écrit lui-même la sortie inoffensive, ou une autre), des démarrages, le temps qui
+passe. Depuis REC1b (#679) : une vue d'instance qui porte la parole de l'invité ou non (jamais, au
+banc), tirée pour chaque séquence ; le geste du poste désalloue la VM avant le restore ; des Run
+Commands refusées par la plateforme sur une VM désallouée, de chaque principal ; une commande
+d'attaquant échouée entre la neutralisation et la désallocation. Ajoutées ici, elles auraient dilué
+les séquences des NSG sans rien leur faire voir. Deux propriétés, jugées sur le journal du test,
+jamais sur la parole de l'invité comme preuve :
 
 | | Ce qui doit tenir |
 |---|---|
-| R1 | jamais de `recovery_complete` sans reprise prouvée sur Azure : le dernier job de la VM depuis son isolement fini et réussi, sur place, son conteneur nommé ou son point nommé par son identifiant, son point antérieur à l'isolement, la VM qui tourne ; « neutralisée » seulement si, au journal du test, la dernière Run Command avant le job est celle de la console et qu'aucune d'un autre n'a suivi — un attaquant qui imprime le marqueur, root qui l'écrit, ne comptent pas |
+| R1 | jamais de `recovery_complete` sans reprise prouvée sur Azure : le dernier job de la VM depuis son isolement fini et réussi, sur place, son conteneur nommé ou son point nommé par son identifiant, son point antérieur à l'isolement, la VM qui tourne ; « neutralisée » seulement si, au journal du test, la dernière Run Command avant le job est celle de la console et qu'aucune d'un autre n'a suivi, sauf refusée parce que la VM ne tournait pas — un attaquant qui imprime le marqueur, root qui l'écrit, ne comptent pas ; et jamais « neutralisée » quand la vue porte, après le job, une autre parole que l'inoffensive |
 | R2 | jamais deux `recovery_complete` pour un job, ni deux cartes pour un job et un motif, ni deux de ses cartes en attente sur une VM |
 
 Les tests ciblés du même fichier attrapent les dix mutants du lot (M4615–M4619, M4628–M4632) à
 chaque tour. La machine seule en attrape une partie, qui varie d'un tirage à l'autre : sur un
 tirage, six des neuf qu'elle peut voir à 200 séquences et quatre à 60. M4632, une levée en cours,
-n'est vu que par son test.
+n'est vu que par son test. Les six de REC1b (M4650–M4653, M4668 : le même appelant, M4671 : le statut des autres événements) aussi, à chaque tour ; la machine seule
+voit M4650 (un échec quelconque pris pour un refus) et M4651 (la parole contraire ignorée) sur une
+partie des tirages, à 200 et 300 séquences, l'un ou l'autre selon le tirage. M4652 (la parole
+exigée de nouveau) retient des levées, ce que R1 ne juge pas ; M4653 (la borne du `Started` d'un
+refus levée, en nombre et en temps) demande un identifiant d'opération choisi par le client, que
+le faux Azure ne tire pas : ses tests ciblés l'écrivent à la main.
 
 **Des oracles qui ne demandent rien au code.** Ce qu'une propriété juge vient du journal du test :
 la levée qu'il a demandée (I9), ce qu'il a perdu et quand (une carte « intraçable »), qui a écrit

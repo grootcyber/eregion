@@ -7,16 +7,20 @@ guest last said): a restore run from the workstation — its neutralization by t
 console's principal, then the vault's job in place — makes the watch lift the isolation, once,
 without the reassertion putting it back; a point not before the incident, a job that failed, a VM
 that does not run, a restore elsewhere lift nothing, and say so on one card; an attacker's script
-printing the harmless output, root rewriting it, never prove a neutralization (review B1). The
-machine at the end draws sequences of isolations, points, restores, commands by each principal, a
-hostile guest and passes: never a recovery_complete without a recovery proven on Azure (R1), never
-two for one job nor two cards for one job and one reason (R2).
+printing the harmless output, root rewriting it, never prove a neutralization (review B1).
+REC1b (#679): the instance view never carries Run Command v1 (measured 09/11, the fake's default):
+the control plane decides alone, the guest's word present and contrary holds the release, and a
+command the platform refused (on a deallocated VM: Conflict, OperationNotAllowed) is none, whoever
+tried it — any other failure of another principal still holds. The machine at the end draws
+sequences of isolations, points, restores, commands by each principal, refused ones, a hostile
+guest, a view that carries the guest's word or not, and passes: never a recovery_complete without a
+recovery proven on Azure (R1), never two for one job nor two cards for one job and one reason (R2).
 """
 from __future__ import annotations
 
 import os
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest
@@ -25,6 +29,8 @@ from hypothesis.stateful import RuleBasedStateMachine, initialize, invariant, ru
 
 from glorfindel import escalations, recovery_watch, reassert
 from glorfindel.actions import AzureConnector, _load_isolation_state, active_isolations
+
+from glorfindel.providers.azure.restore import NEUTRALIZED_MARKER
 
 from .fake_azure import FakeAzure, key, open_flows
 
@@ -49,8 +55,10 @@ def _env(monkeypatch):
     monkeypatch.setattr(escalations, "_notify", lambda esc: None)
 
 
-def _world(windows: bool = False):
+def _world(windows: bool = False, view: bool = False):
+    """`view`: the instance view carries Run Command v1's word (never, on the bench: 09/11)."""
     f = FakeAzure()
+    f.view_run_command = view
     nsg = f.add_nsg("rg-app", "nsg-web")
     sub = f.add_subnet("rg-net", "vnet", "app", nsg)
     vm = f.add_vm("rg-app", "web", [{"rg": "rg-app", "name": "web-nic", "ips": ["10.0.1.4"],
@@ -337,17 +345,20 @@ def test_a_restore_without_the_neutralization_is_released_by_no_one():
 
 
 def test_a_word_of_run_command_from_before_the_restore_proves_nothing():
-    """The marker read before the restore's end (written by the guest of the old disk, perhaps):
-    the watch waits for the restored disk's word, then, none, says the neutralization unknown."""
-    f, c, vm = _world()
+    """A word read before the restore's end (written by the guest of the old disk): not the
+    restored disk's, it neither proves nor contradicts — here another command's output, H0's drain:
+    the control plane decides alone, and the release follows (REC1b)."""
+    f, c, vm = _world(view=True)
     _isolated(f, c, vm)
     _points(f, vm)
     _from_the_workstation(f, c, vm)
     v = f.vms[key(vm)]
-    v["said"] = {"message": v["last_output"], "time": _t(30)}  # before the job's end (40)
-    assert _pass(c, 50)[0] == []                            # within the wait: nothing yet
-    sig = _pass(c, 60)[0][0]                                # past it: unknown
-    assert sig["raw_signal"]["run_command_neutralized"] is None
+    v["said"] = {"message": "Enable succeeded:\n[stdout]\nglorfindel-drain-remaining=0\n[stderr]\n",
+                 "time": _t(30)}                            # before the job's end (40)
+    iso = _load_isolation_state(vm)["isolated_at"]
+    assert c.observed_restore(vm, iso, vault=VAULT)["run_command"]["neutralized"] is None
+    sig = _pass(c, 46)[0][0]
+    assert sig["raw_signal"]["run_command_neutralized"] is True
 
 
 def test_a_replayable_extension_holds_the_release_and_is_named():
@@ -432,7 +443,7 @@ def test_a_windows_vm_is_read_the_same_way_and_held_as_on_the_workstation():
     `runcommandlinux` and v2's handlers): the workstation's restore holds it as a replay vector,
     and the watch the same — the release held, the card naming it. A gap older than REC1, left
     as it is (said in its report)."""
-    f, c, vm = _world(windows=True)
+    f, c, vm = _world(windows=True, view=True)
     _isolated(f, c, vm)
     _points(f, vm)
     assert c._neutralize_run_command("rg-app", "web", f.compute.virtual_machines.get("rg-app", "web"))[
@@ -469,7 +480,7 @@ def test_a_restore_elsewhere_lifts_nothing_and_says_the_vm_was_not_restored(kind
     """« Restore disks », a new VM: the operation is a Restore, named after the source VM, its
     container too — but the isolated VM keeps its disks. Root on it writes the harmless word: still
     nothing (REC1, review B1)."""
-    f, c, vm = _world()
+    f, c, vm = _world(view=True)              # the guest's forged word read
     _isolated(f, c, vm)
     _points(f, vm)
     _from_the_workstation(f, c, vm, kind=kind)
@@ -510,7 +521,7 @@ def test_a_restore_without_neutralization_whose_attacker_prints_the_marker_lifts
     """A restore from the portal, nothing neutralized; the attacker's Run Command, the VM model's
     last, prints the harmless output (the marker is public), and the restored disk replays it: the
     guest says « neutralized », the activity log says the attacker ran the last command."""
-    f, c, vm = _world()
+    f, c, vm = _world(view=True)
     _isolated(f, c, vm)
     _points(f, vm)
     _run(f, c, vm, "glorfindel: run command neutralized", ATTACKER)
@@ -539,7 +550,7 @@ def test_an_attacker_command_after_the_neutralization_lifts_nothing():
 def test_root_rewriting_the_word_after_the_restore_proves_nothing():
     """No neutralization (H0's drain the last command); after the boot, root writes the harmless
     word in the agent's status: the control plane says otherwise."""
-    f, c, vm = _world()
+    f, c, vm = _world(view=True)              # the guest's forged word read
     _isolated(f, c, vm)
     _points(f, vm)
     _from_the_workstation(f, c, vm, neutralize=False)
@@ -550,7 +561,7 @@ def test_root_rewriting_the_word_after_the_restore_proves_nothing():
 
 
 def test_a_command_of_another_after_the_restore_began_proves_nothing():
-    f, c, vm = _world()
+    f, c, vm = _world(view=True)              # the guest's forged word read
     _isolated(f, c, vm)
     _points(f, vm)
     _from_the_workstation(f, c, vm)
@@ -667,6 +678,236 @@ def test_the_control_plane_reads_who_ran_each_command():
     assert decide({"run_commands": [ran(3, "h0"), cut(5, "oid-1", "Failed")]}, start, trusted)[0] is False
 
 
+# ── REC1b (#679): the control plane decides, the platform's refusals are none ──────────────────
+
+def _after(at: float, seconds: float) -> datetime:
+    """A moment `seconds` after the isolation's (`at`, an epoch)."""
+    return datetime.fromtimestamp(at + seconds, tz=timezone.utc)
+
+
+def _refusals(f, c, vm, by: str, times: int = 1) -> None:
+    """`glorfindel restore` tried again on the VM it deallocated: each Run Command `by` refused by
+    the platform (Conflict, OperationNotAllowed), logged under its real caller."""
+    from azure.core.exceptions import HttpResponseError
+    f.deallocate(vm)
+    for _ in range(times):
+        with pytest.raises(HttpResponseError, match="OperationNotAllowed"):
+            _run(f, c, vm, "glorfindel: run command neutralized", by)
+
+
+def test_a_view_without_run_command_and_a_control_plane_proof_lifts_once():
+    """Fini quand (1): the instance view carries no Run Command (the bench, 09/11), the activity
+    log proves the neutralization: the watch emits, once, as soon as the grace is past — no wait
+    for a word that never comes; the release follows."""
+    from glorfindel.agent import _apply_release_precondition
+    f, c, vm = _world()
+    _isolated(f, c, vm)
+    _points(f, vm)
+    _from_the_workstation(f, c, vm)
+    iso = _load_isolation_state(vm)["isolated_at"]
+    obs = c.observed_restore(vm, iso, vault=VAULT)
+    assert obs["run_command"] == {"neutralized": None, "why": "aucune parole de Run Command sur la VM"}
+    signals, report = _pass(c, 46)                          # end 40, grace 5 min
+    assert [r["outcome"] for r in report] == ["emitted"] and len(signals) == 1
+    assert signals[0]["raw_signal"]["run_command_neutralized"] is True
+    d = {"escalate": False, "action": "release_isolation"}
+    _apply_release_precondition(d, signals[0])
+    assert d["escalate"] is False
+    assert _pass(c, 47) == ([], []) and _pass(c, 120) == ([], [])
+
+
+def test_the_word_of_the_guest_present_and_contrary_holds_the_release():
+    """The control plane proves the neutralization, but the restored disk's guest says another
+    command ran (root wrote it, or a replay the log does not show): the release held."""
+    from glorfindel.agent import _apply_release_precondition
+    f, c, vm = _world(view=True)
+    _isolated(f, c, vm)
+    _points(f, vm)
+    _from_the_workstation(f, c, vm)
+    v = f.vms[key(vm)]
+    v["said"] = {"message": "Enable succeeded:\n[stdout]\nsomething else\n[stderr]\n", "time": _t(42)}
+    sig, report = _pass(c)
+    assert sig[0]["raw_signal"]["run_command_neutralized"] is False
+    assert "l'invité dit autre chose" in report[0]["detail"]
+    d = {"escalate": False, "action": "release_isolation"}
+    _apply_release_precondition(d, sig[0])
+    assert d["escalate"] is True and d["held_by"] == "release_precondition"
+
+
+def test_the_word_of_the_guest_present_and_harmless_lifts():
+    f, c, vm = _world(view=True)
+    _isolated(f, c, vm)
+    _points(f, vm)
+    _from_the_workstation(f, c, vm)                          # the restored disk replays the marker
+    iso = _load_isolation_state(vm)["isolated_at"]
+    assert c.observed_restore(vm, iso, vault=VAULT)["run_command"]["neutralized"] is True
+    assert _pass(c)[0][0]["raw_signal"]["run_command_neutralized"] is True
+
+
+@pytest.mark.parametrize("by", [CONSOLE, ATTACKER, H0])
+def test_refusals_of_the_platform_hold_nothing_whoever_tried(by):
+    """Fini quand (2): after the neutralization, the VM deallocated, Run Commands refused by the
+    platform (Conflict, OperationNotAllowed) — from the principal that restores as from another:
+    they never reached the guest, the model is as it was; the release follows."""
+    f, c, vm = _world()
+    at = _isolated(f, c, vm)
+    _points(f, vm)
+    f.caller, f.clock = CONSOLE, lambda: _after(at, 60)
+    c._neutralize_run_command("rg-app", "web", f.compute.virtual_machines.get("rg-app", "web"))
+    f.caller, f.clock = H0, lambda: _after(at, 120)
+    _refusals(f, c, vm, by, times=3)
+    f.restore(vm, "p-clean", _t(20), _t(40))
+    iso = _load_isolation_state(vm)["isolated_at"]
+    runs = c.observed_restore(vm, iso, vault=VAULT)["run_commands"]
+    theirs = [r for r in runs if by in r["callers"] and r["at"] == _after(at, 120).isoformat()]
+    assert [r["status"] for r in theirs] == ["Started", "Failed"] * 3 and all(r["refused"] for r in theirs)
+    sig = _pass(c)[0][0]
+    assert sig["raw_signal"]["run_command_neutralized"] is True
+
+
+def test_the_bench_of_09_11_lifts_with_the_restore_alone():
+    """The activity log of the bench, 09/11 (REC1b): three commands by Orodruin before the isolation,
+    H0's drain, the console's neutralization, three refused attempts by the console on the
+    deallocated VM, then the job in place — and an instance view without Run Command."""
+    f, c, vm = _world()
+    f.clock = lambda: datetime.now(timezone.utc) - timedelta(minutes=2)
+    for _ in range(3):
+        _run(f, c, vm, "setup", "orodruin-oid")
+    f.clock = lambda: datetime.now(timezone.utc)
+    at = _isolated(f, c, vm)                                # H0's drain
+    _points(f, vm)
+    f.clock = lambda: _after(at, 60)
+    _run(f, c, vm, "glorfindel: run command neutralized", CONSOLE)
+    f.clock = lambda: _after(at, 300)
+    _refusals(f, c, vm, CONSOLE, times=3)
+    f.restore(vm, "p-clean", _t(20), _t(40))
+    signals, report = _pass(c)
+    assert [r["outcome"] for r in report] == ["emitted"]
+    assert signals[0]["raw_signal"]["run_command_neutralized"] is True
+
+
+_OTHER_FAILURES = [
+    ("Conflict", '{"error":{"code":"OperationPreempted","message":"preempted"}}'),      # another code
+    ("BadRequest", '{"error":{"code":"OperationNotAllowed","message":"x"}}'),          # another status
+    (None, '{"error":{"code":"OperationNotAllowed","message":"x"}}'),                  # no status said
+    ("Conflict", "Operation not allowed"),                                             # unreadable
+    ("Conflict", ""),                                                                  # no message
+    ("Conflict", '{"status":"Failed","error":{"code":"ResourceOperationFailure",'
+                 '"details":[{"code":"OperationNotAllowed"}]}}'),                        # under details
+]
+
+
+@pytest.mark.parametrize("http, message", _OTHER_FAILURES)
+def test_another_failure_of_another_principal_holds_the_release(http, message):
+    """Fini quand (3), the rule m1 of REC1's review unchanged: any failure of another principal's
+    command after the neutralization but the platform's refusal, read as such, holds the release —
+    a code that can't be read included (prudence)."""
+    f, c, vm = _world()
+    at = _isolated(f, c, vm)
+    _points(f, vm)
+    f.caller, f.clock = CONSOLE, lambda: _after(at, 60)
+    c._neutralize_run_command("rg-app", "web", f.compute.virtual_machines.get("rg-app", "web"))
+    f.caller, f.clock = ATTACKER, lambda: _after(at, 120)
+    f.cut_run_command(vm, "attacker", status="Failed", http=http, message=message)
+    f.caller = H0
+    f.restore(vm, "p-clean", _t(20), _t(40))
+    iso = _load_isolation_state(vm)["isolated_at"]
+    runs = c.observed_restore(vm, iso, vault=VAULT)["run_commands"]
+    assert not any(r["refused"] for r in runs if ATTACKER in r["callers"])
+    assert _pass(c)[0][0]["raw_signal"]["run_command_neutralized"] is False
+
+
+def test_a_refusal_is_read_where_the_activity_log_carries_it():
+    """The forms an activity log event may give a refusal (`properties.statusCode`, else
+    `subStatus`; the error of `properties.statusMessage`, a JSON text or its object) — and what is
+    not one: an operation that went further than its Started, a Started of another caller or after
+    the refusal, an event without its operation."""
+    from glorfindel.providers.azure.recovery import _refused, _refused_operations
+    msg = '{"error":{"code":"OperationNotAllowed","message":"Operation \'RunCommand\' is not allowed"}}'
+    failed = {"status": {"value": "Failed"}, "properties": {"statusCode": "Conflict", "statusMessage": msg},
+              "operationId": "op-1", "caller": "x", "eventTimestamp": "2026-11-09T20:09:31Z"}
+    assert _refused(failed)
+    assert _refused({**failed, "properties": {"statusMessage": msg}, "subStatus": {"value": "Conflict"}})
+    assert _refused({**failed, "properties": {"statusCode": "conflict", "statusMessage": {
+        "status": "Failed", "error": {"code": "operationNotAllowed"}}}})
+    assert not _refused({**failed, "status": {"value": "Succeeded"}})
+    assert not _refused({**failed, "properties": {"statusCode": "Conflict", "statusMessage": "{not json"}})
+    assert not _refused({**failed, "properties": None})
+    started = {"status": {"value": "Started"}, "operationId": "OP-1", "caller": "x",
+               "eventTimestamp": "2026-11-09T20:09:29Z"}
+    assert _refused_operations([started, failed]) == {"op-1"}
+    assert _refused_operations([{**started, "caller": "y"}, failed]) == set()
+    assert _refused_operations([{**started, "eventTimestamp": "2026-11-09T20:09:40Z"}, failed]) == set()
+    assert _refused_operations([started, {**started, "status": {"value": "Succeeded"}}, failed]) == set()
+    assert _refused_operations([{**started, "operationId": ""}, {**failed, "operationId": ""}]) == set()
+    # Review round 1: one Started at most per refusal, the closest before it, within a minute.
+    earlier = {**started, "eventTimestamp": "2026-11-09T20:09:20Z"}
+    assert _refused_operations([earlier, started, failed]) == set()           # two Started, one refusal
+    assert _refused_operations([{**started, "eventTimestamp": "2026-11-09T19:59:31Z"}, failed]) == set()
+    assert _refused_operations([{**started, "eventTimestamp": "2026-11-09T20:08:31Z"}, failed]) == {"op-1"}
+    assert _refused_operations([{**started, "eventTimestamp": "2026-11-09T20:08:30Z"}, failed]) == set()
+    again = {**failed, "eventTimestamp": "2026-11-09T20:09:41Z"}
+    assert _refused_operations([earlier, failed, {**started, "eventTimestamp": "2026-11-09T20:09:39Z"},
+                                again]) == {"op-1"}                          # two refusals, a Started each
+    assert _refused_operations([failed]) == {"op-1"}                          # its Started not logged
+    # Review round 2: an operation that went further than its Started — an Accepted, a Succeeded of
+    # the same caller within the window, with no Started beside it — is not refused.
+    for went in ("Accepted", "Succeeded"):
+        assert _refused_operations([{**started, "status": {"value": went}}, failed]) == set(), went
+
+
+def _log_by_hand(f, vm, caller: str, op: str, at: datetime, status: str, refused: bool = False) -> None:
+    """One activity log event written as a client choosing its `operationId` would leave it (the
+    review's hypothesis: its origin is unmeasured)."""
+    failed = ({"http": "Conflict", "message": '{"error":{"code":"OperationNotAllowed","message":"x"}}'}
+              if refused else None)
+    f.activity.append({"resource_id": vm, "op": "Microsoft.Compute/virtualMachines/runCommand/action",
+                       "status": status, "at": at, "caller": caller, "op_id": op, "failed": failed})
+
+
+@pytest.mark.parametrize("starts", [(-5, -2), (-600,)], ids=["two-started", "ten-minutes-before"])
+def test_a_cut_command_never_hides_behind_a_refusal_of_its_id(starts):
+    """Review round 1: an attacker's command cut by the deallocation leaves its Started alone; a
+    later refusal under the same operationId (a client choosing it) takes at most one Started, the
+    closest before it, within a minute — two Started for one refusal, or one ten minutes before,
+    hold the release."""
+    f, c, vm = _world()
+    at = _isolated(f, c, vm)
+    _points(f, vm)
+    f.caller, f.clock = CONSOLE, lambda: _after(at, 60)
+    c._neutralize_run_command("rg-app", "web", f.compute.virtual_machines.get("rg-app", "web"))
+    f.caller = H0
+    refused_at = 900
+    for s in starts:
+        _log_by_hand(f, vm, ATTACKER, "op-chosen", _after(at, refused_at + s), "Started")
+    _log_by_hand(f, vm, ATTACKER, "op-chosen", _after(at, refused_at), "Failed", refused=True)
+    f.restore(vm, "p-clean", _t(20), _t(40))
+    iso = _load_isolation_state(vm)["isolated_at"]
+    runs = [r for r in c.observed_restore(vm, iso, vault=VAULT)["run_commands"] if ATTACKER in r["callers"]]
+    assert not any(r["refused"] for r in runs if r["status"] == "Started")
+    assert _pass(c)[0][0]["raw_signal"]["run_command_neutralized"] is False
+
+
+def test_the_activity_log_is_asked_for_what_a_refusal_needs(monkeypatch):
+    """The REST query selects the fields `_refused` reads: without them, every refusal would read as
+    another failure — the release held, never one too many."""
+    import requests
+    asked = []
+
+    class Page:
+        ok, status_code, text = True, 200, ""
+
+        def json(self):
+            return {"value": []}
+    monkeypatch.setattr(requests, "get", lambda url, **kw: asked.append(kw["params"]) or Page())
+    f, c, vm = _world()
+    c._activity = None
+    c._credential = type("Cred", (), {"get_token": lambda self, scope: type("T", (), {"token": "t"})()})()
+    c._activity_events(vm, _t(0).isoformat())
+    fields = set(asked[0]["$select"].split(","))
+    assert {"status", "subStatus", "properties", "operationId", "caller", "claims"} <= fields
+
+
 # ── M2, M4 (review) ─────────────────────────────────────────────────────────────────────────────
 
 def test_a_job_naming_no_container_lifts_only_by_the_id_of_its_point():
@@ -722,11 +963,13 @@ def test_a_vm_of_another_subscription_is_never_read():
 class RecoveryMachine(RuleBasedStateMachine):
     """Isolations, points, restores (every status, every way the job names its point, in place or
     elsewhere, its container named or not, the VM left on or off), Run Commands by the principal that
-    restores, by H0, by an attacker (printing the harmless output or not), a hostile guest writing
-    the harmless word itself, starts, passes over time — and, after each pass, the release the graph
-    would make (neutralized) or none (held). The oracles are the test's own journal: the jobs it
-    created and how, the moments it isolated, who ran each command and when — never the guest's
-    word, which an attacker can write."""
+    restores, by H0, by an attacker (printing the harmless output or not), commands the platform
+    refused on a deallocated VM (REC1b), a hostile guest writing the harmless word itself, an
+    instance view that carries the guest's word or not (never, on the bench), starts, passes over
+    time — and, after each pass, the release the graph would make (neutralized) or none (held). The
+    oracles are the test's own journal: the jobs it created and how, the moments it isolated, who
+    ran each command, when, and whether the VM ran then — never the guest's word as a proof, which
+    an attacker can write; only, present and contrary, as what must hold the release."""
 
     def __init__(self):
         super().__init__()
@@ -736,8 +979,8 @@ class RecoveryMachine(RuleBasedStateMachine):
         self.jobs: list[dict] = []                    # the test's own record of each restore
         self.cmds: dict[str, list[dict]] = {}         # VM → each Run Command: when, by whom
 
-    @initialize()
-    def build(self):
+    @initialize(view=st.booleans())
+    def build(self, view):
         import shutil
         import tempfile
         from pathlib import Path
@@ -747,7 +990,7 @@ class RecoveryMachine(RuleBasedStateMachine):
         escalations._STORE = self.home / "escalations.jsonl"
         recovery_watch.RECOVERIES_FILE = self.home / "recoveries.json"
         self._cleanup = lambda: shutil.rmtree(self.home, ignore_errors=True)
-        self.f, self.c, vm = _world()
+        self.f, self.c, vm = _world(view=view)
         self.f.clock = lambda: datetime.fromtimestamp(self._now(), tz=timezone.utc)
         sub = next(iter(self.f.subnets.values()))["id"]
         other = self.f.add_vm("rg-app", "db", [{"rg": "rg-app", "name": "db-nic", "ips": ["10.0.1.5"],
@@ -766,6 +1009,13 @@ class RecoveryMachine(RuleBasedStateMachine):
     def _now(self) -> float:
         return _NOW + self.minutes * 60
 
+    def _runs(self, vm: str) -> bool:
+        return self.f.vms[key(vm)]["power"] == "running"
+
+    def _command(self, vm: str, by: str, ran: bool) -> None:
+        """The test's journal of one Run Command: done (it ran), or refused (the VM did not run)."""
+        self.cmds.setdefault(vm, []).append({"at": self._now(), "by": by, "done": ran, "refused": not ran})
+
     @rule(i=st.integers(0, 1))
     def isolate(self, i):
         vm = self.vms[i]
@@ -773,8 +1023,9 @@ class RecoveryMachine(RuleBasedStateMachine):
             return
         self.minutes += 1
         at = self._now()
+        ran = self._runs(vm)
         self.c.isolate_vm(vm)                         # its session drain: a Run Command by H0
-        self.cmds.setdefault(vm, []).append({"at": at, "by": H0, "done": True})
+        self._command(vm, H0, ran)
         from glorfindel.actions import _save_isolation_state
         state = _load_isolation_state(vm)
         _save_isolation_state(vm, {**state, "isolated_at": datetime.fromtimestamp(at, tz=timezone.utc).isoformat()})
@@ -791,30 +1042,45 @@ class RecoveryMachine(RuleBasedStateMachine):
     def run_command(self, i, by, marker):
         """A Run Command through ARM: the console's neutralization, H0's drain, an attacker's —
         which may print the harmless output (the marker is public)."""
+        from azure.core.exceptions import HttpResponseError
         vm = self.vms[i]
         self.minutes += 1
-        _run(self.f, self.c, vm, "glorfindel: run command neutralized" if marker else "attacker", by)
-        self.cmds.setdefault(vm, []).append({"at": self._now(), "by": by, "done": True})
+        ran = self._runs(vm)
+        try:
+            _run(self.f, self.c, vm, "glorfindel: run command neutralized" if marker else "attacker", by)
+        except HttpResponseError:
+            assert not ran, "a Run Command refused on a VM that runs"
+        self._command(vm, by, ran)
+
+    @rule(i=st.integers(0, 1), by=st.sampled_from([CONSOLE, H0, ATTACKER]), marker=st.booleans())
+    def refused_command(self, i, by, marker):
+        """The VM deallocated (what `glorfindel restore` does before the vault restores), then a Run
+        Command on it: refused by the platform, logged Started then Failed (Conflict,
+        OperationNotAllowed) under its real caller, the model as it was (REC1b)."""
+        self.f.deallocate(self.vms[i])
+        self.run_command(i, by, marker)
 
     @rule(i=st.integers(0, 1), status=st.sampled_from(["Accepted", "Started", "Failed"]), marker=st.booleans())
     def cut_command(self, i, status, marker):
         """An attacker's Run Command that never finished (cut by a deallocation, or failed): no
         Succeeded in the log, its settings in the VM model all the same (round 2, m1)."""
         vm = self.vms[i]
+        if not self._runs(vm):
+            return                                    # it would be refused: refused_command
         self.minutes += 1
         self.f.caller = ATTACKER
         try:
             self.f.cut_run_command(vm, "glorfindel: run command neutralized" if marker else "attacker", status)
         finally:
             self.f.caller = H0
-        self.cmds.setdefault(vm, []).append({"at": self._now(), "by": ATTACKER, "done": False})
+        self.cmds.setdefault(vm, []).append({"at": self._now(), "by": ATTACKER, "done": False, "refused": False})
 
-    @rule(i=st.integers(0, 1))
-    def hostile_guest(self, i):
-        """Root on the VM writes the harmless word in the agent's status: no Run Command, nothing
-        in the activity log."""
+    @rule(i=st.integers(0, 1), marker=st.booleans())
+    def hostile_guest(self, i, marker):
+        """Root on the VM writes a word in the agent's status — the harmless one, or another: no Run
+        Command, nothing in the activity log."""
         v = self.f.vms[key(self.vms[i])]
-        v["said"] = {"message": "Enable succeeded:\n[stdout]\nglorfindel: run command neutralized\n[stderr]\n",
+        v["said"] = {"message": f"Enable succeeded:\n[stdout]\n{NEUTRALIZED_MARKER if marker else 'rooted'}\n[stderr]\n",
                      "time": datetime.fromtimestamp(self._now(), tz=timezone.utc)}
 
     @rule(i=st.integers(0, 1), data=st.data(), start=st.sampled_from([-10, 2, 10]),
@@ -843,18 +1109,30 @@ class RecoveryMachine(RuleBasedStateMachine):
           kind=st.sampled_from(["replace", "replace", "replace", "disks"]),
           container=st.sampled_from([True, True, True, False]),
           power=st.sampled_from(["running", "running", "running", "deallocated"]),
-          hostile=st.booleans(), during=st.sampled_from([False, False, False, True]))
-    def workstation(self, i, start, neutralize, status, kind, container, power, hostile, during):
+          hostile=st.sampled_from([None, None, "marker", "other"]),
+          during=st.sampled_from([False, False, False, True]),
+          between=st.sampled_from(["none", "none", "refused", "cut"]),
+          refused_by=st.sampled_from([CONSOLE, ATTACKER, H0]))
+    def workstation(self, i, start, neutralize, status, kind, container, power, hostile, during, between,
+                    refused_by):
         """What `glorfindel restore` does from the workstation — the console's harmless Run Command,
         then an in-place restore of the clean point taken before the isolation: the case to prove —
         each part of it drawn otherwise once in a while: no neutralization, an attacker's command
         printing the marker, a failed job, a restore elsewhere, no container named, the VM left off,
-        a point of the incident, root writing the harmless word after the boot."""
+        a point of the incident, root writing a word after the boot (the harmless one, or another);
+        and, between the neutralization and the deallocation that precedes the restore, an
+        attacker's command that failed or was cut, or, after it, a Run Command the platform refuses
+        (REC1b: the restore tried again, by the console or by another)."""
         vm = self.vms[i]
         if vm not in self.iso_at:
             return
         if neutralize != "none":
             self.run_command(i, CONSOLE if neutralize == "console" else ATTACKER, True)
+        if between == "cut":
+            self.cut_command(i, "Failed", False)
+        self.f.deallocate(vm)                         # as `glorfindel restore` does before the vault
+        if between == "refused":
+            self.run_command(i, refused_by, True)
         pts = sorted(self.f.points[key(vm)], key=lambda p: p["time"])
         point = pts[-1] if during else pts[0]
         begin = self._now() + start * 60
@@ -865,9 +1143,9 @@ class RecoveryMachine(RuleBasedStateMachine):
                           "point": point["time"].timestamp(), "named": True, "kind": kind,
                           "container": container, "by_id": False})
         if hostile:
-            self.f.vms[key(vm)]["said"] = {
-                "message": "Enable succeeded:\n[stdout]\nglorfindel: run command neutralized\n[stderr]\n",
-                "time": datetime.fromtimestamp(begin + 960, tz=timezone.utc)}
+            word = NEUTRALIZED_MARKER if hostile == "marker" else "rooted"
+            self.f.vms[key(vm)]["said"] = {"message": f"Enable succeeded:\n[stdout]\n{word}\n[stderr]\n",
+                                           "time": datetime.fromtimestamp(begin + 960, tz=timezone.utc)}
 
     @rule(i=st.integers(0, 1))
     def start_vm(self, i):
@@ -901,8 +1179,12 @@ class RecoveryMachine(RuleBasedStateMachine):
                 before = [c for c in cmds if c["done"] and c["at"] < last["start"]]
                 assert before and before[-1]["by"] == CONSOLE, (
                     f"R1: neutralized, yet the last Run Command before the restore was {before[-1:]}")
-                assert all(c["by"] == CONSOLE for c in cmds if c["at"] > before[-1]["at"]), (
+                assert all(c["by"] == CONSOLE or c["refused"] for c in cmds if c["at"] > before[-1]["at"]), (
                     f"R1: neutralized, yet another ran a Run Command after it, finished or not: {cmds}")
+                said = self.f.vms[key(vm)].get("said")
+                if self.f.view_run_command and said and said["time"].timestamp() > last["end"]:
+                    assert NEUTRALIZED_MARKER in said["message"], (
+                        f"R1: neutralized, yet the guest's word after the restore contradicts it: {said}")
             assert (vm, last["name"]) not in self.emitted, f"R2: twice for {last['name']}"
             self.emitted.append((vm, last["name"]))
             if sig["raw_signal"]["run_command_neutralized"] is True:
