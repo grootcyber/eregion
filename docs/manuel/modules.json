@@ -1723,6 +1723,18 @@
    "pr": 663
   },
   {
+   "id": "s-graine-tours",
+   "composant": "socle",
+   "poste": "s-prouver",
+   "nom": "A mutant the machine catches one round in two, caught on every round by a frozen sequence",
+   "etat": "main",
+   "release": "0.5",
+   "lots": [
+    "MUT9"
+   ],
+   "issue": 704
+  },
+  {
    "id": "s-verrous",
    "composant": "socle",
    "poste": "s-signer",
