@@ -4218,6 +4218,65 @@ Le workspace est celui du profil, jamais un argument.
 
 ---
 
+## Le banc lisible : le préflight et le rapport d'un run (BNC1, #682)
+
+Le rejeu T1486 du 09/11 a duré environ 4 h. Chaque vérification de l'étape 0 et chaque mesure de
+l'étape 8 de `docs/banc-t1486.md` ont été tapées à la main, puis masquées et recopiées ; un droit
+manquant (`listKeys` sur le compte de transit) n'a été vu qu'au restore. Deux cibles les lisent
+désormais seules, **en lecture seule partout** (Azure, H0, Orodruin), sous l'`az login` de
+l'opérateur et les paires de son environnement (`.envrc` chargé) :
+
+```zsh
+make bench-preflight [TARGET=vm-celebrimbor-gondolin] [POINT_MAX_H=24]   # l'étape 0 : ✓/⚠/✗, code 1 sur un ✗
+make bench-report RUN=<run_id> [TARGET=…] [OUT=runs/bench/<run_id>.json]  # l'étape 8 : Markdown et JSON
+```
+
+- **`bench-preflight`** (`scripts/bench_preflight.py`) : une ligne par contrôle, puis le verdict.
+  Il réutilise `make glorfindel-host-status`, `make glorfindel-host-cd-status`,
+  `scripts/credential_expiry.py` (`make azure-pairs-expiry`) et le lecteur des droits du restore
+  (`glorfindel/providers/azure/restore_rights.py`) ; il lit le contrat d'Orodruin sur Orodruin, par
+  `check()`, sans le publier (`orodruin-check`, lui, le publie dans le canal). Les droits de H0 et
+  d'Orodruin se lisent par leurs attributions (`az role assignment list --all --include-inherited`) et
+  les définitions de leurs rôles, avec la même règle que le restore : un joker vaut, un `notActions`
+  ne retire que dans son propre rôle. Leurs object id viennent des sorties Terraform, lus sur le poste.
+  Une attribution posée sur un groupe d'administration n'est pas lue : un droit qui manque le dit
+  (un faux ✗, jamais un faux ✓), à vérifier à la main.
+- **Le lecteur de H0, en lecture seule par construction.** Il ne tourne jamais dans la watch
+  (`docker exec`). Deux ssh : `docker inspect eregion-watch` lit l'image déployée (son id) et les
+  montages de la watch ; puis `scripts/bench_h0_reader.py` (sur l'entrée du ssh) tourne dans un
+  conteneur jetable de cette image : `docker run --rm --network none --read-only --cap-drop ALL
+  --security-opt no-new-privileges`, avec `runs/glorfindel`, `runs/console`, `runs/bot`,
+  `~/.glorfindel` et `glorfindel-config.yaml` montés `readonly` (`--mount` : une source absente est
+  refusée, jamais créée). Sans réseau : ni IMDS, ni jeton, ni cloud. Il ne renvoie ni raisonnement, ni
+  signal brut, ni id. Rien ne part tant que la clé d'hôte de H0 n'est pas vérifiée par son empreinte
+  (`HOST_SSH_FINGERPRINT` : la première option `StrictHostKeyChecking` vaut `yes`, comme ssh la lit,
+  et un `UserKnownHostsFile` est donné) ; de même pour Orodruin. Sans elle, le préflight ne lance pas
+  non plus `make glorfindel-host-status` ni `glorfindel-host-cd-status`, qui se connecteraient en
+  `accept-new` : une seule ligne ✗ le dit. Le lecteur ne prend que les montages `bind` de la watch. La suite possible :
+  une sous-commande de lecture livrée dans l'image, à la place du script venu du checkout du poste.
+- **`bench-report`** (`scripts/bench_report.py`) : sur H0, le rapport du run, ses cycles, les levées,
+  l'état d'isolement ; sur Azure, le journal d'activité des seules ressources de la cible, chacune lue
+  à part (`az monitor activity-log list --resource-id` : la VM, puis ses cartes réseau ; 3 h avant T0
+  jusqu'à maintenant, 5000 événements au plus par lecture, une lecture qui atteint le plafond est dite
+  coupée), les jobs du coffre et la vue d'instance. L'appelant d'une Run Command devient un rôle : la
+  console (son appId, ou `GLORFINDEL_RESTORE_PRINCIPALS`), le bot, H0 et Orodruin (leur `principal_id`
+  Terraform), la watch du poste, un humain (un jeton d'utilisateur), sinon inconnu. Le JSON et le
+  Markdown s'écrivent côte à côte (`runs/bench/<run_id>.json` et `.md`, ou `OUT=` : son nom, en
+  `.json` et en `.md`), le JSON pour alimenter plus tard `docs/proofs.json`.
+- **Aucun identifiant n'est affiché** : chaque ligne dit un rôle, un type de portée ou un nom du banc
+  déjà public, et passe par `bench_shared.scrub` (GUID, IPv4, UPN, id ARM masqués) avant d'être
+  imprimée ou écrite. Les commandes ssh de H0 et d'Orodruin passent au script par l'environnement ;
+  `TARGET`, `RUN`, `OUT`, `POINT_MAX_H` aussi, jamais développés par make, vérifiés par le script.
+- **Les limites** : l'API des droits ne rend ni les deny assignments, ni les verrous, ni les
+  conditions ABAC, ni PIM ; un droit lu comme tenu peut encore être refusé. La vue d'instance est lue
+  une fois, au moment de composer : l'heure de l'agent `Ready` est celle de son dernier statut, pas
+  la première. L'isolement, une fois l'état de H0 levé, se date par la première écriture de H0 sur une
+  carte réseau de la cible après T0 (la quarantaine posée) : une isolation par les seules règles d'un
+  NSG n'y paraît pas, et c'est dit en lacune. Le `restore_time` de la CLI du poste ne se lit qu'à sa
+  sortie.
+
+DRL1 (`docs/design/drill-banc.md`) pourra appeler les deux cibles autour de chaque occurrence.
+
 ## auditd au banc (AUD1, #408)
 
 ADM1 et COR1 jugent un `sudo` vers root ; ce qui se fait ensuite dans un shell root, sudo ne l'écrit

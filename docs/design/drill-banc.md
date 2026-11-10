@@ -639,6 +639,11 @@ H0 les tire, comme aujourd'hui (`pull_runs`, `runs/orodruin/`), chacun relu cont
 la liste du canal pour le permis (§2.4). Le lot ajoute un lecteur exact pour `drill.json` et pour le
 permis.
 
+**Le préflight et le rapport du banc (BNC1, #682).** DRL1 pourra appeler `make bench-preflight`
+avant une occurrence et `make bench-report RUN=<run_id>` après elle : deux cibles en lecture seule,
+sans identifiant affiché, dont le JSON (`runs/bench/<run_id>.json`) est prêt pour `docs/proofs.json`
+(`docs/operations.md`, « Le banc lisible »).
+
 ### 4.2 Le verdict d'une occurrence, et les alertes
 
 **H0 juge chaque occurrence**, par le code, jamais par le modèle. Il croise trois choses :

@@ -1355,6 +1355,19 @@
    "doc": "docs/banc-t1486.md"
   },
   {
+   "id": "c-banc-lisible",
+   "composant": "celebrimbor",
+   "poste": "c-construire",
+   "nom": "The bench read by the machine: a preflight and a run report, composed alone",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "BNC1"
+   ],
+   "issue": 682,
+   "doc": "docs/banc-t1486.md"
+  },
+  {
    "id": "c-lecture",
    "composant": "celebrimbor",
    "poste": "c-acces",
