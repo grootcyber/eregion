@@ -1280,6 +1280,19 @@
    "doc": "docs/design/drill-banc.md"
   },
   {
+   "id": "o-banc-autonome",
+   "composant": "orodruin",
+   "poste": "o-executer",
+   "nom": "The bench run in one gesture: an armed slot, restore the only human step",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "BNC2"
+   ],
+   "issue": 684,
+   "doc": "docs/design/banc-autonome.md"
+  },
+  {
    "id": "o-canal",
    "composant": "orodruin",
    "poste": "o-rendre",

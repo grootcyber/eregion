@@ -1,6 +1,6 @@
 # T1486 au banc — rejouer le rançongiciel, et dater ses chiffres (RAN1)
 
-[← le banc](demarrer/banc.md) · le modèle : [la session de BL1](banc-bl1.md) · [ce qui reste à rejouer](demarrer/a-rejouer.md)
+[← le banc](demarrer/banc.md) · le modèle : [la session de BL1](banc-bl1.md) · [ce qui reste à rejouer](demarrer/a-rejouer.md) · [ce run en un geste (conception)](design/banc-autonome.md)
 
 Le README dit : « ~1 min to contain a ransomware VM, 21m29s to restored service ». Ces chiffres
 viennent du run `20260609T190824Z` (09/06, l'ancienne sandbox ; `ROADMAP.md`,

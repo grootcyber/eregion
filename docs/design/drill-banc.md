@@ -1035,5 +1035,10 @@ Prises une à une, en interactif ; toutes suivent la recommandation de la concep
   d'attentes en v1 : seul un drill livré porte `schedule` et des attentes. Un client qui voudrait son
   propre drill hebdomadaire est une question pour la 1.x.
 - La rotation de plusieurs drills (§1.1) est une suite, hors DRL1.
+- **Le run du banc en un geste** — un créneau unique armé qui déroule le scénario de référence
+  entier (le rançongiciel T1486), destructif compris, jusqu'au restore et à la levée — est une suite,
+  conçue à part : [`banc-autonome.md`](banc-autonome.md) (BNC2, #684). Il réutilise la machinerie de
+  ce drill (l'armement, le permis, le verrou, le registre, l'arrêt du service) et peut appeler le
+  préflight et le rapport de BNC1.
 - Ni le jumeau ni la production : le drill est du banc seul. La sentinelle de production
   (`sentinelle`) reste une demande portée à la main.
