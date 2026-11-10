@@ -308,16 +308,26 @@ resource "azurerm_role_assignment" "restore_neutralize" {
 # portée du seul compte restore_staging_storage (restore.auto.tfvars, commité), pour chaque
 # principal de restore_principals — jamais sur le groupe du banc, qui tient d'autres comptes de
 # stockage (leurs clés sont leurs données), jamais l'identité de H0. Le compte est relu sur Azure
-# dans le groupe du banc : une faute de frappe échoue au plan. Vide : rien d'attribué.
-data "azurerm_storage_account" "restore_staging" {
+# dans le groupe du banc, un seul : une faute de frappe échoue au plan. Par azurerm_resources (son
+# type, son nom, son groupe), jamais azurerm_storage_account, qui lit les clés du compte et les
+# écrirait dans l'état de H0 (relecture de RST1). Vide : rien d'attribué.
+data "azurerm_resources" "restore_staging" {
   count               = var.restore_staging_storage == "" ? 0 : 1
+  type                = "Microsoft.Storage/storageAccounts"
   name                = var.restore_staging_storage
   resource_group_name = data.azurerm_resource_group.bench.name
+
+  lifecycle {
+    postcondition {
+      condition     = length(self.resources) == 1
+      error_message = "restore_staging_storage : aucun compte de stockage de ce nom dans le groupe du banc (ou plusieurs)."
+    }
+  }
 }
 
 resource "azurerm_role_assignment" "restore_staging" {
   for_each             = var.restore_staging_storage == "" ? {} : var.restore_principals
-  scope                = data.azurerm_storage_account.restore_staging[0].id
+  scope                = data.azurerm_resources.restore_staging[0].resources[0].id
   role_definition_name = "Eregion Glorfindel Restore Staging"
   principal_id         = each.value
   principal_type       = "ServicePrincipal"

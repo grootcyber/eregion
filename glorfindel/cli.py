@@ -2379,7 +2379,10 @@ def _restore_before(resource_id: str, before: str | None) -> tuple[str, str]:
                 "l'attaque : passer --before <ISO8601>, un instant avant son début." + hint)
 
 
-# RST1 (h): the pairs a restore may run under, by the variable that holds each one's client id.
+# RST1 (h): the pairs a restore may run under. In the compose, the console's and the bot's
+# containers name theirs (GLORFINDEL_AZURE_PAIR, a constant: docker-compose.yml); on a workstation,
+# by the variable that holds each one's client id.
+_PAIR_MARKS = {"console": "la paire de la console", "bot": "la paire du bot"}
 _RESTORE_PAIRS = (("EREGION_CONSOLE_AZURE_CLIENT_ID", "la paire de la console", True),
                   ("GLORFINDEL_BOT_AZURE_CLIENT_ID", "la paire du bot", True),
                   ("GLORFINDEL_AZURE_CLIENT_ID", "la paire de la watch — elle ne restaure pas "
@@ -2403,6 +2406,9 @@ def _restore_identity() -> tuple[str, bool]:
         empty = ", ".join(n for n, v in (("AZURE_CLIENT_ID", cid), ("AZURE_CLIENT_SECRET", secret),
                                          ("AZURE_TENANT_ID", tenant)) if not v)
         return f"paire de l'environnement incomplète ({empty} vide) : {other}", False
+    mark = env("GLORFINDEL_AZURE_PAIR")
+    if mark in _PAIR_MARKS:
+        return f"{_PAIR_MARKS[mark]} (GLORFINDEL_AZURE_PAIR = {mark}, son conteneur)", True
     for var, said, restores in _RESTORE_PAIRS:
         if env(var) and env(var) == cid:
             return f"{said} (AZURE_CLIENT_ID = {var})", restores

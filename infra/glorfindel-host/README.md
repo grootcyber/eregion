@@ -66,7 +66,7 @@ seul sur le banc, dans le mode de chaque VM.
     restore de la console au banc, le 09/11 (403 `LinkedAuthorizationFailed`). L'état porte
     « Eregion Glorfindel Restore Staging » (`listKeys` seul) à la portée du seul compte
     `restore_staging_storage` (`stcelebrimborstaging`, `restore.auto.tfvars`, commité ; relu sur
-    Azure dans le groupe du banc), pour chaque principal de `restore_principals` — jamais sur le
+    Azure par son type et son nom dans le groupe du banc, sans ses clés : `azurerm_resources`), pour chaque principal de `restore_principals` — jamais sur le
     groupe, qui tient d'autres comptes de stockage, jamais l'identité de H0 (le plan la refuse).
     `terraform output restore_staging` dit à qui. Un rôle posé à la main avant (le banc, le 09/11) :
     `docs/operations.md`, « Depuis un rôle « Restore Staging » posé à la main » (l'importer). Le

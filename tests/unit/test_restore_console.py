@@ -360,6 +360,21 @@ def test_the_snapshot_s_refusal_is_said_whole_and_stays_a_write_refused(monkeypa
     assert _OBJECT_ID not in str(exc.value)
 
 
+@pytest.mark.parametrize("status, outright", [(400, True), (403, True), (404, True), (409, False),
+                                             (500, False), (503, False)])
+def test_only_a_refusal_of_authorization_or_validation_says_no_restore_left(monkeypatch, status, outright):
+    """RST1 review: a 5xx may have been applied, a 409 names an operation under way — the vault's
+    jobs are read before the VM is started again or the restore triggered again."""
+    az = FakeRestoreAzure(monkeypatch, trigger=(status, json.dumps({"error": {"code": "X", "message": "m"}})))
+    with pytest.raises(RuntimeError) as exc:
+        az.restore()
+    msg = str(exc.value)
+    assert ("Aucun restore n'est parti" in msg) is outright
+    assert ("lire les jobs du coffre (az backup job list -g rg -v rsv -o table) avant de relancer" in msg) \
+        is not outright
+    assert "az vm start -g rg -n vm" in msg and az.listings == 0
+
+
 def test_a_trigger_without_an_answer_says_the_vm_is_deallocated(monkeypatch):
     az = FakeRestoreAzure(monkeypatch)
     az.trigger = az.requests.Timeout("read timed out")
@@ -471,19 +486,45 @@ def test_a_snapshot_whose_job_fails_at_once_says_so(monkeypatch):
     assert "backup-1 Failed" in str(exc.value) and "code 42 : UserErrorGuestAgentStatusUnavailable" in str(exc.value)
 
 
-def test_a_snapshot_s_job_is_searched_two_minutes_and_its_absence_says_what_to_do(monkeypatch):
+def test_the_snapshot_s_search_stays_short_the_restore_s_lasts_two_minutes(monkeypatch):
+    """RST1 review: the watch's autonomous snapshot runs one VM at a time — a ransomware's signal
+    waits behind it. Its search stays 3 × 10 s, as before; the restore's is 8 × 15 s."""
     az = FakeRestoreAzure(monkeypatch, jobs=[])
     with pytest.raises(RuntimeError) as exc:
         az.connector.snapshot(_RID, vault="rsv", wait=False)
-    assert "lire les jobs du coffre avant de relancer" in str(exc.value)
-    assert sum(az.sleeps) >= 120 and "désallouée" not in str(exc.value)
+    assert "lire les jobs du coffre avant de relancer" in str(exc.value) and "(30 s)" in str(exc.value)
+    assert az.sleeps == [10.0] * 3 and "désallouée" not in str(exc.value)
+    az = FakeRestoreAzure(monkeypatch, jobs=[])
+    with pytest.raises(RuntimeError, match=r"\(120 s\)"):
+        az.restore()
+    assert az.sleeps == [15.0] * 8
 
 
-def test_a_snapshot_s_job_found_late_is_tracked(monkeypatch):
+def test_a_snapshot_s_job_found_at_its_last_look_is_tracked_and_one_failed_at_once_too(monkeypatch):
     def jobs(attempt):
-        return [_job("backup-1", "Backup", datetime.now(timezone.utc))] if attempt >= 6 else []
+        return [_job("backup-1", "Backup", datetime.now(timezone.utc))] if attempt >= 3 else []
     az = FakeRestoreAzure(monkeypatch, jobs=jobs)
     assert az.connector.snapshot(_RID, vault="rsv", wait=False) == "rsv:rsv/rg/backup-1"
+    now = datetime.now(timezone.utc)
+    az = FakeRestoreAzure(monkeypatch, jobs=[_job("backup-2", "Backup", now, status="Failed",
+                                                  errors=[_error(9, "vault busy")])])
+    with pytest.raises(RuntimeError, match="backup-2 Failed : code 9 : vault busy"):
+        az.connector.snapshot(_RID, vault="rsv", wait=False)
+    assert az.sleeps == [10.0]
+
+
+@pytest.mark.parametrize("seconds, taken", [(25, True), (35, False)])
+def test_a_finished_job_counts_up_to_thirty_seconds_before_the_trigger(monkeypatch, seconds, taken):
+    """The clock skew a finished job is allowed: 30 s. One started more than 30 s before the
+    trigger is a previous attempt's, never this one's."""
+    def jobs(attempt):
+        return [_job("restore-x", "Restore", datetime.now(timezone.utc) - timedelta(seconds=seconds),
+                     status="Failed", errors=[_error(1, "x")])]
+    az = FakeRestoreAzure(monkeypatch, jobs=jobs)
+    with pytest.raises(RuntimeError) as exc:
+        az.restore()
+    assert ("restore-x Failed" in str(exc.value)) is taken
+    assert ("not found after trigger" in str(exc.value)) is not taken
 
 
 def test_a_job_s_errors_are_masked():
@@ -495,21 +536,35 @@ def test_a_job_s_errors_are_masked():
 # ── (h) the identity the CLI restores under ─────────────────────────────────────
 
 _PAIRS = ("AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "AZURE_TENANT_ID", "EREGION_CONSOLE_AZURE_CLIENT_ID",
-          "GLORFINDEL_BOT_AZURE_CLIENT_ID", "GLORFINDEL_AZURE_CLIENT_ID")
+          "GLORFINDEL_BOT_AZURE_CLIENT_ID", "GLORFINDEL_AZURE_CLIENT_ID", "GLORFINDEL_AZURE_PAIR")
+# Example ids (none real) and a secret: never in what the CLI says.
+_CONSOLE = "c0c0c0c0-1111-4111-8111-000000000001"
+_BOT = "b0b0b0b0-1111-4111-8111-000000000002"
+_WATCH = "a0a0a0a0-1111-4111-8111-000000000003"
+_OTHER = "d0d0d0d0-1111-4111-8111-000000000004"
+_TENANT = "e0e0e0e0-1111-4111-8111-000000000005"
+_SECRET = "s3cr3t-never-said-0123456789"
+
+
+def _pair(cid: str) -> dict:
+    return {"AZURE_CLIENT_ID": cid, "AZURE_CLIENT_SECRET": _SECRET, "AZURE_TENANT_ID": _TENANT}
 
 
 @pytest.mark.parametrize("env, words, restores", [
     ({}, "aucune paire AZURE_CLIENT_*", False),
-    ({"AZURE_CLIENT_ID": "c", "AZURE_TENANT_ID": "t"}, "AZURE_CLIENT_SECRET vide", False),
-    ({"AZURE_CLIENT_ID": "c", "AZURE_CLIENT_SECRET": "x"}, "AZURE_TENANT_ID vide", False),
-    ({"AZURE_CLIENT_ID": "c", "AZURE_CLIENT_SECRET": "x", "AZURE_TENANT_ID": "t",
-      "EREGION_CONSOLE_AZURE_CLIENT_ID": "c"}, "la paire de la console", True),
-    ({"AZURE_CLIENT_ID": "b", "AZURE_CLIENT_SECRET": "x", "AZURE_TENANT_ID": "t",
-      "GLORFINDEL_BOT_AZURE_CLIENT_ID": "b", "EREGION_CONSOLE_AZURE_CLIENT_ID": ""}, "la paire du bot", True),
-    ({"AZURE_CLIENT_ID": "w", "AZURE_CLIENT_SECRET": "x", "AZURE_TENANT_ID": "t",
-      "GLORFINDEL_AZURE_CLIENT_ID": "w"}, "la paire de la watch", False),
-    ({"AZURE_CLIENT_ID": "o", "AZURE_CLIENT_SECRET": "x", "AZURE_TENANT_ID": "t"},
-     "ni celle de la console ni celle du bot", False),
+    ({"AZURE_CLIENT_ID": _CONSOLE, "AZURE_TENANT_ID": _TENANT}, "AZURE_CLIENT_SECRET vide", False),
+    ({"AZURE_CLIENT_ID": _CONSOLE, "AZURE_CLIENT_SECRET": _SECRET}, "AZURE_TENANT_ID vide", False),
+    ({**_pair(_CONSOLE), "EREGION_CONSOLE_AZURE_CLIENT_ID": _CONSOLE}, "la paire de la console", True),
+    ({**_pair(_BOT), "GLORFINDEL_BOT_AZURE_CLIENT_ID": _BOT, "EREGION_CONSOLE_AZURE_CLIENT_ID": ""},
+     "la paire du bot", True),
+    ({**_pair(_WATCH), "GLORFINDEL_AZURE_CLIENT_ID": _WATCH, "EREGION_CONSOLE_AZURE_CLIENT_ID": _CONSOLE},
+     "la paire de la watch", False),
+    ({**_pair(_OTHER), "EREGION_CONSOLE_AZURE_CLIENT_ID": _CONSOLE}, "ni celle de la console ni celle du bot", False),
+    ({**_pair(_CONSOLE), "GLORFINDEL_AZURE_PAIR": "console"}, "la paire de la console", True),
+    ({**_pair(_BOT), "GLORFINDEL_AZURE_PAIR": "bot"}, "la paire du bot", True),
+    # The container's mark never vouches for an incomplete pair.
+    ({"AZURE_CLIENT_ID": "", "AZURE_CLIENT_SECRET": "", "AZURE_TENANT_ID": _TENANT,
+      "GLORFINDEL_AZURE_PAIR": "console"}, "aucune paire AZURE_CLIENT_*", False),
 ])
 def test_the_cli_says_which_kind_of_identity_restores_never_an_id(monkeypatch, env, words, restores):
     from glorfindel.cli import _restore_identity
@@ -519,7 +574,40 @@ def test_the_cli_says_which_kind_of_identity_restores_never_an_id(monkeypatch, e
         monkeypatch.setenv(name, value)
     said, ok = _restore_identity()
     assert words in said and ok is restores
-    assert not [v for k, v in env.items() if v and len(v) > 1 and v in said]
+    for secret_or_id in (_CONSOLE, _BOT, _WATCH, _OTHER, _TENANT, _SECRET):
+        assert secret_or_id not in said
+
+
+def test_the_console_s_and_the_bot_s_containers_say_their_pair_the_watch_gets_no_mark(monkeypatch):
+    """RST1 review: the compose passed only AZURE_CLIENT_* to the console and the bot, and their
+    restore said « ni celle de la console ni celle du bot ». Their containers carry their pair's
+    name (a constant), never an id nor a secret; the watch gets nothing more."""
+    import yaml
+    from pathlib import Path
+    from .test_azure_roles import _render
+    from glorfindel.cli import _restore_identity
+    compose = yaml.safe_load((Path(__file__).resolve().parents[2] / "docker-compose.yml").read_text(encoding="utf-8"))
+    services = compose["services"]
+    dotenv = {"EREGION_CONSOLE_AZURE_CLIENT_ID": _CONSOLE, "EREGION_CONSOLE_AZURE_CLIENT_SECRET": _SECRET,
+              "GLORFINDEL_BOT_AZURE_CLIENT_ID": _BOT, "GLORFINDEL_BOT_AZURE_CLIENT_SECRET": _SECRET + "-bot",
+              "GLORFINDEL_AZURE_CLIENT_ID": _WATCH, "GLORFINDEL_AZURE_CLIENT_SECRET": _SECRET + "-watch",
+              "AZURE_TENANT_ID": _TENANT}
+    for service, pair, words in (("war-room", "console", "la paire de la console"), ("bot", "bot", "la paire du bot")):
+        env = {k: _render(str(v), dotenv) for k, v in (services[service].get("environment") or {}).items()}
+        assert env["GLORFINDEL_AZURE_PAIR"] == pair
+        for name in _PAIRS:
+            monkeypatch.delenv(name, raising=False)
+        for name in ("AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "AZURE_TENANT_ID", "GLORFINDEL_AZURE_PAIR"):
+            monkeypatch.setenv(name, env[name])
+        said, ok = _restore_identity()
+        assert words in said and ok is True, service
+        assert not [x for x in (_CONSOLE, _BOT, _WATCH, _TENANT, _SECRET) if x in said]
+    watch = services["watch"].get("environment") or {}
+    assert "GLORFINDEL_AZURE_PAIR" not in watch
+    # The mark is a constant in the compose, never drawn from the environment.
+    text = (Path(__file__).resolve().parents[2] / "docker-compose.yml").read_text(encoding="utf-8")
+    assert "GLORFINDEL_AZURE_PAIR: console\n" in text and "GLORFINDEL_AZURE_PAIR: bot\n" in text
+    assert "${GLORFINDEL_AZURE_PAIR" not in text
 
 
 def test_the_restore_command_prints_its_identity(monkeypatch, tmp_path):

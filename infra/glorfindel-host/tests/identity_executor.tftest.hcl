@@ -24,6 +24,20 @@ mock_provider "azurerm" {
       tenant_id = "00000000-0000-0000-0000-0000000000f0"
     }
   }
+  # RST1 : le compte de transit de restore.auto.tfvars, relu sur Azure par son type et son nom
+  # (restore_staging.tftest.hcl) — un seul, ou le plan échoue.
+  mock_data "azurerm_resources" {
+    defaults = {
+      resources = [{
+        id                  = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-celebrimbor/providers/Microsoft.Storage/storageAccounts/stcelebrimborstaging"
+        name                = "stcelebrimborstaging"
+        type                = "Microsoft.Storage/storageAccounts"
+        resource_group_name = "rg-celebrimbor"
+        location            = "westeurope"
+        tags                = {}
+      }]
+    }
+  }
 }
 
 # Microsoft Graph tel que le tenant le publie : son principal et quelques-uns de ses rôles

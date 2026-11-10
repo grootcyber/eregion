@@ -750,7 +750,7 @@ déclenchement est accepté. Ce que la CLI fait depuis :
 - **un déclenchement refusé ne laisse aucune trace au journal d'activité** du groupe (relu 2 h 40
   après, au banc) : seule la sortie de la CLI le garde. La lire, et la garder ;
 - `glorfindel restore` dit **sous quelle identité** il restaure (`Identity :`, jamais un id) : la
-  paire de la console, celle du bot, ou aucune paire complète — `DefaultAzureCredential` prend
+  paire de la console, celle du bot (dans leurs conteneurs, `GLORFINDEL_AZURE_PAIR`), ou aucune paire complète — `DefaultAzureCredential` prend
   alors une autre identité, sans le dire (ci-dessus, « `AZURE_CLIENT_*`, le venv seulement »).
 
 **Depuis un rôle « Restore Staging » posé à la main** (le banc, le 09/11 : le rôle créé dans le
@@ -881,7 +881,7 @@ un nouveau `password` ; le poser dans `.envrc`, `make glorfindel-restart`. L'anc
 réinitialisation : un service à la fois. **Quand le faire** : `make azure-pairs-expiry` (RST1) lit,
 sous ton `az login`, la date de fin des secrets des trois paires du poste (`az ad app credential
 list`, la date seule : jamais un secret, ni un id affiché) ; il avertit à moins de 14 jours, dit
-« aucune paire » pour une paire absente et sort en 1 sur une date illisible ou un secret expiré.
+« aucune paire » pour une paire absente, dit un ancien secret expiré à côté d'un valable (« à retirer ») et sort en 1 sur une date illisible ou quand aucun secret n'est valable.
 `check-azure-env` et le démarrage de Glorfindel n'appellent jamais Graph : la lecture se fait à la
 demande, avant une session du banc (`docs/banc-t1486.md`, étape 0).
 

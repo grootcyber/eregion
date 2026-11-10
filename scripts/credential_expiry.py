@@ -8,12 +8,14 @@ the watch's, the console's, the bot's — under the operator's own `az login`
 (`az ad app credential list`, Microsoft Graph), and says:
   - « aucune paire » for a pair whose `…_CLIENT_ID` is empty;
   - a warning under 14 days, and a secret already expired;
-  - several secrets on one application: their dates, and that one is expected.
+  - several valid secrets on one application: their dates, and that one is expected;
+  - an expired secret beside a valid one: an old one, to remove — the pair is not broken.
 
 What it never does: print a secret (only `endDateTime` is asked of az, never `hint` nor a password),
 print a client id (each pair by its name), or run at start — `check-azure-env` and Glorfindel's
-start never call Graph. Stdlib only. Exit 1 when a pair's date can't be read or a secret has
-expired, 0 otherwise (a warning, an absent pair included).
+start never call Graph. Stdlib only. Exit 1 when a pair's date can't be read or none of its
+secrets is valid, 0 otherwise (a warning, an absent pair, an old expired secret beside a valid one
+included).
 """
 from __future__ import annotations
 
@@ -71,19 +73,27 @@ def report(env: dict, now: datetime, az: str = "az") -> tuple[list[str], bool]:
             lines.append(f"⚠ {name} : aucun secret lu sur son application — la paire ne peut pas se connecter")
             broken = True
             continue
-        first = dates[0]
-        days = (first - now).total_seconds() / 86400
-        when = first.strftime("%Y-%m-%d")
-        if days < 0:
+        valid = [d for d in dates if d >= now]
+        expired = [d for d in dates if d < now]
+        if not valid:
+            when = expired[-1].strftime("%Y-%m-%d")
             lines.append(f"✗ {name} : secret expiré le {when} — le faire tourner ({ROTATE})")
             broken = True
-        elif days < WARN_DAYS:
+            continue
+        first = valid[0]
+        days = (first - now).total_seconds() / 86400
+        when = first.strftime("%Y-%m-%d")
+        if days < WARN_DAYS:
             lines.append(f"⚠ {name} : secret qui expire dans {int(days)} j, le {when} — le faire tourner ({ROTATE})")
         else:
             lines.append(f"✓ {name} : secret valable jusqu'au {when} ({int(days)} j)")
-        if len(dates) > 1:
-            lines.append(f"  ⚠ {name} : {len(dates)} secrets ({', '.join(d.strftime('%Y-%m-%d') for d in dates)}) — un "
-                         "seul attendu : celui de .envrc ne se distingue pas des autres ; retirer les anciens")
+        # An old secret, expired beside a valid one: no longer a way in, to remove — the pair holds.
+        for d in expired:
+            lines.append(f"  ⚠ {name} : un ancien secret expiré le {d.strftime('%Y-%m-%d')}, à retirer "
+                         "(az ad app credential delete)")
+        if len(valid) > 1:
+            lines.append(f"  ⚠ {name} : {len(valid)} secrets valables ({', '.join(d.strftime('%Y-%m-%d') for d in valid)})"
+                         " — un seul attendu : celui de .envrc ne se distingue pas des autres ; retirer les anciens")
     return lines, broken
 
 

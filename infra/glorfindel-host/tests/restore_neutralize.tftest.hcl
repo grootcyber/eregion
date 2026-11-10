@@ -21,10 +21,18 @@ mock_provider "azurerm" {
       id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-celebrimbor/providers/Microsoft.OperationalInsights/workspaces/law-celebrimbor"
     }
   }
-  # RST1 : le compte de transit de restore.auto.tfvars, relu sur Azure (restore_staging.tftest.hcl).
-  mock_data "azurerm_storage_account" {
+  # RST1 : le compte de transit de restore.auto.tfvars, relu sur Azure par son type et son nom
+  # (restore_staging.tftest.hcl).
+  mock_data "azurerm_resources" {
     defaults = {
-      id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-celebrimbor/providers/Microsoft.Storage/storageAccounts/stcelebrimborstaging"
+      resources = [{
+        id                  = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-celebrimbor/providers/Microsoft.Storage/storageAccounts/stcelebrimborstaging"
+        name                = "stcelebrimborstaging"
+        type                = "Microsoft.Storage/storageAccounts"
+        resource_group_name = "rg-celebrimbor"
+        location            = "westeurope"
+        tags                = {}
+      }]
     }
   }
 }

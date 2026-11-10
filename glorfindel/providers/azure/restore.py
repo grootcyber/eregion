@@ -4,9 +4,9 @@ never without knowing when it began (SEC4c) —, Run Command scripts neutralised
 """
 from __future__ import annotations
 
-from glorfindel.providers.azure.backup import FAILED_JOB_STATUSES, FINISHED_JOB_STATUSES, JOB_SEARCH_S
-from glorfindel.providers.azure.restore_rights import (explain_refusal, restore_rights, restore_scopes,
-                                                       rights_refusal)
+from glorfindel.providers.azure.backup import FAILED_JOB_STATUSES, FINISHED_JOB_STATUSES, job_search_s
+from glorfindel.providers.azure.restore_rights import (explain_refusal, refused_outright, restore_rights,
+                                                       restore_scopes, rights_refusal)
 from glorfindel.providers.azure.sdk import _enum_text, _is_iam_error, rest_post
 from glorfindel.response.ids import _parse_vm_resource_id
 from glorfindel.response.policy import _console, _ERR_MAX, _first_line
@@ -212,16 +212,22 @@ class RestoreMixin:
             raise RuntimeError(f"{e} ({jobs}). La VM {vm_name} est désallouée : ne la redémarrer "
                                f"qu'une fois sûr qu'aucun restore ne tourne ({restart}).") from None
         if r.status_code not in (200, 202):
+            said = explain_refusal(r.status_code, r.text)
+            if refused_outright(r.status_code):
+                raise RuntimeError(
+                    f"Restore trigger failed — {said}. Aucun restore n'est parti, la VM {vm_name} reste "
+                    f"désallouée : la redémarrer ({restart}), ou relancer le restore une fois le droit posé.")
+            # A 5xx or a 409 may have been applied (or names a job already running): as a timeout.
             raise RuntimeError(
-                f"Restore trigger failed — {explain_refusal(r.status_code, r.text)}. Aucun restore "
-                f"n'est parti, la VM {vm_name} reste désallouée : la redémarrer ({restart}), ou "
-                "relancer le restore une fois le droit posé.")
+                f"Restore trigger failed — {said}. La demande a pu être prise en compte : lire les jobs "
+                f"du coffre ({jobs}) avant de relancer. La VM {vm_name} est désallouée : ne la redémarrer "
+                f"qu'une fois sûr qu'aucun restore ne tourne ({restart}).")
 
         restore_job = self._find_backup_job(
             backup_client, vault, v_rg, "Restore", vm_name, triggered_at)
         if restore_job is None:
             raise RuntimeError(
-                f"Restore job for {vm_name} not found after trigger ({JOB_SEARCH_S} s) — un job a pu "
+                f"Restore job for {vm_name} not found after trigger ({job_search_s('Restore')} s) — un job a pu "
                 f"partir : lire les jobs du coffre avant de relancer ({jobs}). La VM {vm_name} est "
                 f"désallouée : ne la redémarrer qu'une fois sûr qu'aucun restore ne tourne ({restart}).")
         status = getattr(restore_job.properties, "status", "")

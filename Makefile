@@ -530,7 +530,7 @@ check-azure-env:
 # RST1 (#680) : la date de fin des secrets des trois paires du poste (la watch, la console, le bot),
 # lue à la demande sous l'az login de l'opérateur (az ad app credential list : endDateTime seul,
 # jamais un secret ni un client id affiché). Avertit à moins de 14 jours, dit « aucune paire » pour
-# une paire absente ; sort en 1 sur une date illisible ou un secret expiré. check-azure-env et le
+# une paire absente ; sort en 1 sur une date illisible ou sans secret valable. check-azure-env et le
 # démarrage de Glorfindel n'appellent jamais Graph : c'est ici seulement.
 azure-pairs-expiry:
 	@python3 scripts/credential_expiry.py

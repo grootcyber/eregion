@@ -7,7 +7,8 @@ Held here, on a fake `az` put first on PATH — no Azure, no Graph:
   - a date under 14 days warns, a far one is quiet (« ✓ »), an expired one fails (exit 1);
   - an absent pair says « aucune paire », and az is not asked about it;
   - only `endDateTime` is asked of az: a secret is never printed, nor a client id;
-  - a date az can't give is said, its ids masked (exit 1); several secrets are said;
+  - a date az can't give is said, its ids masked (exit 1); several valid secrets are said, an old
+    expired one beside a valid one is to remove, the pair holding;
   - `check-azure-env` (the start of Glorfindel) never calls az;
   - the bench's step 0 calls the target, and the rotation cites it.
 """
@@ -141,7 +142,17 @@ def test_several_secrets_are_said_the_nearest_decides(tmp_path):
     env = _pairs("EREGION_CONSOLE_AZURE_CLIENT_ID")
     res, _ = _run(tmp_path, {_IDS["EREGION_CONSOLE_AZURE_CLIENT_ID"]: [_iso(300), _iso(3)]}, env)
     assert "⚠ console : secret qui expire dans" in res.stdout
-    assert "2 secrets" in res.stdout and "un seul attendu" in res.stdout
+    assert "2 secrets valables" in res.stdout and "un seul attendu" in res.stdout
+
+
+def test_an_old_expired_secret_beside_a_valid_one_is_to_remove_the_pair_holds(tmp_path):
+    """RST1 review: the oldest secret expired, a valid one beside it — not « expiré », no failure."""
+    env = _pairs("EREGION_CONSOLE_AZURE_CLIENT_ID")
+    res, _ = _run(tmp_path, {_IDS["EREGION_CONSOLE_AZURE_CLIENT_ID"]: [_iso(-40), _iso(200)]}, env)
+    assert res.returncode == 0, res.stdout
+    assert "✓ console : secret valable jusqu'au" in res.stdout
+    assert "un ancien secret expiré le" in res.stdout and "à retirer" in res.stdout
+    assert "✗" not in res.stdout and "un seul attendu" not in res.stdout
 
 
 def test_no_pair_at_all_says_three_absent_pairs_and_calls_nothing(tmp_path):

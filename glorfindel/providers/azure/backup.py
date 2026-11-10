@@ -11,16 +11,21 @@ from glorfindel.response.policy import _console
 # RST1 (f): a job that fails at once (bench, 09/11: the restore's in 4.5 s, code 400625) is the
 # trigger's job all the same — kept, its errorDetails said, never « not found ». A job counts as
 # this trigger's when it started after it: FINISHED_SKEW_S of clock skew for a finished one (a
-# previous attempt's failed job, minutes before, is never taken for this one), 2 min for one in
-# progress, as before.
+# finished job started more than 30 s before the trigger — a previous attempt's, minutes before —
+# is not taken), 2 min for one in progress, as before.
 FAILED_JOB_STATUSES = ("Failed", "Cancelled", "CompletedWithWarnings")
 FINISHED_JOB_STATUSES = ("Completed", *FAILED_JOB_STATUSES)
 FINISHED_SKEW_S = 30
-# How long a trigger's job is looked for: at least 2 min (the bench's restore: found after 45 s
-# only once in four; 2 min on 09/11 found it).
-JOB_SEARCH_ATTEMPTS = 8
-JOB_SEARCH_DELAY_S = 15.0
-JOB_SEARCH_S = round(JOB_SEARCH_ATTEMPTS * JOB_SEARCH_DELAY_S)
+# How long a trigger's job is looked for, by operation (attempts, seconds between them). The
+# restore: at least 2 min (on 09/11 the job was not seen in 45 s; looked for 2 min, it was). The
+# snapshot: short, as before (3 × 10 s) — the watch's autonomous action, one VM at a time: a
+# ransomware's signal waits behind it (time to contain). A job already finished is read in both.
+JOB_SEARCH = {"Restore": (8, 15.0), "Backup": (3, 10.0)}
+
+
+def job_search_s(operation: str) -> int:
+    attempts, delay_s = JOB_SEARCH[operation]
+    return round(attempts * delay_s)
 
 
 class BackupMixin:
@@ -84,7 +89,7 @@ class BackupMixin:
             backup_client, vault, v_rg, "Backup", vm_name, triggered_at)
         if backup_job is None:
             raise RuntimeError(
-                f"Backup job for {vm_name} not found after trigger ({JOB_SEARCH_S} s) — un job a pu "
+                f"Backup job for {vm_name} not found after trigger ({job_search_s('Backup')} s) — un job a pu "
                 f"partir : lire les jobs du coffre avant de relancer (az backup job list -g {v_rg} "
                 f"-v {vault} -o table).")
         status = getattr(backup_job.properties, "status", "")
@@ -139,20 +144,24 @@ class BackupMixin:
 
     def _find_backup_job(
         self, client, vault: str, vault_rg: str, operation: str, vm_name: str,
-        triggered_at, attempts: int = JOB_SEARCH_ATTEMPTS, delay_s: float = JOB_SEARCH_DELAY_S,
+        triggered_at, attempts: int | None = None, delay_s: float | None = None,
     ):
         """The job this trigger created, for THIS VM — in progress, or already finished (RST1).
 
         Taking the first InProgress job of the vault cross-wired concurrent jobs: two
         snapshots (watch + CLI + War Room) could each track the other VM's job. Filter
         on the VM (entity_friendly_name) and on a start time not older than the trigger,
-        newest first. Jobs show up a few seconds after the trigger: retry, at least 2 min.
+        newest first. Jobs show up a few seconds after the trigger: retry, as long as JOB_SEARCH
+        says for the operation (2 min for a restore, 30 s for a snapshot).
         A job that failed at once is kept too (its errorDetails are said by the caller): only
         InProgress was, and a restore refused by the vault in 4.5 s read « not found ».
         """
         import time
         from datetime import timedelta
 
+        default_attempts, default_delay = JOB_SEARCH.get(operation, JOB_SEARCH["Backup"])
+        attempts = default_attempts if attempts is None else attempts
+        delay_s = default_delay if delay_s is None else delay_s
         not_before = triggered_at - timedelta(minutes=2)  # tolerate clock skew
         finished_not_before = triggered_at - timedelta(seconds=FINISHED_SKEW_S)
         for attempt in range(attempts):

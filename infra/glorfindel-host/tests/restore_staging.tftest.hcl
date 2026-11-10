@@ -6,7 +6,9 @@
 #   terraform -chdir=infra/glorfindel-host test
 # Les cas : le compte du dépôt (restore.auto.tfvars) ; une attribution par principal, à la portée du
 # compte, jamais au groupe, jamais à l'identité de H0 ; sans principal ou sans compte, rien ; le
-# compte cherché dans le groupe du banc ; un chemin ou un nom qui n'est pas celui d'un compte, refusé.
+# compte cherché par son type et son nom dans le groupe du banc, sans ses clés (azurerm_resources),
+# et un nom qu'Azure n'y trouve pas, refusé au plan ; un chemin ou un nom qui n'est pas celui d'un
+# compte, refusé.
 # tests/unit/test_glorfindel_host.py tient le même contrat en lisant les fichiers.
 
 mock_provider "azurerm" {
@@ -20,9 +22,16 @@ mock_provider "azurerm" {
       id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-celebrimbor/providers/Microsoft.OperationalInsights/workspaces/law-celebrimbor"
     }
   }
-  mock_data "azurerm_storage_account" {
+  mock_data "azurerm_resources" {
     defaults = {
-      id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-celebrimbor/providers/Microsoft.Storage/storageAccounts/stcelebrimborstaging"
+      resources = [{
+        id                  = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-celebrimbor/providers/Microsoft.Storage/storageAccounts/stcelebrimborstaging"
+        name                = "stcelebrimborstaging"
+        type                = "Microsoft.Storage/storageAccounts"
+        resource_group_name = "rg-celebrimbor"
+        location            = "westeurope"
+        tags                = {}
+      }]
     }
   }
   # Les VM de restore_vms et session_drain_vms : une portée qu'azurerm sait lire (un id au hasard
@@ -76,8 +85,8 @@ run "the_repositorys_staging_account_gets_the_keys_right_for_each_principal" {
     error_message = "les clés ne vont pas aux principaux qui restaurent"
   }
   assert {
-    condition     = data.azurerm_storage_account.restore_staging[0].name == "stcelebrimborstaging" && data.azurerm_storage_account.restore_staging[0].resource_group_name == "rg-celebrimbor"
-    error_message = "le compte de transit n'est pas cherché par son nom dans le groupe du banc"
+    condition     = data.azurerm_resources.restore_staging[0].name == "stcelebrimborstaging" && data.azurerm_resources.restore_staging[0].resource_group_name == "rg-celebrimbor" && data.azurerm_resources.restore_staging[0].type == "Microsoft.Storage/storageAccounts"
+    error_message = "le compte de transit n'est pas cherché par son type et son nom dans le groupe du banc"
   }
   # La neutralisation, elle, reste VM par VM : le compte de transit n'y change rien.
   assert {
@@ -107,7 +116,7 @@ run "without_a_staging_account_nothing_is_read_nor_given" {
   }
 
   assert {
-    condition     = length(azurerm_role_assignment.restore_staging) == 0 && length(data.azurerm_storage_account.restore_staging) == 0
+    condition     = length(azurerm_role_assignment.restore_staging) == 0 && length(data.azurerm_resources.restore_staging) == 0
     error_message = "sans compte de transit, un compte est lu ou des clés attribuées"
   }
 }
@@ -135,6 +144,20 @@ run "h0_s_own_identity_never_gets_the_keys" {
   }
 
   expect_failures = [azurerm_role_assignment.restore_staging]
+}
+
+# Un nom qu'Azure ne connaît pas dans le groupe (une faute de frappe) : aucun compte lu, le plan échoue.
+run "a_staging_account_azure_does_not_find_fails_the_plan" {
+  command = plan
+
+  override_data {
+    target = data.azurerm_resources.restore_staging[0]
+    values = {
+      resources = []
+    }
+  }
+
+  expect_failures = [data.azurerm_resources.restore_staging]
 }
 
 run "a_path_for_the_staging_account_is_refused" {

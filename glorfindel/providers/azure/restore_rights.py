@@ -117,6 +117,13 @@ def explain_refusal(status: int, text: str) -> str:
     return f"{head} : {masked(message).strip()[:_REFUSAL_MAX]}"
 
 
+def refused_outright(status: int) -> bool:
+    """A refusal that applied nothing: a 4xx of authorization or validation (400, 401, 403, 404,
+    422…). A 409 (a conflict: an operation already running) and a 5xx may have been applied, or
+    name a job under way: the vault's jobs are read before anything else."""
+    return 400 <= int(status) < 500 and int(status) != 409
+
+
 def job_error_text(job) -> str:
     """A backup job's errorDetails, masked: `code 400625 : …` for each; "" when it gives none."""
     p = getattr(job, "properties", None)
