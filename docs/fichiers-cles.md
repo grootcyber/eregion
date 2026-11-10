@@ -456,6 +456,10 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
   recoveries.json             → REC1 (#668) : ce que la watch a fait de chaque job de restauration lu sur Azure
                                 (émis, ou la carte écrite et son motif), par VM et par job : une fois par job
                                 (`glorfindel/recovery_watch.py`) ; les notes d'une VM qui n'est plus isolée tombent à l'écriture
+  door/<vm>-<h8>.json         → LEV2 (#690) : les faits de la porte d'une VM isolée, pour information — qui a agi
+                                sur elle par le plan de contrôle, ses gestes, ses droits (tenus, absents, illisibles),
+                                lus par la watch (`glorfindel/door_facts.py`) et montrés sur la carte d'isolement ; rien
+                                ne lève ni ne retient sur eux ; le fichier d'une VM levée tombe à la passe suivante
   channel_refusals.json       → SEC3 (V-05) : les lignes de `runs/` que la watch a refusées, comptées par événement
                                 (la dernière : fichier, heure, raison)
   console_token               → ancien emplacement du jeton tiré de la console : retiré à son premier
@@ -472,6 +476,9 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 est la cible (`samefile` — sur macOS/Windows/Docker Desktop `VM-Foo--h` et `vm-foo--h`
                                 sont le même fichier : cinquième passe C1) ; `migrate_state_files()` au démarrage du watch.
                                 CI : job macOS (APFS insensible à la casse) ; `main` protégée, checks requis.
+                                `disks_at_isolation` (LEV2) : les disques de la VM notés à l'isolement (`os`, `data`,
+                                `ids`), ceux de la première isolation gardés par une isolation de plus ; après un restore
+                                sur place, les disques d'origine, des preuves. Un état sans eux se relit (d'avant LEV2)
   blocks/<vm>--<h>.json       → IPs bloquées par VM (même clé)
                                 **Illisible = inconnu (SEC3, SEC4b)** : un fichier d'isolation ou de blocage qui ne se lit
                                 pas (JSON cassé, autre forme — dont des `placements` sans `resource_id` —, `unreadable_states`)

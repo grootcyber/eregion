@@ -121,6 +121,7 @@ sans changement de texte, un module par préoccupation, aucun au-delà de 430 li
 | `turned.py` | nos règles retournées en autorisation (`_TURNED_NAMES`), et les refus qu'elles attendent derrière (I5Q) ; la garde de chaque retrait par son nom (`_held_by_turned`), qui lit aussi une ancienne version retournée sous son nom (`_OLDER_NAMES`, I4G) |
 | `sdk.py`, `capabilities.py`, `monitor.py` | préchauffage du SDK ; capacités déclarées ; Log Analytics |
 | `activity.py` | le journal d'activité (`AzureActivity`, AL1) : les écritures de Glorfindel écartées (son identité et ses opérations déclarées), ses règles marquées |
+| `door.py`, `door_rights.py` | la porte, en lecture seule (LEV2) : qui a agi sur la VM par le plan de contrôle (la table fermée des gestes, le journal d'activité par l'API REST) et s'il garde ses droits (attributions, éligibilités, définitions) ; ci-dessous, « Les lectures de la porte » |
 | `entra.py` | les journaux d'Entra ID (`AuditLogs`, `AADServicePrincipalSignInLogs`, C2) : les seuils en code, l'identité de Glorfindel marquée (acteur ou cible), jamais écartée ; le texte et les étapes d'une carte d'identité |
 
 Le cœur neutre (actions autonomes, état local, verrous) est dans `glorfindel/response/` ; tout
@@ -129,6 +130,28 @@ s'importe toujours depuis `glorfindel.actions`. L'adaptateur déclare ses capaci
 et `join`), règles (`securityRules/write` et `delete`), coupure des sessions (`runCommand`), points
 de restauration. La préparation lit les droits là ; un test vérifie qu'ils sont ceux que
 `check_permissions` demande à Azure.
+
+### Les lectures de la porte (LEV2, #690)
+
+Pour chaque VM isolée, la watch lit qui a agi sur elle et ses droits (`docs/glorfindel.md`, « La
+porte, pour information »). **Rien que des `GET`, sous le Reader que H0 tient déjà** : aucun droit
+n'est ajouté, ni dans ARM, ni dans Graph.
+
+| La lecture | L'appel | Sa borne |
+|---|---|---|
+| la VM, ses cartes, leurs NSG (de la carte, du sous-réseau), ses disques, ses identités | `virtualMachines.get`, `networkInterfaces.get`, `subnets.get`, `networkSecurityGroups.get` (le SDK) | une lecture qui échoue : acteurs illisibles |
+| le journal, **exact** : chaque ressource (la VM, chaque carte, chaque disque, actuel ou noté à l'isolement, chaque NSG, chaque IP publique, chaque identité) | `GET …/providers/Microsoft.Insights/eventtypes/management/values`, `$filter` = `eventTimestamp ge … and eventTimestamp le … and resourceUri eq '<id>'` | 20 pages, comme REC1b ; une de plus : illisible |
+| le journal, **par groupe** : celui de la VM, et celui de chaque NSG ou carte qui vit ailleurs ; filtré par le code sur les enfants de la VM et des NSG (le préfixe de l'id, sans la casse) | le même, `resourceGroupName eq '<rg>'` | 20 pages ; un groupe chargé peut la dépasser (H9) : illisible, dit |
+| les attributions, à chaque portée d'un geste | `GET {portée}/providers/Microsoft.Authorization/roleAssignments` (2022-04-01) | 20 pages ; une portée refusée : illisible |
+| les éligibilités PIM, à chaque portée | `GET {portée}/providers/Microsoft.Authorization/roleEligibilityScheduleInstances?$filter=atScope()` (2020-10-01) | 20 pages ; refusées (H2 tombée) : illisible |
+| la définition de chaque rôle qui touche l'acteur (le sien, celui d'un groupe) | `GET {roleDefinitionId}` | illisible : le verdict l'est |
+
+Chaque page suivante doit rester sur `management.azure.com` (SEC8), sinon la lecture est refusée.
+La fenêtre va de 7 jours avant l'isolement jusqu'à la lecture (au plus 90 : la rétention du
+journal). Les droits : `Microsoft.Insights/eventtypes/values/read` et
+`Microsoft.Authorization/*/read`, tous deux sous `*/read`. **À mesurer** ([`banc-lev2.md`](banc-lev2.md)) :
+le filtre exact sans les enfants (H9), la ressource de chaque opération (H7), la latence (H12),
+les attributions héritées lues à la portée de la VM (H1), les éligibilités sous `*/read` (H2).
 
 ## Pitfalls opérateur
 

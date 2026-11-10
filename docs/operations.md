@@ -100,6 +100,7 @@ glorfindel pending --watch                   # alerting temps réel
 #             les points d'avant, y : --before ; le refus reste à l'écran — SEC4c)
 #
 glorfindel release <resource_id> --yes       # lever isolation NSG (post-restore, VM de retour)
+glorfindel door <vm> [--days 7] [--json]     # LEV2 : qui a agi sur la VM, et ses droits — lecture seule, rien n'est écrit
 glorfindel unblock <ip> <resource_id> --yes  # supprimer une règle block IP
 glorfindel reset <resource_id> --yes        # reset complet : release + unblock toutes IPs
 glorfindel reset <resource_id> --dry-run    # ce que le reset ferait, rien lu ni écrit sur Azure (jamais « clean », I3V)
@@ -437,6 +438,8 @@ GLORFINDEL_ISOLATION_TTL_H=4        # TTL isolation (défaut 4h) : au-delà, une
 GLORFINDEL_RECOVERY_INTERVAL_S=60   # REC1 : la watch relit sur Azure la reprise des VM qu'elle a isolées (0 : jamais) ;
                                     # GLORFINDEL_RECOVERY_GRACE_S=300 (un job fini depuis moins attend), _START_WAIT_S=600
                                     # (VM arrêtée au-delà : une carte)
+GLORFINDEL_DOOR_FACTS_INTERVAL_S=900  # LEV2 : la watch relit qui a agi sur chaque VM isolée, et ses droits, pour la
+                                    # carte d'isolement — pour information, rien ne lève ni ne retient (0 : jamais)
 GLORFINDEL_RESTORE_PRINCIPALS=oid   # REC1 : les principaux qui restaurent (object id ou appId, séparés par des virgules) ;
                                     # leur Run Command, au journal d'activité, prouve la neutralisation ; vide : une carte
                                     # — docs/glorfindel.md, « La reprise lue sur Azure »

@@ -6,6 +6,27 @@ Jonathan du 10/11 sont dans l'issue, et ce sont ses commentaires qui font foi ; 
 ci-dessous. Jonathan a tranché le 10/11 chaque question du §15 : Q1, Q11 et Q13 d'abord, puis toutes
 les autres selon l'option recommandée. Les lots de code (§12) partent de ces décisions._
 
+> **Ce que LEV2 a posé (10/11, #690)** — les faits, sans rien changer à la levée :
+> - `observed_actors` (`glorfindel/providers/azure/door.py`) : la table du §4.1, fermée, lue comme
+>   le dit le §4.1 (une lecture exacte par ressource, une lecture du groupe filtrée sur les enfants,
+>   chacune bornée à 20 pages ; coupée ou en échec : illisible, jamais vide). La règle d'un NSG
+>   partagé se juge sur le corps de la requête de l'événement, sinon sur la règle telle qu'elle est,
+>   sinon elle compte ;
+> - `observed_rights` (`door_rights.py`) : le §4.4, en lecture seule, aucun droit ajouté. Écarts
+>   prudents : une attribution **à un groupe d'administration** qui donnerait la porte est illisible,
+>   même directe ; un principal supprimé est illisible dès qu'**une** attribution lui reste, quel que
+>   soit son rôle (« restauré, il ne retrouverait rien », pris à la lettre) ;
+> - `disks_at_isolation` dans l'état (§8), tiré de la lecture de la VM que l'isolement faisait déjà ;
+> - la carte d'isolement dit les acteurs et leurs droits, pour information (§13, point 6). Sa fenêtre
+>   part de 7 jours avant l'**isolement** : avant un restore, c'est le moment connu ; LEV3 relira à la
+>   levée, depuis 7 jours avant le point restauré ;
+> - le faux Azure gagne le journal complet, les attributions, les définitions et les éligibilités ;
+> - la mesure de H7, H9, H12, et de H1 et H2, préparée pour Jonathan : `docs/banc-lev2.md`. **Les
+>   hypothèses restent ouvertes** jusqu'à la mesure.
+>
+> Un point pour LEV3 : `securityRules/delete` n'est pas dans la table. Retirer une règle de refus
+> rouvre un port, comme en écrire une allow : l'ajouter est un changement de la table, à trancher.
+
 > **Décisions de Jonathan (10/11, révisées le même jour).**
 > - **Un exercice prouvé par le plan de contrôle** (un run d'Orodruin, cause connue) : la levée reste
 >   seule, comme aujourd'hui. Le banc garde son geste unique.

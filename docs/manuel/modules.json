@@ -913,7 +913,8 @@
    "etat": "main",
    "release": "0.6",
    "lots": [
-    "LEV1"
+    "LEV1",
+    "LEV2"
    ],
    "issue": 690,
    "doc": "docs/design/levee-probation.md"
