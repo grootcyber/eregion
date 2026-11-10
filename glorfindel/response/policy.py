@@ -71,29 +71,86 @@ class PartialActionError(RuntimeError):
 _ERR_MAX = 600
 
 
+# DRN1 (#677): what a card says of the session drain — still running on Azure, refused, sessions
+# left open, or never ended (still running at its deadline, or no longer followed).
+DRAIN_CASES = {
+    "pending": "coupure en attente",
+    "refused": "coupure refusée",
+    "open": "sessions restées ouvertes",
+    "never": "coupure jamais aboutie",
+}
+_CUT_BY_HAND = ("Couper à la main : az vm run-command invoke --command-id RunShellScript "
+                "--scripts 'ss -K state established'")
+
+
+def drain_case(drain: dict | None) -> str:
+    """The case of a drain's outcome (DRAIN_CASES), "" when it cut the sessions (or did not run)."""
+    drain = drain if isinstance(drain, dict) else {}
+    status = drain.get("status")
+    if status == "pending":
+        return "pending"
+    if drain.get("never"):
+        return "never"
+    if status not in ("failed", "partial", "unsupported"):
+        return ""
+    return "refused" if drain.get("refused") else "open"
+
+
+def drain_said(drain: dict | None) -> str:
+    """What a card says of a drain that did not cut the sessions, its case first; "" otherwise."""
+    drain = drain if isinstance(drain, dict) else {}
+    case = drain_case(drain)
+    if case in ("", "pending"):
+        return ""
+    if drain.get("status") == "unsupported":
+        return (f"{DRAIN_CASES[case]} : sessions déjà ouvertes non coupées ("
+                + (drain.get("note") or "OS non pris en charge")
+                + ") : un attaquant connecté garde la main — les couper à la main")
+    if case == "never":       # not read: perhaps cut, perhaps not — never said either way
+        return (f"{DRAIN_CASES[case]} : règles posées, mais les sessions déjà ouvertes n'ont peut-être pas "
+                f"été coupées ({drain.get('error', drain.get('status'))}) — un attaquant connecté garde "
+                f"peut-être la main. {_CUT_BY_HAND}")
+    return (f"{DRAIN_CASES[case]} : règles posées, mais les sessions déjà ouvertes n'ont pas été "
+            f"coupées ({drain.get('error', drain.get('status'))}) — un attaquant connecté garde la "
+            f"main. {_CUT_BY_HAND}")
+
+
+def drain_followed() -> bool:
+    """A pending drain is read again: the watch's reassertion pass runs (`posture._reassertion_on`:
+    GLORFINDEL_REASSERT_INTERVAL_S > 0). Off, nothing reads it again (DRN1 review)."""
+    from glorfindel.posture import _reassertion_on
+    return _reassertion_on()
+
+
+# The cycle's word for a drain pending that nothing will read again (the reassertion off).
+DRAIN_UNFOLLOWED = ("coupure en attente, non suivie : la Run Command tourne encore sur Azure après sa "
+                    "première attente, et la réaffirmation est coupée (GLORFINDEL_REASSERT_INTERVAL_S) : "
+                    "son statut ne sera pas relu — un attaquant connecté garde peut-être la main. "
+                    + _CUT_BY_HAND)
+
+
 def isolation_verdict(verification: dict, outcome: dict) -> dict:
     """verify_isolation's result, downgraded when the drain left sessions open.
 
     The rules only stop NEW connections (measured 2026-10-05): rules in place with an
     attacker's session still open is not a contained VM. Shared by the agent's
-    verify_action and the War Room's approve route."""
+    verify_action and the War Room's approve route.
+
+    A drain still running on Azure past its first wait (DRN1: 302 s under the quarantine) keeps
+    the rules' verdict, and says it is pending (`drain_case`): its status is read again by the
+    reassertion's pass (glorfindel/drain_watch.py), which closes its card once the cut ends, or
+    says on a card that it was refused, left sessions open, or never ended. The reassertion off,
+    nothing reads it again: not verified (« coupure en attente, non suivie »)."""
     drain = (outcome or {}).get("drain") or {}
-    if verification.get("verified") is True and drain.get("status") == "unsupported":
-        return {
-            **verification, "verified": False, "drain": drain,
-            "error": ("sessions déjà ouvertes non coupées (" + (drain.get("note") or "OS non pris en charge")
-                      + ") : un attaquant connecté garde la main — les couper à la main"),
-        }
-    if verification.get("verified") is True and drain.get("status") in ("failed", "partial"):
-        return {
-            **verification, "verified": False,
-            "error": (
-                f"règles posées, mais les sessions déjà ouvertes n'ont pas été coupées "
-                f"({drain.get('error', drain.get('status'))}) — un attaquant connecté "
-                "garde la main. Couper à la main : az vm run-command invoke "
-                "--command-id RunShellScript --scripts 'ss -K state established'"
-            ),
-        }
+    case = drain_case(drain)
+    if verification.get("verified") is True and case == "pending":
+        if not drain_followed():
+            return {**verification, "verified": False, "drain": drain, "drain_case": case,
+                    "drain_followed": False, "error": DRAIN_UNFOLLOWED}
+        return {**verification, "drain": drain, "drain_case": case}
+    if verification.get("verified") is True and case:
+        return {**verification, "verified": False, "drain": drain, "drain_case": case,
+                "error": drain_said(drain)}
     return verification
 
 
