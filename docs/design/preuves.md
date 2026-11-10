@@ -1028,6 +1028,33 @@ encore et la base est enregistrée après les deux (`always()`). Tenu par `tests
 (`-k night_runs_both`, `-k push_replays`) ; mutants M1952 (l'étape AWS ôtée) et M1953 (la base
 enregistrée seulement sur une nuit verte), attrapés.
 
+**Une origine que plus rien ne tient, c'était l'oracle** (AWS1b, #708, 10/11). La nuit du 10/11 (macOS,
+10 000 séquences, graine 894570835, rejouée sous Linux par la même graine) : quatre échecs de I3, une
+seule séquence. `i-web2` sur `default` et son propre groupe est isolée, son origine sur le tag du groupe
+de quarantaine, l'état jamais écrit (disque plein à l'écriture de l'état) ; quelqu'un sort `eni-web2`
+vers `default` ; les tags du groupe de quarantaine sont perdus. Plus rien ne dit son origine : la
+ré-isolation depuis `default` note `default`, la levée remet `default` et dit `released`. C'est
+l'équivalent AWS d'une carte laissée nue, ré-isolée nue (U2) : la machine d'Azure accepte cette levée,
+l'opérateur remet le groupe (`_recover_everything`). L'oracle AWS l'acceptait aussi tant que la
+ré-isolation n'avait pas écrit son état, puis lisait « un état a tenu son origine » dans ce `default`.
+Celle d'Azure ne lit rien dans une note « aucun » (`_record_lost`). **Ni l'adaptateur ni le faux
+n'avaient tort** : sans état ni tag, aucune origine n'est connaissable. **L'oracle ne compte plus pour
+une origine le `default` seul d'une ENI qu'on y a laissée, quand les tags de la quarantaine notée
+étaient déjà perdus au moment où il a vu l'état** (`_holds_an_original`) : rien ne tenait alors
+l'origine. Un premier correctif excusait ce `default` quel que soit ce moment, et la relecture l'a
+refusé : il affaiblissait I3. Une ré-isolation fautive à la M606, qui ignore le tag encore présent, y
+note `default` et l'écrase, suivie de la perte des tags, passait. L'oracle de la base l'attrapait.
+Borné au moment de la perte, l'oracle refuse ce que celui de la base refusait. Un état qui a tenu la vraie
+origine rend l'ENI traçable. Un `default` noté pendant que le tag la tenait encore la rend traçable
+aussi, ses tags perdus ensuite ou non. Une levée qui laisse l'ENI sur `default` échoue alors à I3.
+Quatre séquences figées dans `tests/unit/test_invariant_regressions_aws.py` : la séquence de la nuit ;
+son pendant par l'état (l'état écrit) ; son pendant par le tag (les tags perdus après la
+ré-isolation), qui attrapent tous deux M606 ; et l'oracle face au `default` noté par-dessus le tag.
+Aucun mutant de l'adaptateur : il n'avait pas de défaut. Trois mutants de l'oracle, comme AWS1, dans
+`scripts/mutants/AWS1b.py` : M4751 (le défaut revenu) et M4752 (un correctif qui affaiblit : toute
+origine qui nomme `default` ne compte plus), puis M4753 (l'excuse quel que soit le moment de la
+perte, le premier correctif).
+
 **Le jeu de contrôle sur AWS.** Seize bugs plausibles de l'adaptateur, M630–M645, écrits et commités
 avant la machine AWS (dans le même commit que l'adaptateur) et jamais utilisés pour l'orienter, dans la
 discipline de C01–C16 (`--control`). Au budget du lundi, **AWS 9 à 10 sur 16, Azure 9 à 11 sur 16,

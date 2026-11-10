@@ -746,6 +746,18 @@
    "issue": 92
   },
   {
+   "id": "g-aws-simule-trace",
+   "composant": "glorfindel",
+   "poste": "g-agir",
+   "nom": "The simulated AWS: an ENI whose original nothing holds any more, judged as Azure judges a bare NIC",
+   "etat": "main",
+   "release": "0.5",
+   "lots": [
+    "AWS1b"
+   ],
+   "issue": 708
+  },
+  {
    "id": "g-file-signee",
    "composant": "glorfindel",
    "poste": "g-agir",
