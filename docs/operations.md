@@ -4302,7 +4302,8 @@ sudo -v && make mobile-check                                   # le poste ouvert
   demande portée sur Orodruin et lancée comme `make orodruin-exercise` (le nom tapé retiré à la fin) ;
   `make bench-report` pour chaque run nommé, puis la commande du restore avec `RUN=`. La demande est
   écrite sur le poste, pas dans le répertoire de la console : Dagorlad ne suit pas sa chronologie (le
-  run, ses cartes et son rapport, si). `make orodruin-exercise` exige aussi un terminal.
+  run, ses cartes et son rapport, si). `make orodruin-exercise` exige aussi un terminal, dès son premier
+  prérequis (`orodruin-exercise-guard`), avant de lire la demande sur H0 ou les VM d'un drill.
 - **`bench-restore`** (`scripts/bench_restore.py`) : un terminal ; la paire de la console exigée
   (RST1) ; `--before` le T0 du run, son `attack_started` (SEC4c), lu dans `runs/bench/<run_id>.json` —
   celui de `RUN=`, sinon le seul rapport de `TARGET` ; plusieurs : refusé, leurs runs listés —, sauf
@@ -4322,8 +4323,8 @@ sudo -v && make mobile-check                                   # le poste ouvert
 - **`mobile-check`** (`scripts/mobile.py check`), en lecture seule : Tailscale (une adresse, Tailscale
   SSH fermé) ; `sshd -T` (mot de passe, clavier interactif, `hostbased`, GSSAPI fermés, la clé seule,
   `AuthorizedKeysFile .ssh/authorized_keys` seul, `AuthorizedKeysCommand none`, `TrustedUserCAKeys
-  none`, `AllowTcpForwarding local`, `PermitOpen 127.0.0.1:7007` seul, `GatewayPorts no`, pas de
-  root) ; `ss -Hltn` (le serveur SSH sur l'adresse privée seule, le port de la console en `127.0.0.1`
+  none`, `AllowTcpForwarding local`, `PermitOpen 127.0.0.1:7007` seul, `GatewayPorts no`, ni socket,
+  ni agent, ni X11, pas de root) ; `ss -Hltn` (le serveur SSH sur l'adresse privée seule, le port de la console en `127.0.0.1`
   seul) ; `~/.ssh/authorized_keys` (compté, jamais affiché ; ses options `from=` et `permitopen=` ne
   sont pas lues). Aucune adresse n'est affichée.
 

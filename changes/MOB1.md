@@ -25,15 +25,18 @@
   - `make mobile-check` (`scripts/mobile.py`), read-only: the SSH server listening on the private address
     alone; password and keyboard-interactive closed, the key alone, from `.ssh/authorized_keys` alone, no
     `AuthorizedKeysCommand`, no `TrustedUserCAKeys`; `AllowTcpForwarding local`, `PermitOpen
-    127.0.0.1:7007` alone, `GatewayPorts no`; the console's port on 127.0.0.1 alone; Tailscale SSH off;
-    no address printed.
+    127.0.0.1:7007` alone, `GatewayPorts no`, no socket, agent nor X11 forwarding; the console's port on
+    127.0.0.1 alone; Tailscale SSH off (unread: a ✗); no address printed. These bound sshd's own
+    forwarding only: with a shell, the phone relays as the operator does.
   - The workstation's models, applied by the operator: `infra/poste/sshd_config.d/00-eregion.conf`,
     `infra/poste/ssh.service.d/eregion.conf`, `infra/poste/tailscale-acl.hujson`.
   - Tests: `tests/unit/test_bench_run.py`, `tests/unit/test_bench_restore.py`, `tests/unit/test_mobile.py`;
-    mutants M4696–M4705 and M4737–M4744 (`scripts/mutants/MOB1.py`).
+    mutants M4696–M4705, M4737–M4744 and M4756–M4758 (`scripts/mutants/MOB1.py`).
 
 ### Security
-- **`make orodruin-exercise` wants a terminal for the names it has typed** (MOB1, #686): a name piped
-  into `eregion_core.exercise_request confirm` is refused, nothing shown nor written.
+- **`make orodruin-exercise` wants a terminal for the names it has typed** (MOB1, #686): its first
+  prerequisite, `orodruin-exercise-guard`, refuses without one before `glorfindel-host-known` and
+  `orodruin-known` — nothing read from H0, nor a drill's VMs from Azure, nor Terraform's state; a name
+  piped into `eregion_core.exercise_request confirm` is refused too, nothing shown nor written.
   - Tests: `tests/unit/test_exercise_request.py`, `tests/unit/test_makefile_exercise.py` (now run under
     a pseudo-terminal).

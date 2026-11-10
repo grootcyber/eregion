@@ -85,6 +85,9 @@ sudo systemctl daemon-reload && sudo sshd -t && sudo systemctl enable --now ssh.
   - **un seul tunnel** : `AllowTcpForwarding local` et `PermitOpen 127.0.0.1:7007` — le téléphone
     peut ouvrir une redirection locale vers la console, et vers rien d'autre ; aucune redirection
     distante, aucun port ouvert sur le poste (`GatewayPorts no`), ni socket, ni agent, ni X11.
+    C'est une borne de **la seule connexion SSH** : avec un shell, le téléphone relaie comme
+    l'opérateur (`ssh poste nc …`). Ce cas est celui d'un téléphone déverrouillé, qui est
+    l'opérateur, ou perdu ou volé (« Ce qui reste ouvert », étape 7).
 
   Il s'appelle `00-` : `sshd` garde la **première** valeur qu'il lit, et un `50-cloud-init.conf` qui
   dirait `PasswordAuthentication yes` l'emporterait sur un `eregion.conf`.
@@ -99,13 +102,14 @@ sudo -v && make mobile-check
 
 `make mobile-check` (`scripts/mobile.py`) dit une ligne ✓/⚠/✗ par point, sans afficher aucune
 adresse, et sort en 1 sur un ✗ :
-- le réseau privé : une adresse du tailnet, et Tailscale SSH fermé ;
+- le réseau privé : une adresse du tailnet, et Tailscale SSH fermé (illisible, c'est un ✗) ;
 - le serveur SSH (`sshd -T`, ce qu'il applique vraiment) : `PasswordAuthentication no`,
   `KbdInteractiveAuthentication no`, `PermitEmptyPasswords no`, `HostbasedAuthentication no`,
   `GSSAPIAuthentication no`, `PubkeyAuthentication yes`, `AuthenticationMethods` à clé seule,
   `AuthorizedKeysFile .ssh/authorized_keys` seul, `AuthorizedKeysCommand none`, `TrustedUserCAKeys
   none` ; `AllowTcpForwarding local` (`yes`, `all` ou `remote` : ✗ ; `no` : ⚠, le tunnel du
-  téléphone ne s'ouvre pas), `PermitOpen 127.0.0.1:7007` seul, `GatewayPorts no` ; `PermitRootLogin
+  téléphone ne s'ouvre pas), `PermitOpen 127.0.0.1:7007` seul, `GatewayPorts no`,
+  `AllowStreamLocalForwarding no`, `AllowAgentForwarding no`, `X11Forwarding no` ; `PermitRootLogin
   no` (un ⚠ sinon) ;
 - les écoutes (`ss -Hltn`) : le port du serveur SSH sur l'adresse privée **seule** — toutes les
   interfaces (`0.0.0.0`, `[::]`, `*`), la boucle locale ou une autre adresse sont un ✗ ; le port de la
