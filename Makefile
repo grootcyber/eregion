@@ -253,6 +253,7 @@ help:
 	@echo "  make celebrimbor-auditd-up [YES=1]          L'applique (auditd_enabled du tfvars ; false : le retire)"
 	@echo ""
 	@echo "Glorfindel hébergé (Imladris : pré-observation, état Terraform séparé)"
+	@echo "  make imladris-<x>                            Le même geste que make glorfindel-host-<x> (IML1)"
 	@echo "  make glorfindel-host-plan [OPERATOR_CIDR=]   Plan (lecture seule)"
 	@echo "  make glorfindel-host-up   [OPERATOR_CIDR=] [YES=1]  Crée la VM (confirmation, sauf YES=1)"
 	@echo "  make glorfindel-host-env                     host.env depuis ton .envrc (sans secret Azure)"
@@ -905,6 +906,11 @@ HOST_BACKUPS  ?= $(HOME)/.eregion/host-backups
 HOST_ENV_VALUE = sed -n -E '/^$(1)=/{s/^[^=]*=[[:space:]]*//;s/[[:space:]]+\#.*$$//;s/[[:space:]]+$$//;p;}' $(HOST_ENV) | tail -1
 CONSOLE_TOKEN  = $$(t=$$($(call HOST_ENV_VALUE,EREGION_CONSOLE_TOKEN)); [ -n "$$t" ] || t=$$($(call HOST_ENV_VALUE,GLORFINDEL_WARROOM_TOKEN)); printf '%s' "$$t")
 NO_CONSOLE_TOKEN = $(HOST_ENV) : aucun jeton de la console (EREGION_CONSOLE_TOKEN, ou son ancien nom GLORFINDEL_WARROOM_TOKEN)
+
+# IML1 (#688) : la VM s'appelle Imladris. make imladris-<x> fait make glorfindel-host-<x>, rien
+# d'autre : la même recette, les mêmes variables et les mêmes gardes (YES=1, REF=, la clé d'hôte).
+# Les cibles glorfindel-host-* restent les noms de référence ; IML2 les renommera avec la ressource.
+imladris-%: glorfindel-host-% ;
 
 glorfindel-host-init:
 	$(HOST_TF) init

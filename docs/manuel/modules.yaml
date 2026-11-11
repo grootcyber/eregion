@@ -1279,6 +1279,15 @@ briques:
     issue: 114
     doc: docs/operations.md
 
+  - id: s-imladris
+    composant: socle
+    poste: s-heberger
+    nom: "Imladris, formerly H0: the hosted Glorfindel's VM gets its name, in the docs, the console, the bot and the CLI"
+    etat: main
+    release: "0.6"
+    lots: [IML1]
+    issue: 688
+
   - id: s-cd
     composant: socle
     poste: s-heberger
