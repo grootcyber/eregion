@@ -76,6 +76,12 @@ TESTS_ALSO = {
     "M33": f"{_REG}test_an_old_isolation_on_an_nsg_shared_since_is_not_released "
            f"{_REG}test_an_old_isolation_is_not_released_when_its_nsg_cant_be_read "
            "tests/unit/test_glorfindel.py::test_release_isolation_without_state_sweeps_every_nic",
+    # Flaky on the first night of MUT7 (MUT10, #715: survives the machine on seed 356818481, caught
+    # on the two others): A0's own frozen sequence — another host putting the quarantine back during
+    # the release, which only the read-back after the write tells — and the unit test of a release
+    # whose write Azure didn't apply, the original not back on the NIC.
+    "M14": f"{_REG}test_a_release_undone_by_another_host_is_not_reported_released "
+           "tests/unit/test_glorfindel.py::test_release_checks_the_original_came_back",
     # The unit test that holds its property, outside its target.
     "M36": "tests/unit/test_glorfindel.py::test_an_old_state_file_is_moved_before_it_is_rewritten",
     # Their tests of their own.
