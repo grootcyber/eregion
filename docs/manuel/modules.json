@@ -1355,6 +1355,19 @@
    "doc": "docs/design/drill-banc.md"
   },
   {
+   "id": "o-banc-autonome",
+   "composant": "orodruin",
+   "poste": "o-executer",
+   "nom": "Design: the bench that measures itself, the destructive run launched by the operator, a dated slot for non-destructive drills, the report composed alone",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "BNC2"
+   ],
+   "issue": 684,
+   "doc": "docs/design/banc-autonome.md"
+  },
+  {
    "id": "o-canal",
    "composant": "orodruin",
    "poste": "o-rendre",
