@@ -6,7 +6,8 @@
   preflight; a calm check that refuses rather than waits; a refusal ("restore first") on a VM that
   carries a destructive run without a restore since, the runs listed from Azure's activity log of
   the VM (every Run Command since its last restore, whatever its caller; only the host's own
-  session drain left out), the technique of the current Orodruin's runs from its journal (an
+  session drain left out, when it starts within minutes of a verified isolation the watch recorded
+  on that VM; an unreadable isolation refuses), the technique of the current Orodruin's runs from its journal (an
   unreadable one counting as destructive), and the restores from the vault's jobs; after the typed name, the newest recovery
   point checked clean (taken after the VM's last restore and outside any quarantine) and, when it
   is not, a new one asked through the snapshot button's own route of the host's console (a signed
