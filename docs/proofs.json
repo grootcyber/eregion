@@ -181,7 +181,7 @@
     },
     "hosted_chain": {
       "value": "~2 min",
-      "says": "from an attack on the bench to its card in Discord, with Glorfindel on its own hosted VM",
+      "says": "from an attack on the bench to its card in Discord, with Glorfindel on Imladris, its own hosted VM",
       "date": "2026-10-16",
       "kind": "measured",
       "source": {
@@ -192,7 +192,7 @@
     },
     "host_cost": {
       "value": "~61 € / month",
-      "says": "the reference host of Glorfindel, running all the time, before its disk and address",
+      "says": "Imladris, the reference host of Glorfindel, running all the time, before its disk and address",
       "date": "2026-11-04",
       "kind": "estimate",
       "source": {

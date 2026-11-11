@@ -71,7 +71,7 @@ def _default_reset(resource_id: str) -> str:
     exit 1 on ``ModuleNotFoundError``. The guard therefore tests the PACKAGE first
     (``find_spec``), then the launcher: when either is missing, the reset is SKIPPED — quietly
     (no loud failure), without shelling out or writing anything — and the manifest says so.
-    On H0 nothing isolates (human_only, read-only), so there is nothing to reset anyway.
+    On Imladris nothing isolates (human_only, read-only), so there is nothing to reset anyway.
     """
     if find_spec("glorfindel") is None:
         return "skipped: glorfindel absent (package not installed — reset is not in the Orodruin image)"

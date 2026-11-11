@@ -2,7 +2,7 @@
 
 One rule for every entry point that reaches Azure with ``DefaultAzureCredential`` on a host
 without a service principal — the ``glorfindel`` command (the watch, the bot), ``eregion
-console``, and the analysis commands launched by ``docker exec`` in H0's container
+console``, and the analysis commands launched by ``docker exec`` in Imladris's container
 (``python -m analysis.containment``, ``make glorfindel-host-containment``). Here, in the shared
 core, so that each one calls it without importing another component (D1).
 """
@@ -19,7 +19,7 @@ def drop_empty_service_principal_env(environ=os.environ) -> list[str]:
     azure-identity's EnvironmentCredential takes an empty variable for a set one (`is not
     None`): docker compose passes `${AZURE_CLIENT_ID:-}` as "" when the host has no service
     principal, and DefaultAzureCredential then fails on ClientSecretCredential("") instead
-    of reaching the VM's managed identity. Measured on the hosted Glorfindel (H0), 16/10.
+    of reaching the VM's managed identity. Measured on the hosted Glorfindel (Imladris), 16/10.
     """
     dropped = [k for k in SERVICE_PRINCIPAL_VARS if k in environ and not environ[k].strip()]
     for k in dropped:

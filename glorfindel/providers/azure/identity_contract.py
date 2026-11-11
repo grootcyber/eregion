@@ -38,7 +38,7 @@ name, nor by ``templateId``, which a custom role may set to anything.
 
 Read only by construction: Graph through ``graph.GraphReader`` (a GET and nothing else), the token
 from the executor's own credential, its certificate (``executor_credential``; never
-``DefaultAzureCredential``: on H0 the VM's token endpoint answers any container, and its identity
+``DefaultAzureCredential``: on Imladris the VM's token endpoint answers any container, and its identity
 is the watch's). No verb is run here: that is IR1c's executor, which calls ``start`` first and
 asks ``Verdict.allows`` before each verb.
 

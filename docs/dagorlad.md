@@ -135,7 +135,7 @@ juge et la lance.
    make orodruin-exercise REQUEST=r-20261030T075200Z-a1b2c3 [DRY_RUN=1] [REQUEST_FROM=local]
    ```
 
-   - Elle tire la demande de H0 par SSH, la clé d'hôte vérifiée (`HOST_SSH_FINGERPRINT`), et la porte
+   - Elle tire la demande d'Imladris (anciennement H0) par SSH, la clé d'hôte vérifiée (`HOST_SSH_FINGERPRINT`), et la porte
      à Orodruin par SSH, sa clé vérifiée aussi : `ORO_SSH_FINGERPRINT` est exigée (SEC14, V-32 ; la
      lire une fois par `make orodruin-fingerprint`, par Azure, et la poser dans ton environnement).
    - Elle l'affiche fil par fil.
@@ -202,7 +202,7 @@ lues maintenant, les juge comme le fait le plan, écrit la demande, puis continu
 make orodruin-exercise DRILL=<nom> [TARGETS=<vm>,<vm>…|all] [DRY_RUN=1] [REQUEST_FROM=local]
 ```
 
-- Le drill vient de l'instance de la console (H0, ou ton poste avec `REQUEST_FROM=local`), sinon des
+- Le drill vient de l'instance de la console (Imladris, ou ton poste avec `REQUEST_FROM=local`), sinon des
   drills livrés du dépôt. Un drill de l'instance qui est un lien est refusé : jamais suivi, et jamais
   remplacé par le drill livré du même nom.
 - **Un drill livré attend `TARGETS`** : sans lui, la commande refuse et liste les VM candidates de

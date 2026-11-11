@@ -61,7 +61,7 @@ eregion_core/runs_layout.py     → SEC18 (N-05) : runs/ un répertoire par écr
                                    écrit (campaign_output), ce qui n'est pas lu, dit une fois (survey, say_strays), le
                                    rapport d'un run tenu contre son répertoire (report_refusal), la migration de
                                    l'ancienne disposition (migrate ; python -m eregion_core.runs_layout migrate|survey,
-                                   make runs-migrate, runs-survey). Bibliothèque standard seule (H0 la lance hors image).
+                                   make runs-migrate, runs-survey). Bibliothèque standard seule (Imladris, anciennement H0, la lance hors image).
 eregion_core/exercise.py        → B2 : fenêtres d'exercice des injecteurs. Annatar en ouvre une avant de toucher sa
                                    cible (setup compris) et la ferme en fin de run : runs/<injecteur>/exercises/<run_id>.json
                                    (run_id, injector, kind, experiment, targets, start, end, expires ; ou
@@ -70,9 +70,9 @@ eregion_core/exercise.py        → B2 : fenêtres d'exercice des injecteurs. An
                                    exercises), windows_dirs, et ne purge que les siennes (SEC18).
 eregion_core/exercise_channel.py → O1 : les fenêtres d'Orodruin vers la watch hébergée (conteneur exercises).
                                    Porte aussi les campagnes finies (campaigns/<id>/…, #167) et le rapport d'un
-                                   run seul (blob runs/<run_id>.json, #193) ; sur H0, tout ce que la watch tire va
+                                   run seul (blob runs/<run_id>.json, #193) ; sur Imladris, tout ce que la watch tire va
                                    dans son répertoire, runs/glorfindel/ (SEC18) — runs/glorfindel/.pulled-runs/<run_id>
-                                   marque un rapport tiré du canal (jamais écrit par-dessus un run de H0).
+                                   marque un rapport tiré du canal (jamais écrit par-dessus un run d'Imladris).
 eregion_core/watch_channel.py   → #159 : le sens retour (conteneur watch) — heartbeat.json {at, since, windows, covers (SEC21b)} et
                                    detections/<run_id>/<signal_id>.json, écrits par la watch hébergée (Publisher,
                                    thread watch-channel), lus par l'attente d'Annatar ; miss_unprovable → unknown.
@@ -145,7 +145,7 @@ glorfindel/
                           identity_contract.py (IR1b : le contrat de l'exécuteur d'identité, lu à son
                           démarrage — son jeton Graph puis ses droits relus en lecture seule, contre la
                           liste fermée ; beyond_contract, contract_unreadable : passif, il refuse de
-                          démarrer ; `glorfindel identity-contract`. Son application : Terraform de H0,
+                          démarrer ; `glorfindel identity-contract`. Son application : Terraform d'Imladris,
                           infra/glorfindel-host/identity_executor.tf, désactivée par défaut)
                           backup.py : check_backup_points ; list_backup_items(vault, rg) → inventaire RSV vault-wide (protected items + last RP/state),
                           indépendant de l'état des VMs (source de vérité backup même VM éteinte). Cheap leg : 1 appel
@@ -450,7 +450,7 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 ~/.glorfindel. La watch le crée au démarrage. 0644 (dossier 0755) : à lire par eux, rien
                                 de secret. Retiré à l'arrêt. SEC19 (N-03) : signé par la clé de la watch (seq, key,
                                 sig), vérifié par l'injecteur avec EREGION_WATCH_KEY (docs/design/watch-key.md)
-  watch_heartbeat             → le battement de la watch (V1 sur cet hôte, la console, le CD de H0) ; écrit d'un coup
+  watch_heartbeat             → le battement de la watch (V1 sur cet hôte, la console, le CD d'Imladris) ; écrit d'un coup
                                 (un fichier à côté, renommé par-dessus), 0644 : jamais vide ni coupé (SEC17)
   exercise_seen.json          → SEC14 (V-20) : quand la watch a vu pour la première fois chaque fenêtre d'exercice écrite
                                 sur cet hôte (sans canal), et sa fermeture : une fenêtre antidatée ou réécrite n'est pas
@@ -534,7 +534,7 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
   client_rules.yaml           → P1 : la couche du client — règles approuvées (`approve-rule`, War Room), règles de
                                 base remplacées (même nom) ou désactivées (`disable:`), chargée par-dessus la base
                                 livrée. Hors du dépôt : une mise à jour ne la touche jamais (conteneurs : base `:ro`)
-                                Sur H0, les règles du banc y sont fondues par `make glorfindel-host-client-rules`
+                                Sur Imladris, les règles du banc y sont fondues par `make glorfindel-host-client-rules`
                                 (WL1 : `infra/glorfindel-host/client_rules.bench.yaml`) ; une copie d'une règle de
                                 base porte `base_sha256` : périmée, elle est écartée et dite au chargement ;
                                 `env_guids` (CAN2) : un GUID pris dans l'environnement de la watch
@@ -589,23 +589,23 @@ en écriture chez lui seul, en lecture seule chez ceux qui le lisent._
 | Annatar (`annatar run`, `campaign`, `wire`) | `<run_id>_signals.jsonl` (`attack_started`, `detection_missed`), `<run_id>.json` (le rapport du run), `exercises/<run_id>.json` (sa fenêtre, B2), `campaigns/<id>/` (manifeste, scénarios) | la watch (les signaux, par le lecteur commun ; les fenêtres), la recherche du moment d'un restore (les signaux), la console (fil, Runs, couverture, indicateurs), l'analyse (rapports, fenêtres), le lanceur d'Orodruin (fenêtres, rapports) |
 | Gothmog (`gothmog run`) | `gothmog/<run_id>_signals.jsonl` (que la watch ne lit pas), `<run_id>.json`, `exercises/<run_id>.json` | la watch (les fenêtres), la console, l'analyse (`fault_rate`, `containment`), le lanceur d'Orodruin |
 | La watch (`glorfindel watch`) | `<run_id>_debug.jsonl` et `watch-*_debug.jsonl` (chaque cycle : signal, raisonnement, action, vérification) | la console (fil, cartes de Runs, couverture, indicateurs, suivi d'une demande), l'analyse (décisions), la TUI, **Annatar** (l'attente de sa détection, `annatar/runner/engine.py`) |
-| La watch sur H0 (le tirage du canal d'exercice, `analysis/hosted_report.py`) | `campaigns/<id>/` (manifeste et rapports tirés, `.pulled`), `<run_id>.json` et `.pulled-runs/` (rapports d'un run seul), `exercises/` (fenêtres tirées), `orodruin/` (verdict et statuts d'Orodruin) | la console, l'analyse, la watch (les fenêtres) |
+| La watch sur Imladris (le tirage du canal d'exercice, `analysis/hosted_report.py`) | `campaigns/<id>/` (manifeste et rapports tirés, `.pulled`), `<run_id>.json` et `.pulled-runs/` (rapports d'un run seul), `exercises/` (fenêtres tirées), `orodruin/` (verdict et statuts d'Orodruin) | la console, l'analyse, la watch (les fenêtres) |
 | L'analyse (dans le conteneur de la watch, ou à la main) | `campaigns/<id>/report.md`, `report.error`, son verrou, `triage.md`, `triage.json` ; `glorfindel replay-campaign` : `campaigns/<id>/replay.json` | la console (page d'une campagne), `make glorfindel-host-campaign-report` |
 | La console, la CLI de Glorfindel, le bot (qui lance la CLI) | `manual_actions.jsonl` (les gestes de l'opérateur : levée, reset, déblocage, instantané, restore) | la console (fil, indicateurs), l'analyse (`containment` : les levées) |
 | Orodruin (`eregion_core/exercise_runner.py`, le contrat) | `orodruin/audit.jsonl` (chaque appel d'un injecteur, avant l'appel), `orodruin/requests/` (statut d'une demande, registre des demandes jouées, le verrou « un run à la fois ») | Orodruin lui-même (le plafond, le registre, le verrou) |
 | Dagorlad (la console) | rien dans `runs/` : ses demandes vont dans `~/.eregion/console/requests/` | Orodruin, par l'opérateur |
-| Le canal d'Orodruin vers H0 (`exercise_channel.py`) et le canal retour (`watch_channel.py`) | rien dans `runs/` sur Orodruin ; sur H0, ce que tire la watch (ci-dessus) | — |
+| Le canal d'Orodruin vers Imladris (`exercise_channel.py`) et le canal retour (`watch_channel.py`) | rien dans `runs/` sur Orodruin ; sur Imladris, ce que tire la watch (ci-dessus) | — |
 
 Montages avant SEC18 :
 
 | Où | Service | `runs/` |
 |---|---|---|
-| `docker-compose.yml` (poste, H0, une équipe) | `watch`, `war-room` (la console), `bot` | `runs/` entier, en écriture |
+| `docker-compose.yml` (poste, Imladris, une équipe) | `watch`, `war-room` (la console), `bot` | `runs/` entier, en écriture |
 | `docker-compose.yml` | `annatar`, `gothmog` | `runs/` entier, en écriture (plus `~/.glorfindel/injectors` en lecture seule, SEC3) |
 | `Makefile` (`annatar-shell`, `DOCKER_ANNATAR`) | Annatar | `runs/` entier, en écriture |
 | `Makefile` (`glorfindel-shell`, `DOCKER_GLORFINDEL`) | Glorfindel à la main | `runs/` entier, en écriture |
 | Orodruin (`ORO_RUN`, `ORO_RUN_REQUEST`) | Annatar, Gothmog, le lanceur d'une demande | `~/runs` entier, en écriture |
-| H0 (`infra/glorfindel-host/deploy.sh` → compose) | `watch`, `war-room`, `bot` | `runs/` entier, en écriture |
+| Imladris (`infra/glorfindel-host/deploy.sh` → compose) | `watch`, `war-room`, `bot` | `runs/` entier, en écriture |
 
 Le rouge écrivait donc où le bleu écrit ses décisions, et lisait le raisonnement de la watch.
 
@@ -613,7 +613,7 @@ Le rouge écrivait donc où le bleu écrit ses décisions, et lisait le raisonne
 
 | Répertoire | Écrivain | Ce qu'il y écrit | Monté en lecture seule par |
 |---|---|---|---|
-| `runs/glorfindel/` | la watch, et ce qui tourne dans son conteneur : le tirage du canal, le rapport de campagne, l'analyse ; la CLI de Glorfindel quand elle rejoue des signaux (`respond`) | `*_debug.jsonl`, `campaigns/<id>/` (tirées sur H0 ; `report.md`, `report.error`, `triage.*`, `replay.json` partout), `<run_id>.json` et `.pulled-runs/` tirés, `exercises/` tirées, `orodruin/` tiré | la console |
+| `runs/glorfindel/` | la watch, et ce qui tourne dans son conteneur : le tirage du canal, le rapport de campagne, l'analyse ; la CLI de Glorfindel quand elle rejoue des signaux (`respond`) | `*_debug.jsonl`, `campaigns/<id>/` (tirées sur Imladris ; `report.md`, `report.error`, `triage.*`, `replay.json` partout), `<run_id>.json` et `.pulled-runs/` tirés, `exercises/` tirées, `orodruin/` tiré | la console |
 | `runs/console/` | la console, la CLI de Glorfindel | `manual_actions.jsonl`, `queue/` (FS1b) | la watch (l'analyse des levées, la file) |
 | `runs/bot/` | le bot, et la CLI qu'il lance (`EREGION_RUNS_WRITER=bot`, FS1c) | `manual_actions.jsonl`, `queue/` (FS1b) | la watch, la console (le fil, les levées) |
 | `runs/annatar/` | Annatar | `*_signals.jsonl`, `<run_id>.json`, `exercises/`, `campaigns/<id>/` | la watch, le bot (le moment d'un restore), la console |
@@ -638,7 +638,7 @@ Montages après SEC18 (`tests/unit/test_runs_mounts.py` les tient) :
 
 | Où | Service | En écriture | En lecture seule |
 |---|---|---|---|
-| compose (poste, H0, une équipe) | `watch` | `glorfindel`, `verdicts` | `annatar`, `gothmog`, `console`, `bot` |
+| compose (poste, Imladris, une équipe) | `watch` | `glorfindel`, `verdicts` | `annatar`, `gothmog`, `console`, `bot` |
 | compose | `war-room` (la console) | `console` | `glorfindel`, `annatar`, `gothmog`, `bot` (FS1c) |
 | compose | `bot` | `bot` (FS1c : plus `console`) | `annatar`, `glorfindel/queue` |
 | compose | `annatar` | `annatar`, `orodruin` | `verdicts` |
@@ -650,10 +650,10 @@ Montages après SEC18 (`tests/unit/test_runs_mounts.py` les tient) :
 | Orodruin `ORO_RUN_CONTRACT` | le contrat (`orodruin-check`) | `orodruin` | — |
 | Orodruin `ORO_RUN_REQUEST` | le lanceur d'une demande (il lance les deux) | `annatar`, `gothmog`, `orodruin` | — |
 | Orodruin `ORO_MIGRATE` | la migration, une fois, à `orodruin-push` | `~/runs` entier | — |
-| H0 (`deploy.sh` → compose) | `watch`, `war-room`, `bot` | comme le compose | comme le compose |
+| Imladris (`deploy.sh` → compose) | `watch`, `war-room`, `bot` | comme le compose | comme le compose |
 
 La migration de l'ancienne disposition, son choix et sa raison, et le redéploiement dans l'ordre
-(poste, H0, Orodruin) : [`operations.md`](operations.md), « `runs/` : un répertoire par écrivain ».
+(poste, Imladris, Orodruin) : [`operations.md`](operations.md), « `runs/` : un répertoire par écrivain ».
 
 ### Ce que le rouge monte en écriture (SEC20)
 

@@ -3,7 +3,7 @@ on the card (`escalations.request_identity_check`) — it never reads Graph itse
 it at its housekeeping, reads Graph read only (`entra_check.verify`), and notes the result on the
 card's thread (`escalations.note_identity_check`): held, not held, or unreadable, each item said.
 
-Graph unreadable — a right missing (H0 today), an error, a delay — the thread says « unreadable »,
+Graph unreadable — a right missing (Imladris today), an error, a delay — the thread says « unreadable »,
 with why, never « held ».
 """
 from __future__ import annotations

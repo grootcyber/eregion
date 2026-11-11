@@ -1,4 +1,4 @@
-"""bench_h0_reader — what the bench's two targets read on H0, sent by ssh (BNC1, #682).
+"""bench_h0_reader — what the bench's two targets read on Imladris, sent by ssh (BNC1, #682).
 
 Sent on stdin by scripts/bench_shared.py (`read_h0`), never into the watch itself: it runs in a
 disposable container of the deployed watch's image (`docker run --rm --network none --read-only
@@ -8,7 +8,7 @@ token), no capability, nothing it could write. It reads files, calls no cloud an
 prints one JSON object on stdout, only what the two targets need (a later step: a read-only
 sub-command shipped in the image, in place of this script from the workstation's checkout):
 
-  preflight   the target as H0 sees it: its configured and effective mode, its readiness (verdict
+  preflight   the target as Imladris sees it: its configured and effective mode, its readiness (verdict
               and codes), the quarantine NSG enabled or not, its isolation if any; Orodruin's
               contract as Orodruin last published it (runs/glorfindel/orodruin/contract.json, DG-b);
   report      the same isolation, the run's report (runs/glorfindel/<run_id>.json: its metrics, a
@@ -19,7 +19,7 @@ sub-command shipped in the image, in place of this script from the workstation's
 What it never sends back: a reasoning, a signal's raw content, a resource id (a VM is its name),
 an identifier of any kind. The caller masks again what it prints (bench_shared.scrub).
 
-Stdlib only, Python 3.10 (the image's floor is 3.11; H0's host is 3.10): the product's modules
+Stdlib only, Python 3.10 (the image's floor is 3.11; Imladris's host is 3.10): the product's modules
 are imported only for the mode and the readiness, each in its own try.
 """
 from __future__ import annotations
@@ -75,7 +75,7 @@ def _lines(path: Path):
 
 
 def isolation(vm: str) -> dict | None:
-    """The VM's isolation state, if H0 holds one: its times, never its rules nor its ids."""
+    """The VM's isolation state, if Imladris holds one: its times, never its rules nor its ids."""
     for f in sorted(glob.glob(str(HOME / ".glorfindel" / "isolation" / "*.json"))):
         st = _json(Path(f))
         if isinstance(st, dict) and _name(st.get("resource_id")) == vm:

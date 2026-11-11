@@ -17,7 +17,7 @@
 ## 0. En bref
 
 - **Aujourd'hui**, la console et le bot écrivent sur Azure eux-mêmes : dans leur processus, ou par
-  la CLI qu'ils lancent dans leur conteneur, sous leur propre identité. Sur H0, cette identité est
+  la CLI qu'ils lancent dans leur conteneur, sous leur propre identité. Sur Imladris (anciennement H0), cette identité est
   celle de la VM, partagée par les trois conteneurs.
 - **Avec FS1**, ils ne font plus que **déposer une demande**. Elle est signée par la clé du service,
   porte un verbe d'une liste fermée, une cible, une date d'expiration et un nonce, et s'écrit dans
@@ -45,13 +45,13 @@
 | la watch | `GLORFINDEL_AZURE_CLIENT_*` → `AZURE_CLIENT_*` (`docker-compose.yml:76-78`, service `watch` : `:142-143`) | `Reader`, `Log Analytics Reader`, **Response**, **Session Drain** VM par VM |
 | la console | `EREGION_CONSOLE_AZURE_CLIENT_*` (`docker-compose.yml:85-88`, service `war-room` : `:246`) | `Reader`, `Log Analytics Reader`, **Response**, **Restore**, **Session Drain** VM par VM, **Restore Neutralize** VM par VM |
 | le bot | `GLORFINDEL_BOT_AZURE_CLIENT_*` (`docker-compose.yml:90-93`, service `bot` : `:200`) | `Reader`, **Response**, **Restore**, **Restore Neutralize** VM par VM |
-| **H0** | les trois vides : l'identité managée de la VM, `SystemAssigned` (`infra/glorfindel-host/main.tf:147-149`) | `Reader` et `Log Analytics Reader` (`main.tf:189-199`) ; **Response** sur le groupe du banc, posée à la main (`docs/banc-bl1.md`, étape 3), hors de l'état ; **Session Drain** VM par VM (`main.tf:218-223`) ; jamais le restore (`main.tf:283-284`) |
+| **Imladris** | les trois vides : l'identité managée de la VM, `SystemAssigned` (`infra/glorfindel-host/main.tf:147-149`) | `Reader` et `Log Analytics Reader` (`main.tf:189-199`) ; **Response** sur le groupe du banc, posée à la main (`docs/banc-bl1.md`, étape 3), hors de l'état ; **Session Drain** VM par VM (`main.tf:218-223`) ; jamais le restore (`main.tf:283-284`) |
 
 `docs/operations.md` dit déjà la frontière qui reste : « la console et le bot écrivent sur Azure
 avec leur propre identité […] Les rendre lecteurs seuls, c'est confier l'action approuvée à la
 watch […] — planifié. »
 
-Sur H0, le dépôt affirme que « le point de jeton de la VM répond à chacun [des conteneurs] » :
+Sur Imladris, le dépôt affirme que « le point de jeton de la VM répond à chacun [des conteneurs] » :
 c'est la raison pour laquelle « une identité par conteneur ne s'y sépare pas ».
 
 ### 1.2 Les gestes d'écriture de la console (`eregion_console/api.py`)
@@ -116,11 +116,11 @@ coupure » (`glorfindel/providers/azure/own_run_command.py:39-45`). De même, un
 ### 1.6 Ce qui en découle
 
 1. **Une console ou un bot compromis tient un jeton d'écriture libre.** Le code écrit la commande
-   d'avance ; avec le jeton, l'attaquant fait ce qu'il veut. Sur H0, c'est aussi `runCommand`, en
+   d'avance ; avec le jeton, l'attaquant fait ce qu'il veut. Sur Imladris, c'est aussi `runCommand`, en
    root, sur gondolin et bree (modèle de menace, §5).
 2. **Même avec une file**, la watch ne doit pas croire ce que la console peut écrire : une carte,
    un état. Sinon, une console compromise forge la carte, puis l'approuve.
-3. **Sur H0, rendre la console lectrice exige de séparer les identités** d'un même hôte. C'est le
+3. **Sur Imladris, rendre la console lectrice exige de séparer les identités** d'un même hôte. C'est le
    seul vrai problème d'Azure de FS1 (Q3).
 4. **Le restore n'est pas une action de la watch.** Elle ne restaure jamais, par décision (SEC7 :
    « même un bogue ou une décision détournée ne le pourrait pas »). Et les identités de la console
@@ -273,7 +273,7 @@ Ce mécanisme se factorise, sans être copié.
 **La watch épingle les clés publiques**, comme l'injecteur épingle la sienne (SEC19). Elle les lit
 dans **son environnement**, et nulle part ailleurs :
 `EREGION_QUEUE_KEYS=console=ed25519:…,bot=ed25519:…`. Le geste est
-`make queue-keys` (ce poste), ou `make glorfindel-host-queue-keys` (H0, par SSH, la clé d'hôte
+`make queue-keys` (ce poste), ou `make glorfindel-host-queue-keys` (Imladris, par SSH, la clé d'hôte
 épinglée). Il donne la ligne à poser dans `.envrc` ou dans `host.env`. Sans épinglage, la watch
 refuse chaque demande de ce service, le geste dit, et la console grise ses boutons d'écriture en le
 disant (§2.10).
@@ -414,7 +414,7 @@ trace sur Azure. Chaque refus est compté, comme `channel_refusals.json` (SEC3).
 ### 2.12 Ce qui ne passe pas par la file
 
 - **La CLI de l'opérateur** (Q4) : c'est un geste à la main sur l'hôte, dans le conteneur de la
-  watch sur H0 (`docker exec`), ou avec le principal de la watch sur un poste (`AZURE_CLIENT_*`,
+  watch sur Imladris (`docker exec`), ou avec le principal de la watch sur un poste (`AZURE_CLIENT_*`,
   `.envrc.example`). Elle garde l'appel direct : c'est l'issue de secours, et elle tient l'identité
   de la watch. « Seule la watch tient le rôle d'écriture » reste vrai. Lancée dans le conteneur de
   la console, la CLI y échoue, et c'est voulu.
@@ -453,7 +453,7 @@ qui tombe, la console ne la remplace plus.
   carte en attente. La signature lie le service, pas l'humain. Seule une clé par humain fermerait ce
   point (Q1, l'option 2, en 1.x).
 - **Le bot nomme l'humain** ; il ne le prouve pas.
-- **La watch compromise, root sur l'hôte, ou la clé SSH de H0** : l'identité d'écriture est à leur
+- **La watch compromise, root sur l'hôte, ou la clé SSH d'Imladris** : l'identité d'écriture est à leur
   portée. C'est le même périmètre qu'aujourd'hui, en moins de conteneurs.
 - **L'état local que la console et le bot écrivent encore** (`~/.glorfindel`) : l'original d'une
   quarantaine, que la levée réassocie, une coupure enregistrée, un mode d'autonomie, une règle
@@ -461,7 +461,7 @@ qui tombe, la console ne la remplace plus.
   **FS1f le ferme** (Q5) : ces écritures passent par la file, et la console et le bot montent
   `~/.glorfindel` en lecture seule.
 - **La CLI** garde l'appel direct (Q4).
-- **Sur H0, la séparation des identités** repose sur ce que l'option retenue au Q3 tient : un
+- **Sur Imladris, la séparation des identités** repose sur ce que l'option retenue au Q3 tient : un
   pare-feu, ou un montage. Elle se mesure (§5).
 
 ### 3.3 La mise à jour du modèle de menace
@@ -471,10 +471,10 @@ Le lot qui ferme FS1 (FS1e) écrit ces changements dans `docs/design/modele-de-m
   console et le bot sont lecteurs, et une action humaine est une demande signée, vérifiée, puis
   rejouée par les gardes (FS1) » ; SID1 y reste, resserré.
 - **§5, « Ouvert »** : « l'action approuvée confiée à la watch seule, par une file signée —
-  planifié : #413 » passe dans « ce qui tient ». « L'identité unique de H0, partagée par la watch,
+  planifié : #413 » passe dans « ce qui tient ». « L'identité unique d'Imladris, partagée par la watch,
   la console et le bot » se ferme selon le Q3. « Une identité managée par conteneur » reste
   ouverte.
-- **§5, l'encadré de la posture de H0** : « un clic d'approbation dans la console, ou un bouton du
+- **§5, l'encadré de la posture d'Imladris** : « un clic d'approbation dans la console, ou un bouton du
   bot, écrit sur le banc » devient « dépose une demande que la watch juge ».
 - **§2** : les nouveaux répertoires, `runs/console/queue/` et `runs/bot/queue/`, le registre de la
   watch, les reçus. S et T : une demande forgée, rejouée, d'un autre écrivain. E : une carte ou un
@@ -495,7 +495,7 @@ Le lot qui ferme FS1 (FS1e) écrit ces changements dans `docs/design/modele-de-m
    direct reste. Rien ne change par défaut.
 2. **La file par défaut** (FS1c). On la mesure au banc avec Jonathan, puis l'appel direct ne reste
    que derrière `EREGION_ACTION_QUEUE=0`, le temps d'une release.
-3. **Les identités lectrices** (FS1d). Les rôles de la console et du bot sont retirés, et H0 est
+3. **Les identités lectrices** (FS1d). Les rôles de la console et du bot sont retirés, et Imladris est
    séparé (Q3). À partir de là, l'appel direct échoue sur un 403, et c'est dit.
 4. **Le retrait de l'appel direct** (FS1e). Plus aucun appel d'écriture dans `eregion_console/` ni
    dans le bot, prouvé par un test. Le modèle de menace passe au « tenu ».
@@ -512,8 +512,8 @@ Le lot qui ferme FS1 (FS1e) écrit ces changements dans `docs/design/modele-de-m
 - **Les identités, avec FS1d, dans cet ordre**, pour qu'aucune approbation ne reste sans
   exécutant :
   1. la file par défaut, mesurée ;
-  2. le plan de H0 relu, sans `YES` ;
-  3. la séparation de H0 appliquée (Q3) ;
+  2. le plan d'Imladris relu, sans `YES` ;
+  3. la séparation d'Imladris appliquée (Q3) ;
   4. sur un poste, `az role assignment delete` de **Response**, **Session Drain**, **Restore** et
      **Restore Neutralize** pour la console et le bot ; `session_drain_principals` vidé ;
      `restore_principals` selon le Q2 ;
@@ -560,10 +560,10 @@ En jours de travail effectif, à ±50 %, comme la ROADMAP.
 | **FS1a** ✅ 05/11 | Le format et sa vérification : `eregion_core/action_queue.py` (forme, domaines, signature, fraîcheur, nonce, les refus), la clé de service tirée (factorisée avec `watch_key`), la proposition signée sur les cartes par la watch. Tests et mutants. Aucun changement de comportement. | Glorfindel | 2–3 j |
 | **FS1b** ✅ 05/11 | La watch relève la file : le fil, le registre, le rattachement, les gardes rejouées (sorties de la console en code partagé), l'exécution sous `_vm_lock`, les reçus et le statut signés, les cartes critiques. La console et le bot déposent, derrière `EREGION_ACTION_QUEUE=1`. Le nouvel écrivain `runs/bot/`, les montages. | Glorfindel, Console, bot | 4–5 j |
 | **FS1c** ✅ 05/11 | Les routes d'écriture asynchrones (`GET /api/queue/<id>`, la page suit le reçu), le bot dit le reçu, les boutons grisés selon le statut de la watch, les retouches de FS1b ; la bascule préparée (§9). La mesure au banc avec Jonathan, puis le défaut : une ligne. | Console, bot, Tests | 2–3 j |
-| **FS1d** | Les identités lectrices : le compose, `docs/operations.md` « Identités Azure », le Terraform de H0 selon le Q3, les rôles de la console et du bot, `GLORFINDEL_OWN_CALLERS`, la préparation (`check_permissions`) qui dit une console qui écrit encore. Les gestes de Jonathan. | H0 (Infra), Glorfindel | 2–3 j + gestes |
+| **FS1d** | Les identités lectrices : le compose, `docs/operations.md` « Identités Azure », le Terraform d'Imladris selon le Q3, les rôles de la console et du bot, `GLORFINDEL_OWN_CALLERS`, la préparation (`check_permissions`) qui dit une console qui écrit encore. Les gestes de Jonathan. | Imladris (Infra), Glorfindel | 2–3 j + gestes |
 | **FS1e** | Le retrait de l'appel direct, le test de frontière du code, le modèle de menace (§3.3), SID1 resserré. | Glorfindel, Console | 1–2 j |
 | **FS1f** | Selon le Q5 : le mode, les règles approuvées, les acquittements et les verdicts passent par la file ; la console et le bot montent `~/.glorfindel` en lecture seule. | Glorfindel, Console, bot | 3–4 j |
-| FS1g | Seulement si le Q2 retient l'option 2 : un exécuteur de restore à part. | Glorfindel, H0 | 3–4 j |
+| FS1g | Seulement si le Q2 retient l'option 2 : un exécuteur de restore à part. | Glorfindel, Imladris | 3–4 j |
 
 **Total** : de 11 à 16 j pour FS1a–e. Avec FS1f, de 14 à 20 j. FS1g en sus.
 
@@ -575,7 +575,7 @@ Elles sont tirées de la documentation, jamais mesurées ici. Chacune se mesure 
 écrite comme un fait.
 1. Le point de jeton de la VM (IMDS, `169.254.169.254`) répond à tout processus de la VM qui le
    joint, conteneurs en réseau `bridge` compris, sans autre preuve que l'en-tête `Metadata: true`.
-   Le dépôt l'affirme pour H0 (`docs/operations.md`), sans mesure citée.
+   Le dépôt l'affirme pour Imladris (`docs/operations.md`), sans mesure citée.
 2. Une identité managée attribuée par l'utilisateur, ajoutée à la VM, est servie par le même point
    à quiconque le joint et donne son `client_id`. Ajouter une identité ne sépare donc pas les
    conteneurs.
@@ -616,14 +616,14 @@ Une à la fois, l'option recommandée en premier.
    console, renommé `EREGION_RESTORE_AZURE_CLIENT_*`, qui tient **Restore** et **Restore
    Neutralize** ; `restore_principals` le nomme. Raison : ainsi, la watch ne restaure jamais (SEC7),
    les services longs deviennent lecteurs, et le destructif reste un geste à la main. Ce que ça
-   change : un clic de moins dans la console et le bot, et rien sur H0, qui ne restaure déjà pas.
+   change : un clic de moins dans la console et le bot, et rien sur Imladris, qui ne restaure déjà pas.
 2. **Un exécuteur de restore à part**, un quatrième service qui ne relève que les demandes de
    restore signées et ne tient que Restore. Ce que ça change : le bouton reste, mais il faut une
-   identité de plus à séparer (sur H0, le même problème que le Q3) et le lot FS1g (+3 à 4 j).
+   identité de plus à séparer (sur Imladris, le même problème que le Q3) et le lot FS1g (+3 à 4 j).
 3. **La watch restaure, sur une demande signée.** Ce que ça change : c'est le plus simple, mais cela
    défait la décision de SEC7, et une watch compromise pourrait écraser des disques. Déconseillé.
 
-**Q3. Sur H0, comment séparer l'identité de la watch de celle de la console et du bot ?**
+**Q3. Sur Imladris, comment séparer l'identité de la watch de celle de la console et du bot ?**
 1. **L'identité managée reste à la watch, et le point de jeton est coupé à la console et au bot**
    par une règle du pare-feu de l'hôte (`DOCKER-USER`, posée par `deploy.sh`, sur un réseau Docker à
    eux) *(recommandé)*. Ils lisent avec un principal lecteur, dont le secret ou le certificat est
@@ -632,7 +632,7 @@ Une à la fois, l'option recommandée en premier.
    n'est qu'un lecteur. Ce que ça change : une règle de pare-feu à mesurer (hypothèse 3), un
    principal de plus, et `deploy.sh` qui a besoin de `sudo`.
 2. **L'identité managée devient lectrice, et la watch écrit avec un principal à certificat** dont la
-   clé est tirée sur H0, dans un répertoire qu'elle seule monte, comme sa clé de SEC19. Ce que ça
+   clé est tirée sur Imladris, dans un répertoire qu'elle seule monte, comme sa clé de SEC19. Ce que ça
    change : pas de pare-feu, et des montages déjà testés en CI. Mais un certificat volé écrit
    **depuis n'importe où**, jusqu'à sa révocation (hypothèse 4), et il expire.
 3. **Deux VM** : la watch seule sur l'une, la console et le bot sur l'autre. Ce que ça change : la
@@ -666,7 +666,7 @@ acquittements), et l'état que la console écrit encore ?**
 |---|---|
 | Q1, qui signe | Une clé Ed25519 par service (console, bot), épinglée chez la watch ; la watch signe ses propositions sous `eregion.action-queue/1`. |
 | Q2, le restore | **Un exécuteur de restore à part** (FS1g). Le bouton reste dans la console et le bot : en pleine urgence, l'opérateur n'écrit pas de commande. Le clic dépose une demande signée ; l'exécuteur, seul à tenir Restore et Restore Neutralize, la vérifie, rejoue les gardes et restaure. La watch ne restaure jamais (SEC7). C'est aussi la seule voie propre vers un restore autonome encadré, si on le veut un jour. |
-| Q3, H0 | IMDS coupé à la console, au bot et à l'exécuteur par une règle `DOCKER-USER` que pose `deploy.sh`. L'identité managée reste à la watch ; les autres ont leur principal (lecteur, ou restore pour l'exécuteur) ; un conteneur qui joint IMDS refuse de démarrer. À mesurer au banc. |
+| Q3, Imladris | IMDS coupé à la console, au bot et à l'exécuteur par une règle `DOCKER-USER` que pose `deploy.sh`. L'identité managée reste à la watch ; les autres ont leur principal (lecteur, ou restore pour l'exécuteur) ; un conteneur qui joint IMDS refuse de démarrer. À mesurer au banc. |
 | Q4, la CLI | L'appel direct reste, sous l'identité de la watch : c'est l'issue de secours. Le modèle de menace le dit. |
 | Q5, l'état local | FS1f fait partie du prérequis avant toute VM hors du banc. |
 
@@ -804,7 +804,7 @@ console et le bot). Chaque point du §7 « Pour FS1b » est tenu :
 - **La proposition re-signée au-delà d'un âge seulement** : une carte revue garde la sienne tant
   qu'elle tient (cette clé, la carte inchangée) et a moins de 10 min (`escalations.RESIGN_AFTER_S`,
   `action_queue.proposal_fresh`).
-- **Les clés à épingler** : `make queue-keys` (ce poste) et `make glorfindel-host-queue-keys` (H0),
+- **Les clés à épingler** : `make queue-keys` (ce poste) et `make glorfindel-host-queue-keys` (Imladris),
   préparés, pas lancés (`docs/operations.md`, « La file d'actions signée »).
 - **Tests** : `tests/unit/test_action_queue_watch.py` (le bout en bout sur le faux Azure, chaque refus,
   le rejeu, la carte forgée, la clé d'un autre service, le drapeau absent, un registre illisible,
@@ -834,7 +834,7 @@ restore).
 
 ## 9. FS1c, fait (05/11, #571)
 
-**Le drapeau reste faux par défaut.** Sans clés de service épinglées, la console de H0 refuserait
+**Le drapeau reste faux par défaut.** Sans clés de service épinglées, la console d'Imladris refuserait
 toute approbation à la release suivante : la bascule est préparée et testée, pas faite. Elle sera
 une ligne (`action_queue.enabled` : `"1"` par défaut, `"0"` pour l'appel direct, le temps d'une
 release), après la mesure au banc (`docs/operations.md`, « La file d'actions signée », l'ordre des
@@ -894,7 +894,7 @@ gestes de Jonathan).
   (`python -m eregion_core.action_queue pin <service> --draw`, le code du service), sans le
   drapeau : les clés d'abord, le drapeau ensuite. Le bot arrêté : sa clé manque, et c'est dit.
 - `host_env.py` ne recopie jamais `EREGION_ACTION_QUEUE` ni `EREGION_QUEUE_KEYS` de
-  l'environnement de l'opérateur (ce sont les clés de ce poste, H0 a les siennes), et le dit ;
+  l'environnement de l'opérateur (ce sont les clés de ce poste, Imladris a les siennes), et le dit ;
   `--check` (lancé par `make glorfindel-host-push`) refuse le drapeau sans la clé de la console, ou
   sans celle du bot quand il tourne (`DISCORD_BOT_TOKEN`), et un drapeau autre que « 1 ».
 - La watch dit à son démarrage chaque clé qui manque ou qui est fausse (`action_queue.pin_problems`,

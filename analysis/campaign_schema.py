@@ -1,11 +1,11 @@
-"""H-1: the shape H0 accepts of what the exercise channel carries for a campaign — its
+"""H-1: the shape Imladris accepts of what the exercise channel carries for a campaign — its
 manifest and the report of each of its runs, written on another host (Orodruin) and read on
-H0 (analysis/hosted_report.py). Whoever can write in the channel writes these files: they
+Imladris (analysis/hosted_report.py). Whoever can write in the channel writes these files: they
 are read against the fields the campaign report uses, never taken as they come.
 
 The same shapes as JSON Schema: schemas/campaign_manifest.schema.json and
 schemas/run_report.schema.json, checked against these functions in the tests — the watch's
-image has no jsonschema (pyproject: a dev dependency), so this is what runs on H0. Each
+image has no jsonschema (pyproject: a dev dependency), so this is what runs on Imladris. Each
 function says why a file is refused, "" when it is accepted.
 """
 from __future__ import annotations
@@ -46,7 +46,7 @@ def manifest_refusal(manifest) -> str:
 
 def without_glorfindel(manifest) -> bool:
     """V1: a campaign run --without-glorfindel — no detection measured, so no analysis report
-    (here or on H0), never in the index nor in a comparison: ``NO_CAMPAIGN_REPORT``."""
+    (here or on Imladris), never in the index nor in a comparison: ``NO_CAMPAIGN_REPORT``."""
     return isinstance(manifest, dict) and manifest.get("without_glorfindel") is True
 
 

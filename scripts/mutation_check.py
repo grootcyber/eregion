@@ -629,8 +629,8 @@ MUTANTS = [
     ("M148", "the thread's messages of a campaign share one slot, said again every pull (#167, review 3)",
      HREP, "    k = (_key(cdir), sort)\n", "    k = _key(cdir)\n"),
     ("M149", "a failed publication raises into the campaign (#167)", ACLI,
-     '    except Exception as exc:\n        console.print(f"[yellow]Campaign not published to H0',
-     '    except OSError as exc:\n        console.print(f"[yellow]Campaign not published to H0'),
+     '    except Exception as exc:\n        console.print(f"[yellow]Campaign not published to Imladris',
+     '    except OSError as exc:\n        console.print(f"[yellow]Campaign not published to Imladris'),
     # #167, fourth review — M151–M158 are lot G2's.
     ("M159", "the report's table leaves Glorfindel's escalation out (#167, review 4)", CREP,
      "        how += [_ESCALATED[x.escalated]] if isinstance(x.escalated, bool) else []\n",
@@ -914,7 +914,7 @@ MUTANTS = [
      "    engine = Engine(dry_run=dry_run, skip_preflight=skip_preflight, publish_report=True,\n",
      "    engine = Engine(dry_run=dry_run, skip_preflight=skip_preflight,\n"),
     ("M241", "`gothmog run` keeps its report on Orodruin (#193)", GOTH,
-     "            carry_run(run_id, self.runs_dir)  # its report, to H0 with its window (#193)\n",
+     "            carry_run(run_id, self.runs_dir)  # its report, to Imladris with its window (#193)\n",
      "            pass\n"),
     ("M242", "a failed publication of a run's report raises into the run (#193)", XCH,
      '    except Exception as e:\n        print(f"[exercise-channel] run report {run_id} not published: {e}")\n',
@@ -4162,7 +4162,7 @@ MUTANTS += [
      '              "sépare les PR — le verrou d\'abord, attesté et déployé, puis le code qui s\'en sert.")',
      '              "")'),
     ("M1717", "the lock already the latest tag's: BASE=<the release before> unsaid (H3, review)", _ATT,
-     '        print(f"ce verrou est déjà celui de {tag} : si H0 tourne sur une release d\'avant, donne "\n'
+     '        print(f"ce verrou est déjà celui de {tag} : si Imladris tourne sur une release d\'avant, donne "\n'
      '              f"BASE=<la release d\'avant {tag}> ; sinon le CD n\'a rien à attester — rien lancé")',
      '        print("rien lancé")'),
 ]
@@ -5897,7 +5897,7 @@ TESTS["M2362"] = "tests/unit/test_hosted_report.py"
 HCF = "infra/glorfindel-host/host_config.py"
 MUTANTS += [
     ("M2363", "the push carries the local config's mode of a VM H0 does not know: bolder than in place (BL1c)",
-     HCF, '            report.append((name, HUMAN, "inconnue de H0 : human_only"))\n',
+     HCF, '            report.append((name, HUMAN, "inconnue d\'Imladris : human_only"))\n',
      '            kept.append({"match": name, "mode": rule.get("mode")})\n'),
     ("M2364", "H0's config of another shape trusted: the push stops, nothing said (BL1c)", HCF,
      "    if not isinstance(cfg, dict):\n        return None, \"forme inconnue\"\n", ""),
@@ -8961,7 +8961,7 @@ MUTANTS += [
     ("M3034", "the card says the drain goes to the enrolled VMs, not to those Glorfindel defends (SEC11, R-03, review)", ISO,
      '"que Glorfindel défend : session_drain_vms) — "', '"inscrites) — "'),
     ("M3035", "the readiness names no list where the drain is given (SEC11, R-03, review)", "glorfindel/readiness.py",
-     '"session_drain_vms sur H0 —, jamais sur le groupe', '"jamais sur le groupe'),
+     '"session_drain_vms sur Imladris —, jamais sur le groupe', '"jamais sur le groupe'),
     ("M3036", "a container on a workstation said to fall back on the machine's az login (SEC11, V-17, review)", GCLI,
      "    if in_container:\n", "    if False:\n"),
 ]

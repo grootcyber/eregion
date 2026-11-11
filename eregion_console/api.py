@@ -71,7 +71,7 @@ _MAX_BODY = 64 * 1024
 def console_token() -> str:
     """The token the deployment sets: EREGION_CONSOLE_TOKEN when it is not empty, else its
     former name. Not empty, not merely set: docker compose passes `${VAR:-}`, so the new
-    variable is always there, empty on a host whose host.env only has the old one (H0) — read
+    variable is always there, empty on a host whose host.env only has the old one (Imladris) — read
     as "set", it would drop the token there."""
     return os.environ.get(TOKEN_ENV, "") or os.environ.get(LEGACY_TOKEN_ENV, "")
 
@@ -148,7 +148,7 @@ def _write_token(token: str) -> None:
 
 
 def ensure_token() -> tuple[str, str]:
-    """The console's token and where it comes from: ``env`` (the deployment sets it — H0),
+    """The console's token and where it comes from: ``env`` (the deployment sets it — Imladris),
     ``file`` (drawn at an earlier start, read from ``_TOKEN_FILE``) or ``new`` (drawn now and
     written there, mode 600). There is no console without a token (SEC1). The former place is
     retired first (SEC10), whatever the token: ``_local_token["retired"]`` says it was there.
@@ -488,7 +488,7 @@ async def _page_headers(request, call_next):
     """The CSP and the other headers on every response, the token page's and the boundary's
     refusals included (this middleware is the outermost). Pages and their scripts revalidate
     on every load (ETag): after a redeployment, a page left in the browser's cache showed the
-    old console on H0 (#197)."""
+    old console on Imladris (#197)."""
     response = await call_next(request)
     if request.url.path in _PAGES or request.url.path == "/dagorlad" or request.url.path.startswith("/static/"):
         response.headers["Cache-Control"] = "no-cache"
@@ -515,7 +515,7 @@ async def _warm_up_azure() -> None:
 async def _read_enrollment() -> None:
     """H-1: a window marks a VM only if that VM is enrolled, read by the reader itself. The
     watch sets that check at startup (glorfindel/cli.py); the console sets the same, with the
-    same identity on H0, so the injectors' pages show Glorfindel's reading — without it, no
+    same identity on Imladris, so the injectors' pages show Glorfindel's reading — without it, no
     window would mark anything here, and no run of a published campaign would be kept."""
     from eregion_core import exercise
     from eregion_core.inscription import TagEnrollment
@@ -1490,7 +1490,7 @@ def _read_only() -> bool:
 
 # Observe-only: Glorfindel decides, a human judges, nothing acts — the autonomy mode stays
 # human_only. Changing it from the War Room would only produce write_blocked cards (and
-# undid the human_only forced on the hosted VM, H0).
+# undid the human_only forced on the hosted VM, Imladris).
 _READ_ONLY_MODE = ("observe-only (read-only credentials): the autonomy mode is locked to "
                    "human-only")
 
@@ -2517,7 +2517,7 @@ def _parse(data: dict, kind: str) -> dict:
 
 
 # ── Annatar and Gothmog: what they ran, and what Glorfindel made of it (read only) ─────────
-# From the files that reach this host: the exercise windows (B2; on H0, pulled by the watch
+# From the files that reach this host: the exercise windows (B2; on Imladris, pulled by the watch
 # from Orodruin), the campaigns Orodruin publishes (#167), the technique catalog, the watch's
 # debug files and cards, and the return channel the watch writes (#159). Every route here is a
 # GET: a run starts from Orodruin, armed (eregion_core/orodruin.py) — a launch button, later,
@@ -2671,7 +2671,7 @@ def _watch_cycles(since_ts: float | None) -> list[dict]:
 
 def _run_reports() -> dict[str, Path]:
     """Where each run's report is on this host: its injector's own directory (a run launched
-    here), the watch's (a run Orodruin published, pulled on H0), else under the campaign it was
+    here), the watch's (a run Orodruin published, pulled on Imladris), else under the campaign it was
     published with — each in its writer's directory (SEC18, ``runs_layout.run_reports``)."""
     from eregion_core import runs_layout
     _say_strays()
@@ -2825,7 +2825,7 @@ def _exercises(start: datetime | None, injector: str) -> dict:
 @app.get("/api/campaigns")
 async def campaigns(since: str = "30d") -> dict:
     """The campaigns on this host, newest first: those Orodruin published (``.pulled``) and
-    those run here. On H0 a campaign appears once it is over (its manifest comes last)."""
+    those run here. On Imladris a campaign appears once it is over (its manifest comes last)."""
     try:
         start = _since_start(since)
     except ValueError as exc:
@@ -3167,7 +3167,7 @@ MAX_WIRES = 100
 
 def _bench_vms() -> tuple[list[dict], str]:
     """The VMs of the bench's resource groups with their tags, read with the console's identity
-    (Reader on the bench, on H0), cached a minute — or why they could not be read."""
+    (Reader on the bench, on Imladris), cached a minute — or why they could not be read."""
     import time as _time
     from eregion_core.inscription import TagEnrollment
     if _targets_cache["value"] is not None and _time.monotonic() - _targets_cache["at"] < _TARGETS_TTL_S:
@@ -3199,7 +3199,7 @@ def _board_rules() -> list[dict]:
 
 def _fault_targets(catalog: dict) -> dict[str, list[str] | None]:
     """For each fault, the VMs its engine aims at, as its Gothmog experiment declares them
-    (gothmog/experiments/<id>.yaml) — None when this host has no such file (H0's image carries no
+    (gothmog/experiments/<id>.yaml) — None when this host has no such file (Imladris's image carries no
     Gothmog): Gothmog's preflight decides, on Orodruin."""
     import yaml
     from eregion_core.exercise_channel import safe_part

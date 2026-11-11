@@ -147,7 +147,7 @@ commence par « Connexion après brute force non vérifiée ». Les comptes port
 
 Décision de Jonathan (06/11), issue #609 : quand la corrélation a confirmé, **sur une même VM**, un
 brute force qui a réussi puis une élévation vers root, `decide` propose **au moins `isolate_vm`**,
-quel que soit le choix du modèle. Le harnais du CD de H0 tirait `block_suspicious_ip` une fois sur
+quel que soit le choix du modèle. Le harnais du CD d'Imladris (anciennement H0) tirait `block_suspicious_ip` une fois sur
 trois sur son cas apparié (2/2, « brute force après un sudo vers root sur la même VM »), au-dessus de
 la porte : l'attaquant bloqué, la VM où il a pris root laissée debout.
 

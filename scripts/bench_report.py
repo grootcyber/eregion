@@ -3,18 +3,18 @@
 
 On 09/11 (RAN1, #665) the step 8 of docs/banc-t1486.md was rebuilt by hand: each source read, its
 output masked, then copied into the report's tables. Here it is read and composed — nothing is
-written on Azure, on H0 nor on Orodruin:
+written on Azure, on Imladris nor on Orodruin:
 
-  on H0, by ssh   the run's report (runs/glorfindel/<run_id>.json: T0, the detection, the Dagorlad
+  on Imladris, by ssh   the run's report (runs/glorfindel/<run_id>.json: T0, the detection, the Dagorlad
                   request it was a wire of), the watch's cycles of the run, its own recovery_complete
                   (REC1), the lifts of runs/console|bot/manual_actions.jsonl, the target's isolation
                   state if it is still isolated (scripts/bench_h0_reader.py, in a disposable,
                   network-less container of the deployed image, its mounts read-only); only once
-                  H0's host key is verified by its fingerprint;
+                  Imladris's host key is verified by its fingerprint;
   the activity log  the target's own resources, each read apart (`--resource-id`: the VM, its NICs),
                   never the whole group: each Run Command on the target, its start, its end, its
-                  status, its caller as a role (the console, the bot, H0, Orodruin, a human,
-                  unknown) and its duration; H0's write on a NIC of the target (the isolation, when
+                  status, its caller as a role (the console, the bot, Imladris, Orodruin, a human,
+                  unknown) and its duration; Imladris's write on a NIC of the target (the isolation, when
                   its state is gone: an isolation by an NSG's rules alone does not show there); the
                   target's deallocations and starts. A read that reaches MAX_EVENTS is said cut;
   the vault       its jobs on the target (`az backup job list`): the operation, start, end, status;
@@ -48,7 +48,7 @@ DEFAULT_TARGET = "vm-celebrimbor-gondolin"
 # preparations of Orodruin.
 BEFORE_T0_S = 3 * 3600
 TERMINAL = ("succeeded", "failed", "canceled")
-# The isolation, once H0's state is gone: H0 puts the quarantine NSG on each of the target's NICs.
+# The isolation, once Imladris's state is gone: Imladris puts the quarantine NSG on each of the target's NICs.
 NIC_WRITE = "microsoft.network/networkinterfaces/write"
 # What one activity-log read returns at most: a read that reaches it may be cut, and says so.
 MAX_EVENTS = 5000
@@ -131,11 +131,11 @@ def _what(rc: dict, attack: dict | None, neutralization: dict | None) -> str:
 def compose(run_id: str, target: str, h0: dict, events: list[dict], jobs: list[dict], view: dict | None,
             roles: bs.Roles, now: datetime, gaps: list[str] | None = None, nics=()) -> dict:
     """The report as data: its figures from T0, its chronology, its Run Commands, its jobs. `nics`:
-    the names of the target's NICs, where H0's quarantine is put (the isolation, its state gone)."""
+    the names of the target's NICs, where Imladris's quarantine is put (the isolation, its state gone)."""
     gaps = list(gaps or [])
     run = h0.get("run")
     if not isinstance(run, dict):
-        raise RuntimeError(f"le rapport du run {run_id} est absent de H0 (runs/glorfindel/{run_id}.json)")
+        raise RuntimeError(f"le rapport du run {run_id} est absent d'Imladris (runs/glorfindel/{run_id}.json)")
     t0 = bs.epoch(run.get("attack_time"))
     if t0 is None:
         raise RuntimeError("le rapport du run ne donne pas de T0 (attack_time)")
@@ -163,7 +163,7 @@ def compose(run_id: str, target: str, h0: dict, events: list[dict], jobs: list[d
                         "since_t0_s": (at - t0) if at is not None and key not in ("neutralization", "restore_job", "restart", "agent") else None,
                         "note": note})
 
-    fig("t0", "T0", t0, "`attack_time`, le rapport du run sur H0")
+    fig("t0", "T0", t0, "`attack_time`, le rapport du run sur Imladris")
     latency = run.get("detection_latency_s")
     if isinstance(latency, (int, float)) and not isinstance(latency, bool):
         fig("detection", "Détection", t0 + float(latency),
@@ -173,22 +173,22 @@ def compose(run_id: str, target: str, h0: dict, events: list[dict], jobs: list[d
     st = h0.get("isolation") or None
     isolated = bs.epoch((st or {}).get("isolated_at"))
     if isolated is not None:
-        fig("isolation", "Isolement exécuté (NSG de quarantaine posé)", isolated, "`isolated_at`, l'état d'isolation de H0", tenth=True)
+        fig("isolation", "Isolement exécuté (NSG de quarantaine posé)", isolated, "`isolated_at`, l'état d'isolation d'Imladris", tenth=True)
     else:
         mine = {str(n).lower() for n in nics}
         net = next((o for o in ops if o["role"] == "h0" and o["op"] == NIC_WRITE and o["resource"] in mine
                     and o["start"] >= t0 and o["status"].lower() == "succeeded"), None)
         if net is not None:
-            fig("isolation", "Isolement exécuté (carte réseau de la cible écrite par H0)", net["end"],
-                "journal d'activité : la première écriture de H0 sur une carte réseau de la cible après T0 "
-                "(l'état de H0 est levé ; une isolation par les seules règles d'un NSG n'y paraît pas)")
+            fig("isolation", "Isolement exécuté (carte réseau de la cible écrite par Imladris)", net["end"],
+                "journal d'activité : la première écriture d'Imladris sur une carte réseau de la cible après T0 "
+                "(l'état d'Imladris est levé ; une isolation par les seules règles d'un NSG n'y paraît pas)")
         else:
-            gaps.append("l'isolement : ni l'état de H0 (levé ?) ni une écriture de H0 sur une carte réseau de la "
+            gaps.append("l'isolement : ni l'état d'Imladris (levé ?) ni une écriture d'Imladris sur une carte réseau de la "
                         "cible au journal d'activité")
     drain = next((r for r in rcs if r["role"] == "h0" and r["start"] >= t0), None)
     drains = [d for d in (bs.epoch(x) for x in (st or {}).get("drains_at") or []) if d is not None and d >= t0 - 60]
     if drains:
-        fig("drain_asked", "Coupure des sessions demandée", drains[0], "`drains_at`, l'état de H0", tenth=True)
+        fig("drain_asked", "Coupure des sessions demandée", drains[0], "`drains_at`, l'état d'Imladris", tenth=True)
     elif drain is not None:
         fig("drain_asked", "Coupure des sessions demandée", drain["start"], "journal d'activité : Started")
     if drain is not None and drain["end"] is not None:
@@ -202,7 +202,7 @@ def compose(run_id: str, target: str, h0: dict, events: list[dict], jobs: list[d
         fig("verified", f"Vérification relue, {verdict}", at,
             f"le cycle `isolate_vm`, `verified={o.get('verified')}`, `action_s` = {o.get('action_s', '?')}", tenth=True)
     else:
-        gaps.append("aucun cycle `isolate_vm` de ce run sur H0 : une action retenue, ou une recommandation")
+        gaps.append("aucun cycle `isolate_vm` de ce run sur Imladris : une action retenue, ou une recommandation")
     if neutralization is not None:
         fig("neutralization", f"Neutralisation ({bs.ROLE_NAMES[neutralization['role']]})", neutralization["start"],
             f"journal d'activité, {neutralization['status']}, {bs.duration(neutralization['duration_s'])}",
@@ -223,7 +223,7 @@ def compose(run_id: str, target: str, h0: dict, events: list[dict], jobs: list[d
     lift, lift_source = None, ""
     if h0.get("lifts"):
         x = h0["lifts"][0]
-        lift, lift_source = bs.epoch(x.get("timestamp")), f"`manual_actions.jsonl` de H0 ({x.get('hand')}), `{x.get('status')}`"
+        lift, lift_source = bs.epoch(x.get("timestamp")), f"`manual_actions.jsonl` d'Imladris ({x.get('hand')}), `{x.get('status')}`"
     else:
         rec = next((c for c in h0.get("cycles") or [] if c.get("kind") == "recovery" and c.get("action") == "release_isolation"), None)
         if rec is not None:
@@ -233,7 +233,7 @@ def compose(run_id: str, target: str, h0: dict, events: list[dict], jobs: list[d
     if lift is not None:
         fig("lift", "Levée (service rendu)", lift, lift_source)
     else:
-        gaps.append("aucune levée de la cible après T0 sur H0 (manual_actions.jsonl, ni un cycle recovery_complete)")
+        gaps.append("aucune levée de la cible après T0 sur Imladris (manual_actions.jsonl, ni un cycle recovery_complete)")
     agent = _agent(view)
     if agent["status"]:
         fig("agent", f"Agent invité `{agent['status']}`", agent["at"], f"la vue d'instance, relue en composant ({agent['power'] or '?'})")
@@ -263,7 +263,7 @@ def compose(run_id: str, target: str, h0: dict, events: list[dict], jobs: list[d
         if f["key"] in ("drain_done",):
             continue
         if f["key"] == "drain_asked" and drain is not None:
-            at(drain["start"], f"coupure des sessions par H0 ({bs.duration(drain['duration_s'])}, {drain['status']})", drain["end"])
+            at(drain["start"], f"coupure des sessions par Imladris ({bs.duration(drain['duration_s'])}, {drain['status']})", drain["end"])
             continue
         label = {"t0": "**T0**, l'attaque", "lift": "**levée**"}.get(f["key"], f["label"][0].lower() + f["label"][1:])
         at(f["at"], label, f["end"])
@@ -302,7 +302,7 @@ def _span(a: str, b: str, tenth: bool = False) -> str:
 def markdown(doc: dict) -> str:
     """The report, in the form of the 09/11 one."""
     out = [f"# Rapport du banc — {doc['target']}, run `{doc['run_id']}`", "",
-           "> Composé par `make bench-report` (BNC1) : lu sur H0, au journal d'activité, au coffre et à la vue",
+           "> Composé par `make bench-report` (BNC1) : lu sur Imladris, au journal d'activité, au coffre et à la vue",
            "> d'instance, sans rien écrire. Aucun identifiant ici : un appelant est un rôle. Heures en UTC.", "",
            "| Identifiant | Valeur |", "|---|---|",
            f"| Demande Dagorlad | {'`' + doc['request'] + '`' if doc['request'] else 'aucune (le run ne porte pas de demande)'} |",
@@ -359,12 +359,12 @@ def scrubbed(doc):
 # ── the reads ─────────────────────────────────────────────────────────────────
 
 def gather(run_id: str, target: str, env: dict, config: str, now: datetime) -> tuple[dict, list, list, dict | None, list, list]:
-    """(H0's view, the activity log's events, the vault's jobs, the instance view, what failed, the
-    target's NICs). H0 is read only once its host key is verified: else nothing is sent."""
+    """(Imladris's view, the activity log's events, the vault's jobs, the instance view, what failed, the
+    target's NICs). Imladris is read only once its host key is verified: else nothing is sent."""
     gaps: list[str] = []
     known = bs.run(["make", "-s", "--no-print-directory", "glorfindel-host-known"], timeout=60)
     if not known.ok:
-        raise RuntimeError("la clé d'hôte de H0 n'est pas vérifiée par son empreinte (HOST_SSH_FINGERPRINT, "
+        raise RuntimeError("la clé d'hôte d'Imladris n'est pas vérifiée par son empreinte (HOST_SSH_FINGERPRINT, "
                            f"make glorfindel-host-known : {known.first_error()}) : rien n'est envoyé")
     h0 = bs.read_h0("report", target, run_id, env=env)
     t0 = bs.epoch((h0.get("run") or {}).get("attack_time"))

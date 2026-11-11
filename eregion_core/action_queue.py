@@ -89,7 +89,7 @@ SEEN_BYTES = 1024 * 1024
 
 KEYS_ENV = "EREGION_QUEUE_KEYS"
 PIN_GESTURE = (f"pin the service's public key at the watch: {KEYS_ENV}=console=ed25519:…,bot=ed25519:… "
-               "in the watch's environment (host.env on H0, .envrc on a workstation)")
+               "in the watch's environment (host.env on Imladris, .envrc on a workstation)")
 
 _ID = re.compile(r"[0-9a-f]{32}")
 _DIGEST = re.compile(r"sha256:[0-9a-f]{64}")

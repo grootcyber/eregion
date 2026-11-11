@@ -85,7 +85,7 @@ def run(scenario: str, dry_run: bool, yes: bool, skip_preflight: bool,
             )
             raise SystemExit(1)
 
-    # With EREGION_EXERCISE_CHANNEL, the run's report goes to H0 at its end (#193).
+    # With EREGION_EXERCISE_CHANNEL, the run's report goes to Imladris at its end (#193).
     engine = Engine(dry_run=dry_run, skip_preflight=skip_preflight, publish_report=True,
                     without_glorfindel=without_glorfindel)
     # One run at a time on Orodruin (#358, R-10): nothing launched by hand runs during a Dagorlad
@@ -518,7 +518,7 @@ def _load_manifest(manifest_cls, cdir):
               help="Development campaign: no live Glorfindel watch required. Each run's "
                    "report says the detection was not measured, by choice.")
 @click.option("--report/--no-report", default=True,
-              help="With EREGION_EXERCISE_CHANNEL, publish the campaign to H0, whose watch "
+              help="With EREGION_EXERCISE_CHANNEL, publish the campaign to Imladris, whose watch "
                    "writes its report (#167); without, say how to write it beside the watch "
                    "(make campaign-report: never Annatar's, SEC18). --no-report: neither.")
 def campaign_run(campaign_id, yes, dry_run, runs_dir, without_glorfindel, report):
@@ -567,9 +567,9 @@ def campaign_run(campaign_id, yes, dry_run, runs_dir, without_glorfindel, report
             f"executed={r['executed']} detected={r['detected']} "
             f"missed={r['missed']} skipped={r['skipped']} errors={r['errors']}"
         )
-        # From Orodruin (an exercise channel set), the campaign goes to H0, whose watch
+        # From Orodruin (an exercise channel set), the campaign goes to Imladris, whose watch
         # writes its report (#167); else, or if it could not go, written here if possible.
-        # Without Glorfindel (V1) no report is written, here nor on H0 — and that is said.
+        # Without Glorfindel (V1) no report is written, here nor on Imladris — and that is said.
         without = result.without_glorfindel
         if report and not _publish_campaign(cdir, runs_dir, result.state, without) \
                 and not without:
@@ -618,9 +618,9 @@ _CAMPAIGN_HINT = ("lancer la watch de Glorfindel (ou la watch hébergée, vue pa
 
 
 def _publish_campaign(cdir, runs_dir, state, without_glorfindel=False) -> bool:
-    """#167: carry the finished campaign to H0 over the exercise channel — its manifest and
+    """#167: carry the finished campaign to Imladris over the exercise channel — its manifest and
     its runs' reports, nothing else (eregion_core/exercise_channel.py) — and say where its
-    report will be written: on H0 for a ``done`` campaign only (the hosted watch writes no
+    report will be written: on Imladris for a ``done`` campaign only (the hosted watch writes no
     other) whose executed runs all had their report to publish, by hand otherwise (and an
     executed run without a report is said). False without a channel (nothing sent) or when the
     publication failed: reported, never raised (the campaign has run)."""
@@ -633,37 +633,37 @@ def _publish_campaign(cdir, runs_dir, state, without_glorfindel=False) -> bool:
     try:
         cid, names = exercise_channel.publish_campaign(cdir, Path(runs_dir))
     except Exception as exc:
-        console.print(f"[yellow]Campaign not published to H0 ({type(exc).__name__}: "
+        console.print(f"[yellow]Campaign not published to Imladris ({type(exc).__name__}: "
                       f"{str(exc)[:120]})[/yellow]")
         return False
     try:
         missing = exercise_channel.unpublished_runs(cdir, Path(runs_dir))
     except Exception:  # the manifest was just published from this very file
         missing = []
-    if without_glorfindel:  # V1: H0 writes no report for it (analysis/hosted_report.py)
-        console.print(f"[yellow]Campaign published to H0[/yellow] ({len(names)} file(s)) — "
+    if without_glorfindel:  # V1: Imladris writes no report for it (analysis/hosted_report.py)
+        console.print(f"[yellow]Campaign published to Imladris[/yellow] ({len(names)} file(s)) — "
                       "no report will be written for it there")
     elif missing:
-        # H0 waits for the report of every executed run: without them, it never writes the
+        # Imladris waits for the report of every executed run: without them, it never writes the
         # campaign's (`--runs-dir` other than runs/annatar: the runs' reports stay there, SEC18).
-        console.print(f"[yellow]Campaign published to H0[/yellow] ({len(names)} file(s)) — "
+        console.print(f"[yellow]Campaign published to Imladris[/yellow] ({len(names)} file(s)) — "
                       f"{len(missing)} executed run(s) without a report under {runs_dir}/ "
-                      f"(not published): H0 will not write its report on its own. By hand, "
+                      f"(not published): Imladris will not write its report on its own. By hand, "
                       f"where the campaign, its runs and the watch's files are: "
                       f"make campaign-report CAMPAIGN={cid}")
     elif state == "done":
-        console.print(f"[green]Campaign published to H0[/green] ({len(names)} file(s)) — the "
-                      f"hosted watch writes its report: runs/glorfindel/campaigns/{cid}/report.md on H0 "
+        console.print(f"[green]Campaign published to Imladris[/green] ({len(names)} file(s)) — the "
+                      f"hosted watch writes its report: runs/glorfindel/campaigns/{cid}/report.md on Imladris "
                       f"(make glorfindel-host-campaign-report CAMPAIGN={cid})")
     else:
-        console.print(f"[yellow]Campaign published to H0[/yellow] ({len(names)} file(s)) — "
+        console.print(f"[yellow]Campaign published to Imladris[/yellow] ({len(names)} file(s)) — "
                       f"'{state}': no report is written on its own; by hand, where the "
                       f"campaign and the watch's files are: make campaign-report CAMPAIGN={cid}")
     return True
 
 
 def _write_campaign_report(cdir) -> None:
-    """IA0 without a channel to H0: the report is the watch's to write, never Annatar's (SEC18 —
+    """IA0 without a channel to Imladris: the report is the watch's to write, never Annatar's (SEC18 —
     it reads the watch's cycles, which the red never reads, and writes in the watch's directory).
     Said, with the gesture: the campaign has run, its verdicts are in its manifest."""
     console.print(f"[yellow]Campaign report: written beside the watch, by the analysis — "

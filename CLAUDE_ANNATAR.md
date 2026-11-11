@@ -38,10 +38,10 @@ Tu es spécialisé sur l'agent offensif. Lis ce fichier en début de session.
 - `annatar run <scenario.yaml>` : setup → integrity check → attack → emit `attack_started`
 - Preflight check automatique : VM running + pas de règles `glorfindel-isolation-*` en place
 - Signal `attack_started` : `{T0, query, workspace_id}` via `annatar/signals/emitter.py`
-- Thread daemon feedback (SEC18) : jamais les fichiers de la watch. Le verdict du run vient du canal retour du stockage (H0, Orodruin), sinon du canal local des verdicts `runs/verdicts/` (lecture seule, `eregion_core/watch_channel.py`) ; un raté que le battement garantit → `detection_missed` (déclenche propose_detection_rule) ; sans canal, `unknown`
+- Thread daemon feedback (SEC18) : jamais les fichiers de la watch. Le verdict du run vient du canal retour du stockage (Imladris, anciennement H0, Orodruin), sinon du canal local des verdicts `runs/verdicts/` (lecture seule, `eregion_core/watch_channel.py`) ; un raté que le battement garantit → `detection_missed` (déclenche propose_detection_rule) ; sans canal, `unknown`
 - Scénarios : `detection.hints` alimentent `propose_detection_rule` — soigner les `expected_indicators` et `failure_candidates`
 - `--dry-run` disponible, `--skip-preflight` pour bypasser le check VM
-- Fin de `annatar run` seul (#193) : avec `EREGION_EXERCISE_CHANNEL`, le rapport part vers H0
+- Fin de `annatar run` seul (#193) : avec `EREGION_EXERCISE_CHANNEL`, le rapport part vers Imladris
   (`runs/<run_id>.json` dans `exercises`, `Engine(publish_report=True)`, la CLI seulement) ;
   la watch hébergée le tire s'il passe `run_report_refusal`. Garder la forme de `RunReport`
 

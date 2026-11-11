@@ -1,7 +1,7 @@
 """What Azure says of a VM's recovery, read only (REC1, #668): facts, each with its author —
 the control plane (the vault, ARM, the activity log) or the guest (what the VM's agent reports).
 
-H0 never restores (SEC17): a restore runs from the operator's workstation, and the
+Imladris never restores (SEC17): a restore runs from the operator's workstation, and the
 `recovery_complete` it writes stays on that host. The watch that isolated the VM reads the
 recovery here instead — never from a file another host wrote, never from the model — and
 glorfindel/recovery_watch.py decides what the facts prove. Read here:

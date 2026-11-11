@@ -14,7 +14,7 @@ identifier outside the allowed ones (``identifiers``), a video written inside th
 The server it starts refuses to run anywhere but in that directory, with an Azure variable in
 its environment, or without the sample's mark (``serve_refusal``); through Python, it reaches
 the loopback only — connections, datagrams, names — and starts no program but git
-(``loopback_only``, which says what stays open). No Azure call, no model, no H0.
+(``loopback_only``, which says what stays open). No Azure call, no model, no Imladris.
 
 **The tools are the workstation's**, never the CI's nor a dependency of the package: a Chromium
 (``--chromium``, ``EREGION_CHROMIUM``, the PATH, or Playwright's cache: ``chrome-headless-shell``),
@@ -147,7 +147,7 @@ def _iso(dt: datetime) -> str:
 def materialize(doc: dict, work: Path, now: datetime | None = None) -> dict:
     """The sample as the console reads it, its times counted back from ``now``: under
     ``work/home`` the watch's heartbeat and discovered assets; under ``work/cwd/runs/glorfindel``
-    — the watch's own directory, as on H0 (SEC18) — the run reports, the watch's cycles, the
+    — the watch's own directory, as on Imladris (SEC18) — the run reports, the watch's cycles, the
     exercise windows, Orodruin's contract, all pulled there. Returns where."""
     now = (now or datetime.now(timezone.utc)).replace(microsecond=0)
     home, cwd = work / "home", work / "cwd"

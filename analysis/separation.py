@@ -13,7 +13,7 @@ could teach the defender what the analysis guessed. Both are refused here, at th
   read once the path is resolved (``..``, a symbolic link).
 - ``check_collection``: its collection is never Glorfindel's (``cycles``).
 
-A refusal raises ``SharedWithGlorfindel``: the report or the triage is not written (on H0, an
+A refusal raises ``SharedWithGlorfindel``: the report or the triage is not written (on Imladris, an
 attempt that failed, analysis/hosted_report.py), and the message says which setting to change.
 """
 from __future__ import annotations
@@ -76,7 +76,7 @@ def main() -> int:
     """``python -m analysis.separation``: does the analysis AI, where it runs, reason with
     another model than Glorfindel's? 0 when it does; ``REFUSED`` (2) when it does not, and
     what to set — 1 stays Python's own, an error (an image before IA1 has no such module).
-    ``make glorfindel-host-model`` runs it in H0's watch and gives its advice on 2 only: a
+    ``make glorfindel-host-model`` runs it in Imladris's watch and gives its advice on 2 only: a
     model shared with the analysis there makes every campaign report refused (and given up
     after 3 attempts)."""
     from eregion_core.models import analysis_model

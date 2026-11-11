@@ -2,7 +2,7 @@
 by those who read it (docs/fichiers-cles.md, « runs/ — qui écrit, qui lit, qui monte »).
 
 - ``runs/glorfindel/`` — the watch, and what runs in its container: its cycles
-  (``*_debug.jsonl``), what it pulls from the exercise channel on H0 (``campaigns/``,
+  (``*_debug.jsonl``), what it pulls from the exercise channel on Imladris (``campaigns/``,
   ``<run_id>.json`` and ``.pulled-runs/``, ``exercises/``, ``orodruin/``), and what the analysis
   writes of a campaign (``campaigns/<id>/report.md``, ``report.error``, ``triage.*``,
   ``replay.json``) — wherever the campaign itself was written;
@@ -38,7 +38,7 @@ says of itself, or a marker of the pull beside it); any other is left where it i
 said with the gesture to make. Nothing is ever deleted: a file is renamed, an emptied directory of
 the former layout removed. Run again, it moves nothing more.
 
-Standard library only: the migration runs on H0's host Python, outside any image.
+Standard library only: the migration runs on Imladris's host Python, outside any image.
 """
 from __future__ import annotations
 
@@ -91,7 +91,7 @@ _DIRS = {
 ANALYSIS_FILES = ("report.md", "report.error", ".report.lock", "triage.md", "triage.json",
                   ".triage.lock", "replay.json")
 # Markers of the exercise channel's pull (eregion_core/exercise_channel.py PULLED, PULLED_RUNS)
-# and of Orodruin's published verdict on H0 (eregion_core/orodruin.py CONTRACT_BLOB).
+# and of Orodruin's published verdict on Imladris (eregion_core/orodruin.py CONTRACT_BLOB).
 _PULLED, _PULLED_RUNS, _CONTRACT = ".pulled", ".pulled-runs", "contract.json"
 _CHANNEL_CREATED = "channel_created"     # eregion_core/exercise.py CHANNEL_CREATED
 _REPORT_BYTES = 2 * 1024 * 1024          # a report or a window read to tell its writer, bounded
@@ -139,7 +139,7 @@ def writer_of(path) -> str:
 def campaign_output(campaign_dir) -> Path:
     """Where the analysis writes of a campaign — ``report.md``, ``report.error``, ``triage.*``,
     ``replay.json`` —: in the watch's directory, ``<root>/glorfindel/campaigns/<id>``, whoever
-    wrote the campaign (Annatar on this host, or the watch's pull on H0: then its own directory).
+    wrote the campaign (Annatar on this host, or the watch's pull on Imladris: then its own directory).
     A campaign in no writer's directory (a copy named by hand) keeps its analysis beside it."""
     cdir = Path(campaign_dir)
     holder = cdir.parent.parent
@@ -148,7 +148,7 @@ def campaign_output(campaign_dir) -> Path:
     return holder.parent / GLORFINDEL / "campaigns" / cdir.name
 
 
-# Who holds campaigns, and run reports, on a host: the watch first (pulled on H0), then the
+# Who holds campaigns, and run reports, on a host: the watch first (pulled on Imladris), then the
 # injectors (written on this host).
 CAMPAIGN_HOLDERS = (GLORFINDEL, ANNATAR)
 REPORT_HOLDERS = (GLORFINDEL, ANNATAR, GOTHMOG)
@@ -357,7 +357,7 @@ def _plan(root: Path) -> tuple[list[tuple[Path, Path]], list[tuple[Path, str]]]:
             continue
         if name in WRITERS:
             if name == ORODRUIN and is_dir and (path / _CONTRACT).exists():
-                # On H0, runs/orodruin/ was the watch's copy of what Orodruin published.
+                # On Imladris, runs/orodruin/ was the watch's copy of what Orodruin published.
                 moves.append((path, dir_of(GLORFINDEL, root) / ORODRUIN))
             elif name == GOTHMOG and is_dir:
                 continue   # Gothmog's signals were there already: its directory now
@@ -508,7 +508,7 @@ def unsafe(root=None) -> list[Path]:
 
 def pending(root=None) -> bool:
     """The former layout holds something to move: an entry at the top of ``root`` that is no
-    writer's directory (a dot aside, but the pull's marker), or H0's copy of Orodruin's statuses."""
+    writer's directory (a dot aside, but the pull's marker), or Imladris's copy of Orodruin's statuses."""
     root = Path(ROOT if root is None else root)
     for e in _entries(root):
         if e.name in WRITERS:
@@ -543,7 +543,7 @@ def migrate(root=None, say=print, writers=WRITERS) -> tuple[int, list[tuple[Path
         _rmdir_empty(root / "campaigns" / c.name)
     for name in ("campaigns", "exercises"):
         _rmdir_empty(root / name)
-    for w in writers:   # runs/orodruin/ moved away on H0: every writer keeps a directory
+    for w in writers:   # runs/orodruin/ moved away on Imladris: every writer keeps a directory
         if not os.path.lexists(dir_of(w, root)):
             dir_of(w, root).mkdir()
     for path, why in left:

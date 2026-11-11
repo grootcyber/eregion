@@ -4,12 +4,12 @@
 The operator types it on his workstation — at its keyboard, or from his phone through the private
 network and the workstation's SSH server (docs/demarrer/mobile.md). Only the path between the phone
 and the workstation is new: Orodruin still listens to the workstation's SSH alone (DRL1), and nothing
-is installed on H0. In order, each step stopping the next one:
+is installed on Imladris. In order, each step stopping the next one:
 
   0  the guard     never in a code session (EREGION_AGENT_SESSION, a lot's worktree): a session never
                    launches an attack (bench_shared.session_refusal, the rule of bench_reader.py); and a
                    terminal on stdin, or nothing is sent and nothing is run (the sub-make has already read
-                   the local Terraform state, H0's and Orodruin's addresses: the threat model's frontier 9):
+                   the local Terraform state, Imladris's and Orodruin's addresses: the threat model's frontier 9):
                    a name « typed » through a pipe is no name typed
   1  the preflight `make bench-preflight` (scripts/bench_preflight.py, BNC1): one ✗ and nothing is
                    asked, nothing is sent

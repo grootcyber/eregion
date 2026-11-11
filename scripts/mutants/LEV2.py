@@ -41,7 +41,7 @@ MUTANTS = [
      "                if False:\n                    return None\n"),
     ("M4726", "a right through a group read as absent: members H0 never reads, the door left open behind "
      "« absent » (LEV2, Q11)", RIGHTS,
-     '            out["unreadable"].append(f"« {role[\'name\']} » sur {where} à un groupe : H0 n\'en lit pas les membres")\n',
+     '            out["unreadable"].append(f"« {role[\'name\']} » sur {where} à un groupe : Imladris n\'en lit pas les membres")\n',
      "            pass\n"),
     ("M4727", "the PIM eligibilities never judged: a third party eligible to Owner read as absent (LEV2, "
      "H2)", RIGHTS,

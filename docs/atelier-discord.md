@@ -1,6 +1,6 @@
 # L'atelier dans Discord (N1, N2, N3)
 
-_Lots N1 (#242) et N2 (#243), 27/10 ; N3 (#262), 28/10 : `#agents` devient le tableau de ce qui t'attend. Le déploiement de H0 (H1, #244) s'y ajoutera ensuite. REL1 (#269), 29/10 : une release en brouillon y attend que tu la publies. REL2 (#309), 29/10 : `#releases`, l'histoire d'une release au même endroit. RM1 (#406), 02/11 : les releases dans le message de `#roadmap`._
+_Lots N1 (#242) et N2 (#243), 27/10 ; N3 (#262), 28/10 : `#agents` devient le tableau de ce qui t'attend. Le déploiement d'Imladris, anciennement H0 (H1, #244) s'y ajoutera ensuite. REL1 (#269), 29/10 : une release en brouillon y attend que tu la publies. REL2 (#309), 29/10 : `#releases`, l'histoire d'une release au même endroit. RM1 (#406), 02/11 : les releases dans le message de `#roadmap`._
 
 Ce que fait l'atelier (la CI, les PR, les lots d'elrond) arrive dans Discord, à part de la défense : le bot de Glorfindel, ses cartes et son channel ne changent pas.
 
@@ -16,8 +16,8 @@ Ce que fait l'atelier (la CI, les PR, les lots d'elrond) arrive dans Discord, à
 | `#agents` | **le tableau**, un message réécrit sur place (N3) : 🙋 ce qui t'attend, 🔄 les agents d'elrond en cours (relances comprises), ✅ ce qui est rendu depuis peu, 🏁 le dernier run ; chaque ligne avec ses liens (fil du lot, PR, issue, rapport) | non |
 | `#agents` | **un ping par chose qui t'attend**, avec ta mention et ses liens, **effacé une fois réglé** : lot bloqué, relecture non obtenue, la session elrond qui attend ta permission ou ta réponse, une PR à fusionner toi-même, une release en brouillon à publier (REL1), la fin du run | oui |
 | `#roadmap` | un seul message du bot, réécrit sur place (N2) : une barre par jalon, les releases (la dernière publiée, celles qui se préparent : RM1), en cours, relus, bloqués, à faire, les critères de la 1.0, les cinq indicateurs | non |
-| `#deploy` | le CD de H0 (H1) : début, succès, attente de la CI, agent de CD à mettre à jour, résultats du dry-run | non |
-| `#deploy` | refus, retour arrière, retour arrière raté, H0 dépareillé, erreur de l'agent : avec ta mention | oui |
+| `#deploy` | le CD d'Imladris (H1) : début, succès, attente de la CI, agent de CD à mettre à jour, résultats du dry-run | non |
+| `#deploy` | refus, retour arrière, retour arrière raté, Imladris dépareillé, erreur de l'agent : avec ta mention | oui |
 
 Ce qui ne mérite rien n'envoie rien : un run vert sur une PR, un run annulé, une PR fermée sans fusion, les agents qui ne sont pas ceux d'elrond. **Ne te notifie plus** (N3) : une relecture `changes` ou `blocking` (elrond corrige seul), le repli d'un exécutant (elrond le fait relire), un rendu, une relecture sans verdict lisible — c'est dans le fil du lot et dans le tableau.
 
@@ -38,11 +38,11 @@ Ce qui ne mérite rien n'envoie rien : un run vert sur une PR, un run annulé, u
   - **Le relais local.** Le tableau local demande aussi à GitHub si la release est publiée : au plus toutes les 5 min, à chaque événement, et par le veilleur des PR (deux jours au plus). GitHub ne connaît une release par son tag qu'une fois publiée. Sans le secret dans GitHub, c'est ce relais qui efface, au rafraîchissement suivant. Quand le ping d'un brouillon a disparu de Discord (`notify.yml` l'a effacé), GitHub est demandé tout de suite, sans attendre les 5 min (le ping est cherché au plus une fois par minute) : la ligne retirée par `notify.yml` ne revient pas.
   - **À la main** : `agents_discord.py clear vX.Y.Z`, pour un brouillon supprimé sans être publié. Un nouveau brouillon du même tag remplace l'ancien : son lien, et un nouveau ping (l'ancien est effacé).
   - **Sans configuration** : rien n'est envoyé, et la commande réussit.
-- **`#releases`** (REL2, `EREGION_DISCORD_WEBHOOK_RELEASES`) : du brouillon jusqu'à H0, sans ping, rien n'y est effacé. `#ci` garde les autres PR, les runs rouges et les issues fermées.
+- **`#releases`** (REL2, `EREGION_DISCORD_WEBHOOK_RELEASES`) : du brouillon jusqu'à Imladris, sans ping, rien n'y est effacé. `#ci` garde les autres PR, les runs rouges et les issues fermées.
   - **La PR de version.** `notify.yml` la reconnaît à sa branche de tête, `chore/release-` suivi d'un semver (`chore/release-0.4.5`, jamais `chore/release-notes` ni `chore/release-0.4.5-bis`), **et** à son dépôt : la tête est ce dépôt-ci. La même branche venue d'un fork reste une PR de `#ci` (SEC6 : un fork nomme sa branche comme il veut). Ouverte, puis fusionnée (« ensuite : make release-draft ») ; fermée sans fusion, rien.
   - **Le brouillon prêt.** `make release-draft` poste « 📦 vX.Y.Z en brouillon — titre » : les titres de section des notes, leurs trois premières entrées, coupées, « Cherche vX.Y.Z en tête des releases du dépôt », et un bouton vers ces releases (le brouillon n'est visible que des membres du dépôt). Pas de ping : celui de `#agents` (REL1) ne change pas. **Le lien est la liste, jamais l'URL du brouillon** : GitHub donne au brouillon une nouvelle URL (`…/releases/tag/untagged-<hash>`) à chaque édition, et `make release-draft` l'édite juste après l'avoir annoncé (les ids de `#agents`, dans ses notes) ; tu peux l'éditer toi aussi avant de publier. Relire l'URL après la dernière édition ne suffirait donc pas. La liste, elle, ne bouge pas. Le lien du tableau et du ping de `#agents` est le même.
-  - **La publication.** Sur `release: published`, « 🏷️ vX.Y.Z publiée », un bouton vers la page de la release, et « le CD de H0 la déploie : voir #deploy ». Elle ne va plus dans `#ci`. L'effacement de la ligne et du ping de `#agents` (REL1) reste.
-  - **Le déploiement** reste dans `#deploy` (décision de Jonathan, 29/10) : le webhook de `#deploy` est le seul secret de l'atelier sur H0. La carte de publication y renvoie.
+  - **La publication.** Sur `release: published`, « 🏷️ vX.Y.Z publiée », un bouton vers la page de la release, et « le CD d'Imladris la déploie : voir #deploy ». Elle ne va plus dans `#ci`. L'effacement de la ligne et du ping de `#agents` (REL1) reste.
+  - **Le déploiement** reste dans `#deploy` (décision de Jonathan, 29/10) : le webhook de `#deploy` est le seul secret de l'atelier sur Imladris. La carte de publication y renvoie.
   - **Le texte du dehors est inerte** (SEC6) : les notes, le nom d'une release, le titre d'une PR, qu'un membre du dépôt écrit, passent par `glorfindel/chat_text.py` (`discord_text`, l'échappement du bot de Glorfindel) : aucun Markdown, aucun lien masqué, aucune mention ; `allowed_mentions` vide. `notify.yml` l'apporte dans son checkout partiel ; le script le lit depuis son fichier, jamais par le paquet `glorfindel`. Sans lui, un filtre strict ne garde que les lettres, les chiffres et la ponctuation simple. Un lien qui n'est pas `https://` ne donne ni bouton ni lien de carte.
   - **Le bouton.** Un webhook créé dans les paramètres du salon n'envoie un bouton-lien qu'avec `with_components=true` (documentation de Discord, non mesuré). Une carte refusée avec son bouton (400) repart sans lui : son titre mène au même endroit.
   - **Le secret** n'est donné à l'étape que pour un événement `release`, ou pour la seule PR de version du dépôt : un `pull_request_target` dont la tête est ce dépôt-ci (`head.repo.full_name == github.repository`) et sa branche `chore/release-…` (l'expression de `notify.yml`). Jamais pour la PR d'un fork, jamais pour un run ni une issue. Le script revérifie (`version_pull` : le semver entier, le dépôt de la tête) : deux barrières, l'une dans le YAML, l'autre en Python.
@@ -88,7 +88,7 @@ Ce qui ne mérite rien n'envoie rien : un run vert sur une PR, un run annulé, u
 - Le bot ne reçoit rien au niveau du serveur. Ailleurs, il ne voit que ce que `@everyone` voit.
 - **Mode développeur** (Paramètres → Avancés). Clic droit sur `#lots`, puis sur `#roadmap` → Copier l'identifiant du salon. Clic droit sur ton nom → Copier l'identifiant de l'utilisateur.
 
-**3. Les secrets.** Ce sont des URL et des jetons : jamais dans le dépôt (public), jamais sur H0. `host_env.py` ne recopie aucune variable `EREGION_DISCORD_*`.
+**3. Les secrets.** Ce sont des URL et des jetons : jamais dans le dépôt (public), jamais sur Imladris. `host_env.py` ne recopie aucune variable `EREGION_DISCORD_*`.
 
 ```bash
 gh secret set EREGION_DISCORD_WEBHOOK_CI          # l'URL du webhook de #ci (collée au prompt, pas dans l'historique)
@@ -112,9 +112,9 @@ EREGION_DISCORD_WEBHOOK_DEPLOY=https://discord.com/api/webhooks/…   # #deploy 
 EREGION_DISCORD_WEBHOOK_RELEASES=https://discord.com/api/webhooks/…   # #releases : la carte du brouillon (REL2)
 ```
 
-`#releases` (REL2) reçoit de deux endroits : de GitHub (le secret, pour la PR de version et la publication) et de ton poste (cette ligne, pour `make release-draft`). Sans la ligne, le brouillon n'a pas sa carte ; sans le secret, la PR de version et la publication restent dans `#ci`. Ce webhook ne va jamais sur H0.
+`#releases` (REL2) reçoit de deux endroits : de GitHub (le secret, pour la PR de version et la publication) et de ton poste (cette ligne, pour `make release-draft`). Sans la ligne, le brouillon n'a pas sa carte ; sans le secret, la PR de version et la publication restent dans `#ci`. Ce webhook ne va jamais sur Imladris.
 
-Le webhook de `#deploy` est le seul secret de l'atelier qui va sur H0. `make glorfindel-host-cd-install` le copie dans `~/.eregion-cd/discord.env` (600), avec la mention et rien d'autre : le CD de H0 poste avec (H1, `infra/glorfindel-host/README.md`, « Le CD de H0 »).
+Le webhook de `#deploy` est le seul secret de l'atelier qui va sur Imladris. `make glorfindel-host-cd-install` le copie dans `~/.eregion-cd/discord.env` (600), avec la mention et rien d'autre : le CD d'Imladris poste avec (H1, `infra/glorfindel-host/README.md`, « Le CD d'Imladris »).
 
 **4. Les hooks**, chez toi et jamais dans le dépôt (ils s'exécuteraient chez chaque contributeur) : `bash scripts/elrond-hooks.sh install`, **à relancer après N3** (les hooks de N1 appelaient `notify_discord.py hook`, retirés à la réinstallation). La commande ajoute palantir sur `Stop` et `SubagentStop`, et `agents_discord.py hook` sur `PreToolUse` (`Agent|SendMessage|SubagentHandback|AskUserQuestion`, synchrone), `PostToolUse` (`AskUserQuestion`), `SubagentStop` (`elrond-worker|elrond-reviewer`, synchrone), `Notification` (`permission_prompt`) et `Stop`. Chaque commande finit par `|| true` : un hook `PreToolUse` qui sort en 2 bloquerait l'outil, et `python3` sort en 2 si le fichier manque. `uninstall` les retire et garde les autres hooks (rtk compris).
 

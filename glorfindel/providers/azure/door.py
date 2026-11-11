@@ -9,7 +9,7 @@ reading of REC1b: it reached nothing). Nothing here lifts or holds: the lift is 
 
 The table is CLOSED and lives here: an operation that is missing is a lot, never the model's.
 Reading, the REST API of the activity log (`Microsoft.Insights/eventtypes/management/values`,
-under `*/read` — the Reader H0 already holds):
+under `*/read` — the Reader Imladris already holds):
   - one EXACT read per resource (`resourceUri eq '<id>'`): the VM, each NIC, each disk (the
     current ones and those noted at the isolation, §8), each NSG that governs it, each public IP
     of its NICs, each identity it carries;

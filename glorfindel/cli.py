@@ -248,7 +248,7 @@ class _GlorfindelCli(click.Group):
 def identity_note(environ=os.environ, in_container: bool | None = None) -> str:
     """What the watch says of its identity at start when it has no service principal of its own
     (SEC11, V-17): compose no longer falls back on AZURE_CLIENT_*, the former shared principal.
-    "" when it has one. In a container, only a VM's managed identity can stand in (H0); on a
+    "" when it has one. In a container, only a VM's managed identity can stand in (Imladris); on a
     workstation, none — the `az login` of the machine is not in the container. From the venv,
     the machine's `az login`."""
     if (environ.get("AZURE_CLIENT_ID") or "").strip():
@@ -257,7 +257,7 @@ def identity_note(environ=os.environ, in_container: bool | None = None) -> str:
         in_container = Path("/.dockerenv").exists()
     if in_container:
         return ("no service principal (its …_AZURE_CLIENT_* pair empty) — the VM's managed identity "
-                "if this container runs on one (H0); on a workstation, no identity at all: every "
+                "if this container runs on one (Imladris); on a workstation, no identity at all: every "
                 "Azure call will fail")
     return ("no service principal (AZURE_CLIENT_* empty) — this machine's `az login`, or the VM's "
             "managed identity")
@@ -317,7 +317,7 @@ def respond(signals_file: str, dry_run: bool, model: str, memory_path: str | Non
 def door(resource_id: str, days: float, as_json: bool):
     """Who acted on a VM by the control plane, and whether they keep their rights — READ ONLY, under
     this host's identity (LEV2, #690). Nothing is written, on Azure or here; nothing lifts or holds.
-    On H0, the reads its Reader can make (H1, H2: docs/banc-lev2.md)."""
+    On Imladris, the reads its Reader can make (H1, H2: docs/banc-lev2.md)."""
     from datetime import datetime, timedelta, timezone
     from glorfindel.actions import AzureConnector
 
@@ -544,7 +544,7 @@ def _watch_door_pass(connector, lock=None, said: dict | None = None) -> list[dic
 
 def _write_watch_heartbeat(path: Path, at) -> None:
     """The watch's heartbeat, written at once (SEC17): a temp file beside it, renamed over it —
-    never opened in place, so a reader (the injectors' gate, the console, the CD of H0, a second
+    never opened in place, so a reader (the injectors' gate, the console, the CD of Imladris, a second
     watch) never finds it empty or cut. In the mode it always had, 0644: read by other processes."""
     from glorfindel.response.state import _atomic_write_text
     _atomic_write_text(path, at.isoformat(), mode=0o644)
@@ -1045,7 +1045,7 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
         _watch_reassert_pass(ttl_connector, mode_override, _output_lock, _reassert_seen)
 
     # REC1 (#668): the recovery of a VM this watch isolated, read on Azure — a restore run from
-    # another host (H0 never restores, SEC17) proven there hands the VM's queue its own
+    # another host (Imladris never restores, SEC17) proven there hands the VM's queue its own
     # recovery_complete. In its own thread, one pass at a time.
     try:
         _recovery_every_s = float(os.environ.get("GLORFINDEL_RECOVERY_INTERVAL_S", "60"))
@@ -2753,7 +2753,7 @@ def rules_cmd(ctx: click.Context, rules_file: str | None) -> None:
 @click.option("--rules", "rules_file", default=None, metavar="PATH",
               help="The shipped base detection_rules.yaml (default: auto-detected).")
 @click.option("--live", is_flag=True, help="Run each rule's query once, read-only, on its backend.")
-@click.option("--json", "as_json", is_flag=True, help="One JSON object (what H0's CD reads), errors reduced.")
+@click.option("--json", "as_json", is_flag=True, help="One JSON object (what Imladris's CD reads), errors reduced.")
 @click.option("--query-timeout", "query_timeout_s", type=click.FloatRange(0.1, 600), default=30.0,
               show_default=True, help="Seconds a query is waited for.")
 @click.option("--total", "total_s", type=click.FloatRange(0.1, 3600), default=120.0, show_default=True,
@@ -2784,7 +2784,7 @@ def migrate_rules(from_file: str, base_file: str, dry_run: bool) -> None:
     What --from holds beyond --base goes to ~/.glorfindel/client_rules.yaml: a new rule
     as is, a changed base rule as a client rule of the same name (it overrides), a base
     rule --from removed as `disable`. Running it twice changes nothing more. Procedure on
-    H0: infra/glorfindel-host/README.md, « Migrer les règles approuvées vers la couche du
+    Imladris: infra/glorfindel-host/README.md, « Migrer les règles approuvées vers la couche du
     client ».
     """
     from glorfindel.rule_layers import ClientLayerError, migrate

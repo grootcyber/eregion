@@ -1,7 +1,7 @@
-# La couche du client du banc (WL1, #595) : les règles que le Glorfindel hébergé (H0) charge
+# La couche du client du banc (WL1, #595) : les règles que le Glorfindel hébergé (Imladris) charge
 # par-dessus la base livrée, dans son ~/.glorfindel/client_rules.yaml. Jamais copiée telle quelle
-# sur H0 : `make glorfindel-host-client-rules` y fond chacune de ces règles, par son nom, à côté
-# des règles approuvées sur H0 (infra/glorfindel-host/README.md, « La couche du client du banc »).
+# sur Imladris : `make glorfindel-host-client-rules` y fond chacune de ces règles, par son nom, à côté
+# des règles approuvées sur Imladris (infra/glorfindel-host/README.md, « La couche du client du banc »).
 #
 # Ces commentaires ne survivent pas à la fusion (la couche est réécrite) : ce qu'il faut savoir
 # d'une règle est dans sa description et dans les commentaires de sa requête.
@@ -40,7 +40,7 @@ rules:
       | where SyslogMessage !has "NOT in sudoers"
             and SyslogMessage !has "authentication failure"
       // WL1 (#595), the bench only: bree's scheduled maintenance (infra/terraform/scripts/workload.sh,
-      // /etc/cron.d/eregion-workload), benign noise kept on purpose for H0's pre-observation. Set
+      // /etc/cron.d/eregion-workload), benign noise kept on purpose for Imladris's pre-observation. Set
       // aside only when everything holds: bree (its host name and its resource), the account
       // celebrimbor, no terminal (no TTY=, sudo's form outside a terminal), to root with nothing
       // between USER= and COMMAND= (no GROUP=, no ENV=), one of these three commands with exactly
@@ -64,7 +64,7 @@ rules:
   # supprime ses NSG jetables dans rg-eregion-canary sous son propre principal (P-04). Décision de
   # Jonathan, 06/11 (CAN2, #605), après 12 cartes jugées Right. L'appid du principal n'est jamais
   # dans le dépôt : `env_guids` le fait prendre, au chargement, dans l'environnement de la watch
-  # (EREGION_RULE_CANARY_APPID, host.env de H0), vérifié GUID ; absent ou invalide, cette copie est
+  # (EREGION_RULE_CANARY_APPID, host.env d'Imladris), vérifié GUID ; absent ou invalide, cette copie est
   # écartée et la règle livrée tourne — les cartes du canari reviennent, rien n'est caché.
   - name: nsg-change-outside-glorfindel
     description: "Modification d'un NSG ou d'une de ses règles par un autre appelant que Glorfindel — T1562.007 (Impair Defenses: Disable or Modify Cloud Firewall). Le cas le plus grave : une règle gérée par Glorfindel (isolation, quarantaine, blocage) écrite par un autre. (banc : sans le canari azurerm dans rg-eregion-canary, CAN2)"
@@ -131,7 +131,7 @@ rules:
   # entra-sp-unusual-signin : la règle livrée, recopiée à l'identique, plus une exclusion — les
   # connexions du canari azurerm (.github/workflows/canary-azurerm.yml) depuis les runners hébergés
   # de GitHub, dont l'adresse change à chaque run, par le jeton OIDC que GitHub donne au job (P-04) :
-  # une carte à chaque passage sur H0. Décision de Jonathan, 09/11 (CAN3, #673). Écartée seulement
+  # une carte à chaque passage sur Imladris. Décision de Jonathan, 09/11 (CAN3, #673). Écartée seulement
   # si les deux tiennent : le principal est celui du canari (son appid, pris par `env_guids` dans
   # l'environnement de la watch, la même variable que CAN2, jamais dans le dépôt) et la connexion
   # est faite par un identifiant fédéré. Le même principal par un secret ou un certificat, et tout

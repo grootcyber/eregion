@@ -11,7 +11,7 @@ def cli():
     """Eregion — Glorfindel defends, Annatar and Gothmog prove it."""
     # The console reads Azure with the host's identity. Compose passes `${AZURE_CLIENT_ID:-}`:
     # empty, it stops azure-identity before the VM's managed identity — the glorfindel
-    # command drops it, this one must too (H0, 26/10: every read of the console failed).
+    # command drops it, this one must too (Imladris, 26/10: every read of the console failed).
     from glorfindel.cli import _drop_empty_service_principal_env
     _drop_empty_service_principal_env()
 
@@ -50,7 +50,7 @@ def console(host: str, port: int, chosen: str | None):
 def rotate_token():
     """Draw a new console token (SEC10): the console reads it at its next request, and refuses
     every session of the former one. Never printed — `make console-url` reads it. When the
-    deployment sets EREGION_CONSOLE_TOKEN (H0), rotate it there."""
+    deployment sets EREGION_CONSOLE_TOKEN (Imladris), rotate it there."""
     from eregion_console.api import _TOKEN_FILE, rotate_token as rotate
     try:
         rotate()

@@ -8,7 +8,7 @@ code; a claim of a difference without its fact, or with a number no fact holds, 
 by ``verify``. And the index of past campaigns: put in again, idempotent, never losing the
 facts a report saw. A fake model (no call), an index in memory (no embedding, no download).
 D2b: the runs a trend cites face each other in the order they were played, when it is known;
-a campaign that came through the channel has its manifest's start checked against what H0
+a campaign that came through the channel has its manifest's start checked against what Imladris
 saw. Mutants M260–M279, M510–M519, M530–M547 and M650–M669 (scripts/mutation_check.py) are
 measured here."""
 import json
@@ -764,7 +764,7 @@ WINDOW = "2026-10-23T08:12:00Z"           # when the first run of CH opened its 
 
 
 def _window_file(runs, rid, start, *, lasts_s=3600.0):
-    """A run's window as H0 holds it once pulled: its file written ten minutes after its start."""
+    """A run's window as Imladris holds it once pulled: its file written ten minutes after its start."""
     t = cr._timestamp(start)
     path = cr.windows_dir(runs) / f"{rid}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -777,7 +777,7 @@ def _window_file(runs, rid, start, *, lasts_s=3600.0):
 
 def _from_channel(runs, cid, created, scenarios, *, pulled="2026-10-26T06:00:00Z", windows=()):
     """A campaign pulled from the channel: its manifest (``created``: the date it gives),
-    its runs' reports, its ``.pulled`` marker, and the windows H0 holds — ``(run id, start,
+    its runs' reports, its ``.pulled`` marker, and the windows Imladris holds — ``(run id, start,
     how long it lasts)``."""
     cdir = _campaign(runs, cid, created, scenarios)
     (cdir / "runs").mkdir()
@@ -806,13 +806,13 @@ _BEFORE_WINDOW = f"il précède de plus de 1 h la première fenêtre d'exercice 
     # the same, with a window of its own that H-1 refuses (it lasts 3 h): it bounds nothing
     ("2026-10-18T10:00:00Z", (("HX", "2026-10-18T10:05:00Z", 3 * 3600.0),), _BEFORE_WINDOW),
     # dates no UTC date holds (year 10000, year 0): refused, said as read, never raised (M667)
-    ("9999-12-31T23:59:59-05:00", (), "il est postérieur au tirage de la campagne par H0 (2026-10-26T06:00:00Z)"),
+    ("9999-12-31T23:59:59-05:00", (), "il est postérieur au tirage de la campagne par Imladris (2026-10-26T06:00:00Z)"),
     ("0001-01-01T00:00:00+05:00", (), _BEFORE_WINDOW),
 ])
 def test_a_forged_manifest_date_does_not_change_the_previous_campaign(tmp_path, index, created, forged,
                                                                       said):
     """M656, M657, M659–M661, M667: a campaign that came through the channel gives its start
-    in its manifest, written by whoever can write in the channel. H0 bounds it by what it
+    in its manifest, written by whoever can write in the channel. Imladris bounds it by what it
     saw: the first window of its runs that H-1 believes. A date that does not fit is refused,
     said in the report and by the index's command, and the window's start taken: the previous
     campaign stays C0."""
@@ -842,7 +842,7 @@ def test_a_forged_manifest_date_does_not_change_the_previous_campaign(tmp_path, 
 
 def test_a_channel_campaign_did_not_start_after_h0_pulled_it(tmp_path, index):
     """M658, M668: without a window (purged a week after its end), the ``.pulled`` marker
-    still bounds it: a campaign cannot have started after H0 pulled it. Refused, its start is
+    still bounds it: a campaign cannot have started after Imladris pulled it. Refused, its start is
     unknown — never the date it gave — and putting it in the index says so. Indexed before
     with that date (before D2b), it loses it: an upsert keeps a key it leaves out, so the
     unknown start is written ("")."""
@@ -856,7 +856,7 @@ def test_a_channel_campaign_did_not_start_after_h0_pulled_it(tmp_path, index):
     info = cr.campaign_info(cdir)
     assert (info.started, info.start_refused) == (None, (
         "début de la campagne lu dans son manifeste (2026-10-25T00:00:00Z) refusé : il est postérieur "
-        "au tirage de la campagne par H0 (2026-10-24T00:00:00Z) ; début inconnu"))
+        "au tirage de la campagne par Imladris (2026-10-24T00:00:00Z) ; début inconnu"))
     assert ci.verse(cdir).line().endswith(f" ; {info.start_refused}")
     assert index.rows["H1"]["campaign_started"] == ""
     assert cr.fact_of(index.rows["H1"]).campaign_started is None

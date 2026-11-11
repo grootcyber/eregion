@@ -8,13 +8,13 @@ and Annatar and Gothmog stay blind to Glorfindel as Glorfindel is to them.
 
 ``read`` is the only way in: it refuses any field more, any field missing, a value of the wrong
 kind — the same reader on the console's host, on the operator's machine and on Orodruin, so a
-request forged on a compromised H0 cannot carry anything the reader would trust.
+request forged on a compromised Imladris cannot carry anything the reader would trust.
 
 The names typed by the operator (a destructive technique's target, or one nobody declared
 non-destructive: A0) never live in the request: the command that carries it
 (``make orodruin-exercise``) asks for them on the operator's machine and writes them beside it,
 in a file of their own (``read_typed``). A name the console kept would prove nothing: a request
-forged on H0 would pass under the human gesture unseen.
+forged on Imladris would pass under the human gesture unseen.
 
 Where the console writes a request: ``~/.eregion/console/requests/`` (``requests_dir``), its own
 directory — never ``runs/`` nor ``~/.glorfindel/``, where the watch reads (« Glorfindel reste

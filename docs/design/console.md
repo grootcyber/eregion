@@ -1,7 +1,7 @@
 # La console d'Eregion
 
 Conception du 26/10/2026, session War Room. **Décidé par Jonathan le 26/10**, question par question.
-**UI-1 construit et déployé sur H0 le 26/10** (#209, #210, #212, #216) ; **UI-2 construit le 27/10** (#206), définitions décidées le 27/10.
+**UI-1 construit et déployé sur Imladris (anciennement H0) le 26/10** (#209, #210, #212, #216) ; **UI-2 construit le 27/10** (#206), définitions décidées le 27/10.
 **Dagorlad (§7) : conception du 30/10**, ses trois questions tranchées par Jonathan le 30/10 ; **le Board construit le 30/10** (DG-a, première partie).
 Ce document sert aux sessions qui implémentent : le lot UI-1 (le socle, #205), le lot UI-2 (les cinq
 indicateurs, #206), et le lot d'Annatar et de Gothmog qui vérifie, avant chaque run, que Glorfindel
@@ -38,9 +38,9 @@ tourne.
 
 ## 1. Pourquoi
 
-Le constat a été fait sur H0 (vraies données, par le tunnel, en lecture seule) et sur une instance
+Le constat a été fait sur Imladris (vraies données, par le tunnel, en lecture seule) et sur une instance
 locale aux données fictives, à 1440 et 1600 px. Les captures restent hors du dépôt, parce que celles
-de H0 portent l'abonnement du banc.
+d'Imladris portent l'abonnement du banc.
 
 - **Les deux pages parlent de Glorfindel.** `/` montre ce qu'il fait sur le trafic réel. `/atelier`
   montre ce qu'il a fait pendant les exercices : ses cycles, ses cartes, ses décisions, le verdict de
@@ -65,7 +65,7 @@ de H0 portent l'abonnement du banc.
      10 jours s'affiche « — » ;
   9. l'identifiant de la VM affiché avec l'abonnement ;
   10. une configuration qui n'est qu'une bascule, sans adresse ;
-  11. des pages servies sans `Cache-Control`, restées en cache sur H0 (#197).
+  11. des pages servies sans `Cache-Control`, restées en cache sur Imladris (#197).
 - **Un seul des cinq indicateurs de la finalité est affiché** : « isolate/block wrong », noyé dans
   l'en-tête.
 - **Pas de port dédié.** Il coûterait un jeton, un tunnel et un conteneur de plus, et n'isolerait
@@ -85,7 +85,7 @@ de H0 portent l'abonnement du banc.
 | Glorfindel | être défendu d'abord, en observation (« découvrir ») | Overview, Glorfindel, Config | « Proof: none yet » ; Annatar et Gothmog grisés, avec ce qu'ils ajouteraient |
 | Glorfindel + Annatar | « ma détection marche-t-elle ? » | + Annatar | Gothmog grisé |
 | Glorfindel + Gothmog | « mon infra tient-elle ? », et Glorfindel avec elle | + Gothmog | Annatar grisé |
-| Tout | « défense éprouvée » (H0) | tous | — |
+| Tout | « défense éprouvée » (Imladris) | tous | — |
 
 **À General.**
 - Les profils de la 1.0 deviennent ces combinaisons.
@@ -372,7 +372,7 @@ ne l'était pas.
 - **La clé dont on parle** : la console juge avec son propre `EREGION_WATCH_KEY`, l'injecteur avec
   celui d'Orodruin (`orodruin.env`). Les deux doivent épingler la même clé publique, celle de la
   watch ; sinon leurs verdicts peuvent différer. L'empreinte affichée en tête permet de les comparer
-  (`make glorfindel-host-watch-key` donne celle de la watch de H0).
+  (`make glorfindel-host-watch-key` donne celle de la watch d'Imladris).
 - **Sans canal de stockage**, la route ne juge rien, comme avant : elle répond `configured: false`.
   Le canal local des verdicts (SEC18, `runs/verdicts/`) n'est pas lu par elle.
 - **La page** (`injector.js`, `channelDetections`) : le titre dit « ON THE RETURN CHANNEL FOR THIS
@@ -384,7 +384,7 @@ ne l'était pas.
   La raison, l'empreinte, le TTP, la règle et la VM passent par `esc`, et les comptes par `Number`
   (#254). Aucun script en ligne (#257).
 - **Le compose** : le service de la console (`war-room`) reçoit déjà `EREGION_WATCH_KEY` depuis SEC19,
-  la clé **publique**. Il ne monte pas le répertoire de la clé privée. Aucun droit nouveau. Sur H0, la
+  la clé **publique**. Il ne monte pas le répertoire de la clé privée. Aucun droit nouveau. Sur Imladris, la
   ligne `EREGION_WATCH_KEY=` de `host.env` doit être remplie (`docs/demarrer/banc.md`, étape 5). Sinon
   la console le dit sur chaque détection.
 - Tests : `tests/unit/test_console_signed_detections.py` (signée, non signée, d'une autre clé,
@@ -570,7 +570,7 @@ page du jeton puis son formulaire, `?token=` une fois, chaque page (aucune viola
 erreur JS, aucune requête refusée, le fil en WebSocket ouvert), et chaque bouton de Glorfindel et de
 Config (Release, Restore, Cmd, Snapshot, Approve & execute, les verdicts, le mode par défaut) : chaque
 modification part en JSON et répond 200. Deux fois : jeton tiré au premier démarrage, puis jeton du
-déploiement (le mode de H0).
+déploiement (le mode d'Imladris).
 
 **Mutants M1170–M1189** (`tests/unit/test_console.py`) : le nom d'hôte ignoré ou lu comme une
 sous-chaîne, l'origine ignorée, le WebSocket hors des modifications, le port de l'origine ignoré, la
@@ -676,13 +676,13 @@ EXERCISES · 11          windows [7 days ▾] │ CAMPAIGNS · 1    [30 days ▾
 | Dans la même PR, hors périmètre | `pyproject.toml` : le paquet, le script `eregion`, l'extra `console` (`war-room` gardé), les pages en données du paquet (aucune n'est déclarée aujourd'hui : un `pip install` sans `-e` les perdrait). Le Dockerfile de Glorfindel : `COPY eregion_console/`. Depuis M-3, il installe les dépendances verrouillées (`requirements/glorfindel.txt`, avec FastAPI et uvicorn), puis le paquet sans dépendances : l'extra `console` reprend celles de `war-room`, à vérifier contre le verrou. `docker-compose.yml` : le montage de `static` et la commande. L'import de `glorfindel/cli.py`. Les imports des tests et de `scripts/mutation_check.py`, dont 5 mutants visent `glorfindel/api.py` | War Room, avec l'accord de General et de Glorfindel |
 | Glorfindel (UI-1b) | l'alias caché `glorfindel war-room` ; les textes « War Room » d'`agent.py`, `readiness.py` et `jobs.py`. Vérifier qu'aucun n'entre dans ce que voit le modèle | Glorfindel |
 | General (UI-1c) | Makefile, `status.sh`, `host_env.py`, `host.env.example` (les deux noms du jeton) ; `CLAUDE.md` (table des sessions, index des docs) et le fichier de rôle (une session « Console » ?) ; profils de la 1.0 et D1 dans la feuille de route ; doc hors console | General |
-| Plus tard (UI-1d) | le service compose `console`, nommé aussi dans `infra/glorfindel-host/deploy.sh` (`up -d watch war-room bot`) et `status.sh` ; la sortie Terraform `war_room_tunnel` au prochain apply de H0 | General et Jonathan |
+| Plus tard (UI-1d) | le service compose `console`, nommé aussi dans `infra/glorfindel-host/deploy.sh` (`up -d watch war-room bot`) et `status.sh` ; la sortie Terraform `war_room_tunnel` au prochain apply d'Imladris | General et Jonathan |
 | Doc | README, `docs/glorfindel.md`, `operations.md`, `fichiers-cles.md`, `architecture.md`, `azure.md`, `design/preuves.md`, `observation.md`, `infra/glorfindel-host/README.md`. Le CHANGELOG passé et `historique.md` restent tels quels | War Room pour la console, General pour le reste |
 
 ### Pièges
 
 - **L'alias du jeton.** Compose passe `${VAR:-}` : la variable est toujours définie, vide si elle
-  n'est pas posée. Une lecture « la nouvelle si elle existe » couperait le jeton sur H0. La règle
+  n'est pas posée. Une lecture « la nouvelle si elle existe » couperait le jeton sur Imladris. La règle
   est : la nouvelle si elle n'est pas vide.
 - **Le service compose renommé.** L'ancien conteneur garde `127.0.0.1:7007`, et le nouveau ne démarre
   pas. Il faut `up -d --remove-orphans` une fois, mesuré en local d'abord. D'où UI-1d, à part.
@@ -735,9 +735,9 @@ EXERCISES · 11          windows [7 days ▾] │ CAMPAIGNS · 1    [30 days ▾
 | Les cartes (#248) : I1F, AL1, C2, A3 | Console | 0,5 |
 | UI-1d, optionnel | General et Jonathan | 0,25 |
 
-- UI-1 se déploie seul : sur H0, la détection voit tous les composants, et l'alias du jeton suffit.
+- UI-1 se déploie seul : sur Imladris, la détection voit tous les composants, et l'alias du jeton suffit.
 - Les autres lots sont indépendants, sauf UI-2, qui suit UI-1.
-- H0 est en pré-observation jusqu'au 13/11 environ. Chaque redéploiement se fait avec Jonathan,
+- Imladris est en pré-observation jusqu'au 13/11 environ. Chaque redéploiement se fait avec Jonathan,
   `.envrc` chargé, sur une référence épinglée (`make glorfindel-host-start REF=<commit>`, M-3).
 
 ## 6. Hors périmètre
@@ -823,7 +823,7 @@ l'opérateur sait et qu'elle ignore : « never told what the red side plans ». 
 
 | Ce qu'elle montre | D'où |
 |---|---|
-| nom, l'identifiant au survol | les VM du périmètre du banc (`Scope` d'O0, groupes `rg-celebrimbor*`), lues par l'identité de la console (Reader sur le banc, sur H0) |
+| nom, l'identifiant au survol | les VM du périmètre du banc (`Scope` d'O0, groupes `rg-celebrimbor*`), lues par l'identité de la console (Reader sur le banc, sur Imladris) |
 | inscription et zone (`bench`, `twin`, `production`) | ses tags et ceux de son groupe, lus par la même identité et jugés par `inscription.enrollment`, comme la watch les lit (`TagEnrollment`, H-1) |
 | allumée ou désallouée | la même lecture |
 | vue par Glorfindel, et depuis quand | la découverte (`AssetRegistry`, Heartbeat) |
@@ -874,7 +874,7 @@ l'emporte :
   fermé, jamais un raté.
 - `no_rule` : Glorfindel n'a aucune règle pour cette technique sur ce backend. Il est aveugle : le run
   doit finir en `missed`, et la boucle violette proposer une règle.
-- `engine_unknown` : une panne dont cet hôte ne lit pas les cibles du moteur (l'image de H0 ne porte
+- `engine_unknown` : une panne dont cet hôte ne lit pas les cibles du moteur (l'image d'Imladris ne porte
   pas Gothmog). Le preflight de Gothmog en décide, sur Orodruin.
 
 L'état du contrat d'Orodruin, inconnu sur cet hôte tant qu'il ne le publie pas (« Ce qui manque
@@ -899,7 +899,7 @@ aveugle »).
 
   | Mode effectif | Attendu |
   |---|---|
-  | déploiement en lecture seule (H0) | il détecte et recommande ; rien n'est exécuté |
+  | déploiement en lecture seule (Imladris) | il détecte et recommande ; rien n'est exécuté |
   | `human_only`, ou `non_disruptive` retenu par la préparation | une carte à juger ; un humain agit |
   | `non_disruptive`, prête | il isole ou bloque seul si chaque garde passe (confiance, signal caractérisé et attribué, télémétrie lue, tirages d'accord), puis vérifie sur Azure ; sinon une carte qui nomme la garde |
   | zone `production` | l'enveloppe de son mode : Glorfindel ne lit pas encore la zone ; J1 y forcera le mode ombre (détection seule) |
@@ -956,7 +956,7 @@ L'état normal est relu avant et après (les sondes de Gothmog : `vm-running`, `
   (relecture 5.5 de #338, 30/10). La commande **affiche les fils de la demande**, puis fait taper à
   l'opérateur, sur son poste, le nom de la cible de chaque fil destructif (le nom de la VM, tel
   qu'Azure l'écrit) ; Orodruin le compare au nom qu'il lit de la cible. Un nom tapé que la console
-  aurait gardé ne prouverait rien : une demande forgée sur un H0 compromis passerait sous le geste
+  aurait gardé ne prouverait rien : une demande forgée sur un Imladris compromis passerait sous le geste
   humain sans être vue. La page peut montrer ce qui sera demandé, elle ne le recueille pas.
 - **Une fenêtre d'exercice par fil.** L'injecteur l'ouvre quand il touche sa cible, comme
   aujourd'hui. Elle porte l'identifiant de la demande : c'est ce qui relie le fil à son run.
@@ -982,15 +982,15 @@ L'état normal est relu avant et après (les sondes de Gothmog : `vm-running`, `
   écrit la demande dans son propre répertoire (`~/.eregion/console/requests/`, hors de `runs/` et
   de `~/.glorfindel/`), et donne une commande : `make orodruin-exercise REQUEST=<id>`. Elle part du
   poste de l'opérateur, comme les autres cibles d'Orodruin : elle tire la demande de l'hôte de la
-  console (sur H0, par SSH, comme `make glorfindel-host-*`), l'affiche, fait taper les noms (le point
+  console (sur Imladris, par SSH, comme `make glorfindel-host-*`), l'affiche, fait taper les noms (le point
   précédent), puis la copie sur Orodruin par SSH, comme `orodruin-push`, et l'y lance. À la fiche de
   DG-b d'en fixer le détail. Ce choix garde trois choses :
   - rien de neuf dans le canal ;
-  - aucun droit de plus pour l'identité de H0, qui reste un observateur ;
+  - aucun droit de plus pour l'identité d'Imladris, qui reste un observateur ;
   - un geste humain entre la console et Orodruin.
 
   « Stop all » est aussi une commande (`make orodruin-kill`). Écarté : un conteneur de demandes, où
-  l'identité de H0 aurait pu faire agir Orodruin.
+  l'identité d'Imladris aurait pu faire agir Orodruin.
 - **Le modèle de menace** : la console devient une page qui fait agir sur le cloud. Sa frontière (la
   première) le dira au lot de la phase (b), avec ce qui le tient : le jeton, l'origine et le corps
   JSON de SEC1 ; le contrat d'Orodruin, l'inscription, la zone et le nom tapé.
@@ -1002,7 +1002,7 @@ Chaque fil devient une ligne de la chronologie (écran 2), tirée de ce qui arri
 | Étape | D'où |
 |---|---|
 | demandée | la demande, sur l'hôte de la console ; acceptée ou refusée, Orodruin le dit à l'opérateur dans la commande portée, et la page le voit quand la première fenêtre arrive |
-| lancée : la fenêtre et son run | la fenêtre d'exercice (tirée du canal sur H0), qui porte l'identifiant de la demande |
+| lancée : la fenêtre et son run | la fenêtre d'exercice (tirée du canal sur Imladris), qui porte l'identifiant de la demande |
 | T0 | le début de la fenêtre en direct ; à la fin, l'heure de l'attaque du rapport de run |
 | détectée, et quand | un cycle de la watch sur la cible dans la fenêtre (`covering_runs`), ou une détection livrée au run (canal retour) |
 | la décision | ce cycle : action, confiance, mode, la garde qui l'a retenue |
@@ -1263,12 +1263,12 @@ Dagorlad » ; le pas à pas, dans [`docs/operations.md`](../operations.md).
   - Le navigateur n'envoie que l'expérience et la cible de chaque fil.
   - Les fils sont jugés par `exercise_plan` ; un fil refusé, rien n'est écrit.
   - La demande va dans `~/.eregion/console/requests/`, mode 600, et nulle part ailleurs.
-  - Seul le service de la console monte `~/.eregion/console` ; H0 crée le répertoire avant compose
+  - Seul le service de la console monte `~/.eregion/console` ; Imladris crée le répertoire avant compose
     (`glorfindel-host-start`, `deploy.sh`).
   - La page dit « Request run from Orodruin », puis donne la commande et les fils dont le nom sera
     tapé. Elle ne recueille aucun nom. Les fils restent figés jusqu'à « New plan ».
 - **La commande portée** : `make orodruin-exercise REQUEST=<id> [DRY_RUN=1] [REQUEST_FROM=local]`.
-  - Elle tire la demande de H0 par SSH, clé d'hôte vérifiée, et la relit.
+  - Elle tire la demande d'Imladris par SSH, clé d'hôte vérifiée, et la relit.
   - Elle l'affiche fil par fil et fait taper le nom de chaque cible destructive, technique ou panne,
     ou non déclarée (A0).
   - Elle la copie sur Orodruin et l'y lance.
@@ -1284,7 +1284,7 @@ Dagorlad » ; le pas à pas, dans [`docs/operations.md`](../operations.md).
   d'Orodruin et le rapport. `gothmog targets` lit sans Orodruin les VM que vise chaque expérience
   (`no_engine`).
 - **Orodruin publie** son verdict (`armed` ou `passive`, les codes, l'heure) et le statut de chaque
-  demande, sous `orodruin/` dans le canal des fenêtres. La watch de H0 les tire dans `runs/orodruin/`,
+  demande, sous `orodruin/` dans le canal des fenêtres. La watch d'Imladris les tire dans `runs/orodruin/`,
   chaque blob relu contre sa forme. La console les montre ; sans eux, « Orodruin: unknown here ».
 - **« Stop all »** donne `make orodruin-kill`, les fenêtres ouvertes qu'il fermera et leurs cibles,
   ce qui marque encore (la grâce) et ce qui reste en vol (M-1). La console ne révoque rien.
@@ -1294,8 +1294,8 @@ Dagorlad » ; le pas à pas, dans [`docs/operations.md`](../operations.md).
   - `test_exercise_request.py`, `test_console_dagorlad_request.py`, `test_makefile_exercise.py` ;
   - `test_exercise_runner.py`, `test_annatar_wire.py`, `test_gothmog.py`, `test_orodruin_word.py` ;
   - `test_exercise_e2e.py` : une demande de la console aux deux injecteurs, sur les faux.
-- **Reste pour le banc, avec Jonathan** : le premier exercice réel, et le blob `orodruin/` tiré par H0.
-  Avant, `make glorfindel-host-cd-install` : le CD de H0 garde sa copie de `deploy.sh`.
+- **Reste pour le banc, avec Jonathan** : le premier exercice réel, et le blob `orodruin/` tiré par Imladris.
+  Avant, `make glorfindel-host-cd-install` : le CD d'Imladris garde sa copie de `deploy.sh`.
 - **Glorfindel reste aveugle, prouvé** (relecture de DG-b) : `tests/unit/test_dagorlad_blind.py` rejoue
   `_build_user_message()` avec une demande, ses noms tapés, son statut et le verdict d'Orodruin
   présents (`~/.eregion/console/requests/`, `runs/orodruin/`). Le message est le même, à l'octet
@@ -1392,7 +1392,7 @@ Dagorlad » ; le pas à pas, dans [`docs/operations.md`](../operations.md).
   candidates de sa zone et, pour chacune, quand elle a joué cette technique ici pour la dernière fois
   (les rapports de run de l'hôte : un indice). La demande ne s'écrit pas tant qu'un fil attend ses VM.
 - **La commande** : `make orodruin-exercise DRILL=<nom> [TARGETS=…]`. Sur le poste, le drill de
-  l'instance (H0, ou le poste avec `REQUEST_FROM=local`), sinon le livré du dépôt ; ses fils posés sur
+  l'instance (Imladris, ou le poste avec `REQUEST_FROM=local`), sinon le livré du dépôt ; ses fils posés sur
   les VM inscrites lues par Azure avec l'identité de l'opérateur ; un drill livré sans `TARGETS` est
   refusé, ses candidates listées ; chaque fil jugé par `exercise_plan` ; puis la demande, comme
   `REQUEST=`. `DRILL` et `TARGETS` viennent de la ligne de commande, jamais de l'environnement.

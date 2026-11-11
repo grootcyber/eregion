@@ -1,15 +1,15 @@
 """`make bench-report RUN=<run_id>`: the chronology of a bench run, composed alone (BNC1, #682).
 
-On a fake bench (tests/unit/bench_world.py: `az`, `terraform`, `make`, and H0 read by ssh through
-scripts/bench_h0_reader.py, run for real on a fake H0), with the shapes measured on 09/11 (RAN1,
+On a fake bench (tests/unit/bench_world.py: `az`, `terraform`, `make`, and Imladris read by ssh through
+scripts/bench_h0_reader.py, run for real on a fake Imladris), with the shapes measured on 09/11 (RAN1,
 #665), the report composes again what was rebuilt by hand that night:
   - T0, the detection at 70,3 s, the isolation, the session drain 302 s, the verification read
     false, the neutralization 152 s, the restore job 15 min 17, the start held by the quarantine,
     the lift at T0 + 15 863 s, the guest agent `Ready`;
-  - the Run Commands of the target, each caller a role (Orodruin, H0, the console, a human);
+  - the Run Commands of the target, each caller a role (Orodruin, Imladris, the console, a human);
   - the same in JSON (runs/bench/<run_id>.json, or OUT=), and nothing else is written;
   - no identifier leaves: no GUID, no IP, no UPN — the output is scanned for them.
-No Azure, no H0, no model.
+No Azure, no Imladris, no model.
 """
 from __future__ import annotations
 
@@ -162,7 +162,7 @@ def test_the_run_commands_say_their_callers_as_roles(tmp_path):
         ("human", "Succeeded", "une Run Command humaine"),
     ]
     assert [r["duration_s"] for r in rcs][:5] == [22.0, 21.0, 61.0, 302.0, 152.0]
-    assert "| 4 | H0 | 16:43:03 → 16:48:05 | Succeeded | 302 s | la coupure des sessions |" in md
+    assert "| 4 | Imladris | 16:43:03 → 16:48:05 | Succeeded | 302 s | la coupure des sessions |" in md
     assert "| 6 | console | 20:09:29 → 20:09:29 | Failed (`Conflict`) | 0 s | une tentative refusée |" in md
     assert "| 9 | un humain |" in md
     # bree's Run Command and the unknown principal's ListServiceSas are not the target's Run Commands
@@ -179,7 +179,7 @@ def test_the_chronology_is_in_order_and_says_the_point_and_the_failed_job(tmp_pa
     assert "**T0**, l'attaque" in whats and "**levée**" in whats
     assert any(x.startswith("job de restore Failed (4,5 s)") for x in whats)
     assert any(x.startswith("désallocation de vm-celebrimbor-gondolin") for x in whats)
-    assert any("coupure des sessions par H0 (302 s, Succeeded)" in x for x in whats)
+    assert any("coupure des sessions par Imladris (302 s, Succeeded)" in x for x in whats)
     assert "| 15:49:23 → 16:15:00 | point de restauration pris (job de sauvegarde) |" in md
 
 
@@ -187,8 +187,8 @@ def test_the_isolation_state_gives_the_tenth_when_h0_still_holds_it(tmp_path):
     w = _world_0911(tmp_path, isolated=True)
     code, md, _, _ = _report(w)
     assert code == 0
-    assert "| Isolement exécuté (NSG de quarantaine posé) | 16:43:02,8 | **96,8 s** | `isolated_at`, l'état d'isolation de H0 |" in md
-    assert "| Coupure des sessions demandée | 16:43:03,3 | 97,3 s | `drains_at`, l'état de H0 |" in md
+    assert "| Isolement exécuté (NSG de quarantaine posé) | 16:43:02,8 | **96,8 s** | `isolated_at`, l'état d'isolation d'Imladris |" in md
+    assert "| Coupure des sessions demandée | 16:43:03,3 | 97,3 s | `drains_at`, l'état d'Imladris |" in md
 
 
 def test_no_identifier_leaves_the_report(tmp_path):
@@ -247,7 +247,7 @@ def test_a_run_unknown_on_h0_refuses(tmp_path):
     (w.app / f"runs/glorfindel/{bw.RUN}.json").unlink()
     code, md, err, out = _report(w)
     assert code == 1 and md == "" and not out.exists()
-    assert f"le rapport du run {bw.RUN} est absent de H0" in err
+    assert f"le rapport du run {bw.RUN} est absent d'Imladris" in err
 
 
 @pytest.mark.parametrize("bad", ["", "$(touch x)", "a b", "-rf"])
@@ -332,7 +332,7 @@ def test_an_unverified_h0_host_key_sends_nothing(tmp_path, ssh, known_rc):
                               err=f"✗ HOST_SSH_FINGERPRINT requis : la clé d'hôte de {bw.H0_IP}\n"))
     code, md, err, out = _report(w, env_extra={"BENCH_H0_SSH": ssh})
     assert code == 1 and md == "" and not out.exists()
-    assert "clé d'hôte de H0 n'est pas vérifiée" in err and bw.H0_IP not in err
+    assert "clé d'hôte d'Imladris n'est pas vérifiée" in err and bw.H0_IP not in err
     assert not [c for c in w.calls() if c[0] == "ssh"]
 
 

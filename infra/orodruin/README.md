@@ -21,8 +21,8 @@ Contrat (garanties, vérifications, kill, mutants) :
   de logs du banc. Rien d'autre : le contrat tient une liste de ce que chaque portée peut porter,
   et tout autre droit le rend passif (SEC11, `docs/design/orodruin-contract.md`). Une VM inscrite plus tard : `make orodruin-lock` (son plan relu, puis confirmé) lui donne ses droits.
 - **Le compte du canal derrière son pare-feu** (SEC5) : seuls les sous-réseaux d'Orodruin et de
-  H0 (points de terminaison de service) et les IP d'Orodruin, de H0 et de l'opérateur y entrent.
-  Appliquer `infra/glorfindel-host` d'abord (le point de terminaison de H0), puis ce module.
+  Imladris, anciennement H0 (points de terminaison de service) et les IP d'Orodruin, d'Imladris et de l'opérateur y entrent.
+  Appliquer `infra/glorfindel-host` d'abord (le point de terminaison d'Imladris), puis ce module.
 - **Sortie fermée** hors périmètre : API de contrôle d'Azure, Entra ID, API du modèle
   (`160.79.104.0/23`), DNS et IMDS ; le reste d'Internet refusé. Pas de peering avec le banc :
   Run Command passe par l'API de contrôle.
@@ -60,19 +60,19 @@ Contrat (garanties, vérifications, kill, mutants) :
   (`detection_refused`) et dans le rapport ; le run est `unknown`. Le battement liste aussi ce
   qu'il couvre (SEC21b) : une détection couverte absente du canal est dite de même
   (`detection_missing`), et le run est `unknown`, jamais `missed`. **Le passage** : la release
-  publiée, le CD de H0 la déploie d'abord ; puis Orodruin (OI3, ou `make orodruin-push REF=<tag>`).
+  publiée, le CD d'Imladris la déploie d'abord ; puis Orodruin (OI3, ou `make orodruin-push REF=<tag>`).
   Dans l'autre ordre, les runs d'Orodruin restent `unknown` (« unsigned … update Glorfindel », ou
   « the heartbeat does not say which detections it covers ») tant que la watch n'est pas à jour
   (`docs/design/watch-key.md`, « Les détections signées », « Ce que le battement couvre »).
-- **Qui écrit le canal retour** (WC1, #523) : par défaut la watch de H0 seule, comme avant. Sans H0,
+- **Qui écrit le canal retour** (WC1, #523) : par défaut la watch d'Imladris seule, comme avant. Sans Imladris,
   la watch d'un poste ou d'une équipe : `WATCH_PRINCIPALS=<id>[,<id>…]` (la variable
   `watch_principal_ids`), voir ci-dessous.
 
-## Sans H0 : la watch d'un poste ou d'une équipe (WC1)
+## Sans Imladris : la watch d'un poste ou d'une équipe (WC1)
 
 Une watch qui tourne sur ton poste (`make glorfindel-start`, `make profile-discover`) ou pour une
 équipe (`make team-start`) publie son battement signé et ses détections sur le canal retour par le
-même chemin que H0 (`eregion_core/watch_channel.py`), sous **son** principal de service
+même chemin qu'Imladris (`eregion_core/watch_channel.py`), sous **son** principal de service
 (`GLORFINDEL_AZURE_CLIENT_*`, jamais `ANNATAR_AZURE_CLIENT_*`). Il lui faut deux droits, et rien
 d'autre : lire `exercises` (les fenêtres) et écrire `watch`.
 
@@ -81,11 +81,11 @@ d'autre : lire `exercises` (les fenêtres) et écrire `watch`.
   toi qui la nommes : Terraform ne connaît pas l'identité d'Annatar, il donne le droit à celle que
   tu lui donnes. Le plan refuse seulement l'identité d'Orodruin et la tienne (celle qui applique).
 - **Le plan** : `make orodruin-plan WATCH_PRINCIPALS=<object id> NO_WATCH=1`. `NO_WATCH=1` dit
-  qu'il n'y a pas de Glorfindel hébergé (SEC7). Avec H0, sa watch ne garde le canal que si son
+  qu'il n'y a pas de Glorfindel hébergé (SEC7). Avec Imladris, sa watch ne garde le canal que si son
   identité est dans la liste (`terraform -chdir=infra/glorfindel-host output principal_id`) ;
   sinon le Makefile refuse, sauf `NO_WATCH=1`.
 - **Chaque apply redonne la liste** : à chaque `orodruin-up` et `orodruin-lock` (une VM inscrite
-  plus tard, la sortie refermée), la même `WATCH_PRINCIPALS`, et `NO_WATCH=1` sans H0. Sans elles,
+  plus tard, la sortie refermée), la même `WATCH_PRINCIPALS`, et `NO_WATCH=1` sans Imladris. Sans elles,
   le plan retire ses droits à la watch du poste.
 - **Ce que le Makefile vérifie** : `WATCH_PRINCIPALS` se donne sur la ligne de commande (jamais de
   l'environnement), des GUID séparés par des virgules, sans espace, aucun deux fois ; jamais
@@ -99,7 +99,7 @@ d'autre : lire `exercises` (les fenêtres) et écrire `watch`.
   l'équipe.
 - **Sur Orodruin** : la clé de cette watch épinglée dans `orodruin.env`, `EREGION_WATCH_KEY`
   (`make watch-key` sur son poste), puis `make orodruin-push`. Un battement d'une autre clé, celui
-  de H0 compris, reste refusé (SEC19).
+  d'Imladris compris, reste refusé (SEC19).
 - **Une watch à la fois** : le battement est un seul blob (`heartbeat.json`). Deux watches qui
   publient en même temps l'écrasent tour à tour, et la garde refuse celle dont la clé n'est pas
   épinglée. Plusieurs identités servent à passer de l'une à l'autre, pas à les faire tourner ensemble.
@@ -127,7 +127,7 @@ make orodruin-fingerprint          # l'empreinte de sa clé d'hôte, lue sur la 
                                    # export ORO_SSH_FINGERPRINT=SHA256:… dans ton environnement (V-32)
 make orodruin-ssh                  # attendre ~/.orodruin-ready, puis exit
 make orodruin-lock                 # 2e apply, il REFERME la sortie : son plan montré, relu, confirmé
-                                   # sans H0 (WC1) : à chaque -up et -lock, la même WATCH_PRINCIPALS=<id> NO_WATCH=1,
+                                   # sans Imladris (WC1) : à chaque -up et -lock, la même WATCH_PRINCIPALS=<id> NO_WATCH=1,
                                    # sinon le plan retire ses droits à la watch du poste
 cp infra/orodruin/orodruin.env.example infra/orodruin/orodruin.env   # abonnement, plafond
 make orodruin-push                 # l'image d'Annatar publiée (CI3) : digest, signature et provenance vérifiés ici, archive tirée des blobs du registre (OI1) | ssh docker load ; + orodruin.env
@@ -140,7 +140,7 @@ make orodruin-check                # le contrat lu depuis la VM : armed ou passi
 
 **SSH : la clé d'hôte épinglée (V-32, SEC14).** Chaque commande du poste vers Orodruin
 (`orodruin-push`, `-check`, `-ssh`, `-exercise`, `-campaign-*`, `gothmog-*`) passe d'abord par
-`orodruin-known` (`infra/glorfindel-host/known_host.sh`, comme H0) : un `known_hosts` dédié,
+`orodruin-known` (`infra/glorfindel-host/known_host.sh`, comme Imladris) : un `known_hosts` dédié,
 `ORO_KNOWN_HOSTS` (défaut `~/.eregion/orodruin_known_hosts`, mode 600), écrit à partir de la clé que
 présente la VM seulement si elle a l'empreinte `ORO_SSH_FINGERPRINT` ; ssh et scp n'acceptent ensuite
 que ce fichier (`StrictHostKeyChecking=yes`, `ssh-ed25519`). **Sans l'empreinte, rien ne part** :
@@ -207,7 +207,7 @@ peut laisser arrêtée. Il sort en 1 si une étape a échoué.
 Le kill retire les droits hors de Terraform : `make orodruin-lock` les repose. Retirer un rôle ne
 prend pas effet à l'instant (cache du plan de contrôle) : c'est pour ça que la VM s'arrête aussi.
 **Mesuré le 26/10** pendant une `vm-shutdown` : révocation, annulation, fenêtre fermée et tirée par
-H0 en 11 s ; gondolin redémarrée par Chaos Studio. Après le réarmement, `orodruin-check` dit
+Imladris en 11 s ; gondolin redémarrée par Chaos Studio. Après le réarmement, `orodruin-check` dit
 `armed` tout de suite, mais Log Analytics a refusé Gothmog encore quelques minutes :
 `make gothmog-preflight` avant de relancer une panne.
 Détail : [« L'arrêt d'urgence arrête ce qui tourne »](../../docs/design/orodruin-contract.md).

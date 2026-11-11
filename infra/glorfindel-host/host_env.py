@@ -1,4 +1,4 @@
-"""Write host.env — the hosted Glorfindel's environment (H0) — from the operator's own.
+"""Write host.env — the hosted Glorfindel's environment (Imladris) — from the operator's own.
 
     python infra/glorfindel-host/host_env.py infra/glorfindel-host/host.env   # .envrc loaded
     python infra/glorfindel-host/host_env.py --check infra/glorfindel-host/host.env
@@ -98,7 +98,7 @@ EXECUTOR = "EREGION_IDENTITY_EXECUTOR_CLIENT_ID"
 # What a value written into host.env never holds (NT1 review, measured with `docker compose
 # config`): a line break adds a line — a variable of its own, which compose reads (the signed
 # queue switched on, its keys); a quote compose opens and never closes refuses the whole file, and
-# no service starts on H0; compose interpolates a `$` (second review: `'a$HOME'`, unwrapped, gave
+# no service starts on Imladris; compose interpolates a `$` (second review: `'a$HOME'`, unwrapped, gave
 # the watch a path) and reads a backslash as an escape. Every value copied, not only the list's.
 UNSAFE = {"\n": "a line break", "\r": "a carriage return", "$": "a dollar sign", "\\": "a backslash",
           '"': "a quote", "'": "a quote"}
@@ -128,7 +128,7 @@ ANALYSIS = "EREGION_ANALYSIS_MODEL"
 TOKEN = "EREGION_CONSOLE_TOKEN"
 LEGACY_TOKEN = "GLORFINDEL_WARROOM_TOKEN"
 # FS1c: the signed action queue — never copied from the operator's environment: its keys are this
-# workstation's, H0's are its own (`make glorfindel-host-queue-keys`). Written in host.env by hand,
+# workstation's, Imladris's are its own (`make glorfindel-host-queue-keys`). Written in host.env by hand,
 # keys and flag in one push; --check holds them together.
 QUEUE_FLAG = "EREGION_ACTION_QUEUE"
 QUEUE_KEYS = "EREGION_QUEUE_KEYS"
@@ -137,9 +137,9 @@ QUEUE_GESTURE = ("make glorfindel-host-queue-keys, then its line and EREGION_ACT
 
 
 def queue_problems(env: dict) -> list[str]:
-    """FS1c: what keeps H0's queue from taking a gesture, said before the push — a flag the queue
+    """FS1c: what keeps Imladris's queue from taking a gesture, said before the push — a flag the queue
     does not read (« 1 » only), or the flag set without the console's key pinned at the watch, or
-    without the bot's while the bot runs (DISCORD_BOT_TOKEN): pushed, the console of H0 would grey
+    without the bot's while the bot runs (DISCORD_BOT_TOKEN): pushed, the console of Imladris would grey
     every write and the watch refuse them all (no_key_pinned). Empty: nothing to say."""
     from eregion_core.action_queue import parse_pins, pin_problems
     flag = env.get(QUEUE_FLAG, "")
@@ -247,7 +247,7 @@ def unsafe(out: dict) -> None:
         if held:
             raise SystemExit(f"{k} holds {' and '.join(held)}: written into host.env, it would add a "
                              "variable that docker compose reads, or make compose refuse the whole file "
-                             "(no service would start on H0). Its value is not printed — set it again, "
+                             "(no service would start on Imladris). Its value is not printed — set it again, "
                              "on one line, without quotes.")
 
 
@@ -342,7 +342,7 @@ def escaped(path: Path) -> list[str]:
 def check(dst: str) -> int:
     if names := unclosed(Path(dst)):
         raise SystemExit(f"{dst}: {', '.join(names)} opens a quote it never closes — docker compose "
-                         "would refuse the whole file, and no service would start on H0. Close it, or "
+                         "would refuse the whole file, and no service would start on Imladris. Close it, or "
                          "write the value without quotes.")
     if names := escaped(Path(dst)):
         raise SystemExit(f"{dst}: {', '.join(names)} holds a backslash inside quotes — docker compose "
@@ -393,7 +393,7 @@ def main(dst: str) -> int:
         print(warning, file=sys.stderr)
     if os.environ.get(QUEUE_FLAG) or os.environ.get(QUEUE_KEYS):
         print(f"ℹ {QUEUE_FLAG} / {QUEUE_KEYS} de ton environnement ne vont pas dans host.env : ce sont "
-              f"les clés de ce poste, H0 a les siennes — {QUEUE_GESTURE}.", file=sys.stderr)
+              f"les clés de ce poste, Imladris a les siennes — {QUEUE_GESTURE}.", file=sys.stderr)
     for warning in never_target_warnings(never_target_read(env)):
         print(warning, file=sys.stderr)
     if warning := canary_warning(env.get(CANARY, "")):

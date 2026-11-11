@@ -56,7 +56,7 @@ destructive technique or a fault never runs there, so a window that says one did
 
 Files: one JSON per run under its injector's own directory, ``runs/annatar/exercises/`` or
 ``runs/gothmog/exercises/`` (SEC18, eregion_core/runs_layout.py; or ``EREGION_EXERCISES_DIR``),
-which the watch mounts read-only. A watch on another host (H0) gets them through the exercise
+which the watch mounts read-only. A watch on another host (Imladris) gets them through the exercise
 channel (``eregion_core/exercise_channel.py``, O1): the injector publishes each window it writes,
 the watch pulls them into its own directory (``runs/glorfindel/exercises/``) before it reads. The
 watch reads the three (``windows_dirs``), and purges only in its own.

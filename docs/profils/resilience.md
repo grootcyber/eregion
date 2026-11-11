@@ -7,7 +7,7 @@
 **Ce que fait Gothmog.** Il déclare la panne en code, la confie à un moteur public (Chaos Studio d'abord, G0), puis vérifie l'état normal avant, pendant et après.
 
 **Ce qui tourne.**
-- **Glorfindel** : sur ton poste ou hébergé (H0).
+- **Glorfindel** : sur ton poste ou hébergé (Imladris, anciennement H0).
 - **Gothmog** : depuis **Orodruin**, avec la même image et la même identité qu'Annatar. Il n'y agit que si son contrat est `armed`, et seulement sur des cibles inscrites au banc ou au jumeau. Jamais en `production`.
 
 ## Installer

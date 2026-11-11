@@ -8,13 +8,13 @@ _Extrait tel quel de `CLAUDE.md` le 2026-10-15 (lot DX1) : la CLI, les workflows
 # Workflow opérateur — Docker Compose (recommandé) ; le pas à pas, de zéro : docs/demarrer/ (GS1)
 make doctor [PROFILE=discover|bench]         # les prérequis (outils, variables présentes — jamais leur valeur —,
                                              # config lue comme la watch, dossiers à ton nom, port 7007 ; bench : clés
-                                             # et canaux d'Orodruin et de H0) ; sans cloud ni modèle ; 0 si tout est vert, sinon 2 par make (1 du script)
+                                             # et canaux d'Orodruin et d'Imladris, anciennement H0) ; sans cloud ni modèle ; 0 si tout est vert, sinon 2 par make (1 du script)
 make glorfindel-start                        # lance watch + la console → http://localhost:7007
 make console-url                             # l'URL de la console avec son jeton (celui de l'environnement ou de .env,
                                              # sinon ~/.eregion/console/token, attendu CONSOLE_WAIT=20 s) ; glorfindel-start l'affiche
                                              # refuse si AZURE_SUBSCRIPTION_ID est vide (watch aveugle) ; ALLOW_NO_AZURE=1 pour une démo
 make console-rotate                          # un nouveau jeton tiré : toute session de l'ancien refusée aussitôt, le flux
-                                             # en direct compris (SEC10) ; refusé quand EREGION_CONSOLE_TOKEN est posé (H0)
+                                             # en direct compris (SEC10) ; refusé quand EREGION_CONSOLE_TOKEN est posé (Imladris)
 make glorfindel-logs                         # tail logs des deux services
 make glorfindel-dev                          # auto-reload sur modification de code (docker compose watch)
 make glorfindel-stop                         # arrêt
@@ -53,14 +53,14 @@ make components-check [COMPONENT=annatar]    # chaque composant tourne seul : se
 #     (watch_heartbeat, et sa copie pour les injecteurs) s'écrit d'un coup, en 0644 (SEC17) : un lecteur
 #     ne le trouve jamais vide ni coupé.
 
-# Glorfindel hébergé (H0) — infra/glorfindel-host/README.md
+# Glorfindel hébergé (Imladris) — infra/glorfindel-host/README.md
 make glorfindel-host-tunnel                  # tunnel + « Console → http://localhost:7007/?token=… » ; le jeton de host.env :
                                              # EREGION_CONSOLE_TOKEN s'il n'est pas vide, sinon GLORFINDEL_WARROOM_TOKEN
                                              # (l'ancien nom reste valide, rien à renommer) ; -url : l'URL seule
 make glorfindel-host-status                  # tout tourne ? lit le jeton sur la VM sous l'un ou l'autre nom, sans l'afficher
 make glorfindel-host-push                    # host_env.py --check d'abord : refuse un host.env sans jeton de la console (et dit, sans refuser, une variable de never_target vide, NT1)
-make glorfindel-host-client-rules           # WL1 : les règles du banc (infra/glorfindel-host/client_rules.bench.yaml) fondues dans la couche du client de H0, par nom ; la watch redémarre (README, « La couche du client du banc »)
-make glorfindel-host-cd-install              # le CD de H0 (H1) : agent dans ~/.eregion-cd/, timer désactivé ; README, « Le CD de H0 »
+make glorfindel-host-client-rules           # WL1 : les règles du banc (infra/glorfindel-host/client_rules.bench.yaml) fondues dans la couche du client d'Imladris, par nom ; la watch redémarre (README, « La couche du client du banc »)
+make glorfindel-host-cd-install              # le CD d'Imladris (H1) : agent dans ~/.eregion-cd/, timer désactivé ; README, « Le CD d'Imladris »
 make glorfindel-host-cd-check                # à blanc : vérifie, construit à côté, préflight (config sous A3), sans basculer
 make glorfindel-host-cd-enable               # puis : toute release publiée se déploie (5 min), retour arrière si malade
 make glorfindel-host-cd-status | -cd-retry | -cd-disable | -cd-uninstall
@@ -70,11 +70,11 @@ glorfindel watch runs/                       # terminal 1 — réponses automati
 glorfindel pending --watch                   # terminal 3 — alerting (poll 2s, NEW ESCALATION)
 # Le terminal 2, l'attaque, ne tourne plus sur ce poste (GS1). Ici l'injecteur est passif : --dry-run,
 # validate, list. Depuis Orodruin armé, un run ne croit que le battement du canal retour, que seule la
-# watch de H0 écrit : une watch de ce poste n'y parvient pas (WC1, #523, en cours). Le seul run possible
+# watch d'Imladris écrit : une watch de ce poste n'y parvient pas (WC1, #523, en cours). Le seul run possible
 # avec elle est un run de développement, détection non mesurée et dite au rapport :
 #   make orodruin-ssh, puis : annatar run <scénario> --yes --without-glorfindel   (dans le docker run durci)
 # La vraie boucle, mesurée : les cibles de campagne (make orodruin-campaign-plan / -run), la watch de
-# H0 répondant — l'ordre complet, de zéro : docs/demarrer/banc.md.
+# Imladris répondant — l'ordre complet, de zéro : docs/demarrer/banc.md.
 
 # Setup scénario T1486 (avant chaque run ; annatar clean et run, depuis Orodruin armé, comme ci-dessus)
 annatar clean annatar/scenarios/azure/ransomware-vm.yaml   # nettoyage disque
@@ -162,14 +162,14 @@ glorfindel rules check [--live] [--json]     # H2 : chaque règle chargée (base
                                              # le tout : au-delà, les règles restantes ne partent pas, et c'est dit.
                                              # Jamais de nouvel essai. Aucun appel au modèle, aucune écriture, aucune
                                              # action. Sortie : 0 tout ok, 1 une erreur durable, 3 des non prouvées ou
-                                             # des délais seulement. --json : ce que lit le CD de H0, avant et après une
+                                             # des délais seulement. --json : ce que lit le CD d'Imladris, avant et après une
                                              # bascule (genre, code KQL ou HTTP, ligne réduite sans workspace,
                                              # abonnement, chemin de ressource, hôte ni adresse) ; les mots complets
                                              # sur stderr. Utile après un glorfindel-host-push :
                                              # docker exec eregion-watch glorfindel rules check --live
 glorfindel migrate-rules --from <modifié> --base <livré> [--dry-run]  # règles approuvées DANS la base avant P1
                                              # → couche du client, une règle au workspace en ligne liée à son
-                                             # backend (H0 : infra/glorfindel-host/README.md)
+                                             # backend (Imladris : infra/glorfindel-host/README.md)
 
 glorfindel memory-stats                      # ChromaDB cycle count
 glorfindel bot                               # démarrer le bot Discord interactif
@@ -185,7 +185,7 @@ eregion coverage [--json] [--check]          # la matrice de couverture (C1), de
                                              # ses derniers résultats (✓ ✗ ? ·) ; fichiers seulement, ni cloud ni modèle.
                                              # --check : la non-régression, sort en 1 sur une technique ou une panne
                                              # prouvée avant et ratée depuis (après un rejeu du catalogue sur le banc,
-                                             # depuis Orodruin, sur l'hôte de la watch : H0 garde les rapports et les cycles)
+                                             # depuis Orodruin, sur l'hôte de la watch : Imladris garde les rapports et les cycles)
 glorfindel --version                         # 0.2.0
 
 # Annatar et Gothmog exigent Glorfindel (V1, #214) : avant chaque run (chaque run d'une campagne aussi),
@@ -193,7 +193,7 @@ glorfindel --version                         # 0.2.0
 #   configuré (EREGION_WATCH_CHANNEL : la watch hébergée vue d'Orodruin — un fichier de cet hôte n'en dit
 #   rien) ; sinon le fichier local ~/.glorfindel/watch_heartbeat (une watch sur le même hôte ; `make
 #   annatar-run` monte sa copie, ~/.glorfindel/injectors — SEC3). Un battement de moins de 90 s, et pas daté de plus de 10 s dans le futur (le
-#   décalage des horloges H0 ↔ Orodruin), signé par la clé de la watch et vérifié avec EREGION_WATCH_KEY, la clé
+#   décalage des horloges Imladris ↔ Orodruin), signé par la clé de la watch et vérifié avec EREGION_WATCH_KEY, la clé
 #   publique épinglée de ce côté (SEC19 ; make watch-key, make glorfindel-host-watch-key) : la watch vit. Non
 #   signé, d'une autre clé, rejoué, ou aucune clé épinglée : refusé, la raison dite. Sinon : refus, code 1, et le message dit depuis quand
 #   date le dernier battement (« never » s'il n'y en a pas, la raison entre parenthèses : pas de fichier, canal
@@ -203,10 +203,10 @@ glorfindel --version                         # 0.2.0
 #   --without-glorfindel (annatar run, annatar campaign run, gothmog run, gothmog preflight ; Make d'Orodruin :
 #   WITHOUT_GLORFINDEL=1, yes ou true — toute autre valeur, 0 compris, n'y touche pas) : run de développement.
 #   Le rapport l'inscrit (metrics.without_glorfindel: true, metrics.detection_note « detection not measured, by
-#   choice ») ; aucune attente de détection, jamais de detection_missed ; H0 accepte ce rapport au tirage (un
+#   choice ») ; aucune attente de détection, jamais de detection_missed ; Imladris accepte ce rapport au tirage (un
 #   tel rapport qui dirait detected ou missed est refusé), et la console l'affiche « not measured, by choice »,
 #   à part d'unknown. Une campagne ainsi lancée le porte dans son manifeste (without_glorfindel: true) et ne
-#   se reprend que de la même façon ; elle n'a pas de rapport d'analyse (IA0), ni sur Orodruin ni sur H0,
+#   se reprend que de la même façon ; elle n'a pas de rapport d'analyse (IA0), ni sur Orodruin ni sur Imladris,
 #   n'entre pas dans l'index ni dans les comparaisons (D-2), et c'est dit : « campaign without Glorfindel: no
 #   detection report, by choice ». Le --dry-run n'exige rien.
 #   SEC5 (#276) : le battement porte le périmètre de la watch — un condensé de l'abonnement qu'elle lit
@@ -244,7 +244,7 @@ annatar run annatar/scenarios/azure/account-creation-atomic.yaml  # R1 : un test
 #   qu'une détection du même TTP, sur la même VM (resource_id comparé sans la casse : la watch écrit le _ResourceId de
 #   Log Analytics en minuscules), vue à partir de l'attaque — une détection antérieure est celle d'un autre run
 #   (annatar/runner/detection.py, même règle pour runs/glorfindel/<run_id>_debug.jsonl et les fichiers watch-*).
-#   Depuis Orodruin (#159), la watch est sur H0 : avec EREGION_WATCH_CHANNEL, l'attente lit le canal retour (battement
+#   Depuis Orodruin (#159), la watch est sur Imladris : avec EREGION_WATCH_CHANNEL, l'attente lit le canal retour (battement
 #   de cœur, detections/<run_id>/), même règle. Sans watch locale, `missed` exige un battement de cœur écrit après
 #   l'attente (jusqu'à 130 s de plus), par une watch démarrée avant l'attaque, qui connaît la fenêtre du run ; sinon
 #   `unknown`, sans detection_missed, et la raison s'affiche (« channel unreadable », « does not know the run's window »…).
@@ -254,29 +254,29 @@ make gothmog-preflight [FAULT=vm-shutdown]   # watch de Glorfindel, contrat, cib
 make gothmog-run [FAULT=vm-shutdown]         # la panne, son retour vérifié par sonde (~15 min) ; WITHOUT_GLORFINDEL=1 : sans watch (V1)
 #   G1 : FAULT=vm-disk-write | vm-cpu-pressure | vm-restart, le bruit bénin (planned : chaos.noise_vms
 #   à appliquer avec Jonathan, gothmog/README.md « G1 »)
-make glorfindel-host-fault-rate [DAYS=30] [JSON=1]   # sur H0 : les pannes prises pour une attaque, par run (G1)
+make glorfindel-host-fault-rate [DAYS=30] [JSON=1]   # sur Imladris : les pannes prises pour une attaque, par run (G1)
 make fault-rate [DAYS=30] [JSON=1]                   # le même taux, sur l'hôte de la watch seulement (ses runs/) ;
 #   ailleurs (Orodruin, un poste) chaque panne est « non mesurée » : les décisions n'y sont pas
 gothmog run vm-shutdown --dry-run            # la panne déclarée, sans appel Azure
 gothmog report <run_id>                      # runs/gothmog/<run_id>.json (même forme qu'Annatar)
 #   Depuis Orodruin, avec EREGION_EXERCISE_CHANNEL (#193, pas encore mesuré sur le banc) : à la fin
-#   de `annatar run` comme de `gothmog run`, le rapport du run part vers H0 (le blob runs/<run_id>.json dans
+#   de `annatar run` comme de `gothmog run`, le rapport du run part vers Imladris (le blob runs/<run_id>.json dans
 #   le conteneur des fenêtres, sans droit nouveau), après la fermeture de sa fenêtre. La watch
 #   hébergée le tire dans son runs/ (une forme refusée n'est pas écrite, un rapport local jamais
 #   écrasé) : la page de son injecteur, dans la console, affiche son verdict. Un échec de publication est signalé
 #   (« run report … not published ») et ne change ni le run ni son code de sortie.
 
 # Dagorlad, phase (b) (DG-b) — demander un exercice depuis la console, le porter sur Orodruin
-#   La console écrit une demande ; elle ne lance rien, n'appelle pas Orodruin, et H0 n'a aucun droit
+#   La console écrit une demande ; elle ne lance rien, n'appelle pas Orodruin, et Imladris n'a aucun droit
 #   ni canal de plus (docs/design/console.md, §7 ; docs/design/orodruin-contract.md, « La demande »).
 #   1. Dans Dagorlad (/dagorlad), tirer les fils, puis « Request run from Orodruin » : les fils jugés
 #      comme Orodruin les jugera ; un fil refusé, rien n'est écrit. La demande va dans
-#      ~/.eregion/console/requests/<id>.json (sur H0 : celui de la VM). La page donne la commande et
+#      ~/.eregion/console/requests/<id>.json (sur Imladris : celui de la VM). La page donne la commande et
 #      dit quels fils demanderont le nom de leur cible ; elle ne prend aucun nom.
 #   2. Sur ton poste :
 make orodruin-exercise REQUEST=r-20261030T075200Z-a1b2c3 [DRY_RUN=1] [REQUEST_FROM=local]
 #      Ou un drill (DG-d, docs/dagorlad.md, « Garder et rejouer un drill ») : la demande s'écrit sur ton
-#      poste, depuis le drill de l'instance (H0, ou REQUEST_FROM=local), sinon celui livré (drills/) :
+#      poste, depuis le drill de l'instance (Imladris, ou REQUEST_FROM=local), sinon celui livré (drills/) :
 make orodruin-exercise DRILL=<nom> [TARGETS=<vm>,<vm>…|all] [DRY_RUN=1] [REQUEST_FROM=local]
 #      - DRILL vérifié avant toute commande (a-z, 0-9, -) ; DRILL, TARGETS et DRILL_VMS jamais lus de
 #        l'environnement ; un drill de l'instance qui est un lien : refusé, jamais suivi ni remplacé par le
@@ -287,9 +287,9 @@ make orodruin-exercise DRILL=<nom> [TARGETS=<vm>,<vm>…|all] [DRY_RUN=1] [REQUE
 #        par leur groupe ; chaque fil jugé comme le plan le juge (un refusé : rien) ;
 #      - puis comme REQUEST= : affichée, les noms tapés, [y/N], Orodruin.
 #      - REQUEST vérifié avant toute commande (r-<heure UTC>-<6 hex>), jamais lu de l'environnement ;
-#      - la demande tirée de H0 par SSH, sa clé d'hôte vérifiée par son empreinte : HOST_SSH_FINGERPRINT
+#      - la demande tirée d'Imladris par SSH, sa clé d'hôte vérifiée par son empreinte : HOST_SSH_FINGERPRINT
 #        est exigée (sans elle, rien n'est fait — jamais accept-new pour ce qui fait agir Orodruin) ;
-#        REQUEST_FROM=local : la console de ce poste (make glorfindel-start), sans SSH vers H0 ;
+#        REQUEST_FROM=local : la console de ce poste (make glorfindel-start), sans SSH vers Imladris ;
 #      - portée à Orodruin par SSH, sa clé d'hôte vérifiée par ORO_SSH_FINGERPRINT, toujours exigée
 #        (V-32, SEC14 ; make orodruin-fingerprint la lit par Azure) ;
 #      - relue par son seul lecteur (un champ de plus : refusée, rien n'est envoyé), affichée fil par
@@ -309,7 +309,7 @@ make orodruin-exercise DRILL=<nom> [TARGETS=<vm>,<vm>…|all] [DRY_RUN=1] [REQUE
 #      isolée par Glorfindel est attendue 20 min au plus, puis son fil est sauté (isolated) — jamais
 #      levée. Code de sortie 0 si chaque fil a tourné, 1 sinon.
 #   4. La console : chaque fenêtre porte l'identifiant de la demande (Runs) ; Orodruin publie son
-#      verdict et le statut de la demande dans le canal (orodruin/…), la watch de H0 les tire dans
+#      verdict et le statut de la demande dans le canal (orodruin/…), la watch d'Imladris les tire dans
 #      runs/orodruin/ ; la page les relit (« Orodruin: armed », ou « unknown here » sans eux).
 #   « Stop all » (le bouton de Dagorlad) : la commande make orodruin-kill, ce qu'elle arrêtera (les
 #   fenêtres ouvertes et leurs cibles) et ce qui reste en vol. La console ne révoque rien.
@@ -320,7 +320,7 @@ make orodruin-campaign-plan CAMPAIGN_TARGET=<resource_id de la VM inscrite> [CAM
 #   techniques déclarées, dans leur ordre, vérifiées contre le catalogue (bibliothèque publique,
 #   implémentée, non destructive ; zone bench, mode non_disruptive) ; le planner n'y choisit rien.
 #   La session de banc pas à pas : docs/banc-bl1.md. Après la campagne :
-#   make glorfindel-host-containment CAMPAIGN=<id> [FAULT_RUNS=<run Gothmog>]   (sur H0)
+#   make glorfindel-host-containment CAMPAIGN=<id> [FAULT_RUNS=<run Gothmog>]   (sur Imladris)
 #   make campaign-containment CAMPAIGN=<id> [FAULT_RUNS=…] [JSON=1]               (ici, runs/)
 #   — le temps pour contenir et la part contenue seule (docs/analysis.md), lecture seule.
 #   Planifie une kill-chain depuis le catalogue (annatar campaign plan) et rend un id. Le planner
@@ -333,7 +333,7 @@ make orodruin-campaign-plan CAMPAIGN_TARGET=<resource_id de la VM inscrite> [CAM
 #   par les tests. Une entrée destructive (atomic ou script) demande --allow-destructive et un
 #   safe_target. Manifeste et scénarios dans ~/runs/glorfindel/campaigns/<id>/ (bind-monté). La commande n'est
 #   pas répétée à l'écran (CAMPAIGN_TARGET porte l'abonnement).
-make orodruin-campaign-run CAMPAIGN=<id>     # joue la campagne (la watch de H0 répond selon le mode de chaque VM : gondolin non_disruptive) ; refusée sans watch vivante (V1)
+make orodruin-campaign-run CAMPAIGN=<id>     # joue la campagne (la watch d'Imladris répond selon le mode de chaque VM : gondolin non_disruptive) ; refusée sans watch vivante (V1)
 #   Chaque run passe par le moteur de son expérience (atomic ou script) ; sa détection (detected/
 #   missed/unknown) et sa latence (#157) arrivent dans le manifeste, comme pour un run seul. Le reset
 #   entre scénarios (glorfindel reset) n'est pas dans l'image d'Orodruin : le lanceur glorfindel y
@@ -342,23 +342,23 @@ make orodruin-campaign-run CAMPAIGN=<id>     # joue la campagne (la watch de H0 
 #   ou l'autre, le reset est sauté proprement (ni appel, ni échec, ni écriture) et le manifeste le
 #   note (scenarios[].reset : reset, skipped: …, ou failed: exit <code> si un glorfindel installé
 #   sort en erreur).
-#   Le rapport s'écrit sur H0, pas sur Orodruin (#167, 21/10 : code, tests et mutants M126–M149,
+#   Le rapport s'écrit sur Imladris, pas sur Orodruin (#167, 21/10 : code, tests et mutants M126–M149,
 #   M159–M169, M180–M188 écrits, pas encore mesuré sur le banc). Orodruin n'a ni chromadb ni litellm. Avec
 #   EREGION_EXERCISE_CHANNEL (orodruin.env), la fin de la campagne publie son manifeste et le
 #   rapport de chacun de ses runs dans le conteneur des fenêtres (campaigns/<id>/…), sans rien
 #   d'autre et sans droit nouveau. La campagne affiche l'id publié et, pour une campagne done, où
 #   le rapport s'écrira ; pour une autre (aborted), elle renvoie à make campaign-report. Un run
 #   exécuté sans rapport à publier (campaign run --runs-dir X : les rapports de run restent dans
-#   runs/) est signalé, et le rapport sur H0 n'est pas annoncé : H0 l'attendrait sans fin. Un
+#   runs/) est signalé, et le rapport sur Imladris n'est pas annoncé : Imladris l'attendrait sans fin. Un
 #   échec de publication est signalé et ne fait pas échouer la campagne. Avec --no-report
-#   (annatar campaign run), la campagne n'est pas publiée non plus : H0 n'en écrit pas le
+#   (annatar campaign run), la campagne n'est pas publiée non plus : Imladris n'en écrit pas le
 #   rapport. L'image d'Orodruin doit être reconstruite pour écrire l'attack_time dans le rapport
 #   de chaque run : sans lui, aucune décision de la watch n'est rattachée au run.
-make glorfindel-host-campaign-report CAMPAIGN=<id>   # lit runs/glorfindel/campaigns/<id>/report.md sur H0
+make glorfindel-host-campaign-report CAMPAIGN=<id>   # lit runs/glorfindel/campaigns/<id>/report.md sur Imladris
 #   (à défaut, son report.error). Le thread campaign-report de la watch hébergée tire la campagne
 #   toutes les 30 s et écrit report.md une fois, quand elle est done et que le rapport de chaque run
 #   exécuté est arrivé, seulement pour une campagne tirée du canal (marqueur .pulled). Les
-#   décisions viennent des watch-*_debug.jsonl de H0 (règle de #157 bornée par la fenêtre du run,
+#   décisions viennent des watch-*_debug.jsonl d'Imladris (règle de #157 bornée par la fenêtre du run,
 #   docs/analysis.md). Un run détecté (ou de détection inconnue) sans décision retrouvée fait
 #   attendre le rapport jusqu'à la fin de sa fenêtre (grâce comprise), ou 15 min après la fin de
 #   la campagne sans fenêtre, plus 10 min pour que le cycle écrive sa décision : environ 25 min
@@ -371,7 +371,7 @@ make glorfindel-host-campaign-report CAMPAIGN=<id>   # lit runs/glorfindel/campa
 #   report.error ne suffit pas à relancer : redémarrer la watch (docker restart eregion-watch
 #   sur la VM) ou lancer la commande à la main ci-dessous. Index campaign_runs dans
 #   ~/.eregion/analysis sur la VM (monté dans le conteneur ; montage et image au prochain
-#   redéploiement de H0). À la main, sur la VM, si le rapport automatique a été abandonné :
+#   redéploiement d'Imladris). À la main, sur la VM, si le rapport automatique a été abandonné :
 #     docker exec eregion-watch python -m analysis.campaign_report runs/glorfindel/campaigns/<id>
 #   D-2 (#184) : le rapport se compare à la campagne précédente, choisie dans l'index. Pour y
 #   verser les campagnes passées (idempotent, aucun appel au modèle), sur la VM :
@@ -403,9 +403,9 @@ make annatar-simulate-gap
 ANTHROPIC_API_KEY=...               # requis si provider Anthropic (défaut)
 GLORFINDEL_LLM_MODEL=...            # ex: ollama/llama3.1, openai/gpt-4o, azure/gpt-4o (défaut : anthropic/claude-sonnet-5-5, eregion_core/models.py)
 ANNATAR_LLM_MODEL=...               # planificateur de campagne d'Annatar (défaut : anthropic/claude-sonnet-4-6 — claude-sonnet-5-5 refuse ce prompt, 19/10)
-EREGION_ANALYSIS_MODEL=...          # IA d'analyse, rapport de campagne (défaut : anthropic/claude-haiku-5-5 — un autre modèle que Glorfindel ; celui de Glorfindel est refusé, IA1) ; passé à la watch par docker-compose.yml (rapport écrit sur H0, #167) et recopié dans host.env par host_env.py (IA1) ; le conteneur d'Annatar reçoit aussi GLORFINDEL_LLM_MODEL, pour que le refus y voie le vrai modèle de Glorfindel
-EREGION_ANALYSIS_INDEX=...          # index campaign_runs du rapport de campagne (défaut : ~/.eregion/analysis/chroma ; refusé dans ~/.glorfindel, IA1 ; sur H0, le disque de la VM, monté)
-EREGION_ANALYSIS_TIMEOUT_S=300      # borne d'un appel au modèle d'analyse (rapport de campagne), par tentative (défaut 300 ; illisible, ≤0, >3600 → 300) ; passée aux conteneurs (x-env) et à l'image d'Annatar ; sur H0, à poser à la main dans host.env (host_env.py ne la recopie pas)
+EREGION_ANALYSIS_MODEL=...          # IA d'analyse, rapport de campagne (défaut : anthropic/claude-haiku-5-5 — un autre modèle que Glorfindel ; celui de Glorfindel est refusé, IA1) ; passé à la watch par docker-compose.yml (rapport écrit sur Imladris, #167) et recopié dans host.env par host_env.py (IA1) ; le conteneur d'Annatar reçoit aussi GLORFINDEL_LLM_MODEL, pour que le refus y voie le vrai modèle de Glorfindel
+EREGION_ANALYSIS_INDEX=...          # index campaign_runs du rapport de campagne (défaut : ~/.eregion/analysis/chroma ; refusé dans ~/.glorfindel, IA1 ; sur Imladris, le disque de la VM, monté)
+EREGION_ANALYSIS_TIMEOUT_S=300      # borne d'un appel au modèle d'analyse (rapport de campagne), par tentative (défaut 300 ; illisible, ≤0, >3600 → 300) ; passée aux conteneurs (x-env) et à l'image d'Annatar ; sur Imladris, à poser à la main dans host.env (host_env.py ne la recopie pas)
 GLORFINDEL_LLM_BASE_URL=...         # endpoint self-hosted/Ollama (ex: http://localhost:11434)
 GLORFINDEL_WEBHOOK_URL=...          # Slack/Teams/Discord webhook — escalades ET actions autonomes
                                     # Discord : https://discord.com/api/webhooks/<id>/<token>/slack
@@ -415,21 +415,21 @@ DISCORD_PING_ROLE=...               # ID du rôle à pinger à l'ouverture d'un 
 DISCORD_ALLOWED_USERS=111,222       # M-3 : ids des utilisateurs qui peuvent cliquer les boutons des cartes
 DISCORD_ALLOWED_ROLES=333           # M-3 : ids des rôles autorisés ; les deux vides → tous les boutons refusent (fermé par défaut), refus journalisé
 EREGION_OPERATOR_OBJECT_ID=...      # NT1 : never_target (eregion_core/never_target.py), à la watch seule (plan d'identité, IR1a) ; recopiée dans host.env ; source : terraform -chdir=infra/orodruin output -raw operator_object_id ; vide → liste illisible, tout verbe une étape de l'humain
-EREGION_PROTECTED_IDENTITIES=...    # NT1 : idem ; source : output protected_identities d'Orodruin, plus identity_executor_object_id de H0 (« L'exécuteur d'identité », geste 6)
+EREGION_PROTECTED_IDENTITIES=...    # NT1 : idem ; source : output protected_identities d'Orodruin, plus identity_executor_object_id d'Imladris (« L'exécuteur d'identité », geste 6)
 EREGION_IDENTITY_EXECUTOR_CLIENT_ID=...  # NT1 : idem ; source : terraform -chdir=infra/glorfindel-host output -raw identity_executor_client_id (vide : exécuteur non activé)
 EREGION_RULE_CANARY_APPID=...       # CAN2 : l'appid du principal du canari azurerm (l'inscription eregion-canary, par le filtre exact `displayName eq` d'`az ad app list`, écrite par le shell dans host.env : le geste et ses vérifications, `infra/glorfindel-host/README.md`, « Le canari azurerm (CAN2) »), à la watch et à la console ; recopiée dans host.env ; la copie du banc de nsg-change-outside-glorfindel écarte avec lui les runs du canari dans rg-eregion-canary, celle d'entra-sp-unusual-signin ses connexions OIDC (CAN3) ; vide ou pas un GUID → la règle livrée tourne (dit)
-# L'atelier dans Discord (N1, docs/atelier-discord.md) — à part de la défense : jamais sur H0, host_env.py ne les recopie pas
+# L'atelier dans Discord (N1, docs/atelier-discord.md) — à part de la défense : jamais sur Imladris, host_env.py ne les recopie pas
 EREGION_DISCORD_WEBHOOK_CI=...              # webhook de #ci (secret GitHub : notify.yml)
 EREGION_DISCORD_WEBHOOK_AGENTS=...          # webhook de #agents (poste de l'opérateur : hooks d'elrond)
 EREGION_DISCORD_BOT_TOKEN=...               # le bot « Eregion », celui de l'atelier (pas celui de Glorfindel) : fils du forum #lots et leurs étiquettes
 EREGION_DISCORD_LOTS_FORUM=...              # id du forum #lots
 EREGION_DISCORD_ROADMAP_CHANNEL=...         # id du salon #roadmap : le message de la feuille de route (N2, secret GitHub : roadmap.yml)
-EREGION_DISCORD_WEBHOOK_DEPLOY=...          # webhook de #deploy : copié sur H0 par make glorfindel-host-cd-install (~/.eregion-cd/discord.env, H1)
+EREGION_DISCORD_WEBHOOK_DEPLOY=...          # webhook de #deploy : copié sur Imladris par make glorfindel-host-cd-install (~/.eregion-cd/discord.env, H1)
 EREGION_DISCORD_MENTION=...                 # id de l'utilisateur que mentionnent les pings de #agents
                                     # sur le poste : ~/.config/eregion/discord.env (600) si l'environnement ne les a pas
 GLORFINDEL_AZURE_CLIENT_ID=…        # V-17 : le principal de la watch (et …_SECRET) ; EREGION_CONSOLE_AZURE_CLIENT_* la console,
                                     # GLORFINDEL_BOT_AZURE_CLIENT_* le bot ; vides : aucun principal de service (l'identité managée de la VM s'il y en a une), jamais AZURE_CLIENT_* (SEC11)
-HOST_SSH_FINGERPRINT=SHA256:…       # V-32 : l'empreinte de la clé d'hôte de H0, relevée sur la VM ; sans elle, accept-new et c'est dit
+HOST_SSH_FINGERPRINT=SHA256:…       # V-32 : l'empreinte de la clé d'hôte d'Imladris, relevée sur la VM ; sans elle, accept-new et c'est dit
                                     # (infra/glorfindel-host/README.md, « SSH ») ; HOST_KNOWN_HOSTS : son fichier (~/.eregion/h0_known_hosts)
 ORO_SSH_FINGERPRINT=SHA256:…        # V-32 (SEC14) : celle d'Orodruin, lue sur la VM par Azure (make orodruin-fingerprint) ; exigée par
                                     # toute commande vers Orodruin, jamais accept-new ; ORO_KNOWN_HOSTS : ~/.eregion/orodruin_known_hosts
@@ -453,7 +453,7 @@ GLORFINDEL_DECISION_DRAWS=3         # D-1 : tirages qui doivent s'accorder avant
 GLORFINDEL_READ_ONLY=1              # creds lecture seule (SP Reader) — mode observe-only ; toute valeur sauf vide/0/false/no/off = lecture seule
 GLORFINDEL_OWN_CALLERS=<id>,<id>    # AL1 : identités de Glorfindel sur Azure, en plus des claims de son jeton (jeton d'application : appid/azp et oid ; jeton d'utilisateur, `az login` : l'oid seul — l'appid y est celui de la CLI, commun au tenant, dit une fois) et d'AZURE_CLIENT_ID ; ses écritures (isolation, quarantaine, blocage) dans le journal d'activité ne s'escaladent pas, seulement sur une cible qui est à lui (NSG de quarantaine, règle qu'un état d'isolation ou de blocage nomme — un nom glorfindel-* seul ne suffit pas —, règle du client dont une isolation a décalé la priorité, NIC mise en quarantaine) — son identité sur une autre ressource s'escalade, critique. Glorfindel lancé sous l'identité d'un opérateur écarte aussi les écritures de cet opérateur sur les ressources de Glorfindel ; un seul principal pour Annatar et Glorfindel (option A de .envrc.example) écarte de même celles d'Annatar. Journaux d'Entra ID (C2) : rien n'est écarté sous ces identités, elles y sont marquées (acteur ou cible, critique) ; y ajouter l'objet de l'application de Glorfindel pour qu'un identifiant ajouté à son inscription soit marqué
 GLORFINDEL_DISCOVERY_RETENTION_H=8  # rétention d'une VM éteinte dans le registre avant éviction (défaut 8h)
-EREGION_EXERCISE_CHANNEL=https://…/exercises  # O1 : canal des fenêtres d'exercice (Orodruin publie, la watch hébergée lit) ; vide → fenêtres locales. Porte aussi les campagnes finies (campaigns/<id>/…, #167) et le rapport d'un run seul (le blob runs/<run_id>.json, tiré sur H0 dans runs/glorfindel/, #193) ; posé sur la watch, il démarre le thread campaign-report, qui tire les deux
+EREGION_EXERCISE_CHANNEL=https://…/exercises  # O1 : canal des fenêtres d'exercice (Orodruin publie, la watch hébergée lit) ; vide → fenêtres locales. Porte aussi les campagnes finies (campaigns/<id>/…, #167) et le rapport d'un run seul (le blob runs/<run_id>.json, tiré sur Imladris dans runs/glorfindel/, #193) ; posé sur la watch, il démarre le thread campaign-report, qui tire les deux
 # Orodruin seulement (orodruin.env) : EREGION_CHANNEL_SCOPE (le conteneur, seule attribution hors du banc acceptée),
 # EREGION_MAX_INJECTIONS / EREGION_MAX_RUN_S (plafond du contrat), EREGION_BENCH_RG
 # Gothmog : EREGION_BENCH_WORKSPACE (Log Analytics du banc pour la sonde Heartbeat, défaut law-celebrimbor-amonsul)
@@ -462,7 +462,7 @@ EREGION_EXERCISE_CHANNEL=https://…/exercises  # O1 : canal des fenêtres d'exe
 Chaque conteneur ne reçoit que ses variables (M-3, `docker-compose.yml`) : les clés des modèles
 à la watch seule ; `DISCORD_BOT_TOKEN` et `DISCORD_ALLOWED_*` au bot seul ;
 `EREGION_CONSOLE_TOKEN` (et son ancien nom, `GLORFINDEL_WARROOM_TOKEN` ; un nouveau `host.env`
-reçoit le nouveau, celui de H0 garde l'ancien) à la console seule ;
+reçoit le nouveau, celui d'Imladris garde l'ancien) à la console seule ;
 `GLORFINDEL_WEBHOOK_URL` à la watch et à la console, avec `GLORFINDEL_DISCORD_BOT` (« 1 » si `DISCORD_BOT_TOKEN` est posé, vide sinon,
 jamais sa valeur : avec `DISCORD_CHANNEL_ID`, leur webhook se tait) ; à chacun des trois son
 principal de service Azure (la watch, « Approve & execute », les boutons Restore / Revert du bot :
@@ -480,7 +480,7 @@ y ajoute `ANNATAR_LLM_MODEL` et `ANTHROPIC_API_KEY` (le planificateur `--llm`), 
 Plusieurs équipes (D1, `docs/profils/equipes.md`) : `EREGION_INSTANCE` (préfixe des conteneurs,
 défaut `eregion`), `EREGION_CONSOLE_PORT` (défaut 7007), `EREGION_RUNS` (défaut `./runs`),
 `EREGION_CONFIG` (défaut `./glorfindel-config.yaml`) ; vides, `docker-compose.yml` rend ce qu'il
-rendait avant D1 (H0 lit `eregion-watch`, `eregion-war-room`). `make team-start` les pose, et le
+rendait avant D1 (Imladris lit `eregion-watch`, `eregion-war-room`). `make team-start` les pose, et le
 `HOME` de l'équipe, sous `env -i`.
 
 **Aucun test n'écrit dans le dépôt** (HY1). Le garde de `tests/unit/conftest.py`
@@ -549,23 +549,23 @@ services de Glorfindel, trois principaux, chacun avec ce que son code appelle vr
   R-03) : Run Command seul, le droit le plus fort de la watch (une commande en root sur la VM),
   pour couper les sessions déjà ouvertes d'une VM qu'elle isole (`ss -K`, écrit dans le code).
   **Attribué VM par VM, aux VM que Glorfindel défend** (une liste explicite : `session_drain_vms`
-  sur H0), jamais sur un groupe. Pas le tag d'inscription : il dit où un injecteur peut agir,
+  sur Imladris), jamais sur un groupe. Pas le tag d'inscription : il dit où un injecteur peut agir,
   pas ce que Glorfindel défend — bree, jamais inscrite, est la VM du banc qui reçoit de vraies
   attaques. Une VM qui ne l'a pas est quand même isolée ; la coupure est
   refusée, et la carte le dit (« Run Command refusé sur cette VM : le rôle … n'y est pas »), la
   vérification de l'isolation en échec, comme pour toute session restée ouverte. La préparation
   le dit avant (`no_drain`), l'audit aussi (« Isolation permissions », avertissement). Le droit
   est lu sur la VM elle-même (`check_permissions`) ; tenu sur tout le groupe, il est dit comme
-  plus que la réponse (`identity_beyond_response`). Sur H0, c'est Terraform qui l'attribue
+  plus que la réponse (`identity_beyond_response`). Sur Imladris, c'est Terraform qui l'attribue
   (`infra/glorfindel-host/session_drain.auto.tfvars`, ci-dessous). **La console aussi** (SEC17,
   relecture) : elle isole dans son propre processus ce qu'un humain approuve (le chemin par défaut en
   `human_only`), et la coupure des sessions part alors sous son identité. Avant SEC17, son rôle
   Restore lui donnait Run Command sur tout le groupe ; elle reçoit la coupure VM par VM, sur les mêmes
   VM que la watch — plus étroit, aucun droit en plus. **Pas le bot** : il n'isole pas (ses boutons
   lancent Restore et Revert, une levée et un déblocage ; le restore neutralise par une Run Command, sous
-  « Restore Neutralize », VM par VM). Sur H0, la console a
+  « Restore Neutralize », VM par VM). Sur Imladris, la console a
   l'identité de la VM, qui tient déjà la coupure par `session_drain_vms` ; pour la console d'un poste
-  sur le banc, le Terraform de H0 la donne aussi (`session_drain_principals`, son object id dans
+  sur le banc, le Terraform d'Imladris la donne aussi (`session_drain_principals`, son object id dans
   `principals.auto.tfvars`). La neutralisation avant un restore a son propre rôle, ci-dessous
   (SEC17).
 - **Eregion Glorfindel Restore** (`infra/identities/glorfindel-restore.json`) : un restore en
@@ -582,11 +582,11 @@ services de Glorfindel, trois principaux, chacun avec ce que son code appelle vr
   jamais à la watch, jamais sur un groupe. Un rôle à part de la coupure des sessions, plutôt que
   « Session Drain » réutilisé : d'autres principaux (la coupure va à la watch, la neutralisation
   jamais), une autre liste qui change sans l'autre, et, sur un hôte où une seule identité tiendrait
-  les deux (H0), deux attributions distinctes au lieu d'une même attribution que deux listes se
+  les deux (Imladris), deux attributions distinctes au lieu d'une même attribution que deux listes se
   disputeraient (Azure n'en garde qu'une par principal, rôle et portée). Une VM hors de la liste est
   **restaurée quand même** : la neutralisation y est refusée, la sortie de `glorfindel restore` le
   dit, et la carte de la levée retenue aussi (« Run Command refusé sur cette VM : le rôle … n'y est
-  pas »). H0 n'a jamais ce rôle : il ne restaure pas, et son plan refuse son identité parmi
+  pas »). Imladris n'a jamais ce rôle : il ne restaure pas, et son plan refuse son identité parmi
   `restore_principals`.
 - **Eregion Glorfindel Restore Staging** (`infra/identities/glorfindel-restore-staging.json`,
   RST1, #680) : `Microsoft.Storage/storageAccounts/listKeys/action` seul, les clés du compte de
@@ -595,8 +595,8 @@ services de Glorfindel, trois principaux, chacun avec ce que son code appelle vr
   banc le 09/11, le premier restore sous le principal de la console ; le 05/10, l'ancien principal
   partagé avait `Contributor`). **Attribué sur le seul compte de transit**, aux principaux qui
   restaurent — la console et le bot —, jamais sur le groupe (il tient d'autres comptes de stockage,
-  et les clés d'un compte sont ses données), jamais à la watch, jamais à l'identité de H0. Un rôle à
-  part du rôle Restore, qui va sur des groupes entiers. Sur le banc, c'est le Terraform de H0 qui
+  et les clés d'un compte sont ses données), jamais à la watch, jamais à l'identité d'Imladris. Un rôle à
+  part du rôle Restore, qui va sur des groupes entiers. Sur le banc, c'est le Terraform d'Imladris qui
   l'attribue (`restore_staging_storage`, `infra/glorfindel-host/restore.auto.tfvars`, commité) ;
   ailleurs, la commande ci-dessous. Le restore lit ce droit avant de toucher la VM, comme ceux du
   coffre et de la VM (`docs/azure.md`, « Le restore depuis la console ») : sans lui, il refuse en le
@@ -610,7 +610,7 @@ services de Glorfindel, trois principaux, chacun avec ce que son code appelle vr
 - **Les variables** : `GLORFINDEL_AZURE_CLIENT_ID` / `…_SECRET` (la watch),
   `EREGION_CONSOLE_AZURE_CLIENT_ID` / `…_SECRET` (la console), `GLORFINDEL_BOT_AZURE_CLIENT_ID` /
   `…_SECRET` (le bot). **Aucun repli** (SEC11) : vide, un service n'a pas de principal de
-  service — l'identité managée de la VM s'il y en a une (H0), sinon aucune —, jamais
+  service — l'identité managée de la VM s'il y en a une (Imladris), sinon aucune —, jamais
   `AZURE_CLIENT_*`, le principal unique d'avant, `Contributor` sur l'abonnement là où il traîne
   encore. `make glorfindel-start` (`check-azure-env`) dit chaque service sans paire, et la watch
   le dit à son démarrage (« Identity: no service principal »). C'est ce qui rend vrai « plus
@@ -650,7 +650,7 @@ services de Glorfindel, trois principaux, chacun avec ce que son code appelle vr
   identité (la CLI qu'ils lancent tourne dans leur conteneur). Les rendre lecteurs seuls, c'est
   confier l'action approuvée à la watch (une file sous `~/.glorfindel`, signée par la console),
   qui l'exécute — planifié.
-- **H0** : ses conteneurs partagent l'identité managée de la VM : une identité par conteneur ne
+- **Imladris** : ses conteneurs partagent l'identité managée de la VM : une identité par conteneur ne
   s'y sépare pas (le point de jeton de la VM répond à chacun d'eux), et les variables de chaque
   service y restent vides. Depuis le 31/10 (décision de Jonathan, BL1), elle tient `Reader` et
   **Eregion Glorfindel Response** sur le seul groupe du banc, `Log Analytics Reader` sur son
@@ -662,7 +662,7 @@ services de Glorfindel, trois principaux, chacun avec ce que son code appelle vr
   `terraform output session_drain_vms`), jamais sur le groupe. Un `make glorfindel-host-up`
   ordinaire relit la liste : il ne retire rien.
   `make glorfindel-host-push` garde ces modes (décision de Jonathan, 02/11 : il lit la config en
-  place sur H0, n'en reporte que le mode de chaque VM, jamais un plus hardi, et le dit VM par VM ;
+  place sur Imladris, n'en reporte que le mode de chaque VM, jamais un plus hardi, et le dit VM par VM ;
   avant, SEC7 remettait tout en `human_only` à chaque push) ; `HUMAN_ONLY=1` remet toutes les VM
   en `human_only`, le geste d'urgence (`infra/glorfindel-host/README.md`).
   La watch, la console et le bot écrivent donc avec la même identité, sur le banc seulement : ce
@@ -721,7 +721,7 @@ for vm in <id de chaque VM défendue>; do
   done
 done
 # La neutralisation avant un restore (SEC17) : à la console et au bot, sur chaque VM que le restore
-# défend, jamais sur le groupe, jamais à la watch. Sur le banc, c'est le Terraform de H0 qui la donne
+# défend, jamais sur le groupe, jamais à la watch. Sur le banc, c'est le Terraform d'Imladris qui la donne
 # (restore_vms, restore_principals : ci-dessous) ; ailleurs :
 for vm in <id de chaque VM que le restore défend>; do
   for a in <appId-console> <appId-bot>; do
@@ -729,7 +729,7 @@ for vm in <id de chaque VM que le restore défend>; do
   done
 done
 # Les clés du compte de transit (RST1) : à la console et au bot, sur ce seul compte, jamais sur le
-# groupe, jamais à la watch. Sur le banc, c'est le Terraform de H0 qui les donne
+# groupe, jamais à la watch. Sur le banc, c'est le Terraform d'Imladris qui les donne
 # (restore_staging_storage, restore_principals : ci-dessous) ; ailleurs :
 staging=$(az storage account show -g $RG -n <restore_staging_storage> --query id -o tsv)
 for a in <appId-console> <appId-bot>; do
@@ -764,7 +764,7 @@ déclenchement est accepté. Ce que la CLI fait depuis :
   alors une autre identité, sans le dire (ci-dessus, « `AZURE_CLIENT_*`, le venv seulement »).
 
 **Depuis un rôle « Restore Staging » posé à la main** (le banc, le 09/11 : le rôle créé dans le
-tenant, puis attribué à la console sur le seul compte de transit) : le Terraform de H0 reprend
+tenant, puis attribué à la console sur le seul compte de transit) : le Terraform d'Imladris reprend
 l'attribution de la console, sans fenêtre où elle manque, et donne celle du bot —
 
 1. **le rôle** : le relire (`az role definition list --name "Eregion Glorfindel Restore Staging"
@@ -772,11 +772,11 @@ l'attribution de la console, sans fenêtre où elle manque, et donne celle du bo
    (`az role definition update --role-definition @…`, ci-dessous) ;
 2. **l'attribution à la main**, relue : `az role assignment list --role "Eregion Glorfindel Restore
    Staging" --all -o table` — une seule, pour la console, à la portée du compte de transit ;
-3. **l'importer** dans l'état de H0, sous la clé de la console (`restore_principals`), plutôt que la
+3. **l'importer** dans l'état d'Imladris, sous la clé de la console (`restore_principals`), plutôt que la
    supprimer puis la recréer : `terraform import` prend l'id de l'attribution (`--query
    '[0].id'`) ;
 4. **le plan**, relu : `make glorfindel-host-plan` — une création, `restore_staging["bot"]`, rien
-   d'autre (ni `restore_staging["console"]`, importée, ni la VM de H0 remplacée) ;
+   d'autre (ni `restore_staging["console"]`, importée, ni la VM d'Imladris remplacée) ;
 5. **l'application** : `make glorfindel-host-up`, sans `YES` ; puis `terraform -chdir=infra/glorfindel-host
    output restore_staging` (`bot`, `console`) et la même liste `az role assignment list`, deux
    attributions à la portée du compte, aucune de groupe.
@@ -800,11 +800,11 @@ Un tenant neuf n'a rien à migrer : le rôle se crée avec les autres (« Créer
 glorfindel-host-up` donne les deux attributions.
 
 **Depuis un rôle de la réponse d'avant SEC11** (il tient Run Command, sur tout le groupe — c'est
-le cas de H0 aujourd'hui) : dans cet ordre, pour qu'aucune VM défendue ne perde la coupure entre
+le cas d'Imladris aujourd'hui) : dans cet ordre, pour qu'aucune VM défendue ne perde la coupure entre
 deux gestes —
 
 1. créer le rôle de la coupure ;
-2. l'attribuer sur chaque VM défendue : sur H0, `make glorfindel-host-plan`, le plan relu (une
+2. l'attribuer sur chaque VM défendue : sur Imladris, `make glorfindel-host-plan`, le plan relu (une
    attribution par VM de `session_drain_vms`, aucune sur le groupe), puis `make
    glorfindel-host-up`, sans `YES` ; ailleurs, la boucle `for vm in …` ci-dessus ;
 3. vérifier les attributions, juste après l'apply : `terraform -chdir=infra/glorfindel-host output
@@ -839,21 +839,21 @@ console, entre deux gestes —
 2. **les principaux**, sur le poste seulement : `infra/glorfindel-host/principals.auto.tfvars`,
    copié de `principals.auto.tfvars.example` (ignoré par git, jamais dans le dépôt), avec
    l'**object id** de chacun (`az ad sp show --id <appId-console> --query id -o tsv`, de même pour le
-   bot) — jamais l'appId, jamais l'identité de H0 (le plan la refuse) : `restore_principals` (la
+   bot) — jamais l'appId, jamais l'identité d'Imladris (le plan la refuse) : `restore_principals` (la
    console, le bot) et `session_drain_principals` (la console seule) ;
 3. **le plan**, relu : `make glorfindel-host-plan`. Il doit montrer six créations, et **rien
    d'autre** : quatre de `azurerm_role_assignment.restore_neutralize` (`console/vm-celebrimbor-gondolin`,
    `console/vm-celebrimbor-bree`, `bot/…`, `bot/…`, le rôle « Eregion Glorfindel Restore Neutralize »)
    et deux de `azurerm_role_assignment.session_drain_principals` (`console/vm-celebrimbor-gondolin`,
    `console/vm-celebrimbor-bree`, le rôle « Eregion Glorfindel Session Drain »), chacune à la portée
-   d'une VM ; ni la VM de H0 remplacée, ni la coupure de H0 touchée, ni une attribution sur un groupe ;
+   d'une VM ; ni la VM d'Imladris remplacée, ni la coupure d'Imladris touchée, ni une attribution sur un groupe ;
 4. **l'application** : `make glorfindel-host-up`, sans `YES` (le même plan, confirmé) ;
 5. **la vérification**, juste après : `terraform -chdir=infra/glorfindel-host output restore_neutralize`
    (les quatre paires) et `output session_drain_principals` (les deux), puis `az role assignment list
    --role "Eregion Glorfindel Restore Neutralize" --all -o table` et de même pour « Session Drain » :
-   des portées de VM seulement, aucune de groupe, ni la neutralisation pour la watch ou H0, ni la
+   des portées de VM seulement, aucune de groupe, ni la neutralisation pour la watch ou Imladris, ni la
    coupure pour le bot ;
-   **Hors du banc** (un déploiement sans H0, les principaux par la boucle `az` ci-dessus) : les gestes
+   **Hors du banc** (un déploiement sans Imladris, les principaux par la boucle `az` ci-dessus) : les gestes
    2 à 5 sont les deux boucles `for vm in …` — la coupure à la watch et à la console sur chaque VM
    défendue, la neutralisation à la console et au bot sur chaque VM que le restore défend —, puis la
    même vérification par `az role assignment list` ;
@@ -882,9 +882,9 @@ az role definition update --role-definition @/tmp/eregion-role-restore.json     
 Dans l'autre ordre, un restore entre les deux gestes restaure la VM sans neutraliser sa dernière
 commande : refusé et dit, la levée retenue, mais le disque restauré a pu la rejouer ; et une
 isolation approuvée dans la console isole la VM sans couper ses sessions (refusé, dit sur la carte). Les
-attributions vivent dans l'état de H0 : `make glorfindel-host-down` les retire avec la VM, le
+attributions vivent dans l'état d'Imladris : `make glorfindel-host-down` les retire avec la VM, le
 prochain `make glorfindel-host-up` les reprend ; une VM que Celebrimbor reconstruit perd la sienne
-(l'attribution porte l'id de la VM) jusqu'au prochain apply de H0.
+(l'attribution porte l'id de la VM) jusqu'au prochain apply d'Imladris.
 
 **Faire tourner un secret** (un an par défaut) : `az ad sp credential reset --id <appId>` rend
 un nouveau `password` ; le poser dans `.envrc`, `make glorfindel-restart`. L'ancien cesse à la
@@ -916,9 +916,9 @@ code : ses paramètres (l'`id` de l'objet, le `keyId`, l'`id` de l'octroi ou de 
 lus dans Microsoft Graph, **en lecture seule**, et le bouton **Verify** de la console demande à la
 watch de relire Graph après le geste de l'humain. Sans droit sur Graph, le plan reste utile (ce que
 le journal donne, chaque paramètre non lu marqué, jamais inventé) et la vérification dit
-« unreadable », jamais « held ». C'est le cas de H0 aujourd'hui.
+« unreadable », jamais « held ». C'est le cas d'Imladris aujourd'hui.
 
-**Le droit à donner à l'identité de la watch** (l'identité managée de H0 ; sur un poste, le
+**Le droit à donner à l'identité de la watch** (l'identité managée d'Imladris ; sur un poste, le
 principal de la watch) — un **geste de Jonathan**, hors de tout lot, avec un compte qui peut
 consentir des permissions d'application (Privileged Role Administrator) :
 
@@ -953,7 +953,7 @@ L'**exécuteur d'identité** répondra à une identité volée (IR1c) : retirer 
 désactiver puis réactiver un principal, révoquer les sessions, désactiver un utilisateur de test —
 toujours sur l'approbation d'un humain, jamais seul, jamais la watch
 ([`design/reponse-identite.md`](design/reponse-identite.md), §3.3 à §3.5). IR1b pose son
-**application** (Terraform de H0, désactivée par défaut) et son **contrat**, lu à son démarrage ;
+**application** (Terraform d'Imladris, désactivée par défaut) et son **contrat**, lu à son démarrage ;
 il n'écrit encore rien : ses verbes sont le travail d'IR1c.
 
 **Ses droits** — la liste fermée du contrat (`glorfindel/providers/azure/identity_contract.py`) :
@@ -974,7 +974,7 @@ il n'écrit encore rien : ses verbes sont le travail d'IR1c.
 Administrator, Privileged Authentication Administrator, Application Administrator, Cloud
 Application Administrator, et User Administrator ailleurs qu'à l'unité du banc) ; retirer un rôle
 ou un consentement (un plan, que l'humain exécute avec son compte) ; prendre l'identité managée de
-H0 (celle de la watch : il n'a que son certificat, jamais `DefaultAzureCredential`) ; être
+Imladris (celle de la watch : il n'a que son certificat, jamais `DefaultAzureCredential`) ; être
 membre d'un groupe (un groupe peut porter un rôle) ; posséder autre chose qu'une application
 inscrite et son principal (ni lui-même, ni une identité de Glorfindel, d'Orodruin, d'Annatar ou
 d'un opérateur, ni un groupe) ; posséder une identité **privilégiée** (décision du Q6), jugée par
@@ -1019,7 +1019,7 @@ comme celui d'Orodruin, rien n'est écrit :
 
 **Son environnement** (jamais dans le dépôt) : `EREGION_TENANT_ID` (le tenant du banc, le nom
 d'IDI1), `EREGION_IDENTITY_EXECUTOR_CLIENT_ID` (`terraform output identity_executor_client_id`),
-`EREGION_IDENTITY_EXECUTOR_CERTIFICATE` (le chemin de son certificat et de sa clé, sur H0), et pour
+`EREGION_IDENTITY_EXECUTOR_CERTIFICATE` (le chemin de son certificat et de sa clé, sur Imladris), et pour
 ses rôles bornés `EREGION_BENCH_ADMIN_UNIT_ID` (la sortie de l'unité du banc d'IDI1b) et
 `EREGION_IDENTITY_ATTRIBUTE_SET=Eregion` (l'ensemble qu'IDI1b fige : la sortie `entra_attribute_set`
 de Celebrimbor). Aucune n'a de valeur par défaut, fermé : non déclarée, User Administrator ou
@@ -1038,7 +1038,7 @@ Attribute Assignment Reader le rendent passif. Et `EREGION_OPERATOR_OBJECT_ID`, 
    `azuread_app_role_assignment.identity_executor` (`Application.ReadWrite.OwnedBy`,
    `User.RevokeSessions.All`, sur le principal de Microsoft Graph), et
    `azurerm_role_assignment.identity_executor_logs_reader[0]` (`Log Analytics Reader`, à la portée
-   du workspace du banc). Ni la VM de H0 remplacée, ni une autre attribution touchée.
+   du workspace du banc). Ni la VM d'Imladris remplacée, ni une autre attribution touchée.
 4. **Appliquer** : `make glorfindel-host-up`, **sans `YES`** (le même plan, confirmé), sous un
    `az login` qui peut créer une application et **consentir des permissions d'application de
    Microsoft Graph** (Administrateur des rôles privilégiés, ou Administrateur général) : chaque
@@ -1070,7 +1070,7 @@ Attribute Assignment Reader le rendent passif. Et `EREGION_OPERATOR_OBJECT_ID`, 
    Un **principal d'Annatar de poste** dans le tenant du banc (`ANNATAR_AZURE_CLIENT_ID`) : son
    object id s'ajoute aussi à `EREGION_PROTECTED_IDENTITIES`. Ne recopie dans `host.env` ni
    `ANNATAR_AZURE_CLIENT_ID` ni `GLORFINDEL_AZURE_CLIENT_ID` : le compose en ferait l'`AZURE_CLIENT_ID`
-   d'un service (V-17), et sur H0, `DefaultAzureCredential` chercherait une identité assignée qui
+   d'un service (V-17), et sur Imladris, `DefaultAzureCredential` chercherait une identité assignée qui
    n'existe pas.
    L'écriture de `host.env` et `host_env.py --check` (lancé par `make glorfindel-host-push`) disent
    une variable vide, ou une entrée qui n'est pas un object id, avec sa source, jamais sa valeur
@@ -1082,14 +1082,14 @@ Attribute Assignment Reader le rendent passif. Et `EREGION_OPERATOR_OBJECT_ID`, 
    guillemets autour d'elle est retirée, comme le fait compose), refusés à l'écriture — un saut de
    ligne ajouterait à `host.env` une variable à lui (la file signée allumée, avec une clé venue de
    la valeur), un guillemet resté ouvert ferait refuser tout le fichier par compose, et rien ne
-   démarrerait sur H0, un `$` serait interpolé par compose ; `--check` refuse une ligne dont la
+   démarrerait sur Imladris, un `$` serait interpolé par compose ; `--check` refuse une ligne dont la
    valeur ouvre un guillemet sans le fermer, ou porte une barre oblique inverse entre guillemets
    (compose lit `\"` comme un guillemet échappé : la valeur avalerait la ligne suivante). Édité à
    la main, `host.env` s'écrit donc sans guillemets. La variable est nommée, jamais sa valeur. Puis
-   `make glorfindel-host-push`, et sur H0 `cd ~/eregion && docker compose up -d watch` : la watch
+   `make glorfindel-host-push`, et sur Imladris `cd ~/eregion && docker compose up -d watch` : la watch
    est recréée avec le nouvel `.env` — un `docker restart` ne relit pas `.env`, elle garderait son
    ancien environnement.
-7. **Le certificat** (avec IR1c, qui monte le conteneur) : la clé tirée sur H0, dans un répertoire
+7. **Le certificat** (avec IR1c, qui monte le conteneur) : la clé tirée sur Imladris, dans un répertoire
    que seul l'exécuteur monte ; sa partie publique (PEM, `BEGIN CERTIFICATE`, jamais une clé : le
    plan la refuse) dans `identity_executor_certificate`, puis les gestes 3 et 4 (une création de
    plus, `azuread_application_certificate.identity_executor[0]`).
@@ -1101,7 +1101,7 @@ Attribute Assignment Reader le rendent passif. Et `EREGION_OPERATOR_OBJECT_ID`, 
 `entra_identity_executor_object_id` (IDI1b), puis son plan et son apply —, sans quoi l'état de
 Celebrimbor viserait un principal supprimé ; ensuite l'exécuteur : `identity_executor_enabled =
 false` (ou le fichier ôté), puis les gestes 3 et 4 : le plan montre les mêmes destructions. `make
-glorfindel-host-down` le retire avec le reste de l'état de H0 (même ordre : Celebrimbor d'abord).
+glorfindel-host-down` le retire avec le reste de l'état d'Imladris (même ordre : Celebrimbor d'abord).
 
 **Les hypothèses** (§5 de la conception, à mesurer sur le tenant du banc) : les droits qu'il faut
 pour lire ses propres droits et ceux de ce qu'il possède (10) — Directory Readers est celui que le
@@ -1354,11 +1354,11 @@ le compose. Les `docker run` des injecteurs sur Orodruin (`ORO_RUN`, `ORO_RUN_RE
 `orodruin-check`, `orodruin-exercise`, `gothmog-*`, `orodruin-campaign-*`) portent les mêmes quatre
 réglages depuis SEC14 (`ORO_HARDEN`, `tests/unit/test_host_ssh.py`) ; à mesurer au premier run sur
 Orodruin qu'aucune écriture hors de son répertoire de `~/runs` et de `/tmp` n'y manque. Annatar ne monte ni `~/.eregion/analysis` ni `~/.cache/chroma` : le rapport de
-sa campagne s'écrit sur H0, par la watch, et l'index de l'IA d'analyse ne s'ouvre jamais dans son conteneur
-(chromadb n'est pas dans son image, `tests/unit/test_profiles.py`). Sur H0, la santé du CD lit
+sa campagne s'écrit sur Imladris, par la watch, et l'index de l'IA d'analyse ne s'ouvre jamais dans son conteneur
+(chromadb n'est pas dans son image, `tests/unit/test_profiles.py`). Sur Imladris, la santé du CD lit
 le journal de chaque conteneur depuis la bascule : un « Read-only file system » que la release
 d'avant ne montrait pas (relu dans sa dernière heure, avant la bascule) est une régression, et
-H0 revient en arrière (`infra/glorfindel-host/cd/eregion_cd.py`, `read_only_errors`) ; le même
+Imladris revient en arrière (`infra/glorfindel-host/cd/eregion_cd.py`, `read_only_errors`) ; le même
 avant et après est dit, jamais un retour ; un journal illisible est dit en orange, non prouvé.
 
 ---
@@ -1372,7 +1372,7 @@ Depuis SEC18 (N-05), `runs/` n'est plus un répertoire que chaque service monte 
 
 | Répertoire | Écrit par | Lu (lecture seule) par |
 |---|---|---|
-| `runs/glorfindel/` | la watch (ses cycles ; sur H0, ce qu'elle tire du canal ; les rapports et le tri des campagnes) | la console |
+| `runs/glorfindel/` | la watch (ses cycles ; sur Imladris, ce qu'elle tire du canal ; les rapports et le tri des campagnes) | la console |
 | `runs/console/` | la console, la CLI de Glorfindel (`manual_actions.jsonl` ; `queue/`, FS1b) | la watch |
 | `runs/bot/` | le bot et la CLI qu'il lance (`manual_actions.jsonl`, FS1c ; `queue/`, FS1b) | la watch, la console |
 | `runs/annatar/` | Annatar (ses signaux, ses rapports, ses fenêtres, ses campagnes) | la watch, le bot, la console |
@@ -1384,7 +1384,7 @@ Le rouge ne monte ni `runs/glorfindel/` ni `runs/console/`. La détection d'un r
 par le canal retour du stockage (`EREGION_WATCH_CHANNEL`), qui garde la priorité ; sans lui — un poste
 —, par le canal local des verdicts, `runs/verdicts/`, que la watch écrit et que le rouge lit en
 lecture seule : la boucle purple locale garde sa mesure. Sans aucun des deux, elle est `unknown`,
-dite, jamais un raté. `annatar campaign run` sans canal vers H0 n'écrit plus le rapport de campagne :
+dite, jamais un raté. `annatar campaign run` sans canal vers Imladris n'écrit plus le rapport de campagne :
 il dit le geste, `make campaign-report CAMPAIGN=<id>` (le rapport lit les cycles de la watch, que le
 rouge ne lit pas). Un lecteur ne lit un fichier que dans le répertoire de son écrivain ; ce qui est
 ailleurs n'est jamais lu, et la watch (dans son journal, toutes les minutes, chaque chose une fois),
@@ -1394,7 +1394,7 @@ la console (dans le sien) et `make runs-survey` le disent.
 déplacée une fois, **sur l'hôte**, avant que les services démarrent — aucun service ne monte `runs/`
 entier, aucun ne pourrait déplacer —, par `python3 -m eregion_core.runs_layout migrate <runs>` :
 `make glorfindel-start`, `glorfindel-restart`, `team-start` et `team-init` sur un poste, `deploy.sh`
-sur H0 (au démarrage des services, le CD compris), `make orodruin-push` (et `-push-dev`) sur
+sur Imladris (au démarrage des services, le CD compris), `make orodruin-push` (et `-push-dev`) sur
 Orodruin, dans un conteneur de l'image tout juste vérifiée — le seul qui monte `~/runs` entier, une
 fois. `make runs-migrate` la lance à la main, `make runs-survey` dit ce qui reste hors de place (code
 1 s'il y en a). Ses règles :
@@ -1404,7 +1404,7 @@ fois. `make runs-migrate` la lance à la main, `make runs-survey` dit ce qui res
   d'Annatar ; une fenêtre : son `injector`, ou `channel_created` quand la watch l'a tirée), ou par un
   marqueur du tirage à côté (`.pulled-runs/<run_id>`, le `.pulled` d'une campagne : à la watch) ; d'une
   campagne d'Annatar, `report.md`, `report.error`, `triage.*` et `replay.json` vont à la watch ;
-  `runs/orodruin/` qui tient un `contract.json` est la copie de H0 (→ `runs/glorfindel/orodruin/`),
+  `runs/orodruin/` qui tient un `contract.json` est la copie d'Imladris (→ `runs/glorfindel/orodruin/`),
   sinon c'est déjà le répertoire d'Orodruin ;
 - sinon il est **laissé où il est**, jamais lu, et dit avec le geste : le déplacer à la main vers
   `runs/<écrivain>/` s'il est connu, sinon le garder à part ;
@@ -1427,19 +1427,19 @@ lisent la couverture, les indicateurs et les rapports. Déplacer ce qui se recon
 histoire. **Ce que la migration ne fait pas** : elle classe par le nom et par ce que dit le fichier,
 comme les lecteurs le croyaient avant SEC18 — un fichier écrit avant par un autre que son écrivain
 apparent (sur un poste où le rouge montait `runs/` en écriture) le reste. Ce qui tient, c'est ce qui
-s'écrit après. Sur H0, aucun injecteur ne tournait : tout `runs/` y était écrit par la watch et la
+s'écrit après. Sur Imladris, aucun injecteur ne tournait : tout `runs/` y était écrit par la watch et la
 console.
 
-**Le redéploiement, dans l'ordre — poste, H0, Orodruin.** Aucun run en vol pendant les trois (ni
+**Le redéploiement, dans l'ordre — poste, Imladris, Orodruin.** Aucun run en vol pendant les trois (ni
 `make orodruin-exercise`, ni campagne, ni panne).
 1. **Le poste.** La branche fusionnée tirée : `make glorfindel-start` (il migre `runs/`, puis démarre
    la watch et la console), puis `make runs-survey` — rien, ou chaque chose laissée et son geste.
    Une équipe : `make team-start TEAM=<nom>`.
-2. **H0.** **Avant de publier** la release qui porte SEC18 : `make glorfindel-host-cd-install`
+2. **Imladris.** **Avant de publier** la release qui porte SEC18 : `make glorfindel-host-cd-install`
    depuis un checkout de `main` à jour, puis `make glorfindel-host-cd-check`, puis
    `make glorfindel-host-cd-enable`. Le CD bascule par **son** `deploy.sh`, la copie installée dans
    `~/.eregion-cd/`, jamais celui de la release (l'agent ne se remplace jamais lui-même,
-   [`infra/glorfindel-host/README.md`](../infra/glorfindel-host/README.md), « Le CD de H0 ») : celui
+   [`infra/glorfindel-host/README.md`](../infra/glorfindel-host/README.md), « Le CD d'Imladris ») : celui
    d'avant SEC18 ne migre pas, et `docker compose up` créerait `runs/glorfindel/`, `runs/console/` et
    les autres au nom de root — la watch n'y écrirait plus ses cycles, la console ses gestes, la
    migration suivante échouerait sur eux. Puis publier : le CD la déploie (`deploy.sh` migre
@@ -1458,10 +1458,10 @@ console.
 - **L'image de SEC18 sur Orodruin face au Makefile d'avant** (un poste resté en arrière) : `~/runs`
   monté entier, l'injecteur écrit dans ses répertoires ; rien ne casse, mais l'ancienne disposition
   n'est pas migrée tant que `make orodruin-push` du poste à jour n'a pas tourné.
-- **Le canal entre Orodruin et H0 ne change pas** (les mêmes blobs, aux mêmes noms) : l'un à jour et
+- **Le canal entre Orodruin et Imladris ne change pas** (les mêmes blobs, aux mêmes noms) : l'un à jour et
   l'autre pas, les fenêtres, les rapports et les campagnes passent ; seul l'emplacement sur le disque
-  de H0 change.
-- **Un retour de H0 sous SEC18** (le CD qui revient sur la release d'avant si la santé échoue, ou
+  d'Imladris change.
+- **Un retour d'Imladris sous SEC18** (le CD qui revient sur la release d'avant si la santé échoue, ou
   `make glorfindel-host-cd-rollback`) : le compose d'avant monte `runs/` entier et ne lit qu'à plat — il
   ne voit plus ce que la migration a rangé. La console paraît vide d'historique ; la watch tire de
   nouveau du canal les campagnes qui y restent et réécrit leur rapport (un appel au modèle d'analyse
@@ -1479,7 +1479,7 @@ console.
 Chaque détection du canal retour est signée par la clé de la watch (la même que le battement, un
 autre domaine), et un injecteur ne la compte que vérifiée avec `EREGION_WATCH_KEY`
 ([`docs/design/watch-key.md`](design/watch-key.md), « Les détections signées »). **Aucun geste de
-clé** : ni clé nouvelle, ni épingle nouvelle. **L'ordre** : la release publiée → le CD de H0 la
+clé** : ni clé nouvelle, ni épingle nouvelle. **L'ordre** : la release publiée → le CD d'Imladris la
 déploie (sa watch signe) → Orodruin (OI3, ou `make orodruin-push REF=<tag>`) → une watch de poste
 ou d'équipe : `make glorfindel-restart`. Une watch encore d'avant, des injecteurs à jour : les
 runs sont `unknown`, chaque détection refusée dite (« unsigned … update Glorfindel ») dans la
@@ -1489,11 +1489,11 @@ sortie du run, le journal d'Orodruin et le rapport — jamais `missed`, jamais `
 
 **Ce qui change.** Un injecteur ne croit plus le battement de la watch que **signé par la clé de la
 watch**, vérifié avec la clé publique épinglée de son côté (`EREGION_WATCH_KEY`, N-03 ;
-[`docs/design/watch-key.md`](design/watch-key.md)). Le CD de H0 ne croit plus l'attestation du
+[`docs/design/watch-key.md`](design/watch-key.md)). Le CD d'Imladris ne croit plus l'attestation du
 harnais que **signée par ta clé** (une paire cosign à toi, sans journal public : aucune adresse
-publiée, ni dans le dépôt ni chez sigstore), sa clé publique épinglée dans la config de H0 (R-13 ;
+publiée, ni dans le dépôt ni chez sigstore), sa clé publique épinglée dans la config d'Imladris (R-13 ;
 `infra/glorfindel-host/README.md`, « L'attestation du harnais »). Sans clé épinglée, un injecteur
-refuse tout run et le dit, et Dagorlad refuse toute demande ; sans clé déclarée sur H0, le CD
+refuse tout run et le dit, et Dagorlad refuse toute demande ; sans clé déclarée sur Imladris, le CD
 refuse tout nouveau verrou et le dit. Rien ne se déploie en silence.
 
 **La clé de l'attestation, une fois** (Jonathan) : `make harness-key`. cosign tire la paire dans
@@ -1513,23 +1513,23 @@ une clé matérielle (`cosign generate-key-pair --sk`, puis `sign-blob --sk`), j
 selon la seule liste de REN1, avant la fusion de SEC19, est à refaire (étape 2) : l'agent d'avant
 ne crée pas le répertoire de la clé de la watch et ne lit pas `EREGION_HARNESS_KEY`.
 
-1. **La clé de l'attestation sur H0.** `make harness-key` (ci-dessus) ; sa ligne
+1. **La clé de l'attestation sur Imladris.** `make harness-key` (ci-dessus) ; sa ligne
    `EREGION_HARNESS_KEY=…` dans `infra/glorfindel-host/host.env` ; puis
    `source .envrc && make glorfindel-host-push`. Cette clé ne va dans aucun conteneur ; seul le CD
    la lit, jamais le dépôt.
 2. **L'agent du CD, avant de publier.** `make glorfindel-host-cd-install` depuis un checkout de
    `main` qui porte REN1 et SEC19 (`make glorfindel-host-cd-disable` d'abord pour voir la release à
    blanc avant qu'elle se déploie) : son `deploy.sh` crée `~/.eregion/watch-key` au nom de
-   l'utilisateur de H0 avant que le compose ne le monte (laissé à docker, il serait à root, et la
+   l'utilisateur d'Imladris avant que le compose ne le monte (laissé à docker, il serait à root, et la
    watch n'aurait pas de clé).
 3. **La release** publiée (la 0.5.3).
 4. `make glorfindel-host-cd-check` (« ✅ À blanc : v0.5.3 est prête »), puis
    `make glorfindel-host-cd-enable`. Le verrou de Glorfindel ne change pas dans SEC19 : aucune
    attestation n'est demandée pour cette release.
-5. **La clé de la watch de H0.** Une fois la release en service : `make glorfindel-host-watch-key`
+5. **La clé de la watch d'Imladris.** Une fois la release en service : `make glorfindel-host-watch-key`
    (lue dans le conteneur de la watch, par SSH, clé d'hôte épinglée). Sa ligne
    `EREGION_WATCH_KEY=ed25519:…` dans `host.env` et dans `infra/orodruin/orodruin.env` ; puis
-   `source .envrc && make glorfindel-host-push`, et **sur H0** (`make glorfindel-host-ssh`)
+   `source .envrc && make glorfindel-host-push`, et **sur Imladris** (`make glorfindel-host-ssh`)
    `cd eregion && docker compose up -d war-room` : la console relit son environnement (`restart` ne
    le relit pas). Entre la release et ce geste, Dagorlad refuse toute demande (« no watch key
    pinned ») : c'est attendu.
@@ -1574,10 +1574,10 @@ reste `make glorfindel-host-start REF=<tag>`.
 **Si l'ordre n'est pas tenu** :
 - la release publiée avant l'étape 2 : `~/.eregion/watch-key` est créé par docker, au nom de root ;
   la watch le dit en rouge (« Clé de la watch indisponible ») et ses battements partent sans
-  signature, refusés par les injecteurs à jour. Sur H0 (`make glorfindel-host-ssh`) :
+  signature, refusés par les injecteurs à jour. Sur Imladris (`make glorfindel-host-ssh`) :
   `sudo chown "$USER": ~/.eregion/watch-key && chmod 700 ~/.eregion/watch-key && docker restart eregion-watch`,
   puis l'étape 2 ;
-- un nouveau verrou avant l'étape 1 : refusé (« aucune clé de l'attestation déclarée sur H0 »),
+- un nouveau verrou avant l'étape 1 : refusé (« aucune clé de l'attestation déclarée sur Imladris »),
   puis `make glorfindel-host-cd-retry` une fois `host.env` poussé ;
 - la clé de la watch retirée ou tirée à nouveau (une VM reconstruite, une clé vide après un disque
   plein : la watch dit « remove it ») : « signed by another key » chez les injecteurs ; refaire
@@ -1592,7 +1592,7 @@ de la console et du bot reste, et aucune file n'est lue. FS1c prépare la bascul
 drapeau se pose à la main pour la mesure au banc (ci-dessous, « La mesure au banc »), et le défaut
 ne changera qu'après elle (`docs/design/file-actions-signee.md`, §4.2, §9).
 
-Avec `EREGION_ACTION_QUEUE=1` (dans `.envrc` sur un poste, dans `host.env` sur H0 — pour les trois
+Avec `EREGION_ACTION_QUEUE=1` (dans `.envrc` sur un poste, dans `host.env` sur Imladris — pour les trois
 services : la watch le lit aussi), la console et le bot ne font plus que déposer une demande signée
 par **leur propre clé**, que la watch juge et exécute. Chacun tire sa clé à son premier démarrage
 avec le drapeau, dans le répertoire que lui seul monte : `~/.eregion/console/queue_ed25519` et
@@ -1603,14 +1603,14 @@ crée au nom de root). La watch **épingle** leurs clés publiques, dans son env
 1. **Ce poste** : `make glorfindel-restart` avec le drapeau, puis `make queue-keys` — la ligne
    `export EREGION_QUEUE_KEYS=console=ed25519:…,bot=ed25519:…` (le bot seulement s'il tourne,
    profil `bot`) dans ton `.envrc`, puis `make glorfindel-restart`. Jamais la clé privée.
-2. **H0** : **les clés d'abord, le drapeau ensuite**. `make glorfindel-host-queue-keys` (par SSH,
+2. **Imladris** : **les clés d'abord, le drapeau ensuite**. `make glorfindel-host-queue-keys` (par SSH,
    la clé d'hôte épinglée) tire la clé de la console et celle du bot dans leurs conteneurs s'ils n'en
    ont pas encore (`pin <service> --draw`, sans le drapeau) et imprime `EREGION_QUEUE_KEYS=…` ; cette
    ligne et `EREGION_ACTION_QUEUE=1` vont dans `host.env` ensemble, puis `make glorfindel-host-push`.
    `host_env.py --check` (que le push lance) refuse le drapeau sans la clé de la console, ou sans
    celle du bot quand `DISCORD_BOT_TOKEN` est posé, et un drapeau autre que « 1 ».
    `make glorfindel-host-env` ne recopie jamais ces deux variables de ton `.envrc` : ce sont les clés
-   de ce poste, H0 a les siennes.
+   de ce poste, Imladris a les siennes.
 3. **La copie des autorisés du bot** chez la watch : `DISCORD_ALLOWED_USERS` et
    `DISCORD_ALLOWED_ROLES` passent aussi à la watch (le compose), qui relit l'humain qu'une demande du
    bot nomme ; vides chez elle, le Revert du bot est refusé (`guard`).
@@ -1643,11 +1643,11 @@ demandes sans attendre une lecture. Le Revert du bot, lui, est noté par le bot 
 
 ### La mesure au banc (FS1c) — l'ordre des gestes de Jonathan
 
-Sur H0 et le banc (gondolin), avec la release de FS1c déployée. Chaque étape se vérifie avant la
+Sur Imladris et le banc (gondolin), avec la release de FS1c déployée. Chaque étape se vérifie avant la
 suivante ; aucune n'est faite par une session.
 
 1. **Les clés** : `make glorfindel-host-queue-keys` — la ligne `EREGION_QUEUE_KEYS=console=…,bot=…`
-   (le drapeau n'est pas encore posé : rien ne change sur H0).
+   (le drapeau n'est pas encore posé : rien ne change sur Imladris).
 2. **Le drapeau** : cette ligne et `EREGION_ACTION_QUEUE=1` dans `host.env`, puis
    `make glorfindel-host-push` (le `--check` les tient ensemble), et le redémarrage des trois
    services. Au démarrage, la watch ne dit aucune clé manquante ; la console dit sa clé, et ses
@@ -1704,7 +1704,7 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
   préparation) et une exception la retire de la surveillance (`vm-?: non_disruptive` sous un
   défaut `human_only` rend `VM-A` autonome). Les noms sont ceux qu'Azure rend (la fin du
   `resource_id` d'ARM, avec la casse de la création ; le `Computer` du Heartbeat pour les
-  exceptions) : relire `exceptions` et `autonomy.assets` face à eux avant de mettre H0 à jour.
+  exceptions) : relire `exceptions` et `autonomy.assets` face à eux avant de mettre Imladris à jour.
 - Le fichier d'exemple (`glorfindel-config.yaml.example`) et le fragment de Celebrimbor
   (`make celebrimbor-output`) passent la lecture stricte (`tests/unit/test_config.py`).
 - **`never_block`** (SEC2, 28/10) : une liste d'adresses ou de préfixes CIDR que Glorfindel ne
@@ -1719,7 +1719,7 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
   son extension au sous-réseau, réaffirmation) ; une liste illisible refuse tout
   blocage. Chaque entrée est validée (adresse ou préfixe ; `/0` refusé : couper les blocages se fait
   par le mode d'autonomie). Absente : la liste livrée seule. **Clé nouvelle** : une config qui la
-  porte est refusée par une version antérieure (lecture stricte) — la poser sur H0 après la mise à
+  porte est refusée par une version antérieure (lecture stricte) — la poser sur Imladris après la mise à
   jour.
 - **`expected_sudo`** (ADM1, #284, 02/11) : les administrateurs dont le sudo vers root est attendu,
   par VM ou motif de VM. Un tel sudo n'ouvre pas de carte d'élévation — il est écarté par le
@@ -1768,34 +1768,34 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
   Une seule source, pour toutes les entrées qui déclarent `origins`. Lue strictement : une autre
   valeur, ou une source sans aucune entrée qui déclare `origins`, refuse le fichier. Trace absente,
   source illisible ou coupée : une carte. **Clé nouvelle** : une version sans COR2 refuse la config qui
-  la porte. Mesurer avant de déclarer : « Déclarer la source qui confirme l'origine sur H0 (COR2) ».
+  la porte. Mesurer avant de déclarer : « Déclarer la source qui confirme l'origine sur Imladris (COR2) ».
 - **`memory.max_age_days`** (SEC17, V-12 ; `docs/glorfindel.md`, « Source d'un cycle ») : l'âge au-delà
   duquel un cycle passé n'est plus un précédent — écarté de la recherche, jamais effacé. 90 jours par
   défaut. Lue strictement : un nombre de jours sans guillemets ni unité, fini, positif, au plus
   3650 ; un texte (`"30"`, `30d`), un booléen, `0`, `.inf`, `.nan` ou plus de dix ans refusent le
   fichier, comme une clé inconnue sous `memory`. `glorfindel report` dit combien de cycles réels
   la borne écarte, et à part ceux rangés avant SEC17, sans date à eux, datés par la borne de B2 (le
-  16/10/2026 : un cycle n'est réel que depuis B2, leur âge est au moins le vrai ; sur H0, avec 90 jours,
+  16/10/2026 : un cycle n'est réel que depuis B2, leur âge est au moins le vrai ; sur Imladris, avec 90 jours,
   gardés jusque vers le 14/01/2027, puis écartés). **Clé nouvelle** : une version
   sans SEC17 refuse la config qui la porte.
 
-### Poser la liste des administrateurs sur H0 (ADM1)
+### Poser la liste des administrateurs sur Imladris (ADM1)
 
-Les vrais noms de comptes ne vont que dans la config de H0, jamais dans le dépôt.
+Les vrais noms de comptes ne vont que dans la config d'Imladris, jamais dans le dépôt.
 
-1. **D'abord la version** : H0 doit tourner une version qui lit `expected_sudo` (la release qui
+1. **D'abord la version** : Imladris doit tourner une version qui lit `expected_sudo` (la release qui
    porte ADM1, déployée par le CD, ou `make glorfindel-host-start REF=<tag>`). Avant, la config
    serait refusée et la watch ne redémarrerait pas. **La déployer hors d'une détection récente** :
    l'identité des lignes de journal change (instant et empreinte du texte), si bien qu'une ligne
    déjà vue dans les ~15 min de la fenêtre est renvoyée une fois — au plus une carte par VM et par
    règle, qui peut relancer un instantané en `non_disruptive`.
 2. **La liste** dans le `glorfindel-config.yaml` local (ignoré par git), section `expected_sudo`
-   ci-dessus : les VMs de H0 (ou `"*"`) et les comptes d'administration en entier.
+   ci-dessus : les VMs d'Imladris (ou `"*"`) et les comptes d'administration en entier.
    Vérifier la lecture stricte : `glorfindel rules check` (ou
    `python -c "from glorfindel.config import load_glorfindel_config as l; print(l().expected_sudo)"`).
-3. **La pousser** : `make glorfindel-host-push`. Le push garde les modes d'autonomie de H0 ;
+3. **La pousser** : `make glorfindel-host-push`. Le push garde les modes d'autonomie d'Imladris ;
    `HUMAN_ONLY=1` pour tout remettre en `human_only` (BL1c). Sans ce lot sur le poste, ajouter le
-   bloc directement dans `~/eregion/glorfindel-config.yaml` de H0 (`make glorfindel-host-ssh`),
+   bloc directement dans `~/eregion/glorfindel-config.yaml` d'Imladris (`make glorfindel-host-ssh`),
    sans toucher au reste.
 4. **Redémarrer la watch** (la config se lit au démarrage) : `make glorfindel-host-ssh`, puis
    `cd eregion && docker compose restart watch war-room`. `make glorfindel-host-logs` : pas de
@@ -1805,12 +1805,12 @@ Les vrais noms de comptes ne vont que dans la config de H0, jamais dans le dép�
    « N expected » sur `sudo-privilege-escalation`, sans carte nouvelle ; un `sudo cat /etc/shadow`
    du même compte fait encore une carte.
 
-### Déclarer ses origines sur H0 (COR1)
+### Déclarer ses origines sur Imladris (COR1)
 
-Les vraies adresses ne vont que dans la config de H0, jamais dans le dépôt (le dépôt n'écrit que
+Les vraies adresses ne vont que dans la config d'Imladris, jamais dans le dépôt (le dépôt n'écrit que
 198.51.100.0/24, 203.0.113.0/24, 2001:db8::/32).
 
-1. **D'abord la version** : H0 doit tourner une version qui lit `origins` (la release qui porte
+1. **D'abord la version** : Imladris doit tourner une version qui lit `origins` (la release qui porte
    COR1, déployée par le CD, ou `make glorfindel-host-start REF=<tag>`). Avant, la config serait
    refusée et la watch ne redémarrerait pas.
 2. **Les origines** dans le `glorfindel-config.yaml` local (hors du dépôt), sous chaque entrée de
@@ -1825,8 +1825,8 @@ Les vraies adresses ne vont que dans la config de H0, jamais dans le dépôt (le
    origine déclarée ; une commande sensible reste toujours une carte. Pour une preuve, déclarer une
    source hors de la VM (COR2, ci-dessous). Vérifier : `glorfindel rules check` (ou
    `python -c "from glorfindel.config import load_glorfindel_config as l; print(l().expected_sudo)"`).
-3. **La pousser** : `make glorfindel-host-push` (garde les modes d'autonomie de H0 ; sans ce lot sur
-   le poste, ajouter `origins:` à la main dans `~/eregion/glorfindel-config.yaml` de H0 par
+3. **La pousser** : `make glorfindel-host-push` (garde les modes d'autonomie d'Imladris ; sans ce lot sur
+   le poste, ajouter `origins:` à la main dans `~/eregion/glorfindel-config.yaml` d'Imladris par
    `make glorfindel-host-ssh`).
 4. **Redémarrer la watch** : `make glorfindel-host-ssh`, puis
    `cd eregion && docker compose restart watch war-room` ; `make glorfindel-host-logs` : pas de
@@ -1838,12 +1838,12 @@ Les vraies adresses ne vont que dans la config de H0, jamais dans le dépôt (le
    « session depuis <adresse>, origine inconnue » ; un `sudo bash -c 'cat /etc/shadow'` fait
    toujours une carte.
 
-### Déclarer la source qui confirme l'origine sur H0 (COR2)
+### Déclarer la source qui confirme l'origine sur Imladris (COR2)
 
 Avec Jonathan, au banc : les tables et leurs colonnes sont prises de la documentation publique
 (Microsoft Learn), pas mesurées. **Mesurer d'abord** (les hypothèses ci-dessous), déclarer ensuite.
 
-1. **La source existe dans le workspace de H0.**
+1. **La source existe dans le workspace d'Imladris.**
    - `bastion` : un paramètre de diagnostic sur l'hôte Bastion, catégorie `BastionAuditLogs`, vers
      le workspace des règles. Les sessions SSH arrivent alors sur la VM depuis
      `AzureBastionSubnet` : c'est cette plage qu'on déclare dans `origins`.
@@ -1856,8 +1856,8 @@ Avec Jonathan, au banc : les tables et leurs colonnes sont prises de la document
    `expected_sudo.origin_proof: bastion` (ou `flows`), à côté des `origins` de COR1. Vérifier la
    lecture stricte : `glorfindel rules check`.
 4. **Pousser et redémarrer** comme pour COR1 (`make glorfindel-host-push`, puis
-   `docker compose restart watch war-room` sur H0) ; `make glorfindel-host-logs` : pas de
-   « glorfindel-config.yaml refusé ». H0 doit tourner une version qui lit `origin_proof`.
+   `docker compose restart watch war-room` sur Imladris) ; `make glorfindel-host-logs` : pas de
+   « glorfindel-config.yaml refusé ». Imladris doit tourner une version qui lit `origin_proof`.
 5. **Vérifier** : un `sudo -i` après une connexion par Bastion n'ouvre pas de carte (si B2 tient), et
    `make glorfindel-host-report` dit « every one confirmed outside the VM (COR2) » ; la console, dans
    le détail de `sudo-privilege-escalation`, « N confirmed outside the VM (COR2) ». Une ligne écrite à
@@ -1910,11 +1910,11 @@ chacune avec sa mesure et ce qui change selon le résultat.
 ## Verrou des dépendances
 
 `pyproject.toml` déclare des plages (`>=`) ; le verrou fixe ce qui s'installe vraiment (M-3,
-#183). Une version mineure de LiteLLM avait cassé toutes les décisions de H0 (19/10) : sans
+#183). Une version mineure de LiteLLM avait cassé toutes les décisions d'Imladris (19/10) : sans
 verrou, chaque reconstruction de l'image prenait la dernière version de tout.
 
 - `requirements/dev.txt` : la CI (3.11, 3.12, macOS), `make install`, les mutants et les
-  invariants de nuit. `requirements/glorfindel.txt` : l'image de Glorfindel (H0 compris).
+  invariants de nuit. `requirements/glorfindel.txt` : l'image de Glorfindel (Imladris compris).
   `requirements/annatar.txt` (HY1) : l'image des injecteurs, Annatar et Gothmog, celle que
   `make orodruin-push` envoie à Orodruin — avec `litellm`, dont le planificateur a besoin
   (`annatar campaign plan --llm`), et `jsonschema` et `requests`, déclarés plutôt qu'apportés
@@ -1936,8 +1936,8 @@ verrou, chaque reconstruction de l'image prenait la dernière version de tout.
   construit. LiteLLM reste épinglée dans `pyproject.toml` (`==1.86.1` alors, `==1.100.4` depuis
   DEP1, ci-dessous). Il monte nettement de
   versions par rapport aux postes et à la CI d'avant (anthropic 0.104 → 2.3, fastapi 0.136 →
-  0.162, langgraph 1.2.1 → 1.2.17) : **le harnais avant le premier redéploiement de H0 sur ce
-  verrou n'est pas facultatif** (`infra/glorfindel-host/README.md`, « Redéployer H0 après M-3 »,
+  0.162, langgraph 1.2.1 → 1.2.17) : **le harnais avant le premier redéploiement d'Imladris sur ce
+  verrou n'est pas facultatif** (`infra/glorfindel-host/README.md`, « Redéployer Imladris après M-3 »,
   étape 4).
 - DEP1 (#282, 29/10) : litellm 1.86.1 → 1.100.4, à la même date de résolution (`LOCK_DATE`
   2026-10-26). 1.100.4 déclare en plus `boto3` et `pydantic-settings`. Entrent dans les trois
@@ -1956,7 +1956,7 @@ verrou, chaque reconstruction de l'image prenait la dernière version de tout.
   `--exclude-newer-package oauthlib=2026-11-05T00:00:00Z`. `annatar.txt` et `audit.txt` ne la
   portent pas : ils restent identiques à l'octet.
 
-**Mettre à jour** (une PR, jamais directement sur H0) :
+**Mettre à jour** (une PR, jamais directement sur Imladris) :
 
 ```bash
 pip install uv                          # ou pipx install uv ; seulement pour générer
@@ -1993,12 +1993,12 @@ verrou, même de ceux qui ne le portent pas.
 
 La PR dit ce qui change (le diff du verrou : LiteLLM, anthropic, langgraph, chromadb surtout).
 Avant de la fusionner, **Jonathan relance le harnais** (appels payants), qui écrit l'attestation
-que le CD de H0 exige (H1, H3) :
+que le CD d'Imladris exige (H1, H3) :
 
 ```bash
 make install                            # le .venv suit le nouveau verrou (sinon : rien n'est lancé)
-make llm-compare MODELS=<modèle de H0> RUNS=3 ATTEST=1             # référence = le dernier tag v*
-make llm-compare MODELS=<modèle de H0> RUNS=3 ATTEST=1 BASE=v0.4.6 # H0 tourne sur une autre release
+make llm-compare MODELS=<modèle d'Imladris> RUNS=3 ATTEST=1             # référence = le dernier tag v*
+make llm-compare MODELS=<modèle d'Imladris> RUNS=3 ATTEST=1 BASE=v0.4.6 # Imladris tourne sur une autre release
 git add requirements/harness.json       # dans la PR du verrou
 ```
 
@@ -2021,7 +2021,7 @@ v3.1.3 n'a plus `--tlog-upload` ; `--use-signing-config=false` seul envoie encor
 rekor.sigstore.dev ; seule une config de signature sans service garde la signature hors du
 journal. Toute modification de l'attestation après la signature la rend invalide : la signer en
 dernier. **`make harness-verify` lit par défaut ta `cosign.pub` locale, pas la clé de `host.env`** :
-pour vérifier exactement ce que H0 croira, `make harness-verify PINNED=<la valeur de
+pour vérifier exactement ce qu'Imladris croira, `make harness-verify PINNED=<la valeur de
 EREGION_HARNESS_KEY>`. Le CD la vérifie avec la clé publique épinglée dans `host.env` (`EREGION_HARNESS_KEY`),
 jamais avec ce que dit le dépôt (`infra/glorfindel-host/README.md`, « L'attestation du harnais »).
 
@@ -2121,16 +2121,16 @@ en même temps, une vingtaine de jobs, les runs attendaient jusqu'à 15 minutes)
   souvent faute de machine (« The job was not acquired by Runner »), et l'App des sessions ne peut
   pas le relancer. Il tourne sur un push sur `main` et chaque nuit (`schedule`, 02:41 UTC ; la nuit
   de `ci.yml` est la sienne seule : l'audit des dépendances, rouge un soir d'avis, rendrait rouge le
-  commit de `main` ; depuis H1c, le CD de H0 le dirait sans retenir la release). Un rouge sur `main`
+  commit de `main` ; depuis H1c, le CD d'Imladris le dirait sans retenir la release). Un rouge sur `main`
   ouvre l'issue « CI : les tests macOS sont rouges sur main », ou commente celle qui est ouverte
   (job `macos-red`, `issues: write` à lui seul, jamais sur une PR, sans checkout ni action). Un
   macOS annulé compte comme rouge : un délai dépassé ou un runner jamais obtenu remontent
   `cancelled`, et rien n'annule un run de `main`. L'issue cherchée est celle de ce workflow
   (`--author app/github-actions`) : une issue du même titre ouverte par un autre n'est pas la sienne.
-  **Un macOS rouge ou annulé sur le commit d'une release ne retient pas le CD de H0** (H1c, #518) :
+  **Un macOS rouge ou annulé sur le commit d'une release ne retient pas le CD d'Imladris** (H1c, #518) :
   macOS n'est pas un check requis de `main`, le CD le dit dans `#deploy`, en orange, sans mention,
   et déploie. Seuls les cinq checks requis et `publish (glorfindel)` bloquent
-  (`infra/glorfindel-host/README.md`, « Le CD de H0 », point 2). L'agent installé avant H1c, lui,
+  (`infra/glorfindel-host/README.md`, « Le CD d'Imladris », point 2). L'agent installé avant H1c, lui,
   le refuse encore : `make glorfindel-host-cd-install` avant de publier la release qui porte H1c.
 - **200 séquences d'invariants sur une PR**, 500 sur un push sur `main`, 10 000 la nuit
   (`invariants.yml`, inchangé).
@@ -2195,7 +2195,7 @@ chaque mutant sur l'arbre publié, une fois, sans travail en double. Le côté h
   son téléchargement : un modèle qui ne vient pas ne saute pas les autres et ne cache pas leur rouge.
   Les actions du job sont épinglées par commit, celles de la porte (aucune action ajoutée). Cinq runners
   deviennent un par push de PR. Sur `main`, un job par composant et celui des profils, comme avant :
-  ce sont leurs noms que le CD de H0 lit (« dits », jamais requis). Aucun check requis ne change de
+  ce sont leurs noms que le CD d'Imladris lit (« dits », jamais requis). Aucun check requis ne change de
   nom : les cinq de [sessions.md](sessions.md) restent ceux de `ci.yml` et d'Images, et ceux de
   Components n'en ont jamais été (`tests/unit/test_workflows.py`).
 - **La porte** : 10 tranches (L5), plus de run non muté d'une machine dans une tranche (L3), ses tests en
@@ -2268,7 +2268,7 @@ cache d'outils du runner (3.11 et 3.12 y sont) : aucune panne vue.
 ## La CI des images (CI1, #267, 29/10)
 
 Avant CI1, la CI ne construisait aucune image : compose était seulement rendu (`make
-profiles-check`). L'image de Glorfindel n'était construite que sur H0, par le CD. Un Dockerfile ou
+profiles-check`). L'image de Glorfindel n'était construite que sur Imladris, par le CD. Un Dockerfile ou
 un verrou cassé n'apparaissait qu'à son préflight : la release était refusée, sans dégât, mais
 brûlée. L'image des injecteurs n'était construite que sur le poste de l'opérateur (`make
 orodruin-push`).
@@ -2307,7 +2307,7 @@ La CI des images ne rend pas compose : chaque profil est rendu par `make profile
    - Glorfindel : `glorfindel --version` est la version de `pyproject.toml`. La watch, le bot et
      la console importent. Ce sont les mêmes imports que le préflight du CD (`eregion_cd.py`,
      étape 5). Un test lit chaque `docker run` de ce préflight et exige sa vérification ici ; le
-     rendu de compose avec le `.env` de H0 est la seule exception, écrite. `glorfindel-config.yaml.example` passe la lecture stricte
+     rendu de compose avec le `.env` d'Imladris est la seule exception, écrite. `glorfindel-config.yaml.example` passe la lecture stricte
      d'A3 : il est monté en lecture seule là où compose monte la config, puis ouvert avant d'être
      lu, car un fichier absent se lirait comme une config vide. Un appel d'outil passe par
      litellm, comme la décision le fait (`eregion_core/llm_call.py`), répondu par le mock de
@@ -2366,19 +2366,19 @@ job par image décide lui-même, dans son premier step, de construire ou de pass
 `notify.yml`. `tests/unit/test_workflows.py` exige que chaque workflow lancé par un push, une PR ou
 la nuit y figure, sauf ses exceptions écrites (Notify lui-même, Roadmap, vert par conception).
 
-**Et le CD de H0** : il ne bloque une release que sur les cinq checks requis de `main` et sur
+**Et le CD d'Imladris** : il ne bloque une release que sur les cinq checks requis de `main` et sur
 `publish (glorfindel)`, l'image qu'il tire (H1c, #518, décision de Jonathan du 04/11). `image
 (glorfindel)` et `image (annatar)` en sont : un job `image` rouge sur `main` fait donc refuser la
 release, avant même son préflight. Un autre check rouge ou annulé (macOS sans runner, un composant,
-les profils compose) est dit dans `#deploy`, en orange, sans retenir H0 ; en cours, il ne retarde
-rien (`infra/glorfindel-host/README.md`, « Le CD de H0 », point 2). La liste est une constante de
+les profils compose) est dit dans `#deploy`, en orange, sans retenir Imladris ; en cours, il ne retarde
+rien (`infra/glorfindel-host/README.md`, « Le CD d'Imladris », point 2). La liste est une constante de
 l'agent installé, `REQUIRED_CHECKS`, égale à celle de `docs/sessions.md` (« Les règles du dépôt »)
 par un test : un check requis ajouté ou retiré demande les deux, puis `make
 glorfindel-host-cd-install`. L'étape 2 de #267, décidée par Jonathan le 29/10 : la section suivante.
 
 ## Les images publiées (CI3, #267, 29/10)
 
-Avant CI3, H0 construisait l'image de Glorfindel de chaque release (son CD, `deploy.sh
+Avant CI3, Imladris construisait l'image de Glorfindel de chaque release (son CD, `deploy.sh
 --build-only`), et l'image des injecteurs se construisait sur le poste de l'opérateur (`make
 orodruin-push`). Rien ne liait l'image qui tourne à ce que la CI avait éprouvé, ni à un commit
 signé (contre-audit : P-02, ni SBOM ni signature ; V-22, des tags non signés).
@@ -2387,7 +2387,7 @@ signé (contre-audit : P-02, ni SBOM ni signature ; V-22, des tags non signés).
 et `ghcr.io/grootcyber/eregion-annatar`, étiquetées `sha-<commit complet>`, par
 `.github/workflows/publish.yml` (jobs `publish (glorfindel)`, `publish (annatar)`) :
 1. construites comme dans `images.yml` (CI1), plus ce que les hôtes demandent : l'utilisateur de
-   H0 et d'Orodruin (UID/GID 1000, le premier utilisateur d'une VM Ubuntu d'Azure), et les
+   Imladris et d'Orodruin (UID/GID 1000, le premier utilisateur d'une VM Ubuntu d'Azure), et les
    étiquettes `org.opencontainers.image.version` (`v` + la version de `pyproject.toml`, que dit
    `glorfindel --version`) et `.revision` (le commit) ;
 2. éprouvées dans l'image (`scripts/image_check.py`, les vérifications de CI1) **avant** d'être
@@ -2401,7 +2401,7 @@ et `ghcr.io/grootcyber/eregion-annatar`, étiquetées `sha-<commit complet>`, pa
    de l'image et gardées dans le magasin d'attestations de GitHub ;
 5. **signées sans clé** : `cosign sign`, un certificat de sigstore délivré sur le jeton OIDC de
    GitHub (aucune clé de longue durée, aucun secret) ;
-6. **vérifiées comme H0 les vérifie** (`published_image.py verify`, le même cosign épinglé) ;
+6. **vérifiées comme Imladris les vérifie** (`published_image.py verify`, le même cosign épinglé) ;
 7. lues sans jeton, ou un avertissement : un paquet encore privé est dit dans le run.
 
 Ce workflow est le seul qui peut écrire un paquet, demander un jeton OIDC ou écrire une
@@ -2411,8 +2411,8 @@ sur un push sur `main` de ce dépôt : jamais sur une PR, celle d'un fork compri
 `#ci` (`notify.yml`).
 
 **Quand : à chaque push sur `main`, pas à la release.** Le brouillon d'une release vise un commit
-de `main` (`make release-draft`, le sha d'`origin/main`), et le CD de H0 la déploie dès que
-Jonathan la publie. Publier à la release (un workflow sur l'événement `release`) laisserait H0
+de `main` (`make release-draft`, le sha d'`origin/main`), et le CD d'Imladris la déploie dès que
+Jonathan la publie. Publier à la release (un workflow sur l'événement `release`) laisserait Imladris
 chercher une image qui n'existe pas encore ; publier sur la PR de version seule manquerait un
 brouillon posé sur un commit plus récent. Le dépôt fusionne en squash : chaque commit de `main` est la tête
 d'un push, et l'image de n'importe quelle release
@@ -2465,8 +2465,8 @@ gh attestation verify oci://ghcr.io/grootcyber/eregion-glorfindel@sha256:<digest
   --predicate-type https://spdx.dev/Document/v2.3                    # le SBOM
 ```
 
-**H0** tire l'image de chaque release par son digest et la vérifie avant de la préflighter : son CD
-ne construit plus (`infra/glorfindel-host/README.md`, « Le CD de H0 »). **Orodruin** reçoit l'image
+**Imladris** tire l'image de chaque release par son digest et la vérifie avant de la préflighter : son CD
+ne construit plus (`infra/glorfindel-host/README.md`, « Le CD d'Imladris »). **Orodruin** reçoit l'image
 d'Annatar publiée, vérifiée sur le poste : `make orodruin-push [REF=<tag|commit>]` (sans `REF`, le
 dernier tag `v*` : tant qu'il est d'avant CI3, il n'a pas d'image, et d'avant REN1, il est signé par l'ancien nom du dépôt ; donner `REF=`), sa sortie restant fermée (`docs/design/orodruin-contract.md`, « L'image des
 injecteurs »). **Depuis OI1 (#488)**, le docker du poste n'y prend plus part : l'archive est construite
@@ -2489,7 +2489,7 @@ contrôle quand il réussit ; sur Orodruin, `docker ps -a --filter name=eregion-
 après), puis `make orodruin-check`. `make orodruin-push-dev` garde l'ancien chemin, l'image construite sur le poste,
 **non vérifiée**, pour essayer une branche : `~/.eregion-image` sur Orodruin le dit (`dev <commit>`).
 
-**Orodruin à jour au démarrage (OI3, #522).** H0 se met à jour seul ; Orodruin, éteint la plupart du
+**Orodruin à jour au démarrage (OI3, #522).** Imladris se met à jour seul ; Orodruin, éteint la plupart du
 temps, se met à jour à son démarrage : **après une publication, `make orodruin-start` suffit**. La VM
 démarrée et répondant en SSH (2 min au plus), `orodruin-update` vérifie sa clé d'hôte
 (`orodruin-known`) et lit l'image en service par elle, en lecture seule : docker qui répond, le tag
@@ -2514,12 +2514,12 @@ REF=vY » : un avertissement, son code reste celui du contrat. Tests : `tests/un
 `tests/unit/test_host_ssh.py` (le SSH de la mise à jour) ; mutants M3630–M3639, M3685–M3693
 (`scripts/mutants/OI3.py`).
 
-**Après le renommage du compte (REN1, 03/11).** Les images ont suivi le compte : le nouvel espace répond, l'ancien rend 403, sans redirection (mesuré). Celles d'avant (la v0.5.2 et avant) sont signées par l'ancien nom du dépôt, que `published_image.py` ne reconnaît plus : un retour arrière vers elles est refusé, sur H0 comme sur Orodruin. **H0** : l'ordre dans `infra/glorfindel-host/README.md`, « REN1 change l'agent » (`cd-install`, la 0.5.3 publiée, `cd-check`, `cd-enable`). **Orodruin** : `make orodruin-push REF=<sha de la fusion de REN1>`, puis `make orodruin-check` ; sans `REF` (le dernier tag), seulement à partir de la 0.5.3.
+**Après le renommage du compte (REN1, 03/11).** Les images ont suivi le compte : le nouvel espace répond, l'ancien rend 403, sans redirection (mesuré). Celles d'avant (la v0.5.2 et avant) sont signées par l'ancien nom du dépôt, que `published_image.py` ne reconnaît plus : un retour arrière vers elles est refusé, sur Imladris comme sur Orodruin. **Imladris** : l'ordre dans `infra/glorfindel-host/README.md`, « REN1 change l'agent » (`cd-install`, la 0.5.3 publiée, `cd-check`, `cd-enable`). **Orodruin** : `make orodruin-push REF=<sha de la fusion de REN1>`, puis `make orodruin-check` ; sans `REF` (le dernier tag), seulement à partir de la 0.5.3.
 
 **L'image publique** : le dépôt l'est, l'image n'a aucun secret (elle n'a que le code et ses
 dépendances verrouillées ; les secrets sont dans `host.env` et `orodruin.env`, montés ou passés au
 démarrage). La rendre publique ne montre rien de plus que le dépôt et ses verrous ; elle permet à
-H0 et à n'importe qui de la tirer et de la vérifier sans jeton. Un paquet neuf de GHCR est privé par
+Imladris et à n'importe qui de la tirer et de la vérifier sans jeton. Un paquet neuf de GHCR est privé par
 défaut (à vérifier au premier run) : Jonathan le passe en public une fois, dans les réglages de
 chaque paquet (« Change visibility »).
 
@@ -2556,7 +2556,7 @@ rafraîchissement du verrou sans contrôle).
   l'audit, continuent en erreur (`continue-on-error` sur les étapes, pas sur le job), le check-run
   reste vert. Un avis publié en amont ne doit pas retenir une release qui tourne avec la même
   dépendance — le passage hebdomadaire le dit, par son issue. Depuis H1c, ce check n'est pas de
-  ceux qui bloquent le CD de H0 : rouge, il serait dit dans `#deploy`, sans retenir la release.
+  ceux qui bloquent le CD d'Imladris : rouge, il serait dit dans `#deploy`, sans retenir la release.
 - **pip-audit a son propre verrou**, `requirements/audit.txt` (issu de `requirements/audit.in`,
   version épinglée), avec empreintes. Il s'installe dans un venv à part, jamais dans l'image ni
   dans `dev.txt`. Le workflow utilise le Python du runner, sans action tierce. Son seul secret est
@@ -2688,14 +2688,14 @@ make release-draft VERSION=0.4.4 [NOTES=notes.md] [DRY_RUN=1]   # après sa fusi
 - **L'image de la release** (CI3) : le commit que vise le brouillon a déjà ses deux images publiées,
   attestées et signées (`publish.yml` tourne sur la tête de chaque push sur `main`, « Les images publiées »).
   Avant de cliquer « Publish », les checks `publish (glorfindel)` et `publish (annatar)` de ce commit
-  doivent être verts. Sans `publish (glorfindel)`, le CD de H0 attend une heure, puis refuse la
+  doivent être verts. Sans `publish (glorfindel)`, le CD d'Imladris attend une heure, puis refuse la
   release, sans jamais la construire ; rouge ou annulé, il la refuse. `publish (annatar)` sert
   Orodruin : le CD le dit seulement (H1c). Le CD ne bloque aussi que sur les cinq checks requis de
   `main` : un macOS annulé faute de runner ne retient plus la release.
 - **Une release qui change l'agent du CD** (`infra/glorfindel-host/cd/`, H1c par exemple) : `make
   glorfindel-host-cd-install` avant de la publier, depuis un checkout de `main` qui la porte.
-  L'agent ne se remplace jamais lui-même (`infra/glorfindel-host/README.md`, « Le CD de H0 »).
-- **Après la publication** : H0 la déploie seul (son CD) ; pour Orodruin, `make orodruin-start` suffit
+  L'agent ne se remplace jamais lui-même (`infra/glorfindel-host/README.md`, « Le CD d'Imladris »).
+- **Après la publication** : Imladris la déploie seul (son CD) ; pour Orodruin, `make orodruin-start` suffit
   — son image plus ancienne que la release, il pousse celle-ci, vérifiée (OI3, « Les images publiées »).
 - **Aucun chemin ne publie** : rien ne fait d'un brouillon une release. `tests/unit/test_release.py`
   lit le code sur une liste blanche : cinq commandes `gh` seulement (`pr create`, `release list`,
@@ -2706,7 +2706,7 @@ make release-draft VERSION=0.4.4 [NOTES=notes.md] [DRY_RUN=1]   # après sa fusi
   `branch` et `number` vérifiés avant, CI6c). Une commande ne
   part que par `run()`, avec une liste littérale qui commence par `git` ou `gh` ; ni shell, ni
   `os.system`. Aucun texte ne dit
-  `draft`, sauf ce `--draft`. Une URL de `releases` n'est jamais appelée qu'en lecture. Publier déploie H0 (son CD, H1) : **Jonathan publie**, sur GitHub.
+  `draft`, sauf ce `--draft`. Une URL de `releases` n'est jamais appelée qu'en lecture. Publier déploie Imladris (son CD, H1) : **Jonathan publie**, sur GitHub.
 - `DRY_RUN=1` : tout est montré, rien n'est écrit, poussé, créé ni envoyé.
 - `VERSION`, `TITLE` et `NOTES` se donnent sur la ligne de commande. Venus de l'environnement, ils sont
   refusés, comme `REF` : le script les lit dans son environnement, make ne les développe pas.
@@ -2756,7 +2756,7 @@ mesurait en entier le commit publié.
 - `terraform` : les tests Terraform de `ci.yml`, mot pour mot (providers simulés) ;
 - `macos` : le job macOS de `ci.yml`, mot pour mot, qu'une PR ne lance plus (CI5). **Il informe, il ne
   bloque pas** (décision de Jonathan du 04/11, H1c, #518 : seuls les checks requis bloquent, comme pour
-  le CD de H0). H0 tourne sous Linux, et un runner que GitHub ne donne pas ne doit jamais retenir une
+  le CD d'Imladris). Imladris tourne sous Linux, et un runner que GitHub ne donne pas ne doit jamais retenir une
   release : le macOS du commit de la 0.5.4 a été annulé faute de runner. Le job a `continue-on-error`.
   Cela ne suffit pas : annulé faute de runner, il met quand même le run en `failure` (la 0.5.6, 05/11).
   C'est pourquoi `release-draft` ne lit jamais la conclusion du run, mais ses jobs (REL3, ci-dessous).
@@ -2780,7 +2780,7 @@ calcule : c'est cet arbre que `release-draft` compare.
   PR a fusionné entre la porte et la PR de version.
 - Pas sur un push de `main` : la batterie tournerait une seconde fois sur le même arbre, et un rouge
   arriverait après la fusion. Le message `chore(release):` d'un push, lui, se choisit librement.
-- La porte n'est pas un check requis de `main`, et le CD de H0 ne change pas (il refuse déjà une
+- La porte n'est pas un check requis de `main`, et le CD d'Imladris ne change pas (il refuse déjà une
   release dont un check est rouge sur son commit).
 
 **`make release-draft` la redemande.** Il lit les runs du workflow par `gh api` (`GET
@@ -3187,7 +3187,7 @@ se fait avec Jonathan : rien ici n'a été planifié ni appliqué. Les noms sont
 |---|---|---|---|
 | Abonnement | l'opérateur sous `az login` (le Makefile ne passe que `ARM_SUBSCRIPTION_ID` : azurerm prend la CLI) | **Monitoring Contributor** sur l'abonnement (ou un rôle qui le contient) : `Microsoft.Insights/DiagnosticSettings/*`, et `Microsoft.OperationalInsights/workspaces/sharedKeys/action` pour le workspace | [Monitoring Contributor](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles/monitor), [rôles d'Azure Monitor](https://learn.microsoft.com/azure/azure-monitor/roles-permissions-security) |
 | Tenant | l'opérateur sous `az login`, **rôle d'Entra actif** | **Administrateur de la sécurité** (« the least privileged role required to configure diagnostic settings »), ou Administrateur général — un rôle d'Entra, pas un rôle Azure sur l'abonnement. Un principal de service demanderait `Contributor` à la portée `/providers/Microsoft.aadiam`, attribué par un administrateur à l'accès élevé à la racine : ne pas le faire, appliquer sous `az login` | [Entra : accès aux journaux](https://learn.microsoft.com/entra/identity/monitoring-health/howto-access-activity-logs), [paramètres de diagnostic d'Entra](https://learn.microsoft.com/entra/identity/monitoring-health/howto-configure-diagnostic-settings), documentation du provider azurerm (`monitor_aad_diagnostic_setting`) |
-| Lecture (Glorfindel, H0 compris) | — | rien de plus : `Log Analytics Reader` sur le workspace ; aucun droit sur Entra ID | |
+| Lecture (Glorfindel, Imladris compris) | — | rien de plus : `Log Analytics Reader` sur le workspace ; aucun droit sur Entra ID | |
 
 Licence : la page des licences d'Entra donne « Audit logs : Yes » et « Sign-in logs : Yes » pour
 Entra ID **Free** ([licences](https://learn.microsoft.com/entra/fundamentals/licensing), « Microsoft
@@ -3264,7 +3264,7 @@ jours). `make celebrimbor-down CONFIRM=default` les retire aussi, avec le reste.
 pour Entra, « up to three days for the logs to start appearing » ([Entra](https://learn.microsoft.com/entra/identity/monitoring-health/howto-configure-diagnostic-settings)).
 Attendre `AzureActivity | take 1` et `AuditLogs | take 1` non vides avant les opérations de test.
 
-**Ce que H0 verra aussitôt** : la watch hébergée lit ce workspace ; chaque vraie opération du banc
+**Ce qu'Imladris verra aussitôt** : la watch hébergée lit ce workspace ; chaque vraie opération du banc
 devient une carte `control_plane_change` (un apply Terraform qui écrit le NSG, une attribution de
 rôle, une sauvegarde si l'hypothèse A2 se vérifie) et chaque événement d'Entra retenu une carte
 `identity_change` — jamais une action (détection seule, deux verrous). Une fois Entra activé, chaque
@@ -3348,7 +3348,7 @@ az backup protection backup-now -g rg-celebrimbor -v rsv-celebrimbor-erebor --ba
 ```
 
 **AL2 — `restorepoint-by-unexpected-caller` (T1578.001, T1530), la preuve au banc.** Deux temps,
-chacun avec son attendu sur H0 :
+chacun avec son attendu sur Imladris :
 
 1. **La sauvegarde à la demande ci-dessus (`backup-now`) : aucune carte** de cette règle — ses
    lignes `RESTOREPOINTS/WRITE` et `RETRIEVESASURIS` sont celles d'Azure Backup, exclu par
@@ -3391,7 +3391,7 @@ L'attribution de rôle et la règle de NSG n'ont pas besoin de Glorfindel. La r�
 n'est pas dans le Terraform du banc : retirée aussitôt (sinon le prochain `celebrimbor-up` la
 retirerait). Facultatif, avec Jonathan, coûteux : un `glorfindel restore` de gondolin (hypothèse A3,
 ~20 min, la VM désallouée) ; une isolation puis une levée de gondolin par une watch locale (hypothèse
-A4) — jamais par H0, qui est en lecture seule.
+A4) — jamais par Imladris, qui est en lecture seule.
 
 **Le retrait — un seul bloc**, à la fin des mesures, **ou dès un abandon en cours de route** (chaque
 ligne tolère ce qui n'a pas encore été créé ; dans un nouveau shell, `APP` est retrouvée par son nom
@@ -3454,12 +3454,12 @@ done
 ```
 
 Attendu : au moins une ligne par opération de test (`entra-sp-unusual-signin` après les 3 jours de
-base), et sur H0 la carte correspondante (`control_plane_change`, `identity_change`) ;
-`glorfindel rules check --live` sur H0 dit `ok` pour les neuf. `run-command-by-glorfindel-outside-isolation`
-(SID1) ne fait **aucune** carte pour une isolation de gondolin par H0 (sa coupure des sessions), ni pour
+base), et sur Imladris la carte correspondante (`control_plane_change`, `identity_change`) ;
+`glorfindel rules check --live` sur Imladris dit `ok` pour les neuf. `run-command-by-glorfindel-outside-isolation`
+(SID1) ne fait **aucune** carte pour une isolation de gondolin par Imladris (sa coupure des sessions), ni pour
 un Run Command de l'opérateur ou d'Annatar (une autre identité) ; sa requête montre pourtant leurs lignes.
 
-**La latence, de l'événement à l'ingestion** (le T0 noté donne le bout en bout ; la carte de H0
+**La latence, de l'événement à l'ingestion** (le T0 noté donne le bout en bout ; la carte d'Imladris
 ajoute l'intervalle de la règle, 60 s pour AL1, 120 à 300 s pour C2 ; `--timespan P1D`) :
 
 ```kusto
@@ -3560,7 +3560,7 @@ est un lot de la session Glorfindel ; ID1 ne le fait pas.
 | **A4** | Les écritures de Glorfindel (isolation, levée) portent son `appid`/`oid` dans `Claims` et sont écartées | une isolation par une watch locale, requête A5 | rien | comparer `Caller`, `CallerAppId`, `CallerObjectId` à `GLORFINDEL_OWN_CALLERS` ; corriger la lecture de l'identité |
 | **A5** | Une opération = plusieurs lignes (`Start`, `Accept`, `Success`) d'un même `CorrelationId` : une carte | requête A5 | rien | deux cartes pour une opération : revoir la clé de déduplication |
 | **A6** | `Claims` porte `appid` et `objectidentifier`, pour un utilisateur comme pour un principal | requête A5 (`AppIds`, `ObjectIds` non vides) | rien | l'identité de Glorfindel n'est lue que par `Caller` : le dire dans l'adaptateur |
-| **A7** | La requête de `run-command-by-glorfindel-outside-isolation` est acceptée telle quelle (`summarize arg_max(TimeGenerated, *), Started = min(TimeGenerated) by …`), et `Started` d'une coupure tombe dans `[coupure − 120 s, coupure + 420 s]` de l'heure notée dans l'état (`drains_at`) (SID1) | `glorfindel rules check --live` ; une isolation de gondolin par H0, puis la requête de la règle et l'état de la VM | rien | une requête refusée : la corriger ; hors de la fenêtre : relever `DRAIN_BEFORE_S`/`DRAIN_AFTER_S` (`own_run_command.py`) |
+| **A7** | La requête de `run-command-by-glorfindel-outside-isolation` est acceptée telle quelle (`summarize arg_max(TimeGenerated, *), Started = min(TimeGenerated) by …`), et `Started` d'une coupure tombe dans `[coupure − 120 s, coupure + 420 s]` de l'heure notée dans l'état (`drains_at`) (SID1) | `glorfindel rules check --live` ; une isolation de gondolin par Imladris, puis la requête de la règle et l'état de la VM | rien | une requête refusée : la corriger ; hors de la fenêtre : relever `DRAIN_BEFORE_S`/`DRAIN_AFTER_S` (`own_run_command.py`) |
 | **A8** | Une coupure des sessions est **une** opération Run Command (un `CorrelationId`), même quand le SDK réessaie (SID1 : une coupure pour une opération) | la même isolation, requête A5 sur `RUNCOMMAND` | rien | deux opérations pour une coupure : une carte critique à tort ; rattacher par l'heure seule, ou noter chaque essai |
 | **ID1-A9** | Chaque opération d'une sauvegarde sur les points de restauration (`RESTOREPOINTS/WRITE`, `RETRIEVESASURIS`) nomme Azure Backup par l'identifiant public de son application, `262044b1-e2ce-469f-a196-69ab7ada62d3` (dans `Claims.appid` ou `Caller`), sur une ligne au moins, et aucune ne nomme un autre appelant (AL2) | requête AL2 sur les lignes du 05/11 (`BackupLines ≥ 1`, `Callers` et `AppIds` sans autre identifiant ; `Named` dit si la dernière ligne est nue — sans effet sur la règle, qui ne décide qu'avec une ligne nommée), puis le temps 1 : aucune carte | rien | une carte à chaque sauvegarde : la session Glorfindel corrige l'identifiant ou la forme de l'exclusion, sur la sortie de la requête |
 | **ID1-A10** | Un accès au disque d'un point de restauration (`az rest … /beginGetAccess`) s'écrit `MICROSOFT.COMPUTE/RESTOREPOINTCOLLECTIONS/RESTOREPOINTS/DISKRESTOREPOINTS/BEGINGETACCESS/ACTION`, et un point fait à la main `…/RESTOREPOINTS/WRITE` sous l'identité de l'opérateur, nommée sur une ligne au moins (`NamedLines ≥ 1`, AL2) | le temps 2, requête AL2 sur son heure | deux cartes | un autre nom d'opération : la règle est aveugle à ce geste, la corriger |
@@ -3571,7 +3571,7 @@ est un lot de la session Glorfindel ; ID1 ne le fait pas.
 | **E5** | `modifiedProperties` : `KeyDescription` (ancien et nouvel ensemble), `Role.DisplayName`, `ConsentAction.Permissions`, `ConsentContext.IsAdminConsent`, `ServicePrincipal.ObjectID` | requête E4 | rien | `entra-credential-added` filtre sur `KeyDescription` : un autre nom la rend aveugle ; les autres cartes perdent une précision |
 | **E6** | Le consentement d'administrateur par `az` donne « Consent to application », ou seulement l'octroi, dont la cible serait Microsoft Graph (`entra.py`) | requête E4 | rien | la carte ne propose pas de blocage (déjà le cas) ; noter le nom réel |
 | **E7** | `entra-sp-unusual-signin` se tait les 3 premiers jours, puis voit une adresse nouvelle d'un principal connu | la connexion du principal de test, 3 jours puis Cloud Shell | rien | lire la base (`history`), le seuil `MIN_BASELINE_DAYS` |
-| **E8** | La connexion de l'identité managée de H0 n'est pas dans `AADServicePrincipalSignInLogs` (autre catégorie, non envoyée) | `AADServicePrincipalSignInLogs` sur 24 h | la limite reste écrite | ses connexions visibles : la marque `GlorfindelIdentity` les lit |
+| **E8** | La connexion de l'identité managée d'Imladris n'est pas dans `AADServicePrincipalSignInLogs` (autre catégorie, non envoyée) | `AADServicePrincipalSignInLogs` sur 24 h | la limite reste écrite | ses connexions visibles : la marque `GlorfindelIdentity` les lit |
 | **E9** | Le volume d'Entra reste sous 1 Go par mois | `Usage` à 24 h, à 7 jours | rien | au-delà : retirer `ServicePrincipalSignInLogs`, ou décider d'en payer le prix |
 
 Non mesuré par ID1 : `Company Administrator` (l'ancien nom de Global Administrator) dans les journaux
@@ -3723,7 +3723,7 @@ corps illisible, la même réponse sur une autre lecture, ou sur une page suivan
 Un refus dit désormais le code d'erreur de Graph (`error.code`, filtré : lettres ASCII et `_` seuls, 64 au plus, sinon
 rien). La même lecture vaut pour un utilisateur de test (`eregion_core.inscription user`) et pour le
 contrat de l'exécuteur d'identité (`glorfindel identity-contract`, « L'exécuteur d'identité »). Il faut une
-release qui porte IDI1p, puis `make orodruin-push REF=<cette release>` pour qu'Orodruin l'ait ; H0 l'a par
+release qui porte IDI1p, puis `make orodruin-push REF=<cette release>` pour qu'Orodruin l'ait ; Imladris l'a par
 son CD.
 
 **À mesurer au banc** : le `wids` une fois les deux rôles d'application posés et le droit déclaré
@@ -3869,7 +3869,7 @@ az rest --method GET --url "https://graph.microsoft.com/v1.0/users/$USER_ID/tran
                                    # attendu : l'unité $UNIT, de type #microsoft.graph.administrativeUnit ;
                                    # rien : ce refus ne tient pas (le dire, un lot de suite)
 
-# 7. L'exécuteur d'IR1 : ce qu'il lit, et ses trois rôles. Dans son environnement (host.env sur H0,
+# 7. L'exécuteur d'IR1 : ce qu'il lit, et ses trois rôles. Dans son environnement (host.env sur Imladris,
 #    posé par IR1b et IR1c, jamais dans le dépôt) :
 terraform -chdir=infra/terraform output -raw entra_bench_unit_id    # → EREGION_BENCH_ADMIN_UNIT_ID=
 terraform -chdir=infra/terraform output -raw entra_attribute_set    # → EREGION_IDENTITY_ATTRIBUTE_SET=
@@ -4173,7 +4173,7 @@ La session lit le dépôt (les règles, les docs) par `--add-dir`. Son premier m
 > environnement (« La remise à la session Banc »), `CLAUDE_CODE_*` et `ANTHROPIC_*` écartés ;
 > autre chose qu'`AZURE_CONFIG_DIR` et `GH_CONFIG_DIR`, tu t'arrêtes et tu le dis. Tu lis les détections et les rapports du banc par
 > `python3 ~/eregion/scripts/bench_reader.py` seul. Tu n'écris rien, nulle part ; une action sur le banc
-> ou sur H0 reste à Jonathan.
+> ou sur Imladris reste à Jonathan.
 
 **Ce que la session lance :**
 
@@ -4199,7 +4199,7 @@ Le workspace est celui du profil, jamais un argument.
   `AADServicePrincipalSignInLogs`). Elle peut aussi lire la configuration du workspace (`*/read` à sa
   portée).
 - **Le seul workspace n'est pas les seules données du banc.** Avec AL1 (`activity_log_enabled`),
-  `AzureActivity` porte l'activité de **tout l'abonnement** (H0, Orodruin, les noms de compte et les
+  `AzureActivity` porte l'activité de **tout l'abonnement** (Imladris, Orodruin, les noms de compte et les
   adresses de ceux qui agissent) ; avec C2 et ID1 (`entra_logs_enabled`), `AuditLogs` et
   `AADServicePrincipalSignInLogs` celle de **tout le tenant**. Ce que la
   session lit part chez le fournisseur du modèle qu'elle emploie (`design/modele-de-menace.md`,
@@ -4211,10 +4211,10 @@ Le workspace est celui du profil, jamais un argument.
     workspace et, à la portée d'un workspace, sans doute sans effet : les tickets vivent à
     l'abonnement ;
   - lire les clés partagées du workspace (exclues du rôle) ;
-  - toucher une autre ressource ARM : le groupe du banc, les VM, `rg-glorfindel` (H0), Orodruin ;
+  - toucher une autre ressource ARM : le groupe du banc, les VM, `rg-glorfindel` (Imladris), Orodruin ;
   - lire un autre workspace ;
   - appeler Microsoft Graph (aucune permission) ;
-  - atteindre H0 : aucune ressource, aucune clé SSH, aucun jeton de la console.
+  - atteindre Imladris : aucune ressource, aucune clé SSH, aucun jeton de la console.
 
 ### La rotation et le retrait
 
@@ -4277,7 +4277,7 @@ Le workspace est celui du profil, jamais un argument.
 Le rejeu T1486 du 09/11 a duré environ 4 h. Chaque vérification de l'étape 0 et chaque mesure de
 l'étape 8 de `docs/banc-t1486.md` ont été tapées à la main, puis masquées et recopiées ; un droit
 manquant (`listKeys` sur le compte de transit) n'a été vu qu'au restore. Deux cibles les lisent
-désormais seules, **en lecture seule partout** (Azure, H0, Orodruin), sous l'`az login` de
+désormais seules, **en lecture seule partout** (Azure, Imladris, Orodruin), sous l'`az login` de
 l'opérateur et les paires de son environnement (`.envrc` chargé) :
 
 ```zsh
@@ -4289,42 +4289,42 @@ make bench-report RUN=<run_id> [TARGET=…] [OUT=runs/bench/<run_id>.json]  # l'
   Il réutilise `make glorfindel-host-status`, `make glorfindel-host-cd-status`,
   `scripts/credential_expiry.py` (`make azure-pairs-expiry`) et le lecteur des droits du restore
   (`glorfindel/providers/azure/restore_rights.py`) ; il lit le contrat d'Orodruin sur Orodruin, par
-  `check()`, sans le publier (`orodruin-check`, lui, le publie dans le canal). Les droits de H0 et
+  `check()`, sans le publier (`orodruin-check`, lui, le publie dans le canal). Les droits d'Imladris et
   d'Orodruin se lisent par leurs attributions (`az role assignment list --all --include-inherited`) et
   les définitions de leurs rôles, avec la même règle que le restore : un joker vaut, un `notActions`
   ne retire que dans son propre rôle. Leurs object id viennent des sorties Terraform, lus sur le poste.
   Une attribution posée sur un groupe d'administration n'est pas lue : un droit qui manque le dit
   (un faux ✗, jamais un faux ✓), à vérifier à la main.
-- **Le lecteur de H0, en lecture seule par construction.** Il ne tourne jamais dans la watch
+- **Le lecteur d'Imladris, en lecture seule par construction.** Il ne tourne jamais dans la watch
   (`docker exec`). Deux ssh : `docker inspect eregion-watch` lit l'image déployée (son id) et les
   montages de la watch ; puis `scripts/bench_h0_reader.py` (sur l'entrée du ssh) tourne dans un
   conteneur jetable de cette image : `docker run --rm --network none --read-only --cap-drop ALL
   --security-opt no-new-privileges`, avec `runs/glorfindel`, `runs/console`, `runs/bot`,
   `~/.glorfindel` et `glorfindel-config.yaml` montés `readonly` (`--mount` : une source absente est
   refusée, jamais créée). Sans réseau : ni IMDS, ni jeton, ni cloud. Il ne renvoie ni raisonnement, ni
-  signal brut, ni id. Rien ne part tant que la clé d'hôte de H0 n'est pas vérifiée par son empreinte
+  signal brut, ni id. Rien ne part tant que la clé d'hôte d'Imladris n'est pas vérifiée par son empreinte
   (`HOST_SSH_FINGERPRINT` : la première option `StrictHostKeyChecking` vaut `yes`, comme ssh la lit,
   et un `UserKnownHostsFile` est donné) ; de même pour Orodruin. Sans elle, le préflight ne lance pas
   non plus `make glorfindel-host-status` ni `glorfindel-host-cd-status`, qui se connecteraient en
   `accept-new` : une seule ligne ✗ le dit. Le lecteur ne prend que les montages `bind` de la watch. La suite possible :
   une sous-commande de lecture livrée dans l'image, à la place du script venu du checkout du poste.
-- **`bench-report`** (`scripts/bench_report.py`) : sur H0, le rapport du run, ses cycles, les levées,
+- **`bench-report`** (`scripts/bench_report.py`) : sur Imladris, le rapport du run, ses cycles, les levées,
   l'état d'isolement ; sur Azure, le journal d'activité des seules ressources de la cible, chacune lue
   à part (`az monitor activity-log list --resource-id` : la VM, puis ses cartes réseau ; 3 h avant T0
   jusqu'à maintenant, 5000 événements au plus par lecture, une lecture qui atteint le plafond est dite
   coupée), les jobs du coffre et la vue d'instance. L'appelant d'une Run Command devient un rôle : la
-  console (son appId, ou `GLORFINDEL_RESTORE_PRINCIPALS`), le bot, H0 et Orodruin (leur `principal_id`
+  console (son appId, ou `GLORFINDEL_RESTORE_PRINCIPALS`), le bot, Imladris et Orodruin (leur `principal_id`
   Terraform), la watch du poste, un humain (un jeton d'utilisateur), sinon inconnu. Le JSON et le
   Markdown s'écrivent côte à côte (`runs/bench/<run_id>.json` et `.md`, ou `OUT=` : son nom, en
   `.json` et en `.md`), le JSON pour alimenter plus tard `docs/proofs.json`.
 - **Aucun identifiant n'est affiché** : chaque ligne dit un rôle, un type de portée ou un nom du banc
   déjà public, et passe par `bench_shared.scrub` (GUID, IPv4, UPN, id ARM masqués) avant d'être
-  imprimée ou écrite. Les commandes ssh de H0 et d'Orodruin passent au script par l'environnement ;
+  imprimée ou écrite. Les commandes ssh d'Imladris et d'Orodruin passent au script par l'environnement ;
   `TARGET`, `RUN`, `OUT`, `POINT_MAX_H` aussi, jamais développés par make, vérifiés par le script.
 - **Les limites** : l'API des droits ne rend ni les deny assignments, ni les verrous, ni les
   conditions ABAC, ni PIM ; un droit lu comme tenu peut encore être refusé. La vue d'instance est lue
   une fois, au moment de composer : l'heure de l'agent `Ready` est celle de son dernier statut, pas
-  la première. L'isolement, une fois l'état de H0 levé, se date par la première écriture de H0 sur une
+  la première. L'isolement, une fois l'état d'Imladris levé, se date par la première écriture d'Imladris sur une
   carte réseau de la cible après T0 (la quarantaine posée) : une isolation par les seules règles d'un
   NSG n'y paraît pas, et c'est dit en lacune. Le `restore_time` de la CLI du poste ne se lit qu'à sa
   sortie.
@@ -4336,9 +4336,9 @@ DRL1 (`docs/design/drill-banc.md`) pourra appeler les deux cibles autour de chaq
 C'est toujours l'opérateur qui tape la commande **sur son poste** ; seul le chemin téléphone → poste
 change, par deux barrières indépendantes : le réseau privé (Tailscale, une règle d'accès qui n'ouvre
 que téléphone → poste:22), puis le serveur SSH du poste, dans WSL, à clé seule, la clé dans la puce du
-téléphone. La console de H0 passe par le tunnel SSH que le téléphone ouvre lui-même vers le
-`127.0.0.1:7007` du poste, où `make glorfindel-host-tunnel` tient celui de H0 : **rien ne change sur
-H0**. Orodruin n'écoute toujours que le SSH du poste (DRL1). Le guide, de l'installation à la perte du
+téléphone. La console d'Imladris passe par le tunnel SSH que le téléphone ouvre lui-même vers le
+`127.0.0.1:7007` du poste, où `make glorfindel-host-tunnel` tient celui d'Imladris : **rien ne change sur
+Imladris**. Orodruin n'écoute toujours que le SSH du poste (DRL1). Le guide, de l'installation à la perte du
 téléphone : [`docs/demarrer/mobile.md`](demarrer/mobile.md) ; les modèles du poste : `infra/poste/` ;
 la frontière : `docs/design/modele-de-menace.md`, frontière 9.
 
@@ -4361,19 +4361,19 @@ sudo -v && make mobile-check                                   # le poste ouvert
   `make bench-report` pour chaque run nommé, puis la commande du restore avec `RUN=`. La demande est
   écrite sur le poste, pas dans le répertoire de la console : Dagorlad ne suit pas sa chronologie (le
   run, ses cartes et son rapport, si). `make orodruin-exercise` exige aussi un terminal, dès son premier
-  prérequis (`orodruin-exercise-guard`), avant de lire la demande sur H0 ou les VM d'un drill — avec un
+  prérequis (`orodruin-exercise-guard`), avant de lire la demande sur Imladris ou les VM d'un drill — avec un
   make sans `-j`, qui construit les prérequis dans leur ordre.
 - **`bench-restore`** (`scripts/bench_restore.py`) : un terminal ; la paire de la console exigée
   (RST1) ; `--before` le T0 du run, son `attack_started` (SEC4c), lu dans `runs/bench/<run_id>.json` —
   celui de `RUN=`, sinon le seul rapport de `TARGET` ; plusieurs : refusé, leurs runs listés —, sauf
   `BEFORE=` ; le coffre et le compte de transit du poste ; le nom de la VM tapé ; l'essai à blanc, puis
   « [o/N] », puis `.venv/bin/glorfindel restore … --keep-isolated --wait --yes` sous la paire.
-  `--keep-isolated` toujours : la levée est celle de H0.
+  `--keep-isolated` toujours : la levée est celle d'Imladris.
 - **Le garde** : les deux refusent dans une session d'agent (`EREGION_AGENT_SESSION`, le worktree
   d'un lot ; `bench_shared.session_refusal`, la règle de `scripts/bench_reader.py`). `bench-run` et
   `bench-restore` ne développent avant lui que `$(origin …)` et `$(PYTHON)` : il tourne seul, puis une
   sous-make lance la cible interne `-go`. Appelée directement, une cible `-go` développe d'abord ses
-  `export` — les adresses de H0 et d'Orodruin, lues par `terraform output` dans leur état local, rien
+  `export` — les adresses d'Imladris et d'Orodruin, lues par `terraform output` dans leur état local, rien
   d'autre —, puis refait le contrôle d'origine, puis le script refait le garde avant tout ssh, az ou
   scp. `TARGET`, `SCENARIO`, `BEFORE`, `RUN`, `POINT_MAX_H` : sur la ligne de commande, jamais de
   l'environnement. **Une session `tmux` qui dure** se pilote par tout processus du même utilisateur
@@ -4504,11 +4504,11 @@ quelles (A12). La mesure (requête Q3, ci-dessous) remplace l'estimation après 
 
 ### Avant le plan
 
-1. **D'abord la version** : H0 doit tourner une version qui porte la règle
+1. **D'abord la version** : Imladris doit tourner une version qui porte la règle
    `auditd-sensitive-root-command` (la release qui porte AUD1, déployée par le CD). Avant, les lignes
    arrivent sans que rien ne les lise — sans dommage, mais sans mesure.
 2. **Le mode des VM, pour la mesure** : `make glorfindel-host-push HUMAN_ONLY=1` (tout en
-   `human_only`). gondolin et bree sont en `non_disruptive` sur H0 : chaque carte d'AUD1 y pourrait
+   `human_only`). gondolin et bree sont en `non_disruptive` sur Imladris : chaque carte d'AUD1 y pourrait
    lancer un instantané, et la routine de bree en fait une toutes les 6 h (A13). Les remettre comme
    avant à la fin de la mesure.
 
@@ -4542,7 +4542,7 @@ Une sortie en erreur (« /sbin/audisp-syslog absent ») : A1.
 Chacune est connue et sans effet sur le banc. Noter l'heure UTC juste avant (`date -u +%FT%TZ`).
 
 1. **Un shell root et une commande sensible** : `ssh celebrimbor@<gondolin>`, `sudo -i`, `id`,
-   `cat /etc/shadow > /dev/null`, `ls /root`, `exit`, `exit`. Attendu sur H0 : la carte d'ADM1 (le shell
+   `cat /etc/shadow > /dev/null`, `ls /root`, `exit`, `exit`. Attendu sur Imladris : la carte d'ADM1 (le shell
    root de `sudo -i`, comme avant) et une carte `auditd-sensitive-root-command` qui nomme
    `celebrimbor (auid 1000)`, la commande `cat /etc/shadow`, `Sensitive: shadow` ; `id` et `ls` n'en font
    pas. `make glorfindel-host-report` : « auditd (AUD1), auditd-sensitive-root-command: N root exec(s) of
@@ -4804,7 +4804,7 @@ Depuis le poste, à la racine du dépôt, `.envrc` chargé :
    de la première :
    - ta lecture sur le compte (`Storage Blob Data Reader`) ;
    - tes rôles hérités de l'abonnement ;
-   - les rôles de H0, de la console et d'Orodruin sur le groupe : `Reader`, « Eregion Glorfindel
+   - les rôles d'Imladris, de la console et d'Orodruin sur le groupe : `Reader`, « Eregion Glorfindel
      Response », « Eregion Glorfindel Restore », la lecture d'Orodruin. Aucun de ces rôles n'a de
      droit de données ni `listKeys`. Ce sont des identités d'hôtes que la watch ne surveille pas.
      « Eregion Glorfindel Restore » porte toutefois `Microsoft.Storage/storageAccounts/write` sur
@@ -4860,7 +4860,7 @@ Depuis le poste, à la racine du dépôt, `.envrc` chargé :
 - **Le point de terminaison public reste ouvert.** Il est fermé à toute requête sans identité Entra
   ID autorisée, mais pas par le réseau. Un pare-feu du compte (refus par défaut, services de
   confiance admis, comme le permet la FAQ de Network Watcher) serait une défense de plus. Il demande
-  de prévoir l'accès réseau de la lecture de SEC-A3f, depuis H0 ou le poste : un lot à part, s'il est
+  de prévoir l'accès réseau de la lecture de SEC-A3f, depuis Imladris ou le poste : un lot à part, s'il est
   voulu.
 - **Les identités au-dessus du banc** gardent leurs droits : un Owner ou un Contributor de
   l'abonnement peut toujours écrire ou effacer les flux, ou rouvrir la clé. Ce ne sont pas des
@@ -4873,7 +4873,7 @@ Depuis le poste, à la racine du dépôt, `.envrc` chargé :
   exception pour les services de confiance, sans lire ni régénérer une clé, ni écrire un blob. Le restore n'a besoin de cette écriture que sur le compte de transit : la restreindre à
   ce compte est une question pour les sessions Glorfindel et Infra. Les principaux de ce rôle sont
   ceux de la console, pas ceux d'une VM surveillée.
-- **Les modules d'Orodruin et de H0** ne sont pas lus par le test. Leurs attributions sur le groupe
+- **Les modules d'Orodruin et d'Imladris** ne sont pas lus par le test. Leurs attributions sur le groupe
   se vérifient à l'étape 2. Chez un client, c'est la vérification de Glorfindel au démarrage qui tient
   CR15 : dans `corroboration.md`, §3.5, le statut `unknown` « compte des flux écrit depuis une VM »
   (SEC-A3f).

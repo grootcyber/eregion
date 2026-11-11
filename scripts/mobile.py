@@ -23,8 +23,8 @@ unit at the deadline too. Under WSL, a sleep pauses the monotonic clocks: 12 h o
 
 The two barriers: the private network (Tailscale: the account with MFA, an access rule that opens only
 phone → workstation:22), then the workstation's SSH server, in WSL, by key alone — a key kept in the
-phone's secure chip. The console of H0 reaches the phone through the phone's own SSH tunnel to the
-workstation's 127.0.0.1:7007, where `make glorfindel-host-tunnel` holds H0's (decision of Jonathan,
+phone's secure chip. The console of Imladris reaches the phone through the phone's own SSH tunnel to the
+workstation's 127.0.0.1:7007, where `make glorfindel-host-tunnel` holds Imladris's (decision of Jonathan,
 10/11): the same two barriers, then the console's token. What `check` reads, and nothing else:
 
   the tailnet     `tailscale ip -4`: one private address; `tailscale debug prefs`: Tailscale SSH off (unread: ✗; on,
@@ -267,7 +267,7 @@ def listener_lines(listeners: list[tuple[str, int]], private: set[str], ssh_port
         lines.append((FAIL, f"console : le port {console_port} est exposé sur "
                       + ", ".join(said[b] for b in bad) + " — 127.0.0.1 seul (make glorfindel-host-tunnel)"))
     elif console:
-        lines.append((OK, f"console : le port {console_port} n'écoute qu'en 127.0.0.1 — le tunnel du poste vers H0"))
+        lines.append((OK, f"console : le port {console_port} n'écoute qu'en 127.0.0.1 — le tunnel du poste vers Imladris"))
     else:
         lines.append((OK, f"console : le port {console_port} n'est ouvert nulle part"))
     return lines

@@ -67,7 +67,7 @@ _TTL_S = 300.0
 _MISS_REFRESH_S = 60.0
 UNREAD = object()      # a section of the topology Azure did not answer
 # What a listing that does not hold an id may mean: the watch reads only what its rights let it
-# list (on H0, `Reader` on the bench's group), and a listing over the subscription is filtered by
+# list (on Imladris, `Reader` on the bench's group), and a listing over the subscription is filtered by
 # them — never « gone » on that alone (review, AL1c).
 _GONE_OR_HIDDEN = "supprimé, ou hors des droits de la watch"
 # What a VM missing from `targets` may be: `targets` are the rule's (RulePoller._targets), not the

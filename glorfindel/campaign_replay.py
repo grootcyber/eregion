@@ -120,7 +120,7 @@ def replay_campaign(
     verdict document. Pure except for the optional replay.json write — detector and
     proposals are injected so this is unit-testable with zero Azure/disk dependency.
     """
-    # SEC18: ``runs_dir`` is the runs root — the campaign is Annatar's, or the watch's copy (H0).
+    # SEC18: ``runs_dir`` is the runs root — the campaign is Annatar's, or the watch's copy (Imladris).
     cdir = runs_layout.find_campaign(campaign_id, runs_dir)
     if cdir is None:
         raise FileNotFoundError(f"no campaign {campaign_id!r} under {runs_dir}")

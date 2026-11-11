@@ -43,7 +43,7 @@ beside the detected ones) and the age of the last proof (over the whole history)
 bound, eregion_core/exercise.py) is left out of every row, and said (``future``): a ``missed``
 dated 2076 would keep a row regressed for ever, a proof dated in the future would never age.
 
-**What a report can make it say** (the threat model, frontier 2): a run report reaches H0
+**What a report can make it say** (the threat model, frontier 2): a run report reaches Imladris
 through the exercise channel, written on Orodruin. A forged ``missed`` can make a row
 regressed — a false alarm, said in red, never a proof: a proof needs the watch's own record
 of the decision, which only Glorfindel writes. A forged ``detected`` counts in the 30 days'

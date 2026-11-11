@@ -1822,7 +1822,7 @@ def _recipes(text: str, *targets: str) -> str:
 
 
 def test_no_path_publishes_in_the_code():
-    """Publishing deploys H0: nothing in the release's code turns a draft into a release."""
+    """Publishing deploys Imladris: nothing in the release's code turns a draft into a release."""
     code = {n: (ROOT / "scripts" / n).read_text(encoding="utf-8") for n in SCRIPTS}
     assert publishes_gh(code["release.py"]) == []
     assert publishes_code(code["release.py"]) == []
@@ -2039,7 +2039,7 @@ def test_the_draft_is_on_the_board_and_pinged_then_both_go_when_published(repo, 
     assert ping["content"] == "<@42>" and ping["allowed_mentions"] == {"parse": [], "users": ["42"]}
     assert ping["embeds"][0]["title"] == line and ping["embeds"][0]["url"] == url
     board, state = _board(fake)
-    assert f"{line} — publier déploie H0" in board["description"] and f"[brouillon]({url})" in board["description"]
+    assert f"{line} — publier déploie Imladris" in board["description"] and f"[brouillon]({url})" in board["description"]
     ping_id = state["waiting"][0]["ping"]
     assert ping_id in fake.messages
 
@@ -2173,7 +2173,7 @@ def test_a_release_s_story_on_releases_the_draft_then_the_publication(repo, tmp_
     _published(tmp_path, monkeypatch, edit["notes"])
     cards = _releases_cards(releases)
     assert [c["title"] for c, _ in cards] == ["📦 v0.4.4 en brouillon — two commands", "🏷️ v0.4.4 publiée"]
-    assert cards[1][0]["description"] == "v0.4.4 — x\nle CD de H0 la déploie : voir #deploy"
+    assert cards[1][0]["description"] == "v0.4.4 — x\nle CD d'Imladris la déploie : voir #deploy"
     assert releases.webhook_posts("CI-SECRET-rel") == []                       # it left #ci
     ids = [m for m, v in releases.messages.items() if v["embeds"][0]["title"] in [c["title"] for c, _ in cards]]
     assert len(ids) == 2                                                        # never deleted

@@ -24,7 +24,7 @@ Usage:
     python scripts/llm_smoke.py --model ollama/command-r7b --runs 5
     python scripts/llm_smoke.py --model anthropic/claude-sonnet-5-5 --kinds paired --runs 5
     make llm-smoke MODEL=ollama/llama3.1
-    make llm-compare MODELS=<H0's model> RUNS=3 ATTEST=1 [BASE=<tag>]   # H3: two passes, one
+    make llm-compare MODELS=<Imladris's model> RUNS=3 ATTEST=1 [BASE=<tag>]   # H3: two passes, one
         # attestation (requirements/harness.json) — the reference lock, then this checkout's
 
 For Ollama: `ollama serve` + `ollama pull llama3.1` (a TOOL-CAPABLE model is required —
@@ -464,9 +464,9 @@ def _run_one(model: str, runs: int, kinds: set[str] | None = None) -> dict:
 
 
 # ── The attestation (H1, then H3) ─────────────────────────────────────────────────
-# H0's CD deploys a new lock only with the harness's attestation. Since H3 (#324) it holds two
+# Imladris's CD deploys a new lock only with the harness's attestation. Since H3 (#324) it holds two
 # passes: the candidate (the lock of this checkout) and the reference (the lock in service on
-# H0, installed apart: scripts/harness_attest.py), each case's draws in each. The CD judges
+# Imladris, installed apart: scripts/harness_attest.py), each case's draws in each. The CD judges
 # case by case against what runs, not against a perfect score that the model's own sampling
 # cannot promise (the same lock: 51/51, then 50/51, 29/10). A draw keeps whether it was right,
 # the action and the confidence: nothing of the logs, nothing secret.
@@ -500,7 +500,7 @@ def harness_pass(results: list[dict], runs: int, lock: Path, ref: str = "",
 
 
 def attestation(candidate: dict, reference: dict) -> dict:
-    """What the CD of H0 checks before deploying a new lock (H1, H3): both passes. Written
+    """What the CD of Imladris checks before deploying a new lock (H1, H3): both passes. Written
     whatever the result: the CD refuses a regression, and says what varies."""
     from datetime import date
     return {"schema": ATTESTATION_SCHEMA, "lock": LOCK_REL, "date": date.today().isoformat(),
@@ -544,7 +544,7 @@ def main() -> int:
     ap.add_argument("--attest", default="",
                     help="write the harness's attestation to this file (H1, H3): "
                          "requirements/harness.json, committed in the lock's pull request — the "
-                         "CD of H0 deploys a new lock only with it. Needs --reference: "
+                         "CD of Imladris deploys a new lock only with it. Needs --reference: "
                          "make llm-compare ATTEST=1 runs both passes (scripts/harness_attest.py).")
     ap.add_argument("--reference", default="",
                     help="the reference pass (--pass-out of the harness on the lock in service), "
@@ -567,7 +567,7 @@ def main() -> int:
         print("--attest needs --reference (the pass on the lock in service): make llm-compare ATTEST=1")
         return 2
     if (args.attest or args.pass_out) and (kinds or runs < 3):
-        print("an attestation's pass runs every case, 3 runs at least (H0's CD refuses less): "
+        print("an attestation's pass runs every case, 3 runs at least (Imladris's CD refuses less): "
               "no --kinds, --runs 3 — nothing run")
         return 2
     if args.reference:

@@ -17,7 +17,7 @@ writes `rule_status.json` and dispatches), no model, no action, nothing written.
 is bounded (`query_timeout_s`, in a thread of its own), and so is the whole (`total_s`): past
 it, the rules left are « not run », said as timeouts. Never a retry, never a loop.
 
-The JSON (`--json`) is what H0's CD reads before and after a switch (`infra/glorfindel-host/
+The JSON (`--json`) is what Imladris's CD reads before and after a switch (`infra/glorfindel-host/
 cd/eregion_cd.py`): a rule in a lasting error after the switch that was ok before is a
 rollback. Its errors are **reduced** — a kind, a code (`SEM0100`, `429`), a short line, no
 workspace, subscription, resource path, host name, address. The full detail goes to stderr

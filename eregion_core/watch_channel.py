@@ -1,4 +1,4 @@
-"""The return channel (#159): what the hosted watch (Glorfindel, H0) tells a run launched
+"""The return channel (#159): what the hosted watch (Glorfindel, Imladris) tells a run launched
 from Orodruin — its heartbeat, and its detections of the VMs that run exercises.
 
 The exercise channel (eregion_core/exercise_channel.py) the other way round: a blob
@@ -69,7 +69,7 @@ HEARTBEAT_EVERY_S = 60.0
 # A heartbeat older than this is no watch — the channel's and the local file's alike
 # (eregion_core/watch_gate.py, V1).
 FRESH_S = 90.0
-# A heartbeat dated a little after now is the clocks of two hosts (H0, Orodruin) drifting
+# A heartbeat dated a little after now is the clocks of two hosts (Imladris, Orodruin) drifting
 # apart; one dated further ahead is never fresh — else it would stay fresh for ever.
 CLOCK_SKEW_S = 10.0
 # A detection waits for its window as long as a window could still cover it.
@@ -440,7 +440,7 @@ def recent(at: datetime | None, now: datetime | None = None) -> bool:
 
 
 NOT_COVERING = ("the heartbeat does not say which detections it covers: a watch older than this "
-                "injector (update Glorfindel — H0 by its CD, a workstation's by make glorfindel-restart)")
+                "injector (update Glorfindel — Imladris by its CD, a workstation's by make glorfindel-restart)")
 
 
 def uncovered(heartbeat: dict, run_id: str, vouched: list[dict]) -> tuple[str, list[str], int]:

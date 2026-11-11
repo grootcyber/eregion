@@ -92,7 +92,7 @@ class Engine:
         # V1 (#214): a development run, without a live Glorfindel watch — its report says so
         # and its detection is not measured (eregion_core/watch_gate.py).
         self.without_glorfindel = without_glorfindel
-        # `annatar run` alone (#193): the report goes to H0 with the window. A campaign
+        # `annatar run` alone (#193): the report goes to Imladris with the window. A campaign
         # leaves it False — it carries its runs' reports itself, at its end (annatar/cli.py).
         self.publish_report = publish_report
         self.parser = ScenarioParser()
@@ -266,7 +266,7 @@ class Engine:
                               refused=True)
         if self.request and destructive:
             # DG-b: the operator typed the target's name on their machine; compared here to the
-            # name Azure gives the VM — a request forged on H0 never runs a destructive technique.
+            # name Azure gives the VM — a request forged on Imladris never runs a destructive technique.
             name = executor.get_vm_name()
             if self.typed_name != name:
                 why = (f"the name typed ({self.typed_name or 'none'}) is not the target's "
@@ -420,7 +420,7 @@ class Engine:
             self._execute_action(executor, step)
 
         checks["attack"] = "PASS"
-        # T0 in the run's report: the campaign report on H0 bounds the run's decision with
+        # T0 in the run's report: the campaign report on Imladris bounds the run's decision with
         # it, the debug file of the run being on another host (#167).
         metrics["attack_time"] = T0
 
@@ -586,7 +586,7 @@ class Engine:
                     },
                 )
                 attack_started = True
-                metrics["attack_time"] = T0  # the campaign report on H0 reads it (#167)
+                metrics["attack_time"] = T0  # the campaign report on Imladris reads it (#167)
                 console.print(
                     "[cyan]->[/cyan] Signal 'attack_started' emitted"
                     " — Glorfindel will detect via detection_rules.yaml."

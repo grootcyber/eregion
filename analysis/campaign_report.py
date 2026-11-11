@@ -6,7 +6,7 @@
 What a campaign did is read from its files, never from a model: the manifest (techniques,
 run ids, detected / missed, latency) and, per run, Annatar's report and Glorfindel's
 decision file (`runs/glorfindel/<run_id>_debug.jsonl`). A campaign launched from Orodruin has no such
-file where its report is written (H0, analysis/hosted_report.py): the decision is then the
+file where its report is written (Imladris, analysis/hosted_report.py): the decision is then the
 first of the watch's `watch-*_debug.jsonl` that the rule of #157 gives the run — same
 technique, same VM without case, seen between its `attack_time` and the end of its exercise
 window, grace included (#167). An executed run, detected or of unknown detection, whose
@@ -26,12 +26,12 @@ written by the model. Run contents (Glorfindel's reasoning, signal text) are dat
 instruction planted in a run can make the model write a wrong claim, never get it into the
 report. The model writes no rule and acts on nothing.
 
-A campaign that came through the exercise channel (its ``.pulled`` marker, H0) was written
+A campaign that came through the exercise channel (its ``.pulled`` marker, Imladris) was written
 on another host, by whoever can write in the channel (H-1): its scenarios and its runs'
 reports are checked against their shape (analysis/campaign_schema.py), and an executed run
 is kept only if its window is known and believed and names its VM, and that VM is enrolled
 (eregion_core/exercise.py) — else it is left out of the facts, and the report says why. The
-report says which facts came through the channel and which H0 saw itself.
+report says which facts came through the channel and which Imladris saw itself.
 
 What changed since the previous campaign (D-2, #184) is computed by the code, never found by
 similarity: the previous campaign is the latest ``done`` campaign of the index that started
@@ -199,7 +199,7 @@ def _decision_of(debug_path: Path) -> dict:
 def watch_dir(runs_dir: Path) -> Path:
     """Where the watch's cycles are for a campaign's runs directory: the watch's own directory
     beside it (SEC18: ``runs/annatar`` → ``runs/glorfindel``), or that directory itself when it is
-    the watch's (a campaign pulled on H0)."""
+    the watch's (a campaign pulled on Imladris)."""
     return runs_layout.beside(runs_dir, runs_layout.GLORFINDEL)
 
 
@@ -208,7 +208,7 @@ def windows_dir(runs_dir: Path) -> Path:
     ``<runs_dir>/exercises``: one computation with the injector's and the watch's,
     ``eregion_core.exercise.exercises_dir``, given the report's runs directory.
 
-    SEC18: the campaign's writer's directory (``runs/glorfindel`` on H0, where the watch pulls;
+    SEC18: the campaign's writer's directory (``runs/glorfindel`` on Imladris, where the watch pulls;
     ``runs/annatar`` here); ``window_paths`` then looks in the other writers' beside it. A watch on another runs
     directory reads its windows elsewhere; the report then pulls them again into its own
     (analysis/hosted_report.py ``tick``) — two copies of the same windows, never two
@@ -419,7 +419,7 @@ class CampaignInfo:
     """What the index keeps of a campaign beside its runs (D-2): its state and when it
     started — what the choice of the previous campaign reads. ``start_refused``: the start
     its manifest gave was not believed (D2b, ``start_refusal``), and why — said in the
-    report; ``started`` is then what H0 saw itself."""
+    report; ``started`` is then what Imladris saw itself."""
     campaign_id: str
     state: str = ""
     started: float | None = None       # seconds since the epoch; None: unknown
@@ -470,14 +470,14 @@ def start_refusal(started: float | None, first_window: float | None,
                   pulled: float | None) -> str:
     """Why the start a campaign that came through the channel gives in its manifest is not
     believed — "" when it is, or unknown (D2b). The manifest is written on Orodruin, by
-    whoever can write in the channel (H-1); H0 bounds it by what it saw itself: the campaign
-    did not start after H0 pulled it (``pulled``, its ``.pulled`` marker), nor after the
+    whoever can write in the channel (H-1); Imladris bounds it by what it saw itself: the campaign
+    did not start after Imladris pulled it (``pulled``, its ``.pulled`` marker), nor after the
     first window of its runs that H-1 believes (``first_window``), nor more than
     START_LEAD_S before it — each to FUTURE_SKEW_S, the clocks of two hosts."""
     if started is None:
         return ""
     if pulled is not None and started > pulled + FUTURE_SKEW_S:
-        return f"il est postérieur au tirage de la campagne par H0 ({_iso(pulled)})"
+        return f"il est postérieur au tirage de la campagne par Imladris ({_iso(pulled)})"
     if first_window is not None and started > first_window + FUTURE_SKEW_S:
         return f"il est postérieur à la première fenêtre d'exercice de ses runs ({_iso(first_window)})"
     if first_window is not None and started < first_window - START_LEAD_S - FUTURE_SKEW_S:
@@ -512,7 +512,7 @@ def campaign_info(campaign_dir: Path, runs_dir: Path | None = None) -> CampaignI
     """The campaign's id and state, from its manifest, and when it started: the earliest
     ``started_at`` of its scenarios, else its ``created_at``, else its id when it is a date
     (``annatar/campaign/manifest.py``: ``YYYYMMDDTHHMMSSZ``) — else unknown. A campaign that
-    came through the channel has that start checked against what H0 saw (D2b,
+    came through the channel has that start checked against what Imladris saw (D2b,
     ``start_refusal``): refused, it is the start of the first window of its runs H-1
     believes — unknown without one — and ``start_refused`` says why."""
     campaign_dir = Path(campaign_dir)
@@ -578,7 +578,7 @@ INDEX_ENV = "EREGION_ANALYSIS_INDEX"
 
 
 def index_path() -> Path:
-    """The index: ``EREGION_ANALYSIS_INDEX``, else ``~/.eregion/analysis/chroma`` — on H0,
+    """The index: ``EREGION_ANALYSIS_INDEX``, else ``~/.eregion/analysis/chroma`` — on Imladris,
     on the VM's disk (mounted into the watch's container, docker-compose.yml)."""
     return Path(os.environ.get(INDEX_ENV) or _INDEX_PATH)
 
@@ -1109,7 +1109,7 @@ def _facts_message(facts: list[RunFact], prior: list[RunFact],
 
 
 # The call to the analysis model is bounded (#167, review 6): LiteLLM's own default is 6000 s
-# an attempt (measured by G2) — on H0 a hung provider held the `campaign-report` thread, and
+# an attempt (measured by G2) — on Imladris a hung provider held the `campaign-report` thread, and
 # every report after it, for hours without a word. Bounded, it raises: a failed attempt
 # (analysis/hosted_report.py), never the watch. Its own variable, not GLORFINDEL_LLM_TIMEOUT_S:
 # the report also runs where Glorfindel's package is not (the Annatar image), and writes up to
@@ -1179,11 +1179,11 @@ def _latency(seconds: float | None) -> str:
 # H-1: what a campaign that came through the channel rests on — said in its report.
 CHANNEL_NOTE = (
     "*Venu par le canal d'exercice, écrit sur l'hôte des injecteurs (Orodruin) et non vu par "
-    "H0 : la liste des runs, leur statut, leur détection et leur latence (le manifeste), "
+    "Imladris : la liste des runs, leur statut, leur détection et leur latence (le manifeste), "
     "l'heure de chaque attaque (le rapport de chaque run) et les fenêtres d'exercice. Vu par "
-    "H0 : les décisions de Glorfindel, lues dans les fichiers de la watch, et l'inscription "
+    "Imladris : les décisions de Glorfindel, lues dans les fichiers de la watch, et l'inscription "
     "de chaque VM, lue dans ses tags. Un run dont la fenêtre est inconnue ou refusée, ou dont "
-    "la VM n'est pas inscrite, est écarté des faits. Confrontés par H0 pour la section « Réponse » : "
+    "la VM n'est pas inscrite, est écarté des faits. Confrontés par Imladris pour la section « Réponse » : "
     "l'heure de chaque attaque, à sa fenêtre et à ce que la watch a vu de la VM ; la liste des "
     "runs, à ce que la watch a vu (fenêtres, cycles et cartes rattachés à un run).*")
 
@@ -1250,7 +1250,7 @@ def build(campaign_dir: Path, model: str | None = None, llm=None, index_path: Pa
         _say(f"{Path(campaign_dir).name}: {message}")
 
     info = campaign_info(campaign_dir)
-    if info.start_refused:   # a manifest's date H0 does not believe (D2b): said, like a scenario
+    if info.start_refused:   # a manifest's date Imladris does not believe (D2b): said, like a scenario
         warn(info.start_refused)
     facts = collect_facts(campaign_dir, warn=warn)
     for f in facts:          # what orders this campaign's runs among those a trend cites (D2b)
@@ -1280,7 +1280,7 @@ def check_enrollment(campaign_dir: Path) -> None:
     """A campaign that came through the channel: its runs' VMs are checked enrolled, as by
     the watch (H-1) — their tags read from Azure, by the host's identity. Compose's empty
     AZURE_CLIENT_* are dropped first, as the watch and the console drop them (#205): launched
-    by docker exec in H0's container, the report, the measure, the triage or the index would
+    by docker exec in Imladris's container, the report, the measure, the triage or the index would
     otherwise never reach the managed identity, and leave every run out (BL1c)."""
     if from_channel(campaign_dir):
         from eregion_core import exercise

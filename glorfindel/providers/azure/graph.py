@@ -6,7 +6,7 @@ Read only by construction: this module has a GET and nothing else — no POST, P
 is written here, and tests/unit/test_identity_plan.py keeps it so. The watch's identity reads
 Graph with `Application.Read.All`, `DelegatedPermissionGrant.Read.All`,
 `RoleManagement.Read.Directory` and `User.Read.All` (docs/operations.md, « Identités Azure »; the
-exact rights are hypothesis 10, to measure). Without them — H0 today —, every read is
+exact rights are hypothesis 10, to measure). Without them — Imladris today —, every read is
 `Unreadable`, and says why: the plan keeps what the log gives, each parameter not read marked
 so, and a check is never « held ».
 
@@ -65,7 +65,7 @@ class NoGraph:
 
 class GraphReader:
     """GET on Microsoft Graph, with the process's identity (DefaultAzureCredential: the managed
-    identity on H0, a service principal or `az login` elsewhere)."""
+    identity on Imladris, a service principal or `az login` elsewhere)."""
 
     def __init__(self, credential=None, session=None, timeout=TIMEOUT_S):
         self._credential = credential

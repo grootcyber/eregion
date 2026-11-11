@@ -30,7 +30,7 @@ Un minuteur systemd d'Orodruin le lance.
 - un fichier d'armement, écrit par Jonathan ;
 - l'horloge.
 
-**Ce qui vient d'ailleurs ne peut que refuser.** Le battement de la watch (V1), qui vient de H0 par
+**Ce qui vient d'ailleurs ne peut que refuser.** Le battement de la watch (V1), qui vient d'Imladris (anciennement H0) par
 le canal ; le permis d'armement, dans le canal, que l'opérateur écrit en armant et que le kill
 retire ; les tags et l'état des cibles, lus dans Azure. Aucun ne peut lancer une occurrence, ni en
 changer le contenu ou la cible.
@@ -48,7 +48,7 @@ en ajoute :
   joue, et un permis absent ou expiré ferme au lieu d'ouvrir.
 
 **Qui dit quoi :**
-- **H0** juge chaque occurrence et alerte, y compris quand rien n'est arrivé : c'est l'observateur qui
+- **Imladris** juge chaque occurrence et alerte, y compris quand rien n'est arrivé : c'est l'observateur qui
   tient l'alarme d'absence, jamais l'acteur.
 - **La session « Banc »** relit le workspace en témoin indépendant.
 - **VP1** lit ce que le drill attend, pour proposer un verdict que Jonathan confirme.
@@ -64,8 +64,8 @@ Jonathan ── arme (une fois, puis à chaque changement du drill) ──▶ Or
                                                                      ▼
             gondolin démarrée s'il le faut, puis Run Command (atomic T1136.001), journalisés avant
                                                                      │
-   gondolin ── Syslog ──▶ workspace ──▶ H0 : RulePoller → carte d'exercice → VP1 propose → Jonathan
-                              │                     ▲   (VP1 : expectations/banc-hebdo.yaml, sur H0)
+   gondolin ── Syslog ──▶ workspace ──▶ Imladris : RulePoller → carte d'exercice → VP1 propose → Jonathan
+                              │                     ▲   (VP1 : expectations/banc-hebdo.yaml, sur Imladris)
                               │   canal : fenêtres, rapports, statuts, orodruin/drill.json
                               ▼
                    session « Banc » (BRO1, lecture seule) : la règle rejouée, l'indice brut, le Heartbeat
@@ -171,7 +171,7 @@ lecteur exact :
 
 ```yaml
 # What the watch should see when the weekly drill plays (DRL1, docs/design/drill-banc.md).
-# Read on H0 (VP1) and by the Banc session. Never copied into the injectors' image: Orodruin
+# Read on Imladris (VP1) and by the Banc session. Never copied into the injectors' image: Orodruin
 # cannot read it.
 drill: banc-hebdo
 wires:
@@ -261,7 +261,7 @@ secret. Les conteneurs le montent en lecture seule, et ne peuvent donc pas le r�
   - `AccuracySec=1min`.
 - `eregion-drill.service` : un `docker run` durci comme les autres (ORO_HARDEN) :
   - `docker run --rm --pull never` : l'image est celle qu'`orodruin-push` a chargée et vérifiée
-    (`eregion-annatar:orodruin`), jamais tirée ; absente, le service échoue, et H0 le dit (`not_run`) ;
+    (`eregion-annatar:orodruin`), jamais tirée ; absente, le service échoue, et Imladris le dit (`not_run`) ;
   - un nom fixe (`--name eregion-drill`) et `--init` (§3.1, l'arrêt du service) ;
   - `--env-file orodruin.env`, comme `ORO_RUN` : le contrat se lit dans la même configuration que
     pour une demande ;
@@ -301,14 +301,14 @@ commande, **mais toujours sans rien tirer ni écouter**.
 
 | Lu | D'où | Ce qu'il peut faire |
 |---|---|---|
-| le battement de la watch (V1) | H0, par le canal | refuser (`watch`) ; jamais lancer, ni rien changer de ce qui joue |
+| le battement de la watch (V1) | Imladris, par le canal | refuser (`watch`) ; jamais lancer, ni rien changer de ce qui joue |
 | le permis d'armement (§2.4) | le canal, écrit par l'opérateur en armant, retiré par le kill et le désarmement | refuser (`no_permit`, `permit_mismatch`) : sa présence est nécessaire, jamais suffisante |
 | le contrat | les droits effectifs de l'identité d'Orodruin, lus dans Azure | refuser (`passive`) |
 | les cibles : inscription, zone, état, isolation | Azure, par l'identité d'Orodruin | refuser (`not_placed`, `not_bench`), sauter un fil (`isolated`, `not_ready`) ; démarrer une VM arrêtée **déjà nommée à l'armement** (§3.1) |
 
-Un H0 compromis, ou qui écrit le canal, peut donc empêcher une occurrence, jamais en lancer une, ni
+Un Imladris compromis, ou qui écrit le canal, peut donc empêcher une occurrence, jamais en lancer une, ni
 en changer le contenu ou la cible. **Écartés** :
-- un ordonnancement sur H0 : H0 commanderait une attaque ;
+- un ordonnancement sur Imladris : Imladris commanderait une attaque ;
 - un workflow planifié de GitHub : un chemin d'écriture de la CI vers Azure ;
 - un `cron` dans le conteneur : un processus de plus qui tourne en continu, et l'armement relu de
   l'intérieur.
@@ -397,12 +397,12 @@ absence ouvrait.
 
 **La rétention ferme au lieu d'ouvrir.** Une occurrence réécrit le permis chaque semaine ; la
 rétention le supprime 9 jours après sa dernière écriture. Une seule occurrence manquée (Orodruin
-éteint à l'heure) suffit donc à le laisser expirer : la semaine suivante, `no_permit`, et H0 dit
+éteint à l'heure) suffit donc à le laisser expirer : la semaine suivante, `no_permit`, et Imladris dit
 « réarmement attendu » (§4.2). C'est voulu : après deux semaines sans drill, un geste de Jonathan
 le relance. La rétention ne change pas.
 
-**Ce que le permis donne à H0.** H0 tire le canal (`pull_runs`) et garde ses copies : `pull_runs`
-ne supprime rien. H0 juge donc le permis **par la liste du canal à son dernier tirage**, jamais par
+**Ce que le permis donne à Imladris.** Imladris tire le canal (`pull_runs`) et garde ses copies : `pull_runs`
+ne supprime rien. Imladris juge donc le permis **par la liste du canal à son dernier tirage**, jamais par
 sa copie locale. Le permis lui dit l'armement (le drill, son empreinte, l'heure) tel que
 l'opérateur l'a écrit, sans croire `drill.json`, qu'Orodruin écrit. Orodruin réécrit le permis,
 mais à l'identique : un Orodruin compromis pourrait le changer, et il n'en a pas besoin pour
@@ -432,7 +432,7 @@ le contrat, V1 et le journal.
    la demande fabriquée (§2.3, 9) : ses refus, désormais, sont ceux d'une demande
 2  contrat : orodruin.check() armé, sinon passive (ses codes)      ┐
 3  V1 : battement signé de la watch, frais, du bon périmètre ;      │ Runner.judge, le premier
-       relu jusqu'à 10 min (un déploiement de H0 en cours),         │ jugement du runner
+       relu jusqu'à 10 min (un déploiement d'Imladris en cours),         │ jugement du runner
        puis refus watch                                             │
 4  cibles relues : inscription, zone bench (§2.3, 10) ;             │
        plafond : celui du drill ≤ celui déclaré                     ┘
@@ -484,7 +484,7 @@ demandait 5 appels le 20/10 : 6 laissent le démarrage de la VM.
 
 | Étape | Au plus | D'où vient le chiffre |
 |---|---|---|
-| V1 relu | 10 min | un déploiement de H0 (CD) |
+| V1 relu | 10 min | un déploiement d'Imladris (CD) |
 | démarrage de gondolin, Heartbeat frais | 10 min | à mesurer à froid (§6.2) |
 | le runner (`max_run_s`) | 30 min (1 800 s) | ci-dessous |
 | verrou, lectures, statuts | quelques minutes | — |
@@ -563,7 +563,7 @@ l'identité, annule les pannes, désalloue la VM et ferme les fenêtres. Pour le
 - **il ne touche pas au démarrage planifié** (§5.1) : la semaine suivante, la Logic App rallumerait
   l'Orodruin tué ;
 - **il retire à Orodruin l'écriture du canal** (la révocation) : `drill.json` resterait `armed`, et
-  H0 lèverait `not_run` à tort.
+  Imladris lèverait `not_run` à tort.
 
 DRL1a ajoute au kill trois pas, par l'identité de l'opérateur. L'ordre devient :
 1. `revoke` : l'identité d'Orodruin perd ses droits (comme aujourd'hui, en premier) ;
@@ -575,7 +575,7 @@ DRL1a ajoute au kill trois pas, par l'identité de l'opérateur. L'ordre devient
 
 Un pas en échec est une erreur du kill (sortie 1), comme les autres, et ne bloque pas les suivants.
 
-H0 lit aussi la liste du canal : sans permis, il n'arme jamais l'alarme d'absence, même si le
+Imladris lit aussi la liste du canal : sans permis, il n'arme jamais l'alarme d'absence, même si le
 cinquième pas a échoué. Pas de `not_run` après un kill.
 
 Le minuteur, lui, reste sur le disque d'Orodruin. Après un `make orodruin-lock` (l'apply du module,
@@ -588,22 +588,22 @@ scheduled start disabled, permit removed; refused until re-armed ».
 
 | Cas | Ce qui se passe | Qui le dit |
 |---|---|---|
-| **H0 en panne** (watch morte, VM arrêtée) | V1 refuse avant tout appel au cloud (`watch`), après 10 min de relecture ; statut publié dans le canal | personne sur l'instant : H0 est celui qui alerte. Au retour, H0 tire le statut et le dit ; la session « Banc » ne voit aucun indice. À la troisième semaine sans preuve, la ligne passe `aging`, puis `stale` à 30 jours : c'est l'indicateur lui-même |
-| **H0 en déploiement** (CD) à l'heure | battement manquant moins de 90 s : la relecture de 10 min le couvre | rien si ça passe |
+| **Imladris en panne** (watch morte, VM arrêtée) | V1 refuse avant tout appel au cloud (`watch`), après 10 min de relecture ; statut publié dans le canal | personne sur l'instant : Imladris est celui qui alerte. Au retour, Imladris tire le statut et le dit ; la session « Banc » ne voit aucun indice. À la troisième semaine sans preuve, la ligne passe `aging`, puis `stale` à 30 jours : c'est l'indicateur lui-même |
+| **Imladris en déploiement** (CD) à l'heure | battement manquant moins de 90 s : la relecture de 10 min le couvre | rien si ça passe |
 | **Le banc éteint** (gondolin désallouée, le cas ordinaire : elle s'éteint à 23:00 UTC) | démarrée par le drill (étape 6), Heartbeat attendu avant la technique ; elle s'éteindra à 23:00 UTC par son extinction quotidienne. Le drill ne l'arrête pas : arrêter n'est pas au contrat d'Orodruin, et ne le sera pas pour ça | le statut dit le démarrage |
-| **Le banc détruit**, gondolin renommée ou désinscrite | `not_placed` : refus entier, rien ne part | H0 : alerte |
-| **La télémétrie cassée** (agent, DCR, workspace) | la technique joue ; la détection ne vient pas : `missed` sur un battement de fin d'attente signé, sinon `unknown` | H0 : alerte ; la session « Banc » sépare les causes : l'indice brut arrivé ou non, la règle qui le voit ou non (§4.3) |
-| **Orodruin éteint à l'heure** | le minuteur ne part pas, et rien n'est rattrapé (`Persistent=false`) | H0 : « not run », par l'alarme d'absence (§4.2) |
-| **Orodruin rallumé** (OI3) | `make orodruin-start`, depuis le poste, le met à jour sur la dernière release. Si la release change le drill : `drill_changed` jusqu'au réarmement. Un démarrage planifié (§5) ne met **pas** à jour : la mise à jour part du poste, et la sortie d'Orodruin est fermée | H0 compare le commit de l'image (dans `drill.json`) à sa propre version : « Orodruin behind ». En retard d'un format signé (SEC21), les runs sont `unknown`, dits |
-| **Orodruin reconstruit** (`orodruin-down`, puis `-up`) | le minuteur, l'armement et le registre étaient sur son disque : perdus. Le canal est détruit avec le module, `drill.json` avec lui. Rien ne joue, et rien ne le dit sur Orodruin | H0 garde sa dernière copie de `drill.json` : « Orodruin silent » quand elle a plus de 8 jours. DRL1a fait dire à `orodruin-down` : « drill armed: lost, re-arm after up » |
-| **Le drill précédent pas fini**, ou une demande, une campagne, un run à la main en cours | le verrou est pris : `busy`, avec ce qui le tient ; jamais attendu, jamais rattrapé. Le registre n'est pas écrit : il se lit et s'écrit sous le verrou | H0 : alerte (sans mention si une demande de Jonathan le tenait) |
-| **gondolin tenue par Glorfindel** (une isolation de la semaine passée, pas levée) | lue avant tout démarrage : sautée tout de suite (`isolated`), rien n'est démarré. Le drill ne lève jamais une isolation | H0 : alerte « target held since … » |
-| **Le contrat passif** (droit changé, sortie rouverte, jeton Graph hors liste) | `passive` et ses codes | H0 : alerte, avec mention |
-| **Un arrêt d'urgence** depuis l'armement | le démarrage planifié désactivé, le permis supprimé ; `drill.json` à `disarmed (killed)`, écrit par le kill ; une occurrence lancée malgré tout, même des semaines plus tard : `no_permit` | H0 : « disarmed by kill », sans `not_run` |
-| **Le permis expiré** (une occurrence manquée, plus de 9 jours sans réécriture) | `no_permit` : rien ne joue jusqu'au réarmement | H0 : « réarmement attendu », sans `not_run` |
-| **L'horloge d'Orodruin** dérive | `off_schedule` au-delà de 30 min ; le registre borne à une fois par 6 jours quoi qu'il arrive | H0 : alerte |
-| **Le service dépasse `RuntimeMaxSec`** | arrêté (§3.1) : SIGTERM relayé au fil, la fenêtre fermée, l'occurrence `stopped` ; SIGKILL 90 s après | H0 : alerte |
-| **Une release change l'heure du drill** | l'empreinte change : `drill_changed` jusqu'au réarmement ; la Logic App garde son heure jusqu'à l'apply (§5.1) | H0 : « réarmement attendu », sans `not_run` (§4.2) |
+| **Le banc détruit**, gondolin renommée ou désinscrite | `not_placed` : refus entier, rien ne part | Imladris : alerte |
+| **La télémétrie cassée** (agent, DCR, workspace) | la technique joue ; la détection ne vient pas : `missed` sur un battement de fin d'attente signé, sinon `unknown` | Imladris : alerte ; la session « Banc » sépare les causes : l'indice brut arrivé ou non, la règle qui le voit ou non (§4.3) |
+| **Orodruin éteint à l'heure** | le minuteur ne part pas, et rien n'est rattrapé (`Persistent=false`) | Imladris : « not run », par l'alarme d'absence (§4.2) |
+| **Orodruin rallumé** (OI3) | `make orodruin-start`, depuis le poste, le met à jour sur la dernière release. Si la release change le drill : `drill_changed` jusqu'au réarmement. Un démarrage planifié (§5) ne met **pas** à jour : la mise à jour part du poste, et la sortie d'Orodruin est fermée | Imladris compare le commit de l'image (dans `drill.json`) à sa propre version : « Orodruin behind ». En retard d'un format signé (SEC21), les runs sont `unknown`, dits |
+| **Orodruin reconstruit** (`orodruin-down`, puis `-up`) | le minuteur, l'armement et le registre étaient sur son disque : perdus. Le canal est détruit avec le module, `drill.json` avec lui. Rien ne joue, et rien ne le dit sur Orodruin | Imladris garde sa dernière copie de `drill.json` : « Orodruin silent » quand elle a plus de 8 jours. DRL1a fait dire à `orodruin-down` : « drill armed: lost, re-arm after up » |
+| **Le drill précédent pas fini**, ou une demande, une campagne, un run à la main en cours | le verrou est pris : `busy`, avec ce qui le tient ; jamais attendu, jamais rattrapé. Le registre n'est pas écrit : il se lit et s'écrit sous le verrou | Imladris : alerte (sans mention si une demande de Jonathan le tenait) |
+| **gondolin tenue par Glorfindel** (une isolation de la semaine passée, pas levée) | lue avant tout démarrage : sautée tout de suite (`isolated`), rien n'est démarré. Le drill ne lève jamais une isolation | Imladris : alerte « target held since … » |
+| **Le contrat passif** (droit changé, sortie rouverte, jeton Graph hors liste) | `passive` et ses codes | Imladris : alerte, avec mention |
+| **Un arrêt d'urgence** depuis l'armement | le démarrage planifié désactivé, le permis supprimé ; `drill.json` à `disarmed (killed)`, écrit par le kill ; une occurrence lancée malgré tout, même des semaines plus tard : `no_permit` | Imladris : « disarmed by kill », sans `not_run` |
+| **Le permis expiré** (une occurrence manquée, plus de 9 jours sans réécriture) | `no_permit` : rien ne joue jusqu'au réarmement | Imladris : « réarmement attendu », sans `not_run` |
+| **L'horloge d'Orodruin** dérive | `off_schedule` au-delà de 30 min ; le registre borne à une fois par 6 jours quoi qu'il arrive | Imladris : alerte |
+| **Le service dépasse `RuntimeMaxSec`** | arrêté (§3.1) : SIGTERM relayé au fil, la fenêtre fermée, l'occurrence `stopped` ; SIGKILL 90 s après | Imladris : alerte |
+| **Une release change l'heure du drill** | l'empreinte change : `drill_changed` jusqu'au réarmement ; la Logic App garde son heure jusqu'à l'apply (§5.1) | Imladris : « réarmement attendu », sans `not_run` (§4.2) |
 
 ---
 
@@ -620,7 +620,7 @@ ce qui existe déjà :
 Il y ajoute deux choses, sans identifiant ni cible, comme le statut des demandes :
 - **un champ `drill`** dans le statut de la demande : nom, empreinte, occurrence prévue (l'heure du
   `schedule`). Le lecteur du statut est exact (`exercise_request.STATUS_FIELDS`) : le champ y entre,
-  optionnel, dans la même release. Un H0 plus ancien qu'Orodruin refuse ce statut, et l'occurrence
+  optionnel, dans la même release. Un Imladris plus ancien qu'Orodruin refuse ce statut, et l'occurrence
   est `unknown`, dite. Les états du statut (`exercise_request.STATES`) ne changent pas ;
 - **`orodruin/drill.json`**, le pouls du drill : `armed` ou `disarmed` (et pourquoi : `killed`,
   `drill_changed`), le nom, l'empreinte, la prochaine occurrence, la dernière (son heure, son état,
@@ -635,7 +635,7 @@ Il y ajoute deux choses, sans identifiant ni cible, comme le statut des demandes
   `skipped`.
 - `stopped` ne vit que dans `drill.json` : la demande, elle, finit `finished`, son fil `failed`.
 
-H0 les tire, comme aujourd'hui (`pull_runs`, `runs/orodruin/`), chacun relu contre sa forme, et lit
+Imladris les tire, comme aujourd'hui (`pull_runs`, `runs/orodruin/`), chacun relu contre sa forme, et lit
 la liste du canal pour le permis (§2.4). Le lot ajoute un lecteur exact pour `drill.json` et pour le
 permis.
 
@@ -646,7 +646,7 @@ sans identifiant affiché, dont le JSON (`runs/bench/<run_id>.json`) est prêt p
 
 ### 4.2 Le verdict d'une occurrence, et les alertes
 
-**H0 juge chaque occurrence**, par le code, jamais par le modèle. Il croise trois choses :
+**Imladris juge chaque occurrence**, par le code, jamais par le modèle. Il croise trois choses :
 - l'heure prévue, tirée de **sa propre copie** du drill (le dépôt, dans son image) ;
 - `drill.json`, et le permis, présent ou non dans la liste du canal ;
 - le statut de la demande, et le rapport de run.
@@ -660,20 +660,20 @@ sans identifiant affiché, dont le JSON (`runs/bench/<run_id>.json`) est prêt p
 | `skipped` | le fil sauté : `isolated`, `not_ready` | oui |
 | `stopped` | le service arrêté à `RuntimeMaxSec` | oui |
 | `not_run` | le drill armé (ci-dessous), et aucun statut pour l'occurrence 2 h après son heure ; ou `drill.json` vieux de plus de 8 jours (« Orodruin silent ») | **oui, avec mention** |
-| `rearm_expected` | `drill.json` ou le permis disent une empreinte qui n'est pas celle de la copie de H0 (une release a changé le drill, son heure peut-être) ; ou `drill.json` dit `armed` sans permis dans le canal (expiré) | oui, sans mention : « réarmement attendu » |
+| `rearm_expected` | `drill.json` ou le permis disent une empreinte qui n'est pas celle de la copie d'Imladris (une release a changé le drill, son heure peut-être) ; ou `drill.json` dit `armed` sans permis dans le canal (expiré) | oui, sans mention : « réarmement attendu » |
 | `self_disarmed` | le permis est dans le canal, mais `drill.json` dit `disarmed` | oui, avec mention : « permis présent, Orodruin se dit désarmé » |
 | `channel_unread` | le dernier tirage n'a pas pu lister le canal : l'état du permis est inconnu | oui, sans mention : « canal illisible » ; **avec mention** après 8 jours de suite, puisqu'il tait aussi « Orodruin silent ». Ni `not_run` ni `rearm_expected` |
 
 **L'alarme d'absence** (`not_run`) vit chez l'observateur. Orodruin éteint ne peut pas dire qu'il
-n'a pas tourné. H0 ne l'arme que si **tout** concorde :
-- le dernier tirage a pu lister le canal ; sinon l'état du permis est inconnu, et H0 dit « canal
+n'a pas tourné. Imladris ne l'arme que si **tout** concorde :
+- le dernier tirage a pu lister le canal ; sinon l'état du permis est inconnu, et Imladris dit « canal
   illisible » sans armer ni `not_run` ni `rearm_expected` (avec mention après 8 jours de suite) ;
 - le permis est dans la liste du canal, à son dernier tirage ;
 - `drill.json` dit `armed` ;
-- l'empreinte du permis et celle de `drill.json` sont celles de **la copie du drill de H0**, dont il
+- l'empreinte du permis et celle de `drill.json` sont celles de **la copie du drill d'Imladris**, dont il
   tire l'heure prévue.
 
-Ce qu'H0 croit d'Orodruin, ici, est borné : `drill.json` à `armed`, écrit par Orodruin, est une
+Ce qu'Imladris croit d'Orodruin, ici, est borné : `drill.json` à `armed`, écrit par Orodruin, est une
 des conditions. Orodruin ne peut pas taire l'alarme en gardant le permis : un permis présent avec un
 `drill.json` qui se dit `disarmed` alerte (`self_disarmed`). Mais son identité a le droit d'écrire
 le conteneur du canal (`Storage Blob Data Contributor` sur `exercises`), et peut donc supprimer le
@@ -688,9 +688,9 @@ l'Orodruin d'avant ne connaît pas, mais « réarmement attendu ».
 - **Dans la console** : une ligne « Weekly drill » sur la page de Dagorlad (la dernière occurrence,
   son état, la prochaine, l'armement), et les vues existantes : Runs, la matrice de couverture, la
   tuile de la dernière preuve (qui dit quand elle vient du drill, §1.1).
-- **Dans Discord** : par le **bot de Glorfindel**, celui du produit, que H0 tient déjà, dans un fil à
+- **Dans Discord** : par le **bot de Glorfindel**, celui du produit, qu'Imladris tient déjà, dans un fil à
   lui (« drill · banc-hebdo »). Le texte passe par `chat_text.py`, sans autre mention que le rôle
-  configuré. Le jeton du bot de l'atelier ne va jamais sur H0, et Orodruin n'a pas de sortie vers
+  configuré. Le jeton du bot de l'atelier ne va jamais sur Imladris, et Orodruin n'a pas de sortie vers
   Discord : ni l'un ni l'autre ne change (décision 4).
 - **La carte d'exercice** elle-même reste dans TO JUDGE, marquée, avec le verdict proposé de VP1
   (§8).
@@ -698,7 +698,7 @@ l'Orodruin d'avant ne connaît pas, mais « réarmement attendu ».
 ### 4.3 Comment la session « Banc » le lit
 
 BRO1 donne à la session « Banc » le rôle **Lecteur Log Analytics sur le seul workspace du banc**.
-Elle ne lit ni H0, ni le canal, ni Orodruin. Elle n'est donc pas un second lecteur du rapport de H0,
+Elle ne lit ni Imladris, ni le canal, ni Orodruin. Elle n'est donc pas un second lecteur du rapport d'Imladris,
 mais un **témoin indépendant**, qui relit dans le workspace ce qui aurait dû s'y écrire.
 
 **La fenêtre qu'elle relit.** Elle ne connaît pas le T0 du fil (il est dans le canal) : elle prend
@@ -710,7 +710,7 @@ le délai d'`expectations/banc-hebdo.yaml`).
    exclurait l'occurrence et dirait « ne matche pas » à tort. Ses `ago(…)` sont donc réécrits pour
    remonter au début de la fenêtre, et la requête est bornée à la fenêtre, comme le fait
    `glorfindel/campaign_replay.py` (`would_have_caught`). Matche-t-elle sur la cible ? C'est la
-   preuve que la détection *pouvait* se faire, sans H0.
+   preuve que la détection *pouvait* se faire, sans Imladris.
 2. **L'indice brut** : la ligne que la technique écrit (pour T1136.001, `new user: name=` en
    `auth`/`authpriv`, étiquetée `useradd`), sur la cible. Elle sépare « rien n'est arrivé » de « la
    règle ne voit plus ».
@@ -721,7 +721,7 @@ le délai d'`expectations/banc-hebdo.yaml`).
 
 | La règle matche | L'indice brut | Le Heartbeat | Lecture |
 |---|---|---|---|
-| oui | oui | oui | la détection était possible : si H0 dit `missed`, c'est la watch (ou le canal) |
+| oui | oui | oui | la détection était possible : si Imladris dit `missed`, c'est la watch (ou le canal) |
 | non | oui | oui | **la règle régresse**, ou l'ingestion a changé de forme |
 | non | non | oui | la technique n'a pas joué (voir le statut), ou la télémétrie Syslog est coupée |
 | non | non | non | la cible n'était pas allumée : `not_ready`, `not_placed`, ou le drill n'a pas tourné |
@@ -744,7 +744,7 @@ une VM désallouée ne part jamais. Trois façons étaient possibles ; Jonathan 
 | | Comment | Coût d'Orodruin | Ce que ça ouvre |
 |---|---|---|---|
 | **(b) retenue** : démarrage planifié côté Azure | une Logic App (Consumption), avec sa propre identité managée. Elle démarre Orodruin à T − 20 min. Une extinction quotidienne d'Orodruin à 23:00 UTC (le planning DevTest, qui désalloue), comme le banc | environ 4 h 20 par semaine, quelques euros par mois | une identité de plus, qui ne peut qu'allumer Orodruin (§7) ; une ressource Terraform dans `infra/orodruin/` (DRL1c) ; l'extinction de 23:00 UTC vaut aussi les autres jours : elle protège d'un Orodruin oublié allumé la nuit, et coupe une session tardive de Jonathan (décision 1) |
-| (a) allumé en continu, écartée | rien de neuf | D2als_v6 : environ 61 € par mois, le chiffre de la VM de H0, de même taille ; environ 27 € en B2als_v2 si le quota le permet | l'hôte qui tient l'identité des injecteurs, allumé tout le temps : SSH ouvert à l'IP de l'opérateur seulement, sortie fermée, mais plus de temps exposé |
+| (a) allumé en continu, écartée | rien de neuf | D2als_v6 : environ 61 € par mois, le chiffre de la VM d'Imladris, de même taille ; environ 27 € en B2als_v2 si le quota le permet | l'hôte qui tient l'identité des injecteurs, allumé tout le temps : SSH ouvert à l'IP de l'opérateur seulement, sortie fermée, mais plus de temps exposé |
 | (c) Jonathan l'allume | — | — | n'est plus un drill automatique : écartée |
 
 **L'identité du démarrage planifié (b)** :
@@ -772,7 +772,7 @@ demande donc une PR, un apply du module (DRL1c), puis le réarmement.
 
 Avec (b), le démarrage planifié ne met pas à jour l'image (§3.2) : après une release, Jonathan lance
 `make orodruin-start` ou `make orodruin-update` depuis son poste, comme il le fait déjà (OI3). Sinon,
-H0 dit « Orodruin behind ». **À mesurer** : la Logic App, son identité, son rôle à la portée d'une
+Imladris dit « Orodruin behind ». **À mesurer** : la Logic App, son identité, son rôle à la portée d'une
 VM, le délai jusqu'à docker prêt.
 
 ### 5.2 Les VM du banc
@@ -793,7 +793,7 @@ jamais inscrite, et elle porte la vraie charge de la pré-observation.
 | Orodruin, (b) | environ 4 h 20 de D2als_v6 par semaine |
 | gondolin | environ 4 h de D2as_v6 par semaine, quand elle était éteinte |
 | L'instantané que la watch déclenche (T1136.001 → snapshot) | un point de sauvegarde à la demande, expirant à 30 jours : 4 à 5 à la fois sur gondolin |
-| La décision du modèle, sur H0 | un appel par occurrence |
+| La décision du modèle, sur Imladris | un appel par occurrence |
 | Journaux, canal, Logic App | négligeable |
 | Chaos Studio | rien : pas de panne |
 
@@ -836,8 +836,8 @@ attaque. Aucune session n'arme, ne déclenche ni ne réarme le drill. La ligne �
    - le délai jusqu'au premier Heartbeat (le budget de 10 min tient-il ?) ;
    - la ligne Syslog d'une technique jouée juste après, perdue ou non ;
    - la latence de détection, à comparer aux 117–144 s mesurées sur une VM chaude.
-4. L'alarme d'absence de H0 : Orodruin éteint à l'heure → `not_run` deux heures après.
-5. H0 arrêté à l'heure → refus `watch` ; dit au retour de H0.
+4. L'alarme d'absence d'Imladris : Orodruin éteint à l'heure → `not_run` deux heures après.
+5. Imladris arrêté à l'heure → refus `watch` ; dit au retour d'Imladris.
 6. Un arrêt d'urgence :
    - le démarrage planifié désactivé avant l'arrêt de la VM, le permis supprimé, `drill.json` à
      `disarmed (killed)`, aucun `not_run` ;
@@ -854,7 +854,7 @@ attaque. Aucune session n'arme, ne déclenche ni ne réarme le drill. La ligne �
     relayé au fil, sa fenêtre fermée, l'occurrence `stopped`. Et le nettoyage de l'atomic par Run
     Command : tient-il dans les 75 s, une seule Run Command à la fois sur la VM, ses reprises
     pouvant aller jusqu'à 315 s ?
-12. Le permis expiré : une occurrence manquée, puis la suivante → `no_permit`, et H0 dit « réarmement
+12. Le permis expiré : une occurrence manquée, puis la suivante → `no_permit`, et Imladris dit « réarmement
     attendu ».
 
 ---
@@ -874,16 +874,16 @@ commande, une demande portée par SSH. Le minuteur en lance une sans geste à ch
 
 | | Menace | Ce qui la tiendrait |
 |---|---|---|
-| S | Quelqu'un fait jouer une attaque à Orodruin sans Jonathan : par H0, par le canal, par la console | Orodruin ne tire ni n'écoute rien. Seuls le drill de l'image, l'armement du disque et l'heure de l'horloge peuvent déclencher ; ce qui vient de H0 ou du canal (V1, le permis) ne peut que refuser |
+| S | Quelqu'un fait jouer une attaque à Orodruin sans Jonathan : par Imladris, par le canal, par la console | Orodruin ne tire ni n'écoute rien. Seuls le drill de l'image, l'armement du disque et l'heure de l'horloge peuvent déclencher ; ce qui vient d'Imladris ou du canal (V1, le permis) ne peut que refuser |
 | T | Le contenu du drill change : une PR, une release, une image | La PR relue ; l'image vérifiée à son envoi (CI3) ; l'empreinte du fichier entier, épinglée à l'armement : un drill changé est refusé jusqu'au réarmement de Jonathan |
 | T | Le drill joue plus souvent que prévu : un `OnCalendar` réécrit, le service déclenché à la main, une horloge fausse | Une fois par 6 jours au plus (le registre, lu et écrit sous le verrou, écrit avant le jugement ; illisible, rien ne joue) ; l'heure dans les 30 min du `schedule` ; jamais rattrapé (`Persistent=false`) ; un run à la fois (le verrou) |
 | E | Le drill atteint une VM hors du banc, ou joue une technique destructive | La zone `bench` exigée au jugement **et avant chaque fil** (`zones` rejugé dans `_recheck`), plus stricte que la règle de production ; le catalogue de l'image relu à chaque occurrence (implémentée, non destructive, bibliothèque publique) ; les cibles nommées à l'armement, jamais `all` ; puis toutes les gardes de DG-b et d'O0 |
 | E | L'identité du démarrage planifié (b) | Un rôle personnalisé, une seule action (`start/action`), attribué à la portée de la VM d'Orodruin, assignable dans son seul groupe. Compromise, elle n'allume qu'Orodruin, dont le minuteur ne joue qu'à son heure et sous son contrat |
-| R | Une occurrence sans trace | Le journal avant chaque appel, démarrage compris (O1), sur l'hôte et dans le canal (SEC5) ; le registre des occurrences ; `drill.json` ; l'alarme d'absence sur H0 |
+| R | Une occurrence sans trace | Le journal avant chaque appel, démarrage compris (O1), sur l'hôte et dans le canal (SEC5) ; le registre des occurrences ; `drill.json` ; l'alarme d'absence sur Imladris |
 | D | Un drill qui s'emballe, ou qui use le banc | Les trois plafonds ; `RuntimeMaxSec`, un arrêt qui ferme les fenêtres ; le nettoyage de l'atomic (le compte créé, retiré) ; les points de sauvegarde expirent à 30 jours |
 | D | Le drill masque un vrai incident sur sa cible | La fenêtre ne marque que ses cibles, pour un temps borné (B2, H-1) ; une carte d'exercice reste devant l'opérateur, marquée ; VP1 propose, ne pose jamais. **Le calendrier est public** (le `schedule` est dans le dépôt) : quelqu'un sait à quelle heure, chaque semaine, ce que fait gondolin est d'abord lu comme un exercice. **Impact faible, assumé** : le banc seul, environ une heure par semaine, aucune donnée réelle, et c'est Jonathan qui juge la carte (décision 7) |
 | I | Ce que le drill publie | Ce que publient déjà les demandes : ni identifiant, ni cible, ni abonnement. Le nom du drill, son empreinte et ses heures sont ceux du dépôt public |
-| S | Un verdict proposé forgé : une fenêtre ou un statut qui se dit du drill | H0 lit le drill dans **sa propre copie** (`load_file(…, SHIPPED)`), et les attentes dans son image, jamais dans le canal ; l'empreinte annoncée doit être celle de cette copie ; un verdict proposé n'est jamais compté (VP1) |
+| S | Un verdict proposé forgé : une fenêtre ou un statut qui se dit du drill | Imladris lit le drill dans **sa propre copie** (`load_file(…, SHIPPED)`), et les attentes dans son image, jamais dans le canal ; l'empreinte annoncée doit être celle de cette copie ; un verdict proposé n'est jamais compté (VP1) |
 | D | Le minuteur repart après un arrêt d'urgence | Un permis fermé par défaut : le kill le supprime, une occurrence l'exige, et sa réécriture conditionnelle ne recrée jamais un permis supprimé ; la rétention du canal le fait expirer, jamais revenir. Le kill désactive aussi le démarrage planifié, juste après la révocation, et écrit `drill.json` désarmé ; un apply ne réactive pas le démarrage planifié ; seul un réarmement relance |
 
 **Ce qui resterait ouvert**, dit neutre :
@@ -891,9 +891,9 @@ commande, une demande portée par SSH. Le minuteur en lance une sans geste à ch
   ne lui donne rien de plus. L'armement et le registre, sur son disque, sont à sa main ;
 - le permis est dans un conteneur où Orodruin écrit (il le réécrit à l'identique). Il évite une
   reprise par mégarde, pas celle d'un Orodruin compromis, qui n'en a pas besoin ;
-- H0 en panne, aucune alerte sur l'instant : l'indicateur de la dernière preuve finit par le dire ;
+- Imladris en panne, aucune alerte sur l'instant : l'indicateur de la dernière preuve finit par le dire ;
 - un Orodruin reconstruit perd minuteur et armement sans rien dire, jusqu'à « Orodruin silent » ;
-- l'identité d'Orodruin peut supprimer le permis et écrire `drill.json` à `disarmed` : H0 y voit un
+- l'identité d'Orodruin peut supprimer le permis et écrire `drill.json` à `disarmed` : Imladris y voit un
   désarmement de Jonathan, sans alerte. Un Orodruin compromis peut ainsi taire l'alarme d'absence ;
   il n'en a pas besoin pour attaquer.
 
@@ -941,12 +941,12 @@ garde (§9).
 ### 8.2 Ce que le drill déclare pour VP1
 
 VP1 propose un verdict à une carte d'exercice qui correspond à la détection attendue : la bonne
-règle, la bonne cible, dans la fenêtre. Il lit, **sur H0** :
+règle, la bonne cible, dans la fenêtre. Il lit, **sur Imladris** :
 
 | Ce qu'il compare | D'où il le lit |
 |---|---|
-| le drill | **sa copie dans l'image de H0**, par `drill.load_file(<image>/drills/<nom>.yaml, SHIPPED)`, jamais `drill.find` (qui préfère la couche de l'instance : un drill de la console du même nom prendrait sa place) ; son nom et son empreinte égaux à ceux du statut de la demande (`drill`) |
-| la règle attendue | `expectations/<nom>.yaml`, dans l'image de H0, l'attente du fil au même rang et de la même expérience |
+| le drill | **sa copie dans l'image d'Imladris**, par `drill.load_file(<image>/drills/<nom>.yaml, SHIPPED)`, jamais `drill.find` (qui préfère la couche de l'instance : un drill de la console du même nom prendrait sa place) ; son nom et son empreinte égaux à ceux du statut de la demande (`drill`) |
+| la règle attendue | `expectations/<nom>.yaml`, dans l'image d'Imladris, l'attente du fil au même rang et de la même expérience |
 | le délai | `within_s` de l'attente, après le T0 du fil (l'heure de l'appel de l'atomic, le rapport du run) |
 | la cible | la VM du fil : celle de la fenêtre (`targets`) **et** celle du rapport (`metrics.resource_id`), les deux égales |
 | la fenêtre | début, fin, et 15 min de grâce (`GRACE_AFTER_S`) |
@@ -959,7 +959,7 @@ Il propose seulement si **tout** concorde, sur **une seule** carte par fil :
 - la carte est la première de ce run et de cette règle.
 
 Une carte d'une autre règle, d'une autre VM, hors de la fenêtre, une seconde carte, un drill dont
-l'empreinte ne concorde pas (Orodruin et H0 sur deux versions) : pas de proposition, et la raison
+l'empreinte ne concorde pas (Orodruin et Imladris sur deux versions) : pas de proposition, et la raison
 est dite.
 
 VP1 propose sur la **détection**, pas sur la qualité de la décision. Le drill ne déclare aucune
@@ -974,7 +974,7 @@ sont à VP1. Le drill lui donne ce qu'il lit, rien de plus.
 | Lot | Contenu | Où |
 |---|---|---|
 | **DRL1a** (Orodruin, cœur) | `schedule` dans le lecteur de drill ; `drills/banc-hebdo.yaml` ; `expectations/banc-hebdo.yaml` et son lecteur exact ; `COPY drills/` dans l'image des injecteurs (jamais `expectations/`), `COPY expectations/` dans celle de Glorfindel, et leur test ; `eregion_core/scheduled_drill.py` (l'armement, les gardes de §2.3, le verrou et son descripteur passé au runner, le registre sous le verrou, le démarrage de la cible et le Heartbeat, la demande, le permis exigé et réécrit sous `If-Match`, `drill.json`, le `launch` du drill par `Popen`, le gestionnaire SIGTERM qui relaie et attend) ; le paramètre `zones` du runner, passé à `exercise_plan.judge` (premier jugement et `_recheck`) ; le permis écrit par `orodruin-drill-arm`, supprimé par `-disarm` et le kill ; la fenêtre d'un fil bornée par son temps restant ; le champ `drill` du statut, optionnel dans son lecteur exact ; les cibles Make `orodruin-drill-check`, `-arm`, `-disarm` ; les unités systemd ; le pas « drill » du kill ; la ligne de `orodruin-down` ; le gestionnaire SIGTERM d'`annatar wire` (dit à la session Annatar) ; le test de CI drill ↔ attentes ↔ catalogue ↔ règles ; l'extension de `test_dagorlad_blind.py` | `eregion_core/`, `drills/`, `expectations/`, `annatar/Dockerfile`, `glorfindel/Dockerfile`, `annatar/cli.py`, `Makefile`, `infra/orodruin/kill.py` |
-| **DRL1b** (H0) | le verdict de chaque occurrence, l'alarme d'absence, les alertes par le bot de Glorfindel, la ligne « Weekly drill » de la console, la tuile de la dernière preuve qui dit le drill ; les lecteurs exacts de `drill.json` et du permis, jugé par la liste du canal ; l'alarme d'absence armée seulement sur des empreintes égales à la copie de H0, sinon « réarmement attendu » | `eregion_console/`, `glorfindel/` (le pull, le bot) |
+| **DRL1b** (Imladris) | le verdict de chaque occurrence, l'alarme d'absence, les alertes par le bot de Glorfindel, la ligne « Weekly drill » de la console, la tuile de la dernière preuve qui dit le drill ; les lecteurs exacts de `drill.json` et du permis, jugé par la liste du canal ; l'alarme d'absence armée seulement sur des empreintes égales à la copie d'Imladris, sinon « réarmement attendu » | `eregion_console/`, `glorfindel/` (le pull, le bot) |
 | **DRL1c** (Terraform) | la Logic App, créée désactivée et son état ignoré, son heure tirée de `drill_autostart_at` ; son identité ; son rôle personnalisé (`start/action` seul, assignable dans le groupe d'Orodruin, attribué à la VM d'Orodruin) ; l'extinction de 23:00 UTC | `infra/orodruin/` |
 | VP1, BRO1 | ce qu'ils lisent du drill et des attentes (§4.3, §8.2) | leurs lots |
 
@@ -995,7 +995,7 @@ au modèle, un `HOME` jetable.
 - la réécriture du permis sans `If-Match` (un permis supprimé recréé) ;
 - **le kill qui laisse le démarrage planifié actif**, ou le désactive après l'arrêt de la VM ;
 - le kill ou le désarmement qui laisse le permis ;
-- **le kill qui laisse `drill.json` à `armed`** (H0 lève `not_run`) ;
+- **le kill qui laisse `drill.json` à `armed`** (Imladris lève `not_run`) ;
 - l'apply de Terraform qui réactive le démarrage planifié ;
 - le démarrage de la VM avant V1, avant le journal, ou avant la lecture de l'isolation ;
 - le démarrage non compté dans le plafond rendu au runner ;
@@ -1004,7 +1004,7 @@ au modèle, un `HOME` jetable.
 - les attentes écrites dans la fenêtre ou dans la demande ;
 - **`_build_user_message()` qui voit le drill** : son statut, `drill.json` ou les attentes ;
 - `all` admis comme cible ;
-- l'alarme d'absence armée sur un drill désarmé, ou tué, ou sur une empreinte que H0 n'a pas ;
+- l'alarme d'absence armée sur un drill désarmé, ou tué, ou sur une empreinte qu'Imladris n'a pas ;
 - le SIGTERM sans gestionnaire, ou un gestionnaire qui lève pendant l'attente du fil (le fil tué
   par SIGKILL, sa fenêtre ouverte) ;
 - la fenêtre d'un fil ouverte pour `MAX_DURATION_S` au lieu de son temps restant, ou sans le

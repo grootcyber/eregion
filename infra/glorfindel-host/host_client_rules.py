@@ -1,25 +1,25 @@
-"""Rules of the repository merged into the client's layer of the hosted Glorfindel (H0) (WL1, #595).
+"""Rules of the repository merged into the client's layer of the hosted Glorfindel (Imladris) (WL1, #595).
 
     python infra/glorfindel-host/host_client_rules.py RULES.yaml H0_LAYER.yaml OUT.yaml
 
-``make glorfindel-host-client-rules`` reads H0's layer (``~/.glorfindel/client_rules.yaml``) through
-ssh into ``H0_LAYER.yaml`` (empty when H0 has none), runs this, then sends ``OUT.yaml`` back, put in
-place on H0 only if the layer did not change in between (under the lock the watch and the console
+``make glorfindel-host-client-rules`` reads Imladris's layer (``~/.glorfindel/client_rules.yaml``) through
+ssh into ``H0_LAYER.yaml`` (empty when Imladris has none), runs this, then sends ``OUT.yaml`` back, put in
+place on Imladris only if the layer did not change in between (under the lock the watch and the console
 take to write it).
 
-- **Merged, never copied over**: each rule of ``RULES.yaml`` is added to H0's layer, or replaces the
+- **Merged, never copied over**: each rule of ``RULES.yaml`` is added to Imladris's layer, or replaces the
   rule of its name there (``rule_layers``'s upsert, as an approval writes); every other rule, the
-  ``disable`` list, the assets and backends of H0's layer stay as they are. A rule approved on H0
+  ``disable`` list, the assets and backends of Imladris's layer stay as they are. A rule approved on Imladris
   is never lost by a push.
 - **Said**: each rule, added, replaced or unchanged; what the layer does to the base once merged
   (the notes the watch will print at its start).
-- **Refused, nothing written** (exit 1): H0's layer unreadable (``rule_layers.read_client_layer``:
+- **Refused, nothing written** (exit 1): Imladris's layer unreadable (``rule_layers.read_client_layer``:
   a layer we cannot read is never written over); ``RULES.yaml`` unreadable, with a key other than
   ``rules``, or a rule without a name; a rule of ``RULES.yaml`` the watch would skip (invalid), or a
   copy of a base rule whose shipped rule changed since, or is gone (``base_sha256``: drift; the
   watch would set the copy aside and run the shipped rule) — read against the base of this
   checkout, the one the watch of the same release ships.
-- **Not refused**: a name H0's layer lists under ``disable``. Only the base rule of that name is
+- **Not refused**: a name Imladris's layer lists under ``disable``. Only the base rule of that name is
   not loaded; the pushed rule, a client rule, loads in its place (``merge_layers``), and the
   watch's note says the base rule is disabled — measured by
   ``test_a_disable_of_the_same_name_on_h0_does_not_stop_the_pushed_rule``.
@@ -42,7 +42,7 @@ from glorfindel.detection_rules import load_config, shipped_rules_path  # noqa: 
 
 
 # CAN2: the GUID a rule's `env_guids` variables take while the push reads the layer back — no
-# identifier, H0's own value is never on this poste.
+# identifier, Imladris's own value is never on this poste.
 _STAND_IN = "00000000-0000-0000-0000-000000000000"
 
 
@@ -61,7 +61,7 @@ def _rules_to_push(path: Path) -> list[dict]:
 
 
 def merge(rules_path: Path, h0_layer: Path, out: Path, base: Path | None = None) -> list[str]:
-    """H0's layer with the rules of `rules_path` merged in, written to `out` → the lines said.
+    """Imladris's layer with the rules of `rules_path` merged in, written to `out` → the lines said.
     Raises ClientLayerError (nothing written to `out`) when it must not be sent."""
     rules = _rules_to_push(rules_path)
     data = rule_layers.read_client_layer(h0_layer)
@@ -75,9 +75,9 @@ def merge(rules_path: Path, h0_layer: Path, out: Path, base: Path | None = None)
     # Read back as the watch will, before anything is written: the merged layer over the base.
     staged = out.with_name(f".{out.name}.check")
     rule_layers._write(staged, data)
-    # CAN2: what a rule takes from the WATCH's environment (`env_guids`) is H0's, never this
-    # poste's: read with a stand-in GUID, the rule is checked as the watch reads it once H0 has
-    # the variable — and that it needs it is said (without it, on H0, the shipped rule runs).
+    # CAN2: what a rule takes from the WATCH's environment (`env_guids`) is Imladris's, never this
+    # poste's: read with a stand-in GUID, the rule is checked as the watch reads it once Imladris has
+    # the variable — and that it needs it is said (without it, on Imladris, the shipped rule runs).
     needs = {v: _STAND_IN for r in rules if isinstance(r.get("env_guids"), list)
              for v in r["env_guids"] if isinstance(v, str)}
     try:
@@ -99,7 +99,7 @@ def merge(rules_path: Path, h0_layer: Path, out: Path, base: Path | None = None)
     for rule in rules:
         if rule.get("enabled", True) and isinstance(rule.get("env_guids"), list):
             said.append(f"ℹ « {rule['name']} » prend {', '.join(map(str, rule['env_guids']))} dans "
-                        "l'environnement de la watch de H0 (host.env, un GUID) : sans elle, la règle "
+                        "l'environnement de la watch d'Imladris (host.env, un GUID) : sans elle, la règle "
                         "livrée tourne à sa place, et la watch le dit")
     return said + [f"  · {note}" for note in cfg.notes]
 

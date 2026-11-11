@@ -1,9 +1,9 @@
-"""IA0 on H0 (#167): the report of a campaign launched from Orodruin writes itself where the
+"""IA0 on Imladris (#167): the report of a campaign launched from Orodruin writes itself where the
 watch runs.
 
 Orodruin has neither the analysis dependencies, nor the model's key, nor the watch's files:
 at the end of ``annatar campaign run`` it publishes the campaign to the exercise channel —
-its manifest and its runs' reports, nothing else (eregion_core/exercise_channel.py). H0 has
+its manifest and its runs' reports, nothing else (eregion_core/exercise_channel.py). Imladris has
 all the rest. ``glorfindel watch`` starts this on a thread of its own, only when
 ``EREGION_EXERCISE_CHANNEL`` is set: every PULL_EVERY_S it pulls the published campaigns
 into ``runs/glorfindel/campaigns/<id>/`` (the watch's directory, SEC18) and writes ``report.md`` for each one that is ``done`` and has
@@ -347,7 +347,7 @@ def write_report(cdir: Path, *, model: str | None = None, llm=None,
 def pull_runs(runs_dir: Path, *, channel: str | None = None, credential=None, get=None,
               say=_say) -> int:
     """The reports of the runs launched alone (#193), pulled into ``runs_dir`` once they
-    have the shape H0 accepts (``run_report_refusal``, H-1). How many were written. A run
+    have the shape Imladris accepts (``run_report_refusal``, H-1). How many were written. A run
     not pulled is said once with why, the listing that fails too. Never raises."""
     runs_dir = Path(runs_dir)
     try:

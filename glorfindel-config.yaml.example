@@ -132,7 +132,7 @@ never_block: []
 # sessions — `bastion` (Azure Bastion's audit logs in the workspace) or `flows` (the
 # VNet's flow logs, traffic analytics); `none` (the default) keeps COR1. A trace
 # absent or unreadable: a card. Read docs/operations.md (« Déclarer la source qui
-# confirme l'origine sur H0 (COR2) ») before setting it.
+# confirme l'origine sur Imladris (COR2) ») before setting it.
 
 expected_sudo:
   # origin_proof: bastion

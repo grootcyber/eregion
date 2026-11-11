@@ -8,11 +8,11 @@ entre le téléphone et le poste change :
 ```
 téléphone ──(Tailscale : téléphone → poste:22 seul)──► poste (WSL) : sshd, à clé seule
    │                                                      ├─ make bench-run / bench-restore, tapés dans le terminal
-   └─ son propre tunnel SSH (-L 7007:127.0.0.1:7007) ───► └─ 127.0.0.1:7007 ── le tunnel du poste ──► Imladris : la console
+   └─ son propre tunnel SSH (-L 7007:127.0.0.1:7007) ───► └─ 127.0.0.1:7007 ── le tunnel du poste ──► Imladris (anciennement H0) : la console
                                                               (make mobile-tunnel-on : armé à la demande, 12 h au plus)
 ```
 
-- Orodruin continue à n'écouter que le SSH du poste (DRL1). **Rien ne change sur Imladris** (H0) : la
+- Orodruin continue à n'écouter que le SSH du poste (DRL1). **Rien ne change sur Imladris** : la
   console y répond comme aujourd'hui, sous `localhost`, par le tunnel du poste — armé par un geste,
   pour 12 h au plus (MOB2, étape 5).
 - **Deux barrières indépendantes**, pour le terminal comme pour la console : le réseau privé (le
@@ -309,7 +309,7 @@ make bench-run TARGET=vm-celebrimbor-gondolin SCENARIO=T1486              # tape
 
 `make bench-run` (`scripts/bench_run.py`) enchaîne, chaque étape arrêtant la suivante :
 1. **un terminal** : sans terminal sur l'entrée (un tube, un script), rien n'est envoyé ni lancé
-   (seules les adresses de H0 et d'Orodruin ont été lues, dans l'état Terraform local) ;
+   (seules les adresses d'Imladris et d'Orodruin ont été lues, dans l'état Terraform local) ;
 2. **le préflight** (`make bench-preflight`, BNC1) : un ✗, rien n'est demandé, rien n'est lancé ;
 3. **la demande** : un fil `SCENARIO` → `TARGET`, l'id de la VM lu sur Azure sous ton `az login`
    (une seule VM de ce nom), lue par le seul lecteur des demandes, comme celles de Dagorlad ;
@@ -339,16 +339,16 @@ make bench-restore TARGET=vm-celebrimbor-gondolin RUN=<run_id>             # tap
   `make bench-run`). Sans `RUN=`, il prend le seul rapport de `TARGET`, et l'affiche avant de faire
   taper le nom ; **s'il y en a plusieurs, il refuse et les liste** : le plus récent n'est pas le sens
   sûr. `BEFORE=<instant>` l'emporte. Sans moment, rien n'est restauré ;
-- passe **toujours** `--keep-isolated` : la levée est celle de H0 (REC1, REC1b ; LEV1 changera la
+- passe **toujours** `--keep-isolated` : la levée est celle d'Imladris (REC1, REC1b ; LEV1 changera la
   règle) ;
 - fait taper le nom de la VM, lance l'essai à blanc, puis demande « [o/N] » avant le vrai restore.
   Le restore lit ses droits avant de toucher la VM (RST1). La clé matérielle du SSH tient lieu de
   second facteur, en attendant FS1g et TOT1.
 
-Ensuite, la levée par H0 (étape 7 de banc-t1486.md), puis `make bench-report RUN=<run_id>`.
+Ensuite, la levée par Imladris (étape 7 de banc-t1486.md), puis `make bench-report RUN=<run_id>`.
 
 **Les deux commandes refusent dans une session d'agent** (`EREGION_AGENT_SESSION`, le worktree d'un
-lot) : le garde tourne seul, avant que make ne développe aucune commande de H0 ni d'Orodruin. Elles
+lot) : le garde tourne seul, avant que make ne développe aucune commande d'Imladris ni d'Orodruin. Elles
 refusent aussi `TARGET`, `SCENARIO`, `BEFORE`, `RUN` ou `POINT_MAX_H` venus de l'environnement : sur
 la ligne de commande, toujours. Ce garde-là, comme le terminal, ne tient pas contre un processus qui
 tape dans une session `tmux` ouverte (étape 4). Le T1486 reste lancé de la main de l'opérateur :
@@ -364,7 +364,7 @@ Les deux barrières se ferment l'une sans l'autre ; fermer les deux, puis ce que
    nomme). Même revenu sur le réseau, il n'entre plus, ni dans le terminal, ni dans la console.
 3. **Le jeton de la console**, que le navigateur du téléphone a vu : un nouveau
    `EREGION_CONSOLE_TOKEN` dans `infra/glorfindel-host/host.env`, `make glorfindel-host-push`, puis
-   sur H0 `cd eregion && docker compose up -d war-room` ; le cookie de session tombe avec lui (SEC10).
+   sur Imladris `cd eregion && docker compose up -d war-room` ; le cookie de session tombe avec lui (SEC10).
    **Non vérifié** comme enchaînement.
 4. `make mobile-tunnel-off` sur le poste : le tunnel vers la console d'Imladris s'arrête avant la fin
    de ses 12 h.

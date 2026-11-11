@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """CI1 (#267): the images, built and proven in CI — a broken Dockerfile or lock seen in the pull
-request, not at H0's preflight, where it burns a release (infra/glorfindel-host/README.md,
-« Le CD de H0 »).
+request, not at Imladris's preflight, where it burns a release (infra/glorfindel-host/README.md,
+« Le CD d'Imladris »).
 
     python3 scripts/image_check.py glorfindel                   # checks eregion-glorfindel:ci
     python3 scripts/image_check.py annatar --build              # builds it first, as the CI does
@@ -13,7 +13,7 @@ Dockerfile, the repository as context, no build argument, never pushed — then 
 on it; `--build` (make images-check) builds the same way, without the CI's cache.
 
 In the image, each check is a `docker run --rm --network none`: nothing starts (a command, never
-the image's CMD), no network, no environment from the host — no secret, no Azure. What H0's CD
+the image's CMD), no network, no environment from the host — no secret, no Azure. What Imladris's CD
 checks in its candidate (infra/glorfindel-host/cd/eregion_cd.py, preflight, step 5) is checked
 here first, with the same imports (tests/unit/test_image_check.py keeps them in step):
 
@@ -52,7 +52,7 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
 from component_check import GLORFINDEL_ONLY_DEPS  # noqa: E402  (D1's list, not a copy)
 
-# The imports H0's CD runs in its candidate (eregion_cd.py, preflight): the watch, the bot, the console.
+# The imports Imladris's CD runs in its candidate (eregion_cd.py, preflight): the watch, the bot, the console.
 GLORFINDEL_IMPORTS = "glorfindel.cli, glorfindel.bot, eregion_console.api"
 INJECTOR_IMPORTS = "annatar.cli, gothmog.cli"
 EXAMPLE_CONFIG = "glorfindel-config.yaml.example"

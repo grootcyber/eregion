@@ -20,7 +20,7 @@ tableau sont calculés.
 
 **Une campagne sans Glorfindel n'a pas de rapport** (V1, #214) : lancée `--without-glorfindel`,
 son manifeste porte `without_glorfindel: true` et aucune détection n'a été mesurée. Ni
-`make campaign-report`, ni la fin de `annatar campaign run`, ni la watch de H0 n'écrivent son
+`make campaign-report`, ni la fin de `annatar campaign run`, ni la watch d'Imladris (anciennement H0) n'écrivent son
 rapport ; elle n'entre pas dans l'index, et n'est donc jamais la campagne précédente d'une autre
 (D-2). C'est dit : « campaign without Glorfindel: no detection report, by choice »
 (`campaign_report.no_report`, `hosted_report.ready`, `campaign_index.verse`).
@@ -46,7 +46,7 @@ pas partager les angles morts du défenseur. Depuis IA1, le modèle de Glorfinde
 Glorfindel (décision, autoring de règle) : le rapport s'écrit aussi là où le paquet de Glorfindel
 n'est pas (l'image d'Annatar, en fin de `campaign run`), et il écrit jusqu'à 2048 jetons hors du
 chemin d'un cycle, d'où une borne plus large. Passé la borne, l'appel lève : en local, la
-commande échoue avec le délai dépassé ; sur H0, c'est un essai raté (voir plus bas).
+commande échoue avec le délai dépassé ; sur Imladris, c'est un essai raté (voir plus bas).
 
 **La vérification est déterministe** (`verify`) : une affirmation sans run cité, citant un run
 inconnu, ou que les faits contredisent (« détectée » sur un run manqué, une latence ou une
@@ -70,18 +70,18 @@ passages, Haiku 5.5) : 0 obéissance à la ligne plantée, 0 rejet, 17 affirmati
 
 **Il s'écrit seul** : `annatar campaign run` écrit le rapport à la fin de la campagne
 (`--no-report` pour s'en passer : avec un canal d'exercice, la campagne n'est alors pas publiée
-non plus, et H0 n'en écrit pas le rapport). Sans paquet `analysis` ou sans clé de modèle, la campagne se
+non plus, et Imladris n'en écrit pas le rapport). Sans paquet `analysis` ou sans clé de modèle, la campagne se
 termine quand même et dit comment l'écrire plus tard. Les campagnes de R1 (Atomic) et de G0
 (Chaos Studio) passeront par là.
 
-## Une campagne lancée depuis Orodruin : le rapport s'écrit sur H0 (#167)
+## Une campagne lancée depuis Orodruin : le rapport s'écrit sur Imladris (#167)
 
 _21/10 : le code, ses tests (`tests/unit/test_campaign_channel.py`, `test_hosted_report.py`, dont
 un bout en bout local) et ses mutants (M126–M149, M159–M169, M180–M188) sont écrits. La campagne sur le banc viendra
 ensuite, avec Jonathan (session Tests) : rien de ceci n'est encore mesuré sur le banc._
 
 Orodruin n'a ni `chromadb`, ni `litellm`, ni la clé du modèle, ni les fichiers de la watch.
-H0 a tout cela. C'est donc là que le rapport s'écrit (option B, décidée le 21/10 sur #69).
+Imladris a tout cela. C'est donc là que le rapport s'écrit (option B, décidée le 21/10 sur #69).
 
 **Ce qu'Orodruin publie.** Avec `EREGION_EXERCISE_CHANNEL`, à la fin de `campaign run`, il
 publie la campagne dans le conteneur `exercises`, celui des fenêtres
@@ -96,27 +96,27 @@ demande aucun droit de plus que pour les fenêtres : une seule attribution, sur 
 Le préfixe tient les campagnes à l'écart des fenêtres. Une fenêtre est `<run_id>.json` à la
 racine, et un nom avec `/` ne passe pas `_SAFE_NAME` : le tirage des fenêtres l'ignore.
 
-Le message de fin annonce le rapport sur H0 seulement pour une campagne `done`. Pour une autre
+Le message de fin annonce le rapport sur Imladris seulement pour une campagne `done`. Pour une autre
 (`aborted`), il renvoie à `make campaign-report CAMPAIGN=<id>`, à lancer là où se trouvent la
 campagne et les fichiers de la watch. Sans canal, rien ne change : le rapport s'écrit en local
 si c'est possible. Un échec de la publication est signalé et ne fait pas échouer la campagne.
 
 Avec `campaign run --runs-dir X`, les rapports de run restent dans `runs/` (le dossier fixe du
 moteur, `annatar/runner/report.py`) : la publication ne les trouve pas sous `X`. Elle le signale
-(`unpublished_runs`), et le message de fin n'annonce pas le rapport sur H0, qui attendrait ces
+(`unpublished_runs`), et le message de fin n'annonce pas le rapport sur Imladris, qui attendrait ces
 runs sans fin : il renvoie à `make campaign-report`.
 
 **Un run seul (#193, 26/10 ; code, tests et mutants M240–M246, pas encore mesuré sur le
 banc).** `annatar run` et `gothmog run` publient aussi leur rapport, à la fin du run, après la
 fermeture de la fenêtre : le blob `runs/<run_id>.json`, dans le même conteneur, sans droit de plus
 (`publish_run`). Un échec est signalé, jamais levé. Le thread `campaign-report` le tire à chaque
-passage vers `runs/glorfindel/<run_id>.json` sur H0 (le répertoire de la watch, SEC18), où la console de l'atelier le lit (`pull_runs`) :
+passage vers `runs/glorfindel/<run_id>.json` sur Imladris (le répertoire de la watch, SEC18), où la console de l'atelier le lit (`pull_runs`) :
 seulement un nom simple, et un rapport qui passe `run_report_refusal` (H-1). Il n'écrit jamais
-par-dessus un rapport que H0 n'a pas tiré lui-même : un marqueur `runs/glorfindel/.pulled-runs/<run_id>`
+par-dessus un rapport qu'Imladris n'a pas tiré lui-même : un marqueur `runs/glorfindel/.pulled-runs/<run_id>`
 dit lesquels viennent du canal. Un rapport refusé n'est pas écrit, et la raison est dite une
 fois. Une campagne ne change pas : ses runs ne partent qu'avec elle, sous `campaigns/<id>/`.
 
-**Quand H0 l'écrit.** `glorfindel watch` démarre le thread `campaign-report`
+**Quand Imladris l'écrit.** `glorfindel watch` démarre le thread `campaign-report`
 (`analysis/hosted_report.py`), seulement avec `EREGION_EXERCISE_CHANNEL`. Toutes les 30 s, il :
 1. tire les campagnes dans `runs/glorfindel/campaigns/<id>/` (`pull_campaigns`). Il écrit les runs d'abord,
    puis le manifeste, et seulement si tous les runs de la campagne sont arrivés ; à côté du
@@ -141,7 +141,7 @@ fois. Une campagne ne change pas : ses runs ne partent qu'avec elle, sous `campa
    Sans fenêtre lisible (une publication de fenêtre perdue, qu'un tirage suivant peut encore
    apporter), elle dure jusqu'à 15 min après la fin de la campagne (le plus tard des
    `finished_at` de ses scénarios et de son `updated_at`, jamais après l'arrivée du manifeste
-   sur H0). Dans les deux cas s'ajoutent 10 min (`DECISION_LAG_S`) : la fenêtre borne l'heure
+   sur Imladris). Dans les deux cas s'ajoutent 10 min (`DECISION_LAG_S`) : la fenêtre borne l'heure
    de la détection, pas celle où la décision s'écrit, à la fin du cycle qui suit (enquête,
    décision du modèle et ses reprises, action et sa vérification). En pratique, puisque la
    dernière fenêtre se ferme juste avant la fin de la campagne, un rapport dont une décision
@@ -161,8 +161,8 @@ fois. Une campagne ne change pas : ses runs ne partent qu'avec elle, sous `campa
 5. écrit `report.md` une fois, sous un verrou par campagne. Un `report.md` présent n'est jamais
    réécrit.
 
-**Ce que H0 accepte du canal (H-1, #187, 26/10).** Le manifeste et les rapports des runs sont
-écrits sur un autre hôte, par qui peut écrire dans le canal : H0 les lit contre leur forme, il ne
+**Ce qu'Imladris accepte du canal (H-1, #187, 26/10).** Le manifeste et les rapports des runs sont
+écrits sur un autre hôte, par qui peut écrire dans le canal : Imladris les lit contre leur forme, il ne
 les croit pas tels quels (`analysis/campaign_schema.py`, schémas `schemas/campaign_manifest.schema.json`
 et `schemas/run_report.schema.json`, tenus d'accord par les tests ; l'image de la watch n'a pas
 `jsonschema`).
@@ -177,10 +177,10 @@ et `schemas/run_report.schema.json`, tenus d'accord par les tests ; l'image de l
   Sinon il est écarté des faits, et la ligne « Écarté des faits » du rapport dit pourquoi
   (« run R2 refusé : fenêtre d'exercice inconnue »).
 - Le rapport dit quels faits viennent du canal : la liste des runs, leur statut, leur détection
-  et leur latence, l'heure de chaque attaque et les fenêtres ; et ce que H0 a vu lui-même : les
+  et leur latence, l'heure de chaque attaque et les fenêtres ; et ce qu'Imladris a vu lui-même : les
   décisions de Glorfindel et l'inscription de chaque VM (`CHANNEL_NOTE`). Pour les indicateurs de
   la section « Réponse », l'heure de chaque attaque et la liste des runs sont en plus confrontées
-  à ce que H0 tient (SEC9, « D'où vient chaque entrée », plus bas).
+  à ce qu'Imladris tient (SEC9, « D'où vient chaque entrée », plus bas).
 - L'attente des décisions (étape 4) ne change pas : une fenêtre absente peut encore arriver. Le
   refus se décide à l'écriture.
 - Une fenêtre refusée (plus longue que 2 h…) ne borne plus la recherche d'une décision : la
@@ -241,10 +241,10 @@ abandonné, effacer `report.error` ne suffit pas : redémarrer la watch (sur la 
 le `report.md`, ou à défaut le `report.error`. L'index `campaign_runs` reste sur le disque de la
 VM : `~/.eregion/analysis`, monté dans le conteneur de la watch (`docker-compose.yml`). Le
 montage et l'image, qui copie maintenant `analysis/`, prendront effet au prochain redéploiement
-de H0, avec Jonathan.
+d'Imladris, avec Jonathan.
 
 **D'où viennent les décisions.** `collect_facts` lit d'abord `runs/glorfindel/<run_id>_debug.jsonl`, quand
-une watch tourne à côté du run. Sur H0, la watch hébergée écrit plutôt
+une watch tourne à côté du run. Sur Imladris, la watch hébergée écrit plutôt
 `watch-<règle>-<ts>_debug.jsonl`. La décision d'un run est alors la première détection de ces
 fichiers qui porte une `action` et qui remplit la règle de #157 (`annatar/runner/detection.py`,
 `first_detection`) :
@@ -255,7 +255,7 @@ fichiers qui porte une `action` et qui remplit la règle de #157 (`annatar/runne
 La fin de la fenêtre est sa fin (ou son expiration, la plus tôt des deux) plus 15 min
 (`eregion_core/exercise.py`, `last_moment`, la borne de `live`). La fenêtre est lue dans
 `EREGION_EXERCISES_DIR`, sinon là où cet hôte la tient : le répertoire de la campagne
-(`runs/glorfindel/exercises` sur H0, où la watch tire les fenêtres ; `runs/annatar/exercises` pour
+(`runs/glorfindel/exercises` sur Imladris, où la watch tire les fenêtres ; `runs/annatar/exercises` pour
 une campagne d'Annatar sur ce poste), puis ceux des autres écrivains (SEC18, `window_paths`). La
 watch écrit ses `watch-*_debug.jsonl` dans son répertoire, `runs/glorfindel/`, et le rapport les y
 cherche, à côté du répertoire de la campagne (`watch_dir`). Sans `attack_time` fini, sans
@@ -276,7 +276,7 @@ deuxième campagne viendra après la fusion, avec Jonathan. Suite (D2b, 26/10) :
 runs qu'une tendance cite est lu, le début d'une campagne venue du canal est contrôlé, et les
 dernières tournures de dates sont lues (mutants M650–M669)._
 
-Le premier rapport écrit sur H0 (campagne `20261023T081120Z`) était fidèle, mais il n'apprenait
+Le premier rapport écrit sur Imladris (campagne `20261023T081120Z`) était fidèle, mais il n'apprenait
 rien : son index était vide. La seule nouveauté a été vue par une comparaison faite à la main.
 Sur T1110.001, Glorfindel a isolé à 0,78 le 23/10, alors qu'il avait bloqué à 0,80 le 21/10. La
 recherche des runs passés (`prior_runs`) ramène les runs des mêmes techniques, mais elle ne
@@ -296,9 +296,9 @@ c'est une technique jouée sur une VM cible ; la VM est comparée sans la casse.
 - S'il n'y en a aucune, la section le dit, avec la raison.
 - **Le début d'une campagne venue du canal est contrôlé** (D2b, `start_refusal`). Son
   manifeste (`started_at`, `created_at`, l'identifiant) est écrit sur Orodruin, par quiconque
-  peut écrire dans le canal (H-1) : une date fausse ferait nommer à tort « la précédente ». H0
+  peut écrire dans le canal (H-1) : une date fausse ferait nommer à tort « la précédente ». Imladris
   la confronte à ce qu'il tient : la date du marqueur `.pulled`, qu'il écrit lui-même, et les
-  fenêtres d'exercice de ses runs que H-1 croit. Une campagne n'a pas commencé après que H0
+  fenêtres d'exercice de ses runs que H-1 croit. Une campagne n'a pas commencé après qu'Imladris
   l'a tirée, ni après la première de ces fenêtres, ni plus d'une heure avant elle (le temps
   de quelques scénarios en échec avant le premier run joué), à 5 minutes près
   (`FUTURE_SKEW_S`, l'écart d'horloge de deux hôtes). Une date hors de ces bornes est refusée,
@@ -308,7 +308,7 @@ c'est une technique jouée sur une VM cible ; la VM est comparée sans la casse.
   est écrit dans l'index (vide) à la place d'un début qu'une indexation antérieure avait
   donné, sans quoi ChromaDB, qui fusionne les métadonnées d'une ligne, le garderait. Une
   campagne sans marqueur `.pulled` garde les dates de son manifeste : écrite sur cet hôte, ou
-  copiée à la main par l'opérateur (celle du 21/10 sur H0), elle est crue comme l'opérateur
+  copiée à la main par l'opérateur (celle du 21/10 sur Imladris), elle est crue comme l'opérateur
   qui l'a posée là. **Limites** : les fenêtres passent par le même canal que le manifeste, et
   H-1 ne borne leur début que vers le futur. Qui forge le manifeste **et** les fenêtres peut
   donc antidater une campagne : seul le marqueur `.pulled` la borne alors, et seulement par le
@@ -473,7 +473,7 @@ maintenant l'état et le début de sa campagne, ainsi que sa VM. Un rapport écr
 indexés sans eux : ses runs ne sont jamais choisis. La commande les ajoute :
 
 ```bash
-python -m analysis.campaign_index --all runs/glorfindel/campaigns      # chaque campagne done ou aborted (H0 ; en local, runs/annatar/campaigns)
+python -m analysis.campaign_index --all runs/glorfindel/campaigns      # chaque campagne done ou aborted (Imladris ; en local, runs/annatar/campaigns)
 python -m analysis.campaign_index runs/glorfindel/campaigns/<id> …     # celles-ci
 ```
 
@@ -487,7 +487,7 @@ python -m analysis.campaign_index runs/glorfindel/campaigns/<id> …     # celle
   aucun modèle et n'écrit que dans l'index.
 - Une campagne encore en cours est laissée de côté, et la commande le dit.
 
-**Sur H0** (à lancer par Jonathan : c'est une écriture sur H0), après le redéploiement de H0
+**Sur Imladris** (à lancer par Jonathan : c'est une écriture sur Imladris), après le redéploiement d'Imladris
 avec ce code :
 
 ```bash
@@ -509,12 +509,12 @@ docker exec eregion-watch python -m analysis.campaign_index --all runs/glorfinde
   campagne arrivée pendant la commande : relancer la commande après son rapport (elle est
   idempotente).
 
-- **La campagne du 23/10** (`20261023T081120Z`) est déjà sur H0 et dans son index. La commande
+- **La campagne du 23/10** (`20261023T081120Z`) est déjà sur Imladris et dans son index. La commande
   lui ajoute l'état, le début et les VM, sans recalculer ses décisions.
-- **La campagne du 21/10** (`20261021T121643Z`) n'est jamais passée par H0 : son manifeste et
-  les rapports de ses runs sont restés sur Orodruin. Il faut d'abord les copier sur H0, dans
+- **La campagne du 21/10** (`20261021T121643Z`) n'est jamais passée par Imladris : son manifeste et
+  les rapports de ses runs sont restés sur Orodruin. Il faut d'abord les copier sur Imladris, dans
   `eregion/runs/glorfindel/campaigns/20261021T121643Z/` (le manifeste, et les rapports des runs dans
-  `runs/`), puis lancer la commande. Ses décisions sont alors lues dans les `watch-*` de H0,
+  `runs/`), puis lancer la commande. Ses décisions sont alors lues dans les `watch-*` d'Imladris,
   bornées par les fenêtres de `runs/<injecteur>/exercises/`.
 - **Attention à la purge** : une fenêtre est vidée une semaine après sa fin
   (`PURGE_AFTER_S`). Une fois les fenêtres du 21/10 vidées, la décision de chacun de ses runs
@@ -533,7 +533,7 @@ Deux indicateurs de la finalité, calculés par le code depuis les fichiers d'un
 ([`analysis/containment.py`](../analysis/containment.py)), jamais par le modèle. Le rapport les
 rend dans sa section « Réponse ». La page de la campagne dans la console les recalcule, depuis les
 mêmes fichiers. `python -m analysis.containment runs/glorfindel/campaigns/<id> [--fault-run <run>] [--json]`
-les donne seuls ; sur H0 : `make glorfindel-host-containment CAMPAIGN=<id>`. Lancée seule, la
+les donne seuls ; sur Imladris : `make glorfindel-host-containment CAMPAIGN=<id>`. Lancée seule, la
 commande lit l'inscription des VM d'une campagne venue du canal comme le rapport
 (`check_enrollment`, H-1) : sans geste de plus (BL1c). `check_enrollment` retire d'abord les
 `AZURE_CLIENT_*` vides que compose passe sous `docker exec`, comme la watch (#205) : le rapport, la
@@ -716,7 +716,7 @@ n'est jamais rien (A0).
 
 - **Le rapport de campagne** (`report.md`), section « Réponse » : la part, la médiane, une ligne par
   incident (issue, action, T0, temps) et les pannes rattachées. Si le calcul échoue, le rapport
-  s'écrit quand même et le dit. Sur H0, le rapport s'écrit environ 25 min après la fin : une carte
+  s'écrit quand même et le dit. Sur Imladris, le rapport s'écrit environ 25 min après la fin : une carte
   de la réaffirmation plus tardive n'y figure pas. La console, elle, recalcule.
 - **La console**, page Annatar, détail d'une campagne : l'encadré **RESPONSE**
   (`GET /api/campaigns/<id>`, champ `containment`).
@@ -808,7 +808,7 @@ bloquer. Le taux se calcule sur **toutes** les pannes de Gothmog, pas seulement 
 campagne (`analysis/fault_rate.py`) :
 
 ```bash
-make glorfindel-host-fault-rate [DAYS=30] [JSON=1]   # sur H0, l'hôte de la watch
+make glorfindel-host-fault-rate [DAYS=30] [JSON=1]   # sur Imladris, l'hôte de la watch
 python -m analysis.fault_rate [--runs-dir runs] [--days 30] [--json]
 ```
 
@@ -902,7 +902,7 @@ code d'infrastructure. Elle n'écrit pas de règle et n'agit pas.
 
 Un refus n'écrit rien, et dit le réglage à changer, en tête de son message (la fin de `campaign
 run` coupe le message à 120 caractères : l'instruction « set EREGION_ANALYSIS_MODEL » reste). En
-local, la commande échoue ; sur H0, le rapport compte un essai raté (plus haut).
+local, la commande échoue ; sur Imladris, le rapport compte un essai raté (plus haut).
 
 **Le contrôle voit l'environnement de son processus**, et seulement lui. Les deux variables
 doivent donc y être :
@@ -910,7 +910,7 @@ doivent donc y être :
   reçoit `GLORFINDEL_LLM_MODEL` à côté d'`EREGION_ANALYSIS_MODEL` (`ANNATAR_AZURE_ENV`, Makefile).
   Sans lui, le contrôle comparait au modèle par défaut de Glorfindel, et laissait passer le modèle
   réellement posé ;
-- **sur H0**, la watch écrit les rapports. `host_env.py` recopie `EREGION_ANALYSIS_MODEL` de
+- **sur Imladris**, la watch écrit les rapports. `host_env.py` recopie `EREGION_ANALYSIS_MODEL` de
   l'environnement de l'opérateur dans `host.env` (vide : le défaut, Haiku 5.5). Pour un
   `host.env` déjà écrit, poser la ligne à la main, ici et sur la VM :
   `EREGION_ANALYSIS_MODEL=<un autre modèle que celui de Glorfindel>` dans
@@ -1023,7 +1023,7 @@ n'appelle ni Glorfindel, ni Azure, ni le modèle. Une proposition se décide une
 porte une décision n'est jamais réécrit par un nouveau tri (`Decided`).
 
 **Un seul écrivain à la fois** : `decide` et l'écriture d'un tri prennent un verrou `flock` sur
-`runs/glorfindel/campaigns/<id>/.triage.lock` (comme `.report.lock` du rapport sur H0). Deux décisions prises
+`runs/glorfindel/campaigns/<id>/.triage.lock` (comme `.report.lock` du rapport sur Imladris). Deux décisions prises
 en même temps sont gardées toutes les deux ; sans verrou, la seconde écriture perdait la première
 (un test le joue entre trois processus) ; un nouveau tri écrit pendant une décision ne la perd
 pas non plus (la décision attend, puis s'inscrit sur le nouveau tri ; un test le joue entre deux
@@ -1058,4 +1058,4 @@ autrement (Bicep, le portail, une politique Azure) est inconnue, jamais « non c
 lit ni les seuils des règles ni les tables du workspace : « une règle et sa source » renvoie le
 défaut à un humain. Les cibles Make (`make campaign-triage`, `make analysis-eval`) viendront avec
 un lot qui touche le Makefile. Le tri ne s'écrit pas encore seul à la fin d'une campagne, ni sur
-H0 (l'image de la watch n'a ni le code d'infrastructure, ni `jsonschema`).
+Imladris (l'image de la watch n'a ni le code d'infrastructure, ni `jsonschema`).

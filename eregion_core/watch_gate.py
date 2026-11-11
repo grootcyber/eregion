@@ -5,7 +5,7 @@ before every run — each run of a campaign too — and before any call to the c
 injector reads the watch's heartbeat, from two places:
 
 - the return channel (eregion_core/watch_channel.py, ``EREGION_WATCH_CHANNEL``), when it is
-  set: the watch hosted on H0, seen from Orodruin;
+  set: the watch hosted on Imladris, seen from Orodruin;
 - the local file the watch rewrites every minute and removes when it stops: its copy for the
   injectors, ``~/.glorfindel/injectors/watch_heartbeat`` (mounted as the injectors'
   ``~/.glorfindel``, SEC3), else ``~/.glorfindel/watch_heartbeat``.
@@ -22,7 +22,7 @@ subscription). The injector compares it with its own: a live watch of another su
 no watch of its targets, and a heartbeat that names no perimeter (a watch older than this
 injector) is refused. The subscription rather than the host, because it is the one thing both
 sides know of the same targets: the injector acts in its subscription, the watch reads it; a
-host name gives the injector nothing to compare (Orodruin and H0 are two hosts, the local
+host name gives the injector nothing to compare (Orodruin and Imladris are two hosts, the local
 containers two more). What this proves, and what not (docs/design/orodruin-contract.md): a
 watch configured for this subscription wrote this file or blob less than 90 s ago — or
 someone who can write there did. The digest binds, it does not authenticate (it is no
@@ -43,7 +43,7 @@ campaign with it. ``annatar clean`` goes through it too.
 ``--without-glorfindel`` runs anyway, for development — never in zone ``production`` (the
 engine refuses it once the target's zone is read), and it is written to Orodruin's journal as
 well as to the run's report (``metrics.without_glorfindel``, ``metrics.detection_note``); its
-detection is not measured — never ``missed``, never a rule proposed for it; H0 accepts that
+detection is not measured — never ``missed``, never a rule proposed for it; Imladris accepts that
 report (``analysis/campaign_schema.run_report_refusal``) and the console shows it apart from
 ``unknown``. A campaign run that way carries ``without_glorfindel: true`` in its manifest, is
 resumed only the same way, and has no analysis report (``NO_CAMPAIGN_REPORT``).
@@ -244,7 +244,7 @@ def refusal(now: datetime | None = None, *, record: bool = True) -> str:
 
 
 # A campaign run --without-glorfindel: its runs measured no detection, so it has no report of
-# the analysis (IA0), here or on H0, and never enters the index nor a comparison (D-2).
+# the analysis (IA0), here or on Imladris, and never enters the index nor a comparison (D-2).
 NO_CAMPAIGN_REPORT = "campaign without Glorfindel: no detection report, by choice"
 
 
