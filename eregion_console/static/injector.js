@@ -306,7 +306,7 @@ function renderCampaignDetail(c) {
       ${(d.skipped || []).map(s => `<div style="color:var(--yellow)">${esc(s)}</div>`).join('')}</div>` : ''}
     <div class="dsec s-purple"><div class="dtitle">REPORT</div>${d.report_md
       ? `<button class="mini" data-report="${esc(c.dir)}">${showing ? 'hide' : 'show'} report.md</button>${showing ? `<pre class="report">${esc(d.report_md)}</pre>` : ''}`
-      : '<span style="color:var(--dim)">not written (yet) — on H0 it waits for the decisions, up to ~25 min after the end</span>'}</div>
+      : '<span style="color:var(--dim)">not written (yet) — on Imladris it waits for the decisions, up to ~25 min after the end</span>'}</div>
   </div>`;
 }
 

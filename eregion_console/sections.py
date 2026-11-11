@@ -78,7 +78,7 @@ def glorfindel_setup() -> dict:
 
 
 def version() -> dict:
-    """What this console runs: the reference H0 deployed (``EREGION_REF``, ``EREGION_REVISION``,
+    """What this console runs: the reference Imladris deployed (``EREGION_REF``, ``EREGION_REVISION``,
     passed by deploy.sh at the image's build), else the commit of the checkout it runs from
     (local), and the package's version. ``label`` is what the header shows: the tag when one
     was deployed, else the package's version and the short commit."""
