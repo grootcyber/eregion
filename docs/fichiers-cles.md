@@ -345,6 +345,13 @@ scripts/component_check.py → D1 : chaque composant tourne seul — Glorfindel,
                         composant sur main, un seul job à la suite sur une PR, CI10b) ; tests :
                         tests/unit/test_components.py. Les profils d'usage : docs/profils/, tests/unit/test_profiles.py.
 
+scripts/identity_map.py → IDM1 : la carte des identités (docs/design/identites.md) tenue à ce que le dépôt déclare —
+                        les rôles de infra/identities/, chaque identité ou droit Terraform, chaque variable d'identité
+                        du compose et des environnements d'exemple, chaque secret et permission d'écriture des
+                        workflows ont leur ligne au registre (§4) ; `check` dit ce qui manque, `list` ce que le dépôt
+                        déclare ; ne lit ni un état, ni un tfvars, ni un host.env, ni un .envrc ; tests :
+                        tests/unit/test_identity_map.py.
+
 scripts/image_check.py → CI1 : les images de Glorfindel et des injecteurs éprouvées après leur construction — --version,
                         imports (ceux du préflight du CD), config d'exemple sous A3, pas root, rien de Glorfindel chez
                         les injecteurs ; chaque vérification en docker run --network none. CI : images.yml ; local :
