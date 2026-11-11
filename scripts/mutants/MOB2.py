@@ -41,6 +41,11 @@ MUTANTS = [
      "deadline (MOB2, review round 1)", UNIT,
      'exec /usr/bin/timeout "$$left" "$$@"\'',
      'exec "$$@"\''),
+    # Review round 2: under timeout, MainPID is timeout's and its child ssh listens.
+    ("M4787", "the listener compared with MainPID alone: under timeout, an armed and healthy tunnel is said "
+     "not to hold 127.0.0.1:7007, and one held by its child is never seen (MOB2, review round 2)", MOBILE,
+     '    pids = unit_pids(run, state.get("ControlGroup", ""), state.get("MainPID", ""))\n',
+     '    pids = {state.get("MainPID", "")}\n'),
 ]
 TESTS = {
     "M4776": f"{_MOB}::test_a_code_session_never_sets_nor_arms_the_tunnel",
@@ -51,4 +56,5 @@ TESTS = {
     "M4784": f"{_MOB}::test_what_systemd_loaded_is_read_beside_the_file",
     "M4785": f"{_MOB}::test_the_deadline_refuses_a_start_past_it",
     "M4786": f"{_MOB}::test_ssh_runs_under_timeout_until_the_deadline",
+    "M4787": f"{_MOB}::test_the_listener_of_ssh_under_timeout_is_the_unit_s",
 }

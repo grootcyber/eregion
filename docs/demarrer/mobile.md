@@ -258,10 +258,10 @@ remplie.
   des clés de l'empreinte que l'unité nomme) ; `ExitOnForwardFailure`, `ServerAlive`, `Restart` ;
   l'adresse d'Imladris celle de Terraform (illisible ici : un ⚠). Chaque écart est un ✗ ;
 - puis `systemctl --user show`, ce que systemd a chargé : le fichier seul (`FragmentPath`), aucun
-  drop-in (`DropInPaths`), `RuntimeMaxUSec` de 12 h au plus, aucune unité qui la tire (`WantedBy`,
-  `RequiredBy`, `TriggeredBy`) — sinon un ✗, armé ou non ; arrêté, **ℹ non armé** (pas un ✗) ; en échec ou qui redémarre, un ✗ ;
-  armé : depuis quand, jusqu'à quand, le minuteur de fin vivant, et `ss -Hltnp` : son processus
-  n'écoute qu'en `127.0.0.1:7007`. Armé au-delà de sa date limite, ou pour plus de 12 h, un ✗.
+  drop-in (`DropInPaths`), le fichier non changé depuis sa lecture (`NeedDaemonReload=no`),
+  `RuntimeMaxUSec` de 12 h au plus, aucune unité qui la tire (`WantedBy`, `RequiredBy`, `BoundBy`,
+  `UpheldBy`, `TriggeredBy`, `OnFailureOf`, `OnSuccessOf`) — sinon un ✗, armé ou non ; arrêté, **ℹ non armé** (pas un ✗) ; en échec ou qui redémarre, un ✗ ;
+  armé : depuis quand, jusqu'à quand, le minuteur de fin vivant, et `ss -Hltnp` : les processus de l'unité — ceux de son cgroup (`ControlGroup`), sinon `MainPID` et ses fils, car `MainPID` est celui de `timeout` et c'est son fils ssh qui écoute — n'écoutent qu'en `127.0.0.1:7007` ; le port tenu par un processus hors de l'unité est un ✗ ; ces processus ou `ss` illisibles, un ⚠ (l'écoute n'est pas vérifiée). Armé au-delà de sa date limite, ou pour plus de 12 h, un ✗.
 
 ### 5c. Sur le téléphone : le tunnel, puis Safari
 

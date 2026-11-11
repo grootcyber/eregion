@@ -54,7 +54,9 @@ workstation's 127.0.0.1:7007, where `make glorfindel-host-tunnel` holds H0's (de
                   address of Imladris the one Terraform gives now (--host-ip; unread: a ⚠). Then
                   `systemctl --user show`: stopped, ℹ not armed (never a ✗); failing, restarting or
                   enabled, a ✗; armed: since when, until when (past its deadline or beyond 12 h: ✗), its
-                  timer of expiry alive, and (`ss -Hltnp`) its process listening on 127.0.0.1:7007 alone.
+                  timer of expiry alive, and (`ss -Hltnp`) the unit's processes — its cgroup's, else
+                  MainPID and its children (MainPID is timeout's) — listening on 127.0.0.1:7007 alone
+                  (held outside the unit: ✗; unreadable: ⚠).
                   Not set at all: ℹ.
 
 No address is printed. `check` writes nothing, installs nothing. The global configuration only: a
@@ -742,8 +744,11 @@ def _span(seconds: float) -> str:
 
 
 # What systemd loaded, read beside the file: a drop-in (`.service.d/`, `systemctl set-property`), another
-# file in another directory, a limit it reads otherwise, a unit that pulls it in.
-LOADED = ("FragmentPath", "DropInPaths", "RuntimeMaxUSec", "WantedBy", "RequiredBy", "TriggeredBy")
+# file in another directory, a file changed since it was read, a limit it reads otherwise, a unit that
+# pulls it in (each reverse dependency: wanted, required, bound, upheld, triggered, on another's failure
+# or success).
+PULLED_BY = ("WantedBy", "RequiredBy", "BoundBy", "UpheldBy", "TriggeredBy", "OnFailureOf", "OnSuccessOf")
+LOADED = ("FragmentPath", "DropInPaths", "NeedDaemonReload", "RuntimeMaxUSec") + PULLED_BY
 
 
 def loaded_lines(state: dict[str, str], fragment: Path | None) -> list[tuple[str, str]]:
@@ -753,10 +758,13 @@ def loaded_lines(state: dict[str, str], fragment: Path | None) -> list[tuple[str
         why.append("systemd lit un autre fichier que ~/" + str(UNIT_DIR / UNIT_NAME))
     if state.get("DropInPaths", "").strip():
         why.append("un drop-in la change (DropInPaths)")
+    if state.get("NeedDaemonReload", "").strip() == "yes":
+        why.append("le fichier a changé depuis que systemd l'a lu (NeedDaemonReload=yes : systemctl --user "
+                   "daemon-reload)")
     loaded_for = duration_s(state.get("RuntimeMaxUSec", ""))
     if loaded_for is None or loaded_for < 1 or loaded_for > WINDOW_S:
         why.append(f"RuntimeMaxUSec={state.get('RuntimeMaxUSec') or '?'} (12 h au plus attendu)")
-    pulled = [k for k in ("WantedBy", "RequiredBy", "TriggeredBy") if state.get(k, "").strip()]
+    pulled = [k for k in PULLED_BY if state.get(k, "").strip()]
     if pulled:
         why.append("une autre unité la tire (" + ", ".join(pulled) + ") : elle démarrerait sans geste")
     if why:
@@ -769,10 +777,10 @@ def service_lines(run=_run, console_port: int = CONSOLE_PORT, deadline: Path | N
                   now: float | None = None, fragment: Path | None = None) -> list[tuple[str, str]]:
     """What systemd says of the unit: what it loaded (its file alone, no drop-in, 12 h at most, nothing
     that pulls it in); never enabled; stopped (ℹ, not armed), failing (✗), or running — then since when,
-    until when, its timer of expiry, and what its process listens on."""
+    until when, its timer of expiry, and what the unit's processes listen on."""
     lines: list[tuple[str, str]] = []
     rc, out, err = run(["systemctl", "--user", "show", UNIT_NAME, "--no-pager",
-                        "--property=LoadState,ActiveState,SubState,UnitFileState,NRestarts,MainPID,"
+                        "--property=LoadState,ActiveState,SubState,UnitFileState,NRestarts,MainPID,ControlGroup,"
                         + ",".join(LOADED)])
     state = _show(out) if rc == 0 else {}
     if "LoadState" not in state:
@@ -816,23 +824,45 @@ def service_lines(run=_run, console_port: int = CONSOLE_PORT, deadline: Path | N
                       "tient plus que par RuntimeMaxSec : make mobile-tunnel-off, puis -on"))
     else:
         lines.append((OK, f"tunnel : le minuteur de fin l'arrêtera à la date limite ({EXPIRY_UNIT}.timer)"))
-    pid = state.get("MainPID", "")
+    # ssh runs under timeout: MainPID is timeout's, the listener its child's — the unit's processes are
+    # those of its cgroup (else MainPID and its children), never MainPID alone.
+    pids = unit_pids(run, state.get("ControlGroup", ""), state.get("MainPID", ""))
     rc, out, _ = run(["ss", "-Hltnp"])
-    if rc != 0 or not pid.isdigit() or pid == "0":
-        lines.append((FAIL, "tunnel : ce qu'écoute son processus ne se lit pas (ss -Hltnp, MainPID)"))
+    if pids is None or rc != 0:
+        lines.append((WARN, "tunnel : ce qu'écoutent ses processus ne se lit pas (" + (
+            "ss -Hltnp" if pids is not None else "son cgroup et /proc") + ") — l'écoute en 127.0.0.1:"
+            f"{console_port} seul n'est pas vérifiée"))
         return lines
-    held = set()
+    held, others = set(), set()
     for row in out.splitlines():
-        if re.search(rf"\bpid={pid}\b", row):
-            held.update(parse_listeners(row))
+        mine = set(re.findall(r"\bpid=(\d+)\b", row)) & pids
+        (held if mine else others).update(parse_listeners(row))
     if held == {("127.0.0.1", console_port)}:
-        lines.append((OK, f"tunnel : son processus n'écoute qu'en 127.0.0.1:{console_port}"))
-    elif not held:
-        lines.append((FAIL, f"tunnel : son processus ne tient pas 127.0.0.1:{console_port} (pas encore "
-                      "connecté ? le port pris par la console locale ?)"))
+        lines.append((OK, f"tunnel : ses processus n'écoutent qu'en 127.0.0.1:{console_port}"))
+    elif held:
+        lines.append((FAIL, f"tunnel : ses processus écoutent ailleurs qu'en 127.0.0.1:{console_port}"))
+    elif ("127.0.0.1", console_port) in others:
+        lines.append((FAIL, f"tunnel : il ne tient pas 127.0.0.1:{console_port} — un processus hors de l'unité "
+                      "le tient (la console locale ? un tunnel à la main ?)"))
     else:
-        lines.append((FAIL, f"tunnel : son processus écoute ailleurs qu'en 127.0.0.1:{console_port}"))
+        lines.append((FAIL, f"tunnel : il ne tient pas 127.0.0.1:{console_port} (pas encore connecté ?)"))
     return lines
+
+
+def unit_pids(run, control_group: str, main_pid: str) -> set[str] | None:
+    """The processes of the unit: its cgroup's (cgroup v2, else the hybrid hierarchies), else MainPID and
+    its children (/proc). None when neither reads."""
+    if control_group.startswith("/") and ".." not in control_group:
+        for root in ("/sys/fs/cgroup", "/sys/fs/cgroup/unified", "/sys/fs/cgroup/systemd"):
+            rc, out, _ = run(["cat", f"{root}{control_group}/cgroup.procs"])
+            pids = set(out.split()) if rc == 0 else set()
+            if pids and all(p.isdigit() for p in pids):
+                return pids
+    if main_pid.isdigit() and main_pid != "0":
+        rc, out, _ = run(["cat", f"/proc/{main_pid}/task/{main_pid}/children"])
+        if rc == 0 and all(p.isdigit() for p in out.split()):
+            return {main_pid, *out.split()}
+    return None
 
 
 def tunnel_lines(run=_run, home: Path | None = None, host_ip: str | None = None,

@@ -359,7 +359,10 @@ BLOB = base64.b64encode(b"\x00\x00\x00\x0bssh-ed25519\x00\x00\x00\x20" + b"k" * 
 OTHER_BLOB = base64.b64encode(b"\x00\x00\x00\x0bssh-ed25519\x00\x00\x00\x20" + b"z" * 32).decode()
 FP = mob.fingerprint_of(BLOB)
 NOW = 1_800_000_000
+# As under systemd: MainPID is timeout's, ssh its child, the one that listens; both in the unit's cgroup.
 PID = "4242"
+SSH_PID = "4243"
+CG = "/user.slice/user-1000.slice/user@1000.service/app.slice/eregion-console-tunnel.service"
 
 
 def _home(tmp_path) -> Path:
@@ -393,10 +396,13 @@ def tunnel_world(**over):
     """What systemd and ss say of an armed tunnel, in order."""
     # FragmentPath None: the unit's own path under the world's home, as systemd says it.
     w = {"unit": {"LoadState": "loaded", "ActiveState": "active", "SubState": "running", "UnitFileState": "static",
-                  "NRestarts": "1", "MainPID": PID, "FragmentPath": None, "DropInPaths": "",
-                  "RuntimeMaxUSec": "12h", "WantedBy": "", "RequiredBy": "", "TriggeredBy": ""},
+                  "NRestarts": "1", "MainPID": PID, "ControlGroup": CG, "FragmentPath": None, "DropInPaths": "",
+                  "NeedDaemonReload": "no", "RuntimeMaxUSec": "12h", "WantedBy": "", "RequiredBy": "",
+                  "BoundBy": "", "UpheldBy": "", "TriggeredBy": "", "OnFailureOf": "", "OnSuccessOf": ""},
          "timer": {"LoadState": "loaded", "ActiveState": "active"},
-         "ss_p": f"LISTEN 0 128 127.0.0.1:7007 0.0.0.0:* users:((\"ssh\",pid={PID},fd=4))\n",
+         "ss_p": f"LISTEN 0 128 127.0.0.1:7007 0.0.0.0:* users:((\"ssh\",pid={SSH_PID},fd=4))\n",
+         "files": {f"/sys/fs/cgroup{CG}/cgroup.procs": f"{PID}\n{SSH_PID}\n",
+                   f"/proc/{PID}/task/{PID}/children": f"{SSH_PID} "},
          "show_rc": 0, "fail": set(), "calls": [], "home": None}
     for k, v in over.items():
         if k in ("unit", "timer"):
@@ -418,6 +424,9 @@ def tunnel_run(tw, base=None):
             return 0, "".join(f"{k}={fragment if v is None else v}\n" for k, v in state.items()), ""
         if argv[:2] == ["ss", "-Hltnp"]:
             return 0, tw["ss_p"], ""
+        if argv[0] == "cat" and len(argv) == 2:
+            text = tw["files"].get(argv[1])
+            return (0, text, "") if text is not None else (1, "", f"cat: {argv[1]}: No such file or directory")
         if argv[0] in ("systemctl", "systemd-run"):
             verb = argv[0] if argv[0] == "systemd-run" else argv[2]
             return (1, "", f"{verb}: refused") if verb in tw["fail"] else (0, "", "")
@@ -605,7 +614,7 @@ def test_an_armed_tunnel_says_since_when_until_when_and_listens_on_127_0_0_1_alo
     assert all(m == mob.OK for m, _ in lines), lines
     text = "\n".join(t for _, t in lines)
     assert "armé depuis" in text and "expire à" in text and "(dans 11 h 50)" in text
-    assert "le minuteur de fin" in text and "n'écoute qu'en 127.0.0.1:7007" in text
+    assert "le minuteur de fin" in text and "n'écoutent qu'en 127.0.0.1:7007" in text
 
 
 @pytest.mark.parametrize("over,said", [
@@ -617,11 +626,13 @@ def test_an_armed_tunnel_says_since_when_until_when_and_listens_on_127_0_0_1_alo
     ({"show_rc": 1}, "ne se lit pas"),
     ({"timer": {"ActiveState": "inactive"}}, "minuteur de fin"),
     ({"timer": {"LoadState": "not-found"}}, "minuteur de fin"),
-    ({"ss_p": f"LISTEN 0 128 0.0.0.0:7007 0.0.0.0:* users:((\"ssh\",pid={PID},fd=4))\n"}, "écoute ailleurs"),
-    ({"ss_p": f"LISTEN 0 128 127.0.0.1:7007 0.0.0.0:* users:((\"ssh\",pid={PID},fd=4))\n"
-              f"LISTEN 0 128 {PRIVATE}:7007 0.0.0.0:* users:((\"ssh\",pid={PID},fd=5))\n"}, "écoute ailleurs"),
-    ({"ss_p": "LISTEN 0 128 127.0.0.1:7007 0.0.0.0:* users:((\"docker-proxy\",pid=99,fd=4))\n"}, "ne tient pas"),
-    ({"unit": {"MainPID": "0"}}, "ne se lit pas"),
+    ({"ss_p": f"LISTEN 0 128 0.0.0.0:7007 0.0.0.0:* users:((\"ssh\",pid={SSH_PID},fd=4))\n"}, "écoutent ailleurs"),
+    ({"ss_p": f"LISTEN 0 128 127.0.0.1:7007 0.0.0.0:* users:((\"ssh\",pid={SSH_PID},fd=4))\n"
+              f"LISTEN 0 128 {PRIVATE}:7007 0.0.0.0:* users:((\"ssh\",pid={SSH_PID},fd=5))\n"}, "écoutent ailleurs"),
+    ({"ss_p": "LISTEN 0 128 127.0.0.1:7007 0.0.0.0:* users:((\"docker-proxy\",pid=99,fd=4))\n"},
+     "hors de l'unité"),
+    ({"ss_p": "LISTEN 0 128 127.0.0.1:7007 0.0.0.0:*\n"}, "hors de l'unité"),
+    ({"ss_p": ""}, "pas encore connecté"),
 ])
 def test_a_tunnel_failing_enabled_or_listening_elsewhere_is_a_fail(tmp_path, over, said):
     _set_tunnel(_home(tmp_path))
@@ -1099,3 +1110,75 @@ def test_make_console_url_keeps_the_local_console_while_the_tunnel_is_stopped(tm
     assert "Console   →  http://localhost:7007/?token=local-tok-K2" in res.stdout
     assert "fake-tok-Q7" not in res.stdout + res.stderr
     assert "make glorfindel-host-url" in res.stderr and "make mobile-tunnel-on" in res.stderr
+
+
+# ── MOB2, review round 2: the unit's processes, not MainPID alone; the loaded view, complete ──────────
+
+def _listening(lines):
+    """The one line on what the unit's processes listen on."""
+    return [(m, t) for m, t in lines
+            if t.startswith(("tunnel : ses processus", "tunnel : il ne tient pas", "tunnel : ce qu'écoutent"))]
+
+
+def test_the_listener_of_ssh_under_timeout_is_the_unit_s(tmp_path):
+    """MainPID is timeout's; ssh, its child, holds 127.0.0.1:7007: read through the unit's cgroup, an armed,
+    healthy tunnel is a ✓ — never « it does not hold the port »."""
+    _set_tunnel(_home(tmp_path))
+    lines, tw = _tunnel(tmp_path)
+    assert (mob.OK, "tunnel : ses processus n'écoutent qu'en 127.0.0.1:7007") in lines, lines
+    assert ["cat", f"/sys/fs/cgroup{CG}/cgroup.procs"] in tw["calls"]
+
+
+def test_without_the_cgroup_the_children_of_main_pid_are_read(tmp_path):
+    _set_tunnel(_home(tmp_path))
+    files = {f"/proc/{PID}/task/{PID}/children": f"{SSH_PID} "}
+    lines, _ = _tunnel(tmp_path, files=files)
+    assert (mob.OK, "tunnel : ses processus n'écoutent qu'en 127.0.0.1:7007") in lines, lines
+    lines, _ = _tunnel(tmp_path, files=files, unit={"ControlGroup": ""})
+    assert (mob.OK, "tunnel : ses processus n'écoutent qu'en 127.0.0.1:7007") in lines, lines
+
+
+@pytest.mark.parametrize("over", [{"files": {}}, {"files": {}, "unit": {"MainPID": "0", "ControlGroup": ""}},
+                                  {"unit": {"ControlGroup": "/../../etc", "MainPID": "0"}}])
+def test_processes_that_cannot_be_read_are_a_warning_never_a_verdict(tmp_path, over):
+    """Neither the cgroup nor /proc reads: a clear ⚠, never a ✓ on the listener nor a false ✗."""
+    _set_tunnel(_home(tmp_path))
+    lines, _ = _tunnel(tmp_path, **over)
+    said = _listening(lines)
+    assert said == [(mob.WARN, said[0][1])] and "n'est pas vérifiée" in said[0][1], lines
+
+
+def test_ss_unread_is_a_warning_never_a_verdict(tmp_path):
+    _set_tunnel(_home(tmp_path))
+    tw = tunnel_world(home=_home(tmp_path))
+    base = tunnel_run(tw)
+
+    def run(argv, timeout=30):
+        return (1, "", "ss: permission denied") if argv[:2] == ["ss", "-Hltnp"] else base(argv, timeout)
+    lines = mob.tunnel_lines(run, _home(tmp_path), HOST, 7007, NOW)
+    said = _listening(lines)
+    assert said == [(mob.WARN, said[0][1])] and "ss -Hltnp" in said[0][1], lines
+
+
+def test_a_listener_held_outside_the_unit_is_a_fail(tmp_path):
+    """127.0.0.1:7007 held by a process outside the unit's cgroup (the local console, a tunnel by hand),
+    the unit's own ssh not listening: a ✗ that says so."""
+    _set_tunnel(_home(tmp_path))
+    # `ss -Hltnp` lists listeners only: the unit's ssh, not yet listening, is absent from it.
+    ss_p = "LISTEN 0 128 127.0.0.1:7007 0.0.0.0:* users:((\"ssh\",pid=999,fd=4))\n"
+    lines, _ = _tunnel(tmp_path, ss_p=ss_p)
+    assert any("hors de l'unité" in t for t in _fails(lines)), lines
+    assert not any(m == mob.OK and "n'écoutent" in t for m, t in lines)
+
+
+@pytest.mark.parametrize("key,value,said", [
+    ("NeedDaemonReload", "yes", "NeedDaemonReload=yes"),
+    ("BoundBy", "other.service", "BoundBy"),
+    ("UpheldBy", "other.service", "UpheldBy"),
+    ("OnFailureOf", "other.service", "OnFailureOf"),
+    ("OnSuccessOf", "other.service", "OnSuccessOf"),
+])
+def test_a_file_changed_since_loaded_or_another_reverse_dependency_is_a_fail(tmp_path, key, value, said):
+    _set_tunnel(_home(tmp_path))
+    lines, _ = _tunnel(tmp_path, unit={key: value})
+    assert any("ce que systemd a chargé" in t and said in t for t in _fails(lines)), lines

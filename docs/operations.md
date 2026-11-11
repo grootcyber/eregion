@@ -4390,8 +4390,8 @@ sudo -v && make mobile-check                                   # le poste ouvert
   la date limite lue, ssh sous `timeout`, ce que systemd a chargé sans drop-in ni autre fichier, une
   redirection `127.0.0.1:7007` seule, la clé d'hôte épinglée, l'adresse d'Imladris celle de Terraform),
   puis `systemctl --user show` et `ss -Hltnp` : arrêté, « ℹ non armé » ; en échec, activé ou armé
-  au-delà de sa date limite, un ✗ ; armé, depuis quand, jusqu'à quand, son minuteur de fin, et son
-  processus qui n'écoute qu'en `127.0.0.1:7007`.
+  au-delà de sa date limite, un ✗ ; armé, depuis quand, jusqu'à quand, son minuteur de fin, et
+  les processus de l'unité — ceux de son cgroup (`ControlGroup`), sinon `MainPID` et ses fils, car `MainPID` est celui de `timeout` et c'est son fils ssh qui écoute — n'écoutent qu'en `127.0.0.1:7007` ; le port tenu par un processus hors de l'unité est un ✗ ; ces processus ou `ss` illisibles, un ⚠ (l'écoute n'est pas vérifiée).
 - **Le tunnel du poste** (MOB2, `scripts/mobile.py tunnel-*`, `infra/poste/eregion-console-tunnel.service`) :
   armé à la demande, borné à 12 h (décision de Jonathan, 11/11). `-install` écrit l'unité dans
   `~/.config/systemd/user/` — l'adresse d'Imladris lue par `terraform output`, `HOST_USER`, `HOST_SSH_KEY`,
