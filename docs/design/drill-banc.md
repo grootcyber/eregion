@@ -1040,5 +1040,10 @@ Prises une à une, en interactif ; toutes suivent la recommandation de la concep
   d'attentes en v1 : seul un drill livré porte `schedule` et des attentes. Un client qui voudrait son
   propre drill hebdomadaire est une question pour la 1.x.
 - La rotation de plusieurs drills (§1.1) est une suite, hors DRL1.
+- **Le créneau daté**, une occurrence unique d'un drill non destructif, armée à une heure choisie, à
+  côté du drill de la semaine, est conçu à part : [`banc-autonome.md`](banc-autonome.md) (BNC2,
+  #684). Il réutilise la machinerie de ce drill (l'armement, le permis, le verrou, le registre,
+  l'arrêt du service) et ne joue jamais le destructif : le rançongiciel T1486 reste lancé de la main
+  de l'opérateur (`make bench-run`), et la même conception dit ce qui s'automatise autour.
 - Ni le jumeau ni la production : le drill est du banc seul. La sentinelle de production
   (`sentinelle`) reste une demande portée à la main.
