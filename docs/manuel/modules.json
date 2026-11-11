@@ -982,6 +982,18 @@
    "issue": 660
   },
   {
+   "id": "s-inf-fl",
+   "composant": "socle",
+   "poste": "s-signer",
+   "nom": "Security hardening",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "INF-FL"
+   ],
+   "issue": 654
+  },
+  {
    "id": "g-remontee",
    "composant": "glorfindel",
    "poste": "g-rediger",
