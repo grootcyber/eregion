@@ -143,6 +143,19 @@ def test_an_untracked_file_is_never_read(tmp_path):
     assert host_name.problems(tmp_path) == []
 
 
+def test_a_tracked_file_whose_name_is_not_ascii_is_read(tmp_path):
+    """FLK1: `git ls-files` quotes a name that is not ASCII (core.quotePath, git's default, set here
+    whatever the operator's config) — read without -z, « "docs/caf\\303\\251.md" » names no file,
+    and its H0 was skipped, unsaid. Read by -z, the name as it is, and what it says is seen."""
+    _tree(tmp_path, {"docs/café.md": "Le CD de H0.\n", "docs/plain.md": "Rien.\n"})
+    git = ["git", "-c", "init.defaultBranch=main", "-C", str(tmp_path)]
+    subprocess.run([*git, "init", "-q"], check=True, capture_output=True)
+    subprocess.run([*git, "config", "core.quotePath", "true"], check=True, capture_output=True)
+    subprocess.run([*git, "add", "docs"], check=True, capture_output=True)
+    assert host_name.files(tmp_path) == ["docs/café.md", "docs/plain.md"]
+    assert [p.split(":")[0] for p in host_name.problems(tmp_path)] == ["docs/café.md"]
+
+
 def test_without_git_hidden_files_and_env_files_are_not_read(tmp_path):
     _tree(tmp_path, {".envrc": "H0\n", "infra/glorfindel-host/host.env": "H0\n", ".hidden/x.md": "H0\n",
                      "docs/x.md": "Rien.\n"})

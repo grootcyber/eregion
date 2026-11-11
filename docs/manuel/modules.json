@@ -1889,6 +1889,18 @@
    "issue": 715
   },
   {
+   "id": "s-modele-chroma",
+   "composant": "socle",
+   "poste": "s-prouver",
+   "nom": "ChromaDB's embedding model fetched by one test process at a time, only when a test needs it",
+   "etat": "main",
+   "release": "0.5",
+   "lots": [
+    "FLK1"
+   ],
+   "issue": 723
+  },
+  {
    "id": "s-verrous",
    "composant": "socle",
    "poste": "s-signer",
