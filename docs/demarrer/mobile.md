@@ -222,16 +222,27 @@ make mobile-check          # « armé depuis …, expire à … (dans …) », 1
 make mobile-tunnel-off     # avant la fin, dès qu'on n'en a plus besoin
 ```
 
-**Comment les 12 h tiennent** — trois bornes, chacune suffisante pour qu'aucune fenêtre ne dure
-sans fin :
-1. `make mobile-tunnel-on` écrit la date limite (maintenant + 12 h) dans
-   `~/.eregion/console-tunnel/deadline`, puis pose un minuteur de systemd,
-   `eregion-console-tunnel-expiry.timer` (`systemd-run --user --on-active=43200s`), qui arrête
-   l'unité à cette heure ; le minuteur ne se pose pas, rien n'est armé ;
-2. l'unité lit la date limite à chaque départ (`ExecCondition`) : passée, ou absente, elle ne
-   démarre pas, et `Restart=` ne la relance pas (une condition fausse n'est pas un échec) ; un
-   `systemctl --user start` à la main, sans `make mobile-tunnel-on`, ne fait rien ;
-3. `RuntimeMaxSec=12h` arrête toute exécution qui durerait plus, le minuteur perdu.
+**Comment les 12 h tiennent.** `make mobile-tunnel-on` écrit la date limite (maintenant + 12 h)
+dans `~/.eregion/console-tunnel/deadline`. **L'unité seule** s'y tient ensuite, sans le minuteur :
+1. à chaque départ et à chaque relance, son `ExecCondition` lit la date limite : absente, passée, ou
+   à plus de 12 h de maintenant, l'unité ne démarre pas, et `Restart=` ne la relance pas (une
+   condition fausse n'est pas un échec). **Dans la fenêtre**, un `systemctl --user start` à la main la
+   démarre bien, jusqu'à la date limite ; hors fenêtre, il ne fait rien ;
+2. son `ExecStart` lance ssh sous `/usr/bin/timeout`, pour le temps qui reste jusqu'à la date limite
+   (12 h au plus) : à l'heure, `timeout` arrête ssh (code 124), `Restart=` tente une relance, et
+   l'`ExecCondition` la refuse ;
+3. `RuntimeMaxSec=12h` arrête toute exécution qui durerait plus : la dernière borne.
+
+En plus, `make mobile-tunnel-on` pose un minuteur de systemd, `eregion-console-tunnel-expiry.timer`
+(`systemd-run --user --on-active=43200s`), qui arrête l'unité à l'heure : une quatrième borne, dont
+les trois autres n'ont pas besoin ; le minuteur ne se pose pas, rien n'est armé.
+
+Ce que ces bornes ne tiennent pas :
+- **un processus du même utilisateur Unix** (une session d'agent comprise) peut réécrire la date
+  limite et lancer le service : le garde des cibles `make` arrête l'erreur, pas une volonté ;
+- **sous WSL, une veille de l'hôte met en pause les horloges monotones** (`timeout`, `RuntimeMaxSec`,
+  le minuteur) : leurs 12 h comptent le temps où le poste est éveillé. L'`ExecCondition` lit
+  l'horloge murale : au réveil, aucune relance ne passe la date limite.
 
 Sans session de l'utilisateur (sans *linger*), systemd de l'utilisateur s'arrête avec la dernière
 session, et le tunnel avec lui : la fenêtre est alors plus courte, jamais plus longue. **Non
@@ -241,11 +252,14 @@ remplie.
 
 `make mobile-check` lit le tunnel en plus du reste :
 - l'unité est celle du modèle : pas de `[Install]`, ni de lien dans un `*.wants/` (elle démarrerait
-  au boot) ; `RuntimeMaxSec` entre 1 s et 12 h et la date limite lue (sinon : « sans limite de
-  durée ») ; une redirection, `127.0.0.1:7007` seul ; la clé épinglée (le known_hosts ne tient que
+  au boot) ; aucune clé ni section dite deux fois ; `RuntimeMaxSec` entre 1 s et 12 h, la date limite
+  lue, et ssh sous le `timeout` du modèle (sinon : « sans limite de durée », ou « pas borné ») ; une
+  redirection, `127.0.0.1:7007` seul ; la clé épinglée (le known_hosts ne tient que
   des clés de l'empreinte que l'unité nomme) ; `ExitOnForwardFailure`, `ServerAlive`, `Restart` ;
   l'adresse d'Imladris celle de Terraform (illisible ici : un ⚠). Chaque écart est un ✗ ;
-- puis `systemctl --user show` : arrêté, **ℹ non armé** (pas un ✗) ; en échec ou qui redémarre, un ✗ ;
+- puis `systemctl --user show`, ce que systemd a chargé : le fichier seul (`FragmentPath`), aucun
+  drop-in (`DropInPaths`), `RuntimeMaxUSec` de 12 h au plus, aucune unité qui la tire (`WantedBy`,
+  `RequiredBy`, `TriggeredBy`) — sinon un ✗, armé ou non ; arrêté, **ℹ non armé** (pas un ✗) ; en échec ou qui redémarre, un ✗ ;
   armé : depuis quand, jusqu'à quand, le minuteur de fin vivant, et `ss -Hltnp` : son processus
   n'écoute qu'en `127.0.0.1:7007`. Armé au-delà de sa date limite, ou pour plus de 12 h, un ✗.
 
@@ -258,9 +272,10 @@ remplie.
      destination `127.0.0.1:7007`, par l'hôte du poste.
 
    **Non vérifié** : les noms des menus, et la syntaxe exacte de chaque application.
-2. **L'URL** : dans le terminal du téléphone, sur le poste, `make console-url`. Le tunnel posé, elle
+2. **L'URL** : dans le terminal du téléphone, sur le poste, `make console-url`. Le tunnel armé, elle
    donne celle de la console d'Imladris (`http://localhost:7007/?token=…`, le jeton lu dans
-   `infra/glorfindel-host/host.env`), et dit si le tunnel n'est pas armé. Elle refuse dans une
+   `infra/glorfindel-host/host.env`). Le tunnel arrêté, elle donne celle de la console locale, comme
+   avant, et une ligne renvoie à `make glorfindel-host-url` ou à `make mobile-tunnel-on`. Elle refuse dans une
    session d'agent : le jeton n'atteint jamais une session de code (`make glorfindel-host-url` et
    `make glorfindel-host-tunnel` refusent de même).
 3. **Dans Safari** : cette URL. Le `Host` reste `localhost` : la console d'Imladris répond sans rien

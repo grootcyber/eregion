@@ -14,10 +14,12 @@
                                            targets that print the console's token run it first
 
 Every gesture refuses in a code session (bench_shared.session_refusal, as MOB1's): a session never sets
-nor arms the tunnel, and never reads the console's token. The tunnel is armed on demand and bounded to
-12 h (decision of Jonathan, 11/11), by three bounds: the deadline and the transient timer that stops the
-unit then, both from `tunnel-on`; the unit's ExecCondition, which refuses any (re)start past the deadline;
-RuntimeMaxSec=12h on each run.
+nor arms the tunnel, and never reads the console's token — a guard against a mistake: a process of the
+same Unix user can still write a deadline and start the unit. The tunnel is armed on demand and bounded
+to 12 h (decision of Jonathan, 11/11): `tunnel-on` writes the deadline, and the unit alone holds to it —
+its ExecCondition refuses any (re)start without it, past it or more than 12 h ahead; ssh runs under
+/usr/bin/timeout until it; RuntimeMaxSec=12h ends any run. The transient timer `tunnel-on` sets stops the
+unit at the deadline too. Under WSL, a sleep pauses the monotonic clocks: 12 h of the workstation awake.
 
 The two barriers: the private network (Tailscale: the account with MFA, an access rule that opens only
 phone → workstation:22), then the workstation's SSH server, in WSL, by key alone — a key kept in the
@@ -358,7 +360,9 @@ def unit_path(home: Path | None = None) -> Path:
 
 def parse_unit(text: str) -> tuple[dict[str, dict[str, list[str]]], list[str]]:
     """A unit file → ({section: {key: [values]}}, what is not a unit's line). A line ending in « \\ »
-    goes on with the next one, as systemd reads it; comments (# ;) left out."""
+    goes on with the next one, as systemd reads it; comments (# ;) left out. A section or a key said
+    twice is odd: systemd would merge the section, add to the key or reset it (`ExecStart=`, then a
+    second `RuntimeMaxSec=infinity`), and the first value read here would not be what it runs."""
     sections: dict[str, dict[str, list[str]]] = {}
     odd: list[str] = []
     current = None
@@ -372,12 +376,16 @@ def parse_unit(text: str) -> tuple[dict[str, dict[str, list[str]]], list[str]]:
             continue
         line, pending = (pending + line).strip(), ""
         if line.startswith("[") and line.endswith("]"):
+            if line[1:-1] in sections:
+                odd.append(f"{line} deux fois")
             current = sections.setdefault(line[1:-1], {})
             continue
         key, eq, value = line.partition("=")
         if not eq or current is None:
             odd.append(line[:60])
             continue
+        if key.strip() in current:
+            odd.append(f"{key.strip()}= deux fois")
         current.setdefault(key.strip(), []).append(value.strip())
     if pending:
         odd.append(pending[:60])
@@ -524,11 +532,30 @@ def deadline_of(sections: dict) -> str:
     return m.group(1) if m else ""
 
 
+def _wrapper_model() -> list[str]:
+    """The model's ExecStart up to ssh: `/bin/sh -c '<timeout until the deadline>' tunnel`."""
+    try:
+        sections, _ = parse_unit(UNIT_MODEL.read_text(encoding="utf-8"))
+        argv = shlex.split((sections.get("Service", {}).get("ExecStart") or [""])[0])
+    except (OSError, ValueError):
+        return []
+    return argv[:4] if len(argv) > 5 and argv[4] == "@DEADLINE@" else []
+
+
+def split_exec(argv: list[str]) -> tuple[str, list[str]]:
+    """ExecStart → (the deadline its timeout reads, ssh's argv). ('', argv) when it is not the
+    model's wrapper: ssh, if it is one, is then not bounded by the deadline."""
+    model = _wrapper_model()
+    if model and argv[:4] == model and len(argv) > 5:
+        return argv[4], argv[5:]
+    return "", argv
+
+
 def _read_private(path) -> str:
     """A file of the operator's: a regular file, not a link, writable by them alone."""
     path = Path(path)
     st = path.lstat()
-    if not stat.S_ISREG(st.st_mode) or st.st_mode & 0o022:
+    if not stat.S_ISREG(st.st_mode) or st.st_mode & 0o022 or st.st_uid != os.getuid():
         raise OSError(f"{path.name} : pas un fichier à soi")
     return path.read_text(encoding="utf-8", errors="replace")
 
@@ -549,6 +576,13 @@ def unit_lines(text: str, host_ip: str | None = None, console_port: int = CONSOL
         lines.append((FAIL, "tunnel : l'unité a une section [Install] — `systemctl enable` la ferait démarrer "
                       "au boot, sans geste : make mobile-tunnel-install la réécrit"))
     # 12 h at most: a run bounded, and no start past the deadline (the model's ExecCondition).
+    argv: list[str] = []
+    if len(execs) == 1:
+        try:
+            argv = shlex.split(execs[0])
+        except ValueError:
+            argv = []
+    bounded_by, argv = split_exec(argv)
     longest = duration_s((service.get("RuntimeMaxSec") or [""])[0])
     if longest is None or not 1 <= longest <= WINDOW_S:
         lines.append((FAIL, "tunnel : l'unité est sans limite de durée — RuntimeMaxSec entre 1 s et 12 h "
@@ -556,21 +590,20 @@ def unit_lines(text: str, host_ip: str | None = None, console_port: int = CONSOL
     elif not deadline_of(sections):
         lines.append((FAIL, "tunnel : l'unité ne lit pas la date limite (ExecCondition du modèle) — elle "
                       "repartirait au-delà des 12 h : make mobile-tunnel-install la réécrit"))
+    elif bounded_by != deadline_of(sections):
+        lines.append((FAIL, "tunnel : ssh n'est pas borné à la date limite (le timeout du modèle) — une "
+                      "exécution durerait jusqu'à RuntimeMaxSec : make mobile-tunnel-install la réécrit"))
     else:
-        lines.append((OK, "tunnel : jamais au boot, 12 h au plus — RuntimeMaxSec, la date limite lue à "
-                      "chaque départ"))
+        lines.append((OK, "tunnel : jamais au boot, 12 h au plus — ssh sous timeout jusqu'à la date limite, "
+                      "la date limite lue à chaque départ, RuntimeMaxSec"))
     more = [f"[{name}]" for name in sections if name not in UNIT_KEYS and name != "Install"]
     more += [f"{k}=" for name, keys in sections.items() if name in UNIT_KEYS for k in keys
              if k not in UNIT_KEYS[name]]
     more += [f"« {o} »" for o in odd]
-    argv: list[str] = []
     if len(execs) != 1:
         more.append(f"{len(execs)} ExecStart")
-    else:
-        try:
-            argv = shlex.split(execs[0])
-        except ValueError:
-            more.append("un ExecStart illisible")
+    elif not argv:
+        more.append("un ExecStart illisible")
     if argv and (not argv[0].startswith("/") or Path(argv[0]).name != "ssh"):
         more.append("un ExecStart qui n'est pas /…/ssh")
         argv = []
@@ -708,13 +741,39 @@ def _span(seconds: float) -> str:
     return f"{seconds // 3600} h {seconds % 3600 // 60:02d}"
 
 
+# What systemd loaded, read beside the file: a drop-in (`.service.d/`, `systemctl set-property`), another
+# file in another directory, a limit it reads otherwise, a unit that pulls it in.
+LOADED = ("FragmentPath", "DropInPaths", "RuntimeMaxUSec", "WantedBy", "RequiredBy", "TriggeredBy")
+
+
+def loaded_lines(state: dict[str, str], fragment: Path | None) -> list[tuple[str, str]]:
+    """The unit as systemd holds it: its file alone, no drop-in, 12 h at most, nothing that pulls it in."""
+    why = []
+    if fragment is not None and Path(state.get("FragmentPath", "")) != fragment:
+        why.append("systemd lit un autre fichier que ~/" + str(UNIT_DIR / UNIT_NAME))
+    if state.get("DropInPaths", "").strip():
+        why.append("un drop-in la change (DropInPaths)")
+    loaded_for = duration_s(state.get("RuntimeMaxUSec", ""))
+    if loaded_for is None or loaded_for < 1 or loaded_for > WINDOW_S:
+        why.append(f"RuntimeMaxUSec={state.get('RuntimeMaxUSec') or '?'} (12 h au plus attendu)")
+    pulled = [k for k in ("WantedBy", "RequiredBy", "TriggeredBy") if state.get(k, "").strip()]
+    if pulled:
+        why.append("une autre unité la tire (" + ", ".join(pulled) + ") : elle démarrerait sans geste")
+    if why:
+        return [(FAIL, "tunnel : ce que systemd a chargé n'est pas le modèle — " + " ; ".join(why)
+                 + " : make mobile-tunnel-remove, puis -install")]
+    return [(OK, "tunnel : systemd a chargé le fichier seul — aucun drop-in, 12 h au plus, rien ne la tire")]
+
+
 def service_lines(run=_run, console_port: int = CONSOLE_PORT, deadline: Path | None = None,
-                  now: float | None = None) -> list[tuple[str, str]]:
-    """What systemd says of the unit: never enabled; stopped (ℹ, not armed), failing (✗), or running —
-    then since when, until when, its timer of expiry, and what its process listens on."""
+                  now: float | None = None, fragment: Path | None = None) -> list[tuple[str, str]]:
+    """What systemd says of the unit: what it loaded (its file alone, no drop-in, 12 h at most, nothing
+    that pulls it in); never enabled; stopped (ℹ, not armed), failing (✗), or running — then since when,
+    until when, its timer of expiry, and what its process listens on."""
     lines: list[tuple[str, str]] = []
     rc, out, err = run(["systemctl", "--user", "show", UNIT_NAME, "--no-pager",
-                        "--property=LoadState,ActiveState,SubState,UnitFileState,NRestarts,MainPID"])
+                        "--property=LoadState,ActiveState,SubState,UnitFileState,NRestarts,MainPID,"
+                        + ",".join(LOADED)])
     state = _show(out) if rc == 0 else {}
     if "LoadState" not in state:
         return [(FAIL, "tunnel : systemd de l'utilisateur ne se lit pas (systemctl --user : "
@@ -722,6 +781,7 @@ def service_lines(run=_run, console_port: int = CONSOLE_PORT, deadline: Path | N
     if state["LoadState"] != "loaded":
         return [(FAIL, f"tunnel : l'unité n'est pas chargée (LoadState={state['LoadState']}) — "
                  "systemctl --user daemon-reload")]
+    lines += loaded_lines(state, fragment)
     if state.get("UnitFileState", "") not in ("static", "disabled", ""):
         lines.append((FAIL, f"tunnel : l'unité est activée (UnitFileState={state['UnitFileState']}) — elle "
                       f"démarrerait au boot, sans geste : systemctl --user disable {UNIT_NAME}"))
@@ -787,7 +847,7 @@ def tunnel_lines(run=_run, home: Path | None = None, host_ip: str | None = None,
                        "par d'autres ?)")]
     lines = unit_lines(text, host_ip, console_port) + wants_lines(home)
     path = deadline_of(parse_unit(text)[0])
-    return lines + service_lines(run, console_port, Path(path) if path else None, now)
+    return lines + service_lines(run, console_port, Path(path) if path else None, now, unit_path(home))
 
 
 def wants_lines(home: Path) -> list[tuple[str, str]]:
@@ -942,6 +1002,14 @@ def tunnel_on(env: dict, run=_run, home: Path | None = None, say=print, now: flo
         return 1
     found = unit_lines(text, (env.get("MOBILE_HOST_IP") or "").strip() or None)
     found += wants_lines(home)
+    rc, out, err = run(["systemctl", "--user", "show", UNIT_NAME, "--no-pager", "--property=LoadState,"
+                        + ",".join(LOADED)])
+    state = _show(out) if rc == 0 else {}
+    if state.get("LoadState") != "loaded":
+        found.append((FAIL, "systemd de l'utilisateur ne dit pas l'unité chargée (" + _first(err, out, rc)[:80]
+                      + ") — systemctl --user daemon-reload"))
+    else:
+        found += loaded_lines(state, unit_path(home))
     bad = [t for m, t in found if m == FAIL]
     if bad:
         say("✗ l'unité ne passe pas make mobile-check : " + " ; ".join(bad) + ". Rien n'est armé.")

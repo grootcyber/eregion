@@ -391,11 +391,13 @@ def _set_tunnel(home, unit=None, known=None, window=(NOW - 600, NOW - 600 + mob.
 
 def tunnel_world(**over):
     """What systemd and ss say of an armed tunnel, in order."""
+    # FragmentPath None: the unit's own path under the world's home, as systemd says it.
     w = {"unit": {"LoadState": "loaded", "ActiveState": "active", "SubState": "running", "UnitFileState": "static",
-                  "NRestarts": "1", "MainPID": PID},
+                  "NRestarts": "1", "MainPID": PID, "FragmentPath": None, "DropInPaths": "",
+                  "RuntimeMaxUSec": "12h", "WantedBy": "", "RequiredBy": "", "TriggeredBy": ""},
          "timer": {"LoadState": "loaded", "ActiveState": "active"},
          "ss_p": f"LISTEN 0 128 127.0.0.1:7007 0.0.0.0:* users:((\"ssh\",pid={PID},fd=4))\n",
-         "show_rc": 0, "fail": set(), "calls": []}
+         "show_rc": 0, "fail": set(), "calls": [], "home": None}
     for k, v in over.items():
         if k in ("unit", "timer"):
             w[k] = {**w[k], **v}
@@ -412,7 +414,8 @@ def tunnel_run(tw, base=None):
             if tw["show_rc"]:
                 return tw["show_rc"], "", "Failed to connect to bus: No medium found"
             state = tw["timer"] if argv[3].endswith(".timer") else tw["unit"]
-            return 0, "".join(f"{k}={v}\n" for k, v in state.items()), ""
+            fragment = str(mob.unit_path(tw["home"])) if tw["home"] else ""
+            return 0, "".join(f"{k}={fragment if v is None else v}\n" for k, v in state.items()), ""
         if argv[:2] == ["ss", "-Hltnp"]:
             return 0, tw["ss_p"], ""
         if argv[0] in ("systemctl", "systemd-run"):
@@ -426,7 +429,7 @@ def tunnel_run(tw, base=None):
 
 def _tunnel(tmp_path, host_ip=HOST, now=NOW, **over):
     home = _home(tmp_path)
-    tw = tunnel_world(**over)
+    tw = tunnel_world(home=home, **over)
     lines = mob.tunnel_lines(tunnel_run(tw), home, host_ip, 7007, now)
     return lines, tw
 
@@ -558,11 +561,13 @@ def test_durations_read_as_systemd_writes_them(value, seconds):
 # ── the unit's ExecCondition, as /bin/sh runs it ─────────────────────────────
 
 @pytest.mark.parametrize("window,starts", [((NOW - 60, None), True), ((NOW - 60, -10), False), (None, False),
-                                           ("garbage", False)])
+                                           ("garbage", False), ((NOW - 60, 12 * 3600 - 60), True),
+                                           ((NOW - 60, 13 * 3600), False), ((NOW - 60, 30 * 86400), False)])
 def test_the_deadline_refuses_a_start_past_it(tmp_path, window, starts):
     """The model's ExecCondition, unescaped as systemd does it ($$ → $, %% → %), run by /bin/sh: past the
-    deadline, or without one, it exits between 1 and 254 — systemd then skips the start without a
-    failure, so Restart= never starts it again."""
+    deadline, without one, or with one more than 12 h ahead (a deadline written by another hand), it exits
+    between 1 and 254 — systemd then skips the start without a failure, so Restart= never starts it
+    again."""
     if shutil.which("sh") is None:
         pytest.skip("no sh")
     sections, _ = mob.parse_unit(mob.UNIT_MODEL.read_text(encoding="utf-8"))
@@ -663,11 +668,11 @@ def test_mobile_check_with_a_failing_tunnel_gives_no_green_verdict(tmp_path):
     (home / ".ssh").mkdir()
     (home / ".ssh" / "authorized_keys").write_text("ecdsa-sha2-nistp256 AAAA phone\n")
     (home / ".ssh" / "authorized_keys").chmod(0o600)
-    tw = tunnel_world(unit={"ActiveState": "activating", "SubState": "auto-restart"})
+    tw = tunnel_world(home=home, unit={"ActiveState": "activating", "SubState": "auto-restart"})
     text, code = mob.render(mob.check(7007, tunnel_run(tw, fake_run(world())), home, HOST, NOW))
     assert code == 1 and "✓ le poste ne s'ouvre" not in text and "✗ tunnel : en échec" in text
     assert IP.findall(text.replace("127.0.0.1", "")) == []
-    tw = tunnel_world()
+    tw = tunnel_world(home=home)
     text, code = mob.render(mob.check(7007, tunnel_run(tw, fake_run(world())), home, HOST, NOW))
     assert code == 0 and "✓ le poste ne s'ouvre" in text, text
 
@@ -687,6 +692,7 @@ def _env(home, **over):
 
 def _main(home, *argv, env=None, tw=None, cwd=None, here=None):
     tw = tw or tunnel_world()
+    tw["home"] = tw["home"] or home
     said = []
     code = mob.main(list(argv), tunnel_run(tw), home, env if env is not None else _env(home),
                     cwd=cwd or home, here=here or home, say=said.append, now=NOW)
@@ -776,7 +782,8 @@ def test_on_refuses_a_unit_mobile_check_refuses(tmp_path, change, env_over, said
     _set_tunnel(home, window=None, **change)
     code, out, tw = _main(home, "tunnel-on", env=_env(home, **env_over))
     assert code == 1 and said in out and "Rien n'est armé" in out, out
-    assert tw["calls"] == [] and not (home / mob.TUNNEL_DEADLINE).exists()
+    assert [c[:3] for c in tw["calls"]] in ([], [["systemctl", "--user", "show"]])
+    assert not (home / mob.TUNNEL_DEADLINE).exists()
 
 
 def test_on_without_a_unit_arms_nothing(tmp_path):
@@ -851,7 +858,8 @@ def spies(tmp_path):
     log = tmp_path / "spy.log"
     for name in SPY:
         (b / name).write_text(f'#!/bin/sh\necho "{name} $*" >> "{log}"\n'
-                              '[ "$1 $2" = "--user is-active" ] && exit 3\nexit 0\n')
+                              '[ "$1 $2" = "--user is-active" ] && { [ -n "$SPY_ACTIVE" ] && exit 0; exit 3; }\n'
+                              'exit 0\n')
         (b / name).chmod(0o755)
     return b, log
 
@@ -876,7 +884,8 @@ def _make_at(root, spies, home, *args, **env_over):
 
 @needs_make
 @pytest.mark.parametrize("target", ["mobile-tunnel-install", "mobile-tunnel-on", "mobile-tunnel-off",
-                                    "mobile-tunnel-remove", "console-url", "glorfindel-host-url"])
+                                    "mobile-tunnel-remove", "console-url", "glorfindel-host-url",
+                                    "glorfindel-host-tunnel"])
 @pytest.mark.parametrize("where", ["env", "worktree"])
 def test_make_refuses_in_an_agent_session_before_anything_runs(tmp_path, spies, target, where):
     """The guard runs alone: no terraform output, no ssh-keyscan, no systemctl — and no token read."""
@@ -935,11 +944,10 @@ def test_make_console_url_gives_imladris_s_when_the_tunnel_is_set(tmp_path, spie
     root = _operator(tmp_path)
     res = _make_at(root, spies, home, "console-url", f"HOST_ENV={env_file}", "CONSOLE_WAIT=0")
     assert res.returncode != 0 and "fake-tok-Q7" not in res.stdout   # no tunnel: the local console's, none here
-    _set_tunnel(home, window=None)
-    res = _make_at(root, spies, home, "console-url", f"HOST_ENV={env_file}", "CONSOLE_WAIT=0")
+    _set_tunnel(home)
+    res = _make_at(root, spies, home, "console-url", f"HOST_ENV={env_file}", "CONSOLE_WAIT=0", SPY_ACTIVE="1")
     assert res.returncode == 0, res.stderr
     assert "Console d'Imladris (le tunnel du poste)  →  http://localhost:7007/?token=fake-tok-Q7" in res.stdout
-    assert "n'est pas armé : make mobile-tunnel-on" in res.stderr
 
 
 @needs_make
@@ -953,7 +961,8 @@ def test_make_mobile_check_sees_an_unbounded_unit(tmp_path, fake_bin):
     (home / ".ssh" / "authorized_keys").write_text("ecdsa-sha2-nistp256 AAAA phone\n")
     (home / ".ssh" / "authorized_keys").chmod(0o600)
     for name, body in (("systemctl", "echo LoadState=loaded; echo ActiveState=inactive; echo SubState=dead; "
-                                     "echo UnitFileState=static"),):
+                                     "echo UnitFileState=static; echo RuntimeMaxUSec=12h; "
+                                     "echo FragmentPath=$HOME/.config/systemd/user/eregion-console-tunnel.service"),):
         (fake_bin[0] / name).write_text(f"#!/bin/sh\n{body}\n")
         (fake_bin[0] / name).chmod(0o755)
     _set_tunnel(home, window=None)
@@ -964,3 +973,129 @@ def test_make_mobile_check_sees_an_unbounded_unit(tmp_path, fake_bin):
     res = _make(fake_bin, "mobile-check")
     assert res.returncode != 0 and "✗ tunnel : l'unité est sans limite de durée" in res.stdout
     assert "✓ le poste ne s'ouvre" not in res.stdout
+
+
+# ── MOB2, review round 1: what systemd loaded, the unit bounded alone, the owner, console-url ─────────
+
+@pytest.mark.parametrize("over,said", [
+    ({"DropInPaths": "/home/op/.config/systemd/user/eregion-console-tunnel.service.d/50-x.conf"}, "un drop-in"),
+    ({"FragmentPath": "/etc/systemd/user/eregion-console-tunnel.service"}, "un autre fichier"),
+    ({"RuntimeMaxUSec": "infinity"}, "RuntimeMaxUSec=infinity"),
+    ({"RuntimeMaxUSec": "1d"}, "RuntimeMaxUSec=1d"),
+    ({"RuntimeMaxUSec": "13h"}, "RuntimeMaxUSec=13h"),
+    ({"WantedBy": "default.target"}, "WantedBy"),
+    ({"RequiredBy": "other.service"}, "RequiredBy"),
+    ({"TriggeredBy": "eregion-console-tunnel.path"}, "TriggeredBy"),
+])
+@pytest.mark.parametrize("armed", [True, False])
+def test_what_systemd_loaded_is_read_beside_the_file(tmp_path, over, said, armed):
+    """A drop-in, another file, a limit read otherwise, a unit that pulls it in: the file says the model,
+    systemd runs something else — a ✗, armed or not."""
+    _set_tunnel(_home(tmp_path), window=None if not armed else (NOW - 600, NOW - 600 + mob.WINDOW_S))
+    unit = dict(over) if armed else {**over, "ActiveState": "inactive", "SubState": "dead", "MainPID": "0"}
+    lines, _ = _tunnel(tmp_path, unit=unit)
+    assert any("ce que systemd a chargé" in t and said in t for t in _fails(lines)), lines
+
+
+def test_what_systemd_loaded_as_the_model_is_said(tmp_path):
+    _set_tunnel(_home(tmp_path))
+    lines, _ = _tunnel(tmp_path)
+    assert (mob.OK, "tunnel : systemd a chargé le fichier seul — aucun drop-in, 12 h au plus, rien ne la tire") in lines
+
+
+def test_on_refuses_a_unit_systemd_holds_otherwise(tmp_path):
+    home = _home(tmp_path)
+    _set_tunnel(home, window=None)
+    tw = tunnel_world(unit={"DropInPaths": "/run/user/1000/systemd/transient/eregion-console-tunnel.service.d/x.conf"})
+    code, out, tw = _main(home, "tunnel-on", tw=tw)
+    assert code == 1 and "un drop-in" in out and "Rien n'est armé" in out, out
+    assert [c for c in tw["calls"] if c[0] == "systemd-run" or "start" in c] == []
+    assert not (home / mob.TUNNEL_DEADLINE).exists()
+
+
+@pytest.mark.parametrize("change,said", [
+    ({"RuntimeMaxSec=12h\n": "RuntimeMaxSec=12h\nRuntimeMaxSec=infinity\n"}, "RuntimeMaxSec= deux fois"),
+    ({"RuntimeMaxSec=12h\n": "RuntimeMaxSec=12h\n\n[Service]\nRuntimeMaxSec=infinity\n"}, "[Service] deux fois"),
+    ({"Restart=on-failure\n": "ExecStart=\nRestart=on-failure\n"}, "ExecStart= deux fois"),
+])
+def test_a_key_or_a_section_said_twice_is_never_the_model(tmp_path, change, said):
+    """systemd adds to a key said twice, or resets it, and merges a section: the first value read is not
+    what it would run."""
+    text = _set_tunnel(_home(tmp_path), **change)
+    fails = _fails(mob.unit_lines(text, HOST))
+    assert any("autre chose que le modèle" in t and said in t for t in fails), fails
+
+
+@pytest.mark.parametrize("change", [
+    # ssh alone, no timeout: a run would last until RuntimeMaxSec
+    {"ExecStart=/bin/sh -c": "ExecStart=/bin/sh -x -c"},
+    {"exec /usr/bin/timeout \"$$left\" \"$$@\"": "exec \"$$@\""},
+])
+def test_ssh_not_bounded_by_the_deadline_is_a_fail(tmp_path, change):
+    text = _set_tunnel(_home(tmp_path), **change)
+    fails = _fails(mob.unit_lines(text, HOST))
+    assert any("n'est pas borné à la date limite" in t for t in fails), fails
+
+
+def test_the_timeout_reads_the_same_deadline_as_the_condition(tmp_path):
+    home = _home(tmp_path)
+    text = _set_tunnel(home)
+    other = text.replace(f"tunnel {home / mob.TUNNEL_DEADLINE}", f"tunnel {home / 'elsewhere'}")
+    assert other != text
+    assert any("n'est pas borné" in t for t in _fails(mob.unit_lines(other, HOST)))
+
+
+def _wrapper(tmp_path, command):
+    """The model's ExecStart up to ssh, unescaped as systemd does it, the deadline in tmp_path, then
+    `command` in ssh's place."""
+    sections, _ = mob.parse_unit(mob.UNIT_MODEL.read_text(encoding="utf-8"))
+    argv = shlex.split(sections["Service"]["ExecStart"][0].replace("$$", "$").replace("%%", "%"))
+    assert argv[4] == "@DEADLINE@" and argv[5] == "/usr/bin/ssh"
+    return argv[:4] + [str(tmp_path / "deadline")] + command
+
+
+@pytest.mark.parametrize("ahead,code,ran", [(2, 124, True), (-10, 0, False), (None, 0, False)])
+def test_ssh_runs_under_timeout_until_the_deadline(tmp_path, ahead, code, ran):
+    """The model's own wrapper, run by /bin/sh with a fake ssh that would last 8 s: ended by timeout at
+    the deadline (124, which Restart= follows into ExecCondition's refusal); past the deadline or without
+    one, never started, a clean exit."""
+    if shutil.which("timeout") is None or not Path("/usr/bin/timeout").exists():
+        pytest.skip("no /usr/bin/timeout")
+    marker = tmp_path / "ran"
+    now = int(time.time())
+    if ahead is not None:
+        (tmp_path / "deadline").write_text(f"{now - 60} {now + ahead}\n")
+    start = time.monotonic()
+    res = subprocess.run(_wrapper(tmp_path, ["/bin/sh", "-c", f'touch "{marker}"; exec sleep 8']),
+                         capture_output=True, text=True, timeout=60)
+    assert res.returncode == code, res.stderr
+    assert marker.exists() is ran
+    assert time.monotonic() - start < 6
+
+
+def test_a_unit_file_of_another_user_is_not_the_operator_s(tmp_path, monkeypatch):
+    home = _home(tmp_path)
+    _set_tunnel(home)
+    real = os.getuid()
+    monkeypatch.setattr(mob.os, "getuid", lambda: real + 1)
+    lines, _ = _tunnel(tmp_path)
+    assert _fails(lines) and "pas un fichier à soi" in lines[0][1]
+    with pytest.raises(OSError):
+        mob._read_private(home / mob.TUNNEL_KNOWN_HOSTS)
+
+
+@needs_make
+def test_make_console_url_keeps_the_local_console_while_the_tunnel_is_stopped(tmp_path, spies):
+    """The unit set, the tunnel stopped (systemctl is-active: inactive): the console behind 127.0.0.1:7007
+    is the local one — its token, never Imladris's; a line names the way to Imladris's."""
+    home = _home(tmp_path)
+    (home / ".eregion" / "console").mkdir(parents=True)
+    (home / ".eregion" / "console" / "token").write_text("local-tok-K2\n")
+    env_file = tmp_path / "host.env"
+    env_file.write_text("EREGION_CONSOLE_TOKEN=fake-tok-Q7\n")
+    _set_tunnel(home, window=None)
+    res = _make_at(_operator(tmp_path), spies, home, "console-url", f"HOST_ENV={env_file}", "CONSOLE_WAIT=0")
+    assert res.returncode == 0, res.stderr
+    assert "Console   →  http://localhost:7007/?token=local-tok-K2" in res.stdout
+    assert "fake-tok-Q7" not in res.stdout + res.stderr
+    assert "make glorfindel-host-url" in res.stderr and "make mobile-tunnel-on" in res.stderr

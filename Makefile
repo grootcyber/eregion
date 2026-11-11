@@ -145,7 +145,7 @@ DOCKER_GLORFINDEL_WATCH = $(WATCH_KEY_DIR) && $(RUNS_DIRS) && $(GLORFINDEL_AZURE
 	bench-preflight bench-report bench-run bench-run-go bench-restore bench-restore-go mobile-check \
 	mobile-tunnel-install mobile-tunnel-remove mobile-tunnel-on mobile-tunnel-off \
 	mobile-tunnel-install-go mobile-tunnel-remove-go mobile-tunnel-on-go mobile-tunnel-off-go \
-	console-url-local console-url-imladris \
+	console-url-local console-url-imladris glorfindel-host-tunnel-go \
 	annatar-run annatar-dry-run annatar-validate annatar-list \
 	glorfindel-respond glorfindel-dry-run glorfindel-watch \
 	glorfindel-release glorfindel-revert glorfindel-list \
@@ -597,25 +597,28 @@ glorfindel-ui: build-glorfindel
 # former name, from the environment or .env), else the one the console drew at its first start,
 # ~/.eregion/console/token (its own directory, SEC10) — written by the container after `up -d`, so waited for
 # (CONSOLE_WAIT seconds, 20 by default). The port: EREGION_CONSOLE_PORT, as compose publishes it.
-# MOB2 : refused in an agent session (the token never reaches a code session), the guard alone first;
-# with the workstation's tunnel set (make mobile-tunnel-install) and the port 7007, the console behind
-# 127.0.0.1:7007 is Imladris's: its URL, from host.env, as glorfindel-host-url gives it — the way to it from
-# the phone's terminal; said when the tunnel is not armed.
+# MOB2 : refused in an agent session (the token never reaches a code session), the guard alone first.
+# The workstation's tunnel running (systemctl --user is-active) and the port 7007: the console behind
+# 127.0.0.1:7007 is Imladris's — its URL, from host.env, as glorfindel-host-url gives it, the way to it from
+# the phone's terminal. Otherwise the local console's, as before — glorfindel-start, -restart, -dev, -ui and
+# console-rotate print it — and, the tunnel set but not armed, a line names the way to Imladris's.
 CONSOLE_WAIT ?= 20
 MOBILE_UNIT    = $(HOME)/.config/systemd/user/eregion-console-tunnel.service
 CONSOLE_GUARD  = python3 scripts/mobile.py guard
 console-url:
 	@$(CONSOLE_GUARD) $@
-	@if [ -f "$(MOBILE_UNIT)" ] && [ "$${EREGION_CONSOLE_PORT:-7007}" = 7007 ]; then \
-	   $(MAKE) --no-print-directory console-url-imladris; else $(MAKE) --no-print-directory console-url-local; fi
+	@if [ -f "$(MOBILE_UNIT)" ] && [ "$${EREGION_CONSOLE_PORT:-7007}" = 7007 ] \
+	   && systemctl --user is-active --quiet eregion-console-tunnel.service 2>/dev/null; then \
+	   $(MAKE) --no-print-directory console-url-imladris; \
+	 else $(MAKE) --no-print-directory console-url-local; rc=$$?; \
+	   [ ! -f "$(MOBILE_UNIT)" ] || echo "  ℹ le tunnel du poste vers Imladris est posé, non armé : ci-dessus la console locale ; celle d'Imladris → make glorfindel-host-url, ou make mobile-tunnel-on" >&2; \
+	   exit $$rc; fi
 
 console-url-imladris:
 	@$(CONSOLE_GUARD) console-url
 	@test -f $(HOST_ENV) || { echo "  ⚠ Console d'Imladris : $(HOST_ENV) manquant (make glorfindel-host-env)" >&2; exit 1; }
 	@t="$(CONSOLE_TOKEN)"; test -n "$$t" || { echo "  ⚠ $(NO_CONSOLE_TOKEN)" >&2; exit 1; }; \
-	 echo "  Console d'Imladris (le tunnel du poste)  →  http://localhost:7007/?token=$$t"; \
-	 systemctl --user is-active --quiet eregion-console-tunnel.service 2>/dev/null \
-	   || echo "  ⚠ le tunnel du poste n'est pas armé : make mobile-tunnel-on (12 h au plus)" >&2
+	 echo "  Console d'Imladris (le tunnel du poste)  →  http://localhost:7007/?token=$$t"
 
 console-url-local:
 	@$(CONSOLE_GUARD) console-url
@@ -1127,8 +1130,14 @@ glorfindel-host-url:
 	 echo "http://localhost:7007/?token=$$t"
 
 # Affiche l'URL avec son jeton, puis tient le tunnel ouvert (Ctrl+C pour fermer).
-glorfindel-host-tunnel: glorfindel-host-known
+# MOB2 : the guard alone first, before glorfindel-host-known (an ssh-keyscan) and $(HOST_IP) (terraform
+# output) — the -go target carries them, and runs the guard again.
+glorfindel-host-tunnel:
 	@$(CONSOLE_GUARD) $@
+	@$(MAKE) --no-print-directory $@-go
+
+glorfindel-host-tunnel-go: glorfindel-host-known
+	@$(CONSOLE_GUARD) glorfindel-host-tunnel
 	@! systemctl --user is-active --quiet eregion-console-tunnel.service 2>/dev/null || { echo "  le tunnel du poste tient déjà 127.0.0.1:7007 (make mobile-tunnel-on) : l'URL, make console-url ; l'arrêter, make mobile-tunnel-off" >&2; exit 1; }
 	@if [ -f $(HOST_ENV) ]; then t="$(CONSOLE_TOKEN)"; \
 	 if [ -n "$$t" ]; then echo "  Console → http://localhost:7007/?token=$$t"; else echo "  ⚠ $(NO_CONSOLE_TOKEN)"; fi; \
@@ -1510,7 +1519,8 @@ mobile-check:
 # 11/11 ; infra/poste/eregion-console-tunnel.service, docs/demarrer/mobile.md). -install pose l'unité dans
 # ~/.config/systemd/user/ (l'adresse d'Imladris lue par terraform output, HOST_USER, HOST_SSH_KEY, la clé d'hôte
 # de HOST_SSH_FINGERPRINT vérifiée par known_host.sh, « required », puis copiée dans un known_hosts à elle), sans
-# l'activer ni la lancer : aucune section [Install], jamais au boot. -on l'arme : la date limite (maintenant + 12 h),
+# l'activer ni la lancer : aucune section [Install], jamais au boot. -on l'arme : la date limite (maintenant + 12 h,
+# que l'unité seule tient : ExecCondition, ssh sous timeout jusqu'à elle, RuntimeMaxSec),
 # le minuteur de fin (systemd-run), puis le start ; -off l'arrête ; -remove l'arrête et retire l'unité.
 # DRY_RUN=1 : -install montre l'unité, -remove dit ce qu'il retirerait ; rien n'est écrit.
 # Le garde : toutes refusent dans une session d'agent (EREGION_AGENT_SESSION, le worktree d'un lot) — une session
