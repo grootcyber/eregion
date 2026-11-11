@@ -2245,7 +2245,31 @@ comme pip et Terraform (la boucle le piège, et sort avec 130 ou 143). Aucune va
   dans chaque job qui restaure son cache (`ci.yml`, les invariants, les tranches de mutants et le jeu de
   contrôle de la porte et du lundi, le job Glorfindel de Components). Il ne télécharge que si un fichier
   du modèle manque ; le cache restauré, rien ne part. Le harnais de mutation le trouve ensuite prêt
-  (CI6b). Après trois échecs, le job est rouge : le réseau du runner est en panne.
+  (CI6b). Après trois échecs, le job est rouge : le réseau du runner est en panne. Le script et la
+  préparation du harnais (`prepare_embedding_model`) prennent le même verrou que la suite (ci-dessous).
+- **La suite elle-même ne télécharge le modèle que par un processus à la fois** (FLK1, #723), pour un
+  run local sans cette étape : `pytest -n 4` avec un `HOME` jetable vide. Le 11/11, deux workers le
+  téléchargeaient en même temps dans le même `~/.cache/chroma` (la vraie `CycleMemory` de
+  `test_agent_nodes.py`, l'index du rapport de campagne dans `test_containment.py`). ChromaDB écrit
+  l'archive en place et la supprime quand son SHA-256 ne correspond pas : l'un supprimait le fichier
+  à moitié écrit de l'autre (`FileNotFoundError … onnx.tar.gz`), mesuré dès la première suite en
+  `-n 4`. Désormais, dans chaque processus de la suite, la fixture de session `chroma_model`
+  (`tests/unit/conftest.py`) appelle `lock_downloads` (`scripts/chroma_model.py`). Celle-ci enveloppe
+  la vérification-puis-téléchargement de ChromaDB lui-même
+  (`ONNXMiniLM_L6_V2._download_model_if_not_exists`) dans un verrou de fichier (`flock`,
+  `~/.cache/chroma/onnx_models/.eregion-prepare.lock`), au moment où ChromaDB est importé.
+  - **Paresseusement** : une session dont aucun test ne calcule d'embedding ne télécharge rien. C'est
+    le cas des jobs sans le cache du modèle (le macOS de `ci.yml` et de la porte, les invariants) et
+    d'un run local de quelques fichiers.
+  - Le premier processus qui a besoin du modèle le télécharge ; les autres attendent le verrou, puis le
+    trouvent là, par la vérification de ChromaDB.
+  - Le verrou est réentrant dans un processus : le harnais ou le script de CI8 le tient, puis ChromaDB,
+    enveloppé, le redemande sans s'attendre lui-même.
+  - Un cache non inscriptible (un `~/.cache/chroma` encore à root, d'avant les images non-root :
+    `make fix-state-ownership`) est dit, et ChromaDB continue sans verrou, comme avant ; sans
+    `chromadb` (un composant sans les dépendances de Glorfindel, D1), rien à faire.
+  - Un ChromaDB sans cette méthode (une montée de version) est dit en avertissement ;
+    `tests/unit/test_chroma_model.py` vérifie que la version verrouillée l'a toujours.
 - `syft` et `cosign`, binaires épinglés par leur sha256 (`publish.yml`) : l'empreinte est vérifiée à
   chaque tentative.
 
@@ -3153,13 +3177,26 @@ python scripts/mutation_night.py --only M21 --seed 89917386 --seeds 3 --examples
 
 ## Les journaux d'activité et d'Entra ID au banc (ID1, #281)
 
-AL1 (le journal d'activité) et C2 (Entra ID) sont livrés en détection seule, mais **aveugles** : leurs
-tables (`AzureActivity`, `AuditLogs`, `AADServicePrincipalSignInLogs`) n'arrivent dans le workspace
-du banc (`law-celebrimbor-amonsul`) que par deux paramètres de diagnostic qui ne vivent pas dans le
-groupe du banc — l'un sur l'**abonnement** (`infra/terraform/activity_log.tf`), l'autre sur le
-**tenant** Entra ID (`infra/terraform/entra_logs.tf`). Le Terraform est prêt, désactivé. Ce qui suit
-se fait avec Jonathan : rien ici n'a été planifié ni appliqué. Les noms sont ceux du banc ; `<…>` est
-à remplacer, rien de réel dans ce dépôt.
+AL1 (le journal d'activité) et C2 (Entra ID) sont livrés en détection seule, et **aveugles** sans
+deux paramètres de diagnostic : leurs tables (`AzureActivity`, `AuditLogs`,
+`AADServicePrincipalSignInLogs`) n'arrivent dans le workspace du banc (`law-celebrimbor-amonsul`) que
+par eux, et ils ne vivent pas dans le groupe du banc — l'un sur l'**abonnement**
+(`infra/terraform/activity_log.tf`), l'autre sur le **tenant** Entra ID
+(`infra/terraform/entra_logs.tf`). Le Terraform est désactivé par défaut ; ce qui suit se fait avec
+Jonathan.
+
+**Sur le banc, les deux paramètres sont allumés : le journal d'activité depuis le 05/11, Entra ID
+au plus tard le 06/11** (ID1, 05–06/11 : `docs/glorfindel.md`, « La carte se range sur ce qu'elle
+vise ») :
+- le journal d'activité du 05/11 a donné la mesure de l'hypothèse A2 (AL2, #598 ;
+  `docs/glorfindel.md`, « Les points de restauration ») ;
+- six cartes, du plan de contrôle et d'Entra ID, se sont rangées sur bree les 05 et 06/11, sans la
+  viser (AL1c, #597) ;
+- les cartes d'Entra ID sont arrivées dans Discord le 06/11 (C2b, #607 ; le CHANGELOG de la 0.5.8).
+
+Le reste de cette section n'est pas mesuré en entier : chaque hypothèse garde son statut, et la
+mesure complète ferme ID1 avec la 0.6.0 (`ROADMAP.md`, « ID1 allumé et mesuré »). Les noms sont
+ceux du banc ; `<…>` est à remplacer, rien de réel dans ce dépôt.
 
 ### Ce que le Terraform pose, et sous quelle variable
 

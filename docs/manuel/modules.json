@@ -951,6 +951,38 @@
    "doc": "docs/design/levee-probation.md"
   },
   {
+   "id": "g-dossier-isolation",
+   "composant": "glorfindel",
+   "poste": "g-verifier",
+   "nom": "Design: the record of an isolation, the facts read after the action so a human only has to judge, never shown to the model",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "DOS1"
+   ],
+   "issue": 727,
+   "doc": "docs/design/dossier-isolation.md"
+  },
+  {
+   "id": "g-dossier-isolation-code",
+   "composant": "glorfindel",
+   "poste": "g-verifier",
+   "nom": "The record of an isolation itself: the decision noted, the platform's context, the host's second opinion, the recurrence, on the card and in Discord",
+   "etat": "prevue",
+   "release": "0.6",
+   "lots": [
+    "DOS2",
+    "DOS3",
+    "DOS4",
+    "DOS5",
+    "DOS6",
+    "DOS7",
+    "DOS8"
+   ],
+   "issue": 727,
+   "doc": "docs/design/dossier-isolation.md"
+  },
+  {
    "id": "g-memoire-source",
    "composant": "glorfindel",
    "poste": "g-memoire",
@@ -1445,6 +1477,19 @@
    "doc": "docs/banc-t1486.md"
   },
   {
+   "id": "c-banc-preflight-mesure",
+   "composant": "celebrimbor",
+   "poste": "c-construire",
+   "nom": "The bench's preflight corrected on what the bench measured: the recovery point read, the true error said, no foreign watcher",
+   "etat": "main",
+   "release": "0.5",
+   "lots": [
+    "BNC1b"
+   ],
+   "issue": 724,
+   "doc": "docs/banc-t1486.md"
+  },
+  {
    "id": "c-telephone",
    "composant": "celebrimbor",
    "poste": "c-acces",
@@ -1857,6 +1902,18 @@
    "issue": 715
   },
   {
+   "id": "s-modele-chroma",
+   "composant": "socle",
+   "poste": "s-prouver",
+   "nom": "ChromaDB's embedding model fetched by one test process at a time, only when a test needs it",
+   "etat": "main",
+   "release": "0.5",
+   "lots": [
+    "FLK1"
+   ],
+   "issue": 723
+  },
+  {
    "id": "s-ci-terraform-source",
    "composant": "socle",
    "poste": "s-prouver",
@@ -2070,6 +2127,19 @@
    ],
    "issue": 687,
    "doc": "docs/design/identites.md"
+  },
+  {
+   "id": "s-docs-vrais",
+   "composant": "socle",
+   "poste": "s-documenter",
+   "nom": "Documents that no longer contradict the bench: what the ransomware run of 09/11 showed, the logs switched on, the unit tests counted by the CI",
+   "etat": "main",
+   "release": "0.5",
+   "lots": [
+    "MEN2"
+   ],
+   "issue": 722,
+   "doc": "docs/banc-t1486.md"
   },
   {
    "id": "s-adoption",
