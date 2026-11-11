@@ -8,10 +8,10 @@ entre le téléphone et le poste change :
 ```
 téléphone ──(Tailscale : téléphone → poste:22 seul)──► poste (WSL) : sshd, à clé seule
    │                                                      ├─ make bench-run / bench-restore, tapés dans le terminal
-   └─ son propre tunnel SSH (-L 7007:127.0.0.1:7007) ───► └─ 127.0.0.1:7007 ── make glorfindel-host-tunnel ──► H0 : la console
+   └─ son propre tunnel SSH (-L 7007:127.0.0.1:7007) ───► └─ 127.0.0.1:7007 ── make glorfindel-host-tunnel ──► Imladris (anciennement H0) : la console
 ```
 
-- Orodruin continue à n'écouter que le SSH du poste (DRL1). **Rien ne change sur H0** : la console
+- Orodruin continue à n'écouter que le SSH du poste (DRL1). **Rien ne change sur Imladris** : la console
   y répond comme aujourd'hui, sous `localhost`, par le tunnel du poste.
 - **Deux barrières indépendantes**, pour le terminal comme pour la console : le réseau privé (le
   compte Tailscale avec MFA, une règle d'accès qui n'ouvre que téléphone → poste:22), puis le serveur
@@ -164,10 +164,10 @@ console chargée dans cette session, elle pourrait lancer un restore. D'où :
 `HOST_SSH_FINGERPRINT` et `ORO_SSH_FINGERPRINT` doivent être posées pour la commande (dans
 `.envrc`).
 
-## 5. La console de H0, sur le téléphone
+## 5. La console d'Imladris, sur le téléphone
 
-Par le poste, **rien ne change sur H0** : téléphone → réseau privé → son propre tunnel SSH vers le
-`127.0.0.1:7007` du poste → le tunnel du poste vers H0.
+Par le poste, **rien ne change sur Imladris** : téléphone → réseau privé → son propre tunnel SSH vers le
+`127.0.0.1:7007` du poste → le tunnel du poste vers Imladris.
 
 1. **Sur le poste** (une fenêtre de `tmux`, ou du bureau), comme aujourd'hui :
 
@@ -184,7 +184,7 @@ make glorfindel-host-tunnel      # « Console → http://localhost:7007/?token=�
    **Non vérifié** : les noms des menus, et la syntaxe exacte de chaque application.
 3. **Dans le navigateur du téléphone** : `http://localhost:7007/?token=…`, l'URL que donne `make
    glorfindel-host-tunnel` (ou `make glorfindel-host-url`). Le `Host` reste `localhost` : la console
-   de H0 répond sans rien ajouter à `EREGION_CONSOLE_HOSTS`. Le jeton reste exigé : l'URL le porte
+   d'Imladris répond sans rien ajouter à `EREGION_CONSOLE_HOSTS`. Le jeton reste exigé : l'URL le porte
    une fois, la console le retire et pose un cookie de session (12 h).
 
 **Le prix de ce choix.** Sur iOS, une application mise en arrière-plan peut être suspendue, et sa
@@ -192,7 +192,7 @@ redirection coupée : le navigateur ne répond plus. Il faut alors revenir dans 
 le tunnel se rouvre, puis recharger la page. Ce qu'on y gagne : la console derrière la clé
 matérielle du téléphone, et pas seulement derrière le tailnet et le jeton.
 
-Un restore depuis la console reste refusé sur H0 (elle n'a pas le rôle Restore) ; il demandera le
+Un restore depuis la console reste refusé sur Imladris (elle n'a pas le rôle Restore) ; il demandera le
 nom tapé et le code à usage unique avec TOT1 (#685). En attendant, le restore passe par le terminal
 du poste (étape 6).
 
@@ -237,16 +237,16 @@ make bench-restore TARGET=vm-celebrimbor-gondolin RUN=<run_id>             # tap
   `make bench-run`). Sans `RUN=`, il prend le seul rapport de `TARGET`, et l'affiche avant de faire
   taper le nom ; **s'il y en a plusieurs, il refuse et les liste** : le plus récent n'est pas le sens
   sûr. `BEFORE=<instant>` l'emporte. Sans moment, rien n'est restauré ;
-- passe **toujours** `--keep-isolated` : la levée est celle de H0 (REC1, REC1b ; LEV1 changera la
+- passe **toujours** `--keep-isolated` : la levée est celle d'Imladris (REC1, REC1b ; LEV1 changera la
   règle) ;
 - fait taper le nom de la VM, lance l'essai à blanc, puis demande « [o/N] » avant le vrai restore.
   Le restore lit ses droits avant de toucher la VM (RST1). La clé matérielle du SSH tient lieu de
   second facteur, en attendant FS1g et TOT1.
 
-Ensuite, la levée par H0 (étape 7 de banc-t1486.md), puis `make bench-report RUN=<run_id>`.
+Ensuite, la levée par Imladris (étape 7 de banc-t1486.md), puis `make bench-report RUN=<run_id>`.
 
 **Les deux commandes refusent dans une session d'agent** (`EREGION_AGENT_SESSION`, le worktree d'un
-lot) : le garde tourne seul, avant que make ne développe aucune commande de H0 ni d'Orodruin. Elles
+lot) : le garde tourne seul, avant que make ne développe aucune commande d'Imladris ni d'Orodruin. Elles
 refusent aussi `TARGET`, `SCENARIO`, `BEFORE`, `RUN` ou `POINT_MAX_H` venus de l'environnement : sur
 la ligne de commande, toujours. Ce garde-là, comme le terminal, ne tient pas contre un processus qui
 tape dans une session `tmux` ouverte (étape 4). Le T1486 reste lancé de la main de l'opérateur :
@@ -262,7 +262,7 @@ Les deux barrières se ferment l'une sans l'autre ; fermer les deux, puis ce que
    nomme). Même revenu sur le réseau, il n'entre plus, ni dans le terminal, ni dans la console.
 3. **Le jeton de la console**, que le navigateur du téléphone a vu : un nouveau
    `EREGION_CONSOLE_TOKEN` dans `infra/glorfindel-host/host.env`, `make glorfindel-host-push`, puis
-   sur H0 `cd eregion && docker compose up -d war-room` ; le cookie de session tombe avec lui (SEC10).
+   sur Imladris `cd eregion && docker compose up -d war-room` ; le cookie de session tombe avec lui (SEC10).
    **Non vérifié** comme enchaînement.
 4. `make mobile-check` : une clé de moins.
 

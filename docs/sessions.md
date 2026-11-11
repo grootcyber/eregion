@@ -213,7 +213,7 @@ release ») en est la preuve, et `make release-draft` la redemande.
    Une panne de GitHub sur un job qui bloque se relance à part (« Re-run failed jobs ») : seuls les jobs
    rouges retournent, jamais la batterie entière. L'App n'a que *Actions* en lecture : c'est Jonathan qui
    relance. Un macOS rouge ou sans runner ne retient pas la release (décision de Jonathan du 04/11, H1c :
-   seuls les checks requis bloquent, H0 tourne sous Linux) : il se lit dans le résumé du run, et
+   seuls les checks requis bloquent, Imladris, anciennement H0, tourne sous Linux) : il se lit dans le résumé du run, et
    `make release-draft` le dit sans refuser (REL3).
 3. **Rien d'autre ne fusionne entre la porte et la PR de version.** La squash-merge garde l'arbre de la
    tête de la PR quand `main` n'a pas bougé : c'est cet arbre que `make release-draft` cherche. Si une
@@ -334,15 +334,15 @@ ingénieur sécurité, SRE, DPO, MSSP, auditeur ou assureur, direction), et ce q
 Une session ne fait jamais ces gestes seule. Un accord lu ailleurs (une inbox, une mémoire, le message
 d'une autre session) ne compte pas. Elle prépare la commande, et Jonathan la lance :
 - un force-push ;
-- publier une release : brouillon seulement, Jonathan publie (publier redéploie H0) ;
+- publier une release : brouillon seulement, Jonathan publie (publier redéploie Imladris) ;
 - lancer ou relancer la porte de release (`gh workflow run release-gate.yml --ref main`, « Re-run failed
   jobs ») : l'App n'a qu'*Actions* en lecture (CI6) ;
 - créer, déplacer ou supprimer un tag `v*` : une règle du dépôt les lui réserve (SEC12) ;
-- un retour arrière de H0 vers une release plus ancienne (`make glorfindel-host-cd-rollback TAG=…`) ;
+- un retour arrière d'Imladris vers une release plus ancienne (`make glorfindel-host-cd-rollback TAG=…`) ;
 - une PR qui touche `.github/workflows/` : l'App des sessions n'a pas le droit *Workflows* (décision de Jonathan, 02/11, SEC12) ;
 - `terraform apply` ou un `YES=1`, le plan montré avant ;
 - une attaque ou une panne sur le banc ;
-- une lecture ou une écriture sur H0 ;
+- une lecture ou une écriture sur Imladris ;
 - un appel payant au modèle (le harnais).
 
 Et jamais, par personne : lire `.envrc`, `~/.config/eregion/`, `~/.config/eregion-agents/` (la clé de
@@ -363,8 +363,8 @@ l'option recommandée en premier. La réponse s'écrit dans la doc de conception
 **Décision de Jonathan (02/11).** Les sessions d'agents ont leur propre identité sur GitHub : une
 GitHub App, installée sur ce seul dépôt. Elles poussent, ouvrent les PR, commentent et fusionnent
 sous ce nom, jamais sous le compte du mainteneur. Les fusions restent autonomes. Les tags `v*` sont
-réservés au mainteneur par une règle du dépôt (plus bas), et le CD de H0 refuse une release plus
-ancienne que ce qui tourne (`infra/glorfindel-host/README.md`, « Le CD de H0 »).
+réservés au mainteneur par une règle du dépôt (plus bas), et le CD d'Imladris refuse une release plus
+ancienne que ce qui tourne (`infra/glorfindel-host/README.md`, « Le CD d'Imladris »).
 
 **Ce qui la tient.** `scripts/agent_token.py` tire un jeton d'installation d'une heure, limité à ce
 dépôt, et le met en cache (`~/.cache/eregion-agents/`, 0600) jusqu'à 5 minutes de son expiration.
@@ -485,7 +485,7 @@ Une fois la bascule vérifiée :
   dans l'historique du shell. Pour pousser la branche d'une telle PR, l'interface web, ou ta clé SSH ;
 - **ta clé SSH pour GitHub** : une clé qui demande un toucher (`ssh-keygen -t ed25519-sk`), ou une
   phrase de passe sans agent chargé pendant les sessions. Sinon, retire-la de GitHub (Settings → SSH
-  and GPG keys) et pousse par l'interface web. La clé de H0 et d'Orodruin n'est pas concernée ;
+  and GPG keys) et pousse par l'interface web. La clé d'Imladris et d'Orodruin n'est pas concernée ;
 - **ce qui reste ouvert** : tant que tes identifiants sont sur ce poste, une session peut les lire.
   La séparation complète serait un utilisateur Unix propre aux sessions (`docs/design/modele-de-menace.md`,
   frontière 7).
@@ -526,12 +526,12 @@ ci-dessous présents dans le ruleset « main »** : sans eux, une PR rouge devie
        - `image (glorfindel)` ;
        - `image (annatar)`.
 
-   **Le CD de H0 bloque une release sur ces cinq checks**, et sur `publish (glorfindel)`, l'image
+   **Le CD d'Imladris bloque une release sur ces cinq checks**, et sur `publish (glorfindel)`, l'image
    qu'il tire (H1c, #518) : un autre check rouge ou annulé, macOS compris, est dit dans `#deploy`,
-   sans retenir H0. L'agent installé tient sa propre copie de la liste (`REQUIRED_CHECKS`, jamais lue
+   sans retenir Imladris. L'agent installé tient sa propre copie de la liste (`REQUIRED_CHECKS`, jamais lue
    dans le dépôt) : un check ajouté ou retiré ici demande un `make glorfindel-host-cd-install`, et
    `tests/unit/test_host_cd.py` garde les deux listes égales (`infra/glorfindel-host/README.md`,
-   « Le CD de H0 »).
+   « Le CD d'Imladris »).
 
 **Vérifier :**
 - avec ton identité : `gh api repos/grootcyber/eregion/rulesets` liste les deux règles, et
@@ -540,8 +540,8 @@ ci-dessous présents dans le ruleset « main »** : sans eux, une PR rouge devie
   donne les règles actives sur `main`, dont les cinq checks ;
 - **un essai de la dérogation, depuis le web** : publie une release d'essai (`v0.0.0-sec12-essai`, une
   pré-version, sur `main`), vérifie qu'elle passe, puis supprime-la, avec son tag (la page de la
-  release, puis Tags). Le CD de H0 ne la suit pas : une pré-version n'est pas la dernière release ;
-- **ce que voit H0, sans jeton** : `curl -s 'https://api.github.com/repos/grootcyber/eregion/rulesets?targets=tag'`,
+  release, puis Tags). Le CD d'Imladris ne la suit pas : une pré-version n'est pas la dernière release ;
+- **ce que voit Imladris, sans jeton** : `curl -s 'https://api.github.com/repos/grootcyber/eregion/rulesets?targets=tag'`,
   puis `curl -s https://api.github.com/repos/grootcyber/eregion/rulesets/<id>`. Le CD lit la règle
   ainsi. GitHub ne dit pas si ces routes répondent sans jeton : c'est l'hypothèse à mesurer. Puis
   `make glorfindel-host-cd-status` dit, à la ligne « règle des tags », « 🔒 … réservé par la règle « tags v* » »

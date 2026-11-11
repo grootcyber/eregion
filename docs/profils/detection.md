@@ -5,7 +5,7 @@
 **Pour qui.** Une équipe qui veut savoir si une attaque réelle sur ses charges cloud est vue, en combien de temps, et ce que Glorfindel en fait. Annatar joue des techniques MITRE ATT&CK tirées de bibliothèques publiques, en version épinglée (Atomic Red Team d'abord, R1). Glorfindel détecte, ou il manque l'attaque. Un raté devient une règle proposée : c'est la boucle violette.
 
 **Ce qui tourne.**
-- **Glorfindel** : sur ton poste (`make glorfindel-start`) ou hébergé (H0, [`infra/glorfindel-host/`](../../infra/glorfindel-host/README.md)).
+- **Glorfindel** : sur ton poste (`make glorfindel-start`) ou hébergé (Imladris, anciennement H0, [`infra/glorfindel-host/`](../../infra/glorfindel-host/README.md)).
 - **Annatar** : depuis **Orodruin**, l'hôte jetable des injecteurs ([`infra/orodruin/`](../../infra/orodruin/README.md)). Il n'y agit que si son contrat est `armed`, et seulement sur des cibles inscrites au banc.
 
 ## Installer
@@ -24,7 +24,7 @@ docker compose --profile annatar run --rm annatar validate annatar/scenarios/azu
 docker compose --profile annatar run --rm annatar run annatar/scenarios/azure/ransomware-vm.yaml --dry-run
 ```
 
-**Les vraies attaques partent d'Orodruin.** L'ordre complet, de zéro, est le guide [« Le banc complet : d'une attaque à sa preuve »](../demarrer/banc.md) : Celebrimbor, les identités, H0, Orodruin et ses clés épinglées (`ORO_SSH_FINGERPRINT`, `EREGION_WATCH_KEY`), l'inscription, une première attaque et sa preuve, puis le démontage. `make doctor PROFILE=bench` dit ce qui manque. En bref, une fois tout en place :
+**Les vraies attaques partent d'Orodruin.** L'ordre complet, de zéro, est le guide [« Le banc complet : d'une attaque à sa preuve »](../demarrer/banc.md) : Celebrimbor, les identités, Imladris, Orodruin et ses clés épinglées (`ORO_SSH_FINGERPRINT`, `EREGION_WATCH_KEY`), l'inscription, une première attaque et sa preuve, puis le démontage. `make doctor PROFILE=bench` dit ce qui manque. En bref, une fois tout en place :
 
 ```bash
 make orodruin-check                                                  # armed ?
@@ -36,7 +36,7 @@ make orodruin-campaign-run CAMPAIGN=<id>
 
 **Le service compose.** `annatar` dépend de la watch : le lancer la démarre, mais sans attendre son battement. Dans la première minute, le temps que la watch publie son premier battement, Annatar peut refuser d'agir : relance-le un peu plus tard. Il lit ce battement dans `~/.glorfindel/injectors`, en lecture seule : la watch l'y écrit pour lui, et le reste de `~/.glorfindel` (escalades, état d'isolation, règles du client) lui reste fermé. De `runs/`, il n'écrit que son répertoire, `runs/annatar/` (et `runs/orodruin/`, le journal et le verrou), que la watch monte en lecture seule : elle y lit l'`attack_started`, et n'en prend que ce qu'un injecteur émet. Il ne monte ni `runs/glorfindel/` (le raisonnement de la watch) ni `runs/console/` (les gestes de l'opérateur). La détection d'un run se mesure par le canal retour du stockage, ou, sur ce poste, par le canal local des verdicts, `runs/verdicts/`, en lecture seule : le verdict de chaque run, jamais le raisonnement (SEC18, [`docs/operations.md`](../operations.md), « `runs/` : un répertoire par écrivain »).
 
-**Depuis Orodruin.** Annatar lit le battement de la watch hébergée sur le canal retour, `EREGION_WATCH_CHANNEL`. Sans battement vivant, il refuse avant tout appel au cloud. Sans H0, la watch de ce poste peut écrire ce canal : `make orodruin-plan WATCH_PRINCIPALS=<object id> NO_WATCH=1` lui en donne le droit, sa clé va dans `orodruin.env` (WC1, [`infra/orodruin/README.md`](../../infra/orodruin/README.md), « Sans H0 »).
+**Depuis Orodruin.** Annatar lit le battement de la watch hébergée sur le canal retour, `EREGION_WATCH_CHANNEL`. Sans battement vivant, il refuse avant tout appel au cloud. Sans Imladris, la watch de ce poste peut écrire ce canal : `make orodruin-plan WATCH_PRINCIPALS=<object id> NO_WATCH=1` lui en donne le droit, sa clé va dans `orodruin.env` (WC1, [`infra/orodruin/README.md`](../../infra/orodruin/README.md), « Sans Imladris »).
 
 **La dérogation.** `--without-glorfindel` (Make : `WITHOUT_GLORFINDEL=1`) permet un run de développement. Le rapport le dit : « detection not measured, by choice ». Voir [`docs/operations.md`](../operations.md).
 
@@ -46,7 +46,7 @@ make orodruin-campaign-run CAMPAIGN=<id>
 
 - **L'onglet Annatar s'active** dès que l'hôte porte un de ses runs : une fenêtre d'exercice, un rapport de run ou une campagne. Chaque run y est lié à ce que Glorfindel en a fait.
 - **Gothmog reste grisé.**
-- **Le rapport de campagne** (IA0) s'écrit seul sur H0 : [`docs/analysis.md`](../analysis.md).
+- **Le rapport de campagne** (IA0) s'écrit seul sur Imladris : [`docs/analysis.md`](../analysis.md).
 
 ## Limites
 

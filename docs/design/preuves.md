@@ -113,7 +113,7 @@ Ses étapes : des isolations, des points (avant l'incident, pendant), des restau
 statut, chaque façon dont le job nomme son point, sur place ou ailleurs, son conteneur nommé ou
 non, la VM laissée allumée ou éteinte), le geste du poste (la neutralisation par la console puis la
 restauration sur place, chacune de ses parties tirée autrement de temps en temps), des Run Commands
-par la console, par H0, par un attaquant (qui imprime ou non la sortie inoffensive), **un invité
+par la console, par Imladris (anciennement H0), par un attaquant (qui imprime ou non la sortie inoffensive), **un invité
 hostile** (root écrit lui-même la sortie inoffensive, ou une autre), des démarrages, le temps qui
 passe. Depuis REC1b (#679) : une vue d'instance qui porte la parole de l'invité ou non (jamais, au
 banc), tirée pour chaque séquence ; le geste du poste désalloue la VM avant le restore ; des Run
@@ -850,7 +850,7 @@ Treize sur treize attrapés au premier tour (26/10). Détail :
 ### Une fenêtre d'exercice n'est plus crue sur parole (H-1)
 
 Qui écrit dans `runs/exercises/` ou dans le canal pouvait faire passer une vraie attaque pour
-un exercice. H-1 met les gardes côté lecteur : la watch, et H0 pour les campagnes. Dix-neuf
+un exercice. H-1 met les gardes côté lecteur : la watch, et Imladris pour les campagnes. Dix-neuf
 mutants, mesurés par `tests/unit/test_exercise_guard.py` (M57 suit la vérification des cibles
 dans `_targets`) :
 
@@ -867,7 +867,7 @@ dans `_targets`) :
 | M228 | lecture des tags en échec lue « inscrite » | un 403 ouvre la porte |
 | M229 | fenêtre écrite aujourd'hui pour demain crue demain | le refus du futur ne dure qu'un jour |
 | M230 | fenêtre purgée supprimée au lieu d'être vidée | le canal la ramène à chaque tirage |
-| M231 | manifeste d'une autre forme accepté par H0 | rapport écrit sur un fichier forgé |
+| M231 | manifeste d'une autre forme accepté par Imladris | rapport écrit sur un fichier forgé |
 | M232 | run du canal sans fenêtre connue gardé | un run inventé entre dans les faits |
 | M233 | run du canal sur une VM non inscrite gardé | idem, sur la vraie charge |
 | M234 | run du canal sur une VM que sa fenêtre ne nomme pas gardé | idem |
@@ -878,7 +878,7 @@ dans `_targets`) :
 
 Dix-neuf sur dix-neuf attrapés au premier tour (26/10), et M57 aussi. Détail :
 [`../glorfindel.md`](../glorfindel.md), « Une fenêtre n'est plus crue sur parole », et
-[`../analysis.md`](../analysis.md), « Ce que H0 accepte du canal ».
+[`../analysis.md`](../analysis.md), « Ce qu'Imladris accepte du canal ».
 
 ### Le découpage d'`actions.py` (A1, MC0)
 
@@ -1207,7 +1207,7 @@ D2b a repris les trois points que les relectures de D-2 avaient laissés. Une te
 désormais ses runs face à face dans l'ordre où ils ont été joués (le début de leur campagne,
 gardé dans l'index, ou son identifiant quand c'est une date ; le `seq` dans une campagne) : une
 paire de runs antérieurs ne sert plus d'alibi. Le début d'une campagne venue du canal est borné
-par ce que H0 a vu (la première fenêtre crue de ses runs, le marqueur `.pulled`) : une date
+par ce qu'Imladris a vu (la première fenêtre crue de ses runs, le marqueur `.pulled`) : une date
 forgée ne change plus la campagne précédente. « au » et « the » seuls n'ouvrent plus une plage
 de dates ; « au 21 et au 23 », « from the 21 to the 23 », « on the 21st and 23rd » en sont.
 M540–M542, M546 et M547 suivent le code corrigé. Dix-sept mutants, M650–M666, mesurés par le
@@ -1223,7 +1223,7 @@ même fichier :
 | M655 | deux runs d'une campagne non ordonnés par `seq` | l'alibi revient dans une seule campagne |
 | M656 | début du manifeste après la première fenêtre cru | une date forgée choisit une campagne postérieure |
 | M657 | début du manifeste bien avant la première fenêtre cru | une date forgée saute la vraie précédente |
-| M658 | début du manifeste après le tirage par H0 cru | sans fenêtre, rien ne borne la date |
+| M658 | début du manifeste après le tirage par Imladris cru | sans fenêtre, rien ne borne la date |
 | M659 | début refusé tu | le lecteur ne sait pas que la date a été écartée |
 | M660 | début refusé gardé | la date forgée choisit quand même |
 | M661 | fenêtre refusée par H-1 prise pour borne | une fenêtre forgée couvre une date forgée |
@@ -1252,7 +1252,7 @@ Détail : [`../analysis.md`](../analysis.md), « Ce qui a changé depuis la camp
 
 ### L'hôte de Glorfindel : référence épinglée, verrou, un environnement par conteneur, boutons (M-3)
 
-H0 déployait la tête de `main`, sans verrou de dépendances ; les trois conteneurs recevaient tous
+Imladris déployait la tête de `main`, sans verrou de dépendances ; les trois conteneurs recevaient tous
 les secrets ; un bouton Discord obéissait à qui cliquait. Dix-neuf mutants (dix du lot, neuf
 de sa relecture), mesurés par `tests/unit/test_bot.py`, `test_glorfindel_host.py`,
 `test_host_deploy.py` et `test_dependency_lock.py` :
@@ -1266,7 +1266,7 @@ de sa relecture), mesurés par `tests/unit/test_bot.py`, `test_glorfindel_host.p
 | M284 | le jeton du bot revient à chaque conteneur | un conteneur compromis a le bot |
 | M285 | la War Room reçoit les clés des modèles | elle n'en appelle aucun et les tient quand même |
 | M286 | la watch ne connaît le bot que par son jeton | chaque carte part aussi au webhook |
-| M287 | H0 déploie une branche : toute révision se résout | la tête de `main` revient sur l'hôte |
+| M287 | Imladris déploie une branche : toute révision se résout | la tête de `main` revient sur l'hôte |
 | M288 | l'image ne porte pas sa référence | on ne sait plus ce qui tourne |
 | M289 | l'image résout ses dépendances sans verrou | une version mineure change les décisions |
 | M520 | un clic refusé est dit, puis passe à son action | le refus n'empêche rien |
@@ -1281,7 +1281,7 @@ de sa relecture), mesurés par `tests/unit/test_bot.py`, `test_glorfindel_host.p
 
 Dix-neuf sur dix-neuf attrapés, trois tours (26/10, #202). Détail :
 [`../../infra/glorfindel-host/README.md`](../../infra/glorfindel-host/README.md), « Ce que la VM
-exécute » et « Redéployer H0 après M-3 ».
+exécute » et « Redéployer Imladris après M-3 ».
 
 ### Les couches de règles (P1)
 
@@ -1308,7 +1308,7 @@ réattribués à A3 le 27/10).
 | M678 | la proposition approuvée avant que sa règle soit écrite | « approuvée » sans règle |
 | M685 | la migration ne prend que les règles nouvelles | une règle de base modifiée sur la VM perdue |
 | M686 | la migration oublie une règle de base supprimée sur la VM | elle revient |
-| M687 | H0 : un fichier de règles modifié repart dans l'image | les règles approuvées avant P1 jamais migrées |
+| M687 | Imladris : un fichier de règles modifié repart dans l'image | les règles approuvées avant P1 jamais migrées |
 | M688 | la base montée en écriture dans la watch | un conteneur peut de nouveau l'écrire |
 | M695 | une entrée de la couche pas validée | `interval_s: 30s` : plus aucune règle, base comprise |
 | M696 | une clé de la couche qui n'est pas une liste pas dite | des règles absentes en silence |
@@ -1392,7 +1392,7 @@ de la cible et le réseau lèvent, et chaque tentative est notée. Trente mutant
 | M731 | un battement de n'importe quel âge vaut une watch | une watch arrêtée depuis des jours compte |
 | M732 | le canal retour n'est pas lu | depuis Orodruin, la watch hébergée jamais vue |
 | M733 | un canal illisible lève au lieu de refuser | une trace au lieu d'une raison |
-| M734 | H0 accepte un run sans Glorfindel qui revendique un verdict | un `detected` sans watch |
+| M734 | Imladris accepte un run sans Glorfindel qui revendique un verdict | un `detected` sans watch |
 | M735 | la console perd le drapeau | un run de dév affiché `unknown` |
 | M736 | un script `--without-glorfindel` attend encore la détection | 30 s perdues, puis `unknown` |
 | M737 | un atomic `--without-glorfindel` attend encore la détection | idem |
@@ -1401,7 +1401,7 @@ de la cible et le réseau lèvent, et chaque tentative est notée. Trente mutant
 | M750 | une campagne `--without-glorfindel` ne le dit pas dans son manifeste | ses runs comptés « sans mesure », sans raison |
 | M751 | une campagne reprise avec un autre réglage | détections mesurées et non mesurées mêlées |
 | M752 | une campagne sans Glorfindel a un rapport d'analyse | « décision inconnue » cherchée, appel au modèle |
-| M753 | H0 écrit le rapport d'une campagne sans Glorfindel | idem, sur H0 |
+| M753 | Imladris écrit le rapport d'une campagne sans Glorfindel | idem, sur Imladris |
 | M754 | une campagne sans Glorfindel entre dans l'index | choisie comme précédente (D-2) |
 | M755 | une campagne `aborted` sort en 0 | `make orodruin-campaign-run` réussit |
 | M756 | un battement daté dans le futur reste frais | une horloge fausse vaut une watch pour toujours |

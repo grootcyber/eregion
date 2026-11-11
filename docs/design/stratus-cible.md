@@ -4,7 +4,7 @@ _Conception — 2026-11-06 (v4 — identité et zone **tranchées par Jonathan l
 
 ## La décision (Jonathan, 06/11, en interactif)
 
-**Stratus tourne dans un abonnement de test dédié, unique et permanent**, où **rien d'autre ne vit** : ni H0, ni Orodruin, ni le canari, ni `rg-celebrimbor`. La cible d'une technique est le groupe que crée son `warmup` **dans cet abonnement**. Cette décision remplace celle du matin (le groupe dans l'abonnement du banc partagé), cassée par la relecture v1 : sous l'identité d'Orodruin, créer/détruire un groupe dans l'abonnement partagé demandait des droits qui atteignaient tout le banc, et un « droit de tag étroit » ne bornait rien.
+**Stratus tourne dans un abonnement de test dédié, unique et permanent**, où **rien d'autre ne vit** : ni Imladris (anciennement H0), ni Orodruin, ni le canari, ni `rg-celebrimbor`. La cible d'une technique est le groupe que crée son `warmup` **dans cet abonnement**. Cette décision remplace celle du matin (le groupe dans l'abonnement du banc partagé), cassée par la relecture v1 : sous l'identité d'Orodruin, créer/détruire un groupe dans l'abonnement partagé demandait des droits qui atteignaient tout le banc, et un « droit de tag étroit » ne bornait rien.
 
 **Ce que l'abonnement dédié règle, et ce qu'il ne règle pas.** Le périmètre devient l'abonnement entier : **plus de tag d'inscription** (donc plus de `tags/write`, plus d'ABAC) — appartenir à l'abonnement dédié *est* l'inscription. Mais **l'abonnement vide n'est pas, à lui seul, un garde-fou** : un rôle large (Contributor) y permettrait encore d'aveugler la watch (supprimer le paramètre de diagnostic), de supprimer l'alerte de budget, de créer des ressources coûteuses, de créer une identité managée à credential fédéré (persistante dans le tenant), ou d'ouvrir une sortie Internet par une VM pilotée en Run Command — ce qui contournerait « Orodruin sans Internet ». Le garde-fou est donc **un rôle personnalisé fermé + une Azure Policy** sur l'abonnement dédié (§ 1, § 6), pas la seule vacuité. Le blast radius est l'abonnement dédié **borné par ce rôle et cette policy**.
 
@@ -34,7 +34,7 @@ Le contrat d'Orodruin pour **sa propre identité reste quasi tel quel** (`orodru
 - **(b) le paramètre de diagnostic et les groupes (COLD)** se lisent avec le **jeton de Stratus**, par le processus d'Orodruin **hors du bac à sable** (sens voulu, § décision). Le rôle fermé de Stratus contient donc `Microsoft.Insights/diagnosticSettings/read` et `…/resourceGroups/read` ; et son `NotActions` sur les paramètres de diagnostic se resserre de `*` à **`write` + `delete`** (lire oui, modifier/supprimer non — Stratus ne peut pas aveugler la watch).
 - **l'absence ailleurs** (le banc, l'abonnement de la VM : l'identité Stratus n'y tient rien) se lit avec le **jeton d'Orodruin**, filtré `assignedTo('<oid de Stratus>')`.
 - **Rôle fermé (SEC11)** : jamais un joker, **aucune action `Microsoft.Authorization`** (N6) sur le rôle de Stratus ; `roleAssignments/read`/`roleDefinitions/read` sont le `AUTHZ_READ_ONLY` d'**Orodruin** (point (a) ci-dessus), pas du rôle de Stratus. Les actions d'attaque minimales par technique, mesurées au banc (§ Questions).
-- **Refuser si `EREGION_STRATUS_SUBSCRIPTION` vaut l'abonnement du banc, celui de la VM, celui de H0 ou celui de la VM d'Orodruin** : sans ce refus, une ligne d'`orodruin.env` ramènerait le bloquant v1. `orodruin-check` → `passive`.
+- **Refuser si `EREGION_STRATUS_SUBSCRIPTION` vaut l'abonnement du banc, celui de la VM, celui d'Imladris ou celui de la VM d'Orodruin** : sans ce refus, une ligne d'`orodruin.env` ramènerait le bloquant v1. `orodruin-check` → `passive`.
 - **Les autres abonnements du tenant restent improuvables** (la lecture ne prouve l'absence que sur l'abonnement dédié, le banc et la VM).
 
 **À mesurer** : que le jeton d'Orodruin, avec `AUTHZ_READ_ONLY` sur l'abonnement dédié, liste bien les attributions de Stratus (et non un 403 ou une liste vide trompeuse).
@@ -71,17 +71,17 @@ Le moteur Stratus a son propre `Scope`, borné à l'abonnement dédié (`EREGION
 Ma v2 « affinait » la fenêtre au groupe une fois son nom connu : **c'est interdit** (SEC14, `exercise.py:247-267` ; `_fields` ne laisse changer que `end`, `closed_by`, `channel_created` — réécrire la cible refuse la fenêtre et compte le run comme réel). Correction :
 
 - **une seule fenêtre**, ouverte **avant le `warmup`**, ciblant **l'abonnement dédié**, et rien d'autre. L'abonnement étant dédié, cette cible est **exacte**, pas « large ». Le **nom du groupe** créé va au **rapport** (pour l'indice de remise en état), **pas** dans la fenêtre.
-- Une fenêtre qui **nomme un abonnement** est une **nouvelle primitive** côté lecteur (H-1) : aujourd'hui `_targets` compare des identifiants exacts. La watch doit tenir l'identifiant de l'abonnement dédié **de sa propre configuration sur H0**, **jamais** de la fenêtre, et **refuser** s'il vaut l'abonnement du banc — sinon une fenêtre nommant `/subscriptions/<banc>` étiquetterait tout le banc « exercice » pendant 2 h 15.
+- Une fenêtre qui **nomme un abonnement** est une **nouvelle primitive** côté lecteur (H-1) : aujourd'hui `_targets` compare des identifiants exacts. La watch doit tenir l'identifiant de l'abonnement dédié **de sa propre configuration sur Imladris**, **jamais** de la fenêtre, et **refuser** s'il vaut l'abonnement du banc — sinon une fenêtre nommant `/subscriptions/<banc>` étiquetterait tout le banc « exercice » pendant 2 h 15.
 
 ### La watch étiquette sur le `SubscriptionId` (constat 5)
 
 Aujourd'hui `RowAttribution` (`detection_rules.py:1158-1163, 1327-1329`) lit le `_ResourceId` d'une VM : hors des actifs découverts, une ligne de VM part `named=True, target=None` et `_route` la jette en silence ; une ligne sans VM (Bastion, groupe) part « non attribuée », `resource_id` vide, et `source_of` répond `unknown`. L'opération de `azure.execution.vm-run-command` — la technique principale — n'atteindrait jamais l'étiquetage. R2b doit, côté watch :
 
 - nommer **`RowAttribution`, `_route` et `source_of`** comme points de changement ;
-- poser l'étiquetage « exercice » sur le **`SubscriptionId`** de la ligne (quand il vaut l'abonnement dédié **tenu par la config de H0** et qu'une fenêtre est ouverte), pas sur un `resourceId` de VM ;
+- poser l'étiquetage « exercice » sur le **`SubscriptionId`** de la ligne (quand il vaut l'abonnement dédié **tenu par la config d'Imladris** et qu'une fenêtre est ouverte), pas sur un `resourceId` de VM ;
 - **(N7, recommandé) exiger aussi l'appelant Stratus** sur la ligne : l'étiquette « exercice » ne vaut que pour `SubscriptionId == <dédié>` **et** l'appelant = l'identité de Stratus — pas pour un tiers qui agirait dans l'abonnement ;
-- **(N4)** la watch passe aussi par `is_enrolled` et `zone_allows` (`exercise.py:522-556`) : l'inscription et la zone `bench` de l'abonnement dédié viennent de la **config de H0**, jamais `production` ;
-- **(N8)** la watch **refuse** comme cible d'une fenêtre non seulement l'abonnement du banc, mais aussi celui de **H0** et celui de la **VM d'Orodruin** — tenus de sa config, jamais de la fenêtre ;
+- **(N4)** la watch passe aussi par `is_enrolled` et `zone_allows` (`exercise.py:522-556`) : l'inscription et la zone `bench` de l'abonnement dédié viennent de la **config d'Imladris**, jamais `production` ;
+- **(N8)** la watch **refuse** comme cible d'une fenêtre non seulement l'abonnement du banc, mais aussi celui de **Imladris** et celui de la **VM d'Orodruin** — tenus de sa config, jamais de la fenêtre ;
 - lister les règles **AL1** qui vont tirer sur le `warmup`/`cleanup` : p. ex. `nsg-change-outside-glorfindel` sur le NSG que crée la technique (carte critique) ;
 - dire qu'**aucune règle actuelle** ne détecte Run Command, ni le lien Bastion par un autre appelant — c'est ID1, mais à écrire. Les lignes `AzureActivity` de l'abonnement dédié sont des **données contrôlées** par qui agit dedans ; AL1 décide **sans modèle**, à garder ainsi.
 
@@ -93,7 +93,7 @@ Aujourd'hui `RowAttribution` (`detection_rules.py:1158-1163, 1327-1329`) lit le 
 
 ## 3. Le journal d'activité, le paramètre de diagnostic, sa fraîcheur (constat 10)
 
-Pour que la watch voie les techniques **sans droit sur l'abonnement dédié** : un **paramètre de diagnostic** sur l'abonnement dédié route sa catégorie `Administrative` d'`AzureActivity` vers le **Log Analytics workspace du banc** (celui que H0 lit déjà en `Log Analytics Reader`, `infra/glorfindel-host/main.tf:208-210`). Le pont est à sens unique ; H0 n'a aucun droit sur l'abonnement dédié.
+Pour que la watch voie les techniques **sans droit sur l'abonnement dédié** : un **paramètre de diagnostic** sur l'abonnement dédié route sa catégorie `Administrative` d'`AzureActivity` vers le **Log Analytics workspace du banc** (celui qu'Imladris lit déjà en `Log Analytics Reader`, `infra/glorfindel-host/main.tf:208-210`). Le pont est à sens unique ; Imladris n'a aucun droit sur l'abonnement dédié.
 
 Mais **ce workspace est jetable** (il part avec `celebrimbor-down`) : le paramètre pointerait alors sur un workspace détruit et la watch serait **aveugle sans le savoir**. R2b doit donc :
 

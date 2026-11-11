@@ -9,7 +9,7 @@ Lot D1 (#81). Eregion est auto-hébergé : il tourne sur ton poste, ou dans une 
 | Découvrir | être défendu d'abord, en observation | Glorfindel (watch + console) | `make profile-discover` | [decouvrir.md](decouvrir.md) |
 | Ma détection marche-t-elle ? | savoir si une attaque réelle est vue | + Annatar | `make profile-detection` | [detection.md](detection.md) |
 | Mon infra tient-elle ? | savoir si une panne est bien vécue, par l'infra et par Glorfindel | + Gothmog | `make profile-resilience` | [resilience.md](resilience.md) |
-| Défense éprouvée | prouver la défense, en continu (comme H0) | tout | `make profile-proven` | [eprouvee.md](eprouvee.md) |
+| Défense éprouvée | prouver la défense, en continu (comme Imladris, anciennement H0) | tout | `make profile-proven` | [eprouvee.md](eprouvee.md) |
 | Plusieurs équipes | une défense par équipe, sans rien mélanger | un Glorfindel par équipe | `make team-start TEAM=<nom>` | [equipes.md](equipes.md) |
 
 ## Ce que chaque profil installe

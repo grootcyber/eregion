@@ -34,7 +34,7 @@ préversion publique et hors du provider azurerm (09/2026).
 | 4. Injecter | fenêtre d'exercice ouverte (`kind: fault`, publiée vers la watch hébergée), démarrage **journalisé avant l'appel**, signal `fault_started` | — |
 | 5. Pendant | l'exécution suivie toutes les 30 s ; la panne doit être constatée : son **effet** déclaré (G1), la VM arrêtée ou le bruit vu dans Perf ; les sondes marquées `during` tiennent (G1) | une sonde `during` qui ne tient plus : l'expérience est **annulée** (le bruit n'est plus bénin) ; au-delà de sa durée + 5 min, ou du plafond : annulée ; Ctrl-C : annulée aussi |
 | 6. Après | les sondes à nouveau, Heartbeat **postérieur à la fin** de la panne, 10 min au plus ; un effet lu dans la télémétrie, pas encore vu, cherché encore entre son début et sa fin (l'ingestion a du retard) ; si le moteur n'a pas ramené la VM : le retour déclaré (`start_vm`, journalisé), puis les sondes encore ; enfin, la watch de Glorfindel relue (`checks.watch_after`, G1) | le retour n'est « vérifié » que par une sonde, jamais sur la parole du moteur ; un effet jamais vu fait échouer le run (`fault_effective`) ; une watch disparue aussi : la réaction de Glorfindel n'est pas connue |
-| 7. Enregistrer | `runs/gothmog/<run_id>.json` comme Annatar, avec les valeurs des sondes avant et après (`metrics.before`, `metrics.after`, par VM) ; fenêtre fermée, puis, avec le canal, le rapport publié vers H0 (#193) ; signaux dans `runs/gothmog/` | — |
+| 7. Enregistrer | `runs/gothmog/<run_id>.json` comme Annatar, avec les valeurs des sondes avant et après (`metrics.before`, `metrics.after`, par VM) ; fenêtre fermée, puis, avec le canal, le rapport publié vers Imladris, anciennement H0 (#193) ; signaux dans `runs/gothmog/` | — |
 
 **Les sondes d'état normal** ([`probes.py`](probes.py)) : la VM en marche (`PowerState/running`),
 son agent `Ready` (le système répond), son Heartbeat dans Log Analytics de moins de 10 minutes.
@@ -127,7 +127,7 @@ Une panne n'est mesurée que si la watch de Glorfindel vivait avant la panne (V1
 (Gothmog la relit, `checks.watch_after`), et si ses décisions ont été lues sur l'hôte. Une
 décision faite après le début de la panne suivante sur la même VM est à la suivante. Si elle
 tombe aussi dans la fenêtre de la première, la première n'est pas mesurée. Définitions et calcul : [`docs/analysis.md`](../docs/analysis.md),
-« Le taux des pannes prises pour une attaque ». Le taux se lit **sur l'hôte de la watch** (H0) :
+« Le taux des pannes prises pour une attaque ». Le taux se lit **sur l'hôte de la watch** (Imladris) :
 `make glorfindel-host-fault-rate`. Sur Orodruin, chaque panne est « non mesurée » : les décisions
 n'y sont pas.
 
@@ -168,7 +168,7 @@ sans poignée) jusqu'au premier run.
 
    `make gothmog-preflight FAULT=vm-disk-write` lit l'état normal sans rien écrire.
 3. Depuis Orodruin armé, une panne à la fois (`gothmog run vm-disk-write`, puis `vm-cpu-pressure`,
-   puis `vm-restart`), en `human_only` sur gondolin. Puis `make glorfindel-host-fault-rate` (sur H0).
+   puis `vm-restart`), en `human_only` sur gondolin. Puis `make glorfindel-host-fault-rate` (sur Imladris).
    Le taux mesuré va ici, et les pannes passent `implemented`.
 
 ## G2 — les pannes des dépendances de Glorfindel
@@ -189,7 +189,7 @@ ne sait aujourd'hui que l'arrêt de VM, `Shutdown-1.0`) :
 | Télémétrie | règle de sortie refusée vers `AzureMonitor` | RulePoller en `last_error`, nœud DETECT rouge ; aucune action disruptive sur une enquête incomplète |
 | Configuration | pas une faute de Chaos Studio (un fichier local) : reste un test | — |
 
-À décider avant : la cible (H0 n'est pas inscrite, et un Glorfindel d'exercice sur le banc
+À décider avant : la cible (Imladris n'est pas inscrite, et un Glorfindel d'exercice sur le banc
 serait plus sûr qu'une coupure de celui qui observe bree) ; l'inscription des NSG auprès de
 Chaos Studio et de l'inscription O0 (`kind="fault"`) ; si la faute NSG accepte bien une étiquette
 de service comme destination (à mesurer, pas à supposer).

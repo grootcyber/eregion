@@ -1,7 +1,7 @@
 # BL1 — la boucle avec la réponse exécutée : la session de banc
 
 Deux des cinq indicateurs de la finalité étaient vides depuis le début : **le temps pour contenir**
-et **la part contenue seule**. Jusqu'au 30/10, H0 observait en `human_only`, avec une identité
+et **la part contenue seule**. Jusqu'au 30/10, Imladris (anciennement H0) observait en `human_only`, avec une identité
 lectrice : la 0.3 a mesuré la détection et la décision, jamais le confinement. BL1 (#280) les
 remplit, sur le banc.
 
@@ -14,10 +14,10 @@ panne, 0) ; T1136.001 détectée en 144 s, mais contenue seule 0 fois sur 1 (un 
 à 35 %, escaladé sous le seuil de 0,7) — le critère 1 tenu, le 2 à mesurer avec une technique que le
 modèle juge grave (BL1b, #396).
 
-**Depuis le 31/10, H0 garde la posture de la session** (décision de Jonathan ; bree aussi en
+**Depuis le 31/10, Imladris garde la posture de la session** (décision de Jonathan ; bree aussi en
 `non_disruptive` depuis le 01/11) : le rôle « Eregion Glorfindel Response » sur le seul groupe du
 banc, `GLORFINDEL_READ_ONLY=0`, gondolin et bree en `non_disruptive`, le CD actif. Les étapes 3 et 7
-ne servent plus que si H0 a été remis en lecture seule. Ce que la posture ouvre et ce qui la borne :
+ne servent plus que si Imladris a été remis en lecture seule. Ce que la posture ouvre et ce qui la borne :
 le modèle de menace ([`design/modele-de-menace.md`](design/modele-de-menace.md), §5).
 
 ## Ce qui est prêt
@@ -29,7 +29,7 @@ le modèle de menace ([`design/modele-de-menace.md`](design/modele-de-menace.md)
     modèle) ;
   - la page Annatar de la console (la campagne, encadré **RESPONSE**) ;
   - l'accueil de la console (tuiles **TIME TO CONTAIN** et **CONTAINED ALONE**, sur 30 jours) ;
-  - `make glorfindel-host-containment CAMPAIGN=<id>`, sur H0, en lecture seule, sans geste de plus
+  - `make glorfindel-host-containment CAMPAIGN=<id>`, sur Imladris, en lecture seule, sans geste de plus
     (depuis BL1c : la commande lit elle-même l'inscription des VM d'une campagne venue du canal, et
     retire les variables d'identité vides que compose passe, comme la watch).
 - **La campagne déclarée** : [`annatar/campaign/declared/bl1-reponse.yaml`](../annatar/campaign/declared/bl1-reponse.yaml).
@@ -76,37 +76,37 @@ campagne d'Annatar ne joue pas encore elle-même une panne. Deux cas :
 
 ## Où tourne la watch qui répond
 
-**Depuis le 31/10, (a) est la posture de H0 sur le banc** : rien à poser avant une session. Le choix
+**Depuis le 31/10, (a) est la posture d'Imladris sur le banc** : rien à poser avant une session. Le choix
 du 30/10 reste ci-dessous, pour ses raisons.
 
-Le 30/10, H0 était lecteur : identité managée `Reader` et `Log Analytics Reader`,
+Le 30/10, Imladris était lecteur : identité managée `Reader` et `Log Analytics Reader`,
 `GLORFINDEL_READ_ONLY=1`, et la config forcée en `human_only` au push (SEC7). Pour que Glorfindel
 isole seul, une watch devait pouvoir écrire sur le groupe du banc, le temps de la campagne.
 **Jonathan a retenu (a) le 30/10**, puis l'a gardée le 31/10 ; (c) est le repli, (b) est écartée.
 La posture est écrite au modèle de menace ([`design/modele-de-menace.md`](design/modele-de-menace.md),
 §5).
 
-| | (a) **retenue** : H0, rôle « Response » sur le banc | (b) **écartée** : une watch sur le poste de Jonathan | (c) **repli** : H0, avec un principal propre à la watch |
+| | (a) **retenue** : Imladris, rôle « Response » sur le banc | (b) **écartée** : une watch sur le poste de Jonathan | (c) **repli** : Imladris, avec un principal propre à la watch |
 |---|---|---|---|
-| Ce qui écrit | l'identité managée de H0 : watch, console et bot | le principal de réponse de Jonathan (`.envrc`) | la watch seule (`GLORFINDEL_AZURE_CLIENT_*`) ; la console et le bot restent lecteurs |
+| Ce qui écrit | l'identité managée d'Imladris : watch, console et bot | le principal de réponse de Jonathan (`.envrc`) | la watch seule (`GLORFINDEL_AZURE_CLIENT_*`) ; la console et le bot restent lecteurs |
 | Règle de production | tenue : rôle sur `rg-celebrimbor` seul ; gondolin `bench` ; bree reste en `human_only` | tenue, même portée | tenue, même portée |
-| Le canal retour (V1) | inchangé : H0 publie son battement, Orodruin le lit | **cassé** : seule l'identité de H0 écrit le battement et les détections. Il faut soit ouvrir l'écriture du conteneur `watch` à l'opérateur et arrêter la watch de H0, soit lancer `--without-glorfindel`, qui annule la mesure | inchangé |
-| La console | celle de H0 : bandeau « lecture seule » levé, boutons actifs (toutes les VM) | une console locale : les fichiers de la campagne arrivent sur H0, pas sur le poste | celle de H0 : les approbations échouent (`write_blocked`), la console reste de fait lectrice |
-| Le CD | en pause pendant la session (`make glorfindel-host-cd-disable`, étape 3) : il redéploierait H0 au milieu | intact | idem (a) |
-| L'observation de bree | continue (`human_only`) | **trou** : la watch de H0 arrêtée | continue |
-| Secret | aucun | celui du poste | un secret client sur H0, le temps de la session |
-| À défaire | le rôle, `READ_ONLY=1`, gondolin en `human_only`, push, redémarrage, le CD réactivé | le rôle du canal, redémarrer la watch de H0 | les variables vidées, le secret révoqué, `READ_ONLY=1`, gondolin en `human_only` |
+| Le canal retour (V1) | inchangé : Imladris publie son battement, Orodruin le lit | **cassé** : seule l'identité d'Imladris écrit le battement et les détections. Il faut soit ouvrir l'écriture du conteneur `watch` à l'opérateur et arrêter la watch d'Imladris, soit lancer `--without-glorfindel`, qui annule la mesure | inchangé |
+| La console | celle d'Imladris : bandeau « lecture seule » levé, boutons actifs (toutes les VM) | une console locale : les fichiers de la campagne arrivent sur Imladris, pas sur le poste | celle d'Imladris : les approbations échouent (`write_blocked`), la console reste de fait lectrice |
+| Le CD | en pause pendant la session (`make glorfindel-host-cd-disable`, étape 3) : il redéploierait Imladris au milieu | intact | idem (a) |
+| L'observation de bree | continue (`human_only`) | **trou** : la watch d'Imladris arrêtée | continue |
+| Secret | aucun | celui du poste | un secret client sur Imladris, le temps de la session |
+| À défaire | le rôle, `READ_ONLY=1`, gondolin en `human_only`, push, redémarrage, le CD réactivé | le rôle du canal, redémarrer la watch d'Imladris | les variables vidées, le secret révoqué, `READ_ONLY=1`, gondolin en `human_only` |
 
 **Retenue : (a)** (décision de Jonathan, 30/10).
 - Une seule watch et un seul battement.
-- Les cartes, le rapport de la campagne et les deux indicateurs sont au même endroit (H0, sa
+- Les cartes, le rapport de la campagne et les deux indicateurs sont au même endroit (Imladris, sa
   console), comme le sera une vraie exploitation.
 - Aucun secret, et le retour se fait en quatre gestes.
 
 Ce que (a) ouvre de plus que (c) : un clic dans la console, ou un bouton du bot, peut écrire sur le
 banc, bree comprise. C'est un humain qui agit, derrière le jeton de la console ou la liste de
 Discord. Pensé le 30/10 pour une session courte, c'est depuis le 31/10 la posture de tous les jours.
-Si Jonathan veut une console qui reste lectrice, (c) est le repli, au prix d'un secret sur H0. (b)
+Si Jonathan veut une console qui reste lectrice, (c) est le repli, au prix d'un secret sur Imladris. (b)
 casse le canal retour : écartée.
 
 ## Le déroulé (environ 1 h 30 à 2 h)
@@ -116,13 +116,13 @@ chaque `YES=1`, le plan est montré et relu.
 
 ### 0. Avant (5 min, lecture seule)
 
-Le CD de H0 reste actif : ne pas publier de release pendant la session, elle redéploierait H0 au
+Le CD d'Imladris reste actif : ne pas publier de release pendant la session, elle redéploierait Imladris au
 milieu de la campagne (ou mettre le CD en pause, comme à l'étape 3).
 
 ```bash
 source .envrc
 git fetch --tags && git log --oneline -1 origin/main     # la branche de BL1 fusionnée
-make glorfindel-host-status                              # H0 : conteneurs Up, aucune erreur
+make glorfindel-host-status                              # Imladris : conteneurs Up, aucune erreur
 make glorfindel-host-report                              # l'observation de la semaine, pour la note
 ```
 
@@ -155,13 +155,13 @@ d'`orodruin-plan` est celui de la sortie fermée, pas celui du premier apply.
 
 ### 3. La watch qui répond — option (a) (facultative, 10 min)
 
-**Seulement si H0 a été remis en lecture seule** (étape 7). Sinon, la posture du 31/10 est déjà là :
+**Seulement si Imladris a été remis en lecture seule** (étape 7). Sinon, la posture du 31/10 est déjà là :
 vérifier dans la console (page Glorfindel) que gondolin est en `non_disruptive`, et passer à
-l'étape 4. Un `make glorfindel-host-push` garde les modes en place sur H0 (depuis le 02/11) ; après
+l'étape 4. Un `make glorfindel-host-push` garde les modes en place sur Imladris (depuis le 02/11) ; après
 un `make glorfindel-host-push HUMAN_ONLY=1`, les redonner dans la console.
 
 ```bash
-make glorfindel-host-cd-disable        # le CD en pause : aucune release ne redéploie H0 pendant la session
+make glorfindel-host-cd-disable        # le CD en pause : aucune release ne redéploie Imladris pendant la session
 make glorfindel-host-cd-status         # attendu : en pause
 P=$(terraform -chdir=infra/glorfindel-host output -raw principal_id)
 SCOPE=/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/rg-celebrimbor
@@ -170,7 +170,7 @@ az role assignment create --assignee-object-id ${P} --assignee-principal-type Se
 make glorfindel-host-plan                   # SEC11 : la coupure des sessions, une attribution par VM de session_drain_vms (gondolin, bree), aucune sur le groupe
 make glorfindel-host-up                     # après relecture du plan, sans YES
 # infra/glorfindel-host/host.env : GLORFINDEL_READ_ONLY=0
-make glorfindel-host-push              # .env et config (le défaut human_only ; les modes en place sur H0 gardés, et dits)
+make glorfindel-host-push              # .env et config (le défaut human_only ; les modes en place sur Imladris gardés, et dits)
 make glorfindel-host-start REF=<le même commit>
 make glorfindel-host-tunnel            # la console : page Glorfindel, gondolin → non_disruptive
 ```
@@ -209,7 +209,7 @@ Pendant la campagne, dans la console : la carte de l'action autonome, et gondoli
 ### 5. La reprise (5 min)
 
 Une fois le run fini (le nettoyage de l'atomic est passé), la console fait **↩️ Release** sur
-gondolin. En ligne de commande, sur H0 :
+gondolin. En ligne de commande, sur Imladris :
 `docker exec eregion-war-room glorfindel release <resource_id> --yes` — dans le conteneur de la console, qui écrit `runs/console/` : la watch le monte en lecture seule et n'y noterait pas la levée (SEC18). La levée est vérifiée sur
 Azure, et elle est notée au fil des actions.
 
@@ -231,7 +231,7 @@ Dans la console, à trois endroits :
 
 ### 7. Le retour en lecture seule (facultatif, 10 min)
 
-**Seulement pour remettre H0 en lecture seule** : depuis le 31/10, la posture de H0 garde le rôle,
+**Seulement pour remettre Imladris en lecture seule** : depuis le 31/10, la posture d'Imladris garde le rôle,
 `GLORFINDEL_READ_ONLY=0` et les modes. Hors de ce cas, ne garder que les deux dernières lignes
 (`orodruin-stop`, `celebrimbor-stop`), vérifier que plus aucune isolation ni blocage ne reste
 sur gondolin (`glorfindel list`), et `make glorfindel-host-cd-enable` si le CD a été mis en pause.
@@ -242,7 +242,7 @@ sur gondolin (`glorfindel list`), et `make glorfindel-host-cd-enable` si le CD a
 P=$(terraform -chdir=infra/glorfindel-host output -raw principal_id)
 SCOPE=/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/rg-celebrimbor
 az role assignment delete --assignee ${P} --role "Eregion Glorfindel Response" --scope ${SCOPE}
-# la coupure aussi, si H0 ne doit plus rien écrire : session_drain_vms = [] dans
+# la coupure aussi, si Imladris ne doit plus rien écrire : session_drain_vms = [] dans
 # infra/glorfindel-host/session_drain.auto.tfvars, puis make glorfindel-host-plan, relu, et -up
 # infra/glorfindel-host/host.env : GLORFINDEL_READ_ONLY=1
 make glorfindel-host-push HUMAN_ONLY=1 # toutes les VM de nouveau en human_only

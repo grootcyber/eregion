@@ -57,18 +57,18 @@ Rien de ce guide n'a été rejoué de zéro. Les mesures citées sont celles des
 | 4 | `orodruin-up`, `-fingerprint`, `-lock` | l'empreinte lue par Run Command, puis `orodruin-ssh` accepté ; `orodruin-lock` referme la sortie |
 | 5 | `glorfindel-host-env` avec les deux canaux exportés, `-push`, `-start REF=<tag>` | `make glorfindel-host-logs` : `Canal retour : https://…/watch`, `Clé de la watch : SHA256:…` |
 | 5 | `make glorfindel-host-watch-key`, la ligne dans `orodruin.env`, `make orodruin-push REF=<tag>`, `make orodruin-check` | `armed` ; `make doctor PROFILE=bench` tout vert |
-| 7 | `orodruin-campaign-plan … CAMPAIGN_DECLARED=…bl1-reponse.yaml`, `orodruin-campaign-run` | `executed=1 detected=1` ; la carte de la détection sur H0, l'action retenue (`human_only`). Le rapport dit « non contenu » : l'attente `contain` de `bl1-reponse.yaml` ne peut pas tenir en `human_only`, seul le verdict de détection compte ici |
+| 7 | `orodruin-campaign-plan … CAMPAIGN_DECLARED=…bl1-reponse.yaml`, `orodruin-campaign-run` | `executed=1 detected=1` ; la carte de la détection sur Imladris (anciennement H0), l'action retenue (`human_only`). Le rapport dit « non contenu » : l'attente `contain` de `bl1-reponse.yaml` ne peut pas tenir en `human_only`, seul le verdict de détection compte ici |
 | 7 | ~25 min après : `make glorfindel-host-campaign-report CAMPAIGN=<id>` | le rapport ; la page Annatar de la console ; la preuve de T1136.001 datée sur l'accueil |
 | 8 | `orodruin-down`, `glorfindel-host-down`, `celebrimbor-down CONFIRM=default`, les rôles supprimés | plus aucun des trois groupes ; `az role definition list --custom-role-only true` sans les rôles d'Eregion |
 
 ## Le rançongiciel au banc (RAN1)
 
-Les chiffres du README (« ~1 min to contain, 21m29s to restored service ») datent du 09/06, d'avant H0, Orodruin et Dagorlad. Le pas à pas : [`banc-t1486.md`](../banc-t1486.md).
+Les chiffres du README (« ~1 min to contain, 21m29s to restored service ») datent du 09/06, d'avant Imladris, Orodruin et Dagorlad. Le pas à pas : [`banc-t1486.md`](../banc-t1486.md).
 
 | Étape | Le geste | Ce qu'on doit voir |
 |---|---|---|
-| 2–9 | T1486 sur gondolin par Dagorlad et `make orodruin-exercise`, le restore du poste sous le principal de la console, la levée sur H0 | `detected`, `isolate_vm` seul et relu sur Azure, la restauration et la levée ; les trois temps datés dans #665 |
+| 2–9 | T1486 sur gondolin par Dagorlad et `make orodruin-exercise`, le restore du poste sous le principal de la console, la levée sur Imladris | `detected`, `isolate_vm` seul et relu sur Azure, la restauration et la levée ; les trois temps datés dans #665 |
 
-## Le cas sans H0
+## Le cas sans Imladris
 
-Depuis WC1 (#523), la watch du poste peut écrire le canal retour d'Orodruin ([banc.md](banc.md#sans-h0--la-watch-de-ton-poste)). Codé et testé sans Azure ; la mesure au banc reste à faire : un run depuis Orodruin, la watch sur le poste, la garde qui passe avec sa clé épinglée et refuse une autre clé.
+Depuis WC1 (#523), la watch du poste peut écrire le canal retour d'Orodruin ([banc.md](banc.md#sans-imladris--la-watch-de-ton-poste)). Codé et testé sans Azure ; la mesure au banc reste à faire : un run depuis Orodruin, la watch sur le poste, la garde qui passe avec sa clé épinglée et refuse une autre clé.

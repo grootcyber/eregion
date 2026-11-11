@@ -9,7 +9,7 @@
 > (`glorfindel/providers/azure/identity_contract.py`, `glorfindel identity-contract`) — son jeton
 > Graph, puis ses droits relus dans Graph en lecture seule, contre la liste fermée ; un droit en
 > trop, `beyond_contract`, un contrat illisible, `contract_unreadable` : passif, il refuse de
-> démarrer ; son application en Terraform de H0, désactivée par défaut
+> démarrer ; son application en Terraform d'Imladris (anciennement H0), désactivée par défaut
 > (`infra/glorfindel-host/identity_executor.tf`), ses deux permissions consenties par Jonathan à
 > l'apply — `docs/operations.md`, « L'exécuteur d'identité ». Aucun verbe n'est écrit. Le reste
 > (IDI1b, IR1c à IR1e) est encore une conception.
@@ -527,18 +527,18 @@ les siens.
   jamais à son nom, ni à son `templateId`, qu'un rôle personnalisé peut choisir ;
 - une permission n'est tenue que si le jeton **et** ses attributions la disent ; un droit qui
   manque n'arme ni ne désarme, il retire les verbes qui en ont besoin (`VERB_RIGHTS`, `allows`) ;
-- l'exécuteur ne prend que son certificat, jamais `DefaultAzureCredential` : sur H0, le point de
+- l'exécuteur ne prend que son certificat, jamais `DefaultAzureCredential` : sur Imladris, le point de
   jeton de la VM répondrait, et son identité est celle de la watch ;
 - son identifiant d'application rejoint `never_target` (`EREGION_IDENTITY_EXECUTOR_CLIENT_ID`) ;
-- son application est dans l'état de H0 (`infra/glorfindel-host/identity_executor.tf`) : les deux
+- son application est dans l'état d'Imladris (`infra/glorfindel-host/identity_executor.tf`) : les deux
   permissions de Graph et Log Analytics Reader sur le workspace. Ses rôles d'annuaire bornés
   viennent d'IDI1b (Celebrimbor), la propriété des applications inscrites d'IDI1.
 
-**Sur H0**, l'exécuteur est un conteneur à qui le point de jeton de la VM est coupé (FS1, Q3,
+**Sur Imladris**, l'exécuteur est un conteneur à qui le point de jeton de la VM est coupé (FS1, Q3,
 décision du 04/11). Il a donc son propre principal, avec un certificat dont la clé est tirée sur
 l'hôte, dans un répertoire que lui seul monte. FS1 l'a noté (son hypothèse 4) : un certificat volé
 s'utilise **depuis n'importe où**. L'accès conditionnel pour les identités de charge de travail
-pourrait le borner à l'adresse de H0 (**hypothèse**, licence à vérifier) : c'est un point ouvert
+pourrait le borner à l'adresse d'Imladris (**hypothèse**, licence à vérifier) : c'est un point ouvert
 (§4).
 
 ### 3.5 Ne jamais viser Glorfindel, Orodruin, ni l'opérateur
@@ -547,7 +547,7 @@ pourrait le borner à l'adresse de H0 (**hypothèse**, licence à vérifier) : c
 (`glorfindel/response/policy.py:105-109`) : ce qui est livré, puis ce que la configuration ajoute.
 Elle tient :
 - les identités de Glorfindel : chaque `*_AZURE_CLIENT_ID` des services (watch, console, bot,
-  exécuteur de restore, exécuteur d'identité), `GLORFINDEL_OWN_CALLERS`, l'identité managée de H0 ;
+  exécuteur de restore, exécuteur d'identité), `GLORFINDEL_OWN_CALLERS`, l'identité managée d'Imladris ;
   et pour chacune, l'objet de l'application **et** celui du principal (C2 l'a appris : l'objet de
   l'application n'est pas dans le jeton, `entra.py:38-39`) ;
 - l'identité d'Orodruin (une sortie de l'état d'`infra/orodruin`) et le principal d'Annatar ;
@@ -690,8 +690,8 @@ révoquer des sessions (décisions des Q2 et Q3).
 | **La console** (son jeton, sa clé de file) | demander un verbe d'identité | il ne peut viser qu'une proposition que la watch a signée, avec ses paramètres à elle ; l'exécuteur rejoue l'inscription, `never_target`, le débit, la preuve et l'état ; un verbe lourd ou irréversible (retirer un secret, désactiver un principal ou un utilisateur) exige la clé de l'opérateur et le nom tapé sur son poste (décision du Q4) | approuver un verbe léger en attente : retirer un certificat ajouté, réactiver, révoquer les sessions d'un utilisateur inscrit, dans le débit |
 | **Le bot** | idem | aucun verbe d'identité pour le bot : il montre, il n'agit pas (décision du Q5) ; une demande d'identité de son répertoire est une carte critique | rien |
 | **La watch** (sa clé, son hôte) | forger une proposition sur n'importe quelle cible | une proposition n'est qu'une proposition : un humain l'approuve ; l'exécuteur relit la preuve lui-même dans les journaux, avec sa propre identité (`evidence_mismatch`) ; inscription et `never_target` relus chez lui | la lecture de Graph d'IR1a : l'énumération du tenant (I) |
-| **L'exécuteur** (son certificat volé, son conteneur) | retirer les identifiants et désactiver les applications inscrites ; révoquer les sessions de tout utilisateur (si la permission vaut pour tout le tenant : hypothèse) ; **créer des applications** (`OwnedBy` le permet) ; **ajouter un identifiant à une application qu'il possède et agir comme elle** ; désactiver un utilisateur de test, ou **réinitialiser son mot de passe et le prendre** (User Administrator borné) | rien ne lui permet de s'accorder un droit (la liste refusée, vérifiée au démarrage) ; une application ou un utilisateur inscrits ne tiennent aucun privilège (décision du Q6), donc agir comme eux ne donne rien ; il ne peut ni inscrire ni désinscrire un utilisateur (l'appartenance à l'unité restreinte et l'attribut de sécurité ne sont pas à sa portée, §3.6) ; chaque écriture d'Entra sous son identité sans reçu est une carte critique (IR1d, comme SID1 pour Run Command) ; un identifiant ajouté par lui est vu par C2, acteur marqué `GlorfindelIdentity` | un déni de service sur les identités du banc, et des déconnexions en masse (Q3) ; le certificat utilisable hors de H0 tant que l'accès conditionnel ne le borne pas |
-| **Root sur H0, ou sa clé SSH** | tout ce que tient l'exécuteur | le même périmètre que ci-dessus : rien qui accorde un droit | ce qui est déjà ouvert sur H0 (§5 du modèle) |
+| **L'exécuteur** (son certificat volé, son conteneur) | retirer les identifiants et désactiver les applications inscrites ; révoquer les sessions de tout utilisateur (si la permission vaut pour tout le tenant : hypothèse) ; **créer des applications** (`OwnedBy` le permet) ; **ajouter un identifiant à une application qu'il possède et agir comme elle** ; désactiver un utilisateur de test, ou **réinitialiser son mot de passe et le prendre** (User Administrator borné) | rien ne lui permet de s'accorder un droit (la liste refusée, vérifiée au démarrage) ; une application ou un utilisateur inscrits ne tiennent aucun privilège (décision du Q6), donc agir comme eux ne donne rien ; il ne peut ni inscrire ni désinscrire un utilisateur (l'appartenance à l'unité restreinte et l'attribut de sécurité ne sont pas à sa portée, §3.6) ; chaque écriture d'Entra sous son identité sans reçu est une carte critique (IR1d, comme SID1 pour Run Command) ; un identifiant ajouté par lui est vu par C2, acteur marqué `GlorfindelIdentity` | un déni de service sur les identités du banc, et des déconnexions en masse (Q3) ; le certificat utilisable hors d'Imladris tant que l'accès conditionnel ne le borne pas |
+| **Root sur Imladris, ou sa clé SSH** | tout ce que tient l'exécuteur | le même périmètre que ci-dessus : rien qui accorde un droit | ce qui est déjà ouvert sur Imladris (§5 du modèle) |
 | **Le contenu des journaux** (un nom d'application, un événement provoqué) | faire proposer une action sur une identité légitime | une proposition ne vise que la cible de l'événement, par son `id`, jamais par son nom ; pour viser une application de production, il faut déjà l'avoir compromise, et la proposer est alors juste ; un humain approuve | le bruit : des cartes, jamais une action |
 | **Un rejeu** | rejouer une demande ou une proposition | le nonce de FS1, une proposition consommée une fois | — |
 | **D** : l'exécuteur arrêté | aucune action d'identité | le plan reste sur la carte : l'humain l'exécute avec son compte, et Eregion vérifie | une perte de disponibilité, assumée comme pour la watch (FS1 §2.13) |
@@ -707,7 +707,7 @@ et c'est une carte.
 
 **Ce que le lot qui ferme IR1c écrit dans `docs/design/modele-de-menace.md`** :
 - **§5, la ligne « E »** des identités : l'exécuteur d'identité, ses droits, la liste refusée, le
-  contrat au démarrage ; « jamais une identité, un rôle » reste vrai pour la watch et H0 ;
+  contrat au démarrage ; « jamais une identité, un rôle » reste vrai pour la watch et Imladris ;
 - **§5, « Ouvert »** : l'accès conditionnel du certificat de l'exécuteur ; la portée de
   `User.RevokeSessions.All` ;
 - **§5, le banc** : l'unité administrative restreinte du banc, son rôle borné, l'attribut
@@ -809,7 +809,7 @@ Jonathan les a tranchées le 05/11 (la section finale).
    modèle de FS1g *(recommandé)*. Raison : la watch agit seule et lit du texte de l'attaquant ;
    l'exécuteur n'a aucun chemin autonome, il relit la preuve lui-même, et ses droits ne se mêlent
    pas à ceux du restore. Ce que ça change : un service et un principal de plus, avec un
-   certificat sur H0 (IMDS coupé, FS1 Q3).
+   certificat sur Imladris (IMDS coupé, FS1 Q3).
 2. **L'exécuteur de restore de FS1g, élargi** à l'identité. Ce que ça change : un service de moins,
    mais une seule identité qui tient le restore et l'écriture sur Entra ID ; sa compromission
    ouvre les deux.

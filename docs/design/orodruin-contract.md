@@ -186,7 +186,7 @@ Décisions du 19/10 (go de Jonathan sur le plan) :
 ## Le canal des fenêtres d'exercice (O1, partie C — 19/10)
 
 Les fenêtres B2 (`eregion_core/exercise.py`) disent à Glorfindel quels cycles sont des
-exercices. Avec Glorfindel hébergé (H0) et les injecteurs sur Orodruin, elles changent d'hôte
+exercices. Avec Glorfindel hébergé (Imladris, anciennement H0) et les injecteurs sur Orodruin, elles changent d'hôte
 par un conteneur de stockage à Orodruin (`eregion_core/exercise_channel.py`) :
 
 - **Côté Orodruin** : `open_window` et `close_window` publient la fenêtre
@@ -216,7 +216,7 @@ par un conteneur de stockage à Orodruin (`eregion_core/exercise_channel.py`) :
   n'autorise rien (M68).
 - **Sortie** : `Storage.FranceCentral` en 443. Le tag couvre tous les comptes de la région :
   c'est une voie de sortie possible, bornée à la région. Côté compte, depuis SEC5, son pare-feu
-  n'admet qu'Orodruin et H0 (voir « SEC5 »).
+  n'admet qu'Orodruin et Imladris (voir « SEC5 »).
 
 **Mesuré le 19/10** :
 - avec `EREGION_CHANNEL_SCOPE` déclarée, `armed` ; sans elle, `passive`
@@ -228,7 +228,7 @@ par un conteneur de stockage à Orodruin (`eregion_core/exercise_channel.py`) :
 
 ## Le canal retour : la watch hébergée parle au run (#159 — 20/10)
 
-Un run lancé depuis Orodruin ne voit pas la watch de H0 : ni son battement de cœur ni ses
+Un run lancé depuis Orodruin ne voit pas la watch d'Imladris : ni son battement de cœur ni ses
 fichiers `watch-*` (premier run R1 sur le banc, 20/10 : `detection: unknown`). Une watch sur
 Orodruin ne détecterait pas : `api.loganalytics.io` est hors de sa sortie. Le canal retour est
 le canal des fenêtres dans l'autre sens : un conteneur `watch` dans le même compte
@@ -266,7 +266,7 @@ le canal des fenêtres dans l'autre sens : un conteneur `watch` dans le même co
   rapport) ; un run qui n'a vu que des détections refusées est `unknown`, jamais `missed`. Le
   battement qui prouve un `missed` n'est cru, lui aussi, que signé par la clé épinglée
   (`watch_gate.miss_proof`) : non signé, d'une autre clé ou rejoué, le run est `unknown`. Et ce battement liste, pour chaque fenêtre, les détections livrées avant lui (`covers`, SEC21b) : le run les relit après lui, et une détection couverte absente, ou un battement sans `covers` (une watch d'avant), donne `unknown`, jamais `missed`. Depuis
-  WC1, d'autres identités que H0 peuvent écrire `watch` : seule la clé épinglée fait un « vu ». `missed` exige un battement de cœur écrit **après la fin de l'attente**, par une watch
+  WC1, d'autres identités qu'Imladris peuvent écrire `watch` : seule la clé épinglée fait un « vu ». `missed` exige un battement de cœur écrit **après la fin de l'attente**, par une watch
   **démarrée avant l'attaque**, qui **connaît la fenêtre du run**, et une liste lue sans erreur
   (`miss_unprovable`). Tout le reste donne `unknown` : canal absent, injoignable ou refusé,
   battement de cœur périmé, fenêtre jamais reçue par la watch (le canal des fenêtres en panne :
@@ -282,15 +282,15 @@ le canal des fenêtres dans l'autre sens : un conteneur `watch` dans le même co
   rôle `injector` ne changent pas ; `orodruin-kill` supprime toutes les attributions de
   l'identité, celle-ci comprise.
 - **Qui est « la watch » (WC1, #523, 04/11)** : `watch_principal_ids`, une ou plusieurs identités ;
-  par défaut (`null`) celle de H0 seule, `watch_principal_id`, comme avant — mêmes attributions, aux
-  mêmes adresses de l'état : le plan de H0 et d'Orodruin ne change pas. Sans H0, l'*object id* du
+  par défaut (`null`) celle d'Imladris seule, `watch_principal_id`, comme avant — mêmes attributions, aux
+  mêmes adresses de l'état : le plan d'Imladris et d'Orodruin ne change pas. Sans Imladris, l'*object id* du
   principal de service d'une watch de poste ou d'équipe (`GLORFINDEL_AZURE_CLIENT_*`), passé par
   `make orodruin-plan WATCH_PRINCIPALS=<id>[,<id>…] NO_WATCH=1`. Chacune reçoit exactement ce que
-  reçoit H0 : `Storage Blob Data Reader` sur `exercises`, `Storage Blob Data Contributor` sur
+  reçoit Imladris : `Storage Blob Data Reader` sur `exercises`, `Storage Blob Data Contributor` sur
   `watch`, à la portée du conteneur, `principal_type = ServicePrincipal`. Le plan refuse un
   non-GUID, une identité nommée deux fois, l'identité d'Orodruin et celle de l'opérateur qui
   applique (`azurerm_client_config`) ; le Makefile refuse une valeur venue de l'environnement, et
-  une liste qui retire le canal à H0 quand son état se lit, sauf `NO_WATCH=1`. Celle d'Annatar,
+  une liste qui retire le canal à Imladris quand son état se lit, sauf `NO_WATCH=1`. Celle d'Annatar,
   Terraform ne la connaît pas : c'est l'opérateur qui nomme l'identité, et lui seul la tient hors de
   la liste. Chaque `orodruin-up` et `orodruin-lock` redonne la même liste, sinon le plan retire ses
   droits à la watch du poste. Le contrat d'Orodruin ne change pas : il ne lit que ses propres
@@ -300,8 +300,8 @@ le canal des fenêtres dans l'autre sens : un conteneur `watch` dans le même co
   épinglée a signées pour lui, et ne conclut à un `missed` que sur un battement qu'elle a signé —
   un rédacteur de plus ne fausse pas la mesure, ce qu'il écrit est refusé et dit. Une watch à la
   fois : le battement est un seul blob, deux watches l'écraseraient tour à tour
-  (`infra/orodruin/README.md`, « Sans H0 »).
-- **Sortie** : rien ne change (`Storage.FranceCentral` pour Orodruin ; la sortie de H0 n'est pas
+  (`infra/orodruin/README.md`, « Sans Imladris »).
+- **Sortie** : rien ne change (`Storage.FranceCentral` pour Orodruin ; la sortie d'Imladris n'est pas
   filtrée). `GLORFINDEL_READ_ONLY` porte sur l'infra observée, pas sur le stockage d'Eregion. Une
   watch de poste entre par l'IP de l'opérateur, que le pare-feu du compte admet déjà (WC1).
 - **Mutants** : M109 (battement de cœur sur une détection en attente), M110 (une VM hors fenêtre
@@ -376,7 +376,7 @@ contexte courant est un autre abonnement.
 | 14:58:23–14:58:31 | les 5 attributions d'Orodruin supprimées ; la liste relue juste après est vide |
 | juste après | annulation demandée ; l'exécution est encore `Running` (le kill le dit) |
 | 14:58:37 | la fenêtre fermée par le kill (`closed_by: orodruin-kill`) |
-| 14:58:48 | la watch de H0 a tiré la fenêtre fermée (11 s) |
+| 14:58:48 | la watch d'Imladris a tiré la fenêtre fermée (11 s) |
 | 14:58:56 | Orodruin désallouée |
 | 14:59:19 | gondolin redémarrée **par Chaos Studio** : l'annulation ramène la VM, sans `az vm start` |
 | 14:59:25 | l'exécution passe à `Cancelled` |
@@ -440,16 +440,16 @@ tirage ne lit `audit/` : celui des fenêtres ne liste plus que la racine du cont
 
 **Le pare-feu du compte du canal (V-31).** Le point de terminaison public reste, fermé par défaut
 (`network_rules`, `default_action = "Deny"`, rien ne contourne). Entrent : les sous-réseaux
-d'Orodruin et de H0, par un point de terminaison de service `Microsoft.Storage` (gratuit) — une
+d'Orodruin et d'Imladris, par un point de terminaison de service `Microsoft.Storage` (gratuit) — une
 règle d'IP n'a pas d'effet pour un client de la même région que le compte, ce qui est leur cas
-(francecentral) —, et les IP publiques d'Orodruin, de H0 (si l'un d'eux change de région) et de
+(francecentral) —, et les IP publiques d'Orodruin, d'Imladris (si l'un d'eux change de région) et de
 l'opérateur (l'arrêt d'urgence ferme les fenêtres depuis son poste ; une IP qui a changé depuis le
 dernier apply : le kill dit que les fenêtres n'ont pas été fermées, et quand elles expirent ; depuis
 WC1, la watch d'un poste passe par cette même IP, rien n'est ouvert de plus). Un
 point de terminaison privé n'est pas gratuit : 0,0088 € l'heure l'un (API publique des prix
 d'Azure, compteur « Standard Private Endpoint », 29/10), environ 6,4 € par mois, plus le trafic ;
 il en faudrait deux, les VNet n'étant pas appairés. À mesurer après l'apply : `orodruin-check`,
-une fenêtre publiée et tirée par H0, le kill qui la ferme.
+une fenêtre publiée et tirée par Imladris, le kill qui la ferme.
 
 **Le garde « jamais sans Glorfindel » (N-03, N-04).** Ce qu'il prouve : que la watch qui détient
 sa clé a écrit ce fichier (ou ce blob), pour l'abonnement de l'injecteur, il y a moins de 90 s
@@ -463,7 +463,7 @@ SEC19, le garde prouvait seulement que quelqu'un qui peut écrire là avait écr
 de ce périmètre. Le battement porte un condensé de l'abonnement que la watch
 lit (`perimeter`, 16 hex du sha256 ; jamais l'abonnement lui-même), que l'injecteur compare au
 sien : l'abonnement plutôt que l'hôte, parce que c'est ce que les deux côtés savent des mêmes
-cibles (un nom d'hôte ne se compare à rien : Orodruin et H0 sont deux hôtes, les conteneurs locaux
+cibles (un nom d'hôte ne se compare à rien : Orodruin et Imladris sont deux hôtes, les conteneurs locaux
 deux autres) ; le condensé lie, la signature authentifie. Ce qu'il ne prouve pas : que les
 workspaces de la watch voient la cible, ni sa santé au-delà de sa boucle de battement ; et qui lit
 la clé privée de la watch (root sur son hôte) signe comme elle. Le garde est relu avant chaque action d'un
@@ -549,9 +549,9 @@ provenance : M-3).
 
 **Le déploiement, avec Jonathan, dans cet ordre** — un injecteur neuf refuse le battement d'une
 watch sans périmètre, un contrat neuf sur l'ancien rôle de groupe dit `identity_group_wide`, et un
-pare-feu posé avant le point de terminaison de H0 lui coupe le canal :
+pare-feu posé avant le point de terminaison d'Imladris lui coupe le canal :
 
-1. la release publiée ; le CD de H0 la déploie ; vérifier que `heartbeat.json`, dans le conteneur
+1. la release publiée ; le CD d'Imladris la déploie ; vérifier que `heartbeat.json`, dans le conteneur
    `watch`, porte `perimeter` ;
 2. `make glorfindel-host-plan` : une seule mise à jour en place, celle du sous-réseau
    (`service_endpoints`), et l'output `subnet_id` — rien qui remplace la VM (`custom_data`) ;
@@ -561,7 +561,7 @@ pare-feu posé avant le point de terminaison de H0 lui coupe le canal :
 4. `make orodruin-push` (l'image des injecteurs, publiée et vérifiée depuis CI3, et son contrat) ;
 5. `make orodruin-check` : `armed`.
 
-Un retour en arrière du CD de H0 vers une version sans SEC5 rend un battement sans périmètre :
+Un retour en arrière du CD d'Imladris vers une version sans SEC5 rend un battement sans périmètre :
 tous les injecteurs neufs refusent (« names no perimeter »), le sens fermé — redéployer la
 version SEC5 ; `--without-glorfindel` reste possible hors production. En profil local, un vieil
 injecteur (une image d'avant SEC5) lit la copie de la watch neuve, devenue du JSON, comme une date
@@ -831,7 +831,7 @@ poste, **non vérifiée**, pour essayer une branche avant sa fusion ; `~/.eregio
 Il passe encore par `docker save` : une image construite sur le poste s'exporte entière (mesuré le
 03/11), seule une image tirée perdait sa configuration et ses couches.
 
-**À jour au démarrage** (OI3, #522, décision de Jonathan du 04/11). H0 se met à jour seul (son CD) ;
+**À jour au démarrage** (OI3, #522, décision de Jonathan du 04/11). Imladris se met à jour seul (son CD) ;
 Orodruin, éteint la plupart du temps et sans sortie vers le registre, restait sur l'image de son dernier
 `orodruin-push`. **`make orodruin-start`** rallume la VM, attend qu'elle réponde en SSH (`ssh-keyscan`,
 rien n'y est accepté : sa clé est vérifiée ensuite par `orodruin-known`), puis lit **en lecture seule**
@@ -892,7 +892,7 @@ contrat : ni droit, ni attribution, ni sortie réseau, ni canal. Conception :
 [`docs/design/console.md`](console.md), §7, phase (b). Pas à pas : [`docs/operations.md`](../operations.md).
 
 **Le transport, porté par l'opérateur.** `make orodruin-exercise REQUEST=<id>`, depuis son poste :
-- la demande est tirée de H0 par SSH, la clé d'hôte vérifiée ;
+- la demande est tirée d'Imladris par SSH, la clé d'hôte vérifiée ;
 - elle est affichée, et les noms des cibles destructives sont tapés sur le poste ;
 - elle est copiée par SSH dans `~/requests/` d'Orodruin, avec les noms tapés à part
   (`<id>.typed.json`) ;
@@ -1021,7 +1021,7 @@ conteneur, même attribution, rien de neuf.
   finie) et, par fil, son rang, son état, son code, ses runs. Jamais l'expérience ni la cible : les
   fenêtres le disent déjà, comme avant.
 
-La watch de H0 les tire dans `runs/orodruin/` avec les rapports de run. Chaque blob est relu contre sa
+La watch d'Imladris les tire dans `runs/orodruin/` avec les rapports de run. Chaque blob est relu contre sa
 forme (`read_contract`, `read_status`) : un blob refusé n'est pas écrit. La console les relit à son
 tour. Sans eux, elle dit « Orodruin: unknown here ».
 
@@ -1039,7 +1039,7 @@ fenêtres ouvertes qu'il fermera et leurs cibles, et ce qui reste en vol (voir p
   et un Orodruin sans elles dit `identity_missing_right`, donc `passive` ;
 - le premier exercice réel ;
 - la lecture des cartes, des sous-réseaux et de leurs NSG par l'identité d'Orodruin ;
-- le blob `orodruin/` tiré par H0.
+- le blob `orodruin/` tiré par Imladris.
 
 ## Ce que le contrat ne couvre pas : Stratus et la lecture de Graph de la watch
 
@@ -1068,7 +1068,7 @@ Stratus Red Team, épinglé (`annatar/stratus/PIN`), pour une technique du plan 
 **La lecture de Microsoft Graph par la watch (IR1a, #552).** Le contrat relit les droits Graph
 d'Orodruin (IDI1, plus haut), jamais ceux de la watch. L'identité de la watch peut recevoir quatre
 permissions d'application en lecture, posées à la main, hors de Terraform
-([`docs/operations.md`](../operations.md), « La lecture de Microsoft Graph par la watch ») ; sur H0,
+([`docs/operations.md`](../operations.md), « La lecture de Microsoft Graph par la watch ») ; sur Imladris,
 c'est l'identité de la VM, partagée par la watch, la console et le bot. Le code n'en fait que des GET
 (`glorfindel/providers/azure/graph.py`), mais aucun contrat ne relit ces droits au démarrage de la
 watch. Côté Orodruin, rien ne change : la watch lit `exercises` et écrit `watch` sur le canal, son

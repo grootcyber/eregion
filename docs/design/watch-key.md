@@ -27,11 +27,11 @@ crue ou refusée). Tests : `tests/unit/test_watch_key.py`, `tests/unit/test_watc
   d'autres, un lien, un autre propriétaire, un fichier d'une autre taille : elle ne signe pas, et le
   dit dans son journal. Ses battements partent alors sans signature, et les injecteurs les refusent.
 - **Le répertoire est créé avant les services**, au nom de l'opérateur (`make glorfindel-start`,
-  `-restart`, `-dev`, `team-start`, `deploy.sh` sur H0). Laissé à docker, il serait à root, et la
+  `-restart`, `-dev`, `team-start`, `deploy.sh` sur Imladris, anciennement H0). Laissé à docker, il serait à root, et la
   watch ne pourrait pas tirer sa clé. `make glorfindel-shell` ne la monte pas : une watch lancée
   dans ce shell tirerait une clé éphémère, refusée par les injecteurs.
 - **La moitié publique s'épingle** : `make watch-key` (la watch de ce poste) ou
-  `make glorfindel-host-watch-key` (celle de H0, lue dans son conteneur par SSH, clé d'hôte épinglée)
+  `make glorfindel-host-watch-key` (celle d'Imladris, lue dans son conteneur par SSH, clé d'hôte épinglée)
   donnent `export EREGION_WATCH_KEY=ed25519:<base64 de 32 octets>` et l'empreinte
   (`SHA256:…`, la forme d'une empreinte SSH). Jamais la clé privée.
 
@@ -77,7 +77,7 @@ aucun battement.
 ## Les détections signées (SEC21, #530)
 
 Le battement dit qu'une watch vit ; les détections disent ce qu'elle a vu d'un run, et c'est ce que
-mesure un injecteur. Depuis WC1 (#523), d'autres identités que H0 peuvent écrire le canal retour :
+mesure un injecteur. Depuis WC1 (#523), d'autres identités qu'Imladris peuvent écrire le canal retour :
 non signée, une détection pouvait fausser la mesure d'un run, dans un sens comme dans l'autre.
 
 **Ce que la watch signe.** Chaque blob `detections/<run_id>/<signal_id>.json` porte deux champs de
@@ -142,7 +142,7 @@ de canal de stockage.
 - **Une watch d'avant, des injecteurs à jour** : chaque détection est refusée (`unsigned … update
   Glorfindel`) ; le run est `unknown`, jamais `missed` ni `detected`, et le dit. La garde, elle,
   passe toujours : le battement est signé depuis SEC19.
-- **L'ordre** : la release publiée, le CD de H0 la déploie (la watch de H0 signe ses détections) ;
+- **L'ordre** : la release publiée, le CD d'Imladris la déploie (la watch d'Imladris signe ses détections) ;
   puis Orodruin, par OI3 ou `make orodruin-push REF=<tag>`. Une watch de poste ou d'équipe (WC1) :
   `make glorfindel-restart` après la mise à jour. Aucune clé nouvelle, aucune épingle nouvelle :
   `EREGION_WATCH_KEY` reste celle de SEC19.
@@ -219,7 +219,7 @@ par un battement qui ne dit pas ce qu'il couvre.
   heartbeat does not say which detections it covers ») et le geste. Un « detected » n'est pas
   touché. La garde passe toujours.
 - **Le passage est borné par la mise à jour de la watch** :
-  - la release publiée, le CD de H0 la déploie d'abord ;
+  - la release publiée, le CD d'Imladris la déploie d'abord ;
   - puis Orodruin, par OI3 ou par `make orodruin-push REF=<tag>` ;
   - une watch de poste ou d'équipe (WC1) se met à jour par `make glorfindel-restart`.
 - **Aucune clé nouvelle, aucune épingle nouvelle.**

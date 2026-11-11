@@ -12,7 +12,7 @@ qui en fera une règle de levée :
 | **H7** | chaque opération de la table du §4.1 s'écrit-elle sous la ressource que la table nomme ? Une Run Command v1 écrit-elle aussi une extension (`RunCommandLinux`), sous le même appelant, au même moment ? | la table ; une opération jamais rendue devient un vecteur dans l'invité |
 | **H9** | le filtre `resourceUri eq '<vm>'` est-il exact, ou rend-il les enfants ? Combien de pages la lecture du groupe demande-t-elle ? | la lecture des enfants ; une borne de 20 pages trop courte retient trop |
 | **H12** | combien de temps entre une écriture et sa lecture par l'API REST du journal ? | `lift.log_settle_s` (LEV3, 15 min par défaut) |
-| **H1** | le Reader de H0 lit-il les attributions héritées de l'abonnement, à la portée de la VM ? | l'abonnement devient une portée illisible |
+| **H1** | le Reader d'Imladris (anciennement H0) lit-il les attributions héritées de l'abonnement, à la portée de la VM ? | l'abonnement devient une portée illisible |
 | **H2** | les éligibilités PIM (`roleEligibilityScheduleInstances`) se lisent-elles sous `*/read` ? | illisibles : toute lecture des droits l'est |
 
 **Rien de cette page n'a été joué au banc** : chaque commande est **non vérifiée**, à voir pendant la
@@ -28,7 +28,7 @@ session. Jonathan lance chaque geste ; aucune session de code ne le fait. Il n'y
   **jamais** touchés.
 - **reimage** et **redeploy** ne se jouent pas : l'un remplace le disque OS, l'autre déplace la VM. Ils
   restent dans la table, non mesurés.
-- **AL1 peut lever des cartes** sur H0 pendant la session : une extension, une règle, une carte
+- **AL1 peut lever des cartes** sur Imladris pendant la session : une extension, une règle, une carte
   changée par un humain sont des détections du plan de contrôle (des cartes, jamais une action).
   C'est attendu ; elles s'acquittent à la fin.
 - Le coût : une IP publique Standard quelques minutes, un disque de 4 Gio quelques minutes (les gestes
@@ -81,7 +81,7 @@ session de code. Le lancer d'un terminal neuf du poste, sous le `az login` de Jo
 | 10 | `…/networkSecurityGroups/securityRules/write` | `note Microsoft.Network/networkSecurityGroups/securityRules/write deny-rule` puis `az network nsg rule create --nsg-name ${NSG##*/} -g ${${NSG#*/resourceGroups/}%%/*} -n eregion-lev2-deny --priority 4090 --direction Inbound --access Deny --protocol Tcp --source-address-prefixes 192.0.2.1/32 --destination-address-prefixes $IP --destination-port-ranges 9` (le NSG de la carte, sinon `$SUBNET_NSG`) | `note Microsoft.Network/networkSecurityGroups/securityRules/delete deny-rule-delete` puis `az network nsg rule delete … -n eregion-lev2-deny` : le retrait d'une règle est un geste aussi (Q16) |
 | 11 | idem, sur le NSG **partagé** du sous-réseau, visant une **autre** adresse | `note Microsoft.Network/networkSecurityGroups/securityRules/write deny-rule-other-vm` puis la même règle sur `$SUBNET_NSG`, `--destination-address-prefixes 10.255.255.254/32` (aucune VM) | `az network nsg rule delete …` ; à lire : le corps de la requête est-il dans l'événement (`properties.requestbody`) ? Sinon la règle se juge sur ce qu'elle est sur Azure, ou compte |
 | 12 | `…/networkSecurityGroups/write` | `note Microsoft.Network/networkSecurityGroups/write nsg-tag` puis `az network nsg update --ids ${NSG:-$SUBNET_NSG} --set tags.eregion-lev2=1` | `az network nsg update --ids … --remove tags.eregion-lev2` |
-| 13 | `…/publicIPAddresses/join/action` (facultatif) | **seulement la carte en quarantaine**, posé et retiré **pendant l'étape 5** de [`banc-t1486.md`](banc-t1486.md) (gondolin isolée par H0, avant tout restore) : `az network public-ip create -g $RG -n eregion-lev2-pip --sku Standard`, puis `note Microsoft.Network/publicIPAddresses/join/action pip-join` et `az network nic ip-config update --ids $NIC/ipConfigurations/<nom> --public-ip-address eregion-lev2-pip` | dans la même étape 5 : `az network nic ip-config update --ids … --remove publicIPAddress`, puis `az network public-ip delete -g $RG -n eregion-lev2-pip`. **Avant l'étape 6 (le restore)**, relire `az network nic show --ids $NIC --query 'ipConfigurations[].publicIPAddress' -o tsv` : vide, sinon ne pas restaurer. L'étape 7 lève seule : une IP restée sortirait de quarantaine avec gondolin (H8 n'est pas mesurée). Un doute : sauter ce geste |
+| 13 | `…/publicIPAddresses/join/action` (facultatif) | **seulement la carte en quarantaine**, posé et retiré **pendant l'étape 5** de [`banc-t1486.md`](banc-t1486.md) (gondolin isolée par Imladris, avant tout restore) : `az network public-ip create -g $RG -n eregion-lev2-pip --sku Standard`, puis `note Microsoft.Network/publicIPAddresses/join/action pip-join` et `az network nic ip-config update --ids $NIC/ipConfigurations/<nom> --public-ip-address eregion-lev2-pip` | dans la même étape 5 : `az network nic ip-config update --ids … --remove publicIPAddress`, puis `az network public-ip delete -g $RG -n eregion-lev2-pip`. **Avant l'étape 6 (le restore)**, relire `az network nic show --ids $NIC --query 'ipConfigurations[].publicIPAddress' -o tsv` : vide, sinon ne pas restaurer. L'étape 7 lève seule : une IP restée sortirait de quarantaine avec gondolin (H8 n'est pas mesurée). Un doute : sauter ce geste |
 | 14 | `…/userAssignedIdentities/assign/action` (facultatif) | `az identity create -g $RG -n eregion-lev2-id`, puis `note Microsoft.ManagedIdentity/userAssignedIdentities/assign/action identity-assign` et `az vm identity assign -g $RG -n $VM --identities eregion-lev2-id` | `az vm identity remove -g $RG -n $VM --identities eregion-lev2-id`, puis `az identity delete -g $RG -n eregion-lev2-id` |
 | 15 | `…/attachDetachDataDisks/action` (facultatif) | `az disk create -g $RG -n eregion-lev2-disk --size-gb 4 --sku Standard_LRS`, puis `note Microsoft.Compute/virtualMachines/attachDetachDataDisks/action disk-attach` et `az vm disk attach -g $RG --vm-name $VM --name eregion-lev2-disk` | `az vm disk detach -g $RG --vm-name $VM --name eregion-lev2-disk`, puis `az disk delete -g $RG -n eregion-lev2-disk --yes` |
 | 16 | `Microsoft.SerialConsole/serialPorts/connect/action` (H6, facultatif) | si la console série est active : `note Microsoft.SerialConsole/serialPorts/connect/action serial` puis `az serial-console connect -g $RG -n $VM`, et la quitter aussitôt | rien |
@@ -91,7 +91,7 @@ Le geste 8 dit comment un échec se lit : son statut et son code, et s'il compte
 question du NSG partagé : une règle qui ne couvre pas gondolin ne doit pas compter.
 
 **Pourquoi le geste 13 reste couplé à l'exercice T1486.** Il demande une carte déjà en quarantaine,
-et seul un isolement par H0 la met là. Aucun exercice non destructif du banc n'isole gondolin à coup
+et seul un isolement par Imladris la met là. Aucun exercice non destructif du banc n'isole gondolin à coup
 sûr : le T1136.001 mesuré le 31/10 a escaladé un instantané à 35 %, sans isolement
 (`docs/banc-bl1.md`). Le geste se pose et se retire donc dans l'étape 5, et se relit avant le restore.
 
@@ -116,9 +116,9 @@ Le rapport ne porte **aucun identifiant** (des sortes de ressources, des opérat
 - **H9** : le filtre exact rend-il d'autres ressources que la sienne ; le nombre de pages de chaque
   lecture, et si le groupe dépasse la borne de 20.
 
-## 4. H1 et H2, sous l'identité de H0 (2 min, un `GET` chacun)
+## 4. H1 et H2, sous l'identité d'Imladris (2 min, un `GET` chacun)
 
-Sur H0 (`make glorfindel-host-ssh`, puis `exit`) :
+Sur Imladris (`make glorfindel-host-ssh`, puis `exit`) :
 
 ```bash
 docker exec eregion-watch glorfindel door vm-celebrimbor-gondolin --days 1
@@ -136,7 +136,7 @@ lignes dans le rapport, sans identifiant.
   `eregion-lev2` ; l'extension `eregion-auditd` toujours là (`az vm extension list`), aucune IP
   publique sur la carte ; ni règle `eregion-lev2-*`, ni IP, ni identité, ni disque `eregion-lev2-*` dans
   `$RG`.
-- Les cartes d'AL1 levées par la session : acquittées sur la console de H0.
+- Les cartes d'AL1 levées par la session : acquittées sur la console d'Imladris.
 - `make bench-preflight` : le banc comme au début.
 
 ## Ce que Jonathan note à la fin

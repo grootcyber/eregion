@@ -5,9 +5,9 @@
 Le README dit : « ~1 min to contain a ransomware VM, 21m29s to restored service ». Ces chiffres
 viennent du run `20260609T190824Z` (09/06, l'ancienne sandbox ; `ROADMAP.md`,
 `docs/historique.md`). Ce jour-là, la watch, le restore et la levée tournaient sur le même poste.
-Depuis, Glorfindel vit sur H0, l'attaque part d'Orodruin et se demande dans Dagorlad. Cette page
-rejoue le rançongiciel sur gondolin, avec la version en service (0.5.8 sur H0 et Orodruin), et en
-mesure trois temps. Une version de H0 qui porte REC1 (#668) change la levée, et seulement elle :
+Depuis, Glorfindel vit sur Imladris (anciennement H0), l'attaque part d'Orodruin et se demande dans Dagorlad. Cette page
+rejoue le rançongiciel sur gondolin, avec la version en service (0.5.8 sur Imladris et Orodruin), et en
+mesure trois temps. Une version d'Imladris qui porte REC1 (#668) change la levée, et seulement elle :
 chaque endroit qui en dépend dit les deux cas (« La levée », plus bas, et l'étape 7).
 
 - **la détection** : de T0 à la détection de la watch, puis à sa carte ;
@@ -33,7 +33,7 @@ Jonathan lance chaque geste ; rien de cette page n'a encore été joué au banc.
 
 bree n'est pas inscrite (`enrolled: false`, `infra/terraform/config.yaml:52-55`) : aucun injecteur
 ne la vise, et Dagorlad ne lui donne pas de carte bleue (`docs/dagorlad.md`, « Ce que c'est »). Le
-rançongiciel se rejoue sur gondolin, inscrite `bench`, que H0 tient en `non_disruptive`.
+rançongiciel se rejoue sur gondolin, inscrite `bench`, qu'Imladris tient en `non_disruptive`.
 
 ### Le chemin : une demande de Dagorlad, puis `make orodruin-exercise`
 
@@ -59,7 +59,7 @@ déclarée le refuse.
   (`engine.py:388-404`). Il ne fait que retirer les fichiers d'un run précédent et poser le marqueur
   (`scripts/vm/setup_testdata.sh`). Sur ce chemin, **`annatar clean` n'est pas nécessaire**.
 - **Les 10 minutes.** La règle `ransomware-disk-write` lit les 10 dernières minutes de `Perf`
-  (`ago(10m)`, `glorfindel/rules/azure/detection_rules.yaml:55-80`), et le RulePoller de H0 la
+  (`ago(10m)`, `glorfindel/rules/azure/detection_rules.yaml:55-80`), et le RulePoller d'Imladris la
   relit toutes les 30 s, sans rien savoir de T0. Une écriture forte avant le fil serait vue :
   - hors de la fenêtre, comme un incident réel, et gondolin, en `non_disruptive`, serait isolée
     avant l'attaque ;
@@ -71,19 +71,19 @@ déclarée le refuse.
   démarrage de gondolin, et après tout run précédent. L'ancienne consigne (10 min après
   `annatar clean`, `docs/operations.md`) visait le même piège.
 
-### Le point de restauration propre : depuis H0
+### Le point de restauration propre : depuis Imladris
 
-H0 a le droit d'un instantané : le rôle « Eregion Glorfindel Response » porte l'action de
+Imladris a le droit d'un instantané : le rôle « Eregion Glorfindel Response » porte l'action de
 sauvegarde du coffre (`infra/identities/glorfindel-response.json`), et le coffre est dans le groupe
-du banc (`infra/terraform/backup.tf:1-4`), où H0 tient ce rôle. `glorfindel snapshot` se lance donc
-dans le conteneur de la console de H0, comme ses boutons (SEC18 : il écrit `runs/console/`).
+du banc (`infra/terraform/backup.tf:1-4`), où Imladris tient ce rôle. `glorfindel snapshot` se lance donc
+dans le conteneur de la console d'Imladris, comme ses boutons (SEC18 : il écrit `runs/console/`).
 
-Le poste le peut aussi, sous le principal de la console. Mais H0 suffit, sans secret sur la ligne de
+Le poste le peut aussi, sous le principal de la console. Mais Imladris suffit, sans secret sur la ligne de
 commande. Le point à la demande est gardé 30 jours (`glorfindel/providers/azure/backup.py:45`).
 
 ### La restauration : sur le poste, sous le principal de la console
 
-- **H0 ne restaure jamais.** Son identité n'a pas le rôle Restore, et son Terraform refuse de le
+- **Imladris ne restaure jamais.** Son identité n'a pas le rôle Restore, et son Terraform refuse de le
   lui donner (`infra/glorfindel-host/README.md`, « Ce que la VM est »). Les boutons 🔄 Restore de sa
   console et de son bot partent sous cette identité : Azure les refuse, et la carte le dit.
 - **Le restore part donc du poste**, par la CLI, avec la paire de la console pour cette commande
@@ -92,11 +92,11 @@ commande. Le point à la demande est gardé 30 jours (`glorfindel/providers/azur
   Ce principal tient `Reader`, Response et Restore sur le groupe du banc, et la neutralisation sur
   gondolin.
 - **`--before` est obligatoire sur le poste.** Sans lui, la commande prend le moment de la carte en
-  attente de la VM ; mais les cartes sont sur H0, pas sur le poste. Elle refuse alors, avant tout
+  attente de la VM ; mais les cartes sont sur Imladris, pas sur le poste. Elle refuse alors, avant tout
   appel à Azure (`glorfindel/cli.py:2287-2312`). *Vérifié à blanc* : « Moment de l'attaque inconnu
   pour vm-celebrimbor-gondolin : aucune carte en attente de cette VM n'en donne un ». On lui donne
   le moment noté juste après le point propre (`AVANT`, étape 2) : le point le plus récent avant
-  lui est celui-là. Un instantané que H0 prendrait seul après l'isolement est postérieur, donc écarté.
+  lui est celui-là. Un instantané qu'Imladris prendrait seul après l'isolement est postérieur, donc écarté.
 - **La neutralisation (SEC17)** se fait sur gondolin, par le principal qui restaure, avant
   l'échange des disques (`glorfindel/providers/azure/restore.py:145-150`). Une Run Command sans
   effet devient la dernière : un disque restauré rejouerait sinon `ransomware_sim.sh` au démarrage
@@ -107,8 +107,8 @@ commande. Le point à la demande est gardé 30 jours (`glorfindel/providers/azur
 
 ### La levée
 
-**Quel cas s'applique : la version que H0 fait tourner.** REC1 (#668) fait lever l'isolement
-par la watch de H0 ; la 0.5.8, en service aujourd'hui, ne le porte pas. Depuis le poste :
+**Quel cas s'applique : la version qu'Imladris fait tourner.** REC1 (#668) fait lever l'isolement
+par la watch d'Imladris ; la 0.5.8, en service aujourd'hui, ne le porte pas. Depuis le poste :
 
 ```zsh
 make glorfindel-host-status        # « référence déployée : <ref> (<sha>) »
@@ -117,36 +117,36 @@ git fetch -q origin && git cat-file -e ${SHA}:glorfindel/recovery_watch.py && pr
 ```
 
 - **sans REC1** (0.5.8, ou toute version d'avant la release qui porte REC1) : **deux gestes humains**,
-  le restore sur le poste puis la levée sur H0 ; la levée se lit dans `runs/console/manual_actions.jsonl` ;
-- **avec REC1** : un seul geste, le restore ; la watch de H0 lève, ou écrit une carte qui dit
+  le restore sur le poste puis la levée sur Imladris ; la levée se lit dans `runs/console/manual_actions.jsonl` ;
+- **avec REC1** : un seul geste, le restore ; la watch d'Imladris lève, ou écrit une carte qui dit
   pourquoi, et la levée se fait alors à la main comme sans REC1.
 
-#### Sans REC1 (0.5.8) : sur H0, par un humain
+#### Sans REC1 (0.5.8) : sur Imladris, par un humain
 
 - **`restore --wait` lève l'isolement dans son propre processus.** Il construit le
   `recovery_complete`, le garantit pour ce processus et le passe aussitôt au graphe
   (`cli.py:1517-1530`). La levée autonome n'est permise que pour ce signal-là, ou pour celui relu par
   `glorfindel respond` dans `~/.glorfindel/recovery_signals/` du même hôte
-  (`glorfindel/signal_origin.py:29-35`, `glorfindel/agent.py:1449-1478`). **La watch de H0 ne lit
+  (`glorfindel/signal_origin.py:29-35`, `glorfindel/agent.py:1449-1478`). **La watch d'Imladris ne lit
   jamais ce répertoire d'elle-même**, et celui du poste encore moins.
 - **Sur le poste, ce processus déciderait seul.** Il appellerait le modèle avec la clé du poste et
   la configuration du poste (le mode de gondolin, sa préparation). Puis, s'il levait l'isolement,
-  il le ferait sans l'état d'isolation de H0.
-- **H0 reposerait l'isolement.** Sa réaffirmation relit chaque minute les isolations de son état.
+  il le ferait sans l'état d'isolation d'Imladris.
+- **Imladris reposerait l'isolement.** Sa réaffirmation relit chaque minute les isolations de son état.
   Elle trouverait les règles disparues et les reposerait une fois, gondolin étant en
   `non_disruptive` (`glorfindel/reassert.py:271-290`).
-- D'où `--keep-isolated` sur le poste (`cli.py:1517`). La levée se fait ensuite sur H0 :
+- D'où `--keep-isolated` sur le poste (`cli.py:1517`). La levée se fait ensuite sur Imladris :
   - **↩️ Release** dans sa console ;
   - ou `docker exec eregion-war-room glorfindel release …`, dans le conteneur de la console
     (`docs/banc-bl1.md`, étape 5).
 
-  La levée est relue sur Azure, et l'état de H0 suit. Elle n'est pas reposée : elle marque la levée
+  La levée est relue sur Azure, et l'état d'Imladris suit. Elle n'est pas reposée : elle marque la levée
   en cours (`releasing_at`) sous le verrou de la VM, que la réaffirmation prend aussi avant de la
   sauter (`glorfindel/reassert.py:141`, `:239-240`).
 
-#### Avec REC1 : par la watch de H0
+#### Avec REC1 : par la watch d'Imladris
 
-- **La watch de H0 lit la reprise sur Azure, et lève elle-même** (`docs/glorfindel.md`, « La reprise
+- **La watch d'Imladris lit la reprise sur Azure, et lève elle-même** (`docs/glorfindel.md`, « La reprise
   lue sur Azure »). Chaque minute, pour gondolin isolée, elle lit sur le plan de contrôle :
   - le dernier job de restore de gondolin depuis l'isolement, fini, `Completed` ;
   - **sur place** : le type « Replace disks », et le disque OS de gondolin créé pendant le job ;
@@ -165,11 +165,11 @@ git fetch -q origin && git cat-file -e ${SHA}:glorfindel/recovery_watch.py && pr
   Ce principal, `GLORFINDEL_RESTORE_PRINCIPALS`, est l'object id de la console, celui de
   `restore_principals`. Le lire, `.envrc` chargé :
   `az ad sp show --id "$EREGION_CONSOLE_AZURE_CLIENT_ID" --query id -o tsv`. Le poser sur le poste :
-  dans le `.envrc`, et, H0 étant en place, à la main dans `infra/glorfindel-host/host.env` (le
+  dans le `.envrc`, et, Imladris étant en place, à la main dans `infra/glorfindel-host/host.env` (le
   `host.env` existant n'est jamais réécrit : son jeton changerait), puis `make glorfindel-host-push`.
   Il est pris au démarrage de la watch qui porte REC1. Sans lui, chaque levée est une carte. Le
   journal d'activité nomme la console par son object id dans `caller` et dans `claims.oid`, son
-  appId dans `claims.appid` (mesuré le 09/11, la même forme que pour H0 et Orodruin).
+  appId dans `claims.appid` (mesuré le 09/11, la même forme que pour Imladris et Orodruin).
 
   Elle émet alors son propre `recovery_complete`, et la levée suit : seule en `non_disruptive`, une
   carte en `human_only`. Elle ne lit jamais un fichier du poste. Ses droits : Reader sur le groupe
@@ -183,7 +183,7 @@ git fetch -q origin && git cat-file -e ${SHA}:glorfindel/recovery_watch.py && pr
   principal après la neutralisation : elle retient la levée automatique, qui se fait alors à la
   main. Run Command est lente sous la quarantaine (le 09/11 : 152 s pour la neutralisation, 302 s
   pour la coupure) ; hors quarantaine, après la levée, la lecture d'intégrité a pris 11 s.
-- **`--keep-isolated` reste de rigueur sur le poste** : la levée est celle de H0, pas du poste.
+- **`--keep-isolated` reste de rigueur sur le poste** : la levée est celle d'Imladris, pas du poste.
 - Une carte « Reprise à revoir » ou « levée retenue » à la place dit pourquoi. La levée se fait
   alors à la main, comme sans REC1, après la vérification de l'étape 7.
 
@@ -192,17 +192,17 @@ git fetch -q origin && git cat-file -e ${SHA}:glorfindel/recovery_watch.py && pr
 Le README décrit une boucle où la seule étape humaine est d'approuver le restore, la levée
 autonome suivant le `recovery_complete`. **Sur le banc d'aujourd'hui, ce n'est pas vrai.** Il y a
 deux gestes humains, sur deux hôtes :
-- le restore, sur le poste, puisque H0 n'en a pas le droit ;
-- la levée, sur H0, puisque sa watch ne voit pas la reprise.
+- le restore, sur le poste, puisqu'Imladris n'en a pas le droit ;
+- la levée, sur Imladris, puisque sa watch ne voit pas la reprise.
 
 Le temps du « service rendu » mesuré ici inclut donc le temps de ces deux gestes. On le donne aussi
 au sens du README, sans le temps de décision humaine (étape 8).
 
-Porter à la main le signal du poste dans `~/.glorfindel/recovery_signals/` de H0, puis lancer
+Porter à la main le signal du poste dans `~/.glorfindel/recovery_signals/` d'Imladris, puis lancer
 `glorfindel respond`, passerait la précondition. Ce serait pourtant un humain qui écrit, dans le
 répertoire du défenseur, un signal que celui-ci croit sien (SEC3) : cette page ne le fait pas.
 
-**Proposition de lot** (non construite) : que la watch de H0 constate elle-même la reprise d'une VM
+**Proposition de lot** (non construite) : que la watch d'Imladris constate elle-même la reprise d'une VM
 qu'elle a isolée, plutôt que d'attendre un signal d'un autre hôte. Elle lirait sur Azure, avec ses
 droits de lecture :
 - le job de restore fini ;
@@ -214,7 +214,7 @@ Puis elle émettrait son propre `recovery_complete`. L'autre piste : la file d'a
 `docs/design/file-actions-signee.md`), où le poste déposerait la reprise.
 
 **Avec REC1, ce lot est construit** (#668) : il ne reste qu'un geste humain, le restore. La levée
-est celle de la watch de H0 (« La levée », ci-dessus). Non mesuré avant cette session : ce que
+est celle de la watch d'Imladris (« La levée », ci-dessus). Non mesuré avant cette session : ce que
 le coffre écrit d'un job de restore (« Job Type », le point restauré), et l'identifiant que le
 journal d'activité donne au principal qui restaure. Si l'un manque, la watch écrit une carte qui le
 dit, sans lever ; la levée se fait alors à la main.
@@ -225,7 +225,7 @@ que d'une campagne (`Makefile:1042`). Pour un fil de Dagorlad, `make bench-repor
 
 ## Le déroulé (environ 1 h à 1 h 30)
 
-Les commandes du poste sont en zsh, `.envrc` chargé, à la racine du dépôt. Celles de H0 sont tapées
+Les commandes du poste sont en zsh, `.envrc` chargé, à la racine du dépôt. Celles d'Imladris sont tapées
 après `make glorfindel-host-ssh` (bash). `ORO_SSH_FINGERPRINT` et `HOST_SSH_FINGERPRINT` doivent
 être dans l'environnement : `make orodruin-exercise` les exige toutes deux (`Makefile:1455-1470`).
 
@@ -240,16 +240,16 @@ make bench-preflight TARGET=vm-celebrimbor-gondolin   # une ligne ✓/⚠/✗ pa
 cette étape lisait à la main, sans rien écrire nulle part, et n'affiche aucun identifiant : ni
 abonnement, ni object id, ni appId, ni IP, ni UPN. Elle sort en 0 si aucune ligne n'est ✗ ; un ⚠
 ne bloque pas. Ses contrôles (`scripts/bench_preflight.py`) :
-- **H0** : la référence déployée et les trois conteneurs, tels que `make glorfindel-host-status`
+- **Imladris** : la référence déployée et les trois conteneurs, tels que `make glorfindel-host-status`
   les dit, et ce qu'il marque ✗ ; le CD, par `make glorfindel-host-cd-status` (le minuteur, la
   release qui tourne face à la dernière publiée) ;
 - **le poste** : aucune watch locale (`docker ps`) ;
 - **Orodruin** : son contrat lu sur lui, sans être publié (`check()` dans son conteneur durci),
   armé et son plafond. Désallouée, c'est un ⚠ : son contrat se lit après `make orodruin-start`. Sans
-  `ORO_SSH_FINGERPRINT`, rien ne part vers Orodruin, ni vers H0 sans `HOST_SSH_FINGERPRINT` ;
+  `ORO_SSH_FINGERPRINT`, rien ne part vers Orodruin, ni vers Imladris sans `HOST_SSH_FINGERPRINT` ;
 - **les paires** : celles de `make azure-pairs-expiry` (RST1). Celle de la console est exigée : absente
   ou incomplète, c'est un ✗ ;
-- **la cible** : une seule VM de ce nom, son groupe, son état ; sur H0, son mode (configuré et
+- **la cible** : une seule VM de ce nom, son groupe, son état ; sur Imladris, son mode (configuré et
   effectif), sa préparation et la quarantaine, et aucune isolation déjà posée ;
 - **le point de restauration** : l'âge du plus récent au coffre, ⚠ au-delà de 24 h
   (`POINT_MAX_H=…`) ;
@@ -257,9 +257,9 @@ ne bloque pas. Ses contrôles (`scripts/bench_preflight.py`) :
   - la console, sous sa paire, par `Microsoft.Authorization/permissions`, avec le lecteur du restore
     (`glorfindel/providers/azure/restore_rights.py`) : le restore sur le coffre, `deallocate` et
     `start` sur la VM, `listKeys` sur le compte de transit, et la neutralisation (Run Command) ;
-  - H0 et Orodruin, par leurs attributions et les définitions de leurs rôles, jokers et
+  - Imladris et Orodruin, par leurs attributions et les définitions de leurs rôles, jokers et
     `notActions` compris : l'isolement, la coupure, le point de restauration et la lecture du journal
-    pour H0 ; l'attaque (Run Command sur la cible) pour Orodruin. Leurs identifiants sont lus dans les
+    pour Imladris ; l'attaque (Run Command sur la cible) pour Orodruin. Leurs identifiants sont lus dans les
     sorties Terraform d'`infra/glorfindel-host` et d'`infra/orodruin`, jamais affichés. Une attribution
     sur un groupe d'administration n'est pas lue : la ligne le dit, à vérifier à la main ;
 - **les dérives connues** : le rôle « Eregion Glorfindel Restore » du tenant qui porte encore
@@ -313,7 +313,7 @@ print -r -- ${RID}                 # à copier
 make glorfindel-host-ssh
 ```
 
-Sur H0 :
+Sur Imladris :
 
 ```bash
 RID=<la ligne copiée>              # snapshot veut l'id complet ; release et reset prennent le nom
@@ -328,7 +328,7 @@ AVANT=$(date -u +%Y-%m-%dT%H:%M:%S+00:00); print -r -- ${AVANT}   # le moment du
 ```
 
 Ce qu'on doit voir :
-- **sur H0** : « ✓ Backup complete. Time: … », puis « ✓ Recovery point verified in vault. »
+- **sur Imladris** : « ✓ Backup complete. Time: … », puis « ✓ Recovery point verified in vault. »
   (`cli.py:1327-1341`) ;
 - **dans la console** : aucune carte, puisque c'est l'identité de Glorfindel qui sauvegarde (A2,
   mesuré le 05/11 : `docs/operations.md`).
@@ -357,7 +357,7 @@ make orodruin-exercise REQUEST=r-… DRY_RUN=1   # le fil affiché, le nom tapé
 make orodruin-exercise REQUEST=r-…             # taper vm-celebrimbor-gondolin, puis y
 ```
 
-*Vérifié à blanc* (`make -n`) : la cible tire la demande de H0 par SSH, la fait confirmer sur le
+*Vérifié à blanc* (`make -n`) : la cible tire la demande d'Imladris par SSH, la fait confirmer sur le
 poste, puis la porte à Orodruin (`Makefile:1455-1502`). `DRY_RUN=1` s'arrête avant l'envoi : la
 demande n'est pas consommée. Le nom se tape tel qu'Azure l'écrit (`eregion_core/exercise_request.py:274-307`) :
 « Wire 1: type the name of its target VM to run it », puis « Run these 1 wire(s) from Orodruin?
@@ -396,7 +396,7 @@ sessions a pris 302 s le 09/11, et une coupure qui dépasse 300 s est suivie sur
   en cours 30 min après, ou la watch redémarrée, ou la VM isolée par un autre processus entre-temps). À noter dans l'issue, avec la durée
   lue au journal d'activité (Started → Succeeded).
 - **Discord** : l'action autonome, par le bot.
-- **Sur H0** (`make glorfindel-host-ssh`, puis `exit`) : `docker exec eregion-watch glorfindel
+- **Sur Imladris** (`make glorfindel-host-ssh`, puis `exit`) : `docker exec eregion-watch glorfindel
   list` montre gondolin `ISOLATED`, vérifiée.
 
 Autres issues, qui sont des mesures et non des échecs du banc :
@@ -404,7 +404,7 @@ Autres issues, qui sont des mesures et non des échecs du banc :
 - une simple recommandation.
 
 La noter. Approuver l'isolement dans la console reste possible, mais ce serait un confinement
-humain, et il se mesure comme tel. **Ne pas cliquer 🔄 Restore**, ni dans la console de H0 ni dans
+humain, et il se mesure comme tel. **Ne pas cliquer 🔄 Restore**, ni dans la console d'Imladris ni dans
 Discord : refusé, ce n'est pas son hôte.
 
 ### 6. La restauration, depuis le poste (15 à 30 min)
@@ -425,7 +425,7 @@ les deux :
 grep -A5 'type: azure_backup_vault' glorfindel-config.yaml   # vault_name, resource_group: rg-celebrimbor, restore_staging_storage
 ```
 
-Ensuite, aucun job du coffre en cours sur gondolin. Si un cycle suivant de H0 a choisi `snapshot`
+Ensuite, aucun job du coffre en cours sur gondolin. Si un cycle suivant d'Imladris a choisi `snapshot`
 (`glorfindel/agent.py:1971-1988`), sa sauvegarde peut encore tourner, et Azure refuse un restore
 pendant une sauvegarde :
 
@@ -460,15 +460,15 @@ Azure (**non vérifiée**) :
 La VM est désallouée, ses disques remplacés, puis redémarrée. Elle reste isolée : le NSG est sur
 ses cartes réseau, pas sur ses disques.
 
-### 7. La levée, sur H0 (5 à 20 min)
+### 7. La levée, sur Imladris (5 à 20 min)
 
 Le cas : `make glorfindel-host-status`, puis le test de « La levée » (plus haut).
 
-**Avec REC1**, rien à faire d'abord : la watch de H0 lit la reprise sur Azure. Elle attend 5 min
+**Avec REC1**, rien à faire d'abord : la watch d'Imladris lit la reprise sur Azure. Elle attend 5 min
 après la fin du job (`GLORFINDEL_RECOVERY_GRACE_S`), puis décide par le journal d'activité
 (REC1b : la parole de l'invité n'est plus attendue ; sans REC1b, elle l'attendait 15 min, puis
 retenait la levée). Aucune lecture d'intégrité par Run Command avant la levée, sauf sous un
-principal qui restaure : elle la retiendrait. Sur H0 :
+principal qui restaure : elle la retiendrait. Sur Imladris :
 
 ```bash
 docker logs --since 30m eregion-watch 2>&1 | grep -E "reprise|recovery_complete|release_isolation"
@@ -493,14 +493,14 @@ le fil : un `seed.dat` ou des `enc_*.dat` datés d'avant ce point sont les reste
 restaurés avec lui. Datés d'après le redémarrage du restore, le chiffrement a été rejoué : ne pas
 lever. Cette commande devient la dernière Run Command, inoffensive.
 
-Puis la levée : **↩️ Release** sur gondolin, dans la console de H0, ou en ligne de commande. On se
+Puis la levée : **↩️ Release** sur gondolin, dans la console d'Imladris, ou en ligne de commande. On se
 connecte d'abord depuis le poste :
 
 ```zsh
 make glorfindel-host-ssh
 ```
 
-Puis, sur H0 (le nom court suffit : `release` le résout par l'état de H0, `cli.py:172-202`) :
+Puis, sur Imladris (le nom court suffit : `release` le résout par l'état d'Imladris, `cli.py:172-202`) :
 
 ```bash
 docker exec eregion-war-room glorfindel release vm-celebrimbor-gondolin --yes   # « ✓ Isolation released. »
@@ -509,9 +509,9 @@ docker exec eregion-watch glorfindel pending                  # la carte de rest
 docker exec eregion-war-room glorfindel ack <son id>          # le restore du poste n'a résolu que les cartes du poste (cli.py:1513)
 ```
 
-Cette levée-là n'est pas reposée. Elle note `releasing_at` dans l'état de H0 sous le verrou de la
+Cette levée-là n'est pas reposée. Elle note `releasing_at` dans l'état d'Imladris sous le verrou de la
 VM, et la réaffirmation, qui prend le même verrou, saute une levée en cours
-(`glorfindel/reassert.py:141`, `:239-240`). Seule une levée faite hors de H0 le serait.
+(`glorfindel/reassert.py:141`, `:239-240`). Seule une levée faite hors d'Imladris le serait.
 
 Dans la console, juger les cartes de l'exercice (TO JUDGE) : l'isolement, et la recommandation de
 restore. Le Heartbeat de gondolin revient en quelques minutes (la requête de l'étape 1).
@@ -526,24 +526,24 @@ make bench-report RUN=<run_id>     # TARGET=vm-celebrimbor-gondolin par défaut 
 
 *Vérifié sur des faux* (BNC1 : `tests/unit/test_bench_report.py`, sur les formes mesurées le 09/11).
 La cible compose la chronologie du run, dans la forme du compte rendu du 09/11, sans rien écrire sur
-Azure, sur H0 ni sur Orodruin (`scripts/bench_report.py`) :
+Azure, sur Imladris ni sur Orodruin (`scripts/bench_report.py`) :
 - **« Les chiffres »**, depuis T0 : la détection, l'isolement, la coupure demandée et aboutie, la
   vérification relue, la neutralisation, le job de restore, le démarrage, la levée et l'agent invité ;
 - **le `restore_time` en deux nombres** : le job, puis le démarrage, et s'il a été retenu par la
   quarantaine jusqu'à la levée ;
 - **« La chronologie »**, puis **les Run Command de la cible** : leur début, leur fin, leur statut,
-  leur durée, et leur appelant par son rôle (la console, le bot, H0, Orodruin, un humain, inconnu) ;
+  leur durée, et leur appelant par son rôle (la console, le bot, Imladris, Orodruin, un humain, inconnu) ;
 - **les jobs du coffre**, et ce qui n'a pas pu être lu.
 
 Ses sources :
-- sur H0, par ssh, la clé d'hôte vérifiée par son empreinte (sinon rien ne part) : le rapport du run
+- sur Imladris, par ssh, la clé d'hôte vérifiée par son empreinte (sinon rien ne part) : le rapport du run
   (`runs/glorfindel/<run_id>.json`, son T0, sa détection, la demande de Dagorlad dont il est un fil),
   les cycles du run, le `recovery_complete` de la watch (REC1), les levées de `manual_actions.jsonl`
   et l'état d'isolement de la cible s'il est encore là. `scripts/bench_h0_reader.py` les lit dans un
   conteneur jetable de l'image déployée, jamais dans la watch : sans réseau, sans capacité, chaque
   montage en lecture seule (`docs/operations.md`, « Le banc lisible ») ;
 - le journal d'activité de la cible et de ses cartes réseau, chacune lue à part : ses Run Command,
-  l'écriture de H0 sur une de ses cartes (l'isolement, quand l'état de H0 est levé ; une isolation par
+  l'écriture d'Imladris sur une de ses cartes (l'isolement, quand l'état d'Imladris est levé ; une isolation par
   les seules règles d'un NSG n'y paraît pas), les désallocations et les démarrages ; une lecture qui
   atteint le plafond est dite coupée ;
 - les jobs du coffre et la vue d'instance (l'agent `Ready`, relu au moment de composer).
@@ -574,7 +574,7 @@ Depuis le poste :
 make glorfindel-host-ssh
 ```
 
-Puis, sur H0 :
+Puis, sur Imladris :
 
 ```bash
 docker exec eregion-watch glorfindel list                                 # gondolin : ni ISOLATED ni BLOCKED
@@ -628,7 +628,7 @@ make glorfindel-host-cd-enable     # seulement s'il a été mis en pause à l'é
 | gondolin allumée ~1 h 30 | ~0,15 € | 71 €/mois en continu pour la même taille (bree, `docs/demarrer/banc.md`), soit ~0,10 €/h |
 | Orodruin, le temps de la session | quelques centimes | ~5–9 €/mois désalloué entre les sessions (`docs/demarrer/banc.md`) |
 | Azure Backup | le stockage du point à la demande, incrémental, 30 jours ; la VM est déjà protégée (`backup.tf`) | **non mesuré** |
-| le modèle, sur H0 | la détection, les tirages avant l'isolement (3 par défaut, `GLORFINDEL_DECISION_DRAWS`), la recommandation de restore : de l'ordre de 0,10 à 0,30 $ | ~0,05–0,10 $ par run (`docs/operations.md`, « Coûts réels ») ; **non mesuré** pour T1486 sur H0 |
+| le modèle, sur Imladris | la détection, les tirages avant l'isolement (3 par défaut, `GLORFINDEL_DECISION_DRAWS`), la recommandation de restore : de l'ordre de 0,10 à 0,30 $ | ~0,05–0,10 $ par run (`docs/operations.md`, « Coûts réels ») ; **non mesuré** pour T1486 sur Imladris |
 
 **La durée.** Les étapes 0 et 1 prennent 20 min (le calme compris), le point propre 5 à 20 min, la
 demande et le fil 15 min. Le restore prend 15 à 30 min (`cli.py`, `--wait`), la levée et la mesure
@@ -642,7 +642,7 @@ demande et le fil 15 min. Le restore prend 15 à 30 min (`cli.py`, `--wait`), la
    Sinon, ce qui l'a retenu.
 3. **La restauration** : le point choisi (celui de l'étape 2), `restore_time`, la neutralisation
    faite.
-4. **La levée** : sans REC1 à la main ; avec REC1 par la watch de H0, ou à la main avec la carte
+4. **La levée** : sans REC1 à la main ; avec REC1 par la watch d'Imladris, ou à la main avec la carte
    qui l'a retenue ; relue sur Azure, gondolin plus `ISOLATED` ; le service rendu à T0+…, et la somme
    au sens du README, à comparer à 21m29s.
 5. **Rien hors du périmètre** : aucune action sur bree, aucune carte inattendue. Sinon, la carte et
@@ -695,10 +695,10 @@ Ce qu'on doit voir :
 
 ## Annexe B — la mesure de l'étape 8 à la main (dépannage)
 
-Ce que `make bench-report` compose, lu directement sur H0, quand le journal d'activité ou le coffre
+Ce que `make bench-report` compose, lu directement sur Imladris, quand le journal d'activité ou le coffre
 ne se lisent pas depuis le poste.
 
-Toujours sur H0 (sinon, `make glorfindel-host-ssh` d'abord) :
+Toujours sur Imladris (sinon, `make glorfindel-host-ssh` d'abord) :
 
 ```bash
 docker exec -i -e RUN=<run_id> -e VM=vm-celebrimbor-gondolin eregion-watch python - <<'EOF'
@@ -743,4 +743,4 @@ EOF
 *Vérifié à blanc* sur des fichiers fictifs de même forme (`RunReport.to_dict`,
 `agent.py:2500-2555`, `cli.py:24-54`) : une ligne T0, une ligne détection, une ligne par cycle du
 run (l'isolement : `isolate_vm escalate=False verified=True T0+…`), une ligne de levée. Le rapport
-arrive sur H0 quand le fil a fini ; sur Orodruin, le même est dans `~/runs/annatar/<run_id>.json`.
+arrive sur Imladris quand le fil a fini ; sur Orodruin, le même est dans `~/runs/annatar/<run_id>.json`.

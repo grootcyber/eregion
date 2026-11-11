@@ -7,7 +7,7 @@
 **Ce que tu obtiens.** Glorfindel branché sur ton espace Log Analytics, avec un principal qui ne peut que lire. Il détecte, enquête et décide sur tes vrais signaux, mais il **retient chaque action** : tu lis dans la console ce qu'il aurait fait. Il ne peut rien changer sur Azure : ni rôle d'écriture, ni API d'écriture appelée (`GLORFINDEL_READ_ONLY=1`). Les journaux, eux, partent chez le fournisseur du modèle : voir [ce qui part de la machine](#7-ce-qui-part-de-la-machine).
 
 **Le chemin : Docker, par `make profile-discover`.** Un seul chemin, celui-ci, pour quatre raisons :
-- **une commande** démarre la watch et la console ensemble, comme sur l'hôte de référence (H0, le même `docker-compose.yml`) ;
+- **une commande** démarre la watch et la console ensemble, comme sur l'hôte de référence (Imladris, anciennement H0, le même `docker-compose.yml`) ;
 - **les conteneurs sont durcis** : racine en lecture seule, aucune capacité, et chacun ne reçoit que ses propres secrets (le modèle pour la watch seule) ;
 - **les dossiers d'état sont créés à ton nom** avant le démarrage, et le jeton de la console n'apparaît jamais dans les journaux (`make console-url`) ;
 - la CLI demande davantage : un venv (`make install`), deux terminaux (la watch et la console), et une autre paire de variables (`AZURE_CLIENT_*`, que seul le venv lit).
@@ -108,7 +108,7 @@ make doctor            # tout vert : « Tout est prêt. »
 make profile-discover  # construit l'image eregion-glorfindel, puis démarre la watch et la console
 ```
 
-La construction de l'image a pris 72 s sans cache sur le poste de l'opérateur, l'image de base déjà tirée (29/10, [`docs/operations.md`](../operations.md), « La CI des images »), et 2 min 44 s sur la VM de H0 (16/10, `infra/glorfindel-host/variables.tf`). Sur ton poste, elle n'est **pas vérifiée** : le rejeu de ce guide n'avait pas de démon Docker.
+La construction de l'image a pris 72 s sans cache sur le poste de l'opérateur, l'image de base déjà tirée (29/10, [`docs/operations.md`](../operations.md), « La CI des images »), et 2 min 44 s sur la VM d'Imladris (16/10, `infra/glorfindel-host/variables.tf`). Sur ton poste, elle n'est **pas vérifiée** : le rejeu de ce guide n'avait pas de démon Docker.
 
 La cible finit par l'URL de la console, avec son jeton. Tu la retrouves par `make console-url`.
 - La console écoute sur `127.0.0.1:7007` seulement, et demande toujours ce jeton.
@@ -156,7 +156,7 @@ az ad sp delete --id <appId> && az ad app delete --id <appId>
 ```
 
 - **`~/.eregion` ne s'efface pas en bloc.** Ce guide n'y écrit que `console/`, `watch-key/` et `analysis/`. Le reste vient d'autres usages, et se garde ou se retire en connaissance de cause :
-  - `host-backups/` : les copies de la mémoire et des verdicts d'un H0 (`make glorfindel-host-pull`), de vraies cartes ;
+  - `host-backups/` : les copies de la mémoire et des verdicts d'un Imladris (`make glorfindel-host-pull`), de vraies cartes ;
   - `teams/` : les instances d'équipe (`make team-init`) ;
   - `orodruin_known_hosts`, `h0_known_hosts` : les clés d'hôte épinglées du banc.
 - **En lecture seule, Glorfindel n'a rien isolé ni bloqué.** Hors lecture seule, `glorfindel list` doit d'abord être vide : voir « Remove Eregion » dans le [README](../../README.md#remove-eregion).

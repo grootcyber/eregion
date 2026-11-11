@@ -71,11 +71,11 @@ quand c'est le LLM qui les a écrites, elles restent des propositions qu'un huma
 ## Processus et état partagé
 
 La watch, la console, le bot et la CLI sont des processus distincts sur l'hôte de l'opérateur (ou
-sur H0). Ils partagent l'état local et ne touchent une VM qu'un à la fois.
+sur Imladris, anciennement H0). Ils partagent l'état local et ne touchent une VM qu'un à la fois.
 
 ```mermaid
 flowchart TB
-    subgraph Host["Hôte de l'opérateur, ou H0"]
+    subgraph Host["Hôte de l'opérateur, ou Imladris"]
         W["watch — conteneur<br/>RulePoller, corrélation, découverte,<br/>préparation, réaffirmation"]
         WR["Console — conteneur<br/>127.0.0.1:7007, jeton"]
         BOT["bot Discord — conteneur<br/>profil bot"]
@@ -107,7 +107,7 @@ flowchart TB
     style Host fill:#f4f7fb,stroke:#aab4c3,color:#18212b
 ```
 
-- **Aujourd'hui, la console et le bot écrivent sur Azure eux-mêmes**, sous leur identité (sur H0,
+- **Aujourd'hui, la console et le bot écrivent sur Azure eux-mêmes**, sous leur identité (sur Imladris,
   celle de la VM, partagée par les trois conteneurs). Avec `EREGION_ACTION_QUEUE=1` (faux par
   défaut), ils ne font plus que déposer une demande signée, que la watch juge et exécute
   ([plus bas](#la-clé-de-la-watch-et-la-file-dactions-signée)).
@@ -380,13 +380,13 @@ flowchart LR
 
 ## Les identités
 
-Chaque service a l'identité de ce que son code appelle ; sur H0, la watch, la console et le bot
+Chaque service a l'identité de ce que son code appelle ; sur Imladris, la watch, la console et le bot
 partagent celle de la VM (le [modèle de menace](design/modele-de-menace.md), §5).
 
 | Identité | Ce qu'elle tient | Ce qu'elle ne tient jamais |
 |---|---|---|
 | la watch | la lecture des journaux, la réponse sur les groupes inscrits ; Microsoft Graph en lecture (IR1a, quatre permissions posées à la main, `docs/operations.md`) | une écriture sur Entra ID, le restore |
-| la console, le bot | leurs gestes sur Azure, le restore compris (hors H0, qui ne restaure pas ; la console isole ce qu'un humain approuve) ; avec la file, une demande signée | le bot : la coupure des sessions (il n'isole pas) |
+| la console, le bot | leurs gestes sur Azure, le restore compris (hors Imladris, qui ne restaure pas ; la console isole ce qu'un humain approuve) ; avec la file, une demande signée | le bot : la coupure des sessions (il n'isole pas) |
 | l'exécuteur d'identité (IR1b) | son application, deux permissions de Graph (`Application.ReadWrite.OwnedBy`, `User.RevokeSessions.All`) ; User Administrator sur la seule unité administrative du banc, Directory Readers au tenant, Attribute Assignment Reader sur l'ensemble d'attributs d'Eregion ; Log Analytics Reader sur le workspace ; **désactivé par défaut** | l'identité de la VM (son propre certificat seulement), un droit hors de son contrat |
 | Orodruin | la lecture du groupe du banc, l'écriture sur chaque VM inscrite et chaque expérience ; Graph en lecture (IDI1), désactivé par défaut ; le binaire Stratus, lancé depuis Orodruin, emploie cette identité (R2b la sépare) | une écriture sur le groupe entier |
 

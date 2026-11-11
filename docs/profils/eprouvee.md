@@ -2,7 +2,7 @@
 
 [← Les profils](README.md)
 
-**Pour qui.** Une équipe qui veut la preuve à tout moment : Glorfindel défend, Annatar l'attaque, Gothmog le casse, et les cinq indicateurs de la finalité se lisent sur l'accueil de la console. Le premier indicateur est le temps pour contenir. Le dernier est l'âge de la dernière preuve, qui doit rester sous 30 jours. C'est le profil de H0, la VM de Glorfindel du banc.
+**Pour qui.** Une équipe qui veut la preuve à tout moment : Glorfindel défend, Annatar l'attaque, Gothmog le casse, et les cinq indicateurs de la finalité se lisent sur l'accueil de la console. Le premier indicateur est le temps pour contenir. Le dernier est l'âge de la dernière preuve, qui doit rester sous 30 jours. C'est le profil d'Imladris (anciennement H0), la VM de Glorfindel du banc.
 
 **Ce qui tourne.**
 
@@ -22,7 +22,7 @@ make profile-proven           # Glorfindel + l'image des injecteurs
 
 Elle crée d'abord, à ton nom, `~/.glorfindel` et `~/.cache/chroma`, que les services montent. Lance un injecteur **après** elle. Le premier peut refuser dans la première minute, le temps que la watch publie son battement (V1) : relance-le un peu plus tard.
 
-**Hébergé**, comme H0. Une référence se déploie, jamais une branche :
+**Hébergé**, comme Imladris. Une référence se déploie, jamais une branche :
 
 ```bash
 make glorfindel-host-up && make glorfindel-host-push && make glorfindel-host-start REF=<tag>

@@ -45,12 +45,12 @@ make team-stop  TEAM=bleue
 
 **Le canal retour de l'équipe (WC1).** Sa watch y écrit sous le principal de service de l'équipe (`GLORFINDEL_AZURE_CLIENT_*` de son `team.env`), jamais sous celui d'Annatar. Orodruin le lui ouvre par son *object id* :
 - `az ad sp show --id <GLORFINDEL_AZURE_CLIENT_ID> --query id -o tsv` le donne ;
-- `make orodruin-plan WATCH_PRINCIPALS=<object id> NO_WATCH=1`, puis `make orodruin-lock` avec les mêmes options (ajoute l'identité de H0 à la liste, s'il y en a un et qu'il doit garder le canal) ;
+- `make orodruin-plan WATCH_PRINCIPALS=<object id> NO_WATCH=1`, puis `make orodruin-lock` avec les mêmes options (ajoute l'identité d'Imladris, anciennement H0, à la liste, s'il y en a un et qu'il doit garder le canal) ;
 - la watch reçoit la lecture des fenêtres et l'écriture du canal retour, rien d'autre ;
 - `EREGION_WATCH_CHANNEL` et `EREGION_EXERCISE_CHANNEL` vont dans son `team.env` (`terraform -chdir=infra/orodruin output`) ;
 - sa clé publique (`make watch-key`, sur l'hôte de l'équipe) va dans l'`orodruin.env` de son Orodruin (`EREGION_WATCH_KEY`).
 
-Deux limites. Le pare-feu du compte du canal n'admet que l'IP de l'opérateur qui applique Orodruin : la watch doit tourner sur ce poste. Et une watch publie à la fois sur un canal : deux équipes, deux Orodruin ([`infra/orodruin/README.md`](../../infra/orodruin/README.md), « Sans H0 »).
+Deux limites. Le pare-feu du compte du canal n'admet que l'IP de l'opérateur qui applique Orodruin : la watch doit tourner sur ce poste. Et une watch publie à la fois sur un canal : deux équipes, deux Orodruin ([`infra/orodruin/README.md`](../../infra/orodruin/README.md), « Sans Imladris »).
 
 ## Ce que montre la console
 
