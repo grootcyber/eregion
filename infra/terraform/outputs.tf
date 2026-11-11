@@ -38,6 +38,18 @@ output "exfil_storage_account" {
   value = azurerm_storage_account.exfil.name
 }
 
+# INF-FL : le compte des flux réseau — ce que l'identité de lecture de SEC-A3f visera (Storage Blob
+# Data Reader, sur ce seul compte), et ce que lit CR15 au banc.
+output "flow_logs_storage_account" {
+  value       = azurerm_storage_account.flows.name
+  description = "Compte des flux réseau (VNet flow logs) du banc, à lui seul : aucune identité de VM n'y écrit (INF-FL)"
+}
+
+output "flow_logs_storage_account_id" {
+  value       = azurerm_storage_account.flows.id
+  description = "Id de ressource du compte des flux réseau (la portée d'une lecture, jamais d'une écriture)"
+}
+
 output "restore_staging_storage" {
   value       = azurerm_storage_account.restore_staging.name
   description = "SA de staging du restore Azure Backup — restore_staging_storage du backend azure_backup_vault"
