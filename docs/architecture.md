@@ -383,6 +383,10 @@ flowchart LR
 Chaque service a l'identité de ce que son code appelle ; sur H0, la watch, la console et le bot
 partagent celle de la VM (le [modèle de menace](design/modele-de-menace.md), §5).
 
+**La carte complète** (IDM1) — chaque identité d'Azure, d'Entra ID, de GitHub, de Discord, du poste et
+du téléphone, où vit son secret, ses droits, ce qu'elle ne peut pas, sa rotation, et les schémas de
+leurs liens : [`design/identites.md`](design/identites.md). Un test la tient aux déclarations du dépôt.
+
 | Identité | Ce qu'elle tient | Ce qu'elle ne tient jamais |
 |---|---|---|
 | la watch | la lecture des journaux, la réponse sur les groupes inscrits ; Microsoft Graph en lecture (IR1a, quatre permissions posées à la main, `docs/operations.md`) | une écriture sur Entra ID, le restore |
