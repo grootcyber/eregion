@@ -42,10 +42,13 @@ session Tests (fiche du lot) ; ce document les reprend sans les avoir relus.
   `few_shot_examples.yaml`, ni `_SYSTEM_PROMPT` ne changent : un test fige le message. Le montrer un
   jour au modèle est une question à part (Q3) et un lot à part, avec son run de bout en bout, par
   Jonathan.
-- **Il ne demande aucun droit nouveau.** Le journal d'activité, les jobs du coffre, la vue d'instance et
-  les métriques se lisent sous le `Reader` qu'Imladris tient sur le groupe du banc ; `Perf`, `Syslog`
-  et `Heartbeat`, sous son `Log Analytics Reader`. Seules les métriques n'ont encore jamais été lues
-  par Glorfindel : leur droit est tenu sur le papier, et à mesurer (DH4).
+- **Il ne demande aucun droit nouveau.** Le journal d'activité de la VM, les jobs du coffre, la vue
+  d'instance, l'état de santé de la ressource et les métriques se lisent sous le `Reader` qu'Imladris
+  tient sur le groupe du banc ; `Perf`, `Syslog` et `Heartbeat`, sous son `Log Analytics Reader`. Deux
+  de ces lectures n'ont encore jamais été faites par Glorfindel : les métriques de l'hôte et l'état de
+  santé de la ressource. Leur droit est tenu sur le papier, et à mesurer (DH4, DH7). Les événements
+  `ServiceHealth`, qui vivent au niveau de l'abonnement, demanderaient un `Reader` sur l'abonnement :
+  ils restent **sans objet** sous les droits actuels (§3.2).
 - **La garde est la question de Jonathan (Q1).** La conception recommande de ne rien retenir sur le
   dossier en v1. Comparée sur la même minute, la métrique de l'hôte risque de ne dire que la durée
   du pic, que l'invité dit déjà. L'attaque de référence du banc écrit pendant environ 50 s : une
@@ -63,12 +66,12 @@ session Tests (fiche du lot) ; ce document les reprend sans les avoir relus.
 | Heure (UTC, 10/11) | Fait | Source |
 |---|---|---|
 | 02:33:19 | la sauvegarde nocturne de bree démarre | le job du coffre |
-| ~02:33:50 et ~02:34:00 | deux échantillons de `Disk Write Bytes/sec` sur `/` : 30,4 puis 65,9 Mo/s, de 31 à 41 s après le départ de la sauvegarde | `Perf` (l'agent de l'invité) |
+| ~02:33:50 et ~02:34:00 | deux échantillons de 10 s de `Disk Write Bytes/sec` sur `/`, 30,4 puis 65,9 Mo/s, le premier daté 31 s après le départ de la sauvegarde (un échantillon daté couvre les 10 s qui précèdent sa date ; les échantillons d'avant ne sont pas dans le relevé) | `Perf` (l'agent de l'invité) |
 | autour du pic | la métrique de l'hôte, `OS Disk Write Bytes/sec`, ne voit que 9,4 Mo/s (le relevé ne dit ni l'agrégation ni la minute) | Azure Monitor (l'hôte) |
 | 02:35:56 | `ransomware-disk-write` (T1486) correspond | le RulePoller |
 | juste après | `decide` : `isolate_vm`, confiance 0,80 ; bree en `non_disruptive` ; les 3 tirages de D-1 sont unanimes ; l'isolation part seule | `*_debug.jsonl` |
-| 02:36:22 → 02:43:36 | la coupure des sessions (Run Command) attend derrière l'extension de sauvegarde : 7 min 14 s | le journal d'activité |
-| à 300 s | la v0.5.8 n'a pas DRN1 : la vérification échoue | la carte `verification_failed` |
+| 02:36:22 → 02:43:36 | la coupure des sessions (Run Command) dure 7 min 14 s, pendant que l'extension de sauvegarde tourne. Qu'elle **attende derrière** l'extension est l'hypothèse du relevé, pas une mesure (DH11) | le journal d'activité |
+| ensuite | la v0.5.8 n'a pas DRN1 : la vérification échoue (d'après le code de la v0.5.8 : la coupure était attendue 300 s, puis lue comme une sortie illisible, `docs/glorfindel.md`, « La coupure suivie sur Azure ») | la carte `verification_failed` |
 | ensuite | une carte critique T1651 naît de cette seule coupure (la règle de SID1, `run-command-by-glorfindel-outside-isolation`, `detection_rules.yaml:708`) | la carte |
 | pendant 35 h | personne n'acquitte les trois cartes | `escalations.jsonl` |
 | sur 10 jours | aucun autre dépassement ; aucune connexion SSH acceptée ; 298 échecs depuis 41 sources | `Perf`, `Syslog` |
@@ -81,7 +84,7 @@ relevés, (30,4 + 65,9) / 2 = 48,2 Mo/s, soit 7 % au-dessus du seuil ; `MaxWrite
 Ce calcul est fait ici, sur le relevé. Il reste à confirmer sur la ligne `detected_data` du cycle, et
 selon l'unité du relevé (Mo de 10⁶ octets, ou Mio).
 
-### 1.2 Ce que chaque garde a fait, lu dans le code
+### 1.2 Ce que les principales gardes ont fait, lu dans le code
 
 | Garde | Ce qu'elle a fait ce soir-là | Pourquoi |
 |---|---|---|
@@ -92,6 +95,13 @@ selon l'unité du relevé (Mo de 10⁶ octets, ou Mio).
 | l'accord des tirages (D-1, `_apply_agreement_guard`, `agent.py:1629`) | laisse partir | 3 tirages sur 3. Les tirages sondent la variance du modèle sur **la même entrée**, pas la vérité de l'entrée : un modèle constant dans l'erreur passe |
 | `GRAVE_TTPS` (`glorfindel/decision_queue.py:57`) | fait passer la détection en tête de file | ce n'est pas une garde : il ordonne la file de décision (SEC-A2), il ne retient rien |
 
+Les autres gardes de `decide` ne visent pas ce cas, d'après leur docstring : la garde exécutable
+(`_apply_executable_guard`, `agent.py:917` : `isolate_vm` est implémentée), l'attribution
+(`_apply_attribution_guard`, `agent.py:1193` : la ligne nomme sa VM), la précondition de levée
+(`agent.py:1449` : une levée seulement), `never_block` (`agent.py:1241` : un blocage seulement), le
+plancher d'un compromis confirmé (B3a, `agent.py:1306` : ni brute force réussi ni sudo vers root) et
+celui d'une détection non contenue (`agent.py:1353` : un instantané seul).
+
 Toutes les gardes déterministes ont vu juste sur ce qu'elles regardent. Aucune ne regarde la
 plateforme. La seule lecture qui aurait pu changer l'issue est une lecture que personne ne faisait.
 
@@ -101,9 +111,12 @@ plateforme. La seule lecture qui aurait pu changer l'issue est une lecture que p
 (`agent.py:702-708`) :
 - `top_write_processes` et `backup_agent_check` lisent le compteur `Process` `IO Write Bytes/sec`.
   Le code le dit lui-même (`agent.py:536-544`) : ce compteur n'existe que sous Windows, et **ces deux
-  requêtes rendent toujours `[]` sur une VM Linux**. Sur bree, le modèle a lu « aucun agent de
-  sauvegarde n'écrit » là où la télémétrie ne pouvait rien en dire. Ce n'est pas un échec de requête :
-  la garde de télémétrie ne le compte pas ;
+  requêtes rendent toujours `[]` sur une VM Linux**. Ce que le modèle a reçu sur bree, c'est le texte
+  que `_build_user_message()` rend pour une liste vide (`agent.py:3054-3060`) :
+  `**backup agent check** : aucun résultat (requête vide ou données absentes)`, là où la télémétrie ne
+  pouvait rien en dire. Comment le modèle l'a lu (une absence de sauvegarde, ou une donnée manquante)
+  reste à vérifier dans le `reasoning` du cycle, que ce document n'a pas relu. Ce n'est pas un échec de
+  requête : la garde de télémétrie ne le compte pas ;
 - `heartbeat_gap` cherche un redémarrage récent, sur deux heures.
 
 `successful_auth_from_ip` (`agent.py:555`, `agent.py:712`) ne tourne que sur un brute force, pour
@@ -122,7 +135,7 @@ décision (§3.7). Ce sont ces lectures que le dossier fait à sa place.
 ## 2. Les principes
 
 1. **Des faits, jamais un verdict.** Le dossier ne dit ni « bénin » ni « attaque ». Il peut aligner des
-   faits qui se répondent (« la sauvegarde a démarré 31 s avant le premier échantillon ») ; il ne les
+   faits qui se répondent (« la sauvegarde a démarré 31 s avant la date du premier échantillon ») ; il ne les
    pèse pas. LEV2 a posé la même règle pour la porte (`glorfindel/door_facts.py`, en-tête).
 2. **Illisible n'est jamais vide.** Une lecture coupée, refusée, en échec, ou d'une forme inattendue
    rend le fait **illisible**, avec sa raison. « Aucun job de sauvegarde » ne s'écrit que si le coffre a
@@ -131,10 +144,15 @@ décision (§3.7). Ce sont ces lectures que le dossier fait à sa place.
 3. **Chaque fait dit son auteur.** La plateforme (le coffre, ARM, l'hôte) : un utilisateur local ne
    l'écrit pas. L'invité (`Perf`, `Syslog`) : `Syslog` est forgeable par tout utilisateur local
    ([`corroboration.md`](corroboration.md), §1.1). `Perf` ne l'est pas, mais un utilisateur local peut
-   provoquer une vraie écriture (§2.2 du même document). Glorfindel (son état, ses cartes, sa ligne de
-   debug).
+   provoquer une vraie écriture (§2.2 du même document) : il est **provocable**. Un trou de `Heartbeat`
+   (un root local arrête l'agent) et l'état d'une extension dans la vue d'instance (écrit par l'agent
+   de la VM) le sont aussi : ce sont des faits de l'invité, et la carte les dit « dit par l'invité ».
+   Glorfindel (son état, ses cartes, sa ligne de debug).
 4. **Après l'action, ou à côté.** Aucune lecture du dossier ne se fait dans le fil de la VM avant
-   l'action, ni sous son verrou. La contention ne paie rien (§7).
+   l'action, ni sous son verrou. L'étape 0 (§4.5) se fait dans le fil de la VM, mais après l'action et
+   sa vérification ; elle ne lit que des fichiers locaux (`escalations.jsonl`, l'état d'isolement, le
+   registre des assets) et l'état du cycle, sans aucun appel. Les lectures d'Azure se font dans un
+   autre fil. La contention ne paie rien (§7).
 5. **Jamais au modèle sans le dire.** Le dossier ne va ni dans le signal, ni dans la mémoire
    (ChromaDB : `past_cycles` est l'entrée du modèle), ni dans le message (§4.4).
 6. **Aucune identité, aucun droit nouveau** (§6).
@@ -156,14 +174,15 @@ Chaque fait est une entrée du fichier du dossier :
 | `valeurs` | ce qui a été lu, brut et borné (heures, octets, nombres) |
 | `source` | la table, l'API ou le fichier |
 | `lecture` | la requête KQL, ou l'appel REST, tels qu'envoyés (sans jeton) |
-| `auteur` | `plateforme`, `invité` (`forgeable: true` pour `Syslog`) ou `glorfindel` |
+| `auteur` | `plateforme`, `invité` ou `glorfindel` ; un fait de l'invité porte `forgeable: true` (une ligne de `Syslog`, qu'un utilisateur local écrit) ou `provocable: true` (un fait vrai qu'il peut faire naître : une écriture dans `Perf`, un trou de `Heartbeat`, l'état d'une extension écrit par l'agent) |
 | `etat` | `lu`, `vide`, `sans_objet`, `illisible` (avec `pourquoi`), `en_attente` (la latence de la source n'est pas encore passée) |
 | `lu_a` | l'heure de la lecture ; un fait relu garde la dernière |
 | `mesure` | `mesuré` (et où) ou `à mesurer` (le numéro DH) : ce qui n'est pas mesuré le dit sur la carte |
 
 Toutes les fenêtres sont **ancrées sur l'heure du signal** (`T`, l'heure de la ligne qui a déclenché la
 règle), jamais sur l'heure de la lecture. Les requêtes d'`investigate` utilisent `ago(5m)` à
-`ago(10m)` (`agent.py:505-509`) : lues dix minutes plus tard, elles ne verraient plus la même chose.
+`ago(10m)` (`agent.py:505-509`), et `ago(2h)` pour `heartbeat_gap` (`agent.py:511-522`) : lues dix
+minutes plus tard, elles ne verraient plus la même chose.
 Le dossier passe au contraire une fenêtre absolue (`run_query(…, timespan=(début, fin))`,
 `glorfindel/providers/azure/monitor.py:93`), et chaque valeur tirée d'une ligne entre dans sa requête
 comme littéral vérifié (`glorfindel/kql.py`, SEC4c).
@@ -174,10 +193,10 @@ Ce que faisait Azure sur la VM, de `T − 30 min` à `T + 10 min`.
 
 | Fait | Ce qu'il dit | Source, lecture | Auteur | Illisible quand | État |
 |---|---|---|---|---|---|
-| **F1a** `backup_job` | un job du coffre sur cette VM dans la fenêtre : son type (`Backup`, `Restore`…), son heure de départ, son état, sa durée ; l'écart entre son départ et `T` | les jobs du coffre : `backup_jobs.list(vault, vault_rg)`, le lecteur de REC1 (`glorfindel/providers/azure/recovery.py:250`), filtré par la VM et son conteneur, comme REC1 le fait déjà | plateforme | le coffre ne répond pas, la liste est coupée, la VM n'a pas de coffre connu (`action_backends`) | lecteur mesuré pour un job de restore (REC1b, 09/11) ; **un job `Backup` à mesurer** (DH2) |
-| **F1b** `extensions` | les extensions de la VM en cours ou finies dans la fenêtre (la sauvegarde : `VMSnapshotLinux` ; l'agent ; une extension d'un tiers), leur état et l'heure de cet état | la vue d'instance (`virtualMachines/instanceView`), et les écritures d'extension du journal d'activité (la lecture du groupe de LEV2, `door.py`, filtrée sur les enfants de la VM) | plateforme (l'état d'une extension est écrit par l'agent de la VM : à dire) | la vue d'instance ne se lit pas | **à mesurer** (DH3) : la vue d'instance ne porte jamais Run Command v1 (mesuré, REC1b), on ignore ce qu'elle porte d'une sauvegarde en cours |
-| **F1c** `reboot` | un démarrage, un redémarrage, un redéploiement dans la fenêtre ; un trou de `Heartbeat` | le journal d'activité (`restart/action`, `start/action`, `redeploy/action`, `deallocate/action`) ; `Heartbeat` (la requête `heartbeat_gap` d'`investigate`, déjà lancée sur ce signal : son résultat est repris, sans relecture) | plateforme ; `Heartbeat` : l'agent | le journal ne se lit pas | `Heartbeat` lu par `investigate` ; le journal **à mesurer** (DH1) |
-| **F1d** `platform_health` | une maintenance de la plateforme ou un événement de santé de la VM dans la fenêtre (une migration à chaud, une dégradation de l'hôte) | le journal d'activité, catégories `ResourceHealth` et `ServiceHealth`, dans la même lecture que F1c ; en complément, l'état de disponibilité de la ressource (`Microsoft.ResourceHealth/availabilityStatuses`) | plateforme | la lecture échoue | **à mesurer** (DH7) : on ne sait pas si ces événements arrivent pour une VM du banc, ni avec quel délai |
+| **F1a** `backup_job` | un job du coffre sur cette VM dans la fenêtre : son type (`Backup`, `Restore`…), son heure de départ, son état, sa durée ; l'écart entre son départ et `T` | les jobs du coffre : `backup_jobs.list(vault, vault_rg)`. Deux lecteurs existent déjà : celui des jobs `Backup` de l'action `snapshot` (`glorfindel/providers/azure/backup.py:160-187` : `operation == "Backup"`, `entity_friendly_name`, `start_time`), et celui de REC1 pour un restore (`recovery.py:250`), filtré par la VM et son conteneur | plateforme | le coffre ne répond pas, la liste est coupée, la VM n'a pas de coffre connu (`action_backends`) | les jobs `Backup` d'un instantané à la demande sont lus en service ; **la forme d'un job planifié et son filtrage sur N jours, à mesurer** (DH2) |
+| **F1b** `extensions` | les extensions de la VM en cours ou finies dans la fenêtre (la sauvegarde : `VMSnapshotLinux` ; l'agent ; une extension d'un tiers), leur état et l'heure de cet état | la vue d'instance (`virtualMachines/instanceView`), et les écritures d'extension du journal d'activité (la lecture du groupe de LEV2, `door.py`, filtrée sur les enfants de la VM) | l'écriture d'une extension au journal : plateforme. **Son état dans la vue d'instance : invité, `provocable`** (l'agent de la VM l'écrit ; la carte dit « dit par l'invité ») | la vue d'instance ne se lit pas | **à mesurer** (DH3) : la vue d'instance ne porte jamais Run Command v1 (mesuré, REC1b), on ignore ce qu'elle porte d'une sauvegarde en cours |
+| **F1c** `reboot` | un démarrage, un redémarrage, un redéploiement dans la fenêtre ; un trou de `Heartbeat` | le journal d'activité (`restart/action`, `start/action`, `redeploy/action`, `deallocate/action`) ; `Heartbeat` (la requête `heartbeat_gap` d'`investigate`, déjà lancée sur ce signal : son résultat est repris, sans relecture) | le journal : plateforme. **Le trou de `Heartbeat` : invité, `provocable`** (un root local arrête l'agent, et le code lit ce trou comme un redémarrage, une explication bénigne de l'écriture : `agent.py:705-707`) ; la carte dit « dit par l'invité » | le journal ne se lit pas | `Heartbeat` lu par `investigate` ; le journal **à mesurer** (DH1) |
+| **F1d** `platform_health` | un événement de santé de la VM dans la fenêtre (une dégradation de l'hôte, une migration à chaud), et une maintenance planifiée en attente | le journal d'activité, catégorie `ResourceHealth`, dans la même lecture que F1c ; l'état de disponibilité de la ressource (`Microsoft.ResourceHealth/availabilityStatuses`) ; `instanceView.maintenanceRedeployStatus` (la maintenance planifiée), dans la lecture de la vue d'instance de F1b. **`ServiceHealth` : sans objet sous les droits actuels.** D'après la documentation d'Azure (pas une mesure), un événement `ServiceHealth` vit au niveau de l'abonnement, sans le `resourceUri` de la VM : la lecture exacte de la VM ne le rend jamais, et le lire au niveau de l'abonnement demanderait `Microsoft.Insights/eventtypes/values/read` sur l'abonnement (un `Reader` d'abonnement), qu'Imladris n'a pas | plateforme | la lecture échoue | **à mesurer** (DH7) : la portée et le délai de ces événements viennent de la documentation d'Azure ; on ne sait pas s'ils arrivent pour une VM du banc |
 | **F1e** `guest_context` | ce que l'invité dit faire dans la fenêtre : les lignes de `waagent`, d'`apt`/`unattended-upgrades`, de `cron` | `Syslog`, sur la VM, dans la fenêtre | **invité, forgeable** | la requête échoue | la carte le marque « dit par l'invité » |
 
 **Pourquoi F1e.** La règle a déjà tiré, au matin du 05/10, sur le rattrapage d'`apt`/`snap` d'Ubuntu
@@ -237,7 +256,7 @@ pas la même question.
 | Fait | Ce qu'il dit | Source, lecture | Auteur | État |
 |---|---|---|---|---|
 | **F3a** `recurrence` | sur les `N` derniers jours (Q6, 10 par défaut), le nombre de fenêtres où la règle aurait tiré sur cette VM, avec le même calcul (pas fin ou grossier, moyenne de deux échantillons ou échantillon seul), par heure du jour et par point de montage ; le maximum de la même heure, nuit après nuit | `Perf`, la requête de la règle rejouée sur `[T − N jours, T]` pour cette seule VM, résumée par `bin(1h)` et par `InstanceName` | invité (non forgeable, provocable) | **à mesurer** (DH9 : son coût sur dix jours d'échantillons à 10 s) |
-| **F3b** `recurrence_vs_backup` | les mêmes nuits, l'écriture maximale de l'invité dans les 5 minutes qui suivent le départ de chaque job de sauvegarde de la VM | F3a croisé avec la liste des jobs `Backup` de F1a sur `N` jours (la même lecture du coffre, la fenêtre élargie) | plateforme et invité | **à mesurer** (DH2, DH9) |
+| **F3b** `recurrence_vs_backup` | les mêmes nuits, l'écriture maximale de l'invité dans les 5 minutes qui suivent le départ de chaque job de sauvegarde de la VM | F3a croisé avec la liste des jobs `Backup` de F1a sur `N` jours (la même lecture du coffre, la fenêtre élargie) | les jobs : plateforme ; l'écriture : invité, `provocable` (un attaquant peut écrire chaque nuit à la même heure, pour conditionner la série) | **à mesurer** (DH2, DH9) |
 | **F3c** `past_cards` | les cartes de cette VM et de cette règle sur `N` jours, et leur verdict quand un humain en a donné un (`escalations.verdict` : jugée bénigne, malveillante…) | `~/.glorfindel/escalations.jsonl`, `escalations.recurrence` (`glorfindel/escalations.py:767`) étendu à la règle | glorfindel | lu (local) |
 
 **Pourquoi F3b.** C'est le fait qui aurait suffi à Jonathan : chaque nuit, à la même minute, une
@@ -275,7 +294,7 @@ réseau existera (SEC-A3f), F4 la reprendra : une connexion établie vers le por
 | Fait | Ce qu'il dit | Source | Auteur | État |
 |---|---|---|---|---|
 | **F5a** `own_operations` | les gestes de Glorfindel sur la VM depuis `T` : chaque écriture de règle de NSG, chaque Run Command (la coupure), leur heure de départ et de fin, leur durée, leur statut | les gestes de rôle `glorfindel` des faits de la porte (`door.py:246`, `observed_actors` : `gestures` porte `at`, `operation`, `status`) ; la durée se calcule par `operationId`, du premier `Started` au dernier état, ce que `observed_actors` ne regroupe pas encore (DOS4) | plateforme | **à mesurer** : la latence du journal (H12 de LEV2, DH1) |
-| **F5b** `drain` | la coupure : demandée à quelle heure, aboutie ou non, en combien de temps ; `pending` suivie par DRN1 | l'état d'isolement (`drain`, `drains_at`, `drain_ended_at` : `glorfindel/drain_watch.py`) | glorfindel | lu (local) |
+| **F5b** `drain` | la coupure : demandée à quelle heure, aboutie ou non, en combien de temps ; `pending` suivie par DRN1 | l'état d'isolement (`drains_at`, écrit par `glorfindel/providers/azure/isolation.py` juste avant la Run Command de la coupure ; `drain` et `drain_ended_at`, écrits par `glorfindel/drain_watch.py`) | glorfindel | lu (local) |
 | **F5c** `verification` | le verdict de `verify_action` (`agent.py:2241`), sa raison, `verified_at` | l'`outcome` du cycle | glorfindel | lu (local) |
 | **F5d** `cards` | les cartes de la VM nées depuis `T` (la vérification, la coupure, une carte de SID1), leur type, leur état (acquittée ou non), leur âge | `escalations.jsonl` | glorfindel | lu (local) |
 
@@ -336,14 +355,14 @@ dict.
 
 | Fait | Source | Droit | Auteur | Mesuré ? |
 |---|---|---|---|---|
-| F1a job du coffre | `backupJobs` (ARM) | `Microsoft.RecoveryServices/vaults/backupJobs/read` (Reader, tenu : REC1) | plateforme | lecteur mesuré (restore) ; job `Backup` à mesurer (DH2) |
-| F1b extensions | vue d'instance ; journal d'activité | `virtualMachines/instanceView/read`, `Microsoft.Insights/eventtypes/values/read` (Reader, tenus : REC1, LEV2) | plateforme | à mesurer (DH3) |
-| F1c redémarrage | journal d'activité ; `Heartbeat` | Reader ; Log Analytics Reader (tenus) | plateforme ; agent | `Heartbeat` en service ; journal à mesurer (DH1) |
-| F1d santé, maintenance | journal d'activité ; `availabilityStatuses` | Reader (`*/read`) | plateforme | à mesurer (DH7) |
+| F1a job du coffre | `backupJobs` (ARM) | `Microsoft.RecoveryServices/vaults/backupJobs/read` (Reader, tenu : `snapshot`, REC1) | plateforme | lecteurs en service (`backup.py`, `recovery.py`) ; job planifié sur N jours à mesurer (DH2) |
+| F1b extensions | vue d'instance ; journal d'activité | `virtualMachines/instanceView/read`, `Microsoft.Insights/eventtypes/values/read` (Reader, tenus : REC1, LEV2) | l'écriture : plateforme ; l'état : invité, provocable | à mesurer (DH3) |
+| F1c redémarrage | journal d'activité ; `Heartbeat` | Reader ; Log Analytics Reader (tenus) | le journal : plateforme ; le trou de `Heartbeat` : invité, provocable | `Heartbeat` en service ; journal à mesurer (DH1) |
+| F1d santé, maintenance | journal d'activité (`ResourceHealth`) ; `availabilityStatuses` ; `maintenanceRedeployStatus` | Reader sur le groupe (`*/read`), jamais lu pour `availabilityStatuses`. `ServiceHealth` : un Reader d'abonnement, **non tenu**, donc sans objet | plateforme | à mesurer (DH7) |
 | F1e contexte de l'invité | `Syslog` | Log Analytics Reader (tenu) | invité, forgeable | filtre à écrire ; volume à mesurer (DH8) |
 | F2 métrique de l'hôte | Azure Monitor, `metrics` (ARM) | `Microsoft.Insights/metrics/read` (Reader `*/read` : tenu sur le papier, **jamais lu par Glorfindel**) | plateforme | à mesurer (DH4, DH5, DH6) |
 | F2 série de l'invité | `Perf` | Log Analytics Reader (tenu) | invité | la règle en service ; la série par minute à écrire |
-| F3a, F3b récurrence | `Perf` ; jobs du coffre | Log Analytics Reader ; Reader (tenus) | invité ; plateforme | à mesurer (DH9) |
+| F3a, F3b récurrence | `Perf` ; jobs du coffre | Log Analytics Reader ; Reader (tenus) | invité, provocable ; plateforme | à mesurer (DH9) |
 | F3c cartes passées | `escalations.jsonl` | aucun (local) | glorfindel | lu |
 | F4a, F4b connexions | `Syslog` | Log Analytics Reader (tenu) | invité, forgeable | filtres en service ; fenêtre à mesurer (DH8) |
 | F4c ce que le modèle a vu | le cycle | aucun | glorfindel | lu |
@@ -479,8 +498,9 @@ illisible ou en retard : une carte (A0).
 
 ### 5.3 La règle face à un pic ponctuel : ce que la garde ne règle pas
 
-La règle `ransomware-disk-write` a tiré sur un pic de 20 s à 48,2 Mo/s de moyenne (§1.1), 7 % au-dessus
-de son seuil. La fiche demande si la garde du point 3 règle ce cas. **Pas proprement.**
+La règle `ransomware-disk-write` a tiré sur deux échantillons de 10 s dont la moyenne vaut 48,2 Mo/s
+(§1.1, calculée ici sur le relevé), 7 % au-dessus de son seuil. Les échantillons d'avant ne sont pas
+dans le relevé : la durée réelle du pic reste à lire (DH5). La fiche demande si la garde du point 3 règle ce cas. **Pas proprement.**
 - Si la métrique de l'hôte ne fait que lisser le pic sur la minute, une garde B **déplacerait** le seuil
   de durée de la règle (20 s) vers la granularité de la métrique (60 s), sans le dire.
 - La bonne réponse au pic ponctuel est dans la règle : une durée minimale, ou une somme d'octets sur
@@ -496,7 +516,7 @@ L'option A. Les raisons :
 - elle risquerait de retenir l'attaque de référence du banc ;
 - elle ajouterait des minutes à la contention d'une technique grave.
 
-C est écartée pour le trou qu'elle ouvre. Si la mesure de DH5 et DH6 montre une divergence franche et
+C est déconseillée pour le trou qu'elle ouvre ; c'est Jonathan qui l'écarte ou non (Q1). Si la mesure de DH5 et DH6 montre une divergence franche et
 stable, sur des bénins réels comme sur les attaques du banc, B se rouvre comme un lot à part, DOS9 :
 la forme de SEC-A3, la métrique attendue au plus quelques minutes, une carte sinon. Jonathan tranche
 alors sur des chiffres.
@@ -519,10 +539,12 @@ le dossier n'utilise pas.
 | jobs du coffre | `Microsoft.RecoveryServices/vaults/backupJobs/read` | Reader | oui : REC1 |
 | vue d'instance, extensions | `Microsoft.Compute/virtualMachines/instanceView/read`, `.../extensions/read` | Reader | oui : REC1 |
 | métriques de l'hôte | `Microsoft.Insights/metrics/read` | Reader (`*/read`) | **non** : tenu sur le papier, à mesurer (DH4) |
-| santé de la ressource | `Microsoft.ResourceHealth/availabilityStatuses/read` | Reader (`*/read`) | **non** : à mesurer (DH7) |
+| santé de la ressource | `Microsoft.ResourceHealth/availabilityStatuses/read` ; le journal d'activité de la VM, catégorie `ResourceHealth` | Reader (`*/read`) sur le groupe | **non** pour `availabilityStatuses` : à mesurer (DH7) |
+| événements `ServiceHealth` | `Microsoft.Insights/eventtypes/values/read` **sur l'abonnement** | un Reader d'abonnement : **non tenu** | sans objet : F1d le dit, aucun droit n'est demandé |
 | `Perf`, `Syslog`, `Heartbeat` | la lecture du workspace | Log Analytics Reader | oui : le RulePoller, `investigate` |
 
-**Rien de nouveau.** Aucune identité, aucune attribution, aucun rôle n'est ajouté ; aucune déclaration
+**Rien de nouveau.** Aucune identité, aucune attribution, aucun rôle n'est ajouté : `ServiceHealth`,
+qui demanderait un Reader sur l'abonnement, reste sans objet plutôt que de l'exiger ; aucune déclaration
 de Terraform ni d'environnement ne change. `scripts/identity_map.py check` passe donc tel quel : le lot
 de conception ne touche aucun de ses fichiers. Une lecture refusée (403) par un Reader plus étroit chez
 un client est un fait `illisible`, avec la raison « droit absent », jamais un échec du cycle.
@@ -560,7 +582,7 @@ isolation, étalés sur 30 min.
 - Chaque appel REST porte `REST_TIMEOUT_S` (`glorfindel/providers/azure/sdk.py`) ; chaque requête KQL,
   une fenêtre absolue.
 - **Un plafond** : au plus 6 dossiers composés par heure pour toute la watch (`GLORFINDEL_DOSSIER_MAX_PER_H`,
-  0 l'éteint). Au-delà, un dossier `non composé : plafond atteint`, dit sur la carte, jamais en
+  0 l'éteint). La valeur est une proposition, à trancher par Jonathan (Q9). Au-delà, un dossier `non composé : plafond atteint`, dit sur la carte, jamais en
   silence. Une rafale d'isolations (une campagne) ne se paie pas en appels.
 - **La file de décision (SEC-A2)** n'est pas touchée : le dossier n'appelle jamais le modèle, n'entre pas
   dans `MODEL_CALLS_PER_MIN`, et ne tient jamais le verrou de la VM. Une détection suivante de la VM
@@ -579,6 +601,8 @@ facturation à l'ingestion ne coûtent rien de plus. À vérifier sur un workspa
 | Frontière | Ce qui la tient | Ce qui reste ouvert |
 |---|---|---|
 | **un fait de l'invité trompe l'humain** (une ligne `Syslog` écrite pour faire croire à un `apt` ou à une absence de connexion) | l'auteur dit sur chaque fait, « forgeable » sur `Syslog` ; F4 dit « aucune ligne », jamais « aucune connexion » | l'humain peut quand même s'y fier : c'est le prix d'un fait dit plutôt que tu |
+| **un fait provoqué par l'invité passe pour une explication bénigne** : un root local arrête l'agent (un trou de `Heartbeat`, lu comme un redémarrage, `agent.py:705-707`), ou fait écrire à l'agent l'état d'une extension | ces faits portent l'auteur `invité` et `provocable` ; la carte dit « dit par l'invité », et la ligne d'un coup d'œil ne les range jamais sous « Plateforme » | le même prix : un fait dit, que l'humain pèse |
+| **un fait vrai de la plateforme, à une heure prévisible, pousse l'humain à juger bénin** : le job de sauvegarde (F1a) ne se forge pas, mais son heure est stable nuit après nuit (F3b), et un attaquant peut chiffrer à cette heure-là (l'argument de l'option C, §5.2) | la carte dit, à côté de F1a : « l'heure de la sauvegarde est prévisible : une attaque peut s'y caler » ; aucun verdict | l'humain peut conclure trop vite ; F2 et F4d sont là pour le contredire |
 | **le dossier pousse l'humain à lever à tort** (un « tout semble bénin » qui n'est que l'absence de preuve) | aucun verdict ; les illisibles en tête ; F4d (la porte de LEV2) toujours présent ; la levée garde ses propres règles (REC1, LEV3) | un humain pressé lit la ligne d'un coup d'œil. Q4 (le rappel) ne doit pas devenir « lever en un clic » |
 | **un fichier du dossier forgé** (`~/.glorfindel/` s'écrit aussi depuis la console et le bot) | le dossier n'est lu par aucune garde, aucun modèle, aucune levée ; la console et le bot le lisent comme une information | un conteneur de la console compromis peut mentir à l'humain sur la carte. C'est la même frontière que les faits de la porte de LEV2 (§2 du modèle de menace, `runs/` et l'état) |
 | **un texte d'Azure ou de l'invité dans la console ou sur Discord** | `_attr` (#254, #257), `discord_text` (SEC6, N-09) | — |
@@ -595,12 +619,12 @@ faite par ce lot.
 | N° | Hypothèse | Ce qui la mesure | Si elle tombe |
 |---|---|---|---|
 | **DH1** | le journal d'activité livre les écritures et les Run Commands d'une VM en quelques minutes (la documentation ; H12 de LEV2, non mesurée) | les heures `eventTimestamp` et `submissionTimestamp` des gestes de la coupure de bree, lus après coup | les délais de l'étape 1 bis s'allongent ; F5a reste `en_attente` plus longtemps |
-| **DH2** | un job `Backup` du coffre se lit comme un job `Restore` (REC1) : son type, son départ, son entité, et il est listé dès son départ | la liste des jobs du coffre sur bree, du 01/11 au 11/11 | F1a et F3b changent de lecteur |
+| **DH2** | un job `Backup` **planifié** se lit comme celui d'un instantané à la demande, que `backup.py:160-187` lit déjà (`operation`, `entity_friendly_name`, `start_time`), et la liste du coffre se filtre sur `N` jours sans couper | la liste des jobs du coffre sur bree, du 01/11 au 11/11 | F1a et F3b changent de filtre, ou `N` baisse |
 | **DH3** | la vue d'instance porte l'état de `VMSnapshotLinux` pendant une sauvegarde | une lecture de la vue d'instance pendant une sauvegarde à la demande (un geste de Jonathan) | F1b se réduit au journal d'activité |
 | **DH4** | les métriques `OS Disk Write Bytes/sec`, `Data Disk Write Bytes/sec` et `Disk Write Bytes` d'une VM se lisent sous Reader, à `PT1M`, avec `Average` (et `Maximum` ?), avec quelques minutes de latence | une lecture des métriques de bree sur la nuit du 10/11 (gardées 93 jours, la documentation) | F2 est illisible ; Q1, option B, tombe |
 | **DH5** | **sur la même minute**, la moyenne de l'invité et celle de l'hôte divergent nettement pendant le pic de bree | la série `Perf` de bree, `bin(1m)`, de 02:28 à 02:38 le 10/11, face à DH4 ; le lien entre `/` et le disque OS | si elles ne divergent pas, F2 ne dit que la durée du pic, et B n'a plus d'objet |
 | **DH6** | sur une attaque T1486 du banc (environ 50 s d'écritures), l'hôte voit autant que l'invité sur la même minute ; le cache de l'hôte (disque OS en `ReadWrite`) n'absorbe pas les écritures | le dernier T1486 du banc (09/11), même lecture | si l'hôte voit moins, B retiendrait la vraie attaque : B tombe |
-| **DH7** | les événements `ResourceHealth` et `ServiceHealth` d'une VM arrivent au journal d'activité, et `availabilityStatuses` se lit sous Reader | une lecture sur bree et gondolin, sur 30 jours | F1d se réduit à ce qui se lit |
+| **DH7** | les événements `ResourceHealth` d'une VM arrivent dans la lecture exacte de la VM au journal d'activité ; `availabilityStatuses` et `instanceView.maintenanceRedeployStatus` se lisent sous le Reader du groupe ; `ServiceHealth` ne s'y lit pas (la documentation d'Azure le place au niveau de l'abonnement : à confirmer, sans le lire au niveau de l'abonnement) | une lecture sur bree et gondolin, sur 30 jours | F1d se réduit à ce qui se lit ; si `ServiceHealth` se lisait sous le groupe, il entrerait dans F1d sans droit nouveau |
 | **DH8** | les lignes `Accepted` et `Failed` d'une VM exposée tiennent en une requête bornée sur 24 h et sur `N` jours | le volume de `Syslog` `auth` de bree sur 10 jours (298 échecs, 41 sources) | les bornes de F4 changent |
 | **DH9** | la requête de récurrence sur `N` jours d'échantillons à 10 s, pour une VM, rend en quelques secondes | la requête rejouée sur bree, `N` = 10 et 30 | `N` baisse, ou F3a passe en agrégats précalculés |
 | **DH10** | la sauvegarde du coffre apparaît parmi les acteurs de la porte de LEV2 (une écriture d'extension par le service de sauvegarde) | les faits de la porte d'une VM isolée pendant une sauvegarde | à dire à LEV3, pour « qui n'est pas un tiers » |
@@ -694,7 +718,8 @@ décidé à sa place.
    ajout au message se décide ensuite, sur des faits mesurés.
 2. Plus tard, par un lot à part (DOS10) : le job de sauvegarde et les requêtes sans objet sous Linux dans
    `_build_user_message()`, avec un run de bout en bout T1486 et un autre TTP, par Jonathan. Le modèle
-   ne croirait plus « aucun agent de sauvegarde » sous Linux.
+   ne recevrait plus « aucun résultat » pour une requête qui ne peut rien dire sous Linux ; comment il a
+   lu ce texte sur bree reste à vérifier dans le `reasoning` du cycle.
 3. Jamais : le modèle ne voit que la détection et l'enquête, le dossier reste hors de sa portée pour de
    bon.
 
@@ -736,3 +761,11 @@ sur bree)
 2. Tout après la mesure. Le plus prudent ; la ligne de debug (DOS2) attend sans raison.
 3. Tout le code d'abord, la mesure ensuite. Le plus rapide à livrer ; les données de bree risquent de
    partir avant d'être lues, et le code d'Azure suit la documentation.
+
+**Q9 — Le plafond de dossiers par heure, pour toute la watch ?** (§7)
+1. **6 par heure (recommandée).** Une isolation réelle est rare ; une rafale (une campagne d'exercices)
+   ne se paie pas en appels, et chaque dossier non composé est dit sur sa carte.
+2. 20 par heure. Une campagne garde tous ses dossiers ; au pire, quelques centaines d'appels de lecture
+   par heure.
+3. Pas de plafond, seulement le fil unique et les bornes de chaque lecture. Le plus simple ; une rafale
+   se paie en appels et retarde les dossiers suivants.
