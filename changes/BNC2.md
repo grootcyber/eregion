@@ -4,8 +4,9 @@
   phone through it), and its restore stays a second human gesture, from the isolation card once FS1g
   and TOT1 exist, from `make bench-restore` until then. What surrounds them is automated: the
   preflight; a calm check that refuses rather than waits; a refusal ("restore first") on a VM that
-  carries a destructive run without a restore since, the runs listed from Orodruin's own journal in
-  the exercise channel and the restores from the vault's jobs; after the typed name, the newest recovery
+  carries a destructive run without a restore since, the runs listed from Azure's activity log of
+  the VM (Orodruin's Run Commands since its last restore), their technique from Orodruin's journal
+  (an unreadable one counting as destructive), and the restores from the vault's jobs; after the typed name, the newest recovery
   point checked clean (taken after the VM's last restore and outside any quarantine) and, when it
   is not, a new one asked through the snapshot button's own route of the host's console (a signed
   request the watch executes under the action queue), followed to its end, then the preflight played again before the attack; the lift by the host;
