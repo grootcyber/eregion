@@ -1131,6 +1131,16 @@ briques:
     issue: 682
     doc: docs/banc-t1486.md
 
+  - id: c-banc-preflight-mesure
+    composant: celebrimbor
+    poste: c-construire
+    nom: "The bench's preflight corrected on what the bench measured: the recovery point read, the true error said, no foreign watcher"
+    etat: main
+    release: "0.5"
+    lots: [BNC1b]
+    issue: 724
+    doc: docs/banc-t1486.md
+
   - id: c-telephone
     composant: celebrimbor
     poste: c-acces
