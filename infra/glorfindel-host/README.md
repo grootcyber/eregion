@@ -600,7 +600,7 @@ d'exercice non marqués (B2), qui n'ont rien à faire dans une observation.
      - Rouge, annulé, hors délai (`failure`, `cancelled`, `timed_out`, `action_required`, `startup_failure`, `stale`) : **refusée**, dite avec ta mention (« CI rouge sur … , un check requis : … »).
      - En cours ou en file : le CD attend le passage suivant, et le dit une fois (« ⏳ … attend sa CI »).
      - Absent : le CD l'attend une heure (« ⏳ … attend sa CI requise (« … ») », « … attend son image publiée », dit une fois), puis refuse. Chaque check a son compte.
-   - **Ceux qui ne sont que dits** : tous les autres (`tests (macOS, case-insensitive file system)`, `<composant> alone`, `compose profiles (Glorfindel in each)`, `dependency advisories`, `publish (annatar)`, `notify`…). Rouges ou annulés, `#deploy` le dit en orange, sans ta mention, une fois par tag et par check (« ⚠️ … check(s) non requis en échec … dit, sans retenir Imladris ») ; en cours, ils ne retardent rien. Le cas du 04/11 : le commit de la 0.5.4 vert, sauf macOS annulé faute de runner. L'agent d'avant l'aurait refusée ; celui-ci la déploie et dit l'annulation.
+   - **Ceux qui ne sont que dits** : tous les autres (`tests (macOS, case-insensitive file system)`, `<composant> alone`, `compose profiles (Glorfindel in each)`, `dependency advisories`, `publish (annatar)`, `notify`…). Rouges ou annulés, `#deploy` le dit en orange, sans ta mention, une fois par tag et par check (« ⚠️ … check(s) non requis en échec … dit, sans retenir H0 ») ; en cours, ils ne retardent rien. Le cas du 04/11 : le commit de la 0.5.4 vert, sauf macOS annulé faute de runner. L'agent d'avant l'aurait refusée ; celui-ci la déploie et dit l'annulation.
    - **Le nom entier, jamais un début** : un check nommé `lint + tests (py3.12) beta`, ou `Image (annatar)`, ne passe pas pour un requis. **Seuls les runs de GitHub Actions comptent** pour un check qui bloque (`app.slug` = `github-actions`, lu sur les commits de `main` le 04/11) : un run d'une autre App au nom d'un requis, vert, ne comble jamais un check absent ; rouge ou en cours, il bloque quand même. **Deux runs du même nom** (une relance, une seconde suite) : un rouge suffit à refuser, un en cours à attendre. **Terminé sans conclusion verte** (aucune, ou une que l'agent ne connaît pas) : refusé, jamais pris pour vert. Le nom dit dans `#deploy` perd d'abord toute URL (‹url›), adresse ou nom d'hôte (‹hôte›), puis ne garde que lettres, chiffres et `+ , . ( ) -` — ni `:` ni `/`, donc aucun lien que Discord ferait, ni mention, ni Markdown (SEC6).
    - **D'où vient la liste** : une constante de l'agent installé, `REQUIRED_CHECKS` dans `eregion_cd.py`, jamais lue dans le dépôt ni dans la release : une release ne dit pas elle-même ce qui la retient. `tests/unit/test_host_cd.py` la garde égale à la liste de `docs/sessions.md` (« Les règles du dépôt »). **Un check ajouté ou retiré de la règle de `main` demande donc une PR qui change les deux, puis un `make glorfindel-host-cd-install`.** Une release d'avant CI4 (sans `terraform test`) attendrait une heure, puis serait refusée ; les releases d'avant REN1 le sont déjà.
    - **Le journal** (`journalctl -u eregion-cd`) écrit les deux groupes à chaque passage, chaque check avec son état ; **le à blanc** (`make glorfindel-host-cd-check`) les dit dans le terminal et dans `#deploy`, sous « ✅ À blanc : … est prête » (« bloquent (les requis de main, l'image publiée) : … », « ne sont que dits : … ; N vert(s) »), et aussi quand la release tourne déjà (« ses checks : … »).
@@ -825,7 +825,7 @@ CI3 est déployée **par l'agent d'avant, qui construit** ; la suivante, par le 
    sans jeton (attendu au premier run : un paquet neuf de GHCR est privé). **C'est la première mesure
    de l'aller-retour** : jamais encore `cosign sign` v3 puis `verify`, ni les attestations poussées
    puis relues, n'ont tourné sur nos propres images. Avant de publier la 0.4.6, relire ce run : les
-   steps « Sign (keyless) » et « Verified as Imladris verifies it » verts sur les deux jobs ; rouge, ne pas
+   steps « Sign (keyless) » et « Verified as H0 verifies it » verts sur les deux jobs ; rouge, ne pas
    publier, le corriger d'abord.
 2. **Les deux paquets publics, une fois.** Sur GitHub : ton profil → Packages → `eregion-glorfindel`
    → Package settings → Change visibility → Public ; de même pour `eregion-annatar`. Puis, sans jeton,
@@ -862,7 +862,7 @@ ci-dessus garde la 0.4.6 sur le chemin connu. Le retour arrière depuis la 0.4.7
 
 **L'agent neuf devant une release sans image attestée** : jamais une construction. Sans le job
 `publish (glorfindel)` sur son commit (une release d'avant CI3), il attend une heure, puis la refuse
-(« aucune image publiée … Imladris ne construit plus »). Avec le job, mais une image absente, privée, non
+(« aucune image publiée … H0 ne construit plus »). Avec le job, mais une image absente, privée, non
 signée ou signée par un autre : refusée tout de suite ; un paquet privé aussi (GHCR refuse le jeton
 anonyme). Les deux avec ta mention dans `#deploy`. Un registre ou sigstore injoignable (cosign dit
 « error updating to TUF remote mirror », ou un délai) est dit une fois, en bleu, et le CD repasse,
