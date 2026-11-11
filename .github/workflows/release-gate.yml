@@ -355,7 +355,11 @@ jobs:
           echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" \
             | sudo tee /etc/apt/sources.list.d/hashicorp.list > /dev/null
           # A transient error on an index fails the update (apt-get --error-on=any): retried, never a W: and 0.
-          bash scripts/retry.sh sudo apt-get update -qq -o APT::Update::Error-Mode=any
+          # CI11 (#728): HashiCorp's source alone is refreshed — an outage of Ubuntu's mirrors (11/11:
+          # security.ubuntu.com unresolved for hours) no longer fails the job; Error-Mode=any still holds for it.
+          bash scripts/retry.sh sudo apt-get update -qq -o APT::Update::Error-Mode=any \
+            -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/hashicorp.list \
+            -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0
           bash scripts/retry.sh sudo apt-get install -y -qq "terraform=${TERRAFORM_VERSION}"
           terraform version
 

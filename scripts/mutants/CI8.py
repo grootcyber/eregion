@@ -39,8 +39,8 @@ MUTANTS += [
      RETRY, "trap 'echo \"::error::retry.sh: stopped by SIGTERM: never run again\"; exit 143' TERM\n", ""),
     ("M4029", "apt-get update says a transient error as a W: and exits 0: never retried, the install fails "
               "three times (CI8, review)", ".github/workflows/ci.yml",
-     "          bash scripts/retry.sh sudo apt-get update -qq -o APT::Update::Error-Mode=any\n",
-     "          bash scripts/retry.sh sudo apt-get update -qq\n"),
+     "          bash scripts/retry.sh sudo apt-get update -qq -o APT::Update::Error-Mode=any \\\n",
+     "          bash scripts/retry.sh sudo apt-get update -qq \\\n"),
 ]
 TESTS = {
     "M4027": f"{_SIG}[SIGINT-130]",

@@ -1857,6 +1857,18 @@
    "issue": 715
   },
   {
+   "id": "s-ci-terraform-source",
+   "composant": "socle",
+   "poste": "s-prouver",
+   "nom": "The jobs that install Terraform refresh HashiCorp's source alone, never Ubuntu's mirrors",
+   "etat": "main",
+   "release": "0.5",
+   "lots": [
+    "CI11"
+   ],
+   "issue": 728
+  },
+  {
    "id": "s-verrous",
    "composant": "socle",
    "poste": "s-signer",
