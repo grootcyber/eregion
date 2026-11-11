@@ -11,58 +11,180 @@ prepare_embedding_model). The cache restored, nothing leaves the runner.
 Exits 0 when the model is ready, or when ChromaDB is not installed (nothing to fetch); otherwise
 the error, and a non-zero exit, which retry.sh tries again.
 
-FLK1 (#723): the test suite prepares it too, once per session (`prepare_once`, called by
-tests/unit/conftest.py in each process, xdist's workers included), under a file lock beside the
-model. On 11/11, in `pytest -n 4` with a throwaway HOME, two workers fetched it into the same
-~/.cache/chroma at once: ChromaDB writes the archive in place, and removes it when its SHA-256
-does not match — one worker removed the other's half-written file, which then failed on it
-(FileNotFoundError on onnx.tar.gz). Under the lock, the first process fetches it, the others
-wait, then find it there; a model already there is never fetched again (no network).
+FLK1 (#723): one fetch at a time, under a file lock beside the model (`held`). On 11/11, in
+`pytest -n 4` with a throwaway HOME, two workers fetched the model into the same ~/.cache/chroma
+at once: ChromaDB writes the archive in place, and removes it when its SHA-256 does not match —
+one worker removed the other's half-written file, which then failed on it (FileNotFoundError on
+onnx.tar.gz). Three places take the lock: this script, the harness's preparation (CI6b), and the
+test suite, lazily — tests/unit/conftest.py calls `lock_downloads` in each process, which wraps
+ChromaDB's own check-then-fetch (`ONNXMiniLM_L6_V2._download_model_if_not_exists`) in the lock,
+when ChromaDB is imported. The first process that needs the model fetches it; the others wait,
+then find it by ChromaDB's own check. A session that never embeds a text fetches nothing.
 """
 from __future__ import annotations
 
 import contextlib
+import functools
 import importlib
+import os
 import sys
+import threading
 from pathlib import Path
 
 EMBEDDING = "chromadb.utils.embedding_functions"
-# Where chromadb 1.5.9 keeps its default model (ONNXMiniLM_L6_V2: DOWNLOAD_PATH, taken from
-# Path.home() when it is imported), and the six files whose absence makes it fetch the model.
-MODEL = Path(".cache") / "chroma" / "onnx_models" / "all-MiniLM-L6-v2"
-FILES = ("config.json", "model.onnx", "special_tokens_map.json", "tokenizer_config.json",
-         "tokenizer.json", "vocab.txt")
+# Where chromadb keeps its default model: Path.home()/.cache/chroma/onnx_models/<model>
+# (ONNXMiniLM_L6_V2.DOWNLOAD_PATH). The lock is beside the models, in onnx_models/.
+MODELS = Path(".cache") / "chroma" / "onnx_models"
 LOCK = ".eregion-prepare.lock"
+# The module, class and method that check the model's files and fetch it when one is missing
+# (chromadb 1.5.9) — what the suite wraps in the lock; tests/unit/test_chroma_model.py checks the
+# locked version still has them.
+TARGET = "chromadb.utils.embedding_functions.onnx_mini_lm_l6_v2"
+CLASS = "ONNXMiniLM_L6_V2"
+METHOD = "_download_model_if_not_exists"
 
 
-def model_dir(home: Path | None = None) -> Path:
-    """The folder of the model's files (the archive's ``onnx/``, extracted)."""
-    return Path(home if home is not None else Path.home()) / MODEL / "onnx"
+def lock_dir(home: Path | None = None) -> Path:
+    """The folder of the lock: ~/.cache/chroma/onnx_models."""
+    return Path(home if home is not None else Path.home()) / MODELS
 
 
-def ready(home: Path | None = None) -> bool:
-    """The model there, as ChromaDB sees it: its six files, every one of them."""
-    folder = model_dir(home)
-    return all((folder / name).exists() for name in FILES)
+def _in_process(path: Path) -> dict:
+    """This process's hold on the lock at ``path``, shared by every copy of this module (the
+    conftest, the harness and a test each load their own, by its path): a thread lock, and how
+    deep the hold goes."""
+    registry = sys.__dict__.setdefault("_eregion_flk1_locks", {})
+    return registry.setdefault(os.path.abspath(path), {"thread": threading.RLock(), "depth": 0})
 
 
 @contextlib.contextmanager
-def held(home: Path | None = None):
-    """The file lock beside the model (flock: released when the process ends, even killed). The
-    processes that prepare the model take it in turn; without fcntl (not POSIX), no lock."""
+def held(folder: Path | None = None, say=print):
+    """The file lock in ``folder`` (default ~/.cache/chroma/onnx_models): flock, released when the
+    process ends, even killed. Without fcntl (not POSIX), no lock. A lock that cannot be taken —
+    a cache not writable (one root still owns, from the old image: make fix-state-ownership) — is
+    said, and the body runs without it, as before FLK1: never an error of its own.
+
+    Re-entrant in a process: the harness's preparation or CI8's step holds it, then ChromaDB's
+    check-then-fetch, wrapped by the suite, asks for it again — a second flock on the same file,
+    by another open file description, would wait on itself for ever. The threads of a process
+    take it in turn."""
+    path = Path(folder if folder is not None else lock_dir()) / LOCK
+    mine = _in_process(path)
+    with mine["thread"]:
+        if mine["depth"]:
+            mine["depth"] += 1
+            try:
+                yield
+            finally:
+                mine["depth"] -= 1
+            return
+        mine["depth"] = 1
+        try:
+            with _flock(path, say):
+                yield
+        finally:
+            mine["depth"] = 0
+
+
+@contextlib.contextmanager
+def _flock(path: Path, say):
+    """The lock between processes."""
     try:
         import fcntl
     except ImportError:            # pragma: no cover — the suite runs on Linux and macOS
         yield
         return
-    path = Path(home if home is not None else Path.home()) / MODEL.parent / LOCK
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "a") as lock:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        lock = open(path, "a")
+    except OSError as exc:         # said, never a verdict
+        say(f"ChromaDB's model: the lock {path} could not be taken ({type(exc).__name__}: {exc}); "
+            f"the model is fetched without it, as before FLK1 — two processes may fetch it at once. "
+            f"A cache root owns: make fix-state-ownership.")
+        lock = None
+    if lock is None:               # outside the except: an error of the body is never chained to it
+        yield
+        return
+    with lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         try:
             yield
         finally:
             fcntl.flock(lock, fcntl.LOCK_UN)
+
+
+def wrap(module, say=print) -> bool:
+    """ChromaDB's check-then-fetch, wrapped in the lock: True when wrapped (now or before), False
+    when this ChromaDB has no such method — said: its fetches are then not serialized."""
+    cls = getattr(module, CLASS, None)
+    original = getattr(cls, METHOD, None) if cls is not None else None
+    if not callable(original):
+        say(f"ChromaDB's model: {CLASS}.{METHOD} is not in {getattr(module, '__name__', module)} — "
+            f"this ChromaDB fetches its model unlocked, two processes may fetch it at once; "
+            f"see scripts/chroma_model.py (FLK1).")
+        return False
+    if getattr(original, "_flk1_locked", False):
+        return True
+
+    @functools.wraps(original)
+    def locked(self, *args, **kwargs):
+        with held(Path(self.DOWNLOAD_PATH).parent, say=say):
+            return original(self, *args, **kwargs)
+
+    locked._flk1_locked = True
+    setattr(cls, METHOD, locked)
+    return True
+
+
+class _ThenWrap:
+    """The module's own loader, then `wrap` once it has run."""
+
+    def __init__(self, loader, then):
+        self._loader, self._then = loader, then
+
+    def __getattr__(self, name):
+        return getattr(self._loader, name)
+
+    def create_module(self, spec):
+        return self._loader.create_module(spec)
+
+    def exec_module(self, module):
+        self._loader.exec_module(module)
+        self._then(module)
+
+
+class _OnImport:
+    """A finder that finds nothing itself: the target's spec as the other finders give it, its
+    loader followed by `then`. Once only."""
+
+    def __init__(self, target: str, then):
+        self.target, self.then, self.done = target, then, False
+
+    def find_spec(self, name, path=None, target=None):
+        if self.done or name != self.target:
+            return None
+        self.done = True
+        for finder in sys.meta_path:
+            find = getattr(finder, "find_spec", None)
+            if finder is self or find is None:
+                continue
+            spec = find(name, path, target)
+            if spec is not None:
+                if spec.loader is not None:
+                    spec.loader = _ThenWrap(spec.loader, self.then)
+                return spec
+        return None
+
+
+def lock_downloads(say=print, target: str = TARGET) -> bool | None:
+    """In this process, ChromaDB's fetches of its model taken under the lock: wrapped now when
+    ChromaDB is imported already (True, or False when the method is missing — said), else when
+    it is (None: nothing imported here, nothing fetched)."""
+    module = sys.modules.get(target)
+    if module is not None:
+        return wrap(module, say)
+    sys.meta_path.insert(0, _OnImport(target, lambda m: wrap(m, say)))
+    return None
 
 
 def fetch() -> bool | None:
@@ -74,24 +196,6 @@ def fetch() -> bool | None:
         return None
     functions.DefaultEmbeddingFunction()(["eregion"])
     return True
-
-
-def prepare_once(say=print, fetch=fetch) -> bool | None:
-    """The model made ready by one process at a time, under the lock: True when it is there
-    (already: nothing imported, nothing goes out; or fetched now), None when ChromaDB is not
-    installed, False when it could not be fetched — said, with its error, never raised: the
-    tests that need it fail on their own error, as before (CI6b)."""
-    with held():
-        if ready():
-            return True
-        try:
-            return fetch()
-        except Exception as exc:   # said, never a verdict
-            say(f"ChromaDB's embedding model could not be prepared before the tests "
-                f"({type(exc).__name__}: {exc}). The tests that embed a text fetch it themselves, "
-                f"and fail on it if it cannot be. Without a network, put it in ~/.cache/chroma "
-                f"first; if it is there but unreadable, remove ~/.cache/chroma/onnx_models (FLK1).")
-            return False
 
 
 def main() -> int:

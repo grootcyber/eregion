@@ -39,8 +39,10 @@ from __future__ import annotations
 import argparse
 import ast
 import concurrent.futures
+import contextlib
 import heapq
 import importlib
+import importlib.util
 import json
 import math
 import os
@@ -11608,6 +11610,20 @@ def _not_prepared(exc: Exception, say) -> bool:
     return False
 
 
+def _model_lock(say):
+    """FLK1 (#723): the file lock of scripts/chroma_model.py (`held`), beside the model, which the
+    test suite and CI8's step take too: a harness and a `pytest -n 4` started at once on an empty
+    cache never fetch the model beside each other. A lock that cannot be taken is said there, and
+    the preparation goes on without it; no chroma_model.py beside this file, no lock."""
+    path = Path(__file__).resolve().parent / "chroma_model.py"
+    if not path.is_file():
+        return contextlib.nullcontext()
+    spec = importlib.util.spec_from_file_location("_mutation_check_chroma_model", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.held(say=lambda text: say(text, flush=True))
+
+
 def prepare_embedding_model(say=print) -> bool | None:
     """ChromaDB's embedding model, made ready in this process: None when ChromaDB is not here
     (nothing to prepare), True when it is ready (fetched now, or there already: nothing goes out),
@@ -11621,7 +11637,8 @@ def prepare_embedding_model(say=print) -> bool | None:
     except Exception as exc:          # there, but it cannot start: chromadb 1.5.9 raises a RuntimeError
         return _not_prepared(exc, say)   # on import when sqlite3 is too old (CI6b, review)
     try:
-        functions.DefaultEmbeddingFunction()(["eregion"])
+        with _model_lock(say):
+            functions.DefaultEmbeddingFunction()(["eregion"])
     except Exception as exc:          # said, never hidden, never a verdict
         return _not_prepared(exc, say)
     say("ChromaDB's embedding model: ready in ~/.cache/chroma, before any run (CI6b)", flush=True)

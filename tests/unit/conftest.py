@@ -413,24 +413,22 @@ def _chroma_model_script():
 
 @pytest.fixture(scope="session", autouse=True)
 def chroma_model():
-    """FLK1 (#723): ChromaDB's embedding model, made ready once per session, before this process's
-    first test. Without it, on 11/11, in `pytest -n 4` with a throwaway HOME, two workers fetched it
-    into one ~/.cache/chroma at once (test_agent_nodes.py's real CycleMemory, test_containment.py's
-    campaign report and its index); ChromaDB removes an archive whose SHA-256 does not match, the
-    other's half-written one included, and test_containment.py failed (FileNotFoundError on
-    onnx.tar.gz). Each process, xdist's workers included, goes through `prepare_once`: a file lock
-    beside the model, under which the first fetches it and the others find it there; a model
-    already there is neither fetched nor loaded (no network, ChromaDB not even imported). Nothing
-    to do without chromadb (D1: a component's tests without Glorfindel's dependencies). A
-    preparation that fails is said (a warning), never a verdict: a test that embeds then fails on
-    its own error, as before."""
+    """FLK1 (#723): ChromaDB's embedding model, fetched by one process at a time. Without it, on
+    11/11, in `pytest -n 4` with a throwaway HOME, two workers fetched it into one ~/.cache/chroma
+    at once (test_agent_nodes.py's real CycleMemory, test_containment.py's campaign report and its
+    index); ChromaDB removes an archive whose SHA-256 does not match, the other's half-written one
+    included, and test_containment.py failed (FileNotFoundError on onnx.tar.gz). In each process,
+    xdist's workers included, `lock_downloads` wraps ChromaDB's own check-then-fetch in a file lock
+    beside the model, when ChromaDB is imported: lazily — a session that never embeds a text
+    fetches nothing (the CI jobs without the model's cache, a local run of a few files); the first
+    process that needs it fetches it, the others wait, then find it there. Nothing to do without
+    chromadb (D1: a component's tests without Glorfindel's dependencies). A lock that cannot be
+    taken, or a ChromaDB without the method, is said (a warning), never a verdict."""
     script = _chroma_model_script() if _present("chromadb") else None
     if script is None:
-        outcome = None
-    else:
-        import warnings
-        outcome = script.prepare_once(say=lambda text: warnings.warn(pytest.PytestWarning(text)))
-    return outcome
+        return None
+    import warnings
+    return script.lock_downloads(say=lambda text: warnings.warn(pytest.PytestWarning(text)))
 
 
 @pytest.hookimpl(trylast=True)

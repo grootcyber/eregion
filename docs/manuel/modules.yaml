@@ -1443,7 +1443,7 @@ briques:
   - id: s-modele-chroma
     composant: socle
     poste: s-prouver
-    nom: "ChromaDB's embedding model fetched once per test session, never by two workers at once"
+    nom: "ChromaDB's embedding model fetched by one test process at a time, only when a test needs it"
     etat: main
     release: "0.5"
     lots: [FLK1]
