@@ -1,4 +1,4 @@
-"""H0: what goes to the hosted Glorfindel keeps it an observer.
+"""Imladris: what goes to the hosted Glorfindel keeps it an observer.
 
 The config pushed to the VM is human_only whatever the local one says, and the VM's
 Terraform grants it read rights on the bench only, without enrolling it as a target.
@@ -35,7 +35,7 @@ def test_pushed_config_is_human_only_for_every_asset():
     assert out["monitoring_backends"] == local["monitoring_backends"]
     assert out["exceptions"] == local["exceptions"]
     assert local["autonomy"]["default"] == "non_disruptive"  # the local file is untouched
-    assert report[0] == ("*", "human_only", "config de H0 non lue : toutes les VM en human_only")
+    assert report[0] == ("*", "human_only", "config d'Imladris non lue : toutes les VM en human_only")
 
 
 # ── BL1c (02/11): each VM's mode on H0 kept by the push, never a bolder one ─────────────────
@@ -54,7 +54,7 @@ def _h0(**autonomy):
 
 
 def _push(tmp_path, capsys, h0_text, *flags):
-    """host_config.py as `make glorfindel-host-push` runs it: H0's config read through ssh
+    """host_config.py as `make glorfindel-host-push` runs it: Imladris's config read through ssh
     into a file (empty when unread), the config sent, and what it says."""
     import yaml
     src, dst, h0 = tmp_path / "local.yaml", tmp_path / "out.yaml", tmp_path / "h0.yaml"
@@ -69,9 +69,9 @@ def _push(tmp_path, capsys, h0_text, *flags):
 
 
 def test_the_push_keeps_each_vm_s_mode_in_place_on_h0(tmp_path, capsys):
-    """M2363: gondolin and bree in non_disruptive on H0 (its posture on the bench) stay so; the
-    local config never makes one bolder (gondolin human_only there: H0's kept), a VM H0 does not
-    know stays human_only (the local non_disruptive never reaches H0), and so does the default.
+    """M2363: gondolin and bree in non_disruptive on Imladris (its posture on the bench) stay so; the
+    local config never makes one bolder (gondolin human_only there: Imladris's kept), a VM Imladris does not
+    know stays human_only (the local non_disruptive never reaches Imladris), and so does the default.
     Each VM is said, with the mode sent and where it comes from."""
     h0 = _h0(assets=[{"match": GONDOLIN, "mode": "non_disruptive"},
                      {"match": BREE, "mode": "non_disruptive"}])
@@ -79,9 +79,9 @@ def test_the_push_keeps_each_vm_s_mode_in_place_on_h0(tmp_path, capsys):
     assert modes == {GONDOLIN: "non_disruptive", BREE: "non_disruptive", NEW: "human_only"}
     assert autonomy.default == "human_only" and autonomy.allow_destructive == []
     lines = {line.split()[0]: line for line in said.splitlines()[1:]}
-    assert "non_disruptive" in lines[GONDOLIN] and "gardé de H0" in lines[GONDOLIN]
-    assert "non_disruptive" in lines[BREE] and "gardé de H0" in lines[BREE]
-    assert "human_only" in lines[NEW] and "inconnue de H0" in lines[NEW]
+    assert "non_disruptive" in lines[GONDOLIN] and "gardé d'Imladris" in lines[GONDOLIN]
+    assert "non_disruptive" in lines[BREE] and "gardé d'Imladris" in lines[BREE]
+    assert "human_only" in lines[NEW] and "inconnue d'Imladris" in lines[NEW]
 
 
 @pytest.mark.parametrize("h0_text, why", [
@@ -92,28 +92,28 @@ def test_the_push_keeps_each_vm_s_mode_in_place_on_h0(tmp_path, capsys):
     ("autonomy:\n  assets: {vm-celebrimbor-gondolin: non_disruptive}\n", "forme inconnue (autonomy)"),
 ], ids=["absent", "empty", "not-yaml", "a-list", "assets-not-a-list"])
 def test_an_unread_h0_config_sends_every_vm_human_only_and_says_so(tmp_path, capsys, h0_text, why):
-    """M2364: H0's config absent, unreadable or of another shape — nothing of it is trusted:
+    """M2364: Imladris's config absent, unreadable or of another shape — nothing of it is trusted:
     every VM in human_only, as before BL1c, and the push says why."""
     modes, _, said = _push(tmp_path, capsys, h0_text)
     assert set(modes.values()) == {"human_only"}
-    assert f"config de H0 {why} : toutes les VM en human_only" in said
+    assert f"config d'Imladris {why} : toutes les VM en human_only" in said
 
 
 def test_a_pattern_on_h0_is_never_carried_and_a_name_twice_is_the_first(tmp_path, capsys):
-    """M2368: a pattern on H0 (which the watch reads) is not carried — every VM it matches would
-    be made bolder: those VMs go to human_only, said; the same name twice: the first, the one H0
+    """M2368: a pattern on Imladris (which the watch reads) is not carried — every VM it matches would
+    be made bolder: those VMs go to human_only, said; the same name twice: the first, the one Imladris
     resolves."""
     h0 = _h0(assets=[{"match": "vm-celebrimbor-*", "mode": "non_disruptive"},
                      {"match": BREE, "mode": "human_only"},
                      {"match": BREE, "mode": "non_disruptive"}])
     modes, autonomy, said = _push(tmp_path, capsys, h0)
     assert modes == {GONDOLIN: "human_only", BREE: "human_only", NEW: "human_only"}
-    assert "motif sur H0, non reporté" in said
+    assert "motif sur Imladris, non reporté" in said
 
 
 def test_human_only_puts_every_vm_back_in_one_gesture(tmp_path, capsys):
     """M2366: HUMAN_ONLY=1 (--human-only), the emergency gesture: every VM back to human_only
-    whatever H0 holds, each said."""
+    whatever Imladris holds, each said."""
     h0 = _h0(assets=[{"match": GONDOLIN, "mode": "non_disruptive"},
                      {"match": BREE, "mode": "non_disruptive"}])
     modes, autonomy, said = _push(tmp_path, capsys, h0, "--human-only")
@@ -154,11 +154,11 @@ def test_a_config_the_watch_would_refuse_keeps_no_mode(tmp_path, capsys, autonom
         _parse_autonomy(autonomy)
     modes, _, said = _push(tmp_path, capsys, yaml.safe_dump({"autonomy": autonomy}))
     assert set(modes.values()) == {"human_only"}
-    assert f"config de H0 {why} : toutes les VM en human_only" in said
+    assert f"config d'Imladris {why} : toutes les VM en human_only" in said
 
 
 def test_what_h0_s_config_says_reaches_the_terminal_printable_only(tmp_path, capsys):
-    """A name read on H0, shown by the push, never carries an escape sequence to the operator's
+    """A name read on Imladris, shown by the push, never carries an escape sequence to the operator's
     terminal: every character that is not printable is shown as « ? »."""
     h0 = _h0(assets=[{"match": "vm-\x1b[2J\x1b]0;evil\x07x", "mode": "non_disruptive"}])
     _, _, said = _push(tmp_path, capsys, h0)
@@ -208,7 +208,7 @@ def test_host_terraform_reads_the_bench_and_is_no_target():
 
 def test_the_restore_s_neutralization_goes_to_each_vm_it_defends_never_to_h0():
     """SEC17: « Eregion Glorfindel Restore Neutralize » on each VM of restore_vms, each read on
-    Azure, for each principal that restores — never on the group, never H0's own identity; the
+    Azure, for each principal that restores — never on the group, never Imladris's own identity; the
     list kept in the repository, the principals never (M3217)."""
     tf = (HOST / "main.tf").read_text(encoding="utf-8")
     res = tf.split('resource "azurerm_role_assignment" "restore_neutralize"', 1)[1].split("\n}\n", 1)[0]
@@ -237,7 +237,7 @@ def test_the_staging_account_s_keys_go_to_that_account_alone_for_each_principal_
     """RST1 (#680): a restore checks `listKeys` on the staging account (403
     LinkedAuthorizationFailed on the bench, 09/11) — « Eregion Glorfindel Restore Staging » on that
     one account, read on Azure in the bench's group, for each principal that restores; never on
-    the group (it holds other storage accounts), never H0's identity; the account kept in the
+    the group (it holds other storage accounts), never Imladris's identity; the account kept in the
     repository; the role file listKeys alone."""
     tf = (HOST / "main.tf").read_text(encoding="utf-8")
     res = tf.split('resource "azurerm_role_assignment" "restore_staging"', 1)[1].split("\n}\n", 1)[0]
@@ -267,7 +267,7 @@ def test_the_staging_account_s_keys_go_to_that_account_alone_for_each_principal_
 def test_the_console_of_a_workstation_gets_the_session_drain_vm_by_vm():
     """SEC17 review (M3264): the console isolates what a human approves in its own process, and
     the session drain runs under its identity — once Run Command leaves the Restore role, it gets
-    the drain on each VM of session_drain_vms, never on the group, never H0's identity; not the bot."""
+    the drain on each VM of session_drain_vms, never on the group, never Imladris's identity; not the bot."""
     tf = (HOST / "main.tf").read_text(encoding="utf-8")
     res = tf.split('resource "azurerm_role_assignment" "session_drain_principals"', 1)[1].split("\n}\n", 1)[0]
     assert "for_each             = local.session_drain_others" in res
@@ -315,7 +315,7 @@ def test_host_env_carries_the_analysis_model_to_the_watch():
     """IA1: the hosted watch writes the campaign reports with the analysis model, never
     Glorfindel's. Set by the operator, it reaches host.env, then the watch through compose (a
     model's name, no secret: the common block); unset, it stays out (the code's default,
-    another model than Glorfindel's). Before, it was never copied: on H0, only by hand."""
+    another model than Glorfindel's). Before, it was never copied: on Imladris, only by hand."""
     operator = {"AZURE_SUBSCRIPTION_ID": "sub", "ANTHROPIC_API_KEY": "key",
                 "GLORFINDEL_LLM_MODEL": "anthropic/claude-haiku-5-5",
                 "EREGION_ANALYSIS_MODEL": "anthropic/claude-opus-4-7"}
@@ -453,7 +453,7 @@ def test_a_local_model_without_the_analysis_key_is_said_not_refused(tmp_path, mo
      {"OPENAI_API_KEY"}),
 ])
 def test_host_env_carries_no_other_providers_key(model, extra, carried):
-    """An operator's .envrc may hold every provider's key: host.env — H0, then the watch —
+    """An operator's .envrc may hold every provider's key: host.env — Imladris, then the watch —
     carries only those of the configured models' providers (the decision's, the analysis')."""
     keys = ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "MISTRAL_API_KEY", "AZURE_API_KEY",
             "AZURE_API_BASE", "AZURE_API_VERSION")
@@ -574,7 +574,7 @@ def _interpolate(spec: str, dotenv: dict) -> str:
 
 
 def test_the_generated_host_env_reaches_each_container_with_only_its_secrets():
-    """host.env (host_env.py) is the one .env compose reads on H0: render each container's
+    """host.env (host_env.py) is the one .env compose reads on Imladris: render each container's
     environment from it as compose would, then look for every secret's value."""
     # OL1: host.env carries the keys of the models' providers only — two here, both checked.
     operator = {k: f"value-of-{k}" for k in host_env.COPIED} | {

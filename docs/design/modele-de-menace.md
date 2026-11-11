@@ -335,7 +335,7 @@ direct (FS1e), et l'état local qu'ils écrivent reste à fermer (FS1f). Le repo
 conception — S, T, E de la ligne de la console, le choix assumé lu « tous les verbes de la file » —
 se fait quand FS1e ferme l'appel direct ([`file-actions-signee.md`](file-actions-signee.md), §3.3).
 
-**Ouvert** : un journal hors de l'hôte que son identité ne peut pas effacer — planifié ; le canal sans point de terminaison public — planifié  ; l'action approuvée confiée à la watch seule, par une file signée — planifié : #413 ; une identité managée par conteneur sur un même hôte — planifié ; l'identité d'Imladris, partagée par la watch, la console et le bot — planifié ; les lectures de Graph d'Imladris, valables pour ses trois conteneurs — planifié : #638 ; la portée d'une technique Stratus, celle de l'identité d'Orodruin — planifié : #608.
+**Ouvert** : un journal hors de l'hôte que son identité ne peut pas effacer — planifié ; le canal sans point de terminaison public — planifié  ; l'action approuvée confiée à la watch seule, par une file signée — planifié : #413 ; une identité managée par conteneur sur un même hôte — planifié ; l'identité unique d'Imladris, que partagent watch, console et bot — planifié ; les lectures de Graph d'Imladris, valables pour ses trois conteneurs — planifié : #638 ; la portée d'une technique Stratus, celle de l'identité d'Orodruin — planifié : #608.
 
 ---
 

@@ -1,12 +1,12 @@
-"""WL1 (#595): the bench's rules reach the client's layer of the hosted Glorfindel (H0), merged.
+"""WL1 (#595): the bench's rules reach the client's layer of the hosted Glorfindel (Imladris), merged.
 
-`make glorfindel-host-client-rules` reads H0's `~/.glorfindel/client_rules.yaml` by ssh, merges each
+`make glorfindel-host-client-rules` reads Imladris's `~/.glorfindel/client_rules.yaml` by ssh, merges each
 rule of `infra/glorfindel-host/client_rules.bench.yaml` into it by name
 (`infra/glorfindel-host/host_client_rules.py`), reads the result back as the watch will, and puts it
-in place on H0 under the layer's lock, only if the layer did not change since it was read. Then the
-watch restarts and `glorfindel rules` says what runs. A rule approved on H0 is never lost.
+in place on Imladris under the layer's lock, only if the layer did not change since it was read. Then the
+watch restarts and `glorfindel rules` says what runs. A rule approved on Imladris is never lost.
 
-The recipe really runs, against a fake `ssh` that runs its command in a directory standing for H0's
+The recipe really runs, against a fake `ssh` that runs its command in a directory standing for Imladris's
 home, a fake `scp` that copies there, and a fake `docker` that records its calls; the real `flock`
 holds the lock. No VM, no network, no Azure, no model.
 """
@@ -152,7 +152,7 @@ def test_a_stale_copy_of_the_base_is_refused_before_anything_is_sent(tmp_path):
 @needs_tools
 @pytest.mark.parametrize("h0", [{"disable": [NAME]}, {"rules": [{"name": NAME, "enabled": False}]}])
 def test_a_disable_of_the_same_name_on_h0_does_not_stop_the_pushed_rule(tmp_path, h0):
-    """WL1 (review): `disable: [<name>]` on H0 drops the BASE rule of that name only; the pushed
+    """WL1 (review): `disable: [<name>]` on Imladris drops the BASE rule of that name only; the pushed
     rule is a client rule, and it loads in its place (`merge_layers`). A rule of that name
     `enabled: false` is replaced by the push. Either way the target does not lie: what it says
     pushed is what the watch runs — nothing to refuse."""
@@ -221,16 +221,16 @@ def test_merge_refuses_a_rule_the_watch_would_skip(tmp_path):
 
 
 def test_merge_reads_a_rule_that_takes_a_guid_of_h0_s_watch_with_a_stand_in_and_says_so(tmp_path, monkeypatch):
-    """CAN2: the canary's appid is H0's, never this poste's — the push reads the copy back with a
+    """CAN2: the canary's appid is Imladris's, never this poste's — the push reads the copy back with a
     stand-in GUID (the copy checked as the watch reads it with its variable), writes it as it is
-    (`${…}` kept: H0's watch replaces it), and says that H0's watch needs the variable."""
+    (`${…}` kept: Imladris's watch replaces it), and says that Imladris's watch needs the variable."""
     monkeypatch.delenv("EREGION_RULE_CANARY_APPID", raising=False)
     out = tmp_path / "out.yaml"
     said = host_client_rules.merge(BENCH, tmp_path / "absent.yaml", out)
     assert f"ajoutée : « {CANARY} »" in said
-    assert any("EREGION_RULE_CANARY_APPID" in line and "H0" in line and CANARY in line for line in said)
+    assert any("EREGION_RULE_CANARY_APPID" in line and "Imladris" in line and CANARY in line for line in said)
     assert f"ajoutée : « {SIGNIN} »" in said and _rules(out)[SIGNIN] == _rules(BENCH)[SIGNIN]
-    assert any("EREGION_RULE_CANARY_APPID" in line and "H0" in line and SIGNIN in line for line in said)
+    assert any("EREGION_RULE_CANARY_APPID" in line and "Imladris" in line and SIGNIN in line for line in said)
     assert _rules(out)[CANARY] == _rules(BENCH)[CANARY]
     assert "${EREGION_RULE_CANARY_APPID}" in _rules(out)[CANARY]["query"]
     assert host_client_rules._STAND_IN not in out.read_text()

@@ -830,7 +830,7 @@ celebrimbor-auditd-up:
 	@$(TF) workspace select $(INSTANCE)
 	@$(TF) apply$(if $(YES), -auto-approve) $(AUDITD_TARGETS)
 
-# Imladris : la charge réelle de bree (petit site + routine d'admin), par Run Command —
+# Lot H0 : la charge réelle de bree (petit site + routine d'admin), par Run Command —
 # jamais par le custom_data (le changer remplace la VM). Idempotent.
 celebrimbor-workload:
 	az vm run-command invoke -g rg-celebrimbor$(if $(filter-out default,$(INSTANCE)),-$(INSTANCE)) \

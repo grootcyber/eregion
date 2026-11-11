@@ -5897,7 +5897,7 @@ TESTS["M2362"] = "tests/unit/test_hosted_report.py"
 HCF = "infra/glorfindel-host/host_config.py"
 MUTANTS += [
     ("M2363", "the push carries the local config's mode of a VM H0 does not know: bolder than in place (BL1c)",
-     HCF, '            report.append((name, HUMAN, "inconnue de H0 : human_only"))\n',
+     HCF, '            report.append((name, HUMAN, "inconnue d\'Imladris : human_only"))\n',
      '            kept.append({"match": name, "mode": rule.get("mode")})\n'),
     ("M2364", "H0's config of another shape trusted: the push stops, nothing said (BL1c)", HCF,
      "    if not isinstance(cfg, dict):\n        return None, \"forme inconnue\"\n", ""),

@@ -8,7 +8,7 @@
     "workstation": "100.64.0.1",
   },
   "acls": [
-    // 22: the workstation's SSH server, by key alone. The console of H0 goes through it too: the phone's
+    // 22: the workstation's SSH server, by key alone. The console of Imladris goes through it too: the phone's
     // own SSH tunnel to the workstation's 127.0.0.1:7007 (decision of Jonathan, 10/11).
     {"action": "accept", "src": ["phone"], "dst": ["workstation:22"]},
   ],
