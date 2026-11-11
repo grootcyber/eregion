@@ -1,7 +1,8 @@
 """IDM1 (#687): the identity map (docs/design/identites.md) holds every identity the repository
 declares — a role of infra/identities/, a Terraform identity or right, an identity variable of the
 compose and the example environments, a workflow's secret or write permission — and fails on one
-added without its line (scripts/identity_map.py; mutants M4765–M4769).
+added without its line, an assignment whose role or scope changes, a right the matrix does not name
+(scripts/identity_map.py; mutants M4765–M4769, M4773–M4775).
 
 Each « added without its line » case runs on a copy of exactly the files the reader reads, so the
 real map is proved clean first, then broken by one declaration. Nothing here calls Azure, GitHub or
@@ -58,20 +59,23 @@ def test_the_reader_finds_each_kind_of_declaration():
     keys = set(idm.declarations())
     for key in ("infra/identities/glorfindel-restore-staging.json",
                 "infra/glorfindel-host:azurerm_linux_virtual_machine.host#identity",
-                "infra/glorfindel-host:azurerm_role_assignment.restore_staging",
                 "infra/orodruin:azurerm_role_definition.injector_vm",
-                "infra/orodruin:azuread_app_role_assignment.graph_read",
                 "infra/terraform:azuread_application.bench_reader",
                 "infra/terraform:azurerm_linux_virtual_machine.baseline#admin_ssh_key",
                 "env:EREGION_CONSOLE_AZURE_CLIENT_SECRET", "env:DISCORD_BOT_TOKEN", "env:EREGION_HARNESS_KEY",
                 "workflow:canary-azurerm.yml:canary:id-token", "workflow:pip-audit.yml:*:issues",
                 "workflow:notify.yml:secrets.EREGION_DISCORD_WEBHOOK_CI"):
         assert key in keys, key
+    for prefix in ("infra/glorfindel-host:azurerm_role_assignment.restore_staging [Eregion Glorfindel Restore Staging @ ",
+                   "infra/orodruin:azurerm_role_assignment.vm_injector [azurerm_role_definition.injector_vm @ ",
+                   "infra/orodruin:azuread_app_role_assignment.graph_read ["):
+        assert any(k.startswith(prefix) for k in keys), prefix
     # What says no identity stays out: a subscription, a workspace, a channel's URL, a data source.
     for key in ("env:AZURE_SUBSCRIPTION_ID", "env:AZURE_WORKSPACE_ID", "env:EREGION_EXERCISE_CHANNEL",
                 "env:DISCORD_CHANNEL_ID"):
         assert key not in keys, key
-    assert not any(":data." in k or "azuread_service_principal.msgraph" in k for k in keys)
+    addresses = {k.split(" [")[0] for k in keys}
+    assert not any(":data." in k or "azuread_service_principal.msgraph" in k for k in addresses)
 
 
 ADDED = {
@@ -79,8 +83,29 @@ ADDED = {
                     '{"Name": "Eregion Glorfindel Probe", "Actions": []}\n', None,
                     "infra/identities/glorfindel-probe.json"),
     "a role assignment": ("infra/orodruin/main.tf",
-                          '\nresource "azurerm_role_assignment" "probe" {\n  scope = "x"\n}\n', None,
-                          "infra/orodruin:azurerm_role_assignment.probe"),
+                          '\nresource "azurerm_role_assignment" "probe" {\n  scope = "x"\n'
+                          '  role_definition_name = "Owner"\n}\n', None,
+                          "infra/orodruin:azurerm_role_assignment.probe [Owner @ x]"),
+    "a key vault access policy": ("infra/glorfindel-host/main.tf",
+                                  '\nresource "azurerm_key_vault_access_policy" "probe" {\n  key_vault_id = "x"\n}\n',
+                                  None, "infra/glorfindel-host:azurerm_key_vault_access_policy.probe"),
+    "an azapi role assignment": ("infra/terraform/chaos.tf",
+                                 '\nresource "azapi_resource" "probe" {\n'
+                                 '  type      = "Microsoft.Authorization/roleAssignments@2022-04-01"\n'
+                                 '  body = {\n    properties = {}\n  }\n}\n',
+                                 None, "infra/terraform:azapi_resource.probe"),
+    "an assignment in a .tf.json": ("infra/orodruin/probe.tf.json",
+                                    '{"resource": {"azurerm_role_assignment": {"probe": {"scope": "x", '
+                                    '"role_definition_name": "Owner"}}}}\n',
+                                    None, "infra/orodruin:azurerm_role_assignment.probe [Owner @ x]"),
+    "a dynamic identity block": ("infra/glorfindel-host/main.tf",
+                                 '\nresource "azurerm_storage_account" "probe" {\n  dynamic "identity" {\n'
+                                 '    for_each = []\n    content {\n      type = "SystemAssigned"\n    }\n  }\n}\n',
+                                 None, "infra/glorfindel-host:azurerm_storage_account.probe#identity"),
+    "an identity block deeper down": ("infra/orodruin/main.tf",
+                                      '\nresource "azurerm_container_group" "probe" {\n  container {\n'
+                                      '    identity {\n      type = "SystemAssigned"\n    }\n  }\n}\n',
+                                      None, "infra/orodruin:azurerm_container_group.probe#identity"),
     "a role definition": ("infra/terraform/chaos.tf",
                           '\nresource "azurerm_role_definition" "probe" {\n  name = "x"\n}\n', None,
                           "infra/terraform:azurerm_role_definition.probe"),
@@ -109,6 +134,20 @@ ADDED = {
                                            "env:PROBE_CLIENT_ID"),
     "a workflow's secret": (".github/workflows/roadmap.yml", "\n# ${{ secrets.PROBE_WEBHOOK }}\n", None,
                             "workflow:roadmap.yml:secrets.PROBE_WEBHOOK"),
+    "a workflow's secret by its index": (".github/workflows/ci.yml", "\n# ${{ secrets['PROBE_TOKEN'] }}\n", None,
+                                         "workflow:ci.yml:secrets.PROBE_TOKEN"),
+    "a job that inherits every secret": (".github/workflows/probe.yaml",
+                                         "on: push\njobs:\n  call:\n    uses: ./.github/workflows/ci.yml\n"
+                                         "    secrets: inherit\n", None, "workflow:probe.yaml:call:secrets-inherit"),
+    "a password": (".envrc.example", "\n# export PROBE_PASSWORD=x\n", None, "env:PROBE_PASSWORD"),
+    "a SAS": ("infra/orodruin/orodruin.env.example", "\nEREGION_CHANNEL_SAS=\n", None, "env:EREGION_CHANNEL_SAS"),
+    "a connection string": ("team.env.example", "\nPROBE_CONNECTION_STRING=\n", None, "env:PROBE_CONNECTION_STRING"),
+    "a fingerprint": ("infra/glorfindel-host/host.env.example", "\nPROBE_SSH_FINGERPRINT=\n", None,
+                      "env:PROBE_SSH_FINGERPRINT"),
+    "a certificate": ("infra/glorfindel-host/host.env.example", "\nEREGION_PROBE_CERT=\n", None,
+                      "env:EREGION_PROBE_CERT"),
+    "a secret beside a client": ("infra/glorfindel-host/host.env.example", "\nEREGION_TOTP_SECRET=\n", None,
+                                 "env:EREGION_TOTP_SECRET"),
     "a job's OIDC token": (".github/workflows/ci.yml", None,
                            ("  test:\n", "  test:\n    permissions:\n      id-token: write\n"),
                            "workflow:ci.yml:test:id-token"),
@@ -145,8 +184,76 @@ def test_a_line_of_the_register_the_repository_no_longer_declares_fails(copy):
     _edit(copy / "infra/orodruin/main.tf", 'resource "azurerm_role_assignment" "channel_operator" {',
           'resource "azurerm_storage_blob" "channel_operator" {')
     found = idm.problems(copy)
-    assert any(p.startswith("infra/orodruin:azurerm_role_assignment.channel_operator : au registre, mais le dépôt "
-                            "ne la déclare plus") for p in found), found
+    assert any(p.startswith("infra/orodruin:azurerm_role_assignment.channel_operator [Storage Blob Data Contributor @ "
+                            "azurerm_storage_container.exercises] : au registre, mais le dépôt ne la déclare plus")
+               for p in found), found
+
+
+_BENCH_READER = ('resource "azurerm_role_assignment" "bench_reader" {\n'
+                 "  scope                = data.azurerm_resource_group.bench.id\n"
+                 '  role_definition_name = "Reader"\n')
+
+
+@pytest.mark.parametrize("old,new,key", [
+    ('role_definition_name = "Reader"', 'role_definition_name = "Contributor"',
+     "infra/glorfindel-host:azurerm_role_assignment.bench_reader [Contributor @ data.azurerm_resource_group.bench]"),
+    ("scope                = data.azurerm_resource_group.bench.id",
+     "scope                = data.azurerm_subscription.current.id",
+     "infra/glorfindel-host:azurerm_role_assignment.bench_reader [Reader @ data.azurerm_subscription.current]"),
+], ids=["role", "scope"])
+def test_an_assignment_whose_role_or_scope_changes_is_a_new_key(copy, old, new, key):
+    _edit(copy / "infra/glorfindel-host/main.tf", _BENCH_READER, _BENCH_READER.replace(old, new))
+    found = idm.problems(copy)
+    assert any(p.startswith(key + " ") and "sans sa ligne" in p for p in found), found
+    assert any(p.startswith("infra/glorfindel-host:azurerm_role_assignment.bench_reader [Reader @ "
+                            "data.azurerm_resource_group.bench] : au registre, mais le dépôt ne la déclare plus")
+               for p in found), found
+
+
+RIGHTS = {
+    "an action added to a role file": (
+        "infra/identities/glorfindel-response.json",
+        '    "Microsoft.Network/networkInterfaces/write",\n',
+        '    "Microsoft.Network/networkInterfaces/write",\n    "Microsoft.Compute/virtualMachines/delete",\n',
+        "Microsoft.Compute/virtualMachines/delete"),
+    "a not-action added to a role file": (
+        "infra/identities/glorfindel-restore.json", '"NotActions": [],',
+        '"NotActions": ["Microsoft.Storage/storageAccounts/delete"],', "Microsoft.Storage/storageAccounts/delete"),
+    "an action added to a Terraform role definition": (
+        "infra/orodruin/main.tf", '      "Microsoft.Compute/virtualMachines/runCommand/action",\n',
+        '      "Microsoft.Compute/virtualMachines/runCommand/action",\n'
+        '      "Microsoft.Compute/virtualMachines/extensions/write",\n',
+        "Microsoft.Compute/virtualMachines/extensions/write"),
+    "a Graph permission": (
+        "infra/orodruin/main.tf", 'toset(["Application.Read.All", "RoleManagement.Read.Directory"])',
+        'toset(["Application.Read.All", "RoleManagement.Read.Directory", "Directory.ReadWrite.All"])',
+        "Directory.ReadWrite.All"),
+    "a directory role": (
+        "infra/terraform/entra_bench_unit.tf", '  entra_role_templates = {\n',
+        '  entra_role_templates = {\n    "Privileged Role Administrator" = "00000000-0000-0000-0000-000000000001"\n',
+        "Privileged Role Administrator"),
+}
+
+
+@pytest.mark.parametrize("case", sorted(RIGHTS))
+def test_a_right_the_matrix_does_not_name_fails(copy, case):
+    rel, old, new, right = RIGHTS[case]
+    _edit(copy / rel, old, new)
+    found = idm.problems(copy)
+    assert any(p.startswith(f"{right} ({rel}) : un droit que le dépôt déclare, nommé nulle part") for p in found), found
+    # Named in the matrix, between backticks, and it holds again.
+    _edit(copy / idm.DOC, "### 3.1 Imladris\n", f"Le droit de l'essai : `{right}`.\n\n### 3.1 Imladris\n")
+    assert [p for p in idm.problems(copy) if right in p] == []
+
+
+def test_every_action_of_every_role_is_named_in_the_matrix():
+    names = idm.named_rights()
+    for action in ("Microsoft.Compute/virtualMachines/write", "Microsoft.Compute/disks/write",
+                   "Microsoft.Storage/storageAccounts/write", "Microsoft.Network/networkInterfaces/write",
+                   "Microsoft.Network/publicIPAddresses/join/action", "Microsoft.Compute/virtualMachines/powerOff/action",
+                   "Microsoft.Authorization/roleAssignments/read", "Application.ReadWrite.OwnedBy", "User Administrator"):
+        assert action in names, action
+    assert idm.problems() == []
 
 
 def test_a_register_row_naming_an_unknown_line_fails(copy):

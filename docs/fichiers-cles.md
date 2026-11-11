@@ -348,7 +348,8 @@ scripts/component_check.py → D1 : chaque composant tourne seul — Glorfindel,
 scripts/identity_map.py → IDM1 : la carte des identités (docs/design/identites.md) tenue à ce que le dépôt déclare —
                         les rôles de infra/identities/, chaque identité ou droit Terraform, chaque variable d'identité
                         du compose et des environnements d'exemple, chaque secret et permission d'écriture des
-                        workflows ont leur ligne au registre (§4) ; `check` dit ce qui manque, `list` ce que le dépôt
+                        workflows ont leur ligne au registre (§4), une attribution par son rôle et sa portée ; chaque
+                        action des rôles nommée dans la matrice (§3) ; `check` dit ce qui manque, `list` ce que le dépôt
                         déclare ; ne lit ni un état, ni un tfvars, ni un host.env, ni un .envrc ; tests :
                         tests/unit/test_identity_map.py.
 
