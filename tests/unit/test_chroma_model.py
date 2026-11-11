@@ -1,6 +1,6 @@
 """FLK1 (#723): ChromaDB's embedding model, fetched by one process at a time (scripts/chroma_model.py:
 `held`, `wrap`, `lock_downloads`; tests/unit/conftest.py, `chroma_model`). Mutants M4790–M4794,
-M4807–M4809.
+M4810–M4813.
 
 On 11/11, in `pytest -n 4` with a throwaway HOME, two workers fetched the model into the same
 ~/.cache/chroma at once — test_agent_nodes.py through a real CycleMemory, test_containment.py
@@ -194,7 +194,7 @@ def test_a_process_that_holds_the_lock_takes_it_again_without_waiting_on_itself(
     another open file description would wait on itself for ever: seen when this lot first ran
     test_mutation_shards.py."""
     proc = subprocess.run([sys.executable, "-c", _NESTED, str(SCRIPT), str(tmp_path / "onnx_models")],
-                          capture_output=True, text=True, timeout=60)
+                          capture_output=True, text=True, timeout=20)   # waiting on itself: killed here
     assert proc.returncode == 0 and proc.stdout.strip() == "nested", proc.stdout + proc.stderr
 
 

@@ -1,9 +1,9 @@
 """FLK1 (#723): ChromaDB's embedding model fetched by one process at a time — the suite wraps
-ChromaDB's own check-then-fetch in a file lock, lazily (M4790, the defect back; M4792; M4808 when
+ChromaDB's own check-then-fetch in a file lock, lazily (M4790, the defect back; M4792; M4811 when
 ChromaDB is imported after the fixture), the lock taken between processes (M4791) and by the
-harness too (M4809); a lock that cannot be taken, or a ChromaDB without the method, is said, never
-an error of its own (M4793, M4807). The guard of Imladris's name reads `git ls-files -z`: a name
-that is not ASCII is read, never skipped (M4794). M4790–M4794, then M4807–M4809 (review 1).
+harness too (M4812); a lock that cannot be taken, or a ChromaDB without the method, is said, never
+an error of its own (M4793, M4810). The guard of Imladris's name reads `git ls-files -z`: a name
+that is not ASCII is read, never skipped (M4794). M4790–M4794, then M4810–M4812 (review 1); the lock re-entrant in a process (M4813).
 
 The form of a lot's file, as scripts/mutation_check.py loads it: MUTANTS, TESTS (its own ids),
 optionally TESTS_ALSO and CONTROL; its paths as plain strings.
@@ -35,18 +35,24 @@ MUTANTS = [
               "skipped unsaid (FLK1)", GUARD,
      ('["git", "ls-files", "-z"]', 'names = out.split("\\0")'),
      ('["git", "ls-files"]', 'names = out.split("\\n")')),
-    ("M4807", "a ChromaDB without the method fetches unlocked, unsaid: the race back with an upgrade "
+    ("M4810", "a ChromaDB without the method fetches unlocked, unsaid: the race back with an upgrade "
               "(FLK1, review 1)", SCRIPT,
      "        say(f\"ChromaDB's model: {CLASS}.{METHOD} is not in",
      "        (lambda *_, **__: None)(f\"ChromaDB's model: {CLASS}.{METHOD} is not in"),
-    ("M4808", "ChromaDB imported after the fixture never wrapped: the race back in every worker that "
+    ("M4811", "ChromaDB imported after the fixture never wrapped: the race back in every worker that "
               "imports it later (FLK1, review 1)", SCRIPT,
      "    sys.meta_path.insert(0, _OnImport(target, lambda m: wrap(m, say)))\n",
      ""),
-    ("M4809", "the harness prepares the model outside the lock: a harness and a `pytest -n 4` fetch it "
+    ("M4812", "the harness prepares the model outside the lock: a harness and a `pytest -n 4` fetch it "
               "beside each other (FLK1, review 1)", HARNESS,
      "        with _model_lock(say):\n            functions.DefaultEmbeddingFunction()([\"eregion\"])\n",
      "        with contextlib.nullcontext():\n            functions.DefaultEmbeddingFunction()([\"eregion\"])\n"),
+]
+MUTANTS += [
+    ("M4813", "the lock not re-entrant: the harness (or CI8's step) holds it, then ChromaDB, wrapped, waits "
+              "on it for ever (FLK1, review 1)", SCRIPT,
+     '        if mine["depth"]:\n',
+     "        if False:\n"),
 ]
 TESTS = {
     "M4790": f"{T}test_workers_that_embed_at_once_fetch_the_model_once "
@@ -56,7 +62,8 @@ TESTS = {
     "M4792": T + "test_chromadb_s_check_then_fetch_runs_under_the_lock",
     "M4793": T + "test_a_cache_that_is_not_writable_is_said_and_chromadb_goes_on_as_before",
     "M4794": "tests/unit/test_host_name.py::test_a_tracked_file_whose_name_is_not_ascii_is_read",
-    "M4807": T + "test_a_chromadb_without_the_method_is_said",
-    "M4808": T + "test_chromadb_imported_after_the_fixture_is_wrapped_when_it_is",
-    "M4809": "tests/unit/test_mutation_shards.py::test_the_harness_prepares_the_model_under_the_suite_s_lock",
+    "M4810": T + "test_a_chromadb_without_the_method_is_said",
+    "M4811": T + "test_chromadb_imported_after_the_fixture_is_wrapped_when_it_is",
+    "M4812": "tests/unit/test_mutation_shards.py::test_the_harness_prepares_the_model_under_the_suite_s_lock",
+    "M4813": T + "test_a_process_that_holds_the_lock_takes_it_again_without_waiting_on_itself",
 }
