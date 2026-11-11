@@ -933,6 +933,24 @@
    "doc": "docs/design/levee-probation.md"
   },
   {
+   "id": "g-levee-probation-code",
+   "composant": "glorfindel",
+   "poste": "g-agir",
+   "nom": "The lift into probation itself: the rule, the probation and its ports, the cards, the exercise as a real incident, measured on the bench",
+   "etat": "prevue",
+   "release": "0.6",
+   "lots": [
+    "LEV3",
+    "LEV4",
+    "LEV5",
+    "LEV6",
+    "LEV7",
+    "LEV8"
+   ],
+   "issue": 690,
+   "doc": "docs/design/levee-probation.md"
+  },
+  {
    "id": "g-memoire-source",
    "composant": "glorfindel",
    "poste": "g-memoire",
