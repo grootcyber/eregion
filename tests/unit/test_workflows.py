@@ -1617,6 +1617,35 @@ def test_the_gate_runs_ci_s_macos_job_and_its_terraform_tests_word_for_word():
     assert jobs["terraform"]["env"] == ci["terraform-test"]["env"] == {"CHECKPOINT_DISABLE": "1"}
 
 
+def test_the_jobs_that_install_terraform_refresh_hashicorp_s_source_alone():
+    """CI11 (#728): on 11/11, Ubuntu's mirrors did not resolve for hours (security.ubuntu.com), and a
+    pull request's Terraform job failed twice on `apt-get update`, its code nothing to do with it. The
+    jobs that install Terraform from HashiCorp's apt repository refresh that source alone: an outage of
+    Ubuntu's mirrors no longer fails them, and `Error-Mode=any` still holds for HashiCorp's index. A job
+    is found by what it runs (HashiCorp's apt repository, or `apt-get install … terraform`), never by
+    the name of its step."""
+    wf = ROOT / ".github" / "workflows"
+
+    def runs(job: dict) -> list[str]:
+        return [s.get("run") or "" for s in job.get("steps") or []]
+
+    found = {}
+    for f in sorted(wf.glob("*.yml")):
+        for name, job in (_load(f).get("jobs") or {}).items():
+            text = "\n".join(runs(job))
+            if "apt.releases.hashicorp.com" in text or re.search(r"apt-get install[^\n]*\bterraform\b", text):
+                found[(f.name, name)] = text
+    assert sorted(found) == sorted([("canary-azurerm.yml", "canary"), ("ci.yml", "terraform-test"),
+                                    ("release-gate.yml", "terraform")]), sorted(found)
+    for where, text in found.items():
+        updates = re.findall(r"apt-get update(?:[^\n]*\\\n)*[^\n]*", text)
+        assert updates, where
+        for update in updates:
+            assert "Error-Mode=any" in update, (where, update)
+            assert "Dir::Etc::sourcelist=/etc/apt/sources.list.d/hashicorp.list" in update, (where, update)
+            assert "Dir::Etc::sourceparts=-" in update, (where, update)
+
+
 def test_the_last_job_waits_for_every_job_that_blocks_never_macos():
     """CI10b (#581, L7): the total needs every job but the one that informs — on 05/11 it concluded
     12 min after the last job that blocks, macOS waiting for a runner. macOS says itself."""
