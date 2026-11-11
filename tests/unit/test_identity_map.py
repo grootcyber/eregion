@@ -85,7 +85,7 @@ ADDED = {
     "a role assignment": ("infra/orodruin/main.tf",
                           '\nresource "azurerm_role_assignment" "probe" {\n  scope = "x"\n'
                           '  role_definition_name = "Owner"\n}\n', None,
-                          "infra/orodruin:azurerm_role_assignment.probe [Owner @ x]"),
+                          "infra/orodruin:azurerm_role_assignment.probe [Owner @ x → ?]"),
     "a key vault access policy": ("infra/glorfindel-host/main.tf",
                                   '\nresource "azurerm_key_vault_access_policy" "probe" {\n  key_vault_id = "x"\n}\n',
                                   None, "infra/glorfindel-host:azurerm_key_vault_access_policy.probe"),
@@ -97,7 +97,7 @@ ADDED = {
     "an assignment in a .tf.json": ("infra/orodruin/probe.tf.json",
                                     '{"resource": {"azurerm_role_assignment": {"probe": {"scope": "x", '
                                     '"role_definition_name": "Owner"}}}}\n',
-                                    None, "infra/orodruin:azurerm_role_assignment.probe [Owner @ x]"),
+                                    None, "infra/orodruin:azurerm_role_assignment.probe [Owner @ x → ?]"),
     "a dynamic identity block": ("infra/glorfindel-host/main.tf",
                                  '\nresource "azurerm_storage_account" "probe" {\n  dynamic "identity" {\n'
                                  '    for_each = []\n    content {\n      type = "SystemAssigned"\n    }\n  }\n}\n',
@@ -132,6 +132,32 @@ ADDED = {
                                       "env:EREGION_PROBE_KEY"),
     "a commented pair in .envrc.example": (".envrc.example", "\n# export PROBE_CLIENT_ID=xxxx\n", None,
                                            "env:PROBE_CLIENT_ID"),
+    "a PIM assignment": ("infra/terraform/chaos.tf",
+                         '\nresource "azurerm_pim_eligible_role_assignment" "probe" {\n  scope = "x"\n'
+                         '  role_definition_id = "y"\n  principal_id = "z"\n}\n', None,
+                         "infra/terraform:azurerm_pim_eligible_role_assignment.probe [y @ x → z]"),
+    "a VM's admin password": ("infra/orodruin/main.tf",
+                              '\nresource "azurerm_windows_virtual_machine" "probe" {\n  admin_password = var.x\n}\n',
+                              None, "infra/orodruin:azurerm_windows_virtual_machine.probe#admin_password"),
+    "an assignment with unquoted labels": ("infra/orodruin/main.tf",
+                                           '\nresource azurerm_role_assignment probe {\n  scope = "x"\n'
+                                           '  role_definition_name = "Owner"\n  principal_id = "z"\n}\n', None,
+                                           "infra/orodruin:azurerm_role_assignment.probe [Owner @ x → z]"),
+    "an assignment on one line": ("infra/orodruin/main.tf",
+                                  '\nresource "azurerm_role_assignment" "probe" { scope = "x" }\n', None,
+                                  "infra/orodruin:azurerm_role_assignment.probe [? @ ? → ?]"),
+    "a variable in the compose's list form": ("docker-compose.yml",
+                                              "\nx-probe:\n  environment:\n    - PROBE_PASSPHRASE=x\n", None,
+                                              "env:PROBE_PASSPHRASE"),
+    "a principal id": ("infra/orodruin/orodruin.env.example", "\nEREGION_PROBE_PRINCIPAL_ID=\n", None,
+                       "env:EREGION_PROBE_PRINCIPAL_ID"),
+    "an app id": ("team.env.example", "\nPROBE_APP_ID=\n", None, "env:PROBE_APP_ID"),
+    "a tailnet auth key": (".envrc.example", "\n# export TS_AUTHKEY=x\n", None, "env:TS_AUTHKEY"),
+    "credentials": ("infra/glorfindel-host/host.env.example", "\nPROBE_CREDENTIALS=\n", None, "env:PROBE_CREDENTIALS"),
+    "every secret at once": (".github/workflows/ci.yml", "\n# ${{ toJSON(secrets) }}\n", None,
+                             "workflow:ci.yml:toJSON(secrets)"),
+    "a secret chosen at run time": (".github/workflows/ci.yml", "\n# ${{ secrets[matrix.name] }}\n", None,
+                                    "workflow:ci.yml:secrets[matrix.name]"),
     "a workflow's secret": (".github/workflows/roadmap.yml", "\n# ${{ secrets.PROBE_WEBHOOK }}\n", None,
                             "workflow:roadmap.yml:secrets.PROBE_WEBHOOK"),
     "a workflow's secret by its index": (".github/workflows/ci.yml", "\n# ${{ secrets['PROBE_TOKEN'] }}\n", None,
@@ -176,7 +202,9 @@ def test_an_identity_added_without_its_line_fails(copy, case):
     _edit(doc, "| `workflow:roadmap.yml:secrets.EREGION_DISCORD_ROADMAP_CHANNEL` | `atelier-bot` |\n",
           "| `workflow:roadmap.yml:secrets.EREGION_DISCORD_ROADMAP_CHANNEL` | `atelier-bot` |\n"
           f"| `{key}` | `imladris-mi` |\n")
-    rest = [p for p in idm.problems(copy) if "le rôle « Eregion Glorfindel Probe »" not in p]
+    # A new role still wants its rows in §3.0: said as such, and only that.
+    rest = [p for p in idm.problems(copy) if "le rôle « Eregion Glorfindel Probe »" not in p
+            and not (p.lower().startswith("probe (") and "sans ses actions dans §3.0" in p)]
     assert rest == []
 
 
@@ -185,49 +213,100 @@ def test_a_line_of_the_register_the_repository_no_longer_declares_fails(copy):
           'resource "azurerm_storage_blob" "channel_operator" {')
     found = idm.problems(copy)
     assert any(p.startswith("infra/orodruin:azurerm_role_assignment.channel_operator [Storage Blob Data Contributor @ "
-                            "azurerm_storage_container.exercises] : au registre, mais le dépôt ne la déclare plus")
-               for p in found), found
+                            "azurerm_storage_container.exercises → data.azurerm_client_config.operator.object_id] : "
+                            "au registre, mais le dépôt ne la déclare plus") for p in found), found
 
 
 _BENCH_READER = ('resource "azurerm_role_assignment" "bench_reader" {\n'
                  "  scope                = data.azurerm_resource_group.bench.id\n"
-                 '  role_definition_name = "Reader"\n')
+                 '  role_definition_name = "Reader"\n'
+                 "  principal_id         = azurerm_linux_virtual_machine.host.identity[0].principal_id\n")
+_HOST = "azurerm_linux_virtual_machine.host.identity[0].principal_id"
 
 
 @pytest.mark.parametrize("old,new,key", [
     ('role_definition_name = "Reader"', 'role_definition_name = "Contributor"',
-     "infra/glorfindel-host:azurerm_role_assignment.bench_reader [Contributor @ data.azurerm_resource_group.bench]"),
+     f"infra/glorfindel-host:azurerm_role_assignment.bench_reader [Contributor @ data.azurerm_resource_group.bench → {_HOST}]"),
     ("scope                = data.azurerm_resource_group.bench.id",
      "scope                = data.azurerm_subscription.current.id",
-     "infra/glorfindel-host:azurerm_role_assignment.bench_reader [Reader @ data.azurerm_subscription.current]"),
-], ids=["role", "scope"])
-def test_an_assignment_whose_role_or_scope_changes_is_a_new_key(copy, old, new, key):
+     f"infra/glorfindel-host:azurerm_role_assignment.bench_reader [Reader @ data.azurerm_subscription.current → {_HOST}]"),
+    (f"principal_id         = {_HOST}", "principal_id         = var.someone_else",
+     "infra/glorfindel-host:azurerm_role_assignment.bench_reader [Reader @ data.azurerm_resource_group.bench → "
+     "var.someone_else]"),
+], ids=["role", "scope", "principal"])
+def test_an_assignment_whose_role_scope_or_principal_changes_is_a_new_key(copy, old, new, key):
     _edit(copy / "infra/glorfindel-host/main.tf", _BENCH_READER, _BENCH_READER.replace(old, new))
     found = idm.problems(copy)
     assert any(p.startswith(key + " ") and "sans sa ligne" in p for p in found), found
     assert any(p.startswith("infra/glorfindel-host:azurerm_role_assignment.bench_reader [Reader @ "
-                            "data.azurerm_resource_group.bench] : au registre, mais le dépôt ne la déclare plus")
+                            f"data.azurerm_resource_group.bench → {_HOST}] : au registre, mais le dépôt ne la déclare "
+                            "plus") for p in found), found
+
+
+# An action added to a role: said role by role, even when §3.0 already names it on another role's row.
+ACTIONS = {
+    "an action of another role, added to a role file": (
+        "infra/identities/glorfindel-response.json",
+        '    "Microsoft.Network/networkInterfaces/write",\n',
+        '    "Microsoft.Network/networkInterfaces/write",\n    "Microsoft.Compute/virtualMachines/write",\n',
+        "Response", "Microsoft.Compute/virtualMachines/write", "`Microsoft.Network/networkInterfaces/write` |"),
+    "a data action added to a role file": (
+        "infra/identities/glorfindel-restore-staging.json", '"DataActions": [],',
+        '"DataActions": ["Microsoft.Storage/storageAccounts/blobServices/containers/blobs/read"],',
+        "Restore Staging", "Microsoft.Storage/storageAccounts/blobServices/containers/blobs/read",
+        "`Microsoft.Storage/storageAccounts/listKeys/action` |"),
+    "an action of another role, added to a Terraform role definition": (
+        "infra/orodruin/main.tf", '      "Microsoft.Chaos/experiments/cancel/action",\n',
+        '      "Microsoft.Chaos/experiments/cancel/action",\n      "Microsoft.Compute/virtualMachines/runCommand/action",\n',
+        "injector_chaos", "Microsoft.Compute/virtualMachines/runCommand/action",
+        "`Microsoft.Chaos/experiments/cancel/action` |"),
+    "the joker in a Terraform role definition": (
+        "infra/terraform/chaos.tf", '      "Microsoft.Compute/virtualMachines/start/action",\n    ]',
+        '      "Microsoft.Compute/virtualMachines/start/action",\n      "*",\n    ]',
+        "chaos_vm_shutdown", "*", "`Microsoft.Compute/virtualMachines/start/action` |"),
+}
+
+
+@pytest.mark.parametrize("case", sorted(ACTIONS))
+def test_a_role_whose_actions_differ_from_its_table_fails(copy, case):
+    rel, old, new, role, action, row_end = ACTIONS[case]
+    _edit(copy / rel, old, new)
+    found = idm.problems(copy)
+    assert any(p.startswith(f"{role} ({rel}) : ses actions dans §3.0 ne sont pas les siennes") and action in p
                for p in found), found
+    # Its row in §3.0 takes the action, and the map holds again.
+    doc = copy / idm.DOC
+    lines = doc.read_text(encoding="utf-8").splitlines(keepends=True)
+    for i, line in enumerate(lines):
+        if line.startswith("| **") and (f"**{role}**" in line or f"`{role}`" in line) and row_end in line:
+            lines[i] = line.replace(row_end, f"`{action}`, {row_end}".replace(" |", "", 1) + " |", 1)
+            break
+    else:
+        raise AssertionError(f"no row of §3.0 for {role}")
+    doc.write_text("".join(lines), encoding="utf-8")
+    assert [p for p in idm.problems(copy) if p.startswith(role + " ")] == []
+
+
+def test_a_role_without_its_rows_in_the_table_fails(copy):
+    doc = copy / idm.DOC
+    text = doc.read_text(encoding="utf-8")
+    doc.write_text("".join(line for line in text.splitlines(keepends=True)
+                           if not line.startswith("| **Restore Staging** |")), encoding="utf-8")
+    assert ("Restore Staging (infra/identities/glorfindel-restore-staging.json) : un rôle que le dépôt définit, sans ses "
+            "actions dans §3.0") in idm.problems(copy)
 
 
 RIGHTS = {
-    "an action added to a role file": (
-        "infra/identities/glorfindel-response.json",
-        '    "Microsoft.Network/networkInterfaces/write",\n',
-        '    "Microsoft.Network/networkInterfaces/write",\n    "Microsoft.Compute/virtualMachines/delete",\n',
-        "Microsoft.Compute/virtualMachines/delete"),
     "a not-action added to a role file": (
         "infra/identities/glorfindel-restore.json", '"NotActions": [],',
         '"NotActions": ["Microsoft.Storage/storageAccounts/delete"],', "Microsoft.Storage/storageAccounts/delete"),
-    "an action added to a Terraform role definition": (
-        "infra/orodruin/main.tf", '      "Microsoft.Compute/virtualMachines/runCommand/action",\n',
-        '      "Microsoft.Compute/virtualMachines/runCommand/action",\n'
-        '      "Microsoft.Compute/virtualMachines/extensions/write",\n',
-        "Microsoft.Compute/virtualMachines/extensions/write"),
     "a Graph permission": (
         "infra/orodruin/main.tf", 'toset(["Application.Read.All", "RoleManagement.Read.Directory"])',
         'toset(["Application.Read.All", "RoleManagement.Read.Directory", "Directory.ReadWrite.All"])',
         "Directory.ReadWrite.All"),
+    "a Graph permission of any resource": (
+        "infra/orodruin/main.tf", 'toset(["Application.Read.All", "RoleManagement.Read.Directory"])',
+        'toset(["Application.Read.All", "RoleManagement.Read.Directory", "Mail.Send"])', "Mail.Send"),
     "a directory role": (
         "infra/terraform/entra_bench_unit.tf", '  entra_role_templates = {\n',
         '  entra_role_templates = {\n    "Privileged Role Administrator" = "00000000-0000-0000-0000-000000000001"\n',
@@ -246,13 +325,15 @@ def test_a_right_the_matrix_does_not_name_fails(copy, case):
     assert [p for p in idm.problems(copy) if right in p] == []
 
 
-def test_every_action_of_every_role_is_named_in_the_matrix():
-    names = idm.named_rights()
-    for action in ("Microsoft.Compute/virtualMachines/write", "Microsoft.Compute/disks/write",
-                   "Microsoft.Storage/storageAccounts/write", "Microsoft.Network/networkInterfaces/write",
-                   "Microsoft.Network/publicIPAddresses/join/action", "Microsoft.Compute/virtualMachines/powerOff/action",
-                   "Microsoft.Authorization/roleAssignments/read", "Application.ReadWrite.OwnedBy", "User Administrator"):
-        assert action in names, action
+def test_every_role_is_read_action_by_action():
+    roles = idm.role_actions()
+    assert {"Response", "Session Drain", "Restore", "Restore Neutralize", "Restore Staging", "injector_read",
+            "injector_vm", "injector_chaos", "contract_reader", "chaos_vm_shutdown"} <= set(roles)
+    assert {"Microsoft.Compute/virtualMachines/write", "Microsoft.Compute/disks/write",
+            "Microsoft.Storage/storageAccounts/write"} <= roles["Restore"][0]
+    assert "Microsoft.Network/publicIPAddresses/join/action" in roles["Response"][0]
+    assert idm.table_actions(DOC.read_text(encoding="utf-8"))["Restore"] == roles["Restore"][0]
+    assert {"Application.ReadWrite.OwnedBy", "User Administrator"} <= set(idm.named_rights())
     assert idm.problems() == []
 
 

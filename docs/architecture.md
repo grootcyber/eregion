@@ -389,7 +389,7 @@ leurs liens : [`design/identites.md`](design/identites.md). Un test la tient aux
 
 | Identité | Ce qu'elle tient | Ce qu'elle ne tient jamais |
 |---|---|---|
-| la watch | la lecture des journaux, la réponse sur les groupes inscrits ; Microsoft Graph en lecture (IR1a, quatre permissions posées à la main, `docs/operations.md`) | une écriture sur Entra ID, le restore |
+| la watch | la lecture des journaux, la réponse sur les groupes inscrits ; Microsoft Graph en lecture (IR1a, quatre permissions à poser à la main, pas encore posées, `docs/operations.md`) | une écriture sur Entra ID, le restore |
 | la console, le bot | leurs gestes sur Azure, le restore compris (hors H0, qui ne restaure pas ; la console isole ce qu'un humain approuve) ; avec la file, une demande signée | le bot : la coupure des sessions (il n'isole pas) |
 | l'exécuteur d'identité (IR1b) | son application, deux permissions de Graph (`Application.ReadWrite.OwnedBy`, `User.RevokeSessions.All`) ; User Administrator sur la seule unité administrative du banc, Directory Readers au tenant, Attribute Assignment Reader sur l'ensemble d'attributs d'Eregion ; Log Analytics Reader sur le workspace ; **désactivé par défaut** | l'identité de la VM (son propre certificat seulement), un droit hors de son contrat |
 | Orodruin | la lecture du groupe du banc, l'écriture sur chaque VM inscrite et chaque expérience ; Graph en lecture (IDI1), désactivé par défaut ; le binaire Stratus, lancé depuis Orodruin, emploie cette identité (R2b la sépare) | une écriture sur le groupe entier |

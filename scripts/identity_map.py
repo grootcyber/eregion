@@ -9,24 +9,28 @@ The map is docs/design/identites.md: its matrix (§3), one line per identity, an
 « D'où vient chaque ligne », one row per declaration naming the lines it feeds. What is read here,
 and only that — never a state, a tfvars, a host.env or an .envrc:
 
-  the roles       infra/identities/*.json, by file; each role's Name said on one of its lines, and
-                  each of its actions (Actions, NotActions, DataActions, NotDataActions) named in §3;
+  the roles       infra/identities/*.json, by file; each role's Name said on one of its lines; its
+                  Actions and DataActions exactly those of its rows in the tables of §3.0
+                  (`| **<role>** | `<action>` |`), role by role; its NotActions named in §3;
   Terraform       every `.tf` and `.tf.json` under infra/ (`.terraform/` aside): each resource that
-                  is an identity or a right (a role assignment or definition, a user-assigned
-                  identity, a federated credential, a key vault access policy, an azapi resource of
-                  type Microsoft.Authorization/roleAssignments or roleDefinitions, every azuread_*
-                  resource), and each resource that carries an `identity`, `admin_ssh_key` or
-                  `access_policy` block, `dynamic` or not, at any depth — `<module>:<type>.<name>[#block]`.
-                  An assignment's key carries its role and the expression of its scope,
-                  `… [<role> @ <scope>]`: a role or a scope changed is a new key, said. The actions of
-                  a Terraform role definition, the Graph permissions and the directory roles a `.tf`
-                  names are each named in §3;
-  the environment the compose file and the example environments (host.env, orodruin.env, .envrc,
-                  team.env): each variable whose name says an identity, a credential or a right
-                  (IDENTITY_VAR) — `env:<NAME>`;
-  the workflows   `.yml` and `.yaml`: each secret a workflow reads (`secrets.X`, `secrets['X']`), each
-                  job given `secrets: inherit`, and each permission it grants in write, at the top or
-                  per job (`id-token: write` among them) — `workflow:<file>:…`.
+                  is an identity or a right (any type that names a role assignment or definition —
+                  azurerm's, azuread's, PIM, Cosmos DB… —, a user-assigned identity, a federated
+                  credential, a key vault access policy, an azapi resource of type
+                  Microsoft.Authorization/roleAssignments or roleDefinitions, every azuread_* resource),
+                  each resource that carries an `identity`, `admin_ssh_key` or `access_policy` block,
+                  `dynamic` or not, at any depth, or an `admin_password` — `<module>:<type>.<name>[#…]`.
+                  An assignment's key carries its role, the expression of its scope and that of its
+                  principal, `… [<role> @ <scope> → <principal>]`: any of them changed is a new key,
+                  said. A role definition's lists of actions are read whole (the joker `"*"` too) and
+                  compared to §3.0 as a role file's are; the Graph permissions and the directory roles
+                  a `.tf` names are each named in §3;
+  the environment the compose file (`KEY: value` and `- KEY=value`) and the example environments
+                  (host.env, orodruin.env, .envrc, team.env): each variable whose name says an
+                  identity, a credential or a right (IDENTITY_VAR) — `env:<NAME>`;
+  the workflows   `.yml` and `.yaml`: each secret a workflow reads (`secrets.X`, `secrets['X']`,
+                  `secrets[<expression>]`, `toJSON(secrets)`), each job given `secrets: inherit`, and
+                  each permission it grants in write, at the top or per job (`id-token: write` among
+                  them) — `workflow:<file>:…`.
 
 A line of the matrix says where it is declared: `dépôt` (it must be fed by a declaration), `code`
 (drawn at run time by Eregion's code: a key, a token), `à la main` (made outside the repository: the
@@ -56,28 +60,32 @@ ENV_FILES = ("infra/glorfindel-host/host.env.example", "infra/orodruin/orodruin.
 # A variable that carries an identity, a credential, the name of a principal or the scope of a right.
 IDENTITY_VAR = re.compile(r"CLIENT_ID|SECRET|PASSWORD|TENANT_ID|OBJECT_ID|_TOKEN|API_KEY|_KEYS?$|(^|_)SAS(_|$)"
                           r"|CONNECTION_STRING|FINGERPRINT|CERT|WEBHOOK|ALLOWED_USERS|ALLOWED_ROLES"
-                          r"|PRINCIPALS?$|IDENTIT|OWN_CALLERS|APPID|_PAIR$|DISCORD_BOT$|_SCOPE$")
-# The Terraform resources that are an identity or a right; every azuread_* one too.
+                          r"|PRINCIPAL|IDENTIT|OWN_CALLERS|APPID|APP_ID|AUTHKEY|PASSPHRASE|CREDENTIAL|_PAIR$"
+                          r"|DISCORD_BOT$|_SCOPE$")
+# The Terraform resources that are an identity or a right; every azuread_* one, and every type that
+# names a role assignment or definition (PIM, Cosmos DB, Synapse…), too.
 IDENTITY_TYPES = ("azurerm_role_assignment", "azurerm_role_definition", "azurerm_user_assigned_identity",
                   "azurerm_federated_identity_credential", "azurerm_key_vault_access_policy")
-# The ones whose key carries a role and a scope: (the role's attributes, the scope's), the first found.
-ASSIGNMENTS = {
-    "azurerm_role_assignment": (("role_definition_name", "role_definition_id"), ("scope",)),
-    "azuread_directory_role_assignment": (("role_id",), ("directory_scope_id",)),
-    "azuread_app_role_assignment": (("app_role_id",), ("resource_object_id",)),
-}
+# An assignment's key carries its role, the expression of its scope and that of its principal: the
+# first attribute found of each.
+ASSIGNMENT_ROLE = ("role_definition_name", "role_definition_id", "role_id", "app_role_id")
+ASSIGNMENT_SCOPE = ("scope", "directory_scope_id", "resource_object_id")
+ASSIGNMENT_PRINCIPAL = ("principal_id", "principal_object_id")
 AZAPI_RIGHTS = ("Microsoft.Authorization/roleAssignments", "Microsoft.Authorization/roleDefinitions")
 AZAPI_TYPE = re.compile(r'^\s*type\s*=\s*"([^"@]+)')
-RESOURCE = re.compile(r'^resource "([a-z0-9_]+)" "([A-Za-z0-9_-]+)" \{')
+RESOURCE = re.compile(r'^resource\s+"?([a-z0-9_]+)"?\s+"?([A-Za-z0-9_-]+)"?\s*\{')
+# A role definition's list of actions: `actions = [`, `not_actions`, `data_actions`, `not_data_actions`.
+ACTION_LIST = re.compile(r"^\s*(actions|not_actions|data_actions|not_data_actions)\s*=\s*\[")
+LIST_ITEM = re.compile(r'"([^"]+)"')
 BLOCKS = ("identity", "admin_ssh_key", "access_policy")
 NESTED = re.compile(r'^\s*(?:dynamic\s+"(identity|admin_ssh_key|access_policy)"|(identity|admin_ssh_key|access_policy))\s*\{')
 ATTRIBUTE = re.compile(r"^\s*([a-z_]+)\s*=\s*(.+?)\s*$")
 _STRING = re.compile(r'"(?:[^"\\]|\\.)*"')
 # The rights a .tf names that are no resource: an action of a role definition, a Graph permission, a
 # directory role (its name beside its template id).
-ARM_ACTION = re.compile(r'"(Microsoft\.[A-Za-z]+/[^"]+)"')
-GRAPH_PERMISSION = re.compile(r'"((?:Application|AppRoleAssignment|AuditLog|DelegatedPermissionGrant|Directory|Group'
-                              r'|GroupMember|Policy|RoleManagement|User)\.[A-Za-z]+(?:\.[A-Za-z]+)?)"')
+# A Graph permission by its form, `<Resource>[.<Sub>].<Verb>…[.<Scope>]`, whatever its resource.
+GRAPH_PERMISSION = re.compile(r'"([A-Z][A-Za-z]+(?:\.[A-Z][A-Za-z]+)?\.(?:Read|ReadWrite|Write|Send|Manage|Revoke'
+                              r'|Invite|Create|Export|Import|Delete|Access)[A-Za-z]*(?:\.[A-Z][A-Za-z]+)?)"')
 DIRECTORY_ROLE = re.compile(r'^\s*"([A-Z][A-Za-z ]+)"\s*=\s*"[0-9a-f]{8}-[0-9a-f]{4}-')
 
 MATRIX = "## 3. La matrice"
@@ -133,18 +141,27 @@ def _norm(value: str) -> str:
 
 
 def _key(module: str, kind: str, name: str, attrs: dict[str, str]) -> str:
-    """A resource's key; an assignment's carries its role and the expression of its scope."""
+    """A resource's key; an assignment's carries its role, the expression of its scope and that of its
+    principal."""
     addr = f"{module}:{kind}.{name}"
-    if kind not in ASSIGNMENTS:
+    if "role_assignment" not in kind:
         return addr
-    roles, scopes = ASSIGNMENTS[kind]
-    role = next((_norm(attrs[a]) for a in roles if a in attrs), "?")
-    scope = next((_norm(attrs[a]) for a in scopes if a in attrs), "?")
-    return f"{addr} [{role} @ {scope}]"
+    role = next((_norm(attrs[a]) for a in ASSIGNMENT_ROLE if a in attrs), "?")
+    scope = next((_norm(attrs[a]) for a in ASSIGNMENT_SCOPE if a in attrs), "?")
+    principal = next((_norm(attrs[a]) for a in ASSIGNMENT_PRINCIPAL if a in attrs), "?")
+    return f"{addr} [{role} @ {scope} → {principal}]"
 
 
 def _is_right(kind: str, azapi_type: str) -> bool:
-    return kind in IDENTITY_TYPES or kind.startswith("azuread_") or azapi_type.startswith(AZAPI_RIGHTS)
+    return (kind in IDENTITY_TYPES or kind.startswith("azuread_") or "role_assignment" in kind
+            or "role_definition" in kind or azapi_type.startswith(AZAPI_RIGHTS))
+
+
+def _close(out: dict, module: str, current: tuple, attrs: dict, azapi_type: str, rel: str) -> None:
+    if _is_right(current[0], azapi_type):
+        out[_key(module, current[0], current[1], attrs)] = rel
+    if "admin_password" in attrs:
+        out[f"{module}:{current[0]}.{current[1]}#admin_password"] = rel
 
 
 def _hcl_declarations(p: Path, module: str, rel: str) -> dict[str, str]:
@@ -157,7 +174,12 @@ def _hcl_declarations(p: Path, module: str, rel: str) -> dict[str, str]:
         if depth == 0:
             m = RESOURCE.match(line)
             if m:
-                current, attrs, azapi_type, depth = m.groups(), {}, "", 1
+                current, attrs, azapi_type = m.groups(), {}, ""
+                bare = _STRING.sub('""', line)
+                depth = bare.count("{") - bare.count("}")
+                if depth <= 0:     # a resource on one line: what it says between its braces is not read
+                    _close(out, module, current, attrs, azapi_type, rel)
+                    current, depth = None, 0
             continue
         if depth == 1:
             a = ATTRIBUTE.match(line)
@@ -172,8 +194,7 @@ def _hcl_declarations(p: Path, module: str, rel: str) -> dict[str, str]:
         bare = _STRING.sub('""', line)
         depth += bare.count("{") - bare.count("}")
         if depth <= 0:
-            if _is_right(current[0], azapi_type):
-                out[_key(module, current[0], current[1], attrs)] = rel
+            _close(out, module, current, attrs, azapi_type, rel)
             current, depth = None, 0
     return out
 
@@ -187,8 +208,8 @@ def _json_declarations(p: Path, module: str, rel: str) -> dict[str, str]:
             for b in body if isinstance(body, list) else [body]:
                 b = b or {}
                 attrs = {k: v if isinstance(v, str) else json.dumps(v) for k, v in b.items()}
-                if _is_right(kind, str(b.get("type", "")).split("@")[0] if kind == "azapi_resource" else ""):
-                    out[_key(module, kind, name, attrs)] = rel
+                _close(out, module, (kind, name), attrs,
+                       str(b.get("type", "")).split("@")[0] if kind == "azapi_resource" else "", rel)
                 for block in BLOCKS:
                     if block in b or block in (b.get("dynamic") or {}):
                         out[f"{module}:{kind}.{name}#{block}"] = rel
@@ -206,40 +227,95 @@ def terraform_declarations(repo: Path = REPO) -> dict[str, str]:
     return out
 
 
-def named_rights(repo: Path = REPO) -> dict[str, str]:
-    """Each right the repository names that the matrix must name too (§3): every action of a role file
-    and of a Terraform role definition, every Graph permission and directory role a `.tf` names."""
-    out: dict[str, str] = {}
+def _tf_definitions(p: Path) -> tuple[dict[str, dict[str, set[str]]], dict[str, str]]:
+    """A `.tf` file's role definitions, by their resource name: each list of actions read whole (the
+    joker `"*"` too); and the Graph permissions and directory roles it names, anywhere."""
+    definitions: dict[str, dict[str, set[str]]] = {}
+    named: dict[str, str] = {}
+    current = None
+    depth = 0
+    in_list = ""
+    for line in p.read_text(encoding="utf-8").splitlines():
+        for perm in GRAPH_PERMISSION.findall(line):
+            named.setdefault(perm, "")
+        d = DIRECTORY_ROLE.match(line)
+        if d:
+            named.setdefault(d.group(1), "")
+        if depth == 0:
+            m = RESOURCE.match(line)
+            if m:
+                current = m.group(2) if m.group(1) == "azurerm_role_definition" else None
+                if current:
+                    definitions[current] = {}
+                depth = 1
+            continue
+        if current:
+            a = ACTION_LIST.match(line)
+            if a:
+                in_list = a.group(1)
+                line = line[a.end():]
+            if in_list:
+                definitions[current].setdefault(in_list, set()).update(LIST_ITEM.findall(line.split("#")[0]))
+                if "]" in line:
+                    in_list = ""
+        bare = _STRING.sub('""', line)
+        depth += bare.count("{") - bare.count("}")
+        if depth <= 0:
+            current, depth, in_list = None, 0, ""
+    return definitions, named
+
+
+def role_actions(repo: Path = REPO) -> dict[str, tuple[set[str], set[str], str]]:
+    """Each role the repository defines, by the name §3.0 gives it — a role file's Name without
+    « Eregion Glorfindel », a Terraform definition's resource name —: (its actions and data actions,
+    its not-actions and not-data-actions, where)."""
+    out = {}
     for p in role_files(repo):
         role = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-        for field in ("Actions", "NotActions", "DataActions", "NotDataActions"):
-            for action in role.get(field) or []:
-                out.setdefault(str(action), _rel(p, repo))
+        name = str(role.get("Name", "")).removeprefix("Eregion Glorfindel ").strip()
+        grants = {str(a) for f in ("Actions", "DataActions") for a in role.get(f) or []}
+        denies = {str(a) for f in ("NotActions", "NotDataActions") for a in role.get(f) or []}
+        out[name] = (grants, denies, _rel(p, repo))
     for p in tf_files(repo):
         if p.name.endswith(".tf.json"):
             continue
-        rel = _rel(p, repo)
-        definition = False
-        depth = 0
-        for line in p.read_text(encoding="utf-8").splitlines():
-            if depth == 0:
-                m = RESOURCE.match(line)
-                if m:
-                    definition, depth = m.group(1) == "azurerm_role_definition", 1
-                    continue
-            if definition:
-                for action in ARM_ACTION.findall(line):
-                    out.setdefault(action, rel)
-            for perm in GRAPH_PERMISSION.findall(line):
-                out.setdefault(perm, rel)
-            d = DIRECTORY_ROLE.match(line)
-            if d:
-                out.setdefault(d.group(1), rel)
-            if depth:
-                bare = _STRING.sub('""', line)
-                depth += bare.count("{") - bare.count("}")
-                if depth <= 0:
-                    definition, depth = False, 0
+        for name, lists in _tf_definitions(p)[0].items():
+            grants = lists.get("actions", set()) | lists.get("data_actions", set())
+            denies = lists.get("not_actions", set()) | lists.get("not_data_actions", set())
+            out[name] = (grants, denies, _rel(p, repo))
+    return out
+
+
+def table_actions(text: str) -> dict[str, set[str]]:
+    """The tables of §3.0, row by row (`| **<role>** | `<action>`… |`): each role the first cell names
+    — in bold, or a Terraform definition between backticks — and the actions of the second cell."""
+    out: dict[str, set[str]] = {}
+    for line in _section(text, MATRIX):
+        if not line.startswith("| **"):
+            continue
+        cells = _cells(line)
+        if len(cells) < 2:
+            continue
+        roles = re.findall(r"\*\*([^*]+)\*\*", cells[0]) + re.findall(r"`([a-z0-9_]+)`", cells[0])
+        actions = set(re.findall(r"`([^`]+)`", cells[1]))
+        for role in roles:
+            out.setdefault(role.strip(), set()).update(actions)
+    return out
+
+
+def named_rights(repo: Path = REPO) -> dict[str, str]:
+    """Each right the repository names that the matrix must name too (§3), beyond the actions §3.0
+    holds role by role: every not-action of a role, every Graph permission and directory role a `.tf`
+    names."""
+    out: dict[str, str] = {}
+    for grants, denies, where in role_actions(repo).values():
+        for action in denies:
+            out.setdefault(action, where)
+    for p in tf_files(repo):
+        if p.name.endswith(".tf.json"):
+            continue
+        for right in _tf_definitions(p)[1]:
+            out.setdefault(right, _rel(p, repo))
     return out
 
 
@@ -248,6 +324,8 @@ def _env_names(path: Path) -> set[str]:
     if path.name.endswith(".yml"):
         names = set(re.findall(r"\$\{([A-Z][A-Z0-9_]*)", text))
         names |= set(re.findall(r"^\s+([A-Z][A-Z0-9_]*):", text, re.M))
+        # The list form of `environment:` (`- KEY=value`).
+        names |= set(re.findall(r"^\s+-\s+['\"]?([A-Z][A-Z0-9_]*)=", text, re.M))
         return names
     # An example environment: its lines, and those left commented for the reader to fill.
     return set(re.findall(r"^(?:#\s*)?(?:export\s+)?([A-Z][A-Z0-9_]*)=", text, re.M))
@@ -274,6 +352,11 @@ def workflow_declarations(repo: Path = REPO) -> dict[str, str]:
         names |= set(re.findall(r"secrets\[\s*['\"]([A-Za-z_][A-Za-z0-9_]*)['\"]\s*\]", text))
         for name in sorted(names):
             out[f"workflow:{p.name}:secrets.{name}"] = rel
+        # Every secret at once, or one chosen at run time: the whole set, which no name says.
+        if re.search(r"toJSON\(\s*secrets\s*\)", text):
+            out[f"workflow:{p.name}:toJSON(secrets)"] = rel
+        for expr in sorted(set(re.findall(r"secrets\[\s*([a-z][^\]'\"]*?)\s*\]", text))):
+            out[f"workflow:{p.name}:secrets[{expr}]"] = rel
         doc = yaml.safe_load(text) or {}
         jobs = doc.get("jobs") or {}
         for job, spec in jobs.items():
@@ -391,6 +474,15 @@ def problems(repo: Path = REPO) -> list[str]:
             out.append(f"`{ident}` : l'identité prévue manque à la matrice")
         elif matrix[ident][-1] != "prévue":
             out.append(f"`{ident}` : doit être marquée « prévue »")
+    tables = table_actions(text)
+    for role, (grants, _denies, where) in sorted(role_actions(repo).items()):
+        said = tables.get(role)
+        if said is None:
+            out.append(f"{role} ({where}) : un rôle que le dépôt définit, sans ses actions dans §3.0")
+        elif said != grants:
+            extra, missing = sorted(said - grants), sorted(grants - said)
+            out.append(f"{role} ({where}) : ses actions dans §3.0 ne sont pas les siennes — au dépôt seulement : "
+                       f"{', '.join(missing) or 'aucune'} ; dans §3.0 seulement : {', '.join(extra) or 'aucune'}")
     named = "\n".join(_section(text, MATRIX))
     for right, where in sorted(named_rights(repo).items()):
         if f"`{right}`" not in named:

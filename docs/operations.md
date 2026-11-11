@@ -562,7 +562,8 @@ services de Glorfindel, trois principaux, chacun avec ce que son code appelle vr
   `human_only`), et la coupure des sessions part alors sous son identité. Avant SEC17, son rôle
   Restore lui donnait Run Command sur tout le groupe ; elle reçoit la coupure VM par VM, sur les mêmes
   VM que la watch — plus étroit, aucun droit en plus. **Pas le bot** : il n'isole pas (ses boutons
-  lancent Restore et Revert, une levée et un déblocage, sans Run Command). Sur H0, la console a
+  lancent Restore et Revert, une levée et un déblocage ; le restore neutralise par une Run Command, sous
+  « Restore Neutralize », VM par VM). Sur H0, la console a
   l'identité de la VM, qui tient déjà la coupure par `session_drain_vms` ; pour la console d'un poste
   sur le banc, le Terraform de H0 la donne aussi (`session_drain_principals`, son object id dans
   `principals.auto.tfvars`). La neutralisation avant un restore a son propre rôle, ci-dessous
