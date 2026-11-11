@@ -82,7 +82,13 @@ coûte (control plane + nodes) → détruire entre sessions. VMs : auto-shutdown
 
 - **Inscription (O0)** : Celebrimbor pose `eregion-target` (`celebrimbor`, ou
   `celebrimbor-<instance>` pour une instance nommée) et `eregion-zone = "bench"` dans
-  `common_tags` (`locals.tf`, O0 — **écrit, pas encore appliqué**) ; `annatar-test` reste posé le temps de la migration. Un
+  `common_tags` (`locals.tf`, O0 — **lu sur Azure le 11/11 à 13:44 UTC**, en lecture seule, sur
+  gondolin (`az vm show -g rg-celebrimbor -n vm-celebrimbor-gondolin --query tags`) et sur son groupe
+  (`az group show -n rg-celebrimbor --query tags`) : `eregion-target` porte l'id du banc, le même sur
+  les deux, et `eregion-zone` vaut `bench`. Ce que la lecture ne dit pas : le tag hérité
+  `annatar-test`, encore posé, inscrit toujours une cible qui n'aurait pas `eregion-target`, et le
+  contrat d'Orodruin ne distingue pas une attribution posée à la main de celle de Terraform) ;
+  `annatar-test` reste posé le temps de la migration. Un
   `terraform apply` sur le banc se fait avec Jonathan, `glorfindel list` vide avant.
 - **Gothmog (G0)** : Celebrimbor inscrit les cibles du banc auprès de Chaos Studio ; l'expérience
   est décrite en code dans le module du banc.

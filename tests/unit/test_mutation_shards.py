@@ -673,6 +673,33 @@ def test_the_model_is_prepared_by_chromadb_s_default_embedding_function_on_one_t
     assert "embedding model: ready" in capsys.readouterr().out
 
 
+def test_the_harness_prepares_the_model_under_the_suite_s_lock(tmp_path, monkeypatch):
+    """FLK1 (#723): the harness's preparation takes the lock of scripts/chroma_model.py, beside the
+    model, as the test suite and CI8's step do — a harness and a `pytest -n 4` started at once on an
+    empty cache never fetch it beside each other."""
+    import fcntl
+    import types
+    monkeypatch.setenv("HOME", str(tmp_path))
+    held: list = []
+
+    class DefaultEmbeddingFunction:
+        def __call__(self, texts):
+            with open(tmp_path / ".cache" / "chroma" / "onnx_models" / ".eregion-prepare.lock", "a") as other:
+                try:
+                    fcntl.flock(other, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    held.append(True)
+                else:
+                    held.append(False)
+                    fcntl.flock(other, fcntl.LOCK_UN)
+            return [[0.0] for _ in texts]
+    fake = types.ModuleType(mc.EMBEDDING)
+    fake.DefaultEmbeddingFunction = DefaultEmbeddingFunction
+    monkeypatch.setitem(sys.modules, mc.EMBEDDING, fake)
+    assert REAL_PREPARE(say=lambda *a, **k: None) is True
+    assert held == [True]
+
+
 def test_without_chromadb_nothing_is_prepared_nor_said(monkeypatch, capsys):
     monkeypatch.setitem(sys.modules, mc.EMBEDDING, None)        # import fails: not installed
     assert REAL_PREPARE() is None
