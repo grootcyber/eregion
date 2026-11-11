@@ -181,9 +181,14 @@ def read_here(rel: str) -> bool:
 
 
 def files(root: Path) -> list[str]:
+    """The tracked files, by `git ls-files -z`: their names as they are, cut at « \\0 ». Without
+    -z, git quotes a name that is not ASCII (« "docs/caf\\303\\251.md" »), which no file has: it
+    was skipped, unsaid (FLK1, the second review of IML1). Without git, the tree, hidden and .env
+    files aside."""
     try:
-        out = subprocess.run(["git", "ls-files"], cwd=root, capture_output=True, text=True, check=True).stdout
-        names = out.split("\n")
+        out = subprocess.run(["git", "ls-files", "-z"], cwd=root, capture_output=True, text=True,
+                             check=True).stdout
+        names = out.split("\0")
     except (OSError, subprocess.CalledProcessError):
         names = [p.relative_to(root).as_posix() for p in root.rglob("*")
                  if p.is_file() and not p.name.endswith(".env")

@@ -399,6 +399,38 @@ def nothing_written_in_the_repository():
         pytest.fail(found)
 
 
+def _chroma_model_script():
+    """scripts/chroma_model.py (CI8, FLK1), loaded by its path: None where it is not (this conftest
+    copied alone into a throwaway repository, tests/unit/test_repo_hermetic.py)."""
+    path = os.path.join(REPO, "scripts", "chroma_model.py")
+    if not os.path.isfile(path):
+        return None
+    spec = importlib.util.spec_from_file_location("_conftest_chroma_model", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.fixture(scope="session", autouse=True)
+def chroma_model():
+    """FLK1 (#723): ChromaDB's embedding model, fetched by one process at a time. Without it, on
+    11/11, in `pytest -n 4` with a throwaway HOME, two workers fetched it into one ~/.cache/chroma
+    at once (test_agent_nodes.py's real CycleMemory, test_containment.py's campaign report and its
+    index); ChromaDB removes an archive whose SHA-256 does not match, the other's half-written one
+    included, and test_containment.py failed (FileNotFoundError on onnx.tar.gz). In each process,
+    xdist's workers included, `lock_downloads` wraps ChromaDB's own check-then-fetch in a file lock
+    beside the model, when ChromaDB is imported: lazily — a session that never embeds a text
+    fetches nothing (the CI jobs without the model's cache, a local run of a few files); the first
+    process that needs it fetches it, the others wait, then find it there. Nothing to do without
+    chromadb (D1: a component's tests without Glorfindel's dependencies). A lock that cannot be
+    taken, or a ChromaDB without the method, is said (a warning), never a verdict."""
+    script = _chroma_model_script() if _present("chromadb") else None
+    if script is None:
+        return None
+    import warnings
+    return script.lock_downloads(say=lambda text: warnings.warn(pytest.PytestWarning(text)))
+
+
 @pytest.hookimpl(trylast=True)
 def pytest_sessionfinish(session, exitstatus):
     if _checked[0]:

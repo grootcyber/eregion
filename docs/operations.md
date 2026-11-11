@@ -2245,7 +2245,31 @@ comme pip et Terraform (la boucle le piège, et sort avec 130 ou 143). Aucune va
   dans chaque job qui restaure son cache (`ci.yml`, les invariants, les tranches de mutants et le jeu de
   contrôle de la porte et du lundi, le job Glorfindel de Components). Il ne télécharge que si un fichier
   du modèle manque ; le cache restauré, rien ne part. Le harnais de mutation le trouve ensuite prêt
-  (CI6b). Après trois échecs, le job est rouge : le réseau du runner est en panne.
+  (CI6b). Après trois échecs, le job est rouge : le réseau du runner est en panne. Le script et la
+  préparation du harnais (`prepare_embedding_model`) prennent le même verrou que la suite (ci-dessous).
+- **La suite elle-même ne télécharge le modèle que par un processus à la fois** (FLK1, #723), pour un
+  run local sans cette étape : `pytest -n 4` avec un `HOME` jetable vide. Le 11/11, deux workers le
+  téléchargeaient en même temps dans le même `~/.cache/chroma` (la vraie `CycleMemory` de
+  `test_agent_nodes.py`, l'index du rapport de campagne dans `test_containment.py`). ChromaDB écrit
+  l'archive en place et la supprime quand son SHA-256 ne correspond pas : l'un supprimait le fichier
+  à moitié écrit de l'autre (`FileNotFoundError … onnx.tar.gz`), mesuré dès la première suite en
+  `-n 4`. Désormais, dans chaque processus de la suite, la fixture de session `chroma_model`
+  (`tests/unit/conftest.py`) appelle `lock_downloads` (`scripts/chroma_model.py`). Celle-ci enveloppe
+  la vérification-puis-téléchargement de ChromaDB lui-même
+  (`ONNXMiniLM_L6_V2._download_model_if_not_exists`) dans un verrou de fichier (`flock`,
+  `~/.cache/chroma/onnx_models/.eregion-prepare.lock`), au moment où ChromaDB est importé.
+  - **Paresseusement** : une session dont aucun test ne calcule d'embedding ne télécharge rien. C'est
+    le cas des jobs sans le cache du modèle (le macOS de `ci.yml` et de la porte, les invariants) et
+    d'un run local de quelques fichiers.
+  - Le premier processus qui a besoin du modèle le télécharge ; les autres attendent le verrou, puis le
+    trouvent là, par la vérification de ChromaDB.
+  - Le verrou est réentrant dans un processus : le harnais ou le script de CI8 le tient, puis ChromaDB,
+    enveloppé, le redemande sans s'attendre lui-même.
+  - Un cache non inscriptible (un `~/.cache/chroma` encore à root, d'avant les images non-root :
+    `make fix-state-ownership`) est dit, et ChromaDB continue sans verrou, comme avant ; sans
+    `chromadb` (un composant sans les dépendances de Glorfindel, D1), rien à faire.
+  - Un ChromaDB sans cette méthode (une montée de version) est dit en avertissement ;
+    `tests/unit/test_chroma_model.py` vérifie que la version verrouillée l'a toujours.
 - `syft` et `cosign`, binaires épinglés par leur sha256 (`publish.yml`) : l'empreinte est vérifiée à
   chaque tentative.
 
