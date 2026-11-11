@@ -930,13 +930,19 @@ def test_make_console_url_says_where_the_token_is(tmp_path):
     import subprocess
     if shutil.which("make") is None:
         pytest.skip("make not installed")
-    root = api._STATIC.parents[1]
+    # make console-url refuses in an agent session (MOB2): the operator's checkout, copied outside any
+    # worktree, without the session's variable.
+    root = tmp_path / "operator"
+    for rel in ("Makefile", "scripts/mobile.py", "scripts/bench_shared.py"):
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(api._STATIC.parents[1] / rel, root / rel)
     env = {k: v for k, v in os.environ.items() if k not in ("EREGION_CONSOLE_TOKEN", "GLORFINDEL_WARROOM_TOKEN",
-                                                             "EREGION_CONSOLE_PORT", "MAKEFLAGS")}
+                                                             "EREGION_CONSOLE_PORT", "MAKEFLAGS",
+                                                             "EREGION_AGENT_SESSION")}
 
     def url(home, **extra):
         r = subprocess.run(["make", "-s", "-C", str(root), "console-url", f"HOME={home}", "CONSOLE_WAIT=0"],
-                           env={**env, **extra}, capture_output=True, text=True, cwd=tmp_path)
+                           env={**env, **extra}, capture_output=True, text=True, cwd=root)
         return r.returncode, r.stdout.strip(), r.stderr
     (tmp_path / ".eregion" / "console").mkdir(parents=True)
     (tmp_path / ".eregion" / "console" / "token").write_text("drawn-token\n")

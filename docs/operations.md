@@ -4345,7 +4345,10 @@ la frontière : `docs/design/modele-de-menace.md`, frontière 9.
 ```zsh
 make bench-run TARGET=<vm> SCENARIO=<id> [DRY_RUN=1]           # préflight, demande, nom tapé, Orodruin, rapport
 make bench-restore TARGET=<vm> RUN=<run_id> [BEFORE=…] [DRY_RUN=1]  # le restore du poste, paire de la console
-make glorfindel-host-tunnel                                    # la console de H0 en 127.0.0.1:7007, comme aujourd'hui
+make mobile-tunnel-install [DRY_RUN=1]                         # MOB2 : pose l'unité du tunnel vers la console d'Imladris
+make mobile-tunnel-on / make mobile-tunnel-off                 # MOB2 : l'arme pour 12 h au plus / l'arrête
+make console-url                                               # l'URL de la console d'Imladris, le tunnel posé
+make glorfindel-host-tunnel                                    # à la main, le tunnel du poste non armé
 sudo -v && make mobile-check                                   # le poste ouvert au téléphone, lu
 ```
 
@@ -4382,7 +4385,29 @@ sudo -v && make mobile-check                                   # le poste ouvert
   none`, `AllowTcpForwarding local`, `PermitOpen 127.0.0.1:7007` seul, `GatewayPorts no`, ni socket,
   ni agent, ni X11, pas de root) ; `ss -Hltn` (le serveur SSH sur l'adresse privée seule, le port de la console en `127.0.0.1`
   seul) ; `~/.ssh/authorized_keys` (compté, jamais affiché ; ses options `from=` et `permitopen=` ne
-  sont pas lues). Aucune adresse n'est affichée.
+  sont pas lues). Aucune adresse n'est affichée. Puis le tunnel du poste (MOB2) : l'unité celle du
+  modèle (ni `[Install]`, ni lien dans un `*.wants/`, ni clé dite deux fois, `RuntimeMaxSec` ≤ 12 h,
+  la date limite lue, ssh sous `timeout`, ce que systemd a chargé sans drop-in ni autre fichier, une
+  redirection `127.0.0.1:7007` seule, la clé d'hôte épinglée, l'adresse d'Imladris celle de Terraform),
+  puis `systemctl --user show` et `ss -Hltnp` : arrêté, « ℹ non armé » ; en échec, activé ou armé
+  au-delà de sa date limite, un ✗ ; armé, depuis quand, jusqu'à quand, son minuteur de fin, et
+  les processus de l'unité — ceux de son cgroup (`ControlGroup`), sinon `MainPID` et ses fils, car `MainPID` est celui de `timeout` et c'est son fils ssh qui écoute — n'écoutent qu'en `127.0.0.1:7007` ; le port tenu par un processus hors de l'unité est un ✗ ; ces processus ou `ss` illisibles, un ⚠ (l'écoute n'est pas vérifiée).
+- **Le tunnel du poste** (MOB2, `scripts/mobile.py tunnel-*`, `infra/poste/eregion-console-tunnel.service`) :
+  armé à la demande, borné à 12 h (décision de Jonathan, 11/11). `-install` écrit l'unité dans
+  `~/.config/systemd/user/` — l'adresse d'Imladris lue par `terraform output`, `HOST_USER`, `HOST_SSH_KEY`,
+  la clé d'hôte de `HOST_SSH_FINGERPRINT` vérifiée par `known_host.sh` (« required ») puis copiée seule
+  dans `~/.eregion/console-tunnel/known_hosts` — et ne l'active ni ne la lance. `-on` écrit la date
+  limite (maintenant + 12 h), pose le minuteur `eregion-console-tunnel-expiry.timer` (`systemd-run
+  --user --on-active=43200s`), puis lance l'unité ; il refuse une unité que `mobile-check` refuserait,
+  ou ce que systemd a chargé autrement (un drop-in, un autre fichier), ou dont l'adresse n'est plus
+  celle de Terraform. L'unité seule tient les 12 h : son `ExecCondition` refuse tout départ sans date
+  limite, après elle ou à plus de 12 h ; ssh tourne sous `/usr/bin/timeout` jusqu'à la date limite ;
+  `RuntimeMaxSec=12h` borne chaque exécution ; le minuteur en est une quatrième borne. Un processus du
+  même utilisateur peut réécrire la date limite ; sous WSL, une veille met les horloges monotones en
+  pause (les 12 h comptent le temps éveillé). `-off` arrête le minuteur et
+  l'unité ; `-remove` l'arrête et retire l'unité, son known_hosts et sa date limite. Toutes refusent
+  dans une session d'agent, le garde seul d'abord ; `make console-url`, `make glorfindel-host-url` et
+  `make glorfindel-host-tunnel` aussi, avant de lire le jeton.
 
 ## auditd au banc (AUD1, #408)
 

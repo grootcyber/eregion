@@ -1,4 +1,4 @@
-# Piloter le banc depuis le téléphone (MOB1)
+# Piloter le banc depuis le téléphone (MOB1, MOB2)
 
 [← le banc](banc.md) · le rejeu du rançongiciel : [banc-t1486.md](../banc-t1486.md) · le modèle de menace : [frontière 9](../design/modele-de-menace.md#9-le-téléphone-et-son-chemin-vers-le-poste)
 
@@ -8,11 +8,13 @@ entre le téléphone et le poste change :
 ```
 téléphone ──(Tailscale : téléphone → poste:22 seul)──► poste (WSL) : sshd, à clé seule
    │                                                      ├─ make bench-run / bench-restore, tapés dans le terminal
-   └─ son propre tunnel SSH (-L 7007:127.0.0.1:7007) ───► └─ 127.0.0.1:7007 ── make glorfindel-host-tunnel ──► H0 : la console
+   └─ son propre tunnel SSH (-L 7007:127.0.0.1:7007) ───► └─ 127.0.0.1:7007 ── le tunnel du poste ──► Imladris : la console
+                                                              (make mobile-tunnel-on : armé à la demande, 12 h au plus)
 ```
 
-- Orodruin continue à n'écouter que le SSH du poste (DRL1). **Rien ne change sur H0** : la console
-  y répond comme aujourd'hui, sous `localhost`, par le tunnel du poste.
+- Orodruin continue à n'écouter que le SSH du poste (DRL1). **Rien ne change sur Imladris** (H0) : la
+  console y répond comme aujourd'hui, sous `localhost`, par le tunnel du poste — armé par un geste,
+  pour 12 h au plus (MOB2, étape 5).
 - **Deux barrières indépendantes**, pour le terminal comme pour la console : le réseau privé (le
   compte Tailscale avec MFA, une règle d'accès qui n'ouvre que téléphone → poste:22), puis le serveur
   SSH du poste, **à clé seule**, la clé gardée dans la puce sécurisée du téléphone et débloquée par
@@ -164,37 +166,136 @@ console chargée dans cette session, elle pourrait lancer un restore. D'où :
 `HOST_SSH_FINGERPRINT` et `ORO_SSH_FINGERPRINT` doivent être posées pour la commande (dans
 `.envrc`).
 
-## 5. La console de H0, sur le téléphone
+## 5. La console d'Imladris, sur le téléphone (MOB2)
 
-Par le poste, **rien ne change sur H0** : téléphone → réseau privé → son propre tunnel SSH vers le
-`127.0.0.1:7007` du poste → le tunnel du poste vers H0.
+Par le poste, **rien ne change sur Imladris** : téléphone → réseau privé → son propre tunnel SSH vers
+le `127.0.0.1:7007` du poste → le tunnel du poste vers Imladris. Ce dernier tunnel, le poste le tient
+par un service systemd de l'utilisateur, **armé à la demande et borné à 12 h** (décision de Jonathan,
+11/11) : on n'a plus besoin d'un terminal du bureau ouvert sur `make glorfindel-host-tunnel`, et la
+console n'est jamais joignable sur le poste sans un geste.
 
-1. **Sur le poste** (une fenêtre de `tmux`, ou du bureau), comme aujourd'hui :
+### 5a. Poser le tunnel, une fois
+
+Sur le poste, `HOST_SSH_FINGERPRINT` posée (sans elle, rien n'est écrit : le tunnel n'accepte jamais
+une clé au premier contact) :
 
 ```zsh
-make glorfindel-host-tunnel      # « Console → http://localhost:7007/?token=… », Ctrl+C ferme
+make mobile-tunnel-install DRY_RUN=1     # l'unité remplie, affichée ; rien n'est écrit
+make mobile-tunnel-install               # HOST_SSH_KEY=~/.ssh/… si ton agent ne propose pas la clé d'Imladris
 ```
 
-2. **Sur le téléphone, le tunnel**, ouvert par l'application avec la clé de sa puce :
-   - **Blink** : `ssh -L 7007:127.0.0.1:7007 <utilisateur>@<adresse privée du poste>`, puis laisser
-     la session ouverte ;
-   - **Termius** : un *Port Forwarding* de type *Local*, port local 7007, destination
-     `127.0.0.1:7007`, par l'hôte du poste.
+Elle écrit `~/.config/systemd/user/eregion-console-tunnel.service`, à partir du modèle
+`infra/poste/eregion-console-tunnel.service`, puis `systemctl --user daemon-reload` — **sans
+l'activer ni la lancer** :
+- **jamais au boot** : l'unité n'a pas de section `[Install]`, `systemctl enable` n'a rien à faire ;
+- `ssh -N -L 127.0.0.1:7007:127.0.0.1:7007` vers Imladris : le port lié à `127.0.0.1` **seul**,
+  jamais `0.0.0.0` ni l'adresse Tailscale. C'est le téléphone qui ouvre son tunnel jusqu'à ce
+  `127.0.0.1` ;
+- **la clé d'hôte épinglée** : `infra/glorfindel-host/known_host.sh` la vérifie par son empreinte
+  (`HOST_SSH_FINGERPRINT`, « required »), puis elle est copiée seule dans un known_hosts à elle
+  (`~/.eregion/console-tunnel/known_hosts`) ; l'unité nomme ce fichier et l'empreinte
+  (`X-Eregion-HostKey`), avec `StrictHostKeyChecking=yes`, `GlobalKnownHostsFile=/dev/null`,
+  `UpdateHostKeys=no` — jamais `StrictHostKeyChecking=no` ;
+- `-F none` (aucun `~/.ssh/config` lu), `BatchMode=yes` (rien n'est demandé : la clé doit s'ouvrir
+  sans phrase de passe, ou par un agent que le service voit — **non vérifié** sur le poste),
+  `ExitOnForwardFailure=yes` (le port pris, ssh sort), `ServerAliveInterval=30` et
+  `ServerAliveCountMax=3` (une coupure vue en 90 s) ;
+- `Restart=on-failure`, `RestartSec=15` : il repart après une coupure, jusqu'à la fin de sa fenêtre.
+
+Elle refuse dans une session d'agent, comme toutes les cibles de cette étape sauf `make
+mobile-check`. `make mobile-tunnel-remove` (`DRY_RUN=1` : ce qu'il retirerait) l'arrête et retire
+l'unité, son known_hosts et sa date limite.
+
+**L'adresse d'Imladris** est celle que donne Terraform (`terraform output public_ip`) au moment de
+l'installation. Imladris redéployé sous une nouvelle adresse : ssh ne la joint plus, ou joint une
+autre machine, dont la clé refuse ; le service échoue et repart toutes les 15 s sans rien lier,
+jusqu'à la fin de sa fenêtre. `make mobile-check` le dit (✗), et `make mobile-tunnel-on` refuse
+d'armer une unité dont l'adresse n'est plus celle de Terraform : `make mobile-tunnel-install` la
+réécrit. Une VM reconstruite (une nouvelle clé d'hôte) : la nouvelle empreinte dans
+`HOST_SSH_FINGERPRINT`, `~/.eregion/h0_known_hosts` retiré, puis `make mobile-tunnel-install`.
+
+### 5b. L'armer, 12 h au plus
+
+```zsh
+make mobile-tunnel-on      # du poste, ou du téléphone dans tmux (étape 4)
+make mobile-check          # « armé depuis …, expire à … (dans …) », 127.0.0.1:7007 seul
+make mobile-tunnel-off     # avant la fin, dès qu'on n'en a plus besoin
+```
+
+**Comment les 12 h tiennent.** `make mobile-tunnel-on` écrit la date limite (maintenant + 12 h)
+dans `~/.eregion/console-tunnel/deadline`. **L'unité seule** s'y tient ensuite, sans le minuteur :
+1. à chaque départ et à chaque relance, son `ExecCondition` lit la date limite : absente, passée, ou
+   à plus de 12 h de maintenant, l'unité ne démarre pas, et `Restart=` ne la relance pas (une
+   condition fausse n'est pas un échec). **Dans la fenêtre**, un `systemctl --user start` à la main la
+   démarre bien, jusqu'à la date limite ; hors fenêtre, il ne fait rien ;
+2. son `ExecStart` lance ssh sous `/usr/bin/timeout`, pour le temps qui reste jusqu'à la date limite
+   (12 h au plus) : à l'heure, `timeout` arrête ssh (code 124), `Restart=` tente une relance, et
+   l'`ExecCondition` la refuse ;
+3. `RuntimeMaxSec=12h` arrête toute exécution qui durerait plus : la dernière borne.
+
+En plus, `make mobile-tunnel-on` pose un minuteur de systemd, `eregion-console-tunnel-expiry.timer`
+(`systemd-run --user --on-active=43200s`), qui arrête l'unité à l'heure : une quatrième borne, dont
+les trois autres n'ont pas besoin ; le minuteur ne se pose pas, rien n'est armé.
+
+Ce que ces bornes ne tiennent pas :
+- **un processus du même utilisateur Unix** (une session d'agent comprise) peut réécrire la date
+  limite et lancer le service : le garde des cibles `make` arrête l'erreur, pas une volonté ;
+- **sous WSL, une veille de l'hôte met en pause les horloges monotones** (`timeout`, `RuntimeMaxSec`,
+  le minuteur) : leurs 12 h comptent le temps où le poste est éveillé. L'`ExecCondition` lit
+  l'horloge murale : au réveil, aucune relance ne passe la date limite.
+
+Sans session de l'utilisateur (sans *linger*), systemd de l'utilisateur s'arrête avec la dernière
+session, et le tunnel avec lui : la fenêtre est alors plus courte, jamais plus longue. **Non
+vérifié** sur le poste : `systemctl --user` depuis la session SSH du téléphone (il demande le bus de
+l'utilisateur, que `pam_systemd` ouvre d'ordinaire), et `systemd-analyze --user verify` sur l'unité
+remplie.
+
+`make mobile-check` lit le tunnel en plus du reste :
+- l'unité est celle du modèle : pas de `[Install]`, ni de lien dans un `*.wants/` (elle démarrerait
+  au boot) ; aucune clé ni section dite deux fois ; `RuntimeMaxSec` entre 1 s et 12 h, la date limite
+  lue, et ssh sous le `timeout` du modèle (sinon : « sans limite de durée », ou « pas borné ») ; une
+  redirection, `127.0.0.1:7007` seul ; la clé épinglée (le known_hosts ne tient que
+  des clés de l'empreinte que l'unité nomme) ; `ExitOnForwardFailure`, `ServerAlive`, `Restart` ;
+  l'adresse d'Imladris celle de Terraform (illisible ici : un ⚠). Chaque écart est un ✗ ;
+- puis `systemctl --user show`, ce que systemd a chargé : le fichier seul (`FragmentPath`), aucun
+  drop-in (`DropInPaths`), le fichier non changé depuis sa lecture (`NeedDaemonReload=no`),
+  `RuntimeMaxUSec` de 12 h au plus, aucune unité qui la tire (`WantedBy`, `RequiredBy`, `BoundBy`,
+  `UpheldBy`, `TriggeredBy`, `OnFailureOf`, `OnSuccessOf`) — sinon un ✗, armé ou non ; arrêté, **ℹ non armé** (pas un ✗) ; en échec ou qui redémarre, un ✗ ;
+  armé : depuis quand, jusqu'à quand, le minuteur de fin vivant, et `ss -Hltnp` : les processus de l'unité — ceux de son cgroup (`ControlGroup`), sinon `MainPID` et ses fils, car `MainPID` est celui de `timeout` et c'est son fils ssh qui écoute — n'écoutent qu'en `127.0.0.1:7007` ; le port tenu par un processus hors de l'unité est un ✗ ; ces processus ou `ss` illisibles, un ⚠ (l'écoute n'est pas vérifiée). Armé au-delà de sa date limite, ou pour plus de 12 h, un ✗.
+
+### 5c. Sur le téléphone : le tunnel, puis Safari
+
+1. **Le tunnel du téléphone**, ouvert par l'application avec la clé de sa puce :
+   - **Blink** (iPhone, iPad) : `ssh -L 7007:127.0.0.1:7007 <utilisateur>@<adresse privée du
+     poste>`, puis laisser la session ouverte ;
+   - **Termius** (iPhone, iPad) : un *Port Forwarding* de type *Local*, port local 7007,
+     destination `127.0.0.1:7007`, par l'hôte du poste.
 
    **Non vérifié** : les noms des menus, et la syntaxe exacte de chaque application.
-3. **Dans le navigateur du téléphone** : `http://localhost:7007/?token=…`, l'URL que donne `make
-   glorfindel-host-tunnel` (ou `make glorfindel-host-url`). Le `Host` reste `localhost` : la console
-   de H0 répond sans rien ajouter à `EREGION_CONSOLE_HOSTS`. Le jeton reste exigé : l'URL le porte
-   une fois, la console le retire et pose un cookie de session (12 h).
+2. **L'URL** : dans le terminal du téléphone, sur le poste, `make console-url`. Le tunnel armé, elle
+   donne celle de la console d'Imladris (`http://localhost:7007/?token=…`, le jeton lu dans
+   `infra/glorfindel-host/host.env`). Le tunnel arrêté, elle donne celle de la console locale, comme
+   avant, et une ligne renvoie à `make glorfindel-host-url` ou à `make mobile-tunnel-on`. Elle refuse dans une
+   session d'agent : le jeton n'atteint jamais une session de code (`make glorfindel-host-url` et
+   `make glorfindel-host-tunnel` refusent de même).
+3. **Dans Safari** : cette URL. Le `Host` reste `localhost` : la console d'Imladris répond sans rien
+   ajouter à `EREGION_CONSOLE_HOSTS`. Le jeton reste exigé : l'URL le porte une fois, la console le
+   retire et pose un cookie de session (12 h).
 
-**Le prix de ce choix.** Sur iOS, une application mise en arrière-plan peut être suspendue, et sa
-redirection coupée : le navigateur ne répond plus. Il faut alors revenir dans Blink ou Termius, que
-le tunnel se rouvre, puis recharger la page. Ce qu'on y gagne : la console derrière la clé
-matérielle du téléphone, et pas seulement derrière le tailnet et le jeton.
+**Ce que fait iOS en arrière-plan.** Une application mise en arrière-plan est suspendue au bout de
+quelques secondes ou minutes, et sa redirection avec elle : Safari ne répond plus. Il faut revenir
+dans Blink ou Termius, que le tunnel du téléphone se rouvre, puis recharger la page. Le tunnel du
+poste, lui, ne dépend pas du téléphone : il reste armé jusqu'à `make mobile-tunnel-off` ou la fin de
+ses 12 h. **Non vérifié** : la durée exacte avant suspension, propre à chaque application.
 
-Un restore depuis la console reste refusé sur H0 (elle n'a pas le rôle Restore) ; il demandera le
-nom tapé et le code à usage unique avec TOT1 (#685). En attendant, le restore passe par le terminal
-du poste (étape 6).
+**Le retrait.** `make mobile-tunnel-off` à la fin du geste ; `make mobile-tunnel-remove` quand on
+n'en veut plus du tout. Le tunnel du poste non armé, `make glorfindel-host-tunnel` tient encore le tunnel
+à la main, dans un terminal (Ctrl+C le ferme) ; il refuse tant que le tunnel du poste est armé, qui
+tient déjà le port.
+
+Un restore depuis la console reste refusé sur Imladris (elle n'a pas le rôle Restore) ; il demandera
+le nom tapé et le code à usage unique avec TOT1 (#685). En attendant, le restore passe par le
+terminal du poste (étape 6).
 
 ## 6. Un run depuis le téléphone
 
@@ -265,7 +366,9 @@ Les deux barrières se ferment l'une sans l'autre ; fermer les deux, puis ce que
    `EREGION_CONSOLE_TOKEN` dans `infra/glorfindel-host/host.env`, `make glorfindel-host-push`, puis
    sur H0 `cd eregion && docker compose up -d war-room` ; le cookie de session tombe avec lui (SEC10).
    **Non vérifié** comme enchaînement.
-4. `make mobile-check` : une clé de moins.
+4. `make mobile-tunnel-off` sur le poste : le tunnel vers la console d'Imladris s'arrête avant la fin
+   de ses 12 h.
+5. `make mobile-check` : une clé de moins, « ℹ tunnel : non armé ».
 
 ## Ce qui reste ouvert
 
@@ -275,9 +378,17 @@ Les deux barrières se ferment l'une sans l'autre ; fermer les deux, puis ce que
 - Une session `tmux` ouverte se pilote par tout processus du même utilisateur (étape 4).
 - Un téléphone déverrouillé, l'application ouverte et la session reprise, est l'opérateur : la
   biométrie débloque la clé, pas chaque commande. Les gestes qui comptent font taper un nom.
-- Le jeton de la console s'affiche dans le terminal du téléphone, comme dans celui du bureau.
-- Le `127.0.0.1:7007` du poste est aussi celui que WSL partage avec Windows : un processus de Windows
-  y joint la console, jeton exigé, comme pour le tunnel du bureau.
+- Le jeton de la console s'affiche dans le terminal du téléphone (`make console-url`), comme dans
+  celui du bureau.
+- **Pendant que le tunnel est armé, tout processus local du poste joint la console d'Imladris** sur
+  `127.0.0.1:7007` — une session d'agent comprise. Sans le jeton, il n'obtient qu'un refus. Le
+  `127.0.0.1` de WSL est aussi partagé avec Windows : un processus de Windows y joint la console, jeton
+  exigé, de même. La fenêtre est bornée par le geste (`make mobile-tunnel-on`) et par les 12 h ; le
+  [modèle de menace](../design/modele-de-menace.md#9-le-téléphone-et-son-chemin-vers-le-poste) dit ce
+  qui garde la console pendant ce temps.
+- La clé du tunnel du poste vers Imladris doit s'ouvrir sans phrase de passe, ou par un agent que
+  systemd de l'utilisateur voit (**non vérifié**) : une clé sans phrase, sur le disque du poste, ouvre
+  Imladris à qui la lit.
 - Le Windows de l'hôte n'est pas lu par `make mobile-check` : son pare-feu, et le réseau de WSL en
   mode *mirrored*, où une écoute de WSL sur toutes les interfaces le serait aussi sur celles de
   Windows. Le contrôle des écoutes de WSL le couvre en partie.

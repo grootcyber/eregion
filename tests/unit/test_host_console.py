@@ -46,12 +46,36 @@ CASES = {
 }
 
 
-def _make(tmp_path, *args, environ=None):
+# What the targets that print the console's token read, copied outside any worktree: they refuse in an
+# agent session (MOB2), and the operator's checkout is never one.
+OPERATOR_FILES = ("Makefile", "scripts/mobile.py", "scripts/bench_shared.py",
+                  "infra/poste/eregion-console-tunnel.service", "infra/glorfindel-host/known_host.sh")
+
+
+def operator_checkout(tmp_path) -> Path:
+    """The operator's checkout, for the targets that print the token: a copy outside any worktree, and a
+    `systemctl` first on the PATH that says the workstation's tunnel is not armed."""
+    root = tmp_path / "operator"
+    for rel in OPERATOR_FILES:
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(ROOT / rel, root / rel)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    (bin_dir / "systemctl").write_text("#!/bin/sh\nexit 3\n")
+    (bin_dir / "systemctl").chmod(0o755)
+    return root
+
+
+def _make(tmp_path, *args, environ=None, operator=False):
     env = {**os.environ, "HOME": str(tmp_path), **(environ or {})}
-    for k in (NEW, OLD, "HOST_ENV", "HOST_IP"):
+    for k in (NEW, OLD, "HOST_ENV", "HOST_IP", "EREGION_AGENT_SESSION"):
         env.pop(k, None)
-    return subprocess.run(["make", "-s", "--no-print-directory", "-C", str(ROOT), *args],
-                          env=env, capture_output=True, text=True, timeout=60)
+    root = ROOT
+    if operator:
+        root = operator_checkout(tmp_path)
+        env["PATH"] = f"{tmp_path / 'bin'}{os.pathsep}{env['PATH']}"
+    return subprocess.run(["make", "-s", "--no-print-directory", "-C", str(root), *args],
+                          env=env, capture_output=True, text=True, timeout=60, cwd=root)
 
 
 def _host_env(tmp_path, content) -> Path:
@@ -66,7 +90,7 @@ def _host_env(tmp_path, content) -> Path:
 @pytest.mark.parametrize("case", list(CASES))
 def test_host_url_takes_the_token_under_either_name(tmp_path, case):
     content, token = CASES[case]
-    res = _make(tmp_path, "glorfindel-host-url", f"HOST_ENV={_host_env(tmp_path, content)}")
+    res = _make(tmp_path, "glorfindel-host-url", f"HOST_ENV={_host_env(tmp_path, content)}", operator=True)
     if token is None:
         assert res.returncode != 0
         assert "aucun jeton de la console" in res.stderr and "?token=" not in res.stdout
@@ -92,7 +116,7 @@ def test_host_tunnel_shows_the_console_url_under_either_name(tmp_path, case):
     content, token = CASES[case]
     bin_dir, log = _fake_ssh(tmp_path)
     res = _make(tmp_path, "glorfindel-host-tunnel", "HOST_IP=203.0.113.9",
-                f"HOST_ENV={_host_env(tmp_path, content)}",
+                f"HOST_ENV={_host_env(tmp_path, content)}", operator=True,
                 environ={"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", "FAKE_SSH_LOG": str(log)})
     assert res.returncode == 0, res.stderr
     assert "War Room" not in res.stdout
@@ -227,7 +251,7 @@ def test_make_host_env_and_the_console_agree_on_the_token(tmp_path, case, monkey
 
     content, token = CASES[case]
     path = _host_env(tmp_path, content)
-    res = _make(tmp_path, "glorfindel-host-url", f"HOST_ENV={path}")
+    res = _make(tmp_path, "glorfindel-host-url", f"HOST_ENV={path}", operator=True)
     by_make = res.stdout.strip().removeprefix("http://localhost:7007/?token=") if res.returncode == 0 else None
     parsed = host_env.read_env(path)
     name = host_env.token_name(parsed)
