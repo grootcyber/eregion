@@ -1413,6 +1413,15 @@ briques:
     lots: [MUT9]
     issue: 704
 
+  - id: s-nuit-figee
+    composant: socle
+    poste: s-prouver
+    nom: "A mutant the nightly run found fragile, caught on every round by the frozen sequence that names it"
+    etat: main
+    release: "0.5"
+    lots: [MUT10]
+    issue: 715
+
   - id: s-verrous
     composant: socle
     poste: s-signer
