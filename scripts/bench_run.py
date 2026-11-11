@@ -9,7 +9,7 @@ is installed on Imladris. In order, each step stopping the next one:
   0  the guard     never in a code session (EREGION_AGENT_SESSION, a lot's worktree): a session never
                    launches an attack (bench_shared.session_refusal, the rule of bench_reader.py); and a
                    terminal on stdin, or nothing is sent and nothing is run (the sub-make has already read
-                   the local Terraform state, H0's and Orodruin's addresses: the threat model's frontier 9):
+                   the local Terraform state, Imladris's and Orodruin's addresses: the threat model's frontier 9):
                    a name « typed » through a pipe is no name typed
   1  the preflight `make bench-preflight` (scripts/bench_preflight.py, BNC1): one ✗ and nothing is
                    asked, nothing is sent

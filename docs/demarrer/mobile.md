@@ -208,7 +208,7 @@ make bench-run TARGET=vm-celebrimbor-gondolin SCENARIO=T1486              # tape
 
 `make bench-run` (`scripts/bench_run.py`) enchaîne, chaque étape arrêtant la suivante :
 1. **un terminal** : sans terminal sur l'entrée (un tube, un script), rien n'est envoyé ni lancé
-   (seules les adresses de H0 et d'Orodruin ont été lues, dans l'état Terraform local) ;
+   (seules les adresses d'Imladris et d'Orodruin ont été lues, dans l'état Terraform local) ;
 2. **le préflight** (`make bench-preflight`, BNC1) : un ✗, rien n'est demandé, rien n'est lancé ;
 3. **la demande** : un fil `SCENARIO` → `TARGET`, l'id de la VM lu sur Azure sous ton `az login`
    (une seule VM de ce nom), lue par le seul lecteur des demandes, comme celles de Dagorlad ;
