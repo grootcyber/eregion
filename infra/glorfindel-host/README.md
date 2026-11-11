@@ -435,7 +435,9 @@ absente, vide ou pas un GUID ». Avec cette note, la variable manque à la watch
 écartée, la règle livrée tourne (les cartes du canari reviennent) — reprendre les étapes 1 et 2.
 La cible le rappelle : sa relecture sur le poste prend un GUID de remplacement (l'appid d'Imladris n'y
 est jamais) et dit que la watch d'Imladris en a besoin. **Après coup** : au run planifié du canari du
-lendemain (06:00 UTC), aucune carte `nsg-change-outside-glorfindel` sur `rg-eregion-canary` ; une
+lendemain (programmé à 06:00 UTC, `0 6 * * *` ; GitHub le retarde de plusieurs heures — le 11/11,
+ses six derniers passages programmés sont partis entre 11:57 et 14:27 UTC ; l'heure réelle : `gh run
+list --workflow canary-azurerm.yml`), aucune carte `nsg-change-outside-glorfindel` sur `rg-eregion-canary` ; une
 carte du canari, c'est que l'exclusion ne tient pas (l'appid n'est pas celui du principal du run, ou
 la variable manque à la watch) — reprendre l'étape 1. Pour revenir aux cartes du canari : vider la
 variable (étapes 1 et 2), ou retirer la règle de la couche d'Imladris.
@@ -456,12 +458,14 @@ make glorfindel-host-client-rules
 `glorfindel rules` doit montrer `entra-sp-unusual-signin` en `client (remplace)`, avec la note
 « remplacée par celle de la couche du client », et aucune note « EREGION_RULE_CANARY_APPID absente,
 vide ou pas un GUID » (avec elle, la variable manque à la watch : les deux copies du canari sont
-écartées, reprendre les étapes 1 et 2 de CAN2). **Au passage suivant du canari** (06:00 UTC, ou un
-`workflow_dispatch` de `canary-azurerm`) : **aucune** carte `entra-sp-unusual-signin` pour
-`eregion-canary`. **À mesurer à ce passage** : la forme que le workspace écrit dans
-`ClientCredentialType` pour une connexion OIDC (la valeur retenue est celle de Microsoft Graph ; la
-page de la table n'en donne que des exemples en prose) et la présence de `FederatedCredentialId`.
-Une carte du canari, c'est que l'une des deux ne tient pas : lire ses lignes de la dernière heure,
+écartées, reprendre les étapes 1 et 2 de CAN2). **Au passage suivant du canari** (programmé à 06:00 UTC, que
+GitHub retarde de plusieurs heures, comme ci-dessus ; ou un `workflow_dispatch` de `canary-azurerm`) :
+**aucune** carte `entra-sp-unusual-signin` pour `eregion-canary`. **Mesuré au banc le 11/11** (#673),
+sur une connexion OIDC du canari : `ClientCredentialType` vaut `federatedIdentityCredential` (la
+valeur de Microsoft Graph, celle que lit la copie), et `FederatedCredentialId` est présent.
+`ServicePrincipalCredentialKeyId` et `ServicePrincipalCredentialThumbprint` sont remplis eux aussi,
+constants d'un passage à l'autre, et ne valent pas l'id de l'identifiant fédéré ; la copie ne les
+lit pas. Une carte du canari, c'est qu'une des deux conditions ne tient plus : lire ses lignes de la dernière heure,
 dans le workspace (des ids, aucun secret), puis corriger la copie dans le dépôt, et relancer la
 cible — sans release :
 
@@ -472,9 +476,14 @@ AADServicePrincipalSignInLogs
           ServicePrincipalCredentialKeyId, ServicePrincipalCredentialThumbprint
 ```
 
-Une carte du canari qui nomme un secret ou un certificat (`ServicePrincipalCredentialKeyId`,
-`…Thumbprint`) n'est pas l'exclusion qui manque : c'est la carte voulue — le canari n'a pas de
-secret (P-04). Pour revenir aux cartes de ses connexions : retirer la règle de la couche d'Imladris.
+`ServicePrincipalCredentialKeyId` et `…Thumbprint` ne disent pas qu'un secret ou un certificat a
+servi : ils sont remplis pour une connexion fédérée aussi (mesuré le 11/11). C'est
+`ClientCredentialType` qui le dit, sur la ligne (`clientSecret`, `certificate`) : une carte du
+canari sous l'une de ces valeurs n'est pas l'exclusion qui manque, c'est la carte voulue — le canari
+n'a pas de secret (P-04). Qu'il n'en ait toujours pas se lit sur l'application et sur son principal
+de service, en comptes, jamais en valeurs : `az ad app show --id <appid> --query
+"{secrets: length(passwordCredentials), certs: length(keyCredentials)}"`, puis la même requête par
+`az ad sp show --id <appid>` ; deux zéros attendus de chaque côté. Pour revenir aux cartes de ses connexions : retirer la règle de la couche d'Imladris.
 
 **Après une mise à jour de Glorfindel**, si une règle livrée recopiée a changé (n'importe quel
 champ : l'empreinte `base_sha256` est celle de la règle entière), la watch **écarte la copie** et
