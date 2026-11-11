@@ -46,7 +46,7 @@ Entre ces gestes, rien ne demande la main :
 |---|---|---|
 | le préflight, qui refuse s'il n'est pas vert | le poste, dans `bench-run` | BNC1, MOB1 |
 | le calme de 10 minutes, vérifié au lieu d'être attendu à la montre : un ✗, jamais une attente | le poste, dans le préflight | à faire (BNC3) |
-| le point de restauration propre, vérifié, et pris s'il manque | le poste, dans `bench-run`, par le chemin du bouton 📸 d'Imladris | à faire (BNC3) |
+| le point de restauration propre, vérifié, et pris s'il manque ; « restore d'abord » sur une VM attaquée et non restaurée | le poste, dans `bench-run`, par la route du bouton 📸 de la console d'Imladris, après le nom tapé | à faire (BNC3) |
 | la détection, l'isolement autonome et sa vérification | Imladris | la watch, DRN1 |
 | la levée après le restore | Imladris | REC1, REC1b ; à venir, LEV1 (LEV3 et suivants) : un exercice prouvé par le plan de contrôle se lèvera seul |
 | le rapport, composé sans rien taper | le poste, puis Imladris en fin de run | BNC1 (le poste) ; à faire (BNC3, BNC4) |
@@ -61,7 +61,8 @@ l'exclut (§10.2).
 opérateur (poste, ou téléphone → terminal du poste)
    │ geste 1 : make bench-run TARGET=gondolin SCENARIO=T1486   (nom tapé, [o/N])
    ▼
-préflight (BNC1) ─ calme ─ demande ─▶ Orodruin (rejuge : contrat, V1, zone, nom tapé, plafond)
+préflight (BNC1) ─ calme ─ restore d'abord ? ─ demande, nom tapé, [o/N] ─ point propre (route 📸)
+   ─▶ Orodruin (rejuge : contrat, V1, zone, nom tapé, plafond)
                                          │ setup_testdata.sh, puis T1486, T0
                                          ▼
 Imladris : détection ─ isolement autonome vérifié (DRN1) ─ carte d'isolement
@@ -212,7 +213,9 @@ soit en attente, joué, refusé ou passé (« a slot is already armed: disarm fi
 **L'heure armée finit avant l'extinction.** Orodruin et gondolin s'éteignent à 23:00 UTC (DRL1c, le
 planning de Celebrimbor). `slot-arm` refuse une heure dont l'occurrence ne finirait pas avant :
 `at` + `RuntimeMaxSec` (60 min) après 23:00 UTC, soit `at` après 22:00 UTC. Il refuse aussi une
-heure trop proche pour le réveil (§2.7) : moins de 80 min après l'armement, Orodruin éteint.
+heure trop proche pour le réveil (§2.7) : moins de 80 min après l'armement, Orodruin éteint. Et il
+refuse tant que le réveil est désactivé, c'est-à-dire tant que le drill de la semaine n'est pas
+armé (§2.7).
 
 **L'horizon : sept jours au plus.** `AT` tombe dans le futur, au plus 7 jours après l'armement. La
 politique du canal supprime un blob 9 jours après sa dernière écriture (`channel_retention_days`,
@@ -296,24 +299,41 @@ créneau a donc un réveil, décidé par Jonathan le 11/11 :
 - **l'armement n'écrit qu'une donnée**, le permis. Il ne touche jamais la Logic App, ni son
   planning, ni son état : rien ne s'écarte de l'état de Terraform ;
 - **son identité reçoit une lecture, sur ce seul conteneur du canal** : `Storage Blob Data Reader`
-  à la portée du conteneur `exercises` (`infra/orodruin/main.tf`), jamais du compte. Elle y lit ce
-  que le canal publie déjà (fenêtres, statuts, rapports, permis), sans identifiant ni cible. Elle
-  n'y écrit rien ;
+  à la portée du conteneur `exercises` (`infra/orodruin/main.tf`), jamais du compte. Elle n'y écrit
+  rien. Le conteneur porte bien plus que le permis : le journal d'Orodruin (`audit/<run_id>.jsonl`,
+  dont chaque ligne nomme sa cible par son identifiant ARM, donc l'abonnement :
+  `eregion_core/orodruin.py`), les fenêtres et leurs cibles (`eregion_core/exercise.py`), les
+  statuts et les rapports. D'où **une condition ABAC sur l'attribution**, qui borne la lecture au
+  seul chemin `orodruin/slot-permit.json` (l'attribut `path` du blob, `StringEquals`) : la portée
+  reste ce seul conteneur, comme Jonathan l'a décidé, et la lecture ce seul blob. Son mutant : la
+  condition absente. **À mesurer au banc (BNC5b)** : que la condition tienne pour une Logic App, et
+  qu'une lecture d'un autre blob soit refusée. Si elle ne tient pas, la Logic App lit tout le
+  conteneur : la même lecture que la watch (`channel_watch_reader`, `infra/orodruin/main.tf`), les
+  identifiants ARM des cibles compris, et le modèle de menace le dira noir sur blanc ;
 - **elle ne joue rien** : elle allume une VM. Le minuteur d'Orodruin, ses gardes (§2.6) et le permis
   décident seuls de l'occurrence. Allumé pour rien (un permis forgé par Orodruin, qui peut écrire le
   canal), Orodruin coûte une soirée de VM, puis s'éteint à 23:00 UTC ;
-- **le kill** supprime le permis : plus de réveil. Il désactive aussi la Logic App, comme dans DRL1
-  (§3.1 de `drill-banc.md`). `slot-arm` lit son état, en lecture seule : désactivée, il le dit
-  (« the wake-up is disabled »), et refuse, puisque le réveil ne viendrait pas. Le réarmement du
-  drill de la semaine la réactive (DRL1).
+- **le réveil dépend du drill de la semaine.** DRL1 crée la Logic App désactivée, et seul
+  `orodruin-drill-arm` l'active ; `orodruin-drill-disarm` et le kill la désactivent (§5.1 et §3.1 de
+  `drill-banc.md`). Donc : sans drill de la semaine armé, aucun créneau ne s'arme (`slot-arm` lit
+  son état, en lecture seule, et refuse : « the wake-up is disabled: arm the weekly drill first ») ;
+  et désarmer le drill de la semaine coupe le réveil d'un créneau déjà armé. Ce cas n'est pas
+  silencieux : l'alarme d'absence « slot not run » d'Imladris (§2.6) le rattrape ;
+- **le kill** supprime le permis : plus de réveil, et la Logic App est désactivée ;
+- **deux récurrences dans une même Logic App** : celle de la semaine (T − 20 min) et celle de
+  l'heure. Elles partagent les mêmes actions : la condition doit tester laquelle s'est déclenchée,
+  et le contrôle d'heure d'`orodruin-drill-arm` (« apply first », §5.1 de `drill-banc.md`) viser la
+  récurrence de la semaine. Une Logic App de consommation n'a peut-être qu'un déclencheur : la
+  récurrence horaire porterait alors les deux conditions. À mesurer (BNC5b).
 
 **Les gestes de Jonathan** (BNC5b) : `make orodruin-plan`, relu (une récurrence de plus, une
 attribution de rôle à la portée du conteneur, rien d'autre), puis `make orodruin-lock`, qui en est
 l'apply. Aucun droit nouveau pour l'identité d'Orodruin.
 
-**À mesurer** : la lecture d'un blob par la Logic App sous son identité managée ; le JSON du permis
-lu par son expression ; le délai entre le réveil et docker prêt (les 20 min de marge
-suffisent-elles ?) ; le coût d'une récurrence horaire.
+**À mesurer** (BNC5b) : la lecture d'un blob par la Logic App sous son identité managée, et la
+condition ABAC qui la borne au seul permis ; le JSON du permis lu par son expression ; les deux
+récurrences et la condition qui les distingue ; le délai entre le réveil et docker prêt (les 20 min
+de marge suffisent-elles ?) ; le coût d'une récurrence horaire.
 
 ---
 
@@ -328,48 +348,98 @@ quels droits, ce qui le prouve, et si une main la fait.
 | 0 | **Allumer** gondolin et Orodruin | l'opérateur, `make celebrimbor-start`, `make orodruin-start` (OI3 met Orodruin à jour) | leur état, relu par le préflight | oui, comme aujourd'hui |
 | 1 | **Le geste 1** : `make bench-run TARGET=gondolin SCENARIO=T1486` | l'opérateur, dans un terminal du poste (au clavier, ou depuis le téléphone, MOB1) ; refusé dans une session d'agent, ou sans terminal | la commande et sa sortie ; le journal du serveur SSH du poste pour le téléphone | **oui** |
 | 2 | **Le préflight** (BNC1) | le poste, en lecture seule : l'`az login` de l'opérateur, la lecture d'Imladris par SSH dans un conteneur sans réseau, le contrat lu sur Orodruin | une ligne ✓/⚠/✗ par contrôle ; **un ✗, et rien ne part** | non |
-| 3 | **Le calme** : gondolin démarrée depuis 10 min au moins, aucun run sur elle depuis 10 min | le préflight, en lecture (le journal d'activité de la VM, les rapports de `runs/bench/`) | une ligne de plus du préflight (BNC3) : un ✗ qui dit les minutes qui restent, jamais une attente ; l'opérateur relance (Q6). Aujourd'hui, la montre de l'opérateur | non (à faire) |
-| 4 | **Le point de restauration propre** (Q3) | `bench-run`, après le préflight. Il lit le point que le restore prendra, le plus récent de la VM, et vérifie qu'il est **propre** : pris après le dernier restore de la VM (les jobs du coffre) et **hors de toute quarantaine** (l'historique d'isolement d'Imladris, lu comme BNC1 le lit). Sinon, il en demande un par le chemin du bouton 📸 : `glorfindel snapshot --yes --wait` dans le conteneur de la console d'Imladris, par le SSH à clé d'hôte épinglée, sous l'identité d'Imladris (son rôle Response, aucun droit ajouté). Il attend que le job soit terminé, `Completed`, puis attaque | la ligne « point » de `bench-run` : le point gardé et pourquoi, ou celui qui vient d'être pris ; le job du coffre ; `runs/console/manual_actions.jsonl` sur Imladris | non (à faire, BNC3) |
-| 5 | **La demande**, puis **le nom tapé** et « [o/N] » | le poste écrit la demande par le lecteur de Dagorlad (`exercise_request.new`) ; le nom de la VM, tapé, est comparé à celui qu'Azure donne | la demande, son identifiant ; un autre nom, et rien ne part | **oui** (fait partie du geste 1) |
+| 3 | **Le calme**, et **le restore d'abord** : gondolin démarrée depuis 10 min au moins, aucun run sur elle depuis 10 min ; et elle ne porte **aucun run destructif sans restore depuis** (Q3b) | le préflight, en lecture (le journal d'activité de la VM, les rapports de `runs/bench/`). Un run destructif de la VM dont le rapport manque ou ne se lit pas compte comme un refus | deux lignes de plus du préflight (BNC3) : un ✗ qui dit les minutes qui restent, jamais une attente (Q6) ; un ✗ « restore d'abord » (Q3b). L'opérateur relance. Aujourd'hui, la montre de l'opérateur | non (à faire) |
+| 4 | **La demande**, puis **le nom tapé** et « [o/N] » | le poste écrit la demande par le lecteur de Dagorlad (`exercise_request.new`) ; le nom de la VM, tapé, est comparé à celui qu'Azure donne. **Rien n'est écrit, ni sur Imladris ni sur Azure, avant cette confirmation** | la demande, son identifiant ; un autre nom, ou « N », et rien ne part | **oui** (fait partie du geste 1) |
+| 5 | **Le point de restauration propre** (Q3) | `bench-run`, après la confirmation. Il lit **le point le plus récent** de la VM, celui que le restore prendra, et vérifie qu'il est **propre** (§3.1). Sinon, il en demande un par **la route du bouton 📸**, `POST /api/action/snapshot/<vm>` de la console d'Imladris (`eregion_console/api.py`, `action_snapshot`), attend que le job soit `Completed`, puis attaque | la ligne « point » de `bench-run` : le point gardé et pourquoi, ou celui qui vient d'être pris ; le reçu de la demande (sous FS1) ; le job du coffre | non (à faire, BNC3) |
 | 6 | **L'attaque, par Orodruin** | `exercise_runner` rejuge tout (contrat, V1, inscription, zone, le nom tapé contre le nom qu'il lit, plafond), puis `annatar wire` : Run Command sous l'identité d'Orodruin (`injector_vm`), journalisé **avant** l'appel ; `setup_testdata.sh` puis le script de T1486, sous la fenêtre d'exercice | la fenêtre porte l'identifiant de la demande ; `attack_started`, T0 ; le journal d'activité, appelant Orodruin | non |
 | 7 | **La détection, l'isolement autonome et sa vérification** | la watch d'Imladris : `Reader` et `Log Analytics Reader` sur le banc, « Response », « Session Drain » sur gondolin ; `isolate_vm` en `non_disruptive` ; la coupure des sessions suivie sur Azure (DRN1) | le cycle `isolate_vm` relu `verified=True` ; la carte d'isolement | non |
 | 8 | **Le rapport intermédiaire** | `bench-run` compose `make bench-report RUN=<run_id>` à sa sortie, sur le poste (BNC1) | `runs/bench/<run_id>.json` et son Markdown, sur le poste | non |
-| 9 | **L'attente**, en quarantaine | personne : la VM reste isolée, réaffirmée chaque minute (§3.2) | l'état d'isolement d'Imladris, la carte | — |
+| 9 | **L'attente**, en quarantaine | personne : la VM reste isolée, réaffirmée chaque minute (§3.3) | l'état d'isolement d'Imladris, la carte | — |
 | 10 | **Le geste 2 : le restore** (§4) | aujourd'hui `make bench-restore TARGET=gondolin RUN=<run_id>` sur le poste, sous la paire de la console ; demain, la carte d'isolement (FS1g, TOT1) | le job du coffre `Completed` ; la neutralisation (SEC17) dans le journal d'activité | **oui** |
 | 11 | **La levée, par Imladris** | la watch lit la reprise sur Azure chaque minute (REC1) : le job fini, sur place, le point antérieur, la VM qui tourne, la neutralisation par le seul journal (REC1b) ; aujourd'hui la levée suit le mode de gondolin (`non_disruptive` : seule) ; à venir, LEV1 (LEV3 et suivants) en fait la règle d'un exercice prouvé par le plan de contrôle ; son seul `Reader` | le cycle de son `recovery_complete`, `release_isolation` vérifié ; ou une carte « levée retenue » qui dit pourquoi | non (une carte, si retenue) |
 | 12 | **Le rapport final** (§5) | composé seul : sur le poste à la fin de `bench-restore` (BNC3), puis sur Imladris en fin de run (BNC4) | `runs/bench/<run_id>.json` ; le message du bot de Glorfindel | non |
 | 13 | **La remise en état** (§6) | les lectures dans le rapport ; les gestes à froid à l'opérateur | la section « état du banc à la fin » du rapport | les gestes à froid |
 
-**Pourquoi le point se vérifie (Q3).** Le restore prend le point le plus récent avant T0. Quand les
-runs s'enchaînent, ce point peut avoir été pris pendant la quarantaine du run précédent : un
-instantané que la watch déclenche sur la VM isolée, ou un point de la politique pris avant son
-restore. Il porterait alors les données chiffrées. `bench-run` refuse donc un point pris avant le
-dernier restore ou pendant une quarantaine, et en prend un propre avant l'attaque. Le premier point
-après un restore est complet, et peut prendre environ 40 min : l'attente est bornée (60 min, à
-mesurer), et un job qui échoue ou dépasse arrête le run avant la demande, rien n'est envoyé.
+### 3.1 Le point propre (Q3, Q3b)
 
-### 3.1 Ce qui arrête le run
+**Pourquoi il se vérifie.** Le restore prend le point le plus récent avant T0. Quand les runs
+s'enchaînent, ce point peut avoir été pris pendant la quarantaine du run précédent : un instantané
+que la watch déclenche sur la VM isolée, ou un point de la politique pris avant son restore. Il
+porterait alors les données chiffrées.
+
+**Ce qui est vérifié : le point le plus récent**, celui que le restore prendra, et pas seulement
+qu'un point propre existe quelque part. C'est plus strict que la lettre de Q3, et c'est la bonne
+lecture : un point propre plus ancien ne servirait pas. Il est propre s'il tient les deux critères :
+1. **pris après le dernier restore de la VM**, lu dans les jobs du coffre, sous l'`az login` de
+   l'opérateur. Si la liste des jobs ne remonte pas jusqu'au dernier restore (sa profondeur, sa
+   rétention), le point est refusé ;
+2. **pris hors de toute quarantaine.** La source : les intervalles entre un `isolate_vm` vérifié
+   (les cycles de la watch d'Imladris) et sa levée (le cycle du `recovery_complete` de la watch, ou
+   un `release_isolation` dans `runs/console/manual_actions.jsonl` et `runs/bot/manual_actions.jsonl`),
+   **sur tous les runs**, pas sur le seul run en cours. Le lecteur de BNC1 ne les lit pas
+   aujourd'hui (`scripts/bench_h0_reader.py` ne lit que l'isolement courant et les cycles d'un run
+   après son T0) : BNC3 l'étend, toujours dans le conteneur jetable, sans réseau, aux montages en
+   lecture seule. **Faute de lecture**, ou sur une quarantaine dont la levée ne se lit pas, le
+   point est refusé et un nouveau est pris.
+
+**Le trou que ferme Q3b.** Un T1486 dont la détection a manqué ne met pas la VM en quarantaine. Si
+elle n'a pas été restaurée depuis, un point pris après est chiffré, et il tiendrait pourtant les deux
+critères. Jonathan l'a tranché le 11/11 (Q3b) : le préflight refuse le run sur une VM qui porte un
+run destructif sans restore depuis, lu dans les rapports de `runs/bench/`, par un ✗ « restore
+d'abord ». Un rapport manquant compte comme un refus. Une VM attaquée et non restaurée ne se
+rattaque donc pas, et les deux critères suffisent alors.
+
+**Le chemin du bouton 📸.** Quand le point le plus récent n'est pas propre, `bench-run` prend le
+chemin du bouton, la route `POST /api/action/snapshot/<vm>` de la console d'Imladris :
+- **comment il la joint : par un renvoi de port court qu'il ouvre lui-même**,
+  `ssh -N -L 127.0.0.1:<port libre>:127.0.0.1:7007` vers Imladris, avec la clé d'hôte épinglée
+  (`glorfindel-host-known`), le temps de la demande et de son reçu, fermé dans tous les cas à la
+  fin. Raison : il ne dépend pas du tunnel de MOB2, armé à la demande pour 12 h au plus ; il ne
+  laisse rien d'ouvert après lui ; il ne dispute pas le port 7007 au tunnel du téléphone ;
+- **le jeton** est celui de la console, lu dans `host.env` par le Makefile, comme pour `make
+  console-url-imladris`, et refusé aux sessions d'agent par le même garde (`CONSOLE_GUARD`,
+  `scripts/mobile.py guard`). Il part en `Authorization: Bearer`, jamais dans l'URL, jamais
+  affiché ;
+- **ce que la route fait.** Sans la file d'actions, elle lance l'instantané dans la console, sous
+  l'identité d'Imladris (son rôle Response), et rend l'identifiant du job. Sous FS1
+  (`EREGION_ACTION_QUEUE=1`), elle dépose une demande signée par la clé de la console, et **c'est la
+  watch qui l'exécute** (`_queued`) : la route rend l'identifiant de la demande, et `bench-run` suit
+  son reçu, `GET /api/queue/<id>`, jusqu'à une réponse finale. `not_taken`, `untrusted` ou une
+  demande expirée arrêtent le run ;
+- **la suite** : le job du coffre, lu par `az backup job show` sous l'`az login` de l'opérateur,
+  jusqu'à `Completed`. Le premier point après un restore est complet, et peut prendre environ
+  40 min : l'attente est bornée (60 min, à mesurer). Un job qui échoue ou qui dépasse arrête le run
+  avant que la demande parte vers Orodruin : rien n'est attaqué ;
+- **jamais de `docker exec`** dans un conteneur d'Imladris, ni la CLI de Glorfindel lancée dans celui
+  de la console : BNC1 se l'interdit (`scripts/bench_shared.py`, `read_h0`), et FS1 le dit, la CLI
+  lancée dans le conteneur de la console y échoue sous la file, et c'est voulu
+  (`docs/design/file-actions-signee.md`, §2.12).
+
+### 3.2 Ce qui arrête le run
 
 - **Un préflight rouge** : rien n'est demandé, rien n'est envoyé (`bench-run`, étape 1 de son
-  script). Le calme non tenu en est un : un ✗, jamais une attente.
-- **Pas de point propre** : `bench-run` en demande un ; s'il échoue ou dépasse son attente, le run
-  s'arrête avant la demande.
-- **Un nom mal tapé, ou pas de terminal** : rien ne part. Un nom passé par un tube n'est pas un nom
-  tapé.
+  script). Le calme non tenu en est un : un ✗, jamais une attente. « Restore d'abord » aussi.
+- **Une VM qui porte un run destructif sans restore depuis** (Q3b) : un ✗ « restore d'abord » du
+  préflight ; un rapport manquant compte comme un refus.
+- **Un nom mal tapé, « N », ou pas de terminal** : rien ne part, et rien n'est écrit, ni le point ni
+  l'attaque. Un nom passé par un tube n'est pas un nom tapé.
+- **Pas de point propre** : après la confirmation, `bench-run` en demande un par la route du bouton
+  📸 ; si la demande est refusée, si le job échoue ou dépasse son attente, le run s'arrête avant que
+  la demande parte vers Orodruin.
 - **Le battement absent** (V1) : Orodruin refuse `watch` avant tout appel au cloud, après 10 min de
   relecture. Sans Glorfindel vivant, aucune attaque.
 - **« Stop all »** : `make orodruin-kill`, depuis le poste (et montré par Dagorlad,
   `/api/dagorlad/stop`), révoque l'identité d'Orodruin, annule ce qui tourne, ferme les fenêtres.
   Avec DRL1a et BNC5, il supprime aussi les permis et désactive les minuteurs.
 - **Le plafond d'Orodruin** (`max_run_s`, le plafond absolu) : le fil est arrêté, sa fenêtre fermée.
-- **Le restore qui ne vient pas** : la quarantaine tient (§3.2). Rien ne part seul.
+- **Le restore qui ne vient pas** : la quarantaine tient (§3.3). Rien ne part seul.
 - **Le restore refusé** : il lit ses propres droits avant de toucher la VM (RST1) et dit ce qui
   manque ; la VM reste isolée.
 - **Ce qui expire** : ce n'est pas la quarantaine. Ce qui expire, c'est le geste (§4.3) : la
   demande signée d'un clic (FS1), le code de TOT1, la session de la console. La carte du TTL, elle,
-  ne lève rien (§3.2).
+  ne lève rien (§3.3).
 
-### 3.2 L'état sûr quand l'humain ne répond pas
+### 3.3 L'état sûr quand l'humain ne répond pas
 
 Si personne ne restaure, le banc reste dans l'état où la watch l'a mis :
 - **la VM est en quarantaine** : le NSG de quarantaine, réaffirmé chaque minute ; les sessions
@@ -435,7 +505,7 @@ d'Imladris. La clé matérielle du SSH du téléphone tient lieu de second facte
   disparaît à la levée : plus de bouton « Restaurer » sur une VM levée.
 - **Le geste expire** : une demande de la file vit 120 s au plus (`expires_at`, FS1) ; un code TOTP
   vaut pour son pas de temps (TOT1) ; le cookie de session de la console, 12 h.
-- **La carte du TTL** demande à un humain de trancher, et ne lève rien (§3.2).
+- **La carte du TTL** demande à un humain de trancher, et ne lève rien (§3.3).
 - **L'approbation en un clic** d'une carte de recommandation (`GLORFINDEL_APPROVAL_MAX_AGE_H`, 2 h,
   `glorfindel/approval.py`) ne concerne pas ce run : il n'y a pas de carte de recommandation de
   restore.
@@ -557,10 +627,11 @@ F=infra/glorfindel-host/host.env
 grep -c '^EREGION_ORODRUIN_PRINCIPAL_ID=' $F    # → 0 (sinon : la retirer d'abord, sed -i '/^EREGION_ORODRUIN_PRINCIPAL_ID=/d' $F)
 P=$(terraform -chdir=infra/orodruin output -no-color -raw principal_id)
 print -r -- ${#P}                               # → 36, la longueur d'un GUID (0 : l'état d'Orodruin illisible, s'arrêter)
+tail -c1 $F | wc -l                             # → 1 : host.env finit par un saut de ligne (0 : print >> $F d'abord)
 print -r -- "EREGION_ORODRUIN_PRINCIPAL_ID=$P" >> $F
 unset P
 grep -cE '^EREGION_ORODRUIN_PRINCIPAL_ID=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' $F   # → 1, sans l'afficher
-make glorfindel-host-push                       # host.env → ~/eregion/.env sur Imladris
+make glorfindel-host-push                       # host.env → ~/eregion/.env sur Imladris ; --check dit une valeur qui n'est pas un GUID (BNC4)
 make glorfindel-host-ssh                        # puis, sur Imladris :
 grep -c '^EREGION_ORODRUIN_PRINCIPAL_ID=' ~/eregion/.env   # → 1
 ```
@@ -628,26 +699,27 @@ point propre demandé par `bench-run`, un message du bot, et une proposition de 
 
 | Frontière | Ce que BNC2 gagne | Ce qu'il ajoute, ou met en risque | Ce qui le tient |
 |---|---|---|---|
-| **1. La console** | rien de neuf à défendre : elle ne lance rien ; le restore depuis la carte d'isolement attend FS1g et TOT1, qui portent leurs propres menaces | — | — |
+| **1. La console** | elle ne lance aucune attaque ; le restore depuis la carte d'isolement attend FS1g et TOT1, qui portent leurs propres menaces | **une écriture du poste** : `bench-run` appelle la route du bouton 📸 (`POST /api/action/snapshot/<vm>`) sous le jeton de la console, sans clic. Avant FS1, la console lance l'instantané ; sous FS1, elle dépose une demande signée, et c'est **la watch qui exécute** | la même route, les mêmes gardes que le bouton (le jeton, `_one_slot`, la file sous FS1) ; un seul verbe, l'instantané, qui n'est pas destructif ; le jeton refusé aux sessions d'agent, jamais dans l'URL, jamais affiché ; seulement après le nom tapé et « [o/N] » ; le renvoi de port fermé à la fin |
 | **2. `runs/` et l'état local** | — | un écrivain de plus sur Imladris, `runs/bench/` (le rapport) ; un marqueur de plus dans `runs/glorfindel/` | SEC18 tenu : `runs/bench/` est un écrivain déclaré (`runs_layout.WRITERS`, `test_runs_mounts.py`), monté en écriture par la seule composition ; le marqueur reste dans le répertoire de la watch, que la composition lit en lecture seule et ne touche pas. Le rapport n'est **lu par aucune décision** : ni par la watch, ni par REC1, ni par `_build_user_message()` (mutant proposé) |
 | **3. Discord** | — | un message de plus du bot de Glorfindel | le texte passe par `chat_text.py`, sans mention sauf le rôle configuré (SEC6), et **sans bouton** ; masqué avant d'être posté |
 | **4. Le fournisseur du modèle** | Glorfindel reste aveugle au rouge : rien du rapport, du créneau ni de la demande n'entre dans le message au modèle | — | les trois zones du prompt inchangées ; le test de `test_dagorlad_blind.py`, étendu au créneau |
-| **5. Les hôtes : Imladris** | — | un conteneur de plus, lancé par une unité de l'hôte sur un marqueur de la watch, qui lit Azure sous l'identité managée | **aucun droit ajouté** : aucune attribution nouvelle dans son Terraform (`infra/glorfindel-host/`) ; la watch n'a jamais le socket Docker ; les montages en lecture seule sauf `runs/bench/`. **Mais l'identité est celle qui écrit** (Response, Session Drain, le canal) : la lecture seule sur Azure ne tient que par le code, son test et son mutant : **risque accepté par Jonathan pour la v1 (Q8)**. À FS1d, la règle `DOCKER-USER` qui coupe IMDS vise aussi ce conteneur |
+| **5. Les hôtes : Imladris** | — | un conteneur de plus, lancé par une unité de l'hôte sur un marqueur de la watch, qui lit Azure sous l'identité managée ; et un instantané demandé depuis le poste (Q3), exécuté sous l'identité d'Imladris (Response) | **aucun droit ajouté** : aucune attribution nouvelle dans son Terraform (`infra/glorfindel-host/`) ; la watch n'a jamais le socket Docker ; les montages en lecture seule sauf `runs/bench/`. **Mais l'identité est celle qui écrit** (Response, Session Drain, le canal) : la lecture seule sur Azure ne tient que par le code, son test et son mutant : **risque accepté par Jonathan pour la v1 (Q8)**. À FS1d, la règle `DOCKER-USER` qui coupe IMDS vise aussi ce conteneur |
 | **5. Les hôtes : Imladris, du conteneur à l'hôte** | — | **une frontière neuve** : un fichier qu'un conteneur écrit (le marqueur de la watch) déclenche, sur l'hôte, un `docker run` sous le groupe docker, qui vaut root | les bornes, chacune avec son mutant (§9) : le `run_id` est pris du **nom** du fichier, validé par le motif des `run_id` du cœur (`eregion_core/exercise.py`, `_SAFE_RUN_ID`, à exposer par `runs_layout` au lot), et passé en argv, **jamais par un shell** ; le **contenu** du marqueur n'est jamais lu comme argument ; l'image (celle qui est déployée), la commande et les montages sont fixés dans l'unité, rien ne vient du marqueur ; **une composition à la fois**, sous verrou (`flock`), avec un `RuntimeMaxSec`. Un marqueur forgé par la watch ne fait que composer, en lecture, le rapport d'un `run_id` valide |
 | **5. Les hôtes : Orodruin** | — | une occurrence armée de plus | la frontière du minuteur proposée par DRL1 (§7 de `drill-banc.md` ; numérotée à son lot de code, puisque la 9 est désormais celle du téléphone) : le même lecteur, le même refus du destructif, la zone `bench`, le contrat, V1. En plus : l'horizon de 7 jours, un créneau à la fois, le registre à part, le permis jamais réécrit |
-| **5. Les hôtes : Orodruin, le réveil** | un créneau joue sans qu'on ait allumé Orodruin à la main | l'identité de la Logic App de DRL1c reçoit **une lecture** : `Storage Blob Data Reader` sur le seul conteneur du canal | elle n'écrit rien, ne lit que ce que le canal publie déjà (sans identifiant ni cible), et ne peut qu'allumer Orodruin ; elle n'allume que sur un permis présent dont l'heure tombe dans l'heure qui vient ; le kill supprime le permis et la désactive ; l'armement n'écrit jamais dans la Logic App. Compromise, elle lit le canal et allume Orodruin, dont le minuteur ne joue qu'à son heure et sous ses gardes |
+| **5. Les hôtes : Orodruin, le réveil** | un créneau joue sans qu'on ait allumé Orodruin à la main | l'identité de la Logic App de DRL1c reçoit **une lecture** : `Storage Blob Data Reader` sur le seul conteneur du canal. Ce conteneur porte le journal d'Orodruin, dont les lignes nomment les cibles par leur identifiant ARM, et les fenêtres | une condition ABAC borne la lecture au seul blob `orodruin/slot-permit.json` (son mutant ; à mesurer au banc, BNC5b). Sans elle, la même lecture que la watch (`channel_watch_reader`), identifiants compris : dit ici si la mesure l'impose. Elle n'écrit rien, et ne peut qu'allumer Orodruin ; elle n'allume que sur un permis présent dont l'heure tombe dans l'heure qui vient ; le kill supprime le permis et la désactive ; l'armement n'écrit jamais dans la Logic App. Compromise, elle lit le canal et allume Orodruin, dont le minuteur ne joue qu'à son heure et sous ses gardes |
 | **6. La CI et le CD** | — | rien de neuf | la PR de BNC6 passe la CI et la relecture, comme toute PR ; aucun workflow ne lit un rapport |
 | **7. Les sessions d'agents** | le transcript d'une session voit le rapport masqué, et non plus les sorties brutes d'`az` | — | les sessions n'arment rien et ne lancent rien : `slot-arm`, `bench-run`, `bench-restore` refusent dans une session d'agent (`session_refusal`) ; `proofs.json` change par une PR relue |
 | **8. La session Banc** | elle n'a besoin de rien de plus que le rapport | — | BRO1 n'est pas élargi |
-| **9. Le téléphone** | — | rien : les deux gestes du T1486 restent tapés dans le terminal du poste | ce que MOB1 tient déjà, la réserve de `tmux` comprise. `bench-run` porte une écriture de plus, le point propre (Q3) : demandé par le SSH à clé d'hôte épinglée au conteneur de la console d'Imladris, sous son identité (Response), derrière le même garde de session et le même terminal |
+| **9. Le téléphone** | — | rien : les deux gestes du T1486 restent tapés dans le terminal du poste | ce que MOB1 tient déjà, la réserve de `tmux` comprise. `bench-run` porte une écriture de plus, le point propre (Q3) : la route du bouton 📸, jointe par un renvoi de port court à clé d'hôte épinglée, sous le jeton de la console, derrière le même garde de session et le même terminal, après le nom tapé (frontière 1) |
 
 **Par STRIDE, ce qui compte :**
 - **S, lancer une attaque sans l'opérateur** : aucun chemin du dehors. Le destructif part du seul
   terminal du poste, nom tapé ; le créneau ne joue que du non destructif, armé par Jonathan, et le
   dehors ne peut que refuser.
-- **T, un restore qui remet un disque chiffré** : `bench-run` vérifie que le point que le restore
-  prendra est pris après le dernier restore et hors de toute quarantaine, et en prend un propre
-  sinon (Q3).
+- **T, un restore qui remet un disque chiffré** : `bench-run` vérifie que le point le plus récent,
+  celui que le restore prendra, est pris après le dernier restore et hors de toute quarantaine, et
+  en prend un propre sinon (Q3) ; une VM qui porte un run destructif sans restore n'est pas
+  rattaquée (Q3b). Une lecture qui manque refuse le point.
 - **T, un créneau qui rejoue ou joue autre chose** : le registre sous le verrou, écrit avant le
   jugement ; `off_slot` ; l'empreinte épinglée ; le catalogue relu dans l'image.
 - **E, un créneau qui atteint le destructif, une panne, ou hors du banc** : deux couches
@@ -661,7 +733,7 @@ point propre demandé par `bench-run`, un message du bot, et une proposition de 
   Sur Imladris, ces droits comprennent des écritures, que seul le code n'emploie pas (Q8).
 - **R, un run sans trace** : le journal avant chaque appel (O1) ; la demande ; le rapport, daté et
   composé seul.
-- **D, l'humain absent** : l'état sûr du §3.2. Rien de pire qu'un incident réel contenu et laissé à
+- **D, l'humain absent** : l'état sûr du §3.3. Rien de pire qu'un incident réel contenu et laissé à
   l'humain.
 - **I, ce que le rapport publie** : masqué par construction, un test le scrute. L'heure d'un créneau
   n'est pas dans le dépôt (elle est à l'armement), au contraire du calendrier de DRL1 ; Imladris la
@@ -701,10 +773,10 @@ alertes, l'alarme d'absence sur Imladris) et DRL1c (la Logic App, que le réveil
 
 | Ordre | Lot (proposé) | Session | Contenu | Ce qu'il prouve au banc |
 |---|---|---|---|---|
-| **1** | **BNC3** (le poste) | Tests, Orodruin | le calme dans le préflight (gondolin démarrée depuis 10 min, aucun run sur elle depuis 10 min) : un ✗ qui dit les minutes qui restent, jamais une attente (Q6) ; le point propre dans `bench-run` (Q3) : le point que le restore prendra, vérifié (après le dernier restore, hors de toute quarantaine), sinon demandé par le chemin du bouton 📸 et attendu jusqu'à `Completed` avant l'attaque ; `bench-restore` qui suit la levée en lecture, 30 min au plus, puis compose le rapport ; la section « état du banc à la fin » et l'inventaire des disques dans le rapport, en lecture | un T1486 en deux gestes, et un rapport complet composé sans rien taper ; aucun ✓ sur un banc pas calme ; **deux runs enchaînés** : au second, le point le plus récent est celui pris pendant la quarantaine du premier, `bench-run` le refuse, en prend un propre, attend `Completed`, puis attaque, et le restore du second prend ce point |
-| **2** | **BNC4** (Imladris) | Glorfindel, Console | la sous-commande de composition, en lecture seule, livrée dans l'image ; le marqueur de fin de run, écrit par la watch dans `runs/glorfindel/bench-pending/` (la levée, la carte « levée retenue », la carte du TTL) ; l'unité de l'hôte qui lance le `docker run --rm`, avec ses bornes ; la variable d'Orodruin (Q7) passée au seul conteneur de la composition, son mode contrôle, et le mode opératoire du §5.5 dans `infra/glorfindel-host/README.md` ; `runs/bench/` déclaré dans `runs_layout.WRITERS` et `test_runs_mounts.py` ; le fichier `runs/bench/<run_id>.json` ; le message du bot de Glorfindel dans le fil du drill, sans bouton | le rapport final posté sans personne au poste, masqué ; aucune attribution de rôle ajoutée à Imladris |
+| **1** | **BNC3** (le poste) | Tests, Orodruin | le calme dans le préflight (gondolin démarrée depuis 10 min, aucun run sur elle depuis 10 min) : un ✗ qui dit les minutes qui restent, jamais une attente (Q6) ; « restore d'abord » dans le préflight (Q3b) : un ✗ sur une VM qui porte un run destructif sans restore depuis, un rapport manquant comptant comme un refus ; le point propre dans `bench-run` (Q3), après le nom tapé et « [o/N] » : le point le plus récent vérifié (après le dernier restore, lu dans les jobs du coffre ; hors de toute quarantaine, par le lecteur de BNC1 étendu aux intervalles d'isolement de tous les runs), sinon demandé par la route du bouton 📸 (le renvoi de port court, le jeton de la console, le reçu sous FS1) et attendu jusqu'à `Completed` avant l'attaque ; `bench-restore` qui suit la levée en lecture, 30 min au plus, puis compose le rapport ; la section « état du banc à la fin » et l'inventaire des disques dans le rapport, en lecture | un T1486 en deux gestes, et un rapport complet composé sans rien taper ; aucun ✓ sur un banc pas calme ; **deux runs enchaînés** : au second, le point le plus récent est celui pris pendant la quarantaine du premier, `bench-run` le refuse, en prend un propre par la route, attend `Completed`, puis attaque, et le restore du second prend ce point ; **un T1486 sans restore**, puis `bench-run` sur la même VM : ✗ « restore d'abord » ; son rapport retiré : ✗ aussi ; un nom mal tapé : aucun point demandé |
+| **2** | **BNC4** (Imladris) | Glorfindel, Console | la sous-commande de composition, en lecture seule, livrée dans l'image ; le marqueur de fin de run, écrit par la watch dans `runs/glorfindel/bench-pending/` (la levée, la carte « levée retenue », la carte du TTL) ; l'unité de l'hôte qui lance le `docker run --rm`, avec ses bornes ; la variable d'Orodruin (Q7) passée au seul conteneur de la composition, son mode contrôle, la clé `EREGION_ORODRUIN_PRINCIPAL_ID` connue de `host_env.py --check` (un GUID), et le mode opératoire du §5.5 dans `infra/glorfindel-host/README.md` ; `runs/bench/` déclaré dans `runs_layout.WRITERS` et `test_runs_mounts.py` ; le fichier `runs/bench/<run_id>.json` ; le message du bot de Glorfindel dans le fil du drill, sans bouton | le rapport final posté sans personne au poste, masqué ; aucune attribution de rôle ajoutée à Imladris |
 | **3** | **BNC5** (Orodruin) | Orodruin, Glorfindel | le créneau daté : `scheduled_drill run --slot`, son armement, son permis, son registre, l'horizon, un créneau à la fois ; les cibles `orodruin-slot-check`, `-arm`, `-disarm` ; ses unités ; le pas du kill ; `orodruin/slot.json` et son lecteur exact sur Imladris ; l'alarme d'absence « slot not run » | le créneau joue une fois à l'heure armée, refuse après, refuse un drill destructif, ne joue plus après un kill ; manqué et dit si Orodruin n'est pas allumé à l'heure |
-| **3b** | **BNC5b** (Terraform) | Orodruin, Infra | le réveil (§2.7) : la récurrence horaire de la Logic App de DRL1c, sa lecture du permis, sa condition sur l'heure qui vient ; le rôle `Storage Blob Data Reader` de son identité à la portée du seul conteneur du canal ; la lecture de son état par `slot-arm`. Les gestes de Jonathan : `make orodruin-plan`, relu, puis `make orodruin-lock` | Orodruin éteint, un créneau armé est réveillé et joue à l'heure ; sans permis, rien ne s'allume ; après un kill, rien ne s'allume |
+| **3b** | **BNC5b** (Terraform) | Orodruin, Infra | le réveil (§2.7) : la récurrence horaire de la Logic App de DRL1c, sa lecture du permis, sa condition sur l'heure qui vient ; le rôle `Storage Blob Data Reader` de son identité à la portée du seul conteneur du canal, avec la condition ABAC qui borne la lecture au seul permis ; la condition qui distingue les deux récurrences ; la lecture de son état par `slot-arm`. Les gestes de Jonathan : `make orodruin-plan`, relu, puis `make orodruin-lock` | Orodruin éteint, un créneau armé est réveillé et joue à l'heure ; sans permis, rien ne s'allume ; après un kill, rien ne s'allume |
 | **4** | **BNC6** (la preuve) | Orchestre | un script qui lit `runs/bench/<run_id>.json` et prépare, dans une branche, la ligne datée de `docs/banc-t1486.md` et le changement de `docs/proofs.json` qui la cite, que `scripts/adoption.py check` passe ; jamais un push sur `main` | un run mesuré devient une figure datée et sourcée, par une PR relue |
 
 **Mutants proposés** (la plage, à demander à l'Orchestre au lot de code) :
@@ -723,8 +795,18 @@ alertes, l'alarme d'absence sur Imladris) et DRL1c (la Logic App, que le réveil
 - le calme sauté par le préflight ;
 - le calme attendu au lieu d'être refusé ;
 - un point pris pendant une quarantaine est accepté ;
-- un point d'avant le dernier restore de la VM est accepté ;
+- un point d'avant le dernier restore de la VM est accepté, ou accepté quand la liste des jobs ne montre pas le dernier restore ;
+- un historique des quarantaines illisible pris pour vide ;
+- un point propre plus ancien accepté quand le plus récent ne l'est pas ;
+- un run accepté sur une VM qui porte un destructif sans restore ;
+- un rapport manquant pris pour un restore ;
+- le point demandé avant le nom tapé et « [o/N] » ;
 - l'attaque lancée avant que le point demandé soit `Completed` ;
+- le point demandé par `docker exec`, ou par la CLI dans le conteneur de la console, au lieu de la route ;
+- le jeton de la console dans l'URL, affiché, ou donné dans une session d'agent ;
+- le renvoi de port de `bench-run` laissé ouvert ;
+- la condition ABAC du réveil absente (la lecture de tout le conteneur) ;
+- le réveil déclenché par la récurrence de la semaine pour un créneau, ou l'inverse ;
 - le réveil qui allume Orodruin sans permis, ou pour une heure hors de l'heure qui vient ;
 - la lecture du réveil à la portée du compte du canal au lieu du seul conteneur ;
 - l'armement qui écrit dans la Logic App ;
@@ -756,19 +838,23 @@ sur Imladris, une fois BNC4 déployé (§5.5).
 
 ### 10.1 Décisions de Jonathan (11/11)
 
-Prises une à une, sur les huit questions de cette conception ; chacune suit l'option recommandée,
-précisée pour Q3 et Q4.
+Prises une à une, sur les huit questions de cette conception. Q1, Q2 et Q5 à Q8 suivent l'option
+recommandée ; pour Q3, Jonathan a retenu l'option 2, pour la raison des runs enchaînés ; pour Q4,
+une option nouvelle : un réveil qui lit le créneau. Q3b, prise à la quatrième relecture, ferme le
+trou de Q3. Dans la colonne « Raison », *(Jonathan)* marque sa raison, *(le document)* celle de la
+conception.
 
 | | Décision | Raison |
 |---|---|---|
-| **Q1. La fin du run, pour Imladris** | Au premier des trois événements : la levée vérifiée, la levée retenue, la carte du TTL. Le rapport dit lequel (« restored and lifted », « lift held », « contained, not restored ») (§3.2, §5.1) | Le run se ferme toujours, même sans réponse humaine |
-| **Q2. Où le rapport est publié** | Dans le fil du banc, celui du drill de DRL1, un message par run, sans bouton ; le poste ne publie rien (§5.3) | Un seul fil du banc, déjà décidé pour les alertes du drill (décision 4 de DRL1) ; une seule voix |
-| **Q3. Le point de restauration propre** | `bench-run` vérifie qu'un point propre existe, pris après le dernier restore de la VM et hors de toute quarantaine ; sinon il en demande un par le chemin du bouton 📸 (la console d'Imladris), attend qu'il soit terminé, puis lance l'attaque (§3, étape 4) | Quand les runs s'enchaînent, « le plus récent avant T0 » peut être un point pris pendant la quarantaine du run précédent, donc chiffré |
-| **Q4. Le réveil d'Orodruin** | Un réveil qui lit le créneau : la Logic App, déclarée une fois dans Terraform, regarde chaque heure dans le canal si un créneau est armé pour l'heure qui vient, et allume Orodruin. L'armement n'écrit qu'une donnée ; la Logic App reçoit une lecture sur ce seul conteneur du canal (§2.7) | Un créneau qui ne joue que si quelqu'un a allumé Orodruin n'en est pas un ; l'armement ne touche pas l'infrastructure |
-| **Q5. Combien de créneaux** | Un créneau à la fois en v1 ; pour en poser un autre, désarmer le précédent, joué ou non (§2.3) | Un seul état à juger ; sous la rétention du canal, le permis n'a jamais à être réécrit |
-| **Q6. Le calme** | Un ✗ du préflight, jamais une attente : `bench-run` refuse, dit les minutes qui restent, l'opérateur relance (§3, étape 3) | Une commande qui attaque ne garde pas la main en attendant |
-| **Q7. Le rôle d'Orodruin dans le rapport d'Imladris** | Une variable non secrète sur Imladris, l'identifiant du principal d'Orodruin, pour nommer et masquer seulement ; « inconnu » ne désigne plus qu'un vrai inconnu. Le mode opératoire complet est au §5.5 | L'attaquant du run se nomme dans son propre rapport, sans droit ajouté |
-| **Q8. L'identité de la composition sur Imladris** | Le risque accepté et dit pour la v1 : l'identité de la VM, la lecture seule tenue par le code, son test et son mutant, écrit au §8. Au moment de FS1d, la règle `DOCKER-USER` qui coupe IMDS vise aussi le conteneur de la composition, qui lit alors par le principal lecteur de la console (§5.2) | La décision 3 : aucune identité nouvelle. FS1 ferme le risque à son heure |
+| **Q1. La fin du run, pour Imladris** | Au premier des trois événements : la levée vérifiée, la levée retenue, la carte du TTL. Le rapport dit lequel (« restored and lifted », « lift held », « contained, not restored ») (§3.3, §5.1) | *(le document)* Le run se ferme toujours, même sans réponse humaine |
+| **Q2. Où le rapport est publié** | Dans le fil du banc, celui du drill de DRL1, un message par run, sans bouton ; le poste ne publie rien (§5.3) | *(le document)* Un seul fil du banc, déjà décidé pour les alertes du drill (décision 4 de DRL1) ; une seule voix |
+| **Q3. Le point de restauration propre** | `bench-run` vérifie qu'un point propre existe, pris après le dernier restore de la VM et hors de toute quarantaine ; sinon il en demande un par le chemin du bouton 📸 (la console d'Imladris), attend qu'il soit terminé, puis lance l'attaque. Le document vérifie le point le plus récent, celui que le restore prendra, et passe par la route du bouton (§3, étape 5 ; §3.1) | *(Jonathan)* Quand les runs s'enchaînent, « le plus récent avant T0 » peut être un point pris pendant la quarantaine du run précédent, donc chiffré |
+| **Q3b. Restore d'abord** | Quand la VM porte un run destructif sans restore depuis (lu dans les rapports de `runs/bench/`), le préflight refuse le run : ✗ « restore d'abord », comme pour le calme ; un rapport manquant compte comme un refus. Les deux critères du point propre suffisent alors (§3, étape 3 ; §3.1) | *(la relecture, retenue par Jonathan)* Un T1486 dont la détection a manqué laisse la VM chiffrée sans quarantaine : un point pris après passerait pour propre |
+| **Q4. Le réveil d'Orodruin** | Un réveil qui lit le créneau : la Logic App, déclarée une fois dans Terraform, regarde chaque heure dans le canal si un créneau est armé pour l'heure qui vient, et allume Orodruin. L'armement n'écrit qu'une donnée ; la Logic App reçoit une lecture sur ce seul conteneur du canal (§2.7) | *(le document)* Un créneau qui ne joue que si quelqu'un a allumé Orodruin n'en est pas un ; l'armement ne touche pas l'infrastructure |
+| **Q5. Combien de créneaux** | Un créneau à la fois en v1 ; pour en poser un autre, désarmer le précédent, joué ou non (§2.3) | *(le document)* Un seul état à juger ; sous la rétention du canal, le permis n'a jamais à être réécrit |
+| **Q6. Le calme** | Un ✗ du préflight, jamais une attente : `bench-run` refuse, dit les minutes qui restent, l'opérateur relance (§3, étape 3) | *(le document)* Une commande qui attaque ne garde pas la main en attendant |
+| **Q7. Le rôle d'Orodruin dans le rapport d'Imladris** | Une variable non secrète sur Imladris, l'identifiant du principal d'Orodruin, pour nommer et masquer seulement ; « inconnu » ne désigne plus qu'un vrai inconnu. Le mode opératoire complet est au §5.5 | *(Jonathan)* « Inconnu » ne désigne plus qu'un vrai inconnu ; *(le document)* l'attaquant du run se nomme dans son propre rapport, sans droit ajouté |
+| **Q8. L'identité de la composition sur Imladris** | Le risque accepté et dit pour la v1 : l'identité de la VM, la lecture seule tenue par le code, son test et son mutant, écrit au §8. Au moment de FS1d, la règle `DOCKER-USER` qui coupe IMDS vise aussi le conteneur de la composition, qui lit alors par le principal lecteur de la console (§5.2) | *(le document)* La décision 3 : aucune identité nouvelle. FS1 ferme le risque à son heure |
 
 ### 10.2 Les options écartées, et leur raison
 
@@ -793,11 +879,13 @@ Le premier jet du 10/11 en proposait plusieurs, que le cadre du 10/11 exclut ; l
 | Q1 : **le run fini à la levée seulement** | Un run sans restore ne se fermerait jamais, et n'aurait que le rapport intermédiaire du poste |
 | Q2 : **un fil par run**, ou **le fil de la VM** | Un fil à créer et à archiver à chaque run ; ou le rapport mêlé aux cartes de la VM |
 | Q2 : **le poste qui publie aussi** | Deux voix pour un même run, et le jeton du bot de l'atelier dans la chaîne |
+| Q3 : **le point pris par `docker exec`**, la CLI de Glorfindel lancée dans le conteneur de la console | Contourne la file d'actions de FS1, où seule la watch écrit, et cesse de marcher quand la console perd IMDS (FS1d). BNC1 s'interdit tout `docker exec` dans un conteneur d'Imladris. Le point passe par la route du bouton 📸 |
 | Q3 : **aucun point pris par le run**, le restore prenant le plus récent avant T0 | Quand les runs s'enchaînent, ce point peut être pris pendant la quarantaine du run précédent : le restore remettrait un disque chiffré |
 | Q4 : **aucun réveil**, le créneau ne jouant que si Orodruin est déjà allumé | Le créneau manquerait chaque fois qu'Orodruin est éteint, c'est-à-dire presque toujours |
 | Q4 : **l'armement qui écrit une occurrence dans la Logic App** | Un écart avec l'état de Terraform, et un armement qui touche l'infrastructure |
 | Q4 : **une seconde Logic App**, réservée aux créneaux | Une ressource et une identité de plus, pour ce que la première fait par une récurrence |
-| Q5 : **plusieurs créneaux, ou un horizon plus long** | Plusieurs états à juger ; au-delà de la rétention du canal, Orodruin devrait réécrire le permis, une écriture de plus et son mutant |
+| Q5 : **plusieurs créneaux à la fois** | Écarté pour la v1 : un seul état à juger. Élargi si l'usage le demande |
+| Q5 : **un horizon plus long** | Au-delà de la rétention du canal, Orodruin devrait réécrire le permis : une écriture de plus, et son mutant |
 | Q6 : **`bench-run` qui attend lui-même les minutes qui restent** | Une commande qui attaque garderait la main en attendant |
 | Q7 : **aucune variable**, Orodruin dit « inconnu » | L'attaquant du run serait inconnu dans son propre rapport, et « inconnu » ne distinguerait plus un vrai inconnu |
 | Q8 : **une identité de lecture à part** pour la composition | Une identité nouvelle, que la décision 3 exclut ; FS1 ferme le même risque sans elle |
