@@ -7,17 +7,22 @@ exercises' one, where each enrolled VM's managed identity writes. Read from the 
 Terraform needed (the CI's terraform-test job plans the same contract against a fake azurerm:
 infra/terraform/tests/flow_logs.tftest.hcl):
   - the flow log writes to the flows account, never to the exercises' nor to the restore's;
-  - every role assignment of the module given to a VM's identity (system-assigned, or a
-    user-assigned identity a VM carries) is scoped below the group, never to the flows account,
-    the group or the subscription: an inherited role is worth as much as a direct one — the
-    assignment added in a file the plan's test does not name is caught here;
+  - every role assignment of the module, WHATEVER ITS PRINCIPAL, is scoped to a resource of a
+    closed list strictly below the group (the exercises' account, the DCR, a VM, the workspace), or
+    is named in a closed list with its exact scope and its reason (the operator's read of the flows
+    account, today alone). Anything else is refused: the flows account, a group, the subscription, a
+    literal id, a `local` or a `var` (what it names is not read here). An inherited role is worth as
+    much as a direct one, and a principal is not followed through a `local` (the review's probe of
+    INF-FL: a VM's identity through `local.p`, Storage Blob Data Contributor on the group): the default
+    is the refusal, not the reading of the principal;
+  - every role assignment given to a VM's identity is, besides, never above its own resource;
   - on the flows account, one assignment only: the operator's read;
   - the flows account refuses the shared key by default (a variable, the measured way back) and
     public containers; the provider no longer reads any account's data plane with a key;
   - its name is never another account's, for the canonical instance or a named one;
   - `make celebrimbor-flows-plan` / `-up` touch the account, its read and the flow log, nothing else
     of the bench, never with a `-var` of their own — against a fake `terraform` first on the PATH.
-Mutants M4760–M4764 (scripts/mutants/INF-FL.py).
+Mutants M4760–M4764, M4770 (scripts/mutants/INF-FL.py).
 """
 import os
 import re
@@ -38,11 +43,31 @@ VM_PRINCIPAL = re.compile(r"azurerm_(linux_|windows_)?virtual_machine(_scale_set
 ABOVE_OR_FLOWS = re.compile(r"azurerm_storage_account\.flows\b|azurerm_resource_group\.|azurerm_subscription\.|\"/")
 
 
-def _blocks(kind: str, name: str | None = None) -> list[tuple[str, str, str]]:
+# The scopes a role assignment of the module may take, each a resource strictly below the bench's
+# group and never the flows account — with what is assigned there today. A new kind of scope is
+# added here with its reason, in review; never a group, the subscription, a literal, a local, a var.
+SCOPES_BELOW = {
+    r"azurerm_storage_account\.exfil\.id": "the exercises' account: the enrolled VMs write their exfiltration (T1041)",
+    r"azurerm_monitor_data_collection_rule\.celebrimbor\.id": "the DCR: each VM's agent publishes its metrics",
+    r"azurerm_linux_virtual_machine\.\w+(\[each\.key\]|\[0\])?\.id": "a VM: the Chaos Studio experiments act on their own VM",
+    r"azurerm_log_analytics_workspace\.celebrimbor\.id": "the workspace: the bench's read identity (BRO1)",
+}
+# The assignments named one by one, outside SCOPES_BELOW: (their exact scope, their reason). On the
+# group or above it, none today — the module gives no role on the group; one added here says why.
+CLOSED = {
+    "flows_operator_reader": ("azurerm_storage_account.flows.id",
+                              "the operator's read of the flows (Storage Blob Data Reader), for the bench's measurements"),
+}
+
+
+def _module_texts() -> dict[str, str]:
+    return {p.name: p.read_text() for p in sorted(TF.glob("*.tf"))}
+
+
+def _blocks(kind: str, name: str | None = None, texts: dict[str, str] | None = None) -> list[tuple[str, str, str]]:
     """Every `resource|data "<kind>" "<name>" { … }` of the module: (file, name, body), braces matched."""
     found = []
-    for path in sorted(TF.glob("*.tf")):
-        text = path.read_text()
+    for fname, text in (texts if texts is not None else _module_texts()).items():
         for m in re.finditer(rf'(?m)^(?:resource|data) "{kind}" "([\w-]+)" \{{', text):
             if name is not None and m.group(1) != name:
                 continue
@@ -50,7 +75,7 @@ def _blocks(kind: str, name: str | None = None) -> list[tuple[str, str, str]]:
             while depth:
                 depth += {"{": 1, "}": -1}.get(text[i], 0)
                 i += 1
-            found.append((path.name, m.group(1), text[m.end():i - 1]))
+            found.append((fname, m.group(1), text[m.end():i - 1]))
     return found
 
 
@@ -60,8 +85,66 @@ def _attr(body: str, key: str) -> str:
     return m.group(1).strip()
 
 
-def _assignments():
-    return [(f, n, _attr(b, "scope"), _attr(b, "principal_id"), b) for f, n, b in _blocks("azurerm_role_assignment")]
+def _assignments(texts: dict[str, str] | None = None):
+    return [(f, n, _attr(b, "scope"), _attr(b, "principal_id"), b)
+            for f, n, b in _blocks("azurerm_role_assignment", texts=texts)]
+
+
+def _refused(texts: dict[str, str]) -> list[str]:
+    """The role assignments whose scope is neither of SCOPES_BELOW nor theirs in CLOSED, any principal."""
+    refused = []
+    for f, n, scope, _, _ in _assignments(texts):
+        if n in CLOSED:
+            if scope != CLOSED[n][0]:
+                refused.append(f"{f}: {n} at {scope}, not its closed scope {CLOSED[n][0]}")
+        elif not any(re.fullmatch(p, scope) for p in SCOPES_BELOW):
+            refused.append(f"{f}: {n} at {scope}")
+    # A role assignment declared by another resource type passes by no reading here: none at all.
+    for f, text in texts.items():
+        if re.search(r"Microsoft\.Authorization/roleAssignments", text, re.I):
+            refused.append(f"{f}: a role assignment through azapi")
+    return refused
+
+
+# The review's probe of INF-FL: a VM's identity through a local, a data write on the group.
+PROBE = """
+locals {
+  p = azurerm_linux_virtual_machine.baseline["gondolin"].identity[0].principal_id
+}
+
+resource "azurerm_role_assignment" "probe" {
+  scope                = azurerm_resource_group.celebrimbor.id
+  role_definition_name = "Storage Blob Data Contributor"
+  principal_id         = local.p
+}
+"""
+
+
+def test_every_assignment_is_below_the_group_or_closed_whatever_its_principal():
+    assert _refused(_module_texts()) == []
+    # Not vacuous: each scope kind is used, and each closed assignment exists.
+    scopes = {a[2] for a in _assignments()}
+    for pattern in SCOPES_BELOW:
+        assert any(re.fullmatch(pattern, s) for s in scopes), pattern
+    assert set(CLOSED) <= {a[1] for a in _assignments()}
+
+
+@pytest.mark.parametrize("probe", [
+    PROBE,
+    PROBE.replace("azurerm_resource_group.celebrimbor.id", "local.s").replace(
+        "locals {\n", "locals {\n  s = azurerm_resource_group.celebrimbor.id\n"),
+    PROBE.replace("azurerm_resource_group.celebrimbor.id", "data.azurerm_subscription.bench.id"),
+    PROBE.replace("azurerm_resource_group.celebrimbor.id", '"/subscriptions/00000000-0000-0000-0000-000000000000"'),
+    PROBE.replace("azurerm_resource_group.celebrimbor.id", "azurerm_storage_account.flows.id"),
+    PROBE.replace("azurerm_resource_group.celebrimbor.id", "var.any_scope"),
+], ids=["group-principal-through-a-local", "scope-through-a-local", "subscription", "literal", "flows", "var"])
+def test_the_probe_is_refused(probe):
+    texts = {**_module_texts(), "probe.tf": probe}
+    assert [r for r in _refused(texts) if "probe" in r], probe
+    # The closed list is not a way around: a closed name at another scope is refused too.
+    moved = texts["storage.tf"].replace("  scope                = azurerm_storage_account.flows.id\n",
+                                        "  scope                = azurerm_resource_group.celebrimbor.id\n")
+    assert _refused({**texts, "storage.tf": moved, "probe.tf": ""})
 
 
 def test_the_flow_log_writes_to_the_flows_account():

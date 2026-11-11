@@ -1,6 +1,6 @@
 """INF-FL (#654): the bench's network flow logs in an account of their own, which no identity
 reachable from a watched VM writes (infra/terraform/storage.tf, monitoring.tf) — the prerequisite of
-the proof by connection (SEC-A3f; docs/design/corroboration.md, CR15). M4760–M4764, measured by
+the proof by connection (SEC-A3f; docs/design/corroboration.md, CR15). M4760–M4764 and M4770, measured by
 tests/unit/test_bench_flow_logs.py (the Terraform plan itself: infra/terraform/tests/flow_logs.tftest.hcl).
 """
 STORAGE_TF = "infra/terraform/storage.tf"
@@ -29,5 +29,14 @@ MUTANTS = [
     ("M4764", "the provider reads each account's data plane with its key again: the flows account without a "
      "key fails every plan of the bench (INF-FL)", MAIN_TF,
      "      data_plane_available = false\n", "      data_plane_available = true\n"),
+    ("M4770", "a VM's identity through a local, a data write on the bench group: inherited by the flows account, "
+     "and no reading of the principal sees it (INF-FL, the review's probe)", STORAGE_TF,
+     'resource "azurerm_role_assignment" "vm_storage_exfil" {\n',
+     'locals {\n  p = azurerm_linux_virtual_machine.baseline["gondolin"].identity[0].principal_id\n}\n\n'
+     'resource "azurerm_role_assignment" "probe" {\n'
+     '  scope                = azurerm_resource_group.celebrimbor.id\n'
+     '  role_definition_name = "Storage Blob Data Contributor"\n'
+     '  principal_id         = local.p\n}\n\n'
+     'resource "azurerm_role_assignment" "vm_storage_exfil" {\n'),
 ]
-TESTS = {f"M{n}": _TESTS for n in range(4760, 4765)}
+TESTS = {**{f"M{n}": _TESTS for n in range(4760, 4765)}, "M4770": _TESTS}

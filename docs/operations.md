@@ -4688,10 +4688,17 @@ test vérifie trois choses :
   ni au-dessus (le groupe, l'abonnement) ;
 - la clé est refusée, et le retour en arrière la rouvre sans rien changer d'autre.
 
-`tests/unit/test_bench_flow_logs.py` lit la même propriété dans les fichiers. Il prend **chaque**
-`azurerm_role_assignment` du module donnée à une identité de VM, système ou attribuée par
-l'utilisateur, y compris une attribution ajoutée dans un fichier que le plan ne nomme pas. Mutants
-M4760–M4764.
+`tests/unit/test_bench_flow_logs.py` lit la même propriété dans les fichiers, et la renverse : le
+défaut est le refus. **Chaque** `azurerm_role_assignment` du module, **quel que soit son principal**,
+doit porter sur une ressource d'une liste fermée, strictement sous le groupe : le compte des
+exercices, la DCR, une VM, le workspace. Sinon, elle doit être nommée dans une seconde liste fermée,
+avec sa portée exacte et sa raison. Aujourd'hui, cette seconde liste ne tient que
+`flows_operator_reader`, et aucune attribution du module ne porte sur le groupe. Tout le reste est
+refusé : le compte des flux, un groupe, l'abonnement, un id littéral, un `local` ou un `var`. Ainsi,
+une identité de VM passée par un `local` n'y échappe pas : la sonde de la relecture, une écriture de
+données sur le groupe avec `principal_id = local.p`, est un cas du test, et un mutant (M4770). Une
+attribution ajoutée dans un fichier que le plan ne nomme pas est prise de même. Mutants M4760–M4764
+et M4770.
 
 ### Le plan, puis l'application (gestes de Jonathan)
 
@@ -4700,8 +4707,10 @@ Depuis le poste, à la racine du dépôt, `.envrc` chargé :
 1. **Le plan ciblé** (lecture seule) : `make celebrimbor-flows-plan`. Il doit montrer exactement ceci :
    - `+ azurerm_storage_account.flows` (création), avec `shared_access_key_enabled = false` et
      `allow_nested_items_to_be_public = false` ;
-   - `+ azurerm_role_assignment.flows_operator_reader` (création) : `Storage Blob Data Reader`, ta
-     propre identité, la portée du compte des flux ;
+   - `+ azurerm_role_assignment.flows_operator_reader` (création) : `Storage Blob Data Reader`, la
+     portée du compte des flux, et ta propre identité. Cette attribution suit l'identité qui lance
+     Terraform (`data.azurerm_client_config.operator`). Un plan lancé plus tard sous une autre
+     identité montre son remplacement (`-/+`) : un remplacement de cette attribution, s'arrêter ;
    - `~ azurerm_network_watcher_flow_log.celebrimbor`, **mise à jour en place** : seul
      `storage_account_id` change, de `…/stcelebrimborexfil` vers `…/stcelebrimborflows`.
      `storage_account_id` n'est pas `ForceNew` dans azurerm 4.81.0 : aucun `-/+` ;
@@ -4828,8 +4837,8 @@ Depuis le poste, à la racine du dépôt, `.envrc` chargé :
 - **Le rôle de restore écrit la configuration du compte.** « Eregion Glorfindel Restore » est
   attribué à la main sur le groupe de la VM (« Identités Azure », ci-dessus). Son
   `Microsoft.Storage/storageAccounts/write` vaut donc aussi sur le compte des flux. Il permet de
-  rouvrir la clé partagée ou de changer les règles réseau, sans lire ni régénérer une clé, ni écrire
-  un blob. Le restore n'a besoin de cette écriture que sur le compte de transit : la restreindre à
+  rouvrir la clé partagée, ou de faire taire la preuve par une règle réseau qui refuse tout sans
+  exception pour les services de confiance, sans lire ni régénérer une clé, ni écrire un blob. Le restore n'a besoin de cette écriture que sur le compte de transit : la restreindre à
   ce compte est une question pour les sessions Glorfindel et Infra. Les principaux de ce rôle sont
   ceux de la console, pas ceux d'une VM surveillée.
 - **Les modules d'Orodruin et de H0** ne sont pas lus par le test. Leurs attributions sur le groupe

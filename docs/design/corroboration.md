@@ -584,7 +584,12 @@ sont des chaînes séparées par des virgules, sous `records[].flowRecords.flows
   sans aucun échec dans `Syslog`.
 
 Le lot SEC-A3f livre le lecteur (`glorfindel/providers/azure/`) ; une commande de lecture seule qui
-l'appelle sur un blob téléchargé sert alors à refaire M1b.
+l'appelle sur un blob téléchargé sert alors à refaire M1b. **Le lecteur prend le compte par son id
+de ressource**, jamais par son nom seul : la sortie `flow_logs_storage_account_id` de Celebrimbor
+(INF-FL), ou le `storageId` du flow log lu sur Azure. Le nom d'un compte de stockage est global, et
+celui du banc est écrit dans un dépôt public : n'importe qui peut créer un compte de ce nom, ailleurs,
+si celui du banc disparaît. Un lecteur qui le prendrait par son nom lirait des flux que n'importe qui
+écrit.
 
 **M2, les lignes forgées telles qu'elles arrivent** :
 
