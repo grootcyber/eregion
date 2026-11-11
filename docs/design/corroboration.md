@@ -38,12 +38,14 @@
   vers une table à lui. C'est une collecte nouvelle (Q1, retenue).
 - **La preuve d'une adresse distante.** Ce sont les enregistrements de flux **par connexion** (5-tuple)
   des blobs des VNet flow logs, déjà écrits au banc dans un compte de stockage
-  (`infra/terraform/monitoring.tf:109-131`). Une connexion de l'adresse vers le port 22, établie, avec
+  (`infra/terraform/monitoring.tf:113-137`). Une connexion de l'adresse vers le port 22, établie, avec
   des octets dans les deux sens au-delà d'une poignée de main (Q5, décidée : SEC-A3f). La table
   agrégée `NTANetAnalytics` ne suffit pas : elle somme les flux d'une source sur 10 minutes (§3.10).
   **Un prérequis** : aucune identité joignable depuis une VM surveillée ne doit pouvoir écrire dans
-  le compte qui porte les blobs. Au banc, ce compte est aussi celui des exfiltrations, et l'identité
-  managée des VM inscrites y écrit (§2.4) : un lot Infra, à part, le sépare avant SEC-A3f.
+  le compte qui porte les blobs. Au banc, ce compte était aussi celui des exfiltrations, et l'identité
+  managée des VM inscrites y écrit (§2.4). Le lot Infra INF-FL (#654) donne aux flux un compte à eux
+  seuls, sans clé partagée, qu'aucune VM n'atteint (CR15). Il est écrit et tenu par un test, pas
+  encore appliqué.
 - **Le mécanisme.** Le code juge, jamais le modèle. Une étape du RulePoller cherche la preuve, hors du
   verrou, comme COR1, COR2 et AUD1. Son verdict voyage à côté du signal, jamais dedans : il arrive
   dans l'état du graphe (`GlorfindelState`), comme `telemetry_gaps`, et n'atteint jamais le prompt.
@@ -139,7 +141,7 @@ l'utilisateur local ne peut pas écrire :
 Le canal A tient contre un utilisateur sans privilège, pas contre root : root écrit le fichier. Les
 blobs de flux sont écrits par Azure, hors de la VM, et ni un utilisateur local ni root ne les écrit
 **tant qu'aucune identité joignable depuis une VM surveillée n'a d'écriture sur le compte qui les
-porte** (CR15) — ce qui n'est pas le cas au banc aujourd'hui (§2.4). Et un flux autorisé **ne prouve
+porte** (CR15). Ce n'était pas le cas au banc ; INF-FL le sépare (§2.4). Et un flux autorisé **ne prouve
 pas la source d'un paquet** : seule une connexion établie la prouve (§3.10).
 Les deux sources ne protègent donc pas la même chose : §3.9 et §3.10.
 
@@ -149,8 +151,8 @@ Les deux sources ne protègent donc pas la même chose : §3.9 et §3.10.
 |---|---|---|
 | `Syslog` `auth`, `authpriv`, `syslog`, `daemon` | `monitoring.tf:47` | collecté |
 | `Syslog` `local6` (auditd par `audisp-syslog`) | `auditd.tf`, drapeau `auditd_enabled` | désactivé par défaut. Son état réel n'est pas dans le dépôt : `docs/operations.md` dit « rien ici n'a été planifié ni appliqué » (geste 0, §5) |
-| VNet flow logs, **blobs** (enregistrements par 5-tuple) | `monitoring.tf:109-131` (`storage_account_id` : le compte `exfil` du banc, `storage.tf:1`, rétention 7 jours) | **écrits**, mais **pas une preuve en l'état** : le compte est aussi la cible des exfiltrations d'Annatar, et l'identité managée de chaque VM inscrite y a `Storage Blob Data Contributor` sur tout le compte (`infra/terraform/storage.tf:29-34`). Tout utilisateur local se sert de cette identité par IMDS : il peut écrire dans le compte qui porte les blobs. Un compte dédié aux flux, ou le rôle des VM restreint au conteneur `exfil-target`, est un **prérequis** de SEC-A3f (un lot Infra, à part). Glorfindel n'a encore ni le droit de les lire ni le lecteur : SEC-A3f |
-| traffic analytics 10 min → `NTANetAnalytics` | `monitoring.tf:119-125` | collecté (lu par COR2). Le commentaire de la ressource nomme encore `AzureNetworkAnalytics_CL`, la table des NSG flow logs retirés : à corriger par la session Infra |
+| VNet flow logs, **blobs** (enregistrements par 5-tuple) | `monitoring.tf`, `azurerm_network_watcher_flow_log.celebrimbor` (rétention 7 jours). Avant INF-FL, `storage_account_id` visait le compte `exfil` du banc ; depuis INF-FL, le compte des flux, `azurerm_storage_account.flows` (`storage.tf`) | **écrits**. Avant INF-FL, ils n'étaient **pas une preuve** : le compte était aussi la cible des exfiltrations d'Annatar, et l'identité managée de chaque VM inscrite y a `Storage Blob Data Contributor` sur tout le compte (`vm_storage_exfil`). Tout utilisateur local se sert de cette identité par IMDS : il pouvait écrire dans le compte qui porte les blobs. **INF-FL (#654)** leur donne un compte à eux seuls : aucune attribution à une VM, sur lui ni au-dessus ; pas de clé partagée ; aucun conteneur public. C'est écrit, tenu par un test, et pas encore appliqué : l'application et la mesure de CR15 restent à Jonathan (`docs/operations.md`, « Le compte des flux réseau (INF-FL) »). Glorfindel n'a encore ni le droit de les lire ni le lecteur : SEC-A3f |
+| traffic analytics 10 min → `NTANetAnalytics` | `monitoring.tf`, le bloc `traffic_analytics` du flow log | collecté (lu par COR2). Le commentaire de la ressource nommait `AzureNetworkAnalytics_CL`, la table des NSG flow logs retirés ; INF-FL l'a corrigé |
 | `MicrosoftAzureBastionAuditLogs` | aucun (COR2 la lit si un client la déclare) | pas de Bastion au banc |
 | `/var/log/audit/audit.log` vers une table | aucun | **nouveau** (SEC-A3d) |
 | Règles d'audit `identity` (`-w /etc/passwd`…) | aucune dans `infra/terraform/scripts/auditd.sh`. `vm3_auditd.sh` pose `log_tamper` et `shell_exec`, sans extension pour le lancer | **nouveau** |
@@ -500,7 +502,7 @@ Les noms sont à remplacer, `<…>` ; rien de réel dans ce dépôt.
 | **CR12** | L'instant de `msg=audit(…)` d'un `sudo` et celui de sa ligne `Syslog` tombent à 2 s au plus l'un de l'autre | M3 et M2 pour un même `sudo -n true` | `SKEW_S` = 2 | relever la tolérance de l'audit seule |
 | **CR13** | Une connexion de brute force, établie, porte dans chaque sens plus qu'une poignée de main : de la VM vers la source, des octets et une taille moyenne de paquets nettement au-dessus de SYN-ACK et de RST (~40 à 74 octets) ; de la source vers la VM, sa bannière. Une sonde qui ne fait que le SYN (un scanner de ports) reste en dessous. Le port source du 5-tuple est celui que sshd écrit dans la ligne | M1b : par 5-tuple, la distribution des octets et de la taille moyenne dans chaque sens, pour les adresses des fenêtres de M1a et pour les sondes sans échec dans `Syslog` ; le rapprochement des ports sur quelques fenêtres | les seuils, réglés entre les deux distributions | les distributions se chevauchent : la preuve repose sur le rapprochement des ports, ou sur `USER_AUTH` là où le canal d'audit existe |
 | **CR14** | Les blobs des VNet flow logs : un blob par heure et par ressource, complété environ chaque minute ; chaque enregistrement porte l'instant, le 5-tuple, la direction, l'état (début, suite, fin, refus) et les paquets et octets de chaque sens ; l'identité de H0 peut les lire avec `Storage Blob Data Reader` sur le seul compte | M1b ; l'heure de dernière modification des blobs ; une lecture avec un rôle de lecture seul | rien | corriger le lecteur (version du format, champs) ; un délai plus long relève `wait_s` |
-| **CR15** | Aucune identité joignable depuis une VM surveillée ne peut écrire dans le compte des flux : ni l'identité managée de la VM (par IMDS), ni une clé ou un SAS posés sur la VM ; aucune attribution, sur le compte ou héritée au-dessus (groupe de ressources, abonnement), d'un rôle de données en écriture ou d'un rôle de gestion qui porte `listKeys` ; `allowSharedKeyAccess` désactivé sur le compte | les attributions de rôle du compte et de ses portées parentes (lecture, `Reader`) ; la propriété `allowSharedKeyAccess` ; depuis une VM, avec son identité managée, une écriture d'essai refusée (403) dans le conteneur des flux | le compte des flux est une preuve | le compte n'est pas une preuve : SEC-A3f ne sort pas, le lot Infra à part le sépare d'abord |
+| **CR15** | Aucune identité joignable depuis une VM surveillée ne peut écrire dans le compte des flux : ni l'identité managée de la VM (par IMDS), ni une clé ou un SAS posés sur la VM ; aucune attribution, sur le compte ou héritée au-dessus (groupe de ressources, abonnement), d'un rôle de données en écriture ou d'un rôle de gestion qui porte `listKeys` ; `allowSharedKeyAccess` désactivé sur le compte | les attributions de rôle du compte et de ses portées parentes (lecture, `Reader`) ; la propriété `allowSharedKeyAccess` ; depuis une VM, avec son identité managée, une écriture d'essai refusée (403) dans le conteneur des flux | le compte des flux est une preuve | le compte n'est pas une preuve : SEC-A3f ne sort pas tant que ce n'est pas réglé. **Au banc, INF-FL (#654)** sépare le compte des flux de celui des exercices. `infra/terraform/tests/flow_logs.tftest.hcl` tient la propriété au plan : le flow log vise le compte des flux et plus celui des exercices ; aucune attribution d'une identité de VM ne porte sur lui ni au-dessus ; `shared_access_key_enabled = false`. `tests/unit/test_bench_flow_logs.py` lit, en plus, chaque attribution du module donnée à une VM. Les gestes et la vérification en lecture sont dans `docs/operations.md`, « Le compte des flux réseau (INF-FL) ». Les hypothèses CF1 et CF2 y sont à mesurer : Network Watcher écrit-il sans clé, et traffic analytics lit-il sans clé ? |
 | **CR16** | Traffic analytics ne tire `NTANetAnalytics` que des blobs écrits par Network Watcher dans le conteneur des flux | Microsoft Learn ; au banc, après le lot Infra à part, rien à mesurer si CR15 tient (aucune autre identité n'y écrit) | rien | à dire dans `correlation.md` (COR2, `origin_proof: flows`) et dans le modèle de menace, par la session Glorfindel |
 
 ### 5.2 Les étapes
@@ -582,7 +584,12 @@ sont des chaînes séparées par des virgules, sous `records[].flowRecords.flows
   sans aucun échec dans `Syslog`.
 
 Le lot SEC-A3f livre le lecteur (`glorfindel/providers/azure/`) ; une commande de lecture seule qui
-l'appelle sur un blob téléchargé sert alors à refaire M1b.
+l'appelle sur un blob téléchargé sert alors à refaire M1b. **Le lecteur prend le compte par son id
+de ressource**, jamais par son nom seul : la sortie `flow_logs_storage_account_id` de Celebrimbor
+(INF-FL), ou le `storageId` du flow log lu sur Azure. Le nom d'un compte de stockage est global, et
+celui du banc est écrit dans un dépôt public : n'importe qui peut créer un compte de ce nom, ailleurs,
+si celui du banc disparaît. Un lecteur qui le prendrait par son nom lirait des flux que n'importe qui
+écrit.
 
 **M2, les lignes forgées telles qu'elles arrivent** :
 

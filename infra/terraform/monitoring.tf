@@ -103,9 +103,13 @@ data "azurerm_network_watcher" "celebrimbor" {
   resource_group_name = "NetworkWatcherRG"
 }
 
-# NSG Flow Logs + Traffic Analytics — populates AzureNetworkAnalytics_CL in the LAW.
-# Enables T1041 detection via outbound traffic anomaly queries.
+# VNet Flow Logs + Traffic Analytics — populates NTANetAnalytics in the LAW (AzureNetworkAnalytics_CL
+# was the table of the retired NSG flow logs), read by COR2 (`origin_proof: flows`).
 # Minimum interval is 10 min — detection timeout in data-exfiltration.yaml is set to 900s.
+# INF-FL (#654) : les blobs vont au compte des flux (storage.tf, azurerm_storage_account.flows), jamais
+# à celui des exercices, où l'identité des VM inscrites écrit : sinon une VM compromise forge ou efface
+# la preuve d'une connexion (docs/design/corroboration.md, CR15). Changer de compte est une mise à
+# jour en place du flow log (storage_account_id n'est pas ForceNew) : l'historique reste dans l'ancien.
 resource "azurerm_network_watcher_flow_log" "celebrimbor" {
   network_watcher_name = data.azurerm_network_watcher.celebrimbor.name
   resource_group_name  = data.azurerm_network_watcher.celebrimbor.resource_group_name
@@ -113,7 +117,7 @@ resource "azurerm_network_watcher_flow_log" "celebrimbor" {
 
   # VNet flow logs (NSG flow logs retired June 2025 — target_resource_id replaces network_security_group_id)
   target_resource_id = azurerm_virtual_network.celebrimbor.id
-  storage_account_id = azurerm_storage_account.exfil.id
+  storage_account_id = azurerm_storage_account.flows.id
   enabled            = true
 
   traffic_analytics {

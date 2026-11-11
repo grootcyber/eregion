@@ -426,6 +426,9 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 Topologies de validation dans config.yaml (topologies.<n>.enabled, toutes false
                                 par défaut), gated par for_each, 1 RG par topo. topo_multinic.tf = topo #1 (2 NIC).
                                 Cibles : make celebrimbor-{plan,up,down,output,stop,start} [INSTANCE=] [TOPO=].
+                                storage.tf : trois comptes séparés — exfil (les exercices, écrit par les VM
+                                inscrites), restore_staging (le transit du restore), flows (INF-FL : les VNet flow
+                                logs, la preuve d'une connexion ; aucune identité de VM, pas de clé partagée).
                                 Schéma de noms type-celebrimbor-nom (CAF) : VM=cités, LAW=tours de guet, RSV=coffres.
 
 ~/.glorfindel/                → SEC3 : en 0600 (dossiers 0700), écrits entiers (fichier temporaire + `os.replace`) :

@@ -88,3 +88,19 @@ variable "chaos_noise_vms" {
   type        = list(string)
   default     = null
 }
+
+# ── INF-FL (#654) : la clé partagée du compte des flux réseau ─────────────────────────────
+# false (le défaut) : allowSharedKeyAccess désactivé sur le compte des flux (storage.tf) — aucune clé,
+# aucun SAS n'y vaut, seule une identité Entra ID autorisée y lit ou écrit (CR15,
+# docs/design/corroboration.md). Que Network Watcher y écrive et que traffic analytics y lise sans
+# clé est une HYPOTHÈSE à mesurer au banc après l'apply (docs/operations.md, « Le compte des flux
+# réseau (INF-FL) ») : la FAQ de Network Watcher dit qu'il essaie une clé, puis un jeton. Si la mesure
+# montre qu'aucun blob n'arrive, true est le retour en arrière, dans terraform.tfvars — jamais en
+# `-var` d'une seule commande (le prochain apply sans lui la refermerait) : les blobs ne sont alors
+# plus une preuve au sens de CR15, et la conception doit le dire avant SEC-A3f.
+variable "flow_logs_shared_key_enabled" {
+  description = "INF-FL : la clé partagée (allowSharedKeyAccess) du compte des flux réseau. Défaut false : seules des identités Entra ID y accèdent. true seulement si la mesure au banc montre que Network Watcher n'y écrit pas sans elle (docs/operations.md, « Le compte des flux réseau (INF-FL) »)."
+  type        = bool
+  default     = false
+  nullable    = false
+}
