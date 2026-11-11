@@ -523,6 +523,12 @@ ligne qui lance ssh, `export NOM=`, pour tout nom de secret. Une cible nouvelle 
 
 ## Identités Azure — un principal par service, au moindre droit (V-17, SEC7)
 
+**La vue d'ensemble** (IDM1) : toutes les identités d'Eregion — celles-ci, Imladris, Orodruin, le
+banc, Entra ID, GitHub, Discord, le poste et le téléphone —, leurs droits par type de portée, leur
+rotation et leurs schémas, dans [la carte des identités](design/identites.md). Une attribution, un
+rôle ou une variable d'identité ajoutés ici prennent leur ligne là-bas : `python3
+scripts/identity_map.py check` dit ce qui manque.
+
 Plus jamais `Contributor` sur l'abonnement (`tests/unit/test_azure_roles.py` refuse un
 `--role Contributor` ou `Owner` à la portée d'un abonnement dans la doc et les scripts). Trois
 services de Glorfindel, trois principaux, chacun avec ce que son code appelle vraiment :
@@ -556,7 +562,8 @@ services de Glorfindel, trois principaux, chacun avec ce que son code appelle vr
   `human_only`), et la coupure des sessions part alors sous son identité. Avant SEC17, son rôle
   Restore lui donnait Run Command sur tout le groupe ; elle reçoit la coupure VM par VM, sur les mêmes
   VM que la watch — plus étroit, aucun droit en plus. **Pas le bot** : il n'isole pas (ses boutons
-  lancent Restore et Revert, une levée et un déblocage, sans Run Command). Sur H0, la console a
+  lancent Restore et Revert, une levée et un déblocage ; le restore neutralise par une Run Command, sous
+  « Restore Neutralize », VM par VM). Sur H0, la console a
   l'identité de la VM, qui tient déjà la coupure par `session_drain_vms` ; pour la console d'un poste
   sur le banc, le Terraform de H0 la donne aussi (`session_drain_principals`, son object id dans
   `principals.auto.tfvars`). La neutralisation avant un restore a son propre rôle, ci-dessous

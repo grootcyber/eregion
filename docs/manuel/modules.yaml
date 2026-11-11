@@ -1552,6 +1552,16 @@ briques:
     issue: 664
     doc: docs/manuel/index.html
 
+  - id: s-identites
+    composant: socle
+    poste: s-documenter
+    nom: "The identity map: every identity, its secret, its rights and its boundary, held to what the repository declares"
+    etat: main
+    release: "0.6"
+    lots: [IDM1]
+    issue: 687
+    doc: docs/design/identites.md
+
   - id: s-adoption
     composant: socle
     poste: s-documenter

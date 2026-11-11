@@ -383,9 +383,13 @@ flowchart LR
 Chaque service a l'identité de ce que son code appelle ; sur H0, la watch, la console et le bot
 partagent celle de la VM (le [modèle de menace](design/modele-de-menace.md), §5).
 
+**La carte complète** (IDM1) — chaque identité d'Azure, d'Entra ID, de GitHub, de Discord, du poste et
+du téléphone, où vit son secret, ses droits, ce qu'elle ne peut pas, sa rotation, et les schémas de
+leurs liens : [`design/identites.md`](design/identites.md). Un test la tient aux déclarations du dépôt.
+
 | Identité | Ce qu'elle tient | Ce qu'elle ne tient jamais |
 |---|---|---|
-| la watch | la lecture des journaux, la réponse sur les groupes inscrits ; Microsoft Graph en lecture (IR1a, quatre permissions posées à la main, `docs/operations.md`) | une écriture sur Entra ID, le restore |
+| la watch | la lecture des journaux, la réponse sur les groupes inscrits ; Microsoft Graph en lecture (IR1a, quatre permissions à poser à la main, pas encore posées, `docs/operations.md`) | une écriture sur Entra ID, le restore |
 | la console, le bot | leurs gestes sur Azure, le restore compris (hors H0, qui ne restaure pas ; la console isole ce qu'un humain approuve) ; avec la file, une demande signée | le bot : la coupure des sessions (il n'isole pas) |
 | l'exécuteur d'identité (IR1b) | son application, deux permissions de Graph (`Application.ReadWrite.OwnedBy`, `User.RevokeSessions.All`) ; User Administrator sur la seule unité administrative du banc, Directory Readers au tenant, Attribute Assignment Reader sur l'ensemble d'attributs d'Eregion ; Log Analytics Reader sur le workspace ; **désactivé par défaut** | l'identité de la VM (son propre certificat seulement), un droit hors de son contrat |
 | Orodruin | la lecture du groupe du banc, l'écriture sur chaque VM inscrite et chaque expérience ; Graph en lecture (IDI1), désactivé par défaut ; le binaire Stratus, lancé depuis Orodruin, emploie cette identité (R2b la sépare) | une écriture sur le groupe entier |

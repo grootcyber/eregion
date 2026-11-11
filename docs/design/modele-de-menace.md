@@ -6,6 +6,8 @@ _SEC6 (#277), 28/10, sur la 0.4.3. Une page par frontière : qui y est de confia
 
 **Ce qu'Eregion protège.** Les charges du client : ne jamais les rendre plus joignables qu'il ne les a conçues, ne jamais les couper à tort sans qu'un humain l'ait voulu, ne jamais y laisser une panne ou une action destructive (la règle de production, `eregion_core/inscription.py`). Puis ce qu'Eregion sait d'elles : journaux, noms, adresses. Puis ses propres secrets : identités Azure, clé du modèle, jetons de Discord et de la console.
 
+**Qui tient quoi** (IDM1, #687) : chaque identité — Azure, Entra ID, GitHub, Discord, le poste, le téléphone, Imladris (anciennement H0) et Orodruin —, où vit son secret, ses droits par type de portée, ce qu'elle ne peut pas, sa rotation, et la frontière ci-dessous qui la tient, avec les schémas de leurs liens : [la carte des identités](identites.md). Un test la tient aux déclarations du dépôt (`tests/unit/test_identity_map.py`).
+
 **Ce qui n'est pas de confiance, partout.** Le contenu des journaux (un attaquant sur une VM surveillée écrit ses lignes), les noms et attributs que renvoie Azure (n'importe qui ayant le droit d'enregistrer une application Entra choisit son nom), la réponse du modèle, ce qu'un injecteur écrit dans son répertoire de `runs/` (`runs/annatar/`, `runs/gothmog/`), ce qu'un fork ou un inconnu envoie à GitHub.
 
 | Frontière | De confiance | Ce qui la traverse |
