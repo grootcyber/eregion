@@ -69,7 +69,11 @@ What must hold whatever happens:
       it, and a disappearance it says (L1) is never told by that card alone (I3G);
   U1  a rule left by a NIC that no longer exists, cutting a live NIC off, is reported (L28)
       — and the orphan sweep takes it off, nothing else (A3): after it, every live VM is
-      back to its design, not only in its own view.
+      back to its design, not only in its own view;
+  L4  a session drain still running on Azure past its first wait (the guest agent held, as
+      under the quarantine on 09/11 — `guest_agent_held`) is said waiting on a card after a pass;
+      one that ended on Azure (`run_commands_end`) is no longer pending once a pass read it, and
+      a card « coupure en attente » names a VM whose drain still waits (DRN1).
 
 Oracles are the test's own: what was released, what was lost and when, who wrote what
 — never the markers and records the code under test leaves (a bug that deletes them
@@ -577,6 +581,8 @@ class IsolationMachine(RuleBasedStateMachine):
         self.graph_cards: dict[str, str] = {}
         self.notified = _CURRENT.notified = []
         self.detached: set[str] = set()                 # NICs someone left without any NSG
+        from glorfindel.providers.azure import run_command
+        run_command._FOLLOWED.clear()                   # the drains followed: this sequence's only
 
     @initialize(net=_networks())
     def build(self, net):
@@ -1555,6 +1561,7 @@ class IsolationMachine(RuleBasedStateMachine):
         if fault is None and err is None:
             self._block_cards_true(cards_before, journal_at)
             self._isolation_cards_true(cards_before)
+            self._drains_said()
             self._no_drift_on_untouched(cards_before, quiet, named)
             # Liveness: a block whose rules all vanished from Azure is put back, or told
             # about — not left gone in silence.
@@ -1790,6 +1797,52 @@ class IsolationMachine(RuleBasedStateMachine):
             assert not reached, (
                 f"I3: the reassertion said the isolation of {vm} put back ({e['reason'][:100]}…), "
                 f"{sorted(reached)[:3]} still open")
+
+    def _drains_said(self):
+        """L4 (DRN1), after a pass: a drain its VM's state still says pending has a Run Command still
+        running on Azure (the fake's own list, never the code's) and a card that says it waits; a
+        card « coupure en attente » is of such a VM — or of one whose state file can't be read."""
+        import json
+        running = {key(r._vm["id"]) for r in self.fake.running}
+        waiting = set()
+        # Every VM the test made, deleted ones too: a VM deleted then made again under its id (its
+        # pipeline) keeps the state of the one before — and its drain (`address_reused`).
+        for vm in {key(v): v for v in self.vms}.values():
+            if _is_busy(vm):
+                continue
+            drain = (self._state(vm) or {}).get("drain") or {}
+            if drain.get("status") != "pending":
+                continue
+            waiting.add(key(vm))
+            assert key(vm) in running, f"L4: the drain of {vm} ended on Azure, still pending after a pass"
+            assert any(e.get("escalation_type") == "drain_pending" and key(e.get("resource_id") or "") == key(vm)
+                       for e in escalations.pending()), f"L4: the drain of {vm} still runs on Azure, unsaid"
+        for e in escalations.pending():
+            vm = key(e.get("resource_id") or "")
+            if e.get("escalation_type") != "drain_pending" or vm in waiting or any(
+                    _is_busy(v) for v in self.vms if key(v) == vm):
+                continue
+            unreadable = False
+            for f in (actions._ISOLATION_STATE_DIR.glob("*.json") if actions._ISOLATION_STATE_DIR.exists() else []):
+                try:
+                    json.loads(f.read_text())
+                except ValueError:
+                    unreadable = True
+            assert unreadable, f"L4: a card says the drain of {vm} waits, none does"
+
+    @rule(data=st.data())
+    def guest_agent_held(self, data):
+        """DRN1: the guest agent held (under the quarantine, 09/11: 302 s) — a Run Command asked now
+        runs on past the drain's first wait; or no longer held."""
+        self.fake.hold_run_commands = data.draw(st.booleans(), label="held")
+
+    @rule(data=st.data())
+    def run_commands_end(self, data):
+        """Every Run Command held running ends on Azure: succeeded, or failed (the agent gave up)."""
+        from azure.core.exceptions import HttpResponseError
+        from .fake_azure import _error
+        failed = data.draw(st.booleans(), label="failed")
+        self.fake.end_run_commands(_error(HttpResponseError, 409, "(Conflict) VM agent") if failed else None)
 
     def _block_cards_true(self, cards_before: set, journal_at: int):
         """I3 for what the reassertion's block cards say (RB1), NIC by NIC, on the NICs a

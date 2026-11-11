@@ -100,6 +100,7 @@ glorfindel pending --watch                   # alerting temps réel
 #             les points d'avant, y : --before ; le refus reste à l'écran — SEC4c)
 #
 glorfindel release <resource_id> --yes       # lever isolation NSG (post-restore, VM de retour)
+glorfindel door <vm> [--days 7] [--json]     # LEV2 : qui a agi sur la VM, et ses droits — lecture seule, rien n'est écrit
 glorfindel unblock <ip> <resource_id> --yes  # supprimer une règle block IP
 glorfindel reset <resource_id> --yes        # reset complet : release + unblock toutes IPs
 glorfindel reset <resource_id> --dry-run    # ce que le reset ferait, rien lu ni écrit sur Azure (jamais « clean », I3V)
@@ -437,6 +438,8 @@ GLORFINDEL_ISOLATION_TTL_H=4        # TTL isolation (défaut 4h) : au-delà, une
 GLORFINDEL_RECOVERY_INTERVAL_S=60   # REC1 : la watch relit sur Azure la reprise des VM qu'elle a isolées (0 : jamais) ;
                                     # GLORFINDEL_RECOVERY_GRACE_S=300 (un job fini depuis moins attend), _START_WAIT_S=600
                                     # (VM arrêtée au-delà : une carte)
+GLORFINDEL_DOOR_FACTS_INTERVAL_S=900  # LEV2 : la watch relit qui a agi sur chaque VM isolée, et ses droits, pour la
+                                    # carte d'isolement — pour information, rien ne lève ni ne retient (0 : jamais)
 GLORFINDEL_RESTORE_PRINCIPALS=oid   # REC1 : les principaux qui restaurent (object id ou appId, séparés par des virgules) ;
                                     # leur Run Command, au journal d'activité, prouve la neutralisation ; vide : une carte
                                     # — docs/glorfindel.md, « La reprise lue sur Azure »
@@ -3076,6 +3079,50 @@ une graine où que ce soit ; `EREGION_HYPOTHESIS_SEED=profile` garde la manière
 l'exécution tirerait. `--hypothesis-seed=N` ne sert pas sous `CI=true` : mesuré, la dérandomisation
 passe avant elle (et, lu dans le code d'Hypothesis 6.170, elle coupe la base des séquences en échec).
 
+**Les mutants fragiles, chaque nuit** (MUT7, #699 ; décision de Jonathan du 10/11). Le soir de la
+0.5.9, la porte a été retenue cinq fois, un mutant après l'autre (M21, M606, M09, M13, M33). Seule une
+machine des invariants les tue, et certains tirages de la graine les laissent passer. On les découvrait
+le soir de la release. `.github/workflows/mutants-night.yml` (« Fragile mutants », `schedule` à 01:07
+UTC chaque nuit, ou un dispatch) les cherche avant. Il lance `scripts/mutation_night.py` sur la part de
+la nuit, à 500 séquences (le budget de la porte) et sur trois graines tirées, puis dit pour chaque
+mutant `CAUGHT n/n`, `flaky` ou `SURVIVES`. Un mutant fragile (`flaky` ou `SURVIVES`, hors des survivants
+connus) ouvre l'issue « Mutation : Mnn échappe à une graine de la machine des invariants », ou commente
+celle qui est ouverte. L'issue donne ses graines et la commande qui le rejoue. Le run est rouge quand une
+issue s'ouvre, ou quand la nuit n'a rien mesuré : le code non muté rouge sur une graine, ou une partie
+qui ne collecte aucun test. `notify.yml` l'annonce dans `#ci`. Le remède est décrit dans
+[preuves.md](design/preuves.md), « Les mutants fragiles, de la nuit à la séquence figée ».
+- **La liste** (`python scripts/mutation_night.py --list`, rien de mesuré) : chaque mutant compté dont la
+  cible atteint le test qui fait tourner une machine (Azure, AWS, celle de `test_recovery_watch.py`).
+  Sur l'arbre du 10/11 (a1f1860c, après MUT9), il y en a 241. Pour 42 d'entre eux, la cible ne fait
+  tourner que la machine (`alone`). Pour 199, elle a aussi des tests fixes (`beside`) : ces tests passent
+  d'abord, une fois, et s'ils attrapent le mutant, la machine n'est pas lancée sur lui (sauf s'ils tirent
+  au hasard ou font courir des fils : 45 d'entre eux, dont la cible entière tourne alors sur chaque
+  graine).
+- **La rotation** : la nuit d'un mutant ne dépend que de son identifiant (crc32 de l'id, modulo 7).
+  Chacun est donc mesuré une fois en sept nuits, et un mutant ajouté ou retiré n'en déplace aucun autre.
+  `--part auto` prend la nuit de la date UTC. Le prix de cette stabilité : des nuits inégales (de 24 à
+  47 mutants le 10/11).
+- **Le budget de minutes** (estimé sur les durées de la porte, `scripts/mutants/durations.json`, mesurées
+  à deux tours de la cible entière : un majorant). Entre 22 et 136 min de runner par nuit pour les
+  mutants à trois graines, environ 590 min sur la semaine. S'y ajoutent les runs non mutés : chaque
+  machine sur chaque graine, puis les tests fixes de la part une fois, soit environ 25 min de runner par
+  nuit. À quatre jobs sur un runner de 4 vCPU, une nuit prend de 15 à 45 min de mur, sous une borne de
+  120 min, sur un seul runner. Un dépôt public ne paie pas ses minutes de runner standard. **Estimé, pas
+  mesuré** : la première semaine de nuits donnera les vraies durées (l'artefact `mutants-night` garde le
+  JSON de chaque nuit 14 jours, avec ses secondes par mutant).
+- **Rejouer** : la ligne `replay` d'un mutant fragile, ou son issue, donne la commande de la porte sur la
+  graine où il a survécu ; `again` redonne la mesure de la nuit entière.
+```bash
+python scripts/mutation_check.py --only M21 --seed 89917386 --examples 500 --rounds 1     # comme la porte
+python scripts/mutation_night.py --only M21 --seed 89917386 --seeds 3 --examples 500     # comme la nuit
+```
+- **Le workflow est poussé par Jonathan** : l'App des sessions n'a pas le droit Workflows. Son patch
+  (`mutants-night.yml` et sa ligne dans `notify.yml`) accompagne la PR de MUT7. Sans lui,
+  `tests/unit/test_mutation_night.py` saute les tests du workflow, et `tests/unit/test_workflows.py`
+  n'admet le droit `issues: write` de son job `issues` que s'il est là. Ce job n'a ni checkout ni action,
+  son texte est fixe, il ne tourne que sur un `schedule` ou un dispatch, et il vérifie la forme de ce
+  que la nuit a dit avant de s'en servir.
+
 **Si elle est rouge.**
 - **Un vrai rouge** (un invariant, un mutant qui survit hors de la liste connue, un test) : la release
   attend. On le corrige par un lot, qui tue le mutant par un test ou écrit sa raison si elle est vraie
@@ -4218,6 +4265,118 @@ Le workspace est celui du profil, jamais un argument.
 
 ---
 
+## Le banc lisible : le préflight et le rapport d'un run (BNC1, #682)
+
+Le rejeu T1486 du 09/11 a duré environ 4 h. Chaque vérification de l'étape 0 et chaque mesure de
+l'étape 8 de `docs/banc-t1486.md` ont été tapées à la main, puis masquées et recopiées ; un droit
+manquant (`listKeys` sur le compte de transit) n'a été vu qu'au restore. Deux cibles les lisent
+désormais seules, **en lecture seule partout** (Azure, H0, Orodruin), sous l'`az login` de
+l'opérateur et les paires de son environnement (`.envrc` chargé) :
+
+```zsh
+make bench-preflight [TARGET=vm-celebrimbor-gondolin] [POINT_MAX_H=24]   # l'étape 0 : ✓/⚠/✗, code 1 sur un ✗
+make bench-report RUN=<run_id> [TARGET=…] [OUT=runs/bench/<run_id>.json]  # l'étape 8 : Markdown et JSON
+```
+
+- **`bench-preflight`** (`scripts/bench_preflight.py`) : une ligne par contrôle, puis le verdict.
+  Il réutilise `make glorfindel-host-status`, `make glorfindel-host-cd-status`,
+  `scripts/credential_expiry.py` (`make azure-pairs-expiry`) et le lecteur des droits du restore
+  (`glorfindel/providers/azure/restore_rights.py`) ; il lit le contrat d'Orodruin sur Orodruin, par
+  `check()`, sans le publier (`orodruin-check`, lui, le publie dans le canal). Les droits de H0 et
+  d'Orodruin se lisent par leurs attributions (`az role assignment list --all --include-inherited`) et
+  les définitions de leurs rôles, avec la même règle que le restore : un joker vaut, un `notActions`
+  ne retire que dans son propre rôle. Leurs object id viennent des sorties Terraform, lus sur le poste.
+  Une attribution posée sur un groupe d'administration n'est pas lue : un droit qui manque le dit
+  (un faux ✗, jamais un faux ✓), à vérifier à la main.
+- **Le lecteur de H0, en lecture seule par construction.** Il ne tourne jamais dans la watch
+  (`docker exec`). Deux ssh : `docker inspect eregion-watch` lit l'image déployée (son id) et les
+  montages de la watch ; puis `scripts/bench_h0_reader.py` (sur l'entrée du ssh) tourne dans un
+  conteneur jetable de cette image : `docker run --rm --network none --read-only --cap-drop ALL
+  --security-opt no-new-privileges`, avec `runs/glorfindel`, `runs/console`, `runs/bot`,
+  `~/.glorfindel` et `glorfindel-config.yaml` montés `readonly` (`--mount` : une source absente est
+  refusée, jamais créée). Sans réseau : ni IMDS, ni jeton, ni cloud. Il ne renvoie ni raisonnement, ni
+  signal brut, ni id. Rien ne part tant que la clé d'hôte de H0 n'est pas vérifiée par son empreinte
+  (`HOST_SSH_FINGERPRINT` : la première option `StrictHostKeyChecking` vaut `yes`, comme ssh la lit,
+  et un `UserKnownHostsFile` est donné) ; de même pour Orodruin. Sans elle, le préflight ne lance pas
+  non plus `make glorfindel-host-status` ni `glorfindel-host-cd-status`, qui se connecteraient en
+  `accept-new` : une seule ligne ✗ le dit. Le lecteur ne prend que les montages `bind` de la watch. La suite possible :
+  une sous-commande de lecture livrée dans l'image, à la place du script venu du checkout du poste.
+- **`bench-report`** (`scripts/bench_report.py`) : sur H0, le rapport du run, ses cycles, les levées,
+  l'état d'isolement ; sur Azure, le journal d'activité des seules ressources de la cible, chacune lue
+  à part (`az monitor activity-log list --resource-id` : la VM, puis ses cartes réseau ; 3 h avant T0
+  jusqu'à maintenant, 5000 événements au plus par lecture, une lecture qui atteint le plafond est dite
+  coupée), les jobs du coffre et la vue d'instance. L'appelant d'une Run Command devient un rôle : la
+  console (son appId, ou `GLORFINDEL_RESTORE_PRINCIPALS`), le bot, H0 et Orodruin (leur `principal_id`
+  Terraform), la watch du poste, un humain (un jeton d'utilisateur), sinon inconnu. Le JSON et le
+  Markdown s'écrivent côte à côte (`runs/bench/<run_id>.json` et `.md`, ou `OUT=` : son nom, en
+  `.json` et en `.md`), le JSON pour alimenter plus tard `docs/proofs.json`.
+- **Aucun identifiant n'est affiché** : chaque ligne dit un rôle, un type de portée ou un nom du banc
+  déjà public, et passe par `bench_shared.scrub` (GUID, IPv4, UPN, id ARM masqués) avant d'être
+  imprimée ou écrite. Les commandes ssh de H0 et d'Orodruin passent au script par l'environnement ;
+  `TARGET`, `RUN`, `OUT`, `POINT_MAX_H` aussi, jamais développés par make, vérifiés par le script.
+- **Les limites** : l'API des droits ne rend ni les deny assignments, ni les verrous, ni les
+  conditions ABAC, ni PIM ; un droit lu comme tenu peut encore être refusé. La vue d'instance est lue
+  une fois, au moment de composer : l'heure de l'agent `Ready` est celle de son dernier statut, pas
+  la première. L'isolement, une fois l'état de H0 levé, se date par la première écriture de H0 sur une
+  carte réseau de la cible après T0 (la quarantaine posée) : une isolation par les seules règles d'un
+  NSG n'y paraît pas, et c'est dit en lacune. Le `restore_time` de la CLI du poste ne se lit qu'à sa
+  sortie.
+
+DRL1 (`docs/design/drill-banc.md`) pourra appeler les deux cibles autour de chaque occurrence.
+
+## Piloter le banc depuis le téléphone (MOB1, #686)
+
+C'est toujours l'opérateur qui tape la commande **sur son poste** ; seul le chemin téléphone → poste
+change, par deux barrières indépendantes : le réseau privé (Tailscale, une règle d'accès qui n'ouvre
+que téléphone → poste:22), puis le serveur SSH du poste, dans WSL, à clé seule, la clé dans la puce du
+téléphone. La console de H0 passe par le tunnel SSH que le téléphone ouvre lui-même vers le
+`127.0.0.1:7007` du poste, où `make glorfindel-host-tunnel` tient celui de H0 : **rien ne change sur
+H0**. Orodruin n'écoute toujours que le SSH du poste (DRL1). Le guide, de l'installation à la perte du
+téléphone : [`docs/demarrer/mobile.md`](demarrer/mobile.md) ; les modèles du poste : `infra/poste/` ;
+la frontière : `docs/design/modele-de-menace.md`, frontière 9.
+
+```zsh
+make bench-run TARGET=<vm> SCENARIO=<id> [DRY_RUN=1]           # préflight, demande, nom tapé, Orodruin, rapport
+make bench-restore TARGET=<vm> RUN=<run_id> [BEFORE=…] [DRY_RUN=1]  # le restore du poste, paire de la console
+make glorfindel-host-tunnel                                    # la console de H0 en 127.0.0.1:7007, comme aujourd'hui
+sudo -v && make mobile-check                                   # le poste ouvert au téléphone, lu
+```
+
+- **`bench-run`** (`scripts/bench_run.py`) : un terminal sur l'entrée, sinon le script refuse, avant
+  tout ssh, az ou scp — la sous-make a seulement lu l'état Terraform local (`terraform output`) ;
+  `make bench-preflight` (un ✗, rien ne part) ; un fil `SCENARIO` → `TARGET`, l'id de la VM lu sur
+  Azure (une seule de ce nom), en une demande du seul lecteur des demandes
+  (`eregion_core/exercise_request.py`) ; le nom de la cible tapé, destructif ou non, puis « [o/N] » ; la
+  demande portée sur Orodruin et lancée comme `make orodruin-exercise` (le nom tapé retiré à la fin) ;
+  `make bench-report` pour chaque run nommé, puis la commande du restore avec `RUN=`. La demande est
+  écrite sur le poste, pas dans le répertoire de la console : Dagorlad ne suit pas sa chronologie (le
+  run, ses cartes et son rapport, si). `make orodruin-exercise` exige aussi un terminal, dès son premier
+  prérequis (`orodruin-exercise-guard`), avant de lire la demande sur H0 ou les VM d'un drill — avec un
+  make sans `-j`, qui construit les prérequis dans leur ordre.
+- **`bench-restore`** (`scripts/bench_restore.py`) : un terminal ; la paire de la console exigée
+  (RST1) ; `--before` le T0 du run, son `attack_started` (SEC4c), lu dans `runs/bench/<run_id>.json` —
+  celui de `RUN=`, sinon le seul rapport de `TARGET` ; plusieurs : refusé, leurs runs listés —, sauf
+  `BEFORE=` ; le coffre et le compte de transit du poste ; le nom de la VM tapé ; l'essai à blanc, puis
+  « [o/N] », puis `.venv/bin/glorfindel restore … --keep-isolated --wait --yes` sous la paire.
+  `--keep-isolated` toujours : la levée est celle de H0.
+- **Le garde** : les deux refusent dans une session d'agent (`EREGION_AGENT_SESSION`, le worktree
+  d'un lot ; `bench_shared.session_refusal`, la règle de `scripts/bench_reader.py`). `bench-run` et
+  `bench-restore` ne développent avant lui que `$(origin …)` et `$(PYTHON)` : il tourne seul, puis une
+  sous-make lance la cible interne `-go`. Appelée directement, une cible `-go` développe d'abord ses
+  `export` — les adresses de H0 et d'Orodruin, lues par `terraform output` dans leur état local, rien
+  d'autre —, puis refait le contrôle d'origine, puis le script refait le garde avant tout ssh, az ou
+  scp. `TARGET`, `SCENARIO`, `BEFORE`, `RUN`, `POINT_MAX_H` : sur la ligne de commande, jamais de
+  l'environnement. **Une session `tmux` qui dure** se pilote par tout processus du même utilisateur
+  (`tmux send-keys`) : le garde, le terminal et le nom tapé n'y tiennent pas ; ne pas y garder la
+  paire chargée (le guide, étape 4).
+- **`mobile-check`** (`scripts/mobile.py check`), en lecture seule : Tailscale (une adresse, Tailscale
+  SSH fermé) ; `sshd -T` (mot de passe, clavier interactif, `hostbased`, GSSAPI fermés, la clé seule,
+  `AuthorizedKeysFile .ssh/authorized_keys` seul, `AuthorizedKeysCommand none`, `TrustedUserCAKeys
+  none`, `AllowTcpForwarding local`, `PermitOpen 127.0.0.1:7007` seul, `GatewayPorts no`, ni socket,
+  ni agent, ni X11, pas de root) ; `ss -Hltn` (le serveur SSH sur l'adresse privée seule, le port de la console en `127.0.0.1`
+  seul) ; `~/.ssh/authorized_keys` (compté, jamais affiché ; ses options `from=` et `permitopen=` ne
+  sont pas lues). Aucune adresse n'est affichée.
+
 ## auditd au banc (AUD1, #408)
 
 ADM1 et COR1 jugent un `sudo` vers root ; ce qui se fait ensuite dans un shell root, sudo ne l'écrit
@@ -4481,6 +4640,212 @@ AUD1), à mesurer : les comm et exe réels du bruit, la forme des enregistrement
 `crontab` écrit, le volume de `shell_exec`, et si un `echo 0>` sur un journal existant (O_TRUNC) est vu
 par la surveillance du répertoire.
 
+## Le compte des flux réseau (INF-FL, #654)
+
+Les blobs des VNet flow logs du banc portent un enregistrement par connexion (5-tuple). SEC-A3f les
+lira comme la preuve qu'une adresse s'est vraiment connectée au port 22 d'une VM
+(`docs/design/corroboration.md`, §3.10). Cette preuve ne tient que si **aucune identité joignable
+depuis une VM surveillée ne peut écrire le compte qui les porte** (CR15).
+
+Jusqu'à INF-FL, ce compte était celui des exercices d'exfiltration (`stcelebrimborexfil`). L'identité
+managée de chaque VM inscrite y a `Storage Blob Data Contributor` sur tout le compte, pour T1041. Un
+utilisateur local s'en sert par IMDS : il pouvait écrire de faux flux, ou effacer les vrais. INF-FL
+donne aux flux **un compte à eux seuls**. Le compte des exercices garde l'écriture des VM inscrites,
+ses diagnostics (`StorageBlobLogs`) et son conteneur `exfil-target`, comme avant. **Rien n'est encore
+planifié ni appliqué** : c'est un geste de Jonathan. Les noms sont ceux du banc canonique ; une
+instance nommée a les siens (`stcbrflow<hash>`). Rien de réel dans ce dépôt.
+
+### Le choix : un compte dédié, plutôt qu'un rôle restreint au conteneur
+
+Deux options existaient. La première : garder le compte partagé, et restreindre le rôle des VM au
+conteneur `exfil-target`. La seconde, retenue : un compte dédié aux flux.
+
+- **Une portée restreinte ne ferme pas tout.** Le compte partagé garde des clés, et chaque exercice
+  y écrit. Une clé ou un SAS du compte des exercices, posé un jour sur une VM pour un exercice, y
+  écrirait aussi les flux. Un rôle de gestion qui porte `listKeys` sur le compte en ferait autant.
+- **Un compte dédié ferme ces chemins par construction.** Il n'a aucune attribution à une VM, ni sur
+  lui, ni au-dessus. Sa clé partagée est refusée. Il n'a aucun conteneur public.
+- **La preuve et l'attaque restent séparées.** Les exercices continuent d'écrire ce qu'ils veulent, où
+  ils veulent, sans toucher la preuve.
+- **Le coût est nul** (ci-dessous).
+
+### Ce que le Terraform pose
+
+| Ressource (`infra/terraform/`) | Ce qu'elle fait |
+|---|---|
+| `azurerm_storage_account.flows` (`storage.tf`) : `stcelebrimborflows`, Standard LRS, même région | le compte des flux. `shared_access_key_enabled = var.flow_logs_shared_key_enabled` (`false` par défaut : `allowSharedKeyAccess` désactivé, ni clé ni SAS n'y valent) ; `allow_nested_items_to_be_public = false`. Chiffrement par défaut, par des clés gérées par Microsoft. Une clé du client qui tourne arrête les flow logs, selon Microsoft Learn |
+| `azurerm_role_assignment.flows_operator_reader` (`storage.tf`) | `Storage Blob Data Reader` sur ce seul compte, pour l'opérateur qui applique (`data.azurerm_client_config.operator`, son az login). Sans clé, son rôle Owner n'ouvre plus le plan de données. Cette lecture sert aux mesures (M1b, `corroboration.md`, §5.4). L'identité de Glorfindel recevra la sienne par SEC-A3f, dans son module |
+| `azurerm_network_watcher_flow_log.celebrimbor` (`monitoring.tf`) | `storage_account_id` vise désormais `azurerm_storage_account.flows`. Traffic analytics (10 minutes, `NTANetAnalytics`) et la rétention de 7 jours ne changent pas |
+| `provider "azurerm"` (`main.tf`) : `features { storage { data_plane_available = false } }` | sans ce drapeau, azurerm 4.81.0 lit les propriétés de file d'attente et de site statique de **chaque** compte par le plan de données, avec la clé (`storage_use_azuread` n'est pas posé). Un compte sans clé ferait échouer chaque plan, par un 403 `KeyBasedAuthenticationNotPermitted`. Aucun compte du module n'a `queue_properties` ni `static_website`, et le drapeau sert précisément à ce cas (guide du bloc `features`) |
+| sorties `flow_logs_storage_account`, `flow_logs_storage_account_id` | le nom et l'id du compte : la portée de la future lecture de SEC-A3f, et ce que lit CR15 |
+
+La propriété, planifiée contre de faux providers et sans Azure, est dans
+`infra/terraform/tests/flow_logs.tftest.hcl` (`terraform test`, job `terraform-test` de la CI). Ce
+test vérifie trois choses :
+
+- le flow log vise le compte des flux, et plus celui des exercices ni celui du restore ;
+- aucune attribution d'une VM du banc, ni d'une VM des topologies, ne porte sur le compte des flux
+  ni au-dessus (le groupe, l'abonnement) ;
+- la clé est refusée, et le retour en arrière la rouvre sans rien changer d'autre.
+
+`tests/unit/test_bench_flow_logs.py` lit la même propriété dans les fichiers, et la renverse : le
+défaut est le refus. **Chaque** `azurerm_role_assignment` du module, **quel que soit son principal**,
+doit porter sur une ressource d'une liste fermée, strictement sous le groupe : le compte des
+exercices, la DCR, une VM, le workspace. Sinon, elle doit être nommée dans une seconde liste fermée,
+avec sa portée exacte et sa raison. Aujourd'hui, cette seconde liste ne tient que
+`flows_operator_reader`, et aucune attribution du module ne porte sur le groupe. Tout le reste est
+refusé : le compte des flux, un groupe, l'abonnement, un id littéral, un `local` ou un `var`. Ainsi,
+une identité de VM passée par un `local` n'y échappe pas : la sonde de la relecture, une écriture de
+données sur le groupe avec `principal_id = local.p`, est un cas du test, et un mutant (M4770). Une
+attribution ajoutée dans un fichier que le plan ne nomme pas est prise de même. Mutants M4760–M4764
+et M4770.
+
+### Le plan, puis l'application (gestes de Jonathan)
+
+Depuis le poste, à la racine du dépôt, `.envrc` chargé :
+
+1. **Le plan ciblé** (lecture seule) : `make celebrimbor-flows-plan`. Il doit montrer exactement ceci :
+   - `+ azurerm_storage_account.flows` (création), avec `shared_access_key_enabled = false` et
+     `allow_nested_items_to_be_public = false` ;
+   - `+ azurerm_role_assignment.flows_operator_reader` (création) : `Storage Blob Data Reader`, la
+     portée du compte des flux, et ta propre identité. Cette attribution suit l'identité qui lance
+     Terraform (`data.azurerm_client_config.operator`). Un plan lancé plus tard sous une autre
+     identité montre son remplacement (`-/+`) : un remplacement de cette attribution, s'arrêter ;
+   - `~ azurerm_network_watcher_flow_log.celebrimbor`, **mise à jour en place** : seul
+     `storage_account_id` change, de `…/stcelebrimborexfil` vers `…/stcelebrimborflows`.
+     `storage_account_id` n'est pas `ForceNew` dans azurerm 4.81.0 : aucun `-/+` ;
+   - `Plan: 2 to add, 1 to change, 0 to destroy`, et l'avertissement de Terraform sur `-target`.
+
+   **S'arrêter** si le plan montre un remplacement, une destruction, ou un changement sur le compte
+   des exercices, sur `vm_storage_exfil`, sur une VM, le VNet ou le workspace. Un tel changement est
+   une dérive à traiter d'abord par `make celebrimbor-plan`.
+2. **Le plan complet** (lecture seule), pour l'hypothèse CF3 : `make celebrimbor-plan`. Le drapeau du
+   provider ne doit rien changer sur `azurerm_storage_account.exfil` ni sur
+   `azurerm_storage_account.restore_staging`. Ce plan peut montrer d'autres dérives du banc, sans
+   rapport avec INF-FL : ne pas les appliquer ici.
+3. **L'application** : `make celebrimbor-flows-up YES=1`, une fois le plan du point 1 relu. Sans
+   `YES=1`, Terraform redemande la confirmation.
+
+### Ce qui se perd, ce qui reste
+
+- **L'historique des flux reste dans l'ancien compte.** Le conteneur
+  `insights-logs-flowlogflowevent` de `stcelebrimborexfil` garde les blobs écrits jusqu'à l'apply.
+  Ils restent lisibles avec ton identité, mais **ils ne sont pas une preuve** : les VM pouvaient y
+  écrire. Network Watcher applique sa rétention de 7 jours par une règle de cycle de vie sur le
+  compte qu'il vise. On ne sait pas si cette règle reste sur l'ancien compte et finit d'y effacer les
+  blobs (hypothèse CF4). Au-delà de 8 jours, s'ils sont encore là, le conteneur se supprime à la
+  main. C'est une destruction, à faire seulement après les mesures qui s'en servent.
+- **Les lignes de `NTANetAnalytics` ne sont pas touchées.** Elles vivent dans le workspace, avec sa
+  rétention. Au moment de la bascule, un trou de quelques minutes est possible, le temps que Network
+  Watcher écrive dans le nouveau compte (CF6).
+- **Les mesures M1b de SEC-A3** (`corroboration.md`, §5.2, étape 2, sur 7 jours) se font sur le
+  nouveau compte, une fois ses 7 jours accumulés. Les blobs de l'ancien compte peuvent servir aux
+  distributions de CR13, pas à CR15.
+- **Le retour en arrière, si Network Watcher n'écrit pas sans clé** (CF1) : mettre
+  `flow_logs_shared_key_enabled = true` dans `terraform.tfvars`, jamais en `-var`. Puis
+  `make celebrimbor-flows-plan` doit montrer `1 to change` (le compte, la clé seule), et
+  `make celebrimbor-flows-up YES=1`. Les blobs ne sont alors plus une preuve au sens de CR15 : SEC-A3f
+  attend que la conception le dise. Revenir au compte des exercices n'est pas un retour en arrière
+  prévu : il défait la séparation.
+
+### Vérifier CR15 au banc, après l'apply (en lecture)
+
+1. **La clé et l'accès public**. Résultat attendu : `false` et `false`.
+
+   ```bash
+   az storage account show -g rg-celebrimbor -n stcelebrimborflows \
+     --query "{allowSharedKeyAccess: allowSharedKeyAccess, allowBlobPublicAccess: allowBlobPublicAccess}" -o json
+   ```
+
+2. **Les attributions sur le compte et au-dessus** (le groupe, l'abonnement, héritées), puis les
+   identités des VM du banc :
+
+   ```bash
+   FLOWS=$(az storage account show -g rg-celebrimbor -n stcelebrimborflows --query id -o tsv)
+   az role assignment list --scope "$FLOWS" --include-inherited \
+     --query "[].{principal: principalId, type: principalType, role: roleDefinitionName, scope: scope}" -o table
+   az vm list -g rg-celebrimbor --query "[].{vm: name, system: identity.principalId}" -o table
+   az identity list -g rg-celebrimbor --query "[].{name: name, principal: principalId}" -o table
+   ```
+
+   Aucun principal des deux dernières listes ne doit paraître dans la première. Les entrées attendues
+   de la première :
+   - ta lecture sur le compte (`Storage Blob Data Reader`) ;
+   - tes rôles hérités de l'abonnement ;
+   - les rôles de H0, de la console et d'Orodruin sur le groupe : `Reader`, « Eregion Glorfindel
+     Response », « Eregion Glorfindel Restore », la lecture d'Orodruin. Aucun de ces rôles n'a de
+     droit de données ni `listKeys`. Ce sont des identités d'hôtes que la watch ne surveille pas.
+     « Eregion Glorfindel Restore » porte toutefois `Microsoft.Storage/storageAccounts/write` sur
+     tout le groupe : il peut rouvrir la clé du compte des flux, sans pouvoir la lire (ci-dessous,
+     « Ce qui reste ouvert »).
+
+   Un autre principal est à expliquer avant SEC-A3f.
+3. **Network Watcher écrit sans clé** (CF1), dans les 10 à 30 minutes qui suivent l'apply. Ta lecture
+   peut mettre quelques minutes à se propager.
+
+   ```bash
+   az storage blob list --account-name stcelebrimborflows -c insights-logs-flowlogflowevent --auth-mode login \
+     --num-results 5 --query "[].{name: name, modified: properties.lastModified}" -o table
+   ```
+
+4. **Traffic analytics suit** (CF2), dans le portail, « Logs » du workspace du banc. Les lignes
+   doivent continuer d'arriver après l'heure de l'apply :
+
+   ```kusto
+   NTANetAnalytics
+   | where TimeGenerated > ago(2h) and SubType == "FlowLog"
+   | summarize Rows = count(), Last = max(TimeGenerated) by bin(TimeGenerated, 10m)
+   ```
+
+5. **Depuis une VM inscrite, une écriture d'essai refusée** (la mesure de CR15 dans `corroboration.md`).
+   Sur gondolin, par SSH, avec son identité managée :
+
+   ```bash
+   TOKEN=$(curl -sf -H "Metadata: true" \
+     "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://storage.azure.com/" \
+     | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+   curl -s -o /dev/null -w "%{http_code}\n" -X PUT -H "Authorization: Bearer $TOKEN" \
+     -H "x-ms-blob-type: BlockBlob" -H "x-ms-version: 2020-04-08" --data-binary "" \
+     "https://stcelebrimborflows.blob.core.windows.net/insights-logs-flowlogflowevent/cr15-probe.txt"
+   ```
+
+   Résultat attendu : `403`. Un `201` veut dire que le compte n'est pas une preuve : l'écrire dans
+   CR15, et retirer le blob d'essai.
+
+### Les hypothèses d'INF-FL
+
+| | Hypothèse | Mesure | Si elle tient | Sinon |
+|---|---|---|---|---|
+| **CF1** | Network Watcher écrit les blobs dans un compte sans clé partagée. La FAQ de Network Watcher dit qu'il essaie une clé, puis un jeton | étape 3 | la clé reste refusée | `flow_logs_shared_key_enabled = true` (le retour en arrière) ; CR15 ne tient plus sur `allowSharedKeyAccess`, à dire dans la conception |
+| **CF2** | Traffic analytics lit les blobs du compte sans clé : `NTANetAnalytics` continue | étape 4 | rien | COR2 (`origin_proof: flows`) perd sa source : le retour en arrière, comme CF1 |
+| **CF3** | Le drapeau `data_plane_available = false` ne change rien aux comptes d'exfiltration et de transit : `queue_properties` et `static_website` sont `Optional` et `Computed`, et gardent leur valeur | le plan complet du point 2 | rien | lire le changement avant tout apply complet ; ne pas l'appliquer s'il touche un compte |
+| **CF4** | La règle de rétention que Network Watcher a posée sur l'ancien compte y reste, et efface ses blobs de flux en 7 jours | l'ancien conteneur, 8 jours après l'apply | rien | supprimer le conteneur à la main, après les mesures |
+| **CF5** | `Storage Blob Data Reader` et `--auth-mode login` suffisent à lire les blobs, pour M1b | étape 3 | rien | lire le refus : un délai de propagation, ou une règle réseau |
+| **CF6** | La bascule de `storage_account_id` est une mise à jour en place, et Network Watcher écrit dans le nouveau compte en quelques minutes | le plan du point 1, puis l'étape 3 | rien | relever le trou dans `NTANetAnalytics`, le dire dans `corroboration.md` |
+
+### Ce qui reste ouvert
+
+- **Le point de terminaison public reste ouvert.** Il est fermé à toute requête sans identité Entra
+  ID autorisée, mais pas par le réseau. Un pare-feu du compte (refus par défaut, services de
+  confiance admis, comme le permet la FAQ de Network Watcher) serait une défense de plus. Il demande
+  de prévoir l'accès réseau de la lecture de SEC-A3f, depuis H0 ou le poste : un lot à part, s'il est
+  voulu.
+- **Les identités au-dessus du banc** gardent leurs droits : un Owner ou un Contributor de
+  l'abonnement peut toujours écrire ou effacer les flux, ou rouvrir la clé. Ce ne sont pas des
+  identités joignables depuis une VM surveillée. Ni verrou de suppression ni stockage immuable n'est
+  posé.
+- **Le rôle de restore écrit la configuration du compte.** « Eregion Glorfindel Restore » est
+  attribué à la main sur le groupe de la VM (« Identités Azure », ci-dessus). Son
+  `Microsoft.Storage/storageAccounts/write` vaut donc aussi sur le compte des flux. Il permet de
+  rouvrir la clé partagée, ou de faire taire la preuve par une règle réseau qui refuse tout sans
+  exception pour les services de confiance, sans lire ni régénérer une clé, ni écrire un blob. Le restore n'a besoin de cette écriture que sur le compte de transit : la restreindre à
+  ce compte est une question pour les sessions Glorfindel et Infra. Les principaux de ce rôle sont
+  ceux de la console, pas ceux d'une VM surveillée.
+- **Les modules d'Orodruin et de H0** ne sont pas lus par le test. Leurs attributions sur le groupe
+  se vérifient à l'étape 2. Chez un client, c'est la vérification de Glorfindel au démarrage qui tient
+  CR15 : dans `corroboration.md`, §3.5, le statut `unknown` « compte des flux écrit depuis une VM »
+  (SEC-A3f).
+
 ---
 
 ## Coûts réels (West Europe)
@@ -4491,4 +4856,5 @@ par la surveillance du répertoire.
 - **auditd au banc (AUD1)**, s'il est activé : les lignes d'auditd dans `Syslog` (local6), 2,99 USD le Go
   en West Europe au-delà des 5 Go gratuits du mois — estimées à moins de 1 USD par mois sur le banc
   (~3 Ko par exécution d'un humain en root), à mesurer (« auditd au banc (AUD1) », ci-dessus).
+- **Le compte des flux réseau (INF-FL)** : un compte de stockage n'a pas de frais fixes ; on paie la capacité et les opérations, à l'usage (Azure Blob Storage). Les blobs des flux, leurs écritures (un ajout par minute) et les lectures de traffic analytics **changent de compte, ils ne doublent pas** : le coût total reste celui d'avant. Le seul surcoût est passager : l'ancien historique, 7 jours au plus, dans le compte des exercices. Le coût réel se relève sur la facture, avec ceux des flux (`docs/design/corroboration.md`, §5.2, étape 1).
 - **Chaos Studio (G0)** : facturé à l'usage des expériences (une panne de 5 min sur une VM). Feu vert du 15/10 sur une estimation de 11 à 42 € par mois pour 2 à 4 campagnes (ROADMAP) ; le coût réel est à relever sur la facture après le premier run.

@@ -52,6 +52,30 @@ TESTS_ALSO = {
     "M1963": f"{_REG}test_a_release_after_a_lost_state_and_a_cut_isolation_says_what_it_keeps",
     # Flaky (the machine found it one round in two): its fixed sequence is there already.
     "M41": f"{_REG}test_a_reset_sweeps_the_original_it_puts_back",
+    # Flaky at the 0.5.9 release gate (MUT5: survives the machine on seed 89917386, caught on 89917387):
+    # L26's sequence, and the bare NIC's that MUT5 froze beside it.
+    "M21": f"{_REG}test_a_block_hidden_behind_the_quarantine_is_not_a_block "
+           f"{_REG}test_a_block_on_an_nsg_taken_off_its_nic_is_not_a_block",
+    # Flaky at the 0.5.9 release gate (MUT6: the machine alone catches it on seed 766752177,
+    # lets it through on 766752178): Q7's sequence, frozen by MUT6.
+    "M09": f"{_REG}test_a_quarantine_whose_state_and_tag_are_lost_is_not_released_bare",
+    # Survived the AWS machine at the 0.5.9 release gate (MUT6: both rounds, seeds 276700698
+    # and 276700699): U2's sequence on AWS, frozen by MUT6.
+    "M606": "tests/unit/test_invariant_regressions_aws.py::"
+            "test_a_reisolation_of_an_eni_left_on_default_keeps_its_original",
+    # Flaky at the 0.5.9 release gate (MUT8: survives the machine on seed 873889299, caught on
+    # 873889300): already caught by M35's frozen sequence (a reset cut off after its first write
+    # on Azure, then a reassertion) and by the unit tests of a release and an unblock in progress.
+    "M13": f"{_REG}test_an_interrupted_reset_is_a_release_under_way "
+           f"{_RE}test_a_release_in_progress_is_not_put_back "
+           f"{_RE}test_an_unblock_in_progress_is_not_put_back",
+    # Flaky at the 0.5.9 release gate (MUT9: survives the machine on seed 637433568, caught on
+    # 637433567): A0's own frozen sequences — an older version's fixed-name deny-all, its state
+    # lost, on an NSG shared since or whose sharing can't be read — and the unit test of a release
+    # without state that leaves it, said, on another VM's NSG.
+    "M33": f"{_REG}test_an_old_isolation_on_an_nsg_shared_since_is_not_released "
+           f"{_REG}test_an_old_isolation_is_not_released_when_its_nsg_cant_be_read "
+           "tests/unit/test_glorfindel.py::test_release_isolation_without_state_sweeps_every_nic",
     # The unit test that holds its property, outside its target.
     "M36": "tests/unit/test_glorfindel.py::test_an_old_state_file_is_moved_before_it_is_rewritten",
     # Their tests of their own.

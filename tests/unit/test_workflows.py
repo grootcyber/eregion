@@ -292,6 +292,9 @@ def test_every_workflow_a_push_a_pull_request_or_the_night_runs_is_announced_whe
 # key that silences an advisory. So `issues: write` (or write-all) is pip-audit.yml's alone,
 # at the workflow's level or a job's — and every workflow says its permissions (no default).
 
+NIGHT = ROOT / ".github" / "workflows" / "mutants-night.yml"     # MUT7: pushed by Jonathan
+
+
 def _permission_sets(doc: dict) -> list:
     sets = [doc.get("permissions")]
     sets += [job.get("permissions") for job in (doc.get("jobs") or {}).values() if isinstance(job, dict)]
@@ -310,7 +313,20 @@ def test_only_the_dependency_audit_may_write_issues():
     docs = {p.name: _load(p) for p in WORKFLOWS}
     assert all("permissions" in doc for doc in docs.values()), "a workflow without its permissions"
     writers = {name for name, doc in docs.items() if any(_writes_issues(p) for p in _permission_sets(doc))}
-    assert writers == {"pip-audit.yml", "ci.yml"}
+    # MUT7 (#699): and the night's fragile mutants, its `issues` job alone (Jonathan pushes the file).
+    assert writers == {"pip-audit.yml", "ci.yml"} | ({NIGHT.name} if NIGHT.exists() else set())
+    if NIGHT.exists():
+        night = docs[NIGHT.name]
+        assert night["permissions"] == {"contents": "read"} and set(night["on"]) == {"schedule", "workflow_dispatch"}
+        assert {name for name, job in night["jobs"].items() if _writes_issues(job.get("permissions"))} == {"issues"}
+        job = night["jobs"]["issues"]
+        assert job["permissions"] == {"issues": "write"}
+        assert [s for s in job["steps"] if s.get("uses")] == []
+        text = NIGHT.read_text(encoding="utf-8")
+        assert "eregion-pip-audit" not in text and "--label" not in "".join(s.get("run", "") for s in job["steps"])
+        for event in ("pull_request", "pull_request_target", "workflow_run", "push"):
+            assert not _expr(job["if"], event, needs={"night": "success"},
+                             outputs={"night": {"fragile": "M1:1/3:7"}}), event
     ci = docs["ci.yml"]
     assert not _writes_issues(ci["permissions"])
     jobs = {name for name, job in ci["jobs"].items() if _writes_issues(job.get("permissions"))}
@@ -1680,10 +1696,11 @@ _TOKEN = re.compile(r"'[^']*'|&&|\|\||!=|==|!|\(|\)|,|\d+|[A-Za-z_][\w.\-]*|\s+"
 
 
 def _expr(text, event: str, *, needs: dict | None = None, number: int = 7, run_id: int = 4242,
-          workflow: str = "CI", cancelled: bool = False):
+          workflow: str = "CI", cancelled: bool = False, outputs: dict | None = None):
     if not isinstance(text, str):
         return text
-    kw = {"needs": needs, "number": number, "run_id": run_id, "workflow": workflow, "cancelled": cancelled}
+    kw = {"needs": needs, "number": number, "run_id": run_id, "workflow": workflow, "cancelled": cancelled,
+          "outputs": outputs}
     whole = re.fullmatch(r"\s*\$\{\{((?:(?!\}\}).)*)\}\}\s*", text, re.S)
     if not whole:   # a plain value, or a template: each ${{ … }} replaced by its value
         return re.sub(r"\$\{\{((?:(?!\}\}).)*)\}\}", lambda x: str(_expr("${{" + x.group(1) + "}}", event, **kw)),
@@ -1693,6 +1710,8 @@ def _expr(text, event: str, *, needs: dict | None = None, number: int = 7, run_i
              "github.event.pull_request.number": number if event in ("pull_request", "pull_request_target") else None,
              "github.ref": "refs/heads/main"}
     names |= {f"needs.{job}.result": result for job, result in (needs or {}).items()}
+    # A job's outputs (MUT7): {"job": {"name": value}}.
+    names |= {f"needs.{job}.outputs.{k}": v for job, said in (outputs or {}).items() for k, v in said.items()}
     out, at, src = [], 0, m.group(1)
     while at < len(src):
         tok = _TOKEN.match(src, at)
@@ -1925,7 +1944,7 @@ DOWNLOADS = re.compile(
     r"|\bterraform\b.*\binit\b|published_image\.py install-|scripts/chroma_model\.py")
 # What measures — never retried, never in a step that is: a step that downloads then tests is cut.
 MEASURES = re.compile(
-    r"\bpytest\b|mutation_check\.py|component_check\.py|image_check\.py|pip_audit_issues\.py|\bruff\b"
+    r"\bpytest\b|mutation_check\.py|mutation_night\.py|component_check\.py|image_check\.py|pip_audit_issues\.py|\bruff\b"
     r"|\bterraform\b.*\b(?:test|validate)\b|jit-terraform/run\.sh|profiles-check"
     r"|published_image\.py (?:verify|resolve)")
 # Every step retried, by workflow, job and name: the list grows only with a download.
@@ -1947,6 +1966,8 @@ RETRIED = {
     ("publish.yml", "publish", "syft"), ("publish.yml", "publish", "cosign"),
     ("canary-azurerm.yml", "canary", "Install Terraform (HashiCorp's apt repository)"),
 }
+# MUT7: the night's fragile mutants, once Jonathan has pushed its workflow.
+NIGHT_RETRIED = {("mutants-night.yml", "night", s) for s in (_INSTALL, CHROMA_STEP)}
 
 
 def _lines(run: str) -> list[str]:
@@ -1972,7 +1993,7 @@ def _retried() -> set[tuple[str, str, str]]:
 def test_ci8_the_steps_retried_are_these_and_only_these():
     """The list, said: each step that downloads, in each workflow that runs one — Images aside, whose
     build is an action (docker/build-push-action), never wrapped."""
-    assert _retried() == RETRIED
+    assert _retried() == RETRIED | (NIGHT_RETRIED if NIGHT.exists() else set())
     assert RETRY_SH.is_file() and (ROOT / "scripts" / "chroma_model.py").is_file()
 
 
@@ -2289,14 +2310,16 @@ def _harness_calls() -> list[tuple[str, str, list[str]]]:
     """(workflow, job, the options) of each call to scripts/mutation_check.py in a workflow's `run`."""
     calls = []
     for wf, job, step in _job_steps():
-        # A folded scalar (`>-`) is one line already; a backslash goes on with the next.
-        words = str(step.get("run") or "").replace("\\\n", " ").split()
-        for i, w in enumerate(words):
-            if not w.endswith("scripts/mutation_check.py"):
-                continue
-            tail = words[i + 1:]
-            end = next((k for k, x in enumerate(tail) if x in ("&&", "||", ";", "|")), len(tail))
-            calls.append((wf, job, [x.split("=", 1)[0] for x in tail[:end] if x.startswith("--")]))
+        # A folded scalar (`>-`) is one line already; a backslash goes on with the next. A command
+        # ends with its line (MUT7: the night's issue writes a replay on a line of its own).
+        for line in str(step.get("run") or "").replace("\\\n", " ").splitlines():
+            words = line.split()
+            for i, w in enumerate(words):
+                if not w.endswith("scripts/mutation_check.py"):
+                    continue
+                tail = words[i + 1:]
+                end = next((k for k, x in enumerate(tail) if x in ("&&", "||", ";", "|")), len(tail))
+                calls.append((wf, job, [x.split("=", 1)[0] for x in tail[:end] if x.startswith("--")]))
     return calls
 
 
@@ -2307,7 +2330,9 @@ def test_ci10b_every_option_a_workflow_gives_the_harness_is_one_its_parser_knows
     known = _harness_options()
     assert {"--machines", "--skip-machine-baseline", "--total", "--shard", "--json"} <= known, known
     calls = _harness_calls()
-    assert {wf for wf, _job, _opts in calls} == {"release-gate.yml", "mutants.yml"}, calls
+    # MUT7: the night's issue writes the replay of a fragile mutant — a command of the harness too.
+    night = {NIGHT.name} if NIGHT.exists() else set()
+    assert {wf for wf, _job, _opts in calls} == {"release-gate.yml", "mutants.yml"} | night, calls
     for wf, job, opts in calls:
         assert opts and set(opts) <= known, (wf, job, sorted(set(opts) - known))
 

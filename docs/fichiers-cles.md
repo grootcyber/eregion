@@ -128,7 +128,8 @@ glorfindel/
                           (tests/unit/test_provider_boundary.py, étape CI « Provider boundary ») :
                           connector.py (AzureConnector = un mixin par préoccupation + garde d'abonnement + verrou
                           de VM sur les écritures), nsg.py (règles lues par contenu), network.py, quarantine.py,
-                          isolation.py, release.py (+ gone.py : la VM supprimée, I7S), verify.py, blocks.py, verify_block.py, unblock.py, backup.py (+ restore_job_status,
+                          isolation.py (+ run_command.py : la Run Command attendue une fois, puis son statut relu sur
+                          Azure — la coupure `pending`, son poller gardé, DRN1), release.py (+ gone.py : la VM supprimée, I7S), verify.py, blocks.py, verify_block.py, unblock.py, backup.py (+ restore_job_status,
                           lu par jobs.py), restore.py (+ restore_rights.py : ses droits lus avant de toucher la VM, les refus dits sans id, RST1), sweep.py (+ reset_bare.py : ses cartes nues), readers.py (check_permissions, check_nsg_access,
                           list_nsgs, check_compute_access…), sdk.py (warm-up), capabilities.py, monitor.py
                           (AzureMonitorDetector, réexporté par detectors.py), activity.py (AzureActivityDetector, AL1 :
@@ -192,6 +193,11 @@ glorfindel/
                           say_unreadable_states (carte `state_unreadable`, state_alerts.json), say_left (I4A,
                           carte `rule_left`), say_unverified (SEC13, V-16 : une vérification qui lève, carte
                           `unverified` une fois, fermée quand elle repasse) ; L2C : une marque ne fait taire que la dernière carte, fermée par un humain
+  drain_watch.py        → DRN1 : la coupure des sessions encore en cours sur Azure après 300 s, relue à chaque passe
+                          de la réaffirmation ; une carte `drain_pending` tant qu'elle tourne, fermée quand elle
+                          aboutit, ou une carte `verification_failed` qui dit « coupure refusée », « sessions restées
+                          ouvertes » ou « coupure jamais aboutie » (30 min, ou la watch redémarrée, ou la VM isolée par un
+                          autre processus : `asked_at`, le nonce) ; la carte d'abord, puis l'état
   reassert_quarantine.py → I1F, I1S, ISU : les NSG de quarantaine modifiés, lus à chaque passe quel que soit
                           l'état local — _report_altered_quarantines, quarantine_alerts.json (sorti de
                           reassert.py par RB1, sans changement de comportement ; L2Q : un changement qui revient est redit)
@@ -412,6 +418,9 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 Topologies de validation dans config.yaml (topologies.<n>.enabled, toutes false
                                 par défaut), gated par for_each, 1 RG par topo. topo_multinic.tf = topo #1 (2 NIC).
                                 Cibles : make celebrimbor-{plan,up,down,output,stop,start} [INSTANCE=] [TOPO=].
+                                storage.tf : trois comptes séparés — exfil (les exercices, écrit par les VM
+                                inscrites), restore_staging (le transit du restore), flows (INF-FL : les VNet flow
+                                logs, la preuve d'une connexion ; aucune identité de VM, pas de clé partagée).
                                 Schéma de noms type-celebrimbor-nom (CAF) : VM=cités, LAW=tours de guet, RSV=coffres.
 
 ~/.glorfindel/                → SEC3 : en 0600 (dossiers 0700), écrits entiers (fichier temporaire + `os.replace`) :
@@ -450,6 +459,10 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
   recoveries.json             → REC1 (#668) : ce que la watch a fait de chaque job de restauration lu sur Azure
                                 (émis, ou la carte écrite et son motif), par VM et par job : une fois par job
                                 (`glorfindel/recovery_watch.py`) ; les notes d'une VM qui n'est plus isolée tombent à l'écriture
+  door/<vm>-<h8>.json         → LEV2 (#690) : les faits de la porte d'une VM isolée, pour information — qui a agi
+                                sur elle par le plan de contrôle, ses gestes, ses droits (tenus, absents, illisibles),
+                                lus par la watch (`glorfindel/door_facts.py`) et montrés sur la carte d'isolement ; rien
+                                ne lève ni ne retient sur eux ; le fichier d'une VM levée tombe à la passe suivante
   channel_refusals.json       → SEC3 (V-05) : les lignes de `runs/` que la watch a refusées, comptées par événement
                                 (la dernière : fichier, heure, raison)
   console_token               → ancien emplacement du jeton tiré de la console : retiré à son premier
@@ -466,6 +479,11 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 est la cible (`samefile` — sur macOS/Windows/Docker Desktop `VM-Foo--h` et `vm-foo--h`
                                 sont le même fichier : cinquième passe C1) ; `migrate_state_files()` au démarrage du watch.
                                 CI : job macOS (APFS insensible à la casse) ; `main` protégée, checks requis.
+                                `disks_at_isolation` (LEV2) : les disques de la VM notés à l'isolement (`os`, `data`,
+                                `ids`), ceux de la première isolation gardés par une isolation de plus ; après un restore
+                                sur place, les disques d'origine, des preuves. Un état sans eux se relit (d'avant LEV2).
+                                `nsg_rules_at_isolation` (Q16) : les règles de chaque NSG client que l'isolement a lues,
+                                par id de NSG ; vide sur le chemin du NSG de quarantaine
   blocks/<vm>--<h>.json       → IPs bloquées par VM (même clé)
                                 **Illisible = inconnu (SEC3, SEC4b)** : un fichier d'isolation ou de blocage qui ne se lit
                                 pas (JSON cassé, autre forme — dont des `placements` sans `resource_id` —, `unreadable_states`)

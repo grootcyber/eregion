@@ -116,7 +116,8 @@ class NetworkMixin:
         primary = next((n for n in nics if n.primary), nics[0])
         return primary.id
 
-    def _get_vm_nic_targets(self, rg: str, vm_name: str, allow_no_nsg: bool = False) -> list[dict]:
+    def _get_vm_nic_targets(self, rg: str, vm_name: str, allow_no_nsg: bool = False,
+                            seen: list | None = None) -> list[dict]:
         """Every NIC of the VM with its governing NSG + all private IPs.
 
         Isolation must cover EVERY NIC: a VM with 2 NICs each behind its own NSG is
@@ -132,8 +133,13 @@ class NetworkMixin:
         allow_no_nsg: a NIC with no NSG at all (neither its own nor its subnet's) is
         returned with scope 'none' instead of raising — isolation can still attach the
         quarantine NSG to it.
+
+        seen: the VM as read here is appended to it (the isolation notes its disks from it,
+        LEV2: no read more).
         """
         vm = self._compute.virtual_machines.get(rg, vm_name)
+        if seen is not None:
+            seen.append(vm)
         targets: list[dict] = []
         for ref in vm.network_profile.network_interfaces:
             nic_id = ref.id

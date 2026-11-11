@@ -1,6 +1,6 @@
 # Le banc complet : d'une attaque à sa preuve
 
-[← README](../../README.md) · le guide d'avant : [observer en lecture seule](bleu.md) · ce qui reste à rejouer sur Azure : [a-rejouer.md](a-rejouer.md)
+[← README](../../README.md) · le guide d'avant : [observer en lecture seule](bleu.md) · ce qui reste à rejouer sur Azure : [a-rejouer.md](a-rejouer.md) · depuis le téléphone : [mobile.md](mobile.md)
 
 **Pour qui.** Un ingénieur infra ou sécurité qui veut voir la boucle entière : une attaque réelle, publique et épinglée, lancée sur une cible jetable, et ce que Glorfindel en a fait. On le mesure par le verdict (`detected`, `missed` ou `unknown`), le rapport de la campagne et la console.
 
@@ -214,6 +214,8 @@ La preuve, à trois endroits :
 **Sans cible Make pour un run seul.** Un scénario seul se lance de la VM : `make orodruin-ssh`, puis le `docker run` d'un injecteur, durci (`infra/orodruin/README.md`). La campagne déclarée, elle, passe par des cibles Make.
 
 **Le rançongiciel (T1486)**, une technique destructive, se rejoue par une demande de Dagorlad, avec son restore et sa levée : [`banc-t1486.md`](../banc-t1486.md).
+
+**Ce que le journal d'activité dit des gestes sur une VM** (LEV2, avant la règle de levée de LEV3) : des écritures sans effet sur gondolin, chacune avec son retour, puis un rapport sans identifiant : [`banc-lev2.md`](../banc-lev2.md).
 
 ## 8. Tout démonter
 

@@ -11,6 +11,8 @@ from glorfindel.providers.azure.away import AwayRulesMixin
 from glorfindel.providers.azure.backup import BackupMixin
 from glorfindel.providers.azure.blocks import BlockMixin
 from glorfindel.providers.azure.capabilities import CAPABILITIES as AZURE_CAPABILITIES
+from glorfindel.providers.azure.door import DoorMixin
+from glorfindel.providers.azure.door_rights import DoorRightsMixin
 from glorfindel.providers.azure.gone import GoneVmMixin
 from glorfindel.providers.azure.isolation import IsolationMixin
 from glorfindel.providers.azure.network import NetworkMixin
@@ -22,6 +24,7 @@ from glorfindel.providers.azure.recovery import RecoveryMixin
 from glorfindel.providers.azure.release import ReleaseMixin
 from glorfindel.providers.azure.reset_bare import ResetBareMixin
 from glorfindel.providers.azure.restore import RestoreMixin
+from glorfindel.providers.azure.run_command import DrainFollowMixin
 from glorfindel.providers.azure.sweep import SweepMixin
 from glorfindel.providers.azure.unblock import UnblockMixin
 from glorfindel.providers.azure.verify import VerifyMixin
@@ -36,6 +39,7 @@ class AzureConnector(
     NetworkMixin,
     QuarantineMixin,
     IsolationMixin,
+    DrainFollowMixin,
     ReleaseMixin,
     GoneVmMixin,
     AwayRulesMixin,
@@ -48,6 +52,8 @@ class AzureConnector(
     BackupMixin,
     RestoreMixin,
     RecoveryMixin,
+    DoorMixin,
+    DoorRightsMixin,
     SweepMixin,
     ResetBareMixin,
     ReadersMixin,
@@ -208,6 +214,6 @@ for _name in ("isolate_vm", "release_isolation", "block_suspicious_ip", "unblock
 for _name in ("isolate_vm", "release_isolation", "verify_isolation", "verify_release",
               "block_suspicious_ip", "unblock_ip", "verify_block_ip", "snapshot",
               "restore_from_backup", "drain_connections", "sweep_vm_rules", "check_permissions",
-              "observed_restore"):
+              "observed_restore", "observed_actors", "observed_rights"):
     if hasattr(AzureConnector, _name):
         setattr(AzureConnector, _name, _same_subscription(getattr(AzureConnector, _name)))

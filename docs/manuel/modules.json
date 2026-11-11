@@ -367,8 +367,8 @@
    "version": "0.5",
    "nom": "the measured loop",
    "etat": "publiee",
-   "derniere": "0.5.8",
-   "date": "2026-11-09",
+   "derniere": "0.5.10",
+   "date": "2026-11-10",
    "resume": "The loop measured on real traffic, the correlation, the signed action queue, signed proofs from end to end."
   },
   {
@@ -494,8 +494,9 @@
    "composant": "socle",
    "poste": "s-signer",
    "nom": "Security hardening",
-   "etat": "main",
-   "release": "0.6",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.9",
    "lots": [
     "SEC-A4"
    ],
@@ -745,6 +746,18 @@
    "issue": 92
   },
   {
+   "id": "g-aws-simule-trace",
+   "composant": "glorfindel",
+   "poste": "g-agir",
+   "nom": "The simulated AWS: an ENI whose original nothing holds any more, judged as Azure judges a bare NIC",
+   "etat": "main",
+   "release": "0.5",
+   "lots": [
+    "AWS1b"
+   ],
+   "issue": 708
+  },
+  {
    "id": "g-file-signee",
    "composant": "glorfindel",
    "poste": "g-agir",
@@ -866,8 +879,9 @@
    "composant": "glorfindel",
    "poste": "g-verifier",
    "nom": "The recovery of a VM restored elsewhere read on Azure, and the isolation lifted on its own",
-   "etat": "main",
-   "release": "0.6",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.9",
    "lots": [
     "REC1",
     "REC1b"
@@ -880,13 +894,61 @@
    "composant": "glorfindel",
    "poste": "g-agir",
    "nom": "The restore from the console: its rights read before the VM is touched, a refusal said whole",
-   "etat": "main",
-   "release": "0.6",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.9",
    "lots": [
     "RST1"
    ],
    "issue": 680,
    "doc": "docs/azure.md"
+  },
+  {
+   "id": "g-coupure-suivie",
+   "composant": "glorfindel",
+   "poste": "g-verifier",
+   "nom": "The session cut under the quarantine followed on Azure: pending, refused, or sessions left open",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.9",
+   "lots": [
+    "DRN1"
+   ],
+   "issue": 677,
+   "doc": "docs/glorfindel.md"
+  },
+  {
+   "id": "g-levee-probation",
+   "composant": "glorfindel",
+   "poste": "g-agir",
+   "nom": "Design: the lift after a restore, alone and on probation, unless the door is proven open",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.10",
+   "lots": [
+    "LEV1",
+    "LEV2"
+   ],
+   "issue": 690,
+   "doc": "docs/design/levee-probation.md"
+  },
+  {
+   "id": "g-levee-probation-code",
+   "composant": "glorfindel",
+   "poste": "g-agir",
+   "nom": "The lift into probation itself: the rule, the probation and its ports, the cards, the exercise as a real incident, measured on the bench",
+   "etat": "prevue",
+   "release": "0.6",
+   "lots": [
+    "LEV3",
+    "LEV4",
+    "LEV5",
+    "LEV6",
+    "LEV7",
+    "LEV8"
+   ],
+   "issue": 690,
+   "doc": "docs/design/levee-probation.md"
   },
   {
    "id": "g-memoire-source",
@@ -936,6 +998,18 @@
     "SEC-A4b"
    ],
    "issue": 660
+  },
+  {
+   "id": "s-inf-fl",
+   "composant": "socle",
+   "poste": "s-signer",
+   "nom": "Security hardening",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "INF-FL"
+   ],
+   "issue": 654
   },
   {
    "id": "g-remontee",
@@ -1332,8 +1406,9 @@
    "composant": "celebrimbor",
    "poste": "c-construire",
    "nom": "The bench's customer layer: the canary's OIDC sign-ins",
-   "etat": "main",
-   "release": "0.6",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.9",
    "lots": [
     "CAN3"
    ],
@@ -1345,14 +1420,43 @@
    "composant": "celebrimbor",
    "poste": "c-construire",
    "nom": "The ransomware replayed on the bench, step by step",
-   "etat": "main",
-   "release": "0.6",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.9",
    "lots": [
     "RAN1"
    ],
    "issue": 665,
    "pr": 669,
    "doc": "docs/banc-t1486.md"
+  },
+  {
+   "id": "c-banc-lisible",
+   "composant": "celebrimbor",
+   "poste": "c-construire",
+   "nom": "The bench read by the machine: a preflight and a run report, composed alone",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.9",
+   "lots": [
+    "BNC1"
+   ],
+   "issue": 682,
+   "doc": "docs/banc-t1486.md"
+  },
+  {
+   "id": "c-telephone",
+   "composant": "celebrimbor",
+   "poste": "c-acces",
+   "nom": "The bench driven from the phone: one command for a run, one for the restore, typed on the workstation",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.10",
+   "lots": [
+    "MOB1"
+   ],
+   "issue": 686,
+   "doc": "docs/demarrer/mobile.md"
   },
   {
    "id": "c-lecture",
@@ -1677,13 +1781,44 @@
    "composant": "socle",
    "poste": "s-prouver",
    "nom": "A seed drawn per round for the nightly run and the release gate, stated and replayable",
-   "etat": "main",
-   "release": "0.6",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.9",
    "lots": [
-    "SEED1"
+    "SEED1",
+    "MUT5",
+    "MUT6",
+    "MUT8"
    ],
    "issue": 655,
    "pr": 663
+  },
+  {
+   "id": "s-fragiles",
+   "composant": "socle",
+   "poste": "s-prouver",
+   "nom": "The mutants only an invariant machine kills, measured each night on seeds drawn",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.10",
+   "lots": [
+    "MUT7"
+   ],
+   "issue": 699,
+   "doc": "docs/design/preuves.md"
+  },
+  {
+   "id": "s-graine-tours",
+   "composant": "socle",
+   "poste": "s-prouver",
+   "nom": "A mutant the machine catches one round in two, caught on every round by a frozen sequence",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.10",
+   "lots": [
+    "MUT9"
+   ],
+   "issue": 704
   },
   {
    "id": "s-verrous",
@@ -1845,8 +1980,9 @@
    "composant": "socle",
    "poste": "s-documenter",
    "nom": "The loop replayed, an interactive page on the site",
-   "etat": "main",
-   "release": "0.6",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.9",
    "lots": [
     "PRES1",
     "PRES1b"
@@ -1863,11 +1999,13 @@
    "composant": "socle",
    "poste": "s-documenter",
    "nom": "The public manual: where Eregion stands, component by component",
-   "etat": "main",
-   "release": "0.6",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.9",
    "lots": [
     "MAN1",
-    "MAN1b"
+    "MAN1b",
+    "REL4"
    ],
    "issue": 664,
    "doc": "docs/manuel/index.html"
@@ -1877,8 +2015,9 @@
    "composant": "socle",
    "poste": "s-documenter",
    "nom": "Eregion by role: one sheet per reader, every figure dated and sourced",
-   "etat": "main",
-   "release": "0.6",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.9",
    "lots": [
     "ADO2"
    ],

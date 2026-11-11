@@ -23,7 +23,19 @@ terraform {
 #   2. sinon null → le provider lit ARM_SUBSCRIPTION_ID de l'env.
 # Le Makefile mappe l'AZURE_SUBSCRIPTION_ID de .envrc → ARM_SUBSCRIPTION_ID.
 provider "azurerm" {
-  features {}
+  # INF-FL (#654) : le compte des flux réseau refuse la clé partagée (storage.tf). Sans ce drapeau,
+  # le provider lit les propriétés de file d'attente et de site statique de CHAQUE compte par le plan
+  # de données, avec la clé (storage_use_azuread n'est pas posé) : un compte sans clé fait échouer
+  # chaque plan (403 KeyBasedAuthenticationNotPermitted ; azurerm 4.81.0,
+  # storage_account_resource.go, et le guide du bloc features). Aucun compte du module n'a
+  # queue_properties ni static_website, ce à quoi le drapeau est destiné ; tout le reste passe par
+  # Azure Resource Manager (les conteneurs par storage_account_id). Hypothèse à relire au plan :
+  # aucun changement sur les comptes d'exfiltration et de transit.
+  features {
+    storage {
+      data_plane_available = false
+    }
+  }
   subscription_id = var.subscription_id != "" ? var.subscription_id : null
 }
 

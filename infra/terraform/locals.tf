@@ -22,6 +22,12 @@ locals {
   # setting → aucune I/O de restore ne pollue le flux StorageWrite du LAW (T1041).
   staging_storage_name = local.instance == "default" ? "stcelebrimborstaging" : "stcbrstg${substr(md5(local.instance), 0, 8)}"
 
+  # INF-FL (#654) : le compte des flux réseau (VNet flow logs), à lui seul — jamais celui des
+  # exercices d'exfiltration, où l'identité de chaque VM inscrite écrit (storage.tf). Ses blobs sont
+  # la preuve d'une connexion (docs/design/corroboration.md, §3.10, CR15) : aucune identité joignable
+  # depuis une VM surveillée n'y écrit.
+  flows_storage_name = local.instance == "default" ? "stcelebrimborflows" : "stcbrflow${substr(md5(local.instance), 0, 8)}"
+
   common_tags = {
     project    = local.project
     managed-by = "terraform"

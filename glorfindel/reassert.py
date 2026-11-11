@@ -184,7 +184,9 @@ def reassert_pass(connector, autonomy=None) -> list[dict]:
 def _whatever_the_state(connector, autonomy, report: list[dict]) -> None:
     """The checks of every pass, after the isolations (which may have put a quarantine
     back): one listing of the NSGs for both, read after those writes. Listing failed →
-    each lists for itself, and says it can't."""
+    each lists for itself, and says it can't. Last, the session drains past their first wait,
+    read again on Azure (DRN1, glorfindel/drain_watch.py)."""
+    from glorfindel.drain_watch import follow_drains
     from glorfindel.orphans import sweep_orphan_rules
     say_unreadable_states(report)             # what it can't read, said (SEC4b)
     unverified_released()                     # a check that raised, its VM released since (V-16)
@@ -198,6 +200,7 @@ def _whatever_the_state(connector, autonomy, report: list[dict]) -> None:
             log.warning("reassert: NSGs not listed (%s)", exc)
     _report_altered_quarantines(connector, report, nsgs)
     sweep_orphan_rules(connector, autonomy, report, nsgs)
+    follow_drains(connector, report)          # the session drains still running on Azure (DRN1)
 
 
 _LOCK_WAIT_S = 30
