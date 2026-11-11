@@ -3,9 +3,9 @@
 - `run`: one outside command (az, ssh, terraform, docker, make), its output captured, never
   printed as it is: the two targets print only the lines they compose;
 - `scrub`: the last gate before a line is printed or written. Each line already says a role (the
-  console, H0, Orodruin, a human), a kind of scope or a bench name — never an id; whatever still
+  console, Imladris, Orodruin, a human), a kind of scope or a bench name — never an id; whatever still
   looks like one (a GUID, an IPv4, a UPN, an ARM id) is masked here, by construction;
-- `read_h0`: the files of H0's watch, read by ssh through scripts/bench_h0_reader.py;
+- `read_h0`: the files of Imladris's watch, read by ssh through scripts/bench_h0_reader.py;
 - `Roles`: who a caller of the activity log is, as a role — the ids compared come from the
   operator's environment and from Terraform's outputs, read locally, never printed;
 - the times and durations, written as the bench's reports write them (09/11).
@@ -162,7 +162,7 @@ def reader_command(mounts: list[dict], image: str, ask: str, vm: str, run_id: st
     `readonly` (`--mount`: a source that is not there is refused, never created). Raises RuntimeError
     on a mount or an image it does not recognize."""
     if not _IMAGE_ID.fullmatch(image or ""):
-        raise RuntimeError("l'image de la watch de H0 ne se lit pas (docker inspect)")
+        raise RuntimeError("l'image de la watch d'Imladris ne se lit pas (docker inspect)")
     # Bind mounts only: a volume or a tmpfs names no host path of the watch's.
     by_target = {str(m.get("Destination") or ""): str(m.get("Source") or "") for m in mounts
                  if isinstance(m, dict) and m.get("Type") == "bind"}
@@ -171,53 +171,53 @@ def reader_command(mounts: list[dict], image: str, ask: str, vm: str, run_id: st
         source = by_target.get(target, "")
         if not source:
             if required:
-                raise RuntimeError(f"la watch de H0 ne monte pas {target}")
+                raise RuntimeError(f"la watch d'Imladris ne monte pas {target}")
             continue
         if not _SAFE_PATH.fullmatch(source) or ".." in source.split("/"):
-            raise RuntimeError(f"le montage de {target} sur H0 n'est pas un chemin attendu")
+            raise RuntimeError(f"le montage de {target} sur Imladris n'est pas un chemin attendu")
         words += ["--mount", f"type=bind,source={source},target={target},readonly"]
     return [*words, "--entrypoint", "python", image, "-", ask, vm, *([run_id] if run_id else [])]
 
 
 def read_h0(ask: str, vm: str, run_id: str = "", env: dict | None = None, timeout: float = 120) -> dict:
-    """The watch's files on H0, read by bench_h0_reader.py (on the ssh's stdin) in a disposable
+    """The watch's files on Imladris, read by bench_h0_reader.py (on the ssh's stdin) in a disposable
     container of the deployed watch's image — never inside the watch (`docker exec`): two ssh, the
     watch's image and mounts read (`docker inspect`), then the reader run. Raises RuntimeError when
-    H0 can't be read (said by the caller), or when its host key is not verified."""
+    Imladris can't be read (said by the caller), or when its host key is not verified."""
     base = ssh_argv("BENCH_H0_SSH", env)
     if not base:
-        raise RuntimeError("BENCH_H0_SSH vide : lancer par make (la commande ssh de H0 vient du Makefile)")
+        raise RuntimeError("BENCH_H0_SSH vide : lancer par make (la commande ssh d'Imladris vient du Makefile)")
     if not host_key_pinned(base):
-        raise RuntimeError("la clé d'hôte de H0 n'est pas vérifiée par son empreinte (HOST_SSH_FINGERPRINT, "
+        raise RuntimeError("la clé d'hôte d'Imladris n'est pas vérifiée par son empreinte (HOST_SSH_FINGERPRINT, "
                            "make glorfindel-host-known) : rien n'est envoyé")
     if not VM_NAME.fullmatch(vm) or (run_id and not RUN_ID.fullmatch(run_id)):
         raise RuntimeError("nom de VM ou run_id invalide")
     inspect = ["docker", "inspect", "--format", "{{json .Mounts}}|{{.Image}}", "eregion-watch"]
     seen = run(remote(base, " ".join(shlex.quote(w) for w in inspect)), timeout=60)
     if not seen.ok:
-        raise RuntimeError(f"H0 ne répond pas par ssh ({seen.first_error()})")
+        raise RuntimeError(f"Imladris ne répond pas par ssh ({seen.first_error()})")
     try:
         mounts_text, image = seen.out.strip().splitlines()[-1].rsplit("|", 1)
         mounts = json.loads(mounts_text)
     except (ValueError, IndexError) as e:
-        raise RuntimeError("la watch de H0 ne se lit pas (docker inspect)") from e
+        raise RuntimeError("la watch d'Imladris ne se lit pas (docker inspect)") from e
     words = reader_command(mounts if isinstance(mounts, list) else [], image.strip(), ask, vm, run_id)
     res = run(remote(base, " ".join(shlex.quote(w) for w in words)),
               stdin=READER.read_text(encoding="utf-8"), timeout=timeout)
     if not res.ok:
-        raise RuntimeError(f"la lecture de H0 a échoué ({res.first_error()})")
+        raise RuntimeError(f"la lecture d'Imladris a échoué ({res.first_error()})")
     try:
         doc = json.loads(res.out.strip().splitlines()[-1])
     except (ValueError, IndexError) as e:
-        raise RuntimeError("la lecture de H0 n'a pas rendu de JSON") from e
+        raise RuntimeError("la lecture d'Imladris n'a pas rendu de JSON") from e
     if not isinstance(doc, dict) or doc.get("error"):
-        raise RuntimeError(f"la lecture de H0 a échoué ({scrub(str((doc or {}).get('error')))[:120]})")
+        raise RuntimeError(f"la lecture d'Imladris a échoué ({scrub(str((doc or {}).get('error')))[:120]})")
     return doc
 
 
 # ── who a caller is ───────────────────────────────────────────────────────────
 
-ROLE_NAMES = {"console": "console", "bot": "bot", "h0": "H0", "orodruin": "Orodruin",
+ROLE_NAMES = {"console": "console", "bot": "bot", "h0": "Imladris", "orodruin": "Orodruin",
               "watch": "la watch du poste", "human": "un humain", "unknown": "inconnu"}
 _USER_CLAIMS = ("upn", "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn", "unique_name",
                 "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name")

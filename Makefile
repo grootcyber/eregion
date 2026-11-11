@@ -187,7 +187,7 @@ help:
 	@echo "  make lint           Ruff linter"
 	@echo "  make clean          Remove build artifacts"
 	@echo ""
-	@echo "Release (REL1) — a draft only: Jonathan publishes (publishing deploys H0)"
+	@echo "Release (REL1) — a draft only: Jonathan publishes (publishing deploys Imladris)"
 	@echo "  make release VERSION=X.Y.Z TITLE=\"…\" [DRY_RUN=1]  The version's PR: CHANGELOG cut, version, README"
 	@echo "  make release-draft VERSION=X.Y.Z [NOTES=file] [DRY_RUN=1]  After its merge: the draft, seen on #agents and #releases"
 	@echo "  make manuel         The public manual: docs/manuel/modules.json written from modules.yaml (MAN1)"
@@ -252,12 +252,12 @@ help:
 	@echo "  make celebrimbor-auditd-plan [INSTANCE=]    Plan d'auditd seul : l'extension des VM et la DCR (AUD1)"
 	@echo "  make celebrimbor-auditd-up [YES=1]          L'applique (auditd_enabled du tfvars ; false : le retire)"
 	@echo ""
-	@echo "Glorfindel hébergé (H0 : pré-observation, état Terraform séparé)"
+	@echo "Glorfindel hébergé (Imladris : pré-observation, état Terraform séparé)"
 	@echo "  make glorfindel-host-plan [OPERATOR_CIDR=]   Plan (lecture seule)"
 	@echo "  make glorfindel-host-up   [OPERATOR_CIDR=] [YES=1]  Crée la VM (confirmation, sauf YES=1)"
 	@echo "  make glorfindel-host-env                     host.env depuis ton .envrc (sans secret Azure)"
-	@echo "  make glorfindel-host-push [HUMAN_ONLY=1]     host.env + config sur la VM (modes de H0 gardés ; HUMAN_ONLY=1 : tout en human_only)"
-	@echo "  make glorfindel-host-client-rules [CLIENT_RULES=]  Règles du banc fondues dans la couche du client de H0 (WL1), la watch redémarre"
+	@echo "  make glorfindel-host-push [HUMAN_ONLY=1]     host.env + config sur la VM (modes d'Imladris gardés ; HUMAN_ONLY=1 : tout en human_only)"
+	@echo "  make glorfindel-host-client-rules [CLIENT_RULES=]  Règles du banc fondues dans la couche du client d'Imladris (WL1), la watch redémarre"
 	@echo "  make glorfindel-host-report [SINCE=7d]       Rapport d'observation"
 	@echo "  make glorfindel-host-pull                    Copie locale des verdicts et de la mémoire (chaque semaine)"
 	@echo "  make glorfindel-host-model MODEL=…           Changer le modèle qui décide (ou MODEL=default)"
@@ -267,25 +267,25 @@ help:
 	@echo "  make glorfindel-host-stop / -logs            Glorfindel + la console sur la VM"
 	@echo "  make glorfindel-host-tunnel                  Tunnel + URL de la console avec son jeton"
 	@echo "  make glorfindel-host-url                     L'URL de la console avec son jeton"
-	@echo "  make glorfindel-host-cd-install              Le CD de H0 (H1) : agent + timer (désactivé), webhook #deploy"
+	@echo "  make glorfindel-host-cd-install              Le CD d'Imladris (H1) : agent + timer (désactivé), webhook #deploy"
 	@echo "  make glorfindel-host-cd-check                À blanc : vérifie, construit, préflight de la dernière release"
 	@echo "  make glorfindel-host-cd-enable / -disable    Le timer (toutes les 5 min) : une release publiée se déploie"
 	@echo "  make glorfindel-host-cd-status / -retry      Ce qui tourne, les derniers résultats / réessayer la release"
-	@echo "  make glorfindel-host-cd-rollback TAG=vX.Y.Z  Le retour arrière demandé sur H0 (SEC12) : une release publiée, plus ancienne"
+	@echo "  make glorfindel-host-cd-rollback TAG=vX.Y.Z  Le retour arrière demandé sur Imladris (SEC12) : une release publiée, plus ancienne"
 	@echo ""
 	@echo "Orodruin (O1) — hôte des injecteurs, état séparé (infra/orodruin/README.md) :"
 	@echo "  make orodruin-plan [OPERATOR_CIDR=]          Plan (lecture seule)"
 	@echo "  make orodruin-up   [YES=1]                   1er apply, sortie ouverte (installe Docker)"
 	@echo "  make orodruin-lock [YES=1]                   Referme la sortie (apply) ; YES=1 = sans confirmation"
-	@echo "    WATCH_PRINCIPALS=<id>[,<id>…] : les watches qui écrivent le canal retour (défaut : H0) ;"
-	@echo "    sans H0, avec NO_WATCH=1 — la watch d'un poste ou d'une équipe (WC1)"
+	@echo "    WATCH_PRINCIPALS=<id>[,<id>…] : les watches qui écrivent le canal retour (défaut : Imladris) ;"
+	@echo "    sans Imladris, avec NO_WATCH=1 — la watch d'un poste ou d'une équipe (WC1)"
 	@echo "  make orodruin-push [REF=<tag|commit>]        Image d'Annatar publiée (digest vérifié ici) + orodruin.env"
 	@echo "  make orodruin-push-dev                       Développement : l'image construite ici, non vérifiée"
 	@echo "  make orodruin-check                          Le contrat, lu depuis la VM : armed ou passive ; l'image, et la dernière release"
 	@echo "  make orodruin-identity ID=<object id>        Une identité d'Entra ID est-elle inscrite (IDI1), lu depuis la VM"
 	@echo "  make orodruin-fingerprint                    L'empreinte de sa clé d'hôte, lue par Azure (ORO_SSH_FINGERPRINT)"
-	@echo "  make watch-key / glorfindel-host-watch-key   La clé publique de la watch (ici / H0), à épingler : EREGION_WATCH_KEY (SEC19)"
-	@echo "  make queue-keys / glorfindel-host-queue-keys Les clés de la console et du bot (ici / H0), à épingler chez la watch : EREGION_QUEUE_KEYS (FS1b)"
+	@echo "  make watch-key / glorfindel-host-watch-key   La clé publique de la watch (ici / Imladris), à épingler : EREGION_WATCH_KEY (SEC19)"
+	@echo "  make queue-keys / glorfindel-host-queue-keys Les clés de la console et du bot (ici / Imladris), à épingler chez la watch : EREGION_QUEUE_KEYS (FS1b)"
 	@echo "  make harness-key / harness-sign              La clé de l'attestation (une fois) / signer requirements/harness.json (SEC19)"
 	@echo "  make orodruin-stop / orodruin-start          Désalloue / rallume la VM (entre les sessions)"
 	@echo "  make orodruin-start [NO_UPDATE=1]            …et la met à jour : la dernière release, vérifiée, si son image est plus ancienne (OI3)"
@@ -302,7 +302,7 @@ help:
 	@echo "  make bench-report RUN=<run_id> [TARGET=<vm>] [OUT=…]  La chronologie d'un run, en Markdown et en JSON (runs/bench/)"
 	@echo "  make bench-run TARGET=<vm> SCENARIO=<id> [DRY_RUN=1]  MOB1 : préflight, demande, nom tapé, lancement par Orodruin, rapport"
 	@echo "  make bench-restore TARGET=<vm> [BEFORE=…] [RUN=…] [DRY_RUN=1]  MOB1 : le restore du poste, paire de la console, nom tapé,"
-	@echo "                                               --before le T0 du run, --keep-isolated (la levée est celle de H0)"
+	@echo "                                               --before le T0 du run, --keep-isolated (la levée est celle d'Imladris)"
 	@echo "  make mobile-check                            MOB1 : le poste ouvert au téléphone, lu (SSH à clé, tunnel local seul, écoutes, Tailscale)"
 	@echo "    La console sur le téléphone : son propre tunnel SSH vers 127.0.0.1:7007 du poste (make glorfindel-host-tunnel)"
 	@echo "    Les deux premières refusent dans une session d'agent — docs/demarrer/mobile.md"
@@ -312,12 +312,12 @@ help:
 	@echo "  make gothmog-run [FAULT=vm-shutdown]         La panne, son retour vérifié (~15 min)"
 	@echo "    Sans watch de Glorfindel vivante, refusé (V1) ; WITHOUT_GLORFINDEL=1 : run de dév, dit au rapport"
 	@echo "    FAULT=vm-disk-write | vm-cpu-pressure | vm-restart : le bruit bénin (G1)"
-	@echo "  make glorfindel-host-fault-rate [DAYS=30]    Les pannes prises pour une attaque, sur H0 (G1)"
+	@echo "  make glorfindel-host-fault-rate [DAYS=30]    Les pannes prises pour une attaque, sur Imladris (G1)"
 	@echo ""
 	@echo "Campagne (R1 + IA0) — kill-chain + rapport, depuis Orodruin :"
 	@echo "  make orodruin-campaign-plan CAMPAIGN_TARGET=<rid> [CAMPAIGN_MAX=5]  Planifie (rend un id)"
-	@echo "  make orodruin-campaign-run  CAMPAIGN=<id>    Joue la campagne (la watch de H0 répond selon le mode de chaque VM)"
-	@echo "  make glorfindel-host-campaign-report CAMPAIGN=<id>  Son rapport, écrit seul sur H0"
+	@echo "  make orodruin-campaign-run  CAMPAIGN=<id>    Joue la campagne (la watch d'Imladris répond selon le mode de chaque VM)"
+	@echo "  make glorfindel-host-campaign-report CAMPAIGN=<id>  Son rapport, écrit seul sur Imladris"
 	@echo "    (#167 : code, tests et mutants — rien de mesuré sur le banc)"
 	@echo "  CAMPAIGN_DECLARED=annatar/campaign/declared/bl1-reponse.yaml  Le plan : exactement ses techniques (BL1)"
 	@echo "  make glorfindel-host-containment CAMPAIGN=<id> [FAULT_RUNS=<run>]  Temps pour contenir, part contenue seule"
@@ -327,7 +327,7 @@ help:
 	@echo "  make profile-discover       Glorfindel seul, en observation : découvrir"
 	@echo "  make profile-detection      + Annatar : ma détection marche-t-elle ?"
 	@echo "  make profile-resilience     + Gothmog : mon infra tient-elle ?"
-	@echo "  make profile-proven         Tout : défense éprouvée (comme H0)"
+	@echo "  make profile-proven         Tout : défense éprouvée (comme Imladris)"
 	@echo "  make team-init  TEAM=<nom>  Plusieurs équipes : ~/.eregion/teams/<nom>/ (team.env, config)"
 	@echo "  make team-start TEAM=<nom> [BOT=1]  Son Glorfindel, sa console sur son port ; team-stop, team-logs"
 	@echo "  make profiles-check         Chaque profil compose rend ses services (docker, rien ne démarre)"
@@ -461,10 +461,10 @@ fault-rate:
 report-eval:
 	$(PYTHON) scripts/report_eval.py --runs $(or $(RUNS),3)
 
-# H3: ATTEST=1 writes requirements/harness.json for H0's CD — two passes, paid twice: the lock
+# H3: ATTEST=1 writes requirements/harness.json for Imladris's CD — two passes, paid twice: the lock
 # of the release in service (the latest v* tag, or BASE=<tag>) in a throwaway venv under
 # ~/.cache/eregion/, then this checkout's .venv (scripts/harness_attest.py, docs/operations.md).
-#   make llm-compare MODELS=<modèle de H0> RUNS=3 ATTEST=1 [BASE=v0.4.5]
+#   make llm-compare MODELS=<modèle d'Imladris> RUNS=3 ATTEST=1 [BASE=v0.4.5]
 llm-compare:
 	$(if $(ATTEST),$(PYTHON) scripts/harness_attest.py --models $(MODELS) --runs $(or $(RUNS),3)$(if $(BASE), --base $(BASE)) --out requirements/harness.json,$(PYTHON) scripts/llm_smoke.py --models $(MODELS) --runs $(or $(RUNS),3))
 
@@ -484,7 +484,7 @@ harness-sign:
 	@python3 scripts/published_image.py install-cosign
 	@python3 scripts/published_image.py sign-blob requirements/harness.json$(if $(KEY), --key "$(KEY)")
 
-# Ce que H0 en dira : la clé publique de harness-key, ou PINNED=<la valeur de EREGION_HARNESS_KEY>.
+# Ce qu'Imladris en dira : la clé publique de harness-key, ou PINNED=<la valeur de EREGION_HARNESS_KEY>.
 harness-verify:
 	@python3 scripts/published_image.py install-cosign
 	@python3 scripts/published_image.py verify-blob requirements/harness.json$(if $(PINNED), --pinned "$(PINNED)")
@@ -601,7 +601,7 @@ console-url:
 
 # SEC10 : un nouveau jeton tiré, dans le fichier propre de la console (la console le relit à la
 # requête suivante, et refuse toute session de l'ancien). Jamais quand le déploiement pose le jeton
-# (EREGION_CONSOLE_TOKEN, H0) : on le change là où il est posé.
+# (EREGION_CONSOLE_TOKEN, Imladris) : on le change là où il est posé.
 console-rotate:
 	docker compose exec -T war-room eregion rotate-token
 	@$(MAKE) --no-print-directory console-url
@@ -829,7 +829,7 @@ celebrimbor-auditd-up:
 	@$(TF) workspace select $(INSTANCE)
 	@$(TF) apply$(if $(YES), -auto-approve) $(AUDITD_TARGETS)
 
-# H0 : la charge réelle de bree (petit site + routine d'admin), par Run Command —
+# Imladris : la charge réelle de bree (petit site + routine d'admin), par Run Command —
 # jamais par le custom_data (le changer remplace la VM). Idempotent.
 celebrimbor-workload:
 	az vm run-command invoke -g rg-celebrimbor$(if $(filter-out default,$(INSTANCE)),-$(INSTANCE)) \
@@ -841,7 +841,7 @@ celebrimbor-workload:
 # avant d'agir.
 #   VM=<nom>  une seule VM : nom court (gondolin, bree) ou complet (vm-celebrimbor-gondolin)
 #   ALL=1     (stop) éteint aussi les VM au tag always-on=true (config.yaml : always_on) — bree,
-#             la charge réelle que le Glorfindel hébergé (H0) observe ; sans VM ni ALL, stop les épargne.
+#             la charge réelle que le Glorfindel hébergé (Imladris) observe ; sans VM ni ALL, stop les épargne.
 BENCH_VMS = [?tags.project=='celebrimbor' && tags.instance=='$(INSTANCE)'$(if $(VM), && (name=='$(VM)' || ends_with(name, '-$(VM)')))
 BENCH_KEEP = $(if $(or $(VM),$(ALL)),, && tags.\"always-on\" != 'true')
 
@@ -860,15 +860,15 @@ celebrimbor-start:
 	 echo "$$vms" | awk -F'\t' '{ print "  az vm start : " $$2 }'; \
 	 az vm start --ids $$(echo "$$vms" | cut -f1)
 
-# ── Glorfindel hébergé (H0) ───────────────────────────────────────────────
+# ── Glorfindel hébergé (Imladris) ───────────────────────────────────────────────
 # La VM du défenseur, hors du banc : infra/glorfindel-host/README.md. Elle répond sur le banc
-# (BL1c) ; le push garde les modes de H0, le défaut en human_only (HUMAN_ONLY=1 : tout en
+# (BL1c) ; le push garde les modes d'Imladris, le défaut en human_only (HUMAN_ONLY=1 : tout en
 # human_only). L'apply demande confirmation (pas d'--auto-approve).
 HOST_TF       := terraform -chdir=infra/glorfindel-host
 HOST_USER     ?= glorfindel
 # Sans OPERATOR_CIDR, ton IP publique du moment, en /32 (seule source SSH autorisée).
 OPERATOR_CIDR ?= $(shell curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null)/32
-# La coupure des sessions de H0 (SEC11, R-03) : infra/glorfindel-host/session_drain.auto.tfvars,
+# La coupure des sessions d'Imladris (SEC11, R-03) : infra/glorfindel-host/session_drain.auto.tfvars,
 # que Terraform lit de lui-même à chaque plan — rien à passer ici. De même la neutralisation avant
 # un restore (SEC17) : restore.auto.tfvars (commité) et principals.auto.tfvars (les object
 # id de la console et du bot, sur le poste seulement, ignoré par git ; la coupure de la console aussi).
@@ -878,16 +878,16 @@ HOST_IP        = $(shell $(HOST_TF) output -no-color -raw public_ip 2>/dev/null 
 # SSH ne la propose pas.
 HOST_SSH_KEY  ?=
 SSH_KEY_OPTS   = $(if $(HOST_SSH_KEY),-i $(HOST_SSH_KEY) -o IdentitiesOnly=yes)
-# V-32 (SEC14) : SSH_OPTS, ceux d'Orodruin — sa clé d'hôte épinglée comme celle de H0, jamais
+# V-32 (SEC14) : SSH_OPTS, ceux d'Orodruin — sa clé d'hôte épinglée comme celle d'Imladris, jamais
 # accept-new. ORO_SSH_FINGERPRINT (SHA256:…, dans ton environnement, jamais dans le dépôt : lue
 # sur la VM par Azure, make orodruin-fingerprint) ; orodruin-known écrit ORO_KNOWN_HOSTS à partir
 # d'elle, et chaque commande vers Orodruin n'accepte que ce fichier. Sans elle, rien ne part.
 ORO_SSH_FINGERPRINT ?=
 ORO_KNOWN_HOSTS ?= $(HOME)/.eregion/orodruin_known_hosts
 SSH_OPTS       = -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$(ORO_KNOWN_HOSTS) -o HostKeyAlgorithms=ssh-ed25519 $(SSH_KEY_OPTS)
-# V-32 (SEC7) : la clé d'hôte de H0, épinglée par son empreinte. HOST_SSH_FINGERPRINT (SHA256:…,
+# V-32 (SEC7) : la clé d'hôte d'Imladris, épinglée par son empreinte. HOST_SSH_FINGERPRINT (SHA256:…,
 # dans ton environnement, jamais dans le dépôt : relevée sur la VM, infra/glorfindel-host/README.md,
-# « SSH ») ; glorfindel-host-known écrit HOST_KNOWN_HOSTS à partir d'elle, et chaque commande vers H0
+# « SSH ») ; glorfindel-host-known écrit HOST_KNOWN_HOSTS à partir d'elle, et chaque commande vers Imladris
 # n'accepte que ce fichier (StrictHostKeyChecking=yes) : une autre clé refuse. Sans elle, accept-new
 # reste, et chaque commande le dit.
 HOST_SSH_FINGERPRINT ?=
@@ -900,7 +900,7 @@ HOST_ENV      ?= infra/glorfindel-host/host.env
 HOST_BACKUPS  ?= $(HOME)/.eregion/host-backups
 # Le jeton de la console dans host.env (UI-1c), à la règle de la console (eregion_console/api.py) :
 # EREGION_CONSOLE_TOKEN s'il n'est pas vide, sinon son ancien nom, GLORFINDEL_WARROOM_TOKEN — le
-# host.env de H0 n'a que lui, rien à renommer. Lu comme compose le lit : la dernière ligne d'une
+# host.env d'Imladris n'a que lui, rien à renommer. Lu comme compose le lit : la dernière ligne d'une
 # clé l'emporte, un « # … » après la valeur et un blanc est un commentaire. Affiché dans l'URL seulement.
 HOST_ENV_VALUE = sed -n -E '/^$(1)=/{s/^[^=]*=[[:space:]]*//;s/[[:space:]]+\#.*$$//;s/[[:space:]]+$$//;p;}' $(HOST_ENV) | tail -1
 CONSOLE_TOKEN  = $$(t=$$($(call HOST_ENV_VALUE,EREGION_CONSOLE_TOKEN)); [ -n "$$t" ] || t=$$($(call HOST_ENV_VALUE,GLORFINDEL_WARROOM_TOKEN)); printf '%s' "$$t")
@@ -926,19 +926,19 @@ glorfindel-host-down:
 glorfindel-host-env:
 	@.venv/bin/python infra/glorfindel-host/host_env.py infra/glorfindel-host/host.env
 
-# V-32 : avant chaque commande vers H0 — la clé d'hôte vérifiée par HOST_SSH_FINGERPRINT, ou dit
+# V-32 : avant chaque commande vers Imladris — la clé d'hôte vérifiée par HOST_SSH_FINGERPRINT, ou dit
 # qu'elle ne l'est pas (infra/glorfindel-host/known_host.sh).
 glorfindel-host-known:
 	@HOST_SSH_FINGERPRINT="$(HOST_SSH_FINGERPRINT)" bash infra/glorfindel-host/known_host.sh "$(HOST_IP)" "$(HOST_KNOWN_HOSTS)"
 
 # host.env → ~/eregion/.env (lu par docker compose), et la config locale : le défaut forcé à
-# human_only, le mode de chaque VM gardé tel qu'il est sur H0 (BL1c, décision de Jonathan du 02/11 ;
-# la config de H0 lue par la même connexion ssh — illisible, tout part en human_only, et c'est dit).
+# human_only, le mode de chaque VM gardé tel qu'il est sur Imladris (BL1c, décision de Jonathan du 02/11 ;
+# la config d'Imladris lue par la même connexion ssh — illisible, tout part en human_only, et c'est dit).
 # HUMAN_ONLY=1 (seul « 1 ») : toutes les VM remises en human_only, le geste d'urgence
-# (host_config.py). La config de H0 est relue juste avant le scp : changée entre les deux lectures
+# (host_config.py). La config d'Imladris est relue juste avant le scp : changée entre les deux lectures
 # (un mode changé dans la console pendant le push), rien n'est envoyé. Pas sous HUMAN_ONLY=1 : ce
-# push n'emporte rien de H0, et une relecture qui échoue ne bloque pas le geste d'urgence.
-HOST_PUSH_RECHECK = { $(HOST_SSH) 'cat eregion/glorfindel-config.yaml' > $$h1 2>/dev/null || : > $$h1; } && { cmp -s $$h0 $$h1 || { echo "  la config de H0 a changé pendant le push (un mode changé dans la console ?) : rien d'envoyé, relancer"; false; }; } &&
+# push n'emporte rien d'Imladris, et une relecture qui échoue ne bloque pas le geste d'urgence.
+HOST_PUSH_RECHECK = { $(HOST_SSH) 'cat eregion/glorfindel-config.yaml' > $$h1 2>/dev/null || : > $$h1; } && { cmp -s $$h0 $$h1 || { echo "  la config d'Imladris a changé pendant le push (un mode changé dans la console ?) : rien d'envoyé, relancer"; false; }; } &&
 glorfindel-host-push: glorfindel-host-known
 	@test -f infra/glorfindel-host/host.env || { echo "infra/glorfindel-host/host.env manquant (voir host.env.example)"; exit 1; }
 	@test -n "$(HOST_IP)" || { echo "Pas de VM : make glorfindel-host-up d'abord"; exit 1; }
@@ -954,10 +954,10 @@ glorfindel-host-push: glorfindel-host-known
 	@echo "  host.env et glorfindel-config.yaml poussés sur $(HOST_IP)"
 
 # WL1 (#595) : les règles du dépôt pour le banc (CLIENT_RULES, défaut client_rules.bench.yaml)
-# fondues dans la couche du client de H0, ~/.glorfindel/client_rules.yaml : lue par ssh, chaque
-# règle ajoutée ou remplacée par son nom (les règles approuvées sur H0 restent), relue comme la
+# fondues dans la couche du client d'Imladris, ~/.glorfindel/client_rules.yaml : lue par ssh, chaque
+# règle ajoutée ou remplacée par son nom (les règles approuvées sur Imladris restent), relue comme la
 # watch la lira (host_client_rules.py : rien d'envoyé si une règle serait ignorée ou si sa copie de
-# la base a dérivé), puis mise en place sur H0 sous le verrou de la couche, seulement si elle n'a
+# la base a dérivé), puis mise en place sur Imladris sous le verrou de la couche, seulement si elle n'a
 # pas changé depuis la lecture (une règle approuvée entre-temps : rien n'est remplacé, relancer).
 # Puis la watch redémarre (elle lit ses règles au démarrage) et `glorfindel rules` dit ce qui tourne.
 CLIENT_RULES ?= infra/glorfindel-host/client_rules.bench.yaml
@@ -966,18 +966,18 @@ glorfindel-host-client-rules: glorfindel-host-known
 	@test -n "$(HOST_IP)" || { echo "Pas de VM : make glorfindel-host-up d'abord"; exit 1; }
 	@test -f "$(CLIENT_RULES)" || { echo "$(CLIENT_RULES) manquant"; exit 1; }
 	@d=$$(mktemp -d); \
-	 { $(HOST_SSH) 'if [ -e $(HOST_LAYER) ]; then cat $(HOST_LAYER); fi' > $$d/seen.yaml || { echo "  couche du client de H0 illisible par ssh : rien d'envoyé"; false; }; } && \
+	 { $(HOST_SSH) 'if [ -e $(HOST_LAYER) ]; then cat $(HOST_LAYER); fi' > $$d/seen.yaml || { echo "  couche du client d'Imladris illisible par ssh : rien d'envoyé"; false; }; } && \
 	 $(PYTHON) infra/glorfindel-host/host_client_rules.py "$(CLIENT_RULES)" $$d/seen.yaml $$d/client_rules.yaml && \
 	 scp -q $(HOST_SSH_OPTS) $$d/seen.yaml $(HOST_USER)@$(HOST_IP):.glorfindel/.client_rules.yaml.seen && \
 	 scp -q $(HOST_SSH_OPTS) $$d/client_rules.yaml $(HOST_USER)@$(HOST_IP):.glorfindel/.client_rules.yaml.push && \
-	 $(HOST_SSH) 'cd .glorfindel && flock .client_rules.yaml.lock sh -c '"'"'if [ -e client_rules.yaml ]; then cmp -s client_rules.yaml .client_rules.yaml.seen; else ! [ -s .client_rules.yaml.seen ]; fi || { rm -f .client_rules.yaml.seen .client_rules.yaml.push; echo "  la couche du client de H0 a changé pendant le push (une règle approuvée ?) : rien de remplacé, relancer"; exit 3; }; chmod 600 .client_rules.yaml.push && mv .client_rules.yaml.push client_rules.yaml && rm -f .client_rules.yaml.seen'"'"'' && \
+	 $(HOST_SSH) 'cd .glorfindel && flock .client_rules.yaml.lock sh -c '"'"'if [ -e client_rules.yaml ]; then cmp -s client_rules.yaml .client_rules.yaml.seen; else ! [ -s .client_rules.yaml.seen ]; fi || { rm -f .client_rules.yaml.seen .client_rules.yaml.push; echo "  la couche du client, sur Imladris, a changé pendant le push (une règle approuvée ?) : rien de remplacé, relancer"; exit 3; }; chmod 600 .client_rules.yaml.push && mv .client_rules.yaml.push client_rules.yaml && rm -f .client_rules.yaml.seen'"'"'' && \
 	 echo "  ✓ couche du client écrite sur $(HOST_IP) : ~/$(HOST_LAYER) ; la watch redémarre" && \
 	 $(HOST_SSH) 'cd eregion && docker compose restart watch >/dev/null && docker exec eregion-watch glorfindel rules'; \
 	 rc=$$?; rm -rf $$d; exit $$rc
 
 # M-3 (#183) : une référence nommée, jamais une branche — REF=<tag ou commit>, exigée (SEC14,
-# V-22 : ce chemin construit sur H0, hors de la vérification de CI3 — le chemin de secours ; il ne
-# construit que ce que l'opérateur nomme, jamais « le dernier tag »). Le CD de H0 ne construit
+# V-22 : ce chemin construit sur Imladris, hors de la vérification de CI3 — le chemin de secours ; il ne
+# construit que ce que l'opérateur nomme, jamais « le dernier tag »). Le CD d'Imladris ne construit
 # jamais : il tire l'image publiée, vérifiée. Checkout détaché, image étiquetée avec la référence
 # (deploy.sh, envoyé par ssh : celui du poste, quelle que soit la référence déployée).
 # REF se donne sur la ligne de commande : une variable REF de l'environnement (un nom
@@ -991,7 +991,7 @@ glorfindel-host-start: export EREGION_DEPLOY_REF = $(value REF)
 glorfindel-host-start: glorfindel-host-known
 	@test -n "$(HOST_IP)" || { echo "Pas de VM : make glorfindel-host-up d'abord"; exit 1; }
 	@case "$(origin REF)" in environment*) echo "REF vient de l'environnement (« $$EREGION_DEPLOY_REF ») : rien n'est déployé. La donner sur la ligne de commande : make glorfindel-host-start REF=<tag ou commit>." >&2; exit 1;; esac
-	@test -n "$$EREGION_DEPLOY_REF" || { echo "REF exigée : make glorfindel-host-start REF=<tag ou commit> — ce chemin construit sur H0, il ne prend jamais « le dernier tag » (le CD déploie la release publiée, vérifiée). Rien n'est déployé." >&2; exit 1; }
+	@test -n "$$EREGION_DEPLOY_REF" || { echo "REF exigée : make glorfindel-host-start REF=<tag ou commit> — ce chemin construit sur Imladris, il ne prend jamais « le dernier tag » (le CD déploie la release publiée, vérifiée). Rien n'est déployé." >&2; exit 1; }
 	@case "$$EREGION_DEPLOY_REF" in -*|*[!A-Za-z0-9._-]*) echo "REF invalide : « $$EREGION_DEPLOY_REF » (un tag ou un commit)" >&2; exit 1;; esac
 	$(HOST_SSH) 'test -f .eregion-host-ready && mkdir -p .eregion/analysis .eregion/console/requests && cd eregion && bash -s -- '"$$EREGION_DEPLOY_REF" < infra/glorfindel-host/deploy.sh
 	@echo ""
@@ -1024,7 +1024,7 @@ glorfindel-host-pull: glorfindel-host-known
 # VM's .env, then a restart. MODEL=default goes back to the code default (eregion_core/models.py).
 # Compare it first (make llm-compare) and run it end to end — README, « Changer de modèle ».
 # IA1: then says whether the analysis AI still reasons with another model (analysis/separation.py):
-# Glorfindel's model shared with the analysis makes every campaign report refused on H0. Its
+# Glorfindel's model shared with the analysis makes every campaign report refused on Imladris. Its
 # advice on a refusal (exit 2) only; an error (1, an image before IA1) is said; never fails.
 # OL1: first, host.env with the new model, on a copy, held to the rule of host_env.py --check (the
 # key its provider reads): refused, nothing is written, here nor on the VM.
@@ -1036,7 +1036,7 @@ glorfindel-host-model: glorfindel-host-known
 	@c=$$(mktemp); sed '/^GLORFINDEL_LLM_MODEL=/d' $(HOST_ENV) > $$c; \
 	 [ "$(MODEL)" = default ] || echo "GLORFINDEL_LLM_MODEL=$(MODEL)" >> $$c; \
 	 $(PYTHON) infra/glorfindel-host/host_env.py --check $$c >/dev/null; rc=$$?; rm -f $$c; \
-	 [ $$rc -eq 0 ] || { echo "  rien d'écrit, ni ici ni sur H0 : $(HOST_ENV) doit d'abord porter ce que lit le fournisseur de $(MODEL) (OL1)"; exit 1; }
+	 [ $$rc -eq 0 ] || { echo "  rien d'écrit, ni ici ni sur Imladris : $(HOST_ENV) doit d'abord porter ce que lit le fournisseur de $(MODEL) (OL1)"; exit 1; }
 	@f=$(HOST_ENV); sed -i '/^GLORFINDEL_LLM_MODEL=/d' $$f; \
 	 [ "$(MODEL)" = default ] || echo "GLORFINDEL_LLM_MODEL=$(MODEL)" >> $$f
 	@$(HOST_SSH) 'cd eregion && sed -i "/^GLORFINDEL_LLM_MODEL=/d" .env && \
@@ -1057,7 +1057,7 @@ glorfindel-host-campaign-report: glorfindel-host-known
 	@case "$(CAMPAIGN)" in *[!A-Za-z0-9._-]*) echo "CAMPAIGN invalide : $(CAMPAIGN)"; exit 1;; esac
 	$(HOST_SSH) 'cat eregion/runs/glorfindel/campaigns/$(CAMPAIGN)/report.md 2>/dev/null || { cat eregion/runs/glorfindel/campaigns/$(CAMPAIGN)/report.error 2>/dev/null; echo "pas encore de rapport pour $(CAMPAIGN)"; exit 1; }'
 
-# BL1 (#280) : le temps pour contenir et la part contenue seule d'une campagne, calculés sur H0
+# BL1 (#280) : le temps pour contenir et la part contenue seule d'une campagne, calculés sur Imladris
 # depuis ses fichiers (analysis/containment.py) — lecture seule, aucun modèle. FAULT_RUNS= : une
 # panne de Gothmog à rattacher en plus ; JSON=1 : en JSON.
 glorfindel-host-containment: glorfindel-host-known
@@ -1065,7 +1065,7 @@ glorfindel-host-containment: glorfindel-host-known
 	@case "$(CAMPAIGN)$(FAULT_RUNS)" in *[!A-Za-z0-9._,-]*) echo "CAMPAIGN ou FAULT_RUNS invalide"; exit 1;; esac
 	$(HOST_SSH) 'docker exec eregion-watch python -m analysis.containment runs/glorfindel/campaigns/$(CAMPAIGN)$(foreach r,$(subst $(BL1_COMMA), ,$(FAULT_RUNS)), --fault-run $(r))$(if $(JSON), --json)'
 
-# G1 (#76) : le même taux, sur H0, où sont les décisions de la watch — lecture seule, aucun modèle.
+# G1 (#76) : le même taux, sur Imladris, où sont les décisions de la watch — lecture seule, aucun modèle.
 glorfindel-host-fault-rate: glorfindel-host-known
 	@case "$(DAYS)" in *[!0-9]*) echo "DAYS invalide : un nombre de jours"; exit 1;; esac
 	$(HOST_SSH) 'docker exec eregion-watch python -m analysis.fault_rate --runs-dir runs --days $(or $(DAYS),30)$(if $(JSON), --json)'
@@ -1085,8 +1085,8 @@ glorfindel-host-tunnel: glorfindel-host-known
 glorfindel-host-ssh: glorfindel-host-known
 	$(HOST_SSH)
 
-# ── Le CD de H0 (H1, #244) : la release que Jonathan publie arrive seule sur H0 ──────────
-# infra/glorfindel-host/README.md, « Le CD de H0 ». L'agent vit dans ~/.eregion-cd/ sur la VM,
+# ── Le CD d'Imladris (H1, #244) : la release que Jonathan publie arrive seule sur Imladris ──────────
+# infra/glorfindel-host/README.md, « Le CD d'Imladris ». L'agent vit dans ~/.eregion-cd/ sur la VM,
 # jamais dans le checkout qu'il déploie ; ses unités systemd s'installent avec sudo, le timer
 # désactivé : -cd-check (à blanc), puis -cd-enable. Le webhook de #deploy et la mention viennent
 # de ton environnement ou de ~/.config/eregion/discord.env, par stdin — jamais le jeton du bot.
@@ -1126,7 +1126,7 @@ glorfindel-host-cd-retry: glorfindel-host-known
 	$(HOST_SSH) 'python3 .eregion-cd/eregion_cd.py retry'
 
 # SEC12 : le seul chemin par lequel le CD déploie une release plus ancienne que ce qui tourne —
-# demandé sur H0, pour ce tag, vérifié comme toute release ; celle qu'il quitte n'est plus reprise
+# demandé sur Imladris, pour ce tag, vérifié comme toute release ; celle qu'il quitte n'est plus reprise
 # seule (une nouvelle release, ou -cd-retry). TAG : vX.Y.Z vérifié ici, puis par l'agent (TAG_RE).
 glorfindel-host-cd-rollback: glorfindel-host-known
 	@printf '%s' "$(TAG)" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$$' || { echo "TAG=vX.Y.Z attendu"; exit 2; }
@@ -1144,7 +1144,7 @@ ORO_USER      ?= orodruin
 ORO_WATCH_ID   = $(shell $(HOST_TF) output -no-color -raw principal_id 2>/dev/null | grep -E '^[0-9a-f-]{36}$$')
 # WC1 (#523) : WATCH_PRINCIPALS=<id>[,<id>…] — les watches qui écrivent le canal retour et lisent
 # les fenêtres (watch_principal_ids) : l'object id du principal de service de la watch d'un poste ou
-# d'une équipe, celui de H0 s'il doit garder le canal. Vide : la watch de H0 seule, comme avant. Sur
+# d'une équipe, celui d'Imladris s'il doit garder le canal. Vide : la watch d'Imladris seule, comme avant. Sur
 # la ligne de commande seulement, vérifiée (orodruin-watch-principals : des GUID, aucun deux fois),
 # jamais développée par make ($(value …), unexport — comme REF) ; passée à terraform par le shell.
 WATCH_PRINCIPALS ?=
@@ -1153,7 +1153,7 @@ ORO_GUID       = [0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-
 ORO_WATCH_IDS  = $(if $(value WATCH_PRINCIPALS), -var="watch_principal_ids=$$(printf '%s' "$$EREGION_WATCH_PRINCIPALS" | tr A-F a-f | sed 's/[^,][^,]*/"&"/g; s/.*/[&]/')")
 ORO_VARS       = -var-file=../terraform/terraform.tfvars -var="operator_cidr=$(OPERATOR_CIDR)" -var="watch_principal_id=$(ORO_WATCH_ID)"$(ORO_WATCH_IDS)
 orodruin-plan orodruin-up orodruin-lock orodruin-down orodruin-watch-principals: export EREGION_WATCH_PRINCIPALS = $(value WATCH_PRINCIPALS)
-# SEC5 (V-31) : le sous-réseau et l'IP de H0, admis par le pare-feu du compte du canal — dans
+# SEC5 (V-31) : le sous-réseau et l'IP d'Imladris, admis par le pare-feu du compte du canal — dans
 # l'environnement de terraform, jamais sur la ligne affichée (l'id du sous-réseau nomme
 # l'abonnement, M124).
 ORO_WATCH_SUBNET = $(shell $(HOST_TF) output -no-color -raw subnet_id 2>/dev/null | grep -E '^/subscriptions/')
@@ -1201,7 +1201,7 @@ orodruin-known:
 # EREGION_WATCH_KEY dans infra/orodruin/orodruin.env (puis make orodruin-push), ou dans ton
 # environnement pour les injecteurs de ce poste. Jamais la clé privée. watch-key : la watch de ce
 # poste (~/.eregion/watch-key, tirée à son premier démarrage) ; glorfindel-host-watch-key : celle de
-# H0, lue dans son conteneur par SSH, clé d'hôte épinglée (V-32).
+# Imladris, lue dans son conteneur par SSH, clé d'hôte épinglée (V-32).
 watch-key:
 	@$(PYTHON) -m eregion_core.watch_key public
 
@@ -1210,11 +1210,11 @@ glorfindel-host-watch-key: glorfindel-host-known
 	@$(HOST_SSH) 'docker exec eregion-watch glorfindel watch-key'
 
 # FS1b (#563) : les clés publiques de la console et du bot pour la file d'actions signée, à épingler
-# chez la watch — EREGION_QUEUE_KEYS dans .envrc (ce poste) ou dans host.env (H0). Tirées au premier
+# chez la watch — EREGION_QUEUE_KEYS dans .envrc (ce poste) ou dans host.env (Imladris). Tirées au premier
 # démarrage de chaque service avec EREGION_ACTION_QUEUE=1, dans ~/.eregion/console et ~/.eregion/bot ;
-# jamais la clé privée. queue-keys : celles de ce poste ; glorfindel-host-queue-keys : celles de H0,
+# jamais la clé privée. queue-keys : celles de ce poste ; glorfindel-host-queue-keys : celles d'Imladris,
 # lues dans leurs conteneurs par SSH, clé d'hôte épinglée (V-32).
-# FS1c : sur H0, les clés d'abord, le drapeau ensuite — `pin … --draw` tire la clé du service dans son
+# FS1c : sur Imladris, les clés d'abord, le drapeau ensuite — `pin … --draw` tire la clé du service dans son
 # propre conteneur s'il n'en a pas encore, sans le drapeau ; la ligne imprimée va dans host.env avec
 # EREGION_ACTION_QUEUE=1, en un seul push (host_env.py --check refuse le drapeau sans la clé de la
 # console, ni sans celle du bot quand il tourne). Le bot arrêté : sa clé manque, et c'est dit.
@@ -1223,7 +1223,7 @@ queue-keys:
 
 glorfindel-host-queue-keys: glorfindel-host-known
 	@test -n "$(HOST_IP)" || { echo "Pas de VM : make glorfindel-host-up d'abord"; exit 1; }
-	@$(HOST_SSH) 'c=$$(docker exec eregion-war-room python -m eregion_core.action_queue pin console --draw) || exit 1; b=$$(docker exec eregion-bot python -m eregion_core.action_queue pin bot --draw 2>/dev/null) || { b=; echo "# le bot ne tourne pas sur H0 : sa clé n est pas épinglée (son Revert sera refusé, no_key_pinned)" >&2; }; echo "EREGION_QUEUE_KEYS=$$c$${b:+,$$b}"'
+	@$(HOST_SSH) 'c=$$(docker exec eregion-war-room python -m eregion_core.action_queue pin console --draw) || exit 1; b=$$(docker exec eregion-bot python -m eregion_core.action_queue pin bot --draw 2>/dev/null) || { b=; echo "# le bot ne tourne pas sur Imladris : sa clé n est pas épinglée (son Revert sera refusé, no_key_pinned)" >&2; }; echo "EREGION_QUEUE_KEYS=$$c$${b:+,$$b}"'
 
 # L'empreinte de la clé d'hôte d'Orodruin, lue sur la VM par le plan de contrôle d'Azure (ton az
 # login, Run Command) — jamais par SSH, qu'elle sert à vérifier. Une fois par VM (reconstruite :
@@ -1237,11 +1237,11 @@ orodruin-fingerprint:
 	 echo "export ORO_SSH_FINGERPRINT=$$fp"
 
 # SEC7 (relecture de SEC5) : sans l'état de glorfindel-host lisible sur ce poste, l'identité et le
-# sous-réseau de H0 seraient vides, et le plan retirerait la lecture du canal par la watch et
+# sous-réseau d'Imladris seraient vides, et le plan retirerait la lecture du canal par la watch et
 # l'accès de son sous-réseau. NO_WATCH=1 : un Orodruin sans Glorfindel hébergé, voulu — 1 seulement
 # (NO_WATCH=0, ou toute autre valeur, ne contourne rien).
-# WC1 : WATCH_PRINCIPALS ne retire pas non plus le canal à H0 sans le dire — H0 lisible ici et absent
-# de la liste : refusé, sauf NO_WATCH=1 (sans H0 : WATCH_PRINCIPALS=<id> NO_WATCH=1).
+# WC1 : WATCH_PRINCIPALS ne retire pas non plus le canal à Imladris sans le dire — Imladris lisible ici et absent
+# de la liste : refusé, sauf NO_WATCH=1 (sans Imladris : WATCH_PRINCIPALS=<id> NO_WATCH=1).
 orodruin-watch-guard: orodruin-watch-principals
 	@if [ "$(NO_WATCH)" != 1 ] && { [ -z "$(ORO_WATCH_ID)" ] || [ -z "$(ORO_WATCH_SUBNET)" ]; }; then \
 	  echo "✗ L'état de infra/glorfindel-host ne se lit pas ici (principal_id, subnet_id) : le plan retirerait" >&2; \
@@ -1249,7 +1249,7 @@ orodruin-watch-guard: orodruin-watch-principals
 	  echo "  sur ce poste, ou NO_WATCH=1 pour un Orodruin sans Glorfindel hébergé." >&2; exit 1; fi
 	@if [ -n "$$EREGION_WATCH_PRINCIPALS" ] && [ "$(NO_WATCH)" != 1 ] \
 	   && ! printf ',%s,' "$$EREGION_WATCH_PRINCIPALS" | tr A-F a-f | grep -qF ",$(ORO_WATCH_ID),"; then \
-	  echo "✗ WATCH_PRINCIPALS ne nomme pas la watch hébergée (H0) : le plan lui retirerait le canal retour et" >&2; \
+	  echo "✗ WATCH_PRINCIPALS ne nomme pas la watch hébergée (Imladris) : le plan lui retirerait le canal retour et" >&2; \
 	  echo "  la lecture des fenêtres. Ajoute son identité (terraform -chdir=infra/glorfindel-host output principal_id)," >&2; \
 	  echo "  ou NO_WATCH=1 pour un Orodruin sans Glorfindel hébergé." >&2; exit 1; fi
 
@@ -1387,7 +1387,7 @@ orodruin-check: orodruin-known
 # et 8). bench-preflight : toute l'étape 0 en un verdict, une ligne ✓/⚠/✗ par contrôle, code 1 sur un
 # ✗ (scripts/bench_preflight.py) ; bench-report : la chronologie d'un run, en Markdown et en JSON
 # (runs/bench/<run_id>.json, ou OUT=), scripts/bench_report.py. Aucun identifiant affiché. Les commandes
-# ssh de H0 et d'Orodruin passent par l'environnement du script, jamais affichées ; TARGET, RUN, OUT et
+# ssh d'Imladris et d'Orodruin passent par l'environnement du script, jamais affichées ; TARGET, RUN, OUT et
 # POINT_MAX_H aussi, jamais développés par make ($(value …), unexport — comme REF), vérifiés par le
 # script. Le contrat d'Orodruin y est lu sans être publié (check() dans son conteneur durci, sans montage).
 unexport TARGET RUN OUT POINT_MAX_H
@@ -1406,19 +1406,19 @@ bench-report:
 
 # MOB1 (#686) : piloter le banc depuis le téléphone — l'opérateur tape toujours la commande sur son
 # poste, seul le chemin téléphone → poste change (docs/demarrer/mobile.md). Orodruin n'écoute toujours
-# que le SSH du poste (DRL1), rien ne change sur H0. La console de H0 passe par le tunnel SSH que le
-# téléphone ouvre lui-même vers le 127.0.0.1:7007 du poste, où make glorfindel-host-tunnel tient celui de H0.
+# que le SSH du poste (DRL1), rien ne change sur Imladris. La console d'Imladris passe par le tunnel SSH que le
+# téléphone ouvre lui-même vers le 127.0.0.1:7007 du poste, où make glorfindel-host-tunnel tient celui d'Imladris.
 # bench-run : le préflight (un ✗, rien ne part), la demande d'un fil SCENARIO → TARGET (l'id de la VM lu
 # sur Azure), le nom de la cible tapé dans un terminal, destructif ou non, puis la demande portée sur
 # Orodruin, qui la rejuge et la lance (comme orodruin-exercise), puis bench-report pour chaque run
 # (scripts/bench_run.py). bench-restore : le restore du poste, sous la paire de la console, le nom de la VM
 # tapé dans un terminal, --before le T0 du run (son attack_started, SEC4c : runs/bench/<run_id>.json, RUN=,
-# ou le seul rapport de TARGET) sauf BEFORE=, toujours --keep-isolated (la levée est celle de H0), à blanc
+# ou le seul rapport de TARGET) sauf BEFORE=, toujours --keep-isolated (la levée est celle d'Imladris), à blanc
 # d'abord (scripts/bench_restore.py). DRY_RUN=1 : rien n'est envoyé ni restauré.
 # Le garde : tous deux refusent dans une session d'agent (EREGION_AGENT_SESSION, le worktree d'un lot).
 # bench-run et bench-restore ne développent avant lui que $(origin …) et $(PYTHON) : le garde tourne seul,
 # puis une sous-make lance la cible -go. Les cibles -go sont internes : appelées directement, make y
-# développe d'abord leurs export — HOST_IP et ORO_IP, lus par terraform output dans l'état local de H0 et
+# développe d'abord leurs export — HOST_IP et ORO_IP, lus par terraform output dans l'état local d'Imladris et
 # d'Orodruin, rien d'autre — puis refont le contrôle d'origine, puis le script refait le garde avant tout
 # ssh, az ou scp. TARGET, SCENARIO, BEFORE, RUN, POINT_MAX_H : sur la ligne de commande, jamais de
 # l'environnement (dans la sous-make, ils restent « command line »), jamais développés par make,
@@ -1521,9 +1521,9 @@ orodruin-kill:
 		--bench-rg "$(ORO_BENCH_RG)" --channel "$(ORO_CHANNEL)" $(if $(DRY_RUN),--dry-run)
 
 # ── Dagorlad, phase (b) (DG-b) — une demande de la console, portée par l'opérateur ───
-# La console écrit la demande dans son propre répertoire (~/.eregion/console/requests/, sur H0) ;
-# elle ne parle jamais à Orodruin, et H0 n'a aucun droit ni canal de plus. Depuis ce poste :
-#   1. la tirer de l'hôte de la console : H0 par SSH, clé d'hôte vérifiée par son empreinte
+# La console écrit la demande dans son propre répertoire (~/.eregion/console/requests/, sur Imladris) ;
+# elle ne parle jamais à Orodruin, et Imladris n'a aucun droit ni canal de plus. Depuis ce poste :
+#   1. la tirer de l'hôte de la console : Imladris par SSH, clé d'hôte vérifiée par son empreinte
 #      (glorfindel-host-known ; HOST_SSH_FINGERPRINT exigée ici, jamais accept-new) ; Orodruin
 #      de même (orodruin-known, ORO_SSH_FINGERPRINT exigée : V-32, SEC14) ;
 #      REQUEST_FROM=local : la console de ce poste (make glorfindel-start) ;
@@ -1548,7 +1548,7 @@ orodruin-exercise: export EREGION_DRILL_TARGETS = $(value TARGETS)
 orodruin-exercise: export EREGION_DRILL_VMS = $(value DRILL_VMS)
 # MOB1 (#686) : les noms se tapent dans un terminal. orodruin-exercise-guard, le premier prérequis, refuse
 # sans terminal sur l'entrée, après les contrôles d'origine et avant glorfindel-host-known et
-# orodruin-known : rien n'est lu, ni sur H0 (la demande), ni sur Azure (les VM d'un DRILL=), ni l'état
+# orodruin-known : rien n'est lu, ni sur Imladris (la demande), ni sur Azure (les VM d'un DRILL=), ni l'état
 # Terraform. Make construit les prérequis dans leur ordre (sans -j, comme toutes les cibles qui agissent).
 # Les contrôles d'origine de REQUEST, DRILL, TARGETS et DRILL_VMS y passent aussi, de la recette.
 orodruin-exercise-guard:
@@ -1559,7 +1559,7 @@ orodruin-exercise-guard:
 orodruin-exercise: orodruin-exercise-guard $(if $(filter local,$(REQUEST_FROM)),,glorfindel-host-known) $(if $(DRY_RUN),,orodruin-known)
 	@if [ -n "$$EREGION_REQUEST_ID" ] && [ -n "$$EREGION_DRILL" ]; then echo "REQUEST=<id> ou DRILL=<nom>, pas les deux : rien n'est fait." >&2; exit 1; fi
 	@case "$(REQUEST_FROM)" in h0|local) ;; *) echo "REQUEST_FROM=h0 ou local, pas « $(REQUEST_FROM) »" >&2; exit 1;; esac
-	@if [ "$(REQUEST_FROM)" = h0 ] && [ -z "$(HOST_SSH_FINGERPRINT)" ]; then echo "✗ HOST_SSH_FINGERPRINT requis : la demande vient de H0, sa clé d'hôte doit être vérifiée par son empreinte (infra/glorfindel-host/README.md, « SSH ») — jamais accept-new pour ce qui fait agir Orodruin. Rien n'est fait." >&2; exit 1; fi
+	@if [ "$(REQUEST_FROM)" = h0 ] && [ -z "$(HOST_SSH_FINGERPRINT)" ]; then echo "✗ HOST_SSH_FINGERPRINT requis : la demande vient d'Imladris, sa clé d'hôte doit être vérifiée par son empreinte (infra/glorfindel-host/README.md, « SSH ») — jamais accept-new pour ce qui fait agir Orodruin. Rien n'est fait." >&2; exit 1; fi
 	@if [ -n "$$EREGION_DRILL" ]; then $(PYTHON) -m eregion_core.drill check-name "$$EREGION_DRILL"; \
 	 else $(PYTHON) -m eregion_core.exercise_request check-id "$$EREGION_REQUEST_ID"; fi
 	@d=$$(mktemp -d) && trap 'rm -rf "$$d"' EXIT && \
@@ -1569,7 +1569,7 @@ orodruin-exercise: orodruin-exercise-guard $(if $(filter local,$(REQUEST_FROM)),
 	     f="$(HOME)/.eregion/console/drills/$$n.yaml"; \
 	     if [ -L "$$f" ]; then rc=4; elif [ -e "$$f" ]; then cat "$$f" > "$$d/$$n.yaml" || rc=1; else rc=3; fi; \
 	   else \
-	     test -n "$(HOST_IP)" || { echo "✗ Pas de H0 (HOST_IP) : make glorfindel-host-up, ou REQUEST_FROM=local" >&2; exit 1; }; \
+	     test -n "$(HOST_IP)" || { echo "✗ Pas d'Imladris (HOST_IP) : make glorfindel-host-up, ou REQUEST_FROM=local" >&2; exit 1; }; \
 	     $(HOST_SSH) "test -e .eregion/console/drills/$$n.yaml || test -L .eregion/console/drills/$$n.yaml || exit 3; test ! -L .eregion/console/drills/$$n.yaml || exit 4; cat .eregion/console/drills/$$n.yaml" > "$$d/$$n.yaml" || rc=$$?; \
 	   fi; \
 	   if [ "$$rc" = 3 ]; then \
@@ -1583,7 +1583,7 @@ orodruin-exercise: orodruin-exercise-guard $(if $(filter local,$(REQUEST_FROM)),
 	   if [ "$(REQUEST_FROM)" = local ]; then \
 	     cat "$(HOME)/.eregion/console/requests/$$id.json" > "$$d/$$id.json"; \
 	   else \
-	     test -n "$(HOST_IP)" || { echo "✗ Pas de H0 (HOST_IP) : make glorfindel-host-up, ou REQUEST_FROM=local" >&2; exit 1; }; \
+	     test -n "$(HOST_IP)" || { echo "✗ Pas d'Imladris (HOST_IP) : make glorfindel-host-up, ou REQUEST_FROM=local" >&2; exit 1; }; \
 	     $(HOST_SSH) "cat .eregion/console/requests/$$id.json" > "$$d/$$id.json"; \
 	   fi || { echo "✗ la demande $$id ne se lit pas sur l'hôte de la console : rien n'est envoyé" >&2; exit 1; }; \
 	 fi; \
@@ -1624,13 +1624,13 @@ gothmog-run: orodruin-known
 # ── Campagne (R1 + IA0) — planifier puis lancer depuis Orodruin ───────────────
 # Même image, même identité qu'Annatar/Gothmog sur Orodruin. La campagne joue l'atomic
 # (T1136.001) avec d'autres techniques du catalogue ; le manifeste se pose dans ~/runs/annatar
-# (bind-monté). Le rapport (IA0) s'écrit seul sur H0 (#167 — code, tests et mutants M126–M149, M159–M169, M180–M186 ;
+# (bind-monté). Le rapport (IA0) s'écrit seul sur Imladris (#167 — code, tests et mutants M126–M149, M159–M169, M180–M186 ;
 # rien de mesuré sur le banc) : à la fin, la campagne publie son
 # manifeste et les rapports de ses runs sur le canal des fenêtres (EREGION_EXERCISE_CHANNEL,
-# même conteneur, aucun droit de plus) ; la watch de H0 les tire et écrit
+# même conteneur, aucun droit de plus) ; la watch d'Imladris les tire et écrit
 # runs/glorfindel/campaigns/<id>/report.md, avec les décisions de Glorfindel — make
 # glorfindel-host-campaign-report CAMPAIGN=<id> pour le lire (docs/analysis.md).
-# Deux temps : `campaign plan` rend un id, `campaign run <id>` le joue (la watch sur H0 répond
+# Deux temps : `campaign plan` rend un id, `campaign run <id>` le joue (la watch sur Imladris répond
 # selon le mode de chaque VM : gondolin et bree en non_disruptive, BL1c). ServerAliveInterval : une campagne dure longtemps (plusieurs
 # techniques et leurs fenêtres de détection), plus que le délai d'inactivité d'une IP publique.
 #   make orodruin-campaign-plan CAMPAIGN_TARGET=<resource_id VM inscrite> [CAMPAIGN_MAX=5]
@@ -1777,7 +1777,7 @@ install: venv
 
 # Regénérer le verrou (uv, résolution universelle : Python 3.11 et 3.12, Linux et macOS).
 # Les versions déjà verrouillées restent ; UPGRADE=1 les monte toutes. Une PR, puis le harnais
-# (make llm-compare) avant de redéployer H0 : docs/operations.md, « Verrou des dépendances ».
+# (make llm-compare) avant de redéployer Imladris : docs/operations.md, « Verrou des dépendances ».
 # DEP2 (#590) : UPGRADE_PACKAGE=<paquet>[,<paquet>] monte ces paquets seuls, à leur dernière version
 # d'avant UPGRADE_DATE (le jour, par défaut), dans les verrous qui les portent ; les autres sont
 # réécrits à l'octet. La date admise par paquet reste dans l'en-tête du verrou, et make lock la
@@ -1841,7 +1841,7 @@ lint:
 # REL1 (#269) : une release en deux commandes (docs/operations.md, « Packaging et version »).
 # `release` coupe [Unreleased], change la version et la ligne « Status » du README, ouvre la PR
 # chore/release-X.Y.Z ; `release-draft`, après sa fusion, crée le BROUILLON sur le sha complet
-# d'origin/main et le pose sur #agents. Aucune ne publie : Jonathan publie (son CD déploie H0).
+# d'origin/main et le pose sur #agents. Aucune ne publie : Jonathan publie (son CD déploie Imladris).
 # Comme REF : VERSION, TITLE et NOTES se donnent sur la ligne de commande, lus par le script
 # dans son environnement, jamais développés par make ni recopiés dans la commande.
 RELEASE_ARGS = VERSION TITLE NOTES

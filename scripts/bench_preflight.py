@@ -4,22 +4,22 @@
 On 09/11 (RAN1, #665) every check of the step 0 of docs/banc-t1486.md was typed by hand, and a
 missing right (`listKeys` on the staging account) was seen only at the restore, three hours in.
 Here each check is one line, ✓, ⚠ or ✗, then a summary; exit 0 when nothing is ✗ (a ⚠ does not
-stop the run), 1 otherwise. Everything is read, nothing is written — on Azure, on H0, on Orodruin:
+stop the run), 1 otherwise. Everything is read, nothing is written — on Azure, on Imladris, on Orodruin:
 
-  H0            its deployed reference, its three containers and what `make glorfindel-host-status`
+  Imladris            its deployed reference, its three containers and what `make glorfindel-host-status`
                 marks ✗; its CD (`make glorfindel-host-cd-status`): the timer, the release it runs;
   the workstation  no local watch (`docker ps`);
   Orodruin      its contract read on it without being published (`check()` in its hardened
                 container), armed or passive, and its cap; deallocated, a ⚠: read once it runs;
   the pairs     `scripts/credential_expiry.py` (RST1): each secret's end — the console's pair, which
                 restores, is required;
-  the target    its group (one VM of that name), its power; on H0: its mode (configured, effective),
+  the target    its group (one VM of that name), its power; on Imladris: its mode (configured, effective),
                 its readiness and the quarantine, no isolation already;
   the point     the newest recovery point of the target in the vault, its age (⚠ past POINT_MAX_H,
                 24 h by default);
   the rights    the console, under its own pair, by `Microsoft.Authorization/permissions` (Glorfindel's
                 reader, glorfindel/providers/azure/restore_rights.py): what a restore reads, and the
-                neutralization's Run Command; H0 and Orodruin by their role assignments and the roles'
+                neutralization's Run Command; Imladris and Orodruin by their role assignments and the roles'
                 definitions (wildcards and `notActions` read as Azure reads them, the same
                 `action_held`), their ids from Terraform's outputs, read locally; an assignment
                 at a management group is not read (a missing right then says so: a false ✗,
@@ -71,7 +71,7 @@ def line(mark: str, text: str) -> tuple[str, str]:
 # (what for, where, action). `where`: "vm", "rg" (the target's group), "vault".
 
 def h0_needs() -> list[tuple[str, str, str]]:
-    """H0's watch: isolate (the quarantine and the deny rules: Glorfindel's own capabilities, MC0),
+    """Imladris's watch: isolate (the quarantine and the deny rules: Glorfindel's own capabilities, MC0),
     drain the sessions, take the clean point, read the activity log and the vault's jobs (REC1)."""
     from glorfindel.providers.azure.capabilities import CAPABILITIES
     from glorfindel.providers.interface import NETWORK_QUARANTINE, NETWORK_RULES, SESSION_DRAIN
@@ -150,20 +150,20 @@ def check_h0(ctx: Context) -> list:
     failed = [ln.strip()[1:].strip() for ln in text.splitlines()
               if ln.strip().startswith(bs.FAIL) and "référence déployée" not in ln]
     if ref is None and not up:
-        return [line(bs.FAIL, f"H0 : illisible par make glorfindel-host-status ({res.first_error()})")]
+        return [line(bs.FAIL, f"Imladris : illisible par make glorfindel-host-status ({res.first_error()})")]
     out = []
     if ref is None:
-        out.append(line(bs.FAIL, "H0 : la référence déployée ne se lit pas"))
+        out.append(line(bs.FAIL, "Imladris : la référence déployée ne se lit pas"))
     else:
         sha = f" ({ref.group(3)[:12]})" if ref.group(3) else ""
         out.append(line(bs.OK if ref.group(1) == bs.OK else bs.WARN if ref.group(1) == bs.WARN else bs.FAIL,
-                        f"H0 : {ref.group(2)}{sha} déployée"))
+                        f"Imladris : {ref.group(2)}{sha} déployée"))
     down = [n for n in ("watch", "console", "bot") if up.get(n) != bs.OK]
-    out.append(line(bs.FAIL, f"H0 : conteneur(s) arrêté(s) ou absent(s) : {', '.join(down)}") if down
-               else line(bs.OK, "H0 : watch, console et bot en marche"))
+    out.append(line(bs.FAIL, f"Imladris : conteneur(s) arrêté(s) ou absent(s) : {', '.join(down)}") if down
+               else line(bs.OK, "Imladris : watch, console et bot en marche"))
     others = [f for f in failed if not re.match(r"(watch|console|bot)\s+eregion-", f)]
     if others:
-        out.append(line(bs.FAIL, "H0 : " + " ; ".join(others[:4])[:300]))
+        out.append(line(bs.FAIL, "Imladris : " + " ; ".join(others[:4])[:300]))
     return out
 
 
@@ -174,8 +174,8 @@ def check_cd(ctx: Context) -> list:
     latest = re.search(r"dernière release : (\S+)", text)
     timer = re.search(r"timer : (\S+)", text)
     if not runs:
-        return [line(bs.WARN, f"le CD de H0 : illisible ({res.first_error()})")]
-    said = f"le CD de H0 : H0 sur {runs.group(1)}"
+        return [line(bs.WARN, f"le CD d'Imladris : illisible ({res.first_error()})")]
+    said = f"le CD d'Imladris : Imladris sur {runs.group(1)}"
     if latest and latest.group(1) not in ("illisible", "aucune") and latest.group(1) != runs.group(1):
         return [line(bs.WARN, f"{said}, la dernière release est {latest.group(1)} : le CD peut basculer "
                               "pendant la session (make glorfindel-host-cd-disable)")]
@@ -279,24 +279,24 @@ def check_target_on_h0(ctx: Context) -> list:
         ctx.h0 = bs.read_h0("preflight", ctx.target, env=ctx.env)
     except RuntimeError as e:
         ctx.h0_error = str(e)
-        return [line(bs.FAIL, f"la cible sur H0 : {e}")]
+        return [line(bs.FAIL, f"la cible sur Imladris : {e}")]
     t = ctx.h0.get("target") or {}
     out = []
     if t.get("config_error"):
-        return [line(bs.FAIL, f"la cible sur H0 : sa configuration ne se lit pas ({t['config_error']})")]
+        return [line(bs.FAIL, f"la cible sur Imladris : sa configuration ne se lit pas ({t['config_error']})")]
     configured, effective = t.get("configured") or "?", t.get("effective") or "?"
     if effective == configured and effective not in ("human_only", "?"):
-        out.append(line(bs.OK, f"son mode sur H0 : {effective}"))
+        out.append(line(bs.OK, f"son mode sur Imladris : {effective}"))
     elif configured != effective:
-        out.append(line(bs.FAIL, f"son mode sur H0 : {configured} configuré, retenu en {effective} "
+        out.append(line(bs.FAIL, f"son mode sur Imladris : {configured} configuré, retenu en {effective} "
                                  f"({t.get('hold') or 'préparation'}) — le confinement serait une mesure, pas le confinement"))
     else:
-        out.append(line(bs.WARN, f"son mode sur H0 : {effective} — l'isolement attendrait un humain, "
+        out.append(line(bs.WARN, f"son mode sur Imladris : {effective} — l'isolement attendrait un humain, "
                                  "et se mesurerait comme tel"))
     verdict = t.get("readiness") or "jamais contrôlée"
     codes = f" ({', '.join(t.get('readiness_codes') or [])})" if t.get("readiness_codes") else ""
     if not t.get("quarantine_nsg", True):
-        out.append(line(bs.FAIL, "la quarantaine : désactivée (isolation.quarantine_nsg) sur H0"))
+        out.append(line(bs.FAIL, "la quarantaine : désactivée (isolation.quarantine_nsg) sur Imladris"))
     elif verdict == "ready":
         out.append(line(bs.OK, "la quarantaine : prête (préparation ready)"))
     elif verdict == "reserve":
@@ -304,7 +304,7 @@ def check_target_on_h0(ctx: Context) -> list:
     else:
         out.append(line(bs.FAIL, f"la quarantaine : préparation {verdict}{codes}"))
     if t.get("isolation"):
-        out.append(line(bs.FAIL, f"la cible : déjà isolée sur H0 (depuis {t['isolation'].get('isolated_at') or '?'}) — "
+        out.append(line(bs.FAIL, f"la cible : déjà isolée sur Imladris (depuis {t['isolation'].get('isolated_at') or '?'}) — "
                                  "l'étape 7, puis une nouvelle demande"))
     return out
 
@@ -332,7 +332,7 @@ def check_point(ctx: Context) -> list:
     age_h = (ctx.now.timestamp() - max(times)) / 3600
     said = f"le point de restauration : le plus récent il y a {bs.duration(age_h * 3600)} (seuil {ctx.point_max_h:g} h)"
     if age_h > ctx.point_max_h:
-        return [line(bs.WARN, f"{said} — trop vieux : l'étape 2 en prend un propre, depuis H0")]
+        return [line(bs.WARN, f"{said} — trop vieux : l'étape 2 en prend un propre, depuis Imladris")]
     return [line(bs.OK, said)]
 
 
@@ -405,7 +405,7 @@ def _principal_rights(ctx: Context, who: str, module: str, needs: list) -> list:
 
 
 def check_h0_rights(ctx: Context) -> list:
-    return _principal_rights(ctx, "H0", "glorfindel-host", h0_needs())
+    return _principal_rights(ctx, "Imladris", "glorfindel-host", h0_needs())
 
 
 def check_orodruin_rights(ctx: Context) -> list:
@@ -453,8 +453,8 @@ def _safe(check, ctx: Context) -> list:
         return [line(bs.FAIL, f"{name} : illisible ({type(e).__name__}: {bs.scrub(str(e))[:200]})")]
 
 
-H0_UNPINNED = "H0 : sa clé d'hôte n'est pas vérifiée par son empreinte (HOST_SSH_FINGERPRINT) : rien n'est envoyé"
-# What reaches H0 by ssh: none of it without its host key verified (the make targets included: they
+H0_UNPINNED = "Imladris : sa clé d'hôte n'est pas vérifiée par son empreinte (HOST_SSH_FINGERPRINT) : rien n'est envoyé"
+# What reaches Imladris by ssh: none of it without its host key verified (the make targets included: they
 # would connect in accept-new).
 H0_CHECKS = ("check_h0", "check_cd", "check_target_on_h0")
 

@@ -595,7 +595,7 @@ def read_contract(doc) -> dict:
 
 def publish_contract(verdict: Verdict, **kw) -> bool:
     """The verdict to the exercise channel (``orodruin/contract.json``: the same container, the
-    same assignment — no right more), for the watch of H0 to pull and the console to show.
+    same assignment — no right more), for the watch of Imladris to pull and the console to show.
     False without a channel; a refused write raises to its caller."""
     from eregion_core import exercise_channel
     return exercise_channel.publish_doc(CONTRACT_BLOB, contract_doc(verdict), **kw)

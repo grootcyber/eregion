@@ -4,7 +4,7 @@
 The operator types it on his workstation — at its keyboard, or from his phone through the private
 network and the workstation's SSH server (docs/demarrer/mobile.md). Only the path between the phone
 and the workstation is new: Orodruin still listens to the workstation's SSH alone (DRL1), and nothing
-is installed on H0. In order, each step stopping the next one:
+is installed on Imladris. In order, each step stopping the next one:
 
   0  the guard     never in a code session (EREGION_AGENT_SESSION, a lot's worktree): a session never
                    launches an attack (bench_shared.session_refusal, the rule of bench_reader.py); and a

@@ -2,7 +2,7 @@
 contain and the share contained alone, computed by the code from a campaign's traces.
 
     python -m analysis.containment runs/<writer>/campaigns/<campaign_id> [--fault-run <run_id> …] [--json]
-    (``runs/glorfindel/campaigns`` on H0, ``runs/annatar/campaigns`` here — SEC18)
+    (``runs/glorfindel/campaigns`` on Imladris, ``runs/annatar/campaigns`` here — SEC18)
 
 Definitions (docs/analysis.md, « Temps pour contenir et part contenue seule ») :
 
@@ -63,7 +63,7 @@ from eregion_core.run_report import CONTAINING as DISRUPTIVE   # C1: one list of
 # The exercise window's grace (eregion_core/exercise.py GRACE_AFTER_S): how long after the
 # read-back a containment is watched when the run has no window.
 HOLD_WATCH_S = 15 * 60
-# SEC9: the clocks of two hosts — Orodruin's T0, the telemetry's TimeGenerated, H0's own times
+# SEC9: the clocks of two hosts — Orodruin's T0, the telemetry's TimeGenerated, Imladris's own times
 # (the same allowance as the watch's heartbeat, eregion_core/watch_channel.py CLOCK_SKEW_S).
 CLOCK_SKEW_S = 10.0
 # The columns in which a rule's row dates what it read (glorfindel/rules/azure: ``project
@@ -664,7 +664,7 @@ def read_liftings(runs_dir: Path, since: float = 0.0) -> list[tuple]:
 
 
 def _gothmog_reports(runs_dir: Path) -> dict[str, dict]:
-    """The fault runs' reports: in the campaign's runs directory (the watch's copy on H0), and in
+    """The fault runs' reports: in the campaign's runs directory (the watch's copy on Imladris), and in
     Gothmog's own directory beside it (SEC18) — each kept only where its writer may write it."""
     out = {}
     dirs = dict.fromkeys([Path(runs_dir), runs_layout.beside(runs_dir, runs_layout.GOTHMOG)])

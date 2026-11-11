@@ -1,17 +1,17 @@
 """`make bench-preflight [TARGET=<vm>]`: the bench's step 0 in one verdict (BNC1, #682).
 
-On a fake bench (tests/unit/bench_world.py: `az`, `terraform`, `docker`, `make`, Orodruin and H0
-read by ssh — H0 through scripts/bench_h0_reader.py, run for real on a fake H0) and a fake Azure
+On a fake bench (tests/unit/bench_world.py: `az`, `terraform`, `docker`, `make`, Orodruin and Imladris
+read by ssh — Imladris through scripts/bench_h0_reader.py, run for real on a fake Imladris) and a fake Azure
 Resource Manager (the console pair's token, `Microsoft.Authorization/permissions`, on `requests`),
 shaped as the bench was on 09/11 (RAN1, #665), the preflight sees what that night found too late:
   - `listKeys` missing to the console on the staging account (read by Glorfindel's own reader);
   - « Eregion Glorfindel Restore Staging » not assigned there;
   - the tenant's « Eregion Glorfindel Restore » that still holds `runCommand/action` (before SEC17);
   - a recovery point too old;
-and, apart, a console pair absent. A bench in order exits 0; a ✗ exits 1, a ⚠ does not. H0's and
+and, apart, a console pair absent. A bench in order exits 0; a ✗ exits 1, a ⚠ does not. Imladris's and
 Orodruin's rights are read from their assignments and the roles' definitions — wildcards and
 `notActions` as Azure reads them. No identifier leaves: the output is scanned for GUIDs, IPs, UPNs.
-No Azure, no H0, no Orodruin, no model.
+No Azure, no Imladris, no Orodruin, no model.
 """
 from __future__ import annotations
 
@@ -237,11 +237,11 @@ def test_a_bench_in_order_lets_the_run_go(tmp_path, monkeypatch):
     assert code == 0, out + err
     assert _marked(out, bs.FAIL) == [] and _marked(out, bs.WARN) == [], out
     oks = _marked(out, bs.OK)
-    for said in ("H0 : v0.5.8 (0123456789ab) déployée", "H0 : watch, console et bot en marche",
-                 "le poste : aucune watch locale", "son mode sur H0 : non_disruptive",
+    for said in ("Imladris : v0.5.8 (0123456789ab) déployée", "Imladris : watch, console et bot en marche",
+                 "le poste : aucune watch locale", "son mode sur Imladris : non_disruptive",
                  "la quarantaine : prête (préparation ready)",
                  "droits · console : le restore (coffre, VM, compte de transit) et la neutralisation",
-                 "droits · H0 : l'isolement, la coupure, le point de restauration, la lecture du journal",
+                 "droits · Imladris : l'isolement, la coupure, le point de restauration, la lecture du journal",
                  "droits · Orodruin : l'attaque",
                  "dérive : « Eregion Glorfindel Restore Staging » attribué à la console sur le compte de transit"):
         assert said in oks, (said, out)
@@ -262,7 +262,7 @@ def test_an_absent_console_pair_is_a_failure(tmp_path, monkeypatch):
 
 
 def test_h0_s_rights_read_wildcards_and_not_actions(tmp_path, monkeypatch):
-    """H0 under a role `Microsoft.Network/*` whose notActions take securityRules/delete: the isolation
+    """Imladris under a role `Microsoft.Network/*` whose notActions take securityRules/delete: the isolation
     is missing that one action; the Run Command of the drain held by a wildcard. Its Response role on
     another group, whose name begins as the bench's (`rg-celeb`), covers nothing of the bench."""
     w = _world(tmp_path, point_age_h=3, staging_assigned=True, h0_rights=[
@@ -275,8 +275,8 @@ def test_h0_s_rights_read_wildcards_and_not_actions(tmp_path, monkeypatch):
         "Wide Compute", 81, ["Microsoft.Compute/virtualMachines/*"])))
     code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
     assert code == 1
-    fails = [f for f in _marked(out, bs.FAIL) if f.startswith("droits · H0")]
-    assert fails == ["droits · H0 : pour l'isolement, il manque Microsoft.Network/networkSecurityGroups/securityRules/delete"]
+    fails = [f for f in _marked(out, bs.FAIL) if f.startswith("droits · Imladris")]
+    assert fails == ["droits · Imladris : pour l'isolement, il manque Microsoft.Network/networkSecurityGroups/securityRules/delete"]
 
 
 def test_the_staging_role_on_the_group_is_not_the_staging_account_s(tmp_path, monkeypatch):
@@ -318,7 +318,7 @@ def test_a_local_watch_and_a_held_mode_are_failures(tmp_path, monkeypatch):
     assert code == 1
     fails = _marked(out, bs.FAIL)
     assert any(f.startswith("le poste : une watch locale tourne (eregion-watch)") for f in fails)
-    assert any(f.startswith("son mode sur H0 : non_disruptive configuré, retenu en human_only (not_ready)") for f in fails)
+    assert any(f.startswith("son mode sur Imladris : non_disruptive configuré, retenu en human_only (not_ready)") for f in fails)
     assert "la quarantaine : préparation not_ready" in fails
 
 
@@ -333,7 +333,7 @@ def test_no_identifier_leaves_the_preflight(tmp_path, monkeypatch):
     code, out, err = _preflight(w, arm_0911(), monkeypatch)
     assert code == 1
     assert leaks(out + err) == [], leaks(out + err)
-    assert any(f.startswith(f"H0 : sauvegarde {bw.VM} Failed par <upn> sur <ressource> (<id>) depuis <ip>")
+    assert any(f.startswith(f"Imladris : sauvegarde {bw.VM} Failed par <upn> sur <ressource> (<id>) depuis <ip>")
                for f in _marked(out, bs.FAIL))
     # the console's secret went to the token endpoint's body only
     assert all(bw.SECRET not in " ".join(c) for c in w.calls())
@@ -353,7 +353,7 @@ def test_the_deployed_reference_keeps_its_mark(tmp_path, monkeypatch, ref, mark)
                               "  ✓ watch    eregion-watch  running\n  ✓ console  eregion-war-room  running\n"
                               "  ✓ bot      eregion-bot  running\n"))
     _, out, _ = _preflight(w, arm_in_order(), monkeypatch)
-    assert "H0 : v0.5.8 (0123456789ab) déployée" in _marked(out, mark)
+    assert "Imladris : v0.5.8 (0123456789ab) déployée" in _marked(out, mark)
 
 
 # ── the review's findings (BNC1, round 1) ──────────────────────────────────────
@@ -373,7 +373,7 @@ def test_a_silent_console_stops_the_run(tmp_path, monkeypatch, said):
                               f"  ✓ bot      eregion-bot  running\n  ✗ {said}\n"))
     code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
     assert code == 1
-    assert f"H0 : {said}" in _marked(out, bs.FAIL)
+    assert f"Imladris : {said}" in _marked(out, bs.FAIL)
 
 
 def test_a_tenant_that_is_not_a_guid_is_refused_before_any_request(tmp_path, monkeypatch):
@@ -391,7 +391,7 @@ def test_a_management_group_assignment_is_said_unread(tmp_path, monkeypatch):
                                                  _assign("Eregion Glorfindel Response", mg, 5)])
     code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
     assert code == 1
-    fails = [f for f in _marked(out, bs.FAIL) if f.startswith("droits · H0")]
+    fails = [f for f in _marked(out, bs.FAIL) if f.startswith("droits · Imladris")]
     assert fails and all(f.endswith("(une attribution à un groupe d'administration n'est pas lue : à vérifier "
                                     "à la main)") for f in fails)
 
@@ -405,7 +405,7 @@ H0_TARGETS = ("glorfindel-host-status", "glorfindel-host-cd-status")
     f"ssh -o StrictHostKeyChecking=yes glorfindel@{bw.H0_IP}",              # no known_hosts file of its own
 ])
 def test_an_unpinned_host_key_sends_nothing_to_orodruin_nor_h0(tmp_path, monkeypatch, h0_ssh):
-    """Nothing reaches H0 by ssh — the reader, nor `make glorfindel-host-status` and
+    """Nothing reaches Imladris by ssh — the reader, nor `make glorfindel-host-status` and
     `glorfindel-host-cd-status`, which would connect in accept-new: one ✗, and make never called for them."""
     w = _world(tmp_path, **_IN_ORDER)
     code, out, _ = _preflight(w, arm_in_order(), monkeypatch,
@@ -414,8 +414,8 @@ def test_an_unpinned_host_key_sends_nothing_to_orodruin_nor_h0(tmp_path, monkeyp
     assert code == 1
     fails = _marked(out, bs.FAIL)
     assert "Orodruin : sa clé d'hôte n'est pas épinglée (StrictHostKeyChecking=yes) : rien n'est envoyé" in fails
-    assert [f for f in fails if f.startswith(("H0", "la cible sur H0"))] == [
-        "H0 : sa clé d'hôte n'est pas vérifiée par son empreinte (HOST_SSH_FINGERPRINT) : rien n'est envoyé"]
+    assert [f for f in fails if f.startswith(("Imladris", "la cible sur Imladris"))] == [
+        "Imladris : sa clé d'hôte n'est pas vérifiée par son empreinte (HOST_SSH_FINGERPRINT) : rien n'est envoyé"]
     assert not [c for c in w.calls() if c[0] == "ssh"]
     assert not [c for c in w.calls() if c[0] == "make" and any(t in c for t in H0_TARGETS)]
 
@@ -446,7 +446,7 @@ def test_an_autonomous_mode_as_configured_is_the_run_s_mode(tmp_path, monkeypatc
         "configured": "full_auto", "effective": "full_auto", "readiness": "ready", "quarantine_nsg": True}})
     code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
     assert code == 0, out
-    assert "son mode sur H0 : full_auto" in _marked(out, bs.OK)
+    assert "son mode sur Imladris : full_auto" in _marked(out, bs.OK)
 
 
 def test_ssh_s_warning_is_not_the_error_said():

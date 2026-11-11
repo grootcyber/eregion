@@ -41,8 +41,8 @@ def analysis_model() -> str:
 
 # ── The variables a model needs, by its provider (OL1, #525) ───────────────────────────────
 # LiteLLM names a model <provider>/<model> and reads its provider's key from the environment.
-# H0 required ANTHROPIC_API_KEY whatever the model — even a local one (ollama/…), whose logs
-# never leave the machine. The rule, defined once: H0's host.env (infra/glorfindel-host/
+# Imladris required ANTHROPIC_API_KEY whatever the model — even a local one (ollama/…), whose logs
+# never leave the machine. The rule, defined once: Imladris's host.env (infra/glorfindel-host/
 # host_env.py) requires what it names; `make doctor` (GS1) is meant to read it too.
 PROVIDER_ENV = {
     "anthropic": ("ANTHROPIC_API_KEY",),

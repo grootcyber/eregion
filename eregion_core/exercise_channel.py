@@ -1,5 +1,5 @@
 """The channel that carries exercise windows (B2) from the injectors' host (Orodruin) to a
-watch on another host (Glorfindel hosted, H0) — O1, part C.
+watch on another host (Glorfindel hosted, Imladris) — O1, part C.
 
 A blob container, reached by managed identity only (no shared key): Orodruin's identity
 writes, the watch's identity reads. ``EREGION_EXERCISE_CHANNEL`` is the container's URL
@@ -10,7 +10,7 @@ Both directions fail toward ``real``: a window that doesn't reach the watch leav
 cycles labelled real — the label never lowers a guard (eregion_core/exercise.py). So a
 failure here is reported, never raised into a run or a cycle.
 
-The same container carries a finished campaign to H0, where its report is written (IA0,
+The same container carries a finished campaign to Imladris, where its report is written (IA0,
 #167; analysis/hosted_report.py): its manifest and the report of each of its runs, under
 ``campaigns/<campaign_id>/`` — nothing else, and no right more than the windows' (one
 assignment, on this container: eregion_core/orodruin.py). The prefix keeps them out of the
@@ -18,10 +18,10 @@ windows: a run's window is ``<run_id>.json`` at the root, and a name with a ``/`
 matches ``_SAFE_NAME``, so ``pull`` leaves the campaigns to ``pull_campaigns``.
 
 And the report of a run launched alone (``annatar run``, ``gothmog run``, #193), so that its
-verdict is seen on H0 too: ``runs/<run_id>.json``, under the same container and the same
-assignment — a prefix again, which neither ``pull`` nor ``pull_campaigns`` takes. H0 pulls
+verdict is seen on Imladris too: ``runs/<run_id>.json``, under the same container and the same
+assignment — a prefix again, which neither ``pull`` nor ``pull_campaigns`` takes. Imladris pulls
 it into the watch's own directory, ``runs/glorfindel/<run_id>.json`` (``pull_runs``; SEC18), where
-the console of the atelier reads it, once it has the shape H0 accepts (H-1), and never over a file
+the console of the atelier reads it, once it has the shape Imladris accepts (H-1), and never over a file
 it did not pull. Everything the watch pulls goes to its own directory, the only one it writes.
 
 SEC5 holds the channel at its edges:
@@ -82,16 +82,16 @@ _SAFE_PART = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 _CAMPAIGN_BLOB = re.compile(
     r"^campaigns/(?P<cid>[A-Za-z0-9][A-Za-z0-9_.-]*)/"
     r"(?:manifest\.json|runs/(?P<rid>[A-Za-z0-9][A-Za-z0-9_.-]*)\.json)$")
-# The files of a run that go to H0: its report only — never its _debug.jsonl (the watch's,
-# written on H0) nor its _signals.jsonl.
+# The files of a run that go to Imladris: its report only — never its _debug.jsonl (the watch's,
+# written on Imladris) nor its _signals.jsonl.
 _RUN_FILES = ("{run_id}.json",)
-# Beside a manifest pulled from the channel: H0 writes the report of these campaigns only,
+# Beside a manifest pulled from the channel: Imladris writes the report of these campaigns only,
 # never of a campaign of its own runs directory (analysis/hosted_report.py).
 PULLED = ".pulled"
 # The report of a run launched alone: ``runs/<run_id>.json``, the run id a plain name.
 RUNS = "runs"
 _RUN_BLOB = re.compile(r"^runs/(?P<rid>[A-Za-z0-9][A-Za-z0-9_.-]*)\.json$")
-# In H0's runs directory, one empty file per run report pulled from the channel: H0 writes
+# In Imladris's runs directory, one empty file per run report pulled from the channel: Imladris writes
 # again only those, never the report of a run of its own.
 PULLED_RUNS = ".pulled-runs"
 
@@ -117,7 +117,7 @@ CREATED = "channel_created"
 # SEC5 (V-29): Orodruin's journal, one append blob per run.
 AUDIT = "audit"
 # DG-b: what Orodruin says to the console — its contract's verdict, each request's status —
-# under its own prefix of the same container; the watch of H0 pulls it into runs/glorfindel/orodruin/,
+# under its own prefix of the same container; the watch of Imladris pulls it into runs/glorfindel/orodruin/,
 # each blob read against its shape (eregion_core/orodruin.py read_contract,
 # eregion_core/exercise_request.py read_status).
 ORODRUIN = "orodruin"
@@ -504,7 +504,7 @@ def pull_now(directory: Path, **kw) -> int:
         _pull_lock.release()
 
 
-# ── A finished campaign, carried to H0 (#167) ─────────────────────────────────────────
+# ── A finished campaign, carried to Imladris (#167) ─────────────────────────────────────────
 
 def safe_part(part: str) -> bool:
     """A plain name — never a path: what a campaign id or a run id read from a manifest (it
@@ -516,7 +516,7 @@ _safe_part = safe_part
 
 
 def unpublished_runs(campaign_dir: Path, runs_dir: Path | None = None) -> list[str]:
-    """The executed runs of the campaign whose report is not in ``runs_dir`` — H0 waits for
+    """The executed runs of the campaign whose report is not in ``runs_dir`` — Imladris waits for
     each one before it writes the campaign's report, so it will not write it on its own
     (``campaign run --runs-dir X``: the runs' reports stay in ``runs/annatar/``, annatar/runner/report.py)."""
     import json
@@ -535,7 +535,7 @@ def unpublished_runs(campaign_dir: Path, runs_dir: Path | None = None) -> list[s
 
 
 def campaign_blobs(campaign_dir: Path, runs_dir: Path | None = None) -> list[tuple[str, Path]]:
-    """What a campaign carries to H0, as (blob name, local file): the report of each of its
+    """What a campaign carries to Imladris, as (blob name, local file): the report of each of its
     runs (``runs/annatar/<run_id>.json``, which holds ``attack_time``), then its manifest — last, so
     a watch that sees the manifest sees the runs too. Nothing else: not the runs' debug or
     signal files, not another run, not a file of the campaign directory (scenarios, report).
@@ -565,7 +565,7 @@ def publish_campaign(campaign_dir: Path, runs_dir: Path | None = None, *,
                      channel: str | None = None, credential=None,
                      put=None) -> tuple[str, list[str]]:
     """Write the campaign's blobs (``campaign_blobs``) to the channel: the campaign id they
-    are published under (the manifest's, after which H0 names the campaign's directory and
+    are published under (the manifest's, after which Imladris names the campaign's directory and
     report) and the names written — ``("", [])`` when no channel is configured. A refused
     write raises to its caller, which reports it (annatar/cli.py): the campaign has run,
     its report can be written later."""
@@ -588,7 +588,7 @@ def publish_campaign(campaign_dir: Path, runs_dir: Path | None = None, *,
     return cid, written
 
 
-# ── The report of a run launched alone, carried to H0 (#193) ──────────────────────────
+# ── The report of a run launched alone, carried to Imladris (#193) ──────────────────────────
 
 def publish_run(run_id: str, runs_dir: Path | str, *, channel: str | None = None,
                 credential=None, put=None) -> str:
@@ -626,7 +626,7 @@ def carry_run(run_id: str, runs_dir: Path | str) -> bool:
         print(f"[exercise-channel] run report {run_id} not published: {e}")
         return False
     if name:
-        print(f"[exercise-channel] run report published to H0: {name}")
+        print(f"[exercise-channel] run report published to Imladris: {name}")
     return bool(name)
 
 
@@ -673,7 +673,7 @@ def _bounded(blobs, skipped: dict):
 
 def pull_campaigns(directory: Path, *, channel: str | None = None, credential=None,
                    get=None) -> tuple[int, set[str]]:
-    """Copy the published campaigns into ``directory`` (``runs/glorfindel/campaigns`` on H0, SEC18):
+    """Copy the published campaigns into ``directory`` (``runs/glorfindel/campaigns`` on Imladris, SEC18):
     ``<campaign_id>/runs/<run_id>.json``, then ``<campaign_id>/manifest.json``, each new or
     changed since the local copy, written whole (tmp, then replace). A blob of any other
     shape is skipped; the windows are never touched.
@@ -734,7 +734,7 @@ def pull_campaigns(directory: Path, *, channel: str | None = None, credential=No
         tmp = local.with_suffix(".json.tmp")
         tmp.write_bytes(body)
         tmp.replace(local)  # atomic: the report never reads half a manifest
-        if m["rid"] is None:  # this campaign came from the channel: its report is H0's
+        if m["rid"] is None:  # this campaign came from the channel: its report is Imladris's
             (local.parent / PULLED).touch()
         written += 1
     return written, failed
@@ -742,9 +742,9 @@ def pull_campaigns(directory: Path, *, channel: str | None = None, credential=No
 
 def pull_runs(directory: Path, *, refusal, channel: str | None = None, credential=None,
               get=None) -> tuple[int, dict[str, str]]:
-    """Copy into ``directory`` (``runs/glorfindel`` on H0, SEC18) the published report of each run launched
+    """Copy into ``directory`` (``runs/glorfindel`` on Imladris, SEC18) the published report of each run launched
     alone, as ``<run_id>.json``, new or changed since the local copy, written whole (tmp,
-    then replace). Each one is read against the shape H0 accepts first — ``refusal(report,
+    then replace). Each one is read against the shape Imladris accepts first — ``refusal(report,
     run_id)`` says why not, "" when it does (analysis/campaign_schema.py
     ``run_report_refusal``, H-1) — and a refused one is not written. A local file without
     its ``PULLED_RUNS`` marker (a run of this host) is never written over. Returns how many
@@ -853,7 +853,7 @@ def orodruin_refusal(name: str, doc) -> str:
 
 def pull_orodruin(directory: Path, *, channel: str | None = None, credential=None,
                   get=None) -> tuple[int, dict[str, str]]:
-    """Copy into ``directory`` (``runs/glorfindel/orodruin`` on H0, SEC18) Orodruin's verdict (``contract.json``)
+    """Copy into ``directory`` (``runs/glorfindel/orodruin`` on Imladris, SEC18) Orodruin's verdict (``contract.json``)
     and the status of each request (``requests/<id>.json``), new or changed since the local
     copy, each read against its shape first (``orodruin_refusal``) — a refused one is never
     written. Within the bounds of V-21. Returns how many were written, and why each one that was

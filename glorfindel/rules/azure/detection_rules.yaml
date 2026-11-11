@@ -234,7 +234,7 @@ rules:
       // exists » failure (idempotent provisioning), the « new group » line of the same creation,
       // or a line that merely mentions useradd is not an account created.
       | where SyslogMessage has "new user: name="
-      // Lines tagged useradd only (SEC4c, as SEC2 for sudo and sshd). Measured on H0's Syslog
+      // Lines tagged useradd only (SEC4c, as SEC2 for sudo and sshd). Measured on Imladris's Syslog
       // (30 days to 29/10): 16 « new user » lines on 6 VMs, auth and authpriv, all tagged
       // useradd — no other emitter, no other wording. Read in the code only: Debian's adduser
       // calls useradd and logs « Adding new user … » of its own, never « new user: name= ».

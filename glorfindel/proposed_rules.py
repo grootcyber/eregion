@@ -132,7 +132,7 @@ def approve(proposal_id: str, rules_yaml_path: str | Path) -> dict:
 
     `rules_yaml_path` is the shipped base (detection_rules.yaml): read to resolve the
     rule's asset, NEVER written — an update of Glorfindel replaces the base, and an
-    approved rule written there was lost (or stopped H0's deployment, M-3). The rule goes
+    approved rule written there was lost (or stopped Imladris's deployment, M-3). The rule goes
     to `~/.glorfindel/client_rules.yaml` (`rule_layers.write_client_rule`), loaded over
     the base. The rule is written first: a layer that cannot be read leaves the proposal
     pending, never approved without its rule. Returns the proposal, with `rules_file` (the

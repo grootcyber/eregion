@@ -185,7 +185,7 @@ def assess(resource_id: str, connector, quarantine_nsg: bool = True) -> dict:
             "manquant) : un attaquant connecté garde la main.",
             f"Ajouter {', '.join(sorted(caps.rights(SESSION_DRAIN)))} : le rôle « Eregion Glorfindel "
             "Session Drain », attribué sur cette VM (VM par VM, aux VM que Glorfindel défend — "
-            "session_drain_vms sur H0 —, jamais sur le groupe : docs/operations.md, « Identités "
+            "session_drain_vms sur Imladris —, jamais sur le groupe : docs/operations.md, « Identités "
             "Azure »)."))
 
     # Windows: no session drain (Linux `ss -K` only).

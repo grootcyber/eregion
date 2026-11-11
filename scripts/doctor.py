@@ -183,9 +183,9 @@ def tools(profile: str, p: Probes, repo: Path) -> list[Check]:
                           "installer Azure CLI : https://learn.microsoft.com/cli/azure/install-azure-cli, puis az login"))
     if profile == "bench":
         for tool, why, fix in (
-                ("terraform", "il construit le banc, H0 et Orodruin",
+                ("terraform", "il construit le banc, Imladris et Orodruin",
                  "installer Terraform 1.5 ou plus : https://developer.hashicorp.com/terraform/install"),
-                ("ssh", "chaque commande vers H0 et Orodruin", "installer le client OpenSSH")):
+                ("ssh", "chaque commande vers Imladris et Orodruin", "installer le client OpenSSH")):
             out.append(Check(g, tool, OK) if p.which(tool) else Check(g, f"{tool} absent : {why}", FAIL, fix))
         out.append(Check(g, ".venv (make install)", OK) if (repo / ".venv" / "bin" / "python").exists()
                    else Check(g, ".venv absent : make glorfindel-host-env, -push et watch-key le lancent", FAIL,
@@ -273,7 +273,7 @@ def variables(profile: str, env: Mapping[str, str]) -> list[Check]:
                    else Check(g, "ORO_SSH_FINGERPRINT vide ou mal formé : aucune commande ne part vers Orodruin",
                               FAIL, "make orodruin-fingerprint, puis sa ligne export dans .envrc"))
         out.append(Check(g, "HOST_SSH_FINGERPRINT", OK) if _SSH_FINGERPRINT.match(env.get("HOST_SSH_FINGERPRINT", ""))
-                   else Check(g, "HOST_SSH_FINGERPRINT vide (optionnel : sans elle, accept-new vers H0)", WARN,
+                   else Check(g, "HOST_SSH_FINGERPRINT vide (optionnel : sans elle, accept-new vers Imladris)", WARN,
                               "infra/glorfindel-host/README.md, « SSH : la clé d'hôte épinglée »"))
     return out
 
@@ -408,12 +408,12 @@ def bench(repo: Path, env: Mapping[str, str]) -> list[Check]:
         out += model(host, g, docker=True)
         for name in ("EREGION_WATCH_CHANNEL", "EREGION_EXERCISE_CHANNEL"):
             out.append(Check(g, f"host.env : {name}", OK) if filled(host.get(name))
-                       else Check(g, f"host.env : {name} vide : H0 ne publierait pas son battement", FAIL,
+                       else Check(g, f"host.env : {name} vide : Imladris ne publierait pas son battement", FAIL,
                                   "la valeur d'orodruin.env, puis make glorfindel-host-push"))
     if oro is not None and host is not None:
         for name, why in (("AZURE_SUBSCRIPTION_ID", "la watch d'un autre abonnement est refusée (SEC5)"),
-                          ("EREGION_WATCH_CHANNEL", "Orodruin ne lirait pas le battement que H0 publie"),
-                          ("EREGION_EXERCISE_CHANNEL", "H0 ne lirait pas les fenêtres qu'Orodruin écrit")):
+                          ("EREGION_WATCH_CHANNEL", "Orodruin ne lirait pas le battement qu'Imladris publie"),
+                          ("EREGION_EXERCISE_CHANNEL", "Imladris ne lirait pas les fenêtres qu'Orodruin écrit")):
             a, b = oro.get(name, ""), host.get(name, "")
             if a and b and a != b:
                 out.append(Check(g, f"{name} : orodruin.env et host.env diffèrent — {why}", FAIL,

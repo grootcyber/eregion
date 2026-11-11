@@ -4,7 +4,7 @@ its previous campaign.
     python -m analysis.campaign_index runs/<writer>/campaigns/<id> [… …]
     python -m analysis.campaign_index --all runs/annatar/campaigns   # every done or aborted one, here
 
-On H0 (Jonathan; the index is on the VM's disk, mounted into the watch's container):
+On Imladris (Jonathan; the index is on the VM's disk, mounted into the watch's container):
 
     make glorfindel-host-ssh
     docker exec eregion-watch python -m analysis.campaign_index --all runs/glorfindel/campaigns

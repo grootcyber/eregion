@@ -5,7 +5,7 @@
 # `gothmog` (les injecteurs, lancés à la demande : `docker compose --profile annatar run --rm
 # annatar list`). Plusieurs équipes : une instance par équipe (make team-start TEAM=…), que
 # nomment EREGION_INSTANCE (conteneurs), EREGION_CONSOLE_PORT, EREGION_RUNS et EREGION_CONFIG —
-# vides, ce sont les valeurs d'avant D1 (H0 et ses scripts lisent eregion-watch, eregion-war-room).
+# vides, ce sont les valeurs d'avant D1 (Imladris et ses scripts lisent eregion-watch, eregion-war-room).
 
 # SEC18 (N-05, #455) : runs/ a un répertoire par écrivain (eregion_core/runs_layout.py) — glorfindel/
 # (la watch), console/ (la console, la CLI, le bot), annatar/, gothmog/, orodruin/, verdicts/ (le
@@ -15,11 +15,11 @@
 # et déplace l'ancienne disposition (make runs-migrate) avant de démarrer. tests/unit/test_runs_mounts.py
 # tient ces montages, et ceux du Makefile et d'Orodruin.
 
-# M-3 (#183) : chaque conteneur ne reçoit que ses secrets. docker compose lit `.env` (sur H0,
+# M-3 (#183) : chaque conteneur ne reçoit que ses secrets. docker compose lit `.env` (sur Imladris,
 # host.env poussé) pour remplacer les ${…} ci-dessous, et rien d'autre : un conteneur ne voit
 # que les variables de sa liste `environment`. Les blocs :
 #   env     : réglages sans secret, pour les trois ;
-#   azure   : le principal de service de chacun (V-17, ci-dessous ; vide sur H0 : l'identité
+#   azure   : le principal de service de chacun (V-17, ci-dessous ; vide sur Imladris : l'identité
 #             managée) — watch, console (« Approve & execute ») et bot (boutons Restore / Revert) ;
 #   models  : les clés des modèles — la watch seule (décisions, rapport de campagne) ;
 #   webhook : son URL porte un jeton — watch et console (cartes enregistrées) ; avec elle,
@@ -71,9 +71,9 @@ x-env: &env
 #   la console  EREGION_CONSOLE_AZURE_CLIENT_*  lecture + réponse + restore (ce qu'un humain approuve) ;
 #   le bot      GLORFINDEL_BOT_AZURE_CLIENT_*   lecture + réponse + restore (Restore, Revert).
 # Aucun repli (SEC11) : vide, un service n'a pas de principal de service — l'identité managée de la
-# VM s'il y en a une (H0), sinon aucune —, jamais AZURE_CLIENT_*, l'ancien principal partagé
+# VM s'il y en a une (Imladris), sinon aucune —, jamais AZURE_CLIENT_*, l'ancien principal partagé
 # (Contributor sur l'abonnement, là où il traîne encore). make glorfindel-start (check-azure-env) dit
-# chaque service sans paire, et une paire incomplète ; la watch le dit à son démarrage. Sur H0, tout
+# chaque service sans paire, et une paire incomplète ; la watch le dit à son démarrage. Sur Imladris, tout
 # est vide : l'identité managée de la VM, partagée par les trois — lecture et réponse sur le groupe
 # du banc depuis le 31/10, la coupure des sessions sur les seules VM qu'il défend (SEC11), jamais le
 # restore (docs/design/modele-de-menace.md, §5).
@@ -175,7 +175,7 @@ services:
       # secret ; vide, aucune neutralisation n'est prouvée : chaque levée lue sur Azure est une carte.
       GLORFINDEL_RESTORE_PRINCIPALS: ${GLORFINDEL_RESTORE_PRINCIPALS:-}
     volumes:
-      # SEC18 : son répertoire en écriture (ses cycles ; sur H0, ce qu'elle tire du canal et les
+      # SEC18 : son répertoire en écriture (ses cycles ; sur Imladris, ce qu'elle tire du canal et les
       # rapports de campagne ; FS1b : ses reçus de la file et son statut, queue/) ; ceux des
       # injecteurs en lecture seule (leurs signaux, leurs fenêtres, leurs rapports), celui de la
       # console aussi (les levées de l'opérateur, pour l'analyse ; ses demandes de la file), celui du
@@ -219,7 +219,7 @@ services:
           path: ./pyproject.toml
 
   # Bot Discord (escalades dans des fils par VM, boutons). Profil `bot` : ne démarre que si on
-  # le demande (`docker compose --profile bot up -d`, ce que fait la VM de Glorfindel, H0) —
+  # le demande (`docker compose --profile bot up -d`, ce que fait la VM de Glorfindel, Imladris) —
   # un seul bot par DISCORD_BOT_TOKEN. Avec le jeton et DISCORD_CHANNEL_ID définis, le webhook
   # des escalades se tait (GLORFINDEL_DISCORD_BOT, bloc webhook) : ce profil doit alors tourner.
   bot:
@@ -266,7 +266,7 @@ services:
       - watch
 
   # The Eregion console (`eregion console`, docs/design/console.md). The service keeps the War
-  # Room's name for now: H0's deploy.sh and status.sh start and read it by that name.
+  # Room's name for now: Imladris's deploy.sh and status.sh start and read it by that name.
   war-room:
     image: eregion-glorfindel
     container_name: ${EREGION_INSTANCE:-eregion}-war-room
@@ -292,7 +292,7 @@ services:
       - "127.0.0.1:${EREGION_CONSOLE_PORT:-7007}:7007"
     environment:
       <<: [*env, *console-azure, *webhook]
-      # The console's token; its former name still works (H0's host.env has only that one):
+      # The console's token; its former name still works (Imladris's host.env has only that one):
       # the console takes EREGION_CONSOLE_TOKEN when it is not empty, else the former.
       EREGION_CONSOLE_TOKEN: ${EREGION_CONSOLE_TOKEN:-}
       GLORFINDEL_WARROOM_TOKEN: ${GLORFINDEL_WARROOM_TOKEN:-}
@@ -367,7 +367,7 @@ services:
     profiles: ["annatar"]
     # V-34 (SEC7) : aucune capacité, aucun gain de privilège, la racine en lecture seule. Il
     # n'écrit que dans ses montages (runs/annatar, runs/orodruin) et /tmp. Ni ~/.eregion/analysis ni
-    # ~/.cache/chroma : le rapport de fin de campagne s'écrit sur H0, et l'index de l'IA
+    # ~/.cache/chroma : le rapport de fin de campagne s'écrit sur Imladris, et l'index de l'IA
     # d'analyse ne s'ouvre jamais ici — chromadb n'est pas dans l'image des injecteurs
     # (requirements/annatar.txt) ; la watch tient cet index (son montage ~/.eregion/analysis).
     read_only: true

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """bench_restore — the bench's restore from the workstation: `make bench-restore TARGET=<vm> [BEFORE=…] [RUN=…] [DRY_RUN=1]` (MOB1, #686).
 
-H0 never restores (its identity has no Restore role): the restore leaves from the workstation, under
+Imladris never restores (its identity has no Restore role): the restore leaves from the workstation, under
 the console's pair for this one command (docs/banc-t1486.md, step 6; docs/operations.md, « Identités
 Azure »). Until FS1g and TOT1, the phone reaches it through the workstation's terminal
 (docs/demarrer/mobile.md): the hardware key of the SSH stands as the second factor. In order:
@@ -27,9 +27,9 @@ Azure »). Until FS1g and TOT1, the phone reaches it through the workstation's t
   6  the restore   « [o/N] », then the same with `--wait --yes` instead of `--dry-run`. The restore
                    reads its own rights before touching the VM (RST1), neutralizes Run Command (SEC17)
 
-`--keep-isolated` always: the lift is H0's (REC1, REC1b; LEV1 will change the rule), never the
+`--keep-isolated` always: the lift is Imladris's (REC1, REC1b; LEV1 will change the rule), never the
 workstation's — a restore without it would release in its own process, under the workstation's
-configuration, and H0 would put the isolation back.
+configuration, and Imladris would put the isolation back.
 """
 from __future__ import annotations
 
@@ -81,7 +81,7 @@ def pair_env(env: dict) -> dict:
 
 
 def restore_argv(resource_id: str, moment: str, *, dry: bool) -> list[str]:
-    """Always --before and --keep-isolated: the point before the attack, the lift H0's."""
+    """Always --before and --keep-isolated: the point before the attack, the lift Imladris's."""
     return ["restore", resource_id, "--before", moment, "--keep-isolated",
             *(["--dry-run"] if dry else ["--wait", "--yes"])]
 
@@ -214,7 +214,7 @@ def main(argv: list[str] | None = None, env: dict | None = None, *, cwd=None, he
     say(f"Restore de {name} (groupe {hits[0]['rg']}) :")
     say(f"  le point : le plus récent avant {moment} ({source})")
     say("  l'identité : la paire de la console, pour cette seule commande")
-    say("  --keep-isolated : la VM reste isolée, la levée est celle de H0")
+    say("  --keep-isolated : la VM reste isolée, la levée est celle d'Imladris")
     try:
         got = ask("Tape le nom de la VM à restaurer : ").strip()
     except EOFError:
@@ -243,7 +243,7 @@ def main(argv: list[str] | None = None, env: dict | None = None, *, cwd=None, he
         return 1
     code = steps.restore(restore_argv(rid, moment, dry=False), restore_env)
     if code == 0:
-        say("Ensuite : la levée par H0 (docs/banc-t1486.md, étape 7), puis make bench-report RUN=<run_id>.")
+        say("Ensuite : la levée par Imladris (docs/banc-t1486.md, étape 7), puis make bench-report RUN=<run_id>.")
     return code
 
 

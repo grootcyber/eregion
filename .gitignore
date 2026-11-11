@@ -17,7 +17,7 @@ build/
 .envrc
 *.tfvars
 !*.tfvars.example
-# SEC11 : la liste des VM dont H0 coupe les sessions, sans secret, gardée au dépôt ; SEC17 : celle
+# SEC11 : la liste des VM dont Imladris coupe les sessions, sans secret, gardée au dépôt ; SEC17 : celle
 # des VM que le restore défend (les principaux qui restaurent, restore_principals, restent ignorés).
 !infra/glorfindel-host/session_drain.auto.tfvars
 !infra/glorfindel-host/restore.auto.tfvars
@@ -53,7 +53,7 @@ infra/canary/**/terraform.tfstate*
 .claude/worktrees/
 .claude/settings.local.json
 
-# Glorfindel hébergé (H0) — état séparé, secrets jamais suivis
+# Glorfindel hébergé (Imladris) — état séparé, secrets jamais suivis
 infra/glorfindel-host/.terraform/
 infra/glorfindel-host/terraform.tfstate*
 infra/glorfindel-host/*.tfplan

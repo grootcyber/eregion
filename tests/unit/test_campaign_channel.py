@@ -1,6 +1,6 @@
-"""#167, Orodruin's side and the channel: a finished campaign goes to H0 over the exercise
+"""#167, Orodruin's side and the channel: a finished campaign goes to Imladris over the exercise
 container — its manifest and its runs' reports, nothing else, no right more than the
-windows' — and H0 pulls it into ``runs/campaigns/<id>/`` without touching the windows. The
+windows' — and Imladris pulls it into ``runs/campaigns/<id>/`` without touching the windows. The
 end of ``campaign run`` says where the report will be written. Never the network: the
 container is in memory (tests/unit/fake_container.py), and a call that would leave the
 process fails the test. Mutants M130, M136, M138, M139 and M149 (scripts/mutation_check.py)
@@ -287,8 +287,8 @@ def test_a_done_campaign_says_its_report_is_written_on_h0(tmp_path, container, s
     assert cli._publish_campaign(cdir, str(runs), "done") is True
     assert "campaigns/C1/manifest.json" in container.blobs
     text = said.getvalue()
-    assert "Campaign published to H0 (3 file(s))" in text
-    assert "runs/glorfindel/campaigns/C1/report.md on H0" in text     # SEC18: the watch's own directory
+    assert "Campaign published to Imladris (3 file(s))" in text
+    assert "runs/glorfindel/campaigns/C1/report.md on Imladris" in text     # SEC18: the watch's own directory
 
 
 def test_an_aborted_campaign_says_its_report_is_to_write_by_hand(tmp_path, container, said):
@@ -297,7 +297,7 @@ def test_an_aborted_campaign_says_its_report_is_to_write_by_hand(tmp_path, conta
     assert cli._publish_campaign(cdir, str(runs), "aborted") is True
     text = said.getvalue()
     assert "'aborted': no report is written on its own" in text
-    assert "make campaign-report CAMPAIGN=C1" in text and "report.md on H0" not in text
+    assert "make campaign-report CAMPAIGN=C1" in text and "report.md on Imladris" not in text
 
 
 def test_runs_without_a_report_say_h0_will_not_write_it(tmp_path, container, said):
@@ -306,7 +306,7 @@ def test_runs_without_a_report_say_h0_will_not_write_it(tmp_path, container, sai
     assert cli._publish_campaign(cdir, str(runs), "done") is True
     text = said.getvalue()
     assert "1 executed run(s) without a report" in text
-    assert "H0 will not write its report on its own" in text and "report.md on H0" not in text
+    assert "Imladris will not write its report on its own" in text and "report.md on Imladris" not in text
 
 
 def test_without_a_channel_nothing_is_said_nor_sent(tmp_path, said):
@@ -326,13 +326,13 @@ def test_a_failed_publication_is_said_never_raised(tmp_path, container, said):
     except Exception as e:
         pytest.fail(f"the failed publication raised into the campaign: {type(e).__name__}: {e}")
     assert published is False
-    assert "Campaign not published to H0 (RuntimeError: HTTP 403" in said.getvalue()
+    assert "Campaign not published to Imladris (RuntimeError: HTTP 403" in said.getvalue()
 
 
 @pytest.mark.parametrize("with_channel", [True, False])
 def test_campaign_run_writes_the_report_here_only_without_the_channel(tmp_path, monkeypatch,
                                                                      with_channel, said):
-    """With the channel the report is H0's; without it (or when the publication failed),
+    """With the channel the report is Imladris's; without it (or when the publication failed),
     the campaign writes it here, as before #167."""
     import annatar.campaign.runner as runner_mod
     from annatar import cli

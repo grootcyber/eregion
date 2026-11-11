@@ -353,7 +353,7 @@ class TagEnrollment:
     def vms(self, subscription: str, *, max_pages: int = 20) -> list[dict]:
         """The VMs of the bench's resource groups (``SANDBOX_RG_PATTERNS``), each with its tags
         and its group's — every one, enrolled or not: ``enrollment`` judges, never this list.
-        Read now with the reader's own identity (the console's: Reader on the bench, on H0); a
+        Read now with the reader's own identity (the console's: Reader on the bench, on Imladris); a
         group it cannot read, Azure does not list. For the targets of Dagorlad (§7 of
         docs/design/console.md). An error raises: the caller says the targets are unreadable."""
         import requests

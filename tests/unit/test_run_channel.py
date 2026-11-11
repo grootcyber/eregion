@@ -1,8 +1,8 @@
 """#193: the report of a run launched alone — ``annatar run``, ``gothmog run`` — goes from
-Orodruin to H0 over the exercise container, as ``runs/<run_id>.json``: its report only, at
-the end of the run, beside its closed window, a failure said and never raised. H0 pulls it
+Orodruin to Imladris over the exercise container, as ``runs/<run_id>.json``: its report only, at
+the end of the run, beside its closed window, a failure said and never raised. Imladris pulls it
 into its own ``runs/<run_id>.json``, where the console of the atelier reads its verdict —
-once it has the shape H0 accepts (H-1), and never over a report of a run of its own. A
+once it has the shape Imladris accepts (H-1), and never over a report of a run of its own. A
 campaign is unchanged: it carries its runs' reports itself, at its end. Never the network:
 the container is in memory (tests/unit/fake_container.py). Mutants M240–M245
 (scripts/mutation_check.py) are measured here; M246 (Gothmog's side) in test_gothmog.py."""
@@ -120,7 +120,7 @@ def test_annatar_run_publishes_its_report_after_its_last_save(tmp_path, monkeypa
     assert report == json.loads((tmp_path / "runs" / "annatar" / f"{rid}.json").read_text())   # SEC18
     window = container.puts.index(f"{rid}.json", 1)        # the window, once closed
     assert container.puts.index(published[0]) > window
-    assert f"run report published to H0: runs/{rid}.json" in res.output
+    assert f"run report published to Imladris: runs/{rid}.json" in res.output
 
 
 def test_an_atomic_that_raised_still_publishes_its_failed_report(tmp_path, monkeypatch, container):
@@ -176,7 +176,7 @@ def test_a_report_of_the_wrong_shape_is_refused_at_the_pull(tmp_path, container,
 
 
 def test_a_report_of_this_host_is_never_written_over(tmp_path, container):
-    """M244: a run of H0's own (no marker) keeps its report, whatever the channel holds."""
+    """M244: a run of Imladris's own (no marker) keeps its report, whatever the channel holds."""
     channel.publish_run(RID, _on_orodruin(tmp_path))
     h0 = _h0(tmp_path)
     mine = h0 / f"{RID}.json"
@@ -270,7 +270,7 @@ def test_a_listing_that_fails_is_said_once_and_the_campaigns_are_still_pulled(tm
 def test_the_console_shows_the_verdict_of_a_run_pulled_from_the_channel(tmp_path, monkeypatch,
                                                                          container):
     """« Fini quand », in code: an `annatar run` on Orodruin, its window and its report pulled
-    on H0, and the console's exercise carries its verdict."""
+    on Imladris, and the console's exercise carries its verdict."""
     pytest.importorskip("fastapi")
     pytest.importorskip("httpx")
     from .console_client import console

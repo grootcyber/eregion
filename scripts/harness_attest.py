@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """make llm-compare … ATTEST=1 — the harness on two locks, one attestation (H3, #324).
 
-H0's CD deploys a new lock only with the harness's attestation (H1), and judges it against the
+Imladris's CD deploys a new lock only with the harness's attestation (H1), and judges it against the
 lock in service (H3): a case right on every draw there and wrong on every draw here is a
 regression; a case that varies is said, never a refusal. So the harness runs twice, with the
 same code and the same cases — only the dependencies differ:
 
-  1. the reference: the lock of the release in service on H0 (the latest `v*` tag, or
+  1. the reference: the lock of the release in service on Imladris (the latest `v*` tag, or
      --base <tag>), installed with --require-hashes in a throwaway venv under
      ~/.cache/eregion/harness-reference/<sha256>/ (kept for the next time, never in the
      repository), this checkout's code on its PYTHONPATH;
@@ -15,7 +15,7 @@ same code and the same cases — only the dependencies differ:
 Then requirements/harness.json holds both passes (scripts/llm_smoke.py writes it). Paid calls,
 twice those of one pass: Jonathan runs it (docs/operations.md, « Verrou des dépendances »).
 
-    python scripts/harness_attest.py --models <H0's model> --runs 3 [--base v0.4.5]
+    python scripts/harness_attest.py --models <Imladris's model> --runs 3 [--base v0.4.5]
 """
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ REPO = Path(__file__).resolve().parents[1]
 LOCK = "requirements/glorfindel.txt"
 SMOKE = REPO / "scripts" / "llm_smoke.py"
 RELEASE_TAG = re.compile(r"v\d+\.\d+\.\d+")   # a published release; never a pre-release
-MIN_RUNS = 3                                   # what H0's CD asks for
+MIN_RUNS = 3                                   # what Imladris's CD asks for
 
 
 def _git(*args: str, check: bool = True) -> subprocess.CompletedProcess:
@@ -55,7 +55,7 @@ def reference_tag(base: str = "", fetch: bool = True) -> str:
         print("git fetch --tags a échoué : les tags locaux font foi")
     tags = [t for t in _git("tag", "--list", "v*", "--sort=-v:refname").stdout.split() if RELEASE_TAG.fullmatch(t)]
     if not tags:
-        raise SystemExit("aucun tag de release v* : BASE=<tag en service sur H0>")
+        raise SystemExit("aucun tag de release v* : BASE=<tag en service sur Imladris>")
     return tags[0]
 
 
@@ -132,15 +132,15 @@ def drift(lock_text: str, installed: dict[str, str] | None = None) -> list[str]:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--models", required=True, help="comma-separated; H0's model among them")
+    ap.add_argument("--models", required=True, help="comma-separated; Imladris's model among them")
     ap.add_argument("--runs", type=int, default=MIN_RUNS)
-    ap.add_argument("--base", default="", help="the release in service on H0 (default: the latest v* tag)")
+    ap.add_argument("--base", default="", help="the release in service on Imladris (default: the latest v* tag)")
     ap.add_argument("--out", default=str(REPO / "requirements" / "harness.json"))
     ap.add_argument("--cache", default="", help="where the reference venv goes (default ~/.cache/eregion/…)")
     ap.add_argument("--no-fetch", action="store_true", help="the local tags only")
     args = ap.parse_args(argv)
     if args.runs < MIN_RUNS:
-        print(f"RUNS={args.runs} : le CD de H0 en demande {MIN_RUNS} au moins — rien lancé")
+        print(f"RUNS={args.runs} : le CD d'Imladris en demande {MIN_RUNS} au moins — rien lancé")
         return 2
     mine = (REPO / LOCK).read_bytes()
     off = drift(mine.decode("utf-8", "replace"))
@@ -151,7 +151,7 @@ def main(argv: list[str] | None = None) -> int:
     tag = reference_tag(args.base, fetch=not args.no_fetch)
     lock = reference_lock(tag)
     if hashlib.sha256(lock).digest() == hashlib.sha256(mine).digest():
-        print(f"ce verrou est déjà celui de {tag} : si H0 tourne sur une release d'avant, donne "
+        print(f"ce verrou est déjà celui de {tag} : si Imladris tourne sur une release d'avant, donne "
               f"BASE=<la release d'avant {tag}> ; sinon le CD n'a rien à attester — rien lancé")
         return 0
     cache = Path(args.cache) if args.cache else cache_dir()

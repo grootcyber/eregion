@@ -80,7 +80,7 @@ KEY_DIR: Path | None = None
 SEEN_FILE: Path | None = None
 
 PIN_GESTURE = (f"pin the watch's public key: {KEY_ENV}=ed25519:… in orodruin.env (Orodruin) or in "
-               "your environment (a workstation) — `make glorfindel-host-watch-key` (H0) or "
+               "your environment (a workstation) — `make glorfindel-host-watch-key` (Imladris) or "
                "`make watch-key` (this host) gives it")
 
 
@@ -290,7 +290,7 @@ def read_public(directory: Path | None = None, *, name: str = KEY_FILE) -> bytes
             raise KeyUnavailable(f"no key in {directory}: the service draws it at its first start with "
                                  "EREGION_ACTION_QUEUE=1 — or this container does not mount it") from None
         raise KeyUnavailable(f"no key in {directory}: the watch draws it at its first start "
-                             "(make glorfindel-start, or H0 deployed) — or this container does not mount it "
+                             "(make glorfindel-start, or Imladris deployed) — or this container does not mount it "
                              "(only the watch's does: in make glorfindel-shell it is not mounted; make "
                              "watch-key on the host reads it)") from None
     except ImportError as e:
@@ -429,7 +429,7 @@ def verify_beat(body: dict, key: bytes) -> str:
     return ""
 
 
-UNSIGNED_DETECTION = ("unsigned: a watch older than this injector (update Glorfindel — H0 by its CD, a "
+UNSIGNED_DETECTION = ("unsigned: a watch older than this injector (update Glorfindel — Imladris by its CD, a "
                       "workstation's by make glorfindel-restart), or one whose key is unavailable (its "
                       "log says why)")
 

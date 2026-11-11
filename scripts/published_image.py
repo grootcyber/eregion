@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CI3 (#267, step 2): the images the CI publishes, found and verified by their digest — on H0
+"""CI3 (#267, step 2): the images the CI publishes, found and verified by their digest — on Imladris
 by its CD (infra/glorfindel-host/cd/eregion_cd.py), on the operator's machine for Orodruin
 (make orodruin-push), in the publishing workflow itself (.github/workflows/publish.yml).
 
@@ -38,7 +38,7 @@ What is trusted, and what is not (docs/operations.md, « Les images publiées »
   actions/attest-build-provenance pushed to GHCR verified, a wrong commit or workflow refused.
 
 Exit 0 when it holds, 1 when it does not (said why), 3 when the registry or the network does not
-answer (nothing proven, try again). Python 3.10 (H0's), standard library only.
+answer (nothing proven, try again). Python 3.10 (Imladris's), standard library only.
 """
 from __future__ import annotations
 
@@ -80,7 +80,7 @@ SYFT_SHA256 = "8fcb33017a0dc1058298c923c436d19dfa68ae93968e0b423248542e3afb9fc3"
 SYFT_URL = (f"https://github.com/anchore/syft/releases/download/{SYFT_VERSION}/"
             f"syft_{SYFT_VERSION[1:]}_linux_amd64.tar.gz")
 SYFT_MAX = 200 * 1024 * 1024
-# The user the published images run as: the first user of an Azure Ubuntu VM, H0's and Orodruin's.
+# The user the published images run as: the first user of an Azure Ubuntu VM, Imladris's and Orodruin's.
 UID = GID = 1000
 MANIFEST_MAX = 4 * 1024 * 1024
 ACCEPT = ", ".join(("application/vnd.oci.image.index.v1+json", "application/vnd.oci.image.manifest.v1+json",
@@ -386,7 +386,7 @@ def verify(image: str, digest: str, commit: str, cosign: Path, slug: str = SOURC
 # ── SEC19 (R-13): the harness's attestation signed by its author's own key ─────────────
 # A cosign key pair of the maintainer (`make harness-key`, Jonathan's decision of 03/11): its private
 # half encrypted by a passphrase he types, kept off the repository (~/.config/eregion/harness/); its
-# public half pinned in H0's config (EREGION_HARNESS_KEY in host.env), never in the repository. No
+# public half pinned in Imladris's config (EREGION_HARNESS_KEY in host.env), never in the repository. No
 # certificate, no identity, nothing sent to a transparency log: signed and verified offline
 # (measured on 03/11 with cosign v3.1.3, the network refused: `sign-blob --signing-config` with a
 # config that names no service writes a bundle holding the signature and the key's hint only;
@@ -419,7 +419,7 @@ def key_der(pinned: str) -> bytes:
     the body of cosign.pub without its two PEM lines. Raises Unverified when it is not one."""
     text = (pinned or "").strip()
     if not text:
-        raise Unverified(f"aucune clé de l'attestation déclarée sur H0 ({HARNESS_KEY_ENV} dans host.env)")
+        raise Unverified(f"aucune clé de l'attestation déclarée sur Imladris ({HARNESS_KEY_ENV} dans host.env)")
     if not _B64.fullmatch(text):
         raise Unverified(f"{HARNESS_KEY_ENV} illisible dans host.env : la clé publique (base64 d'une ligne, sans les lignes PEM ; make harness-key la donne)")
     try:
@@ -565,7 +565,7 @@ def generate_key(dest: Path, cosign: Path, run_in=None, tty: bool | None = None)
     key, pub = dest / f"{KEY_PREFIX}.key", dest / f"{KEY_PREFIX}.pub"
     if os.path.lexists(key) or os.path.lexists(pub):
         print(f"✗ {key} ou {pub} existe déjà : une clé n'est jamais remplacée ici (la retirer d'abord, puis "
-              "réépingler la nouvelle sur H0)", file=sys.stderr)
+              "réépingler la nouvelle sur Imladris)", file=sys.stderr)
         return 1
     if not cosign_ok(cosign):
         print(f"✗ cosign absent ou altéré ({cosign}) : python3 scripts/published_image.py install-cosign",

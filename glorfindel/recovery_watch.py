@@ -1,7 +1,7 @@
 """The watch sees the recovery of a VM it isolated, on Azure, and says it (REC1, #668).
 
-H0 never restores (SEC17): a restore runs from the operator's workstation, whose
-`glorfindel restore --wait` writes its `recovery_complete` where it runs. The watch on H0
+Imladris never restores (SEC17): a restore runs from the operator's workstation, whose
+`glorfindel restore --wait` writes its `recovery_complete` where it runs. The watch on Imladris
 never reads that host's files (SEC3), so it never lifted an isolation on its own; and a
 release made elsewhere was put back by its reassertion. Now, every
 GLORFINDEL_RECOVERY_INTERVAL_S (60 s; 0: off), for each isolation of its state, the watch
@@ -82,7 +82,7 @@ def start_wait_s() -> float:
 
 def restore_principals() -> frozenset[str]:
     """The principals that restore, whose Run Command neutralizes (GLORFINDEL_RESTORE_PRINCIPALS:
-    their object ids or appIds, comma-separated; on H0, the workstation's console principal, in
+    their object ids or appIds, comma-separated; on Imladris, the workstation's console principal, in
     host.env). None given: no neutralization is ever proven."""
     raw = os.environ.get("GLORFINDEL_RESTORE_PRINCIPALS", "")
     return frozenset(p.strip().lower() for p in raw.split(",") if p.strip())

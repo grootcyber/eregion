@@ -1841,7 +1841,7 @@ def decide(
     mode_hold = _apply_autonomy_mode(d, mode, gate)
 
     # Agreement last (D-1): only a disruptive action about to run alone pays for the other
-    # draws — never a human_only VM (H0), never an action a gate already held.
+    # draws — never a human_only VM (Imladris), never an action a gate already held.
     draws: list[dict] = []
     responses = [response]
     if not d["escalate"] and d["action"] in _DISRUPTIVE_AUTONOMOUS:

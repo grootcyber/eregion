@@ -1,8 +1,8 @@
 """Does the one who acted on the VM keep their rights? Read only (LEV2, #690;
 docs/design/levee-probation.md §4.4).
 
-With the Reader H0 already holds (`Microsoft.Authorization/*/read` is under `*/read`): NO right
-is added to H0, in ARM nor in Graph (Q11). At each scope where a gesture of the table is made
+With the Reader Imladris already holds (`Microsoft.Authorization/*/read` is under `*/read`): NO right
+is added to Imladris, in ARM nor in Graph (Q11). At each scope where a gesture of the table is made
 (the VM, its NICs, disks, NSGs, identities, subnets):
   - the role assignments, `GET {scope}/providers/Microsoft.Authorization/roleAssignments` — a
     listing at a scope also gives those of the scopes above it, the group and the subscription
@@ -20,7 +20,7 @@ The verdict, for one actor:
   held        a direct assignment (its principalId one of the actor's ids) gives the door;
   absent      every scope read whole, no assignment nor eligibility — direct, to a group, at a
               management group — would give it;
-  unreadable  a read failed or was cut, a definition can't be read, or a path H0 can't read: an
+  unreadable  a read failed or was cut, a definition can't be read, or a path Imladris can't read: an
               assignment to a GROUP that would give the door (its members are not read), a PIM
               ELIGIBILITY that would (to the actor or a group), an assignment at a MANAGEMENT
               GROUP that would, a DELETED principal with an assignment left (restorable from
@@ -179,7 +179,7 @@ def rights_verdict(reading: RightsReading, principal_ids, deleted, definition) -
         said = {"role": role["name"], "scope": where, "door": door[:4]}
         if _MG in a["scope"].lower():
             out["unreadable"].append(f"« {role['name']} » à un groupe d'administration : au-dessus de "
-                                     "l'abonnement, hors de ce que H0 lit")
+                                     "l'abonnement, hors de ce qu'Imladris lit")
         elif a["kind"] == "eligibilities":
             out["unreadable"].append(f"une éligibilité PIM à « {role['name']} » sur {where}"
                                      + (" (à un groupe)" if group and not mine else ""))
@@ -191,7 +191,7 @@ def rights_verdict(reading: RightsReading, principal_ids, deleted, definition) -
                                      f"{a['type'] or 'absent'} : qui il porte ne se lit pas")
         else:
             out["groups"].append(said)
-            out["unreadable"].append(f"« {role['name']} » sur {where} à un groupe : H0 n'en lit pas les membres")
+            out["unreadable"].append(f"« {role['name']} » sur {where} à un groupe : Imladris n'en lit pas les membres")
     out["unreadable"] = list(dict.fromkeys(out["unreadable"]))
     out["verdict"] = "held" if out["held"] else "unreadable" if out["unreadable"] else "absent"
     return out

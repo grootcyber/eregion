@@ -25,7 +25,7 @@ normal checked before, during and after, the return to the initial state verifie
                  the fault and after it, or its reaction is not known (analysis/fault_rate.py)
     7  record    ``runs/gothmog/<run_id>.json`` (its own directory, SEC18) as Annatar's, the
                  probes' values before and after in ``metrics.before`` / ``metrics.after``;
-                 window closed, and with an exercise channel the report goes to H0 with it
+                 window closed, and with an exercise channel the report goes to Imladris with it
                  (#193); signals beside it (``gothmog/signals/emitter.py``)
 
 ``preflight`` runs 0–3 with no session at all: a write there is refused by construction.
@@ -340,7 +340,7 @@ class Engine:
             return self._inject(fault, run_id, bench, vms, seen, verdict, start)
         finally:
             close_window(run_id, injector="gothmog")
-            carry_run(run_id, self.runs_dir)  # its report, to H0 with its window (#193)
+            carry_run(run_id, self.runs_dir)  # its report, to Imladris with its window (#193)
 
     def _inject(self, fault, run_id, bench, vms, seen, verdict, run_start) -> RunOutcome:
         name = fault["engine_ref"]

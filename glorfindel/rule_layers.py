@@ -7,7 +7,7 @@ rule, disabling one — live in the client's layer, `~/.glorfindel/client_rules.
 over the base (`detection_rules.merge_layers`). Here:
 
 - `write_client_rule`: what an approval writes (`proposed_rules.approve`), never the base;
-- `migrate`: rules approved INTO the base before P1 (a modified checkout, H0) → the layer.
+- `migrate`: rules approved INTO the base before P1 (a modified checkout, Imladris) → the layer.
 
 Exporting a rule generalised, without any identifier, to propose it upstream is left to a
 lot of P2 (a deterministic leak check, then a human review before anything is sent).
@@ -169,7 +169,7 @@ def migrate(from_path: str | Path, base_path: str | Path, dest: Path | None = No
     """Move what a modified base holds beyond the pristine base into the client's layer.
 
     `from_path`: the base file as the deployment modified it (rules approved into it before
-    P1, a hand edit); `base_path`: the same file as shipped (on H0, `git show HEAD:…` of the
+    P1, a hand edit); `base_path`: the same file as shipped (on Imladris, `git show HEAD:…` of the
     reference the checkout is on). A rule of `from` that the base does not have, or has
     differently, goes to the layer (a changed base rule becomes a client rule of the same
     name: it overrides); a base rule `from` no longer has goes to `disable`; same for assets
