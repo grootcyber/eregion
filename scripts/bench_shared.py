@@ -36,6 +36,9 @@ VM_NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,62}")
 RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,95}")
 
 OK, WARN, FAIL = "✓", "⚠", "✗"
+# What a command says before its error, and is none: ssh's « Warning: Permanently added … », az's
+# `WARNING: …` (its logger's level, upper case).
+WARNING_PREFIXES = ("Warning:", "WARNING:")
 RUN_COMMAND_OP = "microsoft.compute/virtualmachines/runcommand/action"
 
 
@@ -82,10 +85,37 @@ class Result:
         return self.rc == 0
 
     def first_error(self) -> str:
-        # ssh's « Warning: Permanently added … » is no error: the first line that says one.
-        lines = [ln for ln in (self.err or self.out or "").strip().splitlines()
-                 if ln.strip() and not ln.lstrip().startswith("Warning:")]
-        return scrub(lines[0][:200]) if lines else f"code {self.rc}"
+        """The first line that says an error. ssh's « Warning: Permanently added … » is none, nor az's
+        `WARNING: …` and the indented lines that go on with it (BNC1b, #724: az's warning before its
+        `ERROR:` was said as the error, empty). A warning goes on up to a blank line, never over a line
+        that says ERROR, indented or not. Only warnings: said so, the first one with it — never an
+        empty line."""
+        lines = (self.err or self.out or "").strip().splitlines()
+        warnings: list[str] = []
+        in_warning = False
+        for i, ln in enumerate(lines):
+            if not ln.strip():
+                in_warning = False
+                continue
+            if ln.lstrip().startswith(WARNING_PREFIXES):
+                in_warning = True
+                warnings.append(ln.strip().split(":", 1)[1].strip())
+                continue
+            if in_warning and ln[:1].isspace() and not ln.lstrip().upper().startswith("ERROR"):
+                if not warnings[-1]:
+                    warnings[-1] = ln.strip()
+                continue
+            in_warning = False
+            said = ln.strip()
+            if said.rstrip(":").upper() == "ERROR":
+                # az's `ERROR:` alone on its line: what it says is on the next one.
+                nxt = next((x.strip() for x in lines[i + 1:] if x.strip()), "")
+                said = f"{said} {nxt}".strip()
+            return scrub(said[:200])
+        if warnings:
+            first = next((w for w in warnings if w), "")
+            return scrub(f"code {self.rc}, rien que des avertissements" + (f" : {first}"[:200] if first else ""))
+        return f"code {self.rc}"
 
 
 def run(argv: list[str], stdin: str | None = None, timeout: float = 180, env: dict | None = None) -> Result:
