@@ -188,7 +188,7 @@ def files(root: Path) -> list[str]:
         names = [p.relative_to(root).as_posix() for p in root.rglob("*")
                  if p.is_file() and not p.name.endswith(".env")
                  and not any(part.startswith(".") for part in p.relative_to(root).parts)]
-    return sorted(n for n in names if n)
+    return sorted({n for n in names if n})
 
 
 def _text(path: Path) -> str | None:

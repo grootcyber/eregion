@@ -39,21 +39,26 @@ OK, WARN, FAIL = "✓", "⚠", "✗"
 RUN_COMMAND_OP = "microsoft.compute/virtualmachines/runcommand/action"
 
 
+NEVER = "ne lance jamais une attaque ni un restore, l'opérateur les tape"
+
+
 def session_refusal(env: dict | None = None, cwd: str | os.PathLike | None = None,
-                    here: str | os.PathLike | None = None) -> str:
+                    here: str | os.PathLike | None = None, never: str = NEVER) -> str:
     """Why this runs in a code session, or '' (MOB1, #686): a session never launches an attack nor a
     restore. A lot's session carries EREGION_AGENT_SESSION (the repository's settings, SEC12) and works
     in .claude/worktrees/<lot> — as its current directory, or as the checkout this script runs from
-    (`here`, the repository's root by default). The rule of scripts/bench_reader.py, for the gestures."""
+    (`here`, the repository's root by default). The rule of scripts/bench_reader.py, for the gestures.
+    `never` says what a session never does (MOB2: it never installs the workstation's tunnel, never
+    reads the console's token)."""
     env = os.environ if env is None else env
     if env.get("EREGION_AGENT_SESSION"):
-        return ("une session de code (EREGION_AGENT_SESSION) : une session ne lance jamais une attaque "
-                "ni un restore, l'opérateur les tape sur son poste (docs/sessions.md)")
+        return (f"une session de code (EREGION_AGENT_SESSION) : une session {never} "
+                "sur son poste (docs/sessions.md)")
     for where in (Path(cwd or os.getcwd()), Path(here or REPO)):
         parts = where.resolve().parts
         if ".claude" in parts and "worktrees" in parts[parts.index(".claude"):]:
-            return ("le worktree d'un lot (.claude/worktrees/) : une session ne lance jamais une attaque "
-                    "ni un restore, l'opérateur les tape depuis son propre checkout")
+            return (f"le worktree d'un lot (.claude/worktrees/) : une session {never} "
+                    "depuis son propre checkout")
     return ""
 
 

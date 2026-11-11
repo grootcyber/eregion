@@ -107,7 +107,7 @@ def test_every_command_toward_h0_checks_the_key_first_and_orodruin_keeps_its_own
     rules = re.findall(r"(?m)^(glorfindel-host-[\w-]+):([^\n=]*)\n((?:\t.*\n)*)", text)
     reaching = {name: deps for name, deps, recipe in rules
                 if re.search(r"\$\(HOST_SSH(_TTY|_OPTS)?\)|status\.sh", recipe)}
-    assert {"glorfindel-host-push", "glorfindel-host-start", "glorfindel-host-tunnel",
+    assert {"glorfindel-host-push", "glorfindel-host-start", "glorfindel-host-tunnel-go",
             "glorfindel-host-status", "glorfindel-host-cd-install"} <= set(reaching)
     assert {n for n, deps in reaching.items() if "glorfindel-host-known" not in deps} == set()
     assert "$(SSH_OPTS)" not in "".join(r for n, _, r in rules if n != "glorfindel-host-known")

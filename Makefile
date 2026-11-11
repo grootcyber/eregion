@@ -143,6 +143,9 @@ DOCKER_GLORFINDEL_WATCH = $(WATCH_KEY_DIR) && $(RUNS_DIRS) && $(GLORFINDEL_AZURE
 
 .PHONY: help build build-annatar build-glorfindel fix-state-ownership check-azure-env azure-pairs-expiry runs-migrate runs-survey \
 	bench-preflight bench-report bench-run bench-run-go bench-restore bench-restore-go mobile-check \
+	mobile-tunnel-install mobile-tunnel-remove mobile-tunnel-on mobile-tunnel-off \
+	mobile-tunnel-install-go mobile-tunnel-remove-go mobile-tunnel-on-go mobile-tunnel-off-go \
+	console-url-local console-url-imladris glorfindel-host-tunnel-go \
 	annatar-run annatar-dry-run annatar-validate annatar-list \
 	glorfindel-respond glorfindel-dry-run glorfindel-watch \
 	glorfindel-release glorfindel-revert glorfindel-list \
@@ -211,7 +214,8 @@ help:
 	@echo "  make glorfindel-restart         Rebuild + restart all services"
 	@echo "  make glorfindel-dev             Start + watch files (auto-reload on change)"
 	@echo "  make glorfindel-ui              Rebuild + restart war-room only (watch untouched)"
-	@echo "  make console-url                The console's URL with its token (~/.eregion/console/token: never in the logs)"
+	@echo "  make console-url                The console's URL with its token (~/.eregion/console/token: never in the logs);"
+	@echo "                                  Imladris's when the workstation's tunnel is set (MOB2). Refused in an agent session"
 	@echo "  make console-rotate             A new drawn token: every session of the former one refused at once"
 	@echo "  make azure-pairs-expiry         When the secrets of the three pairs end (az login; warns under 14 days)"
 	@echo "  make glorfindel-logs            Tail service logs"
@@ -307,8 +311,11 @@ help:
 	@echo "  make bench-restore TARGET=<vm> [BEFORE=…] [RUN=…] [DRY_RUN=1]  MOB1 : le restore du poste, paire de la console, nom tapé,"
 	@echo "                                               --before le T0 du run, --keep-isolated (la levée est celle d'Imladris)"
 	@echo "  make mobile-check                            MOB1 : le poste ouvert au téléphone, lu (SSH à clé, tunnel local seul, écoutes, Tailscale)"
-	@echo "    La console sur le téléphone : son propre tunnel SSH vers 127.0.0.1:7007 du poste (make glorfindel-host-tunnel)"
-	@echo "    Les deux premières refusent dans une session d'agent — docs/demarrer/mobile.md"
+	@echo "    La console sur le téléphone : son propre tunnel SSH vers 127.0.0.1:7007 du poste, que tient le tunnel du poste :"
+	@echo "  make mobile-tunnel-install [DRY_RUN=1]       MOB2 : pose l'unité systemd du tunnel vers la console d'Imladris (jamais au boot)"
+	@echo "  make mobile-tunnel-on / mobile-tunnel-off    MOB2 : l'arme pour 12 h au plus (du poste, ou du téléphone dans tmux) / l'arrête"
+	@echo "  make mobile-tunnel-remove [DRY_RUN=1]        MOB2 : l'arrête et retire l'unité"
+	@echo "    Toutes refusent dans une session d'agent, sauf mobile-check — docs/demarrer/mobile.md"
 	@echo ""
 	@echo "Gothmog (G0, G1) — une panne déclarée, depuis Orodruin (gothmog/README.md) :"
 	@echo "  make gothmog-preflight [FAULT=vm-shutdown]   Contrat, cibles, état normal — rien d'écrit"
@@ -591,8 +598,31 @@ glorfindel-ui: build-glorfindel
 # former name, from the environment or .env), else the one the console drew at its first start,
 # ~/.eregion/console/token (its own directory, SEC10) — written by the container after `up -d`, so waited for
 # (CONSOLE_WAIT seconds, 20 by default). The port: EREGION_CONSOLE_PORT, as compose publishes it.
+# MOB2 : refused in an agent session (the token never reaches a code session), the guard alone first.
+# The workstation's tunnel running (systemctl --user is-active) and the port 7007: the console behind
+# 127.0.0.1:7007 is Imladris's — its URL, from host.env, as glorfindel-host-url gives it, the way to it from
+# the phone's terminal. Otherwise the local console's, as before — glorfindel-start, -restart, -dev, -ui and
+# console-rotate print it — and, the tunnel set but not armed, a line names the way to Imladris's.
 CONSOLE_WAIT ?= 20
+MOBILE_UNIT    = $(HOME)/.config/systemd/user/eregion-console-tunnel.service
+CONSOLE_GUARD  = python3 scripts/mobile.py guard
 console-url:
+	@$(CONSOLE_GUARD) $@
+	@if [ -f "$(MOBILE_UNIT)" ] && [ "$${EREGION_CONSOLE_PORT:-7007}" = 7007 ] \
+	   && systemctl --user is-active --quiet eregion-console-tunnel.service 2>/dev/null; then \
+	   $(MAKE) --no-print-directory console-url-imladris; \
+	 else $(MAKE) --no-print-directory console-url-local; rc=$$?; \
+	   [ ! -f "$(MOBILE_UNIT)" ] || echo "  ℹ le tunnel du poste vers Imladris est posé, non armé : ci-dessus la console locale ; celle d'Imladris → make glorfindel-host-url, ou make mobile-tunnel-on" >&2; \
+	   exit $$rc; fi
+
+console-url-imladris:
+	@$(CONSOLE_GUARD) console-url
+	@test -f $(HOST_ENV) || { echo "  ⚠ Console d'Imladris : $(HOST_ENV) manquant (make glorfindel-host-env)" >&2; exit 1; }
+	@t="$(CONSOLE_TOKEN)"; test -n "$$t" || { echo "  ⚠ $(NO_CONSOLE_TOKEN)" >&2; exit 1; }; \
+	 echo "  Console d'Imladris (le tunnel du poste)  →  http://localhost:7007/?token=$$t"
+
+console-url-local:
+	@$(CONSOLE_GUARD) console-url
 	@t="$${EREGION_CONSOLE_TOKEN:-$${GLORFINDEL_WARROOM_TOKEN:-}}"; f="$(HOME)/.eregion/console/token"; \
 	 for k in EREGION_CONSOLE_TOKEN GLORFINDEL_WARROOM_TOKEN; do \
 	   [ -n "$$t" ] || t=$$(sed -n -E "/^$$k=/{s/^[^=]*=[[:space:]]*//;s/[[:space:]]+#.*$$//;s/[[:space:]]+$$//;p;}" .env 2>/dev/null | tail -1); \
@@ -1100,12 +1130,21 @@ glorfindel-host-fault-rate: glorfindel-host-known
 	$(HOST_SSH) 'docker exec eregion-watch python -m analysis.fault_rate --runs-dir runs --days $(or $(DAYS),30)$(if $(JSON), --json)'
 
 glorfindel-host-url:
+	@$(CONSOLE_GUARD) $@
 	@test -f $(HOST_ENV) || { echo "$(HOST_ENV) manquant (make glorfindel-host-env)"; exit 1; }
 	@t="$(CONSOLE_TOKEN)"; test -n "$$t" || { echo "$(NO_CONSOLE_TOKEN)" >&2; exit 1; }; \
 	 echo "http://localhost:7007/?token=$$t"
 
 # Affiche l'URL avec son jeton, puis tient le tunnel ouvert (Ctrl+C pour fermer).
-glorfindel-host-tunnel: glorfindel-host-known
+# MOB2 : the guard alone first, before glorfindel-host-known (an ssh-keyscan) and $(HOST_IP) (terraform
+# output) — the -go target carries them, and runs the guard again.
+glorfindel-host-tunnel:
+	@$(CONSOLE_GUARD) $@
+	@$(MAKE) --no-print-directory $@-go
+
+glorfindel-host-tunnel-go: glorfindel-host-known
+	@$(CONSOLE_GUARD) glorfindel-host-tunnel
+	@! systemctl --user is-active --quiet eregion-console-tunnel.service 2>/dev/null || { echo "  le tunnel du poste tient déjà 127.0.0.1:7007 (make mobile-tunnel-on) : l'URL, make console-url ; l'arrêter, make mobile-tunnel-off" >&2; exit 1; }
 	@if [ -f $(HOST_ENV) ]; then t="$(CONSOLE_TOKEN)"; \
 	 if [ -n "$$t" ]; then echo "  Console → http://localhost:7007/?token=$$t"; else echo "  ⚠ $(NO_CONSOLE_TOKEN)"; fi; \
 	 echo "  (Ctrl+C ferme le tunnel)"; fi
@@ -1478,8 +1517,37 @@ bench-run-go bench-restore-go:
 # fichier seul, aucune commande ni autorité de certificats), le tunnel local du téléphone vers
 # 127.0.0.1:7007 seul (AllowTcpForwarding local, PermitOpen, GatewayPorts no), le port de la console en
 # 127.0.0.1 seul, Tailscale SSH fermé. sshd -T par sudo -n : sudo -v d'abord.
+mobile-check: export MOBILE_HOST_IP = $(HOST_IP)
 mobile-check:
 	@$(PYTHON) scripts/mobile.py check
+
+# MOB2 : le tunnel du poste vers la console d'Imladris, armé à la demande et borné à 12 h (décision de Jonathan,
+# 11/11 ; infra/poste/eregion-console-tunnel.service, docs/demarrer/mobile.md). -install pose l'unité dans
+# ~/.config/systemd/user/ (l'adresse d'Imladris lue par terraform output, HOST_USER, HOST_SSH_KEY, la clé d'hôte
+# de HOST_SSH_FINGERPRINT vérifiée par known_host.sh, « required », puis copiée dans un known_hosts à elle), sans
+# l'activer ni la lancer : aucune section [Install], jamais au boot. -on l'arme : la date limite (maintenant + 12 h,
+# que l'unité seule tient : ExecCondition, ssh sous timeout jusqu'à elle, RuntimeMaxSec),
+# le minuteur de fin (systemd-run), puis le start ; -off l'arrête ; -remove l'arrête et retire l'unité.
+# DRY_RUN=1 : -install montre l'unité, -remove dit ce qu'il retirerait ; rien n'est écrit.
+# Le garde : toutes refusent dans une session d'agent (EREGION_AGENT_SESSION, le worktree d'un lot) — une session
+# n'arme jamais le tunnel. Comme bench-run : le garde tourne seul, avant que make ne développe HOST_IP (terraform
+# output) ; les cibles -go internes refont le garde avant tout known_host.sh, ssh-keyscan ou systemctl.
+mobile-tunnel-install mobile-tunnel-remove mobile-tunnel-on mobile-tunnel-off:
+	@$(PYTHON) scripts/mobile.py $(@:mobile-%=%) --guard-only
+	@$(MAKE) --no-print-directory $@-go
+
+mobile-tunnel-install-go mobile-tunnel-on-go: export MOBILE_HOST_IP = $(HOST_IP)
+mobile-tunnel-install-go: export MOBILE_HOST_USER = $(HOST_USER)
+mobile-tunnel-install-go: export MOBILE_HOST_KEY = $(HOST_SSH_KEY)
+mobile-tunnel-install-go: export MOBILE_KNOWN_HOSTS = $(HOST_KNOWN_HOSTS)
+mobile-tunnel-install-go mobile-tunnel-remove-go: export MOBILE_DRY_RUN = $(DRY_RUN)
+mobile-tunnel-install-go:
+	@$(PYTHON) scripts/mobile.py tunnel-install --guard-only
+	@[ "$(DRY_RUN)" = 1 ] || HOST_SSH_FINGERPRINT="$(HOST_SSH_FINGERPRINT)" bash infra/glorfindel-host/known_host.sh "$$MOBILE_HOST_IP" "$(HOST_KNOWN_HOSTS)" HOST_SSH_FINGERPRINT required
+	@HOST_SSH_FINGERPRINT="$(HOST_SSH_FINGERPRINT)" $(PYTHON) scripts/mobile.py tunnel-install
+
+mobile-tunnel-remove-go mobile-tunnel-on-go mobile-tunnel-off-go:
+	@$(PYTHON) scripts/mobile.py $(@:mobile-%-go=%)
 
 unexport ID
 orodruin-identity orodruin-identity-id: export EREGION_IDENTITY = $(value ID)

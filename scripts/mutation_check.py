@@ -5483,7 +5483,7 @@ MUTANTS += [
      "-o StrictHostKeyChecking=yes -o UserKnownHostsFile=$(HOST_KNOWN_HOSTS)",
      "-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$(HOST_KNOWN_HOSTS)"),
     ("M1421", "the tunnel to H0 opened without the host key checked (SEC7, V-32)", MAKE,
-     "glorfindel-host-tunnel: glorfindel-host-known\n", "glorfindel-host-tunnel:\n"),
+     "glorfindel-host-tunnel-go: glorfindel-host-known\n", "glorfindel-host-tunnel-go:\n"),
     ("M1422", "Gothmog's container writes its image (SEC7, V-34)", "docker-compose.yml",
      "    # n'écrit que dans runs/gothmog, runs/orodruin et /tmp (SEC18).\n    read_only: true\n",
      "    # n'écrit que dans runs/gothmog, runs/orodruin et /tmp (SEC18).\n    read_only: false\n"),

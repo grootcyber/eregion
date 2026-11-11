@@ -1132,6 +1132,15 @@ briques:
     issue: 686
     doc: docs/demarrer/mobile.md
 
+  - id: c-telephone-tunnel
+    composant: celebrimbor
+    poste: c-acces
+    nom: "The console of Imladris on the phone: a tunnel armed by a gesture, twelve hours at most, never at boot"
+    etat: main
+    release: "0.5"
+    lots: [MOB2]
+    doc: docs/demarrer/mobile.md
+
   - id: c-lecture
     composant: celebrimbor
     poste: c-acces
@@ -1412,6 +1421,15 @@ briques:
     lots: [MUT9]
     issue: 704
 
+  - id: s-nuit-figee
+    composant: socle
+    poste: s-prouver
+    nom: "A mutant the nightly run found fragile, caught on every round by the frozen sequence that names it"
+    etat: main
+    release: "0.5"
+    lots: [MUT10]
+    issue: 715
+
   - id: s-verrous
     composant: socle
     poste: s-signer
@@ -1542,6 +1560,16 @@ briques:
     lots: [MAN1, MAN1b, REL4]
     issue: 664
     doc: docs/manuel/index.html
+
+  - id: s-identites
+    composant: socle
+    poste: s-documenter
+    nom: "The identity map: every identity, its secret, its rights and its boundary, held to what the repository declares"
+    etat: main
+    release: "0.6"
+    lots: [IDM1]
+    issue: 687
+    doc: docs/design/identites.md
 
   - id: s-adoption
     composant: socle

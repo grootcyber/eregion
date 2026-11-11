@@ -622,7 +622,8 @@ qui refuse toute graine posée dans `ci.yml` et n'admet ailleurs que `draw` ou l
 tire une graine nouvelle à chaque tour, et elle a débusqué, l'un après l'autre, des mutants que seule une
 machine tue et que certains tirages à 500 séquences laissent passer. M21 a été figé par MUT5, M606 et M09
 par MUT6, M13 par MUT8, M33 par MUT9 (#704, #706). Chacun a été trouvé le soir de la release, jamais
-avant.
+avant. M14 est le premier que la nuit a trouvé (11/11, #715) : figé par MUT10, sa séquence figée d'A0 et
+un test unitaire, qui l'attrapaient déjà sans lui être reliés.
 
 **Les reconnaître.** La table des mutants (`TESTS` de `mutation_check.py` et des lots, plus leurs
 `TESTS_ALSO`) donne la cible de chaque mutant. La règle de l'issue disait : « leurs tests ne contiennent
