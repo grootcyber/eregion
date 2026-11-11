@@ -1,0 +1,44 @@
+# Eregion (MOB2) — the workstation's tunnel to the console of Imladris, armed on demand for 12 h at most:
+# a model, written by `make mobile-tunnel-install` into ~/.config/systemd/user/, its @…@ filled then,
+# never by a session (docs/demarrer/mobile.md). `make mobile-tunnel-install DRY_RUN=1` shows it filled.
+#
+# It holds what `make glorfindel-host-tunnel` held by hand: the console of Imladris, listening on the
+# workstation's 127.0.0.1:7007 alone — never 0.0.0.0, never the private address. The phone opens its own
+# SSH tunnel to that 127.0.0.1 (infra/poste/sshd_config.d/00-eregion.conf, PermitOpen 127.0.0.1:7007).
+#
+# - Armed by a gesture, never at boot: no [Install] section, so `systemctl enable` has nothing to do;
+#   `make mobile-tunnel-on` starts it, `make mobile-tunnel-off` stops it (decision of Jonathan, 11/11).
+# - 12 h at most, three bounds: `make mobile-tunnel-on` writes the deadline (now + 12 h) and a transient
+#   timer of systemd that stops the unit then (eregion-console-tunnel-expiry); ExecCondition refuses
+#   any start, or restart, once the deadline is past — or without one: a `systemctl --user start` by
+#   hand does nothing; RuntimeMaxSec=12h ends any single run, the timer lost.
+# - The host key pinned: a known_hosts of its own, written at the install with the one key whose
+#   fingerprint is HOST_SSH_FINGERPRINT (infra/glorfindel-host/known_host.sh, « required »), and that
+#   fingerprint named below (X-Eregion-HostKey, which systemd ignores and `make mobile-check` compares).
+#   StrictHostKeyChecking=yes, no global known_hosts, no key update: another key refuses, never asked.
+# - -F none: no ~/.ssh/config read — no LocalForward, ProxyCommand or GatewayPorts slipped in.
+# - BatchMode=yes: nothing asked (a passphrase, a new key); the key must open without a prompt.
+# - ExitOnForwardFailure=yes: 127.0.0.1:7007 taken (the local console, a manual tunnel), ssh exits.
+# - ServerAliveInterval × ServerAliveCountMax: a link lost is seen in 90 s, then ssh exits.
+# - Restart=on-failure, RestartSec=15: it starts again after a cut, until the deadline.
+# - The address of Imladris is the one Terraform gave at the install. Imladris redeployed under a new
+#   address: ssh no longer reaches it, or reaches another machine whose key refuses — the service fails
+#   and starts again every 15 s, binding nothing, until the deadline; `make mobile-check` says it (✗),
+#   and refuses to arm it (`make mobile-tunnel-on`) when Terraform gives another address: a new
+#   `make mobile-tunnel-install` writes the new one.
+[Unit]
+Description=Eregion: the workstation's tunnel to the console of Imladris (127.0.0.1:7007, 12 h at most)
+StartLimitIntervalSec=0
+X-Eregion-HostKey=@FINGERPRINT@
+
+[Service]
+Type=simple
+ExecCondition=/bin/sh -c 'read -r _ end < "$$1" && [ "$$(date +%%s)" -lt "$$end" ]' deadline @DEADLINE@
+ExecStart=/usr/bin/ssh -F none -N -T -o BatchMode=yes \
+  -o StrictHostKeyChecking=yes -o UserKnownHostsFile=@KNOWN_HOSTS@ -o GlobalKnownHostsFile=/dev/null \
+  -o HostKeyAlgorithms=ssh-ed25519 -o UpdateHostKeys=no \
+  -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ConnectTimeout=15 \
+  @IDENTITY@-L 127.0.0.1:7007:127.0.0.1:7007 @TARGET@
+Restart=on-failure
+RestartSec=15
+RuntimeMaxSec=12h
