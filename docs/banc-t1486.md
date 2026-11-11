@@ -243,7 +243,10 @@ ne bloque pas. Ses contrôles (`scripts/bench_preflight.py`) :
 - **Imladris** : la référence déployée et les trois conteneurs, tels que `make glorfindel-host-status`
   les dit, et ce qu'il marque ✗ ; le CD, par `make glorfindel-host-cd-status` (le minuteur, la
   release qui tourne face à la dernière publiée) ;
-- **le poste** : aucune watch locale (`docker ps`) ;
+- **le poste** : aucune watch locale d'Eregion (`docker ps`) : le service `watch` du
+  `docker-compose.yml`, de l'image `eregion-glorfindel` (son label compose et son image), ou un
+  conteneur `eregion-watch` / `eregion-<équipe>-watch`. Le « …-watcher » d'un autre projet n'en est
+  pas une (BNC1b, mesuré le 11/11) ;
 - **Orodruin** : son contrat lu sur lui, sans être publié (`check()` dans son conteneur durci),
   armé et son plafond. Désallouée, c'est un ⚠ : son contrat se lit après `make orodruin-start`. Sans
   `ORO_SSH_FINGERPRINT`, rien ne part vers Orodruin, ni vers Imladris sans `HOST_SSH_FINGERPRINT` ;
@@ -252,7 +255,11 @@ ne bloque pas. Ses contrôles (`scripts/bench_preflight.py`) :
 - **la cible** : une seule VM de ce nom, son groupe, son état ; sur Imladris, son mode (configuré et
   effectif), sa préparation et la quarantaine, et aucune isolation déjà posée ;
 - **le point de restauration** : l'âge du plus récent au coffre, ⚠ au-delà de 24 h
-  (`POINT_MAX_H=…`) ;
+  (`POINT_MAX_H=…`). Le conteneur (`-c`) et l'item (`-i`) se lisent dans l'`id` de l'item : le segment
+  entre `/protectionContainers/` et `/protectedItems/` (`IaasVMContainer;…`), puis le dernier. Le
+  `containerName` en trois segments est refusé par `az backup recoverypoint list`
+  (`BMSUserErrorContainerNameIncorrectFormat`) ; la forme de l'`id` répond (mesuré le 11/11). Un `id`
+  sans ces segments : un ✗ « illisible », jamais un repli ;
 - **les droits effectifs** :
   - la console, sous sa paire, par `Microsoft.Authorization/permissions`, avec le lecteur du restore
     (`glorfindel/providers/azure/restore_rights.py`) : le restore sur le coffre, `deallocate` et
@@ -659,7 +666,8 @@ regarder de plus près. Ces sorties-là affichent des identifiants : ne pas les 
 source .envrc
 make glorfindel-host-status        # « ✓ référence déployée : v0.5.8 », les trois conteneurs ✓, aucune erreur
 make glorfindel-host-cd-status     # actif : ne publie aucune release pendant la session (ou make glorfindel-host-cd-disable)
-docker ps --format '{{.Names}}'    # aucun eregion-watch : une watch du poste répondrait aussi
+docker ps --format '{{.Names}}\t{{.Image}}\t{{.Label "com.docker.compose.service"}}'   # aucun service watch
+                                   # d'eregion-glorfindel : une watch du poste répondrait aussi
 az role assignment list --assignee ${EREGION_CONSOLE_AZURE_CLIENT_ID} --all -o table
 terraform -chdir=infra/glorfindel-host output restore_neutralize
 terraform -chdir=infra/glorfindel-host output restore_staging

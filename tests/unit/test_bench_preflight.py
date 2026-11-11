@@ -66,6 +66,24 @@ ROLES = {
 RESTORE_PRE_SEC17 = json.loads((ROOT / "infra/identities/glorfindel-restore.json").read_text())["Actions"] + [
     "Microsoft.Compute/virtualMachines/runCommand/action"]
 
+# The vault's item of the target, as `az backup item list` gave it on 11/11 (BNC1b, #724), in template:
+# `properties.containerName` in three segments, `name` in four, the full container in the item's id.
+CONTAINER_SHORT = f"iaasvmcontainerv2;{bw.RG};{bw.VM}"
+CONTAINER_FULL = f"IaasVMContainer;iaasvmcontainerv2;{bw.RG};{bw.VM}"
+ITEM_NAME = f"VM;iaasvmcontainerv2;{bw.RG};{bw.VM}"
+ITEM = {"id": (f"/subscriptions/{bw.SUB}/resourceGroups/{bw.RG}/providers/Microsoft.RecoveryServices/vaults/"
+               f"{bw.VAULT}/backupFabrics/Azure/protectionContainers/{CONTAINER_FULL}/protectedItems/{ITEM_NAME}"),
+        "name": ITEM_NAME,
+        "properties": {"friendlyName": bw.VM, "containerName": CONTAINER_SHORT}}
+# az's stderr on 11/11 at `az backup recoverypoint list -c <containerName>`, in template: a WARNING
+# first (the backup management type), then the ERROR, then its code and message.
+AZ_WARNING_THEN_ERROR = (
+    "WARNING: Could not extract the backup management type, please provide it using "
+    "--backup-management-type, or try using container friendly name instead.\n"
+    "ERROR: (BMSUserErrorContainerNameIncorrectFormat) Container name is not in the correct format\n"
+    "Code: BMSUserErrorContainerNameIncorrectFormat\n"
+    "Message: Container name is not in the correct format\n")
+
 
 def leaks(text: str) -> list[str]:
     return (GUID.findall(text) + IP.findall(text) + UPN.findall(text)
@@ -162,7 +180,7 @@ def _world(tmp_path, *, point_age_h: float = 50, restore_role=None, staging_assi
         bw.rule("make", ["glorfindel-host-cd-status"],
                 "  tourne : v0.5.8 (0123456789ab), image sha256:00\n  dernière release : v0.5.8\n  timer : enabled\n"),
         bw.rule("make", ["orodruin-known"]),
-        bw.rule("docker", ["ps"], "eregion-annatar-shell\n"),
+        bw.rule("docker", ["ps", bp.PS_FORMAT], "eregion-annatar-shell\teregion-annatar\t\n"),
         bw.rule("terraform", ["~infra/orodruin", "vm_id"], bw.ORO_VM),
         bw.rule("terraform", ["~infra/orodruin", "principal_id"], bw.ORO_OID),
         bw.rule("terraform", ["~infra/glorfindel-host", "principal_id"], bw.H0_OID),
@@ -174,10 +192,10 @@ def _world(tmp_path, *, point_age_h: float = 50, restore_role=None, staging_assi
         bw.rule("az", ["credential", bw.BOT_APP], [(NOW + timedelta(days=60)).isoformat()]),
         bw.rule("az", ["vm", "list"], [{"name": bw.VM, "rg": bw.RG, "id": bw.RID},
                                        {"name": "vm-celebrimbor-bree", "rg": bw.RG, "id": bw.BREE}]),
-        bw.rule("az", ["backup", "item", "list"], [
-            {"name": f"VM;iaasvmcontainerv2;{bw.RG};{bw.VM}",
-             "properties": {"friendlyName": bw.VM, "containerName": f"IaasVMContainer;iaasvmcontainerv2;{bw.RG};{bw.VM}"}}]),
-        bw.rule("az", ["backup", "recoverypoint", "list"], [
+        bw.rule("az", ["backup", "item", "list"], [ITEM]),
+        # Measured on 11/11: the three-segment containerName refused, the full name of the item's id answers.
+        bw.rule("az", ["backup", "recoverypoint", "list", "-c", CONTAINER_SHORT], rc=1, err=AZ_WARNING_THEN_ERROR),
+        bw.rule("az", ["backup", "recoverypoint", "list", "-c", CONTAINER_FULL, "-i", ITEM_NAME], [
             {"name": "1", "properties": {"recoveryPointTime": point}},
             {"name": "2", "properties": {"recoveryPointTime": (NOW - timedelta(hours=point_age_h + 24)).isoformat()}}]),
         bw.rule("az", ["assignment", bw.H0_OID], h0),
@@ -312,7 +330,8 @@ def test_orodruin_deallocated_is_a_warning_and_its_contract_is_never_published(t
 
 def test_a_local_watch_and_a_held_mode_are_failures(tmp_path, monkeypatch):
     w = _world(tmp_path, point_age_h=3, staging_assigned=True)
-    w.rules.insert(0, bw.rule("docker", ["ps"], "eregion-watch\neregion-war-room\n"))
+    w.rules.insert(0, bw.rule("docker", ["ps"], "eregion-watch\teregion-glorfindel\twatch\n"
+                                               "eregion-war-room\teregion-glorfindel\twar-room\n"))
     _h0(w, readiness="not_ready")
     code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
     assert code == 1
@@ -453,3 +472,134 @@ def test_ssh_s_warning_is_not_the_error_said():
     res = bs.Result(255, "", f"Warning: Permanently added '{bw.H0_IP}' (ED25519) to the list of known hosts.\n"
                              "Permission denied (publickey).\n")
     assert res.first_error() == "Permission denied (publickey)."
+
+
+# ── BNC1b (#724): what the bench of 11/11 measured ───────────────────────────────
+
+def test_az_s_warning_is_not_the_error_said():
+    res = bs.Result(1, "", AZ_WARNING_THEN_ERROR)
+    assert res.first_error() == ("ERROR: (BMSUserErrorContainerNameIncorrectFormat) Container name is not "
+                                 "in the correct format")
+
+
+def test_az_s_warning_and_its_indented_lines_are_skipped():
+    res = bs.Result(1, "", "WARNING: \n    the warning, told on the line after\n    and on one more\n"
+                           f"ERROR: (AuthorizationFailed) on /subscriptions/{bw.SUB}/resourceGroups/{bw.RG}\n")
+    said = res.first_error()
+    assert said.startswith("ERROR: (AuthorizationFailed) on <ressource>"), said
+    assert not leaks(said)
+
+
+def test_az_s_error_alone_on_its_line_says_the_next_one():
+    assert bs.Result(1, "", "WARNING: a warning\nERROR:\n(ResourceNotFound) the vault\n").first_error() == \
+        "ERROR: (ResourceNotFound) the vault"
+
+
+@pytest.mark.parametrize("err, said", [
+    ("WARNING: \n    only a warning, on the line after\n",
+     "code 1, rien que des avertissements : only a warning, on the line after"),
+    ("WARNING: the type\nWarning: Permanently added 'x' (ED25519) to the list of known hosts.\n",
+     "code 1, rien que des avertissements : the type"),
+    ("WARNING: \n", "code 1, rien que des avertissements"),
+    ("", "code 1"),
+])
+def test_only_warnings_are_said_so_never_an_empty_line(err, said):
+    assert bs.Result(1, "", err).first_error() == said
+
+
+def test_the_point_s_az_warning_is_not_the_error_the_preflight_says(tmp_path, monkeypatch):
+    """11/11: « point : illisible (RuntimeError: WARNING: ) » — the true error hidden behind az's
+    warning. The ✗ stays a ✗, and says the error."""
+    w = _world(tmp_path, point_age_h=3, staging_assigned=True)
+    w.rules.insert(0, bw.rule("az", ["backup", "recoverypoint", "list"], rc=1, err=AZ_WARNING_THEN_ERROR))
+    code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
+    assert code == 1, out
+    fails = _marked(out, bs.FAIL)
+    assert ("point : illisible (RuntimeError: ERROR: (BMSUserErrorContainerNameIncorrectFormat) Container name "
+            "is not in the correct format)") in fails, out
+    assert not any("WARNING" in f for f in fails), out
+
+
+# `docker ps --format PS_FORMAT` on a workstation where another project runs a « watcher ».
+FOREIGN = ("billing-watcher-1\tghcr.io/example/watcher:2.1\twatcher\n"
+           "files-watch-1\texample/files:latest\twatch\n"
+           "kind-watchdog\tkindest/node:v1.31.0\t\n")
+
+
+def test_a_foreign_watcher_on_the_workstation_is_no_watch_of_eregion(tmp_path, monkeypatch):
+    w = _world(tmp_path, point_age_h=3, staging_assigned=True)
+    w.rules.insert(0, bw.rule("docker", ["ps", bp.PS_FORMAT], FOREIGN + "eregion-annatar-shell\teregion-annatar\t\n"))
+    code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
+    assert "le poste : aucune watch locale" in _marked(out, bs.OK), out
+    assert code == 0, out
+
+
+@pytest.mark.parametrize("ps, watch", [
+    ("eregion-watch\teregion-glorfindel\twatch\n", "eregion-watch"),
+    ("eregion-blue-watch\teregion-glorfindel:latest\twatch\n", "eregion-blue-watch"),
+    # rebuilt under it: docker says the old image by its id; the name compose gives is the watch's
+    ("eregion-watch\t0123456789ab\twatch\n", "eregion-watch"),
+    # EREGION_INSTANCE set to another name: the service and the image say it
+    ("lab-watch\teregion-glorfindel\twatch\n", "lab-watch"),
+])
+def test_a_watch_of_eregion_beside_a_foreign_watcher_is_a_failure(tmp_path, monkeypatch, ps, watch):
+    w = _world(tmp_path, point_age_h=3, staging_assigned=True)
+    w.rules.insert(0, bw.rule("docker", ["ps", bp.PS_FORMAT], FOREIGN + ps))
+    code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
+    assert code == 1, out
+    assert f"le poste : une watch locale tourne ({watch}) : elle répondrait aussi — make glorfindel-stop" \
+        in _marked(out, bs.FAIL), out
+
+
+def test_the_watch_read_is_the_service_compose_declares():
+    """The service, its image and its container's name, as docker-compose.yml says them: renamed there,
+    the preflight would read no watch."""
+    import yaml
+    watch = yaml.safe_load((ROOT / "docker-compose.yml").read_text())["services"][bp.WATCH_SERVICE]
+    assert bp._image_name(watch["image"]) == bp.WATCH_IMAGE
+    assert watch["container_name"] == "${EREGION_INSTANCE:-eregion}-watch"
+    assert "glorfindel watch" in watch["command"]
+
+
+def test_the_point_is_asked_by_the_full_container_of_the_item_s_id():
+    """The form measured on 11/11 (B): `-c` the full container's name — not its three-segment
+    containerName, refused —, `-i` the item's name, both read from the item's id: the bench confirmed
+    the id's segments are `"IaasVMContainer;" + containerName` and the item's `name`, to the case."""
+    args = bp.recoverypoint_args("rg-vault", bw.VAULT, ITEM)
+    assert args == ["backup", "recoverypoint", "list", "-g", "rg-vault", "-v", bw.VAULT, "-c", CONTAINER_FULL,
+                    "-i", ITEM_NAME, "--backup-management-type", "AzureIaasVM"]
+    assert CONTAINER_SHORT not in args
+    assert CONTAINER_FULL == "IaasVMContainer;" + ITEM["properties"]["containerName"]
+    # read from the id alone: neither the name nor the containerName of the item is taken
+    bare = {"id": ITEM["id"], "name": "other", "properties": {"containerName": "other"}}
+    assert bp.recoverypoint_args("rg-vault", bw.VAULT, bare) == args
+
+
+def test_the_point_s_container_is_read_whatever_the_id_s_case():
+    item = {**ITEM, "id": ITEM["id"].replace("/protectionContainers/", "/protectioncontainers/")
+                                    .replace("/protectedItems/", "/protecteditems/")}
+    assert bp.recoverypoint_args("rg-vault", bw.VAULT, item)[8] == CONTAINER_FULL
+
+
+@pytest.mark.parametrize("item, cause", [
+    ({k: v for k, v in ITEM.items() if k != "id"}, "l'id de l'item ne porte pas son conteneur"),
+    ({**ITEM, "id": f"/subscriptions/{bw.SUB}/resourceGroups/{bw.RG}/providers/Microsoft.RecoveryServices/"
+                    f"vaults/{bw.VAULT}/backupFabrics/Azure/protectedItems/{ITEM_NAME}"},
+     "l'id de l'item ne porte pas son conteneur"),
+    ({**ITEM, "id": ITEM["id"].rsplit("/", 1)[0] + "/"}, "l'id de l'item ne porte pas son conteneur et son nom"),
+])
+def test_an_item_without_its_container_or_name_is_unreadable_never_a_fallback(tmp_path, monkeypatch, item, cause):
+    w = _world(tmp_path, point_age_h=3, staging_assigned=True)
+    w.rules.insert(0, bw.rule("az", ["backup", "item", "list"], [item]))
+    code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
+    assert code == 1, out
+    fails = [f for f in _marked(out, bs.FAIL) if f.startswith("le point de restauration : illisible")]
+    assert len(fails) == 1 and cause in fails[0], out
+    assert not any("recoverypoint" in c for c in w.calls()), "a form not measured was tried"
+
+
+def test_the_point_of_the_bench_in_order_is_read_by_the_measured_form(tmp_path, monkeypatch):
+    w = _world(tmp_path, point_age_h=3, staging_assigned=True)
+    code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
+    assert any(o.startswith("le point de restauration : le plus récent il y a") for o in _marked(out, bs.OK)), out
+    assert code == 0, out

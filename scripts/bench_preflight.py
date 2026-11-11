@@ -188,11 +188,40 @@ def check_cd(ctx: Context) -> list:
     return [line(bs.WARN, f"{said} ; minuteur {state}")]
 
 
+# A watch of Eregion, as docker-compose.yml declares it: the service `watch`, of the image
+# `eregion-glorfindel`, its container `${EREGION_INSTANCE:-eregion}-watch` (a team's: eregion-<team>-watch).
+# Read by the compose label and the image, or by that name — never by a name that only holds « watch »:
+# another project's « …-watcher » on the workstation is none (BNC1b, #724).
+WATCH_SERVICE = "watch"
+WATCH_IMAGE = "eregion-glorfindel"
+WATCH_NAME = re.compile(r"eregion(?:-[a-z0-9-]+)?-watch")
+PS_FORMAT = '{{.Names}}\t{{.Image}}\t{{.Label "com.docker.compose.service"}}'
+
+
+def _image_name(image: str) -> str:
+    """`registry/eregion-glorfindel:tag` → `eregion-glorfindel`."""
+    return image.split("@", 1)[0].rsplit("/", 1)[-1].split(":", 1)[0]
+
+
+def eregion_watches(ps_out: str) -> list[str]:
+    """The names of the containers of `docker ps --format PS_FORMAT` that are a watch of Eregion."""
+    out = []
+    for ln in ps_out.splitlines():
+        name, image, service = ([*ln.split("\t"), "", ""])[:3]
+        name = name.strip()
+        if not name:
+            continue
+        if WATCH_NAME.fullmatch(name) or (service.strip() == WATCH_SERVICE
+                                          and _image_name(image.strip()) == WATCH_IMAGE):
+            out.append(name)
+    return out
+
+
 def check_workstation(ctx: Context) -> list:
-    res = bs.run(["docker", "ps", "--format", "{{.Names}}"], timeout=30)
+    res = bs.run(["docker", "ps", "--format", PS_FORMAT], timeout=30)
     if not res.ok:
         return [line(bs.WARN, f"le poste : docker ne répond pas ({res.first_error()}) — aucune watch locale lue")]
-    watches = [n for n in res.out.split() if "watch" in n.lower()]
+    watches = eregion_watches(res.out)
     if watches:
         return [line(bs.FAIL, f"le poste : une watch locale tourne ({', '.join(watches)}) : elle répondrait "
                               "aussi — make glorfindel-stop")]
@@ -313,6 +342,29 @@ def resolve_vault(ctx: Context) -> None:
     ctx.vault, ctx.vault_rg, ctx.staging = bs.local_vault(ctx.config)
 
 
+# The item's container and its own name, as its ARM id carries them:
+# `…/protectionContainers/<container>/protectedItems/<item>`.
+ITEM_SEGMENTS = re.compile(r"/protectionContainers/([^/]+)/protectedItems/([^/]+)/?$", re.IGNORECASE)
+
+
+def recoverypoint_args(v_rg: str, vault: str, item: dict) -> list[str]:
+    """`az backup recoverypoint list`'s arguments for one item of `az backup item list` (BNC1b, #724).
+
+    Measured on the bench, 11/11, read only: `properties.containerName` has three segments
+    (`iaasvmcontainerv2;<rg>;<vm>`), and `-c` with it is refused (BMSUserErrorContainerNameIncorrectFormat);
+    `-c IaasVMContainer;iaasvmcontainerv2;<rg>;<vm> -i VM;iaasvmcontainerv2;<rg>;<vm>` answers. On the
+    item, the id's segment between /protectionContainers/ and /protectedItems/ is that full container,
+    to the exact case (`"IaasVMContainer;" + properties.containerName`), and its last segment is the
+    item's `name`: both are read from the id — never built by hand, nor a short name, which two groups
+    of one vault could share. A segment missing: a RuntimeError, never a fallback to a form not measured."""
+    found = ITEM_SEGMENTS.search(str(item.get("id") or ""))
+    if not found:
+        raise RuntimeError("l'id de l'item ne porte pas son conteneur et son nom "
+                           "(/protectionContainers/…/protectedItems/…)")
+    return ["backup", "recoverypoint", "list", "-g", v_rg, "-v", vault, "-c", found.group(1),
+            "-i", found.group(2), "--backup-management-type", "AzureIaasVM"]
+
+
 def check_point(ctx: Context) -> list:
     if not ctx.vault:
         return [line(bs.FAIL, f"le point de restauration : aucun coffre dans {Path(ctx.config).name} "
@@ -323,9 +375,11 @@ def check_point(ctx: Context) -> list:
     item = next((i for i in items if str((i.get("properties") or {}).get("friendlyName") or "").lower() == ctx.target), None)
     if item is None:
         return [line(bs.FAIL, f"le point de restauration : {ctx.target} n'est pas protégée par le coffre {ctx.vault}")]
-    container = str((item.get("properties") or {}).get("containerName") or "")
-    points = bs.az_json(["backup", "recoverypoint", "list", "-g", v_rg, "-v", ctx.vault, "-c", container,
-                         "-i", str(item.get("name") or ""), "--backup-management-type", "AzureIaasVM"]) or []
+    try:
+        args = recoverypoint_args(v_rg, ctx.vault, item)
+    except RuntimeError as e:
+        return [line(bs.FAIL, f"le point de restauration : illisible ({e})")]
+    points = bs.az_json(args) or []
     times = [t for t in (bs.epoch((p.get("properties") or {}).get("recoveryPointTime")) for p in points) if t is not None]
     if not times:
         return [line(bs.FAIL, "le point de restauration : aucun point lu pour la cible")]
