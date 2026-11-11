@@ -1,0 +1,56 @@
+# Eregion (MOB2) — the workstation's tunnel to the console of Imladris, armed on demand for 12 h at most:
+# a model, written by `make mobile-tunnel-install` into ~/.config/systemd/user/, its @…@ filled then,
+# never by a session (docs/demarrer/mobile.md). `make mobile-tunnel-install DRY_RUN=1` shows it filled.
+#
+# It holds what `make glorfindel-host-tunnel` held by hand: the console of Imladris, listening on the
+# workstation's 127.0.0.1:7007 alone — never 0.0.0.0, never the private address. The phone opens its own
+# SSH tunnel to that 127.0.0.1 (infra/poste/sshd_config.d/00-eregion.conf, PermitOpen 127.0.0.1:7007).
+#
+# - Armed by a gesture, never at boot: no [Install] section, so `systemctl enable` has nothing to do;
+#   `make mobile-tunnel-on` writes the deadline (now + 12 h, ~/.eregion/console-tunnel/deadline) and
+#   starts it, `make mobile-tunnel-off` stops it (decision of Jonathan, 11/11).
+# - The deadline bounds the unit alone:
+#   - ExecCondition, at each start and restart: no deadline, a deadline past, or one more than 12 h
+#     ahead — the unit does not start, and Restart= does not start it again (a condition that fails
+#     is no failure). Within the window, a `systemctl --user start` by hand does start it, until the
+#     deadline;
+#   - ExecStart runs ssh under /usr/bin/timeout, for the time left until the deadline (12 h at most):
+#     at the deadline, timeout ends ssh (exit 124), Restart= tries again, and ExecCondition refuses;
+#   - RuntimeMaxSec=12h ends any single run, the last bound.
+#   `make mobile-tunnel-on` also sets a transient timer that stops the unit at the deadline
+#   (eregion-console-tunnel-expiry.timer): a fourth bound, not needed by the three above.
+#   What it does not hold: a process of the same Unix user can write another deadline and start the
+#   unit — the guard of the make targets stops a mistake, not a will. Under WSL, a sleep of the host
+#   pauses the monotonic clocks (timeout, RuntimeMaxSec, the timer): those 12 h count the time the
+#   workstation is awake; ExecCondition reads the wall clock.
+# - The host key pinned: a known_hosts of its own, written at the install with the one key whose
+#   fingerprint is HOST_SSH_FINGERPRINT (infra/glorfindel-host/known_host.sh, « required »), and that
+#   fingerprint named below (X-Eregion-HostKey, which systemd ignores and `make mobile-check` compares).
+#   StrictHostKeyChecking=yes, no global known_hosts, no key update: another key refuses, never asked.
+# - -F none: no ~/.ssh/config read — no LocalForward, ProxyCommand or GatewayPorts slipped in.
+# - BatchMode=yes: nothing asked (a passphrase, a new key); the key must open without a prompt.
+# - ExitOnForwardFailure=yes: 127.0.0.1:7007 taken (the local console, a manual tunnel), ssh exits.
+# - ServerAliveInterval × ServerAliveCountMax: a link lost is seen in 90 s, then ssh exits.
+# - Restart=on-failure, RestartSec=15: it starts again after a cut, until the deadline.
+# - The address of Imladris is the one Terraform gave at the install. Imladris redeployed under a new
+#   address: ssh no longer reaches it, or reaches another machine whose key refuses — the service fails
+#   and starts again every 15 s, binding nothing, until the deadline; `make mobile-check` says it (✗),
+#   and refuses to arm it (`make mobile-tunnel-on`) when Terraform gives another address: a new
+#   `make mobile-tunnel-install` writes the new one.
+[Unit]
+Description=Eregion: the workstation's tunnel to the console of Imladris (127.0.0.1:7007, 12 h at most)
+StartLimitIntervalSec=0
+X-Eregion-HostKey=@FINGERPRINT@
+
+[Service]
+Type=simple
+ExecCondition=/bin/sh -c 'read -r _ end < "$$1" && now=$$(date +%%s) && [ "$$now" -lt "$$end" ] && [ "$$end" -le $$((now + 43200)) ]' deadline @DEADLINE@
+ExecStart=/bin/sh -c 'f=$$1; shift; read -r _ end < "$$f" || exit 0; left=$$((end - $$(date +%%s))); [ "$$left" -gt 0 ] || exit 0; [ "$$left" -le 43200 ] || left=43200; exec /usr/bin/timeout "$$left" "$$@"' tunnel @DEADLINE@ \
+  /usr/bin/ssh -F none -N -T -o BatchMode=yes \
+  -o StrictHostKeyChecking=yes -o UserKnownHostsFile=@KNOWN_HOSTS@ -o GlobalKnownHostsFile=/dev/null \
+  -o HostKeyAlgorithms=ssh-ed25519 -o UpdateHostKeys=no \
+  -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ConnectTimeout=15 \
+  @IDENTITY@-L 127.0.0.1:7007:127.0.0.1:7007 @TARGET@
+Restart=on-failure
+RestartSec=15
+RuntimeMaxSec=12h

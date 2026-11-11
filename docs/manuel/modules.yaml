@@ -1142,6 +1142,15 @@ briques:
     issue: 686
     doc: docs/demarrer/mobile.md
 
+  - id: c-telephone-tunnel
+    composant: celebrimbor
+    poste: c-acces
+    nom: "The console of Imladris on the phone: a tunnel armed by a gesture, twelve hours at most, never at boot"
+    etat: main
+    release: "0.5"
+    lots: [MOB2]
+    doc: docs/demarrer/mobile.md
+
   - id: c-lecture
     composant: celebrimbor
     poste: c-acces
