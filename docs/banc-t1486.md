@@ -25,7 +25,34 @@ Les lignes citées sont celles de la 0.5.8 (`v0.5.8`), la version en service. RE
 `glorfindel/cli.py` (+64) et de `glorfindel/providers/azure/restore.py` (+4), sans changer ce qu'elles
 font ; ce que REC1 ajoute est cité par son fichier.
 
-Jonathan lance chaque geste ; rien de cette page n'a encore été joué au banc.
+Jonathan lance chaque geste.
+
+**Le 09/11, cette page a été jouée une fois au banc** : environ 4 h, chaque vérification tapée à la
+main (`docs/operations.md`, « Le banc lisible » ; RAN1, #665). Ce qui s'y est vu, ce qui a cassé, et
+ce qui l'a corrigé depuis (le CHANGELOG de la 0.5.9 et de la 0.5.10) :
+- **la détection**, à 70,3 s de T0, puis **l'isolement autonome** de gondolin, son NSG posé et tenu
+  (BNC1, #682 : `tests/unit/test_bench_report.py` recompose ce run sur ses formes mesurées) ;
+- **la coupure des sessions**, 302 s sous la quarantaine : la watch, qui l'attendait 300 s, a dit
+  l'isolement non vérifié, 2 s avant que la coupure aboutisse. Corrigé par DRN1 (#677, 0.5.9) : la
+  coupure est suivie sur Azure, la carte « session cut pending » le dit ;
+- **le restore depuis la console**, refusé au déclenchement (`listKeys` manquait sur le compte de
+  transit), après la neutralisation et la désallocation : la VM est restée arrêtée trois heures, sans
+  le dire. Puis Azure a refusé `restoreDiskLunList` sur un restore en place (code `400625`). Corrigé
+  par RST1 (#680, 0.5.9) : le rôle « Restore Staging », les droits lus avant de toucher la VM, le refus
+  dit entier, le champ retiré. Le job a ensuite abouti en 15 min 17 ; la neutralisation avait pris
+  152 s sous la quarantaine ;
+- **la levée par la watch d'Imladris**, qui portait REC1 sans REC1b : elle a attendu la parole de
+  l'invité, que la vue d'instance ne porte jamais, et a retenu la levée par une carte ; elle s'est
+  faite à la main. Corrigé par REC1b (#679, 0.5.9) : la neutralisation se décide par le journal
+  d'activité seul ;
+- **les gestes tapés et recopiés à la main** : `make bench-preflight` et `make bench-report` (BNC1,
+  0.5.9) lisent l'étape 0 et l'étape 8 ; `make bench-run` et `make bench-restore` (MOB1, #686, 0.5.10)
+  font le lancement et le restore en une commande chacun.
+
+**Pas encore repassé au banc** : un run de bout en bout avec ces corrections. Le restore sous RST1
+(la lecture des droits, « à mesurer » à l'étape 6), la coupure suivie de DRN1, la levée seule de
+REC1b, et `make bench-run` et `make bench-restore` sur Azure n'ont tourné que sur des faux. Les trois
+temps ne sont donc pas datés, et les chiffres du README restent ceux du 09/06 (RAN1, #665).
 
 ## Ce que le code décide avant la session
 

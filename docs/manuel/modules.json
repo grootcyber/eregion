@@ -2060,6 +2060,19 @@
    "doc": "docs/design/identites.md"
   },
   {
+   "id": "s-docs-vrais",
+   "composant": "socle",
+   "poste": "s-documenter",
+   "nom": "Documents that no longer contradict the bench: what the ransomware run of 09/11 showed, the logs switched on, the unit tests counted by the CI",
+   "etat": "main",
+   "release": "0.5",
+   "lots": [
+    "MEN2"
+   ],
+   "issue": 722,
+   "doc": "docs/banc-t1486.md"
+  },
+  {
    "id": "s-adoption",
    "composant": "socle",
    "poste": "s-documenter",

@@ -3153,13 +3153,24 @@ python scripts/mutation_night.py --only M21 --seed 89917386 --seeds 3 --examples
 
 ## Les journaux d'activité et d'Entra ID au banc (ID1, #281)
 
-AL1 (le journal d'activité) et C2 (Entra ID) sont livrés en détection seule, mais **aveugles** : leurs
-tables (`AzureActivity`, `AuditLogs`, `AADServicePrincipalSignInLogs`) n'arrivent dans le workspace
-du banc (`law-celebrimbor-amonsul`) que par deux paramètres de diagnostic qui ne vivent pas dans le
-groupe du banc — l'un sur l'**abonnement** (`infra/terraform/activity_log.tf`), l'autre sur le
-**tenant** Entra ID (`infra/terraform/entra_logs.tf`). Le Terraform est prêt, désactivé. Ce qui suit
-se fait avec Jonathan : rien ici n'a été planifié ni appliqué. Les noms sont ceux du banc ; `<…>` est
-à remplacer, rien de réel dans ce dépôt.
+AL1 (le journal d'activité) et C2 (Entra ID) sont livrés en détection seule, et **aveugles** sans
+deux paramètres de diagnostic : leurs tables (`AzureActivity`, `AuditLogs`,
+`AADServicePrincipalSignInLogs`) n'arrivent dans le workspace du banc (`law-celebrimbor-amonsul`) que
+par eux, et ils ne vivent pas dans le groupe du banc — l'un sur l'**abonnement**
+(`infra/terraform/activity_log.tf`), l'autre sur le **tenant** Entra ID
+(`infra/terraform/entra_logs.tf`). Le Terraform est désactivé par défaut ; ce qui suit se fait avec
+Jonathan.
+
+**Sur le banc, les deux paramètres sont allumés depuis le 05/11** (ID1, 05–06/11 :
+`docs/glorfindel.md`, « La carte se range sur ce qu'elle vise ») :
+- le journal d'activité du 05/11 a donné la mesure de l'hypothèse A2 (AL2, #598 ;
+  `docs/glorfindel.md`, « Les points de restauration ») ;
+- six cartes du plan de contrôle se sont rangées sur bree les 05 et 06/11, sans la viser (AL1c, #597) ;
+- les cartes d'Entra ID sont arrivées dans Discord le 06/11 (C2b, #607 ; le CHANGELOG de la 0.5.8).
+
+Le reste de cette section n'est pas mesuré en entier : chaque hypothèse garde son statut, et la
+mesure complète ferme ID1 avec la 0.6.0 (`ROADMAP.md`, « ID1 allumé et mesuré »). Les noms sont
+ceux du banc ; `<…>` est à remplacer, rien de réel dans ce dépôt.
 
 ### Ce que le Terraform pose, et sous quelle variable
 
