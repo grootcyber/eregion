@@ -4772,7 +4772,7 @@ Depuis le poste, à la racine du dépôt, `.envrc` chargé :
    de la première :
    - ta lecture sur le compte (`Storage Blob Data Reader`) ;
    - tes rôles hérités de l'abonnement ;
-   - les rôles de H0, de la console et d'Orodruin sur le groupe : `Reader`, « Eregion Glorfindel
+   - les rôles d'Imladris, de la console et d'Orodruin sur le groupe : `Reader`, « Eregion Glorfindel
      Response », « Eregion Glorfindel Restore », la lecture d'Orodruin. Aucun de ces rôles n'a de
      droit de données ni `listKeys`. Ce sont des identités d'hôtes que la watch ne surveille pas.
      « Eregion Glorfindel Restore » porte toutefois `Microsoft.Storage/storageAccounts/write` sur
@@ -4828,7 +4828,7 @@ Depuis le poste, à la racine du dépôt, `.envrc` chargé :
 - **Le point de terminaison public reste ouvert.** Il est fermé à toute requête sans identité Entra
   ID autorisée, mais pas par le réseau. Un pare-feu du compte (refus par défaut, services de
   confiance admis, comme le permet la FAQ de Network Watcher) serait une défense de plus. Il demande
-  de prévoir l'accès réseau de la lecture de SEC-A3f, depuis H0 ou le poste : un lot à part, s'il est
+  de prévoir l'accès réseau de la lecture de SEC-A3f, depuis Imladris ou le poste : un lot à part, s'il est
   voulu.
 - **Les identités au-dessus du banc** gardent leurs droits : un Owner ou un Contributor de
   l'abonnement peut toujours écrire ou effacer les flux, ou rouvrir la clé. Ce ne sont pas des
@@ -4841,7 +4841,7 @@ Depuis le poste, à la racine du dépôt, `.envrc` chargé :
   exception pour les services de confiance, sans lire ni régénérer une clé, ni écrire un blob. Le restore n'a besoin de cette écriture que sur le compte de transit : la restreindre à
   ce compte est une question pour les sessions Glorfindel et Infra. Les principaux de ce rôle sont
   ceux de la console, pas ceux d'une VM surveillée.
-- **Les modules d'Orodruin et de H0** ne sont pas lus par le test. Leurs attributions sur le groupe
+- **Les modules d'Orodruin et d'Imladris** ne sont pas lus par le test. Leurs attributions sur le groupe
   se vérifient à l'étape 2. Chez un client, c'est la vérification de Glorfindel au démarrage qui tient
   CR15 : dans `corroboration.md`, §3.5, le statut `unknown` « compte des flux écrit depuis une VM »
   (SEC-A3f).
