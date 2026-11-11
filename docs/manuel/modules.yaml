@@ -1061,7 +1061,7 @@ briques:
   - id: o-banc-autonome
     composant: orodruin
     poste: o-executer
-    nom: "The bench run in one gesture: an armed slot, restore the only human step"
+    nom: "Design: the bench that measures itself, the destructive run launched by the operator, a dated slot for non-destructive drills, the report composed alone"
     etat: main
     release: "0.6"
     lots: [BNC2]
