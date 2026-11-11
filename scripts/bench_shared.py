@@ -87,19 +87,21 @@ class Result:
     def first_error(self) -> str:
         """The first line that says an error. ssh's « Warning: Permanently added … » is none, nor az's
         `WARNING: …` and the indented lines that go on with it (BNC1b, #724: az's warning before its
-        `ERROR:` was said as the error, empty). Only warnings: said so, the first one with it — never
-        an empty line."""
+        `ERROR:` was said as the error, empty). A warning goes on up to a blank line, never over a line
+        that says ERROR, indented or not. Only warnings: said so, the first one with it — never an
+        empty line."""
         lines = (self.err or self.out or "").strip().splitlines()
         warnings: list[str] = []
         in_warning = False
         for i, ln in enumerate(lines):
             if not ln.strip():
+                in_warning = False
                 continue
             if ln.lstrip().startswith(WARNING_PREFIXES):
                 in_warning = True
                 warnings.append(ln.strip().split(":", 1)[1].strip())
                 continue
-            if in_warning and ln[:1].isspace():
+            if in_warning and ln[:1].isspace() and not ln.lstrip().upper().startswith("ERROR"):
                 if not warnings[-1]:
                     warnings[-1] = ln.strip()
                 continue

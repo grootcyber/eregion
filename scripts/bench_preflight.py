@@ -188,14 +188,18 @@ def check_cd(ctx: Context) -> list:
     return [line(bs.WARN, f"{said} ; minuteur {state}")]
 
 
-# A watch of Eregion, as docker-compose.yml declares it: the service `watch`, of the image
-# `eregion-glorfindel`, its container `${EREGION_INSTANCE:-eregion}-watch` (a team's: eregion-<team>-watch).
-# Read by the compose label and the image, or by that name — never by a name that only holds « watch »:
-# another project's « …-watcher » on the workstation is none (BNC1b, #724).
+# A watch of Eregion on the workstation, whatever started it (BNC1b, #724), read three ways:
+#   - its command, `glorfindel watch …`, whatever its image and its name: compose's service
+#     (`glorfindel watch /app/runs`), `make glorfindel-watch` (`docker run --rm … glorfindel watch runs/`,
+#     a name drawn by docker, no compose label), an instance of any name on a rebuilt image;
+#   - the compose service `watch` of the image `eregion-glorfindel`, as docker-compose.yml declares it;
+#   - its container's name, `${EREGION_INSTANCE:-eregion}-watch` (a team's: eregion-<team>-watch).
+# Never by a name that only holds « watch »: another project's « …-watcher » is none.
 WATCH_SERVICE = "watch"
 WATCH_IMAGE = "eregion-glorfindel"
 WATCH_NAME = re.compile(r"eregion(?:-[a-z0-9-]+)?-watch")
-PS_FORMAT = '{{.Names}}\t{{.Image}}\t{{.Label "com.docker.compose.service"}}'
+PS_FORMAT = '{{.Names}}\t{{.Image}}\t{{.Label "com.docker.compose.service"}}\t{{.Command}}'
+PS_ARGV = ["docker", "ps", "--no-trunc", "--format", PS_FORMAT]
 
 
 def _image_name(image: str) -> str:
@@ -203,22 +207,32 @@ def _image_name(image: str) -> str:
     return image.split("@", 1)[0].rsplit("/", 1)[-1].split(":", 1)[0]
 
 
+def is_watch_command(command: str) -> bool:
+    """`"glorfindel watch runs/"` as `docker ps --no-trunc` says it (the command between double quotes):
+    the program `glorfindel` (or a path to it), its first word that is no option `watch`."""
+    words = command.strip().removeprefix('"').removesuffix('"').split()
+    if not words or words[0].rsplit("/", 1)[-1] != "glorfindel":
+        return False
+    return next((w for w in words[1:] if not w.startswith("-")), "") == "watch"
+
+
 def eregion_watches(ps_out: str) -> list[str]:
-    """The names of the containers of `docker ps --format PS_FORMAT` that are a watch of Eregion."""
+    """The names of the containers of `docker ps --no-trunc --format PS_FORMAT` that are a watch of Eregion."""
     out = []
     for ln in ps_out.splitlines():
-        name, image, service = ([*ln.split("\t"), "", ""])[:3]
+        name, image, service, command = ([*ln.split("\t"), "", "", ""])[:4]
         name = name.strip()
         if not name:
             continue
-        if WATCH_NAME.fullmatch(name) or (service.strip() == WATCH_SERVICE
-                                          and _image_name(image.strip()) == WATCH_IMAGE):
+        if (is_watch_command(command)
+                or WATCH_NAME.fullmatch(name)
+                or (service.strip() == WATCH_SERVICE and _image_name(image.strip()) == WATCH_IMAGE)):
             out.append(name)
     return out
 
 
 def check_workstation(ctx: Context) -> list:
-    res = bs.run(["docker", "ps", "--format", PS_FORMAT], timeout=30)
+    res = bs.run(PS_ARGV, timeout=30)
     if not res.ok:
         return [line(bs.WARN, f"le poste : docker ne répond pas ({res.first_error()}) — aucune watch locale lue")]
     watches = eregion_watches(res.out)

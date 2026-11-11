@@ -180,7 +180,8 @@ def _world(tmp_path, *, point_age_h: float = 50, restore_role=None, staging_assi
         bw.rule("make", ["glorfindel-host-cd-status"],
                 "  tourne : v0.5.8 (0123456789ab), image sha256:00\n  dernière release : v0.5.8\n  timer : enabled\n"),
         bw.rule("make", ["orodruin-known"]),
-        bw.rule("docker", ["ps", bp.PS_FORMAT], "eregion-annatar-shell\teregion-annatar\t\n"),
+        bw.rule("docker", ["ps", "--no-trunc", bp.PS_FORMAT],
+                "eregion-annatar-shell\teregion-annatar\t\t\"bash --init-file /root/.annatar/.bashrc\"\n"),
         bw.rule("terraform", ["~infra/orodruin", "vm_id"], bw.ORO_VM),
         bw.rule("terraform", ["~infra/orodruin", "principal_id"], bw.ORO_OID),
         bw.rule("terraform", ["~infra/glorfindel-host", "principal_id"], bw.H0_OID),
@@ -330,8 +331,8 @@ def test_orodruin_deallocated_is_a_warning_and_its_contract_is_never_published(t
 
 def test_a_local_watch_and_a_held_mode_are_failures(tmp_path, monkeypatch):
     w = _world(tmp_path, point_age_h=3, staging_assigned=True)
-    w.rules.insert(0, bw.rule("docker", ["ps"], "eregion-watch\teregion-glorfindel\twatch\n"
-                                               "eregion-war-room\teregion-glorfindel\twar-room\n"))
+    w.rules.insert(0, bw.rule("docker", ["ps"], "eregion-watch\teregion-glorfindel\twatch\t\"glorfindel watch /app/runs\"\n"
+                                               "eregion-war-room\teregion-glorfindel\twar-room\t\"glorfindel serve\"\n"))
     _h0(w, readiness="not_ready")
     code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
     assert code == 1
@@ -520,31 +521,37 @@ def test_the_point_s_az_warning_is_not_the_error_the_preflight_says(tmp_path, mo
     assert not any("WARNING" in f for f in fails), out
 
 
-# `docker ps --format PS_FORMAT` on a workstation where another project runs a « watcher ».
-FOREIGN = ("billing-watcher-1\tghcr.io/example/watcher:2.1\twatcher\n"
-           "files-watch-1\texample/files:latest\twatch\n"
-           "kind-watchdog\tkindest/node:v1.31.0\t\n")
+# `docker ps --no-trunc --format PS_FORMAT` on a workstation where another project runs a « watcher ».
+FOREIGN = ('billing-watcher-1\tghcr.io/example/watcher:2.1\twatcher\t"/usr/bin/watcher --interval 10s"\n'
+           'files-watch-1\texample/files:latest\twatch\t"npm run watch"\n'
+           'kind-watchdog\tkindest/node:v1.31.0\t\t"/usr/local/bin/entrypoint /sbin/init"\n'
+           'notes-glorfindel-1\texample/notes\tnotes\t"node glorfindel watch"\n')
 
 
 def test_a_foreign_watcher_on_the_workstation_is_no_watch_of_eregion(tmp_path, monkeypatch):
     w = _world(tmp_path, point_age_h=3, staging_assigned=True)
-    w.rules.insert(0, bw.rule("docker", ["ps", bp.PS_FORMAT], FOREIGN + "eregion-annatar-shell\teregion-annatar\t\n"))
+    w.rules.insert(0, bw.rule("docker", ["ps", "--no-trunc", bp.PS_FORMAT],
+                              FOREIGN + 'eregion-annatar-shell\teregion-annatar\t\t"bash"\n'))
     code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
     assert "le poste : aucune watch locale" in _marked(out, bs.OK), out
     assert code == 0, out
 
 
 @pytest.mark.parametrize("ps, watch", [
-    ("eregion-watch\teregion-glorfindel\twatch\n", "eregion-watch"),
-    ("eregion-blue-watch\teregion-glorfindel:latest\twatch\n", "eregion-blue-watch"),
+    ('eregion-watch\teregion-glorfindel\twatch\t"glorfindel watch /app/runs"\n', "eregion-watch"),
+    ('eregion-blue-watch\teregion-glorfindel:latest\twatch\t"glorfindel watch /app/runs"\n', "eregion-blue-watch"),
     # rebuilt under it: docker says the old image by its id; the name compose gives is the watch's
-    ("eregion-watch\t0123456789ab\twatch\n", "eregion-watch"),
+    ('eregion-watch\t0123456789ab\twatch\t"glorfindel watch /app/runs"\n', "eregion-watch"),
     # EREGION_INSTANCE set to another name: the service and the image say it
-    ("lab-watch\teregion-glorfindel\twatch\n", "lab-watch"),
+    ('lab-watch\teregion-glorfindel\twatch\t"glorfindel watch /app/runs"\n', "lab-watch"),
+    # its command alone says it (review 1): EREGION_INSTANCE=lab on a rebuilt image — neither the name
+    # nor the image say it; `make glorfindel-watch` — a name drawn by docker, no compose label
+    ('lab-watch\t3f2a9c1b7d00\twatch\t"glorfindel watch /app/runs"\n', "lab-watch"),
+    ('quirky_hopper\teregion-glorfindel\t\t"glorfindel watch runs/"\n', "quirky_hopper"),
 ])
 def test_a_watch_of_eregion_beside_a_foreign_watcher_is_a_failure(tmp_path, monkeypatch, ps, watch):
     w = _world(tmp_path, point_age_h=3, staging_assigned=True)
-    w.rules.insert(0, bw.rule("docker", ["ps", bp.PS_FORMAT], FOREIGN + ps))
+    w.rules.insert(0, bw.rule("docker", ["ps", "--no-trunc", bp.PS_FORMAT], FOREIGN + ps))
     code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
     assert code == 1, out
     assert f"le poste : une watch locale tourne ({watch}) : elle répondrait aussi — make glorfindel-stop" \
@@ -558,7 +565,44 @@ def test_the_watch_read_is_the_service_compose_declares():
     watch = yaml.safe_load((ROOT / "docker-compose.yml").read_text())["services"][bp.WATCH_SERVICE]
     assert bp._image_name(watch["image"]) == bp.WATCH_IMAGE
     assert watch["container_name"] == "${EREGION_INSTANCE:-eregion}-watch"
-    assert "glorfindel watch" in watch["command"]
+    assert bp.is_watch_command(f'"{watch["command"]}"')
+
+
+def test_the_watch_by_hand_is_read_by_its_command():
+    """`make glorfindel-watch`: `docker run --rm … eregion-glorfindel glorfindel watch runs/`, no name, no
+    compose label — its command, as docker ps --no-trunc says it, is a watch's."""
+    make = (ROOT / "Makefile").read_text()
+    recipe = re.search(r"^glorfindel-watch:.*\n\t@\$\(DOCKER_GLORFINDEL_WATCH\) (.+)$", make, re.M)
+    image_cmd = re.search(r"^DOCKER_GLORFINDEL_WATCH = (?:.*\\\n)*.*\$\(IMAGE_GLORFINDEL\) (\S+)$", make, re.M)
+    assert recipe and image_cmd, "make glorfindel-watch is no longer what the preflight reads"
+    assert bp.is_watch_command(f'"{image_cmd.group(1)} {recipe.group(1).strip()}"')
+    assert bp.PS_ARGV[:3] == ["docker", "ps", "--no-trunc"]
+
+
+@pytest.mark.parametrize("command, watch", [
+    ('"glorfindel watch runs/"', True),
+    ('"glorfindel watch /app/runs"', True),
+    ('"/usr/local/bin/glorfindel --verbose watch runs/"', True),
+    ("glorfindel watch", True),
+    ('"glorfindel serve"', False),
+    ('"glorfindel respond runs/annatar/x_signals.jsonl"', False),
+    ('"bash --init-file /root/.glorfindel/.bashrc"', False),
+    ('"node glorfindel watch"', False),
+    ('"/usr/bin/watcher --interval 10s"', False),
+    ('"glorfindel-watcher watch"', False),
+    ("", False),
+])
+def test_a_watch_s_command(command, watch):
+    assert bp.is_watch_command(command) is watch
+
+
+def test_a_warning_goes_on_neither_over_a_blank_line_nor_over_an_error():
+    """Review 1: an indented line after a WARNING was its suite even after a blank line, an indented
+    ERROR too — the true error hidden behind « rien que des avertissements »."""
+    assert bs.Result(1, "", "WARNING: the type\n\n    (Conflict) the vault is busy\n").first_error() == \
+        "(Conflict) the vault is busy"
+    assert bs.Result(1, "", "WARNING: the type\n    told on\n  ERROR: (Conflict) the vault is busy\n").first_error() == \
+        "ERROR: (Conflict) the vault is busy"
 
 
 def test_the_point_is_asked_by_the_full_container_of_the_item_s_id():

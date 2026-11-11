@@ -1,9 +1,11 @@
 """BNC1b (#724): the bench's preflight, corrected on what the bench of 11/11 measured — az's warning
-is not its error, another project's « watcher » is no watch of Eregion, the recovery point asked by
-the full container of the item's id. M4800–M4806, measured by tests/unit/test_bench_preflight.py."""
+is not its error, another project's « watcher » is no watch of Eregion, a watch read by its command
+too, the recovery point asked by the full container of the item's id. M4800–M4808, measured by
+tests/unit/test_bench_preflight.py."""
 PRE = "scripts/bench_preflight.py"
 SHARED = "scripts/bench_shared.py"
 _P = "tests/unit/test_bench_preflight.py"
+_CONTINUED = '            if in_warning and ln[:1].isspace() and not ln.lstrip().upper().startswith("ERROR"):\n'
 
 MUTANTS = [
     ("M4800", "az's `WARNING:` taken for the error: the point said « illisible (WARNING: ) », the true "
@@ -11,7 +13,7 @@ MUTANTS = [
      'WARNING_PREFIXES = ("Warning:", "WARNING:")\n',
      'WARNING_PREFIXES = ("Warning:",)\n'),
     ("M4801", "the indented lines of az's warning said as the error (BNC1b)", SHARED,
-     "            if in_warning and ln[:1].isspace():\n",
+     _CONTINUED,
      "            if False:\n"),
     ("M4802", "a command that says only warnings answered by an empty line (BNC1b)", SHARED,
      '            return scrub(f"code {self.rc}, rien que des avertissements" + (f" : {first}"[:200] if first else ""))\n',
@@ -22,9 +24,8 @@ MUTANTS = [
      '    watches = [n.split("\\t")[0] for n in res.out.splitlines() if "watch" in n.lower()]\n'),
     ("M4804", "the compose service `watch` of any image read as Eregion's: another project's `watch` "
      "service stops the run (BNC1b)", PRE,
-     "        if WATCH_NAME.fullmatch(name) or (service.strip() == WATCH_SERVICE\n"
-     "                                          and _image_name(image.strip()) == WATCH_IMAGE):\n",
-     "        if WATCH_NAME.fullmatch(name) or service.strip() == WATCH_SERVICE:\n"),
+     "                or (service.strip() == WATCH_SERVICE and _image_name(image.strip()) == WATCH_IMAGE)):\n",
+     "                or service.strip() == WATCH_SERVICE):\n"),
     ("M4805", "the three-segment containerName passed to `-c` and the item's name to `-i`: az refuses "
      "it (BMSUserErrorContainerNameIncorrectFormat), the point is never read (BNC1b, the defect back)", PRE,
      '    return ["backup", "recoverypoint", "list", "-g", v_rg, "-v", vault, "-c", found.group(1),\n'
@@ -38,6 +39,28 @@ MUTANTS = [
      '                           "(/protectionContainers/…/protectedItems/…)")\n',
      '        found = re.search(r"(.+);(.+)", "IaasVMContainer;" + str((item.get("properties") or {})\n'
      '                          .get("containerName") or "") + ";" + str(item.get("name") or ""))\n'),
+    # The review's first round: M4807, M4808.
+    ("M4807", "a watch read by its name and its compose label only: `make glorfindel-watch` (a name drawn "
+     "by docker, no label) or an instance of another name on a rebuilt image is no local watch, a false ✓ "
+     "(BNC1b review)", PRE,
+     "        if (is_watch_command(command)\n",
+     "        if (False\n"),
+    ("M4808", "az's warning goes on over a blank line and over an indented ERROR: the true error said "
+     "« rien que des avertissements » (BNC1b review)", SHARED,
+     "            if not ln.strip():\n"
+     "                in_warning = False\n"
+     "                continue\n"
+     "            if ln.lstrip().startswith(WARNING_PREFIXES):\n"
+     "                in_warning = True\n"
+     '                warnings.append(ln.strip().split(":", 1)[1].strip())\n'
+     "                continue\n" + _CONTINUED,
+     "            if not ln.strip():\n"
+     "                continue\n"
+     "            if ln.lstrip().startswith(WARNING_PREFIXES):\n"
+     "                in_warning = True\n"
+     '                warnings.append(ln.strip().split(":", 1)[1].strip())\n'
+     "                continue\n"
+     "            if in_warning and ln[:1].isspace():\n"),
 ]
 TESTS = {
     "M4800": f"{_P}::test_az_s_warning_is_not_the_error_said",
@@ -47,4 +70,6 @@ TESTS = {
     "M4804": f"{_P}::test_a_foreign_watcher_on_the_workstation_is_no_watch_of_eregion",
     "M4805": f"{_P}::test_the_point_is_asked_by_the_full_container_of_the_item_s_id",
     "M4806": f"{_P}::test_an_item_without_its_container_or_name_is_unreadable_never_a_fallback",
+    "M4807": f"{_P}::test_a_watch_of_eregion_beside_a_foreign_watcher_is_a_failure",
+    "M4808": f"{_P}::test_a_warning_goes_on_neither_over_a_blank_line_nor_over_an_error",
 }
