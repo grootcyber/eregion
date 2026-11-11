@@ -379,6 +379,12 @@ Elle construit alors son propre `recovery_complete`, garanti dans son processus 
 
 **Hypothèses, à mesurer au banc avant LEV3** ([`banc-lev2.md`](banc-lev2.md)) : chaque opération s'écrit sous la ressource que la table nomme, et une Run Command v1 écrit peut-être aussi une extension (H7) ; le filtre exact ne rend pas les enfants, et la lecture du groupe tient dans 20 pages (H9) ; la latence de la lecture (H12) ; le Reader d'Imladris lit les attributions héritées (H1) et les éligibilités (H2) ; une attribution orpheline se lit `principalType: Unknown` (H11) ; l'événement d'une écriture de règle porte son corps. **Ce qui ne retire que** (une attribution de refus, une condition ABAC, un verrou) est ignoré : le sens prudent.
 
+### Le dossier d'une isolation, en conception (DOS1, #727)
+
+**Le constat (banc, 10/11)** : bree s'est isolée seule sur un pic d'écriture de 20 s, 31 s après le départ de sa sauvegarde nocturne, que la métrique de l'hôte voyait bien plus bas. Toutes les gardes ont vu juste sur ce qu'elles regardent, aucune ne lit la plateforme, et sous Linux `backup_agent_check` rend toujours `[]`. Jonathan a relu à la main le coffre, la métrique de l'hôte, dix jours de `Perf` et de `Syslog`, le journal d'activité et la ligne de debug, qui ne disait pas le modèle de la décision.
+
+**La suite, en conception** : un **dossier** par isolation, et par carte qui propose d'isoler. Ce sont des faits, jamais un verdict, chacun avec sa source, son auteur et son état (lu, vide, sans objet, illisible, en attente) : le contexte de la plateforme (un job du coffre, une extension, un redémarrage, une maintenance), un second avis de l'hôte sur la même minute, la récurrence, les connexions acceptées, l'après-coup (les gestes de Glorfindel, la coupure, la vérification, les cartes) et la décision telle qu'elle a été prise (le modèle, l'échantillonnage, la version). Il se compose **après l'action**, dans un fil à part, comme la porte de LEV2, sous les droits qu'Imladris tient déjà. Il est dit sur la carte de la console et sur Discord, et **jamais au modèle** : le message reste identique à l'octet. S'il devient une garde, c'est une question pour Jonathan. Rien n'est codé ni mesuré : [`design/dossier-isolation.md`](design/dossier-isolation.md).
+
 ---
 
 ## IncidentRegistry

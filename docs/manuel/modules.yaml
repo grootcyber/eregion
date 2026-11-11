@@ -742,6 +742,26 @@ briques:
     issue: 690
     doc: docs/design/levee-probation.md
 
+  - id: g-dossier-isolation
+    composant: glorfindel
+    poste: g-verifier
+    nom: "Design: the record of an isolation, the facts read after the action so a human only has to judge, never shown to the model"
+    etat: main
+    release: "0.6"
+    lots: [DOS1]
+    issue: 727
+    doc: docs/design/dossier-isolation.md
+
+  - id: g-dossier-isolation-code
+    composant: glorfindel
+    poste: g-verifier
+    nom: "The record of an isolation itself: the decision noted, the platform's context, the host's second opinion, the recurrence, on the card and in Discord"
+    etat: prevue
+    release: "0.6"
+    lots: [DOS2, DOS3, DOS4, DOS5, DOS6, DOS7, DOS8]
+    issue: 727
+    doc: docs/design/dossier-isolation.md
+
   - id: g-memoire-source
     composant: glorfindel
     poste: g-memoire
