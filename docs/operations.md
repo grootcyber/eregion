@@ -4640,6 +4640,212 @@ AUD1), à mesurer : les comm et exe réels du bruit, la forme des enregistrement
 `crontab` écrit, le volume de `shell_exec`, et si un `echo 0>` sur un journal existant (O_TRUNC) est vu
 par la surveillance du répertoire.
 
+## Le compte des flux réseau (INF-FL, #654)
+
+Les blobs des VNet flow logs du banc portent un enregistrement par connexion (5-tuple). SEC-A3f les
+lira comme la preuve qu'une adresse s'est vraiment connectée au port 22 d'une VM
+(`docs/design/corroboration.md`, §3.10). Cette preuve ne tient que si **aucune identité joignable
+depuis une VM surveillée ne peut écrire le compte qui les porte** (CR15).
+
+Jusqu'à INF-FL, ce compte était celui des exercices d'exfiltration (`stcelebrimborexfil`). L'identité
+managée de chaque VM inscrite y a `Storage Blob Data Contributor` sur tout le compte, pour T1041. Un
+utilisateur local s'en sert par IMDS : il pouvait écrire de faux flux, ou effacer les vrais. INF-FL
+donne aux flux **un compte à eux seuls**. Le compte des exercices garde l'écriture des VM inscrites,
+ses diagnostics (`StorageBlobLogs`) et son conteneur `exfil-target`, comme avant. **Rien n'est encore
+planifié ni appliqué** : c'est un geste de Jonathan. Les noms sont ceux du banc canonique ; une
+instance nommée a les siens (`stcbrflow<hash>`). Rien de réel dans ce dépôt.
+
+### Le choix : un compte dédié, plutôt qu'un rôle restreint au conteneur
+
+Deux options existaient. La première : garder le compte partagé, et restreindre le rôle des VM au
+conteneur `exfil-target`. La seconde, retenue : un compte dédié aux flux.
+
+- **Une portée restreinte ne ferme pas tout.** Le compte partagé garde des clés, et chaque exercice
+  y écrit. Une clé ou un SAS du compte des exercices, posé un jour sur une VM pour un exercice, y
+  écrirait aussi les flux. Un rôle de gestion qui porte `listKeys` sur le compte en ferait autant.
+- **Un compte dédié ferme ces chemins par construction.** Il n'a aucune attribution à une VM, ni sur
+  lui, ni au-dessus. Sa clé partagée est refusée. Il n'a aucun conteneur public.
+- **La preuve et l'attaque restent séparées.** Les exercices continuent d'écrire ce qu'ils veulent, où
+  ils veulent, sans toucher la preuve.
+- **Le coût est nul** (ci-dessous).
+
+### Ce que le Terraform pose
+
+| Ressource (`infra/terraform/`) | Ce qu'elle fait |
+|---|---|
+| `azurerm_storage_account.flows` (`storage.tf`) : `stcelebrimborflows`, Standard LRS, même région | le compte des flux. `shared_access_key_enabled = var.flow_logs_shared_key_enabled` (`false` par défaut : `allowSharedKeyAccess` désactivé, ni clé ni SAS n'y valent) ; `allow_nested_items_to_be_public = false`. Chiffrement par défaut, par des clés gérées par Microsoft. Une clé du client qui tourne arrête les flow logs, selon Microsoft Learn |
+| `azurerm_role_assignment.flows_operator_reader` (`storage.tf`) | `Storage Blob Data Reader` sur ce seul compte, pour l'opérateur qui applique (`data.azurerm_client_config.operator`, son az login). Sans clé, son rôle Owner n'ouvre plus le plan de données. Cette lecture sert aux mesures (M1b, `corroboration.md`, §5.4). L'identité de Glorfindel recevra la sienne par SEC-A3f, dans son module |
+| `azurerm_network_watcher_flow_log.celebrimbor` (`monitoring.tf`) | `storage_account_id` vise désormais `azurerm_storage_account.flows`. Traffic analytics (10 minutes, `NTANetAnalytics`) et la rétention de 7 jours ne changent pas |
+| `provider "azurerm"` (`main.tf`) : `features { storage { data_plane_available = false } }` | sans ce drapeau, azurerm 4.81.0 lit les propriétés de file d'attente et de site statique de **chaque** compte par le plan de données, avec la clé (`storage_use_azuread` n'est pas posé). Un compte sans clé ferait échouer chaque plan, par un 403 `KeyBasedAuthenticationNotPermitted`. Aucun compte du module n'a `queue_properties` ni `static_website`, et le drapeau sert précisément à ce cas (guide du bloc `features`) |
+| sorties `flow_logs_storage_account`, `flow_logs_storage_account_id` | le nom et l'id du compte : la portée de la future lecture de SEC-A3f, et ce que lit CR15 |
+
+La propriété, planifiée contre de faux providers et sans Azure, est dans
+`infra/terraform/tests/flow_logs.tftest.hcl` (`terraform test`, job `terraform-test` de la CI). Ce
+test vérifie trois choses :
+
+- le flow log vise le compte des flux, et plus celui des exercices ni celui du restore ;
+- aucune attribution d'une VM du banc, ni d'une VM des topologies, ne porte sur le compte des flux
+  ni au-dessus (le groupe, l'abonnement) ;
+- la clé est refusée, et le retour en arrière la rouvre sans rien changer d'autre.
+
+`tests/unit/test_bench_flow_logs.py` lit la même propriété dans les fichiers, et la renverse : le
+défaut est le refus. **Chaque** `azurerm_role_assignment` du module, **quel que soit son principal**,
+doit porter sur une ressource d'une liste fermée, strictement sous le groupe : le compte des
+exercices, la DCR, une VM, le workspace. Sinon, elle doit être nommée dans une seconde liste fermée,
+avec sa portée exacte et sa raison. Aujourd'hui, cette seconde liste ne tient que
+`flows_operator_reader`, et aucune attribution du module ne porte sur le groupe. Tout le reste est
+refusé : le compte des flux, un groupe, l'abonnement, un id littéral, un `local` ou un `var`. Ainsi,
+une identité de VM passée par un `local` n'y échappe pas : la sonde de la relecture, une écriture de
+données sur le groupe avec `principal_id = local.p`, est un cas du test, et un mutant (M4770). Une
+attribution ajoutée dans un fichier que le plan ne nomme pas est prise de même. Mutants M4760–M4764
+et M4770.
+
+### Le plan, puis l'application (gestes de Jonathan)
+
+Depuis le poste, à la racine du dépôt, `.envrc` chargé :
+
+1. **Le plan ciblé** (lecture seule) : `make celebrimbor-flows-plan`. Il doit montrer exactement ceci :
+   - `+ azurerm_storage_account.flows` (création), avec `shared_access_key_enabled = false` et
+     `allow_nested_items_to_be_public = false` ;
+   - `+ azurerm_role_assignment.flows_operator_reader` (création) : `Storage Blob Data Reader`, la
+     portée du compte des flux, et ta propre identité. Cette attribution suit l'identité qui lance
+     Terraform (`data.azurerm_client_config.operator`). Un plan lancé plus tard sous une autre
+     identité montre son remplacement (`-/+`) : un remplacement de cette attribution, s'arrêter ;
+   - `~ azurerm_network_watcher_flow_log.celebrimbor`, **mise à jour en place** : seul
+     `storage_account_id` change, de `…/stcelebrimborexfil` vers `…/stcelebrimborflows`.
+     `storage_account_id` n'est pas `ForceNew` dans azurerm 4.81.0 : aucun `-/+` ;
+   - `Plan: 2 to add, 1 to change, 0 to destroy`, et l'avertissement de Terraform sur `-target`.
+
+   **S'arrêter** si le plan montre un remplacement, une destruction, ou un changement sur le compte
+   des exercices, sur `vm_storage_exfil`, sur une VM, le VNet ou le workspace. Un tel changement est
+   une dérive à traiter d'abord par `make celebrimbor-plan`.
+2. **Le plan complet** (lecture seule), pour l'hypothèse CF3 : `make celebrimbor-plan`. Le drapeau du
+   provider ne doit rien changer sur `azurerm_storage_account.exfil` ni sur
+   `azurerm_storage_account.restore_staging`. Ce plan peut montrer d'autres dérives du banc, sans
+   rapport avec INF-FL : ne pas les appliquer ici.
+3. **L'application** : `make celebrimbor-flows-up YES=1`, une fois le plan du point 1 relu. Sans
+   `YES=1`, Terraform redemande la confirmation.
+
+### Ce qui se perd, ce qui reste
+
+- **L'historique des flux reste dans l'ancien compte.** Le conteneur
+  `insights-logs-flowlogflowevent` de `stcelebrimborexfil` garde les blobs écrits jusqu'à l'apply.
+  Ils restent lisibles avec ton identité, mais **ils ne sont pas une preuve** : les VM pouvaient y
+  écrire. Network Watcher applique sa rétention de 7 jours par une règle de cycle de vie sur le
+  compte qu'il vise. On ne sait pas si cette règle reste sur l'ancien compte et finit d'y effacer les
+  blobs (hypothèse CF4). Au-delà de 8 jours, s'ils sont encore là, le conteneur se supprime à la
+  main. C'est une destruction, à faire seulement après les mesures qui s'en servent.
+- **Les lignes de `NTANetAnalytics` ne sont pas touchées.** Elles vivent dans le workspace, avec sa
+  rétention. Au moment de la bascule, un trou de quelques minutes est possible, le temps que Network
+  Watcher écrive dans le nouveau compte (CF6).
+- **Les mesures M1b de SEC-A3** (`corroboration.md`, §5.2, étape 2, sur 7 jours) se font sur le
+  nouveau compte, une fois ses 7 jours accumulés. Les blobs de l'ancien compte peuvent servir aux
+  distributions de CR13, pas à CR15.
+- **Le retour en arrière, si Network Watcher n'écrit pas sans clé** (CF1) : mettre
+  `flow_logs_shared_key_enabled = true` dans `terraform.tfvars`, jamais en `-var`. Puis
+  `make celebrimbor-flows-plan` doit montrer `1 to change` (le compte, la clé seule), et
+  `make celebrimbor-flows-up YES=1`. Les blobs ne sont alors plus une preuve au sens de CR15 : SEC-A3f
+  attend que la conception le dise. Revenir au compte des exercices n'est pas un retour en arrière
+  prévu : il défait la séparation.
+
+### Vérifier CR15 au banc, après l'apply (en lecture)
+
+1. **La clé et l'accès public**. Résultat attendu : `false` et `false`.
+
+   ```bash
+   az storage account show -g rg-celebrimbor -n stcelebrimborflows \
+     --query "{allowSharedKeyAccess: allowSharedKeyAccess, allowBlobPublicAccess: allowBlobPublicAccess}" -o json
+   ```
+
+2. **Les attributions sur le compte et au-dessus** (le groupe, l'abonnement, héritées), puis les
+   identités des VM du banc :
+
+   ```bash
+   FLOWS=$(az storage account show -g rg-celebrimbor -n stcelebrimborflows --query id -o tsv)
+   az role assignment list --scope "$FLOWS" --include-inherited \
+     --query "[].{principal: principalId, type: principalType, role: roleDefinitionName, scope: scope}" -o table
+   az vm list -g rg-celebrimbor --query "[].{vm: name, system: identity.principalId}" -o table
+   az identity list -g rg-celebrimbor --query "[].{name: name, principal: principalId}" -o table
+   ```
+
+   Aucun principal des deux dernières listes ne doit paraître dans la première. Les entrées attendues
+   de la première :
+   - ta lecture sur le compte (`Storage Blob Data Reader`) ;
+   - tes rôles hérités de l'abonnement ;
+   - les rôles de H0, de la console et d'Orodruin sur le groupe : `Reader`, « Eregion Glorfindel
+     Response », « Eregion Glorfindel Restore », la lecture d'Orodruin. Aucun de ces rôles n'a de
+     droit de données ni `listKeys`. Ce sont des identités d'hôtes que la watch ne surveille pas.
+     « Eregion Glorfindel Restore » porte toutefois `Microsoft.Storage/storageAccounts/write` sur
+     tout le groupe : il peut rouvrir la clé du compte des flux, sans pouvoir la lire (ci-dessous,
+     « Ce qui reste ouvert »).
+
+   Un autre principal est à expliquer avant SEC-A3f.
+3. **Network Watcher écrit sans clé** (CF1), dans les 10 à 30 minutes qui suivent l'apply. Ta lecture
+   peut mettre quelques minutes à se propager.
+
+   ```bash
+   az storage blob list --account-name stcelebrimborflows -c insights-logs-flowlogflowevent --auth-mode login \
+     --num-results 5 --query "[].{name: name, modified: properties.lastModified}" -o table
+   ```
+
+4. **Traffic analytics suit** (CF2), dans le portail, « Logs » du workspace du banc. Les lignes
+   doivent continuer d'arriver après l'heure de l'apply :
+
+   ```kusto
+   NTANetAnalytics
+   | where TimeGenerated > ago(2h) and SubType == "FlowLog"
+   | summarize Rows = count(), Last = max(TimeGenerated) by bin(TimeGenerated, 10m)
+   ```
+
+5. **Depuis une VM inscrite, une écriture d'essai refusée** (la mesure de CR15 dans `corroboration.md`).
+   Sur gondolin, par SSH, avec son identité managée :
+
+   ```bash
+   TOKEN=$(curl -sf -H "Metadata: true" \
+     "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://storage.azure.com/" \
+     | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+   curl -s -o /dev/null -w "%{http_code}\n" -X PUT -H "Authorization: Bearer $TOKEN" \
+     -H "x-ms-blob-type: BlockBlob" -H "x-ms-version: 2020-04-08" --data-binary "" \
+     "https://stcelebrimborflows.blob.core.windows.net/insights-logs-flowlogflowevent/cr15-probe.txt"
+   ```
+
+   Résultat attendu : `403`. Un `201` veut dire que le compte n'est pas une preuve : l'écrire dans
+   CR15, et retirer le blob d'essai.
+
+### Les hypothèses d'INF-FL
+
+| | Hypothèse | Mesure | Si elle tient | Sinon |
+|---|---|---|---|---|
+| **CF1** | Network Watcher écrit les blobs dans un compte sans clé partagée. La FAQ de Network Watcher dit qu'il essaie une clé, puis un jeton | étape 3 | la clé reste refusée | `flow_logs_shared_key_enabled = true` (le retour en arrière) ; CR15 ne tient plus sur `allowSharedKeyAccess`, à dire dans la conception |
+| **CF2** | Traffic analytics lit les blobs du compte sans clé : `NTANetAnalytics` continue | étape 4 | rien | COR2 (`origin_proof: flows`) perd sa source : le retour en arrière, comme CF1 |
+| **CF3** | Le drapeau `data_plane_available = false` ne change rien aux comptes d'exfiltration et de transit : `queue_properties` et `static_website` sont `Optional` et `Computed`, et gardent leur valeur | le plan complet du point 2 | rien | lire le changement avant tout apply complet ; ne pas l'appliquer s'il touche un compte |
+| **CF4** | La règle de rétention que Network Watcher a posée sur l'ancien compte y reste, et efface ses blobs de flux en 7 jours | l'ancien conteneur, 8 jours après l'apply | rien | supprimer le conteneur à la main, après les mesures |
+| **CF5** | `Storage Blob Data Reader` et `--auth-mode login` suffisent à lire les blobs, pour M1b | étape 3 | rien | lire le refus : un délai de propagation, ou une règle réseau |
+| **CF6** | La bascule de `storage_account_id` est une mise à jour en place, et Network Watcher écrit dans le nouveau compte en quelques minutes | le plan du point 1, puis l'étape 3 | rien | relever le trou dans `NTANetAnalytics`, le dire dans `corroboration.md` |
+
+### Ce qui reste ouvert
+
+- **Le point de terminaison public reste ouvert.** Il est fermé à toute requête sans identité Entra
+  ID autorisée, mais pas par le réseau. Un pare-feu du compte (refus par défaut, services de
+  confiance admis, comme le permet la FAQ de Network Watcher) serait une défense de plus. Il demande
+  de prévoir l'accès réseau de la lecture de SEC-A3f, depuis H0 ou le poste : un lot à part, s'il est
+  voulu.
+- **Les identités au-dessus du banc** gardent leurs droits : un Owner ou un Contributor de
+  l'abonnement peut toujours écrire ou effacer les flux, ou rouvrir la clé. Ce ne sont pas des
+  identités joignables depuis une VM surveillée. Ni verrou de suppression ni stockage immuable n'est
+  posé.
+- **Le rôle de restore écrit la configuration du compte.** « Eregion Glorfindel Restore » est
+  attribué à la main sur le groupe de la VM (« Identités Azure », ci-dessus). Son
+  `Microsoft.Storage/storageAccounts/write` vaut donc aussi sur le compte des flux. Il permet de
+  rouvrir la clé partagée, ou de faire taire la preuve par une règle réseau qui refuse tout sans
+  exception pour les services de confiance, sans lire ni régénérer une clé, ni écrire un blob. Le restore n'a besoin de cette écriture que sur le compte de transit : la restreindre à
+  ce compte est une question pour les sessions Glorfindel et Infra. Les principaux de ce rôle sont
+  ceux de la console, pas ceux d'une VM surveillée.
+- **Les modules d'Orodruin et de H0** ne sont pas lus par le test. Leurs attributions sur le groupe
+  se vérifient à l'étape 2. Chez un client, c'est la vérification de Glorfindel au démarrage qui tient
+  CR15 : dans `corroboration.md`, §3.5, le statut `unknown` « compte des flux écrit depuis une VM »
+  (SEC-A3f).
+
 ---
 
 ## Coûts réels (West Europe)
@@ -4650,4 +4856,5 @@ par la surveillance du répertoire.
 - **auditd au banc (AUD1)**, s'il est activé : les lignes d'auditd dans `Syslog` (local6), 2,99 USD le Go
   en West Europe au-delà des 5 Go gratuits du mois — estimées à moins de 1 USD par mois sur le banc
   (~3 Ko par exécution d'un humain en root), à mesurer (« auditd au banc (AUD1) », ci-dessus).
+- **Le compte des flux réseau (INF-FL)** : un compte de stockage n'a pas de frais fixes ; on paie la capacité et les opérations, à l'usage (Azure Blob Storage). Les blobs des flux, leurs écritures (un ajout par minute) et les lectures de traffic analytics **changent de compte, ils ne doublent pas** : le coût total reste celui d'avant. Le seul surcoût est passager : l'ancien historique, 7 jours au plus, dans le compte des exercices. Le coût réel se relève sur la facture, avec ceux des flux (`docs/design/corroboration.md`, §5.2, étape 1).
 - **Chaos Studio (G0)** : facturé à l'usage des expériences (une panne de 5 min sur une VM). Feu vert du 15/10 sur une estimation de 11 à 42 € par mois pour 2 à 4 campagnes (ROADMAP) ; le coût réel est à relever sur la facture après le premier run.

@@ -151,7 +151,7 @@ DOCKER_GLORFINDEL_WATCH = $(WATCH_KEY_DIR) && $(RUNS_DIRS) && $(GLORFINDEL_AZURE
 	annatar-shell glorfindel-shell \
 	venv install lock audit test test-unit lint annatar-simulate annatar-simulate-gap clean release release-draft manuel \
 	canary-jit providers-lock celebrimbor-init celebrimbor-plan celebrimbor-up celebrimbor-down celebrimbor-output celebrimbor-stop celebrimbor-start \
-	celebrimbor-logs-plan celebrimbor-logs-up celebrimbor-auditd-plan celebrimbor-auditd-up \
+	celebrimbor-logs-plan celebrimbor-logs-up celebrimbor-auditd-plan celebrimbor-auditd-up celebrimbor-flows-plan celebrimbor-flows-up \
 	celebrimbor-identity-plan celebrimbor-identity-up celebrimbor-unit-prepare celebrimbor-users-plan celebrimbor-users-up \
 	celebrimbor-reader-key celebrimbor-reader-plan celebrimbor-reader-up celebrimbor-reader-profile \
 	glorfindel-host-init glorfindel-host-plan glorfindel-host-up glorfindel-host-down glorfindel-host-push glorfindel-host-client-rules \
@@ -251,6 +251,8 @@ help:
 	@echo "  make celebrimbor-reader-profile             Le profil de la session Banc (aucun secret), depuis les sorties"
 	@echo "  make celebrimbor-auditd-plan [INSTANCE=]    Plan d'auditd seul : l'extension des VM et la DCR (AUD1)"
 	@echo "  make celebrimbor-auditd-up [YES=1]          L'applique (auditd_enabled du tfvars ; false : le retire)"
+	@echo "  make celebrimbor-flows-plan [INSTANCE=]     Plan du compte des flux réseau seul : le compte, sa lecture, le flow log (INF-FL)"
+	@echo "  make celebrimbor-flows-up [YES=1]           L'applique (le flow log change de compte, en place)"
 	@echo ""
 	@echo "Glorfindel hébergé (Imladris : pré-observation, état Terraform séparé)"
 	@echo "  make imladris-<x>                            Le même geste que make glorfindel-host-<x> (IML1)"
@@ -829,6 +831,27 @@ celebrimbor-auditd-up:
 	@$(TF) init
 	@$(TF) workspace select $(INSTANCE)
 	@$(TF) apply$(if $(YES), -auto-approve) $(AUDITD_TARGETS)
+
+# INF-FL (#654) : le compte des flux réseau, à lui seul — plan et apply ciblés sur le compte des flux,
+# la lecture de l'opérateur et le flow log qui change de compte (une mise à jour en place), rien
+# d'autre du banc (une dérive en attente du VNet, du workspace ou du groupe, leurs dépendances, y
+# paraîtrait : alors s'arrêter, et la traiter par celebrimbor-plan). Jamais de `-var` d'ici : la clé
+# du compte (flow_logs_shared_key_enabled, false) vient de terraform.tfvars. Ce que le plan doit
+# montrer, ce qui se perd, la vérification de CR15 : docs/operations.md, « Le compte des flux réseau
+# (INF-FL) ».
+#   make celebrimbor-flows-plan                # lecture seule
+#   make celebrimbor-flows-up [YES=1]          # YES=1 : sans confirmation, plan relu avant
+FLOWS_TARGETS = -target=azurerm_storage_account.flows -target=azurerm_role_assignment.flows_operator_reader -target=azurerm_network_watcher_flow_log.celebrimbor
+
+celebrimbor-flows-plan:
+	@$(TF) init
+	@$(TF) workspace select $(INSTANCE)
+	@$(TF) plan $(FLOWS_TARGETS)
+
+celebrimbor-flows-up:
+	@$(TF) init
+	@$(TF) workspace select $(INSTANCE)
+	@$(TF) apply$(if $(YES), -auto-approve) $(FLOWS_TARGETS)
 
 # Lot H0 : la charge réelle de bree (petit site + routine d'admin), par Run Command —
 # jamais par le custom_data (le changer remplace la VM). Idempotent.
