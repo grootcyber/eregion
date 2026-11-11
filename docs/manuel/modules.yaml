@@ -250,7 +250,7 @@ postes:
   - id: s-heberger
     composant: socle
     nom: "Host"
-    legende: "Glorfindel hosted, its CD"
+    legende: "Glorfindel hosted on Imladris, its CD"
     nature: code
     schema: socle
   - id: s-prouver
@@ -285,13 +285,13 @@ releases:
     etat: publiee
     derniere: "0.3.1"
     date: "2026-10-27"
-    resume: "From an armed Orodruin, a public technique and a declared fault on enrolled targets; Glorfindel hosted beside the bench; the campaign report writes itself."
+    resume: "From an armed Orodruin, a public technique and a declared fault on enrolled targets; Glorfindel hosted on Imladris, beside the bench; the campaign report writes itself."
   - version: "0.4"
     nom: "the isolation path held"
     etat: publiee
     derniere: "0.4.10"
     date: "2026-11-02"
-    resume: "Isolation held to its invariants; its edges (console, logs, channels) and its core hardened; publishing a release deploys the hosted Glorfindel."
+    resume: "Isolation held to its invariants; its edges (console, logs, channels) and its core hardened; publishing a release deploys Imladris, the hosted Glorfindel."
   - version: "0.5"
     nom: "the measured loop"
     etat: publiee
@@ -1271,7 +1271,7 @@ briques:
   - id: s-heberge
     composant: socle
     poste: s-heberger
-    nom: "Glorfindel hosted on a dedicated VM, beside the bench"
+    nom: "Glorfindel hosted on Imladris, a dedicated VM beside the bench"
     etat: livree
     release: "0.3"
     version: "0.3.0"
@@ -1282,7 +1282,7 @@ briques:
   - id: s-cd
     composant: socle
     poste: s-heberger
-    nom: "The CD: publishing a release deploys the hosted Glorfindel"
+    nom: "The CD: publishing a release deploys Imladris, the hosted Glorfindel"
     etat: livree
     release: "0.4"
     version: "0.4.2"
