@@ -75,8 +75,16 @@ sudo install -m 644 infra/poste/sshd_config.d/00-eregion.conf /etc/ssh/sshd_conf
 sudoedit /etc/ssh/sshd_config.d/00-eregion.conf      # ListenAddress <tailscale ip -4>, AllowUsers <toi>
 sudo install -D -m 644 infra/poste/ssh.service.d/eregion.conf /etc/systemd/system/ssh.service.d/eregion.conf
 sudo systemctl disable --now ssh.socket              # Ubuntu ≥ 22.10 : sshd écoute lui-même, pas le socket
+sudo install -d -m 755 /run/sshd                     # sans lui, sshd -t refuse avant le premier départ du service
 sudo systemctl daemon-reload && sudo sshd -t && sudo systemctl enable --now ssh.service
 ```
+
+- **`/run/sshd`** (mesuré le 11/11 sur Ubuntu 24.04) : `ssh.socket` coupé, `ssh.service` pas encore
+  parti, `sudo sshd -t` refuse avec « Missing privilege separation directory: /run/sshd ». `/run` est
+  un tmpfs, vidé à chaque démarrage, et ce répertoire, c'est le `RuntimeDirectory=sshd` du service
+  qui le crée au départ du service — ni avant, ni pour `sshd -t` lancé à la main. `install -d` le crée
+  vide (root, 755), comme le service le ferait. On garde le test **avant** le départ : une
+  configuration refusée ne démarre rien.
 
 - **Le fragment** (`infra/poste/sshd_config.d/00-eregion.conf`) :
   - l'adresse privée seule ;
