@@ -2245,7 +2245,21 @@ comme pip et Terraform (la boucle le piège, et sort avec 130 ou 143). Aucune va
   dans chaque job qui restaure son cache (`ci.yml`, les invariants, les tranches de mutants et le jeu de
   contrôle de la porte et du lundi, le job Glorfindel de Components). Il ne télécharge que si un fichier
   du modèle manque ; le cache restauré, rien ne part. Le harnais de mutation le trouve ensuite prêt
-  (CI6b). Après trois échecs, le job est rouge : le réseau du runner est en panne.
+  (CI6b). Après trois échecs, le job est rouge : le réseau du runner est en panne. Le script prend
+  le même verrou que la suite (ci-dessous).
+- **La suite elle-même prépare le modèle une fois par session** (FLK1, #723), pour un run local
+  sans cette étape : `pytest -n 4` avec un `HOME` jetable vide. Le 11/11, deux workers le
+  téléchargeaient en même temps dans le même `~/.cache/chroma` (la vraie `CycleMemory` de
+  `test_agent_nodes.py`, l'index du rapport de campagne dans `test_containment.py`). ChromaDB écrit
+  l'archive en place et la supprime quand son SHA-256 ne correspond pas : l'un supprimait le fichier
+  à moitié écrit de l'autre (`FileNotFoundError … onnx.tar.gz`), mesuré dès la première suite en
+  `-n 4`. Désormais chaque processus de la suite (`tests/unit/conftest.py`, la fixture de session
+  `chroma_model`) passe, avant son premier test, par `prepare_once` (`scripts/chroma_model.py`) : un
+  verrou de fichier (`flock`, `~/.cache/chroma/onnx_models/.eregion-prepare.lock`), sous lequel le
+  premier télécharge le modèle et les autres le trouvent là. Le modèle déjà là (ses six fichiers), rien
+  n'est importé ni téléchargé ; sans `chromadb` (un composant sans les dépendances de Glorfindel, D1),
+  rien à préparer. Un échec (pas de réseau) est dit, en avertissement, jamais un verdict : un test qui
+  calcule un embedding échoue alors sur sa propre erreur, comme avant.
 - `syft` et `cosign`, binaires épinglés par leur sha256 (`publish.yml`) : l'empreinte est vérifiée à
   chaque tentative.
 

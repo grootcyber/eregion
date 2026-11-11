@@ -399,6 +399,40 @@ def nothing_written_in_the_repository():
         pytest.fail(found)
 
 
+def _chroma_model_script():
+    """scripts/chroma_model.py (CI8, FLK1), loaded by its path: None where it is not (this conftest
+    copied alone into a throwaway repository, tests/unit/test_repo_hermetic.py)."""
+    path = os.path.join(REPO, "scripts", "chroma_model.py")
+    if not os.path.isfile(path):
+        return None
+    spec = importlib.util.spec_from_file_location("_conftest_chroma_model", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.fixture(scope="session", autouse=True)
+def chroma_model():
+    """FLK1 (#723): ChromaDB's embedding model, made ready once per session, before this process's
+    first test. Without it, on 11/11, in `pytest -n 4` with a throwaway HOME, two workers fetched it
+    into one ~/.cache/chroma at once (test_agent_nodes.py's real CycleMemory, test_containment.py's
+    campaign report and its index); ChromaDB removes an archive whose SHA-256 does not match, the
+    other's half-written one included, and test_containment.py failed (FileNotFoundError on
+    onnx.tar.gz). Each process, xdist's workers included, goes through `prepare_once`: a file lock
+    beside the model, under which the first fetches it and the others find it there; a model
+    already there is neither fetched nor loaded (no network, ChromaDB not even imported). Nothing
+    to do without chromadb (D1: a component's tests without Glorfindel's dependencies). A
+    preparation that fails is said (a warning), never a verdict: a test that embeds then fails on
+    its own error, as before."""
+    script = _chroma_model_script() if _present("chromadb") else None
+    if script is None:
+        outcome = None
+    else:
+        import warnings
+        outcome = script.prepare_once(say=lambda text: warnings.warn(pytest.PytestWarning(text)))
+    return outcome
+
+
 @pytest.hookimpl(trylast=True)
 def pytest_sessionfinish(session, exitstatus):
     if _checked[0]:
