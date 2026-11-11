@@ -8,7 +8,9 @@ is installed on H0. In order, each step stopping the next one:
 
   0  the guard     never in a code session (EREGION_AGENT_SESSION, a lot's worktree): a session never
                    launches an attack (bench_shared.session_refusal, the rule of bench_reader.py); and a
-                   terminal on stdin, or nothing is read: a name « typed » through a pipe is no name typed
+                   terminal on stdin, or nothing is sent and nothing is run (the sub-make has already read
+                   the local Terraform state, H0's and Orodruin's addresses: the threat model's frontier 9):
+                   a name « typed » through a pipe is no name typed
   1  the preflight `make bench-preflight` (scripts/bench_preflight.py, BNC1): one ✗ and nothing is
                    asked, nothing is sent
   2  the request   one wire, SCENARIO (a catalogue id) on TARGET, the VM's id read from Azure under the
@@ -156,13 +158,13 @@ def main(argv: list[str] | None = None, env: dict | None = None, *, cwd=None, he
 
     refusal = bs.session_refusal(env, cwd, here)
     if refusal:
-        say(f"✗ make bench-run refusé : {refusal}. Rien n'est lu, rien n'est lancé.")
+        say(f"✗ make bench-run refusé : {refusal}. Rien n'est envoyé, rien n'est lancé.")
         return 1
     if args.guard_only:
         return 0
     if not (sys.stdin.isatty() if tty is None else tty):
-        say("✗ pas de terminal : le nom de la cible se tape au clavier, jamais par un tube. Rien n'est lu, "
-            "rien n'est lancé.")
+        say("✗ pas de terminal : le nom de la cible se tape au clavier, jamais par un tube. Rien n'est "
+            "envoyé, rien n'est lancé.")
         return 1
     target, scenario = args.target.strip().lower(), args.scenario.strip()
     if not bs.VM_NAME.fullmatch(target):
