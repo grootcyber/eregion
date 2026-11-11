@@ -43,8 +43,8 @@ session Tests (fiche du lot) ; ce document les reprend sans les avoir relus.
   jour au modèle est une question à part (Q3) et un lot à part, avec son run de bout en bout, par
   Jonathan.
 - **Il ne demande aucun droit nouveau.** Le journal d'activité de la VM, les jobs du coffre, la vue
-  d'instance, l'état de santé de la ressource et les métriques se lisent sous le `Reader` qu'Imladris
-  tient sur le groupe du banc ; `Perf`, `Syslog` et `Heartbeat`, sous son `Log Analytics Reader`. Deux
+  d'instance, l'état de santé de la ressource et les métriques se lisent sous le `Reader`
+  qu'Imladris (anciennement H0) tient sur le groupe du banc ; `Perf`, `Syslog` et `Heartbeat`, sous son `Log Analytics Reader`. Deux
   de ces lectures n'ont encore jamais été faites par Glorfindel : les métriques de l'hôte et l'état de
   santé de la ressource. Leur droit est tenu sur le papier, et à mesurer (DH4, DH7). Les événements
   `ServiceHealth`, qui vivent au niveau de l'abonnement, demanderaient un `Reader` sur l'abonnement :
