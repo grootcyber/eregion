@@ -251,8 +251,8 @@ def test_a_red_run_never_creates_a_thread(fake, monkeypatch, tmp_path):
                                   "infra/glorfindel-host/host.env.example"])
 def test_the_workshop_variables_never_reach_the_containers_nor_h0(path):
     """EREGION_DISCORD_* is the workshop's (the CI, elrond), not the product's: the Eregion bot's
-    token never goes into a container nor onto H0 — only Glorfindel's DISCORD_* do. #deploy's
-    webhook reaches H0 only in the CD's own file (~/.eregion-cd/discord.env, H1): never through
+    token never goes into a container nor onto Imladris — only Glorfindel's DISCORD_* do. #deploy's
+    webhook reaches Imladris only in the CD's own file (~/.eregion-cd/discord.env, H1): never through
     host.env nor a container (tests/unit/test_host_cd.py, the installation's export)."""
     assert "EREGION_DISCORD_" not in (ROOT / path).read_text(encoding="utf-8")
 
@@ -364,7 +364,7 @@ def test_the_publication_goes_to_releases_and_leaves_ci(fake, monkeypatch, tmp_p
     body = post["body"]
     card = body["embeds"][0]
     assert card["title"] == "🏷️ v0.4.5 publiée" and card["url"] == "https://github.com/o/r/releases/tag/v0.4.5"
-    assert card["description"].endswith("\nle CD de H0 la déploie : voir #deploy")
+    assert card["description"].endswith("\nle CD d'Imladris la déploie : voir #deploy")
     (button,) = body["components"][0]["components"]
     assert button == {"type": 2, "style": 5, "label": "Voir la release",
                       "url": "https://github.com/o/r/releases/tag/v0.4.5"}
@@ -376,15 +376,15 @@ def test_the_publication_goes_to_releases_and_leaves_ci(fake, monkeypatch, tmp_p
 
 
 def test_a_pre_release_card_never_says_the_cd_deploys_it(fake, monkeypatch, tmp_path):
-    """A pre-release is never H0's latest release: its card says the CD leaves it (SEC12, the
-    rulesets' trial of 02/11 said « le CD de H0 la déploie » of a pre-release)."""
+    """A pre-release is never Imladris's latest release: its card says the CD leaves it (SEC12, the
+    rulesets' trial of 02/11 said « le CD d'Imladris la déploie » of a pre-release)."""
     configure(monkeypatch, fake, releases=True)
     pre = {**PUBLISHED, "release": {**PUBLISHED["release"], "prerelease": True}}
     assert run_github(monkeypatch, tmp_path, "release", pre) == 0
     (post,) = releases_posts(fake)
     card = post["body"]["embeds"][0]
     assert card["title"].endswith("publiée (pré-version)")
-    assert card["description"].endswith("\nune pré-version : le CD de H0 ne la déploie pas")
+    assert card["description"].endswith("\nune pré-version : le CD d'Imladris ne la déploie pas")
     assert "la déploie : voir #deploy" not in card["description"]
 
 def test_a_release_s_name_is_inert(fake, monkeypatch, tmp_path):

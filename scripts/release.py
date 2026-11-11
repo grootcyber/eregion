@@ -33,7 +33,7 @@ deleted when the release is published (notify.yml); and its card goes to #releas
 button to it and its notes in short, never pinged nor deleted (REL2, notify_discord.release_ready).
 Without Discord's configuration, nothing is sent and the command succeeds.
 
-**No path publishes.** Publishing deploys H0 (its CD, H1): Jonathan alone publishes, on GitHub.
+**No path publishes.** Publishing deploys Imladris (its CD, H1): Jonathan alone publishes, on GitHub.
 Nothing here ever turns a draft into a release (tests/unit/test_release.py reads this file).
 
 --dry-run shows everything — the checks, the changes, the commands — and runs nothing that writes:
@@ -959,7 +959,7 @@ def draft(root: Path, version: str, notes_file: str = "", *, dry_run: bool = Fal
         url = run(["gh", "release", "create", tag, "--draft", "--target", sha, "--title", title,
                    "--notes-file", str(notes)], root).stdout.strip().splitlines()[-1:] or [""]
         url = releases_page(url[0])
-        say(f"Brouillon créé, en tête de {url or '(lien non lu)'} — Jonathan le publie (publier déploie H0).")
+        say(f"Brouillon créé, en tête de {url or '(lien non lu)'} — Jonathan le publie (publier déploie Imladris).")
         ids = _discord(tag, url, heading, text)
         if ids.get("ping") or ids.get("board"):
             # Where notify.yml finds #agents' messages when the release is published: it has no

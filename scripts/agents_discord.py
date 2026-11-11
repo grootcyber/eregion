@@ -600,7 +600,7 @@ def on_elrond(e, cfg, state, forum) -> None:
         tag = e.get("tag", "")
         await_(cfg, state, {"key": f"release:{tag}", "kind": "release", "lot": tag, "tag": tag,
                             "url": e.get("url", ""), "title": nd.release_waiting(tag),
-                            "text": "publier déploie H0 (son CD) : Jonathan seul publie", "since": at})
+                            "text": "publier déploie Imladris (son CD) : Jonathan seul publie", "since": at})
     elif kind == "run-end":
         _unping(cfg, state, (state.get("last_run") or {}).get("ping"))
         state["last_run"] = {"text": note, "at": at}

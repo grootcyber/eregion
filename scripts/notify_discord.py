@@ -16,7 +16,7 @@ event of the lot, its tags (milestone, state) kept true. Only a red CI notifies;
 silent. #releases (REL2, EREGION_DISCORD_WEBHOOK_RELEASES): a release's whole story, a card per
 step, silent, never deleted — the version's pull request (chore/release-X.Y.Z, this repository's
 own: a fork's stays in #ci) opened and merged, its draft ready (release_ready, from
-scripts/release.py), the release published, with a word on #deploy, where the CD of H0 says the
+scripts/release.py), the release published, with a word on #deploy, where the CD of Imladris says the
 rest. Without that webhook, the pull request and the publication stay in #ci, as before.
 elrond's lots and #agents: scripts/agents_discord.py (N3), which shares this module's plumbing;
 a published release deletes its draft's line and ping there (REL1,
@@ -84,8 +84,8 @@ class Config:
     forum: str = ""
     mention: str = ""
     roadmap: str = ""
-    deploy: str = ""   # #deploy's webhook: the CD of H0 posts with it (H1), never the bot's token
-    releases: str = ""  # #releases' webhook (REL2): notify.yml and scripts/release.py, never H0
+    deploy: str = ""   # #deploy's webhook: the CD of Imladris posts with it (H1), never the bot's token
+    releases: str = ""  # #releases' webhook (REL2): notify.yml and scripts/release.py, never Imladris
     api: str = "https://discord.com/api/v10"
 
     @property
@@ -432,9 +432,9 @@ def github_notices(name: str, event: dict, previous=lambda run: "") -> list[Noti
         rel = event.get("release") or {}
         pre = " (pré-version)" if rel.get("prerelease") else ""
         url = _https(rel.get("html_url"))
-        # A pre-release is never the latest release: H0's CD never follows it (SEC12) — never said it would.
-        cd = ("une pré-version : le CD de H0 ne la déploie pas" if rel.get("prerelease")
-              else "le CD de H0 la déploie : voir #deploy")
+        # A pre-release is never the latest release: Imladris's CD never follows it (SEC12) — never said it would.
+        cd = ("une pré-version : le CD d'Imladris ne la déploie pas" if rel.get("prerelease")
+              else "le CD d'Imladris la déploie : voir #deploy")
         said = "\n".join(x for x in (inert(rel.get("name") or ""), cd) if x)
         return [Notice(embed(f"🏷️ {inert(rel.get('tag_name') or '?')} publiée{pre}", said, GREEN, url),
                        silent=False, releases=True, button=link_button("Voir la release", url))]
