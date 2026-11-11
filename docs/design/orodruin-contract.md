@@ -5,10 +5,11 @@ _Conception — 2026-10-14, relue en Opus 5.5 le 2026-10-15 — statut : **impl�
 des fenêtres d'exercice ») ; canal retour de la watch (#159, M109–M115) le 20/10 ; arrêt
 d'urgence revu et mesuré sur le banc le 26/10 (M-1, M191–M194) ; droits par VM inscrite, journal
 hors de l'hôte, pare-feu du canal, tirages bornés et garde V1 lié à la watch le 29/10 (SEC5, #276,
-M1260–M1279 — Terraform écrit et validé ce jour-là, **appliqué depuis** : le `make orodruin-check`
-du 05/11 rend `armed` (« La mesure du 05/11 », plus bas), ce que le contrat refuse tant qu'une
-écriture tient sur le groupe entier, comme le rôle d'avant SEC5 ; restent à mesurer les points
-« À mesurer après l'apply » de la section SEC5)._
+M1260–M1279 — Terraform écrit et validé ce jour-là ; **appliqué, déduit de la mesure du 05/11**
+(`armed`, « La mesure du 05/11 », plus bas) : les droits, parce que le contrat refuse une écriture
+sur le groupe entier, ce que tenait le rôle d'avant SEC5 ; le reste du module (le pare-feu du canal,
+le journal hors de l'hôte), parce qu'`orodruin-lock` en fait un apply complet, sans `-target` — pas
+relu sur Azure ; restent à mesurer les points « À mesurer après l'apply » de la section SEC5)._
 
 ## Ce qu'Orodruin est, et ce qu'il n'est pas
 

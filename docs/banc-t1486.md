@@ -6,7 +6,8 @@ Le README dit : « ~1 min to contain a ransomware VM, 21m29s to restored service
 viennent du run `20260609T190824Z` (09/06, l'ancienne sandbox ; `ROADMAP.md`,
 `docs/historique.md`). Ce jour-là, la watch, le restore et la levée tournaient sur le même poste.
 Depuis, Glorfindel vit sur Imladris (anciennement H0), l'attaque part d'Orodruin et se demande dans Dagorlad. Cette page
-rejoue le rançongiciel sur gondolin, avec la version en service (0.5.8 sur Imladris et Orodruin), et en
+rejoue le rançongiciel sur gondolin, avec la release publiée sur Imladris et Orodruin (la 0.5.8 quand la
+page a été écrite, le 09/11), et en
 mesure trois temps. Une version d'Imladris qui porte REC1 (#668) change la levée, et seulement elle :
 chaque endroit qui en dépend dit les deux cas (« La levée », plus bas, et l'étape 7).
 
@@ -21,7 +22,8 @@ marqué ainsi :
   et sa sortie est celle qui est citée ;
 - **non vérifié** : ni l'un ni l'autre, à voir pendant la session.
 
-Les lignes citées sont celles de la 0.5.8 (`v0.5.8`), la version en service. REC1 décale celles de
+Les lignes citées sont celles de la 0.5.8 (`v0.5.8`), la version en service quand la page a été écrite
+(09/11) ; une release plus récente peut les décaler. REC1 décale celles de
 `glorfindel/cli.py` (+64) et de `glorfindel/providers/azure/restore.py` (+4), sans changer ce qu'elles
 font ; ce que REC1 ajoute est cité par son fichier.
 
@@ -30,21 +32,21 @@ Jonathan lance chaque geste.
 **Le 09/11, cette page a été jouée une fois au banc** : environ 4 h, chaque vérification tapée à la
 main (`docs/operations.md`, « Le banc lisible » ; RAN1, #665). Ce qui s'y est vu, ce qui a cassé, et
 ce qui l'a corrigé depuis (le CHANGELOG de la 0.5.9 et de la 0.5.10) :
-- **la détection**, à 70,3 s de T0, puis **l'isolement autonome** de gondolin, son NSG posé et tenu
-  (BNC1, #682 : `tests/unit/test_bench_report.py` recompose ce run sur ses formes mesurées) ;
+- **la détection**, à 70,3 s de T0, puis **l'isolement autonome** de gondolin, son NSG posé et tenu.
+  Rien n'y a cassé ; la source de ces chiffres est le test de BNC1 (#682), qui recompose ce run sur
+  ses formes mesurées (`tests/unit/test_bench_report.py`), pas un correctif ;
 - **la coupure des sessions**, 302 s sous la quarantaine : la watch, qui l'attendait 300 s, a dit
   l'isolement non vérifié, 2 s avant que la coupure aboutisse. Corrigé par DRN1 (#677, 0.5.9) : la
   coupure est suivie sur Azure, la carte « session cut pending » le dit ;
-- **le restore depuis la console**, refusé au déclenchement (`listKeys` manquait sur le compte de
+- **le restore depuis le poste, sous le principal de la console**, refusé au déclenchement (`listKeys` manquait sur le compte de
   transit), après la neutralisation et la désallocation : la VM est restée arrêtée trois heures, sans
   le dire. Puis Azure a refusé `restoreDiskLunList` sur un restore en place (code `400625`). Corrigé
   par RST1 (#680, 0.5.9) : le rôle « Restore Staging », les droits lus avant de toucher la VM, le refus
   dit entier, le champ retiré. Le job a ensuite abouti en 15 min 17 ; la neutralisation avait pris
   152 s sous la quarantaine ;
 - **la levée par la watch d'Imladris**, qui portait REC1 sans REC1b : elle a attendu la parole de
-  l'invité, que la vue d'instance ne porte jamais, et a retenu la levée par une carte ; elle s'est
-  faite à la main. Corrigé par REC1b (#679, 0.5.9) : la neutralisation se décide par le journal
-  d'activité seul ;
+  l'invité, que la vue d'instance ne porte jamais, et a retenu la levée par une carte. Corrigé par
+  REC1b (#679, 0.5.9) : la neutralisation se décide par le journal d'activité seul ;
 - **les gestes tapés et recopiés à la main** : `make bench-preflight` et `make bench-report` (BNC1,
   0.5.9) lisent l'étape 0 et l'étape 8 ; `make bench-run` et `make bench-restore` (MOB1, #686, 0.5.10)
   font le lancement et le restore en une commande chacun.
@@ -135,7 +137,8 @@ commande. Le point à la demande est gardé 30 jours (`glorfindel/providers/azur
 ### La levée
 
 **Quel cas s'applique : la version qu'Imladris fait tourner.** REC1 (#668) fait lever l'isolement
-par la watch d'Imladris ; la 0.5.8, en service aujourd'hui, ne le porte pas. Depuis le poste :
+par la watch d'Imladris ; la 0.5.8, en service quand la page a été écrite, ne le porte pas ; la 0.5.9 le
+porte (CHANGELOG). Depuis le poste :
 
 ```zsh
 make glorfindel-host-status        # « référence déployée : <ref> (<sha>) »
@@ -684,7 +687,7 @@ regarder de plus près. Ces sorties-là affichent des identifiants : ne pas les 
 
 ```zsh
 source .envrc
-make glorfindel-host-status        # « ✓ référence déployée : v0.5.8 », les trois conteneurs ✓, aucune erreur
+make glorfindel-host-status        # « ✓ référence déployée : v<la release publiée> », les trois conteneurs ✓, aucune erreur
 make glorfindel-host-cd-status     # actif : ne publie aucune release pendant la session (ou make glorfindel-host-cd-disable)
 docker ps --format '{{.Names}}'    # aucun eregion-watch : une watch du poste répondrait aussi
 az role assignment list --assignee ${EREGION_CONSOLE_AZURE_CLIENT_ID} --all -o table

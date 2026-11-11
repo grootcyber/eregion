@@ -82,10 +82,16 @@ coûte (control plane + nodes) → détruire entre sessions. VMs : auto-shutdown
 
 - **Inscription (O0)** : Celebrimbor pose `eregion-target` (`celebrimbor`, ou
   `celebrimbor-<instance>` pour une instance nommée) et `eregion-zone = "bench"` dans
-  `common_tags` (`locals.tf`, O0 — **appliqué** : `eregion-target` est sur Azure au plus tard le
-  05/11, où Orodruin rend `armed`, ce qui exige Run Command accordé sur une VM au moins, et son
-  Terraform ne l'accorde qu'aux VM qui portent ce tag — `docs/design/orodruin-contract.md`, « La
-  mesure du 05/11 », `infra/orodruin/main.tf`, `enrolled_vms`) ; `annatar-test` reste posé le temps de la migration. Un
+  `common_tags` (`locals.tf`, O0 — **déduit de la mesure du 05/11 (`armed`), pas encore lu sur
+  Azure** : `armed` exige Run Command accordé sur une VM au moins, et le Terraform d'Orodruin ne
+  l'accorde qu'aux VM qui portent `eregion-target=<banc>` (`infra/orodruin/main.tf`, `enrolled_vms` ;
+  `docs/design/orodruin-contract.md`, « La mesure du 05/11 »). Trois trous : une attribution posée à
+  la main à la portée d'une VM satisferait aussi le contrat, qui ne relit pas les tags ; rien n'en
+  prouve le tag du groupe de ressources ; `eregion-zone` et le tag du groupe ne sont que déduits avec
+  `eregion-target`, posés par la même table `common_tags`. La lecture du 26/10 (gondolin « inscrite »,
+  `docs/glorfindel.md`, « Mesuré sur le banc le 26/10 ») ne les départage pas : le tag hérité
+  `annatar-test` inscrit aussi. À lire : `az vm show -g rg-celebrimbor -n vm-celebrimbor-gondolin
+  --query tags` et `az group show -n rg-celebrimbor --query tags`) ; `annatar-test` reste posé le temps de la migration. Un
   `terraform apply` sur le banc se fait avec Jonathan, `glorfindel list` vide avant.
 - **Gothmog (G0)** : Celebrimbor inscrit les cibles du banc auprès de Chaos Studio ; l'expérience
   est décrite en code dans le module du banc.

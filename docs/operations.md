@@ -3161,11 +3161,13 @@ par eux, et ils ne vivent pas dans le groupe du banc — l'un sur l'**abonnement
 (`infra/terraform/entra_logs.tf`). Le Terraform est désactivé par défaut ; ce qui suit se fait avec
 Jonathan.
 
-**Sur le banc, les deux paramètres sont allumés depuis le 05/11** (ID1, 05–06/11 :
-`docs/glorfindel.md`, « La carte se range sur ce qu'elle vise ») :
+**Sur le banc, les deux paramètres sont allumés : le journal d'activité depuis le 05/11, Entra ID
+au plus tard le 06/11** (ID1, 05–06/11 : `docs/glorfindel.md`, « La carte se range sur ce qu'elle
+vise ») :
 - le journal d'activité du 05/11 a donné la mesure de l'hypothèse A2 (AL2, #598 ;
   `docs/glorfindel.md`, « Les points de restauration ») ;
-- six cartes du plan de contrôle se sont rangées sur bree les 05 et 06/11, sans la viser (AL1c, #597) ;
+- six cartes, du plan de contrôle et d'Entra ID, se sont rangées sur bree les 05 et 06/11, sans la
+  viser (AL1c, #597) ;
 - les cartes d'Entra ID sont arrivées dans Discord le 06/11 (C2b, #607 ; le CHANGELOG de la 0.5.8).
 
 Le reste de cette section n'est pas mesuré en entier : chaque hypothèse garde son statut, et la
