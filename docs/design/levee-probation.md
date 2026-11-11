@@ -1117,7 +1117,8 @@ l'Orchestre. Ce lot de conception n'en a pas.
    - la version d'Imladris qui porte LEV ;
    - aucune probation déjà en cours sur gondolin.
 2. **La demande** : dans Dagorlad, le fil T1486 vers gondolin, avec la case « as a real incident »,
-   puis `make orodruin-exercise REQUEST=…`. (`make bench-run`, de MOB1, la portera plus tard.)
+   puis `make orodruin-exercise REQUEST=…`. (`make bench-run`, livré par MOB1 (#711), lance déjà un
+   fil depuis le poste ; il ne porte pas encore la case, qui vient avec LEV6.)
 3. **La détection, l'isolement, le restore** : comme le guide T1486, étapes 4 à 6.
 4. **La levée en probation** : Imladris lit la reprise, la porte (aucun tiers : Orodruin est dans sa
    fenêtre), et lève en probation. On note :
@@ -1219,8 +1220,10 @@ Le replay privé (10/11) est suivi pour les quatre scénarios et les deux modes.
    verdict se décide à la levée, sur une lecture de toute la fenêtre jusqu'à ce moment-là.
 7. **Après une réinfection, la levée suivante est humaine** (§6.5). Le replay s'arrête sur le choix
    de l'humain ; ce document le rend explicite (Q9).
-8. **`make bench-restore` et `make bench-run`** n'existent pas encore (MOB1, #686). Le restore passe
-   aujourd'hui par `glorfindel restore` sur le poste, et la demande par `make orodruin-exercise`.
+8. **`make bench-restore` et `make bench-run`** sont livrés (MOB1, #711) : le restore se lance du
+   poste, ou du téléphone par le poste (`docs/demarrer/mobile.md`), et la demande d'un fil aussi.
+   La case « as a real incident » ne passe que par Dagorlad et `make orodruin-exercise` : `make
+   bench-run` ne la porte pas encore (LEV6).
 9. **Un exercice en `human_only`** : comme dans le replay, la levée est une carte, sans probation.
 10. **Un exercice prouvé ne lève sans probation qu'en `bench` et `twin`** (§5.1). Le replay ne joue
     que le banc.

@@ -78,7 +78,8 @@ Tenue par l'Orchestre (RM1, 02/11). Une ligne par release qui se prépare : sa v
 
 | Version | Titre | Contenu | État |
 |---|---|---|---|
-| 0.5.8 | within bounds | SEC-A1 (les lectures bornées), SEC-A2 (la file de décision bornée), SEC-D (le modèle de menace et SECURITY.md, audit du 06/11) ; KS1 (l'arrêt d'une campagne en échec fermé), B3a (un brute force réussi puis root : au moins `isolate_vm`), AL1c, AL1d et AL2 (les cartes du plan de contrôle rangées sur leur cible, les points de restauration) ; WL1 et CAN2 (la couche du client du banc : la maintenance de bree, le canari azurerm), C2b, IDI1p, BRO1 ; NICE1, I3K, MUT4 ; R2a (l'adaptateur Stratus, binaire pas encore livré) ; conceptions : R2b (la cible Stratus), DRL1 (le drill du banc), SEC-A3 (la corroboration) ; MAN0 | publiée (09/11) |
+| 0.5.10 | within reach | MOB1 (le banc piloté depuis le téléphone : `make bench-run`, `make bench-restore`, la console par le tunnel du téléphone, `make mobile-check`) ; LEV2 (les faits de la porte sur la carte d'isolement, pour information) et la conception LEV1 (la levée après un restore, seule et en probation sauf porte prouvée ouverte) ; MUT7 (les mutants fragiles mesurés chaque nuit), MUT9 (M33 attrapé quelle que soit la graine) | publiée (10/11) |
+| 0.5.11 | — | AWS1b (sur le faux AWS, l'oracle d'I3 face à une origine que plus rien ne tient) ; puis ce que le banc du 11/11 débloque | en préparation |
 | 0.5.x | — | G1 au banc ; MUT2, MAK2, OI4 | plus tard |
 | 0.6.0 | l'identité défendue | ID1 allumé et mesuré, IDI1 appliqué, R2 (une technique Stratus sur l'identité de test) vue par Glorfindel, IR1a (le plan et « Vérifier » sur la carte) — décidé par Jonathan le 05/11 ; R2c compris, visée le 13 ou le 16/11 (Jonathan, 09/11) | plus tard |
 
