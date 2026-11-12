@@ -131,13 +131,15 @@ def report(env: dict, now: datetime, az: str = "az") -> tuple[list[str], bool]:
             continue
         # The nearest end of the two objects decides; an unread one may hold a nearer: never a ✓ then.
         found.sort(key=lambda c: c.end)
-        partial = f" ; {' et '.join(unread)} illisible : une date plus proche peut s'y trouver" if unread else ""
+        unread_said = f" ; {' et '.join(unread)} illisible : " if unread else ""
+        partial = unread_said and unread_said + "une date plus proche peut s'y trouver"
         valid = [c for c in found if c.end >= now]
         expired = [c for c in found if c.end < now]
         if not valid:
             last = expired[-1]
             lines.append(f"✗ {name} : {last.kind} expiré le {_day(last)} sur {_where(last.obj)}"
-                         f" — le faire tourner ({ROTATE}){partial}")
+                         f" — le faire tourner ({ROTATE})"
+                         + (unread_said and unread_said + "un secret valable peut s'y trouver"))
             broken = True
             continue
         first = valid[0]

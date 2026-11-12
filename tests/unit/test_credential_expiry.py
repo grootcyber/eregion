@@ -168,7 +168,7 @@ def test_a_secret_on_the_service_principal_only_is_seen_with_its_days_left(tmp_p
     line = _line(res.stdout, "console")
     assert line == f"✓ console : secret valable jusqu'au {_day(26.5)} (26 j), sur son principal de service"
     assert "aucun secret" not in res.stdout
-    # Under 14 days, it warns there too: the 26/11 the bench would have passed in silence.
+    # Under 14 days, it warns there too: from about 24/11, the bench would have passed it in silence.
     res, _ = _console(tmp_path, sp=[_iso(12.5)])
     assert _line(res.stdout, "console").startswith("⚠ console : secret qui expire dans 12 j, le ")
     assert "sur son principal de service — le faire tourner" in res.stdout
@@ -222,6 +222,12 @@ def test_beside_an_unread_object_a_valid_secret_is_no_check_mark(tmp_path):
     assert line.startswith("⚠ console : secret valable jusqu'au") and "sur son principal de service" in line
     assert "son application illisible : une date plus proche peut s'y trouver" in line
     assert "✓" not in res.stdout
+    # Only an expired one read beside it: a valid secret may be on the unread object.
+    res, _ = _console(tmp_path, app="fail", sp=[_iso(-3)])
+    assert res.returncode != 0
+    line = [ln for ln in res.stdout.splitlines() if "expiré" in ln][0]
+    assert line.startswith("✗ console : secret expiré le") and line.endswith(
+        "; son application illisible : un secret valable peut s'y trouver")
 
 
 def test_both_objects_unread_are_both_said(tmp_path):

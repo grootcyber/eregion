@@ -887,7 +887,7 @@ prochain `make glorfindel-host-up` les reprend ; une VM que Celebrimbor reconstr
 (l'attribution porte l'id de la VM) jusqu'au prochain apply d'Imladris.
 
 **Faire tourner un secret** (un an par défaut) : `az ad sp credential reset --id <appId>` rend
-un nouveau `password` ; le poser dans `.envrc`, `make glorfindel-restart`. L'ancien cesse à la
+un nouveau `password` ; le poser dans `.envrc`, `make glorfindel-restart`. L'ancien, sur le même objet, cesse à la
 réinitialisation : un service à la fois. **Les deux formes d'une paire** (PAIR1, #736) : son secret
 vit sur l'un de deux objets, son application ou son principal de service. Au banc, le 12/11, celui de
 la watch était sur son application (la forme d'`az ad sp create-for-rbac`), celui de la console sur son
@@ -911,7 +911,7 @@ aurait jamais vu l'expiration.
 demande, avant une session du banc (`docs/banc-t1486.md`, étape 0).
 
 > **Note du 12/11 (PAIR1), pour Jonathan** : le secret de la console, sur son principal de service,
-> expire vers le **08/12** ; `make azure-pairs-expiry` avertira à partir du 26/11 environ. Sa rotation
+> expire vers le **08/12** ; `make azure-pairs-expiry` avertira à partir du 24/11 environ. Sa rotation
 > se fait avant le 08/12 : ce jour-là, le restore depuis le poste s'arrêterait. Après la rotation,
 > relancer `make azure-pairs-expiry` : une seule date doit rester pour la console.
 
