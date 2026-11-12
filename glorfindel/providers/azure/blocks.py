@@ -397,7 +397,7 @@ class BlockMixin:
         # A NIC off the perimeter's subnet is blocked only by its own block — as Azure reads
         # it, never as the state remembers it (a partial one, rules gone since).
         uncovered = [t["nic_short"] for t in off]
-        unread_nics: list[str] = []
+        unread_nics, gone = [], []
         if uncovered:
             try:
                 check = self.verify_block_ip(ip, resource_id)
@@ -410,17 +410,12 @@ class BlockMixin:
                 # a NIC whose rules couldn't be read was said covered.
                 held = {*(check.get("blocked_nics") or []), *(check.get("held_by_perimeter") or [])}
                 uncovered = [n for n in uncovered if n not in held]
-                # « Still reaches » only on a proof that it is open (`open_nics`: nothing of ours
-                # blocks it): the others were said reached, read of none — their rules or their
-                # perimeter unread (I3Q, #771). Unread, never reached, never covered.
-                opened = set(check.get("open_nics") or [])
-                unread_nics = [n for n in uncovered if n not in opened]
-                uncovered = [n for n in uncovered if n in opened]
-                if unread_nics:
-                    why = {**{n: "règles illisibles" for n in check.get("nics_unknown") or []},
-                           **{n: "périmètre illisible" for n in check.get("perimeter_unread") or []}}
-                    other = "cartes illisibles" if check.get("nics_unread") else "non jugée"
-                    unread = ", ".join(f"{n} ({why.get(n, other)})" for n in unread_nics)
+                # « Still reaches » only on a proof that it is open; the others were said reached,
+                # read of none: unread, with why (I3Q, #771; verify_block._sort_off_perimeter).
+                uncovered, unread_nics, said = self._sort_off_perimeter(
+                    check, [t for t in off if t["nic_short"] in uncovered], ip, threat_port, resource_id)
+                unread = said or unread
+                gone = check.get("missing_rules") or []    # its own pair too, read gone
             else:
                 # Not concluded (a read answered 429): no NIC proven open, none proven held —
                 # neither « uncovered, the IP still reaches it » (another VM's perimeter may cut
@@ -449,8 +444,11 @@ class BlockMixin:
             out["note"] += (" Kept by the promotion, its placement left in the state for the unblock: "
                             + " ; ".join(guarded) + ".")
         # Each said when it is, both on one block (I3Q, #771): one key, the unread went unsaid.
-        if uncovered or unread:
+        if uncovered or unread or gone:
             out["status"] = "blocked_partial"
+        if gone:          # a NIC another perimeter holds no longer hides it (I3Q, review)
+            out["missing_rules"] = gone
+            out["note"] += f" Rules of this block missing on Azure: {', '.join(gone)}."
         if uncovered:
             out["uncovered_nics"] = uncovered
             out["note"] += (f" Not behind it, on another subnet: {', '.join(uncovered)} — {ip} still reaches "
