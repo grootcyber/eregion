@@ -9,7 +9,7 @@
 # The third argument names the variable that holds the fingerprint (HOST_SSH_FINGERPRINT by
 # default, or ORO_SSH_FINGERPRINT); with « required », its absence refuses — Orodruin's commands
 # never fall back to accept-new.
-# Run by make before every command that reaches H0 (glorfindel-host-known) or Orodruin
+# Run by make before every command that reaches H0 (imladris-known) or Orodruin
 # (orodruin-known). The expected
 # fingerprint comes from the operator's environment, never from the repository: read once on
 # the host itself (`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`, README « SSH »).

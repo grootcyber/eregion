@@ -1063,7 +1063,7 @@ def main(argv: list[str]) -> int:
         print(f"{cdir} : pas de manifest.json", file=sys.stderr)
         return 2
     # A campaign pulled from the channel: its runs' VMs read enrolled from Azure, as the report
-    # does (H-1) — without it, launched alone (make glorfindel-host-containment), every run was
+    # does (H-1) — without it, launched alone (make imladris-containment), every run was
     # left out, « sa VM n'est pas inscrite ». check_enrollment also drops compose's empty
     # AZURE_CLIENT_* first, as the watch does (#205): under docker exec the managed identity was
     # never reached (BL1c, the bench, 31/10).

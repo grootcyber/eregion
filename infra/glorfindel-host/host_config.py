@@ -3,7 +3,7 @@ human_only, and each VM's mode kept as it is on Imladris (BL1c, Jonathan's decis
 
     python infra/glorfindel-host/host_config.py glorfindel-config.yaml OUT.yaml [--h0 Imladris.yaml] [--human-only]
 
-``make glorfindel-host-push`` reads Imladris's config through the ssh connection it already opens
+``make imladris-push`` reads Imladris's config through the ssh connection it already opens
 (``--h0``), and says, VM by VM, the mode sent and where it comes from.
 
 - **The default** is always ``human_only``, and ``allow_destructive`` always empty: the local

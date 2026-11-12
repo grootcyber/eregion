@@ -2,7 +2,7 @@
 
     python infra/glorfindel-host/host_client_rules.py RULES.yaml H0_LAYER.yaml OUT.yaml
 
-``make glorfindel-host-client-rules`` reads Imladris's layer (``~/.glorfindel/client_rules.yaml``) through
+``make imladris-client-rules`` reads Imladris's layer (``~/.glorfindel/client_rules.yaml``) through
 ssh into ``H0_LAYER.yaml`` (empty when Imladris has none), runs this, then sends ``OUT.yaml`` back, put in
 place on Imladris only if the layer did not change in between (under the lock the watch and the console
 take to write it).

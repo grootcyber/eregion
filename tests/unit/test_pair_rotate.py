@@ -9,7 +9,7 @@ On fakes only, in tmp_path — no Azure, no Graph, no Imladris, no Discord:
   - a fake `docker`: the compose services that run, `up --force-recreate` recording which secret
     each pair's variable carried in its environment (never its argv);
   - a fake `ssh` that runs the remote command in a fake home of Imladris, where the real CD agent
-    (infra/glorfindel-host/cd/eregion_cd.py) is installed, as `make glorfindel-host-cd-install`
+    (infra/glorfindel-host/cd/eregion_cd.py) is installed, as `make imladris-cd-install`
     puts it;
   - the token endpoint and Azure Resource Manager answered in-process: a token only for a secret
     the fake az holds;
@@ -792,7 +792,7 @@ def test_the_note_with_an_agent_from_before_rot1_says_to_update_it(tmp_path):
     old_agent = w.imladris / ".eregion-cd" / "eregion_cd.py"
     old_agent.write_text("import sys\nprint('usage')\nsys.exit(2)\n")
     assert pr.note("console", w.ctx()) == 1
-    assert "make glorfindel-host-cd-install" in w.said[-1] and w.noted() is not None
+    assert "make imladris-cd-install" in w.said[-1] and w.noted() is not None
 
 
 # ── the reminders, on Imladris ───────────────────────────────────────────────────────
@@ -913,7 +913,7 @@ def test_without_the_webhook_a_tier_is_never_counted_sent_and_status_says_so(tmp
     (tmp_path / ".eregion-cd" / "discord.env").write_text("")
     said = agent.reminders(now=datetime(2026, 11, 24, 8, tzinfo=timezone.utc))
     assert said == ["  rappels · console : J-14 dû, non envoyé — aucun webhook de #deploy "
-                    "(~/.eregion-cd/discord.env : make glorfindel-host-cd-install)"]
+                    "(~/.eregion-cd/discord.env : make imladris-cd-install)"]
     assert not (tmp_path / ".eregion-cd" / "reminders.json").exists()
     status = agent.reminders(now=datetime(2026, 11, 24, 8, tzinfo=timezone.utc), send=False)
     assert any("aucun webhook de #deploy" in s and "aucun rappel ne part" in s for s in status)
@@ -966,7 +966,7 @@ def test_the_targets_are_phony_helped_and_the_rotation_s_doc_is_written_around_t
     ops = (ROOT / "docs" / "operations.md").read_text(encoding="utf-8")
     rotation = ops.split("**Faire tourner un secret**", 1)[1].split("\n**Retirer l'ancien principal partagé**", 1)[0]
     for said in ("make pair-rotate PAIR=console", "make pair-expiry-note PAIR=console", "--append", "#deploy",
-                 "J-14", "n'est pas vue", "make glorfindel-host-cd-install"):
+                 "J-14", "n'est pas vue", "make imladris-cd-install"):
         assert said in rotation, said
     readme = (ROOT / "infra" / "glorfindel-host" / "README.md").read_text(encoding="utf-8")
     assert "ROT1 change l'agent" in readme

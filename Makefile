@@ -143,10 +143,10 @@ DOCKER_GLORFINDEL_WATCH = $(WATCH_KEY_DIR) && $(RUNS_DIRS) && $(GLORFINDEL_AZURE
 
 .PHONY: help build build-annatar build-glorfindel fix-state-ownership check-azure-env azure-pairs-expiry runs-migrate runs-survey \
 	pair-rotate pair-rotate-go pair-expiry-note pair-expiry-note-go \
-	bench-preflight bench-report bench-run bench-run-go bench-restore bench-restore-go mobile-check \
-	mobile-tunnel-install mobile-tunnel-remove mobile-tunnel-on mobile-tunnel-off \
-	mobile-tunnel-install-go mobile-tunnel-remove-go mobile-tunnel-on-go mobile-tunnel-off-go \
-	console-url-local console-url-imladris glorfindel-host-tunnel-go \
+	bench-preflight bench-report bench-run bench-run-go bench-restore bench-restore-go imladris-tunnel-check \
+	imladris-tunnel-install imladris-tunnel-remove imladris-tunnel-on imladris-tunnel-off \
+	imladris-tunnel-install-go imladris-tunnel-remove-go imladris-tunnel-on-go imladris-tunnel-off-go \
+	console-url-local imladris-tunnel-go \
 	annatar-run annatar-dry-run annatar-validate annatar-list \
 	glorfindel-respond glorfindel-dry-run glorfindel-watch \
 	glorfindel-release glorfindel-revert glorfindel-list \
@@ -158,15 +158,15 @@ DOCKER_GLORFINDEL_WATCH = $(WATCH_KEY_DIR) && $(RUNS_DIRS) && $(GLORFINDEL_AZURE
 	celebrimbor-logs-plan celebrimbor-logs-up celebrimbor-auditd-plan celebrimbor-auditd-up celebrimbor-flows-plan celebrimbor-flows-up \
 	celebrimbor-identity-plan celebrimbor-identity-up celebrimbor-unit-prepare celebrimbor-users-plan celebrimbor-users-up \
 	celebrimbor-reader-key celebrimbor-reader-plan celebrimbor-reader-up celebrimbor-reader-profile \
-	glorfindel-host-init glorfindel-host-plan glorfindel-host-up glorfindel-host-down glorfindel-host-push glorfindel-host-client-rules \
-	glorfindel-host-start glorfindel-host-stop glorfindel-host-logs glorfindel-host-tunnel glorfindel-host-ssh \
-	glorfindel-host-cd-install glorfindel-host-cd-check glorfindel-host-cd-enable glorfindel-host-cd-disable \
-	glorfindel-host-cd-status glorfindel-host-cd-retry glorfindel-host-cd-rollback glorfindel-host-cd-uninstall \
-	glorfindel-host-env glorfindel-host-report glorfindel-host-url glorfindel-host-status glorfindel-host-pull \
-	glorfindel-host-model glorfindel-host-campaign-report glorfindel-host-containment glorfindel-host-fault-rate glorfindel-host-known celebrimbor-workload \
+	imladris-init imladris-plan imladris-up imladris-down imladris-push imladris-client-rules \
+	imladris-start imladris-stop imladris-logs imladris-tunnel imladris-ssh \
+	imladris-cd-install imladris-cd-check imladris-cd-enable imladris-cd-disable \
+	imladris-cd-status imladris-cd-retry imladris-cd-rollback imladris-cd-uninstall \
+	imladris-env imladris-report imladris-url imladris-status imladris-pull \
+	imladris-model imladris-campaign-report imladris-containment imladris-fault-rate imladris-known celebrimbor-workload \
 	orodruin-init orodruin-watch-guard orodruin-watch-principals orodruin-plan orodruin-up orodruin-lock orodruin-push orodruin-push-dev orodruin-check \
 	orodruin-stop orodruin-start orodruin-update orodruin-kill orodruin-down orodruin-ssh orodruin-exercise orodruin-exercise-guard \
-	orodruin-known orodruin-identity orodruin-identity-id orodruin-fingerprint watch-key glorfindel-host-watch-key queue-keys glorfindel-host-queue-keys harness-key harness-sign harness-verify \
+	orodruin-known orodruin-identity orodruin-identity-id orodruin-fingerprint watch-key imladris-watch-key queue-keys imladris-queue-keys harness-key harness-sign harness-verify \
 	gothmog-preflight gothmog-run \
 	orodruin-campaign-plan orodruin-campaign-run campaign-containment fault-rate \
 	profile-discover profile-detection profile-resilience profile-proven profiles-check \
@@ -216,7 +216,7 @@ help:
 	@echo "  make glorfindel-dev             Start + watch files (auto-reload on change)"
 	@echo "  make glorfindel-ui              Rebuild + restart war-room only (watch untouched)"
 	@echo "  make console-url                The console's URL with its token (~/.eregion/console/token: never in the logs);"
-	@echo "                                  Imladris's when the workstation's tunnel is set (MOB2). Refused in an agent session"
+	@echo "                                  the local console's only: Imladris's, make imladris-url (IML1b). Refused in an agent session"
 	@echo "  make console-rotate             A new drawn token: every session of the former one refused at once"
 	@echo "  make azure-pairs-expiry         When the secrets of the three pairs end (az login; warns under 14 days)"
 	@echo "  make pair-rotate PAIR=<watch|console|bot> [DAYS=…]   Turn a pair's secret: added, verified, in .envrc,"
@@ -262,27 +262,36 @@ help:
 	@echo "  make celebrimbor-flows-plan [INSTANCE=]     Plan du compte des flux réseau seul : le compte, sa lecture, le flow log (INF-FL)"
 	@echo "  make celebrimbor-flows-up [YES=1]           L'applique (le flow log change de compte, en place)"
 	@echo ""
-	@echo "Glorfindel hébergé (Imladris : pré-observation, état Terraform séparé)"
-	@echo "  make imladris-<x>                            Le même geste que make glorfindel-host-<x> (IML1)"
-	@echo "  make glorfindel-host-plan [OPERATOR_CIDR=]   Plan (lecture seule)"
-	@echo "  make glorfindel-host-up   [OPERATOR_CIDR=] [YES=1]  Crée la VM (confirmation, sauf YES=1)"
-	@echo "  make glorfindel-host-env                     host.env depuis ton .envrc (sans secret Azure)"
-	@echo "  make glorfindel-host-push [HUMAN_ONLY=1]     host.env + config sur la VM (modes d'Imladris gardés ; HUMAN_ONLY=1 : tout en human_only)"
-	@echo "  make glorfindel-host-client-rules [CLIENT_RULES=]  Règles du banc fondues dans la couche du client d'Imladris (WL1), la watch redémarre"
-	@echo "  make glorfindel-host-report [SINCE=7d]       Rapport d'observation"
-	@echo "  make glorfindel-host-pull                    Copie locale des verdicts et de la mémoire (chaque semaine)"
-	@echo "  make glorfindel-host-model MODEL=…           Changer le modèle qui décide (ou MODEL=default)"
+	@echo "Imladris — Glorfindel hébergé, état Terraform séparé (infra/glorfindel-host/README.md) :"
+	@echo "  make imladris-plan [OPERATOR_CIDR=]          Plan (lecture seule)"
+	@echo "  make imladris-up [OPERATOR_CIDR=] [YES=1]    Crée la VM (confirmation, sauf YES=1)"
+	@echo "  make imladris-env                            host.env depuis ton .envrc (sans secret Azure)"
+	@echo "  make imladris-push [HUMAN_ONLY=1]            host.env + config sur la VM (modes d'Imladris gardés ; HUMAN_ONLY=1 : tout en human_only)"
+	@echo "  make imladris-client-rules [CLIENT_RULES=]   Règles du banc fondues dans la couche du client d'Imladris (WL1), la watch redémarre"
+	@echo "  make imladris-report [SINCE=7d]              Rapport d'observation"
+	@echo "  make imladris-pull                           Copie locale des verdicts et de la mémoire (chaque semaine)"
+	@echo "  make imladris-model MODEL=…                  Changer le modèle qui décide (ou MODEL=default)"
 	@echo "  make celebrimbor-workload                    Charge de bree (site + routine d'admin)"
-	@echo "  make glorfindel-host-status                  Tout tourne ? VMs, sauvegardes, services, erreurs, cartes à juger"
-	@echo "  make glorfindel-host-start REF=tag|commit    Déploie une référence nommée (exigée), jamais une branche"
-	@echo "  make glorfindel-host-stop / -logs            Glorfindel + la console sur la VM"
-	@echo "  make glorfindel-host-tunnel                  Tunnel + URL de la console avec son jeton"
-	@echo "  make glorfindel-host-url                     L'URL de la console avec son jeton"
-	@echo "  make glorfindel-host-cd-install              Le CD d'Imladris (H1) : agent + timer (désactivé), webhook #deploy"
-	@echo "  make glorfindel-host-cd-check                À blanc : vérifie, construit, préflight de la dernière release"
-	@echo "  make glorfindel-host-cd-enable / -disable    Le timer (toutes les 5 min) : une release publiée se déploie"
-	@echo "  make glorfindel-host-cd-status / -retry      Ce qui tourne, les derniers résultats / réessayer la release"
-	@echo "  make glorfindel-host-cd-rollback TAG=vX.Y.Z  Le retour arrière demandé sur Imladris (SEC12) : une release publiée, plus ancienne"
+	@echo "  make imladris-status                         Tout tourne ? VMs, sauvegardes, services, erreurs, cartes à juger"
+	@echo "  make imladris-start REF=tag|commit           Déploie une référence nommée (exigée), jamais une branche"
+	@echo "  make imladris-stop / imladris-logs           Glorfindel + la console sur la VM"
+	@echo "  make imladris-ssh                            Un shell sur la VM (clé d'hôte épinglée)"
+	@echo "  make imladris-cd-install                     Le CD d'Imladris (H1) : agent + timer (désactivé), webhook #deploy"
+	@echo "  make imladris-cd-check                       À blanc : vérifie, construit, préflight de la dernière release"
+	@echo "  make imladris-cd-enable / -disable           Le timer (toutes les 5 min) : une release publiée se déploie"
+	@echo "  make imladris-cd-status / -retry             Ce qui tourne, les derniers résultats / réessayer la release"
+	@echo "  make imladris-cd-rollback TAG=vX.Y.Z         Le retour arrière demandé sur Imladris (SEC12) : une release publiée, plus ancienne"
+	@echo ""
+	@echo "La console d'Imladris, du poste et du téléphone (MOB2) — docs/demarrer/mobile.md :"
+	@echo "  make imladris-tunnel-install [DRY_RUN=1]     Pose l'unité systemd du tunnel du poste vers la console d'Imladris (jamais au boot)"
+	@echo "  make imladris-tunnel-on / imladris-tunnel-off  L'arme pour 12 h au plus (du poste, ou du téléphone dans tmux) / l'arrête"
+	@echo "  make imladris-tunnel-remove [DRY_RUN=1]      L'arrête et retire l'unité"
+	@echo "  make imladris-tunnel-check                   Le poste ouvert au téléphone, lu (l'unité, SSH à clé, Tailscale, 127.0.0.1:7007 seul)"
+	@echo "  make imladris-url                            L'URL de la console d'Imladris avec son jeton (et si le tunnel n'est pas armé)"
+	@echo "    La console sur le téléphone : son propre tunnel SSH vers 127.0.0.1:7007 du poste, que tient le tunnel du poste."
+	@echo "    Toutes refusent dans une session d'agent, sauf imladris-tunnel-check."
+	@echo "    Secours — un poste sans systemd de l'utilisateur (macOS), ou un coup d'œil sans armer les 12 h :"
+	@echo "  make imladris-tunnel                         Le tunnel au premier plan, tenu par le terminal jusqu'à Ctrl+C, et l'URL"
 	@echo ""
 	@echo "Orodruin (O1) — hôte des injecteurs, état séparé (infra/orodruin/README.md) :"
 	@echo "  make orodruin-plan [OPERATOR_CIDR=]          Plan (lecture seule)"
@@ -295,8 +304,8 @@ help:
 	@echo "  make orodruin-check                          Le contrat, lu depuis la VM : armed ou passive ; l'image, et la dernière release"
 	@echo "  make orodruin-identity ID=<object id>        Une identité d'Entra ID est-elle inscrite (IDI1), lu depuis la VM"
 	@echo "  make orodruin-fingerprint                    L'empreinte de sa clé d'hôte, lue par Azure (ORO_SSH_FINGERPRINT)"
-	@echo "  make watch-key / glorfindel-host-watch-key   La clé publique de la watch (ici / Imladris), à épingler : EREGION_WATCH_KEY (SEC19)"
-	@echo "  make queue-keys / glorfindel-host-queue-keys Les clés de la console et du bot (ici / Imladris), à épingler chez la watch : EREGION_QUEUE_KEYS (FS1b)"
+	@echo "  make watch-key / imladris-watch-key          La clé publique de la watch (ici / Imladris), à épingler : EREGION_WATCH_KEY (SEC19)"
+	@echo "  make queue-keys / imladris-queue-keys        Les clés de la console et du bot (ici / Imladris), à épingler chez la watch : EREGION_QUEUE_KEYS (FS1b)"
 	@echo "  make harness-key / harness-sign              La clé de l'attestation (une fois) / signer requirements/harness.json (SEC19)"
 	@echo "  make orodruin-stop / orodruin-start          Désalloue / rallume la VM (entre les sessions)"
 	@echo "  make orodruin-start [NO_UPDATE=1]            …et la met à jour : la dernière release, vérifiée, si son image est plus ancienne (OI3)"
@@ -314,27 +323,22 @@ help:
 	@echo "  make bench-run TARGET=<vm> SCENARIO=<id> [DRY_RUN=1]  MOB1 : préflight, demande, nom tapé, lancement par Orodruin, rapport"
 	@echo "  make bench-restore TARGET=<vm> [BEFORE=…] [RUN=…] [DRY_RUN=1]  MOB1 : le restore du poste, paire de la console, nom tapé,"
 	@echo "                                               --before le T0 du run, --keep-isolated (la levée est celle d'Imladris)"
-	@echo "  make mobile-check                            MOB1 : le poste ouvert au téléphone, lu (SSH à clé, tunnel local seul, écoutes, Tailscale)"
-	@echo "    La console sur le téléphone : son propre tunnel SSH vers 127.0.0.1:7007 du poste, que tient le tunnel du poste :"
-	@echo "  make mobile-tunnel-install [DRY_RUN=1]       MOB2 : pose l'unité systemd du tunnel vers la console d'Imladris (jamais au boot)"
-	@echo "  make mobile-tunnel-on / mobile-tunnel-off    MOB2 : l'arme pour 12 h au plus (du poste, ou du téléphone dans tmux) / l'arrête"
-	@echo "  make mobile-tunnel-remove [DRY_RUN=1]        MOB2 : l'arrête et retire l'unité"
-	@echo "    Toutes refusent dans une session d'agent, sauf mobile-check — docs/demarrer/mobile.md"
+	@echo "    Le poste ouvert au téléphone, la console d'Imladris : plus haut (make imladris-tunnel-check)"
 	@echo ""
 	@echo "Gothmog (G0, G1) — une panne déclarée, depuis Orodruin (gothmog/README.md) :"
 	@echo "  make gothmog-preflight [FAULT=vm-shutdown]   Contrat, cibles, état normal — rien d'écrit"
 	@echo "  make gothmog-run [FAULT=vm-shutdown]         La panne, son retour vérifié (~15 min)"
 	@echo "    Sans watch de Glorfindel vivante, refusé (V1) ; WITHOUT_GLORFINDEL=1 : run de dév, dit au rapport"
 	@echo "    FAULT=vm-disk-write | vm-cpu-pressure | vm-restart : le bruit bénin (G1)"
-	@echo "  make glorfindel-host-fault-rate [DAYS=30]    Les pannes prises pour une attaque, sur Imladris (G1)"
+	@echo "  make imladris-fault-rate [DAYS=30]           Les pannes prises pour une attaque, sur Imladris (G1)"
 	@echo ""
 	@echo "Campagne (R1 + IA0) — kill-chain + rapport, depuis Orodruin :"
 	@echo "  make orodruin-campaign-plan CAMPAIGN_TARGET=<rid> [CAMPAIGN_MAX=5]  Planifie (rend un id)"
 	@echo "  make orodruin-campaign-run  CAMPAIGN=<id>    Joue la campagne (la watch d'Imladris répond selon le mode de chaque VM)"
-	@echo "  make glorfindel-host-campaign-report CAMPAIGN=<id>  Son rapport, écrit seul sur Imladris"
+	@echo "  make imladris-campaign-report CAMPAIGN=<id>  Son rapport, écrit seul sur Imladris"
 	@echo "    (#167 : code, tests et mutants — rien de mesuré sur le banc)"
 	@echo "  CAMPAIGN_DECLARED=annatar/campaign/declared/bl1-reponse.yaml  Le plan : exactement ses techniques (BL1)"
-	@echo "  make glorfindel-host-containment CAMPAIGN=<id> [FAULT_RUNS=<run>]  Temps pour contenir, part contenue seule"
+	@echo "  make imladris-containment CAMPAIGN=<id> [FAULT_RUNS=<run>]  Temps pour contenir, part contenue seule"
 	@echo "    (BL1, docs/banc-bl1.md : la session de banc, pas à pas)"
 	@echo ""
 	@echo "Profils d'usage (D1) — Glorfindel toujours là ; docs/profils/ :"
@@ -640,27 +644,22 @@ glorfindel-ui: build-glorfindel
 # ~/.eregion/console/token (its own directory, SEC10) — written by the container after `up -d`, so waited for
 # (CONSOLE_WAIT seconds, 20 by default). The port: EREGION_CONSOLE_PORT, as compose publishes it.
 # MOB2 : refused in an agent session (the token never reaches a code session), the guard alone first.
-# The workstation's tunnel running (systemctl --user is-active) and the port 7007: the console behind
-# 127.0.0.1:7007 is Imladris's — its URL, from host.env, as glorfindel-host-url gives it, the way to it from
-# the phone's terminal. Otherwise the local console's, as before — glorfindel-start, -restart, -dev, -ui and
-# console-rotate print it — and, the tunnel set but not armed, a line names the way to Imladris's.
+# IML1b : the local console's only. The workstation's tunnel running (systemctl --user is-active) and the
+# port 7007: the console behind 127.0.0.1:7007 is Imladris's — no URL here, a line names make imladris-url
+# (exit 1: nothing given). Otherwise the local console's, as before — glorfindel-start, -restart, -dev, -ui
+# and console-rotate print it — and, the tunnel set but not armed, a line names the way to Imladris's.
 CONSOLE_WAIT ?= 20
 MOBILE_UNIT    = $(HOME)/.config/systemd/user/eregion-console-tunnel.service
+TUNNEL_ACTIVE  = systemctl --user is-active --quiet eregion-console-tunnel.service 2>/dev/null
 CONSOLE_GUARD  = python3 scripts/mobile.py guard
 console-url:
 	@$(CONSOLE_GUARD) $@
-	@if [ -f "$(MOBILE_UNIT)" ] && [ "$${EREGION_CONSOLE_PORT:-7007}" = 7007 ] \
-	   && systemctl --user is-active --quiet eregion-console-tunnel.service 2>/dev/null; then \
-	   $(MAKE) --no-print-directory console-url-imladris; \
+	@if [ -f "$(MOBILE_UNIT)" ] && [ "$${EREGION_CONSOLE_PORT:-7007}" = 7007 ] && $(TUNNEL_ACTIVE); then \
+	   echo "  ℹ 127.0.0.1:7007 est tenu par le tunnel du poste vers Imladris : la console derrière est celle d'Imladris, son URL → make imladris-url" >&2; \
+	   exit 1; \
 	 else $(MAKE) --no-print-directory console-url-local; rc=$$?; \
-	   [ ! -f "$(MOBILE_UNIT)" ] || echo "  ℹ le tunnel du poste vers Imladris est posé, non armé : ci-dessus la console locale ; celle d'Imladris → make glorfindel-host-url, ou make mobile-tunnel-on" >&2; \
+	   [ ! -f "$(MOBILE_UNIT)" ] || echo "  ℹ le tunnel du poste vers Imladris est posé, non armé : ci-dessus la console locale ; celle d'Imladris → make imladris-url (le tunnel : make imladris-tunnel-on)" >&2; \
 	   exit $$rc; fi
-
-console-url-imladris:
-	@$(CONSOLE_GUARD) console-url
-	@test -f $(HOST_ENV) || { echo "  ⚠ Console d'Imladris : $(HOST_ENV) manquant (make glorfindel-host-env)" >&2; exit 1; }
-	@t="$(CONSOLE_TOKEN)"; test -n "$$t" || { echo "  ⚠ $(NO_CONSOLE_TOKEN)" >&2; exit 1; }; \
-	 echo "  Console d'Imladris (le tunnel du poste)  →  http://localhost:7007/?token=$$t"
 
 console-url-local:
 	@$(CONSOLE_GUARD) console-url
@@ -982,7 +981,7 @@ ORO_KNOWN_HOSTS ?= $(HOME)/.eregion/orodruin_known_hosts
 SSH_OPTS       = -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$(ORO_KNOWN_HOSTS) -o HostKeyAlgorithms=ssh-ed25519 $(SSH_KEY_OPTS)
 # V-32 (SEC7) : la clé d'hôte d'Imladris, épinglée par son empreinte. HOST_SSH_FINGERPRINT (SHA256:…,
 # dans ton environnement, jamais dans le dépôt : relevée sur la VM, infra/glorfindel-host/README.md,
-# « SSH ») ; glorfindel-host-known écrit HOST_KNOWN_HOSTS à partir d'elle, et chaque commande vers Imladris
+# « SSH ») ; imladris-known écrit HOST_KNOWN_HOSTS à partir d'elle, et chaque commande vers Imladris
 # n'accepte que ce fichier (StrictHostKeyChecking=yes) : une autre clé refuse. Sans elle, accept-new
 # reste, et chaque commande le dit.
 HOST_SSH_FINGERPRINT ?=
@@ -1001,34 +1000,40 @@ HOST_ENV_VALUE = sed -n -E '/^$(1)=/{s/^[^=]*=[[:space:]]*//;s/[[:space:]]+\#.*$
 CONSOLE_TOKEN  = $$(t=$$($(call HOST_ENV_VALUE,EREGION_CONSOLE_TOKEN)); [ -n "$$t" ] || t=$$($(call HOST_ENV_VALUE,GLORFINDEL_WARROOM_TOKEN)); printf '%s' "$$t")
 NO_CONSOLE_TOKEN = $(HOST_ENV) : aucun jeton de la console (EREGION_CONSOLE_TOKEN, ou son ancien nom GLORFINDEL_WARROOM_TOKEN)
 
-# IML1 (#688) : la VM s'appelle Imladris. make imladris-<x> fait make glorfindel-host-<x>, rien
-# d'autre : la même recette, les mêmes variables et les mêmes gardes (YES=1, REF=, la clé d'hôte).
-# Les cibles glorfindel-host-* restent les noms de référence ; IML2 les renommera avec la ressource.
-imladris-%: glorfindel-host-% ;
+# IML1b (#747) : les commandes d'Imladris s'appellent toutes imladris-* (décision de Jonathan du 12/11).
+# Les anciens noms restent des alias muets jusqu'à IML2 (#689) : glorfindel-host-<x> mène à imladris-<x>,
+# mobile-check à imladris-tunnel-check, mobile-tunnel-<x> à imladris-tunnel-<x>, rien d'autre : la même
+# recette, les mêmes variables et les mêmes gardes (YES=1, REF=, la clé d'hôte, le refus d'une session
+# d'agent : $@ y est le nouveau nom). Une règle sans recette, qui ne vaut que pour un nom dont la cible
+# imladris-* existe ; ni make help ni les guides ne les montrent. Les cibles imladris-* sont dans .PHONY,
+# jamais les anciens noms : make ne cherche pas de règle implicite pour une cible .PHONY.
+glorfindel-host-%: imladris-% ;
+mobile-check: imladris-tunnel-check ;
+mobile-tunnel-%: imladris-tunnel-% ;
 
-glorfindel-host-init:
+imladris-init:
 	@$(HOST_TF) init
 
-glorfindel-host-plan: glorfindel-host-init
+imladris-plan: imladris-init
 	@$(HOST_TF) plan $(HOST_VARS)
 
 # YES=1 : sans confirmation (le plan n'est alors pas relu avant l'apply).
-glorfindel-host-up: glorfindel-host-init
+imladris-up: imladris-init
 	@$(HOST_TF) apply $(HOST_VARS)$(if $(YES), -auto-approve)
-	@echo "" && echo "  Ensuite : make glorfindel-host-env (ou copier host.env.example et remplir), make glorfindel-host-push"
+	@echo "" && echo "  Ensuite : make imladris-env (ou copier host.env.example et remplir), make imladris-push"
 
-glorfindel-host-down:
+imladris-down:
 	@$(HOST_TF) destroy $(HOST_VARS)
 
 # host.env depuis ton environnement (.envrc chargé) : abonnement, clé du modèle, webhook ;
 # jamais de secret Azure (identité managée) ; READ_ONLY=1 et un jeton de la console tiré au sort
 # (EREGION_CONSOLE_TOKEN ; un host.env existant sous l'ancien nom reste valide).
-glorfindel-host-env:
+imladris-env:
 	@.venv/bin/python infra/glorfindel-host/host_env.py infra/glorfindel-host/host.env
 
 # V-32 : avant chaque commande vers Imladris — la clé d'hôte vérifiée par HOST_SSH_FINGERPRINT, ou dit
 # qu'elle ne l'est pas (infra/glorfindel-host/known_host.sh).
-glorfindel-host-known:
+imladris-known:
 	@HOST_SSH_FINGERPRINT="$(HOST_SSH_FINGERPRINT)" bash infra/glorfindel-host/known_host.sh "$(HOST_IP)" "$(HOST_KNOWN_HOSTS)"
 
 # host.env → ~/eregion/.env (lu par docker compose), et la config locale : le défaut forcé à
@@ -1039,9 +1044,9 @@ glorfindel-host-known:
 # (un mode changé dans la console pendant le push), rien n'est envoyé. Pas sous HUMAN_ONLY=1 : ce
 # push n'emporte rien d'Imladris, et une relecture qui échoue ne bloque pas le geste d'urgence.
 HOST_PUSH_RECHECK = { $(HOST_SSH) 'cat eregion/glorfindel-config.yaml' > $$h1 2>/dev/null || : > $$h1; } && { cmp -s $$h0 $$h1 || { echo "  la config d'Imladris a changé pendant le push (un mode changé dans la console ?) : rien d'envoyé, relancer"; false; }; } &&
-glorfindel-host-push: glorfindel-host-known
+imladris-push: imladris-known
 	@test -f infra/glorfindel-host/host.env || { echo "infra/glorfindel-host/host.env manquant (voir host.env.example)"; exit 1; }
-	@test -n "$(HOST_IP)" || { echo "Pas de VM : make glorfindel-host-up d'abord"; exit 1; }
+	@test -n "$(HOST_IP)" || { echo "Pas de VM : make imladris-up d'abord"; exit 1; }
 	@.venv/bin/python infra/glorfindel-host/host_env.py --check infra/glorfindel-host/host.env
 	@cfg=$$(mktemp); h0=$$(mktemp); h1=$$(mktemp); \
 	 $(HOST_SSH) 'cat eregion/glorfindel-config.yaml' > $$h0 2>/dev/null || : > $$h0; \
@@ -1062,8 +1067,8 @@ glorfindel-host-push: glorfindel-host-known
 # Puis la watch redémarre (elle lit ses règles au démarrage) et `glorfindel rules` dit ce qui tourne.
 CLIENT_RULES ?= infra/glorfindel-host/client_rules.bench.yaml
 HOST_LAYER    = .glorfindel/client_rules.yaml
-glorfindel-host-client-rules: glorfindel-host-known
-	@test -n "$(HOST_IP)" || { echo "Pas de VM : make glorfindel-host-up d'abord"; exit 1; }
+imladris-client-rules: imladris-known
+	@test -n "$(HOST_IP)" || { echo "Pas de VM : make imladris-up d'abord"; exit 1; }
 	@test -f "$(CLIENT_RULES)" || { echo "$(CLIENT_RULES) manquant"; exit 1; }
 	@d=$$(mktemp -d); \
 	 { $(HOST_SSH) 'if [ -e $(HOST_LAYER) ]; then cat $(HOST_LAYER); fi' > $$d/seen.yaml || { echo "  couche du client d'Imladris illisible par ssh : rien d'envoyé"; false; }; } && \
@@ -1087,34 +1092,34 @@ glorfindel-host-client-rules: glorfindel-host-known
 # REF qui commence par « - » serait une option de deploy.sh (--checkout-only, --show) : refusée.
 REF ?=
 unexport REF
-glorfindel-host-start: export EREGION_DEPLOY_REF = $(value REF)
-glorfindel-host-start: glorfindel-host-known
-	@test -n "$(HOST_IP)" || { echo "Pas de VM : make glorfindel-host-up d'abord"; exit 1; }
-	@case "$(origin REF)" in environment*) echo "REF vient de l'environnement (« $$EREGION_DEPLOY_REF ») : rien n'est déployé. La donner sur la ligne de commande : make glorfindel-host-start REF=<tag ou commit>." >&2; exit 1;; esac
-	@test -n "$$EREGION_DEPLOY_REF" || { echo "REF exigée : make glorfindel-host-start REF=<tag ou commit> — ce chemin construit sur Imladris, il ne prend jamais « le dernier tag » (le CD déploie la release publiée, vérifiée). Rien n'est déployé." >&2; exit 1; }
+imladris-start: export EREGION_DEPLOY_REF = $(value REF)
+imladris-start: imladris-known
+	@test -n "$(HOST_IP)" || { echo "Pas de VM : make imladris-up d'abord"; exit 1; }
+	@case "$(origin REF)" in environment*) echo "REF vient de l'environnement (« $$EREGION_DEPLOY_REF ») : rien n'est déployé. La donner sur la ligne de commande : make imladris-start REF=<tag ou commit>." >&2; exit 1;; esac
+	@test -n "$$EREGION_DEPLOY_REF" || { echo "REF exigée : make imladris-start REF=<tag ou commit> — ce chemin construit sur Imladris, il ne prend jamais « le dernier tag » (le CD déploie la release publiée, vérifiée). Rien n'est déployé." >&2; exit 1; }
 	@case "$$EREGION_DEPLOY_REF" in -*|*[!A-Za-z0-9._-]*) echo "REF invalide : « $$EREGION_DEPLOY_REF » (un tag ou un commit)" >&2; exit 1;; esac
 	@$(HOST_SSH) 'test -f .eregion-host-ready && mkdir -p .eregion/analysis .eregion/console/requests && cd eregion && bash -s -- '"$$EREGION_DEPLOY_REF" < infra/glorfindel-host/deploy.sh
 	@echo ""
 	@echo "  ⚠ Arrête le Glorfindel local (make glorfindel-stop) : deux watch sur le même banc = cartes en double ;"
 	@echo "    et aucun autre bot avec le même DISCORD_BOT_TOKEN."
-	@echo "  Console → make glorfindel-host-tunnel : il affiche l'URL avec son jeton, puis tient le tunnel"
+	@echo "  Console → make imladris-tunnel-on (le tunnel du poste, 12 h au plus), puis make imladris-url"
 
-glorfindel-host-stop: glorfindel-host-known
+imladris-stop: imladris-known
 	@$(HOST_SSH) 'cd eregion && docker compose stop'
 
-glorfindel-host-logs: glorfindel-host-known
+imladris-logs: imladris-known
 	@$(HOST_SSH) 'cd eregion && docker compose logs --tail 100'
 
 # Is everything running? Azure VMs and backups, containers, errors, discovery, bot, cards
 # to judge — read-only, one look (infra/glorfindel-host/status.sh).
-glorfindel-host-status: glorfindel-host-known
-	@test -n "$(HOST_IP)" || { echo "Pas de VM : make glorfindel-host-up d'abord"; exit 1; }
+imladris-status: imladris-known
+	@test -n "$(HOST_IP)" || { echo "Pas de VM : make imladris-up d'abord"; exit 1; }
 	@HOST_IP=$(HOST_IP) HOST_USER=$(HOST_USER) SSH_OPTS="$(HOST_SSH_OPTS)" HOST_BACKUPS=$(HOST_BACKUPS) bash infra/glorfindel-host/status.sh
 
 # A copy of the VM's ~/.glorfindel on this machine (the verdicts of the observation, the
 # memory, the state) — the 30 latest kept. The model cache (~/.cache/chroma) re-downloads.
-glorfindel-host-pull: glorfindel-host-known
-	@test -n "$(HOST_IP)" || { echo "Pas de VM : make glorfindel-host-up d'abord"; exit 1; }
+imladris-pull: imladris-known
+	@test -n "$(HOST_IP)" || { echo "Pas de VM : make imladris-up d'abord"; exit 1; }
 	@mkdir -p $(HOST_BACKUPS) && f=$(HOST_BACKUPS)/glorfindel-$$(date -u +%Y%m%dT%H%M%SZ).tgz && \
 	 $(HOST_SSH) 'tar czf - -C $$HOME .glorfindel' > $$f && test -s $$f && \
 	 ls -1t $(HOST_BACKUPS)/glorfindel-*.tgz | tail -n +31 | xargs -r rm -f && \
@@ -1128,11 +1133,11 @@ glorfindel-host-pull: glorfindel-host-known
 # advice on a refusal (exit 2) only; an error (1, an image before IA1) is said; never fails.
 # OL1: first, host.env with the new model, on a copy, held to the rule of host_env.py --check (the
 # key its provider reads): refused, nothing is written, here nor on the VM.
-glorfindel-host-model: glorfindel-host-known
+imladris-model: imladris-known
 	@test -n "$(MODEL)" || { echo "MODEL=anthropic/<modèle> requis (ou MODEL=default)"; exit 1; }
 	@case "$(MODEL)" in *[!A-Za-z0-9._/:-]*) echo "MODEL invalide : $(MODEL)"; exit 1;; esac
-	@test -n "$(HOST_IP)" || { echo "Pas de VM : make glorfindel-host-up d'abord"; exit 1; }
-	@test -f $(HOST_ENV) || { echo "$(HOST_ENV) manquant (make glorfindel-host-env)"; exit 1; }
+	@test -n "$(HOST_IP)" || { echo "Pas de VM : make imladris-up d'abord"; exit 1; }
+	@test -f $(HOST_ENV) || { echo "$(HOST_ENV) manquant (make imladris-env)"; exit 1; }
 	@c=$$(mktemp); sed '/^GLORFINDEL_LLM_MODEL=/d' $(HOST_ENV) > $$c; \
 	 [ "$(MODEL)" = default ] || echo "GLORFINDEL_LLM_MODEL=$(MODEL)" >> $$c; \
 	 $(PYTHON) infra/glorfindel-host/host_env.py --check $$c >/dev/null; rc=$$?; rm -f $$c; \
@@ -1148,11 +1153,11 @@ glorfindel-host-model: glorfindel-host-known
 	   [ $$rc -ne 1 ] || echo "  (contrôle de séparation indisponible sur cette image : avant IA1 ?)"; \
 	   true; }'
 
-glorfindel-host-report: glorfindel-host-known
+imladris-report: imladris-known
 	@$(HOST_SSH) 'docker exec eregion-watch glorfindel report --since $(or $(SINCE),7d)'
 
 # IA0 (#167) : le rapport d'une campagne lancée depuis Orodruin, écrit par la watch de la VM.
-glorfindel-host-campaign-report: glorfindel-host-known
+imladris-campaign-report: imladris-known
 	@test -n "$(CAMPAIGN)" || { echo "CAMPAIGN=<id> requis (rendu par orodruin-campaign-plan)"; exit 1; }
 	@case "$(CAMPAIGN)" in *[!A-Za-z0-9._-]*) echo "CAMPAIGN invalide : $(CAMPAIGN)"; exit 1;; esac
 	@$(HOST_SSH) 'cat eregion/runs/glorfindel/campaigns/$(CAMPAIGN)/report.md 2>/dev/null || { cat eregion/runs/glorfindel/campaigns/$(CAMPAIGN)/report.error 2>/dev/null; echo "pas encore de rapport pour $(CAMPAIGN)"; exit 1; }'
@@ -1160,38 +1165,44 @@ glorfindel-host-campaign-report: glorfindel-host-known
 # BL1 (#280) : le temps pour contenir et la part contenue seule d'une campagne, calculés sur Imladris
 # depuis ses fichiers (analysis/containment.py) — lecture seule, aucun modèle. FAULT_RUNS= : une
 # panne de Gothmog à rattacher en plus ; JSON=1 : en JSON.
-glorfindel-host-containment: glorfindel-host-known
+imladris-containment: imladris-known
 	@test -n "$(CAMPAIGN)" || { echo "CAMPAIGN=<id> requis (rendu par orodruin-campaign-plan)"; exit 1; }
 	@case "$(CAMPAIGN)$(FAULT_RUNS)" in *[!A-Za-z0-9._,-]*) echo "CAMPAIGN ou FAULT_RUNS invalide"; exit 1;; esac
 	@$(HOST_SSH) 'docker exec eregion-watch python -m analysis.containment runs/glorfindel/campaigns/$(CAMPAIGN)$(foreach r,$(subst $(BL1_COMMA), ,$(FAULT_RUNS)), --fault-run $(r))$(if $(JSON), --json)'
 
 # G1 (#76) : le même taux, sur Imladris, où sont les décisions de la watch — lecture seule, aucun modèle.
-glorfindel-host-fault-rate: glorfindel-host-known
+imladris-fault-rate: imladris-known
 	@case "$(DAYS)" in *[!0-9]*) echo "DAYS invalide : un nombre de jours"; exit 1;; esac
 	@$(HOST_SSH) 'docker exec eregion-watch python -m analysis.fault_rate --runs-dir runs --days $(or $(DAYS),30)$(if $(JSON), --json)'
 
-glorfindel-host-url:
+# IML1b : l'URL de la console d'Imladris avec son jeton, toujours (la sortie : l'URL seule) ; le tunnel du
+# poste pas armé, une ligne de plus, sur la sortie d'erreur, dit comment l'armer.
+imladris-url:
 	@$(CONSOLE_GUARD) $@
-	@test -f $(HOST_ENV) || { echo "$(HOST_ENV) manquant (make glorfindel-host-env)"; exit 1; }
+	@test -f $(HOST_ENV) || { echo "$(HOST_ENV) manquant (make imladris-env)"; exit 1; }
 	@t="$(CONSOLE_TOKEN)"; test -n "$$t" || { echo "$(NO_CONSOLE_TOKEN)" >&2; exit 1; }; \
-	 echo "http://localhost:7007/?token=$$t"
+	 echo "http://localhost:7007/?token=$$t"; \
+	 $(TUNNEL_ACTIVE) || if [ -f "$(MOBILE_UNIT)" ]; then \
+	   echo "  ℹ le tunnel du poste vers Imladris n'est pas armé : make imladris-tunnel-on (12 h au plus)" >&2; \
+	 else echo "  ℹ le tunnel du poste vers Imladris n'est pas armé (pas posé : make imladris-tunnel-install), puis make imladris-tunnel-on" >&2; fi
 
-# Affiche l'URL avec son jeton, puis tient le tunnel ouvert (Ctrl+C pour fermer).
-# MOB2 : the guard alone first, before glorfindel-host-known (an ssh-keyscan) and $(HOST_IP) (terraform
+# Le secours (IML1b) : un poste sans systemd de l'utilisateur (macOS), ou un coup d'œil sans armer les
+# 12 h. Affiche l'URL avec son jeton, puis tient le tunnel au premier plan (Ctrl+C pour fermer).
+# MOB2 : the guard alone first, before imladris-known (an ssh-keyscan) and $(HOST_IP) (terraform
 # output) — the -go target carries them, and runs the guard again.
-glorfindel-host-tunnel:
+imladris-tunnel:
 	@$(CONSOLE_GUARD) $@
 	@$(MAKE) --no-print-directory $@-go
 
-glorfindel-host-tunnel-go: glorfindel-host-known
-	@$(CONSOLE_GUARD) glorfindel-host-tunnel
-	@! systemctl --user is-active --quiet eregion-console-tunnel.service 2>/dev/null || { echo "  le tunnel du poste tient déjà 127.0.0.1:7007 (make mobile-tunnel-on) : l'URL, make console-url ; l'arrêter, make mobile-tunnel-off" >&2; exit 1; }
+imladris-tunnel-go: imladris-known
+	@$(CONSOLE_GUARD) imladris-tunnel
+	@! $(TUNNEL_ACTIVE) || { echo "  le tunnel du poste tient déjà 127.0.0.1:7007 (make imladris-tunnel-on) : l'URL, make imladris-url ; l'arrêter, make imladris-tunnel-off" >&2; exit 1; }
 	@if [ -f $(HOST_ENV) ]; then t="$(CONSOLE_TOKEN)"; \
 	 if [ -n "$$t" ]; then echo "  Console → http://localhost:7007/?token=$$t"; else echo "  ⚠ $(NO_CONSOLE_TOKEN)"; fi; \
 	 echo "  (Ctrl+C ferme le tunnel)"; fi
 	@ssh $(HOST_SSH_OPTS) -N -L 7007:127.0.0.1:7007 $(HOST_USER)@$(HOST_IP)
 
-glorfindel-host-ssh: glorfindel-host-known
+imladris-ssh: imladris-known
 	@$(HOST_SSH)
 
 # ── Le CD d'Imladris (H1, #244) : la release que Jonathan publie arrive seule sur Imladris ──────────
@@ -1207,8 +1218,8 @@ HOST_SSH_TTY   = ssh -t $(HOST_SSH_OPTS) $(HOST_USER)@$(HOST_IP)
 
 # CI3 : cosign (published_image.py, version et sha256 épinglés) téléchargé par la VM elle-même,
 # depuis la release de sigstore sur GitHub, et gardé seulement si son sha256 est l'épinglé.
-glorfindel-host-cd-install: glorfindel-host-known
-	@test -n "$(HOST_IP)" || { echo "Pas de VM : make glorfindel-host-up d'abord"; exit 1; }
+imladris-cd-install: imladris-known
+	@test -n "$(HOST_IP)" || { echo "Pas de VM : make imladris-up d'abord"; exit 1; }
 	@lines=$$(python3 infra/glorfindel-host/cd/eregion_cd.py export-discord-env) || exit 1; \
 	 $(HOST_SSH) 'mkdir -p .eregion-cd && chmod 700 .eregion-cd' && \
 	 scp -q $(HOST_SSH_OPTS) $(HOST_CD_FILES) $(HOST_USER)@$(HOST_IP):.eregion-cd/ && \
@@ -1217,31 +1228,31 @@ glorfindel-host-cd-install: glorfindel-host-known
 	 git rev-parse HEAD | $(HOST_SSH) 'cat > .eregion-cd/installed-from'
 	@$(HOST_SSH_TTY) 'sudo bash .eregion-cd/install.sh'
 
-glorfindel-host-cd-check: glorfindel-host-known
-	@test -n "$(HOST_IP)" || { echo "Pas de VM : make glorfindel-host-up d'abord"; exit 1; }
+imladris-cd-check: imladris-known
+	@test -n "$(HOST_IP)" || { echo "Pas de VM : make imladris-up d'abord"; exit 1; }
 	@$(HOST_SSH) 'python3 .eregion-cd/eregion_cd.py check'
 
-glorfindel-host-cd-enable: glorfindel-host-known
+imladris-cd-enable: imladris-known
 	@$(HOST_SSH_TTY) 'sudo systemctl enable --now eregion-cd.timer && systemctl list-timers eregion-cd.timer --no-pager'
 
-glorfindel-host-cd-disable: glorfindel-host-known
+imladris-cd-disable: imladris-known
 	@$(HOST_SSH_TTY) 'sudo systemctl disable --now eregion-cd.timer'
 
-glorfindel-host-cd-status: glorfindel-host-known
-	@test -n "$(HOST_IP)" || { echo "Pas de VM : make glorfindel-host-up d'abord"; exit 1; }
+imladris-cd-status: imladris-known
+	@test -n "$(HOST_IP)" || { echo "Pas de VM : make imladris-up d'abord"; exit 1; }
 	@$(HOST_SSH) 'python3 .eregion-cd/eregion_cd.py status; echo "  timer : $$(systemctl is-enabled eregion-cd.timer 2>/dev/null || echo absent)"; journalctl -u eregion-cd --since -1d -n 15 --no-pager -o cat 2>/dev/null | sed "s/^/  | /"'
 
-glorfindel-host-cd-retry: glorfindel-host-known
+imladris-cd-retry: imladris-known
 	@$(HOST_SSH) 'python3 .eregion-cd/eregion_cd.py retry'
 
 # SEC12 : le seul chemin par lequel le CD déploie une release plus ancienne que ce qui tourne —
 # demandé sur Imladris, pour ce tag, vérifié comme toute release ; celle qu'il quitte n'est plus reprise
 # seule (une nouvelle release, ou -cd-retry). TAG : vX.Y.Z vérifié ici, puis par l'agent (TAG_RE).
-glorfindel-host-cd-rollback: glorfindel-host-known
+imladris-cd-rollback: imladris-known
 	@printf '%s' "$(TAG)" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$$' || { echo "TAG=vX.Y.Z attendu"; exit 2; }
 	@$(HOST_SSH) 'python3 .eregion-cd/eregion_cd.py rollback $(TAG)'
 
-glorfindel-host-cd-uninstall: glorfindel-host-known
+imladris-cd-uninstall: imladris-known
 	@$(HOST_SSH_TTY) 'sudo bash .eregion-cd/install.sh --remove'
 
 # ── Orodruin (O1) — l'hôte d'où les injecteurs agissent ───────────────────────
@@ -1309,19 +1320,19 @@ orodruin-known:
 # SEC19 (N-03) : la clé publique de la watch et son empreinte, à épingler chez les injecteurs —
 # EREGION_WATCH_KEY dans infra/orodruin/orodruin.env (puis make orodruin-push), ou dans ton
 # environnement pour les injecteurs de ce poste. Jamais la clé privée. watch-key : la watch de ce
-# poste (~/.eregion/watch-key, tirée à son premier démarrage) ; glorfindel-host-watch-key : celle de
+# poste (~/.eregion/watch-key, tirée à son premier démarrage) ; imladris-watch-key : celle de
 # Imladris, lue dans son conteneur par SSH, clé d'hôte épinglée (V-32).
 watch-key:
 	@$(PYTHON) -m eregion_core.watch_key public
 
-glorfindel-host-watch-key: glorfindel-host-known
-	@test -n "$(HOST_IP)" || { echo "Pas de VM : make glorfindel-host-up d'abord"; exit 1; }
+imladris-watch-key: imladris-known
+	@test -n "$(HOST_IP)" || { echo "Pas de VM : make imladris-up d'abord"; exit 1; }
 	@$(HOST_SSH) 'docker exec eregion-watch glorfindel watch-key'
 
 # FS1b (#563) : les clés publiques de la console et du bot pour la file d'actions signée, à épingler
 # chez la watch — EREGION_QUEUE_KEYS dans .envrc (ce poste) ou dans host.env (Imladris). Tirées au premier
 # démarrage de chaque service avec EREGION_ACTION_QUEUE=1, dans ~/.eregion/console et ~/.eregion/bot ;
-# jamais la clé privée. queue-keys : celles de ce poste ; glorfindel-host-queue-keys : celles d'Imladris,
+# jamais la clé privée. queue-keys : celles de ce poste ; imladris-queue-keys : celles d'Imladris,
 # lues dans leurs conteneurs par SSH, clé d'hôte épinglée (V-32).
 # FS1c : sur Imladris, les clés d'abord, le drapeau ensuite — `pin … --draw` tire la clé du service dans son
 # propre conteneur s'il n'en a pas encore, sans le drapeau ; la ligne imprimée va dans host.env avec
@@ -1330,8 +1341,8 @@ glorfindel-host-watch-key: glorfindel-host-known
 queue-keys:
 	@$(PYTHON) -m eregion_core.action_queue public
 
-glorfindel-host-queue-keys: glorfindel-host-known
-	@test -n "$(HOST_IP)" || { echo "Pas de VM : make glorfindel-host-up d'abord"; exit 1; }
+imladris-queue-keys: imladris-known
+	@test -n "$(HOST_IP)" || { echo "Pas de VM : make imladris-up d'abord"; exit 1; }
 	@$(HOST_SSH) 'c=$$(docker exec eregion-war-room python -m eregion_core.action_queue pin console --draw) || exit 1; b=$$(docker exec eregion-bot python -m eregion_core.action_queue pin bot --draw 2>/dev/null) || { b=; echo "# le bot ne tourne pas sur Imladris : sa clé n est pas épinglée (son Revert sera refusé, no_key_pinned)" >&2; }; echo "EREGION_QUEUE_KEYS=$$c$${b:+,$$b}"'
 
 # L'empreinte de la clé d'hôte d'Orodruin, lue sur la VM par le plan de contrôle d'Azure (ton az
@@ -1354,7 +1365,7 @@ orodruin-fingerprint:
 orodruin-watch-guard: orodruin-watch-principals
 	@if [ "$(NO_WATCH)" != 1 ] && { [ -z "$(ORO_WATCH_ID)" ] || [ -z "$(ORO_WATCH_SUBNET)" ]; }; then \
 	  echo "✗ L'état de infra/glorfindel-host ne se lit pas ici (principal_id, subnet_id) : le plan retirerait" >&2; \
-	  echo "  à la watch hébergée la lecture du canal et l'accès de son sous-réseau. make glorfindel-host-init" >&2; \
+	  echo "  à la watch hébergée la lecture du canal et l'accès de son sous-réseau. make imladris-init" >&2; \
 	  echo "  sur ce poste, ou NO_WATCH=1 pour un Orodruin sans Glorfindel hébergé." >&2; exit 1; fi
 	@if [ -n "$$EREGION_WATCH_PRINCIPALS" ] && [ "$(NO_WATCH)" != 1 ] \
 	   && ! printf ',%s,' "$$EREGION_WATCH_PRINCIPALS" | tr A-F a-f | grep -qF ",$(ORO_WATCH_ID),"; then \
@@ -1395,7 +1406,7 @@ orodruin-lock: orodruin-init orodruin-watch-guard
 # Orodruin comme le manifeste prouvé l'annonce (son id, ses couches, son utilisateur, son commit) —
 # sinon elle est retirée, rien n'a changé. ~/.eregion-image est effacé avant, et n'est écrit
 # (« commit digest ») qu'au succès. REF se donne sur la ligne de commande, comme pour
-# glorfindel-host-start. UID 1000 = l'utilisateur de la VM. L'archive : un répertoire temporaire de
+# imladris-start. UID 1000 = l'utilisateur de la VM. L'archive : un répertoire temporaire de
 # ce poste (TMPDIR ; ~630 Mo), retiré à la fin.
 # OI2 (#490) : relue, elle démarre une fois avant son tag — un run de contrôle qui ne lance que true,
 # sans réseau, sans tirer, sans rien de l'hôte (ni montage, ni orodruin.env), durci comme les
@@ -1516,7 +1527,7 @@ bench-report:
 # MOB1 (#686) : piloter le banc depuis le téléphone — l'opérateur tape toujours la commande sur son
 # poste, seul le chemin téléphone → poste change (docs/demarrer/mobile.md). Orodruin n'écoute toujours
 # que le SSH du poste (DRL1), rien ne change sur Imladris. La console d'Imladris passe par le tunnel SSH que le
-# téléphone ouvre lui-même vers le 127.0.0.1:7007 du poste, où make glorfindel-host-tunnel tient celui d'Imladris.
+# téléphone ouvre lui-même vers le 127.0.0.1:7007 du poste, où make imladris-tunnel tient celui d'Imladris.
 # bench-run : le préflight (un ✗, rien ne part), la demande d'un fil SCENARIO → TARGET (l'id de la VM lu
 # sur Azure), le nom de la cible tapé dans un terminal, destructif ou non, puis la demande portée sur
 # Orodruin, qui la rejuge et la lance (comme orodruin-exercise), puis bench-report pour chaque run
@@ -1558,8 +1569,8 @@ bench-run-go bench-restore-go:
 # fichier seul, aucune commande ni autorité de certificats), le tunnel local du téléphone vers
 # 127.0.0.1:7007 seul (AllowTcpForwarding local, PermitOpen, GatewayPorts no), le port de la console en
 # 127.0.0.1 seul, Tailscale SSH fermé. sshd -T par sudo -n : sudo -v d'abord.
-mobile-check: export MOBILE_HOST_IP = $(HOST_IP)
-mobile-check:
+imladris-tunnel-check: export MOBILE_HOST_IP = $(HOST_IP)
+imladris-tunnel-check:
 	@$(PYTHON) scripts/mobile.py check
 
 # MOB2 : le tunnel du poste vers la console d'Imladris, armé à la demande et borné à 12 h (décision de Jonathan,
@@ -1573,22 +1584,22 @@ mobile-check:
 # Le garde : toutes refusent dans une session d'agent (EREGION_AGENT_SESSION, le worktree d'un lot) — une session
 # n'arme jamais le tunnel. Comme bench-run : le garde tourne seul, avant que make ne développe HOST_IP (terraform
 # output) ; les cibles -go internes refont le garde avant tout known_host.sh, ssh-keyscan ou systemctl.
-mobile-tunnel-install mobile-tunnel-remove mobile-tunnel-on mobile-tunnel-off:
-	@$(PYTHON) scripts/mobile.py $(@:mobile-%=%) --guard-only
+imladris-tunnel-install imladris-tunnel-remove imladris-tunnel-on imladris-tunnel-off:
+	@$(PYTHON) scripts/mobile.py $(@:imladris-%=%) --guard-only
 	@$(MAKE) --no-print-directory $@-go
 
-mobile-tunnel-install-go mobile-tunnel-on-go: export MOBILE_HOST_IP = $(HOST_IP)
-mobile-tunnel-install-go: export MOBILE_HOST_USER = $(HOST_USER)
-mobile-tunnel-install-go: export MOBILE_HOST_KEY = $(HOST_SSH_KEY)
-mobile-tunnel-install-go: export MOBILE_KNOWN_HOSTS = $(HOST_KNOWN_HOSTS)
-mobile-tunnel-install-go mobile-tunnel-remove-go: export MOBILE_DRY_RUN = $(DRY_RUN)
-mobile-tunnel-install-go:
+imladris-tunnel-install-go imladris-tunnel-on-go: export MOBILE_HOST_IP = $(HOST_IP)
+imladris-tunnel-install-go: export MOBILE_HOST_USER = $(HOST_USER)
+imladris-tunnel-install-go: export MOBILE_HOST_KEY = $(HOST_SSH_KEY)
+imladris-tunnel-install-go: export MOBILE_KNOWN_HOSTS = $(HOST_KNOWN_HOSTS)
+imladris-tunnel-install-go imladris-tunnel-remove-go: export MOBILE_DRY_RUN = $(DRY_RUN)
+imladris-tunnel-install-go:
 	@$(PYTHON) scripts/mobile.py tunnel-install --guard-only
 	@[ "$(DRY_RUN)" = 1 ] || HOST_SSH_FINGERPRINT="$(HOST_SSH_FINGERPRINT)" bash infra/glorfindel-host/known_host.sh "$$MOBILE_HOST_IP" "$(HOST_KNOWN_HOSTS)" HOST_SSH_FINGERPRINT required
 	@HOST_SSH_FINGERPRINT="$(HOST_SSH_FINGERPRINT)" $(PYTHON) scripts/mobile.py tunnel-install
 
-mobile-tunnel-remove-go mobile-tunnel-on-go mobile-tunnel-off-go:
-	@$(PYTHON) scripts/mobile.py $(@:mobile-%-go=%)
+imladris-tunnel-remove-go imladris-tunnel-on-go imladris-tunnel-off-go:
+	@$(PYTHON) scripts/mobile.py $(@:imladris-%-go=%)
 
 unexport ID
 orodruin-identity orodruin-identity-id: export EREGION_IDENTITY = $(value ID)
@@ -1662,7 +1673,7 @@ orodruin-kill:
 # La console écrit la demande dans son propre répertoire (~/.eregion/console/requests/, sur Imladris) ;
 # elle ne parle jamais à Orodruin, et Imladris n'a aucun droit ni canal de plus. Depuis ce poste :
 #   1. la tirer de l'hôte de la console : Imladris par SSH, clé d'hôte vérifiée par son empreinte
-#      (glorfindel-host-known ; HOST_SSH_FINGERPRINT exigée ici, jamais accept-new) ; Orodruin
+#      (imladris-known ; HOST_SSH_FINGERPRINT exigée ici, jamais accept-new) ; Orodruin
 #      de même (orodruin-known, ORO_SSH_FINGERPRINT exigée : V-32, SEC14) ;
 #      REQUEST_FROM=local : la console de ce poste (make glorfindel-start) ;
 #   2. l'afficher fil par fil et faire taper ICI le nom de la cible de chaque fil destructif, ou
@@ -1685,7 +1696,7 @@ orodruin-exercise: export EREGION_DRILL = $(value DRILL)
 orodruin-exercise: export EREGION_DRILL_TARGETS = $(value TARGETS)
 orodruin-exercise: export EREGION_DRILL_VMS = $(value DRILL_VMS)
 # MOB1 (#686) : les noms se tapent dans un terminal. orodruin-exercise-guard, le premier prérequis, refuse
-# sans terminal sur l'entrée, après les contrôles d'origine et avant glorfindel-host-known et
+# sans terminal sur l'entrée, après les contrôles d'origine et avant imladris-known et
 # orodruin-known : rien n'est lu, ni sur Imladris (la demande), ni sur Azure (les VM d'un DRILL=), ni l'état
 # Terraform. Make construit les prérequis dans leur ordre (sans -j, comme toutes les cibles qui agissent).
 # Les contrôles d'origine de REQUEST, DRILL, TARGETS et DRILL_VMS y passent aussi, de la recette.
@@ -1694,7 +1705,7 @@ orodruin-exercise-guard:
 	@case "$(origin DRILL) $(origin TARGETS) $(origin DRILL_VMS)" in *environment*) echo "DRILL, TARGETS et DRILL_VMS viennent de l'environnement : rien n'est fait. Les donner sur la ligne de commande : make orodruin-exercise DRILL=<nom> [TARGETS=…]." >&2; exit 1;; esac
 	@[ -t 0 ] || { echo "✗ pas de terminal : les noms des cibles se tapent au clavier, jamais par un tube. Rien n'est lu, rien n'est envoyé." >&2; exit 1; }
 
-orodruin-exercise: orodruin-exercise-guard $(if $(filter local,$(REQUEST_FROM)),,glorfindel-host-known) $(if $(DRY_RUN),,orodruin-known)
+orodruin-exercise: orodruin-exercise-guard $(if $(filter local,$(REQUEST_FROM)),,imladris-known) $(if $(DRY_RUN),,orodruin-known)
 	@if [ -n "$$EREGION_REQUEST_ID" ] && [ -n "$$EREGION_DRILL" ]; then echo "REQUEST=<id> ou DRILL=<nom>, pas les deux : rien n'est fait." >&2; exit 1; fi
 	@case "$(REQUEST_FROM)" in h0|local) ;; *) echo "REQUEST_FROM=h0 ou local, pas « $(REQUEST_FROM) »" >&2; exit 1;; esac
 	@if [ "$(REQUEST_FROM)" = h0 ] && [ -z "$(HOST_SSH_FINGERPRINT)" ]; then echo "✗ HOST_SSH_FINGERPRINT requis : la demande vient d'Imladris, sa clé d'hôte doit être vérifiée par son empreinte (infra/glorfindel-host/README.md, « SSH ») — jamais accept-new pour ce qui fait agir Orodruin. Rien n'est fait." >&2; exit 1; fi
@@ -1707,7 +1718,7 @@ orodruin-exercise: orodruin-exercise-guard $(if $(filter local,$(REQUEST_FROM)),
 	     f="$(HOME)/.eregion/console/drills/$$n.yaml"; \
 	     if [ -L "$$f" ]; then rc=4; elif [ -e "$$f" ]; then cat "$$f" > "$$d/$$n.yaml" || rc=1; else rc=3; fi; \
 	   else \
-	     test -n "$(HOST_IP)" || { echo "✗ Pas d'Imladris (HOST_IP) : make glorfindel-host-up, ou REQUEST_FROM=local" >&2; exit 1; }; \
+	     test -n "$(HOST_IP)" || { echo "✗ Pas d'Imladris (HOST_IP) : make imladris-up, ou REQUEST_FROM=local" >&2; exit 1; }; \
 	     $(HOST_SSH) "test -e .eregion/console/drills/$$n.yaml || test -L .eregion/console/drills/$$n.yaml || exit 3; test ! -L .eregion/console/drills/$$n.yaml || exit 4; cat .eregion/console/drills/$$n.yaml" > "$$d/$$n.yaml" || rc=$$?; \
 	   fi; \
 	   if [ "$$rc" = 3 ]; then \
@@ -1721,7 +1732,7 @@ orodruin-exercise: orodruin-exercise-guard $(if $(filter local,$(REQUEST_FROM)),
 	   if [ "$(REQUEST_FROM)" = local ]; then \
 	     cat "$(HOME)/.eregion/console/requests/$$id.json" > "$$d/$$id.json"; \
 	   else \
-	     test -n "$(HOST_IP)" || { echo "✗ Pas d'Imladris (HOST_IP) : make glorfindel-host-up, ou REQUEST_FROM=local" >&2; exit 1; }; \
+	     test -n "$(HOST_IP)" || { echo "✗ Pas d'Imladris (HOST_IP) : make imladris-up, ou REQUEST_FROM=local" >&2; exit 1; }; \
 	     $(HOST_SSH) "cat .eregion/console/requests/$$id.json" > "$$d/$$id.json"; \
 	   fi || { echo "✗ la demande $$id ne se lit pas sur l'hôte de la console : rien n'est envoyé" >&2; exit 1; }; \
 	 fi; \
@@ -1767,7 +1778,7 @@ gothmog-run: orodruin-known
 # manifeste et les rapports de ses runs sur le canal des fenêtres (EREGION_EXERCISE_CHANNEL,
 # même conteneur, aucun droit de plus) ; la watch d'Imladris les tire et écrit
 # runs/glorfindel/campaigns/<id>/report.md, avec les décisions de Glorfindel — make
-# glorfindel-host-campaign-report CAMPAIGN=<id> pour le lire (docs/analysis.md).
+# imladris-campaign-report CAMPAIGN=<id> pour le lire (docs/analysis.md).
 # Deux temps : `campaign plan` rend un id, `campaign run <id>` le joue (la watch sur Imladris répond
 # selon le mode de chaque VM : gondolin et bree en non_disruptive, BL1c). ServerAliveInterval : une campagne dure longtemps (plusieurs
 # techniques et leurs fenêtres de détection), plus que le délai d'inactivité d'une IP publique.
@@ -1810,7 +1821,7 @@ profile-resilience: glorfindel-start build-annatar
 
 profile-proven: glorfindel-start build-annatar
 	@echo "  Profil « défense éprouvée » : Glorfindel + Annatar + Gothmog — docs/profils/eprouvee.md"
-	@echo "  Glorfindel hébergé : make glorfindel-host-up, glorfindel-host-start ; injecteurs : Orodruin"
+	@echo "  Glorfindel hébergé : make imladris-up, imladris-start ; injecteurs : Orodruin"
 
 # CI (.github/workflows/components.yml) : chaque profil compose rend ses services, Glorfindel
 # dans tous ; une instance d'équipe prend son nom. docker compose config : rien ne démarre.

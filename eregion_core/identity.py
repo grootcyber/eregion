@@ -3,7 +3,7 @@
 One rule for every entry point that reaches Azure with ``DefaultAzureCredential`` on a host
 without a service principal — the ``glorfindel`` command (the watch, the bot), ``eregion
 console``, and the analysis commands launched by ``docker exec`` in Imladris's container
-(``python -m analysis.containment``, ``make glorfindel-host-containment``). Here, in the shared
+(``python -m analysis.containment``, ``make imladris-containment``). Here, in the shared
 core, so that each one calls it without importing another component (D1).
 """
 from __future__ import annotations

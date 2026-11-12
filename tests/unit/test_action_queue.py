@@ -577,7 +577,7 @@ def test_the_watch_s_key_keeps_its_name_its_place_and_its_words(tmp_path):
     with pytest.raises(watch_key.KeyUnavailable) as e:
         watch_key.load_or_create(other)
     assert str(e.value).endswith("remove it, let the watch draw another at its next start, then pin the "
-                                 "new public key (make watch-key, make glorfindel-host-watch-key)")
+                                 "new public key (make watch-key, make imladris-watch-key)")
 
 
 def test_the_watch_and_a_service_draw_two_keys_never_one():

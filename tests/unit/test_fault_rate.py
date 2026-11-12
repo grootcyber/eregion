@@ -310,7 +310,7 @@ def test_the_make_targets_check_their_days_before_any_shell():
     makefile = (Path(__file__).resolve().parents[2] / "Makefile").read_text()
     phony = makefile.split(".PHONY:", 1)[1].split("\n\n", 1)[0]
     lines = makefile.splitlines()
-    for target in ("fault-rate", "glorfindel-host-fault-rate"):
+    for target in ("fault-rate", "imladris-fault-rate"):
         start = next(i for i, ln in enumerate(lines) if ln.split(" ")[0] == f"{target}:")
         recipe = [ln for ln in lines[start + 1:start + 4] if ln.startswith("\t")]
         assert target in phony

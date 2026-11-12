@@ -128,7 +128,7 @@ Une panne n'est mesurée que si la watch de Glorfindel vivait avant la panne (V1
 décision faite après le début de la panne suivante sur la même VM est à la suivante. Si elle
 tombe aussi dans la fenêtre de la première, la première n'est pas mesurée. Définitions et calcul : [`docs/analysis.md`](../docs/analysis.md),
 « Le taux des pannes prises pour une attaque ». Le taux se lit **sur l'hôte de la watch** (Imladris) :
-`make glorfindel-host-fault-rate`. Sur Orodruin, chaque panne est « non mesurée » : les décisions
+`make imladris-fault-rate`. Sur Orodruin, chaque panne est « non mesurée » : les décisions
 n'y sont pas.
 
 **Mutants** : M2400–M2409 et M2424 (`tests/unit/test_gothmog_noise.py`), M2410–M2423 sauf
@@ -168,7 +168,7 @@ sans poignée) jusqu'au premier run.
 
    `make gothmog-preflight FAULT=vm-disk-write` lit l'état normal sans rien écrire.
 3. Depuis Orodruin armé, une panne à la fois (`gothmog run vm-disk-write`, puis `vm-cpu-pressure`,
-   puis `vm-restart`), en `human_only` sur gondolin. Puis `make glorfindel-host-fault-rate` (sur Imladris).
+   puis `vm-restart`), en `human_only` sur gondolin. Puis `make imladris-fault-rate` (sur Imladris).
    Le taux mesuré va ici, et les pannes passent `implemented`.
 
 ## G2 — les pannes des dépendances de Glorfindel

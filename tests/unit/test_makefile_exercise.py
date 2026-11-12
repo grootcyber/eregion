@@ -70,7 +70,7 @@ def _make(fake, *args, stdin="", env_extra=None, tty=True):
                **(env_extra or {}))
     # The host key's check is known_host.sh's (tests/unit/test_host_ssh.py): taken as done here.
     fingerprint = [] if any(a.startswith("HOST_SSH_FINGERPRINT=") for a in args) else ["HOST_SSH_FINGERPRINT=SHA256:test"]
-    argv = ["make", "-s", "--no-print-directory", "-C", str(ROOT), "-o", "glorfindel-host-known", "-o", "orodruin-known",
+    argv = ["make", "-s", "--no-print-directory", "-C", str(ROOT), "-o", "imladris-known", "-o", "orodruin-known",
             "orodruin-exercise", f"PYTHON={sys.executable}", "HOST_IP=10.0.0.4", "ORO_IP=10.0.0.5",
             *fingerprint, *args]
     if not tty:
@@ -146,7 +146,7 @@ def test_names_piped_instead_of_typed_send_nothing(fake_hosts):
 @needs_make
 @pytest.mark.parametrize("what", [f"REQUEST={RID}", "DRILL=bl1-reponse"])
 def test_without_a_terminal_nothing_is_read_before_the_refusal(tmp_path, what):
-    """MOB1 (review round 2): the refusal comes before glorfindel-host-known and orodruin-known — no
+    """MOB1 (review round 2): the refusal comes before imladris-known and orodruin-known — no
     ssh to H0 for the request, no az for a drill's VMs, not even terraform for an address."""
     bindir = tmp_path / "bin"
     bindir.mkdir()
@@ -224,9 +224,9 @@ def test_the_target_is_phony_and_has_its_help_line():
 
 
 def test_h0_is_reached_only_once_its_host_key_is_checked():
-    """V-32: the pull from H0 goes through glorfindel-host-known and HOST_SSH (its pinned key)."""
+    """V-32: the pull from H0 goes through imladris-known and HOST_SSH (its pinned key)."""
     head = next(ln for ln in MAKEFILE.splitlines() if ln.startswith("orodruin-exercise: orodruin-exercise-guard $(if"))
-    assert "glorfindel-host-known" in head
+    assert "imladris-known" in head
     recipe = MAKEFILE.split(head, 1)[1].split("\n\n", 1)[0]
     assert '$(HOST_SSH) "cat .eregion/console/requests/$$id.json"' in recipe
 

@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """mobile — the workstation reached from the phone, held by two barriers (MOB1, #686; docs/demarrer/mobile.md).
 
-  mobile.py check [--console-port 7007]    `make mobile-check`: read-only, one line ✓/⚠/✗ per check, exit 1
+  mobile.py check [--console-port 7007]    `make imladris-tunnel-check`: read-only, one line ✓/⚠/✗ per check, exit 1
                                            on a ✗
-  mobile.py tunnel-install [--dry-run]     `make mobile-tunnel-install` (MOB2): the workstation's tunnel to
+  mobile.py tunnel-install [--dry-run]     `make imladris-tunnel-install` (MOB2): the workstation's tunnel to
                                            the console of Imladris, a user unit of systemd, written, never
                                            enabled nor started
-  mobile.py tunnel-on                      `make mobile-tunnel-on`: armed for 12 h at most (the deadline,
+  mobile.py tunnel-on                      `make imladris-tunnel-on`: armed for 12 h at most (the deadline,
                                            the timer of expiry, then the start)
-  mobile.py tunnel-off                     `make mobile-tunnel-off`: stopped, its deadline removed
-  mobile.py tunnel-remove [--dry-run]      `make mobile-tunnel-remove`: stopped, the unit removed
+  mobile.py tunnel-off                     `make imladris-tunnel-off`: stopped, its deadline removed
+  mobile.py tunnel-remove [--dry-run]      `make imladris-tunnel-remove`: stopped, the unit removed
   mobile.py guard <target>                 the refusal of a code session, alone: `make console-url` and the
                                            targets that print the console's token run it first
 
@@ -24,7 +24,7 @@ unit at the deadline too. Under WSL, a sleep pauses the monotonic clocks: 12 h o
 The two barriers: the private network (Tailscale: the account with MFA, an access rule that opens only
 phone → workstation:22), then the workstation's SSH server, in WSL, by key alone — a key kept in the
 phone's secure chip. The console of Imladris reaches the phone through the phone's own SSH tunnel to the
-workstation's 127.0.0.1:7007, where `make glorfindel-host-tunnel` holds Imladris's (decision of Jonathan,
+workstation's 127.0.0.1:7007, where the workstation's tunnel (`make imladris-tunnel-on`) holds Imladris's (decision of Jonathan,
 10/11): the same two barriers, then the console's token. What `check` reads, and nothing else:
 
   the tailnet     `tailscale ip -4`: one private address; `tailscale debug prefs`: Tailscale SSH off (unread: ✗; on,
@@ -107,7 +107,7 @@ NO_RELAY = (
     ("x11forwarding", "no"),
 )
 KEYS_FILES = (".ssh/authorized_keys", "%h/.ssh/authorized_keys")
-# Where the console's port may listen: the loopback ssh binds for `make glorfindel-host-tunnel`.
+# Where the console's port may listen: the loopback ssh binds for `make imladris-tunnel`.
 CONSOLE_LOOPBACK = ("127.0.0.1", "::1")
 # Said only by a server built with it: closed when it is there.
 IF_PRESENT = (("gssapiauthentication", "no"), ("challengeresponseauthentication", "no"))
@@ -265,7 +265,7 @@ def listener_lines(listeners: list[tuple[str, int]], private: set[str], ssh_port
         said = {**SAID, "private": "l'adresse privée (le téléphone passe par son tunnel SSH)",
                 "loopback": "une autre boucle que 127.0.0.1"}
         lines.append((FAIL, f"console : le port {console_port} est exposé sur "
-                      + ", ".join(said[b] for b in bad) + " — 127.0.0.1 seul (make glorfindel-host-tunnel)"))
+                      + ", ".join(said[b] for b in bad) + " — 127.0.0.1 seul (make imladris-tunnel)"))
     elif console:
         lines.append((OK, f"console : le port {console_port} n'écoute qu'en 127.0.0.1 — le tunnel du poste vers Imladris"))
     else:
@@ -322,7 +322,7 @@ UNIT_NAME = "eregion-console-tunnel.service"
 UNIT_MODEL = _HERE.parent / "infra" / "poste" / UNIT_NAME
 UNIT_DIR = Path(".config") / "systemd" / "user"
 # The tunnel's own known_hosts: the one key of Imladris whose fingerprint the unit names; and its window,
-# « <armed at> <deadline> » in seconds since the epoch, written by `make mobile-tunnel-on`.
+# « <armed at> <deadline> » in seconds since the epoch, written by `make imladris-tunnel-on`.
 TUNNEL_KNOWN_HOSTS = Path(".eregion") / "console-tunnel" / "known_hosts"
 TUNNEL_DEADLINE = Path(".eregion") / "console-tunnel" / "deadline"
 # The window of exposure: 12 h at most from the gesture (decision of Jonathan, 11/11), and the transient
@@ -576,7 +576,7 @@ def unit_lines(text: str, host_ip: str | None = None, console_port: int = CONSOL
     # Armed by a gesture alone: no [Install], whatever it says (WantedBy, RequiredBy, Alias, Also).
     if "Install" in sections:
         lines.append((FAIL, "tunnel : l'unité a une section [Install] — `systemctl enable` la ferait démarrer "
-                      "au boot, sans geste : make mobile-tunnel-install la réécrit"))
+                      "au boot, sans geste : make imladris-tunnel-install la réécrit"))
     # 12 h at most: a run bounded, and no start past the deadline (the model's ExecCondition).
     argv: list[str] = []
     if len(execs) == 1:
@@ -588,13 +588,13 @@ def unit_lines(text: str, host_ip: str | None = None, console_port: int = CONSOL
     longest = duration_s((service.get("RuntimeMaxSec") or [""])[0])
     if longest is None or not 1 <= longest <= WINDOW_S:
         lines.append((FAIL, "tunnel : l'unité est sans limite de durée — RuntimeMaxSec entre 1 s et 12 h "
-                      "attendu : make mobile-tunnel-install la réécrit"))
+                      "attendu : make imladris-tunnel-install la réécrit"))
     elif not deadline_of(sections):
         lines.append((FAIL, "tunnel : l'unité ne lit pas la date limite (ExecCondition du modèle) — elle "
-                      "repartirait au-delà des 12 h : make mobile-tunnel-install la réécrit"))
+                      "repartirait au-delà des 12 h : make imladris-tunnel-install la réécrit"))
     elif bounded_by != deadline_of(sections):
         lines.append((FAIL, "tunnel : ssh n'est pas borné à la date limite (le timeout du modèle) — une "
-                      "exécution durerait jusqu'à RuntimeMaxSec : make mobile-tunnel-install la réécrit"))
+                      "exécution durerait jusqu'à RuntimeMaxSec : make imladris-tunnel-install la réécrit"))
     else:
         lines.append((OK, "tunnel : jamais au boot, 12 h au plus — ssh sous timeout jusqu'à la date limite, "
                       "la date limite lue à chaque départ, RuntimeMaxSec"))
@@ -623,7 +623,7 @@ def unit_lines(text: str, host_ip: str | None = None, console_port: int = CONSOL
         more.append(f"Type={service['Type'][0]}")
     if more:
         lines.append((FAIL, "tunnel : l'unité dit autre chose que le modèle (" + ", ".join(more)[:200]
-                      + ") — make mobile-tunnel-install la réécrit"))
+                      + ") — make imladris-tunnel-install la réécrit"))
 
     # One forward: the console, on 127.0.0.1 alone.
     fwds = ssh["forwards"]
@@ -666,7 +666,7 @@ def unit_lines(text: str, host_ip: str | None = None, console_port: int = CONSOL
         elif others or any(f != pin for f in mine):
             why = "son known_hosts tient une autre clé que celle de l'empreinte épinglée"
     if why:
-        lines.append((FAIL, f"tunnel : la clé d'hôte n'est pas épinglée — {why} : make mobile-tunnel-install"))
+        lines.append((FAIL, f"tunnel : la clé d'hôte n'est pas épinglée — {why} : make imladris-tunnel-install"))
     else:
         lines.append((OK, "tunnel : la clé d'hôte d'Imladris épinglée (son empreinte, son known_hosts, "
                       "StrictHostKeyChecking=yes)"))
@@ -708,7 +708,7 @@ def unit_lines(text: str, host_ip: str | None = None, console_port: int = CONSOL
                       "l'unité n'est pas comparée"))
     elif unit_ip != host_ip.strip():
         lines.append((FAIL, "tunnel : Imladris n'est plus à l'adresse de l'unité (redéployé ?) — "
-                      "make mobile-tunnel-install"))
+                      "make imladris-tunnel-install"))
     else:
         lines.append((OK, "tunnel : l'adresse d'Imladris est celle que donne Terraform"))
     return lines
@@ -724,7 +724,7 @@ def _show(text: str) -> dict[str, str]:
 
 
 def read_window(path: Path) -> tuple[int, int] | None:
-    """(armed at, deadline), seconds since the epoch, from the file `make mobile-tunnel-on` writes."""
+    """(armed at, deadline), seconds since the epoch, from the file `make imladris-tunnel-on` writes."""
     try:
         words = _read_private(path).split()
     except OSError:
@@ -771,7 +771,7 @@ def loaded_lines(state: dict[str, str], fragment: Path | None) -> list[tuple[str
         why.append("une autre unité la tire (" + ", ".join(pulled) + ") : elle démarrerait sans geste")
     if why:
         return [(FAIL, "tunnel : ce que systemd a chargé n'est pas le modèle — " + " ; ".join(why)
-                 + " : make mobile-tunnel-remove, puis -install")]
+                 + " : make imladris-tunnel-remove, puis -install")]
     return [(OK, "tunnel : systemd a chargé le fichier seul — aucun drop-in, 12 h au plus, rien ne la tire")]
 
 
@@ -799,22 +799,22 @@ def service_lines(run=_run, console_port: int = CONSOLE_PORT, deadline: Path | N
     restarts = restarts if restarts.isdigit() else "?"
     active = (state.get("ActiveState", ""), state.get("SubState", ""))
     if active[0] == "inactive":
-        lines.append((INFO, "tunnel : non armé — make mobile-tunnel-on l'arme pour 12 h"))
+        lines.append((INFO, "tunnel : non armé — make imladris-tunnel-on l'arme pour 12 h"))
         return lines
     if active != ("active", "running"):
         lines.append((FAIL, f"tunnel : en échec ({active[0] or '?'}/{active[1] or '?'}, {restarts} "
                       "redémarrage(s)) — journalctl --user -u eregion-console-tunnel ; Imladris redéployé "
-                      "(une autre adresse, une autre clé) : make mobile-tunnel-install ; make mobile-tunnel-off"))
+                      "(une autre adresse, une autre clé) : make imladris-tunnel-install ; make imladris-tunnel-off"))
         return lines
     now = time.time() if now is None else now
     window = read_window(deadline) if deadline else None
     if window is None:
-        lines.append((FAIL, "tunnel : armé sans date limite lisible — make mobile-tunnel-off, puis -on"))
+        lines.append((FAIL, "tunnel : armé sans date limite lisible — make imladris-tunnel-off, puis -on"))
     elif window[1] <= now:
         lines.append((FAIL, f"tunnel : armé au-delà de sa date limite ({_clock(window[1])}) — "
-                      "make mobile-tunnel-off"))
+                      "make imladris-tunnel-off"))
     elif window[1] - window[0] > WINDOW_S or window[1] - now > WINDOW_S + 60:
-        lines.append((FAIL, "tunnel : armé pour plus de 12 h — make mobile-tunnel-off, puis -on"))
+        lines.append((FAIL, "tunnel : armé pour plus de 12 h — make imladris-tunnel-off, puis -on"))
     else:
         lines.append((OK, f"tunnel : armé depuis {_clock(window[0])}, expire à {_clock(window[1])} (dans "
                       f"{_span(window[1] - now)}) ; {restarts} redémarrage(s)"))
@@ -823,7 +823,7 @@ def service_lines(run=_run, console_port: int = CONSOLE_PORT, deadline: Path | N
     timer = _show(out) if rc == 0 else {}
     if (timer.get("LoadState"), timer.get("ActiveState")) != ("loaded", "active"):
         lines.append((FAIL, f"tunnel : le minuteur de fin ({EXPIRY_UNIT}.timer) ne tourne pas — la fin ne "
-                      "tient plus que par RuntimeMaxSec : make mobile-tunnel-off, puis -on"))
+                      "tient plus que par RuntimeMaxSec : make imladris-tunnel-off, puis -on"))
     else:
         lines.append((OK, f"tunnel : le minuteur de fin l'arrêtera à la date limite ({EXPIRY_UNIT}.timer)"))
     # ssh runs under timeout: MainPID is timeout's, the listener its child's — the unit's processes are
@@ -873,7 +873,7 @@ def tunnel_lines(run=_run, home: Path | None = None, host_ip: str | None = None,
     try:
         text = _read_private(unit_path(home))
     except FileNotFoundError:
-        return [(INFO, "tunnel : pas posé — make mobile-tunnel-install, puis make mobile-tunnel-on")]
+        return [(INFO, "tunnel : pas posé — make imladris-tunnel-install, puis make imladris-tunnel-on")]
     except OSError:
         return [(FAIL, f"tunnel : ~/{UNIT_DIR / UNIT_NAME} n'est pas un fichier à soi (un lien ? modifiable "
                        "par d'autres ?)")]
@@ -945,16 +945,16 @@ def _home_path(value: str, home: Path, default: Path) -> Path:
 
 
 def tunnel_install(env: dict, run=_run, home: Path | None = None, say=print, dry_run: bool = False) -> int:
-    """`make mobile-tunnel-install`: the unit filled from the model — the address of Imladris Terraform
+    """`make imladris-tunnel-install`: the unit filled from the model — the address of Imladris Terraform
     gives (MOBILE_HOST_IP), HOST_USER, HOST_SSH_KEY, the key of HOST_SSH_FINGERPRINT taken from the
     known_hosts known_host.sh checked (MOBILE_KNOWN_HOSTS) into the tunnel's own —, checked as
-    mobile-check reads it, then written; never enabled, never started (make mobile-tunnel-on arms it).
+    imladris-tunnel-check reads it, then written; never enabled, never started (make imladris-tunnel-on arms it).
     DRY_RUN: shown, nothing written."""
     home = home or Path.home()
     ip = (env.get("MOBILE_HOST_IP") or "").strip()
     if not ip:
         say("✗ aucune adresse d'Imladris (terraform output public_ip, dans infra/glorfindel-host) : "
-            "make glorfindel-host-up d'abord. Rien n'est écrit.")
+            "make imladris-up d'abord. Rien n'est écrit.")
         return 1
     want = (env.get("HOST_SSH_FINGERPRINT") or "").strip()
     if not FINGERPRINT.fullmatch(want):
@@ -993,7 +993,7 @@ def tunnel_install(env: dict, run=_run, home: Path | None = None, say=print, dry
     if not keep:                     # a dry run before known_host.sh: the pin is checked at the install
         bad = [t for t in bad if "clé d'hôte" not in t]
     if bad:
-        say("✗ l'unité ne passerait pas make mobile-check : " + " ; ".join(bad) + ". Rien n'est écrit.")
+        say("✗ l'unité ne passerait pas make imladris-tunnel-check : " + " ; ".join(bad) + ". Rien n'est écrit.")
         return 1
     if identity is not None and not identity.is_file():
         say("⚠ HOST_SSH_KEY : le fichier de la clé est introuvable — le tunnel ne s'authentifiera pas")
@@ -1012,24 +1012,24 @@ def tunnel_install(env: dict, run=_run, home: Path | None = None, say=print, dry
     rc, out, err = run(["systemctl", "--user", "daemon-reload"])
     if rc != 0:
         say(f"✗ systemctl --user daemon-reload a échoué ({_first(err, out, rc)}) : l'unité est écrite, "
-            "make mobile-tunnel-remove la retire")
+            "make imladris-tunnel-remove la retire")
         return 1
     say(f"✓ tunnel {'réécrit' if existed else 'posé'}, non armé : ~/{UNIT_DIR / UNIT_NAME}, la clé d'hôte "
         f"épinglée dans ~/{TUNNEL_KNOWN_HOSTS} — jamais démarré au boot")
-    say("  L'armer pour 12 h : make mobile-tunnel-on" + (" (déjà armé : make mobile-tunnel-off, puis -on, "
+    say("  L'armer pour 12 h : make imladris-tunnel-on" + (" (déjà armé : make imladris-tunnel-off, puis -on, "
                                                           "pour prendre la nouvelle unité)" if existed else ""))
     return 0
 
 
 def tunnel_on(env: dict, run=_run, home: Path | None = None, say=print, now: float | None = None) -> int:
-    """`make mobile-tunnel-on`: the unit checked as mobile-check reads it (the address of Imladris
+    """`make imladris-tunnel-on`: the unit checked as imladris-tunnel-check reads it (the address of Imladris
     compared with Terraform's), the deadline written (now + 12 h), the timer of expiry started, then the
     unit. Any step that fails: nothing armed."""
     home = home or Path.home()
     try:
         text = _read_private(unit_path(home))
     except OSError:
-        say("✗ le tunnel n'est pas posé (ou pas un fichier à soi) : make mobile-tunnel-install d'abord. "
+        say("✗ le tunnel n'est pas posé (ou pas un fichier à soi) : make imladris-tunnel-install d'abord. "
             "Rien n'est armé.")
         return 1
     found = unit_lines(text, (env.get("MOBILE_HOST_IP") or "").strip() or None)
@@ -1044,7 +1044,7 @@ def tunnel_on(env: dict, run=_run, home: Path | None = None, say=print, now: flo
         found += loaded_lines(state, unit_path(home))
     bad = [t for m, t in found if m == FAIL]
     if bad:
-        say("✗ l'unité ne passe pas make mobile-check : " + " ; ".join(bad) + ". Rien n'est armé.")
+        say("✗ l'unité ne passe pas make imladris-tunnel-check : " + " ; ".join(bad) + ". Rien n'est armé.")
         return 1
     deadline = Path(deadline_of(parse_unit(text)[0]))
     start = int(time.time() if now is None else now)
@@ -1069,12 +1069,12 @@ def tunnel_on(env: dict, run=_run, home: Path | None = None, say=print, now: flo
             say(f"✗ {' '.join(argv[:3])} a échoué ({_first(err, out, rc)}) : rien n'est armé")
             return 1
     say(f"✓ tunnel armé jusqu'à {_clock(end)} (12 h) : la console d'Imladris sur le 127.0.0.1:7007 du poste")
-    say("  make mobile-check : son état ; make console-url : l'URL ; make mobile-tunnel-off : l'arrêter avant")
+    say("  make imladris-tunnel-check : son état ; make imladris-url : l'URL ; make imladris-tunnel-off : l'arrêter avant")
     return 0
 
 
 def tunnel_off(run=_run, home: Path | None = None, say=print) -> int:
-    """`make mobile-tunnel-off`: the timer of expiry and the unit stopped, the deadline removed."""
+    """`make imladris-tunnel-off`: the timer of expiry and the unit stopped, the deadline removed."""
     home = home or Path.home()
     run(["systemctl", "--user", "stop", f"{EXPIRY_UNIT}.timer"])
     rc, out, err = (0, "", "")
@@ -1083,14 +1083,14 @@ def tunnel_off(run=_run, home: Path | None = None, say=print) -> int:
     (home / TUNNEL_DEADLINE).unlink(missing_ok=True)
     if rc != 0:
         say(f"✗ systemctl --user stop a échoué ({_first(err, out, rc)}) : la date limite est retirée, il ne "
-            "repartira pas ; make mobile-check")
+            "repartira pas ; make imladris-tunnel-check")
         return 1
     say("✓ tunnel désarmé : le 127.0.0.1:7007 du poste n'est plus tenu")
     return 0
 
 
 def tunnel_remove(run=_run, home: Path | None = None, say=print, dry_run: bool = False) -> int:
-    """`make mobile-tunnel-remove`: the tunnel stopped, then its unit, known_hosts and deadline removed.
+    """`make imladris-tunnel-remove`: the tunnel stopped, then its unit, known_hosts and deadline removed.
     DRY_RUN: said, nothing done."""
     home = home or Path.home()
     there = [p for p in (unit_path(home), home / TUNNEL_KNOWN_HOSTS, home / TUNNEL_DEADLINE)
@@ -1108,7 +1108,7 @@ def tunnel_remove(run=_run, home: Path | None = None, say=print, dry_run: bool =
             p.unlink()
     run(["systemctl", "--user", "daemon-reload"])
     say("✓ tunnel retiré : l'unité, son known_hosts et sa date limite" if code == 0 else
-        "✗ tunnel retiré du disque, son arrêt à vérifier (make mobile-check)")
+        "✗ tunnel retiré du disque, son arrêt à vérifier (make imladris-tunnel-check)")
     return code
 
 
@@ -1150,7 +1150,7 @@ def check(console_port: int = CONSOLE_PORT, run=_run, home: Path | None = None, 
     if rc != 0 or not conf:
         first = (err or out).strip().splitlines()
         lines.append((FAIL, "SSH : sshd -T ne se lit pas (" + (first[0][:100] if first else f"code {rc}")
-                      + ") — sudo -v, puis make mobile-check"))
+                      + ") — sudo -v, puis make imladris-tunnel-check"))
         ports = {22}
     else:
         ports = {int(p) for p in conf.get("port", ["22"]) if p.isdigit()} or {22}
@@ -1200,7 +1200,7 @@ def main(argv: list[str] | None = None, run=_run, home: Path | None = None, env:
         return code
     if args.cmd == "guard":
         return guard(args.target, env, cwd, here)
-    target = f"mobile-{args.cmd}"
+    target = f"imladris-{args.cmd}"
     if guard(target, env, cwd, here, never=NEVER_TUNNEL, say=say):
         return 1
     if args.guard_only:
@@ -1210,7 +1210,7 @@ def main(argv: list[str] | None = None, run=_run, home: Path | None = None, env:
     if args.cmd == "tunnel-remove":
         return tunnel_remove(run, home, say, args.dry_run)
     if args.dry_run:
-        say(f"DRY_RUN=1 : make {target} ne fait rien à blanc — make mobile-check dit l'état")
+        say(f"DRY_RUN=1 : make {target} ne fait rien à blanc — make imladris-tunnel-check dit l'état")
         return 0
     if args.cmd == "tunnel-on":
         return tunnel_on(env, run, home, say, now)

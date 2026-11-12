@@ -371,7 +371,7 @@ def note_on_imladris(pair: str, end: datetime, ctx: Ctx, by: str) -> tuple[bool,
     again = f"make pair-expiry-note PAIR={pair}"
     if not ctx.ssh:
         return False, [f"⚠ Imladris : injoignable d'ici (pas d'adresse, ou sa clé d'hôte refusée : make "
-                       f"glorfindel-host-known) — la date n'est pas notée, aucun rappel ; ensuite {again}"]
+                       f"imladris-known) — la date n'est pas notée, aucun rappel ; ensuite {again}"]
     payload = json.dumps({"pair": pair, "end": end.strftime("%Y-%m-%dT%H:%M:%SZ"),
                           "noted_at": ctx.now.strftime("%Y-%m-%dT%H:%M:%SZ"), "by": by})
     tmp, final = f".eregion-cd/expiry/.{pair}.json.tmp", f".eregion-cd/expiry/{pair}.json"
@@ -379,11 +379,11 @@ def note_on_imladris(pair: str, end: datetime, ctx: Ctx, by: str) -> tuple[bool,
               f"cat > {tmp} && mv -f {tmp} {final} && python3 .eregion-cd/eregion_cd.py reminders")
     res = run([*shlex.split(ctx.ssh), remote], ctx.env, stdin=payload + "\n", timeout=60)
     if res.rc == 3:
-        return False, ["✗ Imladris : son CD n'est pas installé (~/.eregion-cd absent : make glorfindel-host-cd-install) "
+        return False, ["✗ Imladris : son CD n'est pas installé (~/.eregion-cd absent : make imladris-cd-install) "
                        f"— aucun rappel ; ensuite {again}"]
     if res.rc == 2:
         return False, ["⚠ Imladris : la date est notée, mais l'agent de son CD ne connaît pas encore les rappels "
-                       "(une version d'avant ROT1) : make glorfindel-host-cd-install, depuis un checkout de main à jour"]
+                       "(une version d'avant ROT1) : make imladris-cd-install, depuis un checkout de main à jour"]
     if not res.ok:
         return False, [f"✗ Imladris : la date n'est pas notée ({_error(res) or f'ssh a rendu {res.rc}'}) ; ensuite {again}"]
     said = [bs.scrub(ln) for ln in res.out.splitlines() if ln.lstrip().startswith("rappels") and f" {pair} " in ln]

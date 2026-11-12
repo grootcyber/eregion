@@ -1,6 +1,6 @@
-"""The workstation reached from the phone (MOB1, #686): `make mobile-check`.
+"""The workstation reached from the phone (MOB1, #686): `make imladris-tunnel-check`.
 
-`make mobile-check` reads, and only reads, what holds the two barriers — the private network, then the
+`make imladris-tunnel-check` reads, and only reads, what holds the two barriers — the private network, then the
 SSH server by key alone. It runs here on fakes of `tailscale`, `ss`, `sshd -T` and `sudo`, first on
 PATH: it must see a listener on every interface, a password admitted, a key handed by a command or a
 certificate authority, a forwarding wider than the phone's local tunnel to 127.0.0.1:7007, a gateway
@@ -131,7 +131,7 @@ def test_a_lan_address_given_for_the_tailnet_s_is_never_the_private_one(tmp_path
     assert code == 1 and any(m == mob.FAIL and "une autre adresse" in t for m, t in lines), text
 
 
-# ── mobile-check, on fakes ───────────────────────────────────────────────────
+# ── imladris-tunnel-check, on fakes ───────────────────────────────────────────────────
 
 def test_a_workstation_in_order_passes(tmp_path):
     code, text, lines = _check(tmp_path)
@@ -324,7 +324,7 @@ def test_make_mobile_check_sees_every_interface_a_password_and_a_wide_tunnel(fak
            sshd_T=_sshd("passwordauthentication", "yes").replace("allowtcpforwarding local", "allowtcpforwarding yes")
            .replace("permitopen 127.0.0.1:7007", "permitopen any"),
            ss_Hltn="LISTEN 0 128 0.0.0.0:22 0.0.0.0:*\nLISTEN 0 128 0.0.0.0:7007 0.0.0.0:*\n")
-    res = _make(fake_bin, "mobile-check")
+    res = _make(fake_bin, "imladris-tunnel-check")
     assert res.returncode != 0
     for said in ("✗ SSH : le serveur écoute sur toutes les interfaces", "✗ SSH : passwordauthentication yes, no attendu",
                  "✗ SSH : allowtcpforwarding yes — local attendu", "✗ SSH : permitopen any",
@@ -333,7 +333,7 @@ def test_make_mobile_check_sees_every_interface_a_password_and_a_wide_tunnel(fak
     answer(sshd_T=GOOD_SSHD, ss_Hltn=GOOD_SS + "LISTEN 0 128 127.0.0.1:7007 0.0.0.0:*\n")
     (fake_bin[0].parent / ".ssh").mkdir()
     (fake_bin[0].parent / ".ssh" / "authorized_keys").write_text("ecdsa-sha2-nistp256 AAAA phone\n")
-    res = _make(fake_bin, "mobile-check")
+    res = _make(fake_bin, "imladris-tunnel-check")
     assert res.returncode == 0, res.stdout + res.stderr
     assert IP.findall(res.stdout.replace("127.0.0.1", "")) == []
 
@@ -341,13 +341,13 @@ def test_make_mobile_check_sees_every_interface_a_password_and_a_wide_tunnel(fak
 def test_nothing_binds_the_console_on_the_private_address_any_more():
     """The tunnel on the private address is gone with the decision of 10/11: no target binds it."""
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
-    assert "glorfindel-host-tunnel-private" not in makefile and "private-ip" not in makefile
+    assert "imladris-tunnel-private" not in makefile and "private-ip" not in makefile
 
 
 # ── MOB2: the workstation's tunnel to the console of Imladris, armed on demand for 12 h ────────────────
 #
 # Decision of Jonathan (11/11): not permanent. A user unit of systemd, never started at boot (no
-# [Install]), armed by `make mobile-tunnel-on` for 12 h at most — a deadline, a timer of expiry, an
+# [Install]), armed by `make imladris-tunnel-on` for 12 h at most — a deadline, a timer of expiry, an
 # ExecCondition that refuses any (re)start past the deadline, RuntimeMaxSec on each run —, its port on
 # 127.0.0.1 alone, the host key of Imladris pinned. Everything here runs on fakes of `systemctl`,
 # `systemd-run`, `ss`, `terraform` and `ssh-keyscan`: nothing is installed, nothing started.
@@ -372,7 +372,7 @@ def _home(tmp_path) -> Path:
 
 
 def _set_tunnel(home, unit=None, known=None, window=(NOW - 600, NOW - 600 + mob.WINDOW_S), **over):
-    """The tunnel as make mobile-tunnel-install and -on leave it: the unit, its known_hosts, its deadline."""
+    """The tunnel as make imladris-tunnel-install and -on leave it: the unit, its known_hosts, its deadline."""
     text = unit if unit is not None else mob.render_unit(
         HOST, "glorfindel", home / mob.TUNNEL_KNOWN_HOSTS, FP, None, home / mob.TUNNEL_DEADLINE)
     for old, new in over.items():
@@ -447,7 +447,7 @@ def _fails(lines):
     return [t for m, t in lines if m == mob.FAIL]
 
 
-# ── the unit: the model's, read as mobile-check reads it ─────────────────────
+# ── the unit: the model's, read as imladris-tunnel-check reads it ─────────────────────
 
 def test_the_model_filled_passes_every_check_of_the_unit(tmp_path):
     home = _home(tmp_path)
@@ -593,7 +593,7 @@ def test_the_deadline_refuses_a_start_past_it(tmp_path, window, starts):
     assert 0 <= res.returncode <= 254
 
 
-# ── mobile-check: the tunnel's state ─────────────────────────────────────────
+# ── imladris-tunnel-check: the tunnel's state ─────────────────────────────────────────
 
 def test_a_tunnel_not_set_is_said_never_a_fail(tmp_path):
     lines, tw = _tunnel(tmp_path)
@@ -605,7 +605,7 @@ def test_a_tunnel_stopped_is_not_armed_never_a_fail(tmp_path):
     _set_tunnel(_home(tmp_path), window=None)
     lines, _ = _tunnel(tmp_path, unit={"ActiveState": "inactive", "SubState": "dead", "MainPID": "0"})
     assert not _fails(lines), lines
-    assert [t for m, t in lines if m == mob.INFO] == ["tunnel : non armé — make mobile-tunnel-on l'arme pour 12 h"]
+    assert [t for m, t in lines if m == mob.INFO] == ["tunnel : non armé — make imladris-tunnel-on l'arme pour 12 h"]
 
 
 def test_an_armed_tunnel_says_since_when_until_when_and_listens_on_127_0_0_1_alone(tmp_path):
@@ -796,7 +796,7 @@ def test_on_arms_the_timer_of_expiry_before_the_unit_for_12_hours(tmp_path):
         ["systemctl", "--user", "start", mob.UNIT_NAME],
     ]
     assert not [c for c in tw["calls"] if "enable" in c]
-    # The window mobile-check then reads: 12 h from the gesture.
+    # The window imladris-tunnel-check then reads: 12 h from the gesture.
     lines = mob.service_lines(tunnel_run(tunnel_world()), 7007, home / mob.TUNNEL_DEADLINE, NOW + 60)
     assert any("(dans 11 h 59)" in t for m, t in lines if m == mob.OK), lines
 
@@ -827,7 +827,7 @@ def test_on_refuses_a_unit_mobile_check_refuses(tmp_path, change, env_over, said
 
 def test_on_without_a_unit_arms_nothing(tmp_path):
     code, out, tw = _main(_home(tmp_path), "tunnel-on")
-    assert code == 1 and "make mobile-tunnel-install d'abord" in out and tw["calls"] == []
+    assert code == 1 and "make imladris-tunnel-install d'abord" in out and tw["calls"] == []
 
 
 def test_off_stops_the_timer_and_the_unit_and_drops_the_deadline(tmp_path):
@@ -865,7 +865,7 @@ def test_a_code_session_never_sets_nor_arms_the_tunnel(tmp_path, cmd, where):
     env = {**_env(home), "EREGION_AGENT_SESSION": "1"} if where == "env" else _env(home)
     for argv in ([cmd], [cmd, "--guard-only"]):
         code, out, tw = _main(home, *argv, env=env, cwd=lot if where == "worktree" else home)
-        assert code == 1 and f"make mobile-{cmd} refusé" in out and "n'arme" in out, out
+        assert code == 1 and f"make imladris-{cmd} refusé" in out and "n'arme" in out, out
         assert tw["calls"] == []
     assert mob.unit_path(home).exists() and not (home / mob.TUNNEL_DEADLINE).exists()
 
@@ -922,12 +922,16 @@ def _make_at(root, spies, home, *args, **env_over):
 
 
 @needs_make
-@pytest.mark.parametrize("target", ["mobile-tunnel-install", "mobile-tunnel-on", "mobile-tunnel-off",
-                                    "mobile-tunnel-remove", "console-url", "glorfindel-host-url",
-                                    "glorfindel-host-tunnel"])
+@pytest.mark.parametrize("target", ["imladris-tunnel-install", "imladris-tunnel-on", "imladris-tunnel-off",
+                                    "imladris-tunnel-remove", "console-url", "imladris-url",
+                                    "imladris-tunnel",
+                                    # IML1b: the former names, silent aliases — the same guard, first
+                                    "mobile-tunnel-install", "mobile-tunnel-on", "mobile-tunnel-off",
+                                    "mobile-tunnel-remove", "glorfindel-host-url", "glorfindel-host-tunnel"])
 @pytest.mark.parametrize("where", ["env", "worktree"])
 def test_make_refuses_in_an_agent_session_before_anything_runs(tmp_path, spies, target, where):
-    """The guard runs alone: no terraform output, no ssh-keyscan, no systemctl — and no token read."""
+    """The guard runs alone: no terraform output, no ssh-keyscan, no systemctl — and no token read.
+    A former name (IML1b) refuses as its new one, and names it."""
     home = _home(tmp_path)
     _set_tunnel(home, window=None)
     (tmp_path / "host.env").write_text("EREGION_CONSOLE_TOKEN=fake-tok-Q7\n")
@@ -938,7 +942,8 @@ def test_make_refuses_in_an_agent_session_before_anything_runs(tmp_path, spies, 
     res = _make_at(root, spies, home, target, f"HOST_ENV={tmp_path / 'host.env'}",
                    f"HOST_SSH_FINGERPRINT={FP}", **extra)
     assert res.returncode != 0
-    assert f"make {target} refusé" in res.stdout + res.stderr, res.stdout + res.stderr
+    new = target.replace("mobile-", "imladris-").replace("glorfindel-host-", "imladris-")
+    assert f"make {new} refusé" in res.stdout + res.stderr, res.stdout + res.stderr
     assert "fake-tok-Q7" not in res.stdout + res.stderr
     log = spies[1]
     assert not log.exists() or log.read_text() == ""
@@ -948,7 +953,7 @@ def test_make_refuses_in_an_agent_session_before_anything_runs(tmp_path, spies, 
 @needs_make
 def test_make_install_dry_run_shows_the_unit_and_writes_nothing(tmp_path, spies):
     home = _home(tmp_path)
-    res = _make_at(_operator(tmp_path), spies, home, "mobile-tunnel-install", "DRY_RUN=1", f"HOST_IP={HOST}",
+    res = _make_at(_operator(tmp_path), spies, home, "imladris-tunnel-install", "DRY_RUN=1", f"HOST_IP={HOST}",
                    f"HOST_SSH_FINGERPRINT={FP}")
     assert res.returncode == 0, res.stdout + res.stderr
     assert "DRY_RUN=1 : rien n'est écrit" in res.stdout and f"glorfindel@{HOST}" in res.stdout
@@ -965,33 +970,61 @@ def test_make_install_pins_the_key_known_host_sh_checked(tmp_path, spies):
     kh = home / ".eregion" / "h0_known_hosts"
     kh.parent.mkdir(parents=True)
     kh.write_text(f"{HOST} ssh-ed25519 {BLOB}\n")
-    res = _make_at(_operator(tmp_path), spies, home, "mobile-tunnel-install", f"HOST_IP={HOST}",
+    res = _make_at(_operator(tmp_path), spies, home, "imladris-tunnel-install", f"HOST_IP={HOST}",
                    f"HOST_SSH_FINGERPRINT={FP}")
     assert res.returncode == 0, res.stdout + res.stderr
     assert (home / mob.TUNNEL_KNOWN_HOSTS).read_text() == f"{HOST} ssh-ed25519 {BLOB}\n"
     calls = spies[1].read_text().splitlines()
     assert calls == ["systemctl --user daemon-reload"], calls
-    res = _make_at(_operator(tmp_path), spies, home, "mobile-tunnel-install", f"HOST_IP={HOST}")
+    res = _make_at(_operator(tmp_path), spies, home, "imladris-tunnel-install", f"HOST_IP={HOST}")
     assert res.returncode != 0 and "HOST_SSH_FINGERPRINT requis" in res.stdout + res.stderr
 
 
 @needs_make
-def test_make_console_url_gives_imladris_s_when_the_tunnel_is_set(tmp_path, spies):
+def test_make_console_url_names_imladris_url_when_the_tunnel_holds_the_port(tmp_path, spies):
+    """IML1b: console-url is the local console's only. The tunnel holding 127.0.0.1:7007, the console
+    there is Imladris's: no URL, no token — a line names make imladris-url, and the exit says it."""
     home = _home(tmp_path)
+    (home / ".eregion" / "console").mkdir(parents=True)
+    (home / ".eregion" / "console" / "token").write_text("local-tok-K2\n")
     env_file = tmp_path / "host.env"
     env_file.write_text("EREGION_CONSOLE_TOKEN=fake-tok-Q7\n")
     root = _operator(tmp_path)
     res = _make_at(root, spies, home, "console-url", f"HOST_ENV={env_file}", "CONSOLE_WAIT=0")
-    assert res.returncode != 0 and "fake-tok-Q7" not in res.stdout   # no tunnel: the local console's, none here
+    assert res.returncode == 0 and "token=local-tok-K2" in res.stdout   # no tunnel: the local console's
+    assert "imladris" not in res.stdout + res.stderr
     _set_tunnel(home)
     res = _make_at(root, spies, home, "console-url", f"HOST_ENV={env_file}", "CONSOLE_WAIT=0", SPY_ACTIVE="1")
-    assert res.returncode == 0, res.stderr
-    assert "Console d'Imladris (le tunnel du poste)  →  http://localhost:7007/?token=fake-tok-Q7" in res.stdout
+    assert res.returncode != 0
+    assert "fake-tok-Q7" not in res.stdout + res.stderr and "local-tok-K2" not in res.stdout + res.stderr
+    assert "son URL → make imladris-url" in res.stderr, res.stderr
+
+
+@needs_make
+@pytest.mark.parametrize("name", ["imladris-url", "glorfindel-host-url"])
+def test_make_imladris_url_gives_the_url_and_says_when_the_tunnel_is_not_armed(tmp_path, spies, name):
+    """IML1b: always the URL of Imladris's console, alone on the output; the tunnel not armed, a line
+    more on the error output says how to arm it (and to set it first, when it is not)."""
+    home = _home(tmp_path)
+    env_file = tmp_path / "host.env"
+    env_file.write_text("EREGION_CONSOLE_TOKEN=fake-tok-Q7\n")
+    root = _operator(tmp_path)
+    url = "http://localhost:7007/?token=fake-tok-Q7\n"
+    res = _make_at(root, spies, home, name, f"HOST_ENV={env_file}")                    # not set
+    assert (res.returncode, res.stdout) == (0, url), res.stderr
+    assert "make imladris-tunnel-install" in res.stderr and "make imladris-tunnel-on" in res.stderr
+    _set_tunnel(home, window=None)
+    res = _make_at(root, spies, home, name, f"HOST_ENV={env_file}")                    # set, not armed
+    assert (res.returncode, res.stdout) == (0, url), res.stderr
+    assert "n'est pas armé : make imladris-tunnel-on" in res.stderr and "install" not in res.stderr
+    _set_tunnel(home)
+    res = _make_at(root, spies, home, name, f"HOST_ENV={env_file}", SPY_ACTIVE="1")    # armed
+    assert (res.returncode, res.stdout, res.stderr) == (0, url, "")
 
 
 @needs_make
 def test_make_mobile_check_sees_an_unbounded_unit(tmp_path, fake_bin):
-    """`make mobile-check`, the tunnel set with no limit of time: a ✗, never the green verdict."""
+    """`make imladris-tunnel-check`, the tunnel set with no limit of time: a ✗, never the green verdict."""
     _, answer = fake_bin
     home = fake_bin[0].parent
     answer(tailscale_ip_4=PRIVATE + "\n", tailscale_ip_6="", tailscale_debug_prefs='{"RunSSH": false}',
@@ -1005,11 +1038,11 @@ def test_make_mobile_check_sees_an_unbounded_unit(tmp_path, fake_bin):
         (fake_bin[0] / name).write_text(f"#!/bin/sh\n{body}\n")
         (fake_bin[0] / name).chmod(0o755)
     _set_tunnel(home, window=None)
-    res = _make(fake_bin, "mobile-check")
+    res = _make(fake_bin, "imladris-tunnel-check")
     assert res.returncode == 0, res.stdout + res.stderr
     assert "ℹ tunnel : non armé" in res.stdout
     _set_tunnel(home, window=None, **{"RuntimeMaxSec=12h\n": ""})
-    res = _make(fake_bin, "mobile-check")
+    res = _make(fake_bin, "imladris-tunnel-check")
     assert res.returncode != 0 and "✗ tunnel : l'unité est sans limite de durée" in res.stdout
     assert "✓ le poste ne s'ouvre" not in res.stdout
 
@@ -1137,7 +1170,7 @@ def test_make_console_url_keeps_the_local_console_while_the_tunnel_is_stopped(tm
     assert res.returncode == 0, res.stderr
     assert "Console   →  http://localhost:7007/?token=local-tok-K2" in res.stdout
     assert "fake-tok-Q7" not in res.stdout + res.stderr
-    assert "make glorfindel-host-url" in res.stderr and "make mobile-tunnel-on" in res.stderr
+    assert "make imladris-url" in res.stderr and "make imladris-tunnel-on" in res.stderr
 
 
 # ── MOB2, review round 2: the unit's processes, not MainPID alone; the loaded view, complete ──────────
