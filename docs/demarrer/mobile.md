@@ -1,4 +1,4 @@
-# Piloter le banc depuis le téléphone (MOB1, MOB2)
+# Piloter le banc depuis le téléphone (MOB1, MOB2, MOB3)
 
 [← le banc](banc.md) · le rejeu du rançongiciel : [banc-t1486.md](../banc-t1486.md) · le modèle de menace : [frontière 9](../design/modele-de-menace.md#9-le-téléphone-et-son-chemin-vers-le-poste)
 
@@ -20,8 +20,11 @@ téléphone ──(Tailscale : téléphone → poste:22 seul)──► poste (WS
   SSH du poste, **à clé seule**, la clé gardée dans la puce sécurisée du téléphone et débloquée par
   biométrie. L'une tombée, l'autre tient. Pour la console, le jeton de la console vient ensuite.
 - Le lot fournit les commandes et les modèles (`infra/poste/`) ; **Jonathan les applique**, aucune
-  session ne le fait. Rien de ce guide n'a encore été joué sur le poste : chaque étape qui n'est ni
-  lue dans le code ni testée sur des faux est marquée **non vérifié**.
+  session ne le fait. **Le banc du 11/11** (la session Tests avec Jonathan, de 12:20 à 13:50 UTC,
+  sur un iPhone) a joué ce guide : ce qu'il a mesuré est marqué **mesuré le 11/11** ; ce qu'il n'a
+  pas mesuré, et chaque étape ni lue dans le code ni testée sur des faux, reste **non mesuré** ou
+  **non vérifié**. Le bilan : [ce qui a été mesuré, ce qui reste à
+  mesurer](#ce-qui-a-été-mesuré-ce-qui-reste-à-mesurer).
 
 ## 0. Le Windows de l'hôte ne se met pas en veille
 
@@ -34,8 +37,8 @@ powercfg /change hibernate-timeout-ac 0
 ```
 
 L'écran peut s'éteindre, pas la machine. WSL doit aussi rester démarré : garder un onglet WSL
-ouvert dans Windows Terminal. **Non vérifié** : que les seuls services de systemd gardent la VM de
-WSL en vie, sans terminal ouvert.
+ouvert dans Windows Terminal. **Non mesuré** (le 11/11 non plus) : que les seuls services de
+systemd gardent la VM de WSL en vie, sans terminal ouvert.
 
 ## 1. Tailscale dans WSL (systemd)
 
@@ -64,16 +67,27 @@ chaque appareil (le défaut) : un appareil se ré-authentifie, il ne reste pas o
 poste:22, et rien d'autre**, aucune règle `ssh` de Tailscale. La console passe par ce même port 22,
 dans le tunnel du téléphone (étape 5).
 
-**Non vérifié** : la règle se lit dans la console de Tailscale, pas sur le poste ; `make
+**Un appareil, une ligne.** Le 11/11, seul l'iPhone y est (iPhone → poste:22) ; **l'iPad est
+reporté**. Le modèle ne nomme qu'un téléphone : un second appareil, le jour où il vient, c'est son
+adresse de plus dans `hosts` et dans le `src` de la même règle, sa propre clé à l'étape 3, et une
+ligne de plus à fermer à l'étape 7. Rien ne l'ouvre d'avance.
+
+**Non mesuré** : que la règle refuse tout le reste (un autre appareil du tailnet vers le poste,
+l'iPhone vers un autre port). Elle se lit dans la console de Tailscale, pas sur le poste ; `make
 mobile-check` ne la voit pas.
 
 ## 2. Le serveur SSH du poste, durci
 
+**L'ordre recommandé : le fragment et le drop-in d'abord, le paquet ensuite.** Le 11/11, ils ont été
+posés avant `apt install openssh-server`, pour que le paquet n'ouvre jamais `ssh.socket` sur toutes
+les interfaces avec le mot de passe. C'est une **hypothèse de lecture, non mesurée** : personne n'a
+regardé ce qu'écoute un `openssh-server` installé seul, ni pendant combien de temps.
+
 ```zsh
-sudo apt install openssh-server tmux
-sudo install -m 644 infra/poste/sshd_config.d/00-eregion.conf /etc/ssh/sshd_config.d/00-eregion.conf
+sudo install -D -m 644 infra/poste/sshd_config.d/00-eregion.conf /etc/ssh/sshd_config.d/00-eregion.conf
 sudoedit /etc/ssh/sshd_config.d/00-eregion.conf      # ListenAddress <tailscale ip -4>, AllowUsers <toi>
 sudo install -D -m 644 infra/poste/ssh.service.d/eregion.conf /etc/systemd/system/ssh.service.d/eregion.conf
+sudo apt install openssh-server tmux                 # après : le paquet démarre sur le fragment déjà posé
 sudo systemctl disable --now ssh.socket              # Ubuntu ≥ 22.10 : sshd écoute lui-même, pas le socket
 sudo install -d -m 755 /run/sshd                     # sans lui, sshd -t refuse avant le premier départ du service
 sudo systemctl daemon-reload && sudo sshd -t && sudo systemctl enable --now ssh.service
@@ -102,8 +116,9 @@ sudo systemctl daemon-reload && sudo sshd -t && sudo systemctl enable --now ssh.
   Il s'appelle `00-` : `sshd` garde la **première** valeur qu'il lit, et un `50-cloud-init.conf` qui
   dirait `PasswordAuthentication yes` l'emporterait sur un `eregion.conf`.
 - **L'ordre de systemd** (`infra/poste/ssh.service.d/eregion.conf`) : `sshd` attend que Tailscale ait
-  son adresse avant d'écouter dessus, une minute au plus, et repart après un échec. **Non vérifié** sur
-  le poste.
+  son adresse avant d'écouter dessus, une minute au plus, et repart après un échec. **Non mesuré** :
+  le retour seul de `tailscaled` puis de `sshd` après un redémarrage du poste, et `/run/sshd` recréé
+  par le service à ce départ-là. Le banc du 11/11 n'a pas redémarré le poste.
 - **Le contrôle**, en lecture seule, chaque fois que la configuration change :
 
 ```zsh
@@ -133,10 +148,20 @@ n'en a pas ; n'en ajouter aucun.
 
 ## 3. La clé, dans la puce du téléphone
 
-Dans **Blink Shell** (iOS) ou **Termius** (iOS, Android) : une clé créée **dans la puce sécurisée**
+Dans **Termius** (iOS, Android) ou **Blink** (iOS) : une clé créée **dans la puce sécurisée**
 (Secure Enclave sur iOS, le Keystore matériel sur Android), non exportable, débloquée par biométrie.
-Le type est ECDSA P-256 : c'est celui que la puce sait garder. **Non vérifié** : le nom exact du menu
-dans chaque application.
+Le type est ECDSA P-256 : c'est celui que la puce sait garder.
+
+**Termius sur iOS** (mesuré le 11/11, sur l'iPhone) :
+- **la clé** : *Vaults* (la flèche `<`), puis *Keychain*, puis **+**, puis **New Face ID Key**.
+  C'est une clé `ecdsa-sha2-nistp256` ; Face ID s'affiche à la connexion ;
+- **sa clé publique** : *Export*, puis **Send by email** ou **Copy public key** ; puis la ligne
+  ci-dessous, sur le poste ;
+- **« Export to host » ne marche pas** : le poste refuse le mot de passe (étape 2). C'est voulu ;
+- la redirection de la console : étape 5c.
+
+**Blink** s'appelle **« Blink Shell, Build & Code »** sur l'App Store, et il est **payant**. Il n'a
+pas été joué le 11/11 : ses menus restent **non vérifiés**, comme Termius sur Android.
 
 Sa clé **publique** va sur le poste, une ligne par appareil, avec le nom de l'appareil en
 commentaire et des options qui la bornent au tailnet et au seul tunnel de la console :
@@ -205,7 +230,8 @@ l'activer ni la lancer** :
   (`X-Eregion-HostKey`), avec `StrictHostKeyChecking=yes`, `GlobalKnownHostsFile=/dev/null`,
   `UpdateHostKeys=no` — jamais `StrictHostKeyChecking=no` ;
 - `-F none` (aucun `~/.ssh/config` lu), `BatchMode=yes` (rien n'est demandé : la clé doit s'ouvrir
-  sans phrase de passe, ou par un agent que le service voit — **non vérifié** sur le poste),
+  sans phrase de passe, ou par un agent que le service voit — **mesuré le 11/11** : la clé vers
+  Imladris s'ouvre sous `systemd --user`, en `BatchMode`),
   `ExitOnForwardFailure=yes` (le port pris, ssh sort), `ServerAliveInterval=30` et
   `ServerAliveCountMax=3` (une coupure vue en 90 s) ;
 - `Restart=on-failure`, `RestartSec=15` : il repart après une coupure, jusqu'à la fin de sa fenêtre.
@@ -226,7 +252,7 @@ réécrit. Une VM reconstruite (une nouvelle clé d'hôte) : la nouvelle emprein
 
 ```zsh
 make mobile-tunnel-on      # du poste, ou du téléphone dans tmux (étape 4)
-make mobile-check          # « armé depuis …, expire à … (dans …) », 127.0.0.1:7007 seul
+make mobile-check          # « armé depuis <jj/mm hh:mm> UTC, expire à <jj/mm hh:mm> UTC (dans …) », 127.0.0.1:7007 seul
 make mobile-tunnel-off     # avant la fin, dès qu'on n'en a plus besoin
 ```
 
@@ -253,10 +279,17 @@ Ce que ces bornes ne tiennent pas :
   l'horloge murale : au réveil, aucune relance ne passe la date limite.
 
 Sans session de l'utilisateur (sans *linger*), systemd de l'utilisateur s'arrête avec la dernière
-session, et le tunnel avec lui : la fenêtre est alors plus courte, jamais plus longue. **Non
-vérifié** sur le poste : `systemctl --user` depuis la session SSH du téléphone (il demande le bus de
-l'utilisateur, que `pam_systemd` ouvre d'ordinaire), et `systemd-analyze --user verify` sur l'unité
-remplie.
+session, et le tunnel avec lui : la fenêtre est alors plus courte, jamais plus longue.
+
+**Mesuré le 11/11** : armé, `make mobile-check` est resté tout ✓ — armé pour 12 h, le minuteur de
+fin vivant, aucun redémarrage, l'écoute en `127.0.0.1:7007` seule. **Non vérifié** sur le poste :
+`systemctl --user` depuis la session SSH du téléphone (il demande le bus de l'utilisateur, que
+`pam_systemd` ouvre d'ordinaire), et `systemd-analyze --user verify` sur l'unité remplie.
+
+**Les heures sont en UTC** (MOB3) : « armé depuis …, expire à … », « armé au-delà de sa date
+limite (…) » et le « armé jusqu'à … » de `make mobile-tunnel-on` disent `UTC`, quel que soit le
+fuseau du poste. Le 11/11, c'était l'heure locale du poste, sans fuseau : lue sur le téléphone ou à
+côté d'un journal, l'heure d'une autre zone.
 
 `make mobile-check` lit le tunnel en plus du reste :
 - l'unité est celle du modèle : pas de `[Install]`, ni de lien dans un `*.wants/` (elle démarrerait
@@ -274,12 +307,12 @@ remplie.
 ### 5c. Sur le téléphone : le tunnel, puis Safari
 
 1. **Le tunnel du téléphone**, ouvert par l'application avec la clé de sa puce :
-   - **Blink** (iPhone, iPad) : `ssh -L 7007:127.0.0.1:7007 <utilisateur>@<adresse privée du
-     poste>`, puis laisser la session ouverte ;
-   - **Termius** (iPhone, iPad) : un *Port Forwarding* de type *Local*, port local 7007,
-     destination `127.0.0.1:7007`, par l'hôte du poste.
+   - **Termius** (mesuré le 11/11, sur l'iPhone) : *Port Forwarding*, puis **Local** — port local
+     7007, destination `127.0.0.1:7007`, par l'hôte du poste et la clé Face ID de l'étape 3 ;
+   - **Blink** : `ssh -L 7007:127.0.0.1:7007 <utilisateur>@<adresse privée du poste>`, puis laisser
+     la session ouverte. **Non vérifié** : pas joué le 11/11.
 
-   **Non vérifié** : les noms des menus, et la syntaxe exacte de chaque application.
+   L'iPad est reporté (étape 1) : ces gestes sont ceux de l'iPhone.
 2. **L'URL** : dans le terminal du téléphone, sur le poste, `make console-url`. Le tunnel armé, elle
    donne celle de la console d'Imladris (`http://localhost:7007/?token=…`, le jeton lu dans
    `infra/glorfindel-host/host.env`). Le tunnel arrêté, elle donne celle de la console locale, comme
@@ -288,13 +321,24 @@ remplie.
    `make glorfindel-host-tunnel` refusent de même).
 3. **Dans Safari** : cette URL. Le `Host` reste `localhost` : la console d'Imladris répond sans rien
    ajouter à `EREGION_CONSOLE_HOSTS`. Le jeton reste exigé : l'URL le porte une fois, la console le
-   retire et pose un cookie de session (12 h).
+   retire et pose un cookie de session (12 h). **Mesuré le 11/11** : la console d'Imladris s'affiche
+   dans Safari, sur l'iPhone.
 
 **Ce que fait iOS en arrière-plan.** Une application mise en arrière-plan est suspendue au bout de
 quelques secondes ou minutes, et sa redirection avec elle : Safari ne répond plus. Il faut revenir
 dans Blink ou Termius, que le tunnel du téléphone se rouvre, puis recharger la page. Le tunnel du
 poste, lui, ne dépend pas du téléphone : il reste armé jusqu'à `make mobile-tunnel-off` ou la fin de
-ses 12 h. **Non vérifié** : la durée exacte avant suspension, propre à chaque application.
+ses 12 h. **Mesuré le 11/11** (Termius) : la console revient après un passage en arrière-plan. **Non
+vérifié** : la durée exacte avant suspension, propre à chaque application.
+
+**Ce que `make glorfindel-host-*` affiche** (MOB3). Le 11/11, `make glorfindel-host-ssh` affichait
+sa commande en clair, `ssh … glorfindel@<adresse d'Imladris>` et le chemin de la clé compris :
+collée telle quelle depuis le terminal du téléphone, la sortie repartait comme commande. Chaque
+recette `glorfindel-host-*` commence maintenant par `@` et n'affiche plus sa commande — `-ssh`,
+`-tunnel`, `-start`, `-stop`, `-logs`, `-report`, `-cd-*`, et `-plan`, `-up`, `-down`, qui
+affichaient l'adresse de l'opérateur (`operator_cidr`) ; ce qu'elles font ne change pas. Les lignes
+de `known_host.sh` (« ⚠ HOST_SSH_FINGERPRINT absent : la clé d'hôte de <adresse> … », le ✓ de la
+première écriture) nomment encore l'adresse ; ce ne sont pas des commandes.
 
 **Le retrait.** `make mobile-tunnel-off` à la fin du geste ; `make mobile-tunnel-remove` quand on
 n'en veut plus du tout. Le tunnel du poste non armé, `make glorfindel-host-tunnel` tient encore le tunnel
@@ -378,6 +422,32 @@ Les deux barrières se ferment l'une sans l'autre ; fermer les deux, puis ce que
    de ses 12 h.
 5. `make mobile-check` : une clé de moins, « ℹ tunnel : non armé ».
 
+## Ce qui a été mesuré, ce qui reste à mesurer
+
+Le banc du 11/11 : la session Tests avec Jonathan, de 12:20 à 13:50 UTC, un iPhone, Termius.
+
+**Mesuré** :
+- Termius sur iOS : la clé Face ID (`ecdsa-sha2-nistp256`, Face ID à la connexion), sa clé publique
+  par *Export*, « Export to host » refusé par le poste (mot de passe fermé), la redirection par
+  *Port Forwarding* → *Local* (étapes 3 et 5c) ;
+- le poste installé dans l'ordre fragment, drop-in, puis paquet ; le geste `/run/sshd` avant
+  `sshd -t` (étape 2, BNC1b) ;
+- la clé du tunnel vers Imladris qui s'ouvre sous `systemd --user`, en `BatchMode` (étape 5a) ;
+- `make mobile-check` tout ✓, le tunnel armé : 12 h, le minuteur de fin vivant, aucun redémarrage,
+  l'écoute en `127.0.0.1:7007` seule (étape 5b) ;
+- la console d'Imladris dans Safari, et son retour après un passage en arrière-plan (étape 5c) ;
+- la règle de Tailscale posée pour l'iPhone seul (étape 1).
+
+**Pas mesuré**, à jouer :
+- le retour seul de `sshd` et de `tailscaled` après un redémarrage du poste, et `/run/sshd` recréé
+  par le service (étape 2) ;
+- WSL vivant sans terminal ouvert, par ses seuls services (étape 0) ;
+- le refus, par la règle de Tailscale, de tout le reste (étape 1) ;
+- la raison de l'ordre d'installation : qu'un `openssh-server` posé seul ouvre `ssh.socket` sur
+  toutes les interfaces avec mot de passe reste une hypothèse de lecture (étape 2) ;
+- `systemctl --user` depuis la session SSH du téléphone, `systemd-analyze --user verify` (étape 5b) ;
+- Blink, Termius sur Android, l'iPad (reporté) ; la perte du téléphone, comme enchaînement (étape 7).
+
 ## Ce qui reste ouvert
 
 - La règle d'accès de Tailscale ne se lit pas sur le poste ; seule sa console la montre.
@@ -395,8 +465,8 @@ Les deux barrières se ferment l'une sans l'autre ; fermer les deux, puis ce que
   [modèle de menace](../design/modele-de-menace.md#9-le-téléphone-et-son-chemin-vers-le-poste) dit ce
   qui garde la console pendant ce temps.
 - La clé du tunnel du poste vers Imladris doit s'ouvrir sans phrase de passe, ou par un agent que
-  systemd de l'utilisateur voit (**non vérifié**) : une clé sans phrase, sur le disque du poste, ouvre
-  Imladris à qui la lit.
+  systemd de l'utilisateur voit (mesuré le 11/11 : elle s'ouvre en `BatchMode`) : une clé sans
+  phrase, sur le disque du poste, ouvre Imladris à qui la lit.
 - Le Windows de l'hôte n'est pas lu par `make mobile-check` : son pare-feu, et le réseau de WSL en
   mode *mirrored*, où une écoute de WSL sur toutes les interfaces le serait aussi sur celles de
   Windows. Le contrôle des écoutes de WSL le couvre en partie.

@@ -494,15 +494,19 @@ La console tient donc par le tailnet **et** la clé matérielle, puis par son je
 - Le jeton de la console s'affiche dans le terminal du téléphone, comme dans celui du bureau.
 - Le `127.0.0.1:7007` du poste est celui que WSL partage avec Windows : un processus de Windows y joint la console, jeton exigé, comme pour le tunnel du bureau.
 - Pendant la fenêtre du tunnel (12 h au plus), tout processus local du poste joint la console d'Imladris, une session d'agent comprise : sans le jeton, un refus ; avec lui, la console. Une session d'agent qui lit `host.env` malgré la règle l'a.
-- La clé du tunnel du poste vers Imladris doit s'ouvrir sans demande (`BatchMode=yes`) : sans phrase de passe, sur le disque du poste, elle ouvre Imladris à qui la lit — ou par un agent que systemd de l'utilisateur voit, **non vérifié**. Une clé à elle, bornée sur Imladris au seul tunnel (`restrict,port-forwarding,permitopen="127.0.0.1:7007"`), fermerait ce reste : un geste sur Imladris, non fait.
+- La clé du tunnel du poste vers Imladris doit s'ouvrir sans demande (`BatchMode=yes`) : sans phrase de passe, sur le disque du poste, elle ouvre Imladris à qui la lit — ou par un agent que systemd de l'utilisateur voit (mesuré le 11/11, MOB3 : elle s'ouvre sous `systemd --user`, en `BatchMode`). Une clé à elle, bornée sur Imladris au seul tunnel (`restrict,port-forwarding,permitopen="127.0.0.1:7007"`), fermerait ce reste : un geste sur Imladris, non fait.
 - Non vérifiés sur le poste : l'unité remplie devant `systemd-analyze --user verify`, l'`ExecCondition` sous systemd (testée par `/bin/sh` sur des faux), `systemctl --user` depuis la session SSH du téléphone.
+- Mesurés au banc du 11/11 (MOB3, le guide : « Ce qui a été mesuré, ce qui reste à mesurer ») : le tunnel du poste armé, `make mobile-check` tout ✓, la console d'Imladris dans Safari et son retour après un passage en arrière-plan.
+- Non mesurés au banc du 11/11 (MOB3) : le retour seul de `sshd` et de `tailscaled` après un redémarrage du poste, et `/run/sshd` recréé ; WSL vivant sans terminal ; le refus, par la règle de Tailscale, de tout le reste. L'ordre d'installation (le fragment et le drop-in avant le paquet, pour que `ssh.socket` ne s'ouvre jamais sur toutes les interfaces avec mot de passe) est une hypothèse de lecture, non mesurée.
+- La règle de Tailscale ne nomme que l'iPhone (11/11) ; l'iPad est reporté : il aura sa ligne, sa clé et son retrait (le guide, étapes 1, 3 et 7).
+- `make glorfindel-host-*` n'affiche plus ses commandes (MOB3, M4817, M4818) : `make glorfindel-host-ssh` affichait l'adresse d'Imladris et le chemin de la clé, une ligne qui repartait collée depuis le terminal du téléphone. Les lignes de `known_host.sh` nomment encore l'adresse, sans être des commandes.
 - Le restore depuis le téléphone passe par le terminal du poste, la clé matérielle du SSH tenant lieu de second facteur, jusqu'à FS1g et TOT1 (#685).
 - `make mobile-check` lit la configuration globale de `sshd` : un bloc `Match` la change pour une connexion ; le modèle n'en a pas. Il ne lit ni les options de la ligne de la clé, ni la règle d'accès de Tailscale (sa console seule la montre), ni le pare-feu de Windows, ni le réseau de WSL en mode *mirrored*.
 
 **Ouvert** :
 - les gestes de Jonathan qui ouvrent cette frontière — planifié : #686
 - un run lancé et la console ouverte depuis le téléphone — planifié : #686
-- le tunnel du poste armé depuis le téléphone, la console dans Safari — planifié
+- le tunnel du poste armé depuis la session SSH du téléphone — planifié
 
 ---
 
