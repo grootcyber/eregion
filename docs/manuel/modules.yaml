@@ -1635,9 +1635,19 @@ briques:
     nom: "Documents that no longer contradict the bench: what the ransomware run of 09/11 showed, the logs switched on, the unit tests counted by the CI"
     etat: main
     release: "0.5"
-    lots: [MEN2, MEN3]
+    lots: [MEN2]
     issue: 722
     doc: docs/banc-t1486.md
+
+  - id: s-commandes-vraies
+    composant: socle
+    poste: s-documenter
+    nom: "The workstation's commands work as written, under zsh as under bash: role lists filtered, the subscription checked, the plan without colours"
+    etat: main
+    release: "0.5"
+    lots: [MEN3]
+    issue: 734
+    doc: docs/operations.md
 
   - id: s-adoption
     composant: socle

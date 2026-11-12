@@ -22,7 +22,8 @@
   also gives « Eregion Glorfindel Restore Staging » to the console and the bot on the staging account:
   four `restore_neutralize`, two `session_drain_principals`, two `restore_staging` — `Plan: 8 to add`,
   seven when the console's hand-made assignment was imported first, and the apply fails without the
-  Restore Staging role, which must exist before.
+  Restore Staging role, which must exist before. The block copies `principals.auto.tfvars.example` with
+  `cp -n`: a filled file stays.
 - **What the reviews of 11/11 left said** (MEN3, #734). `docs/operations.md`, « Ce qui est retenté »:
   the update reads HashiCorp's apt source alone (CI11, #728) and why; what `Error-Mode=any` did on the
   runner on 11/11 (exit 100, three attempts, then the failure), no longer « to be seen »; and that the

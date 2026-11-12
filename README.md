@@ -339,13 +339,13 @@ if printf %s "$SUB" | grep -qE "$GUID"; then    # not a GUID (az login missing):
     sed "s|<SUBSCRIPTION_ID>|$SUB|" infra/identities/glorfindel-$r.json > /tmp/eregion-role-$r.json
     az role definition create --role-definition @/tmp/eregion-role-$r.json
   done
+  az ad sp create-for-rbac --name "eregion-glorfindel-watch"     # → GLORFINDEL_AZURE_CLIENT_ID / _SECRET
+  az role assignment create --assignee <appId> --role Reader --scope /subscriptions/$SUB/resourceGroups/$RG
+  az role assignment create --assignee <appId> --role "Eregion Glorfindel Response" \
+    --scope /subscriptions/$SUB/resourceGroups/$RG
+  az role assignment create --assignee <appId> --role "Eregion Glorfindel Session Drain" \
+    --scope <id of each VM it defends>    # VM by VM, never the group
 else echo "SUB is not a GUID: az login, then run the block again"; fi
-az ad sp create-for-rbac --name "eregion-glorfindel-watch"     # → GLORFINDEL_AZURE_CLIENT_ID / _SECRET
-az role assignment create --assignee <appId> --role Reader --scope /subscriptions/$SUB/resourceGroups/$RG
-az role assignment create --assignee <appId> --role "Eregion Glorfindel Response" \
-  --scope /subscriptions/$SUB/resourceGroups/$RG
-az role assignment create --assignee <appId> --role "Eregion Glorfindel Session Drain" \
-  --scope <id of each VM it defends>    # VM by VM, never the group
 # … the console and the bot the same way, plus "Eregion Glorfindel Restore" (docs/operations.md)
 ```
 

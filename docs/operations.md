@@ -716,38 +716,44 @@ if printf %s "$SUB" | grep -qE "$GUID"; then    # vide : rien ne part (en tête 
     sed "s|<SUBSCRIPTION_ID>|$SUB|" infra/identities/glorfindel-$r.json > /tmp/eregion-role-$r.json
     az role definition create --role-definition @/tmp/eregion-role-$r.json
   done
+  # Un principal par service, sans rôle à sa création (appId → …_CLIENT_ID, password → …_SECRET).
+  for s in watch console bot; do az ad sp create-for-rbac --name "eregion-glorfindel-$s"; done
 else echo "SUB n'est pas un GUID : az login, puis relancer le bloc"; fi
-# Un principal par service, sans rôle à sa création (appId → …_CLIENT_ID, password → …_SECRET).
-for s in watch console bot; do az ad sp create-for-rbac --name "eregion-glorfindel-$s"; done
 ```
 
 Le nom d'un rôle personnalisé est unique dans le tenant : pour un **second abonnement du même
 tenant**, `az role definition create` refuse (le nom existe). Ajouter l'abonnement aux portées
-du rôle existant, puis l'attribuer comme ci-dessous :
+du rôle existant, puis l'attribuer comme ci-dessous. Dans le shell du bloc « Créer » (`$SUB` et
+`$GUID` y sont posés) ; `$SUB2` se lit de même, jamais tapé :
 
 ```bash
-SUB2=<SECOND_SUBSCRIPTION_ID>
-for r in "Eregion Glorfindel Response" "Eregion Glorfindel Restore" "Eregion Glorfindel Session Drain" \
-         "Eregion Glorfindel Restore Neutralize" "Eregion Glorfindel Restore Staging"; do
-  az role definition list --name "$r" --scope /subscriptions/$SUB --query '[0]' -o json \
-    | python3 -c 'import json,sys; d=json.load(sys.stdin); d["assignableScopes"].append(sys.argv[1]); print(json.dumps(d))' \
-        "/subscriptions/$SUB2" > /tmp/eregion-role.json
-  az role definition update --role-definition @/tmp/eregion-role.json
-done
+SUB2=$(az account show --subscription <nom ou id du second abonnement> --query id -o tsv)
+if printf %s "$SUB" | grep -qE "$GUID" && printf %s "$SUB2" | grep -qE "$GUID"; then
+  for r in "Eregion Glorfindel Response" "Eregion Glorfindel Restore" "Eregion Glorfindel Session Drain" \
+           "Eregion Glorfindel Restore Neutralize" "Eregion Glorfindel Restore Staging"; do
+    az role definition list --name "$r" --scope /subscriptions/$SUB --query '[0]' -o json \
+      | python3 -c 'import json,sys; d=json.load(sys.stdin); d["assignableScopes"].append(sys.argv[1]); print(json.dumps(d))' \
+          "/subscriptions/$SUB2" > /tmp/eregion-role.json
+    az role definition update --role-definition @/tmp/eregion-role.json
+  done
+else echo "SUB ou SUB2 n'est pas un GUID : le bloc « Créer » d'abord, puis relancer"; fi
 ```
 
-**Attribuer** (`<appId-…>` : ce que la création a rendu) :
+**Attribuer** (`<appId-…>` : ce que la création a rendu), dans le shell du bloc « Créer » : `$SUB`,
+`$GUID`, `$RG`, `$VAULT_RG` et `$LAW` y sont posés. Seule la première boucle se sert de `$SUB` :
 
 ```bash
-for scope in /subscriptions/$SUB/resourceGroups/$RG /subscriptions/$SUB/resourceGroups/$VAULT_RG; do
-  for a in <appId-watch> <appId-console> <appId-bot>; do
-    az role assignment create --assignee $a --role Reader --scope $scope
-    az role assignment create --assignee $a --role "Eregion Glorfindel Response" --scope $scope
+if printf %s "$SUB" | grep -qE "$GUID"; then
+  for scope in /subscriptions/$SUB/resourceGroups/$RG /subscriptions/$SUB/resourceGroups/$VAULT_RG; do
+    for a in <appId-watch> <appId-console> <appId-bot>; do
+      az role assignment create --assignee $a --role Reader --scope $scope
+      az role assignment create --assignee $a --role "Eregion Glorfindel Response" --scope $scope
+    done
+    for a in <appId-console> <appId-bot>; do
+      az role assignment create --assignee $a --role "Eregion Glorfindel Restore" --scope $scope
+    done
   done
-  for a in <appId-console> <appId-bot>; do
-    az role assignment create --assignee $a --role "Eregion Glorfindel Restore" --scope $scope
-  done
-done
+else echo "SUB n'est pas un GUID : le bloc « Créer » d'abord, puis relancer"; fi
 for a in <appId-watch> <appId-console>; do
   az role assignment create --assignee $a --role "Log Analytics Reader" --scope $LAW
 done
@@ -947,7 +953,7 @@ if printf %s "$SUB" | grep -qE "$GUID"; then                                    
   az role definition create --role-definition @/tmp/eregion-role-restore-neutralize.json
 else echo "SUB n'est pas un GUID : az login, puis relancer le bloc"; fi
 az role definition list --name "Eregion Glorfindel Restore Staging" --query 'length(@)'   #     1 (0 : le créer, « Créer »)
-cp infra/glorfindel-host/principals.auto.tfvars.example infra/glorfindel-host/principals.auto.tfvars
+cp -n infra/glorfindel-host/principals.auto.tfvars.example infra/glorfindel-host/principals.auto.tfvars   # -n : un fichier rempli reste
 #   2 : les deux object id dedans (az ad sp show --id <appId> --query id -o tsv)
 TF_CLI_ARGS_plan=-no-color make glorfindel-host-plan | tee /tmp/eregion-plan.txt          # 3 : huit attributions, rien d'autre
 grep '^Plan:' /tmp/eregion-plan.txt                                                       #     Plan: 8 to add, 0 to change, 0 to destroy
