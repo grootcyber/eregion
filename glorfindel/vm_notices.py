@@ -549,11 +549,9 @@ def _shown(notice: dict) -> dict:
     """The notice as a chat shows it (MSK3, #772): its title and text without a subscription's id —
     an ARM id said by its name and group (glorfindel/masking.py). A copy: the store keeps the text
     as written."""
-    from glorfindel.masking import commands_named, ids_masked, subscriptions_known
+    from glorfindel.masking import shown
     rid = str(notice.get("resource_id") or "")
-    subs = subscriptions_known(rid)
-    return {**notice, **{k: ids_masked(commands_named(str(notice.get(k, "") or ""), rid), subscriptions=subs)
-                         for k in ("title", "text")}}
+    return {**notice, **{k: shown(str(notice.get(k, "") or ""), rid) for k in ("title", "text")}}
 
 
 def bot_message(notice: dict) -> str:

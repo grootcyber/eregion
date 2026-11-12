@@ -156,6 +156,7 @@ def test_the_group_and_name_form_is_resolved_on_its_host(monkeypatch):
     ["reset", GV, "--yes"], ["revert", GV, "--yes"], ["release", GV, "--yes", "--dry-run"],
     ["unblock", "203.0.113.7", GV, "--yes", "--dry-run"], ["activate", GV, "--yes"],
     ["restore", GV, "--yes", "--dry-run", "--before", "2026-11-12T07:55:00+00:00"],
+    ["snapshot", GV, "--yes", "--dry-run"],
 ])
 def test_the_cli_says_the_vm_it_resolved_before_acting_yes_too(monkeypatch, args):
     """Even with --yes, the VM resolved is read back by its name and its group before anything is done."""
@@ -474,3 +475,67 @@ def test_an_escalation_by_the_webhook_masks_its_action_ttp_and_severity(posts):
     escalations._notify(_card(action=f"isolate {VM}", ttp=f"T1486 {VM}", severity=f"high ({SUB})"))
     assert posts
     _clean(posts)
+
+
+# ── 6. The review (round 2): snapshot, a subscription only a command named, the VM's own id ──────
+
+SUB3 = "00000000-0000-0000-0000-0000000000ee"           # known neither to the card nor to the environment
+VM_C = _vm("vm-c", rg="rg-example-c", sub=SUB3)
+OTHER = f"glorfindel restore {VM_C} --yes, ref {SUB3}"
+
+
+def test_the_snapshot_step_of_a_card_acts_on_the_vm_it_names(monkeypatch):
+    """`glorfindel snapshot <groupe>/<nom> --yes`, the card's step rewritten: resolved to the VM's id,
+    never passed to Azure as it is."""
+    from glorfindel import cli
+    _known(monkeypatch, VM)
+    calls = []
+
+    class _Connector:
+        def __init__(self, *a, **k):
+            pass
+    monkeypatch.setattr("glorfindel.actions.AzureConnector", _Connector)
+    monkeypatch.setattr("glorfindel.jobs.start_snapshot", lambda rid, *a, **k: (
+        calls.append(rid), {"job_id": "job-1", "snap_id": "snap-1"})[1])
+    monkeypatch.setattr(cli, "_backup_vault_from_config", lambda vault: ("vault-a", RG, "sa-a"))
+    monkeypatch.setattr(cli, "_record_manual_action", lambda *a, **k: None)   # the journal: not here
+    step = bot._shown(_card(suggested_steps=[f"`glorfindel snapshot {VM} --yes` pour capturer l'état"]))
+    assert f"glorfindel snapshot {GV} --yes" in step["suggested_steps"][0]
+    _cli(["snapshot", GV, "--yes"])
+    assert calls == [VM]                              # the VM's id, never « rg/vm » as an id
+    assert cli._resolve_resource_id(GV) == VM
+
+
+def test_a_subscription_only_a_command_named_is_masked_bare_too(posts):
+    """Review 2: the rewriting of the command took its id away before the masking learned its
+    subscription — its bare id passed in the webhook and the notices."""
+    from glorfindel import masking
+    assert masking.shown(OTHER, VM) == "glorfindel restore rg-example-c/vm-c --yes, ref <abonnement>"
+    escalations._notify(_card(reason=OTHER))
+    escalations.notify_action("isolate_vm", VM, "run-1", 0.9, OTHER, True, key="action:k-other")
+    assert len(posts) == 2
+    _clean(posts)
+    assert SUB3 not in str(posts)
+    notice = _notice(text=OTHER, title="Coupure")
+    for said in (vm_notices.bot_message(notice), vm_notices.webhook_payload(notice)["text"],
+                 vm_notices.bot_message(vm_notices.said("action:k-other"))):
+        assert SUB3 not in said and "rg-example-c/vm-c" in said, said
+
+
+def test_only_a_vm_s_own_id_is_named_by_its_group_and_name():
+    from glorfindel import masking
+    assert masking.group_and_name(VM) == GV
+    assert masking.group_and_name(VM + "/extensions/ext-a") == masking.UNNAMED
+    assert masking.group_and_name(NSG) == masking.UNNAMED
+    assert bot._vm_for_a_command(NSG) == masking.UNNAMED
+
+
+def test_a_group_the_shell_would_read_is_quoted():
+    """Azure allows « ( ) » in a group's name: quoted, the command pastes; the CLI gets it unquoted."""
+    import shlex
+
+    from glorfindel import masking
+    vm = _vm(rg="rg.(x)")
+    said = masking.group_and_name(vm)
+    assert said == "'rg.(x)/vm-example-01'"
+    assert shlex.split(f"glorfindel revert {said} --yes")[2] == "rg.(x)/vm-example-01"

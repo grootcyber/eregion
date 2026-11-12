@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 
 _GUID = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
 # An ARM id, with or without its leading slash, up to what cannot be in one: a blank, a quote,
@@ -81,10 +82,13 @@ def group_and_name(resource_id) -> str:
     An id with no group: « <id: glorfindel list --ids> »."""
     parts = str(resource_id or "").strip().rstrip("/").split("/")
     low = [p.lower() for p in parts]
-    if "resourcegroups" in low[:-1] and "providers" in low:
+    # A VM's own id only: « …/virtualMachines/<nom> », never a child of it (an extension) nor
+    # another resource (a NSG) — the command would name another resource (review 2).
+    if "resourcegroups" in low[:-1] and len(low) >= 2 and low[-2] == "virtualmachines":
         i = low.index("resourcegroups")
         if i + 1 < len(parts) - 1 and parts[i + 1] and parts[-1]:
-            return f"{parts[i + 1]}/{parts[-1]}"
+            # A group may hold « ( ) » (Azure allows them): quoted, the shell takes the command.
+            return shlex.quote(f"{parts[i + 1]}/{parts[-1]}")
     return UNNAMED
 
 
@@ -130,6 +134,16 @@ def cut(text, n: int) -> str:
     while i > 0 and _HEX.match(s[i - 1]) and _HEX.match(s[i]):
         i -= 1
     return s[:i]
+
+
+def shown(text, resource_id: str = "", subscriptions=()) -> str:
+    """A text as a chat shows it (MSK3): its glorfindel commands naming their VM by
+    `<groupe>/<nom>` (`commands_named`), then masked (`ids_masked`) — the subscriptions learned from
+    the text as written, before the rewriting took its ids away (review 2: a bare id of a
+    subscription only a command's id named passed), from `resource_id` and from `subscriptions`."""
+    text = str(text if text is not None else "")
+    subs = set(subscriptions or ()) | subscriptions_known(text) | subscriptions_known(str(resource_id or ""))
+    return ids_masked(commands_named(text, resource_id), subscriptions=subs)
 
 
 def subscriptions_known(text: str = "", environ=None, subscriptions=()) -> set[str]:

@@ -149,7 +149,7 @@ def _shown(esc: dict) -> dict:
     rid = str(esc.get("resource_id") or "")
     for k in _SHOWN_TEXTS:
         if isinstance(out.get(k), str):
-            out[k] = masking.ids_masked(masking.commands_named(out[k], rid), subscriptions=subs)
+            out[k] = masking.shown(out[k], rid, subs)
     if isinstance(out.get("suggested_steps"), list):
         # A step's command names its VM by `<groupe>/<nom>` first (the card's own written by the
         # code with its id or its short name): masked, it would be no command; short, a homonym's.

@@ -4,7 +4,9 @@ CLI's rule, the card's texts, what a button ran and its output, the notices and 
 are masked at the display; the buttons' arguments and the stores keep the full id. M5020–M5029,
 then M5098–M5104 after the first review (the commands name the VM by `<groupe>/<nom>`, resolved by
 the CLI on its own host or refused; the CLI reads the VM back before acting; a thread named before
-MSK3; the announcement cut before its masking), measured by tests/unit/test_bot_masking.py.
+MSK3; the announcement cut before its masking), M5110–M5113 after the second (snapshot resolves the
+form, a subscription only a command named, a VM's own id, a group the shell reads), measured by
+tests/unit/test_bot_masking.py.
 
 The form of a lot's file, as scripts/mutation_check.py loads it: MUTANTS, TESTS (its own ids),
 optionally TESTS_ALSO and CONTROL; its paths as plain strings.
@@ -13,6 +15,7 @@ BOT = "glorfindel/bot.py"
 NOTICES = "glorfindel/vm_notices.py"
 ESC = "glorfindel/escalations.py"
 CLI = "glorfindel/cli.py"
+MASK = "glorfindel/masking.py"
 _M = "tests/unit/test_bot_masking.py"
 
 MUTANTS = [
@@ -50,7 +53,7 @@ MUTANTS = [
      "    from glorfindel.chat_text import discord_code, discord_text\n"),
     ("M5028", "an escalation by the webhook says the model's reason raw: the signal's id in the channel "
      "(MSK3)", ESC,
-     "                f\"> {webhook_text(ids_masked(commands_named(esc['reason'], rid), subscriptions=subs)[:500])}\\n\"\n",
+     "                f\"> {webhook_text(masked(esc['reason'], rid, subs)[:500])}\\n\"\n",
      "                f\"> {webhook_text(esc['reason'][:500])}\\n\"\n"),
     ("M5029", "an autonomous action's announcement by the webhook says the model's explanation raw (MSK3)",
      ESC,
@@ -83,6 +86,20 @@ MUTANTS = [
     ("M5104", "the announcement's text cut mid-GUID in the notices' store: its first digits pass the "
      "masking in the VM's thread (MSK3)", ESC,
      "cut(explanation, 800),", "explanation[:800],"),
+    # The review of MSK3 (r2).
+    ("M5110", "glorfindel snapshot takes `<groupe>/<nom>` as an id: the card's step fails on Azure (MSK3)", CLI,
+     "    resource_id = _resolve_resource_id(resource_id)\n    vault, vault_rg, _ = _backup_vault_from_config(vault)\n",
+     "    vault, vault_rg, _ = _backup_vault_from_config(vault)\n"),
+    ("M5111", "the subscriptions learned from the text once rewritten: a bare id of one only a command's id "
+     "named passes in the webhook and the notices (MSK3)", MASK,
+     '    subs = set(subscriptions or ()) | subscriptions_known(text) | subscriptions_known(str(resource_id or ""))\n',
+     '    subs = set(subscriptions or ()) | subscriptions_known(str(resource_id or ""))\n'),
+    ("M5112", "the last segment of any id taken for a VM's name: an extension's id gives « rg/ext » (MSK3)", MASK,
+     '    if "resourcegroups" in low[:-1] and len(low) >= 2 and low[-2] == "virtualmachines":\n',
+     '    if "resourcegroups" in low[:-1] and "providers" in low:\n'),
+    ("M5113", "a group with « ( ) » left bare in the command: the shell refuses it (MSK3)", MASK,
+     '            return shlex.quote(f"{parts[i + 1]}/{parts[-1]}")\n',
+     '            return f"{parts[i + 1]}/{parts[-1]}"\n'),
 ]
 TESTS = {
     "M5020": f"{_M}::test_the_command_to_copy_names_the_vm_by_its_group_and_name",
@@ -102,4 +119,8 @@ TESTS = {
     "M5102": f"{_M}::test_a_step_s_command_names_the_vm_by_its_group_and_name",
     "M5103": f"{_M}::test_the_reused_thread_is_renamed_before_the_post",
     "M5104": f"{_M}::test_the_announcement_is_masked_then_cut_never_a_guid_s_first_characters",
+    "M5110": f"{_M}::test_the_snapshot_step_of_a_card_acts_on_the_vm_it_names",
+    "M5111": f"{_M}::test_a_subscription_only_a_command_named_is_masked_bare_too",
+    "M5112": f"{_M}::test_only_a_vm_s_own_id_is_named_by_its_group_and_name",
+    "M5113": f"{_M}::test_a_group_the_shell_would_read_is_quoted",
 }

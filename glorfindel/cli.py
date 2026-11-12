@@ -1565,9 +1565,15 @@ def snapshot(resource_id: str, vault: str | None, dry_run: bool, yes: bool, wait
         annatar clean <scenario.yaml>
         glorfindel snapshot <resource_id> --yes --wait   # --wait for setup
         annatar run <scenario.yaml>
+
+    RESOURCE_ID: the VM's short name, <group>/<name> (what the Discord bot's commands give) or
+    its full id; the VM resolved is said before anything is done, --yes too.
     """
     from glorfindel.actions import AzureConnector
 
+    # MSK3 (review 2): the card's step « glorfindel snapshot <groupe>/<nom> --yes » is resolved here,
+    # as every command that acts on a VM — it was passed to Azure as it is, and failed.
+    resource_id = _resolve_resource_id(resource_id)
     vault, vault_rg, _ = _backup_vault_from_config(vault)
 
     connector = AzureConnector(dry_run=dry_run)

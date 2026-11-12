@@ -617,7 +617,8 @@ def _action_words(action: str, resource_id: str, run_id: str, confidence: float,
     card_said = f"Carte à juger : {card[:8]} (console, TO JUDGE)." if card else ""
     # The card and the run before the explanation: a text cut (the webhook's 800 characters, the
     # fallback's: JUG2 review) never loses them.
-    from glorfindel.masking import commands_named, cut, ids_masked, name_said, subscriptions_known
+    from glorfindel.masking import cut, name_said, subscriptions_known
+    from glorfindel.masking import shown as masked
     # Kept as written in the notices' store, masked where it is shown — so cut never inside a GUID
     # (MSK3 review: a cut mid-id let its first characters through the masking).
     text = " ".join(filter(None, [
@@ -633,14 +634,14 @@ def _action_words(action: str, resource_id: str, run_id: str, confidence: float,
     resource_short = webhook_code(name_said(resource_id))
 
     def shown(value: str) -> str:
-        return ids_masked(commands_named(value, resource_id), subscriptions=subs)
+        return masked(value, resource_id, subs)
     payload = {"text": (
         f":robot_face: *{_ACTION_LABELS.get(action) or webhook_text(shown(action))}* {status}  |  `{resource_short}`\n"
         f"`{webhook_code(shown(action))}` · {webhook_text(shown(meta))}\n"
         f"> {webhook_text(shown(explanation)[:800])}\n"
         + (f"> ⚠ {webhook_text(shown(note)[:300])}\n" if note else "")
         + (f"> {webhook_text(card_said)}\n" if card_said else "")
-        + f"`{webhook_code(ids_masked(run_id, subscriptions=subs))}`"
+        + f"`{webhook_code(shown(run_id))}`"
     )}
     return f"{label} {status}", text, level, payload
 
@@ -742,7 +743,8 @@ def _notify(esc: dict) -> None:
         import requests
 
         from glorfindel.chat_text import webhook_code, webhook_text
-        from glorfindel.masking import commands_named, ids_masked, name_said, subscriptions_known
+        from glorfindel.masking import name_said, subscriptions_known
+        from glorfindel.masking import shown as masked
         # The reason carries the model's words and Azure's names (an Entra application's
         # display name): one line, no link nor mention of its own (SEC6, N-09) — and no
         # subscription's id (MSK3, #772): the message is pasted from the channel too. The action,
@@ -752,7 +754,7 @@ def _notify(esc: dict) -> None:
         subs = subscriptions_known(rid)
 
         def shown(value) -> str:
-            return ids_masked(commands_named(str(value or ""), rid), subscriptions=subs)
+            return masked(str(value or ""), rid, subs)
         resource_short = webhook_code(name_said(esc["resource_id"]))
         label = _ACTION_LABELS.get(esc["action"]) or webhook_text(shown(esc["action"]))
         type_label = _ESCALATION_LABELS.get(
@@ -764,8 +766,8 @@ def _notify(esc: dict) -> None:
             "text": (
                 f":rotating_light: *{label}*  |  `{resource_short}`\n"
                 f"`{webhook_code(shown(esc['action']))}` · {meta}\n"
-                f"> {webhook_text(ids_masked(commands_named(esc['reason'], rid), subscriptions=subs)[:500])}\n"
-                f"`{webhook_code(ids_masked(esc['run_id'], subscriptions=subs))}`"
+                f"> {webhook_text(masked(esc['reason'], rid, subs)[:500])}\n"
+                f"`{webhook_code(shown(esc['run_id']))}`"
             )
         }, timeout=5)
     except Exception:
