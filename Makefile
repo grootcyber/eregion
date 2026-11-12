@@ -1536,11 +1536,13 @@ bench-report:
 # téléphone ouvre lui-même vers le 127.0.0.1:7007 du poste, où make imladris-tunnel tient celui d'Imladris.
 # bench-run : le préflight (un ✗, rien ne part), la demande d'un fil SCENARIO → TARGET (l'id de la VM lu
 # sur Azure), le nom de la cible tapé dans un terminal, destructif ou non, puis la demande portée sur
-# Orodruin, qui la rejuge et la lance (comme orodruin-exercise), puis bench-report pour chaque run
-# (scripts/bench_run.py). bench-restore : le restore du poste, sous la paire de la console, le nom de la VM
+# Orodruin, qui la rejuge et la lance (comme orodruin-exercise), puis bench-report pour chaque run, une fois
+# son cycle écrit sur Imladris (relu, 10 min au plus : BNC3a) (scripts/bench_run.py). bench-restore : le
+# restore du poste, sous la paire de la console, le nom de la VM
 # tapé dans un terminal, --before le T0 du run (son attack_started, SEC4c : runs/bench/<run_id>.json, RUN=,
 # ou le seul rapport de TARGET) sauf BEFORE=, toujours --keep-isolated (la levée est celle d'Imladris), à blanc
-# d'abord (scripts/bench_restore.py). DRY_RUN=1 : rien n'est envoyé ni restauré.
+# d'abord, puis le rapport du run, qui suit la levée par Imladris, en lecture, 30 min au plus (BNC3a)
+# (scripts/bench_restore.py). DRY_RUN=1 : rien n'est envoyé ni restauré.
 # Le garde : tous deux refusent dans une session d'agent (EREGION_AGENT_SESSION, le worktree d'un lot).
 # bench-run et bench-restore ne développent avant lui que $(origin …) et $(PYTHON) : le garde tourne seul,
 # puis une sous-make lance la cible -go. Les cibles -go sont internes : appelées directement, make y
@@ -1556,7 +1558,7 @@ bench-run bench-restore:
 	@$(PYTHON) scripts/$(subst -,_,$@).py --guard-only
 	@$(ORO_SUBMAKE) $@-go
 
-bench-run-go: export BENCH_H0_SSH = $(HOST_SSH)
+bench-run-go bench-restore-go: export BENCH_H0_SSH = $(HOST_SSH)
 bench-run-go: export BENCH_ORO_SSH = $(ORO_SSH)
 bench-run-go: export BENCH_ORO_RUN = docker run --rm $(ORO_HARDEN) --env-file orodruin.env $(ORO_IMAGE)
 bench-run-go: export BENCH_ORO_RUN_REQUEST = $(ORO_RUN_REQUEST)

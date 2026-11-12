@@ -42,10 +42,16 @@ T0 = "2025-11-10T16:43:02.800000+00:00"
 
 class FakeSteps:
     def __init__(self, hits=None, vault=("rsv-celebrimbor-erebor", "rg-celebrimbor", "stcelebrimborstaging"),
-                 dry=0, real=0):
+                 dry=0, real=0, report=0):
         self.calls: list[tuple] = []
         self._hits = [{"rg": "rg-celebrimbor", "id": VM_ID}] if hits is None else hits
-        self._vault, self._dry, self._real = vault, dry, real
+        self._vault, self._dry, self._real, self._report = vault, dry, real, report
+
+    def report(self, run_id, target, since):
+        self.calls.append(("report", run_id, target, since))
+        if self._report == "ctrl-c":
+            raise KeyboardInterrupt
+        return self._report
 
     def locate(self, target):
         self.calls.append(("locate", target))
@@ -255,3 +261,87 @@ def test_the_restore_argv_always_keeps_the_isolation():
     for dry in (True, False):
         argv = brs.restore_argv(VM_ID, T0, dry=dry)
         assert argv[:5] == ["restore", VM_ID, "--before", T0, "--keep-isolated"]
+
+
+# ── BNC3a (#753): the report, after the lift ──────────────────────────────────
+
+def test_the_restore_done_the_report_follows_the_lift_of_the_run(runs):
+    d, report = runs
+    report("r1")
+    steps = FakeSteps()
+    code, out = _main(steps, d, VM, "o")
+    assert code == 0, out
+    assert [c[0] for c in steps.calls] == ["locate", "vault", "restore", "restore", "report"]
+    assert steps.calls[-1][:3] == ("report", "r1", VM)
+    assert "il suit la levée par Imladris, en lecture, 30 min au plus" in out
+
+
+def test_the_report_is_the_run_of_run_even_with_before(runs):
+    d, report = runs
+    report("r-old", t0="2025-11-09T10:00:00+00:00")
+    report("r-new")
+    steps = FakeSteps()
+    assert _main(steps, d, VM, "o", env={"BENCH_BEFORE": "2025-11-10T15:00:00Z", "BENCH_RUN": "r-old"})[0] == 0
+    assert steps.calls[-1][:3] == ("report", "r-old", VM)
+
+
+def test_before_without_run_names_no_run_and_composes_no_report(runs):
+    d, _ = runs
+    steps = FakeSteps()
+    code, out = _main(steps, d, VM, "o", env={"BENCH_BEFORE": "2025-11-10T15:00:00Z"})
+    assert code == 0, out
+    assert "report" not in [c[0] for c in steps.calls]
+    assert "BEFORE= sans RUN= ne nomme aucun run, aucun rapport n'est composé" in out
+
+
+@pytest.mark.parametrize("env,answers,real", [({"BENCH_DRY_RUN": "1"}, (VM,), 0), ({}, (VM, "n"), 0),
+                                              ({}, (VM, "o"), 3)])
+def test_no_restore_done_no_report(runs, env, answers, real):
+    d, report = runs
+    report("r1")
+    steps = FakeSteps(real=real)
+    _main(steps, d, *answers, env=env)
+    assert "report" not in [c[0] for c in steps.calls]
+
+
+def test_the_restore_done_and_the_report_failed_is_said_and_a_failure(runs):
+    d, report = runs
+    report("r1")
+    code, out = _main(FakeSteps(report=1), d, VM, "o")
+    assert code == 1
+    assert "le restore a abouti ; le rapport n'a pas pu être composé : make bench-report RUN=r1" in out
+
+
+def test_the_report_counts_the_lift_from_this_restore_s_start(runs, monkeypatch):
+    """`--since` the start of this restore, taken just before it: a card or a lift of a restore before,
+    on the same run, never ends the wait (review round 1)."""
+    from datetime import datetime, timezone
+    d, report = runs
+    report("r1")
+    steps = FakeSteps()
+    before = datetime.now(timezone.utc).timestamp()
+    assert _main(steps, d, VM, "o")[0] == 0
+    since = bs.epoch(steps.calls[-1][3])
+    assert since is not None and before <= since <= datetime.now(timezone.utc).timestamp()
+
+
+@pytest.mark.parametrize("report", [130, "ctrl-c"])
+def test_a_report_interrupted_after_the_restore_is_said_never_a_trace(runs, report):
+    d, put = runs
+    put("r1")
+    code, out = _main(FakeSteps(report=report), d, VM, "o")
+    assert code == 1
+    assert "le restore a abouti ; rapport interrompu (Ctrl-C) : make bench-report RUN=r1" in out
+
+
+def test_the_report_waits_for_the_lift_under_the_operator_s_environment(monkeypatch):
+    """`--wait lift`, the run and the target; the environment the operator's — never the console's
+    pair, which is the restore's alone (pair_env)."""
+    import bench_report
+    seen = []
+    monkeypatch.setattr(bench_report, "main", lambda argv, env: seen.append((argv, env)) or 0)
+    env = {"PATH": "/usr/bin", **PAIR}
+    assert brs.Steps(env).report("r1", VM, "2025-11-10T18:00:00+00:00") == 0
+    (argv, given), = seen
+    assert argv == ["--run", "r1", "--target", VM, "--wait", "lift", "--since", "2025-11-10T18:00:00+00:00"]
+    assert given is env and given["AZURE_CLIENT_ID"] == "the-watch-s-id" and "GLORFINDEL_READ_ONLY" not in given
