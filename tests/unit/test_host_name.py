@@ -208,7 +208,7 @@ def test_make_help_shows_the_new_names_only():
     ("run(['make', 'mobile-check'])\n", True),
     ("Puis `make YES=1 imladris-up` et `make -C . imladris-push`.\n", False),
     ("make -C infra/glorfindel-host plan, puis make help\n", False),
-    ("make help, puis glorfindel-host-up n'est plus listé\n", False),
+    ("make help puis glorfindel-host-up n'est plus listé\n", False),        # a word that is neither
 ])
 def test_a_former_command_in_a_live_text_is_said(tmp_path, text, said):
     _tree(tmp_path, {"docs/x.md": text, "glorfindel/x.py": "# " + text})

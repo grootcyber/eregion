@@ -62,5 +62,5 @@ TESTS = {
     "M4846": f"{_NAME}::test_a_former_command_is_read_but_in_the_history_and_the_kept_texts",
     "M4847": f"{_NAME}::test_the_history_is_the_one_exception_for_the_name",
     "M4848": f"{_MOB}::test_make_imladris_url_gives_the_url_and_says_when_the_tunnel_is_not_armed",
-    "M4849": f"{_MOB}::test_make_console_url_names_imladris_url_when_the_tunnel_holds_the_port",
+    "M4849": f"{_MOB}::test_make_console_url_gives_imladris_s_url_when_the_tunnel_holds_the_port",
 }

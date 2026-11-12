@@ -1029,10 +1029,12 @@ def test_make_imladris_url_gives_the_url_and_says_when_the_tunnel_is_not_armed(t
     res = _make_at(root, spies, home, name, f"HOST_ENV={env_file}")                    # not set
     assert (res.returncode, res.stdout) == (0, url), res.stderr
     assert "make imladris-tunnel-install" in res.stderr and "make imladris-tunnel-on" in res.stderr
+    assert "(ou make imladris-tunnel au premier plan)" in res.stderr                    # IML1c: the fallback
     _set_tunnel(home, window=None)
     res = _make_at(root, spies, home, name, f"HOST_ENV={env_file}")                    # set, not armed
     assert (res.returncode, res.stdout) == (0, url), res.stderr
     assert "n'est pas armé : make imladris-tunnel-on" in res.stderr and "install" not in res.stderr
+    assert "ou make imladris-tunnel au premier plan)" in res.stderr
     _set_tunnel(home)
     res = _make_at(root, spies, home, name, f"HOST_ENV={env_file}", SPY_ACTIVE="1")    # armed
     assert (res.returncode, res.stdout, res.stderr) == (0, url, "")

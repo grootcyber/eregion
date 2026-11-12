@@ -1855,6 +1855,19 @@
    "doc": "infra/glorfindel-host/README.md"
   },
   {
+   "id": "s-imladris-suites",
+   "composant": "socle",
+   "poste": "s-heberger",
+   "nom": "console-url gives Imladris's console while the tunnel holds 7007, and glorfindel restore never shows the subscription's id",
+   "etat": "main",
+   "release": "0.5",
+   "lots": [
+    "IML1c"
+   ],
+   "issue": 752,
+   "doc": "docs/demarrer/mobile.md"
+  },
+  {
    "id": "s-cd",
    "composant": "socle",
    "poste": "s-heberger",
