@@ -69,8 +69,9 @@ session cut (DRN2, kind `drain_closed`: drained, refused, sessions left open, ne
 followed — a drained one too) goes the same way as an action's announcement (`RELAY_KINDS`): the same
 beat, the same passes, a webhook that fails gives it back to the bot, once per closure. But `say`
 never posts it: said from the reassertion, under its VM's lock, it is recorded for the bot, and the
-bot mute, the next `relay_pass` says it — within a minute, in its own thread (JUG2b review: a
-webhook never holds the lock, an isolation of the same VM nor the reassertion). **Never a ping**:
+bot mute, the next `relay_pass` says it — about a minute later (two when a pass still runs), in
+its own thread (JUG2b review: a webhook never holds the lock, an isolation of the same VM nor the
+reassertion). **Never a ping**:
 only an action taken alone pings (JUG1). It decides nothing either: the cut's outcome is the one read
 on Azure, in the isolation's state.
 
@@ -79,23 +80,29 @@ on Azure, in the isolation's state.
 while one runs): its loop — `runs/` read, its heartbeat, the reassertion, the TTL, « Verify » — never
 waits for a webhook. Each POST is bounded: `CONNECT_TIMEOUT_S` to connect, `READ_TIMEOUT_S` to read,
 and `POST_DEADLINE_S` for the whole of it, the name's resolution included (`_send`: the POST in a
-thread its caller waits for). A pass stops at the first webhook rate limited, refused (a 4xx: a
-webhook deleted refuses the next ones too), unreachable or that nothing reached (`STOPS_THE_PASS`):
+thread its caller waits for). A pass stops at the first webhook rate limited, refusing them all (a
+401, 403 or 404: a webhook deleted refuses the next ones too), unreachable or that nothing reached
+(`STOPS_THE_PASS`):
 the rest goes back to the bot, or to the next pass; and it starts no post once it has run
 `RELAY_PASS_BUDGET_S`. A pass therefore lasts at most the budget and
 one notice — 0.5 s of spacing, a POST, a short 429's wait, a second POST: some 86 s, in its own
 thread. **The tries of a notice are capped**: a post that may have been delivered — a read timeout,
-the deadline passed, the connection cut once sent, a 5xx — counts a try (`tries`, beside `relayed`,
-which goes when the notice goes back to the bot; a mark taken back counts one too), and after
-`RELAY_MAX_TRIES` the webhook says it no more, said once in the log: the notice waits for the bot. A
-post that left nothing — the name not resolved, the connection refused or not made in time
-(`_nothing_sent`) — and a refusal (a 4xx, a 429) delivered nothing and count none: a network cut
-stops the passes, never the fallback.
+the connection cut once sent, a 5xx — counts a try, and so does a 4xx of its own (a 400, a 413: that
+notice refused, not the webhook — the pass goes on, and the notice gives way in the end) (`tries`,
+beside `relayed`, which goes when the notice goes back to the bot; a mark taken back counts one too);
+after `RELAY_MAX_TRIES` the webhook says it no more, said once in the log: the notice waits for the
+bot. A post that left nothing — the name not resolved, the connection refused or not made in time
+(`_nothing_sent`), or `POST_DEADLINE_S` passed (JUG2b review, round 2: most often a connection never
+made, every address of a host tried in turn) — and a refusal of the whole webhook (401, 403, 404, a
+429) count none: a network cut, however long, stops the passes, never the fallback. Its price: a post
+delivered whose answer comes past the deadline is said again at the next pass, uncapped — rare, for it
+takes a connection slower than 5 s and an answer lost; the fallback's own rule, a double rather than
+a silence.
 
 Known limits: a webhook that delivered but whose answer was lost has the notice said again, an
 action's ping with it, `RELAY_MAX_TRIES` times at most; then it is the bot's (an action's card is
-in the console). A post abandoned at its deadline may still reach the webhook, and counts a try — a
-resolution that hangs past it as well.
+in the console). A post abandoned at its deadline may still reach the webhook: counted as unsent, it
+can be said again at each pass (above).
 A post of the bot in flight while the watch relays (the beat aged, or `CONFIRM_S`
 reached, during a `thread.send` held by Discord's rate limits) says the announcement twice, in the
 thread and in the channel; the same race on the card's post can ping twice. A notice forged in the
@@ -148,20 +155,25 @@ READ_TIMEOUT_S = 5.0
 POST_DEADLINE_S = 10.0
 # A pass starts no post once it has run this long: the rest goes back to the bot, or the next pass.
 RELAY_PASS_BUDGET_S = 60.0
-# A relayed notice whose post may have been delivered without its answer (unreachable, a 5xx) is
-# tried this many times at most: then it waits for the bot, no new webhook (an action's ping each try).
+# A relayed notice whose post may have been delivered without its answer (unreachable, a 5xx), or
+# that the webhook refused for itself (a 400, a 413), is tried this many times at most: then it waits
+# for the bot, no new webhook (an action's ping each try).
 RELAY_MAX_TRIES = 3
-# What a post answered: `sent` (2xx), `limited` (a 429 still refused), `refused` (another 4xx: nothing
-# delivered), `unsent` (nothing left: the name not resolved, the connection refused or not made in
-# time), `failed` (a 5xx, an odd answer), `unreachable` (no answer, or none within the deadline, or
-# the connection cut once the request was sent). The last two may have been delivered: they count a
-# try (JUG2b review: a network cut of three passes no longer silences the fallback).
-MAYBE_DELIVERED = ("failed", "unreachable")
+# The answers that refuse the whole webhook, not one notice: a token revoked, a webhook deleted.
+WEBHOOK_REFUSALS = (401, 403, 404)
+# What a post answered: `sent` (2xx), `limited` (a 429 still refused), `refused` (401, 403, 404: the
+# webhook refuses them all), `rejected` (another 4xx: this notice refused), `unsent` (nothing left: the
+# name not resolved, the connection refused or not made in time, or no answer within the deadline —
+# most often a connection never made), `failed` (a 5xx, an odd answer), `unreachable` (the read timed
+# out, or the connection cut once the request was sent). `failed` and `unreachable` may have been
+# delivered, `rejected` is the notice's own: they count a try (JUG2b review: a network cut no longer
+# silences the fallback, a notice the webhook refuses gives way to the next).
+COUNTS_A_TRY = ("failed", "unreachable", "rejected")
 # What stops a pass: the next posts would go to the same webhook (JUG2b review).
 STOPS_THE_PASS = ("limited",
                   "unsent",           # nothing left: the network, the name
                   "unreachable",
-                  "refused")          # a webhook deleted (404) refuses the next ones as well
+                  "refused")          # a webhook deleted (404) refuses the next ones as well (not "rejected")
 _sleep = time.sleep
 _monotonic = time.monotonic
 _PASS = threading.Lock()        # one relay pass at a time, whoever calls it
@@ -461,7 +473,7 @@ def _write(notices: list[dict]) -> None:
 def _settle(outcome: dict[str, str]) -> None:
     """Under the store's lock: each relayed notice noted sent (`outcome`: what `_post` answered), or
     given back to the bot (`via: bot`, `relayed` removed) — a try counted when its post may have been
-    delivered (`MAYBE_DELIVERED`, JUG2b). Never raises: a note refused (a full disk) leaves the mark,
+    delivered, or was the notice's own refusal (`COUNTS_A_TRY`, JUG2b). Never raises: a note refused (a full disk) leaves the mark,
     taken back after `RESEND_AFTER_S` — said twice rather than never."""
     try:
         with _lock():
@@ -475,7 +487,7 @@ def _settle(outcome: dict[str, str]) -> None:
                 else:
                     n["via"] = "bot"
                     n.pop("relayed")
-                    if result in MAYBE_DELIVERED:
+                    if result in COUNTS_A_TRY:
                         _count_try(n)
             _write(notices)
     except OSError as exc:
@@ -541,10 +553,14 @@ def _wait(done: threading.Event, seconds: float) -> bool:
     return done.wait(seconds)
 
 
+class PostDeadline(TimeoutError):
+    """No answer within `POST_DEADLINE_S` (`_send`)."""
+
+
 def _send(url: str, payload: dict):
     """`requests.post`, bounded: `CONNECT_TIMEOUT_S` to connect and `READ_TIMEOUT_S` to read, and the
     whole of it — the name's resolution included, which requests does not bound — `POST_DEADLINE_S`:
-    the POST in a thread of its own, waited for that long (JUG2b). Past it, TimeoutError: the post is
+    the POST in a thread of its own, waited for that long (JUG2b). Past it, PostDeadline: the post is
     abandoned, its answer never read (it may still reach the webhook)."""
     box: dict = {}
     done = threading.Event()
@@ -559,7 +575,7 @@ def _send(url: str, payload: dict):
             done.set()
     threading.Thread(target=run, daemon=True, name="webhook-post").start()
     if not _wait(done, POST_DEADLINE_S):
-        raise TimeoutError(f"no answer within {POST_DEADLINE_S:g} s")
+        raise PostDeadline(f"no answer within {POST_DEADLINE_S:g} s")
     if "error" in box:
         raise box["error"]
     return box["answer"]
@@ -569,9 +585,10 @@ def _nothing_sent(exc: BaseException) -> bool:
     """Nothing of the request left (JUG2b review): the connection not made in time
     (`requests.ConnectTimeout`), or refused, or the name not resolved — urllib3's
     `NewConnectionError` and `NameResolutionError`, both `ConnectTimeoutError`s, found in the
-    exception or what it wraps (`MaxRetryError.reason`, its arguments, its cause). A read timeout,
-    the deadline passed (a resolution that hangs as well as an answer that never comes), a
-    connection cut while reading: perhaps delivered — False."""
+    exception or what it wraps (`MaxRetryError.reason`, its arguments: requests and urllib3 put what
+    they wrap there; an exception's `__cause__` would only lead below a connection error, to the
+    socket's, so it is not read). A read timeout, a connection cut while reading: perhaps
+    delivered — False. The deadline passed is `_post`'s to weigh (`PostDeadline`)."""
     try:
         import requests
         from urllib3.exceptions import ConnectTimeoutError
@@ -586,16 +603,17 @@ def _nothing_sent(exc: BaseException) -> bool:
         seen.add(id(e))
         if isinstance(e, (requests.ConnectTimeout, ConnectTimeoutError)):
             return True
-        todo.extend([getattr(e, "reason", None), e.__cause__, *e.args])
+        todo.extend([getattr(e, "reason", None), *e.args])
     return False
 
 
 def _post(payload: dict, key: str = "", url: str = "") -> str:
     """`payload` to `url` (GLORFINDEL_WEBHOOK_URL when none): `sent` on a 2xx answer only (JUG2
     review: a 429, a 404, a network cut are no announcement), `limited` on a 429 still refused after
-    one wait of at most `RETRY_MAX_S`, `refused` on another 4xx, `unsent` when nothing left
-    (`_nothing_sent`), `unreachable` without an answer within `POST_DEADLINE_S` (`_send`) or the
-    connection cut after the request, `failed` otherwise. Never raises."""
+    one wait of at most `RETRY_MAX_S`, `refused` on a refusal of the whole webhook
+    (`WEBHOOK_REFUSALS`), `rejected` on another 4xx, `unsent` when nothing left (`_nothing_sent`) or
+    no answer within `POST_DEADLINE_S` (`_send`), `unreachable` on a read timed out or a connection
+    cut after the request, `failed` otherwise. Never raises."""
     url = url or os.environ.get("GLORFINDEL_WEBHOOK_URL", "")
     if not url:
         return "failed"
@@ -604,6 +622,8 @@ def _post(payload: dict, key: str = "", url: str = "") -> str:
             resp = _send(url, payload)
         except Exception as exc:          # a notification never stops the watch
             log.warning("notice %s: webhook unreachable (%s)", key, exc)
+            if isinstance(exc, PostDeadline):     # most often a connection never made (JUG2b review)
+                return "unsent"
             if _nothing_sent(exc):
                 return "unsent"
             return "unreachable"
@@ -618,7 +638,9 @@ def _post(payload: dict, key: str = "", url: str = "") -> str:
             log.warning("notice %s: webhook rate limited", key)
             return "limited"
         log.warning("notice %s: webhook answered %s", key, status)
-        return "refused" if isinstance(status, int) and 400 <= status < 500 else "failed"
+        if status in WEBHOOK_REFUSALS:
+            return "refused"
+        return "rejected" if isinstance(status, int) and 400 <= status < 500 else "failed"
     return "failed"
 
 

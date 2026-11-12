@@ -4,7 +4,9 @@ tries of a notice capped; the bot's SIGTERM handler put back; and a cut's closur
 never pinging (Jonathan, 12/11). M5005–M5014. The review (round 1) took three of them back for its
 findings — M5006 (was: two passes at once), M5009 (was: no budget), M5011 (was: a try never counted):
 their tests stay (test_one_relay_pass_at_a_time, test_a_pass_starts_no_post_once_its_budget_spent,
-the cap's tests), the range held. Measured by tests/unit/test_bot_fallback.py."""
+the cap's tests), the range held. The review (round 2): M5060–M5064 — the deadline passed counted
+as unsent, a 4xx of a notice's own, and the three taken back in round 1, recorded again. Measured by
+tests/unit/test_bot_fallback.py."""
 NOTICES = "glorfindel/vm_notices.py"
 BOT = "glorfindel/bot.py"
 CLI = "glorfindel/cli.py"
@@ -52,5 +54,29 @@ MUTANTS = [
      "JUG2b)", NOTICES,
      '    ping = bool(notice.get("kind") == ACTION_KIND\n                and _ping_role()',
      "    ping = bool(True\n                and _ping_role()"),
+]
+# The review (round 2): M5060–M5064.
+MUTANTS += [
+    ("M5060", "the deadline passed counts a try: a host whose addresses all drop silences the fallback in "
+     "three passes (JUG2b review, round 2)", NOTICES,
+     '            if isinstance(exc, PostDeadline):     # most often a connection never made (JUG2b review)\n'
+     '                return "unsent"\n',
+     ""),
+    ("M5061", "a 400 or a 413 of one notice refuses the whole webhook: it stops every pass, the notices "
+     "after it held for 24 h (JUG2b review, round 2)", NOTICES,
+     "        if status in WEBHOOK_REFUSALS:\n",
+     "        if isinstance(status, int) and 400 <= status < 500:\n"),
+    ("M5062", "two relay passes at once: an announcement said twice, a mark settled by the other pass "
+     "(JUG2b, recorded again)", NOTICES,
+     "    if not _PASS.acquire(blocking=False):\n        return 0\n    try:\n",
+     "    if False:\n        return 0\n    try:\n"),
+    ("M5063", "a pass with no budget: slow answers, one after the other, hold it past the mark's take-back "
+     "(JUG2b, recorded again)", NOTICES,
+     "        if i and _monotonic() - started >= RELAY_PASS_BUDGET_S:\n            stop = True",
+     "        if False:\n            stop = True"),
+    ("M5064", "a post that may have been delivered counts no try: the cap never reached, a lost answer "
+     "pings at every pass (JUG2b, recorded again)", NOTICES,
+     "                    if result in COUNTS_A_TRY:\n                        _count_try(n)\n",
+     ""),
 ]
 TESTS = {mid: _T for mid, *_ in MUTANTS}

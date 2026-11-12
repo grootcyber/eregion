@@ -820,7 +820,7 @@ def _cut_while_reading():
     (_connection_refused, True),
     (lambda: __import__("requests").ReadTimeout("read timeout"), False),
     (_cut_while_reading, False),
-    (lambda: TimeoutError("no answer within 10 s"), False),           # the deadline: ambiguous
+    (lambda: TimeoutError("timed out"), False),                       # a bare one: not the deadline
 ])
 def test_what_left_nothing_is_told_from_what_may_have_been_delivered(bot_set, monkeypatch, make, unsent):
     import requests
@@ -846,14 +846,67 @@ def test_a_pass_stops_at_a_webhook_unreachable(azure, bot_set, answers, make):
     assert vm_notices.relay_pass() == 3 and len(_relayed(bot_set)) == 4
 
 
-def test_a_pass_stops_at_a_webhook_that_refuses(azure, bot_set, answers):
-    """A 404 (a webhook deleted): the next posts would go to the same one — the pass stops there."""
+@pytest.mark.parametrize("status", [401, 403, 404])
+def test_a_pass_stops_at_a_webhook_that_refuses(azure, bot_set, answers, status):
+    """A 401, a 403, a 404 (a token revoked, a webhook deleted): the next posts would go to the same
+    one, refused as well — the pass stops there, no try counted."""
     f, c = azure
     _three_actions_left_to_the_bot(c)
-    answers.append(_Answer(404))
+    answers.append(_Answer(status))
     assert vm_notices.relay_pass() == 0 and len(_relayed(bot_set)) == 1
     assert [n["via"] for n in vm_notices._read()] == ["bot"] * 3
+    assert not any("tries" in n for n in vm_notices._read())
     assert vm_notices.relay_pass() == 3 and len(_relayed(bot_set)) == 4
+
+
+def test_a_notice_the_webhook_refuses_for_itself_gives_way(azure, bot_set, answers):
+    """A 400, a 413: that notice refused, not the webhook — the pass goes on to the next ones, and the
+    notice counts a try: refused at each pass, it gives way after `RELAY_MAX_TRIES` (JUG2b review,
+    round 2: a notice of its own never blocks the others for 24 h)."""
+    f, c = azure
+    _three_actions_left_to_the_bot(c)
+    answers.extend([_Answer(400), _Answer(), _Answer()])
+    assert vm_notices.relay_pass() == 2 and len(_relayed(bot_set)) == 3
+    [n] = [n for n in vm_notices._read() if n["via"] == "bot"]
+    assert n["tries"] == 1
+    answers.extend([_Answer(413), _Answer(400)])
+    assert vm_notices.relay_pass() == 0 and vm_notices.relay_pass() == 0
+    assert vm_notices.relay_pass() == 0 and len(_relayed(bot_set)) == 5         # given way: no new post
+    assert vm_notices.said(n["key"])["tries"] == vm_notices.RELAY_MAX_TRIES
+
+
+def test_a_host_whose_addresses_all_drop_counts_no_try(azure, bot_set, monkeypatch):
+    """JUG2b review, round 2: a host of several addresses whose SYNs fall in a black hole — urllib3
+    tries each one 5 s in turn, and the 10 s deadline passes before any ConnectTimeout. Most often no
+    connection was ever made: unsent, no try — five passes, then the network back, the webhook says
+    the announcement, its ping with it."""
+    import threading
+
+    import requests
+    hole, state = threading.Event(), {"hole": True}
+
+    def post(url, json=None, timeout=None):
+        if state["hole"]:
+            hole.wait(30)                                               # abandoned at the deadline
+            raise requests.ConnectTimeout("every address dropped")
+        bot_set.append({"url": url, **json})
+        return _Answer()
+    monkeypatch.setattr(requests, "post", post)
+    monkeypatch.setattr(vm_notices, "_wait", lambda done, s: False if state["hole"] else done.wait(s))
+    try:
+        f, c = azure
+        _respond(c, _ransomware(), "isolate_vm")                        # the first post: the deadline
+        for _ in range(4):
+            assert vm_notices.relay_pass() == 0
+        n = _announcement()
+        assert n["via"] == "bot" and "tries" not in n and bot_set == []
+        state["hole"] = False
+        assert vm_notices.relay_pass() == 1
+        [msg] = _relayed(bot_set)
+        assert msg["content"].startswith(f"<@&{ROLE}> ") and _announcement()["relayed"]["sent"] is True
+    finally:
+        hole.set()
+        _join("webhook-post")
 
 
 def test_a_network_cut_counts_no_try(azure, bot_set, answers):
@@ -889,9 +942,10 @@ def test_a_pass_starts_no_post_once_its_budget_spent(azure, bot_set, monkeypatch
     assert vm_notices.relay_pass() == 1 and vm_notices.relay_pass() == 1 and len(_relayed(bot_set)) == 3
 
 
-def test_a_post_without_an_answer_by_its_deadline_is_unreachable(bot_set, monkeypatch):
+def test_a_post_without_an_answer_by_its_deadline_is_unsent(bot_set, monkeypatch):
     """The name's resolution, the connection or the read held past `POST_DEADLINE_S`: the post is
-    abandoned, `unreachable` — the caller goes on."""
+    abandoned, `unsent` (most often no connection made: JUG2b review, round 2) — the caller goes
+    on."""
     import threading
 
     import requests
@@ -903,7 +957,7 @@ def test_a_post_without_an_answer_by_its_deadline_is_unreachable(bot_set, monkey
     monkeypatch.setattr(requests, "post", held)
     monkeypatch.setattr(vm_notices, "POST_DEADLINE_S", 0.05)
     try:
-        assert vm_notices._post({"content": "x"}, "k", NATIVE) == "unreachable"
+        assert vm_notices._post({"content": "x"}, "k", NATIVE) == "unsent"
     finally:
         release.set()
         _join("webhook-post")
