@@ -226,6 +226,8 @@ La preuve, à trois endroits :
 
 **Ce que le journal d'activité dit des gestes sur une VM** (LEV2, avant la règle de levée de LEV3) : des écritures sans effet sur gondolin, chacune avec son retour, puis un rapport sans identifiant : [`banc-lev2.md`](../banc-lev2.md).
 
+**Le retard de chaque source** (ING5, avant ING3) : des requêtes en lecture seule sur les données gardées 30 jours, dans l'ordre où elles partent (la première le 08/12), et un geste sur gondolin : [`banc-retard.md`](../banc-retard.md).
+
 ## 8. Tout démonter
 
 Dans cet ordre : Orodruin lit encore l'état d'Imladris, et les trois modules lisent `terraform.tfvars`.

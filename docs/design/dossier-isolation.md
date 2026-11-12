@@ -639,7 +639,8 @@ gardées**, sans attaque ni panne : la nuit du 10/11 sur bree, le T1486 du 09/11
 10/12. Les métriques de l'hôte et le journal d'activité restent 90 jours environ (la documentation).
 DH5 et DH6 décident Q1 : c'est la mesure à faire en premier (Q8). Le protocole sera
 `docs/banc-dos.md` (DOS8) : les requêtes exactes, que Jonathan lance depuis le poste ; rien n'écrit
-sur Azure.
+sur Azure. DH2 et DH11, sur la même nuit de bree, sont déjà écrites dans le protocole du retard
+([`docs/banc-retard.md`](../banc-retard.md), ING5), pour se lire dans la même séance.
 
 DH3 et DH10 demandent une sauvegarde à la demande d'une VM du banc. C'est un geste non destructif, mais
 il reste un geste de Jonathan.
