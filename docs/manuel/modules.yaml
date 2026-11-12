@@ -427,9 +427,19 @@ briques:
     nom: "Late measures judged by the rules themselves, the lateness shown per VM and per table, measured on the bench"
     etat: prevue
     release: "0.6"
-    lots: [ING2, ING3, ING4, ING5, ING6]
+    lots: [ING2, ING3, ING4, ING6]
     issue: 738
     doc: docs/design/mesure-en-retard.md
+
+  - id: g-mesure-en-retard-banc
+    composant: glorfindel
+    poste: g-detecter
+    nom: "The lateness of each source, measured on the bench: read-only queries on the kept data, in the order the data leaves"
+    etat: main
+    release: "0.6"
+    lots: [ING5]
+    issue: 758
+    doc: docs/banc-retard.md
 
   - id: g-charges-ia
     composant: glorfindel
