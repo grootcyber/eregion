@@ -113,7 +113,7 @@ T1486 est une technique **destructive** du catalogue (`destructive: true`,
 |---|---|---|
 | **Dagorlad** : le fil T1486 → gondolin, « Request run from Orodruin », puis `make orodruin-exercise REQUEST=…` | le nom de la cible tapé sur le poste, comparé par Orodruin au nom qu'Azure lui donne (`annatar/runner/engine.py:267-274`) ; le scénario construit depuis le catalogue, son `setup` compris (`annatar/campaign/synthesizer.py:188-196`) ; l'identifiant de la demande dans la fenêtre et le rapport ; la chronologie de Dagorlad | **le chemin prévu, mesuré** |
 | `annatar run annatar/scenarios/azure/ransomware-vm.yaml --yes` dans le `docker run` durci d'Orodruin (`make orodruin-ssh`) | les mêmes gardes d'inscription, de zone et de watch, la fenêtre et le rapport publiés (`annatar/cli.py:89`) ; **pas** de nom tapé (la garde ne joue que pour une demande, `engine.py:267`), pas de chronologie dans Dagorlad | un repli, mesuré aussi, moins gardé |
-| **`make bench-run TARGET=… SCENARIO=T1486`** (MOB1, #686) : depuis le poste, au clavier ou depuis le téléphone ([le guide](demarrer/mobile.md)) | le préflight d'abord (un ✗ : rien ne part), la demande d'un fil écrite sur le poste par le même lecteur que celles de Dagorlad, le nom de la cible tapé, puis le même lancement que `make orodruin-exercise` et `make bench-report` pour le run (`scripts/bench_run.py`) ; la demande n'est pas dans le répertoire de la console : **pas** de chronologie de la demande dans Dagorlad (le run, ses cartes et son rapport, si) | le même chemin gardé, en une commande |
+| **`make bench-run TARGET=… SCENARIO=T1486`** (MOB1, #686) : depuis le poste, au clavier ou depuis le téléphone ([le guide](demarrer/mobile.md)) | le préflight d'abord (un ✗ : rien ne part), la demande d'un fil écrite sur le poste par le même lecteur que celles de Dagorlad, le nom de la cible tapé, puis le même lancement que `make orodruin-exercise` et `make bench-report` pour le run, une fois son cycle écrit sur Imladris (relu, 10 min au plus : BNC3a) (`scripts/bench_run.py`) ; la demande n'est pas dans le répertoire de la console : **pas** de chronologie de la demande dans Dagorlad (le run, ses cartes et son rapport, si) | le même chemin gardé, en une commande |
 | une campagne déclarée (`make orodruin-campaign-plan CAMPAIGN_DECLARED=…`) | refusée deux fois : T1486 est un script maison et destructif (`annatar/campaign/declared.py:119-122`) ; `orodruin-campaign-plan` ne passe jamais `--allow-destructive` (`Makefile:1546`) | **écartée** |
 
 Aucun de ces chemins n'est un run de développement tant que `--without-glorfindel` n'est pas donné.
@@ -499,7 +499,9 @@ Discord : refusé, ce n'est pas son hôte.
 **En une commande (MOB1)** : `make bench-restore TARGET=vm-celebrimbor-gondolin RUN=<run_id> [DRY_RUN=1]`, dans un terminal, fait ce qui suit — la
 paire de la console exigée, `--before` le T0 du run (`runs/bench/<run_id>.json`, que `make bench-report` écrit ;
 `BEFORE=${AVANT}` pour le point de l'étape 2), `--keep-isolated`, le nom de la VM tapé, l'essai à blanc, puis « [o/N] »
-(`scripts/bench_restore.py`, [le guide](demarrer/mobile.md)). Le prérequis du poste et le job du coffre, ci-dessous, restent
+(`scripts/bench_restore.py`, [le guide](demarrer/mobile.md)). Le restore fini, il suit la levée d'Imladris (étape 7),
+en lecture, 30 min au plus, puis compose le rapport du run (étape 8, BNC3a). Avec `BEFORE=` sans `RUN=`, aucun run
+n'est nommé : pas de rapport. Le prérequis du poste et le job du coffre, ci-dessous, restent
 à vérifier avant.
 
 **Le prérequis du poste.** Le restore lit le coffre (`azure_backup_vault`) et son compte de transit
@@ -611,7 +613,13 @@ gondolin revient en quelques minutes (la requête de l'étape 1).
 
 ### 8. Mesurer (10 min)
 
-Depuis le poste, une fois la levée faite :
+**Composé seul** (BNC3a, #753) : `make bench-run` compose le rapport une fois le cycle du run écrit sur
+Imladris, et `make bench-restore` le recompose après la levée. Tous deux relisent Imladris toutes les 30 s,
+en lecture seule, puis lisent Azure. L'attente est bornée : 10 min pour le cycle, 30 min pour la levée.
+Passé la borne, ou sur un Ctrl-C, le rapport se compose quand même, et dit ce qui n'est pas encore écrit.
+Pour `bench-restore`, une levée retenue par la reprise de la watch compte comme une fin : une carte
+`release_hold`, sauf `stopped`, que la watch relit. Le rapport en dit alors la sorte et l'heure, jamais
+la raison. À la main, à tout moment, sans attente :
 
 ```zsh
 make bench-report RUN=<run_id>     # TARGET=vm-celebrimbor-gondolin par défaut ; OUT=… pour le JSON ailleurs
@@ -646,14 +654,17 @@ alimentera plus tard `docs/proofs.json`. Un appelant devient un rôle, une resso
 déjà public. Le `restore_time` de la CLI du poste ne se lit qu'à sa sortie (étape 6) : le noter à
 part. Le calcul à la main reste en annexe, pour un dépannage (« Annexe B »).
 
-**Mesuré le 12/11.** `make bench-run` compose le rapport juste après la détection : composé 7 s
-après elle, il ne montrait ni l'isolement ni le cycle `isolate_vm`. Le relancer après la coupure,
-puis après la levée (`make bench-report RUN=…`) : la v3, composée après la levée, porte tous les
-chiffres. Deux manques y restent, à corriger dans le code : les jobs du coffre se lisent avec
-`--end-date` à la date du jour (`scripts/bench_report.py:410`), qui exclut ceux du jour ; le rapport a
-montré le job de sauvegarde de la veille comme « point de restauration pris », sans le point de
-l'étape 2 ni le job du restore (« aucun job de restore de la cible après T0 dans le coffre »). Le point choisi et le
-`restore_time` se lisent donc à la sortie de `make bench-restore`.
+**Mesuré le 12/11, corrigé par BNC3a** (#753 ; *vérifié sur des faux* :
+`tests/unit/test_bench_report.py`, `test_bench_run.py`, `test_bench_restore.py` ; **la mesure au banc
+reste à faire**). Ce jour-là, `make bench-run` composait le rapport 7 s après la détection : il ne
+montrait ni l'isolement ni le cycle `isolate_vm`, et disait à tort « une action retenue, ou une
+recommandation ». Le cycle a été écrit 5 min 22 s après la détection, la coupure des sessions
+comprise. Désormais, `bench-run` attend ce cycle. Sans lui, le rapport dit « le cycle de ce run n'est
+pas encore écrit ». Il fallait aussi le relancer à la main après la levée : `bench-restore` le fait seul.
+Les jobs du coffre se lisaient avec `--end-date` à la date du jour, qui exclut ceux du jour : le rapport
+montrait la sauvegarde de la veille comme « point de restauration pris », sans le point de l'étape 2 ni
+le job du restore. La borne est maintenant le lendemain (`job_end_date`). Le `restore_time` de la CLI ne
+se lit toujours qu'à la sortie de `make bench-restore`.
 
 | Le chiffre | Sa définition | Où le lire |
 |---|---|---|

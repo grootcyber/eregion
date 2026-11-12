@@ -1538,6 +1538,19 @@
    "doc": "docs/banc-t1486.md"
   },
   {
+   "id": "c-banc-rapport-apres-levee",
+   "composant": "celebrimbor",
+   "poste": "c-construire",
+   "nom": "The bench's report composed alone once the run's cycle is written, and again after the lift, bounded; the day's vault jobs read",
+   "etat": "main",
+   "release": "0.5",
+   "lots": [
+    "BNC3a"
+   ],
+   "issue": 753,
+   "doc": "docs/banc-t1486.md"
+  },
+  {
    "id": "c-paires-expiration",
    "composant": "celebrimbor",
    "poste": "c-construire",

@@ -383,8 +383,10 @@ make bench-run TARGET=vm-celebrimbor-gondolin SCENARIO=T1486              # tape
    par `eregion_core.exercise_runner`, qui la rejuge (contrat, watch, inscription, zone, le nom tapé
    comparé à celui qu'il lit, son plafond), comme `make orodruin-exercise` ; le nom tapé est retiré
    d'Orodruin à la fin, quelle qu'elle soit ;
-6. **le rapport** : `make bench-report` pour chaque run de la sortie (« Run: … »), puis la commande
-   du restore, avec le run nommé.
+6. **le rapport** : `make bench-report` pour chaque run de la sortie (« Run: … »), une fois le cycle
+   du run écrit sur Imladris (relu toutes les 30 s, 10 min au plus, puis composé quand même, en disant ce
+   qui n'est pas encore écrit ; Ctrl-C le compose tout de suite : BNC3a), puis la commande du restore,
+   avec le run nommé.
 
 `make orodruin-exercise` exige lui aussi un terminal pour les noms qu'il fait taper.
 
@@ -407,13 +409,18 @@ make bench-restore TARGET=vm-celebrimbor-gondolin RUN=<run_id>             # tap
   règle) ;
 - fait taper le nom de la VM, lance l'essai à blanc, puis demande « [o/N] » avant le vrai restore.
   Le restore lit ses droits avant de toucher la VM (RST1). La clé matérielle du SSH tient lieu de
-  second facteur, en attendant FS1g et TOT1.
+  second facteur, en attendant FS1g et TOT1 ;
+- **le restore fini, suit la levée par Imladris**, en lecture : il relit Imladris toutes les 30 s, 30 min
+  au plus, puis compose seul le rapport du run (`runs/bench/<run_id>.json`, BNC3a). Une levée retenue
+  par la reprise de la watch l'arrête aussi. Garder le terminal ouvert (`tmux`) jusqu'au rapport ;
+  Ctrl-C le compose tout de suite. Avec `BEFORE=` sans `RUN=`, aucun run n'est nommé : pas de rapport.
 
 **La sortie affiche l'id complet de la VM, l'abonnement compris, et le nom du coffre** (la ligne
 `Resource :` de `glorfindel restore`, `glorfindel/cli.py:1609` ; relevé au banc le 12/11, à blanc comme
 pour de vrai) : ne pas la coller telle quelle dans une issue ou un fil. La masquer demande du code.
 
-Ensuite, la levée par Imladris (étape 7 de banc-t1486.md), puis `make bench-report RUN=<run_id>`.
+La levée reste celle d'Imladris (étape 7 de banc-t1486.md) ; `make bench-report RUN=<run_id>` reste
+possible à la main, à tout moment.
 
 **Les deux commandes refusent dans une session d'agent** (`EREGION_AGENT_SESSION`, le worktree d'un
 lot) : le garde tourne seul, avant que make ne développe aucune commande d'Imladris ni d'Orodruin. Elles

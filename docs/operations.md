@@ -4590,7 +4590,11 @@ make bench-report RUN=<run_id> [TARGET=…] [OUT=runs/bench/<run_id>.json]  # l'
   l'état d'isolement ; sur Azure, le journal d'activité des seules ressources de la cible, chacune lue
   à part (`az monitor activity-log list --resource-id` : la VM, puis ses cartes réseau ; 3 h avant T0
   jusqu'à maintenant, 5000 événements au plus par lecture, une lecture qui atteint le plafond est dite
-  coupée), les jobs du coffre et la vue d'instance. L'appelant d'une Run Command devient un rôle : la
+  coupée), les jobs du coffre (jusqu'au lendemain : `--end-date` du jour exclut les jobs du jour, mesuré
+  le 12/11) et la vue d'instance. `--wait cycle` (la sortie de `bench-run`) et `--wait lift` (celle de
+  `bench-restore`) relisent Imladris toutes les 30 s jusqu'au cycle du run ou à la levée (une levée
+  retenue par la reprise de la watch compte : sa carte `release_hold`, sa sorte et son heure, jamais sa
+  raison), 10 et 30 min au plus, puis lisent Azure (BNC3a). L'appelant d'une Run Command devient un rôle : la
   console (son appId, ou `GLORFINDEL_RESTORE_PRINCIPALS`), le bot, Imladris et Orodruin (leur `principal_id`
   Terraform), la watch du poste, un humain (un jeton d'utilisateur), sinon inconnu. Le JSON et le
   Markdown s'écrivent côte à côte (`runs/bench/<run_id>.json` et `.md`, ou `OUT=` : son nom, en
@@ -4636,7 +4640,9 @@ sudo -v && make imladris-tunnel-check                          # le poste ouvert
   Azure (une seule de ce nom), en une demande du seul lecteur des demandes
   (`eregion_core/exercise_request.py`) ; le nom de la cible tapé, destructif ou non, puis « [o/N] » ; la
   demande portée sur Orodruin et lancée comme `make orodruin-exercise` (le nom tapé retiré à la fin) ;
-  `make bench-report` pour chaque run nommé, puis la commande du restore avec `RUN=`. La demande est
+  `make bench-report` pour chaque run nommé, une fois son cycle écrit sur Imladris (BNC3a : relu toutes
+  les 30 s, 10 min au plus, puis composé quand même, en disant ce qui n'est pas encore écrit), puis la
+  commande du restore avec `RUN=`. La demande est
   écrite sur le poste, pas dans le répertoire de la console : Dagorlad ne suit pas sa chronologie (le
   run, ses cartes et son rapport, si). `make orodruin-exercise` exige aussi un terminal, dès son premier
   prérequis (`orodruin-exercise-guard`), avant de lire la demande sur Imladris ou les VM d'un drill — avec un
@@ -4646,7 +4652,10 @@ sudo -v && make imladris-tunnel-check                          # le poste ouvert
   celui de `RUN=`, sinon le seul rapport de `TARGET` ; plusieurs : refusé, leurs runs listés —, sauf
   `BEFORE=` ; le coffre et le compte de transit du poste ; le nom de la VM tapé ; l'essai à blanc, puis
   « [o/N] », puis `.venv/bin/glorfindel restore … --keep-isolated --wait --yes` sous la paire.
-  `--keep-isolated` toujours : la levée est celle d'Imladris.
+  `--keep-isolated` toujours : la levée est celle d'Imladris. Le restore fini, `make bench-report` du run
+  (`RUN=`, ou celui dont vient le moment) suit la levée, en lecture, 30 min au plus, puis compose
+  (BNC3a) ; sous l'environnement de l'opérateur, jamais sous la paire. `bench-restore-go` reçoit donc
+  aussi la commande ssh d'Imladris (`BENCH_H0_SSH`, l'adresse lue par `terraform output`).
 - **Le garde** : les deux refusent dans une session d'agent (`EREGION_AGENT_SESSION`, le worktree
   d'un lot ; `bench_shared.session_refusal`, la règle de `scripts/bench_reader.py`). `bench-run` et
   `bench-restore` ne développent avant lui que `$(origin …)` et `$(PYTHON)` : il tourne seul, puis une
