@@ -412,8 +412,10 @@ make bench-restore TARGET=vm-celebrimbor-gondolin RUN=<run_id>             # tap
   second facteur, en attendant FS1g et TOT1 ;
 - **le restore fini, suit la levée par Imladris**, en lecture : il relit Imladris toutes les 30 s, 30 min
   au plus, puis compose seul le rapport du run (`runs/bench/<run_id>.json`, BNC3a). Une levée retenue
-  par la reprise de la watch l'arrête aussi. Garder le terminal ouvert (`tmux`) jusqu'au rapport ;
-  Ctrl-C le compose tout de suite. Avec `BEFORE=` sans `RUN=`, aucun run n'est nommé : pas de rapport.
+  par la reprise de la watch l'arrête aussi, sauf `stopped`, que la watch relit. Seules comptent la levée
+  et les cartes de ce restore-ci, après son début : celles d'un restore d'avant sur le même run restent
+  dans les fichiers et n'arrêtent rien. Garder le terminal ouvert (`tmux`) jusqu'au rapport ;
+  Ctrl-C le compose tout de suite (avant toute lecture d'Imladris, il n'y a rien à composer : il le dit). Avec `BEFORE=` sans `RUN=`, aucun run n'est nommé : pas de rapport.
 
 **La sortie affiche l'id complet de la VM, l'abonnement compris, et le nom du coffre** (la ligne
 `Resource :` de `glorfindel restore`, `glorfindel/cli.py:1609` ; relevé au banc le 12/11, à blanc comme

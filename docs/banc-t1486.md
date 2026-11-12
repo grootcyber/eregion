@@ -615,11 +615,15 @@ gondolin revient en quelques minutes (la requête de l'étape 1).
 
 **Composé seul** (BNC3a, #753) : `make bench-run` compose le rapport une fois le cycle du run écrit sur
 Imladris, et `make bench-restore` le recompose après la levée. Tous deux relisent Imladris toutes les 30 s,
-en lecture seule, puis lisent Azure. L'attente est bornée : 10 min pour le cycle, 30 min pour la levée.
-Passé la borne, ou sur un Ctrl-C, le rapport se compose quand même, et dit ce qui n'est pas encore écrit.
-Pour `bench-restore`, une levée retenue par la reprise de la watch compte comme une fin : une carte
-`release_hold`, sauf `stopped`, que la watch relit. Le rapport en dit alors la sorte et l'heure, jamais
-la raison. À la main, à tout moment, sans attente :
+en lecture seule, puis lisent Azure. L'attente est bornée : 10 min pour le cycle, 30 min pour la levée,
+et aucune lecture d'Imladris ne court au-delà (chacune n'a que le temps qui reste). Passé la borne, ou
+sur un Ctrl-C, le rapport se compose quand même, et dit ce qui n'est pas encore écrit ; un Ctrl-C
+pendant les lectures d'Azure le compose avec ce qui est lu. Pour `bench-restore`, une levée retenue par
+la reprise de la watch compte comme une fin : une carte `release_hold` encore ouverte, sauf `stopped`,
+que la watch relit. Le rapport en dit alors la sorte et l'heure, jamais la raison. Seules comptent la
+levée et les cartes écrites après le début de ce restore (`--since`) : un restore relancé sur le même
+run (un point refusé, puis `BEFORE=` un plus ancien) n'est pas arrêté par la carte du premier. À la
+main, à tout moment, sans attente :
 
 ```zsh
 make bench-report RUN=<run_id>     # TARGET=vm-celebrimbor-gondolin par défaut ; OUT=… pour le JSON ailleurs

@@ -73,6 +73,8 @@ HELD_MARGIN_S = 120.0
 CYCLE_WAIT_S = 600.0
 LIFT_WAIT_S = 1800.0
 POLL_S = 30.0
+# The exit of a report interrupted before anything was read (Ctrl-C): `make bench-restore` says it so.
+INTERRUPTED = 130
 
 
 def _name(rid) -> str:
@@ -260,9 +262,9 @@ def compose(run_id: str, target: str, h0: dict, events: list[dict], jobs: list[d
     if lift is not None:
         fig("lift", "Levée (service rendu)", lift, lift_source)
     else:
-        held = h0.get("holds") or []
-        if held:
-            x = held[-1]
+        cards = pending_holds(h0)
+        if cards:
+            x = cards[-1]
             gaps.append("la levée retenue par la reprise de la watch (une carte `release_hold`, "
                         f"`{x.get('kind') or '?'}`, {bs.hms(bs.epoch(x.get('timestamp')))}) : aucune levée")
         else:
@@ -414,14 +416,36 @@ def cycle_written(h0: dict) -> bool:
     return not _detected(run) or any(c.get("kind") == "run" for c in h0.get("cycles") or [])
 
 
+def pending_holds(h0: dict) -> list[dict]:
+    """The cards of a held lift still pending: a card closed (resolved, replaced) stays in the file,
+    and says nothing of this restore (BNC3a, review round 1)."""
+    return [h for h in h0.get("holds") or [] if h.get("status") == "pending"]
+
+
 def lift_seen(h0: dict) -> bool:
     """What `make bench-restore` waits for (BNC3a): the lift — by the console or the bot, the watch's
-    own `recovery_complete` (REC1) —, or the lift held by the watch's recovery (a `release_hold` card,
-    but `stopped`: the watch reads again, and releases once the VM runs)."""
+    own `recovery_complete` (REC1) —, or the lift held by the watch's recovery (a pending
+    `release_hold` card, but `stopped`: the watch reads again, and releases once the VM runs)."""
     if not isinstance(h0.get("run"), dict):
         return True                                 # nothing to follow: composing says it
     return (bool(h0.get("lifts")) or any(c.get("kind") == "recovery" for c in h0.get("cycles") or [])
-            or any(h.get("kind") != "stopped" for h in h0.get("holds") or []))
+            or any(h.get("kind") != "stopped" for h in pending_holds(h0)))
+
+
+def after(h0: dict, since: float | None) -> dict:
+    """Imladris's view of this restore only (BNC3a, review round 1): the lifts, the watch's recovery
+    cycles and the held lifts' cards from `since` on — the restore's start. A restore before it, on the
+    same run (its point refused: `point_after`, then `BEFORE=` an older one), left its card and its
+    cycles in the files: never taken for this one's."""
+    if since is None:
+        return h0
+
+    def new(ts) -> bool:
+        at = bs.epoch(ts)
+        return at is not None and at >= since
+    return {**h0, "lifts": [x for x in h0.get("lifts") or [] if new(x.get("timestamp"))],
+            "holds": [x for x in h0.get("holds") or [] if new(x.get("timestamp"))],
+            "cycles": [c for c in h0.get("cycles") or [] if c.get("kind") != "recovery" or new(c.get("timestamp"))]}
 
 
 # What each wait follows, its bound, and what it is said to be.
@@ -432,11 +456,13 @@ WAITS = {"cycle": (cycle_written, CYCLE_WAIT_S, "le cycle du run"),
 def await_h0(read, ready, max_s: float, what: str, *, poll_s: float = POLL_S, sleep=time.sleep,
              clock=time.monotonic, say=None) -> tuple[dict, list[str]]:
     """Imladris read again, every poll_s, until ready(its view) or max_s — in reading only, bounded.
-    (The last view read, what the wait left unsaid). The first read's failure is the caller's; a later
-    one is counted, and the view before it kept. Ctrl-C ends the wait, never the report."""
+    (The last view read, what the wait left unsaid). `read(budget)`: a read within `budget` seconds
+    (None: its own timeouts), so that no read runs past the bound. The first read's failure is the
+    caller's, a Ctrl-C during it too (nothing read yet); a later one is counted, and the view before it
+    kept. A Ctrl-C after it ends the wait, never the report."""
     say = say or (lambda s: print(s, file=sys.stderr))
     start = clock()
-    h0 = read()
+    h0 = read(None)
     if ready(h0):
         return h0, []
     say(f"… {what} n'est pas encore écrit sur Imladris : relu toutes les {int(poll_s)} s, "
@@ -448,7 +474,10 @@ def await_h0(read, ready, max_s: float, what: str, *, poll_s: float = POLL_S, sl
             break
         try:
             sleep(min(poll_s, left))
-            h0 = read()
+            left = max_s - (clock() - start)
+            if left <= 0:
+                break                               # the bound reached: no read past it
+            h0 = read(left)
         except KeyboardInterrupt:
             ended = "interrupted"
             break
@@ -469,19 +498,22 @@ def await_h0(read, ready, max_s: float, what: str, *, poll_s: float = POLL_S, sl
 
 
 def gather(run_id: str, target: str, env: dict, config: str, now, wait: str = "", *, sleep=time.sleep,
-           clock=time.monotonic) -> tuple[dict, list, list, dict | None, list, list, datetime]:
+           clock=time.monotonic, since: float | None = None
+           ) -> tuple[dict, list, list, dict | None, list, list, datetime]:
     """(Imladris's view, the activity log's events, the vault's jobs, the instance view, what failed, the
     target's NICs, when it was composed). Imladris is read only once its host key is verified: else
     nothing is sent. `wait` (BNC3a): `cycle` or `lift`, Imladris read again until it is written, bounded
-    (WAITS); Azure is read after the wait, up to its end. `now`: a datetime, or what gives one."""
+    (WAITS); Azure is read after the wait, up to its end — a Ctrl-C during its reads composes with what
+    was read. `since`: the restore's start, the lifts and cards counted from it (`after`). `now`: a
+    datetime, or what gives one."""
     gaps: list[str] = []
     known = bs.run(["make", "-s", "--no-print-directory", "imladris-known"], timeout=60)
     if not known.ok:
         raise RuntimeError("la clé d'hôte d'Imladris n'est pas vérifiée par son empreinte (HOST_SSH_FINGERPRINT, "
                            f"make imladris-known : {known.first_error()}) : rien n'est envoyé")
 
-    def read() -> dict:
-        return bs.read_h0("report", target, run_id, env=env)
+    def read(budget: float | None = None) -> dict:
+        return after(bs.read_h0("report", target, run_id, env=env, budget=budget), since)
     if wait:
         ready, max_s, what = WAITS[wait]
         h0, unsaid = await_h0(read, ready, max_s, what, sleep=sleep, clock=clock)
@@ -492,10 +524,20 @@ def gather(run_id: str, target: str, env: dict, config: str, now, wait: str = ""
     t0 = bs.epoch((h0.get("run") or {}).get("attack_time"))
     if t0 is None:
         return h0, [], [], None, gaps, [], now
+    got: dict = {"events": [], "jobs": [], "view": None, "nics": []}
+    try:
+        _azure(target, t0, config, now, gaps, got)
+    except KeyboardInterrupt:
+        gaps.append("les lectures d'Azure : interrompues (Ctrl-C) — ce qui suit n'est pas lu")
+    return h0, got["events"], got["jobs"], got["view"], gaps, [_name(n) for n in got["nics"]], now
+
+
+def _azure(target: str, t0: float, config: str, now: datetime, gaps: list[str], got: dict) -> None:
+    """Azure's reads, under the operator's az login, each kept in `got` as soon as it is read."""
     hits = bs.locate_vm(target)
     if len(hits) != 1:
         gaps.append(f"{len(hits)} VM nommée(s) {target} : le journal d'activité, le coffre et la vue d'instance ne sont pas lus")
-        return h0, [], [], None, gaps, [], now
+        return
     rg, vm_id = hits[0]["rg"], hits[0]["id"]
     start = datetime.fromtimestamp(t0 - BEFORE_T0_S, timezone.utc)
     nic_ids: list = []
@@ -504,22 +546,22 @@ def gather(run_id: str, target: str, env: dict, config: str, now, wait: str = ""
                                                "networkProfile.networkInterfaces[].id"]) or []]
     except RuntimeError as e:
         gaps.append(f"les cartes réseau de la cible : illisibles ({e})")
+    got["nics"] = nic_ids
     # The target's own resources, each read apart (the VM, its NICs): never the whole group.
-    events: list = []
+    events: list = got["events"]
     for rid in [vm_id, *nic_ids]:
         try:
-            got = bs.az_json(["monitor", "activity-log", "list", "--resource-id", rid,
+            read = bs.az_json(["monitor", "activity-log", "list", "--resource-id", rid,
                               "--start-time", start.strftime("%Y-%m-%dT%H:%M:%SZ"),
                               "--end-time", now.strftime("%Y-%m-%dT%H:%M:%SZ"), "--max-events", str(MAX_EVENTS)],
                              timeout=300) or []
         except RuntimeError as e:
             gaps.append(f"le journal d'activité de {_name(rid)} : illisible ({e})")
             continue
-        if len(got) >= MAX_EVENTS:
+        if len(read) >= MAX_EVENTS:
             gaps.append(f"le journal d'activité de {_name(rid)} : {MAX_EVENTS} événements lus, le plafond — la suite "
                         "n'est pas lue, la chronologie peut être coupée")
-        events += got
-    jobs: list = []
+        events += read
     try:
         vault, vault_rg, _ = bs.local_vault(config)
     except Exception as e:  # noqa: BLE001 — its message may repeat the file's values: only its type
@@ -527,19 +569,17 @@ def gather(run_id: str, target: str, env: dict, config: str, now, wait: str = ""
         gaps.append(f"la configuration du poste : illisible ({type(e).__name__}) — les jobs du coffre ne sont pas lus")
     if vault:
         try:
-            jobs = bs.az_json(["backup", "job", "list", "-g", vault_rg or rg, "-v", vault,
-                               "--start-date", (start - timedelta(days=1)).strftime("%d-%m-%Y"),
-                               "--end-date", job_end_date(now)]) or []
+            got["jobs"] = bs.az_json(["backup", "job", "list", "-g", vault_rg or rg, "-v", vault,
+                                      "--start-date", (start - timedelta(days=1)).strftime("%d-%m-%Y"),
+                                      "--end-date", job_end_date(now)]) or []
         except RuntimeError as e:
             gaps.append(f"les jobs du coffre : illisibles ({e})")
     elif not any(g.startswith("la configuration du poste") for g in gaps):
         gaps.append("les jobs du coffre : aucun coffre dans la configuration du poste")
-    view = None
     try:
-        view = bs.az_json(["vm", "get-instance-view", "-g", rg, "-n", target])
+        got["view"] = bs.az_json(["vm", "get-instance-view", "-g", rg, "-n", target])
     except RuntimeError as e:
         gaps.append(f"la vue d'instance : illisible ({e})")
-    return h0, events, jobs, view, gaps, [_name(n) for n in nic_ids], now
 
 
 def main(argv: list[str] | None = None, env: dict | None = None, now: datetime | None = None, *,
@@ -552,6 +592,8 @@ def main(argv: list[str] | None = None, env: dict | None = None, now: datetime |
     p.add_argument("--config", default=str(bs.REPO / "glorfindel-config.yaml"))
     p.add_argument("--wait", choices=sorted(WAITS), default="",
                    help="BNC3a: Imladris read again until the run's cycle (cycle) or the lift (lift), bounded")
+    p.add_argument("--since", default="",
+                   help="BNC3a: the restore's start (ISO 8601): the lifts and the held lifts' cards from it on")
     args = p.parse_args(argv)
     run_id, target = args.run.strip(), args.target.strip().lower()
     if not bs.RUN_ID.fullmatch(run_id):
@@ -560,16 +602,25 @@ def main(argv: list[str] | None = None, env: dict | None = None, now: datetime |
     if not bs.VM_NAME.fullmatch(target):
         print("TARGET invalide : le nom d'une VM du banc", file=sys.stderr)
         return 2
+    since = bs.epoch(args.since) if args.since else None
+    if args.since and since is None:
+        print("--since : un instant ISO 8601 (le début du restore)", file=sys.stderr)
+        return 2
     try:
         h0, events, jobs, view, gaps, nics, now = gather(
             run_id, target, env, args.config, now or (lambda: datetime.now(timezone.utc)), args.wait,
-            sleep=sleep, clock=clock)
+            sleep=sleep, clock=clock, since=since)
         doc = scrubbed(compose(run_id, target, h0, events, jobs, view, bs.Roles.from_environment(env), now, gaps,
                                nics=nics))
         text = markdown(doc)
     except RuntimeError as e:
         print(f"✗ {bs.scrub(str(e))}", file=sys.stderr)
         return 1
+    except KeyboardInterrupt:
+        # Before anything was read of Imladris (its host key, its first read): nothing to compose.
+        print(f"✗ interrompu (Ctrl-C) avant toute lecture d'Imladris : rien n'est composé — make bench-report "
+              f"RUN={run_id} le compose", file=sys.stderr)
+        return INTERRUPTED
     except Exception as e:  # noqa: BLE001 — never a Python trace, never an unmasked word
         print(f"✗ le rapport n'a pas pu être composé ({type(e).__name__}: {bs.scrub(str(e))[:300]})", file=sys.stderr)
         return 1

@@ -7,14 +7,17 @@
   `make bench-run` reads Imladris again every 30 s until the run's cycle is written, 10 min at most, then
   reads Azure. `make bench-restore`, once the restore is done, follows the lift by Imladris the same way,
   30 min at most, then composes the run's report alone: the run of `RUN=`, or the one the moment came
-  from. A lift held by the watch's recovery also ends the wait: its `release_hold` card, except `stopped`,
-  which the watch reads again. The report gives that card's kind and time, never its reason. Past the
-  bound, or on Ctrl-C, the report is composed anyway and says what is not yet written. A report composed
+  from. A lift held by the watch's recovery also ends the wait: its `release_hold` card still pending,
+  except `stopped`, which the watch reads again. The report gives that card's kind and time, never its
+  reason. Only the lift and the cards written after this restore started count (`--since`): a restore
+  relaunched on the same run is never stopped by the first one's card. No read of Imladris runs past the
+  bound. Past the bound, or on Ctrl-C, the report is composed anyway and says what is not yet written;
+  a Ctrl-C before anything is read says so, never a Python trace. A report composed
   before the cycle says « not yet written », never an action held back. Everything is read-only, under
   the operator's environment (never the console's pair). `bench-restore-go` now gets Imladris's ssh
   command too.
   - Tests: `tests/unit/test_bench_report.py`, `tests/unit/test_bench_run.py`,
-    `tests/unit/test_bench_restore.py`; mutants M4880–M4889 (`scripts/mutants/BNC3a.py`).
+    `tests/unit/test_bench_restore.py`; mutants M4880–M4889 and M4900–M4904 (`scripts/mutants/BNC3a.py`).
 
 ### Fixed
 - **The vault's jobs of the day are read** (BNC3a, #753). `az backup job list --end-date` with today's

@@ -29,7 +29,9 @@ Azure »). Until FS1g and TOT1, the phone reaches it through the workstation's t
   7  the report    the restore done, `make bench-report RUN=<run_id>` follows the lift by Imladris — in
                    reading, 30 min at most — then composes alone (BNC3a, #753): the run of RUN=, or the
                    one report of TARGET the moment came from; BEFORE= without RUN= names no run, and
-                   no report is composed. The restore done and the report not composed: exit 1, said
+                   no report is composed. Only this restore's lift counts: `--since` its start, a card or
+                   a lift of a restore before it on the same run never ends the wait. The restore done
+                   and the report not composed, or interrupted (Ctrl-C): exit 1, said, never a trace
 
 `--keep-isolated` always: the lift is Imladris's (REC1, REC1b; LEV1 will change the rule), never the
 workstation's — a restore without it would release in its own process, under the workstation's
@@ -42,6 +44,7 @@ import json
 import os
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
@@ -54,6 +57,7 @@ import bench_shared as bs  # noqa: E402
 PAIR = ("EREGION_CONSOLE_AZURE_CLIENT_ID", "EREGION_CONSOLE_AZURE_CLIENT_SECRET")
 YES = ("o", "oui", "y", "yes")
 MAX_REPORT_BYTES = 4 * 1024 * 1024
+REPORT_INTERRUPTED = 130            # bench_report.INTERRUPTED: a Ctrl-C before anything was read
 
 
 class Steps:
@@ -68,11 +72,13 @@ class Steps:
     def vault(self) -> tuple[str, str, str]:
         return bs.local_vault(str(bs.REPO / "glorfindel-config.yaml"))
 
-    def report(self, run_id: str, target: str) -> int:
-        """The run's report, once the lift is read on Imladris (bounded: bench_report.LIFT_WAIT_S),
-        under the operator's environment — never the console's pair, which is the restore's alone."""
+    def report(self, run_id: str, target: str, since: str) -> int:
+        """The run's report, once this restore's lift is read on Imladris (bounded:
+        bench_report.LIFT_WAIT_S; `since`, the restore's start), under the operator's environment —
+        never the console's pair, which is the restore's alone."""
         import bench_report
-        return bench_report.main(["--run", run_id, "--target", target, "--wait", "lift"], self.env)
+        return bench_report.main(["--run", run_id, "--target", target, "--wait", "lift", "--since", since],
+                                 self.env)
 
     def restore(self, argv: list[str], env: dict) -> int:
         """`glorfindel restore …`, its output on the operator's terminal (it is his command)."""
@@ -253,6 +259,7 @@ def main(argv: list[str] | None = None, env: dict | None = None, *, cwd=None, he
     if answer not in YES:
         say("Rien n'est restauré.")
         return 1
+    started = datetime.now(timezone.utc).isoformat()
     code = steps.restore(restore_argv(rid, moment, dry=False), restore_env)
     if code != 0:
         return code
@@ -262,7 +269,14 @@ def main(argv: list[str] | None = None, env: dict | None = None, *, cwd=None, he
         return 0
     say(f"→ le rapport du run {report_run} : il suit la levée par Imladris, en lecture, 30 min au plus, puis se "
         "compose (Ctrl-C : tout de suite)")
-    if steps.report(report_run, target) != 0:
+    try:
+        rc = steps.report(report_run, target, started)
+    except KeyboardInterrupt:
+        rc = REPORT_INTERRUPTED
+    if rc == REPORT_INTERRUPTED:
+        say(f"✗ le restore a abouti ; rapport interrompu (Ctrl-C) : make bench-report RUN={report_run}.")
+        return 1
+    if rc != 0:
         say(f"✗ le restore a abouti ; le rapport n'a pas pu être composé : make bench-report RUN={report_run}.")
         return 1
     return 0

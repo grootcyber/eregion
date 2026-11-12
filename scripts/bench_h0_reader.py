@@ -16,7 +16,8 @@ sub-command shipped in the image, in place of this script from the workstation's
               `recovery_complete` on the VM after T0 (REC1), the lifts of the console and of the bot
               (runs/console|bot/manual_actions.jsonl, `release_isolation` on the VM after T0), and the
               lift held by the watch's recovery (~/.glorfindel/escalations.jsonl, `release_hold` on the
-              VM after T0: its kind and its time, never its reason — BNC3a).
+              VM after T0: its kind, its time and whether it is still pending — a card closed stays in
+              the file —, never its reason — BNC3a).
 
 What it never sends back: a reasoning, a signal's raw content, a resource id (a VM is its name),
 an identifier of any kind. The caller masks again what it prints (bench_shared.scrub).
@@ -180,7 +181,8 @@ def run_view(run_id: str, vm: str) -> dict:
                 and _name(doc.get("resource_id")) == vm):
             kind = str(doc.get("signal_id") or "").rsplit("-", 1)[-1]
             holds.append({"timestamp": str(doc.get("first_seen") or doc.get("timestamp")),
-                          "kind": kind if kind in _HOLD_KINDS else ""})
+                          "kind": kind if kind in _HOLD_KINDS else "",
+                          "status": "pending" if doc.get("status") == "pending" else "closed"})
     out["holds"] = sorted(holds, key=lambda x: x["timestamp"])
     return out
 

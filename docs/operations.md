@@ -4593,8 +4593,11 @@ make bench-report RUN=<run_id> [TARGET=…] [OUT=runs/bench/<run_id>.json]  # l'
   coupée), les jobs du coffre (jusqu'au lendemain : `--end-date` du jour exclut les jobs du jour, mesuré
   le 12/11) et la vue d'instance. `--wait cycle` (la sortie de `bench-run`) et `--wait lift` (celle de
   `bench-restore`) relisent Imladris toutes les 30 s jusqu'au cycle du run ou à la levée (une levée
-  retenue par la reprise de la watch compte : sa carte `release_hold`, sa sorte et son heure, jamais sa
-  raison), 10 et 30 min au plus, puis lisent Azure (BNC3a). L'appelant d'une Run Command devient un rôle : la
+  retenue par la reprise de la watch compte : sa carte `release_hold` encore ouverte, sa sorte et son
+  heure, jamais sa raison), 10 et 30 min au plus, aucune lecture au-delà (`read_h0(budget=…)`), puis
+  lisent Azure (BNC3a). `--since <ISO>` (le début du restore, que `bench-restore` passe) : seules la
+  levée, les cycles `recovery_complete` et les cartes écrits depuis comptent. Un Ctrl-C avant toute
+  lecture d'Imladris sort en 130, sans trace ; pendant Azure, le rapport se compose avec ce qui est lu. L'appelant d'une Run Command devient un rôle : la
   console (son appId, ou `GLORFINDEL_RESTORE_PRINCIPALS`), le bot, Imladris et Orodruin (leur `principal_id`
   Terraform), la watch du poste, un humain (un jeton d'utilisateur), sinon inconnu. Le JSON et le
   Markdown s'écrivent côte à côte (`runs/bench/<run_id>.json` et `.md`, ou `OUT=` : son nom, en
