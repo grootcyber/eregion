@@ -66,10 +66,30 @@ def session_refusal(env: dict | None = None, cwd: str | os.PathLike | None = Non
     return ""
 
 
+# An operation of Microsoft.Resources names the path of its type, never an id:
+# `Microsoft.Resources/subscriptions/resourceGroups/write` (LEV2b, #763: the bench's report of 12/11
+# read `microsoft.resources<ressource>`). Its words after /subscriptions/ are letters only, where an
+# ARM id carries the subscription's GUID.
+RESOURCES_NS = "microsoft.resources"
+OPERATION_PATH = re.compile(r"/subscriptions(?:/[A-Za-z]+)+")
+
+
+def _mask_id(m: re.Match) -> str:
+    """`<ressource>`, unless the match is the path of a Microsoft.Resources operation: written right
+    after its namespace, letters only, nothing after it but punctuation (a closing backtick)."""
+    found = m.group(0)
+    path = OPERATION_PATH.match(found)
+    after = found[path.end():] if path else found
+    namespace = m.string[max(0, m.start() - len(RESOURCES_NS)):m.start()].lower()
+    if namespace == RESOURCES_NS and path and not re.search(r"[\w/-]", after):
+        return found
+    return "<ressource>"
+
+
 def scrub(text: str) -> str:
     """The line without an id: an ARM id becomes `<ressource>`, a GUID `<id>`, an address `<ip>`,
-    a user's name `<upn>`."""
-    out = ARM_ID.sub("<ressource>", str(text))
+    a user's name `<upn>`. The name of an operation is no id: kept (`_mask_id`)."""
+    out = ARM_ID.sub(_mask_id, str(text))
     out = UPN.sub("<upn>", out)
     out = GUID.sub("<id>", out)
     return IPV4.sub("<ip>", out)

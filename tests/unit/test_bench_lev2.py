@@ -229,5 +229,144 @@ def test_a_failure_says_its_status_its_code_and_whether_it_counts(tmp_path):
                               failed(T + timedelta(seconds=62), "Conflict", "SomethingElse", "op-2")])
     out = lev2.report(d, f"{T.isoformat()} {sas} refused\n{(T + timedelta(seconds=60)).isoformat()} {sas} failed\n")
     rows = {ln.split("|")[1].strip(): ln for ln in out.splitlines() if ln.startswith("| ") and "`" in ln}
-    assert "Conflict operationnotallowed : refus de la plateforme, écarté" in rows["refused"]
-    assert "Conflict somethingelse : un échec, il compte" in rows["failed"]
+    assert "`Conflict` `OperationNotAllowed` : refus de la plateforme, écarté" in rows["refused"]
+    assert "`Conflict` `SomethingElse` : un échec, il compte" in rows["failed"]
+
+
+# ── LEV2b (#763): the three defects of the tool seen on the bench on 12/11 ─────────────────────────
+
+@pytest.fixture
+def no_outside(monkeypatch, tmp_path):
+    """`az`, `ssh`, `docker`, `terraform`: fakes on the PATH that refuse, and the script's own ways to
+    them that raise. The report reads files only; a call to any of them fails the test."""
+    called: list = []
+    bin_dir = tmp_path / "refusing-bin"
+    bin_dir.mkdir()
+    for tool in ("az", "ssh", "docker", "terraform"):
+        (bin_dir / tool).write_text(f"#!/bin/sh\necho '{tool} refusé par le test' >&2\nexit 97\n")
+        (bin_dir / tool).chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}:/usr/bin:/bin")
+
+    def refuse(*a, **k):
+        called.append(a)
+        raise AssertionError(f"an outside call from the report: {a}")
+    monkeypatch.setattr(lev2.bs, "az_json", refuse)
+    monkeypatch.setattr(lev2.bs, "run", refuse)
+    yield called
+    assert called == []
+
+
+def _rows(out: str) -> dict[str, str]:
+    return {ln.split("|")[1].strip(): ln for ln in out.splitlines() if ln.startswith("| ") and "`" in ln}
+
+
+SAS = "Microsoft.Compute/disks/beginGetAccess/action"
+
+
+def _sas(at, status, op_id, event_id, *, code="", http=""):
+    """A `grant-access` event of the shape the bench read on 12/11: its HTTP status in
+    `properties.statusCode` and in `subStatus`, its code in the JSON of `statusMessage`."""
+    e = _event(DISK, SAS, at, status=status)
+    e.update({"operationId": op_id, "eventDataId": event_id})
+    if http:
+        e["subStatus"] = {"value": http, "localizedValue": f"{http} (HTTP Status Code: 409)"}
+        e["properties"] = {"statusCode": http, "statusMessage": json.dumps(
+            {"error": {"code": code, "message": "Access not permitted because disk x is attached"}})}
+    return e
+
+
+def _rounds(tmp_path: Path, rounds: list[list[dict]]) -> Path:
+    """Each round reads the same events twice, exactly (the disk) and through the group."""
+    d = tmp_path / "reads"
+    d.mkdir(parents=True)
+    (d / "targets.json").write_text(json.dumps(_targets()))
+    for n, events in enumerate(rounds, 1):
+        (d / f"round-{n:03d}").mkdir()
+        for i, (how, what) in enumerate([("uri", "disk"), ("group", "group")]):
+            (d / f"round-{n:03d}" / f"{i:02d}-{how}-{what}.json").write_text(json.dumps({
+                "fetched_at": (T + timedelta(minutes=n)).isoformat(), "how": how, "what": what,
+                "value": DISK if how == "uri" else "rg-celebrimbor", "pages": 1, "cut": False, "events": events}))
+    return d
+
+
+def test_a_conflict_under_its_own_code_is_said_as_azure_wrote_it_and_why_it_counts(tmp_path, no_outside):
+    """Defect 1: the disk's refusal of 12/11 said « Conflict conflict : un échec, il compte », read as a
+    comparison by case. The code was `Conflict`, not `OperationNotAllowed`: Glorfindel counts it
+    (REC1b's refusal is the pair), and the line now says so, the code as Azure wrote it."""
+    started = _sas(T + timedelta(seconds=1), "Started", "op-1", "e-1")
+    conflict = _sas(T + timedelta(seconds=2), "Failed", "op-1", "e-2", code="Conflict", http="Conflict")
+    out = lev2.report(_rounds(tmp_path, [[started, conflict]]), f"{T.isoformat()} {SAS} disk-sas\n")
+    row = _rows(out)["disk-sas"]
+    assert "`Conflict` `Conflict` : un échec, il compte" in row and "conflict`" not in row
+    assert "n'écarte un `Conflict` que sous le code `OperationNotAllowed`" in row
+    # The comparison is never by case: the same refusal in other cases is REC1b's, left out.
+    upper = _sas(T + timedelta(seconds=2), "FAILED", "op-1", "e-2", code="operationNotAllowed", http="CONFLICT")
+    out = lev2.report(_rounds(tmp_path / "b", [[started, upper]]), f"{T.isoformat()} {SAS} disk-sas\n")
+    assert "`CONFLICT` `operationNotAllowed` : refus de la plateforme, écarté" in _rows(out)["disk-sas"]
+
+
+def test_an_event_read_in_several_rounds_is_judged_once(tmp_path, no_outside):
+    """Each round reads the same events again, exactly and through the group. Glorfindel reads each
+    once: a refusal whose `Started` was read one round before it is still REC1b's refusal."""
+    started = _sas(T + timedelta(seconds=1), "Started", "op-1", "e-1")
+    refusal = _sas(T + timedelta(seconds=2), "Failed", "op-1", "e-2", code="OperationNotAllowed", http="Conflict")
+    d = _rounds(tmp_path, [[started], [started, refusal], [started, refusal]])
+    row = _rows(lev2.report(d, f"{T.isoformat()} {SAS} disk-sas\n"))["disk-sas"]
+    assert "refus de la plateforme, écarté" in row and "compte" not in row
+
+
+def test_a_refusal_whose_operation_still_counts_is_never_said_left_out(tmp_path, no_outside):
+    """Two `Started` under one operation, one refusal: Glorfindel keeps the one left over (a command cut,
+    hidden behind a later refusal, REC1b). The refusal is not said « écarté »."""
+    s1 = _sas(T + timedelta(seconds=1), "Started", "op-1", "e-1")
+    s2 = _sas(T + timedelta(seconds=1, milliseconds=500), "Started", "op-1", "e-3")
+    refusal = _sas(T + timedelta(seconds=2), "Failed", "op-1", "e-2", code="OperationNotAllowed", http="Conflict")
+    d = _rounds(tmp_path, [[s1, s2, refusal]])
+    row = _rows(lev2.report(d, f"{T.isoformat()} {SAS} disk-sas\n"))["disk-sas"]
+    assert "mais son opération compte" in row and "écarté" not in row
+
+
+def test_the_name_of_an_operation_is_no_identifier(tmp_path, no_outside):
+    """Defect 2: the mask read `microsoft.resources<ressource>` for the operation of gesture 6. An
+    operation's path is kept; an ARM id, even after the same namespace, is masked."""
+    op = "Microsoft.Resources/subscriptions/resourceGroups/write"
+    for text in (f"`{op}`", op, "microsoft.resources/subscriptions/read", f"| `{op.lower()}` | oui |"):
+        assert lev2.bs.scrub(text) == text
+    letters = "abcdef01-2345-6789-abcd-ef0123456789"           # a subscription id that starts with letters
+    for text in (f"https://management.azure.com/subscriptions/{SUB}/resourceGroups/rg-celebrimbor",
+                 f"Microsoft.Resources/subscriptions/{letters}/resourceGroups/rg-celebrimbor",
+                 "Microsoft.Resources/subscriptions/resourceGroups/rg-celebrimbor",
+                 "--scope /subscriptions/resourcegroups/celebrimbor", VM):
+        said = lev2.bs.scrub(text)
+        assert "celebrimbor" not in said and "<ressource>" in said and not GUID.search(said), said
+    d = _one_round(tmp_path, [_event(RG, op, T + timedelta(seconds=2))])
+    row = _rows(lev2.report(d, f"{T.isoformat()} {op} group-tag\n"))["group-tag"]
+    assert f"`{op.lower()}` | oui | le groupe" in row
+
+
+def test_another_resource_is_named_by_its_type_and_its_place_never_its_name(tmp_path, no_outside):
+    """Defect 3: `disk-tag` said « une autre ressource » — on 12/11, a disk of the group outside the VM,
+    the one gesture 15 creates, written within the hour."""
+    other_sub = RG.replace(SUB, "99999999-0000-0000-0000-000000000000")
+    disks = "Microsoft.Compute/disks/write"
+    events = [_event(f"{RG}/providers/Microsoft.Compute/disks/eregion-lev2-disk", disks, T + timedelta(seconds=2)),
+              _event(f"/subscriptions/{SUB}/resourceGroups/rg-elsewhere/providers/Microsoft.Compute/disks/far-disk",
+                     disks, T + timedelta(seconds=3)),
+              _event(f"{other_sub}/providers/Microsoft.Compute/disks/twin-disk", disks, T + timedelta(seconds=4)),
+              _event(DISK, disks, T + timedelta(seconds=5))]
+    out = lev2.report(_one_round(tmp_path, events), f"{T.isoformat()} {disks} disk-tag\n")
+    row = _rows(out)["disk-tag"]
+    assert "un disque" in row
+    assert "une autre ressource (`microsoft.compute/disks`, du groupe de la VM, hors de la VM)" in row
+    assert "une autre ressource (`microsoft.compute/disks`, d'un autre groupe)" in row
+    assert "une autre ressource (`microsoft.compute/disks`, d'un autre abonnement)" in row
+    for name in ("eregion-lev2-disk", "far-disk", "twin-disk", "elsewhere"):
+        assert name not in out
+    t = _targets()
+    assert lev2.elsewhere(f"{RG}/providers/Microsoft.Network/virtualNetworks/vnet2/subnets/db", t) == \
+        "une autre ressource (`microsoft.network/virtualnetworks/subnets`, du groupe de la VM, hors de la VM)"
+    # An id out of shape never says a name where a type is read.
+    odd = lev2.elsewhere(f"{RG}/providers/Microsoft.Compute/disks/d/lev2-secret-name/x", t)
+    assert "lev2-secret-name" not in odd and "`microsoft.compute/disks/?`" in odd
+    assert lev2.elsewhere(f"/subscriptions/{SUB}/resourceGroups/rg-elsewhere", t) == "un autre groupe"
+    assert lev2.elsewhere("", t) == "une autre ressource (sans identifiant ARM)"
