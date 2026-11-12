@@ -26,6 +26,10 @@ Azure »). Until FS1g and TOT1, the phone reaches it through the workstation's t
                    (it says its identity, RST1); a failure stops here. DRY_RUN=1 stops here too
   6  the restore   « [o/N] », then the same with `--wait --yes` instead of `--dry-run`. The restore
                    reads its own rights before touching the VM (RST1), neutralizes Run Command (SEC17)
+  7  the report    the restore done, `make bench-report RUN=<run_id>` follows the lift by Imladris — in
+                   reading, 30 min at most — then composes alone (BNC3a, #753): the run of RUN=, or the
+                   one report of TARGET the moment came from; BEFORE= without RUN= names no run, and
+                   no report is composed. The restore done and the report not composed: exit 1, said
 
 `--keep-isolated` always: the lift is Imladris's (REC1, REC1b; LEV1 will change the rule), never the
 workstation's — a restore without it would release in its own process, under the workstation's
@@ -63,6 +67,12 @@ class Steps:
 
     def vault(self) -> tuple[str, str, str]:
         return bs.local_vault(str(bs.REPO / "glorfindel-config.yaml"))
+
+    def report(self, run_id: str, target: str) -> int:
+        """The run's report, once the lift is read on Imladris (bounded: bench_report.LIFT_WAIT_S),
+        under the operator's environment — never the console's pair, which is the restore's alone."""
+        import bench_report
+        return bench_report.main(["--run", run_id, "--target", target, "--wait", "lift"], self.env)
 
     def restore(self, argv: list[str], env: dict) -> int:
         """`glorfindel restore …`, its output on the operator's terminal (it is his command)."""
@@ -175,6 +185,7 @@ def main(argv: list[str] | None = None, env: dict | None = None, *, cwd=None, he
         return 1
 
     from glorfindel import restore_plan
+    report_run = run_id
     if before:
         source = "BEFORE="
         text = before
@@ -184,6 +195,7 @@ def main(argv: list[str] | None = None, env: dict | None = None, *, cwd=None, he
             say(f"✗ {why}")
             return 1
         source = f"le T0 du run {found} (son attack_started, runs/bench/{found}.json)"
+        report_run = found
     try:
         moment = restore_plan.parse_moment(text, now=now)
     except ValueError as e:
@@ -242,9 +254,18 @@ def main(argv: list[str] | None = None, env: dict | None = None, *, cwd=None, he
         say("Rien n'est restauré.")
         return 1
     code = steps.restore(restore_argv(rid, moment, dry=False), restore_env)
-    if code == 0:
-        say("Ensuite : la levée par Imladris (docs/banc-t1486.md, étape 7), puis make bench-report RUN=<run_id>.")
-    return code
+    if code != 0:
+        return code
+    if not report_run:
+        say("Ensuite : la levée par Imladris (docs/banc-t1486.md, étape 7), puis make bench-report RUN=<run_id> : "
+            "BEFORE= sans RUN= ne nomme aucun run, aucun rapport n'est composé.")
+        return 0
+    say(f"→ le rapport du run {report_run} : il suit la levée par Imladris, en lecture, 30 min au plus, puis se "
+        "compose (Ctrl-C : tout de suite)")
+    if steps.report(report_run, target) != 0:
+        say(f"✗ le restore a abouti ; le rapport n'a pas pu être composé : make bench-report RUN={report_run}.")
+        return 1
+    return 0
 
 
 if __name__ == "__main__":

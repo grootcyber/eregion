@@ -14,7 +14,9 @@ sub-command shipped in the image, in place of this script from the workstation's
   report      the same isolation, the run's report (runs/glorfindel/<run_id>.json: its metrics, a
               few of them), the watch's cycles of that run (`exercise_run`) and its own
               `recovery_complete` on the VM after T0 (REC1), the lifts of the console and of the bot
-              (runs/console|bot/manual_actions.jsonl, `release_isolation` on the VM after T0).
+              (runs/console|bot/manual_actions.jsonl, `release_isolation` on the VM after T0), and the
+              lift held by the watch's recovery (~/.glorfindel/escalations.jsonl, `release_hold` on the
+              VM after T0: its kind and its time, never its reason — BNC3a).
 
 What it never sends back: a reasoning, a signal's raw content, a resource id (a VM is its name),
 an identifier of any kind. The caller masks again what it prints (bench_shared.scrub).
@@ -36,6 +38,8 @@ HOME = Path(os.environ.get("HOME") or "/root")
 # The cycle and lift fields kept: nothing the model wrote, nothing a signal carried but its event.
 _OUTCOME_KEYS = ("executed", "verified", "verified_at", "action_s", "status")
 _SINCE_MARGIN_S = 600.0
+# The kinds of a held lift's card (glorfindel/recovery_watch.py, `card(…)`): the last word of its id.
+_HOLD_KINDS = ("failed", "point_unknown", "not_this_vm", "not_in_place", "point_after", "stopped")
 
 
 def _epoch(value) -> float | None:
@@ -167,6 +171,17 @@ def run_view(run_id: str, vm: str) -> dict:
                 lifts.append({"timestamp": str(doc.get("timestamp")), "hand": hand,
                               "status": str(o.get("status") or "")})
     out["lifts"] = sorted(lifts, key=lambda x: x["timestamp"])
+    # BNC3a: the lift held by the watch's recovery (recovery_watch._card, `release_hold`) — its kind and
+    # its time, never its reason (it names the job, the point, the VM's id).
+    holds = []
+    for doc in _lines(HOME / ".glorfindel" / "escalations.jsonl"):
+        at = _epoch(doc.get("first_seen") or doc.get("timestamp"))
+        if (doc.get("escalation_type") == "release_hold" and t0 is not None and at is not None and at > t0
+                and _name(doc.get("resource_id")) == vm):
+            kind = str(doc.get("signal_id") or "").rsplit("-", 1)[-1]
+            holds.append({"timestamp": str(doc.get("first_seen") or doc.get("timestamp")),
+                          "kind": kind if kind in _HOLD_KINDS else ""})
+    out["holds"] = sorted(holds, key=lambda x: x["timestamp"])
     return out
 
 
