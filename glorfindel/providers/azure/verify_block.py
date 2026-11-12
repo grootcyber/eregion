@@ -66,6 +66,7 @@ class VerifyBlockMixin:
             # rule gone elsewhere dropped them — the perimeter block took an unread NIC for covered,
             # the card left it out (I3P, review).
             undecided, proven = [], []
+            unknown_why: dict = {}          # why each NIC is not judged, said by the perimeter block (I3Q)
 
             def _stand(t0) -> bool:
                 # Where a NIC stands once its own block no longer holds: cut off by a
@@ -112,6 +113,7 @@ class VerifyBlockMixin:
                         if q == "unknown" and not ps:
                             unread.append(f'{t0["nic_short"]}: {t0["quarantine"]["nsg_name"]}')
                             undecided.append(t0["nic_short"])
+                            unknown_why[t0["nic_short"]] = "quarantaine illisible"
                             continue
                     # Its subnet's NSG unread (a 429): a placement off its views may lie there —
                     # never « ne gouverne plus », its rules put back on a guess and the NIC said
@@ -121,6 +123,7 @@ class VerifyBlockMixin:
                     if not ps and off_unsure:
                         unread.append(f'{t0["nic_short"]}: NSG du subnet illisible')
                         undecided.append(t0["nic_short"])
+                        unknown_why[t0["nic_short"]] = "NSG du subnet illisible"
                         continue
                     if not ps:
                         _lost(t0, [f'{p["rule"]} ({p["nsg_name"]} ne gouverne plus {t0["nic_short"]})' for p in off])
@@ -169,6 +172,8 @@ class VerifyBlockMixin:
                             _stand(t0)
                     elif nic_unread or nic_unknown:
                         undecided += [t0["nic_short"]] if t0 else []
+                        unknown_why.update({t0["nic_short"]: "règles illisibles" if nic_unread else
+                                            "préséance illisible"} if t0 else {})
                         unread += nic_unread
                         unknown += [u for u in nic_unknown if u not in unknown]
                     else:
@@ -183,7 +188,7 @@ class VerifyBlockMixin:
             said = {**({"held_by_perimeter": held_by, "perimeter_rule": self._block_rule_prefix(ip)} if held_by else {}),
                     **({"perimeter_unread": unsure} if unsure else {}),
                     **({"nics_unread": nics_unread} if nics_unread else {}),
-                    **({"nics_unknown": undecided} if undecided else {}),
+                    **({"nics_unknown": undecided, "nics_unknown_why": unknown_why} if undecided else {}),
                     **({"blocked_nics": proven} if proven else {})}
             if missing:
                 # A bypass goes with what is gone (L1C, #369): dropped, no bypass card was
@@ -305,6 +310,37 @@ class VerifyBlockMixin:
         if unknown:
             return self._precedence_unknown(unknown, nics_covered=len(targets))
         return {"verified": True, "method": "nsg_check", "nics_covered": len(targets)}
+
+    def _sort_off_perimeter(self, check: dict, off: list[dict], ip: str, port, resource_id: str
+                            ) -> tuple[list[str], list[str], str]:
+        """A perimeter block's NICs off its subnet, as its verification read them when it concluded
+        `False` (I3Q, #771): (proven open, unread, the unread said with why). Proven held (its own
+        block read whole, `blocked_nics`, or a perimeter, `held_by_perimeter`): in neither (I3P).
+        « The IP still reaches them » only on a proof (`open_nics`); never of a NIC read of none,
+        that its verification couldn't read: unread, with why.
+        The perimeter alone (no placement of the VM): a pair bypassed or gone stops the
+        verification before the NICs off it (`_block_bypassed`, « rules missing »). Each is asked
+        here, as that verification would have: held, unknown, or open — open, nothing else of ours
+        blocks it (I3Q's review: a NIC the IP reached was said « unverified »). One that holds a
+        block of its own is never read open on its perimeter alone: unread."""
+        held = {*(check.get("blocked_nics") or []), *(check.get("held_by_perimeter") or [])}
+        opened, unsure = set(check.get("open_nics") or []), set(check.get("perimeter_unread") or [])
+        known = dict(check.get("nics_unknown_why") or {})
+        why = {n: known.get(n, "illisible") for n in check.get("nics_unknown") or []}
+        entry = next((e for e in _load_block_entries(resource_id) if e.get("ip") == ip), {})
+        own = {(p.get("nic_id") or "").rstrip("/").lower() for p in entry.get("placements") or []}
+        cache: dict = {}
+        for t in off:
+            n = t["nic_short"]
+            if n in held | opened | unsure or n in why or t["nic_id"].rstrip("/").lower() in own:
+                continue
+            stand = self._perimeter_holds(cache, t, ip, port)
+            (held if stand == "holds" else opened if stand == "no" else unsure).add(n)
+        names = [t["nic_short"] for t in off if t["nic_short"] not in held]
+        unread = [n for n in names if n not in opened]
+        other = "cartes illisibles" if check.get("nics_unread") else "non lue"
+        said = ", ".join(f"{n} ({'périmètre illisible' if n in unsure else why.get(n, other)})" for n in unread)
+        return [n for n in names if n in opened], unread, said
 
     def _block_pair_state(self, cache: dict, nsg_rg: str, nsg_name: str, rule: str, ip: str,
                           ips: list[str] | None) -> tuple[str, list[str]]:

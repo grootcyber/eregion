@@ -128,6 +128,19 @@ def test_a_promotion_short_of_the_whole_subnet_says_what_it_leaves_out(client, b
     assert d["ok"] and d["whole"] is False and all(n in said for n in named), d
 
 
+def test_a_promotion_says_the_open_nics_and_the_unread_ones_each_apart(client, blocks, connector):
+    """I3Q (#771): the connector says both, a NIC proven open and one it couldn't read. Each its own
+    line: the open one « still reaches », the unread one unverified, never in the line that says reached."""
+    connector.outcome = {"status": "blocked_partial", "uncovered_nics": ["web-nic2"],
+                         "nics_unread": "web-nic3 (périmètre illisible)"}
+    d = _promote(client, ip=NEW)
+    reached = [x for x in d["said"] if "still reaches" in x]
+    unread = [x for x in d["said"] if "web-nic3 (périmètre illisible)" in x]
+    assert d["ok"] and d["whole"] is False, d
+    assert len(reached) == 1 and "web-nic2" in reached[0] and "web-nic3" not in reached[0], d
+    assert len(unread) == 1 and "unverified" in unread[0] and "reaches" not in unread[0], d
+
+
 def test_the_page_says_the_whole_subnet_only_when_the_outcome_holds_it_whole():
     """The toast « whole subnet » is the `whole === true` branch alone; anything else opens the
     window that names what is left out, each line escaped."""
