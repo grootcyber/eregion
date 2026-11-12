@@ -118,7 +118,7 @@ TOGETHER = (
     "test_coverage.py",
     "test_restore_moment.py", "test_credential_expiry.py", "test_pair_rotate.py", "test_bench_preflight.py", "test_bench_report.py",
     "test_bench_run.py", "test_bench_restore.py", "test_mobile.py",
-    "test_door_console.py", "test_bench_lev2.py",
+    "test_door_console.py", "test_bench_lev2.py", "test_banc_retard.py",
     "test_signal_origin.py", "test_arm_urls.py",
     "test_decision_stability.py", "test_dependency_failures.py", "test_dependency_lock.py",
     "test_docs_budget.py", "test_manuel.py", "test_adoption.py", "test_repo_owner.py", "test_exercise.py", "test_exercise_e2e.py", "test_held.py", "test_dagorlad_blind.py", "test_githooks.py", "test_exercise_guard.py", "test_bounded_reads.py",
