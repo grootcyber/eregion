@@ -517,50 +517,7 @@ cartes prouvées tenues (I3P, `test_a_perimeter_block_keeps_an_unread_nic_off_it
 carte non lue (illisible, `nics_unknown`, `perimeter_unread`) restait donc dite « atteinte ». La sonde l'avait
 montré derrière un périmètre contourné : `allow-ssh` à 100 sur le sous-réseau data, des cartes illisibles
 (429), et db-nic-0 dite non couverte alors que le périmètre de web la coupe. L'oracle n'y regarde pas, parce
-qu'un contournement dit (`bypass`) l'exempte. Voir la section suivante.
-
-### Une carte non lue est dite non lue, jamais « l'IP l'atteint » (I3Q)
-
-Décidé par Jonathan le 12/11 (« La dire "non lue" »). C'est la branche `False` d'I3P, laissée ouverte par
-I3N. **Le défaut.** Dans cette branche, `_block_ip_subnet` retirait de la liste les cartes prouvées tenues
-(`blocked_nics`, `held_by_perimeter`) et gardait toutes les autres « not behind it, {ip} still reaches
-them ». Parmi elles, une carte que la vérification n'avait pas lue. Et la réponse ne portait qu'une clé,
-`uncovered_nics` ou `nics_unread` : un blocage qui avait les deux ne pouvait pas les dire.
-
-**Le monde où l'oracle le voit**, sans rien lui ajouter. La carte primaire de Db--01 est sur le sous-réseau
-data, avec un NSG à elle ; web est bloquée sur le sous-réseau app ; Db--01 est bloquée pour elle-même, puis
-le client élargit à tous les ports l'`allow-https` du NSG de db-nic-1, avant notre deny. Le blocage propre
-de db-nic-1 est contourné (le périmètre posé ensuite sur nsg-data la coupe encore) : la vérification conclut
-`False`. Une lecture en 429 pendant cette vérification (les cartes, aux appels 14, 15 et 18 ; le sous-réseau
-de db-nic-0, aux appels 19 et 22) laisse db-nic-0 non lue. Le blocage la disait « atteinte » ; le périmètre
-de web et son propre blocage la coupent, et l'oracle (`_perimeter_cuts`) échoue : « I3: perimeter block
-named ['db-nic-0'] of …/Db--01 uncovered; our perimeter on their subnet cuts them off ». Ici le
-contournement est sur le NSG de la carte, pas sur celui du périmètre : la réponse n'a pas de `bypass`, et
-l'oracle la juge.
-
-**Le correctif** (`providers/azure/blocks.py`). Dans la branche `False`, trois sortes : prouvées tenues, hors
-des listes ; prouvées ouvertes (`open_nics` de la vérification : rien de nous ne les bloque), dans
-`uncovered_nics`, la phrase « still reaches them » ; les autres, dans `nics_unread`, chacune avec sa raison
-(`perimeter_unread` : « périmètre illisible » ; `nics_unknown` : « règles illisibles » ; les cartes de la
-VM illisibles : « cartes illisibles »), la phrase « unread … unverified ». Les deux clés coexistent, la note
-dit les deux, et le statut reste `blocked_partial`. `nics_unread` reste une chaîne, comme dans la branche
-`None` : la console et la carte de dérive la lisent ainsi. I3P tient : une carte non lue n'est jamais dite
-couverte, et son test dit maintenant `nics_unread`, plus `uncovered_nics`.
-
-**L'oracle ne change pas.** Il lit déjà les deux clés ensemble (`said`, l'union d'`uncovered_nics` et des
-cartes hors du périmètre quand `nics_unread` est dit). Une carte dite non lue n'affirme rien ; une carte dite
-atteinte est jugée contre le monde. Aucune excuse n'y est ajoutée.
-
-**Mesures.** Figés dans `tests/unit/test_invariant_regressions.py`, avec l'identifiant canonique et en
-minuscules : les cinq lectures en 429, jugées par l'oracle et au connecteur (relue sans panne, la
-vérification prouve db-nic-0 bloquée, et le blocage dit `blocked`) ; puis les deux listes dans un même
-blocage. La machine n'a qu'une carte qui puisse être hors d'un périmètre : le test donne à Db--01 une
-troisième carte, db-nic-2, sur le sous-réseau app (`_VMS`, pour ce test seul). db-nic-2 est ouverte, la
-lecture du NSG propre de db-nic-0 répond 429 (27ᵉ appel) : `uncovered_nics` vaut `['db-nic-2']`,
-`nics_unread` « db-nic-0 (périmètre illisible) », chacune avec sa phrase ; jugé par l'oracle, et au
-connecteur. Sur `main` 5f10c599, 22 de ces cas échouent, et le test d'I3P avec eux ; les deux cas de
-l'oracle à trois cartes y passent, la réponse disant vrai dans ce monde. La console dit les deux, chacune sur
-sa ligne (`tests/unit/test_console_blocks.py`). Mutants M5030–M5039 (`scripts/mutants/I3Q.py`).
+qu'un contournement dit (`bypass`) l'exempte. Voir la section I3Q, après celle-ci.
 
 **Mesures.** Figés dans `tests/unit/test_invariant_regressions.py` : la séquence de la nuit, telle que
 trouvée et réduite, avec les deux formes de l'identifiant. Chacune des huit lectures de la vérification
@@ -585,6 +542,72 @@ locale s'appelle maintenant `off_unsure`. Le cas est figé
 (`test_a_nic_whose_perimeter_is_unknown_stays_unknown_when_another_nic_is_read_after_it`), et M4869
 réintroduit la réaffectation. Ni la suite, ni la machine à 1000 exemples, ni les mutants d'alors ne
 l'attrapaient. Les dix mutants sont attrapés.
+
+### Une carte non lue est dite non lue, jamais « l'IP l'atteint » (I3Q)
+
+Décidé par Jonathan le 12/11 (« La dire "non lue" »). C'est la branche `False` d'I3P, laissée ouverte par
+I3N. **Le défaut.** Dans cette branche, `_block_ip_subnet` retirait de la liste les cartes prouvées tenues
+(`blocked_nics`, `held_by_perimeter`) et gardait toutes les autres « not behind it, {ip} still reaches
+them ». Parmi elles, une carte que la vérification n'avait pas lue. Et la réponse ne portait qu'une clé,
+`uncovered_nics` ou `nics_unread` : un blocage qui avait les deux ne pouvait pas les dire.
+
+**Le monde où l'oracle le voit**, sans rien lui ajouter. La carte primaire de Db--01 est sur le sous-réseau
+data, avec un NSG à elle ; web est bloquée sur le sous-réseau app ; Db--01 est bloquée pour elle-même, puis
+le client élargit à tous les ports l'`allow-https` du NSG de db-nic-1, avant notre deny. Le blocage propre
+de db-nic-1 est contourné (le périmètre posé ensuite sur nsg-data la coupe encore) : la vérification conclut
+`False`. Une lecture en 429 pendant cette vérification (les cartes, aux appels 14, 15 et 18 ; le sous-réseau
+de db-nic-0, aux appels 19 et 22) laisse db-nic-0 non lue. Le blocage la disait « atteinte » ; le périmètre
+de web et son propre blocage la coupent, et l'oracle (`_perimeter_cuts`) échoue : « I3: perimeter block
+named ['db-nic-0'] of …/Db--01 uncovered; our perimeter on their subnet cuts them off ». Ici le
+contournement est sur le NSG de la carte, pas sur celui du périmètre : la réponse n'a pas de `bypass`, et
+l'oracle la juge.
+
+**Le correctif** (`providers/azure/blocks.py`, et le tri dans `verify_block._sort_off_perimeter`). Dans la
+branche `False`, trois sortes : prouvées tenues, hors des listes ; prouvées ouvertes (`open_nics` de la
+vérification : rien de nous ne les bloque), dans `uncovered_nics`, la phrase « still reaches them » ; les
+autres, dans `nics_unread`, chacune avec sa raison, la phrase « unread … unverified ». Les raisons : « périmètre
+illisible » (`perimeter_unread`) ; pour `nics_unknown`, celle que la vérification donne
+(`nics_unknown_why`) : « quarantaine illisible », « NSG du subnet illisible », « règles illisibles » ou
+« préséance illisible » ; « cartes illisibles » quand la vérification n'a pas pu lister les cartes de la VM.
+Les deux clés coexistent, la note dit les deux, et le statut reste `blocked_partial`. `nics_unread` reste une
+chaîne, comme dans la branche `None` : la console et la carte de dérive la lisent ainsi. I3P tient : une carte
+non lue n'est jamais dite couverte, et son test dit maintenant `nics_unread`, plus `uncovered_nics`.
+
+**La relecture (tour 1) a trouvé un recul du premier correctif.** Un blocage de périmètre seul (aucun
+placement de la VM) dont la paire est contournée (une `allow-ssh` du client à 100 sur son NSG) ou a disparu
+avant sa vérification : `verify_block_ip` s'arrête là (`_block_bypassed`, « rules missing ») avant de juger les
+cartes hors du périmètre. Aucune n'y est prouvée ouverte ni tenue, et le premier correctif les disait toutes
+« non jugée … unverified ». Sur `main`, une carte que l'IP atteint vraiment y était dite atteinte, et c'était
+vrai. Maintenant, le blocage demande lui-même chaque carte que la vérification n'a pas jugée, comme elle
+l'aurait fait (`_perimeter_holds`) : tenue, hors des listes ; inconnue, « périmètre illisible » ; ouverte,
+« still reaches ». La vérification elle-même ne change pas : la carte de dérive et la réaffirmation lisent ses
+retours, et y joindre `open_nics` aurait fait dire « l'IP n'est plus bloquée sur db-nic-1 » d'une paire
+disparue qui ouvre aussi les cartes derrière elle. Une carte qui a un blocage à elle n'est jamais demandée
+ainsi : son périmètre seul ne prouve rien d'elle, elle reste non lue (« non lue »). Aucun chemin de
+`verify_block_ip` n'y mène aujourd'hui (les placements sont lus carte par carte, ou les cartes dites
+illisibles) ; un test le tient avec une vérification simulée. Et une paire disparue est dite par le blocage
+(`missing_rules`, `blocked_partial`) : une carte tenue par le périmètre de web, sortie des listes, ne gardait
+plus le statut partiel.
+
+**L'oracle, durci, sans excuse.** Il lit déjà les deux clés ensemble (`said`). Il excusait toutes les cartes
+hors du périmètre dès que `nics_unread` était dit ; il n'excuse plus que les cartes que `nics_unread` nomme (les
+noms avant « ( »), et toutes seulement quand la chaîne n'en nomme aucune (une erreur, les cartes illisibles).
+Une carte dite non lue n'affirme rien ; une carte laissée hors des deux listes est dite tenue, et jugée.
+Les invariants restent verts à 500 exemples.
+
+**Mesures.** Figés dans `tests/unit/test_invariant_regressions.py`, avec l'identifiant canonique et en
+minuscules : les cinq lectures en 429, jugées par l'oracle et au connecteur, chacune avec sa raison exacte
+(relue sans panne, la vérification prouve db-nic-0 bloquée, et le blocage dit `blocked`) ; puis les deux listes
+dans un même blocage. La machine n'a qu'une carte qui puisse être hors d'un périmètre : le test donne à Db--01
+une troisième carte, db-nic-2, sur le sous-réseau app (`_VMS`, pour ce test seul). db-nic-2 est ouverte, la
+lecture du NSG propre de db-nic-0 répond 429 (27ᵉ appel) : `uncovered_nics` vaut `['db-nic-2']`,
+`nics_unread` « db-nic-0 (périmètre illisible) », chacune avec sa phrase ; jugé par l'oracle, et au
+connecteur. Pour la relecture : le monde du relecteur (`allow-ssh` à 100 sur le sous-réseau app, db-nic-1
+dite « still reaches »), le même côté data, et derrière le périmètre de web (dans aucune liste) ; la paire
+supprimée entre l'écriture et la vérification, avec et sans le périmètre de web ; la carte à blocage propre
+non jugée. Sur `main` 5f10c599, 22 des premiers cas échouent, et le test d'I3P avec eux ; les deux cas de
+l'oracle à trois cartes y passent, la réponse disant vrai dans ce monde. La console dit les deux, chacune sur
+sa ligne (`tests/unit/test_console_blocks.py`). Mutants M5030–M5039 et M5075–M5079 (`scripts/mutants/I3Q.py`).
 
 ### Trois mutants que la machine ne voyait plus qu'au hasard (MUT4)
 
