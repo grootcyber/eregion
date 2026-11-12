@@ -103,6 +103,10 @@ def holds(w):
     return any(w[1:] in a for a in args) if w.startswith("~") else w in args
 for rule in plan["rules"]:
     if rule["cmd"] == name and all(holds(w) for w in rule.get("has", [])):
+        if "file" in rule and "--file" in args:
+            # what `az storage blob download --file <path>` writes (BNC3b)
+            with open(args[args.index("--file") + 1], "w") as f:
+                f.write(rule["file"])
         sys.stdout.write(rule.get("out", ""))
         sys.stderr.write(rule.get("err", ""))
         sys.exit(rule.get("rc", 0))
@@ -115,8 +119,12 @@ def ts(hms: str, day: str = DAY) -> str:
     return f"{day}T{hms}+00:00"
 
 
-def rule(cmd: str, has: list[str], out="", rc: int = 0, err: str = "") -> dict:
-    return {"cmd": cmd, "has": has, "out": out if isinstance(out, str) else json.dumps(out), "rc": rc, "err": err}
+def rule(cmd: str, has: list[str], out="", rc: int = 0, err: str = "", file: str | None = None) -> dict:
+    """`file`: what the command writes at the path after its `--file` (a blob downloaded)."""
+    got = {"cmd": cmd, "has": has, "out": out if isinstance(out, str) else json.dumps(out), "rc": rc, "err": err}
+    if file is not None:
+        got["file"] = file
+    return got
 
 
 class World:

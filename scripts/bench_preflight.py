@@ -16,6 +16,11 @@ stop the run), 1 otherwise. Everything is read, nothing is written — on Azure,
                 restores, is required;
   the target    its group (one VM of that name), its power; on Imladris: its mode (configured, effective),
                 its readiness and the quarantine, no isolation already;
+  the calm      BNC3b (#770): started 10 min ago at least, no Run Command on it for 10 min, read in its
+                activity log — a ✗ that says the minutes left, never a wait (scripts/bench_history.py);
+  restore first BNC3b: no Run Command on it since its last restore that may be destructive (Q3b) — every
+                caller counts, but a drain of Imladris at the start of a verified isolation and a run of
+                Orodruin whose technique reads as non-destructive; a read that fails or is cut, a ✗;
   the point     the newest recovery point of the target in the vault, its age (⚠ past POINT_MAX_H,
                 24 h by default);
   the rights    the console, under its own pair, by `Microsoft.Authorization/permissions` (Glorfindel's
@@ -48,6 +53,7 @@ for _p in (str(_HERE.parent), str(_HERE)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
+import bench_history as bh  # noqa: E402
 import bench_shared as bs  # noqa: E402
 import credential_expiry  # noqa: E402
 
@@ -134,6 +140,8 @@ class Context:
         self.vault = self.vault_rg = self.staging = ""
         self.h0: dict | None = None
         self.h0_error = ""
+        self.power = ""
+        self.reads: bh.Reads | None = None
 
     def scopes(self) -> dict[str, str]:
         base = f"/subscriptions/{self.sub}/resourceGroups"
@@ -313,6 +321,7 @@ def locate_target(ctx: Context) -> list:
         power = _power(ctx.vm_id)
     except RuntimeError as e:
         power = f"illisible ({e})"
+    ctx.power = power
     mark = bs.OK if power == "running" else bs.WARN
     hint = "" if power == "running" else " — make celebrimbor-start VM=… avant le calme de l'étape 1"
     return [line(mark, f"la cible : {ctx.target}, groupe {ctx.rg}, {power}{hint}")]
@@ -353,6 +362,32 @@ def check_target_on_h0(ctx: Context) -> list:
     return out
 
 
+def history(ctx: Context) -> bh.Reads:
+    """The target's history (BNC3b), each source read once for the calm and « restore d'abord »."""
+    if ctx.reads is None:
+        ctx.reads = bh.Reads(ctx.target, ctx.vm_id, ctx.rg, ctx.vault, ctx.vault_rg, ctx.env, ctx.now.timestamp())
+    return ctx.reads
+
+
+def check_calm(ctx: Context) -> list:
+    """BNC3b: the calm, verified — a ✗ that says the minutes left, never a wait (Q6)."""
+    reads = history(ctx)
+    try:
+        ops = reads.ops()
+    except bh.Unreadable as e:
+        return [line(bs.FAIL, f"le calme : illisible ({e}) — jamais un ✓ sur une lecture qui manque")]
+    return [line(*bh.calm(ops, ctx.power, reads.created(), ctx.now.timestamp(), ctx.target, reads.restored()))]
+
+
+def check_restore_first(ctx: Context) -> list:
+    """BNC3b: « restore d'abord » (Q3b) — a VM that may carry a destructive run without a restore since."""
+    reads = history(ctx)
+    try:
+        return [line(*bh.restore_first(reads.ops(), reads.anchor(), reads.drains, reads.harmless))]
+    except bh.Unreadable as e:
+        return [line(bs.FAIL, f"restore d'abord : illisible ({e}) — un ✗ jusqu'à un restore lisible")]
+
+
 def resolve_vault(ctx: Context) -> None:
     ctx.vault, ctx.vault_rg, ctx.staging = bs.local_vault(ctx.config)
 
@@ -380,28 +415,47 @@ def recoverypoint_args(v_rg: str, vault: str, item: dict) -> list[str]:
             "-i", found.group(2), "--backup-management-type", "AzureIaasVM"]
 
 
+class NotProtected(RuntimeError):
+    """The target is not an item of the vault."""
+
+
+class ItemUnreadable(RuntimeError):
+    """The vault's item does not carry its container and its name."""
+
+
+def point_times(target: str, v_rg: str, vault: str) -> list[float]:
+    """The times of the target's recovery points in the vault (`az backup recoverypoint list`), as the
+    restore reads them. Raises NotProtected, or RuntimeError when they can't be read."""
+    items = bs.az_json(["backup", "item", "list", "-g", v_rg, "-v", vault,
+                        "--backup-management-type", "AzureIaasVM"]) or []
+    item = next((i for i in items if str((i.get("properties") or {}).get("friendlyName") or "").lower() == target), None)
+    if item is None:
+        raise NotProtected(f"{target} n'est pas protégée par le coffre {vault}")
+    try:
+        args = recoverypoint_args(v_rg, vault, item)
+    except RuntimeError as e:
+        raise ItemUnreadable(str(e)) from None
+    points = bs.az_json(args) or []
+    return [t for t in (bs.epoch((p.get("properties") or {}).get("recoveryPointTime")) for p in points) if t is not None]
+
+
 def check_point(ctx: Context) -> list:
     if not ctx.vault:
         return [line(bs.FAIL, f"le point de restauration : aucun coffre dans {Path(ctx.config).name} "
                               "(action_backends, type azure_backup_vault)")]
-    v_rg = ctx.vault_rg or ctx.rg
-    items = bs.az_json(["backup", "item", "list", "-g", v_rg, "-v", ctx.vault,
-                        "--backup-management-type", "AzureIaasVM"]) or []
-    item = next((i for i in items if str((i.get("properties") or {}).get("friendlyName") or "").lower() == ctx.target), None)
-    if item is None:
-        return [line(bs.FAIL, f"le point de restauration : {ctx.target} n'est pas protégée par le coffre {ctx.vault}")]
     try:
-        args = recoverypoint_args(v_rg, ctx.vault, item)
-    except RuntimeError as e:
+        times = point_times(ctx.target, ctx.vault_rg or ctx.rg, ctx.vault)
+    except NotProtected as e:
+        return [line(bs.FAIL, f"le point de restauration : {e}")]
+    except ItemUnreadable as e:
         return [line(bs.FAIL, f"le point de restauration : illisible ({e})")]
-    points = bs.az_json(args) or []
-    times = [t for t in (bs.epoch((p.get("properties") or {}).get("recoveryPointTime")) for p in points) if t is not None]
     if not times:
         return [line(bs.FAIL, "le point de restauration : aucun point lu pour la cible")]
     age_h = (ctx.now.timestamp() - max(times)) / 3600
     said = f"le point de restauration : le plus récent il y a {bs.duration(age_h * 3600)} (seuil {ctx.point_max_h:g} h)"
     if age_h > ctx.point_max_h:
-        return [line(bs.WARN, f"{said} — trop vieux : l'étape 2 en prend un propre, depuis Imladris")]
+        return [line(bs.WARN, f"{said} — trop vieux : make bench-run en prend un, par la route du bouton 📸 "
+                              "(BNC3b), une fois la demande confirmée")]
     return [line(bs.OK, said)]
 
 
@@ -510,8 +564,8 @@ def check_drifts(ctx: Context) -> list:
 
 
 CHECKS = (check_h0, check_cd, check_workstation, check_orodruin, check_pairs)
-TARGET_CHECKS = (check_target_on_h0, check_point, check_console_rights, check_h0_rights,
-                 check_orodruin_rights, check_drifts)
+TARGET_CHECKS = (check_target_on_h0, check_calm, check_restore_first, check_point, check_console_rights,
+                 check_h0_rights, check_orodruin_rights, check_drifts)
 
 
 def _safe(check, ctx: Context) -> list:
