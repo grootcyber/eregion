@@ -387,7 +387,7 @@ make imladris-campaign-report CAMPAIGN=<id>                          # the repor
 make imladris-tunnel                                                 # the console: the Annatar page
 ```
 
-Before and after a replayed run, two read-only targets read the bench for you, and print no identifier: `make bench-preflight TARGET=<vm>` checks Imladris, its CD, Orodruin's contract, the pairs, the target's mode and quarantine, its last recovery point and each principal's effective rights, one line ✓/⚠/✗ each (exit 1 on a ✗); `make bench-report RUN=<run_id>` composes the run's chronology — the figures from T0, the Run Commands by caller role, the vault's jobs — in Markdown and JSON (`runs/bench/`). The ransomware guide uses both (`docs/banc-t1486.md`, steps 0 and 8; French).
+Before and after a replayed run, two read-only targets read the bench for you, and print no identifier: `make bench-preflight TARGET=<vm>` checks Imladris, its CD, Orodruin's contract, the pairs, the target's mode and quarantine, its last recovery point and each principal's effective rights, one line ✓/⚠/✗ each (exit 1 on a ✗); `make bench-report RUN=<run_id>` composes the run's chronology — the figures from T0, the Run Commands by caller role, the vault's jobs — in Markdown and JSON (`runs/bench/`); `make bench-run` composes it once the run's cycle is written on Imladris, `make bench-restore` once the lift is read (bounded, 10 and 30 min). The ransomware guide uses both (`docs/banc-t1486.md`, steps 0 and 8; French).
 
 ### 4. Simulate locally (no Azure required)
 

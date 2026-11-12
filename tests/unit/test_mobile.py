@@ -981,9 +981,11 @@ def test_make_install_pins_the_key_known_host_sh_checked(tmp_path, spies):
 
 
 @needs_make
-def test_make_console_url_names_imladris_url_when_the_tunnel_holds_the_port(tmp_path, spies):
-    """IML1b: console-url is the local console's only. The tunnel holding 127.0.0.1:7007, the console
-    there is Imladris's: no URL, no token — a line names make imladris-url, and the exit says it."""
+def test_make_console_url_gives_imladris_s_url_when_the_tunnel_holds_the_port(tmp_path, spies):
+    """IML1c (Jonathan's decision, 12/11, back on IML1b's exit 1): the tunnel holding 127.0.0.1:7007,
+    the console there is Imladris's — console-url gives its URL, as make imladris-url does (the token of
+    host.env, never the local one), exit 0, and a line on the error output says whose it is. Otherwise
+    the local console's, as before."""
     home = _home(tmp_path)
     (home / ".eregion" / "console").mkdir(parents=True)
     (home / ".eregion" / "console" / "token").write_text("local-tok-K2\n")
@@ -992,12 +994,26 @@ def test_make_console_url_names_imladris_url_when_the_tunnel_holds_the_port(tmp_
     root = _operator(tmp_path)
     res = _make_at(root, spies, home, "console-url", f"HOST_ENV={env_file}", "CONSOLE_WAIT=0")
     assert res.returncode == 0 and "token=local-tok-K2" in res.stdout   # no tunnel: the local console's
-    assert "imladris" not in res.stdout + res.stderr
+    assert "imladris" not in (res.stdout + res.stderr).lower() and "fake-tok-Q7" not in res.stdout
+    _set_tunnel(home, window=None)                                      # set, not armed: still the local one
+    res = _make_at(root, spies, home, "console-url", f"HOST_ENV={env_file}", "CONSOLE_WAIT=0")
+    assert res.returncode == 0 and "token=local-tok-K2" in res.stdout and "fake-tok-Q7" not in res.stdout
+    assert "non armé" in res.stderr, res.stderr
     _set_tunnel(home)
     res = _make_at(root, spies, home, "console-url", f"HOST_ENV={env_file}", "CONSOLE_WAIT=0", SPY_ACTIVE="1")
-    assert res.returncode != 0
-    assert "fake-tok-Q7" not in res.stdout + res.stderr and "local-tok-K2" not in res.stdout + res.stderr
-    assert "son URL → make imladris-url" in res.stderr, res.stderr
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert res.stdout == "http://localhost:7007/?token=fake-tok-Q7\n", res.stdout
+    assert "local-tok-K2" not in res.stdout + res.stderr
+    assert res.stderr == "  ℹ le tunnel d'Imladris tient 7007 : c'est sa console (make imladris-url)\n", res.stderr
+    # Imladris's URL, as imladris-url says it: no host.env, the same refusal, never the local token.
+    res = _make_at(root, spies, home, "console-url", f"HOST_ENV={tmp_path / 'none.env'}", "CONSOLE_WAIT=0",
+                   SPY_ACTIVE="1")
+    assert res.returncode != 0 and "manquant (make imladris-env)" in res.stdout + res.stderr
+    assert "local-tok-K2" not in res.stdout + res.stderr
+    # Another port: the console there is the local one, the tunnel holds 7007 only.
+    res = _make_at(root, spies, home, "console-url", f"HOST_ENV={env_file}", "CONSOLE_WAIT=0", SPY_ACTIVE="1",
+                   EREGION_CONSOLE_PORT="7017")
+    assert res.returncode == 0 and "localhost:7017/?token=local-tok-K2" in res.stdout, res.stdout
 
 
 @needs_make
@@ -1013,10 +1029,12 @@ def test_make_imladris_url_gives_the_url_and_says_when_the_tunnel_is_not_armed(t
     res = _make_at(root, spies, home, name, f"HOST_ENV={env_file}")                    # not set
     assert (res.returncode, res.stdout) == (0, url), res.stderr
     assert "make imladris-tunnel-install" in res.stderr and "make imladris-tunnel-on" in res.stderr
+    assert "(ou make imladris-tunnel au premier plan)" in res.stderr                    # IML1c: the fallback
     _set_tunnel(home, window=None)
     res = _make_at(root, spies, home, name, f"HOST_ENV={env_file}")                    # set, not armed
     assert (res.returncode, res.stdout) == (0, url), res.stderr
     assert "n'est pas armé : make imladris-tunnel-on" in res.stderr and "install" not in res.stderr
+    assert "ou make imladris-tunnel au premier plan)" in res.stderr
     _set_tunnel(home)
     res = _make_at(root, spies, home, name, f"HOST_ENV={env_file}", SPY_ACTIVE="1")    # armed
     assert (res.returncode, res.stdout, res.stderr) == (0, url, "")

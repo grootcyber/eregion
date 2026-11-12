@@ -29,13 +29,14 @@ MUTANTS = [
      "\t@$(PYTHON) scripts/mobile.py $(@:mobile-%=%) --guard-only\n"),
     ("M4844", "a former command across a line's end never read: « make » at the end of a line, the "
      "former name on the next (IML1b)", GUARD,
-     'OLD_COMMAND = re.compile(r"\\bmake\\s+(?:glorfindel-host|mobile)-")\n',
-     'OLD_COMMAND = re.compile(r"\\bmake[ \\t]+(?:glorfindel-host|mobile)-")\n'),
+     '_GAP = r"""(?:\\s+|["\']\\s*,\\s*["\'])"""\n',
+     '_GAP = r"""(?:[ \\t]+|["\']\\s*,\\s*["\'])"""\n'),
     ("M4845", "the history read for the former commands: the CHANGELOG said, what each version shipped "
      "renamed (IML1b)", GUARD,
      '    return not any(rel.startswith(key) if key.endswith("/") else rel == key for key in OLD_NOT_READ)\n',
      "    return True\n"),
-    ("M4846", "a text kept read anyway: CLAUDE.md, Jonathan's to change, said by every session (IML1b)", GUARD,
+    ("M4846", "a text kept read anyway: a published release's line in ROADMAP.md, said by every session "
+     "(IML1b)", GUARD,
      "        if _within(text, kept, m.start(), m.end()):\n            continue\n",
      "        if False:\n            continue\n"),
     ("M4847", "the CD left unread again: its messages in #deploy could say H0 (IML1b)", GUARD,
@@ -61,5 +62,5 @@ TESTS = {
     "M4846": f"{_NAME}::test_a_former_command_is_read_but_in_the_history_and_the_kept_texts",
     "M4847": f"{_NAME}::test_the_history_is_the_one_exception_for_the_name",
     "M4848": f"{_MOB}::test_make_imladris_url_gives_the_url_and_says_when_the_tunnel_is_not_armed",
-    "M4849": f"{_MOB}::test_make_console_url_names_imladris_url_when_the_tunnel_holds_the_port",
+    "M4849": f"{_MOB}::test_make_console_url_gives_imladris_s_url_when_the_tunnel_holds_the_port",
 }

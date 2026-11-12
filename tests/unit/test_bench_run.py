@@ -315,3 +315,33 @@ def test_make_refuses_a_target_from_the_environment(fake_world, tmp_path):
                           "SCENARIO=T1486"], capture_output=True, text=True, env=env, timeout=60)
     assert res.returncode != 0 and "vient de l'environnement" in res.stderr
     assert not log.exists() or log.read_text() == ""
+
+
+# ── BNC3a (#753): the report, once the run's cycle is written ─────────────────
+
+def test_the_report_waits_for_the_run_s_cycle(monkeypatch):
+    import bench_report
+    seen = []
+    monkeypatch.setattr(bench_report, "main", lambda argv, env: seen.append((argv, env)) or 0)
+    env = dict(CLEAN)
+    assert brun.Steps(env).report("20261110T101500Z-t1486", VM) == 0
+    assert seen == [(["--run", "20261110T101500Z-t1486", "--target", VM, "--wait", "cycle"], env)]
+
+
+@needs_make
+def test_bench_restore_is_given_imladris_s_ssh_for_its_report(fake_world, tmp_path):
+    """The report after the lift reads Imladris: `bench-restore-go` hands the script its ssh command, as
+    `bench-run-go` does — the script stands for python here, and prints what it was given."""
+    bindir, log = fake_world
+    (bindir / "terraform").write_text(f'#!/bin/sh\necho "terraform $*" >> "{log}"\necho 192.0.2.10\n')
+    script = tmp_path / "python"
+    script.write_text('#!/bin/sh\necho "H0=$BENCH_H0_SSH"\n')
+    script.chmod(0o755)
+    env = {k: v for k, v in os.environ.items() if k not in ("TARGET", "SCENARIO", "BEFORE", "RUN", "POINT_MAX_H")}
+    env.update(PATH=f"{bindir}{os.pathsep}{os.environ['PATH']}", HOME=str(tmp_path))
+    res = subprocess.run(["make", "-s", "--no-print-directory", "-C", str(ROOT), "bench-restore-go", f"PYTHON={script}",
+                          f"TARGET={VM}"], capture_output=True, text=True, env=env, timeout=60)
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert "H0=ssh " in res.stdout and res.stdout.strip().endswith("@192.0.2.10")
+    calls = log.read_text().splitlines() if log.exists() else []
+    assert not [c for c in calls if c.split()[0] in ("ssh", "scp", "az", "docker")], calls

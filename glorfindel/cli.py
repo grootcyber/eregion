@@ -1606,8 +1606,8 @@ def restore(resource_id: str, vault: str, dry_run: bool, yes: bool, keep_isolate
     vault, vault_rg, staging_storage = _backup_vault_from_config(vault)
 
     console.rule("[bold yellow]Glorfindel — Restore from Backup[/bold yellow]")
-    console.print(f"  Resource : {resource_id}")
-    console.print(f"  Vault    : {vault}")
+    console.print(f"  Resource : {_esc_markup(_vm_said(resource_id))}")
+    console.print(f"  Vault    : {_esc_markup(_short_name(vault))}")
     identity, restores = _restore_identity()
     console.print(f"  Identity : {'' if restores else '[yellow]'}{_esc_markup(identity)}"
                   f"{'' if restores else '[/yellow]'}")
@@ -1655,7 +1655,7 @@ def restore(resource_id: str, vault: str, dry_run: bool, yes: bool, keep_isolate
         console.print(f"  azure_job: [dim]{job.get('restore_job_name', '?')}[/dim]")
         console.print(f"  RP      : [dim]{job.get('recovery_point_time', '?')}[/dim]")
         _say_recovery_point(job, before, why_before)
-        console.print(f"\n[dim]Check status : glorfindel jobs {resource_id} --refresh[/dim]")
+        console.print(f"\n[dim]Check status : glorfindel jobs {_esc_markup(_short_name(resource_id))} --refresh[/dim]")
         console.print("[dim]When Completed: az vm start + glorfindel release (or the console)[/dim]")
         _record_manual_action("restore", resource_id, {"status": "InProgress", "job": job.get("restore_job_name")})
         return
@@ -1696,7 +1696,7 @@ def restore(resource_id: str, vault: str, dry_run: bool, yes: bool, keep_isolate
     sig = _build_recovery_signal(resource_id, result, rto_s)
     out = _write_signal(sig)
     console.rule("[bold cyan]Glorfindel — Recovery Response[/bold cyan]")
-    console.print(f"  Event    : recovery_complete  |  Resource: {resource_id}\n")
+    console.print(f"  Event    : recovery_complete  |  Resource: {_esc_markup(_vm_said(resource_id))}\n")
 
     try:
         from glorfindel.agent import GlorfindelAgent
@@ -2543,6 +2543,25 @@ def _restore_claimed(resource_id: str):
         yield
     finally:
         claim.__exit__(None, None, None)
+
+
+def _short_name(ref: str) -> str:
+    """The last segment of an ARM id (a VM's, a vault's), or the name given as it is."""
+    return str(ref or "").strip().rstrip("/").rsplit("/", 1)[-1]
+
+
+def _vm_said(resource_id: str) -> str:
+    """A VM as `glorfindel restore` says it: its name and its resource group, never its full id —
+    the subscription's id stays off a terminal whose output is pasted in an issue or a thread
+    (IML1c; read in the output of make bench-restore, 12/11)."""
+    parts = str(resource_id or "").strip().rstrip("/").split("/")
+    low = [p.lower() for p in parts]
+    name = parts[-1]
+    if "resourcegroups" in low[:-1]:
+        i = low.index("resourcegroups")
+        if i + 1 < len(parts) - 1:
+            return f"{name} (groupe {parts[i + 1]})"
+    return name
 
 
 def _say_recovery_point(result: dict, before: str, why: str) -> None:

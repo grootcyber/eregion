@@ -20,6 +20,7 @@ import os
 import re
 import shlex
 import subprocess
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -214,11 +215,25 @@ def reader_command(mounts: list[dict], image: str, ask: str, vm: str, run_id: st
     return [*words, "--entrypoint", "python", image, "-", ask, vm, *([run_id] if run_id else [])]
 
 
-def read_h0(ask: str, vm: str, run_id: str = "", env: dict | None = None, timeout: float = 120) -> dict:
+_clock = time.monotonic        # what read_h0 measures its budget by (a test fakes it)
+
+
+def read_h0(ask: str, vm: str, run_id: str = "", env: dict | None = None, timeout: float = 120,
+            budget: float | None = None) -> dict:
     """The watch's files on Imladris, read by bench_h0_reader.py (on the ssh's stdin) in a disposable
     container of the deployed watch's image — never inside the watch (`docker exec`): two ssh, the
     watch's image and mounts read (`docker inspect`), then the reader run. Raises RuntimeError when
-    Imladris can't be read (said by the caller), or when its host key is not verified."""
+    Imladris can't be read (said by the caller), or when its host key is not verified. `budget`
+    (BNC3a): the seconds the two ssh may take together, at most — a bounded wait stays bounded."""
+    began = _clock()
+
+    def within(limit: float) -> float:
+        if budget is None:
+            return limit
+        left = budget - (_clock() - began)
+        if left <= 0:
+            raise RuntimeError("la lecture d'Imladris n'a plus de temps (la borne de l'attente)")
+        return min(limit, left)
     base = ssh_argv("BENCH_H0_SSH", env)
     if not base:
         raise RuntimeError("BENCH_H0_SSH vide : lancer par make (la commande ssh d'Imladris vient du Makefile)")
@@ -228,7 +243,7 @@ def read_h0(ask: str, vm: str, run_id: str = "", env: dict | None = None, timeou
     if not VM_NAME.fullmatch(vm) or (run_id and not RUN_ID.fullmatch(run_id)):
         raise RuntimeError("nom de VM ou run_id invalide")
     inspect = ["docker", "inspect", "--format", "{{json .Mounts}}|{{.Image}}", "eregion-watch"]
-    seen = run(remote(base, " ".join(shlex.quote(w) for w in inspect)), timeout=60)
+    seen = run(remote(base, " ".join(shlex.quote(w) for w in inspect)), timeout=within(60))
     if not seen.ok:
         raise RuntimeError(f"Imladris ne répond pas par ssh ({seen.first_error()})")
     try:
@@ -238,7 +253,7 @@ def read_h0(ask: str, vm: str, run_id: str = "", env: dict | None = None, timeou
         raise RuntimeError("la watch d'Imladris ne se lit pas (docker inspect)") from e
     words = reader_command(mounts if isinstance(mounts, list) else [], image.strip(), ask, vm, run_id)
     res = run(remote(base, " ".join(shlex.quote(w) for w in words)),
-              stdin=READER.read_text(encoding="utf-8"), timeout=timeout)
+              stdin=READER.read_text(encoding="utf-8"), timeout=within(timeout))
     if not res.ok:
         raise RuntimeError(f"la lecture d'Imladris a échoué ({res.first_error()})")
     try:

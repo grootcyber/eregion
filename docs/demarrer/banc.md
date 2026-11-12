@@ -222,7 +222,7 @@ La preuve, à trois endroits :
 
 **Sans cible Make pour un run seul.** Un scénario seul se lance de la VM : `make orodruin-ssh`, puis le `docker run` d'un injecteur, durci (`infra/orodruin/README.md`). La campagne déclarée, elle, passe par des cibles Make.
 
-**Le rançongiciel (T1486)**, une technique destructive, se rejoue par une demande de Dagorlad, avec son restore et sa levée : [`banc-t1486.md`](../banc-t1486.md).
+**Le rançongiciel (T1486)**, une technique destructive, se rejoue par une demande de Dagorlad, avec son restore et sa levée : [`banc-t1486.md`](../banc-t1486.md). En deux commandes du poste, `make bench-run` puis `make bench-restore` : chacune compose seule le rapport du run, la première une fois le cycle du run écrit sur Imladris (10 min au plus), la seconde après la levée (30 min au plus ; BNC3a).
 
 **Ce que le journal d'activité dit des gestes sur une VM** (LEV2, avant la règle de levée de LEV3) : des écritures sans effet sur gondolin, chacune avec son retour, puis un rapport sans identifiant : [`banc-lev2.md`](../banc-lev2.md).
 

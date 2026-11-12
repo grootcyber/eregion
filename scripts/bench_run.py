@@ -24,7 +24,10 @@ is installed on Imladris. In order, each step stopping the next one:
                    which judges it again (contract, watch, enrollment, zone, the name typed against
                    the name it reads, its cap) — what `make orodruin-exercise` does; the name typed is
                    removed from Orodruin at the end, whatever the end
-  5  the report    `make bench-report RUN=<run_id>` for each run Orodruin's output names (« Run: … »)
+  5  the report    `make bench-report RUN=<run_id>` for each run Orodruin's output names (« Run: … »),
+                   once the run's cycle is written on Imladris — read again, 10 min at most, then
+                   composed anyway, saying what is not yet written (BNC3a: on 12/11 the report
+                   composed 7 s after the detection saw neither the isolation nor its cycle)
 
 DRY_RUN=1: 0 to 3, then what 4 would send — nothing sent, nothing run.
 A terminal holds the gesture against a mistake, not against a process of the same user that drives
@@ -106,8 +109,9 @@ class Steps:
         return proc.wait(), runs
 
     def report(self, run_id: str, target: str) -> int:
+        """The run's report, once its cycle is written on Imladris (bounded: bench_report.CYCLE_WAIT_S)."""
         import bench_report
-        return bench_report.main(["--run", run_id, "--target", target], self.env)
+        return bench_report.main(["--run", run_id, "--target", target, "--wait", "cycle"], self.env)
 
 
 def confirm(request: xr.Request, catalog: dict, ask, say) -> dict | None:
@@ -222,7 +226,7 @@ def main(argv: list[str] | None = None, env: dict | None = None, *, cwd=None, he
         say(f"✗ aucun run lu dans la sortie d'Orodruin (code {code}) : pas de rapport. La chronologie de "
             "la demande est dans Dagorlad ; make bench-report RUN=<run_id> à la main.")
         return 1
-    say("→ 4/4 le rapport")
+    say("→ 4/4 le rapport, une fois le cycle du run écrit sur Imladris (relu, 10 min au plus)")
     worst = code
     for run_id in runs:
         rc = steps.report(run_id, target)
