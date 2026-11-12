@@ -454,6 +454,7 @@ def test_pending_says_the_card_without_the_subscription(monkeypatch, recorded):
 ])
 def test_pending_s_own_steps_name_the_vm_by_its_short_name(monkeypatch, recorded, capsys, action, kind, step):
     from glorfindel import cli
+    monkeypatch.setattr("glorfindel.actions.active_isolations", lambda: [{"resource_id": VM}])   # known here
     card = {"id": "esc-1", "resource_id": VM, "action": action, "escalation_type": kind,
             "reason": "r", "run_id": "r1", "timestamp": "2026-10-29T08:00:00+00:00"}
     cli._render_escalation(card)
@@ -461,6 +462,63 @@ def test_pending_s_own_steps_name_the_vm_by_its_short_name(monkeypatch, recorded
     said = " ".join(out.split())
     assert step in said, said
     _clean(out)
+
+
+def _card(rid: str, action: str = "restore_from_backup", kind: str = "destructive_action") -> dict:
+    return {"id": "esc-1", "resource_id": rid, "action": action, "escalation_type": kind, "reason": "r",
+            "run_id": "r1", "timestamp": "2026-10-29T08:00:00+00:00", "first_seen": "2026-10-29T08:12:00+00:00"}
+
+
+def test_pending_never_gives_a_name_that_takes_another_vm(monkeypatch, recorded, capsys):
+    """The card's VM no longer known here, another of its name in another group known: the short
+    name would take that one — `restore vm-example-01 --yes` copied, the wrong VM restored without a
+    question. The id is asked for instead."""
+    from glorfindel import cli
+    monkeypatch.setattr("glorfindel.discovery.AssetRegistry", lambda: SimpleNamespace(all=lambda: [
+        SimpleNamespace(resource_id=_vm(rg=RG_B))]))
+    cli._render_escalation(_card(VM))
+    said = " ".join(capsys.readouterr().out.split())
+    assert "glorfindel restore vm-example-01 --yes" not in said
+    assert "glorfindel restore <id: glorfindel list --ids> --yes --before 2026-10-29T08:12:00+00:00" in said
+    _clean(said)
+
+
+@pytest.mark.parametrize("rid", [
+    VM,                                                        # a VM nothing knows here
+    NSG,                                                       # a card that is no VM's
+    f"/subscriptions/{SUB}/resourceGroups/{RG}/providers/Microsoft.Storage/storageAccounts/stexample",
+])
+def test_pending_asks_for_the_id_of_what_no_name_resolves(monkeypatch, recorded, capsys, rid):
+    from glorfindel import cli
+    cli._render_escalation(_card(rid, action="release_isolation", kind="low_confidence"))
+    said = " ".join(capsys.readouterr().out.split())
+    assert "glorfindel release <id: glorfindel list --ids> --yes" in said, said
+    _clean(said)
+
+
+def test_pending_takes_the_short_name_back_whatever_its_case(monkeypatch, recorded, capsys):
+    from glorfindel import cli
+    monkeypatch.setattr("glorfindel.actions.active_isolations", lambda: [{"resource_id": VM.upper()}])
+    cli._render_escalation(_card(VM + "/", action="release_isolation", kind="low_confidence"))
+    assert "glorfindel release vm-example-01 --yes" in " ".join(capsys.readouterr().out.split())
+
+
+def test_pending_says_a_proposed_rule_without_the_subscription(recorded, capsys):
+    """The rule the model wrote saw the full id in its prompt: its analysis, its explanation and its
+    query said without the subscription. The proposal keeps them; approve-rule takes its id."""
+    from glorfindel import cli
+    proposal = {"id": "prop-1", "rule_name": "rule-x", "ttp": "T1486", "resource_id": VM, "confidence": 0.8,
+                "analysis": f"Missed on {VM} in subscription {SUB}",
+                "explanation": f"Reads {NSG} first",
+                "query": f'Perf | where _ResourceId =~ "{VM.lower()}" | where SubscriptionId == "{SUB}"'}
+    before = dict(proposal)
+    cli._render_proposal(proposal)
+    out = capsys.readouterr().out
+    said = " ".join(out.split())
+    assert f"Missed on vm-example-01 (groupe {RG})" in said and f"Reads nsg-a (groupe {RG}) first" in said
+    assert "glorfindel approve-rule prop-1" in said
+    _clean(out)
+    assert proposal == before
 
 
 def test_pending_never_suggests_a_name_two_vms_hold(monkeypatch, recorded, capsys):

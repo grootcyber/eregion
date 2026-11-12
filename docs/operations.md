@@ -129,12 +129,20 @@ glorfindel list --ids                        # les mêmes, avec leur id ARM comp
 # par son nom et son groupe (« vm (groupe rg) »), le coffre par son nom, et l'id d'un abonnement laissé nu
 # devient « <abonnement> ». Cela vaut pour le texte d'une erreur d'Azure et tout refus, le refus d'un nom
 # court ambigu, la décision rendue (explication, raisonnement, raison d'escalade), la carte de `pending`
-# (sa raison, les étapes du modèle et les siennes), les raisons d'`activate`, release, unblock, snapshot,
-# jobs, list, door, reset et restore. Les commandes proposées prennent le nom court ; deux VM du même nom
-# prennent l'id complet, que `list --ids` montre. Le signal, les fichiers d'état et les journaux (JSONL)
-# gardent l'id complet ; `door --json` aussi, demandé. Les lignes de `glorfindel watch` (docker logs,
-# journal de la machine) ne sont pas masquées : une erreur d'Azure y garde son texte, ids compris. Ce que
-# le modèle voit n'est pas filtré. Ni l'object id d'un principal ni l'id d'un tenant ne sont masqués.
+# (sa raison, les étapes du modèle et les siennes), les règles qu'il propose (analyse, explication,
+# requête KQL ; `approve-rule` prend l'id de la proposition), les raisons d'`activate`, release, unblock,
+# snapshot, jobs, list, door, reset et restore. Une commande proposée prend le nom court seulement s'il
+# revient à la même ressource ; sinon (deux VM de ce nom, une VM inconnue ici dont un homonyme d'un autre
+# groupe est connu, un NSG, un compte) elle demande l'id complet, que `list --ids` montre. Le signal, les
+# fichiers d'état et les journaux (JSONL) gardent l'id complet ; `door --json` aussi, demandé. Les lignes
+# de `glorfindel watch` (docker logs, journal de la machine) ne sont pas masquées : une erreur d'Azure y
+# garde son texte, ids compris. Ce que le modèle voit n'est pas filtré. Ni l'object id d'un principal ni
+# l'id d'un tenant ne sont masqués.
+# Limites connues, quand l'environnement ne nomme pas l'abonnement (AZURE_SUBSCRIPTION_ID, obligatoire,
+# couvre le principal) : « "subscriptionId" : "<guid>" » (séparateur de 5 caractères), « %3D<guid> », le
+# double encodage (« %252Fsubscriptions%252F »), une liste JSON (« subscriptions: ["<guid>"] ») passent.
+# Une étape écrite par le modèle, une fois masquée (« glorfindel restore vm (groupe rg) --yes »), ne se
+# copie plus : le shell la refuse (erreur de syntaxe), rien ne s'exécute.
 glorfindel pending                           # escalades en attente
 glorfindel pending --watch                   # alerting temps réel
 

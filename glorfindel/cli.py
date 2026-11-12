@@ -1751,9 +1751,11 @@ def _render_proposal(p: dict) -> None:
     if p.get("replaces") == "client":
         console.print(f"  [yellow]⚠ L'approuver remplace la règle « {_esc_markup(p['rule_name'])} » "
                       f"de la couche du client.[/yellow]")
-    console.print(f"  Analysis  : [dim]{p['analysis'][:100]}…[/dim]")
-    console.print(f"  Why better: {p['explanation'][:100]}")
-    console.print(Syntax(p["query"].strip(), "sql", theme="monokai", line_numbers=False))
+    # The model's words and query, written with the full id in its prompt: said without the
+    # subscription, here only — the proposal keeps them, and approve-rule takes its id (MSK2).
+    console.print(f"  Analysis  : [dim]{_esc_markup(_ids_masked(p['analysis'])[:100])}…[/dim]")
+    console.print(f"  Why better: {_esc_markup(_ids_masked(p['explanation'])[:100])}")
+    console.print(Syntax(_ids_masked(p["query"]).strip(), "sql", theme="monokai", line_numbers=False))
     console.print(
         f"  [dim]→ approve: glorfindel approve-rule {p['id']}[/dim]"
     )
@@ -1800,12 +1802,17 @@ def _card_moment(e: dict) -> str:
 
 
 def _name_for_a_command(resource_id: str) -> str:
-    """What a suggested command names a VM by: its short name, which every command takes back
-    (`_resolve_resource_id`); a name two VMs hold, the id that `list --ids` shows (MSK2)."""
+    """What a suggested command names a VM by: its short name, only when every command takes it
+    back to this very resource (`_resolve_resource_id`); otherwise the id that `list --ids` shows
+    (MSK2). Two VMs of that name, a VM this host no longer knows while another of its name, in
+    another group, is known (the name would take the other one: a `restore … --yes` on the wrong
+    VM), or a resource nothing resolves (a NSG, an account): never the short name."""
     short = _short_name(resource_id)
     try:
-        _resolve_resource_id(short)
+        resolved = _resolve_resource_id(short)
     except click.ClickException:
+        return "<id: glorfindel list --ids>"
+    if resolved.rstrip("/").lower() != str(resource_id or "").rstrip("/").lower():
         return "<id: glorfindel list --ids>"
     return short
 

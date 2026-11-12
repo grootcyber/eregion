@@ -335,10 +335,14 @@ def test_the_provider_lists_its_points_read_only(monkeypatch):
     assert posted == [] and not connector._compute.virtual_machines.begin_deallocate.called
 
 
-def test_every_copyable_restore_command_asks_for_the_moment():
+def test_every_copyable_restore_command_asks_for_the_moment(monkeypatch):
     """The commands to copy — the CLI's next steps, the bot's, the TUI's, the console's —
     show --before."""
     from glorfindel import cli
+    # The card's VM known here (isolated): its short name takes it back (MSK2).
+    monkeypatch.setattr("glorfindel.actions.active_isolations", lambda: [{"resource_id": VM}])
+    monkeypatch.setattr("glorfindel.actions.active_blocks", lambda: [])
+    monkeypatch.setattr("glorfindel.discovery.AssetRegistry", lambda: SimpleNamespace(all=lambda: []))
     import io
     from rich.console import Console
     buf = io.StringIO()

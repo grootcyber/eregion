@@ -1,8 +1,9 @@
 """MSK2 (#762): IML1c's follow-up (decision of Jonathan, 12/11) — no output of the CLI meant for a human
 shows a subscription's id (Azure's error text at the boundary and every refusal, the ambiguous short
 name, the decision rendered, `list` and the commands it suggests), and no webhook nor bot of the
-developer's shell in the test suite. M4950–M4959, then M4980–M4989 after the review (pending,
-activate, three forms of an id, the guard of the imports), measured by tests/unit/test_cli_masking.py and
+developer's shell in the test suite. M4950–M4959, then M4980–M4989 after the first review (pending,
+activate, three forms of an id, the guard of the imports) and M4990–M4994 after the second (a short name
+that takes another VM, the rules pending proposes), measured by tests/unit/test_cli_masking.py and
 tests/unit/test_entries_calls.py.
 
 The form of a lot's file, as scripts/mutation_check.py loads it: MUTANTS, TESTS (its own ids),
@@ -67,8 +68,8 @@ MUTANTS = [
      '    rid = _name_for_a_command(e["resource_id"])      # never the full id on the card (MSK2)\n',
      '    rid = e["resource_id"]\n'),
     ("M4983", "glorfindel pending suggests a name two VMs hold: the command it gives is refused (MSK2)", CLI,
-     '        return "<id: glorfindel list --ids>"\n',
-     "        return short\n"),
+     '    except click.ClickException:\n        return "<id: glorfindel list --ids>"\n',
+     "    except click.ClickException:\n        return short\n"),
     ("M4984", "glorfindel activate says its reasons raw: other_subscription's two subscriptions on the "
      "terminal (MSK2)", CLI,
      "        console.print(f\"  • [{r['level']}] {_esc_markup(_ids_masked(r['message'], subscriptions=subs))}\",\n",
@@ -93,6 +94,25 @@ MUTANTS = [
      "mask what the model sees, unseen (MSK2)", _M,
      '        yield from (a.name == "masking" for a in node.names)\n',
      "        yield from ()\n"),
+    # The review of MSK2 (r2): a short name that takes another VM, the rules pending proposes.
+    ("M4990", "glorfindel pending gives a short name that resolves to another VM: « restore vm-a --yes » "
+     "copied restores the homonym of another group, asking nothing (MSK2)", CLI,
+     '    if resolved.rstrip("/").lower() != str(resource_id or "").rstrip("/").lower():\n',
+     "    if False:\n"),
+    ("M4991", "glorfindel pending compares the resolved id by its case: the card's own VM asked by its id "
+     "(MSK2)", CLI,
+     '    if resolved.rstrip("/").lower() != str(resource_id or "").rstrip("/").lower():\n',
+     '    if resolved.rstrip("/") != str(resource_id or "").rstrip("/"):\n'),
+    ("M4992", "a proposed rule's query shown as the model wrote it: its _ResourceId, the subscription's id "
+     "with it (MSK2)", CLI,
+     '    console.print(Syntax(_ids_masked(p["query"]).strip(), "sql", theme="monokai", line_numbers=False))\n',
+     '    console.print(Syntax(p["query"].strip(), "sql", theme="monokai", line_numbers=False))\n'),
+    ("M4993", "a proposed rule's analysis shown raw (MSK2)", CLI,
+     "    console.print(f\"  Analysis  : [dim]{_esc_markup(_ids_masked(p['analysis'])[:100])}…[/dim]\")\n",
+     "    console.print(f\"  Analysis  : [dim]{p['analysis'][:100]}…[/dim]\")\n"),
+    ("M4994", "a proposed rule's explanation shown raw (MSK2)", CLI,
+     "    console.print(f\"  Why better: {_esc_markup(_ids_masked(p['explanation'])[:100])}\")\n",
+     "    console.print(f\"  Why better: {p['explanation'][:100]}\")\n"),
 ]
 TESTS = {
     "M4950": f"{_M}::test_azure_s_error_at_the_boundary_is_said_without_the_subscription",
@@ -115,4 +135,9 @@ TESTS = {
     "M4987": f"{_M}::test_no_subscription_id_is_left_in_a_text",
     "M4988": f"{_M}::test_no_subscription_id_is_left_in_a_text",
     "M4989": f"{_M}::test_the_guard_sees_every_form_of_import",
+    "M4990": f"{_M}::test_pending_never_gives_a_name_that_takes_another_vm",
+    "M4991": f"{_M}::test_pending_takes_the_short_name_back_whatever_its_case",
+    "M4992": f"{_M}::test_pending_says_a_proposed_rule_without_the_subscription",
+    "M4993": f"{_M}::test_pending_says_a_proposed_rule_without_the_subscription",
+    "M4994": f"{_M}::test_pending_says_a_proposed_rule_without_the_subscription",
 }
