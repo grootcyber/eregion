@@ -218,14 +218,14 @@ def _say_closed(vm: str, rid: str, ended: dict, after, report: list[dict], read:
     case = drain_case(ended)
     # « relue » only for an outcome read on Azure: a poller lost (the watch restarted) read nothing.
     word = "relue " if read else ""
-    read = f", {word}{int(after)} s après la demande" if isinstance(after, (int, float)) else ""
+    when = f", {word}{int(after)} s après la demande" if isinstance(after, (int, float)) else ""
     if not case:
         title, level = "Coupure des sessions aboutie", "ok"
-        text = f"Coupure des sessions aboutie sur {vm}{read} : sessions coupées, isolement vérifié."
+        text = f"Coupure des sessions aboutie sur {vm}{when} : sessions coupées, isolement vérifié."
     else:
         title = f"Coupure des sessions : {DRAIN_CASES[case]}"
         level = "unknown" if case == "never" else "failed"
-        text = f"Sur {vm}{read} — {drain_said(ended)} La carte « vérification échouée » le dit."
+        text = f"Sur {vm}{when} — {drain_said(ended)} La carte « vérification échouée » le dit."
     via = vm_notices.say(rid, closure_key(rid, ended.get("asked_at")), "drain_closed", title, text,
                          level=level, detail={"outcome": case or "drained", "after_s": after})
     report.append({"kind": "drain", "vm": vm, "outcome": "closure", "detail": f"{title} ({via})"})

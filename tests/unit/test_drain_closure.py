@@ -234,8 +234,9 @@ def _forge(key: str, drain: dict) -> None:
 
 def test_a_forged_closure_never_writes_the_outcome(azure, posts):
     """A notice « drained » forged under the cut's key while its Run Command still runs: the state
-    stays pending, the poller is kept, and the outcome written is the one read on Azure — sessions
-    left open. What the forger can do: silence the closure."""
+    stays pending and the poller is kept. After a restart, nothing is read: the outcome written is
+    `never` (« jamais aboutie »), never the forged « drained ». What the forger can do: silence the
+    closure."""
     f, c = azure
     out = c.isolate_vm(_WEB)
     _forge(drain_watch.closure_key(_WEB, out["drain"]["asked_at"]), {"status": "drained"})

@@ -306,7 +306,7 @@ function _healthNote(s) {
 }
 
 // DRN2 (#754): the session cut, as the isolation card says it — pending while it runs on Azure,
-// then its outcome, the closure's own words in the title (the text the notification said). Every
+// then its outcome, what it says in the title (from the isolation's state alone, DRN2 review). Every
 // word from the watch goes through _attr.
 const _DRAIN_CHIP = {
   pending: ['var(--orange)', 'cut pending'],

@@ -883,12 +883,11 @@ def _drain_view(iso: dict) -> dict:
     """DRN2 (#754): the session cut as the isolation card says it — `case` (`pending`, `drained`,
     `refused`, `open`, `never`, or "" for a cut that ended within its first wait, nothing to say),
     `ended_at` when the watch read its outcome after that wait, `after_s` (when it was read so,
-    after it was asked), and `said`: the closure's text as the notification said it
-    (glorfindel/vm_notices.py) when it says the state's outcome, else the outcome's. The case is the
-    state's, never the store's. Text from the watch, with names from Azure: the page writes it
-    through `_attr`."""
-    from glorfindel import vm_notices
-    from glorfindel.drain_watch import closure_key
+    after it was asked), and `said`: what the outcome says. All of it from the isolation's state
+    alone — the outcome read on Azure —, never from the notices' store, which the console and the
+    bot write too (glorfindel/vm_notices.py, DRN2 review): a forged notice changes neither the chip
+    nor its sentence. Text from the watch, with names from Azure: the page writes it through
+    `_attr`."""
     from glorfindel.response.policy import drain_case, drain_said
     drain = iso.get("drain") if isinstance(iso.get("drain"), dict) else {}
     ended_at = str(iso.get("drain_ended_at") or "")
@@ -898,20 +897,16 @@ def _drain_view(iso: dict) -> dict:
     view = {"case": case, "ended_at": ended_at}
     if case == "pending":
         return view
-    try:
-        notice = vm_notices.said(closure_key(str(iso.get("resource_id") or ""), drain.get("asked_at"))) or {}
-    except Exception:          # the card first: an unreadable store says the outcome alone
-        notice = {}
-    # The store is written by the console and the bot too (DRN2 review): its words only when they
-    # say the outcome the state holds — read on Azure — never another one.
-    if (notice.get("detail") or {}).get("outcome") != case:
-        notice = {}
-    after = drain.get("after_s") if isinstance(drain.get("after_s"), (int, float)) else (
-        (notice.get("detail") or {}).get("after_s"))
-    if isinstance(after, (int, float)):
+    after = drain.get("after_s") if isinstance(drain.get("after_s"), (int, float)) else None
+    if after is not None:
         view["after_s"] = int(after)
-    view["said"] = str(notice.get("text") or drain_said(drain)
-                       or ("Coupure des sessions aboutie : sessions coupées." if case == "drained" else ""))
+    if case == "drained":
+        said = ("Coupure des sessions aboutie"
+                + (f", relue {int(after)} s après la demande" if after is not None else "")
+                + " : sessions coupées, isolement vérifié.")
+    else:
+        said = drain_said(drain)
+    view["said"] = said
     return view
 
 

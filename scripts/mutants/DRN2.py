@@ -59,10 +59,12 @@ MUTANTS = [
      "pass (DRN2 review)", WATCH,
      '            if snap.get("drain_closure_due"):     # an outcome written, its closure not said yet\n',
      "            if False:\n"),
-    ("M4906", "the console takes a notice's words for the card whatever the outcome: a forged « aboutie » "
-     "on a cut that never ended (DRN2 review)", API,
-     '    if (notice.get("detail") or {}).get("outcome") != case:\n        notice = {}\n',
-     ""),
+    ("M4906", "the console takes the card's sentence from the notices' store: a forged notice, which "
+     "the console or the bot can write, changes what the card says (DRN2 review)", API,
+     '    view["said"] = said\n',
+     "    from glorfindel import vm_notices\n    from glorfindel.drain_watch import closure_key\n"
+     '    forged = vm_notices.said(closure_key(str(iso.get("resource_id") or ""), drain.get("asked_at"))) or {}\n'
+     '    view["said"] = str(forged.get("text") or said)\n'),
     ("M4907", "bytes that are not UTF-8 in the notices' store stop the follow of every cut (DRN2 review)",
      NOTICES,
      '    for line in _STORE.read_bytes().decode("utf-8", errors="replace").splitlines():\n',

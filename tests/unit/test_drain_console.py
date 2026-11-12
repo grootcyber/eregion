@@ -1,5 +1,5 @@
 """DRN2 (#754): the isolation card of the console says what became of the session cut — pending, then
-its outcome, in the closure's own words (glorfindel/vm_notices.py: the text the notification said).
+its outcome, from the isolation's state alone (the outcome read on Azure), never from the notices' store.
 Until DRN2, `/api/state` carried the drain and the page showed nothing of it: on the bench, 12/11,
 the console said « quarantine NSG ✓ » and Discord « coupure en attente », never its end. What comes
 from the watch reaches the page as data, written through `_attr` (#254,
@@ -29,11 +29,9 @@ def test_a_cut_pending_is_said_pending():
     assert _view({"status": "pending", "asked_at": ASKED}) == {"case": "pending", "ended_at": ""}
 
 
-def test_a_cut_closed_after_its_first_wait_says_the_closure_s_words():
-    said = "Coupure des sessions aboutie sur web, relue 327 s après la demande : sessions coupées."
-    vm_notices.say(VM, drain_watch.closure_key(VM, ASKED), "drain_closed", "Coupure des sessions aboutie",
-                   said, level="ok", detail={"outcome": "drained", "after_s": 327.4})
+def test_a_cut_closed_after_its_first_wait_says_its_outcome_from_the_state():
     view = _view({"status": "drained", "after_s": 327, "asked_at": ASKED}, drain_ended_at="2026-11-12T09:24:12+00:00")
+    said = "Coupure des sessions aboutie, relue 327 s après la demande : sessions coupées, isolement vérifié."
     assert view == {"case": "drained", "ended_at": "2026-11-12T09:24:12+00:00", "after_s": 327, "said": said}
 
 
@@ -44,14 +42,27 @@ def test_a_cut_that_failed_says_its_case_even_without_a_closure():
     assert "after_s" not in view
 
 
-def test_a_notice_that_says_another_outcome_is_never_the_card_s_words():
-    """The store is written by the console and the bot too (DRN2 review): a forged « aboutie » under
-    the key of a cut whose state says it never ended — the card keeps the state's case and words."""
+def test_a_forged_notice_never_changes_the_card():
+    """The store is written by the console and the bot too (DRN2 review): a forged notice — another
+    outcome, or the same outcome with other words and another duration — changes neither the chip
+    nor its sentence: the card is the state's alone."""
     vm_notices.say(VM, drain_watch.closure_key(VM, ASKED), "drain_closed", "Coupure des sessions aboutie",
                    "tout va bien", level="ok", detail={"outcome": "drained", "after_s": 1})
     view = _view({"status": "failed", "never": True, "error": "statut non relu", "asked_at": ASKED},
                  drain_ended_at="2026-11-12T09:50:00+00:00")
     assert view["case"] == "never" and "tout va bien" not in view["said"] and "after_s" not in view
+    other = "/subscriptions/s/resourceGroups/rg-app/providers/Microsoft.Compute/virtualMachines/db"
+    vm_notices.say(other, drain_watch.closure_key(other, ASKED), "drain_closed", "Coupure des sessions : "
+                   "coupure jamais aboutie", "rien à voir ici", level="unknown",
+                   detail={"outcome": "never", "after_s": 9999})
+    _save_isolation_state(other, {"resource_id": other, "isolated_at": ASKED, "placements": [],
+                                  "drain": {"status": "failed", "never": True, "error": "statut non relu",
+                                            "asked_at": ASKED}, "drain_ended_at": "2026-11-12T09:50:00+00:00"})
+    body = console().get("/api/state").json()
+    [iso] = [s for r in body["resources"] if r["resource_id"] == other for s in r["states"]
+             if s["type"] == "isolated"]
+    assert iso["drain_view"]["case"] == "never" and "rien à voir" not in iso["drain_view"]["said"]
+    assert "after_s" not in iso["drain_view"]
 
 
 def test_a_status_with_no_case_says_nothing():
