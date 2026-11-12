@@ -35,7 +35,8 @@ MUTANTS = [
      "renamed (IML1b)", GUARD,
      '    return not any(rel.startswith(key) if key.endswith("/") else rel == key for key in OLD_NOT_READ)\n',
      "    return True\n"),
-    ("M4846", "a text kept read anyway: CLAUDE.md, Jonathan's to change, said by every session (IML1b)", GUARD,
+    ("M4846", "a text kept read anyway: a published release's line in ROADMAP.md, said by every session "
+     "(IML1b)", GUARD,
      "        if _within(text, kept, m.start(), m.end()):\n            continue\n",
      "        if False:\n            continue\n"),
     ("M4847", "the CD left unread again: its messages in #deploy could say H0 (IML1b)", GUARD,

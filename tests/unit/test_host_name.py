@@ -228,12 +228,14 @@ def test_a_former_command_is_read_but_in_the_history_and_the_kept_texts(tmp_path
         "infra/glorfindel-host/deploy.sh": "# " + cited, "Makefile": "# " + cited,
     })
     found = sorted({p.split(":")[0] for p in host_name.problems(tmp_path) if "a former command" in p})
-    assert found == ["Makefile", "infra/glorfindel-host/cd/eregion_cd.py", "infra/glorfindel-host/deploy.sh",
-                     "infra/glorfindel-host/main.tf"]
-    _tree(tmp_path, {"CLAUDE.md": "Puis `make glorfindel-host-push`.\n"})
+    # IML1c: CLAUDE.md is read like any live text — its line changed, with Jonathan's agreement (12/11).
+    assert found == ["CLAUDE.md", "Makefile", "infra/glorfindel-host/cd/eregion_cd.py",
+                     "infra/glorfindel-host/deploy.sh", "infra/glorfindel-host/main.tf"]
+    assert "CLAUDE.md" not in host_name.OLD_KEPT
+    _tree(tmp_path, {"ROADMAP.md": "Puis `make glorfindel-host-push`.\n"})
     said = host_name.problems(tmp_path)
-    assert any(p.startswith("CLAUDE.md:1: a former command") for p in said)
-    assert any("the kept command « `make glorfindel-host-start REF=…` » is gone" in p for p in said)
+    assert any(p.startswith("ROADMAP.md:1: a former command") for p in said)
+    assert any("the kept command « `make mobile-check`) » is gone" in p for p in said)
 
 
 def test_the_kept_former_commands_are_where_they_are_said():
