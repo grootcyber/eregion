@@ -949,6 +949,19 @@
    "doc": "docs/glorfindel.md"
   },
   {
+   "id": "g-perimetre-illisible",
+   "composant": "glorfindel",
+   "poste": "g-verifier",
+   "nom": "A perimeter block whose check a throttled read cut short says its NICs unread, never reached behind another perimeter",
+   "etat": "main",
+   "release": "0.5",
+   "lots": [
+    "I3N"
+   ],
+   "issue": 746,
+   "doc": "docs/azure.md"
+  },
+  {
    "id": "g-levee-probation",
    "composant": "glorfindel",
    "poste": "g-agir",
