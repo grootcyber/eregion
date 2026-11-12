@@ -692,7 +692,8 @@ services de Glorfindel, trois principaux, chacun avec ce que son code appelle vr
   s'y sépare pas (le point de jeton de la VM répond à chacun d'eux), et les variables de chaque
   service y restent vides. Depuis le 31/10 (décision de Jonathan, BL1), elle tient `Reader` et
   **Eregion Glorfindel Response** sur le seul groupe du banc, `Log Analytics Reader` sur son
-  workspace, jamais le restore ; `GLORFINDEL_READ_ONLY=0`, gondolin et bree en `non_disruptive`.
+  workspace, jamais le restore ; `GLORFINDEL_READ_ONLY=0`, gondolin en `non_disruptive` (bree aussi
+  du 01/11 au 11/11, en `human_only` depuis : `docs/banc-bl1.md`).
   Après les gestes de SEC11 (ci-dessous), la coupure des sessions lui vient de Terraform, VM par
   VM : `session_drain_vms` (gondolin et bree, gardée dans
   `infra/glorfindel-host/session_drain.auto.tfvars`, commité) ; chaque VM relue sur Azure, une
@@ -4792,7 +4793,7 @@ quelles (A12). La mesure (requête Q3, ci-dessous) remplace l'estimation après 
    `auditd-sensitive-root-command` (la release qui porte AUD1, déployée par le CD). Avant, les lignes
    arrivent sans que rien ne les lise — sans dommage, mais sans mesure.
 2. **Le mode des VM, pour la mesure** : `make imladris-push HUMAN_ONLY=1` (tout en
-   `human_only`). gondolin et bree sont en `non_disruptive` sur Imladris : chaque carte d'AUD1 y pourrait
+   `human_only`). gondolin est en `non_disruptive` sur Imladris (bree l'était jusqu'au 11/11) : chaque carte d'AUD1 y pourrait
    lancer un instantané, et la routine de bree en fait une toutes les 6 h (A13). Les remettre comme
    avant à la fin de la mesure.
 
@@ -5087,12 +5088,14 @@ Depuis le poste, à la racine du dépôt, `.envrc` chargé :
    ```
 
    Aucun principal des deux dernières listes ne doit paraître dans la première. Les entrées attendues
-   de la première :
+   de la première (15 le 12/11) :
    - ta lecture sur le compte (`Storage Blob Data Reader`) ;
    - tes rôles hérités de l'abonnement ;
-   - les rôles d'Imladris, de la console et d'Orodruin sur le groupe : `Reader`, « Eregion Glorfindel
-     Response », « Eregion Glorfindel Restore », la lecture d'Orodruin. Aucun de ces rôles n'a de
-     droit de données ni `listKeys`. Ce sont des identités d'hôtes que la watch ne surveille pas.
+   - le lecteur du contrat d'Orodruin, hérité de l'abonnement (`eregion-orodruin-contract-reader`, `infra/orodruin/main.tf`) ;
+   - sur le groupe, `Reader` et « Eregion Glorfindel Response » pour Imladris, la console, le bot et
+     la watch du poste ; « Eregion Glorfindel Restore » pour la console et le bot ; la lecture
+     d'Orodruin. Aucun de ces rôles n'a de droit de données ni `listKeys`. Ce sont des identités
+     d'hôtes, ou de l'opérateur, que la watch ne surveille pas.
      « Eregion Glorfindel Restore » porte toutefois `Microsoft.Storage/storageAccounts/write` sur
      tout le groupe : il peut rouvrir la clé du compte des flux, sans pouvoir la lire (ci-dessous,
      « Ce qui reste ouvert »).
@@ -5116,7 +5119,17 @@ Depuis le poste, à la racine du dépôt, `.envrc` chargé :
    ```
 
 5. **Depuis une VM inscrite, une écriture d'essai refusée** (la mesure de CR15 dans `corroboration.md`).
-   Sur gondolin, par SSH, avec son identité managée :
+   Sur gondolin, par SSH, avec son identité managée. La clé à passer est la clé privée qui va avec
+   `admin_ssh_public_key` de `terraform.tfvars`, la même que `HOST_SSH_KEY` pour Imladris ; l'agent
+   SSH qui propose une autre clé est refusé (« Permission denied (publickey) », le 12/11). L'utilisateur
+   est `admin_username` (`infra/terraform/config.yaml`), l'adresse celle de `pip-celebrimbor-gondolin` :
+
+   ```bash
+   GIP=$(az vm show -d -g rg-celebrimbor -n vm-celebrimbor-gondolin --query publicIps -o tsv)   # jamais affichée
+   ssh -i ~/.ssh/<la clé d'admin_ssh_public_key> -o IdentitiesOnly=yes celebrimbor@"$GIP"
+   ```
+
+   Puis, sur gondolin :
 
    ```bash
    TOKEN=$(curl -sf -H "Metadata: true" \
@@ -5129,6 +5142,12 @@ Depuis le poste, à la racine du dépôt, `.envrc` chargé :
 
    Résultat attendu : `403`. Un `201` veut dire que le compte n'est pas une preuve : l'écrire dans
    CR15, et retirer le blob d'essai.
+
+**Mesuré le 12/11** (#654) : les points 1 à 5 tiennent. L'apply ciblé a fini à 12:50:28 UTC ;
+15 attributions lues, aucune identité de VM ni du groupe ; le premier blob écrit sans clé 5 min 23 s
+après l'apply (CF1), lu par `--auth-mode login` (CF5) ; la tranche de `NTANetAnalytics` de 13:10 faite
+des seuls flux d'après la bascule (CF2) ; l'écriture d'essai depuis gondolin refusée, HTTP 403
+`AuthorizationPermissionMismatch`, un refus RBAC et non réseau.
 
 ### Les hypothèses d'INF-FL
 
@@ -5143,6 +5162,10 @@ Depuis le poste, à la racine du dépôt, `.envrc` chargé :
 
 ### Ce qui reste ouvert
 
+- **Environ 46 s de flux perdues, une seule fois, à la bascule de traffic analytics** (12/11).
+  D'habitude, chaque tranche de 10 min chevauche la précédente ; à la bascule, une minute
+  d'agrégation (de 12:48:49 à 12:49:35 UTC) n'est analysée dans aucune tranche. Hypothèse, non lue :
+  elle est restée dans l'ancien compte, que traffic analytics ne lit plus (CF6).
 - **Le point de terminaison public reste ouvert.** Il est fermé à toute requête sans identité Entra
   ID autorisée, mais pas par le réseau. Un pare-feu du compte (refus par défaut, services de
   confiance admis, comme le permet la FAQ de Network Watcher) serait une défense de plus. Il demande

@@ -22,11 +22,17 @@ Les incidents cloud courants sont contenus seuls, en quelques minutes, de façon
 
 | Indicateur | Ce qu'il mesure | Aujourd'hui |
 |---|---|---|
-| Temps pour contenir | de la première action malveillante à l'action vérifiée | mesuré au banc le 31/10 (BL1 : T1136.001 détectée en 144 s, aucun incident contenu seul) ; en réel sur bree depuis le 01/11 (`non_disruptive`) : le brute force SSH bloqué seul, chiffré par l'Overview (OV1, T0 = la détection) |
-| Part contenue seule | incidents contenus sans humain, sur tous les incidents | exercices : 0 sur 1 (BL1, 31/10 : un instantané à 35 %, escaladé) ; réel : 5 blocages autonomes sur bree le week-end du 01/11, comptés par l'Overview (OV1) ; une panne prise pour une attaque comptée à part (0 sur 1 au banc) |
-| Actions disruptives à tort | isolations et blocages jugés faux, parmi ceux qui sont jugés | 0 % sur 41 jugées en 30 jours (Imladris, anciennement H0, banc, bree en `non_disruptive` depuis le 01/11) ; cartes jugées dans la console ou Discord, résumé chaque lundi ; le critère « parc réel » reste ouvert |
-| Couverture | techniques cloud pertinentes détectées, sur le catalogue | 4 techniques sur 5 implémentées (matrice C1) ; les pannes : 2 runs, 2 PASS ; les techniques graves attendent R2 (décision du 02/11) |
-| Âge de la dernière preuve | depuis le dernier run qui a prouvé détection et réponse | objectif : moins de 30 jours ; dernier run de bout en bout : 31/10 (BL1, T1136.001, banc) |
+| Temps pour contenir | de la première action malveillante à l'action vérifiée | T1486 au banc le 12/11 : la quarantaine posée à 161,1 s de T0, l'isolement vérifié à 463,1 s, après la coupure des sessions ; en réel, sur bree du 01/11 au 11/11 : le brute force SSH bloqué seul, chiffré par l'Overview (OV1) |
+| Part contenue seule | incidents contenus sans humain, sur tous les incidents | exercices : 1 sur 3 contenu seul et vérifié (T1486, 12/11) ; réel : 5 blocages autonomes sur bree le week-end du 01/11 (OV1), un brute force bloqué seul le 12/11 ; une panne prise pour une attaque comptée à part (0 sur 1 au banc) |
+| Actions disruptives à tort | isolations et blocages jugés faux, parmi ceux qui sont jugés | 0 % sur 41 jugées en 30 jours au 02/11 ; depuis, l'isolement de bree du 10/11 jugé faux le 11/11 : le compte des 30 jours est à relire ; un isolement autonome vérifié n'a pas encore de carte à juger (JUG1) |
+| Couverture | techniques cloud pertinentes détectées, sur le catalogue | 8 techniques implémentées, dont les 3 de VM3, jamais jouées au banc ; la dernière preuve au banc : T1486 le 12/11, T1136.001 le 31/10 ; les pannes : 2 runs, 2 PASS ; les techniques graves attendent R2 (décision du 02/11) |
+| Âge de la dernière preuve | depuis le dernier run qui a prouvé détection et réponse | objectif : moins de 30 jours ; dernier run de bout en bout : 12/11 (RAN1, T1486, banc : de l'attaque à la levée par Imladris, anciennement H0) ; avant lui, 31/10 (BL1, T1136.001, banc) |
+
+**Le détail, au 12/11.**
+- *Temps pour contenir.* Le rançongiciel au banc le 12/11 (RAN1, run `20261112T091448Z-b218`) : la coupure des sessions a pris 304,2 s sous la quarantaine, d'où la vérification à 463,1 s ([`docs/banc-t1486.md`](docs/banc-t1486.md), « Les chiffres du 12/11 »). Le 31/10, BL1 : T1136.001 détectée en 144 s, aucun incident contenu seul. En réel, T0 est la détection (OV1).
+- *Part contenue seule.* Le T1486 du 09/11 a été isolé seul, sa vérification en échec (DRN1, corrigé dans la 0.5.9) ; BL1, le 31/10 : un instantané à 35 %, escaladé. Le brute force du 12/11 sur gondolin venait d'Internet, hors exercice.
+- *Actions disruptives à tort.* Les 41 jugées au 02/11 : Imladris, sur le banc, bree en `non_disruptive` du 01/11 au 11/11. L'isolement de bree du 10/11 a été jugé faux le 11/11 (la règle `ransomware-disk-write`, aucune attaque) ; un second, le 11/11 à 16:17, n'a pas de verdict relevé. Le compte se relit sur l'Overview. Les cartes se jugent dans la console ou Discord, un résumé chaque lundi ; le critère « parc réel » reste ouvert.
+- *Couverture.* Le catalogue (`technique_catalog.yaml`) implémente 8 techniques depuis la 0.5.7, dont les trois de VM3 (T1053.003, T1059.004, T1070.002). Prouvées au banc par un exercice d'Orodruin : T1486 (12/11, RAN1) et T1136.001 (31/10, BL1). Le 27/10, la matrice C1 en comptait 4 sur les 5 d'alors, prouvées en 30 jours (la capture du README).
 
 ### La règle de production
 
@@ -81,7 +87,7 @@ Tenue par l'Orchestre (RM1, 02/11). Une ligne par release qui se prépare : sa v
 | 0.5.10 | within reach | MOB1 (le banc piloté depuis le téléphone : `make bench-run`, `make bench-restore`, la console par le tunnel du téléphone, `make mobile-check`) ; LEV2 (les faits de la porte sur la carte d'isolement, pour information) et la conception LEV1 (la levée après un restore, seule et en probation sauf porte prouvée ouverte) ; MUT7 (les mutants fragiles mesurés chaque nuit), MUT9 (M33 attrapé quelle que soit la graine) | publiée (10/11) |
 | 0.5.11 | named and mapped | AWS1b, IDM1, IML1, MOB2, BNC2, DOS1, FLK1, MEN2, BNC1b, CI11, INF-FL, MUT10 | brouillon |
 | 0.5.x | — | G1 au banc ; MUT2, MAK2, OI4 | plus tard |
-| 0.6.0 | l'identité défendue | ID1 allumé et mesuré, IDI1 appliqué, R2 (une technique Stratus sur l'identité de test) vue par Glorfindel, IR1a (le plan et « Vérifier » sur la carte) — décidé par Jonathan le 05/11 ; R2c compris, visée le 13 ou le 16/11 (Jonathan, 09/11) | plus tard |
+| 0.6.0 | l'identité défendue | ID1 allumé et mesuré, IDI1 appliqué, R2 (une technique Stratus du plan de contrôle, dans l'abonnement de test dédié de R2b, `docs/design/stratus-cible.md` ; les techniques d'Entra en sont sorties, `planned`) vue par Glorfindel, IR1a (le plan et « Vérifier » sur la carte) — décidé par Jonathan le 05/11 ; R2c compris, visée le 13 ou le 16/11 (Jonathan, 09/11) | plus tard |
 
 ### Les lots
 
@@ -189,7 +195,7 @@ Le 28/10 : la **0.4.1** (échappement de la console, trois suites d'isolation), 
 ## Contexte produit (scénario optionnel)
 Eregion est un CDR — Cloud Detection and Response. Détecte, répond et apprend — sans playbooks, sans équipe SOC dédiée.
 Pitch : "Teste ton infra avant que les autres le fassent pour toi."
-**RTO mesuré : < 25 min sur ransomware VM** — de la détection à la remise en service, sans intervention humaine sur le chemin critique (run 20260609T190824Z : 21m29s).
+**RTO mesuré : 27 min 55 s sur ransomware VM**, au banc le 12/11 (run `20261112T091448Z-b218`, [`docs/banc-t1486.md`](docs/banc-t1486.md)) — de l'attaque à la remise en service, sans l'attente humaine (la détection, l'isolement, le restore) ; le 09/06, sur l'ancienne architecture : de la détection à la remise en service (run 20260609T190824Z : 21m29s).
 Cible : DevOps leads mid-market (50-500 personnes), pas de SOC dédié, <$500/mois acceptable.
 Modèle : CLI open source gratuit, SaaS payant pour multi-tenant + connecteurs avancés + reporting.
 

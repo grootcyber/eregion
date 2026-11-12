@@ -14,9 +14,13 @@ panne, 0) ; T1136.001 détectée en 144 s, mais contenue seule 0 fois sur 1 (un 
 à 35 %, escaladé sous le seuil de 0,7) — le critère 1 tenu, le 2 à mesurer avec une technique que le
 modèle juge grave (BL1b, #396).
 
-**Depuis le 31/10, Imladris garde la posture de la session** (décision de Jonathan ; bree aussi en
-`non_disruptive` depuis le 01/11) : le rôle « Eregion Glorfindel Response » sur le seul groupe du
-banc, `GLORFINDEL_READ_ONLY=0`, gondolin et bree en `non_disruptive`, le CD actif. Les étapes 3 et 7
+**Depuis le 31/10, Imladris garde la posture de la session** (décision de Jonathan) : le rôle
+« Eregion Glorfindel Response » sur le seul groupe du banc, `GLORFINDEL_READ_ONLY=0`, gondolin en
+`non_disruptive`, le CD actif. bree a été en `non_disruptive` du 01/11 au 11/11 ; elle est en
+`human_only` depuis le 11/11, après deux isolations par la règle `ransomware-disk-write` (le 10/11,
+jugée ✗ Wrong le 11/11, et le 11/11 à 16:17), et jusqu'au correctif de la règle (décision de Jonathan ;
+la configuration d'Imladris relue le 11/11 : `autonomy.default` et bree `human_only`, gondolin
+`non_disruptive`). Les étapes 3 et 7
 ne servent plus que si Imladris a été remis en lecture seule. Ce que la posture ouvre et ce qui la borne :
 le modèle de menace ([`design/modele-de-menace.md`](design/modele-de-menace.md), §5).
 
@@ -53,8 +57,8 @@ le modèle de menace ([`design/modele-de-menace.md`](design/modele-de-menace.md)
 
   **Décision de Jonathan (02/11) : « le réel + R2 ».** La règle « bibliothèques publiques
   seulement » reste entière, sans exception. La part contenue seule se mesure sur le **trafic
-  réel** (bree en `non_disruptive` depuis le 01/11, 5 blocages autonomes ; le tableau ci-dessous,
-  du 31/10, la dit encore en `human_only`), compté par l'Overview avec OV1 (#399).
+  réel** (bree en `non_disruptive` du 01/11 au 11/11, 5 blocages autonomes le week-end du 01/11 ;
+  de nouveau en `human_only` depuis le 11/11, comme le tableau ci-dessous, du 31/10), compté par l'Overview avec OV1 (#399).
   **À rejouer** : BL1, quand R2 (#79, Stratus Red Team) apportera une technique grave jouable, en
   seconde technique après T1136.001. D'ici là, rien de nouveau au-delà de la session du 31/10 ; la
   campagne garde sa seule technique publique, T1136.001.
@@ -129,8 +133,9 @@ make imladris-report                                     # l'observation de la s
 ### 1. Le banc (5 à 15 min)
 
 ```bash
-make celebrimbor-plan                  # relire : aucun changement attendu (chaos.enabled: true, gondolin inscrite)
-make celebrimbor-up YES=1              # seulement si le plan montre un écart voulu (ID1 a pu changer le banc)
+make celebrimbor-plan                  # relire, sans appliquer : hors des dérives connues (docs/demarrer/banc.md, étape 1), aucun changement attendu (chaos.enabled: true, gondolin inscrite)
+# un écart voulu (ID1 a pu changer le banc) : son apply ciblé seulement, jamais make celebrimbor-up
+# (le plan complet du 12/11 retirait les règles de Glorfindel du NSG partagé : docs/demarrer/banc.md, étape 1)
 make celebrimbor-start VM=gondolin     # gondolin s'éteint à 23 h UTC
 az vm show -g rg-celebrimbor -n vm-celebrimbor-gondolin --query tags     # eregion-target, eregion-zone=bench
 az group show -n rg-celebrimbor --query tags                             # idem sur le groupe
@@ -180,8 +185,8 @@ secours, hors de la vérification de CI3 (`infra/glorfindel-host/README.md`, « 
 
 Le passage en `non_disruptive` ouvre le contrôle de préparation. Attendu : `ready`, puisque les
 droits viennent d'arriver. Une réserve se lit et se confirme, ou la session s'arrête là. Le 31/10,
-bree était restée en `human_only` ; la posture du 01/11 la met aussi en `non_disruptive`, par le
-même contrôle. `make imladris-ssh` puis `docker exec eregion-watch glorfindel list` montre le
+bree était restée en `human_only` ; la posture du 01/11 l'a mise aussi en `non_disruptive`, par le
+même contrôle, jusqu'au 11/11 : elle est de nouveau en `human_only` (plus haut). `make imladris-ssh` puis `docker exec eregion-watch glorfindel list` montre le
 mode résolu par VM.
 
 ### 4. La campagne (30 à 45 min)
