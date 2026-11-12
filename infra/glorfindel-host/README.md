@@ -683,9 +683,13 @@ d'exercice non marqués (B2), qui n'ont rien à faire dans une observation.
 
   Publiée avant l'étape 1 avec un macOS rouge ou annulé, elle est refusée, et ce refus reste : `make glorfindel-host-cd-install`, puis `make glorfindel-host-cd-retry`.
   Publiée avant l'étape 1 avec un macOS resté en file sans runner, elle n'est pas refusée : l'ancien agent le compte « CI en cours » et attend. Après le `cd-install`, le passage suivant la déploie, sans `cd-retry`.
-- **ROT1 change l'agent** (#737 : `eregion_cd.py`, les rappels d'échéance des paires, ci-dessous). La release qui le porte est déployée par l'agent d'avant, qui ne lit pas les dates notées ; puis `#deploy` demande la mise à jour. Ensuite, une fois :
-  1. `make glorfindel-host-cd-install`, depuis un checkout de `main` à jour (le timer reste comme il était ; les unités ne changent pas) ;
-  2. `make glorfindel-host-cd-status`, dont la dernière ligne dit « rappels : aucune date de fin notée » (l'agent d'avant n'a pas cette ligne) ;
+- **ROT1 change l'agent** (#737 : `eregion_cd.py`, les rappels d'échéance des paires, ci-dessous). Deux voies, la première recommandée :
+  - **juste après la fusion de ROT1**, sans attendre la release : les rappels ne dépendent que de l'agent, pas de la version de Glorfindel qui tourne, et un agent installé depuis un commit plus récent que la release fait dire au CD « rien à mettre à jour ». C'est la voie qui donne de la marge pour le rappel de J-14 ;
+  - **après la release**, déployée par l'agent d'avant, qui ne lit pas les dates notées : `#deploy` demande alors la mise à jour.
+
+  Puis, une fois :
+  1. `make glorfindel-host-cd-install`, depuis un checkout de `main` à jour (`git switch main && git pull` ; le timer reste comme il était ; les unités ne changent pas) ;
+  2. `make glorfindel-host-cd-status`, où une ligne dit « rappels : aucune date de fin notée » (l'agent d'avant n'a pas cette ligne) ;
   3. depuis le poste, `make pair-expiry-note PAIR=console` : la date du secret de la console, qui n'a pas été posé par `make pair-rotate`. Elle dit « ✓ Imladris : fin le … notée » et les dates des rappels.
 - **Le retirer** : `make glorfindel-host-cd-uninstall` (les unités ; `~/.eregion-cd/` reste).
 

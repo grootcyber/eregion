@@ -86,6 +86,9 @@ if args[2:4] == ["credential", "reset"]:
     held["secrets"].append({"keyId": "eeeeeeee-5555-4555-8555-%012d" % st["drawn"], "end": arg("--end-date"),
                             "value": value, "name": arg("--display-name")})
     save()
+    if st.get("fail_after_add"):     # added, then a failure: its answer on stdout, nothing on stderr
+        print(json.dumps({"appId": app, "password": value, "tenant": st["tenant"]}))
+        sys.exit(1)
     sys.stderr.write("WARNING: The output includes credentials that you must protect.\n")
     print(json.dumps({"appId": app, "password": value, "tenant": st["tenant"]}))
     sys.exit(0)
@@ -525,6 +528,149 @@ def test_imladris_out_of_reach_the_rotation_holds_and_says_what_to_type(tmp_path
     assert any("make pair-expiry-note PAIR=console" in s for s in w.said)
 
 
+@pytest.mark.parametrize("missing", ["EREGION_CONSOLE_AZURE_CLIENT_ID", "EREGION_CONSOLE_AZURE_CLIENT_SECRET",
+                                     "both"])
+def test_an_environment_that_is_not_the_envrc_refuses_before_anything(tmp_path, missing):
+    """Without `source .envrc`, compose would recreate the console without its id, then the old secret
+    would go (review 1 of ROT1, measured: rc 0, the console without AZURE_CLIENT_ID)."""
+    w = World(tmp_path)
+    env = w.env()
+    for name in (("EREGION_CONSOLE_AZURE_CLIENT_ID", "EREGION_CONSOLE_AZURE_CLIENT_SECRET") if missing == "both"
+                 else (missing,)):
+        env.pop(name)
+    before = w.envrc.read_bytes()
+    assert pr.rotate("console", 90, w.ctx(env=env)) == 1
+    assert "source .envrc, puis relancer" in w.said[-1]
+    assert w.calls() == [] and w.envrc.read_bytes() == before
+
+
+def test_a_secret_loaded_that_is_not_the_one_of_envrc_refuses(tmp_path):
+    w = World(tmp_path)
+    assert pr.rotate("console", 90, w.ctx(env=w.env(EREGION_CONSOLE_AZURE_CLIENT_SECRET="another"))) == 1
+    assert "source .envrc" in w.said[-1] and w.calls() == []
+
+
+def test_envrc_that_does_not_write_removes_the_new_secret_and_says_nothing_moved(tmp_path, monkeypatch):
+    w = World(tmp_path)
+    before = w.envrc.read_bytes()
+
+    def full(*_a, **_k):
+        raise OSError(28, "No space left on device")
+    monkeypatch.setattr(pr, "write_atomic", full)
+    assert w.rotate() == 1
+    assert w.envrc.read_bytes() == before
+    assert [s["value"] for s in w.secrets()] == [OLD]                    # the new one removed, the old one stays
+    assert not (w.repo / pr.BACKUP).exists() and not (w.repo / pr.TMP).exists()
+    assert "arrêtée (OSError) pendant l'écriture de .envrc" in w.said[-1]
+    assert ".envrc et les services n'ont pas bougé" in w.said[-1] and "le nouveau secret retiré" in w.said[-1]
+    assert w.noted() is None
+    _never_shown(w, OLD, "NEW~secret.1-never-shown")
+
+
+def test_a_ctrl_c_during_the_verification_removes_the_new_secret(tmp_path):
+    w = World(tmp_path)
+    w.unusable.add("NEW~secret.1-never-shown")      # not yet propagated: tried again, and Ctrl-C meanwhile
+
+    def ctrl_c(_s):
+        raise KeyboardInterrupt
+    ctx = w.ctx()
+    ctx.sleep = ctrl_c
+    before = w.envrc.read_bytes()
+    assert pr.rotate("console", 90, ctx) == 1
+    assert w.envrc.read_bytes() == before and [s["value"] for s in w.secrets()] == [OLD]
+    assert "interrompue (Ctrl-C) pendant la vérification du nouveau secret" in w.said[-1]
+
+
+def test_a_ctrl_c_during_the_restart_puts_envrc_and_the_service_back(tmp_path, monkeypatch):
+    w = World(tmp_path)
+    real, seen = pr.recreate, []
+
+    def once(service, env, ctx):
+        seen.append(env["EREGION_CONSOLE_AZURE_CLIENT_SECRET"])
+        if len(seen) == 1:
+            raise KeyboardInterrupt
+        return real(service, env, ctx)
+    monkeypatch.setattr(pr, "recreate", once)
+    before = w.envrc.read_bytes()
+    assert w.rotate() == 1
+    assert w.envrc.read_bytes() == before
+    assert stat.S_IMODE(w.envrc.stat().st_mode) == 0o600
+    assert seen == ["NEW~secret.1-never-shown", OLD]                       # put back on the old one
+    assert [s["value"] for s in w.secrets()] == [OLD]
+    assert not (w.repo / pr.BACKUP).exists()
+    assert ".envrc remise comme avant" in w.said[-1] and "interrompue (Ctrl-C) pendant la relance" in w.said[-1]
+
+
+def test_a_put_back_that_fails_keeps_the_copy_and_says_how_to_restore_it(tmp_path, monkeypatch):
+    w = World(tmp_path)
+    st = json.loads(w.docker_state.read_text())
+    st["refuse"] = ["NEW~secret.1-never-shown"]
+    w.docker_state.write_text(json.dumps(st))
+    before = w.envrc.read_text()
+    real, calls = pr.write_atomic, []
+
+    def first_only(*a, **k):
+        calls.append(1)
+        if len(calls) > 1:
+            raise OSError(28, "No space left on device")
+        return real(*a, **k)
+    monkeypatch.setattr(pr, "write_atomic", first_only)
+    assert w.rotate() == 1
+    copy = w.repo / pr.BACKUP
+    assert copy.read_text() == before and stat.S_IMODE(copy.stat().st_mode) == 0o600
+    assert f"cp -p {pr.BACKUP} .envrc" in w.said[-1] and "ne se remet pas" in w.said[-1]
+    assert OLD in [s["value"] for s in w.secrets()]                       # the old one never touched
+    assert "NEW~secret.1-never-shown" not in "\n".join(w.said)
+
+
+def test_a_reset_that_fails_after_adding_shows_nothing_of_its_answer_and_removes_the_key(tmp_path):
+    w = World(tmp_path)
+    st = json.loads(w.az_state.read_text())
+    st["fail_after_add"] = True
+    w.az_state.write_text(json.dumps(st))
+    assert w.rotate() == 1
+    assert [s["value"] for s in w.secrets()] == [OLD]
+    assert "az n'a pas rendu de nouveau secret" in w.said[-1] and "le nouveau secret retiré" in w.said[-1]
+    _never_shown(w, OLD, "NEW~secret.1-never-shown")
+
+
+def test_an_expired_leftover_on_the_other_object_does_not_refuse_and_a_certificate_is_no_second_secret(tmp_path):
+    held = {IDS["console"]: {
+        "app": {"secrets": [{"keyId": "k-app", "end": "2026-01-01T00:00:00Z", "value": "expired-never"}],
+                "certificates": ["2027-06-01T00:00:00Z"]},
+        "sp": {"secrets": [{"keyId": "cccccccc-3333-4333-8333-000000000001", "end": "2026-12-08T10:00:00Z",
+                            "value": OLD}], "certificates": []}}}
+    w = World(tmp_path, held=held)
+    assert w.rotate() == 0, w.said
+    assert [s["value"] for s in w.secrets()] == w.new_values()            # turned on the SP, which holds it
+    assert [s["keyId"] for s in w.secrets("console", "app")] == ["k-app"]   # the expired leftover untouched
+    assert any("1 secret(s) valable(s)" in s for s in w.said)
+
+
+def test_the_copy_and_the_temporary_file_of_envrc_are_ignored_by_git():
+    """The repository is public: a copy left by an interruption holds every secret of .envrc."""
+    for name in (pr.BACKUP, pr.TMP):
+        res = subprocess.run(["git", "check-ignore", "-q", name], cwd=ROOT, capture_output=True)
+        assert res.returncode == 0, name
+
+
+def test_the_go_targets_read_imladris_s_address_in_the_shell_and_never_expand_pair_or_days(tmp_path):
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    for target in ("pair-rotate-go", "pair-expiry-note-go"):
+        recipe = makefile.split(f"\n{target}:\n", 1)[1].split("\n\n", 1)[0]
+        assert "$(HOST_IP)" not in recipe and "$(HOST_SSH)" not in recipe and "$(PAIR)" not in recipe
+        assert "$$EREGION_PAIR" in recipe
+    ssh = makefile.split("\nPAIR_SSH ", 1)[1].split("\npair-rotate-go pair-expiry-note-go:", 1)[0]
+    assert "ip=$$($(HOST_TF) output" in ssh and "$(HOST_IP)" not in ssh and "2>&1" not in ssh
+    assert "pair-rotate-go pair-expiry-note-go: export EREGION_PAIR = $(value PAIR)" in makefile
+    assert "pair-rotate-go: export EREGION_PAIR_DAYS = $(value DAYS)" in makefile
+    assert "\nunexport PAIR\n" in makefile
+    res = subprocess.run(["make", "-n", "--no-print-directory", "-C", str(ROOT), "pair-rotate-go",
+                          "PAIR=$(shell echo pwned-by-make)", "DAYS=$(shell echo pwned-days)"],
+                         capture_output=True, text=True, timeout=60)
+    assert "pwned" not in res.stdout + res.stderr
+
+
 # ── the note of the end in place ─────────────────────────────────────────────────────
 
 def test_the_note_reads_both_objects_and_writes_a_date_only_on_imladris(tmp_path):
@@ -583,7 +729,8 @@ def _agent(tmp_path, monkeypatch, fake):
     cd.mkdir(exist_ok=True)
     (cd / "discord.env").write_text(f"EREGION_DISCORD_WEBHOOK_DEPLOY={fake.base}/api/webhooks/9/{HOOK}\n"
                                     "EREGION_DISCORD_MENTION=42\n")
-    mod.CD_HOME, mod.HOME = cd, tmp_path
+    # Its home, and a repository that does not exist: no git of the agent ever reaches the real checkout.
+    mod.CD_HOME, mod.HOME, mod.REPO = cd, tmp_path, tmp_path / "no-repository"
     return mod
 
 
@@ -673,6 +820,54 @@ def test_an_unreadable_note_is_said_never_guessed(tmp_path, monkeypatch, fake, c
     assert _posts(fake) == []
     assert agent.main(["reminders"]) == 0
     assert "illisible" in capsys.readouterr().out
+
+
+def test_without_the_webhook_a_tier_is_never_counted_sent_and_status_says_so(tmp_path, monkeypatch, fake):
+    agent = _agent(tmp_path, monkeypatch, fake)
+    _note(tmp_path)
+    (tmp_path / ".eregion-cd" / "discord.env").write_text("")
+    said = agent.reminders(now=datetime(2026, 11, 24, 8, tzinfo=timezone.utc))
+    assert said == ["  rappels · console : J-14 dû, non envoyé — aucun webhook de #deploy "
+                    "(~/.eregion-cd/discord.env : make glorfindel-host-cd-install)"]
+    assert not (tmp_path / ".eregion-cd" / "reminders.json").exists()
+    status = agent.reminders(now=datetime(2026, 11, 24, 8, tzinfo=timezone.utc), send=False)
+    assert any("aucun webhook de #deploy" in s and "aucun rappel ne part" in s for s in status)
+    (tmp_path / ".eregion-cd" / "discord.env").write_text(f"EREGION_DISCORD_WEBHOOK_DEPLOY={fake.base}/api/webhooks/9/{HOOK}\n")
+    agent.reminders(now=datetime(2026, 11, 24, 9, tzinfo=timezone.utc))
+    assert len(fake.messages) == 1                                       # it leaves once the webhook is there
+
+
+def test_the_journal_gets_a_line_only_when_something_happens(tmp_path, monkeypatch, fake, capsys):
+    agent = _agent(tmp_path, monkeypatch, fake)
+    _note(tmp_path)
+    assert agent.reminders(now=datetime(2026, 11, 1, 8, tzinfo=timezone.utc)) == []      # not due: nothing
+    agent.reminders(now=datetime(2026, 11, 24, 8, tzinfo=timezone.utc))                  # J-14: the post
+    printed = capsys.readouterr().out
+    assert "expire dans 14 jours" in printed
+    assert agent.reminders(now=datetime(2026, 11, 24, 8, 5, tzinfo=timezone.utc)) == []  # sent: nothing
+    assert capsys.readouterr().out == ""
+    assert any("déjà envoyés : J-14" in s for s in agent.reminders(send=False))
+
+
+@pytest.mark.parametrize("end", ["0001-01-01T00:00:00Z", "9999-12-31T23:59:59Z", "2026-13-01T00:00:00Z"])
+def test_a_hostile_date_is_unreadable_and_never_stops_the_other_pairs(tmp_path, monkeypatch, fake, end):
+    agent = _agent(tmp_path, monkeypatch, fake)
+    _note(tmp_path, pair="watch", end=end)
+    _note(tmp_path, pair="console")
+    said = agent.reminders(now=datetime(2026, 11, 24, 8, tzinfo=timezone.utc))
+    assert said == ["  rappels · watch : date de fin illisible (~/.eregion-cd/expiry/watch.json)"]
+    assert len(fake.messages) == 1                                       # the console's reminder left
+    assert agent.main(["reminders"]) == 0
+
+
+def test_a_state_that_does_not_read_starts_over_and_never_raises(tmp_path, monkeypatch, fake):
+    agent = _agent(tmp_path, monkeypatch, fake)
+    _note(tmp_path)
+    (tmp_path / ".eregion-cd" / "reminders.json").write_text(json.dumps(
+        {"console": {"end": "2026-12-08T10:00:00Z", "sent": [["x"], "14"]}}))
+    assert agent.reminders(now=datetime(2026, 11, 24, 8, tzinfo=timezone.utc)) == []
+    assert len(fake.messages) == 1
+    assert agent.said_reminders() and agent.main(["reminders"]) == 0
 
 
 # ── the documents ────────────────────────────────────────────────────────────────────

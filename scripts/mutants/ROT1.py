@@ -12,8 +12,8 @@ MUTANTS = [
      "    ok, why = verify(tenant, app_id, new, ctx)\n    if False:\n"),
     ("M4829", "a service that does not restart on the new secret: .envrc not put back from its copy, the "
      "workstation left on a secret then removed (ROT1)", ROTATE,
-     "        write_atomic(envrc, text, mode)\n        back = [",
-     "        back = ["),
+     "    write_atomic(ctx.envrc, t.text, t.mode)\n    t.replaced = False\n",
+     "    t.replaced = False\n"),
     ("M4830", "the refusal of a code session gone: an agent turns a secret and writes it (ROT1)", ROTATE,
      "    why = bs.session_refusal(ctx.env, ctx.cwd, ctx.here, never=NEVER)\n",
      "    why = \"\"\n"),
@@ -30,8 +30,8 @@ MUTANTS = [
      "            os.fchmod(fd, 0o644)\n"),
     ("M4834", "the tiers sent never saved: the same reminder posted at every pass of the timer, and again after "
      "a reboot (ROT1)", CD,
-     "                save_reminders(doc)\n",
-     "                pass\n"),
+     "            save_reminders(doc)\n",
+     "            pass\n"),
     ("M4835", "the tier read one day late: the J-14 reminder leaves at J-13, the day-itself one never (ROT1)", CD,
      "        if days_left <= tier:\n",
      "        if days_left < tier:\n"),

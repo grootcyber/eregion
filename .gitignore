@@ -15,6 +15,7 @@ build/
 .env
 .env.*
 .envrc
+/.envrc.pair-rotate.*
 *.tfvars
 !*.tfvars.example
 # SEC11 : la liste des VM dont Imladris coupe les sessions, sans secret, gardée au dépôt ; SEC17 : celle

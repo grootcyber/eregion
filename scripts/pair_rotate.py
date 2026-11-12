@@ -12,10 +12,13 @@ console's secret, on its service principal (PAIR1), ends around 08/12.
 `pair-rotate`, in this order, so that the service is never cut and a failure leaves all in place:
   0. refused in a code session (EREGION_AGENT_SESSION, a lot's worktree: bench_shared's rule) and
      without a terminal: it writes a secret;
-  1. reads, before anything: .envrc (the pair's two lines, literal values, one each), both objects
-     of the pair as PAIR1 reads them (`az ad app show`, `az ad sp show`: the end dates, then the
-     key ids of the secrets — never a secret, a hint, an id printed); the object that holds the
-     secret is the one to turn (both, or neither: refused, said); the compose services that run;
+  1. reads, before anything: .envrc (the pair's two lines, literal values, one each) and the
+     loaded environment, which must be that .envrc (else a service would be recreated without its
+     id: « source .envrc, puis relancer »); both objects of the pair as PAIR1 reads them (`az ad app
+     show`, `az ad sp show`: the end dates, then the key ids of the secrets — never a secret, a
+     hint, an id printed); the object that holds the valid secret is the one to turn (both, or
+     neither: refused, said; an expired leftover on the other object does not count); the compose
+     services that run;
   2. says what it will do — the pair, its appId masked, the object, the duration and the new end,
      the lines of .envrc, the services, the other readers — and asks « [o/N] »;
   3. adds a new secret on that object, beside the old one (`credential reset --append
@@ -33,10 +36,14 @@ console's secret, on its service principal (PAIR1), ends around 08/12.
      --force-recreate`, the new value in their environment), and reads they run again. A failure
      there: .envrc put back from its copy, the services recreated on the old value, the new
      secret removed — the old one was never touched;
-  7. only then removes the old secret(s) of that object, by their key ids read in 1;
-  8. reads both objects again (PAIR1), and notes the nearest end on Imladris (as pair-expiry-note);
-  9. removes the copy of .envrc and says the result: the pair, the object, the new end, what was
-     recreated, what was verified, what was removed, what was noted.
+  7. only then removes the old secret(s) of that object, by their key ids read in 1, then the copy
+     of .envrc;
+  8. reads both objects again (PAIR1), notes the nearest end on Imladris (as pair-expiry-note), and
+     says the result: the pair, the object, the new end, what was recreated, verified, removed, noted.
+An exception or a Ctrl-C after the new secret is asked for is caught too (`Turn`, `interrupted`):
+.envrc not yet replaced, the new secret removed; replaced, .envrc put back and the service
+recreated on the old one; that put-back failing, the copy kept (0600, ignored by git) and said, with
+the command that restores it; past the restart, the new one stays and what is left is said.
 
 `pair-expiry-note`: the end in place (the nearest valid, PAIR1's reading on both objects — an
 object that can't be read refuses: a nearer date could be there) written on Imladris, by the
@@ -89,6 +96,8 @@ ELSEWHERE = {
                 "suivante (source .envrc)",),
     "bot": (),
 }
+# The duration of a new secret, by default: 90 days, Jonathan's decision of 12/11 — its only place (the
+# Makefile passes DAYS empty when unset). 365 at most.
 DEFAULT_DAYS, MAX_DAYS = 90, 365
 VERIFY_S, VERIFY_STEP_S = 180.0, 10.0
 TOKEN_SCOPE = "https://management.azure.com/.default"
@@ -449,6 +458,11 @@ def _rotate(pair: str, days: int, ctx: Ctx) -> int:
     lines = text.splitlines(True)
     app_id = pair_id(lines, env, id_var)
     _, old = the_line(lines, secret_var)
+    # The loaded environment must be this .envrc: compose recreates the service from it, and a pair
+    # missing there would restart it without its id — then its old secret removed.
+    if (env.get(id_var) or "").strip() != app_id or (env.get(secret_var) or "") != old:
+        raise Refused(f"l'environnement chargé n'est pas celui de .envrc ({id_var} ou {secret_var} absent ou "
+                      "différent) : source .envrc, puis relancer")
     # Every line that holds the old value as written (AZURE_CLIENT_SECRET, when it is a copy).
     copies = [i for i, ln in enumerate(lines) if literal(ln) == old and _ASSIGN.match(ln.rstrip("\r\n"))]
     names = [_ASSIGN.match(lines[i].rstrip("\r\n")).group("name") for i in copies]
@@ -465,12 +479,14 @@ def _rotate(pair: str, days: int, ctx: Ctx) -> int:
             keys[obj] = key_ids(app_id, obj, ctx)
         except Exception as e:  # noqa: BLE001 — never read as « aucun »
             raise Refused(f"{where} ne se lit pas ({bs.scrub(str(e))[:160]}) : rien n'est fait") from None
-    holders = [obj for obj, _ in ce.OBJECTS if keys[obj]]
-    if len(holders) != 1:
-        raise Refused("aucun secret, ni sur son application ni sur son principal de service : rien à faire tourner"
-                      if not holders else
-                      "des secrets sur son application et sur son principal de service : celui de .envrc ne se "
-                      "distingue pas — make azure-pairs-expiry dit leurs dates ; retirer les anciens, puis relancer")
+    # The object that holds a valid secret; none valid (a pair already expired): the one holding any.
+    holders = [obj for obj, _ in ce.OBJECTS if any(c.end >= ctx.now for c in held[obj])] \
+        or [obj for obj, _ in ce.OBJECTS if keys[obj]]
+    if len(holders) > 1:
+        raise Refused("des secrets valables sur son application et sur son principal de service : celui de .envrc "
+                      "ne se distingue pas — make azure-pairs-expiry dit leurs dates ; retirer les anciens, puis relancer")
+    if not holders or not keys[holders[0]]:
+        raise Refused("aucun secret, ni sur son application ni sur son principal de service : rien à faire tourner")
     obj = holders[0]
     where, before = ce._where(obj), keys[obj]
     current = sorted(held[obj], key=lambda c: c.end)
@@ -485,7 +501,7 @@ def _rotate(pair: str, days: int, ctx: Ctx) -> int:
         + (f", fin le {current[0].end:%Y-%m-%d}" if current else ""))
     say(f"  le nouveau     ajouté à côté de l'ancien (--append) sur {where}, pour {days} jours : fin le {end:%Y-%m-%d}")
     say("  vérifié        avant tout le reste : un jeton de la paire, puis une lecture d'Azure Resource Manager")
-    say(f"  .envrc         {', '.join(names)} réécrite(s), ses droits gardés (copie de secours 0600, retirée à la fin)")
+    say(f"  .envrc         {', '.join(names)} réécrite(s), ses droits gardés (copie de secours 0600, retirée une fois l'ancien secret retiré)")
     say(f"  relancé        {service} (docker compose)" if restart else
         f"  relancé        rien : {service} ne tourne pas{' — ' + docker_why if docker_why else ''}")
     for other in ELSEWHERE[pair]:
@@ -502,100 +518,199 @@ def _rotate(pair: str, days: int, ctx: Ctx) -> int:
         say("Rien n'est fait.")
         return 1
 
-    # 3. The new secret, beside the old one: nothing is cut.
+    t = Turn(pair=pair, obj=obj, where=where, app_id=app_id, before=before, end=end, text=text, mode=mode,
+             lines=lines, copies=copies, names=names, restart=restart, old=old, secret_var=secret_var)
+    try:
+        return turn(t, ctx)
+    except BaseException as e:  # noqa: BLE001 — an OSError, a Ctrl-C: what is in place said, never a traceback
+        return interrupted(t, ctx, e)
+
+
+@dataclass
+class Turn:
+    """One rotation, once agreed: what it knows, and how far it went — said on any failure."""
+    pair: str
+    obj: str
+    where: str
+    app_id: str
+    before: list
+    end: datetime
+    text: str
+    mode: int
+    lines: list
+    copies: list
+    names: list
+    restart: list
+    old: str
+    secret_var: str
+    new: str = ""
+    added: list | None = None        # the new secret's key ids (None: not read yet)
+    unread: bool = False             # the key ids could not be read: the new one is unknown
+    copy: Path | None = None         # .envrc's copy, while it exists
+    replaced: bool = False           # .envrc holds the new value
+    committed: bool = False          # the services run on it: no way back, only forward
+    step: str = "l'ajout du nouveau secret"
+
+
+def _added(t: Turn, ctx: Ctx) -> list[str]:
+    if t.added is None:
+        try:
+            t.added = [k for k in key_ids(t.app_id, t.obj, ctx) if k not in t.before]
+        except Exception:  # noqa: BLE001 — the new one then unknown: only the old ones are ever removed
+            t.added, t.unread = [], True
+    return t.added
+
+
+def undo_new(t: Turn, ctx: Ctx) -> str:
+    """The new secret removed, by the key ids that were not there before; what is left, said."""
+    added = _added(t, ctx)
+    if added and not remove_keys(t.app_id, t.obj, added, ctx):
+        return "le nouveau secret retiré"
+    if not added and not t.unread:
+        return "aucun nouveau secret sur Azure"
+    return (f"le nouveau secret à retirer à la main (az ad {t.obj} credential list --id <appId> : celui qui finit "
+            f"le {t.end:%Y-%m-%d})")
+
+
+def put_back(t: Turn, ctx: Ctx, step: str) -> int:
+    """.envrc from before, the services recreated on the old secret, the new one removed. Raises
+    when .envrc can't be written back: the caller keeps the copy and says it."""
+    write_atomic(ctx.envrc, t.text, t.mode)
+    t.replaced = False
+    back = [s for s in t.restart if not recreate(s, ctx.env, ctx)]
+    if t.copy:
+        t.copy.unlink(missing_ok=True)
+        t.copy = None
+    ctx.say(f"✗ {t.pair} : {step} ; .envrc remise comme avant"
+            + (f", {', '.join(t.restart)} relancé(s) sur l'ancien secret" if t.restart and not back else "")
+            + (f" — ⚠ {', '.join(back)} ne repart pas : make glorfindel-restart" if back else "")
+            + f" ; {undo_new(t, ctx)} ; l'ancien reste")
+    return 1
+
+
+def interrupted(t: Turn, ctx: Ctx, e: BaseException) -> int:
+    """An exception or a Ctrl-C after the new secret was asked for: everything put back that can be,
+    and what is in place said."""
+    what = "interrompue (Ctrl-C)" if isinstance(e, KeyboardInterrupt) else f"arrêtée ({type(e).__name__})"
+    pair, say = t.pair, ctx.say
+    if t.committed:
+        if t.copy:
+            t.copy.unlink(missing_ok=True)
+        say(f"✗ {pair} : rotation {what} pendant {t.step} ; le nouveau secret est en place (.envrc"
+            + (f", {', '.join(t.restart)}" if t.restart else "") + ") ; un ancien peut rester valable : make "
+            f"azure-pairs-expiry, puis az ad {t.obj} credential delete")
+        return 1
+    replaced = t.replaced
+    if not replaced and t.copy:
+        try:     # renamed over it, but stopped before it was said
+            replaced = ctx.envrc.read_text(encoding="utf-8") != t.text
+        except OSError:
+            replaced = True
+    if replaced:
+        try:
+            return put_back(t, ctx, f"rotation {what} pendant {t.step}")
+        except BaseException as e2:  # noqa: BLE001
+            say(f"✗ {pair} : rotation {what} pendant {t.step}, puis .envrc ne se remet pas ({type(e2).__name__}) : "
+                f"l'ancien .envrc est dans {BACKUP} (0600, ignoré par git, il tient les secrets) — cp -p {BACKUP} "
+                f".envrc, puis rm {BACKUP} ; l'ancien secret reste valable ; le nouveau : make azure-pairs-expiry")
+            return 1
+    try:
+        undone = undo_new(t, ctx)
+    except BaseException:  # noqa: BLE001
+        undone = (f"le nouveau secret à retirer à la main (az ad {t.obj} credential list --id <appId> : celui qui "
+                  f"finit le {t.end:%Y-%m-%d})")
+    if t.copy:
+        t.copy.unlink(missing_ok=True)
+    say(f"✗ {pair} : rotation {what} pendant {t.step} ; .envrc et les services n'ont pas bougé ; {undone} ; "
+        "l'ancien reste")
+    return 1
+
+
+def turn(t: Turn, ctx: Ctx) -> int:
+    say, env, pair, obj, app_id = ctx.say, ctx.env, t.pair, t.obj, t.app_id
+    # 3. The new secret, beside the old one: nothing is cut. Its answer read from its pipe; on a
+    #    failure, only az's error output is said — its standard output may hold a password.
     res = run([ctx.az, "ad", obj, "credential", "reset", "--id", app_id, "--append",
-               "--end-date", end.strftime("%Y-%m-%dT%H:%M:%SZ"),
+               "--end-date", t.end.strftime("%Y-%m-%dT%H:%M:%SZ"),
                "--display-name", f"eregion-{pair}-{ctx.now:%Y%m%d}", "-o", "json"], env)
     try:
         answer_doc = json.loads(res.out) if res.ok else {}
     except ValueError:
         answer_doc = {}
-    new = str(answer_doc.get("password") or "") if isinstance(answer_doc, dict) else ""
-    if not new:
-        say(f"✗ {pair} : az n'a pas rendu de nouveau secret ({_error(res) or 'réponse illisible'}) ; l'ancien reste, "
-            ".envrc et les services n'ont pas bougé (make azure-pairs-expiry le confirme)")
+    t.new = str(answer_doc.get("password") or "") if isinstance(answer_doc, dict) else ""
+    if not t.new:
+        said = bs.scrub(bs.Result(res.rc, "", res.err).first_error())[:200]
+        say(f"✗ {pair} : az n'a pas rendu de nouveau secret ({said or f'az a rendu {res.rc}'}) ; {undo_new(t, ctx)} ; "
+            "l'ancien reste, .envrc et les services n'ont pas bougé (make azure-pairs-expiry le confirme)")
         return 1
+    new = t.new
     tenant = str(answer_doc.get("tenant") or env.get("AZURE_TENANT_ID") or "")
-    try:
-        added = [k for k in key_ids(app_id, obj, ctx) if k not in before]
-    except Exception:  # noqa: BLE001 — the new one then unknown: only the old ones are ever removed
-        added = []
-
-    def undo_new() -> str:
-        left = remove_keys(app_id, obj, added, ctx)
-        if added and not left:
-            return "le nouveau secret retiré"
-        return (f"le nouveau secret à retirer à la main (az ad {obj} credential list --id <appId> : celui qui finit "
-                f"le {end:%Y-%m-%d})")
+    _added(t, ctx)
 
     # 4. Verified before anything else.
+    t.step = "la vérification du nouveau secret"
     ok, why = verify(tenant, app_id, new, ctx)
     if not ok:
-        say(f"✗ {pair} : le nouveau secret ne se connecte pas ({why}) ; {undo_new()} ; l'ancien reste, .envrc et "
+        say(f"✗ {pair} : le nouveau secret ne se connecte pas ({why}) ; {undo_new(t, ctx)} ; l'ancien reste, .envrc et "
             "les services n'ont pas bougé")
         return 1
     say(f"✓ {pair} : le nouveau secret se connecte (un jeton, puis une lecture d'Azure Resource Manager)")
 
     # 5. .envrc: its copy first, then rewritten beside it and renamed over it, its mode kept.
-    copy = keep_copy(envrc, text)
-    new_lines = list(lines)
-    for i in copies:
-        new_lines[i] = rewritten(lines[i], new)
-    new_env = {k: (new if v == old else v) for k, v in env.items()}
-    new_env.update({name: new for name in names})
-
-    def put_back(step: str) -> int:
-        write_atomic(envrc, text, mode)
-        back = [s for s in restart if not recreate(s, env, ctx)]
-        copy.unlink()
-        say(f"✗ {pair} : {step} ; .envrc remise comme avant"
-            + (f", {', '.join(restart)} relancé(s) sur l'ancien secret" if restart and not back else "")
-            + (f" — ⚠ {', '.join(back)} ne repart pas : make glorfindel-restart" if back else "")
-            + f" ; {undo_new()} ; l'ancien reste")
-        return 1
-
-    try:
-        write_atomic(envrc, "".join(new_lines), mode)
-        reread = envrc.read_text(encoding="utf-8").splitlines(True)
-    except OSError as e:
-        return put_back(f".envrc ne s'écrit pas ({type(e).__name__})")
-    if len(reread) != len(lines) or [literal(reread[i]) for i in copies] != [new] * len(copies):
-        return put_back(".envrc ne se relit pas comme écrite")
+    t.step = "l'écriture de .envrc"
+    t.copy = keep_copy(ctx.envrc, t.text)
+    new_lines = list(t.lines)
+    for i in t.copies:
+        new_lines[i] = rewritten(t.lines[i], new)
+    new_env = {k: (new if v == t.old else v) for k, v in env.items()}
+    new_env.update({name: new for name in t.names})
+    write_atomic(ctx.envrc, "".join(new_lines), t.mode)
+    t.replaced = True
+    reread = ctx.envrc.read_text(encoding="utf-8").splitlines(True)
+    if len(reread) != len(t.lines) or [literal(reread[i]) for i in t.copies] != [new] * len(t.copies):
+        return put_back(t, ctx, ".envrc ne se relit pas comme écrite")
 
     # 6. What reads the pair, recreated on the new value.
-    for s in restart:
+    t.step = "la relance"
+    for s in t.restart:
         if not recreate(s, new_env, ctx):
-            return put_back(f"{s} ne repart pas sur le nouveau secret")
-    if restart:
-        say(f"✓ {pair} : {', '.join(restart)} relancé(s) sur le nouveau secret")
+            return put_back(t, ctx, f"{s} ne repart pas sur le nouveau secret")
+    if t.restart:
+        say(f"✓ {pair} : {', '.join(t.restart)} relancé(s) sur le nouveau secret")
+    t.committed = True
 
-    # 7. Only now, the old one(s).
-    left = remove_keys(app_id, obj, before, ctx)
+    # 7. Only now, the old one(s); then the copy of .envrc.
+    t.step = "le retrait de l'ancien secret"
+    left = remove_keys(app_id, obj, t.before, ctx)
     if left:
         say(f"⚠ {pair} : {len(left)} ancien(s) secret(s) ne se retire(nt) pas — toujours valable(s) ; à retirer : "
             f"az ad {obj} credential list --id <appId>, puis az ad {obj} credential delete (make azure-pairs-expiry dit leurs dates)")
     else:
-        say(f"✓ {pair} : l'ancien secret retiré de {where} ({len(before)})")
-    copy.unlink()
+        say(f"✓ {pair} : l'ancien secret retiré de {t.where} ({len(t.before)})")
+    t.copy.unlink()
+    t.copy = None
 
     # 8. Read again, as PAIR1 reads it, and noted on Imladris.
+    t.step = "la relecture et la note sur Imladris"
     try:
         first, valid = nearest(app_id, ctx)
     except Refused as e:
         say(f"⚠ {pair} : relecture : {e} ; la date n'est pas notée (make pair-expiry-note PAIR={pair} ensuite)")
         return 1
-    if not first:
+    secrets = [c for c in valid if c.kind == "secret"]     # a certificate beside it is not a second secret
+    if not first or not secrets:
         say(f"✗ {pair} : aucun secret valable relu — make azure-pairs-expiry")
         return 1
-    say(f"✓ {pair} : {len(valid)} secret(s) valable(s), le plus proche jusqu'au {first.end:%Y-%m-%d} sur "
-        f"{ce._where(first.obj)}" + ("" if len(valid) == 1 else " — un seul attendu (make azure-pairs-expiry)"))
+    say(f"✓ {pair} : {len(secrets)} secret(s) valable(s), le plus proche jusqu'au {secrets[0].end:%Y-%m-%d} sur "
+        f"{ce._where(secrets[0].obj)}" + ("" if len(secrets) == 1 else " — un seul attendu (make azure-pairs-expiry)"))
     noted, said = note_on_imladris(pair, first.end, ctx, "pair-rotate")
     for line in said:
         say(line)
-    if names != [secret_var]:
-        say(f"ℹ .envrc : {', '.join(n for n in names if n != secret_var)} tenai(en)t la même valeur : réécrite(s) aussi")
+    if t.names != [t.secret_var]:
+        say(f"ℹ .envrc : {', '.join(n for n in t.names if n != t.secret_var)} tenai(en)t la même valeur : "
+            "réécrite(s) aussi")
     say("ℹ ton shell garde l'ancienne valeur : source .envrc (ou direnv allow)")
-    return 0 if not left and noted and len(valid) == 1 else 1
+    return 0 if not left and noted and len(secrets) == 1 else 1
 
 
 def main(argv: list[str] | None = None, ctx: Ctx | None = None) -> int:

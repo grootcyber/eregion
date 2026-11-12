@@ -23,7 +23,9 @@ date, never a secret) and posts in #deploy, with Jonathan's mention, 14, 7 and 1
 on the day: the pair, the date, the exact command to type. Once per tier, even after a reboot
 (~/.eregion-cd/reminders.json, a file of its own: `retry` never forgets it); a date noted late
 sends the tier it is in, never the ones it passed; a new date (a rotation) starts over. A post
-Discord refuses is tried again at the next pass. No Graph, no identity: a rotation made outside
+Discord refuses is tried again at the next pass; without #deploy's webhook a tier is never marked
+sent, and status says so. The journal gets a line only when something happens (a post, a refusal,
+a date that does not read — its year between 2000 and 2999), never at every pass. No Graph, no identity: a rotation made outside
 the command is not seen here.
 
 The trigger is Jonathan publishing a release (sessions prepare drafts). A pass:
@@ -309,11 +311,13 @@ REMIND_PAIRS = ("watch", "console", "bot")
 # The tiers, in calendar days (UTC) before the end: 14, 7, 1, then the day itself (or once after it).
 REMIND_TIERS = (14, 7, 1, 0)
 END_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
+END_YEARS = (2000, 2999)
 
 
 def noted_ends() -> tuple[dict, list[str]]:
     """{pair: its end, aware, UTC} from ~/.eregion-cd/expiry/<pair>.json, and the pairs whose file
-    does not read (said in the journal, never guessed)."""
+    does not read (said, never guessed): a pair's name, a date of the form the workstation writes,
+    its year between 2000 and 2999 (a date at the edge of the calendar would overflow a tier)."""
     from datetime import datetime, timezone
     ends, unread = {}, []
     for pair in REMIND_PAIRS:
@@ -325,7 +329,10 @@ def noted_ends() -> tuple[dict, list[str]]:
             end = str(doc.get("end") or "")
             if doc.get("pair") != pair or not END_RE.fullmatch(end):
                 raise ValueError("not a noted end")
-            ends[pair] = datetime.strptime(end, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+            at = datetime.strptime(end, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+            if not END_YEARS[0] <= at.year <= END_YEARS[1]:
+                raise ValueError("a year out of bounds")
+            ends[pair] = at
         except (OSError, ValueError, AttributeError):
             unread.append(pair)
     return ends, unread
@@ -353,6 +360,11 @@ def save_reminders(doc: dict) -> None:
     os.replace(tmp, CD_HOME / "reminders.json")
 
 
+def deploy_hook() -> bool:
+    """#deploy's webhook is set: without it a reminder is never marked sent."""
+    return bool(env_value(CD_HOME / "discord.env", "EREGION_DISCORD_WEBHOOK_DEPLOY"))
+
+
 def reminder_card(pair: str, end, days_left: int) -> tuple[str, str]:
     """The reminder's title and text: the pair, the date, the exact command — nothing else."""
     day = end.strftime("%Y-%m-%d")
@@ -373,36 +385,73 @@ def reminder_card(pair: str, end, days_left: int) -> tuple[str, str]:
     return title, text
 
 
+def _tier_said(t: int) -> str:
+    return "J-%d" % t if t else "le jour même"
+
+
+def remind(pair: str, end, now, send: bool, hook: bool, doc: dict) -> list[str]:
+    """One pair. With `send`: its reminder, once per tier — the tier it is in and the ones above it
+    marked sent, saved at once; the lines only what did not go. Without: its end and its tiers."""
+    from datetime import timedelta
+    end_said = end.strftime("%Y-%m-%dT%H:%M:%SZ")
+    rec = doc.get(pair) if isinstance(doc.get(pair), dict) else None
+    sent_ok = rec and isinstance(rec.get("sent"), list) and all(
+        type(t) is int and t in REMIND_TIERS for t in rec["sent"])
+    if not sent_ok or rec.get("end") != end_said:
+        rec = {"end": end_said, "sent": []}     # a new date (a rotation), or a state that does not read
+    doc[pair] = rec
+    days_left = (end.date() - now.date()).days
+    tier = due_tier(days_left)
+    if send:
+        if tier is None or tier in rec["sent"]:
+            return []
+        if not hook:
+            return [f"  rappels · {pair} : {_tier_said(tier)} dû, non envoyé — aucun webhook de #deploy "
+                    "(~/.eregion-cd/discord.env : make glorfindel-host-cd-install)"]
+        title, text = reminder_card(pair, end, days_left)
+        if say(title, text, color=nd.ORANGE if tier >= 7 else nd.RED, alert=True):
+            rec["sent"] = sorted(set(rec["sent"]) | {t for t in REMIND_TIERS if t >= tier}, reverse=True)
+            save_reminders(doc)
+            return []                            # say() wrote it in the journal
+        return [f"  rappels · {pair} : {_tier_said(tier)} refusé par Discord, repart au passage suivant"]
+    at = ", ".join(f"{_tier_said(t)} le {(end - timedelta(days=t)).strftime('%Y-%m-%d')}" for t in REMIND_TIERS)
+    sent = ", ".join(_tier_said(t) for t in rec["sent"]) or "aucun"
+    return [f"  rappels · {pair} : fin le {end.strftime('%Y-%m-%d')} (dans {days_left} j) ; {at} ; "
+            f"déjà envoyés : {sent}"]
+
+
 def reminders(now=None, send: bool = True) -> list[str]:
-    """What each noted end and its tiers say; with `send`, the reminder of the tier each pair is
-    in, once: that tier and the ones above it marked sent, saved before the next pair."""
-    from datetime import datetime, timedelta, timezone
+    """With `send` (the timer's pass): each pair's reminder, if due; the lines say only what went
+    wrong — a date unreadable, no webhook, a refusal —, a sent reminder being in the journal by
+    say(): nothing at every pass. Without (status, `reminders`): every noted end and its tiers,
+    and a missing webhook. A pair that fails is said and never stops the others."""
+    from datetime import datetime, timezone
     now = now or datetime.now(timezone.utc)
     ends, unread = noted_ends()
     lines = [f"  rappels · {pair} : date de fin illisible (~/.eregion-cd/expiry/{pair}.json)" for pair in unread]
     if not ends and not unread:   # the timer's pass says nothing then; status and `reminders` do
         return [] if send else ["  rappels : aucune date de fin notée (make pair-expiry-note PAIR=<paire>, "
                                 "depuis le poste)"]
+    hook = deploy_hook()
+    if not send and not hook:
+        lines.append("  ⚠ rappels : aucun webhook de #deploy (~/.eregion-cd/discord.env) — aucun rappel ne part "
+                     "(make glorfindel-host-cd-install)")
     doc = load_reminders()
     for pair, end in ends.items():
-        end_said = end.strftime("%Y-%m-%dT%H:%M:%SZ")
-        rec = doc.get(pair) if isinstance(doc.get(pair), dict) else None
-        if not rec or rec.get("end") != end_said or not isinstance(rec.get("sent"), list):
-            rec = {"end": end_said, "sent": []}     # a new date (a rotation): its tiers start over
-        doc[pair] = rec
-        days_left = (end.date() - now.date()).days
-        tier = due_tier(days_left)
-        if send and tier is not None and tier not in rec["sent"]:
-            title, text = reminder_card(pair, end, days_left)
-            if say(title, text, color=nd.ORANGE if tier >= 7 else nd.RED, alert=True):
-                rec["sent"] = sorted(set(rec["sent"]) | {t for t in REMIND_TIERS if t >= tier}, reverse=True)
-                save_reminders(doc)
-        at = ", ".join(("J-%d" % t if t else "le jour même") + " le " + (end - timedelta(days=t)).strftime("%Y-%m-%d")
-                       for t in REMIND_TIERS)
-        sent = ", ".join("J-%d" % t if t else "le jour même" for t in rec["sent"]) or "aucun"
-        lines.append(f"  rappels · {pair} : fin le {end.strftime('%Y-%m-%d')} (dans {days_left} j) ; {at} ; "
-                     f"déjà envoyés : {sent}")
+        try:
+            lines += remind(pair, end, now, send, hook, doc)
+        except Exception as e:  # noqa: BLE001 — said, the other pairs go on
+            lines.append(f"  rappels · {pair} : {type(e).__name__} — sa date ou son état ne se lit pas "
+                         "(~/.eregion-cd/expiry/, reminders.json)")
     return lines
+
+
+def said_reminders(send: bool = False) -> list[str]:
+    """reminders(), never raising: the pass, status and `reminders` go on."""
+    try:
+        return reminders(send=send)
+    except Exception as e:  # noqa: BLE001
+        return [f"  rappels : {type(e).__name__} — illisibles"]
 
 
 # ── the pass ─────────────────────────────────────────────────────────────────────────
@@ -1671,7 +1720,7 @@ def status() -> int:
         print(f"  règle des tags : {tag_rule(release['tag_name'])[1]}")
     for tag, o in sorted(state["outcomes"].items(), key=lambda kv: kv[1].get("at", 0))[-5:]:
         print(f"  {tag} : {o['result']}" + (f" — {o['why'].splitlines()[0]}" if o.get("why") else ""))
-    print("\n".join(reminders(send=False)))
+    print("\n".join(said_reminders()))
     return 0
 
 
@@ -1695,7 +1744,7 @@ def main(argv: list[str]) -> int:
     if mode == "status":
         return status()
     if mode == "reminders":
-        print("\n".join(reminders(send=False)))
+        print("\n".join(said_reminders()))
         return 0
     if mode not in ("run", "check", "retry", "rollback") or (mode == "rollback") != (len(argv) == 2):
         print(__doc__)
@@ -1705,7 +1754,7 @@ def main(argv: list[str]) -> int:
     def one() -> int:
         if mode == "run":
             try:     # ROT1: the reminders first, never in the way of the release
-                for said in reminders():
+                for said in said_reminders(send=True):
                     print(said)
             except Exception as e:  # noqa: BLE001 — said in the journal, the pass goes on
                 print(f"rappels : {type(e).__name__}")

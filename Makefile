@@ -219,7 +219,7 @@ help:
 	@echo "                                  Imladris's when the workstation's tunnel is set (MOB2). Refused in an agent session"
 	@echo "  make console-rotate             A new drawn token: every session of the former one refused at once"
 	@echo "  make azure-pairs-expiry         When the secrets of the three pairs end (az login; warns under 14 days)"
-	@echo "  make pair-rotate PAIR=<watch|console|bot> [DAYS=90]   Turn a pair's secret: added, verified, in .envrc,"
+	@echo "  make pair-rotate PAIR=<watch|console|bot> [DAYS=…]   Turn a pair's secret: added, verified, in .envrc,"
 	@echo "                                  its service restarted, the old one removed, its end noted on Imladris (ROT1)"
 	@echo "  make pair-expiry-note PAIR=<…>  The end in place noted on Imladris: reminders in #deploy at J-14, J-7, J-1"
 	@echo "  make glorfindel-logs            Tail service logs"
@@ -566,22 +566,28 @@ azure-pairs-expiry:
 # jeton, une lecture d'Azure), écrit dans .envrc (copie 0600, droits gardés), le service du compose
 # qui le lit relancé, puis seulement l'ancien retiré ; la date de fin notée sur Imladris, dont le CD
 # rappelle dans #deploy (J-14, J-7, J-1, le jour même). pair-expiry-note note la date en place, sans
-# rien faire tourner. Refusées en session de code (la garde seule d'abord, avant $(HOST_IP) et
-# known_host.sh : les cibles -go les portent) ; pair-rotate aussi sans terminal. Le secret ne passe
-# jamais sur une ligne de commande : ni ici, ni dans ce que lance le script.
-# DAYS : sans défaut ici (d'autres cibles le lisent avec le leur) ; vide, le script prend 90 jours.
-PAIR       ?=
+# rien faire tourner. Refusées en session de code, pair-rotate aussi sans terminal : la garde seule
+# d'abord ; la cible -go la refait, puis lit l'adresse d'Imladris dans le shell (terraform output,
+# l'état local), jamais développée par make avant la garde, même appelée directement. known_host.sh
+# dit sur la sortie d'erreur une clé d'hôte acceptée sans empreinte (HOST_SSH_FINGERPRINT absent) ;
+# refusée, aucun ssh. PAIR et DAYS : jamais développés par make ($(value …), unexport — comme REF),
+# vérifiés par le script ; DAYS vide, la durée par défaut du script (DEFAULT_DAYS, son seul endroit).
+# Le secret ne passe jamais sur une ligne de commande : ni ici, ni dans ce que lance le script.
+unexport PAIR
 PAIR_GUARD  = python3 scripts/pair_rotate.py guard
-PAIR_SSH    = ssh_cmd=""; if [ -n "$(HOST_IP)" ] && HOST_SSH_FINGERPRINT="$(HOST_SSH_FINGERPRINT)" \
-              bash infra/glorfindel-host/known_host.sh "$(HOST_IP)" "$(HOST_KNOWN_HOSTS)" >/dev/null 2>&1; \
-              then ssh_cmd="$(HOST_SSH)"; fi
+PAIR_SSH    = ip=$$($(HOST_TF) output -no-color -raw public_ip 2>/dev/null | grep -E '^[0-9.]+$$'); ssh_cmd=""; \
+              if [ -n "$$ip" ] && HOST_SSH_FINGERPRINT="$(HOST_SSH_FINGERPRINT)" \
+              bash infra/glorfindel-host/known_host.sh "$$ip" "$(HOST_KNOWN_HOSTS)" >/dev/null; \
+              then ssh_cmd="ssh $(HOST_SSH_OPTS) $(HOST_USER)@$$ip"; fi
+pair-rotate-go pair-expiry-note-go: export EREGION_PAIR = $(value PAIR)
+pair-rotate-go: export EREGION_PAIR_DAYS = $(value DAYS)
 pair-rotate:
 	@$(PAIR_GUARD) $@
 	@$(MAKE) --no-print-directory $@-go
 
 pair-rotate-go:
 	@$(PAIR_GUARD) pair-rotate
-	@$(PAIR_SSH); EREGION_HOST_SSH="$$ssh_cmd" python3 scripts/pair_rotate.py rotate "$(PAIR)" --days "$(DAYS)"
+	@$(PAIR_SSH); EREGION_HOST_SSH="$$ssh_cmd" python3 scripts/pair_rotate.py rotate "$$EREGION_PAIR" --days "$$EREGION_PAIR_DAYS"
 
 pair-expiry-note:
 	@$(PAIR_GUARD) $@
@@ -589,7 +595,7 @@ pair-expiry-note:
 
 pair-expiry-note-go:
 	@$(PAIR_GUARD) pair-expiry-note
-	@$(PAIR_SSH); EREGION_HOST_SSH="$$ssh_cmd" python3 scripts/pair_rotate.py note "$(PAIR)"
+	@$(PAIR_SSH); EREGION_HOST_SSH="$$ssh_cmd" python3 scripts/pair_rotate.py note "$$EREGION_PAIR"
 
 glorfindel-start: check-azure-env build-glorfindel runs-migrate
 	mkdir -p $(HOME)/.glorfindel $(HOME)/.glorfindel/injectors $(HOME)/.cache/chroma $(HOME)/.eregion/analysis $(HOME)/.eregion/console $(HOME)/.eregion/console/requests runs

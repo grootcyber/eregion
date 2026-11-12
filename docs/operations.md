@@ -980,7 +980,8 @@ prochain `make glorfindel-host-up` les reprend ; une VM que Celebrimbor reconstr
 
 **Faire tourner un secret** (ROT1, #737) : une commande, tapée par toi dans ton terminal,
 `make pair-rotate PAIR=<watch|console|bot>` (`scripts/pair_rotate.py`), 90 jours par défaut
-(`DAYS=…`, de 1 à 365). **Les deux formes d'une paire** (PAIR1, #736) : son secret vit sur l'un de
+(décision de Jonathan du 12/11 ; `DAYS=…`, de 1 à 365 ; la valeur par défaut n'est écrite qu'à un
+endroit, `DEFAULT_DAYS` dans le script). **Les deux formes d'une paire** (PAIR1, #736) : son secret vit sur l'un de
 deux objets, son application ou son principal de service. Au banc, le 12/11, celui de la watch était
 sur son application (la forme d'`az ad sp create-for-rbac`), celui de la console sur son principal
 de service (posé le 09/11 pour 30 jours). La commande lit les deux, comme `make azure-pairs-expiry`
@@ -1012,17 +1013,21 @@ n'écrit jamais de secret Azure). Une instance d'équipe (`team.env`) n'est pas 
 1. **Refusée** en session de code (`EREGION_AGENT_SESSION`, un worktree de lot : la règle de
    `scripts/bench_shared.py`) et sans terminal : elle écrit un secret.
 2. **Elle lit avant tout** : `.envrc` (les deux lignes de la paire, une seule chacune, une valeur
-   écrite, pas une référence), les deux objets de la paire, et les services du compose qui tournent.
-   Refusé, rien n'est fait : un objet illisible, aucun secret, des secrets sur les deux objets (celui
-   de `.envrc` ne s'en distingue pas : `make azure-pairs-expiry` dit leurs dates), une copie de
-   secours restée d'une rotation interrompue, un `host.env` qui tiendrait ce secret.
+   écrite, pas une référence), l'environnement chargé, les deux objets de la paire, et les services
+   du compose qui tournent. Refusé, rien n'est fait : un environnement qui n'est pas ce `.envrc` (la
+   paire absente ou différente : le service serait relancé sans son id, puis l'ancien secret retiré —
+   `source .envrc`, puis relancer), un objet illisible, aucun secret, des secrets valables sur les deux
+   objets (celui de `.envrc` ne s'en distingue pas : `make azure-pairs-expiry` dit leurs dates ; un
+   reste expiré sur l'autre objet ne compte pas), une copie de secours restée d'une rotation
+   interrompue, un `host.env` qui tiendrait ce secret.
 3. **Elle dit ce qu'elle va faire, puis demande « [o/N] »** : la paire, son appId masqué (ses quatre
    derniers caractères), l'objet qui porte le secret, la durée et la nouvelle date de fin, les lignes de
    `.envrc`, le service relancé, les autres lecteurs, ce qui sera retiré, la note sur Imladris.
 4. **Un nouveau secret, à côté de l'ancien** : `az ad <app|sp> credential reset --id <appId>
    --append --end-date <date> --display-name eregion-<paire>-<jour>`. L'ancien vaut encore : rien
    n'est coupé. Un `reset` sans `--append` couperait tous ses lecteurs d'un coup, avant qu'un seul ait la
-   nouvelle valeur. La réponse d'az est lue dans son tube, jamais affichée.
+   nouvelle valeur. La réponse d'az est lue dans son tube, jamais affichée ; sur un échec, seule sa
+   sortie d'erreur est dite, et une clé ajoutée malgré l'échec est retirée.
 5. **Vérifié avant le reste** : un jeton de la paire (le flux client credentials, le secret dans le
    corps de la requête, jamais sur une ligne), puis une lecture d'Azure Resource Manager
    (`GET /subscriptions`), retentés toutes les 10 s pendant 3 min, le temps qu'Entra le propage (le
@@ -1036,10 +1041,11 @@ n'écrit jamais de secret Azure). Une instance d'équipe (`team.env`) n'est pas 
    valeur dans son environnement (jamais sur sa ligne), puis relu en marche. Un service qui ne tournait
    pas n'est pas démarré.
 8. **Seulement ensuite, l'ancien secret retiré**, par son `keyId` lu à l'étape 2 :
-   `az ad <app|sp> credential delete --id <appId> --key-id <keyId>`.
-9. **Relu** sur les deux objets (une seule date doit rester), **noté sur Imladris** (comme
-   `make pair-expiry-note`, ci-dessous), la copie de secours retirée, et le résultat dit : la paire,
-   l'objet, la nouvelle date, ce qui a été relancé, vérifié, retiré, noté.
+   `az ad <app|sp> credential delete --id <appId> --key-id <keyId>` ; puis, juste après, la copie de
+   secours retirée.
+9. **Relu** sur les deux objets (un seul secret valable doit rester ; un certificat à côté ne compte
+   pas), **noté sur Imladris** (comme `make pair-expiry-note`, ci-dessous), et le résultat dit : la
+   paire, l'objet, la nouvelle date, ce qui a été relancé, vérifié, retiré, noté.
 
 Le secret ne paraît jamais : ni à l'écran, ni dans un journal, ni dans la ligne de commande d'un
 processus (`tests/unit/test_pair_rotate.py`, sur un faux `az`, un faux `docker`, un faux `ssh`).
@@ -1058,9 +1064,13 @@ service relancé sur l'ancien secret, le nouveau retiré : l'ancien n'a jamais �
 se fait pas de soi-même est dit avec sa commande : un nouveau secret qui ne se retire pas (`az ad
 <app|sp> credential list --id <appId>`, celui de la nouvelle date), un ancien qui ne se retire pas
 (toujours valable, `make azure-pairs-expiry` le montre, « 2 secrets valables »), Imladris injoignable
-(`make pair-expiry-note PAIR=<paire>` ensuite). Une copie de secours restée (une coupure en plein
-milieu) refuse la rotation suivante : compare-la à `.envrc`, garde le bon, retire la copie (elle tient
-un secret), relance.
+(`make pair-expiry-note PAIR=<paire>` ensuite). **Une exception ou un Ctrl-C** en cours de route est
+rattrapé de même : avant que `.envrc` soit remplacée, le nouveau secret retiré ; après, `.envrc` remise
+et le service relancé sur l'ancien ; une fois le service relancé sur le nouveau, il reste en place et
+la commande dit ce qui peut rester de l'ancien. La copie de secours n'est gardée que si `.envrc` ne
+se remet pas, et c'est dit, avec la commande (`cp -p .envrc.pair-rotate.bak .envrc`). Elle est ignorée
+par git (`.gitignore`, le dépôt est public), et une copie restée refuse la rotation suivante :
+compare-la à `.envrc`, garde le bon, retire la copie (elle tient les secrets), relance.
 
 **Les rappels, dans `#deploy`** (décision de Jonathan du 12/11). La date de fin, une date et jamais
 un secret, est écrite sur Imladris par la connexion ssh du poste, dans `~/.eregion-cd/expiry/<paire>.json`
@@ -1069,11 +1079,15 @@ un secret, est écrite sur Imladris par la connexion ssh du poste, dans `~/.ereg
 exacte, `make pair-rotate PAIR=console`. Une fois par palier, même après un redémarrage
 (`~/.eregion-cd/reminders.json`) ; une date notée tard envoie le palier où elle se trouve, jamais
 ceux qu'elle a passés ; une nouvelle date (une rotation) repart de zéro ; un message que Discord
-refuse repart au passage suivant. Pourquoi `#deploy` : son webhook est déjà le seul secret de
+refuse repart au passage suivant ; sans le webhook, aucun palier n'est compté envoyé, et
+`make glorfindel-host-cd-status` le dit. Le journal n'a une ligne que pour un envoi, un refus ou une
+date illisible, jamais à chaque passage. Pourquoi `#deploy` : son webhook est déjà le seul secret de
 l'atelier sur Imladris (`docs/atelier-discord.md`), avec ta mention ; rien de nouveau à poser, rien
 de copié ailleurs. Imladris n'a aucun droit sur Graph (IR1a) : il ne lit pas la date lui-même, le
-poste la lui donne. **ROT1 change l'agent du CD** (`eregion_cd.py`) : une fois la release déployée,
-`make glorfindel-host-cd-install` (`infra/glorfindel-host/README.md`, « Le CD d'Imladris »).
+poste la lui donne. **ROT1 change l'agent du CD** (`eregion_cd.py`) :
+`make glorfindel-host-cd-install` depuis un `main` à jour, **juste après la fusion** de ROT1 — l'agent ne
+dépend pas de la release, ce qui donne de la marge pour le rappel de J-14 — ou, au plus tard, quand
+`#deploy` le demande après la release (`infra/glorfindel-host/README.md`, « Le CD d'Imladris »).
 
 **Noter la date d'un secret déjà posé** : `make pair-expiry-note PAIR=<paire>` lit la date en place
 (la plus proche des deux objets, la lecture de PAIR1 ; un objet illisible refuse), la note sur Imladris
@@ -1081,7 +1095,8 @@ et dit les dates des rappels, sans rien faire tourner. Refusée en session de co
 
 > **Note du 12/11 (PAIR1, ROT1), pour Jonathan** : le secret de la console, sur son principal de
 > service, expire vers le **08/12** ; il n'a pas été posé par la commande, Imladris ne connaît pas sa
-> date. Une fois ROT1 déployé et l'agent du CD réinstallé, **une fois** :
+> date. Une fois l'agent du CD réinstallé depuis `main` (juste après la fusion de ROT1, sans attendre
+> la release), **une fois** :
 > `make pair-expiry-note PAIR=console`, avant le **24/11** pour que le rappel de J-14 parte à sa date
 > (plus tard, il part au moment de la note, avec les jours qui restent). Puis, au rappel,
 > `make pair-rotate PAIR=console`, avant le 08/12 : ce jour-là, le restore depuis le poste
