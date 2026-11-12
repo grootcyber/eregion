@@ -49,7 +49,9 @@ class PerimeterMixin:
                     return "holds"
                 st = "unknown" if found is None else st
             out = "unknown" if st == "unknown" else out
-        return out
+        # Its subnet's NSG unread (a 429), absent from its views: a perimeter there is not
+        # known — never « no », which said the IP reached a NIC it cut off (I3N, #746).
+        return "unknown" if out == "no" and t0.get("subnet_unreadable") else out
 
     def _left_to_perimeter(self, cache: dict, perimeter, t0: dict | None, ip: str, port) -> bool:
         """A NIC of a merged entry with no placement of its own, behind the entry's perimeter
