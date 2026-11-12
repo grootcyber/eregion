@@ -381,3 +381,340 @@ def test_any_failure_is_said_masked_never_a_trace(tmp_path, monkeypatch):
     assert code == 1 and md == "" and not out.exists()
     assert err.startswith("✗ le rapport n'a pas pu être composé (KeyError: ") and "Traceback" not in err
     assert leaks(err) == []
+
+
+# ── BNC3a (#753): the report composed after the run's cycle, after the lift ────
+
+def _no_cycle_yet(w: bw.World) -> tuple[Path, str]:
+    """The bench of 12/11 at the report of `make bench-run`: detected, the watch's cycle of the run not
+    yet written (it closes once the action is verified, the session drain included)."""
+    debug = w.app / "runs/glorfindel/watch-ransomware-disk-write-1_debug.jsonl"
+    full = debug.read_text()
+    debug.write_text(full.splitlines()[0] + "\n")
+    return debug, full
+
+
+class Clock:
+    """A clock and a sleep, both fake: each sleep moves the clock, and may change the fake Imladris."""
+
+    def __init__(self, on_sleep=None):
+        self.t, self.slept, self.on_sleep = 0.0, [], on_sleep
+
+    def __call__(self) -> float:
+        return self.t
+
+    def sleep(self, s: float) -> None:
+        self.slept.append(s)
+        self.t += s
+        if self.on_sleep:
+            self.on_sleep(len(self.slept))
+
+
+def _report_waiting(w: bw.World, wait: str, clock: Clock, *extra: str):
+    env = w.env()
+    out = w.tmp / "out" / f"{bw.RUN}.json"
+    import io
+    from contextlib import redirect_stderr, redirect_stdout
+    so, se = io.StringIO(), io.StringIO()
+    old = dict(os.environ)
+    os.environ.update({"PATH": env["PATH"], "BENCH_FAKE_PLAN": env["BENCH_FAKE_PLAN"],
+                       "BENCH_FAKE_LOG": env["BENCH_FAKE_LOG"]})
+    try:
+        with redirect_stdout(so), redirect_stderr(se):
+            code = br.main(["--run", bw.RUN, "--out", str(out), "--config", str(w.config), "--wait", wait, *extra],
+                           env=env, now=NOW, sleep=lambda s: clock.sleep(s), clock=clock)
+    finally:
+        os.environ.clear()
+        os.environ.update(old)
+    return code, so.getvalue(), se.getvalue(), out
+
+
+def _reads(w: bw.World) -> int:
+    """How many times Imladris was read: one `docker run` of the reader each."""
+    return sum(1 for c in _h0_ssh(w) if c[:2] == ["docker", "run"])
+
+
+def test_a_report_composed_before_the_run_s_cycle_says_it_is_not_yet_written(tmp_path):
+    """12/11: composed 7 s after the detection, the report said « une action retenue, ou une
+    recommandation » — false, the console showed the VM isolated. Now: not yet written."""
+    w = _world_0911(tmp_path)
+    _no_cycle_yet(w)
+    code, md, err, _ = _report(w)
+    assert code == 0, err
+    assert ("le cycle de ce run n'est pas encore écrit sur Imladris : la watch l'écrit une fois l'action vérifiée, "
+            f"la coupure des sessions comprise — `make bench-report RUN={bw.RUN}` le relira") in md
+    assert "une action retenue" not in md
+
+
+def test_a_run_s_cycle_of_another_action_is_named(tmp_path):
+    w = _world_0911(tmp_path)
+    debug = w.app / "runs/glorfindel/watch-ransomware-disk-write-1_debug.jsonl"
+    debug.write_text(debug.read_text().replace('"action": "isolate_vm"', '"action": "snapshot"'))
+    code, md, _, _ = _report(w)
+    assert code == 0
+    assert ("aucun cycle `isolate_vm` de ce run sur Imladris (la watch a écrit `snapshot`) : une action retenue, "
+            "ou une recommandation") in md
+
+
+def test_bench_run_s_report_waits_for_the_run_s_cycle_then_reads_azure(tmp_path):
+    w = _world_0911(tmp_path)
+    debug, full = _no_cycle_yet(w)
+
+    def written(n):
+        if n == 3:
+            debug.write_text(full)
+    clock = Clock(written)
+    code, md, err, _ = _report_waiting(w, "cycle", clock)
+    assert code == 0, err
+    assert "| Vérification relue, **fausse** | 16:48:05,4 | 399,4 s |" in md
+    assert "pas encore écrit" not in md
+    assert clock.slept == [30.0, 30.0, 30.0] and _reads(w) == 4
+    assert "relu toutes les 30 s, 10 min au plus" in err and "✓ le cycle du run lu après 90 s" in err
+    # Azure is read after the wait, never before: its reads come after Imladris's last one
+    calls = w.calls()
+    last_h0 = max(i for i, c in enumerate(calls) if c[0] == "ssh")
+    first_az = min(i for i, c in enumerate(calls) if c[0] == "az" and "activity-log" in c)
+    assert last_h0 < first_az
+
+
+def test_the_wait_for_the_cycle_is_bounded_then_the_report_says_it(tmp_path):
+    w = _world_0911(tmp_path)
+    _no_cycle_yet(w)
+    clock = Clock()
+    code, md, err, out = _report_waiting(w, "cycle", clock)
+    assert code == 0, err
+    # the first read, then one after each sleep but the last: none past the bound (review round 1)
+    assert clock.t == br.CYCLE_WAIT_S == 600.0 and _reads(w) == 600 // 30
+    assert ("le cycle du run : pas encore écrit sur Imladris (attendu 10 min 00, la borne) — "
+            f"`make bench-report RUN={bw.RUN}` le relira plus tard") in md
+    assert json.loads(out.read_text())["run_id"] == bw.RUN
+
+
+def test_a_run_not_detected_is_composed_at_once(tmp_path):
+    """No detection: no cycle will come — nothing to wait for."""
+    w = _world_0911(tmp_path)
+    _no_cycle_yet(w)
+    report = json.loads((w.app / f"runs/glorfindel/{bw.RUN}.json").read_text())
+    report["metrics"].update(detection="timeout", detection_latency_s=None)
+    w.write(f"runs/glorfindel/{bw.RUN}.json", report)
+    clock = Clock()
+    code, md, _, _ = _report_waiting(w, "cycle", clock)
+    assert code == 0 and clock.slept == [] and _reads(w) == 1
+    assert "aucun cycle de ce run sur Imladris : aucune détection" in md
+
+
+def test_ctrl_c_ends_the_wait_never_the_report(tmp_path):
+    w = _world_0911(tmp_path)
+    _no_cycle_yet(w)
+    clock = Clock()
+
+    def interrupted(s):
+        raise KeyboardInterrupt
+    clock.sleep = interrupted
+    code, md, err, _ = _report_waiting(w, "cycle", clock)
+    assert code == 0, err
+    assert "le cycle du run : pas encore écrit sur Imladris (attente interrompue)" in md
+
+
+def _lift_later(w: bw.World) -> tuple[Path, str]:
+    """At the end of the restore: no lift yet on Imladris — neither the console's nor the watch's."""
+    lifts = w.app / "runs/console/manual_actions.jsonl"
+    full = lifts.read_text()
+    lifts.write_text("")
+    return lifts, full
+
+
+def test_bench_restore_s_report_follows_the_lift(tmp_path):
+    w = _world_0911(tmp_path)
+    lifts, full = _lift_later(w)
+
+    def lifted(n):
+        if n == 12:                              # six minutes later: the recovery's grace, then the lift
+            lifts.write_text(full)
+    clock = Clock(lifted)
+    code, md, err, _ = _report_waiting(w, "lift", clock)
+    assert code == 0, err
+    assert "| Levée (service rendu) | 21:05:49 | **15 863 s (4 h 24 min 23 s)** |" in md
+    assert len(clock.slept) == 12 and "30 min au plus" in err
+
+
+def test_the_wait_for_the_lift_is_bounded_at_thirty_minutes(tmp_path):
+    w = _world_0911(tmp_path)
+    _lift_later(w)
+    clock = Clock()
+    code, md, err, _ = _report_waiting(w, "lift", clock)
+    assert code == 0, err
+    assert clock.t == br.LIFT_WAIT_S == 1800.0 and _reads(w) == 1800 // 30
+    assert "la levée de la cible : pas encore écrit sur Imladris (attendu 30 min 00, la borne)" in md
+    assert "aucune levée de la cible après T0 sur Imladris" in md
+
+
+def _hold_card(w: bw.World, tmp_path, kind: str, at: str, status: str = "pending") -> None:
+    """A held lift's card as the watch's recovery writes it (recovery_watch._card, into the store the
+    conftest puts in tmp), its time set to `at`, then put in the fake Imladris's ~/.glorfindel."""
+    from glorfindel import escalations, recovery_watch
+    job = "00000000-0000-4000-8000-00000000ab01"
+    recovery_watch._card(bw.RID, bw.VM, job, kind, f"Restauration de {bw.VM} lue sur Azure (job {job}) : {bw.RID}",
+                         [f"glorfindel restore {bw.RID} --before <ISO8601>"])
+    (card,) = [json.loads(x) for x in escalations._STORE.read_text().splitlines() if x.strip()]
+    card.update(first_seen=at, timestamp=at, status=status)
+    escalations._STORE.unlink()
+    w.write(".glorfindel/escalations.jsonl", json.dumps(card) + "\n", home=True)
+
+
+@pytest.mark.parametrize("kind,ends", [("point_after", True), ("failed", True), ("stopped", False)])
+def test_a_lift_held_by_the_watch_ends_the_wait_and_is_said(tmp_path, kind, ends):
+    """The watch's recovery holds the lift (`release_hold`): said by its kind and its time, never its
+    reason; `stopped` is no end — the watch reads again, and releases once the VM runs."""
+    w = _world_0911(tmp_path)
+    _lift_later(w)
+    _hold_card(w, tmp_path, kind, bw.ts("20:55:00"))
+    clock = Clock()
+    code, md, _, _ = _report_waiting(w, "lift", clock)
+    assert code == 0
+    assert (clock.slept == []) is ends
+    assert (f"la levée retenue par la reprise de la watch (une carte `release_hold`, `{kind}`, 20:55:00) : "
+            "aucune levée") in md
+    assert leaks(md) == []
+    # the reader itself sends back the card's kind, time and status, never its reason nor its ids
+    res = subprocess.run([sys.executable, "-", "report", bw.VM, bw.RUN],
+                         input=(ROOT / "scripts/bench_h0_reader.py").read_text(), capture_output=True, text=True,
+                         cwd=w.app, env={**w.env(), "HOME": str(w.home), "PYTHONPATH": str(ROOT)}, timeout=60)
+    assert res.returncode == 0, res.stderr
+    assert json.loads(res.stdout)["holds"] == [{"timestamp": bw.ts("20:55:00"), "kind": kind, "status": "pending"}]
+    assert leaks(res.stdout) == [] and "Restauration" not in res.stdout
+
+
+@pytest.mark.parametrize("status,at", [("resolved", "21:01:00"), ("pending", "20:40:00"), ("resolved", "20:40:00")])
+def test_a_card_of_a_restore_before_never_ends_the_wait(tmp_path, status, at):
+    """A first restore refused (`point_after`), then `make bench-restore RUN=<the same run> BEFORE=<older>`:
+    the first one's card, closed, or written before this restore started (--since), stays in the file.
+    The wait goes on to the true lift, and the report says the lift, never the old card (review round 1)."""
+    w = _world_0911(tmp_path)
+    lifts, full = _lift_later(w)
+    _hold_card(w, tmp_path, "point_after", bw.ts(at), status=status)
+
+    def lifted(n):
+        if n == 4:
+            lifts.write_text(full)
+    clock = Clock(lifted)
+    code, md, err, _ = _report_waiting(w, "lift", clock, "--since", bw.ts("20:50:00"))
+    assert code == 0, err
+    assert len(clock.slept) == 4
+    assert "| Levée (service rendu) | 21:05:49 |" in md and "levée retenue" not in md
+
+
+def test_a_lift_before_this_restore_is_not_its_lift(tmp_path):
+    """The console's lift of 21:05:49 came before a restore started at 21:30: not this restore's."""
+    w = _world_0911(tmp_path)
+    clock = Clock()
+    code, md, _, _ = _report_waiting(w, "lift", clock, "--since", bw.ts("21:30:00"))
+    assert code == 0 and len(clock.slept) == br.LIFT_WAIT_S // br.POLL_S
+    assert "aucune levée de la cible après T0 sur Imladris" in md
+
+
+def test_a_since_that_is_no_instant_is_refused_before_anything(tmp_path):
+    w = _world_0911(tmp_path)
+    assert br.main(["--run", bw.RUN, "--since", "hier", "--config", str(w.config)], env=w.env(), now=NOW) == 2
+    assert w.calls() == []
+
+
+def test_the_reader_s_kinds_are_those_the_watch_s_recovery_writes():
+    """The kinds of a held lift's card, copied in scripts/bench_h0_reader.py: the same as the
+    `card("<kind>", …)` of glorfindel/recovery_watch.py — a kind added there, or renamed, is seen here."""
+    import re
+    reader = _load("bench_h0_reader")
+    written = set(re.findall(r'\bcard\("([a-z_]+)"', (ROOT / "glorfindel/recovery_watch.py").read_text()))
+    assert written and set(reader._HOLD_KINDS) == written
+
+
+def test_ctrl_c_before_imladris_is_read_says_it_never_a_trace(tmp_path, monkeypatch):
+    w = _world_0911(tmp_path)
+
+    def interrupted(*a, **k):
+        raise KeyboardInterrupt
+    monkeypatch.setattr(br.bs, "read_h0", interrupted)
+    code, md, err, out = _report_waiting(w, "lift", Clock())
+    assert code == br.INTERRUPTED == 130 and md == "" and not out.exists()
+    assert "interrompu (Ctrl-C) avant toute lecture d'Imladris : rien n'est composé" in err
+    assert "Traceback" not in err
+
+
+def test_ctrl_c_during_azure_s_reads_composes_with_what_was_read(tmp_path, monkeypatch):
+    w = _world_0911(tmp_path)
+    real = br.bs.az_json
+
+    def az(args, *a, **k):
+        if args[:3] == ["backup", "job", "list"]:
+            raise KeyboardInterrupt
+        return real(args, *a, **k)
+    monkeypatch.setattr(br.bs, "az_json", az)
+    code, md, err, _ = _report(w)
+    assert code == 0, err
+    assert "les lectures d'Azure : interrompues (Ctrl-C) — ce qui suit n'est pas lu" in md
+    assert "| Neutralisation (console) | 17:07:22 → 17:09:54 |" in md          # the activity log, read before
+
+
+def test_the_vault_s_jobs_of_the_day_are_read(tmp_path):
+    """12/11: `--end-date` the day's date left that day's jobs out — the morning's clean point and the
+    restore missing, yesterday's night backup taken for the point. The bound is the day after."""
+    w = _world_0911(tmp_path)
+    code, _, err, _ = _report(w)
+    assert code == 0, err
+    (backup,) = [c for c in w.calls() if c[0] == "az" and c[1:4] == ["backup", "job", "list"]]
+    assert backup[backup.index("--end-date") + 1] == "10-11-2026"            # NOW: 09/11, 21:20 UTC
+    assert br.job_end_date(datetime(2026, 11, 12, 23, 59, tzinfo=timezone.utc)) == "13-11-2026"
+    assert br.job_end_date(datetime(2026, 12, 31, 9, 0, tzinfo=timezone.utc)) == "01-01-2027"
+
+
+def test_await_reads_again_until_ready_and_keeps_the_view_before_a_failed_read():
+    budgets: list = []
+
+    def reader(views):
+        it = iter(views)
+
+        def read(budget):
+            budgets.append(budget)
+            v = next(it)
+            if isinstance(v, Exception):
+                raise v
+            return v
+        return read
+    clock = Clock()
+    h0, unsaid = br.await_h0(reader([{"n": 1}, RuntimeError("ssh"), {"n": 3}, {"n": 4, "ok": True}]),
+                             lambda v: v.get("ok"), 600, "x", sleep=clock.sleep, clock=clock, say=lambda s: None)
+    assert h0 == {"n": 4, "ok": True} and unsaid == [] and clock.t == 90
+    # each read after the first within what is left of the bound: no read runs past it
+    assert budgets == [None, 570.0, 540.0, 510.0]
+    budgets.clear()
+    clock = Clock()
+    h0, unsaid = br.await_h0(reader([{"n": 1}] + [RuntimeError("ssh")] * 30), lambda v: False, 90, "x",
+                             sleep=clock.sleep, clock=clock, say=lambda s: None)
+    assert h0 == {"n": 1} and clock.t == 90 and budgets == [None, 60.0, 30.0]
+    assert unsaid == ["x : pas encore écrit sur Imladris (attendu 90 s, la borne, 2 relecture(s) d'Imladris "
+                      "échouée(s)) — `make bench-report RUN=<run_id>` le relira plus tard"]
+
+
+def test_a_read_of_imladris_keeps_within_its_budget(monkeypatch):
+    """The two ssh of a read together within the budget: the inspect's timeout, then the reader's, each
+    what is left; nothing left, nothing sent."""
+    timeouts: list = []
+    times = iter([100.0, 100.0, 125.0, 300.0, 400.0])
+    monkeypatch.setattr(bs, "_clock", lambda: next(times))
+
+    def run(argv, stdin=None, timeout=180, env=None):
+        timeouts.append(timeout)
+        if "inspect" in argv[-1]:
+            return bs.Result(0, json.dumps([{"Type": "bind", "Source": "/srv/runs/glorfindel",
+                                             "Destination": "/app/runs/glorfindel"},
+                                            {"Type": "bind", "Source": "/srv/glorfindel",
+                                             "Destination": "/root/.glorfindel"},
+                                            {"Type": "bind", "Source": "/srv/glorfindel-config.yaml",
+                                             "Destination": "/app/glorfindel-config.yaml"}]) + "|" + bw.IMAGE, "")
+        return bs.Result(0, json.dumps({"run": None}), "")
+    monkeypatch.setattr(bs, "run", run)
+    env = {"BENCH_H0_SSH": f"ssh {bw.PINNED} glorfindel@{bw.H0_IP}"}
+    assert bs.read_h0("report", bw.VM, bw.RUN, env=env, budget=90) == {"run": None}
+    assert timeouts == [60, 65.0]                       # 90 s, 25 of them taken by the inspect
+    with pytest.raises(RuntimeError, match="plus de temps"):
+        bs.read_h0("report", bw.VM, bw.RUN, env=env, budget=90)     # 100 s gone at its first ssh

@@ -1550,6 +1550,19 @@
    "doc": "docs/banc-t1486.md"
   },
   {
+   "id": "c-banc-rapport-apres-levee",
+   "composant": "celebrimbor",
+   "poste": "c-construire",
+   "nom": "The bench's report composed alone once the run's cycle is written, and again after the lift, bounded; the day's vault jobs read",
+   "etat": "main",
+   "release": "0.5",
+   "lots": [
+    "BNC3a"
+   ],
+   "issue": 753,
+   "doc": "docs/banc-t1486.md"
+  },
+  {
    "id": "c-paires-expiration",
    "composant": "celebrimbor",
    "poste": "c-construire",
@@ -1865,6 +1878,19 @@
    ],
    "issue": 747,
    "doc": "infra/glorfindel-host/README.md"
+  },
+  {
+   "id": "s-imladris-suites",
+   "composant": "socle",
+   "poste": "s-heberger",
+   "nom": "console-url gives Imladris's console while the tunnel holds 7007, and glorfindel restore never shows the subscription's id",
+   "etat": "main",
+   "release": "0.5",
+   "lots": [
+    "IML1c"
+   ],
+   "issue": 752,
+   "doc": "docs/demarrer/mobile.md"
   },
   {
    "id": "s-cd",

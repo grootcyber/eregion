@@ -1115,6 +1115,8 @@ def test_the_token_page_says_where_the_token_is_now():
     never to the file the console no longer keeps."""
     assert "make console-url" in api._TOKEN_PAGE and "~/.eregion/console/token" in api._TOKEN_PAGE
     assert "console_token" not in api._TOKEN_PAGE
+    # IML1c: Imladris's console, seen through the workstation's tunnel, names its own command too.
+    assert "<code>make imladris-url</code>, Imladris's always" in api._TOKEN_PAGE
 
 
 def _asgi(cookie: bytes, kind: str = "http") -> list:

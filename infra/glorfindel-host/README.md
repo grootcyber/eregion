@@ -201,7 +201,8 @@ son onglet est grisé. Les anciennes adresses (`/atelier`, `/api/atelier/*`) red
 - **L'URL** : `make imladris-url` la donne avec son jeton, le tunnel du poste armé
   (`make imladris-tunnel-on`) ; pas armé, une ligne de plus le dit. Le secours, `make imladris-tunnel`,
   l'affiche aussi (« Console → http://localhost:7007/?token=… »), puis tient le tunnel au premier
-  plan. `make console-url` ne donne que la console locale du poste (IML1b). Le jeton est posé une
+  plan. `make console-url` donne la même, le tunnel armé (il tient 7007 : c'est sa console, une ligne
+  le dit) ; sinon, la console locale du poste (IML1c). Le jeton est posé une
   fois en cookie ; l'URL n'a plus à être rouverte avec lui.
 - **Le jeton, sous ses deux noms.** `EREGION_CONSOLE_TOKEN`, ou son ancien nom,
   `GLORFINDEL_WARROOM_TOKEN` : la console prend le nouveau s'il n'est pas vide, sinon l'ancien
@@ -697,7 +698,7 @@ d'exercice non marqués (B2), qui n'ont rien à faire dans une observation.
   1. `make imladris-cd-install`, depuis un checkout de `main` à jour (`git switch main && git pull` ; le timer reste comme il était ; les unités ne changent pas) ;
   2. `make imladris-cd-status`, où une ligne dit « rappels : aucune date de fin notée » (l'agent d'avant n'a pas cette ligne) ;
   3. depuis le poste, `make pair-expiry-note PAIR=console` : la date du secret de la console, qui n'a pas été posé par `make pair-rotate`. Elle dit « ✓ Imladris : fin le … notée » et les dates des rappels.
-- **IML1b change l'agent** (#747 : `eregion_cd.py`, `install.sh`, ses unités) : ses messages dans `#deploy` et son journal donnent les commandes sous leur nouveau nom, `make imladris-*` (`make imladris-status`, `make imladris-cd-retry`, `make imladris-cd-install`…), et nomment l'hôte Imladris (« ✅ Imladris tourne sur … », « ⛔ … refusée : Imladris reste sur … »). Rien d'autre ne change : ni les checks requis, ni la vérification, ni le déploiement. La release qui le porte est déployée par l'agent d'avant, qui parle encore sous les anciens noms ; puis `#deploy` demande la mise à jour, une fois : `make imladris-cd-install`, depuis un checkout de `main` à jour (le timer reste comme il était). Les anciens noms (`glorfindel-host-*`, `mobile-*`) marchent encore, sans rien dire, jusqu'à IML2 (#689).
+- **IML1b change l'agent** (#747 : `eregion_cd.py`, `install.sh`, ses unités) : ses messages dans `#deploy` et son journal donnent les commandes sous leur nouveau nom, `make imladris-*` (`make imladris-status`, `make imladris-cd-retry`, `make imladris-cd-install`…), et nomment l'hôte Imladris (« ✅ Imladris tourne sur … », « ⛔ … refusée : Imladris reste sur … »). Rien d'autre ne change : ni les checks requis, ni la vérification, ni le déploiement. La release qui le porte est déployée par l'agent d'avant, qui parle encore sous les anciens noms : `#deploy` demande la mise à jour sous l'ancien nom, `make glorfindel-host-cd-install` (qui marche encore), et la redemande à chaque déploiement tant que l'agent n'est pas réinstallé. On lance `make imladris-cd-install`, depuis un checkout de `main` à jour (le timer reste comme il était). IML1c (#752) change aussi `deploy.sh`, l'un des fichiers de l'agent : son refus pendant un déploiement dit « le CD d'Imladris » ; le même `make imladris-cd-install` le pose. Les anciens noms (`glorfindel-host-*`, `mobile-*`) marchent encore, sans rien dire, jusqu'à IML2 (#689).
 - **Le retirer** : `make imladris-cd-uninstall` (les unités ; `~/.eregion-cd/` reste).
 
 ### Les rappels d'échéance des paires (ROT1, #737)

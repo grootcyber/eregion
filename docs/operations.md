@@ -46,7 +46,8 @@ make doctor [PROFILE=discover|bench]         # les prérequis (outils, variables
                                              # et canaux d'Orodruin et d'Imladris, anciennement H0) ; sans cloud ni modèle ; 0 si tout est vert, sinon 2 par make (1 du script)
 make glorfindel-start                        # lance watch + la console → http://localhost:7007
 make console-url                             # l'URL de la console avec son jeton (celui de l'environnement ou de .env,
-                                             # sinon ~/.eregion/console/token, attendu CONSOLE_WAIT=20 s) ; glorfindel-start l'affiche
+                                             # sinon ~/.eregion/console/token, attendu CONSOLE_WAIT=20 s) ; glorfindel-start l'affiche ;
+                                             # le tunnel du poste tient 7007 : celle d'Imladris, comme make imladris-url (IML1c)
                                              # refuse si AZURE_SUBSCRIPTION_ID est vide (watch aveugle) ; ALLOW_NO_AZURE=1 pour une démo
 make console-rotate                          # un nouveau jeton tiré : toute session de l'ancien refusée aussitôt, le flux
                                              # en direct compris (SEC10) ; refusé quand EREGION_CONSOLE_TOKEN est posé (Imladris)
@@ -4590,7 +4591,14 @@ make bench-report RUN=<run_id> [TARGET=…] [OUT=runs/bench/<run_id>.json]  # l'
   l'état d'isolement ; sur Azure, le journal d'activité des seules ressources de la cible, chacune lue
   à part (`az monitor activity-log list --resource-id` : la VM, puis ses cartes réseau ; 3 h avant T0
   jusqu'à maintenant, 5000 événements au plus par lecture, une lecture qui atteint le plafond est dite
-  coupée), les jobs du coffre et la vue d'instance. L'appelant d'une Run Command devient un rôle : la
+  coupée), les jobs du coffre (jusqu'au lendemain : `--end-date` du jour exclut les jobs du jour, mesuré
+  le 12/11) et la vue d'instance. `--wait cycle` (la sortie de `bench-run`) et `--wait lift` (celle de
+  `bench-restore`) relisent Imladris toutes les 30 s jusqu'au cycle du run ou à la levée (une levée
+  retenue par la reprise de la watch compte : sa carte `release_hold` encore ouverte, sa sorte et son
+  heure, jamais sa raison), 10 et 30 min au plus, aucune lecture au-delà (`read_h0(budget=…)`), puis
+  lisent Azure (BNC3a). `--since <ISO>` (le début du restore, que `bench-restore` passe) : seules la
+  levée, les cycles `recovery_complete` et les cartes écrits depuis comptent. Un Ctrl-C avant toute
+  lecture d'Imladris sort en 130, sans trace ; pendant Azure, le rapport se compose avec ce qui est lu. L'appelant d'une Run Command devient un rôle : la
   console (son appId, ou `GLORFINDEL_RESTORE_PRINCIPALS`), le bot, Imladris et Orodruin (leur `principal_id`
   Terraform), la watch du poste, un humain (un jeton d'utilisateur), sinon inconnu. Le JSON et le
   Markdown s'écrivent côte à côte (`runs/bench/<run_id>.json` et `.md`, ou `OUT=` : son nom, en
@@ -4625,7 +4633,7 @@ make bench-run TARGET=<vm> SCENARIO=<id> [DRY_RUN=1]           # préflight, dem
 make bench-restore TARGET=<vm> RUN=<run_id> [BEFORE=…] [DRY_RUN=1]  # le restore du poste, paire de la console
 make imladris-tunnel-install [DRY_RUN=1]                       # MOB2 : pose l'unité du tunnel vers la console d'Imladris
 make imladris-tunnel-on / make imladris-tunnel-off             # MOB2 : l'arme pour 12 h au plus / l'arrête
-make imladris-url                                              # l'URL de la console d'Imladris (console-url : la locale)
+make imladris-url                                              # l'URL de la console d'Imladris (console-url aussi, le tunnel armé)
 make imladris-tunnel                                           # le secours : au premier plan, le tunnel du poste non armé
 sudo -v && make imladris-tunnel-check                          # le poste ouvert au téléphone, lu
 ```
@@ -4636,7 +4644,9 @@ sudo -v && make imladris-tunnel-check                          # le poste ouvert
   Azure (une seule de ce nom), en une demande du seul lecteur des demandes
   (`eregion_core/exercise_request.py`) ; le nom de la cible tapé, destructif ou non, puis « [o/N] » ; la
   demande portée sur Orodruin et lancée comme `make orodruin-exercise` (le nom tapé retiré à la fin) ;
-  `make bench-report` pour chaque run nommé, puis la commande du restore avec `RUN=`. La demande est
+  `make bench-report` pour chaque run nommé, une fois son cycle écrit sur Imladris (BNC3a : relu toutes
+  les 30 s, 10 min au plus, puis composé quand même, en disant ce qui n'est pas encore écrit), puis la
+  commande du restore avec `RUN=`. La demande est
   écrite sur le poste, pas dans le répertoire de la console : Dagorlad ne suit pas sa chronologie (le
   run, ses cartes et son rapport, si). `make orodruin-exercise` exige aussi un terminal, dès son premier
   prérequis (`orodruin-exercise-guard`), avant de lire la demande sur Imladris ou les VM d'un drill — avec un
@@ -4646,7 +4656,10 @@ sudo -v && make imladris-tunnel-check                          # le poste ouvert
   celui de `RUN=`, sinon le seul rapport de `TARGET` ; plusieurs : refusé, leurs runs listés —, sauf
   `BEFORE=` ; le coffre et le compte de transit du poste ; le nom de la VM tapé ; l'essai à blanc, puis
   « [o/N] », puis `.venv/bin/glorfindel restore … --keep-isolated --wait --yes` sous la paire.
-  `--keep-isolated` toujours : la levée est celle d'Imladris.
+  `--keep-isolated` toujours : la levée est celle d'Imladris. Le restore fini, `make bench-report` du run
+  (`RUN=`, ou celui dont vient le moment) suit la levée, en lecture, 30 min au plus, puis compose
+  (BNC3a) ; sous l'environnement de l'opérateur, jamais sous la paire. `bench-restore-go` reçoit donc
+  aussi la commande ssh d'Imladris (`BENCH_H0_SSH`, l'adresse lue par `terraform output`).
 - **Le garde** : les deux refusent dans une session d'agent (`EREGION_AGENT_SESSION`, le worktree
   d'un lot ; `bench_shared.session_refusal`, la règle de `scripts/bench_reader.py`). `bench-run` et
   `bench-restore` ne développent avant lui que `$(origin …)` et `$(PYTHON)` : il tourne seul, puis une
@@ -4685,8 +4698,10 @@ sudo -v && make imladris-tunnel-check                          # le poste ouvert
   pause (les 12 h comptent le temps éveillé). `-off` arrête le minuteur et
   l'unité ; `-remove` l'arrête et retire l'unité, son known_hosts et sa date limite. Toutes refusent
   dans une session d'agent, le garde seul d'abord ; `make console-url`, `make imladris-url` et
-  `make imladris-tunnel` aussi, avant de lire le jeton. `make console-url` ne donne que la console
-  locale du poste : le tunnel armé, elle renvoie à `make imladris-url` (IML1b).
+  `make imladris-tunnel` aussi, avant de lire le jeton. `make console-url` suit le port : le tunnel
+  armé tient 127.0.0.1:7007, elle donne l'URL de la console d'Imladris, comme `make imladris-url` (le
+  jeton de `host.env`), et une ligne sur la sortie d'erreur le dit ; sinon, celle de la console locale
+  (IML1c, qui revient sur le refus d'IML1b).
 - **Aucune cible `imladris-*` n'affiche sa commande** (MOB3, banc du 11/11) : chaque ligne de
   recette commence par `@`. `make imladris-ssh` affichait `ssh … glorfindel@<adresse d'Imladris>`,
   le chemin de la clé compris, et la sortie collée depuis le terminal du téléphone repartait comme

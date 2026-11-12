@@ -216,7 +216,7 @@ help:
 	@echo "  make glorfindel-dev             Start + watch files (auto-reload on change)"
 	@echo "  make glorfindel-ui              Rebuild + restart war-room only (watch untouched)"
 	@echo "  make console-url                The console's URL with its token (~/.eregion/console/token: never in the logs);"
-	@echo "                                  the local console's only: Imladris's, make imladris-url (IML1b). Refused in an agent session"
+	@echo "                                  the workstation's tunnel holding 7007: Imladris's, as make imladris-url (IML1c). Refused in an agent session"
 	@echo "  make console-rotate             A new drawn token: every session of the former one refused at once"
 	@echo "  make azure-pairs-expiry         When the secrets of the three pairs end (az login; warns under 14 days)"
 	@echo "  make pair-rotate PAIR=<watch|console|bot> [DAYS=…]   Turn a pair's secret: added, verified, in .envrc,"
@@ -644,10 +644,15 @@ glorfindel-ui: build-glorfindel
 # ~/.eregion/console/token (its own directory, SEC10) — written by the container after `up -d`, so waited for
 # (CONSOLE_WAIT seconds, 20 by default). The port: EREGION_CONSOLE_PORT, as compose publishes it.
 # MOB2 : refused in an agent session (the token never reaches a code session), the guard alone first.
-# IML1b : the local console's only. The workstation's tunnel running (systemctl --user is-active) and the
-# port 7007: the console behind 127.0.0.1:7007 is Imladris's — no URL here, a line names make imladris-url
-# (exit 1: nothing given). Otherwise the local console's, as before — glorfindel-start, -restart, -dev, -ui
-# and console-rotate print it — and, the tunnel set but not armed, a line names the way to Imladris's.
+# IML1c (Jonathan's decision, 12/11, back on IML1b's exit 1): the workstation's tunnel running (systemctl
+# --user is-active) and the port 7007, the console behind 127.0.0.1:7007 is Imladris's — its URL, as make
+# imladris-url gives it (its token from host.env), exit 0, and a line on the error output says whose it is.
+# Otherwise the local console's, as before — glorfindel-start, -restart, -dev, -ui and console-rotate print
+# it — and, the tunnel set but not armed, a line names the way to Imladris's.
+# Its limit: it reads the unit's state and the port, never which process holds 7007. While the unit
+# retries its connection (Type=simple, ConnectTimeout=15), systemd may say it active though the local
+# console holds the port: Imladris's URL is then given for the local console (make imladris-tunnel-check
+# reads the listener, by ss -Hltnp).
 CONSOLE_WAIT ?= 20
 MOBILE_UNIT    = $(HOME)/.config/systemd/user/eregion-console-tunnel.service
 TUNNEL_ACTIVE  = systemctl --user is-active --quiet eregion-console-tunnel.service 2>/dev/null
@@ -655,8 +660,8 @@ CONSOLE_GUARD  = python3 scripts/mobile.py guard
 console-url:
 	@$(CONSOLE_GUARD) $@
 	@if [ -f "$(MOBILE_UNIT)" ] && [ "$${EREGION_CONSOLE_PORT:-7007}" = 7007 ] && $(TUNNEL_ACTIVE); then \
-	   echo "  ℹ 127.0.0.1:7007 est tenu par le tunnel du poste vers Imladris : la console derrière est celle d'Imladris, son URL → make imladris-url" >&2; \
-	   exit 1; \
+	   echo "  ℹ le tunnel d'Imladris tient 7007 : c'est sa console (make imladris-url)" >&2; \
+	   $(MAKE) --no-print-directory imladris-url; \
 	 else $(MAKE) --no-print-directory console-url-local; rc=$$?; \
 	   [ ! -f "$(MOBILE_UNIT)" ] || echo "  ℹ le tunnel du poste vers Imladris est posé, non armé : ci-dessus la console locale ; celle d'Imladris → make imladris-url (le tunnel : make imladris-tunnel-on)" >&2; \
 	   exit $$rc; fi
@@ -1176,15 +1181,16 @@ imladris-fault-rate: imladris-known
 	@$(HOST_SSH) 'docker exec eregion-watch python -m analysis.fault_rate --runs-dir runs --days $(or $(DAYS),30)$(if $(JSON), --json)'
 
 # IML1b : l'URL de la console d'Imladris avec son jeton, toujours (la sortie : l'URL seule) ; le tunnel du
-# poste pas armé, une ligne de plus, sur la sortie d'erreur, dit comment l'armer.
+# poste pas armé, une ligne de plus, sur la sortie d'erreur, dit comment l'armer — ou le secours, le tunnel
+# au premier plan (IML1c : sur macOS, ou s'il tourne déjà ailleurs, l'URL reste juste).
 imladris-url:
 	@$(CONSOLE_GUARD) $@
 	@test -f $(HOST_ENV) || { echo "$(HOST_ENV) manquant (make imladris-env)"; exit 1; }
 	@t="$(CONSOLE_TOKEN)"; test -n "$$t" || { echo "$(NO_CONSOLE_TOKEN)" >&2; exit 1; }; \
 	 echo "http://localhost:7007/?token=$$t"; \
 	 $(TUNNEL_ACTIVE) || if [ -f "$(MOBILE_UNIT)" ]; then \
-	   echo "  ℹ le tunnel du poste vers Imladris n'est pas armé : make imladris-tunnel-on (12 h au plus)" >&2; \
-	 else echo "  ℹ le tunnel du poste vers Imladris n'est pas armé (pas posé : make imladris-tunnel-install), puis make imladris-tunnel-on" >&2; fi
+	   echo "  ℹ le tunnel du poste vers Imladris n'est pas armé : make imladris-tunnel-on (12 h au plus ; ou make imladris-tunnel au premier plan)" >&2; \
+	 else echo "  ℹ le tunnel du poste vers Imladris n'est pas armé (pas posé : make imladris-tunnel-install), puis make imladris-tunnel-on (ou make imladris-tunnel au premier plan)" >&2; fi
 
 # Le secours (IML1b) : un poste sans systemd de l'utilisateur (macOS), ou un coup d'œil sans armer les
 # 12 h. Affiche l'URL avec son jeton, puis tient le tunnel au premier plan (Ctrl+C pour fermer).
@@ -1530,11 +1536,13 @@ bench-report:
 # téléphone ouvre lui-même vers le 127.0.0.1:7007 du poste, où make imladris-tunnel tient celui d'Imladris.
 # bench-run : le préflight (un ✗, rien ne part), la demande d'un fil SCENARIO → TARGET (l'id de la VM lu
 # sur Azure), le nom de la cible tapé dans un terminal, destructif ou non, puis la demande portée sur
-# Orodruin, qui la rejuge et la lance (comme orodruin-exercise), puis bench-report pour chaque run
-# (scripts/bench_run.py). bench-restore : le restore du poste, sous la paire de la console, le nom de la VM
+# Orodruin, qui la rejuge et la lance (comme orodruin-exercise), puis bench-report pour chaque run, une fois
+# son cycle écrit sur Imladris (relu, 10 min au plus : BNC3a) (scripts/bench_run.py). bench-restore : le
+# restore du poste, sous la paire de la console, le nom de la VM
 # tapé dans un terminal, --before le T0 du run (son attack_started, SEC4c : runs/bench/<run_id>.json, RUN=,
 # ou le seul rapport de TARGET) sauf BEFORE=, toujours --keep-isolated (la levée est celle d'Imladris), à blanc
-# d'abord (scripts/bench_restore.py). DRY_RUN=1 : rien n'est envoyé ni restauré.
+# d'abord, puis le rapport du run, qui suit la levée par Imladris, en lecture, 30 min au plus (BNC3a)
+# (scripts/bench_restore.py). DRY_RUN=1 : rien n'est envoyé ni restauré.
 # Le garde : tous deux refusent dans une session d'agent (EREGION_AGENT_SESSION, le worktree d'un lot).
 # bench-run et bench-restore ne développent avant lui que $(origin …) et $(PYTHON) : le garde tourne seul,
 # puis une sous-make lance la cible -go. Les cibles -go sont internes : appelées directement, make y
@@ -1550,7 +1558,7 @@ bench-run bench-restore:
 	@$(PYTHON) scripts/$(subst -,_,$@).py --guard-only
 	@$(ORO_SUBMAKE) $@-go
 
-bench-run-go: export BENCH_H0_SSH = $(HOST_SSH)
+bench-run-go bench-restore-go: export BENCH_H0_SSH = $(HOST_SSH)
 bench-run-go: export BENCH_ORO_SSH = $(ORO_SSH)
 bench-run-go: export BENCH_ORO_RUN = docker run --rm $(ORO_HARDEN) --env-file orodruin.env $(ORO_IMAGE)
 bench-run-go: export BENCH_ORO_RUN_REQUEST = $(ORO_RUN_REQUEST)
