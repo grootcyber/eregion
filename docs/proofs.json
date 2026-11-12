@@ -1,15 +1,20 @@
 {
-  "about": "The one source of the figures the project's site shows (ADO2, #671). Each figure says what it measures, its date (the day or the month of the measure, or, when the source dates no measure, the day the source states it) and its source: a file of the repository, the sentence of it that gives the figure (quote, or several: quotes), and the heading it sits under (anchor) or the run it comes from (run). scripts/adoption.py and tests/unit/test_adoption.py refuse a figure without its date or its source, a source the repository does not hold, a quote its file no longer says, a number of the value, of what it says or of its note that no quote gives, and a figure on a page that is not here. kind: measured, estimate, setting (a value of the code or of its configuration), to-remeasure (a measure taken before the current architecture, to be replayed).",
+  "about": "The one source of the figures the project's site shows (ADO2, #671). Each figure says what it measures, its date (the day or the month of the measure, or, when the source dates no measure, the day the source states it) and its source: a file of the repository, the sentence of it that gives the figure (quote, or several: quotes), and the heading it sits under (anchor) or the run it comes from (run). scripts/adoption.py and tests/unit/test_adoption.py refuse a figure without its date or its source, a source the repository does not hold, a quote its file no longer says, a number of the value, of what it says or of its note that no quote gives, and a figure on a page that is not here. kind: measured, estimate, setting (a value of the code or of its configuration), to-remeasure (a measure taken before the current architecture, or one a later fact has overtaken, to be measured again).",
   "proofs": {
     "wrong_disruptive": {
       "value": "0 / 41",
       "says": "isolations and blocks it recommended or made on real traffic (exercises excluded), judged wrong, of those judged, over 30 days",
       "date": "2026-11-02",
-      "kind": "measured",
+      "kind": "to-remeasure",
+      "note": "since, an isolation of a bench VM on 10 Nov was judged wrong on 11 Nov; the count over 30 days is to be read again",
       "source": {
         "path": "ROADMAP.md",
         "anchor": "la-finalité-et-ses-cinq-indicateurs",
-        "quote": "0 % sur 41 jugées en 30 jours"
+        "quotes": [
+          "0 % sur 41 jugées en 30 jours au 02/11",
+          "depuis, l'isolement de bree du 10/11 jugé faux le 11/11",
+          "le compte des 30 jours est à relire"
+        ]
       }
     },
     "blocked_alone": {
@@ -66,20 +71,21 @@
       "says": "implemented techniques proven over the last 30 days on the bench",
       "date": "2026-10-27",
       "kind": "measured",
+      "note": "the catalog implements more techniques since, some never played on the bench",
       "source": {
         "path": "README.md",
         "quote": "4 of the 5 implemented techniques proven in the last 30 days"
       }
     },
     "last_e2e": {
-      "value": "31 Oct",
-      "says": "the last run that proved detection and response end to end, on the bench (a technique and a declared fault in one campaign)",
-      "date": "2026-10-31",
+      "value": "12 Nov",
+      "says": "the last run that proved detection and response end to end, on the bench (the ransomware, from the attack to the release by Imladris)",
+      "date": "2026-11-12",
       "kind": "measured",
       "source": {
         "path": "ROADMAP.md",
         "anchor": "la-finalité-et-ses-cinq-indicateurs",
-        "quote": "dernier run de bout en bout : 31/10 (BL1, T1136.001, banc)"
+        "quote": "dernier run de bout en bout : 12/11 (RAN1, T1486, banc : de l'attaque à la levée par Imladris"
       }
     },
     "proof_flag": {
@@ -152,30 +158,29 @@
       }
     },
     "contain_ransom": {
-      "value": "~1 min",
-      "says": "to contain a ransomware VM, Glorfindel acting alone",
-      "date": "2026-06-09",
-      "kind": "to-remeasure",
-      "note": "a run from before the hosted watch, Orodruin and Dagorlad; to be replayed on the bench",
+      "value": "7 min 43 s",
+      "says": "to contain a ransomware VM, Glorfindel acting alone: from the attack to its isolation verified on Azure",
+      "date": "2026-11-12",
+      "kind": "measured",
       "source": {
         "path": "docs/banc-t1486.md",
-        "run": "20260609T190824Z",
-        "quote": "~1 min to contain a ransomware VM"
+        "anchor": "les-chiffres-du-1211",
+        "run": "20261112T091448Z-b218",
+        "quote": "463,1 s de T0 à l'isolement relu sur Azure, soit 7 min 43 s"
       }
     },
     "restore_ransom": {
-      "value": "21 min 29 s",
-      "says": "from the detection to the service restored from backup",
-      "date": "2026-06-09",
-      "kind": "to-remeasure",
-      "note": "a run from before the hosted watch, Orodruin and Dagorlad; to be replayed on the bench",
+      "value": "27 min 55 s",
+      "says": "from the attack to the service restored from backup, the human's wait excluded (detection, isolation, restore)",
+      "date": "2026-11-12",
+      "kind": "measured",
       "source": {
-        "path": "ROADMAP.md",
-        "anchor": "contexte-produit-scénario-optionnel",
-        "run": "20260609T190824Z",
+        "path": "docs/banc-t1486.md",
+        "anchor": "les-chiffres-du-1211",
+        "run": "20261112T091448Z-b218",
         "quotes": [
-          "de la détection à la remise en service",
-          "(run 20260609T190824Z : 21m29s)"
+          "la détection, puis l'isolement, puis `restore_time`, sans le temps des décisions humaines",
+          "141,6 + 19,5 + 1514 = 1675,1 s, soit 27 min 55 s"
         ]
       }
     },

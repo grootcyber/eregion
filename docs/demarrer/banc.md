@@ -66,6 +66,12 @@ make celebrimbor-up            # le plan est montré, « yes » l'applique (YES=
 make celebrimbor-output        # le fragment de glorfindel-config.yaml : l'espace, le coffre, le compte de transit
 ```
 
+- **Un banc qui tourne déjà : jamais d'apply complet.** `make celebrimbor-up` ne se lance que pour créer
+  le banc. Ensuite, tant que les dérives tiennent, seul un apply ciblé se fait (`make celebrimbor-flows-up`,
+  `-logs-up`, `-identity-up`, `-auditd-up`…, chacun après son plan) : le plan complet du 12/11 retirait
+  42 des 44 règles du NSG partagé, posées par Glorfindel (les règles du NSG sont en ligne,
+  `infra/terraform/network.tf`), et voulait rattacher à gondolin, au LUN 10, son disque de données
+  d'origine, que le restore du T1486 a remplacé. `make celebrimbor-plan` se lit, il ne s'applique pas.
 - **La configuration.** Copie le fragment dans `glorfindel-config.yaml`, à la racine du dépôt. `make imladris-push` l'envoie sur Imladris, le défaut forcé en `human_only` (`infra/glorfindel-host/host_config.py`).
 - **Le fichier partagé.** `terraform.tfvars` sert aussi aux modules d'Imladris et d'Orodruin (`-var-file=../terraform/terraform.tfvars`, Makefile).
 

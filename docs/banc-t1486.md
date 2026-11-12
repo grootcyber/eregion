@@ -2,9 +2,10 @@
 
 [← le banc](demarrer/banc.md) · le modèle : [la session de BL1](banc-bl1.md) · [ce qui reste à rejouer](demarrer/a-rejouer.md) · [ce qui s'automatise autour (conception)](design/banc-autonome.md)
 
-Le README dit : « ~1 min to contain a ransomware VM, 21m29s to restored service ». Ces chiffres
-viennent du run `20260609T190824Z` (09/06, l'ancienne sandbox ; `ROADMAP.md`,
+Le README disait : « ~1 min to contain a ransomware VM, 21m29s to restored service ». Ces chiffres
+venaient du run `20260609T190824Z` (09/06, l'ancienne sandbox ; `ROADMAP.md`,
 `docs/historique.md`). Ce jour-là, la watch, le restore et la levée tournaient sur le même poste.
+Depuis le 12/11, le README donne ceux du rejeu de cette page (« Les chiffres du 12/11 », plus bas).
 Depuis, Glorfindel vit sur Imladris (anciennement H0), l'attaque part d'Orodruin et se demande dans Dagorlad. Cette page
 rejoue le rançongiciel sur gondolin, avec la release publiée sur Imladris et Orodruin (la 0.5.8 quand la
 page a été écrite, le 09/11), et en
@@ -51,10 +52,49 @@ ce qui l'a corrigé depuis (le CHANGELOG de la 0.5.9 et de la 0.5.10) :
   0.5.9) lisent l'étape 0 et l'étape 8 ; `make bench-run` et `make bench-restore` (MOB1, #686, 0.5.10)
   font le lancement et le restore en une commande chacun.
 
-**Pas encore repassé au banc** : un run de bout en bout avec ces corrections. Le restore sous RST1
-(la lecture des droits, « à mesurer » à l'étape 6), la coupure suivie de DRN1, la levée seule de
-REC1b, et `make bench-run` et `make bench-restore` sur Azure n'ont tourné que sur des faux. Les trois
-temps ne sont donc pas datés, et les chiffres du README restent ceux du 09/06 (RAN1, #665).
+**Le 12/11, la page a été rejouée de bout en bout avec ces corrections**, sur la v0.5.10 d'Imladris
+et d'Orodruin : `make bench-run`, puis `make bench-restore`, la levée par la watch d'Imladris seule.
+Le restore sous RST1, la coupure suivie de DRN1, la levée seule de REC1b, `make bench-run` et
+`make bench-restore` ont tourné sur Azure. Les chiffres suivent.
+
+### Les chiffres du 12/11
+
+Run `20261112T091448Z-b218` (la demande `r-20261112T091418Z-f94891`), gondolin en `non_disruptive`,
+heures UTC. La source : le rapport de `make bench-report`, recomposé après la levée (v3, 10:08 UTC),
+qui lit l'état d'Imladris, ses cycles, le journal d'activité, le coffre et la vue d'instance (sa v2,
+composée avant la levée, pour `isolated_at`, que la v3 ne lit plus : l'état d'Imladris était levé) ; le
+`restore_time`, à la sortie de `make bench-restore` ; le compte rendu de la session Tests (hors du
+dépôt) ; les chiffres sont aussi sur #665.
+
+| Étape | Heure | Depuis T0 | Le 09/11 | Où c'est lu |
+|---|---|---|---|---|
+| T0 | 09:16:04 | — | — | `attack_time` du run |
+| la détection | 09:18:25 | **141,6 s** | 70,3 s | `detection_latency_s`, verdict `detected` |
+| le NSG de quarantaine posé | 09:18:45,2 | 161,1 s | — | `isolated_at`, l'état d'Imladris (rapport v2) ; la v3 lit 09:18:47, 163,3 s : la première écriture d'Imladris sur la carte, au journal d'activité |
+| la coupure des sessions, par Imladris | 09:18:45 → 09:23:49 | 304,2 s de Run Command | 302 s | le journal d'activité |
+| **l'isolement vérifié** | 09:23:47,2 | **463,1 s** | jamais : la vérification en échec (DRN1) | le cycle `isolate_vm`, `verified=True`, `action_s` 305 |
+| le restore lancé par Jonathan | vers 09:41:43 | 25 min 39 s d'attente humaine | — | un `date -u` tapé juste avant le « o » |
+| la neutralisation de Run Command (la console) | 09:41:41 → 09:44:13 | 152 s | 152 s | le journal d'activité |
+| le démarrage de la VM restaurée | 10:00:38 | — | — | le journal d'activité (`start/action`) |
+| **la levée**, par la watch d'Imladris | 10:06:23 | **3019,9 s** | à la main | le cycle `recovery_complete` (REC1), `verified=True` |
+
+- **Le confinement** : 463,1 s de T0 à l'isolement relu sur Azure, soit 7 min 43 s. Le NSG de
+  quarantaine est posé à 161,1 s, 19,5 s après la détection ; la vérification attend la fin de la
+  coupure des sessions, 304,2 s sous la quarantaine. La confiance de l'isolement : 75 % (82 % le 09/11).
+- **La restauration** : `restore_time` de 25 min 14 s, du point de 08:29:59 (le point propre de
+  l'étape 2, au niveau du coffre, le plus récent avant T0). Le job Azure seul a duré 917 s. La
+  neutralisation a été faite avant (« ✓ Run Command neutralisée avant le restore »).
+- **Au sens du README** (la détection, puis l'isolement, puis `restore_time`, sans le temps des
+  décisions humaines) : 141,6 + 19,5 + 1514 = 1675,1 s, soit 27 min 55 s. Le 09/11 : environ
+  33 min 57 ; le 09/06, sur l'ancienne architecture : 21 min 29 s.
+- **Le service rendu**, l'attente humaine comprise : à la levée, T0 + 50 min 20 s, dont 25 min 39 s
+  entre T0 et le restore lancé. Du démarrage de la VM restaurée à la levée : 5 min 45 s.
+- **La détection a pris 141,6 s, contre 70,3 s le 09/11.** L'écart n'est pas expliqué ici : il est
+  à mesurer, par ING5 (RH1, [`design/mesure-en-retard.md`](design/mesure-en-retard.md)).
+- **Ce qui ne s'est pas lu comme prévu** : la carte Discord de l'isolement (09:23) dit encore
+  « coupure en attente », sans message de clôture, alors que le cycle s'est clos vérifié ; aucune
+  carte n'est venue dans TO JUDGE pour le run (étape 7) ; un rapport composé 7 s après la détection
+  ne montre pas encore l'isolement (étape 8).
 
 ## Ce que le code décide avant la session
 
@@ -430,8 +470,10 @@ sessions a pris 302 s le 09/11, et une coupure qui dépasse 300 s est suivie sur
   `ISOLATED`. Une carte de restauration peut suivre, recommandée et jamais autonome. Elle est
   marquée exercice. Elle demande un cycle suivant, donc une nouvelle détection de gondolin, qui peut
   ne pas venir sous la quarantaine : le 09/11, aucune n'a suivi (`docs/glorfindel.md`, « La coupure
-  suivie sur Azure »).
-- **La coupure des sessions (DRN1)** : sous la quarantaine, elle a pris 302 s le 09/11. La watch
+  suivie sur Azure ») ; le 12/11 non plus, et l'isolement vérifié n'a fait aucune carte dans TO JUDGE
+  (`docs/observation.md`, « Juger chaque carte »).
+- **La coupure des sessions (DRN1)** : sous la quarantaine, elle a pris 302 s le 09/11, 304,2 s le
+  12/11 (la notification a dit « coupure en attente », puis le cycle s'est clos vérifié). La watch
   l'attend 300 s. Finie avant, la carte de l'action autonome est vérifiée. Sinon, la notification
   dit « coupure en attente », `glorfindel list` dit « session cut pending », et, dans la minute, une
   carte **« session cut pending »** (`drain_pending`) apparaît, sans rien à approuver. Elle se ferme
@@ -487,6 +529,10 @@ AZURE_CLIENT_ID=${EREGION_CONSOLE_AZURE_CLIENT_ID} AZURE_CLIENT_SECRET=${EREGION
   .venv/bin/glorfindel restore ${RID} --before ${AVANT} --keep-isolated --wait --yes
 date -u +%H:%M:%S                  # la fin du restore
 ```
+
+**La sortie affiche l'id complet de la VM, l'abonnement compris, et le nom du coffre** (la ligne
+`Resource :` de `glorfindel restore`, `glorfindel/cli.py:1609` ; relevé au banc le 12/11, à blanc comme
+pour de vrai) : ne pas la coller telle quelle dans une issue ou un fil. La masquer demande du code.
 
 *Vérifié à blanc*, dans un `HOME` jetable : la première commande dit le coffre, `Before : <AVANT>
 (--before)`, puis « DRY RUN — no changes made. ». Elle dit aussi son identité (RST1) : `Identity :
@@ -558,8 +604,10 @@ Cette levée-là n'est pas reposée. Elle note `releasing_at` dans l'état d'Iml
 VM, et la réaffirmation, qui prend le même verrou, saute une levée en cours
 (`glorfindel/reassert.py:141`, `:239-240`). Seule une levée faite hors d'Imladris le serait.
 
-Dans la console, juger les cartes de l'exercice (TO JUDGE) : l'isolement, et la recommandation de
-restore. Le Heartbeat de gondolin revient en quelques minutes (la requête de l'étape 1).
+Dans la console, juger les cartes de l'exercice qui sont dans TO JUDGE (une recommandation, une
+vérification en échec). Un isolement autonome vérifié n'y fait aucune carte : le 12/11, aucune carte
+à juger pour le run (`docs/observation.md`, « Juger chaque carte » ; JUG1, à venir). Le Heartbeat de
+gondolin revient en quelques minutes (la requête de l'étape 1).
 
 ### 8. Mesurer (10 min)
 
@@ -597,6 +645,15 @@ Le Markdown s'affiche, et s'écrit à côté du JSON (`runs/bench/<run_id>.json`
 alimentera plus tard `docs/proofs.json`. Un appelant devient un rôle, une ressource un nom du banc
 déjà public. Le `restore_time` de la CLI du poste ne se lit qu'à sa sortie (étape 6) : le noter à
 part. Le calcul à la main reste en annexe, pour un dépannage (« Annexe B »).
+
+**Mesuré le 12/11.** `make bench-run` compose le rapport juste après la détection : composé 7 s
+après elle, il ne montrait ni l'isolement ni le cycle `isolate_vm`. Le relancer après la coupure,
+puis après la levée (`make bench-report RUN=…`) : la v3, composée après la levée, porte tous les
+chiffres. Deux manques y restent, à corriger dans le code : les jobs du coffre se lisent avec
+`--end-date` à la date du jour (`scripts/bench_report.py:410`), qui exclut ceux du jour ; le rapport a
+montré le job de sauvegarde de la veille comme « point de restauration pris », sans le point de
+l'étape 2 ni le job du restore (« aucun job de restore de la cible après T0 dans le coffre »). Le point choisi et le
+`restore_time` se lisent donc à la sortie de `make bench-restore`.
 
 | Le chiffre | Sa définition | Où le lire |
 |---|---|---|
@@ -661,7 +718,7 @@ make imladris-cd-enable            # seulement s'il a été mis en pause à l'é
 | « Restore trigger failed — 403 … » et « la VM … reste désallouée » | Azure a refusé le déclenchement après la désallocation (un refus explicite que l'API des droits ne rend pas). Il ne laisse **aucune trace** au journal d'activité : seule la sortie le garde | la garder ; `az vm start -g rg-celebrimbor -n vm-celebrimbor-gondolin` ; poser le droit nommé, relancer |
 | « Restore job … Failed : code … » ou « not found after trigger » | le job a échoué tout de suite (son erreur est dite), ou n'est pas apparu en 2 min | lire les jobs du coffre (`az backup job list …`) **avant** de relancer ; la VM est désallouée : la redémarrer une fois sûr qu'aucun restore ne tourne |
 | quelque chose part de travers sur Orodruin | — | `make orodruin-kill` : il révoque l'identité d'Orodruin, annule le chaos, désalloue sa VM et ferme les fenêtres. Il ne lève rien sur gondolin. Ensuite, `make orodruin-lock` (plan relu) lui rend ses droits (`infra/orodruin/README.md`, « Urgence ») |
-| `make celebrimbor-up` pendant l'isolement | un apply retire les règles `glorfindel-*` des NSG à règles en ligne | ne pas l'appliquer tant que `glorfindel list` n'est pas vide |
+| `make celebrimbor-up`, l'apply complet | un apply retire les règles `glorfindel-*` des NSG à règles en ligne. Le plan complet du 12/11 montrait aussi les dérives du banc : 42 des 44 règles du NSG partagé sont des `glorfindel-*`, posées par Glorfindel, et le plan veut rattacher à gondolin, au LUN 10, son disque de données d'origine, que le restore a remplacé | **jamais d'apply complet** tant que ces dérives tiennent, même `glorfindel list` vide : seulement un apply ciblé, son plan relu ([`demarrer/banc.md`](demarrer/banc.md), étape 1) |
 
 `make orodruin-kill DRY_RUN=1` dit ce que le kill arrêterait, sans rien arrêter (*vérifié à blanc*,
 `make -n` : `kill.py … --dry-run`).

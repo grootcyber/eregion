@@ -18,7 +18,7 @@ Three agents form a closed loop: Annatar attacks, Gothmog breaks, Glorfindel det
 **The core — LLM reasoning + RAG, not playbooks.** Glorfindel never follows a TTP→action table. Every decision comes from an **LLM** (provider-agnostic via LiteLLM — Anthropic, OpenAI, Azure OpenAI, Ollama, self-hosted) reasoning over: the enriched signal (targeted follow-up queries run *before* deciding), a **RAG memory of past incidents** (ChromaDB — it learns every cycle, no fine-tuning), and production-validated few-shot examples. Two hard guardrails wrap the LLM: a **confidence gate** (low confidence → forced escalation) and a **safety graph** that blocks destructive actions without human approval regardless of what the LLM proposes. *(Annatar runs fixed scenarios deterministically and also has a generative campaign layer — `annatar campaign plan` composes an ATT&CK kill-chain from a shared technique catalog, optionally LLM-planned, and materializes replayable scenarios.)*
 
 > **Observe-only by default** — Glorfindel recommends, you decide. Grant it autonomy per asset as you build trust.
-> With autonomous containment enabled: **~1 min to contain a ransomware VM, 21m29s to restored service** — the only human step is approving the backup restore.
+> With autonomous containment enabled, measured on the bench on 12 November 2026 (run `20261112T091448Z-b218`, [`docs/banc-t1486.md`](docs/banc-t1486.md), French): **a ransomware VM detected in 141.6 s, quarantined 19.5 s later, its isolation verified on Azure at 7 min 43 s; restored service in 27 min 55 s** (detection, isolation and restore, the human's wait excluded) — the only human step is approving the backup restore. The figures of 9 June 2026 (~1 min to contain, 21m29s to restored service) came from an older architecture, before Imladris (formerly H0), Orodruin and Dagorlad.
 
 **[Watch the loop: an interactive replay →](https://grootcyber.github.io/eregion/replay/)** A ransomware simulation on a bench VM, met in `human_only` (you approve each step), `non_disruptive` (Glorfindel contains alone, a human restores) or the planned `full_auto`. The guards, the quarantine, the proof read back from Azure, and what reaches you on Discord and in the console, in their real formats; times marked measured come from the runs below, the rest is illustrative.
 
@@ -143,7 +143,7 @@ Signals from different resources run in parallel threads; signals from the same 
 
 | TTP | Scenario | Detection source | Detection time | Action | RTO |
 |-----|----------|-----------------|----------------|--------|-----|
-| T1486 | Ransomware VM | Perf disk write anomaly | 55–71s | cycle 1: `isolate_vm` (autonomous) → cycle 2: `restore_from_backup` (escalate) | **21m29s** |
+| T1486 | Ransomware VM | Perf disk write anomaly | 141.6 s (12 Nov; 70.3 s on 9 Nov; 55–71s in June) | `isolate_vm` (autonomous, verified at 463.1 s) → restore approved by a human → release by Imladris | **27m55s** (12 Nov; 21m29s in June) |
 | T1041 | Data exfiltration | StorageBlobLogs (PutBlob, RFC-1918) | ~79–108s* | `isolate_vm` (internal IP) | — |
 | T1110.001 | SSH brute force | Syslog DCR (auth facility) | ~58s | `block_suspicious_ip` | — |
 | T1548.003 | Sudo privilege escalation | Syslog DCR (auth facility) | ~40s | `isolate_vm` (OS-level compromise) | — |

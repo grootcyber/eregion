@@ -1123,8 +1123,8 @@ l'Orchestre. Ce lot de conception n'en a pas.
 4. **La levée en probation** : Imladris lit la reprise, la porte (aucun tiers : Orodruin est dans sa
    fenêtre), et lève en probation. On note :
    - le temps de la fin du job à la levée ;
-   - la règle des ports : posée, ou « aucun port exposé » sur le banc (gondolin n'aurait ni IP
-     publique ni allow depuis Internet : H8).
+   - la règle des ports : posée. gondolin a une IP publique et SSH ouvert depuis Internet (H8,
+     tombée le 12/11, §14) : la règle des ports s'y pose et s'y mesure.
 5. **Pendant la probation** : le T1136.001 d'Atomic Red Team (vendorisé, épinglé,
    `annatar/atomics/`), lancé par une seconde demande de Dagorlad sur gondolin. Non destructif. Il a
    été mesuré en 44,7 s de la technique à la détection le 20/10.
@@ -1246,7 +1246,7 @@ Le replay privé (10/11) est suivi pour les quatre scénarios et les deux modes.
 | H5 | Les disques d'origine restent dans le groupe, non attachés, sous leur nom | le restore du banc | les nommer par ce que le job rapporte |
 | H6 | La console série et Bastion : leurs opérations au journal d'activité, et leur ressource | une connexion au banc | la table du §4.1 change |
 | H7 | Le journal d'activité porte chaque opération du §4.1 sous la ressource que la table nomme ; et une Run Command v1 y écrit aussi, ou non, une extension (`RunCommandLinux`), sous le même appelant et au même moment | une écriture de chaque sorte au banc, puis la lecture (LEV2, avant LEV3) | la table change ; une opération jamais rendue est un vecteur dans l'invité |
-| H8 | Gondolin n'a ni IP publique ni allow depuis Internet sur un port d'administration | le NSG du banc | la règle des ports se pose au banc, et se mesure |
+| H8 | Gondolin n'a ni IP publique ni allow depuis Internet sur un port d'administration | le NSG du banc | la règle des ports se pose au banc, et se mesure. **Tombée le 12/11** : la carte de gondolin porte l'IP publique du banc (`pip-celebrimbor-gondolin`, `infra/terraform/network.tf`), le NSG du sous-réseau admet SSH de toute source (`allow-ssh`, priorité 1000), et un vrai brute force SSH venu d'Internet y a été bloqué seul (11:18 UTC). La levée en probation trouvera donc un port d'administration exposé au banc : sa règle s'y pose et s'y mesure |
 | H9 | `resourceUri eq '<vm>'` est exact et ne rend pas les ressources enfants ; la lecture du groupe tient dans la borne de pages | les mêmes écritures, lues des deux façons (LEV2, avant LEV3) | la lecture d'enfants change ; une borne trop courte retient trop |
 | H10 | Combien de levées la lecture illisible d'un groupe retient | les levées du banc et du jumeau, comptées (LEV7) | trop : la lecture d'appartenance par l'identité Graph de la 0.6.2 (Q11) |
 | H11 | Un principal supprimé reste restaurable 30 jours, avec ses attributions orphelines qui reprennent effet | la documentation, puis un principal de test supprimé et restauré au banc | ses droits restent illisibles de toute façon : le texte de la carte change |
