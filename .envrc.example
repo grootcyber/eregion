@@ -59,6 +59,8 @@ export GLORFINDEL_AZURE_CLIENT_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 # ⚠ Le poste qui restaure (glorfindel restore, docs/banc-t1486.md, étape 6) a besoin de la paire de
 # la console : décommenter et remplir ces deux lignes. Vide, le restore ne fait pas échouer, il prend
 # une autre identité sans le dire (RST1) ; make azure-pairs-expiry lit la date de fin de son secret.
+# Une ligne par variable, la valeur écrite (pas une référence) : make pair-rotate PAIR=<paire> la
+# réécrit en place à chaque rotation (ROT1, docs/operations.md, « Faire tourner un secret »).
 # export EREGION_CONSOLE_AZURE_CLIENT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 # export EREGION_CONSOLE_AZURE_CLIENT_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 # export GLORFINDEL_BOT_AZURE_CLIENT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx

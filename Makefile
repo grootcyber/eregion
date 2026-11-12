@@ -142,6 +142,7 @@ DOCKER_GLORFINDEL_WATCH = $(WATCH_KEY_DIR) && $(RUNS_DIRS) && $(GLORFINDEL_AZURE
 	$(IMAGE_GLORFINDEL) glorfindel
 
 .PHONY: help build build-annatar build-glorfindel fix-state-ownership check-azure-env azure-pairs-expiry runs-migrate runs-survey \
+	pair-rotate pair-rotate-go pair-expiry-note pair-expiry-note-go \
 	bench-preflight bench-report bench-run bench-run-go bench-restore bench-restore-go mobile-check \
 	mobile-tunnel-install mobile-tunnel-remove mobile-tunnel-on mobile-tunnel-off \
 	mobile-tunnel-install-go mobile-tunnel-remove-go mobile-tunnel-on-go mobile-tunnel-off-go \
@@ -218,6 +219,9 @@ help:
 	@echo "                                  Imladris's when the workstation's tunnel is set (MOB2). Refused in an agent session"
 	@echo "  make console-rotate             A new drawn token: every session of the former one refused at once"
 	@echo "  make azure-pairs-expiry         When the secrets of the three pairs end (az login; warns under 14 days)"
+	@echo "  make pair-rotate PAIR=<watch|console|bot> [DAYS=90]   Turn a pair's secret: added, verified, in .envrc,"
+	@echo "                                  its service restarted, the old one removed, its end noted on Imladris (ROT1)"
+	@echo "  make pair-expiry-note PAIR=<…>  The end in place noted on Imladris: reminders in #deploy at J-14, J-7, J-1"
 	@echo "  make glorfindel-logs            Tail service logs"
 	@echo "  make glorfindel-watch           Watch runs/ only (no web UI)"
 	@echo "  make glorfindel-respond         SIGNALS=... Process signal file"
@@ -556,6 +560,36 @@ check-azure-env:
 # démarrage de Glorfindel n'appellent jamais Graph : c'est ici seulement.
 azure-pairs-expiry:
 	@python3 scripts/credential_expiry.py
+
+# ROT1 (#737) : faire tourner le secret d'une paire en une commande (scripts/pair_rotate.py) — un
+# nouveau secret ajouté à côté de l'ancien (--append) sur l'objet qui le porte (PAIR1), vérifié (un
+# jeton, une lecture d'Azure), écrit dans .envrc (copie 0600, droits gardés), le service du compose
+# qui le lit relancé, puis seulement l'ancien retiré ; la date de fin notée sur Imladris, dont le CD
+# rappelle dans #deploy (J-14, J-7, J-1, le jour même). pair-expiry-note note la date en place, sans
+# rien faire tourner. Refusées en session de code (la garde seule d'abord, avant $(HOST_IP) et
+# known_host.sh : les cibles -go les portent) ; pair-rotate aussi sans terminal. Le secret ne passe
+# jamais sur une ligne de commande : ni ici, ni dans ce que lance le script.
+# DAYS : sans défaut ici (d'autres cibles le lisent avec le leur) ; vide, le script prend 90 jours.
+PAIR       ?=
+PAIR_GUARD  = python3 scripts/pair_rotate.py guard
+PAIR_SSH    = ssh_cmd=""; if [ -n "$(HOST_IP)" ] && HOST_SSH_FINGERPRINT="$(HOST_SSH_FINGERPRINT)" \
+              bash infra/glorfindel-host/known_host.sh "$(HOST_IP)" "$(HOST_KNOWN_HOSTS)" >/dev/null 2>&1; \
+              then ssh_cmd="$(HOST_SSH)"; fi
+pair-rotate:
+	@$(PAIR_GUARD) $@
+	@$(MAKE) --no-print-directory $@-go
+
+pair-rotate-go:
+	@$(PAIR_GUARD) pair-rotate
+	@$(PAIR_SSH); EREGION_HOST_SSH="$$ssh_cmd" python3 scripts/pair_rotate.py rotate "$(PAIR)" --days "$(DAYS)"
+
+pair-expiry-note:
+	@$(PAIR_GUARD) $@
+	@$(MAKE) --no-print-directory $@-go
+
+pair-expiry-note-go:
+	@$(PAIR_GUARD) pair-expiry-note
+	@$(PAIR_SSH); EREGION_HOST_SSH="$$ssh_cmd" python3 scripts/pair_rotate.py note "$(PAIR)"
 
 glorfindel-start: check-azure-env build-glorfindel runs-migrate
 	mkdir -p $(HOME)/.glorfindel $(HOME)/.glorfindel/injectors $(HOME)/.cache/chroma $(HOME)/.eregion/analysis $(HOME)/.eregion/console $(HOME)/.eregion/console/requests runs

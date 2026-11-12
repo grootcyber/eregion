@@ -18,6 +18,7 @@ Ce que fait l'atelier (la CI, les PR, les lots d'elrond) arrive dans Discord, à
 | `#roadmap` | un seul message du bot, réécrit sur place (N2) : une barre par jalon, les releases (la dernière publiée, celles qui se préparent : RM1), en cours, relus, bloqués, à faire, les critères de la 1.0, les cinq indicateurs | non |
 | `#deploy` | le CD d'Imladris (H1) : début, succès, attente de la CI, agent de CD à mettre à jour, résultats du dry-run | non |
 | `#deploy` | refus, retour arrière, retour arrière raté, Imladris dépareillé, erreur de l'agent : avec ta mention | oui |
+| `#deploy` | le secret d'une paire du poste qui expire (ROT1) : J-14, J-7, J-1 et le jour même, une fois par palier, la commande à taper, avec ta mention (`infra/glorfindel-host/README.md`, « Les rappels d'échéance des paires ») | oui |
 
 Ce qui ne mérite rien n'envoie rien : un run vert sur une PR, un run annulé, une PR fermée sans fusion, les agents qui ne sont pas ceux d'elrond. **Ne te notifie plus** (N3) : une relecture `changes` ou `blocking` (elrond corrige seul), le repli d'un exécutant (elrond le fait relire), un rendu, une relecture sans verdict lisible — c'est dans le fil du lot et dans le tableau.
 
@@ -114,7 +115,7 @@ EREGION_DISCORD_WEBHOOK_RELEASES=https://discord.com/api/webhooks/…   # #relea
 
 `#releases` (REL2) reçoit de deux endroits : de GitHub (le secret, pour la PR de version et la publication) et de ton poste (cette ligne, pour `make release-draft`). Sans la ligne, le brouillon n'a pas sa carte ; sans le secret, la PR de version et la publication restent dans `#ci`. Ce webhook ne va jamais sur Imladris.
 
-Le webhook de `#deploy` est le seul secret de l'atelier qui va sur Imladris. `make glorfindel-host-cd-install` le copie dans `~/.eregion-cd/discord.env` (600), avec la mention et rien d'autre : le CD d'Imladris poste avec (H1, `infra/glorfindel-host/README.md`, « Le CD d'Imladris »).
+Le webhook de `#deploy` est le seul secret de l'atelier qui va sur Imladris. `make glorfindel-host-cd-install` le copie dans `~/.eregion-cd/discord.env` (600), avec la mention et rien d'autre : le CD d'Imladris poste avec (H1, `infra/glorfindel-host/README.md`, « Le CD d'Imladris »), ses rappels d'échéance des paires compris (ROT1, décision de Jonathan du 12/11 : aucun secret nouveau, le webhook jamais copié ailleurs).
 
 **4. Les hooks**, chez toi et jamais dans le dépôt (ils s'exécuteraient chez chaque contributeur) : `bash scripts/elrond-hooks.sh install`, **à relancer après N3** (les hooks de N1 appelaient `notify_discord.py hook`, retirés à la réinstallation). La commande ajoute palantir sur `Stop` et `SubagentStop`, et `agents_discord.py hook` sur `PreToolUse` (`Agent|SendMessage|SubagentHandback|AskUserQuestion`, synchrone), `PostToolUse` (`AskUserQuestion`), `SubagentStop` (`elrond-worker|elrond-reviewer`, synchrone), `Notification` (`permission_prompt`) et `Stop`. Chaque commande finit par `|| true` : un hook `PreToolUse` qui sort en 2 bloquerait l'outil, et `python3` sort en 2 si le fichier manque. `uninstall` les retire et garde les autres hooks (rtk compris).
 

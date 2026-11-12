@@ -886,34 +886,114 @@ attributions vivent dans l'état d'Imladris : `make glorfindel-host-down` les re
 prochain `make glorfindel-host-up` les reprend ; une VM que Celebrimbor reconstruit perd la sienne
 (l'attribution porte l'id de la VM) jusqu'au prochain apply d'Imladris.
 
-**Faire tourner un secret** (un an par défaut) : `az ad sp credential reset --id <appId>` rend
-un nouveau `password` ; le poser dans `.envrc`, `make glorfindel-restart`. L'ancien, sur le même objet, cesse à la
-réinitialisation : un service à la fois. **Les deux formes d'une paire** (PAIR1, #736) : son secret
-vit sur l'un de deux objets, son application ou son principal de service. Au banc, le 12/11, celui de
-la watch était sur son application (la forme d'`az ad sp create-for-rbac`), celui de la console sur son
-principal de service (0 sur l'application, 1 sur le principal, posé le 09/11 pour 30 jours) — sans
-doute la forme d'une rotation par `az ad sp credential reset`, non mesuré. Un secret resté sur l'autre
-objet reste valable jusqu'à sa date : le contrôle le dit (« 2 secrets valables », à retirer par
-`az ad app credential delete` ou `az ad sp credential delete`, selon l'objet qu'il nomme). **Quand le
-faire** : `make azure-pairs-expiry` (RST1) lit, sous ton `az login`, la date de fin des secrets et des
-certificats des trois paires du poste, sur les deux objets : `az ad app show --id <appId>` puis
-`az ad sp show --id <appId>`, la même requête aux deux, `{secrets: passwordCredentials[].endDateTime,
-certificates: keyCredentials[].endDateTime}` (la date seule : jamais un secret, ni un id affiché). Il
-dit où vit chaque date (« sur son application », « sur son principal de service ») ; la plus proche
-des deux objets fait le verdict ; il avertit à moins de 14 jours, dit « aucune paire » pour une paire
-absente, dit un ancien secret expiré à côté d'un valable (« à retirer ») et sort en 1 sur un objet
-illisible ou quand aucun secret n'est valable. « Aucun secret ni certificat » (✗) ne se dit que des
-deux objets lus et vides ; un objet illisible se dit tel (✗), jamais « aucun », et aucun ✓ à côté :
-une date plus proche peut s'y trouver. Avant PAIR1, seule l'application se lisait (`az ad app
-credential list`) : le préflight du banc disait « aucun secret » d'une paire qui se connectait, et n'en
-aurait jamais vu l'expiration.
-`check-azure-env` et le démarrage de Glorfindel n'appellent jamais Graph : la lecture se fait à la
-demande, avant une session du banc (`docs/banc-t1486.md`, étape 0).
+**Faire tourner un secret** (ROT1, #737) : une commande, tapée par toi dans ton terminal,
+`make pair-rotate PAIR=<watch|console|bot>` (`scripts/pair_rotate.py`), 90 jours par défaut
+(`DAYS=…`, de 1 à 365). **Les deux formes d'une paire** (PAIR1, #736) : son secret vit sur l'un de
+deux objets, son application ou son principal de service. Au banc, le 12/11, celui de la watch était
+sur son application (la forme d'`az ad sp create-for-rbac`), celui de la console sur son principal
+de service (posé le 09/11 pour 30 jours). La commande lit les deux, comme `make azure-pairs-expiry`
+(RST1) : `az ad app show --id <appId>` puis `az ad sp show --id <appId>`, la même requête aux deux,
+`{secrets: passwordCredentials[].endDateTime, certificates: keyCredentials[].endDateTime}`, puis les
+seuls `keyId` des secrets ; elle fait tourner celui de l'objet qui le porte et le dit (« sur son
+application », « sur son principal de service »). **Quand le faire** : quand `#deploy` le rappelle
+(ci-dessous), ou quand `make azure-pairs-expiry` avertit, à moins de 14 jours. Ce contrôle lit sous
+ton `az login` la date de fin des secrets et des certificats des trois paires, sur les deux objets ;
+la plus proche fait le verdict ; il dit « aucune paire » pour une paire absente, un ancien secret
+expiré à côté d'un valable (« à retirer »), et sort en 1 sur un objet illisible ou quand aucun secret
+n'est valable. « Aucun secret ni certificat » (✗) ne se dit que des deux objets lus et vides ; un
+objet illisible se dit tel (✗), jamais « aucun ». Avant PAIR1, seule l'application se lisait (`az ad
+app credential list`) : le préflight du banc disait « aucun secret » d'une paire qui se connectait.
+`check-azure-env` et le démarrage de Glorfindel n'appellent jamais Graph.
 
-> **Note du 12/11 (PAIR1), pour Jonathan** : le secret de la console, sur son principal de service,
-> expire vers le **08/12** ; `make azure-pairs-expiry` avertira à partir du 24/11 environ. Sa rotation
-> se fait avant le 08/12 : ce jour-là, le restore depuis le poste s'arrêterait. Après la rotation,
-> relancer `make azure-pairs-expiry` : une seule date doit rester pour la console.
+**Quelle paire sert où** (lu dans le dépôt : `docker-compose.yml`, le `Makefile`, `scripts/`) :
+
+| Paire | Ses variables (`.envrc`) | Ce que la commande relance | Ce qui prend la nouvelle valeur à son prochain départ |
+|---|---|---|---|
+| `watch` | `GLORFINDEL_AZURE_CLIENT_*` (et `AZURE_CLIENT_*`, la copie du venv) | `watch`, du compose, s'il tourne | `make glorfindel-shell`, la CLI du venv ; une watch lancée depuis le venv, à relancer à la main |
+| `console` | `EREGION_CONSOLE_AZURE_CLIENT_*` | `war-room`, du compose, s'il tourne | un restore lancé du poste (`make bench-restore`, la CLI pour cette commande) |
+| `bot` | `GLORFINDEL_BOT_AZURE_CLIENT_*` | `bot`, du compose (profil `bot`), s'il tourne | — |
+
+Sur Imladris, aucune paire : ses conteneurs prennent l'identité managée de la VM (`host_env.py`
+n'écrit jamais de secret Azure). Une instance d'équipe (`team.env`) n'est pas suivie par la commande.
+
+**Ce que fait la commande**, dans cet ordre, pour que le service ne soit jamais coupé :
+1. **Refusée** en session de code (`EREGION_AGENT_SESSION`, un worktree de lot : la règle de
+   `scripts/bench_shared.py`) et sans terminal : elle écrit un secret.
+2. **Elle lit avant tout** : `.envrc` (les deux lignes de la paire, une seule chacune, une valeur
+   écrite, pas une référence), les deux objets de la paire, et les services du compose qui tournent.
+   Refusé, rien n'est fait : un objet illisible, aucun secret, des secrets sur les deux objets (celui
+   de `.envrc` ne s'en distingue pas : `make azure-pairs-expiry` dit leurs dates), une copie de
+   secours restée d'une rotation interrompue, un `host.env` qui tiendrait ce secret.
+3. **Elle dit ce qu'elle va faire, puis demande « [o/N] »** : la paire, son appId masqué (ses quatre
+   derniers caractères), l'objet qui porte le secret, la durée et la nouvelle date de fin, les lignes de
+   `.envrc`, le service relancé, les autres lecteurs, ce qui sera retiré, la note sur Imladris.
+4. **Un nouveau secret, à côté de l'ancien** : `az ad <app|sp> credential reset --id <appId>
+   --append --end-date <date> --display-name eregion-<paire>-<jour>`. L'ancien vaut encore : rien
+   n'est coupé. Un `reset` sans `--append` couperait tous ses lecteurs d'un coup, avant qu'un seul ait la
+   nouvelle valeur. La réponse d'az est lue dans son tube, jamais affichée.
+5. **Vérifié avant le reste** : un jeton de la paire (le flux client credentials, le secret dans le
+   corps de la requête, jamais sur une ligne), puis une lecture d'Azure Resource Manager
+   (`GET /subscriptions`), retentés toutes les 10 s pendant 3 min, le temps qu'Entra le propage (le
+   délai n'est pas mesuré). Refusé : le nouveau secret est retiré, l'ancien reste, `.envrc` et les
+   services n'ont pas bougé.
+6. **`.envrc`** : une copie de secours d'abord (`.envrc.pair-rotate.bak`, 0600), puis le fichier
+   réécrit à côté et renommé par-dessus, ses droits gardés, puis relu. Chaque ligne qui tenait
+   l'ancienne valeur prend la nouvelle (`AZURE_CLIENT_SECRET`, quand c'est une copie et pas
+   `$GLORFINDEL_AZURE_CLIENT_SECRET`) ; le commentaire d'une ligne reste.
+7. **Le service relancé** : `docker compose up -d --no-deps --force-recreate <service>`, la nouvelle
+   valeur dans son environnement (jamais sur sa ligne), puis relu en marche. Un service qui ne tournait
+   pas n'est pas démarré.
+8. **Seulement ensuite, l'ancien secret retiré**, par son `keyId` lu à l'étape 2 :
+   `az ad <app|sp> credential delete --id <appId> --key-id <keyId>`.
+9. **Relu** sur les deux objets (une seule date doit rester), **noté sur Imladris** (comme
+   `make pair-expiry-note`, ci-dessous), la copie de secours retirée, et le résultat dit : la paire,
+   l'objet, la nouvelle date, ce qui a été relancé, vérifié, retiré, noté.
+
+Le secret ne paraît jamais : ni à l'écran, ni dans un journal, ni dans la ligne de commande d'un
+processus (`tests/unit/test_pair_rotate.py`, sur un faux `az`, un faux `docker`, un faux `ssh`).
+Ton shell garde l'ancienne valeur jusqu'à `source .envrc` (ou `direnv allow`) : la commande le dit.
+
+**Ce qu'elle ne fait pas** : un certificat (une paire qui n'a que des certificats n'a « aucun
+secret » à faire tourner) ; `team.env` ; une watch ou une CLI lancées depuis le venv, qu'on relance
+soi-même ; aucun droit nouveau, aucune identité nouvelle, rien sur Graph au-delà de ce que ton
+`az login` lit et écrit déjà (`scripts/identity_map.py check`). **Une rotation faite hors de la
+commande n'est pas vue** par Imladris : `make azure-pairs-expiry` et le préflight du banc restent le
+filet, et `make pair-expiry-note PAIR=<paire>` note la nouvelle date.
+
+**La reprise en cas d'échec** : chaque échec dit ce qui est en place. Avant l'étape 6, rien n'a
+bougé que le nouveau secret, retiré. Aux étapes 6 et 7, `.envrc` est remise depuis sa copie, le
+service relancé sur l'ancien secret, le nouveau retiré : l'ancien n'a jamais été touché. Ce qui ne
+se fait pas de soi-même est dit avec sa commande : un nouveau secret qui ne se retire pas (`az ad
+<app|sp> credential list --id <appId>`, celui de la nouvelle date), un ancien qui ne se retire pas
+(toujours valable, `make azure-pairs-expiry` le montre, « 2 secrets valables »), Imladris injoignable
+(`make pair-expiry-note PAIR=<paire>` ensuite). Une copie de secours restée (une coupure en plein
+milieu) refuse la rotation suivante : compare-la à `.envrc`, garde le bon, retire la copie (elle tient
+un secret), relance.
+
+**Les rappels, dans `#deploy`** (décision de Jonathan du 12/11). La date de fin, une date et jamais
+un secret, est écrite sur Imladris par la connexion ssh du poste, dans `~/.eregion-cd/expiry/<paire>.json`
+(0600). Le CD d'Imladris la lit à chaque passage de son timer, toutes les 5 minutes, et poste dans
+`#deploy`, avec ta mention, à **J-14, J-7, J-1 et le jour même** : la paire, la date et la commande
+exacte, `make pair-rotate PAIR=console`. Une fois par palier, même après un redémarrage
+(`~/.eregion-cd/reminders.json`) ; une date notée tard envoie le palier où elle se trouve, jamais
+ceux qu'elle a passés ; une nouvelle date (une rotation) repart de zéro ; un message que Discord
+refuse repart au passage suivant. Pourquoi `#deploy` : son webhook est déjà le seul secret de
+l'atelier sur Imladris (`docs/atelier-discord.md`), avec ta mention ; rien de nouveau à poser, rien
+de copié ailleurs. Imladris n'a aucun droit sur Graph (IR1a) : il ne lit pas la date lui-même, le
+poste la lui donne. **ROT1 change l'agent du CD** (`eregion_cd.py`) : une fois la release déployée,
+`make glorfindel-host-cd-install` (`infra/glorfindel-host/README.md`, « Le CD d'Imladris »).
+
+**Noter la date d'un secret déjà posé** : `make pair-expiry-note PAIR=<paire>` lit la date en place
+(la plus proche des deux objets, la lecture de PAIR1 ; un objet illisible refuse), la note sur Imladris
+et dit les dates des rappels, sans rien faire tourner. Refusée en session de code.
+
+> **Note du 12/11 (PAIR1, ROT1), pour Jonathan** : le secret de la console, sur son principal de
+> service, expire vers le **08/12** ; il n'a pas été posé par la commande, Imladris ne connaît pas sa
+> date. Une fois ROT1 déployé et l'agent du CD réinstallé, **une fois** :
+> `make pair-expiry-note PAIR=console`, avant le **24/11** pour que le rappel de J-14 parte à sa date
+> (plus tard, il part au moment de la note, avec les jours qui restent). Puis, au rappel,
+> `make pair-rotate PAIR=console`, avant le 08/12 : ce jour-là, le restore depuis le poste
+> s'arrêterait. Après, `make azure-pairs-expiry` : une seule date doit rester pour la console.
 
 **Retirer l'ancien principal partagé** (`Contributor` sur l'abonnement, l'option A d'avant) :
 
@@ -1286,18 +1366,25 @@ gh secret list --env canary --repo "$REPO"   # les trois CANARY_AZURE_*
 ```
 
 Ensuite, qui d'autre se sert de l'ancien principal, et lequel de ses identifiants (secrets) est
-celui du poste. `az ad app credential list` en donne le `hint`, les trois premiers caractères ;
-on le compare à chaque secret de `.envrc` qui va avec cet appId, sans rien afficher (zsh) :
+celui du poste. `az ad app credential list` et `az ad sp credential list` en donnent le `hint`, les
+trois premiers caractères — sur les deux objets : un secret peut vivre sur l'application ou sur le
+principal de service (PAIR1, « Faire tourner un secret »), et ne lire que l'application en laisserait
+passer un ; on le compare à chaque secret de `.envrc` qui va avec cet appId, sans rien afficher (zsh) :
 
 ```bash
 OLD=<appId de l'ancien principal du canari>
 az role assignment list --assignee "$OLD" --all -o table              # ses droits, partout
-az ad app credential list --id "$OLD" --query "[].[keyId,displayName,endDateTime]" -o tsv
+for o in app sp; do
+  az ad $o credential list --id "$OLD" --query "[].[keyId,displayName,endDateTime]" -o tsv | sed "s/^/$o /"
+done
 source .envrc
-az ad app credential list --id "$OLD" --query "[].[keyId,hint]" -o tsv | while read -r k h; do
-  for v in AZURE GLORFINDEL_AZURE EREGION_CONSOLE_AZURE GLORFINDEL_BOT_AZURE ANNATAR_AZURE; do
-    id="${v}_CLIENT_ID"; sec="${v}_CLIENT_SECRET"
-    [ "${(P)id}" = "$OLD" ] && [ "${${(P)sec}[1,3]}" = "$h" ] && echo "keyId $k : $sec, le poste s'en sert"
+for o in app sp; do
+  echo "sur $o :"
+  az ad $o credential list --id "$OLD" --query "[].[keyId,hint]" -o tsv | while read -r k h; do
+    for v in AZURE GLORFINDEL_AZURE EREGION_CONSOLE_AZURE GLORFINDEL_BOT_AZURE ANNATAR_AZURE; do
+      id="${v}_CLIENT_ID"; sec="${v}_CLIENT_SECRET"
+      [ "${(P)id}" = "$OLD" ] && [ "${${(P)sec}[1,3]}" = "$h" ] && echo "keyId $k : $sec, le poste s'en sert"
+    done
   done
 done
 ```
@@ -1306,7 +1393,8 @@ done
   serait couper le poste (la watch, la console, le bot ou l'injecteur qui le tient).
 - **Si l'ancien principal sert ailleurs** (un rôle hors du canari, ou une variable du poste qui
   nomme son appId) : ne supprimer que l'identifiant du canari, un `hint` qu'aucun secret du poste
-  ne partage — `az ad app credential delete --id "$OLD" --key-id <keyId de cet identifiant>` —,
+  ne partage — `az ad app credential delete --id "$OLD" --key-id <keyId de cet identifiant>`, ou
+  `az ad sp …` quand la liste l'a lu sur le principal —,
   jamais le principal.
 - **Sinon** (il ne servait qu'au canari) :
 
@@ -4098,8 +4186,11 @@ az rest --method GET --url "https://graph.microsoft.com/v1.0/servicePrincipals/$
 az rest --method GET --url "https://graph.microsoft.com/v1.0/roleManagement/directory/roleAssignments?\$filter=principalId eq '$SP'" --query "value" -o json
 az rest --method GET --url "https://graph.microsoft.com/v1.0/servicePrincipals/$SP/ownedObjects" --query "value" -o json
                                        # cinq fois [] : une liste vide
-az ad app credential list --id <client_id> --cert -o table   # une ligne : le certificat posé, aucun secret
-az ad app credential list --id <client_id> -o table          # aucune ligne : aucun mot de passe
+#     Les identifiants, sur les deux objets (PAIR1 : un mot de passe posé sur le principal de service
+#     échappe à « az ad app credential list », qui ne lit que l'application) :
+Q='{secrets: passwordCredentials[].endDateTime, certificates: keyCredentials[].endDateTime}'
+az ad app show --id <client_id> --query "$Q" -o json   # secrets [], certificates : une date, celle du certificat posé
+az ad sp show --id <client_id> --query "$Q" -o json    # secrets [], certificates [] : rien sur le principal
 # 6c. La fin de l'identifiant : celle du certificat, au jour près.
 openssl x509 -enddate -noout -in ~/.config/eregion-banc/reader.crt   # notAfter=<…> GMT
 cat ~/.config/eregion-banc/reader.end                                 # la même date, en RFC 3339 (Z)
