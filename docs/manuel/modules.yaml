@@ -752,6 +752,16 @@ briques:
     issue: 754
     doc: docs/glorfindel.md
 
+  - id: g-carte-a-juger
+    composant: glorfindel
+    poste: g-verifier
+    nom: "A disruptive action taken alone, once verified, makes one card to judge, and is said in the VM's thread"
+    etat: main
+    release: "0.5"
+    lots: [JUG1]
+    issue: 760
+    doc: docs/observation.md
+
   - id: g-perimetre-illisible
     composant: glorfindel
     poste: g-verifier
@@ -1376,6 +1386,16 @@ briques:
     release: "0.5"
     lots: [CON-D]
     issue: 735
+
+  - id: k-carte-ouverte
+    composant: console
+    poste: k-juger
+    nom: "A line of TO JUDGE opens its card, and a folded tile shows every card"
+    etat: main
+    release: "0.5"
+    lots: [JUG1]
+    issue: 760
+    doc: docs/design/console.md
 
   - id: k-verdict-propose
     composant: console
