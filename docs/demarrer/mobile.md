@@ -411,7 +411,8 @@ make bench-restore TARGET=vm-celebrimbor-gondolin RUN=<run_id>             # tap
   second facteur, en attendant FS1g et TOT1.
 
 La sortie nomme la VM par son nom et son groupe (`Resource : <vm> (groupe <rg>)`) et le coffre par
-son nom, jamais l'id de l'abonnement (IML1c).
+son nom, jamais l'id de l'abonnement (IML1c) — sauf le texte d'une erreur d'Azure, le refus d'un nom
+ambigu et, avec `--wait` sans `--keep-isolated`, le raisonnement du modèle : à relire avant de coller.
 
 Ensuite, la levée par Imladris (étape 7 de banc-t1486.md), puis `make bench-report RUN=<run_id>`.
 

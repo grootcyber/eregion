@@ -649,6 +649,10 @@ glorfindel-ui: build-glorfindel
 # imladris-url gives it (its token from host.env), exit 0, and a line on the error output says whose it is.
 # Otherwise the local console's, as before — glorfindel-start, -restart, -dev, -ui and console-rotate print
 # it — and, the tunnel set but not armed, a line names the way to Imladris's.
+# Its limit: it reads the unit's state and the port, never which process holds 7007. While the unit
+# retries its connection (Type=simple, ConnectTimeout=15), systemd may say it active though the local
+# console holds the port: Imladris's URL is then given for the local console (make imladris-tunnel-check
+# reads the listener, by ss -Hltnp).
 CONSOLE_WAIT ?= 20
 MOBILE_UNIT    = $(HOME)/.config/systemd/user/eregion-console-tunnel.service
 TUNNEL_ACTIVE  = systemctl --user is-active --quiet eregion-console-tunnel.service 2>/dev/null
