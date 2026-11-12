@@ -131,7 +131,7 @@ glorfindel list --ids                        # les mêmes, avec leur id ARM comp
 # court ambigu, la décision rendue (explication, raisonnement, raison d'escalade), la carte de `pending`
 # (sa raison, les étapes du modèle et les siennes), les règles qu'il propose (analyse, explication,
 # requête KQL ; `approve-rule` prend l'id de la proposition), les raisons d'`activate`, release, unblock,
-# snapshot, jobs, list, door, reset et restore. Une commande proposée prend le nom court seulement s'il
+# snapshot, jobs (son étape 2 aussi), list (son mode retenu aussi), door, reset et restore. Une commande proposée prend le nom court seulement s'il
 # revient à la même ressource ; sinon (deux VM de ce nom, une VM inconnue ici dont un homonyme d'un autre
 # groupe est connu, un NSG, un compte) elle demande l'id complet, que `list --ids` montre. Le signal, les
 # fichiers d'état et les journaux (JSONL) gardent l'id complet ; `door --json` aussi, demandé. Les lignes
@@ -142,7 +142,11 @@ glorfindel list --ids                        # les mêmes, avec leur id ARM comp
 # couvre le principal) : « "subscriptionId" : "<guid>" » (séparateur de 5 caractères), « %3D<guid> », le
 # double encodage (« %252Fsubscriptions%252F »), une liste JSON (« subscriptions: ["<guid>"] ») passent.
 # Une étape écrite par le modèle, une fois masquée (« glorfindel restore vm (groupe rg) --yes »), ne se
-# copie plus : le shell la refuse (erreur de syntaxe), rien ne s'exécute.
+# copie plus : le shell la refuse (bash : erreur de syntaxe ; zsh : erreur de motif) ; rien ne s'exécute.
+# Le nom court est choisi au moment de l'affichage : une commande copiée puis lancée bien plus tard peut
+# trouver un état ou un registre changé (une VM levée, un homonyme découvert) ; `restore` et `release`
+# refusent alors un nom porté par deux VM, mais un nom résolu vers une autre VM ne se voit pas : relancer
+# `glorfindel list` (ou relire la carte) avant une commande ancienne.
 glorfindel pending                           # escalades en attente
 glorfindel pending --watch                   # alerting temps réel
 

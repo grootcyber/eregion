@@ -1589,7 +1589,9 @@ def jobs(resource_id: str, refresh: bool):
         console.print("\n[yellow]Restore done. Next steps:[/yellow]")
         rg = job.get("rg", "<rg>")
         console.print(f"  1. az vm start -g {rg} -n {vm_name}")
-        console.print(f"  2. glorfindel release {_esc_markup(vm_name)} --yes")
+        # The job's own VM (it keeps the full id), by a name that takes it back — never another
+        # VM of its name, whose quarantine `release … --yes` would lift without a question (MSK2).
+        console.print(f"  2. glorfindel release {_esc_markup(_name_for_a_command(job.get('resource_id') or resource_id))} --yes")
 
 
 @cli.command()
@@ -2204,10 +2206,6 @@ def list_active(show_ids: bool):
         return
 
     console.rule(f"[bold cyan]Glorfindel — {len(all_ids_lower)} VM(s)[/bold cyan]")
-    names: dict[str, int] = {}
-    for rid_lower in all_ids_lower:
-        short = rid_lower.rstrip("/").rsplit("/", 1)[-1]
-        names[short] = names.get(short, 0) + 1
     for rid_lower in all_ids_lower:
         resource_id = discovered.get(rid_lower) or (
             isolations.get(rid_lower, {}).get("resource_id")
@@ -2220,10 +2218,9 @@ def list_active(show_ids: bool):
             "bold yellow" if rid_lower in blocks else "bold"
         )
         console.print(f"[{status_color}]{vm_short}[/{status_color}]")
-        # The name `_resolve_resource_id` takes back, unless another VM holds it: the full id
-        # then, shown with --ids only (MSK2).
-        unique = names.get(rid_lower.rstrip("/").rsplit("/", 1)[-1], 0) <= 1
-        target = resource_id if show_ids else (vm_short if unique else "<id: glorfindel list --ids>")
+        # The name every command takes back to this VM (`_name_for_a_command`), else the full id,
+        # shown with --ids only (MSK2).
+        target = resource_id if show_ids else _name_for_a_command(resource_id)
         console.print(f"  [dim]{_esc_markup(resource_id if show_ids else _vm_said(resource_id))}[/dim]",
                       soft_wrap=True)
 
@@ -2231,8 +2228,8 @@ def list_active(show_ids: bool):
             from glorfindel.readiness import effective_mode
             _mode, _hold = effective_mode(resource_id, _autonomy.resolve(vm_short))
             _mode_color = "yellow" if _mode == "human_only" else "green"
-            _held = (f"  [dim](configured {_hold['configured']}, held: {_hold['message']}"
-                     f" → glorfindel activate {vm_short})[/dim]") if _hold else ""
+            _held = (f"  [dim](configured {_hold['configured']}, held: {_esc_markup(_ids_masked(_hold['message']))}"
+                     f" → glorfindel activate {_esc_markup(target)})[/dim]") if _hold else ""
             console.print(f"  mode: [{_mode_color}]{_mode}[/{_mode_color}]{_held}",
                           soft_wrap=True)
 

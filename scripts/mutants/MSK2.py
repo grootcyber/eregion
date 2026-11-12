@@ -3,7 +3,8 @@ shows a subscription's id (Azure's error text at the boundary and every refusal,
 name, the decision rendered, `list` and the commands it suggests), and no webhook nor bot of the
 developer's shell in the test suite. M4950–M4959, then M4980–M4989 after the first review (pending,
 activate, three forms of an id, the guard of the imports) and M4990–M4994 after the second (a short name
-that takes another VM, the rules pending proposes), measured by tests/unit/test_cli_masking.py and
+that takes another VM, the rules pending proposes), M5000–M5003 after the third (jobs's second step,
+list's activate hint), measured by tests/unit/test_cli_masking.py and
 tests/unit/test_entries_calls.py.
 
 The form of a lot's file, as scripts/mutation_check.py loads it: MUTANTS, TESTS (its own ids),
@@ -45,11 +46,12 @@ MUTANTS = [
      '        if name.upper() == "AZURE_SUBSCRIPTION_ID" and re.fullmatch(_GUID, str(value or "").strip()):\n'),
     ("M4957", "glorfindel list suggests its commands with the full id: the subscription's id in every "
      "hint (MSK2)", CLI,
-     '        target = resource_id if show_ids else (vm_short if unique else "<id: glorfindel list --ids>")\n',
+     "        target = resource_id if show_ids else _name_for_a_command(resource_id)\n",
      "        target = resource_id\n"),
-    ("M4958", "glorfindel list suggests a name two VMs hold: every command it gives is refused (MSK2)", CLI,
-     '        unique = names.get(rid_lower.rstrip("/").rsplit("/", 1)[-1], 0) <= 1\n',
-     "        unique = True\n"),
+    ("M4958", "glorfindel list --ids shows no id: a name two VMs hold, the hint asks for an id nothing "
+     "shows (MSK2)", CLI,
+     "        target = resource_id if show_ids else _name_for_a_command(resource_id)\n",
+     "        target = _name_for_a_command(resource_id)\n"),
     ("M4959", "the suite keeps the developer's webhook and bot: a test without a fake posts for real "
      "(MSK2)", CONFTEST,
      "    for name in ALERTING_ENV:\n        monkeypatch.delenv(name, raising=False)\n",
@@ -113,6 +115,21 @@ MUTANTS = [
     ("M4994", "a proposed rule's explanation shown raw (MSK2)", CLI,
      "    console.print(f\"  Why better: {_esc_markup(_ids_masked(p['explanation'])[:100])}\")\n",
      "    console.print(f\"  Why better: {p['explanation'][:100]}\")\n"),
+    # The review of MSK2 (r3): every command to copy goes through _name_for_a_command.
+    ("M5000", "glorfindel jobs's second step names the VM by hand: « release vm --yes » lifts a homonym's "
+     "quarantine, asking nothing (MSK2)", CLI,
+     "_esc_markup(_name_for_a_command(job.get('resource_id') or resource_id))",
+     "_esc_markup(vm_name)"),
+    ("M5001", "glorfindel jobs's second step reads the argument, not the job: a short argument, the id "
+     "asked for a VM that is known (MSK2)", CLI,
+     "_name_for_a_command(job.get('resource_id') or resource_id)",
+     "_name_for_a_command(resource_id)"),
+    ("M5002", "glorfindel list's activate hint names the VM by hand: a name two VMs hold, refused (MSK2)", CLI,
+     '                     f" → glorfindel activate {_esc_markup(target)})[/dim]") if _hold else ""\n',
+     '                     f" → glorfindel activate {vm_short})[/dim]") if _hold else ""\n'),
+    ("M5003", "glorfindel list says a mode's hold raw: the id its message names (MSK2)", CLI,
+     "held: {_esc_markup(_ids_masked(_hold['message']))}",
+     "held: {_hold['message']}"),
 ]
 TESTS = {
     "M4950": f"{_M}::test_azure_s_error_at_the_boundary_is_said_without_the_subscription",
@@ -123,7 +140,7 @@ TESTS = {
     "M4955": f"{_M}::test_no_subscription_id_is_left_in_a_text",
     "M4956": f"{_M}::test_the_environment_s_subscription_is_masked_even_bare",
     "M4957": f"{_M}::test_list_says_each_vm_by_its_name_and_group_and_the_ids_when_asked",
-    "M4958": f"{_M}::test_list_never_suggests_a_name_two_vms_hold",
+    "M4958": f"{_M}::test_list_says_each_vm_by_its_name_and_group_and_the_ids_when_asked",
     "M4959": f"{_M}::test_no_webhook_nor_bot_comes_from_the_developer_s_shell",
     "M4980": f"{_M}::test_pending_says_the_card_without_the_subscription",
     "M4981": f"{_M}::test_pending_says_the_card_without_the_subscription",
@@ -140,4 +157,8 @@ TESTS = {
     "M4992": f"{_M}::test_pending_says_a_proposed_rule_without_the_subscription",
     "M4993": f"{_M}::test_pending_says_a_proposed_rule_without_the_subscription",
     "M4994": f"{_M}::test_pending_says_a_proposed_rule_without_the_subscription",
+    "M5000": f"{_M}::test_jobs_never_gives_a_name_that_lifts_another_vm",
+    "M5001": f"{_M}::test_jobs_says_its_next_step_by_the_vm_s_name",
+    "M5002": f"{_M}::test_list_s_held_mode_names_activate_s_vm_without_its_id",
+    "M5003": f"{_M}::test_list_s_held_mode_names_activate_s_vm_without_its_id",
 }

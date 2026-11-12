@@ -361,15 +361,17 @@ def test_snapshot_says_the_vm_and_the_vault_by_their_names(monkeypatch, recorded
         assert recorded[-1][:2] == ("snapshot", VM)
 
 
-def test_jobs_says_its_next_step_by_the_vm_s_name(monkeypatch):
-    job = {"job_id": "j-1", "type": "restore", "status": "Completed", "rg": RG,
+def test_jobs_says_its_next_step_by_the_vm_s_name(monkeypatch, recorded):
+    job = {"job_id": "j-1", "type": "restore", "status": "Completed", "rg": RG, "resource_id": VM,
            "error": FORBIDDEN, "snap_id": "rsv:rsv-example/rg-backup/job-1"}
     monkeypatch.setattr("glorfindel.jobs.get_job", lambda vm: dict(job))
-    out = _run(["jobs", VM])
-    assert out.exit_code == 0, out.output
-    said = " ".join(out.output.split())
-    assert "2. glorfindel release vm-example-01 --yes" in said and f"az vm start -g {RG} -n vm-example-01" in said
-    _clean(out.output)
+    monkeypatch.setattr("glorfindel.actions.active_isolations", lambda: [{"resource_id": VM}])
+    for arg in (VM, "vm-example-01"):                    # the job's own id, whatever the argument
+        out = _run(["jobs", arg])
+        assert out.exit_code == 0, out.output
+        said = " ".join(out.output.split())
+        assert "2. glorfindel release vm-example-01 --yes" in said and f"az vm start -g {RG} -n vm-example-01" in said
+        _clean(out.output)
 
     def poll_fails(job, connector):
         raise RuntimeError(FORBIDDEN)
@@ -404,6 +406,35 @@ def test_list_says_each_vm_by_its_name_and_group_and_the_ids_when_asked(monkeypa
     ids = _run(["list", "--ids"])                         # asked for: this terminal only
     flat = "".join(ids.output.split())
     assert ids.exit_code == 0 and VM in flat and f"glorfindelrelease{VM}--yes" in flat
+
+
+def test_jobs_never_gives_a_name_that_lifts_another_vm(monkeypatch, recorded):
+    """The job's VM lifted already, a VM of its name isolated in another group: `release vm --yes`
+    copied would lift that one's quarantine, asking nothing. The id is asked for instead."""
+    job = {"job_id": "j-1", "type": "restore", "status": "Completed", "rg": RG, "resource_id": VM}
+    monkeypatch.setattr("glorfindel.jobs.get_job", lambda vm: dict(job))
+    monkeypatch.setattr("glorfindel.actions.active_isolations", lambda: [{"resource_id": _vm(rg=RG_B)}])
+    out = _run(["jobs", VM])
+    said = " ".join(out.output.split())
+    assert out.exit_code == 0 and "2. glorfindel release <id: glorfindel list --ids> --yes" in said, said
+    assert "glorfindel release vm-example-01 --yes" not in said
+    _clean(out.output)
+
+
+def test_list_s_held_mode_names_activate_s_vm_without_its_id(monkeypatch):
+    """A VM held in human_only: its hold said without the id, `activate` by a name that takes it back."""
+    monkeypatch.setattr("glorfindel.config.load_glorfindel_config", lambda *a, **k: SimpleNamespace(
+        autonomy=SimpleNamespace(resolve=lambda name: "non_disruptive")))
+    monkeypatch.setattr("glorfindel.readiness.effective_mode", lambda rid, mode: (
+        "human_only", {"configured": "non_disruptive", "message": f"a new reserve on {rid}"}))
+    _listed(monkeypatch, discovered=[VM])
+    alone = " ".join(_run(["list"]).output.split())
+    assert "glorfindel activate vm-example-01)" in alone and f"a new reserve on vm-example-01 (groupe {RG})" in alone
+    _clean(alone)
+    _listed(monkeypatch, discovered=[VM, _vm(rg=RG_B)])
+    two = _run(["list"])
+    assert "glorfindel activate <id: glorfindel list --ids>)" in " ".join(two.output.split()), two.output
+    _clean(two.output)
 
 
 def test_list_never_suggests_a_name_two_vms_hold(monkeypatch):
