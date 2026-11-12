@@ -253,8 +253,8 @@ prérequis avant toute VM hors du banc (« Ouvert »).
     étape 3), hors de l'état Terraform d'Imladris — dans sa définition d'avant SEC11, **avec Run
     Command, sur toute VM du banc** ;
   - `GLORFINDEL_READ_ONLY=0` dans `host.env` ;
-  - gondolin et bree en `non_disruptive`, chacune après son contrôle de préparation ; le défaut reste
-    `human_only` ;
+  - gondolin en `non_disruptive`, après son contrôle de préparation (bree aussi, du 01/11 au 11/11 ;
+    en `human_only` depuis, `docs/banc-bl1.md`) ; le défaut reste `human_only` ;
   - le CD actif : une release publiée redéploie Imladris sans toucher `host.env` ni la config, donc sans
     toucher la posture.
 - **Après les gestes de SEC11** (`docs/operations.md`, « Depuis un rôle de la réponse d'avant

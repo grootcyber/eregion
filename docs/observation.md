@@ -70,6 +70,16 @@ glorfindel verdict 3f2a91c0 wrong --note "rattrapage apt du matin"
 glorfindel verdict 3f2a91c0 right
 ```
 
+**Ce qui n'entre pas dans TO JUDGE aujourd'hui : une action autonome exécutée et vérifiée.** En
+`non_disruptive`, un isolement ou un blocage que Glorfindel fait seul, et dont la vérification tient,
+ne crée aucune carte de décision (`escalate_to_human`, `glorfindel/agent.py`, n'écrit une carte que pour une action retenue, en échec ou non vérifiée) : il est annoncé (Discord, le fil en direct de la console, la tuile
+de la VM), et ne se juge ni dans TO JUDGE ni par `glorfindel pending`. Mesuré au banc le 12/11 :
+l'isolement autonome et vérifié de gondolin (le T1486) n'a laissé aucune carte à juger, et
+`glorfindel pending` ne nommait pas gondolin. Une vérification en échec, elle, devient une carte
+(`verification_failed`), qui se juge. Qu'une action disruptive autonome exécutée crée sa carte, à
+juger, est le lot JUG1 (décidé par Jonathan le 12/11, à venir) ; d'ici là, elle n'entre pas dans le
+compte des disruptives jugées.
+
 Le verdict est indépendant de l'acquittement : on peut juger une carte avant ou après
 l'avoir acquittée. Une carte qui se répète (« 12× depuis 3 h ») compte une seule fois. La
 note est gardée avec le verdict : c'est elle qui dira, plus tard, quelle règle affiner.
@@ -93,8 +103,8 @@ jugées, la part fausse. (`GET /api/report?since=7d` renvoie la même chose.)
 
 Les cartes d'exercice n'y entrent pas (B2, 16/10) : une carte dont la VM était couverte par la
 fenêtre d'un injecteur (Annatar, puis Gothmog) porte `source: exercise` et le rapport la compte
-à part (« N exercise card(s) left out »). Elles restent pourtant dans la liste TO JUDGE, marquées
-(H-1) : une fenêtre d'exercice est l'affirmation de l'hôte des injecteurs, et une carte cachée
+à part (« N exercise card(s) left out »). Celles qui existent restent pourtant dans la liste TO
+JUDGE, marquées (H-1) ; un isolement autonome vérifié d'un exercice n'en fait aucune (plus haut) : une fenêtre d'exercice est l'affirmation de l'hôte des injecteurs, et une carte cachée
 sur cette seule foi laisserait passer une vraie attaque qu'une fenêtre forgée couvrirait. Un compte créé à la main pour un test, comme celui du
 16/10 sur bree, n'est pas un exercice déclaré : il compte, d'où la note du verdict.
 

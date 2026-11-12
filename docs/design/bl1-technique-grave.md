@@ -4,6 +4,7 @@
 > seulement » reste entière, sans aucune exception.
 > - **La part contenue seule se mesure sur le trafic réel** : bree est en `non_disruptive` depuis
 >   le 01/11 et compte déjà 5 blocages autonomes. L'Overview les comptera avec OV1 (#399).
+>   (Depuis le 11/11, bree est de nouveau en `human_only` : [`banc-bl1.md`](../banc-bl1.md).)
 > - **Pour les exercices**, BL1 sera rejoué quand **R2** (#79, Stratus Red Team, techniques cloud
 >   publiques) apportera une technique grave jouable.
 >
@@ -149,8 +150,8 @@ options examinées, et ce que Jonathan en a retenu le 02/11 :
 2. **Retenue, avec le réel en plus.** **Attendre une couverture publique d'une élévation grave sur VM** (une mise à jour d'Atomic Red
    Team avec un test sudo→root réversible, ou R2/Stratus sur le plan de contrôle avec une règle
    livrée correspondante), puis câbler la technique. Ce sera R2 (#79, Stratus Red Team) ; d'ici
-   là, la part contenue seule se mesure sur le trafic réel (bree en `non_disruptive` depuis le
-   01/11, 5 blocages autonomes), compté par l'Overview avec OV1 (#399).
+   là, la part contenue seule se mesure sur le trafic réel (bree en `non_disruptive` du 01/11 au
+   11/11, 5 blocages autonomes), compté par l'Overview avec OV1 (#399).
 3. **Écartée.** **Autoriser dans R1 un atomic en lecture seule sans nettoyage** (nouvelle garde + mutant) :
    insuffisant seul, car le seul candidat non destructif (« Sudo usage ») reste injouable à cause
    de `sudo vim`, et on ne peut pas éditer l'atomic.
