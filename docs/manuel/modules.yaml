@@ -295,8 +295,8 @@ releases:
   - version: "0.5"
     nom: "the measured loop"
     etat: publiee
-    derniere: "0.5.10"
-    date: "2026-11-10"
+    derniere: "0.5.11"
+    date: "2026-11-12"
     resume: "The loop measured on real traffic, the correlation, the signed action queue, signed proofs from end to end."
   - version: "0.6"
     nom: "identity defended"
@@ -595,8 +595,9 @@ briques:
     composant: glorfindel
     poste: g-agir
     nom: "The simulated AWS: an ENI whose original nothing holds any more, judged as Azure judges a bare NIC"
-    etat: main
+    etat: livree
     release: "0.5"
+    version: "0.5.11"
     lots: [AWS1b]
     issue: 708
 
@@ -746,8 +747,9 @@ briques:
     composant: glorfindel
     poste: g-verifier
     nom: "Design: the record of an isolation, the facts read after the action so a human only has to judge, never shown to the model"
-    etat: main
-    release: "0.6"
+    etat: livree
+    release: "0.5"
+    version: "0.5.11"
     lots: [DOS1]
     issue: 727
     doc: docs/design/dossier-isolation.md
@@ -805,8 +807,9 @@ briques:
     composant: socle
     poste: s-signer
     nom: "Security hardening"
-    etat: main
-    release: "0.6"
+    etat: livree
+    release: "0.5"
+    version: "0.5.11"
     lots: [INF-FL]
     issue: 654
 
@@ -1082,8 +1085,9 @@ briques:
     composant: orodruin
     poste: o-executer
     nom: "Design: the bench that measures itself, the destructive run launched by the operator, a dated slot for non-destructive drills, the report composed alone"
-    etat: main
-    release: "0.6"
+    etat: livree
+    release: "0.5"
+    version: "0.5.11"
     lots: [BNC2]
     issue: 684
     doc: docs/design/banc-autonome.md
@@ -1155,8 +1159,9 @@ briques:
     composant: celebrimbor
     poste: c-construire
     nom: "The bench's preflight corrected on what the bench measured: the recovery point read, the true error said, no foreign watcher"
-    etat: main
+    etat: livree
     release: "0.5"
+    version: "0.5.11"
     lots: [BNC1b]
     issue: 724
     doc: docs/banc-t1486.md
@@ -1176,8 +1181,9 @@ briques:
     composant: celebrimbor
     poste: c-acces
     nom: "The console of Imladris on the phone: a tunnel armed by a gesture, twelve hours at most, never at boot"
-    etat: main
+    etat: livree
     release: "0.5"
+    version: "0.5.11"
     lots: [MOB2]
     doc: docs/demarrer/mobile.md
 
@@ -1361,8 +1367,9 @@ briques:
     composant: socle
     poste: s-heberger
     nom: "Imladris, formerly H0: the hosted Glorfindel's VM gets its name, in the docs, the console, the bot and the CLI"
-    etat: main
-    release: "0.6"
+    etat: livree
+    release: "0.5"
+    version: "0.5.11"
     lots: [IML1]
     issue: 688
 
@@ -1475,8 +1482,9 @@ briques:
     composant: socle
     poste: s-prouver
     nom: "A mutant the nightly run found fragile, caught on every round by the frozen sequence that names it"
-    etat: main
+    etat: livree
     release: "0.5"
+    version: "0.5.11"
     lots: [MUT10]
     issue: 715
 
@@ -1484,8 +1492,9 @@ briques:
     composant: socle
     poste: s-prouver
     nom: "ChromaDB's embedding model fetched by one test process at a time, only when a test needs it"
-    etat: main
+    etat: livree
     release: "0.5"
+    version: "0.5.11"
     lots: [FLK1]
     issue: 723
 
@@ -1493,8 +1502,9 @@ briques:
     composant: socle
     poste: s-prouver
     nom: "The jobs that install Terraform refresh HashiCorp's source alone, never Ubuntu's mirrors"
-    etat: main
+    etat: livree
     release: "0.5"
+    version: "0.5.11"
     lots: [CI11]
     issue: 728
 
@@ -1633,8 +1643,9 @@ briques:
     composant: socle
     poste: s-documenter
     nom: "The identity map: every identity, its secret, its rights and its boundary, held to what the repository declares"
-    etat: main
-    release: "0.6"
+    etat: livree
+    release: "0.5"
+    version: "0.5.11"
     lots: [IDM1]
     issue: 687
     doc: docs/design/identites.md
@@ -1643,8 +1654,9 @@ briques:
     composant: socle
     poste: s-documenter
     nom: "Documents that no longer contradict the bench: what the ransomware run of 09/11 showed, the logs switched on, the unit tests counted by the CI"
-    etat: main
+    etat: livree
     release: "0.5"
+    version: "0.5.11"
     lots: [MEN2]
     issue: 722
     doc: docs/banc-t1486.md
