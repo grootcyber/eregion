@@ -1,6 +1,6 @@
 # IR1b (#572) : l'application de l'exécuteur d'identité — à copier en identity_executor.auto.tfvars
-# (ignoré par git), sur le poste de l'opérateur seulement, puis `make glorfindel-host-plan`, relu
-# (identity_executor.tf, docs/operations.md, « L'exécuteur d'identité »), puis `make glorfindel-host-up`
+# (ignoré par git), sur le poste de l'opérateur seulement, puis `make imladris-plan`, relu
+# (identity_executor.tf, docs/operations.md, « L'exécuteur d'identité »), puis `make imladris-up`
 # sans YES, sous un az login qui peut consentir des permissions d'application de Microsoft Graph.
 identity_executor_enabled = true
 

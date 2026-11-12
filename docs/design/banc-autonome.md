@@ -27,8 +27,8 @@ raison._
 >    créneau armé ne joue que des techniques publiques et non destructives : c'est une occurrence
 >    datée du drill de DRL1 » (#684, le dernier commentaire, point 1).
 
-L'hôte de Glorfindel s'appelle **Imladris** (IML1, #688). Les cibles Make, la
-ressource Azure et l'histoire gardent leur nom (`make glorfindel-host-*`).
+L'hôte de Glorfindel s'appelle **Imladris** (IML1, #688). Ses commandes s'appellent
+`make imladris-*` depuis IML1b (#747) ; la ressource Azure et l'histoire gardent leur nom.
 
 ## En bref
 
@@ -487,7 +487,7 @@ Comment le préflight la lit :
 chemin du bouton, la route `POST /api/action/snapshot/<vm>` de la console d'Imladris :
 - **comment il la joint : par un renvoi de port court qu'il ouvre lui-même**,
   `ssh -N -L 127.0.0.1:<port libre>:127.0.0.1:7007` vers Imladris, avec la clé d'hôte épinglée
-  (`glorfindel-host-known`), le temps de la demande et de son reçu, fermé dans tous les cas à la
+  (`imladris-known`), le temps de la demande et de son reçu, fermé dans tous les cas à la
   fin. Raison : il ne dépend pas du tunnel de MOB2, armé à la demande pour 12 h au plus ; il ne
   laisse rien d'ouvert après lui ; il ne dispute pas le port 7007 au tunnel du téléphone ;
 - **le jeton** est celui de la console, lu dans `host.env` par le Makefile, comme pour `make
@@ -732,8 +732,8 @@ tail -c1 $F | wc -l                             # → 1 : host.env finit par un 
 print -r -- "EREGION_ORODRUIN_PRINCIPAL_ID=$P" >> $F
 unset P
 grep -cE '^EREGION_ORODRUIN_PRINCIPAL_ID=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' $F   # → 1, sans l'afficher
-make glorfindel-host-push                       # host.env → ~/eregion/.env sur Imladris ; --check dit une valeur qui n'est pas un GUID (BNC4)
-make glorfindel-host-ssh                        # puis, sur Imladris :
+make imladris-push                              # host.env → ~/eregion/.env sur Imladris ; --check dit une valeur qui n'est pas un GUID (BNC4)
+make imladris-ssh                               # puis, sur Imladris :
 grep -c '^EREGION_ORODRUIN_PRINCIPAL_ID=' ~/eregion/.env   # → 1
 ```
 

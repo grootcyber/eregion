@@ -501,7 +501,7 @@ def test_a_click_from_someone_not_allowed_is_refused_said_and_logged(monkeypatch
     assert "refusé" in click.ephemeral[0][0] and "DISCORD_ALLOWED_USERS" in click.ephemeral[0][0]
     logged = log.getvalue()
     assert "Button refused" in logged and str(STRANGER) in logged and esc_id[:8] in logged
-    assert "error" not in logged.lower()       # glorfindel-host-status counts errors
+    assert "error" not in logged.lower()       # imladris-status counts errors
 
     click = _press(_stored(esc_id), _User(ALLOWED), policy, _verdict_right)
     assert _stored(esc_id)["verdict"] == "right" and click.ephemeral == []

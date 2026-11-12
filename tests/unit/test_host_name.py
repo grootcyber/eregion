@@ -1,10 +1,12 @@
 """IML1 (#688): the VM that carries Glorfindel is Imladris — « H0 » never names it outside the history
-(scripts/host_name.py; mutants M4710–M4714), and `make imladris-<x>` is `make glorfindel-host-<x>`.
+(scripts/host_name.py; mutants M4710–M4714); IML1b (#747): the commands of Imladris are `make
+imladris-*`, the former names silent aliases.
 
 The lot H0 keeps its name: the guard tells it from the host by its place on the line (after « lot »,
 in a list of lots, a table's first cell, a value alone), or by a phrase named in LOT_PHRASES.
 """
 import importlib.util
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -82,8 +84,9 @@ def _tree(root: Path, files: dict[str, str | bytes]) -> Path:
 
 def test_the_history_is_the_one_exception_for_the_name(tmp_path):
     """Outside git (the harness's copy), the tree's files: the history and the surfaces left to
-    IML2 (Terraform, the CD, the host's deployed scripts, the role definitions) are not read; a doc,
-    the doc of infra/, the code, the CLI of infra/ (`make glorfindel-host-*`) and the site are."""
+    IML2 (Terraform, the host's deployed scripts, the role definitions) are not read; a doc,
+    the doc of infra/, the code, the CLI of infra/ (`make imladris-*`), the site and, since IML1b, the
+    CD are."""
     host = "Le CD de H0 déploie la release.\n"
     _tree(tmp_path, {
         "CHANGELOG.md": host, "docs/historique.md": host,
@@ -98,7 +101,8 @@ def test_the_history_is_the_one_exception_for_the_name(tmp_path):
     })
     said = sorted(p.split(":")[0] for p in host_name.problems(tmp_path) if "names the host" in p)
     assert said == ["docs/banc.md", "docs/manuel/modules.yaml", "glorfindel/cli.py",
-                    "infra/glorfindel-host/README.md", "infra/glorfindel-host/host_config.py"]
+                    "infra/glorfindel-host/README.md", "infra/glorfindel-host/cd/eregion_cd.py",
+                    "infra/glorfindel-host/host_config.py"]
 
 
 @pytest.mark.parametrize("doc,said", [
@@ -113,23 +117,79 @@ def test_the_first_mention_of_a_document_says_it_was_h0(tmp_path, doc, said):
     assert bool(host_name.problems(tmp_path)) is said
 
 
-def _make_n(target: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["make", "-n", "-s", "--no-print-directory", "-C", str(REPO), target],
-                          capture_output=True, text=True, timeout=60)
+# The binaries a recipe of Imladris could reach, first on the PATH: each refuses (exit 97), so that
+# nothing reaches Azure, Imladris, Orodruin or a Terraform state — `make -n` only prints, but it runs
+# a $(MAKE) line, and $(shell …) (HOST_IP: `terraform output`) at the expansion.
+REFUSED = ("az", "ssh", "scp", "ssh-keyscan", "docker", "terraform", "systemctl", "systemd-run",
+           "loginctl", "curl", "tailscale", "sudo")
 
 
-@pytest.mark.parametrize("suffix", ["init", "env"])
-def test_make_imladris_is_make_glorfindel_host(suffix):
-    """Read with `make -n`: nothing runs. The alias runs the same recipe; the target it aliases is
-    untouched (the bench's guides use it)."""
-    alias, target = _make_n(f"imladris-{suffix}"), _make_n(f"glorfindel-host-{suffix}")
-    assert target.returncode == 0 and target.stdout.strip()
-    assert (alias.returncode, alias.stdout) == (0, target.stdout)
+@pytest.fixture(scope="module")
+def refusing_path(tmp_path_factory):
+    b = tmp_path_factory.mktemp("refusing-bin")
+    for name in REFUSED:
+        (b / name).write_text("#!/bin/sh\necho \"refused: $0\" >&2\nexit 97\n")
+        (b / name).chmod(0o755)
+    return f"{b}{os.pathsep}{os.environ['PATH']}"
 
 
-def test_an_imladris_target_without_its_glorfindel_host_one_fails():
-    res = _make_n("imladris-nothing-of-that-name")
-    assert res.returncode != 0 and "imladris-nothing-of-that-name" in res.stderr
+def _make_n(target: str, path: str | None = None, *args: str) -> subprocess.CompletedProcess:
+    env = {k: v for k, v in os.environ.items() if k not in ("MAKEFLAGS", "MFLAGS", "MAKELEVEL", "REF", "HOST_IP")}
+    if path:
+        env["PATH"] = path
+    return subprocess.run(["make", "-n", "-s", "--no-print-directory", "-C", str(REPO), target, *args],
+                          capture_output=True, text=True, timeout=60, env=env)
+
+
+# IML1b (#747): every former name, as `make help` listed it before (0.5.11), and the name it leads to.
+FORMER = {f"glorfindel-host-{x}": f"imladris-{x}" for x in (
+    "init", "plan", "up", "down", "env", "known", "push", "client-rules", "start", "stop", "logs",
+    "status", "pull", "model", "report", "campaign-report", "containment", "fault-rate", "url",
+    "tunnel", "tunnel-go", "ssh", "cd-install", "cd-check", "cd-enable", "cd-disable", "cd-status",
+    "cd-retry", "cd-rollback", "cd-uninstall", "watch-key", "queue-keys")}
+FORMER.update({"mobile-check": "imladris-tunnel-check"})
+FORMER.update({f"mobile-tunnel-{x}": f"imladris-tunnel-{x}" for x in (
+    "install", "remove", "on", "off", "install-go", "remove-go", "on-go", "off-go")})
+# What a recipe needs to say all it does: the variables its own guards read.
+ARGS = ("REF=v0.0.1", "MODEL=anthropic/x", "CAMPAIGN=c1", "TAG=v0.0.1", "HOST_IP=203.0.113.9",
+        "HOST_SSH_FINGERPRINT=SHA256:x", "PYTHON=python3")
+
+
+@pytest.mark.parametrize("former", sorted(FORMER))
+def test_make_imladris_is_make_glorfindel_host(former, refusing_path):
+    """IML1b: read with `make -n` (nothing runs; a $(MAKE) line runs, under -n too, and the binaries
+    refuse): each former name runs the very recipe of its new one, its guards and its sub-makes
+    included — $@ is the new name, so the guard of a code session names it."""
+    new = FORMER[former]
+    target, alias = _make_n(new, refusing_path, *ARGS), _make_n(former, refusing_path, *ARGS)
+    assert target.returncode == 0 and target.stdout.strip(), target.stderr
+    assert "refused:" not in target.stderr + alias.stderr
+    assert (alias.returncode, alias.stdout, alias.stderr) == (0, target.stdout, target.stderr)
+
+
+def test_the_guard_of_a_former_name_is_its_new_one_s(refusing_path):
+    """The former name prints the very guard line: the refusal of a code session, first."""
+    for former, new in (("glorfindel-host-url", "imladris-url"), ("mobile-tunnel-on", "imladris-tunnel-on")):
+        first = _make_n(former, refusing_path, *ARGS).stdout.splitlines()[0]
+        assert first.endswith(f"scripts/mobile.py guard {new}") or f"mobile.py {new[9:]} --guard-only" in first
+
+
+def test_a_former_name_without_its_new_target_fails():
+    for name in ("glorfindel-host-nothing-of-that-name", "mobile-tunnel-nothing", "imladris-nothing-of-that-name"):
+        res = _make_n(name)
+        assert res.returncode != 0 and name in res.stderr
+
+
+def test_make_help_shows_the_new_names_only():
+    """IML1b: `make help` never shows a former name; the console of Imladris under imladris-*."""
+    res = subprocess.run(["make", "-s", "--no-print-directory", "-C", str(REPO), "help"],
+                         capture_output=True, text=True, timeout=60)
+    assert res.returncode == 0, res.stderr
+    assert "glorfindel-host-" not in res.stdout and "mobile-" not in res.stdout
+    shown = {w for line in res.stdout.splitlines() if line.startswith("  make ") for w in line.split()}
+    for name in ("imladris-tunnel-install", "imladris-tunnel-on", "imladris-tunnel-off", "imladris-tunnel-remove",
+                 "imladris-tunnel-check", "imladris-tunnel", "imladris-url", "imladris-start", "imladris-cd-install"):
+        assert name in shown, name
 
 
 def test_an_untracked_file_is_never_read(tmp_path):
@@ -184,9 +244,8 @@ def test_the_query_text_kept_with_h0_is_in_a_shipped_rule_s_query():
 def test_a_kept_text_renamed_or_a_quotation_its_source_no_longer_says_is_said(tmp_path):
     readme = "infra/glorfindel-host/README.md"
     files = {RULES: "      // Measured on Imladris's Syslog\n",
-             readme: "« Verified as H0 verifies it » ; dit, sans retenir H0 » ; … H0 ne construit plus »\n",
-             ".github/workflows/publish.yml": "      - name: Verified as Imladris verifies it\n",
-             "infra/glorfindel-host/cd/eregion_cd.py": '"retenir H0 : seuls" — H0 ne construit plus\n'}
+             readme: "« Verified as H0 verifies it »\n",
+             ".github/workflows/publish.yml": "      - name: Verified as Imladris verifies it\n"}
     _tree(tmp_path, files)
     said = host_name.problems(tmp_path)
     assert len(said) == 2, said

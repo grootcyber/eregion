@@ -55,7 +55,6 @@ LATER = {
     ".tfvars": "Terraform: read at every plan of the resource (IML2)",
     ".tfvars.example": "Terraform: the example of a file read at every plan (IML2)",
     ".hcl": "Terraform: its tests and its lock, with the module (IML2)",
-    "infra/glorfindel-host/cd/": "the CD: installed on the host, renamed with it (IML2)",
     "infra/glorfindel-host/deploy.sh": "deployed on the host: it runs there (IML2)",
     "infra/glorfindel-host/known_host.sh": "the host key's pinning, named with the resource (IML2)",
     "infra/glorfindel-host/status.sh": "deployed on the host: it runs there (IML2)",
@@ -77,8 +76,6 @@ KEPT = {
     "infra/glorfindel-host/README.md": (
         ("« Verified as H0 verifies it »", QUOTE,
          (".github/workflows/publish.yml", "name: Verified as H0 verifies it")),
-        ("dit, sans retenir H0 »", QUOTE, ("infra/glorfindel-host/cd/eregion_cd.py", '"retenir H0 : seuls')),
-        ("… H0 ne construit plus »", QUOTE, ("infra/glorfindel-host/cd/eregion_cd.py", "— H0 ne construit plus")),
     ),
 }
 # A version's text, read under the version: no first mention of its own.

@@ -12,16 +12,16 @@ MUTANTS = [
      "workstation's tunnel to the console (MOB2)", MOBILE,
      "    if guard(target, env, cwd, here, never=NEVER_TUNNEL, say=say):\n",
      "    if False:\n"),
-    ("M4777", "the console's token printed to a code session: make console-url, glorfindel-host-url and "
-     "glorfindel-host-tunnel without their guard (MOB2)", MAKEFILE,
+    ("M4777", "the console's token printed to a code session: make console-url, imladris-url and "
+     "imladris-tunnel without their guard (MOB2)", MAKEFILE,
      "CONSOLE_GUARD  = python3 scripts/mobile.py guard\n",
      "CONSOLE_GUARD  = true\n"),
     ("M4778", "a unit with an [Install] section read as the model's: `systemctl enable` starts the tunnel "
-     "at boot, without a gesture, and mobile-check says nothing (MOB2)", MOBILE,
+     "at boot, without a gesture, and imladris-tunnel-check says nothing (MOB2)", MOBILE,
      '    if "Install" in sections:\n',
      "    if False:\n"),
     ("M4779", "a unit without a limit of time read as the model's: RuntimeMaxSec absent, infinite or "
-     "beyond 12 h passes mobile-check and mobile-tunnel-on arms it (MOB2)", MOBILE,
+     "beyond 12 h passes imladris-tunnel-check and imladris-tunnel-on arms it (MOB2)", MOBILE,
      "    if longest is None or not 1 <= longest <= WINDOW_S:\n",
      "    if False:\n"),
     ("M4780", "a forward bound to every interface read as 127.0.0.1: the tunnel exposes the console of "
@@ -29,7 +29,7 @@ MUTANTS = [
      '        return "sur toutes les interfaces"\n',
      '        return ""\n'),
     # Review round 1: what systemd loaded read beside the file; the unit bounded alone by its deadline.
-    ("M4784", "mobile-check reads the file, not what systemd loaded: a drop-in, another file, an infinite "
+    ("M4784", "imladris-tunnel-check reads the file, not what systemd loaded: a drop-in, another file, an infinite "
      "RuntimeMaxUSec or a unit that pulls the tunnel in pass (MOB2, review round 1)", MOBILE,
      "    lines += loaded_lines(state, fragment)\n",
      ""),

@@ -7,7 +7,7 @@ directory 0700): a directory only the watch's service mounts (docker-compose.yml
 ``~/.glorfindel`` (the console and the bot mount it, the injectors a part of it), never under
 ``runs/``. A key file readable by others, a link, another owner, a file of another size: refused,
 never used, and said (``KeyUnavailable``). ``glorfindel watch-key`` prints its public half and its
-fingerprint, for the operator to pin (``make watch-key``, ``make glorfindel-host-watch-key``).
+fingerprint, for the operator to pin (``make watch-key``, ``make imladris-watch-key``).
 
 **The heartbeat signed.** What the watch writes for the injectors (``~/.glorfindel/injectors/
 watch_heartbeat``) and in the return channel (``heartbeat.json``) carries ``seq`` (a counter that
@@ -80,7 +80,7 @@ KEY_DIR: Path | None = None
 SEEN_FILE: Path | None = None
 
 PIN_GESTURE = (f"pin the watch's public key: {KEY_ENV}=ed25519:… in orodruin.env (Orodruin) or in "
-               "your environment (a workstation) — `make glorfindel-host-watch-key` (Imladris) or "
+               "your environment (a workstation) — `make imladris-watch-key` (Imladris) or "
                "`make watch-key` (this host) gives it")
 
 
@@ -101,7 +101,7 @@ SERVICE_KEY_FILE = "queue_ed25519"
 _HOLDERS = {
     KEY_FILE: _Holder("the watch's user",
                       "let the watch draw another at its next start, then pin the new public key "
-                      "(make watch-key, make glorfindel-host-watch-key)"),
+                      "(make watch-key, make imladris-watch-key)"),
     SERVICE_KEY_FILE: _Holder("the service's user",
                               "let the service draw another at its next start, then pin the new public "
                               "key at the watch (EREGION_QUEUE_KEYS)"),

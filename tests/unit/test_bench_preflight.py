@@ -187,7 +187,7 @@ def _world(tmp_path, *, point_age_h: float = 50, restore_role=None, staging_assi
         _assign("Reader", RG_SCOPE, 1), _assign("Eregion Glorfindel Response", RG_SCOPE, 5),
         _assign("Eregion Glorfindel Session Drain", bw.RID, 6)]
     w.rules = [
-        bw.rule("make", ["glorfindel-host-status"],
+        bw.rule("make", ["imladris-status"],
                 "== Azure\n  ✓ vm-celebrimbor-gondolin running\n"
                 f"== VM {bw.H0_IP}\n  ✓ référence déployée : v0.5.8 (0123456789ab)\n"
                 "  ✓ watch    eregion-watch      running depuis 2026-11-09T08:00:00\n"
@@ -195,7 +195,7 @@ def _world(tmp_path, *, point_age_h: float = 50, restore_role=None, staging_assi
                 "  ✓ bot      eregion-bot        running depuis 2026-11-09T08:00:00\n"
                 "  ✓ découverte : heartbeat 4 assets\n",
                 err=f"  ✓ Clé d'hôte de {bw.H0_IP} vérifiée par son empreinte\n"),
-        bw.rule("make", ["glorfindel-host-cd-status"],
+        bw.rule("make", ["imladris-cd-status"],
                 "  tourne : v0.5.8 (0123456789ab), image sha256:00\n  dernière release : v0.5.8\n  timer : enabled\n"),
         bw.rule("make", ["orodruin-known"]),
         bw.rule("docker", ["ps", "--no-trunc", bp.PS_FORMAT],
@@ -396,7 +396,7 @@ def test_a_local_watch_and_a_held_mode_are_failures(tmp_path, monkeypatch):
 
 def test_no_identifier_leaves_the_preflight(tmp_path, monkeypatch):
     w = _world(tmp_path)
-    w.rules.insert(0, bw.rule("make", ["glorfindel-host-status"],
+    w.rules.insert(0, bw.rule("make", ["imladris-status"],
                               f"== VM {bw.H0_IP}\n  ✓ référence déployée : v0.5.8 (0123456789ab)\n"
                               "  ✓ watch    eregion-watch  running\n  ✓ console  eregion-war-room  running\n"
                               "  ✓ bot      eregion-bot  running\n"
@@ -420,7 +420,7 @@ def test_a_target_that_is_not_a_vm_name_is_refused_before_anything(tmp_path, mon
 @pytest.mark.parametrize("ref,mark", [("✓", bs.OK), ("⚠", bs.WARN)])
 def test_the_deployed_reference_keeps_its_mark(tmp_path, monkeypatch, ref, mark):
     w = _world(tmp_path, point_age_h=3, staging_assigned=True)
-    w.rules.insert(0, bw.rule("make", ["glorfindel-host-status"],
+    w.rules.insert(0, bw.rule("make", ["imladris-status"],
                               f"  {ref} référence déployée : v0.5.8 (0123456789ab)\n"
                               "  ✓ watch    eregion-watch  running\n  ✓ console  eregion-war-room  running\n"
                               "  ✓ bot      eregion-bot  running\n"))
@@ -439,7 +439,7 @@ def test_a_silent_console_stops_the_run(tmp_path, monkeypatch, said):
     """The containers' lines are said apart; the console's own ✗ (no answer, its token refused) is not
     one of them: it stays a failure."""
     w = _world(tmp_path, **_IN_ORDER)
-    w.rules.insert(0, bw.rule("make", ["glorfindel-host-status"],
+    w.rules.insert(0, bw.rule("make", ["imladris-status"],
                               "  ✓ référence déployée : v0.5.8 (0123456789ab)\n"
                               "  ✓ watch    eregion-watch  running\n  ✓ console  eregion-war-room  running\n"
                               f"  ✓ bot      eregion-bot  running\n  ✗ {said}\n"))
@@ -468,7 +468,7 @@ def test_a_management_group_assignment_is_said_unread(tmp_path, monkeypatch):
                                     "à la main)") for f in fails)
 
 
-H0_TARGETS = ("glorfindel-host-status", "glorfindel-host-cd-status")
+H0_TARGETS = ("imladris-status", "imladris-cd-status")
 
 
 @pytest.mark.parametrize("h0_ssh", [
@@ -477,8 +477,8 @@ H0_TARGETS = ("glorfindel-host-status", "glorfindel-host-cd-status")
     f"ssh -o StrictHostKeyChecking=yes glorfindel@{bw.H0_IP}",              # no known_hosts file of its own
 ])
 def test_an_unpinned_host_key_sends_nothing_to_orodruin_nor_h0(tmp_path, monkeypatch, h0_ssh):
-    """Nothing reaches Imladris by ssh — the reader, nor `make glorfindel-host-status` and
-    `glorfindel-host-cd-status`, which would connect in accept-new: one ✗, and make never called for them."""
+    """Nothing reaches Imladris by ssh — the reader, nor `make imladris-status` and
+    `imladris-cd-status`, which would connect in accept-new: one ✗, and make never called for them."""
     w = _world(tmp_path, **_IN_ORDER)
     code, out, _ = _preflight(w, arm_in_order(), monkeypatch,
                               BENCH_ORO_SSH=f"ssh -o StrictHostKeyChecking=accept-new orodruin@{bw.ORO_IP}",

@@ -530,7 +530,7 @@ n'est caché.
   nouvelle requête livrée, le même bloc d'exclusion, `late_s` recopié, l'empreinte recalculée.
   `tests/unit/test_bench_routine.py` échoue tant qu'elle ne l'est pas
   (`test_the_bench_rule_is_the_shipped_query_plus_the_exclusion_block_alone`).
-- **Le geste de Jonathan** : `make glorfindel-host-client-rules`, une fois la release qui porte ING3
+- **Le geste de Jonathan** : `make imladris-client-rules`, une fois la release qui porte ING3
   déployée sur Imladris (anciennement H0) par son CD. Pas avant : la watch d'avant tourne encore
   l'ancienne règle livrée, et la nouvelle copie y serait écartée. Entre le déploiement et le geste,
   les cartes de la maintenance de bree reviennent (Q6).
@@ -845,7 +845,7 @@ fois plus lu), ou `N + H` — à écarter : la carte « au-delà de l'horizon »
    modèle écrit, avec son harnais (`make llm-compare`, par toi).
 
 **Q6 — La copie sudo du banc** (§6)
-1. **Refaite dans la PR d'ING3 ; ton geste `make glorfindel-host-client-rules` juste après que le CD
+1. **Refaite dans la PR d'ING3 ; ton geste `make imladris-client-rules` juste après que le CD
    a déployé la release ; les cartes de la maintenance de bree reviennent entre les deux
    (recommandée).** Rien n'est caché ; le geste est celui que WL1 prévoit.
 2. La règle sudo à part : hors d'ING3, sa copie reste intacte, et la règle sudo reste aveugle au

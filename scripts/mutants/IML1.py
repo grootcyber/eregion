@@ -21,8 +21,8 @@ MUTANTS = [
     ("M4713", "a lot's phrase on a line keeps every H0 of the line, the host's too (IML1)", GUARD,
      "            if i <= start and end <= i + len(text):\n",
      "            if True:\n"),
-    ("M4714", "the alias gone: make imladris-<x> has no rule (IML1)", "Makefile",
-     "imladris-%: glorfindel-host-% ;\n",
+    ("M4714", "the alias gone: make glorfindel-host-<x> has no rule (IML1, inverted by IML1b)", "Makefile",
+     "glorfindel-host-%: imladris-% ;\n",
      ""),
 ]
 MUTANTS += [

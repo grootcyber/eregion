@@ -1640,10 +1640,10 @@ MUTANTS = [
      '            "without_glorfindel": m.get("without_glorfindel") is True,   # V1: counted apart\n', ""),
     # UI-1c (#205) — the console on the host: the token under its two names, from the operator's
     # machine (Makefile, status.sh) and in host.env (host_env.py), never shown.
-    ("M740", "make glorfindel-host-url ignores EREGION_CONSOLE_TOKEN: a new host gets no URL (UI-1c)", MAKE,
+    ("M740", "make imladris-url ignores EREGION_CONSOLE_TOKEN: a new host gets no URL (UI-1c)", MAKE,
      'CONSOLE_TOKEN  = $$(t=$$($(call HOST_ENV_VALUE,EREGION_CONSOLE_TOKEN)); [ -n "$$t" ] || t=',
      "CONSOLE_TOKEN  = $$(t="),
-    ("M741", "make glorfindel-host-url without the former name: H0's host.env gives no URL (UI-1c)", MAKE,
+    ("M741", "make imladris-url without the former name: H0's host.env gives no URL (UI-1c)", MAKE,
      '; [ -n "$$t" ] || t=$$($(call HOST_ENV_VALUE,GLORFINDEL_WARROOM_TOKEN))', ""),
     ("M742", "the Makefile takes an empty EREGION_CONSOLE_TOKEN as the token (UI-1c)", MAKE,
      '[ -n "$$t" ] || t=$$($(call HOST_ENV_VALUE,GLORFINDEL_WARROOM_TOKEN))',
@@ -3099,8 +3099,8 @@ MUTANTS += [
     ("M1012", "a case gaining 2 overconfident draws over the reference accepted: the gate no longer stops them (H1, H3)",
      CD, "    if gained:\n", "    if False:\n"),
     ("M1013", "H0's config refused by A3 and the release switched to anyway: the watch exits 2 (H1)", CD,
-     '        if res.returncode != 0:\n            raise Refused("préflight : la config de H0',
-     '        if False:\n            raise Refused("préflight : la config de H0'),
+     '        if res.returncode != 0:\n            raise Refused("préflight : la config d\'Imladris',
+     '        if False:\n            raise Refused("préflight : la config d\'Imladris'),
     ("M1014", "the candidate built as the running image: a refused release replaces it anyway (H1)", DEPLOY,
      '    build "${pair% *}" "${pair#* }" "" "$name"\n',
      '    build "${pair% *}" "${pair#* }" latest "$name"\n'),
@@ -4149,7 +4149,7 @@ MUTANTS += [
      "            f\"BASE={dep_ref or '<tag en service>'}, dans la PR du verrou\")",
      '            ", dans la PR du verrou")'),
     ("M1711", "what runs unknown: the deployment by hand unsaid (H3, review)", CD,
-     '                      f"déploiement à la main : make glorfindel-host-start REF={tag}")',
+     '                      f"déploiement à la main : make imladris-start REF={tag}")',
      '                      "")'),
     ("M1712", "the CI reads a partial attestation without the CD's _passage (H3, review)", _SMOKE_T,
      '            _entry, cases[side] = cd._passage(p, model, side, "make llm-compare … ATTEST=1")\n',
@@ -4529,7 +4529,7 @@ MUTANTS += [
     ("M1667", "the image's user not compared with H0's: a release that cannot write its state deployed (CI3)", CD,
      "    if res.returncode != 0 or said != mine:\n", "    if res.returncode != 0:\n"),
     ("M1668", "an unverified image made a silent wait instead of a refusal said with the mention (CI3)", CD,
-     '        raise Refused(f"image de {tag} refusée : {discord_text(str(e))} — H0 ne construit pas d\'image",\n'
+     '        raise Refused(f"image de {tag} refusée : {discord_text(str(e))} — Imladris ne construit pas d\'image",\n'
      '                      e.detail) from None\n',
      '        raise Quiet(f"{tag} : {e}") from None\n'),
     ("M1669", "the publishing workflow run on pull requests too (a fork's included) (CI3)", PUB,
@@ -5485,7 +5485,7 @@ MUTANTS += [
      "-o StrictHostKeyChecking=yes -o UserKnownHostsFile=$(HOST_KNOWN_HOSTS)",
      "-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$(HOST_KNOWN_HOSTS)"),
     ("M1421", "the tunnel to H0 opened without the host key checked (SEC7, V-32)", MAKE,
-     "glorfindel-host-tunnel-go: glorfindel-host-known\n", "glorfindel-host-tunnel-go:\n"),
+     "imladris-tunnel-go: imladris-known\n", "imladris-tunnel-go:\n"),
     ("M1422", "Gothmog's container writes its image (SEC7, V-34)", "docker-compose.yml",
      "    # n'écrit que dans runs/gothmog, runs/orodruin et /tmp (SEC18).\n    read_only: true\n",
      "    # n'écrit que dans runs/gothmog, runs/orodruin et /tmp (SEC18).\n    read_only: false\n"),
@@ -5870,7 +5870,7 @@ MUTANTS += [
 TESTS.update({f"M{n}": "tests/unit/test_containment.py" for n in (1924, 1925, 1926)})
 TESTS["M1919"] = "tests/unit/test_indicators.py"
 
-# BL1c (#395): the measure launched alone (make glorfindel-host-containment) — the enrollment of
+# BL1c (#395): the measure launched alone (make imladris-containment) — the enrollment of
 # a channel campaign read as the report reads it, compose's empty identity dropped as the watch
 # drops it (#205), in check_enrollment for every command that reads the enrollment. M2360–M2362.
 MUTANTS += [
@@ -7665,8 +7665,8 @@ MUTANTS += [
      "    return (int(m.group(1)), int(m.group(2)), int(m.group(3))) if m else None\n",
      "    return (m.group(1), m.group(2), m.group(3)) if m else None\n"),
     ("M2911", "an older release made « latest » passed over in silence, never said (SEC12)", HCD,
-     '        raise Refused(f"{why} : jamais de retour arrière sans qu\'on le demande sur H0 "\n',
-     '        raise Quiet(f"{why} : jamais de retour arrière sans qu\'on le demande sur H0 "\n'),
+     '        raise Refused(f"{why} : jamais de retour arrière sans qu\'on le demande sur Imladris "\n',
+     '        raise Quiet(f"{why} : jamais de retour arrière sans qu\'on le demande sur Imladris "\n'),
     ("M2912", "the way back asked on H0 undone by the next pass: the release it left deployed again (SEC12)", HCD,
      "    if back_to and code == 0:\n        left_behind(state, dep_ref, tag)\n",
      "    if False:\n        left_behind(state, dep_ref, tag)\n"),
@@ -7690,12 +7690,12 @@ TESTS["M2914"] = "tests/unit/test_review_verdict.py"
 # token. M2975–M2979.
 MUTANTS += [
     ("M2975", "what runs unreadable (the watch without labels): the release deployed blind (SEC12)",
-     HCD, '    if not dep_ref and not dep_commit:\n        raise Refused("ce qui tourne sur H0 ne se lit pas',
-     '    if False:\n        raise Refused("ce qui tourne sur H0 ne se lit pas'),
+     HCD, '    if not dep_ref and not dep_commit:\n        raise Refused("ce qui tourne sur Imladris ne se lit pas',
+     '    if False:\n        raise Refused("ce qui tourne sur Imladris ne se lit pas'),
     ("M2976", "two commits git cannot order (merge-base: 128) taken for « not older » (SEC12)", HCD,
      "            if before is None:\n", "            if before is None and False:\n"),
     ("M2977", "the floor never read: H0 put back by hand reopens the door to the releases before (SEC12)", HCD,
-     '             (str(floor.get("tag") or ""), str(floor.get("commit") or ""), "déjà déployée sur H0"))\n',
+     '             (str(floor.get("tag") or ""), str(floor.get("commit") or ""), "déjà déployée sur Imladris"))\n',
      "             )\n"),
     ("M2978", "the check reads the verdict for the head of the moment: a push after the review merged (SEC12)",
      "scripts/review_verdict.py", "    if head != reviewed:\n", "    if False:\n"),

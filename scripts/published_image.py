@@ -581,7 +581,7 @@ def generate_key(dest: Path, cosign: Path, run_in=None, tty: bool | None = None)
     os.chmod(key, 0o600)
     pinned = pinned_of_pem(pub.read_text(encoding="utf-8"))
     print(f"✓ la paire de l'attestation : {key} (privée, chiffrée, 0600), {pub}")
-    print("  À épingler dans infra/glorfindel-host/host.env, puis make glorfindel-host-push :")
+    print("  À épingler dans infra/glorfindel-host/host.env, puis make imladris-push :")
     print(f"{HARNESS_KEY_ENV}={pinned}")
     print(f"# empreinte : {key_hint(key_der(pinned))}")
     return 0

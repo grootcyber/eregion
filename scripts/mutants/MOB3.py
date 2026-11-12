@@ -11,11 +11,11 @@ MUTANTS = [
      "is an hour of another zone, read on the phone (MOB3)", MOBILE,
      '    return time.strftime("%d/%m %H:%M UTC", time.gmtime(t))\n',
      '    return time.strftime("%d/%m %H:%M UTC", time.localtime(t))\n'),
-    ("M4817", "make glorfindel-host-ssh prints its command again: the address of Imladris and the key's path "
+    ("M4817", "make imladris-ssh prints its command again: the address of Imladris and the key's path "
      "shown, and the line left as it was once pasted (MOB3)", MAKEFILE,
-     "glorfindel-host-ssh: glorfindel-host-known\n\t@$(HOST_SSH)\n",
-     "glorfindel-host-ssh: glorfindel-host-known\n\t$(HOST_SSH)\n"),
-    ("M4818", "the tunnel by hand (glorfindel-host-tunnel) prints its ssh: the address of Imladris shown, and a "
+     "imladris-ssh: imladris-known\n\t@$(HOST_SSH)\n",
+     "imladris-ssh: imladris-known\n\t$(HOST_SSH)\n"),
+    ("M4818", "the tunnel by hand (imladris-tunnel) prints its ssh: the address of Imladris shown, and a "
      "second tunnel held once pasted (MOB3)", MAKEFILE,
      "\t@ssh $(HOST_SSH_OPTS) -N -L 7007:127.0.0.1:7007 $(HOST_USER)@$(HOST_IP)\n",
      "\tssh $(HOST_SSH_OPTS) -N -L 7007:127.0.0.1:7007 $(HOST_USER)@$(HOST_IP)\n"),

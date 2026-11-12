@@ -141,7 +141,7 @@ par la watch d'Imladris ; la 0.5.8, en service quand la page a été écrite, ne
 porte (CHANGELOG). Depuis le poste :
 
 ```zsh
-make glorfindel-host-status        # « référence déployée : <ref> (<sha>) »
+make imladris-status               # « référence déployée : <ref> (<sha>) »
 SHA=<le sha affiché>
 git fetch -q origin && git cat-file -e ${SHA}:glorfindel/recovery_watch.py && print -r -- "avec REC1" || print -r -- "sans REC1"
 ```
@@ -196,7 +196,7 @@ git fetch -q origin && git cat-file -e ${SHA}:glorfindel/recovery_watch.py && pr
   `restore_principals`. Le lire, `.envrc` chargé :
   `az ad sp show --id "$EREGION_CONSOLE_AZURE_CLIENT_ID" --query id -o tsv`. Le poser sur le poste :
   dans le `.envrc`, et, Imladris étant en place, à la main dans `infra/glorfindel-host/host.env` (le
-  `host.env` existant n'est jamais réécrit : son jeton changerait), puis `make glorfindel-host-push`.
+  `host.env` existant n'est jamais réécrit : son jeton changerait), puis `make imladris-push`.
   Il est pris au démarrage de la watch qui porte REC1. Sans lui, chaque levée est une carte. Le
   journal d'activité nomme la console par son object id dans `caller` et dans `claims.oid`, son
   appId dans `claims.appid` (mesuré le 09/11, la même forme que pour Imladris et Orodruin).
@@ -249,14 +249,14 @@ le coffre écrit d'un job de restore (« Job Type », le point restauré), et l'
 journal d'activité donne au principal qui restaure. Si l'un manque, la watch écrit une carte qui le
 dit, sans lever ; la levée se fait alors à la main.
 
-Un second manque, plus petit : `make glorfindel-host-containment` ne calcule le temps pour contenir
+Un second manque, plus petit : `make imladris-containment` ne calcule le temps pour contenir
 que d'une campagne (`Makefile:1042`). Pour un fil de Dagorlad, `make bench-report RUN=…` le compose
 (BNC1, étape 8) ; on le lit aussi dans sa chronologie de Dagorlad.
 
 ## Le déroulé (environ 1 h à 1 h 30)
 
 Les commandes du poste sont en zsh, `.envrc` chargé, à la racine du dépôt. Celles d'Imladris sont tapées
-après `make glorfindel-host-ssh` (bash). `ORO_SSH_FINGERPRINT` et `HOST_SSH_FINGERPRINT` doivent
+après `make imladris-ssh` (bash). `ORO_SSH_FINGERPRINT` et `HOST_SSH_FINGERPRINT` doivent
 être dans l'environnement : `make orodruin-exercise` les exige toutes deux (`Makefile:1455-1470`).
 
 ### 0. Avant (5 min, lecture seule)
@@ -270,8 +270,8 @@ make bench-preflight TARGET=vm-celebrimbor-gondolin   # une ligne ✓/⚠/✗ pa
 cette étape lisait à la main, sans rien écrire nulle part, et n'affiche aucun identifiant : ni
 abonnement, ni object id, ni appId, ni IP, ni UPN. Elle sort en 0 si aucune ligne n'est ✗ ; un ⚠
 ne bloque pas. Ses contrôles (`scripts/bench_preflight.py`) :
-- **Imladris** : la référence déployée et les trois conteneurs, tels que `make glorfindel-host-status`
-  les dit, et ce qu'il marque ✗ ; le CD, par `make glorfindel-host-cd-status` (le minuteur, la
+- **Imladris** : la référence déployée et les trois conteneurs, tels que `make imladris-status`
+  les dit, et ce qu'il marque ✗ ; le CD, par `make imladris-cd-status` (le minuteur, la
   release qui tourne face à la dernière publiée) ;
 - **le poste** : aucune watch locale d'Eregion (`docker ps --no-trunc`). Est une watch :
   - tout conteneur dont la commande est `glorfindel watch …`, quels que soient son image et son nom :
@@ -331,7 +331,7 @@ make orodruin-check                # armed
 make celebrimbor-start VM=gondolin # elle s'éteint à 23 h UTC
 RID=$(az vm show -g rg-celebrimbor -n vm-celebrimbor-gondolin --query id -o tsv); print -r -- ${RID}
 WS=$(terraform -chdir=infra/terraform output -raw law_workspace_id)
-make glorfindel-host-tunnel        # dans un autre terminal : la console, l'URL affichée
+make imladris-tunnel               # dans un autre terminal : la console, l'URL affichée
 ```
 
 Puis, après 10 minutes, le calme de gondolin :
@@ -355,7 +355,7 @@ Ce qu'on doit voir :
 
 ```zsh
 print -r -- ${RID}                 # à copier
-make glorfindel-host-ssh
+make imladris-ssh
 ```
 
 Sur Imladris :
@@ -441,7 +441,7 @@ sessions a pris 302 s le 09/11, et une coupure qui dépasse 300 s est suivie sur
   en cours 30 min après, ou la watch redémarrée, ou la VM isolée par un autre processus entre-temps). À noter dans l'issue, avec la durée
   lue au journal d'activité (Started → Succeeded).
 - **Discord** : l'action autonome, par le bot.
-- **Sur Imladris** (`make glorfindel-host-ssh`, puis `exit`) : `docker exec eregion-watch glorfindel
+- **Sur Imladris** (`make imladris-ssh`, puis `exit`) : `docker exec eregion-watch glorfindel
   list` montre gondolin `ISOLATED`, vérifiée.
 
 Autres issues, qui sont des mesures et non des échecs du banc :
@@ -507,7 +507,7 @@ ses cartes réseau, pas sur ses disques.
 
 ### 7. La levée, sur Imladris (5 à 20 min)
 
-Le cas : `make glorfindel-host-status`, puis le test de « La levée » (plus haut).
+Le cas : `make imladris-status`, puis le test de « La levée » (plus haut).
 
 **Avec REC1**, rien à faire d'abord : la watch d'Imladris lit la reprise sur Azure. Elle attend 5 min
 après la fin du job (`GLORFINDEL_RECOVERY_GRACE_S`), puis décide par le journal d'activité
@@ -542,7 +542,7 @@ Puis la levée : **↩️ Release** sur gondolin, dans la console d'Imladris, ou
 connecte d'abord depuis le poste :
 
 ```zsh
-make glorfindel-host-ssh
+make imladris-ssh
 ```
 
 Puis, sur Imladris (le nom court suffit : `release` le résout par l'état d'Imladris, `cli.py:172-202`) :
@@ -616,7 +616,7 @@ remplaceront ceux du README, et la ligne T1486 de son tableau.
 Depuis le poste :
 
 ```zsh
-make glorfindel-host-ssh
+make imladris-ssh
 ```
 
 Puis, sur Imladris :
@@ -634,7 +634,7 @@ Puis sur le poste :
 az backup job list -g rg-celebrimbor -v rsv-celebrimbor-erebor -o table  # aucun job en cours
 make orodruin-stop
 make celebrimbor-stop              # bree (always-on) épargnée
-make glorfindel-host-cd-enable     # seulement s'il a été mis en pause à l'étape 0
+make imladris-cd-enable            # seulement s'il a été mis en pause à l'étape 0
 ```
 
 - **Le point de restauration** expire seul : 30 jours pour le point à la demande, 7 jours pour ceux
@@ -648,7 +648,7 @@ make glorfindel-host-cd-enable     # seulement s'il a été mis en pause à l'é
 
 | Ce qu'on voit | Pourquoi | Que faire |
 |---|---|---|
-| le fil refusé `no_watch`, ou le run `unknown` | la watch muette : un battement de plus de 90 s, une clé non épinglée, une watch arrêtée en cours de run. `unknown` ne veut jamais dire « manqué » (`docs/design/orodruin-contract.md`) | `make glorfindel-host-status` ; une nouvelle demande |
+| le fil refusé `no_watch`, ou le run `unknown` | la watch muette : un battement de plus de 90 s, une clé non épinglée, une watch arrêtée en cours de run. `unknown` ne veut jamais dire « manqué » (`docs/design/orodruin-contract.md`) | `make imladris-status` ; une nouvelle demande |
 | `busy` | un autre run tient le verrou d'Orodruin (une campagne, un `annatar run`, un `clean`, une panne). La demande n'est pas consommée | attendre sa fin, relancer la même commande |
 | `expired` ou `replayed` | une demande vaut 6 h et ne se joue qu'une fois. Refusée ou coupée, elle est consommée (`exercise_runner.py:58-62`) | en écrire une nouvelle dans Dagorlad |
 | `isolated_now`, ou le fil sauté `isolated` | gondolin isolée d'avant : un fil attend 20 min sa levée, puis est sauté, sans jamais la lever | l'étape 7, puis une nouvelle demande |
@@ -702,8 +702,8 @@ regarder de plus près. Ces sorties-là affichent des identifiants : ne pas les 
 
 ```zsh
 source .envrc
-make glorfindel-host-status        # « ✓ référence déployée : v<la release publiée> », les trois conteneurs ✓, aucune erreur
-make glorfindel-host-cd-status     # actif : ne publie aucune release pendant la session (ou make glorfindel-host-cd-disable)
+make imladris-status               # « ✓ référence déployée : v<la release publiée> », les trois conteneurs ✓, aucune erreur
+make imladris-cd-status            # actif : ne publie aucune release pendant la session (ou make imladris-cd-disable)
 docker ps --no-trunc --format '{{.Names}}\t{{.Image}}\t{{.Label "com.docker.compose.service"}}\t{{.Command}}'
                                    # aucun "glorfindel watch …" ni service watch d'eregion-glorfindel :
                                    # une watch du poste répondrait aussi
@@ -745,7 +745,7 @@ Ce qu'on doit voir :
 Ce que `make bench-report` compose, lu directement sur Imladris, quand le journal d'activité ou le coffre
 ne se lisent pas depuis le poste.
 
-Toujours sur Imladris (sinon, `make glorfindel-host-ssh` d'abord) :
+Toujours sur Imladris (sinon, `make imladris-ssh` d'abord) :
 
 ```bash
 docker exec -i -e RUN=<run_id> -e VM=vm-celebrimbor-gondolin eregion-watch python - <<'EOF'

@@ -432,7 +432,7 @@ def _channel_campaign(tmp_path):
 
 
 def _measure_alone(cdir, capsys) -> dict:
-    """``python -m analysis.containment <campaign> --json``, as ``make glorfindel-host-containment``
+    """``python -m analysis.containment <campaign> --json``, as ``make imladris-containment``
     launches it in H0's container."""
     assert ct.main([str(cdir), "--json"]) == 0
     return json.loads(capsys.readouterr().out)

@@ -6,8 +6,8 @@ missing right (`listKeys` on the staging account) was seen only at the restore, 
 Here each check is one line, ✓, ⚠ or ✗, then a summary; exit 0 when nothing is ✗ (a ⚠ does not
 stop the run), 1 otherwise. Everything is read, nothing is written — on Azure, on Imladris, on Orodruin:
 
-  Imladris            its deployed reference, its three containers and what `make glorfindel-host-status`
-                marks ✗; its CD (`make glorfindel-host-cd-status`): the timer, the release it runs;
+  Imladris            its deployed reference, its three containers and what `make imladris-status`
+                marks ✗; its CD (`make imladris-cd-status`): the timer, the release it runs;
   the workstation  no local watch (`docker ps`);
   Orodruin      its contract read on it without being published (`check()` in its hardened
                 container), armed or passive, and its cap; deallocated, a ⚠: read once it runs;
@@ -144,14 +144,14 @@ class Context:
 
 
 def check_h0(ctx: Context) -> list:
-    res = bs.run(["make", "-s", "--no-print-directory", "glorfindel-host-status"], timeout=300)
+    res = bs.run(["make", "-s", "--no-print-directory", "imladris-status"], timeout=300)
     text = res.out + "\n" + res.err
     ref = re.search(r"([✓⚠✗]) référence déployée : (\S+)(?: \(([0-9a-f]{7,40})\))?", text)
     up = {name: mark for mark, name in re.findall(r"([✓✗])\s+(watch|console|bot)\s+eregion-", text)}
     failed = [ln.strip()[1:].strip() for ln in text.splitlines()
               if ln.strip().startswith(bs.FAIL) and "référence déployée" not in ln]
     if ref is None and not up:
-        return [line(bs.FAIL, f"Imladris : illisible par make glorfindel-host-status ({res.first_error()})")]
+        return [line(bs.FAIL, f"Imladris : illisible par make imladris-status ({res.first_error()})")]
     out = []
     if ref is None:
         out.append(line(bs.FAIL, "Imladris : la référence déployée ne se lit pas"))
@@ -169,7 +169,7 @@ def check_h0(ctx: Context) -> list:
 
 
 def check_cd(ctx: Context) -> list:
-    res = bs.run(["make", "-s", "--no-print-directory", "glorfindel-host-cd-status"], timeout=120)
+    res = bs.run(["make", "-s", "--no-print-directory", "imladris-cd-status"], timeout=120)
     text = res.out + "\n" + res.err
     runs = re.search(r"tourne : (\S+)", text)
     latest = re.search(r"dernière release : (\S+)", text)
@@ -179,13 +179,13 @@ def check_cd(ctx: Context) -> list:
     said = f"le CD d'Imladris : Imladris sur {runs.group(1)}"
     if latest and latest.group(1) not in ("illisible", "aucune") and latest.group(1) != runs.group(1):
         return [line(bs.WARN, f"{said}, la dernière release est {latest.group(1)} : le CD peut basculer "
-                              "pendant la session (make glorfindel-host-cd-disable)")]
+                              "pendant la session (make imladris-cd-disable)")]
     state = timer.group(1) if timer else "illisible"
     if state == "enabled":
         return [line(bs.OK, f"{said}, la dernière release ; minuteur actif — ne publier aucune release "
                             "pendant la session")]
     if state == "disabled":
-        return [line(bs.OK, f"{said} ; minuteur en pause (make glorfindel-host-cd-enable à la fin)")]
+        return [line(bs.OK, f"{said} ; minuteur en pause (make imladris-cd-enable à la fin)")]
     return [line(bs.WARN, f"{said} ; minuteur {state}")]
 
 

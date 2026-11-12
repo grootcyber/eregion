@@ -534,7 +534,7 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
   client_rules.yaml           → P1 : la couche du client — règles approuvées (`approve-rule`, War Room), règles de
                                 base remplacées (même nom) ou désactivées (`disable:`), chargée par-dessus la base
                                 livrée. Hors du dépôt : une mise à jour ne la touche jamais (conteneurs : base `:ro`)
-                                Sur Imladris, les règles du banc y sont fondues par `make glorfindel-host-client-rules`
+                                Sur Imladris, les règles du banc y sont fondues par `make imladris-client-rules`
                                 (WL1 : `infra/glorfindel-host/client_rules.bench.yaml`) ; une copie d'une règle de
                                 base porte `base_sha256` : périmée, elle est écartée et dite au chargement ;
                                 `env_guids` (CAN2) : un GUID pris dans l'environnement de la watch
@@ -590,7 +590,7 @@ en écriture chez lui seul, en lecture seule chez ceux qui le lisent._
 | Gothmog (`gothmog run`) | `gothmog/<run_id>_signals.jsonl` (que la watch ne lit pas), `<run_id>.json`, `exercises/<run_id>.json` | la watch (les fenêtres), la console, l'analyse (`fault_rate`, `containment`), le lanceur d'Orodruin |
 | La watch (`glorfindel watch`) | `<run_id>_debug.jsonl` et `watch-*_debug.jsonl` (chaque cycle : signal, raisonnement, action, vérification) | la console (fil, cartes de Runs, couverture, indicateurs, suivi d'une demande), l'analyse (décisions), la TUI, **Annatar** (l'attente de sa détection, `annatar/runner/engine.py`) |
 | La watch sur Imladris (le tirage du canal d'exercice, `analysis/hosted_report.py`) | `campaigns/<id>/` (manifeste et rapports tirés, `.pulled`), `<run_id>.json` et `.pulled-runs/` (rapports d'un run seul), `exercises/` (fenêtres tirées), `orodruin/` (verdict et statuts d'Orodruin) | la console, l'analyse, la watch (les fenêtres) |
-| L'analyse (dans le conteneur de la watch, ou à la main) | `campaigns/<id>/report.md`, `report.error`, son verrou, `triage.md`, `triage.json` ; `glorfindel replay-campaign` : `campaigns/<id>/replay.json` | la console (page d'une campagne), `make glorfindel-host-campaign-report` |
+| L'analyse (dans le conteneur de la watch, ou à la main) | `campaigns/<id>/report.md`, `report.error`, son verrou, `triage.md`, `triage.json` ; `glorfindel replay-campaign` : `campaigns/<id>/replay.json` | la console (page d'une campagne), `make imladris-campaign-report` |
 | La console, la CLI de Glorfindel, le bot (qui lance la CLI) | `manual_actions.jsonl` (les gestes de l'opérateur : levée, reset, déblocage, instantané, restore) | la console (fil, indicateurs), l'analyse (`containment` : les levées) |
 | Orodruin (`eregion_core/exercise_runner.py`, le contrat) | `orodruin/audit.jsonl` (chaque appel d'un injecteur, avant l'appel), `orodruin/requests/` (statut d'une demande, registre des demandes jouées, le verrou « un run à la fois ») | Orodruin lui-même (le plafond, le registre, le verrou) |
 | Dagorlad (la console) | rien dans `runs/` : ses demandes vont dans `~/.eregion/console/requests/` | Orodruin, par l'opérateur |

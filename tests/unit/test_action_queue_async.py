@@ -515,7 +515,7 @@ def test_pin_draw_draws_the_services_key_and_pin_alone_never(capsys):
 
 def test_the_hosts_gesture_draws_both_keys_and_says_a_bot_that_does_not_run():
     make = (ROOT / "Makefile").read_text()
-    recipe = make.split("\nglorfindel-host-queue-keys:", 1)[1].split("\n\n", 1)[0]
+    recipe = make.split("\nimladris-queue-keys:", 1)[1].split("\n\n", 1)[0]
     assert "pin console --draw) || exit 1" in recipe
     assert "pin bot --draw 2>/dev/null) ||" in recipe and "le bot ne tourne pas" in recipe
     assert 'echo "EREGION_QUEUE_KEYS=$$c$${b:+,$$b}"' in recipe
@@ -535,7 +535,7 @@ def test_check_refuses_the_flag_without_the_keys_it_needs(tmp_path):
     assert host_env.check(_host_env(tmp_path, f"EREGION_QUEUE_KEYS={console_pin}")) == 0   # keys first
     with pytest.raises(SystemExit) as exc:
         host_env.check(_host_env(tmp_path, "EREGION_ACTION_QUEUE=1"))
-    assert "no key pinned for the console" in str(exc.value) and "glorfindel-host-queue-keys" in str(exc.value)
+    assert "no key pinned for the console" in str(exc.value) and "imladris-queue-keys" in str(exc.value)
     assert host_env.check(_host_env(tmp_path, "EREGION_ACTION_QUEUE=1", f"EREGION_QUEUE_KEYS={console_pin}")) == 0
     with pytest.raises(SystemExit) as exc:
         host_env.check(_host_env(tmp_path, "EREGION_ACTION_QUEUE=1", f"EREGION_QUEUE_KEYS={console_pin}",

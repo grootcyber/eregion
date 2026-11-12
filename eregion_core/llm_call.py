@@ -54,7 +54,7 @@ def _complete(litellm, tool_name: str, **kwargs):
 
 def completion_with_tool(litellm, tool_name: str, *, temperature: float | None = None, **kwargs):
     # litellm prints a « Give Feedback / Get Help » banner on every refused call: the expected
-    # refusal of a forced choice read as an error in the logs (and in glorfindel-host-status).
+    # refusal of a forced choice read as an error in the logs (and in imladris-status).
     litellm.suppress_debug_info = True
     model = str(kwargs.get("model", ""))
     if temperature is not None and model not in _NO_TEMPERATURE:

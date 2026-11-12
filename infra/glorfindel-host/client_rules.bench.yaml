@@ -1,6 +1,6 @@
 # La couche du client du banc (WL1, #595) : les règles que le Glorfindel hébergé (Imladris) charge
 # par-dessus la base livrée, dans son ~/.glorfindel/client_rules.yaml. Jamais copiée telle quelle
-# sur Imladris : `make glorfindel-host-client-rules` y fond chacune de ces règles, par son nom, à côté
+# sur Imladris : `make imladris-client-rules` y fond chacune de ces règles, par son nom, à côté
 # des règles approuvées sur Imladris (infra/glorfindel-host/README.md, « La couche du client du banc »).
 #
 # Ces commentaires ne survivent pas à la fusion (la couche est réécrite) : ce qu'il faut savoir

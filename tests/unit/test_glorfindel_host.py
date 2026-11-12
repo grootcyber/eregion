@@ -54,7 +54,7 @@ def _h0(**autonomy):
 
 
 def _push(tmp_path, capsys, h0_text, *flags):
-    """host_config.py as `make glorfindel-host-push` runs it: Imladris's config read through ssh
+    """host_config.py as `make imladris-push` runs it: Imladris's config read through ssh
     into a file (empty when unread), the config sent, and what it says."""
     import yaml
     src, dst, h0 = tmp_path / "local.yaml", tmp_path / "out.yaml", tmp_path / "h0.yaml"
@@ -396,7 +396,7 @@ def test_the_subscription_is_still_required_beside_the_model():
 
 
 def test_check_holds_a_host_env_to_the_models_provider(tmp_path, capsys):
-    """make glorfindel-host-push runs `--check`: a host.env whose model lacks its provider's
+    """make imladris-push runs `--check`: a host.env whose model lacks its provider's
     variable is refused before the push, named, never a value; a local model needs no key."""
     path = tmp_path / "host.env"
     path.write_text("EREGION_CONSOLE_TOKEN=fake-token\nGLORFINDEL_LLM_MODEL=ollama/llama3.1\n",
@@ -684,7 +684,7 @@ def test_host_env_says_a_missing_never_target_variable_and_still_writes(tmp_path
      f"EREGION_IDENTITY_EXECUTOR_CLIENT_ID={EXECUTOR_APP}\n", {"EREGION_OPERATOR_OBJECT_ID"}),
 ], ids=["none", "all", "quoted", "no-executor", "a-comment"])
 def test_check_says_a_missing_never_target_variable_without_refusing(tmp_path, capsys, lines, said):
-    """M4205, M4206, M4209: `--check` (make glorfindel-host-push) says each variable of the list
+    """M4205, M4206, M4209: `--check` (make imladris-push) says each variable of the list
     the watch would receive empty, with its Terraform output — and never refuses: an unreadable
     list leaves every verb a human's step, closed, not a breakdown."""
     path = tmp_path / "host.env"

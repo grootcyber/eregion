@@ -33,8 +33,8 @@ Without an attack time or a resource, no wait: nothing could be attached. Past t
 written, and says for each such run why its decision is unknown
 (analysis/campaign_report.py ``decision_unknown``) — an unknown, never « Glorfindel did not
 act ». A pull of the windows that fails puts the reports off to the next pull.
-The report is visible in the watch's log (``make glorfindel-host-logs``) and on the VM
-(``make glorfindel-host-campaign-report CAMPAIGN=<id>``).
+The report is visible in the watch's log (``make imladris-logs``) and on the VM
+(``make imladris-campaign-report CAMPAIGN=<id>``).
 
 The same pass pulls the report of each run launched alone from Orodruin (``annatar run``,
 ``gothmog run``, #193) into ``runs/glorfindel/<run_id>.json``, where the console of the atelier reads
