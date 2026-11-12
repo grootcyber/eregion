@@ -1013,6 +1013,19 @@
    "doc": "docs/azure.md"
   },
   {
+   "id": "g-perimetre-non-lue",
+   "composant": "glorfindel",
+   "poste": "g-verifier",
+   "nom": "A perimeter block says a NIC it couldn't read unread, beside the NICs proven open, never reached",
+   "etat": "main",
+   "release": "0.5",
+   "lots": [
+    "I3Q"
+   ],
+   "issue": 771,
+   "doc": "docs/azure.md"
+  },
+  {
    "id": "g-levee-probation",
    "composant": "glorfindel",
    "poste": "g-agir",
