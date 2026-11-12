@@ -987,6 +987,19 @@
    "doc": "docs/observation.md"
   },
   {
+   "id": "g-repli-webhook",
+   "composant": "glorfindel",
+   "poste": "g-verifier",
+   "nom": "The Discord bot silent, the webhook announces an action taken alone, once, pinging the role",
+   "etat": "main",
+   "release": "0.5",
+   "lots": [
+    "JUG2"
+   ],
+   "issue": 765,
+   "doc": "docs/glorfindel.md"
+  },
+  {
    "id": "g-perimetre-illisible",
    "composant": "glorfindel",
    "poste": "g-verifier",
