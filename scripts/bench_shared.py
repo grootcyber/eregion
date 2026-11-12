@@ -66,10 +66,35 @@ def session_refusal(env: dict | None = None, cwd: str | os.PathLike | None = Non
     return ""
 
 
+# An operation of Microsoft.Resources names the path of its type, never an id:
+# `Microsoft.Resources/subscriptions/resourceGroups/write` (LEV2b, #763: the bench's report of 12/11
+# read `microsoft.resources<ressource>`). Only the shape of an operation is kept: words of a closed
+# list of Microsoft.Resources' types, then its verb, whatever the case. Any other word — a group, a VM
+# (`…/resourceGroups/gondolin`, review round 1) — and the path is masked as an id.
+RESOURCES_NS = "microsoft.resources"
+RESOURCES_TYPES = ("resourcegroups|resources|deployments|operations|operationstatuses|operationresults|providers|"
+                   "locations|tags|tagnames|tagvalues|moveresources|validatemoveresources|cancel|validate|whatif|"
+                   "exporttemplate")
+OPERATION_PATH = re.compile(rf"/subscriptions(?:/(?:{RESOURCES_TYPES}))*/(?:read|write|delete|action)", re.IGNORECASE)
+
+
+def _mask_id(m: re.Match) -> str:
+    """`<ressource>`, unless the match is the path of a Microsoft.Resources operation: written right
+    after its namespace, of the shape OPERATION_PATH, nothing after it but punctuation (a closing
+    backtick)."""
+    found = m.group(0)
+    path = OPERATION_PATH.match(found)
+    after = found[path.end():] if path else found
+    namespace = m.string[max(0, m.start() - len(RESOURCES_NS)):m.start()].lower()
+    if namespace == RESOURCES_NS and path and not re.search(r"[\w/-]", after):
+        return found
+    return "<ressource>"
+
+
 def scrub(text: str) -> str:
     """The line without an id: an ARM id becomes `<ressource>`, a GUID `<id>`, an address `<ip>`,
-    a user's name `<upn>`."""
-    out = ARM_ID.sub("<ressource>", str(text))
+    a user's name `<upn>`. The name of an operation is no id: kept (`_mask_id`)."""
+    out = ARM_ID.sub(_mask_id, str(text))
     out = UPN.sub("<upn>", out)
     out = GUID.sub("<id>", out)
     return IPV4.sub("<ip>", out)

@@ -803,6 +803,16 @@ briques:
     issue: 690
     doc: docs/design/levee-probation.md
 
+  - id: g-levee-mesure-outil
+    composant: glorfindel
+    poste: g-agir
+    nom: "The bench tool that measures the lift, corrected on what the bench read: a failure said as Azure wrote it, an operation never masked, another resource named by its type"
+    etat: main
+    release: "0.5"
+    lots: [LEV2b]
+    issue: 763
+    doc: docs/banc-lev2.md
+
   - id: g-levee-probation-code
     composant: glorfindel
     poste: g-agir
