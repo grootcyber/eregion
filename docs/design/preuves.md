@@ -609,6 +609,60 @@ non jugée. Sur `main` 5f10c599, 22 des premiers cas échouent, et le test d'I3P
 l'oracle à trois cartes y passent, la réponse disant vrai dans ce monde. La console dit les deux, chacune sur
 sa ligne (`tests/unit/test_console_blocks.py`). Mutants M5030–M5039 et M5075–M5079 (`scripts/mutants/I3Q.py`).
 
+### Un blocage de périmètre dont la paire a disparu n'est jamais dit `blocked` (I3W)
+
+Trouvé par la relecture 2 d'I3Q, reproduit sur le faux Azure ; un défaut de `main`, antérieur à I3Q.
+**Le défaut.** Sur le chemin des placements de `verify_block_ip`, la paire du périmètre disparue va dans
+`held_missing` quand rien d'autre ne manque. Db--01 a sa carte primaire db-nic-0 sur le sous-réseau app, avec
+web, et db-nic-1 sur le sous-réseau data. Elle est bloquée pour elle-même, puis par périmètre (sans promotion),
+et un tiers supprime la paire `glorfindel-block-<ip>` et `-out` de nsg-subnet entre l'écriture et la
+vérification. Ses deux cartes sont tenues par son propre blocage : la vérification rend `True`, avec la paire
+dans `held_missing`. Le blocage rendait `blocked`, « this IP is denied for ALL VMs on the subnet », et l'IP
+atteignait web. Dans la branche `False` (le NSG propre de db-nic-1, son `allow-https` élargi par le client :
+le blocage de Db--01 contourné là), la paire restait tue à côté de `uncovered_nics` (le constat 1 de la
+relecture). Dans la branche `None` (une lecture en 429), la vérification rendait sans elle.
+
+**Le choix : la vérification ne change pas de verdict.** Elle dit vrai de la VM : Db--01 reste bloquée par
+son propre blocage. La faire rendre `False` sur la seule paire aurait fait dire à la carte de dérive « l'IP
+n'est plus bloquée » de Db--01, et changé la base de `_worse`. Elle dit maintenant la paire à part, dans
+chaque branche (`perimeter_gone`), une clé que ni `_block_drift` pour le reste, ni `_situation`, ni `_worse`,
+ni la réaffirmation ne lisent : ce qu'elles lisent est inchangé, et la réaffirmation reposait déjà la paire
+(`held_missing`). Le blocage la lit (`verify_block._say_gone`) : `blocked_partial`, `missing_rules` la paire,
+et sa note dit « perimeter block written, then read missing or altered on Azure at its check (…): {ip} is not
+denied by it for the VMs on the subnet until it is put back », jamais « denied for ALL VMs ». La paire
+illisible n'est jamais dite disparue (A0) : inconnue, le statut partiel, la note de tête inchangée. La carte
+de dérive, quand la vérification est vraie et la paire disparue, dit « l'IP reste bloquée sur Db--01 ; sur
+les autres VM du subnet, la règle de périmètre ne tient plus » : avant, « l'IP reste bloquée », vrai de la VM,
+muet sur le sous-réseau.
+
+**Une carte n'est plus nommée comme une règle** (le constat 2). La vérification met le nom court d'une
+carte sans règle du blocage dans `missing_rules`, une convention que la carte de dérive lit. Elle dit
+maintenant lesquelles sont des cartes (`missing_nics`) ; le blocage les sépare : `missing_rules` les règles,
+`missing_nics` les cartes, chacune avec sa phrase. Avant, une promotion dont la paire avait disparu disait
+« Rules of this block missing on Azure: db-nic-0, glorfindel-block-…, …-out ». La fenêtre de promotion de
+la console dit les deux, chacune sur sa ligne ; elle disait une carte non couverte et taisait la paire
+disparue à côté.
+
+**L'oracle, durci.** Il lit la paire comme le faux Azure la tient à la réponse, jamais ce que le code en dit :
+disparue, le blocage doit dire `blocked_partial` et la nommer dans `missing_rules`. Avant, une paire
+disparue n'était jugée qu'au travers d'une VM voisine atteinte, jamais sur un sous-réseau sans voisine. Le
+contrôle des voisines ne vaut que si la paire est sur Azure : disparue, la réponse ne prétend plus « denied
+for ALL VMs », et vient d'être jugée sur ce point. C'est le seul relâchement, et il est lié à l'état d'Azure
+lu par le test, non à une marque du code : une réponse qui dirait la paire disparue alors qu'elle est là
+garde le contrôle des voisines. La machine ne tire aucun tiers qui supprime une règle au milieu d'une
+opération : la nouvelle assertion ne s'y déclenche pas, et les invariants restent verts à 500.
+
+**Mesures.** Figés dans `tests/unit/test_invariant_regressions.py`, avec l'identifiant canonique et en
+minuscules : la paire supprimée entre l'écriture et la vérification, branche `True` et branche `False`, jugées
+par l'oracle (puis une réaffirmation et une vérification, jugées comme la machine les juge) et au connecteur
+(la note, web atteinte, la vérification inchangée, la carte de dérive en `human_only`, la repose en
+`non_disruptive`, puis le blocage de nouveau entier) ; la branche `None` (les cartes illisibles, les règles
+d'un placement illisibles, et la paire elle-même illisible, jamais dite disparue) ; la promotion, la carte
+séparée des règles ; la fenêtre de la console (`tests/unit/test_console_blocks.py`). Le cas d'I3Q de la paire disparue d'un périmètre seul dit maintenant la nouvelle tête. Sur
+`main` 9f981c79, 19 des nouveaux cas échouent (les deux de la paire illisible y passent : rien à dire), et les
+quatre du cas d'I3Q avec eux. Mutants M5088–M5097
+(`scripts/mutants/I3W.py`) ; M5033 et M5078 d'I3Q suivent le code déplacé.
+
 ### Trois mutants que la machine ne voyait plus qu'au hasard (MUT4)
 
 La porte de la 0.5.8 (run 42575826306) a rendu trois mutants `FIXED-ONLY`, 0/2 chacun : M19 (un blocage

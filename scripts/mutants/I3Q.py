@@ -41,7 +41,7 @@ _ASK = ('            stand = self._perimeter_holds(cache, t, ip, port)\n'
         '            (held if stand == "holds" else opened if stand == "no" else unsure).add(n)\n')
 _KEY = ('        if unread:\n'
         '            out["nics_unread"] = unread\n')
-_STATUS = '        if uncovered or unread or gone:\n'
+_STATUS = '        if uncovered or unread:\n'    # the pair gone: verify_block._say_gone (I3W)
 _PHRASE = ('            out["note"] += (f" Not behind it, on another subnet, unread: {unread} — whether {ip} '
            'reaches them "\n'
            '                            "is unverified." if unread_nics else\n')
@@ -58,7 +58,7 @@ MUTANTS = [
               "unread unsaid (I3Q)",
      _BLK, _KEY, _KEY.replace("        if unread:", "        elif unread:")),
     ("M5033", "a perimeter block with NICs unread and none open says `blocked` (I3Q, the status; I3P)",
-     _BLK, _STATUS, "        if uncovered or gone:\n"),
+     _BLK, _STATUS, "        if uncovered:\n"),
     ("M5034", "a perimeter block counts the NICs its verification couldn't read among the open ones: « the "
               "IP still reaches them », read of none (I3Q, the proof taken from the wrong lists)",
      _VBL, _OPENED, '        opened, unsure = {*(check.get("open_nics") or []), *(check.get("perimeter_unread") '
@@ -89,7 +89,8 @@ MUTANTS = [
      _VBL, _ASK, _ASK.replace('opened if stand == "no" else unsure', 'held if stand == "no" else unsure')),
     ("M5078", "a perimeter block whose pair is gone at its check says nothing of it: `blocked` once the NICs "
               "off it are held elsewhere (I3Q's review)",
-     _BLK, '                gone = check.get("missing_rules") or []    # its own pair too, read gone\n', ""),
+     _BLK, '        self._say_gone(out, check, vm_name)     # what its check read gone: its pair in every branch (I3W)\n',
+     ""),
     ("M5079", "the verification's reason for a NIC it didn't judge dropped: « illisible » for a subnet's NSG, "
               "rules or a quarantine unread (I3Q's review)",
      _VBL, '                    **({"nics_unknown": undecided, "nics_unknown_why": unknown_why} if undecided else {}),\n',

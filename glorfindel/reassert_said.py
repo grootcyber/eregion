@@ -25,6 +25,10 @@ def _block_drift(ip: str, vm: str, v: dict, again: bool = False, said: bool = Fa
     twice = " une deuxième fois" if again else ""
     if v.get("verified") is True:
         where = f" sur {', '.join(held)}{by}" if held else ""
+        # Its perimeter pair among what is gone (I3W, #778): the VM held by its own block — « reste
+        # bloquée » said of it, never of the subnet the pair was to cut off.
+        where += (f"{'' if held else f' sur {vm}'} ; sur les autres VM du subnet, la règle de périmètre ne "
+                  "tient plus") if v.get("perimeter_gone") else ""
         if said:
             return (f"l'IP reste bloquée{where}, mais il manque toujours{names}." if gone else
                     "Azure le relit entier, mais le fournisseur l'a dit partiel : à vérifier." if partial else

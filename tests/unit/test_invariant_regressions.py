@@ -7574,7 +7574,8 @@ def test_a_perimeter_whose_pair_is_gone_at_its_check_says_the_nics_off_it_and_th
         monkeypatch.setattr(c, "verify_block_ip", after_a_deletion)
         out = c.block_suspicious_ip(ATTACKER, rid, scope="subnet")
         assert out["status"] == "blocked_partial" and out["missing_rules"] == [bare, f"{bare}-out"], out
-        assert "nics_unread" not in out and f"missing on Azure: {bare}, {bare}-out." in out["note"], out
+        assert "nics_unread" not in out and f"missing or altered on Azure at its check ({bare}, {bare}-out)" in out["note"], out
+        assert "denied for ALL" not in out["note"], out          # its pair gone: never claimed (I3W)
         assert out.get("uncovered_nics") == (None if web else ["db-nic-0"]), out
     finally:
         shutil.rmtree(m.home, ignore_errors=True)
@@ -7599,5 +7600,196 @@ def test_a_nic_with_a_block_of_its_own_its_verification_did_not_judge_is_said_un
         out = c.block_suspicious_ip(ATTACKER, DB, scope="subnet", threat_port=22)
         assert out["status"] == "blocked_partial" and "uncovered_nics" not in out, out
         assert out["nics_unread"] == "db-nic-0 (non lue)" and "still reaches" not in out["note"], out
+    finally:
+        shutil.rmtree(m.home, ignore_errors=True)
+
+
+# ── I3W (#778): a perimeter block whose pair is gone at its check is never said `blocked` ──
+# Found by I3Q's second review. Db--01's primary NIC db-nic-0 on the app subnet, beside web; db-nic-1 on the
+# data subnet, off the perimeter. Db--01 blocked by VM first; then its perimeter block (no promotion), the
+# pair `glorfindel-block-<ip>` and `-out` deleted from nsg-subnet between its write and its check (a third
+# party, once). The VM held by its own block, the pair fell in `held_missing`, the check `True`: `blocked`,
+# « denied for ALL VMs on the subnet », web reached. In the branch `False` (db-nic-1's own NSG, its
+# `allow-https` widened to every port by the customer: Db--01's own block bypassed there), the pair went
+# unsaid beside `uncovered_nics` (the review's finding 1).
+_I3W_NSG1 = _NSG.format(rg="rg-app1", name="nsg-db-nic-1")
+_I3W_NETS = {
+    "check True": (_net(subnet_nsg=[], data_subnet=[]), ()),
+    "check False": (_net(subnet_nsg=[], data_subnet=[], db_nic_1={"own": "dedicated", "rules": [
+        _i3n_rule("allow-https", 100)]}), (("customer_edits_rule", key(_I3W_NSG1), "allow-https",
+                                            ("destination_port_range", "*")),)),
+}
+_I3W_BARE = "glorfindel-block-" + ATTACKER.replace(".", "-")
+_I3W_PAIR = [_I3W_BARE, f"{_I3W_BARE}-out"]
+
+
+def _i3w_deleting(m, during=None):
+    """The block's check, its pair deleted from nsg-subnet first — once, by a third party; `during`, a
+    fault armed for that check alone."""
+    c, done = m.connector, []
+    real = c.verify_block_ip
+
+    def after_a_deletion(*a, **k):
+        if done:
+            return real(*a, **k)
+        done.append(1)
+        for name in _I3W_PAIR:
+            c._network.security_rules.begin_delete("rg-net", "nsg-subnet", name)
+        m.chaos.arm(during)
+        try:
+            return real(*a, **k)
+        finally:
+            m.chaos.arm(None)
+    return after_a_deletion
+
+
+def _i3w_replay(monkeypatch, net, before, last, after=()):
+    """`_replay`, the pair deleted at the check of `last`'s block."""
+    invariant_env(monkeypatch)
+    m = IsolationMachine()
+    try:
+        m.build(net)
+
+        def run(rule, *draws):
+            s = Script(*draws)
+            getattr(m, rule)(data=s)
+            if s.values:
+                pytest.fail(f"{rule} left draws unused: {s.values}")
+            m.never_more_open_than_designed()
+            m.customer_configuration_untouched()
+            m.one_vm_one_state_file()
+        for step in before:
+            run(*step)
+        monkeypatch.setattr(m.connector, "verify_block_ip", _i3w_deleting(m))
+        run(*last)
+        m.chain = None          # a third party touched the world: no chain of Glorfindel's alone (the test knows)
+        for step in after:
+            run(*step)
+    finally:
+        m.teardown()
+
+
+@pytest.mark.parametrize("rid", [DB, DB.lower()], ids=["Db--01", "db--01"])
+@pytest.mark.parametrize("branch", sorted(_I3W_NETS))
+def test_a_perimeter_whose_pair_is_gone_at_its_check_judged_by_the_machine(monkeypatch, branch, rid):
+    """I3W, judged by the machine's oracle: « I3: perimeter block said its pair whole, [the pair] gone on
+    Azure » (before its tightening, « I3: perimeter block said blocked, … reaches web »). Then the
+    reassertion and a verification, judged as the machine judges them: its card true, its claims true."""
+    net, edits = _I3W_NETS[branch]
+    _i3w_replay(monkeypatch, net, (("block", DB, rid, None, 22), *edits),
+                ("block_perimeter", DB, rid, None, False),
+                (("reassert", "human_only", None), ("verify", DB, rid, None)))
+
+
+@pytest.mark.parametrize("mode", ["human_only", "non_disruptive"])
+@pytest.mark.parametrize("rid", [DB, DB.lower()], ids=["Db--01", "db--01"])
+@pytest.mark.parametrize("branch", sorted(_I3W_NETS))
+def test_a_perimeter_whose_pair_is_gone_at_its_check_is_never_said_blocked(monkeypatch, branch, rid, mode):
+    """I3W, at the connector: `blocked_partial`, the pair said gone by name (`missing_rules`), never
+    « denied for ALL VMs »; web reached in the world. Its check unchanged (`held_missing`, read by the
+    drift card and the reassertion), the pair said apart (`perimeter_gone`). The reassertion puts the pair
+    back and its card says what was gone, the IP still blocked on Db--01 — true; the block again: the pair
+    whole, said so."""
+    import shutil
+
+    from glorfindel import escalations, reassert
+
+    from .test_invariants import _CURRENT
+
+    net, edits = _I3W_NETS[branch]
+    invariant_env(monkeypatch)
+    m = IsolationMachine()
+    try:
+        m.build(net)
+        c = m.connector
+        assert c.block_suspicious_ip(ATTACKER, rid, scope="vm", threat_port=22)["status"] == "blocked"
+        if edits:
+            m.fake.nsgs[key(_I3W_NSG1)]["rules"]["allow-https"]["destination_port_range"] = "*"
+        monkeypatch.setattr(c, "verify_block_ip", _i3w_deleting(m))
+        out = c.block_suspicious_ip(ATTACKER, rid, scope="subnet", threat_port=22)
+        assert out["status"] == "blocked_partial" and out["missing_rules"] == _I3W_PAIR, out
+        assert "denied for ALL" not in out["note"] and "missing_nics" not in out, out
+        assert (f"read missing or altered on Azure at its check ({', '.join(_I3W_PAIR)}): {ATTACKER} is not "
+                "denied by it for the VMs on the subnet until it is put back.") in out["note"], out
+        assert out.get("uncovered_nics") == (["db-nic-1"] if edits else None), out
+        assert m._attacker_flows(WEB1, None), "the world: web reached, the pair gone"
+        v = c.verify_block_ip(ATTACKER, rid)
+        assert v["verified"] is (not edits) and v["held_missing"] == _I3W_PAIR, v
+        assert v["perimeter_gone"] == _I3W_PAIR and "missing_rules" not in v, v
+        _CURRENT.mode = mode                        # human_only: said, nothing written; non_disruptive: put back
+        reassert.reassert_pass(c, None)
+        said = [e["reason"] for e in escalations.pending() if e.get("action") == "block_suspicious_ip"]
+        vm = rid.rsplit("/", 1)[-1]
+        if mode == "human_only":
+            assert any(r.startswith(f"Le blocage de {ATTACKER} sur {vm} a disparu d'Azure"
+                                    + ("" if edits else " en partie") + f" ({', '.join(_I3W_PAIR)}) — ")
+                       for r in said), said
+            tail = ("l'IP n'est plus bloquée sur db-nic-1." if edits else
+                    f"l'IP reste bloquée sur {vm} ; sur les autres VM du subnet, la règle de périmètre ne tient plus.")
+            assert any(tail in r for r in said), said
+        assert bool(m._attacker_flows(WEB1, None)) is (mode == "human_only"), "put back in non_disruptive alone"
+        again = c.block_suspicious_ip(ATTACKER, rid, scope="subnet", threat_port=22)     # the operator's
+        assert not m._attacker_flows(WEB1, None), "the pair back"
+        assert "missing_rules" not in again and "denied for ALL" in again["note"], again
+        # db-nic-1's bypass: the non_disruptive pass put Db--01's own block back where it holds, too.
+        assert again["status"] == ("blocked_partial" if edits and mode == "human_only" else "blocked"), again
+        assert again["status"] != "blocked" or not m._attacker_flows(DB, 22), again
+    finally:
+        shutil.rmtree(m.home, ignore_errors=True)
+
+
+# The check's call that answers 429, for that check alone (its order: the NICs, their subnets, the rules of
+# Db--01's placements, the pair): the VM's NICs unread (`nic.get` throughout: « cartes illisibles »), a
+# placement's rules unread (the 7th: « règles illisibles »), or the pair's own listing (the 6th).
+_I3W_UNREAD = {"nics": ("nic.get", "always-429"), "rules": (7, "before-429"), "the pair": (6, "before-429")}
+
+
+@pytest.mark.parametrize("rid", [DB, DB.lower()], ids=["Db--01", "db--01"])
+@pytest.mark.parametrize("read", sorted(_I3W_UNREAD))
+def test_a_perimeter_whose_pair_is_gone_at_an_unconcluded_check_says_it_gone(monkeypatch, read, rid):
+    """I3W, the branch `None`: the pair gone, and a read of the check in 429. The check doesn't conclude, and
+    returned without `held_missing`: the pair went unsaid, « denied for ALL VMs on the subnet » beside
+    « unreadable ». Said now (`perimeter_gone`), partial. The pair's own listing unread: never said gone on
+    a guess (A0) — unknown, partial, the head unchanged."""
+    import shutil
+
+    invariant_env(monkeypatch)
+    m = IsolationMachine()
+    try:
+        m.build(_I3W_NETS["check True"][0])
+        c = m.connector
+        assert c.block_suspicious_ip(ATTACKER, rid, scope="vm", threat_port=22)["status"] == "blocked"
+        monkeypatch.setattr(c, "verify_block_ip", _i3w_deleting(m, during=_I3W_UNREAD[read]))
+        out = c.block_suspicious_ip(ATTACKER, rid, scope="subnet", threat_port=22)
+        assert out["status"] == "blocked_partial" and out.get("nics_unread") and "uncovered_nics" not in out, out
+        if read == "the pair":
+            assert "missing_rules" not in out and "règles illisibles" in out["nics_unread"], out
+            return
+        assert out["missing_rules"] == _I3W_PAIR and "denied for ALL" not in out["note"], out
+        assert ("cartes illisibles" if read == "nics" else "règles illisibles") in out["nics_unread"], out
+    finally:
+        shutil.rmtree(m.home, ignore_errors=True)
+
+
+@pytest.mark.parametrize("rid", [DB, DB.lower()], ids=["Db--01", "db--01"])
+def test_a_promotion_whose_pair_is_gone_names_the_nic_apart_from_the_rules(monkeypatch, rid):
+    """I3Q's review, finding 2: with `replace=True` and the pair gone at its check, « Rules of this block
+    missing on Azure: db-nic-0, glorfindel-block-…, …-out » — a NIC (its own block dropped by the promotion,
+    the perimeter that was to cover it gone) named as a rule. Each in its own key and sentence now."""
+    import shutil
+
+    invariant_env(monkeypatch)
+    m = IsolationMachine()
+    try:
+        m.build(_I3W_NETS["check True"][0])
+        c = m.connector
+        assert c.block_suspicious_ip(ATTACKER, rid, scope="vm", threat_port=22)["status"] == "blocked"
+        monkeypatch.setattr(c, "verify_block_ip", _i3w_deleting(m))
+        out = c.block_suspicious_ip(ATTACKER, rid, scope="subnet", threat_port=22, replace=True)
+        assert out["status"] == "blocked_partial", out
+        assert out["missing_rules"] == _I3W_PAIR and out["missing_nics"] == ["db-nic-0"], out
+        assert "Rules of this block missing" not in out["note"], out
+        assert f"{rid.rsplit('/', 1)[-1]}'s NICs with no rule of this block on them: db-nic-0." in out["note"], out
+        assert {f[0] for f in m._attacker_flows(DB, None)} & {"db-nic-0"}, "the world: db-nic-0 reached"
     finally:
         shutil.rmtree(m.home, ignore_errors=True)

@@ -812,6 +812,16 @@ briques:
     issue: 771
     doc: docs/azure.md
 
+  - id: g-perimetre-paire-disparue
+    composant: glorfindel
+    poste: g-verifier
+    nom: "A perimeter block whose own pair is gone at its check is never said blocked, the pair said in every branch"
+    etat: main
+    release: "0.5"
+    lots: [I3W]
+    issue: 778
+    doc: docs/azure.md
+
   - id: g-levee-probation
     composant: glorfindel
     poste: g-agir

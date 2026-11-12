@@ -1464,8 +1464,18 @@ class IsolationMachine(RuleBasedStateMachine):
             reached = ({f[0] for f in self._attacker_flows(vm, None) if f[0] not in off}
                        | {f[0] for f in self._attacker_flows(vm, entry.get("threat_port")) if f[0] in off}) - said
             assert not reached, f"I3: perimeter block said blocked, {ATTACKER} reaches {vm} ({sorted(reached)})"
-            # Its subnet's other VMs: their NICs behind it.
-            for mate in self._subnet_mates(vm):
+            # Its own pair, as Azure holds it when the block answers (I3W, #778; the test's reading, never
+            # the code's): gone — a third party deleted it between its write and its check —, the block says
+            # it, by name, partial. It said `blocked`, « denied for ALL VMs on the subnet », its check `True`
+            # (the VM held by its own block), the subnet's other VMs reached. Tightened: a pair gone was
+            # judged only through a mate it left reached, never on a subnet without one.
+            pair_gone = self._pair_gone(home)
+            said_gone = {str(n).lower() for n in out.get("missing_rules") or []}
+            assert not pair_gone or (out["status"] == "blocked_partial" and pair_gone <= said_gone), (
+                f"I3: perimeter block said its pair whole, {sorted(pair_gone)} gone on Azure: {out}")
+            # Its subnet's other VMs: their NICs behind it — unless its pair is gone on Azure, and said so
+            # (just above): « denied for ALL VMs » no longer claimed.
+            for mate in self._subnet_mates(vm) if not pair_gone else []:
                 if mate == vm:
                     continue
                 behind = {n["id"].rsplit("/", 1)[-1] for n in self._nics(mate) if key(n["subnet"]) == home}
@@ -1509,6 +1519,19 @@ class IsolationMachine(RuleBasedStateMachine):
         # Merged with a perimeter block (RB1): the VM's rules all gone, OR its perimeter pair
         # gone — each a disappearance; never both required (fifth review: L1 weakened).
         return gone(where) or (entry.get("scoped") is False and gone(pair))
+
+    def _pair_gone(self, subnet: str) -> set[str]:
+        """The perimeter pair's rules (lowercase) not on the subnet's NSG as a deny of the attacker:
+        as the fake Azure holds them now (I3W)."""
+        bare = "glorfindel-block-" + ATTACKER.replace(".", "-")
+        g = self.fake.subnets[subnet]["nsg"]
+        rules = {n.lower(): r for n, r in self.fake.nsgs.get(key(g), {}).get("rules", {}).items()} if g else {}
+
+        def holds(r) -> bool:
+            sides = [r.get("source_address_prefix"), r.get("destination_address_prefix"),
+                     *(r.get("source_address_prefixes") or []), *(r.get("destination_address_prefixes") or [])]
+            return str(r.get("access", "")).lower() == "deny" and ATTACKER in sides
+        return {n for n in (bare, f"{bare}-out") if n not in rules or not holds(rules[n])}
 
     @staticmethod
     def _perimeter_rule(name: str) -> bool:

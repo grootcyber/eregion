@@ -397,7 +397,7 @@ class BlockMixin:
         # A NIC off the perimeter's subnet is blocked only by its own block — as Azure reads
         # it, never as the state remembers it (a partial one, rules gone since).
         uncovered = [t["nic_short"] for t in off]
-        unread_nics, gone = [], []
+        unread_nics, check = [], {}
         if uncovered:
             try:
                 check = self.verify_block_ip(ip, resource_id)
@@ -415,7 +415,6 @@ class BlockMixin:
                 uncovered, unread_nics, said = self._sort_off_perimeter(
                     check, [t for t in off if t["nic_short"] in uncovered], ip, threat_port, resource_id)
                 unread = said or unread
-                gone = check.get("missing_rules") or []    # its own pair too, read gone
             else:
                 # Not concluded (a read answered 429): no NIC proven open, none proven held —
                 # neither « uncovered, the IP still reaches it » (another VM's perimeter may cut
@@ -435,6 +434,7 @@ class BlockMixin:
                 "VMs on the subnet (and future ones)."
             ),
         }
+        self._say_gone(out, check, vm_name)     # what its check read gone: its pair in every branch (I3W)
         if promoted_from:
             out["promoted_from"] = promoted_from
         if guarded:
@@ -444,11 +444,8 @@ class BlockMixin:
             out["note"] += (" Kept by the promotion, its placement left in the state for the unblock: "
                             + " ; ".join(guarded) + ".")
         # Each said when it is, both on one block (I3Q, #771): one key, the unread went unsaid.
-        if uncovered or unread or gone:
+        if uncovered or unread:
             out["status"] = "blocked_partial"
-        if gone:          # a NIC another perimeter holds no longer hides it (I3Q, review)
-            out["missing_rules"] = gone
-            out["note"] += f" Rules of this block missing on Azure: {', '.join(gone)}."
         if uncovered:
             out["uncovered_nics"] = uncovered
             out["note"] += (f" Not behind it, on another subnet: {', '.join(uncovered)} — {ip} still reaches "
