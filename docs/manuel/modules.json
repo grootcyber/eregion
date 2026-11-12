@@ -1654,6 +1654,19 @@
    "doc": "docs/banc-t1486.md"
   },
   {
+   "id": "c-banc-un-geste",
+   "composant": "celebrimbor",
+   "poste": "c-construire",
+   "nom": "The bench in one gesture: the calm and the restore-first rule checked by the preflight, a clean recovery point taken through the console snapshot button route, then the preflight run again",
+   "etat": "main",
+   "release": "0.5",
+   "lots": [
+    "BNC3b"
+   ],
+   "issue": 770,
+   "doc": "docs/banc-t1486.md"
+  },
+  {
    "id": "c-paires-expiration",
    "composant": "celebrimbor",
    "poste": "c-construire",

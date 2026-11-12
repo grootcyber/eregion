@@ -173,8 +173,65 @@ def _pair_rules(app_id: str, held: dict) -> list[dict]:
 CONSOLE_ON_ITS_SP = {"app": [], "sp": [(NOW + timedelta(days=26, hours=12)).isoformat()]}
 
 
+def _at(**ago) -> str:
+    """An instant before NOW, as Azure writes it."""
+    return (NOW - timedelta(**ago)).isoformat()
+
+
+# BNC3b review: a restore's detail as `az backup job show` gives it — its property bag's « Job Type »,
+# measured on the bench (09/11, REC1b: « Replace disks », the key with a trailing space or not, by
+# version), the two other kinds as tests/unit/fake_azure.py names them (`_JOB_TYPES`).
+def _detail(kind: str, key: str = "Job Type ") -> dict:
+    return {"properties": {"operation": "Restore", "status": "Completed",
+                           "extendedInfo": {"propertyBag": {key: kind, "Recovery point time ": "11/07/2026"}}}}
+
+
+IN_PLACE = _detail("Replace disks")
+RESTORE_DISKS = _detail("Restore disks")
+NEW_VM = _detail("Create new virtual machine")
+CONTAINER = f"iaasvmcontainerv2;{bw.RG};{bw.VM}"
+DISK = f"/subscriptions/{bw.SUB}/resourceGroups/{bw.RG}/providers/Microsoft.Compute/disks/gondolin-osdisk-restored"
+
+
+def swap(restored_ago=timedelta(days=2)) -> list[dict]:
+    """The write on gondolin during its restore in place (the swap of its disks), by the vault."""
+    at = NOW - restored_ago - timedelta(minutes=10)
+    return [bw.event("Microsoft.Compute/virtualMachines/write", bw.RID, at.isoformat(), "Started", "", {}, "w0"),
+            bw.event("Microsoft.Compute/virtualMachines/write", bw.RID, (at + timedelta(seconds=30)).isoformat(),
+                     "Succeeded", "", {}, "w0")]
+
+
+def calm_activity(started_ago=timedelta(hours=3), rcs=(), swapped=True) -> list[dict]:
+    """BNC3b: gondolin's activity log over the horizon — its disks swapped by the restore of 2 days ago,
+    started `started_ago`, then each Run Command of `rcs`: (who, how long ago it started, how long it
+    ran)."""
+    ev = swap() if swapped else []
+    s = NOW - started_ago
+    ev += [bw.event("Microsoft.Compute/virtualMachines/start/action", bw.RID, (s - timedelta(minutes=2)).isoformat(),
+                    "Started", bw.CONSOLE_OID, {"appid": bw.CONSOLE_APP}, "s0"),
+           bw.event("Microsoft.Compute/virtualMachines/start/action", bw.RID, s.isoformat(), "Succeeded",
+                    bw.CONSOLE_OID, {"appid": bw.CONSOLE_APP}, "s0")]
+    for i, (who, ago, ran) in enumerate(rcs):
+        start = NOW - ago
+        ev += [e for e in bw.operation(bw.RC, bw.RID, "00:00:00", "00:00:01", "Succeeded", who, f"rc{i}")]
+        ev[-2]["eventTimestamp"] = start.isoformat()
+        ev[-1]["eventTimestamp"] = (start + ran).isoformat()
+    return ev
+
+
+def restored_jobs(restored_ago=timedelta(days=2)) -> list[dict]:
+    """BNC3b: the vault's jobs of the horizon — gondolin restored `restored_ago` (20 min of job)."""
+    end = NOW - restored_ago
+    return [{"name": "00000000-0000-4000-8000-0000000000ab",
+             "properties": {"entityFriendlyName": bw.VM, "operation": "Restore", "status": "Completed",
+                            "jobType": "AzureIaaSVMJob", "containerName": CONTAINER,
+                            "startTime": (end - timedelta(minutes=20)).isoformat(), "endTime": end.isoformat()}}]
+
+
 def _world(tmp_path, *, point_age_h: float = 50, restore_role=None, staging_assigned=False,
-           h0_rights=None, console_pair: dict = CONSOLE_ON_ITS_SP) -> bw.World:
+           h0_rights=None, console_pair: dict = CONSOLE_ON_ITS_SP, activity=None, jobs=None,
+           created: str | None = "2026-07-01T09:00:00+00:00", detail=None,
+           disk_created: datetime | None = NOW - timedelta(days=2, minutes=10)) -> bw.World:
     w = bw.World(tmp_path)
     _h0(w)
     point = (NOW - timedelta(hours=point_age_h)).isoformat()
@@ -223,6 +280,16 @@ def _world(tmp_path, *, point_age_h: float = 50, restore_role=None, staging_assi
         bw.rule("az", ["assignment", bw.ORO_OID], [_assign("Eregion Bench Injector", RG_SCOPE, 7)]),
         bw.rule("az", ["assignment", bw.CONSOLE_APP], console),
         bw.rule("az", ["definition", "Eregion Glorfindel Restore"], _definition("Eregion Glorfindel Restore", 2, restore_role)),
+        # BNC3b: the calm and « restore d'abord » — gondolin started 3 h ago, restored 2 days ago, no
+        # Run Command since.
+        bw.rule("az", ["activity-log", bw.RID], calm_activity() if activity is None else activity),
+        bw.rule("az", ["backup", "job", "list"], restored_jobs() if jobs is None else jobs),
+        bw.rule("az", ["vm", "show", bw.RID, "timeCreated"], json.dumps(created)),
+        bw.rule("az", ["backup", "job", "show"], IN_PLACE if detail is None else detail),
+        # the OS disk of gondolin, created during its restore of 2 days ago (REC1's proof)
+        bw.rule("az", ["vm", "show", bw.RID, "storageProfile.osDisk.managedDisk.id"], json.dumps(DISK)),
+        bw.rule("az", ["disk", "show", DISK, "timeCreated"],
+                json.dumps(disk_created.isoformat() if disk_created else None)),
     ]
     for n, (role, actions) in enumerate(ROLES.items(), 1):
         nid = {"Reader": 1, "Eregion Glorfindel Response": 5, "Eregion Glorfindel Session Drain": 6,
@@ -699,3 +766,343 @@ def test_the_point_of_the_bench_in_order_is_read_by_the_measured_form(tmp_path, 
     code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
     assert any(o.startswith("le point de restauration : le plus récent il y a") for o in _marked(out, bs.OK)), out
     assert code == 0, out
+
+
+# ── BNC3b (#770): the calm and « restore d'abord », verified ─────────────────
+
+bh = sys.modules["bench_history"]
+
+
+def _isolation_cycle(w: bw.World, verified_at: datetime, action_s=3, verified=True) -> None:
+    """The watch's `isolate_vm` cycle on gondolin, in its debug file on the fake Imladris."""
+    outcome = {"executed": True, "verified": verified, "verified_at": verified_at.isoformat()}
+    if action_s is not None:
+        outcome["action_s"] = action_s
+    w.write("runs/glorfindel/watch-20261101_debug.jsonl", json.dumps(
+        {"timestamp": (verified_at + timedelta(minutes=5)).isoformat(), "signal": {"resource_id": bw.RID},
+         "action": "isolate_vm", "reasoning": "never sent back", "outcome": outcome}) + "\n")
+
+
+def _lines_of(out: str, mark: str, start: str) -> list[str]:
+    return [x for x in _marked(out, mark) if x.startswith(start)]
+
+
+def test_a_bench_in_order_is_calm_and_restored(tmp_path, monkeypatch):
+    w = _world(tmp_path, **_IN_ORDER)
+    code, out, err = _preflight(w, arm_in_order(), monkeypatch)
+    assert code == 0, out + err
+    assert _lines_of(out, bs.OK, "le calme : vm-celebrimbor-gondolin démarrée il y a 3 h 0 min 0 s, aucune Run Command lue")
+    assert _lines_of(out, bs.OK, "restore d'abord : aucune Run Command destructive depuis son dernier restore (16:00:00 le 07/11)")
+    activity = [c for c in w.calls() if "activity-log" in c]
+    assert len(activity) == 1, "the activity log is read once, for both"
+    assert "--max-events" in activity[0] and str(bh.MAX_EVENTS) in activity[0]
+    start = activity[0][activity[0].index("--start-time") + 1]
+    assert start == (NOW - timedelta(days=bh.HORIZON_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+@pytest.mark.parametrize("started, rcs, left", [
+    (timedelta(minutes=4), (), "il reste 6 min"),
+    (timedelta(hours=3), (("human", timedelta(minutes=2), timedelta(seconds=30)),), "il reste 9 min"),
+    (timedelta(minutes=8), (("human", timedelta(minutes=1), timedelta(seconds=0)),), "il reste 9 min"),
+])
+def test_the_calm_not_held_is_a_failure_that_says_the_minutes_left(tmp_path, monkeypatch, started, rcs, left):
+    w = _world(tmp_path, **_IN_ORDER, activity=calm_activity(started, rcs))
+    code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
+    assert code == 1
+    (calm,) = _lines_of(out, bs.FAIL, "le calme : ")
+    assert left in calm and "un ✗, jamais une attente" in calm, calm
+
+
+def test_a_run_command_still_running_breaks_the_calm(tmp_path, monkeypatch):
+    ev = calm_activity()
+    ev += [bw.event(bw.RC, bw.RID, _at(minutes=20), "Started", bw.HUMAN_UPN, {"upn": bw.HUMAN_UPN}, "open")]
+    w = _world(tmp_path, **_IN_ORDER, activity=ev)
+    code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
+    assert code == 1
+    assert _lines_of(out, bs.FAIL, "le calme : vm-celebrimbor-gondolin sa dernière Run Command il y a 0 s")
+
+
+def test_a_vm_not_running_is_not_calm(tmp_path, monkeypatch):
+    w = _world(tmp_path, **_IN_ORDER)
+    w.rules.insert(0, bw.rule("az", ["get-instance-view", bw.RID], ["PowerState/deallocated"]))
+    code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
+    assert code == 1
+    assert _lines_of(out, bs.FAIL, "le calme : vm-celebrimbor-gondolin est deallocated")
+
+
+@pytest.mark.parametrize("how", ["fails", "cut"])
+def test_an_activity_log_unread_or_cut_is_never_calm_nor_restored(tmp_path, monkeypatch, how):
+    w = _world(tmp_path, **_IN_ORDER)
+    if how == "fails":
+        w.rules.insert(0, bw.rule("az", ["activity-log", bw.RID], rc=1, err="ERROR: (AuthorizationFailed) no\n"))
+    else:
+        monkeypatch.setattr(bh, "MAX_EVENTS", 2)
+    code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
+    assert code == 1
+    said = "la borne" if how == "cut" else "AuthorizationFailed"
+    (calm,) = _lines_of(out, bs.FAIL, "le calme : illisible")
+    (first,) = _lines_of(out, bs.FAIL, "restore d'abord : illisible")
+    assert said in calm and said in first, out
+    assert not _lines_of(out, bs.OK, "le calme") and not _lines_of(out, bs.OK, "restore d'abord")
+
+
+@pytest.mark.parametrize("who, said", [("human", "un humain"), ("console", "console"), ("unknown", "inconnu"),
+                                       ("orodruin", "Orodruin")])
+def test_a_run_command_since_the_last_restore_asks_for_a_restore_first(tmp_path, monkeypatch, who, said):
+    """Every caller counts — Orodruin's run too, its technique unread (no channel here)."""
+    w = _world(tmp_path, **_IN_ORDER, activity=calm_activity(rcs=((who, timedelta(hours=1), timedelta(seconds=20)),)))
+    code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
+    assert code == 1
+    (first,) = _lines_of(out, bs.FAIL, "restore d'abord : 1 Run Command sur la VM depuis son dernier restore")
+    assert said in first and "make bench-restore" in first, first
+
+
+def test_a_run_command_before_the_last_restore_is_settled(tmp_path, monkeypatch):
+    w = _world(tmp_path, **_IN_ORDER, activity=calm_activity(
+        rcs=(("orodruin", timedelta(days=3), timedelta(seconds=20)),)))
+    code, out, err = _preflight(w, arm_in_order(), monkeypatch)
+    assert code == 0, out + err
+    assert _lines_of(out, bs.OK, "restore d'abord : aucune Run Command destructive")
+
+
+def test_a_drain_of_imladris_at_a_verified_isolation_is_left_out(tmp_path, monkeypatch):
+    """§3.1, Q3c: the drain within [−2 min, +7 min] of the isolation's start (`verified_at` − `action_s`)."""
+    rc_ago = timedelta(hours=1)
+    w = _world(tmp_path, **_IN_ORDER, activity=calm_activity(rcs=(("h0", rc_ago, timedelta(minutes=5)),)))
+    _isolation_cycle(w, NOW - rc_ago + timedelta(seconds=2), action_s=3)
+    code, out, err = _preflight(w, arm_in_order(), monkeypatch)
+    assert code == 0, out + err
+    (ok,) = _lines_of(out, bs.OK, "restore d'abord : ")
+    assert "1 coupure(s) des sessions d'Imladris" in ok
+    reads = [c for c in w.calls() if c[0] == "ssh" and "history" in c[-1]]
+    assert len(reads) == 1 and "--network none" in reads[0][-1]
+
+
+@pytest.mark.parametrize("case", ["outside", "unverified", "no_action_s", "second_rc", "no_cycle"])
+def test_a_run_command_of_imladris_outside_a_drain_counts(tmp_path, monkeypatch, case):
+    rc_ago = timedelta(hours=1)
+    rcs = [("h0", rc_ago, timedelta(minutes=5))]
+    if case == "second_rc":
+        rcs.append(("h0", rc_ago - timedelta(minutes=1), timedelta(seconds=20)))
+    w = _world(tmp_path, **_IN_ORDER, activity=calm_activity(rcs=tuple(rcs)))
+    if case == "outside":
+        _isolation_cycle(w, NOW - rc_ago - timedelta(minutes=10))
+    elif case == "unverified":
+        _isolation_cycle(w, NOW - rc_ago, verified=False)
+    elif case == "no_action_s":
+        _isolation_cycle(w, NOW - rc_ago, action_s=None)
+    elif case == "second_rc":
+        _isolation_cycle(w, NOW - rc_ago + timedelta(seconds=2))
+    code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
+    assert code == 1
+    if case == "no_action_s":
+        (first,) = _lines_of(out, bs.FAIL, "restore d'abord : illisible")
+        assert "action_s" in first
+    elif case == "no_cycle":
+        # no cycle file of the watch at all: a quarantine unread is no quarantine absent (BNC3b review)
+        (first,) = _lines_of(out, bs.FAIL, "restore d'abord : illisible")
+        assert "aucun fichier de cycles" in first
+    else:
+        (first,) = _lines_of(out, bs.FAIL, "restore d'abord : 1 Run Command")
+        assert "Imladris" in first
+
+
+@pytest.mark.parametrize("jobs, created, said", [
+    ([], "2026-07-01T09:00:00+00:00", "la liste ne remonte pas jusqu'à son dernier restore"),
+    ([], None, "la liste ne remonte pas jusqu'à son dernier restore"),
+    ([{"name": "x", "properties": {"entityFriendlyName": bw.VM, "operation": "Restore", "status": "InProgress",
+                                   "startTime": "2026-11-09T15:40:00+00:00", "endTime": None}}],
+     "2026-07-01T09:00:00+00:00", "un restore de la VM est en cours"),
+])
+def test_no_restore_read_within_the_horizon_is_a_failure(tmp_path, monkeypatch, jobs, created, said):
+    w = _world(tmp_path, **_IN_ORDER, jobs=jobs, created=created)
+    code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
+    assert code == 1
+    (first,) = _lines_of(out, bs.FAIL, "restore d'abord : illisible")
+    assert said in first, first
+
+
+def test_a_vm_created_within_the_horizon_and_never_restored_is_read_from_its_creation(tmp_path, monkeypatch):
+    w = _world(tmp_path, **_IN_ORDER, jobs=[], created=_at(days=20))
+    code, out, err = _preflight(w, arm_in_order(), monkeypatch)
+    assert code == 0, out + err
+    assert _lines_of(out, bs.OK, "restore d'abord : aucune Run Command destructive depuis sa création")
+
+
+def test_the_jobs_unread_ask_for_a_restore_first(tmp_path, monkeypatch):
+    w = _world(tmp_path, **_IN_ORDER)
+    w.rules.insert(0, bw.rule("az", ["backup", "job", "list"], rc=1, err="ERROR: (Forbidden) no\n"))
+    code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
+    assert code == 1
+    (first,) = _lines_of(out, bs.FAIL, "restore d'abord : illisible")
+    assert "Forbidden" in first
+
+
+# Orodruin's journal in the channel (V-29) and its run's report, as `az storage blob` gives them.
+CHANNEL = "https://stexercises0000.blob.core.windows.net/exercises"
+ORO_RUN = "20261109T145900Z-a1b2"
+
+
+def _channel(w: bw.World, rc_ago: timedelta, technique: str, *, journal=True) -> None:
+    t = NOW - rc_ago
+    line = {"ts": (t - timedelta(seconds=40)).isoformat(), "run_id": ORO_RUN, "injector": "annatar",
+            "action": "run_command", "target": bw.RID, "detail": "drill", "outcome": "about_to_call"}
+    w.rules[:0] = [
+        bw.rule("terraform", ["~infra/orodruin", "channel_url"], CHANNEL),
+        bw.rule("az", ["storage", "blob", "list", "audit/"],
+                [{"name": f"audit/{ORO_RUN}.jsonl", "created": (t - timedelta(minutes=1)).isoformat(),
+                  "modified": (t + timedelta(minutes=2)).isoformat()}] if journal else []),
+        bw.rule("az", ["storage", "blob", "download", f"audit/{ORO_RUN}.jsonl"], "", file=json.dumps(line) + "\n"),
+        bw.rule("az", ["storage", "blob", "download", f"runs/{ORO_RUN}.json"], "",
+                file=json.dumps({"scenario": technique, "mitre": technique})),
+    ]
+
+
+@pytest.mark.parametrize("technique, journal, held", [("T1110.001", True, True), ("T1486", True, False),
+                                                      ("T9999", True, False), ("T1110.001", False, False)])
+def test_a_run_of_orodruin_is_left_out_only_when_its_technique_reads_as_non_destructive(
+        tmp_path, monkeypatch, technique, journal, held):
+    rc_ago = timedelta(hours=1)
+    w = _world(tmp_path, **_IN_ORDER, activity=calm_activity(rcs=(("orodruin", rc_ago, timedelta(seconds=20)),)))
+    _channel(w, rc_ago, technique, journal=journal)
+    code, out, err = _preflight(w, arm_in_order(), monkeypatch)
+    if held:
+        assert code == 0, out + err
+        (ok,) = _lines_of(out, bs.OK, "restore d'abord : ")
+        assert "1 Run Command d'un run non destructif d'Orodruin" in ok
+    else:
+        assert code == 1
+        assert _lines_of(out, bs.FAIL, "restore d'abord : 1 Run Command")
+    downloads = [c for c in w.calls() if c[:4] == ["az", "storage", "blob", "download"]]
+    assert all("--auth-mode" in c and "login" in c for c in downloads)
+    assert not [c for c in w.calls() if c[:3] == ["az", "storage", "blob"] and c[3] not in ("list", "download")]
+    assert not leaks(out)
+
+
+
+# ── BNC3b, review round 1 ─────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("detail, disk, said", [
+    (RESTORE_DISKS, None, "son type est « Restore disks », pas « Replace disks »"),
+    (NEW_VM, None, "son type est « Create new virtual machine », pas « Replace disks »"),
+    ({"properties": {"operation": "Restore", "status": "Completed"}}, None, "son type est « non dit »"),
+    (IN_PLACE, NOW - timedelta(days=30), "le disque OS de la VM n'a pas été créé pendant le job"),
+    (IN_PLACE, "unread", "le disque OS de la VM ne se lit pas"),
+])
+def test_a_restore_not_proven_in_place_is_no_last_restore(tmp_path, monkeypatch, detail, disk, said):
+    """A « Restore disks », a new VM, or a restore whose type or whose new OS disk does not read, leaves
+    the VM as it was: no anchor of « restore d'abord » — a ✗ that says what to do (read the job's bag
+    when `make bench-restore` has just succeeded), never a ✓ (BNC3b review)."""
+    w = _world(tmp_path, **_IN_ORDER, detail=detail,
+               disk_created=None if disk == "unread" else disk or NOW - timedelta(days=2, minutes=10))
+    code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
+    assert code == 1
+    (first,) = _lines_of(out, bs.FAIL, "restore d'abord : illisible")
+    assert "restore non prouvé en place" in first and said in first, first
+    assert "si make bench-restore vient de réussir, lire le sac du job" in first and "propertyBag" in first
+    shows = [c for c in w.calls() if c[:4] == ["az", "backup", "job", "show"]]
+    assert shows and all("-n" in c for c in shows)
+
+
+def test_a_restore_in_place_is_the_last_restore(tmp_path, monkeypatch):
+    w = _world(tmp_path, **_IN_ORDER)
+    code, out, err = _preflight(w, arm_in_order(), monkeypatch)
+    assert code == 0, out + err
+    assert _lines_of(out, bs.OK, "restore d'abord : aucune Run Command destructive depuis son dernier restore")
+
+
+def test_an_older_restore_in_place_is_the_anchor_when_the_newest_is_not(tmp_path, monkeypatch):
+    """A « Restore disks » after an in-place restore left the VM as it was: the runs since the in-place
+    one count — here, a human's Run Command between the two."""
+    jobs = restored_jobs() + [{"name": "00000000-0000-4000-8000-0000000000ac",
+                               "properties": {"entityFriendlyName": bw.VM, "operation": "Restore",
+                                              "containerName": CONTAINER,
+                                              "status": "Completed", "startTime": _at(hours=5),
+                                              "endTime": _at(hours=4, minutes=40)}}]
+    w = _world(tmp_path, **_IN_ORDER, jobs=jobs,
+               activity=calm_activity(rcs=(("human", timedelta(hours=6), timedelta(seconds=20)),)))
+    w.rules.insert(0, bw.rule("az", ["backup", "job", "show", "00000000-0000-4000-8000-0000000000ac"], RESTORE_DISKS))
+    code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
+    assert code == 1
+    assert _lines_of(out, bs.FAIL, "restore d'abord : 1 Run Command sur la VM depuis son dernier restore (16:00:00 le 07/11)")
+
+
+@pytest.mark.parametrize("case", ["write", "restore"])
+def test_a_write_or_a_restore_is_a_start_for_the_calm(tmp_path, monkeypatch, case):
+    if case == "write":
+        ev = calm_activity() + [bw.event("Microsoft.Compute/virtualMachines/write", bw.RID, _at(minutes=3),
+                                         "Succeeded", "", {}, "w9")]
+        w = _world(tmp_path, **_IN_ORDER, activity=ev)
+    else:
+        w = _world(tmp_path, **_IN_ORDER, jobs=restored_jobs(timedelta(minutes=4)),
+                   activity=calm_activity(swapped=False) + swap(timedelta(minutes=4)))
+    code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
+    assert code == 1
+    (calm,) = _lines_of(out, bs.FAIL, "le calme : ")
+    assert "il reste" in calm, calm
+
+
+def test_no_start_read_and_a_creation_unread_is_never_calm(tmp_path, monkeypatch):
+    """A gondolin recreated 3 min ago: no start/action; its creation unread — never a ✓ (BNC3b review)."""
+    ev = [e for e in calm_activity() if "start/action" not in e["operationName"]["value"]
+          and "virtualMachines/write" not in e["operationName"]["value"]]
+    w = _world(tmp_path, **_IN_ORDER, activity=ev, jobs=[], created=None)
+    w.rules.insert(0, bw.rule("az", ["vm", "show", bw.RID, "timeCreated"], rc=1, err="ERROR: (Forbidden) no\n"))
+    code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
+    assert code == 1
+    (calm,) = _lines_of(out, bs.FAIL, "le calme : illisible")
+    assert "timeCreated" in calm
+
+
+def test_a_run_of_orodruin_without_its_own_journal_line_is_destructive(tmp_path, monkeypatch):
+    """R2, non-destructive, journaled; then R1, a T1486 whose journal never reached the channel, within
+    15 min: R1 does not borrow R2's line — one line, one Run Command (BNC3b review)."""
+    r2, r1 = timedelta(hours=1), timedelta(hours=1) - timedelta(minutes=5)
+    w = _world(tmp_path, **_IN_ORDER, activity=calm_activity(rcs=(("orodruin", r2, timedelta(seconds=20)),
+                                                                  ("orodruin", r1, timedelta(seconds=20)))))
+    _channel(w, r2, "T1110.001")
+    code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
+    assert code == 1
+    (first,) = _lines_of(out, bs.FAIL, "restore d'abord : 1 Run Command")
+    assert "Orodruin" in first
+    assert bs.hms((NOW - r1).timestamp()) in first
+
+
+
+# ── BNC3b, review round 2 ─────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("key", ["Job Type ", "Job Type", "job  type"])
+def test_a_restore_of_rst1_is_proven_in_place_by_the_measured_job_type(tmp_path, monkeypatch, key):
+    """The bag measured on the bench (09/11, REC1b): « Job Type » « Replace disks », its key with a trailing
+    space or not; REC1's values, one source (glorfindel.recovery_watch.IN_PLACE_TYPES)."""
+    from glorfindel.recovery_watch import IN_PLACE_TYPES
+    assert bh.IN_PLACE_TYPES is IN_PLACE_TYPES
+    w = _world(tmp_path, **_IN_ORDER, detail=_detail("Replace disks", key))
+    code, out, err = _preflight(w, arm_in_order(), monkeypatch)
+    assert code == 0, out + err
+    assert _lines_of(out, bs.OK, "restore d'abord : aucune Run Command destructive depuis son dernier restore")
+
+
+def test_a_restore_of_another_vm_of_that_name_is_no_restore_of_this_one(tmp_path, monkeypatch):
+    """Two VMs of one name share a vault: a job whose container names another group is the other one's
+    (REC1's `_last_restore_job`)."""
+    jobs = restored_jobs()
+    jobs[0]["properties"]["containerName"] = f"iaasvmcontainerv2;rg-other;{bw.VM}"
+    w = _world(tmp_path, **_IN_ORDER, jobs=jobs)
+    code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
+    assert code == 1
+    (first,) = _lines_of(out, bs.FAIL, "restore d'abord : illisible")
+    assert "aucun restore de la VM lu" in first, first
+    assert not [c for c in w.calls() if c[:4] == ["az", "backup", "job", "show"]]
+
+
+def test_the_creation_after_restores_not_proven_says_why(tmp_path, monkeypatch):
+    """The anchor falls back on the VM's creation: the ✗ of « restore d'abord » says the restores not
+    counted, and what to read (BNC3b review)."""
+    w = _world(tmp_path, **_IN_ORDER, detail=RESTORE_DISKS, created=(NOW - timedelta(days=20)).isoformat(),
+               activity=calm_activity(rcs=(("human", timedelta(hours=1), timedelta(seconds=20)),)))
+    code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
+    assert code == 1
+    (first,) = _lines_of(out, bs.FAIL, "restore d'abord : 1 Run Command sur la VM depuis sa création")
+    assert "restore(s) non prouvé(s) en place" in first and "« Restore disks »" in first, first
+    assert "propertyBag" in first

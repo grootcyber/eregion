@@ -17,7 +17,16 @@ sub-command shipped in the image, in place of this script from the workstation's
               (runs/console|bot/manual_actions.jsonl, `release_isolation` on the VM after T0), and the
               lift held by the watch's recovery (~/.glorfindel/escalations.jsonl, `release_hold` on the
               VM after T0: its kind, its time and whether it is still pending — a card closed stays in
-              the file —, never its reason — BNC3a).
+              the file —, never its reason — BNC3a);
+  history     the VM's quarantines over every run (BNC3b, #770), for the clean point and the drains
+              of « restore d'abord »: each isolation of the VM — the watch's `isolate_vm` cycles in
+              every runs/glorfindel/*_debug.jsonl (executed, verified, partial; `verified_at`,
+              `action_s`), the console's and the bot's (manual_actions.jsonl) —, each lift — the
+              watch's `release_isolation` cycles (verified or not), a `release_isolation` or a
+              `reset` of the console or the bot with its status —, its isolation now, and the files
+              it could not read, a line that is not JSON, a mount of runs/console or runs/bot missing (said,
+              never skipped: a quarantine unread is no quarantine absent); and how many cycle files
+              it read — none is unreadable too, judged on the workstation.
 
 What it never sends back: a reasoning, a signal's raw content, a resource id (a VM is its name),
 an identifier of any kind. The caller masks again what it prints (bench_shared.scrub).
@@ -187,13 +196,93 @@ def run_view(run_id: str, vm: str) -> dict:
     return out
 
 
+def _number(value) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
+def _lines_said(path: Path, unread: list):
+    """`_lines`, but a file that can't be opened or read through is said in `unread` — and each line
+    that is not a JSON object too (a write cut, a full disk: BNC3b review), never skipped silently."""
+    bad = 0
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                try:
+                    doc = json.loads(line)
+                except ValueError:
+                    bad += 1
+                    continue
+                if isinstance(doc, dict):
+                    yield doc
+                else:
+                    bad += 1
+    except (OSError, UnicodeDecodeError) as e:
+        unread.append(f"{path.name}: {type(e).__name__}")
+    if bad:
+        unread.append(f"{path.name}: {bad} ligne(s) illisible(s)")
+
+
+def history(vm: str) -> dict:
+    """BNC3b: the VM's isolations and lifts over every run, as the workstation judges them (the
+    clean point, the drains). Times and flags only: never a reasoning, a rule, an id."""
+    unread: list[str] = []
+    isolations, lifts = [], []
+    files = sorted(glob.glob(str(RUNS / "glorfindel" / "*_debug.jsonl")))
+    for f in files:
+        for doc in _lines_said(Path(f), unread):
+            s = doc.get("signal") if isinstance(doc.get("signal"), dict) else {}
+            if _name(s.get("resource_id")) != vm:
+                continue
+            o = doc.get("outcome") if isinstance(doc.get("outcome"), dict) else {}
+            if doc.get("action") == "isolate_vm":
+                isolations.append({"timestamp": str(doc.get("timestamp") or ""), "source": "watch",
+                                   "executed": o.get("executed") is True, "verified": o.get("verified") is True,
+                                   "partial": o.get("partial") is True,
+                                   "verified_at": str(o.get("verified_at") or ""),
+                                   "action_s": _number(o.get("action_s"))})
+            elif doc.get("action") == "release_isolation":
+                lifts.append({"timestamp": str(doc.get("timestamp") or ""), "source": "watch",
+                              "verified_at": str(o.get("verified_at") or ""), "verified": o.get("verified") is True,
+                              "status": str(o.get("status") or "")})
+    for hand in ("console", "bot"):
+        if not (RUNS / hand).is_dir():
+            unread.append(f"runs/{hand} : absent (son montage manque)")
+            continue
+        path = RUNS / hand / "manual_actions.jsonl"
+        if not path.exists():
+            continue
+        for doc in _lines_said(path, unread):
+            s = doc.get("signal") if isinstance(doc.get("signal"), dict) else {}
+            if _name(s.get("resource_id")) != vm:
+                continue
+            o = doc.get("outcome") if isinstance(doc.get("outcome"), dict) else {}
+            if doc.get("action") == "isolate_vm":
+                isolations.append({"timestamp": str(doc.get("timestamp") or ""), "source": hand,
+                                   "executed": True, "verified": o.get("verified") is True, "partial": False,
+                                   "verified_at": str(o.get("verified_at") or ""),
+                                   "action_s": _number(o.get("action_s"))})
+            elif doc.get("action") in ("release_isolation", "reset"):
+                lifts.append({"timestamp": str(doc.get("timestamp") or ""), "source": hand,
+                              "verified_at": str(o.get("verified_at") or ""), "verified": o.get("verified") is True,
+                              "status": str(o.get("status") or "")})
+    return {"isolation": isolation(vm), "files": len(files), "unreadable": unread,
+            "isolations": sorted(isolations, key=lambda x: x["timestamp"]),
+            "lifts": sorted(lifts, key=lambda x: x["timestamp"])}
+
+
 def main(argv: list[str]) -> int:
-    if len(argv) < 2 or argv[0] not in ("preflight", "report"):
-        print(json.dumps({"error": "usage: preflight <vm> | report <vm> <run_id>"}))
+    if len(argv) < 2 or argv[0] not in ("preflight", "report", "history"):
+        print(json.dumps({"error": "usage: preflight <vm> | report <vm> <run_id> | history <vm>"}))
         return 2
     ask, vm = argv[0], argv[1].lower()
     if ask == "preflight":
         out = {"target": target(vm), "contract": contract()}
+    elif ask == "history":
+        out = history(vm)
     else:
         out = run_view(argv[2] if len(argv) > 2 else "", vm)
     print(json.dumps(out, default=str))
