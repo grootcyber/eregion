@@ -1538,6 +1538,19 @@
    "doc": "docs/operations.md"
   },
   {
+   "id": "c-paires-rotation",
+   "composant": "celebrimbor",
+   "poste": "c-construire",
+   "nom": "A pair's secret turned in one command, verified before the old one goes, and reminded in the deploy channel before it ends",
+   "etat": "main",
+   "release": "0.5",
+   "lots": [
+    "ROT1"
+   ],
+   "issue": 737,
+   "doc": "docs/operations.md"
+  },
+  {
    "id": "c-telephone",
    "composant": "celebrimbor",
    "poste": "c-acces",

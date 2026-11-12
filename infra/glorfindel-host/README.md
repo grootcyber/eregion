@@ -683,7 +683,29 @@ d'exercice non marqués (B2), qui n'ont rien à faire dans une observation.
 
   Publiée avant l'étape 1 avec un macOS rouge ou annulé, elle est refusée, et ce refus reste : `make glorfindel-host-cd-install`, puis `make glorfindel-host-cd-retry`.
   Publiée avant l'étape 1 avec un macOS resté en file sans runner, elle n'est pas refusée : l'ancien agent le compte « CI en cours » et attend. Après le `cd-install`, le passage suivant la déploie, sans `cd-retry`.
+- **ROT1 change l'agent** (#737 : `eregion_cd.py`, les rappels d'échéance des paires, ci-dessous). Deux voies, la première recommandée :
+  - **juste après la fusion de ROT1**, sans attendre la release : les rappels ne dépendent que de l'agent, pas de la version de Glorfindel qui tourne, et un agent installé depuis un commit plus récent que la release fait dire au CD « rien à mettre à jour ». C'est la voie qui donne de la marge pour le rappel de J-14 ;
+  - **après la release**, déployée par l'agent d'avant, qui ne lit pas les dates notées : `#deploy` demande alors la mise à jour.
+
+  Puis, une fois :
+  1. `make glorfindel-host-cd-install`, depuis un checkout de `main` à jour (`git switch main && git pull` ; le timer reste comme il était ; les unités ne changent pas) ;
+  2. `make glorfindel-host-cd-status`, où une ligne dit « rappels : aucune date de fin notée » (l'agent d'avant n'a pas cette ligne) ;
+  3. depuis le poste, `make pair-expiry-note PAIR=console` : la date du secret de la console, qui n'a pas été posé par `make pair-rotate`. Elle dit « ✓ Imladris : fin le … notée » et les dates des rappels.
 - **Le retirer** : `make glorfindel-host-cd-uninstall` (les unités ; `~/.eregion-cd/` reste).
+
+### Les rappels d'échéance des paires (ROT1, #737)
+
+Les secrets des trois paires du poste (la watch, la console, le bot) expirent ; Imladris n'a aucun droit sur Microsoft Graph (IR1a), il ne lit donc pas leurs dates. Le poste les lui donne : `make pair-rotate` à chaque rotation, `make pair-expiry-note` pour un secret déjà posé (`docs/operations.md`, « Faire tourner un secret »). Chacune écrit par ssh `~/.eregion-cd/expiry/<paire>.json` (0600) : le nom de la paire et une date, rien d'autre.
+
+À chaque passage du timer, avant la release, l'agent lit ces dates et poste dans `#deploy`, avec ta mention, à **J-14, J-7, J-1 et le jour même** (en jours du calendrier, UTC) : « 🔑 Le secret de la paire « console » expire dans 14 jours, le … », puis la commande exacte, `make pair-rotate PAIR=console`. Orange à J-14 et J-7, rouge ensuite. Les règles :
+- **une fois par palier**, même après un redémarrage : `~/.eregion-cd/reminders.json`, un fichier à part, que `make glorfindel-host-cd-retry` n'efface pas ;
+- **une date notée tard** envoie le palier où elle se trouve (« expire dans 5 jours »), jamais ceux qu'elle a passés ;
+- **une nouvelle date** (une rotation) repart de zéro ;
+- **un message que Discord refuse** repart au passage suivant, cinq minutes plus tard ;
+- **une date illisible** est dite dans le journal, jamais devinée ; `make glorfindel-host-cd-status` dit chaque date notée, ses paliers et ceux déjà envoyés ;
+- **une rotation faite hors de la commande n'est pas vue** : la date reste l'ancienne, jusqu'à `make pair-expiry-note`. `make azure-pairs-expiry` et le préflight du banc restent le filet.
+
+Le webhook est celui de `#deploy`, déjà dans `~/.eregion-cd/discord.env` : aucun secret nouveau, aucun timer nouveau, aucune identité nouvelle.
 
 ### L'attestation du harnais (H3, #324)
 
