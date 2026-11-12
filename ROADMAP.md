@@ -84,10 +84,11 @@ Tenue par l'Orchestre (RM1, 02/11). Une ligne par release qui se prépare : sa v
 
 | Version | Titre | Contenu | État |
 |---|---|---|---|
-| 0.5.10 | within reach | MOB1 (le banc piloté depuis le téléphone : `make bench-run`, `make bench-restore`, la console par le tunnel du téléphone, `make mobile-check`) ; LEV2 (les faits de la porte sur la carte d'isolement, pour information) et la conception LEV1 (la levée après un restore, seule et en probation sauf porte prouvée ouverte) ; MUT7 (les mutants fragiles mesurés chaque nuit), MUT9 (M33 attrapé quelle que soit la graine) | publiée (10/11) |
-| 0.5.11 | named and mapped | AWS1b, IDM1, IML1, MOB2, BNC2, DOS1, FLK1, MEN2, BNC1b, CI11, INF-FL, MUT10 | brouillon |
+| 0.5.11 | named and mapped | AWS1b, IDM1, IML1, MOB2, BNC2, DOS1, FLK1, MEN2, BNC1b, CI11, INF-FL, MUT10 | publiée (12/11) |
+| 0.5.12 | always heard | MOB3, PAIR1, CON-D, MEN3, ING1 (conception), ROT1, IML1b, IML1c, MEN4, I3N, BNC3a, DRN2, ING5, JUG1, LEV2b, JUG2, MSK2, HY2, I3Q (fusionnés sur `main` depuis `v0.5.11`) ; en route : JUG2b, BNC3b, MSK3, I3W | en préparation |
 | 0.5.x | — | G1 au banc ; MUT2, MAK2, OI4 | plus tard |
-| 0.6.0 | l'identité défendue | ID1 allumé et mesuré, IDI1 appliqué, R2 (une technique Stratus du plan de contrôle, dans l'abonnement de test dédié de R2b, `docs/design/stratus-cible.md` ; les techniques d'Entra en sont sorties, `planned`) vue par Glorfindel, IR1a (le plan et « Vérifier » sur la carte) — décidé par Jonathan le 05/11 ; R2c compris, visée le 13 ou le 16/11 (Jonathan, 09/11) | plus tard |
+| 0.6.0 | l'identité défendue | **recentrée (Jonathan, 12/11)** : ID1 allumé et mesuré ; IDI1 appliqué (fait) ; IR1a (le plan et « Vérifier » sur une **vraie carte d'identité**, provoquée par une technique publique sur l'identité de test, côté attaque — c'est **C2**, #199) ; NT1 (le geste `never_target` des identités protégées). Les techniques d'Entra de Stratus restent `planned`, hors R2b — en l'occurrence T1098 « Account Manipulation (Backdoor Managed Identity via Federated Credential) », `azure.persistence.backdoor-managed-identity-fic` (`docs/design/stratus-cible.md`) — et reviendront dans un lot dédié. **R2 passe en 0.6.1.** | plus tard |
+| 0.6.1 | — | R2 (l'adaptateur Stratus, une technique du plan de contrôle — T1651 « Cloud Administration Command (VM Run Command) » ou T1133 « External Remote Services (Bastion Shareable Link) » —, dans l'abonnement de test dédié de R2b, `docs/design/stratus-cible.md`), vue par Glorfindel ; l'audit du 06/11 (SEC-A1 à SEC-D) ; le drill hebdomadaire du banc | plus tard |
 
 ### Les lots
 
@@ -187,7 +188,7 @@ Le 28/10 : la **0.4.1** (échappement de la console, trois suites d'isolation), 
 
 **Ensuite, dans cet ordre** (décidé par Jonathan le 28/10) :
 1. **BL1** (#280) — la boucle avec la réponse exécutée sur le banc (`non_disruptive`, une technique et une panne dans la même campagne) : elle remplit le temps pour contenir et la part contenue seule, les deux indicateurs encore vides. **Préparé le 30/10** (`lot/bl1-boucle-reponse`, par un agent) : les deux indicateurs calculés depuis les traces d'une campagne (`analysis/containment.py` ; définitions et cas limites dans `docs/analysis.md`), publiés dans le rapport de campagne et la console ; la campagne déclarée (`annatar/campaign/declared/bl1-reponse.yaml` : `vm-shutdown`, puis T1136.001 par l'atomic, puis la reprise ; `annatar campaign plan --declared`) ; la watch qui répond proposée (Imladris avec le rôle « Response » sur le seul groupe du banc, le temps de la campagne) ; test de bout en bout sur le faux Azure, mutants M1770–M1789. **Reste, avec Jonathan** : la session de banc, `docs/banc-bl1.md` (~1 h 30 à 2 h).
-2. **ID1** (#281) — rendre réels AL1 et C2 : les journaux d'activité et d'Entra ID envoyés au workspace du banc, mesurés ; puis R2 (#79).
+2. **ID1** (#281) — rendre réels AL1 et C2 : les journaux d'activité et d'Entra ID envoyés au workspace du banc, mesurés ; puis R2 (#79), désormais visé pour la 0.6.1 (recentrage du 12/11, voir le tableau des releases).
 3. **DEP1** (#282) — litellm ≥ 1.95.0 avec le harnais ; puis B3 (#74) et B4 (#75).
 4. **J1** (#82) et **J2** (#83) — la preuve en production : détection seule, VM sentinelle.
 ---
