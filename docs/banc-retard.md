@@ -19,8 +19,8 @@ une requête refusée par Log Analytics se corrige ici, dans un lot relu.
 
 ## Les règles de la session
 
-- **Rien n'écrit sur Azure**, sauf le geste de RH9 (une Run Command qui écrit trois lignes dans le
-  journal de gondolin). Une requête `az monitor log-analytics query` est une lecture, sous le
+- **Rien n'écrit sur Azure**, sauf le geste de RH9 : une Run Command qui écrit trois lignes dans le
+  journal de gondolin, et, si elle est arrêtée, son démarrage (`make celebrimbor-start`). Une requête `az monitor log-analytics query` est une lecture, sous le
   `az login` du poste (Log Analytics Reader suffit). Au premier appel, `az` installe son extension
   `log-analytics`, sur le poste. Les requêtes sont gratuites : les tables du banc sont facturées à
   l'ingestion, pas à la lecture (la conception, §5).
@@ -67,21 +67,23 @@ séance glisse vers le 08/12, RH6 passe en premier.
 
 | Ordre | Quoi | Les lignes lues (UTC, par leur heure) | Partent vers | **Au plus tard** |
 |---|---|---|---|---|
-| 1 | les bornes | `AzureActivity`, 09/11 00:00 → 13/11 00:00 | 09/12 | **08/12** |
+| 1 | les bornes | `AzureActivity`, 02/11 00:00 → 13/11 00:00 | 02/12 ; 09/12 pour le 09/11 (si la table suit les 30 jours du workspace) | **01/12** pour la semaine de RH1 ; **08/12** pour le reste |
 | 2 | **RH5** | bree, 10/11 02:06 → 11/11 16:17 ; la contre-épreuve, 11/11 15:47 → 19:40 | 10/12 ; 11/12 | **09/12** ; 10/12 |
 | 3 | **RH3** | bree, 11/11 15:40 → 16:40 | 11/12 | **10/12** |
 | 4 | **RH4** | bree, 10/11 02:00 → 11/11 16:17 | 10/12 | **09/12** |
 | 5 | **RH6** | gondolin, 09/11 16:13 → 22:05 ; bree, 11/11 15:47 → 19:40 ; gondolin, 12/11 08:48 → 11:06 | 09/12 ; 11/12 ; 12/12 | **08/12** ; 10/12 ; 11/12 |
-| 6 | DH11 | `AzureActivity` de bree, 10/11 02:28 → 02:50 | 10/12 dans le workspace ; le journal d'activité, 90 jours | **09/12** (le workspace) |
+| 6 | DH11 | `AzureActivity` de bree, 10/11 02:28 → 02:50 ; les tâches du job de sauvegarde du 10/11 | 10/12, si la table suit les 30 jours du workspace ; le journal d'activité et le coffre, 90 jours au moins | **09/12** (une borne prudente) |
 | 7 | DH2 | les jobs du coffre, 01/11 → 12/11 | le coffre garde ses jobs | — |
 | 8 | RH1, RH2, RH12, RH7 | une semaine normale : 02/11 00:00 → 09/11 00:00 | 02/12 | **01/12** ; ensuite, une autre semaine sans quarantaine |
 | 9 | RH8 | `StorageBlobLogs`, 01/11 → 12/12 : ce qui est gardé | au fil de l'eau | vers le 01/12 : le plus de jours |
 | 10 | RH11 | une journée : 11/11 | 11/12 | 10/12 ; ensuite, un autre jour |
-| 11 | RH9 | un geste sur gondolin, un jour où elle tourne | — | — |
+| 11 | RH9 | un geste sur gondolin, un jour où elle tourne hors quarantaine | — | — |
 | 12 | RH10 | après ING3 (les règles), et après ING4 (la vue du retard) | — | — |
 
 « Partent vers » : la rétention compte 30 jours depuis l'heure de la ligne, et la purge n'est pas à
-la minute. « Au plus tard » laisse un jour de marge.
+la minute. « Au plus tard » laisse un jour de marge. Pour `AzureActivity`, la documentation d'Azure
+dit 90 jours au moins, même dans un workspace à 30 jours : les dates de la table sont celles des 30
+jours, des bornes prudentes. On ne parie pas sur les 90.
 
 **Les quarantaines de la période**, d'après les comptes rendus du banc (hors dépôt). L'étape 1 les
 relit au journal d'activité.
@@ -96,18 +98,20 @@ relit au journal d'activité.
 « ≈ » : déduite d'une autre heure (le cycle moins `action_s`, le message de Jonathan) ; l'étape 1 la
 donne.
 
-## 1. Les bornes : chaque écriture des cartes réseau, du 09/11 au 13/11
+## 1. Les bornes : chaque écriture des cartes réseau, du 02/11 au 13/11
 
 Isoler, c'est poser le NSG de quarantaine sur la carte réseau ; lever, c'est remettre l'ancien.
 Chaque isolement et chaque levée s'écrivent donc `networkInterfaces/write` sur la carte de la VM
 (`nic-celebrimbor-<vm>`, `infra/terraform/locals.tf`). Le corps des requêtes de RH4 à RH6 prend ces
-heures à la minute près.
+heures à la minute près. La lecture part du 02/11 : bree et gondolin sont en `non_disruptive` depuis le
+01/11, et une quarantaine que les comptes rendus ne disent pas, dans la semaine de RH1, RH2 et RH12,
+s'y lirait. Ses heures s'excluent alors de ces mesures (§7).
 
 ```zsh
 cat > ${RET}/bornes.kql <<'KQL'
-// Les bornes : chaque écriture des cartes réseau de bree et de gondolin, du 09/11 au 13/11, état par état.
+// Les bornes : chaque écriture des cartes réseau de bree et de gondolin, du 02/11 au 13/11, état par état.
 AzureActivity
-| where TimeGenerated >= datetime(2026-11-09T00:00:00Z) and TimeGenerated < datetime(2026-11-13T00:00:00Z)
+| where TimeGenerated >= datetime(2026-11-02T00:00:00Z) and TimeGenerated < datetime(2026-11-13T00:00:00Z)
 | where OperationNameValue =~ "MICROSOFT.NETWORK/NETWORKINTERFACES/WRITE"
 | extend Nic = extract(@"(?i)/networkinterfaces/([^/]+)$", 1, _ResourceId)
 | where Nic in~ ("nic-celebrimbor-bree", "nic-celebrimbor-gondolin")
@@ -119,8 +123,9 @@ kq bornes
 
 **Ce qu'on doit voir** : pour chaque quarantaine du tableau, une écriture à l'isolement et une à la
 levée, chacune en deux ou trois états (`Start`, `Accept`, `Success`, ou les mots de la table). Le
-12/11, une écriture de plus sur gondolin vers 10:3x : le tag posé puis retiré par LEV2 (le geste 9
-et son retour, `docs/banc-lev2.md`). **Si une heure diffère de plus d'une minute** de celle du tableau,
+12/11, deux écritures de plus sur gondolin vers 10:3x : le tag posé, puis retiré, par LEV2 (le geste 9
+et son retour, `docs/banc-lev2.md`). **Du 02/11 au 09/11**, toute paire d'écritures sur une carte est
+une quarantaine que les comptes rendus ne disent pas : on note son isolement et sa levée, pour le §7. **Si une heure diffère de plus d'une minute** de celle du tableau,
 on prend celle du journal (le premier `Success`) dans les appels `rh` ci-dessous. **Aucune ligne** :
 `AzureActivity` n'était pas encore versée au workspace ces jours-là. Alors on garde les heures du
 tableau, et on le note.
@@ -147,9 +152,11 @@ dit combien de lignes de chaque phase sont arrivées avant et après la levée.
 ```zsh
 cat > ${RET}/phases.kql <<'KQL'
 // Le corps des phases : les bornes (vm, isolated, lift, window_end) viennent devant, posées par rh.
-union withsource=Table
+union
     (Perf | where ObjectName in ("Logical Disk", "LogicalDisk") and CounterName == "Disk Write Bytes/sec"),
     Syslog, Heartbeat
+// La table de chaque ligne par sa colonne Type : withsource nommerait la parenthèse « union_arg0 ».
+| extend Table = Type
 | where TimeGenerated >= isolated - 30m and TimeGenerated < window_end
 | where _ResourceId endswith vm
 | extend Arrived = ingestion_time(), DelayS = datetime_diff('second', ingestion_time(), TimeGenerated)
@@ -210,9 +217,11 @@ cat > ${RET}/rh3.kql <<'KQL'
 // RH3 : par table et par tranche de 2 min de l'heure de la ligne, quand les lignes de bree sont arrivées (11/11, 15:40 → 16:40).
 let lift = datetime(2026-11-11T15:54:10Z);
 let reisolated = datetime(2026-11-11T16:17:40Z);
-union withsource=Table
+union
     (Perf | where ObjectName in ("Logical Disk", "LogicalDisk") and CounterName == "Disk Write Bytes/sec" and InstanceName == "/"),
     Syslog, Heartbeat
+// La table de chaque ligne par sa colonne Type : withsource nommerait la parenthèse « union_arg0 ».
+| extend Table = Type
 | where TimeGenerated >= datetime(2026-11-11T15:40:00Z) and TimeGenerated < datetime(2026-11-11T16:40:00Z)
 | where _ResourceId endswith "/vm-celebrimbor-bree"
 | extend Arrived = ingestion_time(), DelayS = datetime_diff('second', ingestion_time(), TimeGenerated)
@@ -262,9 +271,11 @@ en attend environ une par minute (la période exacte vient de RH12). `Syslog` n'
 cat > ${RET}/rh4-heure.kql <<'KQL'
 // RH4 (a) : de la quarantaine de bree (10/11 02:36 → 11/11 15:54:10), ce qui est arrivé, heure par heure de la ligne.
 let lift = datetime(2026-11-11T15:54:10Z);
-union withsource=Table
+union
     (Perf | where ObjectName in ("Logical Disk", "LogicalDisk") and CounterName == "Disk Write Bytes/sec" and InstanceName == "/"),
     Syslog, Heartbeat
+// La table de chaque ligne par sa colonne Type : withsource nommerait la parenthèse « union_arg0 ».
+| extend Table = Type
 | where TimeGenerated >= datetime(2026-11-10T02:00:00Z) and TimeGenerated < datetime(2026-11-11T16:17:00Z)
 | where _ResourceId endswith "/vm-celebrimbor-bree"
 | extend Arrived = ingestion_time()
@@ -278,9 +289,11 @@ cat > ${RET}/rh4-arrivee.kql <<'KQL'
 // RH4 (b) : les lignes de bree datées sous la quarantaine, par tranche de 10 min de leur arrivée (sans borne sur l'arrivée).
 let isolated = datetime(2026-11-10T02:36:15Z);
 let lift = datetime(2026-11-11T15:54:10Z);
-union withsource=Table
+union
     (Perf | where ObjectName in ("Logical Disk", "LogicalDisk") and CounterName == "Disk Write Bytes/sec" and InstanceName == "/"),
     Syslog, Heartbeat
+// La table de chaque ligne par sa colonne Type : withsource nommerait la parenthèse « union_arg0 ».
+| extend Table = Type
 | where TimeGenerated > isolated + 1m and TimeGenerated < lift - 1m
 | where _ResourceId endswith "/vm-celebrimbor-bree"
 | extend Arrived = ingestion_time()
@@ -330,9 +343,11 @@ disque) et celles d'après le démarrage du disque restauré.
 ```zsh
 cat > ${RET}/tranches.kql <<'KQL'
 // Le corps des tranches : les lignes datées sous la quarantaine, par 5 min de leur heure ; les bornes devant, posées par rh.
-union withsource=Table
+union
     (Perf | where ObjectName in ("Logical Disk", "LogicalDisk") and CounterName == "Disk Write Bytes/sec"),
     Syslog, Heartbeat
+// La table de chaque ligne par sa colonne Type : withsource nommerait la parenthèse « union_arg0 ».
+| extend Table = Type
 | where TimeGenerated > isolated + 1m and TimeGenerated < lift - 1m
 | where _ResourceId endswith vm
 | extend Arrived = ingestion_time()
@@ -381,9 +396,16 @@ workspace). Elles se reportent au dossier d'une isolation (#727, son §9), pas �
 
 **L'hypothèse** (`dossier-isolation.md`, §9) : la coupure des sessions de bree, le 10/11 (la Run
 Command de 02:36:22 à 02:43:36), attend derrière l'extension de sauvegarde (une Run Command après
-l'autre). **Fenêtre** : 02:28 à 02:50 le 10/11. Dans le workspace, ces lignes partent vers le 10/12 :
-**au plus tard le 09/12**. Ensuite, le journal d'activité lui-même les garde 90 jours (la
+l'autre). **Fenêtre** : 02:28 à 02:50 le 10/11. Dans le workspace, ces lignes partent vers le 10/12
+si `AzureActivity` suit les 30 jours du workspace (la documentation dit 90 jours au moins, à ne pas
+parier) : **au plus tard le 09/12**. Le journal d'activité lui-même les garde 90 jours (la
 documentation d'Azure, `dossier-isolation.md`, §9.1).
+
+**Deux sources, et la seconde est la bonne.** L'extension de sauvegarde que le coffre déclenche ne
+s'écrit probablement pas comme une opération ARM : le relevé du 11/11 ne trouve qu'une opération Run
+Command sur bree de 01:30 à 04:30, et les enfants que H7 a lus sont des écritures ARM
+(`docs/banc-lev2.md`). Le journal d'activité dit donc la Run Command, et rarement l'extension. Le
+job de sauvegarde du coffre, lui, dit ses tâches et leurs heures, dont « Take Snapshot ».
 
 ```zsh
 cat > ${RET}/dh11.kql <<'KQL'
@@ -407,14 +429,25 @@ az monitor activity-log list --resource-id ${VMID} --start-time 2026-11-10T02:28
   --query "[].{at:eventTimestamp, op:operationName.value, status:status.value, kind:resourceType.value}" -o table | tee ${RET}/dh11-journal.txt
 ```
 
-**Elle tient si** une opération de l'extension de sauvegarde (`…/extensions/…`, un nom comme
-`VMSnapshotLinux`) court de 02:33 environ jusque juste avant l'aboutissement de la Run Command
-(02:43:36) : la Run Command est `Accepted` dès 02:36:24, et n'aboutit qu'après la fin de l'extension.
-**Elle tombe si** aucune opération d'extension n'apparaît dans la fenêtre, ou si sa fin ne précède pas
-l'aboutissement de la coupure. **Si elle tombe** : F5a dit autrement la durée de la coupure, et DRN1
-et SID1 tirent d'ailleurs leurs délais (`dossier-isolation.md`, §9). **Reporter** : sur #727,
-chaque opération (son nom, sa sorte de ressource, ses heures et ses états), puis la ligne DH11 du §9
-du dossier, par l'Orchestre.
+Les tâches du job de sauvegarde de bree du 10/11 (celui de 02:33:19). Le nom du job, un
+identifiant, reste dans une variable, jamais affiché ; on ne lit que les tâches et leurs heures :
+
+```zsh
+JOB=$(az backup job list -g rg-celebrimbor -v rsv-celebrimbor-erebor --start-date 10-11-2026 --end-date 11-11-2026   --query "[?contains(properties.entityFriendlyName, 'bree') && properties.operation=='Backup' && starts_with(properties.startTime, '2026-11-10')].name | [0]" -o tsv)
+az backup job show -g rg-celebrimbor -v rsv-celebrimbor-erebor -n ${JOB}   --query "properties.extendedInfo.tasksList[].{task:taskId, start:startTime, end:endTime, status:status}" -o table | tee ${RET}/dh11-taches.txt
+```
+
+**Elle tient si** la tâche « Take Snapshot » a commencé avant 02:36:22 (le départ de la Run Command)
+et finit juste avant son aboutissement, à 02:43:36 : la Run Command, `Accepted` dès 02:36:24, n'aboutit
+qu'après l'instantané. Une opération d'extension au journal d'activité, aux mêmes heures, le
+confirme ; son absence ne dit rien.
+**Elle tombe si** « Take Snapshot » finit avant 02:36:22 (la coupure n'avait rien à attendre), ou
+bien après 02:43:36 (elle n'a pas attendu). **Illisible**, jamais « tombe », si le job ne rend pas
+ses tâches (ou pas d'heures) et que le journal d'activité ne montre aucune opération d'extension :
+DH11 reste ouverte, et on le note. **Si elle tombe** : F5a dit autrement la durée de la coupure, et
+DRN1 et SID1 tirent d'ailleurs leurs délais (`dossier-isolation.md`, §9). **Reporter** : sur #727,
+chaque tâche du job (son nom, ses heures, son état) et chaque opération du journal (son nom, sa sorte
+de ressource, ses heures et ses états), puis la ligne DH11 du §9 du dossier, par l'Orchestre.
 
 ### DH2 — un job de sauvegarde planifié se lit-il comme celui d'un instantané ?
 
@@ -446,17 +479,24 @@ nuits de bree et leur opération, puis la ligne DH2 du §9 du dossier, par l'Orc
 - RH2 : celui de `Syslog` tient sous la fenêtre `N` = 10 min. L'en-tête des règles dit 480 s sans
   mesure (`detection_rules.yaml:25`).
 
-**Fenêtre** : une semaine normale, du 02/11 00:00 au 09/11 00:00 : avant le T1486 du 09/11, sans
-quarantaine connue des comptes rendus. Les données partent vers le 02/12 : **au plus tard le 01/12**.
+**Fenêtre** : une semaine normale, du 02/11 00:00 au 09/11 00:00 : avant le T1486 du 09/11. Les
+comptes rendus du banc ne couvrent pas cette semaine, et bree et gondolin y sont en
+`non_disruptive` : les bornes (étape 1) disent si une quarantaine y tombe. **Si oui**, ses heures, de
+l'isolement à 2 h après la levée, vont dans `skip`, une par heure, dans `rh1.kql` et `rh2.kql`
+(par exemple `let skip = dynamic(["2026-11-05 14", "2026-11-05 15"]);`), et rh1 et rh2 se
+relancent : un rattrapage de quarantaine n'est pas un temps normal. Les données partent vers le 02/12 : **au plus tard le 01/12**.
 Ensuite, une autre semaine, qui évite les quarantaines du tableau des échéances.
 
 ```zsh
 cat > ${RET}/rh1.kql <<'KQL'
 // RH1 : le retard de Perf en temps normal, par VM, du 02/11 au 09/11.
+// Les heures exclues, « AAAA-MM-JJ HH » : celles d'une quarantaine lue aux bornes, jusqu'à 2 h après sa levée.
+let skip = dynamic([]);
 Perf
 | where TimeGenerated >= datetime(2026-11-02T00:00:00Z) and TimeGenerated < datetime(2026-11-09T00:00:00Z)
 | extend Vm = case(_ResourceId endswith "/vm-celebrimbor-bree", "bree", _ResourceId endswith "/vm-celebrimbor-gondolin", "gondolin", "")
 | where Vm != ""
+| where format_datetime(bin(TimeGenerated, 1h), "yyyy-MM-dd HH") !in (skip)
 | extend DelayS = datetime_diff('second', ingestion_time(), TimeGenerated)
 | summarize Rows = count(), NoArrival = countif(isnull(DelayS)), P50 = percentile(DelayS, 50), P95 = percentile(DelayS, 95),
             P99 = percentile(DelayS, 99), Max = max(DelayS), Over120 = countif(DelayS > 120), Over600 = countif(DelayS > 600)
@@ -465,10 +505,13 @@ KQL
 kq rh1
 cat > ${RET}/rh2.kql <<'KQL'
 // RH2 : le retard de Syslog en temps normal, par VM et par facilité, du 02/11 au 09/11.
+// Les heures exclues, « AAAA-MM-JJ HH » : celles d'une quarantaine lue aux bornes, jusqu'à 2 h après sa levée.
+let skip = dynamic([]);
 Syslog
 | where TimeGenerated >= datetime(2026-11-02T00:00:00Z) and TimeGenerated < datetime(2026-11-09T00:00:00Z)
 | extend Vm = case(_ResourceId endswith "/vm-celebrimbor-bree", "bree", _ResourceId endswith "/vm-celebrimbor-gondolin", "gondolin", "")
 | where Vm != ""
+| where format_datetime(bin(TimeGenerated, 1h), "yyyy-MM-dd HH") !in (skip)
 | extend DelayS = datetime_diff('second', ingestion_time(), TimeGenerated)
 | summarize Rows = count(), NoArrival = countif(isnull(DelayS)), P50 = percentile(DelayS, 50), P95 = percentile(DelayS, 95),
             P99 = percentile(DelayS, 99), Max = max(DelayS), Over480 = countif(DelayS > 480), Over600 = countif(DelayS > 600)
@@ -492,8 +535,8 @@ kq rh1-rh2-heures
 
 **Comment lire les heures en retard.** gondolin s'éteint chaque soir à 23 h UTC et redémarre à la
 main : le premier envoi après un démarrage est un rattrapage, pas un temps normal (#105, en commentaire
-de `ransomware-disk-write`). Une heure en retard qui suit un démarrage se note à part. Une autre est
-un temps normal, et elle compte.
+de `ransomware-disk-write`). Une heure en retard qui suit un démarrage, ou une levée des bornes, se
+note à part ; une heure de quarantaine va dans `skip`. Une autre est un temps normal, et elle compte.
 
 **RH1 tient si** `P95` de `Perf` reste sous 120 s pour chaque VM, et qu'aucune heure normale n'a de
 ligne au-delà de 600 s. **Elle tombe si** `P95` passe 120 s, ou si des heures normales dépassent
@@ -547,7 +590,8 @@ kq rh12-heartbeat
 ```
 
 **Comment lire.** `MaxGapS` de `Heartbeat` sur bree dit si bree s'est tue. S'il dépasse quelques
-minutes, l'agent ou la VM étaient arrêtés : ce n'est pas un silence de `Syslog`, et on le note. Pour
+minutes, l'agent ou la VM étaient arrêtés, ou bree était en quarantaine (les bornes le disent) : ce
+n'est pas un silence de `Syslog`, et on le note. Pour
 gondolin, `MaxGapS` est une nuit éteinte : seuls `P50GapS` et `P99GapS` comptent.
 
 **Elle tient si** `P50GapS` de `Heartbeat` donne une période nette (de l'ordre de 60 s), et si les
@@ -603,19 +647,23 @@ cat > ${RET}/rh8.kql <<'KQL'
 StorageBlobLogs
 | where TimeGenerated >= datetime(2026-11-01T00:00:00Z) and TimeGenerated < datetime(2026-12-12T00:00:00Z)
 | extend DelayS = datetime_diff('second', ingestion_time(), TimeGenerated),
-         Write = OperationName in ("PutBlob", "PutBlock", "PutBlockList")
+         Write = OperationName in ("PutBlob", "PutBlock", "PutBlockList"),
+         // Un appelant privé (une VM, comme la règle le lit), dit par un booléen : l'adresse n'est jamais rendue.
+         Private = CallerIpAddress matches regex @"^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)"
 | summarize Rows = count(), Days = dcount(bin(TimeGenerated, 1d)), P50 = percentile(DelayS, 50), P95 = percentile(DelayS, 95),
-            Max = max(DelayS), Over300 = countif(DelayS > 300) by Write
+            Max = max(DelayS), Over300 = countif(DelayS > 300) by Write, Private
 KQL
 kq rh8
 ```
 
 **Une erreur « Failed to resolve table »**, ou aucune ligne : aucun blob n'a été journalisé dans le
 workspace pendant ces jours. RH8 reste ouverte, et un T1041 au banc la mesurera (une attaque : un
-geste de Jonathan, hors de cette page). **Elle tient si** `P95` des écritures reste sous 300 s.
-**Elle tombe si** des écritures passent 300 s. **Si elle tombe** : ING3 la couvre déjà (la sélection
-à l'arrivée), et il faut le dire (la conception, §10). **Reporter** : sur #758, pour les écritures et
-pour le reste, `Rows`, `Days`, `P50`, `P95`, `Max`, `Over300`. Puis la ligne RH8 du §10, par
+geste de Jonathan, hors de cette page). **Elle tient si** `P95` des écritures
+d'un appelant privé (`Write` et `Private`, ce que lit la règle) reste sous 300 s. Les autres lignes
+(la plateforme, le journal des flux) se notent à part. **Elle tombe si** ces écritures passent
+300 s. **Si elle tombe** : ING3 la couvre déjà (la sélection
+à l'arrivée), et il faut le dire (la conception, §10). **Reporter** : sur #758, pour chaque couple
+(`Write`, `Private`), `Rows`, `Days`, `P50`, `P95`, `Max`, `Over300`. Puis la ligne RH8 du §10, par
 l'Orchestre.
 
 ## 11. RH11 — `ingestion_time()` est rempli, et le SDK rend une heure
@@ -674,7 +722,9 @@ Sinon, un utilisateur de la VM (root, ou un autre : `/dev/log` est ouvert à tou
 datée dans le passé, au-delà de l'horizon, ou dans le futur, au-delà de la fin de la fenêtre de l'API
 (« maintenant + 1 min », la conception, §9).
 
-**Le geste**, de Jonathan, non destructif. Une Run Command sur gondolin écrit trois lignes dans
+**Le geste**, de Jonathan, non destructif, **un jour où gondolin tourne hors quarantaine** : une Run
+Command de l'opérateur sous la quarantaine retiendrait la levée de REC1 (le compte rendu du 09/11, hors
+dépôt). Une Run Command sur gondolin écrit trois lignes dans
 `/dev/log`, chacune avec une date écrite à la main : deux au format RFC 3164, une au format RFC 5424.
 `logger` date toujours à l'instant et ne prend pas une date à la main : c'est pourquoi on passe par
 `python3`.
@@ -684,10 +734,11 @@ datée dans le passé, au-delà de l'horizon, ou dans le futur, au-delà de la f
 - La Run Command de l'opérateur ne fait pas de carte : `run-command-by-glorfindel-outside-isolation`
   ne regarde que l'identité de Glorfindel (`docs/operations.md`).
 - Le retour en arrière : rien, trois lignes de journal.
-- Le coût : gondolin allumée quelques minutes.
+- Le coût : gondolin allumée quelques minutes. La démarrer (`make celebrimbor-start`) est une
+  écriture sur Azure, la seule de la page avec la Run Command.
 
 ```zsh
-make celebrimbor-start VM=gondolin          # si elle est arrêtée ; elle s'éteint à 23 h UTC
+make celebrimbor-start VM=gondolin          # si elle est arrêtée ; elle s'éteint à 23 h UTC ; jamais si elle est isolée
 cat > ${RET}/rh9.sh <<'SH'
 #!/bin/sh
 # RH9 : trois lignes daemon.notice dans /dev/log, datées à la main (3 h avant, 30 min après, 3 h avant). Rien d'autre.
@@ -738,9 +789,16 @@ vaut à peu près 0 si l'agent date à la réception, −10 800 s (3 h) s'il pre
 « future », si elle est datée à sa date écrite, n'apparaît qu'à la seconde lecture : le `--timespan`
 s'arrête à maintenant. `EventTime` dit ce que la table garde de la date écrite.
 
-**Elle tient si** les trois lignes ont `SkewS` sous la minute, en valeur absolue. **Elle tombe si**
-une ligne a `SkewS` près de −10 800 s ou de +1 800 s. **Si elle tombe** (la conception, §9, §10) :
-root date ses lignes. L'horizon (une ligne plus vieille que 2 h n'est jamais jugée) et la fin de la
+**Ce que la mesure couvre.** Les trois lignes passent par `/dev/log`, ouvert à tout utilisateur de la
+VM : journald, puis rsyslog (`imuxsock`), puis l'agent. Elle dit ce que ce chemin fait d'une date
+écrite à la main. Elle ne dit rien de root, qui a d'autres chemins : la configuration de rsyslog,
+l'entrée locale de l'agent, l'horloge de la VM.
+
+**Elle tient si** les trois lignes ont `SkewS` sous la minute, en valeur absolue : par le chemin de
+`/dev/log`, un utilisateur ne date pas ses lignes. Cela ne ferme pas la ligne du §9 de la conception
+(« il écrit une ligne `Syslog` datée dans le passé ») : root y reste ouvert. **Elle tombe si** une
+ligne a `SkewS` près de −10 800 s ou de +1 800 s. **Si elle tombe** (la conception, §9, §10) : tout
+utilisateur de la VM date ses lignes. L'horizon (une ligne plus vieille que 2 h n'est jamais jugée) et la fin de la
 fenêtre de l'API se contournent, et cela se dit au modèle de menace. **Reporter** : sur #758, pour
 chaque ligne, `Form`, `Claimed`, `SkewS` et `DelayS`, et si `EventTime` porte la date écrite. Puis la
 ligne RH9 du §10, par l'Orchestre.

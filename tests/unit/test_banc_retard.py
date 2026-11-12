@@ -52,7 +52,17 @@ def _section_of(rh: str) -> str:
 
 def _queries(text: str) -> list[str]:
     """The KQL of the page: each body written by a `<<'KQL'` heredoc."""
-    return re.findall(r"<<'KQL'\n(.*?)\nKQL\n", text, re.S)
+    return [body for _, body in _named_queries(text)]
+
+
+def _named_queries(text: str) -> list[tuple[str, str]]:
+    """Each KQL heredoc with the name of its file (`cat > ${RET}/<name>.kql <<'KQL'`)."""
+    return re.findall(r"cat > \$\{RET\}/([\w-]+)\.kql <<'KQL'\n(.*?)\nKQL\n", text, re.S)
+
+
+# The bodies whose bounds come before them, written by a shell line: `rh <body> <name> <vm> <dates>`
+# for the quarantines, the moment the lines were sent for RH9.
+SHARED_BODIES = ("phases", "tranches")
 
 
 def test_the_design_lists_twelve_hypotheses():
@@ -72,10 +82,19 @@ def test_every_hypothesis_of_the_design_has_its_section_its_measure_and_its_verd
 @pytest.mark.parametrize("rh", [f"RH{n}" for n in range(1, 12 + 1) if n not in (9, 10)])
 def test_every_read_on_kept_data_has_its_query_and_an_absolute_window(rh):
     body = _section_of(rh)
-    queries = _queries(body)
+    queries = _named_queries(body)
     assert queries, f"{rh} : aucune requête"
-    # In the query (`datetime(2026-…)`), or in the bounds `rh` puts before a shared body.
-    assert re.search(r"\b2026-\d\d-\d\dT\d\d:\d\d:\d\dZ", body), f"{rh} : aucune date absolue"
+    for name, query in queries:
+        # Each query bounds its own lines by a date, or is a shared body whose `rh` calls give them.
+        assert "datetime(2026-" in query or name in SHARED_BODIES, f"{rh} : {name} sans date absolue\n{query}"
+    for name in SHARED_BODIES:
+        if any(n == name for n, _ in queries):
+            calls = re.findall(rf"^rh {name} +[\w-]+ +vm-celebrimbor-\w+((?: +2026-\d\d-\d\dT\d\d:\d\d:\d\dZ){{3}})$", body, re.M)
+            assert calls, f"{rh} : le corps {name} sans ses bornes"
+    # A shared body used in another section has its calls here.
+    for name in SHARED_BODIES:
+        if re.search(rf"^rh {name} ", body, re.M):
+            assert re.findall(rf"^rh {name} .*2026-\d\d-\d\dT", body, re.M)
 
 
 def test_rh9_is_a_gesture_whose_read_is_anchored_on_the_moment_it_was_sent():
@@ -105,7 +124,8 @@ def test_the_four_first_come_first_in_the_order_the_retention_imposes():
     first = {rh: next(i for i, r in enumerate(rows) if f"**{rh}**" in r) for rh in ("RH5", "RH3", "RH4", "RH6")}
     assert first["RH5"] < first["RH3"] < first["RH4"] < first["RH6"]
     # The others come after the four.
-    later = [i for i, r in enumerate(rows) if re.search(r"\bRH(1|2|7|8|11|12)\b", r)]
+    # By the « Quoi » cell: a deadline may name another hypothesis.
+    later = [i for i, r in enumerate(rows) if re.search(r"\bRH(1|2|7|8|11|12)\b", r.split("|")[2])]
     assert later and min(later) > first["RH6"]
     # The deadlines the design gives: 09/12 (the T1486 of 09/11), 10/12 (bree's quarantine), 11/12 (the lift).
     for date in ("09/12", "10/12", "11/12"):
@@ -130,6 +150,34 @@ def _stages(query: str) -> list[str]:
     return [s.strip() for s in re.split(r"\n\s*\|", "\n" + code) if s.strip()]
 
 
+def test_every_query_ends_by_choosing_what_it_shows():
+    """The last stage that shapes the rows (past an `order by`, a `where` on the result) is a
+    `project`, a `summarize` or a `print`: a query that ends on a filter returns every column."""
+    for name, query in _named_queries(TEXT):
+        stages = _stages(query)
+        while stages and re.match(r"(order|sort) by\b|where\b", stages[-1]):
+            stages.pop()
+        assert stages and re.match(r"(project|summarize|print)\b", stages[-1]), f"{name} :\n{query}"
+
+
+def test_no_query_shows_every_column():
+    for name, query in _named_queries(TEXT):
+        for stage in _stages(query):
+            if re.match(r"(project|summarize)\b", stage):
+                assert "*" not in stage, f"{name} : « * »\n{stage}"
+
+
+def test_a_union_names_each_line_s_table_by_its_type():
+    """`withsource` names a parenthesised argument « union_arg0 », not its table: a union with one
+    reads the table from `Type`, the column every table carries."""
+    for name, query in _named_queries(TEXT):
+        code = "\n".join(line.split("//", 1)[0] for line in query.splitlines())
+        if re.search(r"union\b[^\n]*\n?\s*\(", code):
+            assert "withsource" not in code, f"{name} : withsource sur une parenthèse"
+            if re.search(r"\bTable\b", code):
+                assert "extend Table = Type" in code, f"{name} : la table de la ligne n'est pas lue"
+
+
 def test_no_query_returns_an_identifier():
     """A projected or grouped-by column of the page is never one that names a resource or a caller."""
     queries = _queries(TEXT)
@@ -149,9 +197,22 @@ def test_no_query_returns_an_identifier():
 
 
 def test_the_az_reads_show_no_identifier():
-    """The `--query` of an az read keeps fields that name nothing."""
+    """The `--query` of an az read keeps fields that name nothing; one that reads an id or a job's
+    name puts it in a variable, never on the screen."""
     for projection in re.findall(r'--query "(\[[^"]*)"', TEXT):
         assert "resourceId" not in projection and "caller" not in projection.lower(), projection
+    commands = re.sub(r"\\\n\s*", " ", TEXT).splitlines()
+    reading_an_id = [c for c in commands if re.search(r'--query (id\b|"[^"]*\]\.name\b)', c)]
+    assert len(reading_an_id) >= 2
+    for command in reading_an_id:
+        assert re.match(r"\s*[A-Z]+=\$\(", command), command
+
+
+def test_dh11_never_reads_an_absence_as_a_refutation():
+    joined = next(body for head, body in _sections().items() if "DH2" in head and "DH11" in head)
+    dh11 = joined.split("### DH11", 1)[1].split("### DH2", 1)[0]
+    assert "tasksList" in dh11 and "Take Snapshot" in dh11
+    assert "**Illisible**, jamais « tombe »" in dh11
 
 
 def test_the_page_carries_no_real_identifier():
