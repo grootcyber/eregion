@@ -84,6 +84,7 @@ Tenue par l'Orchestre (RM1, 02/11). Une ligne par release qui se prépare : sa v
 
 | Version | Titre | Contenu | État |
 |---|---|---|---|
+| 0.5.10 | within reach | MOB1 (le banc piloté depuis le téléphone : `make bench-run`, `make bench-restore`, la console par le tunnel du téléphone, `make mobile-check`) ; LEV2 (les faits de la porte sur la carte d'isolement, pour information) et la conception LEV1 (la levée après un restore, seule et en probation sauf porte prouvée ouverte) ; MUT7 (les mutants fragiles mesurés chaque nuit), MUT9 (M33 attrapé quelle que soit la graine) | publiée (10/11) |
 | 0.5.11 | named and mapped | AWS1b, IDM1, IML1, MOB2, BNC2, DOS1, FLK1, MEN2, BNC1b, CI11, INF-FL, MUT10 | publiée (12/11) |
 | 0.5.12 | always heard | MOB3, PAIR1, CON-D, MEN3, ING1 (conception), ROT1, IML1b, IML1c, MEN4, I3N, BNC3a, DRN2, ING5, JUG1, LEV2b, JUG2, MSK2, HY2, I3Q, JUG2b (fusionnés sur `main` depuis `v0.5.11`) ; en route : BNC3b, MSK3, I3W | en préparation |
 | 0.5.x | — | G1 au banc ; MUT2, MAK2, OI4 | plus tard |
