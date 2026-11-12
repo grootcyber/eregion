@@ -508,7 +508,9 @@ NEEDED = {
     "watch": {"AZURE_SUBSCRIPTION_ID", "ANTHROPIC_API_KEY", "GLORFINDEL_LLM_MODEL", "GLORFINDEL_READ_ONLY",
               "EREGION_EXERCISE_CHANNEL", "EREGION_WATCH_CHANNEL", "EREGION_ANALYSIS_MODEL",
               "DISCORD_CHANNEL_ID", "GLORFINDEL_DISCORD_BOT", "GLORFINDEL_WEBHOOK_URL",
-              "GLORFINDEL_DISCOVERY_RETENTION_H"},
+              "GLORFINDEL_DISCOVERY_RETENTION_H",
+              # JUG2: the bot mute, the watch's webhook pings this role for an action taken alone.
+              "DISCORD_PING_ROLE"},
     # SEC1: the names the console answers under, besides the loopback ones.
     "war-room": {"EREGION_CONSOLE_TOKEN", "GLORFINDEL_WARROOM_TOKEN", "EREGION_CONSOLE_HOSTS",
                  "AZURE_SUBSCRIPTION_ID", "GLORFINDEL_READ_ONLY",

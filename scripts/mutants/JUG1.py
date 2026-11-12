@@ -43,12 +43,13 @@ MUTANTS = [
      "        return      # JUG1: the action's announcement says it, once (notify_action) — never twice\n",
      ""),
     ("M4917", "the announcement's key dropped: said again for the same action after a restart (JUG1)", ESC,
-     '        return vm_notices.say(resource_id, key or f"action:{uuid.uuid4()}", EXECUTED_TYPE, title, text,\n',
-     '        return vm_notices.say(resource_id, f"action:{uuid.uuid4()}", EXECUTED_TYPE, title, text,\n'),
+     # JUG2: its anchors follow the fallback's code (the key drawn once, the bot alive or mute).
+     '    key = key or f"action:{uuid.uuid4()}"\n',
+     '    key = f"action:{uuid.uuid4()}"\n'),
     ("M4918", "the notices' store refused, the bot configured and the card written: the action said in "
      "the channel too, the bot posting its card in the thread (JUG1)", ESC,
-     '        if not os.environ.get("GLORFINDEL_WEBHOOK_URL", "") or (discord_bot_configured() and card):\n',
-     '        if not os.environ.get("GLORFINDEL_WEBHOOK_URL", ""):\n'),
+     '        if bot and card and not why:\n            return "none"\n',
+     ""),
     ("M4919", "the notices' store refused, no bot: the autonomous action announced nowhere (JUG1)", ESC,
      '        vm_notices.post_webhook(payload, key)\n        return "webhook"\n',
      '        return "none"\n'),
@@ -93,12 +94,12 @@ MUTANTS = [
 MUTANTS += [
     ("M4940", "a full disk with the bot configured: neither card nor notice written, and the webhook "
      "silent — the action alerts nowhere (JUG1 review)", ESC,
-     '        if not os.environ.get("GLORFINDEL_WEBHOOK_URL", "") or (discord_bot_configured() and card):\n',
-     '        if not os.environ.get("GLORFINDEL_WEBHOOK_URL", "") or discord_bot_configured():\n'),
+     '        if bot and card and not why:\n',
+     '        if bot and not why:\n'),
     ("M4941", "the card of an action taken alone pings nobody: a VM whose thread is open isolated in "
      "silence (JUG1, Jonathan 12/11)", BOT,
      '            ping = ({"content": f"<@&{self.ping_role}>", "allowed_mentions": self._role_mentions()}\n'
-     "                    if self.ping_role else {})\n",
+     '                    if self.ping_role and not vm_notices.relayed_ping(esc.get("action_keys")) else {})\n',
      "            ping = {}\n"),
     ("M4942", "the role pinged twice for one action: the thread opened with « Incident opened », then the "
      "card's ping (JUG1)", BOT,

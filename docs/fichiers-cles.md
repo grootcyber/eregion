@@ -202,7 +202,11 @@ glorfindel/
                           dite d'après l'état (`drain_closure_due` tant qu'elle n'est pas dite), jamais d'après une notice
   vm_notices.py         → DRN2 : ce que la watch dit d'une VM hors d'une carte (la clôture d'une coupure ; JUG1 :
                           l'annonce de chaque action autonome), une fois par clé : dans le fil Discord de la VM
-                          (le bot) ou par le webhook ; `vm_notices.jsonl`
+                          (le bot) ou par le webhook ; `vm_notices.jsonl` ; JUG2 : le bot muet (son battement),
+                          l'annonce d'une action prise seule par le webhook, le rôle pingué (`say`, `relay_pass`)
+  bot_beat.py           → JUG2 : le battement du bot Discord (`bot_heartbeat.json`) — écrit à chaque tour par
+                          le bot, lu par la watch : absent, illisible, daté du futur ou de plus de 3 min
+                          (`MUTE_AFTER_S`), le bot est muet ; ne décide que du chemin d'une annonce
   reassert_quarantine.py → I1F, I1S, ISU : les NSG de quarantaine modifiés, lus à chaque passe quel que soit
                           l'état local — _report_altered_quarantines, quarantine_alerts.json (sorti de
                           reassert.py par RB1, sans changement de comportement ; L2Q : un changement qui revient est redit)
@@ -548,10 +552,17 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 (`EREGION_RULE_…`) à la place de `${NOM}` dans la requête, sinon la règle livrée
   bot_posted.json             → IDs escalades déjà postées (évite doublons au redémarrage du bot)
   bot_threads.json            → resource_id → thread_id Discord (persistance entre redémarrages)
-  bot_notices_posted.json     → DRN2 : clés des notices de la watch postées par le bot dans un fil (une fois)
+  bot_notices_posted.json     → DRN2 : clés des notices de la watch postées par le bot dans un fil (une fois) ;
+                                JUG2 : lu aussi par la watch (une annonce que le bot n'a pas postée se replie)
+  bot_heartbeat.json          → JUG2 : le battement du bot (`{"at": …}`, à chaque tour, effacé à son arrêt,
+                                SIGTERM compris ; un SIGKILL le laisse vieillir) ;
+                                la watch le lit avant d'annoncer une action prise seule — muet (absent ou de
+                                plus de 3 min), le webhook la dit ; forgé frais, il ne fait que retarder (10 min au
+                                plus), jamais la carte
   vm_notices.jsonl            → DRN2 : les notices de la watch (la clôture d'une coupure des sessions ; JUG1 : l'annonce
                                 des actions autonomes, sous la clé de l'action), une par clé,
-                                les 500 dernières ; `via` : bot, webhook ou none ; ne dit que « dite ou non »,
+                                les 500 dernières ; `via` : bot, webhook ou none (JUG2 : `relayed`, l'annonce
+                                repliée sur le webhook, le bot muet) ; ne dit que « dite ou non »,
                                 jamais une issue (la console et le bot l'écrivent aussi, jusqu'à FS1f)
   rule_status.json            → état de polling des règles (last_poll, last_match, match_count, last_error ;
                                 `expected_sudo` : count, last, origin_count, origin_confirmed — ADM1, COR1, COR2 ;
