@@ -95,7 +95,9 @@ def _flock(path: Path, say):
         yield
         return
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
+        # Where a link leads, made (HY2: the suite's throwaway HOME links ~/.cache/chroma to the
+        # real one, which may not be there yet; through a dangling link, mkdir fails).
+        Path(os.path.realpath(path.parent)).mkdir(parents=True, exist_ok=True)
         lock = open(path, "a")
     except OSError as exc:         # said, never a verdict
         say(f"ChromaDB's model: the lock {path} could not be taken ({type(exc).__name__}: {exc}); "

@@ -14,6 +14,18 @@ def _beside(name: str):
     return module
 
 
+# HY2 (#769): HOME a throwaway folder before any module of the repository is imported — the paths
+# they compute at their import (Path.home() / ".glorfindel" / …), a forgotten redirection's, an undone
+# monkeypatch's all lie under it (tests/unit/home_sandbox.py). Removed by the process that made it.
+home_sandbox = _beside("home_sandbox")
+try:
+    SANDBOX = home_sandbox.enter()
+except home_sandbox.Early as exc:
+    raise pytest.UsageError(str(exc)) from None
+if SANDBOX.made:
+    import atexit
+    atexit.register(home_sandbox.leave, SANDBOX)
+
 hypothesis_seed = _beside("hypothesis_seed")
 
 
@@ -257,17 +269,9 @@ def stop_rule_pollers(isolated_rule_status):
         poller.stop(join_s=2.0)
 
 
-@pytest.fixture(scope="session", autouse=True)
-def no_write_outside_the_sandbox():
-    """Where ~/.glorfindel doesn't exist when the suite starts (CI), it must not exist
-    when it ends: any write outside the sandbox fails the run. On an operator's machine
-    the watch writes there too, so only the CI case can be told apart."""
-    from pathlib import Path
-    real = Path.home() / ".glorfindel"
-    existed = real.exists()
-    yield
-    if not existed and real.exists():
-        pytest.fail(f"the test suite wrote outside its sandbox: {sorted(p.name for p in real.iterdir())}")
+def pytest_unconfigure(config):
+    """HY2: the throwaway HOME removed at the end of the session, by the process that made it."""
+    home_sandbox.leave(SANDBOX)
 
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -291,6 +295,14 @@ _WRITE_EVENTS = {
     "sqlite3.connect": ((0,), ()),          # it may create the file
 }
 _writes_in_the_repo: list[tuple[str, str]] = []
+# HY2: the operator's ~/.glorfindel — as given and resolved —, its photograph at the conftest's
+# import, and the writes the test process makes there.
+_STORE_ROOTS = home_sandbox.roots_of(SANDBOX.store)
+_store_before: dict = {}
+_store_existed = [False]
+_writes_in_the_store: list[tuple[str, str]] = []
+_store_watching = [False]
+_store_checked = [False]
 _watching = [False]
 _before: set[str] = set()
 _checked = [False]
@@ -336,9 +348,15 @@ def _audit(event, args):
     """HY1: the writes the test process makes inside the repository, as they happen, with the
     test that made them. Python's audit hook sees them whatever the code (open, pathlib,
     os, shutil, sqlite3), relative paths included."""
-    if not _watching[0]:
+    if not (_watching[0] or _store_watching[0]):
         return
     for path in _written(event, args):
+        if _store_watching[0]:   # HY2: the operator's ~/.glorfindel, wherever the suite runs
+            mine = home_sandbox.inside(path, _STORE_ROOTS)
+            if mine is not None:
+                _writes_in_the_store.append((mine, os.environ.get("PYTEST_CURRENT_TEST", "outside a test").split(" (")[0]))
+        if not _watching[0]:
+            continue
         rel = _in_the_repo(path)
         if rel is not None:
             _writes_in_the_repo.append((rel, os.environ.get("PYTEST_CURRENT_TEST", "outside a test").split(" (")[0]))
@@ -380,9 +398,78 @@ def _what_was_written() -> str | None:
             + "; ".join(found + [f"{n} (new at the root)" for n in left]))
 
 
+def _arm_store():
+    """HY2: the operator's ~/.glorfindel photographed (names, sizes, dates), its writes watched."""
+    shot = home_sandbox.photograph(SANDBOX.store)
+    _store_existed[0] = shot is not None
+    _store_before.clear()
+    _store_before.update(shot or {})
+    _writes_in_the_store.clear()
+    _store_checked[0] = False
+    _store_watching[0] = True
+
+
+def _what_the_store_shows() -> tuple[str | None, str | None]:
+    """Stops the watch of the operator's ~/.glorfindel: (what fails the run, what is only said)."""
+    _store_watching[0] = False
+    _store_checked[0] = True
+    store = SANDBOX.store
+    after = home_sandbox.photograph(store)
+    seen = sorted({f"{rel} ({test})" for rel, test in _writes_in_the_store})
+    if seen:
+        return f"the test suite wrote in the operator's {store}: " + "; ".join(seen), None
+    if not _store_existed[0]:
+        if after is not None:
+            return f"the test suite wrote outside its sandbox: {sorted(after)}", None
+        return None, None
+    changed = home_sandbox.changes(_store_before, after)
+    if not changed:
+        return None, None
+    if home_sandbox.a_glorfindel_lives(_store_before, after):
+        return None, (f"{store} changed while the suite ran, and a Glorfindel of this workstation "
+                      "writes there (a heartbeat moved): not a verdict — " + "; ".join(changed))
+    return (f"the test suite changed the operator's {store} (no Glorfindel of this workstation "
+            "wrote there: its heartbeats did not move): " + "; ".join(changed)), None
+
+
 # Armed when this conftest is imported, before pytest imports a test module: what a module
 # writes at collection is seen too.
 _arm()
+_arm_store()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def nothing_written_in_the_operators_store():
+    """HY2 (#769): no test writes in the operator's real ~/.glorfindel — even where it exists, the
+    workstation's own Glorfindel writing there. HOME is a throwaway folder (home_sandbox.py): a
+    write there now takes a path computed from the real HOME (a module's constant computed before
+    this conftest, a path written in full, `EREGION_TEST_REAL_HOME` read). Two checks, from this
+    conftest's import to the end of the session:
+
+    - in the test process (each xdist worker its own), every write under the real ~/.glorfindel
+      as HY1's audit sees one (_audit: the same events, the same blind spots — a C library's
+      writes once a file is open, a path relative to a dir_fd): fails the run, the file and the
+      test said. What a live watch or bot writes is never seen: only this process's writes are;
+    - the photograph of the folder (names, sizes, dates — never a content) before and after,
+      whatever wrote it (a subprocess of a test too): where the folder did not exist (CI), a
+      folder there at the end fails the run (HY1's check, kept); where it did, a file created,
+      changed or removed fails the run when none of a live Glorfindel's heartbeats moved
+      (home_sandbox.HEARTBEATS: the watch's, its copy for the injectors, the bot's), and is only
+      said (a warning) when one did.
+
+    The choice, and its limit: a live Glorfindel is told by its heartbeats, rewritten every few
+    seconds. While one runs, a subprocess's write is said, not failed (a photograph cannot tell
+    who wrote). A hand on the workstation while the suite runs (`glorfindel unblock`), or the
+    watch writing another file in a session too short for a heartbeat to move, fails it wrongly;
+    another session's suite that writes there fails this one too. Where no test ran,
+    pytest_sessionfinish checks instead."""
+    yield
+    failed, said = _what_the_store_shows()
+    if said:
+        import warnings
+        warnings.warn(pytest.PytestWarning(said))
+    if failed:
+        pytest.fail(failed)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -456,9 +543,15 @@ def chroma_model():
 
 @pytest.hookimpl(trylast=True)
 def pytest_sessionfinish(session, exitstatus):
+    if not _store_checked[0]:   # HY2: no test ran, the store's fixture did not
+        _fail_the_session(session, _what_the_store_shows()[0])
     if _checked[0]:
         return
     found = _what_was_written()
+    _fail_the_session(session, found)
+
+
+def _fail_the_session(session, found: str | None) -> None:
     if found:
         reporter = session.config.pluginmanager.get_plugin("terminalreporter")
         if reporter is not None:
