@@ -11,8 +11,7 @@ _T = "tests/unit/test_bot_fallback.py"
 MUTANTS = [
     ("M4970", "the bot stopped, the action still left to it: announced nowhere until it comes back, and "
      "lost after 24 h (JUG2)", NOTICES,
-     # JUG2b: its anchor follows the closures' fallback (RELAY_KINDS).
-     '    why = relay_reason() if notice["via"] == "bot" and kind in RELAY_KINDS else ""\n',
+     '    why = relay_reason() if notice["via"] == "bot" and kind == ACTION_KIND else ""\n',
      '    why = ""\n'),
     ("M4971", "a heartbeat hours old reads alive: a bot stopped long ago still takes the announcements "
      "(JUG2)", BEAT,

@@ -739,7 +739,7 @@ def test_a_webhook_that_never_answers_holds_neither_the_watch_s_beat_nor_its_rea
 
     def never(url, json=None, timeout=None):
         entered.set()
-        release.wait(5)          # never answers — 5 s at most: a loop it held fails, never hangs
+        release.wait(30)         # never answers — 30 s at most: a loop it held fails, never hangs
         answered.set()
         raise requests.ConnectionError("no answer")
     monkeypatch.setattr(requests, "post", never)
@@ -794,16 +794,82 @@ def test_one_relay_pass_at_a_time(azure, bot_set):
     assert vm_notices.relay_pass() == 3
 
 
-def test_a_pass_stops_at_a_webhook_unreachable(azure, bot_set, answers):
-    """No answer: the pass stops there — the rest back to the bot, said at the next pass."""
+def _name_unresolved():
     import requests
+    from urllib3.exceptions import MaxRetryError, NameResolutionError
+    return requests.ConnectionError(MaxRetryError(None, "/api/webhooks/123/fake-token",
+                                                  NameResolutionError("discord.com", None, OSError("EAI_AGAIN"))))
+
+
+def _connection_refused():
+    import requests
+    from urllib3.exceptions import MaxRetryError, NewConnectionError
+    return requests.ConnectionError(MaxRetryError(None, "/api/webhooks/123/fake-token",
+                                                  NewConnectionError(None, "Connection refused")))
+
+
+def _cut_while_reading():
+    import requests
+    from urllib3.exceptions import ProtocolError
+    return requests.ConnectionError(ProtocolError("Connection aborted.", ConnectionResetError(104, "reset")))
+
+
+@pytest.mark.parametrize("make,unsent", [
+    (lambda: __import__("requests").ConnectTimeout("connect timeout"), True),
+    (_name_unresolved, True),
+    (_connection_refused, True),
+    (lambda: __import__("requests").ReadTimeout("read timeout"), False),
+    (_cut_while_reading, False),
+    (lambda: TimeoutError("no answer within 10 s"), False),           # the deadline: ambiguous
+])
+def test_what_left_nothing_is_told_from_what_may_have_been_delivered(bot_set, monkeypatch, make, unsent):
+    import requests
+    exc = make()
+
+    def raising(url, json=None, timeout=None):
+        raise exc
+    monkeypatch.setattr(requests, "post", raising)
+    assert vm_notices._post({"content": "x"}, "k", NATIVE) == ("unsent" if unsent else "unreachable")
+
+
+@pytest.mark.parametrize("make", [lambda: __import__("requests").ConnectTimeout("unreachable"),
+                                  _name_unresolved, lambda: __import__("requests").ReadTimeout("lost")])
+def test_a_pass_stops_at_a_webhook_unreachable(azure, bot_set, answers, make):
+    """No answer, or nothing left: the pass stops there — the rest back to the bot, said at the next
+    pass."""
     f, c = azure
     _three_actions_left_to_the_bot(c)
-    answers.append(requests.ConnectTimeout("unreachable"))
+    answers.append(make())
     assert vm_notices.relay_pass() == 0
     assert len(_relayed(bot_set)) == 1                                  # one tried, the others kept
     assert [n["via"] for n in vm_notices._read()] == ["bot"] * 3
     assert vm_notices.relay_pass() == 3 and len(_relayed(bot_set)) == 4
+
+
+def test_a_pass_stops_at_a_webhook_that_refuses(azure, bot_set, answers):
+    """A 404 (a webhook deleted): the next posts would go to the same one — the pass stops there."""
+    f, c = azure
+    _three_actions_left_to_the_bot(c)
+    answers.append(_Answer(404))
+    assert vm_notices.relay_pass() == 0 and len(_relayed(bot_set)) == 1
+    assert [n["via"] for n in vm_notices._read()] == ["bot"] * 3
+    assert vm_notices.relay_pass() == 3 and len(_relayed(bot_set)) == 4
+
+
+def test_a_network_cut_counts_no_try(azure, bot_set, answers):
+    """Five passes where nothing left (the connection not made in time, the name not resolved): no
+    try counted — the network back, the webhook says the announcement, its ping with it."""
+    import requests
+    answers.extend([requests.ConnectTimeout("network cut")] * 3 + [_name_unresolved(), _connection_refused()])
+    f, c = azure
+    _respond(c, _ransomware(), "isolate_vm")                            # the first post: nothing left
+    for _ in range(4):
+        assert vm_notices.relay_pass() == 0
+    assert len(_relayed(bot_set)) == 5 and "tries" not in _announcement()
+    assert vm_notices.relay_pass() == 1                                 # a 204: said
+    msgs = _relayed(bot_set)
+    assert len(msgs) == 6 and msgs[-1]["content"].startswith(f"<@&{ROLE}> ")
+    assert _announcement()["relayed"]["sent"] is True
 
 
 def test_a_pass_starts_no_post_once_its_budget_spent(azure, bot_set, monkeypatch):
@@ -864,11 +930,14 @@ def test_the_bound_said_in_the_doc_holds_and_ends_before_a_mark_is_taken_back():
 # ── JUG2b: the tries of a notice are capped ───────────────────────────────────────────────────
 
 @pytest.mark.parametrize("lost", ["read timeout", "502"])
-def test_a_webhook_whose_answer_is_lost_says_it_three_times_at_most(azure, bot_set, answers, lost):
+def test_a_webhook_whose_answer_is_lost_says_it_three_times_at_most(azure, bot_set, answers, lost, caplog):
     """Delivered perhaps, its answer lost (a read timeout, a 502 from the edge): said again, its
-    ping with it, `RELAY_MAX_TRIES` times at most — then the bot's, no new webhook; its card, at the
-    bot's return, pings."""
+    ping with it, `RELAY_MAX_TRIES` times at most — then the bot's, no new webhook, said once in the
+    log; its card, at the bot's return, pings."""
+    import logging
+
     import requests
+    caplog.set_level(logging.WARNING, logger=vm_notices.log.name)
     answers.extend([requests.ReadTimeout("answer lost") if lost == "read timeout" else _Answer(502)] * 6)
     f, c = azure
     _respond(c, _ransomware(), "isolate_vm")                            # the first try
@@ -881,6 +950,8 @@ def test_a_webhook_whose_answer_is_lost_says_it_three_times_at_most(azure, bot_s
     assert n["via"] == "bot" and n["tries"] == vm_notices.RELAY_MAX_TRIES and "relayed" not in n
     later = datetime.now(timezone.utc) + timedelta(seconds=vm_notices.CONFIRM_S + 60)
     assert vm_notices.relay_pass(later) == 0 and len(_relayed(bot_set)) == 3
+    capped = [r for r in caplog.records if "says it no more" in r.getMessage()]
+    assert len(capped) == 1 and n["key"] in capped[0].getMessage()
     [card] = _cards()
     _beat(0)
     threads, said = _bot_returns(card)
@@ -890,7 +961,7 @@ def test_a_webhook_whose_answer_is_lost_says_it_three_times_at_most(azure, bot_s
 @pytest.mark.parametrize("answer", [_Answer(404), _Answer(429, retry_after=30)])
 def test_a_refusal_counts_no_try(azure, bot_set, answers, answer):
     """A 404, a long 429: nothing delivered, nothing to ping twice — no try counted; the passes go on
-    trying (a webhook back from a rate limit says it)."""
+    trying, one post each (a webhook back from a rate limit says it)."""
     answers.extend([answer] * 5)
     f, c = azure
     _respond(c, _ransomware(), "isolate_vm")
@@ -969,12 +1040,15 @@ CLOSURES = {
 
 @pytest.mark.parametrize("outcome", sorted(CLOSURES))
 def test_the_bot_mute_every_closure_goes_once_by_the_webhook_without_a_ping(bot_set, outcome):
-    """Drained too: each closure of a cut said once in the channel by Discord's own endpoint, no
-    mention at all; the bot back never posts it."""
+    """Drained too: each closure of a cut recorded for the bot — never posted from the reassertion —
+    then said once in the channel by the next pass, Discord's own endpoint, no mention at all; the
+    bot back never posts it."""
     from glorfindel import drain_watch
     say, head = CLOSURES[outcome]
     say()
     say()                                                               # said again: nothing more
+    assert bot_set == [] and [n["via"] for n in vm_notices._read()] == ["bot"]
+    assert vm_notices.relay_pass() == 1
     [msg] = _relayed(bot_set)
     assert len(bot_set) == 1 and msg["content"].startswith(head) and "<@&" not in msg["content"]
     assert msg["allowed_mentions"] == {"parse": [], "roles": []}
@@ -986,6 +1060,30 @@ def test_the_bot_mute_every_closure_goes_once_by_the_webhook_without_a_ping(bot_
     _beat(0)                                                            # the bot back
     threads: dict = {}
     assert asyncio.run(_bot(threads)._post_notices(None)) == 0 and threads == {}
+
+
+def test_a_closure_never_waits_for_the_webhook(bot_set, monkeypatch):
+    """JUG2b review: a closure is said from the reassertion, under its VM's lock — the bot mute and a
+    webhook that never answers, `_say_closed` returns at once, nothing posted: the next relay pass,
+    in its own thread, says it."""
+    import threading
+
+    import requests
+    entered, release = threading.Event(), threading.Event()
+
+    def never(url, json=None, timeout=None):
+        entered.set()
+        release.wait(30)
+        return _Answer()
+    monkeypatch.setattr(requests, "post", never)
+    try:
+        CLOSURES["drained"][0]()
+        assert not entered.is_set()                                     # no POST started
+        [n] = vm_notices._read()
+        assert n["via"] == "bot" and "relayed" not in n
+    finally:
+        release.set()
+        _join("webhook-post")
 
 
 def test_the_bot_alive_a_closure_stays_in_the_vm_s_thread(bot_set):

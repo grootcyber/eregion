@@ -67,28 +67,35 @@ A mark never noted sent (the watch stopped mid-send, its note refused) is taken 
 **A cut's closure falls back too** (JUG2b, #768, decided by Jonathan on 12/11): every closure of a
 session cut (DRN2, kind `drain_closed`: drained, refused, sessions left open, never ended, no longer
 followed — a drained one too) goes the same way as an action's announcement (`RELAY_KINDS`): the same
-beat, the same passes, a webhook that fails gives it back to the bot, once per closure. **Never a
-ping**: only an action taken alone pings (JUG1). It decides nothing either: the cut's outcome is the
-one read on Azure, in the isolation's state.
+beat, the same passes, a webhook that fails gives it back to the bot, once per closure. But `say`
+never posts it: said from the reassertion, under its VM's lock, it is recorded for the bot, and the
+bot mute, the next `relay_pass` says it — within a minute, in its own thread (JUG2b review: a
+webhook never holds the lock, an isolation of the same VM nor the reassertion). **Never a ping**:
+only an action taken alone pings (JUG1). It decides nothing either: the cut's outcome is the one read
+on Azure, in the isolation's state.
 
 **The fallback never holds the watch** (JUG2b). The watch runs `relay_pass` in a thread of its own
 (glorfindel/cli.py, `_relay_notices`), one pass at a time (`_PASS`, and the thread not started again
 while one runs): its loop — `runs/` read, its heartbeat, the reassertion, the TTL, « Verify » — never
 waits for a webhook. Each POST is bounded: `CONNECT_TIMEOUT_S` to connect, `READ_TIMEOUT_S` to read,
 and `POST_DEADLINE_S` for the whole of it, the name's resolution included (`_send`: the POST in a
-thread its caller waits for). A pass stops at the first webhook rate limited or unreachable (no
-answer, or none within the deadline): the rest goes back to the bot, or to the next pass; and it
-starts no post once it has run `RELAY_PASS_BUDGET_S`. A pass therefore lasts at most the budget and
+thread its caller waits for). A pass stops at the first webhook rate limited, refused (a 4xx: a
+webhook deleted refuses the next ones too), unreachable or that nothing reached (`STOPS_THE_PASS`):
+the rest goes back to the bot, or to the next pass; and it starts no post once it has run
+`RELAY_PASS_BUDGET_S`. A pass therefore lasts at most the budget and
 one notice — 0.5 s of spacing, a POST, a short 429's wait, a second POST: some 86 s, in its own
-thread. **The tries of a notice are capped**: a post that went without an answer saying it was
-refused (unreachable, a 5xx) may have been delivered — counted (`tries`, beside `relayed`, which goes
-when the notice goes back to the bot; a mark taken back counts one too), and after `RELAY_MAX_TRIES`
-the webhook says it no more: the notice waits for the bot. A refusal (a 4xx, a 429) delivered nothing
-and counts none.
+thread. **The tries of a notice are capped**: a post that may have been delivered — a read timeout,
+the deadline passed, the connection cut once sent, a 5xx — counts a try (`tries`, beside `relayed`,
+which goes when the notice goes back to the bot; a mark taken back counts one too), and after
+`RELAY_MAX_TRIES` the webhook says it no more, said once in the log: the notice waits for the bot. A
+post that left nothing — the name not resolved, the connection refused or not made in time
+(`_nothing_sent`) — and a refusal (a 4xx, a 429) delivered nothing and count none: a network cut
+stops the passes, never the fallback.
 
 Known limits: a webhook that delivered but whose answer was lost has the notice said again, an
-action's ping with it, `RELAY_MAX_TRIES` times at most; a network cut that long leaves it to the bot
-(an action's card is in the console). A post abandoned at its deadline may still reach the webhook.
+action's ping with it, `RELAY_MAX_TRIES` times at most; then it is the bot's (an action's card is
+in the console). A post abandoned at its deadline may still reach the webhook, and counts a try — a
+resolution that hangs past it as well.
 A post of the bot in flight while the watch relays (the beat aged, or `CONFIRM_S`
 reached, during a `thread.send` held by Discord's rate limits) says the announcement twice, in the
 thread and in the channel; the same race on the card's post can ping twice. A notice forged in the
@@ -145,9 +152,16 @@ RELAY_PASS_BUDGET_S = 60.0
 # tried this many times at most: then it waits for the bot, no new webhook (an action's ping each try).
 RELAY_MAX_TRIES = 3
 # What a post answered: `sent` (2xx), `limited` (a 429 still refused), `refused` (another 4xx: nothing
-# delivered), `failed` (a 5xx, an odd answer), `unreachable` (no answer, or none within the deadline).
-# The last two may have been delivered: they count a try.
+# delivered), `unsent` (nothing left: the name not resolved, the connection refused or not made in
+# time), `failed` (a 5xx, an odd answer), `unreachable` (no answer, or none within the deadline, or
+# the connection cut once the request was sent). The last two may have been delivered: they count a
+# try (JUG2b review: a network cut of three passes no longer silences the fallback).
 MAYBE_DELIVERED = ("failed", "unreachable")
+# What stops a pass: the next posts would go to the same webhook (JUG2b review).
+STOPS_THE_PASS = ("limited",
+                  "unsent",           # nothing left: the network, the name
+                  "unreachable",
+                  "refused")          # a webhook deleted (404) refuses the next ones as well
 _sleep = time.sleep
 _monotonic = time.monotonic
 _PASS = threading.Lock()        # one relay pass at a time, whoever calls it
@@ -216,7 +230,10 @@ def say(resource_id: str, key: str, kind: str, title: str, text: str, level: str
               "at": datetime.now(timezone.utc).isoformat()}
     if detail:
         notice["detail"] = detail
-    why = relay_reason() if notice["via"] == "bot" and kind in RELAY_KINDS else ""
+    # Only an action's announcement is posted at once (JUG2): a cut's closure, said from the
+    # reassertion under its VM's lock, is recorded for the bot — the bot mute, the next relay pass
+    # says it, in its own thread (JUG2b review: a webhook never holds the lock nor the reassertion).
+    why = relay_reason() if notice["via"] == "bot" and kind == ACTION_KIND else ""
     if why:
         _mark_relayed(notice, why)
     if not _record(notice):
@@ -333,9 +350,10 @@ def relay_pass(now: datetime | None = None) -> int:
     webhook when the bot reads mute, or once it waited `CONFIRM_S`; marked before the webhook is
     called, noted sent once the webhook answered 2xx; refused, unreachable or rate limited, given back
     to the bot (the next pass tries again, or the bot posts it at its return). Spaced by
-    `RELAY_SPACING_S`; a webhook rate limited (a 429 that asks for longer than `RETRY_MAX_S`) or
-    unreachable leaves the rest of the pass to the next one, and so does `RELAY_PASS_BUDGET_S` spent.
-    A notice tried `RELAY_MAX_TRIES` times waits for the bot. A notice marked but never noted sent
+    `RELAY_SPACING_S`; a webhook rate limited (a 429 that asks for longer than `RETRY_MAX_S`),
+    refused, unreachable or that nothing reached (`STOPS_THE_PASS`) leaves the rest of the pass to the
+    next one, and so does `RELAY_PASS_BUDGET_S` spent. A notice tried `RELAY_MAX_TRIES` times (posts
+    that may have been delivered) waits for the bot. A notice marked but never noted sent
     (`RESEND_AFTER_S`) is taken back first. Within `RELAY_MAX_AGE_H`. One pass at a time: called while
     another runs, it does nothing. Returns the number sent."""
     if not _PASS.acquire(blocking=False):
@@ -350,6 +368,15 @@ def _tries(n: dict) -> int:
     """The posts of a relayed notice that may have been delivered (0 when unread)."""
     t = n.get("tries")
     return t if isinstance(t, int) and not isinstance(t, bool) and t > 0 else 0
+
+
+def _count_try(n: dict) -> None:
+    """One more post of `n` that may have been delivered; the cap reached, said once (JUG2b review):
+    the notice waits for the bot from now on."""
+    n["tries"] = _tries(n) + 1
+    if n["tries"] == RELAY_MAX_TRIES:
+        log.warning("notice %s: %d posts without an answer that says they were refused — the webhook "
+                    "says it no more, it waits for the bot", n.get("key"), RELAY_MAX_TRIES)
 
 
 def _relay_pass(now: datetime | None) -> int:
@@ -374,7 +401,7 @@ def _relay_pass(now: datetime | None) -> int:
             if _unsent_since(n, now) >= RESEND_AFTER_S:
                 n["via"] = "bot"            # marked, never noted sent: weighed again below
                 n.pop("relayed", None)
-                n["tries"] = _tries(n) + 1  # its post may have gone (JUG2b)
+                _count_try(n)               # its post may have gone (JUG2b)
                 changed = True
             if n.get("via") != "bot" or n["key"] in posted:
                 continue
@@ -406,7 +433,7 @@ def _relay_pass(now: datetime | None) -> int:
             _sleep(RELAY_SPACING_S)
         result = _post(*fallback(n))
         outcome[n["key"]] = result
-        stop = result in ("limited", "unreachable")
+        stop = result in STOPS_THE_PASS
     if outcome:
         _settle(outcome)
     return sum(r == "sent" for r in outcome.values())
@@ -449,7 +476,7 @@ def _settle(outcome: dict[str, str]) -> None:
                     n["via"] = "bot"
                     n.pop("relayed")
                     if result in MAYBE_DELIVERED:
-                        n["tries"] = _tries(n) + 1
+                        _count_try(n)
             _write(notices)
     except OSError as exc:
         log.warning("notices: relayed announcements not noted (%s)", exc)
@@ -538,11 +565,37 @@ def _send(url: str, payload: dict):
     return box["answer"]
 
 
+def _nothing_sent(exc: BaseException) -> bool:
+    """Nothing of the request left (JUG2b review): the connection not made in time
+    (`requests.ConnectTimeout`), or refused, or the name not resolved — urllib3's
+    `NewConnectionError` and `NameResolutionError`, both `ConnectTimeoutError`s, found in the
+    exception or what it wraps (`MaxRetryError.reason`, its arguments, its cause). A read timeout,
+    the deadline passed (a resolution that hangs as well as an answer that never comes), a
+    connection cut while reading: perhaps delivered — False."""
+    try:
+        import requests
+        from urllib3.exceptions import ConnectTimeoutError
+    except ImportError:                   # pragma: no cover — both ship with the watch
+        return False
+    seen: set[int] = set()
+    todo: list = [exc]
+    while todo:
+        e = todo.pop()
+        if not isinstance(e, BaseException) or id(e) in seen:
+            continue
+        seen.add(id(e))
+        if isinstance(e, (requests.ConnectTimeout, ConnectTimeoutError)):
+            return True
+        todo.extend([getattr(e, "reason", None), e.__cause__, *e.args])
+    return False
+
+
 def _post(payload: dict, key: str = "", url: str = "") -> str:
     """`payload` to `url` (GLORFINDEL_WEBHOOK_URL when none): `sent` on a 2xx answer only (JUG2
     review: a 429, a 404, a network cut are no announcement), `limited` on a 429 still refused after
-    one wait of at most `RETRY_MAX_S`, `refused` on another 4xx, `unreachable` without an answer
-    within `POST_DEADLINE_S` (`_send`), `failed` otherwise. Never raises."""
+    one wait of at most `RETRY_MAX_S`, `refused` on another 4xx, `unsent` when nothing left
+    (`_nothing_sent`), `unreachable` without an answer within `POST_DEADLINE_S` (`_send`) or the
+    connection cut after the request, `failed` otherwise. Never raises."""
     url = url or os.environ.get("GLORFINDEL_WEBHOOK_URL", "")
     if not url:
         return "failed"
@@ -551,6 +604,8 @@ def _post(payload: dict, key: str = "", url: str = "") -> str:
             resp = _send(url, payload)
         except Exception as exc:          # a notification never stops the watch
             log.warning("notice %s: webhook unreachable (%s)", key, exc)
+            if _nothing_sent(exc):
+                return "unsent"
             return "unreachable"
         status = getattr(resp, "status_code", None)
         if isinstance(status, int) and 200 <= status < 300:
