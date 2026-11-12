@@ -287,7 +287,9 @@ ne bloque pas. Ses contrôles (`scripts/bench_preflight.py`) :
   armé et son plafond. Désallouée, c'est un ⚠ : son contrat se lit après `make orodruin-start`. Sans
   `ORO_SSH_FINGERPRINT`, rien ne part vers Orodruin, ni vers Imladris sans `HOST_SSH_FINGERPRINT` ;
 - **les paires** : celles de `make azure-pairs-expiry` (RST1). Celle de la console est exigée : absente
-  ou incomplète, c'est un ✗ ;
+  ou incomplète, c'est un ✗. Chaque secret se lit sur l'application et sur le principal de service,
+  et se dit là où il vit (PAIR1 : le 12/11, celui de la console était sur son principal de service,
+  dit « aucun secret » jusque-là) ; aucun secret sur les deux, ou un objet illisible, c'est un ✗ ;
 - **la cible** : une seule VM de ce nom, son groupe, son état ; sur Imladris, son mode (configuré et
   effectif), sa préparation et la quarantaine, et aucune isolation déjà posée ;
 - **le point de restauration** : l'âge du plus récent au coffre, ⚠ au-delà de 24 h
@@ -725,7 +727,7 @@ commande. Vide, il ne fait pas échouer : il prend une autre identité, sans le 
 
 ```zsh
 echo ${#EREGION_CONSOLE_AZURE_CLIENT_ID} ${#EREGION_CONSOLE_AZURE_CLIENT_SECRET}   # deux longueurs non nulles, jamais les valeurs
-make azure-pairs-expiry            # « ✓ console : secret valable jusqu'au … », une seule date
+make azure-pairs-expiry            # « ✓ console : secret valable jusqu'au … (… j), sur son … », une seule date
 AZURE_CLIENT_ID=${EREGION_CONSOLE_AZURE_CLIENT_ID} AZURE_CLIENT_SECRET=${EREGION_CONSOLE_AZURE_CLIENT_SECRET} \
   .venv/bin/glorfindel audit $(az vm show -g rg-celebrimbor -n vm-celebrimbor-gondolin --query id -o tsv)   # lecture seule
 ```
