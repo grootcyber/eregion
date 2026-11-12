@@ -29,8 +29,8 @@ MUTANTS = [
      "\t@$(PYTHON) scripts/mobile.py $(@:mobile-%=%) --guard-only\n"),
     ("M4844", "a former command across a line's end never read: « make » at the end of a line, the "
      "former name on the next (IML1b)", GUARD,
-     'OLD_COMMAND = re.compile(r"\\bmake\\s+(?:glorfindel-host|mobile)-")\n',
-     'OLD_COMMAND = re.compile(r"\\bmake[ \\t]+(?:glorfindel-host|mobile)-")\n'),
+     '_GAP = r"""(?:\\s+|["\']\\s*,\\s*["\'])"""\n',
+     '_GAP = r"""(?:[ \\t]+|["\']\\s*,\\s*["\'])"""\n'),
     ("M4845", "the history read for the former commands: the CHANGELOG said, what each version shipped "
      "renamed (IML1b)", GUARD,
      '    return not any(rel.startswith(key) if key.endswith("/") else rel == key for key in OLD_NOT_READ)\n',

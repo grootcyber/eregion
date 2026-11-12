@@ -7846,7 +7846,7 @@ MUTANTS += [
     ("M2872", "the live feed outlives its session: a rotation or the 12 h leave it open (SEC10, review)", CON,
      "            if not any(_credentials(ws, _token())):\n", "            if False:\n"),
     ("M2873", "the token page sends the operator to the file the console no longer keeps (SEC10, review)", CON,
-     "     (<code>~/.eregion/console/token</code>).", "     (<code>~/.glorfindel/console_token</code>)."),
+     "     drew there (<code>~/.eregion/console/token</code>).", "     drew there (<code>~/.glorfindel/console_token</code>)."),
     ("M2874", "a start says « a new token is drawn » when the console keeps its own (SEC10, review)", CON,
      '"file": f"the console keeps its own ({_TOKEN_FILE})",', '"file": "a new token is drawn",'),
     ("M2875", "a former file that could not be removed said removed (SEC10, review)", CON,

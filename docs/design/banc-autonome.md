@@ -491,7 +491,7 @@ chemin du bouton, la route `POST /api/action/snapshot/<vm>` de la console d'Imla
   fin. Raison : il ne dépend pas du tunnel de MOB2, armé à la demande pour 12 h au plus ; il ne
   laisse rien d'ouvert après lui ; il ne dispute pas le port 7007 au tunnel du téléphone ;
 - **le jeton** est celui de la console, lu dans `host.env` par le Makefile, comme pour `make
-  console-url-imladris`, et refusé aux sessions d'agent par le même garde (`CONSOLE_GUARD`,
+  imladris-url`, et refusé aux sessions d'agent par le même garde (`CONSOLE_GUARD`,
   `scripts/mobile.py guard`). Il passe du Makefile au script **par l'environnement, jamais en
   argv** (en argv, `ps` le montrerait). Il part en `Authorization: Bearer`, jamais dans l'URL,
   jamais affiché. Le `POST` porte un corps JSON (`Content-Type: application/json`) et un `Host` à

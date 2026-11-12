@@ -199,6 +199,16 @@ def test_make_help_shows_the_new_names_only():
     ("Puis `make imladris-push` et `make imladris-tunnel-on`.\n", False),
     ("Les anciens noms (`glorfindel-host-*`, `mobile-*`) restent des alias.\n", False),
     ("infra/glorfindel-host/README.md, make -C infra/glorfindel-host\n", False),
+    # IML1c: options and variables between « make » and the former name, and an argv's words.
+    ("Puis `make YES=1 glorfindel-host-up`.\n", True),
+    ("Puis `make -C . glorfindel-host-push`.\n", True),
+    ("Puis `make -s --no-print-directory DRY_RUN=1 mobile-tunnel-install`.\n", True),
+    ("Puis `make -C infra/glorfindel-host -s YES=1\nglorfindel-host-up`.\n", True),      # across a line
+    ('run(["make", "-s", "glorfindel-host-status"])\n', True),
+    ("run(['make', 'mobile-check'])\n", True),
+    ("Puis `make YES=1 imladris-up` et `make -C . imladris-push`.\n", False),
+    ("make -C infra/glorfindel-host plan, puis make help\n", False),
+    ("make help, puis glorfindel-host-up n'est plus listé\n", False),
 ])
 def test_a_former_command_in_a_live_text_is_said(tmp_path, text, said):
     _tree(tmp_path, {"docs/x.md": text, "glorfindel/x.py": "# " + text})
@@ -285,7 +295,7 @@ def test_the_query_text_kept_with_h0_is_in_a_shipped_rule_s_query():
 def test_a_kept_text_renamed_or_a_quotation_its_source_no_longer_says_is_said(tmp_path):
     readme = "infra/glorfindel-host/README.md"
     files = {RULES: "      // Measured on Imladris's Syslog\n",
-             readme: "« Verified as H0 verifies it »\n",
+             readme: "« Verified as H0 verifies it »\n`make glorfindel-host-cd-install` (qui marche encore)\n",
              ".github/workflows/publish.yml": "      - name: Verified as Imladris verifies it\n"}
     _tree(tmp_path, files)
     said = host_name.problems(tmp_path)

@@ -326,10 +326,11 @@ côté d'un journal, l'heure d'une autre zone.
 2. **L'URL** : dans le terminal du téléphone, sur le poste, `make imladris-url`. Elle donne celle de
    la console d'Imladris (`http://localhost:7007/?token=…`, le jeton lu dans
    `infra/glorfindel-host/host.env`) ; le tunnel du poste pas armé, une ligne de plus le dit et
-   renvoie à `make imladris-tunnel-on`. `make console-url` ne donne plus que la console locale du
-   poste : le tunnel armé, elle renvoie à `make imladris-url` (IML1b). Elles refusent dans une
-   session d'agent : le jeton n'atteint jamais une session de code (`make imladris-tunnel` refuse de
-   même).
+   renvoie à `make imladris-tunnel-on`. `make console-url` donne la même, le tunnel armé : il tient
+   127.0.0.1:7007, la console derrière est celle d'Imladris, et une ligne le dit (« le tunnel
+   d'Imladris tient 7007 : c'est sa console ») ; sinon, la console locale du poste (IML1c). Elles
+   refusent dans une session d'agent : le jeton n'atteint jamais une session de code (`make
+   imladris-tunnel` refuse de même).
 3. **Dans Safari** : cette URL. Le `Host` reste `localhost` : la console d'Imladris répond sans rien
    ajouter à `EREGION_CONSOLE_HOSTS`. Le jeton reste exigé : l'URL le porte une fois, la console le
    retire et pose un cookie de session (12 h). **Mesuré le 11/11** : la console d'Imladris s'affiche

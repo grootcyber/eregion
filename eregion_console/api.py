@@ -448,9 +448,10 @@ _TOKEN_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
   <h1>EREGION</h1>
   <p>This console can trigger Azure actions. Enter its token: the one set in
      <code>EREGION_CONSOLE_TOKEN</code> on the machine that hosts it, else the one the console
-     drew there — <code>make console-url</code> gives the URL that opens it
-     (<code>~/.eregion/console/token</code>). A session lasts 12 h, and ends when the token is
-     rotated.</p>
+     drew there (<code>~/.eregion/console/token</code>). <code>make console-url</code> gives the URL
+     that opens it: here, or Imladris's while the workstation's tunnel holds port 7007;
+     <code>make imladris-url</code>, Imladris's always. A session lasts 12 h, and ends when the
+     token is rotated.</p>
   <label for="token">Token</label>
   <input id="token" name="token" type="password" autocomplete="current-password" required autofocus>
   <button type="submit">Open</button>

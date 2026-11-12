@@ -46,7 +46,8 @@ make doctor [PROFILE=discover|bench]         # les prérequis (outils, variables
                                              # et canaux d'Orodruin et d'Imladris, anciennement H0) ; sans cloud ni modèle ; 0 si tout est vert, sinon 2 par make (1 du script)
 make glorfindel-start                        # lance watch + la console → http://localhost:7007
 make console-url                             # l'URL de la console avec son jeton (celui de l'environnement ou de .env,
-                                             # sinon ~/.eregion/console/token, attendu CONSOLE_WAIT=20 s) ; glorfindel-start l'affiche
+                                             # sinon ~/.eregion/console/token, attendu CONSOLE_WAIT=20 s) ; glorfindel-start l'affiche ;
+                                             # le tunnel du poste tient 7007 : celle d'Imladris, comme make imladris-url (IML1c)
                                              # refuse si AZURE_SUBSCRIPTION_ID est vide (watch aveugle) ; ALLOW_NO_AZURE=1 pour une démo
 make console-rotate                          # un nouveau jeton tiré : toute session de l'ancien refusée aussitôt, le flux
                                              # en direct compris (SEC10) ; refusé quand EREGION_CONSOLE_TOKEN est posé (Imladris)
@@ -4625,7 +4626,7 @@ make bench-run TARGET=<vm> SCENARIO=<id> [DRY_RUN=1]           # préflight, dem
 make bench-restore TARGET=<vm> RUN=<run_id> [BEFORE=…] [DRY_RUN=1]  # le restore du poste, paire de la console
 make imladris-tunnel-install [DRY_RUN=1]                       # MOB2 : pose l'unité du tunnel vers la console d'Imladris
 make imladris-tunnel-on / make imladris-tunnel-off             # MOB2 : l'arme pour 12 h au plus / l'arrête
-make imladris-url                                              # l'URL de la console d'Imladris (console-url : la locale)
+make imladris-url                                              # l'URL de la console d'Imladris (console-url aussi, le tunnel armé)
 make imladris-tunnel                                           # le secours : au premier plan, le tunnel du poste non armé
 sudo -v && make imladris-tunnel-check                          # le poste ouvert au téléphone, lu
 ```
@@ -4685,8 +4686,10 @@ sudo -v && make imladris-tunnel-check                          # le poste ouvert
   pause (les 12 h comptent le temps éveillé). `-off` arrête le minuteur et
   l'unité ; `-remove` l'arrête et retire l'unité, son known_hosts et sa date limite. Toutes refusent
   dans une session d'agent, le garde seul d'abord ; `make console-url`, `make imladris-url` et
-  `make imladris-tunnel` aussi, avant de lire le jeton. `make console-url` ne donne que la console
-  locale du poste : le tunnel armé, elle renvoie à `make imladris-url` (IML1b).
+  `make imladris-tunnel` aussi, avant de lire le jeton. `make console-url` suit le port : le tunnel
+  armé tient 127.0.0.1:7007, elle donne l'URL de la console d'Imladris, comme `make imladris-url` (le
+  jeton de `host.env`), et une ligne sur la sortie d'erreur le dit ; sinon, celle de la console locale
+  (IML1c, qui revient sur le refus d'IML1b).
 - **Aucune cible `imladris-*` n'affiche sa commande** (MOB3, banc du 11/11) : chaque ligne de
   recette commence par `@`. `make imladris-ssh` affichait `ssh … glorfindel@<adresse d'Imladris>`,
   le chemin de la clé compris, et la sortie collée depuis le terminal du téléphone repartait comme

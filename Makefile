@@ -216,7 +216,7 @@ help:
 	@echo "  make glorfindel-dev             Start + watch files (auto-reload on change)"
 	@echo "  make glorfindel-ui              Rebuild + restart war-room only (watch untouched)"
 	@echo "  make console-url                The console's URL with its token (~/.eregion/console/token: never in the logs);"
-	@echo "                                  the local console's only: Imladris's, make imladris-url (IML1b). Refused in an agent session"
+	@echo "                                  the workstation's tunnel holding 7007: Imladris's, as make imladris-url (IML1c). Refused in an agent session"
 	@echo "  make console-rotate             A new drawn token: every session of the former one refused at once"
 	@echo "  make azure-pairs-expiry         When the secrets of the three pairs end (az login; warns under 14 days)"
 	@echo "  make pair-rotate PAIR=<watch|console|bot> [DAYS=…]   Turn a pair's secret: added, verified, in .envrc,"
@@ -644,10 +644,11 @@ glorfindel-ui: build-glorfindel
 # ~/.eregion/console/token (its own directory, SEC10) — written by the container after `up -d`, so waited for
 # (CONSOLE_WAIT seconds, 20 by default). The port: EREGION_CONSOLE_PORT, as compose publishes it.
 # MOB2 : refused in an agent session (the token never reaches a code session), the guard alone first.
-# IML1b : the local console's only. The workstation's tunnel running (systemctl --user is-active) and the
-# port 7007: the console behind 127.0.0.1:7007 is Imladris's — no URL here, a line names make imladris-url
-# (exit 1: nothing given). Otherwise the local console's, as before — glorfindel-start, -restart, -dev, -ui
-# and console-rotate print it — and, the tunnel set but not armed, a line names the way to Imladris's.
+# IML1c (Jonathan's decision, 12/11, back on IML1b's exit 1): the workstation's tunnel running (systemctl
+# --user is-active) and the port 7007, the console behind 127.0.0.1:7007 is Imladris's — its URL, as make
+# imladris-url gives it (its token from host.env), exit 0, and a line on the error output says whose it is.
+# Otherwise the local console's, as before — glorfindel-start, -restart, -dev, -ui and console-rotate print
+# it — and, the tunnel set but not armed, a line names the way to Imladris's.
 CONSOLE_WAIT ?= 20
 MOBILE_UNIT    = $(HOME)/.config/systemd/user/eregion-console-tunnel.service
 TUNNEL_ACTIVE  = systemctl --user is-active --quiet eregion-console-tunnel.service 2>/dev/null
@@ -655,8 +656,8 @@ CONSOLE_GUARD  = python3 scripts/mobile.py guard
 console-url:
 	@$(CONSOLE_GUARD) $@
 	@if [ -f "$(MOBILE_UNIT)" ] && [ "$${EREGION_CONSOLE_PORT:-7007}" = 7007 ] && $(TUNNEL_ACTIVE); then \
-	   echo "  ℹ 127.0.0.1:7007 est tenu par le tunnel du poste vers Imladris : la console derrière est celle d'Imladris, son URL → make imladris-url" >&2; \
-	   exit 1; \
+	   echo "  ℹ le tunnel d'Imladris tient 7007 : c'est sa console (make imladris-url)" >&2; \
+	   $(MAKE) --no-print-directory imladris-url; \
 	 else $(MAKE) --no-print-directory console-url-local; rc=$$?; \
 	   [ ! -f "$(MOBILE_UNIT)" ] || echo "  ℹ le tunnel du poste vers Imladris est posé, non armé : ci-dessus la console locale ; celle d'Imladris → make imladris-url (le tunnel : make imladris-tunnel-on)" >&2; \
 	   exit $$rc; fi
@@ -1176,15 +1177,16 @@ imladris-fault-rate: imladris-known
 	@$(HOST_SSH) 'docker exec eregion-watch python -m analysis.fault_rate --runs-dir runs --days $(or $(DAYS),30)$(if $(JSON), --json)'
 
 # IML1b : l'URL de la console d'Imladris avec son jeton, toujours (la sortie : l'URL seule) ; le tunnel du
-# poste pas armé, une ligne de plus, sur la sortie d'erreur, dit comment l'armer.
+# poste pas armé, une ligne de plus, sur la sortie d'erreur, dit comment l'armer — ou le secours, le tunnel
+# au premier plan (IML1c : sur macOS, ou s'il tourne déjà ailleurs, l'URL reste juste).
 imladris-url:
 	@$(CONSOLE_GUARD) $@
 	@test -f $(HOST_ENV) || { echo "$(HOST_ENV) manquant (make imladris-env)"; exit 1; }
 	@t="$(CONSOLE_TOKEN)"; test -n "$$t" || { echo "$(NO_CONSOLE_TOKEN)" >&2; exit 1; }; \
 	 echo "http://localhost:7007/?token=$$t"; \
 	 $(TUNNEL_ACTIVE) || if [ -f "$(MOBILE_UNIT)" ]; then \
-	   echo "  ℹ le tunnel du poste vers Imladris n'est pas armé : make imladris-tunnel-on (12 h au plus)" >&2; \
-	 else echo "  ℹ le tunnel du poste vers Imladris n'est pas armé (pas posé : make imladris-tunnel-install), puis make imladris-tunnel-on" >&2; fi
+	   echo "  ℹ le tunnel du poste vers Imladris n'est pas armé : make imladris-tunnel-on (12 h au plus ; ou make imladris-tunnel au premier plan)" >&2; \
+	 else echo "  ℹ le tunnel du poste vers Imladris n'est pas armé (pas posé : make imladris-tunnel-install), puis make imladris-tunnel-on (ou make imladris-tunnel au premier plan)" >&2; fi
 
 # Le secours (IML1b) : un poste sans systemd de l'utilisateur (macOS), ou un coup d'œil sans armer les
 # 12 h. Affiche l'URL avec son jeton, puis tient le tunnel au premier plan (Ctrl+C pour fermer).

@@ -88,8 +88,16 @@ KEPT = {
 FIRST_MENTION_NOT = ("changes/",)
 
 # IML1b: a former command cited, « make glorfindel-host-<x> » or « make mobile-<x> », the blanks between
-# them a line's end too (a paragraph wraps). Not read, each with its reason; kept, by file: (the text, why).
-OLD_COMMAND = re.compile(r"\bmake\s+(?:glorfindel-host|mobile)-")
+# them a line's end too (a paragraph wraps). IML1c: options and variables may stand between them
+# (« make YES=1 glorfindel-host-up », « make -C . -s glorfindel-host-… »), and an argv's words too
+# (« ["make", "glorfindel-host-…"] »). An option may take a word (« -C . »); a word that is neither
+# never stands between: « make -C infra/glorfindel-host » cites no command.
+# Not read, each with its reason; kept, by file: (the text, why).
+_GAP = r"""(?:\s+|["']\s*,\s*["'])"""
+_OPTION = r"""-[^\s"',]+(?:""" + _GAP + r"""(?!-)[^\s"',=]+(?=""" + _GAP + r"""))?"""
+_VARIABLE = r"""[A-Za-z_][A-Za-z0-9_]*=[^\s"',]*"""
+OLD_COMMAND = re.compile(r"\bmake(?:" + _GAP + r"(?:" + _OPTION + "|" + _VARIABLE + r"))*" + _GAP
+                         + r"(?:glorfindel-host|mobile)-")
 OLD_NOT_READ = {
     "CHANGELOG.md": "the history: what each version shipped, in the names of its time",
     "docs/historique.md": "the history: what each pass said, in the names of its time",
@@ -106,6 +114,11 @@ OLD_KEPT = {
     ),
     "ROADMAP.md": (
         ("`make mobile-check`)", "the line of a release published: what it shipped, in its names"),
+    ),
+    "infra/glorfindel-host/README.md": (
+        ("`make glorfindel-host-cd-install` (qui marche encore)",
+         "the quotation of the former agent's message in #deploy: what the screen shows until the agent "
+         "is reinstalled (IML1c)"),
     ),
 }
 
