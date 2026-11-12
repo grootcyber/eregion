@@ -11,6 +11,7 @@ from discord import app_commands
 from rich.console import Console
 from rich.markup import escape as _esc_markup
 
+from glorfindel import bot_beat
 from glorfindel import escalations as esc_module
 from glorfindel.card_target import IDENTITY_PREFIX as _IDENTITY_PREFIX
 from glorfindel.chat_text import discord_code, discord_text
@@ -1301,6 +1302,12 @@ class GlorfindelBot(discord.Client):
                     _console.print(
                         f"[dim]Watch: channel #{channel.name} ready[/dim]"
                     )
+                # JUG2 (#765): alive, its channel read — the watch leaves the announcements of the
+                # actions taken alone to it; mute, the webhook says them (glorfindel/bot_beat.py).
+                try:
+                    bot_beat.write()
+                except OSError as e:
+                    _console.print(f"[yellow]Bot heartbeat not written: {_esc_markup(str(e))}[/yellow]")
                 pending = esc_module.pending()
                 new = [e for e in pending if e["id"] not in self._posted]
                 if new:
@@ -1339,10 +1346,13 @@ class GlorfindelBot(discord.Client):
         # « Incident opened » ping, its announcement and the cut's closure ping nothing, and the card
         # is posted once (`_posted`, after a restart too). Any other card as before: the role pinged
         # when its post opens the thread.
+        # JUG2 (#765): the bot mute, the watch's webhook announced the action and pinged the role
+        # (vm_notices.relayed_ping): the card, posted at the bot's return, pings no more.
         if esc.get("escalation_type") == esc_module.EXECUTED_TYPE:
+            from glorfindel import vm_notices
             thread = await self._get_or_create_thread(channel, _thread_key(esc), ping=False)
             ping = ({"content": f"<@&{self.ping_role}>", "allowed_mentions": self._role_mentions()}
-                    if self.ping_role else {})
+                    if self.ping_role and not vm_notices.relayed_ping(esc.get("action_keys")) else {})
             message = await thread.send(embed=_build_embed(esc), view=_build_view(esc), **ping)
         else:
             thread = await self._get_or_create_thread(channel, _thread_key(esc))
@@ -1424,6 +1434,11 @@ class GlorfindelBot(discord.Client):
         oldest = datetime.now(timezone.utc) - timedelta(hours=_NOTICE_MAX_AGE_H)
         for notice in notices:
             if notice["key"] in self._notices_posted or not _younger(notice.get("at"), oldest):
+                continue
+            # JUG2 (#765): read again just before its post — the watch may have said it by the webhook
+            # since (the bot read mute, or the notice waited too long): never said twice.
+            current = vm_notices.said(notice["key"])
+            if current is not None and current.get("via") != "bot":
                 continue
             rid = str(notice.get("resource_id") or "")
             key = next((k for k in self._threads if k.lower() == rid.lower()), rid)
@@ -1508,4 +1523,9 @@ def run() -> None:
             "refusent (fermé par défaut). Les cartes se jugent dans la console (page Glorfindel, TO JUDGE).[/yellow]")
     _say_queue_key()
     bot = GlorfindelBot(channel_id=int(channel_id_str), ping_role=ping_role, button_policy=policy)
-    bot.run(token, log_handler=None)
+    try:
+        bot.run(token, log_handler=None)
+    finally:
+        # JUG2: a bot that stops says it at once — the watch announces by the webhook without
+        # waiting for its beat to age (a container killed leaves it: read mute after MUTE_AFTER_S).
+        bot_beat.clear()

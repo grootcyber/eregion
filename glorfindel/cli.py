@@ -1201,6 +1201,17 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
         _exercise.observe()
         _layout.say_strays(runs_dir, lambda text: _say_channel(f"Canal runs/ : {text}"))
 
+    def _relay_notices() -> None:
+        """JUG2 (#765): every minute, an autonomous action's announcement left to the Discord bot and
+        not posted by it — the bot mute (its heartbeat absent or stale), or the announcement waiting
+        for 10 min — said by the webhook, once (glorfindel/vm_notices.py, ``relay_pass``)."""
+        from glorfindel import vm_notices as _vm_notices
+        said = _vm_notices.relay_pass()
+        if said:
+            with _output_lock:
+                console.print(f"[yellow]{said} annonce(s) d'action autonome dite(s) par le webhook : "
+                              "le bot Discord se tait (JUG2)[/yellow]")
+
     # The return channel (#159): a run launched from Orodruin learns from it that this
     # watch is up, and what it detected on the VMs that run exercises. Unset → None.
     _watch_channel = None
@@ -1425,6 +1436,11 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
                     except Exception as exc:
                         with _output_lock:
                             console.print(f"[red]watch: _door_facts en erreur — {exc}[/red]")
+                    try:
+                        _relay_notices()    # JUG2: the bot mute, the webhook says the actions
+                    except Exception as exc:
+                        with _output_lock:
+                            console.print(f"[red]watch: _relay_notices en erreur — {exc}[/red]")
                     for _task in (_check_ttl, _reconcile_jobs, _reassert, _write_heartbeat, _observe_windows):
                         try:
                             _task()

@@ -503,6 +503,11 @@ def isolated_glorfindel_home(tmp_path, monkeypatch):
     monkeypatch.setattr(door_facts, "_LAST_READ", {})
     import glorfindel.vm_notices as vm_notices           # DRN2: what the watch says of a VM outside a card
     monkeypatch.setattr(vm_notices, "_STORE", home / "vm_notices.jsonl")
+    # JUG2: the bot's stores the watch reads — the files isolated_bot_state gives the bot, below.
+    monkeypatch.setattr(vm_notices, "_BOT_NOTICES_POSTED", tmp_path / "bot_notices_posted.json")
+    monkeypatch.setattr(vm_notices, "_BOT_CARDS_POSTED", tmp_path / "bot_posted.json")
+    import glorfindel.bot_beat as bot_beat               # JUG2: the bot's heartbeat
+    monkeypatch.setattr(bot_beat, "_STORE", home / "bot_heartbeat.json")
     from glorfindel.providers.azure import run_command   # DRN2: the drains replaced before their end
     monkeypatch.setattr(run_command, "_SUPERSEDED", {})
     import glorfindel.cli as glorfindel_cli          # the injectors' heartbeat directory (SEC3)

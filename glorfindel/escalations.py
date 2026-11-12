@@ -652,8 +652,12 @@ def notify_action(
     by the webhook, in the channel, even with the bot). `note`: what the action left open (an
     isolation by rules: Azure's DNS / IMDS — S7). `key` (`executed_key`): once per action, after a
     restart too (glorfindel/vm_notices.py); none, every call is said. `card`: the card to judge
-    (`EXECUTED_TYPE`), named. Where it went (`bot`, `webhook`, `none`, `already`); a notification
-    never stops the agent."""
+    (`EXECUTED_TYPE`), named. Where it went (`bot`, `webhook`, `relayed`, `none`, `already`); a
+    notification never stops the agent.
+
+    JUG2 (#765): the bot configured but mute (its heartbeat absent or stale: glorfindel/bot_beat.py),
+    the webhook says it in the channel, the role pinged (`relayed`, vm_notices.say) — and at the
+    watch's passes after, an announcement the bot has not posted (vm_notices.relay_pass)."""
     import os
     try:
         title, text, level, payload = _action_words(action, resource_id, run_id, confidence, explanation,
@@ -662,16 +666,25 @@ def notify_action(
         return "none"
     from glorfindel import vm_notices
     detail = {"action": action, "verified": verified, "card": card, "mode": mode, "run_id": run_id}
+    key = key or f"action:{uuid.uuid4()}"
     try:
-        return vm_notices.say(resource_id, key or f"action:{uuid.uuid4()}", EXECUTED_TYPE, title, text,
+        return vm_notices.say(resource_id, key, EXECUTED_TYPE, title, text,
                               level=level, detail=detail, webhook=payload)
     except Exception:
         # The notices' store refused (a full disk): an autonomous action is always said somewhere
-        # (JUG1 review). The bot posts only what the stores hold: its card written, the bot says it
-        # in the VM's thread; else the webhook says it, as before the store — never twice, the bot
-        # having nothing of it to post.
-        if not os.environ.get("GLORFINDEL_WEBHOOK_URL", "") or (discord_bot_configured() and card):
+        # (JUG1 review). The bot posts only what the stores hold: its card written and the bot
+        # alive, the bot says it in the VM's thread; the bot mute, the webhook says it as the
+        # fallback does, its ping with it (JUG2); else the webhook says it, as before the store.
+        if not os.environ.get("GLORFINDEL_WEBHOOK_URL", ""):
             return "none"
+        bot = discord_bot_configured()
+        why = vm_notices.relay_reason() if bot else ""
+        if bot and card and not why:
+            return "none"
+        if why:
+            vm_notices.relay({"key": key, "resource_id": resource_id, "kind": EXECUTED_TYPE,
+                              "title": title, "text": text, "level": level, "detail": detail}, why)
+            return "relayed"
         vm_notices.post_webhook(payload, key)
         return "webhook"
 

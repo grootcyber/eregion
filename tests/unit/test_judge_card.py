@@ -85,9 +85,13 @@ def posts(monkeypatch):
 
 @pytest.fixture
 def bot_on(monkeypatch, posts):
-    """The bot configured, as compose tells the watch (GLORFINDEL_DISCORD_BOT): the webhook set too."""
+    """The bot configured, as compose tells the watch (GLORFINDEL_DISCORD_BOT): the webhook set too.
+    And alive (JUG2: its heartbeat fresh) — mute, the webhook would say the action
+    (tests/unit/test_bot_fallback.py)."""
+    from glorfindel import bot_beat
     monkeypatch.setenv("GLORFINDEL_DISCORD_BOT", "1")
     monkeypatch.setenv("DISCORD_CHANNEL_ID", "1")
+    bot_beat.write()
     return posts
 
 
