@@ -21,8 +21,8 @@ téléphone ──(Tailscale : téléphone → poste:22 seul)──► poste (WS
   biométrie. L'une tombée, l'autre tient. Pour la console, le jeton de la console vient ensuite.
 - Le lot fournit les commandes et les modèles (`infra/poste/`) ; **Jonathan les applique**, aucune
   session ne le fait. **Le banc du 11/11** (la session Tests avec Jonathan, de 12:20 à 13:50 UTC,
-  sur un iPhone) a joué ce guide : ce qu'il a mesuré est marqué **mesuré le 11/11** ; ce qu'il n'a
-  pas mesuré, et chaque étape ni lue dans le code ni testée sur des faux, reste **non mesuré** ou
+  sur un iPhone) a joué ce guide, puis **un redémarrage du poste, le 12/11** : ce qu'ils ont mesuré
+  est marqué **mesuré le 11/11** ou **mesuré le 12/11** ; ce qu'ils n'ont pas mesuré, et chaque étape ni lue dans le code ni testée sur des faux, reste **non mesuré** ou
   **non vérifié**. Le bilan : [ce qui a été mesuré, ce qui reste à
   mesurer](#ce-qui-a-été-mesuré-ce-qui-reste-à-mesurer).
 
@@ -37,8 +37,8 @@ powercfg /change hibernate-timeout-ac 0
 ```
 
 L'écran peut s'éteindre, pas la machine. WSL doit aussi rester démarré : garder un onglet WSL
-ouvert dans Windows Terminal. **Non mesuré** (le 11/11 non plus) : que les seuls services de
-systemd gardent la VM de WSL en vie, sans terminal ouvert.
+ouvert dans Windows Terminal. **Non mesuré** : que les seuls services de systemd gardent la VM de
+WSL en vie, sans terminal ouvert — au redémarrage du 12/11, un terminal était ouvert.
 
 ## 1. Tailscale dans WSL (systemd)
 
@@ -98,7 +98,9 @@ sudo systemctl daemon-reload && sudo sshd -t && sudo systemctl enable --now ssh.
   un tmpfs, vidé à chaque démarrage, et ce répertoire, c'est le `RuntimeDirectory=sshd` du service
   qui le crée au départ du service — ni avant, ni pour `sshd -t` lancé à la main. `install -d` le crée
   vide (root, 755), comme le service le ferait. On garde le test **avant** le départ : une
-  configuration refusée ne démarre rien.
+  configuration refusée ne démarre rien. **Ce geste ne vaut que pour le tout premier départ**, juste
+  après que `ssh.socket` a été coupé : à chaque démarrage ensuite, c'est le service qui recrée
+  `/run/sshd`, sans aucun geste (mesuré le 12/11).
 
 - **Le fragment** (`infra/poste/sshd_config.d/00-eregion.conf`) :
   - l'adresse privée seule ;
@@ -116,9 +118,12 @@ sudo systemctl daemon-reload && sudo sshd -t && sudo systemctl enable --now ssh.
   Il s'appelle `00-` : `sshd` garde la **première** valeur qu'il lit, et un `50-cloud-init.conf` qui
   dirait `PasswordAuthentication yes` l'emporterait sur un `eregion.conf`.
 - **L'ordre de systemd** (`infra/poste/ssh.service.d/eregion.conf`) : `sshd` attend que Tailscale ait
-  son adresse avant d'écouter dessus, une minute au plus, et repart après un échec. **Non mesuré** :
-  le retour seul de `tailscaled` puis de `sshd` après un redémarrage du poste, et `/run/sshd` recréé
-  par le service à ce départ-là. Le banc du 11/11 n'a pas redémarré le poste.
+  son adresse avant d'écouter dessus, une minute au plus, et repart après un échec. **Mesuré le
+  12/11**, après un redémarrage du poste (la session Tests, à 07:53:13 UTC) : WSL démarré à 07:39:38
+  UTC (`uptime -s`), `tailscaled` actif à 07:39:58, `ssh.service` à 07:40:00, deux secondes plus
+  tard — le drop-in qui attend l'adresse de Tailscale a tenu ; aucun redémarrage de l'un ni de
+  l'autre ; `/run/sshd` recréé par le service lui-même, `ssh` actif sans aucun geste ; `make
+  mobile-check` tout ✓, avec « ℹ tunnel : non armé » : jamais au boot, comme voulu.
 - **Le contrôle**, en lecture seule, chaque fois que la configuration change :
 
 ```zsh
@@ -424,7 +429,8 @@ Les deux barrières se ferment l'une sans l'autre ; fermer les deux, puis ce que
 
 ## Ce qui a été mesuré, ce qui reste à mesurer
 
-Le banc du 11/11 : la session Tests avec Jonathan, de 12:20 à 13:50 UTC, un iPhone, Termius.
+Le banc du 11/11 : la session Tests avec Jonathan, de 12:20 à 13:50 UTC, un iPhone, Termius. Puis
+le redémarrage du poste du 12/11 (la session Tests, à 07:53:13 UTC).
 
 **Mesuré** :
 - Termius sur iOS : la clé Face ID (`ecdsa-sha2-nistp256`, Face ID à la connexion), sa clé publique
@@ -436,12 +442,14 @@ Le banc du 11/11 : la session Tests avec Jonathan, de 12:20 à 13:50 UTC, un iPh
 - `make mobile-check` tout ✓, le tunnel armé : 12 h, le minuteur de fin vivant, aucun redémarrage,
   l'écoute en `127.0.0.1:7007` seule (étape 5b) ;
 - la console d'Imladris dans Safari, et son retour après un passage en arrière-plan (étape 5c) ;
-- la règle de Tailscale posée pour l'iPhone seul (étape 1).
+- la règle de Tailscale posée pour l'iPhone seul (étape 1) ;
+- le 12/11, après un redémarrage du poste : `tailscaled` puis `sshd` revenus seuls, deux secondes
+  l'un après l'autre, sans redémarrage ; `/run/sshd` recréé par le service ; `make mobile-check` tout
+  ✓, le tunnel non armé — jamais au boot (étapes 2 et 5b).
 
 **Pas mesuré**, à jouer :
-- le retour seul de `sshd` et de `tailscaled` après un redémarrage du poste, et `/run/sshd` recréé
-  par le service (étape 2) ;
-- WSL vivant sans terminal ouvert, par ses seuls services (étape 0) ;
+- WSL vivant sans terminal ouvert, par ses seuls services : au redémarrage du 12/11, un terminal
+  était ouvert (étape 0) ;
 - le refus, par la règle de Tailscale, de tout le reste (étape 1) ;
 - la raison de l'ordre d'installation : qu'un `openssh-server` posé seul ouvre `ssh.socket` sur
   toutes les interfaces avec mot de passe reste une hypothèse de lecture (étape 2) ;

@@ -1516,6 +1516,19 @@
    "doc": "docs/demarrer/mobile.md"
   },
   {
+   "id": "c-telephone-mesure",
+   "composant": "celebrimbor",
+   "poste": "c-acces",
+   "nom": "The phone's guide on what the bench measured: Termius, the hours in UTC, no command toward Imladris printed",
+   "etat": "main",
+   "release": "0.5",
+   "lots": [
+    "MOB3"
+   ],
+   "issue": 733,
+   "doc": "docs/demarrer/mobile.md"
+  },
+  {
    "id": "c-lecture",
    "composant": "celebrimbor",
    "poste": "c-acces",
