@@ -86,7 +86,7 @@ def _world_0911(tmp_path, isolated: bool = False) -> bw.World:
     w = bw.World(tmp_path)
     _h0_0911(w, isolated)
     w.rules = [
-        bw.rule("make", ["glorfindel-host-known"], err=f"  ✓ Clé d'hôte de {bw.H0_IP} vérifiée par son empreinte\n"),
+        bw.rule("make", ["imladris-known"], err=f"  ✓ Clé d'hôte de {bw.H0_IP} vérifiée par son empreinte\n"),
         bw.rule("terraform", ["~infra/glorfindel-host", "principal_id"], bw.H0_OID),
         bw.rule("terraform", ["~infra/orodruin", "principal_id"], bw.ORO_OID),
         bw.rule("az", ["vm", "list"], [{"name": bw.VM, "rg": bw.RG, "id": bw.RID},
@@ -328,7 +328,7 @@ def test_the_reader_s_mounts_are_refused_when_they_are_not_the_watch_s(mounts, w
 ])
 def test_an_unverified_h0_host_key_sends_nothing(tmp_path, ssh, known_rc):
     w = _world_0911(tmp_path)
-    w.rules.insert(0, bw.rule("make", ["glorfindel-host-known"], rc=known_rc,
+    w.rules.insert(0, bw.rule("make", ["imladris-known"], rc=known_rc,
                               err=f"✗ HOST_SSH_FINGERPRINT requis : la clé d'hôte de {bw.H0_IP}\n"))
     code, md, err, out = _report(w, env_extra={"BENCH_H0_SSH": ssh})
     assert code == 1 and md == "" and not out.exists()

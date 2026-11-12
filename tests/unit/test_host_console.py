@@ -1,8 +1,8 @@
 """UI-1c (#205): the hosted console's token under its two names, from the operator's machine.
 
 H0's host.env carries the token under its former name, GLORFINDEL_WARROOM_TOKEN; a new host's
-under EREGION_CONSOLE_TOKEN. `make glorfindel-host-url` / `-tunnel` and
-`make glorfindel-host-status` (infra/glorfindel-host/status.sh) find it under either, with the
+under EREGION_CONSOLE_TOKEN. `make imladris-url` / `-tunnel` and
+`make imladris-status` (infra/glorfindel-host/status.sh) find it under either, with the
 console's rule — the new name when it is not empty, else the former (eregion_console/api.py) —
 and status.sh never prints it nor puts it on a command line. The recipes really run, against
 fake `ssh`, `az`, `docker` and `curl` first on the PATH: no Azure, no VM. Every token here is a
@@ -84,13 +84,13 @@ def _host_env(tmp_path, content) -> Path:
     return path
 
 
-# ── make glorfindel-host-url / -tunnel ────────────────────────────────────────────────────
+# ── make imladris-url / -tunnel ────────────────────────────────────────────────────
 
 @needs_make
 @pytest.mark.parametrize("case", list(CASES))
 def test_host_url_takes_the_token_under_either_name(tmp_path, case):
     content, token = CASES[case]
-    res = _make(tmp_path, "glorfindel-host-url", f"HOST_ENV={_host_env(tmp_path, content)}", operator=True)
+    res = _make(tmp_path, "imladris-url", f"HOST_ENV={_host_env(tmp_path, content)}", operator=True)
     if token is None:
         assert res.returncode != 0
         assert "aucun jeton de la console" in res.stderr and "?token=" not in res.stdout
@@ -115,7 +115,7 @@ def _fake_ssh(tmp_path) -> tuple[Path, Path]:
 def test_host_tunnel_shows_the_console_url_under_either_name(tmp_path, case):
     content, token = CASES[case]
     bin_dir, log = _fake_ssh(tmp_path)
-    res = _make(tmp_path, "glorfindel-host-tunnel", "HOST_IP=203.0.113.9",
+    res = _make(tmp_path, "imladris-tunnel", "HOST_IP=203.0.113.9",
                 f"HOST_ENV={_host_env(tmp_path, content)}", operator=True,
                 environ={"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", "FAKE_SSH_LOG": str(log)})
     assert res.returncode == 0, res.stderr
@@ -139,7 +139,7 @@ def test_the_displayed_lines_name_the_console():
     assert any("Console   →  http://localhost:" in line and "?token=" in line for line in text.splitlines())
 
 
-# ── make glorfindel-host-status (status.sh) ───────────────────────────────────────────────
+# ── make imladris-status (status.sh) ───────────────────────────────────────────────
 
 _FAKE_CURL = r'''#!/bin/bash
 # Records its arguments; reads its headers from argv and from stdin (-H @-); answers as the
@@ -199,7 +199,7 @@ def _status(tmp_path, dotenv, console_token):
     argv, seen = tmp_path / "curl.argv", tmp_path / "curl.seen"
     argv.write_text("")
     seen.write_text("")
-    res = _make(tmp_path, "glorfindel-host-status", "HOST_IP=203.0.113.9",
+    res = _make(tmp_path, "imladris-status", "HOST_IP=203.0.113.9",
                 f"HOST_BACKUPS={tmp_path / 'backups'}",
                 environ={"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
                          "FAKE_VM_HOME": str(vm_home), "FAKE_CURL_ARGV": str(argv),
@@ -251,7 +251,7 @@ def test_make_host_env_and_the_console_agree_on_the_token(tmp_path, case, monkey
 
     content, token = CASES[case]
     path = _host_env(tmp_path, content)
-    res = _make(tmp_path, "glorfindel-host-url", f"HOST_ENV={path}", operator=True)
+    res = _make(tmp_path, "imladris-url", f"HOST_ENV={path}", operator=True)
     by_make = res.stdout.strip().removeprefix("http://localhost:7007/?token=") if res.returncode == 0 else None
     parsed = host_env.read_env(path)
     name = host_env.token_name(parsed)
@@ -313,16 +313,16 @@ def test_an_existing_host_env_under_the_old_name_is_never_rewritten(tmp_path, mo
 
 def test_push_checks_the_token_before_anything_reaches_the_vm():
     text = (ROOT / "Makefile").read_text(encoding="utf-8")
-    recipe = text.split("\nglorfindel-host-push: glorfindel-host-known\n", 1)[1].split("\n\n", 1)[0]
+    recipe = text.split("\nimladris-push: imladris-known\n", 1)[1].split("\n\n", 1)[0]
     check = recipe.index("host_env.py --check infra/glorfindel-host/host.env")
     assert check < recipe.index("scp ")
 
 
 def test_a_model_change_checks_its_key_before_anything_is_written():
-    """OL1: `make glorfindel-host-model` rewrote GLORFINDEL_LLM_MODEL here and on the VM with no
+    """OL1: `make imladris-model` rewrote GLORFINDEL_LLM_MODEL here and on the VM with no
     check — H0 restarted without its new model's key. The rule runs first, on a copy."""
     text = (ROOT / "Makefile").read_text(encoding="utf-8")
-    recipe = text.split("\nglorfindel-host-model: glorfindel-host-known\n", 1)[1].split("\n\n", 1)[0]
+    recipe = text.split("\nimladris-model: imladris-known\n", 1)[1].split("\n\n", 1)[0]
     check = recipe.index("host_env.py --check $$c")
     assert check < recipe.index("sed -i") < recipe.index("$(HOST_SSH)")
 
@@ -335,7 +335,7 @@ def test_a_model_change_refused_writes_nothing_here_nor_on_the_vm(tmp_path, mode
     took the new model."""
     content = f"{NEW}={TOK_NEW}\nOPENAI_API_KEY=fake-key\nGLORFINDEL_LLM_MODEL=openai/gpt-4o-mini\n"
     path = _host_env(tmp_path, content)
-    res = _make(tmp_path, "glorfindel-host-model", f"MODEL={model}", f"HOST_ENV={path}",
+    res = _make(tmp_path, "imladris-model", f"MODEL={model}", f"HOST_ENV={path}",
                 "HOST_IP=203.0.113.9", "HOST_SSH=false", "HOST_SSH_FINGERPRINT=",
                 f"PYTHON={sys.executable}")
     assert res.returncode != 0                     # refused, or the fake ssh reached
@@ -357,7 +357,7 @@ def test_push_reads_h0_s_config_before_it_sends_its_own(tmp_path, value, human_o
     mode kept); unread, an empty file (every VM human_only, said). It reads it again just before
     the scp: changed in between (a mode changed in the console), nothing is sent. Only
     HUMAN_ONLY=1 adds --human-only — HUMAN_ONLY=0 keeps the modes."""
-    res = _make(tmp_path, "-n", "glorfindel-host-push", "HOST_IP=203.0.113.9",
+    res = _make(tmp_path, "-n", "imladris-push", "HOST_IP=203.0.113.9",
                 *([f"HUMAN_ONLY={value}"] if value is not None else []))
     assert res.returncode == 0, res.stderr
     out = res.stdout

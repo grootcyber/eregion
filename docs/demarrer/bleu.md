@@ -156,7 +156,7 @@ az ad sp delete --id <appId> && az ad app delete --id <appId>
 ```
 
 - **`~/.eregion` ne s'efface pas en bloc.** Ce guide n'y écrit que `console/`, `watch-key/` et `analysis/`. Le reste vient d'autres usages, et se garde ou se retire en connaissance de cause :
-  - `host-backups/` : les copies de la mémoire et des verdicts d'un Imladris (`make glorfindel-host-pull`), de vraies cartes ;
+  - `host-backups/` : les copies de la mémoire et des verdicts d'un Imladris (`make imladris-pull`), de vraies cartes ;
   - `teams/` : les instances d'équipe (`make team-init`) ;
   - `orodruin_known_hosts`, `h0_known_hosts` : les clés d'hôte épinglées du banc.
 - **En lecture seule, Glorfindel n'a rien isolé ni bloqué.** Hors lecture seule, `glorfindel list` doit d'abord être vide : voir « Remove Eregion » dans le [README](../../README.md#remove-eregion).

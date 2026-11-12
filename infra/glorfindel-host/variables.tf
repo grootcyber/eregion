@@ -11,7 +11,7 @@ variable "subscription_id" {
 }
 
 variable "operator_cidr" {
-  description = "Seule source autorisée en SSH (ton IP publique, en /32). `make glorfindel-host-plan OPERATOR_CIDR=…` ; sans valeur, le Makefile la détecte."
+  description = "Seule source autorisée en SSH (ton IP publique, en /32). `make imladris-plan OPERATOR_CIDR=…` ; sans valeur, le Makefile la détecte."
   type        = string
 
   validation {
@@ -47,7 +47,7 @@ variable "eregion_repo" {
 }
 
 variable "eregion_ref" {
-  description = "Branche ou tag cloné au premier démarrage ; ensuite `make glorfindel-host-start` déploie un tag ou un commit, détaché (M-3). Changer cette valeur remplace la VM (custom_data)."
+  description = "Branche ou tag cloné au premier démarrage ; ensuite `make imladris-start` déploie un tag ou un commit, détaché (M-3). Changer cette valeur remplace la VM (custom_data)."
   type        = string
   default     = "main"
 }

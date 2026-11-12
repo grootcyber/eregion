@@ -1,7 +1,7 @@
 """MOB1 (#686): the bench driven from the phone — `make bench-run` and `make bench-restore` typed on the
 workstation, in a terminal, never in an agent session, never without the target's name typed; the
 restore before the run's T0 and keeping the isolation; `make orodruin-exercise` wanting a terminal too;
-`make mobile-check` that sees a listener on every interface, a password admitted, a key handed by a
+`make imladris-tunnel-check` that sees a listener on every interface, a password admitted, a key handed by a
 command, a forwarding wider than the phone's tunnel to 127.0.0.1:7007, a console port elsewhere than on
 127.0.0.1. M4696–M4705, M4737–M4744 (review round 1: the console's tunnel on the private address went
 with its target; M4703 is the terminal of bench-run now) and M4756–M4758 (review round 2), measured by tests/unit/test_bench_run.py,
@@ -51,11 +51,11 @@ MUTANTS = [
      "a name typed (MOB1, review round 1)", RUN,
      '    if not (sys.stdin.isatty() if tty is None else tty):\n        say("✗ pas de terminal : le nom de la cible',
      '    if False:\n        say("✗ pas de terminal : le nom de la cible'),
-    ("M4704", "a listener on every interface read as on the private address: mobile-check passes an SSH "
+    ("M4704", "a listener on every interface read as on the private address: imladris-tunnel-check passes an SSH "
      "server open to the LAN (MOB1)", MOBILE,
      '    if addr in ("*", "0.0.0.0", "::", ""):\n        return "every"\n',
      '    if addr in ("*", "0.0.0.0", "::", ""):\n        return "private"\n'),
-    ("M4705", "the password left out of what mobile-check reads: PasswordAuthentication yes passes "
+    ("M4705", "the password left out of what imladris-tunnel-check reads: PasswordAuthentication yes passes "
      "(MOB1)", MOBILE,
      '    ("passwordauthentication", "no"),\n',
      ''),
@@ -87,7 +87,7 @@ MUTANTS = [
      "console without the phone's key (MOB1, review round 1)", MOBILE,
      '    bad = sorted({kind(a, private) for a in console if a not in CONSOLE_LOOPBACK})\n',
      '    bad = sorted({kind(a, private) for a in console if a not in CONSOLE_LOOPBACK} - {"private"})\n'),
-    ("M4744", "AuthorizedKeysCommand left out of what mobile-check reads: keys handed by a command pass "
+    ("M4744", "AuthorizedKeysCommand left out of what imladris-tunnel-check reads: keys handed by a command pass "
      "(MOB1, review round 1)", MOBILE,
      '    ("authorizedkeyscommand", "none"),\n',
      ''),
@@ -95,7 +95,7 @@ MUTANTS = [
      "VMs read on Azure (MOB1, review round 2)", MAKEFILE,
      '\t@[ -t 0 ] || { echo "✗ pas de terminal : les noms des cibles',
      '\t@true || { echo "✗ pas de terminal : les noms des cibles'),
-    ("M4757", "socket, agent and X11 forwarding left out of what mobile-check reads: an SSH server that "
+    ("M4757", "socket, agent and X11 forwarding left out of what imladris-tunnel-check reads: an SSH server that "
      "relays them passes (MOB1, review round 2)", MOBILE,
      "    for key, want in REQUIRED + NO_RELAY:\n",
      "    for key, want in REQUIRED:\n"),

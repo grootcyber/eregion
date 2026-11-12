@@ -53,13 +53,13 @@ Rien de ce guide n'a été rejoué de zéro. Les mesures citées sont celles des
 | 0 | `make doctor PROFILE=bench` sur un poste neuf | les outils verts ; les fichiers du banc absents, chacun avec sa commande |
 | 1 | `make celebrimbor-up`, puis `make celebrimbor-output` (un banc neuf : sur le banc qui tourne, un apply ciblé seulement, [banc.md](banc.md#1-celebrimbor-le-banc)) | le plan relu, ~5 min ; le fragment copié tel quel dans `glorfindel-config.yaml` est accepté par la watch |
 | 2 | les quatre rôles de `infra/identities/` | quatre définitions ; un second abonnement du même tenant refuse le nom (`docs/operations.md`) |
-| 3 | `make glorfindel-host-up` | **sa durée** jusqu'à `~/.eregion-host-ready` (jamais notée) ; le dépôt cloné par la redirection de l'ancien nom (`eregion_repo`) |
+| 3 | `make imladris-up` | **sa durée** jusqu'à `~/.eregion-host-ready` (jamais notée) ; le dépôt cloné par la redirection de l'ancien nom (`eregion_repo`) |
 | 4 | `orodruin-up`, `-fingerprint`, `-lock` | l'empreinte lue par Run Command, puis `orodruin-ssh` accepté ; `orodruin-lock` referme la sortie |
-| 5 | `glorfindel-host-env` avec les deux canaux exportés, `-push`, `-start REF=<tag>` | `make glorfindel-host-logs` : `Canal retour : https://…/watch`, `Clé de la watch : SHA256:…` |
-| 5 | `make glorfindel-host-watch-key`, la ligne dans `orodruin.env`, `make orodruin-push REF=<tag>`, `make orodruin-check` | `armed` ; `make doctor PROFILE=bench` tout vert |
+| 5 | `imladris-env` avec les deux canaux exportés, `-push`, `-start REF=<tag>` | `make imladris-logs` : `Canal retour : https://…/watch`, `Clé de la watch : SHA256:…` |
+| 5 | `make imladris-watch-key`, la ligne dans `orodruin.env`, `make orodruin-push REF=<tag>`, `make orodruin-check` | `armed` ; `make doctor PROFILE=bench` tout vert |
 | 7 | `orodruin-campaign-plan … CAMPAIGN_DECLARED=…bl1-reponse.yaml`, `orodruin-campaign-run` | `executed=1 detected=1` ; la carte de la détection sur Imladris (anciennement H0), l'action retenue (`human_only`). Le rapport dit « non contenu » : l'attente `contain` de `bl1-reponse.yaml` ne peut pas tenir en `human_only`, seul le verdict de détection compte ici |
-| 7 | ~25 min après : `make glorfindel-host-campaign-report CAMPAIGN=<id>` | le rapport ; la page Annatar de la console ; la preuve de T1136.001 datée sur l'accueil |
-| 8 | `orodruin-down`, `glorfindel-host-down`, `celebrimbor-down CONFIRM=default`, les rôles supprimés | plus aucun des trois groupes ; `az role definition list --custom-role-only true` sans les rôles d'Eregion |
+| 7 | ~25 min après : `make imladris-campaign-report CAMPAIGN=<id>` | le rapport ; la page Annatar de la console ; la preuve de T1136.001 datée sur l'accueil |
+| 8 | `orodruin-down`, `imladris-down`, `celebrimbor-down CONFIRM=default`, les rôles supprimés | plus aucun des trois groupes ; `az role definition list --custom-role-only true` sans les rôles d'Eregion |
 
 ## Le rançongiciel au banc (RAN1)
 

@@ -46,8 +46,8 @@ Entre deux sessions : `make orodruin-stop` et `make celebrimbor-stop` (bree épa
     ```
 - **Sur le poste.**
   - `terraform` 1.5 ou plus, `az` (`az login`), `ssh` et une paire de clés SSH ;
-  - `make install` : `glorfindel-host-env`, `-push` et `watch-key` lancent le venv.
-- **Une clé du modèle** : `ANTHROPIC_API_KEY` dans `.envrc`. `make glorfindel-host-env` l'exige (`infra/glorfindel-host/host_env.py`).
+  - `make install` : `imladris-env`, `-push` et `watch-key` lancent le venv.
+- **Une clé du modèle** : `ANTHROPIC_API_KEY` dans `.envrc`. `make imladris-env` l'exige (`infra/glorfindel-host/host_env.py`).
 
 ```bash
 git clone https://github.com/grootcyber/eregion && cd eregion && make install
@@ -72,7 +72,7 @@ make celebrimbor-output        # le fragment de glorfindel-config.yaml : l'espac
   42 des 44 règles du NSG partagé, posées par Glorfindel (les règles du NSG sont en ligne,
   `infra/terraform/network.tf`), et voulait rattacher à gondolin, au LUN 10, son disque de données
   d'origine, que le restore du T1486 a remplacé. `make celebrimbor-plan` se lit, il ne s'applique pas.
-- **La configuration.** Copie le fragment dans `glorfindel-config.yaml`, à la racine du dépôt. `make glorfindel-host-push` l'envoie sur Imladris, le défaut forcé en `human_only` (`infra/glorfindel-host/host_config.py`).
+- **La configuration.** Copie le fragment dans `glorfindel-config.yaml`, à la racine du dépôt. `make imladris-push` l'envoie sur Imladris, le défaut forcé en `human_only` (`infra/glorfindel-host/host_config.py`).
 - **Le fichier partagé.** `terraform.tfvars` sert aussi aux modules d'Imladris et d'Orodruin (`-var-file=../terraform/terraform.tfvars`, Makefile).
 
 *Lu dans le code : Makefile, `celebrimbor-*` ; `infra/terraform/outputs.tf`, `glorfindel_config_fragment`.*
@@ -96,7 +96,7 @@ if printf %s "$SUB" | grep -qE "$GUID"; then    # sans l'afficher ; pas un GUID 
 else echo "SUB n'est pas un GUID : source .envrc, puis relancer le bloc"; fi
 ```
 
-- **Pour une première attaque, Imladris observe** : `GLORFINDEL_READ_ONLY=1` et `human_only` sont ce qu'écrit `make glorfindel-host-env`. La détection se mesure ainsi. Le confinement, non : Glorfindel recommande et escalade, il n'agit pas.
+- **Pour une première attaque, Imladris observe** : `GLORFINDEL_READ_ONLY=1` et `human_only` sont ce qu'écrit `make imladris-env`. La détection se mesure ainsi. Le confinement, non : Glorfindel recommande et escalade, il n'agit pas.
 - **Pour qu'il contienne seul**, il faut trois choses, dans l'étape 3 de [`docs/banc-bl1.md`](../banc-bl1.md) :
   - le rôle « Eregion Glorfindel Response » attribué à la main, sur `rg-celebrimbor` ;
   - `GLORFINDEL_READ_ONLY=0` dans `host.env` ;
@@ -106,8 +106,8 @@ else echo "SUB n'est pas un GUID : source .envrc, puis relancer le bloc"; fi
 ## 3. Glorfindel : la VM d'Imladris
 
 ```bash
-make glorfindel-host-plan      # lecture seule ; OPERATOR_CIDR=<ton ip>/32, sinon ton IP du moment
-make glorfindel-host-up        # la VM ; confirmation demandée
+make imladris-plan             # lecture seule ; OPERATOR_CIDR=<ton ip>/32, sinon ton IP du moment
+make imladris-up               # la VM ; confirmation demandée
 ```
 
 La VM seule, pour l'instant. Glorfindel y démarre à l'étape 5, une fois les canaux d'Orodruin connus.
@@ -151,19 +151,19 @@ Chaque apply d'Orodruin, `up` comme `lock`, relit les VM inscrites et donne à s
 ```bash
 export EREGION_EXERCISE_CHANNEL=$(terraform -chdir=infra/orodruin output -raw channel_url)
 export EREGION_WATCH_CHANNEL=$(terraform -chdir=infra/orodruin output -raw watch_channel_url)
-make glorfindel-host-env       # host.env : ton environnement (les deux canaux compris), READ_ONLY=1, un jeton de console
-make glorfindel-host-push      # host.env et glorfindel-config.yaml sur la VM
-make glorfindel-host-start REF=<tag ou commit>   # un tag publié (git tag -l 'v*'), jamais une branche
-make glorfindel-host-logs      # « heartbeat → N VM(s) », « Canal retour : … », « Clé de la watch : SHA256:… »
-make glorfindel-host-watch-key # export EREGION_WATCH_KEY=ed25519:… et son empreinte
+make imladris-env              # host.env : ton environnement (les deux canaux compris), READ_ONLY=1, un jeton de console
+make imladris-push             # host.env et glorfindel-config.yaml sur la VM
+make imladris-start REF=<tag ou commit>          # un tag publié (git tag -l 'v*'), jamais une branche
+make imladris-logs             # « heartbeat → N VM(s) », « Canal retour : … », « Clé de la watch : SHA256:… »
+make imladris-watch-key # export EREGION_WATCH_KEY=ed25519:… et son empreinte
 ```
 
 - **La clé.** La watch tire sa clé à son premier démarrage (`~/.eregion/watch-key` sur Imladris).
-- **Où l'épingler.** La ligne `EREGION_WATCH_KEY=ed25519:…` va dans `orodruin.env`. Mets-la aussi dans `host.env` : la console d'Imladris vérifie alors le battement comme Orodruin le vérifie, et sa page d'exercice dit d'avance si un run serait refusé. `make glorfindel-host-push` ne fait que copier le fichier ; la console relit son environnement quand on la recrée, pas quand on la redémarre :
+- **Où l'épingler.** La ligne `EREGION_WATCH_KEY=ed25519:…` va dans `orodruin.env`. Mets-la aussi dans `host.env` : la console d'Imladris vérifie alors le battement comme Orodruin le vérifie, et sa page d'exercice dit d'avance si un run serait refusé. `make imladris-push` ne fait que copier le fichier ; la console relit son environnement quand on la recrée, pas quand on la redémarre :
 
   ```bash
-  make glorfindel-host-push
-  make glorfindel-host-ssh       # puis, sur Imladris :
+  make imladris-push
+  make imladris-ssh              # puis, sur Imladris :
   cd eregion && docker compose up -d war-room && exit
   ```
 - **Puis l'image d'Annatar sur Orodruin, et le contrat :**
@@ -177,7 +177,7 @@ make doctor PROFILE=bench              # tout vert
 - **`host-env` refuse d'écraser** un `host.env` existant : son jeton changerait. Pour un `host.env` déjà écrit, ajoute les deux canaux à la main.
 - **Le battement d'Imladris.** Il part sur le canal retour toutes les 60 s, signé (`eregion_core/watch_channel.py`). Orodruin le croit s'il a moins de 90 s, si la clé épinglée le vérifie, et s'il porte le même abonnement (`eregion_core/watch_gate.py`).
 
-*Lu dans le code : Makefile, `glorfindel-host-*`, `orodruin-push`, `watch-key` ; `docs/design/watch-key.md`. Le passage de la clé d'Imladris à Orodruin : **non vérifié** sur ce chemin de zéro, fait par Jonathan à la 0.5.3 (`docs/operations.md`, « Le battement signé, l'attestation signée — les gestes »).*
+*Lu dans le code : Makefile, `imladris-*`, `orodruin-push`, `watch-key` ; `docs/design/watch-key.md`. Le passage de la clé d'Imladris à Orodruin : **non vérifié** sur ce chemin de zéro, fait par Jonathan à la 0.5.3 (`docs/operations.md`, « Le battement signé, l'attestation signée — les gestes »).*
 
 ## 6. L'inscription des cibles
 
@@ -212,8 +212,8 @@ La preuve, à trois endroits :
 - **Le verdict.** La fin de la campagne, sur Orodruin, le compte : `executed=1 detected=… missed=…` (`annatar/cli.py`). Le rapport du run dit `detected`, `missed` ou `unknown`.
   - `unknown` ne veut jamais dire « manqué » : le canal était muet, la watch ne connaissait pas la fenêtre du run, ou ce qu'il disait n'était pas signé par la clé épinglée (une watch d'avant SEC21 : « unsigned … update Glorfindel ») (`docs/design/orodruin-contract.md`, « Échec vers `unknown` »).
   - Le rapport du run part ensuite vers Imladris par le canal des fenêtres.
-- **Le rapport de la campagne**, écrit seul sur Imladris, environ 25 min après : `make glorfindel-host-campaign-report CAMPAIGN=<id>`.
-- **La console d'Imladris** : `make glorfindel-host-tunnel`, puis l'URL qu'il affiche.
+- **Le rapport de la campagne**, écrit seul sur Imladris, environ 25 min après : `make imladris-campaign-report CAMPAIGN=<id>`.
+- **La console d'Imladris** : `make imladris-tunnel-on` (le tunnel du poste, 12 h au plus ; `make imladris-tunnel-install` une fois avant), puis l'URL de `make imladris-url` ; au premier plan, sans armer les 12 h : `make imladris-tunnel`.
   - La page **Annatar** : la campagne, son run, et ce que Glorfindel en a fait.
   - La page **Glorfindel** : la carte de la détection, l'action recommandée et retenue.
   - L'**accueil** : la preuve de la technique, datée.
@@ -232,9 +232,9 @@ Dans cet ordre : Orodruin lit encore l'état d'Imladris, et les trois modules li
 
 ```bash
 # rien d'isolé ni de bloqué : la console d'Imladris, ou
-make glorfindel-host-ssh       # puis : docker exec eregion-watch glorfindel list   (vide), exit
+make imladris-ssh              # puis : docker exec eregion-watch glorfindel list   (vide), exit
 make orodruin-down             # la VM, son identité, ses rôles, le compte des canaux
-make glorfindel-host-down      # la VM d'Imladris et son état (sa mémoire comprise : make glorfindel-host-pull avant, pour la garder)
+make imladris-down             # la VM d'Imladris et son état (sa mémoire comprise : make imladris-pull avant, pour la garder)
 make celebrimbor-down CONFIRM=default    # le banc entier, baseline compris (sans CONFIRM, refusé)
 for r in "Eregion Glorfindel Response" "Eregion Glorfindel Restore" "Eregion Glorfindel Session Drain" \
          "Eregion Glorfindel Restore Neutralize" "Eregion Glorfindel Restore Staging"; do az role definition delete --name "$r"; done

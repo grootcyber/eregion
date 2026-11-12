@@ -1,6 +1,6 @@
 """OL1 (#525): H0 requires only the key of the configured model's provider — eregion_core/models.py
 defines the rule (required_env), infra/glorfindel-host/host_env.py applies it to host.env, to
-`--check` and, through it, to `make glorfindel-host-model`. M3655–M3659 and M3680–M3684,
+`--check` and, through it, to `make imladris-model`. M3655–M3659 and M3680–M3684,
 measured by tests/unit/test_glorfindel_host.py and tests/unit/test_host_console.py."""
 HOST_ENV = "infra/glorfindel-host/host_env.py"
 MODELS = "eregion_core/models.py"
@@ -34,7 +34,7 @@ MUTANTS = [
     ("M3680", "every provider's key of the .envrc copied to H0, and to the watch (OL1)", HOST_ENV,
      "if environ.get(k) and (k not in MODEL_KEYS or k in carried)}",
      "if environ.get(k)}"),
-    ("M3681", "`make glorfindel-host-model` writes the new model with no check: H0 restarts "
+    ("M3681", "`make imladris-model` writes the new model with no check: H0 restarts "
      "without its key (OL1)", MAKEFILE,
      "\t $(PYTHON) infra/glorfindel-host/host_env.py --check $$c >/dev/null; rc=$$?; rm -f $$c; \\\n",
      "\t rc=0; rm -f $$c; \\\n"),

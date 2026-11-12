@@ -362,10 +362,10 @@ def gather(run_id: str, target: str, env: dict, config: str, now: datetime) -> t
     """(Imladris's view, the activity log's events, the vault's jobs, the instance view, what failed, the
     target's NICs). Imladris is read only once its host key is verified: else nothing is sent."""
     gaps: list[str] = []
-    known = bs.run(["make", "-s", "--no-print-directory", "glorfindel-host-known"], timeout=60)
+    known = bs.run(["make", "-s", "--no-print-directory", "imladris-known"], timeout=60)
     if not known.ok:
         raise RuntimeError("la clé d'hôte d'Imladris n'est pas vérifiée par son empreinte (HOST_SSH_FINGERPRINT, "
-                           f"make glorfindel-host-known : {known.first_error()}) : rien n'est envoyé")
+                           f"make imladris-known : {known.first_error()}) : rien n'est envoyé")
     h0 = bs.read_h0("report", target, run_id, env=env)
     t0 = bs.epoch((h0.get("run") or {}).get("attack_time"))
     if t0 is None:

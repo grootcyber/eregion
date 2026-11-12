@@ -176,7 +176,7 @@ export ORT_LOGGING_LEVEL_DEFAULT=3
 # La clé publique de la watch de CE poste : un injecteur ne croit son battement que signé par
 # elle (V1, N-03). `make watch-key` la donne, une fois la watch démarrée (make glorfindel-start).
 # Vide : tout run est refusé, et le refus le dit. Celle d'Imladris, pour Orodruin, va dans
-# infra/orodruin/orodruin.env (make glorfindel-host-watch-key), jamais ici.
+# infra/orodruin/orodruin.env (make imladris-watch-key), jamais ici.
 # export EREGION_WATCH_KEY=ed25519:...
 
 # ── La file d'actions signée (FS1b) ────────────────────────────────────────────

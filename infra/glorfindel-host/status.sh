@@ -1,5 +1,5 @@
 #!/bin/bash
-# `make glorfindel-host-status` — is the pre-observation running? One look, read-only.
+# `make imladris-status` — is the pre-observation running? One look, read-only.
 #
 # Azure side (local az): the VMs of the defender and of the bench, the last backups.
 # On the VM (two ssh: the deployed reference, then the rest): containers, errors of the last 24 h, discovery,
@@ -10,7 +10,7 @@
 # rule (eregion_console/api.py). The console's compose service keeps the War Room's name,
 # war-room (container eregion-war-room), until UI-1d (docs/design/console.md).
 set -u
-HOST_IP="${HOST_IP:?no VM: make glorfindel-host-up first}"
+HOST_IP="${HOST_IP:?no VM: make imladris-up first}"
 HOST_USER="${HOST_USER:-glorfindel}"
 SSH_OPTS="${SSH_OPTS:-}"
 BENCH_RG="${BENCH_RG:-rg-celebrimbor}"
@@ -103,7 +103,7 @@ echo "== Poste"
 B="${HOST_BACKUPS:-$HOME/.eregion/host-backups}"
 last=$(ls -1t "$B"/glorfindel-*.tgz 2>/dev/null | head -1)
 if [ -z "$last" ]; then
-  echo "  ⚠ copie locale des verdicts : aucune — make glorfindel-host-pull"
+  echo "  ⚠ copie locale des verdicts : aucune — make imladris-pull"
 else
   age_d=$(( ( $(date +%s) - $(stat -c %Y "$last") ) / 86400 ))
   mark="✓"; [ "$age_d" -ge 7 ] && mark="⚠"

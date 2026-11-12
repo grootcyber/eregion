@@ -33,7 +33,7 @@ le modèle de menace ([`design/modele-de-menace.md`](design/modele-de-menace.md)
     modèle) ;
   - la page Annatar de la console (la campagne, encadré **RESPONSE**) ;
   - l'accueil de la console (tuiles **TIME TO CONTAIN** et **CONTAINED ALONE**, sur 30 jours) ;
-  - `make glorfindel-host-containment CAMPAIGN=<id>`, sur Imladris, en lecture seule, sans geste de plus
+  - `make imladris-containment CAMPAIGN=<id>`, sur Imladris, en lecture seule, sans geste de plus
     (depuis BL1c : la commande lit elle-même l'inscription des VM d'une campagne venue du canal, et
     retire les variables d'identité vides que compose passe, comme la watch).
 - **La campagne déclarée** : [`annatar/campaign/declared/bl1-reponse.yaml`](../annatar/campaign/declared/bl1-reponse.yaml).
@@ -96,7 +96,7 @@ La posture est écrite au modèle de menace ([`design/modele-de-menace.md`](desi
 | Règle de production | tenue : rôle sur `rg-celebrimbor` seul ; gondolin `bench` ; bree reste en `human_only` | tenue, même portée | tenue, même portée |
 | Le canal retour (V1) | inchangé : Imladris publie son battement, Orodruin le lit | **cassé** : seule l'identité d'Imladris écrit le battement et les détections. Il faut soit ouvrir l'écriture du conteneur `watch` à l'opérateur et arrêter la watch d'Imladris, soit lancer `--without-glorfindel`, qui annule la mesure | inchangé |
 | La console | celle d'Imladris : bandeau « lecture seule » levé, boutons actifs (toutes les VM) | une console locale : les fichiers de la campagne arrivent sur Imladris, pas sur le poste | celle d'Imladris : les approbations échouent (`write_blocked`), la console reste de fait lectrice |
-| Le CD | en pause pendant la session (`make glorfindel-host-cd-disable`, étape 3) : il redéploierait Imladris au milieu | intact | idem (a) |
+| Le CD | en pause pendant la session (`make imladris-cd-disable`, étape 3) : il redéploierait Imladris au milieu | intact | idem (a) |
 | L'observation de bree | continue (`human_only`) | **trou** : la watch d'Imladris arrêtée | continue |
 | Secret | aucun | celui du poste | un secret client sur Imladris, le temps de la session |
 | À défaire | le rôle, `READ_ONLY=1`, gondolin en `human_only`, push, redémarrage, le CD réactivé | le rôle du canal, redémarrer la watch d'Imladris | les variables vidées, le secret révoqué, `READ_ONLY=1`, gondolin en `human_only` |
@@ -126,8 +126,8 @@ milieu de la campagne (ou mettre le CD en pause, comme à l'étape 3).
 ```bash
 source .envrc
 git fetch --tags && git log --oneline -1 origin/main     # la branche de BL1 fusionnée
-make glorfindel-host-status                              # Imladris : conteneurs Up, aucune erreur
-make glorfindel-host-report                              # l'observation de la semaine, pour la note
+make imladris-status                                     # Imladris : conteneurs Up, aucune erreur
+make imladris-report                                     # l'observation de la semaine, pour la note
 ```
 
 ### 1. Le banc (5 à 15 min)
@@ -162,31 +162,31 @@ d'`orodruin-plan` est celui de la sortie fermée, pas celui du premier apply.
 
 **Seulement si Imladris a été remis en lecture seule** (étape 7). Sinon, la posture du 31/10 est déjà là :
 vérifier dans la console (page Glorfindel) que gondolin est en `non_disruptive`, et passer à
-l'étape 4. Un `make glorfindel-host-push` garde les modes en place sur Imladris (depuis le 02/11) ; après
-un `make glorfindel-host-push HUMAN_ONLY=1`, les redonner dans la console.
+l'étape 4. Un `make imladris-push` garde les modes en place sur Imladris (depuis le 02/11) ; après
+un `make imladris-push HUMAN_ONLY=1`, les redonner dans la console.
 
 ```bash
-make glorfindel-host-cd-disable        # le CD en pause : aucune release ne redéploie Imladris pendant la session
-make glorfindel-host-cd-status         # attendu : en pause
+make imladris-cd-disable               # le CD en pause : aucune release ne redéploie Imladris pendant la session
+make imladris-cd-status                # attendu : en pause
 P=$(terraform -chdir=infra/glorfindel-host output -raw principal_id)
 SCOPE=/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/rg-celebrimbor
 az role assignment create --assignee-object-id ${P} --assignee-principal-type ServicePrincipal \
   --role "Eregion Glorfindel Response" --scope ${SCOPE}
-make glorfindel-host-plan                   # SEC11 : la coupure des sessions, une attribution par VM de session_drain_vms (gondolin, bree), aucune sur le groupe
-make glorfindel-host-up                     # après relecture du plan, sans YES
+make imladris-plan                          # SEC11 : la coupure des sessions, une attribution par VM de session_drain_vms (gondolin, bree), aucune sur le groupe
+make imladris-up                            # après relecture du plan, sans YES
 # infra/glorfindel-host/host.env : GLORFINDEL_READ_ONLY=0
-make glorfindel-host-push              # .env et config (le défaut human_only ; les modes en place sur Imladris gardés, et dits)
-make glorfindel-host-start REF=<le même commit>
-make glorfindel-host-tunnel            # la console : page Glorfindel, gondolin → non_disruptive
+make imladris-push                     # .env et config (le défaut human_only ; les modes en place sur Imladris gardés, et dits)
+make imladris-start REF=<le même commit>
+make imladris-tunnel                   # la console : page Glorfindel, gondolin → non_disruptive
 ```
 
-`glorfindel-host-start REF=…` **construit** l'image sur la VM (`deploy.sh`) : c'est le chemin de
+`imladris-start REF=…` **construit** l'image sur la VM (`deploy.sh`) : c'est le chemin de
 secours, hors de la vérification de CI3 (`infra/glorfindel-host/README.md`, « Au quotidien »).
 
 Le passage en `non_disruptive` ouvre le contrôle de préparation. Attendu : `ready`, puisque les
 droits viennent d'arriver. Une réserve se lit et se confirme, ou la session s'arrête là. Le 31/10,
 bree était restée en `human_only` ; la posture du 01/11 l'a mise aussi en `non_disruptive`, par le
-même contrôle, jusqu'au 11/11 : elle est de nouveau en `human_only` (plus haut). `make glorfindel-host-ssh` puis `docker exec eregion-watch glorfindel list` montre le
+même contrôle, jusqu'au 11/11 : elle est de nouveau en `human_only` (plus haut). `make imladris-ssh` puis `docker exec eregion-watch glorfindel list` montre le
 mode résolu par VM.
 
 ### 4. La campagne (30 à 45 min)
@@ -221,9 +221,9 @@ Azure, et elle est notée au fil des actions.
 ### 6. Lire les indicateurs (5 min, puis le rapport ~25 min après)
 
 ```bash
-make glorfindel-host-containment CAMPAIGN=<id>                          # la panne rattachée seule (dans l'heure)
-make glorfindel-host-containment CAMPAIGN=<id> FAULT_RUNS=<run Gothmog> # sinon, nommée
-make glorfindel-host-campaign-report CAMPAIGN=<id>                      # report.md, section « Réponse »
+make imladris-containment CAMPAIGN=<id>                                 # la panne rattachée seule (dans l'heure)
+make imladris-containment CAMPAIGN=<id> FAULT_RUNS=<run Gothmog> # sinon, nommée
+make imladris-campaign-report CAMPAIGN=<id>                             # report.md, section « Réponse »
 ```
 
 La mesure se lance seule, sans geste de plus. Le 31/10, elle écartait chaque run (« sa VM n'est pas
@@ -239,7 +239,7 @@ Dans la console, à trois endroits :
 **Seulement pour remettre Imladris en lecture seule** : depuis le 31/10, la posture d'Imladris garde le rôle,
 `GLORFINDEL_READ_ONLY=0` et les modes. Hors de ce cas, ne garder que les deux dernières lignes
 (`orodruin-stop`, `celebrimbor-stop`), vérifier que plus aucune isolation ni blocage ne reste
-sur gondolin (`glorfindel list`), et `make glorfindel-host-cd-enable` si le CD a été mis en pause.
+sur gondolin (`glorfindel list`), et `make imladris-cd-enable` si le CD a été mis en pause.
 
 ```bash
 # console : gondolin et bree → human_only ; plus aucune isolation ni blocage (glorfindel list)
@@ -248,14 +248,14 @@ P=$(terraform -chdir=infra/glorfindel-host output -raw principal_id)
 SCOPE=/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/rg-celebrimbor
 az role assignment delete --assignee ${P} --role "Eregion Glorfindel Response" --scope ${SCOPE}
 # la coupure aussi, si Imladris ne doit plus rien écrire : session_drain_vms = [] dans
-# infra/glorfindel-host/session_drain.auto.tfvars, puis make glorfindel-host-plan, relu, et -up
+# infra/glorfindel-host/session_drain.auto.tfvars, puis make imladris-plan, relu, et -up
 # infra/glorfindel-host/host.env : GLORFINDEL_READ_ONLY=1
-make glorfindel-host-push HUMAN_ONLY=1 # toutes les VM de nouveau en human_only
-make glorfindel-host-start REF=<le tag publié en service>   # la release d'avant, celle du CD
-make glorfindel-host-status            # bandeau lecture seule, aucune erreur
+make imladris-push HUMAN_ONLY=1 # toutes les VM de nouveau en human_only
+make imladris-start REF=<le tag publié en service>          # la release d'avant, celle du CD
+make imladris-status                   # bandeau lecture seule, aucune erreur
 az role assignment list --assignee ${P} --all -o table      # Reader et Log Analytics Reader seulement
-make glorfindel-host-cd-enable         # le CD reprend
-make glorfindel-host-cd-status         # actif ; la release en service est celle d'avant
+make imladris-cd-enable                # le CD reprend
+make imladris-cd-status                # actif ; la release en service est celle d'avant
 make orodruin-stop
 make celebrimbor-stop                  # bree (always-on) épargnée
 ```

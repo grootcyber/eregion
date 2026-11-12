@@ -1,7 +1,7 @@
 #!/bin/bash
 # deploy.sh — on Glorfindel's VM (H0), in ~/eregion: deploy a named reference (M-3, #183).
 #
-#   make glorfindel-host-start REF=v0.3.1|<commit>      # sends this script over ssh
+#   make imladris-start REF=v0.3.1|<commit>      # sends this script over ssh
 #
 #   deploy.sh REF                    fetch, check out REF detached, build the image, start
 #   deploy.sh --checkout-only REF    fetch and check out, nothing built or started
@@ -27,7 +27,7 @@
 # latest tag » it found (a tag pushed by anyone with write access). The CD (H1) never builds
 # here: it pulls the published image, signature and provenance verified. The image carries
 # the reference (labels org.opencontainers.image.version / .revision) — `--show`, and so
-# `make glorfindel-host-status`, read it back from the running container. Each image is also
+# `make imladris-status`, read it back from the running container. Each image is also
 # tagged by its reference, and the three newest are kept, with the one running and the one
 # before it: going back is a retag, not a build.
 #
@@ -49,7 +49,7 @@ die() { echo "✗ $*" >&2; exit 1; }
 lock() {
   [ -n "${EREGION_DEPLOY_LOCKED:-}" ] && return 0
   exec 9>"$HOME/.eregion-deploy.lock"
-  flock -n 9 || die "un déploiement est en cours (le CD de H0, H1) : rien n'est fait. Réessayer après, ou make glorfindel-host-cd-status."
+  flock -n 9 || die "un déploiement est en cours (le CD de H0, H1) : rien n'est fait. Réessayer après, ou make imladris-cd-status."
 }
 
 # The ref to deploy → "<ref> <full commit>", or die. A tag (refs/tags/REF) or a hexadecimal
@@ -83,7 +83,7 @@ checkout() {
     echo "⚠ git fetch a échoué : la référence est résolue sur la VM" >&2
   fi
   # V-22 (SEC14): named, or nothing moves — never « the latest tag ».
-  [ -n "$want" ] || die "REF exigée : un tag ou un commit (make glorfindel-host-start REF=<tag ou commit>) ; rien n'est déployé"
+  [ -n "$want" ] || die "REF exigée : un tag ou un commit (make imladris-start REF=<tag ou commit>) ; rien n'est déployé"
   pair=$(resolve "$want")
   # The image was built from one commit (H1): a tag rewritten since names another — its compose,
   # its rules, its catalogue beside the old image. The image's own commit is checked out

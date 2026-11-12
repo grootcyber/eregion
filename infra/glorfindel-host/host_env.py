@@ -16,7 +16,7 @@ Prints the keys it wrote, never a value.
 
 A host.env written before UI-1 carries the token under its former name,
 GLORFINDEL_WARROOM_TOKEN: it stays valid, nothing to rename. `--check` (run by
-`make glorfindel-host-push`) says which name carries it — the console's rule: the new name
+`make imladris-push`) says which name carries it — the console's rule: the new name
 when it is not empty, else the former — and refuses a host.env with neither: pushed, it would
 leave the console on the VM without a token. Never prints the token.
 
@@ -28,7 +28,7 @@ GLORFINDEL_LLM_BASE_URL — in the watch's container, LiteLLM's default address 
 itself; nothing for an OpenAI-compatible model served at GLORFINDEL_LLM_BASE_URL (self-hosted).
 An unknown provider is refused, with the list. The message names what is missing, never a
 value. host.env carries only the keys of the configured models' providers, never another
-provider's. `--check` (and `make glorfindel-host-model`, before it writes anything) holds a
+provider's. `--check` (and `make imladris-model`, before it writes anything) holds a
 host.env to the same rule, its model's variables read as the watch receives them. The analysis
 model (EREGION_ANALYSIS_MODEL) writes the campaign reports, never a decision: its missing key,
 or a local analysis model (it does not read GLORFINDEL_LLM_BASE_URL), is said, not refused.
@@ -128,12 +128,12 @@ ANALYSIS = "EREGION_ANALYSIS_MODEL"
 TOKEN = "EREGION_CONSOLE_TOKEN"
 LEGACY_TOKEN = "GLORFINDEL_WARROOM_TOKEN"
 # FS1c: the signed action queue — never copied from the operator's environment: its keys are this
-# workstation's, Imladris's are its own (`make glorfindel-host-queue-keys`). Written in host.env by hand,
+# workstation's, Imladris's are its own (`make imladris-queue-keys`). Written in host.env by hand,
 # keys and flag in one push; --check holds them together.
 QUEUE_FLAG = "EREGION_ACTION_QUEUE"
 QUEUE_KEYS = "EREGION_QUEUE_KEYS"
-QUEUE_GESTURE = ("make glorfindel-host-queue-keys, then its line and EREGION_ACTION_QUEUE=1 in host.env, "
-                 "then make glorfindel-host-push (docs/operations.md, « La file d'actions signée »)")
+QUEUE_GESTURE = ("make imladris-queue-keys, then its line and EREGION_ACTION_QUEUE=1 in host.env, "
+                 "then make imladris-push (docs/operations.md, « La file d'actions signée »)")
 
 
 def queue_problems(env: dict) -> list[str]:

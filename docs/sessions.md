@@ -338,7 +338,7 @@ d'une autre session) ne compte pas. Elle prépare la commande, et Jonathan la la
 - lancer ou relancer la porte de release (`gh workflow run release-gate.yml --ref main`, « Re-run failed
   jobs ») : l'App n'a qu'*Actions* en lecture (CI6) ;
 - créer, déplacer ou supprimer un tag `v*` : une règle du dépôt les lui réserve (SEC12) ;
-- un retour arrière d'Imladris vers une release plus ancienne (`make glorfindel-host-cd-rollback TAG=…`) ;
+- un retour arrière d'Imladris vers une release plus ancienne (`make imladris-cd-rollback TAG=…`) ;
 - une PR qui touche `.github/workflows/` : l'App des sessions n'a pas le droit *Workflows* (décision de Jonathan, 02/11, SEC12) ;
 - `terraform apply` ou un `YES=1`, le plan montré avant ;
 - une attaque ou une panne sur le banc ;
@@ -529,7 +529,7 @@ ci-dessous présents dans le ruleset « main »** : sans eux, une PR rouge devie
    **Le CD d'Imladris bloque une release sur ces cinq checks**, et sur `publish (glorfindel)`, l'image
    qu'il tire (H1c, #518) : un autre check rouge ou annulé, macOS compris, est dit dans `#deploy`,
    sans retenir Imladris. L'agent installé tient sa propre copie de la liste (`REQUIRED_CHECKS`, jamais lue
-   dans le dépôt) : un check ajouté ou retiré ici demande un `make glorfindel-host-cd-install`, et
+   dans le dépôt) : un check ajouté ou retiré ici demande un `make imladris-cd-install`, et
    `tests/unit/test_host_cd.py` garde les deux listes égales (`infra/glorfindel-host/README.md`,
    « Le CD d'Imladris »).
 
@@ -544,7 +544,7 @@ ci-dessous présents dans le ruleset « main »** : sans eux, une PR rouge devie
 - **ce que voit Imladris, sans jeton** : `curl -s 'https://api.github.com/repos/grootcyber/eregion/rulesets?targets=tag'`,
   puis `curl -s https://api.github.com/repos/grootcyber/eregion/rulesets/<id>`. Le CD lit la règle
   ainsi. GitHub ne dit pas si ces routes répondent sans jeton : c'est l'hypothèse à mesurer. Puis
-  `make glorfindel-host-cd-status` dit, à la ligne « règle des tags », « 🔒 … réservé par la règle « tags v* » »
+  `make imladris-cd-status` dit, à la ligne « règle des tags », « 🔒 … réservé par la règle « tags v* » »
   — lue sans jeton, mesuré le 02/11 —, ou « la règle des tags n'a pas pu être lue » (`cd-check` ne la lit pas
   quand la release tourne déjà) ;
 - **depuis une session, après la bascule** :

@@ -173,7 +173,7 @@ def test_without_a_key_pinned_it_is_refused_and_the_gesture_said(injector, monke
     _write(injector, _signed(NOW - timedelta(seconds=20)))
     why = gate.refusal(NOW)
     assert why.startswith(f"{gate.LOCAL}: no watch key pinned (EREGION_WATCH_KEY)")
-    assert "orodruin.env" in why and "make watch-key" in why and "make glorfindel-host-watch-key" in why
+    assert "orodruin.env" in why and "make watch-key" in why and "make imladris-watch-key" in why
 
 
 @pytest.mark.parametrize("pin", ["ed25519:abc", "ssh-ed25519 AAAA", watch_key.public_text(WATCH.public)[8:]])

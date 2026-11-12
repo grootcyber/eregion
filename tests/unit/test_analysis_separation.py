@@ -67,7 +67,7 @@ def test_the_refusal_says_what_to_set_before_anything_else(monkeypatch):
     ("", "", 0),                                                 # both defaults: two models
 ])
 def test_the_check_said_after_a_change_of_glorfindel_s_model(monkeypatch, capsys, glorfindel, analysis, code):
-    """`make glorfindel-host-model` runs ``python -m analysis.separation`` in H0's watch: a
+    """`make imladris-model` runs ``python -m analysis.separation`` in H0's watch: a
     model shared with the analysis there would make every campaign report refused."""
     for name, value in (("GLORFINDEL_LLM_MODEL", glorfindel), ("EREGION_ANALYSIS_MODEL", analysis)):
         if value:
@@ -85,7 +85,7 @@ _CHECK = "docker exec eregion-watch python -m analysis.separation"
 def _check_group() -> str:
     """The recipe's part that runs the check in H0's watch, as the remote shell gets it."""
     make = (ANALYSIS.parent / "Makefile").read_text(encoding="utf-8")
-    recipe = make.split("\nglorfindel-host-model:", 1)[1].split("\n\n", 1)[0]
+    recipe = make.split("\nimladris-model:", 1)[1].split("\n\n", 1)[0]
     group = recipe[recipe.index("{ " + _CHECK):]
     group = group[:group.index("true; }") + len("true; }")]
     return group.replace("\\\n", "\n").replace("$$", "$")
@@ -97,7 +97,7 @@ def _check_group() -> str:
     (1, "contrôle de séparation indisponible"),         # an error (an image before IA1)
 ])
 def test_glorfindel_host_model_advises_on_a_refusal_only_and_never_fails(rc, said):
-    """`make glorfindel-host-model` runs the check in H0's watch after the restart: its
+    """`make imladris-model` runs the check in H0's watch after the restart: its
     advice on exit 2 (a refusal) only; an error (1) is said apart; the target never fails on
     it. Played with a stand-in for the check, nothing sent to H0."""
     import subprocess

@@ -151,7 +151,7 @@ services:
     environment:
       <<: [*env, *azure, *models, *webhook]
       # FS1b : les clés publiques de la console et du bot, épinglées ici seulement (make queue-keys,
-      # make glorfindel-host-queue-keys) — une demande de la file n'est crue que signée par celle de
+      # make imladris-queue-keys) — une demande de la file n'est crue que signée par celle de
       # son répertoire. Et la copie des autorisés du bot (aucun secret) : la watch relit l'humain
       # qu'une demande du bot nomme.
       EREGION_QUEUE_KEYS: ${EREGION_QUEUE_KEYS:-}

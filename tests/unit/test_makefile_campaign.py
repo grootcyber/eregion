@@ -51,8 +51,8 @@ def test_bl1_targets_check_what_reaches_the_shell():
     # SEC18: the campaign in its writer's directory — Annatar's here (or the watch's copy), the
     # watch's on H0.
     where = {"campaign-containment": "analysis.containment $(or $(dir $(CAMPAIGN_DIR)),runs/annatar/campaigns/$(CAMPAIGN))",
-             "glorfindel-host-containment": "analysis.containment runs/glorfindel/campaigns/$(CAMPAIGN)"}
-    for target in ("campaign-containment", "glorfindel-host-containment"):
+             "imladris-containment": "analysis.containment runs/glorfindel/campaigns/$(CAMPAIGN)"}
+    for target in ("campaign-containment", "imladris-containment"):
         start = next(i for i, ln in enumerate(lines) if ln.split(" ")[0] == f"{target}:")
         recipe = "\n".join(ln for ln in lines[start + 1:start + 4] if ln.startswith("\t"))
         assert target in phony

@@ -1,9 +1,9 @@
 """M-3 (#183): the hosted Glorfindel deploys a named reference, never a branch.
 
-`make glorfindel-host-start` ran `git pull --ff-only` on main and rebuilt: H0 ran whatever
+`make imladris-start` ran `git pull --ff-only` on main and rebuilt: H0 ran whatever
 had just been merged. It now sends infra/glorfindel-host/deploy.sh over ssh, which checks out
 a tag or a commit — named, never « the latest tag » (SEC14, V-22) —, detached, and labels the image with it;
-`make glorfindel-host-status` reads the label back.
+`make imladris-status` reads the label back.
 
 Everything really runs — git, the script, the Makefile recipe — against local repositories
 (an `origin` and the VM's clone in a tmp dir) and fake `ssh` / `docker` first on the PATH:
@@ -355,7 +355,7 @@ def _make_start(repo, tmp_path, *args, environ=None):
     ssh_log.write_text("")
     env = {**repo.env, **fake, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
            "FAKE_VM_HOME": str(vm_home), "FAKE_SSH_LOG": str(ssh_log), **(environ or {})}
-    res = subprocess.run(["make", "-s", "--no-print-directory", "-C", str(ROOT), "glorfindel-host-start",
+    res = subprocess.run(["make", "-s", "--no-print-directory", "-C", str(ROOT), "imladris-start",
                           "HOST_IP=203.0.113.9", *args], env=env, capture_output=True, text=True, timeout=120)
     return res, log.read_text().splitlines(), ssh_log.read_text()
 
@@ -402,7 +402,7 @@ def test_make_glorfindel_host_start_never_deploys_a_ref_from_the_environment(rep
     res, docker_calls, ssh_calls = _make_start(repo, tmp_path, environ={"REF": "v0.2.0"})
     assert res.returncode != 0 and "environnement" in res.stderr and "v0.2.0" in res.stderr
     assert ssh_calls == "" and docker_calls == [] and not repo.detached()
-    # `make glorfindel-host-start REF=` (or no REF): refused, whatever the environment says —
+    # `make imladris-start REF=` (or no REF): refused, whatever the environment says —
     # never « the latest tag » (SEC14, V-22).
     for args in (("REF=",), ()):
         res, docker_calls, ssh_calls = _make_start(repo, tmp_path, *args,
@@ -415,7 +415,7 @@ def test_make_glorfindel_host_start_never_deploys_a_ref_from_the_environment(rep
 
 
 def test_the_recipe_no_longer_pulls_a_branch():
-    recipe = (ROOT / "Makefile").read_text(encoding="utf-8").split("\nglorfindel-host-start: glorfindel-host-known\n")[1].split("\n\n")[0]
+    recipe = (ROOT / "Makefile").read_text(encoding="utf-8").split("\nimladris-start: imladris-known\n")[1].split("\n\n")[0]
     assert "git pull" not in recipe and "infra/glorfindel-host/deploy.sh" in recipe
     status = (ROOT / "infra" / "glorfindel-host" / "status.sh").read_text(encoding="utf-8")
     assert "--show" in status and "git log --oneline" not in status

@@ -1,9 +1,9 @@
-# The CD of H0 (H1, #244): one pass — the latest release, verified, its published image pulled by
-# digest and proven (CI3: never built on H0), preflighted,
-# switched to, kept if healthy. Installed by `make glorfindel-host-cd-install` (install.sh);
+# The CD of Imladris (H1, #244): one pass — the latest release, verified, its published image pulled by
+# digest and proven (CI3: never built on Imladris), preflighted,
+# switched to, kept if healthy. Installed by `make imladris-cd-install` (install.sh);
 # @USER@ and @HOME@ are filled in then. The timer runs it every 5 minutes, once enabled.
 [Unit]
-Description=Eregion CD: the release Jonathan publishes reaches H0 (H1)
+Description=Eregion CD: the release Jonathan publishes reaches Imladris (H1)
 Wants=network-online.target
 After=network-online.target docker.service
 

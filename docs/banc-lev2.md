@@ -122,7 +122,7 @@ Le rapport ne porte **aucun identifiant** (des sortes de ressources, des opérat
 
 ## 4. H1 et H2, sous l'identité d'Imladris (2 min, un `GET` chacun)
 
-Sur Imladris (`make glorfindel-host-ssh`, puis `exit`) :
+Sur Imladris (`make imladris-ssh`, puis `exit`) :
 
 ```bash
 docker exec eregion-watch glorfindel door vm-celebrimbor-gondolin --days 1

@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
-"""eregion_cd — the release Jonathan publishes reaches H0 on its own (H1, #244;
-infra/glorfindel-host/README.md, « Le CD de H0 »).
+"""eregion_cd — the release Jonathan publishes reaches Imladris on its own (H1, #244;
+infra/glorfindel-host/README.md, « Le CD d'Imladris »).
 
   eregion_cd.py run      the timer's pass (systemd, every 5 min): the latest release, if new,
                          verified, its published image pulled by digest and proven,
-                         preflighted, switched to, kept if healthy — else H0 goes back to what ran
+                         preflighted, switched to, kept if healthy — else Imladris goes back to what ran
   eregion_cd.py check    the same pass up to the preflight, never switching (the first
                          installation, by hand): verified, pulled, proven, preflighted, said
   eregion_cd.py retry    forget that the latest release failed or was refused, then run
-  eregion_cd.py rollback TAG   the way back, asked on H0 (SEC12): the published release TAG,
+  eregion_cd.py rollback TAG   the way back, asked on Imladris (SEC12): the published release TAG,
                          older than what runs, verified and deployed as any other; the release
                          it leaves is marked « rolled back », never taken up again on its own
   eregion_cd.py status   what runs, the latest release, the outcomes
   eregion_cd.py export-discord-env   on the operator's machine: #deploy's webhook and the
-                         mention, for make glorfindel-host-cd-install (never the bot's token)
+                         mention, for make imladris-cd-install (never the bot's token)
   eregion_cd.py reminders   the end dates noted for the pairs' secrets and their reminders, said,
                          never sent (ROT1: make pair-expiry-note runs it after a note)
 
@@ -35,22 +35,22 @@ The trigger is Jonathan publishing a release (sessions prepare drafts). A pass:
      not in it); nothing to do when it runs already (the three containers), or failed or was
      refused before; a tag seen before on another commit is refused (a moved tag);
   2. its tag on origin/main, never older than what runs nor than the floor (the highest version
-     deployed on this H0, never lowered) — by its version (vX.Y.Z) or by its commit: refused and
-     said with the mention, unless the way back was asked on H0 for this very tag (`rollback TAG`,
+     deployed on Imladris, never lowered) — by its version (vX.Y.Z) or by its commit: refused and
+     said with the mention, unless the way back was asked on Imladris for this very tag (`rollback TAG`,
      a published release, never a pre-release; SEC12); what runs unreadable, or two commits git
      cannot order (merge-base: 128), refused — never taken for newer; whether a rule of the repository reserves its tag (its
      creation, update and deletion) read without a token, and said: seen with the start, in
      orange when absent or unreadable — never a refusal (what GitHub shows without a token is
-     to be measured on H0); the checks that hold it (H1c: the five the rule of main requires,
+     to be measured on Imladris); the checks that hold it (H1c: the five the rule of main requires,
      REQUIRED_CHECKS, and the image's, publish (glorfindel)) completed, none red (still running:
      wait for the next pass, said once; absent an hour: refused); every other check only said —
      red or cancelled, once per tag, in orange; still running, never waited for;
   3. requirements/glorfindel.txt changed since what runs: requirements/harness.json signed by the
-     maintainer's key (SEC19, R-13: its bundle beside it, verified offline with the public key H0's
+     maintainer's key (SEC19, R-13: its bundle beside it, verified offline with the public key Imladris's
      config pins — EREGION_HARNESS_KEY in ~/eregion/.env, never the repository; no key declared,
      unsigned, another key, a signature of another file: refused as without an attestation), and
      it holds two
-     passes of the harness for H0's model (H3) — the candidate on this lock (its sha256), the
+     passes of the harness for Imladris's model (H3) — the candidate on this lock (its sha256), the
      reference on the lock in service — 3 runs each, every case. Refused: a broken integration;
      a regression (a case right on every draw there, wrong on every draw here); any case losing
      2 draws of 3; 3 draws lost or more to the reference, summed over every case; a case gaining
@@ -61,10 +61,10 @@ The trigger is Jonathan publishing a release (sessions prepare drafts). A pass:
      for the commit (ghcr.io/grootcyber/eregion-glorfindel:sha-<commit>, a hint), its signature
      and its provenance proven by cosign — the publishing workflow of this repository, on main,
      at this commit — then pulled by its digest; its labels are the tag and the commit, it runs as
-     H0's user; a digest that moved since the release was first seen is refused. The release's
+     Imladris's user; a digest that moved since the release was first seen is refused. The release's
      files in a worktree of their own: the running image and the checkout of ~/eregion do not move;
   5. preflight in the candidate: `glorfindel --version` is the tag, the watch, the bot and the
-     console import, H0's glorfindel-config.yaml passes A3's strict reading, compose renders;
+     console import, Imladris's glorfindel-config.yaml passes A3's strict reading, compose renders;
   6. the image running now tagged by its reference (refused when there is none: no switch
      without a way back); the switch (deploy.sh --activate), then the health for a few
      minutes: three containers running, never restarted, built from the tag; the watch's
@@ -87,7 +87,7 @@ Installed in ~/.eregion-cd/ with deploy.sh, notify_discord.py, chat_text.py (SEC
 says, escaped for #deploy), published_image.py and cosign (CI3, pinned), never run from the checkout it
 deploys, and never replaced by a deployment: after one, a release newer than the agent (the
 commit it was installed from, ~/.eregion-cd/installed-from) whose agent differs is said (make
-glorfindel-host-cd-install); an older release, never — installing from it would break the CD. One pass at a time, and none while a deployment by hand runs
+imladris-cd-install); an older release, never — installing from it would break the CD. One pass at a time, and none while a deployment by hand runs
 (~/.eregion-deploy.lock). Python 3.10 (the VM's), standard library only.
 """
 from __future__ import annotations
@@ -106,7 +106,7 @@ import urllib.request
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-# Installed next to this file on H0; in the repository (export-discord-env), in scripts/ — and
+# Installed next to this file on Imladris; in the repository (export-discord-env), in scripts/ — and
 # chat_text in glorfindel/ (appended: never before the standard library).
 sys.path[:0] = [str(HERE), str(HERE.parents[2] / "scripts")]
 sys.path.append(str(HERE.parents[2] / "glorfindel"))
@@ -214,7 +214,7 @@ class Refused(Exception):
 
 
 class Unhealthy(Exception):
-    """Switched to, and not healthy: H0 goes back."""
+    """Switched to, and not healthy: Imladris goes back."""
 
 
 # ── tools ────────────────────────────────────────────────────────────────────────────
@@ -239,7 +239,7 @@ def git(*args: str, cwd: Path = REPO, check: bool = True) -> subprocess.Complete
 def github(path: str):
     """GitHub's public API, without a token; None for a 404."""
     req = urllib.request.Request(f"{API}/repos/{SLUG}{path}", headers={
-        "Accept": "application/vnd.github+json", "User-Agent": "eregion-cd (H0)"})
+        "Accept": "application/vnd.github+json", "User-Agent": "eregion-cd (Imladris)"})
     try:
         with urllib.request.urlopen(req, timeout=20) as r:
             return json.loads(r.read())
@@ -407,7 +407,7 @@ def remind(pair: str, end, now, send: bool, hook: bool, doc: dict) -> list[str]:
             return []
         if not hook:
             return [f"  rappels · {pair} : {_tier_said(tier)} dû, non envoyé — aucun webhook de #deploy "
-                    "(~/.eregion-cd/discord.env : make glorfindel-host-cd-install)"]
+                    "(~/.eregion-cd/discord.env : make imladris-cd-install)"]
         title, text = reminder_card(pair, end, days_left)
         if say(title, text, color=nd.ORANGE if tier >= 7 else nd.RED, alert=True):
             rec["sent"] = sorted(set(rec["sent"]) | {t for t in REMIND_TIERS if t >= tier}, reverse=True)
@@ -436,7 +436,7 @@ def reminders(now=None, send: bool = True) -> list[str]:
     hook = deploy_hook()
     if not send and not hook:
         lines.append("  ⚠ rappels : aucun webhook de #deploy (~/.eregion-cd/discord.env) — aucun rappel ne part "
-                     "(make glorfindel-host-cd-install)")
+                     "(make imladris-cd-install)")
     doc = load_reminders()
     for pair, end in ends.items():
         try:
@@ -490,7 +490,7 @@ def ancestry(a: str, b: str) -> bool | None:
 
 
 def raise_floor(state: dict, tag: str, commit: str) -> None:
-    """SEC12: the floor — the highest version deployed on this H0, and its commit. Never lowered:
+    """SEC12: the floor — the highest version deployed on Imladris, and its commit. Never lowered:
     not by a way back, not by `retry`; a release under it is older, whatever runs."""
     mine = version_of(tag)
     if not mine or not commit:
@@ -508,7 +508,7 @@ def older(tag: str, commit: str, dep_ref: str, dep_commit: str, floor: dict | No
     mine = version_of(tag)
     floor = floor if isinstance(floor, dict) else {}
     marks = ((dep_ref, dep_commit, "qui tourne"),
-             (str(floor.get("tag") or ""), str(floor.get("commit") or ""), "déjà déployée sur H0"))
+             (str(floor.get("tag") or ""), str(floor.get("commit") or ""), "déjà déployée sur Imladris"))
     for ref, at, what in marks:
         theirs = version_of(ref)
         if mine and theirs and mine < theirs:
@@ -517,7 +517,7 @@ def older(tag: str, commit: str, dep_ref: str, dep_commit: str, floor: dict | No
             before = ancestry(commit, at)
             if before is None:
                 return (f"l'ordre de {tag} ({commit[:12]}) et de {ref or at[:12]} ({what}) ne se lit pas : "
-                        "un commit inconnu du dépôt de H0"), False
+                        "un commit inconnu du dépôt d'Imladris"), False
             if before:
                 return f"le commit de {tag} ({commit[:12]}) précède {ref or at[:12]}, {what}", True
     return "", True
@@ -528,23 +528,23 @@ def verify(tag: str, commit: str, dep_commit: str, state: dict, dep_ref: str = "
     """Refused, waited for (Quiet), or what the commit's checks say: the two groups (H1c)."""
     if not is_ancestor(commit, "refs/remotes/origin/main"):
         raise Refused(f"son tag n'est pas sur main ({commit[:12]}) : seule une release de main se déploie")
-    # SEC12: whoever can publish a release (or mark an old one « latest ») never takes H0 back on
-    # their own: the way back is asked on H0, for this very tag. What runs unreadable, or an order
+    # SEC12: whoever can publish a release (or mark an old one « latest ») never takes Imladris back on
+    # their own: the way back is asked on Imladris, for this very tag. What runs unreadable, or an order
     # git cannot read, is never taken for « newer ».
     if not dep_ref and not dep_commit:
-        raise Refused("ce qui tourne sur H0 ne se lit pas (la watch sans étiquettes) : pas de déploiement sans "
-                      f"savoir d'où l'on part — make glorfindel-host-status, puis make glorfindel-host-start REF={tag}")
+        raise Refused("ce qui tourne sur Imladris ne se lit pas (la watch sans étiquettes) : pas de déploiement sans "
+                      f"savoir d'où l'on part — make imladris-status, puis make imladris-start REF={tag}")
     why, readable = older(tag, commit, dep_ref, dep_commit, state.get("floor"))
     if not readable:
         raise Refused(why)
     if why and tag != back_to:
-        raise Refused(f"{why} : jamais de retour arrière sans qu'on le demande sur H0 "
-                      f"(make glorfindel-host-cd-rollback TAG={tag})")
+        raise Refused(f"{why} : jamais de retour arrière sans qu'on le demande sur Imladris "
+                      f"(make imladris-cd-rollback TAG={tag})")
     held, told = ci_groups(check_runs(commit))
     said = ci_said(held, told)
     print(f"checks de {commit[:12]} :\n{said}")
     # H1c: a check that holds (required, or the image's) red or cancelled refuses, as before; any
-    # other is said, once per tag, and never holds H0.
+    # other is said, once per tag, and never holds Imladris.
     red = [n for n, s in held.items() if s and s[0] in RED]
     if red:
         raise Refused(f"CI rouge sur {commit[:12]}, un check requis : {_names(red)}")
@@ -580,7 +580,7 @@ def verify(tag: str, commit: str, dep_commit: str, state: dict, dep_ref: str = "
             raise Refused(f"le check requis « {name} » n'a pas tourné sur {commit[:12]}, en une heure "
                           "(les checks requis de main : docs/sessions.md, « Les règles du dépôt »)")
         raise Refused(f"aucune image publiée pour {commit[:12]} (« {PUBLISH_CHECK} » absent en une heure : une "
-                      "release d'avant CI3 ?) — H0 ne construit plus : publier une release de main d'après CI3")
+                      "release d'avant CI3 ?) — Imladris ne construit plus : publier une release de main d'après CI3")
     return said
 
 
@@ -662,7 +662,7 @@ def ci_said(held: dict, told: dict) -> str:
 
 def say_told(state: dict, tag: str, commit: str, told: dict) -> None:
     """A check that does not hold the release, red or cancelled: said in #deploy, once per tag and
-    per check, in orange, without the mention — it never holds H0 (H1c)."""
+    per check, in orange, without the mention — it never holds Imladris (H1c)."""
     said = state["said"].setdefault(tag, [])
     new = [n for n, s in told.items() if s[0] in RED and f"ci-told {n}" not in said]
     if not new:
@@ -672,7 +672,7 @@ def say_told(state: dict, tag: str, commit: str, told: dict) -> None:
     if len(new) > CHECKS_SAID:
         listed += f" ; et {len(new) - CHECKS_SAID} autre(s)"
     say(f"⚠️ {tag} : {len(new)} check(s) non requis en échec", f"{listed}, sur {commit[:12]} — dit, sans "
-        "retenir H0 : seuls les checks requis de main et l'image publiée bloquent une release", color=nd.ORANGE)
+        "retenir Imladris : seuls les checks requis de main et l'image publiée bloquent une release", color=nd.ORANGE)
 
 
 def check_runs(commit: str) -> list[dict]:
@@ -734,7 +734,7 @@ def tag_rule(tag: str) -> tuple[str, str]:
 
 
 def h0_model(commit: str) -> str:
-    """The model the hosted watch runs: H0's .env, else the default of the release."""
+    """The model the hosted watch runs: Imladris's .env, else the default of the release."""
     model = env_value(REPO / ".env", "GLORFINDEL_LLM_MODEL")
     if model:
         return model
@@ -743,7 +743,7 @@ def h0_model(commit: str) -> str:
     return m.group(1) if m else ""
 
 
-# SEC19 (R-13): the key the harness's attestation is signed with — its public half, pinned in H0's
+# SEC19 (R-13): the key the harness's attestation is signed with — its public half, pinned in Imladris's
 # own config (~/eregion/.env, pushed from host.env), never the repository: a release cannot name its
 # own signer. Unset: no attestation is believed, as if there were none.
 HARNESS_KEY = "EREGION_HARNESS_KEY"
@@ -756,16 +756,16 @@ def _show_bytes(commit: str, path: str) -> bytes | None:
 
 
 def signed_by(tag: str, commit: str, hint: str) -> None:
-    """The attestation is believed only signed by the maintainer's key (SEC19, R-13): the key H0
+    """The attestation is believed only signed by the maintainer's key (SEC19, R-13): the key Imladris
     pins, the signature covering exactly the file the release carries, verified offline (no
-    transparency log, nothing to reach: no wait). No key declared on H0 (cosign never asked),
+    transparency log, nothing to reach: no wait). No key declared on Imladris (cosign never asked),
     a key unreadable, unsigned, another key, a signature of another file: Refused — the lock's
     guard holds as without an attestation."""
     pinned = env_value(REPO / ".env", HARNESS_KEY)
     held = f"la garde du verrou tient comme sans attestation : {hint}, puis make harness-sign"
     if not pinned:
-        raise Refused(f"aucune clé de l'attestation déclarée sur H0 ({HARNESS_KEY} dans host.env, puis make "
-                      f"glorfindel-host-push ; make harness-key la donne) : l'attestation n'est crue que signée — {held}")
+        raise Refused(f"aucune clé de l'attestation déclarée sur Imladris ({HARNESS_KEY} dans host.env, puis make "
+                      f"imladris-push ; make harness-key la donne) : l'attestation n'est crue que signée — {held}")
     work = CD_HOME / "harness-check"
     work.mkdir(mode=0o700, parents=True, exist_ok=True)
     att, bundle = work / "harness.json", work / ("harness.json" + pim.BUNDLE_SUFFIX)
@@ -782,7 +782,7 @@ def signed_by(tag: str, commit: str, hint: str) -> None:
     finally:
         for path in (att, bundle):
             path.unlink(missing_ok=True)
-    print(f"{ATTESTATION} de {tag} : signée par la clé épinglée sur H0 ({pim.COSIGN_VERSION})")
+    print(f"{ATTESTATION} de {tag} : signée par la clé épinglée sur Imladris ({pim.COSIGN_VERSION})")
 
 
 def lock_guard(tag: str, commit: str, dep_commit: str, dep_ref: str = "") -> dict | None:
@@ -795,7 +795,7 @@ def lock_guard(tag: str, commit: str, dep_commit: str, dep_ref: str = "") -> dic
     # Both passes run the release's code: a regression of the code itself is not measured here.
     code = bool(dep_commit) and git("diff", "--quiet", dep_commit, commit, "--", *DECISION_CODE,
                                     check=False).returncode == 1
-    hint = (f"make llm-compare MODELS={model or '<modèle de H0>'} RUNS=3 ATTEST=1 "
+    hint = (f"make llm-compare MODELS={model or '<modèle sur Imladris>'} RUNS=3 ATTEST=1 "
             f"BASE={dep_ref or '<tag en service>'}, dans la PR du verrou")
     raw = git("show", f"{commit}:{ATTESTATION}", check=False)
     if raw.returncode != 0:
@@ -848,7 +848,7 @@ HARNESS_SAID = 5        # cases named in #deploy; the others counted
 
 
 def _passage(side: dict, model: str, name: str, hint: str) -> tuple[dict, dict]:
-    """One pass (candidate or reference) for H0's model: (its entry, {label: (kind, draws)}).
+    """One pass (candidate or reference) for Imladris's model: (its entry, {label: (kind, draws)}).
     Complete or refused: 3 runs, every kind of case, each case drawn once per run."""
     runs = int(side.get("runs") or 0)
     if runs < HARNESS_MIN_RUNS:
@@ -857,7 +857,7 @@ def _passage(side: dict, model: str, name: str, hint: str) -> tuple[dict, dict]:
         raise Refused(f"le passage {name} du harnais n'a pas tous les cas (--kinds) : {hint}")
     entry = next((m for m in side.get("models") or [] if m.get("model") == model), None)
     if entry is None:
-        raise Refused(f"le passage {name} du harnais ne couvre pas le modèle de H0 ({model}) : {hint}")
+        raise Refused(f"le passage {name} du harnais ne couvre pas le modèle d'Imladris ({model}) : {hint}")
     cases = {}
     for c in entry["cases"]:
         draws = [(d["good"], str(d.get("action") or ""), d.get("confidence")) for d in c["draws"]]
@@ -893,7 +893,7 @@ def _case_line(label: str, cand: list, ref: list) -> str:
 def attested(att: dict, tag: str, commit: str, dep_commit: str, dep_ref: str, model: str, hint: str,
              code_changed: bool = False) -> dict:
     """The attestation (H3): the candidate on this release's lock, the reference on the lock in
-    service, both complete for H0's model; refused on a broken integration, a regression, new
+    service, both complete for Imladris's model; refused on a broken integration, a regression, new
     overconfidence beyond the noise, or a decision steered on the candidate only. What varies
     is said ({note, orange}), never a refusal."""
     if att.get("schema") != HARNESS_SCHEMA:
@@ -920,8 +920,8 @@ def attested(att: dict, tag: str, commit: str, dep_commit: str, dep_ref: str, mo
     if not isinstance(ref, dict):
         raise Refused(f"l'attestation du harnais n'a pas de référence (le verrou en service) : {hint}")
     if not dep_commit:
-        raise Refused("ce qui tourne sur H0 est inconnu : la référence du harnais ne peut être vérifiée — "
-                      f"déploiement à la main : make glorfindel-host-start REF={tag}")
+        raise Refused("ce qui tourne sur Imladris est inconnu : la référence du harnais ne peut être vérifiée — "
+                      f"déploiement à la main : make imladris-start REF={tag}")
     running = git("show", f"{dep_commit}:{LOCK}", check=False)
     if running.returncode != 0 or ref.get("lock_sha256") != hashlib.sha256(running.stdout.encode()).hexdigest():
         raise Refused(f"la référence du harnais porte sur un autre verrou que celui en service "
@@ -1025,7 +1025,7 @@ def fetch(tag: str, commit: str, state: dict, name: str = "") -> str:
         pim.pull("glorfindel", digest, local, commit, version=tag, runner=_run)
     except pim.Unverified as e:
         # What a tool said stays in the detail (the journal); the reason, escaped (SEC6).
-        raise Refused(f"image de {tag} refusée : {discord_text(str(e))} — H0 ne construit pas d'image",
+        raise Refused(f"image de {tag} refusée : {discord_text(str(e))} — Imladris ne construit pas d'image",
                       e.detail) from None
     except pim.Unavailable as e:
         if e.detail:
@@ -1034,7 +1034,7 @@ def fetch(tag: str, commit: str, state: dict, name: str = "") -> str:
         tries[tag] = tries.get(tag, 0) + 1
         if tries[tag] > UNAVAILABLE_PASSES:
             raise Refused(f"image de {tag} illisible ou non prouvée depuis une heure : {discord_text(str(e))} — le "
-                          "détail : make glorfindel-host-cd-status", e.detail) from None
+                          "détail : make imladris-cd-status", e.detail) from None
         say_once(state, tag, "registry", f"⏳ {tag} : son image ne se lit pas encore", f"{discord_text(str(e))} — "
                  "le CD repasse toutes les 5 minutes", color=nd.BLUE)
         raise Quiet(f"{tag} : {e} ({tries[tag]}/{UNAVAILABLE_PASSES})") from None
@@ -1046,19 +1046,19 @@ def fetch(tag: str, commit: str, state: dict, name: str = "") -> str:
 
 
 def fits(img: str) -> None:
-    """The published image runs as H0's user (published_image.UID): else it could write neither
+    """The published image runs as Imladris's user (published_image.UID): else it could write neither
     ~/.glorfindel nor runs/ — refused before anything moves."""
     res = pim.run(["docker", "run", "--rm", "--network", "none", img, "python", "-c",
                    "import os; print(os.getuid(), os.getgid())"], timeout=120)
     said, mine = " ".join(res.stdout.split()), f"{os.getuid()} {os.getgid()}"
     if res.returncode != 0 or said != mine:
         sh("docker", "image", "rm", img, check=False)
-        raise Refused(f"l'image tourne en {said or '?'} (uid gid), H0 en {mine} : elle ne pourrait pas écrire son "
+        raise Refused(f"l'image tourne en {said or '?'} (uid gid), Imladris en {mine} : elle ne pourrait pas écrire son "
                       "état", tail(res))
 
 
 def preflight(tag: str, name: str = "") -> None:
-    """In the candidate. What a command says goes to the journal only: H0's config, compose's
+    """In the candidate. What a command says goes to the journal only: Imladris's config, compose's
     rendering may name the infrastructure."""
     img = f"{IMAGE}:{name or tag}"
     res = sh("docker", "run", "--rm", img, "glorfindel", "--version", check=False)
@@ -1070,7 +1070,7 @@ def preflight(tag: str, name: str = "") -> None:
              "import glorfindel.cli, glorfindel.bot, eregion_console.api", check=False)
     if res.returncode != 0:
         raise Refused("préflight : la watch, le bot ou la console n'importent pas", tail(res))
-    # The file compose mounts: EREGION_CONFIG of H0's .env, else ./glorfindel-config.yaml.
+    # The file compose mounts: EREGION_CONFIG of Imladris's .env, else ./glorfindel-config.yaml.
     cfg = Path(env_value(REPO / ".env", "EREGION_CONFIG") or "glorfindel-config.yaml")
     cfg = cfg if cfg.is_absolute() else REPO / cfg
     if cfg.exists():
@@ -1078,14 +1078,14 @@ def preflight(tag: str, name: str = "") -> None:
                  "from glorfindel.config import load_glorfindel_config as load; load('/app/glorfindel-config.yaml')",
                  check=False)
         if res.returncode != 0:
-            raise Refused("préflight : la config de H0 est refusée par la lecture stricte d'A3 (la watch "
-                          "sortirait en 2) — le détail : make glorfindel-host-cd-status", tail(res))
+            raise Refused("préflight : la config d'Imladris est refusée par la lecture stricte d'A3 (la watch "
+                          "sortirait en 2) — le détail : make imladris-cd-status", tail(res))
     envfile = ["--env-file", str(REPO / ".env")] if (REPO / ".env").exists() else []
     res = sh("docker", "compose", "-f", str(CD_HOME / "build" / "docker-compose.yml"), "--project-directory",
              str(REPO), *envfile, "--profile", "bot", "config", "-q", check=False)
     if res.returncode != 0:
-        raise Refused(f"préflight : docker compose refuse le fichier de {tag} avec le .env de H0 — le détail : "
-                      "make glorfindel-host-cd-status", tail(res))
+        raise Refused(f"préflight : docker compose refuse le fichier de {tag} avec le .env d'Imladris — le détail : "
+                      "make imladris-cd-status", tail(res))
 
 
 def image_exists(name: str) -> bool:
@@ -1098,7 +1098,7 @@ def keep_the_way_back(ref: str, dry: bool = False) -> None:
     No way back, no switch: refused."""
     if not ref:
         raise Refused("ce qui tourne n'a pas de référence : aucun retour arrière possible — déployer une fois "
-                      "à la main (make glorfindel-host-start REF=<tag>)")
+                      "à la main (make imladris-start REF=<tag>)")
     if image_exists(f"{IMAGE}:{ref}"):
         return
     label = sh("docker", "image", "inspect", "-f", VERSION, IMAGE, check=False)
@@ -1262,7 +1262,7 @@ def said_rules(items: list[dict]) -> str:
 
 def verdict(cand: dict, base: dict | None) -> dict:
     """The candidate's rules against what ran (`base`, checked before the switch):
-    {why: a regression (H0 goes back), note: with the success, orange: said apart, alert: with
+    {why: a regression (Imladris goes back), note: with the success, orange: said apart, alert: with
     the mention}. Only a regression rolls back: a rule in a lasting error that was ok, or
     absent, before — a fault this release brought. A reference that could not be read (no
     command, an error that may pass, unreadable): nothing to compare to, no rollback."""
@@ -1280,11 +1280,11 @@ def verdict(cand: dict, base: dict | None) -> dict:
                 "orange": f"règles non prouvées : la vérification n'a pas fini en {cand.get('wait', 0):g} s"}
     if state == "usage":
         return {"why": "", "note": "", "alert": False, "orange": "la vérification des règles a refusé ses "
-                "options (code 2) — le détail : make glorfindel-host-cd-status"}
+                "options (code 2) — le détail : make imladris-cd-status"}
     if state in ("unreadable", "load"):
         what = (f"règles : {scrubbed(cand.get('error'))}" if state == "load" else
                 f"la vérification des règles n'a rien dit de lisible (code {cand.get('code')}) — le détail : "
-                "make glorfindel-host-cd-status")
+                "make imladris-cd-status")
         if comparable:      # what ran had its rules checked: this release broke the check itself
             return {"why": what, "note": "", "orange": "", "alert": False}
         return {"why": "", "note": "", "orange": f"{what} ; {no_ref}", "alert": True}
@@ -1373,7 +1373,7 @@ def health(ref: str, since: float, seen: tuple[int, int] | None, rules: bool = F
         why = health_once(ref, seen)
         if rules and not why:
             # V-34 (SEC7): a write the read-only root refuses, since the switch, in a container whose
-            # journal said nothing of it before — a regression, H0 goes back. The way back
+            # journal said nothing of it before — a regression, Imladris goes back. The way back
             # (rules=False) is never judged on it; a journal that cannot be read, said (the last look).
             found, missed = read_only_errors(since)
             unread = set(missed)
@@ -1394,7 +1394,7 @@ def health(ref: str, since: float, seen: tuple[int, int] | None, rules: bool = F
 def agent_drift(tag: str) -> tuple[list[str], str, bool]:
     """The agent's files that differ from the release just deployed — said only when the release
     is newer than the commit the agent was installed from (`installed-from`, written by make
-    glorfindel-host-cd-install). An older release (one from before H1, v0.4.1) carries an older
+    imladris-cd-install). An older release (one from before H1, v0.4.1) carries an older
     deploy.sh: installing from it would break the CD. Else ([], why nothing is said, whether the
     agent's origin is lost — unknown, or off main: no release will ever descend from it, the
     repository merges by squash — which is said once)."""
@@ -1437,17 +1437,17 @@ def conclude(state: dict, tag: str, dep_ref: str, why: str, url: str, how: str, 
         save_state(state)
         prune(tag, dep_ref)
         note = proof.get("note") or ""
-        say(f"✅ H0 tourne sur {tag}", how + (f"\n{note}" if note else ""), color=nd.GREEN, url=url)
+        say(f"✅ Imladris tourne sur {tag}", how + (f"\n{note}" if note else ""), color=nd.GREEN, url=url)
         if proof.get("orange"):
             say(f"⚠️ {tag} : des règles à regarder", proof["orange"], color=nd.ORANGE,
                 alert=bool(proof.get("alert")), url=url)
         drift, note, lost = agent_drift(tag)
         if drift:
             say(f"🔧 Agent de CD à mettre à jour ({tag})", f"diffèrent de la release, plus récente que l'agent : "
-                f"{', '.join(drift)} — make glorfindel-host-cd-install", color=nd.ORANGE)
+                f"{', '.join(drift)} — make imladris-cd-install", color=nd.ORANGE)
         elif lost:
             say_once(state, "_agent", "origin", "ℹ️ L'agent de CD ne saura pas dire quand se mettre à jour",
-                     f"{note} — make glorfindel-host-cd-install depuis main le note", color=nd.BLUE)
+                     f"{note} — make imladris-cd-install depuis main le note", color=nd.BLUE)
             save_state(state)
         elif note:
             print(note)
@@ -1458,17 +1458,17 @@ def conclude(state: dict, tag: str, dep_ref: str, why: str, url: str, how: str, 
     save_state(state)
     if back:
         say(f"🔥 {tag} malade, et le retour à {dep_ref or '?'} aussi", f"{why}\nretour : {back}\n"
-            "H0 est à regarder : make glorfindel-host-status", color=nd.RED, alert=True, url=url)
+            "Imladris est à regarder : make imladris-status", color=nd.RED, alert=True, url=url)
     else:
         more = f"\n{proof['orange']}" if proof.get("orange") else ""
-        say(f"↩️ {tag} malade : H0 est revenu sur {dep_ref}", why + more, color=nd.ORANGE, alert=True, url=url)
+        say(f"↩️ {tag} malade : Imladris est revenu sur {dep_ref}", why + more, color=nd.ORANGE, alert=True, url=url)
     return 1
 
 
 def resume(state: dict, tag: str, cut: dict) -> int:
     """A pass cut after its switch (a reboot, a timeout), read against what runs now:
     - the watch on the release: its health, then kept or back;
-    - still on what ran, or gone (cut before, or during, the containers' move): H0 put back in
+    - still on what ran, or gone (cut before, or during, the containers' move): Imladris put back in
       one piece, the switch « interrupted » — never called sick, tried again by the next pass;
       cut a second time, refused and said with the mention (a switch that always stops at the
       same place is not tried forever);
@@ -1478,9 +1478,9 @@ def resume(state: dict, tag: str, cut: dict) -> int:
     print(f"reprise d'un passage interrompu : {tag} (avant : {dep_ref or '?'}, la watch : {watch or '?'})")
     if watch and watch not in (tag, dep_ref):     # a watch gone is a cut compose, not a hand
         state["outcomes"][tag] = {"result": "superseded", "at": int(time.time()),
-                                  "why": f"H0 redéployé entre-temps : la watch tourne sur {watch or '?'}"}
+                                  "why": f"Imladris redéployé entre-temps : la watch tourne sur {watch or '?'}"}
         save_state(state)
-        say(f"ℹ️ Bascule vers {tag} interrompue, puis H0 redéployé", f"la watch tourne sur {watch or '?'} : "
+        say(f"ℹ️ Bascule vers {tag} interrompue, puis Imladris redéployé", f"la watch tourne sur {watch or '?'} : "
             "le CD n'y touche pas", color=nd.BLUE, url=url)
         return 0
     if watch != tag:
@@ -1492,15 +1492,15 @@ def resume(state: dict, tag: str, cut: dict) -> int:
         state["outcomes"][tag] = {"result": "refused" if twice else "interrupted", "at": int(time.time()), "why": why}
         save_state(state)
         if back:
-            say(f"🔥 Bascule vers {tag} interrompue, et H0 n'a pas pu être remis sur {dep_ref}", back,
+            say(f"🔥 Bascule vers {tag} interrompue, et Imladris n'a pas pu être remis sur {dep_ref}", back,
                 color=nd.RED, alert=True, url=url)
             return 1
         if twice:
-            say(f"⛔ {tag} refusée : sa bascule a été interrompue deux fois", f"H0 est sur {dep_ref}. Regarder "
-                "pourquoi (journalctl -u eregion-cd, make glorfindel-host-cd-status), puis make glorfindel-host-cd-retry",
+            say(f"⛔ {tag} refusée : sa bascule a été interrompue deux fois", f"Imladris est sur {dep_ref}. Regarder "
+                "pourquoi (journalctl -u eregion-cd, make imladris-cd-status), puis make imladris-cd-retry",
                 color=nd.RED, alert=True, url=url)
             return 1
-        say(f"⏸️ Bascule vers {tag} interrompue avant d'avoir eu lieu", f"H0 est sur {dep_ref} ; le CD la "
+        say(f"⏸️ Bascule vers {tag} interrompue avant d'avoir eu lieu", f"Imladris est sur {dep_ref} ; le CD la "
             "reprend au prochain passage", color=nd.BLUE, url=url)
         return 0
     # What ran was checked before the switch, and written down with it: a cut pass reads it back.
@@ -1515,7 +1515,7 @@ def resume(state: dict, tag: str, cut: dict) -> int:
 
 def check_running(tag: str, commit: str, url: str, state: dict) -> int:
     """The dry run when the release runs already: its published image found, verified, pulled
-    aside and preflighted, nothing moves — the path the next release takes, proven on H0."""
+    aside and preflighted, nothing moves — the path the next release takes, proven on Imladris."""
     name = f"check-{tag}"
     try:
         aside(commit)
@@ -1536,13 +1536,13 @@ def check_running(tag: str, commit: str, url: str, state: dict) -> int:
     except Quiet as e:
         checks = f"ses checks ne se lisent pas ({e})"
     say(f"✅ À blanc : {tag}, en service, tirée par son digest, vérifiée et préflightée",
-        f"{digest[:19]}… signée et attestée ; rien n'a bougé ; make glorfindel-host-cd-enable pour que le CD "
+        f"{digest[:19]}… signée et attestée ; rien n'a bougé ; make imladris-cd-enable pour que le CD "
         f"déploie la prochaine release\nses checks : {checks}", color=nd.GREEN, url=url)
     return 0
 
 
 def run_pass(check: bool = False, back_to: str = "") -> int:
-    """A pass on the latest release; `back_to`: the way back asked on H0 (SEC12), on this
+    """A pass on the latest release; `back_to`: the way back asked on Imladris (SEC12), on this
     published release — older than what runs, and still verified as any other."""
     state = load_state()
     if not check:
@@ -1571,7 +1571,7 @@ def run_pass(check: bool = False, back_to: str = "") -> int:
         raise Quiet(f"tag de release illisible : {tag!r}")
     done = state["outcomes"].get(tag, {}).get("result")
     if not check and not back_to and done in ("refused", "rolled back", "rollback failed"):
-        raise Quiet(f"{tag} : {done} (make glorfindel-host-cd-retry pour réessayer)")
+        raise Quiet(f"{tag} : {done} (make imladris-cd-retry pour réessayer)")
     try:
         git("fetch", "-q", "--tags", "--force", "origin")
     except subprocess.CalledProcessError as e:   # the network: the next pass tries again
@@ -1593,7 +1593,7 @@ def run_pass(check: bool = False, back_to: str = "") -> int:
             return 1
         state["outcomes"][tag] = {"result": "refused", "why": why, "at": int(time.time())}
         save_state(state)
-        say(f"⛔ {tag} refusée : H0 reste sur {dep_ref or 'ce qui tourne'}", why, color=nd.RED, alert=True, url=url)
+        say(f"⛔ {tag} refusée : Imladris reste sur {dep_ref or 'ce qui tourne'}", why, color=nd.RED, alert=True, url=url)
         return 1
     seen.setdefault(tag, commit)
     raise_floor(state, dep_ref, dep_commit)        # what runs (deployed by hand, perhaps) raises it too
@@ -1601,8 +1601,8 @@ def run_pass(check: bool = False, back_to: str = "") -> int:
     if commit == dep_commit:
         lagging = sorted(n for n, v in versions().items() if v != tag)
         if lagging:
-            say_once(state, tag, "split", "⚠️ H0 n'est pas d'un seul tenant",
-                     f"{', '.join(lagging)} ne tourne(nt) pas sur {tag} : make glorfindel-host-status",
+            say_once(state, tag, "split", "⚠️ Imladris n'est pas d'un seul tenant",
+                     f"{', '.join(lagging)} ne tourne(nt) pas sur {tag} : make imladris-status",
                      color=nd.ORANGE, alert=True)
             save_state(state)
             raise Quiet(f"{tag} : conteneurs dépareillés ({', '.join(lagging)})")
@@ -1624,8 +1624,8 @@ def run_pass(check: bool = False, back_to: str = "") -> int:
         aside(commit)
         digest = fetch(tag, commit, state)
         if not check:
-            asked = f"\n↩️ retour arrière demandé sur H0 : {dep_ref or '?'} → {tag}" if back_to else ""
-            say(f"🚀 H0 : déploiement de {tag}", f"{dep_ref or 'inconnu'} → {tag} ({commit[:12]}, image "
+            asked = f"\n↩️ retour arrière demandé sur Imladris : {dep_ref or '?'} → {tag}" if back_to else ""
+            say(f"🚀 Imladris : déploiement de {tag}", f"{dep_ref or 'inconnu'} → {tag} ({commit[:12]}, image "
                 f"{digest[:19]}…)" + (f"\n{harness['note']}" if harness.get("note") else "")
                 + (f"\n{rule_said}" if rule == "held" else "") + asked, color=nd.BLUE, url=url)
         if harness.get("orange") and check:     # H3: what varies, never a refusal — no mention
@@ -1642,13 +1642,13 @@ def run_pass(check: bool = False, back_to: str = "") -> int:
             say(f"⛔ À blanc : {tag} serait refusée", str(e), color=nd.RED)
             return 1
         state["outcomes"][tag] = {"result": "refused", "why": str(e), "at": int(time.time())}
-        say(f"⛔ {tag} refusée : H0 reste sur {dep_ref or 'ce qui tourne'}", str(e), color=nd.RED, alert=True, url=url)
+        say(f"⛔ {tag} refusée : Imladris reste sur {dep_ref or 'ce qui tourne'}", str(e), color=nd.RED, alert=True, url=url)
         return 1
     finally:
         save_state(state)
     if check:
-        say(f"✅ À blanc : {tag} est prête", f"vérifiée, son image publiée tirée par son digest et prouvée, préflight passé ; H0 reste sur {dep_ref}. "
-            f"make glorfindel-host-cd-enable pour que le CD la déploie.\n{checks}", color=nd.GREEN, url=url)
+        say(f"✅ À blanc : {tag} est prête", f"vérifiée, son image publiée tirée par son digest et prouvée, préflight passé ; Imladris reste sur {dep_ref}. "
+            f"make imladris-cd-enable pour que le CD la déploie.\n{checks}", color=nd.GREEN, url=url)
         return 0
     started = time.monotonic()
     base = reference_check()           # what runs, before it moves: the rules it detects with
@@ -1673,16 +1673,16 @@ def run_pass(check: bool = False, back_to: str = "") -> int:
 
 
 def left_behind(state: dict, left: str, tag: str) -> None:
-    """The way back asked on H0 (SEC12): the release it leaves is never taken up again on its own
+    """The way back asked on Imladris (SEC12): the release it leaves is never taken up again on its own
     (a new release, or `retry`)."""
     if left and left != tag:
         state["outcomes"][left] = {"result": "rolled back", "at": int(time.time()),
-                                   "why": f"retour arrière demandé sur H0, vers {tag}"}
+                                   "why": f"retour arrière demandé sur Imladris, vers {tag}"}
         save_state(state)
 
 
 def rollback(ref: str) -> str:
-    """'' when H0 is back on `ref` and healthy, else why not."""
+    """'' when Imladris is back on `ref` and healthy, else why not."""
     if not ref:
         return "aucune référence précédente connue"
     since = time.time()
@@ -1777,8 +1777,8 @@ def main(argv: list[str]) -> int:
             import traceback
             traceback.print_exc()
             state = load_state()
-            say_once(state, "_agent", type(e).__name__, "⚠️ Le CD de H0 a échoué",
-                     f"{type(e).__name__} — le détail : make glorfindel-host-cd-status", color=nd.RED, alert=True)
+            say_once(state, "_agent", type(e).__name__, "⚠️ Le CD d'Imladris a échoué",
+                     f"{type(e).__name__} — le détail : make imladris-cd-status", color=nd.RED, alert=True)
             save_state(state)
             return 1
     return locked(one)

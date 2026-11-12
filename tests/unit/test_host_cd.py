@@ -261,7 +261,7 @@ class H0:
         _git(self.vm, self.env, "-c", "advice.detachedHead=false", "checkout", "-q", "--detach", self.commits["c1"])
         (self.vm / ".env").write_text("EREGION_CONSOLE_TOKEN=tok\n" + H0_SIGNER_ENV)
         (self.vm / "glorfindel-config.yaml").write_text("autonomy: {}\n")
-        # The agent, installed as make glorfindel-host-cd-install does.
+        # The agent, installed as make imladris-cd-install does.
         self.cd = self.home / ".eregion-cd"
         self.cd.mkdir()
         for src in (AGENT, ROOT / "infra" / "glorfindel-host" / "deploy.sh", ROOT / "scripts" / "notify_discord.py",
@@ -415,7 +415,7 @@ def test_an_older_release_is_refused_said_once_and_never_deployed(h0):
     assert res.returncode == 1 and "plus ancienne" in res.stdout
     assert h0.running() == {"v0.4.0"} and h0.head() == h0.commits["c2"]
     said = _alerts(h0)[0]["embeds"][0]["description"]
-    assert "v0.3.1 est plus ancienne que v0.4.0" in said and "make glorfindel-host-cd-rollback TAG=v0.3.1" in said
+    assert "v0.3.1 est plus ancienne que v0.4.0" in said and "make imladris-cd-rollback TAG=v0.3.1" in said
     assert h0.outcome("v0.3.1") == "refused"
     assert h0.run().returncode == 0 and len(h0.posts()) == 1              # said once
     assert h0.running() == {"v0.4.0"}
@@ -469,7 +469,7 @@ def test_the_way_back_asked_on_h0_is_verified_deployed_and_the_release_left_stay
     assert h0.running() == {"v0.3.1"} and h0.head() == h0.commits["c1"]
     assert h0.outcome("v0.3.1") == "deployed" and h0.outcome("v0.4.0") == "rolled back"
     start = next(p for p in h0.posts() if p["embeds"][0]["title"].startswith("🚀"))
-    assert "retour arrière demandé sur H0 : v0.4.0 → v0.3.1" in start["embeds"][0]["description"]
+    assert "retour arrière demandé sur Imladris : v0.4.0 → v0.3.1" in start["embeds"][0]["description"]
     assert [c[0] for c in h0.sig.calls()].count("verify") >= 2       # verified as any release
     # The timer's next pass: the latest release is still v0.4.0 — left behind, never taken up.
     assert h0.run().returncode == 0 and h0.running() == {"v0.3.1"}
@@ -618,7 +618,7 @@ def test_the_floor_is_the_highest_version_deployed_whatever_runs(agent, monkeypa
 def test_a_commit_before_the_floors_is_older(agent, monkeypatch):
     monkeypatch.setattr(agent, "ancestry", lambda a, b: b == "e")
     why, readable = agent.older("v0.5.0", "c", "v0.3.1", "d", {"tag": "v0.4.0", "commit": "e"})
-    assert readable and "précède v0.4.0, déjà déployée sur H0" in why
+    assert readable and "précède v0.4.0, déjà déployée sur Imladris" in why
 
 
 def test_an_order_git_cannot_read_is_refused_never_taken_for_newer(agent, monkeypatch):
@@ -664,7 +664,7 @@ def test_under_the_floor_is_refused_though_what_runs_is_older(h0):
     _git(work, h0.env, "push", "-q", "origin", "--tags")
     h0.publish("v0.3.2")
     assert h0.run().returncode == 1 and h0.running() == {"v0.3.1"}
-    assert "plus ancienne que v0.4.0, déjà déployée sur H0" in _alerts(h0)[-1]["embeds"][0]["description"]
+    assert "plus ancienne que v0.4.0, déjà déployée sur Imladris" in _alerts(h0)[-1]["embeds"][0]["description"]
 
 
 def test_what_runs_unreadable_is_refused_never_taken_for_older_than_anything(h0):
@@ -740,7 +740,7 @@ def test_macos_cancelled_or_queued_without_a_runner_never_holds_a_release(h0, ma
         assert told == []
     else:
         (post,) = told
-        assert MACOS in post["embeds"][0]["description"] and "sans retenir H0" in post["embeds"][0]["description"]
+        assert MACOS in post["embeds"][0]["description"] and "sans retenir Imladris" in post["embeds"][0]["description"]
         assert post.get("content") != "<@42>"
     assert f"« {MACOS} »" in res.stdout and "ne sont que dits" in res.stdout
 
@@ -901,7 +901,7 @@ def test_the_required_checks_are_the_ones_docs_sessions_lists():
 
 
 def test_the_dry_run_shows_what_holds_and_what_is_only_said(h0):
-    """make glorfindel-host-cd-check: both groups, in the terminal and in #deploy."""
+    """make imladris-cd-check: both groups, in the terminal and in #deploy."""
     _checks(h0, _check(MACOS, "cancelled"), _check("notify"), _check("core alone"))
     res = h0.run("check")
     assert res.returncode == 0, res.stdout + res.stderr
@@ -1061,7 +1061,7 @@ def test_an_attestation_not_signed_by_the_maintainer_is_refused_as_if_absent(tmp
 
 
 @pytest.mark.parametrize("env, said", [
-    ("EREGION_CONSOLE_TOKEN=tok\n", "aucune clé de l'attestation déclarée sur H0"),       # M3257
+    ("EREGION_CONSOLE_TOKEN=tok\n", "aucune clé de l'attestation déclarée sur Imladris"),       # M3257
     ("EREGION_CONSOLE_TOKEN=tok\nEREGION_HARNESS_KEY=pas-une-clé\n", "illisible"),       # M3259
 ])
 def test_without_a_readable_key_declared_on_h0_no_attestation_is_believed(tmp_path, fake, env, said):
@@ -1397,8 +1397,8 @@ def test_a_broken_integration_is_refused_whatever_the_reference(agent, monkeypat
     (_attestation(ref=_pass(NEW_LOCK)), "autre verrou que celui en service"),
     (_attestation(_pass(NEW_LOCK, runs=2, draws={lb: [RIGHT] * 2 for lb, _k in CASES})), "il en faut 3"),
     (_attestation(ref=_pass(OLD_LOCK, runs=2, draws={lb: [RIGHT] * 2 for lb, _k in CASES})), "il en faut 3"),
-    (_attestation(_pass(NEW_LOCK, model="ollama/qwen3")), "ne couvre pas le modèle de H0"),
-    (_attestation(ref=_pass(OLD_LOCK, model="ollama/qwen3")), "ne couvre pas le modèle de H0"),
+    (_attestation(_pass(NEW_LOCK, model="ollama/qwen3")), "ne couvre pas le modèle d'Imladris"),
+    (_attestation(ref=_pass(OLD_LOCK, model="ollama/qwen3")), "ne couvre pas le modèle d'Imladris"),
     (_attestation(_pass(NEW_LOCK, kinds=["paired"])), "pas tous les cas"),
     (_attestation(ref=_pass(OLD_LOCK, draws={PAIR: []})), "incomplet"),
     (_attestation(_pass(NEW_LOCK, draws={PAIR: [RIGHT] * 2})), "incomplet"),
@@ -1416,7 +1416,7 @@ def test_a_draw_whose_verdict_is_no_boolean_is_malformed(agent, monkeypatch):
 
 def test_without_what_runs_the_reference_cannot_be_checked(agent, monkeypatch):
     why = _refused(agent, monkeypatch, _attestation(), dep_commit="")
-    assert "ne peut être vérifiée" in why and "make glorfindel-host-start REF=v0.4.0" in why
+    assert "ne peut être vérifiée" in why and "make imladris-start REF=v0.4.0" in why
 
 
 def test_a_malformed_draw_is_refused_by_the_guard(tmp_path, fake):
@@ -1454,7 +1454,7 @@ def test_a_failed_preflight_leaves_what_runs_untouched(h0, env, said):
 
 def test_the_config_refusal_says_what_a3_said_in_the_journal_only(h0):
     """A3's words name the config's keys and values — workspace ids, resource groups: the
-    journal (make glorfindel-host-cd-status) has them, #deploy only says where to look."""
+    journal (make imladris-cd-status) has them, #deploy only says where to look."""
     res = h0.run(FAKE_CONFIG_FAIL="1")
     assert "quarantaine_nsg" in res.stdout
     assert "quarantaine_nsg" not in json.dumps(h0.posts()) and "cd-status" in json.dumps(h0.posts())
@@ -1819,7 +1819,7 @@ def test_an_unexpected_error_is_said_once(h0, tmp_path):
         res = h0.run(EREGION_CD_REPO=str(tmp_path / "no-such-checkout"))
         assert res.returncode == 1
     (alert,) = _alerts(h0)
-    assert alert["embeds"][0]["title"] == "⚠️ Le CD de H0 a échoué"
+    assert alert["embeds"][0]["title"] == "⚠️ Le CD d'Imladris a échoué"
 
 
 def test_check_pulls_verifies_and_preflights_the_release_running_already(h0):
@@ -1962,7 +1962,7 @@ def test_a_newer_release_with_the_same_agent_says_nothing(tmp_path, fake):
 
 @pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
 def test_the_installation_writes_the_commit_it_installs_from():
-    res = subprocess.run(["make", "-n", "--no-print-directory", "-C", str(ROOT), "glorfindel-host-cd-install",
+    res = subprocess.run(["make", "-n", "--no-print-directory", "-C", str(ROOT), "imladris-cd-install",
                           "HOST_IP=203.0.113.9"], capture_output=True, text=True, timeout=60)
     assert res.returncode == 0, res.stderr
     assert "git rev-parse HEAD |" in res.stdout and "cat > .eregion-cd/installed-from" in res.stdout
@@ -2320,7 +2320,7 @@ def test_the_installation_carries_chat_text():
     assert "chat_text.py" in (ROOT / "infra" / "glorfindel-host" / "cd" / "install.sh").read_text()
     if shutil.which("make") is None:
         pytest.skip("make not installed")
-    res = subprocess.run(["make", "-n", "--no-print-directory", "-C", str(ROOT), "glorfindel-host-cd-install",
+    res = subprocess.run(["make", "-n", "--no-print-directory", "-C", str(ROOT), "imladris-cd-install",
                           "HOST_IP=203.0.113.9"], capture_output=True, text=True, timeout=60)
     assert res.returncode == 0 and "glorfindel/chat_text.py" in res.stdout
 
@@ -2507,7 +2507,7 @@ def test_the_installation_carries_the_verifier():
     assert "published_image.py cosign" in install and "install-cosign" in install
     if shutil.which("make") is None:
         pytest.skip("make not installed")
-    res = subprocess.run(["make", "-n", "--no-print-directory", "-C", str(ROOT), "glorfindel-host-cd-install",
+    res = subprocess.run(["make", "-n", "--no-print-directory", "-C", str(ROOT), "imladris-cd-install",
                           "HOST_IP=203.0.113.9"], capture_output=True, text=True, timeout=60)
     assert res.returncode == 0 and "scripts/published_image.py" in res.stdout
     assert "published_image.py install-cosign .eregion-cd/cosign" in res.stdout

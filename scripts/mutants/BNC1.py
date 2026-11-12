@@ -33,7 +33,7 @@ MUTANTS = [
     ("M4681", "a warning stops the run: Orodruin deallocated at the step 0 exits 1 (BNC1)", PRE,
      '    return "\\n".join(bs.scrub(x) for x in out), 1 if n[bs.FAIL] else 0\n',
      '    return "\\n".join(bs.scrub(x) for x in out), 1 if n[bs.FAIL] or n[bs.WARN] else 0\n'),
-    ("M4682", "an IP address printed as it is: H0's in a line of `glorfindel-host-status` (BNC1)", SHARED,
+    ("M4682", "an IP address printed as it is: H0's in a line of `imladris-status` (BNC1)", SHARED,
      '    return IPV4.sub("<ip>", out)\n',
      '    return out\n'),
     ("M4683", "a caller known by its appId alone read as unknown: the console's Run Commands lose their "
