@@ -335,10 +335,14 @@ def test_the_provider_lists_its_points_read_only(monkeypatch):
     assert posted == [] and not connector._compute.virtual_machines.begin_deallocate.called
 
 
-def test_every_copyable_restore_command_asks_for_the_moment():
+def test_every_copyable_restore_command_asks_for_the_moment(monkeypatch):
     """The commands to copy — the CLI's next steps, the bot's, the TUI's, the console's —
     show --before."""
     from glorfindel import cli
+    # The card's VM known here (isolated): its short name takes it back (MSK2).
+    monkeypatch.setattr("glorfindel.actions.active_isolations", lambda: [{"resource_id": VM}])
+    monkeypatch.setattr("glorfindel.actions.active_blocks", lambda: [])
+    monkeypatch.setattr("glorfindel.discovery.AssetRegistry", lambda: SimpleNamespace(all=lambda: []))
     import io
     from rich.console import Console
     buf = io.StringIO()
@@ -349,7 +353,9 @@ def test_every_copyable_restore_command_asks_for_the_moment():
                                 "id": "e1", "first_seen": "2026-10-29T08:12:00+00:00"})
     finally:
         cli.console = real
-    assert f"glorfindel restore {VM} --yes --before 2026-10-29T08:12:00+00:00" in buf.getvalue()
+    # By the VM's short name, never the full id (MSK2): `restore` takes it back.
+    assert "glorfindel restore vm-example-01 --yes --before 2026-10-29T08:12:00+00:00" in buf.getvalue()
+    assert SUB not in buf.getvalue()
     for rel in ("glorfindel/bot.py", "glorfindel/tui.py", "eregion_console/static/glorfindel.js"):
         text = (ROOT / rel).read_text()
         assert "--yes --before" in text, rel
@@ -700,7 +706,9 @@ def test_two_vms_of_one_name_are_refused_wherever_they_are_known(monkeypatch, wh
     resolve = _names(monkeypatch, **where)
     with pytest.raises(click.ClickException) as exc:
         resolve("vm-example-01")
-    assert VM in exc.value.message and _vm("vm-example-01", RG_B) in exc.value.message
+    said = exc.value.message                         # by name and group, never the ids (MSK2)
+    assert f"vm-example-01 (groupe {RG_A})" in said and f"vm-example-01 (groupe {RG_B})" in said
+    assert SUB not in said and "/subscriptions/" not in said and "glorfindel list --ids" in said
 
 
 def test_one_vm_known_twice_is_one_vm(monkeypatch):

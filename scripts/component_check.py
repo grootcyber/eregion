@@ -75,7 +75,7 @@ COMPONENTS: dict[str, Component] = {
         absent_deps=CONSOLE_DEPS,
         tests=(
             "test_actions_split.py", "test_agent_nodes.py", "test_audit.py", "test_aws_adapter.py",
-            "test_bot.py", "test_chat_escaping.py", "test_cli.py", "test_config.py", "test_detection_authoring.py",
+            "test_bot.py", "test_chat_escaping.py", "test_cli.py", "test_cli_masking.py", "test_config.py", "test_detection_authoring.py",
             "test_detection_rules.py", "test_detectors.py", "test_discovery.py", "test_entries_calls.py",
             "test_auditd.py", "test_bench_routine.py", "test_canary_exclusion.py", "test_canary_signin.py", "test_correlation.py", "test_decision_queue.py", "test_expected_sudo.py", "test_forged_logs.py",
             "test_glorfindel.py", "test_identity_cards.py", "test_identity_contract.py", "test_identity_plan.py",

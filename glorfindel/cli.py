@@ -18,6 +18,8 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.markup import escape as _esc_markup
 
+from glorfindel.masking import ids_masked as _ids_masked
+
 console = Console()
 
 
@@ -205,8 +207,26 @@ def _resolve_resource_id(arg: str) -> str:
     if len(found) > 1:
         raise click.ClickException(
             f"{arg}: several VMs have this name — pass the full id:\n  "
-            + "\n  ".join(sorted(found.values())))
+            + "\n  ".join(_vms_said(found.values()))
+            + "\n(az vm show -g <groupe> -n <nom> --query id -o tsv, or glorfindel list --ids — "
+              "this terminal only)")
     return next(iter(found.values()), arg)
+
+
+def _vms_said(resource_ids) -> list[str]:
+    """Several VMs by their name and group, never their ids (MSK2): two that would read the same
+    (one name, one group, two subscriptions) are told apart by their rank, not by an id."""
+    said = sorted((_vm_said(rid), rid.lower()) for rid in resource_ids)
+    seen: dict[str, int] = {}
+    for text, _ in said:
+        seen[text] = seen.get(text, 0) + 1
+    out, rank = [], {}
+    for text, _ in said:
+        if seen[text] > 1:
+            rank[text] = rank.get(text, 0) + 1
+            text = f"{text}, abonnement n°{rank[text]}"
+        out.append(text)
+    return out
 
 
 class _GlorfindelCli(click.Group):
@@ -221,13 +241,17 @@ class _GlorfindelCli(click.Group):
     def invoke(self, ctx):
         try:
             return super().invoke(ctx)
-        except (click.ClickException, click.exceptions.Abort, click.exceptions.Exit,
-                SystemExit, KeyboardInterrupt):
+        except click.ClickException as e:
+            # A refusal is pasted too: never a subscription's id in it (MSK2).
+            e.message = _ids_masked(e.message)
+            raise
+        except (click.exceptions.Abort, click.exceptions.Exit, SystemExit, KeyboardInterrupt):
             raise
         except Exception as e:  # noqa: BLE001 — deliberate CLI boundary
             if os.environ.get("GLORFINDEL_DEBUG"):
                 raise
-            console.print(f"[red]✗ {type(e).__name__}: {e}[/red]")
+            # Azure's text (a 403 cites « over scope '/subscriptions/…' »), said without the id (MSK2).
+            console.print(f"[red]✗ {type(e).__name__}: {_esc_markup(_ids_masked(e))}[/red]")
             msg = str(e)
             if "AZURE_SUBSCRIPTION_ID" in msg or "credential" in msg.lower():
                 console.print(
@@ -341,7 +365,7 @@ def door(resource_id: str, days: float, as_json: bool):
             probe = connector.observed_rights([], resource_id, scopes=seen.get("scopes") or (), reading=reading)
             seen["rights_reads"] = probe.get("reads") or []
     except Exception as exc:            # an answer of a shape not read: said in a sentence, never a trace
-        raise click.ClickException(f"la porte ne se lit pas : {_esc_markup(str(exc))[:240]}")
+        raise click.ClickException(f"la porte ne se lit pas : {_esc_markup(_ids_masked(exc))[:240]}")
     if as_json:
         click.echo(json.dumps(seen, indent=1, default=str))
         return
@@ -349,7 +373,7 @@ def door(resource_id: str, days: float, as_json: bool):
     console.print(f"  {_esc_markup(resource_id.rsplit('/', 1)[-1])} · {seen.get('since')} → {seen.get('until')} "
                   f"· [bold]{seen.get('verdict')}[/bold]")
     for w in seen.get("unreadable") or []:
-        console.print(f"  [orange1]illisible[/orange1] : {_esc_markup(str(w))}")
+        console.print(f"  [orange1]illisible[/orange1] : {_esc_markup(_ids_masked(w))}")
     for a in seen.get("actors") or []:
         r = a.get("rights") or {}
         console.print(f"  · {_esc_markup(', '.join(a.get('ids') or []))} {_esc_markup(a.get('role') or '')} "
@@ -357,14 +381,14 @@ def door(resource_id: str, days: float, as_json: bool):
         for g in a.get("gestures") or []:
             console.print(f"      {g['at']} {_esc_markup(g['operation'])} ({g['kind']}, {_esc_markup(g['status'])})")
         for w in r.get("unreadable") or []:
-            console.print(f"      {_esc_markup(str(w))}")
+            console.print(f"      {_esc_markup(_ids_masked(w))}")
     for r in seen.get("reads") or []:
         console.print(f"  lecture {r.get('how')} {r.get('what')} : "
-                      + (f"[red]{_esc_markup(str(r['error']))}[/red]" if r.get("error") else
+                      + (f"[red]{_esc_markup(_ids_masked(r['error']))}[/red]" if r.get("error") else
                          f"{r.get('pages')} page(s), {r.get('events')} événement(s)"))
     for r in seen.get("rights_reads") or []:
-        console.print(f"  droits {r.get('what')} sur {_esc_markup(str(r.get('scope')))} : "
-                      + (f"[red]{_esc_markup(str(r['error']))}[/red]" if r.get("error") else
+        console.print(f"  droits {r.get('what')} sur {_esc_markup(_ids_masked(r.get('scope')))} : "
+                      + (f"[red]{_esc_markup(_ids_masked(r['error']))}[/red]" if r.get("error") else
                          f"{r.get('items')} lue(s), dont {r.get('inherited')} d'une autre portée"))
 
 
@@ -380,7 +404,7 @@ def release(resource_id: str, dry_run: bool, yes: bool):
     connector = AzureConnector(dry_run=dry_run)
 
     console.rule("[bold yellow]Glorfindel — Release Isolation[/bold yellow]")
-    console.print(f"  Resource : {resource_id}")
+    console.print(f"  Resource : {_esc_markup(_vm_said(resource_id))}")
     console.print(f"  Dry-run  : {dry_run}\n")
 
     if not dry_run:
@@ -403,12 +427,12 @@ def release(resource_id: str, dry_run: bool, yes: bool):
     elif result.get("status") == "release_partial":
         console.print("[red]✗ Isolation partiellement levée — règles encore en place :[/red]")
         for item in result.get("failed", []):
-            console.print(f"  • {item}")
+            console.print(f"  • {_esc_markup(_ids_masked(item))}")
         console.print("[dim]État conservé : relancer `glorfindel release` après correction.[/dim]")
         _record_manual_action("release_isolation", resource_id, result)
         sys.exit(2)
     else:
-        console.print(f"[green]✓ Isolation released.[/green]  ({result})")
+        console.print(f"[green]✓ Isolation released.[/green]  ({_esc_markup(_ids_masked(result))})")
         _record_manual_action("release_isolation", resource_id, result)
 
 
@@ -426,7 +450,7 @@ def unblock(ip: str, resource_id: str, dry_run: bool, yes: bool):
 
     console.rule("[bold yellow]Glorfindel — Unblock IP[/bold yellow]")
     console.print(f"  IP       : {ip}")
-    console.print(f"  Resource : {resource_id}")
+    console.print(f"  Resource : {_esc_markup(_vm_said(resource_id))}")
     console.print(f"  Dry-run  : {dry_run}\n")
 
     if not dry_run and not yes:
@@ -443,11 +467,11 @@ def unblock(ip: str, resource_id: str, dry_run: bool, yes: bool):
     elif result["status"] == "unblock_partial":
         console.print(f"[red]✗ Blocage de {ip} partiellement retiré — règles encore en place :[/red]")
         for item in result.get("failed", []):
-            console.print(f"  • {item}")
+            console.print(f"  • {_esc_markup(_ids_masked(item))}")
         _record_manual_action("unblock_ip", resource_id, {**result, "ip": ip})
         sys.exit(2)
     else:
-        console.print(f"[green]✓ Unblocked {ip}.[/green]  Deleted: {result['deleted_rules']}")
+        console.print(f"[green]✓ Unblocked {ip}.[/green]  Deleted: {_esc_markup(_ids_masked(result['deleted_rules']))}")
         _record_manual_action("unblock_ip", resource_id, {**result, "ip": ip})
 
 
@@ -1485,8 +1509,8 @@ def snapshot(resource_id: str, vault: str | None, dry_run: bool, yes: bool, wait
     connector = AzureConnector(dry_run=dry_run)
 
     console.rule("[bold yellow]Glorfindel — On-demand Snapshot[/bold yellow]")
-    console.print(f"  Resource : {resource_id}")
-    console.print(f"  Vault    : {vault}")
+    console.print(f"  Resource : {_esc_markup(_vm_said(resource_id))}")
+    console.print(f"  Vault    : {_esc_markup(_short_name(vault))}")
     console.print(f"  Dry-run  : {dry_run}")
     console.print(f"  Wait     : {wait}\n")
 
@@ -1505,8 +1529,9 @@ def snapshot(resource_id: str, vault: str | None, dry_run: bool, yes: bool, wait
         job = start_snapshot(resource_id, connector, vault, vault_rg=vault_rg)
         console.print("[green]✓ Backup job started.[/green]")
         console.print(f"  job_id : [dim]{job['job_id']}[/dim]")
-        console.print(f"  snap_id: [dim]{job['snap_id']}[/dim]")
-        console.print(f"\n[dim]Check status: glorfindel jobs {resource_id} --refresh[/dim]")
+        console.print(f"  snap_id: [dim]{_esc_markup(_ids_masked(job['snap_id']))}[/dim]")
+        short = _short_name(resource_id)          # what `jobs` reads: the VM's name (MSK2)
+        console.print(f"\n[dim]Check status: glorfindel jobs {_esc_markup(short)} --refresh[/dim]")
         console.print("[dim]Use --wait to block until completion (needed for setup workflow).[/dim]")
         _record_manual_action("snapshot", resource_id, {"snap_id": job["snap_id"], "status": "InProgress"})
         return
@@ -1519,13 +1544,13 @@ def snapshot(resource_id: str, vault: str | None, dry_run: bool, yes: bool, wait
 
     elapsed_label = f"{elapsed // 60}min {elapsed % 60}s"
     console.print(f"[green]✓ Backup complete.[/green]  Time: {elapsed_label}")
-    console.print(f"  snap_id: [dim]{snap_id}[/dim]")
+    console.print(f"  snap_id: [dim]{_esc_markup(_ids_masked(snap_id))}[/dim]")
 
     verification = connector.verify_snapshot(snap_id)
     if verification.get("verified"):
         console.print("[green]✓ Recovery point verified in vault.[/green]")
     else:
-        console.print(f"[yellow]⚠ Verification inconclusive: {verification}[/yellow]")
+        console.print(f"[yellow]⚠ Verification inconclusive: {_esc_markup(_ids_masked(verification))}[/yellow]")
 
     _record_manual_action("snapshot", resource_id, {"snap_id": snap_id, **verification})
 
@@ -1555,7 +1580,7 @@ def jobs(resource_id: str, refresh: bool):
             if job.get("status") != before:
                 save_job(vm_name, job)
         except Exception as e:
-            console.print(f"[yellow]Azure poll error: {e}[/yellow]")
+            console.print(f"[yellow]Azure poll error: {_esc_markup(_ids_masked(e))}[/yellow]")
 
     status = job.get("status", "?")
     color = {"Completed": "green", "Failed": "red", "InProgress": "cyan",
@@ -1567,20 +1592,22 @@ def jobs(resource_id: str, refresh: bool):
     if job.get("completed_at"):
         console.print(f"  completed: {job.get('completed_at')}")
     if job.get("snap_id"):
-        console.print(f"  snap_id : {job.get('snap_id')}")
+        console.print(f"  snap_id : {_esc_markup(_ids_masked(job.get('snap_id')))}")
     if job.get("restore_job_name"):
         console.print(f"  azure_job: {job.get('restore_job_name')}")
     if job.get("recovery_point_time"):
         console.print(f"  RP      : {job.get('recovery_point_time')}")
     if job.get("error"):
-        console.print(f"  [red]error   : {job.get('error')}[/red]")
+        console.print(f"  [red]error   : {_esc_markup(_ids_masked(job.get('error')))}[/red]")
     if status == "InProgress":
         console.print("\n[dim]Run with --refresh to poll Azure for current status.[/dim]")
     if status == "Completed" and job.get("type") == "restore":
         console.print("\n[yellow]Restore done. Next steps:[/yellow]")
         rg = job.get("rg", "<rg>")
         console.print(f"  1. az vm start -g {rg} -n {vm_name}")
-        console.print(f"  2. glorfindel release {resource_id} --yes")
+        # The job's own VM (it keeps the full id), by a name that takes it back — never another
+        # VM of its name, whose quarantine `release … --yes` would lift without a question (MSK2).
+        console.print(f"  2. glorfindel release {_esc_markup(_name_for_a_command(job.get('resource_id') or resource_id))} --yes")
 
 
 @cli.command()
@@ -1720,7 +1747,7 @@ def restore(resource_id: str, vault: str, dry_run: bool, yes: bool, keep_isolate
         state = agent.respond(sig)
         _render_decision(state, dry_run)
     except Exception as e:
-        console.print(f"[red]Glorfindel agent error:[/red] {e}")
+        console.print(f"[red]Glorfindel agent error:[/red] {_esc_markup(_ids_masked(e))}")
         console.print(
             f"[yellow]Signal saved to {out.name} — process manually:[/yellow]\n"
             f"  glorfindel respond {out}"
@@ -1742,9 +1769,11 @@ def _render_proposal(p: dict) -> None:
     if p.get("replaces") == "client":
         console.print(f"  [yellow]⚠ L'approuver remplace la règle « {_esc_markup(p['rule_name'])} » "
                       f"de la couche du client.[/yellow]")
-    console.print(f"  Analysis  : [dim]{p['analysis'][:100]}…[/dim]")
-    console.print(f"  Why better: {p['explanation'][:100]}")
-    console.print(Syntax(p["query"].strip(), "sql", theme="monokai", line_numbers=False))
+    # The model's words and query, written with the full id in its prompt: said without the
+    # subscription, here only — the proposal keeps them, and approve-rule takes its id (MSK2).
+    console.print(f"  Analysis  : [dim]{_esc_markup(_ids_masked(p['analysis'])[:100])}…[/dim]")
+    console.print(f"  Why better: {_esc_markup(_ids_masked(p['explanation'])[:100])}")
+    console.print(Syntax(_ids_masked(p["query"]).strip(), "sql", theme="monokai", line_numbers=False))
     console.print(
         f"  [dim]→ approve: glorfindel approve-rule {p['id']}[/dim]"
     )
@@ -1770,7 +1799,8 @@ def _render_escalation(e: dict) -> None:
     table.add_row("Action", f"[bold yellow]{e['action']}[/bold yellow]")
     table.add_row("Resource", resource_short)
     table.add_row("Type", e["escalation_type"])
-    table.add_row("Reason", e["reason"][:120] + ("…" if len(e["reason"]) > 120 else ""))
+    reason = _ids_masked(e["reason"])                   # the model's words: masked, then cut (MSK2)
+    table.add_row("Reason", _esc_markup(reason[:120]) + ("…" if len(reason) > 120 else ""))
     table.add_row("Run", e["run_id"])
     console.print(table)
 
@@ -1789,8 +1819,24 @@ def _card_moment(e: dict) -> str:
         return "<ISO8601>"
 
 
+def _name_for_a_command(resource_id: str) -> str:
+    """What a suggested command names a VM by: its short name, only when every command takes it
+    back to this very resource (`_resolve_resource_id`); otherwise the id that `list --ids` shows
+    (MSK2). Two VMs of that name, a VM this host no longer knows while another of its name, in
+    another group, is known (the name would take the other one: a `restore … --yes` on the wrong
+    VM), or a resource nothing resolves (a NSG, an account): never the short name."""
+    short = _short_name(resource_id)
+    try:
+        resolved = _resolve_resource_id(short)
+    except click.ClickException:
+        return "<id: glorfindel list --ids>"
+    if resolved.rstrip("/").lower() != str(resource_id or "").rstrip("/").lower():
+        return "<id: glorfindel list --ids>"
+    return short
+
+
 def _render_next_steps(e: dict) -> None:
-    rid = e["resource_id"]
+    rid = _name_for_a_command(e["resource_id"])      # never the full id on the card (MSK2)
     action = e["action"]
     esc_type = e["escalation_type"]
 
@@ -1798,13 +1844,13 @@ def _render_next_steps(e: dict) -> None:
     if llm_steps:
         console.print("  [bold cyan]Next steps (Glorfindel):[/bold cyan]")
         for i, step in enumerate(llm_steps, 1):
-            console.print(f"  [cyan]{i}.[/cyan] {step}")
+            console.print(f"  [cyan]{i}.[/cyan] {_esc_markup(_ids_masked(step))}")
         return
 
     # Fallback statique pour les escalades sans suggested_steps (anciennes ou dry-run)
     if esc_type == "low_confidence" and action == "snapshot":
         steps = [
-            f"Check VM state: az vm show -g <rg> -n {rid.split('/')[-1]} --query powerState",
+            f"Check VM state: az vm show -g <rg> -n {_short_name(e['resource_id'])} --query powerState",
             f"If compromise confirmed: glorfindel restore {rid} --yes --before {_card_moment(e)}"
             "   # un instant avant le début de l'attaque",
             f"If false positive: glorfindel ack {e['id']}",
@@ -2096,17 +2142,25 @@ def activate(vm: str, yes: bool):
         quarantine = load_glorfindel_config().isolation.quarantine_nsg
     except Exception:
         quarantine = True
-    a = readiness.assess(rid, AzureConnector(dry_run=False), quarantine_nsg=quarantine)
+    connector = AzureConnector(dry_run=False)
+    a = readiness.assess(rid, connector, quarantine_nsg=quarantine)
+    # « VM dans l'abonnement <target>, Glorfindel agit dans <mine> » (other_subscription): both
+    # said without their ids (MSK2).
+    from glorfindel.actions import _subscription_of
+    subs = [s for s in (getattr(connector, "_subscription_id", None), _subscription_of(rid))
+            if isinstance(s, str) and s]
     colors = {"ready": "green", "reserve": "yellow", "not_ready": "red"}
     console.rule(f"[bold]Autonomous response — {a['vm']}[/bold]")
     console.print(f"  Verdict : [{colors[a['verdict']]}]{a['verdict']}[/{colors[a['verdict']]}]")
     for r in a["reasons"]:
-        console.print(f"  • [{r['level']}] {r['message']}", soft_wrap=True)
+        console.print(f"  • [{r['level']}] {_esc_markup(_ids_masked(r['message'], subscriptions=subs))}",
+                      soft_wrap=True)
         if r.get("fix"):
-            console.print(f"    [dim]fix: {r['fix']}[/dim]", soft_wrap=True)
+            console.print(f"    [dim]fix: {_esc_markup(_ids_masked(r['fix'], subscriptions=subs))}[/dim]",
+                          soft_wrap=True)
     refusal = readiness.activation_refusal(a, a["reserve_codes"])
     if refusal:
-        raise click.ClickException(refusal)
+        raise click.ClickException(_ids_masked(refusal, subscriptions=subs))
     if a["reserve_codes"] and not yes and not click.confirm(
             f"Accept these reserves ({', '.join(a['reserve_codes'])}) and turn on "
             "autonomous response?", default=False):
@@ -2120,8 +2174,15 @@ def activate(vm: str, yes: bool):
 
 
 @cli.command("list")
-def list_active():
-    """List discovered VMs and any active Glorfindel actions (isolation, blocked IPs)."""
+@click.option("--ids", "show_ids", is_flag=True,
+              help="The VMs' full ARM ids, the subscription's included (this terminal only: never "
+                   "to paste). Without it, a VM is said by its name and group.")
+def list_active(show_ids: bool):
+    """List discovered VMs and any active Glorfindel actions (isolation, blocked IPs).
+
+    A VM is said by its name and its resource group, never its full id (MSK2): the output is
+    pasted in an issue or a thread. The commands it suggests take the short name; two VMs of one
+    name take the full id, which --ids shows."""
     from datetime import datetime, timezone
     from glorfindel.actions import active_blocks, active_isolations
 
@@ -2173,14 +2234,18 @@ def list_active():
             "bold yellow" if rid_lower in blocks else "bold"
         )
         console.print(f"[{status_color}]{vm_short}[/{status_color}]")
-        console.print(f"  [dim]{resource_id}[/dim]", soft_wrap=True)
+        # The name every command takes back to this VM (`_name_for_a_command`), else the full id,
+        # shown with --ids only (MSK2).
+        target = resource_id if show_ids else _name_for_a_command(resource_id)
+        console.print(f"  [dim]{_esc_markup(resource_id if show_ids else _vm_said(resource_id))}[/dim]",
+                      soft_wrap=True)
 
         if _autonomy is not None:
             from glorfindel.readiness import effective_mode
             _mode, _hold = effective_mode(resource_id, _autonomy.resolve(vm_short))
             _mode_color = "yellow" if _mode == "human_only" else "green"
-            _held = (f"  [dim](configured {_hold['configured']}, held: {_hold['message']}"
-                     f" → glorfindel activate {vm_short})[/dim]") if _hold else ""
+            _held = (f"  [dim](configured {_hold['configured']}, held: {_esc_markup(_ids_masked(_hold['message']))}"
+                     f" → glorfindel activate {_esc_markup(target)})[/dim]") if _hold else ""
             console.print(f"  mode: [{_mode_color}]{_mode}[/{_mode_color}]{_held}",
                           soft_wrap=True)
 
@@ -2193,8 +2258,8 @@ def list_active():
             checked = f"  [dim]verified {_age(iso['verified_at'])}[/dim]" if iso.get("verified_at") else ""
             console.print(f"  [red]{label}[/red]  {_age(ts)}{checked}")
             for w in _state_warnings(iso, "release_failed"):
-                console.print(f"    [bold red]⚠ {w}[/bold red]", soft_wrap=True)
-            console.print(f"  [dim]→ glorfindel release {resource_id} --yes[/dim]",
+                console.print(f"    [bold red]⚠ {_esc_markup(_ids_masked(w))}[/bold red]", soft_wrap=True)
+            console.print(f"  [dim]→ glorfindel release {_esc_markup(target)} --yes[/dim]",
                           soft_wrap=True)
 
         for b in blocks.get(rid_lower, []):
@@ -2202,13 +2267,13 @@ def list_active():
             label = "BLOCKED (PARTIAL)" if b.get("partial") else "BLOCKED"
             console.print(f"  [yellow]{label}[/yellow]   {b['ip']}  {_age(ts)}")
             for w in _state_warnings(b, "unblock_failed"):
-                console.print(f"    [bold red]⚠ {w}[/bold red]", soft_wrap=True)
-            console.print(f"  [dim]→ glorfindel unblock {b['ip']} {resource_id} --yes[/dim]",
+                console.print(f"    [bold red]⚠ {_esc_markup(_ids_masked(w))}[/bold red]", soft_wrap=True)
+            console.print(f"  [dim]→ glorfindel unblock {b['ip']} {_esc_markup(target)} --yes[/dim]",
                           soft_wrap=True)
 
         if has_action:
             console.print(
-                f"  [dim]→ glorfindel reset {resource_id} --yes  (all at once)[/dim]",
+                f"  [dim]→ glorfindel reset {_esc_markup(target)} --yes  (all at once)[/dim]",
                 soft_wrap=True)
         console.print()
 
@@ -2265,11 +2330,11 @@ def _do_reset_from_azure(resource_id: str, yes: bool, dry_run: bool) -> None:
     if preview["failed"]:
         console.print(f"[red]✗ Impossible de tout établir pour {vm_short} :[/red]")
         for item in preview["failed"]:
-            console.print(f"  • {item}")
+            console.print(f"  • {_esc_markup(_ids_masked(item))}")
     elif not preview["deleted"]:
         console.print(f"[green]Aucune règle Glorfindel de {vm_short} sur ses NSG.[/green]")
     for name in preview["deleted"]:
-        console.print(f"  • supprimer {name}")
+        console.print(f"  • supprimer {_esc_markup(_ids_masked(name))}")
     for name in preview["kept_perimeter"]:
         console.print(f"  [dim]• conservée (blocage de périmètre, toutes les VMs) : {name}[/dim]")
     if dry_run or not preview["deleted"]:
@@ -2282,7 +2347,7 @@ def _do_reset_from_azure(resource_id: str, yes: bool, dry_run: bool) -> None:
     if result["failed"]:
         console.print("\n[red]✗ Reset incomplet — règles encore en place :[/red]")
         for item in result["failed"]:
-            console.print(f"  • {item}")
+            console.print(f"  • {_esc_markup(_ids_masked(item))}")
         _record_manual_action("reset", resource_id, {"status": "partial", "vm": vm_short,
                                                      "source": "azure", "failed": result["failed"]})
         sys.exit(2)
@@ -2336,7 +2401,7 @@ def _do_reset(resource_id: str, yes: bool, dry_run: bool, from_azure: bool = Fal
         # VM off or block the IP, and their state is kept for a retry.
         console.print(f"\n[red]✗ Reset incomplet — {vm_short} garde des règles :[/red]")
         for item in leftovers:
-            console.print(f"  • {item}")
+            console.print(f"  • {_esc_markup(_ids_masked(item))}")
         if not dry_run:
             _record_manual_action("reset", resource_id, {"status": "partial", "vm": vm_short,
                                                          "failed": leftovers})
@@ -2627,13 +2692,15 @@ def _render_decision(state: dict, dry_run: bool) -> None:
         else:
             verified_label = "[yellow]⚠ verification not implemented[/yellow]"
         table.add_row("Verification", verified_label)
-    table.add_row("Explanation", state.get("explanation", ""))
+    # The model's words may copy the signal's id: said without it, here only — what the model
+    # saw, and what the cycle stores, keep it (MSK2).
+    table.add_row("Explanation", _esc_markup(_ids_masked(state.get("explanation", ""))))
     if escalated:
-        table.add_row("Escalation reason", state.get("escalation_reason", ""))
+        table.add_row("Escalation reason", _esc_markup(_ids_masked(state.get("escalation_reason", ""))))
     console.print(table)
 
     console.print(Panel(
-        state.get("reasoning", ""),
+        _esc_markup(_ids_masked(state.get("reasoning", ""))),
         title="[dim]Reasoning[/dim]",
         border_style="dim",
         padding=(0, 1),
