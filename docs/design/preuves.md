@@ -471,6 +471,79 @@ l'ancien oracle et l'oracle corrigé l'attrape. M4413 (une suppression refusée 
 règle) et M4414 sont attrapés par la séquence figée : la machine tire trop rarement ensemble un 403, un
 échange d'adresse entre deux cartes et une règle retournée.
 
+### Un blocage de périmètre que sa vérification n'a pas pu conclure (I3N)
+
+La nuit « Invariants (deep) » du 12/11 (run 43207966449, sur 90f00faf, 10 000 exemples) est rouge sur
+macOS seulement : « I3: perimeter block named ['db-nic-0'] of …/Db--01 uncovered; our perimeter on their
+subnet cuts them off ». Le monde est `data_primary` : la carte primaire de Db--01 est sur le sous-réseau
+data, et db-nic-0 sur le sous-réseau app, avec web. web est bloquée sur le sous-réseau app. Dans la
+séquence trouvée, il y a d'abord un périmètre retourné laissé hors d'une passe, puis levé, puis le blocage
+de web promu sept fois. Puis Db--01 est bloquée sur son propre sous-réseau, et son 13ᵉ appel répond 429.
+C'est la lecture de nsg-data par laquelle sa vérification relit la paire qu'elle vient d'écrire. La
+séquence se réduit à deux pas : le périmètre de web, puis celui de Db--01 avec cette panne.
+
+**C'était le produit, pas l'oracle.** La vérification ne concluait pas (`verified: None`). `_block_ip_subnet`
+gardait alors toutes les cartes hors du périmètre dans `uncovered_nics`, « not behind it, the IP still
+reaches them », et perdait l'erreur. Or db-nic-0 est derrière le périmètre de web, qui coupe l'attaquant,
+et rien d'elle n'avait été lu. AWS1b était un défaut de l'oracle, qui demandait plus que ce que l'adaptateur
+pouvait savoir. Ici, la réponse affirme un fait qu'elle n'a pas lu : l'oracle (`_perimeter_cuts`) a raison
+de la juger contre le monde. Aucune excuse ne lui a été ajoutée. **Correctif** (`providers/azure/blocks.py`) :
+une vérification qui ne conclut pas (une de ses huit lectures en 429, ou une exception) ne prouve aucune
+carte ouverte ni aucune carte tenue. Le blocage dit ses cartes non lues (`nics_unread`, avec l'erreur),
+`blocked_partial` : jamais hors du périmètre (I3N), jamais `blocked` (I3P). La vérification suivante, une
+fois lisible, dit laquelle : `held_by_perimeter` ou `uncovered_nics`.
+
+**Ni macOS ni la casse n'en sont la cause.** Les mêmes tirages échouent sur Linux, et l'identifiant en
+minuscules aussi (la séquence figée est jouée avec les deux). Db--01 est la seule VM de la machine dont une
+carte peut être hors de son périmètre, ce qui explique son nom dans le message. L'état local est déjà
+nommé par le nom en minuscules et une empreinte de l'identifiant. En CI, la machine est dérandomisée, et le
+jeu tiré dépend du lieu (MUT4) : c'est la graine de macOS qui a tiré ce cas.
+
+**Deux voisins, cherchés et trouvés.** Une sonde au connecteur a mis en 429 chaque appel du blocage de
+périmètre, dans un monde où Db--01 est d'abord bloquée pour elle-même : une entrée fusionnée (RB1). Le
+17ᵉ appel, la lecture du sous-réseau de db-nic-0 pendant la vérification, rendait encore db-nic-0
+« non couverte », et l'oracle de la machine échouait. Le placement du blocage propre de db-nic-0 est sur
+le NSG de son sous-réseau. Ce sous-réseau non lu, ce NSG manquait dans les vues de la carte :
+`verify_block_ip` lisait « nsg-subnet ne gouverne plus db-nic-0 ». La règle était comptée manquante, la
+carte ouverte, et la réaffirmation l'aurait réécrite sur une supposition (A0). Pourtant deux blocages à
+nous la coupaient. `verify_isolation`, la levée, le déblocage et le reset lisent `subnet_unreadable` ; la
+vérification d'un blocage ne le lisait pas. Elle dit maintenant la carte inconnue, « NSG du subnet
+illisible », sauf si un autre placement la prouve bloquée. De même, `_perimeter_holds` répondait « no » sur
+une telle carte : un périmètre posé sur son sous-réseau était lu absent. Il répond maintenant « unknown ».
+
+**Ce qui reste ouvert.** Quand la vérification conclut `False` (une carte est prouvée ouverte, ou le
+périmètre est contourné), `_block_ip_subnet` ne retire d'`uncovered_nics` que les cartes prouvées tenues
+(I3P, `test_a_perimeter_block_keeps_an_unread_nic_off_its_subnet_uncovered`). Une carte non lue (illisible,
+`nics_unknown`, `perimeter_unread`) reste donc dite « atteinte ». C'est le choix prudent d'I3P. La sonde l'a
+montré derrière un périmètre contourné : `allow-ssh` à 100 sur le sous-réseau data, des cartes illisibles
+(429), et db-nic-0 dite non couverte alors que le périmètre de web la coupe. L'oracle n'y regarde pas, parce
+qu'un contournement dit (`bypass`) l'exempte. Le trancher (une carte non lue dite non lue, à côté d'une carte
+ouverte) changerait la forme de la réponse et le test d'I3P. Ce n'est pas fait ici.
+
+**Mesures.** Figés dans `tests/unit/test_invariant_regressions.py` : la séquence de la nuit, telle que
+trouvée et réduite, avec les deux formes de l'identifiant. Chacune des huit lectures de la vérification
+est mise en 429 tour à tour, derrière le périmètre de web et sans rien qui coupe db-nic-0 : jugée par
+l'oracle de la machine, et au connecteur. Un dernier test couvre la vérification qui lève. Sur l'arbre
+d'`origin/main`, 29 de ces cas échouent. Les 8 cas « rien ne la coupe » de la machine y passent : la
+réponse disait vrai dans ce monde. Pour les voisins : l'entrée fusionnée avec le 17ᵉ appel en 429 (par
+l'oracle, et au connecteur), et `_perimeter_holds` sur une carte au sous-réseau non lu. Ces six cas
+échouent sans leurs deux correctifs. Mutants M4860–M4869 (`scripts/mutants/I3N.py`) : le défaut revenu ; un
+correctif qui affaiblit (`blocked` sur une inconnue) ; une excuse limitée aux cartes lues tenues ; la
+vérification qui lève lue vérifiée, ou lue comme une preuve contre ses cartes ; la cause perdue ; puis
+chaque voisin revenu, et l'autre côté du premier (la carte prise pour bloquée).
+
+**La relecture (tour 1) a trouvé un défaut du premier correctif.** Dans `verify_block_ip`, sa liste par
+carte s'appelait `unsure`. C'est aussi le nom de la liste `perimeter_unread` que remplit `_stand`, la
+fonction imbriquée qui la capture. Chaque tour de carte la réaffectait. Ce que `_stand` avait mis pour une
+carte était donc perdu à la carte suivante, et la réponse publiait la liste de la dernière (parfois des
+noms de règles). Le cas : Db--01 bloquée pour elle-même sur ses deux cartes, la paire de db-nic-1 retirée,
+son périmètre inconnu, puis db-nic-0, bloquée, parcourue après. La carte de la réaffirmation disait
+« l'IP n'est plus bloquée », ce qu'I3P interdit d'une carte dont le périmètre n'a pu être lu. La liste
+locale s'appelle maintenant `off_unsure`. Le cas est figé
+(`test_a_nic_whose_perimeter_is_unknown_stays_unknown_when_another_nic_is_read_after_it`), et M4869
+réintroduit la réaffectation. Ni la suite, ni la machine à 1000 exemples, ni les mutants d'alors ne
+l'attrapaient. Les dix mutants sont attrapés.
+
 ### Trois mutants que la machine ne voyait plus qu'au hasard (MUT4)
 
 La porte de la 0.5.8 (run 42575826306) a rendu trois mutants `FIXED-ONLY`, 0/2 chacun : M19 (un blocage

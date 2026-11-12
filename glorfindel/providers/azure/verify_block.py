@@ -113,12 +113,23 @@ class VerifyBlockMixin:
                             unread.append(f'{t0["nic_short"]}: {t0["quarantine"]["nsg_name"]}')
                             undecided.append(t0["nic_short"])
                             continue
+                    # Its subnet's NSG unread (a 429): a placement off its views may lie there —
+                    # never « ne gouverne plus », its rules put back on a guess and the NIC said
+                    # open behind a perimeter that cut it off (I3N, #746). Unknown, unless another
+                    # placement proves it blocked.
+                    off_unsure = [f'{p["rule"]} ({p["nsg_name"]})' for p in off] if t0.get("subnet_unreadable") else []
+                    if not ps and off_unsure:
+                        unread.append(f'{t0["nic_short"]}: NSG du subnet illisible')
+                        undecided.append(t0["nic_short"])
+                        continue
                     if not ps:
                         _lost(t0, [f'{p["rule"]} ({p["nsg_name"]} ne gouverne plus {t0["nic_short"]})' for p in off])
                         continue
+                else:
+                    off_unsure = []
                 now = current.get(nic) if current is not None and isinstance(nic, str) else None
                 ips_of = {id(p): now if now is not None else (p.get("ips") or None) for p in ps}
-                nic_missing, nic_unread, nic_bypass, nic_unknown, nic_half = [], [], [], [], []
+                nic_missing, nic_unread, nic_bypass, nic_unknown, nic_half = [], list(off_unsure), [], [], []
                 for p in ps:
                     st, names = self._block_pair_state(cache, p["nsg_rg"], p["nsg_name"], p["rule"],
                                                        ip, ips_of[id(p)] or None)

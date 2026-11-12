@@ -7169,3 +7169,214 @@ def test_a_reset_refused_by_azure_names_the_rule_it_leaves(monkeypatch):
     M4414: a refused delete said done, in `deleted` (survives the oracle's first version, which took the
     name in any list)."""
     _replay(monkeypatch, _I3K_NET, *_I3K_STEPS)
+
+
+# ── I3N (#746): a perimeter block whose verification a 429 cut short ──
+# The night « Invariants (deep) » of 12/11 (run 43207966449, 90f00faf, 10 000 examples), red on macOS
+# alone: a draw of that system's (derandomized, the seed differs by place: MUT4), not of its case-
+# insensitive disk — the same draws fail on Linux, the id in lowercase too.
+
+def _i3n_rule(name, prio):
+    from .test_invariants import _TEMPLATES
+    return _rule(name, prio, _TEMPLATES[name])
+
+
+_I3N_NET = {**_net(subnet_nsg=[], tier_rules=[_i3n_rule("allow-https", 100), _i3n_rule("allow-lateral-out", 100)],
+                   web_nic={"rules": [_i3n_rule("allow-ssh", 100), _i3n_rule("allow-lateral-out", 100)]},
+                   db_nic_0={"rules": [_i3n_rule("allow-https", 100), _i3n_rule("deny-lateral-in", 130)],
+                             "policy": True},
+                   db_nic_1={"rules": [_i3n_rule("allow-lateral-out", 100)]},
+                   api_nic={"rules": [_i3n_rule("allow-https", 100), _i3n_rule("allow-lateral-out", 100)]}),
+            "data_subnet": [_i3n_rule("allow-lateral-out", 100), _i3n_rule("deny-lateral-in", 130)],
+            "data_primary": True}
+_I3N_FOUND = (
+    ("turned_perimeter_left_out", WEB1, WEB1, None, WEB2, WEB2, 22, True, True,
+     *["human_only"] * 4, (_SUBNET, "glorfindel-block-192-31-196-7"), "human_only", *["human_only"] * 8),
+    *[("block_perimeter", WEB1, WEB1, None, True)] * 7)
+
+
+@pytest.mark.parametrize("rid", [DB, DB.lower()], ids=["Db--01", "db--01"])
+@pytest.mark.parametrize("steps", [_I3N_FOUND, (("block_perimeter", WEB1, WEB1, None, False),)],
+                         ids=["as found", "reduced"])
+def test_a_perimeter_block_a_429_cut_short_never_says_reached_a_nic_another_perimeter_cuts_off(
+        monkeypatch, steps, rid):
+    """I3N (#746): « I3: perimeter block named ['db-nic-0'] of …/Db--01 uncovered; our perimeter on
+    their subnet cuts them off ». Db--01's primary NIC on the data subnet; web blocked on the app
+    subnet (as found: after a turned perimeter left out of a pass, then lifted, web's block promoted
+    seven times); then Db--01 blocked on its own subnet, the 13th call answered 429 — the listing of
+    nsg-data its verification reads the pair from. db-nic-0, on the app subnet, is off Db--01's
+    perimeter and behind web's, which cuts the attacker off. The verification not concluded
+    (`verified: None`), the block kept every NIC off its perimeter « not behind it, the IP still
+    reaches them » (`uncovered_nics`, the error dropped) — read of none. The product's, not the
+    oracle's: the claim is positive, and nothing of db-nic-0 was read. Reduced to two steps; the id
+    in lowercase fails the same (the case of `Db--01` is not the cause)."""
+    _replay(monkeypatch, _I3N_NET, *steps, ("block_perimeter", DB, rid, (13, "before-429"), False))
+
+
+# The calls of Db--01's perimeter block after its two writes (10, 11) and its state (12): each read of
+# its verification — the pair (13), the precedence (14), the VM, its NICs and their subnets (15–19), the
+# other perimeter (20). One `invariant_env` per test: called twice, each state write counts twice.
+_I3N_VERIFY_READS = range(13, 21)
+
+
+@pytest.mark.parametrize("web", [True, False], ids=["behind web's perimeter", "nothing cuts it off"])
+@pytest.mark.parametrize("n", _I3N_VERIFY_READS)
+def test_a_perimeter_block_whose_verification_is_cut_short_is_judged_by_the_machine(monkeypatch, n, web):
+    """I3N, every read of the verification in 429 in turn, judged by the machine's oracle: I3 « named
+    uncovered; our perimeter … cuts them off » behind web's perimeter, I3 « said blocked, reaches »
+    where nothing cuts db-nic-0 off."""
+    _replay(monkeypatch, _I3N_NET, *([("block_perimeter", WEB1, WEB1, None, False)] if web else []),
+            ("block_perimeter", DB, DB, (n, "before-429"), False))
+
+
+@pytest.mark.parametrize("web", [True, False], ids=["behind web's perimeter", "nothing cuts it off"])
+@pytest.mark.parametrize("n", _I3N_VERIFY_READS)
+def test_a_perimeter_block_whose_verification_is_cut_short_says_its_nics_unread(monkeypatch, n, web):
+    """I3N, the same at the connector: neither « uncovered, the IP still reaches it » (web's perimeter
+    may cut db-nic-0 off) nor `blocked` (nothing may: db-nic-0 open, I3P) — `blocked_partial`, its
+    NICs unread, the error said. Read again, the verification tells which: held by web's perimeter,
+    or uncovered."""
+    import shutil
+
+    invariant_env(monkeypatch)
+    m = IsolationMachine()
+    try:
+        m.build(_I3N_NET)
+        c = m.connector
+        if web:
+            assert c.block_suspicious_ip(ATTACKER, WEB1, scope="subnet")["status"] == "blocked"
+        m.chaos.arm((n, "before-429"))
+        try:
+            out = c.block_suspicious_ip(ATTACKER, DB, scope="subnet")
+        finally:
+            m.chaos.arm(None)
+        assert out["status"] == "blocked_partial" and "uncovered_nics" not in out, out
+        assert "illisible" in out["nics_unread"] or "unreadable" in out["nics_unread"], out
+        v = c.verify_block_ip(ATTACKER, DB)
+        assert (v["verified"], v.get("held_by_perimeter"), v.get("uncovered_nics")) == (
+            (True, ["db-nic-0"], None) if web else (False, None, ["db-nic-0"])), v
+    finally:
+        shutil.rmtree(m.home, ignore_errors=True)
+
+
+def test_a_perimeter_block_whose_verification_raises_says_its_nics_unread(monkeypatch):
+    """I3N, the verification's other way of not concluding: it raises. The same: `blocked_partial`,
+    its NICs unread with the error — never db-nic-0 uncovered, never `blocked`."""
+    import shutil
+
+    invariant_env(monkeypatch)
+    m = IsolationMachine()
+    try:
+        m.build(_I3N_NET)
+        c = m.connector
+        assert c.block_suspicious_ip(ATTACKER, WEB1, scope="subnet")["status"] == "blocked"
+
+        def throttled(*a, **k):
+            raise RuntimeError("(TooManyRequests) verify")
+        monkeypatch.setattr(c, "verify_block_ip", throttled)
+        out = c.block_suspicious_ip(ATTACKER, DB, scope="subnet")
+        assert out["status"] == "blocked_partial" and "uncovered_nics" not in out, out
+        assert "TooManyRequests" in out["nics_unread"], out
+    finally:
+        shutil.rmtree(m.home, ignore_errors=True)
+
+
+# Found while looking for I3N's neighbors (on its first fix): Db--01 blocked for itself first, then on its
+# subnet — one entry, merged (RB1). The 17th call of the perimeter block, in its verification, is the read
+# of db-nic-0's subnet: unread, the NIC's views hold no NSG of its subnet.
+@pytest.mark.parametrize("port", [22, None], ids=["port 22", "any port"])
+def test_a_merged_block_never_reads_a_429_on_a_subnet_as_an_nsg_that_no_longer_governs(monkeypatch, port):
+    """I3N's neighbor, in `verify_block_ip`: db-nic-0's own block lies on its subnet's NSG (nsg-subnet,
+    where web's perimeter lies too). That subnet unread (a 429), its placement read as off the NIC
+    — « nsg-subnet ne gouverne plus db-nic-0 », a rule missing, db-nic-0 open — and the perimeter block
+    said it uncovered, « the IP still reaches them ». Two blocks of ours cut the attacker off it. The
+    reassertion would have put its rules back on a guess (A0). Judged by the machine's oracle (I3)."""
+    _replay(monkeypatch, _I3N_NET, ("block_perimeter", WEB1, WEB1, None, False), ("block", DB, DB, None, port),
+            ("block_perimeter", DB, DB, (17, "before-429"), False))
+
+
+@pytest.mark.parametrize("port", [22, None], ids=["port 22", "any port"])
+def test_a_merged_block_whose_nic_subnet_is_unread_says_it_unknown(monkeypatch, port):
+    """The same at the connector: unknown, its subnet's NSG unread; the perimeter block says its NICs
+    unread. Read again: blocked, nothing missing."""
+    import shutil
+
+    invariant_env(monkeypatch)
+    m = IsolationMachine()
+    try:
+        m.build(_I3N_NET)
+        c = m.connector
+        assert c.block_suspicious_ip(ATTACKER, WEB1, scope="subnet")["status"] == "blocked"
+        assert c.block_suspicious_ip(ATTACKER, DB, scope="vm", threat_port=port)["status"] == "blocked"
+        m.chaos.arm((17, "before-429"))
+        try:
+            out = c.block_suspicious_ip(ATTACKER, DB, scope="subnet", threat_port=port)
+        finally:
+            m.chaos.arm(None)
+        assert out["status"] == "blocked_partial" and "uncovered_nics" not in out, out
+        assert "db-nic-0: NSG du subnet illisible" in out["nics_unread"], out
+        v = c.verify_block_ip(ATTACKER, DB)
+        assert v["verified"] is True and not v.get("missing_rules"), v
+    finally:
+        shutil.rmtree(m.home, ignore_errors=True)
+
+
+@pytest.mark.parametrize("own", [None, "dedicated"], ids=["no NSG of its own", "an NSG of its own"])
+def test_a_perimeter_is_never_read_absent_on_a_nic_whose_subnet_was_not_read(monkeypatch, own):
+    """I3N's neighbor, in `_perimeter_holds` (where each NIC stands once its own block no longer holds):
+    a NIC whose subnet couldn't be read has no NSG of its subnet in its views — a perimeter there was
+    « no », the NIC said open (`open_nics`, « n'est plus bloquée ») behind web's perimeter. Now
+    « unknown » (`perimeter_unread`); read, it holds."""
+    import shutil
+
+    invariant_env(monkeypatch)
+    m = IsolationMachine()
+    try:
+        m.build({**_I3N_NET, "nics": {**_I3N_NET["nics"], "db-nic-0": {**_I3N_NET["nics"]["db-nic-0"], "own": own}}})
+        c = m.connector
+        assert c.block_suspicious_ip(ATTACKER, WEB1, scope="subnet")["status"] == "blocked"
+        t0 = next(t for t in c._get_vm_nic_targets("rg-app1", "Db--01", allow_no_nsg=True)
+                  if t["nic_short"] == "db-nic-0")
+        assert c._perimeter_holds({}, t0, ATTACKER, 22) == "holds"
+        # As _get_vm_nic_targets leaves it when the read of its subnet fails (network.py).
+        bare = {**t0, "subnet_unreadable": True, "alt_nsg": None,
+                **({} if own else {"nsg_rg": None, "nsg_name": None, "scope": "none"})}
+        assert c._perimeter_holds({}, bare, ATTACKER, 22) == "unknown"
+    finally:
+        shutil.rmtree(m.home, ignore_errors=True)
+
+
+def test_a_nic_whose_perimeter_is_unknown_stays_unknown_when_another_nic_is_read_after_it(monkeypatch):
+    """I3N's review (round 1): the first fix of `verify_block_ip` named its per-NIC list `unsure` — the
+    name of the list `perimeter_unread` that `_stand` fills. Each NIC's turn rebound it: what `_stand`
+    had put there for a NIC was lost at the next one, and the last NIC's list (perhaps rule names) was
+    published. Db--01 blocked for itself on both NICs; db-nic-1's pair taken off, its perimeter
+    unknown (a 429 on the perimeter's NSG, or its subnet unread); db-nic-0, read after it, blocked.
+    The card said « l'IP n'est plus bloquée » — I3P forbids it of a NIC whose perimeter couldn't be
+    read, and it is false of the VM, whose db-nic-0 is still blocked. M4869."""
+    import shutil
+
+    from glorfindel.reassert_said import _block_drift
+    from glorfindel.response.state import _load_block_entries
+
+    invariant_env(monkeypatch)
+    m = IsolationMachine()
+    try:
+        m.build(_I3N_NET)
+        c = m.connector
+        assert c.block_suspicious_ip(ATTACKER, DB, scope="vm", threat_port=22)["status"] == "blocked"
+        entry = next(e for e in _load_block_entries(DB) if e.get("ip") == ATTACKER)
+        first = entry["placements"][0]
+        assert first["nic_id"].rstrip("/").lower().endswith("db-nic-1"), entry["placements"]
+        for name in (first["rule"], f'{first["rule"]}-out'):
+            c._network.security_rules.begin_delete(first["nsg_rg"], first["nsg_name"], name)
+        real = c._perimeter_holds
+        monkeypatch.setattr(c, "_perimeter_holds", lambda cache, t0, ip, port: "unknown"
+                            if t0 and t0["nic_short"] == "db-nic-1" else real(cache, t0, ip, port))
+        v = c.verify_block_ip(ATTACKER, DB)
+        assert v["verified"] is False and v.get("perimeter_unread") == ["db-nic-1"], v
+        assert v.get("blocked_nics") == ["db-nic-0"], v
+        card = _block_drift(ATTACKER, "Db--01", v)
+        assert "n'est plus bloquée" not in card and "on ne sait pas" in card and "db-nic-1" in card, card
+    finally:
+        shutil.rmtree(m.home, ignore_errors=True)

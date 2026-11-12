@@ -409,6 +409,10 @@ class BlockMixin:
                 held = {*(check.get("blocked_nics") or []), *(check.get("held_by_perimeter") or [])}
                 uncovered = [n for n in uncovered if n not in held]
             else:
+                # Not concluded (a read answered 429): no NIC proven open, none proven held —
+                # neither « uncovered, the IP still reaches it » (another VM's perimeter may cut
+                # it off: I3N, #746) nor covered (I3P): unread, the status partial.
+                uncovered = []
                 unread = unread or check.get("error") or "illisible"
         # Same precedence report as the VM-scoped block (verify fails on it as well).
         shadowed = _shadowing_rules(
