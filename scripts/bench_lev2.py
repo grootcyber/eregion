@@ -200,10 +200,58 @@ def _kind(rid: str, t: dict) -> str:
     if kind == "vm_child":
         rest = _k(rid)[len(_k(t["vm"])) + 1:].split("/")
         return f"enfant de la VM ({rest[0]}{'/' + rest[-2] if len(rest) > 2 else ''})"
+    if kind is None:
+        return elsewhere(rid, t)
     return {"vm": "la VM", "disk": "un disque", "nic": "une carte", "nsg": "un NSG", "nsg_rule": "une règle de NSG",
             "public_ip": "une IP publique", "identity": "une identité", "group": "le groupe",
-            "subnet": "le sous-réseau",
-            None: "une autre ressource"}.get(kind, str(kind))
+            "subnet": "le sous-réseau"}.get(kind, str(kind))
+
+
+# The words a type may say, a closed list (review round 1: a pattern let a name of letters through,
+# `…/disks/d/secretname/x`). A word outside it is said `?`: the report says less, never a name.
+_NAMESPACES = frozenset({
+    "microsoft.compute", "microsoft.network", "microsoft.managedidentity", "microsoft.resources",
+    "microsoft.authorization", "microsoft.insights", "microsoft.storage", "microsoft.recoveryservices",
+    "microsoft.keyvault", "microsoft.operationalinsights", "microsoft.serialconsole", "microsoft.security",
+    "microsoft.maintenance", "microsoft.guestconfiguration", "microsoft.hybridcompute"})
+_TYPES = frozenset({
+    "virtualmachines", "virtualmachinescalesets", "availabilitysets", "disks", "snapshots", "images",
+    "extensions", "runcommands", "restorepointcollections", "restorepoints", "diskencryptionsets",
+    "galleries", "sshpublickeys", "networkinterfaces", "ipconfigurations", "networksecuritygroups",
+    "securityrules", "applicationsecuritygroups", "publicipaddresses", "virtualnetworks", "subnets",
+    "routetables", "routes", "networkwatchers", "flowlogs", "privateendpoints", "loadbalancers",
+    "natgateways", "bastionhosts", "userassignedidentities", "tags", "deployments", "roleassignments",
+    "roledefinitions", "denyassignments", "locks", "policyassignments", "diagnosticsettings",
+    "datacollectionrules", "datacollectionruleassociations", "actiongroups", "activitylogalerts",
+    "scheduledqueryrules", "storageaccounts", "vaults", "backupfabrics", "protectioncontainers",
+    "protecteditems", "workspaces", "serialports", "configurationassignments",
+    "guestconfigurationassignments", "maintenanceconfigurations", "machines"})
+
+
+def elsewhere(rid, t: dict) -> str:
+    """A resource that is none of the VM's, named by its type and its place, never by its name
+    (LEV2b, #763: on 12/11, `disk-tag` said « une autre ressource » — a disk of the group outside the
+    VM, written within the hour). The type is that of the id's last provider, each of its words read in
+    a closed list (_NAMESPACES, _TYPES), any other said `?`."""
+    parts, mine = _k(rid).split("/"), _k(t["group"]).split("/")
+    if len(parts) < 3 or parts[:2] != ["", "subscriptions"]:
+        return "une autre ressource (sans identifiant ARM)"
+    other_sub = parts[2] != mine[2]
+    if "providers" not in parts[3:]:
+        if len(parts) <= 3:
+            return "un autre abonnement" if other_sub else "l'abonnement de la VM"
+        return "un groupe d'un autre abonnement" if other_sub else "un autre groupe"
+    i = len(parts) - 1 - parts[::-1].index("providers")
+    words = [w if w in _NAMESPACES else "?" for w in parts[i + 1:i + 2]]
+    words += [w if w in _TYPES else "?" for w in parts[i + 2::2]]
+    what = "/".join(words) or "?"
+    if other_sub:
+        where = "d'un autre abonnement"
+    elif parts[3] == "providers":
+        where = "de l'abonnement de la VM"
+    else:
+        where = "du groupe de la VM, hors de la VM" if parts[:5] == mine[:5] else "d'un autre groupe"
+    return f"une autre ressource (`{what}`, {where})"
 
 
 def window(gestures: list[dict], i: int) -> tuple[float, float]:
@@ -221,21 +269,60 @@ def window(gestures: list[dict], i: int) -> tuple[float, float]:
 
 def failure_said(events: list[dict]) -> str:
     """What the gesture's failed events say (the guide's gesture 8): their HTTP status and code, and
-    whether Glorfindel counts them — a refusal of the platform (Conflict, OperationNotAllowed: REC1b)
-    is left out, any other failure counts. « — » without a failure."""
-    from glorfindel.providers.azure.recovery import _error_code, _refused, _refused_operations
-    failed = [e for e in events if str((e.get("status") or {}).get("value") or "").lower() == "failed"]
+    whether Glorfindel counts them — an operation the platform refused (`Conflict` under the code
+    `OperationNotAllowed`, its one `Started` before it: REC1b, `_refused_operations`) is left out, any
+    other failure counts. The status and code are said as Azure wrote them; a `Conflict` under another
+    code counts, and the line says why (LEV2b, #763: the disk's `Conflict` `Conflict` of 12/11, read as
+    a comparison by case). « — » without a failure."""
+    from glorfindel.providers.azure.recovery import _fold, _refused, _refused_operations
+    events = list(unique(events).values())
+    failed = [e for e in events if _fold((e.get("status") or {}).get("value")) == "failed"]
     if not failed:
         return "—"
     refused = _refused_operations(events)
     said = set()
     for e in failed:
         props = e.get("properties") if isinstance(e.get("properties"), dict) else {}
-        status = props.get("statusCode") or (e.get("subStatus") or {}).get("value") or "?"
-        code = _error_code(props.get("statusMessage")) or "?"
-        out = _refused(e) or str(e.get("operationId") or "").lower() in refused
-        said.add(f"{status} {code} : " + ("refus de la plateforme, écarté" if out else "un échec, il compte"))
+        status = str(props.get("statusCode") or (e.get("subStatus") or {}).get("value") or "?").strip()
+        code = error_code(props.get("statusMessage")) or "?"
+        if _fold(e.get("operationId")) in refused:
+            verdict = "refus de la plateforme, écarté"
+        elif _refused(e):
+            verdict = ("refus de la plateforme, mais son opération compte : un autre de ses événements "
+                       "n'est pas le `Started` qui le précède (REC1b)")
+        elif _fold(status) == "conflict":
+            verdict = ("un échec, il compte : Glorfindel n'écarte un `Conflict` que sous le code "
+                       "`OperationNotAllowed` (REC1b)")
+        else:
+            verdict = "un échec, il compte"
+        said.add(f"`{status}` `{code}` : {verdict}")
     return " ; ".join(sorted(said))
+
+
+def error_code(message) -> str:
+    """The top-level error code of a status message as Azure wrote it, its case kept (LEV2b, #763: the
+    report of 12/11 said « Conflict conflict », the code folded, and read as a comparison by case).
+    Glorfindel's verdict still folds both (`_refused`)."""
+    body = message
+    if isinstance(body, str):
+        try:
+            body = json.loads(body)
+        except ValueError:
+            return ""
+    err = body.get("error") if isinstance(body, dict) else None
+    return str(err.get("code") or "").strip() if isinstance(err, dict) else ""
+
+
+def unique(events: list[dict]) -> dict[str, dict]:
+    """Each event once, by Glorfindel's own key (`door._event_key`: its `eventDataId`, else what it is
+    made of): every round reads it again, exactly and through the group, as the door reads a VM and its
+    group (LEV2b, #763: counted per copy, a `Started` read in one round more than its refusal is left
+    over, and the operation is no longer refused)."""
+    from glorfindel.providers.azure.door import _event_key
+    out: dict[str, dict] = {}
+    for e in events:
+        out.setdefault(_event_key(e), e)
+    return out
 
 
 def load_rounds(d: Path) -> list[list[dict]]:
