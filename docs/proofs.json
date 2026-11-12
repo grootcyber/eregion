@@ -71,7 +71,7 @@
       "says": "implemented techniques proven over the last 30 days on the bench",
       "date": "2026-10-27",
       "kind": "measured",
-      "note": "the catalog implements eight techniques since, three of them never played on the bench",
+      "note": "the catalog implements more techniques since, some never played on the bench",
       "source": {
         "path": "README.md",
         "quote": "4 of the 5 implemented techniques proven in the last 30 days"

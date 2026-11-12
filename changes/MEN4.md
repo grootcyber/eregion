@@ -27,8 +27,9 @@
   action executed and verified makes no card in TO JUDGE today (JUG1, to come). `docs/banc-bl1.md` and the
   documents that said otherwise: bree in `human_only` since 11 Nov. `docs/design/levee-probation.md`: H8
   falls (gondolin carries the bench's public IP, a real SSH brute force from the Internet was blocked there).
-  `docs/azure.md`: the guest agent announced itself under the quarantine on 12 Nov, 18 min after the
-  isolation — the quarantine delays it, it does not stop it. The bench guides: no full `make
+  `docs/azure.md`: on 12 Nov, before the restore, the guest agent was read `Ready` under the quarantine
+  (a single reading, when the report was composed): a running VM's agent announces itself under the
+  quarantine, after a delay not measured; after a restore, #677's hypothesis stays open. The bench guides: no full `make
   celebrimbor-up` on a running bench while its drifts hold (42 of the 44 rules of the shared NSG are
   Glorfindel's, the LUN 10 disk of gondolin is the restore's), a targeted apply only. `make bench-restore`
   prints the VM's full id, subscription included: said where it is run, not to be pasted. `ROADMAP.md`,

@@ -61,7 +61,8 @@ Le restore sous RST1, la coupure suivie de DRN1, la levée seule de REC1b, `make
 
 Run `20261112T091448Z-b218` (la demande `r-20261112T091418Z-f94891`), gondolin en `non_disruptive`,
 heures UTC. La source : le rapport de `make bench-report`, recomposé après la levée (v3, 10:08 UTC),
-qui lit l'état d'Imladris, ses cycles, le journal d'activité, le coffre et la vue d'instance ; le
+qui lit l'état d'Imladris, ses cycles, le journal d'activité, le coffre et la vue d'instance (sa v2,
+composée avant la levée, pour `isolated_at`, que la v3 ne lit plus : l'état d'Imladris était levé) ; le
 `restore_time`, à la sortie de `make bench-restore` ; le compte rendu de la session Tests (hors du
 dépôt) ; les chiffres sont aussi sur #665.
 
@@ -69,7 +70,7 @@ dépôt) ; les chiffres sont aussi sur #665.
 |---|---|---|---|---|
 | T0 | 09:16:04 | — | — | `attack_time` du run |
 | la détection | 09:18:25 | **141,6 s** | 70,3 s | `detection_latency_s`, verdict `detected` |
-| le NSG de quarantaine posé | 09:18:45,2 | 161,1 s | — | `isolated_at`, l'état d'Imladris |
+| le NSG de quarantaine posé | 09:18:45,2 | 161,1 s | — | `isolated_at`, l'état d'Imladris (rapport v2) ; la v3 lit 09:18:47, 163,3 s : la première écriture d'Imladris sur la carte, au journal d'activité |
 | la coupure des sessions, par Imladris | 09:18:45 → 09:23:49 | 304,2 s de Run Command | 302 s | le journal d'activité |
 | **l'isolement vérifié** | 09:23:47,2 | **463,1 s** | jamais : la vérification en échec (DRN1) | le cycle `isolate_vm`, `verified=True`, `action_s` 305 |
 | le restore lancé par Jonathan | vers 09:41:43 | 25 min 39 s d'attente humaine | — | un `date -u` tapé juste avant le « o » |
