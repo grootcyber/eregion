@@ -1797,6 +1797,12 @@ def _promotion_said(result: dict) -> list[str]:
     an allow that passes before the deny, the ports it leaves reachable. Empty only when the
     subnet rule holds for the VM whole — the one case the console says « the whole subnet »."""
     said = []
+    # What its check read gone (I3W, #778): the pair, beside a NIC uncovered, went unsaid here.
+    if result.get("missing_rules"):
+        said.append("Missing or altered on Azure at its check: " + ", ".join(str(n) for n in result["missing_rules"])
+                    + " — not in place until put back.")
+    if result.get("missing_nics"):
+        said.append("No rule of the block on: " + ", ".join(str(n) for n in result["missing_nics"]) + ".")
     if result.get("uncovered_nics"):
         said.append("Not behind the subnet rule, on another subnet: "
                     + ", ".join(str(n) for n in result["uncovered_nics"])
