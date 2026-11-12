@@ -2,6 +2,41 @@
 
 _Extrait tel quel de `CLAUDE.md` le 2026-10-15 (lot DX1) : la CLI, les workflows opérateur, les variables d'environnement, le packaging et les coûts. Les règles de sûreté et les conventions restent dans `CLAUDE.md`._
 
+**Les commandes du poste marchent telles qu'écrites, sous zsh comme sous bash** (MEN3, #734 ; quatre
+pièges mesurés au banc le 11/11). Un mode opératoire de variable les suit aussi :
+- **`az role assignment list --role "<nom>" --all` plante** (« ValueError: No value for given
+  attribute », dans `_resolve_role_id` : sans `--scope`, az ne sait pas où chercher le rôle par son
+  nom). Mesuré sans `--assignee` ; avec, déduit du code d'az (le rôle s'y résout de même, sans
+  portée). Le filtre se fait sur la sortie :
+  `az role assignment list --all --query "[?roleDefinitionName=='<nom>']" -o table`.
+- **`$SUB` se pose avant de servir**, dans le même shell : vide, le `sed` des rôles écrit
+  « /subscriptions/ » et az répond « InvalidSubscriptionId 'providers' ». Il se lit, jamais tapé
+  (`SUB=$(az account show --query id -o tsv)`), et ce qui s'en sert tient dans un `if` qui le
+  contrôle sans l'afficher :
+
+  ```bash
+  GUID='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+  if printf %s "$SUB" | grep -qE "$GUID"; then
+    …                                            # les commandes qui servent $SUB
+  else echo "SUB n'est pas un GUID : az login, ou az account set --subscription <…>, puis le relire"; fi
+  ```
+
+  Pourquoi un `if` : collé d'un coup dans le terminal, un `if … fi` est lu en entier avant de
+  tourner, et rien n'en part si `$SUB` est vide. Un `… || { return 1 2>/dev/null || exit 1; }` ne
+  convient pas : sous bash, `return` hors d'une fonction échoue, et `exit` ferme le terminal ; sous
+  zsh, `return` au niveau du terminal ne dit rien, et les lignes suivantes partent quand même
+  (essayé sous `bash --norc -i` et `zsh -f -i`, le 12/11).
+- **Un `!` ou un accent grave entre guillemets doubles** : le `!` est l'historique du shell
+  interactif (zsh répond « event not found » et ne lance rien), l'accent grave une substitution de
+  commande (`` echo "[?a == `false`]" `` affiche `[?a == ]`, sous bash comme sous zsh). Une requête qui
+  porte `!` ou un accent grave (un littéral JMESPath) s'écrit entre guillemets simples :
+  `` --query '[?enabled == `false`]' `` ; entre guillemets doubles, chaque accent grave s'échappe
+  (`` \` ``). Aucune requête de ce document ne porte ni l'un ni l'autre.
+- **Un plan de Terraform est en couleurs** : `grep '^Plan:'` n'y trouve rien. Pour en lire une ligne,
+  `TF_CLI_ARGS_plan=-no-color` devant la cible (`TF_CLI_ARGS_plan=-no-color make glorfindel-host-plan |
+  tee /tmp/eregion-plan.txt`, puis `grep '^Plan:' /tmp/eregion-plan.txt`) ; Terraform le lit à
+  chaque `plan`, `make` le transmet.
+
 ## CLI — référence complète
 
 ```bash
@@ -672,43 +707,53 @@ services de Glorfindel, trois principaux, chacun avec ce que son code appelle vr
 **Créer** (une fois par tenant pour les rôles ; `<…>` à remplacer, rien de réel ici) :
 
 ```bash
-SUB=<SUBSCRIPTION_ID>; RG=<groupe des VM inscrites>; VAULT_RG=<groupe du coffre>
+SUB=$(az account show --query id -o tsv)      # celui de ton az login ; un autre : az account set --subscription <…> d'abord
+GUID='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+RG=<groupe des VM inscrites>; VAULT_RG=<groupe du coffre>
 LAW=<id de ressource du workspace>
-for r in response restore session-drain restore-neutralize restore-staging; do
-  sed "s|<SUBSCRIPTION_ID>|$SUB|" infra/identities/glorfindel-$r.json > /tmp/eregion-role-$r.json
-  az role definition create --role-definition @/tmp/eregion-role-$r.json
-done
-# Un principal par service, sans rôle à sa création (appId → …_CLIENT_ID, password → …_SECRET).
-for s in watch console bot; do az ad sp create-for-rbac --name "eregion-glorfindel-$s"; done
+if printf %s "$SUB" | grep -qE "$GUID"; then    # vide : rien ne part (en tête de ce document)
+  for r in response restore session-drain restore-neutralize restore-staging; do
+    sed "s|<SUBSCRIPTION_ID>|$SUB|" infra/identities/glorfindel-$r.json > /tmp/eregion-role-$r.json
+    az role definition create --role-definition @/tmp/eregion-role-$r.json
+  done
+  # Un principal par service, sans rôle à sa création (appId → …_CLIENT_ID, password → …_SECRET).
+  for s in watch console bot; do az ad sp create-for-rbac --name "eregion-glorfindel-$s"; done
+else echo "SUB n'est pas un GUID : az login, puis relancer le bloc"; fi
 ```
 
 Le nom d'un rôle personnalisé est unique dans le tenant : pour un **second abonnement du même
 tenant**, `az role definition create` refuse (le nom existe). Ajouter l'abonnement aux portées
-du rôle existant, puis l'attribuer comme ci-dessous :
+du rôle existant, puis l'attribuer comme ci-dessous. Dans le shell du bloc « Créer » (`$SUB` et
+`$GUID` y sont posés) ; `$SUB2` se lit de même, jamais tapé :
 
 ```bash
-SUB2=<SECOND_SUBSCRIPTION_ID>
-for r in "Eregion Glorfindel Response" "Eregion Glorfindel Restore" "Eregion Glorfindel Session Drain" \
-         "Eregion Glorfindel Restore Neutralize" "Eregion Glorfindel Restore Staging"; do
-  az role definition list --name "$r" --scope /subscriptions/$SUB --query '[0]' -o json \
-    | python3 -c 'import json,sys; d=json.load(sys.stdin); d["assignableScopes"].append(sys.argv[1]); print(json.dumps(d))' \
-        "/subscriptions/$SUB2" > /tmp/eregion-role.json
-  az role definition update --role-definition @/tmp/eregion-role.json
-done
+SUB2=$(az account show --subscription <nom ou id du second abonnement> --query id -o tsv)
+if printf %s "$SUB" | grep -qE "$GUID" && printf %s "$SUB2" | grep -qE "$GUID"; then
+  for r in "Eregion Glorfindel Response" "Eregion Glorfindel Restore" "Eregion Glorfindel Session Drain" \
+           "Eregion Glorfindel Restore Neutralize" "Eregion Glorfindel Restore Staging"; do
+    az role definition list --name "$r" --scope /subscriptions/$SUB --query '[0]' -o json \
+      | python3 -c 'import json,sys; d=json.load(sys.stdin); d["assignableScopes"].append(sys.argv[1]); print(json.dumps(d))' \
+          "/subscriptions/$SUB2" > /tmp/eregion-role.json
+    az role definition update --role-definition @/tmp/eregion-role.json
+  done
+else echo "SUB ou SUB2 n'est pas un GUID : le bloc « Créer » d'abord, puis relancer"; fi
 ```
 
-**Attribuer** (`<appId-…>` : ce que la création a rendu) :
+**Attribuer** (`<appId-…>` : ce que la création a rendu), dans le shell du bloc « Créer » : `$SUB`,
+`$GUID`, `$RG`, `$VAULT_RG` et `$LAW` y sont posés. Seule la première boucle se sert de `$SUB` :
 
 ```bash
-for scope in /subscriptions/$SUB/resourceGroups/$RG /subscriptions/$SUB/resourceGroups/$VAULT_RG; do
-  for a in <appId-watch> <appId-console> <appId-bot>; do
-    az role assignment create --assignee $a --role Reader --scope $scope
-    az role assignment create --assignee $a --role "Eregion Glorfindel Response" --scope $scope
+if printf %s "$SUB" | grep -qE "$GUID"; then
+  for scope in /subscriptions/$SUB/resourceGroups/$RG /subscriptions/$SUB/resourceGroups/$VAULT_RG; do
+    for a in <appId-watch> <appId-console> <appId-bot>; do
+      az role assignment create --assignee $a --role Reader --scope $scope
+      az role assignment create --assignee $a --role "Eregion Glorfindel Response" --scope $scope
+    done
+    for a in <appId-console> <appId-bot>; do
+      az role assignment create --assignee $a --role "Eregion Glorfindel Restore" --scope $scope
+    done
   done
-  for a in <appId-console> <appId-bot>; do
-    az role assignment create --assignee $a --role "Eregion Glorfindel Restore" --scope $scope
-  done
-done
+else echo "SUB n'est pas un GUID : le bloc « Créer » d'abord, puis relancer"; fi
 for a in <appId-watch> <appId-console>; do
   az role assignment create --assignee $a --role "Log Analytics Reader" --scope $LAW
 done
@@ -770,30 +815,41 @@ l'attribution de la console, sans fenêtre où elle manque, et donne celle du bo
 1. **le rôle** : le relire (`az role definition list --name "Eregion Glorfindel Restore Staging"
    --query '[0].permissions[0].actions'`, `listKeys` seul), puis l'aligner sur le fichier du dépôt
    (`az role definition update --role-definition @…`, ci-dessous) ;
-2. **l'attribution à la main**, relue : `az role assignment list --role "Eregion Glorfindel Restore
-   Staging" --all -o table` — une seule, pour la console, à la portée du compte de transit ;
+2. **l'attribution à la main**, relue : `az role assignment list --all --query
+   "[?roleDefinitionName=='Eregion Glorfindel Restore Staging']" -o table` — une seule, pour la
+   console, à la portée du compte de transit ;
 3. **l'importer** dans l'état d'Imladris, sous la clé de la console (`restore_principals`), plutôt que la
-   supprimer puis la recréer : `terraform import` prend l'id de l'attribution (`--query
-   '[0].id'`) ;
+   supprimer puis la recréer : `terraform import` prend l'id de l'attribution (la même liste,
+   `--query "[?roleDefinitionName=='…'] | [0].id"`) ;
 4. **le plan**, relu : `make glorfindel-host-plan` — une création, `restore_staging["bot"]`, rien
-   d'autre (ni `restore_staging["console"]`, importée, ni la VM d'Imladris remplacée) ;
+   d'autre (ni `restore_staging["console"]`, importée, ni la VM d'Imladris remplacée) ; sa ligne
+   `Plan: 1 to add, 0 to change, 0 to destroy`, sans couleur (le bloc ci-dessous) ;
 5. **l'application** : `make glorfindel-host-up`, sans `YES` ; puis `terraform -chdir=infra/glorfindel-host
-   output restore_staging` (`bot`, `console`) et la même liste `az role assignment list`, deux
-   attributions à la portée du compte, aucune de groupe.
+   output restore_staging` (`bot`, `console`) et la même liste (`az role assignment list --all
+   --query …`), deux attributions à la portée du compte, aucune de groupe.
 
 Sans l'import, l'apply échoue sur la console : Azure refuse une seconde attribution du même rôle, au
 même principal, sur la même portée (409 `RoleAssignmentExists`). Rien n'est perdu, l'attribution à la
 main reste ; l'importer, puis relancer.
 
 ```bash
-sed "s|<SUBSCRIPTION_ID>|$SUB|" infra/identities/glorfindel-restore-staging.json > /tmp/eregion-role-restore-staging.json
-az role definition update --role-definition @/tmp/eregion-role-restore-staging.json      # 1
-id=$(az role assignment list --role "Eregion Glorfindel Restore Staging" --all --query '[0].id' -o tsv)   # 2 : une seule
-ARM_SUBSCRIPTION_ID=$SUB terraform -chdir=infra/glorfindel-host import -var-file=../terraform/terraform.tfvars \
-  -var="operator_cidr=<ton IP>/32" 'azurerm_role_assignment.restore_staging["console"]' "$id"           # 3 : les variables du plan
-make glorfindel-host-plan                                                                 # 4 : une création, le bot
+SUB=$(az account show --query id -o tsv)
+GUID='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+if printf %s "$SUB" | grep -qE "$GUID"; then                                            # 1
+  sed "s|<SUBSCRIPTION_ID>|$SUB|" infra/identities/glorfindel-restore-staging.json > /tmp/eregion-role-restore-staging.json
+  az role definition update --role-definition @/tmp/eregion-role-restore-staging.json
+else echo "SUB n'est pas un GUID : az login, puis relancer le bloc"; fi
+az role assignment list --all --query "[?roleDefinitionName=='Eregion Glorfindel Restore Staging']" -o table   # 2 : une seule
+id=$(az role assignment list --all --query "[?roleDefinitionName=='Eregion Glorfindel Restore Staging'] | [0].id" -o tsv)
+if printf %s "$SUB" | grep -qE "$GUID"; then                                            # 3 : les variables du plan
+  ARM_SUBSCRIPTION_ID=$SUB terraform -chdir=infra/glorfindel-host import -var-file=../terraform/terraform.tfvars \
+    -var="operator_cidr=<ton IP>/32" 'azurerm_role_assignment.restore_staging["console"]' "$id"
+else echo "SUB n'est pas un GUID : az login, puis relancer le bloc"; fi
+TF_CLI_ARGS_plan=-no-color make glorfindel-host-plan | tee /tmp/eregion-plan.txt          # 4 : une création, le bot
+grep '^Plan:' /tmp/eregion-plan.txt                                                       #     Plan: 1 to add, 0 to change, 0 to destroy
 make glorfindel-host-up                                                                   # 5 : sans YES
 terraform -chdir=infra/glorfindel-host output restore_staging
+az role assignment list --all --query "[?roleDefinitionName=='Eregion Glorfindel Restore Staging']" -o table   #     deux, à la portée du compte
 ```
 
 Un tenant neuf n'a rien à migrer : le rôle se crée avec les autres (« Créer »), et le premier `make
@@ -808,21 +864,27 @@ deux gestes —
    attribution par VM de `session_drain_vms`, aucune sur le groupe), puis `make
    glorfindel-host-up`, sans `YES` ; ailleurs, la boucle `for vm in …` ci-dessus ;
 3. vérifier les attributions, juste après l'apply : `terraform -chdir=infra/glorfindel-host output
-   session_drain_vms`, ou `az role assignment list --assignee <principal> --role "Eregion Glorfindel
-   Session Drain" --all`, montre une portée de VM par VM défendue (deux sur le banc : gondolin,
-   bree), aucune de groupe. La préparation ne prouve rien encore : le rôle de la réponse porte
+   session_drain_vms`, ou `az role assignment list --assignee <principal> --all --query
+   "[?roleDefinitionName=='Eregion Glorfindel Session Drain']" -o table`, montre une portée de VM
+   par VM défendue (deux sur le banc : gondolin, bree), aucune de groupe. La préparation ne prouve rien encore : le rôle de la réponse porte
    toujours Run Command sur le groupe, elle ne peut pas dire `no_drain` ;
 4. **seulement ensuite**, retirer Run Command du rôle de la réponse ;
 5. **après le geste 4**, relire la préparation de chaque VM défendue (console, page Glorfindel) :
    aucune `no_drain`. C'est là que la coupure VM par VM se prouve.
 
 ```bash
-sed "s|<SUBSCRIPTION_ID>|$SUB|" infra/identities/glorfindel-session-drain.json > /tmp/eregion-role-session-drain.json
-az role definition create --role-definition @/tmp/eregion-role-session-drain.json       # 1
+SUB=$(az account show --query id -o tsv)
+GUID='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+if printf %s "$SUB" | grep -qE "$GUID"; then                                            # 1
+  sed "s|<SUBSCRIPTION_ID>|$SUB|" infra/identities/glorfindel-session-drain.json > /tmp/eregion-role-session-drain.json
+  az role definition create --role-definition @/tmp/eregion-role-session-drain.json
+else echo "SUB n'est pas un GUID : az login, puis relancer le bloc"; fi
 # 2 : ci-dessus ; 3 :
 terraform -chdir=infra/glorfindel-host output session_drain_vms                         # deux VM
-sed "s|<SUBSCRIPTION_ID>|$SUB|" infra/identities/glorfindel-response.json > /tmp/eregion-role-response.json
-az role definition update --role-definition @/tmp/eregion-role-response.json            # 4 : sans Run Command
+if printf %s "$SUB" | grep -qE "$GUID"; then                                            # 4 : sans Run Command
+  sed "s|<SUBSCRIPTION_ID>|$SUB|" infra/identities/glorfindel-response.json > /tmp/eregion-role-response.json
+  az role definition update --role-definition @/tmp/eregion-role-response.json
+else echo "SUB n'est pas un GUID : az login, puis relancer le bloc"; fi
 # 5 : la préparation de chaque VM défendue, sans no_drain
 ```
 
@@ -835,24 +897,43 @@ neutralisation, ni aucune VM défendue la coupure des sessions d'une isolation a
 console, entre deux gestes —
 
 1. **créer le rôle** de la neutralisation (une fois par tenant ; pour un second abonnement, l'ajouter
-   aux portées du rôle existant, ci-dessus) ;
+   aux portées du rôle existant, ci-dessus). Le rôle « Eregion Glorfindel Restore Staging » doit
+   exister aussi : le plan l'attribue dès que `restore_principals` est rempli
+   (`restore_staging_storage` est commité, `restore.auto.tfvars`), et l'apply échoue sans lui. Absent
+   (`az role definition list --name "Eregion Glorfindel Restore Staging" --query 'length(@)'` → 0), le
+   créer comme dans « Créer », ci-dessus ;
 2. **les principaux**, sur le poste seulement : `infra/glorfindel-host/principals.auto.tfvars`,
    copié de `principals.auto.tfvars.example` (ignoré par git, jamais dans le dépôt), avec
    l'**object id** de chacun (`az ad sp show --id <appId-console> --query id -o tsv`, de même pour le
    bot) — jamais l'appId, jamais l'identité d'Imladris (le plan la refuse) : `restore_principals` (la
    console, le bot) et `session_drain_principals` (la console seule) ;
-3. **le plan**, relu : `make glorfindel-host-plan`. Il doit montrer six créations, et **rien
-   d'autre** : quatre de `azurerm_role_assignment.restore_neutralize` (`console/vm-celebrimbor-gondolin`,
-   `console/vm-celebrimbor-bree`, `bot/…`, `bot/…`, le rôle « Eregion Glorfindel Restore Neutralize »)
-   et deux de `azurerm_role_assignment.session_drain_principals` (`console/vm-celebrimbor-gondolin`,
-   `console/vm-celebrimbor-bree`, le rôle « Eregion Glorfindel Session Drain »), chacune à la portée
-   d'une VM ; ni la VM d'Imladris remplacée, ni la coupure d'Imladris touchée, ni une attribution sur un groupe ;
+3. **le plan**, relu : `make glorfindel-host-plan`. Quand aucune de ces attributions n'est encore
+   dans l'état d'Imladris, il doit montrer huit créations (`Plan: 8 to add, 0 to change, 0 to
+   destroy`, sans couleur : le bloc ci-dessous), et **rien d'autre** :
+   - quatre de `azurerm_role_assignment.restore_neutralize` (`console/vm-celebrimbor-gondolin`,
+     `console/vm-celebrimbor-bree`, `bot/…`, `bot/…`, le rôle « Eregion Glorfindel Restore
+     Neutralize »), chacune à la portée d'une VM ;
+   - deux de `azurerm_role_assignment.session_drain_principals` (`console/vm-celebrimbor-gondolin`,
+     `console/vm-celebrimbor-bree`, le rôle « Eregion Glorfindel Session Drain »), chacune à la portée
+     d'une VM ;
+   - deux de `azurerm_role_assignment.restore_staging` (`["console"]`, `["bot"]`, le rôle « Eregion
+     Glorfindel Restore Staging »), à la portée du seul compte de transit (`restore_staging_storage`,
+     RST1) ;
+   - ni la VM d'Imladris remplacée, ni la coupure d'Imladris touchée, ni une attribution sur un groupe.
+
+   Une attribution de « Restore Staging » déjà posée à la main pour la console (le banc, le 09/11) :
+   l'importer d'abord (« Depuis un rôle "Restore Staging" posé à la main », ci-dessus, gestes 1 à 3) ;
+   le plan montre alors `Plan: 7 to add, 0 to change, 0 to destroy`, sans `restore_staging["console"]`.
+   Sans l'import, l'apply échoue sur elle (409 `RoleAssignmentExists`). Un autre compte : s'arrêter,
+   lire ce que l'état d'Imladris tient déjà (`terraform -chdir=infra/glorfindel-host state list`) ;
 4. **l'application** : `make glorfindel-host-up`, sans `YES` (le même plan, confirmé) ;
 5. **la vérification**, juste après : `terraform -chdir=infra/glorfindel-host output restore_neutralize`
-   (les quatre paires) et `output session_drain_principals` (les deux), puis `az role assignment list
-   --role "Eregion Glorfindel Restore Neutralize" --all -o table` et de même pour « Session Drain » :
-   des portées de VM seulement, aucune de groupe, ni la neutralisation pour la watch ou Imladris, ni la
-   coupure pour le bot ;
+   (les quatre paires), `output session_drain_principals` (les deux) et `output restore_staging`
+   (`bot`, `console`), puis `az role assignment list --all --query
+   "[?roleDefinitionName=='Eregion Glorfindel Restore Neutralize']" -o table` et de même pour
+   « Session Drain » et « Restore Staging » : des portées de VM seulement pour les deux premiers, celle
+   du seul compte de transit pour le troisième, aucune de groupe, ni la neutralisation pour la watch ou
+   Imladris, ni la coupure pour le bot ;
    **Hors du banc** (un déploiement sans Imladris, les principaux par la boucle `az` ci-dessus) : les gestes
    2 à 5 sont les deux boucles `for vm in …` — la coupure à la watch et à la console sur chaque VM
    défendue, la neutralisation à la console et au bot sur chaque VM que le restore défend —, puis la
@@ -865,18 +946,29 @@ console, entre deux gestes —
    la VM restaurée quand même, sa levée retenue pour un humain.
 
 ```bash
-sed "s|<SUBSCRIPTION_ID>|$SUB|" infra/identities/glorfindel-restore-neutralize.json > /tmp/eregion-role-restore-neutralize.json
-az role definition create --role-definition @/tmp/eregion-role-restore-neutralize.json   # 1
-cp infra/glorfindel-host/principals.auto.tfvars.example infra/glorfindel-host/principals.auto.tfvars
+SUB=$(az account show --query id -o tsv)
+GUID='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+if printf %s "$SUB" | grep -qE "$GUID"; then                                            # 1
+  sed "s|<SUBSCRIPTION_ID>|$SUB|" infra/identities/glorfindel-restore-neutralize.json > /tmp/eregion-role-restore-neutralize.json
+  az role definition create --role-definition @/tmp/eregion-role-restore-neutralize.json
+else echo "SUB n'est pas un GUID : az login, puis relancer le bloc"; fi
+az role definition list --name "Eregion Glorfindel Restore Staging" --query 'length(@)'   #     1 (0 : le créer, « Créer »)
+cp -n infra/glorfindel-host/principals.auto.tfvars.example infra/glorfindel-host/principals.auto.tfvars   # -n : un fichier rempli reste
 #   2 : les deux object id dedans (az ad sp show --id <appId> --query id -o tsv)
-make glorfindel-host-plan                                                                 # 3 : six attributions, rien d'autre
+TF_CLI_ARGS_plan=-no-color make glorfindel-host-plan | tee /tmp/eregion-plan.txt          # 3 : huit attributions, rien d'autre
+grep '^Plan:' /tmp/eregion-plan.txt                                                       #     Plan: 8 to add, 0 to change, 0 to destroy
+                                                                                          #     (7 : Restore Staging de la console importé d'abord)
 make glorfindel-host-up                                                                   # 4 : sans YES
 terraform -chdir=infra/glorfindel-host output restore_neutralize                         # 5
 terraform -chdir=infra/glorfindel-host output session_drain_principals
-az role assignment list --role "Eregion Glorfindel Restore Neutralize" --all -o table
-az role assignment list --role "Eregion Glorfindel Session Drain" --all -o table
-sed "s|<SUBSCRIPTION_ID>|$SUB|" infra/identities/glorfindel-restore.json > /tmp/eregion-role-restore.json
-az role definition update --role-definition @/tmp/eregion-role-restore.json              # 6 : sans Run Command
+terraform -chdir=infra/glorfindel-host output restore_staging
+az role assignment list --all --query "[?roleDefinitionName=='Eregion Glorfindel Restore Neutralize']" -o table
+az role assignment list --all --query "[?roleDefinitionName=='Eregion Glorfindel Session Drain']" -o table
+az role assignment list --all --query "[?roleDefinitionName=='Eregion Glorfindel Restore Staging']" -o table
+if printf %s "$SUB" | grep -qE "$GUID"; then                                            # 6 : sans Run Command
+  sed "s|<SUBSCRIPTION_ID>|$SUB|" infra/identities/glorfindel-restore.json > /tmp/eregion-role-restore.json
+  az role definition update --role-definition @/tmp/eregion-role-restore.json
+else echo "SUB n'est pas un GUID : az login, puis relancer le bloc"; fi
 ```
 
 Dans l'autre ordre, un restore entre les deux gestes restaure la VM sans neutraliser sa dernière
@@ -918,10 +1010,14 @@ demande, avant une session du banc (`docs/banc-t1486.md`, étape 0).
 **Retirer l'ancien principal partagé** (`Contributor` sur l'abonnement, l'option A d'avant) :
 
 ```bash
+SUB=$(az account show --query id -o tsv)
+GUID='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
 az role assignment list --assignee <appId-ancien> --all -o table
-az role assignment delete --assignee <appId-ancien> --role Contributor --scope /subscriptions/$SUB
-az ad sp delete --id <appId-ancien>
-az ad app delete --id <appId-ancien>      # l'inscription d'application, que sp delete laisse
+if printf %s "$SUB" | grep -qE "$GUID"; then
+  az role assignment delete --assignee <appId-ancien> --role Contributor --scope /subscriptions/$SUB
+  az ad sp delete --id <appId-ancien>
+  az ad app delete --id <appId-ancien>    # l'inscription d'application, que sp delete laisse
+else echo "SUB n'est pas un GUID : az login, puis relancer le bloc"; fi
 ```
 
 Le principal `annatar` d'avant (`Contributor` sur l'abonnement) se retire de même (les trois
@@ -2255,8 +2351,19 @@ comme pip et Terraform (la boucle le piège, et sort avec 130 ou 143). Aucune va
   par défaut, une erreur passagère sur un index n'est qu'un `W:` et la commande sort avec 0, le retry
   ne jouerait pas et `apt-get install` échouerait trois fois (« version not found »). L'option est
   celle de `apt-get update --error-on=any` (page de manuel d'apt-get, « Fail the update command if
-  any error occured, even a transient one »), lue sur apt 2.8.3 d'Ubuntu 24.04 ; sur le runner, son
-  effet sur une vraie erreur passagère reste à voir.
+  any error occured, even a transient one »), lue sur apt 2.8.3 d'Ubuntu 24.04. **Son effet sur le
+  runner, vu le 11/11** : les miroirs d'Ubuntu ne se résolvaient plus (`security.ubuntu.com`, des
+  heures durant), et `apt-get update` est sorti avec 100 — trois essais, chacun dit, puis l'échec du
+  job, au lieu d'un `W:` et d'un `install` qui échoue plus loin.
+  **La mise à jour ne lit plus que la source de HashiCorp** (CI11, #728) : `-o
+  Dir::Etc::sourcelist=/etc/apt/sources.list.d/hashicorp.list -o Dir::Etc::sourceparts=- -o
+  APT::Get::List-Cleanup=0` — le seul index dont l'installation a besoin. Pourquoi : ce 11/11, une
+  panne des miroirs d'Ubuntu, sans rapport avec le code, faisait tomber le job ; l'image n'était pas
+  en cause (main et le canari verts juste avant, sur la même), aucune n'est épinglée.
+  `Error-Mode=any` tient toujours pour l'index de HashiCorp. Ceux d'Ubuntu ne sont pas rafraîchis
+  (`List-Cleanup=0` : ni effacés non plus). Le paquet `terraform` dépend de `git`, que l'image des
+  runners porte déjà : `apt-get install` n'a rien à tirer d'Ubuntu. Une image sans `git` le
+  chercherait dans ces index-là, sans les avoir relus (non vu ; les workflows n'y changent rien).
 - `terraform init` de chaque module, qui télécharge ses providers verrouillés, dans une étape à part
   (« Terraform init — … (the locked providers, retried) ») : le `test` et le `validate` qui suivent ne
   sont jamais retentés. Un paquet qui ne correspond pas au verrou échoue trois fois (environ 40 s de
@@ -3249,8 +3356,10 @@ ceux du banc ; `<…>` est à remplacer, rien de réel dans ce dépôt.
 Licence : la page des licences d'Entra donne « Audit logs : Yes » et « Sign-in logs : Yes » pour
 Entra ID **Free** ([licences](https://learn.microsoft.com/entra/fundamentals/licensing), « Microsoft
 Entra monitoring and health ») ; ce qu'exige l'**envoi** des connexions des principaux de service vers
-un workspace n'y est pas dit. La doc d'AL1 et de C2 supposait P1 ou P2 : hypothèse E2, tranchée par
-l'apply.
+un workspace n'y est pas dit. La doc d'AL1 et de C2 supposait P1 ou P2 : hypothèse E2. **Ce que le
+banc en a lu** : les connexions arrivent (des lignes d'`AADServicePrincipalSignInLogs` pour le canari,
+le 11/11 : CAN3, #673), sur un tenant sans P2 (`AadPremiumLicenseRequired`, le 06/11 : IDI1p, #618).
+Qu'il soit aussi sans P1 n'a pas été lu : « aucune licence » reste à lire.
 
 ### Le coût
 
@@ -3292,7 +3401,7 @@ demanderait un banc dans ce tenant ; s'il n'y en a pas, c'est le tenant de l'abo
 # 1. Dans infra/terraform/terraform.tfvars (persistant, ignoré par git) — l'un, l'autre, ou les deux :
 #      activity_log_enabled = true
 #      entra_logs_enabled   = true
-make celebrimbor-logs-plan          # plan ciblé : ces deux paramètres seuls (lecture seule)
+TF_CLI_ARGS_plan=-no-color make celebrimbor-logs-plan  # plan ciblé : ces deux paramètres seuls (lecture seule)
 make celebrimbor-logs-up YES=1      # une fois le plan relu
 ```
 
@@ -3306,7 +3415,8 @@ une autre est refusée avant tout appel. **Le plan doit montrer**, et rien d'aut
 - `+ azurerm_monitor_aad_diagnostic_setting.entra[0]` : `name = "diag-celebrimbor-entra"`, le même
   workspace, deux `enabled_log` : `AuditLogs`, `ServicePrincipalSignInLogs` ;
 - `Plan: 1 to add` (ou 2), `0 to change, 0 to destroy`, et l'avertissement de Terraform sur le
-  ciblage (« Resource targeting is in effect ») — attendu.
+  ciblage (« Resource targeting is in effect ») — attendu. La ligne `Plan:` se lit sans couleur
+  (`TF_CLI_ARGS_plan=-no-color`, en tête de ce document).
 
 Un changement sur `azurerm_log_analytics_workspace.celebrimbor` ou sur le groupe (leurs dépendances,
 une dérive de tags en attente) : **s'arrêter**, et le traiter à part par `make celebrimbor-plan`.
@@ -3688,7 +3798,7 @@ make orodruin-check                # armed attendu ; passive « graph_directory_
 
 # 1. Orodruin — la lecture de Graph, seule.
 echo 'graph_read_enabled = true' >> infra/orodruin/terraform.tfvars   # ignoré par git
-make orodruin-plan                 # doit montrer : data.azuread_application_published_app_ids.well_known[0]
+TF_CLI_ARGS_plan=-no-color make orodruin-plan  # doit montrer : data.azuread_application_published_app_ids.well_known[0]
                                    # et data.azuread_service_principal.msgraph[0] lus ;
                                    # + azuread_app_role_assignment.graph_read["Application.Read.All"] et
                                    #   ["RoleManagement.Read.Directory"] (principal_object_id = l'identité
@@ -3717,7 +3827,7 @@ make orodruin-check                # passive « graph_directory_role <valeur> »
 
 # 4. Celebrimbor — l'identité de test et la clé du groupe, seules.
 echo 'entra_test_identity_enabled = true' >> infra/terraform/terraform.tfvars
-make celebrimbor-identity-plan     # doit montrer, et rien d'autre :
+TF_CLI_ARGS_plan=-no-color make celebrimbor-identity-plan  # doit montrer, et rien d'autre :
                                    # + azuread_application.bench_test[0] : display_name = "app-celebrimbor-test",
                                    #   sign_in_audience = "AzureADMyOrg", tags = ["eregion-target=celebrimbor", "eregion-zone=bench"],
                                    #   aucun password, aucun required_resource_access
@@ -3891,7 +4001,7 @@ az rest --method POST --url https://graph.microsoft.com/v1.0/roleManagement/dire
   --body "{\"principalId\": \"$ME\", \"roleDefinitionId\": \"$(role 'Attribute Assignment Administrator')\", \"directoryScopeId\": \"/attributeSets/Eregion\"}"
 
 # 4. Celebrimbor — les utilisateurs de test, leur attribut, leur appartenance, seuls.
-make celebrimbor-users-plan        # doit montrer, et rien d'autre :
+TF_CLI_ARGS_plan=-no-color make celebrimbor-users-plan  # doit montrer, et rien d'autre :
                                    # data.azuread_administrative_unit.bench[0], data.azuread_domains.initial[0] lus
                                    # + azuread_user.bench_test["tuor"] : user_principal_name = "tuor.celebrimbor@<domaine initial>",
                                    #   account_enabled = true, aucun usage_location
@@ -3932,7 +4042,7 @@ terraform -chdir=infra/terraform output -raw entra_bench_unit_id    # → EREGIO
 terraform -chdir=infra/terraform output -raw entra_attribute_set    # → EREGION_IDENTITY_ATTRIBUTE_SET=
 #    Quand IR1b a créé son principal, dans terraform.tfvars :
 #    entra_identity_executor_object_id = "<principal de l'exécuteur>"
-make celebrimbor-users-plan        # + azuread_directory_role_assignment.identity_executor["user_administrator"] :
+TF_CLI_ARGS_plan=-no-color make celebrimbor-users-plan  # + azuread_directory_role_assignment.identity_executor["user_administrator"] :
                                    #   directory_scope_id = "/administrativeUnits/<id>" ;
                                    # ["directory_readers"] : "/" ; ["attribute_assignment_reader"] : "/attributeSets/Eregion" ;
                                    # data.azuread_directory_role_templates.all[0] lu ; Plan: 3 to add
@@ -4063,7 +4173,7 @@ grep -n '^bench_reader_enabled' infra/terraform/terraform.tfvars    # rien : ajo
 printf '\nbench_reader_enabled = true\n' >> infra/terraform/terraform.tfvars   # ignoré par git
 
 # 3. Le plan, relu.
-make celebrimbor-reader-plan           # doit montrer ceci, et rien d'autre :
+TF_CLI_ARGS_plan=-no-color make celebrimbor-reader-plan  # doit montrer ceci, et rien d'autre :
                                        # + azuread_application.bench_reader[0] : display_name = "app-celebrimbor-bench-reader",
                                        #   sign_in_audience = "AzureADMyOrg", sans tags ni required_resource_access
                                        # + azuread_service_principal.bench_reader[0]
@@ -4580,7 +4690,7 @@ quelles (A12). La mesure (requête Q3, ci-dessous) remplace l'estimation après 
 ```bash
 # 1. Dans infra/terraform/terraform.tfvars (persistant, ignoré par git) :
 #      auditd_enabled = true
-make celebrimbor-auditd-plan          # plan ciblé : l'extension d'auditd et la DCR seules (lecture seule)
+TF_CLI_ARGS_plan=-no-color make celebrimbor-auditd-plan  # plan ciblé : l'extension d'auditd et la DCR seules (lecture seule)
 make celebrimbor-auditd-up YES=1      # une fois le plan relu
 ```
 
@@ -4590,7 +4700,8 @@ make celebrimbor-auditd-up YES=1      # une fois le plan relu
   `settings` (le script, en base64) ;
 - `~ azurerm_monitor_data_collection_rule.celebrimbor` : `facility_names` gagne `"local6"`, rien d'autre ;
 - `Plan: 2 to add, 1 to change, 0 to destroy`, et l'avertissement de Terraform sur le ciblage
-  (« Resource targeting is in effect ») — attendu.
+  (« Resource targeting is in effect ») — attendu. La ligne `Plan:` se lit sans couleur
+  (`TF_CLI_ARGS_plan=-no-color`, en tête de ce document).
 
 Un changement sur une VM (`azurerm_linux_virtual_machine.baseline`), le workspace ou le groupe (leurs
 dépendances, une dérive en attente) : **s'arrêter**, et le traiter à part par `make celebrimbor-plan`.
@@ -4809,7 +4920,8 @@ Depuis le poste, à la racine du dépôt, `.envrc` chargé :
    - `~ azurerm_network_watcher_flow_log.celebrimbor`, **mise à jour en place** : seul
      `storage_account_id` change, de `…/stcelebrimborexfil` vers `…/stcelebrimborflows`.
      `storage_account_id` n'est pas `ForceNew` dans azurerm 4.81.0 : aucun `-/+` ;
-   - `Plan: 2 to add, 1 to change, 0 to destroy`, et l'avertissement de Terraform sur `-target`.
+   - `Plan: 2 to add, 1 to change, 0 to destroy`, et l'avertissement de Terraform sur `-target`
+     (la ligne `Plan:` se lit sans couleur : `TF_CLI_ARGS_plan=-no-color make celebrimbor-flows-plan`).
 
    **S'arrêter** si le plan montre un remplacement, une destruction, ou un changement sur le compte
    des exercices, sur `vm_storage_exfil`, sur une VM, le VNet ou le workspace. Un tel changement est
