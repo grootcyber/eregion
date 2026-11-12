@@ -45,8 +45,8 @@ Entre ces gestes, rien ne demande la main :
 | Ce qui s'automatise | Où | Ce qui existe déjà |
 |---|---|---|
 | le préflight, qui refuse s'il n'est pas vert | le poste, dans `bench-run` | BNC1, MOB1 |
-| le calme de 10 minutes, vérifié au lieu d'être attendu à la montre : un ✗, jamais une attente | le poste, dans le préflight | à faire (BNC3) |
-| le point de restauration propre, vérifié, et pris s'il manque ; « restore d'abord » sur une VM attaquée et non restaurée | le poste, dans `bench-run`, par la route du bouton 📸 de la console d'Imladris, après le nom tapé | à faire (BNC3) |
+| le calme de 10 minutes, vérifié au lieu d'être attendu à la montre : un ✗, jamais une attente | le poste, dans le préflight | fait (BNC3b, #770 ; vérifié sur des faux, à mesurer au banc) |
+| le point de restauration propre, vérifié, et pris s'il manque ; « restore d'abord » sur une VM attaquée et non restaurée | le poste, dans `bench-run`, par la route du bouton 📸 de la console d'Imladris, après le nom tapé | fait (BNC3b, #770 ; vérifié sur des faux, à mesurer au banc) |
 | la détection, l'isolement autonome et sa vérification | Imladris | la watch, DRN1 |
 | la levée après le restore | Imladris | REC1, REC1b ; à venir, LEV1 (LEV3 et suivants) : un exercice prouvé par le plan de contrôle se lèvera seul |
 | le rapport, composé sans rien taper | le poste, puis Imladris en fin de run | BNC1 (le poste) ; à faire (BNC3, BNC4) |
@@ -371,9 +371,9 @@ quels droits, ce qui le prouve, et si une main la fait.
 | 0 | **Allumer** gondolin et Orodruin | l'opérateur, `make celebrimbor-start`, `make orodruin-start` (OI3 met Orodruin à jour) | leur état, relu par le préflight | oui, comme aujourd'hui |
 | 1 | **Le geste 1** : `make bench-run TARGET=gondolin SCENARIO=T1486` | l'opérateur, dans un terminal du poste (au clavier, ou depuis le téléphone, MOB1) ; refusé dans une session d'agent, ou sans terminal | la commande et sa sortie ; le journal du serveur SSH du poste pour le téléphone | **oui** |
 | 2 | **Le préflight** (BNC1) | le poste, en lecture seule : l'`az login` de l'opérateur, la lecture d'Imladris par SSH dans un conteneur sans réseau, le contrat lu sur Orodruin | une ligne ✓/⚠/✗ par contrôle ; **un ✗, et rien ne part** | non |
-| 3 | **Le calme**, et **le restore d'abord** : gondolin démarrée depuis 10 min au moins, aucun run sur elle depuis 10 min ; et elle ne porte **aucun run destructif sans restore depuis** (Q3b) | le préflight, en lecture : le journal d'activité de la VM pour le calme ; pour le restore d'abord, la liste de référence des runs de la VM (tout Run Command sur la VM dans le journal d'activité d'Azure, quel que soit l'appelant ; la coupure des sessions d'Imladris seule hors du compte ; la technique d'un run de l'Orodruin actuel dans son journal) et les jobs du coffre (§3.1). Un run de cette liste sans restore lisible donne le ✗ ; une liste illisible aussi | deux lignes de plus du préflight (BNC3) : un ✗ qui dit les minutes qui restent, jamais une attente (Q6) ; un ✗ « restore d'abord » (Q3b). L'opérateur relance. Aujourd'hui, la montre de l'opérateur | non (à faire) |
+| 3 | **Le calme**, et **le restore d'abord** : gondolin démarrée depuis 10 min au moins, aucun run sur elle depuis 10 min ; et elle ne porte **aucun run destructif sans restore depuis** (Q3b) | le préflight, en lecture : le journal d'activité de la VM pour le calme ; pour le restore d'abord, la liste de référence des runs de la VM (tout Run Command sur la VM dans le journal d'activité d'Azure, quel que soit l'appelant ; la coupure des sessions d'Imladris seule hors du compte ; la technique d'un run de l'Orodruin actuel dans son journal) et les jobs du coffre (§3.1). Un run de cette liste sans restore lisible donne le ✗ ; une liste illisible aussi | deux lignes de plus du préflight (BNC3) : un ✗ qui dit les minutes qui restent, jamais une attente (Q6) ; un ✗ « restore d'abord » (Q3b). L'opérateur relance (`scripts/bench_history.py`) | non (fait, BNC3b) |
 | 4 | **La demande**, puis **le nom tapé** et « [o/N] » | le poste écrit la demande par le lecteur de Dagorlad (`exercise_request.new`) ; le nom de la VM, tapé, est comparé à celui qu'Azure donne. **Rien n'est écrit, ni sur Imladris ni sur Azure, avant cette confirmation** | la demande, son identifiant ; un autre nom, ou « N », et rien ne part | **oui** (fait partie du geste 1) |
-| 5 | **Le point de restauration propre** (Q3) | `bench-run`, après la confirmation. Il lit **le point le plus récent** de la VM, celui que le restore prendra, et vérifie qu'il est **propre** (§3.1). Sinon, il en demande un par **la route du bouton 📸**, `POST /api/action/snapshot/<vm>` de la console d'Imladris (`eregion_console/api.py`, `action_snapshot`), attend que le job soit `Completed`, puis attaque | la ligne « point » de `bench-run` : le point gardé et pourquoi, ou celui qui vient d'être pris ; le reçu de la demande (sous FS1) ; le job du coffre | non (à faire, BNC3) |
+| 5 | **Le point de restauration propre** (Q3) | `bench-run`, après la confirmation. Il lit **le point le plus récent** de la VM, celui que le restore prendra, et vérifie qu'il est **propre** (§3.1). Sinon, il en demande un par **la route du bouton 📸**, `POST /api/action/snapshot/<vm>` de la console d'Imladris (`eregion_console/api.py`, `action_snapshot`), attend que le job soit `Completed`, puis attaque | la ligne « point » de `bench-run` : le point gardé et pourquoi, ou celui qui vient d'être pris ; le reçu de la demande (sous FS1) ; le job du coffre ; puis le préflight rejoué (`scripts/bench_snapshot.py`) | non (fait, BNC3b) |
 | 6 | **L'attaque, par Orodruin** | `exercise_runner` rejuge tout (contrat, V1, inscription, zone, le nom tapé contre le nom qu'il lit, plafond), puis `annatar wire` : Run Command sous l'identité d'Orodruin (`injector_vm`), journalisé **avant** l'appel ; `setup_testdata.sh` puis le script de T1486, sous la fenêtre d'exercice | la fenêtre porte l'identifiant de la demande ; `attack_started`, T0 ; le journal d'activité, appelant Orodruin | non |
 | 7 | **La détection, l'isolement autonome et sa vérification** | la watch d'Imladris : `Reader` et `Log Analytics Reader` sur le banc, « Response », « Session Drain » sur gondolin ; `isolate_vm` en `non_disruptive` ; la coupure des sessions suivie sur Azure (DRN1) | le cycle `isolate_vm` relu `verified=True` ; la carte d'isolement | non |
 | 8 | **Le rapport intermédiaire** | `bench-run` compose `make bench-report RUN=<run_id>` à sa sortie, sur le poste (BNC1), une fois le cycle du run écrit sur Imladris, relu 10 min au plus (BNC3a) | `runs/bench/<run_id>.json` et son Markdown, sur le poste | non |
@@ -401,7 +401,7 @@ lecture : un point propre plus ancien ne servirait pas. Il est propre s'il tient
    un `release_isolation` dans `runs/console/manual_actions.jsonl` et `runs/bot/manual_actions.jsonl`),
    **sur tous les runs**, pas sur le seul run en cours. Le lecteur de BNC1 ne les lit pas
    aujourd'hui (`scripts/bench_h0_reader.py` ne lit que l'isolement courant et les cycles d'un run
-   après son T0) : BNC3 l'étend, toujours dans le conteneur jetable, sans réseau, aux montages en
+   après son T0) : BNC3b l'étend (fait : `history`), toujours dans le conteneur jetable, sans réseau, aux montages en
    lecture seule. **Faute de lecture**, ou sur une quarantaine dont la levée ne se lit pas, le
    point est refusé et un nouveau est pris.
 
@@ -431,8 +431,9 @@ Comment le préflight la lit :
   dernier restore compte, quel que soit l'appelant.** L'appelant sert à dire qui a agi
   (`bench_shared.Roles`), jamais à filtrer : une liste filtrée sur l'identité actuelle d'Orodruin
   laisserait passer une VM chiffrée par l'Orodruin d'avant une reconstruction (§5.5). Une lecture
-  coupée (elle atteint sa borne, `MAX_EVENTS`) ou en échec est illisible. Au lot BNC3 : la fenêtre
-  de 90 jours face à cette borne, une lecture coupée comptant comme illisible ;
+  coupée (elle atteint sa borne, `MAX_EVENTS`) ou en échec est illisible. Fait au lot BNC3b : la fenêtre lue est de 89 jours (à
+  un jour de la rétention, pour qu'Azure l'accepte), face à la borne de 5 000 événements ; une lecture
+  coupée compte comme illisible ;
 - **un seul appelant ne compte pas comme destructif : Imladris**, dont l'identité est connue, et
   dont le seul Run Command est celui de la défense : **la coupure des sessions** d'une VM qu'il
   isole (`ss -K`, `glorfindel/providers/azure/isolation.py`, `drain_connections` ; DRN1). Encore
@@ -476,7 +477,7 @@ Comment le préflight la lit :
 - **« sans restore depuis » se lit dans les jobs du coffre**, déjà lus pour le premier critère du
   point propre, pas dans les rapports : un restore de la VM terminé après le dernier appel du run
   le règle, même fait à la main, hors de `bench-restore`. Cela suppose que le restore garde la même
-  VM, le même identifiant : c'est le cas du restore en place de RST1 (à tenir au lot BNC3) ;
+  VM, le même identifiant : c'est le cas du restore en place de RST1 (`recoveryType: OriginalLocation`, tenu par `tests/unit/test_restore_console.py`) ;
 - **l'horizon** : le journal d'activité et le journal d'Orodruin remontent à 90 jours. Si le dernier
   restore de la VM est plus ancien, la liste compte comme illisible ;
 - **un run de la liste sans restore lisible donne le ✗**, et **une liste illisible aussi** (la
@@ -495,7 +496,7 @@ chemin du bouton, la route `POST /api/action/snapshot/<vm>` de la console d'Imla
   `scripts/mobile.py guard`). Il passe du Makefile au script **par l'environnement, jamais en
   argv** (en argv, `ps` le montrerait). Il part en `Authorization: Bearer`, jamais dans l'URL,
   jamais affiché. Le `POST` porte un corps JSON (`Content-Type: application/json`) et un `Host` à
-  `127.0.0.1:<port>` : deux contrôles d'entrée de la console, à vérifier au lot ;
+  `127.0.0.1:<port>` : deux contrôles d'entrée de la console, vérifiés au lot BNC3b (la requête de `bench_snapshot.call` rejouée sur le middleware de la console, `tests/unit/test_bench_snapshot.py`) ;
 - **ce que la route fait.** Sans la file d'actions, elle lance l'instantané dans la console, sous
   l'identité d'Imladris (son rôle Response), et rend l'identifiant du job. Sous FS1
   (`EREGION_ACTION_QUEUE=1`), elle dépose une demande signée par la clé de la console, et **c'est la
@@ -504,7 +505,7 @@ chemin du bouton, la route `POST /api/action/snapshot/<vm>` de la console d'Imla
   `refused`, `failed` ou une demande expirée arrêtent le run ;
 - **la suite** : le job du coffre, lu par `az backup job show` sous l'`az login` de l'opérateur,
   jusqu'à `Completed`. Le premier point après un restore est complet, et peut prendre environ
-  40 min : l'attente est bornée (60 min, à mesurer). Un job qui échoue ou qui dépasse arrête le run
+  40 min : l'attente est bornée (60 min, `JOB_WAIT_S`, à mesurer au banc). Un job qui échoue ou qui dépasse arrête le run
   avant que la demande parte vers Orodruin : rien n'est attaqué ;
 - **le préflight rejoué** après l'attente du point, juste avant l'attaque : jusqu'à 60 min ont pu
   passer, et Orodruin ne rejuge ni le calme ni ce qu'Imladris voit de la VM. Un ✗ arrête là. Le point

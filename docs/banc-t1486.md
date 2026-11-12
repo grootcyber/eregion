@@ -113,7 +113,7 @@ T1486 est une technique **destructive** du catalogue (`destructive: true`,
 |---|---|---|
 | **Dagorlad** : le fil T1486 → gondolin, « Request run from Orodruin », puis `make orodruin-exercise REQUEST=…` | le nom de la cible tapé sur le poste, comparé par Orodruin au nom qu'Azure lui donne (`annatar/runner/engine.py:267-274`) ; le scénario construit depuis le catalogue, son `setup` compris (`annatar/campaign/synthesizer.py:188-196`) ; l'identifiant de la demande dans la fenêtre et le rapport ; la chronologie de Dagorlad | **le chemin prévu, mesuré** |
 | `annatar run annatar/scenarios/azure/ransomware-vm.yaml --yes` dans le `docker run` durci d'Orodruin (`make orodruin-ssh`) | les mêmes gardes d'inscription, de zone et de watch, la fenêtre et le rapport publiés (`annatar/cli.py:89`) ; **pas** de nom tapé (la garde ne joue que pour une demande, `engine.py:267`), pas de chronologie dans Dagorlad | un repli, mesuré aussi, moins gardé |
-| **`make bench-run TARGET=… SCENARIO=T1486`** (MOB1, #686) : depuis le poste, au clavier ou depuis le téléphone ([le guide](demarrer/mobile.md)) | le préflight d'abord (un ✗ : rien ne part), la demande d'un fil écrite sur le poste par le même lecteur que celles de Dagorlad, le nom de la cible tapé, puis le même lancement que `make orodruin-exercise` et `make bench-report` pour le run, une fois son cycle écrit sur Imladris (relu, 10 min au plus : BNC3a) (`scripts/bench_run.py`) ; la demande n'est pas dans le répertoire de la console : **pas** de chronologie de la demande dans Dagorlad (le run, ses cartes et son rapport, si) | le même chemin gardé, en une commande |
+| **`make bench-run TARGET=… SCENARIO=T1486`** (MOB1, #686) : depuis le poste, au clavier ou depuis le téléphone ([le guide](demarrer/mobile.md)) | le préflight d'abord (un ✗ : rien ne part), la demande d'un fil écrite sur le poste par le même lecteur que celles de Dagorlad, le nom de la cible tapé, le point propre vérifié et pris s'il manque par la route du bouton 📸, puis le préflight rejoué (BNC3b), puis le même lancement que `make orodruin-exercise` et `make bench-report` pour le run, une fois son cycle écrit sur Imladris (relu, 10 min au plus : BNC3a) (`scripts/bench_run.py`) ; la demande n'est pas dans le répertoire de la console : **pas** de chronologie de la demande dans Dagorlad (le run, ses cartes et son rapport, si) | le même chemin gardé, en une commande |
 | une campagne déclarée (`make orodruin-campaign-plan CAMPAIGN_DECLARED=…`) | refusée deux fois : T1486 est un script maison et destructif (`annatar/campaign/declared.py:119-122`) ; `orodruin-campaign-plan` ne passe jamais `--allow-destructive` (`Makefile:1546`) | **écartée** |
 
 Aucun de ces chemins n'est un run de développement tant que `--without-glorfindel` n'est pas donné.
@@ -139,10 +139,57 @@ déclarée le refuse.
   le 05/10, `detection_rules.yaml:36-38`) et un run précédent. D'où : 10 minutes de calme après le
   démarrage de gondolin, et après tout run précédent. L'ancienne consigne (10 min après
   `annatar clean`, `docs/operations.md`) visait le même piège.
+- **Le calme, vérifié** (BNC3b, #770) : `make bench-preflight` (et donc `make bench-run`) lit le journal
+  d'activité de gondolin, sous ton `az login` : sa dernière mise en marche (`start/action`,
+  `restart/action`) et sa dernière Run Command, quel que soit l'appelant. Moins de 10 min : un ✗ qui
+  dit les minutes qui restent, **jamais une attente** ; relancer alors. Une Run Command sans fin lue,
+  de moins de 90 min, compte comme en cours. Une lecture en échec, ou coupée à sa borne (5 000
+  événements), est un ✗, jamais un ✓ (`scripts/bench_history.py`, `calm`).
+- **« Restore d'abord »** (BNC3b, Q3b) : une VM qui porte un run destructif sans restore depuis ne se
+  rattaque pas. La liste de référence des runs est le journal d'activité de la VM : **toute Run Command
+  sur gondolin depuis son dernier restore compte**, quel que soit l'appelant, sauf deux. La coupure des
+  sessions d'Imladris, quand elle commence entre 2 min avant et 7 min après le début d'une isolation
+  vérifiée de la watch (`verified_at` − `action_s`, lu sur Imladris dans tous les cycles `isolate_vm` ;
+  une coupure, une Run Command). Et un run de l'Orodruin actuel dont la technique se lit comme non
+  destructive : le `run_id` dans son journal du canal (`audit/<run_id>.jsonl`, la ligne d'avant l'appel
+  sur cette VM), puis la technique de son rapport (`runs/<run_id>.json`), marquée `destructive: false`
+  au catalogue ; une technique qui ne se lit pas compte comme destructive. « Depuis son dernier restore »
+  se lit dans les jobs du coffre : le dernier restore `Completed` de la VM (en place, la même VM :
+  `OriginalLocation`, RST1), ou sa création si elle date de moins de 89 jours. Un restore en cours, une
+  liste qui ne remonte pas jusqu'au dernier restore, une lecture en échec : un ✗. Conséquences
+  voulues : un run non destructif dont le journal s'est perdu, une Run Command lancée à la main, une
+  coupure d'un Imladris reconstruit bloquent la VM jusqu'à un restore (`make bench-restore`).
 
 ### Le point de restauration propre : depuis Imladris
 
-Imladris a le droit d'un instantané : le rôle « Eregion Glorfindel Response » porte l'action de
+**Vérifié et pris par `make bench-run`** (BNC3b, #770) : une fois la demande confirmée (le nom tapé,
+« o »), il lit le point le plus récent de gondolin, celui que le restore prendra. Il le garde s'il est
+**pris après son dernier restore** (les jobs du coffre ; une liste qui ne remonte pas jusqu'à lui le
+refuse) et **hors de toute quarantaine**, sur tous les runs : les isolations de la watch (exécutées,
+vérifiées ou partielles), de la console et du bot, et leurs levées, lues sur Imladris par
+`scripts/bench_h0_reader.py history`, dans son conteneur jetable, sans réseau, aux montages en
+lecture seule. Une quarantaine sans levée lue, ou une lecture impossible : le point est refusé.
+
+Sinon il en prend un par **la route du bouton 📸**, `POST /api/action/snapshot/<vm>` de la console
+d'Imladris (`scripts/bench_snapshot.py`) :
+- par un **renvoi de port court** qu'il ouvre lui-même, `ssh -N -L 127.0.0.1:<port libre>:127.0.0.1:7007`,
+  la clé d'hôte épinglée (`make imladris-known`), sans maître multiplexé, fermé dans tous les cas, le
+  temps de la demande et de son reçu ;
+- avec **le jeton de la console**, lu dans `host.env` par le Makefile après le garde des sessions
+  d'agent (`CONSOLE_GUARD`), passé par l'environnement (`BENCH_CONSOLE_TOKEN`), jamais en argv ni
+  affiché, en `Authorization: Bearer`, sans proxy ; un corps JSON et un `Host` à `127.0.0.1:<port>` ;
+- sous FS1 (`EREGION_ACTION_QUEUE=1`), **le reçu suivi** par `GET /api/queue/<id>` : `not_taken`,
+  `untrusted`, `refused`, `failed`, `unknown` ou une demande expirée arrêtent le run ;
+- puis **le job du coffre** lancé depuis la demande, suivi par `az backup job show` sous ton `az login`
+  jusqu'à `Completed`, **60 min au plus** ; un job en échec ou trop long arrête le run **avant** que la
+  demande parte vers Orodruin ; le point nouveau relu au coffre ;
+- puis **le préflight rejoué**, juste avant l'attaque : un ✗ l'arrête là ; le point pris reste, propre
+  et sans danger.
+
+`DRY_RUN=1` lit le point et dit s'il en prendrait un, sans le prendre. *Vérifié sur des faux*
+(`tests/unit/test_bench_snapshot.py`, `test_bench_run.py`) ; pas encore mesuré au banc.
+
+Le geste à la main reste possible, ci-dessous et à l'étape 2. Imladris a le droit d'un instantané : le rôle « Eregion Glorfindel Response » porte l'action de
 sauvegarde du coffre (`infra/identities/glorfindel-response.json`), et le coffre est dans le groupe
 du banc (`infra/terraform/backup.tf:1-4`), où Imladris tient ce rôle. `glorfindel snapshot` se lance donc
 dans le conteneur de la console d'Imladris, comme ses boutons (SEC18 : il écrit `runs/console/`).
@@ -374,7 +421,10 @@ WS=$(terraform -chdir=infra/terraform output -raw law_workspace_id)
 make imladris-tunnel               # dans un autre terminal : la console, l'URL affichée
 ```
 
-Puis, après 10 minutes, le calme de gondolin :
+Puis, après 10 minutes, le calme de gondolin. **`make bench-run` le vérifie au préflight depuis
+BNC3b** (le journal d'activité : la mise en marche et la dernière Run Command, un ✗ qui dit les
+minutes qui restent) ; les deux requêtes ci-dessous restent pour l'écriture disque, que le journal
+d'activité ne dit pas :
 
 ```zsh
 az monitor log-analytics query -w ${WS} --analytics-query "Heartbeat | where TimeGenerated > ago(5m) | where _ResourceId endswith '/vm-celebrimbor-gondolin' | count" -o table
@@ -392,6 +442,10 @@ Ce qu'on doit voir :
   (`mode_hold`) : ce serait une mesure, pas le confinement.
 
 ### 2. Le point de restauration propre (5 à 20 min)
+
+**Avec `make bench-run`, cette étape ne se tape plus** (BNC3b) : il garde le point le plus récent s'il
+est propre, sinon il en prend un par la route du bouton 📸 et attend son job (« Le point de
+restauration propre », ci-dessus). Le geste à la main, pour le chemin de Dagorlad :
 
 ```zsh
 print -r -- ${RID}                 # à copier
