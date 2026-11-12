@@ -1490,6 +1490,19 @@
    "doc": "docs/banc-t1486.md"
   },
   {
+   "id": "c-paires-expiration",
+   "composant": "celebrimbor",
+   "poste": "c-construire",
+   "nom": "A pair's secret read on its application and on its service principal: its end seen wherever it lives",
+   "etat": "main",
+   "release": "0.5",
+   "lots": [
+    "PAIR1"
+   ],
+   "issue": 736,
+   "doc": "docs/operations.md"
+  },
+  {
    "id": "c-telephone",
    "composant": "celebrimbor",
    "poste": "c-acces",

@@ -11,7 +11,8 @@ stop the run), 1 otherwise. Everything is read, nothing is written — on Azure,
   the workstation  no local watch (`docker ps`);
   Orodruin      its contract read on it without being published (`check()` in its hardened
                 container), armed or passive, and its cap; deallocated, a ⚠: read once it runs;
-  the pairs     `scripts/credential_expiry.py` (RST1): each secret's end — the console's pair, which
+  the pairs     `scripts/credential_expiry.py` (RST1): each secret's end, read on the application and
+                on the service principal, said where it lives (PAIR1) — the console's pair, which
                 restores, is required;
   the target    its group (one VM of that name), its power; on Imladris: its mode (configured, effective),
                 its readiness and the quarantine, no isolation already;

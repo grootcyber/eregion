@@ -888,12 +888,32 @@ prochain `make glorfindel-host-up` les reprend ; une VM que Celebrimbor reconstr
 
 **Faire tourner un secret** (un an par défaut) : `az ad sp credential reset --id <appId>` rend
 un nouveau `password` ; le poser dans `.envrc`, `make glorfindel-restart`. L'ancien cesse à la
-réinitialisation : un service à la fois. **Quand le faire** : `make azure-pairs-expiry` (RST1) lit,
-sous ton `az login`, la date de fin des secrets des trois paires du poste (`az ad app credential
-list`, la date seule : jamais un secret, ni un id affiché) ; il avertit à moins de 14 jours, dit
-« aucune paire » pour une paire absente, dit un ancien secret expiré à côté d'un valable (« à retirer ») et sort en 1 sur une date illisible ou quand aucun secret n'est valable.
+réinitialisation : un service à la fois. **Les deux formes d'une paire** (PAIR1, #736) : son secret
+vit sur l'un de deux objets, son application ou son principal de service. Au banc, le 12/11, celui de
+la watch était sur son application (la forme d'`az ad sp create-for-rbac`), celui de la console sur son
+principal de service (0 sur l'application, 1 sur le principal, posé le 09/11 pour 30 jours) — sans
+doute la forme d'une rotation par `az ad sp credential reset`, non mesuré. Un secret resté sur l'autre
+objet reste valable jusqu'à sa date : le contrôle le dit (« 2 secrets valables », à retirer par
+`az ad app credential delete` ou `az ad sp credential delete`, selon l'objet qu'il nomme). **Quand le
+faire** : `make azure-pairs-expiry` (RST1) lit, sous ton `az login`, la date de fin des secrets et des
+certificats des trois paires du poste, sur les deux objets : `az ad app show --id <appId>` puis
+`az ad sp show --id <appId>`, la même requête aux deux, `{secrets: passwordCredentials[].endDateTime,
+certificates: keyCredentials[].endDateTime}` (la date seule : jamais un secret, ni un id affiché). Il
+dit où vit chaque date (« sur son application », « sur son principal de service ») ; la plus proche
+des deux objets fait le verdict ; il avertit à moins de 14 jours, dit « aucune paire » pour une paire
+absente, dit un ancien secret expiré à côté d'un valable (« à retirer ») et sort en 1 sur un objet
+illisible ou quand aucun secret n'est valable. « Aucun secret ni certificat » (✗) ne se dit que des
+deux objets lus et vides ; un objet illisible se dit tel (✗), jamais « aucun », et aucun ✓ à côté :
+une date plus proche peut s'y trouver. Avant PAIR1, seule l'application se lisait (`az ad app
+credential list`) : le préflight du banc disait « aucun secret » d'une paire qui se connectait, et n'en
+aurait jamais vu l'expiration.
 `check-azure-env` et le démarrage de Glorfindel n'appellent jamais Graph : la lecture se fait à la
 demande, avant une session du banc (`docs/banc-t1486.md`, étape 0).
+
+> **Note du 12/11 (PAIR1), pour Jonathan** : le secret de la console, sur son principal de service,
+> expire vers le **08/12** ; `make azure-pairs-expiry` avertira à partir du 26/11 environ. Sa rotation
+> se fait avant le 08/12 : ce jour-là, le restore depuis le poste s'arrêterait. Après la rotation,
+> relancer `make azure-pairs-expiry` : une seule date doit rester pour la console.
 
 **Retirer l'ancien principal partagé** (`Contributor` sur l'abonnement, l'option A d'avant) :
 

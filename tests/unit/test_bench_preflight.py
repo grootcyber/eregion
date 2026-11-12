@@ -155,8 +155,26 @@ def _h0(w: bw.World, mode: str = "non_disruptive", readiness: str = "ready") -> 
     w.write("runs/glorfindel/orodruin/contract.json", {"verdict": "armed", "codes": [], "at": bw.ts("15:50:00")})
 
 
+def _pair_rules(app_id: str, held: dict) -> list[dict]:
+    """`az ad app show` and `az ad sp show` of one pair: its secrets' end dates, or "fail"."""
+    out = []
+    for obj in ("app", "sp"):
+        if held[obj] == "fail":
+            out.append(bw.rule("az", ["ad", obj, "show", app_id], rc=1,
+                               err=f"ERROR: Resource '{app_id}' does not exist or one of its queried "
+                                   "reference-property objects are not present.\n"))
+        else:
+            out.append(bw.rule("az", ["ad", obj, "show", app_id], {"secrets": held[obj], "certificates": []}))
+    return out
+
+
+# The console's pair as the bench held it on 12/11: no secret on its application, one on its service
+# principal, 26 days left.
+CONSOLE_ON_ITS_SP = {"app": [], "sp": [(NOW + timedelta(days=26, hours=12)).isoformat()]}
+
+
 def _world(tmp_path, *, point_age_h: float = 50, restore_role=None, staging_assigned=False,
-           h0_rights=None) -> bw.World:
+           h0_rights=None, console_pair: dict = CONSOLE_ON_ITS_SP) -> bw.World:
     w = bw.World(tmp_path)
     _h0(w)
     point = (NOW - timedelta(hours=point_age_h)).isoformat()
@@ -189,8 +207,10 @@ def _world(tmp_path, *, point_age_h: float = 50, restore_role=None, staging_assi
         bw.rule("az", ["get-instance-view", bw.RID], ["ProvisioningState/succeeded", "PowerState/running"]),
         bw.rule("ssh", ["~eregion_core.orodruin"],
                 {"verdict": "armed", "codes": [], "notes": [], "cap": {"max_injections": 10, "max_duration_s": 3600}}),
-        bw.rule("az", ["credential", bw.CONSOLE_APP], [(NOW + timedelta(days=30)).isoformat()]),
-        bw.rule("az", ["credential", bw.BOT_APP], [(NOW + timedelta(days=60)).isoformat()]),
+        # The pairs as the bench held them on 12/11 (PAIR1): the console's secret on its service
+        # principal, none on its application; the bot's on its application.
+        *_pair_rules(bw.CONSOLE_APP, console_pair),
+        *_pair_rules(bw.BOT_APP, {"app": [(NOW + timedelta(days=60)).isoformat()], "sp": []}),
         bw.rule("az", ["vm", "list"], [{"name": bw.VM, "rg": bw.RG, "id": bw.RID},
                                        {"name": "vm-celebrimbor-bree", "rg": bw.RG, "id": bw.BREE}]),
         bw.rule("az", ["backup", "item", "list"], [ITEM]),
@@ -278,6 +298,38 @@ def test_an_absent_console_pair_is_a_failure(tmp_path, monkeypatch):
     assert any(f.startswith("les paires : celle de la console est absente ou incomplète") for f in fails)
     assert "droits · console : sa paire absente, rien n'est lu" in fails
     assert arm.posted == [] and arm.asked == []
+
+
+def test_the_console_s_secret_on_its_service_principal_is_seen_with_its_days_left(tmp_path, monkeypatch):
+    """PAIR1 (#736), the bench of 12/11: « ⚠ les paires · console : aucun secret lu sur son application »
+    beside « ✓ droits · console », read under the same pair. Its secret was on its service principal:
+    seen now, its days left, where it lives."""
+    w = _world(tmp_path, point_age_h=3, staging_assigned=True)
+    code, out, err = _preflight(w, arm_in_order(), monkeypatch)
+    assert code == 0, out + err
+    assert ("les paires · console : secret valable jusqu'au 2026-12-06 (26 j), sur son principal de service"
+            in _marked(out, bs.OK)), out
+    assert "les paires · bot : secret valable jusqu'au 2027-01-08 (60 j), sur son application" in _marked(out, bs.OK)
+    assert "aucun secret" not in out
+    asked = [c for c in w.calls() if c[:3] == ["az", "ad", "sp"] or c[:3] == ["az", "ad", "app"]]
+    assert sorted(c[3] for c in asked) == ["show"] * 4
+
+
+@pytest.mark.parametrize("held, said", [
+    ({"app": [], "sp": []}, "les paires · console : aucun secret ni certificat, ni sur son application ni sur "
+                            "son principal de service — la paire ne peut pas se connecter"),
+    ({"app": [], "sp": "fail"}, "les paires · console : date de fin illisible sur son principal de service "
+                                "(ERROR: Resource '<id>' does not exist or one of its queried reference-property "
+                                "objects are not present.)"),
+])
+def test_a_console_pair_without_a_secret_or_unread_is_a_failure_never_none_read(tmp_path, monkeypatch, held, said):
+    """« aucun » only when both objects are read empty; an unread service principal is said so."""
+    w = _world(tmp_path, point_age_h=3, staging_assigned=True, console_pair=held)
+    code, out, err = _preflight(w, arm_in_order(), monkeypatch)
+    assert code == 1, out + err
+    assert said in _marked(out, bs.FAIL), out
+    if held["sp"] == "fail":
+        assert "aucun secret" not in out
 
 
 def test_h0_s_rights_read_wildcards_and_not_actions(tmp_path, monkeypatch):
