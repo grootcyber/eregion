@@ -568,6 +568,38 @@ Limites connues :
 - seul `tests/unit/` est gardé ;
 - un dépôt ouvert par un lien symbolique : les chemins sont comparés tels quels, pas résolus.
 
+**La suite ne touche jamais le vrai `~/.glorfindel`, même sur le poste** (HY2, #769). Le 12/11, deux
+tests y avaient écrit (DRN2 : `vm_notices.jsonl` avant sa redirection ; JUG2 : `bot_heartbeat.json`,
+par un `monkeypatch.undo()` qui défaisait la redirection du conftest), et le garde ne voyait une
+écriture là que si le dossier n'existait pas au départ (la CI, jamais un poste).
+- **Un `HOME` jetable pour toute la session** (`tests/unit/home_sandbox.py`) : posé à l'import du
+  conftest, avant tout module du dépôt (la session refuse de démarrer si l'un est déjà importé, et
+  le nomme). Chaque chemin calculé de `HOME`, à l'import ou plus tard, une redirection oubliée,
+  un `monkeypatch` défait, vit sous un dossier temporaire ; les sous-processus en héritent. Les
+  `XDG_*` du shell sont retirés. Un seul lien vers le vrai `HOME` : `~/.cache/chroma`, le modèle de
+  ChromaDB (~80 Mo, CI8, FLK1), créé au premier téléchargement, sous le verrou de FLK1, là où il
+  l'était avant. Le processus qui a fait le dossier le retire en fin de session (le lien, jamais sa
+  cible). `EREGION_TEST_HOME` et `EREGION_TEST_REAL_HOME` le passent à un worker xdist ; un
+  pytest lancé avec un `HOME` à lui fait le sien.
+- **Le garde du vrai `~/.glorfindel`** (`nothing_written_in_the_operators_store`) : dans le
+  processus de test (chaque worker le sien), toute écriture sous le vrai dossier, vue par l'audit
+  de HY1, fait échouer la session et dit le fichier et le test — jamais faussé par un Glorfindel du
+  poste, puisque seules les écritures de ce processus sont vues. Et la photographie du dossier
+  (noms, tailles, dates, jamais un contenu) avant et après, quel qu'en soit l'auteur : sans dossier
+  au départ, un dossier à la fin échoue (le cas de la CI, gardé) ; avec, un fichier créé, changé ou
+  retiré échoue quand aucun battement d'un Glorfindel vivant n'a bougé (`watch_heartbeat`, sa copie
+  `injectors/watch_heartbeat`, `bot_heartbeat.json`), et n'est que dit (un avertissement) quand l'un
+  a bougé.
+- **`monkeypatch.undo()` interdit dans les tests** (`tests/unit/test_home_sandbox.py` lit leur code) :
+  une fixture qui change un temps prend son `pytest.MonkeyPatch.context()`.
+
+Limites : pendant qu'un Glorfindel du poste tourne, l'écriture d'un sous-processus d'un test n'est
+que dite (une photographie ne dit pas qui a écrit) ; une main sur le poste pendant la suite
+(`glorfindel unblock`), ou la watch qui écrit un autre fichier pendant une session trop courte pour
+qu'un battement bouge, la font échouer à tort ; la suite d'une autre session qui écrirait là fait
+échouer celle-ci. Un chemin calculé du vrai `HOME` hors de Python (un `getpwuid`, un chemin écrit en
+dur dans un script shell) n'est pas redirigé : le garde le voit, il ne l'empêche pas.
+
 **Les secrets passent par leur nom** (L23, #228). Les cibles du `Makefile` qui lancent un conteneur
 (`annatar-run`, `annatar-dry-run`, `annatar-shell`, `glorfindel-watch`, `-list`, `-shell`…)
 donnent chaque secret à `docker run` par son nom, `-e AZURE_CLIENT_SECRET`, jamais par sa valeur :
