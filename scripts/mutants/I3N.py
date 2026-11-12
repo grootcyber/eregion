@@ -10,7 +10,8 @@ was read keeps them all); M4863–M4864: the verification that raises read as ve
 proof of « uncovered »; M4865: its cause dropped. Two neighbors, found looking for them: a NIC
 whose subnet couldn't be read, its block's placement on that subnet's NSG, read « ne gouverne
 plus » by verify_block_ip (M4866; M4868, the other side: taken for blocked), and « no » by
-_perimeter_holds (M4867). Measured by the frozen sequences (tests/unit/test_invariant_regressions.py):
+_perimeter_holds (M4867). M4869, the review's finding (round 1): the first fix's per-NIC list
+named `unsure`, rebinding the list `perimeter_unread` that `_stand` fills. Measured by the frozen sequences (tests/unit/test_invariant_regressions.py):
 the machine draws a data-primary world, another perimeter and a 429 on one of eight reads of one
 call too rarely."""
 _BLK = "glorfindel/providers/azure/blocks.py"
@@ -24,7 +25,7 @@ _NONE = ("                uncovered = []\n"
 _EXCEPT = '                check = {"verified": None, "error": _first_line(exc)}\n'
 _VBL = "glorfindel/providers/azure/verify_block.py"
 _PER = "glorfindel/providers/azure/perimeter.py"
-_UNSURE = ("                    unsure = [f'{p[\"rule\"]} ({p[\"nsg_name\"]})' for p in off] "
+_UNSURE = ("                    off_unsure = [f'{p[\"rule\"]} ({p[\"nsg_name\"]})' for p in off] "
            "if t0.get(\"subnet_unreadable\") else []\n")
 _MERGED = (f"{_REG}test_a_merged_block_never_reads_a_429_on_a_subnet_as_an_nsg_that_no_longer_governs "
            f"{_REG}test_a_merged_block_whose_nic_subnet_is_unread_says_it_unknown")
@@ -54,7 +55,7 @@ MUTANTS = [
     ("M4866", "a block's verification reads a NIC whose subnet it couldn't read as off the NSG its block "
               "lies on: « ne gouverne plus », a rule missing, the NIC open behind two blocks of ours (I3N's "
               "neighbor, in verify_block_ip)",
-     _VBL, _UNSURE, "                    unsure = []\n"),
+     _VBL, _UNSURE, "                    off_unsure = []\n"),
     ("M4867", "a NIC whose subnet couldn't be read is read off any perimeter: « no », the NIC said open "
               "behind one (I3N's neighbor, in _perimeter_holds)",
      _PER, '        return "unknown" if out == "no" and t0.get("subnet_unreadable") else out\n',
@@ -64,6 +65,10 @@ MUTANTS = [
      _VBL, "                        unread.append(f'{t0[\"nic_short\"]}: NSG du subnet illisible')\n"
            "                        undecided.append(t0[\"nic_short\"])\n",
      "                        proven.append(t0[\"nic_short\"])\n"),
+    ("M4869", "the per-NIC list of NICs off their unread subnet rebinds `unsure`, the list `_stand` fills: "
+              "a NIC whose perimeter is unknown lost at the next NIC, « l'IP n'est plus bloquée » said of it "
+              "(I3N's first fix, the review)",
+     _VBL, _UNSURE, _UNSURE.replace("off_unsure = [", "off_unsure = unsure = [")),
 ]
 TESTS = {
     "M4860": f"tests/unit/test_invariants.py {_FOUND} {_SAID}",
@@ -75,4 +80,5 @@ TESTS = {
     "M4866": _MERGED,
     "M4867": f"{_REG}test_a_perimeter_is_never_read_absent_on_a_nic_whose_subnet_was_not_read",
     "M4868": _MERGED,
+    "M4869": f"{_REG}test_a_nic_whose_perimeter_is_unknown_stays_unknown_when_another_nic_is_read_after_it",
 }

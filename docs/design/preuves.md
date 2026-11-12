@@ -527,10 +527,22 @@ l'oracle de la machine, et au connecteur. Un dernier test couvre la vérificatio
 d'`origin/main`, 29 de ces cas échouent. Les 8 cas « rien ne la coupe » de la machine y passent : la
 réponse disait vrai dans ce monde. Pour les voisins : l'entrée fusionnée avec le 17ᵉ appel en 429 (par
 l'oracle, et au connecteur), et `_perimeter_holds` sur une carte au sous-réseau non lu. Ces six cas
-échouent sans leurs deux correctifs. Mutants M4860–M4868 (`scripts/mutants/I3N.py`) : le défaut revenu ; un
+échouent sans leurs deux correctifs. Mutants M4860–M4869 (`scripts/mutants/I3N.py`) : le défaut revenu ; un
 correctif qui affaiblit (`blocked` sur une inconnue) ; une excuse limitée aux cartes lues tenues ; la
 vérification qui lève lue vérifiée, ou lue comme une preuve contre ses cartes ; la cause perdue ; puis
 chaque voisin revenu, et l'autre côté du premier (la carte prise pour bloquée).
+
+**La relecture (tour 1) a trouvé un défaut du premier correctif.** Dans `verify_block_ip`, sa liste par
+carte s'appelait `unsure`. C'est aussi le nom de la liste `perimeter_unread` que remplit `_stand`, la
+fonction imbriquée qui la capture. Chaque tour de carte la réaffectait. Ce que `_stand` avait mis pour une
+carte était donc perdu à la carte suivante, et la réponse publiait la liste de la dernière (parfois des
+noms de règles). Le cas : Db--01 bloquée pour elle-même sur ses deux cartes, la paire de db-nic-1 retirée,
+son périmètre inconnu, puis db-nic-0, bloquée, parcourue après. La carte de la réaffirmation disait
+« l'IP n'est plus bloquée », ce qu'I3P interdit d'une carte dont le périmètre n'a pu être lu. La liste
+locale s'appelle maintenant `off_unsure`. Le cas est figé
+(`test_a_nic_whose_perimeter_is_unknown_stays_unknown_when_another_nic_is_read_after_it`), et M4869
+réintroduit la réaffectation. Ni la suite, ni la machine à 1000 exemples, ni les mutants d'alors ne
+l'attrapaient. Les dix mutants sont attrapés.
 
 ### Trois mutants que la machine ne voyait plus qu'au hasard (MUT4)
 

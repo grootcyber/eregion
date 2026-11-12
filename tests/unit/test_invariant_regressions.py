@@ -7344,3 +7344,39 @@ def test_a_perimeter_is_never_read_absent_on_a_nic_whose_subnet_was_not_read(mon
         assert c._perimeter_holds({}, bare, ATTACKER, 22) == "unknown"
     finally:
         shutil.rmtree(m.home, ignore_errors=True)
+
+
+def test_a_nic_whose_perimeter_is_unknown_stays_unknown_when_another_nic_is_read_after_it(monkeypatch):
+    """I3N's review (round 1): the first fix of `verify_block_ip` named its per-NIC list `unsure` — the
+    name of the list `perimeter_unread` that `_stand` fills. Each NIC's turn rebound it: what `_stand`
+    had put there for a NIC was lost at the next one, and the last NIC's list (perhaps rule names) was
+    published. Db--01 blocked for itself on both NICs; db-nic-1's pair taken off, its perimeter
+    unknown (a 429 on the perimeter's NSG, or its subnet unread); db-nic-0, read after it, blocked.
+    The card said « l'IP n'est plus bloquée » — I3P forbids it of a NIC whose perimeter couldn't be
+    read, and it is false of the VM, whose db-nic-0 is still blocked. M4869."""
+    import shutil
+
+    from glorfindel.reassert_said import _block_drift
+    from glorfindel.response.state import _load_block_entries
+
+    invariant_env(monkeypatch)
+    m = IsolationMachine()
+    try:
+        m.build(_I3N_NET)
+        c = m.connector
+        assert c.block_suspicious_ip(ATTACKER, DB, scope="vm", threat_port=22)["status"] == "blocked"
+        entry = next(e for e in _load_block_entries(DB) if e.get("ip") == ATTACKER)
+        first = entry["placements"][0]
+        assert first["nic_id"].rstrip("/").lower().endswith("db-nic-1"), entry["placements"]
+        for name in (first["rule"], f'{first["rule"]}-out'):
+            c._network.security_rules.begin_delete(first["nsg_rg"], first["nsg_name"], name)
+        real = c._perimeter_holds
+        monkeypatch.setattr(c, "_perimeter_holds", lambda cache, t0, ip, port: "unknown"
+                            if t0 and t0["nic_short"] == "db-nic-1" else real(cache, t0, ip, port))
+        v = c.verify_block_ip(ATTACKER, DB)
+        assert v["verified"] is False and v.get("perimeter_unread") == ["db-nic-1"], v
+        assert v.get("blocked_nics") == ["db-nic-0"], v
+        card = _block_drift(ATTACKER, "Db--01", v)
+        assert "n'est plus bloquée" not in card and "on ne sait pas" in card and "db-nic-1" in card, card
+    finally:
+        shutil.rmtree(m.home, ignore_errors=True)
