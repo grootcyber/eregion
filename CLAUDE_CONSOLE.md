@@ -39,8 +39,9 @@ en 5 secondes et agir en 2 clics.
 GET  /api/state              → { vms: [...], escalations: [...], incidents: [...] }
 GET  /api/watch/status        → { running: bool, uptime_s: float, threads: [...] }
 GET  /api/config              → { azure: {...}, llm: {...} }
-GET  /api/feed/history        → derniers événements du feed
-WS   /api/feed                → stream temps réel (connect + events)
+GET  /api/feed/history        → derniers événements du feed, du plus ancien au plus récent par leur moment complet ;
+     chacun porte `at`, `day`, `time` en UTC (CON-D) — la page dit le jour d'une ligne d'avant aujourd'hui, le plus récent en haut
+WS   /api/feed                → stream temps réel (connect + events), chaque tour dans l'ordre de ses moments
 GET  /api/audit/<vm>          → audit NSG/backup/compute/IAM pour une VM
 GET  /api/audit               → audit toutes VMs
 GET  /api/actions/<vm>        → historique actions sur une VM (limit=5 par défaut)
