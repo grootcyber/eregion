@@ -79,7 +79,7 @@ Tenue par l'Orchestre (RM1, 02/11). Une ligne par release qui se prépare : sa v
 | Version | Titre | Contenu | État |
 |---|---|---|---|
 | 0.5.10 | within reach | MOB1 (le banc piloté depuis le téléphone : `make bench-run`, `make bench-restore`, la console par le tunnel du téléphone, `make mobile-check`) ; LEV2 (les faits de la porte sur la carte d'isolement, pour information) et la conception LEV1 (la levée après un restore, seule et en probation sauf porte prouvée ouverte) ; MUT7 (les mutants fragiles mesurés chaque nuit), MUT9 (M33 attrapé quelle que soit la graine) | publiée (10/11) |
-| 0.5.11 | — | AWS1b (sur le faux AWS, l'oracle d'I3 face à une origine que plus rien ne tient) ; puis ce que le banc du 11/11 débloque | brouillon |
+| 0.5.11 | named and mapped | AWS1b, IDM1, IML1, MOB2, BNC2, DOS1, FLK1, MEN2, BNC1b, CI11, INF-FL, MUT10 | brouillon |
 | 0.5.x | — | G1 au banc ; MUT2, MAK2, OI4 | plus tard |
 | 0.6.0 | l'identité défendue | ID1 allumé et mesuré, IDI1 appliqué, R2 (une technique Stratus sur l'identité de test) vue par Glorfindel, IR1a (le plan et « Vérifier » sur la carte) — décidé par Jonathan le 05/11 ; R2c compris, visée le 13 ou le 16/11 (Jonathan, 09/11) | plus tard |
 

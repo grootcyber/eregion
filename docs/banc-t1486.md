@@ -220,7 +220,7 @@ git fetch -q origin && git cat-file -e ${SHA}:glorfindel/recovery_watch.py && pr
 ## Le manque : la boucle ne se ferme pas seule sur le banc (sans REC1)
 
 Le README décrit une boucle où la seule étape humaine est d'approuver le restore, la levée
-autonome suivant le `recovery_complete`. **Sur le banc d'aujourd'hui, ce n'est pas vrai.** Il y a
+autonome suivant le `recovery_complete`. **Sans REC1 (sur la 0.5.8), ce n'est pas vrai.** Il y a
 deux gestes humains, sur deux hôtes :
 - le restore, sur le poste, puisqu'Imladris n'en a pas le droit ;
 - la levée, sur Imladris, puisque sa watch ne voit pas la reprise.
