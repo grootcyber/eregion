@@ -219,7 +219,8 @@ def test_control_with_every_dependency_up_the_isolation_runs(notified):
     assert conn.writes() == ["isolate_vm"]
     assert final["outcome"]["executed"] is True and final["outcome"]["verified"] is True
     assert [n["action"] for n in notified] == ["isolate_vm"]
-    assert _cards() == []
+    # JUG1 (#760): no escalation — only the card of the action, to judge after the fact.
+    assert [c["escalation_type"] for c in _cards()] == ["autonomous_action"]
 
 
 # ── 1. The model ──────────────────────────────────────────────────────────────

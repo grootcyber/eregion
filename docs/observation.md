@@ -70,15 +70,25 @@ glorfindel verdict 3f2a91c0 wrong --note "rattrapage apt du matin"
 glorfindel verdict 3f2a91c0 right
 ```
 
-**Ce qui n'entre pas dans TO JUDGE aujourd'hui : une action autonome exécutée et vérifiée.** En
-`non_disruptive`, un isolement ou un blocage que Glorfindel fait seul, et dont la vérification tient,
-ne crée aucune carte de décision (`escalate_to_human`, `glorfindel/agent.py`, n'écrit une carte que pour une action retenue, en échec ou non vérifiée) : il est annoncé (Discord, le fil en direct de la console, la tuile
-de la VM), et ne se juge ni dans TO JUDGE ni par `glorfindel pending`. Mesuré au banc le 12/11 :
-l'isolement autonome et vérifié de gondolin (le T1486) n'a laissé aucune carte à juger, et
-`glorfindel pending` ne nommait pas gondolin. Une vérification en échec, elle, devient une carte
-(`verification_failed`), qui se juge. Qu'une action disruptive autonome exécutée crée sa carte, à
-juger, est le lot JUG1 (décidé par Jonathan le 12/11, à venir) ; d'ici là, elle n'entre pas dans le
-compte des disruptives jugées.
+**Une action disruptive autonome exécutée et vérifiée a sa carte, à juger (JUG1, #760, 12/11).** En
+`non_disruptive` ou `full_auto`, un isolement (`isolate_vm`) ou un blocage (`block_suspicious_ip`) que
+Glorfindel fait seul, et dont la vérification tient, crée une carte « exécutée » (`autonomous_action`,
+`_record_executed`, `glorfindel/agent.py`) : l'action, la VM, les preuves (quelques valeurs de la ligne
+de la détection), la vérification relue sur Azure et le mode. Elle entre dans TO JUDGE, se juge comme
+les autres (**Right** si l'action était justifiée et proportionnée, **Wrong** sinon) et compte dans le
+taux des disruptives jugées fausses — c'est l'indicateur « actions disruptives à tort » de l'accueil.
+Elle ne change rien à l'action ni à l'autonomie : aucune approbation en un clic, aucun bouton qui
+défasse ; si elle est jugée à tort, elle se défait par le chemin habituel (`glorfindel release`,
+`glorfindel unblock`, ou les boutons de la carte de la VM), que ses étapes nomment. **Une seule par
+action** (sa clé : le signal du cycle, la VM, l'action, l'adresse), même après un redémarrage de la
+watch ; un `snapshot` ou une levée n'en crée pas ; une seconde action, même sur la même VM, a sa propre
+carte, jamais repliée dans celle d'une autre : chacune se juge et compte. Mesuré au banc le 12/11 avant JUG1 : l'isolement autonome et vérifié de gondolin (le T1486)
+n'avait laissé aucune carte à juger. Une vérification en échec, elle, devient toujours une carte
+`verification_failed`, et une action retenue par le mode sa carte `mode_hold`.
+
+Dans la console, **une ligne de TO JUDGE ouvre sa carte** (ses détails, une note, son verdict), et une
+tuile qui replie plusieurs cartes (« ×6 ») les montre toutes dans ses détails, chacune avec sa raison,
+son explication et son chemin vers le verdict.
 
 Le verdict est indépendant de l'acquittement : on peut juger une carte avant ou après
 l'avoir acquittée. Une carte qui se répète (« 12× depuis 3 h ») compte une seule fois. La
@@ -104,7 +114,7 @@ jugées, la part fausse. (`GET /api/report?since=7d` renvoie la même chose.)
 Les cartes d'exercice n'y entrent pas (B2, 16/10) : une carte dont la VM était couverte par la
 fenêtre d'un injecteur (Annatar, puis Gothmog) porte `source: exercise` et le rapport la compte
 à part (« N exercise card(s) left out »). Celles qui existent restent pourtant dans la liste TO
-JUDGE, marquées (H-1) ; un isolement autonome vérifié d'un exercice n'en fait aucune (plus haut) : une fenêtre d'exercice est l'affirmation de l'hôte des injecteurs, et une carte cachée
+JUDGE, marquées (H-1) — la carte « exécutée » d'un isolement autonome d'un exercice aussi (plus haut) : une fenêtre d'exercice est l'affirmation de l'hôte des injecteurs, et une carte cachée
 sur cette seule foi laisserait passer une vraie attaque qu'une fenêtre forgée couvrirait. Un compte créé à la main pour un test, comme celui du
 16/10 sur bree, n'est pas un exercice déclaré : il compte, d'où la note du verdict.
 

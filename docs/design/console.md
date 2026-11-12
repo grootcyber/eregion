@@ -287,6 +287,23 @@ Après I1F, AL1, C2 et A3 (27/10) :
   control plane » (`held_by` de la ligne de debug).
 - **TO JUDGE laisse de côté** les cartes qui ne sont pas des décisions, comme Glorfindel
   (`escalations._NOT_DECISIONS`, quarantaine modifiée comprise).
+- **Une ligne de TO JUDGE ouvre sa carte** (JUG1, #760 ; au banc du 12/11, elle ne s'ouvrait pas) :
+  `openJudgeCard` montre la carte telle que TO JUDGE la porte (`/api/to-judge` : ses étapes, et ce
+  qu'a fait une action prise seule), complétée par la carte en attente de `/api/state` quand elle y
+  est — son contexte, ce qu'elle vise, sa raison, l'explication du modèle, ses étapes —, une note et
+  ses trois verdicts : c'est toujours TO JUDGE qui juge. La note, les boutons de la ligne et le lien
+  du run gardent leur clic (`stop`).
+- **Une tuile qui replie plusieurs cartes les montre toutes** (JUG1 ; au banc du 12/11, les six cartes
+  d'un NSG, « ×6 », n'en montraient qu'une) : dans ses détails, chaque carte du groupe a son titre,
+  son heure, son id, son contexte, sa raison, son explication et son chemin vers le verdict
+  (« to judge ▸ », qui ouvre la carte, ou « judged: … »), son plan (celui d'une carte d'identité, avec
+  son « Verify », IR1a) ou ses étapes, et sa requête proposée — `_cardDetail`, le même corps que la
+  carte ouverte depuis TO JUDGE (`_cardBody`). L'Ack du groupe acquitte toujours les cartes du groupe ;
+  une carte « exécutée » n'est jamais groupée avec une carte d'un autre type (`_groupEscs`).
+- **La carte « exécutée »** (JUG1, `autonomous_action`) : une action disruptive prise seule et
+  vérifiée, « VM isolated from network — done alone, to judge », avec « ✓ done alone · mode … » et la
+  vérification, puis les preuves de la ligne ; ni Approve ni bouton qui défasse (son type n'est pas
+  dans `_HELD_TYPES`) ; sa commande donne le verdict, puis le chemin habituel qui la défait.
 - **Une tuile NSG** pour une carte dont la ressource est un NSG ; seul PROTECT la relie, et elle ne
   compte pas parmi les VM « unprotected » de RECOVER.
 - **`/api/state` donne `handled`** : les cartes résolues avec une note dans les dernières 24 h. Une carte
