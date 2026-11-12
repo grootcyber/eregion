@@ -43,10 +43,18 @@ CLEAN = {"PATH": os.environ.get("PATH", "")}
 needs_make = pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
 
 
+CLEAN_POINT = {"clean": True, "said": "le plus récent (09:00:00), pris après le dernier restore et hors de toute "
+                                      "quarantaine", "point": 1.0, "vault": "rsv", "vault_rg": "rg"}
+
+
 class FakeSteps:
-    def __init__(self, preflight=0, hits=None, launch=(0, ["20261110T101500Z-t1486"]), report=0):
+    def __init__(self, preflight=0, hits=None, launch=(0, ["20261110T101500Z-t1486"]), report=0, point=None,
+                 snapshot=None, rejudged=(True, "rejugé propre")):
         self.calls: list[tuple] = []
         self._preflight, self._launch, self._report = preflight, launch, report
+        self._point = CLEAN_POINT if point is None else point
+        self._snapshot = snapshot
+        self._rejudged = rejudged
         self._hits = [{"rg": "rg-celebrimbor", "id": VM_ID}] if hits is None else hits
         self.sent: dict = {}
 
@@ -55,7 +63,26 @@ class FakeSteps:
 
     def preflight(self, target):
         self.calls.append(("preflight", target))
+        if isinstance(self._preflight, list):
+            return self._preflight.pop(0)
         return self._preflight
+
+    def point(self, target):
+        self.calls.append(("point", target))
+        if isinstance(self._point, Exception):
+            raise self._point
+        return self._point
+
+    def rejudge(self, target, point):
+        self.calls.append(("rejudge", target))
+        return self._rejudged
+
+    def snapshot(self, target, plan, say, token):
+        self.calls.append(("snapshot", target))
+        self.token = token
+        if isinstance(self._snapshot, Exception):
+            raise self._snapshot
+        return 2.0
 
     def locate(self, target):
         self.calls.append(("locate", target))
@@ -164,12 +191,12 @@ def test_the_request_and_the_name_typed_go_to_orodruin_then_each_run_is_reported
     code, out = _main(steps, VM, "o")
     assert code == 0, out
     kinds = [c[0] for c in steps.calls]
-    assert kinds == ["preflight", "locate", "launch", "report"]
-    rid = steps.calls[2][1]
+    assert kinds == ["preflight", "locate", "point", "launch", "report"]
+    rid = steps.calls[3][1]
     req = xr.read(steps.sent[f"{rid}.json"])
     assert [(w.experiment, w.target, w.rank) for w in req.wires] == [("T1486", VM_ID, 1)]
     assert xr.read_typed(steps.sent[f"{rid}.typed.json"], req) == {1: VM}
-    assert steps.calls[3] == ("report", "20261110T101500Z-t1486", VM)
+    assert steps.calls[4] == ("report", "20261110T101500Z-t1486", VM)
     assert "DESTRUCTIVE" in out
     assert f"make bench-restore TARGET={VM} RUN=20261110T101500Z-t1486" in out      # the run named
 
@@ -345,3 +372,195 @@ def test_bench_restore_is_given_imladris_s_ssh_for_its_report(fake_world, tmp_pa
     assert "H0=ssh " in res.stdout and res.stdout.strip().endswith("@192.0.2.10")
     calls = log.read_text().splitlines() if log.exists() else []
     assert not [c for c in calls if c.split()[0] in ("ssh", "scp", "az", "docker")], calls
+
+
+# ── BNC3b (#770): the clean point, the route of the 📸 button, the preflight replayed ──
+
+DIRTY_POINT = {"clean": False, "said": "le plus récent (09:00:00) est pris dans une quarantaine (depuis 08:50:00, "
+                                       "sans levée lue)", "point": 1.0, "vault": "rsv", "vault_rg": "rg"}
+
+
+def _journal(steps, *answers, **kw):
+    """The run's journal: each step of the fake, and each question asked, in their order."""
+    feed = list(answers)
+    journal = steps.calls
+
+    def ask(prompt):
+        journal.append(("ask", prompt))
+        if not feed:
+            raise EOFError
+        return feed.pop(0)
+    said: list[str] = []
+    code = brun.main(["--target", VM, "--scenario", "T1486"], {**CLEAN, **kw.get("env", {})}, cwd=Path("/"),
+                     here=Path("/"), ask=ask, say=said.append, steps=steps, tty=True)
+    return code, [c[0] for c in journal], "\n".join(said)
+
+
+def test_a_clean_point_is_kept_and_read_after_the_confirmation():
+    steps = FakeSteps()
+    code, kinds, out = _journal(steps, VM, "o")
+    assert code == 0, out
+    assert kinds == ["preflight", "locate", "ask", "ask", "point", "launch", "report"]
+    assert "✓ le point : gardé" in out and "snapshot" not in kinds
+
+
+@pytest.mark.parametrize("answers", [(VM, "n"), ("vm-celebrimbor-bree", "o"), ()])
+def test_nothing_is_read_nor_written_for_the_point_before_the_confirmation(answers):
+    """A name mistyped, or « N »: neither the point read, nor the 📸, nor Orodruin."""
+    steps = FakeSteps(point=DIRTY_POINT)
+    code, kinds, _ = _journal(steps, *answers)
+    assert code == 1
+    assert not {"point", "snapshot", "launch"} & set(kinds), kinds
+
+
+def test_a_point_not_clean_takes_the_snapshot_route_then_the_preflight_is_replayed():
+    steps = FakeSteps(point=DIRTY_POINT)
+    code, kinds, out = _journal(steps, VM, "o")
+    assert code == 0, out
+    assert kinds == ["preflight", "locate", "ask", "ask", "point", "snapshot", "rejudge", "preflight", "launch",
+                     "report"]
+    last_ask = max(i for i, k in enumerate(kinds) if k == "ask")
+    assert kinds.index("snapshot") > last_ask                    # nothing written before the confirmation
+    assert "route du bouton 📸" in out and "le préflight rejoué" in out
+
+
+@pytest.mark.parametrize("why", ["la demande d'instantané : not_taken", "la demande d'instantané : untrusted",
+                                 "la demande d'instantané : refused (point_refused)", "la demande d'instantané : failed",
+                                 "la demande d'instantané : expired", "le job du coffre : Failed",
+                                 "le job du coffre n'est pas Completed en 60 min",
+                                 "le jeton de la console manque"])
+def test_each_refusal_of_the_snapshot_stops_the_run_before_orodruin(why):
+    steps = FakeSteps(point=DIRTY_POINT, snapshot=RuntimeError(why))
+    code, kinds, out = _journal(steps, VM, "o")
+    assert code == 1
+    assert "launch" not in kinds and kinds.count("preflight") == 1
+    assert why in out and "rien n'est envoyé à Orodruin" in out
+
+
+def test_a_red_replayed_preflight_stops_the_run_just_before_the_attack():
+    steps = FakeSteps(point=DIRTY_POINT, preflight=[0, 1])
+    code, kinds, out = _journal(steps, VM, "o")
+    assert code == 1
+    assert kinds[-3:] == ["snapshot", "rejudge", "preflight"] and "launch" not in kinds
+    assert "Le point pris reste" in out
+
+
+def test_a_point_that_cannot_be_read_is_no_clean_point():
+    steps = FakeSteps(point=RuntimeError("az: boom"))
+    code, kinds, out = _journal(steps, VM, "o")
+    assert code == 1 and "launch" not in kinds and "snapshot" not in kinds
+    assert "illisible" in out
+
+
+def test_dry_run_reads_the_point_and_takes_none():
+    steps = FakeSteps(point=DIRTY_POINT)
+    code, kinds, out = _journal(steps, VM, "o", env={"BENCH_DRY_RUN": "1"})
+    assert code == 0, out
+    assert "point" in kinds and "snapshot" not in kinds and "launch" not in kinds
+    assert "sans DRY_RUN, un nouveau par la route du bouton 📸" in out
+
+
+FAKE_TOKEN = "fake-console-tok-K4"
+
+
+def _checkout(tmp_path, under: Path | None = None) -> Path:
+    """The operator's checkout, outside a lot's worktree — or under one (`under`): the guard of a code
+    session reads where the scripts run from (bench_shared.session_refusal)."""
+    root = (under or tmp_path) / "checkout"
+    for rel in ("Makefile", "scripts/mobile.py", "scripts/bench_shared.py"):
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(ROOT / rel, root / rel)
+    return root
+
+
+def _spy_python(tmp_path) -> Path:
+    spy = tmp_path / "python"
+    spy.write_text('#!/bin/sh\necho "ARGV=$0 $*"\necho "TOK=$BENCH_CONSOLE_TOKEN"\n')
+    spy.chmod(0o755)
+    return spy
+
+
+@needs_make
+@pytest.mark.parametrize("where", ["env", "worktree"])
+def test_the_console_s_token_is_refused_to_a_code_session_by_its_guard(fake_world, tmp_path, where):
+    """BNC3b: bench-run-go reads the console's token in host.env — after CONSOLE_GUARD, which refuses a
+    code session before anything is read: no token printed, the script never run."""
+    bindir, log = fake_world
+    host_env = tmp_path / "host.env"
+    host_env.write_text(f"EREGION_CONSOLE_TOKEN={FAKE_TOKEN}\n")
+    root = _checkout(tmp_path, tmp_path / "eregion" / ".claude" / "worktrees" / "lot-x" if where == "worktree" else None)
+    env = {k: v for k, v in os.environ.items() if k not in ("TARGET", "SCENARIO", "BEFORE", "RUN", "POINT_MAX_H",
+                                                            "EREGION_AGENT_SESSION")}
+    env.update(PATH=f"{bindir}{os.pathsep}{os.environ['PATH']}", HOME=str(tmp_path))
+    if where == "env":
+        env["EREGION_AGENT_SESSION"] = "1"
+    res = subprocess.run(["make", "-s", "--no-print-directory", "-C", str(root), "bench-run-go",
+                          f"PYTHON={_spy_python(tmp_path)}", f"TARGET={VM}", "SCENARIO=T1486", f"HOST_ENV={host_env}"],
+                         capture_output=True, text=True, env=env, timeout=60)
+    assert res.returncode != 0
+    assert "make bench-run refusé" in res.stdout + res.stderr, res.stdout + res.stderr
+    assert FAKE_TOKEN not in res.stdout + res.stderr and "TOK=" not in res.stdout
+
+
+@needs_make
+def test_the_console_s_token_reaches_the_script_by_its_environment_never_its_argv(fake_world, tmp_path):
+    bindir, log = fake_world
+    host_env = tmp_path / "host.env"
+    host_env.write_text(f"GLORFINDEL_WARROOM_TOKEN=old\nEREGION_CONSOLE_TOKEN={FAKE_TOKEN}  # le jeton\n")
+    env = {k: v for k, v in os.environ.items() if k not in ("TARGET", "SCENARIO", "BEFORE", "RUN", "POINT_MAX_H",
+                                                            "EREGION_AGENT_SESSION")}
+    env.update(PATH=f"{bindir}{os.pathsep}{os.environ['PATH']}", HOME=str(tmp_path))
+    res = subprocess.run(["make", "-s", "--no-print-directory", "-C", str(_checkout(tmp_path)), "bench-run-go",
+                          f"PYTHON={_spy_python(tmp_path)}", f"TARGET={VM}", "SCENARIO=T1486", f"HOST_ENV={host_env}"],
+                         capture_output=True, text=True, env=env, timeout=60)
+    assert res.returncode == 0, res.stdout + res.stderr
+    argv = next(x for x in res.stdout.splitlines() if x.startswith("ARGV="))
+    assert argv.endswith("scripts/bench_run.py") and FAKE_TOKEN not in argv
+    assert f"TOK={FAKE_TOKEN}" in res.stdout.splitlines()
+    # no host.env: an empty token, the script still runs (it asks for the token only for a 📸)
+    res = subprocess.run(["make", "-s", "--no-print-directory", "-C", str(_checkout(tmp_path / "b")), "bench-run-go",
+                          f"PYTHON={_spy_python(tmp_path)}", f"TARGET={VM}", "SCENARIO=T1486",
+                          f"HOST_ENV={tmp_path / 'absent.env'}"], capture_output=True, text=True, env=env, timeout=60)
+    assert res.returncode == 0 and "TOK=" in res.stdout.splitlines(), res.stdout + res.stderr
+
+
+def test_the_steps_hand_the_point_and_the_snapshot_to_their_module(monkeypatch):
+    import bench_snapshot
+    seen = []
+    monkeypatch.setattr(bench_snapshot, "judge",
+                        lambda target, env, config: seen.append(("judge", target, config)) or DIRTY_POINT)
+    monkeypatch.setattr(bench_snapshot, "take",
+                        lambda target, env, plan, say, token: seen.append(("take", target, plan)) or 3.0)
+    steps = brun.Steps(dict(CLEAN))
+    assert steps.point(VM) is DIRTY_POINT
+    assert steps.snapshot(VM, DIRTY_POINT, print, "t") == 3.0
+    assert seen[0][:2] == ("judge", VM) and seen[0][2].endswith("glorfindel-config.yaml")
+    assert seen[1] == ("take", VM, DIRTY_POINT)
+
+
+def test_the_console_s_token_is_taken_out_of_every_child_s_environment(monkeypatch):
+    """BNC3b review: read once by bench-run, then out of the environment of az, ssh, scp and the
+    preflight — the 📸 route alone takes it, as an argument."""
+    monkeypatch.setenv(brun.TOKEN_ENV, "tok-Q")
+    env = {**CLEAN, brun.TOKEN_ENV: "tok-Q"}
+    steps = FakeSteps(point=DIRTY_POINT)
+    said: list[str] = []
+    feed = [VM, "o"]
+    code = brun.main(["--target", VM, "--scenario", "T1486"], env, cwd=Path("/"), here=Path("/"),
+                     ask=lambda p: feed.pop(0), say=said.append, steps=steps, tty=True)
+    assert code == 0, said
+    assert brun.TOKEN_ENV not in env and brun.TOKEN_ENV not in os.environ
+    assert steps.token == "tok-Q"
+    assert brun.TOKEN_ENV not in brun.Steps({brun.TOKEN_ENV: "x", "A": "1"}).env
+    assert "tok-Q" not in "\n".join(said)
+
+
+def test_a_point_taken_but_judged_again_not_clean_stops_the_run():
+    """BNC3b review: the point the 📸 route took is judged again — an isolation opened during the job, a
+    quarantine still open: refused, nothing goes to Orodruin."""
+    steps = FakeSteps(point=DIRTY_POINT, rejudged=(False, "le plus récent (10:00:00) est pris dans une quarantaine "
+                                                          "(depuis 09:50:00, sans levée lue)"))
+    code, kinds, out = _journal(steps, VM, "o")
+    assert code == 1
+    assert kinds[-2:] == ["snapshot", "rejudge"] and "launch" not in kinds
+    assert "le point pris, rejugé" in out and "quarantaine" in out

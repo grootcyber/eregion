@@ -19,22 +19,31 @@ is installed on Imladris. In order, each step stopping the next one:
   3  the name      the request shown, then the target's name typed here, destructive or not, and
                    compared to the name Azure gives; then « [o/N] ». Another name, or nothing: nothing
                    is sent
-  4  the launch    the request and the name typed carried to Orodruin by its pinned SSH (the
+  4  the point     BNC3b (#770), after the confirmation: the newest recovery point of the target, the one
+                   the restore will take, kept when clean — taken after the VM's last restore and outside
+                   every quarantine, over every run (scripts/bench_snapshot.py, scripts/bench_history.py);
+                   otherwise a new one, by the route of the console's 📸 button (a short port forward to
+                   Imladris, the console's token by the environment, its receipt under FS1, the vault's job
+                   followed to `Completed`, 60 min at most) — any refusal stops the run before Orodruin —,
+                   then the preflight replayed, just before the attack: a ✗, and nothing is sent
+  5  the launch    the request and the name typed carried to Orodruin by its pinned SSH (the
                    preflight ran `orodruin-known`), then run there by `eregion_core.exercise_runner`,
                    which judges it again (contract, watch, enrollment, zone, the name typed against
                    the name it reads, its cap) — what `make orodruin-exercise` does; the name typed is
                    removed from Orodruin at the end, whatever the end
-  5  the report    `make bench-report RUN=<run_id>` for each run Orodruin's output names (« Run: … »),
+  6  the report    `make bench-report RUN=<run_id>` for each run Orodruin's output names (« Run: … »),
                    once the run's cycle is written on Imladris — read again, 10 min at most, then
                    composed anyway, saying what is not yet written (BNC3a: on 12/11 the report
                    composed 7 s after the detection saw neither the isolation nor its cycle)
 
-DRY_RUN=1: 0 to 3, then what 4 would send — nothing sent, nothing run.
+DRY_RUN=1: 0 to 3, the point read (4), then what would follow — no point taken, nothing sent, nothing run.
+Nothing is written, on Azure nor on Imladris, before the confirmation (3).
 A terminal holds the gesture against a mistake, not against a process of the same user that drives
 one (a long-lived tmux session, `tmux send-keys`: docs/demarrer/mobile.md, the threat model's frontier 9).
 TARGET, SCENARIO and DRY_RUN reach the script through the environment, never expanded by make, and
 are checked here; the ssh command of Orodruin and its container's too (BENCH_ORO_SSH,
-BENCH_ORO_RUN_REQUEST), never printed. Errors are said in a sentence; exit 0 only when the request
+BENCH_ORO_RUN_REQUEST), never printed; the console's token too (BENCH_CONSOLE_TOKEN, BNC3b), never in an
+argv. Errors are said in a sentence; exit 0 only when the request
 ran whole and its report was composed.
 """
 from __future__ import annotations
@@ -60,13 +69,15 @@ from eregion_core import exercise_request as xr  # noqa: E402
 RUN_LINE = re.compile(r"^\s*Run:\s+([A-Za-z0-9][A-Za-z0-9_.-]{0,95})\s*$")
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 YES = ("o", "oui", "y", "yes")
+# The console's token, from the Makefile (BNC3b): read once, then out of every child's environment.
+TOKEN_ENV = "BENCH_CONSOLE_TOKEN"
 
 
 class Steps:
     """The outside steps, each a parameter: the tests run the command on fakes."""
 
     def __init__(self, env: dict):
-        self.env = env
+        self.env = {k: v for k, v in env.items() if k != TOKEN_ENV}
 
     def preflight(self, target: str) -> int:
         import bench_preflight
@@ -107,6 +118,21 @@ class Steps:
             if got and got.group(1) not in runs:
                 runs.append(got.group(1))
         return proc.wait(), runs
+
+    def point(self, target: str) -> dict:
+        """BNC3b: the newest point of the target, judged (bench_snapshot.judge)."""
+        import bench_snapshot
+        return bench_snapshot.judge(target, self.env, str(bs.REPO / "glorfindel-config.yaml"))
+
+    def snapshot(self, target: str, plan: dict, say, token: str) -> float:
+        """BNC3b: a new point by the 📸 route, its job followed to Completed (bench_snapshot.take)."""
+        import bench_snapshot
+        return bench_snapshot.take(target, self.env, plan, say, token=token)
+
+    def rejudge(self, target: str, point: float) -> tuple[bool, str]:
+        """BNC3b review: the point taken, judged again (bench_snapshot.rejudge)."""
+        import bench_snapshot
+        return bench_snapshot.rejudge(target, self.env, str(bs.REPO / "glorfindel-config.yaml"), point)
 
     def report(self, run_id: str, target: str) -> int:
         """The run's report, once its cycle is written on Imladris (bounded: bench_report.CYCLE_WAIT_S)."""
@@ -152,6 +178,10 @@ def _write(path: Path, doc: dict) -> None:
 def main(argv: list[str] | None = None, env: dict | None = None, *, cwd=None, here=None,
          ask=input, say=print, steps: Steps | None = None, tty: bool | None = None) -> int:
     env = dict(os.environ) if env is None else env
+    # BNC3b review: the console's token out of the environment of every child (az, ssh, scp, the
+    # preflight) as soon as it is read — the 📸 route alone takes it, as an argument.
+    token = (env.pop(TOKEN_ENV, None) or "").strip()
+    os.environ.pop(TOKEN_ENV, None)
     p = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     p.add_argument("--target", default=env.get("BENCH_TARGET") or "")
     p.add_argument("--scenario", default=env.get("BENCH_SCENARIO") or "")
@@ -184,7 +214,7 @@ def main(argv: list[str] | None = None, env: dict | None = None, *, cwd=None, he
             "comme T1486")
         return 2
 
-    say(f"→ 1/4 le préflight de {target}")
+    say(f"→ 1/5 le préflight de {target}")
     if steps.preflight(target) != 0:
         say("✗ le préflight est rouge (une ligne ✗ ci-dessus) : rien n'est demandé, rien n'est lancé.")
         return 1
@@ -202,7 +232,7 @@ def main(argv: list[str] | None = None, env: dict | None = None, *, cwd=None, he
         say(f"✗ la demande ne se forme pas ({e}) : rien n'est envoyé.")
         return 1
 
-    say("→ 2/4 la demande, et le nom de la cible tapé")
+    say("→ 2/5 la demande, et le nom de la cible tapé")
     typed = confirm(request, catalog, ask, say)
     if typed is None:
         return 1
@@ -211,12 +241,44 @@ def main(argv: list[str] | None = None, env: dict | None = None, *, cwd=None, he
         _write(folder / f"{request.id}.json", request.to_dict())
         _write(folder / f"{request.id}.typed.json", typed)
         xr.load_typed(folder / f"{request.id}.typed.json", xr.load(folder / f"{request.id}.json"))
+        say("→ 3/5 le point de restauration propre (le plus récent, celui que le restore prendra)")
+        try:
+            plan = steps.point(target)
+        except (RuntimeError, OSError) as e:
+            plan = {"clean": False, "said": f"illisible ({bs.scrub(str(e))[:200]})"}
+        if plan.get("clean"):
+            say(f"✓ le point : gardé — {bs.scrub(plan.get('said') or '')}")
+        elif args.dry_run:
+            say(f"✗ le point : {bs.scrub(plan.get('said') or 'non propre')} — sans DRY_RUN, un nouveau par la route "
+                "du bouton 📸, puis le préflight rejoué.")
+        else:
+            say(f"✗ le point : {bs.scrub(plan.get('said') or 'non propre')} — un nouveau, par la route du bouton 📸")
+            if not plan.get("vault"):
+                say("✗ la cible ou son coffre ne se lit pas : aucun point demandé, rien n'est envoyé à Orodruin.")
+                return 1
+            try:
+                taken = steps.snapshot(target, plan, say, token)
+                clean, why = steps.rejudge(target, taken)
+            except (RuntimeError, OSError) as e:
+                say(f"✗ le point : {bs.scrub(str(e))} — le run s'arrête, rien n'est envoyé à Orodruin.")
+                return 1
+            if not clean:
+                say(f"✗ le point pris, rejugé : {bs.scrub(why)} — une quarantaine restée ouverte, ou une lecture "
+                    "qui manque : le run s'arrête, rien n'est envoyé à Orodruin.")
+                return 1
+            say(f"✓ le point : pris, son job Completed, rejugé — {bs.scrub(why)}")
+            say(f"→ le préflight rejoué, juste avant l'attaque ({target})")
+            replayed = steps.preflight(target)
+            if replayed != 0:
+                say("✗ le préflight rejoué est rouge (une ligne ✗ ci-dessus) : rien n'est envoyé à Orodruin. "
+                    "Le point pris reste : il est propre, et sans danger.")
+                return 1
         if args.dry_run:
             say("DRY_RUN : rien n'est envoyé. Sans lui : la demande et le nom tapé copiés sur Orodruin "
                 f"(requests/), puis python -m eregion_core.exercise_runner /app/requests/{request.id}.json, "
                 "puis make bench-report RUN=<le run>.")
             return 0
-        say(f"→ 3/4 le lancement par Orodruin ({request.id})")
+        say(f"→ 4/5 le lancement par Orodruin ({request.id})")
         try:
             code, runs = steps.launch(folder, request.id, say)
         except (RuntimeError, OSError) as e:
@@ -226,7 +288,7 @@ def main(argv: list[str] | None = None, env: dict | None = None, *, cwd=None, he
         say(f"✗ aucun run lu dans la sortie d'Orodruin (code {code}) : pas de rapport. La chronologie de "
             "la demande est dans Dagorlad ; make bench-report RUN=<run_id> à la main.")
         return 1
-    say("→ 4/4 le rapport, une fois le cycle du run écrit sur Imladris (relu, 10 min au plus)")
+    say("→ 5/5 le rapport, une fois le cycle du run écrit sur Imladris (relu, 10 min au plus)")
     worst = code
     for run_id in runs:
         rc = steps.report(run_id, target)

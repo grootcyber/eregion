@@ -368,23 +368,37 @@ Le déroulé reste celui de [banc-t1486.md](../banc-t1486.md) ; deux commandes y
 étapes.
 
 ```zsh
-make bench-run TARGET=vm-celebrimbor-gondolin SCENARIO=T1486 DRY_RUN=1    # tout, sauf l'envoi
+make bench-run TARGET=vm-celebrimbor-gondolin SCENARIO=T1486 DRY_RUN=1    # tout, sauf l'envoi et le point pris
 make bench-run TARGET=vm-celebrimbor-gondolin SCENARIO=T1486              # tape vm-celebrimbor-gondolin, puis o
 ```
 
 `make bench-run` (`scripts/bench_run.py`) enchaîne, chaque étape arrêtant la suivante :
 1. **un terminal** : sans terminal sur l'entrée (un tube, un script), rien n'est envoyé ni lancé
    (seules les adresses d'Imladris et d'Orodruin ont été lues, dans l'état Terraform local) ;
-2. **le préflight** (`make bench-preflight`, BNC1) : un ✗, rien n'est demandé, rien n'est lancé ;
+2. **le préflight** (`make bench-preflight`, BNC1) : un ✗, rien n'est demandé, rien n'est lancé. Il
+   vérifie aussi **le calme** (BNC3b) : gondolin démarrée depuis 10 min au moins, aucune Run Command
+   sur elle depuis 10 min, lu dans son journal d'activité ; non tenu, c'est un ✗ qui dit les minutes
+   qui restent, jamais une attente : relancer alors. Et **« restore d'abord »** : une VM qui porte une
+   Run Command depuis son dernier restore (hors une coupure des sessions d'Imladris et un run non
+   destructif d'Orodruin) est refusée, jusqu'au restore. Une lecture impossible ou coupée est un ✗ ;
 3. **la demande** : un fil `SCENARIO` → `TARGET`, l'id de la VM lu sur Azure sous ton `az login`
    (une seule VM de ce nom), lue par le seul lecteur des demandes, comme celles de Dagorlad ;
 4. **le nom de la cible, tapé**, destructif ou non, puis « [o/N] » : un autre nom, ou rien, rien
    n'est envoyé ;
-5. **le lancement** : la demande et le nom tapé portés sur Orodruin par son SSH épinglé, puis lancés
+5. **le point propre** (BNC3b), après « o » seulement : le point le plus récent de la VM, celui que
+   le restore prendra, est gardé s'il est pris après son dernier restore et hors de toute quarantaine.
+   Sinon, `make bench-run` en demande un par **la route du bouton 📸** de la console d'Imladris : un
+   renvoi de port court qu'il ouvre et ferme lui-même (pas le tunnel du téléphone, ni celui de
+   `make imladris-tunnel-on`), le jeton de la console lu dans `host.env`, passé par l'environnement,
+   jamais affiché ; puis il suit le job du coffre jusqu'à `Completed`, 60 min au plus, et **rejoue le
+   préflight**. Un refus de la console ou de la file d'actions, un job en échec ou trop long, un
+   préflight rejoué rouge : rien ne part vers Orodruin. Garder le terminal ouvert (`tmux`) : le
+   premier point après un restore prend ~40 min ;
+6. **le lancement** : la demande et le nom tapé portés sur Orodruin par son SSH épinglé, puis lancés
    par `eregion_core.exercise_runner`, qui la rejuge (contrat, watch, inscription, zone, le nom tapé
    comparé à celui qu'il lit, son plafond), comme `make orodruin-exercise` ; le nom tapé est retiré
    d'Orodruin à la fin, quelle qu'elle soit ;
-6. **le rapport** : `make bench-report` pour chaque run de la sortie (« Run: … »), une fois le cycle
+7. **le rapport** : `make bench-report` pour chaque run de la sortie (« Run: … »), une fois le cycle
    du run écrit sur Imladris (relu toutes les 30 s, 10 min au plus, puis composé quand même, en disant ce
    qui n'est pas encore écrit ; Ctrl-C le compose tout de suite : BNC3a), puis la commande du restore,
    avec le run nommé.
