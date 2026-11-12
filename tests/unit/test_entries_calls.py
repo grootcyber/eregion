@@ -700,7 +700,9 @@ def test_two_vms_of_one_name_are_refused_wherever_they_are_known(monkeypatch, wh
     resolve = _names(monkeypatch, **where)
     with pytest.raises(click.ClickException) as exc:
         resolve("vm-example-01")
-    assert VM in exc.value.message and _vm("vm-example-01", RG_B) in exc.value.message
+    said = exc.value.message                         # by name and group, never the ids (MSK2)
+    assert f"vm-example-01 (groupe {RG_A})" in said and f"vm-example-01 (groupe {RG_B})" in said
+    assert SUB not in said and "/subscriptions/" not in said and "glorfindel list --ids" in said
 
 
 def test_one_vm_known_twice_is_one_vm(monkeypatch):
