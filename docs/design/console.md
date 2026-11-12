@@ -182,12 +182,13 @@ Le tirage des rapports reste dans la watch de Glorfindel, qui est toujours là.
      seule ni par le texte de l'horodatage ; une ligne arrivée en retard (un signal tiré
      d'Orodruin) se range sous les plus récentes. Passé minuit UTC, les lignes de la page disent
      de nouveau leur jour. Le 11/11 au banc, un snapshot de la veille avait été pris pour celui de
-     l'après-midi. Le fil d'alors, le plus ancien en haut, se lit comme un ordre juste sur deux
-     jours (16:15 et 21:05 la veille, puis 15:54, 16:22, 18:36) : c'est le jour qui ne se lisait
-     pas ; mais l'historique se triait sur le texte de l'horodatage et les lignes d'un tour du fil,
-     fichier par fichier. Les gestes de l'opérateur (`manual_actions.jsonl`) restent montrés
-     quel que soit leur âge, et un fichier de run récent par sa date de modification peut tenir des
-     lignes plus anciennes : c'est leur date qui le dit.
+     l'après-midi. Le fil d'alors, le plus ancien en haut, lisait 16:15, 21:05, 15:54, 16:22,
+     18:36. Pourquoi : une **hypothèse**, que rien de ce qui reste du banc ne montre — un ordre
+     juste sur deux jours, 16:15 et 21:05 la veille. Les gestes de l'opérateur
+     (`manual_actions.jsonl`) restent montrés quel que soit leur âge, et un fichier de run récent
+     par sa date de modification peut tenir des lignes plus anciennes. Ce qui est sûr, c'est que
+     l'historique se triait sur le texte de l'horodatage et les lignes d'un tour du fil, fichier
+     par fichier ; et que, quoi qu'il en soit, c'est désormais leur date qui le dit.
 
 ### Les cinq indicateurs (UI-2, #206)
 

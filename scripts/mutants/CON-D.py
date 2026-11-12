@@ -20,7 +20,7 @@ MUTANTS = [
      "  const ts = fmtTime(entry.timestamp);\n"),
     ("M4823", "a line of the feed put on top by its arrival, not by its moment: a late line above newer ones (CON-D)",
      JS,
-     "    if (row._at <= el._at) { list.insertBefore(el, row); return; }\n",
-     "    list.insertBefore(el, row); return;\n"),
+     "    if (row._at <= el._at) { list.insertBefore(el, row); return list.firstElementChild === el; }\n",
+     "    list.insertBefore(el, row); return list.firstElementChild === el;\n"),
 ]
 TESTS = {f"M{n}": _TESTS for n in range(4820, 4824)}

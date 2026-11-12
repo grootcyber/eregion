@@ -2511,7 +2511,7 @@ def _feed_when(ts) -> dict:
         moment = moment.astimezone(timezone.utc)
     except (ValueError, OverflowError):     # « 0001-01-01T00:00:00+01:00 » leaves the calendar
         return none
-    return {"at": moment.timestamp(), "day": moment.strftime("%Y-%m-%d"), "time": moment.strftime("%H:%M:%S")}
+    return {"at": moment.timestamp(), "day": moment.date().isoformat(), "time": moment.time().isoformat("seconds")}
 
 
 def _feed_order(entry: dict) -> float:

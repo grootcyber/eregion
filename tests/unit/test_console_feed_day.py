@@ -5,6 +5,7 @@ today at 00:00, and says « yesterday ». M4820–M4823 (scripts/mutants/CON-D.p
 from __future__ import annotations
 
 import json
+import math
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -51,12 +52,14 @@ def _signal(ts: str, event: str) -> str:
     ("2026-11-12T00:00:05Z", "2026-11-12", "00:00:05"),
     # a time with no offset is read as UTC, as every writer writes it
     ("2026-11-12T00:00:05", "2026-11-12", "00:00:05"),
+    # a year below 1000 keeps its four digits (strftime's %Y does not, under glibc: review 1)
+    ("0999-03-04T05:06:07.5+00:00", "0999-03-04", "05:06:07"),
 ])
 def test_a_lines_day_and_time_are_read_in_utc_around_midnight(ts, day, time):
     when = _api()._feed_when(ts)
     assert (when["day"], when["time"]) == (day, time)
     utc = datetime.strptime(f"{day} {time}", "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
-    assert int(when["at"]) == int(utc.timestamp())
+    assert math.floor(when["at"]) == utc.timestamp()     # the second of the line, before 1970 too
 
 
 @pytest.mark.parametrize("ts", ["", "   ", "yesterday", "16:15:45", None, 1731340545, "0001-01-01T00:00:00+01:00"])
@@ -157,10 +160,19 @@ def test_the_page_puts_each_line_in_its_place_by_its_moment_the_latest_on_top():
     js = _JS.read_text()
     place = _body(js, "function _feedPlace(list, el, entry) {")
     assert "el._at = entry.at != null && Number.isFinite(at) ? at : -Infinity;" in place
-    assert "    if (row._at <= el._at) { list.insertBefore(el, row); return; }\n" in place
-    assert place.rstrip().endswith("list.appendChild(el);")
+    assert ("    if (row._at <= el._at) { list.insertBefore(el, row); return list.firstElementChild === el; }\n"
+            in place)
+    assert place.rstrip().endswith("list.appendChild(el);\n  return list.firstElementChild === el;")
     entry = _body(js, "function appendFeedEntry(entry) {")
-    assert "_feedPlace(list, el, entry);" in entry
+    assert "const onTop = _feedPlace(list, el, entry);" in entry
     assert "list.appendChild(el)" not in entry
-    assert "list.scrollTop = 0;" in entry and "scrollHeight" not in entry
     assert "_autoScroll = this.scrollTop <= 40;" in js
+
+
+def test_the_page_scrolls_back_to_the_top_only_for_a_line_put_on_top():
+    """Review 1: a late line placed further down never moves the operator's reading; a line put on
+    top keeps the head in sight while the operator reads it. No harness runs the page's script in the
+    suite: read in its text (the behaviour was run once in a headless Chromium, out of the suite)."""
+    entry = _body(_JS.read_text(), "function appendFeedEntry(entry) {")
+    assert "  if (_autoScroll && onTop) {\n    list.scrollTop = 0;\n  }" in entry
+    assert entry.count("scrollTop") == 1 and "scrollHeight" not in entry

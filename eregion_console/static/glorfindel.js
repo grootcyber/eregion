@@ -2683,15 +2683,16 @@ function _feedWhen(entry, now) {
 // CON-D: the latest on top, each line in its place by its full moment (`at`, seconds since the
 // epoch): a line that arrives late — a signal pulled from Orodruin, a file read after another —
 // goes below the newer ones; of two at the same moment, the one that arrived last on top. A line
-// whose moment does not read goes to the bottom.
+// whose moment does not read goes to the bottom. Says whether the line went on top.
 function _feedPlace(list, el, entry) {
   const at = Number(entry.at);
   el._at = entry.at != null && Number.isFinite(at) ? at : -Infinity;
   el._when = { day: entry.day, time: entry.time };
   for (const row of list.children) {
-    if (row._at <= el._at) { list.insertBefore(el, row); return; }
+    if (row._at <= el._at) { list.insertBefore(el, row); return list.firstElementChild === el; }
   }
   list.appendChild(el);
+  return list.firstElementChild === el;
 }
 
 // Past midnight UTC, the lines of the page say their day again: today's become yesterday's.
@@ -2768,10 +2769,11 @@ function appendFeedEntry(entry) {
       <span class="feed-pct">${pct}</span>`;
   }
 
-  _feedPlace(list, el, entry);
+  const onTop = _feedPlace(list, el, entry);
 
-  // The latest is on top (CON-D): the feed stays there while the operator reads its head.
-  if (_autoScroll) {
+  // The latest is on top (CON-D): the feed stays there while the operator reads its head — moved
+  // only by a line put on top, never by a late one placed further down.
+  if (_autoScroll && onTop) {
     list.scrollTop = 0;
   }
 }
