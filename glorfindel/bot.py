@@ -146,11 +146,15 @@ def _shown(esc: dict) -> dict:
     touched."""
     subs = _card_subscriptions(esc)
     out = dict(esc)
+    rid = str(esc.get("resource_id") or "")
     for k in _SHOWN_TEXTS:
         if isinstance(out.get(k), str):
-            out[k] = masking.ids_masked(out[k], subscriptions=subs)
+            out[k] = masking.ids_masked(masking.commands_named(out[k], rid), subscriptions=subs)
     if isinstance(out.get("suggested_steps"), list):
-        out["suggested_steps"] = [masking.ids_masked(str(x), subscriptions=subs) for x in out["suggested_steps"]]
+        # A step's command names its VM by `<groupe>/<nom>` first (the card's own written by the
+        # code with its id or its short name): masked, it would be no command; short, a homonym's.
+        steps = [masking.commands_named(str(x), rid) for x in out["suggested_steps"]]
+        out["suggested_steps"] = [masking.ids_masked(str(x), subscriptions=subs) for x in steps]
     for k in _SHOWN_TREES:
         if isinstance(out.get(k), dict):
             out[k] = _deep_masked(out[k], subs)
@@ -158,19 +162,16 @@ def _shown(esc: dict) -> dict:
 
 
 def _vm_for_a_command(resource_id: str) -> str:
-    """What a command to copy names the VM by — the CLI's own rule (MSK2, `_name_for_a_command`):
-    its short name when every command takes it back to this very VM, else
-    « <id: glorfindel list --ids> », never a homonym. A state that cannot be read: the id asked
-    for too — never a crash of the button, never the full id."""
-    try:
-        from glorfindel.cli import _name_for_a_command
-        return _name_for_a_command(resource_id)
-    except Exception:
-        return "<id: glorfindel list --ids>"
+    """What a command to copy names the VM by: « <groupe>/<nom> » (MSK3, review), never its full id,
+    never its name alone — the bot's host is not the one the command is pasted on: a short name
+    checked here could take, there, a homonym of another group. `glorfindel` resolves this form on
+    its own host (the group and the name matching) or refuses. No group in the id:
+    « <id: glorfindel list --ids> »."""
+    return masking.group_and_name(resource_id)
 
 
 def _args_said(args: list[str]) -> str:
-    """A command the bot runs, as it says it ran: each ARM id by the name a command takes back."""
+    """A command the bot runs, as it says it ran: each ARM id by `<groupe>/<nom>`."""
     return " ".join(_vm_for_a_command(a) if "subscriptions/" in str(a).lower() else str(a) for a in args)
 
 
@@ -1249,6 +1250,26 @@ def _build_view(esc: dict, known_vms: set[str] | None = None) -> EscalationView:
     return view
 
 
+async def _renamed_if_it_names_a_subscription(thread, key: str, vm_name: str) -> bool:
+    """A thread opened before MSK3 on a card filed on a subscription was named by its id
+    (« 🔴 <guid> »): renamed when it is used again (MSK3 review) — only when its name carries a
+    subscription's id, so a name an operator chose is kept and a long name, cut by Discord, is not
+    renamed at every post (Discord allows two renames per ten minutes). A refusal (the bot without
+    the right to manage threads) is logged: the post goes on. True when renamed."""
+    name = str(getattr(thread, "name", "") or "")
+    subs = masking.subscriptions_known(key)
+    if masking.ids_masked(name, subscriptions=subs) == name:
+        return False
+    try:
+        await thread.edit(name=f"🔴 {vm_name}"[:100])
+    except discord.NotFound:
+        raise
+    except discord.HTTPException as exc:
+        _console.print(f"[yellow]Thread {getattr(thread, 'id', '?')} not renamed: {exc}[/yellow]")
+        return False
+    return True
+
+
 class GlorfindelBot(discord.Client):
     def __init__(self, channel_id: int, ping_role: int | None,
                  button_policy: ButtonPolicy | None = None):
@@ -1335,6 +1356,7 @@ class GlorfindelBot(discord.Client):
                 try:
                     if thread.archived:
                         await thread.edit(archived=False)
+                    await _renamed_if_it_names_a_subscription(thread, resource_id, vm_name)
                     return thread
                 except discord.NotFound:
                     _console.print(

@@ -83,45 +83,129 @@ def _embed_text(card: dict) -> str:
 
 # ── 1. The commands to copy ───────────────────────────────────────────────────────────
 
+GV = f"{RG}/vm-example-01"                               # what the bot's commands name a VM by
+
+
 @pytest.mark.parametrize("kw,said", [
     ({"action": "restore_from_backup", "escalation_type": "destructive_action"},
-     "glorfindel restore vm-example-01 --yes --before 2026-11-12T08:00:00+00:00"),
-    ({"escalation_type": "verification_failed"}, "glorfindel revert vm-example-01 --yes"),
-    ({"escalation_type": "readiness_hold"}, "glorfindel activate vm-example-01"),
-    ({"escalation_type": escalations.EXECUTED_TYPE}, "glorfindel release vm-example-01 --yes"),
+     f"glorfindel restore {GV} --yes --before 2026-11-12T08:00:00+00:00"),
+    ({"escalation_type": "verification_failed"}, f"glorfindel revert {GV} --yes"),
+    ({"escalation_type": "readiness_hold"}, f"glorfindel activate {GV}"),
+    ({"escalation_type": escalations.EXECUTED_TYPE}, f"glorfindel release {GV} --yes"),
     ({"escalation_type": escalations.EXECUTED_TYPE, "action": "block_suspicious_ip",
-      "action_params": {"ip": "203.0.113.7"}}, "glorfindel unblock 203.0.113.7 vm-example-01 --yes"),
+      "action_params": {"ip": "203.0.113.7"}}, f"glorfindel unblock 203.0.113.7 {GV} --yes"),
 ])
-def test_the_command_to_copy_names_the_vm_by_its_name(monkeypatch, kw, said):
-    _known(monkeypatch, VM)
-    command = bot._cli_command(_card(**kw))
-    assert said in command
-    _clean(command)
-
-
-@pytest.mark.parametrize("known", [(VM, VM_B), (VM_B,)])
-def test_the_command_never_names_a_homonym(monkeypatch, known):
-    """Two VMs of that name, or the card's VM no longer known while another of its name is: the short
-    name would be refused, or take the other one — the command asks for the id, and shows none."""
-    _known(monkeypatch, *known)
-    for kw in ({"action": "restore_from_backup", "escalation_type": "destructive_action"},
-               {"escalation_type": "verification_failed"},
-               {"escalation_type": escalations.EXECUTED_TYPE}):
+def test_the_command_to_copy_names_the_vm_by_its_group_and_name(monkeypatch, kw, said):
+    """`<groupe>/<nom>`, whatever the bot's host knows: never the full id, never the name alone."""
+    for known in ((VM,), (VM, VM_B), (VM_B,), ()):
+        _known(monkeypatch, *known)
         command = bot._cli_command(_card(**kw))
-        assert "<id: glorfindel list --ids>" in command and "vm-example-01 " not in command, command
+        assert said in command, command
         _clean(command)
+
+
+def test_a_vm_without_a_group_is_asked_by_its_id():
+    assert bot._vm_for_a_command("vm-example-01") == "<id: glorfindel list --ids>"
+    assert bot._vm_for_a_command(f"/subscriptions/{SUB}") == "<id: glorfindel list --ids>"
+
+
+def _cli(args):
+    from click.testing import CliRunner
+
+    from glorfindel import cli
+    return CliRunner().invoke(cli.cli, args, terminal_width=200)
+
+
+def test_the_bot_s_command_pasted_on_a_host_that_knows_only_the_homonym_is_refused(monkeypatch):
+    """The review's case: the bot (on Imladris) knows the card's VM; the operator's terminal knows only
+    a VM of that name in another group. The command copied from the bot is refused there — it never
+    takes the homonym, and nothing is asked of Azure."""
+    from glorfindel import cli
+    _known(monkeypatch, VM)
+    command = bot._cli_command(_card(escalation_type="verification_failed")).splitlines()[0]
+    assert command == f"glorfindel revert {GV} --yes"
+    _known(monkeypatch, VM_B)                             # the operator's terminal
+    with pytest.raises(cli.click.ClickException, match="inconnue de ce poste"):
+        cli._resolve_resource_id(GV)
+    monkeypatch.setattr("glorfindel.actions.AzureConnector",
+                        lambda *a, **k: pytest.fail("no connector for a VM refused"))
+    result = _cli(command.split()[1:])
+    assert result.exit_code != 0 and "inconnue de ce poste" in result.output, result.output
+    assert RG_B not in result.output                    # never a word of the homonym
+
+
+def test_the_group_and_name_form_is_resolved_on_its_host(monkeypatch):
+    from glorfindel import cli
+    _known(monkeypatch, VM, VM_B)
+    assert cli._resolve_resource_id(GV) == VM
+    assert cli._resolve_resource_id(f"{RG_B}/vm-example-01") == VM_B
+    assert cli._resolve_resource_id(GV.upper()) == VM                 # whatever its case
+    assert cli._resolve_resource_id(VM) == VM                         # the full id, as before
+    assert cli._resolve_resource_id(VM[1:]) == VM[1:]
+    with pytest.raises(cli.click.ClickException):                     # two VMs of that name: refused
+        cli._resolve_resource_id("vm-example-01")
+    _known(monkeypatch, VM, _vm(sub=SUB2))                            # one group, one name, two subscriptions
+    with pytest.raises(cli.click.ClickException, match="several VMs"):
+        cli._resolve_resource_id(GV)
+    _known(monkeypatch)
+    with pytest.raises(cli.click.ClickException, match="inconnue de ce poste"):
+        cli._resolve_resource_id(GV)
+
+
+@pytest.mark.parametrize("args", [
+    ["reset", GV, "--yes"], ["revert", GV, "--yes"], ["release", GV, "--yes", "--dry-run"],
+    ["unblock", "203.0.113.7", GV, "--yes", "--dry-run"], ["activate", GV, "--yes"],
+    ["restore", GV, "--yes", "--dry-run", "--before", "2026-11-12T07:55:00+00:00"],
+])
+def test_the_cli_says_the_vm_it_resolved_before_acting_yes_too(monkeypatch, args):
+    """Even with --yes, the VM resolved is read back by its name and its group before anything is done."""
+    _known(monkeypatch, VM)
+
+    class _Stop(Exception):
+        pass
+
+    class _Connector:                                  # built, never used: its first call stops the command
+        def __init__(self, *a, **k):
+            pass
+
+        def __getattr__(self, name):
+            raise _Stop(name)
+    monkeypatch.setattr("glorfindel.actions.AzureConnector", _Connector)
+    monkeypatch.setattr("glorfindel.cli._backup_vault_from_config", lambda vault: ("vault-a", RG, "sa-a"),
+                        raising=False)
+    result = _cli(args)
+    assert "vm-example-01 (groupe rg-example-a)" in result.output, result.output
+    _clean(result.output)
 
 
 def test_the_buttons_keep_the_full_id(monkeypatch):
     """A button acts: its arguments keep the full id — what it says it ran shows none."""
     from glorfindel import restore_plan
-    _known(monkeypatch, VM)
     button = bot._make_action_button(_card(escalation_type="verification_failed"))
     assert button.cli_args == ["revert", VM, "--yes"]
-    assert bot._args_said(button.cli_args) == "revert vm-example-01 --yes"
+    assert bot._args_said(button.cli_args) == f"revert {GV} --yes"
     args = restore_plan.restore_args(VM, "2026-11-12T08:00:00+00:00")
     assert VM in args
     _clean(bot._args_said(args))
+
+
+def test_a_step_s_command_names_the_vm_by_its_group_and_name():
+    """A step the code wrote with the full id (masked, no command) or the card's short name (a
+    homonym's elsewhere): shown with `<groupe>/<nom>`; another word left as it is."""
+    from glorfindel import masking
+    assert masking.commands_named(f"Lever : glorfindel release {VM} --yes", VM) == f"Lever : glorfindel release {GV} --yes"
+    assert masking.commands_named("défaire : `glorfindel release vm-example-01 --yes`.", VM) == \
+        f"défaire : `glorfindel release {GV} --yes`."
+    assert masking.commands_named(f"glorfindel unblock 203.0.113.7 {VM}, ou re-bloquer", VM) == \
+        f"glorfindel unblock 203.0.113.7 {GV}, ou re-bloquer"
+    for kept in ("glorfindel restore <vm> --before <ISO8601>", "glorfindel release other-vm --yes",
+                 "glorfindel restore --wait"):
+        assert masking.commands_named(kept, VM) == kept
+    text = _embed_text(_card(suggested_steps=["défaire : `glorfindel release vm-example-01 --yes`.",
+                                              f"glorfindel reset {VM} --yes"]))
+    assert f"glorfindel release {GV} --yes".replace("/", "/") in text.replace("\\", "")
+    assert f"glorfindel reset {GV} --yes" in text.replace("\\", "")
+    _clean(text)
 
 
 # ── 2. The card ───────────────────────────────────────────────────────────────────────
@@ -233,7 +317,7 @@ def test_what_a_button_ran_is_said_without_the_subscription(monkeypatch, ran):
         await asyncio.gather(*[t for t in asyncio.all_tasks() if t is not asyncio.current_task()])
     asyncio.run(click())
     assert called == [["revert", VM, "--yes"]]                      # the button acts on the full id
-    assert "glorfindel revert vm-example-01 --yes" in channel.posted[0]
+    assert f"glorfindel revert {GV} --yes" in channel.posted[0]
     for text in channel.posted:
         _clean(text)
 
@@ -266,7 +350,7 @@ def test_a_restore_s_confirmation_names_no_subscription(monkeypatch):
         await asyncio.gather(*[t for t in asyncio.all_tasks() if t is not asyncio.current_task()])
     asyncio.run(confirm())
     assert ran and VM in ran[0]                                     # the restore runs on the full id
-    assert "glorfindel restore vm-example-01 --yes --before" in channel.posted[0]
+    assert f"glorfindel restore {GV} --yes --before" in channel.posted[0]
     for posted in channel.posted:
         _clean(posted)
 
@@ -326,3 +410,67 @@ def test_an_action_s_announcement_by_the_webhook_says_no_subscription(posts):
     assert via == "webhook" and posts
     _clean(posts)
     assert VM in vm_notices.said("action:k-3")["text"]              # the store keeps the text
+
+
+# ── 5. The review (round 1): a thread named before MSK3, a cut, the webhook's other fields ─────
+
+class _Thread:
+    def __init__(self, name: str):
+        self.id, self.name, self.archived, self.edits = 7, name, False, []
+
+    async def edit(self, **kw):
+        self.edits.append(kw)
+        self.name = kw.get("name", self.name)
+
+
+@pytest.mark.parametrize("name,key,renamed", [
+    (f"🔴 {SUB}", f"/subscriptions/{SUB}", True),
+    ("🔴 nsg-a", NSG, False),
+    ("incident ouvert", f"/subscriptions/{SUB}", False),         # an operator's name: kept
+])
+def test_a_thread_named_by_a_subscription_is_renamed_when_used_again(name, key, renamed):
+    """A thread opened before MSK3 on a card filed on a subscription kept its id in its name: renamed
+    at its next use. A name without one — the bot's, an operator's — is left as it is."""
+    thread = _Thread(name)
+
+    async def go():
+        return await bot._renamed_if_it_names_a_subscription(thread, key, bot._thread_name(key))
+    assert asyncio.run(go()) is renamed
+    assert thread.edits == ([{"name": "🔴 <abonnement>"}] if renamed else [])
+    _clean(thread.name) if renamed else None
+
+
+def test_the_reused_thread_is_renamed_before_the_post(monkeypatch):
+    """Through `_get_or_create_thread`: the known thread, found again, is renamed before it is given
+    back — the card or the notice posted in it under a name with no subscription."""
+    key = f"/subscriptions/{SUB}"
+    thread = _Thread(f"🔴 {SUB}")
+    monkeypatch.setattr(bot.discord, "Thread", _Thread)
+    b = bot.GlorfindelBot(channel_id=1, ping_role=None)
+    b._threads = {key: thread.id}
+    monkeypatch.setattr(b, "get_channel", lambda tid: thread)
+
+    async def go():
+        return await b._get_or_create_thread(None, key, ping=False)
+    assert asyncio.run(go()) is thread
+    assert thread.name == "🔴 <abonnement>"
+
+
+def test_the_announcement_is_masked_then_cut_never_a_guid_s_first_characters(posts):
+    """The review's measure: a bare subscription at the 800th character — cut first, its first eight
+    digits passed the masking. Masked then cut by the webhook; cut, in the store, before the GUID."""
+    from glorfindel import masking
+    explanation = "x" * 780 + f" abonnement {SUB}"
+    escalations.notify_action("isolate_vm", VM, "run-1", 0.9, explanation, True, key="action:k-cut")
+    assert "00000000" not in posts[-1]["text"], posts[-1]["text"]
+    stored = vm_notices.said("action:k-cut")
+    assert "00000000" not in vm_notices.bot_message(stored)
+    assert "00000000" not in stored["text"]
+    assert masking.cut("ab 0123-4567", 7) == "ab " and masking.cut("ghijkl", 3) == "ghi"
+    assert masking.cut("abc 01", 10) == "abc 01"
+
+
+def test_an_escalation_by_the_webhook_masks_its_action_ttp_and_severity(posts):
+    escalations._notify(_card(action=f"isolate {VM}", ttp=f"T1486 {VM}", severity=f"high ({SUB})"))
+    assert posts
+    _clean(posts)

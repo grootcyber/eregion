@@ -617,22 +617,28 @@ def _action_words(action: str, resource_id: str, run_id: str, confidence: float,
     card_said = f"Carte à juger : {card[:8]} (console, TO JUDGE)." if card else ""
     # The card and the run before the explanation: a text cut (the webhook's 800 characters, the
     # fallback's: JUG2 review) never loses them.
+    from glorfindel.masking import commands_named, cut, ids_masked, name_said, subscriptions_known
+    # Kept as written in the notices' store, masked where it is shown — so cut never inside a GUID
+    # (MSK3 review: a cut mid-id let its first characters through the masking).
     text = " ".join(filter(None, [
-        f"{action} · {meta}.", card_said, f"Run {run_id}." if run_id else "", explanation[:800],
-        f"⚠ {note[:300]}" if note else ""]))
+        f"{action} · {meta}.", card_said, f"Run {run_id}." if run_id else "", cut(explanation, 800),
+        f"⚠ {cut(note, 300)}" if note else ""]))
     level = "ok" if verified else ("unknown" if verified is None else "failed")
     # Text from outside (the model's, Azure's names): one line each, no link nor mention
     # of its own (SEC6, N-09 — glorfindel/chat_text.py), and no subscription's id (MSK3: the
     # model's explanation may copy the signal's id). `text` goes to the notices' store as written:
-    # masked where it is shown (vm_notices.bot_message, webhook_payload).
-    from glorfindel.masking import ids_masked, name_said, subscriptions_known
+    # masked where it is shown (vm_notices.bot_message, webhook_payload). Masked first, then cut
+    # (MSK3 review); a command in it names its VM by `<groupe>/<nom>`.
     subs = subscriptions_known(resource_id)
     resource_short = webhook_code(name_said(resource_id))
+
+    def shown(value: str) -> str:
+        return ids_masked(commands_named(value, resource_id), subscriptions=subs)
     payload = {"text": (
-        f":robot_face: *{_ACTION_LABELS.get(action) or webhook_text(action)}* {status}  |  `{resource_short}`\n"
-        f"`{webhook_code(action)}` · {webhook_text(meta)}\n"
-        f"> {webhook_text(ids_masked(explanation[:800], subscriptions=subs))}\n"
-        + (f"> ⚠ {webhook_text(ids_masked(note[:300], subscriptions=subs))}\n" if note else "")
+        f":robot_face: *{_ACTION_LABELS.get(action) or webhook_text(shown(action))}* {status}  |  `{resource_short}`\n"
+        f"`{webhook_code(shown(action))}` · {webhook_text(shown(meta))}\n"
+        f"> {webhook_text(shown(explanation)[:800])}\n"
+        + (f"> ⚠ {webhook_text(shown(note)[:300])}\n" if note else "")
         + (f"> {webhook_text(card_said)}\n" if card_said else "")
         + f"`{webhook_code(ids_masked(run_id, subscriptions=subs))}`"
     )}
@@ -736,23 +742,29 @@ def _notify(esc: dict) -> None:
         import requests
 
         from glorfindel.chat_text import webhook_code, webhook_text
-        from glorfindel.masking import ids_masked, name_said, subscriptions_known
+        from glorfindel.masking import commands_named, ids_masked, name_said, subscriptions_known
         # The reason carries the model's words and Azure's names (an Entra application's
         # display name): one line, no link nor mention of its own (SEC6, N-09) — and no
-        # subscription's id (MSK3, #772): the message is pasted from the channel too.
-        subs = subscriptions_known(str(esc.get("resource_id") or ""))
+        # subscription's id (MSK3, #772): the message is pasted from the channel too. The action,
+        # the TTP, the severity as the bot shows them (the model may name any action); a command of
+        # the reason names its VM by `<groupe>/<nom>` (MSK3 review).
+        rid = str(esc.get("resource_id") or "")
+        subs = subscriptions_known(rid)
+
+        def shown(value) -> str:
+            return ids_masked(commands_named(str(value or ""), rid), subscriptions=subs)
         resource_short = webhook_code(name_said(esc["resource_id"]))
-        label = _ACTION_LABELS.get(esc["action"]) or webhook_text(esc["action"])
+        label = _ACTION_LABELS.get(esc["action"]) or webhook_text(shown(esc["action"]))
         type_label = _ESCALATION_LABELS.get(
             esc["escalation_type"], esc["escalation_type"]
         )
-        parts = [esc.get("ttp", ""), esc.get("severity", ""), type_label]
+        parts = [shown(esc.get("ttp", "")), shown(esc.get("severity", "")), type_label]
         meta = webhook_text(" · ".join(filter(None, parts)))
         requests.post(url, json={
             "text": (
                 f":rotating_light: *{label}*  |  `{resource_short}`\n"
-                f"`{webhook_code(esc['action'])}` · {meta}\n"
-                f"> {webhook_text(ids_masked(esc['reason'], subscriptions=subs)[:500])}\n"
+                f"`{webhook_code(shown(esc['action']))}` · {meta}\n"
+                f"> {webhook_text(ids_masked(commands_named(esc['reason'], rid), subscriptions=subs)[:500])}\n"
                 f"`{webhook_code(ids_masked(esc['run_id'], subscriptions=subs))}`"
             )
         }, timeout=5)
