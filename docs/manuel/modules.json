@@ -2248,6 +2248,19 @@
    "doc": "docs/operations.md"
   },
   {
+   "id": "s-docs-banc",
+   "composant": "socle",
+   "poste": "s-documenter",
+   "nom": "The bench documents caught up with the measures of 12 Nov: the ransomware times replayed end to end, what the activity log says of a VM measured, the flow logs' own account applied",
+   "etat": "main",
+   "release": "0.5",
+   "lots": [
+    "MEN4"
+   ],
+   "issue": 748,
+   "doc": "docs/banc-t1486.md"
+  },
+  {
    "id": "s-adoption",
    "composant": "socle",
    "poste": "s-documenter",

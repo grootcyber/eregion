@@ -67,9 +67,10 @@
     a destructive one always waiting for a human. The default is <code>human_only</code>: nothing runs without a human.</li>
     <li><strong>Autonomy on a real fleet is not recommended yet.</strong> The criteria the project set before it are
     not all met — among them, four weeks of observation on a real fleet. Autonomy runs on the bench.</li>
-    <li><strong>The ransomware times come from a June run</strong>, before the hosted watch, Orodruin and Dagorlad;
-    they will be replayed. With the hosted watch, the restore is started from the operator's machine, and lifting the
-    isolation after it is a second human step today. Making the watch see the restore itself is planned (#668).</li>
+    <li><strong>The ransomware times come from a single bench run</strong>, on the current architecture: the hosted
+    watch, Orodruin and Dagorlad. The restore is started from the operator's machine; the hosted watch then lifts the
+    isolation by itself, once the restore is proven on Azure (#668). The isolation is verified only once the open
+    sessions are cut, which took about five minutes under the quarantine.</li>
     <li><strong>A log line the monitored VM can write itself</strong> is not yet corroborated before an autonomous
     action on it; that corroboration is planned (threat model, the model provider).</li>
     <li><strong>Bench measures, on small samples</strong> — a single measure of the emergency stop, a single fault so
@@ -85,8 +86,8 @@
     <p class="fear"><b>The fear:</b> not knowing what the detection misses, and not being able to show that it works.</p>
   </div>
   <div class="stats">
-    <div class="stat" data-proof="wrong_disruptive"><b data-f="value">0 / 41</b><span data-f="says">isolations and blocks it recommended or made on real traffic (exercises excluded), judged wrong, of those judged, over 30 days</span><small><time data-f="date" datetime="2026-11-02">2 Nov 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/ROADMAP.md#la-finalité-et-ses-cinq-indicateurs">ROADMAP.md</a></small></div>
-    <div class="stat" data-proof="coverage"><b data-f="value">4 / 5</b><span data-f="says">implemented techniques proven over the last 30 days on the bench</span><small><time data-f="date" datetime="2026-10-27">27 Oct 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/README.md">README.md</a></small></div>
+    <div class="stat" data-proof="wrong_disruptive"><b data-f="value">0 / 41</b><span data-f="says">isolations and blocks it recommended or made on real traffic (exercises excluded), judged wrong, of those judged, over 30 days</span><small><time data-f="date" datetime="2026-11-02">2 Nov 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/ROADMAP.md#la-finalité-et-ses-cinq-indicateurs">ROADMAP.md</a> · <em data-f="kind">to be re-measured</em></small><span class="note" data-f="note">since, an isolation of a bench VM on 10 Nov was judged wrong on 11 Nov; the count over 30 days is to be read again</span></div>
+    <div class="stat" data-proof="coverage"><b data-f="value">4 / 5</b><span data-f="says">implemented techniques proven over the last 30 days on the bench</span><small><time data-f="date" datetime="2026-10-27">27 Oct 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/README.md">README.md</a></small><span class="note" data-f="note">the catalog implements eight techniques since, three of them never played on the bench</span></div>
     <div class="stat" data-proof="blocked_alone"><b data-f="value">5</b><span data-f="says">addresses of an SSH brute force that Glorfindel blocked alone, in one weekend, on a bench VM in non_disruptive</span><small><time data-f="date" datetime="2026-11-01">1 Nov 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/docs/design/console.md">docs/design/console.md</a></small></div>
   </div>
   <div class="grid2">
@@ -124,7 +125,7 @@
   <div class="stats">
     <div class="stat" data-proof="hosted_chain"><b data-f="value">~2 min</b><span data-f="says">from an attack on the bench to its card in Discord, with Glorfindel on Imladris, its own hosted VM</span><small><time data-f="date" datetime="2026-10-16">16 Oct 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/ROADMAP.md#les-lots">ROADMAP.md</a></small></div>
     <div class="stat" data-proof="host_cost"><b data-f="value">~61 € / month</b><span data-f="says">Imladris, the reference host of Glorfindel, running all the time, before its disk and address</span><small><time data-f="date" datetime="2026-11-04">4 Nov 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/docs/demarrer/banc.md#le-coût-et-le-temps">docs/demarrer/banc.md</a> · <em data-f="kind">estimate</em></small></div>
-    <div class="stat" data-proof="contain_ransom"><b data-f="value">~1 min</b><span data-f="says">to contain a ransomware VM, Glorfindel acting alone</span><small><time data-f="date" datetime="2026-06-09">9 Jun 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/docs/banc-t1486.md">docs/banc-t1486.md</a> · <em data-f="kind">to be re-measured</em></small><span class="note" data-f="note">a run from before the hosted watch, Orodruin and Dagorlad; to be replayed on the bench</span></div>
+    <div class="stat" data-proof="contain_ransom"><b data-f="value">7 min 43 s</b><span data-f="says">to contain a ransomware VM, Glorfindel acting alone: from the attack to its isolation verified on Azure</span><small><time data-f="date" datetime="2026-11-12">12 Nov 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/docs/banc-t1486.md#les-chiffres-du-1211">docs/banc-t1486.md</a></small></div>
   </div>
   <div class="grid2">
     <div>
@@ -232,7 +233,7 @@
     <p class="fear"><b>The fear:</b> a tool that isolates a healthy VM in the middle of the night.</p>
   </div>
   <div class="stats">
-    <div class="stat" data-proof="wrong_disruptive"><b data-f="value">0 / 41</b><span data-f="says">isolations and blocks it recommended or made on real traffic (exercises excluded), judged wrong, of those judged, over 30 days</span><small><time data-f="date" datetime="2026-11-02">2 Nov 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/ROADMAP.md#la-finalité-et-ses-cinq-indicateurs">ROADMAP.md</a></small></div>
+    <div class="stat" data-proof="wrong_disruptive"><b data-f="value">0 / 41</b><span data-f="says">isolations and blocks it recommended or made on real traffic (exercises excluded), judged wrong, of those judged, over 30 days</span><small><time data-f="date" datetime="2026-11-02">2 Nov 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/ROADMAP.md#la-finalité-et-ses-cinq-indicateurs">ROADMAP.md</a> · <em data-f="kind">to be re-measured</em></small><span class="note" data-f="note">since, an isolation of a bench VM on 10 Nov was judged wrong on 11 Nov; the count over 30 days is to be read again</span></div>
     <div class="stat" data-proof="fault_mistaken"><b data-f="value">0 / 1</b><span data-f="says">declared fault taken for an attack, on the bench (a single fault so far)</span><small><time data-f="date" datetime="2026-10-31">31 Oct 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/ROADMAP.md#la-finalité-et-ses-cinq-indicateurs">ROADMAP.md</a></small></div>
     <div class="stat" data-proof="kill_switch"><b data-f="value">&lt; 3 s</b><span data-f="says">from revoking the injectors&#x27; host identity to its first refused call, the attack side&#x27;s emergency stop (one measure)</span><small><time data-f="date" datetime="2026-10-19">19 Oct 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/docs/design/orodruin-contract.md#limplémentation-1910">docs/design/orodruin-contract.md</a></small></div>
   </div>
@@ -310,8 +311,8 @@
   </div>
   <div class="stats">
     <div class="stat" data-proof="blocked_alone"><b data-f="value">5</b><span data-f="says">addresses of an SSH brute force that Glorfindel blocked alone, in one weekend, on a bench VM in non_disruptive</span><small><time data-f="date" datetime="2026-11-01">1 Nov 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/docs/design/console.md">docs/design/console.md</a></small></div>
-    <div class="stat" data-proof="wrong_disruptive"><b data-f="value">0 / 41</b><span data-f="says">isolations and blocks it recommended or made on real traffic (exercises excluded), judged wrong, of those judged, over 30 days</span><small><time data-f="date" datetime="2026-11-02">2 Nov 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/ROADMAP.md#la-finalité-et-ses-cinq-indicateurs">ROADMAP.md</a></small></div>
-    <div class="stat" data-proof="last_e2e"><b data-f="value">31 Oct</b><span data-f="says">the last run that proved detection and response end to end, on the bench (a technique and a declared fault in one campaign)</span><small><time data-f="date" datetime="2026-10-31">31 Oct 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/ROADMAP.md#la-finalité-et-ses-cinq-indicateurs">ROADMAP.md</a></small></div>
+    <div class="stat" data-proof="wrong_disruptive"><b data-f="value">0 / 41</b><span data-f="says">isolations and blocks it recommended or made on real traffic (exercises excluded), judged wrong, of those judged, over 30 days</span><small><time data-f="date" datetime="2026-11-02">2 Nov 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/ROADMAP.md#la-finalité-et-ses-cinq-indicateurs">ROADMAP.md</a> · <em data-f="kind">to be re-measured</em></small><span class="note" data-f="note">since, an isolation of a bench VM on 10 Nov was judged wrong on 11 Nov; the count over 30 days is to be read again</span></div>
+    <div class="stat" data-proof="last_e2e"><b data-f="value">12 Nov</b><span data-f="says">the last run that proved detection and response end to end, on the bench (the ransomware, from the attack to the release by Imladris)</span><small><time data-f="date" datetime="2026-11-12">12 Nov 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/ROADMAP.md#la-finalité-et-ses-cinq-indicateurs">ROADMAP.md</a></small></div>
   </div>
   <div class="grid2">
     <div>
@@ -344,9 +345,9 @@
     <p class="fear"><b>The fear:</b> controls declared, never tested.</p>
   </div>
   <div class="stats">
-    <div class="stat" data-proof="last_e2e"><b data-f="value">31 Oct</b><span data-f="says">the last run that proved detection and response end to end, on the bench (a technique and a declared fault in one campaign)</span><small><time data-f="date" datetime="2026-10-31">31 Oct 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/ROADMAP.md#la-finalité-et-ses-cinq-indicateurs">ROADMAP.md</a></small></div>
+    <div class="stat" data-proof="last_e2e"><b data-f="value">12 Nov</b><span data-f="says">the last run that proved detection and response end to end, on the bench (the ransomware, from the attack to the release by Imladris)</span><small><time data-f="date" datetime="2026-11-12">12 Nov 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/ROADMAP.md#la-finalité-et-ses-cinq-indicateurs">ROADMAP.md</a></small></div>
     <div class="stat" data-proof="proof_flag"><b data-f="value">30 days</b><span data-f="says">the age past which the console shows the last proof in red (amber from 21 days)</span><small><time data-f="date" datetime="2026-10-27">27 Oct 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/docs/design/console.md#les-cinq-indicateurs-ui-2-206">docs/design/console.md</a> · <em data-f="kind">a setting</em></small></div>
-    <div class="stat" data-proof="restore_ransom"><b data-f="value">21 min 29 s</b><span data-f="says">from the detection to the service restored from backup</span><small><time data-f="date" datetime="2026-06-09">9 Jun 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/ROADMAP.md#contexte-produit-scénario-optionnel">ROADMAP.md</a> · <em data-f="kind">to be re-measured</em></small><span class="note" data-f="note">a run from before the hosted watch, Orodruin and Dagorlad; to be replayed on the bench</span></div>
+    <div class="stat" data-proof="restore_ransom"><b data-f="value">27 min 55 s</b><span data-f="says">from the attack to the service restored from backup, the human&#x27;s wait excluded (detection, isolation, restore)</span><small><time data-f="date" datetime="2026-11-12">12 Nov 2026</time> · <a data-f="source" href="https://github.com/grootcyber/eregion/blob/main/docs/banc-t1486.md#les-chiffres-du-1211">docs/banc-t1486.md</a></small></div>
   </div>
   <div class="grid2">
     <div>

@@ -6,9 +6,11 @@ file no longer says, a figure on the page that is not in the source: refused). H
 - the real source and the real page pass the rule, and each refusal is said;
 - the page runs no script under a strict content policy, loads only its stylesheet and the replay's
   fonts, links only to itself, the site and the repository;
-- the page says what it does not promise (``full_auto`` planned, the ransomware times to be replayed,
-  the second human step after a restore with the hosted watch), and the README and the home page lead
-  to it.
+- the page says what it does not promise (``full_auto`` planned, the ransomware times from a single
+  bench run, the isolation verified only once the sessions are cut), and the README and the home page
+  lead to it;
+- the ransomware times are those of the bench run of 12/11, and a figure a later fact has overtaken
+  (the disruptive actions judged wrong) is shown as one to measure again (MEN4, #748).
 """
 from __future__ import annotations
 
@@ -83,12 +85,23 @@ def test_the_source_holds_the_figures_the_page_shows_and_nothing_else():
     assert len(ad.read_page(HTML).stats) == 27, "three proofs on each of the nine sheets"
 
 
+def test_the_ransomware_times_come_from_the_bench_run_of_12_11():
+    """RAN1 (#665), MEN4 (#748): replayed on the current architecture (Imladris, Orodruin, Dagorlad), the
+    ransomware times are measured, dated 12/11 and sourced in the run's page, the run named; the run of
+    09/06, from before, is no longer one of the site's figures."""
+    for k in ("contain_ransom", "restore_ransom"):
+        p = PROOFS[k]
+        assert p["kind"] == "measured" and p["date"] == "2026-11-12", k
+        assert p["source"]["path"] == "docs/banc-t1486.md" and p["source"]["run"] == "20261112T091448Z-b218", k
+    assert PROOFS["last_e2e"]["date"] == "2026-11-12" and PROOFS["last_e2e"]["value"] == "12 Nov"
+    assert "20260609T190824Z" not in json.dumps(PROOFS)
+
+
 def test_a_measure_to_take_again_says_so_on_the_page():
-    """The ransomware times come from the run of 09/06, before H0, Orodruin and Dagorlad (RAN1, #665)."""
+    """Bree's isolation of 10/11, judged wrong on 11/11, overtakes « 0 / 41 » of 02/11: the figure stays,
+    shown as one to measure again, with why (MEN4, #748)."""
     again = {k for k, p in PROOFS.items() if p["kind"] == "to-remeasure"}
-    assert again == {"contain_ransom", "restore_ransom"}
-    for k in again:
-        assert PROOFS[k]["source"]["run"] == "20260609T190824Z" and PROOFS[k]["date"] == "2026-06-09"
+    assert again == {"wrong_disruptive"}
     for s in ad.read_page(HTML).stats:
         if s["key"] in again:
             assert ad.norm(s["fields"]["kind"]) == "to be re-measured" and s["fields"]["note"].strip()
@@ -352,7 +365,8 @@ def test_the_page_has_a_sheet_per_reader_each_with_its_parts():
 def test_the_page_says_what_it_does_not_promise():
     limits = ad.norm(HTML.split('id="h-limits"', 1)[1].split("</section>", 1)[0])
     for said in ("<code>full_auto</code> is planned, not available", "detection only", "Not a SOC",
-                 "they will be replayed", "a second human step today", "is planned (#668)", "No hosted offer"):
+                 "come from a single bench run", "lifts the isolation by itself", "proven on Azure (#668)",
+                 "once the open sessions are cut", "No hosted offer"):
         assert said in limits, said
     assert "side by side" not in HTML, "several customers on one host: neither documented nor proven"
     assert "in progress" not in limits

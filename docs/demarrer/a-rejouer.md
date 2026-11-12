@@ -51,7 +51,7 @@ Rien de ce guide n'a été rejoué de zéro. Les mesures citées sont celles des
 | Étape | Le geste | Ce qu'on doit voir |
 |---|---|---|
 | 0 | `make doctor PROFILE=bench` sur un poste neuf | les outils verts ; les fichiers du banc absents, chacun avec sa commande |
-| 1 | `make celebrimbor-up`, puis `make celebrimbor-output` | le plan relu, ~5 min ; le fragment copié tel quel dans `glorfindel-config.yaml` est accepté par la watch |
+| 1 | `make celebrimbor-up`, puis `make celebrimbor-output` (un banc neuf : sur le banc qui tourne, un apply ciblé seulement, [banc.md](banc.md#1-celebrimbor-le-banc)) | le plan relu, ~5 min ; le fragment copié tel quel dans `glorfindel-config.yaml` est accepté par la watch |
 | 2 | les quatre rôles de `infra/identities/` | quatre définitions ; un second abonnement du même tenant refuse le nom (`docs/operations.md`) |
 | 3 | `make glorfindel-host-up` | **sa durée** jusqu'à `~/.eregion-host-ready` (jamais notée) ; le dépôt cloné par la redirection de l'ancien nom (`eregion_repo`) |
 | 4 | `orodruin-up`, `-fingerprint`, `-lock` | l'empreinte lue par Run Command, puis `orodruin-ssh` accepté ; `orodruin-lock` referme la sortie |
@@ -63,11 +63,11 @@ Rien de ce guide n'a été rejoué de zéro. Les mesures citées sont celles des
 
 ## Le rançongiciel au banc (RAN1)
 
-Les chiffres du README (« ~1 min to contain, 21m29s to restored service ») datent du 09/06, d'avant Imladris, Orodruin et Dagorlad. Le pas à pas : [`banc-t1486.md`](../banc-t1486.md).
+**Rejoué de bout en bout le 12/11** (run `20261112T091448Z-b218`, v0.5.10 ; [`banc-t1486.md`](../banc-t1486.md), « Les chiffres du 12/11 ») : la détection à 141,6 s de T0, l'isolement vérifié à 463,1 s, le restore en 25 min 14 s, la levée par Imladris seule à 3019,9 s ; 27 min 55 s au sens du README, qui les porte depuis. Les chiffres d'avant (« ~1 min to contain, 21m29s to restored service ») dataient du 09/06, d'avant Imladris, Orodruin et Dagorlad.
 
 | Étape | Le geste | Ce qu'on doit voir |
 |---|---|---|
-| 2–9 | T1486 sur gondolin par Dagorlad et `make orodruin-exercise`, le restore du poste sous le principal de la console, la levée sur Imladris | `detected`, `isolate_vm` seul et relu sur Azure, la restauration et la levée ; les trois temps datés dans #665 |
+| 2–9 | T1486 sur gondolin par `make bench-run` (ou Dagorlad et `make orodruin-exercise`), `make bench-restore` sous la paire de la console, la levée sur Imladris | ✓ le 12/11 : `detected`, `isolate_vm` seul et relu sur Azure, la restauration et la levée ; les temps datés dans #665 et la page. Reste ouvert : la détection, deux fois plus lente que le 09/11 (141,6 s contre 70,3 s), à mesurer par ING5 (RH1) |
 
 ## Le cas sans Imladris
 
