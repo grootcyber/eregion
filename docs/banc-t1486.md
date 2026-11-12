@@ -530,9 +530,8 @@ AZURE_CLIENT_ID=${EREGION_CONSOLE_AZURE_CLIENT_ID} AZURE_CLIENT_SECRET=${EREGION
 date -u +%H:%M:%S                  # la fin du restore
 ```
 
-**La sortie affiche l'id complet de la VM, l'abonnement compris, et le nom du coffre** (la ligne
-`Resource :` de `glorfindel restore`, `glorfindel/cli.py:1609` ; relevé au banc le 12/11, à blanc comme
-pour de vrai) : ne pas la coller telle quelle dans une issue ou un fil. La masquer demande du code.
+La sortie nomme la VM par son nom et son groupe (`Resource : <vm> (groupe <rg>)`) et le coffre par
+son nom, jamais l'id de l'abonnement (IML1c).
 
 *Vérifié à blanc*, dans un `HOME` jetable : la première commande dit le coffre, `Before : <AVANT>
 (--before)`, puis « DRY RUN — no changes made. ». Elle dit aussi son identité (RST1) : `Identity :

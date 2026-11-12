@@ -410,9 +410,8 @@ make bench-restore TARGET=vm-celebrimbor-gondolin RUN=<run_id>             # tap
   Le restore lit ses droits avant de toucher la VM (RST1). La clé matérielle du SSH tient lieu de
   second facteur, en attendant FS1g et TOT1.
 
-**La sortie affiche l'id complet de la VM, l'abonnement compris, et le nom du coffre** (la ligne
-`Resource :` de `glorfindel restore`, `glorfindel/cli.py:1609` ; relevé au banc le 12/11, à blanc comme
-pour de vrai) : ne pas la coller telle quelle dans une issue ou un fil. La masquer demande du code.
+La sortie nomme la VM par son nom et son groupe (`Resource : <vm> (groupe <rg>)`) et le coffre par
+son nom, jamais l'id de l'abonnement (IML1c).
 
 Ensuite, la levée par Imladris (étape 7 de banc-t1486.md), puis `make bench-report RUN=<run_id>`.
 

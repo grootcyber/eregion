@@ -183,6 +183,63 @@ def test_restore_before_is_read_as_utc_and_wins(tmp_path, monkeypatch):
     assert bad.exit_code != 0 and "ISO 8601" in bad.output
 
 
+def _no_subscription(output: str) -> None:
+    flat = "".join(output.split())                  # a line wrapped by the terminal is read whole
+    assert SUB not in flat and "/subscriptions/" not in flat.lower(), output
+
+
+@pytest.mark.parametrize("args", [
+    ["--dry-run"],                                   # the dry run make bench-restore runs first
+    ["--yes"],                                       # fire-and-forget
+    ["--yes", "--wait", "--keep-isolated"],          # what make bench-restore runs then
+    ["--yes", "--wait"],                             # and the recovery that follows
+])
+def test_restore_says_the_vm_by_its_name_and_group_never_the_subscription(tmp_path, monkeypatch, args):
+    """IML1c: the output of `glorfindel restore` is pasted in an issue or a thread (the bench, 12/11:
+    make bench-restore showed the VM's full id, the subscription's id with it). The VM by its name and
+    its group, the vault by its short name; never the subscription's id, in every path."""
+    cli, started = _restore_env(tmp_path, monkeypatch)
+    vault_id = f"/subscriptions/{SUB}/resourceGroups/rg-backup/providers/Microsoft.RecoveryServices/vaults/rsv-example"
+    monkeypatch.setattr(cli, "_backup_vault_from_config", lambda v: (vault_id, "rg-backup", "stexample"))
+    restored = {"recovery_point_time": "2026-10-29 08:00:00+00:00", "run_command_neutralized": True}
+    monkeypatch.setattr("glorfindel.actions.AzureConnector", lambda dry_run=False: SimpleNamespace(
+        dry_run=dry_run, restore_from_backup=lambda *a, **k: restored))
+    monkeypatch.setattr(cli, "_write_signal", lambda sig: tmp_path / "recovery.json")
+
+    class Agent:
+        def __init__(self, **kw):
+            pass
+
+        def respond(self, sig):
+            assert sig["resource_id"] == VM           # the signal keeps the full id: the watch acts on it
+            raise RuntimeError("no model in the tests")
+    monkeypatch.setattr("glorfindel.agent.GlorfindelAgent", Agent)
+    out = CliRunner().invoke(cli.cli, ["restore", VM, "--before", "2026-10-29T07:30:00Z", *args],
+                             terminal_width=200)
+    assert out.exit_code == 0, out.output
+    said = " ".join(out.output.split())
+    assert f"Resource : vm-example-01 (groupe {RG_A})" in said and "Vault : rsv-example" in said
+    _no_subscription(out.output)
+    if args == ["--yes"]:
+        assert started == [(VM, "2026-10-29T07:30:00+00:00")]
+        assert "glorfindel jobs vm-example-01 --refresh" in said
+    if args == ["--yes", "--wait"]:
+        assert f"recovery_complete | Resource: vm-example-01 (groupe {RG_A})" in said
+
+
+@pytest.mark.parametrize("rid,said", [
+    (VM, f"vm-example-01 (groupe {RG_A})"),
+    (VM + "/", f"vm-example-01 (groupe {RG_A})"),
+    (VM.replace("resourceGroups", "resourcegroups"), f"vm-example-01 (groupe {RG_A})"),
+    ("vm-example-01", "vm-example-01"),
+    (f"/subscriptions/{SUB}/resourceGroups", "resourceGroups"),
+    ("", ""),
+])
+def test_a_vm_is_said_by_its_name_and_group(rid, said):
+    from glorfindel import cli
+    assert cli._vm_said(rid) == said and SUB not in cli._vm_said(rid)
+
+
 def test_restore_resolves_a_short_name_and_refuses_two(tmp_path, monkeypatch):
     cli, started = _restore_env(tmp_path, monkeypatch)
     monkeypatch.setattr("glorfindel.actions.active_isolations", lambda: [{"resource_id": VM}])
