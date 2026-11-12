@@ -1523,13 +1523,14 @@ def run() -> None:
             "refusent (fermé par défaut). Les cartes se jugent dans la console (page Glorfindel, TO JUDGE).[/yellow]")
     _say_queue_key()
     bot = GlorfindelBot(channel_id=int(channel_id_str), ping_role=ping_role, button_policy=policy)
-    _stop_on_sigterm()
+    previous = _stop_on_sigterm()
     try:
         bot.run(token, log_handler=None)
     finally:
         # JUG2: a bot that stops says it at once — the watch announces by the webhook without
         # waiting for its beat to age (a SIGKILL, a host cut, leave it: read mute after MUTE_AFTER_S).
         bot_beat.clear()
+        _restore_sigterm(previous)
 
 
 def _on_sigterm(_signum, _frame) -> None:
@@ -1540,6 +1541,15 @@ def _stop_on_sigterm() -> None:
     """JUG2 review: `docker stop` sends SIGTERM to `glorfindel bot`, PID 1 of its container, where
     Python installs no handler — the kernel ignored it and docker killed the bot 10 s later, its beat
     left behind. Read as a Ctrl-C: discord.py's `Client.run` stops its loop and returns, the beat is
-    removed."""
+    removed. Returns the handler it replaced, for `run()` to put back (JUG2b)."""
     import signal
-    signal.signal(signal.SIGTERM, _on_sigterm)
+    return signal.signal(signal.SIGTERM, _on_sigterm)
+
+
+def _restore_sigterm(previous) -> None:
+    """JUG2b (#768): the SIGTERM handler `run()` found put back once the bot stopped — a caller that
+    goes on (a test's worker) keeps its own. None (no handler known): nothing to put back."""
+    if previous is None:
+        return
+    import signal
+    signal.signal(signal.SIGTERM, previous)

@@ -664,3 +664,357 @@ def test_the_watch_reads_the_files_the_bot_writes():
 def test_the_watch_relays_at_its_housekeeping():
     cli = (Path(__file__).resolve().parents[2] / "glorfindel" / "cli.py").read_text(encoding="utf-8")
     assert "                        _relay_notices()" in cli and "_vm_notices.relay_pass()" in cli
+
+
+# ── JUG2b (#768): the fallback never holds the watch's loop ───────────────────────────────────
+
+def _left_to_the_bot(key: str = "action:never-answered") -> None:
+    """An action's announcement the bot never posted, recorded now: due at the next pass, the bot mute."""
+    vm_notices._record({"key": key, "resource_id": WEB, "kind": vm_notices.ACTION_KIND,
+                        "title": "VM isolée du réseau", "text": "isolée seule", "level": "ok", "via": "bot",
+                        "at": datetime.now(timezone.utc).isoformat()})
+
+
+def _join(*names: str) -> None:
+    import threading
+    for t in threading.enumerate():
+        if t.name in names:
+            t.join(10)
+
+
+def test_a_webhook_that_never_answers_holds_neither_the_watch_s_beat_nor_its_reassertion(
+        tmp_path, monkeypatch, bot_set):
+    """The real loop of `glorfindel watch`, its sleeps counted: an announcement due, the bot mute, a
+    webhook that never answers (no deadline either: the POST holds as long as it will). At the
+    housekeeping after, the POST still waiting, the watch writes its heartbeat and starts its
+    reassertion — before JUG2b, the loop waited 10 to 25 s per announcement."""
+    import atexit
+    import signal as signalmod
+    import threading
+    import time
+    from types import SimpleNamespace
+
+    import requests
+    from click.testing import CliRunner
+
+    from eregion_core import watch_channel as wc
+    from glorfindel import cli
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv(wc.CHANNEL_ENV, raising=False)
+    monkeypatch.delenv("EREGION_ACTION_QUEUE", raising=False)
+    monkeypatch.setenv("GLORFINDEL_REASSERT_INTERVAL_S", "0.000001")    # at each housekeeping
+    monkeypatch.setenv("GLORFINDEL_RECOVERY_INTERVAL_S", "0")
+    monkeypatch.setenv("GLORFINDEL_DOOR_FACTS_INTERVAL_S", "0")
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(cli, "_INJECTORS_DIR", home / ".glorfindel" / "injectors")
+    runs = tmp_path / "runs"
+    (runs / "annatar").mkdir(parents=True)
+    monkeypatch.setattr("eregion_core.watch_channel.start_local", lambda *a, **k: None)
+
+    class _Connector:
+        def __init__(self, dry_run=False):
+            pass
+
+        def private_ip_owners(self):
+            return {}
+
+    class _Agent:
+        def __init__(self, **kw):
+            self.autonomy = SimpleNamespace(default="human_only", assets=[])
+            self.config_error = ""
+            self.connector = SimpleNamespace(permission_mode=lambda: "read_write")
+
+    monkeypatch.setattr("glorfindel.actions.AzureConnector", _Connector)
+    monkeypatch.setattr("glorfindel.actions.warm_up_azure_sdk", lambda: None)
+    monkeypatch.setattr("glorfindel.agent.GlorfindelAgent", _Agent)
+    monkeypatch.setattr(cli, "_find_rules_file", lambda: None)
+    monkeypatch.setattr("eregion_core.inscription.TagEnrollment", lambda *a, **k: (lambda rid: True))
+    monkeypatch.setattr(atexit, "register", lambda *a, **k: None)
+    monkeypatch.setattr(signalmod, "signal", lambda *a, **k: None)
+
+    _left_to_the_bot()
+    entered, answered, release = threading.Event(), threading.Event(), threading.Event()
+
+    def never(url, json=None, timeout=None):
+        entered.set()
+        release.wait(5)          # never answers — 5 s at most: a loop it held fails, never hangs
+        answered.set()
+        raise requests.ConnectionError("no answer")
+    monkeypatch.setattr(requests, "post", never)
+    monkeypatch.setattr(vm_notices, "_wait", lambda done, s: done.wait())
+
+    def waiting() -> bool:
+        return entered.is_set() and not answered.is_set()
+    beats: list[bool] = []
+    reasserts: list[bool] = []
+    real_beat = cli._write_watch_heartbeat
+    monkeypatch.setattr(cli, "_write_watch_heartbeat", lambda path, at: (beats.append(waiting()), real_beat(path, at)))
+    monkeypatch.setattr(cli, "_watch_reassert_pass", lambda *a, **k: reasserts.append(waiting()))
+    real_sleep, calls = time.sleep, [0]
+
+    def _sleep(s):
+        # The watch loop's own sleep only (--interval 0): a housekeeping every 30 polls.
+        if threading.current_thread() is not threading.main_thread() or s != 0:
+            return real_sleep(s)
+        calls[0] += 1
+        if calls[0] == 30:                       # the first housekeeping done: its relay under way
+            deadline = time.monotonic() + 10
+            while (not entered.is_set() or any(t.name == "reassert" for t in threading.enumerate())) \
+                    and time.monotonic() < deadline:
+                real_sleep(0.01)
+        if calls[0] == 60:                       # the second one done
+            raise KeyboardInterrupt
+        return None
+
+    monkeypatch.setattr(cli.time, "sleep", _sleep)
+    try:
+        result = CliRunner().invoke(cli.cli, ["watch", str(runs), "--interval", "0"])
+    finally:
+        release.set()
+        _join("relay-notices", "webhook-post", "reassert")
+    assert result.exit_code == 0, result.output
+    assert entered.is_set()
+    assert True in beats, beats                  # a heartbeat written while the POST waited
+    assert True in reasserts, reasserts          # and a reassertion started
+    n = vm_notices.said("action:never-answered")
+    assert n["via"] == "bot" and n["tries"] == 1     # unreachable: back to the bot, one try counted
+
+
+def test_one_relay_pass_at_a_time(azure, bot_set):
+    """A pass running, another called (a thread started again): it does nothing."""
+    f, c = azure
+    _three_actions_left_to_the_bot(c)
+    assert vm_notices._PASS.acquire(blocking=False)
+    try:
+        assert vm_notices.relay_pass() == 0 and bot_set == []
+    finally:
+        vm_notices._PASS.release()
+    assert vm_notices.relay_pass() == 3
+
+
+def test_a_pass_stops_at_a_webhook_unreachable(azure, bot_set, answers):
+    """No answer: the pass stops there — the rest back to the bot, said at the next pass."""
+    import requests
+    f, c = azure
+    _three_actions_left_to_the_bot(c)
+    answers.append(requests.ConnectTimeout("unreachable"))
+    assert vm_notices.relay_pass() == 0
+    assert len(_relayed(bot_set)) == 1                                  # one tried, the others kept
+    assert [n["via"] for n in vm_notices._read()] == ["bot"] * 3
+    assert vm_notices.relay_pass() == 3 and len(_relayed(bot_set)) == 4
+
+
+def test_a_pass_starts_no_post_once_its_budget_spent(azure, bot_set, monkeypatch):
+    import requests
+    f, c = azure
+    _three_actions_left_to_the_bot(c)
+    clock = [0.0]
+    monkeypatch.setattr(vm_notices, "_monotonic", lambda: clock[0])
+
+    def slow(url, json=None, timeout=None):
+        bot_set.append({"url": url, **json})
+        clock[0] += vm_notices.RELAY_PASS_BUDGET_S                     # each answer takes the budget
+        return _Answer()
+    monkeypatch.setattr(requests, "post", slow)
+    assert vm_notices.relay_pass() == 1 and len(_relayed(bot_set)) == 1
+    assert [n["via"] for n in vm_notices._read()].count("bot") == 2     # the rest back to the bot
+    assert vm_notices.relay_pass() == 1 and vm_notices.relay_pass() == 1 and len(_relayed(bot_set)) == 3
+
+
+def test_a_post_without_an_answer_by_its_deadline_is_unreachable(bot_set, monkeypatch):
+    """The name's resolution, the connection or the read held past `POST_DEADLINE_S`: the post is
+    abandoned, `unreachable` — the caller goes on."""
+    import threading
+
+    import requests
+    release = threading.Event()
+
+    def held(url, json=None, timeout=None):
+        release.wait(5)
+        return _Answer()
+    monkeypatch.setattr(requests, "post", held)
+    monkeypatch.setattr(vm_notices, "POST_DEADLINE_S", 0.05)
+    try:
+        assert vm_notices._post({"content": "x"}, "k", NATIVE) == "unreachable"
+    finally:
+        release.set()
+        _join("webhook-post")
+
+
+def test_each_post_is_bounded_to_connect_and_to_read(bot_set, monkeypatch):
+    import requests
+    seen: list = []
+    monkeypatch.setattr(requests, "post", lambda url, json=None, timeout=None: (seen.append(timeout), _Answer())[1])
+    assert vm_notices._post({"content": "x"}, "k", NATIVE) == "sent"
+    assert seen == [(vm_notices.CONNECT_TIMEOUT_S, vm_notices.READ_TIMEOUT_S)]
+    assert vm_notices.CONNECT_TIMEOUT_S + vm_notices.READ_TIMEOUT_S <= vm_notices.POST_DEADLINE_S
+
+
+def test_the_bound_said_in_the_doc_holds_and_ends_before_a_mark_is_taken_back():
+    """docs/glorfindel.md: a pass lasts at most its budget and one notice — spacing, a POST, a short
+    429's wait, a second POST — some 86 s, under `RESEND_AFTER_S`: its marks never taken back while
+    it runs."""
+    one = vm_notices.RELAY_SPACING_S + 2 * vm_notices.POST_DEADLINE_S + vm_notices.RETRY_MAX_S
+    assert vm_notices.RELAY_PASS_BUDGET_S + one == 85.5 < vm_notices.RESEND_AFTER_S
+    assert vm_notices.RELAY_MAX_TRIES == 3
+
+
+# ── JUG2b: the tries of a notice are capped ───────────────────────────────────────────────────
+
+@pytest.mark.parametrize("lost", ["read timeout", "502"])
+def test_a_webhook_whose_answer_is_lost_says_it_three_times_at_most(azure, bot_set, answers, lost):
+    """Delivered perhaps, its answer lost (a read timeout, a 502 from the edge): said again, its
+    ping with it, `RELAY_MAX_TRIES` times at most — then the bot's, no new webhook; its card, at the
+    bot's return, pings."""
+    import requests
+    answers.extend([requests.ReadTimeout("answer lost") if lost == "read timeout" else _Answer(502)] * 6)
+    f, c = azure
+    _respond(c, _ransomware(), "isolate_vm")                            # the first try
+    assert vm_notices.relay_pass() == 0 and vm_notices.relay_pass() == 0
+    assert len(_relayed(bot_set)) == 3
+    assert vm_notices.relay_pass() == 0 and vm_notices.relay_pass() == 0
+    assert len(_relayed(bot_set)) == 3                                  # the cap: no new webhook
+    assert all(m["content"].startswith(f"<@&{ROLE}> ") for m in _relayed(bot_set))
+    n = _announcement()
+    assert n["via"] == "bot" and n["tries"] == vm_notices.RELAY_MAX_TRIES and "relayed" not in n
+    later = datetime.now(timezone.utc) + timedelta(seconds=vm_notices.CONFIRM_S + 60)
+    assert vm_notices.relay_pass(later) == 0 and len(_relayed(bot_set)) == 3
+    [card] = _cards()
+    _beat(0)
+    threads, said = _bot_returns(card)
+    assert said == 1 and len(_pings(threads)) == 1                      # the bot says it, its card pings
+
+
+@pytest.mark.parametrize("answer", [_Answer(404), _Answer(429, retry_after=30)])
+def test_a_refusal_counts_no_try(azure, bot_set, answers, answer):
+    """A 404, a long 429: nothing delivered, nothing to ping twice — no try counted; the passes go on
+    trying (a webhook back from a rate limit says it)."""
+    answers.extend([answer] * 5)
+    f, c = azure
+    _respond(c, _ransomware(), "isolate_vm")
+    for _ in range(4):
+        assert vm_notices.relay_pass() == 0
+    assert len(_relayed(bot_set)) == 5 and "tries" not in _announcement()
+    assert vm_notices.relay_pass() == 1
+
+
+def test_a_mark_taken_back_counts_a_try(azure, bot_set, monkeypatch):
+    """The watch stopped mid-send: its post may have gone — taken back, it counts one."""
+    real_settle, noted = vm_notices._settle, [False]
+    monkeypatch.setattr(vm_notices, "_settle", lambda outcome: real_settle(outcome) if noted[0] else None)
+    f, c = azure
+    _respond(c, _ransomware(), "isolate_vm")
+    noted[0] = True
+    later = datetime.now(timezone.utc) + timedelta(seconds=vm_notices.RESEND_AFTER_S + 5)
+    assert vm_notices.relay_pass(later) == 1
+    n = _announcement()
+    assert n["tries"] == 1 and n["relayed"]["sent"] is True
+
+
+@pytest.mark.parametrize("tries", ["3", True, -9, None])
+def test_tries_that_do_not_read_count_none(tries):
+    assert vm_notices._tries({"tries": tries}) == 0
+
+
+# ── JUG2b: the SIGTERM handler put back ───────────────────────────────────────────────────────
+
+def test_the_bot_puts_the_sigterm_handler_back_when_it_stops(monkeypatch):
+    """`docker stop` is read as a Ctrl-C while the bot runs; once it stopped, the handler it found
+    is back — a caller that goes on (a test's worker) keeps its own."""
+    pytest.importorskip("discord")
+    import signal
+
+    from glorfindel import bot
+    monkeypatch.setenv("DISCORD_BOT_TOKEN", "fake-token")
+    monkeypatch.setenv("DISCORD_CHANNEL_ID", "1")
+    monkeypatch.delenv("EREGION_ACTION_QUEUE", raising=False)
+    before = signal.getsignal(signal.SIGTERM)
+    during: list = []
+    monkeypatch.setattr(bot.GlorfindelBot, "run",
+                        lambda self, token, log_handler=None: during.append(signal.getsignal(signal.SIGTERM)))
+    try:
+        bot.run()
+        assert during == [bot._on_sigterm]
+        assert signal.getsignal(signal.SIGTERM) == before
+    finally:
+        if before is not None:
+            signal.signal(signal.SIGTERM, before)
+
+
+# ── JUG2b: a cut's closure falls back too, never pinging (Jonathan, 12/11) ────────────────────
+
+ASKED = "2026-11-12T20:00:00+00:00"
+
+
+def _closed(ended: dict):
+    from glorfindel import drain_watch
+    return lambda: drain_watch._say_closed("web", WEB, {**ended, "asked_at": ASKED}, 12, [])
+
+
+def _unfollowed():
+    from glorfindel import drain_watch
+    drain_watch._say_unfollowed(WEB, ASKED, "levée")
+
+
+CLOSURES = {
+    "drained": (_closed({"status": "drained"}), "✅ **Coupure des sessions aboutie**"),
+    "refused": (_closed({"status": "failed", "refused": True, "error": "403"}), "🚨 **Coupure des sessions"),
+    "open": (_closed({"status": "partial", "error": "ss -K"}), "🚨 **Coupure des sessions"),
+    "never": (_closed({"status": "failed", "never": True, "error": "non relu"}), "⚠️ **Coupure des sessions"),
+    "unfollowed": (_unfollowed, "⚠️ **Coupure des sessions"),
+}
+
+
+@pytest.mark.parametrize("outcome", sorted(CLOSURES))
+def test_the_bot_mute_every_closure_goes_once_by_the_webhook_without_a_ping(bot_set, outcome):
+    """Drained too: each closure of a cut said once in the channel by Discord's own endpoint, no
+    mention at all; the bot back never posts it."""
+    from glorfindel import drain_watch
+    say, head = CLOSURES[outcome]
+    say()
+    say()                                                               # said again: nothing more
+    [msg] = _relayed(bot_set)
+    assert len(bot_set) == 1 and msg["content"].startswith(head) and "<@&" not in msg["content"]
+    assert msg["allowed_mentions"] == {"parse": [], "roles": []}
+    assert "Le bot Discord se tait" in msg["content"] and "TO JUDGE" not in msg["content"]
+    [n] = vm_notices._read()
+    assert n["key"] == drain_watch.closure_key(WEB, ASKED) and n["kind"] == vm_notices.CLOSURE_KIND
+    assert n["via"] == "webhook" and n["relayed"]["ping"] is False and n["relayed"]["sent"] is True
+    assert vm_notices.relay_pass() == 0 and len(bot_set) == 1 and vm_notices.for_bot() == []
+    _beat(0)                                                            # the bot back
+    threads: dict = {}
+    assert asyncio.run(_bot(threads)._post_notices(None)) == 0 and threads == {}
+
+
+def test_the_bot_alive_a_closure_stays_in_the_vm_s_thread(bot_set):
+    _beat(0)
+    CLOSURES["drained"][0]()
+    assert bot_set == [] and [n["via"] for n in vm_notices.for_bot()] == ["bot"]
+    assert vm_notices.relay_pass() == 0 and bot_set == []
+    threads: dict = {}
+    assert asyncio.run(_bot(threads)._post_notices(None)) == 1
+    [msg] = threads[WEB.lower()].sent
+    assert msg["content"].startswith("✅ **Coupure des sessions aboutie**") and _pings(threads) == []
+
+
+def test_a_closure_left_to_the_bot_then_mute_goes_by_the_webhook_at_the_next_pass(bot_set, answers):
+    """The bot alive at the closure, mute before its post: the next pass says it, no ping — and a
+    webhook that fails gives it back to the bot, as an action's announcement."""
+    _beat(0)
+    CLOSURES["never"][0]()
+    _beat(bot_beat.MUTE_AFTER_S + 30)
+    answers.append(_Answer(500))
+    assert vm_notices.relay_pass() == 0 and vm_notices.for_bot()        # failed: back to the bot
+    assert vm_notices.relay_pass() == 1
+    msgs = _relayed(bot_set)
+    assert len(msgs) == 2 and all("<@&" not in m["content"] for m in msgs)
+    _beat(0)
+    threads: dict = {}
+    assert asyncio.run(_bot(threads)._post_notices(None)) == 0 and threads == {}
+
+
+def test_the_closure_s_kind_is_the_one_the_drain_writes():
+    src = (Path(__file__).resolve().parents[2] / "glorfindel" / "drain_watch.py").read_text(encoding="utf-8")
+    assert src.count(f'"{vm_notices.CLOSURE_KIND}"') == 2 and vm_notices.CLOSURE_KIND in vm_notices.RELAY_KINDS

@@ -560,9 +560,11 @@ def test_the_allowed_ids_come_from_the_environment(monkeypatch):
     assert not bot.ButtonPolicy.from_env({})[0].configured
 
     import io
+    import signal
 
     from rich.console import Console
 
+    sigterm = signal.getsignal(signal.SIGTERM)
     for env, said in (({}, "fermé par défaut"), ({"DISCORD_ALLOWED_USERS": "111"}, "1 utilisateur(s)")):
         log = io.StringIO()
         monkeypatch.setattr(bot, "_console", Console(file=log, width=200))
@@ -577,6 +579,8 @@ def test_the_allowed_ids_come_from_the_environment(monkeypatch):
         bot.run()
         assert said in log.getvalue()
         assert started[0].users == ({111} if env else frozenset())
+        # JUG2b: the SIGTERM handler `run()` installs is put back — nothing left in this worker.
+        assert signal.getsignal(signal.SIGTERM) == sigterm
 
 
 # ── V-08 : un bouton périmé ne lance rien ────────────────────────────────────────────────

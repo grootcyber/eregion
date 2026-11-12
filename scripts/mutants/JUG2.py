@@ -11,7 +11,8 @@ _T = "tests/unit/test_bot_fallback.py"
 MUTANTS = [
     ("M4970", "the bot stopped, the action still left to it: announced nowhere until it comes back, and "
      "lost after 24 h (JUG2)", NOTICES,
-     '    why = relay_reason() if notice["via"] == "bot" and kind == ACTION_KIND else ""\n',
+     # JUG2b: its anchor follows the closures' fallback (RELAY_KINDS).
+     '    why = relay_reason() if notice["via"] == "bot" and kind in RELAY_KINDS else ""\n',
      '    why = ""\n'),
     ("M4971", "a heartbeat hours old reads alive: a bot stopped long ago still takes the announcements "
      "(JUG2)", BEAT,
@@ -67,8 +68,9 @@ MUTANTS += [
      ""),
     ("M4998", "`docker stop` leaves the bot's beat: SIGTERM ignored by PID 1, the fallback waits 3 min and "
      "a pass (JUG2 review)", BOT,
-     "    _stop_on_sigterm()\n",
-     ""),
+     # JUG2b: its anchor follows the handler put back (`previous`).
+     "    previous = _stop_on_sigterm()\n",
+     "    previous = None\n"),
     ("M4999", "a pass posts its relayed announcements back to back: Discord's 429 loses part of a burst "
      "(JUG2 review)", NOTICES,
      "        if i:\n            _sleep(RELAY_SPACING_S)\n",
