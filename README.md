@@ -550,8 +550,9 @@ glorfindel restore <resource_id> --yes          # Azure Backup restore: newest p
 glorfindel jobs <vm-name> [--refresh]           # snapshot/restore job status
 glorfindel list                                 # all VMs with active actions (isolation + blocked IPs)
 glorfindel list --ids                           # the same with their full ARM ids (this terminal only)
-# What the CLI shows never carries a subscription's id (MSK2): a VM by its name and group, Azure's
-# errors and the decision rendered included; the signal and the journals keep the full id.
+# What the CLI shows a human never carries a subscription's id (MSK2): a VM by its name and group, Azure's
+# errors, the decision rendered, the cards of `pending` and the reasons of `activate` included. The signal,
+# the journals and the watch's own log lines (`glorfindel watch`, docker logs: the machine's) keep the full id.
 #
 # Console buttons:    ↩️ Release (isolated) | ↩️ Unblock (that IP alone) | ⟳ Reset (both)
 # TUI keyboard:       x:release  u:unblock  v:reset  r:restore

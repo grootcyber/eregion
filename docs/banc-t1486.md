@@ -536,7 +536,7 @@ La sortie nomme la VM par son nom et son groupe (`Resource : <vm> (groupe <rg>)`
 son nom, jamais l'id de l'abonnement (IML1c), ni dans le texte d'une erreur d'Azure, le refus d'un nom
 ambigu ou, avec `--wait` sans `--keep-isolated`, la décision rendue (MSK2). Ce qui reste à relire avant
 de coller : les noms eux-mêmes (VM, groupe, coffre) et, dans un message d'Azure, l'object id d'un
-principal, que rien ne masque.
+principal ou l'id d'un tenant, que rien ne masque.
 
 *Vérifié à blanc*, dans un `HOME` jetable : la première commande dit le coffre, `Before : <AVANT>
 (--before)`, puis « DRY RUN — no changes made. ». Elle dit aussi son identité (RST1) : `Identity :

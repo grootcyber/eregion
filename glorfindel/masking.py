@@ -19,11 +19,14 @@ _GUID = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F
 # An ARM id, with or without its leading slash, up to what cannot be in one: a blank, a quote,
 # a bracket, a comma, the query of a URL (« ?api-version=… »). A ';' can (a recovery point's
 # protected item: « vm;iaasvmcontainerv2;rg;vm »); one that ends it is a sentence's.
-_ARM_ID = re.compile(r"/?\bsubscriptions/[^\s'\"`,()\[\]{}<>?#&|\\]+", re.IGNORECASE)
-_SUB_IN_ID = re.compile(r"\bsubscriptions(?:/|%2F)(" + _GUID + ")", re.IGNORECASE)   # a URL's too
-# « The subscription 'guid' could not be found », « abonnement guid » : a bare one, named.
-_SUB_NAMED = re.compile(r"\b((?:subscription|abonnement)s?(?:[ _-]?id)?)(\W{1,3})(" + _GUID + r")\b",
-                        re.IGNORECASE)
+_ARM_ID = re.compile(r"/?(?<![A-Za-z0-9])subscriptions/[^\s'\"`,()\[\]{}<>?#&|\\]+", re.IGNORECASE)
+# A URL's too, encoded whole (« %2Fsubscriptions%2F<guid> »): after « %2F », no word boundary.
+_SUB_IN_ID = re.compile(r"(?:(?<![A-Za-z0-9])|(?<=%2F))subscriptions(?:/|%2F)(" + _GUID + ")", re.IGNORECASE)
+# « The subscription 'guid' could not be found », « subscription identifier 'guid' », the JSON
+# « "subscriptionId": "guid" », « abonnement guid » : a bare one, named.
+_SUB_NAMED = re.compile(r"(?<![A-Za-z0-9])((?:subscription|abonnement)s?(?:[ _-]?(?:identifier|id))?)"
+                        r"([\s\"'=:(«»/]{1,4})(" + _GUID + r")(?![0-9A-Za-z])", re.IGNORECASE)
+_PATH_BEFORE = re.compile(r"[A-Za-z0-9_.~@#%-]")      # the id's « / » then separates it from a path
 _TRAILING = ".;:!"
 SUBSCRIPTION = "<abonnement>"
 
@@ -53,11 +56,13 @@ def resource_said(resource_id: str) -> str:
     return "l'abonnement"
 
 
-def subscriptions_known(text: str = "", environ=None) -> set[str]:
+def subscriptions_known(text: str = "", environ=None, subscriptions=()) -> set[str]:
     """The subscriptions' ids to keep off a terminal: those this environment names (any
-    `…SUBSCRIPTION_ID` that is a GUID) and those an ARM id of `text` carries. Lower case."""
+    `…SUBSCRIPTION_ID` that is a GUID), those the caller knows (`subscriptions`: a connector's)
+    and those an ARM id of `text` carries. Lower case."""
     env = os.environ if environ is None else environ
     known = {m.group(1).lower() for m in _SUB_IN_ID.finditer(str(text or ""))}
+    known |= {str(s).strip().lower() for s in subscriptions or () if re.fullmatch(_GUID, str(s or "").strip())}
     for name, value in env.items():
         if name.upper().endswith("SUBSCRIPTION_ID") and re.fullmatch(_GUID, str(value or "").strip()):
             known.add(str(value).strip().lower())
@@ -67,14 +72,17 @@ def subscriptions_known(text: str = "", environ=None) -> set[str]:
 def _id_said(match: re.Match) -> str:
     raw = match.group(0)
     core = raw.rstrip(_TRAILING)
-    return resource_said(core) + raw[len(core):]
+    start = match.start()
+    # « …/resource/subscriptions/… » keeps its « / »: the name never sticks to the path before it.
+    lead = "/" if raw.startswith("/") and start and _PATH_BEFORE.match(match.string[start - 1]) else ""
+    return lead + resource_said(core) + raw[len(core):]
 
 
-def ids_masked(text, environ=None) -> str:
+def ids_masked(text, environ=None, subscriptions=()) -> str:
     """`text` without a subscription's id: each ARM id said by `resource_said`, each id of a
     known subscription (`subscriptions_known`), or a GUID a « subscription » names, « <abonnement> »."""
     out = str(text if text is not None else "")
-    known = subscriptions_known(out, environ)
+    known = subscriptions_known(out, environ, subscriptions)
     out = _ARM_ID.sub(_id_said, out)
     out = _SUB_NAMED.sub(lambda m: f"{m.group(1)}{m.group(2)}{SUBSCRIPTION}", out)
     for sub in known:

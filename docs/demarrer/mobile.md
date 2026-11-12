@@ -422,7 +422,7 @@ La sortie nomme la VM par son nom et son groupe (`Resource : <vm> (groupe <rg>)`
 son nom, jamais l'id de l'abonnement (IML1c), ni dans le texte d'une erreur d'Azure, le refus d'un nom
 ambigu ou, avec `--wait` sans `--keep-isolated`, la décision rendue (MSK2). Ce qui reste à relire avant
 de coller : les noms eux-mêmes (VM, groupe, coffre) et, dans un message d'Azure, l'object id d'un
-principal, que rien ne masque.
+principal ou l'id d'un tenant, que rien ne masque.
 
 La levée reste celle d'Imladris (étape 7 de banc-t1486.md) ; `make bench-report RUN=<run_id>` reste
 possible à la main, à tout moment.

@@ -1779,7 +1779,8 @@ def _render_escalation(e: dict) -> None:
     table.add_row("Action", f"[bold yellow]{e['action']}[/bold yellow]")
     table.add_row("Resource", resource_short)
     table.add_row("Type", e["escalation_type"])
-    table.add_row("Reason", e["reason"][:120] + ("…" if len(e["reason"]) > 120 else ""))
+    reason = _ids_masked(e["reason"])                   # the model's words: masked, then cut (MSK2)
+    table.add_row("Reason", _esc_markup(reason[:120]) + ("…" if len(reason) > 120 else ""))
     table.add_row("Run", e["run_id"])
     console.print(table)
 
@@ -1798,8 +1799,19 @@ def _card_moment(e: dict) -> str:
         return "<ISO8601>"
 
 
+def _name_for_a_command(resource_id: str) -> str:
+    """What a suggested command names a VM by: its short name, which every command takes back
+    (`_resolve_resource_id`); a name two VMs hold, the id that `list --ids` shows (MSK2)."""
+    short = _short_name(resource_id)
+    try:
+        _resolve_resource_id(short)
+    except click.ClickException:
+        return "<id: glorfindel list --ids>"
+    return short
+
+
 def _render_next_steps(e: dict) -> None:
-    rid = e["resource_id"]
+    rid = _name_for_a_command(e["resource_id"])      # never the full id on the card (MSK2)
     action = e["action"]
     esc_type = e["escalation_type"]
 
@@ -1807,13 +1819,13 @@ def _render_next_steps(e: dict) -> None:
     if llm_steps:
         console.print("  [bold cyan]Next steps (Glorfindel):[/bold cyan]")
         for i, step in enumerate(llm_steps, 1):
-            console.print(f"  [cyan]{i}.[/cyan] {step}")
+            console.print(f"  [cyan]{i}.[/cyan] {_esc_markup(_ids_masked(step))}")
         return
 
     # Fallback statique pour les escalades sans suggested_steps (anciennes ou dry-run)
     if esc_type == "low_confidence" and action == "snapshot":
         steps = [
-            f"Check VM state: az vm show -g <rg> -n {rid.split('/')[-1]} --query powerState",
+            f"Check VM state: az vm show -g <rg> -n {_short_name(e['resource_id'])} --query powerState",
             f"If compromise confirmed: glorfindel restore {rid} --yes --before {_card_moment(e)}"
             "   # un instant avant le début de l'attaque",
             f"If false positive: glorfindel ack {e['id']}",
@@ -2105,17 +2117,25 @@ def activate(vm: str, yes: bool):
         quarantine = load_glorfindel_config().isolation.quarantine_nsg
     except Exception:
         quarantine = True
-    a = readiness.assess(rid, AzureConnector(dry_run=False), quarantine_nsg=quarantine)
+    connector = AzureConnector(dry_run=False)
+    a = readiness.assess(rid, connector, quarantine_nsg=quarantine)
+    # « VM dans l'abonnement <target>, Glorfindel agit dans <mine> » (other_subscription): both
+    # said without their ids (MSK2).
+    from glorfindel.actions import _subscription_of
+    subs = [s for s in (getattr(connector, "_subscription_id", None), _subscription_of(rid))
+            if isinstance(s, str) and s]
     colors = {"ready": "green", "reserve": "yellow", "not_ready": "red"}
     console.rule(f"[bold]Autonomous response — {a['vm']}[/bold]")
     console.print(f"  Verdict : [{colors[a['verdict']]}]{a['verdict']}[/{colors[a['verdict']]}]")
     for r in a["reasons"]:
-        console.print(f"  • [{r['level']}] {r['message']}", soft_wrap=True)
+        console.print(f"  • [{r['level']}] {_esc_markup(_ids_masked(r['message'], subscriptions=subs))}",
+                      soft_wrap=True)
         if r.get("fix"):
-            console.print(f"    [dim]fix: {r['fix']}[/dim]", soft_wrap=True)
+            console.print(f"    [dim]fix: {_esc_markup(_ids_masked(r['fix'], subscriptions=subs))}[/dim]",
+                          soft_wrap=True)
     refusal = readiness.activation_refusal(a, a["reserve_codes"])
     if refusal:
-        raise click.ClickException(refusal)
+        raise click.ClickException(_ids_masked(refusal, subscriptions=subs))
     if a["reserve_codes"] and not yes and not click.confirm(
             f"Accept these reserves ({', '.join(a['reserve_codes'])}) and turn on "
             "autonomous response?", default=False):

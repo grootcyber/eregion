@@ -83,6 +83,11 @@ def test_an_arm_id_is_said_by_its_name_and_group(rid, said):
     f"Microsoft.RecoveryServices/vaults/rsv/backupFabrics/Azure/protectionContainers/"
     f"iaasvmcontainer;iaasvmcontainerv2;{RG};vm/protectedItems/vm;iaasvmcontainerv2;{RG};vm/recoveryPoints/42",
     f"subscriptions/{SUB}/resourceGroups/{RG} (without its slash); [{VM}]; \"{VM}\", {VM}.",
+    # The review of MSK2: encoded whole, the JSON of an error body, « identifier » — no environment.
+    f"https://management.azure.com%2Fsubscriptions%2F{SUB}%2FresourceGroups%2F{RG}",
+    f'{{"error": {{"subscriptionId": "{SUB}"}}}}',
+    f"The subscription identifier '{SUB}' is not valid",
+    f"SUBSCRIPTION_ID={SUB}",
 ])
 def test_no_subscription_id_is_left_in_a_text(text):
     _clean(masking.ids_masked(text, environ={}))
@@ -96,6 +101,23 @@ def test_what_carries_no_id_is_unchanged_and_the_names_stay():
     assert "object id '11111111-2222-3333-4444-555555555555'" in said
     assert masking.ids_masked(f"see {VM}.", environ={}) == f"see vm-example-01 (groupe {RG})."
     assert masking.ids_masked(None, environ={}) == ""
+
+
+def test_the_id_s_slash_still_separates_it_from_the_path_before():
+    """« …/resource/subscriptions/… » never becomes « …/resourcegroupe rg »; a scope said alone
+    keeps no slash before it."""
+    portal = f"https://portal.azure.com/#@tenant/resource/subscriptions/{SUB}/resourceGroups/{RG}/overview"
+    assert masking.ids_masked(portal, environ={}).endswith(f"/resource/groupe {RG}")
+    assert masking.ids_masked(f"foo/subscriptions/{SUB}", environ={}) == "foo/l'abonnement"
+    assert masking.ids_masked(f"scope '/subscriptions/{SUB}'", environ={}) == "scope 'l'abonnement'"
+    assert masking.ids_masked(f"see /subscriptions/{SUB}", environ={}) == "see l'abonnement"
+
+
+def test_a_subscription_the_caller_knows_is_masked_bare():
+    text = f"Glorfindel agit dans {SUB2}"
+    assert masking.ids_masked(text, environ={}) == text
+    assert masking.ids_masked(text, environ={}, subscriptions=[SUB2.upper(), "", None]) == (
+        "Glorfindel agit dans <abonnement>")
 
 
 def test_the_environment_s_subscription_is_masked_even_bare():
@@ -115,11 +137,29 @@ def test_only_the_cli_masks_never_what_the_model_sees():
     for path in (ROOT / "glorfindel").rglob("*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
-            names = ([a.name for a in node.names] if isinstance(node, ast.Import) else
-                     [node.module or ""] if isinstance(node, ast.ImportFrom) else [])
-            if any(n == "glorfindel.masking" or n.endswith(".masking") for n in names):
+            if any(_imports_masking(node)):
                 users.append(path.relative_to(ROOT).as_posix())
     assert users == ["glorfindel/cli.py"]
+
+
+def _imports_masking(node):
+    """Every form: `import glorfindel.masking`, `from glorfindel.masking import …`, `from glorfindel
+    import masking`, `from .masking import …`, `from . import masking`."""
+    if isinstance(node, ast.Import):
+        yield from (a.name.split(".")[-1] == "masking" for a in node.names)
+    elif isinstance(node, ast.ImportFrom):
+        module = node.module or ""
+        yield module.split(".")[-1] == "masking"
+        yield from (a.name == "masking" for a in node.names)
+
+
+@pytest.mark.parametrize("source", [
+    "import glorfindel.masking", "from glorfindel.masking import ids_masked", "from glorfindel import masking",
+    "from .masking import ids_masked", "from . import masking", "from .. import masking",
+])
+def test_the_guard_sees_every_form_of_import(source):
+    assert any(any(_imports_masking(n)) for n in ast.walk(ast.parse(source)))
+    assert not any(any(_imports_masking(n)) for n in ast.walk(ast.parse("from glorfindel import actions")))
 
 
 # ── 2. The paths of the CLI ───────────────────────────────────────────────────────────
@@ -386,6 +426,72 @@ def test_reset_says_what_stays_without_the_subscription(monkeypatch, recorded):
         "note": ""})
     out = _run(["reset", VM, "--from-azure", "--yes"])
     assert out.exit_code == 2, out.output
+    _clean(out.output)
+
+
+def test_pending_says_the_card_without_the_subscription(monkeypatch, recorded):
+    """The card pasted most: its reason and the model's steps masked, the reason cut after."""
+    from glorfindel import escalations
+    long_reason = f"Ransomware on {VM} in subscription {SUB}: " + "x" * 200
+    escalations.record("sig-1", VM, "restore_from_backup", "destructive_action", long_reason, run_id="r1",
+                       suggested_steps=[f"glorfindel restore {VM} --yes --before 2026-10-29T07:30:00Z",
+                                        f"az vm start --ids {VM}"])
+    out = _run(["pending"])
+    assert out.exit_code == 0, out.output
+    said = " ".join(out.output.split())
+    assert f"Ransomware on vm-example-01 (groupe {RG}) in subscription <abonnement>" in said and "…" in said
+    assert f"glorfindel restore vm-example-01 (groupe {RG}) --yes" in said
+    _clean(out.output)
+    assert SUB in escalations.pending()[0]["reason"]            # the card itself keeps the id
+
+
+@pytest.mark.parametrize("action,kind,step", [
+    ("restore_from_backup", "destructive_action", "glorfindel restore vm-example-01 --yes --before"),
+    ("release_isolation", "low_confidence", "glorfindel release vm-example-01 --yes"),
+    ("restore_from_backup", "proposed_action", "glorfindel restore vm-example-01 --yes --before"),
+    ("snapshot", "low_confidence", "If compromise confirmed: glorfindel restore vm-example-01 --yes"),
+    ("delete_resource", "destructive_action", "glorfindel delete-resource vm-example-01 --yes"),
+])
+def test_pending_s_own_steps_name_the_vm_by_its_short_name(monkeypatch, recorded, capsys, action, kind, step):
+    from glorfindel import cli
+    card = {"id": "esc-1", "resource_id": VM, "action": action, "escalation_type": kind,
+            "reason": "r", "run_id": "r1", "timestamp": "2026-10-29T08:00:00+00:00"}
+    cli._render_escalation(card)
+    out = capsys.readouterr().out
+    said = " ".join(out.split())
+    assert step in said, said
+    _clean(out)
+
+
+def test_pending_never_suggests_a_name_two_vms_hold(monkeypatch, recorded, capsys):
+    from glorfindel import cli
+    monkeypatch.setattr("glorfindel.discovery.AssetRegistry", lambda: SimpleNamespace(all=lambda: [
+        SimpleNamespace(resource_id=VM), SimpleNamespace(resource_id=_vm(rg=RG_B))]))
+    cli._render_escalation({"id": "esc-1", "resource_id": VM, "action": "release_isolation",
+                            "escalation_type": "low_confidence", "reason": "r", "run_id": "r1",
+                            "timestamp": "2026-10-29T08:00:00+00:00"})
+    out = capsys.readouterr().out
+    assert "glorfindel release <id: glorfindel list --ids> --yes" in " ".join(out.split())
+    _clean(out)
+
+
+def test_activate_says_its_reasons_without_the_subscriptions(monkeypatch, recorded):
+    """other_subscription names both subscriptions bare; the environment names neither."""
+    from glorfindel import readiness
+    monkeypatch.setattr("glorfindel.actions.active_isolations", lambda: [{"resource_id": VM}])
+    _connector(monkeypatch, _subscription_id=SUB2)
+    monkeypatch.setattr("glorfindel.config.load_glorfindel_config",
+                        lambda *a, **k: SimpleNamespace(isolation=SimpleNamespace(quarantine_nsg=True)))
+    monkeypatch.setattr(readiness, "assess", lambda rid, connector, quarantine_nsg=True: {
+        "vm": "vm-example-01", "verdict": "not_ready", "reserve_codes": [],
+        "reasons": [{"level": "not_ready", "code": "other_subscription",
+                     "message": f"VM dans l'abonnement {SUB}, Glorfindel agit dans {SUB2} : toute action "
+                                "serait refusée.",
+                     "fix": f"Une instance de Glorfindel configurée pour {SUB}."}]})
+    monkeypatch.setattr(readiness, "activation_refusal", lambda a, codes: f"refusé : Glorfindel agit dans {SUB2}")
+    out = _run(["activate", "vm-example-01"])
+    assert out.exit_code != 0 and "Glorfindel agit dans <abonnement>" in out.output, out.output
+    assert "refusé : Glorfindel agit dans <abonnement>" in " ".join(out.output.split())
     _clean(out.output)
 
 
