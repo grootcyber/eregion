@@ -460,6 +460,13 @@ qui tombe, la console ne la remplace plus.
   approuvée, un acquittement. Une console compromise s'en sert pour faire agir la watch.
   **FS1f le ferme** (Q5) : ces écritures passent par la file, et la console et le bot montent
   `~/.glorfindel` en lecture seule.
+  - **`vm_notices.jsonl`** (DRN2, #754) : ce que la watch dit d'une VM hors d'une carte (la clôture
+    d'une coupure des sessions), que le bot poste dans le fil de la VM. Il ne décide de rien : la
+    watch n'y lit que « cette clôture a-t-elle été dite ? », jamais une issue — l'issue d'une
+    coupure est celle relue sur Azure, écrite dans l'état d'isolation. Un écrivain forgé peut y
+    faire taire une clôture (sa clé prise d'avance), en faire dire une deux fois (sa ligne retirée),
+    ou faire poster par le bot un texte, échappé, dans un fil ; jamais déclarer une session coupée.
+    FS1f le met en lecture seule chez la console avec le reste.
 - **La CLI** garde l'appel direct (Q4).
 - **Sur Imladris, la séparation des identités** repose sur ce que l'option retenue au Q3 tient : un
   pare-feu, ou un montage. Elle se mesure (§5).
@@ -651,7 +658,9 @@ Une à la fois, l'option recommandée en premier.
 acquittements), et l'état que la console écrit encore ?**
 1. **Elles passent par la file dans FS1f, et FS1f fait partie du prérequis** avant toute VM hors du
    banc *(recommandé)*. Raison : sans lui, une console compromise forge l'original d'une quarantaine
-   ou une coupure, puis la watch agit dessus avec son identité d'écriture (§3.2). Ce que ça change :
+   ou une coupure, puis la watch agit dessus avec son identité d'écriture (§3.2). Le magasin des
+   notices de la watch (`vm_notices.jsonl`, DRN2) en est aussi : il ne décide de rien, mais un
+   faux y fait taire ou doubler un message. Ce que ça change :
    +3 à 4 j avant la sortie du banc, et la console et le bot montent `~/.glorfindel` en lecture
    seule.
 2. **FS1f après la sortie du banc**, le point dit ouvert au modèle de menace. Ce que ça change : on

@@ -77,6 +77,9 @@ def drain_outcome(result) -> dict:
 
 # The drains still running on Azure, by VM id (lowercase): their poller, when each was asked.
 _FOLLOWED: dict[str, dict] = {}
+# DRN2 review: the drains of this process a new one replaced before their end (a VM isolated anew
+# while its cut still ran), by VM id: their nonce, until their closure is said (drain_watch).
+_SUPERSEDED: dict[str, list[str]] = {}
 _LOCK = threading.Lock()
 
 
@@ -88,14 +91,18 @@ def pending(resource_id: str, poller, asked: float, waited_s: float) -> dict:
         # `asked_at`, the drain's nonce: the state names the drain it waits for, the entry the one
         # this process asked — another process's isolation of the VM (`glorfindel respond`) writes
         # its own, and this poller is never read as its outcome (DRN1 review).
-        _FOLLOWED[resource_id.rstrip("/").lower()] = {"poller": poller, "asked": asked, "asked_at": asked_at}
+        key = resource_id.rstrip("/").lower()
+        before = _FOLLOWED.get(key)
+        if before and before.get("asked_at") and before.get("asked_at") != asked_at:
+            _SUPERSEDED.setdefault(key, []).append(before["asked_at"])
+        _FOLLOWED[key] = {"poller": poller, "asked": asked, "asked_at": asked_at}
     status = azure_status(poller)
     return {"status": "pending", "waited_s": round(waited_s),
             "asked_at": asked_at,
             **({"azure_status": status} if status else {}),
             "note": (f"coupure en attente : Run Command toujours en cours sur Azure après "
                      f"{round(waited_s)} s ({status or 'statut non lu'}) — suivie, son statut relu "
-                     "à chaque passe de la réaffirmation")}
+                     "à chaque passe de la réaffirmation, son issue dite par un message")}
 
 
 class DrainFollowMixin:
@@ -130,6 +137,28 @@ class DrainFollowMixin:
         """Stop following a drain (ended and said, given up, its VM released)."""
         with _LOCK:
             _FOLLOWED.pop(resource_id.rstrip("/").lower(), None)
+
+    def drain_asked_at(self, resource_id: str) -> str | None:
+        """When the drain this process follows on `resource_id` was asked (its nonce), or None — what
+        names its closure when its VM no longer waits for it (DRN2, glorfindel/drain_watch.py)."""
+        with _LOCK:
+            entry = _FOLLOWED.get(resource_id.rstrip("/").lower())
+        return entry.get("asked_at") if entry else None
+
+    def superseded_drains(self) -> list[tuple[str, str]]:
+        """(VM id, nonce) of each drain of this process a new one replaced before its end (DRN2)."""
+        with _LOCK:
+            return [(rid, asked) for rid, nonces in _SUPERSEDED.items() for asked in nonces]
+
+    def forget_superseded(self, resource_id: str, asked_at: str) -> None:
+        """A replaced drain's closure said: forgotten."""
+        key = resource_id.rstrip("/").lower()
+        with _LOCK:
+            left = [a for a in _SUPERSEDED.get(key, []) if a != asked_at]
+            if left:
+                _SUPERSEDED[key] = left
+            else:
+                _SUPERSEDED.pop(key, None)
 
     def followed_drains(self) -> list[str]:
         """The VM ids (lowercase) whose drain this process still follows."""

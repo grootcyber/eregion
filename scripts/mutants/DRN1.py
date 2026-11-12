@@ -55,8 +55,12 @@ MUTANTS = [
     ("M4715", "the state written before the card: a card refused, the outcome said nowhere and the "
      "pending card closed with a false note (DRN1 review, L1A)", WATCH,
      "    _say_ended(vm, rid, ended, report)\n"
-     "    _save_isolation_state(rid, {**state, \"drain\": ended, \"drain_ended_at\": now.isoformat()})\n",
-     "    _save_isolation_state(rid, {**state, \"drain\": ended, \"drain_ended_at\": now.isoformat()})\n"
+     "    due = {\"key\": closure_key(rid, ended.get(\"asked_at\")), \"after_s\": elapsed, \"read\": got is not None}\n"
+     "    ended_state = {**state, \"drain\": ended, \"drain_ended_at\": now.isoformat(), \"drain_closure_due\": due}\n"
+     "    _save_isolation_state(rid, ended_state)\n",
+     "    due = {\"key\": closure_key(rid, ended.get(\"asked_at\")), \"after_s\": elapsed, \"read\": got is not None}\n"
+     "    ended_state = {**state, \"drain\": ended, \"drain_ended_at\": now.isoformat(), \"drain_closure_due\": due}\n"
+     "    _save_isolation_state(rid, ended_state)\n"
      "    _say_ended(vm, rid, ended, report)\n"),
     ("M4716", "the drain's nonce ignored: another process's isolation (glorfindel respond) said cut from "
      "this watch's poller (DRN1 review)", RUN,
@@ -73,7 +77,7 @@ MUTANTS = [
     ("M4719", "the poller of a VM released kept: read later as another drain's outcome (DRN1 review)",
      WATCH,
      '            if not isinstance(drain, dict) or drain.get("status") != "pending":\n'
-     "                drop(rid)\n",
+     "                _let_go(connector, rid, state)\n",
      '            if not isinstance(drain, dict) or drain.get("status") != "pending":\n'
      "                pass\n"),
 ]

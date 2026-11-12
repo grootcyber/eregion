@@ -961,6 +961,19 @@
    "doc": "docs/glorfindel.md"
   },
   {
+   "id": "g-coupure-close",
+   "composant": "glorfindel",
+   "poste": "g-verifier",
+   "nom": "A session cut announced pending is closed once, its outcome in the VM's thread and on the console's card",
+   "etat": "main",
+   "release": "0.5",
+   "lots": [
+    "DRN2"
+   ],
+   "issue": 754,
+   "doc": "docs/glorfindel.md"
+  },
+  {
    "id": "g-perimetre-illisible",
    "composant": "glorfindel",
    "poste": "g-verifier",
