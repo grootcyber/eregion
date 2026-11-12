@@ -1,6 +1,6 @@
 """BNC3b (#770): the bench in one gesture — the calm and « restore d'abord » verified by the preflight,
 the clean point read after the confirmation and taken by the route of the 📸 button, the preflight
-replayed. M5040–M5059, measured by tests/unit/test_bench_preflight.py, tests/unit/test_bench_run.py and
+replayed. M5040–M5059, and M5065–M5074 (the review's first round), measured by tests/unit/test_bench_preflight.py, tests/unit/test_bench_run.py and
 tests/unit/test_bench_snapshot.py."""
 HIST = "scripts/bench_history.py"
 SNAP = "scripts/bench_snapshot.py"
@@ -23,7 +23,7 @@ MUTANTS = [
      "            if len(got) > 10 * MAX_EVENTS:\n"),
     ("M5043", "a run of the current Orodruin left out of « restore d'abord » whatever its technique: the list "
      "filtered on Orodruin's identity, a T1486 without a restore attacked again (BNC3b, Q3b)", HIST,
-     '        elif rc["role"] == "orodruin" and technique(rc):\n',
+     '        elif rc["role"] == "orodruin" and id(rc) in held:\n',
      '        elif rc["role"] == "orodruin":\n'),
     ("M5044", "only the injectors' callers count: a Run Command by hand, by the console or by an unknown caller "
      "left out (BNC3b, « quel que soit l'appelant »)", HIST,
@@ -83,6 +83,50 @@ MUTANTS = [
      "            if False:\n"),
     ("M5059", "the console's token read in host.env without its guard: a code session would get it (BNC3b)",
      "Makefile", "\t@$(CONSOLE_GUARD) bench-run\n", "\t@true\n"),
+    # The review's first round: M5065–M5074.
+    ("M5065", "a restore whose job's detail does not say « in place » counts as the last restore: a « Restore "
+     "disks » made by hand leaves the VM encrypted, and « restore d'abord » says ✓ (BNC3b review)", HIST,
+     "        if not said_in_place(detail):\n",
+     "        if False:\n"),
+    ("M5066", "a restore without the swap of its disks on the VM counts as the last restore (BNC3b review)", HIST,
+     "        if not swapped(ops, job):\n",
+     "        if False:\n"),
+    ("M5067", "every restore completed is the last restore, in place or not (BNC3b review, the defect back)", HIST,
+     "        if verdict is True:\n",
+     "        if True:\n"),
+    ("M5068", "no start read and the VM's creation unread: the calm says ✓ (BNC3b review)", HIST,
+     "    if started is None:\n        if created is None:\n",
+     "    if started is None:\n        if False:\n"),
+    ("M5069", "a write on the VM (its creation) is no start for the calm: a VM recreated 3 min ago is calm "
+     "(BNC3b review)", HIST,
+     '             # its creation, or any write on it: counted as a start, to be prudent (BNC3b review)\n'
+     '             "microsoft.compute/virtualmachines/write")\n',
+     "             )\n"),
+    ("M5070", "the end of the last restore is no start for the calm (BNC3b review)", HIST,
+     "    moments = [_last_moment(o, now) for o in starts] + ([restored] if restored is not None else [])\n",
+     "    moments = [_last_moment(o, now) for o in starts]\n"),
+    ("M5071", "a line of Orodruin's journal answers every Run Command in its window: a T1486 whose journal was "
+     "lost borrows the line of a drill before it (BNC3b review, the defect back)", HIST,
+     '            match = next((r for r in free if id(r) not in out and at - JOURNAL_AFTER_S <= r["start"] <= at + '
+     'JOURNAL_BEFORE_S),\n'
+     "                         None)\n"
+     "            if match is not None:\n"
+     "                out[id(match)] = rid\n",
+     "            for r in free:\n"
+     '                if at - JOURNAL_AFTER_S <= r["start"] <= at + JOURNAL_BEFORE_S:\n'
+     "                    out[id(r)] = rid\n"),
+    ("M5072", "an isolation of the console closed by a lift before its own line, after its start taken 10 min "
+     "early (BNC3b review)", HIST,
+     "        end = next((t for t in lifts if t > line_at), None)\n",
+     "        end = next((t for t in lifts if t > s), None)\n"),
+    ("M5073", "a line of a cycle file that is not JSON skipped silently: a quarantine cut away unsaid (BNC3b "
+     "review)", READER,
+     "    if bad:\n",
+     "    if False:\n"),
+    ("M5074", "`make bench-run-go` called directly takes TARGET or POINT_MAX_H from the environment: its origin "
+     "not checked again (BNC3b review: M4758 lost bench-run-go)", "Makefile",
+     "bench-run-go:\n\t@$(MOB1_ORIGIN)\n\t@$(CONSOLE_GUARD) bench-run\n",
+     "bench-run-go:\n\t@$(CONSOLE_GUARD) bench-run\n"),
 ]
 TESTS = {
     "M5040": f"{_P}::test_the_calm_not_held_is_a_failure_that_says_the_minutes_left",
@@ -105,4 +149,14 @@ TESTS = {
     "M5057": f"{_S}::test_a_job_that_fails_stops",
     "M5058": f"{_N}::test_a_red_replayed_preflight_stops_the_run_just_before_the_attack",
     "M5059": f"{_N}::test_the_console_s_token_is_refused_to_a_code_session_by_its_guard",
+    "M5065": f"{_P}::test_a_restore_not_proven_in_place_is_no_last_restore",
+    "M5066": f"{_P}::test_a_restore_not_proven_in_place_is_no_last_restore",
+    "M5067": f"{_P}::test_a_restore_not_proven_in_place_is_no_last_restore",
+    "M5068": f"{_P}::test_no_start_read_and_a_creation_unread_is_never_calm",
+    "M5069": f"{_P}::test_a_write_or_a_restore_is_a_start_for_the_calm",
+    "M5070": f"{_P}::test_a_write_or_a_restore_is_a_start_for_the_calm",
+    "M5071": f"{_P}::test_a_run_of_orodruin_without_its_own_journal_line_is_destructive",
+    "M5072": f"{_S}::test_a_lift_before_the_line_of_a_console_isolation_never_closes_it",
+    "M5073": f"{_S}::test_a_history_that_reads_in_part_is_no_quarantine_absent",
+    "M5074": f"{_N}::test_the_internal_targets_refuse_a_variable_from_the_environment",
 }

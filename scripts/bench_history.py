@@ -4,18 +4,24 @@ docs/design/banc-autonome.md, §3 (its row 3) and §3.1. Three verdicts, each re
 operator's `az login`, each refusing on a doubt — a read that fails, a read cut at its bound, a
 history that does not reach back far enough, is never a ✓:
 
-  the calm        the VM started 10 min ago at least, and no Run Command on it for 10 min, read in its
-                  own activity log — a ✗ that says the minutes left, never a wait (Q6);
+  the calm        the VM started 10 min ago at least — a start, a restart, a write on it (its creation),
+                  the end of its last restore —, and no Run Command on it for 10 min, read in its own
+                  activity log — a ✗ that says the minutes left, never a wait (Q6); no start read and its
+                  creation unread: unreadable;
   restore first   no Run Command on the VM since its last restore that may be destructive (Q3b): every
                   `runCommand/action` on it, whatever its caller, counts — the caller says who acted,
                   never what is filtered. Two are left out of the count: a session drain of Imladris
                   within [−2 min, +7 min] of the start of a verified isolation of the watch (one drain,
                   one Run Command), and a run of the current Orodruin whose technique reads as
                   non-destructive, from Orodruin's own journal in the channel (`audit/<run_id>.jsonl`)
-                  then its run's report (`runs/<run_id>.json`) against the catalogue. « Since its last
-                  restore » is read in the vault's jobs: the newest restore of the VM completed —
-                  restored in place, the same VM (RST1, `OriginalLocation`) —, or the VM's creation
-                  when it is within the horizon;
+                  then its run's report (`runs/<run_id>.json`) against the catalogue — one journal
+                  line, one Run Command, the nearest after it: a Run Command without its own line is
+                  destructive. « Since its last restore » is read in the vault's jobs: the newest restore
+                  of the VM completed AND proven in place, on the same VM — its job's detail says it
+                  (`az backup job show`, IN_PLACE_KEYS/IN_PLACE_VALUES: a hypothesis, to measure on the
+                  bench) and the VM's activity log holds a write on it during the job (the swap of its
+                  disks) —; a « Restore disks » or a « Create new VM » leaves the VM as it was, and is
+                  no restore here. Else the VM's creation, within the horizon;
   the clean point the newest recovery point of the VM, the one the restore takes, taken after its last
                   restore and outside every quarantine — over every run, read on Imladris by
                   scripts/bench_h0_reader.py (`history`), in its disposable, network-less container.
@@ -23,6 +29,12 @@ history that does not reach back far enough, is never a ✓:
 The horizon: the activity log keeps 90 days; it is read over HORIZON_DAYS (89: a window Azure
 accepts whatever the clocks), as the vault's jobs. A last restore older than that, and a VM older
 than that never restored, are « unreadable » — a ✗, until a restore.
+
+What it does not see (said in docs/banc-t1486.md): « every Run Command » is every
+`runCommand/action` on the VM — not a managed Run Command (`runCommands/write`, a child resource
+`--resource-id` does not bring back), not a Custom Script extension, not an SSH session. And the
+activity log's ingestion delay (a few minutes, a hypothesis to measure) may hide a start or a Run
+Command younger than it from the calm.
 
 Nothing is written: each read is `az … list|show`, an ssh to Imladris reading in its reader's
 container, `az storage blob list|download` on the channel. No identifier is printed: a caller is a
@@ -44,7 +56,9 @@ HORIZON_S = HORIZON_DAYS * 86400.0
 CALM_S = 600.0
 MAX_EVENTS = 5000
 START_OPS = ("microsoft.compute/virtualmachines/start/action",
-             "microsoft.compute/virtualmachines/restart/action")
+             "microsoft.compute/virtualmachines/restart/action",
+             # its creation, or any write on it: counted as a start, to be prudent (BNC3b review)
+             "microsoft.compute/virtualmachines/write")
 # A Run Command without its end, younger than this, is still running (Azure's own bound: 90 min).
 RUN_COMMAND_MAX_S = 90 * 60.0
 # The drain's window around the start of an isolation: SID1's, as a model (§3.1).
@@ -64,6 +78,9 @@ MAX_JOURNALS = 20
 MAX_BLOB_BYTES = 1024 * 1024
 CHANNEL_URL = re.compile(r"https://([a-z0-9]{3,24})\.blob\.core\.windows\.net/([a-z0-9][a-z0-9-]{2,62})/?")
 _RUN_PART = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,95}")
+_JOB_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{0,63}")
+# The calls of an injector that are a Run Command on the VM (annatar/executors/azure_vm.py).
+INJECTOR_CALLS = ("run_command", "run_script")
 
 
 class Unreadable(RuntimeError):
@@ -84,23 +101,75 @@ class Anchor:
 
 
 def vm_jobs(jobs: list[dict], vm: str) -> list[dict]:
-    import bench_report
-    return bench_report._jobs(jobs, vm)
+    """The vault's jobs of the VM, oldest first, each with its name (to read its detail)."""
+    out = []
+    for j in jobs or []:
+        p = j.get("properties") or {}
+        if str(p.get("entityFriendlyName") or "").lower() != vm:
+            continue
+        start = bs.epoch(p.get("startTime"))
+        if start is None:
+            continue
+        out.append({"name": str(j.get("name") or ""), "operation": str(p.get("operation") or ""),
+                    "status": str(p.get("status") or ""), "start": start, "end": bs.epoch(p.get("endTime"))})
+    return sorted(out, key=lambda j: j["start"])
 
 
-def anchor(jobs: list[dict], vm: str, created: float | None, now: float) -> Anchor:
-    """The VM's last restore completed, read in the vault's jobs; or its creation, within the horizon.
-    Raises Unreadable when the list does not reach back to it, or a restore runs."""
+# A restore in place, as its job's detail says it — `properties.extendedInfo.propertyBag` of `az backup
+# job show`. HYPOTHESIS, to measure on the bench (BNC3b review): the key and its value for « Replace
+# existing » (`recoveryType: OriginalLocation`, RST1) are not measured. Anything else, or nothing: not
+# proven, a ✗ — never a ✓ on a field that is not there.
+IN_PLACE_KEYS = ("restoretype", "recoverytype", "restorerecoverytype")
+IN_PLACE_VALUES = ("originallocation", "replaceexisting", "replacedisks", "replaceexistingdisks")
+VM_WRITE = "microsoft.compute/virtualmachines/write"
+# The swap of the disks, a write on the VM during the job (its end may be read a little after it).
+SWAP_AFTER_S = 120.0
+MAX_RESTORES_READ = 5
+
+
+def _norm(text) -> str:
+    return re.sub(r"[^a-z]", "", str(text or "").lower())
+
+
+def said_in_place(detail) -> bool:
+    """The job's detail says a restore in place (IN_PLACE_KEYS, IN_PLACE_VALUES): a hypothesis."""
+    ext = ((detail or {}).get("properties") or {}).get("extendedInfo") or {}
+    bag = ext.get("propertyBag") if isinstance(ext, dict) else None
+    if not isinstance(bag, dict):
+        return False
+    return any(_norm(k) in IN_PLACE_KEYS and _norm(v) in IN_PLACE_VALUES for k, v in bag.items())
+
+
+def swapped(ops: list[dict], job: dict) -> bool:
+    """A write on the VM itself, succeeded, during the restore job: its disks swapped."""
+    end = (job["end"] or job["start"]) + SWAP_AFTER_S
+    return any(o["op"] == VM_WRITE and o["status"].lower() == "succeeded" and job["start"] <= o["start"] <= end
+               for o in ops)
+
+
+def anchor(jobs: list[dict], vm: str, created: float | None, now: float, in_place=None) -> Anchor:
+    """The VM's last restore completed and proven in place (`in_place(job)`: True, or why it is not, a
+    str), read in the vault's jobs; or its creation, within the horizon. Raises Unreadable when a restore
+    runs, or when nothing reaches back far enough — a restore not proven in place among them."""
     mine = vm_jobs(jobs, vm)
     restores = [j for j in mine if j["operation"].lower() == "restore"]
     if any(j["status"].lower() in ("inprogress", "cancelling") for j in restores):
         raise Unreadable("un restore de la VM est en cours dans le coffre")
-    done = [j for j in restores if j["status"].lower() == "completed" and j["end"] is not None]
-    if done:
-        last = max(done, key=lambda j: j["end"])
-        return Anchor(last["start"], last["end"], "restore")
+    done = sorted((j for j in restores if j["status"].lower() == "completed" and j["end"] is not None),
+                  key=lambda j: j["end"], reverse=True)
+    refused: list[str] = []
+    for j in done[:MAX_RESTORES_READ]:
+        verdict = in_place(j) if in_place is not None else "son détail n'est pas lu"
+        if verdict is True:
+            return Anchor(j["start"], j["end"], "restore")
+        day = datetime.fromtimestamp(j["end"], timezone.utc).strftime("%d/%m")
+        refused.append(f"{bs.hms(j['end'])} le {day} : {verdict}")
     if created is not None and now - created <= HORIZON_S:
         return Anchor(created, created, "creation")
+    if refused:
+        raise Unreadable("restore non prouvé en place (" + " ; ".join(refused[:3]) + ") — un « Restore disks » ou "
+                         "une « nouvelle VM » laisse la VM telle quelle : make bench-restore TARGET=… (un restore en "
+                         "place, RST1), puis relancer")
     raise Unreadable(f"aucun restore de la VM lu dans les jobs du coffre sur {HORIZON_DAYS} jours, et la VM est "
                      "plus ancienne (ou sa création ne se lit pas) : la liste ne remonte pas jusqu'à son dernier "
                      "restore")
@@ -120,15 +189,23 @@ def _last_moment(op: dict, now: float) -> float:
     return now if now - op["start"] < RUN_COMMAND_MAX_S else op["start"]
 
 
-def calm(ops: list[dict], power: str, created: float | None, now: float, vm: str) -> tuple[str, str]:
-    """(mark, text): the VM running for CALM_S, and no Run Command on it for CALM_S (Q6)."""
+def calm(ops: list[dict], power: str, created: float | None, now: float, vm: str,
+         restored: float | None = None) -> tuple[str, str]:
+    """(mark, text): the VM running for CALM_S — since its last start, restart, write, or the end of its
+    last restore (`restored`) —, and no Run Command on it for CALM_S (Q6). No start read and its creation
+    unread: unreadable, a ✗."""
     if power != "running":
         return bs.FAIL, (f"le calme : {vm} est {power or 'dans un état illisible'} — make celebrimbor-start VM=…, "
                          "puis 10 min, puis relancer")
     starts = [o for o in ops if o["op"] in START_OPS and o["status"].lower() != "failed"]
-    started = max((_last_moment(o, now) for o in starts), default=None)
-    if started is None and created is not None and now - created <= HORIZON_S:
-        started = created
+    moments = [_last_moment(o, now) for o in starts] + ([restored] if restored is not None else [])
+    started = max(moments, default=None)
+    if started is None:
+        if created is None:
+            return bs.FAIL, (f"le calme : illisible — ni démarrage de {vm} lu en {HORIZON_DAYS} jours, ni sa "
+                             "création (az vm show, timeCreated) : jamais un ✓ sur une lecture qui manque")
+        if now - created <= HORIZON_S:
+            started = created
     rcs = [o for o in ops if o["op"] == bs.RUN_COMMAND_OP]
     last_rc = max((_last_moment(o, now) for o in rcs), default=None)
     waits = []
@@ -150,19 +227,25 @@ def calm(ops: list[dict], power: str, created: float | None, now: float, vm: str
 
 # ── the quarantines and the drains, as Imladris recorded them ────────────────
 
-def isolation_start(x: dict) -> float:
-    """The start of an isolation: `verified_at` − `action_s` for the watch's (§3.1); the console's or
-    the bot's line less MANUAL_BEFORE_S. Raises Unreadable when it can't be told."""
+def isolation_times(x: dict) -> tuple[float, float]:
+    """(its start, its line's own time) of an isolation: the start is `verified_at` − `action_s` for the
+    watch's (§3.1), the console's or the bot's line less MANUAL_BEFORE_S; a lift counts only after the
+    line's own time — never after the start taken earlier to be prudent (BNC3b review). Raises
+    Unreadable when it can't be told."""
     if x.get("source") == "watch":
         at = bs.epoch(x.get("verified_at")) or bs.epoch(x.get("timestamp"))
         spent = x.get("action_s")
         if at is None or not isinstance(spent, (int, float)) or isinstance(spent, bool):
             raise Unreadable("une isolation de la watch sans `verified_at` ou sans `action_s` : son début ne se lit pas")
-        return at - float(spent)
+        return at - float(spent), at
     at = bs.epoch(x.get("timestamp"))
     if at is None:
         raise Unreadable("une isolation de la console ou du bot sans heure")
-    return at - MANUAL_BEFORE_S
+    return at - MANUAL_BEFORE_S, at
+
+
+def isolation_start(x: dict) -> float:
+    return isolation_times(x)[0]
 
 
 def _checked(history: dict) -> dict:
@@ -171,6 +254,10 @@ def _checked(history: dict) -> dict:
     if history.get("unreadable"):
         raise Unreadable("des fichiers de la watch d'Imladris ne se lisent pas ("
                          + ", ".join(str(u) for u in history["unreadable"][:3]) + ")")
+    files = history.get("files")
+    if not isinstance(files, int) or isinstance(files, bool) or files < 1:
+        raise Unreadable("aucun fichier de cycles de la watch sur Imladris : une quarantaine non lue n'est pas "
+                         "une quarantaine absente")
     return history
 
 
@@ -188,7 +275,7 @@ def quarantines(history: dict, now: float) -> list[tuple[float, float | None]]:
     (an open quarantine: every point after its start is in it). An isolation executed, verified, or
     partial counts; its lift is the first one that holds after it."""
     h = _checked(history)
-    starts = sorted(isolation_start(x) for x in h.get("isolations") or []
+    starts = sorted(isolation_times(x) for x in h.get("isolations") or []
                     if x.get("executed") or x.get("verified") or x.get("partial"))
     lifts = []
     for x in h.get("lifts") or []:
@@ -198,8 +285,8 @@ def quarantines(history: dict, now: float) -> list[tuple[float, float | None]]:
             lifts.append(at)
     lifts.sort()
     out: list[tuple[float, float | None]] = []
-    for s in starts:
-        end = next((t for t in lifts if t > s), None)
+    for s, line_at in starts:
+        end = next((t for t in lifts if t > line_at), None)
         out.append((s, end))
     now_iso = (h.get("isolation") or {}) if isinstance(h.get("isolation"), dict) else {}
     if now_iso:
@@ -214,10 +301,13 @@ def quarantines(history: dict, now: float) -> list[tuple[float, float | None]]:
 
 def restore_first(ops: list[dict], since: Anchor, drains, technique) -> tuple[str, str]:
     """(mark, text) of « restore d'abord » (Q3b). `drains()`: the starts of the watch's verified
-    isolations (read only when Imladris ran a Run Command); `technique(op)`: True when a run of the
-    current Orodruin reads as non-destructive."""
+    isolations (read only when Imladris ran a Run Command); `technique(rcs)`: of the current Orodruin's
+    Run Commands, the set (by `id`) of those that read as non-destructive — each with its own line in
+    Orodruin's journal."""
     rcs = sorted((o for o in ops if o["op"] == bs.RUN_COMMAND_OP and o["start"] >= since.start),
                  key=lambda o: o["start"])
+    oro = [rc for rc in rcs if rc["role"] == "orodruin"]
+    held = technique(oro) if oro else set()
     destructive: list[dict] = []
     drained = harmless = 0
     starts: list[float] | None = None
@@ -232,7 +322,7 @@ def restore_first(ops: list[dict], since: Anchor, drains, technique) -> tuple[st
                 taken.add(match)
                 drained += 1
                 continue
-        elif rc["role"] == "orodruin" and technique(rc):
+        elif rc["role"] == "orodruin" and id(rc) in held:
             harmless += 1
             continue
         destructive.append(rc)
@@ -341,8 +431,39 @@ class Reads:
         except Unreadable:
             return None                  # a creation unread: no anchor from it, never a ✓
 
+    def in_place(self, job: dict):
+        """True when the restore job is proven in place on this VM — its detail says it (a hypothesis,
+        IN_PLACE_KEYS) and the VM's activity log holds the swap of its disks —, else why not (a str)."""
+        if not _JOB_NAME.fullmatch(job.get("name") or ""):
+            return "son nom ne se lit pas"
+        try:
+            detail = bs.az_json(["backup", "job", "show", "-g", self.vault_rg, "-v", self.vault, "-n", job["name"]])
+        except RuntimeError as e:
+            return f"son détail ne se lit pas ({bs.scrub(str(e))[:120]})"
+        if not said_in_place(detail):
+            return "son détail ne dit pas un restore en place (Restore disks, nouvelle VM, ou un champ non mesuré)"
+        try:
+            ops = self.ops()
+        except Unreadable as e:
+            return f"le journal d'activité de la VM ne se lit pas ({e})"
+        if not swapped(ops, job):
+            return "aucune écriture de la VM pendant le job au journal d'activité (l'échange de ses disques)"
+        return True
+
     def anchor(self) -> Anchor:
-        return self._once("anchor", lambda: anchor(self.jobs(), self.target, self.created(), self.now))
+        return self._once("anchor", lambda: anchor(self.jobs(), self.target, self.created(), self.now,
+                                                   self.in_place))
+
+    def restored(self) -> float | None:
+        """The end of the VM's last restore completed, whatever it was — a start for the calm. None
+        when the jobs do not read (« restore d'abord » says it, a ✗)."""
+        try:
+            jobs = self.jobs()
+        except Unreadable:
+            return None
+        ends = [j["end"] for j in vm_jobs(jobs, self.target)
+                if j["operation"].lower() == "restore" and j["status"].lower() == "completed" and j["end"] is not None]
+        return max(ends, default=None)
 
     def history(self) -> dict:
         return self._once("history", lambda: _said("l'historique d'Imladris",
@@ -363,13 +484,16 @@ class Reads:
     def channel(self) -> "Channel":
         return self._once("channel", lambda: Channel.from_terraform())
 
-    def harmless(self, rc: dict) -> bool:
-        """A Run Command of the current Orodruin whose run reads as non-destructive — else False
-        (a technique unread is destructive)."""
+    def harmless(self, rcs: list[dict]) -> set[int]:
+        """Of the current Orodruin's Run Commands, those (by `id`) whose own journal line names a run that
+        reads as non-destructive — the others, a technique unread, are destructive."""
         try:
-            return self.channel().non_destructive(rc, self.vm_id, self.catalog())
+            channel = self.channel()
+            paired = channel.pair(rcs, self.vm_id)
+            catalog = self.catalog()
+            return {key for key, rid in paired.items() if channel.non_destructive_run(rid, catalog)}
         except Unreadable:
-            return False
+            return set()
 
 
 def _said(what: str, read):
@@ -436,16 +560,18 @@ class Channel:
         self._blobs[name] = text
         return text
 
-    def run_ids(self, rc: dict, vm_id: str) -> list[str]:
-        """The runs of Orodruin's journal whose call on this VM precedes the Run Command `rc`."""
-        t = rc["start"]
-        out: list[str] = []
+    def lines(self, rcs: list[dict], vm_id: str) -> list[tuple[float, str]]:
+        """Orodruin's calls on this VM (`run_command`, `run_script`, before the call) around the Run
+        Commands `rcs`: (their time, their run), oldest first."""
+        lo = min(rc["start"] for rc in rcs) - JOURNAL_BEFORE_S
+        hi = max(rc["start"] for rc in rcs) + JOURNAL_AFTER_S
+        out: list[tuple[float, str]] = []
         for blob in self.listing():
             name = str(blob.get("name") or "")
             created, modified = bs.epoch(blob.get("created")), bs.epoch(blob.get("modified"))
             if not name.startswith("audit/") or created is None or modified is None:
                 continue
-            if created > t + JOURNAL_AFTER_S or modified < t - JOURNAL_BEFORE_S:
+            if created > hi or modified < lo:
                 continue
             for line in self.text(name).splitlines():
                 try:
@@ -454,29 +580,38 @@ class Channel:
                     continue
                 if not isinstance(doc, dict) or doc.get("outcome") != "about_to_call":
                     continue
+                if doc.get("action") not in INJECTOR_CALLS:
+                    continue
                 if str(doc.get("target") or "").rstrip("/").lower() != vm_id.rstrip("/").lower():
                     continue
                 at = bs.epoch(doc.get("ts"))
                 rid = str(doc.get("run_id") or "")
-                if at is not None and t - JOURNAL_BEFORE_S <= at <= t + JOURNAL_AFTER_S and _RUN_PART.fullmatch(rid):
-                    if rid not in out:
-                        out.append(rid)
+                if at is not None and lo <= at <= hi and _RUN_PART.fullmatch(rid):
+                    out.append((at, rid))
+        return sorted(out)
+
+    def pair(self, rcs: list[dict], vm_id: str) -> dict[int, str]:
+        """One line, one Run Command (BNC3b review): each line of the journal answers at most one Run
+        Command — the nearest one after it, within [−JOURNAL_AFTER_S, +JOURNAL_BEFORE_S] —; {id(rc):
+        run_id} for the Run Commands that have a line of their own. The others have none: destructive."""
+        if not rcs:
+            return {}
+        free = sorted(rcs, key=lambda r: r["start"])
+        out: dict[int, str] = {}
+        for at, rid in self.lines(rcs, vm_id):
+            match = next((r for r in free if id(r) not in out and at - JOURNAL_AFTER_S <= r["start"] <= at + JOURNAL_BEFORE_S),
+                         None)
+            if match is not None:
+                out[id(match)] = rid
         return out
 
-    def non_destructive(self, rc: dict, vm_id: str, catalog: dict) -> bool:
-        """True only when every run the journal names at that time says a technique of the catalogue
-        marked `destructive: false` in its report."""
-        runs = self.run_ids(rc, vm_id)
-        if not runs:
+    def non_destructive_run(self, rid: str, catalog: dict) -> bool:
+        """The run's report says a technique of the catalogue marked `destructive: false`."""
+        try:
+            doc = json.loads(self.text(f"runs/{rid}.json"))
+        except (ValueError, Unreadable):
             return False
-        for rid in runs:
-            try:
-                doc = json.loads(self.text(f"runs/{rid}.json"))
-            except (ValueError, Unreadable):
-                return False
-            ids = [str(doc.get(k) or "") for k in ("mitre", "scenario")] if isinstance(doc, dict) else []
-            entry = next((catalog[i] for i in ids if i in catalog), None)
-            if entry is None or entry.destructive is not False:
-                return False
-        return True
+        ids = [str(doc.get(k) or "") for k in ("mitre", "scenario")] if isinstance(doc, dict) else []
+        entry = next((catalog[i] for i in ids if i in catalog), None)
+        return entry is not None and entry.destructive is False
 

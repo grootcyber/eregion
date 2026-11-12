@@ -141,10 +141,13 @@ déclarée le refuse.
   `annatar clean`, `docs/operations.md`) visait le même piège.
 - **Le calme, vérifié** (BNC3b, #770) : `make bench-preflight` (et donc `make bench-run`) lit le journal
   d'activité de gondolin, sous ton `az login` : sa dernière mise en marche (`start/action`,
-  `restart/action`) et sa dernière Run Command, quel que soit l'appelant. Moins de 10 min : un ✗ qui
-  dit les minutes qui restent, **jamais une attente** ; relancer alors. Une Run Command sans fin lue,
-  de moins de 90 min, compte comme en cours. Une lecture en échec, ou coupée à sa borne (5 000
-  événements), est un ✗, jamais un ✓ (`scripts/bench_history.py`, `calm`).
+  `restart/action`, et toute écriture de la VM, `virtualMachines/write`, sa création comprise ; la fin
+  de son dernier restore aussi) et sa dernière Run Command, quel que soit l'appelant. Moins de 10 min :
+  un ✗ qui dit les minutes qui restent, **jamais une attente** ; relancer alors. Une Run Command sans
+  fin lue, de moins de 90 min, compte comme en cours. Une lecture en échec, ou coupée à sa borne (5 000
+  événements), est un ✗, jamais un ✓ ; aucun démarrage lu et la création de la VM illisible aussi
+  (`scripts/bench_history.py`, `calm`). Il ne remplace pas les deux requêtes de l'écriture disque de
+  l'étape 1 : le journal d'activité ne dit pas ce que la VM écrit.
 - **« Restore d'abord »** (BNC3b, Q3b) : une VM qui porte un run destructif sans restore depuis ne se
   rattaque pas. La liste de référence des runs est le journal d'activité de la VM : **toute Run Command
   sur gondolin depuis son dernier restore compte**, quel que soit l'appelant, sauf deux. La coupure des
@@ -154,11 +157,26 @@ déclarée le refuse.
   destructive : le `run_id` dans son journal du canal (`audit/<run_id>.jsonl`, la ligne d'avant l'appel
   sur cette VM), puis la technique de son rapport (`runs/<run_id>.json`), marquée `destructive: false`
   au catalogue ; une technique qui ne se lit pas compte comme destructive. « Depuis son dernier restore »
-  se lit dans les jobs du coffre : le dernier restore `Completed` de la VM (en place, la même VM :
-  `OriginalLocation`, RST1), ou sa création si elle date de moins de 89 jours. Un restore en cours, une
-  liste qui ne remonte pas jusqu'au dernier restore, une lecture en échec : un ✗. Conséquences
-  voulues : un run non destructif dont le journal s'est perdu, une Run Command lancée à la main, une
-  coupure d'un Imladris reconstruit bloquent la VM jusqu'à un restore (`make bench-restore`).
+  se lit dans les jobs du coffre : le dernier restore `Completed` de la VM **prouvé en place**, sur la
+  même VM, ou sa création si elle date de moins de 89 jours. Un « Restore disks » ou une « nouvelle
+  VM », faits à la main depuis le portail, laissent gondolin telle qu'elle était : ils ne comptent pas.
+  La preuve, deux lectures, toutes deux exigées : le détail du job (`az backup job show`, sa
+  `extendedInfo.propertyBag`, un type de restore « Original Location » ou « Replace existing ») — **le
+  champ et sa valeur sont une hypothèse, à mesurer au banc** (`bench_history.IN_PLACE_KEYS`) —, et une
+  écriture réussie de la VM (`virtualMachines/write`, l'échange de ses disques) pendant le job, au
+  journal d'activité. Faute de l'une, le restore est « non prouvé en place » : un ✗ qui le dit et
+  renvoie à `make bench-restore` (le restore en place de RST1, `recoveryType: OriginalLocation`). Un
+  restore en cours, une liste qui ne remonte pas jusqu'au dernier restore, une lecture en échec : un ✗.
+  Pour Orodruin, une ligne de son journal répond à une seule Run Command, la plus proche qui la suit :
+  une Run Command sans ligne à elle (un envoi du journal perdu, une reprise sur `Conflict`) est
+  destructive. Conséquences voulues : un run non destructif dont le journal s'est perdu, une Run Command
+  lancée à la main, une coupure d'un Imladris reconstruit bloquent la VM jusqu'à un restore (`make
+  bench-restore`).
+- **Ce que la liste ne voit pas** (des limites, écrites) : « toute Run Command » veut dire tout
+  `runCommand/action` sur la VM. Une Run Command gérée (`runCommands/write`, une ressource enfant que
+  `--resource-id` ne remonte pas), une extension Custom Script ou une session SSH n'y paraissent pas.
+  Et **la latence d'ingestion du journal d'activité** (quelques minutes, une hypothèse à mesurer au
+  banc) peut cacher au calme une mise en marche ou une Run Command plus récente qu'elle.
 
 ### Le point de restauration propre : depuis Imladris
 
@@ -168,19 +186,25 @@ déclarée le refuse.
 refuse) et **hors de toute quarantaine**, sur tous les runs : les isolations de la watch (exécutées,
 vérifiées ou partielles), de la console et du bot, et leurs levées, lues sur Imladris par
 `scripts/bench_h0_reader.py history`, dans son conteneur jetable, sans réseau, aux montages en
-lecture seule. Une quarantaine sans levée lue, ou une lecture impossible : le point est refusé.
+lecture seule. Une levée ne ferme une isolation qu'après l'heure de sa ligne. Une quarantaine sans
+levée lue, ou une lecture impossible — un fichier ou une ligne illisible, `runs/console` ou
+`runs/bot` absent, aucun fichier de cycles — : le point est refusé.
 
 Sinon il en prend un par **la route du bouton 📸**, `POST /api/action/snapshot/<vm>` de la console
 d'Imladris (`scripts/bench_snapshot.py`) :
-- par un **renvoi de port court** qu'il ouvre lui-même, `ssh -N -L 127.0.0.1:<port libre>:127.0.0.1:7007`,
-  la clé d'hôte épinglée (`make imladris-known`), sans maître multiplexé, fermé dans tous les cas, le
-  temps de la demande et de son reçu ;
+- par un **renvoi de port court** qu'il ouvre lui-même, `ssh -L 127.0.0.1:<port libre>:127.0.0.1:7007
+  … sleep <borne>` (une commande distante bornée, pas `-N`), la clé d'hôte épinglée (`make
+  imladris-known`), sans maître multiplexé, fermé dans tous les cas — un SIGTERM aussi, par son
+  gestionnaire ; au-delà, la borne de la commande —, le temps de la demande et de son reçu ;
 - avec **le jeton de la console**, lu dans `host.env` par le Makefile après le garde des sessions
-  d'agent (`CONSOLE_GUARD`), passé par l'environnement (`BENCH_CONSOLE_TOKEN`), jamais en argv ni
+  d'agent (`CONSOLE_GUARD`), passé par l'environnement (`BENCH_CONSOLE_TOKEN`), retiré de
+  l'environnement de tous ses enfants (az, ssh, scp, le préflight) dès qu'il est lu, jamais en argv ni
   affiché, en `Authorization: Bearer`, sans proxy ; un corps JSON et un `Host` à `127.0.0.1:<port>` ;
 - sous FS1 (`EREGION_ACTION_QUEUE=1`), **le reçu suivi** par `GET /api/queue/<id>` : `not_taken`,
   `untrusted`, `refused`, `failed`, `unknown` ou une demande expirée arrêtent le run ;
-- puis **le job du coffre** lancé depuis la demande, suivi par `az backup job show` sous ton `az login`
+- puis **le job du coffre** : celui que la console nomme, s'il est un job du coffre — aujourd'hui
+  `action_snapshot` rend `snapshot-<vm>-<heure>`, l'enregistrement de Glorfindel, qui n'en est pas un —,
+  sinon le job de sauvegarde de la VM lancé depuis la demande, suivi par `az backup job show` sous ton `az login`
   jusqu'à `Completed`, **60 min au plus** ; un job en échec ou trop long arrête le run **avant** que la
   demande parte vers Orodruin ; le point nouveau relu au coffre ;
 - puis **le préflight rejoué**, juste avant l'attaque : un ✗ l'arrête là ; le point pris reste, propre
@@ -421,10 +445,10 @@ WS=$(terraform -chdir=infra/terraform output -raw law_workspace_id)
 make imladris-tunnel               # dans un autre terminal : la console, l'URL affichée
 ```
 
-Puis, après 10 minutes, le calme de gondolin. **`make bench-run` le vérifie au préflight depuis
-BNC3b** (le journal d'activité : la mise en marche et la dernière Run Command, un ✗ qui dit les
-minutes qui restent) ; les deux requêtes ci-dessous restent pour l'écriture disque, que le journal
-d'activité ne dit pas :
+Puis, après 10 minutes, le calme de gondolin. **`make bench-run` en vérifie une part au préflight
+depuis BNC3b** (le journal d'activité : la mise en marche et la dernière Run Command, un ✗ qui dit les
+minutes qui restent) ; **les deux requêtes ci-dessous restent à taper**, pour le battement et
+l'écriture disque, que le journal d'activité ne dit pas :
 
 ```zsh
 az monitor log-analytics query -w ${WS} --analytics-query "Heartbeat | where TimeGenerated > ago(5m) | where _ResourceId endswith '/vm-celebrimbor-gondolin' | count" -o table

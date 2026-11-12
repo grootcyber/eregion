@@ -69,13 +69,15 @@ from eregion_core import exercise_request as xr  # noqa: E402
 RUN_LINE = re.compile(r"^\s*Run:\s+([A-Za-z0-9][A-Za-z0-9_.-]{0,95})\s*$")
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 YES = ("o", "oui", "y", "yes")
+# The console's token, from the Makefile (BNC3b): read once, then out of every child's environment.
+TOKEN_ENV = "BENCH_CONSOLE_TOKEN"
 
 
 class Steps:
     """The outside steps, each a parameter: the tests run the command on fakes."""
 
     def __init__(self, env: dict):
-        self.env = env
+        self.env = {k: v for k, v in env.items() if k != TOKEN_ENV}
 
     def preflight(self, target: str) -> int:
         import bench_preflight
@@ -122,10 +124,10 @@ class Steps:
         import bench_snapshot
         return bench_snapshot.judge(target, self.env, str(bs.REPO / "glorfindel-config.yaml"))
 
-    def snapshot(self, target: str, plan: dict, say) -> float:
+    def snapshot(self, target: str, plan: dict, say, token: str) -> float:
         """BNC3b: a new point by the 📸 route, its job followed to Completed (bench_snapshot.take)."""
         import bench_snapshot
-        return bench_snapshot.take(target, self.env, plan, say)
+        return bench_snapshot.take(target, self.env, plan, say, token=token)
 
     def report(self, run_id: str, target: str) -> int:
         """The run's report, once its cycle is written on Imladris (bounded: bench_report.CYCLE_WAIT_S)."""
@@ -171,6 +173,10 @@ def _write(path: Path, doc: dict) -> None:
 def main(argv: list[str] | None = None, env: dict | None = None, *, cwd=None, here=None,
          ask=input, say=print, steps: Steps | None = None, tty: bool | None = None) -> int:
     env = dict(os.environ) if env is None else env
+    # BNC3b review: the console's token out of the environment of every child (az, ssh, scp, the
+    # preflight) as soon as it is read — the 📸 route alone takes it, as an argument.
+    token = (env.pop(TOKEN_ENV, None) or "").strip()
+    os.environ.pop(TOKEN_ENV, None)
     p = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     p.add_argument("--target", default=env.get("BENCH_TARGET") or "")
     p.add_argument("--scenario", default=env.get("BENCH_SCENARIO") or "")
@@ -246,7 +252,7 @@ def main(argv: list[str] | None = None, env: dict | None = None, *, cwd=None, he
                 say("✗ la cible ou son coffre ne se lit pas : aucun point demandé, rien n'est envoyé à Orodruin.")
                 return 1
             try:
-                steps.snapshot(target, plan, say)
+                steps.snapshot(target, plan, say, token)
             except (RuntimeError, OSError) as e:
                 say(f"✗ le point : {bs.scrub(str(e))} — le run s'arrête, rien n'est envoyé à Orodruin.")
                 return 1

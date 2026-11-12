@@ -24,7 +24,9 @@ sub-command shipped in the image, in place of this script from the workstation's
               `action_s`), the console's and the bot's (manual_actions.jsonl) —, each lift — the
               watch's `release_isolation` cycles (verified or not), a `release_isolation` or a
               `reset` of the console or the bot with its status —, its isolation now, and the files
-              it could not read (said, never skipped: a quarantine unread is no quarantine absent).
+              it could not read, a line that is not JSON, a mount of runs/console or runs/bot missing (said,
+              never skipped: a quarantine unread is no quarantine absent); and how many cycle files
+              it read — none is unreadable too, judged on the workstation.
 
 What it never sends back: a reasoning, a signal's raw content, a resource id (a VM is its name),
 an identifier of any kind. The caller masks again what it prints (bench_shared.scrub).
@@ -201,18 +203,27 @@ def _number(value) -> float | None:
 
 
 def _lines_said(path: Path, unread: list):
-    """`_lines`, but a file that can't be opened or read through is said in `unread`."""
+    """`_lines`, but a file that can't be opened or read through is said in `unread` — and each line
+    that is not a JSON object too (a write cut, a full disk: BNC3b review), never skipped silently."""
+    bad = 0
     try:
         with open(path, encoding="utf-8") as f:
             for line in f:
+                if not line.strip():
+                    continue
                 try:
                     doc = json.loads(line)
                 except ValueError:
+                    bad += 1
                     continue
                 if isinstance(doc, dict):
                     yield doc
+                else:
+                    bad += 1
     except (OSError, UnicodeDecodeError) as e:
         unread.append(f"{path.name}: {type(e).__name__}")
+    if bad:
+        unread.append(f"{path.name}: {bad} ligne(s) illisible(s)")
 
 
 def history(vm: str) -> dict:
@@ -238,6 +249,9 @@ def history(vm: str) -> dict:
                               "verified_at": str(o.get("verified_at") or ""), "verified": o.get("verified") is True,
                               "status": str(o.get("status") or "")})
     for hand in ("console", "bot"):
+        if not (RUNS / hand).is_dir():
+            unread.append(f"runs/{hand} : absent (son montage manque)")
+            continue
         path = RUNS / hand / "manual_actions.jsonl"
         if not path.exists():
             continue

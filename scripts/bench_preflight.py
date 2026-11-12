@@ -376,7 +376,7 @@ def check_calm(ctx: Context) -> list:
         ops = reads.ops()
     except bh.Unreadable as e:
         return [line(bs.FAIL, f"le calme : illisible ({e}) — jamais un ✓ sur une lecture qui manque")]
-    return [line(*bh.calm(ops, ctx.power, reads.created(), ctx.now.timestamp(), ctx.target))]
+    return [line(*bh.calm(ops, ctx.power, reads.created(), ctx.now.timestamp(), ctx.target, reads.restored()))]
 
 
 def check_restore_first(ctx: Context) -> list:

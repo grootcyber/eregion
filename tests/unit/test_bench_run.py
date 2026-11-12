@@ -72,8 +72,9 @@ class FakeSteps:
             raise self._point
         return self._point
 
-    def snapshot(self, target, plan, say):
+    def snapshot(self, target, plan, say, token):
         self.calls.append(("snapshot", target))
+        self.token = token
         if isinstance(self._snapshot, Exception):
             raise self._snapshot
         return 2.0
@@ -523,9 +524,26 @@ def test_the_steps_hand_the_point_and_the_snapshot_to_their_module(monkeypatch):
     monkeypatch.setattr(bench_snapshot, "judge",
                         lambda target, env, config: seen.append(("judge", target, config)) or DIRTY_POINT)
     monkeypatch.setattr(bench_snapshot, "take",
-                        lambda target, env, plan, say: seen.append(("take", target, plan)) or 3.0)
+                        lambda target, env, plan, say, token: seen.append(("take", target, plan)) or 3.0)
     steps = brun.Steps(dict(CLEAN))
     assert steps.point(VM) is DIRTY_POINT
-    assert steps.snapshot(VM, DIRTY_POINT, print) == 3.0
+    assert steps.snapshot(VM, DIRTY_POINT, print, "t") == 3.0
     assert seen[0][:2] == ("judge", VM) and seen[0][2].endswith("glorfindel-config.yaml")
     assert seen[1] == ("take", VM, DIRTY_POINT)
+
+
+def test_the_console_s_token_is_taken_out_of_every_child_s_environment(monkeypatch):
+    """BNC3b review: read once by bench-run, then out of the environment of az, ssh, scp and the
+    preflight — the 📸 route alone takes it, as an argument."""
+    monkeypatch.setenv(brun.TOKEN_ENV, "tok-Q")
+    env = {**CLEAN, brun.TOKEN_ENV: "tok-Q"}
+    steps = FakeSteps(point=DIRTY_POINT)
+    said: list[str] = []
+    feed = [VM, "o"]
+    code = brun.main(["--target", VM, "--scenario", "T1486"], env, cwd=Path("/"), here=Path("/"),
+                     ask=lambda p: feed.pop(0), say=said.append, steps=steps, tty=True)
+    assert code == 0, said
+    assert brun.TOKEN_ENV not in env and brun.TOKEN_ENV not in os.environ
+    assert steps.token == "tok-Q"
+    assert brun.TOKEN_ENV not in brun.Steps({brun.TOKEN_ENV: "x", "A": "1"}).env
+    assert "tok-Q" not in "\n".join(said)

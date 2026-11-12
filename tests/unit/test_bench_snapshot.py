@@ -72,6 +72,12 @@ def _world(tmp_path, *, point: datetime, jobs=None, created="2026-07-01T09:00:00
                  {"name": "2", "properties": {"recoveryPointTime": (point - timedelta(days=1)).isoformat()}}]),
         bw.rule("az", ["backup", "job", "list"], [_restore(_at(days=2))] if jobs is None else jobs),
         bw.rule("az", ["vm", "show", bw.RID, "timeCreated"], json.dumps(created)),
+        # the restore of 2 days ago, proven in place: its detail (a hypothesis, IN_PLACE_KEYS), its swap
+        bw.rule("az", ["backup", "job", "show"],
+                {"properties": {"extendedInfo": {"propertyBag": {"Restore Type": "Original Location"}}}}),
+        bw.rule("az", ["activity-log", bw.RID], [
+            bw.event("Microsoft.Compute/virtualMachines/write", bw.RID, _at(days=2, minutes=10).isoformat(),
+                     "Succeeded", "", {}, "w0")]),
     ]
     return w
 
@@ -163,6 +169,7 @@ def test_a_read_that_fails_is_no_clean_point(tmp_path, monkeypatch, case):
 
 def test_the_quarantine_now_on_imladris_holds_every_point_after_it(tmp_path, monkeypatch):
     w = _world(tmp_path, point=_at(hours=3))
+    w.write("runs/glorfindel/watch_debug.jsonl", "")
     w.write(".glorfindel/isolation/gondolin.json", {"resource_id": bw.RID, "isolated_at": _at(hours=4).isoformat()},
             home=True)
     got = _judge(w, monkeypatch)
@@ -176,6 +183,64 @@ def test_the_history_reader_sends_back_no_reasoning_nor_id(tmp_path, monkeypatch
     text = json.dumps(doc)
     assert "never sent back" not in text and "/subscriptions/" not in text and bw.SUB not in text
     assert doc["files"] == 1 and doc["unreadable"] == [] and len(doc["isolations"]) == 1
+
+
+# ── BNC3b, review round 1 ─────────────────────────────────────────────────────
+
+def test_a_lift_before_the_line_of_a_console_isolation_never_closes_it(tmp_path, monkeypatch):
+    """The watch lifts at 10:00, the console isolates again at 10:05 (its start taken at 09:55), the next
+    lift at 12:00: a point of 11:00 is in that quarantine — the lift of 10:00 never closes it."""
+    w = _world(tmp_path, point=_at(hours=1))
+    _cycle(w, action="isolate_vm", verified_at=_at(hours=4))
+    _cycle(w, action="release_isolation", verified_at=_at(hours=2))
+    w.write("runs/console/manual_actions.jsonl", json.dumps(
+        {"timestamp": _at(hours=1, minutes=55).isoformat(), "action": "isolate_vm", "signal": {"resource_id": bw.RID},
+         "outcome": {"status": "isolated"}}) + "\n")
+    _cycle(w, action="release_isolation", verified_at=_at(minutes=30), name="later")
+    got = _judge(w, monkeypatch)
+    assert got["clean"] is False and "pris dans une quarantaine" in got["said"], got
+
+
+@pytest.mark.parametrize("case", ["bad_line", "no_files", "no_console_mount"])
+def test_a_history_that_reads_in_part_is_no_quarantine_absent(tmp_path, monkeypatch, case):
+    w = _world(tmp_path, point=_at(hours=3))
+    if case == "bad_line":
+        _cycle(w, action="isolate_vm", verified_at=_at(days=3))
+        with open(w.app / "runs" / "glorfindel" / "watch_debug.jsonl", "a") as f:
+            f.write('{"timestamp": "2026-11-12T20:00:00+00:00", "action": "isolate_vm", "sig\n')
+    elif case == "no_console_mount":
+        _cycle(w, action="isolate_vm", verified_at=_at(days=3))
+    env = _env(w, monkeypatch)
+    if case == "no_console_mount":
+        plan = json.loads(w.plan_file.read_text())
+        plan["h0"]["mounts"] = [m for m in plan["h0"]["mounts"] if m["Destination"] != "/app/runs/console"]
+        w.plan_file.write_text(json.dumps(plan))
+    got = bsn.judge(bw.VM, env, str(w.config), now=NOW.timestamp())
+    assert got["clean"] is False and "ne se lisent pas" in got["said"], got
+    said = {"bad_line": "ligne(s) illisible(s)", "no_files": "aucun fichier de cycles",
+            "no_console_mount": "runs/console : absent"}[case]
+    assert said in got["said"], got
+
+
+def test_a_job_name_of_the_vault_given_by_the_console_is_followed_and_its_own_never_taken_for_one(monkeypatch):
+    """`action_snapshot` gives `snapshot-<vm>-<ts>`, Glorfindel's own record — no job of the vault: then
+    the job is looked for by its time. A name of the vault (a GUID, or `rsv:<vault>/<rg>/<name>`): followed."""
+    assert bsn.vault_job_name("snapshot-vm-celebrimbor-gondolin-20261112T220000", PLAN) == ""
+    assert bsn.vault_job_name("00000000-0000-4000-8000-0000000000aa", PLAN) == "00000000-0000-4000-8000-0000000000aa"
+    assert bsn.vault_job_name(f"rsv:{bw.VAULT}/{bw.RG}/00000000-0000-4000-8000-0000000000aa", PLAN) == \
+        "00000000-0000-4000-8000-0000000000aa"
+    assert bsn.vault_job_name("rsv:other-vault/rg/00000000-0000-4000-8000-0000000000aa", PLAN) == ""
+    import bench_preflight as bp
+    az, asked = _jobs("Completed")
+    monkeypatch.setattr(bs, "az_json", az)
+    monkeypatch.setattr(bp, "point_times", lambda t, rg, v: [NOW.timestamp() + 60])
+    clock = Clock()
+    bsn.take(bw.VM, {}, PLAN, lambda s: None, token=TOKEN, tunnel=FakeTunnel([]),
+             open_=FakeConsole({"status": "started", "job_id": "00000000-0000-4000-8000-0000000000cc"}),
+             clock=clock, sleep=clock.sleep, now=NOW.timestamp)
+    assert not [a for a in asked if a[:3] == ["backup", "job", "list"]], "the job given was looked for by its time"
+    (show,) = [a for a in asked if a[:3] == ["backup", "job", "show"]]
+    assert show[show.index("-n") + 1].endswith("0cc")
 
 
 # ── the forward ───────────────────────────────────────────────────────────────
@@ -228,10 +293,12 @@ def test_the_forward_is_opened_pinned_without_a_master_and_closed_after(fake_ssh
         (seen,) = calls()
         argv = seen["argv"]
         assert argv[argv.index("-L") + 1] == f"127.0.0.1:{port}:127.0.0.1:7007"
+        # a bounded remote command, never -N: a SIGTERM that skips the close leaves nothing open past it
+        assert "-N" not in argv and argv[-1] == f"sleep {int(bsn.FORWARD_MAX_S)}"
         for opt in ("ControlMaster=no", "ControlPath=none", "ExitOnForwardFailure=yes", "BatchMode=yes",
                     "StrictHostKeyChecking=yes"):
             assert opt in argv, opt
-        assert "-N" in argv and argv[-1] == f"glorfindel@{bw.H0_IP}"
+        assert argv[-2] == f"glorfindel@{bw.H0_IP}"
         assert _alive(seen["pid"])
     assert not _alive(seen["pid"]), "the forward outlives the request"
     assert TOKEN not in json.dumps(calls()), "the token reached ssh"

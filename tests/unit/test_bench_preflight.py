@@ -178,10 +178,27 @@ def _at(**ago) -> str:
     return (NOW - timedelta(**ago)).isoformat()
 
 
-def calm_activity(started_ago=timedelta(hours=3), rcs=()) -> list[dict]:
-    """BNC3b: gondolin's activity log over the horizon — started `started_ago`, then each Run Command
-    of `rcs`: (who, how long ago it started, how long it ran, its correlation)."""
-    ev = []
+# BNC3b review: the detail of a restore in place, as `az backup job show` is supposed to say it (the
+# key and the value are a hypothesis, to measure on the bench: bench_history.IN_PLACE_KEYS).
+IN_PLACE = {"properties": {"operation": "Restore", "status": "Completed",
+                           "extendedInfo": {"propertyBag": {"Restore Type": "Original Location"}}}}
+RESTORE_DISKS = {"properties": {"operation": "Restore", "status": "Completed",
+                                "extendedInfo": {"propertyBag": {"Restore Type": "Restore Disks"}}}}
+
+
+def swap(restored_ago=timedelta(days=2)) -> list[dict]:
+    """The write on gondolin during its restore in place (the swap of its disks), by the vault."""
+    at = NOW - restored_ago - timedelta(minutes=10)
+    return [bw.event("Microsoft.Compute/virtualMachines/write", bw.RID, at.isoformat(), "Started", "", {}, "w0"),
+            bw.event("Microsoft.Compute/virtualMachines/write", bw.RID, (at + timedelta(seconds=30)).isoformat(),
+                     "Succeeded", "", {}, "w0")]
+
+
+def calm_activity(started_ago=timedelta(hours=3), rcs=(), swapped=True) -> list[dict]:
+    """BNC3b: gondolin's activity log over the horizon — its disks swapped by the restore of 2 days ago,
+    started `started_ago`, then each Run Command of `rcs`: (who, how long ago it started, how long it
+    ran)."""
+    ev = swap() if swapped else []
     s = NOW - started_ago
     ev += [bw.event("Microsoft.Compute/virtualMachines/start/action", bw.RID, (s - timedelta(minutes=2)).isoformat(),
                     "Started", bw.CONSOLE_OID, {"appid": bw.CONSOLE_APP}, "s0"),
@@ -206,7 +223,7 @@ def restored_jobs(restored_ago=timedelta(days=2)) -> list[dict]:
 
 def _world(tmp_path, *, point_age_h: float = 50, restore_role=None, staging_assigned=False,
            h0_rights=None, console_pair: dict = CONSOLE_ON_ITS_SP, activity=None, jobs=None,
-           created: str | None = "2026-07-01T09:00:00+00:00") -> bw.World:
+           created: str | None = "2026-07-01T09:00:00+00:00", detail=None) -> bw.World:
     w = bw.World(tmp_path)
     _h0(w)
     point = (NOW - timedelta(hours=point_age_h)).isoformat()
@@ -260,6 +277,7 @@ def _world(tmp_path, *, point_age_h: float = 50, restore_role=None, staging_assi
         bw.rule("az", ["activity-log", bw.RID], calm_activity() if activity is None else activity),
         bw.rule("az", ["backup", "job", "list"], restored_jobs() if jobs is None else jobs),
         bw.rule("az", ["vm", "show", bw.RID, "timeCreated"], json.dumps(created)),
+        bw.rule("az", ["backup", "job", "show"], IN_PLACE if detail is None else detail),
     ]
     for n, (role, actions) in enumerate(ROLES.items(), 1):
         nid = {"Reader": 1, "Eregion Glorfindel Response": 5, "Eregion Glorfindel Session Drain": 6,
@@ -868,6 +886,10 @@ def test_a_run_command_of_imladris_outside_a_drain_counts(tmp_path, monkeypatch,
     if case == "no_action_s":
         (first,) = _lines_of(out, bs.FAIL, "restore d'abord : illisible")
         assert "action_s" in first
+    elif case == "no_cycle":
+        # no cycle file of the watch at all: a quarantine unread is no quarantine absent (BNC3b review)
+        (first,) = _lines_of(out, bs.FAIL, "restore d'abord : illisible")
+        assert "aucun fichier de cycles" in first
     else:
         (first,) = _lines_of(out, bs.FAIL, "restore d'abord : 1 Run Command")
         assert "Imladris" in first
@@ -943,3 +965,86 @@ def test_a_run_of_orodruin_is_left_out_only_when_its_technique_reads_as_non_dest
     assert all("--auth-mode" in c and "login" in c for c in downloads)
     assert not [c for c in w.calls() if c[:3] == ["az", "storage", "blob"] and c[3] not in ("list", "download")]
     assert not leaks(out)
+
+
+
+# ── BNC3b, review round 1 ─────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("detail, swapped, said", [
+    (RESTORE_DISKS, True, "son détail ne dit pas un restore en place"),
+    ({"properties": {"operation": "Restore", "status": "Completed"}}, True, "son détail ne dit pas un restore en place"),
+    (IN_PLACE, False, "aucune écriture de la VM pendant le job"),
+])
+def test_a_restore_not_proven_in_place_is_no_last_restore(tmp_path, monkeypatch, detail, swapped, said):
+    """A « Restore disks », or a restore whose detail or whose swap of disks does not read, leaves the VM
+    as it was: no anchor of « restore d'abord » — a ✗ that says what to do, never a ✓ (BNC3b review)."""
+    w = _world(tmp_path, **_IN_ORDER, detail=detail, activity=calm_activity(swapped=swapped))
+    code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
+    assert code == 1
+    (first,) = _lines_of(out, bs.FAIL, "restore d'abord : illisible")
+    assert "restore non prouvé en place" in first and said in first and "make bench-restore" in first, first
+    shows = [c for c in w.calls() if c[:4] == ["az", "backup", "job", "show"]]
+    assert shows and all("-n" in c for c in shows)
+
+
+def test_a_restore_in_place_is_the_last_restore(tmp_path, monkeypatch):
+    w = _world(tmp_path, **_IN_ORDER)
+    code, out, err = _preflight(w, arm_in_order(), monkeypatch)
+    assert code == 0, out + err
+    assert _lines_of(out, bs.OK, "restore d'abord : aucune Run Command destructive depuis son dernier restore")
+
+
+def test_an_older_restore_in_place_is_the_anchor_when_the_newest_is_not(tmp_path, monkeypatch):
+    """A « Restore disks » after an in-place restore left the VM as it was: the runs since the in-place
+    one count — here, a human's Run Command between the two."""
+    jobs = restored_jobs() + [{"name": "00000000-0000-4000-8000-0000000000ac",
+                               "properties": {"entityFriendlyName": bw.VM, "operation": "Restore",
+                                              "status": "Completed", "startTime": _at(hours=5),
+                                              "endTime": _at(hours=4, minutes=40)}}]
+    w = _world(tmp_path, **_IN_ORDER, jobs=jobs,
+               activity=calm_activity(rcs=(("human", timedelta(hours=6), timedelta(seconds=20)),)))
+    w.rules.insert(0, bw.rule("az", ["backup", "job", "show", "00000000-0000-4000-8000-0000000000ac"], RESTORE_DISKS))
+    code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
+    assert code == 1
+    assert _lines_of(out, bs.FAIL, "restore d'abord : 1 Run Command sur la VM depuis son dernier restore (16:00:00 le 07/11)")
+
+
+@pytest.mark.parametrize("case", ["write", "restore"])
+def test_a_write_or_a_restore_is_a_start_for_the_calm(tmp_path, monkeypatch, case):
+    if case == "write":
+        ev = calm_activity() + [bw.event("Microsoft.Compute/virtualMachines/write", bw.RID, _at(minutes=3),
+                                         "Succeeded", "", {}, "w9")]
+        w = _world(tmp_path, **_IN_ORDER, activity=ev)
+    else:
+        w = _world(tmp_path, **_IN_ORDER, jobs=restored_jobs(timedelta(minutes=4)),
+                   activity=calm_activity(swapped=False) + swap(timedelta(minutes=4)))
+    code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
+    assert code == 1
+    (calm,) = _lines_of(out, bs.FAIL, "le calme : ")
+    assert "il reste" in calm, calm
+
+
+def test_no_start_read_and_a_creation_unread_is_never_calm(tmp_path, monkeypatch):
+    """A gondolin recreated 3 min ago: no start/action; its creation unread — never a ✓ (BNC3b review)."""
+    ev = [e for e in calm_activity() if "start/action" not in e["operationName"]["value"]
+          and "virtualMachines/write" not in e["operationName"]["value"]]
+    w = _world(tmp_path, **_IN_ORDER, activity=ev, jobs=[], created=None)
+    w.rules.insert(0, bw.rule("az", ["vm", "show", bw.RID, "timeCreated"], rc=1, err="ERROR: (Forbidden) no\n"))
+    code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
+    assert code == 1
+    (calm,) = _lines_of(out, bs.FAIL, "le calme : illisible")
+    assert "timeCreated" in calm
+
+
+def test_a_run_of_orodruin_without_its_own_journal_line_is_destructive(tmp_path, monkeypatch):
+    """R2, non-destructive, journaled; then R1, a T1486 whose journal never reached the channel, within
+    15 min: R1 does not borrow R2's line — one line, one Run Command (BNC3b review)."""
+    r2, r1 = timedelta(hours=1), timedelta(hours=1) - timedelta(minutes=5)
+    w = _world(tmp_path, **_IN_ORDER, activity=calm_activity(rcs=(("orodruin", r2, timedelta(seconds=20)),
+                                                                  ("orodruin", r1, timedelta(seconds=20)))))
+    _channel(w, r2, "T1110.001")
+    code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
+    assert code == 1
+    (first,) = _lines_of(out, bs.FAIL, "restore d'abord : 1 Run Command")
+    assert "Orodruin" in first
+    assert bs.hms((NOW - r1).timestamp()) in first

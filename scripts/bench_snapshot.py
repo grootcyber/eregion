@@ -7,21 +7,25 @@ outside every quarantine, over every run (Imladris's history, scripts/bench_hist
 fails is no clean point. Otherwise it asks for one, by the route of the console's 📸 button,
 `POST /api/action/snapshot/<vm>` of Imladris's console:
 
-  the way in    a short port forward it opens itself, `ssh -N -L 127.0.0.1:<free port>:127.0.0.1:7007`
-                to Imladris, the host key pinned (the Makefile's `imladris-known` file), never through a
-                multiplexed master (ControlMaster=no), closed whatever the end — the time of the request
-                and its receipt only: it depends on no tunnel of MOB2, leaves nothing open, never takes
-                the port 7007 of the phone's tunnel;
+  the way in    a short port forward it opens itself, `ssh -L 127.0.0.1:<free port>:127.0.0.1:7007 … sleep
+                FORWARD_MAX_S` to Imladris — a bounded remote command, not `-N` —, the host key pinned
+                (the Makefile's `imladris-known` file), never through a multiplexed master
+                (ControlMaster=no), closed whatever the end (a SIGTERM included, by its handler; past
+                it, the command's bound) — the time of the request and its receipt only: it depends on
+                no tunnel of MOB2, leaves nothing open, never takes the port 7007 of the phone's tunnel;
   the token     the console's, read in host.env by the Makefile, refused to a code session by its guard
                 (`CONSOLE_GUARD`, scripts/mobile.py guard), handed to this script by the environment
-                (BENCH_CONSOLE_TOKEN), never in an argv, never printed; sent as `Authorization: Bearer`,
-                never in the URL; no proxy;
+                (BENCH_CONSOLE_TOKEN), taken out of every child's environment as soon as it is read
+                (scripts/bench_run.py), never in an argv, never printed; sent as `Authorization:
+                Bearer`, never in the URL; no proxy;
   the request   a JSON body (`Content-Type: application/json`) and a `Host` of `127.0.0.1:<port>`: two of
                 the console's entry checks (eregion_console/api.py, `_TokenAuthMiddleware`);
   the receipt   under FS1 (EREGION_ACTION_QUEUE=1), the route deposits a signed request and the watch runs
                 it: its receipt followed by `GET /api/queue/<id>` until final — `not_taken`, `untrusted`,
                 `refused`, `failed`, `unknown`, or a request past its life stop the run;
-  the job       the vault's backup job of the VM started since the gesture, followed by `az backup job
+  the job       the vault's job the console names, when it names one (`vault_job_name`: today it gives
+                Glorfindel's own record, `snapshot-<vm>-<ts>`, which is none), else the vault's backup
+                job of the VM started since the gesture, followed by `az backup job
                 show` under the operator's `az login` until `Completed`, JOB_WAIT_S at most from the
                 gesture (60 min: the first point after a restore is complete, ~40 min); one that fails or
                 runs past it stops the run — before the request goes to Orodruin: nothing is attacked;
@@ -53,6 +57,8 @@ MAX_ANSWER_BYTES = 256 * 1024
 from eregion_core.action_queue import RUN_S as _RUN_S, TAKE_S as _TAKE_S  # noqa: E402
 QUEUE_WAIT_S = float(_TAKE_S + _RUN_S + 60)
 QUEUE_POLL_S = 5.0
+# How long the forward lives at most: the request and its receipt (QUEUE_WAIT_S), and a margin.
+FORWARD_MAX_S = QUEUE_WAIT_S + 120.0
 JOB_WAIT_S = 3600.0
 JOB_POLL_S = 60.0
 JOB_FIND_S = 300.0
@@ -94,6 +100,9 @@ def judge(target: str, env: dict, config: str, now: float | None = None) -> dict
     except bh.Unreadable as e:
         out["said"] = f"le dernier restore de la VM ne se lit pas ({e})"
         return out
+    if out["point"] is not None and out["point"] <= since.end:
+        out["clean"], out["said"] = bh.point_clean(out["point"], since, [])
+        return out
     try:
         quarantine = reads.quarantines()
     except bh.Unreadable as e:
@@ -112,11 +121,12 @@ def free_port() -> int:
 
 
 def forward_argv(base: list[str], port: int) -> list[str]:
-    """The ssh of the forward: no command, no prompt, no multiplexed master, failing when it can't
-    forward, to the console's port on Imladris's loopback alone."""
-    return [*base[:-1], "-N", "-o", "BatchMode=yes", "-o", "ExitOnForwardFailure=yes", "-o", "ConnectTimeout=15",
+    """The ssh of the forward: a bounded remote command (`sleep FORWARD_MAX_S`, never `-N`: a SIGTERM
+    that skips the close leaves it open no longer — BNC3b review), no prompt, no tty, no multiplexed
+    master, failing when it can't forward, to the console's port on Imladris's loopback alone."""
+    return [*base[:-1], "-T", "-o", "BatchMode=yes", "-o", "ExitOnForwardFailure=yes", "-o", "ConnectTimeout=15",
             "-o", "ControlMaster=no", "-o", "ControlPath=none",
-            "-L", f"127.0.0.1:{port}:127.0.0.1:{CONSOLE_PORT}", base[-1]]
+            "-L", f"127.0.0.1:{port}:127.0.0.1:{CONSOLE_PORT}", base[-1], f"sleep {int(FORWARD_MAX_S)}"]
 
 
 class Tunnel:
@@ -139,6 +149,7 @@ class Tunnel:
         self.port = self.port or free_port()
         self.proc = self.popen(forward_argv(base, self.port), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                stderr=subprocess.DEVNULL, cwd=bs.REPO)
+        self._on_term()
         try:
             began = self.clock()
             while True:
@@ -158,7 +169,24 @@ class Tunnel:
             raise
         return self.port
 
+    def _on_term(self) -> None:
+        """A SIGTERM while the forward is open: the close runs (SystemExit through `__exit__`), then
+        the handler before it is put back. Only in the main thread, where Python takes signals."""
+        import signal
+        import threading
+        self._before = None
+        if threading.current_thread() is not threading.main_thread():
+            return
+
+        def stop(signum, frame):
+            raise SystemExit(143)
+        self._before = signal.signal(signal.SIGTERM, stop)
+
     def close(self) -> None:
+        before, self._before = getattr(self, "_before", None), None
+        if before is not None:
+            import signal
+            signal.signal(signal.SIGTERM, before)
         proc, self.proc = self.proc, None
         if proc is None or proc.poll() is not None:
             return
@@ -230,8 +258,9 @@ def follow(port: int, request_id: str, token: str, *, open_=None, clock=time.mon
 
 
 def ask_snapshot(port: int, target: str, token: str, *, open_=None, clock=time.monotonic, sleep=time.sleep,
-                 say=print) -> None:
-    """The 📸 route, then its receipt under FS1. Raises RuntimeError on every refusal."""
+                 say=print) -> str:
+    """The 📸 route, then its receipt under FS1: the `job_id` the console gives (its own record's, or
+    ''). Raises RuntimeError on every refusal."""
     doc = call(port, "POST", f"/api/action/snapshot/{target}", token, body={}, open_=open_)
     if doc.get("error"):
         raise RuntimeError(f"la console refuse l'instantané ({bs.scrub(str(doc['error']))[:200]})")
@@ -244,9 +273,24 @@ def ask_snapshot(port: int, target: str, token: str, *, open_=None, clock=time.m
         if state in FINAL_REFUSALS or state == "expired" or not doc.get("ok") or state != "done":
             why = bs.scrub(str(doc.get("error") or doc.get("refused") or ""))[:200]
             raise RuntimeError(f"la demande d'instantané : {state or 'sans état'}" + (f" ({why})" if why else ""))
-        return
+        return str(doc.get("job_id") or "")
     if doc.get("status") != "started":
         raise RuntimeError("la console ne dit pas l'instantané lancé")
+    return str(doc.get("job_id") or "")
+
+
+def vault_job_name(job_id: str, plan: dict) -> str:
+    """The vault's job name in what the console gives, or ''. Today `action_snapshot` gives Glorfindel's
+    own record, `snapshot-<vm>-<ts>` (glorfindel/jobs.py) — no job of the vault, never taken for one:
+    then the job is looked for by its time. A GUID, or `rsv:<vault>/<group>/<name>` of this vault (the
+    record's `snap_id`), is followed."""
+    if bs.GUID.fullmatch(job_id or ""):
+        return job_id
+    m = re.fullmatch(r"rsv:([^/]+)/([^/]+)/([A-Za-z0-9-]{1,64})", job_id or "")
+    if m and m.group(1).lower() == str(plan.get("vault") or "").lower() \
+            and m.group(2).lower() == str(plan.get("vault_rg") or "").lower():
+        return m.group(3)
+    return ""
 
 
 # ── the vault's job ───────────────────────────────────────────────────────────
@@ -303,12 +347,14 @@ def await_job(name: str, plan: dict, began: float, *, clock=time.monotonic, slee
         sleep(JOB_POLL_S)
 
 
-def take(target: str, env: dict, plan: dict, say=print, *, tunnel=None, open_=None, clock=time.monotonic,
-         sleep=time.sleep, now=time.time) -> float:
+def take(target: str, env: dict, plan: dict, say=print, *, token: str | None = None, tunnel=None, open_=None,
+         clock=time.monotonic, sleep=time.sleep, now=time.time) -> float:
     """A new point by the 📸 route, its job followed to `Completed`; the new point's time. Raises
-    RuntimeError on every refusal: the caller stops the run, nothing goes to Orodruin."""
+    RuntimeError on every refusal: the caller stops the run, nothing goes to Orodruin. `token`: the
+    console's, as `make bench-run` read it and took it out of its children's environment (BNC3b review);
+    else read in `env`."""
     import bench_preflight as bp
-    token = (env.get(TOKEN_ENV) or "").strip()
+    token = (token if token is not None else env.get(TOKEN_ENV) or "").strip()
     if not token:
         raise RuntimeError(f"le jeton de la console manque ({TOKEN_ENV}, lu dans host.env par make bench-run) : "
                            "aucun point demandé")
@@ -317,9 +363,9 @@ def take(target: str, env: dict, plan: dict, say=print, *, tunnel=None, open_=No
     asked_at, began = now(), clock()
     with (tunnel or Tunnel(env)) as port:
         say("  → la route du bouton 📸 de la console d'Imladris, par un renvoi de port court")
-        ask_snapshot(port, target, token, open_=open_, clock=clock, sleep=sleep, say=say)
+        given = ask_snapshot(port, target, token, open_=open_, clock=clock, sleep=sleep, say=say)
     say("  ✓ l'instantané lancé ; le renvoi de port fermé ; le job du coffre suivi")
-    name = find_job(target, plan, asked_at, clock=clock, sleep=sleep)
+    name = vault_job_name(given, plan) or find_job(target, plan, asked_at, clock=clock, sleep=sleep)
     await_job(name, plan, began, clock=clock, sleep=sleep, say=say)
     times = bp.point_times(target, plan["vault_rg"], plan["vault"])
     newest = max(times, default=None)
