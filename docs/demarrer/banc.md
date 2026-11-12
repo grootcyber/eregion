@@ -80,11 +80,14 @@ make celebrimbor-output        # le fragment de glorfindel-config.yaml : l'espac
 Ce rôle personnalisé doit exister avant le plan d'Imladris : le Terraform le nomme. Une fois par tenant, les cinq rôles de `infra/identities/` (le Terraform d'Imladris nomme aussi « Restore Neutralize » et « Restore Staging », dès que `principals.auto.tfvars` donne les principaux qui restaurent) :
 
 ```bash
-SUB=$AZURE_SUBSCRIPTION_ID
-for r in response restore session-drain restore-neutralize restore-staging; do
-  sed "s|<SUBSCRIPTION_ID>|$SUB|" infra/identities/glorfindel-$r.json > /tmp/eregion-role-$r.json
-  az role definition create --role-definition @/tmp/eregion-role-$r.json
-done
+SUB=$AZURE_SUBSCRIPTION_ID                   # .envrc chargé ; vide, le sed écrit « /subscriptions/ » et az refuse chaque rôle
+GUID='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+if printf %s "$SUB" | grep -qE "$GUID"; then    # sans l'afficher ; pas un GUID : rien ne part
+  for r in response restore session-drain restore-neutralize restore-staging; do
+    sed "s|<SUBSCRIPTION_ID>|$SUB|" infra/identities/glorfindel-$r.json > /tmp/eregion-role-$r.json
+    az role definition create --role-definition @/tmp/eregion-role-$r.json
+  done
+else echo "SUB n'est pas un GUID : source .envrc, puis relancer le bloc"; fi
 ```
 
 - **Pour une première attaque, Imladris observe** : `GLORFINDEL_READ_ONLY=1` et `human_only` sont ce qu'écrit `make glorfindel-host-env`. La détection se mesure ainsi. Le confinement, non : Glorfindel recommande et escalade, il n'agit pas.
@@ -233,7 +236,7 @@ rm -f infra/orodruin/orodruin.env infra/glorfindel-host/host.env ~/.eregion/orod
 ```
 
 - **Le rôle de la réponse.** S'il a été attribué à la main (étape 2), retire-le d'abord : [`docs/banc-bl1.md`](../banc-bl1.md), étape 7.
-- **Un rôle encore attribué** quelque part n'est pas supprimé : `az role assignment list --role "<nom>" --all -o table`.
+- **Un rôle encore attribué** quelque part n'est pas supprimé : `az role assignment list --all --query "[?roleDefinitionName=='<nom>']" -o table` (jamais `--role "<nom>" --all` : sans portée, az plante, `docs/operations.md`, en tête).
 - **Le reste** (Discord, la clé du modèle) : le README, « Remove Eregion ».
 
 ## Sans Imladris : la watch de ton poste

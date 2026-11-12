@@ -332,17 +332,20 @@ Base install is the same `make install` as the eval section above. The differenc
 git clone https://github.com/grootcyber/eregion && cd eregion && make install
 cp .envrc.example .envrc   # fill in ANTHROPIC_API_KEY + Azure creds
 
-SUB=<SUBSCRIPTION_ID>; RG=rg-celebrimbor
-for r in response restore session-drain restore-neutralize restore-staging; do
-  sed "s|<SUBSCRIPTION_ID>|$SUB|" infra/identities/glorfindel-$r.json > /tmp/eregion-role-$r.json
-  az role definition create --role-definition @/tmp/eregion-role-$r.json
-done
-az ad sp create-for-rbac --name "eregion-glorfindel-watch"     # → GLORFINDEL_AZURE_CLIENT_ID / _SECRET
-az role assignment create --assignee <appId> --role Reader --scope /subscriptions/$SUB/resourceGroups/$RG
-az role assignment create --assignee <appId> --role "Eregion Glorfindel Response" \
-  --scope /subscriptions/$SUB/resourceGroups/$RG
-az role assignment create --assignee <appId> --role "Eregion Glorfindel Session Drain" \
-  --scope <id of each VM it defends>    # VM by VM, never the group
+SUB=$(az account show --query id -o tsv); RG=rg-celebrimbor   # read, never typed (az account set first for another one)
+GUID='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+if printf %s "$SUB" | grep -qE "$GUID"; then    # not a GUID (az login missing): nothing runs
+  for r in response restore session-drain restore-neutralize restore-staging; do
+    sed "s|<SUBSCRIPTION_ID>|$SUB|" infra/identities/glorfindel-$r.json > /tmp/eregion-role-$r.json
+    az role definition create --role-definition @/tmp/eregion-role-$r.json
+  done
+  az ad sp create-for-rbac --name "eregion-glorfindel-watch"     # → GLORFINDEL_AZURE_CLIENT_ID / _SECRET
+  az role assignment create --assignee <appId> --role Reader --scope /subscriptions/$SUB/resourceGroups/$RG
+  az role assignment create --assignee <appId> --role "Eregion Glorfindel Response" \
+    --scope /subscriptions/$SUB/resourceGroups/$RG
+  az role assignment create --assignee <appId> --role "Eregion Glorfindel Session Drain" \
+    --scope <id of each VM it defends>    # VM by VM, never the group
+else echo "SUB is not a GUID: az login, then run the block again"; fi
 # … the console and the bot the same way, plus "Eregion Glorfindel Restore" (docs/operations.md)
 ```
 

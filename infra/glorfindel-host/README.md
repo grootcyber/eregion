@@ -26,7 +26,7 @@ seul sur le banc, dans le mode de chaque VM.
     (`docs/operations.md`, « Depuis un rôle de la réponse d'avant SEC11 », dans leur ordre :
     créer le rôle ; le plan relu, puis `make glorfindel-host-up` ; juste après, deux portées de
     VM (`terraform output session_drain_vms`, ou `az role assignment list --assignee <principal>
-    --role "Eregion Glorfindel Session Drain" --all`) ; ensuite seulement, Run Command retiré du
+    --all --query "[?roleDefinitionName=='Eregion Glorfindel Session Drain']" -o table`) ; ensuite seulement, Run Command retiré du
     rôle de la réponse ; et après ce geste, la préparation de gondolin et de bree, sans aucune
     `no_drain` — avant, elle ne prouve rien, le rôle de la réponse couvrant encore le groupe) :
     Run Command n'est plus dans le rôle de la réponse ; « Eregion Glorfindel Session Drain » se
