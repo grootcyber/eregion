@@ -1,6 +1,6 @@
 """IML1 (#688): the VM that carries Glorfindel is Imladris — « H0 » never names it outside the history
 (scripts/host_name.py; mutants M4710–M4714); IML1b (#747): the commands of Imladris are `make
-imladris-*`, the former names silent aliases.
+imladris-*`, the former names silent aliases (M4840–M4849), and a live text never cites a former one.
 
 The lot H0 keeps its name: the guard tells it from the host by its place on the line (after « lot »,
 in a list of lots, a table's first cell, a value alone), or by a phrase named in LOT_PHRASES.
@@ -190,6 +190,47 @@ def test_make_help_shows_the_new_names_only():
     for name in ("imladris-tunnel-install", "imladris-tunnel-on", "imladris-tunnel-off", "imladris-tunnel-remove",
                  "imladris-tunnel-check", "imladris-tunnel", "imladris-url", "imladris-start", "imladris-cd-install"):
         assert name in shown, name
+
+
+@pytest.mark.parametrize("text,said", [
+    ("Puis `make glorfindel-host-push`.\n", True),
+    ("Le tunnel : make mobile-tunnel-on, puis Safari.\n", True),
+    ("Elle refuse, comme toutes sauf `make\nmobile-check`.\n", True),          # across a line
+    ("Puis `make imladris-push` et `make imladris-tunnel-on`.\n", False),
+    ("Les anciens noms (`glorfindel-host-*`, `mobile-*`) restent des alias.\n", False),
+    ("infra/glorfindel-host/README.md, make -C infra/glorfindel-host\n", False),
+])
+def test_a_former_command_in_a_live_text_is_said(tmp_path, text, said):
+    _tree(tmp_path, {"docs/x.md": text, "glorfindel/x.py": "# " + text})
+    found = [p for p in host_name.problems(tmp_path) if "a former command" in p]
+    assert sorted(p.split(":")[0] for p in found) == (["docs/x.md", "glorfindel/x.py"] if said else [])
+
+
+def test_a_former_command_is_read_but_in_the_history_and_the_kept_texts(tmp_path):
+    cited = "Puis `make glorfindel-host-start REF=…` et `make mobile-check`).\n"
+    _tree(tmp_path, {
+        "CHANGELOG.md": cited, "docs/historique.md": cited, "changes/X1.md": "### Fixed\n- " + cited,
+        "tests/unit/test_x.py": "# " + cited, "scripts/mutants/X1.py": "# " + cited,
+        ".github/workflows/x.yml": "# " + cited,
+        "CLAUDE.md": "Imladris ne déploie qu'un tag (`make glorfindel-host-start REF=…`).\n",
+        "ROADMAP.md": "| 0.5.10 | la console, `make mobile-check`) | publiée |\n",
+        "infra/glorfindel-host/main.tf": "# " + cited, "infra/glorfindel-host/cd/eregion_cd.py": "# " + cited,
+        "infra/glorfindel-host/deploy.sh": "# " + cited, "Makefile": "# " + cited,
+    })
+    found = sorted({p.split(":")[0] for p in host_name.problems(tmp_path) if "a former command" in p})
+    assert found == ["Makefile", "infra/glorfindel-host/cd/eregion_cd.py", "infra/glorfindel-host/deploy.sh",
+                     "infra/glorfindel-host/main.tf"]
+    _tree(tmp_path, {"CLAUDE.md": "Puis `make glorfindel-host-push`.\n"})
+    said = host_name.problems(tmp_path)
+    assert any(p.startswith("CLAUDE.md:1: a former command") for p in said)
+    assert any("the kept command « `make glorfindel-host-start REF=…` » is gone" in p for p in said)
+
+
+def test_the_kept_former_commands_are_where_they_are_said():
+    for rel, entries in host_name.OLD_KEPT.items():
+        text = (REPO / rel).read_text(encoding="utf-8")
+        for kept, _why in entries:
+            assert host_name.OLD_COMMAND.search(kept) and kept in text, (rel, kept)
 
 
 def test_an_untracked_file_is_never_read(tmp_path):

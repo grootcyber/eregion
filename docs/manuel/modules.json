@@ -1829,6 +1829,19 @@
    "issue": 688
   },
   {
+   "id": "s-imladris-commandes",
+   "composant": "socle",
+   "poste": "s-heberger",
+   "nom": "Every command of Imladris under make imladris-*, its console's tunnel included; the former names silent aliases until IML2",
+   "etat": "main",
+   "release": "0.5",
+   "lots": [
+    "IML1b"
+   ],
+   "issue": 747,
+   "doc": "infra/glorfindel-host/README.md"
+  },
+  {
    "id": "s-cd",
    "composant": "socle",
    "poste": "s-heberger",

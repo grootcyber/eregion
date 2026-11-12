@@ -28,6 +28,12 @@ unless it is, on its line:
   a workflow's step), so that it stays what the screen shows. Each must still be in its file, and a
   quotation in its source: else it is said.
 
+**The commands** (IML1b, #747): the commands of Imladris are all `make imladris-*` — the former names,
+`make glorfindel-host-<x>` and `make mobile-<x>`, stay silent aliases until IML2 (#689). A text read
+that cites one of them (« make », blanks, then the former name, even across a line) is said, unless it
+is one of the texts OLD_KEPT for its file, each with its reason. They are read in every file but
+OLD_NOT_READ: the history, the versions' texts, the proofs, the mutants and this check.
+
 **Not read**: HISTORY, the one exception for the name; and LATER, what IML2 renames with the resource
 or what this lot does not touch — each with its reason. **The first mention**: in each Markdown
 document read but the fragments of changes/ (a version's text, read under it), the first « Imladris »
@@ -80,6 +86,28 @@ KEPT = {
 }
 # A version's text, read under the version: no first mention of its own.
 FIRST_MENTION_NOT = ("changes/",)
+
+# IML1b: a former command cited, « make glorfindel-host-<x> » or « make mobile-<x> », the blanks between
+# them a line's end too (a paragraph wraps). Not read, each with its reason; kept, by file: (the text, why).
+OLD_COMMAND = re.compile(r"\bmake\s+(?:glorfindel-host|mobile)-")
+OLD_NOT_READ = {
+    "CHANGELOG.md": "the history: what each version shipped, in the names of its time",
+    "docs/historique.md": "the history: what each pass said, in the names of its time",
+    "changes/": "a version's text: what a lot shipped, in the names of its time (IML1b's says the change)",
+    ".github/": "the workflows: the sessions' App has no Workflows right — Jonathan's to push",
+    "tests/": "the proofs: the aliases are tested by their former names",
+    "scripts/mutation_check.py": "the mutants: their anchors quote the code word for word",
+    "scripts/mutants/": "the mutants: their anchors quote the code word for word",
+    "scripts/host_name.py": "this check: it quotes the forms it refuses",
+}
+OLD_KEPT = {
+    "CLAUDE.md": (
+        ("`make glorfindel-host-start REF=…`", "the rules of every session: Jonathan's to change (IML1b)"),
+    ),
+    "ROADMAP.md": (
+        ("`make mobile-check`)", "the line of a release published: what it shipped, in its names"),
+    ),
+}
 
 WORD = re.compile(r"\bH0\b")
 _LOT = r"(?:[A-Z]{1,4}\d+[a-z]?|[A-Z]{1,4}-\d+[a-z]?)"
@@ -161,6 +189,22 @@ def first_mention_unsaid(text: str) -> bool:
     return i >= 0 and not FORMER.match(text[i + len(NAME):])
 
 
+def commands_read_here(rel: str) -> bool:
+    """A path whose former commands this check reads."""
+    return not any(rel.startswith(key) if key.endswith("/") else rel == key for key in OLD_NOT_READ)
+
+
+def old_commands(text: str, kept=()) -> list[tuple[int, str]]:
+    """Each former command cited (1-based line of « make », the line), but in a text kept."""
+    lines, out = text.splitlines(), []
+    for m in OLD_COMMAND.finditer(text):
+        if _within(text, kept, m.start(), m.end()):
+            continue
+        n = text.count("\n", 0, m.start()) + 1
+        out.append((n, lines[n - 1].strip()))
+    return out
+
+
 def read_here(rel: str) -> bool:
     """A path of the repository this check reads (relative, with « / »)."""
     if rel in HISTORY:
@@ -209,6 +253,12 @@ def _text(path: Path) -> str | None:
 def kept_gone(root: Path) -> list[str]:
     """A kept text no longer in its file, or a quotation whose source no longer says it."""
     out = []
+    for rel, entries in OLD_KEPT.items():
+        text = _text(root / rel)
+        if text is None:
+            continue
+        for kept in [k for k, _why in entries if k not in text]:
+            out.append(f"{rel}: the kept command « {kept} » is gone — take it out of OLD_KEPT (IML1b)")
     for rel, entries in KEPT.items():
         text = _text(root / rel)
         if text is None:
@@ -226,10 +276,13 @@ def kept_gone(root: Path) -> list[str]:
 def problems(root: Path = REPO, only: list[str] | None = None) -> list[str]:
     out = []
     for rel in only if only is not None else files(root):
-        if not read_here(rel):
-            continue
-        text = _text(root / rel)
+        text = _text(root / rel) if read_here(rel) or commands_read_here(rel) else None
         if text is None:
+            continue
+        if commands_read_here(rel):
+            for n, line in old_commands(text, tuple(k for k, _why in OLD_KEPT.get(rel, ()))):
+                out.append(f"{rel}:{n}: a former command — make imladris-* (IML1b): {line[:160]}")
+        if not read_here(rel):
             continue
         kept = tuple(k for k, _why, _src in KEPT.get(rel, ()))
         for n, line in host_mentions(text, kept):
@@ -246,7 +299,7 @@ def main(argv: list[str]) -> int:
     for p in found:
         print(f"✗ {p}")
     if not found:
-        print("✓ H0 never names the host outside the history: Imladris")
+        print("✓ H0 never names the host outside the history: Imladris; its commands are make imladris-*")
     return 1 if found else 0
 
 
