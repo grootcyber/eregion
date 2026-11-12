@@ -1249,8 +1249,8 @@ MUTANTS = [
      '    _has_alerting = bool(os.environ.get("GLORFINDEL_WEBHOOK_URL") '
      'or os.environ.get("DISCORD_CHANNEL_ID"))\n'),
     ("M524", "REF=--checkout-only reaches deploy.sh as an option (M-3, review)", MAKE,
-     '\t@case "$$EREGION_DEPLOY_REF" in -*|*[!A-Za-z0-9._-]*) echo "REF invalide : « $$EREGION_DEPLOY_REF » (un tag ou un commit)" >&2; exit 1;; esac\n\t$(HOST_SSH)',
-     '\t@case "$$EREGION_DEPLOY_REF" in *[!A-Za-z0-9._-]*) echo "REF invalide : « $$EREGION_DEPLOY_REF » (un tag ou un commit)" >&2; exit 1;; esac\n\t$(HOST_SSH)'),
+     '\t@case "$$EREGION_DEPLOY_REF" in -*|*[!A-Za-z0-9._-]*) echo "REF invalide : « $$EREGION_DEPLOY_REF » (un tag ou un commit)" >&2; exit 1;; esac\n\t@$(HOST_SSH)',
+     '\t@case "$$EREGION_DEPLOY_REF" in *[!A-Za-z0-9._-]*) echo "REF invalide : « $$EREGION_DEPLOY_REF » (un tag ou un commit)" >&2; exit 1;; esac\n\t@$(HOST_SSH)'),
     ("M525", "a REF exported in the environment is deployed in silence (M-3, review)", MAKE,
      '@case "$(origin REF)" in environment*) echo "REF vient de l\'environnement (« $$EREGION_DEPLOY_REF ») : rien n\'est déployé',
      '@case "$(origin REF)" in nowhere*) echo "REF vient de l\'environnement (« $$EREGION_DEPLOY_REF ») : rien n\'est déployé'),
@@ -2876,8 +2876,8 @@ MUTANTS += [
      "\t@$(ANNATAR_AZURE_PICK) docker run --rm -it $(ANNATAR_AZURE_ENV)",
      '\t@docker run --rm -it -e AZURE_CLIENT_SECRET="$$AZURE_CLIENT_SECRET" $(ANNATAR_AZURE_ENV)'),
     ("M954", "a remote command line exports a model key over ssh (L23)", MAKE,
-     "\t$(HOST_SSH) 'docker exec eregion-watch glorfindel report --since $(or $(SINCE),7d)'",
-     '\t$(HOST_SSH) "export ANTHROPIC_API_KEY=$$ANTHROPIC_API_KEY; '
+     "\t@$(HOST_SSH) 'docker exec eregion-watch glorfindel report --since $(or $(SINCE),7d)'",
+     '\t@$(HOST_SSH) "export ANTHROPIC_API_KEY=$$ANTHROPIC_API_KEY; '
      'docker exec eregion-watch glorfindel report --since $(or $(SINCE),7d)"'),
 ]
 TESTS.update({f"M{n}": HY1_GUARD for n in (950, 951, 952)})
