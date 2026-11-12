@@ -12,8 +12,8 @@ MUTANTS = [
      "    ok, why = verify(tenant, app_id, new, ctx)\n    if False:\n"),
     ("M4829", "a service that does not restart on the new secret: .envrc not put back from its copy, the "
      "workstation left on a secret then removed (ROT1)", ROTATE,
-     "    write_atomic(ctx.envrc, t.text, t.mode)\n    t.replaced = False\n",
-     "    t.replaced = False\n"),
+     "    write_atomic(ctx.envrc, t.text, t.mode)\n    back = [",
+     "    back = ["),
     ("M4830", "the refusal of a code session gone: an agent turns a secret and writes it (ROT1)", ROTATE,
      "    why = bs.session_refusal(ctx.env, ctx.cwd, ctx.here, never=NEVER)\n",
      "    why = \"\"\n"),

@@ -1066,7 +1066,8 @@ se fait pas de soi-même est dit avec sa commande : un nouveau secret qui ne se 
 (toujours valable, `make azure-pairs-expiry` le montre, « 2 secrets valables »), Imladris injoignable
 (`make pair-expiry-note PAIR=<paire>` ensuite). **Une exception ou un Ctrl-C** en cours de route est
 rattrapé de même : avant que `.envrc` soit remplacée, le nouveau secret retiré ; après, `.envrc` remise
-et le service relancé sur l'ancien ; une fois le service relancé sur le nouveau, il reste en place et
+et le service relancé sur l'ancien — une interruption pendant cette remise la refait en entier ; une
+fois le service relancé sur le nouveau, il reste en place et
 la commande dit ce qui peut rester de l'ancien. La copie de secours n'est gardée que si `.envrc` ne
 se remet pas, et c'est dit, avec la commande (`cp -p .envrc.pair-rotate.bak .envrc`). Elle est ignorée
 par git (`.gitignore`, le dépôt est public), et une copie restée refuse la rotation suivante :
@@ -1080,8 +1081,8 @@ exacte, `make pair-rotate PAIR=console`. Une fois par palier, même après un re
 (`~/.eregion-cd/reminders.json`) ; une date notée tard envoie le palier où elle se trouve, jamais
 ceux qu'elle a passés ; une nouvelle date (une rotation) repart de zéro ; un message que Discord
 refuse repart au passage suivant ; sans le webhook, aucun palier n'est compté envoyé, et
-`make glorfindel-host-cd-status` le dit. Le journal n'a une ligne que pour un envoi, un refus ou une
-date illisible, jamais à chaque passage. Pourquoi `#deploy` : son webhook est déjà le seul secret de
+`make glorfindel-host-cd-status` le dit. Le journal n'a une ligne que pour un envoi, un refus, une
+date illisible ou un webhook absent (celle-ci à chaque passage tant qu'un palier est dû), jamais sinon. Pourquoi `#deploy` : son webhook est déjà le seul secret de
 l'atelier sur Imladris (`docs/atelier-discord.md`), avec ta mention ; rien de nouveau à poser, rien
 de copié ailleurs. Imladris n'a aucun droit sur Graph (IR1a) : il ne lit pas la date lui-même, le
 poste la lui donne. **ROT1 change l'agent du CD** (`eregion_cd.py`) :

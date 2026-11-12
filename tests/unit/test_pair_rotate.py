@@ -581,6 +581,86 @@ def test_a_ctrl_c_during_the_verification_removes_the_new_secret(tmp_path):
     assert "interrompue (Ctrl-C) pendant la vérification du nouveau secret" in w.said[-1]
 
 
+@pytest.mark.parametrize("why", ["refused", "unreadable"])
+def test_ctrl_c_during_put_back_recreate(tmp_path, monkeypatch, why):
+    """A put-back interrupted during its restart (review 2 of ROT1): done again, the service running on
+    the old secret — never « n'ont pas bougé » with the service stopped. `why`: the put-back comes
+    from a restart refused on the new secret, or from an .envrc that does not read back as written."""
+    w = World(tmp_path)
+    if why == "refused":
+        st = json.loads(w.docker_state.read_text())
+        st["refuse"] = ["NEW~secret.1-never-shown"]
+        w.docker_state.write_text(json.dumps(st))
+    else:
+        real_literal = pr.literal
+        monkeypatch.setattr(pr, "literal", lambda line: "garbled" if "NEW~secret" in line else real_literal(line))
+    real, seen = pr.recreate, []
+
+    def ctrl_c_in_the_put_back(service, env, ctx):
+        seen.append(env["EREGION_CONSOLE_AZURE_CLIENT_SECRET"])
+        if env["EREGION_CONSOLE_AZURE_CLIENT_SECRET"] == OLD and seen.count(OLD) == 1:
+            real(service, env, ctx)      # stopped half-way: down, then the Ctrl-C
+            st = json.loads(w.docker_state.read_text())
+            st["running"] = [s for s in st["running"] if s != service]
+            w.docker_state.write_text(json.dumps(st))
+            raise KeyboardInterrupt
+        return real(service, env, ctx)
+    monkeypatch.setattr(pr, "recreate", ctrl_c_in_the_put_back)
+    before = w.envrc.read_bytes()
+    assert w.rotate() == 1
+    assert "war-room" in json.loads(w.docker_state.read_text())["running"]    # running again, on the old one
+    assert seen[-1] == OLD and seen.count(OLD) == 2
+    assert w.envrc.read_bytes() == before and [s["value"] for s in w.secrets()] == [OLD]
+    assert not (w.repo / pr.BACKUP).exists()
+    assert "n'ont pas bougé" not in w.said[-1]
+    assert ".envrc remise comme avant, war-room relancé(s) sur l'ancien secret" in w.said[-1]
+
+
+def test_a_ctrl_c_while_envrc_is_written_leaves_no_temporary_file(tmp_path, monkeypatch):
+    """The temporary file holds every live secret of .envrc: removed on a Ctrl-C too."""
+    w = World(tmp_path)
+    real_fsync, calls = pr.os.fsync, []
+
+    def ctrl_c_on_the_second(fd):     # the first fsync is the copy's, the second the new .envrc's
+        calls.append(fd)
+        if len(calls) == 2:
+            raise KeyboardInterrupt
+        return real_fsync(fd)
+    monkeypatch.setattr(pr.os, "fsync", ctrl_c_on_the_second)
+    before = w.envrc.read_bytes()
+    assert w.rotate() == 1
+    assert not (w.repo / pr.TMP).exists() and not (w.repo / pr.BACKUP).exists()
+    assert w.envrc.read_bytes() == before and [s["value"] for s in w.secrets()] == [OLD]
+    assert "la copie de secours retirée" in w.said[-1]
+
+
+def test_a_partial_copy_of_envrc_is_removed_and_said(tmp_path, monkeypatch):
+    w = World(tmp_path)
+
+    def full(fd):
+        raise OSError(28, "No space left on device")
+    monkeypatch.setattr(pr.os, "fsync", full)
+    assert w.rotate() == 1
+    assert not (w.repo / pr.BACKUP).exists()
+    assert "arrêtée (OSError) pendant l'écriture de .envrc" in w.said[-1]
+
+
+def test_graph_late_to_show_the_new_key_is_read_once_more(tmp_path, monkeypatch):
+    """Right after the reset, Graph may not show the new key yet: read once more before saying none."""
+    w = World(tmp_path)
+    w.unusable.add("NEW~secret.1-never-shown")
+    real, reads = pr.key_ids, []
+
+    def late(app_id, obj, ctx):
+        reads.append(obj)
+        keys = real(app_id, obj, ctx)
+        return [k for k in keys if not k.startswith("eeeeeeee")] if len(reads) == 3 else keys   # 3rd: after reset
+    monkeypatch.setattr(pr, "key_ids", late)
+    assert w.rotate() == 1
+    assert [s["value"] for s in w.secrets()] == [OLD]                    # found on the second read, removed
+    assert "le nouveau secret retiré" in w.said[-1]
+
+
 def test_a_ctrl_c_during_the_restart_puts_envrc_and_the_service_back(tmp_path, monkeypatch):
     w = World(tmp_path)
     real, seen = pr.recreate, []
@@ -665,10 +745,15 @@ def test_the_go_targets_read_imladris_s_address_in_the_shell_and_never_expand_pa
     assert "pair-rotate-go pair-expiry-note-go: export EREGION_PAIR = $(value PAIR)" in makefile
     assert "pair-rotate-go: export EREGION_PAIR_DAYS = $(value DAYS)" in makefile
     assert "\nunexport PAIR\n" in makefile
-    res = subprocess.run(["make", "-n", "--no-print-directory", "-C", str(ROOT), "pair-rotate-go",
-                          "PAIR=$(shell echo pwned-by-make)", "DAYS=$(shell echo pwned-days)"],
-                         capture_output=True, text=True, timeout=60)
-    assert "pwned" not in res.stdout + res.stderr
+    # A real make, refused by the guard: had make expanded PAIR or DAYS before it, the file would exist.
+    env = {**os.environ, "EREGION_AGENT_SESSION": "1"}
+    for target in ("pair-rotate", "pair-rotate-go", "pair-expiry-note", "pair-expiry-note-go"):
+        pwned = tmp_path / f"pwned-{target}"
+        res = subprocess.run(["make", "--no-print-directory", "-C", str(ROOT), target,
+                              f"PAIR=$(shell touch {pwned}.pair)", f"DAYS=$(shell touch {pwned}.days)"],
+                             capture_output=True, text=True, timeout=60, env=env)
+        assert res.returncode != 0 and "refusé" in res.stderr, (target, res.stderr)
+        assert not list(tmp_path.glob(f"pwned-{target}*")), target
 
 
 # ── the note of the end in place ─────────────────────────────────────────────────────

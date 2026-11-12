@@ -25,7 +25,7 @@ on the day: the pair, the date, the exact command to type. Once per tier, even a
 sends the tier it is in, never the ones it passed; a new date (a rotation) starts over. A post
 Discord refuses is tried again at the next pass; without #deploy's webhook a tier is never marked
 sent, and status says so. The journal gets a line only when something happens (a post, a refusal,
-a date that does not read — its year between 2000 and 2999), never at every pass. No Graph, no identity: a rotation made outside
+no webhook while a tier is due, a date that does not read — its year between 2000 and 2999), never at every pass. No Graph, no identity: a rotation made outside
 the command is not seen here.
 
 The trigger is Jonathan publishing a release (sessions prepare drafts). A pass:
@@ -411,6 +411,7 @@ def remind(pair: str, end, now, send: bool, hook: bool, doc: dict) -> list[str]:
         title, text = reminder_card(pair, end, days_left)
         if say(title, text, color=nd.ORANGE if tier >= 7 else nd.RED, alert=True):
             rec["sent"] = sorted(set(rec["sent"]) | {t for t in REMIND_TIERS if t >= tier}, reverse=True)
+            # Known limit: a state that can't be written here (a full disk) posts it again next pass.
             save_reminders(doc)
             return []                            # say() wrote it in the journal
         return [f"  rappels · {pair} : {_tier_said(tier)} refusé par Discord, repart au passage suivant"]

@@ -252,19 +252,24 @@ def write_atomic(path: Path, text: str, mode: int) -> None:
         finally:
             os.close(fd)
         os.replace(tmp, path)
-    except OSError:
+    except BaseException:    # an OSError or a Ctrl-C: never a temporary file left, it holds every secret
         tmp.unlink(missing_ok=True)
         raise
 
 
 def keep_copy(path: Path, text: str) -> Path:
+    """The copy of .envrc (0600, never over a file left there); a partial one is removed."""
     copy = path.with_name(BACKUP)
     fd = os.open(copy, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     try:
-        os.write(fd, text.encode("utf-8"))
-        os.fsync(fd)
-    finally:
-        os.close(fd)
+        try:
+            os.write(fd, text.encode("utf-8"))
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    except BaseException:
+        copy.unlink(missing_ok=True)
+        raise
     return copy
 
 
@@ -510,7 +515,7 @@ def _rotate(pair: str, days: int, ctx: Ctx) -> int:
         + ("le service relancé" if restart else ".envrc réécrite"))
     say("  Imladris       la date de fin notée : rappels à J-14, J-7, J-1 et le jour même dans #deploy"
         if ctx.ssh else "  Imladris       injoignable d'ici : la date ne sera pas notée (make pair-expiry-note ensuite)")
-    try:
+    try:     # a Ctrl-C here (or in the reads above) is a traceback: nothing done yet (known limit)
         answer = str(ctx.ask("Continuer ? [o/N] ") or "").strip().lower()
     except EOFError:
         answer = ""
@@ -564,20 +569,25 @@ def _added(t: Turn, ctx: Ctx) -> list[str]:
 def undo_new(t: Turn, ctx: Ctx) -> str:
     """The new secret removed, by the key ids that were not there before; what is left, said."""
     added = _added(t, ctx)
+    if not added and not t.unread:     # Graph may not show it yet (another replica): read once more
+        ctx.sleep(min(ctx.step_s, 5.0))
+        t.added = None
+        added = _added(t, ctx)
     if added and not remove_keys(t.app_id, t.obj, added, ctx):
         return "le nouveau secret retiré"
     if not added and not t.unread:
-        return "aucun nouveau secret sur Azure"
+        return "aucun nouveau secret lu sur Azure (make azure-pairs-expiry le confirme)"
     return (f"le nouveau secret à retirer à la main (az ad {t.obj} credential list --id <appId> : celui qui finit "
             f"le {t.end:%Y-%m-%d})")
 
 
 def put_back(t: Turn, ctx: Ctx, step: str) -> int:
     """.envrc from before, the services recreated on the old secret, the new one removed. Raises
-    when .envrc can't be written back: the caller keeps the copy and says it."""
+    when .envrc can't be written back: the caller keeps the copy and says it. `replaced` falls only
+    once the services are recreated: a Ctrl-C during their restart does it all again (idempotent)."""
     write_atomic(ctx.envrc, t.text, t.mode)
-    t.replaced = False
     back = [s for s in t.restart if not recreate(s, ctx.env, ctx)]
+    t.replaced = False
     if t.copy:
         t.copy.unlink(missing_ok=True)
         t.copy = None
@@ -619,10 +629,15 @@ def interrupted(t: Turn, ctx: Ctx, e: BaseException) -> int:
     except BaseException:  # noqa: BLE001
         undone = (f"le nouveau secret à retirer à la main (az ad {t.obj} credential list --id <appId> : celui qui "
                   f"finit le {t.end:%Y-%m-%d})")
-    if t.copy:
-        t.copy.unlink(missing_ok=True)
+    copy_said = ""
+    if t.copy and t.copy.exists():   # a copy, whole or partial, of an .envrc that did not move
+        try:
+            t.copy.unlink()
+            copy_said = " ; la copie de secours retirée"
+        except OSError:
+            copy_said = f" ; ⚠ {BACKUP} reste (0600, ignorée par git, elle tient les secrets) : la retirer"
     say(f"✗ {pair} : rotation {what} pendant {t.step} ; .envrc et les services n'ont pas bougé ; {undone} ; "
-        "l'ancien reste")
+        f"l'ancien reste{copy_said}")
     return 1
 
 
@@ -658,7 +673,8 @@ def turn(t: Turn, ctx: Ctx) -> int:
 
     # 5. .envrc: its copy first, then rewritten beside it and renamed over it, its mode kept.
     t.step = "l'écriture de .envrc"
-    t.copy = keep_copy(ctx.envrc, t.text)
+    t.copy = ctx.envrc.with_name(BACKUP)     # named before it is written: a partial one is said too
+    keep_copy(ctx.envrc, t.text)
     new_lines = list(t.lines)
     for i in t.copies:
         new_lines[i] = rewritten(t.lines[i], new)
