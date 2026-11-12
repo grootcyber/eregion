@@ -7,7 +7,8 @@ the next pass — and no message ever said so. A notice closes what an announcem
 
 - **once per key** (`key`: what it closes, its nonce in it — the cut's `asked_at`): recorded in
   `~/.glorfindel/vm_notices.jsonl` before it goes anywhere; a second `say` of the same key says
-  nothing, after a restart of the watch too. At most once: a webhook that fails is not retried.
+  nothing, after a restart of the watch too. A webhook that fails is not tried again — a short 429
+  waited for once (`_post`) — but where the bot is configured and mute (JUG2, JUG2b, below).
 - **where**: the bot configured (`escalations.discord_bot_configured`), the bot posts it in the
   VM's thread (glorfindel/bot.py, `_post_notices`: the notices it posted kept in
   `bot_notices_posted.json`); else the webhook (GLORFINDEL_WEBHOOK_URL); neither, it is recorded
@@ -63,11 +64,57 @@ silence. A pass spaces its posts (`RELAY_SPACING_S`) and leaves the rest to the 
 A mark never noted sent (the watch stopped mid-send, its note refused) is taken back after
 `RESEND_AFTER_S`.
 
-Known limits: a post of the bot in flight while the watch relays (the beat aged, or `CONFIRM_S`
+**A cut's closure falls back too** (JUG2b, #768, decided by Jonathan on 12/11): every closure of a
+session cut (DRN2, kind `drain_closed`: drained, refused, sessions left open, never ended, no longer
+followed — a drained one too) goes the same way as an action's announcement (`RELAY_KINDS`): the same
+beat, the same passes, a webhook that fails gives it back to the bot, once per closure. But `say`
+never posts it: said from the reassertion, under its VM's lock, it is recorded for the bot, and the
+bot mute, the next `relay_pass` says it — about a minute later (two when a pass still runs), in
+its own thread (JUG2b review: a webhook never holds the lock, an isolation of the same VM nor the
+reassertion). **Never a ping**:
+only an action taken alone pings (JUG1). It decides nothing either: the cut's outcome is the one read
+on Azure, in the isolation's state.
+
+**The fallback never holds the watch** (JUG2b). The watch runs `relay_pass` in a thread of its own
+(glorfindel/cli.py, `_relay_notices`), one pass at a time (`_PASS`, and the thread not started again
+while one runs): its loop — `runs/` read, its heartbeat, the reassertion, the TTL, « Verify » — never
+waits for a webhook. Each POST is bounded: `CONNECT_TIMEOUT_S` to connect, `READ_TIMEOUT_S` to read,
+and `POST_DEADLINE_S` for the whole of it, the name's resolution included (`_send`: the POST in a
+thread its caller waits for). A pass stops at the first webhook rate limited, refusing them all (a
+401, 403, 404 or 410: a webhook deleted refuses the next ones too), unreachable, that nothing reached,
+or unanswered within the deadline (`STOPS_THE_PASS`):
+the rest goes back to the bot, or to the next pass; and it starts no post once it has run
+`RELAY_PASS_BUDGET_S`. A pass therefore lasts at most the budget and
+one notice — 0.5 s of spacing, a POST, a short 429's wait, a second POST: some 86 s, in its own
+thread. **The tries of a notice are capped**: a post that may have been delivered — a read timeout,
+the connection cut once sent, a 5xx — counts a try, and so does a 4xx of its own (a 400, a 413: that
+notice refused, not the webhook — the pass goes on, and the notice gives way in the end) (`tries`,
+beside `relayed`, which goes when the notice goes back to the bot; a mark taken back counts one too);
+after `RELAY_MAX_TRIES` the webhook says it no more, said once in the log: the notice waits for the
+bot. A post that left nothing — the name not resolved, the connection refused or not made in time
+(`_nothing_sent`) — and a refusal of the whole webhook (401, 403, 404, 410, a 429) count none: a
+network cut, however long, stops the passes, never the fallback. **A post past `POST_DEADLINE_S`
+settles its notice itself** (JUG2b review, round 3): the deadline stops waiting for it, not the post,
+which may still deliver (an IPv6 route that loses its packets, then the IPv4; a dead resolver first in
+resolv.conf). `_post` answers `pending`: the pass stops, no try, the mark kept — the notice is not due
+again, the next ones go at the next pass. When the post ends, its own thread settles the notice
+(`_settler`) by the usual rule: a late 2xx noted sent, nothing sent given back without a try, a read
+timeout or a 5xx a try. Only under the mark it was posted with: a notice marked again, taken back or
+settled since is left as it is. A post that never ends is the mark's take-back's, after
+`RESEND_AFTER_S` (a try).
+
+Known limits: a webhook that delivered but whose answer was lost has the notice said again, an
+action's ping with it, `RELAY_MAX_TRIES` times at most; then it is the bot's (an action's card is
+in the console). A post pending longer than `RESEND_AFTER_S` has its mark taken back and the notice
+said again: if the first one delivered after all, said twice, its ping with it (a try counted, the cap
+holds); and while a post is pending, the bot back posts the card with its ping (the webhook's not yet
+noted): two pings when the post delivers.
+A post of the bot in flight while the watch relays (the beat aged, or `CONFIRM_S`
 reached, during a `thread.send` held by Discord's rate limits) says the announcement twice, in the
 thread and in the channel; the same race on the card's post can ping twice. A notice forged in the
 store under an action's key, relayed and noted sent, silences the announcement and can silence the
-card's ping too — never the card.
+card's ping too — never the card. A notice forged with its tries at the cap silences the fallback the
+same way, never the bot's post.
 """
 from __future__ import annotations
 
@@ -75,6 +122,7 @@ import json
 import logging
 import os
 import re
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -88,6 +136,11 @@ _BOT_NOTICES_POSTED = Path.home() / ".glorfindel" / "bot_notices_posted.json"
 _BOT_CARDS_POSTED = Path.home() / ".glorfindel" / "bot_posted.json"
 # The kind of an autonomous action's announcement (escalations.EXECUTED_TYPE).
 ACTION_KIND = "autonomous_action"
+# The kind of a session cut's closure (glorfindel/drain_watch.py, DRN2).
+CLOSURE_KIND = "drain_closed"
+# What falls back on the webhook when the bot is mute: an action's announcement (JUG2), a cut's
+# closure (JUG2b). Only the first pings.
+RELAY_KINDS = (ACTION_KIND, CLOSURE_KIND)
 # An announcement left to the bot and still not posted this long after goes by the webhook, whatever
 # the bot's beat says (JUG2): a beat forged fresh delays the announcement, never silences it.
 CONFIRM_S = 600
@@ -101,7 +154,38 @@ RETRY_MAX_S = 5.0
 # A notice marked relayed but never noted sent (the watch stopped mid-send, its note refused) is
 # taken back this long after: said again rather than never.
 RESEND_AFTER_S = 120
+# JUG2b (#768): each POST bounded — to connect and to read (requests' own timeouts), and the whole of
+# it, the name's resolution included, by the deadline its caller waits for (`_send`).
+CONNECT_TIMEOUT_S = 5.0
+READ_TIMEOUT_S = 5.0
+POST_DEADLINE_S = 10.0
+# A pass starts no post once it has run this long: the rest goes back to the bot, or the next pass.
+RELAY_PASS_BUDGET_S = 60.0
+# A relayed notice whose post may have been delivered without its answer (unreachable, a 5xx), or
+# that the webhook refused for itself (a 400, a 413), is tried this many times at most: then it waits
+# for the bot, no new webhook (an action's ping each try).
+RELAY_MAX_TRIES = 3
+# The answers that refuse the whole webhook, not one notice: a token revoked, a webhook deleted, a
+# channel archived (Slack's 410).
+WEBHOOK_REFUSALS = (401, 403, 404, 410)
+# What a post answered: `sent` (2xx), `limited` (a 429 still refused), `refused` (401, 403, 404, 410:
+# the webhook refuses them all), `rejected` (another 4xx: this notice refused), `unsent` (nothing left:
+# the name not resolved, the connection refused or not made in time), `pending` (no answer within the
+# deadline: the post goes on in its thread, and settles its notice when it ends — JUG2b review, round
+# 3), `failed` (a 5xx, an odd answer), `unreachable` (the read timed out, or the connection cut once
+# the request was sent). `failed` and `unreachable` may have been
+# delivered, `rejected` is the notice's own: they count a try (JUG2b review: a network cut no longer
+# silences the fallback, a notice the webhook refuses gives way to the next).
+COUNTS_A_TRY = ("failed", "unreachable", "rejected")
+# What stops a pass: the next posts would go to the same webhook (JUG2b review).
+STOPS_THE_PASS = ("pending",          # its post past the deadline, settled at its end (round 3)
+                  "limited",
+                  "unsent",           # nothing left: the network, the name
+                  "unreachable",
+                  "refused")          # a webhook deleted (404) refuses the next ones as well (not "rejected")
 _sleep = time.sleep
+_monotonic = time.monotonic
+_PASS = threading.Lock()        # one relay pass at a time, whoever calls it
 # The notices kept, newest last: a key older than these could be said again — a cut's closure is
 # written in the isolation's state long before (glorfindel/drain_watch.py).
 KEPT = 500
@@ -167,6 +251,9 @@ def say(resource_id: str, key: str, kind: str, title: str, text: str, level: str
               "at": datetime.now(timezone.utc).isoformat()}
     if detail:
         notice["detail"] = detail
+    # Only an action's announcement is posted at once (JUG2): a cut's closure, said from the
+    # reassertion under its VM's lock, is recorded for the bot — the bot mute, the next relay pass
+    # says it, in its own thread (JUG2b review: a webhook never holds the lock nor the reassertion).
     why = relay_reason() if notice["via"] == "bot" and kind == ACTION_KIND else ""
     if why:
         _mark_relayed(notice, why)
@@ -175,9 +262,9 @@ def say(resource_id: str, key: str, kind: str, title: str, text: str, level: str
     if why:
         # Sent, it is noted sent; refused or unreachable, the notice goes back to the bot — the
         # next pass tries again, or the bot posts it at its return (JUG2 review: never a silence).
-        sent = _post(*fallback(notice)) == "sent"
-        _settle({key: sent})
-        return "relayed" if sent else "bot"
+        result = _post(*fallback(notice), on_late=_settler(notice))
+        _settle({key: result})
+        return {"sent": "relayed", "pending": "pending"}.get(result, "bot")
     if notice["via"] == "webhook":
         post_webhook(webhook or webhook_payload(notice), key)
     return notice["via"]
@@ -239,9 +326,11 @@ def _bot_posted_notices() -> set[str]:
 
 
 def _mark_relayed(notice: dict, why: str, now: datetime | None = None) -> None:
-    """The notice goes by the webhook: said so in it, with whether the role is pinged — a Discord
-    webhook, a role set, the card not already posted by the bot (one ping per action)."""
-    ping = bool(_ping_role() and _discord_url(os.environ.get("GLORFINDEL_WEBHOOK_URL", ""))
+    """The notice goes by the webhook: said so in it, with whether the role is pinged — an action's
+    announcement only (a cut's closure never pings: JUG1, JUG2b), a Discord webhook, a role set, the
+    card not already posted by the bot (one ping per action)."""
+    ping = bool(notice.get("kind") == ACTION_KIND
+                and _ping_role() and _discord_url(os.environ.get("GLORFINDEL_WEBHOOK_URL", ""))
                 and not _card_posted(str((notice.get("detail") or {}).get("card") or "")))
     notice["via"] = "webhook"
     notice["relayed"] = {"at": (now or datetime.now(timezone.utc)).isoformat(), "why": why, "ping": ping}
@@ -249,6 +338,13 @@ def _mark_relayed(notice: dict, why: str, now: datetime | None = None) -> None:
 
 _RELAY_LINE = ("Le bot Discord se tait : annoncée ici par le webhook. La carte à juger est dans la "
                "console (TO JUDGE), et dans le fil de la VM au retour du bot.")
+# JUG2b: a cut's closure has no card to judge of its own — its isolation's card is in the console.
+_CLOSURE_LINE = ("Le bot Discord se tait : dite ici par le webhook. L'isolement de la VM et ses cartes "
+                 "sont dans la console.")
+
+
+def _relay_line(notice: dict) -> str:
+    return _RELAY_LINE if notice.get("kind") == ACTION_KIND else _CLOSURE_LINE
 
 
 def fallback(notice: dict) -> tuple[dict, str, str]:
@@ -257,25 +353,54 @@ def fallback(notice: dict) -> tuple[dict, str, str]:
     mention allowed. Another webhook: its Slack message, no mention."""
     url = os.environ.get("GLORFINDEL_WEBHOOK_URL", "")
     native = _discord_url(url)
+    line = _relay_line(notice)
     if not native:
         payload = webhook_payload(notice)     # the card and the run first in its text (JUG2 review)
-        payload["text"] += f"\n> {_RELAY_LINE}"
+        payload["text"] += f"\n> {line}"
         return payload, notice["key"], url
     role = _ping_role() if (notice.get("relayed") or {}).get("ping") else ""
     head = f"<@&{role}> " if role else ""
-    body = bot_message(notice)[: 1900 - len(head) - len(_RELAY_LINE)]
-    return ({"content": f"{head}{body}\n*{_RELAY_LINE}*",
+    body = bot_message(notice)[: 1900 - len(head) - len(line)]
+    return ({"content": f"{head}{body}\n*{line}*",
              "allowed_mentions": {"parse": [], "roles": [role] if role else []}}, notice["key"], native)
 
 
 def relay_pass(now: datetime | None = None) -> int:
-    """At the watch's housekeeping: each announcement of an action left to the bot and not posted by
-    it, said by the webhook when the bot reads mute, or once it waited `CONFIRM_S` — marked before
-    the webhook is called, noted sent once the webhook answered 2xx; refused, unreachable or rate
-    limited, given back to the bot (the next pass tries again, or the bot posts it at its return).
-    Spaced by `RELAY_SPACING_S`; a 429 that asks for longer than `RETRY_MAX_S` leaves the rest of the
-    pass to the next one. A notice marked but never noted sent (`RESEND_AFTER_S`) is taken back first.
-    Within `RELAY_MAX_AGE_H`. Returns the number sent."""
+    """At the watch's housekeeping, in a thread of its own (JUG2b): each notice left to the bot and
+    not posted by it — an action's announcement, a cut's closure (`RELAY_KINDS`) — said by the
+    webhook when the bot reads mute, or once it waited `CONFIRM_S`; marked before the webhook is
+    called, noted sent once the webhook answered 2xx; refused, unreachable or rate limited, given back
+    to the bot (the next pass tries again, or the bot posts it at its return). Spaced by
+    `RELAY_SPACING_S`; a webhook rate limited (a 429 that asks for longer than `RETRY_MAX_S`),
+    refused, unreachable or that nothing reached (`STOPS_THE_PASS`) leaves the rest of the pass to the
+    next one, and so does `RELAY_PASS_BUDGET_S` spent. A notice tried `RELAY_MAX_TRIES` times (posts
+    that may have been delivered) waits for the bot. A notice marked but never noted sent
+    (`RESEND_AFTER_S`) is taken back first. Within `RELAY_MAX_AGE_H`. One pass at a time: called while
+    another runs, it does nothing. Returns the number sent."""
+    if not _PASS.acquire(blocking=False):
+        return 0
+    try:
+        return _relay_pass(now)
+    finally:
+        _PASS.release()
+
+
+def _tries(n: dict) -> int:
+    """The posts of a relayed notice that may have been delivered (0 when unread)."""
+    t = n.get("tries")
+    return t if isinstance(t, int) and not isinstance(t, bool) and t > 0 else 0
+
+
+def _count_try(n: dict) -> None:
+    """One more post of `n` that may have been delivered; the cap reached, said once (JUG2b review):
+    the notice waits for the bot from now on."""
+    n["tries"] = _tries(n) + 1
+    if n["tries"] == RELAY_MAX_TRIES:
+        log.warning("notice %s: %d posts without an answer that says they were refused — the webhook "
+                    "says it no more, it waits for the bot", n.get("key"), RELAY_MAX_TRIES)
+
+
+def _relay_pass(now: datetime | None) -> int:
     from datetime import timedelta
 
     from glorfindel.escalations import discord_bot_configured
@@ -292,14 +417,17 @@ def relay_pass(now: datetime | None = None) -> int:
         notices = _read()
         changed = False
         for n in notices:
-            if n.get("kind") != ACTION_KIND:
+            if n.get("kind") not in RELAY_KINDS:
                 continue
             if _unsent_since(n, now) >= RESEND_AFTER_S:
                 n["via"] = "bot"            # marked, never noted sent: weighed again below
                 n.pop("relayed", None)
+                _count_try(n)               # its post may have gone (JUG2b)
                 changed = True
             if n.get("via") != "bot" or n["key"] in posted:
                 continue
+            if _tries(n) >= RELAY_MAX_TRIES:
+                continue                    # tried enough: the bot's, no new webhook (JUG2b)
             try:
                 at = datetime.fromisoformat(str(n.get("at")))
             except ValueError:
@@ -313,20 +441,23 @@ def relay_pass(now: datetime | None = None) -> int:
                 due.append(n)
         if due or changed:
             _write(notices)
-    outcome: dict[str, bool] = {}
-    limited = False
+    outcome: dict[str, str] = {}
+    stop = False
+    started = _monotonic()
     for i, n in enumerate(due):
-        if limited:                         # rate limited: the rest back to the bot, the next pass
-            outcome[n["key"]] = False
+        if i and _monotonic() - started >= RELAY_PASS_BUDGET_S:
+            stop = True                     # the pass's budget spent (JUG2b)
+        if stop:                            # the rest back to the bot, or the next pass
+            outcome[n["key"]] = "skipped"
             continue
         if i:
             _sleep(RELAY_SPACING_S)
-        result = _post(*fallback(n))
-        outcome[n["key"]] = result == "sent"
-        limited = result == "limited"
+        result = _post(*fallback(n), on_late=_settler(n))
+        outcome[n["key"]] = result
+        stop = result in STOPS_THE_PASS
     if outcome:
         _settle(outcome)
-    return sum(outcome.values())
+    return sum(r == "sent" for r in outcome.values())
 
 
 def _unsent_since(n: dict, now: datetime) -> float:
@@ -348,24 +479,41 @@ def _write(notices: list[dict]) -> None:
     _atomic_write_text(_STORE, "\n".join(json.dumps(n, default=str) for n in notices) + "\n")
 
 
-def _settle(outcome: dict[str, bool]) -> None:
-    """Under the store's lock: each relayed notice noted sent, or given back to the bot (`via: bot`,
-    `relayed` removed). Never raises: a note refused (a full disk) leaves the mark, taken back after
-    `RESEND_AFTER_S` — said twice rather than never."""
+def _settle(outcome: dict[str, str], marks: dict[str, str] | None = None) -> None:
+    """Under the store's lock: each relayed notice noted sent (`outcome`: what `_post` answered), or
+    given back to the bot (`via: bot`, `relayed` removed) — a try counted when its post may have been
+    delivered, or was the notice's own refusal (`COUNTS_A_TRY`, JUG2b). `pending`: left marked, its
+    post settles it at its end. `marks` (a late post's settling): the mark each post was made under —
+    a notice marked again, taken back or settled since is left as it is. Never raises: a note refused
+    (a full disk) leaves the mark, taken back after `RESEND_AFTER_S` — said twice rather than never."""
     try:
         with _lock():
             notices = _read()
             for n in notices:
                 if n["key"] not in outcome or not isinstance(n.get("relayed"), dict):
                     continue
-                if outcome[n["key"]]:
+                if marks is not None and (n["relayed"].get("at") != marks.get(n["key"])
+                                          or n["relayed"].get("sent") is True):
+                    continue                # settled, or marked again, since: never overwritten
+                result = outcome[n["key"]]
+                if result == "pending":
+                    continue                # its post settles it at its end (JUG2b review, round 3)
+                if result == "sent":
                     n["relayed"]["sent"] = True
                 else:
                     n["via"] = "bot"
                     n.pop("relayed")
+                    if result in COUNTS_A_TRY:
+                        _count_try(n)
             _write(notices)
     except OSError as exc:
         log.warning("notices: relayed announcements not noted (%s)", exc)
+
+
+def _settler(n: dict):
+    """What settles `n` once its post ends past the deadline: the mark it was posted under, kept."""
+    key, at = n["key"], (n.get("relayed") or {}).get("at")
+    return lambda result: _settle({key: result}, marks={key: at})
 
 
 def relay(notice: dict, why: str) -> bool:
@@ -423,36 +571,132 @@ def _retry_after(resp) -> float | None:
         return None
 
 
-def _post(payload: dict, key: str = "", url: str = "") -> str:
+def _wait(done: threading.Event, seconds: float) -> bool:
+    return done.wait(seconds)
+
+
+class PostDeadline(TimeoutError):
+    """No answer within `POST_DEADLINE_S` (`_send`)."""
+
+
+def _send(url: str, payload: dict, late=None):
+    """`requests.post`, bounded: `CONNECT_TIMEOUT_S` to connect and `READ_TIMEOUT_S` to read, and the
+    whole of it — the name's resolution included, which requests does not bound — `POST_DEADLINE_S`:
+    the POST in a thread of its own, waited for that long (JUG2b). Past it, PostDeadline — but the
+    POST goes on, and may still reach the webhook (an IPv6 route that loses its packets, then the
+    IPv4; a dead resolver first in resolv.conf): when it ends, its answer (`{"answer"}` or
+    `{"error"}`) goes to `late` (JUG2b review, round 3)."""
+    box: dict = {}
+    done = threading.Event()
+    gate = threading.Lock()
+    abandoned = [False]
+
+    def run() -> None:
+        try:
+            import requests
+            box["answer"] = requests.post(url, json=payload, timeout=(CONNECT_TIMEOUT_S, READ_TIMEOUT_S))
+        except Exception as exc:
+            box["error"] = exc
+        finally:
+            with gate:
+                done.set()
+                ended_late = abandoned[0]
+            if ended_late and late is not None:
+                try:
+                    late(box)
+                except Exception as exc:  # a late answer never raises in its thread
+                    log.warning("webhook: late answer not settled (%s)", exc)
+    threading.Thread(target=run, daemon=True, name="webhook-post").start()
+    if not _wait(done, POST_DEADLINE_S):
+        with gate:
+            if not done.is_set():
+                abandoned[0] = True
+                raise PostDeadline(f"no answer within {POST_DEADLINE_S:g} s")
+    if "error" in box:
+        raise box["error"]
+    return box["answer"]
+
+
+def _nothing_sent(exc: BaseException) -> bool:
+    """Nothing of the request left (JUG2b review): the connection not made in time
+    (`requests.ConnectTimeout`), or refused, or the name not resolved — urllib3's
+    `NewConnectionError` and `NameResolutionError`, both `ConnectTimeoutError`s, found in the
+    exception or what it wraps (`MaxRetryError.reason`, its arguments: requests and urllib3 put what
+    they wrap there; an exception's `__cause__` would only lead below a connection error, to the
+    socket's, so it is not read). A read timeout, a connection cut while reading: perhaps
+    delivered — False. The deadline passed is `_post`'s to weigh (`PostDeadline`)."""
+    try:
+        import requests
+        from urllib3.exceptions import ConnectTimeoutError
+    except ImportError:                   # pragma: no cover — both ship with the watch
+        return False
+    seen: set[int] = set()
+    todo: list = [exc]
+    while todo:
+        e = todo.pop()
+        if not isinstance(e, BaseException) or id(e) in seen:
+            continue
+        seen.add(id(e))
+        if isinstance(e, (requests.ConnectTimeout, ConnectTimeoutError)):
+            return True
+        todo.extend([getattr(e, "reason", None), *e.args])
+    return False
+
+
+def _error_result(exc: BaseException, key: str) -> str:
+    log.warning("notice %s: webhook unreachable (%s)", key, exc)
+    if _nothing_sent(exc):
+        return "unsent"
+    return "unreachable"
+
+
+def _answer_result(resp, key: str) -> str:
+    """A webhook's answer, its 429 not waited for: `sent`, `limited`, `refused`, `rejected`, `failed`."""
+    status = getattr(resp, "status_code", None)
+    if isinstance(status, int) and 200 <= status < 300:
+        return "sent"
+    if status == 429:
+        log.warning("notice %s: webhook rate limited", key)
+        return "limited"
+    log.warning("notice %s: webhook answered %s", key, status)
+    if status in WEBHOOK_REFUSALS:
+        return "refused"
+    return "rejected" if isinstance(status, int) and 400 <= status < 500 else "failed"
+
+
+def _post(payload: dict, key: str = "", url: str = "", on_late=None) -> str:
     """`payload` to `url` (GLORFINDEL_WEBHOOK_URL when none): `sent` on a 2xx answer only (JUG2
     review: a 429, a 404, a network cut are no announcement), `limited` on a 429 still refused after
-    one wait of at most `RETRY_MAX_S`, `failed` otherwise. Never raises."""
+    one wait of at most `RETRY_MAX_S`, `refused` on a refusal of the whole webhook
+    (`WEBHOOK_REFUSALS`), `rejected` on another 4xx, `unsent` when nothing left (`_nothing_sent`),
+    `unreachable` on a read timed out or a connection cut after the request, `failed` otherwise.
+    No answer within `POST_DEADLINE_S` (`_send`): `pending` when `on_late` takes what the post ends
+    with (a notice's settling: JUG2b review, round 3), else `unsent`. Never raises."""
     url = url or os.environ.get("GLORFINDEL_WEBHOOK_URL", "")
     if not url:
         return "failed"
+
+    def late(box: dict) -> None:
+        on_late(_error_result(box["error"], key) if "error" in box else _answer_result(box.get("answer"), key))
     for attempt in (0, 1):
         try:
-            import requests
-            resp = requests.post(url, json=payload, timeout=5)
+            resp = _send(url, payload, late if on_late is not None else None)
+        except PostDeadline as exc:       # the post goes on: what it ends with settles its notice
+            log.warning("notice %s: webhook unanswered (%s)", key, exc)
+            return "pending" if on_late is not None else "unsent"
         except Exception as exc:          # a notification never stops the watch
-            log.warning("notice %s: webhook failed (%s)", key, exc)
-            return "failed"
-        status = getattr(resp, "status_code", None)
-        if isinstance(status, int) and 200 <= status < 300:
-            return "sent"
-        if status == 429:
+            return _error_result(exc, key)
+        if getattr(resp, "status_code", None) == 429:
             wait = _retry_after(resp)
             if attempt == 0 and wait is not None and wait <= RETRY_MAX_S:
                 _sleep(wait)
                 continue
-            log.warning("notice %s: webhook rate limited", key)
-            return "limited"
-        log.warning("notice %s: webhook answered %s", key, status)
-        return "failed"
+        return _answer_result(resp, key)
     return "failed"
 
 
 def post_webhook(payload: dict, key: str = "", url: str = "") -> bool:
     """`payload` to `url` (GLORFINDEL_WEBHOOK_URL when none): True when the webhook took it (2xx).
-    Outside the fallback, at most once: a webhook that fails is not retried."""
+    A short 429 is tried again once (`_post`: it asks no longer than `RETRY_MAX_S`); otherwise a
+    webhook that fails is not tried again — outside the fallback, nothing says it later."""
     return _post(payload, key, url) == "sent"

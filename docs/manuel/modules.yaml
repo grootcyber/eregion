@@ -782,6 +782,16 @@ briques:
     issue: 765
     doc: docs/glorfindel.md
 
+  - id: g-repli-hors-boucle
+    composant: glorfindel
+    poste: g-verifier
+    nom: "The webhook fallback in a thread of its own, each post bounded, three tries at most, and a session cut's closure said by it too, without a ping"
+    etat: main
+    release: "0.5"
+    lots: [JUG2b]
+    issue: 768
+    doc: docs/glorfindel.md
+
   - id: g-perimetre-illisible
     composant: glorfindel
     poste: g-verifier
