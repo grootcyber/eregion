@@ -549,9 +549,10 @@ check-azure-env:
 	done
 
 # RST1 (#680) : la date de fin des secrets des trois paires du poste (la watch, la console, le bot),
-# lue à la demande sous l'az login de l'opérateur (az ad app credential list : endDateTime seul,
-# jamais un secret ni un client id affiché). Avertit à moins de 14 jours, dit « aucune paire » pour
-# une paire absente ; sort en 1 sur une date illisible ou sans secret valable. check-azure-env et le
+# lue à la demande sous l'az login de l'opérateur, sur l'application et sur le principal de service
+# (PAIR1 : az ad app show, az ad sp show, endDateTime seul, jamais un secret ni un client id affiché).
+# Avertit à moins de 14 jours, dit « aucune paire » pour une paire absente ; sort en 1 sur un objet
+# illisible ou sans secret valable. check-azure-env et le
 # démarrage de Glorfindel n'appellent jamais Graph : c'est ici seulement.
 azure-pairs-expiry:
 	@python3 scripts/credential_expiry.py
@@ -966,18 +967,18 @@ NO_CONSOLE_TOKEN = $(HOST_ENV) : aucun jeton de la console (EREGION_CONSOLE_TOKE
 imladris-%: glorfindel-host-% ;
 
 glorfindel-host-init:
-	$(HOST_TF) init
+	@$(HOST_TF) init
 
 glorfindel-host-plan: glorfindel-host-init
-	$(HOST_TF) plan $(HOST_VARS)
+	@$(HOST_TF) plan $(HOST_VARS)
 
 # YES=1 : sans confirmation (le plan n'est alors pas relu avant l'apply).
 glorfindel-host-up: glorfindel-host-init
-	$(HOST_TF) apply $(HOST_VARS)$(if $(YES), -auto-approve)
+	@$(HOST_TF) apply $(HOST_VARS)$(if $(YES), -auto-approve)
 	@echo "" && echo "  Ensuite : make glorfindel-host-env (ou copier host.env.example et remplir), make glorfindel-host-push"
 
 glorfindel-host-down:
-	$(HOST_TF) destroy $(HOST_VARS)
+	@$(HOST_TF) destroy $(HOST_VARS)
 
 # host.env depuis ton environnement (.envrc chargé) : abonnement, clé du modèle, webhook ;
 # jamais de secret Azure (identité managée) ; READ_ONLY=1 et un jeton de la console tiré au sort
@@ -1052,17 +1053,17 @@ glorfindel-host-start: glorfindel-host-known
 	@case "$(origin REF)" in environment*) echo "REF vient de l'environnement (« $$EREGION_DEPLOY_REF ») : rien n'est déployé. La donner sur la ligne de commande : make glorfindel-host-start REF=<tag ou commit>." >&2; exit 1;; esac
 	@test -n "$$EREGION_DEPLOY_REF" || { echo "REF exigée : make glorfindel-host-start REF=<tag ou commit> — ce chemin construit sur Imladris, il ne prend jamais « le dernier tag » (le CD déploie la release publiée, vérifiée). Rien n'est déployé." >&2; exit 1; }
 	@case "$$EREGION_DEPLOY_REF" in -*|*[!A-Za-z0-9._-]*) echo "REF invalide : « $$EREGION_DEPLOY_REF » (un tag ou un commit)" >&2; exit 1;; esac
-	$(HOST_SSH) 'test -f .eregion-host-ready && mkdir -p .eregion/analysis .eregion/console/requests && cd eregion && bash -s -- '"$$EREGION_DEPLOY_REF" < infra/glorfindel-host/deploy.sh
+	@$(HOST_SSH) 'test -f .eregion-host-ready && mkdir -p .eregion/analysis .eregion/console/requests && cd eregion && bash -s -- '"$$EREGION_DEPLOY_REF" < infra/glorfindel-host/deploy.sh
 	@echo ""
 	@echo "  ⚠ Arrête le Glorfindel local (make glorfindel-stop) : deux watch sur le même banc = cartes en double ;"
 	@echo "    et aucun autre bot avec le même DISCORD_BOT_TOKEN."
 	@echo "  Console → make glorfindel-host-tunnel : il affiche l'URL avec son jeton, puis tient le tunnel"
 
 glorfindel-host-stop: glorfindel-host-known
-	$(HOST_SSH) 'cd eregion && docker compose stop'
+	@$(HOST_SSH) 'cd eregion && docker compose stop'
 
 glorfindel-host-logs: glorfindel-host-known
-	$(HOST_SSH) 'cd eregion && docker compose logs --tail 100'
+	@$(HOST_SSH) 'cd eregion && docker compose logs --tail 100'
 
 # Is everything running? Azure VMs and backups, containers, errors, discovery, bot, cards
 # to judge — read-only, one look (infra/glorfindel-host/status.sh).
@@ -1108,13 +1109,13 @@ glorfindel-host-model: glorfindel-host-known
 	   true; }'
 
 glorfindel-host-report: glorfindel-host-known
-	$(HOST_SSH) 'docker exec eregion-watch glorfindel report --since $(or $(SINCE),7d)'
+	@$(HOST_SSH) 'docker exec eregion-watch glorfindel report --since $(or $(SINCE),7d)'
 
 # IA0 (#167) : le rapport d'une campagne lancée depuis Orodruin, écrit par la watch de la VM.
 glorfindel-host-campaign-report: glorfindel-host-known
 	@test -n "$(CAMPAIGN)" || { echo "CAMPAIGN=<id> requis (rendu par orodruin-campaign-plan)"; exit 1; }
 	@case "$(CAMPAIGN)" in *[!A-Za-z0-9._-]*) echo "CAMPAIGN invalide : $(CAMPAIGN)"; exit 1;; esac
-	$(HOST_SSH) 'cat eregion/runs/glorfindel/campaigns/$(CAMPAIGN)/report.md 2>/dev/null || { cat eregion/runs/glorfindel/campaigns/$(CAMPAIGN)/report.error 2>/dev/null; echo "pas encore de rapport pour $(CAMPAIGN)"; exit 1; }'
+	@$(HOST_SSH) 'cat eregion/runs/glorfindel/campaigns/$(CAMPAIGN)/report.md 2>/dev/null || { cat eregion/runs/glorfindel/campaigns/$(CAMPAIGN)/report.error 2>/dev/null; echo "pas encore de rapport pour $(CAMPAIGN)"; exit 1; }'
 
 # BL1 (#280) : le temps pour contenir et la part contenue seule d'une campagne, calculés sur Imladris
 # depuis ses fichiers (analysis/containment.py) — lecture seule, aucun modèle. FAULT_RUNS= : une
@@ -1122,12 +1123,12 @@ glorfindel-host-campaign-report: glorfindel-host-known
 glorfindel-host-containment: glorfindel-host-known
 	@test -n "$(CAMPAIGN)" || { echo "CAMPAIGN=<id> requis (rendu par orodruin-campaign-plan)"; exit 1; }
 	@case "$(CAMPAIGN)$(FAULT_RUNS)" in *[!A-Za-z0-9._,-]*) echo "CAMPAIGN ou FAULT_RUNS invalide"; exit 1;; esac
-	$(HOST_SSH) 'docker exec eregion-watch python -m analysis.containment runs/glorfindel/campaigns/$(CAMPAIGN)$(foreach r,$(subst $(BL1_COMMA), ,$(FAULT_RUNS)), --fault-run $(r))$(if $(JSON), --json)'
+	@$(HOST_SSH) 'docker exec eregion-watch python -m analysis.containment runs/glorfindel/campaigns/$(CAMPAIGN)$(foreach r,$(subst $(BL1_COMMA), ,$(FAULT_RUNS)), --fault-run $(r))$(if $(JSON), --json)'
 
 # G1 (#76) : le même taux, sur Imladris, où sont les décisions de la watch — lecture seule, aucun modèle.
 glorfindel-host-fault-rate: glorfindel-host-known
 	@case "$(DAYS)" in *[!0-9]*) echo "DAYS invalide : un nombre de jours"; exit 1;; esac
-	$(HOST_SSH) 'docker exec eregion-watch python -m analysis.fault_rate --runs-dir runs --days $(or $(DAYS),30)$(if $(JSON), --json)'
+	@$(HOST_SSH) 'docker exec eregion-watch python -m analysis.fault_rate --runs-dir runs --days $(or $(DAYS),30)$(if $(JSON), --json)'
 
 glorfindel-host-url:
 	@$(CONSOLE_GUARD) $@
@@ -1148,10 +1149,10 @@ glorfindel-host-tunnel-go: glorfindel-host-known
 	@if [ -f $(HOST_ENV) ]; then t="$(CONSOLE_TOKEN)"; \
 	 if [ -n "$$t" ]; then echo "  Console → http://localhost:7007/?token=$$t"; else echo "  ⚠ $(NO_CONSOLE_TOKEN)"; fi; \
 	 echo "  (Ctrl+C ferme le tunnel)"; fi
-	ssh $(HOST_SSH_OPTS) -N -L 7007:127.0.0.1:7007 $(HOST_USER)@$(HOST_IP)
+	@ssh $(HOST_SSH_OPTS) -N -L 7007:127.0.0.1:7007 $(HOST_USER)@$(HOST_IP)
 
 glorfindel-host-ssh: glorfindel-host-known
-	$(HOST_SSH)
+	@$(HOST_SSH)
 
 # ── Le CD d'Imladris (H1, #244) : la release que Jonathan publie arrive seule sur Imladris ──────────
 # infra/glorfindel-host/README.md, « Le CD d'Imladris ». L'agent vit dans ~/.eregion-cd/ sur la VM,
@@ -1174,34 +1175,34 @@ glorfindel-host-cd-install: glorfindel-host-known
 	 $(HOST_SSH) 'python3 .eregion-cd/published_image.py install-cosign .eregion-cd/cosign' && \
 	 printf '%s\n' "$$lines" | $(HOST_SSH) 'umask 077 && cat > .eregion-cd/discord.env' && \
 	 git rev-parse HEAD | $(HOST_SSH) 'cat > .eregion-cd/installed-from'
-	$(HOST_SSH_TTY) 'sudo bash .eregion-cd/install.sh'
+	@$(HOST_SSH_TTY) 'sudo bash .eregion-cd/install.sh'
 
 glorfindel-host-cd-check: glorfindel-host-known
 	@test -n "$(HOST_IP)" || { echo "Pas de VM : make glorfindel-host-up d'abord"; exit 1; }
-	$(HOST_SSH) 'python3 .eregion-cd/eregion_cd.py check'
+	@$(HOST_SSH) 'python3 .eregion-cd/eregion_cd.py check'
 
 glorfindel-host-cd-enable: glorfindel-host-known
-	$(HOST_SSH_TTY) 'sudo systemctl enable --now eregion-cd.timer && systemctl list-timers eregion-cd.timer --no-pager'
+	@$(HOST_SSH_TTY) 'sudo systemctl enable --now eregion-cd.timer && systemctl list-timers eregion-cd.timer --no-pager'
 
 glorfindel-host-cd-disable: glorfindel-host-known
-	$(HOST_SSH_TTY) 'sudo systemctl disable --now eregion-cd.timer'
+	@$(HOST_SSH_TTY) 'sudo systemctl disable --now eregion-cd.timer'
 
 glorfindel-host-cd-status: glorfindel-host-known
 	@test -n "$(HOST_IP)" || { echo "Pas de VM : make glorfindel-host-up d'abord"; exit 1; }
 	@$(HOST_SSH) 'python3 .eregion-cd/eregion_cd.py status; echo "  timer : $$(systemctl is-enabled eregion-cd.timer 2>/dev/null || echo absent)"; journalctl -u eregion-cd --since -1d -n 15 --no-pager -o cat 2>/dev/null | sed "s/^/  | /"'
 
 glorfindel-host-cd-retry: glorfindel-host-known
-	$(HOST_SSH) 'python3 .eregion-cd/eregion_cd.py retry'
+	@$(HOST_SSH) 'python3 .eregion-cd/eregion_cd.py retry'
 
 # SEC12 : le seul chemin par lequel le CD déploie une release plus ancienne que ce qui tourne —
 # demandé sur Imladris, pour ce tag, vérifié comme toute release ; celle qu'il quitte n'est plus reprise
 # seule (une nouvelle release, ou -cd-retry). TAG : vX.Y.Z vérifié ici, puis par l'agent (TAG_RE).
 glorfindel-host-cd-rollback: glorfindel-host-known
 	@printf '%s' "$(TAG)" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$$' || { echo "TAG=vX.Y.Z attendu"; exit 2; }
-	$(HOST_SSH) 'python3 .eregion-cd/eregion_cd.py rollback $(TAG)'
+	@$(HOST_SSH) 'python3 .eregion-cd/eregion_cd.py rollback $(TAG)'
 
 glorfindel-host-cd-uninstall: glorfindel-host-known
-	$(HOST_SSH_TTY) 'sudo bash .eregion-cd/install.sh --remove'
+	@$(HOST_SSH_TTY) 'sudo bash .eregion-cd/install.sh --remove'
 
 # ── Orodruin (O1) — l'hôte d'où les injecteurs agissent ───────────────────────
 # État séparé de Celebrimbor et de Glorfindel. Le contrat est relu par la VM elle-même (son

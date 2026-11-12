@@ -1122,6 +1122,9 @@ def _feed_new(state: dict[Path, tuple[int, int | None, bool]]) -> list[dict]:
                         out.append(_parse(json.loads(raw), kind))
                     except Exception:
                         pass
+    # CON-D: a turn's lines in the order of their moment, whatever the file that held them — the
+    # page puts each in its place, the latest on top.
+    out.sort(key=_feed_order)
     return out
 
 
@@ -2466,7 +2469,7 @@ def _load_recent(n: int, window_h: float = 4.0) -> list[dict]:
 
     import time as _time
     cutoff = _time.time() - window_h * 3600
-    entries: list[tuple[str, dict]] = []
+    entries: list[dict] = []
 
     for writer, pat, kind in _FEED_FILES:     # SEC18: each from its writer's directory
         for f in _own(writer).glob(pat):
@@ -2481,20 +2484,50 @@ def _load_recent(n: int, window_h: float = 4.0) -> list[dict]:
                 if not line.strip():
                     continue
                 try:
-                    d = json.loads(line)
-                    entries.append((d.get("timestamp", ""), _parse(d, kind)))
+                    entries.append(_parse(json.loads(line), kind))
                 except Exception:
                     pass
 
-    entries.sort(key=lambda x: x[0])
-    return [e for _, e in entries[-n:]]
+    # CON-D: by the full moment, in UTC — never by the text of the timestamp (an offset, a « Z »,
+    # a time with no offset) nor by the time of day. The operator's own actions are kept for days
+    # (above), and a run's file recent by its mtime may hold older lines: a line of yesterday at
+    # 21:05 comes before one of today at 15:54, and the page says its day.
+    entries.sort(key=_feed_order)
+    return entries[-n:]
+
+
+def _feed_when(ts) -> dict:
+    """When a feed line happened, from its ISO timestamp, in UTC (CON-D): ``at`` (seconds since
+    the epoch), ``day`` (``YYYY-MM-DD``) and ``time`` (``HH:MM:SS``) — the page says the day of a
+    line that is not today's. A time with no offset is read as UTC, as every writer writes it; a
+    timestamp that does not read gives nothing, and its line goes to the bottom of the feed."""
+    none = {"at": None, "day": "", "time": ""}
+    if not isinstance(ts, str) or not ts.strip():
+        return none
+    try:
+        moment = datetime.fromisoformat(ts.strip())
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=timezone.utc)
+        moment = moment.astimezone(timezone.utc)
+    except (ValueError, OverflowError):     # « 0001-01-01T00:00:00+01:00 » leaves the calendar
+        return none
+    return {"at": moment.timestamp(), "day": moment.date().isoformat(), "time": moment.time().isoformat("seconds")}
+
+
+def _feed_order(entry: dict) -> float:
+    """The key of a feed line's order: its moment (CON-D); a line whose moment does not read, the
+    oldest."""
+    at = entry.get("at")
+    return at if isinstance(at, (int, float)) else float("-inf")
 
 
 def _parse(data: dict, kind: str) -> dict:
+    when = _feed_when(data.get("timestamp", ""))
     if kind == "signal":
         return {
             "type": "signal",
             "timestamp": data.get("timestamp", ""),
+            **when,
             "event": data.get("event", ""),
             "ttp": data.get("ttp", ""),
             "severity": data.get("severity", ""),
@@ -2505,6 +2538,7 @@ def _parse(data: dict, kind: str) -> dict:
     return {
         "type": "action",
         "timestamp": data.get("timestamp", ""),
+        **when,
         "action": data.get("action", ""),
         "escalate": data.get("escalate", False),
         # A detection-only decision has no action (AL1, C2): the gate that held it.

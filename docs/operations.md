@@ -887,13 +887,33 @@ prochain `make glorfindel-host-up` les reprend ; une VM que Celebrimbor reconstr
 (l'attribution porte l'id de la VM) jusqu'au prochain apply d'Imladris.
 
 **Faire tourner un secret** (un an par défaut) : `az ad sp credential reset --id <appId>` rend
-un nouveau `password` ; le poser dans `.envrc`, `make glorfindel-restart`. L'ancien cesse à la
-réinitialisation : un service à la fois. **Quand le faire** : `make azure-pairs-expiry` (RST1) lit,
-sous ton `az login`, la date de fin des secrets des trois paires du poste (`az ad app credential
-list`, la date seule : jamais un secret, ni un id affiché) ; il avertit à moins de 14 jours, dit
-« aucune paire » pour une paire absente, dit un ancien secret expiré à côté d'un valable (« à retirer ») et sort en 1 sur une date illisible ou quand aucun secret n'est valable.
+un nouveau `password` ; le poser dans `.envrc`, `make glorfindel-restart`. L'ancien, sur le même objet, cesse à la
+réinitialisation : un service à la fois. **Les deux formes d'une paire** (PAIR1, #736) : son secret
+vit sur l'un de deux objets, son application ou son principal de service. Au banc, le 12/11, celui de
+la watch était sur son application (la forme d'`az ad sp create-for-rbac`), celui de la console sur son
+principal de service (0 sur l'application, 1 sur le principal, posé le 09/11 pour 30 jours) — sans
+doute la forme d'une rotation par `az ad sp credential reset`, non mesuré. Un secret resté sur l'autre
+objet reste valable jusqu'à sa date : le contrôle le dit (« 2 secrets valables », à retirer par
+`az ad app credential delete` ou `az ad sp credential delete`, selon l'objet qu'il nomme). **Quand le
+faire** : `make azure-pairs-expiry` (RST1) lit, sous ton `az login`, la date de fin des secrets et des
+certificats des trois paires du poste, sur les deux objets : `az ad app show --id <appId>` puis
+`az ad sp show --id <appId>`, la même requête aux deux, `{secrets: passwordCredentials[].endDateTime,
+certificates: keyCredentials[].endDateTime}` (la date seule : jamais un secret, ni un id affiché). Il
+dit où vit chaque date (« sur son application », « sur son principal de service ») ; la plus proche
+des deux objets fait le verdict ; il avertit à moins de 14 jours, dit « aucune paire » pour une paire
+absente, dit un ancien secret expiré à côté d'un valable (« à retirer ») et sort en 1 sur un objet
+illisible ou quand aucun secret n'est valable. « Aucun secret ni certificat » (✗) ne se dit que des
+deux objets lus et vides ; un objet illisible se dit tel (✗), jamais « aucun », et aucun ✓ à côté :
+une date plus proche peut s'y trouver. Avant PAIR1, seule l'application se lisait (`az ad app
+credential list`) : le préflight du banc disait « aucun secret » d'une paire qui se connectait, et n'en
+aurait jamais vu l'expiration.
 `check-azure-env` et le démarrage de Glorfindel n'appellent jamais Graph : la lecture se fait à la
 demande, avant une session du banc (`docs/banc-t1486.md`, étape 0).
+
+> **Note du 12/11 (PAIR1), pour Jonathan** : le secret de la console, sur son principal de service,
+> expire vers le **08/12** ; `make azure-pairs-expiry` avertira à partir du 24/11 environ. Sa rotation
+> se fait avant le 08/12 : ce jour-là, le restore depuis le poste s'arrêterait. Après la rotation,
+> relancer `make azure-pairs-expiry` : une seule date doit rester pour la console.
 
 **Retirer l'ancien principal partagé** (`Contributor` sur l'abonnement, l'option A d'avant) :
 
@@ -4427,7 +4447,7 @@ sudo -v && make mobile-check                                   # le poste ouvert
   la date limite lue, ssh sous `timeout`, ce que systemd a chargé sans drop-in ni autre fichier, une
   redirection `127.0.0.1:7007` seule, la clé d'hôte épinglée, l'adresse d'Imladris celle de Terraform),
   puis `systemctl --user show` et `ss -Hltnp` : arrêté, « ℹ non armé » ; en échec, activé ou armé
-  au-delà de sa date limite, un ✗ ; armé, depuis quand, jusqu'à quand, son minuteur de fin, et
+  au-delà de sa date limite, un ✗ ; armé, depuis quand, jusqu'à quand (en UTC, dit : MOB3), son minuteur de fin, et
   les processus de l'unité — ceux de son cgroup (`ControlGroup`), sinon `MainPID` et ses fils, car `MainPID` est celui de `timeout` et c'est son fils ssh qui écoute — n'écoutent qu'en `127.0.0.1:7007` ; le port tenu par un processus hors de l'unité est un ✗ ; ces processus ou `ss` illisibles, un ⚠ (l'écoute n'est pas vérifiée).
 - **Le tunnel du poste** (MOB2, `scripts/mobile.py tunnel-*`, `infra/poste/eregion-console-tunnel.service`) :
   armé à la demande, borné à 12 h (décision de Jonathan, 11/11). `-install` écrit l'unité dans
@@ -4445,6 +4465,12 @@ sudo -v && make mobile-check                                   # le poste ouvert
   l'unité ; `-remove` l'arrête et retire l'unité, son known_hosts et sa date limite. Toutes refusent
   dans une session d'agent, le garde seul d'abord ; `make console-url`, `make glorfindel-host-url` et
   `make glorfindel-host-tunnel` aussi, avant de lire le jeton.
+- **Aucune cible `glorfindel-host-*` n'affiche sa commande** (MOB3, banc du 11/11) : chaque ligne de
+  recette commence par `@`. `make glorfindel-host-ssh` affichait `ssh … glorfindel@<adresse d'Imladris>`,
+  le chemin de la clé compris, et la sortie collée depuis le terminal du téléphone repartait comme
+  commande ; `-plan`, `-up`, `-down` affichaient l'adresse de l'opérateur (`operator_cidr`). Ce qu'elles
+  font ne change pas. Ce qui a été mesuré au banc, et ce qui reste à mesurer : le guide, « Ce qui a été
+  mesuré, ce qui reste à mesurer ».
 
 ## auditd au banc (AUD1, #408)
 
