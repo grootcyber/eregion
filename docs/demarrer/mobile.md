@@ -87,7 +87,7 @@ regardé ce qu'écoute un `openssh-server` installé seul, ni pendant combien de
 sudo install -D -m 644 infra/poste/sshd_config.d/00-eregion.conf /etc/ssh/sshd_config.d/00-eregion.conf
 sudoedit /etc/ssh/sshd_config.d/00-eregion.conf      # ListenAddress <tailscale ip -4>, AllowUsers <toi>
 sudo install -D -m 644 infra/poste/ssh.service.d/eregion.conf /etc/systemd/system/ssh.service.d/eregion.conf
-sudo apt install openssh-server tmux                 # après : le paquet démarre sur le fragment déjà posé
+sudo apt install openssh-server tmux                 # après eux : l'ordre recommandé, une hypothèse (ci-dessus)
 sudo systemctl disable --now ssh.socket              # Ubuntu ≥ 22.10 : sshd écoute lui-même, pas le socket
 sudo install -d -m 755 /run/sshd                     # sans lui, sshd -t refuse avant le premier départ du service
 sudo systemctl daemon-reload && sudo sshd -t && sudo systemctl enable --now ssh.service
@@ -98,9 +98,11 @@ sudo systemctl daemon-reload && sudo sshd -t && sudo systemctl enable --now ssh.
   un tmpfs, vidé à chaque démarrage, et ce répertoire, c'est le `RuntimeDirectory=sshd` du service
   qui le crée au départ du service — ni avant, ni pour `sshd -t` lancé à la main. `install -d` le crée
   vide (root, 755), comme le service le ferait. On garde le test **avant** le départ : une
-  configuration refusée ne démarre rien. **Ce geste ne vaut que pour le tout premier départ**, juste
-  après que `ssh.socket` a été coupé : à chaque démarrage ensuite, c'est le service qui recrée
-  `/run/sshd`, sans aucun geste (mesuré le 12/11).
+  configuration refusée ne démarre rien. Au démarrage du poste, c'est le service qui recrée
+  `/run/sshd`, sans aucun geste (mesuré le 12/11). Mais `RuntimeDirectory` le **retire aussi à
+  l'arrêt** du service : un `sudo sshd -t` lancé le service arrêté (après un `systemctl stop ssh`,
+  pour éprouver une configuration changée) en a de nouveau besoin — le même `install -d` d'abord.
+  Le service en marche, le répertoire est là.
 
 - **Le fragment** (`infra/poste/sshd_config.d/00-eregion.conf`) :
   - l'adresse privée seule ;
@@ -121,8 +123,9 @@ sudo systemctl daemon-reload && sudo sshd -t && sudo systemctl enable --now ssh.
   son adresse avant d'écouter dessus, une minute au plus, et repart après un échec. **Mesuré le
   12/11**, après un redémarrage du poste (la session Tests, à 07:53:13 UTC) : WSL démarré à 07:39:38
   UTC (`uptime -s`), `tailscaled` actif à 07:39:58, `ssh.service` à 07:40:00, deux secondes plus
-  tard — le drop-in qui attend l'adresse de Tailscale a tenu ; aucun redémarrage de l'un ni de
-  l'autre ; `/run/sshd` recréé par le service lui-même, `ssh` actif sans aucun geste ; `make
+  tard, aucun redémarrage de l'un ni de l'autre. **On en déduit** que le drop-in qui attend
+  l'adresse de Tailscale a tenu : `ssh` actif deux secondes après `tailscaled`, jamais relancé — son
+  attente elle-même n'a pas été regardée ; `/run/sshd` recréé par le service lui-même, `ssh` actif sans aucun geste ; `make
   mobile-check` tout ✓, avec « ℹ tunnel : non armé » : jamais au boot, comme voulu.
 - **Le contrôle**, en lecture seule, chaque fois que la configuration change :
 
