@@ -80,12 +80,14 @@ make celebrimbor-output        # le fragment de glorfindel-config.yaml : l'espac
 Ce rôle personnalisé doit exister avant le plan d'Imladris : le Terraform le nomme. Une fois par tenant, les cinq rôles de `infra/identities/` (le Terraform d'Imladris nomme aussi « Restore Neutralize » et « Restore Staging », dès que `principals.auto.tfvars` donne les principaux qui restaurent) :
 
 ```bash
-SUB=$AZURE_SUBSCRIPTION_ID                   # .envrc chargé ; vide, chaque rôle se créerait sur « /subscriptions/ »
-printf %s "$SUB" | grep -cE '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'   # → 1, sans l'afficher
-for r in response restore session-drain restore-neutralize restore-staging; do
-  sed "s|<SUBSCRIPTION_ID>|$SUB|" infra/identities/glorfindel-$r.json > /tmp/eregion-role-$r.json
-  az role definition create --role-definition @/tmp/eregion-role-$r.json
-done
+SUB=$AZURE_SUBSCRIPTION_ID                   # .envrc chargé ; vide, le sed écrit « /subscriptions/ » et az refuse chaque rôle
+GUID='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+if printf %s "$SUB" | grep -qE "$GUID"; then    # sans l'afficher ; pas un GUID : rien ne part
+  for r in response restore session-drain restore-neutralize restore-staging; do
+    sed "s|<SUBSCRIPTION_ID>|$SUB|" infra/identities/glorfindel-$r.json > /tmp/eregion-role-$r.json
+    az role definition create --role-definition @/tmp/eregion-role-$r.json
+  done
+else echo "SUB n'est pas un GUID : source .envrc, puis relancer le bloc"; fi
 ```
 
 - **Pour une première attaque, Imladris observe** : `GLORFINDEL_READ_ONLY=1` et `human_only` sont ce qu'écrit `make glorfindel-host-env`. La détection se mesure ainsi. Le confinement, non : Glorfindel recommande et escalade, il n'agit pas.
