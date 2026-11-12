@@ -461,7 +461,7 @@ GLORFINDEL_WEBHOOK_URL=...          # Slack/Teams/Discord webhook — escalades 
                                     # Discord : https://discord.com/api/webhooks/<id>/<token>/slack
 DISCORD_BOT_TOKEN=...               # Bot Discord interactif (fils par VM, boutons Acquitter/Commande) ; le conteneur du bot seul (M-3)
 DISCORD_CHANNEL_ID=...              # ID du channel (clic droit → Copy Channel ID) ; avec DISCORD_BOT_TOKEN, la watch et la console laissent les cartes au bot (webhook muet) ; seul, il ne fait taire rien
-DISCORD_PING_ROLE=...               # ID du rôle à pinger à l'ouverture d'un fil (optionnel)
+DISCORD_PING_ROLE=...               # ID du rôle à pinger à l'ouverture d'un fil, et à chaque action prise seule (sa carte à juger, JUG1) (optionnel)
 DISCORD_ALLOWED_USERS=111,222       # M-3 : ids des utilisateurs qui peuvent cliquer les boutons des cartes
 DISCORD_ALLOWED_ROLES=333           # M-3 : ids des rôles autorisés ; les deux vides → tous les boutons refusent (fermé par défaut), refus journalisé
 EREGION_OPERATOR_OBJECT_ID=...      # NT1 : never_target (eregion_core/never_target.py), à la watch seule (plan d'identité, IR1a) ; recopiée dans host.env ; source : terraform -chdir=infra/orodruin output -raw operator_object_id ; vide → liste illisible, tout verbe une étape de l'humain

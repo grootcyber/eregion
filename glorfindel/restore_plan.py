@@ -109,12 +109,15 @@ def card_of(resource_id: str) -> dict | None:
     """The card a restore of this VM answers, among its pending ones: the one first detected,
     whatever it holds — its first detection is the earliest moment the defender recorded for
     the VM, safer than the restore card's own (written later) — or None. For `glorfindel
-    restore` without --before."""
+    restore` without --before. Never the card of an action taken alone (JUG1 review): it is
+    written after the action, and says nothing of when the attack began — a VM isolated alone,
+    without another card, still has no moment (SEC4c: no card, no moment)."""
     from glorfindel import escalations
     want = str(resource_id or "").rstrip("/").lower()
     try:
         cards = [e for e in escalations.pending()
                  if str(e.get("resource_id") or "").rstrip("/").lower() == want]
+        cards = [e for e in cards if e.get("escalation_type") != escalations.EXECUTED_TYPE]
     except Exception:            # an unreadable store: no card, the operator gives the moment
         return None
     return min(cards, key=_first_seen) if cards else None

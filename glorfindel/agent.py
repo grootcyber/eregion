@@ -2415,6 +2415,9 @@ def store_cycle(state: GlorfindelState, *, memory: CycleMemory) -> GlorfindelSta
             and outcome.get("verified") is not False
         ):
             from glorfindel.escalations import notify_action
+            # JUG1: the card to judge first, then its announcement (as DRN2: the card, then what
+            # is said of it) — both once per action, by its key.
+            card = _record_executed(state, source, exercise_run)
             notify_action(
                 action=state["action"],
                 resource_id=signal.get("resource_id", ""),
@@ -2427,6 +2430,9 @@ def store_cycle(state: GlorfindelState, *, memory: CycleMemory) -> GlorfindelSta
                 # An isolation by rules leaves Azure's DNS / IMDS reachable: said where the
                 # autonomous action is announced, not only buried in the outcome (S7).
                 note=(_platform_note(outcome) if state["action"] == "isolate_vm" else ""),
+                key=_executed_key(state),
+                card=card,
+                mode=state.get("autonomy_mode", ""),
             )
     except Exception as exc:
         _console.print(f"[yellow]store_cycle: notify_action failed: {exc}[/yellow]")
@@ -2437,6 +2443,100 @@ def store_cycle(state: GlorfindelState, *, memory: CycleMemory) -> GlorfindelSta
     # Debug JSONL — always written, even if ChromaDB or webhook failed
     _write_debug_record(state)
     return state
+
+
+# JUG1 (#760): what a card of an autonomous action keeps of the detection's row — a few values,
+# each cut: the evidence it was taken on, never the whole row.
+_EVIDENCE_KEPT = 8
+_EVIDENCE_MAX = 200
+_EXECUTED_ACTIONS = ("isolate_vm", "block_suspicious_ip")
+
+
+def _executed_ip(state: GlorfindelState) -> str:
+    if state.get("action") != "block_suspicious_ip":
+        return ""
+    return str((state.get("outcome") or {}).get("ip") or _extract_suspicious_ip(state["signal"]) or "")
+
+
+def _executed_key(state: GlorfindelState) -> str:
+    """The key of this cycle's action (escalations.executed_key): its card and its announcement."""
+    from glorfindel.escalations import executed_key
+    signal = state["signal"]
+    return executed_key(signal.get("signal_id", ""), signal.get("resource_id", ""),
+                        state.get("action", ""), _executed_ip(state))
+
+
+def _evidence(signal: dict) -> list[str]:
+    """The values of the detection's row (the RulePoller's first row), « column: value », cut."""
+    raw = signal.get("raw_signal") or {}
+    row = raw.get("first_result_row") or raw.get("detected_data") or {}
+    if not isinstance(row, dict):
+        return []
+    return [f"{str(k)[:60]}: {str(v)[:_EVIDENCE_MAX]}"
+            for k, v in list(row.items())[:_EVIDENCE_KEPT] if v not in (None, "", [], {})]
+
+
+def _verification_of(outcome: dict) -> dict:
+    """What the check read back on Azure, for the card: how, when, what it covers."""
+    keys = ("verified", "method", "verified_at", "nics_covered", "nsg", "nsg_scope", "scoped", "ip")
+    out = {k: outcome[k] for k in keys if outcome.get(k) not in (None, "")}
+    drain = outcome.get("drain") if isinstance(outcome.get("drain"), dict) else {}
+    if drain.get("status"):
+        out["drain"] = str(drain["status"])
+    return out
+
+
+def _record_executed(state: GlorfindelState, source: str, exercise_run: str) -> str:
+    """JUG1 (#760): the card « exécutée » of a disruptive action Glorfindel took alone, once its
+    check held — to judge in TO JUDGE (Right, Wrong, Unsure), counted among the disruptive
+    actions (`escalations.observation_report`). It changes nothing of the action nor of the
+    autonomy: nothing to approve on it (its type is not approvable), its undoing by the usual
+    paths. One per action, by its key, after a restart of the watch too; a snapshot or a release
+    makes none. Its id, or "" when there is none — never a stop: the announcement still goes."""
+    outcome = state.get("outcome") or {}
+    action = state.get("action", "")
+    if (action not in _EXECUTED_ACTIONS or state.get("dry_run") or state.get("escalate")
+            or not outcome.get("executed") or outcome.get("verified") is not True):
+        return ""
+    signal = state["signal"]
+    rid = signal.get("resource_id", "")
+    mode = state.get("autonomy_mode", "") or "?"
+    ip = _executed_ip(state)
+    port = _threat_port(signal) if ip else None
+    verification = _verification_of(outcome)
+    note = _platform_note(outcome) if action == "isolate_vm" else ""
+    from glorfindel import escalations
+    label = escalations._ACTION_LABELS.get(action, action)
+    vm = rid.rstrip("/").rsplit("/", 1)[-1]
+    undo = (f"`glorfindel release {vm} --yes`" if action == "isolate_vm"
+            else f"`glorfindel unblock {ip or '<ip>'} {vm} --yes`")
+    reason = (f"{label}{f' ({ip})' if ip else ''} par Glorfindel seul (mode {mode}), vérifiée sur Azure"
+              + (f" ({verification['method']})" if verification.get("method") else "") + "."
+              + (f" {note}." if note else "")
+              + " À juger : Right si l'action était justifiée et proportionnée, Wrong sinon.")
+    executed = {"action": action, "mode": mode, "verification": verification,
+                "evidence": _evidence(signal), "at": outcome.get("verified_at") or ""}
+    if ip:
+        executed["ip"] = ip
+    if note:
+        executed["note"] = note
+    try:
+        return escalations.record(
+            signal_id=signal.get("signal_id", ""), resource_id=rid, action=action,
+            escalation_type=escalations.EXECUTED_TYPE, reason=reason,
+            run_id=(signal.get("context") or {}).get("run_id", ""),
+            suggested_steps=[f"Si elle est jugée à tort, la défaire par le chemin habituel : {undo}."],
+            ttp=signal.get("ttp", ""), severity=signal.get("severity", ""),
+            confidence=state.get("confidence", 0.0),
+            action_params=({"ip": ip, **({"port": port} if port else {})} if ip else None),
+            rule_name=(signal.get("context") or {}).get("rule_name", ""),
+            source=source, exercise_run=exercise_run, explanation=state.get("explanation", ""),
+            target=_card_target(signal), action_key=_executed_key(state), executed=executed,
+        )
+    except Exception as exc:          # said, and the announcement and the debug line still go
+        _console.print(f"[red]store_cycle: carte de l'action autonome '{_esc_markup(action)}' "
+                       f"non écrite — {_esc_markup(str(exc))}[/red]")
+        return ""
 
 
 def _record_displaced(state: GlorfindelState, source: str, exercise_run: str) -> None:
