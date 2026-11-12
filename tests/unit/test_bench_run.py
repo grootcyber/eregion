@@ -49,11 +49,12 @@ CLEAN_POINT = {"clean": True, "said": "le plus récent (09:00:00), pris après l
 
 class FakeSteps:
     def __init__(self, preflight=0, hits=None, launch=(0, ["20261110T101500Z-t1486"]), report=0, point=None,
-                 snapshot=None):
+                 snapshot=None, rejudged=(True, "rejugé propre")):
         self.calls: list[tuple] = []
         self._preflight, self._launch, self._report = preflight, launch, report
         self._point = CLEAN_POINT if point is None else point
         self._snapshot = snapshot
+        self._rejudged = rejudged
         self._hits = [{"rg": "rg-celebrimbor", "id": VM_ID}] if hits is None else hits
         self.sent: dict = {}
 
@@ -71,6 +72,10 @@ class FakeSteps:
         if isinstance(self._point, Exception):
             raise self._point
         return self._point
+
+    def rejudge(self, target, point):
+        self.calls.append(("rejudge", target))
+        return self._rejudged
 
     def snapshot(self, target, plan, say, token):
         self.calls.append(("snapshot", target))
@@ -412,7 +417,8 @@ def test_a_point_not_clean_takes_the_snapshot_route_then_the_preflight_is_replay
     steps = FakeSteps(point=DIRTY_POINT)
     code, kinds, out = _journal(steps, VM, "o")
     assert code == 0, out
-    assert kinds == ["preflight", "locate", "ask", "ask", "point", "snapshot", "preflight", "launch", "report"]
+    assert kinds == ["preflight", "locate", "ask", "ask", "point", "snapshot", "rejudge", "preflight", "launch",
+                     "report"]
     last_ask = max(i for i, k in enumerate(kinds) if k == "ask")
     assert kinds.index("snapshot") > last_ask                    # nothing written before the confirmation
     assert "route du bouton 📸" in out and "le préflight rejoué" in out
@@ -435,7 +441,7 @@ def test_a_red_replayed_preflight_stops_the_run_just_before_the_attack():
     steps = FakeSteps(point=DIRTY_POINT, preflight=[0, 1])
     code, kinds, out = _journal(steps, VM, "o")
     assert code == 1
-    assert kinds[-2:] == ["snapshot", "preflight"] and "launch" not in kinds
+    assert kinds[-3:] == ["snapshot", "rejudge", "preflight"] and "launch" not in kinds
     assert "Le point pris reste" in out
 
 
@@ -547,3 +553,14 @@ def test_the_console_s_token_is_taken_out_of_every_child_s_environment(monkeypat
     assert steps.token == "tok-Q"
     assert brun.TOKEN_ENV not in brun.Steps({brun.TOKEN_ENV: "x", "A": "1"}).env
     assert "tok-Q" not in "\n".join(said)
+
+
+def test_a_point_taken_but_judged_again_not_clean_stops_the_run():
+    """BNC3b review: the point the 📸 route took is judged again — an isolation opened during the job, a
+    quarantine still open: refused, nothing goes to Orodruin."""
+    steps = FakeSteps(point=DIRTY_POINT, rejudged=(False, "le plus récent (10:00:00) est pris dans une quarantaine "
+                                                          "(depuis 09:50:00, sans levée lue)"))
+    code, kinds, out = _journal(steps, VM, "o")
+    assert code == 1
+    assert kinds[-2:] == ["snapshot", "rejudge"] and "launch" not in kinds
+    assert "le point pris, rejugé" in out and "quarantaine" in out

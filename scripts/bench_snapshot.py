@@ -112,6 +112,26 @@ def judge(target: str, env: dict, config: str, now: float | None = None) -> dict
     return out
 
 
+def rejudge(target: str, env: dict, config: str, point: float, now: float | None = None) -> tuple[bool, str]:
+    """The point the 📸 route took, judged again (BNC3b review): after the last restore, outside every
+    quarantine, read again — an isolation opened during the job, or a quarantine still open, refuses
+    it. Any read that fails: refused."""
+    now = time.time() if now is None else now
+    hits = bs.locate_vm(target)
+    if len(hits) != 1:
+        return False, f"{len(hits)} VM nommée(s) {target} : une seule attendue"
+    try:
+        vault, vault_rg, _ = bs.local_vault(config)
+    except Exception as e:  # noqa: BLE001
+        return False, f"la configuration du poste ne se lit pas ({type(e).__name__})"
+    reads = bh.Reads(target, hits[0]["id"], hits[0]["rg"], vault, vault_rg, env, now)
+    try:
+        since, quarantine = reads.anchor(), reads.quarantines()
+    except bh.Unreadable as e:
+        return False, f"le point pris ne se rejuge pas ({e})"
+    return bh.point_clean(point, since, quarantine)
+
+
 # ── the port forward ──────────────────────────────────────────────────────────
 
 def free_port() -> int:

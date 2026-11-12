@@ -160,13 +160,19 @@ déclarée le refuse.
   se lit dans les jobs du coffre : le dernier restore `Completed` de la VM **prouvé en place**, sur la
   même VM, ou sa création si elle date de moins de 89 jours. Un « Restore disks » ou une « nouvelle
   VM », faits à la main depuis le portail, laissent gondolin telle qu'elle était : ils ne comptent pas.
-  La preuve, deux lectures, toutes deux exigées : le détail du job (`az backup job show`, sa
-  `extendedInfo.propertyBag`, un type de restore « Original Location » ou « Replace existing ») — **le
-  champ et sa valeur sont une hypothèse, à mesurer au banc** (`bench_history.IN_PLACE_KEYS`) —, et une
-  écriture réussie de la VM (`virtualMachines/write`, l'échange de ses disques) pendant le job, au
-  journal d'activité. Faute de l'une, le restore est « non prouvé en place » : un ✗ qui le dit et
-  renvoie à `make bench-restore` (le restore en place de RST1, `recoveryType: OriginalLocation`). Un
-  restore en cours, une liste qui ne remonte pas jusqu'au dernier restore, une lecture en échec : un ✗.
+  La preuve est celle de REC1 (`glorfindel/recovery_watch.py`), **mesurée au banc** le 09/11 (REC1b)
+  et tenue par la levée du 12/11, toutes ses lectures exigées : le job nomme le conteneur de cette VM
+  (`containerName` qui finit par `;<groupe>;<vm>` : deux VM d'un même nom partagent un coffre) ; le sac
+  du job (`az backup job show`, `extendedInfo.propertyBag`) dit « Job Type » « Replace disks », la clé
+  repliée comme REC1 la replie, les valeurs de `IN_PLACE_TYPES`, une seule source ; et le disque OS
+  actuel de la VM a été créé pendant le job, au plus 10 min après sa fin (`az vm show --query
+  storageProfile.osDisk.managedDisk.id`, puis `az disk show --query timeCreated`, sous Reader). Faute
+  de l'une, le restore est « non prouvé en place » : un ✗ qui le dit, et qui dit quoi faire — si `make
+  bench-restore` vient de réussir, lire le sac du job (`az backup job show … --query
+  properties.extendedInfo.propertyBag`) et le disque OS, puis le signaler ; un « Restore disks » ou une
+  nouvelle VM faits à la main, restaurer en place. Quand le repli sur la création suit des restores
+  refusés, le ✗ de « restore d'abord » dit leur motif. Un restore en cours, une liste qui ne remonte
+  pas jusqu'au dernier restore, une lecture en échec : un ✗.
   Pour Orodruin, une ligne de son journal répond à une seule Run Command, la plus proche qui la suit :
   une Run Command sans ligne à elle (un envoi du journal perdu, une reprise sur `Conflict`) est
   destructive. Conséquences voulues : un run non destructif dont le journal s'est perdu, une Run Command
@@ -176,7 +182,17 @@ déclarée le refuse.
   `runCommand/action` sur la VM. Une Run Command gérée (`runCommands/write`, une ressource enfant que
   `--resource-id` ne remonte pas), une extension Custom Script ou une session SSH n'y paraissent pas.
   Et **la latence d'ingestion du journal d'activité** (quelques minutes, une hypothèse à mesurer au
-  banc) peut cacher au calme une mise en marche ou une Run Command plus récente qu'elle.
+  banc) peut cacher au calme une mise en marche ou une Run Command plus récente qu'elle. Le calme
+  compte `start`, `restart`, `redeploy`, `performMaintenance` et toute écriture de la VM ; **un
+  redémarrage par la plateforme** (la maintenance de l'hôte, un événement de santé) ne passe par aucune
+  de ces opérations, et ne se voit pas.
+- **Ce que l'historique d'Imladris ne voit pas** : sous la file d'actions (FS1,
+  `EREGION_ACTION_QUEUE=1`), une isolation ou une levée que la watch exécute pour une demande de la
+  console ou du bot n'écrit ni cycle (`_debug.jsonl`) ni `manual_actions.jsonl` ; la console ne la note
+  que quand une page lit le reçu final, le bot ne note que son Revert. Le filet : l'isolation lance
+  toujours la coupure des sessions, une Run Command d'Imladris qu'aucun cycle vérifié n'explique, donc
+  comptée destructive par « restore d'abord » ; et une levée manquée laisse la quarantaine ouverte,
+  ce qui refuse le point. Le point pris par la route 📸 est rejugé, ses quarantaines relues.
 
 ### Le point de restauration propre : depuis Imladris
 

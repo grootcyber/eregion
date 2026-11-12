@@ -178,12 +178,19 @@ def _at(**ago) -> str:
     return (NOW - timedelta(**ago)).isoformat()
 
 
-# BNC3b review: the detail of a restore in place, as `az backup job show` is supposed to say it (the
-# key and the value are a hypothesis, to measure on the bench: bench_history.IN_PLACE_KEYS).
-IN_PLACE = {"properties": {"operation": "Restore", "status": "Completed",
-                           "extendedInfo": {"propertyBag": {"Restore Type": "Original Location"}}}}
-RESTORE_DISKS = {"properties": {"operation": "Restore", "status": "Completed",
-                                "extendedInfo": {"propertyBag": {"Restore Type": "Restore Disks"}}}}
+# BNC3b review: a restore's detail as `az backup job show` gives it — its property bag's « Job Type »,
+# measured on the bench (09/11, REC1b: « Replace disks », the key with a trailing space or not, by
+# version), the two other kinds as tests/unit/fake_azure.py names them (`_JOB_TYPES`).
+def _detail(kind: str, key: str = "Job Type ") -> dict:
+    return {"properties": {"operation": "Restore", "status": "Completed",
+                           "extendedInfo": {"propertyBag": {key: kind, "Recovery point time ": "11/07/2026"}}}}
+
+
+IN_PLACE = _detail("Replace disks")
+RESTORE_DISKS = _detail("Restore disks")
+NEW_VM = _detail("Create new virtual machine")
+CONTAINER = f"iaasvmcontainerv2;{bw.RG};{bw.VM}"
+DISK = f"/subscriptions/{bw.SUB}/resourceGroups/{bw.RG}/providers/Microsoft.Compute/disks/gondolin-osdisk-restored"
 
 
 def swap(restored_ago=timedelta(days=2)) -> list[dict]:
@@ -217,13 +224,14 @@ def restored_jobs(restored_ago=timedelta(days=2)) -> list[dict]:
     end = NOW - restored_ago
     return [{"name": "00000000-0000-4000-8000-0000000000ab",
              "properties": {"entityFriendlyName": bw.VM, "operation": "Restore", "status": "Completed",
-                            "jobType": "AzureIaaSVMJob", "startTime": (end - timedelta(minutes=20)).isoformat(),
-                            "endTime": end.isoformat()}}]
+                            "jobType": "AzureIaaSVMJob", "containerName": CONTAINER,
+                            "startTime": (end - timedelta(minutes=20)).isoformat(), "endTime": end.isoformat()}}]
 
 
 def _world(tmp_path, *, point_age_h: float = 50, restore_role=None, staging_assigned=False,
            h0_rights=None, console_pair: dict = CONSOLE_ON_ITS_SP, activity=None, jobs=None,
-           created: str | None = "2026-07-01T09:00:00+00:00", detail=None) -> bw.World:
+           created: str | None = "2026-07-01T09:00:00+00:00", detail=None,
+           disk_created: datetime | None = NOW - timedelta(days=2, minutes=10)) -> bw.World:
     w = bw.World(tmp_path)
     _h0(w)
     point = (NOW - timedelta(hours=point_age_h)).isoformat()
@@ -278,6 +286,10 @@ def _world(tmp_path, *, point_age_h: float = 50, restore_role=None, staging_assi
         bw.rule("az", ["backup", "job", "list"], restored_jobs() if jobs is None else jobs),
         bw.rule("az", ["vm", "show", bw.RID, "timeCreated"], json.dumps(created)),
         bw.rule("az", ["backup", "job", "show"], IN_PLACE if detail is None else detail),
+        # the OS disk of gondolin, created during its restore of 2 days ago (REC1's proof)
+        bw.rule("az", ["vm", "show", bw.RID, "storageProfile.osDisk.managedDisk.id"], json.dumps(DISK)),
+        bw.rule("az", ["disk", "show", DISK, "timeCreated"],
+                json.dumps(disk_created.isoformat() if disk_created else None)),
     ]
     for n, (role, actions) in enumerate(ROLES.items(), 1):
         nid = {"Reader": 1, "Eregion Glorfindel Response": 5, "Eregion Glorfindel Session Drain": 6,
@@ -970,19 +982,24 @@ def test_a_run_of_orodruin_is_left_out_only_when_its_technique_reads_as_non_dest
 
 # ── BNC3b, review round 1 ─────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("detail, swapped, said", [
-    (RESTORE_DISKS, True, "son détail ne dit pas un restore en place"),
-    ({"properties": {"operation": "Restore", "status": "Completed"}}, True, "son détail ne dit pas un restore en place"),
-    (IN_PLACE, False, "aucune écriture de la VM pendant le job"),
+@pytest.mark.parametrize("detail, disk, said", [
+    (RESTORE_DISKS, None, "son type est « Restore disks », pas « Replace disks »"),
+    (NEW_VM, None, "son type est « Create new virtual machine », pas « Replace disks »"),
+    ({"properties": {"operation": "Restore", "status": "Completed"}}, None, "son type est « non dit »"),
+    (IN_PLACE, NOW - timedelta(days=30), "le disque OS de la VM n'a pas été créé pendant le job"),
+    (IN_PLACE, "unread", "le disque OS de la VM ne se lit pas"),
 ])
-def test_a_restore_not_proven_in_place_is_no_last_restore(tmp_path, monkeypatch, detail, swapped, said):
-    """A « Restore disks », or a restore whose detail or whose swap of disks does not read, leaves the VM
-    as it was: no anchor of « restore d'abord » — a ✗ that says what to do, never a ✓ (BNC3b review)."""
-    w = _world(tmp_path, **_IN_ORDER, detail=detail, activity=calm_activity(swapped=swapped))
+def test_a_restore_not_proven_in_place_is_no_last_restore(tmp_path, monkeypatch, detail, disk, said):
+    """A « Restore disks », a new VM, or a restore whose type or whose new OS disk does not read, leaves
+    the VM as it was: no anchor of « restore d'abord » — a ✗ that says what to do (read the job's bag
+    when `make bench-restore` has just succeeded), never a ✓ (BNC3b review)."""
+    w = _world(tmp_path, **_IN_ORDER, detail=detail,
+               disk_created=None if disk == "unread" else disk or NOW - timedelta(days=2, minutes=10))
     code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
     assert code == 1
     (first,) = _lines_of(out, bs.FAIL, "restore d'abord : illisible")
-    assert "restore non prouvé en place" in first and said in first and "make bench-restore" in first, first
+    assert "restore non prouvé en place" in first and said in first, first
+    assert "si make bench-restore vient de réussir, lire le sac du job" in first and "propertyBag" in first
     shows = [c for c in w.calls() if c[:4] == ["az", "backup", "job", "show"]]
     assert shows and all("-n" in c for c in shows)
 
@@ -999,6 +1016,7 @@ def test_an_older_restore_in_place_is_the_anchor_when_the_newest_is_not(tmp_path
     one count — here, a human's Run Command between the two."""
     jobs = restored_jobs() + [{"name": "00000000-0000-4000-8000-0000000000ac",
                                "properties": {"entityFriendlyName": bw.VM, "operation": "Restore",
+                                              "containerName": CONTAINER,
                                               "status": "Completed", "startTime": _at(hours=5),
                                               "endTime": _at(hours=4, minutes=40)}}]
     w = _world(tmp_path, **_IN_ORDER, jobs=jobs,
@@ -1048,3 +1066,43 @@ def test_a_run_of_orodruin_without_its_own_journal_line_is_destructive(tmp_path,
     (first,) = _lines_of(out, bs.FAIL, "restore d'abord : 1 Run Command")
     assert "Orodruin" in first
     assert bs.hms((NOW - r1).timestamp()) in first
+
+
+
+# ── BNC3b, review round 2 ─────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("key", ["Job Type ", "Job Type", "job  type"])
+def test_a_restore_of_rst1_is_proven_in_place_by_the_measured_job_type(tmp_path, monkeypatch, key):
+    """The bag measured on the bench (09/11, REC1b): « Job Type » « Replace disks », its key with a trailing
+    space or not; REC1's values, one source (glorfindel.recovery_watch.IN_PLACE_TYPES)."""
+    from glorfindel.recovery_watch import IN_PLACE_TYPES
+    assert bh.IN_PLACE_TYPES is IN_PLACE_TYPES
+    w = _world(tmp_path, **_IN_ORDER, detail=_detail("Replace disks", key))
+    code, out, err = _preflight(w, arm_in_order(), monkeypatch)
+    assert code == 0, out + err
+    assert _lines_of(out, bs.OK, "restore d'abord : aucune Run Command destructive depuis son dernier restore")
+
+
+def test_a_restore_of_another_vm_of_that_name_is_no_restore_of_this_one(tmp_path, monkeypatch):
+    """Two VMs of one name share a vault: a job whose container names another group is the other one's
+    (REC1's `_last_restore_job`)."""
+    jobs = restored_jobs()
+    jobs[0]["properties"]["containerName"] = f"iaasvmcontainerv2;rg-other;{bw.VM}"
+    w = _world(tmp_path, **_IN_ORDER, jobs=jobs)
+    code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
+    assert code == 1
+    (first,) = _lines_of(out, bs.FAIL, "restore d'abord : illisible")
+    assert "aucun restore de la VM lu" in first, first
+    assert not [c for c in w.calls() if c[:4] == ["az", "backup", "job", "show"]]
+
+
+def test_the_creation_after_restores_not_proven_says_why(tmp_path, monkeypatch):
+    """The anchor falls back on the VM's creation: the ✗ of « restore d'abord » says the restores not
+    counted, and what to read (BNC3b review)."""
+    w = _world(tmp_path, **_IN_ORDER, detail=RESTORE_DISKS, created=(NOW - timedelta(days=20)).isoformat(),
+               activity=calm_activity(rcs=(("human", timedelta(hours=1), timedelta(seconds=20)),)))
+    code, out, _ = _preflight(w, arm_in_order(), monkeypatch)
+    assert code == 1
+    (first,) = _lines_of(out, bs.FAIL, "restore d'abord : 1 Run Command sur la VM depuis sa création")
+    assert "restore(s) non prouvé(s) en place" in first and "« Restore disks »" in first, first
+    assert "propertyBag" in first

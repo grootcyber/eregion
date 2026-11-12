@@ -129,6 +129,11 @@ class Steps:
         import bench_snapshot
         return bench_snapshot.take(target, self.env, plan, say, token=token)
 
+    def rejudge(self, target: str, point: float) -> tuple[bool, str]:
+        """BNC3b review: the point taken, judged again (bench_snapshot.rejudge)."""
+        import bench_snapshot
+        return bench_snapshot.rejudge(target, self.env, str(bs.REPO / "glorfindel-config.yaml"), point)
+
     def report(self, run_id: str, target: str) -> int:
         """The run's report, once its cycle is written on Imladris (bounded: bench_report.CYCLE_WAIT_S)."""
         import bench_report
@@ -252,11 +257,16 @@ def main(argv: list[str] | None = None, env: dict | None = None, *, cwd=None, he
                 say("✗ la cible ou son coffre ne se lit pas : aucun point demandé, rien n'est envoyé à Orodruin.")
                 return 1
             try:
-                steps.snapshot(target, plan, say, token)
+                taken = steps.snapshot(target, plan, say, token)
+                clean, why = steps.rejudge(target, taken)
             except (RuntimeError, OSError) as e:
                 say(f"✗ le point : {bs.scrub(str(e))} — le run s'arrête, rien n'est envoyé à Orodruin.")
                 return 1
-            say("✓ le point : pris, son job Completed")
+            if not clean:
+                say(f"✗ le point pris, rejugé : {bs.scrub(why)} — une quarantaine restée ouverte, ou une lecture "
+                    "qui manque : le run s'arrête, rien n'est envoyé à Orodruin.")
+                return 1
+            say(f"✓ le point : pris, son job Completed, rejugé — {bs.scrub(why)}")
             say(f"→ le préflight rejoué, juste avant l'attaque ({target})")
             replayed = steps.preflight(target)
             if replayed != 0:

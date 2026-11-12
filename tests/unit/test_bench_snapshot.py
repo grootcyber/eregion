@@ -52,6 +52,9 @@ ITEM = {"id": (f"/subscriptions/{bw.SUB}/resourceGroups/{bw.RG}/providers/Micros
         "name": ITEM_NAME, "properties": {"friendlyName": bw.VM}}
 
 
+DISK = f"/subscriptions/{bw.SUB}/resourceGroups/{bw.RG}/providers/Microsoft.Compute/disks/gondolin-osdisk"
+
+
 def _at(**ago) -> datetime:
     return NOW - timedelta(**ago)
 
@@ -59,6 +62,7 @@ def _at(**ago) -> datetime:
 def _restore(end: datetime) -> dict:
     return {"name": "00000000-0000-4000-8000-0000000000ab",
             "properties": {"entityFriendlyName": bw.VM, "operation": "Restore", "status": "Completed",
+                           "containerName": f"iaasvmcontainerv2;{bw.RG};{bw.VM}",
                            "startTime": (end - timedelta(minutes=20)).isoformat(), "endTime": end.isoformat()}}
 
 
@@ -72,12 +76,12 @@ def _world(tmp_path, *, point: datetime, jobs=None, created="2026-07-01T09:00:00
                  {"name": "2", "properties": {"recoveryPointTime": (point - timedelta(days=1)).isoformat()}}]),
         bw.rule("az", ["backup", "job", "list"], [_restore(_at(days=2))] if jobs is None else jobs),
         bw.rule("az", ["vm", "show", bw.RID, "timeCreated"], json.dumps(created)),
-        # the restore of 2 days ago, proven in place: its detail (a hypothesis, IN_PLACE_KEYS), its swap
+        # the restore of 2 days ago, proven in place as REC1 proves it: its « Job Type » (measured,
+        # 09/11), and the VM's OS disk created during the job
         bw.rule("az", ["backup", "job", "show"],
-                {"properties": {"extendedInfo": {"propertyBag": {"Restore Type": "Original Location"}}}}),
-        bw.rule("az", ["activity-log", bw.RID], [
-            bw.event("Microsoft.Compute/virtualMachines/write", bw.RID, _at(days=2, minutes=10).isoformat(),
-                     "Succeeded", "", {}, "w0")]),
+                {"properties": {"extendedInfo": {"propertyBag": {"Job Type ": "Replace disks"}}}}),
+        bw.rule("az", ["vm", "show", bw.RID, "storageProfile.osDisk.managedDisk.id"], json.dumps(DISK)),
+        bw.rule("az", ["disk", "show", DISK, "timeCreated"], json.dumps(_at(days=2, minutes=10).isoformat())),
     ]
     return w
 
@@ -585,3 +589,24 @@ def test_a_job_completed_without_a_newer_point_stops(monkeypatch):
 
 def test_the_real_clock_is_the_default():
     assert bsn.take.__kwdefaults__["clock"] is time.monotonic
+
+
+
+# ── BNC3b, review round 2: the point the 📸 route took, judged again ─────────
+
+def test_the_point_taken_is_judged_again_against_the_quarantines_read_again(tmp_path, monkeypatch):
+    """An isolation opened during the job (or one still open): the new point is in it — refused."""
+    w = _world(tmp_path, point=_at(hours=3))
+    _cycle(w, action="isolate_vm", verified_at=_at(minutes=30))
+    env = _env(w, monkeypatch)
+    clean, why = bsn.rejudge(bw.VM, env, str(w.config), _at(minutes=5).timestamp(), now=NOW.timestamp())
+    assert clean is False and "pris dans une quarantaine" in why and "sans levée lue" in why
+    clean, why = bsn.rejudge(bw.VM, env, str(w.config), _at(hours=1).timestamp(), now=NOW.timestamp())
+    assert clean is True, why
+
+
+def test_a_point_taken_that_cannot_be_judged_again_is_refused(tmp_path, monkeypatch):
+    w = _world(tmp_path, point=_at(hours=3))            # no cycle file on Imladris: the history unread
+    clean, why = bsn.rejudge(bw.VM, _env(w, monkeypatch), str(w.config), _at(minutes=5).timestamp(),
+                             now=NOW.timestamp())
+    assert clean is False and "ne se rejuge pas" in why

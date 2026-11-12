@@ -1,6 +1,6 @@
 """BNC3b (#770): the bench in one gesture — the calm and « restore d'abord » verified by the preflight,
 the clean point read after the confirmation and taken by the route of the 📸 button, the preflight
-replayed. M5040–M5059, and M5065–M5074 (the review's first round), measured by tests/unit/test_bench_preflight.py, tests/unit/test_bench_run.py and
+replayed. M5040–M5059, M5065–M5074 (the review's first round) and M5083–M5087 (its second), measured by tests/unit/test_bench_preflight.py, tests/unit/test_bench_run.py and
 tests/unit/test_bench_snapshot.py."""
 HIST = "scripts/bench_history.py"
 SNAP = "scripts/bench_snapshot.py"
@@ -88,8 +88,9 @@ MUTANTS = [
      "disks » made by hand leaves the VM encrypted, and « restore d'abord » says ✓ (BNC3b review)", HIST,
      "        if not said_in_place(detail):\n",
      "        if False:\n"),
-    ("M5066", "a restore without the swap of its disks on the VM counts as the last restore (BNC3b review)", HIST,
-     "        if not swapped(ops, job):\n",
+    ("M5066", "a restore whose VM's OS disk was not created during the job counts as the last restore: the "
+     "VM's disks never swapped (BNC3b review)", HIST,
+     "        if not disk_created_during(created, job):\n",
      "        if False:\n"),
     ("M5067", "every restore completed is the last restore, in place or not (BNC3b review, the defect back)", HIST,
      "        if verdict is True:\n",
@@ -127,6 +128,27 @@ MUTANTS = [
      "not checked again (BNC3b review: M4758 lost bench-run-go)", "Makefile",
      "bench-run-go:\n\t@$(MOB1_ORIGIN)\n\t@$(CONSOLE_GUARD) bench-run\n",
      "bench-run-go:\n\t@$(CONSOLE_GUARD) bench-run\n"),
+    # The review's second round: M5083–M5087.
+    ("M5083", "the « Job Type » read without folding its key: Azure's key with a trailing space (measured) not "
+     "found, every restore of RST1 refused (BNC3b review round 2)", HIST,
+     '    return " ".join(folded.get("job type", "").split())\n',
+     '    return str(bag.get("Job Type", ""))\n'),
+    ("M5084", "any restore of disks taken for one in place: a « Restore disks » made by hand counts as the last "
+     "restore (BNC3b review round 2)", HIST,
+     "    return job_type(detail).lower() in IN_PLACE_TYPES\n",
+     '    return "disks" in job_type(detail).lower()\n'),
+    ("M5085", "the jobs not filtered by their container: the restore of another VM of that name, in another "
+     "group, counts for this one (BNC3b review round 2)", HIST,
+     "        if container and want and not container.endswith(want):\n",
+     "        if False:\n"),
+    ("M5086", "any OS disk taken for the restored one, whenever created (BNC3b review round 2: DISK_AFTER_END_S)",
+     HIST,
+     '    return created is not None and job["start"] < created <= end + DISK_AFTER_END_S\n',
+     "    return created is not None\n"),
+    ("M5087", "the point the 📸 route took, judged again and found in a quarantine, kept: the attack goes on "
+     "(BNC3b review round 2)", RUN,
+     "            if not clean:\n",
+     "            if False:\n"),
 ]
 TESTS = {
     "M5040": f"{_P}::test_the_calm_not_held_is_a_failure_that_says_the_minutes_left",
@@ -159,4 +181,9 @@ TESTS = {
     "M5072": f"{_S}::test_a_lift_before_the_line_of_a_console_isolation_never_closes_it",
     "M5073": f"{_S}::test_a_history_that_reads_in_part_is_no_quarantine_absent",
     "M5074": f"{_N}::test_the_internal_targets_refuse_a_variable_from_the_environment",
+    "M5083": f"{_P}::test_a_restore_of_rst1_is_proven_in_place_by_the_measured_job_type",
+    "M5084": f"{_P}::test_a_restore_not_proven_in_place_is_no_last_restore",
+    "M5085": f"{_P}::test_a_restore_of_another_vm_of_that_name_is_no_restore_of_this_one",
+    "M5086": f"{_P}::test_a_restore_not_proven_in_place_is_no_last_restore",
+    "M5087": f"{_N}::test_a_point_taken_but_judged_again_not_clean_stops_the_run",
 }

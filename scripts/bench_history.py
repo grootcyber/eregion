@@ -17,11 +17,12 @@ history that does not reach back far enough, is never a ✓:
                   then its run's report (`runs/<run_id>.json`) against the catalogue — one journal
                   line, one Run Command, the nearest after it: a Run Command without its own line is
                   destructive. « Since its last restore » is read in the vault's jobs: the newest restore
-                  of the VM completed AND proven in place, on the same VM — its job's detail says it
-                  (`az backup job show`, IN_PLACE_KEYS/IN_PLACE_VALUES: a hypothesis, to measure on the
-                  bench) and the VM's activity log holds a write on it during the job (the swap of its
-                  disks) —; a « Restore disks » or a « Create new VM » leaves the VM as it was, and is
-                  no restore here. Else the VM's creation, within the horizon;
+                  of the VM completed AND proven in place, on the same VM, as REC1 proves it (measured
+                  on the bench, 09/11 and 12/11): its container names this VM's group and name, its
+                  job's property bag says « Job Type » « Replace disks » (glorfindel.recovery_watch.
+                  IN_PLACE_TYPES), and the VM's current OS disk was created during the job
+                  (DISK_AFTER_END_S) —; a « Restore disks » or a « Create new virtual machine » leaves
+                  the VM as it was, and is no restore here. Else the VM's creation, within the horizon;
   the clean point the newest recovery point of the VM, the one the restore takes, taken after its last
                   restore and outside every quarantine — over every run, read on Imladris by
                   scripts/bench_h0_reader.py (`history`), in its disposable, network-less container.
@@ -34,7 +35,10 @@ What it does not see (said in docs/banc-t1486.md): « every Run Command » is ev
 `runCommand/action` on the VM — not a managed Run Command (`runCommands/write`, a child resource
 `--resource-id` does not bring back), not a Custom Script extension, not an SSH session. And the
 activity log's ingestion delay (a few minutes, a hypothesis to measure) may hide a start or a Run
-Command younger than it from the calm.
+Command younger than it from the calm; a restart by the platform (the host's maintenance, a health
+event) goes through none of START_OPS. Under the action queue (FS1), the watch's isolations and lifts
+for a request write no cycle: the drain the isolation starts is then a Run Command of Imladris no
+verified cycle answers (destructive), and a lift missed leaves the quarantine open (the point refused).
 
 Nothing is written: each read is `az … list|show`, an ssh to Imladris reading in its reader's
 container, `az storage blob list|download` on the channel. No identifier is printed: a caller is a
@@ -57,6 +61,8 @@ CALM_S = 600.0
 MAX_EVENTS = 5000
 START_OPS = ("microsoft.compute/virtualmachines/start/action",
              "microsoft.compute/virtualmachines/restart/action",
+             "microsoft.compute/virtualmachines/redeploy/action",
+             "microsoft.compute/virtualmachines/performmaintenance/action",
              # its creation, or any write on it: counted as a start, to be prudent (BNC3b review)
              "microsoft.compute/virtualmachines/write")
 # A Run Command without its end, younger than this, is still running (Azure's own bound: 90 min).
@@ -98,60 +104,65 @@ class Anchor:
     start: float
     end: float
     kind: str          # "restore" or "creation"
+    notes: str = ""    # the restores not counted, and why (a creation after them)
 
 
-def vm_jobs(jobs: list[dict], vm: str) -> list[dict]:
-    """The vault's jobs of the VM, oldest first, each with its name (to read its detail)."""
+def vm_jobs(jobs: list[dict], vm: str, rg: str = "") -> list[dict]:
+    """The vault's jobs of the VM, oldest first, each with its name and its container. A job whose
+    container names another group or another VM is another VM's (two VMs of one name share a vault:
+    REC1's `_last_restore_job`); its `container` empty when it names none."""
+    want = f";{rg.lower()};{vm.lower()}" if rg else ""
     out = []
     for j in jobs or []:
         p = j.get("properties") or {}
         if str(p.get("entityFriendlyName") or "").lower() != vm:
             continue
+        container = str(p.get("containerName") or "").lower()
+        if container and want and not container.endswith(want):
+            continue
         start = bs.epoch(p.get("startTime"))
         if start is None:
             continue
         out.append({"name": str(j.get("name") or ""), "operation": str(p.get("operation") or ""),
-                    "status": str(p.get("status") or ""), "start": start, "end": bs.epoch(p.get("endTime"))})
+                    "status": str(p.get("status") or ""), "start": start, "end": bs.epoch(p.get("endTime")),
+                    "container": container})
     return sorted(out, key=lambda j: j["start"])
 
 
-# A restore in place, as its job's detail says it — `properties.extendedInfo.propertyBag` of `az backup
-# job show`. HYPOTHESIS, to measure on the bench (BNC3b review): the key and its value for « Replace
-# existing » (`recoveryType: OriginalLocation`, RST1) are not measured. Anything else, or nothing: not
-# proven, a ✗ — never a ✓ on a field that is not there.
-IN_PLACE_KEYS = ("restoretype", "recoverytype", "restorerecoverytype")
-IN_PLACE_VALUES = ("originallocation", "replaceexisting", "replacedisks", "replaceexistingdisks")
-VM_WRITE = "microsoft.compute/virtualmachines/write"
-# The swap of the disks, a write on the VM during the job (its end may be read a little after it).
-SWAP_AFTER_S = 120.0
+# A restore in place, as REC1 proves it (glorfindel/recovery_watch.py; measured on the bench 09/11,
+# REC1b, and held by the lift of 12/11): the property bag's « Job Type » « Replace disks » — one
+# source for the values —, and the VM's current OS disk created during the job.
+from glorfindel.recovery_watch import DISK_AFTER_END_S, IN_PLACE_TYPES  # noqa: E402
+
 MAX_RESTORES_READ = 5
 
 
-def _norm(text) -> str:
-    return re.sub(r"[^a-z]", "", str(text or "").lower())
-
-
-def said_in_place(detail) -> bool:
-    """The job's detail says a restore in place (IN_PLACE_KEYS, IN_PLACE_VALUES): a hypothesis."""
+def job_type(detail) -> str:
+    """The « Job Type » of `az backup job show`'s property bag, its keys and its value folded as REC1
+    folds them (spaces, case: Azure's keys carry a trailing space or not, by version); '' when none."""
     ext = ((detail or {}).get("properties") or {}).get("extendedInfo") or {}
     bag = ext.get("propertyBag") if isinstance(ext, dict) else None
     if not isinstance(bag, dict):
-        return False
-    return any(_norm(k) in IN_PLACE_KEYS and _norm(v) in IN_PLACE_VALUES for k, v in bag.items())
+        return ""
+    folded = {" ".join(str(k).split()).lower(): str(v) for k, v in bag.items()}
+    return " ".join(folded.get("job type", "").split())
 
 
-def swapped(ops: list[dict], job: dict) -> bool:
-    """A write on the VM itself, succeeded, during the restore job: its disks swapped."""
-    end = (job["end"] or job["start"]) + SWAP_AFTER_S
-    return any(o["op"] == VM_WRITE and o["status"].lower() == "succeeded" and job["start"] <= o["start"] <= end
-               for o in ops)
+def said_in_place(detail) -> bool:
+    return job_type(detail).lower() in IN_PLACE_TYPES
 
 
-def anchor(jobs: list[dict], vm: str, created: float | None, now: float, in_place=None) -> Anchor:
+def disk_created_during(created: float | None, job: dict) -> bool:
+    """The VM's current OS disk created during the restore job, DISK_AFTER_END_S after its end at most."""
+    end = job["end"] if job["end"] is not None else job["start"]
+    return created is not None and job["start"] < created <= end + DISK_AFTER_END_S
+
+
+def anchor(jobs: list[dict], vm: str, created: float | None, now: float, in_place=None, rg: str = "") -> Anchor:
     """The VM's last restore completed and proven in place (`in_place(job)`: True, or why it is not, a
     str), read in the vault's jobs; or its creation, within the horizon. Raises Unreadable when a restore
     runs, or when nothing reaches back far enough — a restore not proven in place among them."""
-    mine = vm_jobs(jobs, vm)
+    mine = vm_jobs(jobs, vm, rg)
     restores = [j for j in mine if j["operation"].lower() == "restore"]
     if any(j["status"].lower() in ("inprogress", "cancelling") for j in restores):
         raise Unreadable("un restore de la VM est en cours dans le coffre")
@@ -164,15 +175,22 @@ def anchor(jobs: list[dict], vm: str, created: float | None, now: float, in_plac
             return Anchor(j["start"], j["end"], "restore")
         day = datetime.fromtimestamp(j["end"], timezone.utc).strftime("%d/%m")
         refused.append(f"{bs.hms(j['end'])} le {day} : {verdict}")
+    said = " ; ".join(refused[:3])
     if created is not None and now - created <= HORIZON_S:
-        return Anchor(created, created, "creation")
+        return Anchor(created, created, "creation", notes=f"restore(s) non prouvé(s) en place : {said}" if said else "")
     if refused:
-        raise Unreadable("restore non prouvé en place (" + " ; ".join(refused[:3]) + ") — un « Restore disks » ou "
-                         "une « nouvelle VM » laisse la VM telle quelle : make bench-restore TARGET=… (un restore en "
-                         "place, RST1), puis relancer")
+        raise Unreadable(f"restore non prouvé en place ({said}){NOT_PROVEN_HINT}")
     raise Unreadable(f"aucun restore de la VM lu dans les jobs du coffre sur {HORIZON_DAYS} jours, et la VM est "
                      "plus ancienne (ou sa création ne se lit pas) : la liste ne remonte pas jusqu'à son dernier "
                      "restore")
+
+
+# What to do when the last restore is not proven in place — not « restore again » after a
+# `make bench-restore` that has just succeeded: read the job's bag, and say it (BNC3b review).
+NOT_PROVEN_HINT = (" — si make bench-restore vient de réussir, lire le sac du job (az backup job show -g <groupe du "
+                   "coffre> -v <coffre> -n <le job, az backup job list> --query properties.extendedInfo.propertyBag ; "
+                   "attendu : « Job Type » « Replace disks ») et le disque OS de la VM (créé pendant le job), puis le "
+                   "signaler ; un « Restore disks » ou une nouvelle VM faits à la main : restaurer en place")
 
 
 def target_ops(events: list[dict], roles: bs.Roles, vm: str) -> list[dict]:
@@ -331,9 +349,10 @@ def restore_first(ops: list[dict], since: Anchor, drains, technique) -> tuple[st
     if destructive:
         who = ", ".join(dict.fromkeys(bs.ROLE_NAMES.get(r["role"], r["role"]) for r in destructive))
         last = destructive[-1]["start"]
+        notes = f" ({since.notes}{NOT_PROVEN_HINT})" if since.notes else ""
         return bs.FAIL, (f"restore d'abord : {len(destructive)} Run Command sur la VM depuis {when} ({at}) — {who}, "
                          f"la dernière à {bs.hms(last)} — : elle peut porter un run destructif ; make bench-restore "
-                         "TARGET=… RUN=… (ou BEFORE=…), puis relancer")
+                         f"TARGET=… RUN=… (ou BEFORE=…), puis relancer{notes}")
     out = []
     if drained:
         out.append(f"{drained} coupure(s) des sessions d'Imladris")
@@ -432,27 +451,42 @@ class Reads:
             return None                  # a creation unread: no anchor from it, never a ✓
 
     def in_place(self, job: dict):
-        """True when the restore job is proven in place on this VM — its detail says it (a hypothesis,
-        IN_PLACE_KEYS) and the VM's activity log holds the swap of its disks —, else why not (a str)."""
+        """True when the restore job is proven in place on this VM, as REC1 proves it — its container
+        names this VM, its « Job Type » is « Replace disks », the VM's current OS disk was created during
+        it —, else why not (a str)."""
         if not _JOB_NAME.fullmatch(job.get("name") or ""):
             return "son nom ne se lit pas"
+        if not job.get("container"):
+            return "il ne nomme pas son conteneur : rien ne dit que c'est cette VM qui a été restaurée"
         try:
             detail = bs.az_json(["backup", "job", "show", "-g", self.vault_rg, "-v", self.vault, "-n", job["name"]])
         except RuntimeError as e:
             return f"son détail ne se lit pas ({bs.scrub(str(e))[:120]})"
         if not said_in_place(detail):
-            return "son détail ne dit pas un restore en place (Restore disks, nouvelle VM, ou un champ non mesuré)"
+            return f"son type est « {job_type(detail) or 'non dit'} », pas « Replace disks »"
         try:
-            ops = self.ops()
+            created = self.os_disk_created()
         except Unreadable as e:
-            return f"le journal d'activité de la VM ne se lit pas ({e})"
-        if not swapped(ops, job):
-            return "aucune écriture de la VM pendant le job au journal d'activité (l'échange de ses disques)"
+            return f"le disque OS de la VM ne se lit pas ({e})"
+        if not disk_created_during(created, job):
+            return "le disque OS de la VM n'a pas été créé pendant le job"
         return True
+
+    def os_disk_created(self) -> float | None:
+        """When the VM's current OS disk was created (two reads under Reader, REC1's)."""
+        def read():
+            disk = bs.az_json(["vm", "show", "--ids", self.vm_id, "--query", "storageProfile.osDisk.managedDisk.id"])
+            if not isinstance(disk, str) or not disk.lower().startswith("/subscriptions/"):
+                raise Unreadable("la VM ne nomme pas de disque OS managé")
+            created = bs.epoch(bs.az_json(["disk", "show", "--ids", disk, "--query", "timeCreated"]))
+            if created is None:
+                raise Unreadable("la date de création du disque OS ne se lit pas")
+            return created
+        return self._once("os_disk", read)
 
     def anchor(self) -> Anchor:
         return self._once("anchor", lambda: anchor(self.jobs(), self.target, self.created(), self.now,
-                                                   self.in_place))
+                                                   self.in_place, self.rg))
 
     def restored(self) -> float | None:
         """The end of the VM's last restore completed, whatever it was — a start for the calm. None
@@ -461,7 +495,7 @@ class Reads:
             jobs = self.jobs()
         except Unreadable:
             return None
-        ends = [j["end"] for j in vm_jobs(jobs, self.target)
+        ends = [j["end"] for j in vm_jobs(jobs, self.target, self.rg)
                 if j["operation"].lower() == "restore" and j["status"].lower() == "completed" and j["end"] is not None]
         return max(ends, default=None)
 
