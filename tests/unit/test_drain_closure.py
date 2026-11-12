@@ -19,7 +19,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from azure.core.exceptions import HttpResponseError
 
-from glorfindel import actions, drain_watch, escalations, vm_notices
+from glorfindel import drain_watch, escalations, vm_notices
 from glorfindel.actions import _load_isolation_state
 from glorfindel.providers.azure import run_command
 from glorfindel.reassert import reassert_pass
@@ -36,8 +36,10 @@ HOOK = "https://hooks.example.invalid/eregion"
 @pytest.fixture(autouse=True)
 def _no_drain_followed():
     run_command._FOLLOWED.clear()
+    run_command._SUPERSEDED.clear()
     yield
     run_command._FOLLOWED.clear()
+    run_command._SUPERSEDED.clear()
 
 
 @pytest.fixture
@@ -161,6 +163,7 @@ def test_a_vm_released_before_any_pass_still_closes_what_it_announced(azure, pos
 # ── once, whatever restarts ───────────────────────────────────────────────────────────────────
 
 def test_a_restart_during_the_cut_closes_it_once(azure, posts):
+    """The poller lost: nothing was read — the closure never says « relue » (DRN2 review)."""
     f, c = azure
     c.isolate_vm(_WEB)
     run_command._FOLLOWED.clear()                                       # the watch restarted
@@ -168,35 +171,13 @@ def test_a_restart_during_the_cut_closes_it_once(azure, posts):
     reassert_pass(c, _ACT)
     [text] = _closures(posts)
     assert "coupure jamais aboutie" in text and "redémarrée" in text
+    assert "relue" not in text.split(" — ")[0] and " s après la demande" in text
 
 
-def test_a_watch_stopped_between_the_closure_and_the_state_never_says_it_again(azure, posts, monkeypatch):
-    """The closure said, the state not written (the watch stopped): after the restart, the poller is
-    gone — the pass takes the outcome from the closure, never a « jamais aboutie » card after an
-    « aboutie » message."""
-    f, c = azure
-    c.isolate_vm(_WEB)
-    f.end_run_commands()
-    real = actions._save_isolation_state
-
-    def stopped(rid, state):
-        if (state.get("drain") or {}).get("status") != "pending":
-            raise OSError(28, "No space left on device")
-        real(rid, state)
-    monkeypatch.setattr(actions, "_save_isolation_state", stopped)
-    reassert_pass(c, _ACT)
-    assert _load_isolation_state(_WEB)["drain"]["status"] == "pending"
-    monkeypatch.setattr(actions, "_save_isolation_state", real)
-    run_command._FOLLOWED.clear()                                       # the restart
-    reassert_pass(c, _ACT)
-    assert _load_isolation_state(_WEB)["drain"]["status"] == "drained"
-    assert len(_closures(posts)) == 1 and "aboutie" in _closures(posts)[0]
-    assert not _drain_cards() and not [e for e in escalations.pending() if "jamais aboutie" in e["reason"]]
-
-
-def test_a_closure_that_cannot_be_recorded_leaves_the_cut_pending_and_is_said_next_pass(azure, posts, monkeypatch):
-    """Its card, its closure, then the state (L1A): the closure refused (a full disk), the state still
-    says pending and the poller is kept — the next pass says it, once."""
+def test_a_watch_stopped_between_the_state_and_its_closure_says_it_at_the_next_pass(azure, posts, monkeypatch):
+    """The outcome read on Azure written with its closure due, the closure not said (the watch
+    stopped, or the store full): after the restart, the poller gone, the mark says it — once, from
+    the state; never a « jamais aboutie » card after the cut ended."""
     f, c = azure
     c.isolate_vm(_WEB)
     f.end_run_commands()
@@ -206,11 +187,121 @@ def test_a_closure_that_cannot_be_recorded_leaves_the_cut_pending_and_is_said_ne
         raise OSError(28, "No space left on device")
     monkeypatch.setattr(vm_notices, "_record", full)
     report = reassert_pass(c, _ACT)
-    assert _load_isolation_state(_WEB)["drain"]["status"] == "pending" and c.followed_drains()
-    assert any(r.get("outcome") == "failed" for r in report) and not _closures(posts)
+    state = _load_isolation_state(_WEB)
+    assert state["drain"]["status"] == "drained"                        # read on Azure, written
+    assert state["drain_closure_due"]["key"] == drain_watch.closure_key(_WEB, state["drain"]["asked_at"])
+    assert any(r.get("outcome") == "failed" and "non dite" in r["detail"] for r in report)
+    assert not _closures(posts) and not c.followed_drains()
     monkeypatch.setattr(vm_notices, "_record", real)
+    run_command._FOLLOWED.clear()                                       # the restart
     reassert_pass(c, _ACT)
-    assert len(_closures(posts)) == 1 and _load_isolation_state(_WEB)["drain"]["status"] == "drained"
+    reassert_pass(c, _ACT)
+    [text] = _closures(posts)
+    assert "aboutie" in text and "relue 0 s" in text
+    assert "drain_closure_due" not in _load_isolation_state(_WEB)
+    assert not _drain_cards() and not [e for e in escalations.pending() if "jamais aboutie" in e["reason"]]
+
+
+def test_a_card_refused_leaves_the_cut_pending_and_says_nothing(azure, posts, monkeypatch):
+    """The card first (L1A): refused, neither the state nor the closure — the next pass says both."""
+    f, c = azure
+    c.isolate_vm(_WEB)
+    f.end_run_commands(error=_error(HttpResponseError, 409, "(Conflict) agent"))
+    real = escalations.record
+
+    def full(**kw):
+        raise OSError(28, "No space left on device")
+    monkeypatch.setattr(escalations, "record", full)
+    reassert_pass(c, _ACT)
+    assert _load_isolation_state(_WEB)["drain"]["status"] == "pending" and not _closures(posts)
+    monkeypatch.setattr(escalations, "record", real)
+    reassert_pass(c, _ACT)
+    assert len(_closures(posts)) == 1 and _load_isolation_state(_WEB)["drain"]["status"] == "failed"
+
+
+# ── a notice decides nothing: the console and the bot write ~/.glorfindel too ─────────────────
+
+def _forge(key: str, drain: dict) -> None:
+    """What a writer of the console or the bot could append to the store."""
+    import json
+    line = {"key": key, "resource_id": _WEB, "kind": "drain_closed", "title": "Coupure des sessions aboutie",
+            "text": "tout va bien", "level": "ok", "via": "bot", "at": "2026-11-12T09:24:12+00:00",
+            "detail": {"outcome": "drained", "drain": drain}}
+    vm_notices._STORE.parent.mkdir(parents=True, exist_ok=True)
+    with vm_notices._STORE.open("a") as fh:
+        fh.write(json.dumps(line) + "\n")
+
+
+def test_a_forged_closure_never_writes_the_outcome(azure, posts):
+    """A notice « drained » forged under the cut's key while its Run Command still runs: the state
+    stays pending, the poller is kept, and the outcome written is the one read on Azure — sessions
+    left open. What the forger can do: silence the closure."""
+    f, c = azure
+    out = c.isolate_vm(_WEB)
+    _forge(drain_watch.closure_key(_WEB, out["drain"]["asked_at"]), {"status": "drained"})
+    reassert_pass(c, _ACT)
+    assert _load_isolation_state(_WEB)["drain"]["status"] == "pending" and c.followed_drains()
+    assert _drain_cards("drain_pending")
+    run_command._FOLLOWED.clear()                                       # a restart too: never taken from it
+    f.end_run_commands(error=_error(HttpResponseError, 409, "(Conflict) The VM agent is not responding"))
+    reassert_pass(c, _ACT)
+    drain = _load_isolation_state(_WEB)["drain"]
+    assert drain["status"] == "failed" and drain.get("never") is True   # not read: never « drained »
+    [card] = _drain_cards("verification_failed")
+    assert "jamais aboutie" in card["reason"]
+    assert not _closures(posts)                                         # silenced, the card says it
+
+
+def test_an_unreadable_store_never_stops_the_follow(azure, posts):
+    """Bytes that are not UTF-8 in the store (a hand, a disk): read line by line, the follow goes on."""
+    f, c = azure
+    c.isolate_vm(_WEB)
+    vm_notices._STORE.parent.mkdir(parents=True, exist_ok=True)
+    vm_notices._STORE.write_bytes(b"\xff\xfe{not json\n")
+    f.end_run_commands()
+    report = reassert_pass(c, _ACT)
+    assert not [r for r in report if r.get("vm") == "?"]                # the follow did not fail
+    assert _load_isolation_state(_WEB)["drain"]["status"] == "drained"
+    assert len(_closures(posts)) == 1
+
+
+def test_a_store_that_raises_never_stops_the_bot(bot_on, monkeypatch):
+    def denied():
+        raise PermissionError(13, "Permission denied")
+    monkeypatch.setattr(vm_notices, "for_bot", denied)
+    b, _ = _bot({})
+    assert asyncio.run(b._post_notices(None)) == 0
+
+
+# ── a cut asked again before its end ──────────────────────────────────────────────────────────
+
+def test_a_cut_asked_again_before_its_end_closes_the_first_as_taken_again(azure, posts):
+    """The same watch isolates the VM anew while its first cut still runs, and the second waits too:
+    the first poller replaced — its closure « reprise avant sa fin », once; the second followed."""
+    f, c = azure
+    first = c.isolate_vm(_WEB)["drain"]["asked_at"]
+    second = c.isolate_vm(_WEB)["drain"]["asked_at"]
+    assert first != second and c.drain_asked_at(_WEB) == second
+    reassert_pass(c, _ACT)
+    [text] = _closures(posts)
+    assert "plus suivie" in text and "reprise avant sa fin" in text
+    assert [n["key"] for n in _notices()] == [drain_watch.closure_key(_WEB, first)]
+    assert c.superseded_drains() == []
+    f.end_run_commands()
+    reassert_pass(c, _ACT)
+    reassert_pass(c, _ACT)
+    assert [n["key"] for n in _notices()] == [drain_watch.closure_key(_WEB, first),
+                                              drain_watch.closure_key(_WEB, second)]
+
+
+def test_a_cut_taken_again_by_one_that_ended_in_time_is_closed_as_taken_again(azure, posts):
+    f, c = azure
+    c.isolate_vm(_WEB)
+    f.hold_run_commands = False
+    assert c.isolate_vm(_WEB)["drain"]["status"] == "drained"           # the second within its first wait
+    reassert_pass(c, _ACT)
+    [text] = _closures(posts)
+    assert "reprise avant sa fin" in text and c.followed_drains() == []
 
 
 def test_a_key_is_said_once():

@@ -1270,7 +1270,10 @@ class GlorfindelBot(discord.Client):
                         )
                     except Exception as e:
                         _console.print(f"[red]Bot post error: {e}[/red]")
-                await self._post_notices(channel)
+                try:
+                    await self._post_notices(channel)
+                except Exception as e:      # the notices never stop the cards, the week, the sync
+                    _console.print(f"[red]Bot notices error: {_esc_markup(str(e))}[/red]")
                 await self._post_weekly(channel)
                 if turn % _SYNC_EVERY == 0:
                     try:
@@ -1352,7 +1355,12 @@ class GlorfindelBot(discord.Client):
         from datetime import datetime, timedelta, timezone
 
         from glorfindel import vm_notices
-        posted, notices = 0, vm_notices.for_bot()
+        try:
+            notices = vm_notices.for_bot()
+        except (OSError, ValueError) as e:   # the store unreadable: said, read again next turn
+            _console.print(f"[yellow]Notices unreadable: {_esc_markup(str(e))}[/yellow]")
+            return 0
+        posted = 0
         oldest = datetime.now(timezone.utc) - timedelta(hours=_NOTICE_MAX_AGE_H)
         for notice in notices:
             if notice["key"] in self._notices_posted or not _younger(notice.get("at"), oldest):

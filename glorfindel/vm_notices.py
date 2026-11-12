@@ -15,10 +15,16 @@ the next pass — and no message ever said so. A notice closes what an announcem
 - **what**: a title and a text written by Glorfindel, with names from Azure (a VM's, a status) —
   made inert at the post (glorfindel/chat_text.py, SEC6), never before: the store keeps the text.
 
-The store is written by the watch only; the console and the bot mount `~/.glorfindel` writable
-too, so a notice there is as trusted as a card of the escalations' store (the same frontier,
-docs/design/modele-de-menace.md). JUG1 puts the autonomous actions' announcements in the VM's
-thread the same way: `say(resource_id, key, kind, title, text, level)`.
+**It decides nothing.** The watch writes it, but the console and the bot mount `~/.glorfindel`
+writable too (docs/design/file-actions-signee.md §1.5): a writer of theirs could add a notice, or
+remove one. So a notice only tells whether a closure was said — never an outcome: the cut's
+outcome is the one read on Azure, written in the isolation's state (glorfindel/drain_watch.py).
+Forged, a notice can silence a closure (its key taken first) or have one said twice (its line
+removed), or have the bot post an escaped text in a VM's thread; never declare a session cut (DRN2
+review; docs/design/modele-de-menace.md, until FS1f). A store unreadable (bytes that are not
+UTF-8) is read line by line, what does not read skipped: a closure may be said twice, never block
+the follow of the cuts. JUG1 puts the autonomous actions' announcements in the VM's thread the
+same way: `say(resource_id, key, kind, title, text, level)`.
 """
 from __future__ import annotations
 
@@ -48,7 +54,9 @@ def _read() -> list[dict]:
     if not _STORE.exists():
         return []
     out = []
-    for line in _STORE.read_text().splitlines():
+    # Bytes that are not UTF-8 (a store damaged or written by another hand) never stop a reader:
+    # replaced, their line no longer reads as JSON and is skipped (DRN2 review).
+    for line in _STORE.read_bytes().decode("utf-8", errors="replace").splitlines():
         try:
             n = json.loads(line)
         except ValueError:
@@ -86,8 +94,8 @@ def say(resource_id: str, key: str, kind: str, title: str, text: str, level: str
         detail: dict | None = None) -> str:
     """Say `text` of `resource_id`'s VM once for `key`: where it went (`bot`, `webhook`, `none`), or
     `already` when that key was said. Raises OSError when the store cannot be written (a full disk):
-    the caller says it again at its next pass. `detail`: what the caller reads back of it (a cut's
-    outcome, after a restart)."""
+    the caller says it again at its next pass. `detail`: what it says, for the console — never read
+    back as an outcome."""
     notice = {"key": key, "resource_id": resource_id, "kind": kind, "title": title, "text": text,
               "level": level if level in LEVELS else "unknown", "via": _where(),
               "at": datetime.now(timezone.utc).isoformat()}

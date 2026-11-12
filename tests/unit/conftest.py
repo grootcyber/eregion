@@ -503,6 +503,8 @@ def isolated_glorfindel_home(tmp_path, monkeypatch):
     monkeypatch.setattr(door_facts, "_LAST_READ", {})
     import glorfindel.vm_notices as vm_notices           # DRN2: what the watch says of a VM outside a card
     monkeypatch.setattr(vm_notices, "_STORE", home / "vm_notices.jsonl")
+    from glorfindel.providers.azure import run_command   # DRN2: the drains replaced before their end
+    monkeypatch.setattr(run_command, "_SUPERSEDED", {})
     import glorfindel.cli as glorfindel_cli          # the injectors' heartbeat directory (SEC3)
     monkeypatch.setattr(glorfindel_cli, "_INJECTORS_DIR", home / "injectors")
     try:

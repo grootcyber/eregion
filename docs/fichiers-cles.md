@@ -198,7 +198,8 @@ glorfindel/
                           aboutit, ou une carte `verification_failed` qui dit « coupure refusée », « sessions restées
                           ouvertes » ou « coupure jamais aboutie » (30 min, ou la watch redémarrée, ou la VM isolée par un
                           autre processus : `asked_at`, le nonce) ; la carte d'abord, puis l'état
-                          ; DRN2 : la clôture de chaque coupure annoncée en attente, une fois, par son nonce
+                          ; DRN2 : la clôture de chaque coupure annoncée en attente, une fois, par son nonce,
+                          dite d'après l'état (`drain_closure_due` tant qu'elle n'est pas dite), jamais d'après une notice
   vm_notices.py         → DRN2 : ce que la watch dit d'une VM hors d'une carte (la clôture d'une coupure), une fois
                           par clé : dans le fil Discord de la VM (le bot) ou par le webhook ; `vm_notices.jsonl`
   reassert_quarantine.py → I1F, I1S, ISU : les NSG de quarantaine modifiés, lus à chaque passe quel que soit
@@ -546,7 +547,8 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
   bot_threads.json            → resource_id → thread_id Discord (persistance entre redémarrages)
   bot_notices_posted.json     → DRN2 : clés des notices de la watch postées par le bot dans un fil (une fois)
   vm_notices.jsonl            → DRN2 : les notices de la watch (la clôture d'une coupure des sessions), une par clé,
-                                les 500 dernières ; `via` : bot, webhook ou none
+                                les 500 dernières ; `via` : bot, webhook ou none ; ne dit que « dite ou non »,
+                                jamais une issue (la console et le bot l'écrivent aussi, jusqu'à FS1f)
   rule_status.json            → état de polling des règles (last_poll, last_match, match_count, last_error ;
                                 `expected_sudo` : count, last, origin_count, origin_confirmed — ADM1, COR1, COR2 ;
                                 `correlation` : queries, origin, card, unknown, compromised, unchecked, confirmed,

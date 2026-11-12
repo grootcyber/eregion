@@ -44,6 +44,22 @@ def test_a_cut_that_failed_says_its_case_even_without_a_closure():
     assert "after_s" not in view
 
 
+def test_a_notice_that_says_another_outcome_is_never_the_card_s_words():
+    """The store is written by the console and the bot too (DRN2 review): a forged « aboutie » under
+    the key of a cut whose state says it never ended — the card keeps the state's case and words."""
+    vm_notices.say(VM, drain_watch.closure_key(VM, ASKED), "drain_closed", "Coupure des sessions aboutie",
+                   "tout va bien", level="ok", detail={"outcome": "drained", "after_s": 1})
+    view = _view({"status": "failed", "never": True, "error": "statut non relu", "asked_at": ASKED},
+                 drain_ended_at="2026-11-12T09:50:00+00:00")
+    assert view["case"] == "never" and "tout va bien" not in view["said"] and "after_s" not in view
+
+
+def test_a_status_with_no_case_says_nothing():
+    """AWS: no session cut (`unavailable`) — never a « aboutie » sentence (DRN2 review)."""
+    assert _view({"status": "unavailable", "reason": "pas de coupure sur AWS"},
+                 drain_ended_at="2026-11-12T09:50:00+00:00") == {}
+
+
 def test_a_cut_ended_within_its_first_wait_adds_nothing_to_the_card():
     assert _view({"status": "drained"}) == {}
     assert _view({}) == {}

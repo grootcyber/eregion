@@ -883,16 +883,17 @@ def _drain_view(iso: dict) -> dict:
     `refused`, `open`, `never`, or "" for a cut that ended within its first wait, nothing to say),
     `ended_at` when the watch read its outcome after that wait, `after_s` (when it was read so,
     after it was asked), and `said`: the closure's text as the notification said it
-    (glorfindel/vm_notices.py), else the outcome's. Text from the watch, with names from Azure:
-    the page writes it through `_attr`."""
+    (glorfindel/vm_notices.py) when it says the state's outcome, else the outcome's. The case is the
+    state's, never the store's. Text from the watch, with names from Azure: the page writes it
+    through `_attr`."""
     from glorfindel import vm_notices
     from glorfindel.drain_watch import closure_key
     from glorfindel.response.policy import drain_case, drain_said
     drain = iso.get("drain") if isinstance(iso.get("drain"), dict) else {}
     ended_at = str(iso.get("drain_ended_at") or "")
     case = drain_case(drain) or ("drained" if drain.get("status") == "drained" else "")
-    if not drain or (case == "drained" and not ended_at):
-        return {}
+    if not case or (case == "drained" and not ended_at):
+        return {}                  # nothing to say: no cut, one ended within its first wait, or another status
     view = {"case": case, "ended_at": ended_at}
     if case == "pending":
         return view
@@ -900,10 +901,16 @@ def _drain_view(iso: dict) -> dict:
         notice = vm_notices.said(closure_key(str(iso.get("resource_id") or ""), drain.get("asked_at"))) or {}
     except Exception:          # the card first: an unreadable store says the outcome alone
         notice = {}
-    after = (notice.get("detail") or {}).get("after_s")
+    # The store is written by the console and the bot too (DRN2 review): its words only when they
+    # say the outcome the state holds — read on Azure — never another one.
+    if (notice.get("detail") or {}).get("outcome") != case:
+        notice = {}
+    after = drain.get("after_s") if isinstance(drain.get("after_s"), (int, float)) else (
+        (notice.get("detail") or {}).get("after_s"))
     if isinstance(after, (int, float)):
         view["after_s"] = int(after)
-    view["said"] = str(notice.get("text") or drain_said(drain) or "Coupure des sessions aboutie : sessions coupées.")
+    view["said"] = str(notice.get("text") or drain_said(drain)
+                       or ("Coupure des sessions aboutie : sessions coupées." if case == "drained" else ""))
     return view
 
 

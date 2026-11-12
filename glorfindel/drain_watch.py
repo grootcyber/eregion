@@ -36,10 +36,12 @@ drain this process announced pending now has one closure, its outcome and how lo
 asked it was read so: a notice (glorfindel/vm_notices.py) in the VM's Discord thread when the bot
 is configured, else by the webhook — cut, refused, sessions left open, never ended, or no longer
 followed (its VM released, or isolated again, before its end). Once per drain, by its nonce
-(`asked_at`), even after a restart: the notice recorded, a pass that finds it (the watch stopped
-between the notice and the state) writes the state from it, and says nothing again. Its card
-first, then its notice, then the state (L1A): the notice refused (a full disk), the state still
-says pending and the next pass says it.
+(`asked_at`), even after a restart. Its card first, then the state — the outcome read on Azure,
+and a mark `drain_closure_due` —, then the notice, then the mark taken off (L1A): the card
+refused, the state still says pending; the notice refused (a full disk, a store unreadable), the
+mark says it at the next pass. The notices' store only tells whether a closure was said: the
+console and the bot write `~/.glorfindel` too, so a notice never writes an outcome — forged, it
+can silence a closure or say one twice, never declare a session cut (DRN2 review).
 """
 from __future__ import annotations
 
@@ -95,24 +97,59 @@ def _follow_all(connector, report: list[dict]) -> None:
     waiting = set()
     for snap in active_isolations():
         drain = snap.get("drain")
-        if not isinstance(drain, dict) or drain.get("status") != "pending":
+        if not isinstance(drain, dict):
             continue
         vm, rid = snap["vm_name"], snap["resource_id"]
+        if drain.get("status") != "pending":
+            if snap.get("drain_closure_due"):     # an outcome written, its closure not said yet
+                _say_due_locked(vm, rid, report)
+            continue
         try:
             with _vm_lock(vm, timeout=_LOCK_WAIT_S):
                 if _follow_one(connector, vm, rid, report):
                     waiting.add(drain_sid(vm, rid))
         except TimeoutError:
             waiting.add(drain_sid(vm, rid))       # a write runs on this VM: next pass
-        except OSError as exc:
+        except (OSError, ValueError) as exc:      # a store full or unreadable: this VM, next pass
             waiting.add(drain_sid(vm, rid))
             report.append(unrecorded(vm, exc))
+    _close_superseded(connector, report)
     _close_the_others(connector, waiting, report)
     # A poller this process keeps for a VM whose state no longer waits for it (released, the state
     # lost): dropped, never read later as another drain's outcome.
     followed = getattr(connector, "followed_drains", None)
     for rid in (followed() if callable(followed) else []):
         _drop_if_not_pending(connector, rid)
+
+
+def _say_due_locked(vm: str, rid: str, report: list[dict]) -> None:
+    """Under the VM's lock, the closure its state marks due (`_say_due`)."""
+    from glorfindel.actions import _load_isolation_state, _vm_lock
+    try:
+        with _vm_lock(vm, timeout=_LOCK_WAIT_S):
+            state = _load_isolation_state(rid)
+            if isinstance(state, dict):
+                _say_due(vm, rid, state, report)
+    except TimeoutError:
+        return
+    except (OSError, ValueError) as exc:
+        report.append(_closure_unsaid(vm, exc))
+
+
+def _close_superseded(connector, report: list[dict]) -> None:
+    """The drains this process asked again before their end (a VM isolated anew while its cut still
+    ran): each closed « plus suivie : reprise avant sa fin », once, then forgotten."""
+    superseded = getattr(connector, "superseded_drains", None)
+    forget = getattr(connector, "forget_superseded", None)
+    if not callable(superseded) or not callable(forget):
+        return
+    for rid, asked in superseded():
+        try:
+            _say_unfollowed(rid, asked, "reprise")
+        except (OSError, ValueError) as exc:     # said at the next pass
+            log.warning("drain: closure of %s not recorded (%s)", rid, exc)
+            continue
+        forget(rid, asked)
 
 
 def _drop_if_not_pending(connector, rid: str) -> None:
@@ -132,7 +169,7 @@ def _drop_if_not_pending(connector, rid: str) -> None:
                 _let_go(connector, rid, state)
     except TimeoutError:
         return
-    except OSError as exc:                         # its closure not recorded: the poller kept, said next pass
+    except (OSError, ValueError) as exc:           # its closure not recorded: the poller kept, said next pass
         log.warning("drain: closure of %s not recorded (%s)", rid, exc)
 
 
@@ -146,31 +183,42 @@ def _let_go(connector, rid: str, state: dict | None) -> None:
     before its end), closed first — said once (DRN2)."""
     asked_of = getattr(connector, "drain_asked_at", None)
     asked = asked_of(rid) if callable(asked_of) else None
-    if isinstance(asked, str) and asked:
-        from glorfindel import vm_notices
-        key = closure_key(rid, asked)
-        if vm_notices.said(key) is None:
-            vm = rid.rstrip("/").rsplit("/", 1)[-1]
-            since = _when(asked)
-            after = (datetime.now(timezone.utc) - since).total_seconds() if since else None
-            how = "levée" if not state else "reprise"
-            text = (f"Coupure des sessions de {vm} plus suivie : l'isolation a été {how} avant sa fin"
-                    + (f", {int(after)} s après la demande" if after is not None else "")
-                    + " — son issue se lit au journal d'activité de la VM (Run Command).")
-            vm_notices.say(rid, key, "drain_closed", "Coupure des sessions : plus suivie", text,
-                           level="unknown", detail={"outcome": "unfollowed", "after_s": after})
+    recorded = ((state or {}).get("drain") or {}).get("asked_at") if isinstance(state, dict) else None
+    # The drain the state records is its own business (its outcome, its closure due): only a poller
+    # of another drain — its VM released, or isolated again — is closed here as no longer followed.
+    if isinstance(asked, str) and asked and asked != recorded:
+        _say_unfollowed(rid, asked, "levée" if not state else "reprise")
     drop = getattr(connector, "drop_drain", None)
     if callable(drop):
         drop(rid)
 
 
-def _say_closed(vm: str, rid: str, ended: dict, after, report: list[dict]) -> None:
+def _say_unfollowed(rid: str, asked: str, how: str) -> None:
+    """A drain no longer followed before its end (its VM released, or isolated again): its closure,
+    once, by its nonce."""
+    from glorfindel import vm_notices
+    key = closure_key(rid, asked)
+    if vm_notices.said(key) is not None:
+        return
+    vm = rid.rstrip("/").rsplit("/", 1)[-1]
+    since = _when(asked)
+    after = (datetime.now(timezone.utc) - since).total_seconds() if since else None
+    text = (f"Coupure des sessions de {vm} plus suivie : l'isolation a été {how} avant sa fin"
+            + (f", {int(after)} s après la demande" if after is not None else "")
+            + " — son issue se lit au journal d'activité de la VM (Run Command).")
+    vm_notices.say(rid, key, "drain_closed", "Coupure des sessions : plus suivie", text,
+                   level="unknown", detail={"outcome": "unfollowed", "after_s": after})
+
+
+def _say_closed(vm: str, rid: str, ended: dict, after, report: list[dict], read: bool = True) -> None:
     """The closure of a drain announced pending (DRN2): its outcome and when it was read so — once,
     by its nonce. Raises OSError when it cannot be recorded: the state then still says pending."""
     from glorfindel import vm_notices
     from glorfindel.response.policy import DRAIN_CASES, drain_case, drain_said
     case = drain_case(ended)
-    read = f", relue {int(after)} s après la demande" if isinstance(after, (int, float)) else ""
+    # « relue » only for an outcome read on Azure: a poller lost (the watch restarted) read nothing.
+    word = "relue " if read else ""
+    read = f", {word}{int(after)} s après la demande" if isinstance(after, (int, float)) else ""
     if not case:
         title, level = "Coupure des sessions aboutie", "ok"
         text = f"Coupure des sessions aboutie sur {vm}{read} : sessions coupées, isolement vérifié."
@@ -179,26 +227,17 @@ def _say_closed(vm: str, rid: str, ended: dict, after, report: list[dict]) -> No
         level = "unknown" if case == "never" else "failed"
         text = f"Sur {vm}{read} — {drain_said(ended)} La carte « vérification échouée » le dit."
     via = vm_notices.say(rid, closure_key(rid, ended.get("asked_at")), "drain_closed", title, text,
-                         level=level, detail={"outcome": case or "drained", "after_s": after, "drain": ended})
+                         level=level, detail={"outcome": case or "drained", "after_s": after})
     report.append({"kind": "drain", "vm": vm, "outcome": "closure", "detail": f"{title} ({via})"})
 
 
 def _follow_one(connector, vm: str, rid: str, report: list[dict]) -> bool:
     """One pending drain, under its VM's lock; True while it still runs."""
-    from glorfindel import vm_notices
     from glorfindel.actions import _load_isolation_state, _save_isolation_state
     state = _load_isolation_state(rid)
     drain = (state or {}).get("drain")
     if not isinstance(drain, dict) or drain.get("status") != "pending":
         _let_go(connector, rid, state)            # released, or ended, meanwhile
-        return False
-    # Its closure already said (the watch stopped between the notice and the state): the state
-    # takes what it said, nothing is said again (DRN2).
-    closed = vm_notices.said(closure_key(rid, drain.get("asked_at")))
-    said_drain = ((closed or {}).get("detail") or {}).get("drain")
-    if isinstance(said_drain, dict) and said_drain.get("status") not in (None, "pending"):
-        _save_isolation_state(rid, {**state, "drain": said_drain, "drain_ended_at": closed.get("at")})
-        _let_go(connector, rid, state)
         return False
     follow = getattr(connector, "follow_drain", None)
     # The drain the state waits for, by its nonce: another process's (`glorfindel respond`) is not
@@ -224,13 +263,44 @@ def _follow_one(connector, vm: str, rid: str, report: list[dict]) -> bool:
                            "Azure l'arrête à 90 min ; lire le journal d'activité de la VM")}
     else:
         ended = {**got, "asked_at": drain.get("asked_at")}
-    # The card first, then its closure (L1A, DRN2): refused, the state still says pending, the
-    # poller kept — read again.
+    # The card first, then the state with the outcome read on Azure and its closure due, then the
+    # closure (L1A, DRN2): the card refused, the state still says pending, the poller kept — read
+    # again; the closure refused, its mark says it at the next pass. The notices' store never
+    # writes the state: the console and the bot write it too (DRN2 review).
     _say_ended(vm, rid, ended, report)
-    _say_closed(vm, rid, ended, elapsed, report)
-    _save_isolation_state(rid, {**state, "drain": ended, "drain_ended_at": now.isoformat()})
-    _let_go(connector, rid, state)
+    due = {"key": closure_key(rid, ended.get("asked_at")), "after_s": elapsed, "read": got is not None}
+    ended_state = {**state, "drain": ended, "drain_ended_at": now.isoformat(), "drain_closure_due": due}
+    _save_isolation_state(rid, ended_state)
+    _let_go(connector, rid, ended_state)
+    try:
+        _say_due(vm, rid, ended_state, report)
+    except (OSError, ValueError) as exc:          # the outcome written; its closure, next pass
+        report.append(_closure_unsaid(vm, exc))
     return False
+
+
+def _closure_unsaid(vm: str, exc: Exception) -> dict:
+    detail = (f"Clôture de la coupure sur {vm} non dite ({exc}) : l'issue est écrite dans l'état, la "
+              "clôture est redite à la passe suivante.")
+    log.warning("drain: %s", detail)
+    return {"kind": "drain", "vm": vm, "outcome": "failed", "detail": detail}
+
+
+def _say_due(vm: str, rid: str, state: dict, report: list[dict]) -> None:
+    """The closure the state marks due (`drain_closure_due`), said from the state — the outcome read
+    on Azure — unless its key was said already; then the mark taken off. Raises OSError (or
+    ValueError) when it cannot be said or the mark cannot be taken off: the mark stays, said again
+    next pass. A forged notice under its key can silence it, never write an outcome (DRN2 review)."""
+    from glorfindel import vm_notices
+    from glorfindel.actions import _save_isolation_state
+    due = state.get("drain_closure_due")
+    drain = state.get("drain")
+    if not isinstance(due, dict) or not isinstance(drain, dict):
+        return
+    if drain.get("status") != "pending" and vm_notices.said(str(due.get("key") or "")) is None:
+        after = due.get("after_s") if isinstance(due.get("after_s"), (int, float)) else None
+        _say_closed(vm, rid, drain, after, report, read=due.get("read") is True)
+    _save_isolation_state(rid, {k: v for k, v in state.items() if k != "drain_closure_due"})
 
 
 def _cards(sid: str) -> list[dict]:
