@@ -1635,7 +1635,7 @@ briques:
     nom: "Documents that no longer contradict the bench: what the ransomware run of 09/11 showed, the logs switched on, the unit tests counted by the CI"
     etat: main
     release: "0.5"
-    lots: [MEN2]
+    lots: [MEN2, MEN3]
     issue: 722
     doc: docs/banc-t1486.md
 

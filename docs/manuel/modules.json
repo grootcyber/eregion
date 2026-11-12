@@ -2136,7 +2136,8 @@
    "etat": "main",
    "release": "0.5",
    "lots": [
-    "MEN2"
+    "MEN2",
+    "MEN3"
    ],
    "issue": 722,
    "doc": "docs/banc-t1486.md"
