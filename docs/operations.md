@@ -124,6 +124,14 @@ annatar run annatar/scenarios/azure/ransomware-vm.yaml     # lancer l'attaque
 
 # État
 glorfindel list                              # toutes VMs : isolations + IPs bloquées + assets découverts
+glorfindel list --ids                        # les mêmes, avec leur id ARM complet (ce terminal seulement)
+# Ce que la CLI montre à l'humain ne porte jamais l'id d'un abonnement (IML1c, MSK2) : une VM est dite
+# par son nom et son groupe (« vm (groupe rg) »), le coffre par son nom, et l'id d'un abonnement laissé nu
+# devient « <abonnement> ». Cela vaut pour le texte d'une erreur d'Azure et tout refus, le refus d'un nom
+# court ambigu, la décision rendue (explication, raisonnement, raison d'escalade), release, unblock,
+# snapshot, jobs, list, door, reset et restore. Les commandes proposées prennent le nom court ; deux VM du
+# même nom prennent l'id complet, que `list --ids` montre. Le signal, les fichiers d'état et les journaux
+# (JSONL) gardent l'id complet ; `door --json` aussi, demandé. Ce que le modèle voit n'est pas filtré.
 glorfindel pending                           # escalades en attente
 glorfindel pending --watch                   # alerting temps réel
 

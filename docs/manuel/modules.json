@@ -1020,6 +1020,19 @@
    "doc": "docs/design/levee-probation.md"
   },
   {
+   "id": "g-cli-sans-abonnement",
+   "composant": "glorfindel",
+   "poste": "g-agir",
+   "nom": "No output of the CLI meant for a human shows a subscription's id: Azure's errors, the decision rendered, release, unblock, snapshot, list, door, jobs",
+   "etat": "main",
+   "release": "0.5",
+   "lots": [
+    "MSK2"
+   ],
+   "issue": 762,
+   "doc": "docs/operations.md"
+  },
+  {
    "id": "g-dossier-isolation",
    "composant": "glorfindel",
    "poste": "g-verifier",

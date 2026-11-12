@@ -419,8 +419,10 @@ make bench-restore TARGET=vm-celebrimbor-gondolin RUN=<run_id>             # tap
   Ctrl-C le compose tout de suite (avant toute lecture d'Imladris, il n'y a rien à composer : il le dit). Avec `BEFORE=` sans `RUN=`, aucun run n'est nommé : pas de rapport.
 
 La sortie nomme la VM par son nom et son groupe (`Resource : <vm> (groupe <rg>)`) et le coffre par
-son nom, jamais l'id de l'abonnement (IML1c) — sauf le texte d'une erreur d'Azure, le refus d'un nom
-ambigu et, avec `--wait` sans `--keep-isolated`, le raisonnement du modèle : à relire avant de coller.
+son nom, jamais l'id de l'abonnement (IML1c), ni dans le texte d'une erreur d'Azure, le refus d'un nom
+ambigu ou, avec `--wait` sans `--keep-isolated`, la décision rendue (MSK2). Ce qui reste à relire avant
+de coller : les noms eux-mêmes (VM, groupe, coffre) et, dans un message d'Azure, l'object id d'un
+principal, que rien ne masque.
 
 La levée reste celle d'Imladris (étape 7 de banc-t1486.md) ; `make bench-report RUN=<run_id>` reste
 possible à la main, à tout moment.

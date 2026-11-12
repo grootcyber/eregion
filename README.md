@@ -549,6 +549,9 @@ glorfindel snapshot <resource_id> --yes         # on-demand Recovery Services Va
 glorfindel restore <resource_id> --yes          # Azure Backup restore: newest point before the attack on THIS VM (--before, else its card's first detection — an exercise card: its run's attack_started; unknown → asked)
 glorfindel jobs <vm-name> [--refresh]           # snapshot/restore job status
 glorfindel list                                 # all VMs with active actions (isolation + blocked IPs)
+glorfindel list --ids                           # the same with their full ARM ids (this terminal only)
+# What the CLI shows never carries a subscription's id (MSK2): a VM by its name and group, Azure's
+# errors and the decision rendered included; the signal and the journals keep the full id.
 #
 # Console buttons:    ↩️ Release (isolated) | ↩️ Unblock (that IP alone) | ⟳ Reset (both)
 # TUI keyboard:       x:release  u:unblock  v:reset  r:restore
