@@ -16,6 +16,7 @@ Mutants M4950–M4959 (scripts/mutants/MSK2.py) are measured here.
 from __future__ import annotations
 
 import ast
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -386,3 +387,30 @@ def test_reset_says_what_stays_without_the_subscription(monkeypatch, recorded):
     out = _run(["reset", VM, "--from-azure", "--yes"])
     assert out.exit_code == 2, out.output
     _clean(out.output)
+
+
+# ── 3. The suite's hygiene ────────────────────────────────────────────────────────────
+
+def test_no_webhook_nor_bot_comes_from_the_developer_s_shell(monkeypatch, tmp_path):
+    from . import conftest
+    names = (*conftest.ALERTING_ENV, "EREGION_DISCORD_WEBHOOK_CI", "EREGION_DISCORD_BOT_TOKEN",
+             "EREGION_DISCORD_WEBHOOK_AGENTS", "EREGION_DISCORD_ENV")
+    for name in names:                                    # what direnv would have exported
+        monkeypatch.setenv(name, "https://hook.example/x")
+    conftest.drop_alerting_env(monkeypatch, tmp_path)
+    assert {"GLORFINDEL_WEBHOOK_URL", "DISCORD_BOT_TOKEN", "DISCORD_CHANNEL_ID",
+            "GLORFINDEL_DISCORD_BOT"} <= set(conftest.ALERTING_ENV)
+    left = {n for n in names if n in os.environ}
+    assert left == {"EREGION_DISCORD_ENV"}, left
+    assert not Path(os.environ["EREGION_DISCORD_ENV"]).exists()
+    assert Path(os.environ["EREGION_DISCORD_ENV"]).parent == tmp_path
+
+
+def test_every_test_starts_with_no_alerting(tmp_path):
+    """The autouse fixture holds for this test as for every other: nothing would post."""
+    from glorfindel import escalations, vm_notices
+    for name in ("GLORFINDEL_WEBHOOK_URL", "DISCORD_BOT_TOKEN", "DISCORD_CHANNEL_ID", "GLORFINDEL_DISCORD_BOT"):
+        assert name not in os.environ
+    assert not [n for n in os.environ if n.startswith("EREGION_DISCORD_") and n != "EREGION_DISCORD_ENV"]
+    assert escalations.alerting_configured() is False
+    assert vm_notices._where() == "none"

@@ -105,6 +105,29 @@ def fake_anthropic_key(monkeypatch):
         monkeypatch.delenv(name)
 
 
+# MSK2 (#762): what would post for real if the developer's shell (direnv) exported it — Glorfindel's
+# webhook and bot (vm_notices.say, escalations._notify, post_webhook), the workshop's Discord
+# (scripts/notify_discord.py, agents_discord.py). A test that needs one sets it itself.
+ALERTING_ENV = ("GLORFINDEL_WEBHOOK_URL", "DISCORD_BOT_TOKEN", "DISCORD_CHANNEL_ID", "GLORFINDEL_DISCORD_BOT")
+ALERTING_PREFIX = "EREGION_DISCORD_"
+
+
+def drop_alerting_env(monkeypatch, tmp_path) -> None:
+    """Remove every variable a test could post with; the workshop's Discord file is one that does
+    not exist (unset, it would be the operator's ~/.config/eregion/discord.env)."""
+    for name in ALERTING_ENV:
+        monkeypatch.delenv(name, raising=False)
+    for name in [n for n in os.environ if n.startswith(ALERTING_PREFIX)]:
+        monkeypatch.delenv(name)
+    monkeypatch.setenv(ALERTING_PREFIX + "ENV", str(tmp_path / "no-discord.env"))
+
+
+@pytest.fixture(autouse=True)
+def no_alerting_env(tmp_path, monkeypatch):
+    """No webhook, no bot, from the developer's environment (MSK2): `drop_alerting_env`."""
+    drop_alerting_env(monkeypatch, tmp_path)
+
+
 @pytest.fixture(autouse=True)
 def hermetic_orodruin(tmp_path, monkeypatch):
     """Orodruin's contract (O1) without Azure or the network: its readers report a
