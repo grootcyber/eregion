@@ -518,7 +518,7 @@ When an escalation fires, `glorfindel pending` shows **context-aware next steps 
 - **🔄 Restore** — executes `glorfindel restore` directly from Discord (for `restore_from_backup` and `low_confidence` escalations)
 - **↩️ Revert** — executes `glorfindel reset` directly from Discord (for `verification_failed`) — full reset (isolation + IP blocks)
 
-A `/pending` slash command lists open escalations, to the allowed users only (the same list as the buttons, below). Set `DISCORD_PING_ROLE` to notify an on-call role on thread creation. When the bot has both its token and `DISCORD_CHANNEL_ID`, escalation webhook notifications are suppressed (bot handles them in threads), and so are the autonomous actions' announcements: the card, the announcement and the closure of a session cut all go in the VM's thread (JUG1, DRN2); a channel without a token runs no bot, so the webhook still posts and `glorfindel watch` warns at startup when nothing alerts. In Docker Compose, only the bot's container gets the token: the watch and the War Room get `GLORFINDEL_DISCORD_BOT` (`1` when the token is set, never its value).
+A `/pending` slash command lists open escalations, to the allowed users only (the same list as the buttons, below). Set `DISCORD_PING_ROLE` to notify an on-call role on thread creation, and at each action Glorfindel takes alone (its card to judge, JUG1). When the bot has both its token and `DISCORD_CHANNEL_ID`, escalation webhook notifications are suppressed (bot handles them in threads), and so are the autonomous actions' announcements: the card, the announcement and the closure of a session cut all go in the VM's thread (JUG1, DRN2); a channel without a token runs no bot, so the webhook still posts and `glorfindel watch` warns at startup when nothing alerts. In Docker Compose, only the bot's container gets the token: the watch and the War Room get `GLORFINDEL_DISCORD_BOT` (`1` when the token is set, never its value).
 
 **Who may click**: only the Discord users in `DISCORD_ALLOWED_USERS` or members of a role in `DISCORD_ALLOWED_ROLES` (ids, comma-separated). Anyone else gets an ephemeral refusal, logged by the bot. **Closed by default**: with neither set, every button refuses — the buttons judge, acknowledge and run restores, and Discord shows them to whoever reads the channel; the War Room (behind its token) still judges every card.
 
@@ -602,7 +602,7 @@ GLORFINDEL_WEBHOOK_URL=...          # Slack / Teams / Discord — escalations + 
 # Optional — Discord bot (interactive, bidirectional)
 DISCORD_BOT_TOKEN=...               # Bot token from discord.com/developers/applications
 DISCORD_CHANNEL_ID=...              # Channel ID (right-click → Copy Channel ID, Developer Mode on)
-DISCORD_PING_ROLE=...               # Role ID to ping on new incident thread (optional)
+DISCORD_PING_ROLE=...               # Role ID to ping on new incident thread, and at each action taken alone (JUG1) (optional)
 DISCORD_ALLOWED_USERS=...           # User IDs allowed to click the buttons (comma-separated)
 DISCORD_ALLOWED_ROLES=...           # Role IDs allowed to click; both empty → every button refuses
 
