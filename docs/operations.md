@@ -3917,7 +3917,7 @@ pas d'un journal absent.
 
 ## L'identité de test du banc (IDI1, #546)
 
-R2 (#79) jouera des techniques d'identité (Stratus Red Team) sur Entra ID. Une identité d'Entra ID ne
+Une technique publique sur l'identité, à choisir, la prendra pour cible. Une identité d'Entra ID ne
 porte pas de tag ARM : elle s'inscrit par **deux clés, une par plan** — les `tags` de l'application
 dans Microsoft Graph (`eregion-target=celebrimbor`, `eregion-zone=bench`) **et** le groupe du banc qui
 la nomme (`eregion-identities=<object id>`) — et passe la même garde qu'une VM (`docs/architecture.md`,

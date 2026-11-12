@@ -1052,7 +1052,7 @@ briques:
   - id: a-stratus
     composant: annatar
     poste: a-attaquer
-    nom: "A Stratus technique against the test identity, seen by Glorfindel"
+    nom: "A Stratus control-plane technique in the dedicated test subscription, seen by Glorfindel"
     etat: prevue
     release: "0.6"
     lots: [R2, R2b, R2c]
