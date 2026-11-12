@@ -1581,7 +1581,7 @@ bench-run-go:
 
 bench-restore-go:
 	@$(MOB1_ORIGIN)
-	@$(PYTHON) scripts/bench_restore.py
+	@$(PYTHON) scripts/$(subst -,_,$(@:-go=)).py
 
 # MOB1 : le poste, ouvert au téléphone, en lecture seule (scripts/mobile.py check) — le serveur SSH de WSL
 # n'écoute que sur l'adresse privée, mot de passe et clavier interactif fermés, la clé seule admise (son

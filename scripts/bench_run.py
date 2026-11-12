@@ -252,7 +252,8 @@ def main(argv: list[str] | None = None, env: dict | None = None, *, cwd=None, he
                 return 1
             say("✓ le point : pris, son job Completed")
             say(f"→ le préflight rejoué, juste avant l'attaque ({target})")
-            if steps.preflight(target) != 0:
+            replayed = steps.preflight(target)
+            if replayed != 0:
                 say("✗ le préflight rejoué est rouge (une ligne ✗ ci-dessus) : rien n'est envoyé à Orodruin. "
                     "Le point pris reste : il est propre, et sans danger.")
                 return 1

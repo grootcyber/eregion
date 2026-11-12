@@ -202,7 +202,14 @@ def fake_ssh(tmp_path):
 
     def calls():
         return [json.loads(x) for x in log.read_text().splitlines()] if log.exists() else []
-    return bindir, calls
+    yield bindir, calls
+    # nothing left running after the test, whatever its end (a forward left open: the test fails)
+    import signal
+    for c in calls():
+        try:
+            os.kill(c["pid"], signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
 
 
 def _alive(pid: int) -> bool:
