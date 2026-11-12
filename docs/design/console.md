@@ -173,7 +173,21 @@ Le tirage des rapports reste dans la watch de Glorfindel, qui est toujours là.
    - le filtre des fenêtres borné à 7 jours (les campagnes gardent 30 jours et « all ») ;
    - le nom de la VM, avec l'identifiant au survol ;
    - `Cache-Control: no-cache` sur les pages ;
-   - la page du jeton en anglais.
+   - la page du jeton en anglais ;
+   - **le fil en direct dit le jour** (CON-D, #735) : une ligne qui n'est pas d'aujourd'hui, en
+     UTC, porte « yesterday » ou sa date (`10/11 16:15:45`, l'année si ce n'est pas celle-ci) ; une
+     ligne d'aujourd'hui, l'heure seule (`16:15:45 UTC`) ; la date et l'heure complètes au survol.
+     Le plus récent est en haut, chaque ligne à sa place par son moment complet (`at`, en secondes,
+     lu par le serveur en UTC : `_feed_when` dans `eregion_console/api.py`), jamais par l'heure
+     seule ni par le texte de l'horodatage ; une ligne arrivée en retard (un signal tiré
+     d'Orodruin) se range sous les plus récentes. Passé minuit UTC, les lignes de la page disent
+     de nouveau leur jour. Le 11/11 au banc, un snapshot de la veille avait été pris pour celui de
+     l'après-midi. Le fil d'alors, le plus ancien en haut, se lit comme un ordre juste sur deux
+     jours (16:15 et 21:05 la veille, puis 15:54, 16:22, 18:36) : c'est le jour qui ne se lisait
+     pas ; mais l'historique se triait sur le texte de l'horodatage et les lignes d'un tour du fil,
+     fichier par fichier. Les gestes de l'opérateur (`manual_actions.jsonl`) restent montrés
+     quel que soit leur âge, et un fichier de run récent par sa date de modification peut tenir des
+     lignes plus anciennes : c'est leur date qui le dit.
 
 ### Les cinq indicateurs (UI-2, #206)
 

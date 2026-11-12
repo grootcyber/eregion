@@ -1648,6 +1648,18 @@
    "issue": 534
   },
   {
+   "id": "k-fil-date",
+   "composant": "console",
+   "poste": "k-voir",
+   "nom": "The live feed says the day of a line before today, the latest on top",
+   "etat": "main",
+   "release": "0.5",
+   "lots": [
+    "CON-D"
+   ],
+   "issue": 735
+  },
+  {
    "id": "k-verdict-propose",
    "composant": "console",
    "poste": "k-juger",

@@ -2665,12 +2665,55 @@ const _FEED_DEDUP_MS = 5000;
 // The gate that held a decision with no action (debug line `held_by`, agent.py).
 const _HELD_BY_WORDS = { control_plane: 'control plane (detection only)', identity: 'identity (detection only)' };
 
+// CON-D: a line that is not of today, in UTC, says its day — « yesterday », or its date (10/11,
+// and its year when it is not this one); a line of today, its time alone. The day and the time
+// are the server's, in UTC (api.py `_feed_when`); the page compares them to its own day.
+const _FEED_DAY_MS = 86400000;
+function _feedWhen(entry, now) {
+  const day = String(entry.day || ''), time = String(entry.time || '');
+  if (!day) return '';
+  const today = new Date(now).toISOString().slice(0, 10);
+  const yesterday = new Date(now - _FEED_DAY_MS).toISOString().slice(0, 10);
+  if (day === today) return time + ' UTC';
+  if (day === yesterday) return 'yesterday ' + time;
+  const year = day.slice(0, 4) === today.slice(0, 4) ? '' : '/' + day.slice(0, 4);
+  return day.slice(8, 10) + '/' + day.slice(5, 7) + year + ' ' + time;
+}
+
+// CON-D: the latest on top, each line in its place by its full moment (`at`, seconds since the
+// epoch): a line that arrives late — a signal pulled from Orodruin, a file read after another —
+// goes below the newer ones; of two at the same moment, the one that arrived last on top. A line
+// whose moment does not read goes to the bottom.
+function _feedPlace(list, el, entry) {
+  const at = Number(entry.at);
+  el._at = entry.at != null && Number.isFinite(at) ? at : -Infinity;
+  el._when = { day: entry.day, time: entry.time };
+  for (const row of list.children) {
+    if (row._at <= el._at) { list.insertBefore(el, row); return; }
+  }
+  list.appendChild(el);
+}
+
+// Past midnight UTC, the lines of the page say their day again: today's become yesterday's.
+let _feedDay = new Date().toISOString().slice(0, 10);
+function _feedRelabel() {
+  const now = Date.now(), day = new Date(now).toISOString().slice(0, 10);
+  if (day === _feedDay) return;
+  _feedDay = day;
+  for (const row of document.getElementById('feed-list').children) {
+    const ts = row.querySelector('.feed-ts');
+    if (ts && row._when) ts.textContent = _feedWhen(row._when, now);
+  }
+}
+setInterval(_feedRelabel, 60000);
+
 function appendFeedEntry(entry) {
   const list = document.getElementById('feed-list');
   const el = document.createElement('div');
   el.className = 'feed-entry';
 
-  const ts = fmtTime(entry.timestamp);
+  const ts = _feedWhen(entry, Date.now());
+  const full = entry.day ? `${String(entry.day)} ${String(entry.time)} UTC` : String(entry.timestamp || '');
 
   if (entry.escalate) {
     const key = `${entry.action || entry.held_by || ''}|${entry.vm || ''}`;
@@ -2704,7 +2747,7 @@ function appendFeedEntry(entry) {
     };
     const icon = icons[entry.event] || '·';
     el.innerHTML = `
-      <span class="feed-ts">${ts}</span>
+      <span class="feed-ts" title="${_attr(full)}">${_attr(ts)}</span>
       <span class="feed-event ${_attr(cls)}">${icon} ${_attr(entry.event)}</span>
       <span class="feed-meta">${_attr(entry.ttp || '')} ${_attr(entry.vm || '')}</span>`;
   } else {
@@ -2719,22 +2762,22 @@ function appendFeedEntry(entry) {
       : entry.action;
     const pct = entry.confidence ? Math.round(entry.confidence * 100) + '%' : '';
     el.innerHTML = `
-      <span class="feed-ts">${ts}</span>
+      <span class="feed-ts" title="${_attr(full)}">${_attr(ts)}</span>
       <span class="feed-event ${cls}">${icon} ${_attr(label)}</span>
       <span class="feed-meta">${_attr(entry.ttp || '')} ${_attr(entry.vm || '')}</span>
       <span class="feed-pct">${pct}</span>`;
   }
 
-  list.appendChild(el);
+  _feedPlace(list, el, entry);
 
+  // The latest is on top (CON-D): the feed stays there while the operator reads its head.
   if (_autoScroll) {
-    list.scrollTop = list.scrollHeight;
+    list.scrollTop = 0;
   }
 }
 
 document.getElementById('feed-list').addEventListener('scroll', function () {
-  const el = this;
-  _autoScroll = el.scrollTop + el.clientHeight >= el.scrollHeight - 40;
+  _autoScroll = this.scrollTop <= 40;
 });
 
 // ── State polling ──────────────────────────────────────────────────────────────
