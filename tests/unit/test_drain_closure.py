@@ -56,9 +56,13 @@ def posts(monkeypatch):
 
 @pytest.fixture
 def bot_on(monkeypatch, posts):
-    """The bot configured (as compose tells the watch): the webhook keeps quiet for the notices."""
+    """The bot configured (as compose tells the watch): the webhook keeps quiet for the notices. And
+    alive (its heartbeat fresh): mute, the webhook says the closure (JUG2b,
+    tests/unit/test_bot_fallback.py)."""
+    from glorfindel import bot_beat
     monkeypatch.setenv("GLORFINDEL_DISCORD_BOT", "1")
     monkeypatch.setenv("DISCORD_CHANNEL_ID", "1")
+    bot_beat.write()
     return posts
 
 
@@ -320,7 +324,7 @@ def test_the_store_keeps_its_last_notices(monkeypatch):
 
 # ── where it goes: the VM's thread when the bot is configured ─────────────────────────────────
 
-def test_with_the_bot_configured_the_closure_waits_for_the_bot_and_the_webhook_keeps_quiet(azure, bot_on):
+def test_with_the_bot_alive_the_closure_waits_for_the_bot_and_the_webhook_keeps_quiet(azure, bot_on):
     f, c = azure
     c.isolate_vm(_WEB)
     f.end_run_commands()

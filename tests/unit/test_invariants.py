@@ -1449,7 +1449,11 @@ class IsolationMachine(RuleBasedStateMachine):
             # off the other NIC, `blocked` said (RB1, review).
             home = key(self._nics(vm)[0]["subnet"])
             off = {n["id"].rsplit("/", 1)[-1] for n in self._nics(vm) if key(n["subnet"]) != home}
-            said = set(out.get("uncovered_nics") or []) | (off if out.get("nics_unread") else set())
+            # Said unread: the NICs it names (« db-nic-0 (périmètre illisible) », I3Q), each claims
+            # nothing; naming none (an error, its NICs unreadable), all of them off the perimeter.
+            unread = [x.split(" (", 1)[0].strip() for x in str(out.get("nics_unread") or "").split("), ")]
+            named = {n for n in unread if n} if out.get("nics_unread") and set(unread) <= off else off
+            said = set(out.get("uncovered_nics") or []) | (named if out.get("nics_unread") else set())
             assert said <= off, f"I3: perimeter block named {sorted(said - off)} of {vm} uncovered, behind it"
             # Nor one another perimeter block of ours cuts off, on its own subnet (L1Qs): « the IP
             # still reaches them » was false there.

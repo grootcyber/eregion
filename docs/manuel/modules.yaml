@@ -782,6 +782,16 @@ briques:
     issue: 765
     doc: docs/glorfindel.md
 
+  - id: g-repli-hors-boucle
+    composant: glorfindel
+    poste: g-verifier
+    nom: "The webhook fallback in a thread of its own, each post bounded, three tries at most, and a session cut's closure said by it too, without a ping"
+    etat: main
+    release: "0.5"
+    lots: [JUG2b]
+    issue: 768
+    doc: docs/glorfindel.md
+
   - id: g-perimetre-illisible
     composant: glorfindel
     poste: g-verifier
@@ -790,6 +800,16 @@ briques:
     release: "0.5"
     lots: [I3N]
     issue: 746
+    doc: docs/azure.md
+
+  - id: g-perimetre-non-lue
+    composant: glorfindel
+    poste: g-verifier
+    nom: "A perimeter block says a NIC it couldn't read unread, beside the NICs proven open, never reached"
+    etat: main
+    release: "0.5"
+    lots: [I3Q]
+    issue: 771
     doc: docs/azure.md
 
   - id: g-levee-probation

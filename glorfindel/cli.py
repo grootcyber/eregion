@@ -1225,16 +1225,34 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
         _exercise.observe()
         _layout.say_strays(runs_dir, lambda text: _say_channel(f"Canal runs/ : {text}"))
 
+    _relay_thread: list = [None]
+
     def _relay_notices() -> None:
-        """JUG2 (#765): every minute, an autonomous action's announcement left to the Discord bot and
-        not posted by it — the bot mute (its heartbeat absent or stale), or the announcement waiting
-        for 10 min — said by the webhook, once (glorfindel/vm_notices.py, ``relay_pass``)."""
-        from glorfindel import vm_notices as _vm_notices
-        said = _vm_notices.relay_pass()
-        if said:
-            with _output_lock:
-                console.print(f"[yellow]{said} annonce(s) d'action autonome dite(s) par le webhook : "
-                              "le bot Discord se tait (JUG2)[/yellow]")
+        """JUG2 (#765): every minute, an autonomous action's announcement — and a cut's closure
+        (JUG2b) — left to the Discord bot and not posted by it, the bot mute (its heartbeat absent or
+        stale) or the notice waiting for 10 min, said by the webhook, once (glorfindel/vm_notices.py,
+        ``relay_pass``). JUG2b (#768): in its own thread, one pass at a time — a webhook that does not
+        answer never holds this loop (runs/ read, the heartbeat, the reassertion, the TTL, « Verify »)."""
+        t = _relay_thread[0]
+        if t is not None and t.is_alive():
+            return      # the previous pass is still running: never two at once
+
+        def _run() -> None:
+            from glorfindel import vm_notices as _vm_notices
+            try:
+                said = _vm_notices.relay_pass()
+            except Exception as exc:
+                with _output_lock:
+                    console.print(f"[red]watch: _relay_notices en erreur — {exc}[/red]")
+                return
+            if said:
+                with _output_lock:
+                    console.print(f"[yellow]{said} notice(s) dite(s) par le webhook : le bot Discord "
+                                  "se tait (JUG2)[/yellow]")
+
+        import threading as _thr
+        _relay_thread[0] = _thr.Thread(target=_run, daemon=True, name="relay-notices")
+        _relay_thread[0].start()
 
     # The return channel (#159): a run launched from Orodruin learns from it that this
     # watch is up, and what it detected on the VMs that run exercises. Unset → None.

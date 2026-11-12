@@ -203,7 +203,10 @@ glorfindel/
   vm_notices.py         → DRN2 : ce que la watch dit d'une VM hors d'une carte (la clôture d'une coupure ; JUG1 :
                           l'annonce de chaque action autonome), une fois par clé : dans le fil Discord de la VM
                           (le bot) ou par le webhook ; `vm_notices.jsonl` ; JUG2 : le bot muet (son battement),
-                          l'annonce d'une action prise seule par le webhook, le rôle pingué (`say`, `relay_pass`)
+                          l'annonce d'une action prise seule par le webhook, le rôle pingué (`say`, `relay_pass`) ;
+                          JUG2b : la clôture d'une coupure aussi, sans ping, dite par la passe ; `relay_pass` dans son propre fil
+                          (la boucle de la watch n'attend aucun webhook), chaque POST borné à 10 s (DNS compris),
+                          3 tentatives au plus par notice (`tries` : ce qui a peut-être livré ; rien parti, rien compté)
   bot_beat.py           → JUG2 : le battement du bot Discord (`bot_heartbeat.json`) — écrit à chaque tour par
                           le bot, lu par la watch : absent, illisible, daté du futur ou de plus de 3 min
                           (`MUTE_AFTER_S`), le bot est muet ; ne décide que du chemin d'une annonce
@@ -556,13 +559,15 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 JUG2 : lu aussi par la watch (une annonce que le bot n'a pas postée se replie)
   bot_heartbeat.json          → JUG2 : le battement du bot (`{"at": …}`, à chaque tour, effacé à son arrêt,
                                 SIGTERM compris ; un SIGKILL le laisse vieillir) ;
-                                la watch le lit avant d'annoncer une action prise seule — muet (absent ou de
+                                la watch le lit avant d'annoncer une action prise seule ou de dire la clôture
+                                d'une coupure (JUG2b) — muet (absent ou de
                                 plus de 3 min), le webhook la dit ; forgé frais, il ne fait que retarder (10 min au
                                 plus), jamais la carte
   vm_notices.jsonl            → DRN2 : les notices de la watch (la clôture d'une coupure des sessions ; JUG1 : l'annonce
                                 des actions autonomes, sous la clé de l'action), une par clé,
                                 les 500 dernières ; `via` : bot, webhook ou none (JUG2 : `relayed`, l'annonce
-                                repliée sur le webhook, le bot muet) ; ne dit que « dite ou non »,
+                                repliée sur le webhook, le bot muet ; JUG2b : la clôture aussi, et `tries`, les
+                                envois qui ont peut-être livré, 3 au plus) ; ne dit que « dite ou non »,
                                 jamais une issue (la console et le bot l'écrivent aussi, jusqu'à FS1f)
   rule_status.json            → état de polling des règles (last_poll, last_match, match_count, last_error ;
                                 `expected_sudo` : count, last, origin_count, origin_confirmed — ADM1, COR1, COR2 ;
