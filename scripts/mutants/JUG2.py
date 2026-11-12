@@ -1,7 +1,8 @@
 """JUG2 (#765): the Discord bot mute (its heartbeat absent, stale, or dated in the future), the webhook
 says an action Glorfindel took alone — once, the role pinged, no other mention allowed; the bot alive,
-nothing changes from JUG1; the bot back, nothing twice; a beat forged fresh only delays. M4970–M4979.
-Measured by tests/unit/test_bot_fallback.py."""
+nothing changes from JUG1; the bot back, nothing twice; a beat forged fresh only delays. M4970–M4979;
+the review (a webhook that fails, `docker stop`, a burst): M4995–M4999. Measured by
+tests/unit/test_bot_fallback.py."""
 NOTICES = "glorfindel/vm_notices.py"
 BEAT = "glorfindel/bot_beat.py"
 BOT = "glorfindel/bot.py"
@@ -42,11 +43,35 @@ MUTANTS = [
      '             "allowed_mentions": {"parse": ["everyone", "roles", "users"]}}, notice["key"], native)\n'),
     ("M4978", "an announcement the bot posted is said again by the webhook once the bot falls silent "
      "(JUG2)", NOTICES,
-     '            if n.get("kind") != ACTION_KIND or n.get("via") != "bot" or n["key"] in posted:\n',
-     '            if n.get("kind") != ACTION_KIND or n.get("via") != "bot":\n'),
+     # The review: its anchor follows relay_pass (a mark never noted sent taken back first).
+     '            if n.get("via") != "bot" or n["key"] in posted:\n',
+     '            if n.get("via") != "bot":\n'),
     ("M4979", "the bot posted the card and its ping, then fell silent: the webhook pings again for the "
      "same action (JUG2)", NOTICES,
      '                and not _card_posted(str((notice.get("detail") or {}).get("card") or "")))\n',
      "                )\n"),
+]
+# The review (round 1): a webhook that fails, `docker stop`, a burst — M4995–M4999.
+MUTANTS += [
+    ("M4995", "a webhook that answers 429, 404 or 500 counts as said: the announcement lost, and the card "
+     "at the bot's return without its ping (JUG2 review)", NOTICES,
+     '        if isinstance(status, int) and 200 <= status < 300:\n            return "sent"\n',
+     '        if True:\n            return "sent"\n'),
+    ("M4996", "a relay that failed stays marked said: neither the next pass nor the bot says it again "
+     "(JUG2 review)", NOTICES,
+     '                    n["via"] = "bot"\n                    n.pop("relayed")\n',
+     "                    pass\n"),
+    ("M4997", "a relay marked but never noted sent silences the card's ping: the role pinged by no one "
+     "(JUG2 review)", NOTICES,
+     '                                and (n.get("relayed") or {}).get("sent") is True\n',
+     ""),
+    ("M4998", "`docker stop` leaves the bot's beat: SIGTERM ignored by PID 1, the fallback waits 3 min and "
+     "a pass (JUG2 review)", BOT,
+     "    _stop_on_sigterm()\n",
+     ""),
+    ("M4999", "a pass posts its relayed announcements back to back: Discord's 429 loses part of a burst "
+     "(JUG2 review)", NOTICES,
+     "        if i:\n            _sleep(RELAY_SPACING_S)\n",
+     ""),
 ]
 TESTS = {mid: _T for mid, *_ in MUTANTS}

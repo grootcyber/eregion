@@ -554,7 +554,8 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
   bot_threads.json            → resource_id → thread_id Discord (persistance entre redémarrages)
   bot_notices_posted.json     → DRN2 : clés des notices de la watch postées par le bot dans un fil (une fois) ;
                                 JUG2 : lu aussi par la watch (une annonce que le bot n'a pas postée se replie)
-  bot_heartbeat.json          → JUG2 : le battement du bot (`{"at": …}`, à chaque tour, effacé à son arrêt) ;
+  bot_heartbeat.json          → JUG2 : le battement du bot (`{"at": …}`, à chaque tour, effacé à son arrêt,
+                                SIGTERM compris ; un SIGKILL le laisse vieillir) ;
                                 la watch le lit avant d'annoncer une action prise seule — muet (absent ou de
                                 plus de 3 min), le webhook la dit ; forgé frais, il ne fait que retarder (10 min au
                                 plus), jamais la carte

@@ -46,19 +46,36 @@ each turn (glorfindel/bot_beat.py); the watch reads it:
   goes by the webhook the same way when the bot reads mute — or, whatever its beat says, once it is
   older than `CONFIRM_S` (10 min): a beat forged fresh only delays. Within 24 h, as the bot's own.
 
-Once per action: the notice rewritten `via: webhook` before the webhook is called, the bot never
-posts it (`for_bot`, and read again before it posts one), after its return too. The card to judge
+Once per action: the notice rewritten `via: webhook` before the webhook is called, the bot does
+not post it (`for_bot`, and read again before it posts one), after its return too. The card to judge
 is the bot's to post at its return, in the VM's thread, with its buttons — without the ping when the
 webhook pinged for it (`relayed_ping`). The webhook pings no one when the bot posted the card already
 (its id in `bot_posted.json`): one ping per action. These two stores of the bot, and its beat,
 decide only the announcement's path and its ping — never the card, written first, nor any state
 (DRN2).
+
+**A webhook that fails is never counted as said** (JUG2 review). Only a 2xx answer is a post
+(`_post`); then the notice is noted `relayed.sent`, and only a notice noted sent silences the card's
+ping. Refused (a 404, a 500), unreachable, or rate limited (a 429 waited for once when it asks no
+longer than `RETRY_MAX_S`), the notice goes back to the bot (`via: bot`, `relayed` removed): the next
+pass tries again, or the bot posts it and its card pings at its return — a rare double rather than a
+silence. A pass spaces its posts (`RELAY_SPACING_S`) and leaves the rest to the next one after a 429.
+A mark never noted sent (the watch stopped mid-send, its note refused) is taken back after
+`RESEND_AFTER_S`.
+
+Known limits: a post of the bot in flight while the watch relays (the beat aged, or `CONFIRM_S`
+reached, during a `thread.send` held by Discord's rate limits) says the announcement twice, in the
+thread and in the channel; the same race on the card's post can ping twice. A notice forged in the
+store under an action's key, relayed and noted sent, silences the announcement and can silence the
+card's ping too — never the card.
 """
 from __future__ import annotations
 
 import json
 import logging
 import os
+import re
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -76,6 +93,15 @@ ACTION_KIND = "autonomous_action"
 CONFIRM_S = 600
 # As the bot (glorfindel/bot.py, `_NOTICE_MAX_AGE_H`): an older announcement is not said late.
 RELAY_MAX_AGE_H = 24
+# JUG2 review: between two relayed announcements of one pass (Discord's webhooks take some 5
+# requests in 2 s); a 429 is waited for once when it asks no longer than RETRY_MAX_S, else the rest
+# of the pass waits for the next one.
+RELAY_SPACING_S = 0.5
+RETRY_MAX_S = 5.0
+# A notice marked relayed but never noted sent (the watch stopped mid-send, its note refused) is
+# taken back this long after: said again rather than never.
+RESEND_AFTER_S = 120
+_sleep = time.sleep
 # The notices kept, newest last: a key older than these could be said again — a cut's closure is
 # written in the isolation's state long before (glorfindel/drain_watch.py).
 KEPT = 500
@@ -147,8 +173,11 @@ def say(resource_id: str, key: str, kind: str, title: str, text: str, level: str
     if not _record(notice):
         return "already"
     if why:
-        post_webhook(*fallback(notice))
-        return "relayed"
+        # Sent, it is noted sent; refused or unreachable, the notice goes back to the bot — the
+        # next pass tries again, or the bot posts it at its return (JUG2 review: never a silence).
+        sent = _post(*fallback(notice)) == "sent"
+        _settle({key: sent})
+        return "relayed" if sent else "bot"
     if notice["via"] == "webhook":
         post_webhook(webhook or webhook_payload(notice), key)
     return notice["via"]
@@ -184,7 +213,7 @@ def _discord_url(url: str) -> str:
                                        or host.endswith((".discord.com", ".discordapp.com"))):
         return ""
     path = parts.path.rstrip("/")
-    if not path.startswith("/api/webhooks/"):
+    if not re.match(r"/api(/v\d+)?/webhooks/", path):
         return ""
     for suffix in ("/slack", "/github"):
         if path.endswith(suffix):
@@ -229,7 +258,7 @@ def fallback(notice: dict) -> tuple[dict, str, str]:
     url = os.environ.get("GLORFINDEL_WEBHOOK_URL", "")
     native = _discord_url(url)
     if not native:
-        payload = webhook_payload(notice)
+        payload = webhook_payload(notice)     # the card and the run first in its text (JUG2 review)
         payload["text"] += f"\n> {_RELAY_LINE}"
         return payload, notice["key"], url
     role = _ping_role() if (notice.get("relayed") or {}).get("ping") else ""
@@ -241,8 +270,12 @@ def fallback(notice: dict) -> tuple[dict, str, str]:
 
 def relay_pass(now: datetime | None = None) -> int:
     """At the watch's housekeeping: each announcement of an action left to the bot and not posted by
-    it, said by the webhook when the bot reads mute, or once it waited `CONFIRM_S` — once, marked
-    before the webhook is called. Within `RELAY_MAX_AGE_H`. Returns the number said."""
+    it, said by the webhook when the bot reads mute, or once it waited `CONFIRM_S` — marked before
+    the webhook is called, noted sent once the webhook answered 2xx; refused, unreachable or rate
+    limited, given back to the bot (the next pass tries again, or the bot posts it at its return).
+    Spaced by `RELAY_SPACING_S`; a 429 that asks for longer than `RETRY_MAX_S` leaves the rest of the
+    pass to the next one. A notice marked but never noted sent (`RESEND_AFTER_S`) is taken back first.
+    Within `RELAY_MAX_AGE_H`. Returns the number sent."""
     from datetime import timedelta
 
     from glorfindel.escalations import discord_bot_configured
@@ -251,15 +284,21 @@ def relay_pass(now: datetime | None = None) -> int:
     if not _STORE.exists():
         return 0
     from glorfindel import bot_beat
-    from glorfindel.response.state import _atomic_write_text
     now = now or datetime.now(timezone.utc)
     mute = bot_beat.mute(now)
     posted = _bot_posted_notices()
     due: list[dict] = []
     with _lock():
         notices = _read()
+        changed = False
         for n in notices:
-            if n.get("kind") != ACTION_KIND or n.get("via") != "bot" or n["key"] in posted:
+            if n.get("kind") != ACTION_KIND:
+                continue
+            if _unsent_since(n, now) >= RESEND_AFTER_S:
+                n["via"] = "bot"            # marked, never noted sent: weighed again below
+                n.pop("relayed", None)
+                changed = True
+            if n.get("via") != "bot" or n["key"] in posted:
                 continue
             try:
                 at = datetime.fromisoformat(str(n.get("at")))
@@ -272,26 +311,78 @@ def relay_pass(now: datetime | None = None) -> int:
             if why:
                 _mark_relayed(n, why, now)
                 due.append(n)
-        if due:
-            _atomic_write_text(_STORE, "\n".join(json.dumps(n, default=str) for n in notices) + "\n")
-    for n in due:
-        post_webhook(*fallback(n))
-    return len(due)
+        if due or changed:
+            _write(notices)
+    outcome: dict[str, bool] = {}
+    limited = False
+    for i, n in enumerate(due):
+        if limited:                         # rate limited: the rest back to the bot, the next pass
+            outcome[n["key"]] = False
+            continue
+        if i:
+            _sleep(RELAY_SPACING_S)
+        result = _post(*fallback(n))
+        outcome[n["key"]] = result == "sent"
+        limited = result == "limited"
+    if outcome:
+        _settle(outcome)
+    return sum(outcome.values())
 
 
-def relay(notice: dict, why: str) -> None:
+def _unsent_since(n: dict, now: datetime) -> float:
+    """Seconds since a notice was marked relayed without being noted sent (0 when it was sent, or
+    is not relayed)."""
+    r = n.get("relayed")
+    if not isinstance(r, dict) or r.get("sent") is True:
+        return 0.0
+    try:
+        at = datetime.fromisoformat(str(r.get("at")))
+    except ValueError:
+        return float(RESEND_AFTER_S)
+    at = at if at.tzinfo else at.replace(tzinfo=timezone.utc)
+    return (now - at).total_seconds()
+
+
+def _write(notices: list[dict]) -> None:
+    from glorfindel.response.state import _atomic_write_text
+    _atomic_write_text(_STORE, "\n".join(json.dumps(n, default=str) for n in notices) + "\n")
+
+
+def _settle(outcome: dict[str, bool]) -> None:
+    """Under the store's lock: each relayed notice noted sent, or given back to the bot (`via: bot`,
+    `relayed` removed). Never raises: a note refused (a full disk) leaves the mark, taken back after
+    `RESEND_AFTER_S` — said twice rather than never."""
+    try:
+        with _lock():
+            notices = _read()
+            for n in notices:
+                if n["key"] not in outcome or not isinstance(n.get("relayed"), dict):
+                    continue
+                if outcome[n["key"]]:
+                    n["relayed"]["sent"] = True
+                else:
+                    n["via"] = "bot"
+                    n.pop("relayed")
+            _write(notices)
+    except OSError as exc:
+        log.warning("notices: relayed announcements not noted (%s)", exc)
+
+
+def relay(notice: dict, why: str) -> bool:
     """An announcement the store could not keep (a full disk), the bot mute: said by the webhook now,
     as `relay_pass` would — nothing recorded, so nothing tells the bot at its return (its card, if
-    written, pings again)."""
+    written, pings again). True when the webhook took it."""
     _mark_relayed(notice, why)
-    post_webhook(*fallback(notice))
+    return _post(*fallback(notice)) == "sent"
 
 
 def relayed_ping(keys) -> bool:
-    """The webhook pinged the role for one of these actions (`relayed.ping`): the card the bot posts
-    at its return pings no more."""
+    """The webhook pinged the role for one of these actions — `relayed.ping`, and noted `sent`: the
+    card the bot posts at its return pings no more. A notice forged so in the store can silence the
+    card's ping too — never the card (DRN2)."""
     wanted = {k for k in (keys or []) if isinstance(k, str)}
     return bool(wanted) and any((n.get("relayed") or {}).get("ping") is True
+                                and (n.get("relayed") or {}).get("sent") is True
                                 for n in _read() if n["key"] in wanted)
 
 
@@ -321,13 +412,47 @@ def webhook_payload(notice: dict) -> dict:
                      f"> {webhook_text(str(notice.get('text', ''))[:800])}")}
 
 
-def post_webhook(payload: dict, key: str = "", url: str = "") -> None:
-    """`payload` to `url` (GLORFINDEL_WEBHOOK_URL when none), once: a webhook that fails is not retried."""
+def _retry_after(resp) -> float | None:
+    """The seconds a 429 asks to wait: its `Retry-After` header, else Discord's `retry_after`."""
+    try:
+        value = (getattr(resp, "headers", None) or {}).get("Retry-After")
+        if value is None:
+            value = resp.json().get("retry_after")
+        return max(0.0, float(value))
+    except Exception:
+        return None
+
+
+def _post(payload: dict, key: str = "", url: str = "") -> str:
+    """`payload` to `url` (GLORFINDEL_WEBHOOK_URL when none): `sent` on a 2xx answer only (JUG2
+    review: a 429, a 404, a network cut are no announcement), `limited` on a 429 still refused after
+    one wait of at most `RETRY_MAX_S`, `failed` otherwise. Never raises."""
     url = url or os.environ.get("GLORFINDEL_WEBHOOK_URL", "")
     if not url:
-        return
-    try:
-        import requests
-        requests.post(url, json=payload, timeout=5)
-    except Exception as exc:          # a notification never stops the watch
-        log.warning("notice %s: webhook failed (%s)", key, exc)
+        return "failed"
+    for attempt in (0, 1):
+        try:
+            import requests
+            resp = requests.post(url, json=payload, timeout=5)
+        except Exception as exc:          # a notification never stops the watch
+            log.warning("notice %s: webhook failed (%s)", key, exc)
+            return "failed"
+        status = getattr(resp, "status_code", None)
+        if isinstance(status, int) and 200 <= status < 300:
+            return "sent"
+        if status == 429:
+            wait = _retry_after(resp)
+            if attempt == 0 and wait is not None and wait <= RETRY_MAX_S:
+                _sleep(wait)
+                continue
+            log.warning("notice %s: webhook rate limited", key)
+            return "limited"
+        log.warning("notice %s: webhook answered %s", key, status)
+        return "failed"
+    return "failed"
+
+
+def post_webhook(payload: dict, key: str = "", url: str = "") -> bool:
+    """`payload` to `url` (GLORFINDEL_WEBHOOK_URL when none): True when the webhook took it (2xx).
+    Outside the fallback, at most once: a webhook that fails is not retried."""
+    return _post(payload, key, url) == "sent"

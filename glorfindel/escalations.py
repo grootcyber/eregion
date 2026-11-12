@@ -615,9 +615,11 @@ def _action_words(action: str, resource_id: str, run_id: str, confidence: float,
     pct = f"{int(confidence * 100)}% confidence"
     meta = " · ".join(filter(None, [ttp, severity, pct, f"mode {mode}" if mode else ""]))
     card_said = f"Carte à juger : {card[:8]} (console, TO JUDGE)." if card else ""
+    # The card and the run before the explanation: a text cut (the webhook's 800 characters, the
+    # fallback's: JUG2 review) never loses them.
     text = " ".join(filter(None, [
-        f"{action} · {meta}.", explanation[:800], f"⚠ {note[:300]}" if note else "", card_said,
-        f"Run {run_id}." if run_id else ""]))
+        f"{action} · {meta}.", card_said, f"Run {run_id}." if run_id else "", explanation[:800],
+        f"⚠ {note[:300]}" if note else ""]))
     level = "ok" if verified else ("unknown" if verified is None else "failed")
     # Text from outside (the model's, Azure's names): one line each, no link nor mention
     # of its own (SEC6, N-09 — glorfindel/chat_text.py).
@@ -682,9 +684,9 @@ def notify_action(
         if bot and card and not why:
             return "none"
         if why:
-            vm_notices.relay({"key": key, "resource_id": resource_id, "kind": EXECUTED_TYPE,
-                              "title": title, "text": text, "level": level, "detail": detail}, why)
-            return "relayed"
+            sent = vm_notices.relay({"key": key, "resource_id": resource_id, "kind": EXECUTED_TYPE,
+                                     "title": title, "text": text, "level": level, "detail": detail}, why)
+            return "relayed" if sent else "none"
         vm_notices.post_webhook(payload, key)
         return "webhook"
 

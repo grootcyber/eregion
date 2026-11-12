@@ -38,15 +38,51 @@ DISCORD_HOOK = "https://discord.com/api/webhooks/123/fake-token/slack"
 NATIVE = "https://discord.com/api/webhooks/123/fake-token"
 
 
+class _Answer:
+    """A webhook's answer: Discord's 204 by default."""
+
+    def __init__(self, status: int = 204, retry_after: float | None = None):
+        self.status_code = status
+        self.headers: dict = {}
+        self._body = {"retry_after": retry_after} if retry_after is not None else {}
+
+    def json(self):
+        return self._body
+
+
 @pytest.fixture
-def bot_set(monkeypatch, posts):
+def answers() -> list:
+    """What the fake webhook answers, in order (an _Answer, or an exception to raise); empty: 204."""
+    return []
+
+
+@pytest.fixture
+def sleeps(monkeypatch) -> list:
+    """The waits of the fallback, recorded, never slept."""
+    waited: list[float] = []
+    monkeypatch.setattr(vm_notices, "_sleep", waited.append)
+    return waited
+
+
+@pytest.fixture
+def bot_set(monkeypatch, posts, answers, sleeps):
     """The bot configured (as compose tells the watch), a Discord webhook, the role to ping — and
-    no heartbeat yet: the bot is mute until a test makes it alive."""
+    no heartbeat yet: the bot is mute until a test makes it alive. Every POST caught, none sent,
+    answered from `answers`."""
+    import requests
     monkeypatch.setenv("GLORFINDEL_DISCORD_BOT", "1")
     monkeypatch.setenv("DISCORD_CHANNEL_ID", "1")
     monkeypatch.setenv("GLORFINDEL_WEBHOOK_URL", DISCORD_HOOK)
     monkeypatch.setenv("DISCORD_PING_ROLE", str(ROLE))
     bot_beat.clear()
+
+    def post(url, json=None, timeout=None):
+        posts.append({"url": url, **json})
+        answer = answers.pop(0) if answers else _Answer()
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+    monkeypatch.setattr(requests, "post", post)
     return posts
 
 
@@ -261,6 +297,125 @@ def test_an_announcement_older_than_a_day_is_not_said_late(azure, bot_set):
     assert vm_notices.relay_pass(later) == 0 and bot_set == []
 
 
+# ── a webhook that fails: never counted as said (JUG2 review) ─────────────────────────────────
+
+@pytest.mark.parametrize("answer", [_Answer(429, retry_after=30), _Answer(404), _Answer(500),
+                                    ConnectionError("network cut")])
+def test_a_webhook_that_fails_gives_the_announcement_back_to_the_bot(azure, bot_set, answers, answer):
+    """Refused, rate limited for long, unreachable: the announcement is not marked said — back to
+    the bot, which posts it at its return, and its card pings the role."""
+    answers.append(answer)
+    f, c = azure
+    _respond(c, _ransomware(), "isolate_vm")
+    assert len(_relayed(bot_set)) == 1                                  # tried
+    n = _announcement()
+    assert n["via"] == "bot" and "relayed" not in n
+    [card] = _cards()
+    _beat(0)                                                            # the bot back
+    threads, said = _bot_returns(card)
+    assert said == 1 and len(_pings(threads)) == 1                      # the announcement, the card's ping
+
+
+def test_a_relay_that_failed_is_tried_again_at_the_next_pass(azure, bot_set, answers):
+    answers.append(_Answer(503))
+    f, c = azure
+    _respond(c, _ransomware(), "isolate_vm")
+    assert vm_notices.relay_pass() == 1                                 # the bot still mute
+    msgs = _relayed(bot_set)
+    assert len(msgs) == 2 and msgs[1]["content"].startswith(f"<@&{ROLE}> ")
+    n = _announcement()
+    assert n["via"] == "webhook" and n["relayed"]["sent"] is True
+    assert vm_notices.relay_pass() == 0 and len(_relayed(bot_set)) == 2
+
+
+def test_a_short_429_is_waited_for_once(azure, bot_set, answers, sleeps):
+    answers.append(_Answer(429, retry_after=0.3))
+    f, c = azure
+    _respond(c, _ransomware(), "isolate_vm")
+    assert len(_relayed(bot_set)) == 2 and sleeps == [0.3]
+    assert _announcement()["relayed"]["sent"] is True
+
+
+def _three_actions_left_to_the_bot(c) -> None:
+    _beat(0)
+    for i in range(3):
+        _respond(c, _ransomware(f"rule-ransomware-disk-write-0000b{i}b{i}"), "isolate_vm")
+    _beat(bot_beat.MUTE_AFTER_S + 30)                                   # then the bot falls silent
+
+
+def test_a_burst_of_actions_loses_none(azure, bot_set, monkeypatch, sleeps):
+    """Three actions left to the bot, the bot then mute: one pass says them all, spaced — a webhook
+    that answers 429 to two posts with no wait between them (Discord's limits) loses none."""
+    import requests
+    f, c = azure
+    _three_actions_left_to_the_bot(c)
+    waited_since_last = [True]
+    monkeypatch.setattr(vm_notices, "_sleep", lambda s: (sleeps.append(s), waited_since_last.__setitem__(0, True)))
+
+    def limited(url, json=None, timeout=None):
+        bot_set.append({"url": url, **json})
+        ok, waited_since_last[0] = waited_since_last[0], False
+        return _Answer() if ok else _Answer(429, retry_after=30)
+    monkeypatch.setattr(requests, "post", limited)
+    assert vm_notices.relay_pass() == 3
+    assert len(_relayed(bot_set)) == 3 and sleeps == [vm_notices.RELAY_SPACING_S] * 2
+    assert all(n["relayed"]["sent"] is True for n in vm_notices._read())
+
+
+def test_a_pass_rate_limited_leaves_the_rest_to_the_next(azure, bot_set, answers):
+    """A 429 that asks for 30 s: the pass stops there, nothing marked said; the next one says all."""
+    f, c = azure
+    _three_actions_left_to_the_bot(c)
+    answers.extend([_Answer(429, retry_after=30)])
+    assert vm_notices.relay_pass() == 0
+    assert len(_relayed(bot_set)) == 1                                  # one tried, the others kept
+    assert [n["via"] for n in vm_notices._read()] == ["bot"] * 3
+    assert vm_notices.relay_pass() == 3 and len(_relayed(bot_set)) == 4
+
+
+def test_a_relay_never_noted_sent_is_said_again_rather_than_never(azure, bot_set, monkeypatch):
+    """The watch stopped mid-send, or its note refused (a full disk): the mark stays without `sent` —
+    taken back after RESEND_AFTER_S, said again; meanwhile the card's ping is not silenced."""
+    real_settle, noted = vm_notices._settle, [False]
+    monkeypatch.setattr(vm_notices, "_settle", lambda outcome: real_settle(outcome) if noted[0] else None)
+    f, c = azure
+    _respond(c, _ransomware(), "isolate_vm")
+    n = _announcement()
+    assert n["via"] == "webhook" and "sent" not in n["relayed"]
+    [card] = _cards()
+    assert not vm_notices.relayed_ping(card["action_keys"])
+    assert vm_notices.relay_pass() == 0 and len(_relayed(bot_set)) == 1
+    noted[0] = True
+    later = datetime.now(timezone.utc) + timedelta(seconds=vm_notices.RESEND_AFTER_S + 5)
+    assert vm_notices.relay_pass(later) == 1 and len(_relayed(bot_set)) == 2
+    assert vm_notices.relayed_ping(card["action_keys"])
+
+
+def test_a_forged_notice_can_silence_the_card_s_ping_never_the_card(azure, bot_set):
+    """A line forged in the store, under the action's key, relayed, pinged and sent: the bot posts
+    the card, without a ping — the card is still there (DRN2, docs/design/modele-de-menace.md)."""
+    from glorfindel.agent import _executed_key
+    vm_notices._record({"key": _executed_key({"signal": _ransomware(), "action": "isolate_vm"}),
+                        "kind": vm_notices.ACTION_KIND, "via": "webhook", "at": "2026-11-12T00:00:00+00:00",
+                        "relayed": {"ping": True, "sent": True}})
+    f, c = azure
+    _beat(0)
+    _respond(c, _ransomware(), "isolate_vm")
+    [card] = _cards()
+    threads, said = _bot_returns(card)
+    assert threads[WEB.lower()].sent[0]["embed"].title.startswith("✅") and _pings(threads) == []
+
+
+def test_a_slack_fallback_keeps_the_card_and_the_run_with_a_long_explanation(azure, bot_set, monkeypatch):
+    monkeypatch.setenv("GLORFINDEL_WEBHOOK_URL", "https://hooks.example.invalid/eregion")
+    f, c = azure
+    _respond(c, _ransomware(), "isolate_vm", explanation="chiffrement " * 300)
+    [card] = _cards()
+    [sent] = bot_set
+    assert f"Carte à juger : {card['id'][:8]}" in sent["text"]
+    assert "Run watch-ransomware-disk-write-20261112T091600Z" in sent["text"]
+
+
 # ── a forged beat only delays; the card never depends on it ───────────────────────────────────
 
 def test_a_beat_forged_fresh_only_delays_the_webhook(azure, bot_set):
@@ -369,6 +524,9 @@ def test_the_relayed_announcement_escapes_what_comes_from_outside(azure, bot_set
     (NATIVE, NATIVE),
     ("https://discordapp.com/api/webhooks/1/t/slack?thread_id=9", "https://discordapp.com/api/webhooks/1/t?thread_id=9"),
     ("https://ptb.discord.com/api/webhooks/1/t/github", "https://ptb.discord.com/api/webhooks/1/t"),
+    ("https://discord.com/api/v10/webhooks/1/t/slack", "https://discord.com/api/v10/webhooks/1/t"),
+    ("https://discord.com/api/v9/webhooks/1/t", "https://discord.com/api/v9/webhooks/1/t"),
+    ("https://discord.com/api/vx/webhooks/1/t", ""),
     ("http://discord.com/api/webhooks/1/t/slack", ""),
     ("https://discord.com.evil.example/api/webhooks/1/t/slack", ""),
     ("https://evil.example/discord.com/api/webhooks/1/t/slack", ""),
@@ -421,9 +579,74 @@ def test_the_bot_stopping_removes_its_beat(monkeypatch):
         bot_beat.write()
         raise RuntimeError("gateway closed")
     monkeypatch.setattr(bot.GlorfindelBot, "run", run)
+    installed: list[bool] = []
+    monkeypatch.setattr(bot, "_stop_on_sigterm", lambda: installed.append(True))   # not in this worker
     with pytest.raises(RuntimeError):
         bot.run()
-    assert bot_beat.mute() == "absent"
+    assert bot_beat.mute() == "absent" and installed == [True]
+
+
+_STOPPED_BOT = """
+import time
+from glorfindel import bot, bot_beat
+
+def run(self, token, log_handler=None):
+    bot_beat.write()
+    time.sleep(60)
+
+bot.GlorfindelBot.run = run
+bot.run()
+"""
+
+
+def test_docker_stop_removes_the_beat(tmp_path):
+    """JUG2 review: `docker stop` sends SIGTERM to `glorfindel bot`, PID 1 of its container, where
+    Python had no handler — the beat stayed, the fallback waited 3 min and a pass. A real process,
+    its HOME under tmp, sent SIGTERM: its beat removed."""
+    pytest.importorskip("discord")
+    import os
+    import signal
+    import subprocess
+    import sys
+    import time
+    root = Path(__file__).resolve().parents[2]
+    home = tmp_path / "home"
+    beat = home / ".glorfindel" / "bot_heartbeat.json"
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "stopped_bot.py").write_text(_STOPPED_BOT)
+    env = {k: v for k, v in os.environ.items() if k != "EREGION_ACTION_QUEUE"}
+    env.update(HOME=str(home), PYTHONPATH=str(root), DISCORD_BOT_TOKEN="fake-token", DISCORD_CHANNEL_ID="1")
+    proc = subprocess.Popen([sys.executable, str(scripts / "stopped_bot.py")], cwd=root, env=env,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        deadline = time.monotonic() + 60
+        while not beat.exists() and proc.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.1)
+        assert beat.exists(), "the bot never wrote its beat"
+        proc.send_signal(signal.SIGTERM)
+        proc.wait(timeout=20)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+    assert not beat.exists()
+
+
+def test_the_sigterm_handler_stops_as_a_ctrl_c():
+    """discord.py's `Client.run` returns on a KeyboardInterrupt: the handler raises one."""
+    pytest.importorskip("discord")
+    import signal
+
+    from glorfindel import bot
+    old = signal.getsignal(signal.SIGTERM)
+    try:
+        bot._stop_on_sigterm()
+        assert signal.getsignal(signal.SIGTERM) is bot._on_sigterm
+        with pytest.raises(KeyboardInterrupt):
+            bot._on_sigterm(signal.SIGTERM, None)
+    finally:
+        signal.signal(signal.SIGTERM, old)
 
 
 # ── the stores: the bot's files, read by the watch ────────────────────────────────────────────

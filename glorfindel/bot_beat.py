@@ -5,7 +5,9 @@ Since JUG1 (#760) an action taken alone is announced in its VM's thread when the
 nothing by the webhook. The bot's container stopped, nothing said it any more: its card and its
 notice waited for the bot, and a notice older than 24 h was lost. Now the bot writes
 `~/.glorfindel/bot_heartbeat.json` (`{"at": …}`) at each turn of its loop (every 5 s, once its
-channel is read), removes it when it stops, and the watch reads it:
+channel is read), removes it when it stops — a SIGTERM too (`docker stop`: glorfindel/bot.py,
+`_stop_on_sigterm`); a SIGKILL or a host cut leave it, and the fallback then waits for it to age
+(`MUTE_AFTER_S`, then the watch's next pass) — and the watch reads it:
 
 - **alive**: dated less than `MUTE_AFTER_S` ago (180 s, some 36 turns: a turn held by Discord's rate
   limits stays alive) — the announcement goes to the bot, as in JUG1;
@@ -17,7 +19,8 @@ channel is read), removes it when it stops, and the watch reads it:
 for `MUTE_AFTER_S` once written, for `vm_notices.CONFIRM_S` at most if a writer keeps it fresh (an
 announcement the bot has not posted by then goes by the webhook whatever the beat says); a beat dated
 in the future reads mute. A beat removed or aged sends the announcement by the webhook while the bot
-lives: in the channel rather than the thread, and the bot never posts it a second time. Never the
+lives: in the channel rather than the thread, and the bot does not post it a second time (save a
+post of the bot in flight at that moment: vm_notices.py, its known limits). Never the
 card to judge, written before any beat is read, nor any state: the watch's alone (DRN2).
 """
 from __future__ import annotations
