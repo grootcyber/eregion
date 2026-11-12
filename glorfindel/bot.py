@@ -11,7 +11,7 @@ from discord import app_commands
 from rich.console import Console
 from rich.markup import escape as _esc_markup
 
-from glorfindel import bot_beat
+from glorfindel import bot_beat, masking
 from glorfindel import escalations as esc_module
 from glorfindel.card_target import IDENTITY_PREFIX as _IDENTITY_PREFIX
 from glorfindel.chat_text import discord_code, discord_text
@@ -98,6 +98,82 @@ _ANCHORED_TYPES = {"control_plane_change", "identity_change", "unattributed_sign
 _IDENTITY_THREAD = ("entra:identities", "Entra ID — identités")
 
 
+# ── MSK3 (#772): no subscription's id in what the bot posts ───────────────────────────────────
+# A message of the bot is posted in a channel, from which an operator may paste it in an issue of
+# the public repository: as the CLI (MSK2), every text it shows is masked (glorfindel/masking.py) —
+# at the display only. The card's store, the signals and the journals keep the full id, and so do
+# the buttons' arguments: they act, they are not shown. What the model sees is never filtered here.
+
+def _card_subscriptions(esc) -> set[str]:
+    """The subscriptions a card names anywhere (an ARM id of its resource, its target, the model's
+    words…) and the environment's: a bare id of one of them in any text of the card is masked too."""
+    if not isinstance(esc, dict):
+        return masking.subscriptions_known("")
+    return masking.subscriptions_known(json.dumps(esc, default=str))
+
+
+def _masked(text, esc=None) -> str:
+    """`text` as the bot shows it: no subscription's id (an ARM id said by its name and group)."""
+    return masking.ids_masked(text, subscriptions=_card_subscriptions(esc))
+
+
+# The keys of a plan's item that hold a command to copy: masked, it would no longer be one.
+_COMMAND_KEYS = ("command", "find", "before", "rollback")
+_COMMAND_HELD = "<la commande nomme un abonnement : la carte dans la console>"
+
+
+def _deep_masked(value, subs, key: str = ""):
+    if isinstance(value, str):
+        masked = masking.ids_masked(value, subscriptions=subs)
+        if key in _COMMAND_KEYS and masked != value:
+            return _COMMAND_HELD         # a command is shown whole or not at all, never altered
+        return masked
+    if isinstance(value, list):
+        return [_deep_masked(v, subs, key) for v in value]
+    if isinstance(value, dict):
+        return {k: (v if k == "kind" else _deep_masked(v, subs, k)) for k, v in value.items()}
+    return value
+
+
+# What a card shows of its own words: the model's (explanation, steps), Azure's names, the code's.
+_SHOWN_TEXTS = ("explanation", "reason", "rule_name", "run_id", "ttp", "severity", "action")
+_SHOWN_TREES = ("target", "executed", "identity_plan")
+
+
+def _shown(esc: dict) -> dict:
+    """The card as the bot shows it (MSK3): a copy, every text it displays masked. The logic's keys
+    (`id`, `resource_id`, `escalation_type`, `status`) are left as they are; the store is not
+    touched."""
+    subs = _card_subscriptions(esc)
+    out = dict(esc)
+    for k in _SHOWN_TEXTS:
+        if isinstance(out.get(k), str):
+            out[k] = masking.ids_masked(out[k], subscriptions=subs)
+    if isinstance(out.get("suggested_steps"), list):
+        out["suggested_steps"] = [masking.ids_masked(str(x), subscriptions=subs) for x in out["suggested_steps"]]
+    for k in _SHOWN_TREES:
+        if isinstance(out.get(k), dict):
+            out[k] = _deep_masked(out[k], subs)
+    return out
+
+
+def _vm_for_a_command(resource_id: str) -> str:
+    """What a command to copy names the VM by — the CLI's own rule (MSK2, `_name_for_a_command`):
+    its short name when every command takes it back to this very VM, else
+    « <id: glorfindel list --ids> », never a homonym. A state that cannot be read: the id asked
+    for too — never a crash of the button, never the full id."""
+    try:
+        from glorfindel.cli import _name_for_a_command
+        return _name_for_a_command(resource_id)
+    except Exception:
+        return "<id: glorfindel list --ids>"
+
+
+def _args_said(args: list[str]) -> str:
+    """A command the bot runs, as it says it ran: each ARM id by the name a command takes back."""
+    return " ".join(_vm_for_a_command(a) if "subscriptions/" in str(a).lower() else str(a) for a in args)
+
+
 def _thread_key(esc: dict) -> str:
     """The card's thread: the resource it is filed on — its VM, its NSG, its group, the control
     plane —, or the identities' one thread (AL1c). By its `resource_id` alone: a card posted
@@ -111,20 +187,22 @@ def _thread_name(key: str) -> str:
     """What the thread is called: the resource's short name, or « Entra ID — identités »."""
     if key == _IDENTITY_THREAD[0]:
         return _IDENTITY_THREAD[1]
-    return key.split("/")[-1] or key.strip("/").split("/")[-1] or "unknown"
+    return masking.name_said(key) or "unknown"          # never a subscription's id (MSK3)
 
 
 def _cli_command(esc: dict) -> str:
     """Return CLI command(s) the operator should run for this escalation."""
     action = esc["action"]
-    rid = esc["resource_id"]
     esc_id = esc["id"]
     if esc.get("escalation_type") in _ANCHORED_TYPES:
         return f"glorfindel ack {esc_id}"
+    # MSK3: the VM by the name a command takes back to it, never its full id — the message is
+    # pasted from the channel; an ambiguous name gives « <id: glorfindel list --ids> ».
+    rid = _vm_for_a_command(esc["resource_id"])
     if esc.get("escalation_type") == esc_module.EXECUTED_TYPE:
         # JUG1: an action Glorfindel took alone — judged, and undone (if judged wrong) by the
         # usual path, never by a button of its card.
-        vm = rid.rstrip("/").rsplit("/", 1)[-1]
+        vm = rid
         ip = str((esc.get("action_params") or {}).get("ip") or "<ip>")
         undo = (f"glorfindel release {vm} --yes" if action == "isolate_vm"
                 else f"glorfindel unblock {ip} {vm} --yes")
@@ -175,6 +253,7 @@ _ATTEMPTED = {"write_blocked", "action_failed"}  # tried, did not go through
 def _embed_title(esc: dict) -> str:
     """Never a past participle for what did not run. An action or a type Glorfindel has no
     label for (the model may name any action) is shown as written, never as Markdown."""
+    esc = _shown(esc)                                   # MSK3: no subscription's id shown
     action, etype = esc.get("action", ""), esc.get("escalation_type", "")
     type_label = _ESCALATION_LABELS.get(etype) or discord_text(etype)
     if etype in _RAN:
@@ -208,7 +287,7 @@ def _target_fields(esc: dict) -> list[tuple[str, str, bool]]:
     t = esc.get("target")
     rid = str(esc.get("resource_id") or "")
     if not isinstance(t, dict) or not t.get("kind"):
-        short = name(rid.split("/")[-1])
+        short = name(masking.name_said(rid))            # never a subscription's own id (MSK3)
         if esc.get("escalation_type") in ("control_plane_change", "identity_change"):
             # Filed before AL1c: on the first VM online — or on the VM itself (a role on the VM,
             # `attribution: asset`; a signal of `respond`): the card cannot tell which (review).
@@ -248,7 +327,9 @@ def _embed_body(esc: dict) -> tuple[str, list[tuple[str, str, bool]]]:
     IP a block targets, the rule, the confidence), then why it did not run.
 
     Every text from outside — the model's, Azure's names (an Entra application's display
-    name), a rule's — is escaped (SEC6, N-09: glorfindel/chat_text.py), then cut."""
+    name), a rule's — is escaped (SEC6, N-09: glorfindel/chat_text.py), then cut; masked first,
+    no subscription's id in it (MSK3, `_shown`)."""
+    esc = _shown(esc)
     explanation = (esc.get("explanation") or "").strip()
     reason = (esc.get("reason") or "").strip()
     fields: list[tuple[str, str, bool]] = [
@@ -626,8 +707,8 @@ async def _pending_reply(interaction: discord.Interaction) -> None:
         return
     lines = []
     for e in escs[:5]:
-        label = _ACTION_LABELS.get(e["action"]) or discord_text(e["action"])
-        short = e["resource_id"].split("/")[-1]
+        label = _ACTION_LABELS.get(e["action"]) or discord_text(_masked(e["action"], e))
+        short = masking.name_said(e["resource_id"])     # MSK3
         lines.append(f"• {discord_code(e['id'][:8])} — **{label}** sur {discord_code(short)}")
     if len(escs) > 5:
         lines.append(f"_... et {len(escs) - 5} autre(s)_")
@@ -671,7 +752,8 @@ class _ExecuteButton(discord.ui.Button):
             view=self.view  # type: ignore[union-attr]
         )
 
-        cmd_display = "glorfindel " + " ".join(self.cli_args)
+        # MSK3: said by the VM's name — the arguments it runs with keep the full id.
+        cmd_display = "glorfindel " + _args_said(self.cli_args)
         await interaction.channel.send(  # type: ignore[union-attr]
             f"⚡ **{discord_text(interaction.user.display_name)}** → {discord_code(cmd_display)}"
         )
@@ -696,7 +778,8 @@ class _ExecuteButton(discord.ui.Button):
         return _run_cli(self.cli_args)
 
 
-# FS1c: how often the bot reads the receipt of its request, and what it says of each state.
+# FS1c: how often the bot reads the receipt of its request, and what it says of each state — `rid`:
+# the request's id (8 characters), never a resource's (MSK3).
 QUEUE_POLL_S = 1.0
 _STATE_SAID = {"received": "📥 File d'actions ({rid}) : reçue par la watch.",
                "accepted": "⚙️ File d'actions ({rid}) : acceptée — la watch exécute le reset."}
@@ -811,8 +894,9 @@ async def _execute_and_report(esc: dict, cli_args: list[str], channel, run, card
     try:
         loop = asyncio.get_running_loop()
         code, output = (await arun()) if arun is not None else await loop.run_in_executor(None, run)
-        # The CLI's output (names from Azure in it): no ``` of its own closes the block.
-        short = output.strip()[:1800].replace("`", "ˋ") or "(pas de sortie)"
+        # The CLI's output (names from Azure in it): no ``` of its own closes the block. Masked
+        # again here (MSK3): the CLI masks what it says, the queue's receipt is the bot's own.
+        short = _masked(output.strip(), esc)[:1800].replace("`", "ˋ") or "(pas de sortie)"
         await channel.send(f"```\n{short}\n```")
         if code != 0:
             await channel.send(f"✗ Refusé ou en échec (code {code}) : la carte reste ouverte.")
@@ -832,7 +916,7 @@ async def _execute_and_report(esc: dict, cli_args: list[str], channel, run, card
                 archived=True, reason="All escalations acknowledged"
             )
     except Exception as exc:
-        await channel.send(f"✗ Erreur lors de l'exécution : {discord_text(exc)} — la carte reste ouverte.")
+        await channel.send(f"✗ Erreur lors de l'exécution : {discord_text(_masked(exc, esc))} — la carte reste ouverte.")
     finally:
         if on_done is not None:
             on_done()
@@ -895,7 +979,7 @@ class _RestoreModal(discord.ui.Modal):
                 required=True, max_length=40)
             # Where the moment comes from, under the field (a description: 100 characters).
             self.field = discord.ui.Label(
-                text=text, description=(str(plan.get("why") or "")[:100] or None),
+                text=text, description=(_masked(plan.get("why") or "", esc)[:100] or None),
                 component=self.moment)
         else:
             self.moment = self.field = discord.ui.TextInput(
@@ -912,7 +996,7 @@ class _RestoreModal(discord.ui.Modal):
         try:
             before = restore_plan.parse_moment(self.moment.value)
         except ValueError as exc:
-            await interaction.response.send_message(f"✗ {discord_text(exc)}", ephemeral=True)
+            await interaction.response.send_message(f"✗ {discord_text(_masked(exc, self.esc))}", ephemeral=True)
             return
         await interaction.response.defer()
         loop = asyncio.get_running_loop()
@@ -928,18 +1012,19 @@ class _RestoreModal(discord.ui.Modal):
 
 
 def _points_text(esc: dict, before: str, plan: dict, points: list[dict], unread: str) -> str:
-    """What the confirmation shows: the moment, where it came from, the points before it."""
-    vm = str(esc.get("resource_id") or "?").rstrip("/").split("/")[-1]
+    """What the confirmation shows: the moment, where it came from, the points before it — no
+    subscription's id (MSK3): a vault's error names its scope."""
+    vm = masking.name_said(esc.get("resource_id")) or "?"
     lines = [f"🔄 Restaurer **{discord_text(vm)}** au point le plus récent d'avant "
              f"{discord_code(before)}"]
     if plan.get("why") and plan.get("before") == before:
-        lines.append(f"Moment proposé : {discord_text(plan['why'])}")
+        lines.append(f"Moment proposé : {discord_text(_masked(plan['why'], esc))}")
     from glorfindel.restore_plan import moment_warning
     warning = moment_warning(str(esc.get("resource_id") or ""), before)
     if warning:
-        lines.append(f"⚠ {discord_text(warning)}")
+        lines.append(f"⚠ {discord_text(_masked(warning, esc))}")
     if unread:
-        lines.append(f"Points de restauration illisibles : {discord_text(unread[:300])}")
+        lines.append(f"Points de restauration illisibles : {discord_text(_masked(unread, esc)[:300])}")
     elif not points:
         lines.append("Aucun point de restauration avant ce moment : le restore sera refusé.")
     else:
@@ -982,7 +1067,7 @@ class _RestoreConfirmView(discord.ui.View):
             await self.card_message.edit(view=self.card_view)
         args = restore_plan.restore_args(self.esc["resource_id"], self.before)
         await interaction.channel.send(  # type: ignore[union-attr]
-            f"⚡ **{discord_text(interaction.user.display_name)}** → {discord_code('glorfindel ' + ' '.join(args))}")
+            f"⚡ **{discord_text(interaction.user.display_name)}** → {discord_code('glorfindel ' + _args_said(args))}")
         asyncio.create_task(_execute_and_report(self.esc, args, interaction.channel,
                                                 lambda: _run_cli(args), self.card_message,
                                                 self.card_view, on_done=lambda: _RESTORING.discard(esc_id)))
@@ -1038,7 +1123,7 @@ class _VerdictButton(discord.ui.Button):
         try:
             esc_module.set_verdict(self.esc["id"], self.verdict, "")
         except (KeyError, ValueError) as exc:
-            await interaction.response.send_message(f"✗ {discord_text(exc)}", ephemeral=True)
+            await interaction.response.send_message(f"✗ {discord_text(_masked(exc, self.esc))}", ephemeral=True)
             return
         # One click: a judged card is also acknowledged (Jonathan, 16/10).
         esc_module.resolve(self.esc["id"])
@@ -1130,7 +1215,7 @@ def _build_embed(esc: dict) -> discord.Embed:
     for name, value, inline in fields:
         embed.add_field(name=name, value=value, inline=inline)
     embed.add_field(name="État", value=_card_state_line(esc), inline=False)
-    embed.set_footer(text=f"Run: {esc.get('run_id', '')} · ID: {esc['id'][:8]}")
+    embed.set_footer(text=f"Run: {_masked(esc.get('run_id', ''), esc)} · ID: {esc['id'][:8]}")
     return embed
 
 

@@ -622,15 +622,19 @@ def _action_words(action: str, resource_id: str, run_id: str, confidence: float,
         f"⚠ {note[:300]}" if note else ""]))
     level = "ok" if verified else ("unknown" if verified is None else "failed")
     # Text from outside (the model's, Azure's names): one line each, no link nor mention
-    # of its own (SEC6, N-09 — glorfindel/chat_text.py).
-    resource_short = webhook_code(resource_id.split("/")[-1])
+    # of its own (SEC6, N-09 — glorfindel/chat_text.py), and no subscription's id (MSK3: the
+    # model's explanation may copy the signal's id). `text` goes to the notices' store as written:
+    # masked where it is shown (vm_notices.bot_message, webhook_payload).
+    from glorfindel.masking import ids_masked, name_said, subscriptions_known
+    subs = subscriptions_known(resource_id)
+    resource_short = webhook_code(name_said(resource_id))
     payload = {"text": (
         f":robot_face: *{_ACTION_LABELS.get(action) or webhook_text(action)}* {status}  |  `{resource_short}`\n"
         f"`{webhook_code(action)}` · {webhook_text(meta)}\n"
-        f"> {webhook_text(explanation[:800])}\n"
-        + (f"> ⚠ {webhook_text(note[:300])}\n" if note else "")
+        f"> {webhook_text(ids_masked(explanation[:800], subscriptions=subs))}\n"
+        + (f"> ⚠ {webhook_text(ids_masked(note[:300], subscriptions=subs))}\n" if note else "")
         + (f"> {webhook_text(card_said)}\n" if card_said else "")
-        + f"`{webhook_code(run_id)}`"
+        + f"`{webhook_code(ids_masked(run_id, subscriptions=subs))}`"
     )}
     return f"{label} {status}", text, level, payload
 
@@ -654,7 +658,9 @@ def notify_action(
     by the webhook, in the channel, even with the bot). `note`: what the action left open (an
     isolation by rules: Azure's DNS / IMDS — S7). `key` (`executed_key`): once per action, after a
     restart too (glorfindel/vm_notices.py); none, every call is said. `card`: the card to judge
-    (`EXECUTED_TYPE`), named. Where it went (`bot`, `webhook`, `relayed`, `none`, `already`); a
+    (`EXECUTED_TYPE`), named. Where it went (`bot`, `webhook`, `relayed`, `pending`, `none`,
+    `already`) — `pending`: relayed by the webhook, the bot mute, its post unanswered within
+    `vm_notices.POST_DEADLINE_S`: the post goes on, and settles the notice at its end (JUG2b). A
     notification never stops the agent.
 
     JUG2 (#765): the bot configured but mute (its heartbeat absent or stale: glorfindel/bot_beat.py),
@@ -730,9 +736,12 @@ def _notify(esc: dict) -> None:
         import requests
 
         from glorfindel.chat_text import webhook_code, webhook_text
+        from glorfindel.masking import ids_masked, name_said, subscriptions_known
         # The reason carries the model's words and Azure's names (an Entra application's
-        # display name): one line, no link nor mention of its own (SEC6, N-09).
-        resource_short = webhook_code(esc["resource_id"].split("/")[-1])
+        # display name): one line, no link nor mention of its own (SEC6, N-09) — and no
+        # subscription's id (MSK3, #772): the message is pasted from the channel too.
+        subs = subscriptions_known(str(esc.get("resource_id") or ""))
+        resource_short = webhook_code(name_said(esc["resource_id"]))
         label = _ACTION_LABELS.get(esc["action"]) or webhook_text(esc["action"])
         type_label = _ESCALATION_LABELS.get(
             esc["escalation_type"], esc["escalation_type"]
@@ -743,8 +752,8 @@ def _notify(esc: dict) -> None:
             "text": (
                 f":rotating_light: *{label}*  |  `{resource_short}`\n"
                 f"`{webhook_code(esc['action'])}` · {meta}\n"
-                f"> {webhook_text(esc['reason'][:500])}\n"
-                f"`{webhook_code(esc['run_id'])}`"
+                f"> {webhook_text(ids_masked(esc['reason'], subscriptions=subs)[:500])}\n"
+                f"`{webhook_code(ids_masked(esc['run_id'], subscriptions=subs))}`"
             )
         }, timeout=5)
     except Exception:

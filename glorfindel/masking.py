@@ -9,6 +9,10 @@ resource group — and a subscription's id left bare becomes « <abonnement> ».
 Nothing else changes: the signal, the state files and the machine's journals (JSONL) keep the
 full id, and a command still takes one. What the model sees is never filtered here: this module
 is called by the rendering, after the decision.
+
+The Discord bot and the webhook follow the same rule (MSK3, #772): their messages are posted in a
+channel, from which they are pasted too (glorfindel/bot.py, glorfindel/vm_notices.py,
+glorfindel/escalations.py). A button keeps the full id in its arguments: it acts, it is not shown.
 """
 from __future__ import annotations
 
@@ -54,6 +58,15 @@ def resource_said(resource_id: str) -> str:
     if group:
         return f"groupe {group}"
     return "l'abonnement"
+
+
+def name_said(resource_id) -> str:
+    """The short name a chat says a resource by — the last segment of its id —, never a
+    subscription's id: a subscription's own id (« /subscriptions/<guid> ») is « <abonnement> »
+    (MSK3: the bot's threads and fields, the webhook's messages)."""
+    text = str(resource_id or "").strip()
+    short = text.rstrip("/").rsplit("/", 1)[-1]
+    return ids_masked(short, subscriptions=subscriptions_known(text))
 
 
 def subscriptions_known(text: str = "", environ=None, subscriptions=()) -> set[str]:
