@@ -540,20 +540,35 @@ def for_bot() -> list[dict]:
 
 
 def _short(resource_id) -> str:
-    return str(resource_id or "").rstrip("/").rsplit("/", 1)[-1] or "?"
+    """The VM's short name, never a subscription's id (MSK3)."""
+    from glorfindel.masking import name_said
+    return name_said(resource_id) or "?"
+
+
+def _shown(notice: dict) -> dict:
+    """The notice as a chat shows it (MSK3, #772): its title and text without a subscription's id —
+    an ARM id said by its name and group (glorfindel/masking.py). A copy: the store keeps the text
+    as written."""
+    from glorfindel.masking import shown
+    rid = str(notice.get("resource_id") or "")
+    return {**notice, **{k: shown(str(notice.get(k, "") or ""), rid) for k in ("title", "text")}}
 
 
 def bot_message(notice: dict) -> str:
-    """The notice as the bot posts it in the VM's thread: every outside word escaped (SEC6)."""
+    """The notice as the bot posts it in the VM's thread: every outside word escaped (SEC6), no
+    subscription's id (MSK3) — the fallback's Discord message too (`fallback`)."""
     from glorfindel.chat_text import discord_code, discord_text
+    notice = _shown(notice)
     icon = LEVELS.get(notice.get("level"), LEVELS["unknown"])[0]
     return (f"{icon} **{discord_text(notice.get('title', ''))}** · {discord_code(_short(notice.get('resource_id')))}\n"
             f"> {discord_text(' '.join(str(notice.get('text', '')).split())[:1500])}")
 
 
 def webhook_payload(notice: dict) -> dict:
-    """The notice in the webhook's (Slack) format: one line each, no link nor mention (SEC6)."""
+    """The notice in the webhook's (Slack) format: one line each, no link nor mention (SEC6), no
+    subscription's id (MSK3)."""
     from glorfindel.chat_text import webhook_code, webhook_text
+    notice = _shown(notice)
     icon = LEVELS.get(notice.get("level"), LEVELS["unknown"])[1]
     return {"text": (f"{icon} *{webhook_text(notice.get('title', ''))}*  |  "
                      f"`{webhook_code(_short(notice.get('resource_id')))}`\n"

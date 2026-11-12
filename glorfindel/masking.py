@@ -9,11 +9,16 @@ resource group — and a subscription's id left bare becomes « <abonnement> ».
 Nothing else changes: the signal, the state files and the machine's journals (JSONL) keep the
 full id, and a command still takes one. What the model sees is never filtered here: this module
 is called by the rendering, after the decision.
+
+The Discord bot and the webhook follow the same rule (MSK3, #772): their messages are posted in a
+channel, from which they are pasted too (glorfindel/bot.py, glorfindel/vm_notices.py,
+glorfindel/escalations.py). A button keeps the full id in its arguments: it acts, it is not shown.
 """
 from __future__ import annotations
 
 import os
 import re
+import shlex
 
 _GUID = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
 # An ARM id, with or without its leading slash, up to what cannot be in one: a blank, a quote,
@@ -54,6 +59,91 @@ def resource_said(resource_id: str) -> str:
     if group:
         return f"groupe {group}"
     return "l'abonnement"
+
+
+def name_said(resource_id) -> str:
+    """The short name a chat says a resource by — the last segment of its id —, never a
+    subscription's id: a subscription's own id (« /subscriptions/<guid> ») is « <abonnement> »
+    (MSK3: the bot's threads and fields, the webhook's messages)."""
+    text = str(resource_id or "").strip()
+    short = text.rstrip("/").rsplit("/", 1)[-1]
+    return ids_masked(short, subscriptions=subscriptions_known(text))
+
+
+UNNAMED = "<id: glorfindel list --ids>"
+
+
+def group_and_name(resource_id) -> str:
+    """What a command pasted from a chat names a VM by (MSK3, review): « <groupe>/<nom> » — never
+    its full id (the subscription's), never its name alone. The name is checked where the message is
+    written (the bot, on Imladris) but the command is pasted elsewhere (an operator's terminal, whose
+    discovery may know only a homonym of another group); `glorfindel` resolves this form on its own
+    host, the group and the name matching, or refuses (glorfindel/cli.py, `_resolve_resource_id`).
+    An id with no group: « <id: glorfindel list --ids> »."""
+    parts = str(resource_id or "").strip().rstrip("/").split("/")
+    low = [p.lower() for p in parts]
+    # A VM's own id only: « …/virtualMachines/<nom> », never a child of it (an extension) nor
+    # another resource (a NSG) — the command would name another resource (review 2).
+    if "resourcegroups" in low[:-1] and len(low) >= 2 and low[-2] == "virtualmachines":
+        i = low.index("resourcegroups")
+        if i + 1 < len(parts) - 1 and parts[i + 1] and parts[-1]:
+            # A group may hold « ( ) » (Azure allows them): quoted, the shell takes the command.
+            return shlex.quote(f"{parts[i + 1]}/{parts[-1]}")
+    return UNNAMED
+
+
+# A glorfindel command that names a VM: its verb, then (unblock) its IP, then the VM.
+_COMMAND_VM = re.compile(
+    r"(?P<head>\bglorfindel\s+(?:release|reset|revert|restore|activate|snapshot|unblock\s+\S+)\s+)"
+    r"(?P<vm>[^\s`'\"<>]+)")
+
+
+def commands_named(text, resource_id: str = "") -> str:
+    """`text` whose glorfindel commands name their VM as one pasted elsewhere can (MSK3, review): an
+    ARM id of a VM by `group_and_name`, the card's own VM's short name too. Another word (a
+    placeholder, another VM's name, an option) is left as it is. Run before `ids_masked`: masked, an id
+    in a command would be « vm (groupe rg) », no command at all."""
+    own = str(resource_id or "").strip().rstrip("/")
+    own_short = own.rsplit("/", 1)[-1].lower() if "/" in own else ""
+
+    def said(m: re.Match) -> str:
+        vm = m.group("vm")
+        bare = vm.rstrip(_TRAILING + ",)")
+        if "subscriptions/" in bare.lower() and "/virtualmachines/" in bare.lower():
+            named = group_and_name(bare)
+        elif own_short and bare.lower() == own_short and "/virtualmachines/" in own.lower():
+            named = group_and_name(own)
+        else:
+            return m.group(0)
+        return m.group("head") + named + vm[len(bare):]
+    return _COMMAND_VM.sub(said, str(text if text is not None else ""))
+
+
+_HEX = re.compile(r"[0-9A-Fa-f-]")
+
+
+def cut(text, n: int) -> str:
+    """`text` cut to `n` characters at most, never inside a run of hexadecimal digits and dashes (a
+    GUID's): the cut moves back to the run's start (MSK3, review). A text kept as written, masked
+    later (a notice's): cut mid-GUID, the masking would no longer read it, and its first characters
+    would show."""
+    s = str(text if text is not None else "")
+    if len(s) <= n:
+        return s
+    i = n
+    while i > 0 and _HEX.match(s[i - 1]) and _HEX.match(s[i]):
+        i -= 1
+    return s[:i]
+
+
+def shown(text, resource_id: str = "", subscriptions=()) -> str:
+    """A text as a chat shows it (MSK3): its glorfindel commands naming their VM by
+    `<groupe>/<nom>` (`commands_named`), then masked (`ids_masked`) — the subscriptions learned from
+    the text as written, before the rewriting took its ids away (review 2: a bare id of a
+    subscription only a command's id named passed), from `resource_id` and from `subscriptions`."""
+    text = str(text if text is not None else "")
+    subs = set(subscriptions or ()) | subscriptions_known(text) | subscriptions_known(str(resource_id or ""))
+    return ids_masked(commands_named(text, resource_id), subscriptions=subs)
 
 
 def subscriptions_known(text: str = "", environ=None, subscriptions=()) -> set[str]:

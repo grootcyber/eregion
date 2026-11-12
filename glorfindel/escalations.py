@@ -617,20 +617,31 @@ def _action_words(action: str, resource_id: str, run_id: str, confidence: float,
     card_said = f"Carte à juger : {card[:8]} (console, TO JUDGE)." if card else ""
     # The card and the run before the explanation: a text cut (the webhook's 800 characters, the
     # fallback's: JUG2 review) never loses them.
+    from glorfindel.masking import cut, name_said, subscriptions_known
+    from glorfindel.masking import shown as masked
+    # Kept as written in the notices' store, masked where it is shown — so cut never inside a GUID
+    # (MSK3 review: a cut mid-id let its first characters through the masking).
     text = " ".join(filter(None, [
-        f"{action} · {meta}.", card_said, f"Run {run_id}." if run_id else "", explanation[:800],
-        f"⚠ {note[:300]}" if note else ""]))
+        f"{action} · {meta}.", card_said, f"Run {run_id}." if run_id else "", cut(explanation, 800),
+        f"⚠ {cut(note, 300)}" if note else ""]))
     level = "ok" if verified else ("unknown" if verified is None else "failed")
     # Text from outside (the model's, Azure's names): one line each, no link nor mention
-    # of its own (SEC6, N-09 — glorfindel/chat_text.py).
-    resource_short = webhook_code(resource_id.split("/")[-1])
+    # of its own (SEC6, N-09 — glorfindel/chat_text.py), and no subscription's id (MSK3: the
+    # model's explanation may copy the signal's id). `text` goes to the notices' store as written:
+    # masked where it is shown (vm_notices.bot_message, webhook_payload). Masked first, then cut
+    # (MSK3 review); a command in it names its VM by `<groupe>/<nom>`.
+    subs = subscriptions_known(resource_id)
+    resource_short = webhook_code(name_said(resource_id))
+
+    def shown(value: str) -> str:
+        return masked(value, resource_id, subs)
     payload = {"text": (
-        f":robot_face: *{_ACTION_LABELS.get(action) or webhook_text(action)}* {status}  |  `{resource_short}`\n"
-        f"`{webhook_code(action)}` · {webhook_text(meta)}\n"
-        f"> {webhook_text(explanation[:800])}\n"
-        + (f"> ⚠ {webhook_text(note[:300])}\n" if note else "")
+        f":robot_face: *{_ACTION_LABELS.get(action) or webhook_text(shown(action))}* {status}  |  `{resource_short}`\n"
+        f"`{webhook_code(shown(action))}` · {webhook_text(shown(meta))}\n"
+        f"> {webhook_text(shown(explanation)[:800])}\n"
+        + (f"> ⚠ {webhook_text(shown(note)[:300])}\n" if note else "")
         + (f"> {webhook_text(card_said)}\n" if card_said else "")
-        + f"`{webhook_code(run_id)}`"
+        + f"`{webhook_code(shown(run_id))}`"
     )}
     return f"{label} {status}", text, level, payload
 
@@ -654,7 +665,9 @@ def notify_action(
     by the webhook, in the channel, even with the bot). `note`: what the action left open (an
     isolation by rules: Azure's DNS / IMDS — S7). `key` (`executed_key`): once per action, after a
     restart too (glorfindel/vm_notices.py); none, every call is said. `card`: the card to judge
-    (`EXECUTED_TYPE`), named. Where it went (`bot`, `webhook`, `relayed`, `none`, `already`); a
+    (`EXECUTED_TYPE`), named. Where it went (`bot`, `webhook`, `relayed`, `pending`, `none`,
+    `already`) — `pending`: relayed by the webhook, the bot mute, its post unanswered within
+    `vm_notices.POST_DEADLINE_S`: the post goes on, and settles the notice at its end (JUG2b). A
     notification never stops the agent.
 
     JUG2 (#765): the bot configured but mute (its heartbeat absent or stale: glorfindel/bot_beat.py),
@@ -730,21 +743,31 @@ def _notify(esc: dict) -> None:
         import requests
 
         from glorfindel.chat_text import webhook_code, webhook_text
+        from glorfindel.masking import name_said, subscriptions_known
+        from glorfindel.masking import shown as masked
         # The reason carries the model's words and Azure's names (an Entra application's
-        # display name): one line, no link nor mention of its own (SEC6, N-09).
-        resource_short = webhook_code(esc["resource_id"].split("/")[-1])
-        label = _ACTION_LABELS.get(esc["action"]) or webhook_text(esc["action"])
+        # display name): one line, no link nor mention of its own (SEC6, N-09) — and no
+        # subscription's id (MSK3, #772): the message is pasted from the channel too. The action,
+        # the TTP, the severity as the bot shows them (the model may name any action); a command of
+        # the reason names its VM by `<groupe>/<nom>` (MSK3 review).
+        rid = str(esc.get("resource_id") or "")
+        subs = subscriptions_known(rid)
+
+        def shown(value) -> str:
+            return masked(str(value or ""), rid, subs)
+        resource_short = webhook_code(name_said(esc["resource_id"]))
+        label = _ACTION_LABELS.get(esc["action"]) or webhook_text(shown(esc["action"]))
         type_label = _ESCALATION_LABELS.get(
             esc["escalation_type"], esc["escalation_type"]
         )
-        parts = [esc.get("ttp", ""), esc.get("severity", ""), type_label]
+        parts = [shown(esc.get("ttp", "")), shown(esc.get("severity", "")), type_label]
         meta = webhook_text(" · ".join(filter(None, parts)))
         requests.post(url, json={
             "text": (
                 f":rotating_light: *{label}*  |  `{resource_short}`\n"
-                f"`{webhook_code(esc['action'])}` · {meta}\n"
-                f"> {webhook_text(esc['reason'][:500])}\n"
-                f"`{webhook_code(esc['run_id'])}`"
+                f"`{webhook_code(shown(esc['action']))}` · {meta}\n"
+                f"> {webhook_text(masked(esc['reason'], rid, subs)[:500])}\n"
+                f"`{webhook_code(shown(esc['run_id']))}`"
             )
         }, timeout=5)
     except Exception:

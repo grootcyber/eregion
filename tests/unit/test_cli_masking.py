@@ -131,15 +131,34 @@ def test_the_environment_s_subscription_is_masked_even_bare():
     _clean(masking.ids_masked(f"{VM} ({SUB})", environ={}))
 
 
+# Who may mask (MSK2, MSK3): the CLI and the bot wherever they render; the notices and the
+# escalations' webhook only in the functions that render a message — never the graph, the prompt,
+# the cycle, nor what a store keeps.
+_MASKERS = {"glorfindel/cli.py": None, "glorfindel/bot.py": None,
+            "glorfindel/vm_notices.py": {"_short", "_shown"},
+            "glorfindel/escalations.py": {"_action_words", "_notify"}}
+
+
 def test_only_the_cli_masks_never_what_the_model_sees():
-    """The masking is the display's: nothing of the graph, the prompt or the cycle imports it."""
-    users = []
+    """The masking is the display's: nothing of the graph, the prompt or the cycle imports it —
+    the CLI and the bot (MSK3) do, and the webhook's two renderings, inside them only."""
+    users: dict[str, set] = {}
     for path in (ROOT / "glorfindel").rglob("*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if any(_imports_masking(node)):
-                users.append(path.relative_to(ROOT).as_posix())
-    assert users == ["glorfindel/cli.py"]
+        rel = path.relative_to(ROOT).as_posix()
+        for outer in [tree, *(n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)))]:
+            body = outer.body
+            for node in (n for stmt in body for n in ast.walk(stmt)):
+                if any(_imports_masking(node)):
+                    users.setdefault(rel, set()).add(getattr(outer, "name", "<module>"))
+    assert set(users) == set(_MASKERS), users
+    for rel, where in _MASKERS.items():
+        if where is not None:
+            # ast.walk from the module sees every nested import too: the module's own entry is the
+            # functions' — only theirs, never one at the module's level.
+            assert users[rel] - {"<module>"} == where, (rel, users[rel])
+            tree = ast.parse((ROOT / rel).read_text(encoding="utf-8"))
+            assert not any(any(_imports_masking(n)) for n in tree.body), rel
 
 
 def _imports_masking(node):

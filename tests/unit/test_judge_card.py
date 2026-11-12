@@ -324,7 +324,7 @@ def test_the_bot_card_says_it_ran_and_offers_only_its_verdict(azure, posts):
     assert bot._make_action_button(card) is None                       # no execute, no revert
     labels = [getattr(i, "label", "") for i in view.children]
     assert "✓ Right" in labels and not any("Revert" in str(x) or "Restore" in str(x) for x in labels)
-    assert "glorfindel release web --yes" in bot._cli_command(card)
+    assert "glorfindel release rg-app1/web --yes" in bot._cli_command(card)     # <groupe>/<nom> (MSK3)
 
 
 # ── where it is said: the VM's thread with the bot, the webhook without ────────────────────────

@@ -181,19 +181,29 @@ def _resolve_resource_id(arg: str) -> str:
     vm-celebrimbor-bree` answered « not found in ? », 16/10). Two VMs of that name in two
     resource groups → refused, never the first one (third review, T1) — the state and the
     discovery together (SEC4c): one isolated, the other blocked, is two VMs too. A full id
-    (contains '/') or an unknown name is returned unchanged — the command then reports
-    'nothing to do' rather than crash on an unresolvable name.
+    (an ARM id, or any form with a '/' but `<groupe>/<nom>`) or an unknown short name is returned
+    unchanged — the command then reports 'nothing to do' rather than crash on an unresolvable name.
+
+    `<groupe>/<nom>` (MSK3, #772): what the Discord bot's commands to copy name a VM by — never its
+    full id (the subscription's), never its name alone, checked on the bot's host but pasted on
+    another (an operator's terminal, whose discovery may know only a homonym of another group).
+    Resolved on the same sources, its group AND its name matching, whatever their case; none known
+    here, or several (one group and one name in two subscriptions): refused — never the argument
+    passed to Azure as it is, never another VM.
     """
-    if "/" in arg:
+    text = str(arg or "").strip()
+    pair = _group_and_name(text)
+    if "/" in text and pair is None:
         return arg
     from glorfindel.actions import active_blocks, active_isolations
-    target = arg.lower()
+    target = (pair or ("", text))[1].lower()
+    group = (pair or ("", ""))[0].lower()
     found: dict[str, str] = {}             # one entry per VM: ids differ in case only
 
     def add(rid) -> None:
         rid = str(rid or "")
         key = rid.rstrip("/").lower()
-        if key and key.rsplit("/", 1)[-1] == target:
+        if key and key.rsplit("/", 1)[-1] == target and (pair is None or _group_of(key) == group):
             found.setdefault(key, rid)
 
     for entry in (*active_isolations(), *active_blocks()):
@@ -204,6 +214,10 @@ def _resolve_resource_id(arg: str) -> str:
             add(a.resource_id)
     except Exception:  # an unreadable cache must not break a command
         pass
+    if pair is not None and not found:
+        raise click.ClickException(
+            f"{text} : inconnue de ce poste — glorfindel list --ids (this terminal only), or the "
+            "full id (az vm show -g <groupe> -n <nom> --query id -o tsv)")
     if len(found) > 1:
         raise click.ClickException(
             f"{arg}: several VMs have this name — pass the full id:\n  "
@@ -211,6 +225,30 @@ def _resolve_resource_id(arg: str) -> str:
             + "\n(az vm show -g <groupe> -n <nom> --query id -o tsv, or glorfindel list --ids — "
               "this terminal only)")
     return next(iter(found.values()), arg)
+
+
+def _group_and_name(text: str) -> tuple[str, str] | None:
+    """(group, name) of `<groupe>/<nom>` — one « / », both sides given, no leading slash —, or None
+    (a short name, a full ARM id, anything else)."""
+    parts = str(text or "").split("/")
+    if len(parts) == 2 and all(p.strip() for p in parts) and parts[0].lower() != "subscriptions":
+        return parts[0].strip(), parts[1].strip()
+    return None
+
+
+def _group_of(resource_id: str) -> str:
+    """The resource group of an ARM id, lower case, or ""."""
+    low = str(resource_id or "").rstrip("/").lower().split("/")
+    if "resourcegroups" in low[:-1]:
+        i = low.index("resourcegroups")
+        return low[i + 1] if i + 1 < len(low) else ""
+    return ""
+
+
+def _say_vm(resource_id: str) -> None:
+    """The VM a command acts on, as resolved, said before it acts — `--yes` too (MSK3): a name
+    pasted from elsewhere is read back by its name and its group, never its id."""
+    console.print(f"  VM       : {_esc_markup(_vm_said(resource_id))}")
 
 
 def _vms_said(resource_ids) -> list[str]:
@@ -397,7 +435,11 @@ def door(resource_id: str, days: float, as_json: bool):
 @click.option("--dry-run", is_flag=True, help="Show what would be done without executing.")
 @click.option("--yes", is_flag=True, help="Skip confirmation prompt.")
 def release(resource_id: str, dry_run: bool, yes: bool):
-    """Release an isolation applied by Glorfindel on a VM."""
+    """Release an isolation applied by Glorfindel on a VM.
+
+    RESOURCE_ID: the VM's short name, <group>/<name> (what the Discord bot's commands give) or
+    its full id; the VM resolved is said before anything is done, --yes too.
+    """
     from glorfindel.actions import AzureConnector
 
     resource_id = _resolve_resource_id(resource_id)
@@ -442,7 +484,11 @@ def release(resource_id: str, dry_run: bool, yes: bool):
 @click.option("--dry-run", is_flag=True)
 @click.option("--yes", is_flag=True, help="Skip confirmation prompt.")
 def unblock(ip: str, resource_id: str, dry_run: bool, yes: bool):
-    """Remove a block rule created by Glorfindel for a suspicious IP."""
+    """Remove a block rule created by Glorfindel for a suspicious IP.
+
+    RESOURCE_ID: the VM's short name, <group>/<name> (what the Discord bot's commands give) or
+    its full id; the VM resolved is said before anything is done, --yes too.
+    """
     from glorfindel.actions import AzureConnector
 
     resource_id = _resolve_resource_id(resource_id)
@@ -1519,9 +1565,15 @@ def snapshot(resource_id: str, vault: str | None, dry_run: bool, yes: bool, wait
         annatar clean <scenario.yaml>
         glorfindel snapshot <resource_id> --yes --wait   # --wait for setup
         annatar run <scenario.yaml>
+
+    RESOURCE_ID: the VM's short name, <group>/<name> (what the Discord bot's commands give) or
+    its full id; the VM resolved is said before anything is done, --yes too.
     """
     from glorfindel.actions import AzureConnector
 
+    # MSK3 (review 2): the card's step « glorfindel snapshot <groupe>/<nom> --yes » is resolved here,
+    # as every command that acts on a VM — it was passed to Azure as it is, and failed.
+    resource_id = _resolve_resource_id(resource_id)
     vault, vault_rg, _ = _backup_vault_from_config(vault)
 
     connector = AzureConnector(dry_run=dry_run)
@@ -1655,6 +1707,9 @@ def restore(resource_id: str, vault: str, dry_run: bool, yes: bool, keep_isolate
 
     The recovery point is the newest one before the attack began (SEC4c): --before, or the
     moment of this VM's card (SEC8); never the newest point when neither says when.
+
+    RESOURCE_ID: the VM's short name, <group>/<name> (what the Discord bot's commands give) or
+    its full id; the VM resolved is said before anything is done, --yes too.
     """
     from glorfindel.actions import AzureConnector
 
@@ -2142,7 +2197,7 @@ def _print_expected_sudo(es: dict) -> None:
 def activate(vm: str, yes: bool):
     """Turn on autonomous response for a VM after its readiness check (lot L6).
 
-    VM: short name or full resource id. Shows the verdict and every reserve; a VM that
+    VM: short name, <group>/<name> or full resource id. Shows the verdict and every reserve; a VM that
     is not ready is refused. The reserves accepted are recorded: one that appears later
     puts the VM back in human_only, with an alert.
     """
@@ -2155,6 +2210,7 @@ def activate(vm: str, yes: bool):
         raise click.ClickException(
             f"{vm}: resource id unknown — pass the full id, or start `glorfindel watch` "
             "so discovery finds the VM.")
+    _say_vm(rid)                                # read back before anything, --yes too (MSK3)
 
     try:
         quarantine = load_glorfindel_config().isolation.quarantine_nsg
@@ -2381,6 +2437,7 @@ def _do_reset(resource_id: str, yes: bool, dry_run: bool, from_azure: bool = Fal
     from glorfindel.gestures import reset_apply, reset_targets
 
     resource_id = _resolve_resource_id(resource_id)
+    _say_vm(resource_id)                        # read back before anything, --yes too (MSK3)
     if from_azure:
         _do_reset_from_azure(resource_id, yes, dry_run)
         return
@@ -2443,6 +2500,9 @@ def reset(resource_id: str, yes: bool, dry_run: bool, from_azure: bool):
     everything in one command. For finer control use 'release' or 'unblock'.
     With --from-azure, local state is not needed (lost state file, another
     container's state): the VM's own Glorfindel rules are found on its NSGs.
+
+    RESOURCE_ID: the VM's short name, <group>/<name> (what the Discord bot's commands give) or
+    its full id; the VM resolved is said before anything is done, --yes too.
     """
     _do_reset(resource_id, yes, dry_run, from_azure)
 

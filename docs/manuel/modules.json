@@ -1111,6 +1111,19 @@
    "doc": "docs/operations.md"
   },
   {
+   "id": "g-bot-sans-abonnement",
+   "composant": "glorfindel",
+   "poste": "g-agir",
+   "nom": "No message of the Discord bot nor of the webhook shows a subscription's id: the commands to copy name the VM by its group and name, which the CLI resolves on its own host or refuses",
+   "etat": "main",
+   "release": "0.5",
+   "lots": [
+    "MSK3"
+   ],
+   "issue": 772,
+   "doc": "docs/glorfindel.md"
+  },
+  {
    "id": "g-dossier-isolation",
    "composant": "glorfindel",
    "poste": "g-verifier",
