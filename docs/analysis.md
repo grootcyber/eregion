@@ -236,8 +236,8 @@ abandonné, effacer `report.error` ne suffit pas : redémarrer la watch (sur la 
 `docker restart eregion-watch`), ou écrire le rapport à la main
 (`docker exec eregion-watch python -m analysis.campaign_report runs/glorfindel/campaigns/<id>`).
 
-**Où le lire.** Dans le journal de la watch (`make glorfindel-host-logs`, lignes
-`[campaign-report]`), ou avec `make glorfindel-host-campaign-report CAMPAIGN=<id>`, qui affiche
+**Où le lire.** Dans le journal de la watch (`make imladris-logs`, lignes
+`[campaign-report]`), ou avec `make imladris-campaign-report CAMPAIGN=<id>`, qui affiche
 le `report.md`, ou à défaut le `report.error`. L'index `campaign_runs` reste sur le disque de la
 VM : `~/.eregion/analysis`, monté dans le conteneur de la watch (`docker-compose.yml`). Le
 montage et l'image, qui copie maintenant `analysis/`, prendront effet au prochain redéploiement
@@ -491,7 +491,7 @@ python -m analysis.campaign_index runs/glorfindel/campaigns/<id> …     # celle
 avec ce code :
 
 ```bash
-make glorfindel-host-ssh
+make imladris-ssh
 # aucun rapport en attente ? (liste vide attendue)
 docker exec eregion-watch python -c "from pathlib import Path; from analysis import hosted_report as h; print([p.name for p in h.ready(Path('runs/glorfindel/campaigns'))])"
 docker exec eregion-watch python -m analysis.campaign_index --all runs/glorfindel/campaigns
@@ -504,7 +504,7 @@ docker exec eregion-watch python -m analysis.campaign_index --all runs/glorfinde
   (`hosted_report.ready` : venues du canal, `done`, sans `report.md`, avec des essais
   restants). Une liste vide veut dire qu'aucun rapport n'est en cours ni à venir. Une campagne
   qui attend encore les décisions de Glorfindel y figure aussi : la watch dit « waiting for
-  Glorfindel's decision » dans son journal (`make glorfindel-host-logs`). Si la liste n'est pas
+  Glorfindel's decision » dans son journal (`make imladris-logs`). Si la liste n'est pas
   vide, il faut attendre que le `report.md` soit écrit, puis relancer la vérification. Une
   campagne arrivée pendant la commande : relancer la commande après son rapport (elle est
   idempotente).
@@ -533,7 +533,7 @@ Deux indicateurs de la finalité, calculés par le code depuis les fichiers d'un
 ([`analysis/containment.py`](../analysis/containment.py)), jamais par le modèle. Le rapport les
 rend dans sa section « Réponse ». La page de la campagne dans la console les recalcule, depuis les
 mêmes fichiers. `python -m analysis.containment runs/glorfindel/campaigns/<id> [--fault-run <run>] [--json]`
-les donne seuls ; sur Imladris : `make glorfindel-host-containment CAMPAIGN=<id>`. Lancée seule, la
+les donne seuls ; sur Imladris : `make imladris-containment CAMPAIGN=<id>`. Lancée seule, la
 commande lit l'inscription des VM d'une campagne venue du canal comme le rapport
 (`check_enrollment`, H-1) : sans geste de plus (BL1c). `check_enrollment` retire d'abord les
 `AZURE_CLIENT_*` vides que compose passe sous `docker exec`, comme la watch (#205) : le rapport, la
@@ -808,7 +808,7 @@ bloquer. Le taux se calcule sur **toutes** les pannes de Gothmog, pas seulement 
 campagne (`analysis/fault_rate.py`) :
 
 ```bash
-make glorfindel-host-fault-rate [DAYS=30] [JSON=1]   # sur Imladris, l'hôte de la watch
+make imladris-fault-rate [DAYS=30] [JSON=1]          # sur Imladris, l'hôte de la watch
 python -m analysis.fault_rate [--runs-dir runs] [--days 30] [--json]
 ```
 
@@ -915,7 +915,7 @@ doivent donc y être :
   `host.env` déjà écrit, poser la ligne à la main, ici et sur la VM :
   `EREGION_ANALYSIS_MODEL=<un autre modèle que celui de Glorfindel>` dans
   `infra/glorfindel-host/host.env` et dans `~/eregion/.env`, puis `docker compose up -d watch`.
-  `make glorfindel-host-model MODEL=…` lance ensuite `python -m analysis.separation` dans la
+  `make imladris-model MODEL=…` lance ensuite `python -m analysis.separation` dans la
   watch. Il sort avec 0 quand les deux modèles diffèrent, et avec 2 quand le modèle choisi pour
   Glorfindel est celui de l'analyse : il le dit (« les rapports et les tris de campagne seront
   refusés »), et la cible dit quoi poser. Le code 1 reste celui d'une erreur (une image d'avant

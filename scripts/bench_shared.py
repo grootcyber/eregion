@@ -224,7 +224,7 @@ def read_h0(ask: str, vm: str, run_id: str = "", env: dict | None = None, timeou
         raise RuntimeError("BENCH_H0_SSH vide : lancer par make (la commande ssh d'Imladris vient du Makefile)")
     if not host_key_pinned(base):
         raise RuntimeError("la clé d'hôte d'Imladris n'est pas vérifiée par son empreinte (HOST_SSH_FINGERPRINT, "
-                           "make glorfindel-host-known) : rien n'est envoyé")
+                           "make imladris-known) : rien n'est envoyé")
     if not VM_NAME.fullmatch(vm) or (run_id and not RUN_ID.fullmatch(run_id)):
         raise RuntimeError("nom de VM ou run_id invalide")
     inspect = ["docker", "inspect", "--format", "{{json .Mounts}}|{{.Image}}", "eregion-watch"]

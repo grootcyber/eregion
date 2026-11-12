@@ -1727,7 +1727,7 @@ markdown-it).
 | M871 | le statut affiché à côté d'une proposition pris du texte du modèle | `triage.md` montre une décision que le code n'a pas écrite |
 | M872 | le Markdown du modèle rendu tel quel | son texte dessine un « Statut (écrit par le code) » à lui |
 | M873 | un nouveau tri écrit sans le verrou | une décision prise pendant ce temps est perdue |
-| M874 | un refus du modèle d'analyse sort avec 1, comme une erreur | `glorfindel-host-model` ne donne pas son conseil |
+| M874 | un refus du modèle d'analyse sort avec 1, comme une erreur | `imladris-model` ne donne pas son conseil |
 | M875 | l'en-tête de `triage.md` ne dit plus que seul le statut du code fait foi | le texte du modèle peut passer pour une décision |
 | M876 | la raison d'une entrée écartée rendue sans échappement | un statut en gras écrit dans « Écarté » |
 | M877 | une ligne ne finit que sur `\n` | un `\r` du modèle ouvre un item de liste à côté des vraies propositions |

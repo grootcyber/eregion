@@ -31,7 +31,7 @@ crue ou refusée). Tests : `tests/unit/test_watch_key.py`, `tests/unit/test_watc
   watch ne pourrait pas tirer sa clé. `make glorfindel-shell` ne la monte pas : une watch lancée
   dans ce shell tirerait une clé éphémère, refusée par les injecteurs.
 - **La moitié publique s'épingle** : `make watch-key` (la watch de ce poste) ou
-  `make glorfindel-host-watch-key` (celle d'Imladris, lue dans son conteneur par SSH, clé d'hôte épinglée)
+  `make imladris-watch-key` (celle d'Imladris, lue dans son conteneur par SSH, clé d'hôte épinglée)
   donnent `export EREGION_WATCH_KEY=ed25519:<base64 de 32 octets>` et l'empreinte
   (`SHA256:…`, la forme d'une empreinte SSH). Jamais la clé privée.
 
@@ -60,7 +60,7 @@ Sont refusés, la raison dite :
 
 | Cas | Ce que dit le refus |
 |---|---|
-| aucune clé épinglée, ou pas une clé | `no watch key pinned (EREGION_WATCH_KEY)` et le geste (`make watch-key`, `make glorfindel-host-watch-key`, `orodruin.env`) |
+| aucune clé épinglée, ou pas une clé | `no watch key pinned (EREGION_WATCH_KEY)` et le geste (`make watch-key`, `make imladris-watch-key`, `orodruin.env`) |
 | un battement sans signature (une watch d'avant SEC19, une main qui écrit là, une watch sans clé) | `unsigned` |
 | signé d'une autre clé | `signed by another key`, les deux empreintes |
 | une signature qui ne tient pas (un champ changé après la signature, l'empreinte d'une autre clé recopiée, une signature faite pour un autre usage) | `its signature does not hold` |

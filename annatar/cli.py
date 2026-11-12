@@ -654,7 +654,7 @@ def _publish_campaign(cdir, runs_dir, state, without_glorfindel=False) -> bool:
     elif state == "done":
         console.print(f"[green]Campaign published to Imladris[/green] ({len(names)} file(s)) — the "
                       f"hosted watch writes its report: runs/glorfindel/campaigns/{cid}/report.md on Imladris "
-                      f"(make glorfindel-host-campaign-report CAMPAIGN={cid})")
+                      f"(make imladris-campaign-report CAMPAIGN={cid})")
     else:
         console.print(f"[yellow]Campaign published to Imladris[/yellow] ({len(names)} file(s)) — "
                       f"'{state}': no report is written on its own; by hand, where the "

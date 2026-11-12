@@ -180,8 +180,8 @@ resource "azurerm_linux_virtual_machine" "host" {
     version   = "latest"
   }
 
-  # Docker et le dépôt seulement. Rien ne démarre avant `make glorfindel-host-push` (host.env,
-  # config) puis `make glorfindel-host-start`. Changer ce bloc remplace la VM : l'état de
+  # Docker et le dépôt seulement. Rien ne démarre avant `make imladris-push` (host.env,
+  # config) puis `make imladris-start`. Changer ce bloc remplace la VM : l'état de
   # Glorfindel (~/.glorfindel, mémoire) est perdu avec elle.
   custom_data = base64encode(<<-EOF
     #!/bin/bash
@@ -216,7 +216,7 @@ resource "azurerm_role_assignment" "bench_logs_reader" {
 # Run Command est sorti du rôle de la réponse : « Eregion Glorfindel Session Drain »
 # (infra/identities/glorfindel-session-drain.json, créé une fois par tenant avec `az role definition
 # create`, comme les deux autres), attribué à la portée de chaque VM de session_drain_vms — une
-# liste explicite, gardée dans session_drain.auto.tfvars, commité : un `make glorfindel-host-up`
+# liste explicite, gardée dans session_drain.auto.tfvars, commité : un `make imladris-up`
 # ordinaire la relit et ne retire rien —, jamais sur le groupe. Pas le tag d'inscription : il dit
 # où un injecteur peut agir, pas ce que Glorfindel défend (bree, jamais inscrite, est la VM du banc
 # qui reçoit de vraies attaques), et il se pose avec Microsoft.Resources/tags/write, sans écrire la
@@ -270,8 +270,8 @@ resource "azurerm_role_assignment" "session_drain_principals" {
 # du dépôt). Un rôle à part de la coupure des sessions : d'autres principaux (jamais la watch),
 # une autre liste, et sur un hôte où une seule identité tiendrait les deux, deux attributions qui
 # ne se confondent pas. Jamais l'identité de H0 : il ne restaure pas (décision du 31/10). Chaque
-# nom relu sur Azure : une faute de frappe échoue au plan. `make glorfindel-host-down` les retire
-# avec le reste de cet état ; le prochain `make glorfindel-host-up` les reprend.
+# nom relu sur Azure : une faute de frappe échoue au plan. `make imladris-down` les retire
+# avec le reste de cet état ; le prochain `make imladris-up` les reprend.
 data "azurerm_virtual_machine" "restore" {
   for_each            = toset(var.restore_vms)
   name                = each.value

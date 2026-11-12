@@ -1,6 +1,6 @@
 """WL1 (#595): the bench's rules reach the client's layer of the hosted Glorfindel (Imladris), merged.
 
-`make glorfindel-host-client-rules` reads Imladris's `~/.glorfindel/client_rules.yaml` by ssh, merges each
+`make imladris-client-rules` reads Imladris's `~/.glorfindel/client_rules.yaml` by ssh, merges each
 rule of `infra/glorfindel-host/client_rules.bench.yaml` into it by name
 (`infra/glorfindel-host/host_client_rules.py`), reads the result back as the watch will, and puts it
 in place on Imladris under the layer's lock, only if the layer did not change since it was read. Then the
@@ -76,7 +76,7 @@ def _make(tmp_path, *args, touch_on_push: bool = False):
            "FAKE_LOG": str(log), "FAKE_H0": str(home), "FAKE_TOUCH": "1" if touch_on_push else ""}
     for k in ("HOST_SSH_FINGERPRINT", "HOST_KNOWN_HOSTS", "HOST_IP", "HOST_SSH_KEY", "CLIENT_RULES"):
         env.pop(k, None)
-    res = subprocess.run(["make", "-s", "--no-print-directory", "-C", str(ROOT), "glorfindel-host-client-rules",
+    res = subprocess.run(["make", "-s", "--no-print-directory", "-C", str(ROOT), "imladris-client-rules",
                           f"HOST_IP={IP}", f"PYTHON={sys.executable}", *args],
                          env=env, capture_output=True, text=True, timeout=120)
     return res, log.read_text().splitlines(), home
@@ -167,18 +167,18 @@ def test_a_disable_of_the_same_name_on_h0_does_not_stop_the_pushed_rule(tmp_path
 
 def test_the_target_waits_on_the_host_key_check():
     text = (ROOT / "Makefile").read_text()
-    assert "\nglorfindel-host-client-rules: glorfindel-host-known\n" in text
+    assert "\nimladris-client-rules: imladris-known\n" in text
 
 
 def test_the_target_is_phony_and_in_make_help():
     text = (ROOT / "Makefile").read_text()
     phony = text[text.index("\n.PHONY:"):]
     phony = phony[:phony.index("\n\n")].replace("\\\n", " ").split()
-    assert "glorfindel-host-client-rules" in phony
+    assert "imladris-client-rules" in phony
     if shutil.which("make"):
         res = subprocess.run(["make", "-s", "--no-print-directory", "-C", str(ROOT), "help"],
                              capture_output=True, text=True, timeout=60)
-        assert "make glorfindel-host-client-rules" in res.stdout
+        assert "make imladris-client-rules" in res.stdout
 
 
 # ── The merge itself ────────────────────────────────────────────────────────────────

@@ -6,7 +6,7 @@ its previous campaign.
 
 On Imladris (Jonathan; the index is on the VM's disk, mounted into the watch's container):
 
-    make glorfindel-host-ssh
+    make imladris-ssh
     docker exec eregion-watch python -m analysis.campaign_index --all runs/glorfindel/campaigns
 
 The choice of the previous campaign (analysis/campaign_report.py ``previous_campaign``)

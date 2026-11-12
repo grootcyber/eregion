@@ -24,7 +24,7 @@ seul sur le banc, dans le mode de chaque VM.
   - **La coupure des sessions, VM par VM** (SEC11). **Aujourd'hui**, le rôle de la réponse posé à
     la main porte encore Run Command, sur toute VM du banc. **Après les gestes de SEC11**
     (`docs/operations.md`, « Depuis un rôle de la réponse d'avant SEC11 », dans leur ordre :
-    créer le rôle ; le plan relu, puis `make glorfindel-host-up` ; juste après, deux portées de
+    créer le rôle ; le plan relu, puis `make imladris-up` ; juste après, deux portées de
     VM (`terraform output session_drain_vms`, ou `az role assignment list --assignee <principal>
     --all --query "[?roleDefinitionName=='Eregion Glorfindel Session Drain']" -o table`) ; ensuite seulement, Run Command retiré du
     rôle de la réponse ; et après ce geste, la préparation de gondolin et de bree, sans aucune
@@ -33,10 +33,10 @@ seul sur le banc, dans le mode de chaque VM.
     donne sur chaque VM de `session_drain_vms` — gondolin et bree, gardée dans
     `session_drain.auto.tfvars`, commité —, jamais sur le groupe, par cet état Terraform (chaque
     VM relue sur Azure : une faute de frappe échoue au plan ; `terraform output
-    session_drain_vms`). Un `make glorfindel-host-up` ordinaire relit la liste et ne retire rien.
+    session_drain_vms`). Un `make imladris-up` ordinaire relit la liste et ne retire rien.
     Une VM hors de la liste est isolée quand même ; la coupure y est refusée et dite sur la carte.
     Une VM de la liste que Celebrimbor reconstruit perd son attribution avec elle (l'attribution
-    porte l'id de la VM) : elle la retrouve au prochain `make glorfindel-host-up` ; d'ici là, sa
+    porte l'id de la VM) : elle la retrouve au prochain `make imladris-up` ; d'ici là, sa
     préparation dit `no_drain`, et elle agit en `human_only`.
   - **La neutralisation avant un restore, VM par VM** (SEC17). Imladris ne restaure pas, et ne reçoit
     jamais ce droit. La restauration part du poste ; la watch d'Imladris la lit ensuite sur Azure, avec
@@ -45,9 +45,9 @@ seul sur le banc, dans le mode de chaque VM.
     `docs/glorfindel.md`, « La reprise lue sur Azure »). Elle reconnaît le principal qui restaure
     par `GLORFINDEL_RESTORE_PRINCIPALS` : l'object id de la console, celui de `restore_principals`
     (`az ad sp show --id "$EREGION_CONSOLE_AZURE_CLIENT_ID" --query id -o tsv`). Il se pose sur le
-    poste : dans le `.envrc`, que `make glorfindel-host-env` copie dans un `host.env` neuf ; sur un
+    poste : dans le `.envrc`, que `make imladris-env` copie dans un `host.env` neuf ; sur un
     Imladris en place (`host_env.py` n'écrase pas un `host.env` existant : le jeton de la console
-    changerait), à la main dans `infra/glorfindel-host/host.env`, puis `make glorfindel-host-push`.
+    changerait), à la main dans `infra/glorfindel-host/host.env`, puis `make imladris-push`.
     Pris au prochain démarrage de la watch. Vide, chaque levée lue sur Azure est une carte. La forme
     du `caller` dans le journal d'activité (appId ou object id) reste à mesurer. Mais son état Terraform porte, pour le banc, « Eregion Glorfindel Restore
     Neutralize » (Run Command, sorti du rôle Restore) sur chaque VM de `restore_vms` (gondolin,
@@ -91,7 +91,7 @@ seul sur le banc, dans le mode de chaque VM.
     refusée, la variable nommée, jamais sa valeur : elle injecterait une variable dans `host.env`,
     serait interpolée par compose, ou ferait refuser tout le fichier ; `--check` refuse un guillemet
     ouvert jamais fermé, et une barre oblique inverse entre guillemets.
-  - **Un `make glorfindel-host-push` garde le mode de chaque VM** tel qu'il est sur Imladris
+  - **Un `make imladris-push` garde le mode de chaque VM** tel qu'il est sur Imladris
     (décision de Jonathan, 02/11 ; avant, SEC7 remettait toutes les VM en `human_only` à
     chaque push, et la posture se redonnait dans la console). Le push lit la config en place
     par la connexion ssh qu'il ouvre déjà, puis `host_config.py` envoie :
@@ -105,7 +105,7 @@ seul sur le banc, dans le mode de chaque VM.
       (`vm-*`) n'est pas reporté, ces VM partent en `human_only` ; et c'est dit.
 
     Le push affiche, VM par VM, le mode envoyé et sa provenance (« gardé d'Imladris », ou
-    `human_only` et pourquoi). **`make glorfindel-host-push HUMAN_ONLY=1`** est le geste
+    `human_only` et pourquoi). **`make imladris-push HUMAN_ONLY=1`** est le geste
     d'urgence : toutes les VM remises en `human_only` d'un coup, pour revenir à un Imladris qui ne
     fait rien seul (la console les redonne, une à une, après leur contrôle de préparation).
     **Ne pas changer un mode dans la console pendant un push** : la config d'Imladris est lue avant
@@ -115,7 +115,7 @@ seul sur le banc, dans le mode de chaque VM.
     geste d'urgence (`HUMAN_ONLY=0` ou vide : les modes gardés) ; il ne relit pas Imladris avant
     d'envoyer : il n'en emporte rien, et une relecture qui échoue ne le bloque pas.
     Le CD, lui, ne touche ni `host.env` ni la config.
-  - **Un nouveau `host.env`** (`make glorfindel-host-env`) part en lecture seule
+  - **Un nouveau `host.env`** (`make imladris-env`) part en lecture seule
     (`GLORFINDEL_READ_ONLY=1`) : la posture se donne à la main, sur un hôte qui doit répondre.
 - **Pas une cible.** Hors du groupe du banc, sans tag `eregion-target`, sans DCR vers le
   Log Analytics du banc : la découverte (Heartbeat) ne la voit pas, Glorfindel ne peut pas
@@ -125,7 +125,7 @@ seul sur le banc, dans le mode de chaque VM.
   Alertes : Discord ou webhook, en sortie.
 - **Sans secret dans Terraform.** La clé du modèle et les jetons sont dans `host.env`
   (ignoré par git), copié à la main sur la VM. Aucun secret Azure : l'identité managée.
-- **La clé du fournisseur configuré, seule** (OL1, #525). `make glorfindel-host-env` exige ce que
+- **La clé du fournisseur configuré, seule** (OL1, #525). `make imladris-env` exige ce que
   lit le fournisseur de `GLORFINDEL_LLM_MODEL` (son préfixe ; la règle :
   `eregion_core/models.py`, `required_env`), et rien d'autre :
 
@@ -141,9 +141,9 @@ seul sur le banc, dans le mode de chaque VM.
   Un autre fournisseur, ou un modèle sans préfixe, est refusé, avec la liste. Le message dit ce
   qui manque, jamais une valeur. `host.env` ne porte que les clés des fournisseurs des modèles
   configurés (celui de la décision, celui de l'analyse) : une autre clé de ton `.envrc` ne va
-  jamais sur Imladris. `make glorfindel-host-push` tient le `host.env` à la même règle
+  jamais sur Imladris. `make imladris-push` tient le `host.env` à la même règle
   (`host_env.py --check`), ses variables de modèle lues comme la watch les reçoit (une paire de
-  guillemets retirée ; `KEY=""` ou `KEY=   # note` vide) ; `make glorfindel-host-model` aussi,
+  guillemets retirée ; `KEY=""` ou `KEY=   # note` vide) ; `make imladris-model` aussi,
   sur une copie, avant d'écrire quoi que ce soit, ici ou sur la VM.
 
   L'IA d'analyse (`EREGION_ANALYSIS_MODEL`, Haiku par défaut) écrit les rapports de campagne,
@@ -160,23 +160,27 @@ le disque et l'IP publique.
 ## Déroulé
 
 ```bash
-make glorfindel-host-plan            # lecture seule ; OPERATOR_CIDR=<ip>/32, sinon ton IP du moment
-make glorfindel-host-up              # crée la VM (confirmation demandée) ; cloud-init installe Docker et clone le dépôt
-make glorfindel-host-env             # host.env depuis ton .envrc chargé (ou : copier host.env.example et remplir)
-make glorfindel-host-push            # host.env → ~/eregion/.env ; la config locale, le défaut en human_only, les modes d'Imladris gardés (HUMAN_ONLY=1 : tout en human_only)
+make imladris-plan                   # lecture seule ; OPERATOR_CIDR=<ip>/32, sinon ton IP du moment
+make imladris-up                     # crée la VM (confirmation demandée) ; cloud-init installe Docker et clone le dépôt
+make imladris-env                    # host.env depuis ton .envrc chargé (ou : copier host.env.example et remplir)
+make imladris-push                   # host.env → ~/eregion/.env ; la config locale, le défaut en human_only, les modes d'Imladris gardés (HUMAN_ONLY=1 : tout en human_only)
 make glorfindel-stop                 # arrête le Glorfindel local : deux watch = cartes en double
-make glorfindel-host-start REF=…     # un tag ou un commit (exigé), détaché ; construit l'image sur Imladris (le chemin de secours), lance watch + console (war-room) + bot
-make glorfindel-host-tunnel          # affiche l'URL de la console avec son jeton, puis tient le tunnel (Ctrl+C) ; le téléphone y passe par son propre tunnel SSH vers le poste (MOB1, docs/demarrer/mobile.md)
-make glorfindel-host-url             # l'URL de la console avec son jeton, seule
-make glorfindel-host-logs            # vérifier « heartbeat → N VM(s) » et l'absence d'erreur d'identité
-make glorfindel-host-status          # tout tourne ? VMs, sauvegardes, services, erreurs 24 h, cartes à juger
-make glorfindel-host-report          # rapport d'observation (SINCE=4w pour la période)
-make glorfindel-host-pull            # copie locale de ~/.glorfindel (verdicts, mémoire) — chaque semaine
-make glorfindel-host-down            # détruit la VM et son état (mémoire comprise)
+make imladris-start REF=…            # un tag ou un commit (exigé), détaché ; construit l'image sur Imladris (le chemin de secours), lance watch + console (war-room) + bot
+make imladris-tunnel-install         # une fois : l'unité du tunnel du poste vers la console (MOB2, docs/demarrer/mobile.md)
+make imladris-tunnel-on              # l'arme pour 12 h au plus (imladris-tunnel-off l'arrête) ; le téléphone y passe par son propre tunnel SSH vers le poste
+make imladris-url                    # l'URL de la console avec son jeton ; une ligne de plus si le tunnel n'est pas armé
+make imladris-tunnel                 # le secours (macOS, ou un coup d'œil sans armer les 12 h) : le tunnel au premier plan, jusqu'à Ctrl+C
+make imladris-logs                   # vérifier « heartbeat → N VM(s) » et l'absence d'erreur d'identité
+make imladris-status                 # tout tourne ? VMs, sauvegardes, services, erreurs 24 h, cartes à juger
+make imladris-report                 # rapport d'observation (SINCE=4w pour la période)
+make imladris-pull                   # copie locale de ~/.glorfindel (verdicts, mémoire) — chaque semaine
+make imladris-down                   # détruit la VM et son état (mémoire comprise)
 ```
 
-Au quotidien : `make glorfindel-host-status` (lecture seule, une vue), puis `make glorfindel-host-tunnel`, l'URL qu'il affiche, puis les boutons **✓ Right** / **✗ Wrong** des cartes de la console (TO JUDGE, page Glorfindel)
-(`docs/observation.md`) ; chaque semaine, `make glorfindel-host-report`. Rien à faire sur la
+Les commandes d'Imladris s'appellent toutes `make imladris-*` (IML1b, #747) ; les anciens noms (`glorfindel-host-*`, `mobile-*`) marchent encore, sans rien dire, jusqu'à IML2 (#689), et `make help` ne les montre plus.
+
+Au quotidien : `make imladris-status` (lecture seule, une vue), puis `make imladris-tunnel-on` et `make imladris-url`, l'URL qu'il donne, puis les boutons **✓ Right** / **✗ Wrong** des cartes de la console (TO JUDGE, page Glorfindel)
+(`docs/observation.md`) ; chaque semaine, `make imladris-report`. Rien à faire sur la
 VM elle-même.
 
 Les escalades arrivent dans Discord par le bot, qui tourne sur la VM (un fil par VM, avec
@@ -194,20 +198,22 @@ Glorfindel est toujours là ; un injecteur est actif dès que l'hôte tient un d
 fenêtre, un rapport, une campagne) — sur Imladris, ceux qui viennent d'Orodruin par le canal —, sinon
 son onglet est grisé. Les anciennes adresses (`/atelier`, `/api/atelier/*`) redirigent.
 
-- **L'URL** : `make glorfindel-host-tunnel` l'affiche avec son jeton (« Console → http://localhost:7007/?token=… »),
-  puis tient le tunnel ; `make glorfindel-host-url` l'affiche seule. Le jeton est posé une fois en
-  cookie ; l'URL n'a plus à être rouverte avec lui.
+- **L'URL** : `make imladris-url` la donne avec son jeton, le tunnel du poste armé
+  (`make imladris-tunnel-on`) ; pas armé, une ligne de plus le dit. Le secours, `make imladris-tunnel`,
+  l'affiche aussi (« Console → http://localhost:7007/?token=… »), puis tient le tunnel au premier
+  plan. `make console-url` ne donne que la console locale du poste (IML1b). Le jeton est posé une
+  fois en cookie ; l'URL n'a plus à être rouverte avec lui.
 - **Le jeton, sous ses deux noms.** `EREGION_CONSOLE_TOKEN`, ou son ancien nom,
   `GLORFINDEL_WARROOM_TOKEN` : la console prend le nouveau s'il n'est pas vide, sinon l'ancien
   (compose lui passe les deux, vides quand ils manquent). Le `host.env` d'Imladris n'a que l'ancien :
-  **rien à renommer**, il reste valide. Un nouvel hôte (`make glorfindel-host-env`) reçoit le
-  nouveau. `make glorfindel-host-url`, `-tunnel` et `-status` suivent la même règle : ils lisent
+  **rien à renommer**, il reste valide. Un nouvel hôte (`make imladris-env`) reçoit le
+  nouveau. `make imladris-url`, `-tunnel` et `-status` suivent la même règle : ils lisent
   le jeton sous l'un ou l'autre nom (`host.env` sur le poste, `~/eregion/.env` sur la VM), comme
   compose lit le fichier (la dernière ligne d'une clé l'emporte ; `# …` après la valeur et un
   blanc est un commentaire — mais `KEY=   # note` vaut « # note », pas une valeur vide, mesuré
-  avec `docker compose config`). `glorfindel-host-status` ne l'affiche jamais et ne le met sur
+  avec `docker compose config`). `imladris-status` ne l'affiche jamais et ne le met sur
   aucune ligne de commande (curl le lit sur son entrée) ; il dit « jeton refusé » si la console
-  le refuse, « aucun jeton » s'il n'y en a pas. `make glorfindel-host-push` vérifie d'abord le
+  le refuse, « aucun jeton » s'il n'y en a pas. `make imladris-push` vérifie d'abord le
   `host.env` (`host_env.py --check`) : il dit sous quel nom est le jeton, sans sa valeur, et
   refuse un fichier sans jeton (la console tournerait sans) ou dont le jeton est un commentaire —
   ou sans la clé du fournisseur de son modèle (OL1, plus haut).
@@ -216,30 +222,30 @@ son onglet est grisé. Les anciennes adresses (`/atelier`, `/api/atelier/*`) red
   donc avec une référence qui contient UI-1 (`REF=<commit>` ou un tag postérieur) : sinon la War
   Room de l'ancienne image démarrerait sans jeton (sur la boucle locale de la VM, mais sans jeton).
 - **Le service compose** garde son nom, `war-room` (conteneur `eregion-war-room`) :
-  `glorfindel-host-status` l'affiche « console  eregion-war-room ». Le renommer (`console`) est
+  `imladris-status` l'affiche « console  eregion-war-room ». Le renommer (`console`) est
   UI-1d, avec Jonathan : l'ancien conteneur garde le port 7007 tant qu'il n'est pas retiré.
 
 ### Ce que change le prochain redéploiement d'Imladris
 
 UI-1c ne change que le poste (`Makefile`, `status.sh`, `host_env.py`) : rien à redéployer pour
-lui. Si Imladris tourne encore une référence d'avant UI-1 (`make glorfindel-host-status` → « référence
-déployée »), le prochain `make glorfindel-host-start REF=<tag ou commit avec UI-1>` (avec Jonathan,
+lui. Si Imladris tourne encore une référence d'avant UI-1 (`make imladris-status` → « référence
+déployée »), le prochain `make imladris-start REF=<tag ou commit avec UI-1>` (avec Jonathan,
 `.envrc` chargé) :
 
 - **la watch et le bot ne changent pas** : mêmes commandes (`glorfindel watch`, `glorfindel bot`),
   mêmes variables, même état ;
 - **la console redémarre sous `eregion console`**, dans le même conteneur (`eregion-war-room`), sur
   le même port (`127.0.0.1:7007`), avec le même jeton (l'ancien nom suffit) ;
-- `host.env` ne change pas (pas de `make glorfindel-host-env` : il tirerait un nouveau jeton) ;
-  `make glorfindel-host-push` seulement si autre chose y a changé.
+- `host.env` ne change pas (pas de `make imladris-env` : il tirerait un nouveau jeton) ;
+  `make imladris-push` seulement si autre chose y a changé.
 
-Vérifier : `make glorfindel-host-status` → « ✓ console  eregion-war-room », « à juger : N » (et non
-« jeton refusé » ni « pas de réponse ») ; `make glorfindel-host-tunnel`, puis l'URL affichée : la
+Vérifier : `make imladris-status` → « ✓ console  eregion-war-room », « à juger : N » (et non
+« jeton refusé » ni « pas de réponse ») ; `make imladris-tunnel-on`, puis l'URL de `make imladris-url` : la
 Vue d'ensemble, l'onglet Glorfindel ; un ancien favori `/atelier` mène à `/`.
 
 ## Ce que la VM exécute (M-3, #183)
 
-- **Une référence nommée, jamais une branche.** `make glorfindel-host-start REF=v0.3.1` (un tag)
+- **Une référence nommée, jamais une branche.** `make imladris-start REF=v0.3.1` (un tag)
   ou `REF=<commit>` (7 à 40 chiffres hexadécimaux) ; **sans `REF`, rien n'est déployé** (SEC14,
   V-22) : ce chemin construit l'image sur Imladris, hors de la vérification de CI3, et ne prend donc
   jamais « le dernier tag » qu'il trouverait — un tag que quiconque peut écrire dans le dépôt
@@ -254,7 +260,7 @@ Vue d'ensemble, l'onglet Glorfindel ; un ancien favori `/atelier` mène à `/`.
   conteneurs ne l'écrivent plus (montage en lecture seule), une règle approuvée va dans la couche
   du client, `~/.glorfindel/client_rules.yaml`, qu'aucun checkout ne touche ; un fichier de règles
   modifié tient des règles approuvées avant P1, à migrer (« Migrer les règles approuvées vers la
-  couche du client », plus bas). `make glorfindel-host-status` relit les
+  couche du client », plus bas). `make imladris-status` relit les
   étiquettes sur le conteneur de la watch : « ✓ référence déployée : v0.3.1 (abc…) », ⚠ si le
   checkout a bougé depuis, si la VM est sur une branche, ou si l'image n'a pas d'étiquette (une
   image d'avant M-3). Revenir en arrière : `REF=<le tag précédent>`.
@@ -314,21 +320,21 @@ Vue d'ensemble, l'onglet Glorfindel ; un ancien favori `/atelier` mène à `/`.
    dépendances »).
 5. **Pousser, puis déployer** :
    ```bash
-   make glorfindel-host-push                 # host.env (avec DISCORD_ALLOWED_USERS) → ~/eregion/.env
-   make glorfindel-host-start REF=v0.3.1     # ou REF=<commit>
+   make imladris-push                        # host.env (avec DISCORD_ALLOWED_USERS) → ~/eregion/.env
+   make imladris-start REF=v0.3.1            # ou REF=<commit>
    ```
    La première fois, la VM est sur la branche `main` (clone de cloud-init) : le déploiement la
    passe en checkout détaché. S'il refuse pour « fichiers suivis modifiés », regarder
-   (`make glorfindel-host-ssh`, puis `git -C eregion status --short`) avant de toucher quoi que ce
+   (`make imladris-ssh`, puis `git -C eregion status --short`) avant de toucher quoi que ce
    soit. S'il refuse pour « modifié sur la VM (règles approuvées avant P1) » : « Migrer les
    règles approuvées vers la couche du client », plus bas. Dans les deux cas, rien n'a bougé :
    l'ancienne image tourne toujours.
-6. **Vérifier** : `make glorfindel-host-status` → « ✓ référence déployée : v0.3.1 (…) », les trois
-   conteneurs ✓, aucune erreur ; `make glorfindel-host-logs` → le bot dit « Boutons : 1
+6. **Vérifier** : `make imladris-status` → « ✓ référence déployée : v0.3.1 (…) », les trois
+   conteneurs ✓, aucune erreur ; `make imladris-logs` → le bot dit « Boutons : 1
    utilisateur(s) … » (et non « fermé par défaut ») ; un clic sur ✓ Right d'une carte dans Discord
    passe. Que chaque conteneur n'a que ses secrets, sans en afficher la valeur :
    ```bash
-   make glorfindel-host-ssh
+   make imladris-ssh
    for c in eregion-watch eregion-war-room eregion-bot; do echo "$c: $(docker exec $c env | cut -d= -f1 | grep -E 'KEY|TOKEN|SECRET|WEBHOOK' | grep -v '^GPG_KEY$' | sort | tr '\n' ' ')"; done
    ```
    (`GPG_KEY` vient de l'image `python:3.12-slim` : l'empreinte publique de la clé qui signe
@@ -338,8 +344,8 @@ Vue d'ensemble, l'onglet Glorfindel ; un ancien favori `/atelier` mène à `/`.
    UI-1, l'un des deux vide), `AZURE_CLIENT_SECRET`, `GLORFINDEL_WEBHOOK_URL` ; le bot,
    `DISCORD_BOT_TOKEN`, `AZURE_CLIENT_SECRET`. Aucune autre. La watch et la War Room ont aussi
    `GLORFINDEL_DISCORD_BOT=1` (le jeton du bot est posé, sans sa valeur).
-7. **En cas de problème** : `make glorfindel-host-start REF=<commit déployé avant>` (affiché par
-   l'ancien `glorfindel-host-status`, « commit déployé ») revient à l'image d'avant — sans
+7. **En cas de problème** : `make imladris-start REF=<commit déployé avant>` (affiché par
+   l'ancien `imladris-status`, « commit déployé ») revient à l'image d'avant — sans
    étiquette, le statut le dira « inconnue ».
 
 ### Règles approuvées : la couche du client (P1)
@@ -364,8 +370,8 @@ du canari azurerm dans `rg-eregion-canary` sous son propre principal (CAN2, #605
 Jonathan du 06/11 ; `docs/glorfindel.md`, « Le canari azurerm ») ; et `entra-sp-unusual-signin`,
 la règle livrée recopiée, sans les connexions OIDC du canari depuis les runners de GitHub (CAN3,
 #673, décision de Jonathan du 09/11 ; `docs/glorfindel.md`, « Les connexions OIDC du canari
-azurerm »). Rien ne les pose seul sur Imladris : ni le CD, ni `glorfindel-host-push`, ni
-`glorfindel-host-start`. Le geste est celui de Jonathan, depuis le poste, **une fois déployée une
+azurerm »). Rien ne les pose seul sur Imladris : ni le CD, ni `imladris-push`, ni
+`imladris-start`. Le geste est celui de Jonathan, depuis le poste, **une fois déployée une
 release qui contient WL1** (avant, la watch ne connaît pas `base_sha256` : elle charge la
 copie, même périmée, sans jamais dire sa dérive). Une couche d'Imladris qui tiendrait encore une copie
 avec `base_query_sha256` (le champ retiré) : la watch l'ignore, le dit, et la règle livrée charge
@@ -373,7 +379,7 @@ si elle n'est pas désactivée (sinon rien, comme pour toute entrée invalide de
 la remplace par son nom :
 
 ```bash
-make glorfindel-host-client-rules
+make imladris-client-rules
 ```
 
 - **Fondue, jamais copiée par-dessus** : la cible lit `~/.glorfindel/client_rules.yaml` d'Imladris par
@@ -421,12 +427,12 @@ grep -cE '^EREGION_RULE_CANARY_APPID=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f
 #    Contrôle croisé : cette valeur est le CallerAppId d'une des cartes nsg-change-outside-glorfindel
 #    du canari du 06/11 (sa ligne, dans la console) — un id, aucun secret :
 grep '^EREGION_RULE_CANARY_APPID=' $F
-make glorfindel-host-push        # host.env → ~/eregion/.env ; --check dit une valeur qui n'est pas un GUID
+make imladris-push               # host.env → ~/eregion/.env ; --check dit une valeur qui n'est pas un GUID
 # 2. La watch et la console la reçoivent : recréées (un `restart`, celui de l'étape 3 aussi, ne
 #    relit pas ~/eregion/.env) :
-make glorfindel-host-ssh         # puis, sur Imladris : cd eregion && docker compose up -d watch war-room
+make imladris-ssh                # puis, sur Imladris : cd eregion && docker compose up -d watch war-room
 # 3. La copie dans la couche du client d'Imladris ; la watch redémarre et `glorfindel rules` s'affiche :
-make glorfindel-host-client-rules
+make imladris-client-rules
 ```
 
 `glorfindel rules` doit montrer `nsg-change-outside-glorfindel` en `client (remplace)`, avec la
@@ -452,7 +458,7 @@ pousse sans release. La variable est déjà dans `host.env` et dans l'environnem
 (CAN2, étapes 1 et 2 ci-dessus) : le geste de Jonathan, depuis le poste, est la seule cible.
 
 ```bash
-make glorfindel-host-client-rules
+make imladris-client-rules
 ```
 
 `glorfindel rules` doit montrer `entra-sp-unusual-signin` en `client (remplace)`, avec la note
@@ -492,7 +498,7 @@ bree revient jusqu'à ce que la copie soit refaite. Elle le dit au démarrage, e
 périmée d'une règle livrée »), et `glorfindel rules` aussi (`sudo-privilege-escalation` en `base`).
 Reprendre la copie dans le dépôt (le test `tests/unit/test_bench_routine.py` échoue déjà dans la
 PR qui change la base ; la note donne la nouvelle empreinte), puis relancer
-`make glorfindel-host-client-rules`. Une règle livrée qui n'existe plus, ou qui ne chargerait
+`make imladris-client-rules`. Une règle livrée qui n'existe plus, ou qui ne chargerait
 pas (`enabled: false` dans la release, ou nommée dans le `disable` de la couche d'Imladris) : la copie
 tourne toujours, et c'est dit — jamais rien ne détecte plus sa technique. Pour revenir à la règle livrée : retirer la règle de
 `~/.glorfindel/client_rules.yaml` sur Imladris, puis `docker compose restart watch`.
@@ -514,10 +520,10 @@ n'a pas) : chargée comme « toutes les VM d'aucun backend », elle ne s'appliqu
 découverte, sans rien dire. `migrate-rules` lie une telle règle au backend de
 `glorfindel-config.yaml` qui surveille son workspace (`assets: [auto]`) : elle tourne alors sur
 toutes les VM de ce backend. Une règle approuvée pour une détection manquée peut se révéler
-bruyante : regarder ses détections et ses cartes les premiers jours (`make glorfindel-host-logs`,
+bruyante : regarder ses détections et ses cartes les premiers jours (`make imladris-logs`,
 la console), et la désactiver au besoin (`disable: [<nom>]` dans la couche).
 
-1. **Sur la VM** (`make glorfindel-host-ssh`, puis `cd eregion`) : mettre de côté le fichier
+1. **Sur la VM** (`make imladris-ssh`, puis `cd eregion`) : mettre de côté le fichier
    modifié et la base d'où il vient, dans `~/.glorfindel` (que les conteneurs voient), puis
    rendre le checkout propre (le stash garde une seconde copie) :
 
@@ -529,7 +535,7 @@ la console), et la désactiver au besoin (`disable: [<nom>]` dans la couche).
    git stash push -m regles-approuvees-p1 -- glorfindel/rules
    ```
 
-2. **Depuis le poste** : `make glorfindel-host-start REF=<tag avec P1>`. Il passe ; la watch
+2. **Depuis le poste** : `make imladris-start REF=<tag avec P1>`. Il passe ; la watch
    démarre avec la base seule, sans les règles approuvées (quelques minutes, jusqu'à l'étape 3).
 3. **Sur la VM** : ce qui part dans la couche (à sec), puis pour de bon, puis redémarrer la watch
    (elle lit les règles au démarrage ; la console les relit à chaque rafraîchissement) :
@@ -552,7 +558,7 @@ la console), et la désactiver au besoin (`disable: [<nom>]` dans la couche).
    couche `client` et, en `assets`, `auto (<backend>)` — `auto (aucun backend : inerte)` dit une
    règle restée inerte, avec sous le tableau la note « ne s'applique à aucune VM découverte ».
 4. **Une fois vérifié** (la règle dans `glorfindel rules`, la watch sans erreur dans
-   `make glorfindel-host-logs`), sur la VM, jeter le stash (le premier de la liste doit être
+   `make imladris-logs`), sur la VM, jeter le stash (le premier de la liste doit être
    `regles-approuvees-p1`) ; la copie reste dans `~/.glorfindel/migration-p1/` :
 
    ```bash
@@ -560,29 +566,29 @@ la console), et la désactiver au besoin (`disable: [<nom>]` dans la couche).
    git stash drop
    ```
 
-**Disque** : chaque `make glorfindel-host-start` reconstruit l'image ; les couches des anciennes images restaient dans containerd (Docker 29), jusqu'à 87 % d'un disque de 32 Go le 20/10, 25 Go récupérables. Le redéploiement purge maintenant les images orphelines (`docker image prune -f`), et `glorfindel-host-status` affiche l'occupation du disque. Depuis H1, chaque image est aussi étiquetée par sa référence (`eregion-glorfindel:v0.4.0`). Le ménage garde les trois plus récentes, plus celle qui tourne et celle d'avant : revenir à la précédente est un `docker tag`, pas une reconstruction. Le CD ne fait ce ménage qu'une fois la santé verte ; jamais à la bascule, pour que l'image du retour arrière reste.
+**Disque** : chaque `make imladris-start` reconstruit l'image ; les couches des anciennes images restaient dans containerd (Docker 29), jusqu'à 87 % d'un disque de 32 Go le 20/10, 25 Go récupérables. Le redéploiement purge maintenant les images orphelines (`docker image prune -f`), et `imladris-status` affiche l'occupation du disque. Depuis H1, chaque image est aussi étiquetée par sa référence (`eregion-glorfindel:v0.4.0`). Le ménage garde les trois plus récentes, plus celle qui tourne et celle d'avant : revenir à la précédente est un `docker tag`, pas une reconstruction. Le CD ne fait ce ménage qu'une fois la santé verte ; jamais à la bascule, pour que l'image du retour arrière reste.
 
-Les verdicts de l'observation et la mémoire ne vivent que sur le disque de la VM : `make glorfindel-host-pull` en garde une copie sur le poste (`~/.eregion/host-backups/`, les 30 dernières), et `make glorfindel-host-status` signale une copie de plus de 7 jours. Une VM éteinte (gondolin entre deux exercices) reste une semaine sur la carte (`GLORFINDEL_DISCOVERY_RETENTION_H=168` dans `host.env`, 8 h par défaut).
+Les verdicts de l'observation et la mémoire ne vivent que sur le disque de la VM : `make imladris-pull` en garde une copie sur le poste (`~/.eregion/host-backups/`, les 30 dernières), et `make imladris-status` signale une copie de plus de 7 jours. Une VM éteinte (gondolin entre deux exercices) reste une semaine sur la carte (`GLORFINDEL_DISCOVERY_RETENTION_H=168` dans `host.env`, 8 h par défaut).
 
 La mémoire (ChromaDB) part vide sur la VM : la mémoire locale ne contient que des cycles
 d'exercice non marqués (B2), qui n'ont rien à faire dans une observation.
 
 ## Le CD d'Imladris (H1, #244)
 
-**Publier une release, c'est déployer Imladris.** Un timer sur la VM la tire toutes les 5 minutes. Il la vérifie, **tire son image publiée par son digest et en vérifie la signature et la provenance** (CI3 : le CD ne construit jamais sur Imladris ; seul le déploiement à la main, le chemin de secours, construit une référence nommée, `REF` exigée), la préflighte, bascule, et revient en arrière si la santé échoue. Imladris reste fermé : il ne fait que sortir, vers l'API publique de GitHub (sans jeton), vers le registre (`ghcr.io`, ses blobs sur `pkg-containers.githubusercontent.com`, sans jeton), vers la racine de confiance de sigstore (`tuf-repo-cdn.sigstore.dev`) et vers le webhook de `#deploy`. Le Terraform d'Imladris n'a aucune règle sortante : la règle par défaut d'Azure (`AllowInternetOutBound`) laisse tout cela passer, rien n'est à ouvrir (lu dans `main.tf` ; à confirmer sur la VM par `make glorfindel-host-cd-check`, qui fait chacun de ces appels).
+**Publier une release, c'est déployer Imladris.** Un timer sur la VM la tire toutes les 5 minutes. Il la vérifie, **tire son image publiée par son digest et en vérifie la signature et la provenance** (CI3 : le CD ne construit jamais sur Imladris ; seul le déploiement à la main, le chemin de secours, construit une référence nommée, `REF` exigée), la préflighte, bascule, et revient en arrière si la santé échoue. Imladris reste fermé : il ne fait que sortir, vers l'API publique de GitHub (sans jeton), vers le registre (`ghcr.io`, ses blobs sur `pkg-containers.githubusercontent.com`, sans jeton), vers la racine de confiance de sigstore (`tuf-repo-cdn.sigstore.dev`) et vers le webhook de `#deploy`. Le Terraform d'Imladris n'a aucune règle sortante : la règle par défaut d'Azure (`AllowInternetOutBound`) laisse tout cela passer, rien n'est à ouvrir (lu dans `main.tf` ; à confirmer sur la VM par `make imladris-cd-check`, qui fait chacun de ces appels).
 
 **Les sessions ne publient jamais une release** : elles la préparent en brouillon (`gh release create --draft`), et Jonathan clique « Publish ». Depuis SEC12, une fois posée par Jonathan, une règle du dépôt le tient : les tags `v*` (création, mise à jour, suppression) sont réservés à l'administrateur, et publier une release crée son tag. Les sessions agissent sous leur propre identité, une GitHub App (`docs/sessions.md`, « L'identité des sessions » et « Les règles du dépôt »).
 
 ### Installer (une fois, Jonathan)
 
 1. **Le webhook de `#deploy`.** Dans Discord, Paramètres du salon → Intégrations → Webhooks (par exemple « Imladris »). Mets son URL dans `~/.config/eregion/discord.env` (`EREGION_DISCORD_WEBHOOK_DEPLOY=…`), à côté de `EREGION_DISCORD_MENTION`.
-2. **`make glorfindel-host-cd-install`.** La commande :
+2. **`make imladris-cd-install`.** La commande :
    - copie l'agent dans `~/.eregion-cd/` sur la VM, avec `deploy.sh`, `notify_discord.py`, `chat_text.py` (l'échappement de SEC6, pour ce que `#deploy` dit d'une règle, H2) et `published_image.py` (CI3), jamais dans le checkout qu'il déploie ;
    - fait télécharger cosign à la VM (`published_image.py install-cosign`, depuis la release de sigstore sur GitHub) dans `~/.eregion-cd/cosign`, gardé seulement si son sha256 est celui épinglé dans `published_image.py` (v3.1.3) ; `install.sh` refuse un agent sans lui ;
    - y écrit `discord.env` en 600, avec le webhook et la mention seulement, passés par stdin. Le jeton du bot Eregion ne va jamais sur Imladris ;
    - installe les unités systemd avec sudo, **timer désactivé**.
-3. **`make glorfindel-host-cd-check`, à blanc.** La commande vérifie la dernière release, tire son image publiée par son digest, la vérifie et passe le préflight, dont **la config d'Imladris sous la lecture stricte d'A3**. Elle ne bascule pas, et dit le résultat dans le terminal et dans `#deploy`. Si la dernière release tourne déjà (le cas quand Imladris a été redéployé à la main sur elle, ou par l'agent d'avant CI3), elle tire son image publiée à côté (`check-<tag>`, effacée ensuite), la vérifie et la préflighte : le chemin de la release suivante est éprouvé sur le vrai Docker d'Imladris.
-4. **Si c'est vert, `make glorfindel-host-cd-enable`.** Le passage suivant déploie.
+3. **`make imladris-cd-check`, à blanc.** La commande vérifie la dernière release, tire son image publiée par son digest, la vérifie et passe le préflight, dont **la config d'Imladris sous la lecture stricte d'A3**. Elle ne bascule pas, et dit le résultat dans le terminal et dans `#deploy`. Si la dernière release tourne déjà (le cas quand Imladris a été redéployé à la main sur elle, ou par l'agent d'avant CI3), elle tire son image publiée à côté (`check-<tag>`, effacée ensuite), la vérifie et la préflighte : le chemin de la release suivante est éprouvé sur le vrai Docker d'Imladris.
+4. **Si c'est vert, `make imladris-cd-enable`.** Le passage suivant déploie.
 
 ### Un passage
 
@@ -590,29 +596,29 @@ d'exercice non marqués (B2), qui n'ont rien à faire dans une observation.
    - la watch est sur la release : la santé, puis la release est gardée ou c'est le retour arrière ;
    - elle est encore sur la version d'avant, ou absente (coupé avant ou pendant le `compose up`) : Imladris est remis d'aplomb sur la version d'avant, et la bascule est dite « interrompue », pas malade ; elle est retentée au passage suivant. Interrompue une deuxième fois, elle est refusée, avec ta mention ;
    - elle tourne sur autre chose (redéployé à la main entre-temps) : le CD n'y touche pas.
-   `make glorfindel-host-cd-retry` garde une bascule interrompue.
+   `make imladris-cd-retry` garde une bascule interrompue.
 1. **La dernière release**, sur l'API publique (les brouillons et les pré-versions n'y figurent pas). Rien à faire si elle tourne déjà sur les trois conteneurs, ou si elle a déjà échoué ou été refusée. Un tag déjà vu sur un autre commit est refusé : un tag publié ne se réécrit pas.
    Si seule une partie des conteneurs tourne sur la release, `#deploy` le dit une fois.
 2. **Vérifier.** Son tag est sur `origin/main`, et jamais plus ancien que ce qui tourne (SEC12) :
    - **plus ancienne par sa version** (`vX.Y.Z`, comparée en nombres) **ou par son commit** (un ancêtre) que ce qui tourne, **ou que le plancher** : **refusée**, dite avec ta mention, le retour arrière nommé. Le plancher est la plus haute version déjà déployée sur ce Imladris, avec son commit (`state.json`, `floor`). Chaque déploiement le monte, ce qui tourne aussi (un déploiement à la main plus récent). Rien ne le baisse, ni un retour arrière, ni `retry` : remettre Imladris à la main sur une version plus ancienne ne rouvre pas la porte aux releases d'avant ;
      - **une release publiée puis retirée** (v0.5.0 déployée, puis supprimée parce qu'elle était fautive) laisse le plancher sur elle : la v0.4.x suivante sera refusée. Trois issues, au choix :
-       - `make glorfindel-host-cd-rollback TAG=<la release voulue>` : le retour arrière vers la série voulue. Le plancher reste où il est, et la release suivante doit le dépasser ;
+       - `make imladris-cd-rollback TAG=<la release voulue>` : le retour arrière vers la série voulue. Le plancher reste où il est, et la release suivante doit le dépasser ;
        - publier une version au-dessus du plancher (v0.5.1) qui porte la correction ;
-       - le CD en pause (`make glorfindel-host-cd-disable`), retirer la clé `floor` de `~/.eregion-cd/state.json` sur la VM, puis `make glorfindel-host-cd-enable`. Le passage suivant repart de ce qui tourne. C'est un geste de Jonathan sur Imladris ;
+       - le CD en pause (`make imladris-cd-disable`), retirer la clé `floor` de `~/.eregion-cd/state.json` sur la VM, puis `make imladris-cd-enable`. Le passage suivant repart de ce qui tourne. C'est un geste de Jonathan sur Imladris ;
      - **un plancher dont le commit est inconnu du dépôt de la VM** (un tag supprimé, puis la VM reclonée) : `git merge-base` ne sait pas ordonner, et chaque release est refusée, « ne se lit pas ». C'est voulu : jamais une release n'est tenue pour plus récente par défaut de lecture. L'issue est la troisième ci-dessus (la clé `floor` retirée, le CD en pause) ;
    - **jamais par défaut de lecture** : si ce qui tourne ne se lit pas (la watch sans étiquettes, absente), ou si `git merge-base` ne sait pas ordonner deux commits (code 128 : un commit inconnu du dépôt de la VM), la release est **refusée**, pas tenue pour plus récente. Un retour arrière demandé n'y change rien. Une release plus ancienne remise en « latest » ne ramène jamais Imladris en arrière seule. Avant SEC12, le CD passait en silence, et seulement par le commit. Si Imladris a été redéployé à la main sur un commit plus récent que la dernière release, celle-ci est refusée une fois, avec la mention, puis plus rien ;
-   - **le retour arrière se demande sur Imladris**, pour un tag : `make glorfindel-host-cd-rollback TAG=v0.4.9`. La release doit être publiée : un brouillon répond 404, une pré-version est refusée. Elle passe toutes les vérifications d'une release : sur `main`, checks verts, image signée tirée par son digest, préflight, santé. Le message de début dit « retour arrière demandé sur Imladris ». La release quittée est marquée « rolled back » : le timer ne la reprend pas seul, il faut une nouvelle release ou `make glorfindel-host-cd-retry`. Un retour arrière qui change de verrou passe aussi la garde du verrou (point 3) : l'attestation de la release visée porte sur un autre verrou de référence, et elle est le plus souvent refusée. Le chemin de secours reste alors `make glorfindel-host-start REF=<tag>`. **Une release d'avant le renommage du compte** (la v0.5.2 et avant, REN1) est toujours refusée : son image est signée par l'ancien nom du dépôt, que ce CD ne reconnaît plus. Même secours ;
-   - **la règle des tags**, lue sans jeton (`/repos/…/rulesets?targets=tag`, puis la règle) : une règle active dont les cibles couvrent `refs/tags/<tag>` et qui interdit création, mise à jour et suppression. Vue, le message de début la nomme (« 🔒 … réservé par la règle … »). Absente, `#deploy` le dit en orange, avec ta mention. Illisible, il le dit en orange, sans mention. Ce n'est **jamais un refus** : GitHub ne dit pas si ces routes répondent sans jeton, c'est une hypothèse à mesurer sur Imladris (`make glorfindel-host-cd-check`). `make glorfindel-host-cd-status` la dit aussi.
+   - **le retour arrière se demande sur Imladris**, pour un tag : `make imladris-cd-rollback TAG=v0.4.9`. La release doit être publiée : un brouillon répond 404, une pré-version est refusée. Elle passe toutes les vérifications d'une release : sur `main`, checks verts, image signée tirée par son digest, préflight, santé. Le message de début dit « retour arrière demandé sur Imladris ». La release quittée est marquée « rolled back » : le timer ne la reprend pas seul, il faut une nouvelle release ou `make imladris-cd-retry`. Un retour arrière qui change de verrou passe aussi la garde du verrou (point 3) : l'attestation de la release visée porte sur un autre verrou de référence, et elle est le plus souvent refusée. Le chemin de secours reste alors `make imladris-start REF=<tag>`. **Une release d'avant le renommage du compte** (la v0.5.2 et avant, REN1) est toujours refusée : son image est signée par l'ancien nom du dépôt, que ce CD ne reconnaît plus. Même secours ;
+   - **la règle des tags**, lue sans jeton (`/repos/…/rulesets?targets=tag`, puis la règle) : une règle active dont les cibles couvrent `refs/tags/<tag>` et qui interdit création, mise à jour et suppression. Vue, le message de début la nomme (« 🔒 … réservé par la règle … »). Absente, `#deploy` le dit en orange, avec ta mention. Illisible, il le dit en orange, sans mention. Ce n'est **jamais un refus** : GitHub ne dit pas si ces routes répondent sans jeton, c'est une hypothèse à mesurer sur Imladris (`make imladris-cd-check`). `make imladris-cd-status` la dit aussi.
 
    **Les checks de son commit, en deux groupes** (H1c, #518, décision de Jonathan du 04/11 : une release ne reste jamais bloquée parce que GitHub n'a pas fourni de runner). Le CD lit tous les check-runs du commit, sur toutes leurs pages, et les range par leur nom entier :
    - **Ceux qui bloquent** : les cinq checks requis de `main` (`lint + tests (py3.11)`, `lint + tests (py3.12)`, `terraform test (mock providers)`, `image (annatar)`, `image (glorfindel)`), et celui qui publie l'image que le CD tire (`publish (glorfindel)`, CI3).
      - Rouge, annulé, hors délai (`failure`, `cancelled`, `timed_out`, `action_required`, `startup_failure`, `stale`) : **refusée**, dite avec ta mention (« CI rouge sur … , un check requis : … »).
      - En cours ou en file : le CD attend le passage suivant, et le dit une fois (« ⏳ … attend sa CI »).
      - Absent : le CD l'attend une heure (« ⏳ … attend sa CI requise (« … ») », « … attend son image publiée », dit une fois), puis refuse. Chaque check a son compte.
-   - **Ceux qui ne sont que dits** : tous les autres (`tests (macOS, case-insensitive file system)`, `<composant> alone`, `compose profiles (Glorfindel in each)`, `dependency advisories`, `publish (annatar)`, `notify`…). Rouges ou annulés, `#deploy` le dit en orange, sans ta mention, une fois par tag et par check (« ⚠️ … check(s) non requis en échec … dit, sans retenir H0 ») ; en cours, ils ne retardent rien. Le cas du 04/11 : le commit de la 0.5.4 vert, sauf macOS annulé faute de runner. L'agent d'avant l'aurait refusée ; celui-ci la déploie et dit l'annulation.
+   - **Ceux qui ne sont que dits** : tous les autres (`tests (macOS, case-insensitive file system)`, `<composant> alone`, `compose profiles (Glorfindel in each)`, `dependency advisories`, `publish (annatar)`, `notify`…). Rouges ou annulés, `#deploy` le dit en orange, sans ta mention, une fois par tag et par check (« ⚠️ … check(s) non requis en échec … dit, sans retenir Imladris ») ; en cours, ils ne retardent rien. Le cas du 04/11 : le commit de la 0.5.4 vert, sauf macOS annulé faute de runner. L'agent d'avant l'aurait refusée ; celui-ci la déploie et dit l'annulation.
    - **Le nom entier, jamais un début** : un check nommé `lint + tests (py3.12) beta`, ou `Image (annatar)`, ne passe pas pour un requis. **Seuls les runs de GitHub Actions comptent** pour un check qui bloque (`app.slug` = `github-actions`, lu sur les commits de `main` le 04/11) : un run d'une autre App au nom d'un requis, vert, ne comble jamais un check absent ; rouge ou en cours, il bloque quand même. **Deux runs du même nom** (une relance, une seconde suite) : un rouge suffit à refuser, un en cours à attendre. **Terminé sans conclusion verte** (aucune, ou une que l'agent ne connaît pas) : refusé, jamais pris pour vert. Le nom dit dans `#deploy` perd d'abord toute URL (‹url›), adresse ou nom d'hôte (‹hôte›), puis ne garde que lettres, chiffres et `+ , . ( ) -` — ni `:` ni `/`, donc aucun lien que Discord ferait, ni mention, ni Markdown (SEC6).
-   - **D'où vient la liste** : une constante de l'agent installé, `REQUIRED_CHECKS` dans `eregion_cd.py`, jamais lue dans le dépôt ni dans la release : une release ne dit pas elle-même ce qui la retient. `tests/unit/test_host_cd.py` la garde égale à la liste de `docs/sessions.md` (« Les règles du dépôt »). **Un check ajouté ou retiré de la règle de `main` demande donc une PR qui change les deux, puis un `make glorfindel-host-cd-install`.** Une release d'avant CI4 (sans `terraform test`) attendrait une heure, puis serait refusée ; les releases d'avant REN1 le sont déjà.
-   - **Le journal** (`journalctl -u eregion-cd`) écrit les deux groupes à chaque passage, chaque check avec son état ; **le à blanc** (`make glorfindel-host-cd-check`) les dit dans le terminal et dans `#deploy`, sous « ✅ À blanc : … est prête » (« bloquent (les requis de main, l'image publiée) : … », « ne sont que dits : … ; N vert(s) »), et aussi quand la release tourne déjà (« ses checks : … »).
+   - **D'où vient la liste** : une constante de l'agent installé, `REQUIRED_CHECKS` dans `eregion_cd.py`, jamais lue dans le dépôt ni dans la release : une release ne dit pas elle-même ce qui la retient. `tests/unit/test_host_cd.py` la garde égale à la liste de `docs/sessions.md` (« Les règles du dépôt »). **Un check ajouté ou retiré de la règle de `main` demande donc une PR qui change les deux, puis un `make imladris-cd-install`.** Une release d'avant CI4 (sans `terraform test`) attendrait une heure, puis serait refusée ; les releases d'avant REN1 le sont déjà.
+   - **Le journal** (`journalctl -u eregion-cd`) écrit les deux groupes à chaque passage, chaque check avec son état ; **le à blanc** (`make imladris-cd-check`) les dit dans le terminal et dans `#deploy`, sous « ✅ À blanc : … est prête » (« bloquent (les requis de main, l'image publiée) : … », « ne sont que dits : … ; N vert(s) »), et aussi quand la release tourne déjà (« ses checks : … »).
 3. **Garde du verrou.** Si `requirements/glorfindel.txt` a changé depuis ce qui tourne, `requirements/harness.json` doit être signée par ta clé (SEC19, R-13 : son paquet `requirements/harness.json.sigstore.json` à côté, vérifié hors ligne avec la clé publique que `host.env` épingle, `EREGION_HARNESS_KEY`, jamais le dépôt ; ci-dessous « La signature de l'attestation ») et porter deux passages du harnais pour le modèle d'Imladris (celui de `.env`, sinon celui par défaut de la release) : le candidat, sur ce verrou (son sha256), et la référence, sur le verrou en service. Le CD juge le candidat contre la référence, cas par cas (H3, ci-dessous « L'attestation du harnais ») : il refuse une régression, jamais une variation.
 4. **La candidate** `eregion-glorfindel:<tag>`, **jamais construite sur Imladris** (CI3, `published_image.py`, `docs/operations.md`, « Les images publiées ») :
    - le digest de `ghcr.io/grootcyber/eregion-glorfindel:sha-<commit>`, lu sans jeton : le sha256 du manifeste lu (une indication : le tag peut bouger) ;
@@ -641,68 +647,69 @@ d'exercice non marqués (B2), qui n'ont rien à faire dans une observation.
      - **Une version d'avant H2 dans ce qui tourne** (sa CLI n'a pas `glorfindel rules check`) : rien à comparer, aucune règle ne fait revenir en arrière ; « non comparé » dans le message de succès, ou en orange avec ta mention si la candidate a une règle en erreur durable.
      - **Une release d'avant H2** (code 2 de click, et ses mots : « No such command », « No such option ») est gardée, « règles non vérifiées » dans le message de succès. Un autre code 2 (une option refusée) est dit en orange.
      - Le retour arrière ne relance pas les règles : la version d'avant n'a peut-être pas la commande.
-     - Les mots complets de chaque erreur (ceux d'Azure, d'A3) vont sur la sortie d'erreur de la commande, que le CD recopie dans son journal (privé, `make glorfindel-host-cd-status`), jamais dans `#deploy`.
+     - Les mots complets de chaque erreur (ceux d'Azure, d'A3) vont sur la sortie d'erreur de la commande, que le CD recopie dans son journal (privé, `make imladris-cd-status`), jamais dans `#deploy`.
    Le message de succès dit combien de règles ont répondu.
 8. **Si la santé est verte, le ménage des images** : la nouvelle et celle d'avant restent. **Si elle échoue, retour à ce qui tournait.** Son image est gardée : c'est un retag. Avant de basculer, le CD l'étiquette par sa référence si elle ne l'est pas encore (une image construite avant H1, comme celle de v0.3.1). La release est marquée et n'est plus retentée seule.
-9. **`#deploy`.** Le début, le succès et l'attente de la CI sont silencieux. Le refus, le retour arrière, un retour arrière raté, Imladris dépareillé et une erreur de l'agent portent ta mention. Le détail d'un refus (les mots d'A3, de compose, d'un build) reste dans le journal, `make glorfindel-host-cd-status`, parce qu'il peut nommer l'infrastructure.
+9. **`#deploy`.** Le début, le succès et l'attente de la CI sont silencieux. Le refus, le retour arrière, un retour arrière raté, Imladris dépareillé et une erreur de l'agent portent ta mention. Le détail d'un refus (les mots d'A3, de compose, d'un build) reste dans le journal, `make imladris-cd-status`, parce qu'il peut nommer l'infrastructure.
 
 ### Au quotidien
 
-- **`make glorfindel-host-cd-status`** : ce qui tourne, la dernière release, les derniers résultats, le journal du jour.
-- **Une release refusée ou revenue en arrière** ne se retente pas d'elle-même. Corriger, puis publier une nouvelle release, ou `make glorfindel-host-cd-retry`.
-- **SEC12 change l'agent** (`eregion_cd.py`) : la release qui le porte est déployée par l'agent d'avant, qui ne lit ni le plancher, ni la règle des tags, et n'a pas `rollback`. Puis `#deploy` demande la mise à jour : `make glorfindel-host-cd-install`, puis `make glorfindel-host-cd-check`, puis `make glorfindel-host-cd-enable` (l'installation laisse le timer désactivé). Ce qu'Imladris lit de la règle des tags sans jeton se voit dans `make glorfindel-host-cd-status` (« 🔒 … réservé par la règle « tags v* » », mesuré le 02/11) : `cd-check` ne la lit pas quand la release tourne déjà. Le plancher part de ce qui tourne au premier passage du nouvel agent.
-- **Revenir à une release plus ancienne** (SEC12) : `make glorfindel-host-cd-rollback TAG=vX.Y.Z`, une release publiée. Le CD la vérifie et la déploie comme toute release. Celle qu'il quitte n'est plus reprise seule. C'est le seul chemin vers une version plus ancienne : le timer la refuse. Pas vers une release d'avant REN1 (la v0.5.2 et avant), signée par l'ancien nom du dépôt : refusée, le secours est `make glorfindel-host-start REF=<tag>`, qui construit sur la VM. Le retour arrière automatique, après une santé rouge, n'est pas touché : il réétiquette l'image locale, sans rien tirer.
+- **`make imladris-cd-status`** : ce qui tourne, la dernière release, les derniers résultats, le journal du jour.
+- **Une release refusée ou revenue en arrière** ne se retente pas d'elle-même. Corriger, puis publier une nouvelle release, ou `make imladris-cd-retry`.
+- **SEC12 change l'agent** (`eregion_cd.py`) : la release qui le porte est déployée par l'agent d'avant, qui ne lit ni le plancher, ni la règle des tags, et n'a pas `rollback`. Puis `#deploy` demande la mise à jour : `make imladris-cd-install`, puis `make imladris-cd-check`, puis `make imladris-cd-enable` (l'installation laisse le timer désactivé). Ce qu'Imladris lit de la règle des tags sans jeton se voit dans `make imladris-cd-status` (« 🔒 … réservé par la règle « tags v* » », mesuré le 02/11) : `cd-check` ne la lit pas quand la release tourne déjà. Le plancher part de ce qui tourne au premier passage du nouvel agent.
+- **Revenir à une release plus ancienne** (SEC12) : `make imladris-cd-rollback TAG=vX.Y.Z`, une release publiée. Le CD la vérifie et la déploie comme toute release. Celle qu'il quitte n'est plus reprise seule. C'est le seul chemin vers une version plus ancienne : le timer la refuse. Pas vers une release d'avant REN1 (la v0.5.2 et avant), signée par l'ancien nom du dépôt : refusée, le secours est `make imladris-start REF=<tag>`, qui construit sur la VM. Le retour arrière automatique, après une santé rouge, n'est pas touché : il réétiquette l'image locale, sans rien tirer.
 - **Un nouveau verrou.** `make llm-compare MODELS=<modèle d'Imladris> RUNS=3 ATTEST=1` (appels payants, deux passages, Jonathan) écrit `requirements/harness.json`, puis `make harness-sign` la signe (SEC19) : les deux fichiers à commiter dans la PR du verrou. La référence est le dernier tag `v*` ; si Imladris tourne sur une autre release, `BASE=<tag en service>`.
-- **Un déploiement à la main** (`make glorfindel-host-start REF=…`) reste possible. Il partage le verrou du CD (`~/.eregion-deploy.lock`) et est refusé pendant un passage. Il **construit** encore l'image sur la VM (`deploy.sh`) : c'est le chemin de secours, hors de la vérification de CI3 — d'où `REF` exigée, jamais « le dernier tag » (SEC14, V-22). Pour mettre le CD en pause : `make glorfindel-host-cd-disable`.
-- **L'agent ne se remplace jamais lui-même.** `make glorfindel-host-cd-install` note le commit d'où il l'installe (`~/.eregion-cd/installed-from`). Après un déploiement, si la release est plus récente que ce commit et porte un autre `eregion_cd.py`, `deploy.sh`, `notify_discord.py` ou `chat_text.py`, `#deploy` le dit ; `make glorfindel-host-cd-install`, depuis un checkout à jour, le met à jour. Une release plus ancienne (v0.4.1, d'avant H1) ne dit rien : réinstaller depuis elle casserait le CD (`deploy.sh` sans `--activate`). Une installation de cet agent sans `installed-from` valable (copiée à la main, ou dont le `git rev-parse` a échoué), ou installée hors de main (une branche de lot : le dépôt fusionne en squash, aucune release n'en descendra), le dit une fois dans `#deploy`, sans mention : elle ne saura pas dire quand se mettre à jour. L'agent installé sur Imladris avant ce correctif (le code de H1) n'a pas ce filtre : au passage de la 0.4.2, c'est lui qui dira « 🔧 … eregion_cd.py », à juste titre.
-- **Les règles, à la main** (après un `make glorfindel-host-push`, une règle approuvée, un doute) : sur la VM, `docker exec eregion-watch glorfindel rules check --live` — chaque règle une fois, en lecture seule, le détail complet de chaque erreur au terminal (`docs/operations.md`).
-- **H2 change l'agent** (`eregion_cd.py`, et `chat_text.py` en plus) : la première release qui le porte est déployée par l'agent d'avant, sans la vérification des règles, puis `#deploy` demande `make glorfindel-host-cd-install`. **Avant de le lancer**, la release H2 tourne déjà sur Imladris : `docker exec eregion-watch glorfindel rules check --live` (sur la VM, `make glorfindel-host-ssh`) montre les règles déjà en erreur — une table absente du workspace, une règle de la couche du client. Elles ne feront pas revenir Imladris en arrière, mais `#deploy` les redira à chaque release : à corriger, ou à désactiver dans la couche du client (`disable:`). Une fois réinstallé, les releases suivantes ont leurs règles vérifiées.
-- **H1d change l'agent** (`eregion_cd.py`, la santé juge le battement par son identité) : la release qui le porte est déployée par l'agent d'avant, qui juge encore le battement par l'horloge murale. Puis `#deploy` demande la mise à jour : `make glorfindel-host-cd-install`, depuis un checkout de `main` à jour, puis `make glorfindel-host-cd-check`.
-- **SEC18 change `deploy.sh`** (la migration de `runs/`, un répertoire par écrivain) : à la différence de SEC12 et de H2, l'agent d'avant ne peut pas déployer la release qui le porte. Il bascule par sa copie de `deploy.sh`, qui ne migre pas, et le compose de la release monterait `runs/glorfindel/` et les autres, que docker créerait au nom de root. **Avant de publier** : `make glorfindel-host-cd-install`, depuis un checkout de `main` qui porte SEC18, puis `make glorfindel-host-cd-check`, puis `make glorfindel-host-cd-enable` (`docs/operations.md`, « `runs/` : un répertoire par écrivain — le redéploiement coordonné »).
-- **REN1 change l'agent** (le compte renommé le 03/11, #470) : `published_image.py` et `eregion_cd.py` attendent le nouveau propriétaire des images et la nouvelle identité de signature. L'agent installé avant (depuis e376584a, la v0.5.2) cherche encore les images sous l'ancien propriétaire, et GHCR lui répond 403. Une release publiée avant sa mise à jour est donc refusée (« illisible sans jeton (HTTP 403) »), et ce refus reste : `make glorfindel-host-cd-install`, puis `make glorfindel-host-cd-retry`. **L'ordre, après la fusion de REN1** :
-  1. `make glorfindel-host-cd-install`, depuis un checkout de `main` à jour (l'installation garde le timer comme il était : `make glorfindel-host-cd-disable` d'abord pour voir la 0.5.3 à blanc avant qu'elle se déploie) ;
+- **Un déploiement à la main** (`make imladris-start REF=…`) reste possible. Il partage le verrou du CD (`~/.eregion-deploy.lock`) et est refusé pendant un passage. Il **construit** encore l'image sur la VM (`deploy.sh`) : c'est le chemin de secours, hors de la vérification de CI3 — d'où `REF` exigée, jamais « le dernier tag » (SEC14, V-22). Pour mettre le CD en pause : `make imladris-cd-disable`.
+- **L'agent ne se remplace jamais lui-même.** `make imladris-cd-install` note le commit d'où il l'installe (`~/.eregion-cd/installed-from`). Après un déploiement, si la release est plus récente que ce commit et porte un autre `eregion_cd.py`, `deploy.sh`, `notify_discord.py` ou `chat_text.py`, `#deploy` le dit ; `make imladris-cd-install`, depuis un checkout à jour, le met à jour. Une release plus ancienne (v0.4.1, d'avant H1) ne dit rien : réinstaller depuis elle casserait le CD (`deploy.sh` sans `--activate`). Une installation de cet agent sans `installed-from` valable (copiée à la main, ou dont le `git rev-parse` a échoué), ou installée hors de main (une branche de lot : le dépôt fusionne en squash, aucune release n'en descendra), le dit une fois dans `#deploy`, sans mention : elle ne saura pas dire quand se mettre à jour. L'agent installé sur Imladris avant ce correctif (le code de H1) n'a pas ce filtre : au passage de la 0.4.2, c'est lui qui dira « 🔧 … eregion_cd.py », à juste titre.
+- **Les règles, à la main** (après un `make imladris-push`, une règle approuvée, un doute) : sur la VM, `docker exec eregion-watch glorfindel rules check --live` — chaque règle une fois, en lecture seule, le détail complet de chaque erreur au terminal (`docs/operations.md`).
+- **H2 change l'agent** (`eregion_cd.py`, et `chat_text.py` en plus) : la première release qui le porte est déployée par l'agent d'avant, sans la vérification des règles, puis `#deploy` demande `make imladris-cd-install`. **Avant de le lancer**, la release H2 tourne déjà sur Imladris : `docker exec eregion-watch glorfindel rules check --live` (sur la VM, `make imladris-ssh`) montre les règles déjà en erreur — une table absente du workspace, une règle de la couche du client. Elles ne feront pas revenir Imladris en arrière, mais `#deploy` les redira à chaque release : à corriger, ou à désactiver dans la couche du client (`disable:`). Une fois réinstallé, les releases suivantes ont leurs règles vérifiées.
+- **H1d change l'agent** (`eregion_cd.py`, la santé juge le battement par son identité) : la release qui le porte est déployée par l'agent d'avant, qui juge encore le battement par l'horloge murale. Puis `#deploy` demande la mise à jour : `make imladris-cd-install`, depuis un checkout de `main` à jour, puis `make imladris-cd-check`.
+- **SEC18 change `deploy.sh`** (la migration de `runs/`, un répertoire par écrivain) : à la différence de SEC12 et de H2, l'agent d'avant ne peut pas déployer la release qui le porte. Il bascule par sa copie de `deploy.sh`, qui ne migre pas, et le compose de la release monterait `runs/glorfindel/` et les autres, que docker créerait au nom de root. **Avant de publier** : `make imladris-cd-install`, depuis un checkout de `main` qui porte SEC18, puis `make imladris-cd-check`, puis `make imladris-cd-enable` (`docs/operations.md`, « `runs/` : un répertoire par écrivain — le redéploiement coordonné »).
+- **REN1 change l'agent** (le compte renommé le 03/11, #470) : `published_image.py` et `eregion_cd.py` attendent le nouveau propriétaire des images et la nouvelle identité de signature. L'agent installé avant (depuis e376584a, la v0.5.2) cherche encore les images sous l'ancien propriétaire, et GHCR lui répond 403. Une release publiée avant sa mise à jour est donc refusée (« illisible sans jeton (HTTP 403) »), et ce refus reste : `make imladris-cd-install`, puis `make imladris-cd-retry`. **L'ordre, après la fusion de REN1** :
+  1. `make imladris-cd-install`, depuis un checkout de `main` à jour (l'installation garde le timer comme il était : `make imladris-cd-disable` d'abord pour voir la 0.5.3 à blanc avant qu'elle se déploie) ;
   2. la 0.5.3 publiée ;
-  3. `make glorfindel-host-cd-check`, qui doit dire « ✅ À blanc : v0.5.3 est prête » ;
-  4. `make glorfindel-host-cd-enable`.
+  3. `make imladris-cd-check`, qui doit dire « ✅ À blanc : v0.5.3 est prête » ;
+  4. `make imladris-cd-enable`.
 
   Un `cd-check` lancé avant la 0.5.3 sort rouge : il revérifie la v0.5.2 en service, signée par l'ancien nom. C'est attendu (`docs/operations.md`, « Les images publiées »).
 - **SEC19 change l'agent** (#456 : `eregion_cd.py`, `deploy.sh`, `published_image.py`) : le CD ne croit plus l'attestation du harnais que signée par ta clé (R-13), et `deploy.sh` crée `~/.eregion/watch-key`, le répertoire de la clé de la watch (N-03), avant que le compose ne le monte. Comme pour SEC18, l'agent d'avant ne doit pas déployer la release qui le porte : sa copie de `deploy.sh` ne crée pas ce répertoire, docker le ferait au nom de root, et la watch n'aurait pas de clé (ses battements partiraient sans signature, refusés par les injecteurs à jour). **REN1 et SEC19 ensemble, pour la 0.5.3 : une seule suite de gestes** (le détail : `docs/operations.md`, « Le battement signé, l'attestation signée — les gestes »). Une installation faite selon la seule liste de REN1 ci-dessus, avant la fusion de SEC19, est à refaire (étape 2).
-  1. `make harness-key` (une fois), sa ligne `EREGION_HARNESS_KEY=…` dans `host.env`, puis `source .envrc && make glorfindel-host-push` ;
-  2. `make glorfindel-host-cd-install`, depuis un checkout de `main` qui porte REN1 et SEC19 (`make glorfindel-host-cd-disable` d'abord pour voir la release à blanc avant qu'elle se déploie) ;
+  1. `make harness-key` (une fois), sa ligne `EREGION_HARNESS_KEY=…` dans `host.env`, puis `source .envrc && make imladris-push` ;
+  2. `make imladris-cd-install`, depuis un checkout de `main` qui porte REN1 et SEC19 (`make imladris-cd-disable` d'abord pour voir la release à blanc avant qu'elle se déploie) ;
   3. la 0.5.3 publiée ;
-  4. `make glorfindel-host-cd-check`, qui doit dire « ✅ À blanc : v0.5.3 est prête », puis `make glorfindel-host-cd-enable`. Le verrou de Glorfindel ne change pas dans SEC19 : aucune attestation n'est demandée pour elle ;
-  5. la clé de la watch, une fois la release en service : `make glorfindel-host-watch-key`, sa ligne `EREGION_WATCH_KEY=ed25519:…` dans `host.env` et `infra/orodruin/orodruin.env`, puis `source .envrc && make glorfindel-host-push` ;
-  6. sur Imladris (`make glorfindel-host-ssh`), `cd eregion && docker compose up -d war-room` : la console relit son environnement (`restart` ne le relit pas). Entre la release et ce geste, Dagorlad refuse toute demande (« no watch key pinned ») ;
+  4. `make imladris-cd-check`, qui doit dire « ✅ À blanc : v0.5.3 est prête », puis `make imladris-cd-enable`. Le verrou de Glorfindel ne change pas dans SEC19 : aucune attestation n'est demandée pour elle ;
+  5. la clé de la watch, une fois la release en service : `make imladris-watch-key`, sa ligne `EREGION_WATCH_KEY=ed25519:…` dans `host.env` et `infra/orodruin/orodruin.env`, puis `source .envrc && make imladris-push` ;
+  6. sur Imladris (`make imladris-ssh`), `cd eregion && docker compose up -d war-room` : la console relit son environnement (`restart` ne le relit pas). Entre la release et ce geste, Dagorlad refuse toute demande (« no watch key pinned ») ;
   7. Orodruin : `make orodruin-push REF=v0.5.3`, puis `make orodruin-check`.
 
   Publiée avant l'étape 2, la release tourne, mais `~/.eregion/watch-key` est à root : la watch le dit en rouge. Sur Imladris, `sudo chown "$USER": ~/.eregion/watch-key && chmod 700 ~/.eregion/watch-key && docker restart eregion-watch`, puis l'étape 2.
 - **H1c change l'agent** (#518 : `eregion_cd.py`) : seuls les checks requis de `main` et l'image publiée bloquent une release (le point 2, « Les checks de son commit, en deux groupes »). La release qui le porte est vérifiée par l'agent d'avant, qui bloque sur tous les checks, macOS compris. **Avant de la publier** :
-  1. `make glorfindel-host-cd-install`, depuis un checkout de `main` qui porte H1c (`make glorfindel-host-cd-disable` d'abord pour voir la release à blanc avant qu'elle se déploie) ;
+  1. `make imladris-cd-install`, depuis un checkout de `main` qui porte H1c (`make imladris-cd-disable` d'abord pour voir la release à blanc avant qu'elle se déploie) ;
   2. la release publiée ;
-  3. `make glorfindel-host-cd-check`, qui doit dire « ✅ À blanc : … est prête » et les deux groupes, puis `make glorfindel-host-cd-enable`.
+  3. `make imladris-cd-check`, qui doit dire « ✅ À blanc : … est prête » et les deux groupes, puis `make imladris-cd-enable`.
 
-  Publiée avant l'étape 1 avec un macOS rouge ou annulé, elle est refusée, et ce refus reste : `make glorfindel-host-cd-install`, puis `make glorfindel-host-cd-retry`.
+  Publiée avant l'étape 1 avec un macOS rouge ou annulé, elle est refusée, et ce refus reste : `make imladris-cd-install`, puis `make imladris-cd-retry`.
   Publiée avant l'étape 1 avec un macOS resté en file sans runner, elle n'est pas refusée : l'ancien agent le compte « CI en cours » et attend. Après le `cd-install`, le passage suivant la déploie, sans `cd-retry`.
 - **ROT1 change l'agent** (#737 : `eregion_cd.py`, les rappels d'échéance des paires, ci-dessous). Deux voies, la première recommandée :
   - **juste après la fusion de ROT1**, sans attendre la release : les rappels ne dépendent que de l'agent, pas de la version de Glorfindel qui tourne, et un agent installé depuis un commit plus récent que la release fait dire au CD « rien à mettre à jour ». C'est la voie qui donne de la marge pour le rappel de J-14 ;
   - **après la release**, déployée par l'agent d'avant, qui ne lit pas les dates notées : `#deploy` demande alors la mise à jour.
 
   Puis, une fois :
-  1. `make glorfindel-host-cd-install`, depuis un checkout de `main` à jour (`git switch main && git pull` ; le timer reste comme il était ; les unités ne changent pas) ;
-  2. `make glorfindel-host-cd-status`, où une ligne dit « rappels : aucune date de fin notée » (l'agent d'avant n'a pas cette ligne) ;
+  1. `make imladris-cd-install`, depuis un checkout de `main` à jour (`git switch main && git pull` ; le timer reste comme il était ; les unités ne changent pas) ;
+  2. `make imladris-cd-status`, où une ligne dit « rappels : aucune date de fin notée » (l'agent d'avant n'a pas cette ligne) ;
   3. depuis le poste, `make pair-expiry-note PAIR=console` : la date du secret de la console, qui n'a pas été posé par `make pair-rotate`. Elle dit « ✓ Imladris : fin le … notée » et les dates des rappels.
-- **Le retirer** : `make glorfindel-host-cd-uninstall` (les unités ; `~/.eregion-cd/` reste).
+- **IML1b change l'agent** (#747 : `eregion_cd.py`, `install.sh`, ses unités) : ses messages dans `#deploy` et son journal donnent les commandes sous leur nouveau nom, `make imladris-*` (`make imladris-status`, `make imladris-cd-retry`, `make imladris-cd-install`…), et nomment l'hôte Imladris (« ✅ Imladris tourne sur … », « ⛔ … refusée : Imladris reste sur … »). Rien d'autre ne change : ni les checks requis, ni la vérification, ni le déploiement. La release qui le porte est déployée par l'agent d'avant, qui parle encore sous les anciens noms ; puis `#deploy` demande la mise à jour, une fois : `make imladris-cd-install`, depuis un checkout de `main` à jour (le timer reste comme il était). Les anciens noms (`glorfindel-host-*`, `mobile-*`) marchent encore, sans rien dire, jusqu'à IML2 (#689).
+- **Le retirer** : `make imladris-cd-uninstall` (les unités ; `~/.eregion-cd/` reste).
 
 ### Les rappels d'échéance des paires (ROT1, #737)
 
 Les secrets des trois paires du poste (la watch, la console, le bot) expirent ; Imladris n'a aucun droit sur Microsoft Graph (IR1a), il ne lit donc pas leurs dates. Le poste les lui donne : `make pair-rotate` à chaque rotation, `make pair-expiry-note` pour un secret déjà posé (`docs/operations.md`, « Faire tourner un secret »). Chacune écrit par ssh `~/.eregion-cd/expiry/<paire>.json` (0600) : le nom de la paire et une date, rien d'autre.
 
 À chaque passage du timer, avant la release, l'agent lit ces dates et poste dans `#deploy`, avec ta mention, à **J-14, J-7, J-1 et le jour même** (en jours du calendrier, UTC) : « 🔑 Le secret de la paire « console » expire dans 14 jours, le … », puis la commande exacte, `make pair-rotate PAIR=console`. Orange à J-14 et J-7, rouge ensuite. Les règles :
-- **une fois par palier**, même après un redémarrage : `~/.eregion-cd/reminders.json`, un fichier à part, que `make glorfindel-host-cd-retry` n'efface pas ;
+- **une fois par palier**, même après un redémarrage : `~/.eregion-cd/reminders.json`, un fichier à part, que `make imladris-cd-retry` n'efface pas ;
 - **une date notée tard** envoie le palier où elle se trouve (« expire dans 5 jours »), jamais ceux qu'elle a passés ;
 - **une nouvelle date** (une rotation) repart de zéro ;
 - **un message que Discord refuse** repart au passage suivant, cinq minutes plus tard ;
-- **une date illisible** est dite dans le journal, jamais devinée ; `make glorfindel-host-cd-status` dit chaque date notée, ses paliers et ceux déjà envoyés ;
+- **une date illisible** est dite dans le journal, jamais devinée ; `make imladris-cd-status` dit chaque date notée, ses paliers et ceux déjà envoyés ;
 - **une rotation faite hors de la commande n'est pas vue** : la date reste l'ancienne, jusqu'à `make pair-expiry-note`. `make azure-pairs-expiry` et le préflight du banc restent le filet.
 
 Le webhook est celui de `#deploy`, déjà dans `~/.eregion-cd/discord.env` : aucun secret nouveau, aucun timer nouveau, aucune identité nouvelle.
@@ -741,9 +748,9 @@ Rien n'est lancé si `RUNS` est sous 3, ou si le verrou du checkout est celui de
 1. **Ce qui n'est pas une attestation de ce verrou** : l'ancien format (un seul passage, sans référence ; message clair, avec la commande), un format inconnu, ou un candidat sur un autre verrou que celui de la release.
 2. **Un passage incomplet** : moins de 3 runs, une partie des cas seulement (`--kinds`), un cas tiré moins de fois que les runs, ou sans le modèle d'Imladris.
 3. **Une intégration cassée du candidat** : une décision non lue (pas d'appel d'outil, une erreur du fournisseur). C'est un refus net, quoi que dise la référence.
-4. **Sans référence, ou sur un autre verrou que celui en service** (le verrou du commit qui tourne sur Imladris, lu dans le clone d'Imladris), ou ce qui tourne inconnu (le refus dit alors de déployer à la main : `make glorfindel-host-start REF=<tag>`), ou une référence incomplète (comme au point 2), ou des cas qui diffèrent entre les deux passages. Le refus donne la commande, `BASE=` compris. Ces vérifications passent avant les comparaisons : comparer à une référence qui n'est pas la bonne ne prouverait rien.
+4. **Sans référence, ou sur un autre verrou que celui en service** (le verrou du commit qui tourne sur Imladris, lu dans le clone d'Imladris), ou ce qui tourne inconnu (le refus dit alors de déployer à la main : `make imladris-start REF=<tag>`), ou une référence incomplète (comme au point 2), ou des cas qui diffèrent entre les deux passages. Le refus donne la commande, `BASE=` compris. Ces vérifications passent avant les comparaisons : comparer à une référence qui n'est pas la bonne ne prouverait rien.
 5. **Une régression** : un cas juste à chaque tirage sur la référence et faux à chaque tirage sur le candidat (la règle de H2).
-6. **Un cas, de quelque genre qu'il soit, qui perd au moins 2 tirages sur 3 face à la référence** (choix de Jonathan, 29/10, étendu à tous les cas le 30/10) : un ransomware non isolé deux fois sur trois, un cas prudent qui isole deux fois sur trois, ou 2/3 sur la référence et 0/3 sur le candidat. Le prix est accepté, sur tous les cas maintenant : p ≈ 1/6 mesuré : environ 4 % de refus à tort par cas bruité, jusqu'à 9 % si p ≈ 1/3 ; de 4 à 20 % par attestation selon le bruit. Le 29/10, un seul cas a tiré un faux, 1 tirage sur 6. Calcul exact (seconde relecture) : un cas bruité, 4,4 % à p = 1/6 et 9,3 % à p = 1/3 ; deux cas bruités, 8,7 à 12,7 % à p = 1/6 et 17,8 à 19,5 % à p = 1/3 (le haut de chaque fourchette quand les erreurs sont à 0.7 ou plus : la règle du gain surconfiant s'y ajoute). La somme L (point 7) ne change pas ce calcul : chaque cas perd déjà un tirage au plus, et L ≥ 3 demande trois cas qui reculent. Un refus à tort se relance (une nouvelle attestation, puis `make glorfindel-host-cd-retry`).
+6. **Un cas, de quelque genre qu'il soit, qui perd au moins 2 tirages sur 3 face à la référence** (choix de Jonathan, 29/10, étendu à tous les cas le 30/10) : un ransomware non isolé deux fois sur trois, un cas prudent qui isole deux fois sur trois, ou 2/3 sur la référence et 0/3 sur le candidat. Le prix est accepté, sur tous les cas maintenant : p ≈ 1/6 mesuré : environ 4 % de refus à tort par cas bruité, jusqu'à 9 % si p ≈ 1/3 ; de 4 à 20 % par attestation selon le bruit. Le 29/10, un seul cas a tiré un faux, 1 tirage sur 6. Calcul exact (seconde relecture) : un cas bruité, 4,4 % à p = 1/6 et 9,3 % à p = 1/3 ; deux cas bruités, 8,7 à 12,7 % à p = 1/6 et 17,8 à 19,5 % à p = 1/3 (le haut de chaque fourchette quand les erreurs sont à 0.7 ou plus : la règle du gain surconfiant s'y ajoute). La somme L (point 7) ne change pas ce calcul : chaque cas perd déjà un tirage au plus, et L ≥ 3 demande trois cas qui reculent. Un refus à tort se relance (une nouvelle attestation, puis `make imladris-cd-retry`).
 7. **Un recul réparti sur les tirages** : L, la somme sur tous les cas de max(0, justes sur la référence − justes sur le candidat) ; un cas qui progresse ne paie pas pour un cas qui recule, un cas faux des deux côtés ajoute 0. Refus si L ≥ 3 ; le bruit mesuré du même verrou contre lui-même est de 1. Sans cette règle, 31/51 contre 51/51, ou contre 41/51 (dix cas de 2/3 à 1/3), passait pour « aucune régression ».
 8. **Une surconfiance que la référence n'a pas.** Une erreur surconfiante est un tirage faux à une confiance d'au moins 0.7, la garde de confiance de Glorfindel (`CONFIDENCE_THRESHOLD`) : elle la laisse passer. Le CD compte avec sa propre garde, pas avec celle écrite dans le fichier. Deux cas sont refusés :
    - un cas qui gagne au moins 2 tirages surconfiants face à la référence (choix de Jonathan, 30/10) : la référence surconfiante une fois, le candidat à chaque tirage, même faux des deux côtés. Elle remplace l'ancienne règle « surconfiant à chaque tirage, jamais sur la référence », qu'elle contient ;
@@ -764,16 +771,16 @@ Rien n'est lancé si `RUNS` est sous 3, ou si le verrou du checkout est celui de
 - **ce qu'Imladris attend**, dans `host.env` (`~/eregion/.env` sur la VM), lu par le CD seul, jamais par un conteneur ni dans le dépôt : `EREGION_HARNESS_KEY=<base64 du DER>`, **sans guillemets** (le CD lit une ligne `CLÉ=valeur` comme compose, et garderait les guillemets). Une release ne peut donc pas nommer sa propre clé ;
 - **la vérification** : `cosign verify-blob --key <la clé de host.env> --bundle … --insecure-ignore-tlog` sur les octets de l'attestation au commit de la release, par le cosign épinglé de l'agent (`published_image.verify_blob`), avant de lire l'attestation. Hors ligne : ni journal, ni racine de confiance de sigstore — rien à attendre ; tout échec est un refus ;
 - **les refus**, dits dans `#deploy` avec ta mention, la garde du verrou tenant alors comme sans attestation : aucune clé déclarée sur Imladris, ou une clé illisible (cosign n'est alors jamais appelé) ; une attestation sans son paquet (« n'est pas signée ») ; signée d'une autre clé ; une signature qui ne couvre pas ce fichier (l'attestation changée après la signature) ;
-- **la règle de passage** : la signature est exigée à chaque changement du verrou dès l'agent de SEC19 installé, et seulement là — une release qui garde le verrou n'en demande pas. Aucune attestation antérieure n'est relue : chacune est liée au sha256 de son verrou, un nouveau verrou demande une nouvelle attestation, et la première signée sera celle du prochain verrou. Pas de grâce par date (elle est dans le fichier) ni par commit (aucune attestation d'avant SEC19 ne peut porter un verrou à venir). Un retour arrière vers une release d'avant SEC19 dont le verrou diffère de celui en service est refusé : `make glorfindel-host-start REF=<tag>` reste le secours ;
-- **la rotation, la révocation** : une nouvelle paire, sa ligne dans `host.env`, `make glorfindel-host-push`, puis re-signer ; vider `EREGION_HARNESS_KEY` révoque (plus aucun nouveau verrou n'est cru). Après une rotation, un retour arrière vers une release dont le verrou diffère et dont l'attestation est signée par l'ancienne clé est refusé : `make glorfindel-host-start REF=<tag>` reste le secours. Ce qui reste : une clé volée signe comme toi ; il n'y a plus de journal de transparence pour voir une signature faite à ton insu.
+- **la règle de passage** : la signature est exigée à chaque changement du verrou dès l'agent de SEC19 installé, et seulement là — une release qui garde le verrou n'en demande pas. Aucune attestation antérieure n'est relue : chacune est liée au sha256 de son verrou, un nouveau verrou demande une nouvelle attestation, et la première signée sera celle du prochain verrou. Pas de grâce par date (elle est dans le fichier) ni par commit (aucune attestation d'avant SEC19 ne peut porter un verrou à venir). Un retour arrière vers une release d'avant SEC19 dont le verrou diffère de celui en service est refusé : `make imladris-start REF=<tag>` reste le secours ;
+- **la rotation, la révocation** : une nouvelle paire, sa ligne dans `host.env`, `make imladris-push`, puis re-signer ; vider `EREGION_HARNESS_KEY` révoque (plus aucun nouveau verrou n'est cru). Après une rotation, un retour arrière vers une release dont le verrou diffère et dont l'attestation est signée par l'ancienne clé est refusé : `make imladris-start REF=<tag>` reste le secours. Ce qui reste : une clé volée signe comme toi ; il n'y a plus de journal de transparence pour voir une signature faite à ton insu.
 
 **L'ordre de déploiement (avec Jonathan).** L'agent installé sur Imladris lit l'ancien format. La release qui porte H3 est donc déployée par l'agent d'avant :
 1. **La release qui porte H3 (0.4.6) ne change pas `requirements/glorfindel.txt`.** L'agent d'avant la déploie sans lire d'attestation, puis `#deploy` dit « 🔧 Agent de CD à mettre à jour » (`eregion_cd.py` diffère).
-2. **`make glorfindel-host-cd-install`**, depuis un checkout de main à jour. CI3 (#325, fusionné le 30/10) est dans la même release : une seule installation les couvre tous les deux.
+2. **`make imladris-cd-install`**, depuis un checkout de main à jour. CI3 (#325, fusionné le 30/10) est dans la même release : une seule installation les couvre tous les deux.
 3. **La release de DEP1** (litellm 1.100.4), avec `requirements/harness.json` au nouveau format. Il est écrit après l'étape 1, avec `BASE=v0.4.6` (ou sans `BASE`, si c'est le dernier tag). Le verrou de la 0.4.6 est celui de la 0.4.5 : une référence prise sur l'une ou l'autre est acceptée.
 
 **Si l'ordre n'est pas tenu**, c'est un refus dit dans `#deploy`, avec ta mention, jamais un déploiement en silence :
-- la release de DEP1 publiée avant la réinstallation : l'agent d'avant ne trouve pas `models` au premier niveau et refuse (« requirements/harness.json illisible »). Pour la débloquer : `make glorfindel-host-cd-install`, puis `make glorfindel-host-cd-retry` ;
+- la release de DEP1 publiée avant la réinstallation : l'agent d'avant ne trouve pas `models` au premier niveau et refuse (« requirements/harness.json illisible »). Pour la débloquer : `make imladris-cd-install`, puis `make imladris-cd-retry` ;
 - une attestation à l'ancien format, devant l'agent nouveau : refusée (« ancien format … »), avec la commande à relancer ;
 - une référence prise sur une release dont le verrou n'est pas celui qui tourne : refusée, avec `BASE=<tag en service>` ;
 - si la release de H3 changeait le verrou (elle ne le doit pas), l'agent d'avant exigerait une attestation à l'ancien format, que le harnais n'écrit plus. Elle serait refusée.
@@ -787,7 +794,7 @@ seulement, avec sa provenance) : changer de modèle, c'est changer qui décide.
 
 1. Le comparer au harnais : `make llm-compare MODELS=anthropic/<actuel>,anthropic/<candidat> RUNS=3`.
 2. Le faire tourner de bout en bout sur le banc (T1486 et un autre TTP) avant toute autonomie.
-3. `make glorfindel-host-model MODEL=anthropic/<candidat>` — le pose dans `host.env` et sur
+3. `make imladris-model MODEL=anthropic/<candidat>` — le pose dans `host.env` et sur
    la VM, redémarre Glorfindel, affiche le modèle en service ; Config dans la console dit
    « set at deployment (GLORFINDEL_LLM_MODEL) ». `MODEL=default` revient au défaut du code.
    Il dit aussi si l'IA d'analyse raisonne encore avec un autre modèle (IA1 ; le contrôle ne
@@ -801,8 +808,8 @@ le 19/10, la VM d'observation tourne sur `claude-sonnet-5-5` (issue #139 pour en
 
 ## SSH : la clé d'hôte épinglée (V-32, SEC7)
 
-Chaque commande du poste vers Imladris (`glorfindel-host-push`, `-start`, `-status`, `-tunnel`, `-ssh`,
-`-cd-*`…) passe d'abord par `glorfindel-host-known` (`infra/glorfindel-host/known_host.sh`) :
+Chaque commande du poste vers Imladris (`imladris-push`, `-start`, `-status`, `-tunnel`, `-ssh`,
+`-cd-*`…) passe d'abord par `imladris-known` (`infra/glorfindel-host/known_host.sh`) :
 
 - **avec `HOST_SSH_FINGERPRINT`** (dans ton environnement, jamais dans le dépôt) : un `known_hosts`
   dédié, `HOST_KNOWN_HOSTS` (défaut `~/.eregion/h0_known_hosts`, mode 600), est écrit à partir de la
@@ -820,7 +827,7 @@ ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub     # → 256 SHA256:… root@�
 export HOST_SSH_FINGERPRINT=SHA256:…                  # la deuxième colonne
 ```
 
-La VM reconstruite (`glorfindel-host-down` puis `-up`) a une autre clé : relever la nouvelle,
+La VM reconstruite (`imladris-down` puis `-up`) a une autre clé : relever la nouvelle,
 la poser, retirer `~/.eregion/h0_known_hosts`. Le CD d'Imladris (H1) n'est pas concerné : il tourne
 sur la VM et ne se connecte à aucun hôte par SSH. Orodruin est épinglé de même, sans repli sur
 `accept-new` : `ORO_SSH_FINGERPRINT` est exigée (SEC14, `infra/orodruin/README.md`, « SSH »).
@@ -832,14 +839,14 @@ sur la VM et ne se connecte à aucun hôte par SSH. Orodruin est épinglé de m�
   son préflight relit le compose de la candidate (`docker compose config -q`) avec le `.env` d'Imladris,
   et ses `docker run` de vérification ne passent pas par le compose. À vérifier au premier
   déploiement : `docker compose version` sur la VM (la valeur par défaut imbriquée,
-  `${A:-${B:-}}`, est lue par compose v2 ; mesuré en 5.5), puis `make glorfindel-host-status` (les
-  trois conteneurs `Up`, aucune erreur) et `make glorfindel-host-logs` sans « Read-only file
+  `${A:-${B:-}}`, est lue par compose v2 ; mesuré en 5.5), puis `make imladris-status` (les
+  trois conteneurs `Up`, aucune erreur) et `make imladris-logs` sans « Read-only file
   system » ; `docker inspect eregion-watch --format '{{.HostConfig.ReadonlyRootfs}}
   {{.HostConfig.CapDrop}}'` → `true [ALL]`.
 - **La santé du CD lit les journaux (V-34)** : un « Read-only file system » depuis la bascule,
   que la release d'avant ne montrait pas, fait revenir Imladris en arrière (la règle de H2 : une
   régression seulement). Cette sonde vit dans l'agent du CD : elle n'arrive sur Imladris qu'avec
-  `make glorfindel-host-cd-install` depuis un commit qui la porte (le CD le signale : « Agent de CD
+  `make imladris-cd-install` depuis un commit qui la porte (le CD le signale : « Agent de CD
   à mettre à jour »). La première release SEC7 est donc déployée par l'agent d'avant, sans elle :
   les vérifications ci-dessus se font à la main.
 - **Les identités (V-17)** : rien. Les variables de chaque service sont vides sur Imladris ; ses trois
@@ -872,18 +879,18 @@ CI3 est déployée **par l'agent d'avant, qui construit** ; la suivante, par le 
    que vise le brouillon. Tu publies. **L'agent d'avant la construit sur Imladris** et la déploie comme
    avant (il ne connaît ni le registre ni cosign). `#deploy` dit ensuite « 🔧 Agent de CD à mettre à
    jour (v0.4.6) » : `eregion_cd.py` a changé.
-4. **L'utilisateur d'Imladris** : `make glorfindel-host-ssh`, puis `id -u; id -g` — **1000 1000** attendu
+4. **L'utilisateur d'Imladris** : `make imladris-ssh`, puis `id -u; id -g` — **1000 1000** attendu
    (le premier utilisateur d'une VM Ubuntu d'Azure ; non mesuré : Imladris n'est pas joignable d'ici).
    L'image publiée tourne en 1000:1000 ; si Imladris dit autre chose, ne pas aller plus loin : le CD la
    refuserait (« elle ne pourrait pas écrire son état »), à décider avant.
-5. **`make glorfindel-host-cd-install`**, depuis un checkout de `main` à jour (`git fetch && git
+5. **`make imladris-cd-install`**, depuis un checkout de `main` à jour (`git fetch && git
    switch --detach origin/main`) : l'agent, `published_image.py`, cosign téléchargé par la VM et son
    sha256 vérifié, les unités réinstallées (le timer garde son état).
-6. **`make glorfindel-host-cd-check`** : v0.4.6 tourne déjà ; l'agent neuf tire son image publiée à
+6. **`make imladris-cd-check`** : v0.4.6 tourne déjà ; l'agent neuf tire son image publiée à
    côté (`check-v0.4.6`), la vérifie (signature, provenance, étiquettes, utilisateur), la préflighte,
    et rien ne bouge. Attendu dans `#deploy` : « ✅ À blanc : v0.4.6, en service, tirée par son digest,
    vérifiée et préflightée ». C'est la mesure sur Imladris de tout ce qui précède : la sortie vers `ghcr.io`
-   et sigstore, la lecture sans jeton, cosign, l'utilisateur. Rouge : `make glorfindel-host-cd-status`
+   et sigstore, la lecture sans jeton, cosign, l'utilisateur. Rouge : `make imladris-cd-status`
    (les mots de cosign y sont).
 7. **La release suivante** (0.4.7) : tirée par son digest, rien n'est construit sur Imladris.
 
@@ -893,7 +900,7 @@ ci-dessus garde la 0.4.6 sur le chemin connu. Le retour arrière depuis la 0.4.7
 
 **L'agent neuf devant une release sans image attestée** : jamais une construction. Sans le job
 `publish (glorfindel)` sur son commit (une release d'avant CI3), il attend une heure, puis la refuse
-(« aucune image publiée … H0 ne construit plus »). Avec le job, mais une image absente, privée, non
+(« aucune image publiée … Imladris ne construit plus »). Avec le job, mais une image absente, privée, non
 signée ou signée par un autre : refusée tout de suite ; un paquet privé aussi (GHCR refuse le jeton
 anonyme). Les deux avec ta mention dans `#deploy`. Un registre ou sigstore injoignable (cosign dit
 « error updating to TUF remote mirror », ou un délai) est dit une fois, en bleu, et le CD repasse,
@@ -920,7 +927,7 @@ une heure au plus : puis la release est refusée, avec ta mention.
   0,35 : snapshot recommandé, escalade) → carte dans le fil Discord de bree, en ~2 min ; rien
   d'exécuté (`human_only`, lecture seule, aucun snapshot créé).
 - **Clé SSH** : celle de `admin_ssh_public_key` ; si ton agent SSH en propose une autre,
-  `HOST_SSH_KEY=~/.ssh/<clé>` sur les cibles `glorfindel-host-*`.
+  `HOST_SSH_KEY=~/.ssh/<clé>` sur les cibles `imladris-*`.
 - **Taille** : B2s sans capacité en francecentral, aucun quota Basv2 (B2als_v2) sur
   l'abonnement : la VM tourne en D2als_v6 (défaut de `vm_size`, ~61 €/mois) ; B2als_v2 quand le quota sera accordé.
 

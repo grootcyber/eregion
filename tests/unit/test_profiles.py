@@ -358,7 +358,7 @@ def test_only_the_console_mounts_its_own_directory():
 
 
 def test_h0_creates_the_consoles_directory_before_compose_mounts_it():
-    """By hand (glorfindel-host-start) and by the CD (deploy.sh, its start): created as the
+    """By hand (imladris-start) and by the CD (deploy.sh, its start): created as the
     operator, never by docker as root — the console could not write its requests."""
     [line] = [ln for ln in MAKEFILE.splitlines() if "deploy.sh" in ln and ln.startswith("\t@$(HOST_SSH)")]
     assert line.index(".eregion/console/requests") < line.index("deploy.sh")

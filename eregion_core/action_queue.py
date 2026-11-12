@@ -837,7 +837,7 @@ def receipt_said(service: str, request_id: str, *, root=None, watch_public: byte
         return None, (f"a receipt is there, but {watch_refusal(doc, 'receipt', watch_public)}: signed by "
                       f"{watch_key._short(said)}, the watch's key pinned here is "
                       f"{watch_key._short(watch_key.fingerprint(watch_public))} — the watch's key drawn again "
-                      f"(pin the new one: {watch_key.KEY_ENV}, `make glorfindel-host-watch-key` or `make "
+                      f"(pin the new one: {watch_key.KEY_ENV}, `make imladris-watch-key` or `make "
                       "watch-key`), or another hand")
     return doc, ""
 
@@ -1048,7 +1048,7 @@ def posture(service: str, *, root=None, watch_public: bytes | None = None, finge
     if pinned != own:
         return {"ok": False, "why": (f"the watch pins another key for the {service} ({watch_key._short(pinned)}) "
                                      f"than its own ({watch_key._short(own)}): a key drawn again — pin this one "
-                                     f"({KEYS_ENV}, make queue-keys or make glorfindel-host-queue-keys)"),
+                                     f"({KEYS_ENV}, make queue-keys or make imladris-queue-keys)"),
                 "status": said}
     return {"ok": True, "why": "", "status": said}
 
@@ -1070,7 +1070,7 @@ def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if args[:1] == ["pin"] and len(args) in (2, 3) and args[1] in SERVICES and args[2:] in ([], ["--draw"]):
         # ``pin <service> [--draw]``: that service's pin alone (``console=ed25519:…``) — make
-        # glorfindel-host-queue-keys joins the console's and the bot's, read in their containers.
+        # imladris-queue-keys joins the console's and the bot's, read in their containers.
         # FS1c: ``--draw`` draws the key first when there is none, in the service's own container and
         # by its own code — the keys are pinned before the flag is set, never after.
         try:

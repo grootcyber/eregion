@@ -188,7 +188,7 @@ def tools(profile: str, p: Probes, repo: Path) -> list[Check]:
                 ("ssh", "chaque commande vers Imladris et Orodruin", "installer le client OpenSSH")):
             out.append(Check(g, tool, OK) if p.which(tool) else Check(g, f"{tool} absent : {why}", FAIL, fix))
         out.append(Check(g, ".venv (make install)", OK) if (repo / ".venv" / "bin" / "python").exists()
-                   else Check(g, ".venv absent : make glorfindel-host-env, -push et watch-key le lancent", FAIL,
+                   else Check(g, ".venv absent : make imladris-env, -push et watch-key le lancent", FAIL,
                               "make install"))
     out.append(Check(g, "direnv", OK) if p.which("direnv")
                else Check(g, "direnv absent (optionnel)", WARN,
@@ -390,7 +390,7 @@ def bench(repo: Path, env: Mapping[str, str]) -> list[Check]:
         good = bool(m) and len(base64.b64decode(m.group(1))) == 32
         out.append(Check(g, "la clé de la watch épinglée pour les injecteurs (EREGION_WATCH_KEY)", OK) if good
                    else Check(g, "EREGION_WATCH_KEY vide ou mal formé dans orodruin.env : tout run serait refusé",
-                              FAIL, "make glorfindel-host-watch-key, sa ligne dans orodruin.env, puis "
+                              FAIL, "make imladris-watch-key, sa ligne dans orodruin.env, puis "
                                     "make orodruin-push REF=<tag ou commit>"))
         for name, output in (("EREGION_WATCH_CHANNEL", "watch_channel_url"),
                              ("EREGION_WATCH_CHANNEL_SCOPE", "watch_channel_scope"),
@@ -403,13 +403,13 @@ def bench(repo: Path, env: Mapping[str, str]) -> list[Check]:
             out.append(Check(g, "orodruin.env porte AZURE_CLIENT_* : elles masqueraient l'identité managée", FAIL,
                              "retirer AZURE_CLIENT_ID et AZURE_CLIENT_SECRET d'orodruin.env"))
     if host is None:
-        out.append(Check(g, f"{HOST_ENV} absent", FAIL, "make glorfindel-host-env"))
+        out.append(Check(g, f"{HOST_ENV} absent", FAIL, "make imladris-env"))
     else:
         out += model(host, g, docker=True)
         for name in ("EREGION_WATCH_CHANNEL", "EREGION_EXERCISE_CHANNEL"):
             out.append(Check(g, f"host.env : {name}", OK) if filled(host.get(name))
                        else Check(g, f"host.env : {name} vide : Imladris ne publierait pas son battement", FAIL,
-                                  "la valeur d'orodruin.env, puis make glorfindel-host-push"))
+                                  "la valeur d'orodruin.env, puis make imladris-push"))
     if oro is not None and host is not None:
         for name, why in (("AZURE_SUBSCRIPTION_ID", "la watch d'un autre abonnement est refusée (SEC5)"),
                           ("EREGION_WATCH_CHANNEL", "Orodruin ne lirait pas le battement qu'Imladris publie"),
@@ -417,7 +417,7 @@ def bench(repo: Path, env: Mapping[str, str]) -> list[Check]:
             a, b = oro.get(name, ""), host.get(name, "")
             if a and b and a != b:
                 out.append(Check(g, f"{name} : orodruin.env et host.env diffèrent — {why}", FAIL,
-                                 "la même valeur dans les deux, puis make glorfindel-host-push et make orodruin-push"))
+                                 "la même valeur dans les deux, puis make imladris-push et make orodruin-push"))
     sub = env.get("AZURE_SUBSCRIPTION_ID", "")
     if oro is not None and sub and oro.get("AZURE_SUBSCRIPTION_ID") and oro["AZURE_SUBSCRIPTION_ID"] != sub:
         out.append(Check(g, "AZURE_SUBSCRIPTION_ID : ton environnement et orodruin.env diffèrent", FAIL,

@@ -23,8 +23,8 @@
 # contrat le relit au démarrage, et tout droit en trop le rend passif (beyond_contract).
 #
 # Désactivé par défaut : `identity_executor_enabled = true` dans identity_executor.auto.tfvars (ignoré
-# par git ; identity_executor.auto.tfvars.example), puis `make glorfindel-host-plan`, relu, puis
-# `make glorfindel-host-up` sans YES — par Jonathan, sous un az login qui peut créer une application et
+# par git ; identity_executor.auto.tfvars.example), puis `make imladris-plan`, relu, puis
+# `make imladris-up` sans YES — par Jonathan, sous un az login qui peut créer une application et
 # consentir des permissions d'application de Microsoft Graph (Administrateur des rôles privilégiés) :
 # attribuer un rôle d'application de Graph, c'est le consentement d'administrateur. Les gestes, dans
 # l'ordre : docs/operations.md, « L'exécuteur d'identité ». Graph est trouvé par son identifiant

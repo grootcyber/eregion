@@ -459,7 +459,7 @@ une fenêtre publiée et tirée par Imladris, le kill qui la ferme.
 sa clé a écrit ce fichier (ou ce blob), pour l'abonnement de l'injecteur, il y a moins de 90 s
 (SEC19, [`watch-key.md`](watch-key.md)). Le battement est signé par la clé Ed25519 de la watch ;
 l'injecteur le vérifie avec la clé publique épinglée de son côté, `EREGION_WATCH_KEY` dans
-`orodruin.env` (`make glorfindel-host-watch-key` la donne) — jamais lue dans le canal ni dans le
+`orodruin.env` (`make imladris-watch-key` la donne) — jamais lue dans le canal ni dans le
 battement. Sans clé épinglée, sans signature, d'une autre clé, à la signature qui ne tient pas ou au
 compteur rejoué : refusé avant tout appel au cloud, la raison dite. Le contrat d'Orodruin, lui, ne
 change pas : la clé épinglée n'est pas une de ses vérifications, c'est la garde qui la lit. Avant
@@ -557,9 +557,9 @@ pare-feu posé avant le point de terminaison d'Imladris lui coupe le canal :
 
 1. la release publiée ; le CD d'Imladris la déploie ; vérifier que `heartbeat.json`, dans le conteneur
    `watch`, porte `perimeter` ;
-2. `make glorfindel-host-plan` : une seule mise à jour en place, celle du sous-réseau
+2. `make imladris-plan` : une seule mise à jour en place, celle du sous-réseau
    (`service_endpoints`), et l'output `subnet_id` — rien qui remplace la VM (`custom_data`) ;
-   puis `make glorfindel-host-up YES=1` ;
+   puis `make imladris-up YES=1` ;
 3. `make orodruin-plan` : deux sous-réseaux dans `network_rules`, les rôles et attributions
    ci-dessus, la politique de rétention ; puis `make orodruin-lock YES=1`, sans run en cours ;
 4. `make orodruin-push` (l'image des injecteurs, publiée et vérifiée depuis CI3, et son contrat) ;

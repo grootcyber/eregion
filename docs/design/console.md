@@ -377,7 +377,7 @@ ne l'était pas.
   raison, mot pour mot celle du run (`watch_channel.vouched_detections` dit la même chose des mêmes
   blobs). `detection` est le blob tel qu'écrit, `null` s'il n'est pas un objet.
 - **Sans clé épinglée**, ou une valeur qui n'en est pas une : `key` vaut `{"pinned": false, "why"}`,
-  les mots et le geste de SEC19 (`make watch-key`, `make glorfindel-host-watch-key`). Chaque
+  les mots et le geste de SEC19 (`make watch-key`, `make imladris-watch-key`). Chaque
   détection est alors refusée avec ces mots, même une que la watch a signée : aucune n'est présentée
   comme vérifiée. Avec une clé : `{"pinned": true, "fingerprint"}`.
 - **Les comptes** : `signed`, `refused` (tous les refus), `refused_shown`. La route ne montre que
@@ -387,7 +387,7 @@ ne l'était pas.
 - **La clé dont on parle** : la console juge avec son propre `EREGION_WATCH_KEY`, l'injecteur avec
   celui d'Orodruin (`orodruin.env`). Les deux doivent épingler la même clé publique, celle de la
   watch ; sinon leurs verdicts peuvent différer. L'empreinte affichée en tête permet de les comparer
-  (`make glorfindel-host-watch-key` donne celle de la watch d'Imladris).
+  (`make imladris-watch-key` donne celle de la watch d'Imladris).
 - **Sans canal de stockage**, la route ne juge rien, comme avant : elle répond `configured: false`.
   Le canal local des verdicts (SEC18, `runs/verdicts/`) n'est pas lu par elle.
 - **La page** (`injector.js`, `channelDetections`) : le titre dit « ON THE RETURN CHANNEL FOR THIS
@@ -753,7 +753,7 @@ EXERCISES · 11          windows [7 days ▾] │ CAMPAIGNS · 1    [30 days ▾
 - UI-1 se déploie seul : sur Imladris, la détection voit tous les composants, et l'alias du jeton suffit.
 - Les autres lots sont indépendants, sauf UI-2, qui suit UI-1.
 - Imladris est en pré-observation jusqu'au 13/11 environ. Chaque redéploiement se fait avec Jonathan,
-  `.envrc` chargé, sur une référence épinglée (`make glorfindel-host-start REF=<commit>`, M-3).
+  `.envrc` chargé, sur une référence épinglée (`make imladris-start REF=<commit>`, M-3).
 
 ## 6. Hors périmètre
 
@@ -997,7 +997,7 @@ L'état normal est relu avant et après (les sondes de Gothmog : `vm-running`, `
   écrit la demande dans son propre répertoire (`~/.eregion/console/requests/`, hors de `runs/` et
   de `~/.glorfindel/`), et donne une commande : `make orodruin-exercise REQUEST=<id>`. Elle part du
   poste de l'opérateur, comme les autres cibles d'Orodruin : elle tire la demande de l'hôte de la
-  console (sur Imladris, par SSH, comme `make glorfindel-host-*`), l'affiche, fait taper les noms (le point
+  console (sur Imladris, par SSH, comme `make imladris-*`), l'affiche, fait taper les noms (le point
   précédent), puis la copie sur Orodruin par SSH, comme `orodruin-push`, et l'y lance. À la fiche de
   DG-b d'en fixer le détail. Ce choix garde trois choses :
   - rien de neuf dans le canal ;
@@ -1279,7 +1279,7 @@ Dagorlad » ; le pas à pas, dans [`docs/operations.md`](../operations.md).
   - Les fils sont jugés par `exercise_plan` ; un fil refusé, rien n'est écrit.
   - La demande va dans `~/.eregion/console/requests/`, mode 600, et nulle part ailleurs.
   - Seul le service de la console monte `~/.eregion/console` ; Imladris crée le répertoire avant compose
-    (`glorfindel-host-start`, `deploy.sh`).
+    (`imladris-start`, `deploy.sh`).
   - La page dit « Request run from Orodruin », puis donne la commande et les fils dont le nom sera
     tapé. Elle ne recueille aucun nom. Les fils restent figés jusqu'à « New plan ».
 - **La commande portée** : `make orodruin-exercise REQUEST=<id> [DRY_RUN=1] [REQUEST_FROM=local]`.
@@ -1310,7 +1310,7 @@ Dagorlad » ; le pas à pas, dans [`docs/operations.md`](../operations.md).
   - `test_exercise_runner.py`, `test_annatar_wire.py`, `test_gothmog.py`, `test_orodruin_word.py` ;
   - `test_exercise_e2e.py` : une demande de la console aux deux injecteurs, sur les faux.
 - **Reste pour le banc, avec Jonathan** : le premier exercice réel, et le blob `orodruin/` tiré par Imladris.
-  Avant, `make glorfindel-host-cd-install` : le CD d'Imladris garde sa copie de `deploy.sh`.
+  Avant, `make imladris-cd-install` : le CD d'Imladris garde sa copie de `deploy.sh`.
 - **Glorfindel reste aveugle, prouvé** (relecture de DG-b) : `tests/unit/test_dagorlad_blind.py` rejoue
   `_build_user_message()` avec une demande, ses noms tapés, son statut et le verdict d'Orodruin
   présents (`~/.eregion/console/requests/`, `runs/orodruin/`). Le message est le même, à l'octet

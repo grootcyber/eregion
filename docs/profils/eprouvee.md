@@ -25,7 +25,7 @@ Elle crée d'abord, à ton nom, `~/.glorfindel` et `~/.cache/chroma`, que les se
 **Hébergé**, comme Imladris. Une référence se déploie, jamais une branche :
 
 ```bash
-make glorfindel-host-up && make glorfindel-host-push && make glorfindel-host-start REF=<tag>
+make imladris-up && make imladris-push && make imladris-start REF=<tag>
 ```
 
 Puis Orodruin, comme dans [detection.md](detection.md) et [resilience.md](resilience.md).

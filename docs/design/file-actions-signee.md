@@ -273,7 +273,7 @@ Ce mécanisme se factorise, sans être copié.
 **La watch épingle les clés publiques**, comme l'injecteur épingle la sienne (SEC19). Elle les lit
 dans **son environnement**, et nulle part ailleurs :
 `EREGION_QUEUE_KEYS=console=ed25519:…,bot=ed25519:…`. Le geste est
-`make queue-keys` (ce poste), ou `make glorfindel-host-queue-keys` (Imladris, par SSH, la clé d'hôte
+`make queue-keys` (ce poste), ou `make imladris-queue-keys` (Imladris, par SSH, la clé d'hôte
 épinglée). Il donne la ligne à poser dans `.envrc` ou dans `host.env`. Sans épinglage, la watch
 refuse chaque demande de ce service, le geste dit, et la console grise ses boutons d'écriture en le
 disant (§2.10).
@@ -503,7 +503,7 @@ Le lot qui ferme FS1 (FS1e) écrit ces changements dans `docs/design/modele-de-m
 
 ### 4.2 Les gestes de Jonathan
 
-- **L'épinglage** : `make glorfindel-host-queue-keys`, puis la ligne `EREGION_QUEUE_KEYS` dans
+- **L'épinglage** : `make imladris-queue-keys`, puis la ligne `EREGION_QUEUE_KEYS` dans
   `host.env`. Sur un poste : `make queue-keys`, puis `.envrc`.
 - **Les copies de la liste Discord** dans l'environnement de la watch (§2.7).
 - **Au banc, avec FS1c** : une approbation d'isolation sur gondolin par la file, puis sa levée, et
@@ -804,7 +804,7 @@ console et le bot). Chaque point du §7 « Pour FS1b » est tenu :
 - **La proposition re-signée au-delà d'un âge seulement** : une carte revue garde la sienne tant
   qu'elle tient (cette clé, la carte inchangée) et a moins de 10 min (`escalations.RESIGN_AFTER_S`,
   `action_queue.proposal_fresh`).
-- **Les clés à épingler** : `make queue-keys` (ce poste) et `make glorfindel-host-queue-keys` (Imladris),
+- **Les clés à épingler** : `make queue-keys` (ce poste) et `make imladris-queue-keys` (Imladris),
   préparés, pas lancés (`docs/operations.md`, « La file d'actions signée »).
 - **Tests** : `tests/unit/test_action_queue_watch.py` (le bout en bout sur le faux Azure, chaque refus,
   le rejeu, la carte forgée, la clé d'un autre service, le drapeau absent, un registre illisible,
@@ -890,12 +890,12 @@ gestes de Jonathan).
   peut plus remplacer ni noyer les demandes de la console : le modèle de menace passe ce point à fermé.
 
 **La bascule préparée** :
-- `make glorfindel-host-queue-keys` tire la clé de chaque service dans son conteneur s'il n'en a pas
+- `make imladris-queue-keys` tire la clé de chaque service dans son conteneur s'il n'en a pas
   (`python -m eregion_core.action_queue pin <service> --draw`, le code du service), sans le
   drapeau : les clés d'abord, le drapeau ensuite. Le bot arrêté : sa clé manque, et c'est dit.
 - `host_env.py` ne recopie jamais `EREGION_ACTION_QUEUE` ni `EREGION_QUEUE_KEYS` de
   l'environnement de l'opérateur (ce sont les clés de ce poste, Imladris a les siennes), et le dit ;
-  `--check` (lancé par `make glorfindel-host-push`) refuse le drapeau sans la clé de la console, ou
+  `--check` (lancé par `make imladris-push`) refuse le drapeau sans la clé de la console, ou
   sans celle du bot quand il tourne (`DISCORD_BOT_TOKEN`), et un drapeau autre que « 1 ».
 - La watch dit à son démarrage chaque clé qui manque ou qui est fausse (`action_queue.pin_problems`,
   les mêmes mots que `--check`) ; la console, ce que le statut de la watch dit de la sienne.

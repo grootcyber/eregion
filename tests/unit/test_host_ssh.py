@@ -7,7 +7,7 @@ a dedicated known_hosts is written from the key the host presents only when it h
 fingerprint, ssh then trusts that file alone, and a key of another fingerprint — presented or
 recorded — refuses before anything runs. Without it, accept-new stays, and the command says so.
 
-The recipes really run (`make glorfindel-host-ssh`), against a fake `ssh-keyscan` (it answers
+The recipes really run (`make imladris-ssh`), against a fake `ssh-keyscan` (it answers
 with a key the test generated) and a fake `ssh` that records its arguments; the real
 `ssh-keygen` computes the fingerprints. No VM, no network. The keys are throwaway, made here.
 """
@@ -48,7 +48,7 @@ def _make(tmp_path, *args, presented="", silent=True):
     for k in ("HOST_SSH_FINGERPRINT", "HOST_KNOWN_HOSTS", "HOST_IP", "HOST_SSH_KEY"):
         env.pop(k, None)
     res = subprocess.run(["make", *(["-s"] if silent else []), "--no-print-directory", "-C", str(ROOT),
-                          "glorfindel-host-ssh", f"HOST_IP={IP}", *args], env=env, capture_output=True, text=True,
+                          "imladris-ssh", f"HOST_IP={IP}", *args], env=env, capture_output=True, text=True,
                           timeout=60)
     return res, log.read_text().splitlines()
 
@@ -102,16 +102,16 @@ def test_a_fingerprint_that_is_not_one_refuses(tmp_path):
 
 def test_every_command_toward_h0_checks_the_key_first_and_orodruin_keeps_its_own():
     """Each target whose recipe reaches H0 (HOST_SSH, HOST_SSH_TTY, its scp, its tunnel) waits
-    on glorfindel-host-known; Orodruin's ssh never takes H0's known_hosts."""
+    on imladris-known; Orodruin's ssh never takes H0's known_hosts."""
     import re
     text = (ROOT / "Makefile").read_text(encoding="utf-8")
-    rules = re.findall(r"(?m)^(glorfindel-host-[\w-]+):([^\n=]*)\n((?:\t.*\n)*)", text)
+    rules = re.findall(r"(?m)^(imladris-[\w-]+):([^\n=]*)\n((?:\t.*\n)*)", text)
     reaching = {name: deps for name, deps, recipe in rules
                 if re.search(r"\$\(HOST_SSH(_TTY|_OPTS)?\)|status\.sh", recipe)}
-    assert {"glorfindel-host-push", "glorfindel-host-start", "glorfindel-host-tunnel-go",
-            "glorfindel-host-status", "glorfindel-host-cd-install"} <= set(reaching)
-    assert {n for n, deps in reaching.items() if "glorfindel-host-known" not in deps} == set()
-    assert "$(SSH_OPTS)" not in "".join(r for n, _, r in rules if n != "glorfindel-host-known")
+    assert {"imladris-push", "imladris-start", "imladris-tunnel-go",
+            "imladris-status", "imladris-cd-install"} <= set(reaching)
+    assert {n for n, deps in reaching.items() if "imladris-known" not in deps} == set()
+    assert "$(SSH_OPTS)" not in "".join(r for n, _, r in rules if n != "imladris-known")
     assert re.search(r"(?m)^ORO_SSH\s*=\s*ssh \$\(SSH_OPTS\)", text)
 
 
@@ -134,7 +134,7 @@ def test_make_glorfindel_host_ssh_prints_nothing_of_its_command(tmp_path):
 
 
 def test_no_command_toward_imladris_is_echoed_by_make():
-    """Every logical line of every glorfindel-host-* recipe starts with @: none prints its command — the
+    """Every logical line of every imladris-* recipe starts with @: none prints its command — the
     address of Imladris, its user, the key's path or the operator's address (terraform's operator_cidr)."""
     import re
     lines = (ROOT / "Makefile").read_text(encoding="utf-8").splitlines()
@@ -148,12 +148,12 @@ def test_no_command_toward_imladris_is_echoed_by_make():
             target = target if (not ln.strip() or ln.startswith("#")) else None
             cont = False
             continue
-        if not cont and target and target.startswith("glorfindel-host-") and not ln[1:].startswith("@"):
+        if not cont and target and target.startswith("imladris-") and not ln[1:].startswith("@"):
             echoed.append((target, ln.strip()[:60]))
         cont = ln.endswith("\\")
     assert echoed == [], echoed
-    reaching = [t for t in ("glorfindel-host-ssh", "glorfindel-host-tunnel-go", "glorfindel-host-start",
-                            "glorfindel-host-cd-install", "glorfindel-host-plan")
+    reaching = [t for t in ("imladris-ssh", "imladris-tunnel-go", "imladris-start",
+                            "imladris-cd-install", "imladris-plan")
                 if f"\n{t}:" in "\n" + "\n".join(lines)]
     assert len(reaching) == 5, reaching
 
