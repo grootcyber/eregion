@@ -727,6 +727,9 @@ async def state() -> dict:
                 "verified_at": _iso.get("verified_at", ""),
                 # Open sessions cut after the rules? (drain: drained|partial|failed|unsupported)
                 "drain": _iso.get("drain") or {},
+                # DRN2: what became of the cut, for the card — pending, cut, refused, sessions open,
+                # never ended — and when it was read so (glorfindel/drain_watch.py).
+                "drain_view": _drain_view(_iso),
                 # LEV2: who acted on the VM by the control plane, and their rights — read by the
                 # watch, for information only (nothing here lifts or holds); None: not read yet.
                 "door": _door_view(resource_id),
@@ -873,6 +876,35 @@ async def state() -> dict:
         "capability": capability,
         "now": now.isoformat(),
     }
+
+
+def _drain_view(iso: dict) -> dict:
+    """DRN2 (#754): the session cut as the isolation card says it — `case` (`pending`, `drained`,
+    `refused`, `open`, `never`, or "" for a cut that ended within its first wait, nothing to say),
+    `ended_at` when the watch read its outcome after that wait, `after_s` (when it was read so,
+    after it was asked), and `said`: the closure's text as the notification said it
+    (glorfindel/vm_notices.py), else the outcome's. Text from the watch, with names from Azure:
+    the page writes it through `_attr`."""
+    from glorfindel import vm_notices
+    from glorfindel.drain_watch import closure_key
+    from glorfindel.response.policy import drain_case, drain_said
+    drain = iso.get("drain") if isinstance(iso.get("drain"), dict) else {}
+    ended_at = str(iso.get("drain_ended_at") or "")
+    case = drain_case(drain) or ("drained" if drain.get("status") == "drained" else "")
+    if not drain or (case == "drained" and not ended_at):
+        return {}
+    view = {"case": case, "ended_at": ended_at}
+    if case == "pending":
+        return view
+    try:
+        notice = vm_notices.said(closure_key(str(iso.get("resource_id") or ""), drain.get("asked_at"))) or {}
+    except Exception:          # the card first: an unreadable store says the outcome alone
+        notice = {}
+    after = (notice.get("detail") or {}).get("after_s")
+    if isinstance(after, (int, float)):
+        view["after_s"] = int(after)
+    view["said"] = str(notice.get("text") or drain_said(drain) or "Coupure des sessions aboutie : sessions coupées.")
+    return view
 
 
 def _platform_open_nics(placements) -> list[str]:

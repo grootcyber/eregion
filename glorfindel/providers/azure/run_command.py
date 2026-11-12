@@ -95,7 +95,7 @@ def pending(resource_id: str, poller, asked: float, waited_s: float) -> dict:
             **({"azure_status": status} if status else {}),
             "note": (f"coupure en attente : Run Command toujours en cours sur Azure après "
                      f"{round(waited_s)} s ({status or 'statut non lu'}) — suivie, son statut relu "
-                     "à chaque passe de la réaffirmation")}
+                     "à chaque passe de la réaffirmation, son issue dite par un message")}
 
 
 class DrainFollowMixin:
@@ -130,6 +130,13 @@ class DrainFollowMixin:
         """Stop following a drain (ended and said, given up, its VM released)."""
         with _LOCK:
             _FOLLOWED.pop(resource_id.rstrip("/").lower(), None)
+
+    def drain_asked_at(self, resource_id: str) -> str | None:
+        """When the drain this process follows on `resource_id` was asked (its nonce), or None — what
+        names its closure when its VM no longer waits for it (DRN2, glorfindel/drain_watch.py)."""
+        with _LOCK:
+            entry = _FOLLOWED.get(resource_id.rstrip("/").lower())
+        return entry.get("asked_at") if entry else None
 
     def followed_drains(self) -> list[str]:
         """The VM ids (lowercase) whose drain this process still follows."""

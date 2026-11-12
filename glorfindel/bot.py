@@ -33,6 +33,9 @@ _SYNC_EVERY = 3  # watch-loop turns (5 s each) between two syncs of the posted m
 # `glorfindel report --since 7d` says, without opening anything.
 _WEEKLY_STORE = Path.home() / ".glorfindel" / "bot_weekly.json"
 _WEEKLY_HOUR_UTC = 8
+# DRN2 (#754): the keys of the notices (glorfindel/vm_notices.py) this bot posted in a VM's thread —
+# a restart of the bot never posts one twice.
+_NOTICES_POSTED_STORE = Path.home() / ".glorfindel" / "bot_notices_posted.json"
 
 
 def _write_store(path: Path, data) -> None:
@@ -49,6 +52,27 @@ def _load_posted() -> set[str]:
 
 def _save_posted(ids: set[str]) -> None:
     _write_store(_POSTED_STORE, list(ids))
+
+
+# A notice older than this is not posted (a bot started late, or its store lost): it closed what
+# was said long ago.
+_NOTICE_MAX_AGE_H = 24
+
+
+def _younger(at, oldest) -> bool:
+    from datetime import datetime, timezone
+    try:
+        when = datetime.fromisoformat(str(at))
+    except (TypeError, ValueError):
+        return False
+    return (when if when.tzinfo else when.replace(tzinfo=timezone.utc)) >= oldest
+
+
+def _load_notices_posted() -> set[str]:
+    try:
+        return {str(k) for k in json.loads(_NOTICES_POSTED_STORE.read_text())}
+    except (OSError, ValueError, TypeError):
+        return set()
 
 
 def _load_threads() -> dict[str, int]:
@@ -1111,6 +1135,7 @@ class GlorfindelBot(discord.Client):
         self._threads: dict[str, int] = _load_threads()
         self._messages: dict[str, int] = _load_messages()
         self._synced: dict[str, str] = _load_synced()
+        self._notices_posted: set[str] = _load_notices_posted()
         try:
             self._weekly_last: str | None = json.loads(_WEEKLY_STORE.read_text()).get("last")
         except (OSError, ValueError, AttributeError):
@@ -1171,7 +1196,7 @@ class GlorfindelBot(discord.Client):
         self.bg_task = self.loop.create_task(self._watch_escalations())
 
     async def _get_or_create_thread(
-        self, channel: discord.TextChannel, resource_id: str
+        self, channel: discord.TextChannel, resource_id: str, ping: bool = True
     ) -> discord.Thread:
         vm_name = _thread_name(resource_id)
         thread_id = self._threads.get(resource_id)
@@ -1199,7 +1224,7 @@ class GlorfindelBot(discord.Client):
             f"(id={thread.id})[/cyan]"
         )
 
-        if self.ping_role:
+        if self.ping_role and ping:
             await thread.send(
                 f"<@&{self.ping_role}> Incident opened on {discord_code(vm_name)}",
                 # Every field said: the message mentions its role alone, whatever the client's
@@ -1245,6 +1270,7 @@ class GlorfindelBot(discord.Client):
                         )
                     except Exception as e:
                         _console.print(f"[red]Bot post error: {e}[/red]")
+                await self._post_notices(channel)
                 await self._post_weekly(channel)
                 if turn % _SYNC_EVERY == 0:
                     try:
@@ -1317,6 +1343,33 @@ class GlorfindelBot(discord.Client):
             if thread is not None and not thread.archived:
                 await thread.edit(archived=True, reason="All escalations handled")
         return edited
+
+    async def _post_notices(self, channel) -> int:
+        """The notices of the watch (glorfindel/vm_notices.py: a session cut's closure, DRN2) not
+        posted yet, each in its VM's thread — the thread the VM's cards are in, opened again or
+        created without pinging the role (a notice closes what was said; it opens no incident).
+        Each posted once: its key kept before the next. Returns the number posted."""
+        from datetime import datetime, timedelta, timezone
+
+        from glorfindel import vm_notices
+        posted, notices = 0, vm_notices.for_bot()
+        oldest = datetime.now(timezone.utc) - timedelta(hours=_NOTICE_MAX_AGE_H)
+        for notice in notices:
+            if notice["key"] in self._notices_posted or not _younger(notice.get("at"), oldest):
+                continue
+            rid = str(notice.get("resource_id") or "")
+            key = next((k for k in self._threads if k.lower() == rid.lower()), rid)
+            try:
+                thread = await self._get_or_create_thread(channel, key, ping=False)
+                await thread.send(vm_notices.bot_message(notice))
+            except Exception as e:      # the next turn tries again
+                _console.print(f"[red]Bot notice error ({_esc_markup(str(notice['key']))}): {_esc_markup(str(e))}[/red]")
+                continue
+            # Only the keys the store still holds: the others can never come back (KEPT).
+            self._notices_posted = (self._notices_posted | {notice["key"]}) & {n["key"] for n in notices}
+            _write_store(_NOTICES_POSTED_STORE, sorted(self._notices_posted))
+            posted += 1
+        return posted
 
     async def _post_weekly(self, channel) -> bool:
         from datetime import datetime, timedelta, timezone
