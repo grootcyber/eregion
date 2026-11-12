@@ -20,7 +20,7 @@
   lateness facts kept in a file of their own. If the quarantine holds the guest's telemetry back (a
   hypothesis to measure first), a detection before the lift cannot come from the guest, and a late
   human lift needs a catch-up read with absolute bounds. The lateness itself is shown per VM and per
-  table, with a card only when entering the state of lines beyond the horizon, or of a sampled table
+  table, read over 48 hours of event time, with a card only when entering the state of lines beyond the horizon, or of a sampled table
   gone silent while `Heartbeat` arrives (never for `Syslog`, which follows events), and as a fact of
   the isolation record. Twelve hypotheses to measure, most of them read-only on data kept until early
   December; the code lots ING2 to ING7; ten questions for the operator. Linked from

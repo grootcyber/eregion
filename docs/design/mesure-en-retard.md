@@ -320,17 +320,24 @@ let failures = Syslog
   | extend Key = strcat(SourceIP, "|", Computer, "|", _ResourceId)
   | order by Key asc, TimeGenerated asc
   // Le nombre d'échecs frais jusqu'à cette ligne, repris à zéro à chaque couple.
-  | extend CumFresh = row_cumsum(Fresh, Key != prev(Key));
+  | extend CumFresh = row_cumsum(Fresh, Key != prev(Key))
+  // Cette ligne et les neuf suivantes du même couple, lues dans le let, sur les lignes triées.
+  | extend LastKey = next(Key, 9), Last = next(TimeGenerated, 9), LastCum = next(CumFresh, 9);
 failures
-// Cette ligne et les neuf suivantes du même couple : en 10 minutes au plus, une fraîche au moins.
-| extend LastKey = next(Key, 9), Last = next(TimeGenerated, 9), LastCum = next(CumFresh, 9)
+// Dix échecs consécutifs du couple en 10 minutes au plus, un frais au moins parmi eux.
 | where LastKey == Key and Last - TimeGenerated <= 10m and LastCum - (CumFresh - Fresh) > 0
 | summarize Start = min(TimeGenerated), End = max(Last) by Key, SourceIP, Computer, _ResourceId
 // FailedAttempts : les échecs du couple entre le début de la première suite et la fin de la dernière.
 | join kind=inner (failures | project Key, T = TimeGenerated) on Key
 | where T between (Start .. End)
-| summarize FailedAttempts = count(), IngFirstAt = min(Start) by SourceIP, Computer, _ResourceId
+| summarize FailedAttempts = count(), IngFirstAt = min(Start), IngLastAt = max(End)
+            by SourceIP, Computer, _ResourceId
 ```
+
+Les `next()` sont dans le `let`, juste après son `order by` : ils lisent les lignes triées, sans
+dépendre de la façon dont Kusto développe une référence au `let`. Si un même bloc tient deux
+rafales éloignées du même couple, `Start .. End` les réunit, et `FailedAttempts` compte aussi les
+échecs isolés entre elles : une valeur plus haute, jamais une carte de moins.
 
 La règle rend `FailedAttempts` (le nom que COR1 lit, `correlation.py:511`) ; sa valeur change de sens
 (les échecs de la rafale, non plus ceux des 10 dernières minutes), pas sa forme. Dix échecs étalés
@@ -361,8 +368,8 @@ préparation des lignes (AUD1, ADM1, COR1), ni la façon dont le RulePoller rout
 | la fenêtre de sélection `N` | le plus long `ago()` | le plus long `ago()` moins `late_s` |
 | l'expiration d'une identité d'**événement** (`ts:`, `op:`, `entra:`) | fenêtre de l'API (`:1694-1699`) | **inchangée** : la fenêtre de l'API, horizon compris |
 | l'expiration d'une identité **agrégée** (`row:`) | fenêtre de l'API | `N` + 300 s, comme aujourd'hui sans horizon |
-| la fenêtre de `_LOGINS` de COR1 (`:1681-1682`) | fenêtre de l'API | **ancrée sur les échecs** : de l'`IngFirstAt` de la ligne du brute force à maintenant, bornée par `N + H` + 300 s (Q9) |
-| les colonnes `Ing*` de la ligne | — | retirées de la ligne **avant** le routage, l'identité et le signal ; gardées à côté du signal, dans leur propre fichier (§3.5) |
+| la fenêtre de `_LOGINS` de COR1 (`:1681-1682`) | fenêtre de l'API | **ancrée sur les échecs** : une requête par VM, comme aujourd'hui, depuis le plus ancien `IngFirstAt` des lignes de brute force de cette VM, bornée par `N + H` + 300 s ; puis, **ligne par ligne**, seule une connexion datée à partir de l'`IngFirstAt` de cette ligne compte (`at >= IngFirstAt`). Ce filtre par ligne n'existe pas aujourd'hui : `tag_compromise` compare l'adresse, jamais l'heure (`correlation.py:522-535`) ; ING3 l'écrit (Q9) |
+| les colonnes `Ing*` de la ligne | — | retirées de la ligne **avant** le routage, l'identité et le signal, et rangées dans une table à côté, par ligne (`id(row)`, comme `judged` d'ADM1, `detection_rules.py:1673`) ; `correlation.settle` la reçoit en paramètre, pour l'`IngFirstAt` de chaque brute force ; le signal en tire sa ligne de `signal_timing.jsonl` (§3.5) |
 
 **`late_s` est validé au chargement** (la validation de P1, `_invalid_client_entry`,
 `detection_rules.py:423-478`, et `load_config` pour la base) : un entier de secondes, `0 < late_s <`
@@ -381,8 +388,13 @@ lignes agrégées sélectionnables 2 h, et une expiration de 15 minutes les reju
 
 **La limite de cette garde** : elle lit le texte, la plus stricte, et refuse au doute (comme
 `eregion_core/rule_routing.py`). Une requête qui filtre sur l'arrivée puis rejoint des lignes non
-filtrées la passerait encore. L'effet est du bruit (une carte agrégée toutes les `N` + 300 s pendant
-l'horizon), jamais un silence : une identité d'événement, elle, est gardée toute la fenêtre.
+filtrées la passerait encore. Ses formes sont aussi à
+préciser dans ING2 pour deux règles livrées : le `where` de `ssh-brute-force` lit `CumFresh` à travers
+`next()` et une soustraction, et les trois règles d'auditd affectent `Arrived = max(ingestion_time())`
+dans un `summarize`, non par `= ingestion_time()`. Une dérivation à travers l'arithmétique admettrait
+`where Fresh >= 0`, qui ne filtre rien. L'effet est toujours du bruit (une carte agrégée toutes les
+`N` + 300 s pendant l'horizon), jamais un silence : une identité d'événement, elle, est gardée toute
+la fenêtre.
 
 **Une règle du plan des données sans `late_s`** se charge comme aujourd'hui, et c'est dit (une note,
 comme `MIN_LOOKBACK_S`) : « règle … : jugée sur `TimeGenerated` seulement ; une ligne arrivée plus de
@@ -401,11 +413,18 @@ tant que leur retard mesuré tient dans leur heure (ING7).
   données : `signal_id`, la règle, la VM, `IngFirstAt`, `IngLastAt`, `IngMaxDelayS`), écrit avec le
   signal, élagué après 30 jours — la rétention de `Perf` au banc, et celle que DOS1 propose pour un
   dossier (sa Q7) ; la probation, 24 h, y tient. Borné par les plafonds de cartes (SEC2).
+- **Ce qu'il porte, selon la règle.** `ransomware-disk-write` rend les trois colonnes ;
+  `ssh-brute-force`, `IngFirstAt` et `IngLastAt` ; les règles d'événements, aucune : leur ligne porte
+  déjà son `TimeGenerated`, mais pas son arrivée. Pour elles, `signal_timing.jsonl` n'a que l'heure de
+  la ligne, et le fait `signal_delay` (§8) n'a pas de chiffre de retard : il le dit.
+- **Dans la suite hermétique.** ING2 ajoute `signal_timing.jsonl` aux chemins que le `conftest`
+  redirige vers un dossier jetable (HY1) : un test n'écrit jamais dans `~/.glorfindel/`.
 - **Hors de ce que lit le modèle.** `_build_user_message()` injecte l'état de la VM depuis
-  `~/.glorfindel/isolation/<vm>.json` et les blocages (`levee-probation.md`, §6.3) : ces fichiers ne
-  conviennent pas. `signal_timing.jsonl` n'est lu par aucun chemin du message ; un test le tient, et un
-  autre fige le message, à l'octet, pour une ligne donnée. Ni `_SYSTEM_PROMPT`, ni `few_shot_examples.yaml`, ni `_build_user_message()` ne
-  changent.
+  `~/.glorfindel/isolation/<vm>.json`, les blocages (`levee-probation.md`, §6.3) et le dernier restore
+  (`glorfindel.jobs.get_last_restore`, `agent.py:3108-3118`) : ces fichiers ne conviennent pas.
+  `signal_timing.jsonl` n'est lu par aucun chemin du message ; un test le tient, et un autre fige le
+  message, à l'octet, pour une ligne donnée. Ni `_SYSTEM_PROMPT`, ni `few_shot_examples.yaml`, ni
+  `_build_user_message()` ne changent.
 - **Ce qui change, c'est quelles lignes deviennent des détections** : une ligne en retard en devient
   une. La règle d'événements rend son `TimeGenerated`, que le modèle lit ; la ligne agrégée de
   `ransomware-disk-write` n'a pas d'heure, et le modèle ne sait pas que les échantillons ont 20
@@ -447,7 +466,8 @@ opération ; un constat d'Entra).
 
 **Ce qui n'est pas jugé, et le dit.**
 - Une ligne arrivée plus de `H` après son heure : la borne de l'heure la coupe. Le retard est vu
-  (§8), une carte le dit.
+  (§8), une carte le dit, jusqu'à 48 h de retard ; au-delà, la ligne reste invisible, à la vue comme
+  aux règles.
 - Une ligne arrivée pendant une coupure de la watch plus longue que `N` : comme aujourd'hui avec
   `TimeGenerated`. La console dit déjà la coupure (le battement de la watch). Le curseur d'arrivée (la
   piste 3 bis) la fermerait, au prix d'une règle qui ne se lit plus seule.
@@ -538,8 +558,8 @@ reste déterministe.
 
 La probation suit une levée ; ce sont justement les minutes qui arrivent en retard. **Les points 1 à 3
 et 5 à 6 supposent que la quarantaine retient la télémétrie de l'invité** (RH5, avec RH3 : §2.4). Si
-RH5 tombe (l'agent passe la quarantaine), le cas 2 de LEV voit l'invité comme aujourd'hui, et seul le
-point 4 reste ; le bloc du 11/11 serait alors à chercher côté Azure.
+RH5 tombe (l'agent passe la quarantaine), le cas 2 de LEV voit l'invité comme aujourd'hui, et seuls
+les points 4, 7 et 8 restent ; le bloc du 11/11 serait alors à chercher côté Azure.
 
 1. **Sous la quarantaine, la télémétrie de l'invité n'arriverait pas** (RH5). Le NSG de quarantaine
    refuse tout en sortie (§2.4). Le 11/11, les échantillons pris sous la quarantaine (15:50 à 15:54)
@@ -556,8 +576,15 @@ point 4 reste ; le bloc du 11/11 serait alors à chercher côté Azure.
    heure plus vieille encore, n'est jamais jugée. **ING3 est une condition de LEV4.**
 4. **Le moment d'une détection** (quoi que donne RH5). La borne de la probation (« un signal dont le
    moment est après la fin du job de restore ») lit l'heure des lignes : `TimeGenerated` pour une règle
-   d'événements, `IngFirstAt` (gardé à côté du signal, §3.5) pour une règle agrégée — **jamais** le
-   `timestamp` du signal, qui est l'heure de la passe (`detection_rules.py:1891`). Un mutant de LEV4.
+   d'événements ; pour une règle agrégée, **`IngLastAt`** (gardé à côté du signal, §3.5), la dernière
+   ligne au-dessus du seuil — **jamais** le `timestamp` du signal, qui est l'heure de la passe
+   (`detection_rules.py:1891`), **ni `IngFirstAt`**. Un agrégat peut mêler, dans un même bloc en
+   retard, des échantillons d'avant la fin du restore et d'après (si RH5 tient, si le tampon de l'agent
+   survit au restore, si l'écriture tournait sous la quarantaine) : lu par son `IngFirstAt`, il
+   passerait pour l'incident d'origine, et la réécriture d'après le restore ne réisolerait pas. Une
+   lecture plus fine, l'agrégat recalculé sur les seules lignes datées après la fin du restore, reste
+   ouverte à LEV4. `IngFirstAt` sert au dossier (DOS5, DOS9) et à COR1. Deux mutants de LEV4 : la borne
+   sur le `timestamp` du signal ; la borne sur `IngFirstAt` (l'agrégat mêlé ne réisole pas).
 5. **L'horizon face à la levée.** Le retard d'une ligne du démarrage, à son arrivée, vaut le temps
    passé sous la quarantaine après le restore, plus le rattrapage de l'agent.
    - En `non_disruptive`, Imladris lève après la fin du job plus 15 minutes : avec le rattrapage du
@@ -580,8 +607,14 @@ point 4 reste ; le bloc du 11/11 serait alors à chercher côté Azure.
      fenêtres internes (`<= 10m`, `25s`) ne sont pas des `ago()` et ne bougent pas. C'est bien ce que
      le §3.2 reproche à la piste 3 — réécrire un KQL qu'on ne lit pas —, mais borné : une fois par
      probation, d'une seule façon, et seulement sur une règle dont les `ago()` sont exactement ses deux
-     bornes (vérifié au chargement ; sinon pas de relecture pour elle, et la carte le dit). Elle couvre
-     les règles du client et les copies du banc sans les changer ;
+     bornes (vérifié au chargement). Elle couvre sans les changer **les copies du banc et les règles du
+     client écrites dans la forme d'ING3**. Une règle restée sur `TimeGenerated` seul — une règle du
+     client d'avant ING3, une règle autorée (Q5) — n'a qu'un `ago()` : elle est **exclue** de la
+     relecture, et la carte de probation la nomme. La réécrire aussi serait juste pour une règle
+     d'événements, mais un agrégat y perdrait son sens (dix échecs sur 3 h) : la conception ne le fait
+     pas. La relecture se **déduplique par les mêmes identités que `dispatched`** : dans l'horizon
+     (une levée de `non_disruptive`, environ 38 min), elle relit des lignes déjà jugées, qui ne
+     reviennent pas ;
    - **un `probation_query` à bornes absolues** : la variante de probation que LEV prévoit déjà
      (§6.2 de LEV), écrite avec deux noms que la watch pose devant (`let since = datetime(…);
      let until = datetime(…);`). Aucune réécriture ; mais un second texte par règle, qui ne se lance
@@ -610,8 +643,20 @@ Les cartes le disent : « retard d'ingestion ou horloge de la VM ».
 
 **La vue du retard** (ING4). Une requête toutes les 5 minutes, pour toute la watch, sur les lignes
 **arrivées** dans les 10 dernières minutes de `Perf`, `Syslog` et `Heartbeat` : par VM et par table,
-le nombre de lignes, le retard médian et maximal, et la plus vieille heure arrivée. Bornée par ce qui
-est arrivé : quelques lignes par VM.
+le nombre de lignes, le retard médian et maximal, et la plus vieille heure arrivée.
+
+**Sa fenêtre de `TimeGenerated` va bien au-delà de l'horizon.** Le `timespan` de l'API porte sur
+`TimeGenerated` (§1.2) : bornée comme le RulePoller (`N + H`), la vue ne verrait jamais une ligne
+arrivée au-delà de `H`, et la carte « au-delà de l'horizon » ne se ferait jamais — le trou du 11/11
+sous une autre forme. La vue lit donc **48 h** de `TimeGenerated` (au-dessus des 35 à 37 h de la
+quarantaine de bree, la plus longue connue ; réglable, Q4), filtrées par `ingestion_time() > ago(10m)`.
+- **Ce qu'elle rend** est borné par ce qui est arrivé : quelques lignes par VM et par table.
+- **Ce qu'elle coûte** : le serveur lit 48 h de ces trois tables toutes les 5 minutes, 12 fois par
+  heure, pour n'en garder que les arrivées récentes. Au banc, pour `Perf`, 17 280 échantillons par
+  volume et par VM à chaque passe (un toutes les 10 s). La durée en est à mesurer (RH10).
+- **Ce qu'elle ne voit pas** : une ligne datée de plus de 48 h avant son arrivée reste invisible, à la
+  vue comme aux règles. RH4 dit si l'agent en livre ; si oui, la fenêtre s'allonge (7 jours), ou la
+  limite reste dite.
 
 **Les tables à cadence, et les autres.** `Perf` a une cadence : un échantillon toutes les 10 s au banc,
 60 s sur la règle de collecte par défaut d'Azure (`detection_rules.yaml:43-44`). `Heartbeat` aussi, un
@@ -619,7 +664,8 @@ battement régulier de l'agent, dont la période est à lire (RH12). Leur silenc
 événements, la règle de collecte du banc lit auth, authpriv, syslog et daemon, plus local6 et cron en
 option (`infra/terraform/monitoring.tf:47`), et celle d'un client peut se limiter à auth. Une VM calme
 se tait des heures (RH12). Le silence de `Syslog` ne fait **jamais** de carte ; une cadence se déclare
-par table, `Perf` seul en v1.
+par table, `Perf` seul en v1, et ne vaut pour une VM qu'une fois `Perf` vu sur elle : une VM dont la
+règle de collecte ne prend pas `Perf` n'entre jamais dans l'état « muette ».
 
 **Un état par VM et par table**, dans le statut de la watch, lu par la console :
 
@@ -639,7 +685,9 @@ point 6).
 (`dossier-isolation.md`, §3.1). Pour une règle agrégée, `T` n'est pas dans la ligne : c'est
 `IngFirstAt`, lu dans `signal_timing.jsonl` (§3.5). Un fait de plus, `signal_delay`, parmi ceux de la
 décision (F6) : « la détection s'est faite sur des lignes arrivées avec jusqu'à 21 min de retard ;
-l'enquête a lu les minutes d'après » — l'auteur est la plateforme, l'état `lu`. C'est un fait local,
+l'enquête a lu les minutes d'après » — l'auteur est la plateforme, l'état `lu`. Pour une règle
+d'événements, qui ne rend pas son arrivée (§3.5), le fait dit l'heure de la ligne, et « retard non
+lu ». C'est un fait local,
 qui revient donc à DOS3 (les faits locaux, dont F6) ; avant ING2, il est `sans_objet`. Et l'après-coup
 (F5) d'une isolation dit, à sa levée, le rattrapage de la VM. Les deux restent pour l'humain, jamais
 pour le modèle.
@@ -686,7 +734,7 @@ T1486 du 09/11 sur gondolin (une isolation, puis un restore), vers le 09/12.
 | **RH7** | `AzureActivity` arrive en 3 à 20 min (A1 d'ID1), Entra en quelques minutes (E3) | le protocole d'ID1 (`docs/operations.md`, « Les requêtes de mesure »), p95 sur 24 h | au-delà de 45 min : ING7, et le piège de `entra-sp-unusual-signin` |
 | **RH8** | `StorageBlobLogs` arrive sous 5 min, la fenêtre de `data-exfiltration-blob` | la même requête sur 30 jours, là où le T1041 a tourné (lecture seule) | ING3 la couvre déjà ; à dire |
 | **RH9** | l'agent date une ligne `Syslog` à sa réception, pas par l'heure écrite dans la ligne | une ligne `logger` datée à la main sur une VM du banc (un geste de Jonathan, non destructif) | une ligne datée par root : l'horizon et la fin de la fenêtre se contournent, à dire au modèle de menace |
-| **RH10** | la requête de `ransomware-disk-write` sur 130 min, et le `join` de `ssh-brute-force`, rendent en quelques secondes | `glorfindel rules check --live`, après ING3 | `H` baisse, ou la règle change de forme |
+| **RH10** | la requête de `ransomware-disk-write` sur 130 min, le tri et le `join` de `ssh-brute-force`, et la vue du retard sur 48 h, rendent en quelques secondes | `glorfindel rules check --live`, après ING3 | `H` baisse, ou la règle change de forme |
 | **RH11** | `ingestion_time()` est rempli sur `Perf`, `Syslog`, `StorageBlobLogs` (la documentation) ; le SDK rend les colonnes d'heure en `datetime` | une requête sur chaque table ; un test du type de la colonne | une table sans arrivée garde sa fenêtre sur l'heure, et la note du chargement le dit |
 | **RH12** | le silence normal de `Syslog` par VM (le plus long écart entre deux lignes, par facilité, sur une VM calme) ; la période de `Heartbeat` | les écarts entre lignes consécutives, par VM, sur 7 jours (lecture seule) | rien pour `Syslog` (jamais de carte de silence, §8) ; la période de `Heartbeat` fixe le seuil de « muette » |
 
@@ -704,14 +752,15 @@ Dans l'ordre. Les mutants sont comptés ; l'Orchestre donne les plages.
 
 | Lot | Session | Contenu | Ce qu'il prouve | Mutants |
 |---|---|---|---|---|
-| **ING2** — la sélection à l'arrivée dans le RulePoller | Glorfindel | `late_s` validé au chargement (la base et la couche du client), ignoré et dit sur une requête qui ne filtre pas sur l'arrivée dans une forme reconnue (§3.4), ou hors de `0 < late_s <` fenêtre, ou au-delà de 6 h ; les deux expirations ; les colonnes `Ing*` retirées de la ligne avant le routage, l'identité et le signal, écrites dans `signal_timing.jsonl` (30 jours) ; la note du chargement pour une règle du plan des données sans `late_s` ; `kql_subset` gagne `ingestion_time()` (une colonne cachée de la ligne de test) ; la doc. **Aucune règle livrée ne change** | le message au modèle identique à l'octet ; une ligne jamais jugée deux fois, sur un faux qui livre en retard | **6** : l'identité agrégée expirée avec l'horizon (une seconde rafale tue) ; l'identité d'événement expirée à `N + 300 s` (une ligne rejugée) ; `late_s` admis sans `ingestion_time()` ; `late_s` admis sur une requête qui ne fait qu'`extend Arrived = ingestion_time()` (la garde textuelle) ; une colonne `Ing*` laissée dans la ligne ; `signal_timing.jsonl` élagué avec `dispatched` (l'après-coup du dossier ne le trouve plus) |
-| **ING3** — les règles du plan des données | Glorfindel | les neuf règles de `Perf`, `Syslog` et `StorageBlobLogs` (§2.1) dans la forme du §3.3, `late_s` selon Q2 ; la paire jugée à l'arrivée de son dernier échantillon ; le brute force par fenêtre glissante (Q10) ; `_LOGINS` de COR1 ancrée sur l'heure des échecs (Q9) ; les colonnes rendues inchangées (un test les compare) ; la copie sudo du banc refaite ; `kql_subset` gagne ce que lisent `ransomware-disk-write` et `ssh-brute-force` (`order by`, `prev`, `next`, `row_cumsum`, `join kind=leftouter`, `minif`, `max_of`, `between` sur des colonnes), sinon un oracle en Python ; la levée du 11/11 rejouée en données de test, aux retards du relevé | la levée du 11/11 détectée sur l'écriture de 15:56 à 16:06 seule ; dix échecs étalés sur 2 h ne tirent pas ; dix échecs en 5 min arrivés dans le désordre tirent ; la connexion livrée dans le même bloc que son brute force marque la compromission | **7** : la borne de l'arrivée retirée de `ransomware-disk-write` (le 11/11 de nouveau aveugle) ; la paire jugée à l'arrivée de son échantillon d'après, pas du dernier arrivé ; le brute force compté sur l'horizon (le filet de 2 h tire) ; le brute force compté vers l'arrière seulement (les cinq récents arrivés d'abord : jamais de carte) ; la borne de l'arrivée retirée de `t1136-001-…` (le `useradd` du démarrage, arrivé après la levée, tue) ; celle de `data-exfiltration-blob` retirée ; `_LOGINS` ancrée sur la passe (la connexion du bloc perdue) |
-| **ING4** — le retard vu | Glorfindel, puis Console | la requête du §8 toutes les 5 min (Q4), l'état par VM et par table, la cadence déclarée par table (`Perf` en v1), les VM en quarantaine à part, le rattrapage après une levée ; les cartes « au-delà de l'horizon » et « muette », au passage dans l'état ; le rattrapage pour LEV ; la tuile et la section des règles de la console | une VM dont `Perf` se tait sous un `Heartbeat` vivant fait une carte ; une VM en quarantaine n'en fait pas ; un `Syslog` calme n'en fait pas | **6** : une VM en quarantaine en carte ; une ligne au-delà de l'horizon sans carte ; la carte « au-delà de l'horizon » refaite à chaque passe ; une table à cadence muette lue « à l'heure » quand `Heartbeat` arrive ; un `Syslog` calme lu « muette » ; une requête en échec lue « à l'heure » |
+| **ING2** — la sélection à l'arrivée dans le RulePoller | Glorfindel | `late_s` validé au chargement (la base et la couche du client), ignoré et dit sur une requête qui ne filtre pas sur l'arrivée dans une forme reconnue (§3.4), ou hors de `0 < late_s <` fenêtre, ou au-delà de 6 h ; les deux expirations ; les colonnes `Ing*` retirées de la ligne avant le routage, l'identité et le signal, rangées dans une table à côté des lignes, passée à `correlation.settle`, et écrites dans `signal_timing.jsonl` (30 jours), chemin que le `conftest` redirige (HY1) ; la note du chargement pour une règle du plan des données sans `late_s` ; `kql_subset` gagne `ingestion_time()` (une colonne cachée de la ligne de test) ; la doc. **Aucune règle livrée ne change** | le message au modèle identique à l'octet ; une ligne jamais jugée deux fois, sur un faux qui livre en retard | **6** : l'identité agrégée expirée avec l'horizon (une seconde rafale tue) ; l'identité d'événement expirée à `N + 300 s` (une ligne rejugée) ; `late_s` admis sans `ingestion_time()` ; `late_s` admis sur une requête qui ne fait qu'`extend Arrived = ingestion_time()` (la garde textuelle) ; une colonne `Ing*` laissée dans la ligne ; `signal_timing.jsonl` élagué avec `dispatched` (l'après-coup du dossier ne le trouve plus) |
+| **ING3** — les règles du plan des données | Glorfindel | les neuf règles de `Perf`, `Syslog` et `StorageBlobLogs` (§2.1) dans la forme du §3.3, `late_s` selon Q2 ; la paire jugée à l'arrivée de son dernier échantillon ; le brute force par fenêtre glissante (Q10) ; `_LOGINS` de COR1 ancrée sur l'heure des échecs (Q9) ; les colonnes rendues inchangées (un test les compare) ; la copie sudo du banc refaite ; `kql_subset` gagne ce que lisent `ransomware-disk-write` et `ssh-brute-force` (`order by`, `prev`, `next`, `row_cumsum`, `join kind=leftouter`, `minif`, `max_of`, `between` sur des colonnes), sinon un oracle en Python ; la levée du 11/11 rejouée en données de test, aux retards du relevé | la levée du 11/11 détectée sur l'écriture de 15:56 à 16:06 seule ; dix échecs étalés sur 2 h ne tirent pas ; dix échecs en 5 min arrivés dans le désordre tirent ; la connexion livrée dans le même bloc que son brute force marque la compromission | **9** : la borne de l'arrivée retirée de `ransomware-disk-write` (le 11/11 de nouveau aveugle) ; la paire jugée à l'arrivée de son échantillon d'après, pas du dernier arrivé ; le brute force compté sur l'horizon (le filet de 2 h tire) ; le brute force compté vers l'arrière seulement (les cinq récents arrivés d'abord : jamais de carte) ; la borne de l'arrivée retirée de `t1136-001-…` (le `useradd` du démarrage, arrivé après la levée, tue) ; celle de `data-exfiltration-blob` retirée ; `_LOGINS` ancrée sur la passe (la connexion du bloc perdue) ; le filtre par ligne de COR1 retiré (une connexion d'avant le premier échec marque la compromission) ; `Step` calculé sur toute la fenêtre de 130 min sans garde (une série à 60 s avec un rattrapage passe en pas fin et rate une attaque : le test d'une série à 60 s avec un rattrapage) |
+| **ING4** — le retard vu | Glorfindel, puis Console | la requête du §8 toutes les 5 min (Q4), l'état par VM et par table, la cadence déclarée par table (`Perf` en v1), les VM en quarantaine à part, le rattrapage après une levée ; les cartes « au-delà de l'horizon » et « muette », au passage dans l'état ; le rattrapage pour LEV ; la tuile et la section des règles de la console | une VM dont `Perf` se tait sous un `Heartbeat` vivant fait une carte ; une VM en quarantaine n'en fait pas ; un `Syslog` calme n'en fait pas | **7** : une VM en quarantaine en carte ; une ligne au-delà de l'horizon sans carte ; la vue bornée à `N + H` (une ligne arrivée avec 3 h de retard ne fait pas de carte) ; la carte « au-delà de l'horizon » refaite à chaque passe ; une table à cadence muette lue « à l'heure » quand `Heartbeat` arrive ; un `Syslog` calme lu « muette » ; une requête en échec lue « à l'heure » |
 | **ING5** — la mesure | Tests, gestes de Jonathan | `docs/banc-retard.md` : RH1 à RH8 et RH12 en lecture seule sur les données gardées, RH3 à RH6 d'abord ; RH9 (un geste) ; RH10 après ING3 ; les résultats reportés au §10 | RH1 à RH10, RH12 | **0** |
 | **ING6** — les règles autorées | Glorfindel | la note du §3.4 à l'approbation d'une proposition (`approve-rule`, la console) et dans `rules check` ; le prompt d'autorat inchangé (Q5) | une proposition sur `TimeGenerated` seulement est approuvée, et c'est dit | **2** : la note absente à l'approbation ; la note absente au chargement de la couche du client |
 | **ING7** — le plan de contrôle et les identités (si RH7 le demande) | Glorfindel | les neuf règles d'`AzureActivity` et d'Entra dans la même forme ; la base de `entra-sp-unusual-signin` lue par l'arrivée (« connue » = arrivée avant la fenêtre) ; les deux copies du banc refaites, et le geste | une connexion arrivée 70 min en retard n'entre pas dans sa propre base | **3** (estimés) |
 
-**Total** : 21 mutants pour ING2 à ING6 ; 3 de plus si ING7 part. La relecture de rattrapage de la
+**Total** : 24 mutants pour ING2 à ING6 ; 3 de plus si ING7 part. Deux mutants de plus reviennent à
+LEV4 (la borne de la probation, §7, point 4). La relecture de rattrapage de la
 probation (§7, point 6) est à LEV4, avec ses propres mutants.
 
 **L'ordre.**
@@ -772,14 +821,19 @@ décidé à sa place.
 3. `Perf` et `Syslog` seulement (huit). `StorageBlobLogs` attend RH8, malgré sa fenêtre de 5 minutes.
 
 **Q4 — Le retard lui-même** (§8)
-1. **Un état par VM et par table ; une carte, au passage dans l'état, seulement quand des lignes
-   arrivent au-delà de l'horizon, ou quand une table à cadence (`Perf`) se tait alors que `Heartbeat`
-   arrive ; jamais sur le silence de `Syslog` ; un fait du dossier et de la probation (recommandée).**
-   Ce qui n'est pas jugé est dit ; un retard jugé quand même, ou une VM calme, ne fait pas de bruit.
+1. **Un état par VM et par table, lu sur 48 h de `TimeGenerated` ; une carte, au passage dans
+   l'état, seulement quand des lignes arrivent au-delà de l'horizon, ou quand une table à cadence
+   (`Perf`) se tait alors que `Heartbeat` arrive ; jamais sur le silence de `Syslog` ; un fait du
+   dossier et de la probation (recommandée).** Ce qui n'est pas jugé est dit, jusqu'à 48 h de retard ;
+   un retard jugé quand même, ou une VM calme, ne fait pas de bruit. Le prix : 48 h de trois tables
+   lues côté serveur toutes les 5 minutes.
 2. Une carte dès qu'un bloc arrive avec plus de `N` de retard. Le plus visible ; une carte à chaque
    levée, et à chaque lenteur d'Azure.
 3. Rien de neuf : seulement le fait du dossier. Le moins de code ; une VM dont `Perf` se tait sous un
    `Heartbeat` vivant reste invisible.
+
+La fenêtre de la vue, sous l'option 1 : 48 h (recommandée), 7 jours (une quarantaine plus longue, sept
+fois plus lu), ou `N + H` — à écarter : la carte « au-delà de l'horizon » ne se ferait jamais.
 
 **Q5 — Les règles autorées** (§6)
 1. **Le code dit la forme manquante, à l'approbation et dans `rules check` ; la règle est approuvée
@@ -801,8 +855,10 @@ décidé à sa place.
 1. **Une relecture de rattrapage au début de la probation, sur `[fin du restore, maintenant]`, une
    fois le rattrapage de l'agent fini, par la réécriture des `ago()` de `campaign_replay`, assumée et
    bornée aux règles dont les `ago()` sont leurs deux bornes ; plus la forme d'ING3 pour le cas courant
-   (recommandée).** Elle couvre une levée humaine tardive et les règles du client, et dit ce qui n'est
-   jamais arrivé.
+   (recommandée).** Elle couvre une levée humaine tardive, les copies du banc et les règles du client
+   écrites dans la forme d'ING3, et dit ce qui n'est jamais arrivé. Une règle restée sur
+   `TimeGenerated` seul (une règle du client d'avant ING3, une règle autorée) en est exclue, et la
+   carte de probation la nomme.
 2. La même relecture par un `probation_query` à bornes absolues (`let since …; let until …;`). Aucune
    réécriture ; un second texte par règle, qui ne se lance pas seul, et rien pour une règle qui n'en a
    pas.
@@ -821,9 +877,11 @@ décidé à sa place.
    T1486 et un autre TTP, par toi.
 
 **Q9 — Les connexions après un brute force, dans le même bloc** (§2.3, §3.4)
-1. **`_LOGINS` ancrée sur l'heure des échecs : de l'`IngFirstAt` du brute force à maintenant, bornée
-   par l'horizon (recommandée).** Une connexion livrée dans le même bloc que son brute force marque la
-   compromission ; une connexion d'avant le premier échec, non.
+1. **`_LOGINS` ancrée sur l'heure des échecs : une requête par VM depuis le plus ancien `IngFirstAt`
+   de ses brute forces, bornée par l'horizon, puis un filtre par ligne, `at >= IngFirstAt` de ce
+   brute force, à écrire dans `tag_compromise` (recommandée).** Une connexion livrée dans le même
+   bloc que son brute force marque la compromission ; une connexion d'avant son premier échec, non.
+   `IngFirstAt` arrive à COR1 par la table à côté des lignes (§3.4), pas par la ligne.
 2. La fenêtre de la passe, sans l'horizon, comme aujourd'hui. Rien ne change ; la compromission livrée
    en retard avec son brute force est perdue, et c'est dit au modèle de menace.
 3. La fenêtre entière, horizon compris. Simple ; une connexion de la même adresse jusqu'à 2 h **avant**
