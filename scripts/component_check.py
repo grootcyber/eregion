@@ -134,7 +134,7 @@ TOGETHER = (
     "test_workflows.py", "test_readme.py", "test_image_check.py", "test_release.py", "test_published_image.py",
     "test_host_ssh.py", "test_host_client_rules.py", "test_azure_roles.py", "test_identity_map.py", "test_agent_token.py", "test_review_verdict.py",
     "test_mutant_anchors.py", "test_mutation_shards.py", "test_mutation_night.py", "test_hypothesis_seed.py", "test_doctor.py", "test_doc_anchors.py",
-    "test_host_name.py",
+    "test_host_name.py", "test_home_sandbox.py",
 )
 
 # Modules of a component that exist to meet another one: each is imported only by a command

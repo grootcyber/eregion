@@ -1583,6 +1583,16 @@ briques:
     lots: [HY1]
     doc: docs/design/preuves.md
 
+  - id: s-home-jetable
+    composant: socle
+    poste: s-prouver
+    nom: "The suite never touches the operator's own state, even on a workstation where Glorfindel runs: a throwaway HOME, its guard"
+    etat: main
+    release: "0.5"
+    lots: [HY2]
+    issue: 769
+    doc: docs/operations.md
+
   - id: s-release
     composant: socle
     poste: s-prouver

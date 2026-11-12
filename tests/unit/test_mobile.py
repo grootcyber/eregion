@@ -618,13 +618,14 @@ def test_an_armed_tunnel_says_since_when_until_when_and_listens_on_127_0_0_1_alo
 
 
 @pytest.fixture
-def far_zone(monkeypatch):
+def far_zone():
     """The workstation in a zone 5 h 30 off UTC (a POSIX TZ: no tzdata needed): its local hour is
-    never UTC's, so an hour said « UTC » but read locally shows."""
-    monkeypatch.setenv("TZ", "XYZ-5:30")
-    time.tzset()
-    yield
-    monkeypatch.undo()
+    never UTC's, so an hour said « UTC » but read locally shows. Its own MonkeyPatch, never
+    `monkeypatch.undo()`: that would undo the conftest's redirections too (HY2)."""
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("TZ", "XYZ-5:30")
+        time.tzset()
+        yield
     time.tzset()
 
 

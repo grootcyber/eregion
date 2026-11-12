@@ -86,7 +86,7 @@ Actions inconnues proposées → escalade automatique, humain valide et codifie.
 ## Tests
 
 ```bash
-pytest                    # ~10 700 tests (~40s ; 60 séquences d'invariants ; en CI, PR 200, push 500 ~1 min), 0 appel Azure, 0 appel LLM, 0 écriture ~/.glorfindel/ ni dans le dépôt (HY1, garde de session)
+pytest                    # ~10 700 tests (~3 min en -n 4 ; 60 séquences d'invariants ; en CI, PR 200, push 500 ~1 min), 0 appel Azure, 0 appel LLM, 0 écriture ~/.glorfindel/ ni dans le dépôt (HY1, garde de session)
                           # Hermétique par construction (conftest) : TOUS les chemins ~/.glorfindel redirigés
                           # vers tmp, et le glorfindel-config.yaml local ignoré (avant : avec une config locale,
                           # les tests de graphe lançaient de vraies requêtes KQL via `investigate`, suite 5× plus lente).
