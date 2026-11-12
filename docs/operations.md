@@ -4537,7 +4537,7 @@ sudo -v && make mobile-check                                   # le poste ouvert
   la date limite lue, ssh sous `timeout`, ce que systemd a chargé sans drop-in ni autre fichier, une
   redirection `127.0.0.1:7007` seule, la clé d'hôte épinglée, l'adresse d'Imladris celle de Terraform),
   puis `systemctl --user show` et `ss -Hltnp` : arrêté, « ℹ non armé » ; en échec, activé ou armé
-  au-delà de sa date limite, un ✗ ; armé, depuis quand, jusqu'à quand, son minuteur de fin, et
+  au-delà de sa date limite, un ✗ ; armé, depuis quand, jusqu'à quand (en UTC, dit : MOB3), son minuteur de fin, et
   les processus de l'unité — ceux de son cgroup (`ControlGroup`), sinon `MainPID` et ses fils, car `MainPID` est celui de `timeout` et c'est son fils ssh qui écoute — n'écoutent qu'en `127.0.0.1:7007` ; le port tenu par un processus hors de l'unité est un ✗ ; ces processus ou `ss` illisibles, un ⚠ (l'écoute n'est pas vérifiée).
 - **Le tunnel du poste** (MOB2, `scripts/mobile.py tunnel-*`, `infra/poste/eregion-console-tunnel.service`) :
   armé à la demande, borné à 12 h (décision de Jonathan, 11/11). `-install` écrit l'unité dans
@@ -4555,6 +4555,12 @@ sudo -v && make mobile-check                                   # le poste ouvert
   l'unité ; `-remove` l'arrête et retire l'unité, son known_hosts et sa date limite. Toutes refusent
   dans une session d'agent, le garde seul d'abord ; `make console-url`, `make glorfindel-host-url` et
   `make glorfindel-host-tunnel` aussi, avant de lire le jeton.
+- **Aucune cible `glorfindel-host-*` n'affiche sa commande** (MOB3, banc du 11/11) : chaque ligne de
+  recette commence par `@`. `make glorfindel-host-ssh` affichait `ssh … glorfindel@<adresse d'Imladris>`,
+  le chemin de la clé compris, et la sortie collée depuis le terminal du téléphone repartait comme
+  commande ; `-plan`, `-up`, `-down` affichaient l'adresse de l'opérateur (`operator_cidr`). Ce qu'elles
+  font ne change pas. Ce qui a été mesuré au banc, et ce qui reste à mesurer : le guide, « Ce qui a été
+  mesuré, ce qui reste à mesurer ».
 
 ## auditd au banc (AUD1, #408)
 

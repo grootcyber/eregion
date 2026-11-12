@@ -617,6 +617,34 @@ def test_an_armed_tunnel_says_since_when_until_when_and_listens_on_127_0_0_1_alo
     assert "le minuteur de fin" in text and "n'écoutent qu'en 127.0.0.1:7007" in text
 
 
+@pytest.fixture
+def far_zone(monkeypatch):
+    """The workstation in a zone 5 h 30 off UTC (a POSIX TZ: no tzdata needed): its local hour is
+    never UTC's, so an hour said « UTC » but read locally shows."""
+    monkeypatch.setenv("TZ", "XYZ-5:30")
+    time.tzset()
+    yield
+    monkeypatch.undo()
+    time.tzset()
+
+
+def test_the_hours_of_the_tunnel_are_said_in_utc_whatever_the_workstation_s_zone(tmp_path, far_zone):
+    """MOB3 (bench of 11/11): « armé depuis … expire à … » was the workstation's local hour, without its
+    zone. Now in UTC, said: since, until, past the deadline, and the line of tunnel-on."""
+    assert time.strftime("%H:%M", time.localtime(NOW)) == "13:30"     # the zone does apply here
+    _set_tunnel(_home(tmp_path))
+    lines, _ = _tunnel(tmp_path)
+    text = "\n".join(t for _, t in lines)
+    assert "armé depuis 15/01 07:50 UTC, expire à 15/01 19:50 UTC (dans 11 h 50)" in text, text
+    lines, _ = _tunnel(tmp_path, now=NOW + mob.WINDOW_S)
+    assert "armé au-delà de sa date limite (15/01 19:50 UTC)" in "\n".join(_fails(lines)), lines
+    (tmp_path / "on").mkdir()
+    home = _home(tmp_path / "on")
+    _set_tunnel(home, window=None)
+    code, out, _ = _main(home, "tunnel-on")
+    assert code == 0 and "armé jusqu'à 15/01 20:00 UTC (12 h)" in out, out
+
+
 @pytest.mark.parametrize("over,said", [
     ({"unit": {"ActiveState": "activating", "SubState": "auto-restart"}}, "en échec"),
     ({"unit": {"ActiveState": "failed", "SubState": "failed"}}, "en échec"),

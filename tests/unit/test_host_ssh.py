@@ -34,7 +34,7 @@ def _key(tmp_path, name):
     return f"{IP} {pub[0]} {pub[1]}", fp
 
 
-def _make(tmp_path, *args, presented=""):
+def _make(tmp_path, *args, presented="", silent=True):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
     log = tmp_path / "ssh.log"
@@ -47,8 +47,9 @@ def _make(tmp_path, *args, presented=""):
            "FAKE_SSH_LOG": str(log), "FAKE_PRESENTED": presented}
     for k in ("HOST_SSH_FINGERPRINT", "HOST_KNOWN_HOSTS", "HOST_IP", "HOST_SSH_KEY"):
         env.pop(k, None)
-    res = subprocess.run(["make", "-s", "--no-print-directory", "-C", str(ROOT), "glorfindel-host-ssh",
-                          f"HOST_IP={IP}", *args], env=env, capture_output=True, text=True, timeout=60)
+    res = subprocess.run(["make", *(["-s"] if silent else []), "--no-print-directory", "-C", str(ROOT),
+                          "glorfindel-host-ssh", f"HOST_IP={IP}", *args], env=env, capture_output=True, text=True,
+                          timeout=60)
     return res, log.read_text().splitlines()
 
 
@@ -112,6 +113,49 @@ def test_every_command_toward_h0_checks_the_key_first_and_orodruin_keeps_its_own
     assert {n for n, deps in reaching.items() if "glorfindel-host-known" not in deps} == set()
     assert "$(SSH_OPTS)" not in "".join(r for n, _, r in rules if n != "glorfindel-host-known")
     assert re.search(r"(?m)^ORO_SSH\s*=\s*ssh \$\(SSH_OPTS\)", text)
+
+
+# ── MOB3 (bench of 11/11): a command toward Imladris never printed, its address and key with it ──
+
+def test_make_glorfindel_host_ssh_prints_nothing_of_its_command(tmp_path):
+    """Without -s, make printed `ssh … glorfindel@<address of Imladris>`, the key's path with it: pasted
+    from the phone's terminal, the line left as it was. Now the recipe runs silent; the ssh goes as before."""
+    line, fp = _key(tmp_path, "h0")
+    known = tmp_path / "kh"
+    known.write_text(line + "\n")
+    known.chmod(0o600)
+    key = tmp_path / "id_imladris"
+    res, calls = _make(tmp_path, f"HOST_SSH_FINGERPRINT={fp}", f"HOST_KNOWN_HOSTS={known}",
+                       f"HOST_SSH_KEY={key}", silent=False)
+    assert res.returncode == 0, res.stderr
+    assert len(calls) == 1 and f"glorfindel@{IP}" in calls[0] and f"-i {key}" in calls[0]   # unchanged
+    said = res.stdout + res.stderr
+    assert IP not in said and str(key) not in said and "ssh " not in said, said
+
+
+def test_no_command_toward_imladris_is_echoed_by_make():
+    """Every logical line of every glorfindel-host-* recipe starts with @: none prints its command — the
+    address of Imladris, its user, the key's path or the operator's address (terraform's operator_cidr)."""
+    import re
+    lines = (ROOT / "Makefile").read_text(encoding="utf-8").splitlines()
+    echoed, target, cont = [], None, False
+    for ln in lines:
+        rule = re.match(r"^([\w-]+):(?!=)", ln)
+        if rule:
+            target, cont = rule.group(1), False
+            continue
+        if not ln.startswith("\t"):
+            target = target if (not ln.strip() or ln.startswith("#")) else None
+            cont = False
+            continue
+        if not cont and target and target.startswith("glorfindel-host-") and not ln[1:].startswith("@"):
+            echoed.append((target, ln.strip()[:60]))
+        cont = ln.endswith("\\")
+    assert echoed == [], echoed
+    reaching = [t for t in ("glorfindel-host-ssh", "glorfindel-host-tunnel-go", "glorfindel-host-start",
+                            "glorfindel-host-cd-install", "glorfindel-host-plan")
+                if f"\n{t}:" in "\n" + "\n".join(lines)]
+    assert len(reaching) == 5, reaching
 
 
 # ── SEC14 (V-32, V-34): Orodruin's host key pinned too, never accept-new; its containers hardened ──

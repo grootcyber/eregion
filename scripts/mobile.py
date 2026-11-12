@@ -53,7 +53,7 @@ workstation's 127.0.0.1:7007, where `make glorfindel-host-tunnel` holds Imladris
                   keys of the fingerprint the unit names); ExitOnForwardFailure, ServerAlive, Restart; the
                   address of Imladris the one Terraform gives now (--host-ip; unread: a ⚠). Then
                   `systemctl --user show`: stopped, ℹ not armed (never a ✗); failing, restarting or
-                  enabled, a ✗; armed: since when, until when (past its deadline or beyond 12 h: ✗), its
+                  enabled, a ✗; armed: since when, until when, in UTC (past its deadline or beyond 12 h: ✗), its
                   timer of expiry alive, and (`ss -Hltnp`) the unit's processes — its cgroup's, else
                   MainPID and its children (MainPID is timeout's) — listening on 127.0.0.1:7007 alone
                   (held outside the unit: ✗; unreadable: ⚠).
@@ -734,8 +734,10 @@ def read_window(path: Path) -> tuple[int, int] | None:
     return int(words[0]), int(words[1])
 
 
+# MOB3: in UTC, said — the workstation's local hour without its zone (measured on the bench, 11/11) read
+# as the phone's, or as the journal's, is an hour of another zone.
 def _clock(t: float) -> str:
-    return time.strftime("%d/%m %H:%M", time.localtime(t))
+    return time.strftime("%d/%m %H:%M UTC", time.gmtime(t))
 
 
 def _span(seconds: float) -> str:
