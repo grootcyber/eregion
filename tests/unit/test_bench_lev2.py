@@ -330,7 +330,9 @@ def test_the_name_of_an_operation_is_no_identifier(tmp_path, no_outside):
     """Defect 2: the mask read `microsoft.resources<ressource>` for the operation of gesture 6. An
     operation's path is kept; an ARM id, even after the same namespace, is masked."""
     op = "Microsoft.Resources/subscriptions/resourceGroups/write"
-    for text in (f"`{op}`", op, "microsoft.resources/subscriptions/read", f"| `{op.lower()}` | oui |"):
+    for text in (f"`{op}`", op, op.upper(), f"`{op.upper()}`", "microsoft.resources/subscriptions/read",
+                 f"| `{op.lower()}` | oui |", "Microsoft.Resources/subscriptions/resourceGroups/deployments/write",
+                 "Microsoft.Resources/subscriptions/tagNames/tagValues/delete."):
         assert lev2.bs.scrub(text) == text
     letters = "abcdef01-2345-6789-abcd-ef0123456789"           # a subscription id that starts with letters
     for text in (f"https://management.azure.com/subscriptions/{SUB}/resourceGroups/rg-celebrimbor",
@@ -339,6 +341,14 @@ def test_the_name_of_an_operation_is_no_identifier(tmp_path, no_outside):
                  "--scope /subscriptions/resourcegroups/celebrimbor", VM):
         said = lev2.bs.scrub(text)
         assert "celebrimbor" not in said and "<ressource>" in said and not GUID.search(said), said
+    # A name of letters only, right after the namespace, is no operation (review round 1): masked,
+    # whatever follows it and whatever its case.
+    for tail in ("", "`", ".", "'", "’", "/providers/x", "/write", "/providers/Microsoft.Compute/disks/write"):
+        for text in (f"Microsoft.Resources/subscriptions/resourceGroups/gondolin{tail}",
+                     f"MICROSOFT.RESOURCES/SUBSCRIPTIONS/RESOURCEGROUPS/GONDOLIN{tail}",
+                     f"`microsoft.resources/subscriptions/write/gondolin{tail}`"):
+            said = lev2.bs.scrub(text)
+            assert "gondolin" not in said.lower() and "<ressource>" in said, said
     d = _one_round(tmp_path, [_event(RG, op, T + timedelta(seconds=2))])
     row = _rows(lev2.report(d, f"{T.isoformat()} {op} group-tag\n"))["group-tag"]
     assert f"`{op.lower()}` | oui | le groupe" in row
@@ -365,8 +375,16 @@ def test_another_resource_is_named_by_its_type_and_its_place_never_its_name(tmp_
     t = _targets()
     assert lev2.elsewhere(f"{RG}/providers/Microsoft.Network/virtualNetworks/vnet2/subnets/db", t) == \
         "une autre ressource (`microsoft.network/virtualnetworks/subnets`, du groupe de la VM, hors de la VM)"
-    # An id out of shape never says a name where a type is read.
-    odd = lev2.elsewhere(f"{RG}/providers/Microsoft.Compute/disks/d/lev2-secret-name/x", t)
-    assert "lev2-secret-name" not in odd and "`microsoft.compute/disks/?`" in odd
+    # An id out of shape never says a name where a type is read: a type's words come from a closed
+    # list, with a hyphen or without (review round 1).
+    for name in ("lev2-secret-name", "secretname"):
+        odd = lev2.elsewhere(f"{RG}/providers/Microsoft.Compute/disks/d/{name}/x", t)
+        assert name not in odd and "`microsoft.compute/disks/?`" in odd, odd
+    assert "secretns" not in lev2.elsewhere(f"{RG}/providers/secretns/disks/d", t)
+    # A resource at the subscription's level is of the subscription, never of a group.
+    assert lev2.elsewhere(f"/subscriptions/{SUB}/providers/Microsoft.Authorization/roleAssignments/x", t) == \
+        "une autre ressource (`microsoft.authorization/roleassignments`, de l'abonnement de la VM)"
+    assert lev2.elsewhere(f"{other_sub.split('/resourceGroups')[0]}/providers/Microsoft.Authorization/"
+                          "roleAssignments/x", t).endswith("d'un autre abonnement)")
     assert lev2.elsewhere(f"/subscriptions/{SUB}/resourceGroups/rg-elsewhere", t) == "un autre groupe"
     assert lev2.elsewhere("", t) == "une autre ressource (sans identifiant ARM)"

@@ -68,15 +68,20 @@ def session_refusal(env: dict | None = None, cwd: str | os.PathLike | None = Non
 
 # An operation of Microsoft.Resources names the path of its type, never an id:
 # `Microsoft.Resources/subscriptions/resourceGroups/write` (LEV2b, #763: the bench's report of 12/11
-# read `microsoft.resources<ressource>`). Its words after /subscriptions/ are letters only, where an
-# ARM id carries the subscription's GUID.
+# read `microsoft.resources<ressource>`). Only the shape of an operation is kept: words of a closed
+# list of Microsoft.Resources' types, then its verb, whatever the case. Any other word — a group, a VM
+# (`…/resourceGroups/gondolin`, review round 1) — and the path is masked as an id.
 RESOURCES_NS = "microsoft.resources"
-OPERATION_PATH = re.compile(r"/subscriptions(?:/[A-Za-z]+)+")
+RESOURCES_TYPES = ("resourcegroups|resources|deployments|operations|operationstatuses|operationresults|providers|"
+                   "locations|tags|tagnames|tagvalues|moveresources|validatemoveresources|cancel|validate|whatif|"
+                   "exporttemplate")
+OPERATION_PATH = re.compile(rf"/subscriptions(?:/(?:{RESOURCES_TYPES}))*/(?:read|write|delete|action)", re.IGNORECASE)
 
 
 def _mask_id(m: re.Match) -> str:
     """`<ressource>`, unless the match is the path of a Microsoft.Resources operation: written right
-    after its namespace, letters only, nothing after it but punctuation (a closing backtick)."""
+    after its namespace, of the shape OPERATION_PATH, nothing after it but punctuation (a closing
+    backtick)."""
     found = m.group(0)
     path = OPERATION_PATH.match(found)
     after = found[path.end():] if path else found

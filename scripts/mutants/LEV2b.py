@@ -1,7 +1,7 @@
 """LEV2b (#763): the tool of the measure of the lift, corrected on what the bench of 12/11 read — a
 failure said as Azure wrote it, and why a `Conflict` under another code counts; each event judged once;
 the name of an operation is no identifier; another resource named by its type and its place, never its
-name. M4960–M4969, measured by tests/unit/test_bench_lev2.py."""
+name. M4960–M4969 and M4947–M4949 (review round 1), measured by tests/unit/test_bench_lev2.py."""
 LEV2 = "scripts/bench_lev2.py"
 SHARED = "scripts/bench_shared.py"
 _T = "tests/unit/test_bench_lev2.py"
@@ -35,17 +35,34 @@ MUTANTS = [
      "`disk-tag` unread (LEV2b, the defect back)", LEV2,
      "        return elsewhere(rid, t)\n",
      '        return "une autre ressource"\n'),
-    ("M4967", "a word of an id out of shape said where a type is read: a name in the report (LEV2b)", LEV2,
-     '    what = "/".join(w if _TYPE_WORD.fullmatch(w) else "?" for w in words) or "?"\n',
-     '    what = "/".join(words) or "?"\n'),
+    ("M4967", "a word of an id out of shape said where a type is read: a name of letters in the report "
+     "(LEV2b, review round 1)", LEV2,
+     '    words += [w if w in _TYPES else "?" for w in parts[i + 2::2]]\n',
+     "    words += parts[i + 2::2]\n"),
     ("M4968", "a resource of another group said of the VM's group (LEV2b)", LEV2,
-     '             "du groupe de la VM, hors de la VM" if parts[:5] == mine[:5] else "d\'un autre groupe")\n',
-     '             "du groupe de la VM, hors de la VM")\n'),
+     '        where = "du groupe de la VM, hors de la VM" if parts[:5] == mine[:5] else "d\'un autre groupe"\n',
+     '        where = "du groupe de la VM, hors de la VM"\n'),
     ("M4969", "a resource of another subscription said of the VM's (LEV2b)", LEV2,
      "    other_sub = parts[2] != mine[2]\n",
      "    other_sub = False\n"),
+    ("M4947", "the mask's exception back to any path of letters after Microsoft.Resources: "
+     "`…/resourceGroups/gondolin` printed in clear (LEV2b, review round 1)", SHARED,
+     'OPERATION_PATH = re.compile(rf"/subscriptions(?:/(?:{RESOURCES_TYPES}))*/(?:read|write|delete|action)", '
+     're.IGNORECASE)\n',
+     'OPERATION_PATH = re.compile(r"/subscriptions(?:/[A-Za-z]+)+", re.IGNORECASE)\n'),
+    ("M4948", "an operation read by its case: `MICROSOFT.RESOURCES/SUBSCRIPTIONS/RESOURCEGROUPS/WRITE` "
+     "masked as an id, the defect back for that spelling (LEV2b, review round 1)", SHARED,
+     'OPERATION_PATH = re.compile(rf"/subscriptions(?:/(?:{RESOURCES_TYPES}))*/(?:read|write|delete|action)", '
+     're.IGNORECASE)\n',
+     'OPERATION_PATH = re.compile(rf"/subscriptions(?:/(?:{RESOURCES_TYPES}))*/(?:read|write|delete|action)")\n'),
+    ("M4949", "a resource at the subscription's level said of another group (LEV2b, review round 1)", LEV2,
+     '    elif parts[3] == "providers":\n',
+     "    elif False:\n"),
 ]
 TESTS = {
+    "M4947": f"{_T}::test_the_name_of_an_operation_is_no_identifier",
+    "M4948": f"{_T}::test_the_name_of_an_operation_is_no_identifier",
+    "M4949": f"{_T}::test_another_resource_is_named_by_its_type_and_its_place_never_its_name",
     "M4960": f"{_T}::test_the_name_of_an_operation_is_no_identifier",
     "M4961": f"{_T}::test_the_name_of_an_operation_is_no_identifier",
     "M4962": f"{_T}::test_a_conflict_under_its_own_code_is_said_as_azure_wrote_it_and_why_it_counts "

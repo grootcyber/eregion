@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 import time
 import urllib.parse
@@ -208,14 +207,32 @@ def _kind(rid: str, t: dict) -> str:
             "subnet": "le sous-réseau"}.get(kind, str(kind))
 
 
-_TYPE_WORD = re.compile(r"[a-z][a-z0-9.]*")
+# The words a type may say, a closed list (review round 1: a pattern let a name of letters through,
+# `…/disks/d/secretname/x`). A word outside it is said `?`: the report says less, never a name.
+_NAMESPACES = frozenset({
+    "microsoft.compute", "microsoft.network", "microsoft.managedidentity", "microsoft.resources",
+    "microsoft.authorization", "microsoft.insights", "microsoft.storage", "microsoft.recoveryservices",
+    "microsoft.keyvault", "microsoft.operationalinsights", "microsoft.serialconsole", "microsoft.security",
+    "microsoft.maintenance", "microsoft.guestconfiguration", "microsoft.hybridcompute"})
+_TYPES = frozenset({
+    "virtualmachines", "virtualmachinescalesets", "availabilitysets", "disks", "snapshots", "images",
+    "extensions", "runcommands", "restorepointcollections", "restorepoints", "diskencryptionsets",
+    "galleries", "sshpublickeys", "networkinterfaces", "ipconfigurations", "networksecuritygroups",
+    "securityrules", "applicationsecuritygroups", "publicipaddresses", "virtualnetworks", "subnets",
+    "routetables", "routes", "networkwatchers", "flowlogs", "privateendpoints", "loadbalancers",
+    "natgateways", "bastionhosts", "userassignedidentities", "tags", "deployments", "roleassignments",
+    "roledefinitions", "denyassignments", "locks", "policyassignments", "diagnosticsettings",
+    "datacollectionrules", "datacollectionruleassociations", "actiongroups", "activitylogalerts",
+    "scheduledqueryrules", "storageaccounts", "vaults", "backupfabrics", "protectioncontainers",
+    "protecteditems", "workspaces", "serialports", "configurationassignments",
+    "guestconfigurationassignments", "maintenanceconfigurations", "machines"})
 
 
 def elsewhere(rid, t: dict) -> str:
     """A resource that is none of the VM's, named by its type and its place, never by its name
     (LEV2b, #763: on 12/11, `disk-tag` said « une autre ressource » — a disk of the group outside the
-    VM, written within the hour). The type is that of the id's last provider; a word that is not a
-    type's is said `?`."""
+    VM, written within the hour). The type is that of the id's last provider, each of its words read in
+    a closed list (_NAMESPACES, _TYPES), any other said `?`."""
     parts, mine = _k(rid).split("/"), _k(t["group"]).split("/")
     if len(parts) < 3 or parts[:2] != ["", "subscriptions"]:
         return "une autre ressource (sans identifiant ARM)"
@@ -225,10 +242,15 @@ def elsewhere(rid, t: dict) -> str:
             return "un autre abonnement" if other_sub else "l'abonnement de la VM"
         return "un groupe d'un autre abonnement" if other_sub else "un autre groupe"
     i = len(parts) - 1 - parts[::-1].index("providers")
-    words = parts[i + 1:i + 2] + parts[i + 2::2]
-    what = "/".join(w if _TYPE_WORD.fullmatch(w) else "?" for w in words) or "?"
-    where = ("d'un autre abonnement" if other_sub else
-             "du groupe de la VM, hors de la VM" if parts[:5] == mine[:5] else "d'un autre groupe")
+    words = [w if w in _NAMESPACES else "?" for w in parts[i + 1:i + 2]]
+    words += [w if w in _TYPES else "?" for w in parts[i + 2::2]]
+    what = "/".join(words) or "?"
+    if other_sub:
+        where = "d'un autre abonnement"
+    elif parts[3] == "providers":
+        where = "de l'abonnement de la VM"
+    else:
+        where = "du groupe de la VM, hors de la VM" if parts[:5] == mine[:5] else "d'un autre groupe"
     return f"une autre ressource (`{what}`, {where})"
 
 
@@ -292,12 +314,14 @@ def error_code(message) -> str:
 
 
 def unique(events: list[dict]) -> dict[str, dict]:
-    """Each event once (its `eventDataId`, else its whole text): every round reads it again, exactly and
-    through the group; Glorfindel reads it once (LEV2b, #763: counted per copy, a `Started` read in one
-    round more than its refusal is left over, and the operation is no longer refused)."""
+    """Each event once, by Glorfindel's own key (`door._event_key`: its `eventDataId`, else what it is
+    made of): every round reads it again, exactly and through the group, as the door reads a VM and its
+    group (LEV2b, #763: counted per copy, a `Started` read in one round more than its refusal is left
+    over, and the operation is no longer refused)."""
+    from glorfindel.providers.azure.door import _event_key
     out: dict[str, dict] = {}
     for e in events:
-        out.setdefault(str(e.get("eventDataId") or json.dumps(e, sort_keys=True)), e)
+        out.setdefault(_event_key(e), e)
     return out
 
 
