@@ -204,9 +204,9 @@ glorfindel/
                           l'annonce de chaque action autonome), une fois par clé : dans le fil Discord de la VM
                           (le bot) ou par le webhook ; `vm_notices.jsonl` ; JUG2 : le bot muet (son battement),
                           l'annonce d'une action prise seule par le webhook, le rôle pingué (`say`, `relay_pass`) ;
-                          JUG2b : la clôture d'une coupure aussi, sans ping ; `relay_pass` dans son propre fil
+                          JUG2b : la clôture d'une coupure aussi, sans ping, dite par la passe ; `relay_pass` dans son propre fil
                           (la boucle de la watch n'attend aucun webhook), chaque POST borné à 10 s (DNS compris),
-                          3 tentatives au plus par notice (`tries`)
+                          3 tentatives au plus par notice (`tries` : ce qui a peut-être livré ; rien parti, rien compté)
   bot_beat.py           → JUG2 : le battement du bot Discord (`bot_heartbeat.json`) — écrit à chaque tour par
                           le bot, lu par la watch : absent, illisible, daté du futur ou de plus de 3 min
                           (`MUTE_AFTER_S`), le bot est muet ; ne décide que du chemin d'une annonce
