@@ -349,7 +349,9 @@ def test_every_copyable_restore_command_asks_for_the_moment():
                                 "id": "e1", "first_seen": "2026-10-29T08:12:00+00:00"})
     finally:
         cli.console = real
-    assert f"glorfindel restore {VM} --yes --before 2026-10-29T08:12:00+00:00" in buf.getvalue()
+    # By the VM's short name, never the full id (MSK2): `restore` takes it back.
+    assert "glorfindel restore vm-example-01 --yes --before 2026-10-29T08:12:00+00:00" in buf.getvalue()
+    assert SUB not in buf.getvalue()
     for rel in ("glorfindel/bot.py", "glorfindel/tui.py", "eregion_console/static/glorfindel.js"):
         text = (ROOT / rel).read_text()
         assert "--yes --before" in text, rel
