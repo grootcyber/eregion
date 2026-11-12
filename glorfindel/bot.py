@@ -120,6 +120,16 @@ def _cli_command(esc: dict) -> str:
     esc_id = esc["id"]
     if esc.get("escalation_type") in _ANCHORED_TYPES:
         return f"glorfindel ack {esc_id}"
+    if esc.get("escalation_type") == esc_module.EXECUTED_TYPE:
+        # JUG1: an action Glorfindel took alone — judged, and undone (if judged wrong) by the
+        # usual path, never by a button of its card.
+        vm = rid.rstrip("/").rsplit("/", 1)[-1]
+        ip = str((esc.get("action_params") or {}).get("ip") or "<ip>")
+        undo = (f"glorfindel release {vm} --yes" if action == "isolate_vm"
+                else f"glorfindel unblock {ip} {vm} --yes")
+        return (f"glorfindel verdict {esc_id[:8]} right|wrong|unsure\n"
+                f"# jugée à tort : la défaire par le chemin habituel\n{undo}\n"
+                f"glorfindel ack {esc_id}")
     if action == "restore_from_backup":
         # The moment is asked (SEC4c): the card's first detection — the attack began before.
         before = esc.get("first_seen") or esc.get("timestamp") or "<ISO8601>"
@@ -168,6 +178,9 @@ def _embed_title(esc: dict) -> str:
     type_label = _ESCALATION_LABELS.get(etype) or discord_text(etype)
     if etype in _RAN:
         return f"🚨 {_ACTION_LABELS.get(action) or discord_text(action)} — {type_label}"
+    if etype == esc_module.EXECUTED_TYPE:
+        # JUG1: it ran alone and its check held — said done, to judge.
+        return f"✅ {_ACTION_LABELS.get(action) or discord_text(action)} — exécutée seule, à juger"
     rec = _RECOMMEND_LABELS.get(action)
     if etype in _ATTEMPTED:
         return f"🚨 {rec.capitalize() if rec else discord_text((action or '?').capitalize())} — {type_label}"
@@ -260,7 +273,10 @@ def _embed_body(esc: dict) -> tuple[str, list[tuple[str, str, bool]]]:
     # The reason of a decision built by the code (AL1, C2) begins with the explanation the
     # description already shows: said once (AL1c) — what is left says why nothing runs.
     why = reason.replace(explanation, "", 1).strip() if explanation and explanation in reason else reason
-    if explanation and why and reason != explanation:
+    executed = esc.get("executed") if esc.get("escalation_type") == esc_module.EXECUTED_TYPE else None
+    if isinstance(executed, dict):
+        fields += _executed_fields(executed, why)
+    elif explanation and why and reason != explanation:
         fields.append(("Pourquoi rien n'est exécuté", discord_text(why)[:1024], False))
     plan = esc.get("identity_plan")
     if isinstance(plan, dict) and plan.get("items"):
@@ -269,6 +285,33 @@ def _embed_body(esc: dict) -> tuple[str, list[tuple[str, str, bool]]]:
         steps = "\n".join(f"• {discord_text(s)}" for s in esc["suggested_steps"][:3])
         fields.append(("Prochaines étapes", steps[:1024], False))
     return discord_text(explanation or reason)[:2048], fields
+
+
+def _executed_fields(executed: dict, said: str) -> list[tuple[str, str, bool]]:
+    """JUG1 (#760): what the card of an action taken alone says — what ran and how it was checked,
+    the mode, the evidence of the row. Every value from outside escaped, then cut (SEC6)."""
+    v = executed.get("verification") if isinstance(executed.get("verification"), dict) else {}
+    check = " · ".join(filter(None, [
+        "vérifiée" if v.get("verified") is True else "", str(v.get("method") or ""),
+        f"{v['nics_covered']} carte(s) réseau" if v.get("nics_covered") else "",
+        str(v.get("nsg") or ""), f"coupure {v['drain']}" if v.get("drain") else "",
+        str(v.get("verified_at") or "")[:19].replace("T", " ") + " UTC" if v.get("verified_at") else ""]))
+    out = [("Exécutée", discord_text(said)[:_FIELD_MAX], False),
+           ("Mode", discord_code(str(executed.get("mode") or "?")), True)]
+    if check:
+        out.append(("Vérification", discord_text(check)[:_FIELD_MAX], False))
+    evidence = [str(x) for x in (executed.get("evidence") or []) if isinstance(x, (str, int, float))]
+    if evidence:
+        lines, value = [], ""
+        for x in evidence:
+            line = f"• {discord_text(x)}"
+            if len(value) + len(line) + 1 > _FIELD_MAX:
+                break
+            lines.append(line)
+            value = "\n".join(lines)
+        if value:
+            out.append(("Preuves", value, False))
+    return out
 
 
 _FIELD_MAX = 1024          # a field's value (Discord)

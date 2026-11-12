@@ -179,7 +179,28 @@ _ESCALATION_LABELS = {
     "compromise_unchecked": "connexion après brute force non vérifiée",
     "undecided_detection": "détection non décidée par le modèle (dédoublonnée, plafond, file pleine)",
     "drain_pending": "coupure des sessions en attente (l'isolation tient, la coupure est suivie)",
+    "autonomous_action": "action autonome exécutée et vérifiée (à juger)",
 }
+
+# JUG1 (#760): the card of a disruptive action Glorfindel took alone (`non_disruptive`,
+# `full_auto`), once its check held — a judgement after the fact, never an action to approve (not in
+# `action_queue.APPROVABLE_TYPES`: no one-click execute, no proposal signed). Its `action` is the
+# action that ran, so the report counts it among the disruptive ones; `executed` says the mode, the
+# check and the evidence; `action_keys`, the action it stands for: one card per action, whatever
+# the watch's restarts (`record`, `action_key`), never folded into another's.
+EXECUTED_TYPE = "autonomous_action"
+
+
+def executed_key(signal_id: str, resource_id: str, action: str, ip: str = "") -> str:
+    """The key of one autonomous action: the cycle's signal (one per cycle), the VM, the action and
+    the address it blocked — never the time it ran."""
+    return ":".join(("executed", str(signal_id or "?"), str(resource_id or "").rstrip("/").lower(),
+                     str(action or ""), str(ip or "")))
+
+
+def _keys_of(e: dict) -> list[str]:
+    keys = e.get("action_keys")
+    return [k for k in keys if isinstance(k, str)] if isinstance(keys, list) else []
 
 
 @_locked
@@ -204,8 +225,15 @@ def record(
     replaces: dict[str, str] | None = None,
     identity_plan: dict | None = None,
     target: dict | None = None,
+    action_key: str = "",
+    executed: dict | None = None,
 ) -> str:
     """Append an escalation and return its id.
+
+    `action_key` (JUG1, #760: `executed_key`): the autonomous action this card stands for. A card
+    that already holds it — pending or not, judged or not — is the one: its id is returned and
+    nothing is written, after a restart of the watch too. `executed`: what the action's card says
+    (its mode, its check, its evidence).
 
     `target` (AL1c, #597): what a card of the control plane or of an identity is about
     (glorfindel/card_target.py) — kept on the card for the console and Discord; its `resource_id`
@@ -249,6 +277,14 @@ def record(
     lines = _STORE.read_text().splitlines() if _STORE.exists() else []
     if replaces:
         lines = _replaced(lines, replaces, now)
+    if action_key:
+        for line in lines:
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(e, dict) and action_key in _keys_of(e):
+                return str(e.get("id") or "")       # JUG1: one card per action, never a second
     if lines:
         for i, line in enumerate(lines):
             if not line.strip():
@@ -278,6 +314,9 @@ def record(
                 # A detection without a decision of the model (SEC-A2): one card per VM and rule,
                 # never one rule's folded into another's.
                 and (escalation_type != "undecided_detection" or e.get("rule_name", "") == rule_name)
+                # JUG1: each action taken alone has its own card — judged on its own, counted once
+                # each among the disruptive actions; never folded into the card of another.
+                and escalation_type != EXECUTED_TYPE
             ):
                 e["occurrences"] = int(e.get("occurrences", 1)) + 1
                 e["last_seen"] = now
@@ -351,6 +390,10 @@ def record(
         # proposal of FS1a: an identity card holds no action (`action_queue.proposed_verbs`).
         esc["identity_plan"] = identity_plan
         esc["identity_checks"] = []
+    if action_key:
+        esc["action_keys"] = [action_key]
+    if executed:
+        esc["executed"] = executed
     _propose(esc)       # FS1a: the watch's proposal, when the card holds an action
     # Rewritten whole, as every write of the store: an append seen half-done by a reader
     # made its last line unreadable (SEC3, V-10). The cards it replaces closed in it (L1A).
@@ -561,6 +604,35 @@ def pending() -> list[dict]:
     return result
 
 
+def _action_words(action: str, resource_id: str, run_id: str, confidence: float, explanation: str,
+                  verified: bool | None, ttp: str, severity: str, note: str, card: str,
+                  mode: str) -> tuple[str, str, str, dict]:
+    """An autonomous action's announcement: (title, text, level) for the VM's thread, and the
+    webhook's (Slack) message as it always was — the card to judge named in both (JUG1)."""
+    from glorfindel.chat_text import webhook_code, webhook_text
+    label = _ACTION_LABELS.get(action) or action
+    status = "✓" if verified else ("⚠" if verified is None else "✗")
+    pct = f"{int(confidence * 100)}% confidence"
+    meta = " · ".join(filter(None, [ttp, severity, pct, f"mode {mode}" if mode else ""]))
+    card_said = f"Carte à juger : {card[:8]} (console, TO JUDGE)." if card else ""
+    text = " ".join(filter(None, [
+        f"{action} · {meta}.", explanation[:800], f"⚠ {note[:300]}" if note else "", card_said,
+        f"Run {run_id}." if run_id else ""]))
+    level = "ok" if verified else ("unknown" if verified is None else "failed")
+    # Text from outside (the model's, Azure's names): one line each, no link nor mention
+    # of its own (SEC6, N-09 — glorfindel/chat_text.py).
+    resource_short = webhook_code(resource_id.split("/")[-1])
+    payload = {"text": (
+        f":robot_face: *{_ACTION_LABELS.get(action) or webhook_text(action)}* {status}  |  `{resource_short}`\n"
+        f"`{webhook_code(action)}` · {webhook_text(meta)}\n"
+        f"> {webhook_text(explanation[:800])}\n"
+        + (f"> ⚠ {webhook_text(note[:300])}\n" if note else "")
+        + (f"> {webhook_text(card_said)}\n" if card_said else "")
+        + f"`{webhook_code(run_id)}`"
+    )}
+    return f"{label} {status}", text, level, payload
+
+
 def notify_action(
     action: str,
     resource_id: str,
@@ -571,40 +643,35 @@ def notify_action(
     ttp: str = "",
     severity: str = "",
     note: str = "",
-) -> None:
-    """POST an autonomous action notification to the webhook if set. `note`: what the
-    action left open (an isolation by rules: Azure's DNS / IMDS — S7)."""
+    key: str = "",
+    card: str = "",
+    mode: str = "",
+) -> str:
+    """Announce an autonomous action: in the VM's Discord thread when the bot is configured, else
+    by the webhook (GLORFINDEL_WEBHOOK_URL), as before — never both (JUG1, #760: until then it went
+    by the webhook, in the channel, even with the bot). `note`: what the action left open (an
+    isolation by rules: Azure's DNS / IMDS — S7). `key` (`executed_key`): once per action, after a
+    restart too (glorfindel/vm_notices.py); none, every call is said. `card`: the card to judge
+    (`EXECUTED_TYPE`), named. Where it went (`bot`, `webhook`, `none`, `already`); a notification
+    never stops the agent."""
     import os
-    url = os.environ.get("GLORFINDEL_WEBHOOK_URL", "")
-    if not url:
-        return
     try:
-        import requests
-
-        from glorfindel.chat_text import webhook_code, webhook_text
-        # Text from outside (the model's, Azure's names): one line each, no link nor mention
-        # of its own (SEC6, N-09 — glorfindel/chat_text.py).
-        resource_short = webhook_code(resource_id.split("/")[-1])
-        label = _ACTION_LABELS.get(action) or webhook_text(action)
-        if verified:
-            status = "✓"
-        elif verified is None:
-            status = "⚠"
-        else:
-            status = "✗"
-        pct = f"{int(confidence * 100)}% confidence"
-        meta = webhook_text(" · ".join(filter(None, [ttp, severity, pct])))
-        requests.post(url, json={
-            "text": (
-                f":robot_face: *{label}* {status}  |  `{resource_short}`\n"
-                f"`{webhook_code(action)}` · {meta}\n"
-                f"> {webhook_text(explanation[:800])}\n"
-                + (f"> ⚠ {webhook_text(note[:300])}\n" if note else "")
-                + f"`{webhook_code(run_id)}`"
-            )
-        }, timeout=5)
+        title, text, level, payload = _action_words(action, resource_id, run_id, confidence, explanation,
+                                                    verified, ttp, severity, note, card, mode)
     except Exception:
-        pass  # notification failure must never block the agent
+        return "none"
+    from glorfindel import vm_notices
+    detail = {"action": action, "verified": verified, "card": card, "mode": mode, "run_id": run_id}
+    try:
+        return vm_notices.say(resource_id, key or f"action:{uuid.uuid4()}", EXECUTED_TYPE, title, text,
+                              level=level, detail=detail, webhook=payload)
+    except Exception:
+        # The notices' store refused (a full disk): the webhook still says it, as before the store —
+        # the bot reads the store, and says nothing this time.
+        if discord_bot_configured() or not os.environ.get("GLORFINDEL_WEBHOOK_URL", ""):
+            return "none"
+        vm_notices.post_webhook(payload, key)
+        return "webhook"
 
 
 def discord_bot_configured(environ=None) -> bool:
@@ -637,6 +704,8 @@ def _notify(esc: dict) -> None:
     import os
     if discord_bot_configured():
         return
+    if esc.get("escalation_type") == EXECUTED_TYPE:
+        return      # JUG1: the action's announcement says it, once (notify_action) — never twice
     url = os.environ.get("GLORFINDEL_WEBHOOK_URL", "")
     if not url:
         return
@@ -804,7 +873,10 @@ def to_judge(since: datetime | None = None, limit: int = 100) -> list[dict]:
         card = {k: e.get(k) for k in (
             "id", "action", "escalation_type", "resource_id", "ttp", "severity", "confidence",
             "reason", "explanation", "action_params", "first_seen", "last_seen", "occurrences",
-            "status", "rule_name", "target")}
+            "status", "rule_name", "target",
+            # JUG1: what the console opens a line on — the card's steps, and what an action taken
+            # alone did and how it was checked.
+            "suggested_steps", "executed", "run_id", "signal_id")}
         card["exercise"] = e.get("source") == "exercise"
         card["exercise_run"] = (e.get("exercise_run") or "") if card["exercise"] else ""
         card["recurrence"] = recurrence(e, escs)
