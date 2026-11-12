@@ -1077,6 +1077,9 @@ class IsolationMachine(RuleBasedStateMachine):
 
     def _before(self):
         self.journal_at = len(self.fake.journal)
+        # What a third party the test sets acting takes off during the operation (I3W's review): only a
+        # regression's hook fills it — the machine draws no third party in the middle of an operation.
+        self.world_deleted: set[str] = set()
         # The world as the operation finds it, for what a lifted perimeter alone closed
         # (_lifted_alone, I4C): the operations replace a rule or a NIC's NSG, never edit
         # one in place — a copy of each map is enough.
@@ -1460,26 +1463,40 @@ class IsolationMachine(RuleBasedStateMachine):
             cut = sorted(n for n in out.get("uncovered_nics") or [] if self._perimeter_cuts(vm, n))
             assert not cut, f"I3: perimeter block named {cut} of {vm} uncovered; our perimeter on their subnet cuts them off"
             assert out["status"] == "blocked_partial" or not said, f"I3: perimeter block said blocked, {sorted(said)} open"
-            entry = next((e for e in actions._load_block_entries(vm) if e.get("ip") == ATTACKER), {})
-            reached = ({f[0] for f in self._attacker_flows(vm, None) if f[0] not in off}
-                       | {f[0] for f in self._attacker_flows(vm, entry.get("threat_port")) if f[0] in off}) - said
-            assert not reached, f"I3: perimeter block said blocked, {ATTACKER} reaches {vm} ({sorted(reached)})"
             # Its own pair, as Azure holds it when the block answers (I3W, #778; the test's reading, never
-            # the code's): gone — a third party deleted it between its write and its check —, the block says
-            # it, by name, partial. It said `blocked`, « denied for ALL VMs on the subnet », its check `True`
-            # (the VM held by its own block), the subnet's other VMs reached. Tightened: a pair gone was
-            # judged only through a mate it left reached, never on a subnet without one.
+            # the code's): gone, the block says it by name — or unread, by name (`pair_unread`) —, partial. It
+            # said `blocked`, « denied for ALL VMs on the subnet », its check `True` (the VM held by its own
+            # block), the subnet's other VMs reached. Tightened: a pair gone was judged only through a mate it
+            # left reached, never on a subnet without one.
             pair_gone = self._pair_gone(home)
             said_gone = {str(n).lower() for n in out.get("missing_rules") or []}
-            assert not pair_gone or (out["status"] == "blocked_partial" and pair_gone <= said_gone), (
+            said_unread = {str(n).lower() for n in out.get("pair_unread") or []}
+            assert not pair_gone or (out["status"] == "blocked_partial" and pair_gone <= said_gone | said_unread), (
                 f"I3: perimeter block said its pair whole, {sorted(pair_gone)} gone on Azure: {out}")
-            # Its subnet's other VMs: their NICs behind it — unless its pair is gone on Azure, and said so
-            # (just above): « denied for ALL VMs » no longer claimed.
-            for mate in self._subnet_mates(vm) if not pair_gone else []:
+            # Who took it off: a third party the test itself set acting (`world_deleted`, a regression's hook),
+            # or a fault drawn for the operation. Nothing else touches the world in the middle of an operation:
+            # lost otherwise, the block lost it itself — never written, or taken off (I3W's review: a block that
+            # never wrote its pair, said « read missing at its check », passed). Excused way by way: half the
+            # pair gone leaves the other way judged.
+            by_world = self.world_deleted
+            assert fault is not None or pair_gone <= by_world, (
+                f"I3: perimeter block lost its own pair {sorted(pair_gone - by_world)}, nothing else touched it: {out}")
+            excused = pair_gone if fault is not None else pair_gone & by_world
+            exempt = {"out" if n.endswith("-out") else "in" for n in excused}
+            # The VM's NICs behind it it names with no rule of the block (`missing_nics`): their own block
+            # dropped by a promotion, the pair to hold them gone — in the ways excused alone (I3W's review).
+            bare_nics = {str(n).lower() for n in out.get("missing_nics") or []}
+            entry = next((e for e in actions._load_block_entries(vm) if e.get("ip") == ATTACKER), {})
+            reached = ({f[0] for f in self._attacker_flows(vm, None)
+                        if f[0] not in off and not (f[0].lower() in bare_nics and f[2] in exempt)}
+                       | {f[0] for f in self._attacker_flows(vm, entry.get("threat_port")) if f[0] in off}) - said
+            assert not reached, f"I3: perimeter block said blocked, {ATTACKER} reaches {vm} ({sorted(reached)})"
+            # Its subnet's other VMs: their NICs behind it — in the ways its pair still holds.
+            for mate in self._subnet_mates(vm):
                 if mate == vm:
                     continue
                 behind = {n["id"].rsplit("/", 1)[-1] for n in self._nics(mate) if key(n["subnet"]) == home}
-                assert not {f for f in self._attacker_flows(mate, None) if f[0] in behind}, (
+                assert not {f for f in self._attacker_flows(mate, None) if f[0] in behind and f[2] not in exempt}, (
                     f"I3: perimeter block said blocked, {ATTACKER} reaches {mate}")
         self._others_unchanged(vm, flows, states, perimeter=True)
 

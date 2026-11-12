@@ -12,6 +12,14 @@ from glorfindel.response.policy import _ERR_MAX, _first_line
 from glorfindel.response.state import _load_block_entries
 
 
+def _ways(names: list[str]) -> str:
+    """The way a perimeter pair no longer denies, by the names of its rules gone (I3W's review):
+    « inbound » (its rule alone), « outbound » (its `-out` alone), both: "" — never half the pair
+    said as the whole."""
+    out = {str(n).lower().endswith("-out") for n in names}
+    return "" if out == {True, False} else " outbound" if out == {True} else " inbound"
+
+
 class VerifyBlockMixin:
     """Verifying IP blocks (part of AzureConnector)."""
 
@@ -189,9 +197,11 @@ class VerifyBlockMixin:
                     # pair fell in `held_missing`, the check `True` — and the perimeter block said
                     # `blocked`, « denied for ALL VMs on the subnet », the other VMs reached. Read by
                     # the block alone: the drift card and the reassertion read what they read.
-                    pair = {"perimeter_gone": names}
+                    pair = {"perimeter_gone": names, "perimeter_nsg": perimeter[1]}
                 elif st == "unknown":            # never read as there (RB1, review)
                     unread += [f"{n} ({perimeter[1]})" for n in names]
+                    # Unread: never « gone » (A0), nor « denied for ALL VMs » (I3W's review) — by name.
+                    pair = {"pair_unread": names, "perimeter_nsg": perimeter[1]}
             # NICs unread: no perimeter checked for them — not known, never « plus bloquée » (I3P).
             said = {**({"held_by_perimeter": held_by, "perimeter_rule": self._block_rule_prefix(ip)} if held_by else {}),
                     **({"perimeter_unread": unsure} if unsure else {}),
@@ -238,6 +248,7 @@ class VerifyBlockMixin:
             missing = names if st in ("absent", "altered") else []
             if st == "unknown":
                 return {"verified": None, "method": "nsg_check", "unreadable_rules": names,
+                        **({"pair_unread": names, "perimeter_nsg": nsg_name} if entry.get("scoped") is False else {}),
                         "error": "blocage non vérifiable : règles illisibles"}
             if not missing:
                 # A perimeter block has no destination scope: any VM behind the NSG.
@@ -280,7 +291,7 @@ class VerifyBlockMixin:
             half = self._half_bypassed(pair_cache, {"nsg_rg": nsg_rg, "nsg_name": nsg_name, "rule": entry["rule"]},
                                        ip, None, entry.get("threat_port"))
             return {"verified": False, "method": "nsg_check", "missing_rules": missing,
-                    **({"perimeter_gone": missing} if entry.get("scoped") is False else {}),
+                    **({"perimeter_gone": missing, "perimeter_nsg": nsg_name} if entry.get("scoped") is False else {}),
                     **({"shadowed_by": half} if half else {}), **self._rules_seen(pair_cache, entry),
                     "error": f"rules missing: {', '.join(missing)}"
                              + (f" ; contourné : {_describe_shadowing(half)}" if half else "")}
@@ -360,19 +371,27 @@ class VerifyBlockMixin:
         of the block (`missing_nics`), each in its own key and sentence — « Rules of this block
         missing » named a NIC as a rule (I3Q's review). The pair gone: never « denied for ALL VMs
         on the subnet », the status partial — it was `blocked`, the subnet's other VMs reached.
-        On the block's fresh answer, its note the head alone."""
+        On the block's fresh answer, its note the head alone.
+        Half the pair gone, the way it no longer denies said, never both (I3W's review); the pair
+        unread (`pair_unread`), never « denied for ALL VMs » nor « gone » (A0): unverified."""
         pair = [str(n) for n in check.get("perimeter_gone") or []]
+        unread = [str(n) for n in check.get("pair_unread") or []]
         nics = [str(n) for n in check.get("missing_nics") or []]
         lost = (check.get("missing_rules") or []) if check.get("verified") is False else []
         rules = [str(n) for n in lost if str(n) not in nics and str(n) not in pair]
-        if not (pair or rules or nics):
+        if not (pair or unread or rules or nics):
             return
         out["status"] = "blocked_partial"
-        out["missing_rules"] = pair + rules
+        if pair or rules:
+            out["missing_rules"] = pair + rules
         if pair:
             out["note"] = (f"NSG {out['nsg']} — perimeter block written, then read missing or altered on Azure "
-                           f"at its check ({', '.join(pair)}): {out['ip']} is not denied by it for the VMs on "
-                           "the subnet until it is put back.")
+                           f"at its check ({', '.join(pair)}): {out['ip']} is no longer denied{_ways(pair)} by it "
+                           "for the VMs on the subnet until it is put back.")
+        elif unread:
+            out["pair_unread"] = unread
+            out["note"] = (f"NSG {out['nsg']} — perimeter block written, its rules unread at its check "
+                           f"({', '.join(unread)}): whether it holds for the VMs on the subnet is unverified.")
         if rules:
             out["note"] += f" Rules of this block missing on Azure: {', '.join(rules)}."
         if nics:
