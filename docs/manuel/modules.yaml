@@ -1062,7 +1062,7 @@ briques:
   - id: a-stratus
     composant: annatar
     poste: a-attaquer
-    nom: "A Stratus technique against the test identity, seen by Glorfindel"
+    nom: "A Stratus control-plane technique in the dedicated test subscription, seen by Glorfindel"
     etat: prevue
     release: "0.6"
     lots: [R2, R2b, R2c]
@@ -1889,6 +1889,16 @@ briques:
     lots: [MEN4]
     issue: 748
     doc: docs/banc-t1486.md
+
+  - id: s-roadmap-060
+    composant: socle
+    poste: s-documenter
+    nom: "The roadmap caught up with the decisions of 12 Nov: 0.6.0 recentred on the defended identity, R2 moved to 0.6.1, 0.5.11 published and 0.5.12 in preparation"
+    etat: main
+    release: "0.5"
+    lots: [RM3]
+    issue: 777
+    doc: ROADMAP.md
 
   - id: s-adoption
     composant: socle
