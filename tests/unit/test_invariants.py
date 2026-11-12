@@ -915,6 +915,7 @@ class IsolationMachine(RuleBasedStateMachine):
         finally:
             fired = fault is not None and (self.chaos.plan is None or self.chaos.fired)
             self.chaos.plan = None
+            self.fault_played = fired           # the last operation's fault played, not only drawn (I3W)
         if label:
             what = type(err).__name__ if err else (out or {}).get("status", (out or {}).get("verified", "ok"))
             _note(f"{label}: {what}" + (f" after {fault[1]}" if fired else ""))
@@ -1470,18 +1471,20 @@ class IsolationMachine(RuleBasedStateMachine):
             # left reached, never on a subnet without one.
             pair_gone = self._pair_gone(home)
             said_gone = {str(n).lower() for n in out.get("missing_rules") or []}
-            said_unread = {str(n).lower() for n in out.get("pair_unread") or []}
+            # Said unread only on a read that failed: a fault that played in the operation (I3W's review, 2).
+            said_unread = {str(n).lower() for n in out.get("pair_unread") or []} if self.fault_played else set()
             assert not pair_gone or (out["status"] == "blocked_partial" and pair_gone <= said_gone | said_unread), (
                 f"I3: perimeter block said its pair whole, {sorted(pair_gone)} gone on Azure: {out}")
             # Who took it off: a third party the test itself set acting (`world_deleted`, a regression's hook),
-            # or a fault drawn for the operation. Nothing else touches the world in the middle of an operation:
-            # lost otherwise, the block lost it itself — never written, or taken off (I3W's review: a block that
-            # never wrote its pair, said « read missing at its check », passed). Excused way by way: half the
-            # pair gone leaves the other way judged.
+            # alone. Nothing else touches the world in the middle of an operation — a fault drawn neither (a 429,
+            # a crash: the code's own writes cut short, never a rule taken off): lost otherwise, the block lost it
+            # itself, never written or taken off (I3W's review: a block that never wrote its pair, said « read
+            # missing at its check », passed; under a fault drawn that never played, too — round 2). Excused way
+            # by way: half the pair gone leaves the other way judged.
             by_world = self.world_deleted
-            assert fault is not None or pair_gone <= by_world, (
+            assert pair_gone <= by_world, (
                 f"I3: perimeter block lost its own pair {sorted(pair_gone - by_world)}, nothing else touched it: {out}")
-            excused = pair_gone if fault is not None else pair_gone & by_world
+            excused = pair_gone & by_world
             exempt = {"out" if n.endswith("-out") else "in" for n in excused}
             # The VM's NICs behind it it names with no rule of the block (`missing_nics`): their own block
             # dropped by a promotion, the pair to hold them gone — in the ways excused alone (I3W's review).

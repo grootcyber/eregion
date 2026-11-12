@@ -7703,6 +7703,44 @@ def test_a_perimeter_block_beside_a_vm_block_is_judged_on_its_own_pair(monkeypat
     _replay(monkeypatch, net, ("block", DB, rid, None, 22), *edits, ("block_perimeter", DB, rid, None, replace))
 
 
+@pytest.mark.parametrize("rid", [DB, DB.lower()], ids=["Db--01", "db--01"])
+@pytest.mark.parametrize("replace", [False, True], ids=["block", "promotion"])
+@pytest.mark.parametrize("branch", sorted(_I3W_NETS))
+def test_a_perimeter_block_under_a_fault_that_never_plays_is_judged_on_its_own_pair(monkeypatch, branch, replace,
+                                                                                   rid):
+    """I3W's review (round 2): the same, under a fault drawn that never plays (a 429 on the 15th write: the
+    block makes two). The oracle excused a pair lost under any fault drawn — 75 of the review's 144 cases,
+    the fault never played. Only a third party the test sets acting excuses now: a fault cuts the code's own
+    writes short, it takes no rule off."""
+    net, edits = _I3W_NETS[branch]
+    _replay(monkeypatch, net, ("block", DB, rid, None, 22), *edits,
+            ("block_perimeter", DB, rid, (15, "after-429"), replace))
+
+
+@pytest.mark.parametrize("rid", [DB, DB.lower()], ids=["Db--01", "db--01"])
+def test_a_promotion_whose_pair_is_unread_names_no_nic_without_a_rule(monkeypatch, rid):
+    """I3W's review (round 2): the promotion of Db--01, its pair on Azure, its listing a 429 at the check.
+    db-nic-0, its own block dropped by the promotion, left to the pair: said « Db--01's NICs with no rule of
+    this block on them: db-nic-0 » on a read that failed — the pair, a rule of this block, holds it (A0).
+    Unknown now: `nics_unread` says why, never `missing_nics`; the pair named unread."""
+    import shutil
+
+    invariant_env(monkeypatch)
+    m = IsolationMachine()
+    try:
+        m.build(_I3W_NETS["check True"][0])
+        c = m.connector
+        assert c.block_suspicious_ip(ATTACKER, rid, scope="vm", threat_port=22)["status"] == "blocked"
+        monkeypatch.setattr(c, "verify_block_ip", _i3w_deleting(m, during=_I3W_UNREAD["the pair"], names=()))
+        out = c.block_suspicious_ip(ATTACKER, rid, scope="subnet", threat_port=22, replace=True)
+        assert out["status"] == "blocked_partial" and out.get("pair_unread") == _I3W_PAIR, out
+        assert "missing_nics" not in out and "missing_rules" not in out and "no rule of this block" not in out["note"], out
+        assert "db-nic-0: périmètre illisible" in out["nics_unread"], out
+        assert not m._attacker_flows(DB, None) and not m._attacker_flows(WEB1, None), "the world: the pair holds"
+    finally:
+        shutil.rmtree(m.home, ignore_errors=True)
+
+
 @pytest.mark.parametrize("mode", ["human_only", "non_disruptive"])
 @pytest.mark.parametrize("rid", [DB, DB.lower()], ids=["Db--01", "db--01"])
 @pytest.mark.parametrize("branch", sorted(_I3W_NETS))

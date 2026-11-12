@@ -1801,6 +1801,9 @@ def _promotion_said(result: dict) -> list[str]:
     if result.get("missing_rules"):
         said.append("Missing or altered on Azure at its check: " + ", ".join(str(n) for n in result["missing_rules"])
                     + " — not in place until put back.")
+    if result.get("pair_unread"):          # never « the whole subnet » on a read that failed (I3W's review)
+        said.append("The subnet rule unread at its check: " + ", ".join(str(n) for n in result["pair_unread"])
+                    + " — whether it holds for the VMs on the subnet is unverified.")
     if result.get("missing_nics"):
         said.append("No rule of the block on: " + ", ".join(str(n) for n in result["missing_nics"]) + ".")
     if result.get("uncovered_nics"):

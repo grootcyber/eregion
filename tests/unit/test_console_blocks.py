@@ -155,6 +155,19 @@ def test_a_promotion_says_its_pair_gone_beside_a_nic_uncovered(client, blocks, c
     assert any("web-nic2" in x and "still reaches" in x for x in d["said"]), d
 
 
+def test_a_promotion_says_its_pair_unread(client, blocks, connector):
+    """I3W's review (round 2): the pair's listing a 429 at the check, NICs unread beside it. The window said
+    the unread NICs alone, never that the subnet rule itself was unread: its own line now, never « whole »."""
+    pair = ["glorfindel-block-203-0-113-7", "glorfindel-block-203-0-113-7-out"]
+    connector.outcome = {"status": "blocked_partial", "pair_unread": pair,
+                         "nics_unread": "blocage non vérifiable : règles illisibles"}
+    d = _promote(client, ip=NEW)
+    assert d["ok"] and d["whole"] is False, d
+    line = [x for x in d["said"] if pair[0] in x]
+    assert len(line) == 1 and pair[1] in line[0] and "The subnet rule unread at its check" in line[0], d
+    assert "is unverified" in line[0] and "Missing" not in line[0], d
+
+
 def test_the_page_says_the_whole_subnet_only_when_the_outcome_holds_it_whole():
     """The toast « whole subnet » is the `whole === true` branch alone; anything else opens the
     window that names what is left out, each line escaped."""

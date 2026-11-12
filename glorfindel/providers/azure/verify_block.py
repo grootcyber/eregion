@@ -94,8 +94,16 @@ class VerifyBlockMixin:
             if current is not None and any(p.get("nic_id") for p in entry["placements"]):
                 for n in [n for n in current if n not in groups]:       # a NIC added since
                     if not self._left_to_perimeter(cache, perimeter, targets.get(n), ip, port):
+                        t1 = targets.get(n)
+                        if perimeter and t1 and self._perimeter_holds(cache, t1, ip, port) == "unknown":
+                            # Its perimeter unread (the pair's listing a 429): unknown, never « no rule of this
+                            # block on it » nor put back on a guess — the pair may hold it (A0; I3W's review, 2).
+                            unread.append(f'{t1["nic_short"]}: périmètre illisible')
+                            undecided.append(t1["nic_short"])
+                            unknown_why[t1["nic_short"]] = "périmètre illisible"
+                            continue
                         added.append(n.rsplit("/", 1)[-1])
-                        _lost(targets.get(n), added[-1:])
+                        _lost(t1, added[-1:])
             for nic, ps in groups.items():
                 # Only an NSG that governs the NIC NOW blocks anything: in quarantine, the
                 # NIC's own NSG — where the block lies — is off it until the release. The

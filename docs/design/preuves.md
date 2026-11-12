@@ -633,7 +633,10 @@ longer denied by it for the VMs on the subnet until it is put back », jamais «
 de la paire partie, la note dit le sens perdu (« no longer denied outbound by it ») : l'autre sens reste refusé
 à toutes les VM du sous-réseau. La paire illisible n'est jamais dite disparue (A0) ; la vérification la nomme
 (`pair_unread`), et la tête dit « its rules unread at its check (…): whether it holds for the VMs on the subnet
-is unverified », plus « denied for ALL VMs ». La carte de dérive, quand la vérification est vraie et la paire
+is unverified », plus « denied for ALL VMs ». Une carte ajoutée depuis et laissée à cette paire (une promotion
+lui a ôté son propre blocage) est inconnue (« périmètre illisible »), jamais « no rule of this block on it » ni
+reposée sur une supposition : la paire la tient peut-être (relecture, tour 2) ; la fenêtre de promotion de la
+console dit la paire illisible sur sa ligne. La carte de dérive, quand la vérification est vraie et la paire
 disparue, dit « l'IP reste bloquée sur Db--01 ; sur les autres VM derrière nsg-subnet, la règle de périmètre
 ne tient plus » (« … en sortie », « … en entrée » pour une moitié) : avant, « l'IP reste bloquée », vrai de la
 VM, muet sur le sous-réseau. Elle nomme le NSG de la paire (`perimeter_nsg`) : une carte tenue par le
@@ -659,8 +662,12 @@ paire absente à la réponse ne peut venir que du blocage lui-même. Le premier 
 dès que la réponse disait la paire disparue : la relecture (tour 1) l'a démontré, un blocage qui n'écrivait
 pas sa paire (ou son `-out` seul), et que sa vérification lisait « manquante », passait. C'était une excuse.
 L'oracle n'excuse plus que ce qu'un tiers posé par le test a ôté (`world_deleted`, remis à zéro par `_before`,
-rempli par le crochet de la régression), ou une panne tirée pour l'opération ; sinon : « I3: perimeter block
-lost its own pair … ». Et il excuse sens par sens : une moitié partie laisse l'autre sens des voisines jugé,
+rempli par le crochet de la régression), et rien d'autre ; sinon : « I3: perimeter block lost its own pair … ».
+Le deuxième correctif excusait aussi toute panne tirée pour l'opération : la relecture (tour 2) a montré qu'avec
+la paire jamais écrite, 77 cas jugés sur 144 passaient, dont 75 où la panne n'avait pas joué. Une panne coupe
+court les écritures du code, elle n'ôte aucune règle : l'excuse est retirée, et la machine à 500 comme les
+régressions restent vertes sans elle. Une paire dite illisible (`pair_unread`) n'est acceptée qu'après une panne
+qui a joué pendant l'opération (`fault_played`, posé par `_run`). Et il excuse sens par sens : une moitié partie laisse l'autre sens des voisines jugé,
 et les cartes de la VM nommées sans règle du blocage (`missing_nics`, une promotion) ne sont exemptées que
 dans les sens excusés. Les invariants restent verts à 500.
 
@@ -675,7 +682,12 @@ de nouveau entier ; une moitié de paire, le sens perdu dit par la note et par l
 dite disparue) ; la promotion, la carte séparée des règles ; la fenêtre de la console
 (`tests/unit/test_console_blocks.py`). Le cas d'I3Q de la paire disparue d'un périmètre seul dit maintenant
 la nouvelle tête. Le mutant de la relecture (la paire, ou son `-out`, jamais écrite) est pris par la machine :
-« I3: perimeter block lost its own pair … ». Mutants M5088–M5097 et M5105–M5109 (`scripts/mutants/I3W.py`) ;
+« I3: perimeter block lost its own pair … », sans panne et sous une panne tirée qui ne joue pas (la 15ᵉ
+écriture, `test_a_perimeter_block_under_a_fault_that_never_plays_is_judged_on_its_own_pair`). Rejoué à la main
+avec l'ancienne excuse de panne rétablie, ce dernier cas passe, 8 sur 8 ; sans elle, il est pris, 8 sur 8. La
+promotion dont la paire est illisible ne dit aucune carte sans règle
+(`test_a_promotion_whose_pair_is_unread_names_no_nic_without_a_rule`), et la console dit la paire illisible.
+Mutants M5088–M5097, M5105–M5109 et M5115–M5119 (`scripts/mutants/I3W.py`) ;
 M5033 et M5078 d'I3Q suivent le code déplacé.
 
 ### Trois mutants que la machine ne voyait plus qu'au hasard (MUT4)

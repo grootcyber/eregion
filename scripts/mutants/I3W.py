@@ -18,6 +18,10 @@ The review (round 1): the oracle excused every pair said gone — a block that l
 excuses now what a third party the test sets acting took off (`world_deleted`), or a fault drawn, way by way.
 M5105, M5106: the pair, or its `-out`, never written; M5107, M5108: half the pair said as the whole, by the
 block and by the card; M5109: the pair unread, « denied for ALL VMs » kept.
+The review (round 2): a fault drawn excused a pair lost even when it never played. A third party the test
+sets acting alone excuses; « unread » is accepted only after a fault that played. M5115, M5116: the pair, or
+its `-out`, never written, under a fault that never plays; M5117: a NIC left to an unread pair said « no rule
+of this block » (A0); M5118: the console silent of the pair unread; M5119: the pair unread no longer named.
 Measured by the sequences frozen in tests/unit/test_invariant_regressions.py (the machine's oracle and the
 connector) and tests/unit/test_console_blocks.py: the machine draws no third party deleting a rule between a
 block's write and its check."""
@@ -42,6 +46,9 @@ _GONE = ('                if st in ("absent", "altered"):\n'
          '                    (missing if missing else held_missing).extend(names)\n')
 _OWN_PAIR = f"{_REG}test_a_perimeter_block_beside_a_vm_block_is_judged_on_its_own_pair"
 _HALF = f"{_REG}test_half_a_perimeter_pair_gone_is_said_the_way_it_no_longer_denies"
+_UNPLAYED = f"{_REG}test_a_perimeter_block_under_a_fault_that_never_plays_is_judged_on_its_own_pair"
+_PAIR_UNREAD = f"{_REG}test_a_promotion_whose_pair_is_unread_names_no_nic_without_a_rule"
+_CONSOLE_UNREAD = "tests/unit/test_console_blocks.py::test_a_promotion_says_its_pair_unread"
 _WRITE = ('        self._put_deny_rule(nsg_rg, nsg_name, rule_name, "Inbound", priority["inbound"], src=ip, dst="*")\n'
           '        self._put_deny_rule(nsg_rg, nsg_name, f"{rule_name}-out", "Outbound", priority["outbound"],\n'
           '                            src="*", dst=ip)\n')
@@ -97,6 +104,24 @@ MUTANTS = [
               "subnet » (I3W's review, finding 3)",
      _VBL, '        elif unread:\n            out["pair_unread"] = unread\n',
      '        elif False:\n            out["pair_unread"] = unread\n'),
+    # I3W's review (round 2).
+    ("M5115", "a perimeter block that never writes its pair, under a fault drawn that never plays: excused by "
+              "an oracle that excused a pair lost under any fault drawn (I3W's review, round 2)",
+     _BLK, _WRITE, ""),
+    ("M5116", "a perimeter block that never writes its `-out`, under a fault drawn that never plays (I3W's "
+              "review, round 2)",
+     _BLK, _WRITE, _WRITE.split("\n", 1)[0] + "\n"),
+    ("M5117", "a NIC added since, left to a perimeter pair whose listing couldn't be read, said « no rule of "
+              "this block on it » — the pair may hold it (I3W's review, round 2; A0)",
+     _VBL, '                        if perimeter and t1 and self._perimeter_holds(cache, t1, ip, port) == "unknown":\n',
+     "                        if False:\n"),
+    ("M5118", "the console's promotion window silent of a subnet rule unread at its check (I3W's review, "
+              "round 2)",
+     _API, '    if result.get("pair_unread"):', "    if False:"),
+    ("M5119", "a block's check no longer names its perimeter pair unread: « denied for ALL VMs » kept on a "
+              "read that failed (I3W's review, round 2)",
+     _VBL, '                    pair = {"pair_unread": names, "perimeter_nsg": perimeter[1]}\n',
+     "                    pair = {}\n"),
 ]
 TESTS = {
     "M5088": f"{_MACHINE} {_SAID} {_NONE}",
@@ -114,4 +139,9 @@ TESTS = {
     "M5107": _HALF,
     "M5108": _HALF,
     "M5109": _NONE,
+    "M5115": _UNPLAYED,
+    "M5116": _UNPLAYED,
+    "M5117": _PAIR_UNREAD,
+    "M5118": _CONSOLE_UNREAD,
+    "M5119": f"{_NONE} {_PAIR_UNREAD}",
 }
