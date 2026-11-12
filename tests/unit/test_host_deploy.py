@@ -539,6 +539,7 @@ def test_a_deployment_by_hand_waits_for_the_cd(repo, tmp_path):
         env, log = _with_docker(repo, tmp_path)
         res = repo.deploy("v0.2.0", env=env)
         assert res.returncode != 0 and "un déploiement est en cours" in res.stderr
+        assert "(le CD d'Imladris, H1)" in res.stderr and "H0" not in res.stderr      # IML1c
         assert repo.head() == before and log.read_text() == ""
         res = repo.deploy("--activate", "v0.2.0", env={**env, "EREGION_DEPLOY_LOCKED": "1"})
         assert res.returncode == 0, res.stderr

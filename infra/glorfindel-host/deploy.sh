@@ -49,7 +49,7 @@ die() { echo "✗ $*" >&2; exit 1; }
 lock() {
   [ -n "${EREGION_DEPLOY_LOCKED:-}" ] && return 0
   exec 9>"$HOME/.eregion-deploy.lock"
-  flock -n 9 || die "un déploiement est en cours (le CD de H0, H1) : rien n'est fait. Réessayer après, ou make imladris-cd-status."
+  flock -n 9 || die "un déploiement est en cours (le CD d'Imladris, H1) : rien n'est fait. Réessayer après, ou make imladris-cd-status."
 }
 
 # The ref to deploy → "<ref> <full commit>", or die. A tag (refs/tags/REF) or a hexadecimal

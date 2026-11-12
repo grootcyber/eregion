@@ -199,6 +199,16 @@ def test_make_help_shows_the_new_names_only():
     ("Puis `make imladris-push` et `make imladris-tunnel-on`.\n", False),
     ("Les anciens noms (`glorfindel-host-*`, `mobile-*`) restent des alias.\n", False),
     ("infra/glorfindel-host/README.md, make -C infra/glorfindel-host\n", False),
+    # IML1c: options and variables between « make » and the former name, and an argv's words.
+    ("Puis `make YES=1 glorfindel-host-up`.\n", True),
+    ("Puis `make -C . glorfindel-host-push`.\n", True),
+    ("Puis `make -s --no-print-directory DRY_RUN=1 mobile-tunnel-install`.\n", True),
+    ("Puis `make -C infra/glorfindel-host -s YES=1\nglorfindel-host-up`.\n", True),      # across a line
+    ('run(["make", "-s", "glorfindel-host-status"])\n', True),
+    ("run(['make', 'mobile-check'])\n", True),
+    ("Puis `make YES=1 imladris-up` et `make -C . imladris-push`.\n", False),
+    ("make -C infra/glorfindel-host plan, puis make help\n", False),
+    ("make help puis glorfindel-host-up n'est plus listé\n", False),        # a word that is neither
 ])
 def test_a_former_command_in_a_live_text_is_said(tmp_path, text, said):
     _tree(tmp_path, {"docs/x.md": text, "glorfindel/x.py": "# " + text})
@@ -218,12 +228,14 @@ def test_a_former_command_is_read_but_in_the_history_and_the_kept_texts(tmp_path
         "infra/glorfindel-host/deploy.sh": "# " + cited, "Makefile": "# " + cited,
     })
     found = sorted({p.split(":")[0] for p in host_name.problems(tmp_path) if "a former command" in p})
-    assert found == ["Makefile", "infra/glorfindel-host/cd/eregion_cd.py", "infra/glorfindel-host/deploy.sh",
-                     "infra/glorfindel-host/main.tf"]
-    _tree(tmp_path, {"CLAUDE.md": "Puis `make glorfindel-host-push`.\n"})
+    # IML1c: CLAUDE.md is read like any live text — its line changed, with Jonathan's agreement (12/11).
+    assert found == ["CLAUDE.md", "Makefile", "infra/glorfindel-host/cd/eregion_cd.py",
+                     "infra/glorfindel-host/deploy.sh", "infra/glorfindel-host/main.tf"]
+    assert "CLAUDE.md" not in host_name.OLD_KEPT
+    _tree(tmp_path, {"ROADMAP.md": "Puis `make glorfindel-host-push`.\n"})
     said = host_name.problems(tmp_path)
-    assert any(p.startswith("CLAUDE.md:1: a former command") for p in said)
-    assert any("the kept command « `make glorfindel-host-start REF=…` » is gone" in p for p in said)
+    assert any(p.startswith("ROADMAP.md:1: a former command") for p in said)
+    assert any("the kept command « `make mobile-check`) » is gone" in p for p in said)
 
 
 def test_the_kept_former_commands_are_where_they_are_said():
@@ -285,7 +297,7 @@ def test_the_query_text_kept_with_h0_is_in_a_shipped_rule_s_query():
 def test_a_kept_text_renamed_or_a_quotation_its_source_no_longer_says_is_said(tmp_path):
     readme = "infra/glorfindel-host/README.md"
     files = {RULES: "      // Measured on Imladris's Syslog\n",
-             readme: "« Verified as H0 verifies it »\n",
+             readme: "« Verified as H0 verifies it »\n`make glorfindel-host-cd-install` (qui marche encore)\n",
              ".github/workflows/publish.yml": "      - name: Verified as Imladris verifies it\n"}
     _tree(tmp_path, files)
     said = host_name.problems(tmp_path)

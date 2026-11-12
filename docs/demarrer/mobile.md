@@ -326,10 +326,11 @@ côté d'un journal, l'heure d'une autre zone.
 2. **L'URL** : dans le terminal du téléphone, sur le poste, `make imladris-url`. Elle donne celle de
    la console d'Imladris (`http://localhost:7007/?token=…`, le jeton lu dans
    `infra/glorfindel-host/host.env`) ; le tunnel du poste pas armé, une ligne de plus le dit et
-   renvoie à `make imladris-tunnel-on`. `make console-url` ne donne plus que la console locale du
-   poste : le tunnel armé, elle renvoie à `make imladris-url` (IML1b). Elles refusent dans une
-   session d'agent : le jeton n'atteint jamais une session de code (`make imladris-tunnel` refuse de
-   même).
+   renvoie à `make imladris-tunnel-on`. `make console-url` donne la même, le tunnel armé : il tient
+   127.0.0.1:7007, la console derrière est celle d'Imladris, et une ligne le dit (« le tunnel
+   d'Imladris tient 7007 : c'est sa console ») ; sinon, la console locale du poste (IML1c). Elles
+   refusent dans une session d'agent : le jeton n'atteint jamais une session de code (`make
+   imladris-tunnel` refuse de même).
 3. **Dans Safari** : cette URL. Le `Host` reste `localhost` : la console d'Imladris répond sans rien
    ajouter à `EREGION_CONSOLE_HOSTS`. Le jeton reste exigé : l'URL le porte une fois, la console le
    retire et pose un cookie de session (12 h). **Mesuré le 11/11** : la console d'Imladris s'affiche
@@ -409,9 +410,9 @@ make bench-restore TARGET=vm-celebrimbor-gondolin RUN=<run_id>             # tap
   Le restore lit ses droits avant de toucher la VM (RST1). La clé matérielle du SSH tient lieu de
   second facteur, en attendant FS1g et TOT1.
 
-**La sortie affiche l'id complet de la VM, l'abonnement compris, et le nom du coffre** (la ligne
-`Resource :` de `glorfindel restore`, `glorfindel/cli.py:1609` ; relevé au banc le 12/11, à blanc comme
-pour de vrai) : ne pas la coller telle quelle dans une issue ou un fil. La masquer demande du code.
+La sortie nomme la VM par son nom et son groupe (`Resource : <vm> (groupe <rg>)`) et le coffre par
+son nom, jamais l'id de l'abonnement (IML1c) — sauf le texte d'une erreur d'Azure, le refus d'un nom
+ambigu et, avec `--wait` sans `--keep-isolated`, le raisonnement du modèle : à relire avant de coller.
 
 Ensuite, la levée par Imladris (étape 7 de banc-t1486.md), puis `make bench-report RUN=<run_id>`.
 
