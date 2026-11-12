@@ -344,7 +344,6 @@ def test_with_the_bot_everything_is_in_the_vm_s_thread_and_the_channel_stays_qui
     sont dans le salon) ». With the bot: nothing by the webhook; the card and the announcement
     posted by the bot in the VM's thread, once, after its restart too."""
     pytest.importorskip("discord")
-    from glorfindel import bot
     f, c = azure
     _respond(c, _ransomware(), "isolate_vm")
     assert bot_on == []                                                 # nothing in the channel
@@ -353,19 +352,7 @@ def test_with_the_bot_everything_is_in_the_vm_s_thread_and_the_channel_stays_qui
     assert n["kind"] == escalations.EXECUTED_TYPE and n["via"] == "bot" and n["detail"]["card"] == card["id"]
 
     threads: dict = {}
-    b = bot.GlorfindelBot(channel_id=1, ping_role=4242)
-
-    class Thread:
-        def __init__(self):
-            self.sent: list = []
-
-        async def send(self, content=None, **kw):
-            self.sent.append(content if content is not None else kw)
-            return MagicMock(id=len(self.sent))
-
-    async def thread(channel, rid, ping=True):
-        return threads.setdefault(rid.lower(), Thread())
-    b._get_or_create_thread = thread
+    b = _bot(threads)
 
     async def turn(b):
         await b._post_escalation(None, card)
@@ -374,11 +361,98 @@ def test_with_the_bot_everything_is_in_the_vm_s_thread_and_the_channel_stays_qui
     assert list(threads) == [WEB.lower()]                               # one thread, the VM's
     embed_msg, notice_msg = threads[WEB.lower()].sent
     assert embed_msg["embed"].title.startswith("✅ VM isolée du réseau")
-    assert notice_msg.startswith("✅ **VM isolée du réseau ✓** · `web`")
-    assert f"Carte à juger : {card['id'][:8]}" in notice_msg
-    again = bot.GlorfindelBot(channel_id=1, ping_role=4242)              # the bot restarted
-    again._get_or_create_thread = thread
+    assert notice_msg["content"].startswith("✅ **VM isolée du réseau ✓** · `web`")
+    assert f"Carte à juger : {card['id'][:8]}" in notice_msg["content"]
+    again = _bot(threads)                                               # the bot restarted
     assert asyncio.run(again._post_notices(None)) == 0
+
+
+# ── the role pinged: once per action, by its card (Jonathan, 12/11) ───────────────────────────
+
+ROLE = 4242
+
+
+class _Thread:
+    def __init__(self):
+        self.sent: list[dict] = []
+
+    async def send(self, content=None, **kw):
+        self.sent.append({"content": content, **kw})
+        return MagicMock(id=len(self.sent))
+
+
+def _bot(threads: dict):
+    """The bot, its threads in `threads` (by lowercased resource id): one opened as the real one is —
+    the « Incident opened » ping sent at its creation when `ping` asks for it, never after."""
+    pytest.importorskip("discord")
+    from glorfindel import bot
+    b = bot.GlorfindelBot(channel_id=1, ping_role=ROLE)
+
+    async def thread(channel, rid, ping=True):
+        if rid.lower() not in threads:
+            threads[rid.lower()] = _Thread()
+            if ping and b.ping_role:
+                await threads[rid.lower()].send(f"<@&{b.ping_role}> Incident opened on `x`",
+                                                allowed_mentions=b._role_mentions())
+        return threads[rid.lower()]
+    b._get_or_create_thread = thread
+    return b
+
+
+def _pings(threads: dict) -> list[dict]:
+    return [m for t in threads.values() for m in t.sent if f"<@&{ROLE}>" in str(m.get("content") or "")]
+
+
+def test_the_card_of_an_action_taken_alone_pings_the_role_in_a_thread_already_open(azure, bot_on):
+    """The VM's thread exists (an earlier incident): the card pings the role in it, the role alone."""
+    f, c = azure
+    _respond(c, _ransomware(), "isolate_vm")
+    [card] = _cards()
+    threads: dict = {WEB.lower(): _Thread()}
+    b = _bot(threads)
+    asyncio.run(b._post_escalation(None, card))
+    [ping] = _pings(threads)
+    assert ping["content"] == f"<@&{ROLE}>" and ping["embed"].title.startswith("✅ VM isolée du réseau")
+    mentions = ping["allowed_mentions"]
+    assert mentions.everyone is False and mentions.users is False and mentions.replied_user is False
+    assert [r.id for r in mentions.roles] == [ROLE]
+
+
+def test_one_ping_per_action_whichever_the_bot_reads_first_and_after_its_restart(azure, bot_on):
+    """The race of the card and its notice (the notice read first opens the thread), then a restart:
+    the role is pinged once — by the card; the announcement pings nothing."""
+    from glorfindel import bot as bot_module
+    f, c = azure
+    _respond(c, _ransomware(), "isolate_vm")
+    [card] = _cards()
+    threads: dict = {}
+    b = _bot(threads)
+    assert asyncio.run(b._post_notices(None)) == 1                       # the notice first: a new thread
+    assert _pings(threads) == []
+    asyncio.run(b._post_escalation(None, card))
+    bot_module._save_posted({card["id"]})                                # as the watch loop keeps it
+    again = _bot(threads)                                                # restarted
+    assert card["id"] in again._posted and asyncio.run(again._post_notices(None)) == 0
+    assert len(_pings(threads)) == 1
+    threads.clear()
+    other = _bot(threads)                                                # the card first, a new thread
+    asyncio.run(other._post_escalation(None, card))
+    assert len(_pings(threads)) == 1
+
+
+def test_a_card_of_another_type_pings_as_before(azure, bot_on):
+    """A held isolation (`mode_hold`): the role pinged when its post opens the thread, its message
+    mentioning no one — as before JUG1; in a thread already open, no ping."""
+    f, c = azure
+    _respond(c, _ransomware(), "isolate_vm", mode="human_only")
+    [held] = escalations.pending()
+    threads: dict = {}
+    asyncio.run(_bot(threads)._post_escalation(None, held))
+    [opened, msg] = threads[WEB.lower()].sent
+    assert "Incident opened" in opened["content"] and msg["content"] is None and "allowed_mentions" not in msg
+    threads[WEB.lower()].sent.clear()
+    asyncio.run(_bot(threads)._post_escalation(None, held))
+    assert _pings(threads) == []
 
 
 def test_a_forged_notice_silences_an_announcement_never_the_card(azure, posts):
@@ -404,6 +478,7 @@ def test_a_notice_store_that_refuses_still_announces_by_the_webhook(azure, posts
 
 
 def test_a_notice_store_that_refuses_with_the_bot_says_nothing_in_the_channel(azure, bot_on, monkeypatch):
+    """Its card written, the bot says the action in the VM's thread: nothing in the channel."""
     f, c = azure
 
     def full(notice):
@@ -411,6 +486,37 @@ def test_a_notice_store_that_refuses_with_the_bot_says_nothing_in_the_channel(az
     monkeypatch.setattr(vm_notices, "_record", full)
     _respond(c, _ransomware(), "isolate_vm")
     assert bot_on == [] and len(_cards()) == 1
+
+
+def test_a_full_disk_with_the_bot_still_alerts_by_the_webhook(azure, bot_on, monkeypatch):
+    """Imladris has the webhook and the bot (JUG1 review): the disk full, neither the card nor the
+    notice is written, the bot has nothing to post — the webhook says the action, as before JUG1.
+    An autonomous action always alerts somewhere."""
+    f, c = azure
+
+    def full(*a, **k):
+        raise OSError(28, "No space left on device")
+    monkeypatch.setattr(vm_notices, "_record", full)
+    monkeypatch.setattr(escalations, "_write_lines", full)
+    final = _respond(c, _ransomware(), "isolate_vm")
+    assert final["outcome"]["verified"] is True and _cards() == []
+    [text] = _robot(bot_on)
+    assert text.startswith(":robot_face: *VM isolée du réseau* ✓") and "Carte à juger" not in text
+
+
+def test_a_vm_isolated_alone_still_gives_no_moment_to_a_restore(azure, posts):
+    """`glorfindel restore <vm> --yes` without --before: the card of the action is written after it
+    and says nothing of when the attack began — the refusal of before (SEC4c: no card, no moment);
+    a card of a detection still gives it (JUG1 review)."""
+    from glorfindel import restore_plan
+    from glorfindel.cli import _restore_before
+    f, c = azure
+    _respond(c, _ransomware(), "isolate_vm")
+    assert len(_cards()) == 1 and restore_plan.card_of(WEB) is None
+    before, why = _restore_before(WEB, None)
+    assert before == "" and "passer --before" in why
+    held = escalations.record("rule-x-0000j1j9", WEB, "restore_from_backup", "destructive_action", "à restaurer")
+    assert restore_plan.card_of(WEB)["id"] == held
 
 
 # ── what reaches a chat or the console is inert ────────────────────────────────────────────────

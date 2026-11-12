@@ -1277,6 +1277,11 @@ class GlorfindelBot(discord.Client):
             )
         return thread
 
+    def _role_mentions(self) -> discord.AllowedMentions:
+        """The ping role alone, every field said (as the thread's opening message): JUG1's card."""
+        return discord.AllowedMentions(everyone=False, users=False, replied_user=False, roles=[
+            discord.Object(id=self.ping_role)])
+
     async def _watch_escalations(self) -> None:
         channel: discord.TextChannel | None = None
         _console.print("[dim]Watch loop started[/dim]")
@@ -1329,9 +1334,19 @@ class GlorfindelBot(discord.Client):
     async def _post_escalation(
         self, channel: discord.TextChannel, esc: dict
     ) -> None:
-        thread = await self._get_or_create_thread(channel, _thread_key(esc))
-
-        message = await thread.send(embed=_build_embed(esc), view=_build_view(esc))
+        # JUG1 (Jonathan, 12/11): the card of an action taken alone pings the role in its VM's
+        # thread, new or already open — the action's one ping: its thread opened without the
+        # « Incident opened » ping, its announcement and the cut's closure ping nothing, and the card
+        # is posted once (`_posted`, after a restart too). Any other card as before: the role pinged
+        # when its post opens the thread.
+        if esc.get("escalation_type") == esc_module.EXECUTED_TYPE:
+            thread = await self._get_or_create_thread(channel, _thread_key(esc), ping=False)
+            ping = ({"content": f"<@&{self.ping_role}>", "allowed_mentions": self._role_mentions()}
+                    if self.ping_role else {})
+            message = await thread.send(embed=_build_embed(esc), view=_build_view(esc), **ping)
+        else:
+            thread = await self._get_or_create_thread(channel, _thread_key(esc))
+            message = await thread.send(embed=_build_embed(esc), view=_build_view(esc))
         self._messages[esc["id"]] = message.id
         _save_messages(self._messages)
         self._synced[esc["id"]] = _card_signature(esc)
@@ -1391,10 +1406,12 @@ class GlorfindelBot(discord.Client):
         return edited
 
     async def _post_notices(self, channel) -> int:
-        """The notices of the watch (glorfindel/vm_notices.py: a session cut's closure, DRN2) not
-        posted yet, each in its VM's thread — the thread the VM's cards are in, opened again or
-        created without pinging the role (a notice closes what was said; it opens no incident).
-        Each posted once: its key kept before the next. Returns the number posted."""
+        """The notices of the watch (glorfindel/vm_notices.py: a session cut's closure, DRN2; an
+        autonomous action's announcement, JUG1) not posted yet, each in its VM's thread — the thread
+        the VM's cards are in, opened again or created — never pinging the role: a closure closes
+        what was said, and an action's announcement leaves the ping to its card (`_post_escalation`,
+        one ping per action, whichever of the two the bot reads first). Each posted once: its key
+        kept before the next. Returns the number posted."""
         from datetime import datetime, timedelta, timezone
 
         from glorfindel import vm_notices

@@ -296,8 +296,10 @@ Après I1F, AL1, C2 et A3 (27/10) :
 - **Une tuile qui replie plusieurs cartes les montre toutes** (JUG1 ; au banc du 12/11, les six cartes
   d'un NSG, « ×6 », n'en montraient qu'une) : dans ses détails, chaque carte du groupe a son titre,
   son heure, son id, son contexte, sa raison, son explication et son chemin vers le verdict
-  (« to judge ▸ », qui ouvre la carte, ou « judged: … ») — `_cardDetail`, le même corps que la carte
-  ouverte depuis TO JUDGE (`_cardBody`). L'Ack du groupe acquitte toujours les cartes du groupe.
+  (« to judge ▸ », qui ouvre la carte, ou « judged: … »), son plan (celui d'une carte d'identité, avec
+  son « Verify », IR1a) ou ses étapes, et sa requête proposée — `_cardDetail`, le même corps que la
+  carte ouverte depuis TO JUDGE (`_cardBody`). L'Ack du groupe acquitte toujours les cartes du groupe ;
+  une carte « exécutée » n'est jamais groupée avec une carte d'un autre type (`_groupEscs`).
 - **La carte « exécutée »** (JUG1, `autonomous_action`) : une action disruptive prise seule et
   vérifiée, « VM isolated from network — done alone, to judge », avec « ✓ done alone · mode … » et la
   vérification, puis les preuves de la ligne ; ni Approve ni bouton qui défasse (son type n'est pas

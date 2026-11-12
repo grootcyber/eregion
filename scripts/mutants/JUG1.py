@@ -2,12 +2,14 @@
 TO JUDGE, the indicator of the disruptive actions taken wrongly —, one per action after a restart
 too, nothing to approve on it; its announcement in the VM's thread when the bot is configured, by
 the webhook otherwise, never both; the console opens a line of TO JUDGE and shows every card of a
-folded tile. M4910–M4929. Measured by tests/unit/test_judge_card.py and
+folded tile. M4910–M4929; the review, and the card's ping in the VM's thread (Jonathan, 12/11):
+M4940–M4946. Measured by tests/unit/test_judge_card.py and
 tests/unit/test_judge_console.py."""
 AGENT = "glorfindel/agent.py"
 ESC = "glorfindel/escalations.py"
 BOT = "glorfindel/bot.py"
 GJS = "eregion_console/static/glorfindel.js"
+PLAN = "glorfindel/restore_plan.py"
 _T = "tests/unit/test_judge_card.py"
 _C = "tests/unit/test_judge_console.py"
 
@@ -43,9 +45,9 @@ MUTANTS = [
     ("M4917", "the announcement's key dropped: said again for the same action after a restart (JUG1)", ESC,
      '        return vm_notices.say(resource_id, key or f"action:{uuid.uuid4()}", EXECUTED_TYPE, title, text,\n',
      '        return vm_notices.say(resource_id, f"action:{uuid.uuid4()}", EXECUTED_TYPE, title, text,\n'),
-    ("M4918", "the notices' store refused, the bot configured: the announcement goes to the channel by the "
-     "webhook (JUG1)", ESC,
-     '        if discord_bot_configured() or not os.environ.get("GLORFINDEL_WEBHOOK_URL", ""):\n',
+    ("M4918", "the notices' store refused, the bot configured and the card written: the action said in "
+     "the channel too, the bot posting its card in the thread (JUG1)", ESC,
+     '        if not os.environ.get("GLORFINDEL_WEBHOOK_URL", "") or (discord_bot_configured() and card):\n',
      '        if not os.environ.get("GLORFINDEL_WEBHOOK_URL", ""):\n'),
     ("M4919", "the notices' store refused, no bot: the autonomous action announced nowhere (JUG1)", ESC,
      '        vm_notices.post_webhook(payload, key)\n        return "webhook"\n',
@@ -87,6 +89,38 @@ MUTANTS = [
      '            "suggested_steps", "executed", "run_id", "signal_id")}\n',
      '            "run_id", "signal_id")}\n'),
 ]
+# The review (round 1) and Jonathan's answer on the ping (12/11): M4940–M4946.
+MUTANTS += [
+    ("M4940", "a full disk with the bot configured: neither card nor notice written, and the webhook "
+     "silent — the action alerts nowhere (JUG1 review)", ESC,
+     '        if not os.environ.get("GLORFINDEL_WEBHOOK_URL", "") or (discord_bot_configured() and card):\n',
+     '        if not os.environ.get("GLORFINDEL_WEBHOOK_URL", "") or discord_bot_configured():\n'),
+    ("M4941", "the card of an action taken alone pings nobody: a VM whose thread is open isolated in "
+     "silence (JUG1, Jonathan 12/11)", BOT,
+     '            ping = ({"content": f"<@&{self.ping_role}>", "allowed_mentions": self._role_mentions()}\n'
+     "                    if self.ping_role else {})\n",
+     "            ping = {}\n"),
+    ("M4942", "the role pinged twice for one action: the thread opened with « Incident opened », then the "
+     "card's ping (JUG1)", BOT,
+     "            thread = await self._get_or_create_thread(channel, _thread_key(esc), ping=False)\n",
+     "            thread = await self._get_or_create_thread(channel, _thread_key(esc))\n"),
+    ("M4943", "the card's ping mentions everyone and every user, not the role alone (JUG1)", BOT,
+     "        return discord.AllowedMentions(everyone=False, users=False, replied_user=False, roles=[\n",
+     "        return discord.AllowedMentions(everyone=True, users=True, replied_user=False, roles=[\n"),
+    ("M4944", "two identity cards on their tile: each one's plan and its « Verify » gone (IR1a, JUG1 "
+     "review)", GJS,
+     "  const rest = own ? `${e.identity_plan ? _identityPlan(e) : _cardSteps(e)}${_cardQuery(e)}` : '';\n",
+     "  const rest = own ? _cardSteps(e) : '';\n"),
+    ("M4945", "`glorfindel restore` without --before takes its moment from the card of an action taken "
+     "alone: a VM isolated alone restored with no moment given (SEC4c, JUG1 review)", PLAN,
+     '        cards = [e for e in cards if e.get("escalation_type") != escalations.EXECUTED_TYPE]\n',
+     ""),
+    ("M4946", "an action taken alone grouped with a held card: the group's Ack acknowledges the card to "
+     "judge unread (JUG1 review)", GJS,
+     "    const kind = _isExecuted(e) ? `executed|${origin}` : origin;\n",
+     "    const kind = origin;\n"),
+]
 TESTS = {**{mid: _T for mid in ("M4910", "M4911", "M4913", "M4914", "M4915", "M4916", "M4917", "M4918",
                                  "M4919", "M4920", "M4921", "M4922", "M4923", "M4924", "M4925")},
-         **{mid: _C for mid in ("M4912", "M4926", "M4927", "M4928", "M4929")}}
+         **{mid: _T for mid in ("M4940", "M4941", "M4942", "M4943", "M4945")},
+         **{mid: _C for mid in ("M4912", "M4926", "M4927", "M4928", "M4929", "M4944", "M4946")}}

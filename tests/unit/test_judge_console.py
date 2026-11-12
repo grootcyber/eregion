@@ -132,7 +132,7 @@ def test_a_folded_tile_shows_every_card_each_judged_on_its_own():
     assert "${_attr(e.reason || '')}" not in modal                        # the first's reason only: gone
     detail = _function(js, "function _cardDetail(e, vmName, own)")
     for said in ("_attr(escTitle(e))", "_attr(String(e.id || '').slice(0, 8))", "_judgeWay(e)", "_escCtx(e, ",
-                 "${_cardBody(e, vmName)}${own ? _cardSteps(e) : ''}"):
+                 "${_cardBody(e, vmName)}${rest}"):
         assert said in detail, said
     body = _function(js, "function _cardBody(e, vmName)")
     for said in ("_attr(e.reason || '')", "_attr(e.explanation)", "_executedDetail(e)", "_targetNote(e, vmName)"):
@@ -150,3 +150,32 @@ def test_an_action_taken_alone_shows_its_mode_its_check_and_its_evidence():
     assert "mode ${_attr(x.mode || '?')}" in detail
     assert ".filter(Boolean).map(w => _attr(w)).join(' · ')" in detail
     assert "• ${_attr(w)}</div>" in detail and "${_attr(x.note)}" in detail
+
+
+def test_two_identity_cards_on_their_tile_keep_each_their_plan_and_its_verify():
+    """JUG1 review: the identities' cards fold on one tile (`identity_change`, no action); folded,
+    each one showed its steps only — its plan and its « Verify » (IR1a) gone. Each card of a group
+    keeps its own plan, else its steps, and its proposed query."""
+    for n, name in enumerate(("app-a", "app-b")):
+        escalations.record(f"rule-entra-credential-added-0000c{n}c{n}", f"entra:identities/{name}", "",
+                           "identity_change", f"Entra ID : identifiant ajouté à {name}.",
+                           identity_plan={"items": [{"n": 1, "what": f"révoquer {name}", "by": "executor"}]},
+                           target={"kind": "identity", "name": name})
+    cards = [e for e in console().get("/api/state").json()["escalations"]
+             if e["escalation_type"] == "identity_change"]
+    assert sorted(e["identity_plan"]["items"][0]["what"] for e in cards) == ["révoquer app-a", "révoquer app-b"]
+    js = _js()
+    detail = _function(js, "function _cardDetail(e, vmName, own)")
+    assert "const rest = own ? `${e.identity_plan ? _identityPlan(e) : _cardSteps(e)}${_cardQuery(e)}` : '';" in detail
+    assert "${head}${_cardBody(e, vmName)}${rest}" in detail
+    plan = js[js.index("function _identityPlan(e)"):js.index("function _cardDetail(")]
+    assert "_on('click', 'verifyIdentity'" in plan
+    assert "${_attr(e.proposed_query.trim())}</pre>" in _function(js, "function _cardQuery(e)")
+
+
+def test_an_action_taken_alone_is_never_acknowledged_with_a_card_of_another_type():
+    """JUG1 review: a held isolation and an isolation taken alone on the same VM share an action —
+    one group, and its Ack acknowledged the card to judge unread. Never grouped together."""
+    group = _function(_js(), "function _groupEscs(escs)")
+    assert "const kind = _isExecuted(e) ? `executed|${origin}` : origin;" in group
+    assert "map.get(kind).push(e);" in group

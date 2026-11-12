@@ -656,8 +656,11 @@ function _groupEscs(escs) {
     const key = e.action === 'improve_detection' ? e.id   // rules stay separate
       : `${_fromReassertion(e) ? 'reassertion' : 'other'}|${e.action}`;
     const origin = _fromDrain(e) ? `drain|${key}` : key;   // DRN1: the cut's cards, apart
-    if (!map.has(origin)) map.set(origin, []);
-    map.get(origin).push(e);
+    // JUG1: an action taken alone is never grouped with a card of another type on the same action
+    // (a held isolation): the group's Ack would acknowledge it unread.
+    const kind = _isExecuted(e) ? `executed|${origin}` : origin;
+    if (!map.has(kind)) map.set(kind, []);
+    map.get(kind).push(e);
   });
   return [...map.values()];
 }
@@ -3243,7 +3246,16 @@ function _cardDetail(e, vmName, own) {
       </div>
       <div style="color:var(--dim);font-size:10px">${_escCtx(e, e.confidence ? Math.round(e.confidence * 100) + '%' : '', false)}</div>`
     : (_judgeWay(e) ? `<div style="margin-bottom:4px">${_judgeWay(e)}</div>` : '');
-  return `${head}${_cardBody(e, vmName)}${own ? _cardSteps(e) : ''}`;
+  // A card among several keeps its own plan (an identity card's, with its Verify: IR1a) or its steps,
+  // and its proposed query (JUG1 review).
+  const rest = own ? `${e.identity_plan ? _identityPlan(e) : _cardSteps(e)}${_cardQuery(e)}` : '';
+  return `${head}${_cardBody(e, vmName)}${rest}`;
+}
+function _cardQuery(e) {
+  return e.proposed_query
+    ? `<pre style="background:var(--bg2);border-left:2px solid var(--cyan);padding:8px;font-size:10px;
+         color:var(--blue);white-space:pre-wrap;overflow-x:auto;margin:6px 0;border-radius:0 4px 4px 0">${_attr(e.proposed_query.trim())}</pre>`
+    : '';
 }
 // What a card says, the same wherever it is opened (a tile's details, TO JUDGE): what it is about,
 // its reason, the model's explanation, what an action taken alone did.
@@ -3331,10 +3343,7 @@ function showEscModal(vmName) {
     // An identity card with its plan (IR1a) shows the plan — the same steps, structured, with Verify.
     const steps = e.identity_plan ? _identityPlan(e) : (e.suggested_steps || [])
       .map(s => `<div style="color:var(--dim);font-size:10px;padding:2px 0 2px 8px">• ${_attr(s)}</div>`).join('');
-    const query = e.proposed_query
-      ? `<pre style="background:var(--bg2);border-left:2px solid var(--cyan);padding:8px;font-size:10px;
-           color:var(--blue);white-space:pre-wrap;overflow-x:auto;margin:6px 0;border-radius:0 4px 4px 0">${_attr(e.proposed_query.trim())}</pre>`
-      : '';
+    const query = _cardQuery(e);
     const pid   = e.proposal_id || '';
     const countBadge = count > 1
       ? `<span style="font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;

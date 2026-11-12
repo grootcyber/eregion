@@ -666,9 +666,11 @@ def notify_action(
         return vm_notices.say(resource_id, key or f"action:{uuid.uuid4()}", EXECUTED_TYPE, title, text,
                               level=level, detail=detail, webhook=payload)
     except Exception:
-        # The notices' store refused (a full disk): the webhook still says it, as before the store —
-        # the bot reads the store, and says nothing this time.
-        if discord_bot_configured() or not os.environ.get("GLORFINDEL_WEBHOOK_URL", ""):
+        # The notices' store refused (a full disk): an autonomous action is always said somewhere
+        # (JUG1 review). The bot posts only what the stores hold: its card written, the bot says it
+        # in the VM's thread; else the webhook says it, as before the store — never twice, the bot
+        # having nothing of it to post.
+        if not os.environ.get("GLORFINDEL_WEBHOOK_URL", "") or (discord_bot_configured() and card):
             return "none"
         vm_notices.post_webhook(payload, key)
         return "webhook"

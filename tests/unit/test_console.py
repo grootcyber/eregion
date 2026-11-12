@@ -415,7 +415,9 @@ def test_a_card_of_the_reassertion_is_never_grouped_nor_acked_with_one_of_anothe
            "      : `${_fromReassertion(e) ? 'reassertion' : 'other'}|${e.action}`;" in group
     # DRN1 review: the session cut's cards, an origin of their own — the store's prefix.
     assert "const origin = _fromDrain(e) ? `drain|${key}` : key;" in group
-    assert "map.get(origin).push(e);" in group and "map.set(origin, [])" in group
+    # JUG1 review: an action taken alone, a group of its own — never acknowledged with a held card.
+    assert "const kind = _isExecuted(e) ? `executed|${origin}` : origin;" in group
+    assert "map.get(kind).push(e);" in group and "map.set(kind, [])" in group
     assert re.search(r"const _DRAIN_FOLLOW = '([^']+)';", js).group(1) == escalations._DRAIN_FOLLOW
     assert "startsWith(_DRAIN_FOLLOW)" in _js_function(js, "function _fromDrain(e)")
     acks = re.findall(r"_on\('click', '(?:doAckAll|ackAllAndClose)', ([^)]*)\)", js)
