@@ -5,7 +5,9 @@ never pinging (Jonathan, 12/11). M5005–M5014. The review (round 1) took three 
 findings — M5006 (was: two passes at once), M5009 (was: no budget), M5011 (was: a try never counted):
 their tests stay (test_one_relay_pass_at_a_time, test_a_pass_starts_no_post_once_its_budget_spent,
 the cap's tests), the range held. The review (round 2): M5060–M5064 — the deadline passed counted
-as unsent, a 4xx of a notice's own, and the three taken back in round 1, recorded again. Measured by
+as unsent, a 4xx of a notice's own, and the three taken back in round 1, recorded again. The review
+(round 3): M5080–M5082 — a post past its deadline settles its notice itself, a 410. M5011, M5060 and
+M5061 re-anchored (the answers' classing in their own functions). Measured by
 tests/unit/test_bot_fallback.py."""
 NOTICES = "glorfindel/vm_notices.py"
 BOT = "glorfindel/bot.py"
@@ -40,7 +42,7 @@ MUTANTS = [
      "            if False:\n                continue"),
     ("M5011", "a post that left nothing (a name not resolved, a connection refused or not made in time) "
      "counts a try: three minutes of network cut silence the fallback (JUG2b review)", NOTICES,
-     '            if _nothing_sent(exc):\n                return "unsent"\n',
+     '    if _nothing_sent(exc):\n        return "unsent"\n',
      ""),
     ("M5012", "the bot's SIGTERM handler left installed after `run()`: a caller that goes on reads "
      "SIGTERM as a Ctrl-C (JUG2b)", BOT,
@@ -59,13 +61,12 @@ MUTANTS = [
 MUTANTS += [
     ("M5060", "the deadline passed counts a try: a host whose addresses all drop silences the fallback in "
      "three passes (JUG2b review, round 2)", NOTICES,
-     '            if isinstance(exc, PostDeadline):     # most often a connection never made (JUG2b review)\n'
-     '                return "unsent"\n',
-     ""),
+     '            return "pending" if on_late is not None else "unsent"\n',
+     '            return "unreachable"\n'),
     ("M5061", "a 400 or a 413 of one notice refuses the whole webhook: it stops every pass, the notices "
      "after it held for 24 h (JUG2b review, round 2)", NOTICES,
-     "        if status in WEBHOOK_REFUSALS:\n",
-     "        if isinstance(status, int) and 400 <= status < 500:\n"),
+     "    if status in WEBHOOK_REFUSALS:\n",
+     "    if isinstance(status, int) and 400 <= status < 500:\n"),
     ("M5062", "two relay passes at once: an announcement said twice, a mark settled by the other pass "
      "(JUG2b, recorded again)", NOTICES,
      "    if not _PASS.acquire(blocking=False):\n        return 0\n    try:\n",
@@ -78,5 +79,20 @@ MUTANTS += [
      "pings at every pass (JUG2b, recorded again)", NOTICES,
      "                    if result in COUNTS_A_TRY:\n                        _count_try(n)\n",
      ""),
+]
+# The review (round 3): M5080–M5082.
+MUTANTS += [
+    ("M5080", "a post past its deadline never settles its notice: delivered late, the notice held marked "
+     "until its take-back, then said again with its ping (JUG2b review, round 3)", NOTICES,
+     "                    late(box)\n",
+     "                    pass\n"),
+    ("M5081", "a pending post's notice given back to the bot at once: delivered late, it is said again at "
+     "the next pass, its ping with it, for 24 h (JUG2b review, round 3)", NOTICES,
+     '                if result == "pending":\n                    continue',
+     '                if False:\n                    continue'),
+    ("M5082", "a Slack channel archived (410) counts a try for each notice: all capped in three passes, "
+     "left to the bot after the channel comes back (JUG2b review, round 3)", NOTICES,
+     "WEBHOOK_REFUSALS = (401, 403, 404, 410)\n",
+     "WEBHOOK_REFUSALS = (401, 403, 404)\n"),
 ]
 TESTS = {mid: _T for mid, *_ in MUTANTS}

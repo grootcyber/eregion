@@ -81,8 +81,8 @@ while one runs): its loop — `runs/` read, its heartbeat, the reassertion, the 
 waits for a webhook. Each POST is bounded: `CONNECT_TIMEOUT_S` to connect, `READ_TIMEOUT_S` to read,
 and `POST_DEADLINE_S` for the whole of it, the name's resolution included (`_send`: the POST in a
 thread its caller waits for). A pass stops at the first webhook rate limited, refusing them all (a
-401, 403 or 404: a webhook deleted refuses the next ones too), unreachable or that nothing reached
-(`STOPS_THE_PASS`):
+401, 403, 404 or 410: a webhook deleted refuses the next ones too), unreachable, that nothing reached,
+or unanswered within the deadline (`STOPS_THE_PASS`):
 the rest goes back to the bot, or to the next pass; and it starts no post once it has run
 `RELAY_PASS_BUDGET_S`. A pass therefore lasts at most the budget and
 one notice — 0.5 s of spacing, a POST, a short 429's wait, a second POST: some 86 s, in its own
@@ -92,17 +92,23 @@ notice refused, not the webhook — the pass goes on, and the notice gives way i
 beside `relayed`, which goes when the notice goes back to the bot; a mark taken back counts one too);
 after `RELAY_MAX_TRIES` the webhook says it no more, said once in the log: the notice waits for the
 bot. A post that left nothing — the name not resolved, the connection refused or not made in time
-(`_nothing_sent`), or `POST_DEADLINE_S` passed (JUG2b review, round 2: most often a connection never
-made, every address of a host tried in turn) — and a refusal of the whole webhook (401, 403, 404, a
-429) count none: a network cut, however long, stops the passes, never the fallback. Its price: a post
-delivered whose answer comes past the deadline is said again at the next pass, uncapped — rare, for it
-takes a connection slower than 5 s and an answer lost; the fallback's own rule, a double rather than
-a silence.
+(`_nothing_sent`) — and a refusal of the whole webhook (401, 403, 404, 410, a 429) count none: a
+network cut, however long, stops the passes, never the fallback. **A post past `POST_DEADLINE_S`
+settles its notice itself** (JUG2b review, round 3): the deadline stops waiting for it, not the post,
+which may still deliver (an IPv6 route that loses its packets, then the IPv4; a dead resolver first in
+resolv.conf). `_post` answers `pending`: the pass stops, no try, the mark kept — the notice is not due
+again, the next ones go at the next pass. When the post ends, its own thread settles the notice
+(`_settler`) by the usual rule: a late 2xx noted sent, nothing sent given back without a try, a read
+timeout or a 5xx a try. Only under the mark it was posted with: a notice marked again, taken back or
+settled since is left as it is. A post that never ends is the mark's take-back's, after
+`RESEND_AFTER_S` (a try).
 
 Known limits: a webhook that delivered but whose answer was lost has the notice said again, an
 action's ping with it, `RELAY_MAX_TRIES` times at most; then it is the bot's (an action's card is
-in the console). A post abandoned at its deadline may still reach the webhook: counted as unsent, it
-can be said again at each pass (above).
+in the console). A post pending longer than `RESEND_AFTER_S` has its mark taken back and the notice
+said again: if the first one delivered after all, said twice, its ping with it (a try counted, the cap
+holds); and while a post is pending, the bot back posts the card with its ping (the webhook's not yet
+noted): two pings when the post delivers.
 A post of the bot in flight while the watch relays (the beat aged, or `CONFIRM_S`
 reached, during a `thread.send` held by Discord's rate limits) says the announcement twice, in the
 thread and in the channel; the same race on the card's post can ping twice. A notice forged in the
@@ -159,18 +165,21 @@ RELAY_PASS_BUDGET_S = 60.0
 # that the webhook refused for itself (a 400, a 413), is tried this many times at most: then it waits
 # for the bot, no new webhook (an action's ping each try).
 RELAY_MAX_TRIES = 3
-# The answers that refuse the whole webhook, not one notice: a token revoked, a webhook deleted.
-WEBHOOK_REFUSALS = (401, 403, 404)
-# What a post answered: `sent` (2xx), `limited` (a 429 still refused), `refused` (401, 403, 404: the
-# webhook refuses them all), `rejected` (another 4xx: this notice refused), `unsent` (nothing left: the
-# name not resolved, the connection refused or not made in time, or no answer within the deadline —
-# most often a connection never made), `failed` (a 5xx, an odd answer), `unreachable` (the read timed
-# out, or the connection cut once the request was sent). `failed` and `unreachable` may have been
+# The answers that refuse the whole webhook, not one notice: a token revoked, a webhook deleted, a
+# channel archived (Slack's 410).
+WEBHOOK_REFUSALS = (401, 403, 404, 410)
+# What a post answered: `sent` (2xx), `limited` (a 429 still refused), `refused` (401, 403, 404, 410:
+# the webhook refuses them all), `rejected` (another 4xx: this notice refused), `unsent` (nothing left:
+# the name not resolved, the connection refused or not made in time), `pending` (no answer within the
+# deadline: the post goes on in its thread, and settles its notice when it ends — JUG2b review, round
+# 3), `failed` (a 5xx, an odd answer), `unreachable` (the read timed out, or the connection cut once
+# the request was sent). `failed` and `unreachable` may have been
 # delivered, `rejected` is the notice's own: they count a try (JUG2b review: a network cut no longer
 # silences the fallback, a notice the webhook refuses gives way to the next).
 COUNTS_A_TRY = ("failed", "unreachable", "rejected")
 # What stops a pass: the next posts would go to the same webhook (JUG2b review).
-STOPS_THE_PASS = ("limited",
+STOPS_THE_PASS = ("pending",          # its post past the deadline, settled at its end (round 3)
+                  "limited",
                   "unsent",           # nothing left: the network, the name
                   "unreachable",
                   "refused")          # a webhook deleted (404) refuses the next ones as well (not "rejected")
@@ -253,9 +262,9 @@ def say(resource_id: str, key: str, kind: str, title: str, text: str, level: str
     if why:
         # Sent, it is noted sent; refused or unreachable, the notice goes back to the bot — the
         # next pass tries again, or the bot posts it at its return (JUG2 review: never a silence).
-        result = _post(*fallback(notice))
+        result = _post(*fallback(notice), on_late=_settler(notice))
         _settle({key: result})
-        return "relayed" if result == "sent" else "bot"
+        return {"sent": "relayed", "pending": "pending"}.get(result, "bot")
     if notice["via"] == "webhook":
         post_webhook(webhook or webhook_payload(notice), key)
     return notice["via"]
@@ -443,7 +452,7 @@ def _relay_pass(now: datetime | None) -> int:
             continue
         if i:
             _sleep(RELAY_SPACING_S)
-        result = _post(*fallback(n))
+        result = _post(*fallback(n), on_late=_settler(n))
         outcome[n["key"]] = result
         stop = result in STOPS_THE_PASS
     if outcome:
@@ -470,18 +479,25 @@ def _write(notices: list[dict]) -> None:
     _atomic_write_text(_STORE, "\n".join(json.dumps(n, default=str) for n in notices) + "\n")
 
 
-def _settle(outcome: dict[str, str]) -> None:
+def _settle(outcome: dict[str, str], marks: dict[str, str] | None = None) -> None:
     """Under the store's lock: each relayed notice noted sent (`outcome`: what `_post` answered), or
     given back to the bot (`via: bot`, `relayed` removed) — a try counted when its post may have been
-    delivered, or was the notice's own refusal (`COUNTS_A_TRY`, JUG2b). Never raises: a note refused (a full disk) leaves the mark,
-    taken back after `RESEND_AFTER_S` — said twice rather than never."""
+    delivered, or was the notice's own refusal (`COUNTS_A_TRY`, JUG2b). `pending`: left marked, its
+    post settles it at its end. `marks` (a late post's settling): the mark each post was made under —
+    a notice marked again, taken back or settled since is left as it is. Never raises: a note refused
+    (a full disk) leaves the mark, taken back after `RESEND_AFTER_S` — said twice rather than never."""
     try:
         with _lock():
             notices = _read()
             for n in notices:
                 if n["key"] not in outcome or not isinstance(n.get("relayed"), dict):
                     continue
+                if marks is not None and (n["relayed"].get("at") != marks.get(n["key"])
+                                          or n["relayed"].get("sent") is True):
+                    continue                # settled, or marked again, since: never overwritten
                 result = outcome[n["key"]]
+                if result == "pending":
+                    continue                # its post settles it at its end (JUG2b review, round 3)
                 if result == "sent":
                     n["relayed"]["sent"] = True
                 else:
@@ -492,6 +508,12 @@ def _settle(outcome: dict[str, str]) -> None:
             _write(notices)
     except OSError as exc:
         log.warning("notices: relayed announcements not noted (%s)", exc)
+
+
+def _settler(n: dict):
+    """What settles `n` once its post ends past the deadline: the mark it was posted under, kept."""
+    key, at = n["key"], (n.get("relayed") or {}).get("at")
+    return lambda result: _settle({key: result}, marks={key: at})
 
 
 def relay(notice: dict, why: str) -> bool:
@@ -557,13 +579,17 @@ class PostDeadline(TimeoutError):
     """No answer within `POST_DEADLINE_S` (`_send`)."""
 
 
-def _send(url: str, payload: dict):
+def _send(url: str, payload: dict, late=None):
     """`requests.post`, bounded: `CONNECT_TIMEOUT_S` to connect and `READ_TIMEOUT_S` to read, and the
     whole of it — the name's resolution included, which requests does not bound — `POST_DEADLINE_S`:
-    the POST in a thread of its own, waited for that long (JUG2b). Past it, PostDeadline: the post is
-    abandoned, its answer never read (it may still reach the webhook)."""
+    the POST in a thread of its own, waited for that long (JUG2b). Past it, PostDeadline — but the
+    POST goes on, and may still reach the webhook (an IPv6 route that loses its packets, then the
+    IPv4; a dead resolver first in resolv.conf): when it ends, its answer (`{"answer"}` or
+    `{"error"}`) goes to `late` (JUG2b review, round 3)."""
     box: dict = {}
     done = threading.Event()
+    gate = threading.Lock()
+    abandoned = [False]
 
     def run() -> None:
         try:
@@ -572,10 +598,20 @@ def _send(url: str, payload: dict):
         except Exception as exc:
             box["error"] = exc
         finally:
-            done.set()
+            with gate:
+                done.set()
+                ended_late = abandoned[0]
+            if ended_late and late is not None:
+                try:
+                    late(box)
+                except Exception as exc:  # a late answer never raises in its thread
+                    log.warning("webhook: late answer not settled (%s)", exc)
     threading.Thread(target=run, daemon=True, name="webhook-post").start()
     if not _wait(done, POST_DEADLINE_S):
-        raise PostDeadline(f"no answer within {POST_DEADLINE_S:g} s")
+        with gate:
+            if not done.is_set():
+                abandoned[0] = True
+                raise PostDeadline(f"no answer within {POST_DEADLINE_S:g} s")
     if "error" in box:
         raise box["error"]
     return box["answer"]
@@ -607,40 +643,55 @@ def _nothing_sent(exc: BaseException) -> bool:
     return False
 
 
-def _post(payload: dict, key: str = "", url: str = "") -> str:
+def _error_result(exc: BaseException, key: str) -> str:
+    log.warning("notice %s: webhook unreachable (%s)", key, exc)
+    if _nothing_sent(exc):
+        return "unsent"
+    return "unreachable"
+
+
+def _answer_result(resp, key: str) -> str:
+    """A webhook's answer, its 429 not waited for: `sent`, `limited`, `refused`, `rejected`, `failed`."""
+    status = getattr(resp, "status_code", None)
+    if isinstance(status, int) and 200 <= status < 300:
+        return "sent"
+    if status == 429:
+        log.warning("notice %s: webhook rate limited", key)
+        return "limited"
+    log.warning("notice %s: webhook answered %s", key, status)
+    if status in WEBHOOK_REFUSALS:
+        return "refused"
+    return "rejected" if isinstance(status, int) and 400 <= status < 500 else "failed"
+
+
+def _post(payload: dict, key: str = "", url: str = "", on_late=None) -> str:
     """`payload` to `url` (GLORFINDEL_WEBHOOK_URL when none): `sent` on a 2xx answer only (JUG2
     review: a 429, a 404, a network cut are no announcement), `limited` on a 429 still refused after
     one wait of at most `RETRY_MAX_S`, `refused` on a refusal of the whole webhook
-    (`WEBHOOK_REFUSALS`), `rejected` on another 4xx, `unsent` when nothing left (`_nothing_sent`) or
-    no answer within `POST_DEADLINE_S` (`_send`), `unreachable` on a read timed out or a connection
-    cut after the request, `failed` otherwise. Never raises."""
+    (`WEBHOOK_REFUSALS`), `rejected` on another 4xx, `unsent` when nothing left (`_nothing_sent`),
+    `unreachable` on a read timed out or a connection cut after the request, `failed` otherwise.
+    No answer within `POST_DEADLINE_S` (`_send`): `pending` when `on_late` takes what the post ends
+    with (a notice's settling: JUG2b review, round 3), else `unsent`. Never raises."""
     url = url or os.environ.get("GLORFINDEL_WEBHOOK_URL", "")
     if not url:
         return "failed"
+
+    def late(box: dict) -> None:
+        on_late(_error_result(box["error"], key) if "error" in box else _answer_result(box.get("answer"), key))
     for attempt in (0, 1):
         try:
-            resp = _send(url, payload)
+            resp = _send(url, payload, late if on_late is not None else None)
+        except PostDeadline as exc:       # the post goes on: what it ends with settles its notice
+            log.warning("notice %s: webhook unanswered (%s)", key, exc)
+            return "pending" if on_late is not None else "unsent"
         except Exception as exc:          # a notification never stops the watch
-            log.warning("notice %s: webhook unreachable (%s)", key, exc)
-            if isinstance(exc, PostDeadline):     # most often a connection never made (JUG2b review)
-                return "unsent"
-            if _nothing_sent(exc):
-                return "unsent"
-            return "unreachable"
-        status = getattr(resp, "status_code", None)
-        if isinstance(status, int) and 200 <= status < 300:
-            return "sent"
-        if status == 429:
+            return _error_result(exc, key)
+        if getattr(resp, "status_code", None) == 429:
             wait = _retry_after(resp)
             if attempt == 0 and wait is not None and wait <= RETRY_MAX_S:
                 _sleep(wait)
                 continue
-            log.warning("notice %s: webhook rate limited", key)
-            return "limited"
-        log.warning("notice %s: webhook answered %s", key, status)
-        if status in WEBHOOK_REFUSALS:
-            return "refused"
-        return "rejected" if isinstance(status, int) and 400 <= status < 500 else "failed"
+        return _answer_result(resp, key)
     return "failed"
 
 

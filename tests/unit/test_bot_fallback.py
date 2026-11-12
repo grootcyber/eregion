@@ -846,10 +846,10 @@ def test_a_pass_stops_at_a_webhook_unreachable(azure, bot_set, answers, make):
     assert vm_notices.relay_pass() == 3 and len(_relayed(bot_set)) == 4
 
 
-@pytest.mark.parametrize("status", [401, 403, 404])
+@pytest.mark.parametrize("status", [401, 403, 404, 410])
 def test_a_pass_stops_at_a_webhook_that_refuses(azure, bot_set, answers, status):
-    """A 401, a 403, a 404 (a token revoked, a webhook deleted): the next posts would go to the same
-    one, refused as well — the pass stops there, no try counted."""
+    """A 401, a 403, a 404, a 410 (a token revoked, a webhook deleted, a Slack channel archived): the
+    next posts would go to the same one, refused as well — the pass stops there, no try counted."""
     f, c = azure
     _three_actions_left_to_the_bot(c)
     answers.append(_Answer(status))
@@ -875,38 +875,132 @@ def test_a_notice_the_webhook_refuses_for_itself_gives_way(azure, bot_set, answe
     assert vm_notices.said(n["key"])["tries"] == vm_notices.RELAY_MAX_TRIES
 
 
+class _LateWebhook:
+    """A fake webhook whose posts the test holds past the deadline (`_wait` reads it passed while
+    `hold`), then lets end (`finish`): each held post ends with the next of `ends` — an answer, then
+    delivered, or an exception, nothing delivered. Not held, a post is delivered and answered 204."""
+
+    def __init__(self, monkeypatch, sent: list, ends: list):
+        import threading
+
+        import requests
+        self.sent, self.ends, self.hold = sent, ends, True
+        self.gate = threading.Event()
+        monkeypatch.setattr(requests, "post", self.post)
+        monkeypatch.setattr(vm_notices, "_wait", lambda done, s: False if self.hold else done.wait(s))
+
+    def post(self, url, json=None, timeout=None):
+        if not self.hold:
+            self.sent.append({"url": url, **json})
+            return _Answer()
+        end = self.ends.pop(0)
+        self.gate.wait(30)
+        if isinstance(end, Exception):
+            raise end
+        self.sent.append({"url": url, **json})                          # delivered, past the deadline
+        return end
+
+    def finish(self) -> None:
+        self.gate.set()
+        _join("webhook-post")
+        self.gate.clear()
+
+
 def test_a_host_whose_addresses_all_drop_counts_no_try(azure, bot_set, monkeypatch):
     """JUG2b review, round 2: a host of several addresses whose SYNs fall in a black hole — urllib3
-    tries each one 5 s in turn, and the 10 s deadline passes before any ConnectTimeout. Most often no
-    connection was ever made: unsent, no try — five passes, then the network back, the webhook says
-    the announcement, its ping with it."""
-    import threading
-
+    tries each one 5 s in turn, and the 10 s deadline passes before any ConnectTimeout. The post goes
+    on, ends with nothing sent: its notice back to the bot, no try — five times, then the network
+    back, the webhook says the announcement, its ping with it."""
     import requests
-    hole, state = threading.Event(), {"hole": True}
-
-    def post(url, json=None, timeout=None):
-        if state["hole"]:
-            hole.wait(30)                                               # abandoned at the deadline
-            raise requests.ConnectTimeout("every address dropped")
-        bot_set.append({"url": url, **json})
-        return _Answer()
-    monkeypatch.setattr(requests, "post", post)
-    monkeypatch.setattr(vm_notices, "_wait", lambda done, s: False if state["hole"] else done.wait(s))
+    hook = _LateWebhook(monkeypatch, bot_set, [requests.ConnectTimeout("every address dropped")] * 5)
     try:
         f, c = azure
-        _respond(c, _ransomware(), "isolate_vm")                        # the first post: the deadline
+        assert _respond(c, _ransomware(), "isolate_vm")                  # the first post: the deadline
+        assert _announcement()["via"] == "webhook"                      # pending: its mark kept
+        hook.finish()
         for _ in range(4):
             assert vm_notices.relay_pass() == 0
+            hook.finish()
         n = _announcement()
         assert n["via"] == "bot" and "tries" not in n and bot_set == []
-        state["hole"] = False
+        hook.hold = False
         assert vm_notices.relay_pass() == 1
         [msg] = _relayed(bot_set)
         assert msg["content"].startswith(f"<@&{ROLE}> ") and _announcement()["relayed"]["sent"] is True
     finally:
-        hole.set()
-        _join("webhook-post")
+        hook.finish()
+
+
+def test_a_post_delivered_past_its_deadline_is_noted_sent_by_itself(azure, bot_set, monkeypatch):
+    """JUG2b review, round 3 (measured): an IPv6 route that loses its packets, then the IPv4; a dead
+    resolver first in resolv.conf — the post passes its deadline, then delivers. It settles its
+    notice itself: noted sent, said once, its ping once — and the next ones go at the next pass."""
+    f, c = azure
+    _three_actions_left_to_the_bot(c)
+    hook = _LateWebhook(monkeypatch, bot_set, [_Answer()])
+    try:
+        assert vm_notices.relay_pass() == 0                             # the first one pending
+        assert [n["via"] for n in vm_notices._read()] == ["webhook", "bot", "bot"]
+        hook.finish()                                                   # delivered, late: 204
+        first = vm_notices._read()[0]
+        assert first["relayed"]["sent"] is True and "tries" not in first
+        hook.hold = False
+        assert vm_notices.relay_pass() == 2 and vm_notices.relay_pass() == 0
+        msgs = _relayed(bot_set)
+        assert len(msgs) == 3 and len({m["content"] for m in msgs}) == 3   # each once
+        assert all(m["content"].startswith(f"<@&{ROLE}> ") for m in msgs)  # one ping per action
+        assert all(n["relayed"]["sent"] is True for n in vm_notices._read())
+    finally:
+        hook.finish()
+
+
+def test_a_post_that_ends_in_a_read_timeout_past_its_deadline_counts_a_try(azure, bot_set, monkeypatch):
+    import requests
+    hook = _LateWebhook(monkeypatch, bot_set, [requests.ReadTimeout("answer lost")])
+    try:
+        f, c = azure
+        _respond(c, _ransomware(), "isolate_vm")
+        hook.finish()
+        n = _announcement()
+        assert n["via"] == "bot" and n["tries"] == 1 and "relayed" not in n
+    finally:
+        hook.finish()
+
+
+def test_a_late_answer_after_its_mark_was_taken_back_changes_nothing(azure, bot_set, monkeypatch):
+    """The post outlived `RESEND_AFTER_S`: its mark taken back (a try), the notice said again and
+    noted sent — the old post's answer, a 500, comes at last: the notice stays as the new one left
+    it (a late settling never overwrites)."""
+    hook = _LateWebhook(monkeypatch, bot_set, [_Answer(500)])
+    try:
+        f, c = azure
+        _respond(c, _ransomware(), "isolate_vm")
+        hook.hold = False
+        later = datetime.now(timezone.utc) + timedelta(seconds=vm_notices.RESEND_AFTER_S + 5)
+        assert vm_notices.relay_pass(later) == 1
+        hook.finish()
+        n = _announcement()
+        assert n["via"] == "webhook" and n["relayed"]["sent"] is True and n["tries"] == 1
+    finally:
+        hook.finish()
+
+
+def test_the_bot_back_while_a_post_is_pending_never_says_it_twice(azure, bot_set, monkeypatch):
+    """Pending, the notice is marked: the bot back does not post it; delivered late, it is noted
+    sent — the card the bot posts then pings no more."""
+    hook = _LateWebhook(monkeypatch, bot_set, [_Answer()])
+    try:
+        f, c = azure
+        _respond(c, _ransomware(), "isolate_vm")
+        _beat(0)
+        threads: dict = {}
+        assert asyncio.run(_bot(threads)._post_notices(None)) == 0 and threads == {}
+        hook.finish()
+        [card] = _cards()
+        threads, said = _bot_returns(card)
+        assert said == 0 and _pings(threads) == [] and len(_relayed(bot_set)) == 1
+    finally:
+        hook.finish()
 
 
 def test_a_network_cut_counts_no_try(azure, bot_set, answers):
@@ -943,9 +1037,9 @@ def test_a_pass_starts_no_post_once_its_budget_spent(azure, bot_set, monkeypatch
 
 
 def test_a_post_without_an_answer_by_its_deadline_is_unsent(bot_set, monkeypatch):
-    """The name's resolution, the connection or the read held past `POST_DEADLINE_S`: the post is
-    abandoned, `unsent` (most often no connection made: JUG2b review, round 2) — the caller goes
-    on."""
+    """The name's resolution, the connection or the read held past `POST_DEADLINE_S`, no notice to
+    settle (`post_webhook`, `relay`): `unsent` — the caller goes on. A notice's post is `pending`,
+    settled at its end (tests above)."""
     import threading
 
     import requests

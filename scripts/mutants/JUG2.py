@@ -55,8 +55,9 @@ MUTANTS = [
 MUTANTS += [
     ("M4995", "a webhook that answers 429, 404 or 500 counts as said: the announcement lost, and the card "
      "at the bot's return without its ping (JUG2 review)", NOTICES,
-     '        if isinstance(status, int) and 200 <= status < 300:\n            return "sent"\n',
-     '        if True:\n            return "sent"\n'),
+     # JUG2b (round 3): its anchor follows the answers' classing (`_answer_result`).
+     '    if isinstance(status, int) and 200 <= status < 300:\n        return "sent"\n',
+     '    if True:\n        return "sent"\n'),
     ("M4996", "a relay that failed stays marked said: neither the next pass nor the bot says it again "
      "(JUG2 review)", NOTICES,
      '                    n["via"] = "bot"\n                    n.pop("relayed")\n',
