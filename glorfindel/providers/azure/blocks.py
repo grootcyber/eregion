@@ -358,7 +358,8 @@ class BlockMixin:
         NICs behind it only. It lies on the primary NIC's subnet: a NIC on another subnet
         keeps its own block, and one nothing blocks is named (`uncovered_nics`, status
         `blocked_partial`) — it was `blocked` while that NIC stayed open, and a promotion
-        took its block off (RB1, review)."""
+        took its block off (RB1, review). One the verification couldn't read is named unread
+        (`nics_unread`), never uncovered: both can be said of one block (I3Q, #771)."""
         nic_id = self._get_primary_nic_id(rg, vm_name)
         nsg_rg, nsg_name = self._get_subnet_nsg(nic_id)
         rule_name = self._block_rule_name(ip, vm_name, scope="vm")  # shared (no VM suffix)
@@ -396,6 +397,7 @@ class BlockMixin:
         # A NIC off the perimeter's subnet is blocked only by its own block — as Azure reads
         # it, never as the state remembers it (a partial one, rules gone since).
         uncovered = [t["nic_short"] for t in off]
+        unread_nics: list[str] = []
         if uncovered:
             try:
                 check = self.verify_block_ip(ip, resource_id)
@@ -408,6 +410,17 @@ class BlockMixin:
                 # a NIC whose rules couldn't be read was said covered.
                 held = {*(check.get("blocked_nics") or []), *(check.get("held_by_perimeter") or [])}
                 uncovered = [n for n in uncovered if n not in held]
+                # « Still reaches » only on a proof that it is open (`open_nics`: nothing of ours
+                # blocks it): the others were said reached, read of none — their rules or their
+                # perimeter unread (I3Q, #771). Unread, never reached, never covered.
+                opened = set(check.get("open_nics") or [])
+                unread_nics = [n for n in uncovered if n not in opened]
+                uncovered = [n for n in uncovered if n in opened]
+                if unread_nics:
+                    why = {**{n: "règles illisibles" for n in check.get("nics_unknown") or []},
+                           **{n: "périmètre illisible" for n in check.get("perimeter_unread") or []}}
+                    other = "cartes illisibles" if check.get("nics_unread") else "non jugée"
+                    unread = ", ".join(f"{n} ({why.get(n, other)})" for n in unread_nics)
             else:
                 # Not concluded (a read answered 429): no NIC proven open, none proven held —
                 # neither « uncovered, the IP still reaches it » (another VM's perimeter may cut
@@ -435,11 +448,17 @@ class BlockMixin:
             out["kept_rules"] = guarded
             out["note"] += (" Kept by the promotion, its placement left in the state for the unblock: "
                             + " ; ".join(guarded) + ".")
+        # Each said when it is, both on one block (I3Q, #771): one key, the unread went unsaid.
         if uncovered or unread:
             out["status"] = "blocked_partial"
-            out["uncovered_nics" if uncovered else "nics_unread"] = uncovered or unread
+        if uncovered:
+            out["uncovered_nics"] = uncovered
             out["note"] += (f" Not behind it, on another subnet: {', '.join(uncovered)} — {ip} still reaches "
-                            "them; block the VM too (scope vm) to cut them off." if uncovered else
+                            "them; block the VM too (scope vm) to cut them off.")
+        if unread:
+            out["nics_unread"] = unread
+            out["note"] += (f" Not behind it, on another subnet, unread: {unread} — whether {ip} reaches them "
+                            "is unverified." if unread_nics else
                             f" {vm_name}'s NICs unreadable ({unread}): what the perimeter covers of it is unverified.")
         _report_block_shadowing(out, ip, shadowed)
         return out
