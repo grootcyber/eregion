@@ -302,7 +302,29 @@ function _healthNote(s) {
       + ' (=<NSG id>, or =none).';
     out += ` <span style="${warn}" title="${_attr(why)}">⚠ original unknown</span>`;
   }
-  return out;
+  return out + _drainNote(s);
+}
+
+// DRN2 (#754): the session cut, as the isolation card says it — pending while it runs on Azure,
+// then its outcome, what it says in the title (from the isolation's state alone, DRN2 review). Every
+// word from the watch goes through _attr.
+const _DRAIN_CHIP = {
+  pending: ['var(--orange)', 'cut pending'],
+  drained: ['var(--dim)', 'sessions cut'],
+  refused: ['var(--red)', '⚠ cut refused'],
+  open: ['var(--red)', '⚠ sessions open'],
+  never: ['var(--orange)', '⚠ cut never ended'],
+};
+function _drainNote(s) {
+  const d = s && s.drain_view;
+  const chip = d && _DRAIN_CHIP[d.case];
+  if (!chip) return '';
+  const n = Number(d.after_s);
+  const after = d.after_s != null && Number.isFinite(n) ? ` · ${n} s` : '';
+  const why = d.case === 'pending'
+    ? 'Session cut (Run Command) still running on Azure: the isolation holds on the NSG; the cut is read again at each pass of the reassertion, and its outcome said once.'
+    : String(d.said || '') + (d.ended_at ? '\nRead ' + String(d.ended_at) : '');
+  return ` <span style="font-size:8px;font-weight:600;padding:0 4px;border-radius:3px;flex-shrink:0;color:${chip[0]};border:1px solid color-mix(in srgb,${chip[0]} 40%,transparent)" title="${_attr(why)}">${chip[1]}${after}</span>`;
 }
 
 // LEV2 (#690): who acted on the VM by the control plane, and whether they keep their rights —

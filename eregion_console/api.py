@@ -728,6 +728,9 @@ async def state() -> dict:
                 "verified_at": _iso.get("verified_at", ""),
                 # Open sessions cut after the rules? (drain: drained|partial|failed|unsupported)
                 "drain": _iso.get("drain") or {},
+                # DRN2: what became of the cut, for the card — pending, cut, refused, sessions open,
+                # never ended — and when it was read so (glorfindel/drain_watch.py).
+                "drain_view": _drain_view(_iso),
                 # LEV2: who acted on the VM by the control plane, and their rights — read by the
                 # watch, for information only (nothing here lifts or holds); None: not read yet.
                 "door": _door_view(resource_id),
@@ -874,6 +877,37 @@ async def state() -> dict:
         "capability": capability,
         "now": now.isoformat(),
     }
+
+
+def _drain_view(iso: dict) -> dict:
+    """DRN2 (#754): the session cut as the isolation card says it — `case` (`pending`, `drained`,
+    `refused`, `open`, `never`, or "" for a cut that ended within its first wait, nothing to say),
+    `ended_at` when the watch read its outcome after that wait, `after_s` (when it was read so,
+    after it was asked), and `said`: what the outcome says. All of it from the isolation's state
+    alone — the outcome read on Azure —, never from the notices' store, which the console and the
+    bot write too (glorfindel/vm_notices.py, DRN2 review): a forged notice changes neither the chip
+    nor its sentence. Text from the watch, with names from Azure: the page writes it through
+    `_attr`."""
+    from glorfindel.response.policy import drain_case, drain_said
+    drain = iso.get("drain") if isinstance(iso.get("drain"), dict) else {}
+    ended_at = str(iso.get("drain_ended_at") or "")
+    case = drain_case(drain) or ("drained" if drain.get("status") == "drained" else "")
+    if not case or (case == "drained" and not ended_at):
+        return {}                  # nothing to say: no cut, one ended within its first wait, or another status
+    view = {"case": case, "ended_at": ended_at}
+    if case == "pending":
+        return view
+    after = drain.get("after_s") if isinstance(drain.get("after_s"), (int, float)) else None
+    if after is not None:
+        view["after_s"] = int(after)
+    if case == "drained":
+        said = ("Coupure des sessions aboutie"
+                + (f", relue {int(after)} s après la demande" if after is not None else "")
+                + " : sessions coupées, isolement vérifié.")
+    else:
+        said = drain_said(drain)
+    view["said"] = said
+    return view
 
 
 def _platform_open_nics(placements) -> list[str]:
