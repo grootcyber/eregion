@@ -528,6 +528,12 @@ def _run_graph(tmp_path, monkeypatch, sig, mode):
         return graph.invoke(initial), connector
 
 
+def _human_cards() -> list[dict]:
+    """The pending cards but the one of an action taken alone, to judge (JUG1)."""
+    from glorfindel import escalations
+    return [e for e in escalations.pending() if e["escalation_type"] != escalations.EXECUTED_TYPE]
+
+
 def test_a_compromise_blocked_alone_in_non_disruptive_still_makes_a_human_card(tmp_path, monkeypatch):
     """The model blocks at 99 % in non_disruptive: the block runs, and the card exists."""
     from glorfindel import escalations
@@ -535,8 +541,11 @@ def test_a_compromise_blocked_alone_in_non_disruptive_still_makes_a_human_card(t
     connector.block_suspicious_ip.assert_called_once()
     assert final["outcome"]["executed"] is True and final["outcome"]["verified"] is True
     assert final["outcome"]["compromise_card"] is True
-    [card] = escalations.pending()
+    # JUG1 (#760): beside the block's own card to judge, the human card.
+    [card] = _human_cards()
     assert card["escalation_type"] == "account_compromised" and card["action"] == ""
+    [executed] = [e for e in escalations.pending() if e["escalation_type"] == escalations.EXECUTED_TYPE]
+    assert executed["action"] == "block_suspicious_ip" and executed["action_params"]["ip"] == STRANGER
     assert "Compte peut-être compromis" in card["reason"] and STRANGER in card["reason"]
     assert "ops" in card["reason"] and "block_suspicious_ip" in card["reason"]
     pytest.importorskip("fastapi")
@@ -569,14 +578,13 @@ def test_a_compromise_after_a_held_brute_force_rewrites_its_card(tmp_path, monke
 
 
 def test_two_compromises_from_two_addresses_are_two_cards(tmp_path, monkeypatch):
-    from glorfindel import escalations
     _run_graph(tmp_path, monkeypatch, _compromise_signal(), "non_disruptive")
     other = "203.0.113.50"
     lines = _attempts(other) + _login(other, account="admin1", minutes_ago=1, method="password", pid=4800)
     p, rule, sent, _ = _poller(lines, rule_name="ssh-brute-force")
     [sig] = p.poll_once(rule)
     _run_graph(tmp_path, monkeypatch, sig, "non_disruptive")
-    cards = escalations.pending()
+    cards = _human_cards()
     assert sorted(c["action_params"]["ip"] for c in cards) == sorted([STRANGER, other])
     assert all(c["escalation_type"] == "account_compromised" for c in cards)
 
@@ -599,14 +607,13 @@ def test_a_compromise_whose_block_fails_its_check_is_one_card(tmp_path, monkeypa
 
 def test_a_brute_force_whose_logins_cannot_be_read_is_said_to_a_human(tmp_path, monkeypatch):
     """non_disruptive: the block runs, and a card says the login check could not be made."""
-    from glorfindel import escalations
     lines = _attempts(STRANGER) + _login(STRANGER, minutes_ago=1)
     p, rule, sent, _ = _poller(lines, rule_name="ssh-brute-force", fail=lambda q: "ProcessID" in q)
     [sig] = p.poll_once(rule)
     assert sig["raw_signal"]["first_result_row"]["LoginCheck"]["status"] == "unchecked"
     final, connector = _run_graph(tmp_path, monkeypatch, sig, "non_disruptive")
     connector.block_suspicious_ip.assert_called_once()
-    [card] = escalations.pending()
+    [card] = _human_cards()
     assert card["escalation_type"] == "compromise_unchecked" and STRANGER in card["reason"]
     assert "journal illisible" in card["reason"]
 
@@ -623,7 +630,9 @@ def test_the_observation_report_names_a_compromise_card(tmp_path, monkeypatch):
     from glorfindel import escalations
     _run_graph(tmp_path, monkeypatch, _compromise_signal(), "non_disruptive")
     by_action = escalations.observation_report()["by_action"]
-    assert list(by_action) == ["compte peut-être compromis (brute force puis connexion réussie)"]
+    # JUG1: and the block taken alone, its own card to judge.
+    assert list(by_action) == ["compte peut-être compromis (brute force puis connexion réussie)",
+                               "block_suspicious_ip"]
 
 
 def test_the_sessions_of_the_last_seven_days_count_and_not_older():
@@ -679,7 +688,9 @@ def test_a_plain_brute_force_blocked_alone_makes_no_compromise_card(tmp_path, mo
     [sig] = p.poll_once(rule)
     final, connector = _run_graph(tmp_path, monkeypatch, sig, "non_disruptive")
     connector.block_suspicious_ip.assert_called_once()
-    assert escalations.pending() == [] and "compromise_card" not in final["outcome"]
+    # JUG1 (#760): the block's card to judge only, no compromise card.
+    assert [e["escalation_type"] for e in escalations.pending()] == [escalations.EXECUTED_TYPE]
+    assert "compromise_card" not in final["outcome"]
 
 
 # ── COR2 (#427): the origin confirmed outside the VM ─────────────────────────────────

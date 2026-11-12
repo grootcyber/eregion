@@ -214,7 +214,8 @@ def test_control_every_draw_agrees_the_isolation_runs(notified):
     model = Model(_llm("isolate_vm", 0.95), [_llm("isolate_vm", 0.90)])
     final = _respond(_autonomous(conn), _ransomware(), model)
     assert conn.writes() == ["isolate_vm"] and [n["action"] for n in notified] == ["isolate_vm"]
-    assert len(model.calls) == 3 and _cards() == []
+    # JUG1 (#760): no escalation — only the card of the action, to judge after the fact.
+    assert len(model.calls) == 3 and [c["escalation_type"] for c in _cards()] == ["autonomous_action"]
     assert [d["action"] for d in final["decision_draws"]] == ["isolate_vm"] * 3
     assert _debug()[-1]["decision_draws"] == final["decision_draws"]
 

@@ -23,8 +23,13 @@ Forged, a notice can silence a closure (its key taken first) or have one said tw
 removed), or have the bot post an escaped text in a VM's thread; never declare a session cut (DRN2
 review; docs/design/modele-de-menace.md, until FS1f). A store unreadable (bytes that are not
 UTF-8) is read line by line, what does not read skipped: a closure may be said twice, never block
-the follow of the cuts. JUG1 puts the autonomous actions' announcements in the VM's thread the
-same way: `say(resource_id, key, kind, title, text, level)`.
+the follow of the cuts.
+
+**An autonomous action's announcement** (JUG1, #760) goes the same way: `escalations.notify_action`
+says it under the action's key (`escalations.executed_key`), kind `autonomous_action` — the bot
+posts it in the VM's thread, beside the action's card to judge; without the bot, the webhook carries
+it as it always did (its own message, `webhook`), the card's own notification quiet. Forged, a notice
+of that key silences the announcement, never the card: the card decides on its own store.
 """
 from __future__ import annotations
 
@@ -91,11 +96,12 @@ def _where() -> str:
 
 
 def say(resource_id: str, key: str, kind: str, title: str, text: str, level: str = "unknown",
-        detail: dict | None = None) -> str:
+        detail: dict | None = None, webhook: dict | None = None) -> str:
     """Say `text` of `resource_id`'s VM once for `key`: where it went (`bot`, `webhook`, `none`), or
     `already` when that key was said. Raises OSError when the store cannot be written (a full disk):
     the caller says it again at its next pass. `detail`: what it says, for the console — never read
-    back as an outcome."""
+    back as an outcome. `webhook`: the webhook's message when the caller has its own (an autonomous
+    action's announcement, as it always was: JUG1), else `webhook_payload`."""
     notice = {"key": key, "resource_id": resource_id, "kind": kind, "title": title, "text": text,
               "level": level if level in LEVELS else "unknown", "via": _where(),
               "at": datetime.now(timezone.utc).isoformat()}
@@ -104,7 +110,7 @@ def say(resource_id: str, key: str, kind: str, title: str, text: str, level: str
     if not _record(notice):
         return "already"
     if notice["via"] == "webhook":
-        _post_webhook(notice)
+        post_webhook(webhook or webhook_payload(notice), key)
     return notice["via"]
 
 
@@ -134,12 +140,13 @@ def webhook_payload(notice: dict) -> dict:
                      f"> {webhook_text(str(notice.get('text', ''))[:800])}")}
 
 
-def _post_webhook(notice: dict) -> None:
+def post_webhook(payload: dict, key: str = "") -> None:
+    """`payload` to GLORFINDEL_WEBHOOK_URL, once: a webhook that fails is not retried."""
     url = os.environ.get("GLORFINDEL_WEBHOOK_URL", "")
     if not url:
         return
     try:
         import requests
-        requests.post(url, json=webhook_payload(notice), timeout=5)
+        requests.post(url, json=payload, timeout=5)
     except Exception as exc:          # a notification never stops the watch
-        log.warning("notice %s: webhook failed (%s)", notice.get("key"), exc)
+        log.warning("notice %s: webhook failed (%s)", key, exc)

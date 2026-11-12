@@ -77,6 +77,7 @@ const ESC_LABELS = {
   queue_unavailable:   'action queue: the watch\'s register unreadable',
   undecided_detection: 'not decided by the model (deduplicated, ceiling, queue full)',
   drain_pending:       'session cut pending (the isolation holds, the cut is followed)',
+  autonomous_action:   'taken alone and verified (to judge)',
 };
 
 // Cards anchored on a VM the detection does not name (an Activity Log row, an identity,
@@ -106,6 +107,9 @@ function _isHeld(e) {
   return _HELD_TYPES.has(e.escalation_type) && _APPROVABLE.has(e.action)
     && !(e.action === 'snapshot' && e.escalation_type === 'low_confidence');
 }
+// JUG1 (#760): a disruptive action Glorfindel took alone, its check held — done, to judge after
+// the fact. Nothing to approve on it: it is undone, if judged wrong, by the usual paths.
+function _isExecuted(e) { return e.escalation_type === 'autonomous_action'; }
 function _heldWord(e) {
   return e.escalation_type === 'mode_hold' ? 'pending approval' : 'held: ' + escLabel(e.escalation_type);
 }
@@ -483,6 +487,13 @@ function cliCommand(esc) {
   if (esc.escalation_type === 'verification_failed') {
     return `glorfindel revert ${rid} --yes\nglorfindel ack ${id}`;
   }
+  if (_isExecuted(esc)) {
+    // JUG1: an action taken alone — judged; undone, if judged wrong, by the usual path (the bot's words).
+    const vm = rid.split('/').pop();
+    const ip = (esc.action_params && esc.action_params.ip) || '<ip>';
+    const undo = esc.action === 'isolate_vm' ? `glorfindel release ${vm} --yes` : `glorfindel unblock ${ip} ${vm} --yes`;
+    return `glorfindel verdict ${id} right|wrong|unsure\n# judged wrong: undo it by the usual path\n${undo}\nglorfindel ack ${id}`;
+  }
   // No restore here: a held snapshot never ran — restoring would overwrite the very
   // disk the model wanted preserved (fourth review, Q16).
   return `glorfindel ack ${id}`;
@@ -645,8 +656,11 @@ function _groupEscs(escs) {
     const key = e.action === 'improve_detection' ? e.id   // rules stay separate
       : `${_fromReassertion(e) ? 'reassertion' : 'other'}|${e.action}`;
     const origin = _fromDrain(e) ? `drain|${key}` : key;   // DRN1: the cut's cards, apart
-    if (!map.has(origin)) map.set(origin, []);
-    map.get(origin).push(e);
+    // JUG1: an action taken alone is never grouped with a card of another type on the same action
+    // (a held isolation): the group's Ack would acknowledge it unread.
+    const kind = _isExecuted(e) ? `executed|${origin}` : origin;
+    if (!map.has(kind)) map.set(kind, []);
+    map.get(kind).push(e);
   });
   return [...map.values()];
 }
@@ -660,6 +674,7 @@ function _renderEscGroup(group) {
   const pct    = e.confidence ? Math.round(e.confidence * 100) + '%' : '';
   const label  = isModeHold
     ? `${actionLabelVerb(e.action)}${pct ? ` (${pct})` : ''} — ${_heldWord(e)}`
+    : _isExecuted(e)     ? `${actionLabel(e.action)} — done alone, to judge`
     : isSnapshotPending  ? 'Snapshot recommended'
     : isWriteBlocked     ? `${actionLabelVerb(e.action) || e.action || '?'} — write blocked`
     : isActionFailed     ? `${actionLabelVerb(e.action) || e.action || '?'} — failed`
@@ -2442,17 +2457,18 @@ function renderToJudge() {
     const anchored = !t && _isAnchored(c);
     const times = c.occurrences > 1 ? ` · ${Number(c.occurrences)}×` : '';
     const id = _attr(c.id);
-    return `<div class="judge-item${disruptive ? ' disruptive' : ''}${c.id === _focusCard ? ' focus' : ''}" id="judge-${id}">
+    // JUG1: the line opens its card (its details, its verdict); its own note and buttons keep the click.
+    return `<div class="judge-item${disruptive ? ' disruptive' : ''}${c.id === _focusCard ? ' focus' : ''}" id="judge-${id}" ${_on('click', 'openJudgeCard', c.id)} title="Open the card">
       <div class="judge-head">
         <span class="judge-what" style="color:${disruptive ? 'var(--red)' : 'var(--orange)'}">${_attr(what)}</span>
         <span style="flex:1"></span>
         <span class="judge-ts">${c.first_seen ? _relTime(c.first_seen) : ''}${times}</span>
       </div>
       <div class="judge-why" style="-webkit-line-clamp:1;color:var(--text)" title="${anchored ? _attr(_DETECTION_ONLY.has(c.escalation_type) ? _FILED_BEFORE : 'The detection does not name this VM: the card is only filed on it') : _attr((t && t.limit) || c.resource_id || '')}">${anchored ? '⚓ ' : (t ? '🎯 ' : '')}${_attr(vm)}${c.rule_name ? ` · rule ${_attr(c.rule_name)}` : ''}${c.ttp ? ` · ${_attr(c.ttp)}` : ''}${c.severity === 'critical' ? ' · <b style="color:var(--red)">critical</b>' : ''}</div>
-      ${c.exercise ? `<div class="judge-why" style="-webkit-line-clamp:1;color:var(--blue)" title="An injector's exercise window covered this VM at that time. A window is the injectors' claim: check the run before trusting it.">⚑ exercise${c.exercise_run ? ` · run <a href="/runs/${encodeURIComponent(c.exercise_run)}">${_attr(c.exercise_run)}</a> — check the run ▸` : ' — check the run'}</div>` : ''}
+      ${c.exercise ? `<div class="judge-why" style="-webkit-line-clamp:1;color:var(--blue)" title="An injector's exercise window covered this VM at that time. A window is the injectors' claim: check the run before trusting it.">⚑ exercise${c.exercise_run ? ` · run <a href="/runs/${encodeURIComponent(c.exercise_run)}" ${_on('click', 'stop')}>${_attr(c.exercise_run)}</a> — check the run ▸` : ' — check the run'}</div>` : ''}
       ${c.recurrence ? `<div class="judge-why" style="-webkit-line-clamp:1;color:var(--yellow)" title="An earlier card on the same IP: in observation nothing is blocked, so a scanner comes back">↻ same IP seen ${_attr(c.recurrence.previous)}× in 7 days — last ${c.recurrence.last_seen ? _relTime(c.recurrence.last_seen) : ''}${c.recurrence.last_verdict ? ', judged ' + _attr(c.recurrence.last_verdict) : ''}</div>` : ''}
       <div class="judge-why" title="${_attr(why)}">${_attr(why)}</div>
-      <div class="judge-actions">
+      <div class="judge-actions" ${_on('click', 'stop')}>
         <input id="judge-note-${id}" placeholder="note (optional): why" maxlength="300">
         <button class="action" title="The recommendation was right" ${_on('click', 'judgeCard', c.id, 'right')}>✓ Right</button>
         <button class="action" style="color:var(--red)" title="False positive, or a disproportionate action" ${_on('click', 'judgeCard', c.id, 'wrong')}>✗ Wrong</button>
@@ -2467,8 +2483,8 @@ function renderToJudge() {
   }
 }
 
-async function judgeCard(escId, verdict) {
-  const note = (document.getElementById('judge-note-' + escId)?.value || '').trim();
+async function judgeCard(escId, verdict, noteId) {
+  const note = (document.getElementById(noteId || 'judge-note-' + escId)?.value || '').trim();
   try {
     const r = await _post(`/api/escalations/${_seg(escId)}/verdict`, { verdict, note });
     const d = await r.json();
@@ -3193,6 +3209,103 @@ async function verifyIdentity(escId) {
   toast('Verify: no answer from the watch in a minute — is it running? The request stays on the card.', 8000);
 }
 
+// JUG1 (#760): one card's details — its own, never its group's first: what it is about, its
+// reason, the model's explanation, what an action taken alone did and how it was checked, and the
+// way to its verdict (TO JUDGE: the one place a card is judged). `own`: a card among several, its
+// head said (title, when, id), its steps with it.
+function _isDecisionCard(e) {
+  return !(e.action === 'improve_detection' && e.proposal_id) && !_NOT_DECISIONS.has(e.escalation_type)
+    && !String(e.signal_id || '').startsWith('reassert-');
+}
+function _judgeWay(e) {
+  if (!_isDecisionCard(e)) return '';
+  return e.verdict
+    ? `<span style="font-size:9px;color:var(--dim)">judged: ${_attr(e.verdict)}</span>`
+    : `<a class="judge-link" ${_on('click', 'openJudgeCard', e.id)} title="Its details, and its verdict">to judge ▸</a>`;
+}
+function _executedDetail(e) {
+  const x = e && e.executed;
+  if (!_isExecuted(e) || !x || typeof x !== 'object') return '';
+  const v = (x.verification && typeof x.verification === 'object') ? x.verification : {};
+  const check = [v.verified === true ? 'verified' : '', v.method || '',
+    v.nics_covered ? `${Number(v.nics_covered)} NIC(s)` : '', v.nsg || '', v.drain ? 'cut ' + v.drain : '',
+    v.verified_at ? String(v.verified_at).slice(0, 19).replace('T', ' ') + ' UTC' : '']
+    .filter(Boolean).map(w => _attr(w)).join(' · ');
+  const evidence = (Array.isArray(x.evidence) ? x.evidence : []).slice(0, 8)
+    .map(w => `<div style="color:var(--dim);font-size:10px;padding:1px 0 1px 8px">• ${_attr(w)}</div>`).join('');
+  return `<div class="esc-context" style="color:var(--green)" title="It ran alone, and Azure read it back: undo it, if judged wrong, by the usual paths">✓ done alone · mode ${_attr(x.mode || '?')}${check ? ` · ${check}` : ''}</div>
+    ${x.note ? `<div class="esc-context" style="color:var(--yellow)">⚠ ${_attr(x.note)}</div>` : ''}
+    ${evidence ? `<div style="color:var(--dim);font-size:10px;margin-top:4px">evidence (the detection's row):</div>${evidence}` : ''}`;
+}
+function _cardDetail(e, vmName, own) {
+  const head = own
+    ? `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px;padding-top:6px;border-top:1px dashed var(--border);font-size:10px">
+        <span style="color:var(--text);font-weight:700">${_attr(escTitle(e))}</span>
+        <span style="color:var(--dim)">${_attr(e.first_seen ? _relTime(e.first_seen) : '')} · ${_attr(String(e.id || '').slice(0, 8))}</span>
+        <span style="margin-left:auto">${_judgeWay(e)}</span>
+      </div>
+      <div style="color:var(--dim);font-size:10px">${_escCtx(e, e.confidence ? Math.round(e.confidence * 100) + '%' : '', false)}</div>`
+    : (_judgeWay(e) ? `<div style="margin-bottom:4px">${_judgeWay(e)}</div>` : '');
+  // A card among several keeps its own plan (an identity card's, with its Verify: IR1a) or its steps,
+  // and its proposed query (JUG1 review).
+  const rest = own ? `${e.identity_plan ? _identityPlan(e) : _cardSteps(e)}${_cardQuery(e)}` : '';
+  return `${head}${_cardBody(e, vmName)}${rest}`;
+}
+function _cardQuery(e) {
+  return e.proposed_query
+    ? `<pre style="background:var(--bg2);border-left:2px solid var(--cyan);padding:8px;font-size:10px;
+         color:var(--blue);white-space:pre-wrap;overflow-x:auto;margin:6px 0;border-radius:0 4px 4px 0">${_attr(e.proposed_query.trim())}</pre>`
+    : '';
+}
+// What a card says, the same wherever it is opened (a tile's details, TO JUDGE): what it is about,
+// its reason, the model's explanation, what an action taken alone did.
+function _cardBody(e, vmName) {
+  const explanation = e.explanation && e.explanation !== e.reason
+    ? `<div style="color:var(--dim);font-size:10px;line-height:1.5;margin-top:3px">${_attr(e.explanation)}</div>` : '';
+  return `${_targetNote(e, vmName)}
+    <div style="color:var(--text);font-size:11px;line-height:1.6">${_attr(e.reason || '')}</div>
+    ${explanation}${_executedDetail(e)}`;
+}
+function _cardSteps(e) {
+  return (e.suggested_steps || [])
+    .map(st => `<div style="color:var(--dim);font-size:10px;padding:2px 0 2px 8px">• ${_attr(st)}</div>`).join('');
+}
+
+// JUG1: a line of TO JUDGE opens its card — its details as the store holds them (a card still
+// pending, with all it says; an acknowledged one, as TO JUDGE carries it), and its verdict there.
+function openJudgeCard(escId) {
+  const listed = _toJudge.find(c => c.id === escId);
+  const e = Object.assign({}, listed || {}, _escById[escId] || {});
+  if (!e.id) { toast(`Not in TO JUDGE (older than 7 days?) — glorfindel verdict ${escId} right|wrong|unsure`); return; }
+  const vmName = _ownTile(e) || String(e.resource_id || '').split('/').pop();
+  const label = _isExecuted(e) ? `${actionLabel(e.action)} — done alone, to judge`
+    : (e.action ? actionLabelVerb(e.action) : escTitle(e));
+  document.getElementById('modal-title').textContent = `To judge — ${label} — ${vmName}`;
+  document.getElementById('modal-cmd').style.display = 'none';
+  document.getElementById('modal-cancel').style.display = 'none';
+  const bodyEl = document.getElementById('modal-body');
+  const verdicts = e.verdict || !listed
+    ? `<span style="font-size:10px;color:var(--dim)">${e.verdict ? 'judged: ' + _attr(e.verdict) : 'not in TO JUDGE'}</span>`
+    : `<input id="judge-modal-note" placeholder="note (optional): why" maxlength="300">
+       <button class="action" title="The recommendation was right" ${_on('click', 'judgeFromModal', e.id, 'right')}>✓ Right</button>
+       <button class="action" style="color:var(--red)" title="False positive, or a disproportionate action" ${_on('click', 'judgeFromModal', e.id, 'wrong')}>✗ Wrong</button>
+       <button class="action" style="color:var(--dim)" title="Can't tell with what is known" ${_on('click', 'judgeFromModal', e.id, 'unsure')}>? Unsure</button>`;
+  bodyEl.innerHTML = `<div style="border-left:2px solid var(--purple);padding:10px;background:color-mix(in srgb,var(--purple) 4%,var(--bg1))">
+      <div style="color:var(--dim);font-size:10px;margin-bottom:6px">${_escCtx(e, e.confidence ? Math.round(e.confidence * 100) + '%' : '', false)}${e.rule_name ? ` · rule ${_attr(e.rule_name)}` : ''} · ${_attr(e.first_seen ? _relTime(e.first_seen) : '')} · ${_attr(e.status || '')}</div>
+      ${_cardBody(e, vmName)}${_cardSteps(e)}
+      <div class="judge-actions" style="margin-top:8px">${verdicts}</div>
+    </div>`;
+  const btn = document.getElementById('modal-confirm');
+  btn.textContent = 'Close';
+  btn.className = 'action';
+  btn.onclick = () => {
+    closeModal();
+    document.getElementById('modal-cancel').style.display = '';
+  };
+  document.querySelector('.modal').classList.add('wide');
+  document.getElementById('modal').classList.add('open');
+}
+
 function showEscModal(vmName) {
   // A tile's cards, as the tile shows them (AL1c: the identities' tile, an NSG's card on a VM it
   // covers); a card's own resource otherwise.
@@ -3220,6 +3333,7 @@ function showEscModal(vmName) {
     const pct2  = e.confidence ? Math.round(e.confidence * 100) + '%' : '';
     const label = isModeHold
       ? `${actionLabelVerb(e.action)}${pct2 ? ` (${pct2})` : ''} — ${_heldWord(e)}`
+      : _isExecuted(e)    ? `${actionLabel(e.action)} — done alone, to judge`
       : isSnapshotPending ? 'Snapshot recommended'
       : isWriteBlocked    ? `${actionLabelVerb(e.action) || e.action || '?'} — write blocked`
       : isActionFailed    ? `${actionLabelVerb(e.action) || e.action || '?'} — failed`
@@ -3229,10 +3343,7 @@ function showEscModal(vmName) {
     // An identity card with its plan (IR1a) shows the plan — the same steps, structured, with Verify.
     const steps = e.identity_plan ? _identityPlan(e) : (e.suggested_steps || [])
       .map(s => `<div style="color:var(--dim);font-size:10px;padding:2px 0 2px 8px">• ${_attr(s)}</div>`).join('');
-    const query = e.proposed_query
-      ? `<pre style="background:var(--bg2);border-left:2px solid var(--cyan);padding:8px;font-size:10px;
-           color:var(--blue);white-space:pre-wrap;overflow-x:auto;margin:6px 0;border-radius:0 4px 4px 0">${_attr(e.proposed_query.trim())}</pre>`
-      : '';
+    const query = _cardQuery(e);
     const pid   = e.proposal_id || '';
     const countBadge = count > 1
       ? `<span style="font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;
@@ -3255,16 +3366,20 @@ function showEscModal(vmName) {
          <button class="action" ${_on('click', 'openCommandModal', e.id)}>📋 Cmd</button>`
       : `<button class="action" ${_on('click', 'ackAllAndClose', ids)}>✓ Ack</button>
          <button class="action" ${_on('click', 'openCommandModal', e.id)}>📋 Cmd</button>`;
+    // JUG1: a group of several cards shows each of them, every one readable and judged on its own
+    // — the tile of an NSG folded six into one, and its details showed the first only (bench, 12/11).
+    const body = count > 1
+      ? `<div style="color:var(--dim);font-size:10px">${count} cards, each with its own details:</div>
+         ${group.map(g => _cardDetail(g, vmName, true)).join('')}`
+      : `${ctx ? `<div style="color:var(--dim);font-size:10px;margin-bottom:6px">${ctx}</div>` : ''}
+         ${_cardDetail(e, vmName, false)}${query}${steps}`;
     return `<div style="border-left:2px solid var(--purple);padding:10px;margin-bottom:10px;background:color-mix(in srgb,var(--purple) 4%,var(--bg1))">
       <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap">
         <span style="color:var(--purple);font-weight:700;font-size:12px">${_attr(label)}</span>
         ${countBadge}
         <span style="margin-left:auto;display:flex;gap:6px">${modalBtns}</span>
       </div>
-      ${ctx ? `<div style="color:var(--dim);font-size:10px;margin-bottom:6px">${ctx}</div>` : ''}
-      ${_targetNote(e, vmName)}
-      <div style="color:var(--text);font-size:11px;line-height:1.6">${_attr(e.reason || '')}</div>
-      ${query}${steps}
+      ${body}
     </div>`;
   }).join('');
 
@@ -3545,6 +3660,8 @@ const ACTIONS = {
   showIsolationModal, showReasoning, showRuleByIdx, toggleAsset, toggleBackend, closeModal,
   filterBlocks, showBlocks,                       // a VM's blocks, in their window (CON-K)
   verifyIdentity,                                 // an identity card's plan, read again on Graph by the watch (IR1a)
+  openJudgeCard,                                  // a card's details and its verdict, from TO JUDGE or a tile (JUG1)
+  judgeFromModal(id, verdict) { judgeCard(id, verdict, 'judge-modal-note'); closeModal(); },
   _glowNsgVms,
   stop() {},                                      // only keeps the click from the element around
   ackAllAndClose(ids) { doAckAll(ids); closeModal(); },
