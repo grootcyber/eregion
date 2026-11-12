@@ -1568,9 +1568,20 @@ bench-run-go bench-restore-go: export BENCH_TARGET = $(value TARGET)
 bench-run-go bench-restore-go: export BENCH_DRY_RUN = $(value DRY_RUN)
 bench-restore-go: export BENCH_BEFORE = $(value BEFORE)
 bench-restore-go: export BENCH_RUN = $(value RUN)
-bench-run-go bench-restore-go:
+# BNC3b (#770) : le point propre pris, s'il le faut, par la route du bouton 📸 de la console d'Imladris
+# (scripts/bench_snapshot.py). Le jeton de la console, lu dans host.env comme pour make imladris-url, et
+# refusé à une session d'agent par le même garde (CONSOLE_GUARD), avant toute lecture : il passe au
+# script par son environnement (BENCH_CONSOLE_TOKEN), jamais en argv, jamais affiché. Sans host.env, ou
+# sans jeton, il est vide : le script ne le demande que si le point n'est pas propre, et s'arrête alors.
+bench-run-go:
 	@$(MOB1_ORIGIN)
-	@$(PYTHON) scripts/$(subst -,_,$(@:-go=)).py
+	@$(CONSOLE_GUARD) bench-run
+	@t=""; if [ -f $(HOST_ENV) ]; then t="$(CONSOLE_TOKEN)"; fi; \
+	 BENCH_CONSOLE_TOKEN="$$t" $(PYTHON) scripts/bench_run.py
+
+bench-restore-go:
+	@$(MOB1_ORIGIN)
+	@$(PYTHON) scripts/bench_restore.py
 
 # MOB1 : le poste, ouvert au téléphone, en lecture seule (scripts/mobile.py check) — le serveur SSH de WSL
 # n'écoute que sur l'adresse privée, mot de passe et clavier interactif fermés, la clé seule admise (son
