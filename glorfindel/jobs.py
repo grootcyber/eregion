@@ -6,6 +6,7 @@ is readable by both the CLI and the console's API without coupling.
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -177,6 +178,19 @@ def record_snapshot_job(
     }
     save_job(vm_name, job)
     return job
+
+
+# The vault's job of a snapshot as the Azure adapter names it, `rsv:<vault>/<group>/<name>`
+# (glorfindel/providers/azure/backup.py, `snapshot`) — the job the bench follows (SNP1). A dry run's
+# `snap-dry-run-000`, or anything else, names none.
+_VAULT_JOB = re.compile(r"rsv:[^/\s]{1,100}/[^/\s]{1,100}/[A-Za-z0-9-]{1,64}")
+
+
+def vault_job(snap_id) -> str:
+    """The vault's job a snapshot's ``snap_id`` names, ``rsv:<vault>/<group>/<name>``, or '' when it
+    names none (SNP1): the console's answer and the queue's receipt carry it beside ``job_id``,
+    Glorfindel's own record, which stays as it was."""
+    return snap_id if isinstance(snap_id, str) and _VAULT_JOB.fullmatch(snap_id) else ""
 
 
 def start_snapshot(
