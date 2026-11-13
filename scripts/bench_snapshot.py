@@ -31,10 +31,12 @@ fails is no clean point. Otherwise it asks for one, by the route of the console'
                 console or a watch from before SNP1, a dry run — the vault's backup job of the VM started
                 since the gesture, looked for by its time; then followed by `az backup job
                 show` under the operator's `az login` until `Completed`, JOB_WAIT_S at most from the
-                gesture (60 min: the first point after a restore is complete, ~40 min). Its first answer
-                read is checked first (SNP1b): another VM's job, or another operation than `Backup`,
-                stops the run, said; one that fails or runs past its bound stops it too — before the
-                request goes to Orodruin: nothing is attacked;
+                gesture (60 min: the first point after a restore is complete, ~40 min). Each answer read,
+                from the first, is checked before its status (SNP1b): another VM's job (its name, or
+                its container's group: a namesake), another operation than `Backup`, or a field that
+                does not read stops the run, said — never followed to `Completed`; a job that fails or
+                runs past its bound stops it too — before the request goes to Orodruin: nothing is
+                attacked;
   the point     read again in the vault: newer than the one refused, or the run stops.
 
 Then `make bench-run` replays its preflight, just before the attack (up to 60 min may have passed).
@@ -385,18 +387,28 @@ def find_job(target: str, plan: dict, asked_at: float, *, clock=time.monotonic, 
         sleep(30.0)
 
 
-def not_a_backup_of(doc, target: str) -> str:
-    """What makes a job `az backup job show` reads no backup of the target (SNP1b), '' when it is one:
-    its VM (`entityFriendlyName`, in Azure's case) and its operation (`Backup`), the two fields `find_job`
-    filters on. A field that does not read proves nothing: said too."""
+def _props(doc) -> dict:
     props = doc.get("properties") if isinstance(doc, dict) else None
-    props = props if isinstance(props, dict) else {}
+    return props if isinstance(props, dict) else {}
+
+
+def not_a_backup_of(doc, target: str, vm_rg: str = "") -> str:
+    """What makes a job `az backup job show` reads no backup of the target (SNP1b), '' when it is one:
+    its VM (`entityFriendlyName`, compared regardless of case) and its operation (`Backup`), the two
+    fields `find_job` filters on; and, when the job names its container (`iaasvmcontainerv2;<rg>;<vm>`)
+    and the VM's group is known, that container's — a namesake of another group, deleted with its
+    backups left in the vault, is another VM (as glorfindel/providers/azure/recovery.py reads a restore).
+    The VM or the operation that does not read proves nothing: said too."""
+    props = _props(doc)
     vm, op = str(props.get("entityFriendlyName") or ""), str(props.get("operation") or "")
+    container = str(props.get("containerName") or "").lower()
     out = []
     if vm and vm.lower() != target.lower():
         out.append(f"sa VM n'est pas {target}")
     if not vm:
         out.append("sa VM ne se lit pas")
+    if container and vm_rg and not container.endswith(f";{vm_rg.lower()};{target.lower()}"):
+        out.append(f"son conteneur n'est pas celui de {target} dans son groupe (un homonyme)")
     if op and op != "Backup":
         out.append(f"son opération est {op if re.fullmatch(r'[A-Za-z]{1,40}', op) else 'illisible'}, pas Backup")
     if not op:
@@ -407,8 +419,10 @@ def not_a_backup_of(doc, target: str) -> str:
 def await_job(name: str, plan: dict, began: float, *, target: str, clock=time.monotonic, sleep=time.sleep,
               say=print) -> None:
     """`az backup job show` until `Completed`, JOB_WAIT_S at most from `began` (the gesture, on `clock`).
-    Each answer read is first checked as a backup of `target` (SNP1b): another VM's job, or another
-    operation, stops the run at its first `show` — never followed to `Completed`."""
+    Each answer read — the first one, and every one after — is checked as a backup of `target` before
+    its status is (SNP1b, `not_a_backup_of`): another VM's job, another operation, or an answer whose
+    fields do not read stops the run at that `show` — never followed to `Completed`. A read in error is
+    read again, JOB_READ_FAILURES in a row at most."""
     failures = 0
     said = ""
     while True:
@@ -421,11 +435,11 @@ def await_job(name: str, plan: dict, began: float, *, target: str, clock=time.mo
                 raise RuntimeError(f"le job du coffre ne se lit plus ({bs.scrub(str(e))[:160]})") from None
             status = ""
         else:
-            why = not_a_backup_of(doc, target)
+            status = str(_props(doc).get("status") or "")
+            why = not_a_backup_of(doc, target, str(plan.get("rg") or ""))
             if why:
                 raise RuntimeError(f"le job du coffre nommé n'est pas une sauvegarde de {target} ({why}) : "
                                    "il n'est pas suivi, aucun point lu")
-            status = str(doc["properties"].get("status") or "")
         if status == "Completed":
             return
         if status and status != "InProgress":

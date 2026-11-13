@@ -27,6 +27,27 @@ MUTANTS = [
      "place (SNP1b)", SNAP,
      '             if got.lower() != str(want or "").lower()]\n',
      "             if True]\n"),
+    # SNP1b, review round 1: the check at the first show, the read in error read again, the namesake
+    ("M5265", "the named job checked only once it is Completed: another VM's job followed up to 60 min "
+     "before the stop (SNP1b review)", SNAP,
+     "            if why:\n",
+     '            if why and status == "Completed":\n'),
+    ("M5266", "a read of the job in error never read again: one passing error of `az` stops the run (SNP1b "
+     "review)", SNAP,
+     "            if failures >= JOB_READ_FAILURES:\n",
+     "            if failures >= 1:\n"),
+    ("M5267", "the errors of the job's reads counted across the good ones: errors far apart stop the run as "
+     "if in a row (SNP1b review)", SNAP,
+     "            failures = 0\n",
+     "            pass\n"),
+    ("M5268", "the job's container never compared: a namesake of another group, deleted, its backup left in "
+     "the vault, followed as the target's (SNP1b review)", SNAP,
+     "    if container and vm_rg and not container.endswith(",
+     "    if False and not container.endswith("),
+    ("M5269", "a named job whose operation does not read taken for a backup: nothing contradicts it, nothing "
+     "proves it (SNP1b review)", SNAP,
+     '    if not op:\n        out.append("son opération ne se lit pas")\n',
+     '    if False:\n        out.append("son opération ne se lit pas")\n'),
 ]
 TESTS = {
     "M5245": f"{_S}::test_a_named_job_of_another_vm_or_operation_stops_at_its_first_show_and_is_never_followed",
@@ -34,4 +55,9 @@ TESTS = {
     "M5247": f"{_S}::test_a_named_job_whose_vm_or_operation_does_not_read_stops",
     "M5248": f"{_S}::test_a_rsv_name_of_another_vault_or_group_stops_whether_named_by_vault_job_or_job_id",
     "M5249": f"{_S}::test_a_rsv_name_of_another_vault_or_group_stops_whether_named_by_vault_job_or_job_id",
+    "M5265": f"{_S}::test_a_named_job_of_another_vm_or_operation_stops_at_its_first_show_and_is_never_followed",
+    "M5266": f"{_S}::test_a_read_in_error_is_read_again_and_the_job_followed_to_completed",
+    "M5267": f"{_S}::test_a_read_in_error_is_read_again_and_the_job_followed_to_completed",
+    "M5268": f"{_S}::test_a_namesake_of_another_group_whose_backup_stayed_in_the_vault_stops",
+    "M5269": f"{_S}::test_a_named_job_whose_vm_or_operation_does_not_read_stops",
 }

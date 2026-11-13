@@ -474,7 +474,7 @@ def test_a_console_error_answer_is_said_without_the_token():
 
 # ── the vault's job ───────────────────────────────────────────────────────────
 
-PLAN = {"vault": bw.VAULT, "vault_rg": bw.RG, "point": _at(days=1).timestamp()}
+PLAN = {"vault": bw.VAULT, "vault_rg": bw.RG, "rg": bw.RG, "point": _at(days=1).timestamp()}
 
 
 def _jobs(*statuses, shown=None):
@@ -482,7 +482,8 @@ def _jobs(*statuses, shown=None):
     names its VM and its operation, or `shown`'s properties instead (SNP1b)."""
     asked = []
     shows = list(statuses)
-    shown = {"entityFriendlyName": bw.VM, "operation": "Backup"} if shown is None else shown
+    shown = {"entityFriendlyName": bw.VM, "operation": "Backup",
+             "containerName": f"iaasvmcontainerv2;{bw.RG};{bw.VM}"} if shown is None else shown
 
     def az_json(args, timeout=120):
         asked.append(args)
@@ -639,7 +640,10 @@ def snapshot_console(tmp_path, monkeypatch):
     return snap
 
 
-def _take_through(console, monkeypatch, *, token=None, statuses=("Completed",), shown=None, read=None):
+def _take_through(console, monkeypatch, *, token=None, statuses=("Completed",), shown=None, read=None,
+                  stopped=False):
+    """`take` through `console`: (asked, said); with `stopped`, the run must stop — (asked, said, error),
+    the `az` calls made before it stopped included."""
     import bench_preflight as bp
     from console_client import TOKEN as CONSOLE_TOKEN
     az, asked = _jobs(*statuses, shown=shown)
@@ -647,9 +651,19 @@ def _take_through(console, monkeypatch, *, token=None, statuses=("Completed",), 
     monkeypatch.setattr(bp, "point_times",
                         lambda t, rg, v: (read.append("points") if read is not None else None) or [NOW.timestamp() + 60])
     clock, said = Clock(), []
-    bsn.take(bw.VM, {}, PLAN, said.append, token=token or CONSOLE_TOKEN, tunnel=FakeTunnel([]), open_=console,
-             clock=clock, sleep=clock.sleep, now=NOW.timestamp)
+    try:
+        bsn.take(bw.VM, {}, PLAN, said.append, token=token or CONSOLE_TOKEN, tunnel=FakeTunnel([]), open_=console,
+                 clock=clock, sleep=clock.sleep, now=NOW.timestamp)
+    except RuntimeError as e:
+        if not stopped:
+            raise
+        return asked, said, e
+    assert not stopped, "the run went on"
     return asked, said
+
+
+def _shows(asked):
+    return [a for a in asked if a[:3] == ["backup", "job", "show"]]
 
 
 def test_the_console_names_the_vault_s_job_and_the_bench_follows_it_without_looking_for_it_by_time(
@@ -738,10 +752,11 @@ def test_a_named_job_of_another_vm_or_operation_stops_at_its_first_show_and_is_n
     done = {"status": "started", "job_id": "snapshot-x", "vault_job": VAULT_JOB}
     console = FakeConsole(QUEUED, {"via": "queue", "state": "done", "ok": True, **done}) if queued else FakeConsole(done)
     read: list = []
-    with pytest.raises(RuntimeError) as got:
-        _take_through(console, monkeypatch, token=TOKEN, statuses=("InProgress", "Completed"), shown=shown, read=read)
-    assert "n'est pas une sauvegarde de" in str(got.value) and said in str(got.value), got.value
-    assert VAULT_GUID not in str(got.value), "the job's name printed"
+    asked, _, err = _take_through(console, monkeypatch, token=TOKEN, statuses=("InProgress", "Completed"),
+                                  shown=shown, read=read, stopped=True)
+    assert "n'est pas une sauvegarde de" in str(err) and said in str(err), err
+    assert VAULT_GUID not in str(err), "the job's name printed"
+    assert len(_shows(asked)) == 1, "followed past its first show"
     assert read == [], "the point read after a job that is no backup of the target"
 
 
@@ -754,10 +769,39 @@ def test_a_named_job_whose_vm_or_operation_does_not_read_stops(monkeypatch, show
     """A `show` that does not say the job's VM or its operation proves no backup of the target: it stops
     — never taken for one because nothing contradicts it."""
     read: list = []
-    with pytest.raises(RuntimeError) as got:
-        _take_through(_named(VAULT_JOB), monkeypatch, token=TOKEN, shown=shown, read=read)
-    assert said in str(got.value), got.value
+    asked, _, err = _take_through(_named(VAULT_JOB), monkeypatch, token=TOKEN, statuses=("InProgress", "Completed"),
+                                  shown=shown, read=read, stopped=True)
+    assert said in str(err), err
+    assert len(_shows(asked)) == 1, "followed past its first show"
     assert read == []
+
+
+def test_a_namesake_of_another_group_whose_backup_stayed_in_the_vault_stops(monkeypatch):
+    """The job's container names another group than the target's: a VM of the same name, deleted, whose
+    backups the vault kept. Not the target: stopped at the first show. A job that names no container is
+    judged by its VM's name alone, as a restore is (glorfindel/providers/azure/recovery.py)."""
+    read: list = []
+    asked, _, err = _take_through(_named(VAULT_JOB), monkeypatch, token=TOKEN, statuses=("InProgress", "Completed"),
+                                  shown={"entityFriendlyName": bw.VM, "operation": "Backup",
+                                         "containerName": f"iaasvmcontainerv2;rg-gone;{bw.VM}"},
+                                  read=read, stopped=True)
+    assert "son conteneur n'est pas celui de" in str(err) and "rg-gone" not in str(err), err
+    assert len(_shows(asked)) == 1 and read == []
+    asked, _ = _take_through(_named(VAULT_JOB), monkeypatch, token=TOKEN,
+                             shown={"entityFriendlyName": bw.VM, "operation": "Backup"})
+    assert len(_shows(asked)) == 1
+
+
+def test_a_read_in_error_is_read_again_and_the_job_followed_to_completed(monkeypatch):
+    """`az` fails on a read, then answers: read again, never a stop on one error; and a good read
+    counts the errors from zero again — three errors apart are no three in a row."""
+    asked, _ = _take_through(_named(VAULT_JOB), monkeypatch, token=TOKEN,
+                             statuses=(RuntimeError("ERROR: (TooManyRequests)"), "InProgress", "Completed"))
+    assert len(_shows(asked)) == 3
+    boom = RuntimeError("ERROR: (TooManyRequests)")
+    asked, _ = _take_through(_named(VAULT_JOB), monkeypatch, token=TOKEN,
+                             statuses=(boom, boom, "InProgress", boom, boom, "InProgress", "Completed"))
+    assert len(_shows(asked)) == 7
 
 
 def test_a_named_job_of_the_target_in_azure_s_own_case_is_followed(monkeypatch):
