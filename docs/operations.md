@@ -136,7 +136,8 @@ glorfindel list --ids                        # les mêmes, avec leur id ARM comp
 # pourrait prendre) seulement si cette forme revient à la même ressource ; sinon (une VM inconnue ici, un même
 # groupe et un même nom dans deux abonnements, un NSG, un compte) elle demande l'id complet, que `list --ids`
 # montre. Deux VM d'un même nom dans deux groupes : chacune nommée par le sien. Les étapes d'une carte écrite
-# avant MSK3b (le nom court, ou l'id complet, masqué en « vm (groupe rg) ») sont dites de même. Le signal, les
+# avant MSK3b (le nom court, ou l'id complet, masqué en « vm (groupe rg) ») sont dites de même, masquées par
+# l'abonnement que l'étape nommait et celui de la carte, appris avant la réécriture. Le signal, les
 # fichiers d'état et les journaux (JSONL) gardent l'id complet ; `door --json` aussi, demandé. Les lignes
 # de `glorfindel watch` (docker logs, journal de la machine) ne sont pas masquées : une erreur d'Azure y
 # garde son texte, ids compris. Ce que le modèle voit n'est pas filtré. Ni l'object id d'un principal ni
@@ -144,7 +145,9 @@ glorfindel list --ids                        # les mêmes, avec leur id ARM comp
 # Une commande qui agit sur une VM (restore, release, unblock, reset, revert, activate, snapshot) prend son nom court,
 # son id complet, ou `<groupe>/<nom>` — la forme des commandes du bot Discord (MSK3) : résolue sur ce poste,
 # le groupe et le nom correspondant, sinon refusée (« inconnue de ce poste »), jamais un homonyme ; et la
-# VM résolue est relue par son nom et son groupe avant d'agir, --yes compris.
+# VM résolue est relue par son nom et son groupe avant d'agir, --yes compris. Limite connue (MSK3) : un poste
+# qui ne connaît, de ce groupe et de ce nom, que la VM d'un autre abonnement la prend (deux abonnements, un
+# même groupe et un même nom) ; la ligne relue la dit par son nom et son groupe, pas par son abonnement.
 # Limites connues, quand l'environnement ne nomme pas l'abonnement (AZURE_SUBSCRIPTION_ID, obligatoire,
 # couvre le principal) : « "subscriptionId" : "<guid>" » (séparateur de 5 caractères), « %3D<guid> », le
 # double encodage (« %252Fsubscriptions%252F »), une liste JSON (« subscriptions: ["<guid>"] ») passent.
