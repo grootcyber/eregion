@@ -1349,6 +1349,7 @@ briques:
     release: "0.6"
     lots: [SNP1]
     issue: 789
+    pr: 790
     doc: docs/banc-t1486.md
 
   - id: c-paires-expiration
