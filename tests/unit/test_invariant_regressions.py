@@ -8035,13 +8035,15 @@ def test_a_rule_named_gone_off_its_nic_is_read_where_it_lies(monkeypatch, rid, h
         shutil.rmtree(m.home, ignore_errors=True)
 
 
-def test_a_rule_named_gone_off_its_nic_unread_is_left_out_as_before(monkeypatch):
+@pytest.mark.parametrize("how", ["quarantine", "detached"])
+def test_a_rule_named_gone_off_its_nic_unread_is_left_out_as_before(monkeypatch, how):
     """L1N: the NSG off the NIC unread (a 429 on its listing) — its rules left out of `rules_seen`, never
-    read absent (A0), and the verdict the same: the NSG governs nothing of the NIC now."""
+    read absent (A0), and the verdict the same: the NSG governs nothing of the NIC now. Behind the quarantine
+    that lets the attacker in, and (L1Nb, #802) the NSG taken off the NIC by its owner, no isolation."""
     import shutil
 
     from .fake_azure import throttled
-    m, c = _l1n_blocked_behind_the_open_quarantine(monkeypatch)
+    m, c = _l1n_blocked_behind_the_open_quarantine(monkeypatch, how=how)
     try:
         read = c.verify_block_ip(ATTACKER, DB)
         rules = c._network.security_rules
@@ -8052,8 +8054,9 @@ def test_a_rule_named_gone_off_its_nic_unread_is_left_out_as_before(monkeypatch)
                 raise throttled("rule.list")
             return listing(rg, nsg_name)
         monkeypatch.setattr(rules, "list", throttled_there)
+        assert (read.get("rules_seen") or {}).get(_L1N_DB0_KEY), ("read while it reads", read)
         v = c.verify_block_ip(ATTACKER, DB)
-        assert _L1N_DB0_KEY not in (v.get("rules_seen") or {}), v
+        assert not {_L1N_DB0_KEY, f"{_L1N_DB0_KEY}-out"} & set(v.get("rules_seen") or {}), v
         assert {k: v.get(k) for k in ("verified", "missing_rules", "open_nics")} == {
             k: read.get(k) for k in ("verified", "missing_rules", "open_nics")}, v
     finally:
@@ -8081,6 +8084,145 @@ def test_a_block_named_gone_off_its_nic_acknowledged_is_said_again_when_its_rule
         assert not [e for e in escalations.pending() if e.get("action") == "block_suspicious_ip"], (
             "acknowledged, nothing changed: no card more")
         rules = m.fake.nsgs[key(_L1N_DB_NIC_0_NSG)]["rules"]
+        for n in [n for n in rules if n.startswith("glorfindel-block-")]:
+            del rules[n]
+        reassert.reassert_pass(c, None)
+        again = [e for e in escalations.pending() if e.get("action") == "block_suspicious_ip"]
+        assert len(again) == 1 and "a disparu" in again[0]["reason"], again
+    finally:
+        shutil.rmtree(m.home, ignore_errors=True)
+
+
+# ── L1Nb (#802): L1N's proofs completed — two placements off the NIC, and the 429 of the detached NIC ──
+# L1N's frozen cases had one placement off the NIC alone: a check that read only the first (or the last)
+# lived. A NIC whose NSG its owner replaced since the block (a `terraform apply` there), blocked again: the
+# block's pair on each NSG, its entry naming both (`_merge_placements`). Then neither NSG governs it — behind
+# the quarantine that lets the attacker in, or the new NSG taken off too. Both are read, each for itself.
+
+_L1NB_NEW_NSG = _NSG.format(rg="rg-app1", name="nsg-db-nic-0-b")
+_L1NB_PREFIX = "rg-app1/nsg-db-nic-0-b/glorfindel-block-192-31-196-7-db--01-db-nic-0-"
+
+
+def _l1nb_two_placements_off(monkeypatch, how="quarantine"):
+    """Db--01 blocked; nsg-db-nic-0 replaced on db-nic-0 by nsg-db-nic-0-b, Db--01 blocked again — the block's
+    pair of db-nic-0 on both NSGs, its entry naming both; then the quarantine that lets the attacker in
+    (`forensic`), or, `detached`, nsg-db-nic-0-b taken off db-nic-0 too, no isolation: neither NSG on the NIC."""
+    from glorfindel.response.state import _load_block_entries
+    invariant_env(monkeypatch)
+    m = IsolationMachine()
+    m.build(_L1N_UBUNTU_NET)
+    c = m.connector
+    assert c.block_suspicious_ip(ATTACKER, DB, scope="vm", threat_port=22)["status"] == "blocked"
+    m.fake.nics[_nic("rg-app1", "db-nic-0")]["nsg"] = m.fake.add_nsg("rg-app1", "nsg-db-nic-0-b", _L1N_HTTPS_LATERAL)
+    assert c.block_suspicious_ip(ATTACKER, DB, scope="vm", threat_port=22)["status"] == "blocked"
+    entry = next(e for e in _load_block_entries(DB) if e.get("ip") == ATTACKER)
+    on = sorted(p["nsg_name"] for p in entry["placements"] if p["nic_id"].lower().endswith("/db-nic-0"))
+    assert on == ["nsg-db-nic-0", "nsg-db-nic-0-b"], f"the world: db-nic-0 blocked on two NSGs, {entry}"
+    for nsg in (_L1N_DB_NIC_0_NSG, _L1NB_NEW_NSG):
+        assert [n for n in m.fake.nsgs[key(nsg)]["rules"] if n.startswith("glorfindel-block-")], (
+            f"the world: the block's pair on {nsg}")
+    if how == "quarantine":
+        assert c.isolate_vm(DB).get("status") in ("isolated", "isolated_partial"), "the world: Db--01 isolated"
+        from glorfindel import actions
+        now = m.fake.nics[_nic("rg-app1", "db-nic-0")]["nsg"]
+        assert now and actions._is_quarantine_nsg(now), f"the world: db-nic-0 under the quarantine, not {now}"
+        assert m.fake.nsgs[key(now)]["tags"].get("managed-by") == "glorfindel", "the world: our quarantine NSG"
+    else:
+        m.fake.nics[_nic("rg-app1", "db-nic-0")]["nsg"] = None
+    return m, c
+
+
+def _l1nb_seen(v: dict, prefix: str) -> dict:
+    return {k: s for k, s in (v.get("rules_seen") or {}).items() if k.startswith(prefix)}
+
+
+_L1NB_VERDICT = ("verified", "missing_rules", "open_nics")
+
+
+@pytest.mark.parametrize("how", ["quarantine", "detached"])
+@pytest.mark.parametrize("deleted", ["nsg-db-nic-0", "nsg-db-nic-0-b"])
+def test_two_placements_off_its_nic_are_both_read_where_they_lie(monkeypatch, how, deleted):
+    """L1Nb (#802): db-nic-0's block on two NSGs, neither governing it now. Both named gone, both read for
+    `rules_seen` — each pair's signature while it lies there; the one deleted since (a `terraform apply` there)
+    read None, the other still read, the verdict unchanged. Read only the first (`off[:1]`), or the last, one
+    NSG's deletion read « no worse » by the names alone, never said."""
+    import shutil
+
+    m, c = _l1nb_two_placements_off(monkeypatch, how)
+    try:
+        v = c.verify_block_ip(ATTACKER, DB)
+        assert v["verified"] is False and "db-nic-0" in v["open_nics"], v
+        for nsg in ("nsg-db-nic-0", "nsg-db-nic-0-b"):
+            assert any(f"({nsg} ne gouverne plus db-nic-0)" in str(n) for n in v["missing_rules"]), (nsg, v)
+        old, new = _l1nb_seen(v, _L1N_DB0_KEY), _l1nb_seen(v, _L1NB_PREFIX)
+        assert len(old) == 2 and all(old.values()), ("nsg-db-nic-0 read", v.get("rules_seen"))
+        assert len(new) == 2 and all(new.values()), ("nsg-db-nic-0-b read", v.get("rules_seen"))
+        rules = m.fake.nsgs[key(_NSG.format(rg="rg-app1", name=deleted))]["rules"]
+        for n in [n for n in rules if n.startswith("glorfindel-block-")]:
+            del rules[n]
+        after = c.verify_block_ip(ATTACKER, DB)
+        assert {k: after.get(k) for k in _L1NB_VERDICT} == {k: v.get(k) for k in _L1NB_VERDICT}, after
+        gone, kept = (old, new) if deleted == "nsg-db-nic-0" else (new, old)
+        seen = after.get("rules_seen") or {}
+        assert {k: seen.get(k, "unread") for k in gone} == dict.fromkeys(gone), seen
+        assert {k: seen.get(k) for k in kept} == kept, seen
+    finally:
+        shutil.rmtree(m.home, ignore_errors=True)
+
+
+@pytest.mark.parametrize("how", ["quarantine", "detached"])
+@pytest.mark.parametrize("unread", ["nsg-db-nic-0", "nsg-db-nic-0-b"])
+def test_two_placements_off_its_nic_one_unread_the_other_still_read(monkeypatch, how, unread):
+    """L1Nb: one of the two NSGs off db-nic-0 unread (a 429 on its listing) — its rules left out of
+    `rules_seen`, never read absent (A0); the other still read; the verdict the same. A check that gave up
+    at the first NSG unread left the other's deletion unsaid."""
+    import shutil
+
+    from .fake_azure import throttled
+    m, c = _l1nb_two_placements_off(monkeypatch, how)
+    try:
+        read = c.verify_block_ip(ATTACKER, DB)
+        rules = c._network.security_rules
+        listing = rules.list
+
+        def throttled_there(rg, nsg_name):
+            if nsg_name.lower() == unread:
+                raise throttled("rule.list")
+            return listing(rg, nsg_name)
+        monkeypatch.setattr(rules, "list", throttled_there)
+        v = c.verify_block_ip(ATTACKER, DB)
+        old, new = _l1nb_seen(v, _L1N_DB0_KEY), _l1nb_seen(v, _L1NB_PREFIX)
+        left, kept = (old, new) if unread == "nsg-db-nic-0" else (new, old)
+        assert not left, ("unread, left out", v.get("rules_seen"))
+        assert len(kept) == 2 and all(kept.values()), ("the other read", v.get("rules_seen"))
+        assert {k: v.get(k) for k in _L1NB_VERDICT} == {k: read.get(k) for k in _L1NB_VERDICT}, v
+    finally:
+        shutil.rmtree(m.home, ignore_errors=True)
+
+
+@pytest.mark.parametrize("how", ["quarantine", "detached"])
+@pytest.mark.parametrize("deleted", ["nsg-db-nic-0", "nsg-db-nic-0-b"])
+def test_two_placements_off_its_nic_acknowledged_are_said_again_when_either_is_deleted(monkeypatch, how, deleted):
+    """L1Nb, at the reassertion: the card naming both pairs gone « (… ne gouverne plus db-nic-0) »
+    acknowledged, the pass after it silent; the rules deleted from either NSG, the next pass says it again — a
+    new card, pending. Read only one of the two, the other's deletion never said."""
+    import shutil
+
+    from glorfindel import escalations, reassert
+
+    from .test_invariants import _CURRENT
+    m, c = _l1nb_two_placements_off(monkeypatch, how)
+    try:
+        _CURRENT.mode = "human_only"
+        reassert.reassert_pass(c, None)
+        cards = [e for e in escalations.pending() if e.get("action") == "block_suspicious_ip"]
+        assert len(cards) == 1 and all(f"({n} ne gouverne plus db-nic-0)" in cards[0]["reason"]
+                                       for n in ("nsg-db-nic-0", "nsg-db-nic-0-b")), cards
+        escalations.resolve(cards[0]["id"])
+        reassert.reassert_pass(c, None)
+        assert not [e for e in escalations.pending() if e.get("action") == "block_suspicious_ip"], (
+            "acknowledged, nothing changed: no card more")
+        rules = m.fake.nsgs[key(_NSG.format(rg="rg-app1", name=deleted))]["rules"]
         for n in [n for n in rules if n.startswith("glorfindel-block-")]:
             del rules[n]
         reassert.reassert_pass(c, None)
