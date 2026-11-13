@@ -550,7 +550,7 @@ glorfindel restore <resource_id> --yes          # Azure Backup restore: newest p
 glorfindel jobs <vm-name> [--refresh]           # snapshot/restore job status
 glorfindel list                                 # all VMs with active actions (isolation + blocked IPs)
 glorfindel list --ids                           # the same with their full ARM ids (this terminal only)
-# What the CLI shows a human never carries a subscription's id (MSK2): a VM by its name and group, Azure's
+# What the CLI shows a human never carries a subscription's id (MSK2; the TUI too, MSK2c): a VM by its name and group, Azure's
 # errors, the decision rendered, the cards and proposed rules of `pending` and the reasons of `activate`
 # included; a suggested command names the VM by `<group>/<name>` (MSK3b: never its name alone, which a VM of
 # that name in another group could take) only when it comes back to the same resource. The signal,

@@ -131,17 +131,17 @@ def test_the_environment_s_subscription_is_masked_even_bare():
     _clean(masking.ids_masked(f"{VM} ({SUB})", environ={}))
 
 
-# Who may mask (MSK2, MSK3): the CLI and the bot wherever they render; the notices and the
-# escalations' webhook only in the functions that render a message — never the graph, the prompt,
+# Who may mask (MSK2, MSK3, MSK2c): the CLI, the bot and the TUI wherever they render; the notices and
+# the escalations' webhook only in the functions that render a message — never the graph, the prompt,
 # the cycle, nor what a store keeps.
-_MASKERS = {"glorfindel/cli.py": None, "glorfindel/bot.py": None,
+_MASKERS = {"glorfindel/cli.py": None, "glorfindel/bot.py": None, "glorfindel/tui.py": None,
             "glorfindel/vm_notices.py": {"_short", "_shown"},
             "glorfindel/escalations.py": {"_action_words", "card_payload"}}   # JUG2c: `_notify`'s message
 
 
 def test_only_the_cli_masks_never_what_the_model_sees():
     """The masking is the display's: nothing of the graph, the prompt or the cycle imports it —
-    the CLI and the bot (MSK3) do, and the webhook's two renderings, inside them only."""
+    the CLI, the bot (MSK3) and the TUI (MSK2c) do, and the webhook's two renderings, inside them only."""
     users: dict[str, set] = {}
     for path in (ROOT / "glorfindel").rglob("*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"))
