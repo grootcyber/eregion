@@ -63,7 +63,8 @@ MUTANTS = [
      '    reason = e["reason"]\n'),
     ("M4981", "glorfindel pending says the model's suggested steps as written: « glorfindel restore "
      "/subscriptions/… » on the card (MSK2)", CLI,
-     '            console.print(f"  [cyan]{i}.[/cyan] {_esc_markup(_ids_masked(step))}")\n',
+     '            step = _shown(str(step), e["resource_id"])\n'
+     '            console.print(f"  [cyan]{i}.[/cyan] {_esc_markup(step)}")\n',
      '            console.print(f"  [cyan]{i}.[/cyan] {step}")\n'),
     ("M4982", "glorfindel pending's own steps give the full id: the subscription's id in every command "
      "it suggests (MSK2)", CLI,

@@ -1,7 +1,7 @@
 """MSK3b (#787): every command to copy Glorfindel writes for a VM names it by `<groupe>/<nom>` (the card
 « exécutée », the TUI, the CLI's hints and the steps of a card it shows, the watch's cards, the console's
 📋 Command), which the CLI resolves — never its name alone, which could take a VM of that name in another
-group. M5125–M5134, then M5182 after the first review, measured by tests/unit/test_vm_command.py (two VMs « web » in two groups)."""
+group. M5125–M5134, then M5180–M5182 after the first review, measured by tests/unit/test_vm_command.py (two VMs « web » in two groups)."""
 AGENT = "glorfindel/agent.py"
 TUI = "glorfindel/tui.py"
 CLI = "glorfindel/cli.py"
@@ -9,6 +9,7 @@ REASSERT = "glorfindel/reassert.py"
 READINESS = "glorfindel/readiness.py"
 RECOVERY = "glorfindel/recovery_watch.py"
 CONSOLE_JS = "eregion_console/static/glorfindel.js"
+MASK = "glorfindel/masking.py"
 _T = "tests/unit/test_vm_command.py"
 
 MUTANTS = [
@@ -30,8 +31,8 @@ MUTANTS = [
      "    return named\n"),
     ("M5129", "`pending` shows a card's own steps as written: a short name of a homonym, or a full id masked "
      "into no command (MSK3b)", CLI,
-     '            step = _commands_named(str(step), e["resource_id"])\n',
-     "            step = str(step)\n"),
+     '            step = _shown(str(step), e["resource_id"])\n',
+     "            step = _ids_masked(str(step))\n"),
     ("M5130", "the TTL card's step names the VM by its full id: masked, « web (groupe …) » is no command "
      "(MSK3b)", REASSERT,
      'f"Lever : glorfindel release {group_and_name(rid)} --yes"',
@@ -49,6 +50,17 @@ MUTANTS = [
     ("M5134", "the console's 📋 Command undoes an action taken alone by the VM's name alone (MSK3b)", CONSOLE_JS,
      "    const vm = _vmArg(rid);\n    const ip = (esc.action_params && esc.action_params.ip) || '<ip>';\n",
      "    const vm = rid.split('/').pop();\n    const ip = (esc.action_params && esc.action_params.ip) || '<ip>';\n"),
+    # Review 1 (#792): `pending` rewrote a step, then masked it by what was left — the VM's id gone, its
+    # subscription was no longer learned, and a bare GUID of it further on showed.
+    ("M5180", "`pending` masks a card's step once rewritten: its id gone, a bare GUID of its subscription "
+     "shows when the environment names another (MSK3b, review)", CLI,
+     '            step = _shown(str(step), e["resource_id"])\n',
+     '            step = _ids_masked(__import__("glorfindel.masking").masking.commands_named(str(step), '
+     'e["resource_id"]))\n'),
+    ("M5181", "the card's id no longer teaches its subscription: a step written before MSK3b (the name "
+     "alone, a bare GUID) shows the GUID (MSK3b, review)", MASK,
+     '    subs = set(subscriptions or ()) | subscriptions_known(text) | subscriptions_known(str(resource_id or ""))\n',
+     "    subs = set(subscriptions or ()) | subscriptions_known(text)\n"),
     ("M5182", "the `not_in_place` recovery card's `restore` names the VM by its full id (MSK3b, review: "
      "one string, the tree's guard reads it)", RECOVERY,
      "Restaurer la VM sur place depuis le poste : glorfindel restore {group_and_name(rid)} --before",
@@ -65,5 +77,7 @@ TESTS = {
     "M5132": f"{_T}::test_every_command_to_copy_in_the_tree_names_its_vm_by_its_group_and_name",
     "M5133": f"{_T}::test_the_snapshot_step_of_a_held_card_names_its_vm_by_its_group_and_name",
     "M5134": f"{_T}::test_the_console_s_command_names_the_vm_by_its_group_and_name",
+    "M5180": f"{_T}::test_the_cli_masks_a_card_s_step_by_the_subscriptions_it_named_before_the_rewriting",
+    "M5181": f"{_T}::test_the_cli_masks_a_card_s_step_by_the_subscriptions_it_named_before_the_rewriting",
     "M5182": f"{_T}::test_every_command_to_copy_in_the_tree_names_its_vm_by_its_group_and_name",
 }

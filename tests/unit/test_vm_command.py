@@ -194,6 +194,29 @@ def test_the_cli_names_the_vm_of_a_card_s_own_steps_written_before(monkeypatch):
     _clean(said)
 
 
+@pytest.mark.parametrize("step", [
+    f"glorfindel snapshot {WEB_A} --yes puis az account set -s {SUB}",           # the full id, the GUID after
+    f"glorfindel release web --yes puis az account set -s {SUB}",                # before MSK3b: the name, the GUID
+])
+def test_the_cli_masks_a_card_s_step_by_the_subscriptions_it_named_before_the_rewriting(monkeypatch, step):
+    """The step rewritten to `<groupe>/<nom>` no longer carries the VM's id: the subscriptions are learned
+    from the step as written and from the card's id first (review, MSK3b) — the bot's rule (MSK3,
+    `masking.shown`). The environment names another subscription, or none: a bare GUID of the card's
+    is masked all the same, and the command still takes the VM back."""
+    from click.testing import CliRunner
+    from glorfindel import cli
+    _known(monkeypatch, WEB_A, WEB_B)
+    monkeypatch.setenv("AZURE_SUBSCRIPTION_ID", "00000000-0000-0000-0000-0000000000ab")   # another one
+    escalations.record("sig-1", WEB_A, "isolate_vm", escalations.EXECUTED_TYPE, "r", run_id="r1",
+                       suggested_steps=[step])
+    out = CliRunner().invoke(cli.cli, ["pending"], terminal_width=200)
+    said = " ".join(out.output.split())
+    assert out.exit_code == 0, out.output
+    verb = step.split()[1]
+    assert f"glorfindel {verb} {RG_A}/web --yes puis az account set -s <abonnement>" in said, said
+    _clean(said)
+
+
 # ── 5. The watch's cards ────────────────────────────────────────────────────────────────────────
 
 def test_the_ttl_card_names_its_vm_by_its_group_and_name(monkeypatch):

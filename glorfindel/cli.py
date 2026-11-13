@@ -19,7 +19,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.markup import escape as _esc_markup
 
-from glorfindel.masking import commands_named as _commands_named, ids_masked as _ids_masked
+from glorfindel.masking import ids_masked as _ids_masked, shown as _shown
 from glorfindel.vm_command import UNNAMED, group_and_name
 
 console = Console()
@@ -1924,8 +1924,10 @@ def _render_next_steps(e: dict) -> None:
         for i, step in enumerate(llm_steps, 1):
             # A command of the card naming its VM by its id or its name alone (a card written before
             # MSK3b, the model's) names it by « <groupe>/<nom> »: masked, an id is no command (MSK3b).
-            step = _commands_named(str(step), e["resource_id"])
-            console.print(f"  [cyan]{i}.[/cyan] {_esc_markup(_ids_masked(step))}")
+            # Masked by the subscriptions the step named as written and the card's id, learned before
+            # the rewriting takes the id away: a bare GUID of one further on is masked too (review).
+            step = _shown(str(step), e["resource_id"])
+            console.print(f"  [cyan]{i}.[/cyan] {_esc_markup(step)}")
         return
 
     # Fallback statique pour les escalades sans suggested_steps (anciennes ou dry-run)
