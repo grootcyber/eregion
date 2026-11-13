@@ -8,6 +8,7 @@ from eregion_core.identity import drop_empty_service_principal_env as _drop_empt
 import contextlib
 import json
 import os
+import shlex
 import sys
 import time
 from pathlib import Path
@@ -18,7 +19,8 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.markup import escape as _esc_markup
 
-from glorfindel.masking import ids_masked as _ids_masked
+from glorfindel.masking import commands_named as _commands_named, ids_masked as _ids_masked
+from glorfindel.vm_command import UNNAMED, group_and_name
 
 console = Console()
 
@@ -1893,19 +1895,22 @@ def _card_moment(e: dict) -> str:
 
 
 def _name_for_a_command(resource_id: str) -> str:
-    """What a suggested command names a VM by: its short name, only when every command takes it
-    back to this very resource (`_resolve_resource_id`); otherwise the id that `list --ids` shows
-    (MSK2). Two VMs of that name, a VM this host no longer knows while another of its name, in
-    another group, is known (the name would take the other one: a `restore … --yes` on the wrong
-    VM), or a resource nothing resolves (a NSG, an account): never the short name."""
-    short = _short_name(resource_id)
+    """What a suggested command names a VM by: « <groupe>/<nom> » (MSK3b, #787; the bot's form,
+    MSK3), only when every command takes it back to this very resource (`_resolve_resource_id`);
+    otherwise the id that `list --ids` shows (MSK2). Never its name alone: copied to another
+    terminal, or with a VM of that name in another group, it could take that one — two VMs of one
+    name in two groups are each named by theirs. A VM this host no longer knows, one group and one
+    name in two subscriptions, or a resource that is no VM (a NSG, an account): the id is asked."""
+    named = group_and_name(resource_id)
+    if named == UNNAMED:
+        return UNNAMED
     try:
-        resolved = _resolve_resource_id(short)
+        resolved = _resolve_resource_id(shlex.split(named)[0])
     except click.ClickException:
-        return "<id: glorfindel list --ids>"
+        return UNNAMED
     if resolved.rstrip("/").lower() != str(resource_id or "").rstrip("/").lower():
-        return "<id: glorfindel list --ids>"
-    return short
+        return UNNAMED
+    return named
 
 
 def _render_next_steps(e: dict) -> None:
@@ -1917,6 +1922,9 @@ def _render_next_steps(e: dict) -> None:
     if llm_steps:
         console.print("  [bold cyan]Next steps (Glorfindel):[/bold cyan]")
         for i, step in enumerate(llm_steps, 1):
+            # A command of the card naming its VM by its id or its name alone (a card written before
+            # MSK3b, the model's) names it by « <groupe>/<nom> »: masked, an id is no command (MSK3b).
+            step = _commands_named(str(step), e["resource_id"])
             console.print(f"  [cyan]{i}.[/cyan] {_esc_markup(_ids_masked(step))}")
         return
 

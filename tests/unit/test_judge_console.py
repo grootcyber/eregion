@@ -68,7 +68,7 @@ def test_to_judge_carries_what_its_card_says():
     assert card["id"] == cid and card["escalation_type"] == escalations.EXECUTED_TYPE
     assert card["executed"]["mode"] == "non_disruptive" and card["executed"]["verification"]["verified"] is True
     assert "MaxWrite: 147000000" in card["executed"]["evidence"]
-    assert card["suggested_steps"] and "glorfindel release web --yes" in card["suggested_steps"][0]
+    assert card["suggested_steps"] and "glorfindel release rg-app/web --yes" in card["suggested_steps"][0]
 
 
 def test_the_indicator_counts_an_action_taken_alone_judged_wrong():
@@ -87,6 +87,7 @@ def test_the_card_on_its_tile_says_it_ran_and_holds_nothing_to_approve():
     assert ": _isExecuted(e)     ? `${actionLabel(e.action)} — done alone, to judge`" in group
     cmd = _function(js, "function cliCommand(esc)")
     assert "if (_isExecuted(esc)) {" in cmd and "glorfindel release ${vm} --yes" in cmd
+    assert cmd.count("const vm = _vmArg(rid);") == 2           # <groupe>/<nom> (MSK3b)
     assert "glorfindel unblock ${ip} ${vm} --yes" in cmd
 
 

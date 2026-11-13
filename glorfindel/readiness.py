@@ -33,6 +33,8 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
+from glorfindel.vm_command import group_and_name
+
 log = logging.getLogger(__name__)
 
 _STATE_FILE = Path.home() / ".glorfindel" / "readiness.json"
@@ -641,7 +643,7 @@ class ReadinessTracker:
         steps = [r["fix"] for r in reasons if r.get("fix")]
         if hold["reason"] != "not_ready":
             steps.append(f"Lire et confirmer les réserves : console, page Glorfindel (« Review & turn on ») ou "
-                         f"`glorfindel activate {vm}`.")
+                         f"`glorfindel activate {group_and_name(rid)}`.")
         resolve_card(rid)       # a new situation is a new card (and a new notification)
         escalations.record(
             signal_id=_card_id(vm), resource_id=rid, action="activate_autonomy",
