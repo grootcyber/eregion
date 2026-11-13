@@ -697,9 +697,13 @@ ubuntu et sur macOS : « L1: the block on …/Db--01 vanished from Azure; the re
 nor said so » (ubuntu), la même pour web (macOS). Les deux séquences finissent par `a_hold_moved_under_it`
 (MUT4), sa branche `gone`.
 
-**Ni une régression, ni JUG2c.** Rejouées telles qu'Hypothesis les a imprimées, chaque invariant après chaque
-pas, les deux séquences échouent de même sur 90f00faf (la nuit verte du 12/11), sur dc924214 et sur
-`origin/main` c542b66d. Aucun commit entre les deux nuits ne fait basculer : la nuit tire une graine neuve à
+**Ni une régression, ni JUG2c.** Les deux séquences ont été rejouées par une sonde temporaire, gardée hors du
+dépôt, telles qu'Hypothesis les a imprimées. Chaque règle y est appelée avec ses tirages, dans l'ordre
+imprimé, et fait ses propres vérifications, puis vient la remise à zéro (`teardown`). Aucun `@invariant`
+n'est appelé entre les pas, quoi qu'en dise la docstring de la sonde. D'autres de ses tests passaient par
+`_replay`, et ses trois invariants entre les pas (ci-dessous, « Mesures »). Ainsi rejouées, les deux
+séquences échouent de même sur 90f00faf (la nuit verte du 12/11), sur dc924214 et sur `origin/main`
+c542b66d. Aucun commit entre les deux nuits ne fait basculer : la nuit tire une graine neuve à
 chaque passage (SEED1), et celle du 12/11 n'avait pas tiré ce cas. JUG2c (#793) ne met en file que la
 notification du webhook. La carte, elle, est écrite dans le magasin d'escalades pendant la passe
 (`escalations.record`, que `_alert` appelle) : l'oracle de L1 (`escalations.pending()`) lit bien ce que le
@@ -738,18 +742,24 @@ avec le même message pour web. Il n'a pas été retrouvé, et rien ne dit qu'il
 
 **Mesures.** Figés dans `tests/unit/test_invariant_regressions.py` : les deux séquences telles que trouvées et
 réduites, rejouées par `_replay`. Chaque règle y est appelée avec ses tirages, dans l'ordre, et fait ses
-propres vérifications : les affirmations après chaque changement (`_claims_after_a_change`), les oracles de
-la réaffirmation après sa passe, dont celui de L1 qui échouait. Après chaque pas, trois seulement des huit
-invariants de la machine : I1, I2 sur la configuration du client, I6. À la fin, la remise à zéro : I7, puis
-I2 par auteur. Les quatre autres (I3 tiré tour à tour, I4, U1, L3) ne sont pas rejoués entre les pas. Au connecteur, la règle lue là où elle est, sa signature puis
-`None` une fois supprimée, le verdict inchangé, derrière la quarantaine ouverte et le NSG ôté, avec
-l'identifiant canonique et en minuscules. Le NSG en 429 laisse ses règles hors de `rules_seen`, et le verdict
-reste le même. À la réaffirmation, en `human_only` : la carte acquittée, une passe muette, puis la
+propres vérifications. Ce sont les affirmations après chaque changement (`_claims_after_a_change`) et celles
+de la règle `verify` (`_check_claims`). C'est I2 par auteur dans certaines règles (`_check_authors`, par
+`_release`, `_lose_state`, `_tags_lost`, `_record_lost`, `_untied` et `_held_unknown`). Ce sont enfin les
+oracles de la réaffirmation après sa passe, dont celui de L1 qui échouait. Après chaque pas, trois seulement
+des huit `@invariant` de la machine : I1, I2 sur la configuration du client, I6. À la fin, la remise à zéro
+(`teardown`) : I7, dont le balayage des orphelines (aucune VM coupée par la règle d'une VM supprimée), puis I2
+par auteur. Les quatre autres `@invariant` ne sont jamais rejoués, ni entre les pas, ni à la fin : I3 tiré
+tour à tour (`every_claim_is_true`), I4, U1 tel que la machine le dit (`orphans_are_reported`) et L3. I3
+n'existe donc ici que par les affirmations des règles. Au connecteur, la règle lue là où elle est, sa
+signature puis `None` une fois supprimée, le verdict inchangé, derrière la quarantaine ouverte et le NSG ôté,
+avec l'identifiant canonique et en minuscules. Le NSG en 429 laisse ses règles hors de `rules_seen`, et le
+verdict reste le même. À la réaffirmation, en `human_only` : la carte acquittée, une passe muette, puis la
 suppression dite de nouveau, avec la quarantaine et sans elle. Sur `origin/main` c542b66d, 10 de ces 11 cas
-échouent. Seul passe le cas du 429, qui fige ce qui ne change pas. Mutants M5195–M5200 (`scripts/mutants/L1N.py`) : le défaut revenu ; le NSG listé mais hors du cache que
-`rules_seen` lit ; la lecture d'un seul côté (en quarantaine, ou hors d'elle) ; un correctif qui durcit à
-tort (ce NSG illisible rend la carte inconnue) ; un NSG illisible lu vide, ses règles dites supprimées sur une
-supposition. Les six sont attrapés.
+échouent. Seul passe le cas du 429, qui fige ce qui ne change pas. Mutants M5195–M5200
+(`scripts/mutants/L1N.py`) : le défaut revenu ; le NSG listé mais hors du cache que `rules_seen` lit ; la
+lecture d'un seul côté (en quarantaine, ou hors d'elle) ; un correctif qui durcit à tort (ce NSG illisible
+rend la carte inconnue) ; un NSG illisible lu vide, ses règles dites supprimées sur une supposition. Les six
+sont attrapés.
 
 **Les preuves complétées (L1Nb, #802).** La relecture de L1N a relevé deux trous, et le produit n'a pas
 bougé. Les cas figés n'avaient qu'un placement hors de la carte : une lecture du seul premier NSG (`off[:1]`)
@@ -760,13 +770,20 @@ ouverte, ou le second ôté à son tour. Les deux sont lus pour `rules_seen`, ch
 de l'un supprimées, il est lu `None` et l'autre reste lu, le verdict inchangé. L'un en 429, ses règles
 restent dehors et l'autre est lu quand même. À la réaffirmation, la carte acquittée est redite quand l'un ou
 l'autre perd ses règles. Le second trou : le 429 n'était figé que derrière la quarantaine. Il l'est aussi
-pour la carte détachée, avec les mêmes affirmations, et celle sur la règle `-out` en plus. Ces 13 cas sont
-verts sur `origin/main` 41e480c4 : aucun ne trouve de défaut. Mutants M5250–M5254 (`scripts/mutants/L1Nb.py`),
-les cinq attrapés. Le premier NSG seul lu (`off[:1]`), ou le dernier seul : la suppression de l'autre se
-tait. Hors quarantaine, le NSG illisible rend la carte inconnue (M5199 de L1N, du côté que le 429 figé ne
-voyait pas). Hors quarantaine encore, ce NSG illisible est lu vide. Et le premier NSG illisible arrête la
-lecture des suivants. Seuls les nouveaux cas attrapent M5250, M5251 et M5254 ; le 429 détaché attrape M5252 et
-M5253, que le 429 derrière la quarantaine laisse vivre.
+pour la carte détachée, avec les mêmes affirmations. Les deux variantes en ont deux de plus : la règle
+`-out` reste dehors elle aussi, et la lecture d'avant le 429 voyait bien la règle. Ces 13 cas sont verts sur
+`origin/main` 41e480c4 : aucun ne trouve de défaut. Ils sont construits au connecteur, pas tirés par la
+machine. Elle ne pose jamais sur une carte un autre NSG que celui de sa conception ou notre quarantaine, et
+n'en ôte jamais le NSG propre sans isolation : seule la quarantaine est détachée. La variante détachée est
+donc construite à la main, comme dans L1N. Le monde à deux placements est pourtant atteignable par la vraie
+watch. Une seconde détection bloque de nouveau, ou la réaffirmation hors `human_only` réécrit le blocage
+(`_rewrite_block`, `glorfindel/reassert.py`), et `_merge_placements` garde l'ancien placement à côté du
+nouveau. Mutants M5250–M5254 (`scripts/mutants/L1Nb.py`), les cinq attrapés. Le premier NSG seul lu
+(`off[:1]`), ou le dernier seul : la suppression de l'autre se tait. Hors quarantaine, le NSG illisible rend
+la carte inconnue (M5199 de L1N, du côté que le 429 figé ne voyait pas). Hors quarantaine encore, ce NSG
+illisible est lu vide. Et le premier NSG illisible arrête la lecture des suivants. Seuls les nouveaux cas
+attrapent M5250, M5251 et M5254 ; le 429 détaché attrape M5252 et M5253, que le 429 derrière la quarantaine
+laisse vivre.
 
 ### Trois mutants que la machine ne voyait plus qu'au hasard (MUT4)
 

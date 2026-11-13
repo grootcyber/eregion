@@ -856,11 +856,12 @@ briques:
   - id: g-blocage-hors-carte-preuves
     composant: glorfindel
     poste: g-verifier
-    nom: "Proof: two NSGs off the NIC are both read, and an unreadable one detached from it stays unread; its five mutants all caught, the product unchanged"
+    nom: "Proof: two NSGs off the NIC are both read, and an unreadable one detached from it stays out of `rules_seen`; its five mutants all caught, the product unchanged"
     etat: main
     release: "0.6"
     lots: [L1Nb]
     issue: 802
+    pr: 809
     doc: docs/design/preuves.md
 
   - id: g-levee-probation
