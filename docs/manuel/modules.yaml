@@ -1740,6 +1740,7 @@ briques:
     release: "0.6"
     lots: [HY2c]
     issue: 800
+    pr: 807
     doc: docs/operations.md
 
   - id: s-release

@@ -43,10 +43,15 @@ and its drills, the analysis index; ~/.annatar, Annatar's shell (HY2c, Jonathan'
 Not seen (a guard against error, never against a session that wants to: the same Unix user): what a C
 or Rust library writes once its file is open, or by itself, when its opener does not call `check`
 (sqlite's pages, a write through a descriptor, mmap); a path relative to a dir_fd; a process that imports no module of
-the repository (a shell's `>`, a script of its own — the Makefile's `annatar-shell`, which makes
-~/.annatar's two files, is one; scripts/mobile.py and scripts/published_image.py, which write under
-~/.eregion and import none, are others); a session launched without the repository's settings and
-outside a worktree.
+the repository (a shell's `>`, a script of its own — the Makefile's recipes that make folders or
+files under ~/.eregion and ~/.annatar, `annatar-shell`, `glorfindel-start` among them, are shells;
+scripts/published_image.py, which writes cosign under ~/.eregion, imports none); a session launched
+without the repository's settings and outside a worktree. scripts/mobile.py writes under ~/.eregion
+(the tunnel's known_hosts and deadline) and imports bench_shared alone, never eregion_core: the guard
+is not installed there, but each of its gestures that writes refuses by itself in an agent session
+(its `guard`, bench_shared's `session_refusal`), before anything is read. The console's token
+re-tightened to 0600 by os.fchmod (eregion_console/api.py) goes through a descriptor: unseen, and
+harmless — it only narrows the file's mode.
 """
 from __future__ import annotations
 
@@ -204,7 +209,7 @@ def placed(path, roots: tuple[str, ...]) -> str | None:
 # Said to the operator alone, when the refusal comes from the current folder (HY2c): he may have run
 # the command by hand from a lot's worktree. Never a way out offered to a probe of an agent session.
 OPERATOR_ONLY = (" Pour l'opérateur seulement, s'il a lancé lui-même cette commande depuis ce worktree : "
-                 "qu'il la relance hors de lui. Une sonde d'agent, elle, ne sort jamais du worktree pour "
+                 "qu'il la relance hors du worktree. Une sonde d'agent, elle, ne sort jamais du worktree pour "
                  "écrire là.")
 
 

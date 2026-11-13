@@ -47,8 +47,8 @@ MUTANTS = [
     ("M5159", "Glorfindel no longer imports the guard first: a script that imports it alone computes its "
               "paths with nothing installed (HY2b; caught by a reading of the code only, a belt)",
      "glorfindel/__init__.py",
-     "import eregion_core  # noqa: F401 — HY2b: the guard of the operator's ~/.glorfindel, first "
-     "(eregion_core/store_guard.py)\n", ""),
+     "import eregion_core  # noqa: F401 — HY2b: the guard of the operator's ~/.glorfindel, ~/.eregion, "
+     "~/.annatar (HY2c), first (eregion_core/store_guard.py)\n", ""),
 ]
 MEMORY = "glorfindel/memory.py"
 CODE = T + "test_a_probe_that_runs_a_lot_s_worktree_code_from_elsewhere_is_refused_and_said"

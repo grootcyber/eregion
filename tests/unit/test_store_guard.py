@@ -15,7 +15,7 @@ imports the guard first. Mutants M5150–M5159, M5190–M5194 (scripts/mutants/H
 HY2c: the same probes over ~/.eregion (the watch's key drawn when absent, a service's key of the queue,
 the queue's register, the analysis index, ChromaDB's) and ~/.annatar (its shell's history); the folder
 named in the refusal; leaving the worktree said to the operator alone, never offered to a probe.
-Mutants M5235–M5244 (scripts/mutants/HY2c.py).
+Mutants M5235–M5244, M5270–M5271 (scripts/mutants/HY2c.py).
 """
 import ast
 import os
@@ -479,6 +479,7 @@ def test_leaving_the_worktree_is_said_to_the_operator_alone_never_to_a_probe():
     from eregion_core import store_guard as sg
     said = sg.message("/h/.eregion/x", sg.WORKTREE_CWD, ".eregion")
     assert said.endswith(sg.OPERATOR_ONLY) and "Pour l'opérateur seulement" in said
+    assert "qu'il la relance hors du worktree." in said and "hors de lui" not in said   # review round 1
     assert "ou lance la commande hors du worktree" not in said
     assert "Une sonde prend un HOME jetable (HOME=$(mktemp -d) python …) ou va dans la suite" in said
     for why in (sg.WORKTREE_CODE, f"une session d'agent ({sg.SESSION_VAR})"):

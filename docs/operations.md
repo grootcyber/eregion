@@ -633,11 +633,15 @@ vrai `~/.glorfindel` du poste (`vm_notices.jsonl` et son verrou, un verrou de jo
   n'y en a pas), les clés de service de la file signée (`console/`, `bot/`), la file elle-même
   (`watch-queue/`), le jeton de la console, ses demandes d'exercice et ses drills, l'index de l'IA
   d'analyse (`analysis/chroma`) ; `~/.annatar`, le `.bashrc` et l'historique du shell d'Annatar. Leurs
-  écrivains qui n'ouvrent pas leur fichier par `open` passent tous par un événement que le hook voit :
-  la clé de la watch et celles des services (`eregion_core/watch_key.py` : `os.mkdir`, `os.open` en
-  `O_EXCL`, `os.link`, `os.chmod`), les registres et les demandes de la file
+  écrivains en Python qui n'ouvrent pas leur fichier par `open` passent par un événement que le hook
+  voit : la clé de la watch et celles des services (`eregion_core/watch_key.py` : `os.mkdir`,
+  `os.open` en `O_EXCL`, `os.link`, `os.chmod`), les registres et les demandes de la file
   (`channel_reader.write_file` : `mkstemp`, `os.chmod`, `os.replace`), le jeton, un drill, une
-  demande d'exercice (`os.open`, `mkstemp`, `os.replace`, `os.link`).
+  demande d'exercice (`os.open`, `mkstemp`, `os.replace`, `os.link`). Une exception : le jeton de la
+  console, relu, est remis en 0600 par `os.fchmod` sur son descripteur
+  (`eregion_console/api.py`, `_read_token_file`) ; `located()` ne lit pas un descripteur, c'est déjà
+  un « non vu » d'HY2b (une écriture par un descripteur), et c'est sans danger : il ne fait que
+  resserrer les droits.
 - **Une session d'agent** : `EREGION_AGENT_SESSION` posé (le bloc `env` de
   `~/eregion/.claude/settings.local.json` le donne à chaque session lancée dans `~/eregion` et aux
   sous-agents qu'elle lance, `docs/sessions.md`, SEC12), un dossier courant dans le worktree d'un
@@ -645,7 +649,7 @@ vrai `~/.glorfindel` du poste (`vm_notices.jsonl` et son verrou, un verrou de jo
   d'ailleurs) : la règle de `scripts/bench_shared.py`. **Sortir du worktree n'est jamais une issue
   pour une sonde** (HY2c) : refusée pour son dossier courant, la ligne le dit à l'opérateur seul, qui
   aurait lancé la commande à la main depuis un worktree (« Pour l'opérateur seulement, s'il a lancé
-  lui-même cette commande depuis ce worktree : qu'il la relance hors de lui. Une sonde d'agent, elle,
+  lui-même cette commande depuis ce worktree : qu'il la relance hors du worktree. Une sonde d'agent, elle,
   ne sort jamais du worktree pour écrire là. ») ; refusée pour sa variable ou son code, elle n'en dit
   rien. **Partout ailleurs, rien n'est installé** : le terminal de l'opérateur, ses conteneurs
   (`docker run` ne leur passe pas la variable), la watch, le bot, Imladris et la CI écrivent comme
@@ -667,12 +671,22 @@ vrai `~/.glorfindel` du poste (`vm_notices.jsonl` et son verrou, un verrou de jo
   natif sous `~/.glorfindel` (relecture de HY2b, tour 1). Sous `~/.eregion`, l'index de l'IA d'analyse
   (`~/.eregion/analysis/chroma`, ChromaDB aussi) l'est de même : `analysis/campaign_report.py`
   (`_collection`) appelle `store_guard.check` avant de l'ouvrir (HY2c). Ce sont les deux seuls.
-- **Ce qui écrit sous ces dossiers sans importer le dépôt, non vu** (HY2c) : la cible `annatar-shell`
-  du `Makefile`, qui crée `~/.annatar/.bashrc` et `.bash_history` (un shell, `mkdir`, `touch`, `>>`) ;
-  `scripts/mobile.py` (le `known_hosts` du tunnel de la console, écrit par ssh) et
-  `scripts/published_image.py` (le binaire de cosign), deux scripts autonomes qui n'importent aucun
-  module du dépôt. Ce sont des gestes de l'opérateur : le garde ne les voit pas, comme le `>` d'un
-  shell.
+- **Ce qui écrit sous ces dossiers sans passer par le garde** (HY2c) :
+  - **les recettes du `Makefile`**, des shells (`mkdir`, `touch`, `>>`, `>`), que le garde ne voit
+    pas, comme le `>` d'un shell. Ainsi : `annatar-shell` (`~/.annatar/.bashrc` et `.bash_history`) ;
+    `glorfindel-start`, `glorfindel-restart`, `glorfindel-dev` et les `docker run` de la watch
+    (`WATCH_KEY_DIR` : les `mkdir -p` de `~/.eregion/watch-key`, `bot`, `watch-queue`, `analysis`,
+    `console/requests`) ; `imladris-pull` (`~/.eregion/host-backups`) ; `imladris-known` et
+    `orodruin-known` (`~/.eregion/h0_known_hosts`, `~/.eregion/orodruin_known_hosts`, par
+    `infra/glorfindel-host/known_host.sh`) ; `team-init` (`~/.eregion/teams/<équipe>/`). La liste
+    vaut exemples : toute recette qui écrit sous `$(HOME)/.eregion` en est ;
+  - **`scripts/published_image.py`** (le binaire de cosign, `~/.eregion/cosign/`), un script autonome
+    qui n'importe aucun module du dépôt ;
+  - **`scripts/mobile.py`**, qui écrit lui-même sous `~/.eregion/console-tunnel/` le `known_hosts`
+    épinglé et l'échéance du tunnel (`_write` : `os.open`, `os.chmod`, `os.replace`) et y retire des
+    fichiers. Il n'importe que `scripts/bench_shared.py`, jamais `eregion_core` : le garde n'y est pas
+    installé, mais chacun de ses gestes qui écrivent (`tunnel-install`, `-remove`, `-on`, `-off`)
+    refuse lui-même en session d'agent, avant de rien lire (`guard`, `bench_shared.session_refusal`).
 - **Le code que la sonde importe** : le garde vaut pour lui seul. L'installation éditable du venv
   pointe vers `~/eregion` : une sonde lancée par le Python du venv, hors d'un worktree et sans
   `PYTHONPATH`, importe le code de `~/eregion`, et le garde n'y vaut qu'une fois `~/eregion` à jour sur
