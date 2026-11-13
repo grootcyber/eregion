@@ -74,7 +74,7 @@ class GoneVmMixin:
             return None
         return (f"{vm_name} supprimée : sa carte {short} est maintenant celle de {holder.split('/')[4]}/"
                 f"{vm_name}, dont {held} porte les mêmes noms — laissés ; si elle n'est pas {state} "
-                "(glorfindel status), ce sont ceux de la VM supprimée : à retirer à la main "
+                "(glorfindel list), ce sont ceux de la VM supprimée : à retirer à la main "
                 "(az network nsg rule delete)")
 
     def _gone_vm_rules(self, resource_id: str, vm_name: str, nic_ids: list[str], stuck: set,

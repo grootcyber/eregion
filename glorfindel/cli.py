@@ -523,6 +523,139 @@ def unblock(ip: str, resource_id: str, dry_run: bool, yes: bool):
         _record_manual_action("unblock_ip", resource_id, {**result, "ip": ip})
 
 
+# ── CMD1 (#797): isolate, block — a containment by a human's hand ────────────────────────────────────
+# The console's approval of a held card, from a terminal (the console closed, the phone's shell, MOB1),
+# for the reassertion's card on a NIC a perimeter does not cover, or with no card at all: the same calls
+# and the same guards (glorfindel/gestures.py), the state written as the watch writes it — reasserted,
+# lifted by `release` and `unblock`. The cards are never resolved here: the human acknowledges them.
+
+def _contain_preamble(resource_id: str, action: str, dry_run: bool):
+    """The guards before any call to the cloud, and what the human is told before the prompt — the
+    connector once they hold. Refused: a ClickException, nothing done."""
+    from glorfindel import gestures
+    from glorfindel.actions import AzureConnector
+    why = gestures.direct_refusal(resource_id)
+    if why:
+        raise click.ClickException(why)
+    connector = AzureConnector(dry_run=dry_run)
+    if not dry_run and getattr(connector, "read_only", False):
+        raise click.ClickException("credentials en lecture seule (GLORFINDEL_READ_ONLY) : cet hôte ne peut "
+                                   "pas agir — rien n'est fait")
+    for e in gestures.held_cards(resource_id, action):
+        console.print(f"  [cyan]Carte {e['id'][:8]} en attente pour ce geste : elle reste en attente — "
+                      f"glorfindel ack {e['id'][:8]} une fois le geste vérifié.[/cyan]")
+    _state_here_said()
+    return connector
+
+
+def _state_here_said() -> None:
+    """The state a gesture writes is this host's ~/.glorfindel: the watch that reasserts it, and whose
+    console lifts it, is the one that runs here. No live watch here (a terminal of a workstation while
+    the watch runs on Imladris): said, never refused — a watch stopped is when a hand is needed."""
+    from datetime import datetime, timezone
+    from eregion_core import watch_gate
+    if watch_gate.fresh(watch_gate.local_beat(), datetime.now(timezone.utc)):
+        return
+    console.print("  [yellow]Aucune watch vivante sur cet hôte : l'état de ce geste s'écrit dans le "
+                  "~/.glorfindel de cet hôte, qu'une watch d'un autre hôte (Imladris) ne relit pas — ni "
+                  "réaffirmation, ni levée par sa console. La watch sur Imladris : lancer ce geste dans son "
+                  "conteneur (docker exec eregion-watch …).[/yellow]")
+
+
+def _contained_said(out: dict, what: str, dry_run: bool) -> None:
+    """What the gesture did and what its check says — exit 2 when the check is not True (a
+    ``verification_failed`` card left), as a partial release."""
+    result, verification = out.get("result") or {}, out.get("verification")
+    if dry_run:
+        console.print("[yellow]DRY RUN — no changes made.[/yellow]")
+        return
+    if result.get("note"):
+        console.print(f"  [dim]{_esc_markup(_ids_masked(result['note']))}[/dim]")
+    verified = (verification or {}).get("verified")
+    if verified is True:
+        tail = (" — la coupure des sessions court encore, la réaffirmation la relit"
+                if (verification or {}).get("drain_case") == "pending" else "")
+        console.print(f"[green]✓ {what} — la vérification le confirme{tail}.[/green]")
+        if result.get("status", "").endswith("_partial"):
+            console.print(f"[yellow]  En partie : {_esc_markup(result['status'])} (la note ci-dessus).[/yellow]")
+            sys.exit(2)
+        return
+    word = "la vérification a échoué" if verified is False else "elle n'a pas pu être vérifiée"
+    console.print(f"[red]✗ {what}, mais {word} : "
+                  f"{_esc_markup(_ids_masked((verification or {}).get('error') or '?'))}[/red]")
+    console.print("[dim]  Carte verification_failed laissée : glorfindel pending.[/dim]")
+    sys.exit(2)
+
+
+@cli.command()
+@click.argument("resource_id")
+@click.option("--dry-run", is_flag=True, help="Check the guards and show what would be done, without executing.")
+@click.option("--yes", is_flag=True, help="Skip confirmation prompt.")
+def isolate(resource_id: str, dry_run: bool, yes: bool):
+    """Isolate a VM by hand: a deny-all on each of its NICs, as an approved card (CMD1).
+
+    RESOURCE_ID: the VM's short name, <group>/<name> (what the commands to copy give) or its full id;
+    the VM resolved is said before anything is done, --yes too. A VM the watch knows only, never one a
+    card is only anchored on (AL1). Its state is written here — reasserted, then lifted by `release`.
+    A pending card is never resolved: `ack` it once verified.
+    """
+    from glorfindel import gestures
+
+    resource_id = _resolve_resource_id(resource_id)
+    console.rule("[bold red]Glorfindel — Isolate VM[/bold red]")
+    console.print(f"  Resource : {_esc_markup(_vm_said(resource_id))}")
+    console.print(f"  Dry-run  : {dry_run}\n")
+    connector = _contain_preamble(resource_id, "isolate_vm", dry_run)
+
+    if not dry_run and not yes:
+        if not click.confirm("Isolate this VM (every NIC cut off)?", default=False):
+            console.print("Aborted.")
+            return
+
+    out = gestures.contain(connector, "isolate_vm", resource_id,
+                           record=None if dry_run else _record_manual_action)
+    _contained_said(out, "VM isolée", dry_run)
+
+
+@cli.command()
+@click.argument("ip")
+@click.argument("resource_id")
+@click.option("--scope", type=click.Choice(["vm", "subnet"]), default="vm", show_default=True,
+              help="vm: this VM alone; subnet: one rule on its subnet's NSG, every VM of the subnet.")
+@click.option("--dry-run", is_flag=True, help="Check the guards and show what would be done, without executing.")
+@click.option("--yes", is_flag=True, help="Skip confirmation prompt.")
+def block(ip: str, resource_id: str, scope: str, dry_run: bool, yes: bool):
+    """Block one suspicious IP by hand, as an approved card (CMD1).
+
+    RESOURCE_ID: the VM's short name, <group>/<name> or its full id, said before anything is done. One
+    host address, never one of the never-block list (SEC2). Its state is written here — reasserted,
+    then lifted by `unblock`. A pending card is never resolved: `ack` it once verified.
+    """
+    from glorfindel import gestures
+
+    resource_id = _resolve_resource_id(resource_id)
+    host, why = gestures.address_refusal(ip)
+    if why:
+        raise click.ClickException(why)
+    console.rule("[bold red]Glorfindel — Block IP[/bold red]")
+    console.print(f"  IP       : {host}")
+    console.print(f"  Resource : {_esc_markup(_vm_said(resource_id))}")
+    console.print(f"  Scope    : {scope}" + ("  (every VM of its subnet)" if scope == "subnet" else ""))
+    console.print(f"  Dry-run  : {dry_run}\n")
+    connector = _contain_preamble(resource_id, "block_suspicious_ip", dry_run)
+
+    if not dry_run and not yes:
+        ask = (f"Block {host} for every VM of this VM's subnet?" if scope == "subnet"
+               else f"Block {host} on this VM?")
+        if not click.confirm(ask, default=False):
+            console.print("Aborted.")
+            return
+
+    out = gestures.contain(connector, "block_suspicious_ip", resource_id, ip=host, scope=scope,
+                           record=None if dry_run else _record_manual_action)
+    _contained_said(out, f"{host} bloquée", dry_run)
+
+
 def _watch_reassert_pass(connector, mode_override=None, lock=None, seen: dict | None = None) -> list[dict]:
     """One reassertion pass of the watch (its own thread, every
     GLORFINDEL_REASSERT_INTERVAL_S): the recorded isolations and blocks, and our
@@ -2025,6 +2158,7 @@ def pending(watch: bool):
 def ack(escalation_id: str | None, all_pending: bool):
     """Acknowledge (resolve) a pending escalation.
 
+    ESCALATION_ID: the id, or its first 6+ characters (the console's and the TUI's commands give 8).
     Use 'glorfindel pending' to list escalation IDs.
     Use --all to acknowledge everything at once.
     """
@@ -2041,8 +2175,17 @@ def ack(escalation_id: str | None, all_pending: bool):
         console.print("[red]Provide an escalation ID or use --all.[/red]")
         return
 
-    escalations.resolve(escalation_id)
-    console.print(f"[green]✓ Escalation {escalation_id} acknowledged.[/green]")
+    # CMD1: the id or its first 6+ characters, as `verdict` — the commands to copy give 8; an id that
+    # names no card is said, never « acknowledged ».
+    try:
+        e = escalations.card_of(escalation_id)
+    except (KeyError, ValueError) as exc:
+        raise click.ClickException(str(exc).strip(chr(39))) from None
+    if e.get("status") != "pending":
+        console.print(f"[yellow]Escalation {e['id'][:8]} already {e.get('status', 'resolved')}.[/yellow]")
+        return
+    escalations.resolve(e["id"])
+    console.print(f"[green]✓ Escalation {e['id']} acknowledged.[/green]")
 
 
 @cli.command()

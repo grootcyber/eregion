@@ -604,6 +604,29 @@ def pending() -> list[dict]:
     return result
 
 
+def card_of(escalation_id: str) -> dict:
+    """The card a reference names — its full id, or a unique prefix of at least 6 characters (the
+    console, the TUI and `pending`'s commands give 8; CMD1: `glorfindel ack <8 characters>` used to
+    match nothing and say « acknowledged »). ValueError on a prefix too short or ambiguous, KeyError
+    when no card matches. The card as stored, whatever its status."""
+    ref = (escalation_id or "").strip().lower()
+    if len(ref) < 6:
+        raise ValueError("give the card id, or at least its first 6 characters")
+    cards = []
+    for line in (_STORE.read_text().splitlines() if _STORE.exists() else []):
+        try:
+            cards.append(json.loads(line))
+        except Exception:
+            continue
+    exact = [e for e in cards if str(e.get("id", "")).lower() == ref]
+    hits = exact or [e for e in cards if str(e.get("id", "")).lower().startswith(ref)]
+    if not hits:
+        raise KeyError(f"no card {escalation_id}")
+    if len(hits) > 1:
+        raise ValueError(f"{escalation_id} matches {len(hits)} cards — give more characters")
+    return hits[0]
+
+
 def _action_words(action: str, resource_id: str, run_id: str, confidence: float, explanation: str,
                   verified: bool | None, ttp: str, severity: str, note: str, card: str,
                   mode: str) -> tuple[str, str, str, dict]:

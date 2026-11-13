@@ -1644,6 +1644,23 @@ from eregion_core.action_queue import APPROVABLE_TYPES as _APPROVABLE_TYPES  # n
 from glorfindel.approval import approval_max_age_h as _approval_max_age_h  # noqa: E402,F401
 
 
+def _not_run_here(esc: dict) -> str:
+    """CMD1 (#797): an action the console does not run, sent to commands that exist — the card read
+    (`glorfindel pending`), the action made by hand, the card acknowledged. Never `respond <id>`: it
+    takes a file of signals, not a VM."""
+    return (f"Action '{esc.get('action', '')}' non exécutée par la console : la lire (glorfindel pending), "
+            f"la faire à la main, puis glorfindel ack {str(esc.get('id', ''))[:8]}")
+
+
+def _needs_ip(resource_id: str) -> dict:
+    """A card without its address: asked of the human, or the CLI's own command (CMD1), the VM by
+    « <groupe>/<nom> » (MSK3b) — never its full id."""
+    from glorfindel.vm_command import group_and_name
+    return {"needs_ip": True, "error": (
+        "This escalation doesn't carry the IP — enter the IP to block, "
+        f"or run: glorfindel block <ip> {group_and_name(resource_id)} --yes")}
+
+
 def _approval_refusal(esc: dict, vm_name: str) -> str | None:
     """Why this card can't be executed in one click any more, or None (glorfindel/approval.py)."""
     from glorfindel.approval import approval_refusal
@@ -1721,10 +1738,7 @@ async def action_approve(esc_id: str, ip: str = "", scope: str = "vm") -> dict:
             if not block_ip:
                 # Escalation carries no IP (e.g. recorded before action_params) — ask the
                 # operator instead of refusing, so the current escalation is still actionable.
-                return {"needs_ip": True, "error": (
-                    "This escalation doesn't carry the IP — enter the IP to block, "
-                    f"or run: glorfindel block <ip> {resource_id} --yes"
-                )}
+                return _needs_ip(resource_id)
             block_scope = scope if scope in ("vm", "subnet") else "vm"
             threat_port = (esc.get("action_params") or {}).get("port")
             result = await _gesture(
@@ -1737,7 +1751,7 @@ async def action_approve(esc_id: str, ip: str = "", scope: str = "vm") -> dict:
                     "scope": block_scope, "result": result, "verification": verification}
 
         else:
-            return {"error": f"Action '{action}' non supportée par la console — CLI : glorfindel respond {resource_id}"}
+            return {"error": _not_run_here(esc)}
 
     except GesturesBusy:      # FS1c: refused at once, said (503) — never told as an Azure error
         raise
@@ -1755,7 +1769,7 @@ async def _approve_queued(esc: dict, ip: str, scope: str) -> dict:
     action, resource_id = esc.get("action", ""), esc.get("resource_id", "")
     verb = _aq.VERB_OF_ACTION.get(action)
     if verb is None:
-        return {"error": f"Action '{action}' non supportée par la console — CLI : glorfindel respond {resource_id}"}
+        return {"error": _not_run_here(esc)}
     proposal = esc.get("proposal")
     if not isinstance(proposal, dict):
         return {"error": _aq.REFUSALS["proposal_missing"], "refused": "proposal_missing", "via": "queue"}
@@ -1764,9 +1778,7 @@ async def _approve_queued(esc: dict, ip: str, scope: str) -> dict:
         return await _queued(verb, resource_id, card=card, extra={"action": action})
     block_ip = ip or esc.get("ip") or (esc.get("action_params") or {}).get("ip") or ""
     if not block_ip:
-        return {"needs_ip": True, "error": (
-            "This escalation doesn't carry the IP — enter the IP to block, "
-            f"or run: glorfindel block <ip> {resource_id} --yes")}
+        return _needs_ip(resource_id)
     block_scope = scope if scope in ("vm", "subnet") else "vm"
     # The proposal's address is the card's: the request names it, or the human's when it has none.
     return await _queued(verb, resource_id, ip=block_ip, scope=block_scope, card=card,
