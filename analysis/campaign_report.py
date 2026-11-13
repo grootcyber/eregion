@@ -59,7 +59,7 @@ from analysis.campaign_schema import (NO_CAMPAIGN_REPORT, run_report_refusal,
 from annatar.runner.detection import _number, first_detection, read_records
 from eregion_core.exercise import (FUTURE_SKEW_S, exercises_dir, is_enrolled, last_moment,
                                    window_refusal)
-from eregion_core import channel_reader, runs_layout
+from eregion_core import channel_reader, runs_layout, store_guard
 from eregion_core.exercise_channel import PULLED, safe_part
 
 CLAIM_KINDS = ("detected", "missed", "latency", "decision", "trend", "observation", "change")
@@ -590,6 +590,9 @@ COLLECTION = "campaign_runs"
 def _collection(path: Path | None = None):
     import chromadb
     p = separation.check_index(Path(path) if path else index_path())
+    # HY2c (#800): ChromaDB writes the index from Rust, which the guard's audit hook never sees — in
+    # an agent session, the operator's ~/.eregion/analysis/chroma is refused before it is opened.
+    store_guard.check(p)
     p.mkdir(parents=True, exist_ok=True)
     return chromadb.PersistentClient(path=str(p)).get_or_create_collection(
         name=separation.check_collection(COLLECTION), metadata={"hnsw:space": "cosine"})
