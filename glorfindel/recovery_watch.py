@@ -327,8 +327,8 @@ def _one(connector, emit, iso: dict, vault: str, vault_rg: str, now: float, repo
         return card("not_in_place",
                     f"{head}, finie) : ce n'est pas une restauration sur place de cette VM — {why}. La VM "
                     "isolée n'a pas été restaurée (des disques restaurés, une autre VM) : ne pas lever.",
-                    ["Restaurer la VM sur place depuis le poste : glorfindel restore "
-                     f"{group_and_name(rid)} --before <ISO8601>", "Ou garder l'isolation et acquitter cette carte."])
+                    [f"Restaurer la VM sur place depuis le poste : glorfindel restore {group_and_name(rid)} --before <ISO8601>",
+                     "Ou garder l'isolation et acquitter cette carte."])
     at = _epoch(point["time"])
     first, why = restore_plan.incident_start(rid)
     if first is None or at is None or at >= first:

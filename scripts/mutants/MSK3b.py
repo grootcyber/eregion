@@ -1,7 +1,7 @@
 """MSK3b (#787): every command to copy Glorfindel writes for a VM names it by `<groupe>/<nom>` (the card
 « exécutée », the TUI, the CLI's hints and the steps of a card it shows, the watch's cards, the console's
 📋 Command), which the CLI resolves — never its name alone, which could take a VM of that name in another
-group. M5125–M5134, measured by tests/unit/test_vm_command.py (two VMs « web » in two groups)."""
+group. M5125–M5134, then M5182 after the first review, measured by tests/unit/test_vm_command.py (two VMs « web » in two groups)."""
 AGENT = "glorfindel/agent.py"
 TUI = "glorfindel/tui.py"
 CLI = "glorfindel/cli.py"
@@ -49,6 +49,10 @@ MUTANTS = [
     ("M5134", "the console's 📋 Command undoes an action taken alone by the VM's name alone (MSK3b)", CONSOLE_JS,
      "    const vm = _vmArg(rid);\n    const ip = (esc.action_params && esc.action_params.ip) || '<ip>';\n",
      "    const vm = rid.split('/').pop();\n    const ip = (esc.action_params && esc.action_params.ip) || '<ip>';\n"),
+    ("M5182", "the `not_in_place` recovery card's `restore` names the VM by its full id (MSK3b, review: "
+     "one string, the tree's guard reads it)", RECOVERY,
+     "Restaurer la VM sur place depuis le poste : glorfindel restore {group_and_name(rid)} --before",
+     "Restaurer la VM sur place depuis le poste : glorfindel restore {rid} --before"),
 ]
 TESTS = {
     "M5125": f"{_T}::test_the_executed_card_s_undo_names_its_vm_by_its_group_and_name",
@@ -61,4 +65,5 @@ TESTS = {
     "M5132": f"{_T}::test_every_command_to_copy_in_the_tree_names_its_vm_by_its_group_and_name",
     "M5133": f"{_T}::test_the_snapshot_step_of_a_held_card_names_its_vm_by_its_group_and_name",
     "M5134": f"{_T}::test_the_console_s_command_names_the_vm_by_its_group_and_name",
+    "M5182": f"{_T}::test_every_command_to_copy_in_the_tree_names_its_vm_by_its_group_and_name",
 }
