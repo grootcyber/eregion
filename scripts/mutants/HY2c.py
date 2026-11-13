@@ -1,7 +1,8 @@
 """HY2c (#800): the guard of an agent session's probes (HY2b) covers the operator's real ~/.eregion and
 ~/.annatar too — the watch's key, the queue's service keys and registers, the analysis index (ChromaDB,
 refused before it is opened), Annatar's shell — names the folder refused, and says leaving the worktree
-to the operator alone, never as a way out for a probe. M5235–M5244, measured by
+to the operator alone, never as a way out for a probe. M5235–M5244 and M5270–M5271 (the review's round 1),
+measured by
 tests/unit/test_store_guard.py: probes in fresh interpreters over an operator simulated in tmp (its
 system home a folder of tmp_path), never this workstation's.
 """
@@ -56,6 +57,18 @@ MUTANTS = [
               "resolved home passes (HY2c)", GUARD,
      "        roots += [given, os.path.realpath(given)]\n", "        roots += [given]\n"),
 ]
+# The review's round 1: a ~/.eregion that is itself a link elsewhere (a disk of its own) is named
+# ~/.eregion in the refusal, never by the name of its target (`_named`).
+MUTANTS += [
+    ("M5270", "a folder that is a link no longer named by the root given: a write in ~/.eregion, a link to "
+              "/data/eregion-state, said as one in ~/eregion-state (HY2c, review round 1)", GUARD,
+     "        if os.path.basename(given) in STORES and os.path.realpath(given) == root:\n",
+     "        if False:\n"),
+    ("M5271", "the folder named by the root found, never looked up: a ~/.eregion resolved elsewhere said by "
+              "its target's name (HY2c, review round 1)", GUARD,
+     "                return full, _named(root, roots)\n",
+     "                return full, os.path.basename(root)\n"),
+]
 TESTS = {
     "M5235": KEY,
     "M5236": ANNATAR,
@@ -67,4 +80,6 @@ TESTS = {
     "M5242": LINK,
     "M5243": PINNED,
     "M5244": PLACED,
+    "M5270": PLACED,
+    "M5271": PLACED,
 }
