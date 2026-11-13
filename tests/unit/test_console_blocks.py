@@ -141,6 +141,33 @@ def test_a_promotion_says_the_open_nics_and_the_unread_ones_each_apart(client, b
     assert len(unread) == 1 and "unverified" in unread[0] and "reaches" not in unread[0], d
 
 
+def test_a_promotion_says_its_pair_gone_beside_a_nic_uncovered(client, blocks, connector):
+    """I3W (#778): the pair read gone at the check, a NIC uncovered beside it, and a NIC with no rule of the
+    block. The window said the uncovered NIC alone: the pair gone went unsaid. Each its own line now."""
+    pair = ["glorfindel-block-203-0-113-7", "glorfindel-block-203-0-113-7-out"]
+    connector.outcome = {"status": "blocked_partial", "uncovered_nics": ["web-nic2"], "missing_rules": pair,
+                         "missing_nics": ["web-nic0"]}
+    d = _promote(client, ip=NEW)
+    assert d["ok"] and d["whole"] is False, d
+    gone = [x for x in d["said"] if pair[0] in x]
+    assert len(gone) == 1 and pair[1] in gone[0] and "Missing or altered on Azure" in gone[0], d
+    assert any("web-nic0" in x and "No rule of the block" in x for x in d["said"]), d
+    assert any("web-nic2" in x and "still reaches" in x for x in d["said"]), d
+
+
+def test_a_promotion_says_its_pair_unread(client, blocks, connector):
+    """I3W's review (round 2): the pair's listing a 429 at the check, NICs unread beside it. The window said
+    the unread NICs alone, never that the subnet rule itself was unread: its own line now, never « whole »."""
+    pair = ["glorfindel-block-203-0-113-7", "glorfindel-block-203-0-113-7-out"]
+    connector.outcome = {"status": "blocked_partial", "pair_unread": pair,
+                         "nics_unread": "blocage non vérifiable : règles illisibles"}
+    d = _promote(client, ip=NEW)
+    assert d["ok"] and d["whole"] is False, d
+    line = [x for x in d["said"] if pair[0] in x]
+    assert len(line) == 1 and pair[1] in line[0] and "The subnet rule unread at its check" in line[0], d
+    assert "is unverified" in line[0] and "Missing" not in line[0], d
+
+
 def test_the_page_says_the_whole_subnet_only_when_the_outcome_holds_it_whole():
     """The toast « whole subnet » is the `whole === true` branch alone; anything else opens the
     window that names what is left out, each line escaped."""

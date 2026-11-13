@@ -25,6 +25,12 @@ def _block_drift(ip: str, vm: str, v: dict, again: bool = False, said: bool = Fa
     twice = " une deuxième fois" if again else ""
     if v.get("verified") is True:
         where = f" sur {', '.join(held)}{by}" if held else ""
+        # Its perimeter pair among what is gone (I3W, #778): the VM held by its own block — « reste
+        # bloquée » said of it, never of the subnet the pair was to cut off; the way lost, and where
+        # (its NSG: another perimeter may hold a NIC by a rule of the same name, I3W's review).
+        where += (f"{'' if held else f' sur {vm}'} ; sur les autres VM derrière {v.get('perimeter_nsg') or 'son NSG'}"
+                  f", la règle de périmètre ne tient plus{_way(v['perimeter_gone'])}"
+                  ) if v.get("perimeter_gone") else ""
         if said:
             return (f"l'IP reste bloquée{where}, mais il manque toujours{names}." if gone else
                     "Azure le relit entier, mais le fournisseur l'a dit partiel : à vérifier." if partial else
@@ -53,6 +59,13 @@ def _block_drift(ip: str, vm: str, v: dict, again: bool = False, said: bool = Fa
              if unsure else "")
     tail += f" ; sur {', '.join(unknown)}, ses règles n'ont pas pu être lues" if unknown else ""
     return head + tail + (f"{names}." if said else ".")
+
+
+def _way(names) -> str:
+    """The way a perimeter pair no longer holds, by its rules gone (I3W's review): its rule alone,
+    « en entrée » ; its `-out` alone, « en sortie » ; both, nothing — never half said as the whole."""
+    out = {str(n).lower().endswith("-out") for n in names or []}
+    return "" if out == {True, False} else " en sortie" if out == {True} else " en entrée"
 
 
 def _situation(v: dict) -> dict:

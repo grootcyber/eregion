@@ -609,6 +609,87 @@ non jugée. Sur `main` 5f10c599, 22 des premiers cas échouent, et le test d'I3P
 l'oracle à trois cartes y passent, la réponse disant vrai dans ce monde. La console dit les deux, chacune sur
 sa ligne (`tests/unit/test_console_blocks.py`). Mutants M5030–M5039 et M5075–M5079 (`scripts/mutants/I3Q.py`).
 
+### Un blocage de périmètre dont la paire a disparu n'est jamais dit `blocked` (I3W)
+
+Trouvé par la relecture 2 d'I3Q, reproduit sur le faux Azure ; un défaut de `main`, antérieur à I3Q.
+**Le défaut.** Sur le chemin des placements de `verify_block_ip`, la paire du périmètre disparue va dans
+`held_missing` quand rien d'autre ne manque. Db--01 a sa carte primaire db-nic-0 sur le sous-réseau app, avec
+web, et db-nic-1 sur le sous-réseau data. Elle est bloquée pour elle-même, puis par périmètre (sans promotion),
+et un tiers supprime la paire `glorfindel-block-<ip>` et `-out` de nsg-subnet entre l'écriture et la
+vérification. Ses deux cartes sont tenues par son propre blocage : la vérification rend `True`, avec la paire
+dans `held_missing`. Le blocage rendait `blocked`, « this IP is denied for ALL VMs on the subnet », et l'IP
+atteignait web. Dans la branche `False` (le NSG propre de db-nic-1, son `allow-https` élargi par le client :
+le blocage de Db--01 contourné là), la paire restait tue à côté de `uncovered_nics` (le constat 1 de la
+relecture). Dans la branche `None` (une lecture en 429), la vérification rendait sans elle.
+
+**Le choix : la vérification ne change pas de verdict.** Elle dit vrai de la VM : Db--01 reste bloquée par
+son propre blocage. La faire rendre `False` sur la seule paire aurait fait dire à la carte de dérive « l'IP
+n'est plus bloquée » de Db--01, et changé la base de `_worse`. Elle dit maintenant la paire à part, dans
+chaque branche (`perimeter_gone`), une clé que ni `_block_drift` pour le reste, ni `_situation`, ni `_worse`,
+ni la réaffirmation ne lisent : ce qu'elles lisent est inchangé, et la réaffirmation reposait déjà la paire
+(`held_missing`). Le blocage la lit (`verify_block._say_gone`) : `blocked_partial`, `missing_rules` la paire,
+et sa note dit « perimeter block written, then read missing or altered on Azure at its check (…): {ip} is no
+longer denied by it for the VMs on the subnet until it is put back », jamais « denied for ALL VMs ». La moitié
+de la paire partie, la note dit le sens perdu (« no longer denied outbound by it ») : l'autre sens reste refusé
+à toutes les VM du sous-réseau. La paire illisible n'est jamais dite disparue (A0) ; la vérification la nomme
+(`pair_unread`), et la tête dit « its rules unread at its check (…): whether it holds for the VMs on the subnet
+is unverified », plus « denied for ALL VMs ». Une carte ajoutée depuis et laissée à cette paire (une promotion
+lui a ôté son propre blocage) est inconnue (« périmètre illisible »), jamais « no rule of this block on it » ni
+reposée sur une supposition : la paire la tient peut-être (relecture, tour 2) ; la fenêtre de promotion de la
+console dit la paire illisible sur sa ligne. La carte de dérive, quand la vérification est vraie et la paire
+disparue, dit « l'IP reste bloquée sur Db--01 ; sur les autres VM derrière nsg-subnet, la règle de périmètre
+ne tient plus » (« … en sortie », « … en entrée » pour une moitié) : avant, « l'IP reste bloquée », vrai de la
+VM, muet sur le sous-réseau. Elle nomme le NSG de la paire (`perimeter_nsg`) : une carte tenue par le
+périmètre d'un autre sous-réseau l'est par une règle du même nom.
+
+**Sans carte hors du périmètre, rien n'est relu.** Le blocage ne vérifie après son écriture que si la VM a
+une carte hors du périmètre. Pour une VM tout entière sur le sous-réseau, sa réponse s'appuie sur l'écriture
+seule, comme avant : une paire ôtée à ce moment est vue à la passe suivante de la réaffirmation.
+
+**Une carte n'est plus nommée comme une règle** (le constat 2). La vérification met le nom court d'une
+carte sans règle du blocage dans `missing_rules`, une convention que la carte de dérive lit. Elle dit
+maintenant lesquelles sont des cartes (`missing_nics`) ; le blocage les sépare : `missing_rules` les règles,
+`missing_nics` les cartes, chacune avec sa phrase. Avant, une promotion dont la paire avait disparu disait
+« Rules of this block missing on Azure: db-nic-0, glorfindel-block-…, …-out ». La fenêtre de promotion de
+la console dit les deux, chacune sur sa ligne ; elle disait une carte non couverte et taisait la paire
+disparue à côté.
+
+**L'oracle, durci, sans excuse.** Il lit la paire comme le faux Azure la tient à la réponse, jamais ce que le
+code en dit : disparue, le blocage doit dire `blocked_partial` et la nommer, dans `missing_rules` ou dans
+`pair_unread`. Avant, une paire disparue n'était jugée qu'au travers d'une VM voisine atteinte, jamais sur un
+sous-réseau sans voisine. Qui l'a ôtée : la machine ne fait agir aucun tiers au milieu d'une opération, et une
+paire absente à la réponse ne peut venir que du blocage lui-même. Le premier correctif excusait les voisines
+dès que la réponse disait la paire disparue : la relecture (tour 1) l'a démontré, un blocage qui n'écrivait
+pas sa paire (ou son `-out` seul), et que sa vérification lisait « manquante », passait. C'était une excuse.
+L'oracle n'excuse plus que ce qu'un tiers posé par le test a ôté (`world_deleted`, remis à zéro par `_before`,
+rempli par le crochet de la régression), et rien d'autre ; sinon : « I3: perimeter block lost its own pair … ».
+Le deuxième correctif excusait aussi toute panne tirée pour l'opération : la relecture (tour 2) a montré qu'avec
+la paire jamais écrite, 77 cas jugés sur 144 passaient, dont 75 où la panne n'avait pas joué. Une panne coupe
+court les écritures du code, elle n'ôte aucune règle : l'excuse est retirée, et la machine à 500 comme les
+régressions restent vertes sans elle. Une paire dite illisible (`pair_unread`) n'est acceptée qu'après une panne
+qui a joué pendant l'opération (`fault_played`, posé par `_run`). Et il excuse sens par sens : une moitié partie laisse l'autre sens des voisines jugé,
+et les cartes de la VM nommées sans règle du blocage (`missing_nics`, une promotion) ne sont exemptées que
+dans les sens excusés. Les invariants restent verts à 500.
+
+**Mesures.** Figés dans `tests/unit/test_invariant_regressions.py`, avec l'identifiant canonique et en
+minuscules : la paire supprimée entre l'écriture et la vérification, entière ou à moitié, branche `True` et
+branche `False`, blocage et promotion, jugées par l'oracle (puis une réaffirmation et une vérification, jugées
+comme la machine les juge) ; la même séquence sans tiers, où un blocage qui perd sa paire est pris
+(`test_a_perimeter_block_beside_a_vm_block_is_judged_on_its_own_pair`) ; au connecteur, la note, web atteinte,
+la vérification inchangée, la carte de dérive en `human_only`, la repose en `non_disruptive`, puis le blocage
+de nouveau entier ; une moitié de paire, le sens perdu dit par la note et par la carte ; la branche `None`
+(les cartes illisibles, les règles d'un placement illisibles, la paire elle-même illisible, nommée, jamais
+dite disparue) ; la promotion, la carte séparée des règles ; la fenêtre de la console
+(`tests/unit/test_console_blocks.py`). Le cas d'I3Q de la paire disparue d'un périmètre seul dit maintenant
+la nouvelle tête. Le mutant de la relecture (la paire, ou son `-out`, jamais écrite) est pris par la machine :
+« I3: perimeter block lost its own pair … », sans panne et sous une panne tirée qui ne joue pas (la 15ᵉ
+écriture, `test_a_perimeter_block_under_a_fault_that_never_plays_is_judged_on_its_own_pair`). Rejoué à la main
+avec l'ancienne excuse de panne rétablie, ce dernier cas passe, 8 sur 8 ; sans elle, il est pris, 8 sur 8. La
+promotion dont la paire est illisible ne dit aucune carte sans règle
+(`test_a_promotion_whose_pair_is_unread_names_no_nic_without_a_rule`), et la console dit la paire illisible.
+Mutants M5088–M5097, M5105–M5109 et M5115–M5119 (`scripts/mutants/I3W.py`) ;
+M5033 et M5078 d'I3Q suivent le code déplacé.
+
 ### Trois mutants que la machine ne voyait plus qu'au hasard (MUT4)
 
 La porte de la 0.5.8 (run 42575826306) a rendu trois mutants `FIXED-ONLY`, 0/2 chacun : M19 (un blocage
