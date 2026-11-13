@@ -80,8 +80,8 @@ MUTANTS += [
      "    if False:\n        return f\"le fournisseur n'a pas pu la relire"),
     ("M4134", "a put-back behind an allow silent on the deny it kept, aimed at another VM (I4B, RW2 review)",
      REASSERT,
-     '"`glorfindel release {rid} --yes` si la levée est voulue, sinon ré-isoler." + who + left)\n',
-     '"`glorfindel release {rid} --yes` si la levée est voulue, sinon ré-isoler." + who)\n'),
+     '"`glorfindel release {group_and_name(rid)} --yes` si la levée est voulue, sinon ré-isoler." + who + left)\n',
+     '"`glorfindel release {group_and_name(rid)} --yes` si la levée est voulue, sinon ré-isoler." + who)\n'),
 ]
 TESTS = {f"M{n}": _TESTS for n in (*range(4110, 4120), *range(4125, 4134))}
 TESTS["M4134"] = _REGRESSION

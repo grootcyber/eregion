@@ -459,13 +459,31 @@ function _blockBtns(s, vmName) {
   return `${_extendBtn(s, vmName)}<button class="action danger" ${_on('click', 'confirmUnblockIp', vmName, s.ip, s.scoped === false, s.nsg || '')} style="font-size:9px;padding:2px 7px" title="Remove the block of this IP only">↩️ Unblock</button>`;
 }
 
+// What a command to copy names a VM by: « <groupe>/<nom> » (MSK3b, #787 — glorfindel/vm_command.py,
+// the bot's and the CLI's form), never its name alone nor its full id: copied to another terminal, or
+// with a VM of that name in another group, the name alone could take that one (`--yes` asks nothing).
+// `glorfindel` resolves it on its own host, the group and the name matching, or refuses. Quoted for
+// the shell when the group holds one of its characters (Azure allows « ( ) »). Not a VM's own id (an
+// extension, a NSG), or no group: « <id: glorfindel list --ids> ».
+function _vmArg(rid) {
+  const parts = String(rid || '').trim().replace(/\/+$/, '').split('/');
+  const low = parts.map(p => p.toLowerCase());
+  const i = low.slice(0, -1).indexOf('resourcegroups');
+  if (i >= 0 && low.length >= 2 && low[low.length - 2] === 'virtualmachines'
+      && i + 1 < parts.length - 1 && parts[i + 1] && parts[parts.length - 1]) {
+    const pair = `${parts[i + 1]}/${parts[parts.length - 1]}`;
+    return /^[A-Za-z0-9_@%+=:,.\/-]+$/.test(pair) ? pair : `'${pair.replace(/'/g, `'"'"'`)}'`;
+  }
+  return '<id: glorfindel list --ids>';
+}
+
 function cliCommand(esc) {
   const rid = esc.resource_id;
   const id  = esc.id.slice(0, 8);
   // Never a command aimed at the anchor VM (AL1): acknowledge, act from what the card says.
   if (_isAnchored(esc)) return `glorfindel ack ${id}`;
   if (_isHeld(esc)) {
-    const vm = rid.split('/').pop();
+    const vm = _vmArg(rid);
     const ip = esc.ip || (esc.action_params && esc.action_params.ip) || '<ip>';
     const actionMap = {
       isolate_vm:          `glorfindel isolate ${vm} --yes`,
@@ -479,17 +497,17 @@ function cliCommand(esc) {
   if (esc.action === 'restore_from_backup') {
     // The moment is asked (SEC4c): the card's first detection — the attack began before it.
     return `# --before: an instant before the attack began (the card's first detection here — go back if it began earlier)\n`
-      + `glorfindel restore ${rid} --yes --before ${esc.first_seen || esc.timestamp || '<ISO8601>'}\nglorfindel ack ${id}`;
+      + `glorfindel restore ${_vmArg(rid)} --yes --before ${esc.first_seen || esc.timestamp || '<ISO8601>'}\nglorfindel ack ${id}`;
   }
   if (esc.escalation_type === 'readiness_hold') {
-    return `# Shows the reserves, then asks you to accept them\nglorfindel activate ${rid.split('/').pop()}`;
+    return `# Shows the reserves, then asks you to accept them\nglorfindel activate ${_vmArg(rid)}`;
   }
   if (esc.escalation_type === 'verification_failed') {
-    return `glorfindel revert ${rid} --yes\nglorfindel ack ${id}`;
+    return `glorfindel revert ${_vmArg(rid)} --yes\nglorfindel ack ${id}`;
   }
   if (_isExecuted(esc)) {
     // JUG1: an action taken alone — judged; undone, if judged wrong, by the usual path (the bot's words).
-    const vm = rid.split('/').pop();
+    const vm = _vmArg(rid);
     const ip = (esc.action_params && esc.action_params.ip) || '<ip>';
     const undo = esc.action === 'isolate_vm' ? `glorfindel release ${vm} --yes` : `glorfindel unblock ${ip} ${vm} --yes`;
     return `glorfindel verdict ${id} right|wrong|unsure\n# judged wrong: undo it by the usual path\n${undo}\nglorfindel ack ${id}`;

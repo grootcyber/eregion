@@ -2173,10 +2173,11 @@ def escalate_to_human(state: GlorfindelState) -> GlorfindelState:
     signal = state["signal"]
     steps = list(state.get("suggested_steps") or [])
     if action == "snapshot":
-        resource_id = signal.get("resource_id", "")
-        steps.append(
+        from glorfindel.vm_command import group_and_name
+        steps.append(           # the VM by « <groupe>/<nom> », never its full id (MSK3b)
             f"Si tu confirmes la compromission après vérification : "
-            f"`glorfindel snapshot {resource_id} --yes` pour capturer l'état forensique."
+            f"`glorfindel snapshot {group_and_name(signal.get('resource_id', ''))} --yes` "
+            "pour capturer l'état forensique."
         )
 
     # Carry action parameters so the console can approve & execute parameterised
@@ -2507,7 +2508,10 @@ def _record_executed(state: GlorfindelState, source: str, exercise_run: str) -> 
     note = _platform_note(outcome) if action == "isolate_vm" else ""
     from glorfindel import escalations
     label = escalations._ACTION_LABELS.get(action, action)
-    vm = rid.rstrip("/").rsplit("/", 1)[-1]
+    # MSK3b (#787): the VM by « <groupe>/<nom> », never its name alone — the step is copied to
+    # another terminal, or on a subscription where another group holds a VM of that name.
+    from glorfindel.vm_command import group_and_name
+    vm = group_and_name(rid)
     undo = (f"`glorfindel release {vm} --yes`" if action == "isolate_vm"
             else f"`glorfindel unblock {ip or '<ip>'} {vm} --yes`")
     reason = (f"{label}{f' ({ip})' if ip else ''} par Glorfindel seul (mode {mode}), vérifiée sur Azure"
@@ -2697,6 +2701,7 @@ def _detection_blocked(
         )
 
     resource_id = signal.get("resource_id", "")
+    from glorfindel.vm_command import group_and_name   # the reset step's VM (MSK3b)
     return {
         **state,
         "reasoning": " ".join(reasons),
@@ -2713,7 +2718,7 @@ def _detection_blocked(
         "suggested_steps": [
             f"glorfindel list  — vérifier qu'aucune isolation/block résiduel ne "
             f"coupe {resource_id}",
-            f"glorfindel reset {resource_id} --yes  — si l'isolation est résiduelle",
+            f"glorfindel reset {group_and_name(resource_id)} --yes  — si l'isolation est résiduelle",
             f"Rejouer la query de '{rule.name}' dans Log Analytics sur la fenêtre "
             f"de l'attaque (latence d'ingestion > expected_latency_s ?)",
             "Vérifier l'état du backend (nœud DETECT de la console, page Glorfindel / rule_status.json)",

@@ -18,7 +18,8 @@ from __future__ import annotations
 
 import os
 import re
-import shlex
+
+from glorfindel.vm_command import UNNAMED, group_and_name  # noqa: F401 — re-exported (MSK3b)
 
 _GUID = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
 # An ARM id, with or without its leading slash, up to what cannot be in one: a blank, a quote,
@@ -70,27 +71,11 @@ def name_said(resource_id) -> str:
     return ids_masked(short, subscriptions=subscriptions_known(text))
 
 
-UNNAMED = "<id: glorfindel list --ids>"
-
-
-def group_and_name(resource_id) -> str:
-    """What a command pasted from a chat names a VM by (MSK3, review): « <groupe>/<nom> » — never
-    its full id (the subscription's), never its name alone. The name is checked where the message is
-    written (the bot, on Imladris) but the command is pasted elsewhere (an operator's terminal, whose
-    discovery may know only a homonym of another group); `glorfindel` resolves this form on its own
-    host, the group and the name matching, or refuses (glorfindel/cli.py, `_resolve_resource_id`).
-    An id with no group: « <id: glorfindel list --ids> »."""
-    parts = str(resource_id or "").strip().rstrip("/").split("/")
-    low = [p.lower() for p in parts]
-    # A VM's own id only: « …/virtualMachines/<nom> », never a child of it (an extension) nor
-    # another resource (a NSG) — the command would name another resource (review 2).
-    if "resourcegroups" in low[:-1] and len(low) >= 2 and low[-2] == "virtualmachines":
-        i = low.index("resourcegroups")
-        if i + 1 < len(parts) - 1 and parts[i + 1] and parts[-1]:
-            # A group may hold « ( ) » (Azure allows them): quoted, the shell takes the command.
-            return shlex.quote(f"{parts[i + 1]}/{parts[-1]}")
-    return UNNAMED
-
+# What a command pasted from a chat names a VM by (MSK3, review): « <groupe>/<nom> » — never its full
+# id (the subscription's), never its name alone. The name is checked where the message is written (the
+# bot, on Imladris) but the command is pasted elsewhere; `glorfindel` resolves this form on its own host
+# or refuses. Written at the source by the code too since MSK3b (#787): glorfindel/vm_command.py,
+# imported above (the graph and the watch may not import this module).
 
 # A glorfindel command that names a VM: its verb, then (unblock) its IP, then the VM.
 _COMMAND_VM = re.compile(

@@ -47,6 +47,8 @@ import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
+from glorfindel.vm_command import group_and_name
+
 log = logging.getLogger(__name__)
 
 RECOVERIES_FILE = Path.home() / ".glorfindel" / "recoveries.json"
@@ -297,7 +299,7 @@ def _one(connector, emit, iso: dict, vault: str, vault_rg: str, now: float, repo
         return card("failed", f"{head}, {status}) : elle n'a pas abouti. L'isolation reste en place, "
                               "aucune levée.",
                     ["Lire le job dans le coffre (portail, `az backup job show`).",
-                     f"Relancer le restore depuis le poste : glorfindel restore {rid} --before <ISO8601>",
+                     f"Relancer le restore depuis le poste : glorfindel restore {group_and_name(rid)} --before <ISO8601>",
                      "Ou garder l'isolation et acquitter cette carte."])
     point = obs.get("point") or {}
     if not point.get("time"):
@@ -305,14 +307,14 @@ def _one(connector, emit, iso: dict, vault: str, vault_rg: str, now: float, repo
                     f"{head}, finie) : le point restauré ne se lit pas sur Azure ({point.get('why') or '?'}). "
                     "Glorfindel ne peut pas dire qu'il précède l'incident : aucune levée.",
                     ["Vérifier dans le coffre le point que le job a restauré.",
-                     f"S'il précède l'incident et que la VM est saine : glorfindel release {rid} --yes",
+                     f"S'il précède l'incident et que la VM est saine : glorfindel release {group_and_name(rid)} --yes",
                      "Sinon, restaurer un point antérieur depuis le poste."])
     if not job.get("container_named") and point.get("by") != "id":
         return card("not_this_vm",
                     f"{head}) : le job ne nomme pas son conteneur, et son point n'est pas désigné par son "
                     "identifiant — rien ne dit que c'est cette VM qui a été restaurée : aucune levée.",
                     ["Lire le job dans le coffre : quelle VM a-t-il restaurée ?",
-                     f"Si c'est bien celle-ci, saine : glorfindel release {rid} --yes"])
+                     f"Si c'est bien celle-ci, saine : glorfindel release {group_and_name(rid)} --yes"])
     start = _epoch(job.get("start"))
     end = _epoch(job.get("end")) or now
     kind = " ".join(str(obs.get("job_type") or "").split()).lower()
@@ -325,8 +327,8 @@ def _one(connector, emit, iso: dict, vault: str, vault_rg: str, now: float, repo
         return card("not_in_place",
                     f"{head}, finie) : ce n'est pas une restauration sur place de cette VM — {why}. La VM "
                     "isolée n'a pas été restaurée (des disques restaurés, une autre VM) : ne pas lever.",
-                    ["Restaurer la VM sur place depuis le poste : glorfindel restore "
-                     f"{rid} --before <ISO8601>", "Ou garder l'isolation et acquitter cette carte."])
+                    [f"Restaurer la VM sur place depuis le poste : glorfindel restore {group_and_name(rid)} --before <ISO8601>",
+                     "Ou garder l'isolation et acquitter cette carte."])
     at = _epoch(point["time"])
     first, why = restore_plan.incident_start(rid)
     if first is None or at is None or at >= first:
@@ -335,7 +337,7 @@ def _one(connector, emit, iso: dict, vault: str, vault_rg: str, now: float, repo
                     f"{head}, finie) : son point de restauration ({point['time']}) n'est pas antérieur au "
                     f"début de l'incident ({when} : {why}). Le disque restauré peut porter l'attaque : "
                     "aucune levée.",
-                    [f"Restaurer un point antérieur depuis le poste : glorfindel restore {rid} --before {when}",
+                    [f"Restaurer un point antérieur depuis le poste : glorfindel restore {group_and_name(rid)} --before {when}",
                      "La watch relira la reprise sur Azure et lèvera l'isolation si elle est prouvée."])
     power = str(obs.get("power") or "unknown")
     if power != "running":

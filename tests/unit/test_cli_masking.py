@@ -389,7 +389,7 @@ def test_jobs_says_its_next_step_by_the_vm_s_name(monkeypatch, recorded):
         out = _run(["jobs", arg])
         assert out.exit_code == 0, out.output
         said = " ".join(out.output.split())
-        assert "2. glorfindel release vm-example-01 --yes" in said and f"az vm start -g {RG} -n vm-example-01" in said
+        assert f"2. glorfindel release {RG}/vm-example-01 --yes" in said and f"az vm start -g {RG} -n vm-example-01" in said
         _clean(out.output)
 
     def poll_fails(job, connector):
@@ -418,8 +418,9 @@ def test_list_says_each_vm_by_its_name_and_group_and_the_ids_when_asked(monkeypa
     assert out.exit_code == 0, out.output
     said = " ".join(out.output.split())
     assert f"vm-example-01 (groupe {RG})" in said and "open sessions not cut" in said
-    for hint in ("glorfindel release vm-example-01 --yes", "glorfindel unblock 203.0.113.5 vm-example-01 --yes",
-                 "glorfindel reset vm-example-01 --yes"):
+    for hint in (f"glorfindel release {RG}/vm-example-01 --yes",          # <groupe>/<nom> (MSK3b)
+                 f"glorfindel unblock 203.0.113.5 {RG}/vm-example-01 --yes",
+                 f"glorfindel reset {RG}/vm-example-01 --yes"):
         assert hint in said, said
     _clean(out.output)
     ids = _run(["list", "--ids"])                         # asked for: this terminal only
@@ -441,23 +442,27 @@ def test_jobs_never_gives_a_name_that_lifts_another_vm(monkeypatch, recorded):
 
 
 def test_list_s_held_mode_names_activate_s_vm_without_its_id(monkeypatch):
-    """A VM held in human_only: its hold said without the id, `activate` by a name that takes it back."""
+    """A VM held in human_only: its hold said without the id, `activate` by a name that takes it back —
+    « <groupe>/<nom> » (MSK3b), a VM of its name in another group named by its own."""
     monkeypatch.setattr("glorfindel.config.load_glorfindel_config", lambda *a, **k: SimpleNamespace(
         autonomy=SimpleNamespace(resolve=lambda name: "non_disruptive")))
     monkeypatch.setattr("glorfindel.readiness.effective_mode", lambda rid, mode: (
         "human_only", {"configured": "non_disruptive", "message": f"a new reserve on {rid}"}))
     _listed(monkeypatch, discovered=[VM])
     alone = " ".join(_run(["list"]).output.split())
-    assert "glorfindel activate vm-example-01)" in alone and f"a new reserve on vm-example-01 (groupe {RG})" in alone
+    assert f"glorfindel activate {RG}/vm-example-01)" in alone and f"a new reserve on vm-example-01 (groupe {RG})" in alone
     _clean(alone)
     _listed(monkeypatch, discovered=[VM, _vm(rg=RG_B)])
     two = _run(["list"])
-    assert "glorfindel activate <id: glorfindel list --ids>)" in " ".join(two.output.split()), two.output
+    two_said = " ".join(two.output.split())
+    assert f"glorfindel activate {RG}/vm-example-01)" in two_said and f"glorfindel activate {RG_B}/vm-example-01)" in two_said
+    assert "glorfindel activate vm-example-01)" not in two_said, two.output
     _clean(two.output)
 
 
 def test_list_never_suggests_a_name_two_vms_hold(monkeypatch):
-    """The short name of two VMs is refused by every command: the hint asks for the id."""
+    """The short name of two VMs is refused by every command: the hint names the VM by its group and
+    its name (MSK3b), which takes it back — never the other one."""
     _listed(monkeypatch, isolations=[{"resource_id": VM, "isolated_at": "2026-10-29T06:00:00+00:00",
                                       "placements": []}],
             discovered=[VM, _vm(rg=RG_B)])
@@ -465,7 +470,7 @@ def test_list_never_suggests_a_name_two_vms_hold(monkeypatch):
     assert out.exit_code == 0, out.output
     said = " ".join(out.output.split())
     assert "glorfindel release vm-example-01 --yes" not in said
-    assert "glorfindel release <id: glorfindel list --ids> --yes" in said
+    assert f"glorfindel release {RG}/vm-example-01 --yes" in said and f"release {RG_B}/" not in said
     assert f"vm-example-01 (groupe {RG_B})" in said
     _clean(out.output)
 
@@ -490,19 +495,19 @@ def test_pending_says_the_card_without_the_subscription(monkeypatch, recorded):
     assert out.exit_code == 0, out.output
     said = " ".join(out.output.split())
     assert f"Ransomware on vm-example-01 (groupe {RG}) in subscription <abonnement>" in said and "…" in said
-    assert f"glorfindel restore vm-example-01 (groupe {RG}) --yes" in said
+    assert f"glorfindel restore {RG}/vm-example-01 --yes" in said           # still a command (MSK3b)
     _clean(out.output)
     assert SUB in escalations.pending()[0]["reason"]            # the card itself keeps the id
 
 
 @pytest.mark.parametrize("action,kind,step", [
-    ("restore_from_backup", "destructive_action", "glorfindel restore vm-example-01 --yes --before"),
-    ("release_isolation", "low_confidence", "glorfindel release vm-example-01 --yes"),
-    ("restore_from_backup", "proposed_action", "glorfindel restore vm-example-01 --yes --before"),
-    ("snapshot", "low_confidence", "If compromise confirmed: glorfindel restore vm-example-01 --yes"),
-    ("delete_resource", "destructive_action", "glorfindel delete-resource vm-example-01 --yes"),
+    ("restore_from_backup", "destructive_action", f"glorfindel restore {RG}/vm-example-01 --yes --before"),
+    ("release_isolation", "low_confidence", f"glorfindel release {RG}/vm-example-01 --yes"),
+    ("restore_from_backup", "proposed_action", f"glorfindel restore {RG}/vm-example-01 --yes --before"),
+    ("snapshot", "low_confidence", f"If compromise confirmed: glorfindel restore {RG}/vm-example-01 --yes"),
+    ("delete_resource", "destructive_action", f"glorfindel delete-resource {RG}/vm-example-01 --yes"),
 ])
-def test_pending_s_own_steps_name_the_vm_by_its_short_name(monkeypatch, recorded, capsys, action, kind, step):
+def test_pending_s_own_steps_name_the_vm_by_its_group_and_name(monkeypatch, recorded, capsys, action, kind, step):
     from glorfindel import cli
     monkeypatch.setattr("glorfindel.actions.active_isolations", lambda: [{"resource_id": VM}])   # known here
     card = {"id": "esc-1", "resource_id": VM, "action": action, "escalation_type": kind,
@@ -546,11 +551,11 @@ def test_pending_asks_for_the_id_of_what_no_name_resolves(monkeypatch, recorded,
     _clean(said)
 
 
-def test_pending_takes_the_short_name_back_whatever_its_case(monkeypatch, recorded, capsys):
+def test_pending_takes_the_vm_back_whatever_its_case(monkeypatch, recorded, capsys):
     from glorfindel import cli
     monkeypatch.setattr("glorfindel.actions.active_isolations", lambda: [{"resource_id": VM.upper()}])
     cli._render_escalation(_card(VM + "/", action="release_isolation", kind="low_confidence"))
-    assert "glorfindel release vm-example-01 --yes" in " ".join(capsys.readouterr().out.split())
+    assert f"glorfindel release {RG}/vm-example-01 --yes" in " ".join(capsys.readouterr().out.split())
 
 
 def test_pending_says_a_proposed_rule_without_the_subscription(recorded, capsys):
@@ -572,14 +577,28 @@ def test_pending_says_a_proposed_rule_without_the_subscription(recorded, capsys)
 
 
 def test_pending_never_suggests_a_name_two_vms_hold(monkeypatch, recorded, capsys):
+    """Two VMs of one name in two groups: each card names its own by its group (MSK3b), never the
+    name alone. One group and one name in two subscriptions: `<groupe>/<nom>` is refused too —
+    the id is asked for."""
     from glorfindel import cli
+    card = {"id": "esc-1", "resource_id": VM, "action": "release_isolation",
+            "escalation_type": "low_confidence", "reason": "r", "run_id": "r1",
+            "timestamp": "2026-10-29T08:00:00+00:00"}
     monkeypatch.setattr("glorfindel.discovery.AssetRegistry", lambda: SimpleNamespace(all=lambda: [
         SimpleNamespace(resource_id=VM), SimpleNamespace(resource_id=_vm(rg=RG_B))]))
-    cli._render_escalation({"id": "esc-1", "resource_id": VM, "action": "release_isolation",
-                            "escalation_type": "low_confidence", "reason": "r", "run_id": "r1",
-                            "timestamp": "2026-10-29T08:00:00+00:00"})
+    cli._render_escalation(card)
+    cli._render_escalation({**card, "resource_id": _vm(rg=RG_B)})
     out = capsys.readouterr().out
-    assert "glorfindel release <id: glorfindel list --ids> --yes" in " ".join(out.split())
+    said = " ".join(out.split())
+    assert f"glorfindel release {RG}/vm-example-01 --yes" in said, said
+    assert f"glorfindel release {RG_B}/vm-example-01 --yes" in said, said
+    assert "glorfindel release vm-example-01 --yes" not in said
+    _clean(out)
+    monkeypatch.setattr("glorfindel.discovery.AssetRegistry", lambda: SimpleNamespace(all=lambda: [
+        SimpleNamespace(resource_id=VM), SimpleNamespace(resource_id=_vm(sub=SUB2))]))
+    cli._render_escalation(card)
+    out = capsys.readouterr().out
+    assert "glorfindel release <id: glorfindel list --ids> --yes" in " ".join(out.split()), out
     _clean(out)
 
 

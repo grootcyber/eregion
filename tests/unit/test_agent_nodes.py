@@ -860,7 +860,9 @@ def test_escalate_to_human_snapshot_appends_cli_step():
 
     _, kwargs = mock_record.call_args
     steps = kwargs.get("suggested_steps", [])
-    assert any("glorfindel snapshot" in s and _RESOURCE_ID in s for s in steps)
+    # The VM by « <groupe>/<nom> », never its full id (MSK3b): what `snapshot` resolves.
+    assert any("`glorfindel snapshot rg/vm --yes`" in s for s in steps), steps
+    assert not any(_RESOURCE_ID in s for s in steps)
 
 
 def test_escalate_to_human_non_snapshot_no_cli_step():
