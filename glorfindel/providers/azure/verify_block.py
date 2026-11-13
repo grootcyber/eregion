@@ -144,6 +144,12 @@ class VerifyBlockMixin:
                         unknown_why[t0["nic_short"]] = "NSG du subnet illisible"
                         continue
                     if not ps:
+                        # Said gone, its NSG off the NIC — and read there all the same (L1N, #795): a card
+                        # acknowledged while its rules lay on that NSG, deleted since (a `terraform apply`),
+                        # read « no worse » by the names alone, and the release put the NSG back without
+                        # them in silence. Read for `rules_seen` only (L1G): unreadable, left out, as before.
+                        for p in off:
+                            self._list_rules(cache, p["nsg_rg"], p["nsg_name"])
                         _lost(t0, [f'{p["rule"]} ({p["nsg_name"]} ne gouverne plus {t0["nic_short"]})' for p in off])
                         continue
                 else:

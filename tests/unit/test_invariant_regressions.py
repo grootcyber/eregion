@@ -7897,3 +7897,194 @@ def test_a_promotion_whose_pair_is_gone_names_the_nic_apart_from_the_rules(monke
         assert {f[0] for f in m._attacker_flows(DB, None)} & {"db-nic-0"}, "the world: db-nic-0 reached"
     finally:
         shutil.rmtree(m.home, ignore_errors=True)
+
+
+# ── L1N (#795): a block named gone behind a quarantine that lets the attacker in, its rules deleted since ──
+# The night « Invariants (deep) » of 13/11 (run 43413897995, dc924214, 10 000 examples), red on ubuntu
+# (Db--01) and on macOS (web). The investigation access of the drawn configuration is the attacker's own
+# IP (`forensic`): the quarantine does not cut it off, and the block's rules, on the NIC's own NSG off it,
+# were named gone « (nsg-… ne gouverne plus …) » without being read. Not a regression: both sequences fail
+# the same on 90f00faf (the green night of 12/11) — a new draw (SEED1: the night draws a new seed).
+
+def _l1n_rule(name, prio):
+    from .test_invariants import _TEMPLATES
+    return _rule(name, prio, _TEMPLATES[name])
+
+
+_L1N_CONFIG = {"quarantine": True, "rg": "", "forensic": [ATTACKER], "readable": True}
+_L1N_HTTPS_LATERAL = [_l1n_rule("allow-https", 100), _l1n_rule("deny-lateral-in", 130)]
+_L1N_UBUNTU_NET = {
+    **_net(web_nic={"own": "dedicated", "rules": _L1N_HTTPS_LATERAL},
+           db_nic_0={"own": "dedicated", "rules": _L1N_HTTPS_LATERAL},
+           db_nic_1={"own": "tier", "rules": [_l1n_rule("allow-lateral-out", 100)], "policy": True},
+           api_nic={"rules": [_l1n_rule("allow-lateral-out", 100)], "policy": True}),
+    "config": _L1N_CONFIG, "data_primary": False}
+_L1N_SSH_OUT = [_l1n_rule("allow-ssh", 100), _l1n_rule("allow-lateral-out", 100)]
+_L1N_MACOS_NET = {
+    **_net(tier_rules=[*_L1N_SSH_OUT, _l1n_rule("deny-lateral-in", 130)],
+           web_nic={"own": "tier"},
+           db_nic_0={"rules": _L1N_SSH_OUT, "policy": True},
+           db_nic_1={"rules": [*_L1N_SSH_OUT, _l1n_rule("deny-lateral-in", 130)], "policy": True},
+           api_nic={"rules": [_l1n_rule("allow-https", 100), _l1n_rule("allow-lateral-out", 100),
+                              _l1n_rule("deny-lateral-in", 130)], "policy": True}),
+    "config": _L1N_CONFIG, "data_subnet": _L1N_HTTPS_LATERAL, "data_primary": True}
+_L1N_DB_NIC_0_NSG = _NSG.format(rg="rg-app1", name="nsg-db-nic-0")
+_L1N_TIER = _NSG.format(rg="rg-net", name="nsg-tier")
+_L1N_ADDRESS = ("a_hold_moved_under_it", WEB1, WEB1, None, "address", 22, _nic("rg-app1", "web-nic"), 0, 4)
+_L1N_UBUNTU_FOUND = (
+    ("operator_acknowledges", 0),
+    ("quarantine_altered_then_reasserted", WEB1, WEB1, None, True, False, "protocol",
+     (_Q1, "glorfindel-quarantine-deny-dns"), "human_only", "no"),
+    _L1N_ADDRESS,
+    ("customer_deletes_nsg", _L1N_DB_NIC_0_NSG),
+    ("access_changes", False),
+    _L1N_ADDRESS,
+    ("a_hold_moved_under_it", DB, DB, (12, "before-429"), "gone", 22, _L1N_TIER, "human_only"),
+    ("turned_perimeter_left_out", WEB1, WEB1, None),
+    ("operator_acknowledges", 0),
+    ("reassert", "human_only", None),
+    _L1N_ADDRESS,
+    _L1N_ADDRESS,
+    ("a_hold_moved_under_it", DB, DB, None, "gone", 22, _L1N_DB_NIC_0_NSG, "human_only"))
+_L1N_MACOS_FOUND = (
+    ("concurrently", WEB1, "unblock", 0, WEB1, "unblock", "human_only", 163698836),
+    _L1N_ADDRESS,
+    ("verify", WEB1, WEB1, None),
+    ("customer_edits_rule", _DATA, "allow-https", ("source_address_prefix", "10.9.0.0/16")),
+    ("someone_detaches_the_quarantine",),
+    ("race", WEB1, ("release", "reassert"), 0),
+    _L1N_ADDRESS,
+    ("concurrently", WEB1, "isolate", 0, WEB1, "isolate", "human_only", 0),
+    _L1N_ADDRESS,
+    ("blocked_again_after_an_acknowledged_drift", WEB1, WEB1, None, 22, WEB2, False, WEB1, 22, "human_only"),
+    ("race", API, ("release", "reassert"), 0),
+    _L1N_ADDRESS,
+    ("race", WEB1, ("isolate", "release"), 0),
+    ("customer_deletes_nsg", _DATA),
+    ("a_hold_moved_under_it", WEB1, WEB1, (1, "before-429"), "gone", 22, _L1N_TIER, "human_only"))
+# Shrunk by hand (each rule removed in turn while L1 still fails), the drawn fault of `a_hold_moved_under_it`
+# kept: the rule draws it and plays none.
+_L1N_UBUNTU_REDUCED = (
+    ("a_hold_moved_under_it", DB, DB, (12, "before-429"), "gone", 22, _L1N_TIER, "human_only"),
+    ("operator_acknowledges", 0),
+    ("a_hold_moved_under_it", DB, DB, None, "gone", 22, _L1N_DB_NIC_0_NSG, "human_only"))
+_L1N_MACOS_REDUCED = (
+    _L1N_ADDRESS,
+    ("concurrently", WEB1, "isolate", 0, WEB1, "isolate", "human_only", 0),
+    ("blocked_again_after_an_acknowledged_drift", WEB1, WEB1, None, 22, WEB2, False, WEB1, 22, "human_only"),
+    ("a_hold_moved_under_it", WEB1, WEB1, (1, "before-429"), "gone", 22, _L1N_TIER, "human_only"))
+
+
+@pytest.mark.parametrize("net, steps", [
+    (_L1N_UBUNTU_NET, _L1N_UBUNTU_FOUND), (_L1N_UBUNTU_NET, _L1N_UBUNTU_REDUCED),
+    (_L1N_MACOS_NET, _L1N_MACOS_FOUND), (_L1N_MACOS_NET, _L1N_MACOS_REDUCED),
+], ids=["ubuntu Db--01 as found", "ubuntu Db--01 reduced", "macOS web as found", "macOS web reduced"])
+def test_a_block_named_gone_off_its_nic_is_said_again_once_its_rules_are_deleted(monkeypatch, net, steps):
+    """L1N (#795): « L1: the block on …/Db--01 (…/web) vanished from Azure; the reassertion neither put it back
+    nor said so ». The VM blocked, then isolated by a quarantine whose investigation access is the attacker's
+    own IP: the quarantine does not cut it off, and the block's rules lie on the NIC's own NSG, off the NIC.
+    Its verification named them gone « (nsg-… ne gouverne plus …) » without listing that NSG — nothing of them
+    in `rules_seen` (L1G). Said, the card acknowledged; then a `terraform apply` there deletes them: read « no
+    worse » by the names alone, the pass said nothing, and the release puts the NSG back without the block.
+    The product's, not the oracle's: the acknowledgement holds while the rules are as Azure had them then
+    (`_ack_holds`, the test's journal) — the same rule L1G gave the product, which had not read them."""
+    _replay(monkeypatch, net, *steps)
+
+
+def _l1n_blocked_behind_the_open_quarantine(monkeypatch, rid=DB, how="quarantine"):
+    """Db--01 blocked for itself, then isolated by the quarantine that lets the attacker in (`forensic`) — or,
+    `detached`, nsg-db-nic-0 taken off db-nic-0 by its owner, no isolation: the block's rule of db-nic-0 on
+    nsg-db-nic-0, off the NIC."""
+    invariant_env(monkeypatch)
+    m = IsolationMachine()
+    m.build(_L1N_UBUNTU_NET)
+    c = m.connector
+    assert c.block_suspicious_ip(ATTACKER, rid, scope="vm", threat_port=22)["status"] == "blocked"
+    if how == "quarantine":
+        assert c.isolate_vm(rid).get("status") in ("isolated", "isolated_partial"), "the world: Db--01 isolated"
+    else:
+        m.fake.nics[_nic("rg-app1", "db-nic-0")]["nsg"] = None
+    return m, c
+
+
+_L1N_DB0_KEY = "rg-app1/nsg-db-nic-0/glorfindel-block-192-31-196-7-db--01-db-nic-0-0d0228"
+
+
+@pytest.mark.parametrize("how", ["quarantine", "detached"])
+@pytest.mark.parametrize("rid", [DB, DB.lower()], ids=["Db--01", "db--01"])
+def test_a_rule_named_gone_off_its_nic_is_read_where_it_lies(monkeypatch, rid, how):
+    """L1N, at the connector: the rule of a placement whose NSG no longer governs its NIC — behind a quarantine
+    that lets the attacker in, or the NSG taken off the NIC by its owner — is named gone as before, and read
+    there (`rules_seen`): its signature while it lies there, None once deleted — the verdict unchanged."""
+    import shutil
+
+    m, c = _l1n_blocked_behind_the_open_quarantine(monkeypatch, rid, how)
+    try:
+        v = c.verify_block_ip(ATTACKER, rid)
+        assert v["verified"] is False and "db-nic-0" in v["open_nics"], v
+        assert any("nsg-db-nic-0 ne gouverne plus db-nic-0" in str(n) for n in v["missing_rules"]), v
+        seen = v.get("rules_seen") or {}
+        assert seen.get(_L1N_DB0_KEY) and seen.get(f"{_L1N_DB0_KEY}-out"), seen
+        del_rules = m.fake.nsgs[key(_L1N_DB_NIC_0_NSG)]["rules"]
+        for n in [n for n in del_rules if n.startswith("glorfindel-block-")]:
+            del del_rules[n]
+        after = c.verify_block_ip(ATTACKER, rid)
+        assert after["missing_rules"] == v["missing_rules"] and after["open_nics"] == v["open_nics"], after
+        assert after["rules_seen"][_L1N_DB0_KEY] is None and after["rules_seen"][f"{_L1N_DB0_KEY}-out"] is None
+    finally:
+        shutil.rmtree(m.home, ignore_errors=True)
+
+
+def test_a_rule_named_gone_off_its_nic_unread_is_left_out_as_before(monkeypatch):
+    """L1N: the NSG off the NIC unread (a 429 on its listing) — its rules left out of `rules_seen`, never
+    read absent (A0), and the verdict the same: the NSG governs nothing of the NIC now."""
+    import shutil
+
+    from .fake_azure import throttled
+    m, c = _l1n_blocked_behind_the_open_quarantine(monkeypatch)
+    try:
+        read = c.verify_block_ip(ATTACKER, DB)
+        rules = c._network.security_rules
+        listing = rules.list
+
+        def throttled_there(rg, nsg_name):
+            if nsg_name.lower() == "nsg-db-nic-0":
+                raise throttled("rule.list")
+            return listing(rg, nsg_name)
+        monkeypatch.setattr(rules, "list", throttled_there)
+        v = c.verify_block_ip(ATTACKER, DB)
+        assert _L1N_DB0_KEY not in (v.get("rules_seen") or {}), v
+        assert {k: v.get(k) for k in ("verified", "missing_rules", "open_nics")} == {
+            k: read.get(k) for k in ("verified", "missing_rules", "open_nics")}, v
+    finally:
+        shutil.rmtree(m.home, ignore_errors=True)
+
+
+@pytest.mark.parametrize("how", ["quarantine", "detached"])
+def test_a_block_named_gone_off_its_nic_acknowledged_is_said_again_when_its_rules_are_deleted(monkeypatch, how):
+    """L1N, at the reassertion: the card « a disparu (… ne gouverne plus db-nic-0) » acknowledged, the pass after
+    it silent; the rules deleted from nsg-db-nic-0, the next pass says it again — a new card, pending."""
+    import shutil
+
+    from glorfindel import escalations, reassert
+
+    from .test_invariants import _CURRENT
+    m, c = _l1n_blocked_behind_the_open_quarantine(monkeypatch, how=how)
+    try:
+        _CURRENT.mode = "human_only"
+        # The isolation's card and the block's: the block's, acknowledged (its reassertion said « a disparu »).
+        reassert.reassert_pass(c, None)
+        cards = [e for e in escalations.pending() if e.get("action") == "block_suspicious_ip"]
+        assert len(cards) == 1 and "ne gouverne plus db-nic-0" in cards[0]["reason"], cards
+        escalations.resolve(cards[0]["id"])
+        reassert.reassert_pass(c, None)
+        assert not [e for e in escalations.pending() if e.get("action") == "block_suspicious_ip"], (
+            "acknowledged, nothing changed: no card more")
+        rules = m.fake.nsgs[key(_L1N_DB_NIC_0_NSG)]["rules"]
+        for n in [n for n in rules if n.startswith("glorfindel-block-")]:
+            del rules[n]
+        reassert.reassert_pass(c, None)
+        again = [e for e in escalations.pending() if e.get("action") == "block_suspicious_ip"]
+        assert len(again) == 1 and "a disparu" in again[0]["reason"], again
+    finally:
+        shutil.rmtree(m.home, ignore_errors=True)
