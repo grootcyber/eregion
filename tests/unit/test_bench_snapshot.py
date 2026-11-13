@@ -591,6 +591,128 @@ def test_the_real_clock_is_the_default():
     assert bsn.take.__kwdefaults__["clock"] is time.monotonic
 
 
+# ── SNP1 (#789): the console names the vault's job, the bench follows it ─────
+
+VAULT_GUID = "00000000-0000-4000-8000-0000000000dd"
+VAULT_JOB = f"rsv:{bw.VAULT}/{bw.RG}/{VAULT_GUID}"
+
+
+class RealConsole:
+    """The console's app itself behind the forward: `call`'s request replayed on its middleware and its
+    route (TestClient), its answer handed back as the forward would."""
+
+    def __init__(self, port: int = 43210):
+        from fastapi.testclient import TestClient
+
+        import eregion_console.api as api
+        self.client, self.answers = TestClient(api.app, base_url=f"http://127.0.0.1:{port}"), []
+
+    def __call__(self, req, timeout=None):
+        got = self.client.request(req.get_method(), req.full_url, headers=dict(req.header_items()), content=req.data)
+        self.answers.append(got.json())
+        return _Resp(got.json(), got.status_code)
+
+
+@pytest.fixture
+def snapshot_console(tmp_path, monkeypatch):
+    """The console's direct route (no queue) on a VM of the bench, Azure's answer to the snapshot faked
+    (`snap_id` given as `snap`, a list to set), Glorfindel's job record in tmp."""
+    pytest.importorskip("fastapi")
+    import eregion_console.api as api
+    from glorfindel import jobs
+    monkeypatch.delenv("EREGION_ACTION_QUEUE", raising=False)
+    monkeypatch.setattr(jobs, "_JOBS_DIR", tmp_path / "active_jobs")
+    monkeypatch.setattr(api, "_find_resource_id", lambda vm: bw.RID if vm == bw.VM else None)
+    monkeypatch.setattr("glorfindel.config.resolve_backup_vault", lambda *a: (bw.VAULT, bw.RG, ""))
+    snap = [VAULT_JOB]
+
+    class Connector:
+        def __init__(self, dry_run=True):
+            assert dry_run is False
+
+        def snapshot(self, resource_id, vault="", wait=True, vault_rg=""):
+            assert (resource_id, vault, vault_rg, wait) == (bw.RID, bw.VAULT, bw.RG, False)
+            return snap[0]
+    monkeypatch.setattr("glorfindel.actions.AzureConnector", Connector)
+    return snap
+
+
+def _take_through(console, monkeypatch, *, token=None):
+    import bench_preflight as bp
+    from console_client import TOKEN as CONSOLE_TOKEN
+    az, asked = _jobs("Completed")
+    monkeypatch.setattr(bs, "az_json", az)
+    monkeypatch.setattr(bp, "point_times", lambda t, rg, v: [NOW.timestamp() + 60])
+    clock, said = Clock(), []
+    bsn.take(bw.VM, {}, PLAN, said.append, token=token or CONSOLE_TOKEN, tunnel=FakeTunnel([]), open_=console,
+             clock=clock, sleep=clock.sleep, now=NOW.timestamp)
+    return asked, said
+
+
+def test_the_console_names_the_vault_s_job_and_the_bench_follows_it_without_looking_for_it_by_time(
+        snapshot_console, monkeypatch):
+    """The real route: `job_id` stays Glorfindel's own record, `vault_job` names the vault's job; the bench
+    follows that job directly — no job list read by its time."""
+    console = RealConsole()
+    asked, said = _take_through(console, monkeypatch)
+    (answer,) = console.answers
+    assert answer["status"] == "started" and answer["resource_id"] == bw.RID, answer
+    assert answer["job_id"].startswith(f"snapshot-{bw.VM}-"), "job_id changed for those who read it"
+    assert answer["vault_job"] == VAULT_JOB, answer
+    assert not [a for a in asked if a[:3] == ["backup", "job", "list"]], "the job named was looked for by its time"
+    shows = [a for a in asked if a[:3] == ["backup", "job", "show"]]
+    assert shows and all(a[a.index("-n") + 1] == VAULT_GUID for a in shows), shows
+    assert any("le job du coffre que la console nomme" in s for s in said), said
+    assert not any(VAULT_GUID in s for s in said), "the job's name printed"
+
+
+def test_a_snapshot_that_names_no_vault_job_is_looked_for_by_its_time(snapshot_console, monkeypatch):
+    """A dry run's `snap-dry-run-000` names no job of the vault: the answer says none, and the bench falls
+    back on the job of the VM started since the gesture."""
+    snapshot_console[0] = "snap-dry-run-000"
+    console = RealConsole()
+    asked, said = _take_through(console, monkeypatch)
+    assert console.answers[0]["vault_job"] == "" and console.answers[0]["job_id"].startswith("snapshot-")
+    assert [a for a in asked if a[:3] == ["backup", "job", "list"]], "no job named, and none looked for"
+    (show,) = [a for a in asked if a[:3] == ["backup", "job", "show"]]
+    assert show[show.index("-n") + 1].endswith("0aa")                # the job of the gesture, by its time
+    assert any("cherché par son heure" in s for s in said), said
+
+
+def test_under_fs1_the_vault_s_job_of_the_receipt_is_followed(monkeypatch):
+    done = {"via": "queue", "state": "done", "ok": True, "status": "started", "job_id": "snapshot-x",
+            "vault_job": VAULT_JOB}
+    asked, _ = _take_through(FakeConsole(QUEUED, done), monkeypatch, token=TOKEN)
+    assert not [a for a in asked if a[:3] == ["backup", "job", "list"]]
+    (show,) = [a for a in asked if a[:3] == ["backup", "job", "show"]]
+    assert show[show.index("-n") + 1] == VAULT_GUID
+
+
+@pytest.mark.parametrize("vault_job", [
+    f"rsv:another-vault/{bw.RG}/{VAULT_GUID}",                # another vault than the operator's
+    f"rsv:{bw.VAULT}/rg-other/{VAULT_GUID}",                  # its group differs
+    "snapshot-x",                                             # a shape not read
+])
+@pytest.mark.parametrize("queued", [False, True])
+def test_a_vault_job_the_bench_cannot_follow_stops_and_is_never_looked_for_by_its_time(monkeypatch, vault_job,
+                                                                                       queued):
+    """A job named, but not of the vault the operator reads: the point would land where the bench never
+    reads it. The run stops before Orodruin — never the job of the VM taken by its time instead."""
+    done = {"status": "started", "job_id": "snapshot-x", "vault_job": vault_job}
+    console = FakeConsole(QUEUED, {"via": "queue", "state": "done", "ok": True, **done}) if queued else FakeConsole(done)
+    with pytest.raises(RuntimeError, match="pas du coffre du poste"):
+        _take_through(console, monkeypatch, token=TOKEN)
+
+
+def test_without_a_vault_job_a_job_id_of_the_vault_is_still_followed():
+    """A console that names its job by `job_id` alone (a GUID, or the record's `rsv:` name) stays followed."""
+    assert bsn.named_job({"job_id": VAULT_GUID, "vault_job": ""}, PLAN) == VAULT_GUID
+    assert bsn.named_job({"job_id": VAULT_JOB, "vault_job": ""}, PLAN) == VAULT_GUID
+    assert bsn.named_job({"job_id": "snapshot-x", "vault_job": ""}, PLAN) == ""
+    assert bsn.named_job({"job_id": "snapshot-x", "vault_job": VAULT_JOB.upper().replace("RSV:", "rsv:")}, PLAN) \
+        == VAULT_GUID.upper()
+
+
 
 # ── BNC3b, review round 2: the point the 📸 route took, judged again ─────────
 

@@ -155,6 +155,48 @@ def test_a_promotion_an_unblock_a_snapshot_answer_as_before_once_settled(world, 
     assert got["ok"] and (got["status"], got["job_id"], got["resource_id"]) == ("started", "job-1", WEB), got
 
 
+# ── SNP1 (#789): the receipt of a snapshot names the vault's job ───────────────────────
+
+VAULT_JOB = "rsv:vault/rg-vault/00000000-0000-4000-8000-0000000000dd"
+
+
+def test_the_receipt_of_a_snapshot_names_the_vault_s_job_beside_glorfindel_s_record(world, queue_on, monkeypatch,
+                                                                                   tmp_path):
+    """The watch runs the real `start_snapshot` (Azure's answer faked): its signed receipt names the vault's
+    job, and the console's answer says it, `job_id` still Glorfindel's own record — as the direct route."""
+    from glorfindel import jobs
+    client = queue_on["client"]
+    world["conn"].isolate_vm(WEB)                    # a VM the watch holds: in its perimeter, found by the console
+    monkeypatch.setattr(jobs, "_JOBS_DIR", tmp_path / "active_jobs")
+    monkeypatch.setattr("glorfindel.config.resolve_backup_vault", lambda *a: ("vault", "rg-vault", ""))
+    asked = []
+    monkeypatch.setattr(AzureConnector, "snapshot",
+                        lambda self, rid, vault="", wait=True, vault_rg="": asked.append((vault, vault_rg, wait))
+                        or VAULT_JOB)
+    out = client.post("/api/action/snapshot/web", json={}).json()
+    world["q"].poll()
+    signed = aq.read_receipt("console", out["request"], root=world["root"], watch_public=WATCH.public)
+    assert signed["state"] == "done" and signed["result"]["vault_job"] == VAULT_JOB, signed
+    got = _followed(client, out)
+    assert asked == [("vault", "rg-vault", False)]
+    assert got["ok"] and got["vault_job"] == VAULT_JOB, got
+    assert got["job_id"].startswith("snapshot-web-") and got["job_id"] == signed["result"]["job_id"], got
+
+
+@pytest.mark.parametrize("result", [
+    {"status": "started", "job_id": "snapshot-web-1"},                                  # a watch from before SNP1
+    {"status": "started", "job_id": "snapshot-web-1", "vault_job": "snap-dry-run-000"},  # a dry run's
+    {"status": "started", "job_id": "snapshot-web-1", "vault_job": "rsv:v/rg/a b"},      # a shape not read
+    {"status": "started", "job_id": "snapshot-web-1", "vault_job": ["rsv:v/rg/j"]},
+])
+def test_a_receipt_that_names_no_vault_job_is_answered_with_none(queue_on, result):
+    """The limit under FS1: the answer names the vault's job only as the watch's receipt names it — a watch
+    from before SNP1 names none, and the bench then looks for the job by its time."""
+    got = queue_on["api"]._queue_answer({"request": "r", "state": "done", "receipt": {
+        "state": "done", "verb": "snapshot", "resource_id": WEB, "result": result}})
+    assert got["ok"] and got["job_id"] == "snapshot-web-1" and got["vault_job"] == "", got
+
+
 # ── A receipt of another key is told apart from no receipt ─────────────────────────────
 
 def test_a_receipt_signed_by_another_key_is_said_with_both_fingerprints(world, queue_on, monkeypatch):
