@@ -1244,9 +1244,12 @@ imladris-cd-enable: imladris-known
 imladris-cd-disable: imladris-known
 	@$(HOST_SSH_TTY) 'sudo systemctl disable --now eregion-cd.timer'
 
+# Le journal du dernier jour, ses 15 dernières lignes (CDJ1, #783). Jamais `--since` avec `-n` : sur
+# Imladris (Ubuntu 22.04, systemd 249), journalctl lit alors vers l'avant depuis --since et s'arrête aux
+# 15 premières, celles de la veille (mesuré le 13/11) ; `tail` vaut pour toutes les versions.
 imladris-cd-status: imladris-known
 	@test -n "$(HOST_IP)" || { echo "Pas de VM : make imladris-up d'abord"; exit 1; }
-	@$(HOST_SSH) 'python3 .eregion-cd/eregion_cd.py status; echo "  timer : $$(systemctl is-enabled eregion-cd.timer 2>/dev/null || echo absent)"; journalctl -u eregion-cd --since -1d -n 15 --no-pager -o cat 2>/dev/null | sed "s/^/  | /"'
+	@$(HOST_SSH) 'python3 .eregion-cd/eregion_cd.py status; echo "  timer : $$(systemctl is-enabled eregion-cd.timer 2>/dev/null || echo absent)"; journalctl -u eregion-cd --since -1d --no-pager -o cat 2>/dev/null | tail -n 15 | sed "s/^/  | /"'
 
 imladris-cd-retry: imladris-known
 	@$(HOST_SSH) 'python3 .eregion-cd/eregion_cd.py retry'
