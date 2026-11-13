@@ -23,9 +23,12 @@ fails is no clean point. Otherwise it asks for one, by the route of the console'
   the receipt   under FS1 (EREGION_ACTION_QUEUE=1), the route deposits a signed request and the watch runs
                 it: its receipt followed by `GET /api/queue/<id>` until final — `not_taken`, `untrusted`,
                 `refused`, `failed`, `unknown`, or a request past its life stop the run;
-  the job       the vault's job the console names, when it names one (`vault_job_name`: today it gives
-                Glorfindel's own record, `snapshot-<vm>-<ts>`, which is none), else the vault's backup
-                job of the VM started since the gesture, followed by `az backup job
+  the job       the vault's job the console names (SNP1): its `vault_job`, `rsv:<vault>/<group>/<name>`,
+                in its answer or in the receipt under FS1, followed directly — one of another vault than
+                the operator's stops the run; without it, a `job_id` that is a job of the vault
+                (`vault_job_name`; Glorfindel's own record, `snapshot-<vm>-<ts>`, is none), else — a
+                console or a watch from before SNP1, a dry run — the vault's backup job of the VM started
+                since the gesture, looked for by its time; then followed by `az backup job
                 show` under the operator's `az login` until `Completed`, JOB_WAIT_S at most from the
                 gesture (60 min: the first point after a restore is complete, ~40 min); one that fails or
                 runs past it stops the run — before the request goes to Orodruin: nothing is attacked;
@@ -278,9 +281,10 @@ def follow(port: int, request_id: str, token: str, *, open_=None, clock=time.mon
 
 
 def ask_snapshot(port: int, target: str, token: str, *, open_=None, clock=time.monotonic, sleep=time.sleep,
-                 say=print) -> str:
-    """The 📸 route, then its receipt under FS1: the `job_id` the console gives (its own record's, or
-    ''). Raises RuntimeError on every refusal."""
+                 say=print) -> dict:
+    """The 📸 route, then its receipt under FS1: what the console names, {"job_id", "vault_job"} — its
+    own record's id, and the vault's job (SNP1), each '' when not given. Raises RuntimeError on every
+    refusal."""
     doc = call(port, "POST", f"/api/action/snapshot/{target}", token, body={}, open_=open_)
     if doc.get("error"):
         raise RuntimeError(f"la console refuse l'instantané ({bs.scrub(str(doc['error']))[:200]})")
@@ -293,17 +297,36 @@ def ask_snapshot(port: int, target: str, token: str, *, open_=None, clock=time.m
         if state in FINAL_REFUSALS or state == "expired" or not doc.get("ok") or state != "done":
             why = bs.scrub(str(doc.get("error") or doc.get("refused") or ""))[:200]
             raise RuntimeError(f"la demande d'instantané : {state or 'sans état'}" + (f" ({why})" if why else ""))
-        return str(doc.get("job_id") or "")
+        return _named(doc)
     if doc.get("status") != "started":
         raise RuntimeError("la console ne dit pas l'instantané lancé")
-    return str(doc.get("job_id") or "")
+    return _named(doc)
+
+
+def _named(doc: dict) -> dict:
+    return {"job_id": str(doc.get("job_id") or ""), "vault_job": str(doc.get("vault_job") or "")}
+
+
+def named_job(given: dict, plan: dict) -> str:
+    """The vault's job to follow from what the console named (SNP1): its `vault_job` when it gives one —
+    a job of another vault than the operator's, or a shape not read, stops the run (RuntimeError), never
+    looked for by its time instead —; without it, its `job_id` when that is a job of the vault; else ''
+    (then the job is looked for by its time)."""
+    asked = given.get("vault_job") or ""
+    if asked:
+        name = vault_job_name(asked, plan)
+        if not name:
+            raise RuntimeError("la console nomme un job qui n'est pas du coffre du poste (son coffre ou son groupe "
+                               "diffère de la configuration) : aucun point suivi")
+        return name
+    return vault_job_name(given.get("job_id") or "", plan)
 
 
 def vault_job_name(job_id: str, plan: dict) -> str:
-    """The vault's job name in what the console gives, or ''. Today `action_snapshot` gives Glorfindel's
-    own record, `snapshot-<vm>-<ts>` (glorfindel/jobs.py) — no job of the vault, never taken for one:
-    then the job is looked for by its time. A GUID, or `rsv:<vault>/<group>/<name>` of this vault (the
-    record's `snap_id`), is followed."""
+    """The vault's job name in one name the console gives, or ''. Its `job_id` is Glorfindel's own
+    record, `snapshot-<vm>-<ts>` (glorfindel/jobs.py) — no job of the vault, never taken for one. A GUID,
+    or `rsv:<vault>/<group>/<name>` of this vault (the record's `snap_id`, its `vault_job` since SNP1), is
+    followed."""
     if bs.GUID.fullmatch(job_id or ""):
         return job_id
     m = re.fullmatch(r"rsv:([^/]+)/([^/]+)/([A-Za-z0-9-]{1,64})", job_id or "")
@@ -384,8 +407,13 @@ def take(target: str, env: dict, plan: dict, say=print, *, token: str | None = N
     with (tunnel or Tunnel(env)) as port:
         say("  → la route du bouton 📸 de la console d'Imladris, par un renvoi de port court")
         given = ask_snapshot(port, target, token, open_=open_, clock=clock, sleep=sleep, say=say)
-    say("  ✓ l'instantané lancé ; le renvoi de port fermé ; le job du coffre suivi")
-    name = vault_job_name(given, plan) or find_job(target, plan, asked_at, clock=clock, sleep=sleep)
+    name = named_job(given, plan)
+    if name:
+        say("  ✓ l'instantané lancé ; le renvoi de port fermé ; le job du coffre que la console nomme, suivi")
+    else:
+        say("  ✓ l'instantané lancé ; le renvoi de port fermé ; la console ne nomme pas le job du coffre : "
+            "cherché par son heure, puis suivi")
+        name = find_job(target, plan, asked_at, clock=clock, sleep=sleep)
     await_job(name, plan, began, clock=clock, sleep=sleep, say=say)
     times = bp.point_times(target, plan["vault_rg"], plan["vault"])
     newest = max(times, default=None)

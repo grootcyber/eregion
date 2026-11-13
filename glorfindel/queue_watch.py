@@ -420,10 +420,12 @@ class QueueWatch:
         return "done", result, self._check(req, card, "block_suspicious_ip", result, ctx["ip"]), ""
 
     def _do_snapshot(self, req, card, ctx):
-        from glorfindel.jobs import start_snapshot
+        from glorfindel.jobs import start_snapshot, vault_job
         job = start_snapshot(req.resource_id, self.connector, ctx["vault"], vault_rg=ctx["vault_rg"])
         self._settle(card)
-        return "done", {"status": "started", "job_id": job.get("job_id")}, None, ""
+        # SNP1: the receipt names the vault's job beside Glorfindel's own record, as the direct route does.
+        return "done", {"status": "started", "job_id": job.get("job_id"),
+                        "vault_job": vault_job(job.get("snap_id"))}, None, ""
 
     def _do_release_isolation(self, req, card, ctx):
         from glorfindel.gestures import release_needed
