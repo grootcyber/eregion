@@ -325,3 +325,74 @@ def test_holds_vm_lock_says_whether_this_thread_holds_one():
         t.join()
         assert seen == [False]                                          # another thread's, not this one's
     assert not holds_vm_lock()
+
+
+# ── a one-off command, without the watch (JUG2c review) ───────────────────────────────────────
+
+def _isolated_long_ago(vm: str = "web") -> None:
+    from glorfindel.actions import _save_isolation_state
+    rid = f"/subscriptions/s/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/{vm}"
+    _save_isolation_state(vm, {"resource_id": rid, "isolated_at": "2026-10-06T08:00:00+00:00",
+                               "placements": []})
+
+
+def test_check_ttl_from_cron_says_its_card_to_the_webhook(hook):
+    """`glorfindel check-ttl` (« Safe to run from cron », `make glorfindel-check-ttl` in a container of
+    its own): its card is written under the VM's lock, so its notification is queued — no watch to
+    post it, the command posts it before it ends, outside the lock, once."""
+    from click.testing import CliRunner
+
+    from glorfindel.cli import cli
+    _isolated_long_ago()
+    r = CliRunner().invoke(cli, ["check-ttl", "--ttl", "4"])
+    assert r.exit_code == 0, r.output
+    [card] = [e for e in escalations.pending() if e["escalation_type"] == "ttl_exceeded"]
+    assert [p["text"] for p in hook.sent] == [escalations.card_payload(card)["text"]]
+    assert hook.threads == ["webhook-post"]                              # bounded, as every post
+    assert vm_notices.said(f"card:{card['id']}")["relayed"]["sent"] is True
+    assert CliRunner().invoke(cli, ["check-ttl", "--ttl", "4"]).exit_code == 0
+    assert len(hook.sent) == 1                                          # once
+
+
+def test_check_ttl_waits_for_no_webhook_beyond_its_bound(hook, monkeypatch):
+    """The webhook never answers: the command ends once its post is past the deadline."""
+    from click.testing import CliRunner
+
+    from glorfindel.cli import cli
+    _isolated_long_ago()
+    monkeypatch.setattr(vm_notices, "POST_DEADLINE_S", 0.2)
+    hook.hold.set()
+    started = time.monotonic()
+    r = CliRunner().invoke(cli, ["check-ttl", "--ttl", "4"])
+    assert r.exit_code == 0, r.output
+    assert time.monotonic() - started < QUICK_S
+    assert len(hook.sent) == 1
+
+
+def test_a_queued_notice_the_webhook_keeps_failing_is_tried_three_times_then_no_more(hook):
+    """A webhook that answers 500 every time: three posts, a try each (`RELAY_MAX_TRIES`), then no
+    pass posts it again — never a card a minute for 24 h."""
+    with vm_notices.deferred():
+        assert vm_notices.say(_WEB, "drain:k:6", vm_notices.CLOSURE_KIND, "Coupure", "dit") == "queued"
+    hook.answer = _Answer(500)
+    for _ in range(vm_notices.RELAY_MAX_TRIES):
+        assert vm_notices.relay_pass() == 0
+    assert len(hook.sent) == vm_notices.RELAY_MAX_TRIES
+    n = vm_notices.said("drain:k:6")
+    assert n["tries"] == vm_notices.RELAY_MAX_TRIES and n["via"] == vm_notices.OUTBOX
+    assert vm_notices.relay_pass() == 0
+    assert len(hook.sent) == vm_notices.RELAY_MAX_TRIES                 # the fourth pass posts nothing
+
+
+def test_at_the_cap_the_log_says_where_a_queued_notice_stays(caplog):
+    """Queued for the webhook, the bot not configured: at the cap it waits for no bot — the log says
+    it is said no more, but in the console."""
+    import logging
+    queued = {"key": "card:x", "queued": True, "tries": vm_notices.RELAY_MAX_TRIES - 1}
+    relayed = {"key": "action:y", "tries": vm_notices.RELAY_MAX_TRIES - 1}
+    with caplog.at_level(logging.WARNING, logger=vm_notices.log.name):
+        vm_notices._count_try(queued)
+        vm_notices._count_try(relayed)
+    [q, r] = [rec.getMessage() for rec in caplog.records if rec.name == vm_notices.log.name]
+    assert "card:x" in q and "waits for the bot" not in q and "console" in q
+    assert "action:y" in r and "waits for the bot" in r

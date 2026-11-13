@@ -116,10 +116,16 @@ message is the one it always had, written at its post — never a payload kept i
 console and the bot write too: a card's as `_notify` writes it (`escalations.card_payload`), another's
 in the webhook's format; never a ping. A 2xx notes it sent, never said again; refused, unreachable or
 rate limited, it goes back to the queue (`_back`), not to an absent bot, with the same tries and their
-cap. A notice posted at once before (`via: webhook`, never queued) is never taken up. The store
-refused, a card is posted from a thread nobody waits for. Elsewhere — the graph's cycle, the console,
-the CLI outside a lock — a card still goes at once. Limit: a notice queued by another process than the
-watch (the CLI under a VM's lock) waits for the watch's next pass.
+cap — at the cap no pass posts it, and the log says it is shown on the console only (`_count_try`). A
+notice posted at once before (`via: webhook`, never queued) is never taken up. The store refused, a
+card is posted from a thread nobody waits for. Elsewhere — the graph's cycle, the console, the CLI
+outside a lock — a card still goes at once. The CLI under a VM's lock: `check-ttl` (from cron, no watch
+there) writes its card under it, queued, and runs a relay pass before it ends, outside the lock
+(glorfindel/cli.py, `_post_queued_notices` — JUG2c review); no other command writes a card or a
+closure under a VM's lock. Limits: a queued notice whose answer was lost (a read timeout, a 5xx) is
+said again, `RELAY_MAX_TRIES` times at most, then only on the console's card; a post still running
+when `check-ttl` ends is cut with it, its mark taken back by a later pass (`RESEND_AFTER_S`, a try); a
+notice queued by another process than the watch, and not posted by it, waits for the watch's next pass.
 
 Known limits: a webhook that delivered but whose answer was lost has the notice said again, an
 action's ping with it, `RELAY_MAX_TRIES` times at most; then it is the bot's (an action's card is
@@ -553,9 +559,14 @@ def _tries(n: dict) -> int:
 
 def _count_try(n: dict) -> None:
     """One more post of `n` that may have been delivered; the cap reached, said once (JUG2b review):
-    the notice waits for the bot from now on."""
+    the notice waits for the bot from now on — or, queued for the webhook without a bot (JUG2c), is
+    said no more, but on the console's card."""
     n["tries"] = _tries(n) + 1
-    if n["tries"] == RELAY_MAX_TRIES:
+    if n["tries"] == RELAY_MAX_TRIES and n.get("queued") is True:
+        log.warning("notice %s: %d posts without an answer that says they were refused — the webhook "
+                    "says it no more, no bot to post it: it is shown on the console only",
+                    n.get("key"), RELAY_MAX_TRIES)
+    elif n["tries"] == RELAY_MAX_TRIES:
         log.warning("notice %s: %d posts without an answer that says they were refused — the webhook "
                     "says it no more, it waits for the bot", n.get("key"), RELAY_MAX_TRIES)
 

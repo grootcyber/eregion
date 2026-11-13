@@ -2593,6 +2593,21 @@ def check_ttl(ttl: float | None, dry_run: bool):
                       f"(limit {ttl_h}h): escalated, not released.")
     if not alerts:
         console.print(f"[green]No new isolation older than {ttl_h}h.[/green]")
+    # JUG2c review: a card is written under its VM's lock, so its webhook notification is queued
+    # (vm_notices.must_defer) — and no pass of this process would post it: from cron, without the
+    # watch, never said. Posted here, outside the lock, bounded (10 s a post, a pass ~86 s at most);
+    # a card an earlier run left in the queue too.
+    _post_queued_notices()
+
+
+def _post_queued_notices() -> None:
+    """A one-off command's queued notices, posted before it ends (JUG2c review): the notices' relay
+    pass, as the watch runs it — never raises, a notice left is the next pass's."""
+    from glorfindel import vm_notices
+    try:
+        vm_notices.relay_pass()
+    except Exception as exc:          # a notification never fails the command
+        console.print(f"[yellow]Notices not posted ({type(exc).__name__}): the next pass says them.[/yellow]")
 
 
 def _build_recovery_signal(resource_id: str, restore_result: dict, restore_time_s: int) -> dict:
