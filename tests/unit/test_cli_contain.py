@@ -220,6 +220,82 @@ def test_read_only_credentials_refuse_before_any_write(world, monkeypatch):
     assert not _rules(world, world.own) and not _noted(world)
 
 
+def _drain_pending(monkeypatch):
+    """The isolation's session cut still running on Azure past its first wait (DRN1)."""
+    from datetime import datetime, timezone
+    real = AzureConnector.isolate_vm
+
+    def with_drain(self, rid):
+        out = real(self, rid)
+        out["drain"] = {"status": "pending", "asked_at": datetime.now(timezone.utc).isoformat()}
+        return out
+    monkeypatch.setattr(AzureConnector, "isolate_vm", with_drain)
+
+
+def _beat_here(monkeypatch, tmp_path):
+    from datetime import datetime, timezone
+    from eregion_core import watch_gate
+    beat = tmp_path / "watch_heartbeat"
+    beat.write_text(datetime.now(timezone.utc).isoformat())
+    monkeypatch.setattr(watch_gate, "heartbeat_path", lambda: beat)
+
+
+def test_a_session_cut_no_watch_here_rereads_is_not_verified(world, monkeypatch):
+    """No live watch on this host: the cut still running is read again by nobody — never « ✓ … the
+    reassertion rereads it »: not verified, a card, exit 2, and how to cut the sessions by hand
+    (review 1)."""
+    monkeypatch.setenv("GLORFINDEL_REASSERT_INTERVAL_S", "60")
+    _drain_pending(monkeypatch)
+    r = _run("isolate", "rg-app1/web", "--yes")
+    assert r.exit_code == 2, r.output
+    assert "aucune watch vivante sur cet hôte ne relira son statut" in r.output
+    assert "Couper à la main" in r.output and "la réaffirmation la relit" not in r.output
+    [card] = escalations.pending()
+    assert card["escalation_type"] == "verification_failed" and card["signal_id"] == "cli-isolate_vm"
+
+
+def test_a_session_cut_the_watch_here_rereads_is_said_and_holds(world, monkeypatch, tmp_path):
+    monkeypatch.setenv("GLORFINDEL_REASSERT_INTERVAL_S", "60")
+    _drain_pending(monkeypatch)
+    _beat_here(monkeypatch, tmp_path)
+    r = _run("isolate", "rg-app1/web", "--yes")
+    assert r.exit_code == 0 and "la réaffirmation la relit" in r.output, r.output
+    assert not escalations.pending()
+
+
+def test_an_isolation_that_lands_on_some_nics_only_is_noted_and_left_on_a_card(world, monkeypatch):
+    """A PartialActionError (what landed kept, recorded by the connector): noted, a card that names
+    the NIC that failed, exit 2 — never an Azure error said once and lost (review 1)."""
+    from glorfindel.response.policy import PartialActionError
+
+    def partly(self, rid):
+        raise PartialActionError("isolation partielle : web-nic2 refusée", cause=RuntimeError("409"),
+                                 covered=["web-nic"], failed_nic="web-nic2")
+    monkeypatch.setattr(AzureConnector, "isolate_vm", partly)
+    r = _run("isolate", "rg-app1/web", "--yes")
+    assert r.exit_code == 2, r.output
+    assert "en partie seulement" in r.output and "web-nic2" in r.output
+    [card] = escalations.pending()
+    assert card["escalation_type"] == "verification_failed" and "web-nic2" in card["reason"]
+    [noted] = _noted(world)
+    assert noted["action"] == "isolate_vm" and noted["outcome"]["partial"] is True
+    assert noted["outcome"]["verified"] is False
+
+
+def test_a_dry_run_holds_the_read_only_guard_too(world, monkeypatch):
+    """« The guards only »: read-only credentials are a guard, read locally — refused in a dry run
+    too (review 1)."""
+    monkeypatch.setenv("GLORFINDEL_READ_ONLY", "1")
+    r = _run("isolate", "rg-app1/web", "--dry-run")
+    assert r.exit_code == 1 and "lecture seule" in r.output, r.output
+
+
+def test_the_way_to_the_watch_s_container_is_one_a_prompt_answers_in(world):
+    """`docker exec` without `-it`: `click.confirm` reads an end of file — the line says `-it`."""
+    r = _run("isolate", "rg-app1/web", "--yes")
+    assert "docker exec -it eregion-watch" in r.output, r.output
+
+
 def test_a_dry_run_checks_the_guards_and_writes_nothing(world, monkeypatch):
     from glorfindel.actions import active_isolations
     r = _run("isolate", "rg-app1/web", "--dry-run")
@@ -343,6 +419,25 @@ def test_ack_of_a_prefix_two_cards_share_is_refused(world):
     r = _run("ack", ids[0][:5])
     assert r.exit_code == 1 and "6 characters" in r.output
     assert len(escalations.pending()) == 2
+
+
+def test_ack_of_a_prefix_two_cards_share_acknowledges_neither(world, monkeypatch):
+    """Two cards whose ids share their first 8 characters: `ack <those 8>` refuses, both stay —
+    never the first of the two acknowledged in silence (review 1)."""
+    import uuid
+    made = iter(["abcdef01-0000-4000-8000-000000000001", "abcdef01-0000-4000-8000-000000000002"])
+    monkeypatch.setattr(uuid, "uuid4", lambda: next(made))
+    escalations.record(signal_id="s-1", resource_id=WEB, action="isolate_vm", escalation_type="mode_hold",
+                       reason="a", ttp="T1110", severity="high")
+    escalations.record(signal_id="s-2", resource_id=OTHER, action="snapshot", escalation_type="low_confidence",
+                       reason="b", ttp="T1486", severity="high")
+    assert sorted(e["id"] for e in escalations.pending())[0].startswith("abcdef01")
+    r = _run("ack", "abcdef01")
+    assert r.exit_code == 1 and "matches 2 cards" in r.output, r.output
+    assert len(escalations.pending()) == 2
+    r = _run("ack", "abcdef01-0000-4000-8000-000000000002")          # the whole id: that one alone
+    assert r.exit_code == 0, r.output
+    assert [e["id"] for e in escalations.pending()] == ["abcdef01-0000-4000-8000-000000000001"]
 
 
 def test_the_anchored_set_is_the_bot_s_and_the_tui_s():

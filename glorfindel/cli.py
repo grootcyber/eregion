@@ -531,35 +531,37 @@ def unblock(ip: str, resource_id: str, dry_run: bool, yes: bool):
 
 def _contain_preamble(resource_id: str, action: str, dry_run: bool):
     """The guards before any call to the cloud, and what the human is told before the prompt — the
-    connector once they hold. Refused: a ClickException, nothing done."""
+    connector once they hold, and whether a watch lives here (a session cut it rereads). Refused: a
+    ClickException, nothing done — a dry run too: the guards are local reads."""
     from glorfindel import gestures
     from glorfindel.actions import AzureConnector
     why = gestures.direct_refusal(resource_id)
     if why:
         raise click.ClickException(why)
     connector = AzureConnector(dry_run=dry_run)
-    if not dry_run and getattr(connector, "read_only", False):
+    if getattr(connector, "read_only", False):
         raise click.ClickException("credentials en lecture seule (GLORFINDEL_READ_ONLY) : cet hôte ne peut "
                                    "pas agir — rien n'est fait")
     for e in gestures.held_cards(resource_id, action):
         console.print(f"  [cyan]Carte {e['id'][:8]} en attente pour ce geste : elle reste en attente — "
                       f"glorfindel ack {e['id'][:8]} une fois le geste vérifié.[/cyan]")
-    _state_here_said()
-    return connector
+    return connector, _state_here_said()
 
 
-def _state_here_said() -> None:
+def _state_here_said() -> bool:
     """The state a gesture writes is this host's ~/.glorfindel: the watch that reasserts it, and whose
     console lifts it, is the one that runs here. No live watch here (a terminal of a workstation while
-    the watch runs on Imladris): said, never refused — a watch stopped is when a hand is needed."""
+    the watch runs on Imladris): said, never refused — a watch stopped is when a hand is needed.
+    True when one lives here."""
     from datetime import datetime, timezone
     from eregion_core import watch_gate
     if watch_gate.fresh(watch_gate.local_beat(), datetime.now(timezone.utc)):
-        return
+        return True
     console.print("  [yellow]Aucune watch vivante sur cet hôte : l'état de ce geste s'écrit dans le "
                   "~/.glorfindel de cet hôte, qu'une watch d'un autre hôte (Imladris) ne relit pas — ni "
                   "réaffirmation, ni levée par sa console. La watch sur Imladris : lancer ce geste dans son "
-                  "conteneur (docker exec eregion-watch …).[/yellow]")
+                  "conteneur (docker exec -it eregion-watch …).[/yellow]")
+    return False
 
 
 def _contained_said(out: dict, what: str, dry_run: bool) -> None:
@@ -605,7 +607,7 @@ def isolate(resource_id: str, dry_run: bool, yes: bool):
     console.rule("[bold red]Glorfindel — Isolate VM[/bold red]")
     console.print(f"  Resource : {_esc_markup(_vm_said(resource_id))}")
     console.print(f"  Dry-run  : {dry_run}\n")
-    connector = _contain_preamble(resource_id, "isolate_vm", dry_run)
+    connector, watched = _contain_preamble(resource_id, "isolate_vm", dry_run)
 
     if not dry_run and not yes:
         if not click.confirm("Isolate this VM (every NIC cut off)?", default=False):
@@ -613,7 +615,8 @@ def isolate(resource_id: str, dry_run: bool, yes: bool):
             return
 
     out = gestures.contain(connector, "isolate_vm", resource_id,
-                           record=None if dry_run else _record_manual_action)
+                           record=None if dry_run else _record_manual_action,
+                           drain_followed=None if watched else False)
     _contained_said(out, "VM isolée", dry_run)
 
 
@@ -642,7 +645,7 @@ def block(ip: str, resource_id: str, scope: str, dry_run: bool, yes: bool):
     console.print(f"  Resource : {_esc_markup(_vm_said(resource_id))}")
     console.print(f"  Scope    : {scope}" + ("  (every VM of its subnet)" if scope == "subnet" else ""))
     console.print(f"  Dry-run  : {dry_run}\n")
-    connector = _contain_preamble(resource_id, "block_suspicious_ip", dry_run)
+    connector, watched = _contain_preamble(resource_id, "block_suspicious_ip", dry_run)
 
     if not dry_run and not yes:
         ask = (f"Block {host} for every VM of this VM's subnet?" if scope == "subnet"
@@ -652,7 +655,8 @@ def block(ip: str, resource_id: str, scope: str, dry_run: bool, yes: bool):
             return
 
     out = gestures.contain(connector, "block_suspicious_ip", resource_id, ip=host, scope=scope,
-                           record=None if dry_run else _record_manual_action)
+                           record=None if dry_run else _record_manual_action,
+                           drain_followed=None if watched else False)
     _contained_said(out, f"{host} bloquée", dry_run)
 
 

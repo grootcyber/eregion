@@ -2,9 +2,12 @@
 console's approval of a held card without the card, the same calls and the same guards
 (glorfindel/gestures.py) — and no command Glorfindel proposes is invented. M5205–M5219, measured by
 tests/unit/test_cli_contain.py (the gestures, on the in-memory Azure) and tests/unit/test_proposed_commands.py
-(every command to copy of the code, held against Click's own tree)."""
+(every command to copy of the code, held against Click's own tree). M5275–M5284 after the first review
+(#808): a session cut no watch here rereads, a prefix two cards share, a write that lands in part, the
+dry run's read-only guard, the way into the watch's container."""
 GESTURES = "glorfindel/gestures.py"
 CLI = "glorfindel/cli.py"
+POLICY = "glorfindel/response/policy.py"
 ESC = "glorfindel/escalations.py"
 REASSERT = "glorfindel/reassert.py"
 API = "eregion_console/api.py"
@@ -36,16 +39,17 @@ MUTANTS = [
     ("M5210", "the CLI's gesture is never checked after: a NIC still open said contained, no card (Q11, CMD1)",
      GESTURES,
      '        verification = approval.verify_approved(connector, {"id": ""}, action, resource_id, result, ip,\n'
-     '                                                record=record, signal_id=f"cli-{action}")\n',
+     '                                                record=record, signal_id=f"cli-{action}",\n'
+     '                                                drain_followed=drain_followed)\n',
      '        verification = {"verified": True}\n'),
     ("M5211", "the CLI's gesture is not noted in runs/console: the feed never shows the hand that isolated "
      "(CMD1)", GESTURES,
-     '                                                record=record, signal_id=f"cli-{action}")\n',
-     '                                                record=None, signal_id=f"cli-{action}")\n'),
+     '                                                record=record, signal_id=f"cli-{action}",\n',
+     '                                                record=None, signal_id=f"cli-{action}",\n'),
     ("M5212", "read-only credentials are found only at the write: the boundary says « a state file owned by "
      "root » (CMD1)", CLI,
-     '    if not dry_run and getattr(connector, "read_only", False):\n',
-     "    if False:\n"),
+     '    if getattr(connector, "read_only", False):\n        raise click.ClickException("credentials en lecture',
+     '    if False:\n        raise click.ClickException("credentials en lecture'),
     ("M5213", "the CLI resolves the held card of its gesture in silence: the human never reads it, nor checks "
      "before acknowledging (CMD1)", CLI,
      "        console.print(f\"  [cyan]Carte {e['id'][:8]} en attente pour ce geste",
@@ -73,6 +77,48 @@ MUTANTS = [
      "reassertion, no release by its console (CMD1)", CLI,
      "    if watch_gate.fresh(watch_gate.local_beat(), datetime.now(timezone.utc)):\n",
      "    if True:\n"),
+    # Review 1 (#808).
+    ("M5275", "a session cut still running is said reread by the reassertion where no watch lives: « ✓ », "
+     "code 0, no card — an attacker's session open (CMD1, review)", POLICY,
+     "        if followed is False:\n",
+     "        if False:\n"),
+    ("M5276", "the CLI's isolate never says whether a watch lives here: the cut it leaves running is "
+     "followed by nobody, said held (CMD1, review)", CLI,
+     '                           drain_followed=None if watched else False)\n    _contained_said(out, "VM isolée"',
+     '                           drain_followed=None)\n    _contained_said(out, "VM isolée"'),
+    ("M5277", "the gesture drops what the CLI knows of the watch here: the check reads the reassertion's "
+     "setting only (CMD1, review)", GESTURES,
+     "                                                drain_followed=drain_followed)\n",
+     "                                                drain_followed=None)\n"),
+    ("M5278", "`ack <8 characters>` two cards share acknowledges the first of them in silence (CMD1, review)",
+     ESC,
+     '    if len(hits) > 1:\n        raise ValueError(f"{escalation_id} matches {len(hits)} cards — give more '
+     'characters")\n    return hits[0]\n',
+     "    return hits[0]\n"),
+    ("M5279", "an isolation landed on some NICs only escapes the gesture: said once as an Azure error, code 1, "
+     "neither noted nor carded (CMD1, review)", GESTURES,
+     "        except PartialActionError as exc:\n",
+     "        except ZeroDivisionError as exc:\n"),
+    ("M5280", "an isolation landed in part leaves no card: nobody is asked to finish it (CMD1, review)",
+     GESTURES,
+     '    escalations.record(signal_id=f"cli-{action}", resource_id=resource_id, action=action,\n',
+     '    (lambda **k: None)(signal_id=f"cli-{action}", resource_id=resource_id, action=action,\n'),
+    ("M5281", "an isolation landed in part is not noted in runs/console: the feed never shows it (CMD1, "
+     "review)", GESTURES,
+     '            record(action, resource_id, {**result, **verification, "approved_escalation": ""})\n',
+     "            pass\n"),
+    ("M5282", "a dry run passes read-only credentials: « the guards only » checks one guard less (CMD1, "
+     "review)", CLI,
+     '    if getattr(connector, "read_only", False):\n',
+     '    if not dry_run and getattr(connector, "read_only", False):\n'),
+    ("M5283", "the line to the watch's container gives `docker exec` without `-it`: the prompt reads an end "
+     "of file, the gesture aborted (CMD1, review)", CLI,
+     '"conteneur (docker exec -it eregion-watch …).[/yellow]")',
+     '"conteneur (docker exec eregion-watch …).[/yellow]")'),
+    ("M5284", "a session cut no watch here rereads is said « the reassertion is off »: the wrong cause, the "
+     "wrong remedy (CMD1, review)", POLICY,
+     '                    "drain_followed": False, "error": DRAIN_UNWATCHED}\n',
+     '                    "drain_followed": False, "error": DRAIN_UNFOLLOWED}\n'),
 ]
 TESTS = {
     "M5205": f"{_C}::test_a_vm_outside_the_watch_s_perimeter_is_refused_before_any_call",
@@ -90,4 +136,14 @@ TESTS = {
     "M5217": f"{_P}::test_an_action_the_console_does_not_run_is_sent_to_commands_that_exist",
     "M5218": f"{_C}::test_ack_takes_the_eight_characters_the_console_and_the_tui_give",
     "M5219": f"{_C}::test_no_live_watch_here_is_said",
+    "M5275": f"{_C}::test_a_session_cut_no_watch_here_rereads_is_not_verified",
+    "M5276": f"{_C}::test_a_session_cut_no_watch_here_rereads_is_not_verified",
+    "M5277": f"{_C}::test_a_session_cut_no_watch_here_rereads_is_not_verified",
+    "M5278": f"{_C}::test_ack_of_a_prefix_two_cards_share_acknowledges_neither",
+    "M5279": f"{_C}::test_an_isolation_that_lands_on_some_nics_only_is_noted_and_left_on_a_card",
+    "M5280": f"{_C}::test_an_isolation_that_lands_on_some_nics_only_is_noted_and_left_on_a_card",
+    "M5281": f"{_C}::test_an_isolation_that_lands_on_some_nics_only_is_noted_and_left_on_a_card",
+    "M5282": f"{_C}::test_a_dry_run_holds_the_read_only_guard_too",
+    "M5283": f"{_C}::test_the_way_to_the_watch_s_container_is_one_a_prompt_answers_in",
+    "M5284": f"{_C}::test_a_session_cut_no_watch_here_rereads_is_not_verified",
 }

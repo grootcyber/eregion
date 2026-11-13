@@ -116,13 +116,15 @@ def held_cards(resource_id: str, action: str) -> list[dict]:
 
 
 def contain(connector, action: str, resource_id: str, *, ip: str = "", scope: str = "vm",
-            port: int | None = None, record=None) -> dict:
+            port: int | None = None, record=None, drain_followed: bool | None = None) -> dict:
     """``isolate_vm`` or ``block_suspicious_ip``, then the check after — under the VM's lock for the
     whole gesture, as the watch runs a request of the queue (glorfindel/queue_watch.py). The check is
     the console's (``approval.verify_approved``): the agent's own verification, the gesture noted
-    (``record``), a ``verification_failed`` card when it is not ``True``. A dry run calls nothing on
-    Azure, writes nothing, verifies nothing. {"result", "verification"} (verification None in a dry
-    run)."""
+    (``record``), a ``verification_failed`` card when it is not ``True``. ``drain_followed`` False:
+    no watch lives where the CLI runs — a session cut still running is read again by nobody, not
+    verified. A write that lands on some NICs only (``PartialActionError``: what landed is kept and
+    recorded by the connector) is noted and left on a card too. A dry run calls nothing on Azure,
+    writes nothing, verifies nothing. {"result", "verification"} (verification None in a dry run)."""
     if action not in ("isolate_vm", "block_suspicious_ip"):
         raise ValueError(f"not a containment: {action!r}")
 
@@ -135,8 +137,35 @@ def contain(connector, action: str, resource_id: str, *, ip: str = "", scope: st
         return {"result": _act(), "verification": None}
     from glorfindel import approval
     from glorfindel.response.locks import _vm_lock
+    from glorfindel.response.policy import PartialActionError
     with _vm_lock(resource_id.rstrip("/").rsplit("/", 1)[-1]):
-        result = _act()
+        try:
+            result = _act()
+        except PartialActionError as exc:
+            return _partial(action, resource_id, exc, record)
         verification = approval.verify_approved(connector, {"id": ""}, action, resource_id, result, ip,
-                                                record=record, signal_id=f"cli-{action}")
+                                                record=record, signal_id=f"cli-{action}",
+                                                drain_followed=drain_followed)
+    return {"result": result, "verification": verification}
+
+
+def _partial(action: str, resource_id: str, exc, record) -> dict:
+    """A containment that landed on some NICs only: what landed stays (the connector recorded it, for
+    `release`, `unblock`, `reset`); noted, and a ``verification_failed`` card that says which NIC
+    failed — never a trace said once and lost."""
+    from glorfindel import escalations
+    covered = list(getattr(exc, "covered", None) or [])
+    failed = str(getattr(exc, "failed_nic", "") or "?")
+    why = (f"en partie seulement : {', '.join(covered) or 'aucune carte réseau'} couverte(s), {failed} en échec — "
+           f"{str(exc)[:300]}")
+    result = {"status": f"{action}_partial", "partial": True, "covered": covered, "failed_nic": failed}
+    verification = {"verified": False, "error": why}
+    if record is not None:
+        try:
+            record(action, resource_id, {**result, **verification, "approved_escalation": ""})
+        except Exception:
+            pass
+    escalations.record(signal_id=f"cli-{action}", resource_id=resource_id, action=action,
+                       escalation_type="verification_failed",
+                       reason=f"Action '{action}' faite à la main, {why}", ttp="", severity="")
     return {"result": result, "verification": verification}
