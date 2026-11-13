@@ -241,12 +241,14 @@ def test_no_live_watch_here_is_said(world):
     assert r.exit_code == 0 and "Aucune watch vivante sur cet hôte" in r.output, r.output
 
 
-def test_a_live_watch_here_says_nothing_of_it(world):
+def test_a_live_watch_here_says_nothing_of_it(world, monkeypatch, tmp_path):
+    """The heartbeat in this test's own folder: never left in the session's HOME, where it would
+    tell the console's tests that a watch runs."""
     from datetime import datetime, timezone
-    from pathlib import Path
-    beat = Path.home() / ".glorfindel" / "watch_heartbeat"
-    beat.parent.mkdir(parents=True, exist_ok=True)
+    from eregion_core import watch_gate
+    beat = tmp_path / "watch_heartbeat"
     beat.write_text(datetime.now(timezone.utc).isoformat())
+    monkeypatch.setattr(watch_gate, "heartbeat_path", lambda: beat)
     r = _run("isolate", "rg-app1/web", "--yes")
     assert r.exit_code == 0 and "Aucune watch vivante" not in r.output, r.output
 
