@@ -8123,7 +8123,10 @@ def _l1nb_two_placements_off(monkeypatch, how="quarantine"):
             f"the world: the block's pair on {nsg}")
     if how == "quarantine":
         assert c.isolate_vm(DB).get("status") in ("isolated", "isolated_partial"), "the world: Db--01 isolated"
-        assert key(m.fake.nics[_nic("rg-app1", "db-nic-0")]["nsg"]) != key(_L1NB_NEW_NSG), "the world: in quarantine"
+        from glorfindel import actions
+        now = m.fake.nics[_nic("rg-app1", "db-nic-0")]["nsg"]
+        assert now and actions._is_quarantine_nsg(now), f"the world: db-nic-0 under the quarantine, not {now}"
+        assert m.fake.nsgs[key(now)]["tags"].get("managed-by") == "glorfindel", "the world: our quarantine NSG"
     else:
         m.fake.nics[_nic("rg-app1", "db-nic-0")]["nsg"] = None
     return m, c
