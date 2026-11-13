@@ -504,10 +504,28 @@ chemin du bouton, la route `POST /api/action/snapshot/<vm>` de la console d'Imla
   watch qui l'exécute** (`_queued`) : la route rend l'identifiant de la demande, et `bench-run` suit
   son reçu, `GET /api/queue/<id>`, jusqu'à une réponse finale, qui nomme le même job. `not_taken`, `untrusted`,
   `refused`, `failed` ou une demande expirée arrêtent le run ;
-- **la suite** : le job du coffre que la console nomme, suivi directement (un job d'un autre coffre que
-  celui du poste arrête le run) ; sans lui seulement (une console ou une watch d'avant SNP1), le job de
-  sauvegarde de la VM lancé depuis la demande, cherché par son heure. Il est lu par `az backup job show` sous l'`az login` de l'opérateur,
-  jusqu'à `Completed`. Le premier point après un restore est complet, et peut prendre environ
+- **la suite** : le job du coffre que la console nomme, suivi directement ; sans lui seulement (une
+  console ou une watch d'avant SNP1), le job de sauvegarde de la VM lancé depuis la demande, cherché
+  par son heure. Il est lu par `az backup job show` sous l'`az login` de l'opérateur,
+  jusqu'à `Completed`. **Un job nommé est vérifié avant d'être suivi** (SNP1b, #801) :
+  - un nom `rsv:` qui n'est pas du coffre du poste arrête le run, qu'il vienne de `vault_job` ou de
+    `job_id`. Le message dit lequel des deux l'a donné, et ce qui diffère : **son coffre**, **son
+    groupe**, les deux, ou sa forme. Il n'est jamais remplacé en silence par la recherche par l'heure :
+    celle-ci trouverait un autre job, et le point se lirait là où il n'est pas pris ;
+  - dès le premier `show`, puis à chaque lecture, le job doit être **une sauvegarde de la cible**,
+    vérifiée avant son statut : sa VM (`entityFriendlyName`, comparée sans tenir compte de la casse)
+    est la cible, son opération est `Backup`, les deux champs que la recherche par l'heure filtre
+    déjà. Quand le job nomme son conteneur (`iaasvmcontainerv2;<groupe>;<vm>`), ce conteneur est
+    celui du groupe de la cible : un homonyme d'un autre groupe, supprimé et dont la sauvegarde est
+    restée dans le coffre, n'est pas la cible (la même lecture que celle d'un restore,
+    `glorfindel/providers/azure/recovery.py`). Un job d'une autre VM, un restore, une configuration,
+    ou une VM ou une opération qui ne se lit pas, arrêtent le run, en disant ce qui diffère : **sa
+    VM**, **son conteneur** ou **son opération**. Il n'est jamais suivi jusqu'à `Completed`, et aucun
+    point n'est lu. Une lecture en erreur est relue : seules trois erreurs de suite arrêtent le run.
+
+  Ni le nom du job ni ceux du coffre ou du groupe ne sont affichés.
+
+  Le premier point après un restore est complet, et peut prendre environ
   40 min : l'attente est bornée (60 min, `JOB_WAIT_S`, à mesurer au banc). Un job qui échoue ou qui dépasse arrête le run
   avant que la demande parte vers Orodruin : rien n'est attaqué ;
 - **le préflight rejoué** après l'attente du point, juste avant l'attaque : jusqu'à 60 min ont pu
