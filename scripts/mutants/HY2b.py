@@ -2,7 +2,8 @@
 ~/.glorfindel — refused and said before it happens, by an audit hook eregion_core installs in an agent
 session only (eregion_core/store_guard.py). M5150–M5159, measured by tests/unit/test_store_guard.py:
 probes in fresh interpreters over an operator simulated in tmp (its system home a folder of tmp_path),
-never this workstation's.
+never this workstation's. M5190, M5191, M5193, the review's round 1: the memory of cycles (ChromaDB, written
+from Rust) refused before it is opened, and said.
 """
 GUARD = "eregion_core/store_guard.py"
 T = "tests/unit/test_store_guard.py::"
@@ -40,10 +41,32 @@ MUTANTS = [
     ("M5158", "a folder beside the store taken for it: ~/.glorfindel-old, ~/.glorfindel2 refused (HY2b)",
      GUARD, "            if candidate == root or candidate.startswith(root + os.sep):\n",
      "            if candidate.startswith(root):\n"),
+    # M5159 is caught by a reading of the code only (test_every_writer_…: the first import of
+    # glorfindel/__init__.py), a belt: the probes still meet the guard without it, through the first
+    # import of glorfindel/agent.py (eregion_core.models), before any path of the store is written.
     ("M5159", "Glorfindel no longer imports the guard first: a script that imports it alone computes its "
-              "paths with nothing installed (HY2b)", "glorfindel/__init__.py",
+              "paths with nothing installed (HY2b; caught by a reading of the code only, a belt)",
+     "glorfindel/__init__.py",
      "import eregion_core  # noqa: F401 — HY2b: the guard of the operator's ~/.glorfindel, first "
      "(eregion_core/store_guard.py)\n", ""),
+]
+MEMORY = "glorfindel/memory.py"
+CYCLES = T + "test_the_memory_of_cycles_is_refused_before_chromadb_opens_it"
+MUTANTS += [
+    ("M5190", "the memory of cycles no longer checked: an agent session's CycleMemory opens ChromaDB in the "
+              "operator's ~/.glorfindel/cycles, its store written from Rust, unseen (HY2b, review round 1)",
+     MEMORY, "        store_guard.check(storage_path)\n", ""),
+    ("M5191", "the memory checked once ChromaDB has opened it: its sqlite and its index already written in "
+              "the operator's ~/.glorfindel/cycles when the refusal comes (HY2b, review round 1)", MEMORY,
+     "        store_guard.check(storage_path)\n        storage_path.mkdir(parents=True, exist_ok=True)\n"
+     "        self._client = chromadb.PersistentClient(path=str(storage_path))\n",
+     "        storage_path.mkdir(parents=True, exist_ok=True)\n"
+     "        self._client = chromadb.PersistentClient(path=str(storage_path))\n"
+     "        store_guard.check(storage_path)\n"),
+    ("M5193", "a refused opening of the memory no longer said: `glorfindel report` swallows the error, the "
+              "probe never knows why (HY2b, review round 1)", GUARD,
+     '    said = message(full, _installed["why"])\n    _say(said)\n',
+     '    said = message(full, _installed["why"])\n'),
 ]
 TESTS = {
     "M5150": AGENT,
@@ -56,4 +79,7 @@ TESTS = {
     "M5157": WORKTREE,
     "M5158": PLACED,
     "M5159": T + "test_every_writer_of_glorfindel_s_state_imports_the_guard_first",
+    "M5190": CYCLES,
+    "M5191": CYCLES,
+    "M5193": CYCLES,
 }

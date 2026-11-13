@@ -3,13 +3,17 @@
 
 Measured over an operator simulated in tmp, never this workstation's: each probe is a fresh
 interpreter whose system home (pwd) is a folder of tmp_path with its ~/.glorfindel already there, and
-which imports Glorfindel as a probe does, then writes through it (vm_notices.say, the store of 12/11).
-An agent session's probe (EREGION_AGENT_SESSION, a lot's worktree) is refused and says it; the
-operator's, and a probe with a throwaway HOME, write as before. Then what a write is, where it is
-placed, and who imports the guard first. Mutants M5150–M5159 (scripts/mutants/HY2b.py).
+which imports Glorfindel as a probe does, then writes through it (vm_notices.say, the store of 12/11;
+CycleMemory, ChromaDB's store, written from Rust). Its code is a copy of the repository's packages in
+tmp — the operator's from a checkout of his own, a session's from a lot's worktree — so that the
+measure does not depend on where the suite runs. An agent session's probe (EREGION_AGENT_SESSION, a
+lot's worktree as its folder or as the checkout of its code) is refused and says it; the operator's,
+and a probe with a throwaway HOME, write as before. Then what a write is, where it is placed, and who
+imports the guard first. Mutants M5150–M5159, M5190–M5194 (scripts/mutants/HY2b.py).
 """
 import ast
 import os
+import shutil
 import subprocess
 import sys
 import textwrap
@@ -23,28 +27,43 @@ ROOT = Path(__file__).resolve().parents[2]
 SESSION_VAR = "EREGION_AGENT_SESSION"
 
 # The probe: its system home made the simulated operator's (argv[1]), then Glorfindel imported and a
-# notice said — what DRN2's probes did on 12/11. `swallow`: the probe catches the OSError.
+# notice said — what DRN2's probes did on 12/11 — or (argv[3] `memory`) the memory of cycles opened in
+# the operator's ~/.glorfindel/cycles, there already. `swallow`: the probe catches the OSError.
 PROBE = textwrap.dedent("""
     import sys, types
     import pwd
     pwd.getpwuid = lambda uid: types.SimpleNamespace(pw_dir=sys.argv[1])
-    import glorfindel.vm_notices as v
     try:
-        print("via", v.say("/subscriptions/s/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm",
-                            "hy2b-probe", "info", "probe", "a probe's notice"))
+        if sys.argv[3] == "memory":
+            from glorfindel.memory import CycleMemory
+            CycleMemory(path=sys.argv[1] + "/.glorfindel/cycles")
+            print("via memory")
+        else:
+            import glorfindel.vm_notices as v
+            print("via", v.say("/subscriptions/s/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm",
+                                "hy2b-probe", "info", "probe", "a probe's notice"))
     except OSError as exc:
         if sys.argv[2] != "swallow":
             raise
         print("swallowed", type(exc).__name__)
     """)
+# The packages a probe imports, copied for its code (glorfindel imports eregion_core first).
+PACKAGES = ("eregion_core", "glorfindel")
 
 
 def _operator(tmp_path) -> Path:
-    """The operator simulated: his ~/.glorfindel there already, one file in it."""
+    """The operator simulated: his ~/.glorfindel there already, one file in it, and its cycles/."""
     real = tmp_path / "operator"
-    (real / ".glorfindel").mkdir(parents=True)
+    (real / ".glorfindel" / "cycles").mkdir(parents=True)
     (real / ".glorfindel" / "escalations.jsonl").write_text("{}\n")
     return real
+
+
+def _checkout(where: Path) -> Path:
+    """The repository's packages a probe imports, copied in ``where`` (its code's checkout)."""
+    for package in PACKAGES:
+        shutil.copytree(ROOT / package, where / package, ignore=shutil.ignore_patterns("__pycache__"))
+    return where
 
 
 def _shot(root: Path) -> dict:
@@ -52,35 +71,42 @@ def _shot(root: Path) -> dict:
             for p in sorted(root.rglob("*"))} if root.exists() else {}
 
 
+# The two checkouts a probe's code comes from: the operator's own (~/eregion), a lot's worktree.
+CODE = {"operator": "home/eregion", "worktree": "w/.claude/worktrees/lot-code"}
 SCENARIOS = {
-    # name: (EREGION_AGENT_SESSION, current folder, HOME — None: the operator's, how the probe ends)
-    "agent": ("1", "elsewhere", None, "raise"),
-    "worktree": (None, "w/.claude/worktrees/lot-x", None, "swallow"),
-    "operator": (None, "elsewhere", None, "raise"),
-    "throwaway": ("1", "elsewhere", "probe-home", "raise"),
+    # name: (EREGION_AGENT_SESSION, current folder, HOME — None: the operator's, how the probe ends,
+    #        the checkout of its code, what it writes)
+    "agent": ("1", "elsewhere", None, "raise", "operator", "notice"),
+    "worktree": (None, "w/.claude/worktrees/lot-x", None, "swallow", "operator", "notice"),
+    "operator": (None, "elsewhere", None, "raise", "operator", "notice"),
+    "throwaway": ("1", "elsewhere", "probe-home", "raise", "operator", "notice"),
+    "memory": ("1", "elsewhere", None, "swallow", "operator", "memory"),
 }
 
 
 @pytest.fixture(scope="module")
 def probes(tmp_path_factory):
-    """The four probes, at once (each its own interpreter): their outcome and the stores after."""
+    """The probes, at once (each its own interpreter): their outcome and the stores after."""
     base = {k: v for k, v in os.environ.items()
             if not k.startswith(("PYTEST_", "EREGION_TEST_")) and k != SESSION_VAR}
+    base["ANONYMIZED_TELEMETRY"] = "False"     # ChromaDB's, never sent from a test
     driver = tmp_path_factory.mktemp("driver") / "probe.py"
     driver.write_text(PROBE)
+    codes = tmp_path_factory.mktemp("code")
+    checkouts = {k: _checkout(codes / v) for k, v in CODE.items()}
     runs = {}
-    for name, (session, where, home, end) in SCENARIOS.items():
+    for name, (session, where, home, end, code, what) in SCENARIOS.items():
         tmp = tmp_path_factory.mktemp(name)
         operator = _operator(tmp)
         cwd = tmp / where
         cwd.mkdir(parents=True)
         own = tmp / home if home else operator
         own.mkdir(exist_ok=True)
-        env = {**base, "HOME": str(own), "PYTHONPATH": str(ROOT)}
+        env = {**base, "HOME": str(own), "PYTHONPATH": str(checkouts[code])}
         if session:
             env[SESSION_VAR] = session
         before = _shot(operator / ".glorfindel")
-        proc = subprocess.Popen([sys.executable, str(driver), str(operator), end], cwd=cwd, env=env,
+        proc = subprocess.Popen([sys.executable, str(driver), str(operator), end, what], cwd=cwd, env=env,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         runs[name] = (proc, operator, own, before)
     out = {}
@@ -114,6 +140,18 @@ def test_a_probe_from_a_lot_s_worktree_is_refused_and_said_even_when_it_swallows
     assert run["code"] == 0 and "swallowed" in run["out"], _said(run)
     assert run["after"] == run["before"], _said(run)
     assert "HY2b : écriture refusée" in run["err"] and "worktree" in run["err"], _said(run)
+
+
+def test_the_memory_of_cycles_is_refused_before_chromadb_opens_it(probes):
+    """ChromaDB 1.x writes its store from Rust, which the audit hook never sees: with the operator's
+    ~/.glorfindel/cycles there already, an agent session's CycleMemory would create its sqlite and
+    its index there (review of HY2b, round 1). Refused before ChromaDB opens it, and said — even when
+    the probe swallows the error (`glorfindel report`'s age_census does)."""
+    run = probes["memory"]
+    assert run["after"] == run["before"], _said(run)          # no chroma.sqlite3, no index
+    assert run["code"] == 0 and "swallowed" in run["out"], _said(run)
+    assert "HY2b : écriture refusée" in run["err"], _said(run)
+    assert str(run["operator"] / ".glorfindel" / "cycles") in run["err"], _said(run)
 
 
 def test_the_operator_writes_as_before(probes):

@@ -632,6 +632,11 @@ vrai `~/.glorfindel` du poste (`vm_notices.jsonl` et son verrou, un verrou de jo
   dates ou sa taille changées, `shutil.rmtree`, `sqlite3.connect`), plus `chmod` et `chown`. Un chemin
   est placé tel quel et résolu (un lien vers le dossier est vu). Un `mkdir` d'un dossier déjà là
   n'écrit rien : il échoue seul (`os.makedirs(exist_ok=True)` passe). Lire n'est jamais refusé.
+- **Un magasin qu'une bibliothèque écrit d'elle-même** : la mémoire des cycles (`~/.glorfindel/cycles`),
+  que ChromaDB 1.x écrit depuis Rust, hors de la vue du hook. `CycleMemory` appelle
+  `store_guard.check(chemin)` avant d'ouvrir ChromaDB : dans une session d'agent, l'ouverture même est
+  refusée et dite (l'ouvrir peut déjà écrire), en lecture comme en écriture. C'est le seul écrivain
+  natif sous `~/.glorfindel` (relecture de HY2b, tour 1).
 
 Le choix : un garde dans le code, pas un hook de Claude Code. Un hook (`PreToolUse` sur `Bash`) voit le
 texte d'une commande, pas ce qu'écrit le script qu'elle lance : les 52 sondes du 12/11 étaient
@@ -640,12 +645,13 @@ soit calculée (un module à son import, un chemin écrit en entier, un sous-pro
 de la variable). Il ne demande aucun geste à Jonathan : rien n'est installé dans ses réglages.
 
 Limites (un garde-fou contre l'erreur, jamais contre une session qui le veut : même utilisateur Unix) :
-ce qu'une bibliothèque C ou Rust écrit une fois son fichier ouvert, ou d'elle-même (les pages de
-sqlite, le store de ChromaDB 1.x, une écriture par descripteur, mmap) ; un chemin relatif à un
+ce qu'une bibliothèque C ou Rust écrit une fois son fichier ouvert, ou d'elle-même, quand son ouvreur
+n'appelle pas `check` (les pages de sqlite, une écriture par descripteur, mmap) ; un chemin relatif à un
 `dir_fd` ; un processus qui n'importe aucun module du dépôt (un `>` du shell, un script à lui) ; une
 session lancée sans les réglages du dépôt et hors d'un worktree. Les tests :
 `tests/unit/test_store_guard.py`, sur un opérateur simulé dans tmp (le dossier personnel du système
-d'un interpréteur neuf pointé sur `tmp_path`), jamais sur ce poste ; mutants M5150–M5159.
+d'un interpréteur neuf pointé sur `tmp_path`, son code une copie des paquets dans tmp), jamais sur ce
+poste ; mutants M5150–M5159, M5190, M5191, M5193.
 
 **Les secrets passent par leur nom** (L23, #228). Les cibles du `Makefile` qui lancent un conteneur
 (`annatar-run`, `annatar-dry-run`, `annatar-shell`, `glorfindel-watch`, `-list`, `-shell`…)

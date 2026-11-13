@@ -6,6 +6,7 @@ import time
 import uuid
 from pathlib import Path
 
+from eregion_core import store_guard
 
 _DEFAULT_PATH = Path.home() / ".glorfindel" / "cycles"
 # How many more cycles the retrieval reads than it returns, so that the copies of a
@@ -53,6 +54,9 @@ class CycleMemory:
         self.max_age_days = checked_max_age(DEFAULT_MAX_AGE_DAYS if max_age_days is None else max_age_days)
         self._clock = clock
         storage_path = Path(path) if path else _DEFAULT_PATH
+        # HY2b (#791): ChromaDB writes its store from Rust, which the guard's audit hook never sees —
+        # in an agent session, the operator's ~/.glorfindel/cycles is refused before it is opened.
+        store_guard.check(storage_path)
         storage_path.mkdir(parents=True, exist_ok=True)
         self._client = chromadb.PersistentClient(path=str(storage_path))
         self._collection = self._client.get_or_create_collection(

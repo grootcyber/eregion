@@ -23,10 +23,13 @@ Glorfindel's code meets as it meets a read-only disk.
   or replaced, a link made, its times, size or mode changed, shutil.rmtree, sqlite3.connect. A path is
   placed as given and resolved (a link into the folder is seen). A mkdir of a folder that is there
   writes nothing: left to fail by itself (os.makedirs(exist_ok=True)).
+- **A store a native library writes by itself** (ChromaDB 1.x's, from Rust, unseen by the hook): its
+  opener calls `check(path)` first, which refuses the opening itself (glorfindel/memory.py,
+  CycleMemory) — the only one under ~/.glorfindel.
 
 Not seen (a guard against error, never against a session that wants to: the same Unix user): what a C
-or Rust library writes once its file is open, or by itself (sqlite's pages, ChromaDB 1.x's store, a
-write through a descriptor, mmap); a path relative to a dir_fd; a process that imports no module of
+or Rust library writes once its file is open, or by itself, when its opener does not call `check`
+(sqlite's pages, a write through a descriptor, mmap); a path relative to a dir_fd; a process that imports no module of
 the repository (a shell's `>`, a script of its own); a session launched without the repository's
 settings and outside a worktree.
 """
@@ -138,15 +141,31 @@ def placed(path, roots: tuple[str, ...]) -> str | None:
     return None
 
 
+def message(full: str, why: str) -> str:
+    """The line said of a write refused at ``full``: the file, why, and what to do."""
+    return (f"HY2b : écriture refusée dans le ~/{STORE} de l'opérateur ({full}) — {why}. "
+            "Une sonde prend un HOME jetable (HOME=$(mktemp -d) python …) ou va dans la suite "
+            f"(tests/unit/) ; {DOC}.")
+
+
 def refusal(event: str, args, roots: tuple[str, ...], why: str) -> str | None:
     """What is said of this event when it writes in ``roots``, or None."""
     for path in written(event, args):
         full = placed(path, roots)
         if full is not None:
-            return (f"HY2b : écriture refusée dans le ~/{STORE} de l'opérateur ({full}) — {why}. "
-                    "Une sonde prend un HOME jetable (HOME=$(mktemp -d) python …) ou va dans la suite "
-                    f"(tests/unit/) ; {DOC}.")
+            return message(full, why)
     return None
+
+
+def _say(said: str) -> None:
+    """``said`` on stderr, once per line."""
+    if said not in _said:
+        _said.add(said)
+        try:
+            sys.stderr.write(said + "\n")
+            sys.stderr.flush()
+        except Exception:   # a closed stderr: the exception still says it
+            pass
 
 
 def _hook(event, args):
@@ -155,13 +174,22 @@ def _hook(event, args):
     said = refusal(event, args, _installed["roots"], _installed["why"])
     if said is None:
         return
-    if said not in _said:
-        _said.add(said)
-        try:
-            sys.stderr.write(said + "\n")
-            sys.stderr.flush()
-        except Exception:   # a closed stderr: the exception still says it
-            pass
+    _say(said)
+    raise Refused(said)
+
+
+def check(path) -> None:
+    """Refuse, before it is opened, a store that a native library writes by itself (ChromaDB 1.x
+    writes its sqlite and its index from Rust, which the audit hook never sees): ``path`` in the
+    operator's ~/.glorfindel, in an agent session, is said and raises Refused. Elsewhere, nothing."""
+    roots = guarded()
+    if not roots:
+        return
+    full = placed(path, roots)
+    if full is None:
+        return
+    said = message(full, _installed["why"])
+    _say(said)
     raise Refused(said)
 
 
