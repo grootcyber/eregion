@@ -806,6 +806,7 @@ briques:
     release: "0.6"
     lots: [JUG2c]
     issue: 788
+    pr: 793
     doc: docs/glorfindel.md
 
   - id: g-perimetre-illisible
