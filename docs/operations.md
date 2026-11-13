@@ -620,8 +620,10 @@ vrai `~/.glorfindel` du poste (`vm_notices.jsonl` et son verrou, un verrou de jo
   qui avale l'erreur est dite quand même.
 - **Une session d'agent** : `EREGION_AGENT_SESSION` posé (le bloc `env` de
   `~/eregion/.claude/settings.local.json` le donne à chaque session lancée dans `~/eregion` et aux
-  sous-agents qu'elle lance, `docs/sessions.md`, SEC12), ou un dossier courant dans le worktree d'un
-  lot (`.claude/worktrees/`) : la règle de `scripts/bench_shared.py`. **Partout ailleurs, rien n'est
+  sous-agents qu'elle lance, `docs/sessions.md`, SEC12), un dossier courant dans le worktree d'un
+  lot (`.claude/worktrees/`), ou un code qui vient d'un worktree (le fichier du garde y est, lancé
+  d'ailleurs) : la règle de `scripts/bench_shared.py`. Refusée pour son dossier courant, une sonde
+  s'entend dire aussi « ou lance la commande hors du worktree ». **Partout ailleurs, rien n'est
   installé** : le terminal de l'opérateur, ses conteneurs (`docker run` ne leur passe pas la
   variable), la watch, le bot, Imladris et la CI écrivent comme avant, sans hook ni coût.
 - **Le vrai `~/.glorfindel`** : celui du dossier personnel que le système donne à l'utilisateur
@@ -651,7 +653,7 @@ n'appelle pas `check` (les pages de sqlite, une écriture par descripteur, mmap)
 session lancée sans les réglages du dépôt et hors d'un worktree. Les tests :
 `tests/unit/test_store_guard.py`, sur un opérateur simulé dans tmp (le dossier personnel du système
 d'un interpréteur neuf pointé sur `tmp_path`, son code une copie des paquets dans tmp), jamais sur ce
-poste ; mutants M5150–M5159, M5190, M5191, M5193.
+poste ; mutants M5150–M5159, M5190–M5194.
 
 **Les secrets passent par leur nom** (L23, #228). Les cibles du `Makefile` qui lancent un conteneur
 (`annatar-run`, `annatar-dry-run`, `annatar-shell`, `glorfindel-watch`, `-list`, `-shell`…)

@@ -78,6 +78,7 @@ SCENARIOS = {
     #        the checkout of its code, what it writes)
     "agent": ("1", "elsewhere", None, "raise", "operator", "notice"),
     "worktree": (None, "w/.claude/worktrees/lot-x", None, "swallow", "operator", "notice"),
+    "code": (None, "elsewhere", None, "swallow", "worktree", "notice"),
     "operator": (None, "elsewhere", None, "raise", "operator", "notice"),
     "throwaway": ("1", "elsewhere", "probe-home", "raise", "operator", "notice"),
     "memory": ("1", "elsewhere", None, "swallow", "operator", "memory"),
@@ -131,6 +132,8 @@ def test_an_agent_session_s_probe_is_refused_before_it_writes_and_says_so(probes
     assert str(run["operator"] / ".glorfindel") in run["err"], _said(run)
     assert SESSION_VAR in run["err"], _said(run)
     assert "PermissionError" in run["err"] or "Refused" in run["err"], _said(run)
+    # its variable stays wherever it runs: leaving the worktree is no way out, never said
+    assert "hors du worktree" not in run["err"], _said(run)
 
 
 def test_a_probe_from_a_lot_s_worktree_is_refused_and_said_even_when_it_swallows_the_error(probes):
@@ -140,6 +143,18 @@ def test_a_probe_from_a_lot_s_worktree_is_refused_and_said_even_when_it_swallows
     assert run["code"] == 0 and "swallowed" in run["out"], _said(run)
     assert run["after"] == run["before"], _said(run)
     assert "HY2b : écriture refusée" in run["err"] and "worktree" in run["err"], _said(run)
+    assert "ou lance la commande hors du worktree" in run["err"], _said(run)
+
+
+def test_a_probe_that_runs_a_lot_s_worktree_code_from_elsewhere_is_refused_and_said(probes):
+    """No EREGION_AGENT_SESSION, its folder elsewhere, but its code a lot's worktree's (the checkout
+    it runs from, scripts/bench_shared.py's `here`): refused too, and said. The operator's code comes
+    from ~/eregion: his probe writes (test_the_operator_writes_as_before)."""
+    run = probes["code"]
+    assert run["code"] == 0 and "swallowed" in run["out"], _said(run)
+    assert run["after"] == run["before"], _said(run)
+    assert "HY2b : écriture refusée" in run["err"] and "le code d'un worktree" in run["err"], _said(run)
+    assert "hors du worktree" not in run["err"], _said(run)
 
 
 def test_the_memory_of_cycles_is_refused_before_chromadb_opens_it(probes):
@@ -178,12 +193,15 @@ def test_a_probe_with_a_throwaway_home_writes_in_its_own(probes):
 
 def test_an_agent_session_is_its_variable_or_a_lot_s_worktree_never_the_operator(tmp_path):
     from eregion_core import store_guard as sg
-    (tmp_path / ".claude" / "worktrees" / "lot" / "sub").mkdir(parents=True)
-    (tmp_path / "eregion").mkdir()
-    assert sg.SESSION_VAR in sg.why_guarded({sg.SESSION_VAR: "1"}, tmp_path / "eregion")
-    assert "worktree" in sg.why_guarded({}, tmp_path / ".claude" / "worktrees" / "lot" / "sub")
-    assert sg.why_guarded({}, tmp_path / "eregion") == ""
-    assert sg.why_guarded({sg.SESSION_VAR: ""}, tmp_path / ".claude") == ""
+    lot = tmp_path / ".claude" / "worktrees" / "lot" / "sub"
+    lot.mkdir(parents=True)
+    (tmp_path / "eregion" / "eregion_core").mkdir(parents=True)
+    mine = tmp_path / "eregion" / "eregion_core" / "store_guard.py"       # the operator's code
+    assert sg.SESSION_VAR in sg.why_guarded({sg.SESSION_VAR: "1"}, tmp_path / "eregion", mine)
+    assert sg.why_guarded({}, lot, mine) == sg.WORKTREE_CWD
+    assert sg.why_guarded({}, tmp_path / "eregion", lot / "store_guard.py") == sg.WORKTREE_CODE
+    assert sg.why_guarded({}, tmp_path / "eregion", mine) == ""
+    assert sg.why_guarded({sg.SESSION_VAR: ""}, tmp_path / ".claude", mine) == ""
 
 
 # --- What a write is, where it is placed ----------------------------------------------------------------

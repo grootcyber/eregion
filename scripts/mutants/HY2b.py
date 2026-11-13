@@ -2,8 +2,8 @@
 ~/.glorfindel — refused and said before it happens, by an audit hook eregion_core installs in an agent
 session only (eregion_core/store_guard.py). M5150–M5159, measured by tests/unit/test_store_guard.py:
 probes in fresh interpreters over an operator simulated in tmp (its system home a folder of tmp_path),
-never this workstation's. M5190, M5191, M5193, the review's round 1: the memory of cycles (ChromaDB, written
-from Rust) refused before it is opened, and said.
+never this workstation's. M5190–M5194, the review's round 1: the memory of cycles (ChromaDB, written
+from Rust) refused before it is opened, a worktree's code guarded wherever it runs, the way out said.
 """
 GUARD = "eregion_core/store_guard.py"
 T = "tests/unit/test_store_guard.py::"
@@ -51,6 +51,7 @@ MUTANTS = [
      "(eregion_core/store_guard.py)\n", ""),
 ]
 MEMORY = "glorfindel/memory.py"
+CODE = T + "test_a_probe_that_runs_a_lot_s_worktree_code_from_elsewhere_is_refused_and_said"
 CYCLES = T + "test_the_memory_of_cycles_is_refused_before_chromadb_opens_it"
 MUTANTS += [
     ("M5190", "the memory of cycles no longer checked: an agent session's CycleMemory opens ChromaDB in the "
@@ -63,10 +64,17 @@ MUTANTS += [
      "        storage_path.mkdir(parents=True, exist_ok=True)\n"
      "        self._client = chromadb.PersistentClient(path=str(storage_path))\n"
      "        store_guard.check(storage_path)\n"),
+    ("M5192", "the checkout the code runs from no longer looked at: a probe run from elsewhere on a lot's "
+              "worktree code writes in the operator's ~/.glorfindel (HY2b, review round 1)", GUARD,
+     "    if _in_worktree(Path(__file__) if here is None else here):\n", "    if False:\n"),
     ("M5193", "a refused opening of the memory no longer said: `glorfindel report` swallows the error, the "
               "probe never knows why (HY2b, review round 1)", GUARD,
      '    said = message(full, _installed["why"])\n    _say(said)\n',
      '    said = message(full, _installed["why"])\n'),
+    ("M5194", "the way out of a worktree no longer said: a probe refused for its current folder is not told "
+              "to run elsewhere (HY2b, review round 1)", GUARD,
+     '    away = " ou lance la commande hors du worktree" if why == WORKTREE_CWD else ""\n',
+     '    away = ""\n'),
 ]
 TESTS = {
     "M5150": AGENT,
@@ -81,5 +89,7 @@ TESTS = {
     "M5159": T + "test_every_writer_of_glorfindel_s_state_imports_the_guard_first",
     "M5190": CYCLES,
     "M5191": CYCLES,
+    "M5192": CODE,
     "M5193": CYCLES,
+    "M5194": WORKTREE,
 }

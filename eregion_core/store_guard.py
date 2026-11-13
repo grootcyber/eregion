@@ -11,10 +11,12 @@ first), in an agent session only, an audit hook refuses every write under the op
 Glorfindel's code meets as it meets a read-only disk.
 
 - **An agent session**: EREGION_AGENT_SESSION set (the repository's settings give it to every session
-  of Claude Code launched in ~/eregion, and to the sub-agents they start — docs/sessions.md, SEC12), or
-  a current folder in a lot's worktree (.claude/worktrees/) — the rule of scripts/bench_shared.py's
-  `session_refusal`. Anywhere else (the operator's terminal, his containers, the watch, Imladris, the
-  CI) nothing is installed: no hook, no cost, every write as before.
+  of Claude Code launched in ~/eregion, and to the sub-agents they start — docs/sessions.md, SEC12), a
+  current folder in a lot's worktree (.claude/worktrees/), or code that runs from one (this module's
+  file there) — the rule of scripts/bench_shared.py's `session_refusal`. Anywhere else (the
+  operator's terminal, his containers, the watch, Imladris, the CI) nothing is installed: no hook,
+  no cost, every write as before. Refused for its current folder, a probe is told it may also run
+  the command outside the worktree; its variable, or its code, stays wherever it runs.
 - **The operator's ~/.glorfindel**: under the home the system gives the user (pwd), whatever HOME
   says — as given and resolved. A probe with a throwaway HOME (HOME=$(mktemp -d)) writes in its own;
   the suite's throwaway HOME (HY2) is one too.
@@ -42,6 +44,9 @@ from pathlib import Path
 STORE = ".glorfindel"
 SESSION_VAR = "EREGION_AGENT_SESSION"
 DOC = "docs/operations.md, « Une sonde d'agent n'écrit jamais dans le vrai ~/.glorfindel »"
+# Why a process is a session's, when its variable is not set: where it runs, or where its code is.
+WORKTREE_CWD = "le worktree d'un lot (.claude/worktrees/)"
+WORKTREE_CODE = "le code d'un worktree de lot (.claude/worktrees/)"
 
 _WRITE_FLAGS = os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_APPEND | os.O_TRUNC
 # The audit events of a write other than `open`: the positions of the paths written, then of the
@@ -71,17 +76,35 @@ class Refused(PermissionError):
     """A write in the operator's ~/.glorfindel, refused in an agent session (HY2b)."""
 
 
-def why_guarded(env=None, cwd=None) -> str:
-    """Why this process is an agent session's, or '' (the operator's: nothing is guarded)."""
+def _in_worktree(where) -> bool:
+    """``where`` lies in a lot's worktree (.claude/worktrees/), resolved."""
+    try:
+        parts = Path(where).resolve().parts
+    except OSError:   # a current folder removed
+        return False
+    if ".claude" in parts and "worktrees" in parts[parts.index(".claude"):]:
+        return True
+    return False
+
+
+def why_guarded(env=None, cwd=None, here=None) -> str:
+    """Why this process is an agent session's, or '' (the operator's: nothing is guarded).
+
+    The rule of scripts/bench_shared.py's `session_refusal`: the variable, then the current folder,
+    then the checkout this code runs from (``here``, this module's own file by default) — a probe
+    run from elsewhere that imports a worktree's code is a session's; the operator's comes from
+    ~/eregion."""
     env = os.environ if env is None else env
     if env.get(SESSION_VAR):
         return f"une session d'agent ({SESSION_VAR})"
     try:
-        parts = Path(cwd or os.getcwd()).resolve().parts
+        cwd = os.getcwd() if cwd is None else cwd
     except OSError:   # a current folder removed
-        return ""
-    if ".claude" in parts and "worktrees" in parts[parts.index(".claude"):]:
-        return "le worktree d'un lot (.claude/worktrees/)"
+        cwd = None
+    if cwd is not None and _in_worktree(cwd):
+        return WORKTREE_CWD
+    if _in_worktree(Path(__file__) if here is None else here):
+        return WORKTREE_CODE
     return ""
 
 
@@ -143,9 +166,10 @@ def placed(path, roots: tuple[str, ...]) -> str | None:
 
 def message(full: str, why: str) -> str:
     """The line said of a write refused at ``full``: the file, why, and what to do."""
+    away = " ou lance la commande hors du worktree" if why == WORKTREE_CWD else ""
     return (f"HY2b : écriture refusée dans le ~/{STORE} de l'opérateur ({full}) — {why}. "
-            "Une sonde prend un HOME jetable (HOME=$(mktemp -d) python …) ou va dans la suite "
-            f"(tests/unit/) ; {DOC}.")
+            "Une sonde prend un HOME jetable (HOME=$(mktemp -d) python …), va dans la suite "
+            f"(tests/unit/){away} ; {DOC}.")
 
 
 def refusal(event: str, args, roots: tuple[str, ...], why: str) -> str | None:
