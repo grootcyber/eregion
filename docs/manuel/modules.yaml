@@ -1603,6 +1603,16 @@ briques:
     issue: 752
     doc: docs/demarrer/mobile.md
 
+  - id: s-cd-journal
+    composant: socle
+    poste: s-heberger
+    nom: "make imladris-cd-status shows the last lines of the CD's journal of the day, on Imladris's systemd too"
+    etat: main
+    release: "0.6"
+    lots: [CDJ1]
+    issue: 783
+    doc: infra/glorfindel-host/README.md
+
   - id: s-cd
     composant: socle
     poste: s-heberger

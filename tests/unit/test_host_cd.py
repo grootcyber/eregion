@@ -2511,3 +2511,75 @@ def test_the_installation_carries_the_verifier():
                           "HOST_IP=203.0.113.9"], capture_output=True, text=True, timeout=60)
     assert res.returncode == 0 and "scripts/published_image.py" in res.stdout
     assert "published_image.py install-cosign .eregion-cd/cosign" in res.stdout
+
+
+# --- CDJ1 (#783): make imladris-cd-status shows the last lines of the day's journal ---------------
+
+# A fake journalctl, faithful to both behaviours measured on 13/11: systemd 249 (Imladris, Ubuntu
+# 22.04) reads forward from --since and stops at -n lines, the oldest of the window; systemd 255 (a
+# recent workstation) gives the last -n lines of the window. Its arguments are recorded.
+_FAKE_JOURNALCTL = r"""#!/bin/sh
+printf '%s\n' "$*" >> "$FAKE_JOURNAL_ARGS"
+since=; n=
+while [ $# -gt 0 ]; do
+  case "$1" in --since) since=1; shift ;; -n) shift; n=$1 ;; esac
+  shift
+done
+if [ -z "$n" ]; then cat "$FAKE_JOURNAL"
+elif [ -n "$since" ] && [ "$FAKE_SYSTEMD" = 249 ]; then head -n "$n" "$FAKE_JOURNAL"
+else tail -n "$n" "$FAKE_JOURNAL"
+fi
+"""
+
+
+def _cd_status_lines(tmp_path, systemd):
+    """Run `make imladris-cd-status` for real, its ssh faked: the command it sends Imladris is then
+    run here, against a fake journalctl (40 passes of the day, the newest last), systemctl and
+    python3. Returns (the journal lines it shows, the arguments journalctl got)."""
+    if not shutil.which("make"):
+        pytest.skip("make not installed")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    remote, args = tmp_path / "remote.sh", tmp_path / "journal.args"
+    fakes = {
+        "ssh": '#!/bin/sh\nfor a; do last=$a; done\nprintf "%s" "$last" > "$FAKE_REMOTE"\n',
+        "ssh-keyscan": "#!/bin/sh\nexit 0\n",
+        "journalctl": _FAKE_JOURNALCTL,
+        "systemctl": "#!/bin/sh\necho enabled\n",
+        "python3": "#!/bin/sh\necho '  tourne : v0.0.0'\n",
+    }
+    for name, text in fakes.items():
+        (bin_dir / name).write_text(text)
+        (bin_dir / name).chmod(0o755)
+    journal = tmp_path / "journal"
+    journal.write_text("".join(f"passage {i:02d}\n" for i in range(1, 41)))
+    env = {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", "HOME": str(tmp_path),
+           "FAKE_REMOTE": str(remote), "FAKE_JOURNAL": str(journal), "FAKE_JOURNAL_ARGS": str(args),
+           "FAKE_SYSTEMD": str(systemd)}
+    for k in ("HOST_SSH_FINGERPRINT", "HOST_KNOWN_HOSTS", "HOST_IP", "HOST_SSH_KEY"):
+        env.pop(k, None)
+    res = subprocess.run(["make", "-s", "--no-print-directory", "-C", str(ROOT), "imladris-cd-status",
+                          "HOST_IP=192.0.2.10", f"HOST_KNOWN_HOSTS={tmp_path / 'kh'}"],
+                         env=env, capture_output=True, text=True, timeout=60)
+    assert res.returncode == 0, res.stderr
+    out = subprocess.run(["sh", "-c", remote.read_text()], env=env, capture_output=True, text=True,
+                         timeout=60, cwd=tmp_path)
+    assert out.returncode == 0, out.stderr
+    shown = [line[len("  | "):] for line in out.stdout.splitlines() if line.startswith("  | ")]
+    return shown, args.read_text().split()
+
+
+@pytest.mark.parametrize("systemd", [249, 255])
+def test_cd_status_shows_the_last_fifteen_lines_of_the_day_on_imladris_systemd_too(tmp_path, systemd):
+    """On 13/11, right after 0.5.12 was deployed and the agent reinstalled, the status showed 15
+    passes of the day before (« v0.5.10 tourne déjà »): `--since -1d -n 15` on Imladris's systemd 249
+    gives the window's first lines. Whatever the version, the newest are shown, in their order."""
+    shown, _ = _cd_status_lines(tmp_path, systemd)
+    assert shown == [f"passage {i:02d}" for i in range(26, 41)]
+
+
+def test_cd_status_reads_its_own_unit_over_the_last_day(tmp_path):
+    """The window stays the last day, and the journal the CD's unit alone."""
+    _, args = _cd_status_lines(tmp_path, 249)
+    assert args[args.index("--since") + 1] == "-1d"
+    assert args[args.index("-u") + 1] == "eregion-cd"
