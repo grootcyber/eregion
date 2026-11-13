@@ -639,6 +639,10 @@ vrai `~/.glorfindel` du poste (`vm_notices.jsonl` et son verrou, un verrou de jo
   `store_guard.check(chemin)` avant d'ouvrir ChromaDB : dans une session d'agent, l'ouverture même est
   refusée et dite (l'ouvrir peut déjà écrire), en lecture comme en écriture. C'est le seul écrivain
   natif sous `~/.glorfindel` (relecture de HY2b, tour 1).
+- **Le code que la sonde importe** : le garde vaut pour lui seul. L'installation éditable du venv
+  pointe vers `~/eregion` : une sonde lancée par le Python du venv, hors d'un worktree et sans
+  `PYTHONPATH`, importe le code de `~/eregion`, et le garde n'y vaut qu'une fois `~/eregion` à jour sur
+  `main` (l'Orchestre l'avance après chaque fusion).
 
 Le choix : un garde dans le code, pas un hook de Claude Code. Un hook (`PreToolUse` sur `Bash`) voit le
 texte d'une commande, pas ce qu'écrit le script qu'elle lance : les 52 sondes du 12/11 étaient
