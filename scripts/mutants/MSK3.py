@@ -16,6 +16,7 @@ NOTICES = "glorfindel/vm_notices.py"
 ESC = "glorfindel/escalations.py"
 CLI = "glorfindel/cli.py"
 MASK = "glorfindel/masking.py"
+VM_COMMAND = "glorfindel/vm_command.py"   # group_and_name, since MSK3b
 _M = "tests/unit/test_bot_masking.py"
 
 MUTANTS = [
@@ -95,10 +96,10 @@ MUTANTS = [
      "named passes in the webhook and the notices (MSK3)", MASK,
      '    subs = set(subscriptions or ()) | subscriptions_known(text) | subscriptions_known(str(resource_id or ""))\n',
      '    subs = set(subscriptions or ()) | subscriptions_known(str(resource_id or ""))\n'),
-    ("M5112", "the last segment of any id taken for a VM's name: an extension's id gives « rg/ext » (MSK3)", MASK,
+    ("M5112", "the last segment of any id taken for a VM's name: an extension's id gives « rg/ext » (MSK3)", VM_COMMAND,
      '    if "resourcegroups" in low[:-1] and len(low) >= 2 and low[-2] == "virtualmachines":\n',
      '    if "resourcegroups" in low[:-1] and "providers" in low:\n'),
-    ("M5113", "a group with « ( ) » left bare in the command: the shell refuses it (MSK3)", MASK,
+    ("M5113", "a group with « ( ) » left bare in the command: the shell refuses it (MSK3)", VM_COMMAND,
      '            return shlex.quote(f"{parts[i + 1]}/{parts[-1]}")\n',
      '            return f"{parts[i + 1]}/{parts[-1]}"\n'),
 ]

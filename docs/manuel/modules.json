@@ -1164,6 +1164,20 @@
    "doc": "docs/glorfindel.md"
   },
   {
+   "id": "g-commandes-groupe-nom",
+   "composant": "glorfindel",
+   "poste": "g-agir",
+   "nom": "Every command to copy Glorfindel writes for a VM names it by its group and name, which the CLI resolves: the card of an action taken alone, the TUI, the console, the watch's cards, the CLI's hints",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "MSK3b"
+   ],
+   "issue": 787,
+   "pr": 792,
+   "doc": "docs/glorfindel.md"
+  },
+  {
    "id": "g-dossier-isolation",
    "composant": "glorfindel",
    "poste": "g-verifier",

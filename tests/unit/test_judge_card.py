@@ -189,7 +189,7 @@ def test_an_autonomous_isolation_verified_makes_one_card_to_judge(azure, posts):
     assert x["verification"]["verified_at"] == final["outcome"]["verified_at"]
     assert "MaxWrite: 147000000" in x["evidence"]
     assert "mode non_disruptive" in card["reason"] and "vérifiée sur Azure" in card["reason"]
-    assert "glorfindel release web --yes" in card["suggested_steps"][0]
+    assert "`glorfindel release rg-app1/web --yes`" in card["suggested_steps"][0]   # <groupe>/<nom> (MSK3b)
     # Nothing else: no escalation — the action ran and held.
     assert [e["escalation_type"] for e in escalations.pending()] == [escalations.EXECUTED_TYPE]
     [judge] = escalations.to_judge()
@@ -215,7 +215,7 @@ def test_an_autonomous_block_verified_makes_its_card_with_its_address(azure, pos
     [card] = _cards()
     assert card["action"] == "block_suspicious_ip" and card["action_params"]["ip"] == ATTACKER
     assert card["executed"]["ip"] == ATTACKER and f"({ATTACKER})" in card["reason"]
-    assert f"glorfindel unblock {ATTACKER} web --yes" in card["suggested_steps"][0]
+    assert f"`glorfindel unblock {ATTACKER} rg-app1/web --yes`" in card["suggested_steps"][0]
     assert escalations.observation_report()["disruptive"]["unjudged"] == 1
 
 

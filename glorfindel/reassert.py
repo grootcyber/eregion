@@ -28,6 +28,7 @@ from glorfindel.reassert_cards import (
 from glorfindel.reassert_perimeters import put_back_perimeters
 from glorfindel.reassert_quarantine import _report_altered_quarantines
 from glorfindel.reassert_said import _block_drift, _situation, _worse, still_said
+from glorfindel.vm_command import group_and_name   # a command to copy names its VM so (MSK3b)
 
 log = logging.getLogger(__name__)
 
@@ -243,7 +244,7 @@ def _reassert_isolation(connector, autonomy, vm: str, report: list[dict], ref: s
     if _stale(iso.get("releasing_at")) and not iso.get("stale_alerted_at"):
         reason = (f"La levée de l'isolation de {vm} a été interrompue (commencée le "
                   f"{iso['releasing_at']}, jamais terminée) : des cartes peuvent être levées et "
-                  f"d'autres encore isolées. Relancer `glorfindel release {rid} --yes`, ou "
+                  f"d'autres encore isolées. Relancer `glorfindel release {group_and_name(rid)} --yes`, ou "
                   "ré-isoler si la levée n'était pas voulue.")
         _alert(_alert_id(vm, rid), resource_id=rid, action="isolate_vm", reason=reason)
         _save_isolation_state(ref or vm, {**state, "stale_alerted_at": now})
@@ -288,7 +289,7 @@ def _reassert_isolation(connector, autonomy, vm: str, report: list[dict], ref: s
                if iso.get("reasserted_at") else "")
             + " — la VM n'est plus isolée. Retrait délibéré, `terraform apply`, "
             "redéploiement Bicep/ARM de la carte ? Glorfindel ne les repose pas : "
-            f"`glorfindel release {rid} --yes` si la levée est voulue, sinon ré-isoler."
+            f"`glorfindel release {group_and_name(rid)} --yes` si la levée est voulue, sinon ré-isoler."
             + who
         )
         _alert(_alert_id(vm, rid), resource_id=rid, action="isolate_vm", reason=reason)
@@ -318,7 +319,7 @@ def _reassert_isolation(connector, autonomy, vm: str, report: list[dict], ref: s
             # fois », nothing promised — marked said after its card, gone again it is « une deuxième fois ».
             reason = (f"L'isolation de {vm} avait disparu d'Azure ; reposée, elle ne tient pas en entier : {short}. "
                       "Glorfindel ne la repose pas de nouveau : "
-                      f"`glorfindel release {rid} --yes` si la levée est voulue, sinon ré-isoler." + who + left)
+                      f"`glorfindel release {group_and_name(rid)} --yes` si la levée est voulue, sinon ré-isoler." + who + left)
             outcome = "partial"
         else:
             reason = (f"L'isolation de {vm} avait disparu d'Azure (modification hors "
@@ -363,7 +364,7 @@ def _reassert_block(connector, autonomy, vm: str, ip: str, report: list[dict], r
     if _stale(b.get("unblocking_at")) and not b.get("stale_alerted_at"):
         reason = (f"Le déblocage de {ip} sur {vm} a été interrompu (commencé le "
                   f"{b['unblocking_at']}) : des règles peuvent rester. Relancer "
-                  f"`glorfindel unblock {ip} {rid} --yes`, ou re-bloquer.")
+                  f"`glorfindel unblock {ip} {group_and_name(rid)} --yes`, ou re-bloquer.")
         _alert(_alert_id(vm, rid, ip), resource_id=rid, action="block_suspicious_ip",
                reason=reason, action_params={"ip": ip})
         _update_block_entry(ref or vm, ip, stale_alerted_at=now)
@@ -434,7 +435,7 @@ def _reassert_block(connector, autonomy, vm: str, ip: str, report: list[dict], r
         return
     if b.get("reasserted_at") or _mode(autonomy, vm, ref) == "human_only":
         reason = (_block_drift(ip, vm, verification, again=bool(b.get("reasserted_at")))
-                  + f" Glorfindel ne le repose pas : `glorfindel unblock {ip} {rid} --yes` si c'est voulu, "
+                  + f" Glorfindel ne le repose pas : `glorfindel unblock {ip} {group_and_name(rid)} --yes` si c'est voulu, "
                   "sinon re-bloquer.")
         _alert(_alert_id(vm, rid, ip), resource_id=rid, action="block_suspicious_ip",
                reason=reason, action_params={"ip": ip})
@@ -508,7 +509,7 @@ def _rewrite_block(connector, b: dict, vm: str, rid: str, ip: str, report: list[
                       + ("sa règle de périmètre réécrite à la passe précédente" if later else "ses règles réécrites une fois")
                       + (f" ({' ; '.join(notes)})" if notes else "")
                       + ", il ne tient pas en entier — " + _block_drift(ip, vm, after, said=True, partial=not errors)
-                      + f" Glorfindel ne les réécrit pas de nouveau : `glorfindel unblock {ip} {rid} --yes` si "
+                      + f" Glorfindel ne les réécrit pas de nouveau : `glorfindel unblock {ip} {group_and_name(rid)} --yes` si "
                       "c'est voulu, sinon re-bloquer." + _held_partial(ref or vm, ip))
             outcome = "partial"
     else:
@@ -650,10 +651,10 @@ def ttl_alerts(ttl_h: float, now: datetime | None = None) -> list[dict]:
                     action="review_isolation", escalation_type="ttl_exceeded",
                     reason=(f"{vm} est isolée depuis {age_h:.1f} h (TTL {ttl_h:g} h). Glorfindel ne "
                             "lève pas une isolation seul : vérifier la VM, puis "
-                            f"`glorfindel release {rid} --yes` si elle est saine, ou la garder "
+                            f"`glorfindel release {group_and_name(rid)} --yes` si elle est saine, ou la garder "
                             "isolée (restore en attente, investigation)."),
                     suggested_steps=["Vérifier l'état de la VM (restore terminé ? intégrité ?).",
-                                     f"Lever : glorfindel release {rid} --yes",
+                                     f"Lever : glorfindel release {group_and_name(rid)} --yes",
                                      "Ou garder l'isolation et acquitter cette carte."])
                 _save_isolation_state(rid, {**state, "ttl_alerted_at": now.isoformat()})
                 out.append({"vm": vm, "age_h": age_h})

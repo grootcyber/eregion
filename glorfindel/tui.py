@@ -19,6 +19,8 @@ from rich.markup import escape as _esc_markup
 from rich.panel import Panel
 from rich.text import Text
 
+from glorfindel.vm_command import group_and_name
+
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -332,6 +334,9 @@ def _escalations_renderable(
     for e in items[:4]:
         age = _age(e["timestamp"], now)
         vm_short = e["resource_id"].split("/")[-1]
+        # A command to copy names the VM by « <groupe>/<nom> », never its name alone (MSK3b, #787):
+        # copied to another terminal, or with a VM of that name in another group, it could take that one.
+        vm_arg = group_and_name(e["resource_id"])
         esc_id = e["id"][:8]
         action = e["action"]
         esc_type = e.get("escalation_type", "")
@@ -347,13 +352,13 @@ def _escalations_renderable(
             lines.append(f"    → glorfindel ack {esc_id}\n", style="dim cyan")
         elif action == "restore_from_backup":
             lines.append(
-                f"    → glorfindel restore {vm_short} --yes --before "
+                f"    → glorfindel restore {vm_arg} --yes --before "
                 f"{e.get('first_seen') or e.get('timestamp') or '<ISO8601>'}  # before the attack began\n",
                 style="dim cyan"
             )
         elif esc_type == "verification_failed":
             lines.append(
-                f"    → glorfindel revert {vm_short} --yes\n", style="dim cyan"
+                f"    → glorfindel revert {vm_arg} --yes\n", style="dim cyan"
             )
         else:
             lines.append(f"    → glorfindel ack {esc_id}\n", style="dim cyan")

@@ -339,7 +339,7 @@ def test_every_copyable_restore_command_asks_for_the_moment(monkeypatch):
     """The commands to copy — the CLI's next steps, the bot's, the TUI's, the console's —
     show --before."""
     from glorfindel import cli
-    # The card's VM known here (isolated): its short name takes it back (MSK2).
+    # The card's VM known here (isolated): its « <groupe>/<nom> » takes it back (MSK2, MSK3b).
     monkeypatch.setattr("glorfindel.actions.active_isolations", lambda: [{"resource_id": VM}])
     monkeypatch.setattr("glorfindel.actions.active_blocks", lambda: [])
     monkeypatch.setattr("glorfindel.discovery.AssetRegistry", lambda: SimpleNamespace(all=lambda: []))
@@ -353,8 +353,8 @@ def test_every_copyable_restore_command_asks_for_the_moment(monkeypatch):
                                 "id": "e1", "first_seen": "2026-10-29T08:12:00+00:00"})
     finally:
         cli.console = real
-    # By the VM's short name, never the full id (MSK2): `restore` takes it back.
-    assert "glorfindel restore vm-example-01 --yes --before 2026-10-29T08:12:00+00:00" in buf.getvalue()
+    # By the VM's « <groupe>/<nom> », never the full id (MSK2) nor its name alone (MSK3b).
+    assert f"glorfindel restore {RG_A}/vm-example-01 --yes --before 2026-10-29T08:12:00+00:00" in buf.getvalue()
     assert SUB not in buf.getvalue()
     for rel in ("glorfindel/bot.py", "glorfindel/tui.py", "eregion_console/static/glorfindel.js"):
         text = (ROOT / rel).read_text()
