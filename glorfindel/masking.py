@@ -13,6 +13,8 @@ is called by the rendering, after the decision.
 The Discord bot and the webhook follow the same rule (MSK3, #772): their messages are posted in a
 channel, from which they are pasted too (glorfindel/bot.py, glorfindel/vm_notices.py,
 glorfindel/escalations.py). A button keeps the full id in its arguments: it acts, it is not shown.
+
+The TUI too (MSK2c, #798): what it writes of a card or a signal, each text masked before it is cut.
 """
 from __future__ import annotations
 
