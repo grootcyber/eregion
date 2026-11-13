@@ -200,6 +200,9 @@ def test_readme_and_the_makefile_say_check_ttl_escalates():
     assert "auto-release" not in env and "never" in env
     [helpline] = _lines("Makefile", "make glorfindel-check-ttl ")
     assert "Escalate" in helpline and "Release" not in helpline
+    # 0 disables nothing: `ttl_alerts(0)` escalates every isolation at once (the review's round 1).
+    envrc = (ROOT / ".envrc.example").read_text(encoding="utf-8")
+    assert "pour désactiver" not in envrc and "0 ne désactive rien" in envrc
 
 
 def test_check_ttl_s_help_and_its_card_never_say_released():
@@ -210,3 +213,60 @@ def test_check_ttl_s_help_and_its_card_never_say_released():
     assert "auto-release" not in out and "never a release" in " ".join(out.split())
     label = escalations._ESCALATION_LABELS["ttl_exceeded"]
     assert "jamais levée" in label and "levée à" not in label
+
+
+# ── the webhook's secret never in the log (JUG2d review) ──────────────────────────────────────
+
+_TOKEN = "fake-secret-token-0123456789"
+_SECRET_HOOK = f"https://discord.com/api/webhooks/1234567890/{_TOKEN}/slack"
+
+
+def _fail_with(kind: str, monkeypatch) -> None:
+    """The real requests and urllib3, the socket below them failing: the name not resolved, the
+    connection refused, or not made in time — nothing leaves the machine."""
+    import urllib3.util.connection as conn
+
+    def resolve(*args, **kwargs):
+        raise socket.gaierror(socket.EAI_NONAME, "Name or service not known")
+
+    def refused(*args, **kwargs):
+        raise ConnectionRefusedError(111, "Connection refused")
+
+    def slow(*args, **kwargs):
+        raise socket.timeout("timed out")
+    if kind == "resolution":
+        monkeypatch.setattr(socket, "getaddrinfo", resolve)
+    else:
+        monkeypatch.setattr(conn, "create_connection", refused if kind == "connection" else slow)
+
+
+@pytest.mark.parametrize("kind", ["resolution", "connection", "timeout"])
+@pytest.mark.parametrize("path", ["post_webhook", "relay_pass"])
+def test_a_failed_post_never_logs_the_webhook_s_token(kind, path, monkeypatch, caplog):
+    """requests writes the webhook's whole path in its error (`/api/webhooks/<id>/<token>`): the log
+    says the error's types, never its text — at once (`post_webhook`, every card since JUG2d) as by the
+    relay pass (JUG2b, JUG2c)."""
+    import logging
+
+    import requests
+    _no_bot(monkeypatch)
+    monkeypatch.setenv("GLORFINDEL_WEBHOOK_URL", _SECRET_HOOK)
+    for k in _PROXIES:
+        monkeypatch.delenv(k, raising=False)
+    _fail_with(kind, monkeypatch)
+    with pytest.raises(requests.RequestException) as raised:     # what the log used to print
+        requests.post(_SECRET_HOOK, json={}, timeout=(1, 1))
+    assert _TOKEN in str(raised.value)
+    with caplog.at_level(logging.DEBUG):
+        if path == "post_webhook":
+            assert vm_notices.post_webhook({"text": "t"}, "card:x") is False
+        else:
+            with vm_notices.deferred():
+                assert vm_notices.say(_WEB, "drain:k:9", vm_notices.CLOSURE_KIND, "t", "dit") == "queued"
+            assert vm_notices.relay_pass() == 0
+    said = [r.getMessage() for r in caplog.records if r.name == vm_notices.log.name]
+    assert any("webhook unreachable" in m for m in said), said
+    assert all(_TOKEN not in m and "/api/webhooks/" not in m and _SECRET_HOOK not in m for m in said), said
+    wrapped = {"resolution": "NameResolutionError", "connection": "NewConnectionError",
+               "timeout": "ConnectTimeoutError"}[kind]
+    assert any(wrapped in m for m in said), said

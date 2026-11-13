@@ -773,9 +773,10 @@ def _notify(esc: dict) -> None:
     JUG2d (#799): posted at once, bounded as every post of the notices — `vm_notices.post_webhook`:
     the POST in a thread of its own, waited for `POST_DEADLINE_S` (10 s), the name's resolution
     included, which `requests.post(…, timeout=5)` did not bound (`getaddrinfo`): a webhook whose name
-    never resolves holds the graph's cycle 10 s, no longer. Past the deadline the post goes on in its
-    thread and may still deliver — never cut, never posted again: one post (a 429 asking ≤ 5 s tried
-    once more, as every post), nothing queued, a failure said in the log only, as before.
+    never resolves holds the graph's cycle 10 s a card (25 s with a short 429), no longer. Past the deadline the post goes on in its
+    thread and may still deliver — never cut by the watch, never posted again: one post (a 429 asking
+    ≤ 5 s tried once more, as every post), nothing queued; a failure now said in the log, masked (its
+    types, never the webhook's path: `vm_notices._error_said`) — before, nothing was said.
     """
     import os
     if discord_bot_configured():

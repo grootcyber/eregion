@@ -2,7 +2,9 @@
 of the notices (`vm_notices.post_webhook`: its own thread, `POST_DEADLINE_S`, the name's resolution
 included) — one post, never queued, never posted again; `check-ttl` posts its queued card outside the
 VM's lock; README, the Makefile's help, the command's help and its card say it escalates, never that it
-releases. M5225–M5234, measured by tests/unit/test_notify_bounded.py."""
+releases; a failed post logs its exception's types, never the webhook's token (the review's round 1).
+M5225–M5234 and M5260–M5262, measured by tests/unit/test_notify_bounded.py."""
+NOTICES = "glorfindel/vm_notices.py"
 ESC = "glorfindel/escalations.py"
 REASSERT = "glorfindel/reassert.py"
 CLI = "glorfindel/cli.py"
@@ -57,5 +59,18 @@ MUTANTS = [
     ("M5234", "`check-ttl --help` says the TTL is the age before an auto-release (JUG2d, Q1)", CLI,
      "help=\"Max isolation age in hours before its card (ttl_exceeded) — never a release. \"",
      "help=\"Max isolation age in hours before auto-release. \""),
+    # The review's round 1 (M5260–M5264).
+    ("M5260", "a failed post logged with its exception's text: requests writes the webhook's whole path, "
+     "its token in the log (JUG2d review)", NOTICES,
+     '    log.warning("notice %s: webhook unreachable (%s)", key, _error_said(exc))\n',
+     '    log.warning("notice %s: webhook unreachable (%s)", key, exc)\n'),
+    ("M5261", "what a failed post wraps logged by its text, not its type: the token in the log through "
+     "`MaxRetryError`'s message (JUG2d review)", NOTICES,
+     "        names.append(type(e).__name__)\n",
+     "        names.append(str(e))\n"),
+    ("M5262", "`.envrc.example` says a TTL of 0 disables it, though `ttl_alerts(0)` escalates every isolation "
+     "at once (JUG2d review)", ".envrc.example",
+     "# 0 ne désactive rien : toutes les isolations sont escaladées tout de suite (watch et check-ttl).",
+     "# TTL : mettre 0 pour désactiver"),
 ]
 TESTS = {mid: _T for mid, *_ in MUTANTS}

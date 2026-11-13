@@ -863,8 +863,27 @@ def _nothing_sent(exc: BaseException) -> bool:
     return False
 
 
+def _error_said(exc: BaseException) -> str:
+    """What the log says of a post that failed: the exception's type and the types of what it wraps
+    (`MaxRetryError.reason`, its arguments, as `_nothing_sent` reads them) — never its text, which
+    requests and urllib3 write with the webhook's whole path (`/api/webhooks/<id>/<token>`): the
+    webhook's secret in the log (JUG2d review). « ConnectionError ← MaxRetryError ← NameResolutionError »."""
+    names: list[str] = []
+    seen: set[int] = set()
+    todo: list = [exc]
+    while todo and len(names) < 6:
+        e = todo.pop(0)
+        if not isinstance(e, BaseException) or id(e) in seen:
+            continue
+        seen.add(id(e))
+        names.append(type(e).__name__)
+        todo.extend([getattr(e, "reason", None), *e.args])
+    return " ← ".join(names)
+
+
 def _error_result(exc: BaseException, key: str) -> str:
-    log.warning("notice %s: webhook unreachable (%s)", key, exc)
+    # Its type and what it wraps, never its text: the webhook's token in it (JUG2d review).
+    log.warning("notice %s: webhook unreachable (%s)", key, _error_said(exc))
     if _nothing_sent(exc):
         return "unsent"
     return "unreachable"
