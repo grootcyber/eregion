@@ -367,8 +367,8 @@
    "version": "0.5",
    "nom": "the measured loop",
    "etat": "publiee",
-   "derniere": "0.5.11",
-   "date": "2026-11-12",
+   "derniere": "0.5.12",
+   "date": "2026-11-13",
    "resume": "The loop measured on real traffic, the correlation, the signed action queue, signed proofs from end to end."
   },
   {
@@ -520,8 +520,9 @@
    "composant": "glorfindel",
    "poste": "g-detecter",
    "nom": "Design: a measure that arrives late is judged, selected by its arrival and aggregated by its time",
-   "etat": "main",
-   "release": "0.6",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.12",
    "lots": [
     "ING1"
    ],
@@ -549,8 +550,9 @@
    "composant": "glorfindel",
    "poste": "g-detecter",
    "nom": "The lateness of each source, measured on the bench: read-only queries on the kept data, in the order the data leaves",
-   "etat": "main",
-   "release": "0.6",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.12",
    "lots": [
     "ING5"
    ],
@@ -965,8 +967,9 @@
    "composant": "glorfindel",
    "poste": "g-verifier",
    "nom": "A session cut announced pending is closed once, its outcome in the VM's thread and on the console's card",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.5",
+   "version": "0.5.12",
    "lots": [
     "DRN2"
    ],
@@ -978,8 +981,9 @@
    "composant": "glorfindel",
    "poste": "g-verifier",
    "nom": "A disruptive action taken alone, once verified, makes one card to judge, and is said in the VM's thread",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.5",
+   "version": "0.5.12",
    "lots": [
     "JUG1"
    ],
@@ -991,8 +995,9 @@
    "composant": "glorfindel",
    "poste": "g-verifier",
    "nom": "The Discord bot silent, the webhook announces an action taken alone, once, pinging the role",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.5",
+   "version": "0.5.12",
    "lots": [
     "JUG2"
    ],
@@ -1004,8 +1009,9 @@
    "composant": "glorfindel",
    "poste": "g-verifier",
    "nom": "The webhook fallback in a thread of its own, each post bounded, three tries at most, and a session cut's closure said by it too, without a ping",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.5",
+   "version": "0.5.12",
    "lots": [
     "JUG2b"
    ],
@@ -1017,8 +1023,9 @@
    "composant": "glorfindel",
    "poste": "g-verifier",
    "nom": "A perimeter block whose check a throttled read cut short says its NICs unread, never reached behind another perimeter",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.5",
+   "version": "0.5.12",
    "lots": [
     "I3N"
    ],
@@ -1030,8 +1037,9 @@
    "composant": "glorfindel",
    "poste": "g-verifier",
    "nom": "A perimeter block says a NIC it couldn't read unread, beside the NICs proven open, never reached",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.5",
+   "version": "0.5.12",
    "lots": [
     "I3Q"
    ],
@@ -1043,8 +1051,9 @@
    "composant": "glorfindel",
    "poste": "g-verifier",
    "nom": "A perimeter block whose own pair is gone at its check is never said blocked, the pair said in every branch",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.5",
+   "version": "0.5.12",
    "lots": [
     "I3W"
    ],
@@ -1071,8 +1080,9 @@
    "composant": "glorfindel",
    "poste": "g-agir",
    "nom": "The bench tool that measures the lift, corrected on what the bench read: a failure said as Azure wrote it, an operation never masked, another resource named by its type",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.5",
+   "version": "0.5.12",
    "lots": [
     "LEV2b"
    ],
@@ -1102,8 +1112,9 @@
    "composant": "glorfindel",
    "poste": "g-agir",
    "nom": "No output of the CLI meant for a human shows a subscription's id: Azure's errors, the decision rendered, pending, activate, release, unblock, snapshot, list, door, jobs",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.5",
+   "version": "0.5.12",
    "lots": [
     "MSK2"
    ],
@@ -1115,8 +1126,9 @@
    "composant": "glorfindel",
    "poste": "g-agir",
    "nom": "No message of the Discord bot nor of the webhook shows a subscription's id: the commands to copy name the VM by its group and name, which the CLI resolves on its own host or refuses",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.5",
+   "version": "0.5.12",
    "lots": [
     "MSK3"
    ],
@@ -1671,8 +1683,9 @@
    "composant": "celebrimbor",
    "poste": "c-construire",
    "nom": "The bench's report composed alone once the run's cycle is written, and again after the lift, bounded; the day's vault jobs read",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.5",
+   "version": "0.5.12",
    "lots": [
     "BNC3a"
    ],
@@ -1684,8 +1697,9 @@
    "composant": "celebrimbor",
    "poste": "c-construire",
    "nom": "The bench in one gesture: the calm and the restore-first rule checked by the preflight, a clean recovery point taken through the console snapshot button route, then the preflight run again",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.5",
+   "version": "0.5.12",
    "lots": [
     "BNC3b"
    ],
@@ -1697,8 +1711,9 @@
    "composant": "celebrimbor",
    "poste": "c-construire",
    "nom": "A pair's secret read on its application and on its service principal: its end seen wherever it lives",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.5",
+   "version": "0.5.12",
    "lots": [
     "PAIR1"
    ],
@@ -1710,8 +1725,9 @@
    "composant": "celebrimbor",
    "poste": "c-construire",
    "nom": "A pair's secret turned in one command, verified before the old one goes, and reminded in the deploy channel before it ends",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.5",
+   "version": "0.5.12",
    "lots": [
     "ROT1"
    ],
@@ -1750,8 +1766,9 @@
    "composant": "celebrimbor",
    "poste": "c-acces",
    "nom": "The phone's guide on what the bench measured: Termius, the hours in UTC, no command toward Imladris printed",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.5",
+   "version": "0.5.12",
    "lots": [
     "MOB3"
    ],
@@ -1895,8 +1912,9 @@
    "composant": "console",
    "poste": "k-voir",
    "nom": "The live feed says the day of a line before today, the latest on top",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.5",
+   "version": "0.5.12",
    "lots": [
     "CON-D"
    ],
@@ -1907,8 +1925,9 @@
    "composant": "console",
    "poste": "k-juger",
    "nom": "A line of TO JUDGE opens its card, and a folded tile shows every card",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.5",
+   "version": "0.5.12",
    "lots": [
     "JUG1"
    ],
@@ -2014,8 +2033,9 @@
    "composant": "socle",
    "poste": "s-heberger",
    "nom": "Every command of Imladris under make imladris-*, its console's tunnel included; the former names silent aliases until IML2",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.5",
+   "version": "0.5.12",
    "lots": [
     "IML1b"
    ],
@@ -2027,8 +2047,9 @@
    "composant": "socle",
    "poste": "s-heberger",
    "nom": "console-url gives Imladris's console while the tunnel holds 7007, and glorfindel restore never shows the subscription's id",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.5",
+   "version": "0.5.12",
    "lots": [
     "IML1c"
    ],
@@ -2096,8 +2117,9 @@
    "composant": "socle",
    "poste": "s-prouver",
    "nom": "The suite never touches the operator's own state, even on a workstation where Glorfindel runs: a throwaway HOME, its guard",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.5",
+   "version": "0.5.12",
    "lots": [
     "HY2"
    ],
@@ -2459,8 +2481,9 @@
    "composant": "socle",
    "poste": "s-documenter",
    "nom": "The workstation's commands work as written, under zsh as under bash: role lists filtered, the subscription checked, the plan without colours",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.5",
+   "version": "0.5.12",
    "lots": [
     "MEN3"
    ],
@@ -2472,8 +2495,9 @@
    "composant": "socle",
    "poste": "s-documenter",
    "nom": "The bench documents caught up with the measures of 12 Nov: the ransomware times replayed end to end, what the activity log says of a VM measured, the flow logs' own account applied",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.5",
+   "version": "0.5.12",
    "lots": [
     "MEN4"
    ],
@@ -2485,8 +2509,9 @@
    "composant": "socle",
    "poste": "s-documenter",
    "nom": "The roadmap caught up with the decisions of 12 Nov: 0.6.0 recentred on the defended identity, R2 moved to 0.6.1, 0.5.11 published and 0.5.12 in preparation",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.5",
+   "version": "0.5.12",
    "lots": [
     "RM3"
    ],
