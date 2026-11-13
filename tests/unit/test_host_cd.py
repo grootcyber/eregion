@@ -2517,12 +2517,19 @@ def test_the_installation_carries_the_verifier():
 
 # A fake journalctl, faithful to both behaviours measured on 13/11: systemd 249 (Imladris, Ubuntu
 # 22.04) reads forward from --since and stops at -n lines, the oldest of the window; systemd 255 (a
-# recent workstation) gives the last -n lines of the window. Its arguments are recorded.
+# recent workstation) gives the last -n lines of the window. Its arguments are recorded. Strict: an
+# option it does not emulate (`--lines=`, `-n15`, `-r`…) fails, never read as nothing.
 _FAKE_JOURNALCTL = r"""#!/bin/sh
 printf '%s\n' "$*" >> "$FAKE_JOURNAL_ARGS"
 since=; n=
 while [ $# -gt 0 ]; do
-  case "$1" in --since) since=1; shift ;; -n) shift; n=$1 ;; esac
+  case "$1" in
+    -u|-o) shift ;;
+    --since) since=1; shift ;;
+    -n) shift; n=$1 ;;
+    --no-pager) ;;
+    *) echo "fake journalctl: $1 not emulated" >&2; exit 2 ;;
+  esac
   shift
 done
 if [ -z "$n" ]; then cat "$FAKE_JOURNAL"
@@ -2579,7 +2586,10 @@ def test_cd_status_shows_the_last_fifteen_lines_of_the_day_on_imladris_systemd_t
 
 
 def test_cd_status_reads_its_own_unit_over_the_last_day(tmp_path):
-    """The window stays the last day, and the journal the CD's unit alone."""
+    """The window stays the last day, and the journal the CD's unit alone. Nothing bounds or turns the
+    read: on systemd 249, any `-n` beside `--since` (even a larger one, then `tail`) reads from the
+    window's start again, and `-r` gives the oldest lines first."""
     _, args = _cd_status_lines(tmp_path, 249)
     assert args[args.index("--since") + 1] == "-1d"
     assert args[args.index("-u") + 1] == "eregion-cd"
+    assert not [a for a in args if a.startswith(("-n", "--lines", "-r", "--reverse"))], args
