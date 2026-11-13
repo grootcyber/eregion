@@ -230,7 +230,7 @@ help:
 	@echo "  make glorfindel-pending         Show pending escalations"
 	@echo "  make glorfindel-revert          RESOURCE_ID=... Release + unblock all"
 	@echo "  make glorfindel-release         RESOURCE_ID=... Release isolation only"
-	@echo "  make glorfindel-check-ttl       Release expired isolations (TTL)"
+	@echo "  make glorfindel-check-ttl       Escalate expired isolations (TTL): a card each, never a release"
 	@echo "  make glorfindel-shell           Interactive shell in eregion-glorfindel"
 	@echo ""
 	@echo "Shells"

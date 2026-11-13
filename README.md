@@ -550,7 +550,7 @@ glorfindel restore <resource_id> --yes          # Azure Backup restore: newest p
 glorfindel jobs <vm-name> [--refresh]           # snapshot/restore job status
 glorfindel list                                 # all VMs with active actions (isolation + blocked IPs)
 glorfindel list --ids                           # the same with their full ARM ids (this terminal only)
-# What the CLI shows a human never carries a subscription's id (MSK2): a VM by its name and group, Azure's
+# What the CLI shows a human never carries a subscription's id (MSK2; the TUI too, MSK2c): a VM by its name and group, Azure's
 # errors, the decision rendered, the cards and proposed rules of `pending` and the reasons of `activate`
 # included; a suggested command names the VM by `<group>/<name>` (MSK3b: never its name alone, which a VM of
 # that name in another group could take) only when it comes back to the same resource. The signal,
@@ -564,7 +564,7 @@ glorfindel ack <escalation_id>                  # acknowledge an escalation
 glorfindel ack --all                            # acknowledge all pending escalations
 glorfindel verdict <id> right|wrong|unsure      # was the recommendation right? (observation, docs/observation.md)
 glorfindel report --since 4w                    # verdicts by action and rule, false rate of disruptive recommendations
-glorfindel check-ttl                            # release isolations older than TTL (default 4h)
+glorfindel check-ttl                            # escalate isolations older than TTL (default 4h): a card each, never a release
 glorfindel memory-stats                         # ChromaDB cycle count, and those its age bound leaves out
 glorfindel bot                                  # start the interactive Discord bot
 glorfindel dashboard                            # full-screen TUI: resources + feed + escalations
@@ -613,7 +613,7 @@ DISCORD_ALLOWED_USERS=...           # User IDs allowed to click the buttons (com
 DISCORD_ALLOWED_ROLES=...           # Role IDs allowed to click; both empty → every button refuses
 
 GLORFINDEL_KEEP_ISOLATED=1          # forensic mode — VM stays isolated after restore
-GLORFINDEL_ISOLATION_TTL_H=4        # auto-release timeout in hours (default: 4)
+GLORFINDEL_ISOLATION_TTL_H=4        # isolation TTL in hours (default: 4): past it, a ttl_exceeded card — never an automatic release
 GLORFINDEL_RECOVERY_INTERVAL_S=60   # the watch reads on Azure the recovery of a VM it isolated, restored from another host (default: 60 s; 0: never)
 GLORFINDEL_INCIDENT_TTL_S=300       # incident grouping window in seconds (default: 300)
 GLORFINDEL_CONFIDENCE_THRESHOLD=0.7 # min LLM confidence for autonomous action (default: 0.7 — below this, escalate; unreadable or outside [0, 1]: every autonomous action is held)

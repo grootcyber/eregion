@@ -160,7 +160,7 @@ _ESCALATION_LABELS = {
     "cycle_failed": "signal non traité (cycle interrompu)",
     "uncharacterized_signal": "signal non caractérisé (garde-fou)",
     "release_hold": "levée retenue (restauration non terminée, ou rejeu possible au démarrage)",
-    "ttl_exceeded": "isolation levée à l'expiration du TTL",
+    "ttl_exceeded": "isolation au-delà du TTL (à revoir, jamais levée seule)",   # JUG2d: never released
     "unattributed_signal": "détection non attribuée à cette VM",
     "telemetry_gap": "télémétrie incomplète (requêtes d'enquête en échec)",
     "unstable_decision": "décision instable (les tirages ne s'accordent pas)",
@@ -768,7 +768,15 @@ def _notify(esc: dict) -> None:
     by the reassertion under it), or the reassertion's pass (`vm_notices.must_defer`): the
     notification is queued, once by the card's id, and a pass of the watch posts it in its own
     thread, bounded, the name's resolution included (`vm_notices.queue_card`, `relay_pass`).
-    Elsewhere (the graph's cycle, the console, the CLI), posted at once, as before.
+    Elsewhere (the graph's cycle, the console, the CLI), posted at once.
+
+    JUG2d (#799): posted at once, bounded as every post of the notices — `vm_notices.post_webhook`:
+    the POST in a thread of its own, waited for `POST_DEADLINE_S` (10 s), the name's resolution
+    included, which `requests.post(…, timeout=5)` did not bound (`getaddrinfo`): a webhook whose name
+    never resolves holds the graph's cycle 10 s a card (25 s with a short 429), no longer. Past the deadline the post goes on in its
+    thread and may still deliver — never cut by the watch, never posted again: one post (a 429 asking
+    ≤ 5 s tried once more, as every post), nothing queued; a failure now said in the log, masked (its
+    types, never the webhook's path: `vm_notices._error_said`) — before, nothing was said.
     """
     import os
     if discord_bot_configured():
@@ -783,8 +791,8 @@ def _notify(esc: dict) -> None:
         if vm_notices.must_defer():
             vm_notices.queue_card(esc)
             return
-        import requests
-        requests.post(url, json=card_payload(esc), timeout=5)
+        # Bounded, the name's resolution included (JUG2d): never `requests.post` from this thread.
+        vm_notices.post_webhook(card_payload(esc), f"card:{esc.get('id') or '?'}", url)
     except Exception:
         pass  # notification failure must never block the agent
 
