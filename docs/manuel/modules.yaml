@@ -937,6 +937,7 @@ briques:
     release: "0.6"
     lots: [CMD1]
     issue: 797
+    pr: 808
     doc: docs/operations.md
 
   - id: g-dossier-isolation

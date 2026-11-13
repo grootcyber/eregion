@@ -187,15 +187,25 @@ glorfindel block <ip> <groupe>/<nom> --yes [--scope vm|subnet]   # CMD1 : bloque
 # ressource ; jamais la VM où une carte n'est qu'ancrée (AL1 : lire la carte, l'acquitter, agir sur la VM qu'elle
 # concerne) ; des identifiants qui écrivent (GLORFINDEL_READ_ONLY refusé avant la question). Puis, sous le verrou
 # de la VM, l'écriture du connecteur — l'état de la watch, relu par la réaffirmation, levé par release et unblock —
-# et la vérification de la console : le geste noté dans runs/console, une carte verification_failed si elle ne
-# tient pas, dite, code 2. --dry-run : les gardes seules, rien sur Azure, rien écrit. Une carte en attente pour ce
-# même geste est dite, jamais résolue : l'acquitter (glorfindel ack <id>) une fois le geste vérifié. Le mode
-# (human_only) retient l'action autonome, pas le geste de l'humain ; la zone d'inscription (O0) borne les
-# injecteurs, pas le défenseur : isolate et block sont réversibles et défendent aussi une VM de production.
+# et la vérification de la console : une carte verification_failed si elle ne tient pas, dite, code 2 ; de même
+# pour une écriture faite en partie (une carte réseau en échec, ce qui est posé gardé), et pour une coupure des
+# sessions qui court encore quand aucune watch ne vit sur l'hôte (personne ne la relira : la couper à la main).
+# Le geste est noté dans runs/console là où la CLI peut l'écrire (un poste, le conteneur de la console) ; dans le
+# conteneur de la watch, runs/console est monté en lecture seule : le geste n'y est pas noté, la CLI le dit une
+# fois (SEC16), comme pour release et unblock. --dry-run : les gardes seules (lecture seule comprise), rien sur
+# Azure, rien écrit. Une carte en attente pour ce même geste est dite, jamais résolue : l'acquitter
+# (glorfindel ack <id>) une fois le geste vérifié. Le mode (human_only) retient l'action autonome, pas le geste de
+# l'humain. La zone d'inscription (O0) : aucune garde par zone dans isolate et block — en attente de la décision
+# de Jonathan. L'avis de la relecture (#808) : sûr sans refus, puisque le geste est réversible et que ni la watch
+# ni l'approbation de la console n'ont de garde par zone ; une ligne d'information qui dit la zone de la VM avant
+# la question serait un compromis.
 # Où tourne l'état : comme release et unblock, dans le ~/.glorfindel de l'hôte où la commande tourne. La watch
-# sur Imladris : lancer le geste dans son conteneur (make imladris-ssh, puis docker exec eregion-watch glorfindel
-# isolate <groupe>/<nom> --yes), ou par la console. Lancé sur le poste, il écrit l'état du poste, qu'Imladris ne
-# relit pas (ni réaffirmation, ni levée par sa console) ; la CLI le dit quand aucune watch ne bat sur l'hôte.
+# sur Imladris : lancer le geste dans son conteneur (make imladris-ssh, puis docker exec -it eregion-watch
+# glorfindel isolate <groupe>/<nom> : -it, sinon la question lit une fin de fichier ; ou --yes), ou par la
+# console. Lancé sur le poste, il écrit l'état du poste, qu'Imladris ne relit pas (ni réaffirmation, ni levée par
+# sa console) ; la CLI le dit quand aucune watch ne bat sur l'hôte. Le verrou de la VM est celui de l'hôte : entre
+# le poste et Imladris, aucun verrou n'est commun ; et la CLI attend ce verrou en silence, sans délai maximal,
+# derrière une écriture de la watch qui peut durer (une coupure des sessions, ~300 s).
 glorfindel reset <resource_id> --yes        # reset complet : release + unblock toutes IPs
 glorfindel reset <resource_id> --dry-run    # ce que le reset ferait, rien lu ni écrit sur Azure (jamais « clean », I3V)
 glorfindel reset <resource_id> --from-azure  # source de vérité = Azure (sans état local) : retire les
