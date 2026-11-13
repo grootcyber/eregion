@@ -853,6 +853,17 @@ briques:
     issue: 763
     doc: docs/banc-lev2.md
 
+  - id: g-levee-jalon
+    composant: glorfindel
+    poste: g-agir
+    nom: "Design: the lift into probation planned for 0.6.1, after the identity defended"
+    etat: main
+    release: "0.6"
+    lots: [LEV1b]
+    issue: 785
+    pr: 786
+    doc: docs/design/levee-probation.md
+
   - id: g-levee-probation-code
     composant: glorfindel
     poste: g-agir

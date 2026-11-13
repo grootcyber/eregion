@@ -1194,8 +1194,9 @@ Dans l'ordre. Chacun est vert seul, avec ses tests, ses mutants et sa doc.
   éteinte) ; Q12 l'a fixé.
 - LEV7 attend LEV4, LEV5 et LEV6, et une release qu'Imladris déploie.
 - LEV8 vient en dernier, pour que la doc ne décrive rien qui n'existe pas.
-- Le jalon reste la 0.6.0, avec l'identité défendue : LEV4 touche le RulePoller, LEV3 la carte d'IR1a.
-  Aucun droit en plus pour Imladris (Q11) : pas de consentement à attendre. LEV7 mesure combien de levées
+- Le jalon est la 0.6.1, avec R2 (décision de Jonathan du 13/11, LEV1b) : la 0.6.0 reste strictement
+  l'identité défendue (ID1, IDI1, IR1a, NT1). LEV4 touche le RulePoller, LEV3 la carte d'IR1a : ils
+  viennent après elle. Aucun droit en plus pour Imladris (Q11) : pas de consentement à attendre. LEV7 mesure combien de levées
   la lecture illisible d'un groupe retient ; trop, et une lecture Graph viendra plus tard, par
   l'identité Graph dédiée prévue à la 0.6.2.
 
