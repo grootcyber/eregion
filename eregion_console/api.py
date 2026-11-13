@@ -1364,7 +1364,10 @@ def _queue_answer(followed: dict) -> dict:
         if out.get("ok") and result.get("status") == "not_found":
             out["not_found"] = True
     elif verb == "snapshot" and out.get("ok"):
-        out.update(status="started", job_id=result.get("job_id"), resource_id=r.get("resource_id", ""))
+        # SNP1: the vault's job as the watch's receipt names it — '' from a watch that names none.
+        from glorfindel.jobs import vault_job
+        out.update(status="started", job_id=result.get("job_id"), vault_job=vault_job(result.get("vault_job")),
+                   resource_id=r.get("resource_id", ""))
     return out
 
 
@@ -1886,7 +1889,11 @@ _UNBLOCK_NOT_FOUND = "No block rules found for"
 @app.post("/api/action/snapshot/{vm_name}")
 @_one_slot
 async def action_snapshot(vm_name: str) -> dict:
-    """Trigger an on-demand Azure Backup snapshot via jobs.py (visible to CLI + War Room)."""
+    """Trigger an on-demand Azure Backup snapshot via jobs.py (visible to CLI + War Room).
+
+    ``job_id`` is Glorfindel's own record (``snapshot-<vm>-<ts>``, unchanged); ``vault_job`` names the
+    vault's job, ``rsv:<vault>/<group>/<name>``, when Azure gave one, else '' (SNP1) — the bench follows
+    it (scripts/bench_snapshot.py)."""
     resource_id = _find_resource_id(vm_name)
     if not resource_id:
         return {"error": f"Resource ID not found for {vm_name}"}
@@ -1899,14 +1906,15 @@ async def action_snapshot(vm_name: str) -> dict:
         return await _queued("snapshot", resource_id, extra={"resource_id": resource_id})
 
     from glorfindel.actions import AzureConnector
-    from glorfindel.jobs import start_snapshot as _start_snapshot
+    from glorfindel.jobs import start_snapshot as _start_snapshot, vault_job as _vault_job
 
     def _start() -> dict:
         # vault_rg: a central vault lives in its own RG (not the VM's).
         return _start_snapshot(resource_id, AzureConnector(dry_run=False), vault, vault_rg=vault_rg)
 
     job = await _gesture(_start)
-    return {"status": "started", "job_id": job["job_id"], "resource_id": resource_id}
+    return {"status": "started", "job_id": job["job_id"], "vault_job": _vault_job(job.get("snap_id")),
+            "resource_id": resource_id}
 
 
 # Cards anchored on a VM the detection may not concern (AL1; an identity detection names no
