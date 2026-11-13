@@ -1611,6 +1611,7 @@ briques:
     release: "0.6"
     lots: [CDJ1]
     issue: 783
+    pr: 784
     doc: infra/glorfindel-host/README.md
 
   - id: s-cd
