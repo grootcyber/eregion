@@ -223,9 +223,10 @@ d'Imladris (`scripts/bench_snapshot.py`) :
   l'enregistrement de Glorfindel, inchangé, qui n'est pas un job du coffre). `bench-run` suit ce job
   directement. Il le vérifie d'abord (SNP1b, #801) : un nom `rsv:` d'un autre coffre ou d'un autre
   groupe que ceux du poste arrête le run, qu'il vienne de `vault_job` ou de `job_id`, et le message dit
-  ce qui diffère, le coffre, le groupe ou les deux ; au premier `show`, un job dont la VM n'est pas la
-  cible, ou dont l'opération n'est pas `Backup`, l'arrête aussi, en disant laquelle. Il n'est alors ni
-  suivi, ni remplacé par la recherche par l'heure.
+  ce qui diffère, le coffre, le groupe ou les deux ; dès le premier `show`, puis à chaque lecture, un
+  job dont la VM n'est pas la cible (son nom, ou le groupe de son conteneur : un homonyme supprimé dont
+  la sauvegarde est restée au coffre), ou dont l'opération n'est pas `Backup`, l'arrête aussi, en
+  disant laquelle. Il n'est alors ni suivi, ni remplacé par la recherche par l'heure.
   **Sans lui seulement** — une console ou une watch d'avant SNP1, un essai à blanc —, il cherche le
   job de sauvegarde de la VM lancé depuis la demande, par son heure (2 min de tolérance), et la ligne
   le dit. Le job est suivi par `az backup job show` sous ton `az login`

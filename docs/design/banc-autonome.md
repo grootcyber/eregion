@@ -512,13 +512,20 @@ chemin du bouton, la route `POST /api/action/snapshot/<vm>` de la console d'Imla
     `job_id`. Le message dit lequel des deux l'a donné, et ce qui diffère : **son coffre**, **son
     groupe**, les deux, ou sa forme. Il n'est jamais remplacé en silence par la recherche par l'heure :
     celle-ci trouverait un autre job, et le point se lirait là où il n'est pas pris ;
-  - au premier `show`, le job doit être **une sauvegarde de la cible** : sa VM (`entityFriendlyName`,
-    dans la casse d'Azure) est la cible, son opération est `Backup`, les deux champs que la recherche
-    par l'heure filtre déjà. Un job d'une autre VM, un restore, une configuration, ou un champ qui ne
-    se lit pas arrêtent le run, en disant ce qui diffère : **sa VM** ou **son opération**. Il n'est
-    jamais suivi jusqu'à `Completed`, et aucun point n'est lu.
+  - dès le premier `show`, puis à chaque lecture, le job doit être **une sauvegarde de la cible**,
+    vérifiée avant son statut : sa VM (`entityFriendlyName`, comparée sans tenir compte de la casse)
+    est la cible, son opération est `Backup`, les deux champs que la recherche par l'heure filtre
+    déjà. Quand le job nomme son conteneur (`iaasvmcontainerv2;<groupe>;<vm>`), ce conteneur est
+    celui du groupe de la cible : un homonyme d'un autre groupe, supprimé et dont la sauvegarde est
+    restée dans le coffre, n'est pas la cible (la même lecture que celle d'un restore,
+    `glorfindel/providers/azure/recovery.py`). Un job d'une autre VM, un restore, une configuration,
+    ou une VM ou une opération qui ne se lit pas, arrêtent le run, en disant ce qui diffère : **sa
+    VM**, **son conteneur** ou **son opération**. Il n'est jamais suivi jusqu'à `Completed`, et aucun
+    point n'est lu. Une lecture en erreur est relue : seules trois erreurs de suite arrêtent le run.
 
-  Ni le nom du job ni ceux du coffre ou du groupe ne sont affichés. Le premier point après un restore est complet, et peut prendre environ
+  Ni le nom du job ni ceux du coffre ou du groupe ne sont affichés.
+
+  Le premier point après un restore est complet, et peut prendre environ
   40 min : l'attente est bornée (60 min, `JOB_WAIT_S`, à mesurer au banc). Un job qui échoue ou qui dépasse arrête le run
   avant que la demande parte vers Orodruin : rien n'est attaqué ;
 - **le préflight rejoué** après l'attente du point, juste avant l'attaque : jusqu'à 60 min ont pu
