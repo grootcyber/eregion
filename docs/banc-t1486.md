@@ -218,9 +218,13 @@ d'Imladris (`scripts/bench_snapshot.py`) :
   affiché, en `Authorization: Bearer`, sans proxy ; un corps JSON et un `Host` à `127.0.0.1:<port>` ;
 - sous FS1 (`EREGION_ACTION_QUEUE=1`), **le reçu suivi** par `GET /api/queue/<id>` : `not_taken`,
   `untrusted`, `refused`, `failed`, `unknown` ou une demande expirée arrêtent le run ;
-- puis **le job du coffre** : celui que la console nomme, s'il est un job du coffre — aujourd'hui
-  `action_snapshot` rend `snapshot-<vm>-<heure>`, l'enregistrement de Glorfindel, qui n'en est pas un —,
-  sinon le job de sauvegarde de la VM lancé depuis la demande, suivi par `az backup job show` sous ton `az login`
+- puis **le job du coffre** : celui que la console nomme (SNP1, #789). Sa réponse, ou le reçu sous
+  FS1, porte `vault_job`, `rsv:<coffre>/<groupe>/<nom>`, à côté de `job_id` (`snapshot-<vm>-<heure>`,
+  l'enregistrement de Glorfindel, inchangé, qui n'est pas un job du coffre). `bench-run` suit ce job
+  directement ; un job nommé dans un autre coffre ou un autre groupe que ceux du poste arrête le run.
+  **Sans lui seulement** — une console ou une watch d'avant SNP1, un essai à blanc —, il cherche le
+  job de sauvegarde de la VM lancé depuis la demande, par son heure (2 min de tolérance), et la ligne
+  le dit. Le job est suivi par `az backup job show` sous ton `az login`
   jusqu'à `Completed`, **60 min au plus** ; un job en échec ou trop long arrête le run **avant** que la
   demande parte vers Orodruin ; le point nouveau relu au coffre ;
 - puis **le préflight rejoué**, juste avant l'attaque : un ✗ l'arrête là ; le point pris reste, propre

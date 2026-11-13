@@ -498,12 +498,15 @@ chemin du bouton, la route `POST /api/action/snapshot/<vm>` de la console d'Imla
   jamais affiché. Le `POST` porte un corps JSON (`Content-Type: application/json`) et un `Host` à
   `127.0.0.1:<port>` : deux contrôles d'entrée de la console, vérifiés au lot BNC3b (la requête de `bench_snapshot.call` rejouée sur le middleware de la console, `tests/unit/test_bench_snapshot.py`) ;
 - **ce que la route fait.** Sans la file d'actions, elle lance l'instantané dans la console, sous
-  l'identité d'Imladris (son rôle Response), et rend l'identifiant du job. Sous FS1
+  l'identité d'Imladris (son rôle Response), et rend `job_id`, l'enregistrement de Glorfindel, et
+  `vault_job`, le job du coffre (`rsv:<coffre>/<groupe>/<nom>`, SNP1, #789). Sous FS1
   (`EREGION_ACTION_QUEUE=1`), elle dépose une demande signée par la clé de la console, et **c'est la
   watch qui l'exécute** (`_queued`) : la route rend l'identifiant de la demande, et `bench-run` suit
-  son reçu, `GET /api/queue/<id>`, jusqu'à une réponse finale. `not_taken`, `untrusted`,
+  son reçu, `GET /api/queue/<id>`, jusqu'à une réponse finale, qui nomme le même job. `not_taken`, `untrusted`,
   `refused`, `failed` ou une demande expirée arrêtent le run ;
-- **la suite** : le job du coffre, lu par `az backup job show` sous l'`az login` de l'opérateur,
+- **la suite** : le job du coffre que la console nomme, suivi directement (un job d'un autre coffre que
+  celui du poste arrête le run) ; sans lui seulement (une console ou une watch d'avant SNP1), le job de
+  sauvegarde de la VM lancé depuis la demande, cherché par son heure. Il est lu par `az backup job show` sous l'`az login` de l'opérateur,
   jusqu'à `Completed`. Le premier point après un restore est complet, et peut prendre environ
   40 min : l'attente est bornée (60 min, `JOB_WAIT_S`, à mesurer au banc). Un job qui échoue ou qui dépasse arrête le run
   avant que la demande parte vers Orodruin : rien n'est attaqué ;

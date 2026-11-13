@@ -857,6 +857,13 @@ gestes de Jonathan).
   ce qu'elle laisse, le déblocage sans règle, l'instantané et son job ; `error` et `refused`), ou
   `not_taken` (« the watch did not take the request in 120 s »), `untrusted`, `unknown`. La page suit
   le reçu (`_settled`, `glorfindel.js`) et dit chaque état.
+- **L'instantané nomme le job du coffre** (SNP1, #789). Le reçu signé de la watch porte dans son
+  `result`, à côté de `job_id` (l'enregistrement de Glorfindel, `snapshot-<vm>-<heure>`, inchangé),
+  `vault_job` : le job du coffre, `rsv:<coffre>/<groupe>/<nom>`, quand Azure l'a donné, comme la route
+  directe le rend. La console le relit avant de le dire (`glorfindel/jobs.py`, `vault_job`) : une forme
+  qui n'est pas celle d'un job du coffre, ou un essai à blanc (`snap-dry-run-000`), se dit `""`. Sa
+  limite : une watch d'avant SNP1 n'en écrit pas, et la réponse dit alors `vault_job: ""` ; le banc
+  cherche alors le job par son heure (`scripts/bench_snapshot.py`).
 - **Le geste noté une fois**, par la lecture qui retire la demande (`withdraw` rend vrai une seule
   fois) : la page qui suit son reçu, ou l'état de n'importe quelle page (`/api/state` règle chaque
   demande de la console dont le reçu est venu) — le geste d'une page fermée avant son reçu est noté
