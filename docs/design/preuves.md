@@ -737,7 +737,11 @@ isolation. Aucun oracle n'est touché.
 avec le même message pour web. Il n'a pas été retrouvé, et rien ne dit qu'il ait la même cause.
 
 **Mesures.** Figés dans `tests/unit/test_invariant_regressions.py` : les deux séquences telles que trouvées et
-réduites, jouées comme la machine les joue. Au connecteur, la règle lue là où elle est, sa signature puis
+réduites, rejouées par `_replay`. Chaque règle y est appelée avec ses tirages, dans l'ordre, et fait ses
+propres vérifications : les affirmations après chaque changement (`_claims_after_a_change`), les oracles de
+la réaffirmation après sa passe, dont celui de L1 qui échouait. Après chaque pas, trois seulement des huit
+invariants de la machine : I1, I2 sur la configuration du client, I6. À la fin, la remise à zéro : I7, puis
+I2 par auteur. Les quatre autres (I3 tiré tour à tour, I4, U1, L3) ne sont pas rejoués entre les pas. Au connecteur, la règle lue là où elle est, sa signature puis
 `None` une fois supprimée, le verdict inchangé, derrière la quarantaine ouverte et le NSG ôté, avec
 l'identifiant canonique et en minuscules. Le NSG en 429 laisse ses règles hors de `rules_seen`, et le verdict
 reste le même. À la réaffirmation, en `human_only` : la carte acquittée, une passe muette, puis la
@@ -746,6 +750,23 @@ suppression dite de nouveau, avec la quarantaine et sans elle. Sur `origin/main`
 `rules_seen` lit ; la lecture d'un seul côté (en quarantaine, ou hors d'elle) ; un correctif qui durcit à
 tort (ce NSG illisible rend la carte inconnue) ; un NSG illisible lu vide, ses règles dites supprimées sur une
 supposition. Les six sont attrapés.
+
+**Les preuves complétées (L1Nb, #802).** La relecture de L1N a relevé deux trous, et le produit n'a pas
+bougé. Les cas figés n'avaient qu'un placement hors de la carte : une lecture du seul premier NSG (`off[:1]`)
+survivait à tous. Un cas neuf en a deux, sur deux NSG. Db--01 est bloquée ; le propriétaire remplace le NSG de
+db-nic-0 (nsg-db-nic-0 par nsg-db-nic-0-b), et la VM est bloquée de nouveau. L'entrée nomme alors la paire
+sur chacun (`_merge_placements`). Puis aucun des deux ne gouverne plus la carte : derrière la quarantaine
+ouverte, ou le second ôté à son tour. Les deux sont lus pour `rules_seen`, chacun pour lui-même. Les règles
+de l'un supprimées, il est lu `None` et l'autre reste lu, le verdict inchangé. L'un en 429, ses règles
+restent dehors et l'autre est lu quand même. À la réaffirmation, la carte acquittée est redite quand l'un ou
+l'autre perd ses règles. Le second trou : le 429 n'était figé que derrière la quarantaine. Il l'est aussi
+pour la carte détachée, avec les mêmes affirmations, et celle sur la règle `-out` en plus. Ces 13 cas sont
+verts sur `origin/main` 41e480c4 : aucun ne trouve de défaut. Mutants M5250–M5254 (`scripts/mutants/L1Nb.py`),
+les cinq attrapés. Le premier NSG seul lu (`off[:1]`), ou le dernier seul : la suppression de l'autre se
+tait. Hors quarantaine, le NSG illisible rend la carte inconnue (M5199 de L1N, du côté que le 429 figé ne
+voyait pas). Hors quarantaine encore, ce NSG illisible est lu vide. Et le premier NSG illisible arrête la
+lecture des suivants. Seuls les nouveaux cas attrapent M5250, M5251 et M5254 ; le 429 détaché attrape M5252 et
+M5253, que le 429 derrière la quarantaine laisse vivre.
 
 ### Trois mutants que la machine ne voyait plus qu'au hasard (MUT4)
 
