@@ -417,7 +417,24 @@ trace sur Azure. Chaque refus est compté, comme `channel_refusals.json` (SEC3).
   watch sur Imladris (`docker exec`), ou avec le principal de la watch sur un poste (`AZURE_CLIENT_*`,
   `.envrc.example`). Elle garde l'appel direct : c'est l'issue de secours, et elle tient l'identité
   de la watch. « Seule la watch tient le rôle d'écriture » reste vrai. Lancée dans le conteneur de
-  la console, la CLI y échoue, et c'est voulu.
+  la console, la CLI y échoue, et c'est voulu. Ses gestes d'écriture, chacun sous le verrou de la
+  VM et dans l'état de l'hôte où elle tourne (`~/.glorfindel`) :
+
+  | Geste de la CLI | Ce qu'il fait | Ses gardes | L'état |
+  |---|---|---|---|
+  | `release <vm>` | lève l'isolement (`connector.release_isolation`) | rien à lever : l'état effacé (`gestures.release_needed`) | effacé |
+  | `unblock <ip> <vm>` | retire le blocage de cette IP (`connector.unblock_ip`) | — | entrée retirée |
+  | `reset <vm>` | lève tout ce que l'état tient (`gestures.reset_*`) | — | effacé |
+  | **`isolate <vm>`** (CMD1, #797) | isole (`connector.isolate_vm`), puis la vérification de la console (`approval.verify_approved`) | la VM du périmètre de la watch, jamais la VM où une carte n'est qu'ancrée (AL1) (`gestures.direct_refusal`) ; des identifiants qui écrivent | écrit, relu par la réaffirmation, levé par `release` |
+  | **`block <ip> <vm> [--scope vm\|subnet]`** (CMD1) | bloque (`connector.block_suspicious_ip`), puis la vérification | les mêmes, et une seule adresse d'hôte hors de `never_block` (`gestures.address_refusal`) | écrit, relu, levé par `unblock` |
+  | `snapshot`, `restore` | le coffre (Q2 pour le restore) | — | le job |
+
+  `isolate` et `block` sont l'approbation d'une carte tenue par la console, sans la carte, d'un
+  terminal : la console fermée, la carte de la réaffirmation sur une carte réseau non couverte, ou
+  aucune carte. Ils ne résolvent aucune carte : celle du même geste est dite, et l'humain l'acquitte.
+  Les gardes du modèle ne s'y appliquent pas, comme pour une approbation (§2.9). Lancés sur un poste
+  pendant que la watch tourne sur Imladris, ils écrivent l'état du poste, qu'Imladris ne relit pas :
+  la CLI le dit ; sur Imladris, le geste se lance dans le conteneur de la watch.
 - **Le restore** (Q2) : hors de la file, et hors de la console et du bot.
 - **La demande de Dagorlad** (DG-b) : elle ne touche pas Glorfindel. Orodruin la juge, et
   l'opérateur la porte.

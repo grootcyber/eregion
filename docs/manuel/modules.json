@@ -1033,6 +1033,20 @@
    "doc": "docs/glorfindel.md"
   },
   {
+   "id": "g-webhook-carte-bornee",
+   "composant": "glorfindel",
+   "poste": "g-verifier",
+   "nom": "Without the Discord bot, a card posted at once is bounded, the name's resolution included: the graph's cycle never waits for a webhook beyond 10 s a card (25 s with a short 429), its secret never in the log; check-ttl posts its queued card outside the VM's lock and says it escalates, never releases",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "JUG2d"
+   ],
+   "issue": 799,
+   "pr": 805,
+   "doc": "docs/glorfindel.md"
+  },
+  {
    "id": "g-perimetre-illisible",
    "composant": "glorfindel",
    "poste": "g-verifier",
@@ -1190,6 +1204,20 @@
    "issue": 787,
    "pr": 792,
    "doc": "docs/glorfindel.md"
+  },
+  {
+   "id": "g-isoler-bloquer-cli",
+   "composant": "glorfindel",
+   "poste": "g-agir",
+   "nom": "glorfindel isolate and glorfindel block: a containment by a human's hand from a terminal, the console's approval without the card, its guards and its check; and no command Glorfindel proposes is invented",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "CMD1"
+   ],
+   "issue": 797,
+   "pr": 808,
+   "doc": "docs/operations.md"
   },
   {
    "id": "g-tui-sans-abonnement",
@@ -1788,6 +1816,20 @@
    ],
    "issue": 789,
    "pr": 790,
+   "doc": "docs/banc-t1486.md"
+  },
+  {
+   "id": "c-banc-job-verifie",
+   "composant": "celebrimbor",
+   "poste": "c-construire",
+   "nom": "The vault job the console names is checked before the bench follows it: a backup of the target at its first read, and a name of another vault or group stops the run, saying what differs",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "SNP1b"
+   ],
+   "issue": 801,
+   "pr": 806,
    "doc": "docs/banc-t1486.md"
   },
   {

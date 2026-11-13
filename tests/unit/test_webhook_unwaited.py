@@ -183,10 +183,11 @@ def test_under_a_vm_s_lock_alone_nothing_is_posted(hook):
 
 
 def test_elsewhere_a_card_is_still_posted_at_once(hook):
-    """The graph's cycle, the console, the CLI: no lock, no reassertion — posted at once, as always."""
+    """The graph's cycle, the console, the CLI: no lock, no reassertion — posted at once, as always;
+    bounded as every post since JUG2d (#799: its own thread, the name's resolution included)."""
     escalations.record(signal_id="s-2", resource_id=_WEB, action="isolate_vm",
                        escalation_type="mode_hold", reason="retenue")
-    assert len(hook.sent) == 1 and hook.threads == ["MainThread"]
+    assert len(hook.sent) == 1 and hook.threads == ["webhook-post"]
     assert not vm_notices._read()
 
 

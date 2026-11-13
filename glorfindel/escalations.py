@@ -160,7 +160,7 @@ _ESCALATION_LABELS = {
     "cycle_failed": "signal non traité (cycle interrompu)",
     "uncharacterized_signal": "signal non caractérisé (garde-fou)",
     "release_hold": "levée retenue (restauration non terminée, ou rejeu possible au démarrage)",
-    "ttl_exceeded": "isolation levée à l'expiration du TTL",
+    "ttl_exceeded": "isolation au-delà du TTL (à revoir, jamais levée seule)",   # JUG2d: never released
     "unattributed_signal": "détection non attribuée à cette VM",
     "telemetry_gap": "télémétrie incomplète (requêtes d'enquête en échec)",
     "unstable_decision": "décision instable (les tirages ne s'accordent pas)",
@@ -604,6 +604,29 @@ def pending() -> list[dict]:
     return result
 
 
+def card_of(escalation_id: str) -> dict:
+    """The card a reference names — its full id, or a unique prefix of at least 6 characters (the
+    console, the TUI and `pending`'s commands give 8; CMD1: `glorfindel ack <8 characters>` used to
+    match nothing and say « acknowledged »). ValueError on a prefix too short or ambiguous, KeyError
+    when no card matches. The card as stored, whatever its status."""
+    ref = (escalation_id or "").strip().lower()
+    if len(ref) < 6:
+        raise ValueError("give the card id, or at least its first 6 characters")
+    cards = []
+    for line in (_STORE.read_text().splitlines() if _STORE.exists() else []):
+        try:
+            cards.append(json.loads(line))
+        except Exception:
+            continue
+    exact = [e for e in cards if str(e.get("id", "")).lower() == ref]
+    hits = exact or [e for e in cards if str(e.get("id", "")).lower().startswith(ref)]
+    if not hits:
+        raise KeyError(f"no card {escalation_id}")
+    if len(hits) > 1:
+        raise ValueError(f"{escalation_id} matches {len(hits)} cards — give more characters")
+    return hits[0]
+
+
 def _action_words(action: str, resource_id: str, run_id: str, confidence: float, explanation: str,
                   verified: bool | None, ttp: str, severity: str, note: str, card: str,
                   mode: str) -> tuple[str, str, str, dict]:
@@ -768,7 +791,15 @@ def _notify(esc: dict) -> None:
     by the reassertion under it), or the reassertion's pass (`vm_notices.must_defer`): the
     notification is queued, once by the card's id, and a pass of the watch posts it in its own
     thread, bounded, the name's resolution included (`vm_notices.queue_card`, `relay_pass`).
-    Elsewhere (the graph's cycle, the console, the CLI), posted at once, as before.
+    Elsewhere (the graph's cycle, the console, the CLI), posted at once.
+
+    JUG2d (#799): posted at once, bounded as every post of the notices — `vm_notices.post_webhook`:
+    the POST in a thread of its own, waited for `POST_DEADLINE_S` (10 s), the name's resolution
+    included, which `requests.post(…, timeout=5)` did not bound (`getaddrinfo`): a webhook whose name
+    never resolves holds the graph's cycle 10 s a card (25 s with a short 429), no longer. Past the deadline the post goes on in its
+    thread and may still deliver — never cut by the watch, never posted again: one post (a 429 asking
+    ≤ 5 s tried once more, as every post), nothing queued; a failure now said in the log, masked (its
+    types, never the webhook's path: `vm_notices._error_said`) — before, nothing was said.
     """
     import os
     if discord_bot_configured():
@@ -783,8 +814,8 @@ def _notify(esc: dict) -> None:
         if vm_notices.must_defer():
             vm_notices.queue_card(esc)
             return
-        import requests
-        requests.post(url, json=card_payload(esc), timeout=5)
+        # Bounded, the name's resolution included (JUG2d): never `requests.post` from this thread.
+        vm_notices.post_webhook(card_payload(esc), f"card:{esc.get('id') or '?'}", url)
     except Exception:
         pass  # notification failure must never block the agent
 
