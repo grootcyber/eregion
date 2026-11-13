@@ -119,7 +119,9 @@ rate limited, it goes back to the queue (`_back`), not to an absent bot, with th
 cap — at the cap no pass posts it, and the log says it is shown on the console only (`_count_try`). A
 notice posted at once before (`via: webhook`, never queued) is never taken up. The store refused, a
 card is posted from a thread nobody waits for. Elsewhere — the graph's cycle, the console, the CLI
-outside a lock — a card still goes at once. The CLI under a VM's lock: `check-ttl` (from cron, no watch
+outside a lock — a card still goes at once, bounded as every post since JUG2d (#799: `post_webhook`
+from `escalations._notify`, the name's resolution included — `requests.post(…, timeout=5)` did not
+bound it): one post, never queued, never posted again. The CLI under a VM's lock: `check-ttl` (from cron, no watch
 there) writes its card under it, queued, and runs a relay pass before it ends, outside the lock
 (glorfindel/cli.py, `_post_queued_notices` — JUG2c review); no other command writes a card or a
 closure under a VM's lock. Limits: a queued notice whose answer was lost (a read timeout, a 5xx) is
