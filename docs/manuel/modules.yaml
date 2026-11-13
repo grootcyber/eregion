@@ -929,6 +929,17 @@ briques:
     pr: 792
     doc: docs/glorfindel.md
 
+  - id: g-tui-sans-abonnement
+    composant: glorfindel
+    poste: g-agir
+    nom: "The TUI shows a card's steps, its line, the restore's screen and the feed through the CLI's masking: no subscription's id, each step cut after it is masked, never before"
+    etat: main
+    release: "0.6"
+    lots: [MSK2c]
+    issue: 798
+    pr: 804
+    doc: docs/glorfindel.md
+
   - id: g-dossier-isolation
     composant: glorfindel
     poste: g-verifier
