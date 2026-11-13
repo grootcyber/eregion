@@ -552,7 +552,8 @@ glorfindel list                                 # all VMs with active actions (i
 glorfindel list --ids                           # the same with their full ARM ids (this terminal only)
 # What the CLI shows a human never carries a subscription's id (MSK2): a VM by its name and group, Azure's
 # errors, the decision rendered, the cards and proposed rules of `pending` and the reasons of `activate`
-# included; a suggested command takes the short name only when it comes back to the same resource. The signal,
+# included; a suggested command names the VM by `<group>/<name>` (MSK3b: never its name alone, which a VM of
+# that name in another group could take) only when it comes back to the same resource. The signal,
 # the journals and the watch's own log lines (`glorfindel watch`, docker logs: the machine's) keep the full id.
 #
 # Console buttons:    ↩️ Release (isolated) | ↩️ Unblock (that IP alone) | ⟳ Reset (both)

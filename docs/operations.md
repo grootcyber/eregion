@@ -131,9 +131,12 @@ glorfindel list --ids                        # les mêmes, avec leur id ARM comp
 # court ambigu, la décision rendue (explication, raisonnement, raison d'escalade), la carte de `pending`
 # (sa raison, les étapes du modèle et les siennes), les règles qu'il propose (analyse, explication,
 # requête KQL ; `approve-rule` prend l'id de la proposition), les raisons d'`activate`, release, unblock,
-# snapshot, jobs (son étape 2 aussi), list (son mode retenu aussi), door, reset et restore. Une commande proposée prend le nom court seulement s'il
-# revient à la même ressource ; sinon (deux VM de ce nom, une VM inconnue ici dont un homonyme d'un autre
-# groupe est connu, un NSG, un compte) elle demande l'id complet, que `list --ids` montre. Le signal, les
+# snapshot, jobs (son étape 2 aussi), list (son mode retenu aussi), door, reset et restore. Une commande proposée
+# nomme la VM par `<groupe>/<nom>` (MSK3b, #787 : jamais son nom seul, qu'un homonyme d'un autre groupe
+# pourrait prendre) seulement si cette forme revient à la même ressource ; sinon (une VM inconnue ici, un même
+# groupe et un même nom dans deux abonnements, un NSG, un compte) elle demande l'id complet, que `list --ids`
+# montre. Deux VM d'un même nom dans deux groupes : chacune nommée par le sien. Les étapes d'une carte écrite
+# avant MSK3b (le nom court, ou l'id complet, masqué en « vm (groupe rg) ») sont dites de même. Le signal, les
 # fichiers d'état et les journaux (JSONL) gardent l'id complet ; `door --json` aussi, demandé. Les lignes
 # de `glorfindel watch` (docker logs, journal de la machine) ne sont pas masquées : une erreur d'Azure y
 # garde son texte, ids compris. Ce que le modèle voit n'est pas filtré. Ni l'object id d'un principal ni
@@ -147,10 +150,10 @@ glorfindel list --ids                        # les mêmes, avec leur id ARM comp
 # double encodage (« %252Fsubscriptions%252F »), une liste JSON (« subscriptions: ["<guid>"] ») passent.
 # Une étape écrite par le modèle, une fois masquée (« glorfindel restore vm (groupe rg) --yes »), ne se
 # copie plus : le shell la refuse (bash : erreur de syntaxe ; zsh : erreur de motif) ; rien ne s'exécute.
-# Le nom court est choisi au moment de l'affichage : une commande copiée puis lancée bien plus tard peut
-# trouver un état ou un registre changé (une VM levée, un homonyme découvert) ; `restore` et `release`
-# refusent alors un nom porté par deux VM, mais un nom résolu vers une autre VM ne se voit pas : relancer
-# `glorfindel list` (ou relire la carte) avant une commande ancienne.
+# La forme est choisie au moment de l'affichage : une commande copiée puis lancée bien plus tard peut
+# trouver un état ou un registre changé (une VM levée, sortie de la découverte) ; `<groupe>/<nom>` est alors
+# refusé (« inconnue de ce poste »), jamais pris pour un homonyme d'un autre groupe ; la VM résolue est
+# relue avant d'agir. Une commande ancienne au nom court (d'avant MSK3b) : relancer `glorfindel list`.
 glorfindel pending                           # escalades en attente
 glorfindel pending --watch                   # alerting temps réel
 
