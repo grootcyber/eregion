@@ -493,7 +493,7 @@ def say_unreadable_states(report: list[dict]) -> None:
     steps = (["Lire ces fichiers sous ~/.glorfindel/ : les réparer s'ils sont récupérables "
               "(la forme qu'écrit Glorfindel).",
               "Sinon les retirer à la main, puis relancer ce qui attendait ; `glorfindel reset "
-              "--from-azure` relit Azure pour une VM dont l'état est perdu."]
+              "<groupe>/<nom> --from-azure` relit Azure pour une VM dont l'état est perdu."]
              if len(aside) < len(files) else [])
     if aside:
         # Set aside when its VM's state was written since: never a state again, repaired or not.

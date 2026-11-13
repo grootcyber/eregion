@@ -411,7 +411,7 @@ def _reassert_block(connector, autonomy, vm: str, ip: str, report: list[dict], r
         if b.get("uncovered_said") != nics:
             reason = (f"Le blocage de périmètre de {ip} ne couvre pas {', '.join(nics)} de {vm} : non couverte(s) "
                       f"depuis le blocage (autre subnet), l'IP les atteint. Bloquer aussi la VM (scope vm) : "
-                      f"`glorfindel block {ip} {rid}`.")
+                      f"`glorfindel block {ip} {group_and_name(rid)} --scope vm --yes`.")
             _alert(_alert_id(vm, rid, ip), resource_id=rid, action="block_suspicious_ip",
                    reason=reason, action_params={"ip": ip})
             report.append({"kind": "block", "vm": vm, "ip": ip, "outcome": "escalated", "detail": reason})

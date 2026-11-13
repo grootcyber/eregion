@@ -142,7 +142,7 @@ glorfindel list --ids                        # les mêmes, avec leur id ARM comp
 # de `glorfindel watch` (docker logs, journal de la machine) ne sont pas masquées : une erreur d'Azure y
 # garde son texte, ids compris. Ce que le modèle voit n'est pas filtré. Ni l'object id d'un principal ni
 # l'id d'un tenant ne sont masqués.
-# Une commande qui agit sur une VM (restore, release, unblock, reset, revert, activate, snapshot) prend son nom court,
+# Une commande qui agit sur une VM (restore, release, unblock, isolate, block, reset, revert, activate, snapshot) prend son nom court,
 # son id complet, ou `<groupe>/<nom>` — la forme des commandes du bot Discord (MSK3) : résolue sur ce poste,
 # le groupe et le nom correspondant, sinon refusée (« inconnue de ce poste »), jamais un homonyme ; et la
 # VM résolue est relue par son nom et son groupe avant d'agir, --yes compris. Limite connue (MSK3) : un poste
@@ -174,6 +174,38 @@ glorfindel pending --watch                   # alerting temps réel
 glorfindel release <resource_id> --yes       # lever isolation NSG (post-restore, VM de retour)
 glorfindel door <vm> [--days 7] [--json]     # LEV2 : qui a agi sur la VM, et ses droits — lecture seule, rien n'est écrit
 glorfindel unblock <ip> <resource_id> --yes  # supprimer une règle block IP
+glorfindel isolate <groupe>/<nom> --yes      # CMD1 : contenir de sa main — approuver une carte tenue quand la
+                                             # console est fermée (le poste, Termius : MOB1), ou sans carte
+glorfindel block <ip> <groupe>/<nom> --yes [--scope vm|subnet]   # CMD1 : bloquer une adresse de sa main ;
+                                             # --scope vm (défaut) : cette VM seule ; subnet : tout son sous-réseau
+                                             # (la carte de la réaffirmation sur une carte réseau non couverte :
+                                             # glorfindel block <ip> <groupe>/<nom> --scope vm --yes)
+# isolate et block, l'approbation de la console sans la carte (glorfindel/gestures.py) : les mêmes appels et les
+# mêmes gardes, dans cet ordre, avant tout appel au cloud — la VM résolue comme release (<groupe>/<nom>, MSK3b) et
+# relue ; une seule adresse d'hôte (single_host_ip), jamais une plage, un tag, `*` ni une adresse never_block
+# (SEC2) ; une VM du périmètre de la watch (découverte, tenue, ou d'une carte en attente), jamais une autre
+# ressource ; jamais la VM où une carte n'est qu'ancrée (AL1 : lire la carte, l'acquitter, agir sur la VM qu'elle
+# concerne) ; des identifiants qui écrivent (GLORFINDEL_READ_ONLY refusé avant la question). Puis, sous le verrou
+# de la VM, l'écriture du connecteur — l'état de la watch, relu par la réaffirmation, levé par release et unblock —
+# et la vérification de la console : une carte verification_failed si elle ne tient pas, dite, code 2 ; de même
+# pour une écriture faite en partie (une carte réseau en échec, ce qui est posé gardé), et pour une coupure des
+# sessions qui court encore quand aucune watch ne vit sur l'hôte (personne ne la relira : la couper à la main).
+# Le geste est noté dans runs/console là où la CLI peut l'écrire (un poste, le conteneur de la console) ; dans le
+# conteneur de la watch, runs/console est monté en lecture seule : le geste n'y est pas noté, la CLI le dit une
+# fois (SEC16), comme pour release et unblock. --dry-run : les gardes seules (lecture seule comprise), rien sur
+# Azure, rien écrit. Une carte en attente pour ce même geste est dite, jamais résolue : l'acquitter
+# (glorfindel ack <id>) une fois le geste vérifié. Le mode (human_only) retient l'action autonome, pas le geste de
+# l'humain. La zone d'inscription (O0) : aucune garde par zone dans isolate et block — en attente de la décision
+# de Jonathan. L'avis de la relecture (#808) : sûr sans refus, puisque le geste est réversible et que ni la watch
+# ni l'approbation de la console n'ont de garde par zone ; une ligne d'information qui dit la zone de la VM avant
+# la question serait un compromis.
+# Où tourne l'état : comme release et unblock, dans le ~/.glorfindel de l'hôte où la commande tourne. La watch
+# sur Imladris : lancer le geste dans son conteneur (make imladris-ssh, puis docker exec -it eregion-watch
+# glorfindel isolate <groupe>/<nom> : -it, sinon la question lit une fin de fichier ; ou --yes), ou par la
+# console. Lancé sur le poste, il écrit l'état du poste, qu'Imladris ne relit pas (ni réaffirmation, ni levée par
+# sa console) ; la CLI le dit quand aucune watch ne bat sur l'hôte. Le verrou de la VM est celui de l'hôte : entre
+# le poste et Imladris, aucun verrou n'est commun ; et la CLI attend ce verrou en silence, sans délai maximal,
+# derrière une écriture de la watch qui peut durer (une coupure des sessions, ~300 s).
 glorfindel reset <resource_id> --yes        # reset complet : release + unblock toutes IPs
 glorfindel reset <resource_id> --dry-run    # ce que le reset ferait, rien lu ni écrit sur Azure (jamais « clean », I3V)
 glorfindel reset <resource_id> --from-azure  # source de vérité = Azure (sans état local) : retire les
@@ -193,7 +225,8 @@ glorfindel restore <resource_id> --yes       # Azure Backup fire-and-forget ; po
                                              # futur ou hors calendrier → refusé ; après l'isolation → dit
 glorfindel restore <resource_id> --yes --wait  # workflow complet : attend recovery_complete → release_isolation auto
 glorfindel jobs <vm-name> [--refresh]        # état du job snapshot/restore en cours
-glorfindel ack <escalation_id>               # acquitter escalade
+glorfindel ack <escalation_id>               # acquitter escalade (l'id, ou ses 6 premiers caractères au moins :
+                                             # la console et la TUI en donnent 8 ; une carte inconnue est dite, code 1)
 glorfindel ack --all                         # acquitter toutes
 glorfindel verdict <id> right|wrong|unsure [--note "…"]  # observation : la recommandation était-elle juste ?
 glorfindel report [--since 7d|4w|all] [--json]  # verdicts par action et par règle, taux de disruptives fausses
