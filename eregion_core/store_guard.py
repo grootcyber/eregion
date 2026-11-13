@@ -179,8 +179,20 @@ def located(path, roots: tuple[str, ...]) -> tuple[str, str] | None:
     for candidate in dict.fromkeys((full, os.path.realpath(full))):
         for root in roots:
             if candidate == root or candidate.startswith(root + os.sep):
-                return full, os.path.basename(root)
+                return full, _named(root, roots)
     return None
+
+
+def _named(root: str, roots: tuple[str, ...]) -> str:
+    """The name of the operator's folder ``root`` is: its own (``.eregion``), or — the folder itself
+    a link elsewhere (~/.eregion → /data/eregion) — that of the root given that resolves to it."""
+    name = os.path.basename(root)
+    if name in STORES:
+        return name
+    for given in roots:
+        if os.path.basename(given) in STORES and os.path.realpath(given) == root:
+            return os.path.basename(given)
+    return name
 
 
 def placed(path, roots: tuple[str, ...]) -> str | None:

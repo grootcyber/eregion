@@ -463,6 +463,14 @@ def test_the_operator_s_eregion_and_annatar_are_placed_as_given_or_resolved_and_
         assert said.startswith(f"HY2b : écriture refusée dans le ~/{store} de l'opérateur ({real / store / 'f'})")
     linked = sg.refusal("open", (str(tmp_path / "home-link" / ".eregion" / "g"), "a", 0), roots, "why")
     assert "~/.eregion de l'opérateur" in linked
+    # the folder itself a link elsewhere (~/.eregion → a disk of its own): named by its own name still
+    elsewhere = tmp_path / "data" / "eregion-state"
+    elsewhere.mkdir(parents=True)
+    (real / ".eregion").symlink_to(elsewhere)
+    roots = sg.roots_of(real)
+    assert str(elsewhere) in roots
+    said = sg.refusal("open", (str(elsewhere / "watch-key" / "k"), "w", 0), roots, "why")
+    assert said.startswith("HY2b : écriture refusée dans le ~/.eregion de l'opérateur"), said
 
 
 def test_leaving_the_worktree_is_said_to_the_operator_alone_never_to_a_probe():
