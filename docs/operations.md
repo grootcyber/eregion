@@ -612,7 +612,8 @@ qu'un battement bouge, la font échouer à tort ; la suite d'une autre session q
 échouer celle-ci. Un chemin calculé du vrai `HOME` hors de Python (un `getpwuid`, un chemin écrit en
 dur dans un script shell) n'est pas redirigé : le garde le voit, il ne l'empêche pas.
 
-**Une sonde d'agent n'écrit jamais dans le vrai ~/.glorfindel** (HY2b, #791). HY2 garde la suite ; une
+**Une sonde d'agent n'écrit jamais dans le vrai ~/.glorfindel, ~/.eregion ni ~/.annatar** (HY2b, #791 ;
+HY2c, #800). HY2 garde la suite ; une
 sonde lancée hors d'elle (un pytest sur un fichier hors de `tests/unit/`, un script qui importe
 Glorfindel) n'a ni le conftest ni le `HOME` jetable. Le 12/11 vers 23:16 UTC, 52 sondes d'une
 relecture, lancées depuis un fichier hors de `tests/unit/`, ont écrit trois fichiers de test dans le
@@ -621,22 +622,39 @@ vrai `~/.glorfindel` du poste (`vm_notices.jsonl` et son verrou, un verrou de jo
 - **Le garde, dans le code** (`eregion_core/store_guard.py`) : `eregion_core` l'installe à son import,
   et `glorfindel/__init__.py` comme `eregion_console/__init__.py` importent `eregion_core` en premier.
   Dans une session d'agent seulement, un hook d'audit de Python refuse toute écriture sous le vrai
-  `~/.glorfindel` **avant qu'elle ait lieu** : une `PermissionError` (le code de Glorfindel la reçoit
-  comme d'un disque en lecture seule), et une ligne sur stderr, une fois par fichier, qui dit le
-  fichier, pourquoi, et quoi faire (`HY2b : écriture refusée dans le ~/.glorfindel de l'opérateur
-  (…) — une session d'agent (EREGION_AGENT_SESSION). Une sonde prend un HOME jetable …`). Une sonde
-  qui avale l'erreur est dite quand même.
+  `~/.glorfindel`, le vrai `~/.eregion` et le vrai `~/.annatar` **avant qu'elle ait lieu** : une
+  `PermissionError` (le code de Glorfindel la reçoit comme d'un disque en lecture seule), et une ligne
+  sur stderr, une fois par fichier, qui dit le dossier refusé, le fichier, pourquoi, et quoi faire
+  (`HY2b : écriture refusée dans le ~/.eregion de l'opérateur (…) — une session d'agent
+  (EREGION_AGENT_SESSION). Une sonde prend un HOME jetable … ou va dans la suite …`). Une sonde qui
+  avale l'erreur est dite quand même.
+- **Ce que gardent `~/.eregion` et `~/.annatar`** (HY2c, décision de Jonathan du 13/11) :
+  `~/.eregion` tient la clé de signature de la watch (`watch-key/`, SEC19 : le code en tire une s'il
+  n'y en a pas), les clés de service de la file signée (`console/`, `bot/`), la file elle-même
+  (`watch-queue/`), le jeton de la console, ses demandes d'exercice et ses drills, l'index de l'IA
+  d'analyse (`analysis/chroma`) ; `~/.annatar`, le `.bashrc` et l'historique du shell d'Annatar. Leurs
+  écrivains qui n'ouvrent pas leur fichier par `open` passent tous par un événement que le hook voit :
+  la clé de la watch et celles des services (`eregion_core/watch_key.py` : `os.mkdir`, `os.open` en
+  `O_EXCL`, `os.link`, `os.chmod`), les registres et les demandes de la file
+  (`channel_reader.write_file` : `mkstemp`, `os.chmod`, `os.replace`), le jeton, un drill, une
+  demande d'exercice (`os.open`, `mkstemp`, `os.replace`, `os.link`).
 - **Une session d'agent** : `EREGION_AGENT_SESSION` posé (le bloc `env` de
   `~/eregion/.claude/settings.local.json` le donne à chaque session lancée dans `~/eregion` et aux
   sous-agents qu'elle lance, `docs/sessions.md`, SEC12), un dossier courant dans le worktree d'un
   lot (`.claude/worktrees/`), ou un code qui vient d'un worktree (le fichier du garde y est, lancé
-  d'ailleurs) : la règle de `scripts/bench_shared.py`. Refusée pour son dossier courant, une sonde
-  s'entend dire aussi « ou lance la commande hors du worktree ». **Partout ailleurs, rien n'est
-  installé** : le terminal de l'opérateur, ses conteneurs (`docker run` ne leur passe pas la
-  variable), la watch, le bot, Imladris et la CI écrivent comme avant, sans hook ni coût.
-- **Le vrai `~/.glorfindel`** : celui du dossier personnel que le système donne à l'utilisateur
-  (`pwd`), quel que soit `HOME`, tel quel et résolu. Une sonde avec un `HOME` jetable
-  (`HOME=$(mktemp -d) python …`) écrit dans le sien ; le `HOME` jetable de la suite (HY2) en est un.
+  d'ailleurs) : la règle de `scripts/bench_shared.py`. **Sortir du worktree n'est jamais une issue
+  pour une sonde** (HY2c) : refusée pour son dossier courant, la ligne le dit à l'opérateur seul, qui
+  aurait lancé la commande à la main depuis un worktree (« Pour l'opérateur seulement, s'il a lancé
+  lui-même cette commande depuis ce worktree : qu'il la relance hors de lui. Une sonde d'agent, elle,
+  ne sort jamais du worktree pour écrire là. ») ; refusée pour sa variable ou son code, elle n'en dit
+  rien. **Partout ailleurs, rien n'est installé** : le terminal de l'opérateur, ses conteneurs
+  (`docker run` ne leur passe pas la variable), la watch, le bot, Imladris et la CI écrivent comme
+  avant, sans hook ni coût.
+- **Le vrai `~/.glorfindel`, `~/.eregion`, `~/.annatar`** : ceux du dossier personnel que le système
+  donne à l'utilisateur (`pwd`), quel que soit `HOME`, tels quels et résolus. Un dossier à côté
+  (`~/.eregion-cd`, `~/.eregion-image`) n'est pas gardé. Une sonde avec un `HOME` jetable
+  (`HOME=$(mktemp -d) python …`) écrit dans le sien, sa clé de watch et sa file comprises ; le `HOME`
+  jetable de la suite (HY2) en est un.
 - **Une écriture** : ce que voit l'audit de HY1 (un fichier ouvert en écriture par `open`, `pathlib`
   ou `os.open`, un dossier créé ou retiré, un fichier retiré, renommé ou remplacé, un lien créé, ses
   dates ou sa taille changées, `shutil.rmtree`, `sqlite3.connect`), plus `chmod` et `chown`. Un chemin
@@ -646,7 +664,15 @@ vrai `~/.glorfindel` du poste (`vm_notices.jsonl` et son verrou, un verrou de jo
   que ChromaDB 1.x écrit depuis Rust, hors de la vue du hook. `CycleMemory` appelle
   `store_guard.check(chemin)` avant d'ouvrir ChromaDB : dans une session d'agent, l'ouverture même est
   refusée et dite (l'ouvrir peut déjà écrire), en lecture comme en écriture. C'est le seul écrivain
-  natif sous `~/.glorfindel` (relecture de HY2b, tour 1).
+  natif sous `~/.glorfindel` (relecture de HY2b, tour 1). Sous `~/.eregion`, l'index de l'IA d'analyse
+  (`~/.eregion/analysis/chroma`, ChromaDB aussi) l'est de même : `analysis/campaign_report.py`
+  (`_collection`) appelle `store_guard.check` avant de l'ouvrir (HY2c). Ce sont les deux seuls.
+- **Ce qui écrit sous ces dossiers sans importer le dépôt, non vu** (HY2c) : la cible `annatar-shell`
+  du `Makefile`, qui crée `~/.annatar/.bashrc` et `.bash_history` (un shell, `mkdir`, `touch`, `>>`) ;
+  `scripts/mobile.py` (le `known_hosts` du tunnel de la console, écrit par ssh) et
+  `scripts/published_image.py` (le binaire de cosign), deux scripts autonomes qui n'importent aucun
+  module du dépôt. Ce sont des gestes de l'opérateur : le garde ne les voit pas, comme le `>` d'un
+  shell.
 - **Le code que la sonde importe** : le garde vaut pour lui seul. L'installation éditable du venv
   pointe vers `~/eregion` : une sonde lancée par le Python du venv, hors d'un worktree et sans
   `PYTHONPATH`, importe le code de `~/eregion`, et le garde n'y vaut qu'une fois `~/eregion` à jour sur
