@@ -1805,6 +1805,20 @@
    "doc": "docs/banc-t1486.md"
   },
   {
+   "id": "c-banc-job-verifie",
+   "composant": "celebrimbor",
+   "poste": "c-construire",
+   "nom": "The vault job the console names is checked before the bench follows it: a backup of the target at its first read, and a name of another vault or group stops the run, saying what differs",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "SNP1b"
+   ],
+   "issue": 801,
+   "pr": 806,
+   "doc": "docs/banc-t1486.md"
+  },
+  {
    "id": "c-paires-expiration",
    "composant": "celebrimbor",
    "poste": "c-construire",
