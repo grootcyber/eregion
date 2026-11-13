@@ -2,6 +2,10 @@
 release, a reset — out of glorfindel/cli.py as callables, so the watch runs a request of the queue
 with the CLI's own code (glorfindel/queue_watch.py), never a copy of it. The CLI keeps its prompt
 and its words around them (``release``, ``reset``); what they do is here.
+
+CMD1 (#797): and the containments a human makes by hand — ``glorfindel isolate``, ``glorfindel block``
+(``direct_refusal``, ``address_refusal``, ``contain``): the console's approval of a held card, without
+the card, the same calls and the same guards.
 """
 from __future__ import annotations
 
@@ -48,3 +52,120 @@ def reset_apply(connector, resource_id: str, isolations: list[dict], blocks: lis
             say(f"  [cyan]unblock {b['ip']}[/cyan] → {r.get('status', '?')}")
         leftovers += r.get("failed", [])
     return leftovers
+
+
+# ── CMD1 (#797): a containment by a human's hand — `glorfindel isolate`, `glorfindel block` ──────────
+#
+# The console's approval of a held card (eregion_console/api.py, ``action_approve``), without the card:
+# the same calls and the same guards, here, where the CLI calls them and the console may import them
+# (D1: glorfindel/ never imports the console). What the CLI keeps: its prompt and its words. What a
+# card would have said is asked of the human, who names the VM and the address.
+
+# The cards whose VM is an anchor the detection may not concern (AL1, C2) — the console's, the bot's
+# and the TUI's own set (tests/unit/test_cli_contain.py keeps the four equal).
+ANCHORED_TYPES = frozenset({"control_plane_change", "identity_change", "unattributed_signal"})
+
+
+def _same(a: str, b: str) -> bool:
+    return (a or "").rstrip("/").lower() == (b or "").rstrip("/").lower()
+
+
+def _pending_on(resource_id: str) -> list[dict]:
+    from glorfindel import escalations
+    return [e for e in escalations.pending() if _same(e.get("resource_id", ""), resource_id)]
+
+
+def direct_refusal(resource_id: str) -> str:
+    """Why a human's containment of this VM by the CLI is refused — "" when it is not. A VM's own id
+    the watch knows (``approval.in_perimeter``: discovered, held, or the VM of a pending card), never
+    another resource; and never a VM a pending card is only anchored on (AL1): the detection does not
+    name it — read the card, acknowledge it, then act on the VM it is about."""
+    from glorfindel import approval
+    if not approval.is_vm_id(resource_id):
+        return (f"{str(resource_id)[:80]} : pas une VM connue ici (ni découverte, ni tenue, ni d'une carte) "
+                "— son id complet : glorfindel list --ids (ce terminal seulement)")
+    if not approval.in_perimeter(resource_id):
+        return ("cette VM n'est pas du périmètre de la watch (ni découverte, ni isolée ou bloquée, ni d'une "
+                "carte en attente) : rien n'est fait")
+    anchored = [e for e in _pending_on(resource_id) if e.get("escalation_type") in ANCHORED_TYPES]
+    if anchored:
+        ids = ", ".join(str(e.get("id", ""))[:8] for e in anchored)
+        return (f"carte(s) {ids} ancrée(s) sur cette VM sans que la détection la nomme (AL1) : la lire, "
+                "l'acquitter (glorfindel ack <id>), puis agir sur la VM qu'elle concerne")
+    return ""
+
+
+def address_refusal(ip: str) -> tuple[str, str]:
+    """(the address, "") when ``ip`` is one host address Glorfindel may block — the console's two
+    guards in their order: ``single_host_ip`` (a range, a tag, ``*``, a reserved address), then the
+    never-block list (``approval.address_refusal``, SEC2). Else ("", why)."""
+    from glorfindel import approval
+    from glorfindel.response.policy import single_host_ip
+    try:
+        ip = single_host_ip(ip)
+    except ValueError as exc:
+        return "", str(exc)
+    return approval.address_refusal(ip)
+
+
+def held_cards(resource_id: str, action: str) -> list[dict]:
+    """The pending cards of this VM that hold this very action — said by the CLI, never resolved by
+    it: the human acknowledges them (``glorfindel ack``) once the containment is verified."""
+    return [e for e in _pending_on(resource_id)
+            if e.get("action") == action and e.get("escalation_type") not in ANCHORED_TYPES]
+
+
+def contain(connector, action: str, resource_id: str, *, ip: str = "", scope: str = "vm",
+            port: int | None = None, record=None, drain_followed: bool | None = None) -> dict:
+    """``isolate_vm`` or ``block_suspicious_ip``, then the check after — under the VM's lock for the
+    whole gesture, as the watch runs a request of the queue (glorfindel/queue_watch.py). The check is
+    the console's (``approval.verify_approved``): the agent's own verification, the gesture noted
+    (``record``), a ``verification_failed`` card when it is not ``True``. ``drain_followed`` False:
+    no watch lives where the CLI runs — a session cut still running is read again by nobody, not
+    verified. A write that lands on some NICs only (``PartialActionError``: what landed is kept and
+    recorded by the connector) is noted and left on a card too. A dry run calls nothing on Azure,
+    writes nothing, verifies nothing. {"result", "verification"} (verification None in a dry run)."""
+    if action not in ("isolate_vm", "block_suspicious_ip"):
+        raise ValueError(f"not a containment: {action!r}")
+
+    def _act() -> dict:
+        if action == "isolate_vm":
+            return connector.isolate_vm(resource_id)
+        return connector.block_suspicious_ip(ip, resource_id, scope, False, port)
+
+    if getattr(connector, "dry_run", False):
+        return {"result": _act(), "verification": None}
+    from glorfindel import approval
+    from glorfindel.response.locks import _vm_lock
+    from glorfindel.response.policy import PartialActionError
+    with _vm_lock(resource_id.rstrip("/").rsplit("/", 1)[-1]):
+        try:
+            result = _act()
+        except PartialActionError as exc:
+            return _partial(action, resource_id, exc, record)
+        verification = approval.verify_approved(connector, {"id": ""}, action, resource_id, result, ip,
+                                                record=record, signal_id=f"cli-{action}",
+                                                drain_followed=drain_followed)
+    return {"result": result, "verification": verification}
+
+
+def _partial(action: str, resource_id: str, exc, record) -> dict:
+    """A containment that landed on some NICs only: what landed stays (the connector recorded it, for
+    `release`, `unblock`, `reset`); noted, and a ``verification_failed`` card that says which NIC
+    failed — never a trace said once and lost."""
+    from glorfindel import escalations
+    covered = list(getattr(exc, "covered", None) or [])
+    failed = str(getattr(exc, "failed_nic", "") or "?")
+    why = (f"en partie seulement : {', '.join(covered) or 'aucune carte réseau'} couverte(s), {failed} en échec — "
+           f"{str(exc)[:300]}")
+    result = {"status": f"{action}_partial", "partial": True, "covered": covered, "failed_nic": failed}
+    verification = {"verified": False, "error": why}
+    if record is not None:
+        try:
+            record(action, resource_id, {**result, **verification, "approved_escalation": ""})
+        except Exception:
+            pass
+    escalations.record(signal_id=f"cli-{action}", resource_id=resource_id, action=action,
+                       escalation_type="verification_failed",
+                       reason=f"Action '{action}' faite à la main, {why}", ttp="", severity="")
+    return {"result": result, "verification": verification}

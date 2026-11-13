@@ -211,18 +211,20 @@ def discord_refusal(by: dict, environ=None) -> str:
 
 
 def verify_approved(connector, esc: dict, action: str, resource_id: str, result: dict,
-                    ip: str = "", record=None, signal_id: str = "") -> dict:
+                    ip: str = "", record=None, signal_id: str = "", drain_followed: bool | None = None) -> dict:
     """Verify an approved action, as the agent verifies its own, and say it: ``record`` (the
     manual action noted, for the feed — the console's; the watch's receipt says it for the
     queue). The approve route used to execute without either (real run, 2026-10-05). A failed
     check becomes a verification_failed card — the approval itself resolved the held one. Its
     ``signal_id``: the caller's (FS1c: the queue's request, ``queue-<service>-<id>``), else
-    ``approve-<card>``, the console's."""
+    ``approve-<card>``, the console's. ``drain_followed`` False (CMD1: the CLI where no watch lives):
+    a session cut still running is read again by nobody — not verified, a card."""
     from glorfindel import escalations as _esc
     from glorfindel.actions import isolation_verdict
     try:
         if action == "isolate_vm":
-            verification = isolation_verdict(connector.verify_isolation(resource_id), result)
+            verification = isolation_verdict(connector.verify_isolation(resource_id), result,
+                                             followed=drain_followed)
         elif action == "release_isolation":
             verification = connector.verify_release(resource_id)
         else:

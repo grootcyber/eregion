@@ -4973,7 +4973,7 @@ MUTANTS += [
      '            if _rule_name(r).lower() not in own} | set(taken)\n'),
     ("M1629", "the unblock of a deleted VM leaves a rule without saying how to take it off (RB1)", UNB,
      '                                "rien ne nomme plus)" + how.format(" si aucune VM vivante de ce nom ne bloque "\n'
-     '                                                                   f"{ip} (glorfindel status)"))\n',
+     '                                                                   f"{ip} (glorfindel list)"))\n',
      '                                "rien ne nomme plus) : laissée")\n'),
     ("M1630", "the unblock of a deleted VM, its entry lost, never looks for its perimeter block (RB1)", UNB,
      '                elif lost and name.removesuffix("-out") == prefix', '                elif False and name.removesuffix("-out") == prefix'),

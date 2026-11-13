@@ -267,7 +267,7 @@ class UnblockMixin:
                                     and name.removesuffix("-out").rsplit("-", 1)[-1] not in marks):
                     said.append(f"{n_name}:{_rule_name(r)} (nommée pour une VM {vm_name} supprimée, carte que "
                                 "rien ne nomme plus)" + how.format(" si aucune VM vivante de ce nom ne bloque "
-                                                                   f"{ip} (glorfindel status)"))
+                                                                   f"{ip} (glorfindel list)"))
                 elif lost and name.removesuffix("-out") == prefix and (n_rg.lower(), n_name.lower()) not in tied:
                     said.append(f"{n_name}:{_rule_name(r)} (règle de périmètre, ou d'une ancienne version : bloque "
                                 f"{ip} pour tout un subnet ou une carte ; "
