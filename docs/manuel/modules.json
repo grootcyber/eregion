@@ -1075,6 +1075,19 @@
    "doc": "docs/azure.md"
   },
   {
+   "id": "g-blocage-hors-carte-relu",
+   "composant": "glorfindel",
+   "poste": "g-verifier",
+   "nom": "A block said gone because its NSG no longer governs the NIC is read there all the same: its rules deleted after the card was acknowledged are said again",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "L1N"
+   ],
+   "issue": 795,
+   "doc": "docs/glorfindel.md"
+  },
+  {
    "id": "g-levee-probation",
    "composant": "glorfindel",
    "poste": "g-agir",

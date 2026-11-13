@@ -690,6 +690,63 @@ promotion dont la paire est illisible ne dit aucune carte sans règle
 Mutants M5088–M5097, M5105–M5109 et M5115–M5119 (`scripts/mutants/I3W.py`) ;
 M5033 et M5078 d'I3Q suivent le code déplacé.
 
+### Un blocage dit disparu hors de sa carte, ses règles supprimées depuis (L1N)
+
+La nuit « Invariants (deep) » du 13/11 (run 43413897995, sur dc924214, 10 000 exemples) est rouge sur
+ubuntu et sur macOS : « L1: the block on …/Db--01 vanished from Azure; the reassertion neither put it back
+nor said so » (ubuntu), la même pour web (macOS). Les deux séquences finissent par `a_hold_moved_under_it`
+(MUT4), sa branche `gone`.
+
+**Ni une régression, ni JUG2c.** Rejouées telles qu'Hypothesis les a imprimées, chaque invariant après chaque
+pas, les deux séquences échouent de même sur 90f00faf (la nuit verte du 12/11), sur dc924214 et sur
+`origin/main` c542b66d. Aucun commit entre les deux nuits ne fait basculer : la nuit tire une graine neuve à
+chaque passage (SEED1), et celle du 12/11 n'avait pas tiré ce cas. JUG2c (#793) ne met en file que la
+notification du webhook. La carte, elle, est écrite dans le magasin d'escalades pendant la passe
+(`escalations.record`, que `_alert` appelle) : l'oracle de L1 (`escalations.pending()`) lit bien ce que le
+produit écrit.
+
+**Le monde.** La configuration tirée donne comme accès d'investigation (`forensic`) l'adresse de
+l'attaquant elle-même. La quarantaine laisse donc passer l'attaquant (`_quarantine_blocks` ne répond pas
+`blocks`). Le blocage de la VM est sur le NSG propre de la carte, et ce NSG n'est plus sur la carte : la
+quarantaine a pris sa place. La vérification nomme la règle disparue,
+« glorfindel-block-… (nsg-db-nic-0 ne gouverne plus db-nic-0) », et la carte de dérive le dit. Réduite à la
+main (chaque règle retirée tour à tour tant que L1 échoue), la séquence d'ubuntu tient en trois pas. D'abord
+`gone` sur Db--01, qui retire de nsg-tier les règles de db-nic-1 ; la carte dit les trois règles disparues.
+Puis l'acquittement de la carte. Puis `gone` de nouveau, qui retire cette fois de nsg-db-nic-0 les règles de
+db-nic-0. Celle de macOS tient en quatre pas, avec la même fin.
+
+**C'était le produit, pas l'oracle.** L'oracle tient l'acquittement pour dit tant que les règles de l'entrée
+sont, sur Azure, celles qu'il a vues à l'acquittement. Il le lit dans le journal du test (`_ack_holds`, RB1,
+L1G), jamais dans une marque du code. Ici, les règles de nsg-db-nic-0 étaient là à l'acquittement, et elles
+ont été supprimées depuis. C'est la règle que L1G (#461) a donnée au produit : une règle que la carte a lue
+sur Azure et nommée « disparue » pour autre chose, puis supprimée, est une règle de plus partie. Mais sur ce
+chemin, la vérification nommait la règle sans lire le NSG : rien d'elle dans `rules_seen`. Les deux
+lectures étaient donc identiques par les seuls noms, `_worse` répondait « pas pire », et la passe se taisait.
+Le défaut existe depuis L1G : `rules_seen` ne lit que les listages déjà faits, et ce chemin n'en faisait pas.
+Pour l'opérateur, ce silence dure tant que le NSG reste hors de la carte. La levée le lui rend alors sans le
+blocage.
+
+**Le correctif** (`providers/azure/verify_block.py`). Une carte dont les placements sont tous sur des NSG qui
+ne la gouvernent plus fait lister ces NSG avant d'être dite perdue. Ce listage sert à `rules_seen` seulement,
+et le verdict ne change pas : ce NSG ne gouverne rien de la carte. Illisible (un 429), ses règles restent hors
+de `rules_seen`, comme avant, jamais lues absentes (A0). La quarantaine qui coupe l'attaquant lisait déjà ces
+NSG (`held_missing`, A0). Le cas voisin est couvert aussi : le propriétaire ôte le NSG de la carte, sans
+isolation. Aucun oracle n'est touché.
+
+**Le cas resté ouvert de MUT4.** Un tirage de MUT4 à 2 000 séquences avait échoué une fois, sans réduction,
+avec le même message pour web. Il n'a pas été retrouvé, et rien ne dit qu'il ait la même cause.
+
+**Mesures.** Figés dans `tests/unit/test_invariant_regressions.py` : les deux séquences telles que trouvées et
+réduites, jouées comme la machine les joue. Au connecteur, la règle lue là où elle est, sa signature puis
+`None` une fois supprimée, le verdict inchangé, derrière la quarantaine ouverte et le NSG ôté, avec
+l'identifiant canonique et en minuscules. Le NSG en 429 laisse ses règles hors de `rules_seen`, et le verdict
+reste le même. À la réaffirmation, en `human_only` : la carte acquittée, une passe muette, puis la
+suppression dite de nouveau, avec la quarantaine et sans elle. Sur `origin/main` c542b66d, 10 de ces 11 cas
+échouent. Seul passe le cas du 429, qui fige ce qui ne change pas. Mutants M5195–M5200 (`scripts/mutants/L1N.py`) : le défaut revenu ; le NSG listé mais hors du cache que
+`rules_seen` lit ; la lecture d'un seul côté (en quarantaine, ou hors d'elle) ; un correctif qui durcit à
+tort (ce NSG illisible rend la carte inconnue) ; un NSG illisible lu vide, ses règles dites supprimées sur une
+supposition. Les six sont attrapés.
+
 ### Trois mutants que la machine ne voyait plus qu'au hasard (MUT4)
 
 La porte de la 0.5.8 (run 42575826306) a rendu trois mutants `FIXED-ONLY`, 0/2 chacun : M19 (un blocage
