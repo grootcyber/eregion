@@ -725,11 +725,50 @@ def alerting_configured(environ=None) -> bool:
     return bool(env.get("GLORFINDEL_WEBHOOK_URL") or discord_bot_configured(env))
 
 
+def card_payload(esc: dict) -> dict:
+    """A card's notification in the webhook's (Slack) format — what `_notify` posts, at once or from
+    the notices' queue (JUG2c: glorfindel/vm_notices.py, `queue_card`)."""
+    from glorfindel.chat_text import webhook_code, webhook_text
+    from glorfindel.masking import name_said, subscriptions_known
+    from glorfindel.masking import shown as masked
+    # The reason carries the model's words and Azure's names (an Entra application's
+    # display name): one line, no link nor mention of its own (SEC6, N-09) — and no
+    # subscription's id (MSK3, #772): the message is pasted from the channel too. The action,
+    # the TTP, the severity as the bot shows them (the model may name any action); a command of
+    # the reason names its VM by `<groupe>/<nom>` (MSK3 review).
+    rid = str(esc.get("resource_id") or "")
+    subs = subscriptions_known(rid)
+
+    def shown(value) -> str:
+        return masked(str(value or ""), rid, subs)
+    action = str(esc.get("action") or "")
+    etype = str(esc.get("escalation_type") or "")
+    resource_short = webhook_code(name_said(rid))
+    label = _ACTION_LABELS.get(action) or webhook_text(shown(action))
+    type_label = _ESCALATION_LABELS.get(etype, etype)
+    parts = [shown(esc.get("ttp", "")), shown(esc.get("severity", "")), type_label]
+    meta = webhook_text(" · ".join(filter(None, parts)))
+    return {
+        "text": (
+            f":rotating_light: *{label}*  |  `{resource_short}`\n"
+            f"`{webhook_code(shown(action))}` · {meta}\n"
+            f"> {webhook_text(masked(str(esc.get('reason') or ''), rid, subs)[:500])}\n"
+            f"`{webhook_code(shown(esc.get('run_id')))}`"
+        )
+    }
+
+
 def _notify(esc: dict) -> None:
     """POST an escalation notification to GLORFINDEL_WEBHOOK_URL if set.
 
     Skipped when the Discord bot is configured — the bot handles escalations in
     per-VM threads, which is a better UX than a flat channel message.
+
+    JUG2c (#788): never where no webhook may be waited for — a VM's lock held (a cut's card, written
+    by the reassertion under it), or the reassertion's pass (`vm_notices.must_defer`): the
+    notification is queued, once by the card's id, and a pass of the watch posts it in its own
+    thread, bounded, the name's resolution included (`vm_notices.queue_card`, `relay_pass`).
+    Elsewhere (the graph's cycle, the console, the CLI), posted at once, as before.
     """
     import os
     if discord_bot_configured():
@@ -740,36 +779,12 @@ def _notify(esc: dict) -> None:
     if not url:
         return
     try:
+        from glorfindel import vm_notices
+        if vm_notices.must_defer():
+            vm_notices.queue_card(esc)
+            return
         import requests
-
-        from glorfindel.chat_text import webhook_code, webhook_text
-        from glorfindel.masking import name_said, subscriptions_known
-        from glorfindel.masking import shown as masked
-        # The reason carries the model's words and Azure's names (an Entra application's
-        # display name): one line, no link nor mention of its own (SEC6, N-09) — and no
-        # subscription's id (MSK3, #772): the message is pasted from the channel too. The action,
-        # the TTP, the severity as the bot shows them (the model may name any action); a command of
-        # the reason names its VM by `<groupe>/<nom>` (MSK3 review).
-        rid = str(esc.get("resource_id") or "")
-        subs = subscriptions_known(rid)
-
-        def shown(value) -> str:
-            return masked(str(value or ""), rid, subs)
-        resource_short = webhook_code(name_said(esc["resource_id"]))
-        label = _ACTION_LABELS.get(esc["action"]) or webhook_text(shown(esc["action"]))
-        type_label = _ESCALATION_LABELS.get(
-            esc["escalation_type"], esc["escalation_type"]
-        )
-        parts = [shown(esc.get("ttp", "")), shown(esc.get("severity", "")), type_label]
-        meta = webhook_text(" · ".join(filter(None, parts)))
-        requests.post(url, json={
-            "text": (
-                f":rotating_light: *{label}*  |  `{resource_short}`\n"
-                f"`{webhook_code(shown(esc['action']))}` · {meta}\n"
-                f"> {webhook_text(masked(esc['reason'], rid, subs)[:500])}\n"
-                f"`{webhook_code(shown(esc['run_id']))}`"
-            )
-        }, timeout=5)
+        requests.post(url, json=card_payload(esc), timeout=5)
     except Exception:
         pass  # notification failure must never block the agent
 

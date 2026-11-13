@@ -103,6 +103,30 @@ timeout or a 5xx a try. Only under the mark it was posted with: a notice marked 
 settled since is left as it is. A post that never ends is the mark's take-back's, after
 `RESEND_AFTER_S` (a try).
 
+**Without the bot, no webhook waited for where it must not be** (JUG2c, #788). The bot not
+configured, a cut's closure went by the webhook from `say`, under its VM's lock, and every card the
+reassertion writes by `escalations._notify` (`requests.post`, its name's resolution unbounded) from its
+thread. Now, where no webhook may be waited for (`must_defer`: this thread holds a VM's lock —
+`locks.holds_vm_lock` — or runs the reassertion's pass — `deferred`, set by `reassert_pass`), nothing
+is posted: the notice is queued (`via: outbox`, `queued`), once by its key — a closure's, or
+`card:<id>` for a card (`queue_card`, kind `escalation`). A pass posts it (`relay_pass`, bot or no
+bot), bounded as every post: at once in the watch (`serve`: a notice queued starts a pass in a thread
+of its own, `_kick`; a pass running starts one more at its end), else at its next relay pass. Its
+message is the one it always had, written at its post — never a payload kept in the store, which the
+console and the bot write too: a card's as `_notify` writes it (`escalations.card_payload`), another's
+in the webhook's format; never a ping. A 2xx notes it sent, never said again; refused, unreachable or
+rate limited, it goes back to the queue (`_back`), not to an absent bot, with the same tries and their
+cap — at the cap no pass posts it, and the log says it is shown on the console only (`_count_try`). A
+notice posted at once before (`via: webhook`, never queued) is never taken up. The store refused, a
+card is posted from a thread nobody waits for. Elsewhere — the graph's cycle, the console, the CLI
+outside a lock — a card still goes at once. The CLI under a VM's lock: `check-ttl` (from cron, no watch
+there) writes its card under it, queued, and runs a relay pass before it ends, outside the lock
+(glorfindel/cli.py, `_post_queued_notices` — JUG2c review); no other command writes a card or a
+closure under a VM's lock. Limits: a queued notice whose answer was lost (a read timeout, a 5xx) is
+said again, `RELAY_MAX_TRIES` times at most, then only on the console's card; a post still running
+when `check-ttl` ends is cut with it, its mark taken back by a later pass (`RESEND_AFTER_S`, a try); a
+notice queued by another process than the watch, and not posted by it, waits for the watch's next pass.
+
 Known limits: a webhook that delivered but whose answer was lost has the notice said again, an
 action's ping with it, `RELAY_MAX_TRIES` times at most; then it is the bot's (an action's card is
 in the console). A post pending longer than `RESEND_AFTER_S` has its mark taken back and the notice
@@ -118,6 +142,7 @@ same way, never the bot's post.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -141,6 +166,12 @@ CLOSURE_KIND = "drain_closed"
 # What falls back on the webhook when the bot is mute: an action's announcement (JUG2), a cut's
 # closure (JUG2b). Only the first pings.
 RELAY_KINDS = (ACTION_KIND, CLOSURE_KIND)
+# JUG2c (#788): a card's notification queued for the webhook, the bot not configured — said where no
+# webhook may be waited for (`must_defer`): the card's message as `escalations._notify` writes it.
+CARD_KIND = "escalation"
+# A notice queued for the webhook (`queued`): `via: outbox` until a pass of the watch posts it.
+OUTBOX = "outbox"
+QUEUED_WHY = "deferred"
 # An announcement left to the bot and still not posted this long after goes by the webhook, whatever
 # the bot's beat says (JUG2): a beat forged fresh delays the announcement, never silences it.
 CONFIRM_S = 600
@@ -186,6 +217,12 @@ STOPS_THE_PASS = ("pending",          # its post past the deadline, settled at i
 _sleep = time.sleep
 _monotonic = time.monotonic
 _PASS = threading.Lock()        # one relay pass at a time, whoever calls it
+# JUG2c: the watch serves the queue (`serve`): a notice queued starts a pass in a thread of its own
+# (`_kick`) — said within seconds, never waited for. Elsewhere (the CLI, a test), the watch's next
+# pass says it.
+_SERVED = False
+_KICKED = threading.Event()     # a notice queued since the pass that runs read the store
+_DEFER = threading.local()      # `deferred()`: this thread waits for no webhook
 # The notices kept, newest last: a key older than these could be said again — a cut's closure is
 # written in the isolation's state long before (glorfindel/drain_watch.py).
 KEPT = 500
@@ -239,13 +276,124 @@ def _where() -> str:
     return "webhook" if os.environ.get("GLORFINDEL_WEBHOOK_URL", "") else "none"
 
 
+# ── JUG2c (#788): where no webhook is waited for ───────────────────────────────────────────────
+
+@contextlib.contextmanager
+def deferred():
+    """This thread waits for no webhook while it runs (the reassertion's pass: glorfindel/reassert.py):
+    what it would post is queued for a pass of the watch (`must_defer`)."""
+    depth = getattr(_DEFER, "d", 0)
+    _DEFER.d = depth + 1
+    try:
+        yield
+    finally:
+        _DEFER.d = depth
+
+
+def must_defer() -> bool:
+    """A webhook would hold what must never wait for it: the lock of a VM (`_vm_lock`, an isolation
+    of the same VM behind it), or the reassertion's pass (`deferred`) — JUG2c."""
+    from glorfindel.response.locks import holds_vm_lock
+    return getattr(_DEFER, "d", 0) > 0 or holds_vm_lock()
+
+
+def serve(on: bool = True) -> None:
+    """The watch's (glorfindel/cli.py): a notice queued starts a pass at once, in its own thread."""
+    global _SERVED
+    _SERVED = bool(on)
+
+
+def _start_pass() -> None:
+    threading.Thread(target=_kicked_pass, daemon=True, name="notice-outbox").start()
+
+
+def _kicked_pass() -> None:
+    try:
+        relay_pass()
+    except Exception as exc:          # a notice never stops the watch: the next pass says it
+        log.warning("notices: queued pass failed (%s)", exc)
+
+
+def _kick() -> None:
+    """A notice queued: a pass now, in a thread of its own, where the watch serves the queue; a pass
+    already running starts one more at its end (`relay_pass`). Never waits."""
+    _KICKED.set()
+    if _SERVED:
+        _start_pass()
+
+
+# The fields of a card its queued notification is written from, at its post (`_outbox_payload`).
+CARD_FIELDS = ("id", "resource_id", "action", "escalation_type", "ttp", "severity", "reason", "run_id")
+
+
+def queue_card(esc: dict) -> str:
+    """A card's notification queued for the webhook (JUG2c): the bot not configured, said where no
+    webhook may be waited for (`must_defer`: under a VM's lock, in the reassertion's pass). Recorded
+    once, by the card's id, `via: outbox` — a pass of the watch posts it, bounded (`_post`), and
+    settles it (`relay_pass`). The store refused (a full disk): posted from a thread of its own, never
+    waited for (`detached`) — said rather than never. Never raises."""
+    from glorfindel.escalations import _ESCALATION_LABELS
+    card = {k: esc.get(k) for k in CARD_FIELDS}
+    key = f"card:{esc.get('id') or '?'}"
+    etype = str(esc.get("escalation_type") or "")
+    notice = {"key": key, "resource_id": str(esc.get("resource_id") or ""), "kind": CARD_KIND,
+              "title": _ESCALATION_LABELS.get(etype, etype), "text": str(esc.get("reason") or ""),
+              "level": "failed", "via": OUTBOX, "queued": True,
+              "at": datetime.now(timezone.utc).isoformat(), "detail": {"card": card}}
+    try:
+        recorded = _record(notice)
+    except Exception as exc:
+        log.warning("notice %s: not queued (%s) — posted from its own thread", key, exc)
+        try:
+            payload = _outbox_payload(notice)
+            threading.Thread(target=post_webhook, args=(payload, key), daemon=True,
+                             name="notice-detached").start()
+        except Exception as exc2:     # a notification never stops the agent
+            log.warning("notice %s: not posted (%s)", key, exc2)
+            return "none"
+        return "detached"
+    if not recorded:
+        return "already"
+    _kick()
+    return "queued"
+
+
+def _outbox_payload(notice: dict) -> dict:
+    """A queued notice's message, written at its post as it would have been at once: a card's as
+    `escalations._notify` writes it (escaped, masked: SEC6, MSK3), another notice's in the webhook's
+    format (`webhook_payload`). Never from a payload kept in the store — the console and the bot
+    write it too (DRN2): a forged notice posts only escaped text."""
+    if notice.get("kind") == CARD_KIND:
+        card = (notice.get("detail") or {}).get("card")
+        if isinstance(card, dict):
+            from glorfindel.escalations import card_payload
+            try:
+                return card_payload(card)
+            except Exception as exc:
+                log.warning("notice %s: card message unwritable (%s)", notice.get("key"), exc)
+    return webhook_payload(notice)
+
+
+def _back(n: dict) -> str:
+    """Where a notice goes back to when its post did not end in a 2xx: the queue for a notice queued
+    for the webhook (JUG2c), the bot for one the webhook relays (JUG2)."""
+    return OUTBOX if n.get("queued") is True else "bot"
+
+
 def say(resource_id: str, key: str, kind: str, title: str, text: str, level: str = "unknown",
         detail: dict | None = None, webhook: dict | None = None) -> str:
     """Say `text` of `resource_id`'s VM once for `key`: where it went (`bot`, `webhook`, `none`), or
     `already` when that key was said. Raises OSError when the store cannot be written (a full disk):
     the caller says it again at its next pass. `detail`: what it says, for the console — never read
     back as an outcome. `webhook`: the webhook's message when the caller has its own (an autonomous
-    action's announcement, as it always was: JUG1), else `webhook_payload`."""
+    action's announcement, as it always was: JUG1), else `webhook_payload`.
+
+    JUG2c (#788): where no webhook may be waited for (`must_defer`: a VM's lock held — a cut's
+    closure, said by the reassertion under it —, or the reassertion's pass), nothing is posted here:
+    a notice for the webhook is queued (`via: outbox`, `queued`, answer `queued`) and an action left
+    to a mute bot recorded for it — a pass of the watch says them, in its own thread (`_kick`,
+    `relay_pass`)."""
+    defer = must_defer()
     notice = {"key": key, "resource_id": resource_id, "kind": kind, "title": title, "text": text,
               "level": level if level in LEVELS else "unknown", "via": _where(),
               "at": datetime.now(timezone.utc).isoformat()}
@@ -255,10 +403,19 @@ def say(resource_id: str, key: str, kind: str, title: str, text: str, level: str
     # reassertion under its VM's lock, is recorded for the bot — the bot mute, the next relay pass
     # says it, in its own thread (JUG2b review: a webhook never holds the lock nor the reassertion).
     why = relay_reason() if notice["via"] == "bot" and kind == ACTION_KIND else ""
+    why = "" if defer else why        # the bot mute, a pass of the watch relays it (JUG2c)
+    if defer and notice["via"] == "webhook":
+        notice["via"], notice["queued"] = OUTBOX, True      # a pass of the watch posts it (JUG2c)
     if why:
         _mark_relayed(notice, why)
     if not _record(notice):
         return "already"
+    if notice.get("queued"):
+        _kick()
+        return "queued"
+    if defer and notice["via"] == "bot" and kind in RELAY_KINDS:
+        _kick()                       # the bot mute, a pass relays it now, in its own thread
+        return "bot"
     if why:
         # Sent, it is noted sent; refused or unreachable, the notice goes back to the bot — the
         # next pass tries again, or the bot posts it at its return (JUG2 review: never a silence).
@@ -332,6 +489,8 @@ def _mark_relayed(notice: dict, why: str, now: datetime | None = None) -> None:
     ping = bool(notice.get("kind") == ACTION_KIND
                 and _ping_role() and _discord_url(os.environ.get("GLORFINDEL_WEBHOOK_URL", ""))
                 and not _card_posted(str((notice.get("detail") or {}).get("card") or "")))
+    if notice.get("queued") is True:
+        ping = False                  # queued for the webhook, the bot not configured: never a ping (JUG2c)
     notice["via"] = "webhook"
     notice["relayed"] = {"at": (now or datetime.now(timezone.utc)).isoformat(), "why": why, "ping": ping}
 
@@ -352,6 +511,9 @@ def fallback(notice: dict) -> tuple[dict, str, str]:
     bot's message (every outside word escaped, SEC6), the role first when it is pinged, no other
     mention allowed. Another webhook: its Slack message, no mention."""
     url = os.environ.get("GLORFINDEL_WEBHOOK_URL", "")
+    if notice.get("queued") is True:
+        # Queued, the bot not configured (JUG2c): the message the webhook always had, to its URL.
+        return _outbox_payload(notice), notice["key"], url
     native = _discord_url(url)
     line = _relay_line(notice)
     if not native:
@@ -377,12 +539,16 @@ def relay_pass(now: datetime | None = None) -> int:
     that may have been delivered) waits for the bot. A notice marked but never noted sent
     (`RESEND_AFTER_S`) is taken back first. Within `RELAY_MAX_AGE_H`. One pass at a time: called while
     another runs, it does nothing. Returns the number sent."""
+    # A notice queued while another pass runs: that pass starts one more at its end (JUG2c).
     if not _PASS.acquire(blocking=False):
         return 0
     try:
+        _KICKED.clear()               # what is queued from here on, this pass may not have read
         return _relay_pass(now)
     finally:
         _PASS.release()
+        if _KICKED.is_set() and _SERVED:
+            _start_pass()             # queued while it ran (JUG2c): never left to the next minute
 
 
 def _tries(n: dict) -> int:
@@ -393,9 +559,14 @@ def _tries(n: dict) -> int:
 
 def _count_try(n: dict) -> None:
     """One more post of `n` that may have been delivered; the cap reached, said once (JUG2b review):
-    the notice waits for the bot from now on."""
+    the notice waits for the bot from now on — or, queued for the webhook without a bot (JUG2c), is
+    said no more, but on the console's card."""
     n["tries"] = _tries(n) + 1
-    if n["tries"] == RELAY_MAX_TRIES:
+    if n["tries"] == RELAY_MAX_TRIES and n.get("queued") is True:
+        log.warning("notice %s: %d posts without an answer that says they were refused — the webhook "
+                    "says it no more, no bot to post it: it is shown on the console only",
+                    n.get("key"), RELAY_MAX_TRIES)
+    elif n["tries"] == RELAY_MAX_TRIES:
         log.warning("notice %s: %d posts without an answer that says they were refused — the webhook "
                     "says it no more, it waits for the bot", n.get("key"), RELAY_MAX_TRIES)
 
@@ -404,19 +575,25 @@ def _relay_pass(now: datetime | None) -> int:
     from datetime import timedelta
 
     from glorfindel.escalations import discord_bot_configured
-    if not (discord_bot_configured() and os.environ.get("GLORFINDEL_WEBHOOK_URL", "")):
+    if not os.environ.get("GLORFINDEL_WEBHOOK_URL", ""):
         return 0
     if not _STORE.exists():
         return 0
     from glorfindel import bot_beat
+    bot = discord_bot_configured()
     now = now or datetime.now(timezone.utc)
-    mute = bot_beat.mute(now)
-    posted = _bot_posted_notices()
+    mute = bot_beat.mute(now) if bot else ""
+    posted = _bot_posted_notices() if bot else set()
     due: list[dict] = []
     with _lock():
         notices = _read()
         changed = False
         for n in notices:
+            if n.get("queued") is True:     # for the webhook, the bot not configured (JUG2c)
+                changed = _weigh_queued(n, now, due) or changed
+                continue
+            if not bot:
+                continue
             if n.get("kind") not in RELAY_KINDS:
                 continue
             if _unsent_since(n, now) >= RESEND_AFTER_S:
@@ -458,6 +635,31 @@ def _relay_pass(now: datetime | None) -> int:
     if outcome:
         _settle(outcome)
     return sum(r == "sent" for r in outcome.values())
+
+
+def _weigh_queued(n: dict, now: datetime, due: list[dict]) -> bool:
+    """A notice queued for the webhook (JUG2c), the bot not configured: due at this pass unless it is
+    marked already (taken back after `RESEND_AFTER_S`, a try counted), tried `RELAY_MAX_TRIES` times,
+    or older than `RELAY_MAX_AGE_H`; marked before its post, never pinging. True when it changed."""
+    from datetime import timedelta
+    changed = False
+    if _unsent_since(n, now) >= RESEND_AFTER_S:
+        n["via"] = OUTBOX                # marked, never noted sent: weighed again below
+        n.pop("relayed", None)
+        _count_try(n)
+        changed = True
+    if n.get("via") != OUTBOX or _tries(n) >= RELAY_MAX_TRIES:
+        return changed
+    try:
+        at = datetime.fromisoformat(str(n.get("at")))
+    except ValueError:
+        return changed
+    at = at if at.tzinfo else at.replace(tzinfo=timezone.utc)
+    if at < now - timedelta(hours=RELAY_MAX_AGE_H):
+        return changed
+    _mark_relayed(n, QUEUED_WHY, now)
+    due.append(n)
+    return True
 
 
 def _unsent_since(n: dict, now: datetime) -> float:
@@ -503,6 +705,7 @@ def _settle(outcome: dict[str, str], marks: dict[str, str] | None = None) -> Non
                 else:
                     n["via"] = "bot"
                     n.pop("relayed")
+                    n["via"] = _back(n)     # queued: back to the queue, never to an absent bot (JUG2c)
                     if result in COUNTS_A_TRY:
                         _count_try(n)
             _write(notices)

@@ -136,7 +136,7 @@ def test_the_environment_s_subscription_is_masked_even_bare():
 # the cycle, nor what a store keeps.
 _MASKERS = {"glorfindel/cli.py": None, "glorfindel/bot.py": None,
             "glorfindel/vm_notices.py": {"_short", "_shown"},
-            "glorfindel/escalations.py": {"_action_words", "_notify"}}
+            "glorfindel/escalations.py": {"_action_words", "card_payload"}}   # JUG2c: `_notify`'s message
 
 
 def test_only_the_cli_masks_never_what_the_model_sees():

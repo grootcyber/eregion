@@ -82,7 +82,7 @@ COMPONENTS: dict[str, Component] = {
             "test_invariant_regressions.py", "test_invariant_regressions_aws.py", "test_invariants.py",
             "test_invariants_aws.py",
             "test_jobs.py", "test_llm_smoke.py", "test_locks.py", "test_memory_age.py", "test_orphan_sweep.py", "test_posture.py", "test_proposed_rules.py", "test_readiness.py",
-            "test_promotion_guard.py", "test_reassert.py", "test_recovery_watch.py", "test_drain_follow.py", "test_drain_closure.py", "test_judge_card.py", "test_bot_fallback.py", "test_reassert_reread.py", "test_reassert_status.py", "test_reassert_verified.py", "test_release_away.py", "test_restore_points.py", "test_restore_console.py", "test_root_floor.py", "test_rule_layers.py", "test_rule_routing.py", "test_rules_check.py", "test_runs_channel.py", "test_tui_actions.py", "test_turned_names.py", "test_unexpected_decision.py", "test_unreadable_state.py",
+            "test_promotion_guard.py", "test_reassert.py", "test_recovery_watch.py", "test_drain_follow.py", "test_drain_closure.py", "test_judge_card.py", "test_bot_fallback.py", "test_webhook_unwaited.py", "test_reassert_reread.py", "test_reassert_status.py", "test_reassert_verified.py", "test_release_away.py", "test_restore_points.py", "test_restore_console.py", "test_root_floor.py", "test_rule_layers.py", "test_rule_routing.py", "test_rules_check.py", "test_runs_channel.py", "test_tui_actions.py", "test_turned_names.py", "test_unexpected_decision.py", "test_unreadable_state.py",
             "test_door_facts.py", "test_vm_command.py",
         ),
     ),

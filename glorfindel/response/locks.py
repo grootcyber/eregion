@@ -113,6 +113,13 @@ def _vm_lock(vm_name: str, timeout: float | None = None):
         lock.release()
 
 
+def holds_vm_lock() -> bool:
+    """This thread holds the lock of a VM (`_vm_lock`, its flock taken): what a webhook must never
+    wait under — the notice is queued for the watch's pass instead (JUG2c, glorfindel/vm_notices.py)."""
+    depth = getattr(_VM_LOCK_DEPTH, "d", None) or {}
+    return any(d > 0 for d in depth.values())
+
+
 _FILE_LOCKS: dict[str, threading.RLock] = {}
 _FILE_LOCK_DEPTH = threading.local()
 

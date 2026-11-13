@@ -798,6 +798,17 @@ briques:
     issue: 768
     doc: docs/glorfindel.md
 
+  - id: g-webhook-sans-attente
+    composant: glorfindel
+    poste: g-verifier
+    nom: "Without the Discord bot, a session cut's closure and the reassertion's cards are queued for the webhook: no VM's lock and no reassertion pass waits for it"
+    etat: main
+    release: "0.6"
+    lots: [JUG2c]
+    issue: 788
+    pr: 793
+    doc: docs/glorfindel.md
+
   - id: g-perimetre-illisible
     composant: glorfindel
     poste: g-verifier

@@ -206,7 +206,9 @@ glorfindel/
                           l'annonce d'une action prise seule par le webhook, le rôle pingué (`say`, `relay_pass`) ;
                           JUG2b : la clôture d'une coupure aussi, sans ping, dite par la passe ; `relay_pass` dans son propre fil
                           (la boucle de la watch n'attend aucun webhook), chaque POST borné à 10 s (DNS compris),
-                          3 tentatives au plus par notice (`tries` : ce qui a peut-être livré ; rien parti, rien compté)
+                          3 tentatives au plus par notice (`tries` : ce qui a peut-être livré ; rien parti, rien compté) ;
+                          JUG2c : sans bot, sous le verrou d'une VM ou dans la réaffirmation (`must_defer`), la clôture
+                          et les cartes mises en file (`queue_card`, `via: outbox`), postées par la passe (`serve`, `_kick`)
   bot_beat.py           → JUG2 : le battement du bot Discord (`bot_heartbeat.json`) — écrit à chaque tour par
                           le bot, lu par la watch : absent, illisible, daté du futur ou de plus de 3 min
                           (`MUTE_AFTER_S`), le bot est muet ; ne décide que du chemin d'une annonce
@@ -567,7 +569,8 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 des actions autonomes, sous la clé de l'action), une par clé,
                                 les 500 dernières ; `via` : bot, webhook ou none (JUG2 : `relayed`, l'annonce
                                 repliée sur le webhook, le bot muet ; JUG2b : la clôture aussi, et `tries`, les
-                                envois qui ont peut-être livré, 3 au plus) ; ne dit que « dite ou non »,
+                                envois qui ont peut-être livré, 3 au plus ; JUG2c : `outbox` et `queued`, une
+                                notice mise en file pour le webhook, sans bot — `card:<id>` pour une carte) ; ne dit que « dite ou non »,
                                 jamais une issue (la console et le bot l'écrivent aussi, jusqu'à FS1f)
   rule_status.json            → état de polling des règles (last_poll, last_match, match_count, last_error ;
                                 `expected_sudo` : count, last, origin_count, origin_confirmed — ADM1, COR1, COR2 ;

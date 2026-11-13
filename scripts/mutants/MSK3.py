@@ -54,8 +54,9 @@ MUTANTS = [
      "    from glorfindel.chat_text import discord_code, discord_text\n"),
     ("M5028", "an escalation by the webhook says the model's reason raw: the signal's id in the channel "
      "(MSK3)", ESC,
-     "                f\"> {webhook_text(masked(esc['reason'], rid, subs)[:500])}\\n\"\n",
-     "                f\"> {webhook_text(esc['reason'][:500])}\\n\"\n"),
+     # JUG2c: its anchor follows the card's message, written by `card_payload` (at once or queued).
+     "            f\"> {webhook_text(masked(str(esc.get('reason') or ''), rid, subs)[:500])}\\n\"\n",
+     "            f\"> {webhook_text(str(esc.get('reason') or '')[:500])}\\n\"\n"),
     ("M5029", "an autonomous action's announcement by the webhook says the model's explanation raw (MSK3)",
      ESC,
      '        f"> {webhook_text(shown(explanation)[:800])}\\n"\n',
