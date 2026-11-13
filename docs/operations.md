@@ -612,6 +612,61 @@ qu'un battement bouge, la font échouer à tort ; la suite d'une autre session q
 échouer celle-ci. Un chemin calculé du vrai `HOME` hors de Python (un `getpwuid`, un chemin écrit en
 dur dans un script shell) n'est pas redirigé : le garde le voit, il ne l'empêche pas.
 
+**Une sonde d'agent n'écrit jamais dans le vrai ~/.glorfindel** (HY2b, #791). HY2 garde la suite ; une
+sonde lancée hors d'elle (un pytest sur un fichier hors de `tests/unit/`, un script qui importe
+Glorfindel) n'a ni le conftest ni le `HOME` jetable. Le 12/11 vers 23:16 UTC, 52 sondes d'une
+relecture, lancées depuis un fichier hors de `tests/unit/`, ont écrit trois fichiers de test dans le
+vrai `~/.glorfindel` du poste (`vm_notices.jsonl` et son verrou, un verrou de job de restore). La règle
+était dans les prompts ; rien ne la tenait.
+- **Le garde, dans le code** (`eregion_core/store_guard.py`) : `eregion_core` l'installe à son import,
+  et `glorfindel/__init__.py` comme `eregion_console/__init__.py` importent `eregion_core` en premier.
+  Dans une session d'agent seulement, un hook d'audit de Python refuse toute écriture sous le vrai
+  `~/.glorfindel` **avant qu'elle ait lieu** : une `PermissionError` (le code de Glorfindel la reçoit
+  comme d'un disque en lecture seule), et une ligne sur stderr, une fois par fichier, qui dit le
+  fichier, pourquoi, et quoi faire (`HY2b : écriture refusée dans le ~/.glorfindel de l'opérateur
+  (…) — une session d'agent (EREGION_AGENT_SESSION). Une sonde prend un HOME jetable …`). Une sonde
+  qui avale l'erreur est dite quand même.
+- **Une session d'agent** : `EREGION_AGENT_SESSION` posé (le bloc `env` de
+  `~/eregion/.claude/settings.local.json` le donne à chaque session lancée dans `~/eregion` et aux
+  sous-agents qu'elle lance, `docs/sessions.md`, SEC12), un dossier courant dans le worktree d'un
+  lot (`.claude/worktrees/`), ou un code qui vient d'un worktree (le fichier du garde y est, lancé
+  d'ailleurs) : la règle de `scripts/bench_shared.py`. Refusée pour son dossier courant, une sonde
+  s'entend dire aussi « ou lance la commande hors du worktree ». **Partout ailleurs, rien n'est
+  installé** : le terminal de l'opérateur, ses conteneurs (`docker run` ne leur passe pas la
+  variable), la watch, le bot, Imladris et la CI écrivent comme avant, sans hook ni coût.
+- **Le vrai `~/.glorfindel`** : celui du dossier personnel que le système donne à l'utilisateur
+  (`pwd`), quel que soit `HOME`, tel quel et résolu. Une sonde avec un `HOME` jetable
+  (`HOME=$(mktemp -d) python …`) écrit dans le sien ; le `HOME` jetable de la suite (HY2) en est un.
+- **Une écriture** : ce que voit l'audit de HY1 (un fichier ouvert en écriture par `open`, `pathlib`
+  ou `os.open`, un dossier créé ou retiré, un fichier retiré, renommé ou remplacé, un lien créé, ses
+  dates ou sa taille changées, `shutil.rmtree`, `sqlite3.connect`), plus `chmod` et `chown`. Un chemin
+  est placé tel quel et résolu (un lien vers le dossier est vu). Un `mkdir` d'un dossier déjà là
+  n'écrit rien : il échoue seul (`os.makedirs(exist_ok=True)` passe). Lire n'est jamais refusé.
+- **Un magasin qu'une bibliothèque écrit d'elle-même** : la mémoire des cycles (`~/.glorfindel/cycles`),
+  que ChromaDB 1.x écrit depuis Rust, hors de la vue du hook. `CycleMemory` appelle
+  `store_guard.check(chemin)` avant d'ouvrir ChromaDB : dans une session d'agent, l'ouverture même est
+  refusée et dite (l'ouvrir peut déjà écrire), en lecture comme en écriture. C'est le seul écrivain
+  natif sous `~/.glorfindel` (relecture de HY2b, tour 1).
+- **Le code que la sonde importe** : le garde vaut pour lui seul. L'installation éditable du venv
+  pointe vers `~/eregion` : une sonde lancée par le Python du venv, hors d'un worktree et sans
+  `PYTHONPATH`, importe le code de `~/eregion`, et le garde n'y vaut qu'une fois `~/eregion` à jour sur
+  `main` (l'Orchestre l'avance après chaque fusion).
+
+Le choix : un garde dans le code, pas un hook de Claude Code. Un hook (`PreToolUse` sur `Bash`) voit le
+texte d'une commande, pas ce qu'écrit le script qu'elle lance : les 52 sondes du 12/11 étaient
+`python <fichier>`, le chemin n'y figurait pas. Le hook d'audit voit l'écriture elle-même, où qu'elle
+soit calculée (un module à son import, un chemin écrit en entier, un sous-processus Python qui hérite
+de la variable). Il ne demande aucun geste à Jonathan : rien n'est installé dans ses réglages.
+
+Limites (un garde-fou contre l'erreur, jamais contre une session qui le veut : même utilisateur Unix) :
+ce qu'une bibliothèque C ou Rust écrit une fois son fichier ouvert, ou d'elle-même, quand son ouvreur
+n'appelle pas `check` (les pages de sqlite, une écriture par descripteur, mmap) ; un chemin relatif à un
+`dir_fd` ; un processus qui n'importe aucun module du dépôt (un `>` du shell, un script à lui) ; une
+session lancée sans les réglages du dépôt et hors d'un worktree. Les tests :
+`tests/unit/test_store_guard.py`, sur un opérateur simulé dans tmp (le dossier personnel du système
+d'un interpréteur neuf pointé sur `tmp_path`, son code une copie des paquets dans tmp), jamais sur ce
+poste ; mutants M5150–M5159, M5190–M5194.
+
 **Les secrets passent par leur nom** (L23, #228). Les cibles du `Makefile` qui lancent un conteneur
 (`annatar-run`, `annatar-dry-run`, `annatar-shell`, `glorfindel-watch`, `-list`, `-shell`…)
 donnent chaque secret à `docker run` par son nom, `-e AZURE_CLIENT_SECRET`, jamais par sa valeur :

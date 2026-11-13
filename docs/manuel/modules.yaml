@@ -1710,6 +1710,17 @@ briques:
     issue: 769
     doc: docs/operations.md
 
+  - id: s-sonde-gardee
+    composant: socle
+    poste: s-prouver
+    nom: "An agent session's probe, outside the suite, never writes in the operator's ~/.glorfindel: refused and said before it happens"
+    etat: main
+    release: "0.6"
+    lots: [HY2b]
+    issue: 791
+    pr: 794
+    doc: docs/operations.md
+
   - id: s-release
     composant: socle
     poste: s-prouver
