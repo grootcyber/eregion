@@ -245,6 +245,9 @@ def isolated_escalations_store(tmp_path, monkeypatch):
     monkeypatch.setattr(esc_module, "_STORE", tmp_path / "escalations.jsonl")
     # FS1a: the signer of the proposals the watch command installs never outlives its test.
     monkeypatch.setattr(esc_module, "_PROPOSER", None)
+    # JUG2c: nor the queue it serves — a notice queued in a test starts no pass of its own.
+    import glorfindel.vm_notices as notices_module
+    monkeypatch.setattr(notices_module, "_SERVED", False)
 
 
 @pytest.fixture(autouse=True)

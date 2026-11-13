@@ -1272,6 +1272,10 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
         _layout.say_strays(runs_dir, lambda text: _say_channel(f"Canal runs/ : {text}"))
 
     _relay_thread: list = [None]
+    # JUG2c (#788): a notice queued where no webhook may be waited for (a VM's lock, the
+    # reassertion's pass) starts a pass at once, in its own thread — never left to the next minute.
+    from glorfindel import vm_notices as _served_notices
+    _served_notices.serve()
 
     def _relay_notices() -> None:
         """JUG2 (#765): every minute, an autonomous action's announcement — and a cut's closure

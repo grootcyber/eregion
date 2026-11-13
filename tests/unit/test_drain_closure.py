@@ -22,7 +22,7 @@ from azure.core.exceptions import HttpResponseError
 from glorfindel import drain_watch, escalations, vm_notices
 from glorfindel.actions import _load_isolation_state
 from glorfindel.providers.azure import run_command
-from glorfindel.reassert import reassert_pass
+from glorfindel.reassert import reassert_pass as _reassert_pass
 
 from .fake_azure import _error
 from . import test_drain_follow as _follow
@@ -31,6 +31,21 @@ from .test_drain_follow import _ACT, _WEB, _cycle, _drain_cards
 azure = _follow.azure          # the in-memory Azure of DRN1: web, its Run Commands held running
 
 HOOK = "https://hooks.example.invalid/eregion"
+
+
+def reassert_pass(connector, autonomy=None) -> list[dict]:
+    """The reassertion's pass, then the watch's relay pass, as the watch runs them: since JUG2c
+    (#788) the reassertion waits for no webhook — what it says without the bot is queued, and the
+    relay pass (its own thread in the watch) posts it."""
+    report = _reassert_pass(connector, autonomy)
+    vm_notices.relay_pass()
+    return report
+
+
+class _Took:
+    """The webhook's answer: it took the message (Slack's 200)."""
+    status_code = 200
+    headers: dict = {}
 
 
 @pytest.fixture(autouse=True)
@@ -50,7 +65,11 @@ def posts(monkeypatch):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("GLORFINDEL_WEBHOOK_URL", HOOK)
     sent: list[dict] = []
-    monkeypatch.setattr(requests, "post", lambda url, json=None, timeout=None: sent.append({"url": url, **json}))
+
+    def post(url, json=None, timeout=None):
+        sent.append({"url": url, **json})
+        return _Took()
+    monkeypatch.setattr(requests, "post", post)
     return sent
 
 

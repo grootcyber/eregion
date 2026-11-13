@@ -171,7 +171,17 @@ def reassert_pass(connector, autonomy=None) -> list[dict]:
     call for them when there are none — then, whatever the local state says, our
     quarantine NSGs (I1F: the case they are read for is a state lost, and a card raised
     must close after the last release too) and the orphan rules (A3: a VM given a
-    deleted VM's address is freed, or said, within the minute — discovery on or off)."""
+    deleted VM's address is freed, or said, within the minute — discovery on or off).
+
+    JUG2c (#788): it waits for no webhook — what it says (its cards, a cut's closure) is queued
+    and a pass of the watch posts it in its own thread (glorfindel/vm_notices.py, `deferred`)."""
+    from glorfindel import vm_notices
+    with vm_notices.deferred():
+        return _pass(connector, autonomy)
+
+
+def _pass(connector, autonomy) -> list[dict]:
+    """`reassert_pass`'s own work, what it says queued for the webhook (JUG2c)."""
     from glorfindel.actions import active_blocks, active_isolations
     new_pass()
     if active_isolations() or active_blocks():

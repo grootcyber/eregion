@@ -42,6 +42,11 @@ refused, the state still says pending; the notice refused (a full disk, a store 
 mark says it at the next pass. The notices' store only tells whether a closure was said: the
 console and the bot write `~/.glorfindel` too, so a notice never writes an outcome — forged, it
 can silence a closure or say one twice, never declare a session cut (DRN2 review).
+
+**Never a webhook under the lock** (JUG2c, #788): without the bot, the closure — said under its VM's
+lock — and the cards — written there too, or by the reassertion's pass — are queued for the webhook
+(glorfindel/vm_notices.py, `must_defer`): a pass of the watch posts them in its own thread. A webhook
+that does not answer holds neither the VM's lock nor the reassertion.
 """
 from __future__ import annotations
 
