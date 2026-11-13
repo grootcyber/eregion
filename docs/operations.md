@@ -193,6 +193,8 @@ glorfindel verdict <id> right|wrong|unsure [--note "…"]  # observation : la re
 glorfindel report [--since 7d|4w|all] [--json]  # verdicts par action et par règle, taux de disruptives fausses
                                              # (docs/observation.md — le critère « 4 semaines en human_only »)
 glorfindel check-ttl                         # escalade les isolations au-delà du TTL (ne lève JAMAIS — quatrième passe Q1)
+                                             # sans bot, poste sa carte au webhook avant de finir, hors verrou,
+                                             # bornée (JUG2c : la carte, écrite sous le verrou, est mise en file)
 glorfindel identity-contract                 # IR1b : le contrat de l'exécuteur d'identité, lu avec SON identité
                                              # (EREGION_IDENTITY_EXECUTOR_* et EREGION_TENANT_ID) : armed ou
                                              # passive, chaque droit en trop nommé (beyond_contract) ; 0 si armed
