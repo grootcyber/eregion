@@ -19,7 +19,19 @@ from rich.markup import escape as _esc_markup
 from rich.panel import Panel
 from rich.text import Text
 
+from glorfindel.masking import name_said as _name_said, shown as _shown
 from glorfindel.vm_command import group_and_name
+
+# What the TUI writes of a card or a signal goes through the CLI's masking (MSK2c, #798; MSK2,
+# MSK3b): an ARM id said by its name and group, a command naming its VM by `<groupe>/<nom>`, a bare
+# id of a subscription « <abonnement> » — the subscriptions learned from the text, from the card's
+# (the signal's) id and from the environment. A text is cut after it is masked, never before: cut in
+# the middle of an id, the masking would no longer read it, and its first characters would show.
+# Written as it is, each for its reason: the card's own id (its first 8 characters, a uuid that
+# Glorfindel draws), a block's IP, the moments, the ages and the confidence, a command's
+# `<groupe>/<nom>` (`group_and_name`, which never names a subscription), what the operator types,
+# and the names of runs/' files (the FEED's title, a file refused: a run's name, which the injectors'
+# runner draws from its moment and its scenario — neither a card nor a signal; escaped, SEC15).
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -128,6 +140,21 @@ def _commands(key: str, esc: dict, before: str = "") -> list[list[str]]:
     return []
 
 
+# The keys a confirmation precedes, and what it says (« r » asks its moment: `_restore_pending`).
+_CONFIRMED = {"a": "ack [{id}] on {vm}", "x": "release {vm} (isolation only)",
+              "u": "unblock {vm} (IP blocks only)", "v": "reset {vm} (release + unblock all IPs)"}
+
+
+def _confirmation(key: str, esc: dict) -> dict | None:
+    """The confirmation a key asks for on the first card, None when the card allows none: ack
+    always; release, unblock, reset on a failed verification of the card's own VM only (SEC5,
+    V-35). Its label says the resource masked (MSK2c)."""
+    if key not in _CONFIRMED or (key != "a" and not _can_undo(esc)):
+        return None
+    label = _CONFIRMED[key].format(id=esc["id"][:8], vm=_name_said(esc["resource_id"]))
+    return {"key": key, "esc": esc, "label": label}
+
+
 def _execute(pending: dict) -> None:
     """Execute a confirmed action. Restore/release/unblock/reset run in a background thread."""
     from glorfindel import escalations as esc_module
@@ -163,7 +190,7 @@ def _restore_pending(esc: dict) -> dict:
     plan = restore_plan.proposed_moment(esc["resource_id"], esc)
     return {"key": "r", "esc": esc, "stage": "moment", "buffer": plan.get("before", ""),
             "why": plan.get("why", ""), "error": "",
-            "label": f"restore {esc['resource_id'].split('/')[-1]} from backup (~20 min)"}
+            "label": f"restore {_name_said(esc['resource_id'])} from backup (~20 min)"}
 
 
 def _load_points(pending: dict) -> None:
@@ -171,7 +198,9 @@ def _load_points(pending: dict) -> None:
     try:
         pending["points"] = restore_plan.points_before(pending["esc"]["resource_id"], pending["before"])
     except Exception as exc:  # unreadable vault: said, the restore stays possible
-        pending["points_error"] = f"{type(exc).__name__}: {str(exc)[:200]}"
+        # Kept whole: cut at the rendering, once masked (MSK2c, review) — cut here, a bare GUID of the
+        # subscription across the cut would no longer be read by the masking.
+        pending["points_error"] = f"{type(exc).__name__}: {exc}"
         pending["points"] = []
 
 
@@ -205,9 +234,9 @@ def _restore_key(pending: dict, key: str) -> dict | None:
 
 def _start_restore(esc: dict, before: str) -> None:
     from glorfindel import restore_plan
-    vm = esc["resource_id"].split("/")[-1]
+    vm = _name_said(esc["resource_id"])
     _last_restore.clear()
-    _last_restore.update(vm=vm, text=f"restore {vm} before {before}: running…", ok=None)
+    _last_restore.update(vm=vm, rid=esc["resource_id"], text=f"restore {vm} before {before}: running…", ok=None)
 
     def run():
         try:
@@ -216,7 +245,11 @@ def _start_restore(esc: dict, before: str) -> None:
                 raise ValueError("cette carte n'offre pas de restore")
             proc = subprocess.run([_bin(), *cmds[0]], capture_output=True, text=True, timeout=1800)
             ok = proc.returncode == 0
-            said = restore_plan.failure_text(proc.returncode, (proc.stdout or "") + (proc.stderr or ""))
+            # Masked before `failure_text` keeps its last 600 characters (MSK2c, review): cut first, an
+            # id would lose « /subscriptions/ » and its GUID's start, and the rest would pass. The bot's
+            # and recovery_watch's `failure_text` stays as it is.
+            output = _shown((proc.stdout or "") + (proc.stderr or ""), esc["resource_id"])
+            said = restore_plan.failure_text(proc.returncode, output)
         except Exception as exc:
             ok, said = False, f"{type(exc).__name__}: {exc}"
         _last_restore.update(ok=ok, text=(f"✓ restore {vm} started: {said}" if ok
@@ -224,25 +257,33 @@ def _start_restore(esc: dict, before: str) -> None:
     threading.Thread(target=run, daemon=True).start()
 
 
+def _last_restore_said() -> str:
+    """What the restore said, masked by its VM's id (MSK2c): the CLI's output, or an exception's."""
+    return _shown(_last_restore.get("text", ""), _last_restore.get("rid", ""))
+
+
 def _restore_panel(pending: dict) -> Panel:
+    rid = pending["esc"].get("resource_id", "")
     lines = Text(overflow="fold")
     lines.append(f"\n  ⚡ {pending['label']}\n\n", style="bold yellow")
     if pending["stage"] == "moment":
         lines.append("  Restore to the newest point from before: ", style="white")
         lines.append(pending["buffer"] + "▌\n", style="bold cyan")
-        lines.append(f"  {pending['why']}\n", style="dim")
+        lines.append(f"  {_shown(pending['why'], rid)}\n", style="dim")
         if pending["error"]:
-            lines.append(f"  ✗ {pending['error']}\n", style="red")
+            lines.append(f"  ✗ {_shown(pending['error'], rid)}\n", style="red")
         lines.append("\n  [Enter] points before it   [Esc] cancel\n", style="cyan")
     else:
         lines.append(f"  Before {pending['before']}\n", style="bold cyan")
         if pending.get("warning"):
-            lines.append(f"  ⚠ {pending['warning']}\n", style="yellow")
+            lines.append(f"  ⚠ {_shown(pending['warning'], rid)}\n", style="yellow")
         points = pending.get("points")
         if points is None:
             lines.append("  reading the recovery points…\n", style="dim")
         elif pending.get("points_error"):
-            lines.append(f"  recovery points unreadable: {pending['points_error']}\n", style="yellow")
+            # Azure's 403 cites the vault's scope, its subscription's id with it (MSK2c).
+            lines.append(f"  recovery points unreadable: {_shown(pending['points_error'], rid)[:200]}\n",
+                         style="yellow")
         elif not points:
             lines.append("  no recovery point before it: the restore would be refused\n", style="red")
         for i, p in enumerate((points or [])[:6]):
@@ -276,8 +317,7 @@ def _resources_renderable(now: datetime) -> Panel:
 
     lines = Text(overflow="fold")
     for resource_id in all_ids:
-        vm_short = resource_id.split("/")[-1]
-        lines.append(f"  {vm_short}\n", style="bold white")
+        lines.append(f"  {_name_said(resource_id)}\n", style="bold white")
 
         if resource_id in isolations:
             age = _age(isolations[resource_id].get("isolated_at", ""), now)
@@ -311,7 +351,7 @@ def _escalations_renderable(
     if not items:
         last = Text(overflow="fold")
         if _last_restore:                    # what the restore said stays on screen (SEC4c)
-            last.append(f"  {_last_restore.get('text', '')}\n\n",
+            last.append(f"  {_last_restore_said()}\n\n",
                         style="green" if _last_restore.get("ok") else "red" if _last_restore.get("ok") is False else "dim")
         last.append("✓ No pending escalations", style="green")
         return Panel(last, title="[bold]ESCALATIONS[/bold]", border_style="green")
@@ -328,12 +368,12 @@ def _escalations_renderable(
         )
 
     if _last_restore:
-        lines.append(f"  {_last_restore.get('text', '')}\n\n",
+        lines.append(f"  {_last_restore_said()}\n\n",
                      style="green" if _last_restore.get("ok") else ("red" if _last_restore.get("ok") is False else "dim"))
 
     for e in items[:4]:
         age = _age(e["timestamp"], now)
-        vm_short = e["resource_id"].split("/")[-1]
+        vm_short = _name_said(e["resource_id"])
         # A command to copy names the VM by « <groupe>/<nom> », never its name alone (MSK3b, #787):
         # copied to another terminal, or with a VM of that name in another group, it could take that one.
         vm_arg = group_and_name(e["resource_id"])
@@ -342,10 +382,12 @@ def _escalations_renderable(
         esc_type = e.get("escalation_type", "")
 
         lines.append(f"  [{esc_id}]  ", style="dim")
-        lines.append(f"{action}", style="bold yellow")
+        lines.append(f"{_shown(action, e['resource_id'])}", style="bold yellow")   # a model's proposal
         lines.append(f"  {vm_short}  {age} ago\n", style="dim")
 
         for step in (e.get("suggested_steps") or [])[:2]:
+            # As the CLI's `pending` says it (MSK2c): masked by the card's id, then cut — never before.
+            step = _shown(str(step), e["resource_id"])
             lines.append(f"    • {step[:72]}\n", style="dim")
 
         if esc_type in _ANCHORED_TYPES:   # its VM is an anchor: ack only (SEC5, V-35)
@@ -386,9 +428,10 @@ def _escalations_renderable(
 
 def _format_signal(s: dict) -> str:
     ts = s.get("timestamp", "")[:19].replace("T", " ")
-    event = s.get("event", "unknown")
-    ttp = s.get("ttp", "")
-    resource = s.get("resource_id", "").split("/")[-1]
+    rid = s.get("resource_id", "")
+    event = _shown(s.get("event", "unknown"), rid)
+    ttp = _shown(s.get("ttp", ""), rid)
+    resource = _name_said(rid)
     color = {
         "attack_started": "yellow",
         "detection": "green",
@@ -404,11 +447,12 @@ def _format_signal(s: dict) -> str:
 
 def _format_debug(d: dict) -> str:
     ts = d.get("timestamp", "")[:19].replace("T", " ")
-    action = d.get("action", "")
+    rid = d.get("signal", {}).get("resource_id", "")
+    action = _shown(d.get("action", ""), rid)
     confidence = d.get("confidence", 0.0)
     escalate = d.get("escalate", False)
     verified = d.get("outcome", {}).get("verified")
-    ttp = d.get("signal", {}).get("ttp", "")
+    ttp = _shown(d.get("signal", {}).get("ttp", ""), rid)
     pct = f"{int(confidence * 100)}%"
 
     if escalate:
@@ -597,47 +641,14 @@ def run() -> None:
                         escs = esc_module.pending()
                         if key in ("q", "Q"):
                             return
-                        elif key == "a" and escs:
-                            e = escs[0]
-                            vm = e["resource_id"].split("/")[-1]
-                            pending = {
-                                "key": "a",
-                                "esc": e,
-                                "label": f"ack [{e['id'][:8]}] on {vm}",
-                            }
                         elif key == "r" and escs:
                             e = escs[0]
                             # Only a restore card: a held snapshot never ran (fourth review, Q16),
                             # and never an anchored one (SEC5, V-35). It asks its moment (SEC4c).
                             if _can_restore(e):
                                 pending = _restore_pending(e)
-                        elif key == "x" and escs:
-                            e = escs[0]
-                            if _can_undo(e):
-                                vm = e["resource_id"].split("/")[-1]
-                                pending = {
-                                    "key": "x",
-                                    "esc": e,
-                                    "label": f"release {vm} (isolation only)",
-                                }
-                        elif key == "u" and escs:
-                            e = escs[0]
-                            if _can_undo(e):
-                                vm = e["resource_id"].split("/")[-1]
-                                pending = {
-                                    "key": "u",
-                                    "esc": e,
-                                    "label": f"unblock {vm} (IP blocks only)",
-                                }
-                        elif key == "v" and escs:
-                            e = escs[0]
-                            if _can_undo(e):
-                                vm = e["resource_id"].split("/")[-1]
-                                pending = {
-                                    "key": "v",
-                                    "esc": e,
-                                    "label": f"reset {vm} (release + unblock all IPs)",
-                                }
+                        elif key in _CONFIRMED and escs:
+                            pending = _confirmation(key, escs[0])
 
                 layout["header"].update(_header())
                 layout["resources"].update(_resources_renderable(now))

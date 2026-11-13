@@ -650,7 +650,7 @@ il reste un geste de Jonathan.
 ## 10. Ce qui va ailleurs
 
 Cité ici, fait ailleurs, chacun dans son lot :
-- **La carte TTL qui dit « levée à l'expiration »** alors que rien n'est levé : un bug de texte.
+- **La carte TTL qui dit « levée à l'expiration »** alors que rien n'est levé : un bug de texte (corrigé par JUG2d, #799 : « isolation au-delà du TTL (à revoir, jamais levée seule) »).
 - **Le rapprochement par SID1 d'une coupure lente** : la carte T1651 née de la coupure de bree (la
   fenêtre `DRAIN_BEFORE_S`/`DRAIN_AFTER_S`, `glorfindel/providers/azure/own_run_command.py:57-58`).
   Le dossier range la carte sous l'isolation (F5d), il ne la ferme pas.

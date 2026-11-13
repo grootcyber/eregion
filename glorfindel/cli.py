@@ -2728,7 +2728,7 @@ def memory_stats(memory_path: str | None):
 
 @cli.command("check-ttl")
 @click.option("--ttl", default=None, type=float, metavar="HOURS",
-              help="Max isolation age in hours before auto-release. "
+              help="Max isolation age in hours before its card (ttl_exceeded) — never a release. "
                    "Defaults to GLORFINDEL_ISOLATION_TTL_H env var or 4h.")
 @click.option("--dry-run", is_flag=True)
 def check_ttl(ttl: float | None, dry_run: bool):
