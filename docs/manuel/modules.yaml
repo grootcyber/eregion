@@ -937,6 +937,7 @@ briques:
     release: "0.6"
     lots: [MSK2c]
     issue: 798
+    pr: 804
     doc: docs/glorfindel.md
 
   - id: g-dossier-isolation
