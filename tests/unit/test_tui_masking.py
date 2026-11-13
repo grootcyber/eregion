@@ -227,3 +227,76 @@ def test_the_feed_masks_a_signal_s_and_a_cycle_s_words(monkeypatch):
     shown = _render(Text.from_markup(tui._format_debug(cycle)))
     assert "nsg-a (groupe" in shown, shown
     _clean(shown)
+
+
+# ── 3. No cut before the masking, anywhere (review 1) ───────────────────────────────────────────
+
+def test_an_unreadable_vault_s_error_is_cut_after_its_masking(monkeypatch):
+    """M5255, M5256: the vault's error kept whole when it is caught, cut to 200 at the rendering once
+    masked — a bare GUID of the card's subscription across the 200th character, cut first, would show
+    its first characters."""
+    _no_env_subscription(monkeypatch)
+    import glorfindel.restore_plan as restore_plan
+    message = "v" * 170 + f" {SUB} illisible"
+
+    def unreadable(rid, before):
+        raise RuntimeError(message)
+    monkeypatch.setattr(restore_plan, "points_before", unreadable)
+    esc = _card(action="restore_from_backup", kind="destructive_action")
+    pending = {"key": "r", "esc": esc, "stage": "points", "before": "2026-11-13T07:58:00+00:00", "label": "r"}
+    tui._load_points(pending)
+    said = f"RuntimeError: {message}"
+    assert said.index(SUB) < 200 < said.index(SUB) + len(SUB)
+    assert message.index(SUB) < 200 < message.index(SUB) + len(SUB)
+    shown = _render(tui._restore_panel(pending))
+    assert "v" * 170 + " <abonnement>" in shown, shown
+    _clean(shown)
+
+
+class _Now:
+    """A thread that runs at once: what the restore said is on screen when `start` returns."""
+    def __init__(self, target, daemon=None):
+        self.target = target
+
+    def start(self):
+        self.target()
+
+
+def test_what_the_restore_said_is_masked_before_its_last_600_characters_are_kept(monkeypatch):
+    """M5257: `failure_text` keeps the last 600 characters of the CLI's output. A NSG's id that begins
+    just before them, cut first, loses « /subscriptions/ » and its GUID's start: the rest would pass
+    the masking. The TUI masks the output first; `failure_text` stays as the bot and recovery_watch
+    call it."""
+    _no_env_subscription(monkeypatch)
+    from types import SimpleNamespace
+
+    import glorfindel.restore_plan as restore_plan
+    z = 600 - 1 - (len(NSG) - len("/subscriptions/") - 10)
+    output = "a" * 300 + f" {NSG} " + "z" * z
+    assert len(output) - 600 == output.index(SUB) + 10          # the cut is in the GUID
+    assert "subscriptions/" not in restore_plan.failure_text(1, output)
+
+    monkeypatch.setattr(tui.subprocess, "run",
+                        lambda args, **kw: SimpleNamespace(returncode=1, stdout=output, stderr=""))
+    monkeypatch.setattr(tui.threading, "Thread", _Now)
+    monkeypatch.setattr(tui, "_last_restore", {})
+    monkeypatch.setattr(escalations, "pending", lambda: [])
+    tui._start_restore(_card(action="restore_from_backup", kind="destructive_action"), "2026-11-13T07:58:00+00:00")
+    assert tui._last_restore["ok"] is False
+    shown = _render(tui._escalations_renderable(datetime.now(timezone.utc), None, False))
+    assert f"nsg-a (groupe {RG})" in shown, shown
+    flat = "".join(shown.split()).lower()
+    assert SUB[-12:] not in flat and "resourcegroups/" not in flat, shown
+    _clean(shown)
+
+
+def test_a_signal_s_event_is_masked_by_the_signal_s_id(monkeypatch):
+    """M5258: the event of a signal citing the bare id of its resource's subscription, while the shell
+    names another: masked by what the signal's id teaches, as its TTP is."""
+    _no_env_subscription(monkeypatch, SUB2)
+    from rich.text import Text
+    signal = {"timestamp": "2026-11-13T08:00:00+00:00", "event": f"detection {SUB}", "ttp": "T1078",
+              "resource_id": VM}
+    shown = _render(Text.from_markup(tui._format_signal(signal)))
+    assert "detection <abonnement>" in shown, shown
+    _clean(shown)

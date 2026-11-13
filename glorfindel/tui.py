@@ -198,7 +198,9 @@ def _load_points(pending: dict) -> None:
     try:
         pending["points"] = restore_plan.points_before(pending["esc"]["resource_id"], pending["before"])
     except Exception as exc:  # unreadable vault: said, the restore stays possible
-        pending["points_error"] = f"{type(exc).__name__}: {str(exc)[:200]}"
+        # Kept whole: cut at the rendering, once masked (MSK2c, review) — cut here, a bare GUID of the
+        # subscription across the cut would no longer be read by the masking.
+        pending["points_error"] = f"{type(exc).__name__}: {exc}"
         pending["points"] = []
 
 
@@ -243,7 +245,11 @@ def _start_restore(esc: dict, before: str) -> None:
                 raise ValueError("cette carte n'offre pas de restore")
             proc = subprocess.run([_bin(), *cmds[0]], capture_output=True, text=True, timeout=1800)
             ok = proc.returncode == 0
-            said = restore_plan.failure_text(proc.returncode, (proc.stdout or "") + (proc.stderr or ""))
+            # Masked before `failure_text` keeps its last 600 characters (MSK2c, review): cut first, an
+            # id would lose « /subscriptions/ » and its GUID's start, and the rest would pass. The bot's
+            # and recovery_watch's `failure_text` stays as it is.
+            output = _shown((proc.stdout or "") + (proc.stderr or ""), esc["resource_id"])
+            said = restore_plan.failure_text(proc.returncode, output)
         except Exception as exc:
             ok, said = False, f"{type(exc).__name__}: {exc}"
         _last_restore.update(ok=ok, text=(f"✓ restore {vm} started: {said}" if ok
@@ -276,7 +282,8 @@ def _restore_panel(pending: dict) -> Panel:
             lines.append("  reading the recovery points…\n", style="dim")
         elif pending.get("points_error"):
             # Azure's 403 cites the vault's scope, its subscription's id with it (MSK2c).
-            lines.append(f"  recovery points unreadable: {_shown(pending['points_error'], rid)}\n", style="yellow")
+            lines.append(f"  recovery points unreadable: {_shown(pending['points_error'], rid)[:200]}\n",
+                         style="yellow")
         elif not points:
             lines.append("  no recovery point before it: the restore would be refused\n", style="red")
         for i, p in enumerate((points or [])[:6]):
@@ -421,8 +428,8 @@ def _escalations_renderable(
 
 def _format_signal(s: dict) -> str:
     ts = s.get("timestamp", "")[:19].replace("T", " ")
-    event = _shown(s.get("event", "unknown"))
     rid = s.get("resource_id", "")
+    event = _shown(s.get("event", "unknown"), rid)
     ttp = _shown(s.get("ttp", ""), rid)
     resource = _name_said(rid)
     color = {
