@@ -477,10 +477,12 @@ def test_a_console_error_answer_is_said_without_the_token():
 PLAN = {"vault": bw.VAULT, "vault_rg": bw.RG, "point": _at(days=1).timestamp()}
 
 
-def _jobs(*statuses):
-    """`az_json` faked: the job list, then each `job show` in turn."""
+def _jobs(*statuses, shown=None):
+    """`az_json` faked: the job list, then each `job show` in turn — a backup of the target, as Azure
+    names its VM and its operation, or `shown`'s properties instead (SNP1b)."""
     asked = []
     shows = list(statuses)
+    shown = {"entityFriendlyName": bw.VM, "operation": "Backup"} if shown is None else shown
 
     def az_json(args, timeout=120):
         asked.append(args)
@@ -495,7 +497,7 @@ def _jobs(*statuses):
             s = shows.pop(0) if len(shows) > 1 else shows[0]
             if isinstance(s, Exception):
                 raise s
-            return {"properties": {"status": s}}
+            return {"properties": {**shown, "status": s}}
         raise AssertionError(args)
     return az_json, asked
 
@@ -506,7 +508,7 @@ def test_the_job_started_since_the_gesture_is_followed_to_completed(monkeypatch)
     clock = Clock()
     name = bsn.find_job(bw.VM, PLAN, NOW.timestamp(), clock=clock, sleep=clock.sleep)
     assert name.endswith("0aa")                      # the job of the gesture, never yesterday's
-    bsn.await_job(name, PLAN, 0.0, clock=clock, sleep=clock.sleep, say=lambda s: None)
+    bsn.await_job(name, PLAN, 0.0, target=bw.VM, clock=clock, sleep=clock.sleep, say=lambda s: None)
     shows = [a for a in asked if a[:3] == ["backup", "job", "show"]]
     assert len(shows) == 3 and all(a[a.index("-n") + 1] == name for a in shows)
 
@@ -517,7 +519,7 @@ def test_a_job_that_fails_stops(monkeypatch, status):
     monkeypatch.setattr(bs, "az_json", az)
     clock = Clock()
     with pytest.raises(RuntimeError, match=f"le job du coffre : {status}"):
-        bsn.await_job("j", PLAN, 0.0, clock=clock, sleep=clock.sleep, say=lambda s: None)
+        bsn.await_job("j", PLAN, 0.0, target=bw.VM, clock=clock, sleep=clock.sleep, say=lambda s: None)
 
 
 def test_a_job_past_its_bound_stops(monkeypatch):
@@ -525,7 +527,7 @@ def test_a_job_past_its_bound_stops(monkeypatch):
     monkeypatch.setattr(bs, "az_json", az)
     clock = Clock()
     with pytest.raises(RuntimeError, match="pas Completed en 60 min"):
-        bsn.await_job("j", PLAN, 0.0, clock=clock, sleep=clock.sleep, say=lambda s: None)
+        bsn.await_job("j", PLAN, 0.0, target=bw.VM, clock=clock, sleep=clock.sleep, say=lambda s: None)
     assert bsn.JOB_WAIT_S <= clock.t <= bsn.JOB_WAIT_S + bsn.JOB_POLL_S
 
 
@@ -534,7 +536,7 @@ def test_a_job_that_cannot_be_read_stops(monkeypatch):
     monkeypatch.setattr(bs, "az_json", az)
     clock = Clock()
     with pytest.raises(RuntimeError, match="ne se lit plus"):
-        bsn.await_job("j", PLAN, 0.0, clock=clock, sleep=clock.sleep, say=lambda s: None)
+        bsn.await_job("j", PLAN, 0.0, target=bw.VM, clock=clock, sleep=clock.sleep, say=lambda s: None)
 
 
 # ── the whole route ───────────────────────────────────────────────────────────
@@ -637,12 +639,13 @@ def snapshot_console(tmp_path, monkeypatch):
     return snap
 
 
-def _take_through(console, monkeypatch, *, token=None):
+def _take_through(console, monkeypatch, *, token=None, statuses=("Completed",), shown=None, read=None):
     import bench_preflight as bp
     from console_client import TOKEN as CONSOLE_TOKEN
-    az, asked = _jobs("Completed")
+    az, asked = _jobs(*statuses, shown=shown)
     monkeypatch.setattr(bs, "az_json", az)
-    monkeypatch.setattr(bp, "point_times", lambda t, rg, v: [NOW.timestamp() + 60])
+    monkeypatch.setattr(bp, "point_times",
+                        lambda t, rg, v: (read.append("points") if read is not None else None) or [NOW.timestamp() + 60])
     clock, said = Clock(), []
     bsn.take(bw.VM, {}, PLAN, said.append, token=token or CONSOLE_TOKEN, tunnel=FakeTunnel([]), open_=console,
              clock=clock, sleep=clock.sleep, now=NOW.timestamp)
@@ -711,6 +714,86 @@ def test_without_a_vault_job_a_job_id_of_the_vault_is_still_followed():
     assert bsn.named_job({"job_id": "snapshot-x", "vault_job": ""}, PLAN) == ""
     assert bsn.named_job({"job_id": "snapshot-x", "vault_job": VAULT_JOB.upper().replace("RSV:", "rsv:")}, PLAN) \
         == VAULT_GUID.upper()
+
+
+# ── SNP1b (#801): the job the console names, checked before it is followed ────
+
+def _named(vault_job):
+    return FakeConsole({"status": "started", "job_id": "snapshot-x", "vault_job": vault_job})
+
+
+@pytest.mark.parametrize("shown, said", [
+    ({"entityFriendlyName": "vm-celebrimbor-bree", "operation": "Backup"}, f"sa VM n'est pas {bw.VM}"),
+    ({"entityFriendlyName": bw.VM, "operation": "Restore"}, "son opération est Restore, pas Backup"),
+    ({"entityFriendlyName": bw.VM, "operation": "ConfigureBackup"}, "son opération est ConfigureBackup, pas Backup"),
+    ({"entityFriendlyName": "vm-celebrimbor-bree", "operation": "DeleteBackupData"},
+     f"sa VM n'est pas {bw.VM}, son opération est DeleteBackupData, pas Backup"),
+])
+@pytest.mark.parametrize("queued", [False, True])
+def test_a_named_job_of_another_vm_or_operation_stops_at_its_first_show_and_is_never_followed(
+        monkeypatch, shown, said, queued):
+    """The console names a job of the vault, but Azure reads it as no backup of the target: another VM's,
+    a restore, a configuration. The run stops at its first `show`, says what differs — never followed to
+    Completed, no point read, nothing to Orodruin."""
+    done = {"status": "started", "job_id": "snapshot-x", "vault_job": VAULT_JOB}
+    console = FakeConsole(QUEUED, {"via": "queue", "state": "done", "ok": True, **done}) if queued else FakeConsole(done)
+    read: list = []
+    with pytest.raises(RuntimeError) as got:
+        _take_through(console, monkeypatch, token=TOKEN, statuses=("InProgress", "Completed"), shown=shown, read=read)
+    assert "n'est pas une sauvegarde de" in str(got.value) and said in str(got.value), got.value
+    assert VAULT_GUID not in str(got.value), "the job's name printed"
+    assert read == [], "the point read after a job that is no backup of the target"
+
+
+@pytest.mark.parametrize("shown, said", [
+    ({"operation": "Backup"}, "sa VM ne se lit pas"),
+    ({"entityFriendlyName": bw.VM}, "son opération ne se lit pas"),
+    ({}, "sa VM ne se lit pas, son opération ne se lit pas"),
+])
+def test_a_named_job_whose_vm_or_operation_does_not_read_stops(monkeypatch, shown, said):
+    """A `show` that does not say the job's VM or its operation proves no backup of the target: it stops
+    — never taken for one because nothing contradicts it."""
+    read: list = []
+    with pytest.raises(RuntimeError) as got:
+        _take_through(_named(VAULT_JOB), monkeypatch, token=TOKEN, shown=shown, read=read)
+    assert said in str(got.value), got.value
+    assert read == []
+
+
+def test_a_named_job_of_the_target_in_azure_s_own_case_is_followed(monkeypatch):
+    """Azure may give the VM's name in its own case: the same VM, followed."""
+    asked, _ = _take_through(_named(VAULT_JOB), monkeypatch, token=TOKEN,
+                             shown={"entityFriendlyName": bw.VM.upper(), "operation": "Backup"})
+    assert [a for a in asked if a[:3] == ["backup", "job", "show"]]
+
+
+@pytest.mark.parametrize("key", ["vault_job", "job_id"])
+@pytest.mark.parametrize("name, said, unsaid", [
+    (f"rsv:another-vault/{bw.RG}/{VAULT_GUID}", "son coffre diffère", "son groupe"),
+    (f"rsv:{bw.VAULT}/rg-other/{VAULT_GUID}", "son groupe diffère", "son coffre"),
+    (f"rsv:another-vault/rg-other/{VAULT_GUID}", "son coffre et son groupe diffèrent", None),
+    (f"rsv:{bw.VAULT}/{bw.RG}/not_a_job!", "sa forme ne se lit pas", "son coffre"),
+])
+def test_a_rsv_name_of_another_vault_or_group_stops_whether_named_by_vault_job_or_job_id(
+        monkeypatch, key, name, said, unsaid):
+    """`rsv:<vault>/<group>/<name>` names a job of the vault — wherever the console puts it. Of another
+    vault or group than the operator's, it stops the run and says which: never replaced, in silence, by
+    the job of the VM looked for by its time."""
+    given = {"status": "started", "job_id": "snapshot-x", "vault_job": ""}
+    given[key] = name
+    import bench_preflight as bp
+    az, asked = _jobs("Completed")
+    monkeypatch.setattr(bs, "az_json", az)
+    monkeypatch.setattr(bp, "point_times", lambda t, rg, v: [NOW.timestamp() + 60])
+    clock = Clock()
+    with pytest.raises(RuntimeError) as got:
+        bsn.take(bw.VM, {}, PLAN, lambda s: None, token=TOKEN, tunnel=FakeTunnel([]), open_=FakeConsole(given),
+                 clock=clock, sleep=clock.sleep, now=NOW.timestamp)
+    text = str(got.value)
+    assert "pas du coffre du poste" in text and said in text and f"`{key}`" in text, text
+    assert unsaid is None or unsaid not in text, text
+    assert VAULT_GUID not in text and "another-vault" not in text and "rg-other" not in text, "a name printed"
+    assert asked == [], "a job looked for by its time, or followed"
 
 
 

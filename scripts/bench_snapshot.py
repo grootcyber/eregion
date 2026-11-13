@@ -24,14 +24,17 @@ fails is no clean point. Otherwise it asks for one, by the route of the console'
                 it: its receipt followed by `GET /api/queue/<id>` until final — `not_taken`, `untrusted`,
                 `refused`, `failed`, `unknown`, or a request past its life stop the run;
   the job       the vault's job the console names (SNP1): its `vault_job`, `rsv:<vault>/<group>/<name>`,
-                in its answer or in the receipt under FS1, followed directly — one of another vault than
-                the operator's stops the run; without it, a `job_id` that is a job of the vault
-                (`vault_job_name`; Glorfindel's own record, `snapshot-<vm>-<ts>`, is none), else — a
+                in its answer or in the receipt under FS1, followed directly; without it, a `job_id` that
+                is a job of the vault (`vault_job_name`; Glorfindel's own record, `snapshot-<vm>-<ts>`,
+                is none). An `rsv:` name of another vault or group than the operator's, from either,
+                stops the run and says which (SNP1b) — never replaced by the time; with no name — a
                 console or a watch from before SNP1, a dry run — the vault's backup job of the VM started
                 since the gesture, looked for by its time; then followed by `az backup job
                 show` under the operator's `az login` until `Completed`, JOB_WAIT_S at most from the
-                gesture (60 min: the first point after a restore is complete, ~40 min); one that fails or
-                runs past it stops the run — before the request goes to Orodruin: nothing is attacked;
+                gesture (60 min: the first point after a restore is complete, ~40 min). Its first answer
+                read is checked first (SNP1b): another VM's job, or another operation than `Backup`,
+                stops the run, said; one that fails or runs past its bound stops it too — before the
+                request goes to Orodruin: nothing is attacked;
   the point     read again in the vault: newer than the one refused, or the run stops.
 
 Then `make bench-run` replays its preflight, just before the attack (up to 60 min may have passed).
@@ -308,18 +311,37 @@ def _named(doc: dict) -> dict:
 
 
 def named_job(given: dict, plan: dict) -> str:
-    """The vault's job to follow from what the console named (SNP1): its `vault_job` when it gives one —
-    a job of another vault than the operator's, or a shape not read, stops the run (RuntimeError), never
-    looked for by its time instead —; without it, its `job_id` when that is a job of the vault; else ''
-    (then the job is looked for by its time)."""
+    """The vault's job to follow from what the console named (SNP1): its `vault_job` when it gives one;
+    without it, its `job_id` when that names a job of the vault. A name of the vault (`rsv:…`, SNP1b)
+    that is not of the operator's — another vault, another group, or a shape not read —, from `vault_job`
+    or from `job_id`, stops the run (RuntimeError) and says what differs: never replaced, in silence, by
+    the job looked for by its time. Else '' — Glorfindel's own record, a dry run: then it is."""
     asked = given.get("vault_job") or ""
+    key = "vault_job"
+    if not asked and str(given.get("job_id") or "").lower().startswith("rsv:"):
+        asked, key = str(given["job_id"]), "job_id"
     if asked:
         name = vault_job_name(asked, plan)
         if not name:
-            raise RuntimeError("la console nomme un job qui n'est pas du coffre du poste (son coffre ou son groupe "
-                               "diffère de la configuration) : aucun point suivi")
+            raise RuntimeError("la console nomme un job qui n'est pas du coffre du poste "
+                               f"(par `{key}` : {_differs(asked, plan)}) : aucun point suivi, jamais cherché "
+                               "par son heure à la place")
         return name
     return vault_job_name(given.get("job_id") or "", plan)
+
+
+def _differs(asked: str, plan: dict) -> str:
+    """What makes a name the console gives no job of the operator's vault: its vault, its group, both, or
+    its shape — said without the names themselves."""
+    m = re.fullmatch(r"rsv:([^/]+)/([^/]+)/([^/]+)", asked or "")
+    if not m:
+        return "sa forme ne se lit pas, ni rsv:<coffre>/<groupe>/<nom> ni un GUID"
+    parts = [what for what, got, want in (("son coffre", m.group(1), plan.get("vault")),
+                                          ("son groupe", m.group(2), plan.get("vault_rg")))
+             if got.lower() != str(want or "").lower()]
+    if not parts:
+        return "sa forme ne se lit pas, le nom du job n'en est pas un"
+    return " et ".join(parts) + (" diffèrent" if len(parts) > 1 else " diffère") + " de la configuration du poste"
 
 
 def vault_job_name(job_id: str, plan: dict) -> str:
@@ -363,20 +385,47 @@ def find_job(target: str, plan: dict, asked_at: float, *, clock=time.monotonic, 
         sleep(30.0)
 
 
-def await_job(name: str, plan: dict, began: float, *, clock=time.monotonic, sleep=time.sleep, say=print) -> None:
-    """`az backup job show` until `Completed`, JOB_WAIT_S at most from `began` (the gesture, on `clock`)."""
+def not_a_backup_of(doc, target: str) -> str:
+    """What makes a job `az backup job show` reads no backup of the target (SNP1b), '' when it is one:
+    its VM (`entityFriendlyName`, in Azure's case) and its operation (`Backup`), the two fields `find_job`
+    filters on. A field that does not read proves nothing: said too."""
+    props = doc.get("properties") if isinstance(doc, dict) else None
+    props = props if isinstance(props, dict) else {}
+    vm, op = str(props.get("entityFriendlyName") or ""), str(props.get("operation") or "")
+    out = []
+    if vm and vm.lower() != target.lower():
+        out.append(f"sa VM n'est pas {target}")
+    if not vm:
+        out.append("sa VM ne se lit pas")
+    if op and op != "Backup":
+        out.append(f"son opération est {op if re.fullmatch(r'[A-Za-z]{1,40}', op) else 'illisible'}, pas Backup")
+    if not op:
+        out.append("son opération ne se lit pas")
+    return ", ".join(out)
+
+
+def await_job(name: str, plan: dict, began: float, *, target: str, clock=time.monotonic, sleep=time.sleep,
+              say=print) -> None:
+    """`az backup job show` until `Completed`, JOB_WAIT_S at most from `began` (the gesture, on `clock`).
+    Each answer read is first checked as a backup of `target` (SNP1b): another VM's job, or another
+    operation, stops the run at its first `show` — never followed to `Completed`."""
     failures = 0
     said = ""
     while True:
         try:
             doc = bs.az_json(["backup", "job", "show", "-g", plan["vault_rg"], "-v", plan["vault"], "-n", name])
-            status = str(((doc or {}).get("properties") or {}).get("status") or "")
             failures = 0
         except RuntimeError as e:
             failures += 1
             if failures >= JOB_READ_FAILURES:
                 raise RuntimeError(f"le job du coffre ne se lit plus ({bs.scrub(str(e))[:160]})") from None
             status = ""
+        else:
+            why = not_a_backup_of(doc, target)
+            if why:
+                raise RuntimeError(f"le job du coffre nommé n'est pas une sauvegarde de {target} ({why}) : "
+                                   "il n'est pas suivi, aucun point lu")
+            status = str(doc["properties"].get("status") or "")
         if status == "Completed":
             return
         if status and status != "InProgress":
@@ -414,7 +463,7 @@ def take(target: str, env: dict, plan: dict, say=print, *, token: str | None = N
         say("  ✓ l'instantané lancé ; le renvoi de port fermé ; la console ne nomme pas le job du coffre : "
             "cherché par son heure, puis suivi")
         name = find_job(target, plan, asked_at, clock=clock, sleep=sleep)
-    await_job(name, plan, began, clock=clock, sleep=sleep, say=say)
+    await_job(name, plan, began, target=target, clock=clock, sleep=sleep, say=say)
     times = bp.point_times(target, plan["vault_rg"], plan["vault"])
     newest = max(times, default=None)
     if newest is None or (plan.get("point") is not None and newest <= plan["point"]):
