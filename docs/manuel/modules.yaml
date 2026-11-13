@@ -861,6 +861,7 @@ briques:
     release: "0.6"
     lots: [LEV1b]
     issue: 785
+    pr: 786
     doc: docs/design/levee-probation.md
 
   - id: g-levee-probation-code
