@@ -544,6 +544,18 @@ glorfindel respond runs/annatar/<run_id>_signals.jsonl  # post-run processing
 # Use the minimum scope:
 glorfindel release <resource_id> --yes          # lift isolation only (post-restore, VM back online)
 glorfindel unblock <ip> <resource_id> --yes     # remove one IP block (e.g. after T1110)
+glorfindel isolate <group>/<name> --yes         # contain by hand (CMD1): a held card approved from a terminal, or no card —
+                                                #   the console's approval, its guards (the watch's perimeter, never a VM a card
+                                                #   is only anchored on, AL1), under the VM's lock, verified after; lifted by release
+glorfindel block <ip> <group>/<name> --yes      # block one host address by hand (CMD1), --scope vm (default) or subnet; never
+                                                #   a range, a tag or a never_block address; verified after; lifted by unblock
+# Both say a held card of the same gesture and leave it pending (ack it once verified); --dry-run checks the guards only.
+# A check that does not hold, a write landed in part, or a session cut still running with no watch on this host to
+# reread it: a verification_failed card, exit 2. The gesture is noted in runs/console where the CLI can write it; in
+# the watch's container runs/console is mounted read-only: not noted there, said once (as for release and unblock).
+# Their state is this host's ~/.glorfindel: with the watch on Imladris, run them in its container
+# (docker exec -it eregion-watch glorfindel …; without -it the prompt reads an end of file) — from a workstation,
+# the watch there never rereads it (it is said), and the two hosts share no VM lock.
 glorfindel reset <resource_id> --yes           # reset: release isolation + unblock all IPs
 glorfindel snapshot <resource_id> --yes         # on-demand Recovery Services Vault backup (~5-20min)
 glorfindel restore <resource_id> --yes          # Azure Backup restore: newest point before the attack on THIS VM (--before, else its card's first detection — an exercise card: its run's attack_started; unknown → asked)
@@ -560,7 +572,7 @@ glorfindel list --ids                           # the same with their full ARM i
 # TUI keyboard:       x:release  u:unblock  v:reset  r:restore
 glorfindel pending                              # list pending escalations
 glorfindel pending --watch                      # stay running, print new escalations as they arrive
-glorfindel ack <escalation_id>                  # acknowledge an escalation
+glorfindel ack <escalation_id>                  # acknowledge an escalation (its id, or its first 6+ characters)
 glorfindel ack --all                            # acknowledge all pending escalations
 glorfindel verdict <id> right|wrong|unsure      # was the recommendation right? (observation, docs/observation.md)
 glorfindel report --since 4w                    # verdicts by action and rule, false rate of disruptive recommendations

@@ -127,9 +127,13 @@ DRAIN_UNFOLLOWED = ("coupure en attente, non suivie : la Run Command tourne enco
                     "première attente, et la réaffirmation est coupée (GLORFINDEL_REASSERT_INTERVAL_S) : "
                     "son statut ne sera pas relu — un attaquant connecté garde peut-être la main. "
                     + _CUT_BY_HAND)
+# CMD1: the same, for a gesture of the CLI on a host where no watch lives — none here reads it again.
+DRAIN_UNWATCHED = ("coupure en attente, non suivie : la Run Command tourne encore sur Azure après sa "
+                   "première attente, et aucune watch vivante sur cet hôte ne relira son statut — un "
+                   "attaquant connecté garde peut-être la main. " + _CUT_BY_HAND)
 
 
-def isolation_verdict(verification: dict, outcome: dict) -> dict:
+def isolation_verdict(verification: dict, outcome: dict, followed: bool | None = None) -> dict:
     """verify_isolation's result, downgraded when the drain left sessions open.
 
     The rules only stop NEW connections (measured 2026-10-05): rules in place with an
@@ -140,10 +144,15 @@ def isolation_verdict(verification: dict, outcome: dict) -> dict:
     the rules' verdict, and says it is pending (`drain_case`): its status is read again by the
     reassertion's pass (glorfindel/drain_watch.py), which closes its card once the cut ends, or
     says on a card that it was refused, left sessions open, or never ended. The reassertion off,
-    nothing reads it again: not verified (« coupure en attente, non suivie »)."""
+    nothing reads it again: not verified (« coupure en attente, non suivie »). ``followed`` False
+    (CMD1: the CLI on a host where no watch lives): nothing here reads it again either, whatever the
+    reassertion's setting — not verified, said so."""
     drain = (outcome or {}).get("drain") or {}
     case = drain_case(drain)
     if verification.get("verified") is True and case == "pending":
+        if followed is False:
+            return {**verification, "verified": False, "drain": drain, "drain_case": case,
+                    "drain_followed": False, "error": DRAIN_UNWATCHED}
         if not drain_followed():
             return {**verification, "verified": False, "drain": drain, "drain_case": case,
                     "drain_followed": False, "error": DRAIN_UNFOLLOWED}

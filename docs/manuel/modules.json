@@ -1220,6 +1220,20 @@
    "doc": "docs/glorfindel.md"
   },
   {
+   "id": "g-isoler-bloquer-cli",
+   "composant": "glorfindel",
+   "poste": "g-agir",
+   "nom": "glorfindel isolate and glorfindel block: a containment by a human's hand from a terminal, the console's approval without the card, its guards and its check; and no command Glorfindel proposes is invented",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "CMD1"
+   ],
+   "issue": 797,
+   "pr": 808,
+   "doc": "docs/operations.md"
+  },
+  {
    "id": "g-tui-sans-abonnement",
    "composant": "glorfindel",
    "poste": "g-agir",
@@ -1819,6 +1833,20 @@
    "doc": "docs/banc-t1486.md"
   },
   {
+   "id": "c-banc-job-verifie",
+   "composant": "celebrimbor",
+   "poste": "c-construire",
+   "nom": "The vault job the console names is checked before the bench follows it: a backup of the target at its first read, and a name of another vault or group stops the run, saying what differs",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "SNP1b"
+   ],
+   "issue": 801,
+   "pr": 806,
+   "doc": "docs/banc-t1486.md"
+  },
+  {
    "id": "c-paires-expiration",
    "composant": "celebrimbor",
    "poste": "c-construire",
@@ -2267,6 +2295,20 @@
    "doc": "docs/operations.md"
   },
   {
+   "id": "s-sonde-gardee-eregion",
+   "composant": "socle",
+   "poste": "s-prouver",
+   "nom": "An agent session's probe never writes in the operator's ~/.eregion nor ~/.annatar either: the watch's key, the queue, Annatar's shell; the folder named, no way out offered",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "HY2c"
+   ],
+   "issue": 800,
+   "pr": 807,
+   "doc": "docs/operations.md"
+  },
+  {
    "id": "s-release",
    "composant": "socle",
    "poste": "s-prouver",
@@ -2551,6 +2593,20 @@
     "MAN0"
    ],
    "issue": 640,
+   "doc": "docs/sessions.md"
+  },
+  {
+   "id": "s-frontiere-rouge",
+   "composant": "socle",
+   "poste": "s-documenter",
+   "nom": "An attack lot lives end to end in a dedicated Annatar session, unread by the Orchestre, and the main checkout moves forward after each merge",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "FRN1"
+   ],
+   "issue": 803,
+   "pr": 810,
    "doc": "docs/sessions.md"
   },
   {

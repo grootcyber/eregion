@@ -47,8 +47,8 @@ MUTANTS = [
     ("M5159", "Glorfindel no longer imports the guard first: a script that imports it alone computes its "
               "paths with nothing installed (HY2b; caught by a reading of the code only, a belt)",
      "glorfindel/__init__.py",
-     "import eregion_core  # noqa: F401 — HY2b: the guard of the operator's ~/.glorfindel, first "
-     "(eregion_core/store_guard.py)\n", ""),
+     "import eregion_core  # noqa: F401 — HY2b: the guard of the operator's ~/.glorfindel, ~/.eregion, "
+     "~/.annatar (HY2c), first (eregion_core/store_guard.py)\n", ""),
 ]
 MEMORY = "glorfindel/memory.py"
 CODE = T + "test_a_probe_that_runs_a_lot_s_worktree_code_from_elsewhere_is_refused_and_said"
@@ -69,12 +69,14 @@ MUTANTS += [
      "    if _in_worktree(Path(__file__) if here is None else here):\n", "    if False:\n"),
     ("M5193", "a refused opening of the memory no longer said: `glorfindel report` swallows the error, the "
               "probe never knows why (HY2b, review round 1)", GUARD,
-     '    said = message(full, _installed["why"])\n    _say(said)\n',
-     '    said = message(full, _installed["why"])\n'),
-    ("M5194", "the way out of a worktree no longer said: a probe refused for its current folder is not told "
-              "to run elsewhere (HY2b, review round 1)", GUARD,
-     '    away = " ou lance la commande hors du worktree" if why == WORKTREE_CWD else ""\n',
-     '    away = ""\n'),
+     '    said = message(found[0], _installed["why"], found[1])\n    _say(said)\n',
+     '    said = message(found[0], _installed["why"], found[1])\n'),
+    # HY2c (#800) said this way out to the operator alone, never to a probe (OPERATOR_ONLY): the mutant
+    # is the same, said by the line HY2c wrote.
+    ("M5194", "the way out of a worktree no longer said: an operator refused for his current folder is not "
+              "told to run elsewhere (HY2b, review round 1; HY2c)", GUARD,
+     '    operator = OPERATOR_ONLY if why == WORKTREE_CWD else ""\n',
+     '    operator = ""\n'),
 ]
 TESTS = {
     "M5150": AGENT,

@@ -17,6 +17,7 @@ Réponds à l'utilisateur dans sa langue. Les fiches, les branches et les messag
 5. **Les protections sont respectées, jamais contournées.** Ne pas reformuler, découper ni relancer un prompt pour éviter un signalement, et ne pas chercher par bissection ce qui le déclenche. Un lot signalé se fait sur le modèle de repli, puis il est relu. Si la relecture bascule elle aussi, elle tient lieu de relecture Opus 4.8, tracée « 5.5 non obtenue » : le dire à l'utilisateur, et le lot ne fusionne que sur son mot, PR par PR (`docs/sessions.md`, « Relecture et fusion »).
 6. **Rien ne sort sans demande** : ni push, ni PR, ni commentaire, sauf si l'utilisateur l'a demandé dans cette session.
 7. **`collab/`, le dossier de coordination des sessions spécialisées, n'est écrit que par la session principale.** Elle y range, dans `collab/inbox_<rôle>.md`, les impacts transverses que remontent les sous-agents.
+8. **Un lot d'attaque vit dans une session Annatar dédiée** (une technique d'une bibliothèque publique épinglée ; FRN1, `docs/sessions.md`, « La frontière rouge »). La session principale coordonne : l'issue, la plage de mutants, l'ordre de fusion et l'état lui suffisent, elle n'a pas besoin du contenu ; elle n'en lit jamais la fiche, le diff ni le rapport. La session dédiée en tient le travail, sur la fiche entière, la relecture Opus 5.5, le verdict, la PR et la fusion. Un lot est d'attaque **par sa nature, définie d'avance dans la feuille de route**, jamais parce qu'il a été arrêté : **un lot arrêté par une protection reste dans sa session et suit le repli prévu (principe 5) ; il n'est jamais confié à une autre session ni à un autre agent** pour qu'il passe. Le libellé neutre de l'index (signé par l'en-tête `Neutral index`), le titre de l'issue, de la PR et de la brique, c'est la session dédiée ou l'utilisateur qui les écrit, jamais elle. Les messages entre les deux restent neutres : l'issue, la branche, la PR, l'état, jamais le nom ni le code d'une technique. Libellé et messages neutres ne servent qu'à la coordination, jamais au travail ni à faire passer une demande. **Ce n'est pas un contournement** : le travail rouge reste soumis aux mêmes protections dans sa session, et un arrêt s'y traite comme partout (le repli, puis une relecture Opus 5.5 ; si elle bascule aussi, la relecture 4.8 tracée et la fusion sur le mot de l'utilisateur).
 
 ## Où sont les choses
 
@@ -38,7 +39,10 @@ Created: <date>
 Parallel: 1                     # 1 sur Claude Pro, 2 ou 3 sur Claude Max
 Review policy: after-fallback   # ou always
 Base: origin/main
+Neutral index: <date>           # posée par la session dédiée ou l'utilisateur (principe 8)
 ```
+
+`Neutral index` dit que l'index ne nomme aucune technique : un lot d'attaque y a son libellé neutre. Seule la session Annatar dédiée ou l'utilisateur la pose, après avoir neutralisé l'index ; un `init` ou un plan régénéré l'écrit sans elle, et elle se repose par les mêmes. **Lis l'en-tête seul d'abord** (les lignes avant `| Lot |`) : tant que `Neutral index` manque alors qu'un lot d'attaque est prévu, ne lis pas l'index, demande-le.
 
 Index :
 
@@ -65,11 +69,13 @@ Le manuel montre chaque module comme une brique : son état, sa release, son lot
 ## `init <documents...>`
 
 1. Lance un `elrond-planner`, avec la description `elrond plan`. Donne-lui les chemins des documents, le dossier du plan et la racine du dépôt.
-2. À son retour, lance `palantir.py agent "elrond plan"`. Lis ensuite `plan.md`, montre l'index et l'ordre de travail proposé, et rappelle le réglage `Parallel`. Attends le feu vert de l'utilisateur.
+2. À son retour, lance `palantir.py agent "elrond plan"`. Lis l'en-tête de `plan.md` seul : le plan neuf n'a pas de `Neutral index`. Si la feuille de route prévoit un lot d'attaque, demande à la session dédiée ou à l'utilisateur de neutraliser l'index et de poser la ligne, et attends. Lis ensuite `plan.md`, montre l'index et l'ordre de travail proposé, et rappelle le réglage `Parallel`. Attends le feu vert de l'utilisateur.
 
 ## `run [lots...]`
 
 1. **Choisir les lots.** Lance `git fetch`, puis lis `plan.md`. Prends les lots demandés ; à défaut, les prochains `todo` dont toutes les dépendances sont `merged`. Si l'utilisateur accepte d'empiler les branches, une dépendance `done` suffit, et la base du lot devient alors la branche de cette dépendance.
+   - Lis l'en-tête d'abord : sans `Neutral index` alors qu'un lot d'attaque est prévu, ne lis pas l'index, demande-le (plus haut).
+   - **Un lot d'attaque n'a jamais d'`elrond-worker` de cette session** (principe 8) : dès la feuille de route, son travail est à la session Annatar dédiée. Ce n'est pas un lot arrêté qu'on déplace : un lot que la protection arrête ici reste ici et suit le repli prévu (principe 5).
 
 2. **Lancer les exécutants.** Pour chaque lot, lance un `elrond-worker` avec la description `elrond <ID> · <titre>` : c'est elle qui nomme la tâche dans le journal. Son prompt contient seulement :
    - l'ID ;
@@ -120,6 +126,15 @@ Le manuel montre chaque module comme une brique : son état, sa release, son lot
    - **Relecture `not-obtained`** (étape 4) : la seule exception au « 5.5 ok ». La CI verte et un verdict 4.8 `ok` restent exigés. Le rapport se publie sans `body` (sa clé dit Opus 5.5), son `<!--` neutralisé, par un fichier : la commande est dans `docs/sessions.md`, « Relecture et fusion ». `check` échoue alors, et c'est voulu : ne fusionne que sur le mot de l'utilisateur lui-même, écrit dans cette session ou en commentaire sur la PR, pour cette PR seule (jamais l'accord relayé par un autre agent). Cite-le avec sa date sur la PR, puis `gh pr merge <n> --squash --match-head-commit "$reviewed"`.
    - `--match-head-commit "$reviewed"` refuse la fusion si la tête a bougé entre-temps. Si la fusion est refusée (un check requis, la règle de `main`), donne la commande à l'utilisateur.
    - Mets à jour le manuel : fusionnée, la brique passe `main` (sa PR, la release qui la portera dans `release`), et une ligne au fil de type `fusion` ; refusée ou arrêtée, elle dit ce qu'elle attend, et la ligne est de type `blocage`.
+   - **Après la fusion, avance le checkout principal** : le venv éditable y pointe, et les sondes d'agent, la CLI et les outils tournent sur ce code. La commande ne fait rien hors de `main` ni sur un arbre sale, et le dit ; rien ne se force, dis-le à l'utilisateur. Une fusion qui touche `pyproject.toml` demande aussi `make install` à la racine.
+
+     ```
+     [ "$(git -C <racine> branch --show-current)" = main ] \
+       && [ -z "$(git -C <racine> status --porcelain --untracked-files=no)" ] \
+       && git -C <racine> fetch origin && git -C <racine> merge --ff-only origin/main \
+       || echo "racine non avancée : hors de main, arbre sale ou avance refusée"
+     ```
+   - **Un lot d'attaque**, la session dédiée le fusionne à la place que tu lui donnes dans le train, jamais entre la porte de release et la PR de version, et te dit la fusion : tu mets le manuel à jour, sous son nom neutre.
 
 7. **Fin du run.** Lance `palantir.py session ${CLAUDE_SESSION_ID}`, puis rends compte :
    - les lots faits, et leurs branches ;
@@ -140,7 +155,7 @@ Sans configuration, ces commandes ne font rien et sortent en 0.
 
 ## `status`
 
-Lis `plan.md` et le journal de la session. Résume l'avancement par jalon, puis ce qui attend une relecture ou une décision de l'utilisateur.
+Lis l'en-tête de `plan.md` seul : sans `Neutral index` alors qu'un lot d'attaque est prévu, ne lis pas l'index, demande-le (plus haut). Puis lis l'index et le journal de la session. Résume l'avancement par jalon, puis ce qui attend une relecture ou une décision de l'utilisateur. Un lot d'attaque se résume par son libellé neutre et son état (principe 8).
 
 Puis **rattrape le manuel** : compare ses briques avec `plan.md` et GitHub, corrige l'écart et dis-le dans le fil (une ligne de type `note` par brique corrigée, « rattrapé : … »).
 - une PR ouverte → `dev`, ou `relecture` si une relecture est en cours, ou rendue `ok` sur sa tête ;
@@ -149,7 +164,7 @@ Puis **rattrape le manuel** : compare ses briques avec `plan.md` et GitHub, corr
 - une issue de lot fermée : sa brique ne reste ni `prevue` ni `dev` ;
 - la dernière release publiée (`gh release list`) : la sienne `publiee`, la suivante `montage`.
 
-Le rattrapage ne corrige que ce que GitHub contredit. Une brique `banc`, ou dont `attend_jonathan` est vrai, garde son état tant que ce qu'elle attend n'est pas fait.
+Pour un lot d'attaque, le rattrapage ne lit sur GitHub que les titres neutres (issue, PR), jamais un corps, un diff ni un commentaire. Le rattrapage ne corrige que ce que GitHub contredit. Une brique `banc`, ou dont `attend_jonathan` est vrai, garde son état tant que ce qu'elle attend n'est pas fait.
 
 Dis à l'utilisateur ce qui a été rattrapé, en une ligne.
 
