@@ -8,10 +8,10 @@
    action, its resource), the confirmation's label, the restore's screen (why, warning, an
    unreadable vault's error), what the restore said, the RESOURCES panel, the FEED's lines.
 
-What is written as it is, with its reason (glorfindel/tui.py, `_escalations_renderable`'s comment):
-the card's own id (its first 8 characters, a uuid Glorfindel draws), a block's IP, the moments and
-ages, the confidence, the command's `<groupe>/<nom>` (`group_and_name`, which never names a
-subscription), the operator's own typing.
+What is written as it is, with its reason (the comment at the top of glorfindel/tui.py): the card's
+own id (its first 8 characters, a uuid Glorfindel draws), a block's IP, the moments and ages, the
+confidence, the command's `<groupe>/<nom>` (`group_and_name`, which never names a subscription), the
+operator's own typing, the names of runs/' files.
 
 No Azure call, no model call, no subprocess. Every identifier is made up (repository public).
 Mutants M5220–M5224 (scripts/mutants/MSK2c.py) are measured here.

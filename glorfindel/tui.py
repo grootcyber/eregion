@@ -29,7 +29,9 @@ from glorfindel.vm_command import group_and_name
 # the middle of an id, the masking would no longer read it, and its first characters would show.
 # Written as it is, each for its reason: the card's own id (its first 8 characters, a uuid that
 # Glorfindel draws), a block's IP, the moments, the ages and the confidence, a command's
-# `<groupe>/<nom>` (`group_and_name`, which never names a subscription), what the operator types.
+# `<groupe>/<nom>` (`group_and_name`, which never names a subscription), what the operator types,
+# and the names of runs/' files (the FEED's title, a file refused: a run's name, which the injectors'
+# runner draws from its moment and its scenario — neither a card nor a signal; escaped, SEC15).
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
