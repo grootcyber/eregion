@@ -699,9 +699,10 @@ nor said so » (ubuntu), la même pour web (macOS). Les deux séquences finissen
 
 **Ni une régression, ni JUG2c.** Les deux séquences ont été rejouées par une sonde temporaire, gardée hors du
 dépôt, telles qu'Hypothesis les a imprimées. Chaque règle y est appelée avec ses tirages, dans l'ordre
-imprimé, et fait ses propres vérifications, puis vient la remise à zéro (`teardown`). Aucun `@invariant`
-n'est appelé entre les pas, quoi qu'en dise la docstring de la sonde. D'autres de ses tests passaient par
-`_replay`, et ses trois invariants entre les pas (ci-dessous, « Mesures »). Ainsi rejouées, les deux
+imprimé, et fait ses propres vérifications. Les huit `@invariant` sont appelés après chaque pas, comme
+Hypothesis les a imprimés : après la construction et après chaque règle, sauf la dernière, celle qui échoue.
+Puis vient la remise à zéro (`teardown`). La réduction, elle, passait par `_replay` et ses trois invariants
+entre les pas (ci-dessous, « Mesures »). Ainsi rejouées, les deux
 séquences échouent de même sur 90f00faf (la nuit verte du 12/11), sur dc924214 et sur `origin/main`
 c542b66d. Aucun commit entre les deux nuits ne fait basculer : la nuit tire une graine neuve à
 chaque passage (SEED1), et celle du 12/11 n'avait pas tiré ce cas. JUG2c (#793) ne met en file que la
