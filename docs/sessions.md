@@ -35,6 +35,27 @@ La réponse arrive par `SendMessage`, plus tard. N'attends pas sans rien faire :
 - l'avis sur un ordre de lots ;
 - tout ce qui touche un autre composant que le tien.
 
+### La frontière rouge (FRN1, #803)
+
+Décision de Jonathan du 13/11. Un **lot d'attaque** (une technique d'une bibliothèque publique épinglée,
+côté Annatar) vit de bout en bout dans une **session Annatar dédiée**. L'Orchestre le coordonne sans en
+lire le contenu.
+- **La session dédiée tient tout le cycle** : le travail, la relecture Opus 5.5 (un `elrond-reviewer`
+  qu'elle lance, l'issue pour fiche), le verdict publié, la PR et la fusion (plus bas, « Relecture et
+  fusion », « Sans l'Orchestre »).
+- **L'Orchestre ne lit jamais** la fiche, le diff ni le rapport d'un lot d'attaque. Il fournit en aveugle
+  l'issue, la plage de mutants et la place dans l'ordre des fusions, et note un état neutre dans l'index
+  du plan et dans le manuel.
+- **L'index du plan tient ces lots sous un libellé neutre.** La neutralisation revient à la session
+  dédiée ou à Jonathan, jamais à l'Orchestre : il lui faudrait lire ce qu'elle tait. Un index qui
+  nommerait encore une technique, l'Orchestre ne le lit pas : il demande le libellé neutre à Jonathan
+  ou à la session dédiée (`.claude/skills/elrond/SKILL.md`, `run`, `status`).
+- **Les messages entre les deux sessions restent neutres** : l'issue, la branche, la PR, l'état ; jamais
+  le nom ni le code d'une technique.
+- **Ce n'est pas un contournement.** Le travail rouge reste soumis aux mêmes protections dans sa session
+  (principe 5 du skill elrond), et un arrêt s'y traite comme partout : le repli, la relecture tracée, la
+  fusion sur le mot de Jonathan (plus bas, « Quand une protection arrête Opus 5.5 deux fois »).
+
 ## Le cycle d'un changement
 
 1. **Au démarrage.**
@@ -152,6 +173,11 @@ La réponse arrive par `SendMessage`, plus tard. N'attends pas sans rien faire :
      `$reviewed` (un push après la relecture : une autre relecture), ou si le dernier verdict publié
      pour ce commit n'est pas `ok`. Le verdict est **tracé**, pas authentifié : il dit qui l'a publié
      (l'App), pas qu'un relecteur l'a rendu.
+   - **Après chaque fusion, avancer `~/eregion`** (FRN1, #803). Qui a fusionné, l'Orchestre ou toi, avance
+     le checkout principal sur `origin/main`, l'arbre propre et sur `main` : `git -C ~/eregion fetch origin
+     && git -C ~/eregion merge --ff-only origin/main`. Le venv éditable y pointe : les sondes d'agent
+     (HY2b), la CLI et les outils tournent sur ce code. Un arbre sale ou une avance refusée ne se force
+     pas : dis-le à Jonathan.
    - **Deux tours, puis l'essentiel** (décision de Jonathan du 06/11). Quand un deuxième tour de relecture
      relève encore des constats de la même famille de cas, la relecture suivante ne bloque plus que sur
      trois choses : un bug, la régression d'un garde-fou ou une doc fausse. Le reste va en « limites
