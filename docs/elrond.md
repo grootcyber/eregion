@@ -73,7 +73,7 @@ elrond ne remplace pas les sessions par composant (`CLAUDE_<RÔLE>.md`, coordonn
 - L'exécutant lit les fichiers de rôle de ces sessions, ainsi que leur inbox, en lecture seule.
 - Parmi les agents d'elrond, seule la session principale écrit dans `collab/` ; les exécutants n'y écrivent pas. Elle y range les impacts transverses qu'ils remontent.
 - Les sessions spécialisées font relire et fusionner leurs PR par la session principale, l'Orchestre : [sessions.md](sessions.md).
-- Un lot d'attaque (une technique d'une bibliothèque publique épinglée) vit de bout en bout dans une session Annatar dédiée, qui le fait relire et le fusionne. La session principale n'en lit ni la fiche, ni le diff, ni le rapport, et ne le connaît dans l'index que sous un libellé neutre. Ce n'est pas un contournement : les mêmes protections y valent ([sessions.md](sessions.md), « La frontière rouge »).
+- Un lot d'attaque (une technique d'une bibliothèque publique épinglée) vit de bout en bout dans une session Annatar dédiée, qui le fait relire et le fusionne. La session principale n'en lit ni la fiche, ni le diff, ni le rapport, et ne le connaît dans l'index que sous un libellé neutre, que signe la ligne `Neutral index` de l'en-tête de `plan.md`. Ce n'est pas un contournement : les mêmes protections y valent ([sessions.md](sessions.md), « La frontière rouge »).
 - Après chaque fusion, la session qui a fusionné avance le checkout principal sur `origin/main` (`git merge --ff-only`) : le venv éditable y pointe ([sessions.md](sessions.md), « Relecture et fusion »).
 
 ## À plusieurs

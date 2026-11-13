@@ -1953,6 +1953,7 @@ briques:
     release: "0.6"
     lots: [FRN1]
     issue: 803
+    pr: 810
     doc: docs/sessions.md
 
   - id: s-replay

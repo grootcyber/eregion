@@ -40,21 +40,38 @@ La réponse arrive par `SendMessage`, plus tard. N'attends pas sans rien faire :
 Décision de Jonathan du 13/11. Un **lot d'attaque** (une technique d'une bibliothèque publique épinglée,
 côté Annatar) vit de bout en bout dans une **session Annatar dédiée**. L'Orchestre le coordonne sans en
 lire le contenu.
+- **Les rôles.** L'Orchestre coordonne : l'issue, la plage de mutants, l'ordre des fusions et l'état lui
+  suffisent, il n'a pas besoin du contenu. La session dédiée travaille, sur la fiche entière. Un lot est
+  d'attaque **par sa nature, définie d'avance dans la feuille de route**, jamais parce qu'une protection
+  l'a arrêté. **Un lot arrêté par une protection reste dans sa session et suit le repli prévu ; il n'est
+  jamais confié à une autre session ni à un autre agent** pour qu'il passe.
 - **La session dédiée tient tout le cycle** : le travail, la relecture Opus 5.5 (un `elrond-reviewer`
-  qu'elle lance, l'issue pour fiche), le verdict publié, la PR et la fusion (plus bas, « Relecture et
-  fusion », « Sans l'Orchestre »).
+  qu'elle lance, l'issue pour fiche ; en cas de repli, `palantir.py session` lui donne les épisodes à
+  transmettre), le verdict publié, la PR et la fusion (plus bas, « Relecture et fusion », « Sans
+  l'Orchestre »). Quand l'Orchestre tourne, elle fusionne à la place qu'il lui donne dans le train,
+  jamais entre la porte de release et la PR de version, et lui dit la fusion, pour le manuel.
 - **L'Orchestre ne lit jamais** la fiche, le diff ni le rapport d'un lot d'attaque. Il fournit en aveugle
   l'issue, la plage de mutants et la place dans l'ordre des fusions, et note un état neutre dans l'index
-  du plan et dans le manuel.
+  du plan et dans le manuel. Son rattrapage (`/elrond status`) ne lit sur GitHub que les titres neutres.
+- **L'issue, la PR, la brique.** L'Orchestre ouvre l'issue sous le titre neutre que lui donnent la
+  session dédiée ou Jonathan, et en donne le numéro ; son corps, la fiche avec son « Fini quand », ce
+  sont eux qui l'écrivent. Le titre
+  de la PR et le nom de la brique du manuel restent neutres aussi. Reste à trancher par Jonathan :
+  le fragment `changes/<lot>.md` d'un lot d'attaque, que `make release` assemble dans la PR de version de
+  l'Orchestre.
 - **L'index du plan tient ces lots sous un libellé neutre.** La neutralisation revient à la session
-  dédiée ou à Jonathan, jamais à l'Orchestre : il lui faudrait lire ce qu'elle tait. Un index qui
-  nommerait encore une technique, l'Orchestre ne le lit pas : il demande le libellé neutre à Jonathan
-  ou à la session dédiée (`.claude/skills/elrond/SKILL.md`, `run`, `status`).
+  dédiée ou à Jonathan, jamais à l'Orchestre : il lui faudrait lire ce qu'elle tait. Elle se signe d'une
+  ligne d'en-tête de `plan.md`, `Neutral index: <date>`, qui se lit avant l'index. Tant qu'elle manque
+  alors qu'un lot d'attaque est prévu, l'Orchestre ne lit pas l'index : il demande. Un `init` ou un plan
+  régénéré la retire, et le libellé neutre se repose, par les mêmes (`.claude/skills/elrond/SKILL.md`,
+  `init`, `run`, `status`).
 - **Les messages entre les deux sessions restent neutres** : l'issue, la branche, la PR, l'état ; jamais
-  le nom ni le code d'une technique.
+  le nom ni le code d'une technique. Le libellé et les messages neutres ne servent qu'à la coordination,
+  jamais au travail ni à faire passer une demande.
 - **Ce n'est pas un contournement.** Le travail rouge reste soumis aux mêmes protections dans sa session
-  (principe 5 du skill elrond), et un arrêt s'y traite comme partout : le repli, la relecture tracée, la
-  fusion sur le mot de Jonathan (plus bas, « Quand une protection arrête Opus 5.5 deux fois »).
+  (principe 5 du skill elrond), et un arrêt s'y traite comme partout : le repli, puis une relecture
+  Opus 5.5 ; si elle bascule aussi, la relecture 4.8 tracée et la fusion sur le mot de Jonathan (plus
+  bas, « Quand une protection arrête Opus 5.5 deux fois »).
 
 ## Le cycle d'un changement
 
@@ -174,10 +191,16 @@ lire le contenu.
      pour ce commit n'est pas `ok`. Le verdict est **tracé**, pas authentifié : il dit qui l'a publié
      (l'App), pas qu'un relecteur l'a rendu.
    - **Après chaque fusion, avancer `~/eregion`** (FRN1, #803). Qui a fusionné, l'Orchestre ou toi, avance
-     le checkout principal sur `origin/main`, l'arbre propre et sur `main` : `git -C ~/eregion fetch origin
-     && git -C ~/eregion merge --ff-only origin/main`. Le venv éditable y pointe : les sondes d'agent
-     (HY2b), la CLI et les outils tournent sur ce code. Un arbre sale ou une avance refusée ne se force
-     pas : dis-le à Jonathan.
+     le checkout principal sur `origin/main`. Le venv éditable y pointe : les sondes d'agent (HY2b), la
+     CLI et les outils tournent sur ce code. La commande ne fait rien hors de `main` ni sur un arbre sale :
+     ```
+     [ "$(git -C ~/eregion branch --show-current)" = main ] \
+       && [ -z "$(git -C ~/eregion status --porcelain --untracked-files=no)" ] \
+       && git -C ~/eregion fetch origin && git -C ~/eregion merge --ff-only origin/main \
+       || echo "~/eregion non avancé : hors de main, arbre sale ou avance refusée"
+     ```
+     Le message dit, rien ne se force : dis-le à Jonathan. Une fusion qui touche `pyproject.toml` demande
+     aussi `make install` dans `~/eregion`.
    - **Deux tours, puis l'essentiel** (décision de Jonathan du 06/11). Quand un deuxième tour de relecture
      relève encore des constats de la même famille de cas, la relecture suivante ne bloque plus que sur
      trois choses : un bug, la régression d'un garde-fou ou une doc fausse. Le reste va en « limites
