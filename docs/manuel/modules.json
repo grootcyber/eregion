@@ -367,8 +367,8 @@
    "version": "0.5",
    "nom": "the measured loop",
    "etat": "publiee",
-   "derniere": "0.5.12",
-   "date": "2026-11-13",
+   "derniere": "0.5.13",
+   "date": "2026-11-14",
    "resume": "The loop measured on real traffic, the correlation, the signed action queue, signed proofs from end to end."
   },
   {
@@ -1023,8 +1023,9 @@
    "composant": "glorfindel",
    "poste": "g-verifier",
    "nom": "Without the Discord bot, a session cut's closure and the reassertion's cards are queued for the webhook: no VM's lock and no reassertion pass waits for it",
-   "etat": "main",
-   "release": "0.6",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.13",
    "lots": [
     "JUG2c"
    ],
@@ -1037,8 +1038,9 @@
    "composant": "glorfindel",
    "poste": "g-verifier",
    "nom": "Without the Discord bot, a card posted at once is bounded, the name's resolution included: the graph's cycle never waits for a webhook beyond 10 s a card (25 s with a short 429), its secret never in the log; check-ttl posts its queued card outside the VM's lock and says it escalates, never releases",
-   "etat": "main",
-   "release": "0.6",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.13",
    "lots": [
     "JUG2d"
    ],
@@ -1051,8 +1053,9 @@
    "composant": "glorfindel",
    "poste": "g-verifier",
    "nom": "The isolation TTL read in one place, for the watch and check-ttl: 0 escalates every isolation at once, by the option as by the variable; a negative or unreadable TTL is refused by check-ttl (code 1, nothing escalated), and the watch says it and keeps 4 h, never stopping for it",
-   "etat": "main",
-   "release": "0.6",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.13",
    "lots": [
     "TTL1"
    ],
@@ -1107,8 +1110,9 @@
    "composant": "glorfindel",
    "poste": "g-verifier",
    "nom": "A block said gone because its NSG no longer governs the NIC is read there all the same: its rules deleted after the card was acknowledged are said again",
-   "etat": "main",
-   "release": "0.6",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.13",
    "lots": [
     "L1N"
    ],
@@ -1121,8 +1125,9 @@
    "composant": "glorfindel",
    "poste": "g-verifier",
    "nom": "Proof: two NSGs off the NIC are both read, and an unreadable one detached from it stays out of `rules_seen`; its five mutants all caught, the product unchanged",
-   "etat": "main",
-   "release": "0.6",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.13",
    "lots": [
     "L1Nb"
    ],
@@ -1135,8 +1140,9 @@
    "composant": "glorfindel",
    "poste": "g-verifier",
    "nom": "Proof: an isolation that recorded itself whole, then was cut off in its session drain, supersedes the release it replaces; one cut off before writing anything leaves the release under way; the product unchanged",
-   "etat": "main",
-   "release": "0.6",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.13",
    "lots": [
     "I9A"
    ],
@@ -1149,8 +1155,9 @@
    "composant": "glorfindel",
    "poste": "g-verifier",
    "nom": "Proof: a card that says an IP unblocked where a turned rule opens a way out past the perimeter, on port 22 or on UDP, is judged on every way to and from the attacker, by port and protocol; the oracle was too strict, the product unchanged",
-   "etat": "main",
-   "release": "0.6",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.13",
    "lots": [
     "I3X"
    ],
@@ -1192,8 +1199,9 @@
    "composant": "glorfindel",
    "poste": "g-agir",
    "nom": "Design: the lift into probation planned for 0.6.1, after the identity defended",
-   "etat": "main",
-   "release": "0.6",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.13",
    "lots": [
     "LEV1b"
    ],
@@ -1252,8 +1260,9 @@
    "composant": "glorfindel",
    "poste": "g-agir",
    "nom": "Every command to copy Glorfindel writes for a VM names it by its group and name, which the CLI resolves: the card of an action taken alone, the TUI, the console, the watch's cards, the CLI's hints",
-   "etat": "main",
-   "release": "0.6",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.13",
    "lots": [
     "MSK3b"
    ],
@@ -1266,8 +1275,9 @@
    "composant": "glorfindel",
    "poste": "g-agir",
    "nom": "glorfindel isolate and glorfindel block: a containment by a human's hand from a terminal, the console's approval without the card, its guards and its check, the VM's enrollment zone said before the prompt and never a refusal; and no command Glorfindel proposes is invented",
-   "etat": "main",
-   "release": "0.6",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.13",
    "lots": [
     "CMD1",
     "CMD1b"
@@ -1284,8 +1294,9 @@
    "composant": "glorfindel",
    "poste": "g-agir",
    "nom": "The TUI shows a card's steps, its line, the restore's screen and the feed through the CLI's masking: no subscription's id, each step cut after it is masked, never before",
-   "etat": "main",
-   "release": "0.6",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.13",
    "lots": [
     "MSK2c"
    ],
@@ -1565,8 +1576,9 @@
    "composant": "annatar",
    "poste": "a-attaquer",
    "nom": "The identity card: a control-plane identity technique played at the bench",
-   "etat": "main",
-   "release": "0.6",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.13",
    "lots": [
     "RID1"
    ],
@@ -1882,8 +1894,9 @@
    "composant": "celebrimbor",
    "poste": "c-construire",
    "nom": "The console snapshot names the vault job, in its answer and in the signed receipt, and the bench follows that job, looking for it by its time only without it",
-   "etat": "main",
-   "release": "0.6",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.13",
    "lots": [
     "SNP1"
    ],
@@ -1896,8 +1909,9 @@
    "composant": "celebrimbor",
    "poste": "c-construire",
    "nom": "The vault job the console names is checked before the bench follows it: a backup of the target at its first read, and a name of another vault or group stops the run, saying what differs",
-   "etat": "main",
-   "release": "0.6",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.13",
    "lots": [
     "SNP1b"
    ],
@@ -2260,8 +2274,9 @@
    "composant": "socle",
    "poste": "s-heberger",
    "nom": "make imladris-cd-status shows the last lines of the CD's journal of the day, on Imladris's systemd too",
-   "etat": "main",
-   "release": "0.6",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.13",
    "lots": [
     "CDJ1"
    ],
@@ -2344,8 +2359,9 @@
    "composant": "socle",
    "poste": "s-prouver",
    "nom": "An agent session's probe, outside the suite, never writes in the operator's ~/.glorfindel: refused and said before it happens",
-   "etat": "main",
-   "release": "0.6",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.13",
    "lots": [
     "HY2b"
    ],
@@ -2358,8 +2374,9 @@
    "composant": "socle",
    "poste": "s-prouver",
    "nom": "An agent session's probe never writes in the operator's ~/.eregion nor ~/.annatar either: the watch's key, the queue, Annatar's shell; the folder named, no way out offered",
-   "etat": "main",
-   "release": "0.6",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.13",
    "lots": [
     "HY2c"
    ],
@@ -2520,8 +2537,9 @@
    "composant": "socle",
    "poste": "s-signer",
    "nom": "An advisory on a dependency of a dependency accepted with its reason, never red: Eregion never reaches its path, and the fixed version comes with the next lock refresh",
-   "etat": "main",
-   "release": "0.6",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.13",
    "lots": [
     "DEP3"
    ],
@@ -2673,8 +2691,9 @@
    "composant": "socle",
    "poste": "s-documenter",
    "nom": "An attack lot lives end to end in a dedicated Annatar session, unread by the Orchestre, and the main checkout moves forward after each merge",
-   "etat": "main",
-   "release": "0.6",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.13",
    "lots": [
     "FRN1",
     "FRN1b"
@@ -2779,8 +2798,9 @@
    "composant": "socle",
    "poste": "s-documenter",
    "nom": "The replay on the site shows the ransomware times of the bench run of 12 Nov, and a control-plane card says its target in English, like the console that shows it",
-   "etat": "main",
-   "release": "0.6",
+   "etat": "livree",
+   "release": "0.5",
+   "version": "0.5.13",
    "lots": [
     "RAN1b"
    ],
