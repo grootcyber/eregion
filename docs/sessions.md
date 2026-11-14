@@ -58,7 +58,11 @@ lire le contenu.
   sont eux qui l'écrivent. Le titre
   de la PR et le nom de la brique du manuel restent neutres aussi. **Le fragment `changes/<lot>.md`**
   d'un lot d'attaque (décision de Jonathan du 14/11, FRN1b) : la session dédiée l'écrit au même cadrage
-  neutre, ce que Glorfindel détecte ou contient désormais, sans nom ni code de technique ; `make release`
+  neutre, ce que Glorfindel détecte ou contient désormais, sans nom ni code de technique, y compris
+  dans les chemins qu'il cite (un scénario, un test ou un mutant y portent souvent le nom de la
+  technique : il les cite par leur composant, `annatar/scenarios/`, jamais par leur nom) ; sa relecture
+  Opus 5.5, dans la session dédiée, vérifie ce cadrage, que ni un test ni l'Orchestre ne peuvent
+  vérifier sans lire le contenu ; `make release`
   l'assemble tel quel dans la PR de version de l'Orchestre, qui n'en réécrit rien. Le CHANGELOG est
   public : neutre de toute façon.
 - **L'index du plan tient ces lots sous un libellé neutre.** La neutralisation revient à la session

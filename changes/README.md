@@ -21,7 +21,9 @@ plus au même endroit, et la fusion de l'une ne met plus l'autre en conflit (CI5
 - Le nom : le lot, `[A-Za-z0-9][A-Za-z0-9._-]*.md`. Ce dossier ne tient que des fragments et ce README.
 - **Un lot d'attaque** (FRN1b, `docs/sessions.md`, « La frontière rouge ») : sa session dédiée écrit
   le fragment au cadrage neutre, ce que Glorfindel détecte ou contient désormais, sans nom ni code de
-  technique ; `make release` l'assemble tel quel dans la PR de version de l'Orchestre.
+  technique, y compris dans les chemins cités (scénario, tests, mutants : par leur composant, jamais
+  par leur nom) ; sa relecture le vérifie ; `make release` l'assemble tel quel dans la PR de version
+  de l'Orchestre.
 
 Pourquoi cette forme : c'est le Markdown du CHANGELOG, sans syntaxe neuve. Ce qu'on écrit est ce
 qu'on lira sous la version ; un lot qui touche deux sections (une faille et sa correction) le dit
