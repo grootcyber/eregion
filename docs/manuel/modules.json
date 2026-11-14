@@ -2410,6 +2410,19 @@
    "doc": "docs/design/preuves.md"
   },
   {
+   "id": "s-porte-machine-seule",
+   "composant": "socle",
+   "poste": "s-prouver",
+   "nom": "Every mutant only the invariant machine aimed at, reviewed: the frozen sequences that catch it by an invariant of the machine added to its target, those none catches named, the residual risk of a gate",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "MUT13"
+   ],
+   "issue": 837,
+   "doc": "docs/design/preuves.md"
+  },
+  {
    "id": "s-release",
    "composant": "socle",
    "poste": "s-prouver",
