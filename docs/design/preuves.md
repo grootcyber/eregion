@@ -921,18 +921,23 @@ le webhook ne porte rien.
 **M17 : I9A n'y est pour rien.** Le verrou par VM inopérant, mesuré sur les deux graines de la porte
 (906547487 et 906547488, 500 séquences, un tour à la fois) : survivant sur 77e38479, avant I9A, comme sur
 `main` 6f450a13. I9A ne touche que le journal d'une isolation en série, jamais celui d'une course. Sa survie
-vient du tirage. La machine ne le rencontre que dans `concurrently` et `race`, sur Db--01 (deux cartes),
-sur un NSG que ses cartes partagent ou chacune sur le sien avec la quarantaine, pour quelques paires
-d'écrivains et quelques ordres sur vingt-cinq. Cherchées une à une, le mutant appliqué, sur quatre réseaux :
-49 courses rouges sur les 2 600 essayées sur Db--01, toutes vertes sur le code ; aucune sur les 1 560 de
-web (une carte). Dix sont figées
+vient du tirage. La machine ne le rencontre que dans `concurrently` et `race`, sur un NSG de sous-réseau
+partagé (Db--01 comme web), ou sur Db--01 (deux cartes) chacune sur son NSG avec la quarantaine, pour
+quelques paires d'écrivains et quelques ordres sur vingt-cinq. Cherchées une à une, le mutant appliqué :
+sur Db--01, quatre réseaux (sans NSG de sous-réseau, avec la quarantaine, le NSG du sous-réseau partagé,
+un NSG par carte avec la quarantaine), 49 courses rouges sur 2 600 essayées, toutes vertes sur le code ;
+sur web, deux réseaux seulement (sa carte sur un NSG à elle, avec ou sans quarantaine), aucune sur 1 560.
+Sur le NSG du sous-réseau partagé, web tombe aussi : ses courses figées « web isolate, release » (ordres 2
+et 3), trouvées par la recherche d'un seul écrivain hors du verrou, sont rouges en I11 sous M17. Dix sont
+figées sur Db--01, sur deux réseaux (le NSG partagé, un NSG par carte en quarantaine)
 (`test_two_writers_on_one_vm_at_once_end_as_one_after_the_other`) : une isolation et une levée ou un reset,
 un blocage et un déblocage, deux levées. L'état de la VM doit rester celui d'Azure (I11), et aucune carte
 ne doit être posée sur un NSG qui n'est ni son original ni la quarantaine (I2). L'ordre est la graine de
 l'ordonnanceur (L27), sur les appels du faux Azure : un changement de leur nombre peut le déplacer, d'où
 plusieurs ordres par paire. Douze autres, trouvées de même pour chaque écrivain laissé seul hors du verrou
 (M5361–M5363, M5366, M5367), sont dans le même test : chacun de ces mutants est attrapé par les courses
-de sa recherche.
+de sa recherche. Le test tient trois réseaux (`_LOCK_NETS`) : ces deux-là, plus la quarantaine seule
+(web sans NSG à elle).
 
 **M38 et M1960 : un état que certains tirages ne rencontrent pas.** Le run non muté, compté
 (`GLORFINDEL_INVARIANT_STATS`, 500 séquences, les graines de la porte) : sur 669596884, aucun déblocage
