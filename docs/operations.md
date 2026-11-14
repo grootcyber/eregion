@@ -541,7 +541,9 @@ HOST_SSH_FINGERPRINT=SHA256:…       # V-32 : l'empreinte de la clé d'hôte d'
 ORO_SSH_FINGERPRINT=SHA256:…        # V-32 (SEC14) : celle d'Orodruin, lue sur la VM par Azure (make orodruin-fingerprint) ; exigée par
                                     # toute commande vers Orodruin, jamais accept-new ; ORO_KNOWN_HOSTS : ~/.eregion/orodruin_known_hosts
 GLORFINDEL_KEEP_ISOLATED=1          # mode forensique
-GLORFINDEL_ISOLATION_TTL_H=4        # TTL isolation (défaut 4h) : au-delà, une carte ttl_exceeded — jamais de levée automatique
+GLORFINDEL_ISOLATION_TTL_H=4        # TTL isolation (défaut 4h) : au-delà, une carte ttl_exceeded — jamais de levée automatique ;
+                                    # 0 : toutes escaladées tout de suite (comme check-ttl --ttl 0, l'option prime) ; négatif ou illisible :
+                                    # check-ttl refuse (code 1, rien d'escaladé), la watch le dit au démarrage et garde 4 h (TTL1)
 GLORFINDEL_RECOVERY_INTERVAL_S=60   # REC1 : la watch relit sur Azure la reprise des VM qu'elle a isolées (0 : jamais) ;
                                     # GLORFINDEL_RECOVERY_GRACE_S=300 (un job fini depuis moins attend), _START_WAIT_S=600
                                     # (VM arrêtée au-delà : une carte)

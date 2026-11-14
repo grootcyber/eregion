@@ -820,6 +820,17 @@ briques:
     pr: 805
     doc: docs/glorfindel.md
 
+  - id: g-ttl-une-lecture
+    composant: glorfindel
+    poste: g-verifier
+    nom: "The isolation TTL read in one place, for the watch and check-ttl: 0 escalates every isolation at once, by the option as by the variable; a negative or unreadable TTL is refused by check-ttl (code 1, nothing escalated), and the watch says it and keeps 4 h, never stopping for it"
+    etat: main
+    release: "0.6"
+    lots: [TTL1]
+    issue: 812
+    pr: 816
+    doc: docs/glorfindel.md
+
   - id: g-perimetre-illisible
     composant: glorfindel
     poste: g-verifier
@@ -2017,7 +2028,7 @@ briques:
     nom: "An attack lot lives end to end in a dedicated Annatar session, unread by the Orchestre, and the main checkout moves forward after each merge"
     etat: main
     release: "0.6"
-    lots: [FRN1]
+    lots: [FRN1, FRN1b]
     issue: 803
     pr: 810
     doc: docs/sessions.md
