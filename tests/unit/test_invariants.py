@@ -122,8 +122,8 @@ from glorfindel.response import locks
 from glorfindel.actions import AzureConnector, _load_isolation_state
 
 from .fake_azure import (
-    ATTACKER, AZURE_DNS, AZURE_IMDS, LATERAL, Crash, FakeAzure, _rule_record, key, nic_id, open_flows,
-    vm_id,
+    ATTACKER, ATTACKER_WAYS, AZURE_DNS, AZURE_IMDS, LATERAL, Crash, FakeAzure, _rule_record, key, nic_id,
+    open_flows, vm_id,
 )
 
 # ── the customer's network ───────────────────────────────────────────────────────
@@ -1978,7 +1978,11 @@ class IsolationMachine(RuleBasedStateMachine):
         into an allow stays: it is theirs now. The subnet's NSG alone, the NICs' own left
         out: a perimeter an allow passes before, on its NSG, is bypassed — the code's model
         of precedence, one NSG at a time (a NIC's own NSG that happens to close the port as
-        well is no reason for the card to say the perimeter blocks)."""
+        well is no reason for the card to say the perimeter blocks). Every way to and from
+        the attacker, by port and protocol (`ATTACKER_WAYS`, I3X): « on every port » read on
+        the probes alone, a deny of ours narrowed to 22 or turned to UDP, then into an allow,
+        let the VM reach the attacker out of their sight — the card that said so was judged
+        false."""
         bare = "glorfindel-block-" + ATTACKER.replace(".", "-")
         mine = {bare, f"{bare}-out"} if keep else set()
         world = self._world()
@@ -1986,7 +1990,7 @@ class IsolationMachine(RuleBasedStateMachine):
             n: r for n, r in g["rules"].items()
             if not n.startswith("glorfindel-") or n in mine or r["access"].lower() != "deny"}}
             for k, g in world["nsgs"].items()}}
-        return frozenset(f for f in open_flows(world, vm) if f[3] == ATTACKER and f[0] == nic)
+        return frozenset(f for f in open_flows(world, vm, ATTACKER_WAYS) if f[3] == ATTACKER and f[0] == nic)
 
     def _behind_our_perimeter(self, vm: str, nic: str) -> bool:
         """The NIC sits on a subnet whose NSG carries our perimeter block of the attacker as
