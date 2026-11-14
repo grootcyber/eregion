@@ -8486,3 +8486,20 @@ def test_two_writers_on_one_vm_at_once_end_as_one_after_the_other(monkeypatch, n
     the interleaving is the scheduler's seed (L27), over the fake's calls — a change in their number
     may move it, hence several orders for each."""
     _replay(monkeypatch, net, race)
+
+
+# ── MUT12 (#834): M32, an outbound allow before a block, caught whatever the machine draws ──────
+
+def test_a_block_moved_behind_an_allow_out_on_another_port_is_bypassed(monkeypatch):
+    """MUT12 (#834): a block on the threat's port 22, its outbound deny moved behind a customer's allow out
+    on 443 alone — a port the threat does not name. Inbound, such an allow is mere exposure: the attacker's
+    way in on 22 stays cut. Outbound it is not: the VM reaches the attacker on 443 (a reverse shell, an
+    exfiltration), and the block must not be said held (A0). The oracle is the machine's, the attacker's
+    flows read on the world's NSGs (I3), never on the verification's findings. M32 counted every outbound
+    allow as exposure, M5371 an outbound allow by the threat's port: both said the block held."""
+    out_443 = _rule("allow-https-out", 1200, dict(
+        access="Allow", direction="Outbound", source_address_prefix="*",
+        destination_address_prefix="*", destination_port_range="443"))
+    _moved_behind_a_customer_allow(
+        monkeypatch, _net(web_nic={"own": "dedicated", "rules": [out_443]}),
+        lambda m: m.block(Script(WEB1, WEB1, None, 22)), "glorfindel-block-")

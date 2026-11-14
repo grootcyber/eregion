@@ -1863,6 +1863,16 @@ briques:
     pr: 832
     doc: docs/design/preuves.md
 
+  - id: s-porte-sortie-avant-blocage
+    composant: socle
+    poste: s-prouver
+    nom: "An outbound allow before a block, which the machine met by chance only, caught on every round: the frozen sequences that name it added to the mutant, and one more on a port the threat does not name"
+    etat: main
+    release: "0.6"
+    lots: [MUT12]
+    issue: 834
+    doc: docs/design/preuves.md
+
   - id: s-release
     composant: socle
     poste: s-prouver
