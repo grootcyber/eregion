@@ -900,6 +900,61 @@ voit, par ses affirmations sur la sonde de 443 ; elle le tire rarement (0 tour s
 bloquée », `blocked`) lit toujours les sondes seules. Une autorisation sortante sur 22 ou en UDP échappe à la
 machine ; retournée entière, la machine la voit.
 
+### Les cinq survivants de la porte de la 0.5.13 (MUT11)
+
+La porte de la 0.5.13 (run 43597369855, job « mutants (every shard, the count) ») est rouge sur cinq
+mutants hors des survivants connus : M4894 et M4990 (0/1), M17 (0/2), M38 et M1960 (1/2). Aucun ne
+révèle un défaut du produit ; aucun oracle n'est relâché.
+
+**Deux tests que le code a contournés.** M4990 (MSK2 : `pending` donne un nom court qui prend une autre
+VM) a perdu son test avec MSK3b (#792, 3e0849c6), mesuré de part et d'autre : attrapé sur son parent,
+survivant sur lui. Depuis, une commande nomme sa VM « <groupe>/<nom> », qu'un homonyme d'un autre groupe ne
+résout jamais : `_resolve_resource_id` refuse, et la comparaison que M4990 retire n'est plus atteinte. Le
+cas qui l'atteint encore : le même groupe et le même nom dans un autre abonnement, seule VM connue ici
+(`test_pending_never_gives_a_group_and_name_that_take_the_vm_of_another_subscription`). M4894 (DRN2 : le
+webhook parle aussi, le bot configuré) a perdu le sien avec JUG2c (#793, dba3ac75), mesuré de même : la
+clôture de la réaffirmation est dite sous le verrou de la VM, donc différée, et `say` rend la main avant la
+branche du webhook. Le cas qui l'atteint : une notice dite hors de tout verrou, le bot configuré et vivant,
+une clôture et une annonce d'action (`test_said_outside_the_lock_with_the_bot_alive_the_webhook_keeps_quiet`) ;
+le webhook ne porte rien.
+
+**M17 : I9A n'y est pour rien.** Le verrou par VM inopérant, mesuré sur les deux graines de la porte
+(906547487 et 906547488, 500 séquences, un tour à la fois) : survivant sur 77e38479, avant I9A, comme sur
+`main` 6f450a13. I9A ne touche que le journal d'une isolation en série, jamais celui d'une course. Sa survie
+vient du tirage. La machine ne le rencontre que dans `concurrently` et `race`, sur un NSG de sous-réseau
+partagé (Db--01 comme web), ou sur Db--01 (deux cartes) chacune sur son NSG avec la quarantaine, pour
+quelques paires d'écrivains et quelques ordres sur vingt-cinq. Cherchées une à une, le mutant appliqué :
+sur Db--01, quatre réseaux (sans NSG de sous-réseau, avec la quarantaine, le NSG du sous-réseau partagé,
+un NSG par carte avec la quarantaine), 49 courses rouges sur 2 600 essayées, toutes vertes sur le code ;
+sur web, deux réseaux seulement (sa carte sur un NSG à elle, avec ou sans quarantaine), aucune sur 1 560.
+Sur le NSG du sous-réseau partagé, web tombe aussi : ses courses figées « web isolate, release » (ordres 2
+et 3), trouvées par la recherche d'un seul écrivain hors du verrou, sont rouges en I11 sous M17. Dix sont
+figées sur Db--01, sur deux réseaux (le NSG partagé, un NSG par carte en quarantaine)
+(`test_two_writers_on_one_vm_at_once_end_as_one_after_the_other`) : une isolation et une levée ou un reset,
+un blocage et un déblocage, deux levées. L'état de la VM doit rester celui d'Azure (I11), et aucune carte
+ne doit être posée sur un NSG qui n'est ni son original ni la quarantaine (I2). L'ordre est la graine de
+l'ordonnanceur (L27), sur les appels du faux Azure : un changement de leur nombre peut le déplacer, d'où
+plusieurs ordres par paire. Douze autres, trouvées de même pour chaque écrivain laissé seul hors du verrou
+(M5361–M5363, M5366, M5367), sont dans le même test : chacun de ces mutants est attrapé par les courses
+de sa recherche. Le test tient trois réseaux (`_LOCK_NETS`) : ces deux-là, plus la quarantaine seule
+(web sans NSG à elle).
+
+**M38 et M1960 : un état que certains tirages ne rencontrent pas.** Le run non muté, compté
+(`GLORFINDEL_INVARIANT_STATS`, 500 séquences, les graines de la porte) : sur 669596884, aucun déblocage
+qui garde une règle (« unblock: kept a rule of ours… » : 0 ; 14 levées, 18 resets) ; sur 669596885, 17.
+M1960, qui ne touche que le déblocage, survit au premier tour et est attrapé au second, comme à la porte.
+M38 : la branche `gone` d'`a_hold_moved_under_it` est jouée 24 et 27 fois sur 944751537 et 944751538, et
+M38 y reste instable (1/2 sur le poste). La branche ne le montre que si la quarantaine coupe l'attaquant.
+Avec son adresse comme accès d'investigation (un `forensic` tiré sur quatre), la séquence figée passe
+mutée. Chacun avait déjà sa séquence figée, qui l'attrape à chaque fois, mais que sa cible ne lançait pas.
+Elle y est ajoutée (`TESTS_ALSO`) : `test_a_block_gone_behind_the_quarantine_is_said` pour M38, et
+`test_the_machine_refuses_a_rule_kept_unsaid` pour M1960 (l'oracle `_kept_said` de la machine sur un
+résultat du code).
+
+**Mutants** (`scripts/mutants/MUT11.py`) : M5364 et M5365, les propriétés de M4990 et de M4894 sous une autre
+forme ; M5361–M5363 et M5366–M5367, un écrivain laissé hors du verrou (la levée, le déblocage, le reset, le
+blocage, l'isolation), chacun attrapé par une course figée trouvée pour lui.
+
 ### Trois mutants que la machine ne voyait plus qu'au hasard (MUT4)
 
 La porte de la 0.5.8 (run 42575826306) a rendu trois mutants `FIXED-ONLY`, 0/2 chacun : M19 (un blocage

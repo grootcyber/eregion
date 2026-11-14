@@ -153,7 +153,10 @@ TESTS = {
     "M4987": f"{_M}::test_no_subscription_id_is_left_in_a_text",
     "M4988": f"{_M}::test_no_subscription_id_is_left_in_a_text",
     "M4989": f"{_M}::test_the_guard_sees_every_form_of_import",
-    "M4990": f"{_M}::test_pending_never_gives_a_name_that_takes_another_vm",
+    # Since MSK3b a command names « <groupe>/<nom> », which a homonym of another group never resolves:
+    # the same group and name in another subscription reaches the comparison again (MUT11, #830).
+    "M4990": f"{_M}::test_pending_never_gives_a_name_that_takes_another_vm "
+             f"{_M}::test_pending_never_gives_a_group_and_name_that_take_the_vm_of_another_subscription",
     "M4991": f"{_M}::test_pending_takes_the_vm_back_whatever_its_case",
     "M4992": f"{_M}::test_pending_says_a_proposed_rule_without_the_subscription",
     "M4993": f"{_M}::test_pending_says_a_proposed_rule_without_the_subscription",

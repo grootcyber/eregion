@@ -353,6 +353,20 @@ def test_with_the_bot_alive_the_closure_waits_for_the_bot_and_the_webhook_keeps_
     assert n["via"] == "bot" and "aboutie" in n["text"]
 
 
+@pytest.mark.parametrize("kind", [vm_notices.CLOSURE_KIND, vm_notices.ACTION_KIND])
+def test_said_outside_the_lock_with_the_bot_alive_the_webhook_keeps_quiet(bot_on, kind):
+    """MUT11 (#830): since JUG2c the reassertion's closure is said deferred, so the test above no
+    longer reaches the webhook's own branch. Said where nothing defers it (no VM lock held, no
+    reassertion's pass: a notice of the watch's own thread), the bot configured and alive: the
+    notice is left to the bot, and the webhook carries nothing — never twice, in the channel and in
+    the VM's thread (M4894)."""
+    assert not vm_notices.must_defer()
+    assert vm_notices.say(_WEB, f"{kind}:k:1", kind, "Coupure des sessions aboutie", "dit", level="ok") == "bot"
+    assert bot_on == []
+    [n] = vm_notices.for_bot()
+    assert n["via"] == "bot" and n["kind"] == kind
+
+
 class _Thread:
     def __init__(self):
         self.sent: list = []

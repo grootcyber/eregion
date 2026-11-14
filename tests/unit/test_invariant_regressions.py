@@ -8434,3 +8434,55 @@ def test_the_attackers_ways_cover_every_port_and_protocol_the_machine_writes():
     assert written <= protos, (sorted(written), sorted(protos))
     assert {w[0] for w in ATTACKER_WAYS} == {"in", "out"}
     assert not _machine_writes("destination_port_ranges"), "a list of ranges: read it here"
+
+
+# ── MUT11 (#830): the per-VM lock, its races frozen — the machine meets them by chance only ─────
+
+# The networks the races were found on: the subnet's NSG shared by a VM's NICs; each NIC of Db--01
+# on a NSG of its own, the quarantine on; the quarantine on, web's NIC without a NSG of its own.
+_LOCK_NETS = {"shared": _net(subnet_nsg=[]),
+              "own": _net(quarantine=True, db_nic_0={"own": "dedicated"}, db_nic_1={"own": "dedicated"}),
+              "quarantine": _net(quarantine=True)}
+
+
+def _two_at_once(net: str, vm: str, one: str, two: str, order: int, mode: str = "human_only"):
+    return _LOCK_NETS[net], ("concurrently", vm, one, 1, two, mode, order)
+
+
+def _held_race(net: str, vm: str, one: str, two: str, order: int):
+    return _LOCK_NETS[net], ("race", vm, (one, two), order)
+
+
+_LOCK_RACES = {
+    # M17, the lock gone for every writer.
+    **{f"Db--01 isolate, release, order {s}": _two_at_once("shared", DB, "isolate", "release", s) for s in (2, 8, 13)},
+    **{f"Db--01 isolate, reset, order {s}": _two_at_once("shared", DB, "isolate", "reset", s, "non_disruptive")
+       for s in (2, 18)},
+    **{f"Db--01 held, block, unblock, order {s}": _held_race("shared", DB, "block", "unblock", s) for s in (6, 14)},
+    **{f"Db--01 held, two releases, order {s}": _held_race("own", DB, "release", "release", s) for s in (1, 6, 9)},
+    # One writer left out of it (M5361–M5363, M5366, M5367).
+    **{f"web isolate, release, order {s}": _two_at_once("shared", WEB1, "isolate", "release", s) for s in (2, 3)},
+    "web isolate, release, quarantine, order 7": _two_at_once("quarantine", WEB1, "isolate", "release", 7),
+    **{f"Db--01 isolate, reset, order {s}": _two_at_once("shared", DB, "isolate", "reset", s) for s in (15, 17)},
+    **{f"Db--01 held, release, reset, order {s}": _held_race("own", DB, "release", "reset", s) for s in (3, 10)},
+    "Db--01 block, unblock, order 12": _two_at_once("shared", DB, "block", "unblock", 12),
+    **{f"Db--01 block, unblock, own NSGs, order {s}": _two_at_once("own", DB, "block", "unblock", s)
+       for s in (3, 5, 13, 15)},
+}
+
+
+@pytest.mark.parametrize("net, race", list(_LOCK_RACES.values()), ids=list(_LOCK_RACES))
+def test_two_writers_on_one_vm_at_once_end_as_one_after_the_other(monkeypatch, net, race):
+    """MUT11 (#830): the release gate of the 0.5.13 saw M17 (the per-VM lock inoperative) survive both
+    its rounds, 500 sequences each. The machine meets it in its `concurrently` and `race` rules only,
+    on the multi-NIC VM, on a NSG its NICs share or each NIC on a NSG of its own in quarantine, for a
+    few pairs of writers and a few interleavings in twenty-five: a few sequences in a thousand.
+    Frozen here, searched one by one with the mutant applied (red, green on the code), then for each
+    writer left out of the lock alone (M5361–M5363, M5366, M5367): two writers of a VM at once — an
+    isolation and a release or a reset, a block and an unblock, two releases, a release and a reset,
+    on a VM held (isolated and blocked) or not — end as one after the other would leave them: the
+    VM's state Azure's (I11), never a NIC set to a NSG that is neither its original nor the
+    quarantine (I2). The oracles are the machine's, read from the world and the test's journal (A0);
+    the interleaving is the scheduler's seed (L27), over the fake's calls — a change in their number
+    may move it, hence several orders for each."""
+    _replay(monkeypatch, net, race)

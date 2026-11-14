@@ -538,6 +538,24 @@ def test_pending_never_gives_a_name_that_takes_another_vm(monkeypatch, recorded,
     _clean(said)
 
 
+def test_pending_never_gives_a_group_and_name_that_take_the_vm_of_another_subscription(
+        monkeypatch, recorded, capsys):
+    """MUT11 (#830): since MSK3b a command names its VM « <groupe>/<nom> », which a homonym of
+    another group never resolves — the test above no longer reaches the comparison. The card's VM
+    no longer known here, the same group and name known in another subscription: `restore
+    rg/vm --yes` copied would restore that one, asking nothing (M4990). The id is asked for."""
+    from glorfindel import cli
+    other = _vm(sub=SUB2)
+    monkeypatch.setattr("glorfindel.discovery.AssetRegistry", lambda: SimpleNamespace(all=lambda: [
+        SimpleNamespace(resource_id=other)]))
+    assert cli._resolve_resource_id(f"{RG}/vm-example-01") == other       # the name takes the other
+    cli._render_escalation(_card(VM))
+    said = " ".join(capsys.readouterr().out.split())
+    assert f"glorfindel restore {RG}/vm-example-01" not in said
+    assert "glorfindel restore <id: glorfindel list --ids> --yes --before 2026-10-29T08:12:00+00:00" in said
+    _clean(said)
+
+
 @pytest.mark.parametrize("rid", [
     VM,                                                        # a VM nothing knows here
     NSG,                                                       # a card that is no VM's
