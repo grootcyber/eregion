@@ -554,7 +554,9 @@ HOST_SSH_FINGERPRINT=SHA256:…       # V-32 : l'empreinte de la clé d'hôte d'
 ORO_SSH_FINGERPRINT=SHA256:…        # V-32 (SEC14) : celle d'Orodruin, lue sur la VM par Azure (make orodruin-fingerprint) ; exigée par
                                     # toute commande vers Orodruin, jamais accept-new ; ORO_KNOWN_HOSTS : ~/.eregion/orodruin_known_hosts
 GLORFINDEL_KEEP_ISOLATED=1          # mode forensique
-GLORFINDEL_ISOLATION_TTL_H=4        # TTL isolation (défaut 4h) : au-delà, une carte ttl_exceeded — jamais de levée automatique
+GLORFINDEL_ISOLATION_TTL_H=4        # TTL isolation (défaut 4h) : au-delà, une carte ttl_exceeded — jamais de levée automatique ;
+                                    # 0 : toutes escaladées tout de suite (comme check-ttl --ttl 0, l'option prime) ; négatif ou illisible :
+                                    # check-ttl refuse (code 1, rien d'escaladé), la watch le dit au démarrage et garde 4 h (TTL1)
 GLORFINDEL_RECOVERY_INTERVAL_S=60   # REC1 : la watch relit sur Azure la reprise des VM qu'elle a isolées (0 : jamais) ;
                                     # GLORFINDEL_RECOVERY_GRACE_S=300 (un job fini depuis moins attend), _START_WAIT_S=600
                                     # (VM arrêtée au-delà : une carte)
@@ -3071,10 +3073,24 @@ rafraîchissement du verrou sans contrôle).
   version corrigée) visent son serveur HTTP — l'autorisation par locataire, du code exécuté par ses
   points d'entrée de collections ; Eregion n'utilise chromadb qu'embarqué
   (`chromadb.PersistentClient`, `glorfindel/memory.py`, `analysis/campaign_report.py`) : aucun
-  serveur démarré ni exposé. Un avis accepté est dit comme tel (`make audit`, la CI), jamais rouge ;
-  un avis accepté qui n'est plus trouvé est dit, à retirer de la liste. Une liste dont une entrée n'a
-  pas sa forme (une raison vide ou trop courte, une date absente) est refusée. Les issues
-  hebdomadaires n'en dépendent pas : un humain les ferme (« non prévu »).
+  serveur démarré ni exposé. L'avis d'opentelemetry-api 1.45.1 (GHSA-mf5v-w3w3-f6cg, accepté le
+  14/11, DEP3, #813) : un déni de service par expression régulière dans
+  `TraceContextTextMapPropagator.extract()`, sur une valeur `traceparent` forgée. Le paquet n'arrive
+  que par dépendance (anthropic, chromadb, fastapi ; `glorfindel.txt`, `dev.txt`) ; aucune ligne
+  d'Eregion n'importe opentelemetry, aucun paquet d'instrumentation n'est dans les verrous, et rien
+  ne configure un fournisseur de traces : sans lui, la télémétrie native de FastAPI (la console)
+  reste éteinte ; les traces de chromadb, qui en installeraient un, sont éteintes
+  (`CHROMA_OTEL_GRANULARITY` non posée) ; aucun propagateur ne lit un en-tête entrant. Le chemin
+  lent demande un saut de ligne dans la valeur, qu'un en-tête HTTP conforme ne peut pas porter (h11
+  et httptools le refusent). La 1.45.2 le corrige ; elle viendra au prochain `make lock` naturel,
+  sans montée ni harnais pour ce seul avis (décision de Jonathan). Le jour où un fournisseur de
+  traces est configuré (`OTEL_PYTHON_TRACER_PROVIDER`, `FASTAPI_OTEL_AUTO_CONFIGURE`,
+  `CHROMA_OTEL_GRANULARITY`), ou qu'un middleware OpenTelemetry est ajouté (celui de Starlette lit
+  l'en-tête même sans fournisseur), cette raison ne tient plus : monter d'abord. Un avis accepté est
+  dit comme tel (`make audit`, la CI), jamais rouge ; un avis accepté qui n'est plus trouvé est dit,
+  à retirer de la liste. Une liste dont une entrée n'a pas sa forme (une raison vide ou trop courte,
+  une date absente) est refusée. Les issues hebdomadaires n'en dépendent pas : un humain les ferme
+  (« non prévu »).
 
 ```bash
 make audit                              # les avis connus des verrous, celui de pip-audit compris (lecture seule)

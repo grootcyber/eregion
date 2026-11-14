@@ -123,6 +123,47 @@ def decision_draws() -> int:
     return value
 
 
+# Past the isolation's TTL, one ttl_exceeded card — never a release (Q1, reassert.ttl_alerts).
+ISOLATION_TTL_H = 4.0
+
+
+class TTLRefused(ValueError):
+    """The isolation's TTL given is negative or unreadable (TTL1): `check-ttl` refuses it, the
+    watch says it and keeps ISOLATION_TTL_H. Its text is the reason, ready to be said."""
+
+
+def isolation_ttl_h(option: float | None = None) -> float:
+    """The isolation's TTL in hours, read once for the watch and for `check-ttl` (TTL1).
+
+    `option` (`check-ttl --ttl`) wins when it is given, 0 included; otherwise
+    GLORFINDEL_ISOLATION_TTL_H, 4 h when unset or empty. 0 means « escalate every isolation at
+    once » (Jonathan, 14/11), by the option as by the variable. A negative value, or one that is not a
+    number (unreadable, `nan`), raises TTLRefused with its reason — never a fallback here: what to do
+    with a refused TTL is the caller's (refused by `check-ttl`, said by the watch, which keeps 4 h).
+
+    Before, `check-ttl --ttl 0` was silently the variable or 4 h (`ttl or …`), a negative TTL
+    escalated everything as 0 did, and an unreadable variable raised a ValueError that stopped the
+    watch at its start."""
+    import math
+    import os
+    if option is not None:
+        value, said = option, f"--ttl {option:g}"
+    else:
+        raw = (os.environ.get("GLORFINDEL_ISOLATION_TTL_H") or "").strip()
+        if not raw:
+            return ISOLATION_TTL_H
+        said = f"GLORFINDEL_ISOLATION_TTL_H={raw[:40]!r}"
+        try:
+            value = float(raw)
+        except ValueError:
+            raise TTLRefused(f"{said} : illisible, pas un nombre d'heures") from None
+    if math.isnan(value):
+        raise TTLRefused(f"{said} : illisible, pas un nombre d'heures")
+    if value < 0:
+        raise TTLRefused(f"{said} : négatif, refusé (0 escalade toutes les isolations tout de suite)")
+    return value
+
+
 def _flock(f, exclusive: bool) -> None:
     try:
         import fcntl

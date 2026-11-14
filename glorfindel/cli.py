@@ -869,6 +869,7 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
         console.print("[bold red]glorfindel-config.yaml refusé[/bold red] — la watch ne démarre pas "
                       "sur une configuration mal écrite.\n" + _esc_markup(str(exc)))
         raise SystemExit(2)
+    ttl_h = _watch_ttl_h()             # never stops the watch (TTL1)
 
     # Import the Azure SDK once, on the main thread, before discovery/poll/audit
     # threads start — avoids concurrent first-import deadlocks (azure.core _ModuleLock).
@@ -1203,7 +1204,6 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
     from datetime import datetime, timezone
     from glorfindel.actions import AzureConnector
 
-    ttl_h = float(os.environ.get("GLORFINDEL_ISOLATION_TTL_H") or "4")
     ttl_connector = AzureConnector(dry_run=dry_run)
     _ttl_check_counter = 0
 
@@ -2760,10 +2760,28 @@ def memory_stats(memory_path: str | None):
     console.print(_memory_said(m.age_census()))
 
 
+def _watch_ttl_h() -> float:
+    """The watch's TTL (TTL1): `config.isolation_ttl_h`, as `check-ttl` reads it. A negative or
+    unreadable GLORFINDEL_ISOLATION_TTL_H never stops the watch — it used to (`float(...)` before the
+    loop): said at its start, on the console and in the log, and the watch keeps 4 h."""
+    import logging
+
+    from glorfindel import config as _cfg
+    try:
+        return _cfg.isolation_ttl_h()
+    except _cfg.TTLRefused as exc:
+        ttl_h = _cfg.ISOLATION_TTL_H
+        said = f"{exc} — la watch garde {ttl_h:g} h jusqu'à correction"
+        console.print(f"[bold yellow]⚠ TTL refusé[/bold yellow] — {_esc_markup(said)}")
+        logging.getLogger("glorfindel.ttl").warning("TTL refusé — %s", said)
+        return ttl_h
+
+
 @cli.command("check-ttl")
 @click.option("--ttl", default=None, type=float, metavar="HOURS",
               help="Max isolation age in hours before its card (ttl_exceeded) — never a release. "
-                   "Defaults to GLORFINDEL_ISOLATION_TTL_H env var or 4h.")
+                   "0 escalates every isolation at once; a negative value is refused. "
+                   "Given, it wins over GLORFINDEL_ISOLATION_TTL_H; else that variable, or 4h.")
 @click.option("--dry-run", is_flag=True)
 def check_ttl(ttl: float | None, dry_run: bool):
     """Escalate isolations that have exceeded the TTL — never release them.
@@ -2772,8 +2790,12 @@ def check_ttl(ttl: float | None, dry_run: bool):
     restore, or under investigation). Default TTL: 4h (--ttl or
     GLORFINDEL_ISOLATION_TTL_H). Safe to run from cron.
     """
-    import os
-    ttl_h = ttl or float(os.environ.get("GLORFINDEL_ISOLATION_TTL_H") or "4")
+    from glorfindel import config as _cfg
+    try:
+        ttl_h = _cfg.isolation_ttl_h(ttl)        # the watch's own reading (TTL1)
+    except _cfg.TTLRefused as exc:               # negative or unreadable: refused, nothing escalated
+        console.print(f"[bold red]TTL refusé[/bold red] — {_esc_markup(str(exc))} ; rien n'est escaladé.")
+        raise SystemExit(1)
     if dry_run:
         console.print("[dim]DRY RUN — nothing recorded.[/dim]")
         return
