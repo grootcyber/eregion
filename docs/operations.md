@@ -3062,17 +3062,20 @@ rafraîchissement du verrou sans contrôle).
   14/11, DEP3, #813) : un déni de service par expression régulière dans
   `TraceContextTextMapPropagator.extract()`, sur une valeur `traceparent` forgée. Le paquet n'arrive
   que par dépendance (anthropic, chromadb, fastapi ; `glorfindel.txt`, `dev.txt`) ; aucune ligne
-  d'Eregion n'importe opentelemetry, aucun paquet d'instrumentation n'est dans les verrous, et rien ne
-  configure un fournisseur de traces : sans lui, la télémétrie native de FastAPI (la console) et les
-  traces de chromadb restent éteintes, et aucun propagateur ne lit un en-tête entrant. Le chemin lent
-  demande un saut de ligne dans la valeur, qu'un en-tête HTTP conforme ne peut pas porter (h11 et
-  httptools le refusent). La 1.45.2 le corrige ; elle viendra au prochain `make lock` naturel, sans
-  montée ni harnais pour ce seul avis (décision de Jonathan). Le jour où un fournisseur de traces est
-  configuré (`OTEL_PYTHON_TRACER_PROVIDER`, `FASTAPI_OTEL_AUTO_CONFIGURE`, `CHROMA_OTEL_GRANULARITY`),
-  cette raison ne tient plus : monter d'abord. Un avis accepté est dit comme tel (`make audit`, la CI), jamais rouge ;
-  un avis accepté qui n'est plus trouvé est dit, à retirer de la liste. Une liste dont une entrée n'a
-  pas sa forme (une raison vide ou trop courte, une date absente) est refusée. Les issues
-  hebdomadaires n'en dépendent pas : un humain les ferme (« non prévu »).
+  d'Eregion n'importe opentelemetry, aucun paquet d'instrumentation n'est dans les verrous, et rien
+  ne configure un fournisseur de traces : sans lui, la télémétrie native de FastAPI (la console)
+  reste éteinte ; les traces de chromadb, qui en installeraient un, sont éteintes
+  (`CHROMA_OTEL_GRANULARITY` non posée) ; aucun propagateur ne lit un en-tête entrant. Le chemin
+  lent demande un saut de ligne dans la valeur, qu'un en-tête HTTP conforme ne peut pas porter (h11
+  et httptools le refusent). La 1.45.2 le corrige ; elle viendra au prochain `make lock` naturel,
+  sans montée ni harnais pour ce seul avis (décision de Jonathan). Le jour où un fournisseur de
+  traces est configuré (`OTEL_PYTHON_TRACER_PROVIDER`, `FASTAPI_OTEL_AUTO_CONFIGURE`,
+  `CHROMA_OTEL_GRANULARITY`), ou qu'un middleware OpenTelemetry est ajouté (celui de Starlette lit
+  l'en-tête même sans fournisseur), cette raison ne tient plus : monter d'abord. Un avis accepté est
+  dit comme tel (`make audit`, la CI), jamais rouge ; un avis accepté qui n'est plus trouvé est dit,
+  à retirer de la liste. Une liste dont une entrée n'a pas sa forme (une raison vide ou trop courte,
+  une date absente) est refusée. Les issues hebdomadaires n'en dépendent pas : un humain les ferme
+  (« non prévu »).
 
 ```bash
 make audit                              # les avis connus des verrous, celui de pip-audit compris (lecture seule)

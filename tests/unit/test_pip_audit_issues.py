@@ -709,7 +709,9 @@ def test_the_repositorys_accepted_advisories_each_say_why():
     accepted = pai.load_accepted(str(ROOT / "requirements" / "audit-accepted.json"))
     chroma = [a for a in accepted if a["package"] == "chromadb"]
     otel = [a for a in accepted if a["package"] == "opentelemetry-api"]
-    assert len(chroma) == 4 and len(otel) == 1 and len(accepted) == 5
+    assert len(chroma) == 4 and len(otel) == 1 and len(accepted) == 5, (
+        "the accepted list changed: once opentelemetry-api 1.45.2 is locked (make lock), remove its entry "
+        "from requirements/audit-accepted.json and the opentelemetry block of this test")
     assert all("embedded" in a["reason"] and "PersistentClient" in a["reason"] for a in chroma)
     used = "".join(p.read_text(encoding="utf-8") for d in ("glorfindel", "analysis", "eregion_core",
                                                           "eregion_console", "annatar", "gothmog")
@@ -721,11 +723,15 @@ def test_the_repositorys_accepted_advisories_each_say_why():
     [o] = otel
     assert o["id"] == "GHSA-mf5v-w3w3-f6cg"
     assert "1.45.2" in o["reason"] and "make lock" in o["reason"] and "line feed" in o["reason"]
+    # The substring scan also covers starlette.middleware.opentelemetry.OpenTelemetryMiddleware, which
+    # reads the traceparent even without a tracer provider: adding it means naming « opentelemetry ».
     assert "opentelemetry" not in used.lower()
     locks = [(ROOT / "requirements" / f"{n}.txt").read_text(encoding="utf-8")
              for n in ("dev", "glorfindel", "annatar", "audit")]
     assert not any(re.search(r"(?m)^opentelemetry-instrumentation", t) for t in locks)
-    assert all("opentelemetry-api==1.45.1" in t for t in locks[:2])
+    assert all("opentelemetry-api==1.45.1" in t for t in locks[:2]), (
+        "opentelemetry-api moved in the locks: once 1.45.2 is locked, remove its entry from "
+        "requirements/audit-accepted.json and the opentelemetry block of this test")
 
 
 @needs_make
