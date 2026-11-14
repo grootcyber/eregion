@@ -1577,13 +1577,14 @@
    "id": "a-identite-banc",
    "composant": "annatar",
    "poste": "a-attaquer",
-   "nom": "The identity card: a control-plane identity technique played at the bench",
+   "nom": "The 0.6.0 identity card, as a playable control-plane scenario",
    "etat": "main",
    "release": "0.6",
    "lots": [
     "RID1"
    ],
    "issue": 819,
+   "pr": 822,
    "doc": "docs/architecture.md"
   },
   {
