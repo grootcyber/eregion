@@ -1845,7 +1845,7 @@ class RulePoller:
             except Exception as exc:  # a card is never lost to its target: the plane, said
                 logger.warning("detection rule '%s': target unreadable (%s)", rule.name, exc)
                 target = card_target.control_plane_target(
-                    limit=f"Ce que la ligne vise n'a pas pu être lu ({type(exc).__name__}).")
+                    limit=f"What the row is about could not be read ({type(exc).__name__}).")
         # The VM the row was routed to is its own only when the row names it (a role on the VM):
         # one found by the address that made the call is the caller (review, AL1c).
         named = tgt is not None and card_target.names_vm(row, tgt[0])
