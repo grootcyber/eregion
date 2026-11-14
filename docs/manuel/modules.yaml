@@ -2100,6 +2100,16 @@ briques:
     issue: 748
     doc: docs/banc-t1486.md
 
+  - id: s-replay-chiffres
+    composant: socle
+    poste: s-documenter
+    nom: "The replay on the site shows the ransomware times of the bench run of 12 Nov, and a control-plane card says its target in English, like the console that shows it"
+    etat: main
+    release: "0.6"
+    lots: [RAN1b]
+    issue: 820
+    doc: docs/replay/index.html
+
   - id: s-roadmap-060
     composant: socle
     poste: s-documenter

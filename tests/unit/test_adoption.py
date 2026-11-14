@@ -97,6 +97,27 @@ def test_the_ransomware_times_come_from_the_bench_run_of_12_11():
     assert "20260609T190824Z" not in json.dumps(PROOFS)
 
 
+def test_the_replay_shows_the_ransomware_times_of_the_bench_run_of_12_11():
+    """RAN1b (#820): the replay (docs/replay/, PRES1) marks the times it shows « measured »; they are
+    those of the bench run of 12/11 the README and the sheets give, from docs/proofs.json — the time to
+    contain, the time to restored service, and the detection and isolation that make the second
+    (« 141,6 + 19,5 + 1514 »). Before, it still said those of 09/06: « about a minute to contain »,
+    « 21 min 29 s », a detection in « 55–71 s »."""
+    replay = (DOCS / "replay" / "index.html").read_text(encoding="utf-8")
+    contain, restore = PROOFS["contain_ransom"], PROOFS["restore_ransom"]
+    assert contain["date"] == restore["date"] == "2026-11-12"
+    for p in (contain, restore):
+        assert p["value"] in replay, p["value"]
+    # The detection and the isolation, as the restore's own quote adds them.
+    m = re.search(r"(\d+),(\d) \+ (\d+),(\d) \+ \d+ = ", " ".join(ad.quotes(restore["source"])))
+    detected, isolated = f"{m[1]}.{m[2]} s", f"{m[3]}.{m[4]} s"
+    assert f"detected {detected} after T0" in replay and f"<b>{detected}</b>" in replay
+    assert f"quarantined {isolated} after the detection" in replay
+    assert replay.count("12 November 2026") == 2       # the closing caption and the foot
+    for gone in ("21 min 29 s", "about a minute to contain", "about 1 min", "~1 min", "55–71 s", "the validated runs"):
+        assert gone not in replay, gone
+
+
 def test_a_measure_to_take_again_says_so_on_the_page():
     """Bree's isolation of 10/11, judged wrong on 11/11, overtakes « 0 / 41 » of 02/11: the figure stays,
     shown as one to measure again, with why (MEN4, #748)."""
