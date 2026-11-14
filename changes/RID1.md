@@ -1,10 +1,11 @@
 ### Added
-- A control-plane identity technique from a pinned public library is now a playable scenario
-  (`annatar/scenarios/`): Annatar runs it from the injector host against an enrolled bench group,
-  through the existing injector cycle, with a read-only directory probe of the initial state. It
-  is this release's identity card; its control-plane detection is measured at the bench.
+- **A pinned public library's control-plane identity technique is now a playable scenario**
+  (`annatar/scenarios/`), the scenario behind the identity card of the 0.6.0: Annatar runs it from
+  the injector host against an enrolled bench group, through the existing injector cycle, with a
+  read-only directory probe of the initial state. Its control-plane detection will be measured at
+  the bench with the 0.6.0 (#819 open). (RID1, #822)
 
 ### Changed
-- The scenario parser (`annatar validate` and every run) refuses a control-plane injector-library
-  scenario that targets a VM: such a scenario acts on the control plane, not on a virtual machine,
-  so a VM target type or a VM name is a misauthoring, refused before anything runs.
+- **A control-plane injector-library scenario that targets a VM is refused at authoring**
+  (`annatar/runner/parser.py`): it acts on the control plane, not a virtual machine, so a VM
+  target type or a VM name is a misauthoring, refused before anything runs. (RID1, #822)
