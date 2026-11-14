@@ -84,6 +84,7 @@ Tenue par l'Orchestre (RM1, 02/11). Une ligne par release qui se prépare : sa v
 
 | Version | Titre | Contenu | État |
 |---|---|---|---|
+| 0.5.10 | within reach | MOB1 (le banc piloté depuis le téléphone : `make bench-run`, `make bench-restore`, la console par le tunnel du téléphone, `make mobile-check`) ; LEV2 (les faits de la porte sur la carte d'isolement, pour information) et la conception LEV1 (la levée après un restore, seule et en probation sauf porte prouvée ouverte) ; MUT7 (les mutants fragiles mesurés chaque nuit), MUT9 (M33 attrapé quelle que soit la graine) | publiée (10/11) |
 | 0.5.11 | named and mapped | AWS1b, IDM1, IML1, MOB2, BNC2, DOS1, FLK1, MEN2, BNC1b, CI11, INF-FL, MUT10 | publiée (12/11) |
 | 0.5.12 | always heard | MOB3, PAIR1, CON-D, MEN3, ING1 (conception), ROT1, IML1b, IML1c, MEN4, I3N, BNC3a, DRN2, ING5, JUG1, LEV2b, JUG2, MSK2, HY2, I3Q, JUG2b, BNC3b, RM3, MSK3, I3W (fusionnés sur `main` depuis `v0.5.11`) | publiée (13/11) |
 | 0.5.13 | nothing invented | CDJ1, CMD1, CMD1b, DEP3, FRN1, FRN1b, HY2b, HY2c, I3X, I9A, JUG2c, JUG2d, L1N, L1Nb, LEV1b, MSK2c, MSK3b, RAN1b, RID1, SNP1, SNP1b, TTL1 (fusionnés sur `main` depuis `v0.5.12`) | brouillon |
