@@ -124,6 +124,21 @@ class ScenarioParser:
             if "resource_group" not in data["target"]:
                 errors.append("target.resource_group is required")
 
+        # A stratus scenario (R2) attacks the Azure control plane, not a VM (#819): a VM target
+        # type, or a vm_name, is a misauthoring — refused here, at authoring, before any run. The
+        # engine's own fail-closed checks (annatar/engines/stratus.py) still run at run time; the
+        # detection grounding a miss would use (detection.hints) is the scenario author's to give,
+        # not forced here (a stratus run's control-plane detection is measured at ID1).
+        if engine == "stratus":
+            target = data.get("target")
+            if isinstance(target, dict) and (
+                target.get("type") == "azure_vm" or target.get("vm_name")
+            ):
+                errors.append(
+                    "a stratus scenario attacks the Azure control plane, not a VM: target.type "
+                    "is not 'azure_vm' and it carries no vm_name"
+                )
+
         return ValidationResult(valid=len(errors) == 0, errors=errors)
 
 

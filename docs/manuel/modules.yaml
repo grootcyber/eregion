@@ -1189,6 +1189,16 @@ briques:
     lots: [R2, R2b, R2c]
     issue: 79
 
+  - id: a-identite-banc
+    composant: annatar
+    poste: a-attaquer
+    nom: "The identity card: a control-plane identity technique played at the bench"
+    etat: main
+    release: "0.6"
+    lots: [RID1]
+    issue: 819
+    doc: docs/architecture.md
+
   - id: a-pendant-panne
     composant: annatar
     poste: a-attaquer
