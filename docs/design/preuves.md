@@ -955,6 +955,39 @@ résultat du code).
 forme ; M5361–M5363 et M5366–M5367, un écrivain laissé hors du verrou (la levée, le déblocage, le reset, le
 blocage, l'isolation), chacun attrapé par une course figée trouvée pour lui.
 
+### Une autorisation sortante avant un blocage, que la machine ne tirait qu'au hasard (MUT12)
+
+La seconde porte de la 0.5.13 (run 43610485646) est rouge sur un seul mutant, M32 : une autorisation
+sortante placée avant le refus d'un blocage, comptée comme une simple exposition (`threat_port_open` faux
+dès qu'un port de menace est donné). 4 185 mutants sur 4 186 sont attrapés à chaque tour. Le produit n'a
+pas régressé, et aucun oracle n'est relâché.
+
+**D'où vient l'instabilité.** La cible de M32 était la machine seule. Elle ne le voit qu'au bout d'une
+chaîne précise : un blocage sur un port de menace, puis une autorisation sortante avant notre refus sortant
+(celle d'un client, ou une règle à nous retournée ou déplacée), sur une voie que prend l'attaquant, puis une
+vérification ou une réaffirmation qui la juge. Rejouée sur le poste, la graine du premier tour de la porte
+(345556957, tranche 2, 500 séquences) ne tire cette chaîne dans aucune séquence : M32 y survit,
+`FIXED-ONLY` (les séquences figées l'attrapent, sa cible ne les lançait pas). Celle du second (345556958)
+la tire dans sa première séquence fautive, au treizième pas : `turned_perimeter_left_out` sur Db--01, la
+menace sur 22, et la réaffirmation dit le blocage tenu alors que db-nic-0 joint l'attaquant (I3).
+
+**Ce qui l'attrape à chaque tour.** Trois séquences figées visent son défaut et ne dépendent d'aucun
+tirage ; elles sont ajoutées à sa cible (`TESTS_ALSO`, `scripts/mutants/MUT12.py`) :
+`test_a_block_moved_behind_a_customer_allow_is_bypassed` (le refus sortant d'un blocage déplacé derrière
+une autorisation de tout le trafic sortant : `verify_block_ip` le disait tenu) ; les trois voies de sortie d'I3X
+(`test_a_way_out_a_turned_rule_opens_past_the_perimeter_is_said_unblocked`, une voie de sortie qu'une règle
+retournée ouvre avant le périmètre : la réaffirmation ; sa quatrième variante, une entrée, ne le voit pas) ; et une neuve,
+`test_a_block_moved_behind_an_allow_out_on_another_port_is_bypassed` : le même déplacement derrière une
+autorisation sortante sur 443 seul, un port que la menace (22) ne nomme pas. En entrée, une telle
+autorisation n'est qu'une exposition ; en sortie, la VM joint l'attaquant (un shell inversé, une
+exfiltration). L'oracle est celui de la machine : les flux vers l'attaquant lus sur les NSG du monde (I3),
+jamais sur ce que la vérification a trouvé (A0). Mesuré : `--only M32`, deux tours sur la graine de la
+porte (2/2) et deux sur une graine tirée (378795979, 2/2).
+
+**Mutant** (`scripts/mutants/MUT12.py`) : M5371, la propriété de M32 sous une autre forme — une
+autorisation sortante jugée par le port de la menace, comme une entrante. Seule la séquence neuve
+l'attrape ; les autres, sur `*` ou sur 22, couvrent le port de la menace.
+
 ### Trois mutants que la machine ne voyait plus qu'au hasard (MUT4)
 
 La porte de la 0.5.8 (run 42575826306) a rendu trois mutants `FIXED-ONLY`, 0/2 chacun : M19 (un blocage
