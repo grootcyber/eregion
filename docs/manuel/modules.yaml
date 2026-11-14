@@ -1860,6 +1860,7 @@ briques:
     release: "0.6"
     lots: [MUT11]
     issue: 830
+    pr: 832
     doc: docs/design/preuves.md
 
   - id: s-release
