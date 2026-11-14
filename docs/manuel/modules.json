@@ -1145,6 +1145,20 @@
    "doc": "docs/design/preuves.md"
   },
   {
+   "id": "g-perimetre-voies-attaquant",
+   "composant": "glorfindel",
+   "poste": "g-verifier",
+   "nom": "Proof: a card that says an IP unblocked where a turned rule opens a way out past the perimeter, on port 22 or on UDP, is judged on every way to and from the attacker, by port and protocol; the oracle was too strict, the product unchanged",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "I3X"
+   ],
+   "issue": 824,
+   "pr": 826,
+   "doc": "docs/design/preuves.md"
+  },
+  {
    "id": "g-levee-probation",
    "composant": "glorfindel",
    "poste": "g-agir",
