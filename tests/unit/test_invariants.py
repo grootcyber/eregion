@@ -102,6 +102,7 @@ import collections
 import contextlib
 import copy
 import hashlib
+import json
 import os
 import shutil
 import tempfile
@@ -121,8 +122,8 @@ from glorfindel.response import locks
 from glorfindel.actions import AzureConnector, _load_isolation_state
 
 from .fake_azure import (
-    ATTACKER, AZURE_DNS, AZURE_IMDS, LATERAL, Crash, FakeAzure, _rule_record, key, nic_id, open_flows,
-    vm_id,
+    ATTACKER, ATTACKER_WAYS, AZURE_DNS, AZURE_IMDS, LATERAL, Crash, FakeAzure, _rule_record, key, nic_id,
+    open_flows, vm_id,
 )
 
 # ── the customer's network ───────────────────────────────────────────────────────
@@ -239,10 +240,18 @@ class _Chaos:
         self.plan = None
         self.calls = self.writes = self.state_writes = 0
         self.fired = False
+        self.saved: list[tuple[Path, str]] = []
 
     def arm(self, fault):
         self.plan, self.calls, self.writes, self.fired = fault, 0, 0, False
         self.state_writes = 0
+        self.saved = []
+
+    def saved_state_of(self, directory: Path, rid: str) -> bool:
+        """The operation armed last wrote a local state file of `rid` under `directory`, and the
+        write landed — the test's own journal of the writes (`chaotic_write`), by the resource id the
+        write carried, never by what the code marked in it (A0)."""
+        return any(d == directory and r == key(rid) for d, r in self.saved)
 
     def __call__(self, op: str, phase: str, write: bool):
         if phase == "before":
@@ -1140,9 +1149,18 @@ class IsolationMachine(RuleBasedStateMachine):
         azure_before = self.fake.snapshot() if not self.config["readable"] else None
         writes = len(self.fake.journal)
         out, err = self._run(fault, lambda: self.connector.isolate_vm(rid), "isolate")
-        if (out or {}).get("status") == "isolated" or len(self.fake.journal) > writes:
+        if ((out or {}).get("status") == "isolated" or len(self.fake.journal) > writes
+                or self.chaos.saved_state_of(actions._ISOLATION_STATE_DIR, vm)):
             # A new isolation, the operator's call — even cut off midway, once it has
             # written to Azure: the release it supersedes is no longer under way (I9).
+            # Or once it wrote the VM's state (I9A): its NICs already in quarantine, nothing
+            # to write to Azure, an isolation records itself whole, then cuts the sessions —
+            # cut off there (a crash in the drain, or right after the write), it was the
+            # operator's isolation all the same. The product writes a state only once the
+            # isolation is whole, or a partial one, which holds the reassertion itself (`partial`)
+            # — even with nothing written to Azure (NICs already in quarantine counted). One cut
+            # off before writing anything leaves the release under way
+            # (`test_a_cut_off_isolation_supersedes_the_release_once_it_wrote_its_state`).
             self.releasing.discard(vm)
         if azure_before is not None:
             # S1: the configuration can't be read — refused before any write.
@@ -1960,7 +1978,11 @@ class IsolationMachine(RuleBasedStateMachine):
         into an allow stays: it is theirs now. The subnet's NSG alone, the NICs' own left
         out: a perimeter an allow passes before, on its NSG, is bypassed — the code's model
         of precedence, one NSG at a time (a NIC's own NSG that happens to close the port as
-        well is no reason for the card to say the perimeter blocks)."""
+        well is no reason for the card to say the perimeter blocks). Every way to and from
+        the attacker, by port and protocol (`ATTACKER_WAYS`, I3X): « on every port » read on
+        the probes alone, a deny of ours narrowed to 22 or turned to UDP, then into an allow,
+        let the VM reach the attacker out of their sight — the card that said so was judged
+        false."""
         bare = "glorfindel-block-" + ATTACKER.replace(".", "-")
         mine = {bare, f"{bare}-out"} if keep else set()
         world = self._world()
@@ -1968,7 +1990,7 @@ class IsolationMachine(RuleBasedStateMachine):
             n: r for n, r in g["rules"].items()
             if not n.startswith("glorfindel-") or n in mine or r["access"].lower() != "deny"}}
             for k, g in world["nsgs"].items()}}
-        return frozenset(f for f in open_flows(world, vm) if f[3] == ATTACKER and f[0] == nic)
+        return frozenset(f for f in open_flows(world, vm, ATTACKER_WAYS) if f[3] == ATTACKER and f[0] == nic)
 
     def _behind_our_perimeter(self, vm: str, nic: str) -> bool:
         """The NIC sits on a subnet whose NSG carries our perimeter block of the attacker as
@@ -4214,6 +4236,13 @@ def invariant_env(monkeypatch) -> None:
     def chaotic_write(path, text):
         _CURRENT.chaos("state.write", "before", True)
         real_write(path, text)
+        # Landed: in the test's journal before a fault after it (I9A) — whose state, by its resource id.
+        try:
+            rid = json.loads(text)
+            rid = (rid[0] if isinstance(rid, list) and rid else rid).get("resource_id") or ""
+        except Exception:
+            rid = ""
+        _CURRENT.chaos.saved.append((Path(path).parent, key(str(rid))))
         _CURRENT.chaos("state.write", "after", True)
 
     monkeypatch.setattr(actions, "_atomic_write_text", chaotic_write)

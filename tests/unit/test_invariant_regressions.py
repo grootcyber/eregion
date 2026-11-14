@@ -8230,3 +8230,207 @@ def test_two_placements_off_its_nic_acknowledged_are_said_again_when_either_is_d
         assert len(again) == 1 and "a disparu" in again[0]["reason"], again
     finally:
         shutil.rmtree(m.home, ignore_errors=True)
+
+
+# ── I9A (#823): the operator's isolation, recorded whole then cut off in its drain, read as no isolation ──
+# The night « Invariants (deep) » of 14/11 (run 43585550169, f0df21d1, 10 000 examples), red on ubuntu (web),
+# then replayed by every PR from the cached Hypothesis base. web's release left its NIC in quarantine (its
+# original unknown, I8F: `release_failed`); the operator isolates web again: the NIC already in quarantine,
+# nothing to write to Azure, the isolation records itself whole (its state rewritten, the release's marks
+# gone), then a crash in its drain (`vm.get`, its 8th call). Someone takes the quarantine off; the
+# reassertion puts it back. Right — the operator's isolation is what holds — but the machine's journal ended
+# the release only on an isolation that wrote to Azure: « I9: the reassertion isolated …/web again
+# mid-release ». The oracle's, not the product's: its rule dates from A0 (a34a9aac, 13/10), reachable once
+# `bare_with_an_unknown_original` came (791c6b34, 27/10 — the reduced sequence red there too) — a new draw
+# (SEED1). Corrected from the test's journal: an isolation that wrote the VM's state (`chaotic_write`, by the
+# resource id the write carried) supersedes the release too; one cut off before writing anything leaves it.
+
+_I9A_NET = {**_L1N_UBUNTU_NET, "config": {"quarantine": True, "rg": "", "forensic": [], "readable": True}}
+_I9A_WEB_NIC = _nic("rg-app1", "web-nic")
+_I9A_PARTIAL_RELEASE = ("bare_with_an_unknown_original", WEB1, WEB1, None, _I9A_WEB_NIC, "isolate+release", None)
+_I9A_FOUND = (
+    ("operator_acknowledges", 0),
+    ("quarantine_altered_then_reasserted", WEB1, WEB1, None, True, False, "protocol",
+     (_Q1, "glorfindel-quarantine-deny-dns"), "human_only", "no"),
+    _L1N_ADDRESS,
+    ("customer_deletes_nsg", _L1N_DB_NIC_0_NSG),
+    _L1N_ADDRESS,
+    ("turned_perimeter_left_out", WEB1, WEB1, None),
+    ("tags_lost", _Q1),
+    ("a_hold_moved_under_it", DB, DB, None, "gone", 22, _L1N_DB_NIC_0_NSG, "human_only"),
+    ("tamper_with_our_rule", "port", (_Q1, "glorfindel-quarantine-deny-dns")),
+    _L1N_ADDRESS,
+    ("customer_removes_rule", _L1N_DB_NIC_0_NSG, "allow-https"),
+    _I9A_PARTIAL_RELEASE,
+    _L1N_ADDRESS,
+    _L1N_ADDRESS,
+    ("isolate", WEB1, WEB1, (8, "before-crash")),
+    _L1N_ADDRESS,
+    ("redeploy_nic", _nic("rg-edge", "api-nic")),
+    ("someone_detaches_the_quarantine", _I9A_WEB_NIC),
+    ("quarantine_altered_then_reasserted", DB, DB, (1, "before-429"), False, False, "protocol",
+     (_Q1, "glorfindel-quarantine-deny-in"), "non_disruptive", "no"))
+# Shrunk by hand (each rule removed in turn while I9 still fails); the drawn fault no rule plays kept.
+_I9A_REDUCED = (
+    _I9A_PARTIAL_RELEASE,
+    ("isolate", WEB1, WEB1, (8, "before-crash")),
+    ("someone_detaches_the_quarantine", _I9A_WEB_NIC),
+    ("quarantine_altered_then_reasserted", DB, DB, (1, "before-429"), False, False, "protocol",
+     (_Q1, "glorfindel-quarantine-deny-in"), "non_disruptive", "no"))
+
+
+@pytest.mark.parametrize("steps", [_I9A_FOUND, _I9A_REDUCED], ids=["ubuntu web as found", "ubuntu web reduced"])
+def test_an_isolation_recorded_whole_then_cut_off_supersedes_the_release(monkeypatch, steps):
+    """I9A (#823): « I9: the reassertion isolated …/web again mid-release ». web's release kept its NIC in
+    quarantine (its original unknown); isolated again, nothing to write to Azure, the isolation recorded
+    itself whole, then crashed in its drain. The quarantine taken off, the reassertion put it back — the
+    operator's isolation, which superseded the release. The oracle's: its journal ended a release only on an
+    isolation that wrote to Azure; now on one that wrote the VM's state too (the test's journal, A0)."""
+    _replay(monkeypatch, _I9A_NET, *steps)
+
+
+@pytest.mark.parametrize("fault, supersedes", [
+    ((8, "before-crash"), True),          # in its drain, its state written whole
+    ((1, "after-crash"), True),           # right after its state write landed (its first write)
+    ((7, "before-crash"), False),         # at its state write, before it landed: nothing written
+], ids=["cut in the drain", "cut after its state", "cut before its state"])
+def test_a_cut_off_isolation_supersedes_the_release_once_it_wrote_its_state(monkeypatch, fault, supersedes):
+    """I9A, both sides of the corrected journal. web's release partial (its NIC kept in quarantine), the
+    operator's isolation cut off by a crash: once it wrote web's state, it superseded the release — the
+    quarantine taken off is put back by the reassertion (the product's liveness); before, nothing written,
+    the release is still under way and the reassertion leaves the NIC as it is (I9, still binding).
+    The proof is that behaviour, judged on Azure; the code's mark (`release_failed`) is read only to say
+    what the state held when it fails, never asserted (A0)."""
+    from glorfindel import actions
+
+    invariant_env(monkeypatch)
+    m = IsolationMachine()
+    try:
+        m.build(_I9A_NET)
+        m.bare_with_an_unknown_original(data=Script(*_I9A_PARTIAL_RELEASE[1:]))
+        assert WEB1 in m.releasing and (m._state(WEB1) or {}).get("release_failed"), "the world: a partial release"
+        m.isolate(data=Script(WEB1, WEB1, fault))
+        assert (WEB1 not in m.releasing) is supersedes, (fault, m.releasing)
+        mark = (m._state(WEB1) or {}).get("release_failed")          # a diagnostic only
+        m.someone_detaches_the_quarantine(data=Script(_I9A_WEB_NIC))
+        assert m.fake.nics[_I9A_WEB_NIC]["nsg"] is None, "the world: the quarantine taken off"
+        m.reassert(data=Script("non_disruptive", None))       # I9 judged inside, on the journal
+        now = m.fake.nics[_I9A_WEB_NIC]["nsg"]
+        assert bool(now and actions._is_quarantine_nsg(now)) is supersedes, (fault, now, "release_failed", mark)
+    finally:
+        m.teardown()
+
+
+# I3X (#824): the night « Invariants (deep) » of 14/11 on f0df21d1, macOS, 10 000 examples (run 43585550169).
+_I3X_EDGE = "/subscriptions/s/resourcegroups/rg-edge/providers/microsoft.network/networksecuritygroups/nsg-edge"
+_I3X_RULE = "glorfindel-block-192-31-196-7-api-api-nic-c272f2"
+
+
+def _i3x_steps(how: str) -> tuple:
+    """`port`, `protocol`: api's own `-out` narrowed or turned to UDP; `in-protocol`: its inbound deny turned
+    to UDP — then, either way, into an allow by Db--01's block. `whole`: the `-out` turned as it is, the
+    way out the probes cross (on 443)."""
+    turned = (_I3X_EDGE, _I3X_RULE if how == "in-protocol" else f"{_I3X_RULE}-out")
+    tamper = () if how == "whole" else (("tamper_with_our_rule", how.removeprefix("in-"), turned),)
+    return (("block_turned_then_reasserted", API, API, None, "vm", 22, (_I3X_EDGE, _I3X_RULE), "non_disruptive"),
+            ("block_turned_then_reasserted", API, API, None, "both", 22, (_I3X_EDGE, _I3X_RULE), "non_disruptive"),
+            *tamper,
+            ("block_turned_then_reasserted", DB, DB, None, "both", 22, turned, "human_only"))
+
+
+# The ways each variant's turned rule opens to and from the attacker, past the perimeter (`ATTACKER_WAYS`).
+_I3X_OPEN = {"port": {("out", 22, "tcp"), ("out", 22, "udp")},
+             "protocol": {("out", p, "udp") for p in (22, 443, 8080)},
+             "in-protocol": {("in", p, "udp") for p in (22, 443, 8080)},
+             "whole": {("out", p, proto) for p in (22, 443, 8080) for proto in ("tcp", "udp")}}
+
+
+@pytest.mark.parametrize("how", ["port", "protocol", "in-protocol", "whole"])
+def test_a_way_out_a_turned_rule_opens_past_the_perimeter_is_said_unblocked(monkeypatch, how):
+    """I3X (#824), the night of 14/11 at 10 000 (macOS; 26 rules, Hypothesis's shrinking stopped at five
+    minutes, reduced to 4 and an empty nsg-edge): « I3: the reassertion said 192.31.196.7 no longer blocked
+    on …/rg-edge/…/api (['api-nic']); our perimeter block still cuts it off ». The same on Linux: the case
+    of macOS's files plays no part.
+
+    api blocked for itself, its inbound deny turned and put back; blocked again on its subnet and for itself
+    (both on nsg-edge: its own pair at 200, the perimeter's at 210); its own `-out` narrowed to port 22 —
+    or turned to UDP, the same way out unseen —; then Db--01's block turns that `-out` into an allow, and
+    the pass says it: « l'IP n'est plus bloquée sur api-nic ». It is true: the allow at 200, before the
+    perimeter's `-out`, lets api reach the attacker on 22 (on every UDP port) — the code's model of an
+    outbound allow (A0: the VM reaches the attacker, on any port). The way in, frozen beside them
+    (`in-protocol`, the review): api's own inbound deny turned to UDP, then into an allow at 200 before the
+    perimeter's at 210 — the attacker reaches api on UDP, the threat port among them, which no probe crosses
+    either; red on the base as the other two. And `whole` (the review): the `-out` turned as it is, steps 1,
+    2 and 4 — the probe out to the attacker on 443 sees it, the base green, the card true (M5331 caught by
+    the machine's claims there, never on 22 nor on UDP). The oracle was too strict: it judged
+    « cut off on every port » on the probes, TCP all, none out to the attacker on 22. It reads now every
+    way to and from the attacker, by port and protocol (`ATTACKER_WAYS`), the world's own NSGs evaluated —
+    never the code's verification. Older than the night: the probes since L24 (08/10), the narrowing and
+    the turn since L26 (12/10), the oracle since RB1 (29/10); the sequence fails from L1Q (72bb58f8,
+    31/10), which says the block rewritten anew."""
+    from glorfindel import escalations
+
+    invariant_env(monkeypatch)
+    m = IsolationMachine()
+    try:
+        m.build({**_net(), "edge_nsg": []})
+        for rule, *draws in _i3x_steps(how):
+            getattr(m, rule)(data=Script(*draws))
+            m.never_more_open_than_designed()
+            m.customer_configuration_untouched()
+            m.one_vm_one_state_file()
+        from .fake_azure import ATTACKER_WAYS, open_flows    # after the steps: the base fails on them, not here
+        said = [e["reason"] for e in escalations.pending() if key(e.get("resource_id") or "") == key(API)]
+        assert any("n'est plus bloquée sur api-nic" in r for r in said), said
+        world = m._world()
+        out = {(f[2], f[4], f[5]) for f in open_flows(world, API, ATTACKER_WAYS) if f[3] == ATTACKER}
+        assert out == _I3X_OPEN[how], out
+        probed = {(f[2], f[4]) for f in open_flows(world, API) if f[3] == ATTACKER}
+        assert probed == ({("out", 443)} if how == "whole" else set()), ("what the probes alone see", probed)
+    finally:
+        m.teardown()
+
+
+def _machine_writes(field: str) -> set[str]:
+    """Every constant the machine's source (tests/unit/test_invariants.py) writes in a rule's `field`: a
+    keyword (`destination_port_range="22"`), a key of a dict literal, an item assigned (`r["protocol"] =
+    "Udp"`), a pair drawn to edit a rule (`("destination_port_range", "443")`). Read from the source, not
+    restated: a value the generator adds is seen here the day it is added."""
+    import ast
+    from pathlib import Path
+
+    def text(node) -> str | None:
+        return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else None
+    tree = ast.parse((Path(__file__).parent / "test_invariants.py").read_text())
+    found: set[str] = set()
+    for node in ast.walk(tree):
+        pairs = []
+        if isinstance(node, ast.keyword):
+            pairs = [(node.arg, node.value)]
+        elif isinstance(node, ast.Dict):
+            pairs = [(text(k), v) for k, v in zip(node.keys, node.values) if k is not None]
+        elif isinstance(node, ast.Assign):
+            pairs = [(text(t.slice), node.value) for t in node.targets if isinstance(t, ast.Subscript)]
+        elif isinstance(node, ast.Tuple) and len(node.elts) == 2:
+            pairs = [(text(node.elts[0]), node.elts[1])]
+        found |= {text(v) for k, v in pairs if k == field and text(v) is not None}
+    return found
+
+
+def test_the_attackers_ways_cover_every_port_and_protocol_the_machine_writes():
+    """I3X's review: `ATTACKER_WAYS` is written by hand (22, 443, another; TCP, UDP). Every port and protocol
+    the machine can put in a rule — the customer's templates, our rules narrowed or turned, a rule edited — is
+    among them, and one port no rule names: the day the generator writes Icmp or a range, the oracle of
+    « cut off on every way » would go blind again without a sound. `*` covers them all."""
+    from .fake_azure import ATTACKER_WAYS
+    ports = {w[2] for w in ATTACKER_WAYS}
+    protos = {w[3] for w in ATTACKER_WAYS}
+    named = _machine_writes("destination_port_range") - {"*"}
+    assert named, "the machine's ports not found: the reading of its source is broken"
+    assert all(p.isdigit() and int(p) in ports for p in named), (sorted(named), sorted(ports))
+    assert ports - {int(p) for p in named}, "no way on a port no rule names"
+    written = {p.lower() for p in _machine_writes("protocol")} - {"*", "any"}
+    assert written, "the machine's protocols not found: the reading of its source is broken"
+    assert written <= protos, (sorted(written), sorted(protos))
+    assert {w[0] for w in ATTACKER_WAYS} == {"in", "out"}
+    assert not _machine_writes("destination_port_ranges"), "a list of ranges: read it here"

@@ -965,6 +965,14 @@ PROBES = (("in", INTERNET, 22), ("in", INTERNET, 443), ("in", LATERAL, 22),
           ("out", INTERNET, 443), ("out", LATERAL, 445),
           ("out", AZURE_DNS, 53), ("out", AZURE_IMDS, 80),
           ("in", ATTACKER, 22), ("in", ATTACKER, 443), ("out", ATTACKER, 443))
+# Every way to and from the attacker a rule the machine can hold tells apart (I3X, #824): in and
+# out, on the ports a rule names (22, 443) and on the others — and by protocol, TCP and UDP. A
+# deny of ours narrowed to 22 or turned to UDP, then into an allow, opens the attacker a way no
+# probe above crosses (they are TCP, and none goes out to it on 22). The VM reaches the attacker
+# there all the same: a check that says « n'est plus bloquée » of it says true — the probes saw
+# the perimeter cut it off. Read where a claim is « on every port ».
+ATTACKER_WAYS = tuple((direction, ATTACKER, port, proto) for direction in ("in", "out")
+                      for port in (22, 443, 8080) for proto in ("tcp", "udp"))
 # Platform addresses: no rule filters them unless it names their service tag — a
 # deny-all, the default rules included, lets them through (measured on the bench).
 _PLATFORM = {AZURE_DNS: "azureplatformdns", AZURE_IMDS: "azureplatformimds"}
@@ -1023,15 +1031,17 @@ def _names_tag(rule: dict, tag: str) -> bool:
     return any((v or "").strip().lower() == tag for v in values)
 
 
-def _proto(rule: dict, port: int) -> bool:
-    """The rule's protocol covers the probe's: DNS (53) is UDP, the rest TCP."""
+def _proto(rule: dict, port: int, proto: str | None = None) -> bool:
+    """The rule's protocol covers the probe's: the probe's own when it names one
+    (`ATTACKER_WAYS`), else DNS (53) is UDP, the rest TCP."""
     p = _text(rule.get("protocol") or "*").lower()
-    return p in ("*", "any") or p == ("udp" if port == 53 else "tcp")
+    return p in ("*", "any") or p == (proto or ("udp" if port == 53 else "tcp"))
 
 
-def _nsg_allows(nsg: dict, direction: str, src: str, dst: str, port: int) -> bool:
+def _nsg_allows(nsg: dict, direction: str, src: str, dst: str, port: int, proto: str | None = None) -> bool:
     rules = [(r["priority"], r["access"].lower(), r) for r in nsg["rules"].values()
-             if r["direction"].lower() == ("inbound" if direction == "in" else "outbound") and _proto(r, port)]
+             if r["direction"].lower() == ("inbound" if direction == "in" else "outbound")
+             and _proto(r, port, proto)]
     if direction == "out" and dst in _PLATFORM:
         tag = _PLATFORM[dst]
         for _, access, r in sorted(rules, key=lambda x: x[0]):
@@ -1047,19 +1057,20 @@ def _nsg_allows(nsg: dict, direction: str, src: str, dst: str, port: int) -> boo
     return False
 
 
-def open_flows(world: dict, vm: str) -> frozenset:
-    """The probes that get through, for every IP of every NIC of the VM."""
+def open_flows(world: dict, vm: str, probes: tuple = PROBES) -> frozenset:
+    """The probes that get through, for every IP of every NIC of the VM. A probe that names
+    its protocol (`ATTACKER_WAYS`) gives it as its flow's last field."""
     v = world["vms"][key(vm)]
     out = set()
     for n_id in v["nics"]:
         nic = world["nics"][key(n_id)]
         sub = world["subnets"][key(nic["subnet"])]
         chain = [sub["nsg"], nic["nsg"]]
-        for direction, peer, port in PROBES:
+        for direction, peer, port, *proto in probes:
             for ip in nic["ips"]:
                 src, dst = (peer, ip) if direction == "in" else (ip, peer)
                 order = chain if direction == "in" else list(reversed(chain))
-                if all(_nsg_allows(world["nsgs"][key(g)], direction, src, dst, port)
+                if all(_nsg_allows(world["nsgs"][key(g)], direction, src, dst, port, *proto)
                        for g in order if g):
-                    out.add((nic["id"].rsplit("/", 1)[-1], ip, direction, peer, port))
+                    out.add((nic["id"].rsplit("/", 1)[-1], ip, direction, peer, port, *proto))
     return frozenset(out)
