@@ -546,7 +546,8 @@ class AwsIsolationMachine(RuleBasedStateMachine):
         if ((out or {}).get("status") == "isolated" or len(self.fake.journal) > writes
                 or self.chaos.saved_state_of(actions._ISOLATION_STATE_DIR, arn(vm))):
             # As on Azure (I9A): an isolation that wrote the VM's state, cut off after it, was the
-            # operator's isolation — the release it supersedes is no longer under way.
+            # operator's isolation — the release it supersedes is no longer under way. Set by
+            # symmetry, not measured here: no frozen case goes through this line.
             self.releasing.discard(vm)
         if aws_before is not None:
             assert self.fake.snapshot() == aws_before, f"I10: isolate_vm wrote for {vm}, quarantine off or unreadable"

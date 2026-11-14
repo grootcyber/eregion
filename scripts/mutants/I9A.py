@@ -7,11 +7,12 @@ is unchanged; these mutants hold the two sides of the corrected journal.
 M5321: a release left partial (`release_failed`) no longer holds the reassertion — the journal must still
 see an isolation cut off before its state as leaving the release under way (I9 binding). M5322: an
 isolation recorded whole keeps the release's mark — the operator's isolation no longer put back once its
-quarantine is taken off. Measured by the sequences frozen in tests/unit/test_invariant_regressions.py."""
+quarantine is taken off. Measured by the sequences frozen in tests/unit/test_invariant_regressions.py, by behaviour on
+Azure (the quarantine put back, or not): the code's `release_failed` is read there as a diagnostic only."""
 REASSERT = "glorfindel/reassert.py"
 ISOLATION = "glorfindel/providers/azure/isolation.py"
 _REG = "tests/unit/test_invariant_regressions.py::"
-_CUT = f"{_REG}test_an_isolation_cut_off_before_its_state_leaves_the_release"
+_CUT = f"{_REG}test_a_cut_off_isolation_supersedes_the_release_once_it_wrote_its_state"
 
 MUTANTS = [
     ("M5321", "a release left partial no longer holds the reassertion: a quarantine taken off is put back on "

@@ -819,17 +819,22 @@ tirage neuf (SEED1).
 (`chaotic_write`). Il y note désormais chaque écriture arrivée sur le disque, avec le dossier et le
 `resource_id` qu'elle porte (`_Chaos.saved`, `saved_state_of`), avant qu'une faute « after » ne tombe. Une
 isolation qui a écrit l'état de la VM finit la levée, comme celle qui a écrit sur Azure. Le contenu des
-marques n'est jamais lu : `release_failed` n'est cru nulle part. Le produit ne pose un état qu'après une
-écriture arrivée sur Azure (l'état partiel), ou une fois l'isolation entière. Une isolation coupée avant
-d'écrire quoi que ce soit laisse donc la levée en cours, et I9 continue de la tenir. Le même journal
-s'applique au monde AWS (`tests/unit/test_invariants_aws.py`) : rien n'y suit l'écriture de l'état qui
-puisse échouer, sauf une faute juste après elle, et le cas s'y lit de même.
+marques n'est jamais lu : `release_failed` n'est cru nulle part. Le produit pose un état une fois
+l'isolation entière, ou un état partiel, qui retient lui-même la réaffirmation (`partial`,
+`_held_by_an_operation`). Cet état partiel peut venir sans aucune écriture sur Azure : il compte les cartes
+déjà en quarantaine (`kept = done + …`, `providers/azure/isolation.py`, et de même sur AWS). C'est le cas
+d'une VM à deux cartes dont la première est déjà en quarantaine et la seconde échoue avant toute écriture.
+Une isolation coupée avant toute écriture laisse la levée en cours, et I9 continue de la tenir. Le même
+journal est posé sur le monde AWS (`tests/unit/test_invariants_aws.py`), par symétrie, et n'y est pas
+mesuré : aucun cas figé ne passe par sa ligne de `_isolate`. Sur AWS, une lecture suit pourtant
+l'écriture de l'état (`_check_isolation`), et une faute qui y tombe traverse son `except Exception`.
 
 **Mesures.** Figés dans `tests/unit/test_invariant_regressions.py` : la séquence telle que trouvée, et
 réduite, rejouées par `_replay`. S'y ajoutent les deux côtés du journal corrigé, sur la levée partielle de
 web. Un crash dans la coupure de sessions, puis un crash juste après l'écriture de l'état, remplacent la
 levée : la quarantaine ôtée est remise. Un crash à l'écriture de l'état, avant qu'elle n'arrive, laisse la
-levée en cours : la réaffirmation laisse la carte telle quelle. Sur `origin/main` 77e38479, quatre de ces
+levée en cours : la réaffirmation laisse la carte telle quelle. La preuve est dans ce comportement (la
+quarantaine remise, ou non) ; la marque `release_failed` n'y est lue qu'en diagnostic. Sur `origin/main` 77e38479, quatre de ces
 cinq cas échouent. Seul passe le dernier, qui fige ce que la correction ne relâche pas. Mutants
 M5321–M5322 (`scripts/mutants/I9A.py`), le produit inchangé. M5321 : une levée laissée partielle ne retient
 plus la réaffirmation, et le cas « coupée avant son état » l'attrape (I9 tient toujours). M5322 : une

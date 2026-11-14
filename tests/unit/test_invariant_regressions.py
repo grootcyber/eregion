@@ -8294,11 +8294,13 @@ def test_an_isolation_recorded_whole_then_cut_off_supersedes_the_release(monkeyp
     ((1, "after-crash"), True),           # right after its state write landed (its first write)
     ((7, "before-crash"), False),         # at its state write, before it landed: nothing written
 ], ids=["cut in the drain", "cut after its state", "cut before its state"])
-def test_an_isolation_cut_off_before_its_state_leaves_the_release(monkeypatch, fault, supersedes):
+def test_a_cut_off_isolation_supersedes_the_release_once_it_wrote_its_state(monkeypatch, fault, supersedes):
     """I9A, both sides of the corrected journal. web's release partial (its NIC kept in quarantine), the
     operator's isolation cut off by a crash: once it wrote web's state, it superseded the release — the
     quarantine taken off is put back by the reassertion (the product's liveness); before, nothing written,
-    the release is still under way and the reassertion leaves the NIC as it is (I9, still binding)."""
+    the release is still under way and the reassertion leaves the NIC as it is (I9, still binding).
+    The proof is that behaviour, judged on Azure; the code's mark (`release_failed`) is read only to say
+    what the state held when it fails, never asserted (A0)."""
     from glorfindel import actions
 
     invariant_env(monkeypatch)
@@ -8309,11 +8311,11 @@ def test_an_isolation_cut_off_before_its_state_leaves_the_release(monkeypatch, f
         assert WEB1 in m.releasing and (m._state(WEB1) or {}).get("release_failed"), "the world: a partial release"
         m.isolate(data=Script(WEB1, WEB1, fault))
         assert (WEB1 not in m.releasing) is supersedes, (fault, m.releasing)
-        assert bool((m._state(WEB1) or {}).get("release_failed")) is not supersedes, m._state(WEB1)
+        mark = (m._state(WEB1) or {}).get("release_failed")          # a diagnostic only
         m.someone_detaches_the_quarantine(data=Script(_I9A_WEB_NIC))
         assert m.fake.nics[_I9A_WEB_NIC]["nsg"] is None, "the world: the quarantine taken off"
         m.reassert(data=Script("non_disruptive", None))       # I9 judged inside, on the journal
         now = m.fake.nics[_I9A_WEB_NIC]["nsg"]
-        assert bool(now and actions._is_quarantine_nsg(now)) is supersedes, (fault, now)
+        assert bool(now and actions._is_quarantine_nsg(now)) is supersedes, (fault, now, "release_failed", mark)
     finally:
         m.teardown()

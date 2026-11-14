@@ -1156,8 +1156,11 @@ class IsolationMachine(RuleBasedStateMachine):
             # Or once it wrote the VM's state (I9A): its NICs already in quarantine, nothing
             # to write to Azure, an isolation records itself whole, then cuts the sessions —
             # cut off there (a crash in the drain, or right after the write), it was the
-            # operator's isolation all the same. One cut off before writing anything leaves
-            # the release under way (`test_an_isolation_cut_off_before_its_state_leaves_the_release`).
+            # operator's isolation all the same. The product writes a state only once the
+            # isolation is whole, or a partial one, which holds the reassertion itself (`partial`)
+            # — even with nothing written to Azure (NICs already in quarantine counted). One cut
+            # off before writing anything leaves the release under way
+            # (`test_a_cut_off_isolation_supersedes_the_release_once_it_wrote_its_state`).
             self.releasing.discard(vm)
         if azure_before is not None:
             # S1: the configuration can't be read — refused before any write.
