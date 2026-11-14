@@ -675,6 +675,16 @@ briques:
     lots: [IR1a, IR1b]
     issue: 552
 
+  - id: g-identite-defense
+    composant: glorfindel
+    poste: g-agir
+    nom: "An identity card's plan never proposes to cut the defense off: what to check first, who is protected and why, the revocation of sessions checked against the hour of the event"
+    etat: main
+    release: "0.6"
+    lots: [IR1f]
+    issue: 828
+    doc: docs/design/reponse-identite.md
+
   - id: g-identite-unique
     composant: glorfindel
     poste: g-agir
@@ -1214,11 +1224,12 @@ briques:
   - id: a-identite-banc
     composant: annatar
     poste: a-attaquer
-    nom: "The identity card: a control-plane identity technique played at the bench"
+    nom: "The 0.6.0 identity card, as a playable control-plane scenario"
     etat: main
     release: "0.6"
     lots: [RID1]
     issue: 819
+    pr: 822
     doc: docs/architecture.md
 
   - id: a-pendant-panne

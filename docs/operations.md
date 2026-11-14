@@ -1374,6 +1374,15 @@ Pour un principal de service : les mêmes permissions dans son inscription d'app
 (`*.ReadWrite.*`) : la liste refusée de la conception (§3.4) vaut pour la watch comme pour toute
 identité d'Eregion. La lecture de Graph, ce que voit `Verify`, ce qui manque : `docs/glorfindel.md`.
 
+**Ce geste fait lui-même quatre cartes** `entra-app-consent` (mesuré au banc le 14/11) : quatre
+« Add app role assignment to service principal », dont le client est la watch. Depuis IR1f (#828),
+chacune est marquée **identité de la défense** (critique) : son plan ne propose jamais de désactiver
+la watch ni de lui retirer ces droits d'office ; il dit d'abord de vérifier que le geste est celui
+de l'opérateur, et chaque autre étape ne vaut que s'il ne l'est pas. L'opérateur, auteur du geste,
+est dit protégé quand `EREGION_OPERATOR_OBJECT_ID` le nomme, et aucune étape ne le coupe (ni
+désactivation ni révocation de ses sessions). Le geste
+confirmé, la carte se résout à la main.
+
 ### L'exécuteur d'identité : son application et son contrat (IR1b, #572)
 
 L'**exécuteur d'identité** répondra à une identité volée (IR1c) : retirer l'identifiant ajouté,

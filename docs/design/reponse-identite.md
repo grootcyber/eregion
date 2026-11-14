@@ -581,6 +581,38 @@ identifiants, un geste de l'opérateur, et la carte le dit.
 **Quand la cible est l'exécuteur lui-même** : refusé, carte critique. Il ne se désactive pas et ne
 se retire rien.
 
+**Mesuré au banc le 14/11, corrigé par IR1f (#828).** Le geste de Jonathan qui donne à la watch ses
+quatre lectures de Graph fait quatre « Add app role assignment to service principal ». Leur cible
+est le principal de Microsoft Graph, et leur client, la watch, n'est que dans `ClientId`. La carte
+n'était pas marquée, et son plan proposait d'abord de désactiver la watch. Ce que le plan fait
+depuis :
+- **le client d'un consentement est comparé aux identités de Glorfindel**, comme sa cible
+  (`entra.target_ids`) : la carte est `GlorfindelManaged`, critique, et elle le dit (« une identité
+  de la défense ») ;
+- **une identité de la défense n'est jamais coupée d'office**. C'est l'identité de Glorfindel, par
+  ses marques, ou une identité que `never_target` liste et qu'une étape désactiverait ou dont elle
+  révoquerait les sessions. La première étape dit ce qu'il faut vérifier : que le geste est celui
+  de l'opérateur, et pourquoi. Chaque autre étape ne vaut que s'il ne l'est pas : facultative, elle
+  n'est jamais comptée par Vérifier. La désactivation de Glorfindel n'y est jamais. Une liste
+  illisible ne nomme personne : rien n'est retiré, chaque verbe reste une étape de l'humain, avec
+  sa raison ;
+- **un auteur que `never_target` liste** (un opérateur) est dit protégé, et **aucune étape ne le
+  coupe** : ni sa désactivation, ni la révocation de ses sessions. Ce qu'on lui a ajouté se retire
+  encore, comme une étape de l'humain avec la raison de `never_target`. C'est le cas d'un
+  principal listé qui s'ajoute un identifiant à lui-même, la persistance classique d'un identifiant
+  volé : Vérifier dit « pas tenu » tant que l'identifiant est là (relecture d'IR1f). Un verbe de
+  l'humain sur une identité de la liste dit aussi sa raison, et plus seulement ceux de
+  l'exécuteur. Un prédicat qui n'est pas la liste (sans `listed`) ne protège personne ;
+- **l'heure de l'événement** est lue comme `azure-monitor-query` rend `TimeGenerated`, un
+  `datetime` dont le `str()` a une espace à la place du `T`. Elle est réécrite en UTC avec un `Z`,
+  ce qui permet de vérifier la révocation des sessions. Absente ou illisible, le plan le dit, et
+  Vérifier répond « illisible », jamais « tenu » ;
+- la carte, la console et Discord disent qui est protégé et pourquoi (`protected`, `event_at_why`
+  du plan). Ils l'intitulent « Identité de la défense » pour Glorfindel seul (`defense:
+  "glorfindel"`) et « Identité protégée » pour toute autre (`"listed"`, ou un auteur protégé).
+  L'exemple des lectures de Graph de la watch n'est donné que pour un consentement accordé à
+  Glorfindel.
+
 ### 3.6 L'unité administrative du banc, et l'inscription d'un utilisateur de test (IDI1b)
 
 La décision du Q2 donne à l'exécuteur la désactivation d'un **utilisateur de test**, par un User
@@ -771,6 +803,7 @@ En jours de travail effectif, à ±50 %, comme la ROADMAP.
 |---|---|---|---|---|
 | **IR1a** (fait, 05/11) | **Le plan et sa vérification, en lecture seule.** Le plan écrit par le code sur chaque carte `identity_change` (§3.2), avec ses paramètres lus dans Graph ; les commandes complètes, sans `<id>` à chercher ; le bouton **Vérifier**, qui relit Graph et dit « tenu » ou « pas tenu », noté au fil. La liste `never_target` dans `eregion_core/` (partagée avec IDI1). `IDENTITY_ACTIONS` disjoint d'`AUTONOMOUS_ACTIONS`. Graph seulement dans `glorfindel/providers/azure/` (`test_provider_boundary.py`). Un faux Graph, des tests, des mutants. | rien pour le code ; ID1 pour la mesure | Glorfindel, Console | 3–4 j |
 | **IR1b** (fait, 05/11) | **Le contrat de l'exécuteur** : la liste refusée, la lecture de ses droits, `beyond_contract` ; `docs/operations.md` (« Identités Azure ») ; l'application de l'exécuteur en Terraform, désactivée par défaut, ses permissions consenties par Jonathan. | IR1a | Glorfindel, Infra | 2 j |
+| **IR1f** (#828, 14/11) | **Le plan ne coupe jamais la défense** (§3.5, mesuré au banc) : le client d'un consentement comparé aux identités de Glorfindel ; une identité de la défense jamais désactivée d'office, la vérification d'abord ; un auteur de `never_target` dit protégé, jamais visé ; l'heure de l'événement lue comme `azure-monitor-query` la rend. | IR1a | Glorfindel, Console | 1 j |
 | **IDI1b** | **L'inscription d'un utilisateur de test** (§3.6) : l'unité administrative restreinte du banc, ses utilisateurs de test sans rôle, le User Administrator à sa portée et Directory Readers pour l'exécuteur, l'ensemble d'attributs d'Eregion, en Terraform de Celebrimbor désactivé par défaut (plan et apply par Jonathan) ; la garde en deux moitiés (l'appartenance, l'attribut), la même que pour une VM ; tests sans réseau, mutants. | IDI1 (#546) | Infra, Glorfindel | 2–3 j |
 | **IR1c** | **L'exécuteur d'identité** : les verbes du §3.3, la vérification de la demande et de la proposition, les gardes (inscription, zone, `never_target`, débit, clé de l'opérateur, preuve, état), l'état pour le retour, les reçus signés, les cartes critiques. Les verbes déposés par la console, la commande du poste pour les verbes lourds. | FS1a, FS1b (la file), FS1g (le modèle d'exécuteur), IDI1 et IDI1b (l'inscription et la propriété), IR1b | Glorfindel, Console | 5–7 j |
 | **IR1d** | **L'exécuteur surveillé** : toute écriture d'Entra sous son identité sans reçu est une carte critique, comme SID1 pour Run Command ; le modèle de menace (§4). | IR1c, ID1 | Glorfindel | 1–2 j |

@@ -9,11 +9,19 @@ from glorfindel.providers.azure.entra_items import (
 
 # ── A consent ──────────────────────────────────────────────────────────────────────────────
 
-def _consent_items(row: dict, reads: _Reads, event_at: str) -> list[dict]:
+def consent_client(row: dict) -> str:
+    """The client application of a consent (its principal's object id), else "" — what the plan
+    would block, and what `entra.target_ids` compares with Glorfindel's identities (IR1f)."""
     op = str(row.get("EntraOperation") or "").strip().lower()
     # The client: the target of « Consent to application »; outside that flow the target is likely
     # the RESOURCE's principal (Microsoft Graph): the client then from modifiedProperties, or none.
     client = guid(row.get("TargetId")) if op == "consent to application" else guid(row.get("ClientId"))
+    return client
+
+
+def _consent_items(row: dict, reads: _Reads, event_at: str) -> list[dict]:
+    op = str(row.get("EntraOperation") or "").strip().lower()
+    client = consent_client(row)
     items: list[dict] = []
     if not client:
         items.append(_item(

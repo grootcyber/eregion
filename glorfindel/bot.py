@@ -400,6 +400,7 @@ def _executed_fields(executed: dict, said: str) -> list[tuple[str, str, bool]]:
 _FIELD_MAX = 1024          # a field's value (Discord)
 _STEP_FIELDS = 2           # the plan's fields at most: the embed stays under its 6000 characters
 _TAIL_ROOM = 120           # kept in the last one, to say what did not fit
+_SAID_MAX = 600            # who is protected, the hour not read (IR1f): its own field, short
 
 
 def _plan_block(i: dict) -> list[str]:
@@ -413,11 +414,22 @@ def _plan_block(i: dict) -> list[str]:
             unread.setdefault(str(p.get("why") or "non lu"), []).append(str(p.get("name") or "?"))
     if unread:
         lines.append("  ↳ non lu : " + discord_text(" ; ".join(f"{', '.join(n)} ({w})" for w, n in unread.items())))
+    if i.get("protected"):          # IR1f: why a human's, never_target's reason said here too
+        lines.append("  ↳ à la main : " + discord_text(i["protected"]))
     if i.get("before"):
         lines.append(f"  ↳ avant : {discord_code(i['before'])}")
     if i.get("find"):
         lines.append(f"  ↳ pour le trouver : {discord_code(i['find'])}")
     return lines
+
+
+def _said_title(plan: dict) -> str:
+    """IR1f: « Identité de la défense » for Glorfindel's alone; another identity never_target
+    protects (an operator's account, Orodruin), « Identité protégée »; an hour not read alone,
+    « À savoir »."""
+    if plan.get("defense") == "glorfindel":
+        return "Identité de la défense"
+    return "Identité protégée" if plan.get("defense") or plan.get("protected") else "À savoir"
 
 
 def _plan_fields(plan: dict) -> list[tuple[str, str, bool]]:
@@ -448,7 +460,13 @@ def _plan_fields(plan: dict) -> list[tuple[str, str, bool]]:
             break
         fields[-1].extend(block)
     names = ["Prochaines étapes", "Prochaines étapes (suite)"]
-    return [(names[n], "\n".join(f)[:_FIELD_MAX], False) for n, f in enumerate(fields) if f]
+    # IR1f: who is protected and why (an identity of the defense, an author never_target lists),
+    # and an hour of the event not read — in their own field, ahead of the steps, never cut by them.
+    said = [str(x) for x in plan.get("protected") or [] if x] + ([str(plan["event_at_why"])] if plan.get("event_at_why") else [])
+    value = "\n".join(f"• {discord_text(x)}" for x in said)
+    value = value if len(value) <= _SAID_MAX else value[:_SAID_MAX - 30].rstrip() + " … (la carte dans la console)"
+    head = [(_said_title(plan), value, False)] if said else []
+    return head + [(names[n], "\n".join(f)[:_FIELD_MAX], False) for n, f in enumerate(fields) if f]
 
 
 def _load_messages() -> dict[str, int]:
