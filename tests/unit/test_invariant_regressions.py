@@ -8232,6 +8232,95 @@ def test_two_placements_off_its_nic_acknowledged_are_said_again_when_either_is_d
         shutil.rmtree(m.home, ignore_errors=True)
 
 
+# ── I9A (#823): the operator's isolation, recorded whole then cut off in its drain, read as no isolation ──
+# The night « Invariants (deep) » of 14/11 (run 43585550169, f0df21d1, 10 000 examples), red on ubuntu (web),
+# then replayed by every PR from the cached Hypothesis base. web's release left its NIC in quarantine (its
+# original unknown, I8F: `release_failed`); the operator isolates web again: the NIC already in quarantine,
+# nothing to write to Azure, the isolation records itself whole (its state rewritten, the release's marks
+# gone), then a crash in its drain (`vm.get`, its 8th call). Someone takes the quarantine off; the
+# reassertion puts it back. Right — the operator's isolation is what holds — but the machine's journal ended
+# the release only on an isolation that wrote to Azure: « I9: the reassertion isolated …/web again
+# mid-release ». The oracle's, not the product's: its rule dates from A0 (a34a9aac, 13/10), reachable once
+# `bare_with_an_unknown_original` came (791c6b34, 27/10 — the reduced sequence red there too) — a new draw
+# (SEED1). Corrected from the test's journal: an isolation that wrote the VM's state (`chaotic_write`, by the
+# resource id the write carried) supersedes the release too; one cut off before writing anything leaves it.
+
+_I9A_NET = {**_L1N_UBUNTU_NET, "config": {"quarantine": True, "rg": "", "forensic": [], "readable": True}}
+_I9A_WEB_NIC = _nic("rg-app1", "web-nic")
+_I9A_PARTIAL_RELEASE = ("bare_with_an_unknown_original", WEB1, WEB1, None, _I9A_WEB_NIC, "isolate+release", None)
+_I9A_FOUND = (
+    ("operator_acknowledges", 0),
+    ("quarantine_altered_then_reasserted", WEB1, WEB1, None, True, False, "protocol",
+     (_Q1, "glorfindel-quarantine-deny-dns"), "human_only", "no"),
+    _L1N_ADDRESS,
+    ("customer_deletes_nsg", _L1N_DB_NIC_0_NSG),
+    _L1N_ADDRESS,
+    ("turned_perimeter_left_out", WEB1, WEB1, None),
+    ("tags_lost", _Q1),
+    ("a_hold_moved_under_it", DB, DB, None, "gone", 22, _L1N_DB_NIC_0_NSG, "human_only"),
+    ("tamper_with_our_rule", "port", (_Q1, "glorfindel-quarantine-deny-dns")),
+    _L1N_ADDRESS,
+    ("customer_removes_rule", _L1N_DB_NIC_0_NSG, "allow-https"),
+    _I9A_PARTIAL_RELEASE,
+    _L1N_ADDRESS,
+    _L1N_ADDRESS,
+    ("isolate", WEB1, WEB1, (8, "before-crash")),
+    _L1N_ADDRESS,
+    ("redeploy_nic", _nic("rg-edge", "api-nic")),
+    ("someone_detaches_the_quarantine", _I9A_WEB_NIC),
+    ("quarantine_altered_then_reasserted", DB, DB, (1, "before-429"), False, False, "protocol",
+     (_Q1, "glorfindel-quarantine-deny-in"), "non_disruptive", "no"))
+# Shrunk by hand (each rule removed in turn while I9 still fails); the drawn fault no rule plays kept.
+_I9A_REDUCED = (
+    _I9A_PARTIAL_RELEASE,
+    ("isolate", WEB1, WEB1, (8, "before-crash")),
+    ("someone_detaches_the_quarantine", _I9A_WEB_NIC),
+    ("quarantine_altered_then_reasserted", DB, DB, (1, "before-429"), False, False, "protocol",
+     (_Q1, "glorfindel-quarantine-deny-in"), "non_disruptive", "no"))
+
+
+@pytest.mark.parametrize("steps", [_I9A_FOUND, _I9A_REDUCED], ids=["ubuntu web as found", "ubuntu web reduced"])
+def test_an_isolation_recorded_whole_then_cut_off_supersedes_the_release(monkeypatch, steps):
+    """I9A (#823): « I9: the reassertion isolated …/web again mid-release ». web's release kept its NIC in
+    quarantine (its original unknown); isolated again, nothing to write to Azure, the isolation recorded
+    itself whole, then crashed in its drain. The quarantine taken off, the reassertion put it back — the
+    operator's isolation, which superseded the release. The oracle's: its journal ended a release only on an
+    isolation that wrote to Azure; now on one that wrote the VM's state too (the test's journal, A0)."""
+    _replay(monkeypatch, _I9A_NET, *steps)
+
+
+@pytest.mark.parametrize("fault, supersedes", [
+    ((8, "before-crash"), True),          # in its drain, its state written whole
+    ((1, "after-crash"), True),           # right after its state write landed (its first write)
+    ((7, "before-crash"), False),         # at its state write, before it landed: nothing written
+], ids=["cut in the drain", "cut after its state", "cut before its state"])
+def test_a_cut_off_isolation_supersedes_the_release_once_it_wrote_its_state(monkeypatch, fault, supersedes):
+    """I9A, both sides of the corrected journal. web's release partial (its NIC kept in quarantine), the
+    operator's isolation cut off by a crash: once it wrote web's state, it superseded the release — the
+    quarantine taken off is put back by the reassertion (the product's liveness); before, nothing written,
+    the release is still under way and the reassertion leaves the NIC as it is (I9, still binding).
+    The proof is that behaviour, judged on Azure; the code's mark (`release_failed`) is read only to say
+    what the state held when it fails, never asserted (A0)."""
+    from glorfindel import actions
+
+    invariant_env(monkeypatch)
+    m = IsolationMachine()
+    try:
+        m.build(_I9A_NET)
+        m.bare_with_an_unknown_original(data=Script(*_I9A_PARTIAL_RELEASE[1:]))
+        assert WEB1 in m.releasing and (m._state(WEB1) or {}).get("release_failed"), "the world: a partial release"
+        m.isolate(data=Script(WEB1, WEB1, fault))
+        assert (WEB1 not in m.releasing) is supersedes, (fault, m.releasing)
+        mark = (m._state(WEB1) or {}).get("release_failed")          # a diagnostic only
+        m.someone_detaches_the_quarantine(data=Script(_I9A_WEB_NIC))
+        assert m.fake.nics[_I9A_WEB_NIC]["nsg"] is None, "the world: the quarantine taken off"
+        m.reassert(data=Script("non_disruptive", None))       # I9 judged inside, on the journal
+        now = m.fake.nics[_I9A_WEB_NIC]["nsg"]
+        assert bool(now and actions._is_quarantine_nsg(now)) is supersedes, (fault, now, "release_failed", mark)
+    finally:
+        m.teardown()
+
+
 # I3X (#824): the night « Invariants (deep) » of 14/11 on f0df21d1, macOS, 10 000 examples (run 43585550169).
 _I3X_EDGE = "/subscriptions/s/resourcegroups/rg-edge/providers/microsoft.network/networksecuritygroups/nsg-edge"
 _I3X_RULE = "glorfindel-block-192-31-196-7-api-api-nic-c272f2"
