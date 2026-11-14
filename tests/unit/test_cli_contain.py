@@ -566,21 +566,54 @@ def test_the_zone_is_said_before_the_prompt(world, monkeypatch):
     assert not active_isolations() and not _noted(world)
 
 
-def test_a_dry_run_says_the_zone_unread_and_reads_nothing(world, monkeypatch):
-    """A dry run asks nothing of Azure: the line is there, the zone unread — never the bench."""
-    calls = _tags(monkeypatch, _enrolled("bench"))
+@pytest.mark.parametrize("vm_tags, rg_tags, fail, said", [
+    (_enrolled("production"), None, None, "Zone : production — une charge réelle"),
+    (_enrolled("twin"), None, None, "Zone : twin"),
+    ({"annatar-test": "true"}, {"annatar-test": "true"}, None, "Zone : bench (ancien tag)"),
+    ({}, None, None, "Zone : VM non inscrite ("),
+    (None, None, RuntimeError("HTTP 403 reading web"), "Zone : illisible (HTTP 403 reading web)"),
+])
+def test_a_dry_run_reads_the_real_zone_and_writes_nothing(world, monkeypatch, vm_tags, rg_tags, fail, said):
+    """Jonathan's decision of 14/11: a dry run reads the zone (two GETs, bounded) and says the real one,
+    the same cases as a real run — and writes nothing: no rule, no state, nothing noted."""
+    from glorfindel.actions import active_blocks, active_isolations
+    calls = _tags(monkeypatch, vm_tags, rg_tags, fail)
+    before = (_rules(world, world.own), _rules(world, world.subnet_nsg))
     for args in (("isolate", "rg-app1/web", "--dry-run"), ("block", ATTACKER, "rg-app1/web", "--dry-run", "--yes")):
         r = _run(*args)
         assert r.exit_code == 0, r.output
-        assert "Zone : non lue — essai à blanc" in r.output and "Zone : bench" not in r.output, r.output
-    assert calls == []
+        assert said in r.output and "DRY RUN — no changes made" in r.output, r.output
+    assert calls == [WEB, WEB]
+    assert (_rules(world, world.own), _rules(world, world.subnet_nsg)) == before
+    assert not active_isolations() and not active_blocks() and not _noted(world)
+
+
+def test_a_dry_run_past_the_bound_says_the_zone_unreadable(world, monkeypatch):
+    import threading
+
+    from glorfindel import gestures
+    late = threading.Event()
+
+    def slow(resource_id):
+        late.wait(3)
+        return {"eregion-target": "celebrimbor"}, _enrolled("bench")
+    monkeypatch.setattr(gestures, "TAGS_READER", slow)
+    monkeypatch.setattr(gestures, "READ_TIMEOUT_S", 0.05)
+    try:
+        r = _run("isolate", "rg-app1/web", "--dry-run")
+    finally:
+        late.set()
+    assert r.exit_code == 0 and "Zone : illisible (pas de réponse en 0.05 s)" in r.output, r.output
 
 
 def test_a_refused_gesture_reads_no_tag(world, monkeypatch):
-    """The guards first: read-only credentials refuse before the zone is read — nothing asked of Azure."""
+    """The guards first: read-only credentials refuse before the zone is read — nothing asked of Azure, a
+    dry run too."""
     calls = _tags(monkeypatch, _enrolled("bench"))
     monkeypatch.setenv("GLORFINDEL_READ_ONLY", "1")
     assert _run("isolate", "rg-app1/web", "--yes").exit_code == 1
+    assert _run("isolate", "rg-app1/web", "--dry-run").exit_code == 1
+    assert _run("block", ATTACKER, "rg-app1/web", "--dry-run").exit_code == 1
     assert calls == []
 
 
@@ -646,7 +679,7 @@ def test_a_block_on_the_subnet_says_its_other_vms_zones_are_not_read(world, monk
     assert r.exit_code == 0, r.output
     assert f"Zone : bench — {REACH}" in r.output, r.output
     r = _run("block", "203.0.113.8", "rg-app1/web", "--scope", "subnet", "--dry-run", "--yes")
-    assert "non lue" in r.output and REACH in r.output, r.output
+    assert f"Zone : bench — {REACH}" in r.output, r.output
     r = _run("block", "203.0.113.9", "rg-app1/web", "--yes")
     assert r.exit_code == 0 and "Zone : bench" in r.output and REACH not in r.output, r.output
     r = _run("isolate", "rg-app1/web", "--yes")

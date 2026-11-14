@@ -531,8 +531,9 @@ def unblock(ip: str, resource_id: str, dry_run: bool, yes: bool):
 
 def _contain_preamble(resource_id: str, action: str, dry_run: bool, scope: str = "vm"):
     """The guards before any call to the cloud, and what the human is told before the prompt — the
-    connector once they hold, and whether a watch lives here (a session cut it rereads). Refused: a
-    ClickException, nothing done — a dry run too: the guards are local reads."""
+    connector once they hold, the VM's zone (read once they hold, a dry run too: reads only), and whether
+    a watch lives here (a session cut it rereads). Refused: a ClickException, nothing done, no tag read —
+    a dry run too: the guards are local reads."""
     from glorfindel import gestures
     from glorfindel.actions import AzureConnector
     why = gestures.direct_refusal(resource_id)
@@ -542,29 +543,24 @@ def _contain_preamble(resource_id: str, action: str, dry_run: bool, scope: str =
     if getattr(connector, "read_only", False):
         raise click.ClickException("credentials en lecture seule (GLORFINDEL_READ_ONLY) : cet hôte ne peut "
                                    "pas agir — rien n'est fait")
-    _zone_said(resource_id, action, dry_run, scope)
+    _zone_said(resource_id, action, scope)
     for e in gestures.held_cards(resource_id, action):
         console.print(f"  [cyan]Carte {e['id'][:8]} en attente pour ce geste : elle reste en attente — "
                       f"glorfindel ack {e['id'][:8]} une fois le geste vérifié.[/cyan]")
     return connector, _state_here_said()
 
 
-def _zone_said(resource_id: str, action: str, dry_run: bool, scope: str = "vm") -> None:
+def _zone_said(resource_id: str, action: str, scope: str = "vm") -> None:
     """CMD1b (#811): the VM's enrollment zone, on one line before the prompt — --yes and --dry-run too.
     Said, never refused (Jonathan's decision of 14/11): no zone, and no read that fails, stops the gesture
-    or changes its exit code. A dry run reads nothing on Azure: the zone is said unread. A VM not
-    enrolled, a zone none of the three, tags unread or no answer in time: each said as such, never taken
+    or changes its exit code. A dry run reads it too, and says the real zone (Jonathan's decision of
+    14/11: a dry run writes nothing on Azure, it may read — two GETs, bounded). A VM not enrolled, a zone none of the three, tags unread or no answer in time: each said as such, never taken
     for the bench. A block on the subnet reaches its other VMs, whose zones are not read: said too."""
     from glorfindel import gestures
     # The rule of `--scope subnet` sits on the subnet's NSG: every VM of the subnet, any of them perhaps a
     # real load — the zone said is the named VM's only (review of CMD1b).
     reach = (" — la zone de cette VM seulement : le blocage touche toutes les VM de son sous-réseau, leurs "
              "zones non lues") if scope == "subnet" else ""
-    if dry_run:
-        console.print("  [yellow]Zone     : non lue — essai à blanc, rien n'est demandé à Azure ; rien ne "
-                      f"dit qu'elle soit du banc (sans --dry-run, elle est lue avant la question){reach}."
-                      "[/yellow]")
-        return
     kind, why = gestures.zone_of(resource_id)
     # Tag values and Azure's text: masked (no subscription's id, MSK2), one printable line, cut, no markup.
     why = " ".join("".join(c if c.isprintable() else " " for c in _ids_masked(why)).split())
@@ -627,7 +623,8 @@ def _contained_said(out: dict, what: str, dry_run: bool) -> None:
 
 @cli.command()
 @click.argument("resource_id")
-@click.option("--dry-run", is_flag=True, help="Check the guards and show what would be done, without executing.")
+@click.option("--dry-run", is_flag=True, help="Check the guards, read the VM's zone and show what would be done: "
+              "reads only, nothing written on Azure.")
 @click.option("--yes", is_flag=True, help="Skip confirmation prompt.")
 def isolate(resource_id: str, dry_run: bool, yes: bool):
     """Isolate a VM by hand: a deny-all on each of its NICs, as an approved card (CMD1).
@@ -661,7 +658,8 @@ def isolate(resource_id: str, dry_run: bool, yes: bool):
 @click.argument("resource_id")
 @click.option("--scope", type=click.Choice(["vm", "subnet"]), default="vm", show_default=True,
               help="vm: this VM alone; subnet: one rule on its subnet's NSG, every VM of the subnet.")
-@click.option("--dry-run", is_flag=True, help="Check the guards and show what would be done, without executing.")
+@click.option("--dry-run", is_flag=True, help="Check the guards, read the VM's zone and show what would be done: "
+              "reads only, nothing written on Azure.")
 @click.option("--yes", is_flag=True, help="Skip confirmation prompt.")
 def block(ip: str, resource_id: str, scope: str, dry_run: bool, yes: bool):
     """Block one suspicious IP by hand, as an approved card (CMD1).

@@ -2,7 +2,8 @@
 the prompt — read as the console reads it (TagEnrollment's tags, judged by ``enrollment``) — and never refuse
 for it (Jonathan's decision of 14/11). M5285–M5294, measured by tests/unit/test_cli_contain.py (§4, a fake
 reader of tags: no Azure call). M5305–M5309 after the review: a block on the subnet, a read bounded in time,
-the old chaos tag, no empty brackets."""
+the old chaos tag, no empty brackets; M5310 and M5291–M5292 recast after
+Jonathan's decision of 14/11: a dry run reads the real zone, writes nothing."""
 GESTURES = "glorfindel/gestures.py"
 CLI = "glorfindel/cli.py"
 _C = "tests/unit/test_cli_contain.py"
@@ -29,12 +30,14 @@ MUTANTS = [
      GESTURES,
      '    except Exception as exc:\n        return "unreadable"',
      '    except ValueError as exc:\n        return "unreadable"'),
-    ("M5291", "a dry run reads the tags through Azure: « nothing asked of Azure » broken (CMD1b)", CLI,
-     '    if dry_run:\n        console.print("  [yellow]Zone     : non lue',
-     '    if False:\n        console.print("  [yellow]Zone     : non lue'),
-    ("M5292", "a dry run says no zone at all: the line missing where the fiche wants it (CMD1b)", CLI,
-     "    _zone_said(resource_id, action, dry_run, scope)\n",
-     "    if not dry_run:\n        _zone_said(resource_id, action, dry_run, scope)\n"),
+    ("M5291", "a dry run says no zone at all: the line missing where Jonathan wants the real zone (CMD1b)",
+     CLI,
+     "    _zone_said(resource_id, action, scope)\n",
+     "    if not dry_run:\n        _zone_said(resource_id, action, scope)\n"),
+    ("M5292", "a dry run says the zone unread again, the tags never read: the zone of a real load unsaid "
+     "(CMD1b, Jonathan's decision of 14/11)", CLI,
+     "    _zone_said(resource_id, action, scope)\n",
+     "    _zone_said(resource_id, action, scope) if not dry_run else console.print(\"  Zone     : non lue\")\n"),
     ("M5293", "what Azure says of a failed read is shown unmasked: the subscription's id on the terminal "
      "(MSK2, CMD1b)", CLI,
      '"".join(c if c.isprintable() else " " for c in _ids_masked(why))',
@@ -62,6 +65,11 @@ MUTANTS = [
     ("M5309", "a reason left empty shows « () » (CMD1b, review)", CLI,
      '    note = f" ({why})" if why else ""',
      '    note = f" ({why})"'),
+    ("M5310", "the zone is read before the guards: a gesture refused (read-only credentials, a dry run too) "
+     "asks Azure for its tags (CMD1b)", CLI,
+     "    connector = AzureConnector(dry_run=dry_run)\n    if getattr(connector, \"read_only\", False):\n",
+     "    connector = AzureConnector(dry_run=dry_run)\n    _zone_said(resource_id, action, scope)\n"
+     "    if getattr(connector, \"read_only\", False):\n"),
 ]
 TESTS = {
     "M5285": f"{_C}::test_a_vm_not_enrolled_is_said_so_never_taken_for_the_bench",
@@ -70,8 +78,8 @@ TESTS = {
     "M5288": f"{_C}::test_production_is_said_a_real_load_and_never_refused",
     "M5289": f"{_C}::test_production_is_said_a_real_load_and_never_refused",
     "M5290": f"{_C}::test_tags_unread_are_said_unreadable_and_the_gesture_is_made",
-    "M5291": f"{_C}::test_a_dry_run_says_the_zone_unread_and_reads_nothing",
-    "M5292": f"{_C}::test_a_dry_run_says_the_zone_unread_and_reads_nothing",
+    "M5291": f"{_C}::test_a_dry_run_reads_the_real_zone_and_writes_nothing",
+    "M5292": f"{_C}::test_a_dry_run_reads_the_real_zone_and_writes_nothing",
     "M5293": f"{_C}::test_what_the_reader_says_is_masked_printable_and_never_markup",
     "M5294": f"{_C}::test_what_the_reader_says_is_masked_printable_and_never_markup",
     "M5305": f"{_C}::test_a_block_on_the_subnet_says_its_other_vms_zones_are_not_read",
@@ -79,4 +87,5 @@ TESTS = {
     "M5307": f"{_C}::test_a_read_that_does_not_answer_in_time_is_said_and_the_gesture_made",
     "M5308": f"{_C}::test_the_old_chaos_tag_alone_is_said_bench_by_the_old_tag",
     "M5309": f"{_C}::test_a_reason_left_empty_shows_no_empty_brackets",
+    "M5310": f"{_C}::test_a_refused_gesture_reads_no_tag",
 }

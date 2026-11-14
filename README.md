@@ -549,10 +549,11 @@ glorfindel isolate <group>/<name> --yes         # contain by hand (CMD1): a held
                                                 #   is only anchored on, AL1), under the VM's lock, verified after; lifted by release
 glorfindel block <ip> <group>/<name> --yes      # block one host address by hand (CMD1), --scope vm (default) or subnet; never
                                                 #   a range, a tag or a never_block address; verified after; lifted by unblock
-# Both say a held card of the same gesture and leave it pending (ack it once verified); --dry-run checks the guards only.
+# Both say a held card of the same gesture and leave it pending (ack it once verified); --dry-run checks the guards and
+# reads the VM's zone: reads only, nothing written on Azure.
 # Both say the VM's enrollment zone on one line before the prompt (CMD1b), read as the console reads it (its tags and
 # its group's): bench, twin, or production said a real load; not enrolled, an unknown zone or tags unreadable said
-# as such, never taken for the bench; unread in a dry run; with --scope subnet, the named VM's zone only (its
+# as such, never taken for the bench; a dry run reads it too; with --scope subnet, the named VM's zone only (its
 # neighbours' unread, said); the read waits 20 s at most. Said, never refused: no zone, no failed read stops the
 # gesture or changes its exit code.
 # A check that does not hold, a write landed in part, or a session cut still running with no watch on this host to

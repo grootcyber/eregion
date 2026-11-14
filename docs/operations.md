@@ -192,8 +192,8 @@ glorfindel block <ip> <groupe>/<nom> --yes [--scope vm|subnet]   # CMD1 : bloque
 # sessions qui court encore quand aucune watch ne vit sur l'hôte (personne ne la relira : la couper à la main).
 # Le geste est noté dans runs/console là où la CLI peut l'écrire (un poste, le conteneur de la console) ; dans le
 # conteneur de la watch, runs/console est monté en lecture seule : le geste n'y est pas noté, la CLI le dit une
-# fois (SEC16), comme pour release et unblock. --dry-run : les gardes seules (lecture seule comprise), rien sur
-# Azure, rien écrit. Une carte en attente pour ce même geste est dite, jamais résolue : l'acquitter
+# fois (SEC16), comme pour release et unblock. --dry-run : les gardes (lecture seule comprise) et la zone de la
+# VM lue (CMD1b) — des lectures seulement, aucune écriture sur Azure, rien écrit ici. Une carte en attente pour ce même geste est dite, jamais résolue : l'acquitter
 # (glorfindel ack <id>) une fois le geste vérifié. Le mode (human_only) retient l'action autonome, pas le geste de
 # l'humain. La zone d'inscription (O0, CMD1b) : dite, jamais une garde — décision de Jonathan du 14/11 ; la règle
 # de production borne ce qu'Eregion injecte, pas ce qu'il contient, et le geste est réversible (release,
@@ -202,8 +202,9 @@ glorfindel block <ip> <groupe>/<nom> --yes [--scope vm|subnet]   # CMD1 : bloque
 # eregion_core/inscription.py) : bench et twin dits tels quels ; production dite une charge réelle, avec la
 # commande qui lève le geste ; une VM non inscrite (sa raison), une zone ni bench ni twin ni production, des
 # tags illisibles (un 403, pas d'identifiants, une erreur) : dits tels, « rien ne dit qu'elle soit du banc :
-# peut-être une charge réelle », jamais pris pour bench. --dry-run ne demande rien à Azure : la zone y est dite
-# non lue. Aucune zone, et aucune lecture en échec, n'empêche le geste ni ne change son code de sortie ; un
+# peut-être une charge réelle », jamais pris pour bench. --dry-run la lit aussi (décision de Jonathan du 14/11 :
+# l'essai à blanc n'écrit rien sur Azure, il peut lire — les deux GET, bornés) et dit la vraie zone, dans les
+# mêmes cas que le vrai lancement. Aucune zone, et aucune lecture en échec, n'empêche le geste ni ne change son code de sortie ; un
 # geste refusé par une garde (périmètre, carte ancrée, lecture seule) ne lit aucun tag. Une VM que seul l'ancien
 # tag chaos inscrit est dite « bench (ancien tag) ». block --scope subnet : la zone dite est celle de la VM
 # nommée seulement ; la règle se pose sur le NSG du sous-réseau et touche ses voisines, dont aucune zone n'est
