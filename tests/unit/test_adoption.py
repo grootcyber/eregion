@@ -111,8 +111,21 @@ def test_the_replay_shows_the_ransomware_times_of_the_bench_run_of_12_11():
     # The detection and the isolation, as the restore's own quote adds them.
     m = re.search(r"(\d+),(\d) \+ (\d+),(\d) \+ \d+ = ", " ".join(ad.quotes(restore["source"])))
     detected, isolated = f"{m[1]}.{m[2]} s", f"{m[3]}.{m[4]} s"
-    assert f"detected {detected} after T0" in replay and f"<b>{detected}</b>" in replay
-    assert f"quarantined {isolated} after the detection" in replay
+    # Each marked measured where it shows: the flag 1 of the bar under the scene (`benchRef`), the
+    # « measured » label of the closing cards (review, RAN1b).
+    excluded = "the human’s wait excluded"
+    for said in (f"['detected {detected} after T0',1]", f":['quarantined {isolated} after the detection',1]",
+                 f":['contained in {contain['value']}, verified on Azure',1]",
+                 f":['{restore['value']} to restored service, {excluded}',1]"):
+        assert said in replay, said
+    for value in (detected, contain["value"], restore["value"]):
+        assert re.search(rf'<b>{re.escape(value)}</b><span>[^<]*</span><span class="meas">measured</span>',
+                         replay), value
+    # The time to restored service leaves out the human's wait, as the README and the proof say it: never
+    # read as one from end to end, beside « 1 click approving the restore ».
+    assert "the human's wait excluded" in restore["says"]
+    assert replay.count(f"{restore['value']} to restored service, {excluded}") == 2
+    assert f"<b>{restore['value']}</b><span>to restored service, {excluded}</span>" in replay
     assert replay.count("12 November 2026") == 2       # the closing caption and the foot
     for gone in ("21 min 29 s", "about a minute to contain", "about 1 min", "~1 min", "55–71 s", "the validated runs"):
         assert gone not in replay, gone
