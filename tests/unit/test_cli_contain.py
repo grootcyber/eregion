@@ -18,6 +18,10 @@ A held card of the same VM and action is said, never resolved: the human acknowl
 in-memory Azure (fake_azure.py): the isolation and the block are real writes of the connector, their
 state read back by `release`, `unblock` and the reassertion. No Azure call, no model call; every
 identifier is made up (repository public). Mutants M5205–M5219 (scripts/mutants/CMD1.py).
+
+CMD1b (#811, §4): the VM's enrollment zone said on one line before the prompt, read as the console reads
+it, by a fake reader of tags — never a refusal (Jonathan's decision of 14/11). Mutants M5285–M5294
+(scripts/mutants/CMD1b.py).
 """
 from __future__ import annotations
 
@@ -452,3 +456,269 @@ def test_the_anchored_set_is_the_bot_s_and_the_tui_s():
         node = next(n for n in ast.walk(tree) if isinstance(n, ast.Assign)
                     and any(getattr(t, "id", "") == "_ANCHORED_TYPES" for t in n.targets))
         assert set(ast.literal_eval(node.value)) == set(gestures.ANCHORED_TYPES), rel
+
+
+# ── 4. the VM's enrollment zone, said before the prompt — never a refusal (CMD1b, #811) ───────────────
+#
+# Jonathan's decision of 14/11: the CLI says the zone, it never refuses for it. Read as the console
+# reads it (TagEnrollment's tags, judged by ``enrollment``), here by a fake reader of tags: no Azure
+# call. A VM not enrolled, a zone none of the three, tags unread: said as such, never taken for the
+# bench. Mutants M5285–M5294 (scripts/mutants/CMD1b.py).
+
+SUB = "00000000-0000-4000-8000-00000000abcd"
+
+
+def _tags(monkeypatch, vm_tags=None, rg_tags=None, fail=None):
+    """The fake reader of tags: (the group's, the VM's) — or ``fail`` raised. Its calls kept."""
+    from glorfindel import gestures
+    calls: list[str] = []
+
+    def read(resource_id):
+        calls.append(resource_id)
+        if fail is not None:
+            raise fail
+        return dict(rg_tags if rg_tags is not None else {"eregion-target": "celebrimbor"}), dict(vm_tags or {})
+    monkeypatch.setattr(gestures, "TAGS_READER", read)
+    return calls
+
+
+def _enrolled(zone: str) -> dict:
+    return {"eregion-target": "celebrimbor", "eregion-zone": zone}
+
+
+@pytest.mark.parametrize("zone", ["bench", "twin"])
+def test_bench_and_twin_are_said_as_they_are(world, monkeypatch, zone):
+    calls = _tags(monkeypatch, _enrolled(zone))
+    r = _run("isolate", "rg-app1/web", "--yes")
+    assert r.exit_code == 0, r.output
+    assert f"Zone : {zone} " in r.output and "charge réelle" not in r.output, r.output
+    assert calls == [WEB]
+
+
+def test_production_is_said_a_real_load_and_never_refused(world, monkeypatch):
+    """In production the line says a real load — and the gesture is made, verified, exit 0: O0's rule
+    bounds what Eregion injects, not what it contains (the isolation is lifted by `release`)."""
+    from glorfindel.actions import active_isolations
+    _tags(monkeypatch, _enrolled("production"))
+    r = _run("isolate", "rg-app1/web", "--yes")
+    assert r.exit_code == 0, r.output
+    assert "Zone : production — une charge réelle" in r.output and "glorfindel release" in r.output, r.output
+    assert any(x["resource_id"] == WEB for x in active_isolations())
+    assert "la vérification le confirme" in r.output
+
+
+def test_block_in_production_is_said_and_made_lifted_by_unblock(world, monkeypatch):
+    from glorfindel.actions import active_blocks
+    _tags(monkeypatch, _enrolled("production"))
+    r = _run("block", ATTACKER, "rg-app1/web", "--yes")
+    assert r.exit_code == 0, r.output
+    assert "une charge réelle" in r.output and "glorfindel unblock" in r.output, r.output
+    assert any(b["ip"] == ATTACKER for b in active_blocks())
+
+
+@pytest.mark.parametrize("vm_tags, rg_tags", [
+    ({}, None),                                                                  # no tag at all
+    ({"eregion-target": "celebrimbor", "eregion-zone": "bench"}, {}),            # its group not enrolled
+    ({"eregion-target": "another-bench", "eregion-zone": "bench"}, None),        # another bench's
+    ({"eregion-target": "celebrimbor"}, None),                                   # enrolled, no zone
+])
+def test_a_vm_not_enrolled_is_said_so_never_taken_for_the_bench(world, monkeypatch, vm_tags, rg_tags):
+    """The VM with a real load is the one never enrolled: nothing says it is the bench's."""
+    _tags(monkeypatch, vm_tags, rg_tags)
+    r = _run("isolate", "rg-app1/web", "--yes")
+    assert r.exit_code == 0, r.output
+    assert "Zone : VM non inscrite (" in r.output and "rien ne dit qu'elle soit du banc" in r.output, r.output
+    assert "Zone : bench" not in r.output
+
+
+def test_a_zone_none_of_the_three_is_said_unknown_never_the_bench(world, monkeypatch):
+    _tags(monkeypatch, _enrolled("Production"))
+    r = _run("isolate", "rg-app1/web", "--yes")
+    assert r.exit_code == 0, r.output
+    assert "« Production », inconnue" in r.output and "rien ne dit qu'elle soit du banc" in r.output, r.output
+
+
+@pytest.mark.parametrize("fail", [RuntimeError("HTTP 403 reading web"), PermissionError("no credential"),
+                                  ValueError("not a VM resource id")])
+def test_tags_unread_are_said_unreadable_and_the_gesture_is_made(world, monkeypatch, fail):
+    """A read that fails (a 403, no credential, an error) stops nothing and changes no exit code."""
+    from glorfindel.actions import active_isolations
+    _tags(monkeypatch, fail=fail)
+    r = _run("isolate", "rg-app1/web", "--yes")
+    assert r.exit_code == 0, r.output
+    assert f"Zone : illisible ({fail})" in r.output and "rien ne dit qu'elle soit du banc" in r.output, r.output
+    assert any(x["resource_id"] == WEB for x in active_isolations())
+
+
+def test_the_conftest_reader_reads_nothing_and_is_said_unreadable(world):
+    """Every other test of the CLI: tags never read through Azure, the zone said unreadable."""
+    r = _run("isolate", "rg-app1/web", "--yes")
+    assert r.exit_code == 0 and "Zone : illisible (tests : tags jamais lus)" in r.output, r.output
+
+
+def test_the_zone_is_said_before_the_prompt(world, monkeypatch):
+    """Before the question: the human reads it, then answers — « no » leaves the VM as it was."""
+    from glorfindel.actions import active_isolations
+    _tags(monkeypatch, _enrolled("production"))
+    r = _run("isolate", "rg-app1/web", input="n\n")
+    assert "Aborted" in r.output, r.output
+    assert r.output.index("une charge réelle") < r.output.index("Isolate this VM")
+    assert not active_isolations() and not _noted(world)
+
+
+@pytest.mark.parametrize("vm_tags, rg_tags, fail, said", [
+    (_enrolled("production"), None, None, "Zone : production — une charge réelle"),
+    (_enrolled("twin"), None, None, "Zone : twin"),
+    ({"annatar-test": "true"}, {"annatar-test": "true"}, None, "Zone : bench (ancien tag)"),
+    ({}, None, None, "Zone : VM non inscrite ("),
+    (None, None, RuntimeError("HTTP 403 reading web"), "Zone : illisible (HTTP 403 reading web)"),
+])
+def test_a_dry_run_reads_the_real_zone_and_writes_nothing(world, monkeypatch, vm_tags, rg_tags, fail, said):
+    """Jonathan's decision of 14/11: a dry run reads the zone (two GETs, bounded) and says the real one,
+    the same cases as a real run — and writes nothing: no rule, no state, nothing noted."""
+    from glorfindel.actions import active_blocks, active_isolations
+    calls = _tags(monkeypatch, vm_tags, rg_tags, fail)
+    before = (_rules(world, world.own), _rules(world, world.subnet_nsg))
+    for args in (("isolate", "rg-app1/web", "--dry-run"), ("block", ATTACKER, "rg-app1/web", "--dry-run", "--yes")):
+        r = _run(*args)
+        assert r.exit_code == 0, r.output
+        assert said in r.output and "DRY RUN — no changes made" in r.output, r.output
+    assert calls == [WEB, WEB]
+    assert (_rules(world, world.own), _rules(world, world.subnet_nsg)) == before
+    assert not active_isolations() and not active_blocks() and not _noted(world)
+
+
+def test_a_dry_run_past_the_bound_says_the_zone_unreadable(world, monkeypatch):
+    import threading
+
+    from glorfindel import gestures
+    late = threading.Event()
+
+    def slow(resource_id):
+        late.wait(3)
+        return {"eregion-target": "celebrimbor"}, _enrolled("bench")
+    monkeypatch.setattr(gestures, "TAGS_READER", slow)
+    monkeypatch.setattr(gestures, "READ_TIMEOUT_S", 0.05)
+    try:
+        r = _run("isolate", "rg-app1/web", "--dry-run")
+    finally:
+        late.set()
+    assert r.exit_code == 0 and "Zone : illisible (pas de réponse en 0.05 s)" in r.output, r.output
+
+
+def test_a_refused_gesture_reads_no_tag(world, monkeypatch):
+    """The guards first: read-only credentials refuse before the zone is read — nothing asked of Azure, a
+    dry run too."""
+    calls = _tags(monkeypatch, _enrolled("bench"))
+    monkeypatch.setenv("GLORFINDEL_READ_ONLY", "1")
+    assert _run("isolate", "rg-app1/web", "--yes").exit_code == 1
+    assert _run("isolate", "rg-app1/web", "--dry-run").exit_code == 1
+    assert _run("block", ATTACKER, "rg-app1/web", "--dry-run").exit_code == 1
+    assert calls == []
+
+
+def test_what_the_reader_says_is_masked_printable_and_never_markup(world, monkeypatch):
+    """Azure's text and a tag's value come from outside: no subscription's id on the terminal (MSK2),
+    no markup taken as rich's, one line."""
+    full = f"/subscriptions/{SUB}/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web"
+    _tags(monkeypatch, fail=RuntimeError(f"HTTP 403 over scope '{full}'\nsecond line"))
+    r = _run("isolate", "rg-app1/web", "--yes")
+    assert r.exit_code == 0, r.output
+    assert SUB not in r.output, r.output
+    assert "Zone : illisible (HTTP 403 over scope 'web (groupe rg-app1)' second line)" in r.output, r.output
+    assert _run("release", "rg-app1/web", "--yes").exit_code == 0
+    _tags(monkeypatch, _enrolled("[bold]prod[/bold]"))
+    r = _run("isolate", "rg-app1/web", "--yes")
+    assert "« [bold]prod[/bold] », inconnue" in r.output, r.output
+
+
+def test_the_default_reader_is_tag_enrollment_s_two_gets(monkeypatch):
+    """The real reader: TagEnrollment's own read — the group, then the VM, two GETs through Azure
+    Resource Manager, never a write."""
+    import requests
+
+    from eregion_core.inscription import TagEnrollment
+    from glorfindel import gestures
+    seen: list[tuple[str, str]] = []
+
+    class Answer:
+        ok = True
+
+        def __init__(self, tags):
+            self._tags = tags
+
+        def json(self):
+            return {"tags": self._tags}
+
+    def get(url, **kw):
+        seen.append(("GET", url))
+        return Answer({"eregion-target": "celebrimbor"} if url.endswith("/rg-app1") else _enrolled("twin"))
+
+    def write(*a, **kw):
+        raise AssertionError("a write")
+    monkeypatch.setattr(requests, "get", get)
+    for verb in ("post", "put", "patch", "delete"):
+        monkeypatch.setattr(requests, verb, write)
+    monkeypatch.setattr(TagEnrollment, "_headers", lambda self: {"Authorization": "Bearer x"})
+    assert gestures.tags_read(WEB) == ({"eregion-target": "celebrimbor"}, _enrolled("twin"))
+    assert [v for v, _ in seen] == ["GET", "GET"] and seen[1][1].endswith("/virtualMachines/web")
+    monkeypatch.setattr(gestures, "TAGS_READER", gestures.tags_read)
+    assert gestures.zone_of(WEB) == ("twin", "")
+
+
+# Review of CMD1b: M5305–M5309.
+
+REACH = "la zone de cette VM seulement : le blocage touche toutes les VM de son sous-réseau, leurs zones non lues"
+
+
+def test_a_block_on_the_subnet_says_its_other_vms_zones_are_not_read(world, monkeypatch):
+    """`--scope subnet` puts its rule on the subnet's NSG: every VM of the subnet, perhaps one with a real
+    load — the zone said is the named VM's only, and the line says so; a block on the VM alone does not."""
+    _tags(monkeypatch, _enrolled("bench"))
+    r = _run("block", ATTACKER, "rg-app1/web", "--scope", "subnet", "--yes")
+    assert r.exit_code == 0, r.output
+    assert f"Zone : bench — {REACH}" in r.output, r.output
+    r = _run("block", "203.0.113.8", "rg-app1/web", "--scope", "subnet", "--dry-run", "--yes")
+    assert f"Zone : bench — {REACH}" in r.output, r.output
+    r = _run("block", "203.0.113.9", "rg-app1/web", "--yes")
+    assert r.exit_code == 0 and "Zone : bench" in r.output and REACH not in r.output, r.output
+    r = _run("isolate", "rg-app1/web", "--yes")
+    assert REACH not in r.output, r.output
+
+
+def test_a_read_that_does_not_answer_in_time_is_said_and_the_gesture_made(world, monkeypatch):
+    """The credential's search has no bound of its own (a workstation without credentials): the read is
+    bounded, past it the zone is said unreadable — never the bench, the gesture made, exit 0."""
+    import threading
+
+    from glorfindel import gestures
+    from glorfindel.actions import active_isolations
+    late = threading.Event()
+
+    def slow(resource_id):
+        late.wait(3)
+        return {"eregion-target": "celebrimbor"}, _enrolled("bench")
+    monkeypatch.setattr(gestures, "TAGS_READER", slow)
+    monkeypatch.setattr(gestures, "READ_TIMEOUT_S", 0.05)
+    try:
+        r = _run("isolate", "rg-app1/web", "--yes")
+    finally:
+        late.set()
+    assert r.exit_code == 0, r.output
+    assert "Zone : illisible (pas de réponse en 0.05 s)" in r.output and "Zone : bench" not in r.output, r.output
+    assert any(x["resource_id"] == WEB for x in active_isolations())
+
+
+def test_the_old_chaos_tag_alone_is_said_bench_by_the_old_tag(world, monkeypatch):
+    """Only the old tag (annatar-test=true) on the VM and its group: the bench, as the console reads it —
+    said « ancien tag », never as if enrolled by eregion-target."""
+    _tags(monkeypatch, {"annatar-test": "true"}, {"annatar-test": "true"})
+    r = _run("isolate", "rg-app1/web", "--yes")
+    assert r.exit_code == 0 and "Zone : bench (ancien tag)" in r.output, r.output
+
+
+def test_a_reason_left_empty_shows_no_empty_brackets(world, monkeypatch):
+    from glorfindel import gestures
+    monkeypatch.setattr(gestures, "zone_of", lambda rid: ("not_enrolled", ""))
+    r = _run("isolate", "rg-app1/web", "--yes")
+    assert r.exit_code == 0 and "Zone : VM non inscrite — rien ne dit" in r.output and "()" not in r.output, r.output

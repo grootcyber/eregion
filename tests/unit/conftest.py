@@ -652,6 +652,21 @@ def no_graph(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def no_tags(monkeypatch):
+    """A VM's tags never read through Azure by a test (CMD1b): `glorfindel isolate` and `block` say the
+    VM's enrollment zone before the prompt, read by TagEnrollment with this host's identity — here, a
+    reader that reads nothing and says why (the zone said unreadable). The tests of the zone hand in a
+    fake reader of tags (tests/unit/test_cli_contain.py)."""
+    if not GLORFINDEL:
+        return
+    from glorfindel import gestures
+
+    def unread(resource_id):
+        raise RuntimeError("tests : tags jamais lus")
+    monkeypatch.setattr(gestures, "TAGS_READER", unread)
+
+
+@pytest.fixture(autouse=True)
 def no_local_glorfindel_config(monkeypatch):
     """Never read the developer's real glorfindel-config.yaml.
 
