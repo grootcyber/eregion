@@ -988,6 +988,74 @@ porte (2/2) et deux sur une graine tirée (378795979, 2/2).
 autorisation sortante jugée par le port de la menace, comme une entrante. Seule la séquence neuve
 l'attrape ; les autres, sur `*` ou sur 22, couvrent le port de la menace.
 
+### Chaque mutant que seule la machine visait (MUT13)
+
+La troisième porte de la 0.5.13 (run 43620283807, job « mutants (every shard, the count) ») est rouge sur
+**M02** (un NSG de carte partagé avec d'autres cartes lu comme gouvernant celle-ci seule), attrapé à un tour
+sur deux (tranche 2, graines 239041482 et 239041483). Trois portes de suite, trois mutants différents (M17,
+M38 et M1960 ; M32 ; M02) : la cause est commune. Leur cible était la machine seule, qui ne tire la chaîne
+montrant leur défaut que sur certaines graines, et chaque porte tire les siennes. MUT11 et MUT12 les ont
+figés un par un ; une autre porte en faisait sortir un autre. Décision de Jonathan (14/11) : un lot qui
+ferme ce jeu pour tous les mutants déjà couverts par une séquence figée. Aucun oracle n'est relâché, le
+produit n'est pas touché.
+
+**M02.** Sur un NSG à plusieurs cartes, M02 ne change presque rien à la pose : depuis L24, un refus posé
+pour une carte vise ses adresses, sur un NSG dédié aussi (`_scope_to_nic`). Son défaut ne se voit qu'avec
+l'isolation d'une ancienne version dans le monde (noms fixes, any/any), sur un NSG où une VM a été attachée
+depuis : lu comme le sien, la levée, le reset ou la réaffirmation de cette VM prennent les noms fixes pour
+son isolation et les suppriment, et l'autre VM est rouverte (I4). La machine ne tire ce monde
+(`legacy`, puis `create_vm` sur le même NSG, puis une opération de la nouvelle VM) que par moments. Six
+séquences figées l'atteignent, chacune par I4 : `test_a_release_never_takes_an_old_isolation_on_a_shared_nsg`
+(sa docstring nomme M02), `test_a_reset_never_takes_an_old_isolation_on_an_nsg_shared_since` (I4F),
+`test_a_rule_kept_out_of_sight_is_never_a_success`,
+`test_an_older_deny_all_kept_for_a_turned_rule_on_a_redeployed_nic`,
+`test_an_older_versions_turned_deny_all_put_back_by_the_operator_lets_the_release_go` et
+`test_the_sequence_of_pr_342_reasserts_without_opening_the_vm_at_the_old_address`. Elles sont ajoutées à
+sa cible (`TESTS_ALSO`, `scripts/mutants/MUT13.py`). Mesuré : la machine seule, rejouée sur les deux graines de la porte à 500 séquences, laisse passer M02 sur
+239041482 et l'attrape sur 239041483, sa séquence fautive finissant par `joins_an_old_isolation` (une VM
+qui rejoint le NSG d'une ancienne isolation) puis I4 : la porte, rejouée. Avec sa cible de MUT13,
+`--only M02 --seed 239041482 --examples 500 --rounds 2` : **CAUGHT 2/2** (150 s).
+
+**La revue.** La table donnait 37 mutants comptés à la machine seule : ni `TESTS` à eux, ni entrée de
+`narrowed.json`, ni `TESTS_ALSO` (`mutation_night.py --list`, `alone` ; M11 et M25, `EQUIVALENT`, hors
+compte). Pour chacun, les séquences figées (`test_invariant_regressions.py`,
+`test_invariant_regressions_aws.py`, 855 tests) ont tourné sous le mutant, sans `-x`. Une séquence est
+retenue quand elle échoue, sous le mutant, sur une assertion de la machine : un invariant (I…, U…, L…)
+levé dans `test_invariants.py` ou `test_invariants_aws.py`, son oracle lu sur le monde (A0). Une séquence
+qui n'échoue que sur une assertion à elle, sur un `KeyError` d'un nom de règle (M01 renomme les règles) ou
+sur un tirage laissé inutilisé n'est pas retenue. Puis, pour chaque mutant, ses séquences retenues ont
+tourné seules, l'une après l'autre, comme le harnais les lance : chacune rouge par un invariant sous le
+mutant, et les 156 vertes sur le code. **30 mutants** y gagnent leurs séquences, 363 paires en tout, de 1
+(M15, M30) à 72 (M832). La cible garde la machine en tête : sous `-x`, la machine passe d'abord, puis les
+séquences, que la porte lance aussi non mutées (`--skip-machine-baseline` n'écarte que la machine) ; le
+fichier entier tourne en une demi-minute.
+
+**Ceux qu'aucune séquence figée n'attrape** : ils restent au tirage de la machine. C'est le risque
+résiduel d'une porte.
+- **M761** (la passe des orphelins prend la règle d'une carte vivante pour une orpheline) : avec l'état de
+  la carte, la règle reste (`gone == "alive"`). Le défaut ne se voit que sur une carte vivante dont l'état
+  est perdu, au moment d'une passe des orphelins ; aucune séquence figée ne joue cette passe là.
+- **M603, M605, M607, M609, M611, M616** (AWS) : le fichier figé d'AWS tient sept séquences, toutes sur une
+  ENI laissée sur `default` ou sur le numéro d'une entrée d'ACL. Aucune n'éteint la quarantaine par la
+  configuration (M603), ne lève une ENI laissée sur `default` dont l'origine est connue (M605), ne réisole
+  une ENI déjà en quarantaine (M607), ne vérifie une ENI illisible (M609), ne lève en échec (M611), ni ne
+  vérifie une instance d'un autre compte (M616).
+- M11 et M25 restent `EQUIVALENT`, non comptés.
+
+Le jeu de contrôle n'est pas touché : il mesure ce qu'on n'a pas appris à la suite, et une séquence ajoutée
+à sa cible le fausserait.
+
+**Mutant** (`scripts/mutants/MUT13.py`) : M5377, la propriété de M02 sous une autre forme — un NSG dont les
+associations ne se lisent pas, posé comme dédié dans les cibles de l'isolation. Une séquence figée
+l'attrape (`test_a_reset_never_takes_the_old_isolation_of_a_vm_in_quarantine`, I4). Une autre forme, un
+NSG sur une carte et sur un sous-réseau lu comme dédié (`len(subnets)` ignoré), n'est attrapée par aucune
+séquence figée : elle n'est pas ajoutée, sa séquence reste à écrire.
+
+**Mesure** : `--only M15,M30,M27,M31,M1962,M615,M5377 --examples 60 --rounds 2` (graine tirée 863406402 ; à
+60 séquences, la machine ne porte presque rien, les séquences portent le reste) : **7 sur 7 attrapés à chaque
+tour** (M5377, sans machine ni tirage, un tour). Avec M02, 8 sur 8. Après MUT13, `mutation_night.py --list`
+ne compte plus que 7 `alone` (les sept ci-dessus), 236 `beside`.
+
 ### Trois mutants que la machine ne voyait plus qu'au hasard (MUT4)
 
 La porte de la 0.5.8 (run 42575826306) a rendu trois mutants `FIXED-ONLY`, 0/2 chacun : M19 (un blocage
