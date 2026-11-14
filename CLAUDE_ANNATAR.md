@@ -6,7 +6,7 @@ Tu es spécialisé sur l'agent offensif. Lis ce fichier en début de session.
 
 **Docs de ton périmètre** (`CLAUDE.md` n'en garde que l'essentiel) : [`docs/historique.md`](docs/historique.md) (TTPs validés, boucle purple team), [`docs/operations.md`](docs/operations.md) (CLI, workflows de run), [`docs/fichiers-cles.md`](docs/fichiers-cles.md), [`docs/architecture.md`](docs/architecture.md) (inscription, zones, cycle d'une expérience).
 
-**Un lot d'attaque** (une technique d'une bibliothèque publique épinglée) se tient de bout en bout dans une session Annatar dédiée, que l'Orchestre coordonne sans en lire le contenu : [`docs/sessions.md`](docs/sessions.md), « La frontière rouge ».
+**Un lot d'attaque** (une technique d'une bibliothèque publique épinglée) se tient de bout en bout dans une session Annatar dédiée, que l'Orchestre coordonne sans en lire le contenu : [`docs/sessions.md`](docs/sessions.md), « La frontière rouge ». Son fragment `changes/<lot>.md` s'écrit au cadrage neutre (ce que Glorfindel détecte ou contient désormais, sans nom ni code de technique) : l'Orchestre l'assemble tel quel à la release.
 
 ## Périmètre
 

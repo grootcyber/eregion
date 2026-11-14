@@ -56,9 +56,11 @@ lire le contenu.
 - **L'issue, la PR, la brique.** L'Orchestre ouvre l'issue sous le titre neutre que lui donnent la
   session dédiée ou Jonathan, et en donne le numéro ; son corps, la fiche avec son « Fini quand », ce
   sont eux qui l'écrivent. Le titre
-  de la PR et le nom de la brique du manuel restent neutres aussi. Reste à trancher par Jonathan :
-  le fragment `changes/<lot>.md` d'un lot d'attaque, que `make release` assemble dans la PR de version de
-  l'Orchestre.
+  de la PR et le nom de la brique du manuel restent neutres aussi. **Le fragment `changes/<lot>.md`**
+  d'un lot d'attaque (décision de Jonathan du 14/11, FRN1b) : la session dédiée l'écrit au même cadrage
+  neutre, ce que Glorfindel détecte ou contient désormais, sans nom ni code de technique ; `make release`
+  l'assemble tel quel dans la PR de version de l'Orchestre, qui n'en réécrit rien. Le CHANGELOG est
+  public : neutre de toute façon.
 - **L'index du plan tient ces lots sous un libellé neutre.** La neutralisation revient à la session
   dédiée ou à Jonathan, jamais à l'Orchestre : il lui faudrait lire ce qu'elle tait. Elle se signe d'une
   ligne d'en-tête de `plan.md`, `Neutral index: <date>`, qui se lit avant l'index. Tant qu'elle manque

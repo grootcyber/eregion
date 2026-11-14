@@ -2603,7 +2603,8 @@
    "etat": "main",
    "release": "0.6",
    "lots": [
-    "FRN1"
+    "FRN1",
+    "FRN1b"
    ],
    "issue": 803,
    "pr": 810,
