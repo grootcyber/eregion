@@ -786,6 +786,56 @@ illisible est lu vide. Et le premier NSG illisible arrête la lecture des suivan
 attrapent M5250, M5251 et M5254 ; le 429 détaché attrape M5252 et M5253, que le 429 derrière la quarantaine
 laisse vivre.
 
+### Une isolation écrite en entier, coupée dans sa coupure de sessions, remplace la levée (I9A)
+
+La nuit « Invariants (deep) » du 14/11 (run 43585550169, sur f0df21d1, 10 000 exemples) est rouge sur
+ubuntu : « I9: the reassertion isolated …/web again mid-release ». La base Hypothesis restaurée en cache
+(`.hypothesis-invariants`) la rejoue ensuite dans la CI de chaque PR (run 43588496900, celle de RAN1b, la
+même séquence). Le `_Resp` sans `close` du même journal est le bruit d'un faux de
+`tests/unit/test_bench_snapshot.py` (un avertissement de `tempfile` au ramasse-miettes), sans lien.
+
+**Le rejeu.** Sonde temporaire, hors du dépôt : la séquence telle qu'imprimée, ses tirages dans l'ordre, le
+monde tiré (`forensic` vide cette fois), les huit `@invariant` après la construction et après chaque pas.
+Elle échoue de même avec les trois de `_replay`. Réduite à la main (chaque règle retirée tour à tour tant
+qu'I9 échoue), elle tient en quatre pas. `bare_with_an_unknown_original` sur web, branche
+`isolate+release` : la carte reste en quarantaine, son original inconnu (I8F, `release_failed`). La levée
+n'est pas finie, et le journal du test la tient en cours. Puis `isolate` sur web, avec un crash au 8e
+appel. La carte est déjà dans la quarantaine : rien à écrire sur Azure. L'isolation s'écrit en entier (son
+état réécrit, sans les marques de la levée), puis coupe les sessions : le crash tombe là (`vm.get` de
+`drain_connections`). Puis quelqu'un ôte la quarantaine de la carte. Enfin Db--01 est isolée, et la
+réaffirmation, en `non_disruptive`, remet la quarantaine sur web.
+
+**C'était l'oracle, pas le produit.** La réaffirmation remet l'isolation que l'opérateur a demandée en
+dernier, et que le produit a écrite en entier : c'est ce qu'elle doit faire (« une isolation entière
+réécrit son état sans `release_failed` ni `releasing_at` », plus bas, L1B). Mais le journal du test ne
+finissait une levée que sur une isolation qui avait écrit sur Azure (`len(self.fake.journal) > writes`),
+ou qui répondait `isolated`. Ici, elle n'avait rien eu à écrire sur Azure, et le crash lui a pris sa
+réponse. La règle date d'A0 (a34a9aac, 13/10). Le cas est atteignable depuis
+`bare_with_an_unknown_original` (791c6b34, 27/10, I8F) : la séquence réduite échoue de même sur cet arbre,
+sur 90f00faf (la nuit verte du 12/11) et sur `origin/main` 77e38479. Ce n'est pas une régression, mais un
+tirage neuf (SEED1).
+
+**Le correctif**, tiré du journal du test (A0). Le test enveloppe déjà les écritures d'état
+(`chaotic_write`). Il y note désormais chaque écriture arrivée sur le disque, avec le dossier et le
+`resource_id` qu'elle porte (`_Chaos.saved`, `saved_state_of`), avant qu'une faute « after » ne tombe. Une
+isolation qui a écrit l'état de la VM finit la levée, comme celle qui a écrit sur Azure. Le contenu des
+marques n'est jamais lu : `release_failed` n'est cru nulle part. Le produit ne pose un état qu'après une
+écriture arrivée sur Azure (l'état partiel), ou une fois l'isolation entière. Une isolation coupée avant
+d'écrire quoi que ce soit laisse donc la levée en cours, et I9 continue de la tenir. Le même journal
+s'applique au monde AWS (`tests/unit/test_invariants_aws.py`) : rien n'y suit l'écriture de l'état qui
+puisse échouer, sauf une faute juste après elle, et le cas s'y lit de même.
+
+**Mesures.** Figés dans `tests/unit/test_invariant_regressions.py` : la séquence telle que trouvée, et
+réduite, rejouées par `_replay`. S'y ajoutent les deux côtés du journal corrigé, sur la levée partielle de
+web. Un crash dans la coupure de sessions, puis un crash juste après l'écriture de l'état, remplacent la
+levée : la quarantaine ôtée est remise. Un crash à l'écriture de l'état, avant qu'elle n'arrive, laisse la
+levée en cours : la réaffirmation laisse la carte telle quelle. Sur `origin/main` 77e38479, quatre de ces
+cinq cas échouent. Seul passe le dernier, qui fige ce que la correction ne relâche pas. Mutants
+M5321–M5322 (`scripts/mutants/I9A.py`), le produit inchangé. M5321 : une levée laissée partielle ne retient
+plus la réaffirmation, et le cas « coupée avant son état » l'attrape (I9 tient toujours). M5322 : une
+isolation écrite en entier garde la marque de la levée, et la quarantaine ôtée n'est plus remise. Les deux
+sont attrapés. M13 (la réaffirmation ignore une levée commencée) reste attrapé par la machine, 2/2 à 200.
+
 ### Trois mutants que la machine ne voyait plus qu'au hasard (MUT4)
 
 La porte de la 0.5.8 (run 42575826306) a rendu trois mutants `FIXED-ONLY`, 0/2 chacun : M19 (un blocage

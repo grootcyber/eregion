@@ -1131,6 +1131,19 @@
    "doc": "docs/design/preuves.md"
   },
   {
+   "id": "g-isolation-coupee-remplace-levee",
+   "composant": "glorfindel",
+   "poste": "g-verifier",
+   "nom": "Proof: an isolation that recorded itself whole, then was cut off in its session drain, supersedes the release it replaces; one cut off before writing anything leaves the release under way; the product unchanged",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "I9A"
+   ],
+   "issue": 823,
+   "doc": "docs/design/preuves.md"
+  },
+  {
    "id": "g-levee-probation",
    "composant": "glorfindel",
    "poste": "g-agir",
