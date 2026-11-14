@@ -527,3 +527,42 @@ def test_the_shipped_rule_projects_what_the_line_reads():
     query = next(r for r in yaml.safe_load(shipped.read_text())["rules"] if r["name"] == "entra-app-consent")["query"]
     assert '"ConsentContext.IsAppOnly"' in query and "AppOnly = trim(@'\"', tostring(Props[\"ConsentContext.IsAppOnly\"]))" in query
     assert "Permissions = trim(@'\"', coalesce(tostring(Props[\"ConsentAction.Permissions\"])" in query
+
+
+# ── IR1f (#828): Discord says who is protected, and why ────────────────────────────────────────
+
+def _discord(row, reader, protected):
+    from glorfindel import bot
+    plan = entra_plan.build(row, reader, protected=protected, now=NOW)
+    what, steps = entra.describe(row, plan)
+    esc = {**_card(row, reader), "reason": what, "explanation": what, "suggested_steps": steps,
+           "identity_plan": plan}
+    desc, fields = bot._embed_body(esc)
+    return desc, dict((n, v) for n, v, _ in fields), plan
+
+
+def test_discord_says_the_card_is_the_defenses_and_never_proposes_to_disable_it(tenant):
+    """The bench's card (an app role given to the watch, the record as Entra writes it): the
+    description and its own field say it is the defense's identity; no step disables it."""
+    pytest.importorskip("discord")
+    (row,) = entra.prepare_rows([_app_role("Application.Read.All")], {SP})
+    desc, fields, plan = _discord(row, tenant, entra_plan.never_target_protected({"EREGION_OPERATOR_OBJECT_ID": ADMIN}))
+    assert "identité de la défense" in desc
+    assert "Identité de la défense" in fields and "Glorfindel" in fields["Identité de la défense"]
+    assert "L'auteur" in fields["Identité de la défense"] and len(fields["Identité de la défense"]) <= 1024
+    steps = fields["Prochaines étapes"]
+    assert "accountEnabled=false" not in steps and "revokeSignInSessions" not in steps
+    assert "Vérifier avec l" in steps and "Si ce n" in steps
+
+
+def test_discord_says_why_a_step_is_a_humans_never_targets_reason(tenant):
+    """The list unreadable: the client's disabling stays, a human's — and Discord says why."""
+    pytest.importorskip("discord")
+    _, fields, _ = _discord(_consent(), tenant, entra_plan.never_target_protected({}))
+    assert "à la main : never\\_target illisible" in fields["Prochaines étapes"]
+
+
+def test_discord_says_an_hour_not_read(tenant):
+    pytest.importorskip("discord")
+    _, fields, _ = _discord(_role(TimeGenerated="hier"), tenant, None)
+    assert "heure de l" in fields["À savoir"] and "jamais tenu" in fields["À savoir"]

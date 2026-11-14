@@ -120,6 +120,18 @@ def test_the_console_hands_the_plan_as_text_the_page_escapes(monkeypatch):
     assert "${_attr(i.what)}" in js and "${_attr(value)}" in js
 
 
+def test_the_page_says_who_is_protected_and_an_hour_not_read_escaped():
+    """IR1f (#828): the plan's `protected` and `event_at_why` (French, the watch's) are shown
+    ahead of the steps, each through _attr; an identity of the defense is named so."""
+    js = (__import__("pathlib").Path(__file__).resolve().parents[2]
+          / "eregion_console/static/glorfindel.js").read_text()
+    body = js[js.index("function _identityPlan(e)"):js.index("async function verifyIdentity")]
+    assert "plan.protected" in body and "plan.event_at_why" in body
+    assert "⚠ ${_attr(x)}" in body and "${said}" in body
+    assert body.index("${said}") < body.index("${verbs ?")
+    assert "An identity of the defense" in body
+
+
 def test_the_page_names_its_verify_action_and_the_bot_shows_no_button(monkeypatch):
     pytest.importorskip("discord")
     from glorfindel import escalations

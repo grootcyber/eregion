@@ -29,7 +29,8 @@ alone, in code, so they are tested on fake logs:
 And the marks, never a drop: `GlorfindelIdentity` (Glorfindel's identity is the actor —
 it never writes in Entra ID, and its sign-in from a new address is its credential used
 elsewhere), `GlorfindelManaged` (the target is Glorfindel's identity — a credential added
-there gives its rights to someone else). Both critical. **No row is dropped under
+there gives its rights to someone else —, or the client of a consent, `ClientId` outside
+« Consent to application »: IR1f, `target_ids`). Both critical. **No row is dropped under
 Glorfindel's identity**: unlike the Activity Log (AL1), Glorfindel makes no write here; its
 usual sign-ins are left out by the baseline, as anyone's. Its identity is read as AL1 reads
 it (AZURE_CLIENT_ID, GLORFINDEL_OWN_CALLERS, its token) — but its token's ids only when the
@@ -95,7 +96,12 @@ def actor_ids(row: dict) -> set[str]:
 
 
 def target_ids(row: dict) -> set[str]:
-    return _ids(row, "TargetId", "TargetAppId")
+    """The identities a finding gives to, or changes: its target, and the client of a consent —
+    outside « Consent to application » the target is the resource's principal (Microsoft Graph),
+    the client in `ClientId` (IR1f, E-1: the watch's own consent, on the bench of 14/11)."""
+    from glorfindel.providers.azure.entra_grants import consent_client
+    client = consent_client(row) if str(row.get("EntraKind") or "").strip().lower() == "consent" else ""
+    return _ids(row, "TargetId", "TargetAppId") | ({client} - {""})
 
 
 def _succeeded(row: dict) -> bool:
@@ -195,7 +201,13 @@ def describe(row: dict, plan: dict | None = None) -> tuple[str, list[str]]:
         what += (" L'acteur est l'identité de Glorfindel : il n'écrit rien dans Entra ID, et "
                  "une connexion depuis une adresse nouvelle est son identifiant utilisé "
                  "ailleurs — ses identifiants sont peut-être entre d'autres mains.")
-    if row.get("GlorfindelManaged") is True:
+    if row.get("GlorfindelManaged") is True and kind == "consent":
+        what += (" L'application cliente est l'identité de Glorfindel, une identité de la défense : "
+                 "des permissions données à la watch. Attendu si c'est le geste de l'opérateur (les "
+                 "lectures de Microsoft Graph de la watch, docs/operations.md) ; sinon, qui tient ses "
+                 "identifiants tient ces droits. Jamais désactivée par le plan : un attaquant ne doit "
+                 "pas pouvoir faire couper la défense par Eregion.")
+    elif row.get("GlorfindelManaged") is True:
         what += (" La cible est l'identité de Glorfindel : un identifiant ou un rôle ajouté là "
                  "donne ses droits (isoler, bloquer) à quelqu'un d'autre.")
     omitted = row.get("OmittedOperations") or []

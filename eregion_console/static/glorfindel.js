@@ -3187,6 +3187,12 @@ function _identityPlan(e) {
   const asked = e.identity_check_requested
     ? `<div style="color:var(--dim);font-size:10px">Verify asked at ${_attr(e.identity_check_requested)} — the watch answers at its next pass</div>` : '';
   const canCheck = items.some(i => i.verifiable);
+  // IR1f: an identity of the defense in the finding, an author never_target lists, an hour not
+  // read — said ahead of the steps (the watch's French, as the plan's other words).
+  const notes = (Array.isArray(plan.protected) ? plan.protected : []).concat(plan.event_at_why ? [plan.event_at_why] : []);
+  const said = notes.length ? `<div style="color:var(--yellow);font-size:10px;margin:4px 0">
+      <span style="font-weight:700">${plan.defense ? 'An identity of the defense' : (Array.isArray(plan.protected) && plan.protected.length ? 'Protected' : 'Note')}</span>
+      ${notes.map(x => `<div style="padding-left:10px">⚠ ${_attr(x)}</div>`).join('')}</div>` : '';
   return `<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:6px">
       <div style="display:flex;align-items:center;gap:6px">
         <span style="font-weight:700;font-size:11px">Plan</span>
@@ -3195,6 +3201,7 @@ function _identityPlan(e) {
       </div>
       ${graph.read ? '' : `<div style="color:var(--yellow);font-size:10px">Graph not read: ${_attr(graph.why || '')} — each parameter not read is marked, never invented</div>`}
       <div style="color:var(--text);font-size:10px;margin:4px 0">${_attr(plan.confirm || '')}</div>
+      ${said}
       ${verbs ? `<div style="color:var(--dim);font-size:10px;margin-top:4px">Verbs (the identity executor's, IR1c)</div>${verbs}` : ''}
       ${steps ? `<div style="color:var(--dim);font-size:10px;margin-top:4px">Steps for a human</div>${steps}` : ''}
       ${plan.note ? `<div style="color:var(--dim);font-size:10px">${_attr(plan.note)}</div>` : ''}
