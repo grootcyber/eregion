@@ -2017,7 +2017,7 @@ briques:
     nom: "An attack lot lives end to end in a dedicated Annatar session, unread by the Orchestre, and the main checkout moves forward after each merge"
     etat: main
     release: "0.6"
-    lots: [FRN1]
+    lots: [FRN1, FRN1b]
     issue: 803
     pr: 810
     doc: docs/sessions.md
