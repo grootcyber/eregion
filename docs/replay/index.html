@@ -413,7 +413,7 @@ code{font:500 11.5px var(--mono);color:var(--mithril)}
     </div>
   </section>
 
-  <p class="foot">A replay of the T1486 loop on the Eregion bench, compressed into about a minute. Times marked <span class="meas">measured</span> come from the validated runs in the README; every other value is illustrative. This page makes no call to Azure. Open source under Apache 2.0, <a href="https://github.com/grootcyber/eregion" target="_blank" rel="noopener">github.com/grootcyber/eregion</a>. Azure today; AWS and GCP planned through a provider interface.</p>
+  <p class="foot">A replay of the T1486 loop on the Eregion bench, compressed into about a minute. Times marked <span class="meas">measured</span> come from the bench run of 12 November 2026, as in the README; every other value is illustrative. This page makes no call to Azure. Open source under Apache 2.0, <a href="https://github.com/grootcyber/eregion" target="_blank" rel="noopener">github.com/grootcyber/eregion</a>. Azure today; AWS and GCP planned through a provider interface.</p>
 </div>
 
 <script>
@@ -469,17 +469,17 @@ function caption(){
  if(t<55)return 'Azure Backup restores the disks from before the attack.';
  if(t<62){if(h)return t<57.02?'The restore is done. Glorfindel recommends lifting the quarantine, and waits for you.':'Approved. Your own NSG comes back on every NIC, and the network reconnects.';return 'The restore is done. Glorfindel lifts the quarantine alone, and only on its own recovery signal. Your NSG comes back on every NIC.'}
  const mem='The cycle is stored, marked as an exercise: only real incidents are recalled as precedents. ';
- return mem+(h?'When you trust Glorfindel on this VM, switch it to non_disruptive.':FA()?'Nobody was asked; you were told at every step.':'Measured on the bench: about a minute to contain, 21 min 29 s to restored service.');
+ return mem+(h?'When you trust Glorfindel on this VM, switch it to non_disruptive.':FA()?'Nobody was asked; you were told at every step.':'Measured on the bench on 12 November 2026: contained in 7 min 43 s, the isolation verified on Azure; 27 min 55 s to restored service, the human’s wait excluded.');
 }
 function benchRef(){
  const h=HO();
  if(t<5)return ['before T0',0];
  if(t<12)return ['T0, the attack starts',0];
- if(t<24)return ['detected 55–71 s after T0',1];
- if(t<31)return [h?'then it waits for your decision':'a few seconds later',0];
- if(t<43)return h?['contained when you approve',0]:['about 1 min to contain',1];
+ if(t<24)return ['detected 141.6 s after T0',1];
+ if(t<31)return h?['then it waits for your decision',0]:['quarantined 19.5 s after the detection',1];
+ if(t<43)return h?['contained when you approve',0]:['contained in 7 min 43 s, verified on Azure',1];
  if(t<62)return ['Azure Backup restore',0];
- return h?['restored after your approvals',0]:FA()?['planned, not measured yet',0]:['21 min 29 s to restored service',1];
+ return h?['restored after your approvals',0]:FA()?['planned, not measured yet',0]:['27 min 55 s to restored service, the human’s wait excluded',1];
 }
 
 /* rows: v and st may depend on mode and time */
@@ -915,9 +915,9 @@ function ui(){
  const pb=$('play');setT(pb,appr?'Approve':step?'Continue':t>=D?'Replay':playing?'Pause':'Play');setC(pb,'btn primary'+(appr?' wait':''));
  const end=t>=64.6;$('endcard').hidden=!end;
  if(end){const h=HO();setT($('endWho'),'Replay complete · '+mode);
-  setH($('stats'),h?`<div class="stat"><b>55–71 s</b><span>to detect, then your call</span><span class="meas">measured</span></div><div class="stat"><b>3 clicks</b><span>isolate, restore, lift the quarantine</span></div><div class="stat"><b>0 changes</b><span>on Azure without your approval</span></div>`
+  setH($('stats'),h?`<div class="stat"><b>141.6 s</b><span>to detect, then your call</span><span class="meas">measured</span></div><div class="stat"><b>3 clicks</b><span>isolate, restore, lift the quarantine</span></div><div class="stat"><b>0 changes</b><span>on Azure without your approval</span></div>`
   :FA()?`<div class="stat"><b>0 clicks</b><span>in this planned mode</span></div><div class="stat"><b>3 notices</b><span>isolate, restore, lift the quarantine</span></div><div class="stat"><b>not decided</b><span>a restore without a human; today it asks you</span></div>`
-  :`<div class="stat"><b>~1 min</b><span>to contain, alone</span><span class="meas">measured</span></div><div class="stat"><b>21 min 29 s</b><span>to restored service</span><span class="meas">measured</span></div><div class="stat"><b>1 click</b><span>approving the restore</span></div>`);
+  :`<div class="stat"><b>7 min 43 s</b><span>to contain alone, verified on Azure</span><span class="meas">measured</span></div><div class="stat"><b>27 min 55 s</b><span>to restored service, the human’s wait excluded</span><span class="meas">measured</span></div><div class="stat"><b>1 click</b><span>approving the restore</span></div>`);
   /* the two other modes, whichever just played */
   const others=['human_only','non_disruptive','full_auto'].filter(m=>m!==mode);
   [$('endSwitch'),$('endSwitch2')].forEach((b,j)=>{b.dataset.mode=others[j];setT(b,'Replay in '+others[j])})}

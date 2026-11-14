@@ -23,6 +23,7 @@ Mutants M4270–M4279 (scripts/mutants/AL1c.py).
 from __future__ import annotations
 
 import json
+import re
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -144,7 +145,7 @@ def test_an_nsg_rule_is_filed_on_the_nsg_and_shown_on_every_vm_it_covers():
     sig = sent[0]
     t = sig["context"]["target"]
     assert sig["resource_id"] == NSG and sig["resource_type"] == "nsg"
-    assert t["kind"] == "nsg" and t["name"] == "nsg-celebrimbor" and t["via"] == "règle allow-ssh-admin"
+    assert t["kind"] == "nsg" and t["name"] == "nsg-celebrimbor" and t["via"] == "rule allow-ssh-admin"
     # Both VMs it covers, gondolin offline included — never one of them alone, never bree as an anchor.
     assert sorted(t["vm_names"]) == ["vm-celebrimbor-bree", "vm-celebrimbor-gondolin"]
     assert sorted(t["vms"]) == sorted([BREE, GONDOLIN])
@@ -155,7 +156,7 @@ def test_an_nsg_rule_is_filed_on_the_nsg_and_shown_on_every_vm_it_covers():
 def test_an_nsg_whose_coverage_azure_did_not_answer_is_still_the_nsg_and_says_so():
     azure = {**AZURE, "nsg_vms": None}
     t = _poll("nsg-change-outside-glorfindel", [_activity(NSG_OP, NSG)], azure=azure)[0]["context"]["target"]
-    assert t["kind"] == "nsg" and t["vms"] == [] and "n'ont pas pu être lues" in t["limit"]
+    assert t["kind"] == "nsg" and t["vms"] == [] and "could not be read on Azure" in t["limit"]
     # No topology at all (a dry run): the NSG still, its VMs not said.
     t = _poll("nsg-change-outside-glorfindel", [_activity(NSG_OP, NSG)], azure=None)[0]["context"]["target"]
     assert t["kind"] == "nsg" and t["vms"] == [] and t["limit"]
@@ -163,16 +164,16 @@ def test_an_nsg_whose_coverage_azure_did_not_answer_is_still_the_nsg_and_says_so
     azure = {**AZURE, "nsg_vms": {_low(NSG): [_low(BREE), f"{SUB}/x/virtualmachines/elsewhere"]}}
     t = _poll("nsg-change-outside-glorfindel", [_activity(NSG_OP, NSG)], azure=azure)[0]["context"]["target"]
     assert t["vm_names"] == ["vm-celebrimbor-bree"]
-    assert "1 VM lue(s) sur Azure que la règle ne surveille pas (absente de la découverte, exclue de la règle, ou d'un autre backend)" in t["limit"]
+    assert "1 VM(s) read on Azure that the rule does not watch (missing from the discovery, excluded from the rule, or on another backend)" in t["limit"]
     # An NSG the listing does not hold: never « gone » on that alone — the watch reads what its
     # rights let it list (on H0, `Reader` on the bench's group): it says both (review, AL1c).
     azure = {**AZURE, "nsg_vms": {}}
     t = _poll("nsg-change-outside-glorfindel", [_activity(NSG_OP, NSG)], azure=azure)[0]["context"]["target"]
-    assert t["kind"] == "nsg" and t["vms"] == [] and "hors des droits de la watch" in t["limit"]
+    assert t["kind"] == "nsg" and t["vms"] == [] and "outside the watch's rights" in t["limit"]
     # An NSG read with no VM the watch could read under it: what was read, never « covers none ».
     azure = {**AZURE, "nsg_vms": {_low(NSG): []}}
     t = _poll("nsg-change-outside-glorfindel", [_activity(NSG_OP, NSG)], azure=azure)[0]["context"]["target"]
-    assert "n'a été lue sous ce NSG" in t["limit"] and "ne couvre aucune" not in t["limit"]
+    assert "was read under this NSG" in t["limit"] and "covers none" not in t["limit"]
 
 
 def test_a_snapshot_is_filed_on_the_vm_of_its_source_disk_and_says_the_row_names_none():
@@ -185,7 +186,7 @@ def test_a_snapshot_is_filed_on_the_vm_of_its_source_disk_and_says_the_row_names
         assert sig["resource_id"] == GONDOLIN and t["kind"] == "vm"
         assert t["name"] == "vm-celebrimbor-gondolin" and "snap-gondolin-data" in t["via"]
         assert "disk-celebrimbor-gondolin-data" in t["via"]
-        assert "ne nomme pas le disque source" in t["limit"]
+        assert "does not name the snapshot's source disk" in t["limit"]
         # Filed on the VM, still not attributed to it: no incident there, no window read.
         assert sig["context"]["attribution"] == "unattributed"
 
@@ -195,34 +196,34 @@ def test_a_snapshot_azure_no_longer_holds_is_filed_on_its_group():
     sig = _poll("snapshot-by-unexpected-caller", [_activity(SNAP_OP, SNAP)], azure=azure)[0]
     t = sig["context"]["target"]
     assert sig["resource_id"] == GROUP and t["kind"] == "resource_group" and t["name"] == "rg-celebrimbor"
-    assert "ne nomme pas le disque source" in t["limit"] and "hors des droits de la watch" in t["limit"]
-    assert "supprimé depuis" not in t["limit"]            # deleted, or out of the watch's reach
+    assert "does not name the snapshot's source disk" in t["limit"] and "outside the watch's rights" in t["limit"]
+    assert "deleted since" not in t["limit"]              # deleted, or out of the watch's reach
     azure = {**AZURE, "snapshot_source": None}
     t = _poll("snapshot-by-unexpected-caller", [_activity(SNAP_OP, SNAP)], azure=azure)[0]["context"]["target"]
-    assert t["kind"] == "resource_group" and "n'ont pas pu être lus" in t["limit"]
+    assert t["kind"] == "resource_group" and "The snapshots could not be read on Azure" in t["limit"]
 
 
 def test_a_download_access_to_a_disk_is_filed_on_its_vm():
     sig = _poll("snapshot-by-unexpected-caller", [_activity(DISK_ACCESS_OP, DISK)])[0]
     t = sig["context"]["target"]
-    assert sig["resource_id"] == GONDOLIN and t["kind"] == "vm" and t["via"] == "disque disk-celebrimbor-gondolin-data"
+    assert sig["resource_id"] == GONDOLIN and t["kind"] == "vm" and t["via"] == "disk disk-celebrimbor-gondolin-data"
     # A disk of a VM the discovery does not know: its group, said.
     azure = {**AZURE, "disk_vm": {_low(DISK): f"{SUB}/x/virtualmachines/elsewhere"}}
     t = _poll("snapshot-by-unexpected-caller", [_activity(DISK_ACCESS_OP, DISK)], azure=azure)[0]["context"]["target"]
     assert t["kind"] == "resource_group" and card_target._UNWATCHED in t["limit"]
     azure = {**AZURE, "disk_vm": {_low(DISK): ""}}
     t = _poll("snapshot-by-unexpected-caller", [_activity(DISK_ACCESS_OP, DISK)], azure=azure)[0]["context"]["target"]
-    assert t["kind"] == "resource_group" and "attaché à aucune VM" in t["limit"]
+    assert t["kind"] == "resource_group" and "attached to no VM" in t["limit"]
     azure = {**AZURE, "disk_vm": {}}
     t = _poll("snapshot-by-unexpected-caller", [_activity(DISK_ACCESS_OP, DISK)], azure=azure)[0]["context"]["target"]
-    assert t["kind"] == "resource_group" and "hors des droits de la watch" in t["limit"]
+    assert t["kind"] == "resource_group" and "outside the watch's rights" in t["limit"]
 
 
 def test_a_role_is_filed_on_its_scope():
     sig = _poll("role-assignment-write", [_activity(ROLE_OP, ROLE)])[0]
     t = sig["context"]["target"]
     assert sig["resource_id"] == GROUP and t["kind"] == "resource_group" and t["name"] == "rg-celebrimbor"
-    assert "portée rg-celebrimbor" in t["via"]
+    assert t["via"] == "role assignment, scope rg-celebrimbor"
     # On the VM itself: that VM's, attributed (AL1, unchanged).
     on_vm = f"{GONDOLIN}/providers/Microsoft.Authorization/roleAssignments/abc"
     sig = _poll("role-assignment-write", [_activity(ROLE_OP, on_vm)])[0]
@@ -250,7 +251,7 @@ def test_a_write_made_from_a_watched_vm_is_filed_on_what_it_writes_the_vm_named_
     sig = _poll("nsg-change-outside-glorfindel", [row], owners=_bree_owns_its_ip)[0]
     t = sig["context"]["target"]
     assert sig["resource_id"] == NSG and t["kind"] == "nsg" and sig["resource_type"] == "nsg"
-    assert t["via"] == "règle allow-ssh-admin, appel depuis vm-celebrimbor-bree"
+    assert t["via"] == "rule allow-ssh-admin, call from vm-celebrimbor-bree"
     assert sorted(t["vm_names"]) == ["vm-celebrimbor-bree", "vm-celebrimbor-gondolin"]
     assert sig["context"]["attribution"] == "unattributed" and sig["context"]["asset_name"] == "nsg-celebrimbor"
     # A disk read from bree — gondolin's, then bree's own: on the disk's VM, never attributed to
@@ -261,7 +262,7 @@ def test_a_write_made_from_a_watched_vm_is_filed_on_what_it_writes_the_vm_named_
                     azure=azure, owners=_bree_owns_its_ip)[0]
         t = sig["context"]["target"]
         assert sig["resource_id"] == vm and t["kind"] == "vm" and t["name"] == name
-        assert t["via"] == "disque disk-celebrimbor-gondolin-data, appel depuis vm-celebrimbor-bree"
+        assert t["via"] == "disk disk-celebrimbor-gondolin-data, call from vm-celebrimbor-bree"
         assert sig["context"]["attribution"] == "unattributed"
     # A role on gondolin, written from bree: the row names gondolin — its card, attributed (AL1).
     on_vm = f"{GONDOLIN}/providers/Microsoft.Authorization/roleAssignments/abc"
@@ -288,7 +289,7 @@ def test_a_write_made_from_a_vm_the_rule_does_not_watch_is_still_a_card():
         assert len(sent) == 1 and sent[0]["resource_id"] == NSG
         t = sent[0]["context"]["target"]
         assert t["kind"] == "nsg" and t["vm_names"] == (["vm-celebrimbor-gondolin"] if vms else [])
-        assert t["via"] == "règle allow-ssh-admin, appel depuis une VM que la règle ne surveille pas"
+        assert t["via"] == "rule allow-ssh-admin, call from a VM that the rule does not watch"
         assert "bree" not in json.dumps(t) and sent[0]["context"]["attribution"] == "unattributed"
     # Its own resource a VM the rule does not watch: dropped, from any address (AL1, unchanged).
     on_bree = f"{BREE}/providers/Microsoft.Authorization/roleAssignments/abc"
@@ -320,7 +321,7 @@ def test_a_rule_of_the_control_plane_or_of_an_identity_speaks_with_no_vm_watched
     assert len(sent) == 1 and sent[0]["resource_id"] == NSG
     t = sent[0]["context"]["target"]
     # The two VMs Azure reads under it, unknown to an empty discovery: counted, never named.
-    assert t["kind"] == "nsg" and t["vms"] == [] and "2 VM lue(s) sur Azure" in t["limit"]
+    assert t["kind"] == "nsg" and t["vms"] == [] and "2 VM(s) read on Azure" in t["limit"]
     sent = _poll("entra-credential-added", [_entra("credential")], vms=())
     assert len(sent) == 1 and sent[0]["resource_id"] == f"entra:application:{APP_OID}"
     assert sent[0]["context"]["target"]["kind"] == "identity"
@@ -351,9 +352,9 @@ def test_an_unknown_resource_is_filed_on_its_group_or_on_the_control_plane():
                                               f"{PROV}/Microsoft.Storage/storageAccounts/stbench"))
     assert t["kind"] == "resource_group" and t["id"] == GROUP and t["via"] == "stbench"
     t = card_target.control_target(_activity("MICROSOFT.X/Y/WRITE", f"{SUB}/providers/Microsoft.X/y/z", group=""))
-    assert t["kind"] == "control_plane" and "groupe" in t["limit"]
+    assert t["kind"] == "control_plane" and "resource group" in t["limit"]
     t = card_target.control_target({"OmittedOperations": [{}, {}]})
-    assert t["kind"] == "control_plane" and "synthèse" in t["limit"]
+    assert t["kind"] == "control_plane" and "summary card" in t["limit"]
 
 
 # ── an identity: filed on the identity, never a VM ────────────────────────────
@@ -542,7 +543,7 @@ def test_the_discord_card_names_its_target_and_says_its_paragraph_once():
     _, fields = _embed_body(_card(sig))
     by = dict((n, v) for n, v, _ in fields)
     assert by["Ressource visée"].startswith("groupe de ressources `rg-celebrimbor`")
-    assert "ne nomme pas le disque source" in by["Limite"]
+    assert "does not name the snapshot's source disk" in by["Limite"]
 
 
 def test_the_discord_card_names_eight_vms_an_nsg_covers_and_counts_the_rest():
@@ -663,3 +664,72 @@ def test_record_keeps_the_target():
     card = next(e for e in escalations.pending() if e["id"] == eid)
     assert card["target"] == t
     assert json.loads(json.dumps(card))["target"]["kind"] == "identity"
+
+
+# ── in English, as the console that shows it (RAN1b, #820) ────────────────────
+
+# What French leaves in a sentence: an accented letter, or one of its small words. The console
+# is in English and shows a card's target as it is (`_targetNote`: its name, `via`, `limit`).
+_FRENCH = re.compile(r"[àâçéèêëîïôûùüÿœ«»]|\b(?:le|la|les|des|du|une|est|pas|aucune?|sur|depuis|"
+                     r"portée|règle|disque|instantané|appel|lue?s?)\b", re.IGNORECASE)
+
+
+def _said(t: dict) -> str:
+    return " | ".join(str(t.get(k) or "") for k in ("name", "via", "limit"))
+
+
+def test_every_target_is_said_in_english():
+    """Each branch of `card_target`, its name, `via` and `limit`: the strings the console prints
+    under a card (#665: « attribution de rôle, portée … », shown as is in the English console)."""
+    gone = {"nsg_vms": {}, "disk_vm": {}, "snapshot_source": {}}
+    none = {"nsg_vms": None, "disk_vm": None, "snapshot_source": None}
+    rows = [_activity(NSG_OP, f"{NSG}/securityRules/allow-ssh-admin"), _activity(DISK_ACCESS_OP, DISK),
+            _activity(SNAP_OP, SNAP), _activity(ROLE_OP, ROLE),
+            _activity(ROLE_OP, f"{BREE}/providers/Microsoft.Authorization/roleAssignments/abc"),
+            _activity(ROLE_OP, f"{SUB}/providers/Microsoft.Authorization/roleAssignments/abc", group=""),
+            _activity("MICROSOFT.X/Y/WRITE", f"{SUB}/providers/Microsoft.X/y/z", group=""),
+            _activity("MICROSOFT.COMPUTE/VIRTUALMACHINES/WRITE", BREE),
+            {"OmittedOperations": [{}, {}]}]
+    topologies = [AZURE, gone, none, {**AZURE, "nsg_vms": {_low(NSG): [f"{SUB}/x/virtualmachines/elsewhere"]}},
+                  {**AZURE, "disk_vm": {_low(DISK): ""}}, {**AZURE, "snapshot_source": {_low(SNAP): "elsewhere"}},
+                  {**AZURE, "disk_vm": {_low(DISK): f"{SUB}/x/virtualmachines/elsewhere"}}]
+    said = []
+    for azure in topologies:
+        for row in rows:
+            topology = Topology(lambda azure=azure: azure)
+            said.append(_said(card_target.control_target(row, [(GONDOLIN, "vm-celebrimbor-gondolin")], topology)))
+            for kw in ({"tgt": (BREE, "vm-celebrimbor-bree")}, {"caller_unwatched": True},
+                       {"caller_appliance": "hub-fw"}):
+                said.append(_said(card_target.of_row(row, "control", targets=[(GONDOLIN, "g")],
+                                                     topology=topology, **kw)))
+    said.append(_said(card_target.control_target(_activity(NSG_OP, NSG))))          # no topology
+    for kind in ("credential", "consent", "signin"):
+        said.append(_said(card_target.identity_target(_entra(kind))))
+    said.append(_said(card_target.identity_target({"OmittedOperations": [{}]})))
+    said.append(_said(card_target.identity_target({"EntraKind": "audit", "TargetId": "a name, not an id"})))
+    assert len(said) > 250 and all(said)
+    french = sorted({s for s in said if _FRENCH.search(s)})
+    assert not french, french
+    # The case the bench showed (09/11, 20:18 UTC): a role on the group.
+    assert card_target.control_target(_activity(ROLE_OP, ROLE))["via"] == "role assignment, scope rg-celebrimbor"
+    assert card_target.control_plane_target()["name"] == "control plane"
+
+
+def test_no_french_string_is_left_in_the_module():
+    """Every string of `card_target.py` but its docstrings, and the RulePoller's own limit when the
+    target cannot be read (`detection_rules.py`): nothing in French a card could carry."""
+    import ast
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    tree = ast.parse((root / "glorfindel/card_target.py").read_text())
+    docs = {id(n.body[0].value) for n in ast.walk(tree)
+            if isinstance(n, (ast.Module, ast.FunctionDef, ast.ClassDef)) and n.body
+            and isinstance(n.body[0], ast.Expr) and isinstance(n.body[0].value, ast.Constant)}
+    strings = [n.value for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str)
+               and id(n) not in docs and not n.value.startswith("^")]
+    assert len(strings) > 40
+    french = [s for s in strings if _FRENCH.search(s)]
+    assert not french, french
+    with patch.object(card_target, "of_row", side_effect=KeyError("x")):
+        t = _poll("nsg-change-outside-glorfindel", [_activity(NSG_OP, NSG)])[0]["context"]["target"]
+    assert t["kind"] == "control_plane" and t["limit"] == "What the row is about could not be read (KeyError)."

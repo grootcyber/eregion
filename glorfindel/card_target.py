@@ -69,11 +69,11 @@ UNREAD = object()      # a section of the topology Azure did not answer
 # What a listing that does not hold an id may mean: the watch reads only what its rights let it
 # list (on Imladris, `Reader` on the bench's group), and a listing over the subscription is filtered by
 # them — never « gone » on that alone (review, AL1c).
-_GONE_OR_HIDDEN = "supprimé, ou hors des droits de la watch"
+_GONE_OR_HIDDEN = "deleted, or outside the watch's rights"
 # What a VM missing from `targets` may be: `targets` are the rule's (RulePoller._targets), not the
 # whole discovery — never « unknown to the discovery » on that alone (second review, AL1c).
-_UNWATCHED_SHORT = "que la règle ne surveille pas"
-_UNWATCHED = f"{_UNWATCHED_SHORT} (absente de la découverte, exclue de la règle, ou d'un autre backend)"
+_UNWATCHED_SHORT = "that the rule does not watch"
+_UNWATCHED = f"{_UNWATCHED_SHORT} (missing from the discovery, excluded from the rule, or on another backend)"
 
 
 class Topology:
@@ -140,7 +140,7 @@ def vm_target(rid: str, name: str = "", via: str = "", limit: str = "") -> dict:
 
 
 def control_plane_target(limit: str = "") -> dict:
-    t = {"kind": "control_plane", "id": CONTROL_PLANE_ID, "name": "plan de contrôle"}
+    t = {"kind": "control_plane", "id": CONTROL_PLANE_ID, "name": "control plane"}
     if limit:
         t["limit"] = limit
     return t
@@ -156,7 +156,7 @@ def _group_target(rid: str, row: dict, via: str = "", limit: str = "") -> dict:
         sub = _SUB_RE.match(rid or "")
         if not name or "/" in name:
             return control_plane_target(limit=" ".join(filter(None, [
-                limit, "La ligne ne nomme aucun groupe de ressources."])))
+                limit, "The row names no resource group."])))
         gid = f"/subscriptions/{sub.group('sub')}/resourceGroups/{name}" if sub else f"resourceGroups/{name}"
     t = {"kind": "resource_group", "id": gid, "name": name}
     if via:
@@ -177,13 +177,13 @@ def _nsg(m, row: dict, known: dict, topology) -> dict:
     covered = _lookup(topology, "nsg_vms", nsg_id)
     t = {"kind": "nsg", "id": nsg_id, "name": name, "vms": [], "vm_names": []}
     if rule:
-        t["via"] = f"règle {rule}"
+        t["via"] = f"rule {rule}"
     if covered is UNREAD:
-        t["limit"] = "Les VM que ce NSG couvre n'ont pas pu être lues sur Azure."
+        t["limit"] = "The VMs this NSG covers could not be read on Azure."
         return t
     if covered is None:
-        t["limit"] = (f"Ce NSG n'est pas dans la liste lue sur Azure ({_GONE_OR_HIDDEN}) : "
-                      "les VM qu'il couvre ne sont pas dites.")
+        t["limit"] = (f"This NSG is not in the list read on Azure ({_GONE_OR_HIDDEN}): "
+                      "the VMs it covers are not said.")
         return t
     unknown = 0
     for vm in sorted({str(v).rstrip("/").lower() for v in covered or []}):
@@ -194,10 +194,10 @@ def _nsg(m, row: dict, known: dict, topology) -> dict:
             unknown += 1
     said = []
     if not t["vms"]:
-        said.append("Aucune VM que la règle surveille n'a été lue sous ce NSG "
-                    "(cartes réseau lisibles par la watch).")
+        said.append("No VM the rule watches was read under this NSG "
+                    "(the network interfaces the watch can read).")
     if unknown:
-        said.append(f"Sous ce NSG, {unknown} VM lue(s) sur Azure {_UNWATCHED}.")
+        said.append(f"Under this NSG, {unknown} VM(s) read on Azure {_UNWATCHED}.")
     if said:
         t["limit"] = " ".join(said)
     return t
@@ -207,14 +207,14 @@ def _disk_vm(disk_id: str, known: dict, topology):
     """(the VM of the disk known to the discovery, or None; what could not be said)."""
     vm = _lookup(topology, "disk_vm", disk_id)
     if vm is UNREAD:
-        return None, "Le rattachement du disque à une VM n'a pas pu être lu sur Azure."
+        return None, "Which VM the disk is attached to could not be read on Azure."
     if vm is None:
-        return None, f"Le disque n'est pas dans la liste lue sur Azure ({_GONE_OR_HIDDEN})."
+        return None, f"The disk is not in the list read on Azure ({_GONE_OR_HIDDEN})."
     vm = str(vm or "").rstrip("/").lower()
     if not vm:
-        return None, "Le disque n'est attaché à aucune VM."
+        return None, "The disk is attached to no VM."
     if vm not in known:
-        return None, f"Le disque est attaché à {_short(vm)}, {_UNWATCHED}."
+        return None, f"The disk is attached to {_short(vm)}, a VM {_UNWATCHED}."
     return known[vm], ""
 
 
@@ -223,7 +223,7 @@ def control_target(row: dict, targets=(), topology=None) -> dict:
     row = row if isinstance(row, dict) else {}
     if row.get("OmittedOperations"):
         return control_plane_target(
-            limit="Carte de synthèse : chacune de ses opérations nomme sa propre ressource.")
+            limit="A summary card: each of its operations names its own resource.")
     rid = str(row.get("_ResourceId") or row.get("ResourceId") or "").strip()
     known = _known(targets)
     m = _NSG_RE.match(rid)
@@ -233,44 +233,44 @@ def control_target(row: dict, targets=(), topology=None) -> dict:
     if m:
         vm, limit = _disk_vm(m.group("disk"), known, topology)
         if vm:
-            return vm_target(vm[0], vm[1], via=f"disque {m.group('name')}")
-        return _group_target(rid, row, via=f"disque {m.group('name')}", limit=limit)
+            return vm_target(vm[0], vm[1], via=f"disk {m.group('name')}")
+        return _group_target(rid, row, via=f"disk {m.group('name')}", limit=limit)
     m = _SNAPSHOT_RE.match(rid)
     if m:
-        via = f"instantané {m.group('name')}"
-        said = "La ligne ne nomme pas le disque source de l'instantané."
+        via = f"snapshot {m.group('name')}"
+        said = "The row does not name the snapshot's source disk."
         src = _lookup(topology, "snapshot_source", m.group("snap"))
         if src is UNREAD or not src:
             return _group_target(rid, row, via=via, limit=said + (
-                " Les instantanés n'ont pas pu être lus sur Azure." if src is UNREAD else
-                f" L'instantané n'est pas dans la liste lue sur Azure ({_GONE_OR_HIDDEN}) : sa source "
-                "n'a pas pu être lue."
-                if src is None else " Azure ne donne pas sa source."))
+                " The snapshots could not be read on Azure." if src is UNREAD else
+                f" The snapshot is not in the list read on Azure ({_GONE_OR_HIDDEN}): its source "
+                "could not be read."
+                if src is None else " Azure does not give its source."))
         disk = _DISK_RE.match(str(src))
         if not disk:
-            return _group_target(rid, row, via=via, limit=said + f" Sa source, {_short(src)}, n'est pas un disque.")
+            return _group_target(rid, row, via=via, limit=said + f" Its source, {_short(src)}, is not a disk.")
         vm, limit = _disk_vm(disk.group("disk"), known, topology)
         if vm:
-            return vm_target(vm[0], vm[1], via=f"{via}, du disque {disk.group('name')}",
-                             limit=said + " Sa source a été lue sur Azure.")
-        return _group_target(rid, row, via=f"{via}, du disque {disk.group('name')}", limit=f"{said} {limit}")
+            return vm_target(vm[0], vm[1], via=f"{via}, of disk {disk.group('name')}",
+                             limit=said + " Its source was read on Azure.")
+        return _group_target(rid, row, via=f"{via}, of disk {disk.group('name')}", limit=f"{said} {limit}")
     m = _ROLE_RE.match(rid)
     if m:
         scope = m.group("scope") or "/"
-        via = f"attribution de rôle, portée {_short(scope) or '/'}"
+        via = f"role assignment, scope {_short(scope) or '/'}"
         if _VM_RE.search(scope):
             # On a VM the RulePoller did not route the row to: its group. Never reached from the
             # poller — a row naming a VM the rule does not watch is dropped (`_route`, AL1).
-            return _group_target(scope, row, via=via, limit=f"La VM de la portée est une VM {_UNWATCHED}.")
+            return _group_target(scope, row, via=via, limit=f"The scope's VM is a VM {_UNWATCHED}.")
         if _GROUP_RE.match(scope):
             return _group_target(scope, row, via=via)
-        return control_plane_target(limit="La portée de l'attribution n'est pas un groupe de ressources "
-                                          "(l'abonnement, un groupe d'administration).")
+        return control_plane_target(limit="The assignment's scope is not a resource group "
+                                          "(the subscription, a management group).")
     if _VM_RE.search(rid):
         # A VM the RulePoller did not route the row to: never filed on it as if it were known.
         # Never reached from the poller either (`_route` drops the row), only from a direct call.
         return _group_target(rid, row, via=_short(rid),
-                             limit=f"La VM nommée est une VM {_UNWATCHED}.")
+                             limit=f"The VM named is a VM {_UNWATCHED}.")
     return _group_target(rid, row, via=_short(rid) if rid else "")
 
 
@@ -280,8 +280,8 @@ def identity_target(row: dict) -> dict:
     carries the object id only, never a name."""
     row = row if isinstance(row, dict) else {}
     if row.get("OmittedOperations"):
-        return {"kind": "identity", "id": f"{IDENTITY_PREFIX}several", "name": "plusieurs identités",
-                "limit": "Carte de synthèse : chacune de ses opérations nomme sa propre identité."}
+        return {"kind": "identity", "id": f"{IDENTITY_PREFIX}several", "name": "several identities",
+                "limit": "A summary card: each of its operations names its own identity."}
     signin = str(row.get("EntraKind") or "").strip().lower() == "signin"
     cols = ("ActorId", "ActorName", None) if signin else ("TargetId", "TargetName", "TargetType")
     oid = str(row.get(cols[0]) or "").strip()
@@ -293,7 +293,7 @@ def identity_target(row: dict) -> dict:
          "object_id": oid if _SAFE_ID.match(oid) else ""}
     t["id"] = f"{IDENTITY_PREFIX}{ttype.lower()}:{t['object_id'] or 'unread'}"
     if not t["object_id"]:
-        t["limit"] = "La ligne ne donne pas l'identifiant de l'identité."
+        t["limit"] = "The row does not give the identity's id."
     return t
 
 
@@ -319,10 +319,10 @@ def of_row(row: dict, plane: str, tgt=None, targets=(), topology=None,
     if tgt is not None and names_vm(row, tgt[0]):
         return vm_target(tgt[0], tgt[1])
     t = control_target(row, targets, topology)
-    caller = (f"appel depuis {tgt[1] or _short(tgt[0])}" if tgt is not None else
-              f"appel depuis une VM {_UNWATCHED_SHORT}" if caller_unwatched else
-              f"appel depuis l'adresse de {caller_appliance}, qui fait suivre les paquets : la VM "
-              "source est derrière elle" if caller_appliance else "")
+    caller = (f"call from {tgt[1] or _short(tgt[0])}" if tgt is not None else
+              f"call from a VM {_UNWATCHED_SHORT}" if caller_unwatched else
+              f"call from the address of {caller_appliance}, which forwards packets: the source "
+              "VM is behind it" if caller_appliance else "")
     if caller:
         t["via"] = ", ".join(filter(None, [t.get("via"), caller]))
     return t

@@ -5,7 +5,8 @@
 Le README disait : « ~1 min to contain a ransomware VM, 21m29s to restored service ». Ces chiffres
 venaient du run `20260609T190824Z` (09/06, l'ancienne sandbox ; `ROADMAP.md`,
 `docs/historique.md`). Ce jour-là, la watch, le restore et la levée tournaient sur le même poste.
-Depuis le 12/11, le README donne ceux du rejeu de cette page (« Les chiffres du 12/11 », plus bas).
+Depuis le 12/11, le README donne ceux du rejeu de cette page (« Les chiffres du 12/11 », plus bas),
+et le replay du site (`docs/replay/`) aussi depuis RAN1b (#820).
 Depuis, Glorfindel vit sur Imladris (anciennement H0), l'attaque part d'Orodruin et se demande dans Dagorlad. Cette page
 rejoue le rançongiciel sur gondolin, avec la release publiée sur Imladris et Orodruin (la 0.5.8 quand la
 page a été écrite, le 09/11), et en

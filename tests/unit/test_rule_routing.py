@@ -378,7 +378,7 @@ def test_a_control_plane_card_says_the_call_came_from_behind_the_appliance():
     from glorfindel import card_target
     t = card_target.of_row({"OperationNameValue": "MICROSOFT.NETWORK/NETWORKSECURITYGROUPS/WRITE"},
                            "control", None, [], None, caller_appliance="hub-fw")
-    assert "hub-fw" in t["via"] and "derrière" in t["via"]
+    assert "hub-fw" in t["via"] and "the source VM is behind it" in t["via"]
     rule = _rule(name="nsg", source="azure_activity", query="AzureActivity | where x")
     row = {"OperationNameValue": "MICROSOFT.NETWORK/NETWORKSECURITYGROUPS/WRITE", "CorrelationId": "c",
            "CallerIpAddress": "10.0.0.4", "_ResourceId": "/subscriptions/s/resourceGroups/rg/providers/"
