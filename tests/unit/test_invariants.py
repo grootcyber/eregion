@@ -102,6 +102,7 @@ import collections
 import contextlib
 import copy
 import hashlib
+import json
 import os
 import shutil
 import tempfile
@@ -239,10 +240,18 @@ class _Chaos:
         self.plan = None
         self.calls = self.writes = self.state_writes = 0
         self.fired = False
+        self.saved: list[tuple[Path, str]] = []
 
     def arm(self, fault):
         self.plan, self.calls, self.writes, self.fired = fault, 0, 0, False
         self.state_writes = 0
+        self.saved = []
+
+    def saved_state_of(self, directory: Path, rid: str) -> bool:
+        """The operation armed last wrote a local state file of `rid` under `directory`, and the
+        write landed — the test's own journal of the writes (`chaotic_write`), by the resource id the
+        write carried, never by what the code marked in it (A0)."""
+        return any(d == directory and r == key(rid) for d, r in self.saved)
 
     def __call__(self, op: str, phase: str, write: bool):
         if phase == "before":
@@ -1140,9 +1149,18 @@ class IsolationMachine(RuleBasedStateMachine):
         azure_before = self.fake.snapshot() if not self.config["readable"] else None
         writes = len(self.fake.journal)
         out, err = self._run(fault, lambda: self.connector.isolate_vm(rid), "isolate")
-        if (out or {}).get("status") == "isolated" or len(self.fake.journal) > writes:
+        if ((out or {}).get("status") == "isolated" or len(self.fake.journal) > writes
+                or self.chaos.saved_state_of(actions._ISOLATION_STATE_DIR, vm)):
             # A new isolation, the operator's call — even cut off midway, once it has
             # written to Azure: the release it supersedes is no longer under way (I9).
+            # Or once it wrote the VM's state (I9A): its NICs already in quarantine, nothing
+            # to write to Azure, an isolation records itself whole, then cuts the sessions —
+            # cut off there (a crash in the drain, or right after the write), it was the
+            # operator's isolation all the same. The product writes a state only once the
+            # isolation is whole, or a partial one, which holds the reassertion itself (`partial`)
+            # — even with nothing written to Azure (NICs already in quarantine counted). One cut
+            # off before writing anything leaves the release under way
+            # (`test_a_cut_off_isolation_supersedes_the_release_once_it_wrote_its_state`).
             self.releasing.discard(vm)
         if azure_before is not None:
             # S1: the configuration can't be read — refused before any write.
@@ -4214,6 +4232,13 @@ def invariant_env(monkeypatch) -> None:
     def chaotic_write(path, text):
         _CURRENT.chaos("state.write", "before", True)
         real_write(path, text)
+        # Landed: in the test's journal before a fault after it (I9A) — whose state, by its resource id.
+        try:
+            rid = json.loads(text)
+            rid = (rid[0] if isinstance(rid, list) and rid else rid).get("resource_id") or ""
+        except Exception:
+            rid = ""
+        _CURRENT.chaos.saved.append((Path(path).parent, key(str(rid))))
         _CURRENT.chaos("state.write", "after", True)
 
     monkeypatch.setattr(actions, "_atomic_write_text", chaotic_write)

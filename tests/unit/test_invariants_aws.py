@@ -65,6 +65,7 @@ from .fake_aws import (
     open_flows, sg_rule, throttled,
 )
 from .test_invariants import _CURRENT, _SEEN, _Scheduler, _note, _valid_sources, invariant_env
+from .test_invariants import _Chaos as _AzureChaos
 
 QSG = "glorfindel-quarantine"
 CIDR = f"{ATTACKER}/32"
@@ -175,9 +176,13 @@ class _Chaos:
         self.plan = None
         self.calls = self.writes = 0
         self.fired = False
+        self.saved: list[tuple[Path, str]] = []
 
     def arm(self, fault):
         self.plan, self.calls, self.writes, self.fired = fault, 0, 0, False
+        self.saved = []
+
+    saved_state_of = _AzureChaos.saved_state_of      # the test's journal of the state writes (I9A)
 
     def __call__(self, op: str, phase: str, write: bool):
         if phase == "before":
@@ -538,7 +543,11 @@ class AwsIsolationMachine(RuleBasedStateMachine):
         aws_before = self.fake.snapshot() if refused else None
         writes = len(self.fake.journal)
         out, err = self._run(fault, lambda: self.connector.isolate_vm(arn(vm)), "isolate")
-        if (out or {}).get("status") == "isolated" or len(self.fake.journal) > writes:
+        if ((out or {}).get("status") == "isolated" or len(self.fake.journal) > writes
+                or self.chaos.saved_state_of(actions._ISOLATION_STATE_DIR, arn(vm))):
+            # As on Azure (I9A): an isolation that wrote the VM's state, cut off after it, was the
+            # operator's isolation — the release it supersedes is no longer under way. Set by
+            # symmetry, not measured here: no frozen case goes through this line.
             self.releasing.discard(vm)
         if aws_before is not None:
             assert self.fake.snapshot() == aws_before, f"I10: isolate_vm wrote for {vm}, quarantine off or unreadable"
