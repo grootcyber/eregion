@@ -747,7 +747,7 @@ def test_e1_the_watchs_consent_plan_never_disables_it_it_says_what_to_check(benc
     assert items[1:] and all(i["optional"] and i["what"].startswith("Si ce n'est pas le geste de l'opérateur : ")
                              for i in items[1:])
     assert all(i["by"] == "human" for i in items)
-    assert plan["defense"] is True
+    assert plan["defense"] == "glorfindel"
     assert any("Identité de la défense" in x and "Glorfindel" in x for x in plan["protected"])
     assert any("Identité de la défense" in s for s in entra_plan.steps_text(plan))
     # Verify: never « held » while the operator has not said it was his gesture.
@@ -764,8 +764,48 @@ def test_e1_a_client_never_target_lists_is_never_cut_by_default(tenant):
     cut = next(i for i in items if i["verb"] == "entra_disable_principal")
     assert cut["optional"] and cut["by"] == "human" and cut["what"].startswith("Si ce n'est pas le geste")
     assert cut["protected"] and "never_target" in cut["why_human"]
-    assert plan["defense"] is True and plan["protected"]
+    assert plan["defense"] == "listed" and plan["protected"]
     assert any("à la main : une identité jamais ciblée" in s for s in entra_plan.steps_text(plan))
+    # Relecture (r1): « Identité protégée », never « de la défense »; no example of the watch's reads.
+    assert plan["protected"][-1].startswith("Identité protégée")
+    assert "lectures de Microsoft Graph" not in items[0]["what"] and "constat est attendu" in items[0]["what"]
+
+
+def test_e1_r1_the_watchs_reads_of_graph_the_example_of_glorfindels_consent_alone(bench, tenant):
+    (row,) = entra.prepare_rows([_watch_consent()], {WATCH})
+    ask = _plan(row, bench, protected=_operator_named())["items"][0]
+    assert "les lectures de Microsoft Graph données à la watch" in ask["what"]
+    signin = _plan(_row("signin"), tenant, protected=_operator_named(EREGION_PROTECTED_IDENTITIES=SP))
+    assert signin["defense"] == "listed"
+    assert "lectures de Microsoft Graph" not in signin["items"][0]["what"]
+
+
+def test_e2_r1_a_listed_principal_adding_itself_a_credential_keeps_its_removal(tenant):
+    """Relecture (r1): a service principal never_target lists adds a secret to itself — the classic
+    persistence of a stolen credential. Nothing cuts it off, but the secret added is still removed:
+    a human's step, never_target's reason said; Verify « not held » while the secret is there."""
+    tenant.sps[SP]["passwordCredentials"] = [{"keyId": KEY, "displayName": "ci"}]
+    row = _row("credential", ActorName="sp-ci-deploy", ActorId=SP, ActorAppId=APP_ID, TargetName="sp-ci-deploy",
+               TargetId=SP, TargetType="ServicePrincipal")
+    plan = _plan(row, tenant, protected=_operator_named(EREGION_PROTECTED_IDENTITIES=SP))
+    removal = next(i for i in plan["items"] if i["verb"] == "entra_remove_credential")
+    assert removal["target"]["id"] == SP and removal["by"] == "human" and not removal["optional"]
+    assert removal["command"] == f"az ad sp credential delete --id {SP} --key-id {KEY}"
+    assert "never_target" in removal["protected"]
+    assert "L'auteur, sp-ci-deploy, est protégé" in plan["protected"][0]
+    assert entra_check.verify(plan, tenant, now=NOW)["verdict"] == "not_held"
+    tenant.sps[SP]["passwordCredentials"] = []
+    assert entra_check.verify(plan, tenant, now=NOW)["verdict"] == "held"
+
+
+def test_e2_r1_a_predicate_without_listed_lists_no_one(tenant):
+    """Relecture (r1): a `protected` without `listed` is no list — its reasons said, nothing dropped,
+    no step made conditional."""
+    plan = _plan(_row("consent"), tenant, protected=lambda oid: "jamais ciblée")
+    assert plan["protected"] == [] and plan["defense"] is False
+    assert any(i["target"].get("id") == ADMIN for i in plan["items"])
+    assert not any(i["optional"] for i in plan["items"] if i["verb"] == "entra_disable_principal")
+    assert all(i["why_human"].startswith("jamais ciblée") for i in plan["items"] if i["target"].get("id"))
 
 
 def test_e1_never_target_unreadable_the_step_stays_its_reason_said(tenant):
@@ -786,7 +826,7 @@ def test_e2_an_author_never_target_lists_is_said_protected_and_no_step_aims_at_i
     assert not any(i["target"].get("id") == ADMIN for i in plan["items"])
     assert not any(ADMIN in (i["command"] or "") for i in plan["items"])
     said = " ".join(plan["protected"])
-    assert "L'auteur, admin@example.org, est protégé" in said and "aucune étape ne le vise" in said
+    assert "L'auteur, admin@example.org, est protégé" in said and "aucune étape ne le coupe" in said
     # A customer's consent by a listed author: the same.
     cust = _plan(_row("consent"), _authors_tenant(), protected=_operator_named())
     assert not any(i["target"].get("id") == ADMIN for i in cust["items"])
@@ -886,6 +926,6 @@ def test_ir1f_nothing_glorfindel_does_alone_changes(bench, monkeypatch):
     state = agent._identity_decision({"signal": sig, "dry_run": False, "outcome": None})
     assert state["action"] == "" and state["escalate"] is True and state["llm_usage"] is None
     plan = state["identity_plan"]
-    assert plan["event_at"] == "2026-11-14T10:00:00Z" and plan["defense"] is True
+    assert plan["event_at"] == "2026-11-14T10:00:00Z" and plan["defense"] == "glorfindel"
     assert not any(i["verb"] in _CUTS for i in plan["items"] if i["target"].get("id") in (WATCH, ADMIN))
     assert "identité de la défense" in state["escalation_reason"]

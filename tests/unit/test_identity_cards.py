@@ -562,6 +562,18 @@ def test_discord_says_why_a_step_is_a_humans_never_targets_reason(tenant):
     assert "à la main : never\\_target illisible" in fields["Prochaines étapes"]
 
 
+def test_discord_r1_another_protected_identity_is_never_titled_the_defenses(tenant):
+    """Relecture (r1): « Identité de la défense » for Glorfindel's alone — a client never_target lists,
+    or an operator who consented, « Identité protégée »."""
+    pytest.importorskip("discord")
+    _, listed, plan = _discord(_consent(), tenant, entra_plan.never_target_protected(
+        {"EREGION_OPERATOR_OBJECT_ID": ADMIN, "EREGION_PROTECTED_IDENTITIES": SP}))
+    assert plan["defense"] == "listed"
+    assert "Identité protégée" in listed and "Identité de la défense" not in listed
+    _, author, plan = _discord(_consent(), tenant, entra_plan.never_target_protected({"EREGION_OPERATOR_OBJECT_ID": ADMIN}))
+    assert plan["defense"] is False and "Identité protégée" in author and "L'auteur" in author["Identité protégée"]
+
+
 def test_discord_says_an_hour_not_read(tenant):
     pytest.importorskip("discord")
     _, fields, _ = _discord(_role(TimeGenerated="hier"), tenant, None)

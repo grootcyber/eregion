@@ -3190,8 +3190,11 @@ function _identityPlan(e) {
   // IR1f: an identity of the defense in the finding, an author never_target lists, an hour not
   // read — said ahead of the steps (the watch's French, as the plan's other words).
   const notes = (Array.isArray(plan.protected) ? plan.protected : []).concat(plan.event_at_why ? [plan.event_at_why] : []);
+  // « An identity of the defense » for Glorfindel's alone; any other never_target protects, « Protected ».
+  const title = plan.defense === 'glorfindel' ? 'An identity of the defense'
+    : (plan.defense || (Array.isArray(plan.protected) && plan.protected.length) ? 'Protected' : 'Note');
   const said = notes.length ? `<div style="color:var(--yellow);font-size:10px;margin:4px 0">
-      <span style="font-weight:700">${plan.defense ? 'An identity of the defense' : (Array.isArray(plan.protected) && plan.protected.length ? 'Protected' : 'Note')}</span>
+      <span style="font-weight:700">${_attr(title)}</span>
       ${notes.map(x => `<div style="padding-left:10px">⚠ ${_attr(x)}</div>`).join('')}</div>` : '';
   return `<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:6px">
       <div style="display:flex;align-items:center;gap:6px">

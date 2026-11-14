@@ -423,6 +423,15 @@ def _plan_block(i: dict) -> list[str]:
     return lines
 
 
+def _said_title(plan: dict) -> str:
+    """IR1f: « Identité de la défense » for Glorfindel's alone; another identity never_target
+    protects (an operator's account, Orodruin), « Identité protégée »; an hour not read alone,
+    « À savoir »."""
+    if plan.get("defense") == "glorfindel":
+        return "Identité de la défense"
+    return "Identité protégée" if plan.get("defense") or plan.get("protected") else "À savoir"
+
+
 def _plan_fields(plan: dict) -> list[tuple[str, str, bool]]:
     """The plan of an identity card (IR1a) in « Prochaines étapes », its commands as code (C2b, #607).
 
@@ -456,7 +465,7 @@ def _plan_fields(plan: dict) -> list[tuple[str, str, bool]]:
     said = [str(x) for x in plan.get("protected") or [] if x] + ([str(plan["event_at_why"])] if plan.get("event_at_why") else [])
     value = "\n".join(f"• {discord_text(x)}" for x in said)
     value = value if len(value) <= _SAID_MAX else value[:_SAID_MAX - 30].rstrip() + " … (la carte dans la console)"
-    head = [("Identité de la défense" if plan.get("defense") else "À savoir", value, False)] if said else []
+    head = [(_said_title(plan), value, False)] if said else []
     return head + [(names[n], "\n".join(f)[:_FIELD_MAX], False) for n, f in enumerate(fields) if f]
 
 

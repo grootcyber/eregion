@@ -49,8 +49,12 @@ An identity of the defense (IR1f, #828, the bench of 14/11): never cut off by de
   - **one never_target lists** (read, `protected.listed`), that a step would disable or whose
     sessions it would revoke: the same check first, every step conditional, its reason said;
   - **an author never_target lists** (an operator, of a credential, a consent, a role): said
-    protected, and no step aims at it — never a revocation of its sessions;
-  - the plan says it (`defense`, `protected`), on the card, in the console and in Discord.
+    protected, and nothing cuts it off — never its disabling nor a revocation of its sessions;
+    what was added to it (its own credential: the persistence of a stolen one) is still removed,
+    a human's step, never_target's reason said;
+  - the plan says it (`defense`: "glorfindel", "listed" or False; `protected`), on the card, in
+    the console and in Discord — « Identité de la défense » for Glorfindel alone, « Identité
+    protégée » for any other.
 The hour of the event (`event_at`) is read as azure-monitor-query gives it (a datetime, or its
 `str()`); absent or illegible, the plan says it (`event_at_why`) and Verify never says « held ».
 """
@@ -115,12 +119,17 @@ def _conditional(i: dict) -> dict:
     return i
 
 
-def _ask_the_operator(who: str, why: str) -> dict:
-    """The first step of a plan on an identity of the defense: what to check, and why."""
-    return _item(f"Vérifier avec l'opérateur que ce geste est le sien (par exemple les lectures de Microsoft "
-                 f"Graph données à la watch, docs/operations.md) : {who} — jamais désactivée ni privée de ses "
-                 "droits d'office, un attaquant ne doit pas pouvoir faire couper la défense par Eregion (§3.5)",
-                 why_human=why, unchecked=_ASK)
+def _ask_the_operator(who: str, why: str, *, glorfindel: bool) -> dict:
+    """The first step of a plan on an identity of the defense: what to check, and why. The example
+    of the watch's reads of Graph only for a consent given to Glorfindel."""
+    if glorfindel:
+        return _item(f"Vérifier avec l'opérateur que ce geste est le sien (par exemple les lectures de Microsoft "
+                     f"Graph données à la watch, docs/operations.md) : {who} — jamais désactivée ni privée de "
+                     "ses droits d'office, un attaquant ne doit pas pouvoir faire couper la défense par Eregion "
+                     "(§3.5)", why_human=why, unchecked=_ASK)
+    return _item(f"Vérifier avec l'opérateur que ce constat est attendu : {who} — jamais désactivée ni ses "
+                 "sessions révoquées d'office, un attaquant ne doit pas pouvoir faire couper par Eregion une "
+                 "identité que never_target protège (§3.5)", why_human=why, unchecked=_ASK)
 
 
 def _authors(row: dict) -> set[str]:
@@ -128,20 +137,24 @@ def _authors(row: dict) -> set[str]:
     return {guid(row.get("ActorId")), guid(row.get("ActorAppId"))} - {""}
 
 
-def _defend(row: dict, kind: str, items: list[dict], protected, said: list[str]) -> tuple[list[dict], bool]:
-    """E-2 then E-1 (IR1f): no step aims at an author never_target lists; an identity of the
+def _defend(row: dict, kind: str, items: list[dict], protected, said: list[str]) -> tuple[list[dict], str | bool]:
+    """E-2 then E-1 (IR1f): nothing cuts off an author never_target lists; an identity of the
     defense — Glorfindel's (its marks), or one never_target lists that a step would cut off — is
     never cut off by default: its plan says what to check first, and every other step is
-    conditional. The plan says who is protected, and why (`said`)."""
-    listed = (getattr(protected, "listed", None) or (lambda oid: bool(protected(oid)))) if protected \
-        else (lambda oid: False)
+    conditional. The plan says who is protected, and why (`said`); `defense`: "glorfindel",
+    "listed" or False. A predicate without `listed` lists no one (only never_target's says who is IN
+    its list): its reasons said, nothing dropped."""
+    listed = getattr(protected, "listed", None) or (lambda oid: False)
     held = {a for a in _authors(row) if listed(a)} if kind in _AUTHORED else set()
     if held:
-        items = [i for i in items if i["target"].get("id") not in held]
+        # Only what cuts it off: what was added to it (its own credential, the classic persistence
+        # of a stolen one) is still removed — a human's step, never_target's reason said.
+        items = [i for i in items if not (i["verb"] in _CUTS and i["target"].get("id") in held)]
         said.append(f"L'auteur, {str(row.get('ActorName') or '').strip()[:200] or ', '.join(sorted(held))}, "
-                    f"est protégé ({protected(sorted(held)[0])}) : aucune étape ne le vise. Vérifier que ce geste "
-                    "est le sien (un opérateur : avec lui) ; sinon, son compte ou ses identifiants sont entre "
-                    "d'autres mains — sa réponse revient à un humain de son niveau, hors de ce plan.")
+                    f"est protégé ({protected(sorted(held)[0])}) : aucune étape ne le coupe (ni désactivation ni "
+                    "révocation de ses sessions) ; ce qui lui a été ajouté se retire encore, à la main. Vérifier "
+                    "que ce geste est le sien (un opérateur : avec lui) ; sinon, son compte ou ses identifiants "
+                    "sont entre d'autres mains — sa réponse revient à un humain de son niveau, hors de ce plan.")
     cut = [i for i in items if i["verb"] in _CUTS and listed(i["target"].get("id", ""))]
     glorfindel = _glorfindels(row)
     if glorfindel:
@@ -158,9 +171,10 @@ def _defend(row: dict, kind: str, items: list[dict], protected, said: list[str])
         who = ("l'application cliente est l'identité de Glorfindel, une identité de la défense" if glorfindel else
                " ; ".join(sorted({i["target"].get("name") or i["target"].get("id") for i in cut}))
                + f" : {_LISTED}")
-        items = [_ask_the_operator(who, _GLORFINDEL if glorfindel else _LISTED)] + [_conditional(i) for i in items]
+        items = [_ask_the_operator(who, _GLORFINDEL if glorfindel else _LISTED, glorfindel=glorfindel)] + \
+            [_conditional(i) for i in items]
         said.append(f"{'Identité de la défense' if glorfindel else 'Identité protégée'} — {who}.")
-    return items, glorfindel or bool(cut)
+    return items, "glorfindel" if glorfindel else "listed" if cut else False
 
 
 def _ordered(items: list[dict]) -> list[dict]:

@@ -1379,7 +1379,8 @@ identité d'Eregion. La lecture de Graph, ce que voit `Verify`, ce qui manque : 
 chacune est marquée **identité de la défense** (critique) : son plan ne propose jamais de désactiver
 la watch ni de lui retirer ces droits d'office ; il dit d'abord de vérifier que le geste est celui
 de l'opérateur, et chaque autre étape ne vaut que s'il ne l'est pas. L'opérateur, auteur du geste,
-est dit protégé quand `EREGION_OPERATOR_OBJECT_ID` le nomme, et aucune étape ne le vise. Le geste
+est dit protégé quand `EREGION_OPERATOR_OBJECT_ID` le nomme, et aucune étape ne le coupe (ni
+désactivation ni révocation de ses sessions). Le geste
 confirmé, la carte se résout à la main.
 
 ### L'exécuteur d'identité : son application et son contrat (IR1b, #572)

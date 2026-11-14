@@ -597,14 +597,21 @@ depuis :
   illisible ne nomme personne : rien n'est retiré, chaque verbe reste une étape de l'humain, avec
   sa raison ;
 - **un auteur que `never_target` liste** (un opérateur) est dit protégé, et **aucune étape ne le
-  vise**. Un verbe de l'humain sur une identité de la liste dit aussi sa raison, et plus seulement
-  ceux de l'exécuteur ;
+  coupe** : ni sa désactivation, ni la révocation de ses sessions. Ce qu'on lui a ajouté se retire
+  encore, comme une étape de l'humain avec la raison de `never_target`. C'est le cas d'un
+  principal listé qui s'ajoute un identifiant à lui-même, la persistance classique d'un identifiant
+  volé : Vérifier dit « pas tenu » tant que l'identifiant est là (relecture d'IR1f). Un verbe de
+  l'humain sur une identité de la liste dit aussi sa raison, et plus seulement ceux de
+  l'exécuteur. Un prédicat qui n'est pas la liste (sans `listed`) ne protège personne ;
 - **l'heure de l'événement** est lue comme `azure-monitor-query` rend `TimeGenerated`, un
   `datetime` dont le `str()` a une espace à la place du `T`. Elle est réécrite en UTC avec un `Z`,
   ce qui permet de vérifier la révocation des sessions. Absente ou illisible, le plan le dit, et
   Vérifier répond « illisible », jamais « tenu » ;
-- la carte, la console et Discord disent qui est protégé et pourquoi (`defense`, `protected`,
-  `event_at_why` du plan).
+- la carte, la console et Discord disent qui est protégé et pourquoi (`protected`, `event_at_why`
+  du plan). Ils l'intitulent « Identité de la défense » pour Glorfindel seul (`defense:
+  "glorfindel"`) et « Identité protégée » pour toute autre (`"listed"`, ou un auteur protégé).
+  L'exemple des lectures de Graph de la watch n'est donné que pour un consentement accordé à
+  Glorfindel.
 
 ### 3.6 L'unité administrative du banc, et l'inscription d'un utilisateur de test (IDI1b)
 

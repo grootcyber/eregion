@@ -129,7 +129,9 @@ def test_the_page_says_who_is_protected_and_an_hour_not_read_escaped():
     assert "plan.protected" in body and "plan.event_at_why" in body
     assert "⚠ ${_attr(x)}" in body and "${said}" in body
     assert body.index("${said}") < body.index("${verbs ?")
-    assert "An identity of the defense" in body
+    # Relecture (r1): the defense's title for Glorfindel's alone, any other « Protected »; the title escaped.
+    assert "plan.defense === 'glorfindel' ? 'An identity of the defense'" in body
+    assert "${_attr(title)}" in body and "'Protected'" in body
 
 
 def test_the_page_names_its_verify_action_and_the_bot_shows_no_button(monkeypatch):
