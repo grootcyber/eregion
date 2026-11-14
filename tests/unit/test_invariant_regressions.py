@@ -8230,3 +8230,56 @@ def test_two_placements_off_its_nic_acknowledged_are_said_again_when_either_is_d
         assert len(again) == 1 and "a disparu" in again[0]["reason"], again
     finally:
         shutil.rmtree(m.home, ignore_errors=True)
+
+
+# I3X (#824): the night « Invariants (deep) » of 14/11 on f0df21d1, macOS, 10 000 examples (run 43585550169).
+_I3X_EDGE = "/subscriptions/s/resourcegroups/rg-edge/providers/microsoft.network/networksecuritygroups/nsg-edge"
+_I3X_RULE = "glorfindel-block-192-31-196-7-api-api-nic-c272f2"
+
+
+def _i3x_steps(how: str) -> tuple:
+    return (("block_turned_then_reasserted", API, API, None, "vm", 22, (_I3X_EDGE, _I3X_RULE), "non_disruptive"),
+            ("block_turned_then_reasserted", API, API, None, "both", 22, (_I3X_EDGE, _I3X_RULE), "non_disruptive"),
+            ("tamper_with_our_rule", how, (_I3X_EDGE, f"{_I3X_RULE}-out")),
+            ("block_turned_then_reasserted", DB, DB, None, "both", 22, (_I3X_EDGE, f"{_I3X_RULE}-out"), "human_only"))
+
+
+@pytest.mark.parametrize("how", ["port", "protocol"])
+def test_a_way_out_a_turned_rule_opens_past_the_perimeter_is_said_unblocked(monkeypatch, how):
+    """I3X (#824), the night of 14/11 at 10 000 (macOS; 26 rules, Hypothesis's shrinking stopped at five
+    minutes, reduced to 4 and an empty nsg-edge): « I3: the reassertion said 192.31.196.7 no longer blocked
+    on …/rg-edge/…/api (['api-nic']); our perimeter block still cuts it off ». The same on Linux: the case
+    of macOS's files plays no part.
+
+    api blocked for itself, its inbound deny turned and put back; blocked again on its subnet and for itself
+    (both on nsg-edge: its own pair at 200, the perimeter's at 210); its own `-out` narrowed to port 22 —
+    or turned to UDP, the same way out unseen —; then Db--01's block turns that `-out` into an allow, and
+    the pass says it: « l'IP n'est plus bloquée sur api-nic ». It is true: the allow at 200, before the
+    perimeter's `-out`, lets api reach the attacker on 22 (on every UDP port) — the code's model of an
+    outbound allow (A0: the VM reaches the attacker, on any port). The oracle was too strict: it judged
+    « cut off on every port » on the probes, TCP all, none out to the attacker on 22. It reads now every
+    way to and from the attacker, by port and protocol (`ATTACKER_WAYS`), the world's own NSGs evaluated —
+    never the code's verification. Older than the night: the probes since L24 (08/10), the narrowing and
+    the turn since L26 (12/10), the oracle since RB1 (29/10); the sequence fails from L1Q (72bb58f8,
+    31/10), which says the block rewritten anew."""
+    from glorfindel import escalations
+
+    invariant_env(monkeypatch)
+    m = IsolationMachine()
+    try:
+        m.build({**_net(), "edge_nsg": []})
+        for rule, *draws in _i3x_steps(how):
+            getattr(m, rule)(data=Script(*draws))
+            m.never_more_open_than_designed()
+            m.customer_configuration_untouched()
+            m.one_vm_one_state_file()
+        from .fake_azure import ATTACKER_WAYS, open_flows    # after the steps: the base fails on them, not here
+        said = [e["reason"] for e in escalations.pending() if key(e.get("resource_id") or "") == key(API)]
+        assert any("n'est plus bloquée sur api-nic" in r for r in said), said
+        world = m._world()
+        out = {(f[2], f[4], f[5]) for f in open_flows(world, API, ATTACKER_WAYS) if f[3] == ATTACKER}
+        assert out == ({("out", 22, "tcp"), ("out", 22, "udp")} if how == "port" else
+                       {("out", p, "udp") for p in (22, 443, 8080)}), out
+        assert not [f for f in open_flows(world, API) if f[3] == ATTACKER], "the probes alone see no way"
+    finally:
+        m.teardown()

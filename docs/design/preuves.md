@@ -786,6 +786,57 @@ illisible est lu vide. Et le premier NSG illisible arrête la lecture des suivan
 attrapent M5250, M5251 et M5254 ; le 429 détaché attrape M5252 et M5253, que le 429 derrière la quarantaine
 laisse vivre.
 
+### Une voie de sortie vers l'attaquant que les sondes ne traversaient pas (I3X)
+
+La nuit « Invariants (deep) » du 14/11 (run 43585550169, sur f0df21d1, 10 000 exemples) est rouge sur
+macOS : « I3: the reassertion said 192.31.196.7 no longer blocked on …/rg-edge/…/api (['api-nic']); our
+perimeter block still cuts it off ». Hypothesis a cessé de réduire au bout de cinq minutes : 26 règles.
+
+**Rejouée, puis réduite.** La séquence imprimée a été rejouée par une sonde temporaire, hors du dépôt :
+chaque règle avec ses tirages, dans l'ordre, les huit `@invariant` après la construction et après chaque
+pas. Elle échoue de même sur Linux : la casse du disque de macOS n'y est pour rien. Réduite à la main (chaque
+règle retirée tour à tour tant que le même message revient), elle tient en quatre pas, et elle échoue aussi
+sans les `@invariant` entre les pas. Le réseau tiré se réduit à un nsg-edge vide. api est bloquée pour
+elle-même, sa règle entrante retournée puis reposée par la passe. Elle est bloquée de nouveau sur son
+sous-réseau et pour elle-même : sur nsg-edge, sa paire à 200 et celle du périmètre à 210. Puis sa règle
+`-out` est rétrécie au port 22. Enfin le blocage de Db--01 retourne cette `-out` en autorisation, et la passe
+dit « l'IP n'est plus bloquée sur api-nic ».
+
+**C'était l'oracle, pas le produit.** La carte dit vrai. L'autorisation à 200, avant la `-out` du périmètre,
+laisse api joindre l'attaquant sur le port 22. C'est le modèle du code pour une autorisation sortante (A0 :
+la VM joint l'attaquant, sur n'importe quel port). L'oracle (`_perimeter_cuts`, RB1) jugeait « coupée sur
+tous les ports » sur les seules sondes du faux Azure. Elles sont toutes TCP, et aucune ne sort vers
+l'attaquant sur le port 22 : la seule sortie vers lui est sur 443. La même fin, la `-out` passée en UDP au
+lieu d'être rétrécie (`tamper` `protocol`), échoue de même ; aucune sonde ne la voyait non plus.
+
+**Datée.** Le défaut est antérieur à la nuit et vient d'être trouvé. Les sondes datent de L24 (08/10), le
+rétrécissement et le passage en UDP de L26 (12/10), l'oracle de RB1 (29/10). La séquence réduite, rejouée par
+bissection sur les commits de `main` depuis RB1, échoue à partir de L1Q (72bb58f8, 31/10) ; le commit d'avant
+(401d4a4d) passe. Depuis L1Q, un blocage réécrit en entier ouvre un nouvel épisode, et la carte est dite de
+nouveau.
+
+**Le correctif** (`tests/unit/fake_azure.py`, `tests/unit/test_invariants.py`). L'oracle lit désormais
+chaque voie vers l'attaquant et depuis lui (`ATTACKER_WAYS`) : entrée et sortie, ports 22, 443 et un autre,
+TCP et UDP. Il les évalue sur les NSG du monde (`open_flows`), jamais sur la vérification du code (A0). Ces
+voies couvrent tout ce qu'une règle de la machine sait distinguer : les modèles du client (22, 443, `*`),
+nos règles (`*` ou rétrécies à 22, `*` ou UDP). Les autres invariants gardent les sondes d'avant. Le jugement
+reste le même, il est seulement mieux mesuré : « n'est plus bloquée » n'est jamais dit d'une carte que le
+périmètre coupe sur toutes ses voies.
+
+**Mesures.** Figée dans `tests/unit/test_invariant_regressions.py`, la séquence réduite, en deux variantes
+(le port, puis le protocole). Après chaque pas, trois des huit `@invariant` : I1, I2 sur la configuration du
+client, I6. Puis le monde lui-même : la carte dit « n'est plus bloquée sur api-nic », api joint l'attaquant
+par les voies que la règle retournée ouvre (le port 22 en TCP et en UDP, ou UDP sur tous les ports), et
+aucune sonde ne les voit. Les deux variantes échouent sur `origin/main` 77e38479 avec le message de la nuit.
+Les mutants dont la mesure passe par cet oracle restent attrapés : M2180, M2184 et M2187 (I3P), M4860–M4869
+(I3N), M5030–M5039 et M5075–M5079 (I3Q). Mutant M5331 (`scripts/mutants/I3X.py`), attrapé par la séquence
+figée : il remet le côté que la carte tient, une autorisation sortante avant la `-out` du périmètre lue
+« tenue ». La carte dirait alors « reste bloquée », alors que la VM joint l'attaquant.
+
+**Resté ouvert.** L'oracle d'un blocage dit tenu (`_attacker_flows` : « reposé une fois », « reste
+bloquée », `blocked`) lit toujours les sondes seules. Une autorisation sortante sur 22, ou en UDP, lui
+échappe encore : M5331 n'est attrapé que par la séquence figée, pas par la machine.
+
 ### Trois mutants que la machine ne voyait plus qu'au hasard (MUT4)
 
 La porte de la 0.5.8 (run 42575826306) a rendu trois mutants `FIXED-ONLY`, 0/2 chacun : M19 (un blocage
