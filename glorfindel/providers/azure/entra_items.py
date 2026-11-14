@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from datetime import datetime, timezone
 
 from glorfindel.providers.azure.graph import Unreadable
 
@@ -61,9 +62,27 @@ def role_key(name) -> str:
     return ROLE_ALIASES.get(n, n)
 
 
+def _utc(dt: datetime) -> str:
+    dt = (dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)).astimezone(timezone.utc)
+    return dt.strftime("%Y-%m-%dT%H:%M:%S") + (f".{dt.microsecond:06d}" if dt.microsecond else "") + "Z"
+
+
 def when(value) -> str:
+    """An instant as a command or a check holds it, else "". ISO, with its `T`, as written; and as
+    `azure-monitor-query` gives `TimeGenerated` (IR1f, E-3: measured on the bench of 14/11) — a
+    `datetime`, read by its `str()` as after a round trip through JSON: a space for the `T` —,
+    written again in UTC, `Z` (a KQL `datetime(…)` reads it). A naive instant is UTC (Log
+    Analytics')."""
     v = str(value or "").strip()
-    return v if _WHEN.fullmatch(v) else ""
+    if _WHEN.fullmatch(v):
+        return v
+    spaced = v.replace(" ", "T", 1)
+    if " " not in v or not _WHEN.fullmatch(spaced):
+        return ""
+    try:
+        return _utc(datetime.fromisoformat(spaced.replace("Z", "+00:00")))
+    except ValueError:
+        return ""
 
 
 # ── Reading Graph: what was read, and why not ──────────────────────────────────────────────

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import ast
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -684,3 +684,248 @@ def test_a_deleted_client_still_holds_its_app_role_assignment_for_all_we_know():
     out = entra_check.check_item({"kind": "assignment_gone", "client": SP, "assignment_id": APP_ROLE_ASSIGNMENT},
                                  FakeGraph())
     assert out["state"] == "unreadable" and "30 jours" in out["why"]
+
+
+# ── IR1f (#828) : the bench of 14/11, four real consent cards ─────────────────────────────────
+# The operator gave the watch's managed identity its four reads of Graph: four « Add app role
+# assignment to service principal », the client in `ClientId`, the target Microsoft Graph's
+# principal. E-1: the plan proposed to disable the watch; E-2: the operator, its author, was not
+# said protected; E-3: `TimeGenerated` came as a datetime, the hour of the plan was empty.
+
+WATCH = "00000000-0000-0000-0000-0000000000a2"         # the watch's principal (Imladris), a placeholder
+_CUTS = ("entra_disable_principal", "entra_disable_user", "entra_revoke_sessions")
+
+
+def _watch_consent(**extra):
+    return _row("consent", **{"EntraOperation": "Add app role assignment to service principal", "TargetId": RES,
+                              "TargetName": "Microsoft Graph", "ClientId": WATCH,
+                              "Permissions": "Application.Read.All", "AdminConsent": False, **extra})
+
+
+@pytest.fixture()
+def bench(tenant):
+    tenant.sps[WATCH] = {"id": WATCH, "appId": WATCH, "displayName": "vm-watch", "accountEnabled": True,
+                         "passwordCredentials": [], "keyCredentials": []}
+    tenant.app_roles[WATCH] = [{"id": APP_ROLE_ASSIGNMENT, "principalId": WATCH, "resourceId": RES,
+                                "appRoleId": APP_ROLE}]
+    return tenant
+
+
+def _operator_named(**env):
+    return entra_plan.never_target_protected({"EREGION_OPERATOR_OBJECT_ID": ADMIN, **env})
+
+
+def _authors_tenant():
+    g = FakeGraph()
+    g.users[ADMIN] = {"id": ADMIN, "signInSessionsValidFromDateTime": "2026-10-01T00:00:00Z"}
+    return g
+
+
+def test_e1_a_consent_whose_client_is_the_watch_is_marked_glorfindels_and_said():
+    """`ClientId` is the watch: the card is Glorfindel's (critical), and it says so."""
+    (row,) = entra.prepare_rows([_watch_consent()], {WATCH})
+    assert row["GlorfindelManaged"] is True and row["GlorfindelIdentity"] is False
+    what, _ = entra.describe(row)
+    assert "L'application cliente est l'identité de Glorfindel, une identité de la défense" in what
+    (other,) = entra.prepare_rows([_watch_consent(ClientId=SP)], {WATCH})
+    assert other["GlorfindelManaged"] is False                  # another client: never marked by the watch
+    (raw,) = entra.prepare_rows([_watch_consent(EntraKind="credential")], {WATCH})
+    assert raw["GlorfindelManaged"] is False                    # `ClientId` is a consent's client only
+
+
+def test_e1_the_watchs_consent_plan_never_disables_it_it_says_what_to_check(bench):
+    (row,) = entra.prepare_rows([_watch_consent()], {WATCH})
+    plan = _plan(row, bench, protected=_operator_named())
+    items = plan["items"]
+    assert not any(i["verb"] in _CUTS and i["target"].get("id") == WATCH for i in items)
+    assert not any(f"--id {WATCH} --set accountEnabled=false" in (i["command"] or "") for i in items)
+    first = items[0]
+    assert first["n"] == 1 and first["by"] == "human" and not first["optional"]
+    assert first["what"].startswith("Vérifier avec l'opérateur que ce geste est le sien")
+    assert "identité de la défense" in first["what"] and "couper la défense" in first["what"]
+    # Every other step only if the gesture is not the operator's: never a default step.
+    assert items[1:] and all(i["optional"] and i["what"].startswith("Si ce n'est pas le geste de l'opérateur : ")
+                             for i in items[1:])
+    assert all(i["by"] == "human" for i in items)
+    assert plan["defense"] == "glorfindel"
+    assert any("Identité de la défense" in x and "Glorfindel" in x for x in plan["protected"])
+    assert any("Identité de la défense" in s for s in entra_plan.steps_text(plan))
+    # Verify: never « held » while the operator has not said it was his gesture.
+    bench.app_roles[WATCH] = []
+    assert entra_check.verify(plan, bench, now=NOW)["verdict"] == "unreadable"
+
+
+def test_e1_a_client_never_target_lists_is_never_cut_by_default(tenant):
+    """Not marked Glorfindel's, but never_target lists it (a watch, Orodruin): its disabling is
+    no default step — a conditional one, a human's, never_target's reason said."""
+    plan = _plan(_row("consent"), tenant, protected=_operator_named(EREGION_PROTECTED_IDENTITIES=SP))
+    items = plan["items"]
+    assert items[0]["what"].startswith("Vérifier avec l'opérateur") and not items[0]["optional"]
+    cut = next(i for i in items if i["verb"] == "entra_disable_principal")
+    assert cut["optional"] and cut["by"] == "human" and cut["what"].startswith("Si ce n'est pas le geste")
+    assert cut["protected"] and "never_target" in cut["why_human"]
+    assert plan["defense"] == "listed" and plan["protected"]
+    assert any("à la main : une identité jamais ciblée" in s for s in entra_plan.steps_text(plan))
+    # Relecture (r1): « Identité protégée », never « de la défense »; no example of the watch's reads.
+    assert plan["protected"][-1].startswith("Identité protégée")
+    assert "lectures de Microsoft Graph" not in items[0]["what"] and "constat est attendu" in items[0]["what"]
+
+
+def test_e1_r1_the_watchs_reads_of_graph_the_example_of_glorfindels_consent_alone(bench, tenant):
+    (row,) = entra.prepare_rows([_watch_consent()], {WATCH})
+    ask = _plan(row, bench, protected=_operator_named())["items"][0]
+    assert "les lectures de Microsoft Graph données à la watch" in ask["what"]
+    signin = _plan(_row("signin"), tenant, protected=_operator_named(EREGION_PROTECTED_IDENTITIES=SP))
+    assert signin["defense"] == "listed"
+    assert "lectures de Microsoft Graph" not in signin["items"][0]["what"]
+
+
+def test_e2_r1_a_listed_principal_adding_itself_a_credential_keeps_its_removal(tenant):
+    """Relecture (r1): a service principal never_target lists adds a secret to itself — the classic
+    persistence of a stolen credential. Nothing cuts it off, but the secret added is still removed:
+    a human's step, never_target's reason said; Verify « not held » while the secret is there."""
+    tenant.sps[SP]["passwordCredentials"] = [{"keyId": KEY, "displayName": "ci"}]
+    row = _row("credential", ActorName="sp-ci-deploy", ActorId=SP, ActorAppId=APP_ID, TargetName="sp-ci-deploy",
+               TargetId=SP, TargetType="ServicePrincipal")
+    plan = _plan(row, tenant, protected=_operator_named(EREGION_PROTECTED_IDENTITIES=SP))
+    removal = next(i for i in plan["items"] if i["verb"] == "entra_remove_credential")
+    assert removal["target"]["id"] == SP and removal["by"] == "human" and not removal["optional"]
+    assert removal["command"] == f"az ad sp credential delete --id {SP} --key-id {KEY}"
+    assert "never_target" in removal["protected"]
+    assert "L'auteur, sp-ci-deploy, est protégé" in plan["protected"][0]
+    assert entra_check.verify(plan, tenant, now=NOW)["verdict"] == "not_held"
+    tenant.sps[SP]["passwordCredentials"] = []
+    assert entra_check.verify(plan, tenant, now=NOW)["verdict"] == "held"
+
+
+def test_e2_r1_a_predicate_without_listed_lists_no_one(tenant):
+    """Relecture (r1): a `protected` without `listed` is no list — its reasons said, nothing dropped,
+    no step made conditional."""
+    plan = _plan(_row("consent"), tenant, protected=lambda oid: "jamais ciblée")
+    assert plan["protected"] == [] and plan["defense"] is False
+    assert any(i["target"].get("id") == ADMIN for i in plan["items"])
+    assert not any(i["optional"] for i in plan["items"] if i["verb"] == "entra_disable_principal")
+    assert all(i["why_human"].startswith("jamais ciblée") for i in plan["items"] if i["target"].get("id"))
+
+
+def test_e1_never_target_unreadable_the_step_stays_its_reason_said(tenant):
+    """The list unreadable names no one: nothing is dropped, every verb a human's, the reason in
+    the steps — Discord's too."""
+    plan = _plan(_row("consent"), tenant, protected=entra_plan.never_target_protected({}))
+    cut = next(i for i in plan["items"] if i["verb"] == "entra_disable_principal")
+    assert not cut["optional"] and cut["by"] == "human" and "illisible" in cut["protected"]
+    assert plan["defense"] is False and plan["protected"] == []
+    assert any("à la main : never_target illisible" in s for s in entra_plan.steps_text(plan))
+    assert entra_plan.never_target_protected({}).listed(SP) is False
+
+
+def test_e2_an_author_never_target_lists_is_said_protected_and_no_step_aims_at_it(bench):
+    """The operator consented: said protected; its sessions are no step of the plan."""
+    (row,) = entra.prepare_rows([_watch_consent()], {WATCH})
+    plan = _plan(row, bench, protected=_operator_named())
+    assert not any(i["target"].get("id") == ADMIN for i in plan["items"])
+    assert not any(ADMIN in (i["command"] or "") for i in plan["items"])
+    said = " ".join(plan["protected"])
+    assert "L'auteur, admin@example.org, est protégé" in said and "aucune étape ne le coupe" in said
+    # A customer's consent by a listed author: the same.
+    cust = _plan(_row("consent"), _authors_tenant(), protected=_operator_named())
+    assert not any(i["target"].get("id") == ADMIN for i in cust["items"])
+    assert cust["defense"] is False and "L'auteur" in cust["protected"][0]
+    # Not listed: its sessions stay a step.
+    other = _plan(_row("consent"), _authors_tenant(),
+                  protected=entra_plan.never_target_protected({"EREGION_OPERATOR_OBJECT_ID": USER}))
+    assert any(i["target"].get("id") == ADMIN and i["verb"] == "entra_revoke_sessions" for i in other["items"])
+
+
+def test_e2_a_roles_author_listed_its_sessions_dropped_the_members_kept(tenant):
+    plan = _plan(_row("role"), tenant, protected=_operator_named())
+    assert not any(i["target"].get("id") == ADMIN for i in plan["items"])
+    member = next(i for i in plan["items"] if i["verb"] == "entra_revoke_sessions")
+    assert member["target"]["id"] == USER and not member["optional"]
+    assert "L'auteur" in plan["protected"][0]
+
+
+def test_e2_a_humans_step_on_a_protected_identity_says_never_targets_reason(tenant):
+    """`build` applied never_target to the executor's items only: a human's verb on a listed
+    identity now says it too (docs/glorfindel.md : « la raison dite »)."""
+    plan = _plan(_row("role"), tenant, protected=entra_plan.never_target_protected({}))
+    member = next(i for i in plan["items"] if i["verb"] == "entra_revoke_sessions" and i["target"]["id"] == USER)
+    assert "illisible" in member["protected"] and member["why_human"].startswith("never_target illisible")
+    assert "IDI1b" in member["why_human"]
+
+
+def test_e2_a_signins_principal_is_its_subject_not_an_author(tenant):
+    """A sign-in's actor is the principal that signed in: E-2 never drops its steps — listed, its
+    disabling stays, a conditional step after the check (E-1)."""
+    plan = _plan(_row("signin"), tenant, protected=_operator_named())
+    assert plan["protected"] == [] and plan["items"][0]["verb"] == "entra_disable_principal"
+    listed = _plan(_row("signin"), tenant, protected=_operator_named(EREGION_PROTECTED_IDENTITIES=SP))
+    cut = next(i for i in listed["items"] if i["verb"] == "entra_disable_principal")
+    assert cut["target"]["id"] == SP and cut["optional"] and listed["items"][0]["what"].startswith("Vérifier")
+    assert not any(x.startswith("L'auteur") for x in listed["protected"])
+
+
+@pytest.mark.parametrize("at", [datetime(2026, 11, 5, 10, 0, tzinfo=timezone.utc),
+                                datetime(2026, 11, 5, 10, 0),               # naive: Log Analytics' UTC
+                                "2026-11-05 10:00:00+00:00",                 # its str(), through JSON
+                                "2026-11-05 10:00:00",
+                                "2026-11-05 12:00:00+02:00",                 # another offset: in UTC
+                                datetime(2026, 11, 5, 11, 0, tzinfo=timezone(timedelta(hours=1)))])
+def test_e3_time_generated_as_azure_monitor_query_gives_it_reaches_the_plan(tenant, at):
+    plan = _plan(_row("role", TimeGenerated=at), tenant)
+    assert plan["event_at"] == "2026-11-05T10:00:00Z" and plan["event_at_why"] == ""
+    member = next(i for i in plan["items"] if i["verb"] == "entra_revoke_sessions" and i["target"]["id"] == USER)
+    assert member["check"]["after"] == "2026-11-05T10:00:00Z"
+    review = next(i for i in plan["items"] if i["what"].startswith("Revoir"))
+    assert "datetime(2026-11-05T10:00:00Z)" in review["find"]
+
+
+def _sessions_of_the_member(out):
+    return next(x for x in out["items"] if x["what"].startswith("Révoquer les sessions de new-admin"))
+
+
+def test_e3_the_sessions_check_runs_on_a_real_cards_hour(tenant):
+    """The revocation is checked against the event: not held before the gesture, held after."""
+    plan = _plan(_row("role", TimeGenerated=datetime(2026, 11, 5, 10, 0, 0, 123456, tzinfo=timezone.utc)), tenant)
+    assert plan["event_at"] == "2026-11-05T10:00:00.123456Z"
+    tenant.role_assignments.clear()
+    before = _sessions_of_the_member(entra_check.verify(plan, tenant, now=NOW))
+    assert before["state"] == "not_held" and "avant l'événement" in before["why"]
+    tenant.users[USER]["signInSessionsValidFromDateTime"] = "2026-11-05T10:05:00Z"
+    assert _sessions_of_the_member(entra_check.verify(plan, tenant, now=NOW))["state"] == "held"
+
+
+@pytest.mark.parametrize("at", [None, "", "hier", "2026-11-05", "2026-11-05 10:00", "2026-13-05 10:00:00"])
+def test_e3_an_hour_absent_or_illegible_is_said_never_taken_for_checked(tenant, at):
+    plan = _plan(_row("role", TimeGenerated=at), tenant)
+    assert plan["event_at"] == ""
+    assert "l'heure de l'événement n'est pas lue" in plan["event_at_why"]
+    assert any("L'heure de l'événement n'est pas lue" in s for s in entra_plan.steps_text(plan))
+    tenant.role_assignments.clear()
+    tenant.users[USER]["signInSessionsValidFromDateTime"] = "2026-11-05T10:05:00Z"
+    out = entra_check.verify(plan, tenant, now=NOW)
+    assert _sessions_of_the_member(out)["state"] == "unreadable" and out["verdict"] != "held"
+
+
+def test_e3_a_plan_without_sessions_says_nothing_of_the_hour(tenant):
+    plan = _plan(_row("credential", TimeGenerated=None), tenant)
+    assert plan["event_at"] == "" and plan["event_at_why"] == ""
+
+
+def test_ir1f_nothing_glorfindel_does_alone_changes(bench, monkeypatch):
+    """The watch's consent, through `decide`'s identity path: no action, no model, an escalation —
+    the plan a proposal to the human."""
+    from glorfindel import agent
+    (row,) = entra.prepare_rows([_watch_consent(TimeGenerated=datetime(2026, 11, 14, 10, 0, tzinfo=timezone.utc))],
+                                {WATCH})
+    monkeypatch.setattr(graph, "default_reader", lambda: bench)
+    monkeypatch.setenv("EREGION_OPERATOR_OBJECT_ID", ADMIN)
+    sig = {"signal_id": "s-1", "resource_id": "vm", "severity": "critical", "ttp": "T1528",
+           "context": {"plane": "identity"},
+           "raw_signal": {"detection_source": "azure_entra", "first_result_row": row}}
+    state = agent._identity_decision({"signal": sig, "dry_run": False, "outcome": None})
+    assert state["action"] == "" and state["escalate"] is True and state["llm_usage"] is None
+    plan = state["identity_plan"]
+    assert plan["event_at"] == "2026-11-14T10:00:00Z" and plan["defense"] == "glorfindel"
+    assert not any(i["verb"] in _CUTS for i in plan["items"] if i["target"].get("id") in (WATCH, ADMIN))
+    assert "identité de la défense" in state["escalation_reason"]

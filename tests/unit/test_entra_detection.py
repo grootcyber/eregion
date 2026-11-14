@@ -499,6 +499,30 @@ def test_glorfindels_identity_as_actor_or_target_is_kept_critical_and_first(law)
     assert "La cible est l'identité de Glorfindel" in d_tgt["escalation_reason"]
 
 
+def test_a_consent_whose_client_is_its_own_identity_is_kept_critical_and_marked(law):
+    """IR1f (#828), the bench of 14/11: the operator gave the watch its reads of Graph — « Add app
+    role assignment to service principal », the target Microsoft Graph's principal, the client the
+    watch (`ClientId`). Marked Glorfindel's, critical; its plan never disables the watch; and
+    `TimeGenerated`, a datetime as azure-monitor-query gives it, reaches the plan."""
+    from datetime import datetime, timezone
+
+    from glorfindel.agent import _identity_decision
+    rule = _shipped("entra-app-consent")
+    graph_sp = "00000000-0000-0000-0000-0000000000e1"
+    law["rows"] = [_row("consent", corr="c-own", ts=datetime(2026, 11, 14, 10, 0, tzinfo=timezone.utc),
+                        EntraOperation="Add app role assignment to service principal", TargetId=graph_sp,
+                        TargetName="Microsoft Graph", ClientId=OWN_OID, Permissions="Application.Read.All",
+                        AdminConsent=False)]
+    p, sent = _poller(_detector(), rule, VM1)
+    p.poll_once(rule)
+    assert len(sent) == 1 and sent[0]["severity"] == "critical"
+    assert sent[0]["raw_signal"]["normalized_signal"]["glorfindel_managed"] is True
+    d = _identity_decision(_initial(sent[0]))
+    assert d["action"] == "" and "identité de la défense" in d["escalation_reason"]
+    assert not any(f"--id {OWN_OID} --set accountEnabled=false" in s for s in d["suggested_steps"])
+    assert d["identity_plan"]["event_at"] == "2026-11-14T10:00:00Z"
+
+
 def test_its_own_signin_from_a_new_address_is_kept_critical(law):
     """Its usual sign-ins are left out by the baseline, as anyone's; one from an address
     never seen is its credential used elsewhere — kept, critical."""
