@@ -2471,6 +2471,20 @@
    "doc": "docs/operations.md"
   },
   {
+   "id": "s-avis-otel-accepte",
+   "composant": "socle",
+   "poste": "s-signer",
+   "nom": "An advisory on a dependency of a dependency accepted with its reason, never red: Eregion never reaches its path, and the fixed version comes with the next lock refresh",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "DEP3"
+   ],
+   "issue": 813,
+   "pr": 817,
+   "doc": "docs/operations.md"
+  },
+  {
    "id": "s-revue",
    "composant": "socle",
    "poste": "s-signer",
