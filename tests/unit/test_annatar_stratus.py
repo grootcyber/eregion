@@ -685,3 +685,72 @@ def test_dry_run_display_shows_the_cycle(tmp_path, monkeypatch, capsys):
     Engine(dry_run=True).run(str(path), skip_confirm=True)
     out = capsys.readouterr().out
     assert TID in out and "warmup" in out and "detonate" in out
+
+
+# ── #819: the FIC identity scenario (the 0.6.0 identity card) and stratus authoring ──────
+
+FIC_SCENARIO = (
+    Path(__file__).resolve().parents[2]
+    / "annatar/scenarios/azure/managed-identity-federated-credential.yaml"
+)
+
+
+def test_fic_identity_scenario_is_valid_and_resolves_to_the_catalog():
+    """#819: the shipped FIC scenario loads, names the catalog's control-plane identity technique,
+    and describes its cycle from the catalog alone (dry-run, no binary)."""
+    result = ScenarioParser().validate(str(FIC_SCENARIO))
+    assert result.valid, result.errors
+    scenario = ScenarioParser().load(str(FIC_SCENARIO))
+    assert scenario.engine == "stratus"
+    assert scenario.engine_ref == FIC
+    assert scenario.target.get("type") != "azure_vm" and "vm_name" not in scenario.target
+    assert FIC in allowed_techniques()
+    d = describe(FIC)
+    assert d["ttp"] == "T1098"
+    assert list(d["phases"]) == list(PHASES)
+    assert d["graph_probe"] is not None and d["graph_probe"].expect_absent is True
+    # grounding for the purple loop: a control-plane log source Glorfindel can anchor on
+    assert scenario.detection_hints.get("log_source") == "azure_activity"
+
+
+def _stratus_yaml(tmp_path, **over):
+    import yaml
+    data = {
+        "name": "s", "description": "d", "mitre": "T1098", "engine": "stratus",
+        "engine_ref": FIC,
+        "target": {"type": "azure_control_plane", "resource_group": "rg-celebrimbor"},
+        "detection": {"hints": {"log_source": "azure_activity"}},
+    }
+    data.update(over)
+    path = tmp_path / "s.yaml"
+    path.write_text(yaml.safe_dump(data), encoding="utf-8")
+    return str(path)
+
+
+def test_stratus_scenario_on_a_vm_target_is_refused(tmp_path):
+    """#819: a stratus scenario attacks the control plane, not a VM — a VM target (or a vm_name)
+    is a misauthoring, refused at authoring before any run."""
+    path = _stratus_yaml(
+        tmp_path, target={"type": "azure_vm", "resource_group": "rg-celebrimbor"})
+    result = ScenarioParser().validate(path)
+    assert not result.valid and any("not a VM" in e for e in result.errors)
+    # a vm_name on an otherwise control-plane target is refused too
+    path2 = _stratus_yaml(
+        tmp_path,
+        target={"type": "azure_control_plane", "resource_group": "rg-celebrimbor",
+                "vm_name": "vm-celebrimbor-gondolin"})
+    assert any("not a VM" in e for e in ScenarioParser().validate(path2).errors)
+
+
+def test_stratus_authoring_checks_do_not_touch_other_engines(tmp_path):
+    """#819: the authoring checks are stratus-only — a local-script scenario with a VM target and
+    no detection hints stays valid."""
+    import yaml
+    path = tmp_path / "s.yaml"
+    path.write_text(yaml.safe_dump({
+        "name": "s", "description": "d", "mitre": "T1136.001",
+        "target": {"type": "azure_vm", "resource_group": "rg-celebrimbor",
+                   "vm_name": "vm-celebrimbor-gondolin"},
+        "steps": [{"name": "x", "action": "run_script_on_vm", "script": "scripts/vm/x.sh"}],
+    }), encoding="utf-8")
+    assert ScenarioParser().validate(path).valid
