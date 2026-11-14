@@ -974,9 +974,9 @@ menace sur 22, et la réaffirmation dit le blocage tenu alors que db-nic-0 joint
 **Ce qui l'attrape à chaque tour.** Trois séquences figées visent son défaut et ne dépendent d'aucun
 tirage ; elles sont ajoutées à sa cible (`TESTS_ALSO`, `scripts/mutants/MUT12.py`) :
 `test_a_block_moved_behind_a_customer_allow_is_bypassed` (le refus sortant d'un blocage déplacé derrière
-une autorisation de tout le trafic sortant : `verify_block_ip` le disait tenu) ; les trois variantes d'I3X
+une autorisation de tout le trafic sortant : `verify_block_ip` le disait tenu) ; les trois voies de sortie d'I3X
 (`test_a_way_out_a_turned_rule_opens_past_the_perimeter_is_said_unblocked`, une voie de sortie qu'une règle
-retournée ouvre avant le périmètre : la réaffirmation) ; et une neuve,
+retournée ouvre avant le périmètre : la réaffirmation ; sa quatrième variante, une entrée, ne le voit pas) ; et une neuve,
 `test_a_block_moved_behind_an_allow_out_on_another_port_is_bypassed` : le même déplacement derrière une
 autorisation sortante sur 443 seul, un port que la menace (22) ne nomme pas. En entrée, une telle
 autorisation n'est qu'une exposition ; en sortie, la VM joint l'attaquant (un shell inversé, une
@@ -986,7 +986,7 @@ porte (2/2) et deux sur une graine tirée (378795979, 2/2).
 
 **Mutant** (`scripts/mutants/MUT12.py`) : M5371, la propriété de M32 sous une autre forme — une
 autorisation sortante jugée par le port de la menace, comme une entrante. Seule la séquence neuve
-l'attrape ; les autres, sur `*`, couvrent le port de la menace.
+l'attrape ; les autres, sur `*` ou sur 22, couvrent le port de la menace.
 
 ### Trois mutants que la machine ne voyait plus qu'au hasard (MUT4)
 
