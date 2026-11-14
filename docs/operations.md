@@ -195,10 +195,16 @@ glorfindel block <ip> <groupe>/<nom> --yes [--scope vm|subnet]   # CMD1 : bloque
 # fois (SEC16), comme pour release et unblock. --dry-run : les gardes seules (lecture seule comprise), rien sur
 # Azure, rien écrit. Une carte en attente pour ce même geste est dite, jamais résolue : l'acquitter
 # (glorfindel ack <id>) une fois le geste vérifié. Le mode (human_only) retient l'action autonome, pas le geste de
-# l'humain. La zone d'inscription (O0) : aucune garde par zone dans isolate et block — en attente de la décision
-# de Jonathan. L'avis de la relecture (#808) : sûr sans refus, puisque le geste est réversible et que ni la watch
-# ni l'approbation de la console n'ont de garde par zone ; une ligne d'information qui dit la zone de la VM avant
-# la question serait un compromis.
+# l'humain. La zone d'inscription (O0, CMD1b) : dite, jamais une garde — décision de Jonathan du 14/11 ; la règle
+# de production borne ce qu'Eregion injecte, pas ce qu'il contient, et le geste est réversible (release,
+# unblock). Une ligne « Zone : » avant la question, avec --yes et --dry-run aussi, lue comme la console la lit
+# (les tags de la VM et de son groupe par TagEnrollment, l'identité de l'hôte, deux GET, jugés par enrollment,
+# eregion_core/inscription.py) : bench et twin dits tels quels ; production dite une charge réelle, avec la
+# commande qui lève le geste ; une VM non inscrite (sa raison), une zone ni bench ni twin ni production, des
+# tags illisibles (un 403, pas d'identifiants, une erreur) : dits tels, « rien ne dit qu'elle soit du banc :
+# peut-être une charge réelle », jamais pris pour bench. --dry-run ne demande rien à Azure : la zone y est dite
+# non lue. Aucune zone, et aucune lecture en échec, n'empêche le geste ni ne change son code de sortie ; un
+# geste refusé par une garde (périmètre, carte ancrée, lecture seule) ne lit aucun tag.
 # Où tourne l'état : comme release et unblock, dans le ~/.glorfindel de l'hôte où la commande tourne. La watch
 # sur Imladris : lancer le geste dans son conteneur (make imladris-ssh, puis docker exec -it eregion-watch
 # glorfindel isolate <groupe>/<nom> : -it, sinon la question lit une fin de fichier ; ou --yes), ou par la

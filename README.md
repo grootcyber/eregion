@@ -550,6 +550,10 @@ glorfindel isolate <group>/<name> --yes         # contain by hand (CMD1): a held
 glorfindel block <ip> <group>/<name> --yes      # block one host address by hand (CMD1), --scope vm (default) or subnet; never
                                                 #   a range, a tag or a never_block address; verified after; lifted by unblock
 # Both say a held card of the same gesture and leave it pending (ack it once verified); --dry-run checks the guards only.
+# Both say the VM's enrollment zone on one line before the prompt (CMD1b), read as the console reads it (its tags and
+# its group's): bench, twin, or production said a real load; not enrolled, an unknown zone or tags unreadable said
+# as such, never taken for the bench; unread in a dry run. Said, never refused: no zone, no failed read stops the
+# gesture or changes its exit code.
 # A check that does not hold, a write landed in part, or a session cut still running with no watch on this host to
 # reread it: a verification_failed card, exit 2. The gesture is noted in runs/console where the CLI can write it; in
 # the watch's container runs/console is mounted read-only: not noted there, said once (as for release and unblock).
