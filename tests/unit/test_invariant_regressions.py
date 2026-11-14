@@ -8238,13 +8238,25 @@ _I3X_RULE = "glorfindel-block-192-31-196-7-api-api-nic-c272f2"
 
 
 def _i3x_steps(how: str) -> tuple:
+    """`port`, `protocol`: api's own `-out` narrowed or turned to UDP; `in-protocol`: its inbound deny turned
+    to UDP — then, either way, into an allow by Db--01's block. `whole`: the `-out` turned as it is, the
+    way out the probes cross (on 443)."""
+    turned = (_I3X_EDGE, _I3X_RULE if how == "in-protocol" else f"{_I3X_RULE}-out")
+    tamper = () if how == "whole" else (("tamper_with_our_rule", how.removeprefix("in-"), turned),)
     return (("block_turned_then_reasserted", API, API, None, "vm", 22, (_I3X_EDGE, _I3X_RULE), "non_disruptive"),
             ("block_turned_then_reasserted", API, API, None, "both", 22, (_I3X_EDGE, _I3X_RULE), "non_disruptive"),
-            ("tamper_with_our_rule", how, (_I3X_EDGE, f"{_I3X_RULE}-out")),
-            ("block_turned_then_reasserted", DB, DB, None, "both", 22, (_I3X_EDGE, f"{_I3X_RULE}-out"), "human_only"))
+            *tamper,
+            ("block_turned_then_reasserted", DB, DB, None, "both", 22, turned, "human_only"))
 
 
-@pytest.mark.parametrize("how", ["port", "protocol"])
+# The ways each variant's turned rule opens to and from the attacker, past the perimeter (`ATTACKER_WAYS`).
+_I3X_OPEN = {"port": {("out", 22, "tcp"), ("out", 22, "udp")},
+             "protocol": {("out", p, "udp") for p in (22, 443, 8080)},
+             "in-protocol": {("in", p, "udp") for p in (22, 443, 8080)},
+             "whole": {("out", p, proto) for p in (22, 443, 8080) for proto in ("tcp", "udp")}}
+
+
+@pytest.mark.parametrize("how", ["port", "protocol", "in-protocol", "whole"])
 def test_a_way_out_a_turned_rule_opens_past_the_perimeter_is_said_unblocked(monkeypatch, how):
     """I3X (#824), the night of 14/11 at 10 000 (macOS; 26 rules, Hypothesis's shrinking stopped at five
     minutes, reduced to 4 and an empty nsg-edge): « I3: the reassertion said 192.31.196.7 no longer blocked
@@ -8256,7 +8268,12 @@ def test_a_way_out_a_turned_rule_opens_past_the_perimeter_is_said_unblocked(monk
     or turned to UDP, the same way out unseen —; then Db--01's block turns that `-out` into an allow, and
     the pass says it: « l'IP n'est plus bloquée sur api-nic ». It is true: the allow at 200, before the
     perimeter's `-out`, lets api reach the attacker on 22 (on every UDP port) — the code's model of an
-    outbound allow (A0: the VM reaches the attacker, on any port). The oracle was too strict: it judged
+    outbound allow (A0: the VM reaches the attacker, on any port). The way in, frozen beside them
+    (`in-protocol`, the review): api's own inbound deny turned to UDP, then into an allow at 200 before the
+    perimeter's at 210 — the attacker reaches api on UDP, the threat port among them, which no probe crosses
+    either; red on the base as the other two. And `whole` (the review): the `-out` turned as it is, steps 1,
+    2 and 4 — the probe out to the attacker on 443 sees it, the base green, the card true (M5331 caught by
+    the machine's claims there, never on 22 nor on UDP). The oracle was too strict: it judged
     « cut off on every port » on the probes, TCP all, none out to the attacker on 22. It reads now every
     way to and from the attacker, by port and protocol (`ATTACKER_WAYS`), the world's own NSGs evaluated —
     never the code's verification. Older than the night: the probes since L24 (08/10), the narrowing and
@@ -8278,8 +8295,53 @@ def test_a_way_out_a_turned_rule_opens_past_the_perimeter_is_said_unblocked(monk
         assert any("n'est plus bloquée sur api-nic" in r for r in said), said
         world = m._world()
         out = {(f[2], f[4], f[5]) for f in open_flows(world, API, ATTACKER_WAYS) if f[3] == ATTACKER}
-        assert out == ({("out", 22, "tcp"), ("out", 22, "udp")} if how == "port" else
-                       {("out", p, "udp") for p in (22, 443, 8080)}), out
-        assert not [f for f in open_flows(world, API) if f[3] == ATTACKER], "the probes alone see no way"
+        assert out == _I3X_OPEN[how], out
+        probed = {(f[2], f[4]) for f in open_flows(world, API) if f[3] == ATTACKER}
+        assert probed == ({("out", 443)} if how == "whole" else set()), ("what the probes alone see", probed)
     finally:
         m.teardown()
+
+
+def _machine_writes(field: str) -> set[str]:
+    """Every constant the machine's source (tests/unit/test_invariants.py) writes in a rule's `field`: a
+    keyword (`destination_port_range="22"`), a key of a dict literal, an item assigned (`r["protocol"] =
+    "Udp"`), a pair drawn to edit a rule (`("destination_port_range", "443")`). Read from the source, not
+    restated: a value the generator adds is seen here the day it is added."""
+    import ast
+    from pathlib import Path
+
+    def text(node) -> str | None:
+        return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else None
+    tree = ast.parse((Path(__file__).parent / "test_invariants.py").read_text())
+    found: set[str] = set()
+    for node in ast.walk(tree):
+        pairs = []
+        if isinstance(node, ast.keyword):
+            pairs = [(node.arg, node.value)]
+        elif isinstance(node, ast.Dict):
+            pairs = [(text(k), v) for k, v in zip(node.keys, node.values) if k is not None]
+        elif isinstance(node, ast.Assign):
+            pairs = [(text(t.slice), node.value) for t in node.targets if isinstance(t, ast.Subscript)]
+        elif isinstance(node, ast.Tuple) and len(node.elts) == 2:
+            pairs = [(text(node.elts[0]), node.elts[1])]
+        found |= {text(v) for k, v in pairs if k == field and text(v) is not None}
+    return found
+
+
+def test_the_attackers_ways_cover_every_port_and_protocol_the_machine_writes():
+    """I3X's review: `ATTACKER_WAYS` is written by hand (22, 443, another; TCP, UDP). Every port and protocol
+    the machine can put in a rule — the customer's templates, our rules narrowed or turned, a rule edited — is
+    among them, and one port no rule names: the day the generator writes Icmp or a range, the oracle of
+    « cut off on every way » would go blind again without a sound. `*` covers them all."""
+    from .fake_azure import ATTACKER_WAYS
+    ports = {w[2] for w in ATTACKER_WAYS}
+    protos = {w[3] for w in ATTACKER_WAYS}
+    named = _machine_writes("destination_port_range") - {"*"}
+    assert named, "the machine's ports not found: the reading of its source is broken"
+    assert all(p.isdigit() and int(p) in ports for p in named), (sorted(named), sorted(ports))
+    assert ports - {int(p) for p in named}, "no way on a port no rule names"
+    written = {p.lower() for p in _machine_writes("protocol")} - {"*", "any"}
+    assert written, "the machine's protocols not found: the reading of its source is broken"
+    assert written <= protos, (sorted(written), sorted(protos))
+    assert {w[0] for w in ATTACKER_WAYS} == {"in", "out"}
+    assert not _machine_writes("destination_port_ranges"), "a list of ranges: read it here"

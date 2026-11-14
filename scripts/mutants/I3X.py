@@ -6,10 +6,10 @@ oracle judged it false: « cut off on every port » read on its probes, all TCP,
 attacker on 22. The oracle's defect, not the product's: it reads now every way to and from the
 attacker by port and protocol (`ATTACKER_WAYS`, tests/unit/fake_azure.py), the world's NSGs evaluated.
 M5331: the product's side the frozen sequence holds — an outbound allow before the perimeter's `-out`
-counted as holding when it covers only part of the way out, the card « reste bloquée » while the VM
-reaches the attacker. Measured by the frozen sequence (tests/unit/test_invariant_regressions.py),
-the card it says: the machine's own oracle of a held block reads the probes, which never cross that
-way (I3X's report, an open point)."""
+counted as holding, the card « reste bloquée » while the VM reaches the attacker. Measured by the frozen
+sequences (tests/unit/test_invariant_regressions.py) and the machine. An outbound allow on 22 or on UDP
+escapes the machine (its oracle of a held block reads the probes: I3Xb); turned whole, the machine sees it
+(the probe out to the attacker on 443, the frozen `whole`) — but draws it rarely: 0 of 3 rounds at 60."""
 _PER = "glorfindel/providers/azure/perimeter.py"
 _REG = "tests/unit/test_invariant_regressions.py::"
 _FOUND = f"{_REG}test_a_way_out_a_turned_rule_opens_past_the_perimeter_is_said_unblocked"
@@ -21,4 +21,4 @@ MUTANTS = [
      "                if found is not None and not self._threat_open(\n"
      "                        [f for f in found if f.get(\"direction\") != \"outbound\"]):\n"),
 ]
-TESTS = {"M5331": _FOUND}
+TESTS = {"M5331": f"{_FOUND} tests/unit/test_invariants.py"}

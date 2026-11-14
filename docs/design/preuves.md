@@ -821,21 +821,29 @@ TCP et UDP. Il les évalue sur les NSG du monde (`open_flows`), jamais sur la v�
 voies couvrent tout ce qu'une règle de la machine sait distinguer : les modèles du client (22, 443, `*`),
 nos règles (`*` ou rétrécies à 22, `*` ou UDP). Les autres invariants gardent les sondes d'avant. Le jugement
 reste le même, il est seulement mieux mesuré : « n'est plus bloquée » n'est jamais dit d'une carte que le
-périmètre coupe sur toutes ses voies.
+périmètre coupe sur toutes ses voies. Un test garde que ces voies, écrites à la main, couvrent chaque port
+et chaque protocole que la machine écrit dans une règle, et un port qu'aucune règle ne nomme. Il les lit dans
+la source de la machine, pas dans une liste recopiée : le jour où le générateur écrit Icmp ou une plage, il
+échoue, et l'angle mort ne se rouvre pas sans bruit.
 
-**Mesures.** Figée dans `tests/unit/test_invariant_regressions.py`, la séquence réduite, en deux variantes
-(le port, puis le protocole). Après chaque pas, trois des huit `@invariant` : I1, I2 sur la configuration du
-client, I6. Puis le monde lui-même : la carte dit « n'est plus bloquée sur api-nic », api joint l'attaquant
-par les voies que la règle retournée ouvre (le port 22 en TCP et en UDP, ou UDP sur tous les ports), et
-aucune sonde ne les voit. Les deux variantes échouent sur `origin/main` 77e38479 avec le message de la nuit.
-Les mutants dont la mesure passe par cet oracle restent attrapés : M2180, M2184 et M2187 (I3P), M4860–M4869
-(I3N), M5030–M5039 et M5075–M5079 (I3Q). Mutant M5331 (`scripts/mutants/I3X.py`), attrapé par la séquence
-figée : il remet le côté que la carte tient, une autorisation sortante avant la `-out` du périmètre lue
-« tenue ». La carte dirait alors « reste bloquée », alors que la VM joint l'attaquant.
+**Mesures.** Figée dans `tests/unit/test_invariant_regressions.py`, la séquence réduite, en quatre variantes.
+Les trois premières : la `-out` d'api rétrécie au port 22, la même passée en UDP, et la règle entrante d'api
+passée en UDP puis retournée en autorisation à 200, avant le périmètre à 210 (relecture). Après chaque pas,
+trois des huit `@invariant` : I1, I2 sur la configuration du client, I6. Puis le monde lui-même : la carte dit
+« n'est plus bloquée sur api-nic », api joint l'attaquant par les voies que la règle retournée ouvre (le port
+22 en TCP et en UDP, UDP en sortie sur tous les ports, ou UDP en entrée sur tous les ports, le port de la
+menace compris), et aucune sonde ne les voit. Ces trois variantes échouent sur `origin/main` 77e38479 avec le
+message de la nuit. La quatrième retourne la `-out` entière (les pas 1, 2 et 4) : la sonde de sortie vers
+l'attaquant sur 443 la voit, et ses pas passent sur la base. Le garde des voies est dans le même fichier. Les
+mutants dont la mesure passe par cet oracle restent attrapés : M2180, M2184 et M2187 (I3P), M4860–M4869 (I3N),
+M5030–M5039 et M5075–M5079 (I3Q). Mutant M5331 (`scripts/mutants/I3X.py`), attrapé par les séquences figées :
+il remet le côté que la carte tient, une autorisation sortante avant la `-out` du périmètre lue « tenue ». La
+carte dirait alors « reste bloquée », alors que la VM joint l'attaquant. Retournée entière, la machine le
+voit, par ses affirmations sur la sonde de 443 ; elle le tire rarement (0 tour sur 3 à 60 exemples).
 
-**Resté ouvert.** L'oracle d'un blocage dit tenu (`_attacker_flows` : « reposé une fois », « reste
-bloquée », `blocked`) lit toujours les sondes seules. Une autorisation sortante sur 22, ou en UDP, lui
-échappe encore : M5331 n'est attrapé que par la séquence figée, pas par la machine.
+**Resté ouvert (I3Xb).** L'oracle d'un blocage dit tenu (`_attacker_flows` : « reposé une fois », « reste
+bloquée », `blocked`) lit toujours les sondes seules. Une autorisation sortante sur 22 ou en UDP échappe à la
+machine ; retournée entière, la machine la voit.
 
 ### Trois mutants que la machine ne voyait plus qu'au hasard (MUT4)
 
