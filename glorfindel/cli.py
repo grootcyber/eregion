@@ -529,7 +529,7 @@ def unblock(ip: str, resource_id: str, dry_run: bool, yes: bool):
 # and the same guards (glorfindel/gestures.py), the state written as the watch writes it — reasserted,
 # lifted by `release` and `unblock`. The cards are never resolved here: the human acknowledges them.
 
-def _contain_preamble(resource_id: str, action: str, dry_run: bool):
+def _contain_preamble(resource_id: str, action: str, dry_run: bool, scope: str = "vm"):
     """The guards before any call to the cloud, and what the human is told before the prompt — the
     connector once they hold, and whether a watch lives here (a session cut it rereads). Refused: a
     ClickException, nothing done — a dry run too: the guards are local reads."""
@@ -542,39 +542,46 @@ def _contain_preamble(resource_id: str, action: str, dry_run: bool):
     if getattr(connector, "read_only", False):
         raise click.ClickException("credentials en lecture seule (GLORFINDEL_READ_ONLY) : cet hôte ne peut "
                                    "pas agir — rien n'est fait")
-    _zone_said(resource_id, action, dry_run)
+    _zone_said(resource_id, action, dry_run, scope)
     for e in gestures.held_cards(resource_id, action):
         console.print(f"  [cyan]Carte {e['id'][:8]} en attente pour ce geste : elle reste en attente — "
                       f"glorfindel ack {e['id'][:8]} une fois le geste vérifié.[/cyan]")
     return connector, _state_here_said()
 
 
-def _zone_said(resource_id: str, action: str, dry_run: bool) -> None:
+def _zone_said(resource_id: str, action: str, dry_run: bool, scope: str = "vm") -> None:
     """CMD1b (#811): the VM's enrollment zone, on one line before the prompt — --yes and --dry-run too.
     Said, never refused (Jonathan's decision of 14/11): no zone, and no read that fails, stops the gesture
     or changes its exit code. A dry run reads nothing on Azure: the zone is said unread. A VM not
-    enrolled, a zone none of the three, tags unread: each said as such, never taken for the bench."""
+    enrolled, a zone none of the three, tags unread or no answer in time: each said as such, never taken
+    for the bench. A block on the subnet reaches its other VMs, whose zones are not read: said too."""
     from glorfindel import gestures
+    # The rule of `--scope subnet` sits on the subnet's NSG: every VM of the subnet, any of them perhaps a
+    # real load — the zone said is the named VM's only (review of CMD1b).
+    reach = (" — la zone de cette VM seulement : le blocage touche toutes les VM de son sous-réseau, leurs "
+             "zones non lues") if scope == "subnet" else ""
     if dry_run:
         console.print("  [yellow]Zone     : non lue — essai à blanc, rien n'est demandé à Azure ; rien ne "
-                      "dit qu'elle soit du banc (sans --dry-run, elle est lue avant la question).[/yellow]")
+                      f"dit qu'elle soit du banc (sans --dry-run, elle est lue avant la question){reach}."
+                      "[/yellow]")
         return
     kind, why = gestures.zone_of(resource_id)
     # Tag values and Azure's text: masked (no subscription's id, MSK2), one printable line, cut, no markup.
     why = " ".join("".join(c if c.isprintable() else " " for c in _ids_masked(why)).split())
     why = _esc_markup(why[:200])
+    note = f" ({why})" if why else ""            # an enrolled zone's: « ancien tag »; never « () »
     if kind == "production":
         lift = "glorfindel release" if action == "isolate_vm" else "glorfindel unblock"
-        console.print(f"  [bold red]Zone     : production — une charge réelle : ce geste la touche pour de vrai "
-                      f"(réversible : {lift}).[/bold red]")
+        console.print(f"  [bold red]Zone     : production{note} — une charge réelle : ce geste la touche pour "
+                      f"de vrai (réversible : {lift}){reach}.[/bold red]")
     elif kind in ("bench", "twin"):
-        console.print(f"  Zone     : {kind}")
+        console.print(f"  Zone     : {kind}{note}{reach}")
     else:
-        said = {"not_enrolled": f"VM non inscrite ({why})",
+        said = {"not_enrolled": f"VM non inscrite{note}",
                 "unknown": f"« {why} », inconnue (ni bench, ni twin, ni production)",
-                }.get(kind, f"illisible ({why})")
+                }.get(kind, f"illisible{note}")
         console.print(f"  [yellow]Zone     : {said} — rien ne dit qu'elle soit du banc : peut-être une "
-                      "charge réelle.[/yellow]")
+                      f"charge réelle{reach}.[/yellow]")
 
 
 def _state_here_said() -> bool:
@@ -674,7 +681,7 @@ def block(ip: str, resource_id: str, scope: str, dry_run: bool, yes: bool):
     console.print(f"  Resource : {_esc_markup(_vm_said(resource_id))}")
     console.print(f"  Scope    : {scope}" + ("  (every VM of its subnet)" if scope == "subnet" else ""))
     console.print(f"  Dry-run  : {dry_run}\n")
-    connector, watched = _contain_preamble(resource_id, "block_suspicious_ip", dry_run)
+    connector, watched = _contain_preamble(resource_id, "block_suspicious_ip", dry_run, scope)
 
     if not dry_run and not yes:
         ask = (f"Block {host} for every VM of this VM's subnet?" if scope == "subnet"

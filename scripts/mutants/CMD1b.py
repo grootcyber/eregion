@@ -1,7 +1,8 @@
 """CMD1b (#811): `glorfindel isolate` and `glorfindel block` say the VM's enrollment zone on one line before
 the prompt — read as the console reads it (TagEnrollment's tags, judged by ``enrollment``) — and never refuse
 for it (Jonathan's decision of 14/11). M5285–M5294, measured by tests/unit/test_cli_contain.py (§4, a fake
-reader of tags: no Azure call)."""
+reader of tags: no Azure call). M5305–M5309 after the review: a block on the subnet, a read bounded in time,
+the old chaos tag, no empty brackets."""
 GESTURES = "glorfindel/gestures.py"
 CLI = "glorfindel/cli.py"
 _C = "tests/unit/test_cli_contain.py"
@@ -18,8 +19,8 @@ MUTANTS = [
      '        return "unknown", verdict.zone\n',
      '        return "bench", ""\n'),
     ("M5288", "production is said a zone like another: the line no longer says a real load (CMD1b)", CLI,
-     'f"  [bold red]Zone     : production — une charge réelle : ce geste la touche pour de vrai "',
-     'f"  [bold red]Zone     : production — ce geste la touche "'),
+     'f"  [bold red]Zone     : production{note} — une charge réelle : ce geste la touche pour "',
+     'f"  [bold red]Zone     : production{note} — ce geste la touche "'),
     ("M5289", "the zone refuses: a gesture on a VM of production is refused, against Jonathan's decision "
      "(CMD1b)", CLI,
      '        lift = "glorfindel release" if action == "isolate_vm" else "glorfindel unblock"\n',
@@ -32,8 +33,8 @@ MUTANTS = [
      '    if dry_run:\n        console.print("  [yellow]Zone     : non lue',
      '    if False:\n        console.print("  [yellow]Zone     : non lue'),
     ("M5292", "a dry run says no zone at all: the line missing where the fiche wants it (CMD1b)", CLI,
-     "    _zone_said(resource_id, action, dry_run)\n",
-     "    if not dry_run:\n        _zone_said(resource_id, action, dry_run)\n"),
+     "    _zone_said(resource_id, action, dry_run, scope)\n",
+     "    if not dry_run:\n        _zone_said(resource_id, action, dry_run, scope)\n"),
     ("M5293", "what Azure says of a failed read is shown unmasked: the subscription's id on the terminal "
      "(MSK2, CMD1b)", CLI,
      '"".join(c if c.isprintable() else " " for c in _ids_masked(why))',
@@ -42,6 +43,25 @@ MUTANTS = [
      CLI,
      "    why = _esc_markup(why[:200])\n",
      "    why = why[:200]\n"),
+    # Review of CMD1b.
+    ("M5305", "`block --scope subnet` says the named VM's zone as if it were the block's: its neighbours, any "
+     "of them a real load, unsaid (CMD1b, review)", CLI,
+     '             "zones non lues") if scope == "subnet" else ""\n',
+     '             "zones non lues") if False else ""\n'),
+    ("M5306", "the read of the zone waits as long as the credential's search: tens of seconds before the "
+     "prompt, unsaid (CMD1b, review)", GESTURES,
+     "    reader.join(READ_TIMEOUT_S)\n",
+     "    reader.join()\n"),
+    ("M5307", "a read that does not answer in time is taken for the bench (CMD1b, review)", GESTURES,
+     '        return "unreadable", f"pas de réponse en {READ_TIMEOUT_S:g} s"\n',
+     '        return "bench", ""\n'),
+    ("M5308", "a VM enrolled by the old chaos tag alone is said bench as if by eregion-target (CMD1b, review)",
+     GESTURES,
+     '    return verdict.zone, "ancien tag" if verdict.legacy else ""\n',
+     '    return verdict.zone, ""\n'),
+    ("M5309", "a reason left empty shows « () » (CMD1b, review)", CLI,
+     '    note = f" ({why})" if why else ""',
+     '    note = f" ({why})"'),
 ]
 TESTS = {
     "M5285": f"{_C}::test_a_vm_not_enrolled_is_said_so_never_taken_for_the_bench",
@@ -54,4 +74,9 @@ TESTS = {
     "M5292": f"{_C}::test_a_dry_run_says_the_zone_unread_and_reads_nothing",
     "M5293": f"{_C}::test_what_the_reader_says_is_masked_printable_and_never_markup",
     "M5294": f"{_C}::test_what_the_reader_says_is_masked_printable_and_never_markup",
+    "M5305": f"{_C}::test_a_block_on_the_subnet_says_its_other_vms_zones_are_not_read",
+    "M5306": f"{_C}::test_a_read_that_does_not_answer_in_time_is_said_and_the_gesture_made",
+    "M5307": f"{_C}::test_a_read_that_does_not_answer_in_time_is_said_and_the_gesture_made",
+    "M5308": f"{_C}::test_the_old_chaos_tag_alone_is_said_bench_by_the_old_tag",
+    "M5309": f"{_C}::test_a_reason_left_empty_shows_no_empty_brackets",
 }

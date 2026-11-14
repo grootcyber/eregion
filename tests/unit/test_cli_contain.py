@@ -631,3 +631,61 @@ def test_the_default_reader_is_tag_enrollment_s_two_gets(monkeypatch):
     assert [v for v, _ in seen] == ["GET", "GET"] and seen[1][1].endswith("/virtualMachines/web")
     monkeypatch.setattr(gestures, "TAGS_READER", gestures.tags_read)
     assert gestures.zone_of(WEB) == ("twin", "")
+
+
+# Review of CMD1b: M5305–M5309.
+
+REACH = "la zone de cette VM seulement : le blocage touche toutes les VM de son sous-réseau, leurs zones non lues"
+
+
+def test_a_block_on_the_subnet_says_its_other_vms_zones_are_not_read(world, monkeypatch):
+    """`--scope subnet` puts its rule on the subnet's NSG: every VM of the subnet, perhaps one with a real
+    load — the zone said is the named VM's only, and the line says so; a block on the VM alone does not."""
+    _tags(monkeypatch, _enrolled("bench"))
+    r = _run("block", ATTACKER, "rg-app1/web", "--scope", "subnet", "--yes")
+    assert r.exit_code == 0, r.output
+    assert f"Zone : bench — {REACH}" in r.output, r.output
+    r = _run("block", "203.0.113.8", "rg-app1/web", "--scope", "subnet", "--dry-run", "--yes")
+    assert "non lue" in r.output and REACH in r.output, r.output
+    r = _run("block", "203.0.113.9", "rg-app1/web", "--yes")
+    assert r.exit_code == 0 and "Zone : bench" in r.output and REACH not in r.output, r.output
+    r = _run("isolate", "rg-app1/web", "--yes")
+    assert REACH not in r.output, r.output
+
+
+def test_a_read_that_does_not_answer_in_time_is_said_and_the_gesture_made(world, monkeypatch):
+    """The credential's search has no bound of its own (a workstation without credentials): the read is
+    bounded, past it the zone is said unreadable — never the bench, the gesture made, exit 0."""
+    import threading
+
+    from glorfindel import gestures
+    from glorfindel.actions import active_isolations
+    late = threading.Event()
+
+    def slow(resource_id):
+        late.wait(3)
+        return {"eregion-target": "celebrimbor"}, _enrolled("bench")
+    monkeypatch.setattr(gestures, "TAGS_READER", slow)
+    monkeypatch.setattr(gestures, "READ_TIMEOUT_S", 0.05)
+    try:
+        r = _run("isolate", "rg-app1/web", "--yes")
+    finally:
+        late.set()
+    assert r.exit_code == 0, r.output
+    assert "Zone : illisible (pas de réponse en 0.05 s)" in r.output and "Zone : bench" not in r.output, r.output
+    assert any(x["resource_id"] == WEB for x in active_isolations())
+
+
+def test_the_old_chaos_tag_alone_is_said_bench_by_the_old_tag(world, monkeypatch):
+    """Only the old tag (annatar-test=true) on the VM and its group: the bench, as the console reads it —
+    said « ancien tag », never as if enrolled by eregion-target."""
+    _tags(monkeypatch, {"annatar-test": "true"}, {"annatar-test": "true"})
+    r = _run("isolate", "rg-app1/web", "--yes")
+    assert r.exit_code == 0 and "Zone : bench (ancien tag)" in r.output, r.output
+
+
+def test_a_reason_left_empty_shows_no_empty_brackets(world, monkeypatch):
+    from glorfindel import gestures
+    monkeypatch.setattr(gestures, "zone_of", lambda rid: ("not_enrolled", ""))
+    r = _run("isolate", "rg-app1/web", "--yes")
+    assert r.exit_code == 0 and "Zone : VM non inscrite — rien ne dit" in r.output and "()" not in r.output, r.output

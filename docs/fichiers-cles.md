@@ -54,7 +54,7 @@ glorfindel/gestures.py          → FS1b : la levée et le reset de la CLI en fo
                                    de la main d'un humain, glorfindel isolate et block (direct_refusal,
                                    address_refusal, contain : les gardes et la vérification de l'approbation) ;
                                    CMD1b : la zone d'inscription dite avant la question, jamais un refus (tags_read,
-                                   TAGS_READER, zone_of)
+                                   TAGS_READER, zone_of, READ_TIMEOUT_S)
 eregion_console/action_requests.py → FS1b : le côté console de la file (ask, answer) — les routes d'écriture, derrière
                                    EREGION_ACTION_QUEUE=1. FS1c : deposit, follow, withdraw, waiting, posture — la route
                                    rend l'id de sa demande, la page suit le reçu (GET /api/queue/<id>)

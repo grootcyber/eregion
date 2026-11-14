@@ -192,17 +192,40 @@ def tags_read(resource_id: str) -> tuple[dict, dict]:
 TAGS_READER = tags_read
 
 
+# How long the CLI waits for the zone before its prompt: the credential's own search (DefaultAzureCredential,
+# on a workstation without credentials) has no bound of its own; the two GETs, 15 s each (review of CMD1b).
+READ_TIMEOUT_S = 20.0
+
+
 def zone_of(resource_id: str) -> tuple[str, str]:
-    """(what the VM's zone is, why) — never raises, never refuses. The kind: ``bench``, ``twin`` or
-    ``production`` (enrolled there, why ""); ``unknown`` (enrolled, with a zone none of those three:
-    why is the zone as written); ``not_enrolled`` (why: ``enrollment``'s reason); ``unreadable`` (the
-    tags not read — no credential, a 403, an error: why says it). Neither of the last three is ever
-    taken for ``bench``: nothing says the VM is the bench's — it may carry a real load."""
+    """(what the VM's zone is, why) — never raises, never refuses, never waits more than READ_TIMEOUT_S.
+    The kind: ``bench``, ``twin`` or ``production`` (enrolled there; why "" — or « ancien tag » when only
+    the old chaos tag enrolls it, as the console reads it); ``unknown`` (enrolled, with a zone none of
+    those three: why is the zone as written); ``not_enrolled`` (why: ``enrollment``'s reason);
+    ``unreadable`` (the tags not read — no credential, a 403, an error, no answer in time: why says it).
+    Neither of the last three is ever taken for ``bench``: nothing says the VM is the bench's — it may
+    carry a real load. The read runs in a thread of its own, a daemon: past the bound it is left to end
+    alone — two GETs, nothing written."""
     import os
+    import threading
 
     from eregion_core.inscription import BENCH_ENV, DEFAULT_BENCH, ZONES, enrollment
+    box: dict = {}
+
+    def read() -> None:
+        try:
+            box["tags"] = TAGS_READER(resource_id)
+        except Exception as exc:
+            box["error"] = exc
+    reader = threading.Thread(target=read, name="zone-read", daemon=True)
+    reader.start()
+    reader.join(READ_TIMEOUT_S)
+    if "tags" not in box and "error" not in box:
+        return "unreadable", f"pas de réponse en {READ_TIMEOUT_S:g} s"
     try:
-        rg_tags, tags = TAGS_READER(resource_id)
+        if "error" in box:
+            raise box["error"]
+        rg_tags, tags = box["tags"]
         verdict = enrollment(rg_tags, tags, bench=os.environ.get(BENCH_ENV, DEFAULT_BENCH))
     except Exception as exc:
         return "unreadable", str(exc) or type(exc).__name__
@@ -210,4 +233,4 @@ def zone_of(resource_id: str) -> tuple[str, str]:
         return "not_enrolled", verdict.reason
     if verdict.zone not in ZONES:
         return "unknown", verdict.zone
-    return verdict.zone, ""
+    return verdict.zone, "ancien tag" if verdict.legacy else ""

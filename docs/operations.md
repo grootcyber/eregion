@@ -204,7 +204,13 @@ glorfindel block <ip> <groupe>/<nom> --yes [--scope vm|subnet]   # CMD1 : bloque
 # tags illisibles (un 403, pas d'identifiants, une erreur) : dits tels, « rien ne dit qu'elle soit du banc :
 # peut-être une charge réelle », jamais pris pour bench. --dry-run ne demande rien à Azure : la zone y est dite
 # non lue. Aucune zone, et aucune lecture en échec, n'empêche le geste ni ne change son code de sortie ; un
-# geste refusé par une garde (périmètre, carte ancrée, lecture seule) ne lit aucun tag.
+# geste refusé par une garde (périmètre, carte ancrée, lecture seule) ne lit aucun tag. Une VM que seul l'ancien
+# tag chaos inscrit est dite « bench (ancien tag) ». block --scope subnet : la zone dite est celle de la VM
+# nommée seulement ; la règle se pose sur le NSG du sous-réseau et touche ses voisines, dont aucune zone n'est
+# lue (l'une peut porter une charge réelle) — la ligne le dit. La lecture attend au plus 20 s
+# (gestures.READ_TIMEOUT_S) : la recherche d'identifiants (DefaultAzureCredential, sur un poste sans
+# identifiants) n'a pas de borne propre ; au-delà, la zone est dite illisible (« pas de réponse en 20 s ») et
+# la lecture finit seule dans son fil, deux GET, rien d'écrit.
 # Où tourne l'état : comme release et unblock, dans le ~/.glorfindel de l'hôte où la commande tourne. La watch
 # sur Imladris : lancer le geste dans son conteneur (make imladris-ssh, puis docker exec -it eregion-watch
 # glorfindel isolate <groupe>/<nom> : -it, sinon la question lit une fin de fichier ; ou --yes), ou par la

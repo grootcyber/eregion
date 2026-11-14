@@ -552,7 +552,8 @@ glorfindel block <ip> <group>/<name> --yes      # block one host address by hand
 # Both say a held card of the same gesture and leave it pending (ack it once verified); --dry-run checks the guards only.
 # Both say the VM's enrollment zone on one line before the prompt (CMD1b), read as the console reads it (its tags and
 # its group's): bench, twin, or production said a real load; not enrolled, an unknown zone or tags unreadable said
-# as such, never taken for the bench; unread in a dry run. Said, never refused: no zone, no failed read stops the
+# as such, never taken for the bench; unread in a dry run; with --scope subnet, the named VM's zone only (its
+# neighbours' unread, said); the read waits 20 s at most. Said, never refused: no zone, no failed read stops the
 # gesture or changes its exit code.
 # A check that does not hold, a write landed in part, or a session cut still running with no watch on this host to
 # reread it: a verification_failed card, exit 2. The gesture is noted in runs/console where the CLI can write it; in
