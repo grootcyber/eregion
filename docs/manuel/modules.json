@@ -2368,6 +2368,19 @@
    "doc": "docs/operations.md"
   },
   {
+   "id": "s-porte-cinq-survivants",
+   "composant": "socle",
+   "poste": "s-prouver",
+   "nom": "The five mutants a release gate saw survive, each caught on every round again: a test that reaches its defect where a later change had moved it, a frozen sequence where the machine met it by chance only",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "MUT11"
+   ],
+   "issue": 830,
+   "doc": "docs/design/preuves.md"
+  },
+  {
    "id": "s-release",
    "composant": "socle",
    "poste": "s-prouver",
