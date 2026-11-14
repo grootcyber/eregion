@@ -699,20 +699,33 @@ def test_an_acceptance_without_its_reason_or_of_another_shape_refuses_the_list(w
 
 
 def test_the_repositorys_accepted_advisories_each_say_why():
-    """R-20: chromadb's advisories of the HTTP server, accepted — Eregion runs it embedded."""
+    """R-20: chromadb's advisories of the HTTP server, accepted — Eregion runs it embedded; DEP3
+    (#813): opentelemetry-api's, accepted — no line of Eregion reads a traceparent through it."""
     sys.path.insert(0, str(ROOT / "scripts"))
     try:
         import pip_audit_issues as pai
     finally:
         sys.path.pop(0)
     accepted = pai.load_accepted(str(ROOT / "requirements" / "audit-accepted.json"))
-    assert {a["package"] for a in accepted} == {"chromadb"} and len(accepted) == 4
-    assert all("embedded" in a["reason"] and "PersistentClient" in a["reason"] for a in accepted)
+    chroma = [a for a in accepted if a["package"] == "chromadb"]
+    otel = [a for a in accepted if a["package"] == "opentelemetry-api"]
+    assert len(chroma) == 4 and len(otel) == 1 and len(accepted) == 5
+    assert all("embedded" in a["reason"] and "PersistentClient" in a["reason"] for a in chroma)
     used = "".join(p.read_text(encoding="utf-8") for d in ("glorfindel", "analysis", "eregion_core",
                                                           "eregion_console", "annatar", "gothmog")
                    for p in (ROOT / d).rglob("*.py"))
     assert "chromadb.PersistentClient" in used
     assert "HttpClient(" not in used and "chromadb.Client(" not in used
+    # opentelemetry-api: what its reason says, held by the tree — no import, no instrumentation in a
+    # lock, a fixed version said with the lock refresh that brings it.
+    [o] = otel
+    assert o["id"] == "GHSA-mf5v-w3w3-f6cg"
+    assert "1.45.2" in o["reason"] and "make lock" in o["reason"] and "line feed" in o["reason"]
+    assert "opentelemetry" not in used.lower()
+    locks = [(ROOT / "requirements" / f"{n}.txt").read_text(encoding="utf-8")
+             for n in ("dev", "glorfindel", "annatar", "audit")]
+    assert not any(re.search(r"(?m)^opentelemetry-instrumentation", t) for t in locks)
+    assert all("opentelemetry-api==1.45.1" in t for t in locks[:2])
 
 
 @needs_make

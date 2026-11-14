@@ -23,6 +23,12 @@
       "id": "GHSA-xph7-9rjv-w5fr",
       "reason": "The HTTP server's SimpleRBACAuthorizationProvider ignores the tenant, database or collection of a permission. Eregion runs chromadb embedded (PersistentClient): no server, no authorization provider configured. No fixed version yet (1.5.9 locked).",
       "since": "2026-11-02"
+    },
+    {
+      "package": "opentelemetry-api",
+      "id": "GHSA-mf5v-w3w3-f6cg",
+      "reason": "Regular-expression denial of service in TraceContextTextMapPropagator.extract() on a forged traceparent value. Eregion does not reach it: the package comes only as a dependency (of anthropic, chromadb, fastapi; requirements/glorfindel.txt, requirements/dev.txt), no line of Eregion imports opentelemetry, no OpenTelemetry instrumentation package is in the locks, and nothing configures a tracer provider, so no propagator reads an incoming header (FastAPI's native telemetry and chromadb's tracing stay off without one). The slow path needs a line feed inside the value, which a conforming HTTP header cannot carry (h11 and httptools refuse it). Fixed in 1.45.2 (1.45.1 locked): it comes with the next make lock, no bump for this advisory alone.",
+      "since": "2026-11-14"
     }
   ]
 }
