@@ -1223,11 +1223,12 @@
    "id": "g-isoler-bloquer-cli",
    "composant": "glorfindel",
    "poste": "g-agir",
-   "nom": "glorfindel isolate and glorfindel block: a containment by a human's hand from a terminal, the console's approval without the card, its guards and its check; and no command Glorfindel proposes is invented",
+   "nom": "glorfindel isolate and glorfindel block: a containment by a human's hand from a terminal, the console's approval without the card, its guards and its check, the VM's enrollment zone said before the prompt and never a refusal; and no command Glorfindel proposes is invented",
    "etat": "main",
    "release": "0.6",
    "lots": [
-    "CMD1"
+    "CMD1",
+    "CMD1b"
    ],
    "issue": 797,
    "pr": 808,

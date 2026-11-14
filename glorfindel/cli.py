@@ -542,10 +542,39 @@ def _contain_preamble(resource_id: str, action: str, dry_run: bool):
     if getattr(connector, "read_only", False):
         raise click.ClickException("credentials en lecture seule (GLORFINDEL_READ_ONLY) : cet hôte ne peut "
                                    "pas agir — rien n'est fait")
+    _zone_said(resource_id, action, dry_run)
     for e in gestures.held_cards(resource_id, action):
         console.print(f"  [cyan]Carte {e['id'][:8]} en attente pour ce geste : elle reste en attente — "
                       f"glorfindel ack {e['id'][:8]} une fois le geste vérifié.[/cyan]")
     return connector, _state_here_said()
+
+
+def _zone_said(resource_id: str, action: str, dry_run: bool) -> None:
+    """CMD1b (#811): the VM's enrollment zone, on one line before the prompt — --yes and --dry-run too.
+    Said, never refused (Jonathan's decision of 14/11): no zone, and no read that fails, stops the gesture
+    or changes its exit code. A dry run reads nothing on Azure: the zone is said unread. A VM not
+    enrolled, a zone none of the three, tags unread: each said as such, never taken for the bench."""
+    from glorfindel import gestures
+    if dry_run:
+        console.print("  [yellow]Zone     : non lue — essai à blanc, rien n'est demandé à Azure ; rien ne "
+                      "dit qu'elle soit du banc (sans --dry-run, elle est lue avant la question).[/yellow]")
+        return
+    kind, why = gestures.zone_of(resource_id)
+    # Tag values and Azure's text: masked (no subscription's id, MSK2), one printable line, cut, no markup.
+    why = " ".join("".join(c if c.isprintable() else " " for c in _ids_masked(why)).split())
+    why = _esc_markup(why[:200])
+    if kind == "production":
+        lift = "glorfindel release" if action == "isolate_vm" else "glorfindel unblock"
+        console.print(f"  [bold red]Zone     : production — une charge réelle : ce geste la touche pour de vrai "
+                      f"(réversible : {lift}).[/bold red]")
+    elif kind in ("bench", "twin"):
+        console.print(f"  Zone     : {kind}")
+    else:
+        said = {"not_enrolled": f"VM non inscrite ({why})",
+                "unknown": f"« {why} », inconnue (ni bench, ni twin, ni production)",
+                }.get(kind, f"illisible ({why})")
+        console.print(f"  [yellow]Zone     : {said} — rien ne dit qu'elle soit du banc : peut-être une "
+                      "charge réelle.[/yellow]")
 
 
 def _state_here_said() -> bool:

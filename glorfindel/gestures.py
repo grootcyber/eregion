@@ -5,7 +5,8 @@ and its words around them (``release``, ``reset``); what they do is here.
 
 CMD1 (#797): and the containments a human makes by hand — ``glorfindel isolate``, ``glorfindel block``
 (``direct_refusal``, ``address_refusal``, ``contain``): the console's approval of a held card, without
-the card, the same calls and the same guards.
+the card, the same calls and the same guards. CMD1b (#811): and the VM's enrollment zone said before the
+prompt (``zone_of``), never a reason to refuse.
 """
 from __future__ import annotations
 
@@ -169,3 +170,44 @@ def _partial(action: str, resource_id: str, exc, record) -> dict:
                        escalation_type="verification_failed",
                        reason=f"Action '{action}' faite à la main, {why}", ttp="", severity="")
     return {"result": result, "verification": verification}
+
+
+# ── CMD1b (#811): the VM's enrollment zone, said before the prompt — never a refusal ──────────────────
+#
+# Jonathan's decision of 14/11: the CLI says the zone, and never refuses for it. O0's production rule
+# bounds what Eregion injects, not what it contains; isolating a VM of production is disruptive but
+# reversible (`release`, `unblock`). Read as the console reads it (eregion_console/board.py,
+# ``blue_cards``): the VM's tags and its group's through TagEnrollment, judged by ``enrollment``.
+
+def tags_read(resource_id: str) -> tuple[dict, dict]:
+    """(the resource group's tags, the VM's), read now through Azure Resource Manager with this host's
+    identity — TagEnrollment's own read (eregion_core/inscription.py): two GETs, never a write, no SDK
+    of a provider here (MC0). An error raises: ``zone_of`` says it."""
+    from eregion_core.inscription import TagEnrollment
+    return TagEnrollment().tags(resource_id)
+
+
+# The reader ``zone_of`` calls — replaced in the tests by one that reads nothing (tests/unit/conftest.py)
+# or by a fake reader of tags (tests/unit/test_cli_contain.py): never an Azure call in a test.
+TAGS_READER = tags_read
+
+
+def zone_of(resource_id: str) -> tuple[str, str]:
+    """(what the VM's zone is, why) — never raises, never refuses. The kind: ``bench``, ``twin`` or
+    ``production`` (enrolled there, why ""); ``unknown`` (enrolled, with a zone none of those three:
+    why is the zone as written); ``not_enrolled`` (why: ``enrollment``'s reason); ``unreadable`` (the
+    tags not read — no credential, a 403, an error: why says it). Neither of the last three is ever
+    taken for ``bench``: nothing says the VM is the bench's — it may carry a real load."""
+    import os
+
+    from eregion_core.inscription import BENCH_ENV, DEFAULT_BENCH, ZONES, enrollment
+    try:
+        rg_tags, tags = TAGS_READER(resource_id)
+        verdict = enrollment(rg_tags, tags, bench=os.environ.get(BENCH_ENV, DEFAULT_BENCH))
+    except Exception as exc:
+        return "unreadable", str(exc) or type(exc).__name__
+    if not verdict.allowed:
+        return "not_enrolled", verdict.reason
+    if verdict.zone not in ZONES:
+        return "unknown", verdict.zone
+    return verdict.zone, ""
