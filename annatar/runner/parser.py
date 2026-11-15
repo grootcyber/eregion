@@ -6,10 +6,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
-from rich.console import Console
 from rich.table import Table
 
-console = Console()
+from annatar.console import console, outside
+
 
 REQUIRED_FIELDS = ["name", "description", "mitre", "target", "steps"]
 DEFAULT_ENGINE = "local-script"
@@ -180,8 +180,8 @@ def list_available():
         try:
             s = parser.load(f)
             rel = os.path.relpath(f, project_root)
-            table.add_row(s.name, s.mitre, s.target.get("type", "?"), rel)
+            table.add_row(outside(s.name), outside(s.mitre), outside(s.target.get("type", "?")), outside(rel))
         except Exception:
-            table.add_row("(invalid)", "", "", os.path.relpath(f, project_root))
+            table.add_row("(invalid)", "", "", outside(os.path.relpath(f, project_root)))
 
     console.print(table)

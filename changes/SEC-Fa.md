@@ -1,0 +1,6 @@
+### Security
+- **Annatar says what the outside sends as it is, and no print of it fails a run** (SEC-Fa, #852 ; `docs/design/modele-de-menace.md`, section 5). A target VM's Run Command output, Stratus's output, an error of the cloud, a tag a refusal quotes, what the return channel holds, a campaign's or a scenario's field: a closing tag with no opening one used to raise in the print, mid-phase, and an escape sequence reached the operator's terminal, obeyed. Annatar now has one console (`annatar/console.py`) that never raises on markup (a string it cannot read is said without markup, that string only) and reads no emoji code; what comes from the outside goes through `outside()`, its markup escaped and its control characters shown (`\x1b`), never obeyed. A guard reads the whole package: no other console, no exception printed without `outside()`, no bracket of the code around a raw value.
+  - Tests: `tests/unit/test_annatar_console.py` (mutants M5630–M5649, `scripts/mutants/SEC-Fa.py`).
+
+### Fixed
+- **A scenario step's action and a campaign's state are shown again between their brackets** (SEC-Fa, #852). `annatar run --dry-run` and `annatar campaign list` wrote them as `[attack]`, `[planned]`, read as tags: the value vanished from the line.

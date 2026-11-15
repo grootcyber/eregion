@@ -1088,6 +1088,15 @@ briques:
     lots: [SEC-A4b]
     issue: 660
 
+  - id: s-sec-fa
+    composant: socle
+    poste: s-signer
+    nom: "Security hardening"
+    etat: main
+    release: "0.6"
+    lots: [SEC-Fa]
+    issue: 852
+
   - id: s-inf-fl
     composant: socle
     poste: s-signer

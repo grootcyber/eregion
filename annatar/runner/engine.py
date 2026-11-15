@@ -5,9 +5,9 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from rich.console import Console
 from rich.prompt import Confirm
 
+from annatar.console import console, outside
 from annatar.runner.detection import detection_latency
 from annatar.runner.parser import ScenarioParser
 from annatar.runner.report import RUNS_DIR, RunReport
@@ -18,7 +18,6 @@ from eregion_core.exercise import close_window, open_window
 from eregion_core.exercise_channel import carry_run
 from eregion_core.orodruin import arm
 
-console = Console()
 
 # SEC5 (N-04): what Orodruin's journal says of a run --without-glorfindel, and its refusal in
 # production.
@@ -128,15 +127,16 @@ class Engine:
         try:
             scenario = self.parser.load(scenario_path)
         except ValueError as e:
-            from rich.markup import escape   # what the file says (AV1): never markup nor emoji
-            console.print(f"[red]Invalid scenario:[/red] {escape(str(e))}", emoji=False)
+            # what the file says (AV1): never markup nor emoji, whatever console prints it
+            console.print(f"[red]Invalid scenario:[/red] {outside(e)}", emoji=False)
             return RunOutcome(run_id, "unknown", error=f"scenario: {e}", refused=True)
 
-        console.rule(f"[bold cyan]Annatar — {scenario.name}[/bold cyan]")
-        console.print(f"  MITRE   : {scenario.mitre}")
+        console.rule(f"[bold cyan]Annatar — {outside(scenario.name)}[/bold cyan]")
+        console.print(f"  MITRE   : {outside(scenario.mitre)}")
         if scenario.engine != "local-script":
-            console.print(f"  Engine  : {scenario.engine} / {scenario.engine_ref}")
-        console.print(f"  Target  : {scenario.target.get('type')} / {scenario.target.get('resource_group')}")
+            console.print(f"  Engine  : {outside(scenario.engine)} / {outside(scenario.engine_ref)}")
+        console.print(f"  Target  : {outside(scenario.target.get('type'))} / "
+                      f"{outside(scenario.target.get('resource_group'))}")
         console.print(f"  Dry-run : {self.dry_run}\n")
 
         if self.dry_run:
@@ -151,7 +151,7 @@ class Engine:
         else:
             no_watch = watch_gate.refusal()
             if no_watch:
-                console.print(f"[red]Refused — no live Glorfindel watch:[/red] {no_watch}")
+                console.print(f"[red]Refused — no live Glorfindel watch:[/red] {outside(no_watch)}")
                 return RunOutcome(run_id, "unknown", error=f"glorfindel: {no_watch}", refused=True)
 
         if not skip_confirm:
@@ -174,11 +174,11 @@ class Engine:
                 # VM3: the scenario's revert, after the atomic's cleanup — held like the rest.
                 revert = revert_commands(scenario.raw.get("revert"), resolved)
             except AtomicError as e:
-                console.print(f"[red]Atomic unresolved:[/red] {e}")
+                console.print(f"[red]Atomic unresolved:[/red] {outside(e)}")
                 return RunOutcome(run_id, "unknown", error=f"atomic: {e}", refused=True)
             probe_error = self._atomic_probe_error(scenario)
             if probe_error:
-                console.print(f"[red]Refused:[/red] {probe_error}")
+                console.print(f"[red]Refused:[/red] {outside(probe_error)}")
                 return RunOutcome(run_id, "unknown", error=f"atomic: {probe_error}", refused=True)
 
         # The Stratus engine's pure checks run BEFORE anything is armed or opened too (R2):
@@ -195,14 +195,14 @@ class Engine:
                     scenario.engine_ref, binary_path=staged_layout().binary
                 )
             except StratusError as e:
-                console.print(f"[red]Stratus unresolved:[/red] {e}")
+                console.print(f"[red]Stratus unresolved:[/red] {outside(e)}")
                 return RunOutcome(run_id, "unknown", error=f"stratus: {e}", refused=True)
 
         # Orodruin (eregion_core/orodruin.py): the contract before the target is even read.
         # Passive → the run touches nothing and says why.
         verdict, session = arm(run_id, "annatar", request=self.request)
         if session is None:
-            console.print(f"[red]Orodruin passive — nothing touched:[/red] {verdict.reasons()}")
+            console.print(f"[red]Orodruin passive — nothing touched:[/red] {outside(verdict.reasons())}")
             return RunOutcome(run_id, "unknown", error=f"passive: {verdict.reasons()}", refused=True)
         self._session = session   # SEC21: a detection refused is written in its journal
         if self.without_glorfindel:
@@ -249,7 +249,7 @@ class Engine:
         # catalog says, never as the scenario says (SEC5, V-19).
         destructive, lie = scenario_destructive(scenario)
         if lie:
-            console.print(f"[red]Safety check failed:[/red] {lie}")
+            console.print(f"[red]Safety check failed:[/red] {outside(lie)}")
             return RunOutcome(run_id, "unknown", error=f"safety: {lie}", refused=True)
         rg_tags = executor.get_resource_group_tags(scenario.target["resource_group"])
         guard = check_target(
@@ -257,7 +257,7 @@ class Engine:
             kind="technique", destructive=destructive,
         )
         if not guard.allowed:
-            console.print(f"[red]Safety check failed:[/red] {guard.reason}")
+            console.print(f"[red]Safety check failed:[/red] {outside(guard.reason)}")
             return RunOutcome(run_id, "unknown", error=f"safety: {guard.reason}", refused=True)
         if self.without_glorfindel and guard.zone == "production":
             # SEC5 (N-04): a development run has no business in production.
@@ -271,7 +271,7 @@ class Engine:
             if self.typed_name != name:
                 why = (f"the name typed ({self.typed_name or 'none'}) is not the target's "
                        f"({name}): a destructive wire runs only on the VM typed")
-                console.print(f"[red]Safety check failed:[/red] {why}")
+                console.print(f"[red]Safety check failed:[/red] {outside(why)}")
                 return RunOutcome(run_id, "unknown", error=f"safety: {why}", refused=True)
         if guard.legacy:
             console.print(
@@ -285,7 +285,7 @@ class Engine:
             issues = executor.check_preflight()
             if issues:
                 for issue in issues:
-                    console.print(f"[red]✗[/red] {issue}")
+                    console.print(f"[red]✗[/red] {outside(issue)}")
                 console.print(
                     "\n[red]Pre-flight check failed — fix the above before running.[/red]\n"
                     "[dim]Use --skip-preflight to bypass.[/dim]"
@@ -305,7 +305,7 @@ class Engine:
             if scenario.engine == "local-script":
                 return self._run_enrolled(scenario, executor, run_id)
             # Unreachable once validate did its job — the explicit table refuses the rest.
-            console.print(f"[red]Engine not runnable:[/red] {scenario.engine!r}")
+            console.print(f"[red]Engine not runnable:[/red] {outside(repr(scenario.engine))}")
             return RunOutcome(run_id, "unknown", error=f"engine: {scenario.engine!r} not runnable")
         finally:
             close_window(run_id, injector="annatar")
@@ -319,7 +319,7 @@ class Engine:
 
     @staticmethod
     def _lost(run_id: str, why: str) -> RunOutcome:
-        console.print(f"[red]Stopped — the Glorfindel watch is gone:[/red] {why}")
+        console.print(f"[red]Stopped — the Glorfindel watch is gone:[/red] {outside(why)}")
         return RunOutcome(run_id, "unknown", error=f"glorfindel: lost during the run — {why}")
 
     @staticmethod
@@ -361,7 +361,7 @@ class Engine:
         try:
             [(_, ok, _)] = self._check_probes(executor, [probe], resolved, "before revert")
         except Exception as e:
-            console.print(f"[red]Probe {probe.get('name')} failed:[/red] {e}")
+            console.print(f"[red]Probe {outside(probe.get('name'))} failed:[/red] {outside(e)}")
             return False
         return ok
 
@@ -411,7 +411,7 @@ class Engine:
         # Steps
         T0 = time.time()
         for step in scenario.steps:
-            console.print(f"[cyan]->[/cyan] {step.get('name', step.get('action'))}")
+            console.print(f"[cyan]->[/cyan] {outside(step.get('name', step.get('action')))}")
             if step.get("record") == "T0":
                 T0 = time.time()
             lost = self._watch_lost()
@@ -553,7 +553,7 @@ class Engine:
         attack_started = False
         attack_error = None
         restored = None
-        console.print(f"[cyan]->[/cyan] {resolved.name} ({resolved.guid})")
+        console.print(f"[cyan]->[/cyan] {outside(resolved.name)} ({outside(resolved.guid)})")
         try:
             executor.run_command(resolved.command, label=f"atomic {resolved.guid}")
             checks["attack"] = "PASS"
@@ -593,7 +593,7 @@ class Engine:
                 )
         except Exception as e:  # the atomic's own command failed after all retries
             checks["attack"] = "ERROR"
-            console.print(f"[red]Atomic command failed:[/red] {type(e).__name__}: {e}")
+            console.print(f"[red]Atomic command failed:[/red] {type(e).__name__}: {outside(e)}")
             raise  # re-raised after the finally cleans up — the campaign marks it an error
         finally:
             # Cleanup and the return check always run, whatever the command did (even when it
@@ -607,7 +607,7 @@ class Engine:
                 checks["cleanup"] = "PASS"
             except Exception as e:
                 checks["cleanup"] = "ERROR"
-                console.print(f"[red]Cleanup failed:[/red] {e}")
+                console.print(f"[red]Cleanup failed:[/red] {outside(e)}")
             if revert:
                 # VM3: the scenario's revert, after the cleanup and only once it ran — a
                 # cleanup that failed may still need what the revert removes (T1053.003:
@@ -624,7 +624,7 @@ class Engine:
                 metrics["initial_state_restored"] = restored
             except Exception as e:
                 checks["initial_state_after"] = "ERROR"
-                console.print(f"[red]After-probe failed:[/red] {e}")
+                console.print(f"[red]After-probe failed:[/red] {outside(e)}")
 
             # The target may be dirty (cleanup failed, or the return left unverified) — show
             # the operator the resolved cleanup to run by hand.
@@ -709,13 +709,13 @@ class Engine:
         rg = scenario.target.get("resource_group")
         if not sub or not rg:
             why = "stratus target needs a subscription_id and a resource_group (the bench group)"
-            console.print(f"[red]Safety check failed:[/red] {why}")
+            console.print(f"[red]Safety check failed:[/red] {outside(why)}")
             return RunOutcome(run_id, "unknown", error=f"safety: {why}", refused=True)
         rg_scope = f"/subscriptions/{sub}/resourceGroups/{rg}"
 
         destructive, lie = scenario_destructive(scenario)
         if lie:
-            console.print(f"[red]Safety check failed:[/red] {lie}")
+            console.print(f"[red]Safety check failed:[/red] {outside(lie)}")
             return RunOutcome(run_id, "unknown", error=f"safety: {lie}", refused=True)
 
         if executor is None:
@@ -729,17 +729,17 @@ class Engine:
             rg_tags = executor.resource_group_tags(sub, rg)
         except Exception as e:
             why = f"the bench group's enrollment could not be read ({type(e).__name__}: {e})"
-            console.print(f"[red]Control-plane safety check failed:[/red] {why}")
+            console.print(f"[red]Control-plane safety check failed:[/red] {outside(why)}")
             return RunOutcome(run_id, "unknown", error=f"safety: {why}", refused=True)
         guard = check_target(rg_scope, rg_tags, rg_tags, kind="technique", destructive=destructive)
         if not guard.allowed:
-            console.print(f"[red]Control-plane safety check failed:[/red] {guard.reason}")
+            console.print(f"[red]Control-plane safety check failed:[/red] {outside(guard.reason)}")
             return RunOutcome(run_id, "unknown",
                               error=f"safety: {guard.reason} (control plane)", refused=True)
         if guard.zone != "bench":
             why = (f"a Stratus control-plane technique runs only in zone 'bench', not "
                    f"{guard.zone!r} — it can create real cloud resources")
-            console.print(f"[red]Control-plane safety check failed:[/red] {why}")
+            console.print(f"[red]Control-plane safety check failed:[/red] {outside(why)}")
             return RunOutcome(run_id, "unknown", error=f"safety: {why}", refused=True)
         if guard.legacy:
             # Stratus is a new engine (R2): the migration tag 'annatar-test=true' alone, from
@@ -747,7 +747,7 @@ class Engine:
             # 'eregion-target'/'eregion-zone' (unlike the VM path, which still accepts it).
             why = ("Stratus runs only on a target enrolled with 'eregion-target' and "
                    "'eregion-zone', not the legacy 'annatar-test' tag alone")
-            console.print(f"[red]Control-plane safety check failed:[/red] {why}")
+            console.print(f"[red]Control-plane safety check failed:[/red] {outside(why)}")
             return RunOutcome(run_id, "unknown", error=f"safety: {why}", refused=True)
 
         open_window(run_id, injector="annatar",
@@ -838,7 +838,7 @@ class Engine:
                 checks["initial_state_before"] = "ERROR"   # the before-probe raised
             else:
                 checks["attack_started"] = "ERROR"          # failed after a successful detonation
-            console.print(f"[red]Stratus phase failed:[/red] {type(e).__name__}: {e}")
+            console.print(f"[red]Stratus phase failed:[/red] {type(e).__name__}: {outside(e)}")
             raise
         except BaseException:
             # Ctrl-C / SystemExit in the attack part: `except Exception` does not catch it, so
@@ -889,7 +889,7 @@ class Engine:
                     checks["revert"] = "PASS"
                 except Exception as e:
                     checks["revert"] = "SKIPPED"
-                    console.print(f"[yellow]Revert not applied:[/yellow] {e}")
+                    console.print(f"[yellow]Revert not applied:[/yellow] {outside(e)}")
                 except BaseException:
                     checks["revert"] = "INTERRUPTED"
                     raise
@@ -902,7 +902,7 @@ class Engine:
                         checks["cleanup"] = "PASS"
                     except Exception as e:
                         checks["cleanup"] = "ERROR"
-                        console.print(f"[red]Cleanup failed:[/red] {e}")
+                        console.print(f"[red]Cleanup failed:[/red] {outside(e)}")
                     except BaseException:
                         checks["cleanup"] = "INTERRUPTED"
                         raise
@@ -916,7 +916,7 @@ class Engine:
                                 metrics["initial_state_restored"] = after
                         except Exception as e:
                             checks["initial_state_after"] = "ERROR"
-                            console.print(f"[red]After-probe failed:[/red] {e}")
+                            console.print(f"[red]After-probe failed:[/red] {outside(e)}")
                         except BaseException:
                             checks["initial_state_after"] = "INTERRUPTED"
                             raise
@@ -969,13 +969,13 @@ class Engine:
                     f"probe {probe.get('name')!r} did not hold after the cleanup — {left} "
                     "left in place"
                 )
-                console.print(f"[red]Revert ({name}) skipped:[/red] {self._revert_why}")
+                console.print(f"[red]Revert ({outside(name)}) skipped:[/red] {outside(self._revert_why)}")
                 return "SKIPPED"
-            console.print(f"[cyan]->[/cyan] Revert ({name})...")
+            console.print(f"[cyan]->[/cyan] Revert ({outside(name)})...")
             try:
                 executor.run_command(command, label=f"atomic {resolved.guid} revert {name}")
             except Exception as e:
-                console.print(f"[red]Revert failed:[/red] {e}")
+                console.print(f"[red]Revert failed:[/red] {outside(e)}")
                 return "ERROR"
         return "PASS"
 
@@ -990,14 +990,14 @@ class Engine:
         vm = scenario.target.get("vm_name", "<vm>")
         console.print(
             "[yellow]The target may be dirty — run the atomic's cleanup by hand:[/yellow]\n"
-            f"  [bold]az vm run-command invoke -g {rg} -n {vm} --command-id RunShellScript "
-            f"--scripts {shlex.quote(resolved.cleanup_command)}[/bold]"
+            f"  [bold]az vm run-command invoke -g {outside(rg)} -n {outside(vm)} --command-id RunShellScript "
+            f"--scripts {outside(shlex.quote(resolved.cleanup_command))}[/bold]"
         )
         for name, command, *_ in revert:
             console.print(
-                f"[yellow]then, once it held, the scenario's revert ({name}):[/yellow]\n"
-                f"  [bold]az vm run-command invoke -g {rg} -n {vm} --command-id RunShellScript "
-                f"--scripts {shlex.quote(command)}[/bold]"
+                f"[yellow]then, once it held, the scenario's revert ({outside(name)}):[/yellow]\n"
+                f"  [bold]az vm run-command invoke -g {outside(rg)} -n {outside(vm)} --command-id RunShellScript "
+                f"--scripts {outside(shlex.quote(command))}[/bold]"
             )
 
     def _check_probes(self, executor, probes, resolved, phase: str) -> list[tuple]:
@@ -1011,7 +1011,7 @@ class Engine:
             output = executor.run_command(verify, label=f"probe {name} ({phase})")
             ok = expect in output if expect else True
             mark = "[green]✓[/green]" if ok else "[red]✗[/red]"
-            console.print(f"  {mark} {name}: expect '{expect}' in output")
+            console.print(f"  {mark} {outside(name)}: expect '{outside(expect)}' in output")
             results.append((name, ok, output))
         return results
 
@@ -1026,18 +1026,18 @@ class Engine:
                 )
                 revert = revert_commands(scenario.raw.get("revert"), resolved)
             except AtomicError as e:
-                console.print(f"  [red]atomic unresolved:[/red] {e}")
+                console.print(f"  [red]atomic unresolved:[/red] {outside(e)}")
                 return
-            console.print(f"  Atomic  : {resolved.name} ({resolved.guid})")
-            console.print(f"  command : {resolved.command.strip()}")
-            console.print(f"  cleanup : {resolved.cleanup_command.strip()}")
+            console.print(f"  Atomic  : {outside(resolved.name)} ({outside(resolved.guid)})")
+            console.print(f"  command : {outside(resolved.command.strip())}")
+            console.print(f"  cleanup : {outside(resolved.cleanup_command.strip())}")
             for name, command, gate in revert:
-                console.print(f"  revert  : {name} — {command.splitlines()[-1]} "
-                              f"(once probe {gate} holds after the cleanup)")
+                console.print(f"  revert  : {outside(name)} — {outside(command.splitlines()[-1])} "
+                              f"(once probe {outside(gate)} holds after the cleanup)")
             for p in (scenario.raw.get("steady_state") or {}).get("probes") or []:
                 console.print(
-                    f"  probe   : {p.get('name')} — "
-                    f"{resolved.substitute(p.get('verify', ''))} (expect {p.get('expect')})"
+                    f"  probe   : {outside(p.get('name'))} — "
+                    f"{outside(resolved.substitute(p.get('verify', '')))} (expect {outside(p.get('expect'))})"
                 )
         elif scenario.engine == "stratus":
             from annatar.engines.stratus import StratusError, describe
@@ -1045,7 +1045,7 @@ class Engine:
             try:
                 info = describe(scenario.engine_ref)
             except StratusError as e:
-                console.print(f"  [red]stratus unresolved:[/red] {e}")
+                console.print(f"  [red]stratus unresolved:[/red] {outside(e)}")
                 return
             console.print(f"  Stratus : {info['name']} ({info['technique_id']})")
             console.print(f"  cycle   : {' -> '.join(info['phases'])} (each a journaled call)")
@@ -1055,10 +1055,10 @@ class Engine:
                               f"(read-only, expect_absent={probe.expect_absent})")
         else:
             for i, step in enumerate(scenario.steps, 1):
-                console.print(f"  {i}. [{step.get('action')}] {step.get('name', '')}")
+                console.print(f"  {i}. \\[{outside(step.get('action'))}] {outside(step.get('name', ''))}")
         if scenario.detection:
             timeout = scenario.detection.get("timeout", "?")
-            console.print(f"  -> Detection timeout: {timeout} — Glorfindel uses detection_rules.yaml")
+            console.print(f"  -> Detection timeout: {outside(timeout)} — Glorfindel uses detection_rules.yaml")
 
     def _get_executor_collector(self, scenario, session=None):
         target_type = scenario.target.get("type")
@@ -1188,7 +1188,7 @@ class Engine:
             if result_event is None:
                 console.print(
                     f"[yellow]Detection not measured — the hosted watch cannot vouch for"
-                    f" this run ({why}). No detection_missed.[/yellow]"
+                    f" this run ({outside(why)}). No detection_missed.[/yellow]"
                 )
                 self._detection_result = "unknown"
                 if stop_event is not None:
@@ -1254,12 +1254,12 @@ class Engine:
                 continue
             self._detection_missing.append(name)
             console.print(f"A detection the watch's heartbeat covers is missing from the return channel "
-                          f"— never a miss (SEC21b): {name}", markup=False, style="yellow")
+                          f"— never a miss (SEC21b): {outside(name)}", style="yellow")
             if self._session is not None:
                 try:
                     self._session.declare("detection_missing", f"{name}: covered by the watch's heartbeat, absent")
                 except Exception as e:  # the journal said its own failure; the run goes on
-                    console.print(f"[yellow]Not journaled: {e}[/yellow]")
+                    console.print(f"[yellow]Not journaled: {outside(e)}[/yellow]")
         return why
 
     def _vouched(self, run_id: str) -> list[dict]:
@@ -1276,14 +1276,14 @@ class Engine:
             if len(self._detection_refused) >= watch_channel.MAX_REFUSED:
                 break   # a writer that rotates its blobs never floods the journal nor the report
             self._detection_refused.append(why)
-            # What the channel holds is never read as markup.
-            console.print(f"A detection on the return channel refused — never counted (SEC21): {why}",
-                          markup=False, style="yellow")
+            # What the channel holds is never read as markup, nor obeyed by the terminal.
+            console.print(f"A detection on the return channel refused — never counted (SEC21): {outside(why)}",
+                          style="yellow")
             if self._session is not None:
                 try:
                     self._session.declare("detection_refused", why)
                 except Exception as e:  # the journal said its own failure; the run goes on
-                    console.print(f"[yellow]Not journaled: {e}[/yellow]")
+                    console.print(f"[yellow]Not journaled: {outside(e)}[/yellow]")
         return found
 
     def _channel_latency(self, run_id: str, ttp: str, resource_id: str,

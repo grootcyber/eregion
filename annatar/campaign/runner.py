@@ -24,15 +24,11 @@ from importlib.util import find_spec
 from pathlib import Path
 from typing import Callable
 
-from rich.console import Console
-from rich.markup import escape
-
 from annatar.campaign.manifest import CampaignManifest
+from annatar.console import console, outside
 from annatar.runner.engine import Engine, RunOutcome
 from eregion_core import watch_gate
 from eregion_core.channel_reader import Refused, read_json
-
-console = Console()
 
 
 # SEC5 (V-18): what the manifest says of the reset after a run refused before it acted.
@@ -247,7 +243,7 @@ class CampaignRunner:
                     status = self.reset_fn(entry.target_resource_id)
                 except Exception as e:  # reset failure must not abort the campaign
                     status = f"failed: {e}"
-                    console.print(f"[yellow]NSG reset failed: {e}[/yellow]")
+                    console.print(f"[yellow]NSG reset failed: {outside(e)}[/yellow]")
                 if isinstance(status, str):
                     entry.reset = status
                     self._save(m)
@@ -296,7 +292,7 @@ class CampaignRunner:
             return None
 
         console.print(
-            f"[cyan]==>[/cyan] [{entry.seq}] {entry.ttp} ({entry.tactic}) — {path.name}"
+            f"[cyan]==>[/cyan] [{entry.seq}] {outside(entry.ttp)} ({outside(entry.tactic)}) — {outside(path.name)}"
         )
         try:
             outcome: RunOutcome | None = self.engine_factory().run(
@@ -333,8 +329,8 @@ class CampaignRunner:
     def _stopped(self, m: CampaignManifest, stop: str) -> None:
         """The campaign stops here: the stop carried into ``m``, said once."""
         self._stop(m, stop)
-        console.print(f"[red]✗ campaign {escape(m.campaign_id)} stopped: "
-                      f"{escape(self._pending_stop)}[/red]")
+        console.print(f"[red]✗ campaign {outside(m.campaign_id)} stopped: "
+                      f"{outside(self._pending_stop)}[/red]")
 
     def _save(self, m: CampaignManifest) -> None:
         """Every write of the manifest by the runner (KS1): the stop on disk read first — a kill
@@ -371,11 +367,11 @@ class CampaignRunner:
         return f"{KILL_SWITCH_UNREADABLE} (kill_switch is not true or false)"
 
     def _preview(self, m: CampaignManifest) -> None:
-        console.print(f"[yellow]DRY RUN — campaign {m.campaign_id}[/yellow]")
+        console.print(f"[yellow]DRY RUN — campaign {outside(m.campaign_id)}[/yellow]")
         for e in m.scenarios:
             console.print(
-                f"  [{e.seq}] {e.ttp} ({e.tactic}) → {e.scenario_file} "
-                f"[dim]target={e.target_resource_id}[/dim]"
+                f"  [{e.seq}] {outside(e.ttp)} ({outside(e.tactic)}) → {outside(e.scenario_file)} "
+                f"[dim]target={outside(e.target_resource_id)}[/dim]"
             )
         console.print(
             f"[dim]budget: max_scenarios={m.budget.max_scenarios}, "
