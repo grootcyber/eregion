@@ -529,3 +529,86 @@ def test_the_readiness_lock_is_the_file_every_version_took(tmp_path, monkeypatch
         assert time.monotonic() - started > 0.8, "written while the other version held readiness.lock"
     finally:
         holder.wait(timeout=60)
+
+
+# SEC-B (audit du 06/11, V-10): the watch's registers of the action queue — the nonces seen, the
+# proposals consumed — read, changed and written back by two processes on one HOME (a second watch,
+# the CLI): each claim kept, none lost. The read is slowed, so that without the lock between
+# processes two writers would read the same register and the last would drop the other's claim.
+_REGISTER_WRITER = textwrap.dedent("""
+    import sys, time
+    from datetime import datetime, timedelta, timezone
+    from pathlib import Path
+    from eregion_core import action_queue as aq
+    path, kind, who, n = Path(sys.argv[1]), sys.argv[2], sys.argv[3], int(sys.argv[4])
+    register = aq.SeenFile(path) if kind == "seen" else aq.ConsumedFile(path)
+    real = type(register)._read
+
+    def slow(self):
+        got = real(self)
+        time.sleep(0.02)
+        return got
+    type(register)._read = slow
+    now = datetime.now(timezone.utc)
+    for k in range(n):
+        if kind == "seen":
+            nonce = (who * 32)[:24] + f"{k:08x}"
+            assert register.claim(nonce, now + timedelta(days=1), now)
+        else:
+            digest = "sha256:" + (who * 64)[:56] + f"{k:08x}"
+            assert register.consume(digest, f"card-{who}-{k}", now)
+""")
+
+
+def _two_processes_on_one_register(tmp_path: Path, kind: str, writers: int = 3, each: int = 12) -> dict:
+    path = tmp_path / "watch-queue" / f"{kind}.json"
+    env = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[2])}
+    procs = [subprocess.Popen([sys.executable, "-c", _REGISTER_WRITER, str(path), kind, "abcdef"[w], str(each)],
+                              env=env) for w in range(writers)]
+    for p in procs:
+        assert p.wait(timeout=120) == 0
+    return json.loads(path.read_text())
+
+
+@pytest.mark.parametrize("kind", ["seen", "consumed"])
+def test_two_watches_on_one_home_lose_no_claim_of_a_register(tmp_path, kind):
+    """M5437, M5438: three processes claim nonces (``SeenFile.claim``) or consume proposals
+    (``ConsumedFile.consume``) in the same register at once — every one of them is kept."""
+    kept = _two_processes_on_one_register(tmp_path, kind)
+    assert len(kept) == 3 * 12, sorted(kept)
+
+
+_WATCH_HOLDER = textwrap.dedent("""
+    import sys, time
+    from pathlib import Path
+    from glorfindel import queue_watch
+    directory, ready, stop = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
+    queue_watch.hold_the_queue(directory)
+    ready.write_text("held")
+    deadline = time.monotonic() + 60
+    while not stop.exists() and time.monotonic() < deadline:
+        time.sleep(0.05)
+""")
+
+
+def test_a_second_watch_on_one_home_is_refused_while_the_first_runs(tmp_path):
+    """SEC-B: one watch per HOME picks the queue up — while another process holds it, a second is
+    refused and told its pid; once the first is gone (its process ended, a crash as well), the next
+    one takes it."""
+    from glorfindel import queue_watch
+    directory, ready, stop = tmp_path / "watch-queue", tmp_path / "ready", tmp_path / "stop"
+    env = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[2])}
+    holder = subprocess.Popen([sys.executable, "-c", _WATCH_HOLDER, str(directory), str(ready), str(stop)], env=env)
+    try:
+        deadline = time.monotonic() + 30
+        while not ready.exists():
+            assert time.monotonic() < deadline, "the first watch never took the queue"
+            time.sleep(0.05)
+        with pytest.raises(queue_watch.SecondWatch) as refused:
+            queue_watch.hold_the_queue(directory)
+        assert f"pid {holder.pid}" in str(refused.value)
+    finally:
+        stop.write_text("stop")
+        assert holder.wait(timeout=60) == 0
+    fd = queue_watch.hold_the_queue(directory)
+    os.close(fd)

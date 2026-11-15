@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import functools
+import hashlib
 import json
+import logging
 import threading
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 _STORE = Path.home() / ".glorfindel" / "escalations.jsonl"
+log = logging.getLogger(__name__)
 
 # SEC3 (V-10): the store has many writers — the watch's workers and its reassertion pass, the
 # console, the bot, the CLI. Each read-modify-write holds an flock on `<store>.lock`, and the
@@ -66,23 +69,99 @@ def sign_proposals(signer_of) -> None:
 # age of an approval, read from the proposal's signed issued_at, to stay right.
 RESIGN_AFTER_S = 600
 
+# SEC-B (audit du 06/11, V-06): what this watch signed, in its memory only — by the id of the card
+# it joined the proposal to (an id the watch drew when it wrote the card, uuid4, or the card its own
+# decision folded into; never the signal's, which anyone can predict), the digest of that proposal
+# and the fields it signed. A refresh signs a card again only while it still carries that very
+# proposal, and from those fields — never from the card as the store gives it: the store has other
+# writers (the console, the bot, the CLI). After a restart the memory is empty: a refresh signs
+# nothing again until the watch's own decision does (`record`).
+_SIGNED: dict[str, tuple[str, dict]] = {}
+_SIGNED_KEPT = 4096
 
-def _propose(e: dict, seen_again: bool = False) -> None:
+
+def _memory_key(e: dict) -> str:
+    return str(e.get("id") or "")
+
+
+def _held(e: dict) -> dict | None:
+    """The fields this watch signed for the card `e`, while `e` still carries that proposal."""
+    from eregion_core import action_queue
+    kept = _SIGNED.get(_memory_key(e))
+    proposal = e.get("proposal")
+    if kept is None or not isinstance(proposal, dict) or action_queue.digest(proposal) != kept[0]:
+        return None
+    return kept[1]
+
+
+def _propose(e: dict, decision: dict | None = None) -> bool:
+    """The watch's proposal on the card `e` (§2.4): `decision`, the fields of its own decision
+    (`action_queue.decision_fields`, from `record`'s arguments); None when the card is only seen
+    again (`refresh`): then the fields it signed before, while the card still carries them (`_held`).
+    Kept while it stands and is young, else signed again. True when the card carries the watch's
+    proposal after."""
     if _PROPOSER is None:
-        return
+        return False
     try:
         from eregion_core import action_queue
-        if not action_queue.proposable(e):
-            return
+        cid = str(e.get("id") or "")
+        fields = _held(e) if decision is None else decision
+        if not cid or fields is None or not action_queue.proposable(fields) or not action_queue.signable(fields):
+            return False
         signer = _PROPOSER()
         if signer is None:
-            return
+            return False
         now = datetime.now(timezone.utc)
-        if seen_again and action_queue.proposal_fresh(e, e.get("proposal"), signer.public, now, RESIGN_AFTER_S):
-            return
-        e["proposal"] = action_queue.sign_proposal(e, signer, now)
+        if not action_queue.proposal_fresh(cid, fields, e.get("proposal"), signer.public, now, RESIGN_AFTER_S):
+            e["proposal"] = action_queue.sign_fields(cid, fields, signer, now)
+        _SIGNED.pop(_memory_key(e), None)
+        _SIGNED[_memory_key(e)] = (action_queue.digest(e["proposal"]), dict(fields))
+        while len(_SIGNED) > _SIGNED_KEPT:
+            _SIGNED.pop(next(iter(_SIGNED)))
+        return True
     except Exception:       # the card first: a proposal is never worth a card lost
-        pass
+        return False
+
+
+# SEC-B (audit du 06/11, V-12): a line of the store that is not a card — unreadable JSON, or JSON that
+# is not an object — is passed over by every reader, kept as it is in every rewrite (never lost: it
+# may be a card half-written by an older version, or what a hand wrote), and said once by this
+# process: a warning of the log, by its length and a digest — never its text, which anyone writing
+# the store chose. Said again only after a restart.
+_UNREADABLE_SAID: set[str] = set()
+_UNREADABLE_KEPT = 1024
+
+
+def _card_of(line: str) -> dict | None:
+    """The card a line of the store holds — None for a blank line, or for one that is not a card
+    (said once, `_UNREADABLE_SAID`)."""
+    if not line.strip():
+        return None
+    try:
+        e = json.loads(line)
+    except Exception:          # ValueError, RecursionError: never raised into a reader
+        e = None
+    if isinstance(e, dict):
+        return e
+    mark = hashlib.sha256(line.encode("utf-8", "surrogatepass")).hexdigest()[:12]
+    if mark not in _UNREADABLE_SAID:
+        if len(_UNREADABLE_SAID) >= _UNREADABLE_KEPT:
+            _UNREADABLE_SAID.clear()
+        _UNREADABLE_SAID.add(mark)
+        log.warning("escalations.jsonl : une ligne qui n'est pas une carte (%d caractères, empreinte %s) — "
+                    "ignorée, gardée telle quelle dans le fichier (SEC-B)", len(line), mark)
+    return None
+
+
+def _decision(action, resource_id, escalation_type, action_params) -> dict:
+    from eregion_core import action_queue
+    return action_queue.decision_fields(action, resource_id, escalation_type, action_params)
+
+
+def _read_lines() -> list[str]:
+    """The store's lines — a byte that is not UTF-8 never fails the read (SEC-B): kept as it is
+    (`surrogateescape`), its line said once and passed over (`_card_of`), written back unchanged."""
+    return _STORE.read_bytes().decode("utf-8", "surrogateescape").splitlines()
 
 
 def _write_lines(lines: list[str]) -> None:
@@ -274,28 +353,22 @@ def record(
     rid_lower = resource_id.lower()
     now = datetime.now(timezone.utc).isoformat()
     steps = suggested_steps or []
-    lines = _STORE.read_text().splitlines() if _STORE.exists() else []
+    lines = _read_lines() if _STORE.exists() else []
     if replaces:
         lines = _replaced(lines, replaces, now)
     if action_key:
         for line in lines:
-            try:
-                e = json.loads(line)
-            except ValueError:
-                continue
+            e = _card_of(line)
             if isinstance(e, dict) and action_key in _keys_of(e):
                 return str(e.get("id") or "")       # JUG1: one card per action, never a second
     if lines:
         for i, line in enumerate(lines):
-            if not line.strip():
-                continue
-            try:
-                e = json.loads(line)
-            except Exception:
+            e = _card_of(line)
+            if e is None:
                 continue
             if (
                 e.get("status") == "pending"
-                and e.get("resource_id", "").lower() == rid_lower
+                and str(e.get("resource_id") or "").lower() == rid_lower
                 and e.get("action") == action
                 and e.get("escalation_type") == escalation_type
                 and (e.get("source") or "real") == (source or "real")
@@ -348,7 +421,10 @@ def record(
                     if explanation:
                         e["explanation"] = explanation
                     e["updated_at"] = now
-                _propose(e, seen_again=True)     # FS1a, FS1b: seen again — signed again past an age
+                # FS1a, FS1b: seen again — signed again past an age. SEC-B: from the watch's own
+                # decision, its port included, never the card's; the card then says that decision.
+                if _propose(e, _decision(action, resource_id, escalation_type, action_params)):
+                    e["action_params"] = dict(action_params or {})
                 lines[i] = json.dumps(e, default=str)
                 _write_lines(lines)
                 return e["id"]
@@ -394,7 +470,8 @@ def record(
         esc["action_keys"] = [action_key]
     if executed:
         esc["executed"] = executed
-    _propose(esc)       # FS1a: the watch's proposal, when the card holds an action
+    # FS1a: the watch's proposal, when the card holds an action — its own decision (SEC-B).
+    _propose(esc, _decision(action, resource_id, escalation_type, action_params))
     # Rewritten whole, as every write of the store: an append seen half-done by a reader
     # made its last line unreadable (SEC3, V-10). The cards it replaces closed in it (L1A).
     _write_lines([ln for ln in lines if ln.strip()] + [json.dumps(esc, default=str)])
@@ -407,9 +484,8 @@ def _replaced(lines: list[str], replaces: dict[str, str], now: str) -> list[str]
     closed since (by the operator) left as it is: its word stays the last."""
     out = []
     for line in lines:
-        try:
-            e = json.loads(line)
-        except Exception:
+        e = _card_of(line)
+        if e is None:
             out.append(line)
             continue
         if isinstance(e, dict) and e.get("id") in replaces and e.get("status") == "pending":
@@ -428,11 +504,14 @@ def resolve(escalation_id: str, note: str = "") -> None:
     (an orphan rule taken off, A3)."""
     if not _STORE.exists():
         return
-    lines = _STORE.read_text().splitlines()
+    lines = _read_lines()
     updated = []
     for line in lines:
-        e = json.loads(line)
-        if e["id"] == escalation_id:
+        e = _card_of(line)
+        if e is None:                   # SEC-B: kept as it is, never lost, never a failure
+            updated.append(line)
+            continue
+        if e.get("id") == escalation_id:
             e["status"] = "resolved"
             e["resolved_at"] = datetime.now(timezone.utc).isoformat()
             if note:
@@ -448,17 +527,18 @@ def refresh(escalation_id: str, reason: str, **fields) -> bool:
     no longer waits."""
     if not _STORE.exists():
         return False
-    lines, done = _STORE.read_text().splitlines(), False
+    lines, done = _read_lines(), False
     for i, line in enumerate(lines):
-        try:
-            e = json.loads(line)
-        except ValueError:
+        e = _card_of(line)
+        if e is None:
             continue
         if e.get("id") == escalation_id and e.get("status") == "pending":
             now = datetime.now(timezone.utc).isoformat()
             e.setdefault("first_reason", e.get("reason", ""))
             e.update(fields, reason=reason, updated_at=now, last_seen=now)
-            _propose(e, seen_again=True)     # FS1a, FS1b: seen again — signed again past an age
+            # FS1a, FS1b: seen again — signed again past an age. SEC-B: only the proposal this
+            # watch signed on this card, while the card carries it — never from the card's fields.
+            _propose(e)
             lines[i], done = json.dumps(e, default=str), True
     if done:
         _write_lines(lines)
@@ -474,13 +554,10 @@ def _rewrite_one(escalation_id: str, change) -> dict | None:
     changed, or None."""
     if not _STORE.exists():
         return None
-    lines, found = _STORE.read_text().splitlines(), None
+    lines, found = _read_lines(), None
     for i, line in enumerate(lines):
-        try:
-            e = json.loads(line)
-        except ValueError:
-            continue
-        if isinstance(e, dict) and e.get("id") == escalation_id and e.get("status") == "pending":
+        e = _card_of(line)
+        if e is not None and e.get("id") == escalation_id and e.get("status") == "pending":
             change(e)
             lines[i], found = json.dumps(e, default=str), e
     if found is not None:
@@ -540,16 +617,19 @@ def resolve_by_resource(resource_id: str, action: str) -> int:
     if not _STORE.exists():
         return 0
     rid_lower = resource_id.lower()
-    lines = _STORE.read_text().splitlines()
+    lines = _read_lines()
     updated = []
     count = 0
     now = datetime.now(timezone.utc).isoformat()
     for line in lines:
-        e = json.loads(line)
+        e = _card_of(line)
+        if e is None:                   # SEC-B: kept as it is, never lost, never a failure
+            updated.append(line)
+            continue
         if (
-            e["status"] == "pending"
-            and e.get("resource_id", "").lower() == rid_lower
-            and e["action"] == action
+            e.get("status") == "pending"
+            and str(e.get("resource_id") or "").lower() == rid_lower
+            and e.get("action") == action
         ):
             e["status"] = "resolved"
             e["resolved_at"] = now
@@ -564,17 +644,13 @@ def resolve_by_proposal(proposal_id: str) -> int:
     """Resolve all pending proposed_rule escalations for a given proposal_id."""
     if not _STORE.exists() or not proposal_id:
         return 0
-    lines = _STORE.read_text().splitlines()
+    lines = _read_lines()
     updated = []
     count = 0
     now = datetime.now(timezone.utc).isoformat()
     for line in lines:
-        if not line.strip():
-            updated.append(line)
-            continue
-        try:
-            e = json.loads(line)
-        except Exception:
+        e = _card_of(line)
+        if e is None:
             updated.append(line)
             continue
         if (
@@ -595,11 +671,9 @@ def pending() -> list[dict]:
     if not _STORE.exists():
         return []
     result = []
-    for line in _STORE.read_text().splitlines():
-        if not line.strip():
-            continue
-        e = json.loads(line)
-        if e["status"] == "pending":
+    for line in _read_lines():
+        e = _card_of(line)              # SEC-B: a line that is not a card passed over, said once
+        if e is not None and e.get("status") == "pending":
             result.append(e)
     return result
 
@@ -612,12 +686,8 @@ def card_of(escalation_id: str) -> dict:
     ref = (escalation_id or "").strip().lower()
     if len(ref) < 6:
         raise ValueError("give the card id, or at least its first 6 characters")
-    cards = []
-    for line in (_STORE.read_text().splitlines() if _STORE.exists() else []):
-        try:
-            cards.append(json.loads(line))
-        except Exception:
-            continue
+    cards = [e for line in (_read_lines() if _STORE.exists() else [])
+             if (e := _card_of(line)) is not None]
     exact = [e for e in cards if str(e.get("id", "")).lower() == ref]
     hits = exact or [e for e in cards if str(e.get("id", "")).lower().startswith(ref)]
     if not hits:
@@ -840,15 +910,7 @@ def all_escalations() -> list[dict]:
     """Every card, resolved ones included, in file order. Unreadable lines are skipped."""
     if not _STORE.exists():
         return []
-    out = []
-    for line in _STORE.read_text().splitlines():
-        if not line.strip():
-            continue
-        try:
-            out.append(json.loads(line))
-        except Exception:
-            continue
-    return out
+    return [e for line in _read_lines() if (e := _card_of(line)) is not None]
 
 
 @_locked
@@ -863,12 +925,11 @@ def set_verdict(escalation_id: str, verdict: str, note: str = "") -> dict:
     ref = (escalation_id or "").strip().lower()
     if len(ref) < 6:
         raise ValueError("give the card id, or at least its first 6 characters")
-    lines = _STORE.read_text().splitlines() if _STORE.exists() else []
+    lines = _read_lines() if _STORE.exists() else []
     hits = []
     for i, line in enumerate(lines):
-        try:
-            e = json.loads(line)
-        except Exception:
+        e = _card_of(line)
+        if e is None:
             continue
         if str(e.get("id", "")).lower().startswith(ref):
             hits.append((i, e))

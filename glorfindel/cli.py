@@ -1392,6 +1392,11 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
             console.print(f"[cyan]{_esc_markup(text)}[/cyan]")
     try:
         _queue_watch.start(AzureConnector(dry_run=dry_run), _signer, say=_say_queue, root=runs_dir)
+    except _queue_watch.SecondWatch as exc:
+        # SEC-B (audit du 06/11, V-10): with the queue, a second watch on this HOME is refused — never
+        # two writers of the registers, nor two executions of one request. Before its heartbeat.
+        console.print(f"[red]Watch refusée :[/red] {_esc_markup(str(exc))}")
+        sys.exit(1)
     except Exception as exc:   # the watch goes on without its queue, and says it
         console.print(f"[red]File d'actions non relevée :[/red] {_esc_markup(str(exc))}")
 
