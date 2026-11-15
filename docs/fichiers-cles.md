@@ -40,11 +40,17 @@ eregion_core/action_queue.py    → FS1a (#551) : la file d'actions signée, son
                                    waiting, not_taken, untrusted — un reçu d'une autre clé dit avec les deux empreintes —,
                                    unknown), receipt_said, posture (le statut signé de la watch : frais, en écriture, qui
                                    épingle cette clé), pin_problems, `pin <service> --draw` — docs/design/file-actions-signee.md
+                                   SEC-B (#634) : decision_fields, sign_fields (la watch signe ses propres champs), la
+                                   demande comparée à la proposition à l'octet, not_ascii ; les registres sous un flock
+                                   entre processus (_between_processes : seen.json.lock, consumed.json.lock)
 glorfindel/queue_watch.py       → FS1b (#563) : la watch relève la file (derrière EREGION_ACTION_QUEUE=1), dans un fil
                                    à elle — reçu received, vérification, rattachement, gardes rejouées, posture,
                                    proposition consommée, accepted, exécution sous _vm_lock, done/failed ; reçus et
                                    statut signés (runs/glorfindel/queue/), cartes queue_tampered (critiques) et
-                                   queue_unavailable ; recover : un arrêt entre réclamation et fin dit interrupted
+                                   queue_unavailable ; recover : un arrêt entre réclamation et fin dit interrupted.
+                                   SEC-B (#634) : la cible exécutée est celle de la proposition (_signed_target) ; une
+                                   liste d'attente bornée et prioritaire (BACKLOG, CONTAIN : busy, no_slot) ; une watch
+                                   par HOME (hold_the_queue, ~/.eregion/watch-queue/watch.lock, SecondWatch)
 glorfindel/approval.py          → FS1b : les gardes d'un geste humain, un seul code pour la console et la watch —
                                    approval_refusal (l'âge : last_seen pour la console, l'issued_at signé pour la
                                    watch), address_refusal, scope_refusal, held_isolation/held_block(s), in_perimeter,

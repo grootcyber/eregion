@@ -214,6 +214,20 @@ Elle la signe sous `eregion.action-queue/1`, avec `Signer.sign` (`watch_key.py:1
 compteur `next_seq` (`:104-107`). Le champ `kind` est signé, si bien qu'une proposition ne se lit
 jamais comme un reçu. La watch re-signe la proposition quand la carte se rafraîchit (`last_seen`).
 
+**Ce qu'elle signe vient d'elle (SEC-B).** L'action, la cible, le type, l'adresse et le port viennent
+de ce que la watch tient elle-même, jamais d'une carte relue dans `escalations.jsonl`, qui a d'autres
+écrivains (la console, le bot, la CLI) :
+- à l'écriture d'une carte (`record`), de sa propre décision : les arguments de l'appel ;
+- au rafraîchissement (`refresh`), de la proposition qu'elle a signée elle-même sur cette carte, et
+  seulement si la carte la porte encore. Elle s'en souvient en mémoire, par l'identifiant de la carte
+  (tiré par la watch, `uuid4`, ou celui de la carte où sa décision s'est fondue), jamais par le
+  `signal_id`, que chacun peut prévoir. Une carte écrite par une autre main, ou dont la proposition
+  a été remplacée ou retirée, n'est jamais signée par un rafraîchissement.
+
+Après un redémarrage, la mémoire est vide : un rafraîchissement ne signe plus rien de nouveau, la
+proposition déjà là tient jusqu'à l'âge de l'approbation, et la décision suivante de la watch en
+signe une neuve. La watch ne signe jamais une cible ni une adresse hors ASCII (§2.8).
+
 La demande nomme le condensé de la proposition. À l'exécution, la watch :
 - vérifie sa propre signature avec la moitié publique de sa clé en mémoire, et non avec une valeur
   lue sur le disque ;
@@ -227,11 +241,16 @@ La console ne peut donc approuver que ce que la watch a proposé. Une carte écr
 proposition, est refusée (`proposal_missing`) : il faut la CLI, ou attendre que la détection se
 reproduise.
 
-**Une nuance (relecture de FS1a).** La dédup de `record` fond une détection dans la carte en attente
-de même action, même cible et même type : une carte forgée qui attend reçoit donc la proposition de
-la watch si la watch décide ensuite cette même action sur cette même VM. Ce qu'elle signe alors est
-sa propre décision (l'action, la cible, le type), sauf le port, que la carte forgée a pu écrire dans
-`action_params` et que la proposition reprend. Le texte de la carte forgée, lui, n'est pas signé.
+**Une nuance (relecture de FS1a), fermée pour le port (SEC-B).** La dédup de `record` fond une
+détection dans la carte en attente de même action, même cible et même type : une carte forgée qui
+attend reçoit donc la proposition de la watch si la watch décide ensuite cette même action sur cette
+même VM. Ce qu'elle signe alors est sa propre décision, **port compris** : depuis SEC-B, le port vient
+des `action_params` de la décision, plus de ceux de la carte, et la carte les reprend, si bien que
+ce qu'elle dit et ce qui est signé s'accordent. Ce qui reste ouvert, et pourquoi : le texte de la
+carte forgée (sa raison, ses étapes) n'est pas signé, et la carte reste celle de l'autre main. La
+fermer tout à fait voudrait que la dédup refuse une carte que la watch n'a pas écrite, donc un
+registre des cartes de la watch qui survive à un redémarrage ; c'est l'état local de FS1f. Une
+approbation y exécute seulement ce que la watch a décidé elle-même.
 
 ### 2.5 Où la demande est déposée
 
@@ -324,10 +343,16 @@ moins cher au plus cher : **aucun appel au cloud avant l'étape 9**, comme la ga
    c'est l'inverse du compteur de SEC19, où un fichier qu'on ne peut écrire n'est pas un refus
    (`watch_key.py:335-339`) : ici, on ferme.
 9. **Le verbe** : hors liste, `unknown_verb` ; hors des verbes de ce service, `verb_not_allowed`.
-   Le débit est borné par service (30 demandes par minute) : au-delà, `rate_limited`.
+   Le débit est borné par service (30 demandes par minute) : au-delà, `rate_limited`. **Les
+   identifiants** (SEC-B) : la ressource, l'adresse, la portée et la carte en ASCII seulement, sinon
+   `not_ascii` — une casse repliée hors ASCII nomme une autre chaîne.
 10. **Le rattachement** : la proposition (§2.4), ou l'état que la watch tient pour cette VM ou cette
     IP. Sinon : `proposal_missing`, `proposal_mismatch`, `proposal_consumed`, `card_not_pending`
-    ou `nothing_to_undo`.
+    ou `nothing_to_undo`. **La demande et la proposition se comparent à l'octet** (SEC-B) : la
+    cible de la demande est celle de la proposition, telle quelle, sinon `proposal_mismatch`. La
+    console et le bot la recopient de la proposition (`eregion_console/api.py`, `_approve_queued` ;
+    `glorfindel/bot.py`, `_deposit_reset`). Seule la carte et sa proposition se comparent sans la
+    casse (un id ARM ne la distingue pas), en ASCII seulement.
 11. **Les gardes du geste** (§2.9). Sinon : `guard`, avec la raison.
 12. **La posture** : une watch en lecture seule (`GLORFINDEL_READ_ONLY`) refuse, `read_only`.
 
@@ -357,6 +382,10 @@ dans aucun verbe.
 `cli.py` en fonctions appelables. Ensuite, la vérification (ce que fait `_verify_approved`
 aujourd'hui), le geste noté au fil, une carte `verification_failed` si la vérification n'est pas
 `True`, et la carte réglée. Une demande en vol n'est jamais coupée au milieu.
+
+**La cible exécutée est celle de la proposition signée** (SEC-B) : une fois la demande rattachée, la
+garde, le verrou de la VM, l'appel au connecteur et le reçu prennent la cible et l'adresse de la
+proposition vérifiée, jamais l'écriture qu'en fait la demande.
 
 ### 2.10 Le retour : le reçu
 
@@ -406,6 +435,9 @@ Il ne porte jamais la signature de la demande, et jamais rien de ce qu'elle ne n
 | `proposal_*`, `card_not_pending`, `nothing_to_undo` | le rattachement | reçu | — |
 | `guard` | une garde du geste (§2.9) | reçu, avec la raison | — |
 | `read_only` | la watch en lecture seule | reçu, statut | — |
+| `not_ascii` | un identifiant hors ASCII (SEC-B) | reçu | — |
+| `busy` | toutes les exécutions prises et la liste d'attente pleine (SEC-B) | reçu, statut | — |
+| `no_slot` | acceptée, mais aucune exécution libérée avant sa fin de vie (SEC-B) | reçu | — |
 
 Les cartes critiques sont décidées par le code, comme celles d'AL1 et de SID1 : ni modèle, ni
 action. Il y en a au plus une par service et par heure. Une demande refusée ne laisse jamais de
@@ -945,3 +977,54 @@ lorsqu'une lecture le règle (`docs/operations.md`) — une tâche de fond, plus
 identités lectrices), FS1e, FS1f, FS1g. La machine à invariants ne connaît pas encore l'action
 « demande de la console » (§4.3) : laissée à FS1d, avec la propriété « toute écriture par
 l'identité de la watch » que les identités lectrices rendent mesurable.
+
+## 10. SEC-B, fait (15/11, #634)
+
+Les cinq points de l'audit du 06/11 qui empêchaient d'activer la file (V-06, V-08, V-09, V-10, V-12)
+sont fermés. **Le drapeau reste faux par défaut** : sa bascule, après la mesure au banc, est hors de
+ce lot.
+
+- **Une proposition n'est signée que depuis l'état de la watch** (audit du 06/11, V-06 ;
+  `glorfindel/escalations.py`, `_propose`, `_held`). À l'écriture d'une carte, depuis sa décision
+  (`action_queue.decision_fields`, les arguments de `record`) ; au rafraîchissement, depuis la
+  proposition qu'elle a signée sur cette carte, tant que la carte la porte encore (sa mémoire,
+  `_SIGNED`, par l'identifiant de la carte, jamais par le `signal_id`). Une carte d'une autre main
+  trouvée par son signal (la réaffirmation, la coupure des sessions), ou dont la proposition a été
+  remplacée, n'est jamais signée. La nuance du §2.4 est fermée pour le port, dite ouverte pour le
+  texte, avec sa raison.
+- **La cible exécutée est celle de la proposition, comparée à l'octet** (audit du 06/11, V-08 ;
+  `action_queue.proposal_refusal`, `queue_watch._signed_target`). La demande nomme la cible de la
+  proposition telle quelle (la console et le bot la recopient), sinon `proposal_mismatch` ; un
+  identifiant hors ASCII est refusé, `not_ascii`. Une fois la demande rattachée, la garde, le verrou,
+  le connecteur et le reçu prennent la cible et l'adresse de la proposition.
+- **La relève ne se fige pas** (audit du 06/11, V-09 ; `glorfindel/queue_watch.py`). Juger, refuser
+  et écrire le reçu ne dépendent jamais d'une exécution libre. Une demande acceptée attend son tour
+  dans une liste explicite, bornée (`BACKLOG`, 32) et prioritaire : ce qui confine (`isolate_vm`,
+  `block_ip`, `promote_block`, `snapshot`) passe avant ce qui lève (`release_isolation`, `reset`,
+  `unblock_ip`), puis l'ordre d'arrivée ; `IN_FLIGHT` (4) fils la vident. Pleine, la demande est
+  refusée aussitôt, `busy`. Son tour venu après sa fin de vie, elle est refusée, `no_slot`, jamais
+  exécutée en retard ; sa proposition n'est consommée qu'au moment de l'exécution, si bien qu'une
+  demande refusée ainsi peut être redemandée. Le statut signé reste réécrit pendant que tout est
+  pris, et dit ce qui tourne et ce qui attend (`executions`).
+- **Les registres sous un verrou entre processus** (audit du 06/11, V-10 ;
+  `action_queue._between_processes`). `SeenFile.claim` et `ConsumedFile.consume` prennent un
+  `flock` sur `seen.json.lock` et `consumed.json.lock`, à côté de leur registre, en plus du verrou de
+  fil (le cœur ne connaît pas `glorfindel`, D1). **Une seconde watch sur le même HOME, la file
+  activée, est refusée** : `queue_watch.hold_the_queue` prend un `flock` sur `watch.lock`, jamais
+  attendu, tenu le temps du processus ; la seconde le dit (le pid de la première) et `glorfindel
+  watch` s'arrête en erreur, avant son premier battement. Sans le drapeau, rien ne change : la watch
+  prévient, comme avant.
+- **Une ligne du magasin qui n'est pas une carte ne fait rien échouer** (audit du 06/11, V-12 ;
+  `escalations._card_of`, `_read_lines`). Toutes les lectures du magasin la passent (JSON illisible,
+  JSON qui n'est pas un objet, octet hors UTF-8), toutes les réécritures la gardent telle quelle, à
+  l'octet. Elle est dite une fois par processus, en avertissement du journal, par sa longueur et une
+  empreinte, jamais par son texte, qu'a choisi qui l'a écrite ; redite après un redémarrage.
+  `_settle` ne fait plus dire `failed` au reçu d'une action faite : la carte qu'il ne peut régler
+  (un disque plein) est dite, et reste ouverte.
+- **Tests** : `tests/unit/test_action_proposal.py` (la re-signature, la mémoire par carte, la nuance),
+  `test_action_queue_watch.py` (la cible signée, l'ASCII, la liste d'attente, la priorité, la fin
+  de vie, le statut, la seconde watch, le magasin), `test_locks.py` (trois processus sur un registre,
+  une seconde watch entre processus) ; mutants M5426–M5445 (`scripts/mutants/SEC-B.py`).
+
+**Ce qui reste ouvert** : le texte d'une carte forgée où se fond une décision de la watch (§2.4),
+jusqu'à FS1f ; FS1d, FS1e, FS1f, FS1g ; la bascule du drapeau et sa mesure au banc.

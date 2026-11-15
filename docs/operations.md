@@ -2067,6 +2067,13 @@ nonces vus et les propositions exécutées) est à elle seule ; illisible, elle 
 (`queue_unavailable`) — le réparer ou le retirer, la watch le recrée. Les reçus et le statut :
 `runs/glorfindel/queue/` (le bot en monte ce seul sous-répertoire, en lecture seule).
 
+**Une seule watch par HOME, le drapeau mis (SEC-B)** : une seconde est refusée et s'arrête en erreur
+(« Watch refusée : une autre watch relève déjà la file d'actions de ce HOME », le pid de la première,
+`~/.eregion/watch-queue/watch.lock`) — arrêter l'autre (`make glorfindel-stop`), puis relancer. Une
+demande refusée `busy` (les 4 exécutions prises et 32 demandes qui attendent déjà) ou `no_slot`
+(acceptée, mais sa fin de vie passée avant son tour) n'a rien exécuté : la redemander ; sa proposition
+n'est pas consommée. Le statut signé dit ce qui tourne et ce qui attend (`executions`).
+
 **Avec le drapeau, les gestes sont asynchrones (FS1c)** : une route de la console rend aussitôt l'id
 de sa demande, et la page suit son reçu (`GET /api/queue/<id>` : reçue, acceptée, puis faite,
 échouée ou refusée, et pourquoi) ; le bot dit chaque état dans le fil de la VM. Un « Approve »

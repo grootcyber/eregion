@@ -407,6 +407,16 @@ Quand `signals_count > 1` ou `actions_taken` non vide → prompt injecte context
 
 **Le magasin, plusieurs écrivains (SEC3, V-10).** La watch (ses workers, sa passe de réaffirmation), la console, le bot et la CLI écrivent `escalations.jsonl`. Chaque lecture-modification-écriture tient un verrou (`flock` sur `escalations.jsonl.lock`, `response/locks.py::_file_lock`, réentrant) et le magasin est réécrit entier (fichier temporaire + `os.replace`, 0600) ; le webhook part après le verrou. Mesuré entre vrais processus (`tests/unit/test_locks.py`) : aucune carte perdue, aucune lecture tronquée.
 
+**Une ligne du magasin qui n'est pas une carte ne fait rien échouer (SEC-B, audit du 06/11, V-12).** Un
+JSON illisible, un JSON qui n'est pas un objet, un octet hors UTF-8 : chaque lecture (`pending`,
+`all_escalations`, `card_of`, la dédup de `record`) la passe, chaque réécriture (`resolve`,
+`resolve_by_resource`, `refresh`, `set_verdict`…) la garde telle quelle, à l'octet — jamais perdue
+(`escalations._card_of`, `_read_lines`). Elle est **dite une fois par processus**, en avertissement du
+journal (« une ligne qui n'est pas une carte »), par sa longueur et une empreinte, jamais par son
+texte ; redite après un redémarrage. Avant, une seule ligne faisait échouer la clôture d'une carte
+(le reçu d'une action faite disait `failed`) et `/api/state`. La réparer à la main : la retirer du
+fichier, la watch arrêtée.
+
 **Escalade persistante — 1 carte vivante (pas N, pas figée).** La dédup `record()` (clé `action+resource_id+escalation_type` parmi les `pending`, et l'origine : une carte de la réaffirmation — `reassert-…`, `state-unreadable-…` — ne se fond jamais dans une carte d'une autre origine, celle du graphe, ni l'inverse, I3G) garde **une seule** carte quand un finding re-déclenche, mais la rend vivante : `occurrences++` + `last_seen` à chaque re-fire (cheap, `first_seen` préservé → « 12× depuis 3h » d'un coup d'œil), et le contenu cher (reason/suggested_steps/confidence) **rafraîchi uniquement sur changement matériel** (delta de confiance ≥ `_MATERIAL_CONFIDENCE_DELTA`=0.1) — sinon le contenu reste stable (pas de flicker), et le **premier triage est préservé** (`first_reason`/`first_suggested_steps`/`first_confidence`). Avant : la sortie du re-`decide` était jetée → carte périmée sur un finding qui dure (constat terrain). ⚠️ Deux raffinements **différés** (touchent des hot-paths, validation run réel requise) : (a) throttle du re-`decide` LLM lui-même (risque de masquer un changement matériel si l'équivalence est trop lâche — `indicator_value` varie) ; (b) résolution du mismatch `Computer`≠`resource_id` via la map discovery (change l'input LLM via `normalize_row` → run end-to-end requis).
 
 Types d'escalade : `control_plane_change` (détection sur le journal d'activité d'Azure — AL1 : aucune action autonome, jamais approuvable en un clic, jamais fusionnée dans la carte précédente), `identity_change` (détection sur les journaux d'Entra ID — C2 : identifiant ajouté, consentement, rôle privilégié, connexion inhabituelle d'un principal ; aucune action autonome, des étapes pour révoquer, jamais approuvable en un clic, jamais fusionnée), `telemetry_gap` (action disruptive retenue : des requêtes d'enquête ont échoué, le modèle les a lues vides — G2), `unstable_decision` (action disruptive retenue : les tirages de la décision ne s'accordent pas — D-1), `unattributed_signal` (détection non attribuable à cette VM — ligne sans ressource, plusieurs VMs surveillées, ou ligne d'un `attack_started` qui ne nomme pas la VM de la ligne, SEC4a — action ciblant la VM retenue), `uncontained_detection` (détection caractérisée à laquelle seul un instantané a répondu — SEC4a : l'instantané a tourné, rien n'est contenu ; carte sans action, à juger), `undecided_detection` (détection que le modèle n'a pas décidée — SEC-A2 : dédoublonnée, au-delà du plafond d'appels, ou sortie d'une file pleine ; une carte par VM et par règle qui nomme ses dernières lignes, sans action, jamais approuvable en un clic), `low_confidence` (gate de confiance, ou escalade demandée par le LLM sur une action autonome — libellé « confiance insuffisante », ex-« detection timeout »), `uncharacterized_signal` (garde-fou signal non caractérisé), `release_hold` (levée proposée hors `recovery_complete` ; ou, action `review_recovery`, une restauration lue sur Azure qui ne prouve pas la reprise — REC1), `destructive_action` (HUMAN_APPROVAL_REQUIRED), `proposed_action` (action inconnue ou non implémentée), `verification_failed` (action exécutée mais vérification en échec : règle absente, NIC non couverte, allow évaluée avant le deny — boutons Revert/reset), `proposed_rule` (règle de détection proposée après detection_missed), `mode_hold` (action autonome retenue par le mode `human_only` de l'asset — pas un manque de confiance), `write_blocked` (action tentée mais credentials read-only / IAM 403 — capability gap, pas un choix de politique), `action_failed` (échec non-auth pendant l'exécution — **toute** exception, connecteur compris — toujours escaladé, jamais d'abort silencieux du cycle), `cycle_failed` (le cycle n'a pas pu aller au bout : appel LLM en échec après retries, erreur interne, backend de détection injoignable pendant le poll — le signal est réel mais **non analysé**, triage humain), `readiness_hold` (VM configurée autonome mais retenue en `human_only` par le verrou L6 : réserves à confirmer, pas prête, ou réserve apparue depuis l'activation — bouton « Review & turn on »), `detection_blocked` (raté sur un TTP **déjà couvert** par une règle : la détection a été **empêchée** — isolation résiduelle, latence d'ingestion, backend injoignable — pas un manque de règle ; action portée `investigate_detection_gap`), `orphan_rule` (règle orpheline, ci-dessous), `bypassed` (isolation ou blocage contourné par une règle d'autorisation d'un tiers avant le deny — SEC4b : dit par la réaffirmation, action `review_bypass`, rien d'exécutable, hors décompte des décisions), `state_unreadable` (fichier d'état local illisible — SEC4b : action `repair_local_state`, rien d'exécutable, hors décompte des décisions).
@@ -418,10 +428,14 @@ qu'un humain peut lancer (un type approuvable en un clic avec son action, ou `ve
 pour son reset) porte `proposal` : ce que la watch propose (la carte, l'action, la cible, l'adresse
 et le port, le type, l'heure, son compteur), signé par sa clé de SEC19 sous `eregion.action-queue/1`
 (`eregion_core/action_queue.py`, `docs/design/file-actions-signee.md` §2.4, §7). Une carte revue
-garde sa proposition tant qu'elle tient (cette clé, la carte telle qu'elle est) et qu'elle a moins de
-10 min (`escalations.RESIGN_AFTER_S`, FS1b) ; au-delà, ou la carte changée, elle est signée de
-nouveau. Une carte écrite par la console, le bot ou la CLI n'en porte pas ; une clé indisponible
-n'empêche jamais la carte.
+garde sa proposition tant qu'elle tient (cette clé, ce que la watch signerait) et qu'elle a moins de
+10 min (`escalations.RESIGN_AFTER_S`, FS1b) ; au-delà, elle est signée de nouveau. **Ce qu'elle signe
+vient d'elle** (SEC-B, audit du 06/11, V-06) : de sa décision quand elle écrit la carte (le port
+compris, que la carte reprend), et au rafraîchissement, de la proposition qu'elle a signée sur cette
+carte, tant que la carte la porte (sa mémoire, par l'identifiant de la carte) — jamais des champs
+de la carte relue dans le magasin. Une carte écrite par la console, le bot ou la CLI n'en porte
+pas, et un rafraîchissement ne lui en donne jamais ; une clé indisponible n'empêche jamais la
+carte.
 
 **La watch relève la file d'actions signée (FS1b, #563) — derrière `EREGION_ACTION_QUEUE=1`
 seulement.** Sans ce drapeau (le défaut), rien ne change : aucune file n'est lue, la console et le
@@ -440,9 +454,13 @@ le même code que la console appelle : l'approbation en un clic, **son âge lu s
 signé de la proposition**, jamais sur `last_seen`, un restore après la carte ; une seule adresse hors
 de `never_block` et une portée `vm` ou `subnet` ; la VM du périmètre de la watch ; l'humain qu'une
 demande du bot nomme, relu contre la copie de `DISCORD_ALLOWED_USERS`/`DISCORD_ALLOWED_ROLES` de la
-watch), la posture (étape 12 : `read_only`), puis la proposition consommée (écrite avant
-l'exécution : une proposition, une exécution, un échec compris). Le reçu passe alors `accepted`, et
-la demande s'exécute dans un fil de travail, sous `_vm_lock`, avec les fonctions de la watch : celles
+watch), la posture (étape 12 : `read_only`). Le reçu passe alors `accepted`, et la demande attend son
+tour (SEC-B) dans une liste bornée (32) et prioritaire — ce qui confine avant ce qui lève —, que 4
+fils vident : pleine, `busy` ; son tour venu après sa fin de vie, `no_slot`, jamais exécutée en
+retard ; jamais la relève n'attend une exécution, et le statut reste réécrit. À son tour, la
+proposition est consommée (écrite avant l'exécution : une proposition, une exécution, un échec
+compris), puis la demande s'exécute, sous `_vm_lock`, sur **la cible de la proposition signée**
+(SEC-B : la demande la nomme à l'octet, un identifiant hors ASCII refusé), avec les fonctions de la watch : celles
 du connecteur, celles de la CLI pour la levée et le reset (`glorfindel/gestures.py`, sorties de
 `cli.py`), la vérification d'après (`approval.verify_approved`, une carte `verification_failed` si
 elle n'est pas `True`), la carte réglée ; le reçu dit `done` ou `failed`. Les gardes du modèle (la
@@ -455,8 +473,13 @@ refus du groupe critique (`unsigned`, `unknown_key`, `bad_signature`, `wrong_ser
 `verb_not_allowed`) fait une carte `queue_tampered`, **critique**, décidée par le code, sans action,
 au plus une par service et par heure ; un registre illisible (`seen_store_unavailable`), une carte
 `queue_unavailable`. Le registre (`~/.eregion/watch-queue/` : `seen.json`, `consumed.json`) que seule
-la watch monte est écrit durablement (le fichier, puis son répertoire, `fsync`) et, illisible sous
-quelque forme que ce soit, refuse — il ne lève jamais. Les clés épinglées : `EREGION_QUEUE_KEYS`
+la watch monte est écrit durablement (le fichier, puis son répertoire, `fsync`), sous un `flock` entre
+processus (`seen.json.lock`, `consumed.json.lock`, SEC-B) et, illisible sous quelque forme que ce
+soit, refuse — il ne lève jamais. **Une seconde watch sur le même HOME, la file activée, est
+refusée** (SEC-B, audit du 06/11, V-10) : la première tient `~/.eregion/watch-queue/watch.lock`
+(`flock`, son pid écrit dedans), la seconde dit « Watch refusée : une autre watch relève déjà la file
+d'actions de ce HOME (…, pid N) » et s'arrête en erreur, avant son premier battement ; sans le
+drapeau, elle prévient seulement, comme avant (« Another glorfindel watch appears to be running »). Les clés épinglées : `EREGION_QUEUE_KEYS`
 dans l'environnement de la watch (`make queue-keys`, `docs/operations.md`). Tests :
 `tests/unit/test_action_queue_watch.py` ; mutants M3975–M4014.
 
