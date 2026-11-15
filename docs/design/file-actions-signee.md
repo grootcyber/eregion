@@ -1005,7 +1005,12 @@ ce lot.
   refusée aussitôt, `busy`. Son tour venu après sa fin de vie, elle est refusée, `no_slot`, jamais
   exécutée en retard ; sa proposition n'est consommée qu'au moment de l'exécution, si bien qu'une
   demande refusée ainsi peut être redemandée. Le statut signé reste réécrit pendant que tout est
-  pris, et dit ce qui tourne et ce qui attend (`executions`).
+  pris, et dit ce qui tourne et ce qui attend (`executions`). **Les gardes se jugent à
+  l'acceptation, pas au tour d'exécution** : l'âge de l'approbation, le périmètre et le blocage
+  tenu sont lus quand la demande est acceptée, et son exécution peut venir jusqu'à sa fin de vie
+  (`MAX_LIFETIME_S`) — une fenêtre bornée, qui existait déjà avant la liste d'attente. Les refus
+  sont comptés sous le verrou de la watch : la relève et les fils refusent tous deux, aucun compte
+  ne se perd dans le statut signé.
 - **Les registres sous un verrou entre processus** (audit du 06/11, V-10 ;
   `action_queue._between_processes`). `SeenFile.claim` et `ConsumedFile.consume` prennent un
   `flock` sur `seen.json.lock` et `consumed.json.lock`, à côté de leur registre, en plus du verrou de
@@ -1016,7 +1021,9 @@ ce lot.
   prévient, comme avant.
 - **Une ligne du magasin qui n'est pas une carte ne fait rien échouer** (audit du 06/11, V-12 ;
   `escalations._card_of`, `_read_lines`). Toutes les lectures du magasin la passent (JSON illisible,
-  JSON qui n'est pas un objet, octet hors UTF-8), toutes les réécritures la gardent telle quelle, à
+  JSON qui n'est pas un objet, octet hors UTF-8 hors d'une chaîne, ou objet dont une chaîne porte un
+  octet hors UTF-8, brut ou échappé en `\udcff` : `_encodable`, sans quoi `/api/state` ne pourrait
+  pas l'écrire), toutes les réécritures la gardent telle quelle, à
   l'octet. Elle est dite une fois par processus, en avertissement du journal, par sa longueur et une
   empreinte, jamais par son texte, qu'a choisi qui l'a écrite ; redite après un redémarrage.
   `_settle` ne fait plus dire `failed` au reçu d'une action faite : la carte qu'il ne peut régler

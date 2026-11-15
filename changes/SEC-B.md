@@ -17,13 +17,20 @@
     receipt never wait for an execution. An accepted request waits in a bounded wait list, in
     priority (a containment before a lift); full, it is refused at once (`busy`); its turn come
     after its end of life, refused and said (`no_slot`), never run late, its proposal not consumed.
-    The signed status stays fresh and says what runs and what waits.
+    The signed status stays fresh and says what runs and what waits, its refusals counted under the
+    watch's lock. The guards are judged when a request is accepted, not when its turn comes (said,
+    §10).
   - **The registers are under a lock between processes** (audit du 06/11, V-10): the nonces seen
     and the proposals consumed under an `flock`, and a second watch on the same HOME, the queue on,
     is refused, said, and stops before its first heartbeat.
   - **A line of the escalations' store that is not a card fails nothing** (audit du 06/11, V-12):
-    every read passes it, every rewrite keeps it as it is, to the byte, and it is said once by its
+    every read passes it — a card one of whose strings holds a byte that is not UTF-8, raw or
+    escaped, included —, every rewrite keeps it as it is, to the byte, and it is said once by its
     length and a digest. The receipt of an action done no longer says `failed` because its card
-    could not be settled, and `/api/state` stands.
-  - Tests: `tests/unit/test_action_proposal.py`, `test_action_queue_watch.py`, `test_locks.py`;
+    could not be settled, and `/api/state` stands. The watch's reading of a recovery on Azure
+    (REC1) no longer holds every release because of such a line: it decides on the readable cards
+    and the isolation — were the line the VM's earliest pending card, its first detection would no
+    longer date the incident (said, `docs/glorfindel.md`, REC1).
+  - Tests: `tests/unit/test_action_proposal.py`, `test_action_queue_watch.py`, `test_locks.py`,
+    `test_recovery_watch.py`;
     mutants M5426–M5445 (`scripts/mutants/SEC-B.py`).
