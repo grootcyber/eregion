@@ -146,13 +146,13 @@ FORMER = {f"glorfindel-host-{x}": f"imladris-{x}" for x in (
     "init", "plan", "up", "down", "env", "known", "push", "client-rules", "start", "stop", "logs",
     "status", "pull", "model", "report", "campaign-report", "containment", "fault-rate", "url",
     "tunnel", "tunnel-go", "ssh", "cd-install", "cd-check", "cd-enable", "cd-disable", "cd-status",
-    "cd-retry", "cd-rollback", "cd-uninstall", "watch-key", "queue-keys")}
+    "cd-retry", "cd-rollback", "cd-uninstall", "watch-key", "queue-keys", "fingerprint")}   # SEC-C: fingerprint
 FORMER.update({"mobile-check": "imladris-tunnel-check"})
 FORMER.update({f"mobile-tunnel-{x}": f"imladris-tunnel-{x}" for x in (
     "install", "remove", "on", "off", "install-go", "remove-go", "on-go", "off-go")})
 # What a recipe needs to say all it does: the variables its own guards read.
 ARGS = ("REF=v0.0.1", "MODEL=anthropic/x", "CAMPAIGN=c1", "TAG=v0.0.1", "HOST_IP=203.0.113.9",
-        "HOST_SSH_FINGERPRINT=SHA256:x", "PYTHON=python3")
+        "HOST_SSH_FINGERPRINT=SHA256:x", "PYTHON=python3", "IMLADRIS_VM_ID=/subscriptions/x/vm-glorfindel")
 
 
 @pytest.mark.parametrize("former", sorted(FORMER))

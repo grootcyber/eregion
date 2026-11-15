@@ -273,8 +273,8 @@ def variables(profile: str, env: Mapping[str, str]) -> list[Check]:
                    else Check(g, "ORO_SSH_FINGERPRINT vide ou mal formé : aucune commande ne part vers Orodruin",
                               FAIL, "make orodruin-fingerprint, puis sa ligne export dans .envrc"))
         out.append(Check(g, "HOST_SSH_FINGERPRINT", OK) if _SSH_FINGERPRINT.match(env.get("HOST_SSH_FINGERPRINT", ""))
-                   else Check(g, "HOST_SSH_FINGERPRINT vide (optionnel : sans elle, accept-new vers Imladris)", WARN,
-                              "infra/glorfindel-host/README.md, « SSH : la clé d'hôte épinglée »"))
+                   else Check(g, "HOST_SSH_FINGERPRINT vide ou mal formé : aucune commande ne part vers Imladris (SEC-C)",
+                              WARN, "make imladris-fingerprint, puis sa ligne export dans .envrc"))
     return out
 
 

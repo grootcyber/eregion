@@ -701,10 +701,138 @@ def test_anything_else_is_refused(pim, ref, runner, said):
         pim.commit_of(ref, runner)
 
 
-def test_the_latest_tag(pim):
-    assert pim.latest_tag(_git(tags="v0.4.6\nv0.4.5\n")) == "v0.4.6"
+def test_the_release_tags_highest_first(pim):
+    assert pim.release_tags(_git(tags="v0.4.6\nv0.4.5\n")) == ["v0.4.6", "v0.4.5"]
     with pytest.raises(pim.Unverified):
-        pim.latest_tag(_git(tags=""))
+        pim.release_tags(_git(tags=""))
+
+
+# ── SEC-C (audit of 06/11, V-24, V-29): the latest release verified, never a tag on its name; the
+#    deployment by hand of Imladris proven on the workstation; the floor of Orodruin ──────────────
+
+C3 = "3" * 40
+
+
+def _with_git(pim, git):
+    """git answered by `git`, cosign (the fake sigstore) run for real."""
+    return lambda argv: git(argv) if argv[0] == "git" else pim.run(argv)
+
+
+def test_without_ref_the_release_is_the_highest_whose_published_image_is_verified(pim, reg, sig, capsys):
+    """v0.5.11, the highest local tag, has no signed image (pushed by anyone who can write a tag, or
+    its publication failed): set aside and said; v0.5.10, signed and attested, is taken — never a tag
+    believed on its name alone."""
+    digest = reg.image(GLOR, f"sha-{C2}", _manifest(C2))
+    reg.image(GLOR, f"sha-{C1}", _manifest(C1))                         # published, never signed
+    _signed(pim, sig, digest, commit=C2)
+    git = _git(**{"tags": "v0.5.11\nv0.5.10\n", "refs/tags/v0.5.11^{commit}": C1, "refs/tags/v0.5.10^{commit}": C2})
+    assert pim.latest_verified("glorfindel", sig.path, _with_git(pim, git)) == ("v0.5.10", C2, digest)
+    assert "v0.5.11 écartée : signature absente" in capsys.readouterr().err
+    with pytest.raises(pim.Unverified, match="aucune des 1 plus hautes releases"):
+        pim.latest_verified("glorfindel", sig.path, _with_git(pim, _git(**{"tags": "v0.5.11\n",
+                                                                          "refs/tags/v0.5.11^{commit}": C1})))
+
+
+def test_a_registry_silent_stops_the_search_nothing_proven(pim, sig, monkeypatch):
+    monkeypatch.setattr(pim, "REGISTRY_API", "http://127.0.0.1:9")
+    git = _git(**{"tags": "v0.5.11\nv0.5.10\n", "refs/tags/v0.5.11^{commit}": C1, "refs/tags/v0.5.10^{commit}": C2})
+    with pytest.raises(pim.Unavailable):
+        pim.latest_verified("glorfindel", sig.path, _with_git(pim, git))
+
+
+def test_imladris_by_hand_is_proven_on_the_workstation_its_commit_said(pim, reg, sig, capsys):
+    """make imladris-start: REF's commit on origin/main, the image the CI published for it, signed
+    and attested at that commit — or refused, exit 1, nothing sent."""
+    digest = reg.image(GLOR, f"sha-{C2}", _manifest(C2))
+    git = _git(**{"refs/tags/v0.5.10^{commit}": C2})
+    runner = _with_git(pim, git)
+    with pytest.raises(pim.Unverified, match="signature absente"):
+        pim.proven("glorfindel", "v0.5.10", sig.path, runner)
+    _signed(pim, sig, digest, commit=C2)
+    assert pim.proven("glorfindel", "v0.5.10", sig.path, runner) == ("v0.5.10", C2, digest)
+    assert pim.main(["proven", "glorfindel", "--ref", "v0.5.10", "--cosign", str(sig.path)], runner=runner) == 0
+    out = capsys.readouterr()
+    assert out.out.splitlines() == ["ref=v0.5.10", f"commit={C2}", f"digest={digest}"]
+    assert "signée et attestée" in out.err
+    off_main = _with_git(pim, _git(**{"refs/tags/v0.5.10^{commit}": C2, "on_main": False}))
+    assert pim.main(["proven", "glorfindel", "--ref", "v0.5.10", "--cosign", str(sig.path)], runner=off_main) == 1
+    assert "pas sur origin/main" in capsys.readouterr().err
+    with pytest.raises(pim.Unverified, match="REF exigée"):
+        pim.proven("glorfindel", "", sig.path, runner)
+
+
+def test_proven_fetches_first_and_a_fetch_that_fails_proves_nothing(pim, sig, capsys):
+    seen = []
+
+    def git(argv):
+        seen.append(argv[3])
+        return _done(argv, 1 if argv[3] == "fetch" else 0)
+    assert pim.main(["proven", "glorfindel", "--ref", "v0.5.10", "--fetch", "--cosign", str(sig.path)],
+                    runner=_with_git(pim, git)) == 3
+    assert seen == ["fetch"] and "git fetch en échec" in capsys.readouterr().err
+
+
+def _order(**ancestors):
+    """git for the floor: tags on commits (`tags_<commit>`), which commit is an ancestor of which
+    (`ancestors`: "a b" → True), the commits it knows."""
+    known = ancestors.pop("known", {C1, C2, C3})
+    tags = ancestors.pop("tags", {})
+
+    def runner(argv):
+        key = argv[3]
+        if key == "tag":
+            return _done(argv, 0, tags.get(argv[5], ""))
+        if key == "cat-file":
+            return _done(argv, 0 if argv[-1].split("^")[0] in known else 128)
+        if key == "merge-base":
+            return _done(argv, 0 if ancestors.get(f"{argv[-2]} {argv[-1]}") else 1)
+        if key == "rev-parse":
+            return _done(argv, 1)
+        raise AssertionError(argv)
+    return runner
+
+
+def test_a_release_under_the_floor_is_refused_unless_the_way_back_is_asked(pim, capsys):
+    """By its version, or by its commit in git's history; a commit this checkout does not know is
+    never taken for « not older ». ROLLBACK=1: said, not refused."""
+    by_version = [("v0.5.10", C2, "en service sur Orodruin")]
+    assert pim.below_floor("v0.5.9", C1, by_version, _order()) == "v0.5.9 est plus ancienne que v0.5.10, en service sur Orodruin"
+    assert pim.below_floor("v0.5.10", C2, by_version, _order()) == ""
+    assert pim.below_floor("v0.5.11", C3, by_version, _order()) == ""
+    by_commit = [("", C2, "en service sur Orodruin")]                    # a commit of main, no tag
+    assert "précède" in pim.below_floor("v0.5.9", C1, by_commit, _order(**{f"{C1} {C2}": True}))
+    assert pim.below_floor("v0.5.11", C3, by_commit, _order(**{f"{C2} {C3}": True})) == ""
+    with pytest.raises(pim.Unverified, match="inconnu ici"):
+        pim.below_floor("v0.5.11", C3, by_commit, _order(known={C3}))
+    with pytest.raises(pim.Unverified, match="ROLLBACK=1"):
+        pim.floor_held("v0.5.9", C1, by_version, False, _order())
+    pim.floor_held("v0.5.9", C1, by_version, True, _order())
+    assert "retour arrière demandé (ROLLBACK=1) : v0.5.9 est plus ancienne" in capsys.readouterr().err
+    pim.floor_held("v0.5.9", C1, [("", C2, "x")], True, _order(known={C1}))   # unknown, asked: passes
+
+
+def test_only_a_verified_marker_of_the_same_commit_marks_the_floor(pim):
+    git = _order(tags={C2: "v0.5.10\n"})
+    mark = f"{C2} sha256:{'a' * 64}\n"
+    assert pim.service_mark(mark, C2, git) == [("v0.5.10", C2, "en service sur Orodruin")]
+    assert pim.service_mark(mark, None, git) == [("v0.5.10", C2, "en service sur Orodruin")]
+    for marker, revision in ((mark, C1), (f"dev {C2}\n", C2), ("garbage", C2), (None, C2), ("\0", None)):
+        assert pim.service_mark(marker, revision, git) == [], (marker, revision)
+
+
+def test_the_workstation_s_floor_is_raised_never_lowered(pim, tmp_path, monkeypatch):
+    path = tmp_path / ".eregion" / "orodruin_floor.json"
+    monkeypatch.setenv(pim.FLOOR_ENV, str(path))
+    assert pim.memory_mark() == []
+    assert pim.raise_floor("v0.5.10", C2, runner=_order()) == {"tag": "v0.5.10", "commit": C2}
+    assert json.loads(path.read_text()) == {"tag": "v0.5.10", "commit": C2}
+    assert pim.raise_floor("v0.5.9", C1, runner=_order()) == {"tag": "v0.5.10", "commit": C2}    # a way back
+    assert pim.raise_floor(C3[:12], C3, runner=_order()) == {"tag": "v0.5.10", "commit": C2}     # no version
+    assert pim.raise_floor(C3[:12], C3, runner=_order(tags={C3: "v0.5.11\n"}))["tag"] == "v0.5.11"
+    assert pim.memory_mark() == [("v0.5.11", C3, "déjà poussée et vérifiée depuis ce poste")]
+    path.write_text("{not json")
+    with pytest.raises(pim.Unverified, match="illisible"):
+        pim.memory_mark()
 
 
 # ── the workflow's side ──────────────────────────────────────────────────────────────────────
@@ -827,7 +955,11 @@ PUSH_FAKES = {
     "docker": '#!/bin/bash\nexec "$REAL_PYTHON" "$FAKE_OCI" docker "$@"\n',
     "ssh": '#!/bin/bash\ncmd="${!#}"\ncd "$REMOTE_HOME" && DOCKER_STATE="$REMOTE_STATE" bash -c "$cmd"\n',
     "scp": "#!/bin/sh\nexit 0\n",
-    "git": '#!/bin/bash\n[ "$3" = rev-parse ] && { echo "$FAKE_COMMIT"; exit 0; }\nexit 0\n',
+    # SEC-C: merge-base as git answers it for these two commits — the release's never an ancestor of
+    # another (the image in service, older, is one of it); origin/main holds them all.
+    "git": ('#!/bin/bash\n[ "$3" = rev-parse ] && { echo "$FAKE_COMMIT"; exit 0; }\n'
+            'if [ "$3" = merge-base ]; then case "$6" in refs/*) exit 0;; esac\n'
+            '  [ "$5" = "$FAKE_COMMIT" ] && [ "$6" != "$FAKE_COMMIT" ] && exit 1; exit 0; fi\nexit 0\n'),
     "python3": '#!/bin/bash\nexec "$REAL_PYTHON" "$PIM_WRAPPER" "${@:2}"\n',
 }
 PIM_WRAPPER = '''import importlib.util, os, sys
@@ -1036,7 +1168,10 @@ def test_the_control_run_takes_nothing_from_the_host_and_reaches_nothing(orodrui
     kinds = [c[0] if c[0] != "image" else c[1] for c in calls]
     runs = [c for c in calls[:kinds.index("tag")] if c[0] == "run"]     # then, the migration (ORO_MIGRATE)
     assert runs == [CHECK_RUN]
-    assert kinds.index("load") < kinds.index("inspect") < kinds.index("run") < kinds.index("tag")
+    # SEC-C: the image in service read first (docker info, its tag's labels: its floor), read-only.
+    assert kinds[:2] == ["info", "inspect"] and calls[1][:3] == ["image", "inspect", "-f"]
+    load = kinds.index("load")
+    assert load < kinds.index("inspect", load) < kinds.index("run") < kinds.index("tag")
     assert orodruin.containers() == {}
     assert orodruin.images()["eregion-annatar:orodruin"]["manifest"] == orodruin.new.digest
 
@@ -1087,11 +1222,12 @@ def test_a_check_container_left_by_a_push_before_is_taken_off_first(orodruin):
     (lambda reg, img: reg.registry[ANNATAR]["blobs"].pop(img.config_digest), "absent du registre"),
 ])
 def test_a_blob_altered_or_missing_stops_everything_before_anything_is_sent(orodruin, reg, spoil, said):
-    """Nothing reaches Orodruin — no ssh at all: its image, its ~/.eregion-image as they were."""
+    """Nothing reaches Orodruin but the read of its image in service (SEC-C: its floor, read-only):
+    its image, its ~/.eregion-image as they were."""
     spoil(reg, orodruin.new)
     res = orodruin.push()
     assert res.returncode != 0 and said in res.stderr and "rien n'est envoyé" in res.stderr
-    assert orodruin.calls() == []
+    assert [c[:2] for c in orodruin.calls()] == [["info"], ["image", "inspect"]]
     assert orodruin.images()["eregion-annatar:orodruin"]["manifest"] == orodruin.old.digest
     assert orodruin.marker() == [C1, orodruin.old.digest]
     assert list((orodruin.tmp / "tmp").iterdir()) == []
@@ -1497,9 +1633,11 @@ def _updated(start, res):
     assert len(start.az()) == 1 and start.az()[0].startswith("az vm start --ids ")
 
 
-def test_an_older_image_is_replaced_by_the_latest_release_verified(start):
+def test_an_older_image_is_replaced_by_the_latest_release_verified(start, reg, sig):
     """v0.5.9 in service, v0.5.10 the latest release — by version order (by string order v0.5.9
-    would be the latest, the image equal): pushed by orodruin-push, its control run included."""
+    would be the latest, the image equal): pushed by orodruin-push, its control run included. Both
+    published and verified (SEC-C: the latest is the highest verified — the order still decides)."""
+    _publish(start, reg, sig, "v0.5.9")
     start.serve("v0.5.9")
     res = start.run()
     _updated(start, res)
@@ -1704,3 +1842,94 @@ def test_the_check_says_an_image_absent_or_unreadable_too(start, spoil, word):
     assert res.returncode == 0, res.stdout + res.stderr
     assert f"⚠ image {word} : make orodruin-start ou make orodruin-push REF=v0.5.10" in res.stderr
     assert start.loads() == []
+
+
+# ── SEC-C (audit of 06/11, V-24): the floor of Orodruin's update, on the fakes of OI3 ─────────────
+
+def _publish(start, reg, sig, name):
+    start.images_[name].publish(reg, ANNATAR, f"sha-{start.commits[name]}")
+    sig.publish(f"ghcr.io/{ANNATAR}", start.images_[name].digest, "grootcyber/eregion", start.commits[name])
+
+
+def _floor(start):
+    p = start.tmp / "home" / ".eregion" / "orodruin_floor.json"
+    return json.loads(p.read_text()) if p.exists() else None
+
+
+def test_a_push_older_than_the_image_in_service_is_refused_unless_the_way_back_is_asked(start, reg, sig):
+    """v0.5.10 in service; make orodruin-push REF=v0.5.9 sent it back before. Refused now, nothing
+    sent; ROLLBACK=1 on the command line: said, pushed, verified as any release — the floor of this
+    workstation never lowered."""
+    _publish(start, reg, sig, "v0.5.9")
+    start.serve("v0.5.10")
+    floor = start.tmp / "home" / ".eregion" / "orodruin_floor.json"
+    floor.parent.mkdir(parents=True, exist_ok=True)
+    floor.write_text(json.dumps({"tag": "v0.5.10", "commit": start.commits["v0.5.10"]}))
+    res = start.run("REF=v0.5.9", target="orodruin-push")
+    assert res.returncode != 0
+    assert "v0.5.9 est plus ancienne que v0.5.10, en service sur Orodruin" in res.stderr
+    assert "make orodruin-push REF=v0.5.9 ROLLBACK=1" in res.stderr
+    assert start.loads() == [] and start.marker() == [start.commits["v0.5.10"], start.images_["v0.5.10"].digest]
+    res = start.run("REF=v0.5.9", "ROLLBACK=1", target="orodruin-push")
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert "retour arrière demandé (ROLLBACK=1) : v0.5.9 est plus ancienne que v0.5.10" in res.stderr
+    assert start.served() == start.images_["v0.5.9"].digest
+    assert _floor(start) == {"tag": "v0.5.10", "commit": start.commits["v0.5.10"]}    # never lowered
+
+
+def test_the_floor_is_raised_by_a_push_and_holds_for_an_orodruin_rebuilt(start, reg, sig):
+    """Pushed and verified, v0.5.10 raises this workstation's floor. Orodruin rebuilt (no image, no
+    marker): v0.5.9 still refused, by the memory."""
+    _publish(start, reg, sig, "v0.5.9")
+    start.serve("v0.5.9")
+    res = start.run("REF=v0.5.10", target="orodruin-push")
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert _floor(start) == {"tag": "v0.5.10", "commit": start.commits["v0.5.10"]}
+    assert "plancher d'Orodruin sur ce poste : v0.5.10" in res.stderr
+    (start.remote / "docker" / "images.json").write_text("{}")
+    (start.remote / "home" / ".eregion-image").unlink()
+    (start.remote / "docker" / "calls").unlink()
+    res = start.run("REF=v0.5.9", target="orodruin-push")
+    assert res.returncode != 0 and "déjà poussée et vérifiée depuis ce poste" in res.stderr
+    assert start.loads() == [] and start.marker() is None
+    res = start.run("REF=v0.5.9", target="orodruin-update")              # the update too, before anything
+    assert res.returncode != 0 and "déjà poussée et vérifiée depuis ce poste" in res.stderr
+    assert start.loads() == []
+
+
+def test_without_ref_a_higher_tag_without_a_verified_image_is_set_aside(start):
+    """A tag v0.5.11 on main, its image never published: the update takes v0.5.10, the highest
+    verified, and says why v0.5.11 is set aside."""
+    import shutil
+    subprocess.run([shutil.which("git"), "-C", str(start.tmp / "repo"), "tag", "v0.5.11", start.commits["head"]],
+                   check=True, capture_output=True)
+    start.serve("v0.5.9")
+    res = start.run()
+    assert "v0.5.11 écartée" in res.stderr, res.stderr
+    _updated(start, res)
+
+
+def test_the_way_back_replaces_a_newer_image_only_when_asked(start, reg, sig):
+    _publish(start, reg, sig, "v0.5.9")
+    start.serve("head")
+    res = start.run("REF=v0.5.9", target="orodruin-update")
+    assert res.returncode == 0 and "jamais remplacée" in res.stdout and start.loads() == []
+    assert "make orodruin-push REF=v0.5.9 ROLLBACK=1" in res.stdout
+    res = start.run("REF=v0.5.9", "ROLLBACK=1", target="orodruin-update")
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert "Retour arrière demandé (ROLLBACK=1)" in res.stdout and start.served() == start.images_["v0.5.9"].digest
+
+
+@pytest.mark.parametrize("target", ["orodruin-push", "orodruin-update", "orodruin-start"])
+@pytest.mark.parametrize("args, env, said", [
+    (["REF=v0.5.9", "ROLLBACK=yes"], {}, "ROLLBACK invalide"),
+    (["REF=v0.5.9", "ROLLBACK=$(shell touch pwned)"], {}, "ROLLBACK invalide"),
+    (["ROLLBACK=1"], {}, "ROLLBACK=1 demande REF"),
+    (["REF=v0.5.9"], {"ROLLBACK": "1"}, "ROLLBACK vient de l'environnement"),
+])
+def test_rollback_is_asked_on_the_command_line_with_its_release(start, target, args, env, said):
+    """Checked before anything: no az, nothing toward Orodruin, never expanded by make."""
+    start.serve("v0.5.10")
+    res = start.run(*args, target=target, **env)
+    assert res.returncode != 0 and said in res.stderr, res.stderr
+    assert start.az() == [] and start.calls() == [] and not list(start.tmp.rglob("pwned"))

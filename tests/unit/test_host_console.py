@@ -74,7 +74,8 @@ def _make(tmp_path, *args, environ=None, operator=False):
     if operator:
         root = operator_checkout(tmp_path)
         env["PATH"] = f"{tmp_path / 'bin'}{os.pathsep}{env['PATH']}"
-    return subprocess.run(["make", "-s", "--no-print-directory", "-C", str(root), *args],
+    # The host key aside (required since SEC-C, tests/unit/test_host_ssh.py): the console is what is read here.
+    return subprocess.run(["make", "-s", "--no-print-directory", "-C", str(root), "-o", "imladris-known", *args],
                           env=env, capture_output=True, text=True, timeout=60, cwd=root)
 
 
@@ -115,8 +116,17 @@ def _fake_ssh(tmp_path) -> tuple[Path, Path]:
 def test_host_tunnel_shows_the_console_url_under_either_name(tmp_path, case):
     content, token = CASES[case]
     bin_dir, log = _fake_ssh(tmp_path)
-    res = _make(tmp_path, "imladris-tunnel", "HOST_IP=203.0.113.9",
-                f"HOST_ENV={_host_env(tmp_path, content)}", operator=True,
+    # The tunnel runs through a sub-make, which checks the host key again (SEC-C: required): a key
+    # made here, pinned, already in its known_hosts.
+    key = tmp_path / "hostkey"
+    subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(key)], check=True)
+    pub = key.with_suffix(".pub").read_text().split()
+    fp = subprocess.run(["ssh-keygen", "-lf", str(key.with_suffix(".pub"))], capture_output=True, text=True,
+                        check=True).stdout.split()[1]
+    known = tmp_path / "kh"
+    known.write_text(f"203.0.113.9 {pub[0]} {pub[1]}\n")
+    res = _make(tmp_path, "imladris-tunnel", "HOST_IP=203.0.113.9", f"HOST_SSH_FINGERPRINT={fp}",
+                f"HOST_KNOWN_HOSTS={known}", f"HOST_ENV={_host_env(tmp_path, content)}", operator=True,
                 environ={"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", "FAKE_SSH_LOG": str(log)})
     assert res.returncode == 0, res.stderr
     assert "War Room" not in res.stdout

@@ -5,7 +5,9 @@ accepted at first contact, whoever answered at that address. Now the fingerprint
 read on the VM (HOST_SSH_FINGERPRINT, in his environment, never in the repository) decides:
 a dedicated known_hosts is written from the key the host presents only when it has that
 fingerprint, ssh then trusts that file alone, and a key of another fingerprint — presented or
-recorded — refuses before anything runs. Without it, accept-new stays, and the command says so.
+recorded — refuses before anything runs. Without it, accept-new stayed, said on every command;
+since SEC-C (audit of 06/11, V-26), nothing reaches Imladris without it, scp of host.env included, as
+for Orodruin — and the fingerprint is read on the VM through Azure (make imladris-fingerprint).
 
 The recipes really run (`make imladris-ssh`), against a fake `ssh-keyscan` (it answers
 with a key the test generated) and a fake `ssh` that records its arguments; the real
@@ -34,22 +36,27 @@ def _key(tmp_path, name):
     return f"{IP} {pub[0]} {pub[1]}", fp
 
 
-def _make(tmp_path, *args, presented="", silent=True):
+def _make(tmp_path, *args, presented="", silent=True, target="imladris-ssh", root=ROOT):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
     log = tmp_path / "ssh.log"
     log.write_text("")
     (bin_dir / "ssh").write_text('#!/bin/sh\necho "$*" >> "$FAKE_SSH_LOG"\n')
+    (bin_dir / "scp").write_text('#!/bin/sh\necho "scp $*" >> "$FAKE_SSH_LOG"\n')
     (bin_dir / "ssh-keyscan").write_text('#!/bin/sh\nprintf "%s\\n" "$FAKE_PRESENTED"\n')
-    for f in ("ssh", "ssh-keyscan"):
+    (bin_dir / "az").write_text('#!/bin/sh\necho "az $*" >> "$FAKE_SSH_LOG"\nprintf "%s\\n" "$FAKE_AZ"\n')
+    (bin_dir / "terraform").write_text('#!/bin/sh\nprintf "%s" "$FAKE_TF_SUBNET"\n')
+    for f in ("ssh", "scp", "ssh-keyscan", "az", "terraform"):
         (bin_dir / f).chmod(0o755)
     env = {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", "HOME": str(tmp_path),
            "FAKE_SSH_LOG": str(log), "FAKE_PRESENTED": presented}
-    for k in ("HOST_SSH_FINGERPRINT", "HOST_KNOWN_HOSTS", "HOST_IP", "HOST_SSH_KEY"):
+    for k in ("HOST_SSH_FINGERPRINT", "HOST_KNOWN_HOSTS", "HOST_IP", "HOST_SSH_KEY", "IMLADRIS_VM_ID"):
         env.pop(k, None)
-    res = subprocess.run(["make", *(["-s"] if silent else []), "--no-print-directory", "-C", str(ROOT),
-                          "imladris-ssh", f"HOST_IP={IP}", *args], env=env, capture_output=True, text=True,
-                          timeout=60)
+    env.update({k: v for k, v in (a.split("=", 1) for a in args if a.startswith("FAKE_"))})
+    args = [a for a in args if not a.startswith("FAKE_")]
+    res = subprocess.run(["make", *(["-s"] if silent else []), "--no-print-directory", "-C", str(root),
+                          "-f", str(ROOT / "Makefile"), target, f"HOST_IP={IP}", *args], env=env,
+                         capture_output=True, text=True, timeout=60)
     return res, log.read_text().splitlines()
 
 
@@ -88,11 +95,84 @@ def test_a_recorded_key_that_no_longer_has_the_fingerprint_refuses(tmp_path):
     assert known.read_text() == old + "\n"            # never rewritten in silence
 
 
-def test_without_a_fingerprint_accept_new_stays_and_says_so(tmp_path):
-    res, calls = _make(tmp_path, presented="")
+def test_without_a_fingerprint_nothing_reaches_imladris_never_accept_new(tmp_path):
+    """SEC-C (audit of 06/11, V-26): accept-new stayed without HOST_SSH_FINGERPRINT — the key taken at
+    first contact, whoever answered. Now refused, as for Orodruin: nothing runs, and the message says
+    where to read the fingerprint (Azure, never SSH)."""
+    line, _ = _key(tmp_path, "h0")
+    res, calls = _make(tmp_path, presented=line)
+    assert res.returncode != 0 and calls == []
+    assert "HOST_SSH_FINGERPRINT requis" in res.stderr and "jamais accept-new" in res.stderr
+    assert "make imladris-fingerprint" in res.stderr and IP not in res.stderr
+    assert not (tmp_path / ".eregion" / "h0_known_hosts").exists()
+
+
+def test_the_ssh_options_toward_imladris_never_accept_a_new_key_fingerprint_or_not(tmp_path):
+    """The key check left aside (`-o imladris-known`), the options alone: strict, the pinned file,
+    ed25519 — with or without the fingerprint, never accept-new (a recipe that would skip the check
+    still connects to nothing it has not verified)."""
+    for args in ((), ("HOST_SSH_FINGERPRINT=SHA256:x",)):
+        res, calls = _make(tmp_path, "-o", "imladris-known", *args, f"HOST_KNOWN_HOSTS={tmp_path / 'kh'}")
+        assert res.returncode == 0, res.stderr
+        assert len(calls) == 1 and "accept-new" not in calls[0], calls
+        assert f"-o StrictHostKeyChecking=yes -o UserKnownHostsFile={tmp_path / 'kh'} -o HostKeyAlgorithms=ssh-ed25519" in calls[0]
+    import re
+    opts = re.search(r"(?m)^HOST_SSH_OPTS\s*=(.*)$", (ROOT / "Makefile").read_text(encoding="utf-8")).group(1)
+    assert "accept-new" not in opts and "$(if" not in opts
+    known = (ROOT / "infra" / "glorfindel-host" / "known_host.sh").read_text(encoding="utf-8")
+    assert "exit 0" not in known.split('if [ -z "$want" ]; then', 1)[1].split("\nfi\n", 1)[0]
+
+
+def test_host_env_reaches_imladris_only_through_the_pinned_key(tmp_path):
+    """make imladris-push: without the fingerprint, no scp, no ssh; with it, every scp — host.env's
+    first — and every ssh take the pinned file alone."""
+    work = tmp_path / "work"
+    (work / "infra" / "glorfindel-host").mkdir(parents=True)
+    import shutil
+    shutil.copy(ROOT / "infra" / "glorfindel-host" / "known_host.sh", work / "infra" / "glorfindel-host")
+    (work / "infra" / "glorfindel-host" / "host.env").write_text("AZURE_SUBSCRIPTION_ID=sub\n")
+    (work / "glorfindel-config.yaml").write_text("autonomy: {}\n")
+    (work / ".venv" / "bin").mkdir(parents=True)
+    # host_env.py --check passes, host_config.py copies the config: what is sent is what is checked here.
+    (work / ".venv" / "bin" / "python").write_text('#!/bin/sh\ncase "$1" in *host_config.py) cp "$2" "$3";; esac\nexit 0\n')
+    (work / ".venv" / "bin" / "python").chmod(0o755)
+    res, calls = _make(tmp_path, target="imladris-push", root=work)
+    assert res.returncode != 0 and calls == [] and "HOST_SSH_FINGERPRINT requis" in res.stderr
+    line, fp = _key(tmp_path, "h0")
+    known = tmp_path / "kh"
+    res, calls = _make(tmp_path, f"HOST_SSH_FINGERPRINT={fp}", f"HOST_KNOWN_HOSTS={known}", presented=line,
+                       target="imladris-push", root=work)
+    assert res.returncode == 0, res.stdout + res.stderr
+    scp = [c for c in calls if c.startswith("scp ")]
+    assert scp and "infra/glorfindel-host/host.env" in scp[0], calls
+    for c in calls:
+        assert f"-o StrictHostKeyChecking=yes -o UserKnownHostsFile={known} -o HostKeyAlgorithms=ssh-ed25519" in c, c
+        assert "accept-new" not in c
+
+
+def test_imladris_s_fingerprint_is_read_on_the_vm_through_azure(tmp_path):
+    """SEC-C: the first contact — the fingerprint read by Run Command (the operator's az login),
+    never by SSH; the VM's id from the subnet of infra/glorfindel-host's state (its subscription,
+    never the CLI's current one), or IMLADRIS_VM_ID."""
+    _, fp = _key(tmp_path, "h0")
+    sub = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-glorfindel"
+    subnet = f"{sub}/providers/Microsoft.Network/virtualNetworks/vnet-glorfindel/subnets/snet-glorfindel"
+    answer = f"Enable succeeded:\n[stdout]\n256 {fp} root@vm-glorfindel (ED25519)\n\n[stderr]\n"
+    res, calls = _make(tmp_path, f"FAKE_AZ={answer}", f"FAKE_TF_SUBNET={subnet}", target="imladris-fingerprint")
     assert res.returncode == 0, res.stderr
-    assert "HOST_SSH_FINGERPRINT absent" in res.stderr
-    assert len(calls) == 1 and "-o StrictHostKeyChecking=accept-new" in calls[0]
+    assert res.stdout.strip() == f"export HOST_SSH_FINGERPRINT={fp}"
+    vm = f"{sub}/providers/Microsoft.Compute/virtualMachines/vm-glorfindel"
+    assert calls == [calls[0]] and calls[0].startswith(f"az vm run-command invoke --ids {vm} --command-id RunShellScript")
+    assert "ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub" in calls[0]
+    res, calls = _make(tmp_path, f"FAKE_AZ={answer}", "IMLADRIS_VM_ID=/subscriptions/x/vm-y", target="imladris-fingerprint")
+    assert res.returncode == 0 and calls[0].startswith("az vm run-command invoke --ids /subscriptions/x/vm-y ")
+    res, calls = _make(tmp_path, "FAKE_AZ=Enable succeeded: nothing", f"FAKE_TF_SUBNET={subnet}",
+                       target="imladris-fingerprint")
+    assert res.returncode != 0 and "pas d'empreinte" in res.stderr and "export" not in res.stdout
+    res, calls = _make(tmp_path, f"FAKE_AZ={answer}", "FAKE_TF_SUBNET=", target="imladris-fingerprint")
+    assert res.returncode != 0 and calls == [] and "make imladris-init" in res.stderr
+    main = (ROOT / "infra" / "glorfindel-host" / "main.tf").read_text(encoding="utf-8")
+    assert 'name = "glorfindel"' in main and 'name                  = "vm-${local.name}"' in main
 
 
 def test_a_fingerprint_that_is_not_one_refuses(tmp_path):
@@ -111,6 +191,8 @@ def test_every_command_toward_h0_checks_the_key_first_and_orodruin_keeps_its_own
     assert {"imladris-push", "imladris-start", "imladris-tunnel-go",
             "imladris-status", "imladris-cd-install"} <= set(reaching)
     assert {n for n, deps in reaching.items() if "imladris-known" not in deps} == set()
+    # SEC-C: the check itself requires the fingerprint, as Orodruin's does.
+    assert ' "$(HOST_KNOWN_HOSTS)" HOST_SSH_FINGERPRINT required\n' in text
     assert "$(SSH_OPTS)" not in "".join(r for n, _, r in rules if n != "imladris-known")
     assert re.search(r"(?m)^ORO_SSH\s*=\s*ssh \$\(SSH_OPTS\)", text)
 
