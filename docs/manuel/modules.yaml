@@ -1233,7 +1233,7 @@ briques:
     lots: [R2, R2b, R2c]
     issue: 79
 
-  - id: a-stratus-stage
+  - id: a-injecteur-stage
     composant: annatar
     poste: a-attaquer
     nom: "The control-plane injector's offline toolchain, staged onto the execution host"
@@ -1241,7 +1241,6 @@ briques:
     release: "0.6"
     lots: [R2BS]
     issue: 841
-    doc: annatar/stratus/README.md
 
   - id: a-identite-banc
     composant: annatar

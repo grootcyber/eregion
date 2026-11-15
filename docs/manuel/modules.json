@@ -1586,7 +1586,7 @@
    "issue": 79
   },
   {
-   "id": "a-stratus-stage",
+   "id": "a-injecteur-stage",
    "composant": "annatar",
    "poste": "a-attaquer",
    "nom": "The control-plane injector's offline toolchain, staged onto the execution host",
@@ -1595,8 +1595,7 @@
    "lots": [
     "R2BS"
    ],
-   "issue": 841,
-   "doc": "annatar/stratus/README.md"
+   "issue": 841
   },
   {
    "id": "a-identite-banc",
