@@ -35,6 +35,7 @@ from eregion_core.orodruin import CapReached, Passive, Session
 
 TID = "azure.execution.vm-run-command"
 FIC = "azure.persistence.backdoor-managed-identity-fic"
+ENTRA_SP = "entra-id.persistence.backdoor-application-sp"  # RID2, the directory identity card
 RG_SCOPE = "/subscriptions/sub-123/resourceGroups/rg-celebrimbor"
 ENROLLED = {"eregion-target": "celebrimbor", "eregion-zone": "bench"}
 
@@ -85,7 +86,9 @@ def _ok_run(record: list | None = None):
 def test_allowed_techniques_is_the_catalog_closed_list():
     allowed = allowed_techniques()
     assert TID in allowed and FIC in allowed
-    assert all(a.startswith("azure.") for a in allowed)
+    # RID2 adds the directory identity card (entra-id.*) alongside the control-plane (azure.*)
+    assert ENTRA_SP in allowed
+    assert all(a.startswith(("azure.", "entra-id.")) for a in allowed)
 
 
 def test_resolve_refuses_a_technique_off_the_allowlist(tmp_path):
@@ -96,12 +99,14 @@ def test_resolve_refuses_a_technique_off_the_allowlist(tmp_path):
 
 
 @pytest.mark.parametrize("bad", [
-    "aws.execution.vm-run-command",          # not Azure
-    "gcp.persistence.x",                      # not Azure
+    "aws.execution.vm-run-command",          # not azure/entra-id
+    "gcp.persistence.x",                      # not azure/entra-id
+    "kubernetes.persistence.x",               # not azure/entra-id (RID2 adds entra-id only)
     "azure.execution.vm-run-command/extra",   # a path separator
     "azure.Execution.vm-run-command",         # upper case
     "azure.execution.--help",                 # an option-looking segment
     "azure.execution.vm run command",         # a space
+    "entra-id.persistence.x/extra",           # a path separator (entra-id too)
     "",                                        # empty
 ])
 def test_resolve_refuses_a_malformed_id(tmp_path, bad):
@@ -109,6 +114,17 @@ def test_resolve_refuses_a_malformed_id(tmp_path, bad):
     with pytest.raises(StratusError):
         resolve(bad, binary_path=binary, stratus_dir=_stratus_dir(tmp_path, digest),
                 catalog=_catalog(engine_ref=bad))
+
+
+def test_resolve_accepts_an_entra_id_technique(tmp_path):
+    """RID2: the adapter also runs Entra ID directory techniques (entra-id.<tactic>.<name>), held
+    to the catalog's closed allow-list exactly like the azure ones."""
+    binary, digest = _fake_binary(tmp_path)
+    tid = "entra-id.persistence.backdoor-application-sp"
+    r = resolve(tid, binary_path=binary, stratus_dir=_stratus_dir(tmp_path, digest),
+                catalog=_catalog(engine_ref=tid))
+    assert r.technique_id == tid
+    assert [p.name for p in r.phases] == list(PHASES)
 
 
 # ── The pinned binary is checked at run time (SEC5) ───────────────────────────────────
@@ -771,6 +787,55 @@ def test_fic_identity_scenario_is_valid_and_resolves_to_the_catalog():
     assert d["graph_probe"] is not None and d["graph_probe"].expect_absent is True
     # grounding for the purple loop: a control-plane log source Glorfindel can anchor on
     assert scenario.detection_hints.get("log_source") == "azure_activity"
+
+
+# ── RID2: the Entra ID directory identity scenario (the 0.6.0 identity card, directory side) ──
+
+ENTRA_SP_SCENARIO = (
+    Path(__file__).resolve().parents[2]
+    / "annatar/scenarios/azure/backdoor-application-service-principal.yaml"
+)
+
+
+def test_entra_sp_scenario_is_valid_and_resolves_to_the_catalog():
+    """RID2: the shipped backdoor-application-sp scenario loads, names the catalog's directory
+    identity technique, and describes its cycle from the catalog alone (dry-run, no binary). Its
+    target is the directory (entra_id) — no resource_group — and its grounding is Entra AuditLogs."""
+    result = ScenarioParser().validate(str(ENTRA_SP_SCENARIO))
+    assert result.valid, result.errors
+    scenario = ScenarioParser().load(str(ENTRA_SP_SCENARIO))
+    assert scenario.engine == "stratus"
+    assert scenario.engine_ref == ENTRA_SP
+    assert scenario.target.get("type") == "entra_id"
+    assert "resource_group" not in scenario.target
+    assert ENTRA_SP in allowed_techniques()
+    d = describe(ENTRA_SP)
+    assert d["ttp"] == "T1098.001"
+    assert list(d["phases"]) == list(PHASES)
+    # the read-only Graph probe, held to the Graph v1.0 read grammar (spaces as %20)
+    assert d["graph_probe"] is not None and d["graph_probe"].expect_absent is True
+    # grounding for the purple loop: the Entra ID audit log Glorfindel's C2 detection anchors on
+    assert scenario.detection_hints.get("log_source") == "AuditLogs"
+
+
+def test_parser_accepts_an_entra_id_target_without_a_resource_group(tmp_path):
+    """RID2: an entra_id target acts in the directory, not under a resource group — the parser
+    requires no resource_group for it (every other target still names its group)."""
+    import yaml
+    path = tmp_path / "s.yaml"
+    path.write_text(yaml.safe_dump({
+        "name": "s", "description": "d", "mitre": "T1098.001", "engine": "stratus",
+        "engine_ref": ENTRA_SP,
+        "target": {"type": "entra_id"},
+    }), encoding="utf-8")
+    assert ScenarioParser().validate(str(path)).valid
+    # a control-plane target with no resource_group is still refused
+    path2 = tmp_path / "s2.yaml"
+    path2.write_text(yaml.safe_dump({
+        "name": "s", "description": "d", "mitre": "T1098", "engine": "stratus",
+        "engine_ref": FIC, "target": {"type": "azure_control_plane"},
+    }), encoding="utf-8")
+    assert any("resource_group" in e for e in ScenarioParser().validate(str(path2)).errors)
 
 
 def _stratus_yaml(tmp_path, **over):

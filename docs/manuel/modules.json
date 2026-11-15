@@ -1627,6 +1627,18 @@
    "doc": "docs/architecture.md"
   },
   {
+   "id": "a-identite-annuaire",
+   "composant": "annatar",
+   "poste": "a-attaquer",
+   "nom": "The 0.6.0 identity card, directory side: a pinned public library adds a credential on a test directory identity, seen by Glorfindel",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "RID2"
+   ],
+   "issue": 844
+  },
+  {
    "id": "a-pendant-panne",
    "composant": "annatar",
    "poste": "a-attaquer",

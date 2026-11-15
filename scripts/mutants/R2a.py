@@ -15,9 +15,12 @@ _T = "tests/unit/test_annatar_stratus.py"
 
 MUTANTS = [
     # ── The adapter: fail closed on the id and the allow-list ─────────────────────────
-    ("M4315", "the technique-id regex accepts a non-Azure platform (aws/gcp)", ENG,
-     'r"^azure\\.[a-z0-9]+(?:-[a-z0-9]+)*\\.[a-z0-9]+(?:-[a-z0-9]+)*$"',
-     'r"^[a-z0-9]+\\.[a-z0-9]+(?:-[a-z0-9]+)*\\.[a-z0-9]+(?:-[a-z0-9]+)*$"'),
+    # RID2 (#844) widened the id grammar to the directory platform (azure|entra-id); the mutant
+    # still checks the grammar fails closed on any other platform (aws/gcp/kubernetes).
+    ("M4315", "the technique-id regex accepts a platform outside the adapter (aws/gcp/kubernetes)",
+     ENG,
+     'r"^(?:azure|entra-id)\\.[a-z0-9]+(?:-[a-z0-9]+)*\\.[a-z0-9]+(?:-[a-z0-9]+)*$"',
+     'r"^(?:[a-z0-9-]+)\\.[a-z0-9]+(?:-[a-z0-9]+)*\\.[a-z0-9]+(?:-[a-z0-9]+)*$"'),
     ("M4316", "a technique off the catalog's closed allow-list is resolved anyway", ENG,
      "    entry = entries.get(tid)\n    if entry is None:",
      "    entry = entries.get(tid) or {}\n    if False:"),

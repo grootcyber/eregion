@@ -41,9 +41,12 @@ from pathlib import Path
 
 STRATUS_DIR = Path(__file__).resolve().parents[1] / "stratus"
 
-# We run Azure only (the control plane). A Stratus technique id is ``platform.tactic.name``,
-# each of platform/tactic/name a lower-case word of [a-z0-9] with '-' between inner words.
-_TECHNIQUE_ID = re.compile(r"^azure\.[a-z0-9]+(?:-[a-z0-9]+)*\.[a-z0-9]+(?:-[a-z0-9]+)*$")
+# We run two Stratus platforms: ``azure`` (the Azure resource control plane) and ``entra-id``
+# (the Entra ID directory plane, RID2) — never aws/gcp/kubernetes. A Stratus technique id is
+# ``platform.tactic.name``, each of tactic/name a lower-case word of [a-z0-9] with '-' between
+# inner words; the catalog's closed allow-list is still what a run is held to.
+_TECHNIQUE_ID = re.compile(
+    r"^(?:azure|entra-id)\.[a-z0-9]+(?:-[a-z0-9]+)*\.[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 # The cycle, in order — Stratus's own verbs, mapped onto the injector interface
 # (prepare, inject, revert, clean up). ``cleanup`` always runs last, whatever the rest did.
@@ -201,13 +204,14 @@ def _graph_probe(entry: dict) -> GraphProbe | None:
 
 def _lookup(technique_id: str, catalog: dict | None) -> tuple[str, dict]:
     """``(technique_id, entry)`` for a technique on the closed allow-list — the two fail-closed
-    checks shared by ``resolve`` and ``describe``: the id is an Azure Stratus id, and it is one
-    the catalog vouches for. Raises ``StratusError`` otherwise, before anything runs."""
+    checks shared by ``resolve`` and ``describe``: the id is an Azure or Entra ID Stratus id, and
+    it is one the catalog vouches for. Raises ``StratusError`` otherwise, before anything runs."""
     tid = (technique_id or "").strip()
     if not _TECHNIQUE_ID.fullmatch(tid):
         raise StratusError(
-            f"technique id {technique_id!r} is not an Azure Stratus id 'azure.<tactic>.<name>' "
-            "(lower-case, dot-separated) — refused, never sent to a process"
+            f"technique id {technique_id!r} is not an 'azure.<tactic>.<name>' or "
+            "'entra-id.<tactic>.<name>' Stratus id (lower-case, dot-separated) — refused, never "
+            "sent to a process"
         )
     entries = _stratus_entries(catalog)
     entry = entries.get(tid)
