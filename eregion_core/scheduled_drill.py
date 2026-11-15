@@ -84,7 +84,10 @@ DEFAULT_WORKSPACE = "law-celebrimbor-amonsul"
 
 
 class Stopped(RuntimeError):
-    """The service was stopped (SIGTERM): the occurrence ends, ``stopped``."""
+    """The service was stopped (SIGTERM): the occurrence ends, ``stopped``. A ``RuntimeError``, so
+    that the runner takes it from a wire's ``launch`` as a wire that failed and runs nothing more;
+    every read of this module that takes ``Exception`` lets it through (``except Stopped: raise``),
+    and ``_end`` says ``stopped`` whatever the code, once SIGTERM came."""
 
 
 def _now() -> datetime:
@@ -219,6 +222,8 @@ class Occurrence:
         # SIGTERM: when it came (monotonic), and the wire in flight to relay it to.
         self.stop_at: float | None = None
         self.child = None
+        self._launching = False
+        self._relayed = False
 
     @staticmethod
     def _vms() -> list[dict]:
@@ -231,16 +236,26 @@ class Occurrence:
         signal.signal(signal.SIGTERM, self.on_term)
 
     def on_term(self, signum=None, frame=None) -> None:
-        if self.stop_at is None:
+        first = self.stop_at is None
+        if first:
             self.stop_at = self.monotonic()
         child = self.child
         if child is not None:
             # A wire in flight: relayed, and awaited by launch — never a raise here, which would
             # let the wire be killed without its finally (its window open, its cleanup not run).
-            with contextlib.suppress(OSError):
-                child.send_signal(signal.SIGTERM)
+            self._relay(child)
+            return
+        if self._launching or not first:
+            # Between Popen and the wire known (launch relays it once it is), or a second signal:
+            # noted, never raised — the next checkpoint stops.
             return
         raise Stopped("the service was stopped (SIGTERM)")
+
+    def _relay(self, child) -> None:
+        if not self._relayed:
+            self._relayed = True
+            with contextlib.suppress(OSError):
+                child.send_signal(signal.SIGTERM)
 
     def _checkpoint(self) -> None:
         if self.stop_at is not None:
@@ -252,8 +267,14 @@ class Occurrence:
         raises once the wire has ended: the runner marks it failed and runs nothing more."""
         self._checkpoint()
         fd = env.get(er.LOCK_FD_ENV, "")
-        child = self.popen(argv, env={**os.environ, **env}, pass_fds=(int(fd),) if fd.isdigit() else ())
-        self.child = child
+        self._launching, self._relayed = True, False
+        try:
+            child = self.popen(argv, env={**os.environ, **env}, pass_fds=(int(fd),) if fd.isdigit() else ())
+            self.child = child
+        finally:
+            self._launching = False
+        if self.stop_at is not None:
+            self._relay(child)   # SIGTERM came while the wire was launched: relayed now, then awaited
         try:
             while True:
                 try:
@@ -290,6 +311,8 @@ class Occurrence:
         from eregion_core.exercise_channel import Changed
         try:
             doc, etag = self.read_permit()
+        except Stopped:
+            raise
         except Exception as e:
             return "permit_mismatch", f"the permit unreadable: {e}"[:300]
         if doc is None:
@@ -306,6 +329,8 @@ class Occurrence:
             self.write_permit(permit, etag)
         except Changed as e:
             return "no_permit", f"the permit changed or was removed since it was read: {e}"
+        except Stopped:
+            raise
         except Exception as e:
             return "permit_mismatch", f"the permit not rewritten: {e}"[:300]
         return "", ""
@@ -319,6 +344,8 @@ class Occurrence:
                     continue
                 rec = json.loads(line)
                 when = datetime.fromisoformat(rec["played"])
+                if when.tzinfo is None:
+                    raise ValueError(f"an occurrence played at {rec['played']!r}, without its time zone")
                 last = when if last is None or when > last else last
         except FileNotFoundError:
             return None, ""
@@ -338,6 +365,8 @@ class Occurrence:
         now by Orodruin's identity — whatever its zone (the judgment says not_bench)."""
         try:
             cands = dr.candidates(self.list_vms())
+        except Stopped:
+            raise
         except Exception as e:
             return [], f"the bench's VMs unreadable: {e}"[:300]
         pairs = []
@@ -387,29 +416,48 @@ class Occurrence:
                 continue
             try:
                 state = self.power(rid)
+            except Stopped:
+                raise
             except Exception as e:
                 self.unready[rid.lower()] = f"its power state unreadable: {e}"[:200]
                 continue
             since = self.now() - timedelta(seconds=self.ready_wait_s)
             if state != "running":
                 self._checkpoint()
-                verdict, session = self.arm(f"{req.id}-start", "drill", verdict=self._reduced(), request=req.id)
-                if session is None:
-                    self.unready[rid.lower()] = "Orodruin passive at the start: never started"
-                    continue
-                session.before_call("start_vm", rid, f"drill {self.drill.name}: its target was {state or 'not running'}")
-                self.start_calls += 1
                 since = self.now()
-                self.say(f"[drill] {rid.rsplit('/', 1)[-1]} {state or 'not running'}: started")
-                self.start(rid)
+                why = self._start(req, rid, state)
+                if why:
+                    self.unready[rid.lower()] = why
+                    continue
             if not self._ready(rid, since):
                 self.unready[rid.lower()] = f"no fresh Heartbeat within {self.ready_wait_s / 60:.0f} min"
+
+    def _start(self, req: xr.Request, rid: str, state: str) -> str:
+        """A stopped target started, in an armed session journaled before the call — "" when it
+        is; else why not. A session refused, a journal that cannot be written or a cap reached
+        (``before_call``), a start that fails: the target is not ready, its wire skipped, the
+        occurrence said — never a crash without its pulse, this week already spent."""
+        try:
+            verdict, session = self.arm(f"{req.id}-start", "drill", verdict=self._reduced(), request=req.id)
+            if session is None:
+                return "Orodruin passive at the start: never started"
+            session.before_call("start_vm", rid, f"drill {self.drill.name}: its target was {state or 'not running'}")
+            self.start_calls += 1
+            self.say(f"[drill] {rid.rsplit('/', 1)[-1]} {state or 'not running'}: started")
+            self.start(rid)
+        except Stopped:
+            raise
+        except Exception as e:
+            return f"its start failed: {type(e).__name__}: {e}"[:200]
+        return ""
 
     def _ready(self, rid: str, since: datetime) -> bool:
         deadline = self.now() + timedelta(seconds=self.ready_wait_s)
         while True:
             try:
                 beat = self.heartbeat(rid)
+            except Stopped:
+                raise
             except Exception as e:
                 self.say(f"[drill] the Heartbeat unreadable now: {e}"[:200])
                 beat = None
@@ -436,6 +484,10 @@ class Occurrence:
             return self._occur()
         except Stopped as e:
             return self._end("stopped", "stopped", str(e))
+        except Exception as e:
+            # Whatever broke, the occurrence is said and its pulse published: Imladris reads a
+            # cause, never a silence.
+            return self._end("failed", "crashed", f"the occurrence broke: {type(e).__name__}: {e}"[:300])
 
     def _occur(self) -> dict:
         armed, why = self._read_armed()
@@ -530,7 +582,10 @@ class Occurrence:
         return self._end("played", "", f"{len(status.wires)} wire(s) played")
 
     def _end(self, state: str, code: str, why: str) -> dict:
-        """The occurrence said, then its pulse kept here and published (§4.1)."""
+        """The occurrence said, then its pulse kept here and published (§4.1). SIGTERM came: it is
+        ``stopped``, whatever a read that took it said."""
+        if code != "stopped" and self.stop_at is not None:
+            state, code, why = "stopped", "stopped", f"the service was stopped (SIGTERM); then {why}"
         at = self.now()
         self.say(f"[drill] {state}{(' — ' + code) if code else ''}: {xr.shown(why)}")
         drill_changed = code == "drill_changed"
@@ -551,8 +606,11 @@ class Occurrence:
             self.say(f"[drill] the pulse not written: {e}")
             return {"state": state, "code": code, "why": why}
         path = pulse_path(self.runs_dir)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        channel_reader.write_file(path, json.dumps(doc, indent=2))
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            channel_reader.write_file(path, json.dumps(doc, indent=2))
+        except OSError as e:   # the pulse still goes to the channel
+            self.say(f"[drill] the pulse not kept on this disk: {e}"[:300])
         try:
             self.publish_pulse(doc)
         except Exception as e:   # the occurrence is said here; Imladris says the silence
@@ -575,6 +633,7 @@ def fingerprint(name: str, drills_dir: Path | None = None, catalog: dict | None 
 
 
 def check(name: str, targets: list[str], *, now=_now, catalog: dict | None = None,
+          drills_dir: Path | str | None = None,
           contract: Callable = orodruin.check, watch: Callable | None = None,
           list_vms: Callable | None = None, isolated: Callable = er.isolated,
           power: Callable | None = None, read_permit: Callable | None = None) -> tuple[list[str], bool]:
@@ -585,10 +644,10 @@ def check(name: str, targets: list[str], *, now=_now, catalog: dict | None = Non
     catalog = catalog if catalog is not None else load_catalog()
     lines, ok = [], True
     try:
-        fp = fingerprint(name, catalog=catalog)
+        fp = fingerprint(name, drills_dir, catalog=catalog)
     except dr.DrillRefused as e:
         return [f"✗ the drill {name}: {e}"], False
-    drill = dr.load_file(dr.shipped_dir() / f"{name}.yaml", dr.SHIPPED, catalog)
+    drill = dr.load_file(Path(drills_dir or dr.shipped_dir()) / f"{name}.yaml", dr.SHIPPED, catalog)
     lines.append(f"✓ the drill {name} in this image: fingerprint {fp['sha256'][:12]}…, "
                  f"{fp['day']} {fp['at']} UTC — next {drill.schedule.next(now()).isoformat(timespec='minutes')}")
     for w in drill.wires:

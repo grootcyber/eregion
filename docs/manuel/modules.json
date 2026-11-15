@@ -1772,6 +1772,19 @@
    "doc": "docs/design/drill-banc.md"
   },
   {
+   "id": "o-drill-minuteur",
+   "composant": "orodruin",
+   "poste": "o-executer",
+   "nom": "The weekly drill on Orodruin's side: its timer, its arming by the operator, its guards and its stop; nothing armed yet",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "DRL1a"
+   ],
+   "issue": 613,
+   "doc": "docs/design/drill-banc.md"
+  },
+  {
    "id": "o-banc-autonome",
    "composant": "orodruin",
    "poste": "o-executer",

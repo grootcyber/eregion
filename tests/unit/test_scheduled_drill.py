@@ -302,9 +302,13 @@ def test_the_registry_is_written_under_the_lock_before_the_judgment(tmp_path):
 
     world.check = check
     occ, *_ = _occurrence(tmp_path, world=world, clock=clock)
-    with pytest.raises(RuntimeError):
-        occ.run()
+    out = occ.run()
     assert seen and len(seen[0]) == 1 and seen[0][0]["drill"] == "banc-hebdo"
+    # The crash is said, never a silence: failed, its cause, the pulse published; the week spent.
+    assert (out["state"], out["code"]) == ("failed", "crashed") and "contract reader crashes" in out["why"]
+    last = da.read_pulse(world.pulses[-1])["last"]
+    assert (last["state"], last["code"]) == ("failed", "crashed")
+    assert len(_registry(tmp_path)) == 1
 
 
 # ── Refused before the request, in the order of §2.3 ────────────────────────────────
@@ -595,6 +599,8 @@ def test_sigterm_during_a_wire_is_relayed_awaited_and_the_occurrence_is_stopped(
     out = occ.run()
     assert out["state"] == "stopped"
     assert child.signals == [signal.SIGTERM] and not child.killed
+    # Awaited to its end (its window closed, its cleanup run): never left as the handler raised.
+    assert child.returncode == 143
     assert da.read_pulse(world.pulses[-1])["last"]["state"] == "stopped"
     # The request, its wire failed, finished: the runner ran nothing after it.
     assert world.statuses[-1]["state"] == "finished" and world.statuses[-1]["wires"][0]["state"] == "failed"
@@ -628,6 +634,186 @@ def test_sigterm_before_a_wire_launches_nothing(tmp_path):
     with pytest.raises(sd.Stopped):
         occ.launch(["annatar", "wire", "T1136.001", GONDOLIN, "--request", "r-x"], {})
     assert world.launched == []
+
+
+def test_the_registry_is_read_once_the_lock_is_held_never_before(tmp_path):
+    """Another occurrence played, then released the lock just as this one takes it: read under the
+    lock, its line is seen — too_soon; read before, both would play."""
+    import contextlib
+    path = sd.registry_path(tmp_path / "runs")
+
+    @contextlib.contextmanager
+    def lock(what):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"drill": "banc-hebdo", "sha256": SHA, "occurrence": T0.replace(minute=0).isoformat(),
+                                    "played": (T0 - timedelta(minutes=1)).isoformat()}) + "\n")
+        yield 7
+
+    occ, world, *_ = _occurrence(tmp_path, lock=lock)
+    out = occ.run()
+    assert (out["state"], out["code"]) == ("refused", "too_soon"), out
+    assert world.launched == [] and world.started == []
+
+
+def test_the_permit_is_rewritten_by_default_only_over_the_blob_read(tmp_path, monkeypatch):
+    """The occurrence's own writer (not a fake): the ETag read handed to the channel as If-Match."""
+    from eregion_core import exercise_channel as xc
+    seen = {}
+
+    def publish_drill(name, doc, **kw):
+        seen.update(name=name, **kw)
+        return True
+
+    monkeypatch.setattr(xc, "publish_drill", publish_drill)
+    occ = sd.Occurrence(armed_file=tmp_path / "armed.json", catalog=load_catalog(), runs_dir=tmp_path / "runs",
+                        power=lambda r: "", start=lambda r: None, heartbeat=lambda r: None)
+    occ.write_permit(_permit(), '"e7"')
+    assert seen == {"name": xc.PERMIT_BLOB, "if_match": '"e7"'}
+
+
+def test_a_conditional_write_of_the_channel_sends_if_match_and_a_412_is_changed():
+    from types import SimpleNamespace
+
+    from eregion_core import exercise_channel as xc
+    cred = SimpleNamespace(get_token=lambda scope: SimpleNamespace(token="tok"))
+    sent = []
+
+    def put(url, headers=None, data=None, timeout=None):
+        sent.append(headers)
+        return SimpleNamespace(ok=False, status_code=412)
+
+    with pytest.raises(Changed):
+        xc.publish_drill(xc.PERMIT_BLOB, _permit(), if_match='"e1"', channel="https://storodruin.blob.core.windows.net/exercises",
+                         credential=cred, put=put)
+    assert sent[0]["If-Match"] == '"e1"'
+
+
+@pytest.mark.parametrize("reader", ["read_permit", "list_vms", "power", "heartbeat"])
+def test_sigterm_during_a_read_that_takes_any_error_is_stopped_never_its_refusal(tmp_path, reader):
+    """A read that takes ``Exception`` (the permit, the VMs, the power, the Heartbeat) never turns
+    systemd's stop into permit_mismatch, not_placed or not_ready."""
+    clock = Clock()
+    world = World(tmp_path, clock, power="running")
+    occ, world, permits, _ = _occurrence(tmp_path, world=world, clock=clock)
+    orig = getattr(occ, reader)
+
+    def stopped(*a):
+        occ.on_term()
+        return orig(*a)
+
+    setattr(occ, reader, stopped)
+    out = occ.run()
+    assert (out["state"], out["code"]) == ("stopped", "stopped"), out
+    assert da.read_pulse(world.pulses[-1])["last"]["state"] == "stopped"
+    assert world.launched == []
+
+
+def test_sigterm_said_by_a_refusal_is_still_stopped(tmp_path):
+    """SIGTERM noted, then a refusal that took it (a reader that swallowed it): stopped, the code
+    the refusal would have said given after it."""
+    occ, world, *_ = _occurrence(tmp_path)
+
+    def vms():
+        occ.stop_at = 1.0   # the signal noted, its raise swallowed by a reader
+        raise RuntimeError("HTTP 503")
+
+    occ.list_vms = vms
+    out = occ.run()
+    assert (out["state"], out["code"]) == ("stopped", "stopped")
+    assert "HTTP 503" in out["why"] and world.started == []
+
+
+def test_sigterm_between_the_wires_popen_and_its_handle_is_relayed_never_raised(tmp_path):
+    import signal
+    clock = Clock()
+    occ, world, _, _ = _occurrence(tmp_path, clock=clock)
+    child = Sleeper(clock, after=5.0)
+
+    def popen(argv, env=None, pass_fds=()):
+        occ.on_term()   # the wire forked, its handle not yet kept: never a raise here
+        return child
+
+    occ.popen = popen
+    out = occ.run()
+    assert out["state"] == "stopped" and child.signals == [signal.SIGTERM] and not child.killed
+
+
+def test_a_second_sigterm_outside_a_wire_never_raises_from_the_handler(tmp_path):
+    occ, *_ = _occurrence(tmp_path)
+    with pytest.raises(sd.Stopped):
+        occ.on_term()
+    occ.on_term()   # the pulse being written: noted, never raised
+
+
+@pytest.mark.parametrize("breaks", ["start", "journal", "cap"])
+def test_a_target_whose_start_fails_is_not_ready_and_the_occurrence_is_said(tmp_path, breaks):
+    """The start of a target fails (ARM's 409, the journal unwritable, the cap reached): its wire
+    skipped not_ready, the request's status and the pulse published — never a crash in silence."""
+    clock = Clock()
+    world = World(tmp_path, clock)
+    if breaks == "start":
+        def start(rid):
+            world.events.append("start")
+            raise RuntimeError("HTTP 409 on POST …/start")
+        world.start = start
+    else:
+        orig = world.arm
+
+        def arm(run_id, injector, verdict=None, request=""):
+            v, s = orig(run_id, injector, verdict, request)
+
+            def before_call(*a, **k):
+                raise OSError("the journal cannot be written") if breaks == "journal" else \
+                    orodruin.CapReached("the cap is reached")
+            s.before_call = before_call
+            return v, s
+        world.arm = arm
+    occ, world, *_ = _occurrence(tmp_path, world=world, clock=clock)
+    out = occ.run()
+    assert (out["state"], out["code"]) == ("skipped", "not_ready"), out
+    assert world.launched == []
+    assert world.started == [] and ("start" in world.events) == (breaks == "start")
+    assert world.statuses[-1]["wires"][0]["code"] == "not_ready"
+    assert da.read_pulse(world.pulses[-1])["last"]["code"] == "not_ready"
+    # Never journaled, never counted: the start that did not happen leaves the cap whole.
+    assert occ.start_calls == (1 if breaks == "start" else 0)
+
+
+def test_an_occurrence_that_breaks_after_its_registry_is_said_failed(tmp_path):
+    clock = Clock()
+    world = World(tmp_path, clock)
+    occ, world, *_ = _occurrence(tmp_path, world=world, clock=clock)
+
+    def isolated(rid):
+        raise KeyError("the isolation's reader broke")
+
+    occ.isolated = isolated
+    out = occ.run()
+    assert (out["state"], out["code"]) == ("failed", "crashed")
+    assert da.read_pulse(world.pulses[-1])["last"]["code"] == "crashed" and world.started == []
+
+
+def test_a_registry_line_without_its_time_zone_plays_nothing(tmp_path):
+    path = sd.registry_path(tmp_path / "runs")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"drill": "banc-hebdo", "sha256": SHA, "occurrence": "",
+                                "played": "2026-11-10T19:01:00"}) + "\n")
+    occ, world, *_ = _occurrence(tmp_path)
+    out = occ.run()
+    assert (out["state"], out["code"]) == ("refused", "too_soon") and "time zone" in out["why"]
+    assert world.launched == [] and world.started == []
+
+
+def test_the_dry_check_reads_the_drills_directory_it_is_given(tmp_path):
+    other = tmp_path / "drills"
+    other.mkdir()
+    text = SHIPPED.read_text() + "\n# a comment: another fingerprint\n"
+    (other / "banc-hebdo.yaml").write_text(text)
+    lines, _ = sd.check("banc-hebdo", [], now=lambda: T0, catalog=load_catalog(), drills_dir=other,
+                        contract=lambda: orodruin.Verdict(orodruin.ARMED, [], dict(CAP)),
+                        watch=lambda: "", read_permit=lambda: (None, ""))
+    assert dr.fingerprint(text.encode())[:12] in lines[0]
+    assert SHA[:12] not in lines[0]
 
 
 # ── The schedule's reader (eregion_core/drill.py) ────────────────────────────────────
@@ -665,7 +851,8 @@ def test_a_schedule_awry_is_refused(schedule, said):
 @pytest.mark.parametrize("wires, said", [
     ([{"experiment": "T1136.001", "target": {"zone": "production"}}], "bench"),
     ([{"experiment": "T1136.001", "target": {"zone": "twin"}}], "bench"),
-    ([{"experiment": "T1486", "target": {"zone": "bench"}}], "non-destructive"),
+    ([{"experiment": "T1486", "target": {"zone": "bench"}}], "not declared non-destructive"),
+    ([{"experiment": "T1070.002", "target": {"zone": "bench"}}], "not declared non-destructive"),
     ([{"experiment": "vm-shutdown", "target": {"zone": "bench"}}], "not a technique"),
     ([{"experiment": "T1110.001", "target": {"zone": "bench"}}], "public library"),
     ([{"experiment": "T9999", "target": {"zone": "bench"}}], "catalogue"),

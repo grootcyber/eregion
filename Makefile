@@ -1709,10 +1709,15 @@ orodruin-kill:
 #                          puis l'armement (~/drill/armed.json, 600), les unités systemd posées par SSH
 #                          (jamais par custom_data), le minuteur activé, le permis écrit, le démarrage
 #                          planifié activé, le pouls « armed »
-#   orodruin-drill-disarm  chacun de ses pas dit, une erreur si l'un manque
+#   orodruin-drill-disarm  chacun de ses pas dit, une erreur si l'un manque ; Orodruin éteinte, sans
+#                          adresse ou sa clé d'hôte non vérifiée : ses deux pas sur Orodruin dits manqués
+#                          (une erreur), le permis et le démarrage planifié retirés quand même
 # DRILL et TARGETS se donnent sur la ligne de commande, jamais de l'environnement. Le démarrage planifié :
-# la sortie Terraform drill_autostart_id (DRL1c) ; vide, « no scheduled start ».
-ORO_DRILL_AUTOSTART = $(shell $(ORO_TF) output -no-color -raw drill_autostart_id 2>/dev/null | grep -E '^/subscriptions/')
+# la sortie Terraform drill_autostart_id (DRL1c), lue par `terraform output -json` en trois cas — la sortie
+# absente (DRL1c non appliqué) : vide, « no scheduled start » ; l'état illisible (az login, le backend) :
+# « unreadable », une erreur pour le kill et le désarmement, jamais une absence ; un id : lu.
+# AUTOSTART=<id> pour le donner quand l'état ne se lit pas (comme PRINCIPAL= et VM_ID= pour le kill).
+ORO_DRILL_AUTOSTART = $(or $(AUTOSTART),$(shell out=$$($(ORO_TF) output -no-color -json 2>/dev/null) && printf '%s' "$$out" | $(PYTHON) infra/orodruin/drill_ops.py autostart-id 2>/dev/null || echo unreadable))
 ORO_DRILL_RUN  = docker run --rm $(ORO_HARDEN) --env-file orodruin.env --pull never $(ORO_IMAGE)
 orodruin-drill-check orodruin-drill-arm orodruin-drill-disarm: export EREGION_DRILL = $(value DRILL)
 orodruin-drill-check orodruin-drill-arm orodruin-drill-disarm: export EREGION_DRILL_TARGETS = $(value TARGETS)
@@ -1722,10 +1727,18 @@ orodruin-drill-check orodruin-drill-arm orodruin-drill-disarm: export DRILL_ORO_
 orodruin-drill-check orodruin-drill-arm orodruin-drill-disarm: export DRILL_AUTOSTART = $(ORO_DRILL_AUTOSTART)
 orodruin-drill-check orodruin-drill-arm orodruin-drill-disarm: export DRILL_CHANNEL = $(ORO_CHANNEL)
 ORO_DRILL_ORIGIN = case "$(origin DRILL) $(origin TARGETS)" in *environment*) echo "DRILL ou TARGETS vient de l'environnement : rien n'est fait. Sur la ligne de commande : make $@ DRILL=<nom> TARGETS=<vm>" >&2; exit 1;; esac
-orodruin-drill-check orodruin-drill-arm orodruin-drill-disarm: orodruin-known
+orodruin-drill-check orodruin-drill-arm: orodruin-known
 	@$(ORO_DRILL_ORIGIN)
 	@case "$@" in orodruin-drill-arm) [ -n "$$EREGION_DRILL" ] && [ -n "$$EREGION_DRILL_TARGETS" ] || { echo "DRILL=<nom> et TARGETS=<vm>[,<vm>…] requis (jamais all) : rien n'est armé" >&2; exit 1; };; esac
 	@$(PYTHON) infra/orodruin/drill_ops.py $(@:orodruin-drill-%=%)
+
+# Le désarmement n'attend pas Orodruin : le permis et le démarrage planifié passent par ton az login.
+orodruin-drill-disarm:
+	@$(ORO_DRILL_ORIGIN)
+	@if [ -z "$(ORO_IP)" ]; then export DRILL_ORO_UNREACHED="no address: Orodruin stopped, or its state unread"; \
+	 elif ! ORO_SSH_FINGERPRINT="$(ORO_SSH_FINGERPRINT)" bash infra/glorfindel-host/known_host.sh "$(ORO_IP)" "$(ORO_KNOWN_HOSTS)" ORO_SSH_FINGERPRINT required; then \
+	   export DRILL_ORO_UNREACHED="its host key not verified (ORO_SSH_FINGERPRINT)"; fi; \
+	 $(PYTHON) infra/orodruin/drill_ops.py disarm
 
 # ── Dagorlad, phase (b) (DG-b) — une demande de la console, portée par l'opérateur ───
 # La console écrit la demande dans son propre répertoire (~/.eregion/console/requests/, sur Imladris) ;

@@ -20,10 +20,14 @@ The scheduled start (DRL1c, the contract fixed here): Terraform's output ``drill
 trigger is a weekly ``Recurrence`` in UTC (``frequency: Week``, ``interval: 1``, ``timeZone: UTC``,
 ``schedule: {weekDays: [<day>], hours: [<h>], minutes: [<m>]}``), created ``Disabled``, its state
 ignored by Terraform; enabled by the arming (``POST …/enable``), disabled by the disarming and the
-kill (``POST …/disable``), api-version 2019-05-01. An empty output, or a 404: « no scheduled
-start ». Anything else unreadable: an error.
+kill (``POST …/disable``), api-version 2019-05-01. The Makefile reads it from
+``terraform output -json`` (``autostart-id``, below), in three cases: the output absent (DRL1c not
+applied), « no scheduled start »; Terraform's state unreadable (``az login``, the backend), the
+sentinel ``unreadable``, an error for the kill and the disarming — never taken for absent; an id,
+read. A 404 on the id: « no scheduled start ». Anything else unreadable: an error.
 
     python infra/orodruin/drill_ops.py check|arm|disarm
+    terraform output -json | python infra/orodruin/drill_ops.py autostart-id
 """
 from __future__ import annotations
 
@@ -57,6 +61,9 @@ _LOGIC_ID = re.compile(r"/subscriptions/[0-9a-fA-F-]{36}/resourceGroups/[-\w._()
 _WEEKDAYS = {"Monday": "mon", "Tuesday": "tue", "Wednesday": "wed", "Thursday": "thu",
              "Friday": "fri", "Saturday": "sat", "Sunday": "sun"}
 _USER = re.compile(r"[a-z_][a-z0-9_-]{0,31}")
+# DRL1c's output, and what the Makefile says when Terraform's state does not read.
+AUTOSTART_OUTPUT = "drill_autostart_id"
+UNREADABLE = "unreadable"
 
 
 def az(args: list[str]) -> str:
@@ -74,6 +81,9 @@ def read_autostart(logic_id: str, run: Callable = az) -> dict | None:
     Anything else that fails raises: unreadable, never taken for absent."""
     if not logic_id:
         return None
+    if logic_id == UNREADABLE:
+        raise RuntimeError("the scheduled start unreadable: Terraform's state of Orodruin did not read "
+                           "(az login? make orodruin-init?) — never taken for absent; AUTOSTART=<id> to give it")
     if not _LOGIC_ID.fullmatch(logic_id):
         raise RuntimeError("DRILL_AUTOSTART is not a Logic App's resource id")
     try:
@@ -108,6 +118,24 @@ def autostart_at(workflow: dict) -> tuple[str, str]:
     if not (0 <= h <= 23 and 0 <= m <= 59):
         raise ValueError("its hour is not an hour")
     return _WEEKDAYS[days[0]], f"{h:02d}:{m:02d}"
+
+
+def autostart_id(outputs: str) -> str:
+    """The scheduled start's id from ``terraform output -json``: "" when the output is absent or
+    null (DRL1c not applied), the id when it is one, else ``UNREADABLE`` — never an absence."""
+    try:
+        doc = json.loads(outputs)
+    except ValueError:
+        return UNREADABLE
+    if not isinstance(doc, dict):
+        return UNREADABLE
+    if AUTOSTART_OUTPUT not in doc:
+        return ""
+    out = doc[AUTOSTART_OUTPUT]
+    value = out.get("value") if isinstance(out, dict) else UNREADABLE
+    if value is None or value == "":
+        return ""
+    return value if isinstance(value, str) and _LOGIC_ID.fullmatch(value) else UNREADABLE
 
 
 def expected_at(schedule: dr.Schedule) -> tuple[str, str]:
@@ -218,18 +246,28 @@ def disarmed_pulse(reason: str, *, channel: str, credential=None, get=None, now=
 
 
 def kill_steps(logic_id: str, *, channel: str, run: Callable = az, credential=None, get=None, put=None,
-               delete=None, dry_run: bool = False, say=print, now=_now) -> dict:
+               delete=None, dry_run: bool = False, say=print, now=_now, cli: Callable | None = None,
+               said: dict | None = None) -> dict:
     """The kill's three steps for the drill (§3.1), by the operator's identity: the scheduled start
     disabled, the permit removed, the pulse written ``disarmed (killed)``. Each raises on failure —
-    the kill says it and goes on (eregion_core/orodruin.py ``kill``)."""
+    the kill says it and goes on (eregion_core/orodruin.py ``kill``). ``cli``: the kill's own
+    ``az login`` credential; ``said``: what each step did, for the kill's summary (``summary``)."""
+    said = {} if said is None else said
+
+    def cred():
+        return credential or (cli or _cli_credential)()
+
     def disable_start() -> None:
         if dry_run:
-            say(f"[dry-run] disable the scheduled start ({'none given' if not logic_id else 'the Logic App'})")
+            what = {"": "none given", UNREADABLE: "Terraform's state unreadable"}.get(logic_id, "the Logic App")
+            say(f"[dry-run] disable the scheduled start ({what})")
             return
         if read_autostart(logic_id, run) is None:
+            said["disable_start"] = "no scheduled start"
             say("drill: no scheduled start (DRL1c not applied, or gone)")
             return
         set_autostart(logic_id, False, run)
+        said["disable_start"] = "scheduled start disabled"
         say("drill: scheduled start disabled")
 
     def remove_permit() -> None:
@@ -238,9 +276,9 @@ def kill_steps(logic_id: str, *, channel: str, run: Callable = az, credential=No
         if dry_run:
             say("[dry-run] remove the drill's permit from the channel")
             return
-        cred = credential or _cli_credential()
-        gone = xc.delete_drill(xc.PERMIT_BLOB, channel=channel, credential=cred, delete=delete)
-        say("drill: permit removed" if gone else "drill: no permit in the channel")
+        gone = xc.delete_drill(xc.PERMIT_BLOB, channel=channel, credential=cred(), delete=delete)
+        said["remove_permit"] = "permit removed" if gone else "no permit in the channel"
+        say(f"drill: {said['remove_permit']}")
 
     def disarm() -> None:
         if not channel:
@@ -248,17 +286,28 @@ def kill_steps(logic_id: str, *, channel: str, run: Callable = az, credential=No
         if dry_run:
             say("[dry-run] write the drill's pulse: disarmed (killed)")
             return
-        cred = credential or _cli_credential()
-        write_pulse(disarmed_pulse("killed", channel=channel, credential=cred, get=get, now=now),
-                    channel=channel, credential=cred, put=put)
+        c = cred()
+        write_pulse(disarmed_pulse("killed", channel=channel, credential=c, get=get, now=now),
+                    channel=channel, credential=c, put=put)
+        said["disarm"] = "pulse disarmed (killed)"
         say("drill: pulse written, disarmed (killed)")
 
     return {"disable_start": disable_start, "remove_permit": remove_permit, "disarm": disarm}
 
 
+def summary(said: dict) -> str:
+    """The kill's last line for the drill, from what its steps did — never a disabling or a removal
+    that did not happen (« drill: scheduled start disabled, permit removed; refused until
+    re-armed » when both did)."""
+    parts = [said.get("disable_start", "scheduled start not checked"),
+             said.get("remove_permit", "permit not checked")]
+    return f"drill: {', '.join(parts)}; refused until re-armed"
+
+
 def _cli_credential():
     # The operator's own `az login`, as the kill takes it (infra/orodruin/kill.py, the adapter that
-    # imports the SDK: MC0) — never DefaultAzureCredential.
+    # imports the SDK: MC0) — never DefaultAzureCredential. The kill passes its own (``cli``):
+    # this import serves this script's own commands, run as __main__.
     from kill import _cli_credential as cli
     return cli()
 
@@ -392,10 +441,21 @@ def arm(name: str, targets: list[str], *, oro, oro_run: str, user: str, logic_id
 
 
 def disarm(*, oro, logic_id: str, channel: str, run: Callable = az, credential=None, get=None, put=None,
-           delete=None, now=_now, say=print) -> int:
-    """orodruin-drill-disarm: every step tried and said; exit 1 when one fails."""
+           delete=None, now=_now, say=print, unreached: str = "") -> int:
+    """orodruin-drill-disarm: every step tried and said; exit 1 when one fails. Orodruin not
+    reached (``oro`` None: stopped, no address, its host key not verified — ``unreached`` says
+    why): its two steps said missed, the permit and the scheduled start still done by the
+    operator's identity — an occurrence then refuses (``no_permit``), whenever Orodruin wakes."""
     failures = 0
     cred = None
+
+    def on_orodruin(command: str, what: str):
+        def step():
+            if oro is None:
+                raise RuntimeError(f"Orodruin not reached ({unreached or 'no address'}): missed — it stays "
+                                   "on its disk; disarm again once Orodruin is up")
+            _must(oro, command, what)
+        return step
 
     def creds():
         nonlocal cred
@@ -422,8 +482,8 @@ def disarm(*, oro, logic_id: str, channel: str, run: Callable = az, credential=N
         return "pulse written: disarmed"
 
     steps = [
-        ("the timer disabled, its units removed", lambda: _must(oro, DISARM_UNITS, "the units") and None),
-        ("the arming removed", lambda: _must(oro, DISARM_FILE, "the arming") and None),
+        ("the timer disabled, its units removed", on_orodruin(DISARM_UNITS, "the units")),
+        ("the arming removed", on_orodruin(DISARM_FILE, "the arming")),
         ("the permit", permit),
         ("the scheduled start", autostart),
         ("the pulse", pulse),
@@ -461,6 +521,9 @@ def session_refusal(env, cwd: str | None = None, here: str | None = None) -> str
 def main(argv: list[str] | None = None, env=None, cwd: str | None = None, here: str | None = None) -> int:
     env = os.environ if env is None else env
     args = list(sys.argv[1:] if argv is None else argv)
+    if args == ["autostart-id"]:
+        print(autostart_id(sys.stdin.read()))
+        return 0
     if len(args) != 1 or args[0] not in ("check", "arm", "disarm"):
         print(__doc__)
         return 2
@@ -472,11 +535,18 @@ def main(argv: list[str] | None = None, env=None, cwd: str | None = None, here: 
     if cmd != "disarm" and not dr.valid_name(name):
         print(f"✗ DRILL={name!r}: a drill's name (a-z, 0-9, '-') — nothing done", file=sys.stderr)
         return 1
+    unreached = env.get("DRILL_ORO_UNREACHED", "").strip()
     try:
         raw = env.get("EREGION_DRILL_TARGETS", "")
         targets = da.parse_targets(raw) if (cmd == "arm" or raw.strip()) else []
-        oro = Orodruin(env.get("DRILL_ORO_SSH", ""))
-    except (da.ArmingRefused, RuntimeError) as e:
+        oro = None if (cmd == "disarm" and unreached) else Orodruin(env.get("DRILL_ORO_SSH", ""))
+    except RuntimeError as e:
+        if cmd != "disarm":
+            print(f"✗ {e} — nothing done", file=sys.stderr)
+            return 1
+        # The disarming does what needs no Orodruin: the permit, the scheduled start, the pulse.
+        oro, unreached = None, unreached or "no address: make orodruin-start"
+    except da.ArmingRefused as e:
         print(f"✗ {e} — nothing done", file=sys.stderr)
         return 1
     oro_run = env.get("DRILL_ORO_RUN", "")
@@ -487,7 +557,7 @@ def main(argv: list[str] | None = None, env=None, cwd: str | None = None, here: 
     if cmd == "arm":
         return arm(name, targets, oro=oro, oro_run=oro_run, user=env.get("DRILL_ORO_USER", ""),
                    logic_id=logic_id, channel=channel)
-    return disarm(oro=oro, logic_id=logic_id, channel=channel)
+    return disarm(oro=oro, logic_id=logic_id, channel=channel, unreached=unreached)
 
 
 if __name__ == "__main__":

@@ -24,7 +24,9 @@ operator's identity (infra/orodruin/drill_ops.py ``kill_steps``), in eregion_cor
 order: right after revoke, its scheduled start disabled (the Logic App of DRL1c: nothing may wake
 Orodruin while the kill runs; absent, « no scheduled start ») and its permit removed (an
 occurrence refuses without it, whenever it comes); after close, its pulse written
-``disarmed (killed)`` — Orodruin's identity, revoked, can no longer write it.
+``disarmed (killed)`` — Orodruin's identity, revoked, can no longer write it. The last line says
+what they did (« drill: scheduled start disabled, permit removed; refused until re-armed »).
+Without ``--channel``, close, the permit and the pulse are not done: the kill exits 1.
 
 A failed step does not stop the next ones, and is reported: exit 1, never a kill that
 claims success. RBAC removal is not instantaneous (the control plane caches): the first
@@ -272,12 +274,13 @@ def main(argv: list[str]) -> int:
         return 2
     subs = subscriptions(args.subscription, args.vm_id)
     inflight: list[str] = []
+    said: dict = {}
     failures = kill(*steps(args.principal_id, args.vm_id, subscription=args.subscription,
                            bench_rg=args.bench_rg, channel=args.channel,
                            dry_run=args.dry_run, inflight=inflight),
                     **drill_ops.kill_steps(args.drill_autostart, channel=args.channel,
-                                           run=az, dry_run=args.dry_run,
-                                           say=lambda line: print(redact(line, subs))))
+                                           run=az, dry_run=args.dry_run, cli=_cli_credential,
+                                           said=said, say=lambda line: print(redact(line, subs))))
     if inflight:
         print("still in flight — no step of the kill stops these:")
         for line in inflight:
@@ -291,11 +294,9 @@ def main(argv: list[str]) -> int:
     print("[dry-run] nothing done" if args.dry_run else
           "identity revoked, experiments cancelled, VM deallocating, windows closed")
     if not args.dry_run:
-        print(DRILL_SAID)
+        # After each step's own line: what they did, never a disabling that did not happen.
+        print(drill_ops.summary(said))
     return 0
-
-
-DRILL_SAID = "drill: scheduled start disabled, permit removed; refused until re-armed"
 
 
 if __name__ == "__main__":
