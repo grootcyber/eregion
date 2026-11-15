@@ -757,8 +757,10 @@ class Engine:
             return self._run_stratus_cycle(scenario, executor, run_id, resolved)
         finally:
             # The report (with carry_run) is written inside the cycle's innermost finally, so it
-            # survives an interrupt mid-teardown; here only the exercise window is closed.
+            # survives an interrupt mid-teardown; here only the exercise window is closed and the
+            # run-scoped HOME the executor built is removed (R2bs).
             close_window(run_id, injector="annatar")
+            getattr(executor, "close", lambda: None)()
 
     def _run_stratus_cycle(self, scenario, executor, run_id: str, resolved) -> RunOutcome:
         """The four phases of the Stratus cycle, from the armed contract: warmup (prerequisites),

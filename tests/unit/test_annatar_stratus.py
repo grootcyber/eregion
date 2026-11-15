@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -27,7 +28,7 @@ from annatar.engines.stratus import (
     resolve,
     verify_binary,
 )
-from annatar.executors.stratus_host import StratusExecutor, staged_layout
+from annatar.executors.stratus_host import StagedLayout, StratusExecutor, staged_layout
 from annatar.runner.engine import Engine
 from annatar.runner.parser import KNOWN_ENGINES, Scenario, ScenarioParser
 from eregion_core.orodruin import CapReached, Passive, Session
@@ -211,11 +212,12 @@ def test_graph_probe_holds_on_absence_and_presence():
 # ── The offline environment (Orodruin has no Internet) ────────────────────────────────
 
 def test_airgap_env_points_terraform_offline(tmp_path):
-    env = airgap_env(tmp_path / "home", plugin_cache=tmp_path / "cache",
+    env = airgap_env(tmp_path / "home", terraform_binary=tmp_path / "tf",
                      terraformrc=tmp_path / "rc")
     assert env["HOME"] == str(tmp_path / "home")
-    assert env["TF_PLUGIN_CACHE_DIR"] == str(tmp_path / "cache")
+    assert env["STRATUS_TERRAFORM_BINARY_PATH"] == str(tmp_path / "tf")
     assert env["TF_CLI_CONFIG_FILE"] == str(tmp_path / "rc")
+    assert "TF_PLUGIN_CACHE_DIR" not in env   # Stratus keeps its default, writable plugin cache
 
 
 def test_staged_layout_reads_the_environment():
@@ -226,14 +228,32 @@ def test_staged_layout_reads_the_environment():
 
 # ── The executor journals every phase through the armed contract ──────────────────────
 
-def _executor(tmp_path, *, dry_run=False, run=None, get=None, session=None, record=None):
+def _staged_home(tmp_path) -> Path:
+    """A staged ``/opt/stratus/home`` with a fake pinned Terraform and its recorded sha256 (R2bs):
+    what ``make stratus-stage`` lays into the read-only image."""
+    home = tmp_path / "staged-home"
+    home.mkdir(exist_ok=True)
+    tf = home / "terraform"
+    tf.write_bytes(b"#!/bin/sh\necho 'Terraform v1.3.10'\n")
+    tf.chmod(0o755)
+    (home / "terraform.sha256").write_text(
+        hashlib.sha256(tf.read_bytes()).hexdigest() + "  terraform\n", encoding="utf-8")
+    return home
+
+
+def _executor(tmp_path, *, dry_run=False, run=None, get=None, session=None, record=None,
+              layout=None):
     binary, digest = _fake_binary(tmp_path)
     r = resolve(TID, binary_path=binary, stratus_dir=_stratus_dir(tmp_path, digest),
                 catalog=_catalog(graph_probe={"name": "absent",
                                               "read": "/v1.0/applications?$select=id"}))
+    if layout is None:
+        layout = StagedLayout(binary=str(binary), home=str(_staged_home(tmp_path)),
+                              plugin_cache=str(tmp_path / "mirror"),
+                              terraformrc=str(tmp_path / "terraformrc"))
     return StratusExecutor(r, session if session is not None else _session(tmp_path),
                            target=RG_SCOPE, dry_run=dry_run,
-                           run=run or _ok_run(record), get=get)
+                           run=run or _ok_run(record), get=get, layout=layout)
 
 
 def test_executor_journals_each_phase_before_it_runs(tmp_path):
@@ -246,6 +266,7 @@ def test_executor_journals_each_phase_before_it_runs(tmp_path):
     actions = [r["action"] for r in journal if r.get("outcome") == "about_to_call"]
     assert actions == [f"stratus:{p}" for p in PHASES]
     assert all(r["target"] == RG_SCOPE for r in journal)
+    ex.close()
 
 
 def test_executor_sends_the_exact_argv_and_offline_env(tmp_path, monkeypatch):
@@ -255,8 +276,47 @@ def test_executor_sends_the_exact_argv_and_offline_env(tmp_path, monkeypatch):
     ex.detonate()
     assert record[0].argv[1:] == ["detonate", TID]
     assert record[0].env["AZURE_SUBSCRIPTION_ID"] == "sub-123"   # credentials inherited
-    assert record[0].env["HOME"] == ex.layout.home               # offline override layered on
-    assert "TF_PLUGIN_CACHE_DIR" in record[0].env
+    # HOME is a fresh, WRITABLE run-scoped dir — never the read-only staged home (R2bs)
+    assert record[0].env["HOME"] == ex._run_home_path != ex.layout.home
+    assert record[0].env["STRATUS_TERRAFORM_BINARY_PATH"] == ex._staged_terraform()
+    assert record[0].env["TF_CLI_CONFIG_FILE"] == ex.layout.terraformrc
+    assert "TF_PLUGIN_CACHE_DIR" not in record[0].env
+    ex.close()
+
+
+def test_executor_run_home_is_writable_and_close_removes_it(tmp_path):
+    """R2bs: the staged /opt/stratus/home is read-only in the image, so the executor builds a
+    fresh writable HOME per run (Stratus writes its state under <HOME>/.stratus-red-team/) and
+    close() removes it."""
+    ex = _executor(tmp_path)
+    home = ex._ensure_run_home()
+    assert os.path.isdir(home) and home != ex.layout.home
+    (Path(home) / ".stratus-red-team").mkdir()   # writable, as Stratus needs
+    ex.close()
+    assert not os.path.exists(home)
+
+
+def test_executor_refuses_when_the_staged_terraform_is_missing(tmp_path):
+    """R2bs: no staged Terraform (image not staged) → the run refuses before provisioning."""
+    empty = tmp_path / "empty-home"
+    empty.mkdir()
+    layout = StagedLayout(binary="/x/stratus", home=str(empty),
+                          plugin_cache="/m", terraformrc="/rc")
+    ex = _executor(tmp_path, layout=layout)
+    with pytest.raises(RuntimeError, match="staged Terraform"):
+        ex.detonate()
+
+
+def test_executor_refuses_a_staged_terraform_that_does_not_match_its_sha256(tmp_path):
+    """R2bs (SEC5): the staged Terraform re-checked before a run, like the Stratus binary — a
+    binary changed since its sha256 was recorded runs nothing."""
+    home = _staged_home(tmp_path)
+    (home / "terraform").write_bytes(b"tampered\n")   # changed after its sha256 was recorded
+    layout = StagedLayout(binary="/x/stratus", home=str(home),
+                          plugin_cache="/m", terraformrc="/rc")
+    ex = _executor(tmp_path, layout=layout)
+    with pytest.raises(RuntimeError, match="does not match"):
+        ex.detonate()
 
 
 def test_executor_passive_without_a_session(tmp_path):
