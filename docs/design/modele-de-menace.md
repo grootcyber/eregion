@@ -21,6 +21,7 @@ _SEC6 (#277), 28/10, sur la 0.4.3. Une page par frontière : qui y est de confia
 | [7. Les sessions d'agents → `main` → le CD](#7-les-sessions-dagents--main--le-cd) | le mainteneur (tags `v*`, release, réglages) ; les sessions, pour le code qu'elles fusionnent | branches, PR, fusions, verdicts de relecture, releases en brouillon |
 | [8. La session Banc](#8-la-session-banc-et-lidentité-de-lecture-du-banc) | Jonathan (la paire de clés, l'apply, le profil) ; la session Banc, pour lire | requêtes KQL vers le workspace du banc, leurs résultats vers le modèle |
 | [9. Le téléphone](#9-le-téléphone-et-son-chemin-vers-le-poste) | l'opérateur, son téléphone (la clé dans sa puce) et son compte Tailscale | un terminal SSH vers le poste, les commandes du banc qu'il y tape, la console d'Imladris par le tunnel SSH du téléphone |
+| [10. Le minuteur d'Orodruin](#10-le-minuteur-dorodruin-et-le-drill-de-la-semaine) | l'opérateur qui arme ; l'image vérifiée ; l'hôte (root) | l'heure, l'armement et le drill de l'image, qui décident ; V1, le permis et l'état des cibles, qui ne peuvent que refuser ; le démarrage de la cible ; les statuts publiés |
 
 ---
 
@@ -517,6 +518,44 @@ La console tient donc par le tailnet **et** la clé matérielle, puis par son je
 
 ---
 
+## 10. Le minuteur d'Orodruin et le drill de la semaine
+
+_DRL1a (#613), 16/11. Décision de Jonathan du 06/11 (D1, [`drill-banc.md`](drill-banc.md)) : un drill fixe, non destructif, sur le banc seul, lancé chaque semaine par un minuteur d'Orodruin sous son contrat. La conception plaçait cette frontière en §9 ; le §9 est devenu celui du téléphone (MOB1) : elle prend le numéro libre suivant, le 10. Jusqu'ici, chaque attaque sur le banc partait d'un geste humain ; le minuteur en lance une sans geste à chaque fois, une fois armé par Jonathan._
+
+**De confiance** : l'opérateur qui arme (`make orodruin-drill-arm`) ; l'image vérifiée à son envoi (CI3) ; l'hôte (root). **Pas de confiance** : ce qui vient d'Imladris et du canal (le battement de la watch, le permis d'armement, `drill.json`), l'état des cibles lu dans Azure.
+
+**Ce qui la traverse** : trois entrées décident, et seules elles peuvent lancer une occurrence (l'horloge d'Orodruin, l'armement sur son disque, le drill de l'image) ; ce qui vient du dehors (V1, le permis, l'état des cibles) ne peut que refuser. Vers le dehors partent les appels d'une demande (DG-b), plus le démarrage de la cible, et les statuts publiés : la demande avec son `drill`, `orodruin/drill.json`.
+
+| | Menace | Ce qui la tient |
+|---|---|---|
+| S | Quelqu'un fait jouer une attaque à Orodruin sans Jonathan : par Imladris, par le canal, par la console | Orodruin ne tire ni n'écoute rien : le service n'a aucun argument (`python -m eregion_core.scheduled_drill run`), lit le drill dans l'image par son lecteur exact, la couche livrée seule (`drill.load_file(…, SHIPPED)`, jamais `drill.find`), l'armement sur son disque (monté en lecture seule), l'heure de son horloge. Le permis est nécessaire, jamais suffisant (`no_permit`, `permit_mismatch`, M5414, M5415) |
+| T | Le contenu du drill change : une PR, une release, une image | La PR relue ; l'image vérifiée à `orodruin-push` (CI3) ; l'empreinte du fichier entier épinglée à l'armement : un drill changé est refusé (`drill_changed`) jusqu'au réarmement (M5406) |
+| T | Le drill joue plus souvent que prévu : un `OnCalendar` réécrit, le service lancé à la main, une horloge fausse | Une occurrence par 6 jours au plus : le registre (`runs/orodruin/drills/played.jsonl`) lu puis écrit sous le verrou d'Orodruin, avant le jugement, illisible ou d'une ligne sans fuseau, rien ne joue (M5411) ; l'heure dans les 30 min du `schedule`, aucune écriture avant (`off_schedule`, M5410, M5412) ; jamais rattrapé (`Persistent=false`, M5422) ; un run à la fois (le verrou, son descripteur passé au runner, M5413) |
+| E | Le drill atteint une VM hors du banc, ou joue une technique destructive | La zone `bench` exigée au jugement **et** avant chaque fil (`zones`, `not_bench`, M5407, M5408), plus stricte que la règle de production ; le catalogue de l'image relu à chaque occurrence : une technique, implémentée, non destructive, d'une bibliothèque publique (M5409) ; les cibles nommées à l'armement, jamais `all` (M5466) ; puis toutes les gardes de DG-b et d'O0 |
+| E | Le drill démarre une VM tenue par Glorfindel, ou démarre avant le contrat | L'isolation lue avant tout démarrage : une VM tenue n'est jamais démarrée (`isolated`) ; le démarrage passe après le contrat et V1, dans une session armée, journalisé avant l'appel et compté dans le plafond rendu au runner (M5420, M5421) ; un démarrage qui échoue saute son fil (`not_ready`) |
+| E | L'identité du démarrage planifié (DRL1c) | Planifié : #613 — un rôle personnalisé d'une seule action (`start/action`), attribué à la portée de la VM d'Orodruin ; compromise, elle n'allume qu'Orodruin, dont le minuteur ne joue qu'à son heure et sous son contrat |
+| R | Une occurrence sans trace | Le journal avant chaque appel, démarrage compris (O1), sur l'hôte et dans le canal ; le registre ; `drill.json` à chaque occurrence, refusée comprise, et une occurrence qui casse est dite `failed` (`crashed`), jamais un silence |
+| D | Un drill qui s'emballe, ou qui use le banc | Le plafond du drill, sous celui d'Orodruin (`over_cap`) ; `RuntimeMaxSec=3600` ; SIGTERM relayé au fil et attendu 75 s, jamais levé pendant son attente (M5467), pour que sa fenêtre se ferme et que le nettoyage de l'atomic parte ; la fenêtre d'un fil bornée par son temps restant plus 5 min (M5468) |
+| D | Le drill masque un vrai incident sur sa cible | La fenêtre ne marque que ses cibles, pour un temps borné ; la carte reste devant l'opérateur, marquée exercice. Le calendrier est public : impact faible, assumé (ci-dessous) |
+| I | Ce que le drill publie ; ce que la watch voit | Ce que publient déjà les demandes : ni identifiant, ni cible, ni abonnement ; le `drill` du statut, lu par son lecteur exact, ne porte que le nom, l'empreinte et l'heure prévue (M5424). Les attentes ne sont ni dans l'image des injecteurs, ni lues par `scheduled_drill` (M5423), ni dans la fenêtre ou la demande ; `_build_user_message()` reste le même à l'octet avec le drill présent (M5425) |
+| D | Le minuteur repart après un arrêt d'urgence | Le permis, fermé par défaut : le kill le supprime (M5418), une occurrence l'exige, sa réécriture conditionnelle (`If-Match`) ne recrée jamais un permis supprimé (M5416). Le kill désactive le démarrage planifié juste après la révocation, avant l'arrêt de la VM (M5417, M5469), et écrit `drill.json` à `disarmed (killed)` (M5419) ; un état Terraform illisible n'est jamais pris pour « pas de démarrage planifié » (M5470) |
+
+**Où c'est** : `eregion_core/scheduled_drill.py`, `eregion_core/drill.py` (le `schedule`), `eregion_core/drill_arming.py`, `eregion_core/expectations.py`, `eregion_core/exercise_runner.py` (`zones`), `infra/orodruin/drill_ops.py`, `infra/orodruin/kill.py`, le `Makefile` (`orodruin-drill-*`) ; tests `tests/unit/test_scheduled_drill.py`, `tests/unit/test_drill_ops.py`, `tests/unit/test_drill_sigterm.py`, `tests/unit/test_drill_expectations.py`, `tests/unit/test_dagorlad_blind.py` ; mutants `scripts/mutants/DRL1a.py`.
+
+**Ce qui reste, assumé** :
+- root sur Orodruin peut déjà lancer tout injecteur sous le contrat (la limite de DG-b) : le minuteur ne lui donne rien de plus. L'armement et le registre, sur son disque, sont à sa main.
+- Le permis est dans un conteneur où Orodruin écrit (il le réécrit à l'identique). Il évite une reprise par mégarde, pas celle d'un Orodruin compromis, qui n'en a pas besoin.
+- L'identité d'Orodruin peut supprimer le permis et écrire `drill.json` à `disarmed` : Imladris y verrait un désarmement de Jonathan. Un Orodruin compromis peut ainsi taire l'alarme d'absence ; il n'en a pas besoin pour attaquer.
+- Imladris en panne, aucune alerte sur l'instant ; un Orodruin reconstruit perd minuteur et armement (`orodruin-down` le dit avant) : l'indicateur de la dernière preuve finit par le dire.
+- Le démarrage de la cible est hors de la fenêtre d'exercice : aucune règle ne regarde aujourd'hui l'appelant d'un démarrage ; une future règle sur l'appelant d'une action de calcul le verrait comme réel ([`drill-banc.md`](drill-banc.md), §3.1).
+
+**Ouvert** :
+- la Logic App du démarrage planifié, son identité et son rôle — planifié : #613
+- le verdict de chaque occurrence et l'alarme d'absence — planifié : #613
+- l'armement par Jonathan et la première occurrence mesurée — planifié : #613
+
+---
+
 ## L'état des constats bas du second contre-audit (SEC17)
 
 _SEC17 (#451), 03/11. Chaque constat bas du second contre-audit du 02/11 porte ici un état : **tenu** (par quoi), **assumé** (pourquoi) ou **ouvert** (ce qui le fermerait). Les constats moyens et hauts sont aux frontières ci-dessus, avec le lot qui les tient._
@@ -538,6 +577,7 @@ _SEC17 (#451), 03/11. Chaque constat bas du second contre-audit du 02/11 porte i
 
 ## Décisions assumées
 
+- **Un minuteur attaque le banc sans geste humain à chaque fois** (DRL1, décision de Jonathan du 06/11 ; frontière 10). Ce qui le borne : une technique publique et non destructive, la zone `bench` seule, une fois par semaine, sous le contrat d'Orodruin et V1, l'armement par Jonathan, refait à chaque changement du drill. **Le calendrier est public** (le `schedule` est dans le dépôt) : ce que fait la cible à cette heure est d'abord lu comme un exercice ; impact faible, assumé : le banc seul, environ une heure par semaine, aucune donnée réelle, et c'est Jonathan qui juge la carte (décision 7).
 - **`runCommand` à la watch, pour couper les sessions** (V-17, SEC7 ; R-03, SEC11 — décision de Jonathan du 02/11 : la coupure reste). C'est son droit le plus fort : une commande en root sur la VM. Il sert à une seule chose, couper les sessions déjà ouvertes quand la VM est isolée (`ss -K`, Linux) — sans lui, un attaquant connecté garde la main sur une VM « isolée » ; le restore s'en sert aussi, pour neutraliser la dernière commande avant l'échange de disques — jamais à la watch, dans son propre rôle (« Eregion Glorfindel Restore Neutralize »), VM par VM aux seules VM que le restore défend (`restore_vms`), à la console et au bot ; une VM hors de la liste est restaurée quand même, la neutralisation refusée et dite sur la carte (SEC17). Ce qui le borne : il sort du rôle de la réponse, dans un rôle à lui (« Eregion Glorfindel Session Drain »), **attribué VM par VM aux seules VM que Glorfindel défend** (une liste explicite, `session_drain_vms` sur Imladris), jamais sur un groupe — une VM hors de la liste est hors de sa portée ; la commande est écrite dans le code, jamais par le modèle ; elle ne vise qu'une VM que la décision isole ; une VM sans ce rôle est isolée quand même, la coupure refusée est dite sur la carte, et la préparation le dit avant (`no_drain`) ; tenu sur tout un groupe, il est dit comme plus que la réponse (`identity_beyond_response`). **Sur Imladris** (sa posture sur le banc, BL1c), ce droit est tenu par l'identité de la VM, que la console, le bot et tout conteneur compromis partagent : la commande n'y est plus bornée par le code, seulement — après les gestes de SEC11 — par les VM de `session_drain_vms` (aujourd'hui, toute VM du banc), le groupe du banc, l'entrée fermée d'Imladris et un banc sans charge ni donnée d'un client — bree porte une charge d'essai (§5).
 - **La revue de conception sans responsable désigné** (T-05). Ce qui la tient : la relecture Opus 5.5 de chaque lot, son verdict publié sur la PR pour le commit relu avant la fusion (SEC12), et le mainteneur, seul à publier une release et à créer un tag `v*`. `CODEOWNERS` (SEC6) ne fait que nommer les chemins sensibles : il n'exige rien (P-07).
 - **`runCommand` dans le rôle de la réponse** (V-17, SEC7) — **remplacée** : depuis SEC11, la coupure des sessions a son propre rôle, VM par VM (la décision ci-dessus) ; depuis SEC17, la neutralisation du restore aussi (« Eregion Glorfindel Restore Neutralize »). Le rôle de la réponse ne porte plus Run Command.

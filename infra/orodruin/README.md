@@ -204,6 +204,39 @@ peut laisser arrêtée. Il sort en 1 si une étape a échoué.
 - Pour fermer les fenêtres, l'opérateur écrit sur le conteneur `exercises` (`channel_operator`,
   posé par `make orodruin-lock`).
 
+**Le drill de la semaine** (DRL1a, `docs/design/drill-banc.md`). Trois pas de plus au kill, par
+ton `az login`, dans cet ordre : `revoke`, puis le démarrage planifié du drill désactivé (la Logic App
+de DRL1c ; absente, « no scheduled start » ; illisible, une erreur), puis son permis supprimé du canal,
+puis `cancel`, `stop`, `close`, et enfin son pouls écrit `disarmed (killed)`. Un pas en échec n'arrête
+pas les suivants, et le kill sort en 1. Sa dernière ligne dit ce que ces pas ont fait (« drill:
+scheduled start disabled, permit removed; refused until re-armed » quand ils l'ont fait). **Sans
+canal** (`CHANNEL=` vide, l'état et `orodruin.env` illisibles), la fermeture des fenêtres, le permis et
+le pouls ne se font pas : le kill sort en 1 — comme avant DRL1 pour les fenêtres. `AUTOSTART=<id>`
+donne le démarrage planifié quand l'état Terraform est illisible.
+
+Les cibles du drill, depuis ton poste, par la clé d'hôte épinglée (`ORO_SSH_FINGERPRINT`) et ton
+`az login` (`infra/orodruin/drill_ops.py`) :
+
+```bash
+make orodruin-drill-check [DRILL=banc-hebdo TARGETS=gondolin]   # à blanc : rien n'est écrit
+make orodruin-drill-arm DRILL=banc-hebdo TARGETS=gondolin       # Jonathan seul, jamais TARGETS=all
+make orodruin-drill-disarm                                      # chacun de ses pas dit
+```
+
+- **L'armement** refuse avant toute écriture si le drill ne se lit pas dans l'image d'Orodruin, ou si
+  le démarrage planifié manque ou ne réveille pas Orodruin à l'heure du drill moins 20 min
+  (« apply first » : `make orodruin-plan`, puis `make orodruin-lock`). Puis, chaque pas dit : l'armement
+  (`~/drill/armed.json`, mode 600), les unités systemd posées par SSH (jamais par `custom_data`), le
+  minuteur activé, le permis écrit, le démarrage planifié activé, le pouls `armed`. Un pas en échec :
+  l'armement est partiel, c'est dit, rien d'après n'est fait — `make orodruin-drill-disarm`, puis
+  réarmer. Refusé dans la session d'un lot.
+- **Le désarmement** désactive le minuteur et retire ses unités, retire l'armement, supprime le permis,
+  désactive le démarrage planifié, écrit le pouls `disarmed`, et sort en 1 si l'un manque. Orodruin
+  éteinte ou injoignable : ses deux pas sur Orodruin sont dits manqués (une erreur), le reste est fait
+  quand même ; une occurrence refuse alors sans permis. Le refaire une fois Orodruin rallumée.
+- `make orodruin-down` dit « drill armed: lost, re-arm after up » : le minuteur et l'armement sont sur
+  son disque.
+
 Le kill retire les droits hors de Terraform : `make orodruin-lock` les repose. Retirer un rôle ne
 prend pas effet à l'instant (cache du plan de contrôle) : c'est pour ça que la VM s'arrête aussi.
 **Mesuré le 26/10** pendant une `vm-shutdown` : révocation, annulation, fenêtre fermée et tirée par
