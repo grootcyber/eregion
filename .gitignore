@@ -72,3 +72,9 @@ infra/orodruin/orodruin.env
 # SEC19 (R-13) : une clé privée ne se commite jamais (make harness-key la range hors du dépôt).
 cosign.key
 *.key
+
+# R2bs (#841): the staged injector binary + offline Terraform toolchain (make stratus-stage) —
+# downloaded and verified, never committed. The dir and .gitkeep stay so the Dockerfile COPY works
+# in CI, where nothing is staged.
+annatar/stratus/staged/*
+!annatar/stratus/staged/.gitkeep

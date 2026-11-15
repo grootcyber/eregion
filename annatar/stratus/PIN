@@ -34,11 +34,17 @@
 #     TerraformVersion = "1.3.10"), pre-installed under the run-scoped HOME so Stratus finds it
 #     and never downloads one. sha256 of the upstream zip (releases.hashicorp.com):
 #       2e3931c3db6999cdd4c7e55227cb877c6946d1f52923d7d057036d2827311402  terraform_1.3.10_linux_amd64.zip
-#   - the azurerm / azuread provider plugins each technique's lockfile pins, staged into a
+#   - the azurerm / azuread provider plugins the catalog's techniques require, staged into a
 #     filesystem mirror (TF_CLI_CONFIG_FILE) + plugin cache (TF_PLUGIN_CACHE_DIR) so
-#     `terraform init` installs from disk, never the registry. Their sha256 are the ones in
-#     each technique's `.terraform.lock.hcl`, to be recorded by the staging step (which does not
-#     exist yet: it comes with R2b, #608; annatar/stratus/README.md) — not invented here.
+#     `terraform init` installs from disk, never the registry. A Stratus technique pins its exact
+#     provider versions in its Terraform `required_providers` (there is no `.terraform.lock.hcl`
+#     in the upstream technique dirs at v2.38.0); the sha256 below are the linux_amd64
+#     provider-zip checksums HashiCorp publishes in each provider's SHA256SUMS. `make stratus-stage`
+#     (R2bs, #841) verifies each download against them before building the mirror.
+#     `azure.persistence.backdoor-managed-identity-fic` (its `main.tf`, read at v2.38.0) requires:
+#       79a8d17fefe647040fcb9ee8821a4f09f395427c4fd49493489b9a93a9a1038e  terraform-provider-azurerm_4.81.0_linux_amd64.zip
+#       4c895e450e18335ad8714cc6d3488fc1a78816ad2851a91b06cb2ef775dd7c66  terraform-provider-azuread_2.53.1_linux_amd64.zip
 #
 # To update Stratus: bump the version + date above, re-read the new release's checksums.txt,
-# replace the `stratus` and archive sha256, re-stage the assets, and run the harness (ID1).
+# replace the `stratus` and archive sha256, re-read each technique's required_providers, re-stage
+# the assets, and run the harness (ID1).
