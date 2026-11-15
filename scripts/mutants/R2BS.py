@@ -1,4 +1,4 @@
-"""Lot R2bs (#841) — poser l'outillage épinglé de l'injecteur de plan de contrôle sur l'hôte
+"""Lot R2BS (#841) — poser l'outillage épinglé de l'injecteur de plan de contrôle sur l'hôte
 d'exécution (staging hors-ligne, partie de #608). Les mutants portent sur la vérification des
 empreintes (pose et runtime) et sur le HOME inscrite par run. M5386–M5392.
 
@@ -20,21 +20,21 @@ _HOME = ("tests/unit/test_annatar_stratus.py::"
 _AIRGAP = "tests/unit/test_annatar_stratus.py::test_airgap_env_points_terraform_offline"
 
 MUTANTS = [
-    ("M5386", "a staged download whose sha256 does not match the PIN is not refused (R2bs)",
+    ("M5386", "a staged download whose sha256 does not match the PIN is not refused (R2BS)",
      STAGE, "    if got != want:", "    if False:"),
-    ("M5387", "a file with no sha256 in the PIN is staged unverified (R2bs)",
+    ("M5387", "a file with no sha256 in the PIN is staged unverified (R2BS)",
      STAGE, "        if name not in sums:", "        if False:"),
     ("M5388", "the staged provisioning tool altered since its sha256 was recorded is not refused "
-     "(R2bs)", HOST, "        if got != want:", "        if False:"),
-    ("M5389", "the staged provisioning tool is not re-verified before a run (R2bs)",
+     "(R2BS)", HOST, "        if got != want:", "        if False:"),
+    ("M5389", "the staged provisioning tool is not re-verified before a run (R2BS)",
      HOST, "            self._verify_staged_terraform()", "            pass"),
-    ("M5390", "the read-only staged home is used as HOME instead of a writable run HOME (R2bs)",
+    ("M5390", "the read-only staged home is used as HOME instead of a writable run HOME (R2BS)",
      HOST, '            self._run_home_path = tempfile.mkdtemp(prefix="stratus-home-")',
      "            self._run_home_path = self.layout.home"),
-    ("M5391", "the run-scoped HOME is never removed on close (R2bs)",
+    ("M5391", "the run-scoped HOME is never removed on close (R2BS)",
      HOST, "            shutil.rmtree(self._run_home_path, ignore_errors=True)",
      "            pass"),
-    ("M5392", "the staged provisioning-tool binary is not pointed at offline (R2bs)",
+    ("M5392", "the staged provisioning-tool binary is not pointed at offline (R2BS)",
      ENG, "        env[STRATUS_TERRAFORM_BINARY_ENV] = str(terraform_binary)", "        pass"),
 ]
 
