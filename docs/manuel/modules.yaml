@@ -1244,6 +1244,15 @@ briques:
     lots: [R2, R2b, R2c]
     issue: 79
 
+  - id: a-injecteur-stage
+    composant: annatar
+    poste: a-attaquer
+    nom: "The control-plane injector's offline toolchain, staged onto the execution host"
+    etat: main
+    release: "0.6"
+    lots: [R2BS]
+    issue: 841
+
   - id: a-identite-banc
     composant: annatar
     poste: a-attaquer
