@@ -261,23 +261,33 @@ def describe(technique_id: str, *, catalog: dict | None = None) -> dict:
     }
 
 
-def airgap_env(home: str | Path, *, plugin_cache: str | Path | None = None,
+# Stratus's own override for the Terraform binary it runs (runner.go, EnvVarStratusTerraformBinaryPath):
+# set it and Stratus uses that binary (when it is >= its TerraformVersion) instead of downloading one.
+STRATUS_TERRAFORM_BINARY_ENV = "STRATUS_TERRAFORM_BINARY_PATH"
+
+
+def airgap_env(run_home: str | Path, *, terraform_binary: str | Path | None = None,
                terraformrc: str | Path | None = None) -> dict[str, str]:
     """The offline environment Stratus runs its warmup Terraform with — no network.
 
-    ``home`` is a run-scoped ``HOME``: Stratus writes its state under ``<home>/.stratus-red-team``
-    and finds the pre-installed Terraform there (pkg/stratus/config: ``os.UserHomeDir()``), so it
-    never downloads one. ``plugin_cache`` (``TF_PLUGIN_CACHE_DIR``) and ``terraformrc``
-    (``TF_CLI_CONFIG_FILE``, a filesystem mirror of the providers excluding direct installs) keep
-    ``terraform init`` off the network. Stratus passes the inherited environment through to
-    Terraform (pkg/stratus/runner/terraform.go), so these reach ``terraform init``; it drops the
-    reserved ``TF_IN_AUTOMATION`` and the like, which tfexec sets itself.
+    ``run_home`` is a WRITABLE, run-scoped ``HOME``: Stratus writes its state under
+    ``<run_home>/.stratus-red-team/<technique>/`` (internal/state/state.go: ``os.UserHomeDir()`` +
+    ``.stratus-red-team``), so it must be writable — the staged ``/opt/stratus/home`` is read-only
+    in the image, which is why the executor builds a fresh HOME per run (R2BS).
+
+    ``terraform_binary`` is the pinned Terraform staged read-only in the image. Passed as
+    ``STRATUS_TERRAFORM_BINARY_PATH`` (runner.go), Stratus runs it — it is 1.3.10, its ``>=`` check
+    passes — and never downloads one; the binary is only executed, so a read-only path is fine.
+    ``terraformrc`` (``TF_CLI_CONFIG_FILE``, a filesystem mirror of the providers that excludes
+    direct installs) keeps ``terraform init`` off the registry; Stratus leaves its plugin cache at
+    its default under the writable HOME. Stratus passes the inherited environment through to
+    Terraform (pkg/stratus/runner/terraform.go), so these reach ``terraform init``.
 
     These are overrides layered over the process environment (the Azure credentials of Orodruin's
     identity stay); the injector merges them (annatar/executors/stratus_host.py)."""
-    env = {"HOME": str(home)}
-    if plugin_cache is not None:
-        env["TF_PLUGIN_CACHE_DIR"] = str(plugin_cache)
+    env = {"HOME": str(run_home)}
+    if terraform_binary is not None:
+        env[STRATUS_TERRAFORM_BINARY_ENV] = str(terraform_binary)
     if terraformrc is not None:
         env["TF_CLI_CONFIG_FILE"] = str(terraformrc)
     return env
