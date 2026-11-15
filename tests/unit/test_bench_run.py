@@ -355,7 +355,21 @@ def test_the_report_waits_for_the_run_s_cycle(monkeypatch):
     assert seen == [(["--run", "20261110T101500Z-t1486", "--target", VM, "--wait", "cycle"], env)]
 
 
+def _pinned(tmp_path, ip: str = "192.0.2.10") -> list[str]:
+    """Imladris's host key already pinned (SEC-C: required before any command toward it): a throwaway
+    ed25519 key, its line in a known_hosts of the test's own and its fingerprint — no ssh-keyscan."""
+    key = tmp_path / "h0_host_key"
+    subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(key)], check=True)
+    pub = key.with_suffix(".pub").read_text().split()
+    fp = subprocess.run(["ssh-keygen", "-lf", str(key.with_suffix(".pub"))], capture_output=True, text=True,
+                        check=True).stdout.split()[1]
+    known = tmp_path / "h0_known_hosts"
+    known.write_text(f"{ip} {pub[0]} {pub[1]}\n")
+    return [f"HOST_SSH_FINGERPRINT={fp}", f"HOST_KNOWN_HOSTS={known}"]
+
+
 @needs_make
+@pytest.mark.skipif(shutil.which("ssh-keygen") is None, reason="ssh-keygen not installed")
 def test_bench_restore_is_given_imladris_s_ssh_for_its_report(fake_world, tmp_path):
     """The report after the lift reads Imladris: `bench-restore-go` hands the script its ssh command, as
     `bench-run-go` does — the script stands for python here, and prints what it was given."""
@@ -367,7 +381,7 @@ def test_bench_restore_is_given_imladris_s_ssh_for_its_report(fake_world, tmp_pa
     env = {k: v for k, v in os.environ.items() if k not in ("TARGET", "SCENARIO", "BEFORE", "RUN", "POINT_MAX_H")}
     env.update(PATH=f"{bindir}{os.pathsep}{os.environ['PATH']}", HOME=str(tmp_path))
     res = subprocess.run(["make", "-s", "--no-print-directory", "-C", str(ROOT), "bench-restore-go", f"PYTHON={script}",
-                          f"TARGET={VM}"], capture_output=True, text=True, env=env, timeout=60)
+                          f"TARGET={VM}", *_pinned(tmp_path)], capture_output=True, text=True, env=env, timeout=60)
     assert res.returncode == 0, res.stdout + res.stderr
     assert "H0=ssh " in res.stdout and res.stdout.strip().endswith("@192.0.2.10")
     calls = log.read_text().splitlines() if log.exists() else []
@@ -467,7 +481,7 @@ def _checkout(tmp_path, under: Path | None = None) -> Path:
     """The operator's checkout, outside a lot's worktree — or under one (`under`): the guard of a code
     session reads where the scripts run from (bench_shared.session_refusal)."""
     root = (under or tmp_path) / "checkout"
-    for rel in ("Makefile", "scripts/mobile.py", "scripts/bench_shared.py"):
+    for rel in ("Makefile", "scripts/mobile.py", "scripts/bench_shared.py", "infra/glorfindel-host/known_host.sh"):
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(ROOT / rel, root / rel)
     return root

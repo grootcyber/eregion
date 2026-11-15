@@ -197,6 +197,88 @@ def test_every_command_toward_h0_checks_the_key_first_and_orodruin_keeps_its_own
     assert re.search(r"(?m)^ORO_SSH\s*=\s*ssh \$\(SSH_OPTS\)", text)
 
 
+
+# ── SEC-C review (round 1): the bench's targets reach Imladris too — its key checked first ──
+
+BENCH_TARGETS = {"bench-preflight": [], "bench-report": ["RUN=r1"],
+                 "bench-run-go": ["TARGET=vm-celebrimbor-gondolin", "SCENARIO=T1486"],
+                 "bench-restore-go": ["TARGET=vm-celebrimbor-gondolin"]}
+
+
+def test_every_target_handed_imladris_s_ssh_checks_its_key_first():
+    """Not only imladris-*: every rule that hands a script Imladris's ssh command (a target-specific
+    export of $(HOST_SSH)) or reaches it in its recipe checks the key before — imladris-known as a
+    prerequisite, or its check in the recipe, after the guards (the origin, the agent session)."""
+    import re
+    text = (ROOT / "Makefile").read_text(encoding="utf-8")
+    rules = {}
+    for names, deps, recipe in re.findall(r"(?m)^([\w-]+(?: [\w-]+)*):(?!=)(?! export)([^\n=]*)\n((?:\t.*\n)*)", text):
+        for n in names.split():
+            rules[n] = (deps, recipe)
+    handed = {n for m in re.finditer(r"(?m)^([\w-]+(?: [\w-]+)*): export \w+ = .*\$\(HOST_SSH", text)
+              for n in m.group(1).split()}
+    reaching = {n for n, (_, recipe) in rules.items() if re.search(r"\$\(HOST_SSH(_TTY|_OPTS)?\)", recipe)}
+    assert set(BENCH_TARGETS) <= handed
+    unchecked = {n for n in handed | reaching if n != "imladris-known"
+                 and "imladris-known" not in rules[n][0]
+                 and not re.search(r"\$\(HOST_KNOWN_CHECK\)|\$\(PAIR_SSH\)|known_host\.sh", rules[n][1])}
+    assert unchecked == set()
+    for name, guard in (("bench-run-go", "$(CONSOLE_GUARD) bench-run"), ("bench-restore-go", "--guard-only")):
+        recipe = rules[name][1]
+        assert recipe.index("$(MOB1_ORIGIN)") < recipe.index(guard) < recipe.index("$(HOST_KNOWN_CHECK)")
+
+
+def _bench(tmp_path, target, *args):
+    """`make <bench target>` from a checkout outside any lot's worktree (the guards refuse one), not in an
+    agent session; python is a spy that writes its arguments, ssh, scp, az and terraform are fakes."""
+    root = tmp_path / "checkout"
+    for rel in ("Makefile", "scripts/mobile.py", "scripts/bench_shared.py", "infra/glorfindel-host/known_host.sh"):
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(ROOT / rel, root / rel)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    log = tmp_path / "calls.log"
+    log.write_text("")
+    for f in ("ssh", "scp", "az", "terraform", "docker", "ssh-keyscan"):
+        (bin_dir / f).write_text(f'#!/bin/sh\necho "{f} $*" >> "{log}"\n')
+    spy = bin_dir / "spy-python"
+    spy.write_text(f'#!/bin/sh\necho "python $*" >> "{log}"\n')
+    for f in bin_dir.iterdir():
+        f.chmod(0o755)
+    env = {k: v for k, v in os.environ.items() if k not in (
+        "HOST_SSH_FINGERPRINT", "HOST_KNOWN_HOSTS", "HOST_IP", "HOST_SSH_KEY", "EREGION_AGENT_SESSION",
+        "TARGET", "SCENARIO", "BEFORE", "RUN", "OUT", "POINT_MAX_H", "DRY_RUN")}
+    env.update(PATH=f"{bin_dir}{os.pathsep}{os.environ['PATH']}", HOME=str(tmp_path))
+    res = subprocess.run(["make", "-s", "--no-print-directory", "-C", str(root), target, f"HOST_IP={IP}",
+                          f"PYTHON={spy}", *args], env=env, capture_output=True, text=True, timeout=60)
+    return res, log.read_text().splitlines()
+
+
+@pytest.mark.parametrize("target", sorted(BENCH_TARGETS))
+def test_without_a_fingerprint_no_bench_target_reaches_imladris(tmp_path, target):
+    """SEC-C review: `make bench-*` handed its scripts an ssh toward Imladris without its key checked —
+    without HOST_SSH_FINGERPRINT, ssh refused only for a missing known_hosts, and went for an old one. Now
+    nothing runs but the guards: the script never starts, no ssh, no keyscan, and the way to the key said."""
+    res, calls = _bench(tmp_path, target, *BENCH_TARGETS[target])
+    assert res.returncode != 0
+    assert "HOST_SSH_FINGERPRINT requis" in res.stderr and "make imladris-fingerprint" in res.stderr, res.stderr
+    # make reads the addresses (terraform output), said in the Makefile; nothing else goes.
+    assert [c for c in calls if c.split()[0] != "terraform" and not c.endswith("--guard-only")] == [], calls
+
+
+@pytest.mark.parametrize("target", sorted(BENCH_TARGETS))
+def test_with_its_key_pinned_each_bench_target_runs_its_script(tmp_path, target):
+    line, fp = _key(tmp_path, "h0")
+    known = tmp_path / "kh"
+    known.write_text(line + "\n")
+    res, calls = _bench(tmp_path, target, *BENCH_TARGETS[target], f"HOST_SSH_FINGERPRINT={fp}",
+                        f"HOST_KNOWN_HOSTS={known}")
+    assert res.returncode == 0, res.stdout + res.stderr
+    script = target.removesuffix("-go").replace("-", "_")
+    assert [c for c in calls if c.startswith("python") and not c.endswith("--guard-only")] == [
+        f"python scripts/{script}.py"], calls
+    assert not [c for c in calls if c.split()[0] in ("ssh", "scp", "ssh-keyscan")], calls
+
 # ── MOB3 (bench of 11/11): a command toward Imladris never printed, its address and key with it ──
 
 def test_make_glorfindel_host_ssh_prints_nothing_of_its_command(tmp_path):

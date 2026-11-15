@@ -574,9 +574,9 @@ azure-pairs-expiry:
 # rappelle dans #deploy (J-14, J-7, J-1, le jour même). pair-expiry-note note la date en place, sans
 # rien faire tourner. Refusées en session de code, pair-rotate aussi sans terminal : la garde seule
 # d'abord ; la cible -go la refait, puis lit l'adresse d'Imladris dans le shell (terraform output,
-# l'état local), jamais développée par make avant la garde, même appelée directement. known_host.sh
-# dit sur la sortie d'erreur une clé d'hôte acceptée sans empreinte (HOST_SSH_FINGERPRINT absent) ;
-# refusée, aucun ssh. PAIR et DAYS : jamais développés par make ($(value …), unexport — comme REF),
+# l'état local), jamais développée par make avant la garde, même appelée directement. La clé d'hôte
+# d'Imladris : sans empreinte (HOST_SSH_FINGERPRINT absent), refusée par known_host.sh (SEC-C), comme
+# une autre clé : aucun ssh, la date n'est pas notée sur Imladris, et c'est dit (scripts/pair_rotate.py). PAIR et DAYS : jamais développés par make ($(value …), unexport — comme REF),
 # vérifiés par le script ; DAYS vide, la durée par défaut du script (DEFAULT_DAYS, son seul endroit).
 # Le secret ne passe jamais sur une ligne de commande : ni ici, ni dans ce que lance le script.
 unexport PAIR
@@ -1041,8 +1041,12 @@ imladris-env:
 
 # V-32 : avant chaque commande vers Imladris — la clé d'hôte vérifiée par HOST_SSH_FINGERPRINT, ou rien
 # ne part (infra/glorfindel-host/known_host.sh, « required » : SEC-C).
+# HOST_KNOWN_CHECK : la même vérification, en ligne d'une recette qui doit d'abord passer ses gardes
+# (bench-run-go, bench-restore-go : le contrôle d'origine et le refus d'une session d'agent avant tout
+# contact, ssh-keyscan compris).
+HOST_KNOWN_CHECK = HOST_SSH_FINGERPRINT="$(HOST_SSH_FINGERPRINT)" bash infra/glorfindel-host/known_host.sh "$(HOST_IP)" "$(HOST_KNOWN_HOSTS)" HOST_SSH_FINGERPRINT required
 imladris-known:
-	@HOST_SSH_FINGERPRINT="$(HOST_SSH_FINGERPRINT)" bash infra/glorfindel-host/known_host.sh "$(HOST_IP)" "$(HOST_KNOWN_HOSTS)" HOST_SSH_FINGERPRINT required
+	@$(HOST_KNOWN_CHECK)
 
 # SEC-C (audit du 06/11, V-26) : l'empreinte de la clé d'hôte d'Imladris, lue sur la VM par le plan de
 # contrôle d'Azure (ton az login, Run Command) — jamais par SSH, qu'elle sert à vérifier : le premier
@@ -1561,6 +1565,8 @@ orodruin-check: orodruin-known
 # ssh d'Imladris et d'Orodruin passent par l'environnement du script, jamais affichées ; TARGET, RUN, OUT et
 # POINT_MAX_H aussi, jamais développés par make ($(value …), unexport — comme REF), vérifiés par le
 # script. Le contrat d'Orodruin y est lu sans être publié (check() dans son conteneur durci, sans montage).
+# SEC-C (audit du 06/11, V-26) : la clé d'hôte d'Imladris vérifiée d'abord (imladris-known) — sans
+# HOST_SSH_FINGERPRINT, rien ne part, et known_host.sh dit comment la lire.
 unexport TARGET RUN OUT POINT_MAX_H
 bench-preflight bench-report: export BENCH_H0_SSH = $(HOST_SSH)
 bench-preflight bench-report: export BENCH_TARGET = $(value TARGET)
@@ -1569,10 +1575,10 @@ bench-preflight: export BENCH_ORO_RUN = docker run --rm $(ORO_HARDEN) --env-file
 bench-preflight: export BENCH_POINT_MAX_H = $(value POINT_MAX_H)
 bench-report: export BENCH_RUN = $(value RUN)
 bench-report: export BENCH_OUT = $(value OUT)
-bench-preflight:
+bench-preflight: imladris-known
 	@$(PYTHON) scripts/bench_preflight.py
 
-bench-report:
+bench-report: imladris-known
 	@$(PYTHON) scripts/bench_report.py
 
 # MOB1 (#686) : piloter le banc depuis le téléphone — l'opérateur tape toujours la commande sur son
@@ -1592,8 +1598,9 @@ bench-report:
 # bench-run et bench-restore ne développent avant lui que $(origin …) et $(PYTHON) : le garde tourne seul,
 # puis une sous-make lance la cible -go. Les cibles -go sont internes : appelées directement, make y
 # développe d'abord leurs export — HOST_IP et ORO_IP, lus par terraform output dans l'état local d'Imladris et
-# d'Orodruin, rien d'autre — puis refont le contrôle d'origine, puis le script refait le garde avant tout
-# ssh, az ou scp. TARGET, SCENARIO, BEFORE, RUN, POINT_MAX_H : sur la ligne de commande, jamais de
+# d'Orodruin, rien d'autre — puis refont le contrôle d'origine et le garde, puis vérifient la clé d'hôte
+# d'Imladris (HOST_KNOWN_CHECK, SEC-C : sans HOST_SSH_FINGERPRINT, rien ne part), puis le script refait
+# le garde avant tout ssh, az ou scp. TARGET, SCENARIO, BEFORE, RUN, POINT_MAX_H : sur la ligne de commande, jamais de
 # l'environnement (dans la sous-make, ils restent « command line »), jamais développés par make,
 # vérifiés par le script.
 unexport SCENARIO BEFORE
@@ -1621,11 +1628,14 @@ bench-restore-go: export BENCH_RUN = $(value RUN)
 bench-run-go:
 	@$(MOB1_ORIGIN)
 	@$(CONSOLE_GUARD) bench-run
+	@$(HOST_KNOWN_CHECK)
 	@t=""; if [ -f $(HOST_ENV) ]; then t="$(CONSOLE_TOKEN)"; fi; \
 	 BENCH_CONSOLE_TOKEN="$$t" $(PYTHON) scripts/bench_run.py
 
 bench-restore-go:
 	@$(MOB1_ORIGIN)
+	@$(PYTHON) scripts/$(subst -,_,$(@:-go=)).py --guard-only
+	@$(HOST_KNOWN_CHECK)
 	@$(PYTHON) scripts/$(subst -,_,$(@:-go=)).py
 
 # MOB1 : le poste, ouvert au téléphone, en lecture seule (scripts/mobile.py check) — le serveur SSH de WSL
