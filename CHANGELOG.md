@@ -16,8 +16,8 @@ Notable changes to Eregion. The format follows [Keep a Changelog](https://keepac
   (`annatar/scenarios/`), the directory side of the 0.6.0 identity card: the injector adapter now
   also runs the library's directory techniques (not only control-plane ones), each held to the
   same closed allow-list the catalogue vouches for, run from the injector host through the existing
-  cycle, with a read-only directory probe of the initial state. Its directory-log detection will be
-  measured at the bench with the 0.6.0 (#844 open). (RID2, #844)
+  cycle, with a read-only directory probe of the initial state. Its directory-log detection remains
+  to be measured at the bench (#844 open). (RID2, #844)
 
 ### Changed
 - **A control-plane injection builds a writable, run-scoped home and re-checks the staged
