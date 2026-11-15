@@ -1401,6 +1401,19 @@
    "issue": 660
   },
   {
+   "id": "s-sec-c",
+   "composant": "socle",
+   "poste": "s-signer",
+   "nom": "Security hardening",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "SEC-C",
+    "SEC-C-workflow"
+   ],
+   "issue": 635
+  },
+  {
    "id": "s-inf-fl",
    "composant": "socle",
    "poste": "s-signer",
