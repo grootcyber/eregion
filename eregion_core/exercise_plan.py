@@ -23,7 +23,11 @@ from eregion_core.orodruin import CEILING_INJECTIONS, CEILING_RUN_S
 
 # In the order they are checked: the first that holds is the wire's.
 REFUSALS = ("unknown_experiment", "not_implemented", "wrong_target_type", "outside_scope",
-            "not_enrolled", "zone_forbids", "no_watch", "no_engine", "over_cap", "typed_name")
+            "not_enrolled", "not_bench", "zone_forbids", "no_watch", "no_engine", "over_cap", "typed_name")
+# ``not_bench``: a run that plays in some zones only — the drill of the week, the bench alone (DRL1,
+# docs/design/drill-banc.md §2.3, 10) — given a target enrolled in another, stricter than the
+# production rule (which admits a non-destructive technique in production). No ``zones``: none of
+# it, a request of Dagorlad judged as before (DG-b).
 # ``typed_name``: Orodruin's alone (DG-b, eregion_core/exercise_runner.py) — a wire that asks for
 # its target's name typed, without it or with another; the console never holds a name.
 # A destructive technique asks for the target's name, typed (phase b); a fault whose engine's
@@ -122,11 +126,13 @@ class Verdict:
 def judge(experiment_id: str, target_id: str, target: Target | None, *,
           catalog: dict[str, Experiment], watch_refusal: str = "",
           fault_targets: dict[str, list[str] | None] | None = None,
-          scope: Scope | None = None) -> Verdict:
+          scope: Scope | None = None, zones: tuple[str, ...] | None = None) -> Verdict:
     """One wire. ``target`` is what the reader read for ``target_id`` — None when it is not
     among the bench's VMs read now. ``watch_refusal`` is ``watch_gate.refusal()`` ("" when a
     live watch of these targets stands behind). ``fault_targets``: for a fault, the VM names its
-    engine aims at, or None when this host cannot read them."""
+    engine aims at, or None when this host cannot read them. ``zones``: the zones this run may
+    play in (the drill of the week: the bench alone, DRL1) — None, every zone the production rule
+    admits."""
     v = Verdict(experiment_id, target_id)
     e = catalog.get(experiment_id)
     if e is None:
@@ -147,6 +153,9 @@ def judge(experiment_id: str, target_id: str, target: Target | None, *,
     if not enrolled.allowed:
         return v.refuse("not_enrolled", enrolled.reason)
     v.zone = enrolled.zone
+    if zones is not None and enrolled.zone not in zones:
+        return v.refuse("not_bench", f"zone {enrolled.zone}: this run plays in {', '.join(zones)} "
+                                     "alone (the drill of the week: the bench)")
     zone = check_zone(enrolled.zone, kind=e.kind, destructive=e.destructive)
     if not zone.allowed:
         return v.refuse("zone_forbids", f"zone {enrolled.zone}: {zone.reason}")
@@ -179,7 +188,7 @@ def plan(wires: list[tuple[str, str]], targets: dict[str, Target], *,
          catalog: dict[str, Experiment], watch_refusal: str = "",
          fault_targets: dict[str, list[str] | None] | None = None,
          scope: Scope | None = None, max_injections: int | None = None,
-         max_run_s: int | None = None) -> list[Verdict]:
+         max_run_s: int | None = None, zones: tuple[str, ...] | None = None) -> list[Verdict]:
     """Every wire of a request, in the order drawn — the same pair once — and their rank: they
     run one after the other (Jonathan, 30/10). Past Orodruin's ceilings (``CEILING_INJECTIONS``
     wires at least one injection each, ``CEILING_RUN_S`` in all — or the cap Orodruin declares,
@@ -196,7 +205,7 @@ def plan(wires: list[tuple[str, str]], targets: dict[str, Target], *,
             continue
         seen.add(key)
         v = judge(experiment_id, target_id, targets.get(target_id.lower()), catalog=catalog,
-                  watch_refusal=watch_refusal, fault_targets=fault_targets, scope=scope)
+                  watch_refusal=watch_refusal, fault_targets=fault_targets, scope=scope, zones=zones)
         if not v.code:
             estimate = FAULT_S if catalog[experiment_id].kind == "fault" else TECHNIQUE_S
             if rank + 1 > max_injections or total + estimate > max_run_s:

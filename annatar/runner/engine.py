@@ -14,7 +14,7 @@ from annatar.runner.report import RUNS_DIR, RunReport
 from eregion_core.inscription import check_target
 from annatar.signals.emitter import SignalEmitter
 from eregion_core import run_report, watch_channel, watch_gate
-from eregion_core.exercise import close_window, open_window
+from eregion_core.exercise import close_window, open_window, wire_window_s
 from eregion_core.exercise_channel import carry_run
 from eregion_core.orodruin import arm
 
@@ -298,7 +298,7 @@ class Engine:
         open_window(run_id, injector="annatar", kind="technique",
                     experiment=f"{scenario.mitre} {scenario.name}",
                     targets=[executor.resource_id], destructive=destructive,
-                    request=self.request)
+                    request=self.request, **self._window_bound())
         try:
             if scenario.engine == "atomic":
                 return self._run_atomic_enrolled(scenario, executor, run_id, session, resolved)
@@ -311,6 +311,12 @@ class Engine:
             close_window(run_id, injector="annatar")
             if self.publish_report:  # its last save is done, the atomic's that raised too
                 carry_run(run_id, RUNS_DIR)
+
+    def _window_bound(self) -> dict:
+        """A wire of a request (DG-b) opens its window for the time its runner left it, plus a
+        margin, never past MAX_DURATION_S (DRL1, eregion_core/exercise.py ``wire_window_s``): a
+        wire killed outright leaves its VM « exercise » that long only. A run alone: as before."""
+        return {"max_duration_s": wire_window_s()} if self.request else {}
 
     def _watch_lost(self) -> str:
         """Why the watch no longer stands behind this run — "" when it does, or when the run
@@ -752,7 +758,8 @@ class Engine:
 
         open_window(run_id, injector="annatar",
                     kind="technique", experiment=f"{scenario.mitre} {scenario.name}",
-                    targets=[rg_scope], destructive=destructive, request=self.request)
+                    targets=[rg_scope], destructive=destructive, request=self.request,
+                    **self._window_bound())
         try:
             return self._run_stratus_cycle(scenario, executor, run_id, resolved)
         finally:

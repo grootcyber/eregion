@@ -211,6 +211,13 @@ def load_typed(path: str | Path | None, request: Request) -> dict[int, str]:
 # ── What Orodruin says of a request: its status, read by one reader too ─────────────────
 
 STATUS_FIELDS = ("request", "state", "at", "codes", "wires")
+# DRL1 (docs/design/drill-banc.md §4.1): a request the drill of the week made says it — the drill's
+# name, its fingerprint, the occurrence planned (the hour of its schedule). Optional: a request of
+# Dagorlad never carries it. No target, no experiment there either; the states do not change.
+STATUS_OPTIONAL = ("drill",)
+STATUS_DRILL_FIELDS = ("name", "sha256", "occurrence")
+_DRILL_NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,47}")
+_SHA256 = re.compile(r"[0-9a-f]{64}")
 STATUS_WIRE_FIELDS = ("rank", "state", "code", "runs", "result")
 STATES = ("judging", "refused", "judged", "running", "finished")
 WIRE_STATES = ("queued", "refused", "skipped", "running", "done", "failed")
@@ -223,7 +230,12 @@ def read_status(doc) -> dict:
     """A request's status as Orodruin publishes it (eregion_core/exercise_runner.py), or
     ``RequestRefused``: exactly its fields — the request's id, a state, the time, codes, and per
     wire its rank, state, code, runs and result. Never an experiment, a target or a name: what
-    reaches the console's host through the channel stays blind to the red side's plan."""
+    reaches the console's host through the channel stays blind to the red side's plan. A request
+    of the drill of the week carries its ``drill`` besides (``read_status_drill``)."""
+    if isinstance(doc, dict) and "drill" in doc:
+        read_status_drill(doc["drill"])
+        read_status({k: v for k, v in doc.items() if k not in STATUS_OPTIONAL})
+        return doc
     _exact(doc, STATUS_FIELDS, "the status")
     if not valid_id(doc["request"]):
         raise RequestRefused("the status names no request id")
@@ -254,6 +266,23 @@ def read_status(doc) -> dict:
             raise RequestRefused(f"the status of wire {i}: its runs are not run ids")
         if not isinstance(w["result"], str) or not _RESULT.fullmatch(w["result"]):
             raise RequestRefused(f"the status of wire {i}: its result is not a result")
+    return doc
+
+
+def read_status_drill(doc) -> dict:
+    """The ``drill`` of a status (DRL1), or ``RequestRefused``: exactly the drill's name, its
+    fingerprint (a sha256) and the occurrence planned (an ISO time with its zone)."""
+    _exact(doc, STATUS_DRILL_FIELDS, "the status's drill")
+    if not isinstance(doc["name"], str) or not _DRILL_NAME.fullmatch(doc["name"]):
+        raise RequestRefused("the status's drill has no drill's name")
+    if not isinstance(doc["sha256"], str) or not _SHA256.fullmatch(doc["sha256"]):
+        raise RequestRefused("the status's drill has no fingerprint (sha256)")
+    try:
+        when = datetime.fromisoformat(doc["occurrence"]) if isinstance(doc["occurrence"], str) else None
+    except ValueError:
+        when = None
+    if when is None or when.tzinfo is None:
+        raise RequestRefused("the status's drill: its occurrence is not an ISO time with its zone")
     return doc
 
 

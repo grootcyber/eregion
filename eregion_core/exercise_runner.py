@@ -63,7 +63,9 @@ MAX_AGE_S = 6 * 3600
 FUTURE_SKEW_S = 5 * 60
 PLAYED = "played.jsonl"
 # Why a wire did not run, once the request was judged.
-SKIPS = ("over_cap", "no_watch", "isolated", "not_returned", "refused_now", "launch_failed")
+SKIPS = ("over_cap", "no_watch", "isolated", "not_returned", "refused_now", "launch_failed", "not_ready")
+# ``not_ready``: the drill of the week's alone (DRL1, eregion_core/scheduled_drill.py) — its target
+# started, and no fresh Heartbeat from it within the wait: the wire is skipped, said.
 
 
 def _now() -> datetime:
@@ -88,15 +90,21 @@ class Status:
     at: str = ""
     codes: list[str] = field(default_factory=list)
     wires: list[WireStatus] = field(default_factory=list)
+    # DRL1: the request the drill of the week made — its name, fingerprint and occurrence
+    # (exercise_request.read_status_drill); None for a request of Dagorlad.
+    drill: dict | None = None
 
     def wire(self, rank: int) -> WireStatus:
         return next(w for w in self.wires if w.rank == rank)
 
     def to_dict(self) -> dict:
-        return {"request": self.request, "state": self.state, "at": self.at,
-                "codes": list(self.codes),
-                "wires": [{"rank": w.rank, "state": w.state, "code": w.code, "runs": list(w.runs),
-                           "result": w.result} for w in self.wires]}
+        doc = {"request": self.request, "state": self.state, "at": self.at,
+               "codes": list(self.codes),
+               "wires": [{"rank": w.rank, "state": w.state, "code": w.code, "runs": list(w.runs),
+                          "result": w.result} for w in self.wires]}
+        if self.drill is not None:
+            doc["drill"] = dict(self.drill)
+        return doc
 
 
 # ── The readers on Orodruin (its identity; Reader on the bench's group) ─────────────────
@@ -270,7 +278,8 @@ class Runner:
                  catalog: dict | None = None,
                  runs_dir: Path | str = "runs", scope: Scope | None = None, now=_now,
                  sleep=time.sleep, wait_isolation_s: float = WAIT_ISOLATION_S,
-                 poll_s: float = POLL_S, say=print):
+                 poll_s: float = POLL_S, say=print, zones: tuple[str, ...] | None = None,
+                 not_ready: Callable | None = None, drill: dict | None = None):
         self.check = check or orodruin.check
         self.watch = watch or watch_gate.refusal
         self.read_target, self.fault_targets = read_target, fault_targets
@@ -282,10 +291,19 @@ class Runner:
         self.scope = scope or Scope.for_bench()
         self.now, self.sleep, self.say = now, sleep, say
         self.wait_isolation_s, self.poll_s = wait_isolation_s, poll_s
+        # DRL1 (docs/design/drill-banc.md §2.3, 10): the zones this request may play in — judged at
+        # the first judgment AND before each wire (_recheck), by the same guard (exercise_plan
+        # judge, ``not_bench``). None: a request of Dagorlad, every zone the production rule admits.
+        self.zones = tuple(zones) if zones is not None else None
+        # Why a wire's target is not ready now ("" when it is): the drill's Heartbeat after its start.
+        self.not_ready = not_ready
+        self.drill = drill
 
     # The status, kept on this host and published at each step.
     def _emit(self, status: Status) -> None:
         status.at = self.now().isoformat()
+        if self.drill is not None:
+            status.drill = self.drill
         path = runs_layout.dir_of(runs_layout.ORODRUIN, self.runs_dir) / "requests" / f"{status.request}.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         channel_reader.write_file(path, json.dumps(status.to_dict(), indent=2))   # SEC16, SEC18
@@ -376,7 +394,7 @@ class Runner:
         faults = self.fault_targets()
         catalog = self.catalog if self.catalog is not None else load_catalog()
         verdicts = plan([(w.experiment, w.target) for w in req.wires], targets, catalog=catalog,
-                        watch_refusal=self.watch(), fault_targets=faults, scope=self.scope,
+                        watch_refusal=self.watch(), fault_targets=faults, scope=self.scope, zones=self.zones,
                         max_injections=cap.get("max_injections", 0), max_run_s=cap.get("max_run_s", 0))
         for w, v in zip(req.wires, verdicts):
             if not v.code and any(x["code"] == "typed_name" for x in v.warnings):
@@ -545,7 +563,8 @@ class Runner:
         except Exception as ex:
             return "refused_now", f"its target unreadable now: {ex}"
         v = judge(w.experiment, w.target, target, catalog=self.catalog if self.catalog is not None
-                  else load_catalog(), watch_refusal="", fault_targets=faults, scope=self.scope)
+                  else load_catalog(), watch_refusal="", fault_targets=faults, scope=self.scope,
+                  zones=self.zones)
         if v.code:
             return "refused_now", f"{v.code}: {v.reason}"
         if any(x["code"] == "typed_name" for x in v.warnings):
@@ -570,6 +589,9 @@ class Runner:
         if held:
             return "isolated", (f"{w.target_name} still held after {waited / 60:.0f} min ({held}): "
                                 "skipped — an injector never undoes what Glorfindel did")
+        unready = self.not_ready(w.target) if self.not_ready is not None else ""
+        if unready:
+            return "not_ready", f"{w.target_name}: {unready}"
         return None
 
 

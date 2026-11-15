@@ -709,20 +709,37 @@ def arm(run_id: str, injector: str, verdict: Verdict | None = None,
 # ── Kill — revoke first, then stop ────────────────────────────────────────────────────
 
 def kill(revoke: Callable[[], None], cancel: Callable[[], None], stop: Callable[[], None],
-         close: Callable[[], None]) -> list[str]:
+         close: Callable[[], None], *, disable_start: Callable[[], None] | None = None,
+         remove_permit: Callable[[], None] | None = None,
+         disarm: Callable[[], None] | None = None) -> list[str]:
     """``orodruin-kill``: revoke the identity, cancel the chaos experiments still running,
     stop the VM, close the open exercise windows — in that order. Revoke first, so a
     running injector loses its rights even if the rest drags (a stopped VM keeps its
     identity); cancel next, since an experiment acts with its own identity and outlives
     the revocation; close last, once nothing of Orodruin's can reopen a window (M-1).
     A failed step does not stop the next ones, and is reported: never a kill that claims
-    success while something survives. Returns the failures."""
+    success while something survives. Returns the failures.
+
+    The drill of the week (DRL1, docs/design/drill-banc.md §3.1), by the operator's identity:
+    right after the revocation and before the VM is stopped, its scheduled start disabled
+    (nothing may wake Orodruin while the kill runs), then its permit removed (an occurrence
+    refuses without it, whenever it comes); last, its pulse written ``disarmed (killed)``."""
     failures = []
-    for name, step in (("revoke", revoke), ("cancel", cancel), ("stop", stop), ("close", close)):
+
+    def run(name: str, step: Callable[[], None] | None) -> None:
+        if step is None:
+            return
         try:
             step()
         except Exception as e:
             failures.append(f"{name}: {type(e).__name__}: {e}")
+
+    for name, step in (("revoke", revoke), ("cancel", cancel), ("stop", stop), ("close", close)):
+        if name == "cancel":   # DRL1: right after the revocation, before the VM is stopped
+            run("disable_start", disable_start)
+            run("remove_permit", remove_permit)
+        run(name, step)
+    run("disarm", disarm)
     return failures
 
 

@@ -832,6 +832,89 @@ def publish_doc(name: str, doc: dict, *, channel: str | None = None, credential=
     return True
 
 
+# DRL1 (docs/design/drill-banc.md §2.4, §4.1): the drill of the week's pulse (``drill.json``, written
+# by Orodruin at each occurrence, by the operator at the arming, the disarming and the kill) and the
+# operator's permit (``drill-permit.json``: written at the arming, removed by the disarming and the
+# kill, rewritten by Orodruin as it was, under If-Match). Under Orodruin's prefix, the same container,
+# the same assignments: no right more. ``pull_orodruin`` takes neither (its pattern does not): their
+# readers are Imladris's (DRL1b).
+DRILL_BLOB = f"{ORODRUIN}/drill.json"
+PERMIT_BLOB = f"{ORODRUIN}/drill-permit.json"
+DRILL_BLOBS = (DRILL_BLOB, PERMIT_BLOB)
+
+
+class Changed(RuntimeError):
+    """A conditional write refused (HTTP 412): the blob is no longer the one read — removed, or
+    written again, between the read and the write."""
+
+
+def _drill_url(name: str, channel: str | None) -> str:
+    if name not in DRILL_BLOBS:
+        raise ValueError(f"not one of the drill's blobs: {name!r}")
+    return channel if channel is not None else channel_url()
+
+
+def publish_drill(name: str, doc: dict, *, if_match: str | None = None, channel: str | None = None,
+                  credential=None, put=None) -> bool:
+    """Write ``orodruin/drill.json`` or ``orodruin/drill-permit.json``. With ``if_match`` (an ETag
+    read), only over that very blob: removed or changed since, ``Changed`` — never written again
+    (§2.4: a permit removed is never recreated). False without a channel."""
+    import json
+    import requests
+
+    url = _drill_url(name, channel)
+    if not url:
+        return False
+    headers = {**auth_headers(credential, url), "x-ms-blob-type": "BlockBlob",
+               "Content-Type": "application/json"}
+    if if_match is not None:
+        headers["If-Match"] = if_match
+    r = (put or requests.put)(f"{url}/{name}", headers=headers, data=json.dumps(doc).encode(), timeout=15)
+    if r.status_code in (404, 412) and if_match is not None:
+        raise Changed(f"{name} is no longer the one read (HTTP {r.status_code}): not written")
+    if not r.ok:
+        raise RuntimeError(f"HTTP {r.status_code} publishing {name}")
+    return True
+
+
+def read_drill(name: str, *, channel: str | None = None, credential=None, get=None) -> tuple[dict | None, str]:
+    """One of the drill's blobs and its ETag: (None, "") when it is absent (404) or no channel is
+    configured — an absence; anything else that fails raises (unreadable, never taken for absent)."""
+    import json
+
+    url = _drill_url(name, channel)
+    if not url:
+        return None, ""
+    r, body = fetch(get, f"{url}/{name}", auth_headers(credential, url), what=name)
+    if r.status_code == 404:
+        return None, ""
+    if not r.ok:
+        raise RuntimeError(f"HTTP {r.status_code} reading {name}")
+    try:
+        doc = json.loads(body)
+    except ValueError:
+        raise RuntimeError(f"{name} is not JSON") from None
+    if not isinstance(doc, dict):
+        raise RuntimeError(f"{name} is not a JSON object")
+    return doc, str(r.headers.get("ETag") or "")
+
+
+def delete_drill(name: str, *, channel: str | None = None, credential=None, delete=None) -> bool:
+    """Remove one of the drill's blobs: True when it was there, False when it was not (404).
+    Anything else raises. No channel: a ``RuntimeError`` — nothing proven removed."""
+    import requests
+
+    url = _drill_url(name, channel)
+    if not url:
+        raise RuntimeError(f"no exercise channel: {name} not removed")
+    r = (delete or requests.delete)(f"{url}/{name}", headers=auth_headers(credential, url), timeout=15)
+    if r.status_code == 404:
+        return False
+    if not r.ok:
+        raise RuntimeError(f"HTTP {r.status_code} removing {name}")
+    return True
+
+
 def orodruin_refusal(name: str, doc) -> str:
     """Why a blob of Orodruin's is not believed — "" when it has its shape."""
     from eregion_core.exercise_request import RequestRefused, read_status
