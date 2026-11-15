@@ -269,7 +269,7 @@ def airgap_env(run_home: str | Path, *, terraform_binary: str | Path | None = No
     ``run_home`` is a WRITABLE, run-scoped ``HOME``: Stratus writes its state under
     ``<run_home>/.stratus-red-team/<technique>/`` (internal/state/state.go: ``os.UserHomeDir()`` +
     ``.stratus-red-team``), so it must be writable — the staged ``/opt/stratus/home`` is read-only
-    in the image, which is why the executor builds a fresh HOME per run (R2bs).
+    in the image, which is why the executor builds a fresh HOME per run (R2BS).
 
     ``terraform_binary`` is the pinned Terraform staged read-only in the image. Passed as
     ``STRATUS_TERRAFORM_BINARY_PATH`` (runner.go), Stratus runs it — it is 1.3.10, its ``>=`` check

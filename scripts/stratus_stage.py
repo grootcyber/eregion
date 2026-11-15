@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""R2bs (#841): stage the pinned control-plane injector tool and its offline provisioning
+"""R2BS (#841): stage the pinned control-plane injector tool and its offline provisioning
 toolchain into the image build context.
 
 Runs on the operator's workstation WITH network — the only staging step that needs it. The

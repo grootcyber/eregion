@@ -38,7 +38,7 @@ MUTANTS = [
      '    absent = spec.get("expect_absent", True)',
      '    absent = spec.get("expect_absent", False)'),
     # ── Offline — Orodruin has no Internet ────────────────────────────────────────────
-    ("M4322", "the offline env drops the writable run HOME (R2bs replaced the staged plugin cache)",
+    ("M4322", "the offline env drops the writable run HOME (R2BS replaced the staged plugin cache)",
      ENG, '    env = {"HOME": str(run_home)}', "    env = {}"),
     ("M4323", "the offline env drops the provider mirror (TF_CLI_CONFIG_FILE)", ENG,
      "    if terraformrc is not None:", "    if terraformrc is not None and False:"),

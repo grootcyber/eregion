@@ -108,7 +108,7 @@ class StratusExecutor:
         self._run = run or subprocess.run
         self._get = get or _default_graph_get
         self._arm_get = arm_get or _default_arm_get
-        self._run_home_path: str | None = None   # a writable HOME built per run (R2bs)
+        self._run_home_path: str | None = None   # a writable HOME built per run (R2BS)
 
     def resource_group_tags(self, subscription_id: str, resource_group: str) -> dict:
         """The bench group's tags, read through ARM — the control-plane enrollment guard
@@ -119,7 +119,7 @@ class StratusExecutor:
         return (body.get("tags") if isinstance(body, dict) else {}) or {}
 
     def _staged_terraform(self) -> str:
-        """The pinned Terraform binary staged read-only in the image (make stratus-stage, R2bs)."""
+        """The pinned Terraform binary staged read-only in the image (make stratus-stage, R2BS)."""
         return os.path.join(self.layout.home, "terraform")
 
     def _verify_staged_terraform(self) -> None:
@@ -150,7 +150,7 @@ class StratusExecutor:
     def _ensure_run_home(self) -> str:
         """A writable HOME for this run: Stratus writes its state under
         ``<HOME>/.stratus-red-team/`` and the staged ``/opt/stratus/home`` is read-only in the
-        image (R2bs). Built once (the staged Terraform re-checked first), removed by ``close()``."""
+        image (R2BS). Built once (the staged Terraform re-checked first), removed by ``close()``."""
         if self._run_home_path is None:
             self._verify_staged_terraform()
             import tempfile

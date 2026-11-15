@@ -229,7 +229,7 @@ def test_staged_layout_reads_the_environment():
 # ── The executor journals every phase through the armed contract ──────────────────────
 
 def _staged_home(tmp_path) -> Path:
-    """A staged ``/opt/stratus/home`` with a fake pinned Terraform and its recorded sha256 (R2bs):
+    """A staged ``/opt/stratus/home`` with a fake pinned Terraform and its recorded sha256 (R2BS):
     what ``make stratus-stage`` lays into the read-only image."""
     home = tmp_path / "staged-home"
     home.mkdir(exist_ok=True)
@@ -276,7 +276,7 @@ def test_executor_sends_the_exact_argv_and_offline_env(tmp_path, monkeypatch):
     ex.detonate()
     assert record[0].argv[1:] == ["detonate", TID]
     assert record[0].env["AZURE_SUBSCRIPTION_ID"] == "sub-123"   # credentials inherited
-    # HOME is a fresh, WRITABLE run-scoped dir — never the read-only staged home (R2bs)
+    # HOME is a fresh, WRITABLE run-scoped dir — never the read-only staged home (R2BS)
     assert record[0].env["HOME"] == ex._run_home_path != ex.layout.home
     assert record[0].env["STRATUS_TERRAFORM_BINARY_PATH"] == ex._staged_terraform()
     assert record[0].env["TF_CLI_CONFIG_FILE"] == ex.layout.terraformrc
@@ -285,7 +285,7 @@ def test_executor_sends_the_exact_argv_and_offline_env(tmp_path, monkeypatch):
 
 
 def test_executor_run_home_is_writable_and_close_removes_it(tmp_path):
-    """R2bs: the staged /opt/stratus/home is read-only in the image, so the executor builds a
+    """R2BS: the staged /opt/stratus/home is read-only in the image, so the executor builds a
     fresh writable HOME per run (Stratus writes its state under <HOME>/.stratus-red-team/) and
     close() removes it."""
     ex = _executor(tmp_path)
@@ -297,7 +297,7 @@ def test_executor_run_home_is_writable_and_close_removes_it(tmp_path):
 
 
 def test_executor_refuses_when_the_staged_terraform_is_missing(tmp_path):
-    """R2bs: no staged Terraform (image not staged) → the run refuses before provisioning."""
+    """R2BS: no staged Terraform (image not staged) → the run refuses before provisioning."""
     empty = tmp_path / "empty-home"
     empty.mkdir()
     layout = StagedLayout(binary="/x/stratus", home=str(empty),
@@ -308,7 +308,7 @@ def test_executor_refuses_when_the_staged_terraform_is_missing(tmp_path):
 
 
 def test_executor_refuses_a_staged_terraform_that_does_not_match_its_sha256(tmp_path):
-    """R2bs (SEC5): the staged Terraform re-checked before a run, like the Stratus binary — a
+    """R2BS (SEC5): the staged Terraform re-checked before a run, like the Stratus binary — a
     binary changed since its sha256 was recorded runs nothing."""
     home = _staged_home(tmp_path)
     (home / "terraform").write_bytes(b"tampered\n")   # changed after its sha256 was recorded

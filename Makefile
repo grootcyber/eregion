@@ -206,7 +206,7 @@ help:
 	@echo "  make annatar-dry-run          Run scenario (--dry-run)"
 	@echo "  make annatar-validate         Validate scenario YAML"
 	@echo "  make annatar-list             List available scenarios"
-	@echo "  make stratus-stage            Stage the control-plane injector tool offline (network ; R2bs)"
+	@echo "  make stratus-stage            Stage the control-plane injector tool offline (network ; R2BS)"
 	@echo "  make annatar-simulate         Simulate locally (no Azure): glorfindel respond --dry-run"
 	@echo "  make annatar-simulate-gap     Simulate detection_timeout flow (same, no watch)"
 	@echo ""
@@ -432,7 +432,7 @@ annatar-validate:
 annatar-list:
 	docker run --rm -v $(PWD)/annatar/scenarios:/app/annatar/scenarios:ro --entrypoint annatar $(IMAGE_ANNATAR) list
 
-# R2bs (#841): stage the pinned control-plane injector tool + its offline provisioning toolchain
+# R2BS (#841): stage the pinned control-plane injector tool + its offline provisioning toolchain
 # into annatar/stratus/staged/ (the only step with Internet; downloads are verified against
 # annatar/stratus/PIN). The injector image then carries them read-only at /opt/stratus/; build and
 # push it (make orodruin-push) so the execution host has them without egress.

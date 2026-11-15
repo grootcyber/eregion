@@ -758,7 +758,7 @@ class Engine:
         finally:
             # The report (with carry_run) is written inside the cycle's innermost finally, so it
             # survives an interrupt mid-teardown; here only the exercise window is closed and the
-            # run-scoped HOME the executor built is removed (R2bs).
+            # run-scoped HOME the executor built is removed (R2BS).
             close_window(run_id, injector="annatar")
             getattr(executor, "close", lambda: None)()
 

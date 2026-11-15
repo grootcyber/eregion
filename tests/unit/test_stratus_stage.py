@@ -1,4 +1,4 @@
-"""R2bs (#841): `make stratus-stage` (scripts/stratus_stage.py) — the download+verify+layout
+"""R2BS (#841): `make stratus-stage` (scripts/stratus_stage.py) — the download+verify+layout
 logic, hermetic. An injected ``fetch`` serves the archives; nothing reaches the network. Every
 download is verified against a PIN fixture before it is laid out.
 """
