@@ -15,9 +15,12 @@ _T = "tests/unit/test_annatar_stratus.py"
 
 MUTANTS = [
     # ── The adapter: fail closed on the id and the allow-list ─────────────────────────
-    ("M4315", "the technique-id regex accepts a non-Azure platform (aws/gcp)", ENG,
-     'r"^azure\\.[a-z0-9]+(?:-[a-z0-9]+)*\\.[a-z0-9]+(?:-[a-z0-9]+)*$"',
-     'r"^[a-z0-9]+\\.[a-z0-9]+(?:-[a-z0-9]+)*\\.[a-z0-9]+(?:-[a-z0-9]+)*$"'),
+    # RID2 (#844) widened the id grammar to the directory platform (azure|entra-id); the mutant
+    # still checks the grammar fails closed on any other platform (aws/gcp/kubernetes).
+    ("M4315", "the technique-id regex accepts a platform outside the adapter (aws/gcp/kubernetes)",
+     ENG,
+     'r"^(?:azure|entra-id)\\.[a-z0-9]+(?:-[a-z0-9]+)*\\.[a-z0-9]+(?:-[a-z0-9]+)*$"',
+     'r"^(?:[a-z0-9-]+)\\.[a-z0-9]+(?:-[a-z0-9]+)*\\.[a-z0-9]+(?:-[a-z0-9]+)*$"'),
     ("M4316", "a technique off the catalog's closed allow-list is resolved anyway", ENG,
      "    entry = entries.get(tid)\n    if entry is None:",
      "    entry = entries.get(tid) or {}\n    if False:"),
@@ -38,8 +41,8 @@ MUTANTS = [
      '    absent = spec.get("expect_absent", True)',
      '    absent = spec.get("expect_absent", False)'),
     # ── Offline — Orodruin has no Internet ────────────────────────────────────────────
-    ("M4322", "the offline env drops the provider plugin cache (TF_PLUGIN_CACHE_DIR)", ENG,
-     "    if plugin_cache is not None:", "    if plugin_cache is not None and False:"),
+    ("M4322", "the offline env drops the writable run HOME (R2BS replaced the staged plugin cache)",
+     ENG, '    env = {"HOME": str(run_home)}', "    env = {}"),
     ("M4323", "the offline env drops the provider mirror (TF_CLI_CONFIG_FILE)", ENG,
      "    if terraformrc is not None:", "    if terraformrc is not None and False:"),
     # ── The cycle and the exact argv ──────────────────────────────────────────────────

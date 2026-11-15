@@ -78,8 +78,9 @@ What must hold whatever happens:
 Oracles are the test's own: what was released, what was lost and when, who wrote what
 — never the markers and records the code under test leaves (a bug that deletes them
 must not earn an exemption). The test's journal says only what the test did: the operator's
-acknowledgement of a block's drift card (`acked_drift`) holds while the block's rules are as
-they were then, and only a step that ends the block's episode drops it — an isolation of the
+acknowledgement of a block's drift card (`acked_drift`) holds while no rule it saw present has
+vanished since (a rule still present but turned to an allow is a bypass, not a new disappearance
+— L1Nc), and only a step that ends the block's episode drops it — an isolation of the
 same VM taken off and put back by the test does not (MAK, #481). Values are not an episode
 (L1E, #485): the acknowledgement no longer counts once the test wrote the block whole again,
 or once Glorfindel wrote, after it, a rule it saw absent (the fake's journal) — gone again
@@ -1633,10 +1634,12 @@ class IsolationMachine(RuleBasedStateMachine):
             told = {key(e.get("resource_id", "")) for e in escalations.pending()
                     if e.get("action") == "block_suspicious_ip"}
             # A drift card the operator acknowledged (`operator_acknowledges`) stays said
-            # for its episode — one card per disappearance, by design — only while the
-            # entry's rules on Azure, its perimeter pair included, are exactly as they were
-            # at the acknowledgement: anything worse since must be said again (RB1, 4th
-            # review — "no rewrite by Glorfindel" let a perimeter deleted after it pass).
+            # for its episode — one card per disappearance, by design — only while no worse
+            # a disappearance than the one acknowledged has happened since: no rule it saw
+            # present gone (its perimeter pair included — RB1, 4th review: a perimeter deleted
+            # after it must be said again). A named rule still present but turned to an allow
+            # has not vanished (L1Nc, #795): L1 is about rules gone, and a bypass is said by
+            # its own « contourné » card and judged by the bypass invariants. `_ack_holds` judges it.
             acked = getattr(self, "acked_drift", {})
             told |= {key(v) for v in acked if self._ack_holds(v)}
             for vm in vanished:
@@ -1805,14 +1808,27 @@ class IsolationMachine(RuleBasedStateMachine):
 
     def _ack_holds(self, vm: str) -> bool:
         """The operator's acknowledgement of the VM's block drift card counts its disappearance said
-        (L1) for its episode only: the entry's rules exactly as at the acknowledgement (RB1, L1G) —
-        values, never the episode alone — and, the episode the same (L1E, #485), no rule the
-        acknowledgement saw absent written since by Glorfindel (the fake's journal: a block put
-        back, the pair another VM's perimeter wrote; removed again, its values are those of the
-        acknowledgement, the episode is not), nor the block written whole by the test since
-        (`_episode_over`). The test's own journal, never the code's marks (A0)."""
+        (L1) for its episode only, while no worse a disappearance than the one acknowledged has happened
+        since. L1 is about rules gone: a named rule the acknowledgement saw present and now absent on
+        Azure — the perimeter pair deleted in addition, a NIC's rules deleted (RB1 4th review, L1G, L1N)
+        — is a new disappearance, said again. A named rule still present but turned into an allow has NOT
+        vanished (L1Nc, #795): that is a bypass, for which the product raises its own « contourné » card
+        and the bypass invariants answer — it must not break the acknowledgement of a disappearance, and
+        earlier `_block_rules_now(vm) != seen` (the raw bytes) did, demanding a « disparu » card the
+        product rightly did not duplicate (seed at 60: a nic-1 deny in force at the ack, turned since,
+        opened a flow the product said « contourné »; the perimeter it saw gone was the only disappearance,
+        acknowledged). The episode must also be the same (L1E, #485): no rule the acknowledgement saw absent
+        written since by Glorfindel (the fake's journal: a block put back, the pair another VM's perimeter
+        wrote; removed again, the episode is not), nor the block written whole by the test since
+        (`_episode_over`). The test's own journal and the fake's ground truth, never the code's marks (A0)."""
         seen = getattr(self, "acked_drift", {}).get(vm)
-        if seen is None or self._block_rules_now(vm) != seen:
+        if seen is None:
+            return False
+        # A named rule the acknowledgement saw present (its value, not None), gone from Azure now, is a
+        # real new disappearance (L1N, the perimeter pair deleted in addition). A rule still present —
+        # turned to an allow, say — has not vanished: a bypass, judged by its own card (L1Nc).
+        now = self._block_rules_now(vm)
+        if any(r is not None and now.get(k) is None for k, r in seen.items()):
             return False
         absent = {k for k, r in seen.items() if r is None}
         # Never a silent default (L1E, review): an acknowledgement written without its place in the journal
@@ -3075,7 +3091,9 @@ class IsolationMachine(RuleBasedStateMachine):
         card « ne couvre pas » set the drift marker, and the perimeter's later disappearance
         was neither put back nor said. Block cards only: the other kinds (quarantine,
         orphans, bypass) stay said by design once acknowledged, and their oracles count
-        pending cards. A drift card acknowledged stays said for its episode (L1)."""
+        pending cards. A drift card acknowledged stays said for its episode (L1) while no worse a
+        disappearance than the one acknowledged follows — a rule still present but turned is a bypass,
+        not a new disappearance, and does not break it (`_ack_holds`, L1Nc)."""
         cards = [(e["id"], e.get("resource_id") or "", e.get("reason") or "") for e in _reassert_block_cards()]
         # Drawn first, with constraints that never depend on the state, and the cards taken in
         # the store's order: sorted by their ids (a uuid4), what a drawn index fell on differed

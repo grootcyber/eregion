@@ -902,6 +902,17 @@ briques:
     pr: 809
     doc: docs/design/preuves.md
 
+  - id: g-blocage-acquitte-contourne
+    composant: glorfindel
+    poste: g-verifier
+    nom: "Proof: an acknowledged block drift stays said when one of its denies, still present, is turned into an allow since (a bypass, not a new disappearance), while a rule seen present and deleted since still breaks it; the product unchanged"
+    etat: main
+    release: "0.6"
+    lots: [L1Nc]
+    issue: 795
+    pr: 843
+    doc: docs/design/preuves.md
+
   - id: g-isolation-coupee-remplace-levee
     composant: glorfindel
     poste: g-verifier
@@ -1233,6 +1244,15 @@ briques:
     lots: [R2, R2b, R2c]
     issue: 79
 
+  - id: a-injecteur-stage
+    composant: annatar
+    poste: a-attaquer
+    nom: "The control-plane injector's offline toolchain, staged onto the execution host"
+    etat: main
+    release: "0.6"
+    lots: [R2BS]
+    issue: 841
+
   - id: a-identite-banc
     composant: annatar
     poste: a-attaquer
@@ -1244,6 +1264,15 @@ briques:
     issue: 819
     pr: 822
     doc: docs/architecture.md
+
+  - id: a-identite-annuaire
+    composant: annatar
+    poste: a-attaquer
+    nom: "The 0.6.0 identity card, directory side: a pinned public library adds a credential on a test directory identity, seen by Glorfindel"
+    etat: main
+    release: "0.6"
+    lots: [RID2]
+    issue: 844
 
   - id: a-pendant-panne
     composant: annatar
