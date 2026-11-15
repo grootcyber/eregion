@@ -121,7 +121,10 @@ class ScenarioParser:
         elif "target" in data:
             if "type" not in data["target"]:
                 errors.append("target.type is required")
-            if "resource_group" not in data["target"]:
+            # An entra_id target (RID2) acts in the directory — it creates and destroys its own
+            # application and service principal, not a resource under a group — so it carries no
+            # resource_group. Every other target names the group it touches.
+            if data["target"].get("type") != "entra_id" and "resource_group" not in data["target"]:
                 errors.append("target.resource_group is required")
 
         # A stratus scenario (R2) attacks the Azure control plane, not a VM (#819): a VM target

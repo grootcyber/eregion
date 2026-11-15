@@ -1,0 +1,51 @@
+schema_version: "1"
+name: backdoor-application-service-principal
+description: >
+  T1098.001 — Persistance d'identité : ajout d'un identifiant (secret) de porte dérobée au
+  service principal d'une application Entra ID, par la bibliothèque publique épinglée (cycle
+  warmup/detonate/revert/cleanup), depuis Orodruin armé, dans l'annuaire. C'est la carte
+  d'identité de la 0.6.0 côté annuaire (RID2) : la technique crée sa propre application et son
+  service principal au warmup (puis lui assigne le rôle Directory Readers, lecture seule), pas sur
+  l'utilisateur de test. Le detonate ajoute un secret au service principal — l'action apparaît
+  dans le journal d'audit d'Entra ID (« Add service principal credentials »), détection C2. La
+  détection au banc est ID1 ; ici la détection reste « unknown », T0 émis pour cette mesure.
+kind: technique
+mitre: T1098.001
+version: "1.0.0"
+engine: stratus
+engine_ref: entra-id.persistence.backdoor-application-sp
+destructive: false
+
+target:
+  # La technique agit dans l'annuaire Entra ID (pas une ressource de groupe) : elle crée et
+  # détruit sa propre application et son service principal. Le tenant est pris dans l'environnement
+  # d'Orodruin armé (AZURE_TENANT_ID). Rien n'est touché sur l'utilisateur de test inscrit.
+  type: entra_id
+
+detection:
+  timeout: "600s"
+  prerequisites:
+    - name: entra_audit_ingestion
+      table: AuditLogs
+      why: >
+        La technique agit dans l'annuaire (ajout d'un secret au service principal d'une
+        application) ; elle n'apparaît que dans le journal d'audit d'Entra ID, dont l'ingestion au
+        banc est ID1 (#281). C2 détecte cette activité.
+      verify: "AuditLogs | where TimeGenerated > ago(1h) | limit 1"
+  hints:
+    log_source: AuditLogs
+    attack_commands_summary: >
+      La bibliothèque publique épinglée crée une application Entra ID et son service principal, lui
+      assigne le rôle Directory Readers (lecture seule), puis ajoute un secret de porte dérobée au
+      service principal (detonate), le retire (revert) et détruit l'application, le service
+      principal et le rôle (cleanup). Une sonde Graph en lecture seule vérifie l'absence de
+      l'application avant détonation et après nettoyage.
+    expected_indicators:
+      - "AuditLogs : « Add service principal credentials » (Category=ApplicationManagement, OperationName=Add service principal credentials)"
+      - "InitiatedBy : l'identité d'Orodruin (l'appelant du plan d'annuaire)"
+      - "TargetResources : le service principal créé par la technique (application « Stratus Red Team sample application <corrélation> »)"
+      - "Result : success"
+    failure_candidates:
+      - "AuditLogs | where OperationName == 'Add service principal credentials' | where TimeGenerated > ago(10m)"
+      - "AuditLogs | where Category == 'ApplicationManagement' | where TimeGenerated > ago(10m)"
+      - "Le journal d'audit d'Entra ID peut arriver avec plusieurs minutes de retard — fenêtre de détection >= 600 s (ING1)"
