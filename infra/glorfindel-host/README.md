@@ -830,7 +830,8 @@ le 19/10, la VM d'observation tourne sur `claude-sonnet-5-5` (issue #139 pour en
 ## SSH : la clé d'hôte épinglée (V-32, SEC7 ; exigée depuis SEC-C)
 
 Chaque commande du poste vers Imladris (`imladris-push`, `-start`, `-status`, `-tunnel`, `-ssh`,
-`-cd-*`…) passe d'abord par `imladris-known` (`infra/glorfindel-host/known_host.sh`) :
+`-cd-*`…, et `bench-preflight`, `bench-report`, `bench-run`, `bench-restore`) passe d'abord par
+`imladris-known` (`infra/glorfindel-host/known_host.sh`) :
 
 - **avec `HOST_SSH_FINGERPRINT`** (dans ton environnement, jamais dans le dépôt) : un `known_hosts`
   dédié, `HOST_KNOWN_HOSTS` (défaut `~/.eregion/h0_known_hosts`, mode 600), est écrit à partir de la
@@ -872,7 +873,7 @@ porte :
 1. **L'empreinte d'Imladris** : `make imladris-fingerprint`, sa ligne `export HOST_SSH_FINGERPRINT=…`
    dans `.envrc`, `direnv allow` (« SSH », juste au-dessus). Sans elle, **plus rien ne part vers
    Imladris** depuis le poste : ni `imladris-push`, ni `-start`, ni `-status`, ni `-cd-*`, ni le tunnel
-   de la console. Chaque commande refuse avant le moindre ssh, en disant la cible qui lit l'empreinte.
+   de la console, ni `make bench-*`. Chaque commande refuse avant le moindre ssh, en disant la cible qui lit l'empreinte.
 2. **Le CD d'Imladris, sans elle** : rien ne change pour lui. Il tourne sur la VM (son timer, toutes
    les 5 minutes), ne lit pas `HOST_SSH_FINGERPRINT` et ne parle à aucun hôte par SSH : un passage en
    cours se termine, une release publiée se déploie, un retour arrière automatique se fait, comme

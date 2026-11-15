@@ -272,9 +272,11 @@ def variables(profile: str, env: Mapping[str, str]) -> list[Check]:
         out.append(Check(g, "ORO_SSH_FINGERPRINT", OK) if _SSH_FINGERPRINT.match(fp)
                    else Check(g, "ORO_SSH_FINGERPRINT vide ou mal formé : aucune commande ne part vers Orodruin",
                               FAIL, "make orodruin-fingerprint, puis sa ligne export dans .envrc"))
+        # SEC-C: a failure, as Orodruin's — the bench profile holds Imladris (its host.env is required
+        # below), and without the fingerprint no command reaches it, make bench-* included.
         out.append(Check(g, "HOST_SSH_FINGERPRINT", OK) if _SSH_FINGERPRINT.match(env.get("HOST_SSH_FINGERPRINT", ""))
                    else Check(g, "HOST_SSH_FINGERPRINT vide ou mal formé : aucune commande ne part vers Imladris (SEC-C)",
-                              WARN, "make imladris-fingerprint, puis sa ligne export dans .envrc"))
+                              FAIL, "make imladris-fingerprint, puis sa ligne export dans .envrc"))
     return out
 
 
