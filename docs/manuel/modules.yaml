@@ -902,6 +902,17 @@ briques:
     pr: 809
     doc: docs/design/preuves.md
 
+  - id: g-blocage-acquitte-contourne
+    composant: glorfindel
+    poste: g-verifier
+    nom: "Proof: an acknowledged block drift stays said when one of its denies, still present, is turned into an allow since (a bypass, not a new disappearance), while a rule seen present and deleted since still breaks it; the product unchanged"
+    etat: main
+    release: "0.6"
+    lots: [L1Nc]
+    issue: 795
+    pr: 843
+    doc: docs/design/preuves.md
+
   - id: g-isolation-coupee-remplace-levee
     composant: glorfindel
     poste: g-verifier

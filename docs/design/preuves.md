@@ -786,6 +786,22 @@ illisible est lu vide. Et le premier NSG illisible arrête la lecture des suivan
 attrapent M5250, M5251 et M5254 ; le 429 détaché attrape M5252 et M5253, que le 429 derrière la quarantaine
 laisse vivre.
 
+**L'oracle précisé, cette fois (L1Nc, #795).** Après les deux correctifs produit, la nuit restait rouge sur L1,
+et la cause était dans l'oracle, pas dans le produit. Un blocage fusionné (le périmètre et la VM), sa paire de
+périmètre disparue et la perte acquittée ; puis l'une des propres denies de la VM — toujours là, sur son NSG
+dédié, en vigueur à l'acquittement — tournée en allow depuis. Le produit le dit, un contournement, par sa
+carte « contourné » ; mais l'oracle `_ack_holds` comparait les règles de l'entrée à l'acquittement par leurs
+octets bruts (`_block_rules_now != seen`) et lisait l'acquittement rompu, exigeant une carte « a disparu »
+pour une règle qui n'avait pas disparu. L1 parle de règles parties : l'acquittement d'une disparition tient
+désormais tant qu'aucune règle vue présente n'a disparu depuis — la paire de périmètre supprimée en plus, les
+règles d'un NIC supprimées, redites (L1N reste strict) —, tandis qu'une règle toujours présente mais tournée
+est un contournement, du ressort des invariants de contournement et dit par la carte du produit, pas une
+disparition neuve que L1 réclamerait deux fois. La séquence figée (`test_invariant_regressions.py`) appelle
+l'oracle des deux façons : une deny tournée après l'acquittement n'est pas pire, une règle partie depuis le
+rompt. Mutants M5471–M5476 (`scripts/mutants/L1Nc.py`) : l'oracle resserré à tort (les octets bruts de
+nouveau, la présence-à-l'acquittement ôtée, la disparition lue à l'envers) ou relâché jusqu'à être complaisant
+à L1N (le garde-fou ôté, exigé de toute règle, une règle partie lue « encore dite »). Les six sont attrapés.
+
 ### Une isolation écrite en entier, coupée dans sa coupure de sessions, remplace la levée (I9A)
 
 La nuit « Invariants (deep) » du 14/11 (run 43585550169, sur f0df21d1, 10 000 exemples) est rouge sur
