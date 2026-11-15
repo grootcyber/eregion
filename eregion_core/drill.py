@@ -33,7 +33,7 @@ import re
 import sys
 import tempfile
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from eregion_core.orodruin import CEILING_INJECTIONS
@@ -42,8 +42,19 @@ SHIPPED, INSTANCE = "shipped", "instance"
 AUTHORS = ("operator", "annatar", "eregion")
 ZONES = ("bench", "twin", "production")
 FIELDS = ("name", "author", "wires")
-OPTIONAL = ("description", "updated")
+OPTIONAL = ("description", "updated", "schedule")
 WIRE_FIELDS = ("experiment", "target")
+# DRL1 (docs/design/drill-banc.md §1.2): when Orodruin's timer may play a shipped drill — a day of
+# the week, an hour of UTC, its own cap. Read as exactly as the rest: no field more, none awry.
+SCHEDULE_FIELDS = ("day", "at", "max_injections", "max_run_s")
+DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+# The zone every wire of a scheduled drill aims at: the bench alone — never twin nor production,
+# even for a technique the production rule admits there.
+SCHEDULE_ZONE = "bench"
+# The public libraries a scheduled drill may play, their version pinned (BL1b, Jonathan 02/11):
+# never a home-grown script.
+PUBLIC_ENGINES = ("atomic", "stratus")
+_AT = re.compile(r"([01][0-9]|2[0-3]):[0-5][0-9]")
 MAX_WIRES = CEILING_INJECTIONS
 MAX_BYTES = 64 * 1024
 MAX_DESCRIPTION = 300
@@ -75,6 +86,45 @@ class DrillWire:
 
 
 @dataclass(frozen=True)
+class Schedule:
+    """When Orodruin's timer plays the drill (DRL1): ``day`` (mon … sun), ``at`` (HH:MM, UTC), and
+    the drill's own cap, at most Orodruin's ceilings."""
+    day: str
+    at: str
+    max_injections: int
+    max_run_s: int
+
+    def to_doc(self) -> dict:
+        return {"day": self.day, "at": self.at, "max_injections": self.max_injections,
+                "max_run_s": self.max_run_s}
+
+    @property
+    def weekday(self) -> int:
+        return DAYS.index(self.day)
+
+    @property
+    def minutes(self) -> int:
+        """Minutes past midnight, UTC."""
+        hours, minutes = self.at.split(":")
+        return int(hours) * 60 + int(minutes)
+
+    def on_calendar(self) -> str:
+        """systemd's OnCalendar for it (``Tue *-*-* 19:00:00 UTC``)."""
+        return f"{self.day.capitalize()} *-*-* {self.at}:00 UTC"
+
+    def occurrence(self, now: datetime) -> datetime:
+        """The last time it fell, at or before ``now`` (UTC)."""
+        now = now.astimezone(timezone.utc)
+        at = now.replace(hour=self.minutes // 60, minute=self.minutes % 60, second=0, microsecond=0)
+        at -= timedelta(days=(now.weekday() - self.weekday) % 7)
+        return at if at <= now else at - timedelta(days=7)
+
+    def next(self, now: datetime) -> datetime:
+        """The next time it falls, strictly after ``now``."""
+        return self.occurrence(now) + timedelta(days=7)
+
+
+@dataclass(frozen=True)
 class Drill:
     name: str
     author: str
@@ -82,6 +132,7 @@ class Drill:
     description: str = ""
     updated: str = ""
     layer: str = ""
+    schedule: Schedule | None = None
 
     def to_doc(self) -> dict:
         doc: dict = {"name": self.name, "author": self.author}
@@ -89,6 +140,8 @@ class Drill:
             doc["description"] = self.description
         if self.updated:
             doc["updated"] = self.updated
+        if self.schedule is not None:
+            doc["schedule"] = self.schedule.to_doc()
         doc["wires"] = [{"experiment": w.experiment, "target": w.target_doc()} for w in self.wires]
         return doc
 
@@ -108,10 +161,59 @@ def _exact(doc, required: tuple[str, ...], optional: tuple[str, ...], what: str)
         raise DrillRefused(f"{what} lacks {', '.join(missing)}")
 
 
-def read(doc, layer: str) -> Drill:
+def eligible(experiment) -> str:
+    """Why a catalogue entry may not be a wire of a scheduled drill — "" when it may (DRL1 §1.1,
+    conditions 1 to 3): a technique (never a fault in v1), implemented, non-destructive by the
+    catalogue's word, of a public library. ``experiment``: an ``exercise_plan.Experiment``, or None
+    when the catalogue does not hold it."""
+    if experiment is None:
+        return "not in the catalogue"
+    if experiment.kind != "technique":
+        return f"{experiment.id} is a {experiment.kind}, not a technique"
+    if experiment.status != "implemented":
+        return f"{experiment.id} is {experiment.status or 'not implemented'} in the catalogue"
+    if experiment.destructive is not False:
+        return f"{experiment.id} is not declared non-destructive in the catalogue"
+    if experiment.engine not in PUBLIC_ENGINES:
+        return f"{experiment.id} runs by {experiment.engine}, not a public library ({', '.join(PUBLIC_ENGINES)})"
+    return ""
+
+
+def _int(value, low: int, high: int) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and low <= value <= high
+
+
+def read_schedule(doc, wires: list[DrillWire], catalog: dict) -> Schedule:
+    """A shipped drill's ``schedule``, or ``DrillRefused``: exactly its four fields, ``day`` and
+    ``at`` read, its cap within Orodruin's ceilings; and each wire aiming at the bench alone, an
+    experiment ``eligible`` in ``catalog``."""
+    from eregion_core.orodruin import CEILING_RUN_S
+    _exact(doc, SCHEDULE_FIELDS, (), "its schedule")
+    if doc["day"] not in DAYS:
+        raise DrillRefused(f"its schedule's day is not one of {', '.join(DAYS)}")
+    if not isinstance(doc["at"], str) or not _AT.fullmatch(doc["at"]):
+        raise DrillRefused("its schedule's hour (at) is not HH:MM, in UTC")
+    if not _int(doc["max_injections"], 1, CEILING_INJECTIONS):
+        raise DrillRefused(f"its schedule's max_injections is not 1 to {CEILING_INJECTIONS} (CEILING_INJECTIONS)")
+    if not _int(doc["max_run_s"], 1, CEILING_RUN_S):
+        raise DrillRefused(f"its schedule's max_run_s is not 1 to {CEILING_RUN_S} s (CEILING_RUN_S)")
+    for i, w in enumerate(wires, 1):
+        if w.zone != SCHEDULE_ZONE:
+            raise DrillRefused(f"wire {i}: a scheduled drill aims at {{zone: {SCHEDULE_ZONE}}} alone, "
+                               f"not {w.target_doc()}")
+        why = eligible(catalog.get(w.experiment))
+        if why:
+            raise DrillRefused(f"wire {i}: a scheduled drill plays a public, implemented, "
+                               f"non-destructive technique — {why}")
+    return Schedule(doc["day"], doc["at"], doc["max_injections"], doc["max_run_s"])
+
+
+def read(doc, layer: str, catalog: dict | None = None) -> Drill:
     """The drill, or ``DrillRefused``: exactly its fields — a name, an author, 1 to MAX_WIRES
     wires, an optional description and time —, each of its kind. A shipped drill is Eregion's
-    and aims by selector only; an instance's aims by name only. The same pair once."""
+    and aims by selector only; an instance's aims by name only. The same pair once. A shipped
+    drill alone may carry ``schedule`` (DRL1, ``read_schedule``), judged against ``catalog`` — the
+    catalogue of this checkout, or of this image, when none is given."""
     if layer not in (SHIPPED, INSTANCE):
         raise DrillRefused(f"no layer {layer!r}")
     _exact(doc, FIELDS, OPTIONAL, "the drill")
@@ -164,7 +266,15 @@ def read(doc, layer: str) -> Drill:
             raise DrillRefused(f"wire {i}: the same pair twice")
         seen.add(key)
         out.append(wire)
-    return Drill(doc["name"], author, tuple(out), description, updated, layer)
+    schedule = None
+    if "schedule" in doc:
+        if layer != SHIPPED:
+            raise DrillRefused("only a shipped drill is scheduled: an instance's never is (DRL1)")
+        if catalog is None:
+            from eregion_core.exercise_plan import load_catalog
+            catalog = load_catalog()
+        schedule = read_schedule(doc["schedule"], out, catalog)
+    return Drill(doc["name"], author, tuple(out), description, updated, layer, schedule)
 
 
 def to_yaml(drill: Drill) -> str:
@@ -187,10 +297,35 @@ def instance_dir() -> Path:
     return Path(os.environ.get(DRILLS_ENV) or Path.home() / ".eregion" / "console" / "drills")
 
 
-def load_file(path: str | Path, layer: str) -> Drill:
+def load_file(path: str | Path, layer: str, catalog: dict | None = None) -> Drill:
     """One drill's file: read bounded, never through a link, its name its file's."""
+    return loaded(path, layer, catalog)[0]
+
+
+def fingerprint(body: bytes) -> str:
+    """A drill's fingerprint (DRL1, decision 5): the sha256 of its whole file, byte for byte —
+    name, description, schedule, wires; never its expectations."""
+    import hashlib
+    return hashlib.sha256(body).hexdigest()
+
+
+def loaded(path: str | Path, layer: str, catalog: dict | None = None) -> tuple[Drill, str]:
+    """One drill's file and its ``fingerprint``, of the very bytes read."""
     import yaml
     path = Path(path)
+    body = _body(path)
+    try:
+        doc = yaml.safe_load(body.decode("utf-8"))
+    except (UnicodeDecodeError, yaml.YAMLError, RecursionError):   # nested past the parser's depth: not a drill
+        raise DrillRefused(f"{path.name} is not YAML") from None
+    drill = read(doc, layer, catalog)
+    if f"{drill.name}.yaml" != path.name:
+        raise DrillRefused(f"{path.name} holds the drill {drill.name!r}: a drill's file is <its name>.yaml")
+    return drill, fingerprint(body)
+
+
+def _body(path: Path) -> bytes:
+    """A drill file's bytes: read bounded, never through a link, a regular file only."""
     try:
         fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
     except OSError as e:
@@ -201,14 +336,7 @@ def load_file(path: str | Path, layer: str) -> Drill:
         body = f.read(MAX_BYTES + 1)
     if len(body) > MAX_BYTES:
         raise DrillRefused(f"{path.name} larger than {MAX_BYTES} bytes")
-    try:
-        doc = yaml.safe_load(body.decode("utf-8"))
-    except (UnicodeDecodeError, yaml.YAMLError, RecursionError):   # nested past the parser's depth: not a drill
-        raise DrillRefused(f"{path.name} is not YAML") from None
-    drill = read(doc, layer)
-    if f"{drill.name}.yaml" != path.name:
-        raise DrillRefused(f"{path.name} holds the drill {drill.name!r}: a drill's file is <its name>.yaml")
-    return drill
+    return body
 
 
 def _regular(fd: int) -> bool:
