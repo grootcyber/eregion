@@ -257,10 +257,10 @@ def kill_steps(logic_id: str, *, channel: str, run: Callable = az, credential=No
 
 
 def _cli_credential():
-    # The operator's own `az login` — never DefaultAzureCredential, which would take a service
-    # principal from the environment first.
-    from azure.identity import AzureCliCredential
-    return AzureCliCredential()
+    # The operator's own `az login`, as the kill takes it (infra/orodruin/kill.py, the adapter that
+    # imports the SDK: MC0) — never DefaultAzureCredential.
+    from kill import _cli_credential as cli
+    return cli()
 
 
 # ── check, arm, disarm ───────────────────────────────────────────────────────────────

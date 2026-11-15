@@ -116,16 +116,14 @@ class Arm:
 
     def _call(self, method: str, path: str, api: str, body=None) -> dict:
         from eregion_core.held import safe_path
-        from eregion_core.inscription import ARM
-        if self._credential is None:
-            from azure.identity import DefaultAzureCredential
-            self._credential = DefaultAzureCredential()
+        from eregion_core.inscription import ARM, TagEnrollment
         if self._http is None:
             import requests
             self._http = requests
         path = safe_path(path)
-        token = self._credential.get_token(f"{ARM}/.default").token
-        r = getattr(self._http, method)(f"{ARM}{path}", headers={"Authorization": f"Bearer {token}"},
+        # The inscription's reader holds the identity (no SDK of a provider imported here: MC0).
+        reader = self._reader = getattr(self, "_reader", None) or TagEnrollment(credential=self._credential)
+        r = getattr(self._http, method)(f"{ARM}{path}", headers=reader._headers(),
                                         params={"api-version": api}, json=body, timeout=30)
         if not r.ok:
             raise RuntimeError(f"HTTP {r.status_code} on {method.upper()} …/{path.rsplit('/', 1)[-1]}")

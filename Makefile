@@ -1713,7 +1713,7 @@ orodruin-kill:
 # DRILL et TARGETS se donnent sur la ligne de commande, jamais de l'environnement. Le démarrage planifié :
 # la sortie Terraform drill_autostart_id (DRL1c) ; vide, « no scheduled start ».
 ORO_DRILL_AUTOSTART = $(shell $(ORO_TF) output -no-color -raw drill_autostart_id 2>/dev/null | grep -E '^/subscriptions/')
-ORO_DRILL_RUN  = docker run --rm --pull never $(ORO_HARDEN) --env-file orodruin.env $(ORO_IMAGE)
+ORO_DRILL_RUN  = docker run --rm $(ORO_HARDEN) --env-file orodruin.env --pull never $(ORO_IMAGE)
 orodruin-drill-check orodruin-drill-arm orodruin-drill-disarm: export EREGION_DRILL = $(value DRILL)
 orodruin-drill-check orodruin-drill-arm orodruin-drill-disarm: export EREGION_DRILL_TARGETS = $(value TARGETS)
 orodruin-drill-check orodruin-drill-arm orodruin-drill-disarm: export DRILL_ORO_SSH = $(ORO_SSH)
