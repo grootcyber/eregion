@@ -229,7 +229,8 @@ class QueueWatch:
                         key = (service, e.name, st.st_mtime_ns)
                         if key not in self._said:
                             self._said.add(key)
-                            self.refused["malformed"] += 1
+                            with self._lock:
+                                self.refused["malformed"] += 1
                             self.say(f"file d'actions : {service}/queue/{e.name[:60]!r} n'est pas une demande "
                                      "(son nom n'est pas son nonce) : jamais lue")
                         continue
@@ -357,7 +358,8 @@ class QueueWatch:
         return self._run(service, req, card, ctx)
 
     def _refuse(self, service: str, request_id: str, req, refused: aq.Refused, now: datetime) -> dict:
-        self.refused[refused.code] += 1
+        with self._lock:              # the relève and the workers both refuse: never a count lost
+            self.refused[refused.code] += 1
         self.say(f"file d'actions : {service} {request_id[:8]} refusée — {refused.code} : {refused.reason}")
         if refused.critical or refused.code == "seen_store_unavailable":
             self._card(service, refused, now)
@@ -571,10 +573,12 @@ class QueueWatch:
             return None
         self._last_status = at
         from eregion_core import watch_key
+        with self._lock:
+            refused = dict(sorted(self.refused.items()))
         body = {"posture": "read_only" if self.read_only else "write",
                 "pins": {s: (watch_key.fingerprint(self.pins[s]) if s in self.pins else "") for s in aq.SERVICES},
                 "pin_errors": [str(e)[:200] for e in self.pin_errors][:10],
-                "since": _iso(self.since), "at": _iso(now), "refused": dict(sorted(self.refused.items())),
+                "since": _iso(self.since), "at": _iso(now), "refused": refused,
                 "executions": {**self.busy(), "slots": IN_FLIGHT, "backlog": BACKLOG}}
         doc = aq.sign_watch("status", body, self.signer)
         path = aq.receipts_dir(self.root) / aq.STATUS_NAME

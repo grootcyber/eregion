@@ -123,13 +123,24 @@ def _propose(e: dict, decision: dict | None = None) -> bool:
         return False
 
 
-# SEC-B (audit du 06/11, V-12): a line of the store that is not a card — unreadable JSON, or JSON that
-# is not an object — is passed over by every reader, kept as it is in every rewrite (never lost: it
+# SEC-B (audit du 06/11, V-12): a line of the store that is not a card — unreadable JSON, JSON that
+# is not an object, or an object one of whose strings is not UTF-8 (`_encodable`) — is passed over by every reader, kept as it is in every rewrite (never lost: it
 # may be a card half-written by an older version, or what a hand wrote), and said once by this
 # process: a warning of the log, by its length and a digest — never its text, which anyone writing
 # the store chose. Said again only after a restart.
 _UNREADABLE_SAID: set[str] = set()
 _UNREADABLE_KEPT = 1024
+
+
+def _encodable(e: dict) -> bool:
+    """A card every reader can write out again — the console's JSON, a log, a rewrite: none of its
+    strings holds a lone surrogate (SEC-B). A byte that is not UTF-8 in one of its strings, read in
+    `surrogateescape`, or a `\\udcff` its JSON escapes, would make `/api/state` fail on it."""
+    try:
+        json.dumps(e, ensure_ascii=False).encode("utf-8")
+    except Exception:          # UnicodeEncodeError, RecursionError, ValueError
+        return False
+    return True
 
 
 def _card_of(line: str) -> dict | None:
@@ -141,7 +152,7 @@ def _card_of(line: str) -> dict | None:
         e = json.loads(line)
     except Exception:          # ValueError, RecursionError: never raised into a reader
         e = None
-    if isinstance(e, dict):
+    if isinstance(e, dict) and _encodable(e):
         return e
     mark = hashlib.sha256(line.encode("utf-8", "surrogatepass")).hexdigest()[:12]
     if mark not in _UNREADABLE_SAID:

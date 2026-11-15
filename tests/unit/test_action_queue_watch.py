@@ -11,6 +11,7 @@ the receipts the watch signs — never the code's markers (A0). Mutants M3975–
 """
 from __future__ import annotations
 
+import collections
 import json
 import os
 import threading
@@ -982,6 +983,39 @@ def test_a_request_whose_life_ends_while_it_waits_is_refused_and_said(world, thr
     assert aq.digest(card["proposal"]) not in threaded.consumed.digests()
 
 
+class _CountedUnderLock(collections.Counter):
+    """The refusals counted — and every count that was not made under the watch's lock."""
+
+    def __init__(self, q):
+        super().__init__()
+        self.q, self.bare = q, []
+
+    def __setitem__(self, key, value):
+        if not self.q._lock.locked():
+            self.bare.append(key)
+        super().__setitem__(key, value)
+
+
+def test_the_refusals_are_counted_under_the_lock_by_the_releve_and_the_workers(world, threaded, monkeypatch):
+    """SEC-B: the relève and the workers both refuse (``no_slot`` is a worker's) — every count is made
+    under the watch's lock, never lost from the signed status."""
+    threaded.refused = counted = _CountedUnderLock(threaded)
+    g = _first_held(world, threaded, monkeypatch)
+    late = _ask(world, "isolate_vm", card=_card())
+    forged = _ask(world, "release_isolation", signer=BOT)          # the relève refuses it
+    _poll_within(threaded)
+    assert _receipt(world, forged)["state"] == "refused"
+    threaded.clock = lambda: datetime.now(timezone.utc) + timedelta(seconds=aq.MAX_LIFETIME_S + 5)
+    g.gate.set()
+    g.wait_done(1)
+    threaded._backlog.join()
+    assert _code(world, late) == "no_slot"
+    assert counted["no_slot"] == 1 and sum(counted.values()) == 2, counted
+    assert counted.bare == [], counted.bare
+    st = threaded.status(datetime.now(timezone.utc), force=True)
+    assert st["refused"] == {"no_slot": 1, **{k: 1 for k in counted if k != "no_slot"}}, st["refused"]
+
+
 def test_a_full_wait_list_refuses_at_once(world, threaded, monkeypatch):
     """V-09 (M5444): the wait list is bounded — full, a request is refused at once (``busy``), said."""
     monkeypatch.setattr(queue_watch, "BACKLOG", 1)
@@ -1028,7 +1062,11 @@ def test_the_watch_command_refuses_to_run_beside_another(tmp_path, monkeypatch):
 
 
 # V-12: a line of the store that is not a card.
-_NOT_CARDS = ["{not json", '["a list"]', "42", '"text"', "null", "\udcff\udcfe"]
+_NOT_CARDS = ["{not json", '["a list"]', "42", '"text"', "null", "\udcff\udcfe",
+              # an object a byte that is not UTF-8 spoils — raw (read in surrogateescape), and escaped
+              # in its JSON: a card no reader could write out again (/api/state, a log)
+              '{"id": "esc-raw", "status": "pending", "resource_id": "vm-raw", "reason": "\udcff"}',
+              '{"id": "esc-esc", "status": "pending", "resource_id": "vm-esc", "reason": "\\udcff"}']
 
 
 def _spoil(*lines: str) -> list[str]:
@@ -1133,3 +1171,4 @@ def test_the_consoles_state_stands_with_a_line_that_is_not_a_card(world, monkeyp
     got = client.get("/api/state")
     assert got.status_code == 200, got.text[:300]
     assert card["id"] in got.text
+    assert "esc-raw" not in got.text and "esc-esc" not in got.text    # the spoiled objects passed over
