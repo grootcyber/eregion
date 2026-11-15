@@ -421,10 +421,25 @@ resource_types:
         name: "Account Manipulation: Additional Cloud Credentials"
         tactic: persistence
         status: planned
+        engine: stratus
+        engine_ref: entra-id.persistence.backdoor-application-sp
+        # Entra ID (RID2) : le warmup crée une application + son service principal et lui
+        # assigne le rôle Directory Readers (lecture seule) ; le detonate ajoute un secret au
+        # service principal. L'ajout de secret apparaît dans le journal d'audit d'Entra ID —
+        # activité « Add service principal credentials » (détection C2). Réversible : le revert
+        # retire le secret, le cleanup détruit l'application, le service principal et le rôle.
         log_source: AuditLogs
         indicator_key: ""
-        indicator_columns: [OperationName, InitiatedBy]
+        indicator_columns: [OperationName, InitiatedBy, TargetResources]
         expected_latency_s: 600
+        graph_probe:
+          # L'application créée par la technique se nomme « Stratus Red Team sample application
+          # <corrélation> » ; la sonde lecture seule la cherche par préfixe (espaces en %20, la
+          # regex _GRAPH_READ refuse l'espace brut) et attend son absence avant détonation et
+          # après nettoyage.
+          name: stratus-sample-app-absent
+          read: "/v1.0/applications?$filter=startswith(displayName,'Stratus%20Red%20Team%20sample%20application')&$select=id"
+          expect_absent: true
         destructive: false
         requires_testdata: false
         reference_script: null

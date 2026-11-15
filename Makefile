@@ -147,7 +147,7 @@ DOCKER_GLORFINDEL_WATCH = $(WATCH_KEY_DIR) && $(RUNS_DIRS) && $(GLORFINDEL_AZURE
 	imladris-tunnel-install imladris-tunnel-remove imladris-tunnel-on imladris-tunnel-off \
 	imladris-tunnel-install-go imladris-tunnel-remove-go imladris-tunnel-on-go imladris-tunnel-off-go \
 	console-url-local imladris-tunnel-go \
-	annatar-run annatar-dry-run annatar-validate annatar-list \
+	annatar-run annatar-dry-run annatar-validate annatar-list stratus-stage \
 	glorfindel-respond glorfindel-dry-run glorfindel-watch \
 	glorfindel-release glorfindel-revert glorfindel-list \
 	glorfindel-pending glorfindel-check-ttl \
@@ -206,6 +206,7 @@ help:
 	@echo "  make annatar-dry-run          Run scenario (--dry-run)"
 	@echo "  make annatar-validate         Validate scenario YAML"
 	@echo "  make annatar-list             List available scenarios"
+	@echo "  make stratus-stage            Stage the control-plane injector tool offline (network ; R2BS)"
 	@echo "  make annatar-simulate         Simulate locally (no Azure): glorfindel respond --dry-run"
 	@echo "  make annatar-simulate-gap     Simulate detection_timeout flow (same, no watch)"
 	@echo ""
@@ -432,6 +433,13 @@ annatar-validate:
 
 annatar-list:
 	docker run --rm -v $(PWD)/annatar/scenarios:/app/annatar/scenarios:ro --entrypoint annatar $(IMAGE_ANNATAR) list
+
+# R2BS (#841): stage the pinned control-plane injector tool + its offline provisioning toolchain
+# into annatar/stratus/staged/ (the only step with Internet; downloads are verified against
+# annatar/stratus/PIN). The injector image then carries them read-only at /opt/stratus/; build and
+# push it (make orodruin-push) so the execution host has them without egress.
+stratus-stage:
+	$(PYTHON) scripts/stratus_stage.py
 
 # The signals of a run in a temporary file, then `glorfindel respond <file> --dry-run` — not
 # runs/: the watch takes from there only what an injector emits (SEC3).

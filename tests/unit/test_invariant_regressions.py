@@ -8232,6 +8232,99 @@ def test_two_placements_off_its_nic_acknowledged_are_said_again_when_either_is_d
         shutil.rmtree(m.home, ignore_errors=True)
 
 
+# ── L1Nc (#795): a block's deny, in force at the acknowledgement, turned to an allow since — a bypass, not a ──
+# new disappearance. The night « Invariants (deep) », red on L1 (Db--01): a merged block (perimeter + the VM),
+# its perimeter pair gone and the loss acknowledged, then one of the VM's own denies — still present on its
+# dedicated NSG, not vanished — turned into an allow. The product said it (« contourné »), but L1 is about rules
+# gone and `_ack_holds` judged the acknowledgement broken on the raw bytes (`_block_rules_now != seen`), demanding
+# a « disparu » card for a bypass. The oracle, not the product (#796, #809 fixed the product's own misses):
+# the acknowledgement of a disappearance holds while no rule it saw present has vanished, a turned-but-present
+# rule being the bypass invariants' business, not L1's.
+_L1NC_SUBNET = [
+    _rule('allow-https', 100, dict(access='Allow', direction='Inbound', source_address_prefix='Internet', destination_address_prefix='*', destination_port_range='443')),
+    _rule('allow-lateral-out', 100, dict(access='Allow', direction='Outbound', source_address_prefix='*', destination_address_prefix='VirtualNetwork', destination_port_range='*')),
+    _rule('deny-lateral-in', 130, dict(access='Deny', direction='Inbound', source_address_prefix='VirtualNetwork', destination_address_prefix='*', destination_port_range='*')),
+]
+_L1NC_NIC1 = [
+    _rule('allow-ssh', 100, dict(access='Allow', direction='Inbound', source_address_prefix='*', destination_address_prefix='*', destination_port_range='22')),
+    _rule('allow-lateral-out', 100, dict(access='Allow', direction='Outbound', source_address_prefix='*', destination_address_prefix='VirtualNetwork', destination_port_range='*')),
+]
+_L1NC_NET = {
+    "subnet_nsg": _L1NC_SUBNET, "edge_nsg": None, "tier_rules": [], "windows": None,
+    "nics": {"web-nic": {"own": None, "rules": [], "policy": False},
+             "db-nic-0": {"own": None, "rules": list(_L1NC_SUBNET), "policy": True},
+             "db-nic-1": {"own": "dedicated", "rules": list(_L1NC_NIC1), "policy": True},
+             "api-nic": {"own": "dedicated", "rules": [], "policy": False}},
+    "config": {"quarantine": True, "rg": "", "forensic": [], "readable": True},
+    "legacy": None, "data_subnet": None,
+}
+
+
+def _l1nc_block_perimeter_gone_acknowledged(monkeypatch):
+    """Db--01 blocked on its subnet and for itself (one merged entry, nic-1 on its own NSG); web1, on the
+    same subnet, blocked there and unblocked — the perimeter pair, shared, lifted beside Db--01's block; the
+    reassertion says Db--01's pair gone, the operator acknowledges it. The acknowledgement then names nic-1's
+    own deny present (in force), the perimeter pair absent."""
+    m = IsolationMachine()
+    m.build(_L1NC_NET)
+    m.block_perimeter(data=Script(DB, DB, None, False))
+    m.block(data=Script(DB, DB, None, None))
+    m.perimeter_lifted_beside_a_block(data=Script(WEB1, WEB1, None, DB, False, DB, None))
+    m.reassert(data=Script("human_only", None))
+    m.operator_acknowledges(data=Script(0))
+    return m
+
+
+def _l1nc_nic1_deny(m):
+    """nic-1's own block deny, on its dedicated NSG (not the subnet's perimeter), as it lies now."""
+    for gk, g in sorted(m.fake.nsgs.items()):
+        if "nsg-db-nic-1" not in gk:
+            continue
+        for n, r in sorted(g["rules"].items()):
+            if n.startswith("glorfindel-block-") and r.get("access", "").lower() == "deny" and not n.endswith("-out"):
+                return gk, n
+    raise AssertionError(f"the world: nic-1's own block deny present, {sorted(m.fake.nsgs)}")
+
+
+def test_a_block_deny_turned_after_an_acknowledged_perimeter_loss_is_no_worse(monkeypatch):
+    """L1Nc (#795): the acknowledged disappearance (the perimeter pair gone) stays said when one of the VM's
+    own denies, still present on its dedicated NSG, is turned into an allow since — a bypass, not a new
+    disappearance. `_ack_holds` held on the raw bytes (`_block_rules_now != seen`) and broke here, demanding
+    a « disparu » card the product rightly answered with a « contourné » one; now it holds while no rule it saw
+    present has vanished, and the reassertion's L1 passes. Non-complacent (L1N stays strict): a rule the
+    acknowledgement saw present, deleted since, breaks it."""
+    from glorfindel import escalations
+
+    from .test_invariants import invariant_env
+    invariant_env(monkeypatch)
+    m = _l1nc_block_perimeter_gone_acknowledged(monkeypatch)
+    try:
+        assert m._block_vanished(DB), "the world: the merged block has vanished (its perimeter pair gone)"
+        assert m._ack_holds(DB) is True, "the acknowledged loss is said right after the acknowledgement"
+        nsg, name = _l1nc_nic1_deny(m)
+        m._tamper_with_our_rule(data=Script("access", (nsg, name)))   # the deny turned into an allow
+        m._claims_after_a_change()
+        # The turned rule is present, not gone: a bypass (the bypass invariants' and the product's « contourné »
+        # card), not a new disappearance. The acknowledgement of the perimeter loss holds (L1Nc) — the raw-bytes
+        # check broke here.
+        assert m._ack_holds(DB) is True, "L1Nc: a deny turned (present, not vanished) must not break the ack"
+        # The product says the bypass, not a second « disparu »; L1 rests on the acknowledgement, and its pass holds.
+        m.reassert(data=Script("human_only", None))
+        assert any(e.get("action") == "review_bypass" for e in escalations.pending()
+                   if key(e.get("resource_id") or "") == key(DB)), "the product says the block is bypassed"
+    finally:
+        m.teardown()
+    # Non-complacency: the same acknowledged state, but a named rule it saw present deleted since — a real new
+    # disappearance (L1N): the acknowledgement no longer holds, the pass must say it again.
+    m2 = _l1nc_block_perimeter_gone_acknowledged(monkeypatch)
+    try:
+        g2, n2 = _l1nc_nic1_deny(m2)
+        del m2.fake.nsgs[g2]["rules"][n2]
+        assert m2._ack_holds(DB) is False, "L1N stays strict: a rule seen present, vanished since, breaks the ack"
+    finally:
+        m2.teardown()
+
+
 # ── I9A (#823): the operator's isolation, recorded whole then cut off in its drain, read as no isolation ──
 # The night « Invariants (deep) » of 14/11 (run 43585550169, f0df21d1, 10 000 examples), red on ubuntu (web),
 # then replayed by every PR from the cached Hypothesis base. web's release left its NIC in quarantine (its
