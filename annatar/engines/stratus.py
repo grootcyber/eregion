@@ -41,9 +41,12 @@ from pathlib import Path
 
 STRATUS_DIR = Path(__file__).resolve().parents[1] / "stratus"
 
-# We run Azure only (the control plane). A Stratus technique id is ``platform.tactic.name``,
-# each of platform/tactic/name a lower-case word of [a-z0-9] with '-' between inner words.
-_TECHNIQUE_ID = re.compile(r"^azure\.[a-z0-9]+(?:-[a-z0-9]+)*\.[a-z0-9]+(?:-[a-z0-9]+)*$")
+# We run two Stratus platforms: ``azure`` (the Azure resource control plane) and ``entra-id``
+# (the Entra ID directory plane, RID2) — never aws/gcp/kubernetes. A Stratus technique id is
+# ``platform.tactic.name``, each of tactic/name a lower-case word of [a-z0-9] with '-' between
+# inner words; the catalog's closed allow-list is still what a run is held to.
+_TECHNIQUE_ID = re.compile(
+    r"^(?:azure|entra-id)\.[a-z0-9]+(?:-[a-z0-9]+)*\.[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 # The cycle, in order — Stratus's own verbs, mapped onto the injector interface
 # (prepare, inject, revert, clean up). ``cleanup`` always runs last, whatever the rest did.
@@ -201,13 +204,14 @@ def _graph_probe(entry: dict) -> GraphProbe | None:
 
 def _lookup(technique_id: str, catalog: dict | None) -> tuple[str, dict]:
     """``(technique_id, entry)`` for a technique on the closed allow-list — the two fail-closed
-    checks shared by ``resolve`` and ``describe``: the id is an Azure Stratus id, and it is one
-    the catalog vouches for. Raises ``StratusError`` otherwise, before anything runs."""
+    checks shared by ``resolve`` and ``describe``: the id is an Azure or Entra ID Stratus id, and
+    it is one the catalog vouches for. Raises ``StratusError`` otherwise, before anything runs."""
     tid = (technique_id or "").strip()
     if not _TECHNIQUE_ID.fullmatch(tid):
         raise StratusError(
-            f"technique id {technique_id!r} is not an Azure Stratus id 'azure.<tactic>.<name>' "
-            "(lower-case, dot-separated) — refused, never sent to a process"
+            f"technique id {technique_id!r} is not an 'azure.<tactic>.<name>' or "
+            "'entra-id.<tactic>.<name>' Stratus id (lower-case, dot-separated) — refused, never "
+            "sent to a process"
         )
     entries = _stratus_entries(catalog)
     entry = entries.get(tid)
@@ -257,23 +261,33 @@ def describe(technique_id: str, *, catalog: dict | None = None) -> dict:
     }
 
 
-def airgap_env(home: str | Path, *, plugin_cache: str | Path | None = None,
+# Stratus's own override for the Terraform binary it runs (runner.go, EnvVarStratusTerraformBinaryPath):
+# set it and Stratus uses that binary (when it is >= its TerraformVersion) instead of downloading one.
+STRATUS_TERRAFORM_BINARY_ENV = "STRATUS_TERRAFORM_BINARY_PATH"
+
+
+def airgap_env(run_home: str | Path, *, terraform_binary: str | Path | None = None,
                terraformrc: str | Path | None = None) -> dict[str, str]:
     """The offline environment Stratus runs its warmup Terraform with — no network.
 
-    ``home`` is a run-scoped ``HOME``: Stratus writes its state under ``<home>/.stratus-red-team``
-    and finds the pre-installed Terraform there (pkg/stratus/config: ``os.UserHomeDir()``), so it
-    never downloads one. ``plugin_cache`` (``TF_PLUGIN_CACHE_DIR``) and ``terraformrc``
-    (``TF_CLI_CONFIG_FILE``, a filesystem mirror of the providers excluding direct installs) keep
-    ``terraform init`` off the network. Stratus passes the inherited environment through to
-    Terraform (pkg/stratus/runner/terraform.go), so these reach ``terraform init``; it drops the
-    reserved ``TF_IN_AUTOMATION`` and the like, which tfexec sets itself.
+    ``run_home`` is a WRITABLE, run-scoped ``HOME``: Stratus writes its state under
+    ``<run_home>/.stratus-red-team/<technique>/`` (internal/state/state.go: ``os.UserHomeDir()`` +
+    ``.stratus-red-team``), so it must be writable — the staged ``/opt/stratus/home`` is read-only
+    in the image, which is why the executor builds a fresh HOME per run (R2BS).
+
+    ``terraform_binary`` is the pinned Terraform staged read-only in the image. Passed as
+    ``STRATUS_TERRAFORM_BINARY_PATH`` (runner.go), Stratus runs it — it is 1.3.10, its ``>=`` check
+    passes — and never downloads one; the binary is only executed, so a read-only path is fine.
+    ``terraformrc`` (``TF_CLI_CONFIG_FILE``, a filesystem mirror of the providers that excludes
+    direct installs) keeps ``terraform init`` off the registry; Stratus leaves its plugin cache at
+    its default under the writable HOME. Stratus passes the inherited environment through to
+    Terraform (pkg/stratus/runner/terraform.go), so these reach ``terraform init``.
 
     These are overrides layered over the process environment (the Azure credentials of Orodruin's
     identity stay); the injector merges them (annatar/executors/stratus_host.py)."""
-    env = {"HOME": str(home)}
-    if plugin_cache is not None:
-        env["TF_PLUGIN_CACHE_DIR"] = str(plugin_cache)
+    env = {"HOME": str(run_home)}
+    if terraform_binary is not None:
+        env[STRATUS_TERRAFORM_BINARY_ENV] = str(terraform_binary)
     if terraformrc is not None:
         env["TF_CLI_CONFIG_FILE"] = str(terraformrc)
     return env
