@@ -916,6 +916,50 @@ voit, par ses affirmations sur la sonde de 443 ; elle le tire rarement (0 tour s
 bloquée », `blocked`) lit toujours les sondes seules. Une autorisation sortante sur 22 ou en UDP échappe à la
 machine ; retournée entière, la machine la voit.
 
+### Un contournement jugé sur des flux que la tenue ne fermait pas (L1V)
+
+La nuit « Invariants (deep) » du 16/11 (run 43857768609, sur 4d351ef5, 10 000 exemples) est rouge sur
+ubuntu : « L1: the isolation of …/web is bypassed by a customer allow ; the reassertion doesn't say so »,
+au premier « dit » de `_bypass_comes_back` (`said_then_back_after_a_full_disk`, L2C). La CI des PR la
+rejoue ensuite depuis la base Hypothesis de la nuit.
+
+**Le rejeu.** La graine (`reproduce_failure`, Hypothesis 6.170.10, posée sur `IsolationMachine` le temps
+d'un essai) échoue de même sur 4d351ef5. web est isolée par règles sur le NSG partagé `nsg-tier`, sa
+quarantaine refusée par une politique. Plus tôt, son adresse a été donnée à une nouvelle VM, api
+(`address_reused_under_a_turned_rule`) : la carte de web est en 10.0.0.9, la paire de son isolation vise
+toujours 10.0.0.4, celle d'api. Le rôle retiré (`access_changes`), l'isolation que tire la règle est refusée
+(AuthorizationFailed). Puis le client élargit `deny-lateral-in` (130) en un allow de tout. Cette règle passe
+avant le blocage de web (210), la deny « à nous » que la règle a tirée. L'oracle voit des flux neufs, depuis
+10.9.9.9 et depuis l'attaquant, sur 22, et réclame une carte `review_bypass` pour l'isolation.
+
+**C'était l'oracle, pas le produit.** Ces flux, `deny-lateral-in` elle-même et le blocage de web les
+fermaient, jamais l'isolation : sa deny ne nomme aucune adresse de web. Le produit lit la carte de web non
+couverte (`uncovered_nics`) et dit la disparition sur sa carte (« L'isolation de web a disparu d'Azure ; la
+reposer a échoué ») ; le contournement du blocage va sur la carte du blocage. C'est ce que L1 doit là.
+Depuis L2C (d380df52, 30/10), `_bypass_comes_back` lisait tout flux qu'ouvre l'allow comme le contournement
+de la tenue, quoi qui le fermait. Le défaut est ancien, pas une régression : la séquence le rend atteignable
+par une adresse reprise sous une isolation par règles, puis un droit retiré.
+
+**Le correctif**, tiré du monde du test (A0) : `bypassed`. Des flux qu'ouvre l'allow, ne comptent que ceux
+que les denies de la tenue ferment, évaluées en premier dans le monde du test. Ce sont celles de l'isolation
+pour une isolation, celles du blocage pour un blocage, nommées pour les cartes de la VM, comme dans
+`_gone_comes_back`. Une première version s'arrêtait dès que la VM passait avant l'allow, comme
+`_gone_comes_back`. Elle était trop large : sept séquences figées tombaient. Ce sont des isolations dont une
+deny tient encore en partie (U7D, L1R : la deny d'entrée déplacée à 4000 et rétrécie à 22, la `-out`
+retournée), et le produit y dit le contournement à raison.
+
+**Mesures.** Figés dans `tests/unit/test_invariant_regressions.py` : la séquence de la nuit, puis sa règle
+jusqu'au bout, à travers le disque plein et retour (la faute au 1er, 3e ou 6e appel). Aucune carte de
+contournement n'est exigée de l'isolation ; la disparition est dite sur une carte de la réaffirmation. Sur
+4d351ef5, les trois cas échouent avec le message de la nuit. L'autre côté : web isolée par règles ou
+bloquée sur 22, notre deny à 101 derrière une règle du client à 100 élargie, le produit rendu muet
+(`say_bypass` ne fait rien). L'oracle réclame toujours la carte. Mutants M5491–M5496
+(`scripts/mutants/L1V.py`) : le défaut revenu ; toute deny à nous comptée (celle du blocage ferme les flux
+de l'isolation) ; le jugement à l'envers ; la seconde passe jugée comme avant ; nos denies laissées à leur
+place, ou mises en dernier (l'oracle aveugle à tout contournement). Les six sont attrapés. Sur la branche,
+la graine ne se rejoue plus (`DidNotReproduce` : la règle passe le premier « dit » sans l'assertion, puis
+le blob s'épuise au tirage suivant).
+
 ### Les cinq survivants de la porte de la 0.5.13 (MUT11)
 
 La porte de la 0.5.13 (run 43597369855, job « mutants (every shard, the count) ») est rouge sur cinq
