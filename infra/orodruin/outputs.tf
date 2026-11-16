@@ -58,3 +58,25 @@ output "protected_identities" {
   description = "EREGION_PROTECTED_IDENTITIES — l'identité d'Orodruin et celles des watches (H0, les watches listées) : jamais des cibles."
   value       = join(",", distinct(compact(concat([lower(azurerm_linux_virtual_machine.host.identity[0].principal_id)], local.watch_writers))))
 }
+
+# R2b (#608) — ce que les garde-fous ont posé sur l'abonnement de test dédié (null si éteint).
+# Pour la passe de mesure et le rapport ; valeurs jamais recopiées dans le dépôt.
+output "stratus_diagnostic_setting_id" {
+  description = "G6 — l'id du paramètre de diagnostic de l'abonnement dédié (catégorie Administrative → workspace du banc), ou null."
+  value       = one(azurerm_monitor_diagnostic_setting.stratus_activity_log[*].id)
+}
+
+output "stratus_budget_action_group_id" {
+  description = "G7 — le groupe d'action du budget, posé HORS de l'abonnement dédié (groupe d'Orodruin), ou null."
+  value       = one(azurerm_monitor_action_group.stratus_budget[*].id)
+}
+
+output "stratus_policy_assignment_ids" {
+  description = "G5 — les attributions de policy posées sur l'abonnement dédié (refus IP publique sur NIC, et selon les listes : régions, types, SKU)."
+  value = compact([
+    one(azurerm_subscription_policy_assignment.stratus_deny_nic_public_ip[*].id),
+    one(azurerm_subscription_policy_assignment.stratus_allowed_locations[*].id),
+    one(azurerm_subscription_policy_assignment.stratus_allowed_resource_types[*].id),
+    one(azurerm_subscription_policy_assignment.stratus_allowed_vm_skus[*].id),
+  ])
+}
