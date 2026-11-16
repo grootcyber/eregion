@@ -8825,3 +8825,126 @@ def test_two_placements_off_their_nic_in_an_unjudged_quarantine_each_read(monkey
         assert len(kept) == 2 and all(kept.values()), ("the other still read", after.get("rules_seen"))
     finally:
         shutil.rmtree(m.home, ignore_errors=True)
+
+
+# ── L1V (#864): an isolation left on the VM's former address, then a customer allow — not its bypass ──
+# The night « Invariants (deep) » of 16/11 (run 43857768609, on 4d351ef5, 10 000 examples), red on ubuntu:
+# « L1: the isolation of …/rg-app1/…/web is bypassed by a customer allow (…); the reassertion doesn't say
+# so », at the first pass of `_bypass_comes_back` (`said_then_back_after_a_full_disk`, L2C). web isolated by
+# rules on the shared nsg-tier (its quarantine refused by a policy), then its address given to a new VM (api,
+# `address_reused_under_a_turned_rule`): web's NIC is at 10.0.0.9 now, its isolation's pair still aims at
+# 10.0.0.4 — api's. The role taken away (`access_changes`), the rule's own isolation is refused
+# (AuthorizationFailed). Then deny-lateral-in at 130 widened into an allow of all: the flows it opens (from the
+# VNet and from the attacker, on 22) were closed by that very deny and by web's block (210, the « our deny »
+# the rule drew), never by the isolation, whose deny names no address of web's. The product reads web's NIC
+# uncovered and says the disappearance (« L'isolation de web a disparu d'Azure ; la reposer a échoué »), and
+# the block's bypass on the block's card. The oracle's, not the product's: since L2C (d380df52, 30/10)
+# `_bypass_comes_back` read any flow the allow opens as the hold's bypass, whoever closed it. Now (`bypassed`):
+# only those the hold's own denies close, evaluated first in the test's world.
+
+_L1V_TIER = _NSG.format(rg="rg-net", name="nsg-tier")
+_L1V_Q = _NSG.format(rg="rg-app1", name="nsg-glorfindel-quarantine-westeurope")
+_L1V_NET = {
+    **_net(tier_rules=[_s1618("allow-ssh", 1000, "Allow", "22"),
+                       _s1618("allow-https", 110, "Allow", "443", source="Internet"),
+                       _s1618("deny-lateral-in", 130, "Deny", "*", source="VirtualNetwork")],
+           web_nic={"own": "tier", "policy": True},
+           db_nic_0={"own": "dedicated", "policy": True, "rules": [
+               _s1618("allow-ssh", 100, "Allow", "22"),
+               _s1618("allow-lateral-out", 100, "Allow", "*", direction="Outbound", destination="VirtualNetwork")]},
+           db_nic_1={"policy": True},
+           api_nic={"policy": True, "rules": [_s1618("allow-https", 100, "Allow", "443", source="Internet")]}),
+    "config": {"quarantine": True, "readable": True, "forensic": [], "rg": ""}, "data_primary": False}
+# As Hypothesis printed it, shrunk (23 steps before the failing rule); each rule's draws in order.
+_L1V_FOUND = (
+    ("isolate_two", WEB1, WEB1, None, WEB1, WEB1, None, True),
+    ("someone_detaches_the_quarantine",),
+    ("customer_removes_rule", _L1V_TIER, "allow-https"),
+    ("recover",),
+    ("interrupted_isolation", WEB1, WEB1, (1, "before-429"), 7, "before-crash", None),
+    ("interrupted_release", WEB1, WEB1, (1, "before-429"), 7, "before-crash", False),
+    ("lose_everything", WEB2, WEB2, None, WEB1, _L1V_Q, "stop"),
+    ("lose_state", WEB1),
+    ("isolate", WEB1, WEB1, None),
+    ("recover",),
+    ("recover",),
+    ("release_by_the_cli", WEB1, WEB1, ("nic.get", "always-429")),
+    ("lose_everything", WEB1, WEB1, ("nic.get", "always-429"), DB, _L1V_Q, "stop"),
+    ("lose_everything", WEB1, WEB1, (13, "before-429"), WEB1, _L1V_Q, "reisolate"),
+    ("delete_vm", API),
+    ("someone_detaches_the_quarantine",),
+    ("address_reused_under_a_turned_rule", WEB1, WEB1, None, 22,
+     (_L1V_TIER, "glorfindel-block-192-31-196-7-web-web-nic-8b70f2"), _nic("rg-app1", "web-nic"), 0, 4,
+     "rg-app1", "api", None, "Linux"),
+    ("release_by_the_cli", WEB2, WEB2, None),
+    ("verify", WEB1, WEB1, None),
+    ("lose_state", WEB2),
+    ("someone_detaches_the_quarantine",),
+    ("customer_sets_policy", _nic("rg-app1", "db-nic-1"), True),
+    ("access_changes", True))
+
+
+# The failing rule's draws: the branch, the VM, its id, the drawn fault (no rule plays it), an isolation, our
+# deny (the block's, at 210), the customer's rule before it, the first pass's mode; then, as the rule goes on,
+# the full disk's pass (its mode, its fault) and the last pass's mode.
+def _l1v_bypass(nth: int) -> tuple:
+    return ("bypass", WEB1, WEB1, (8, "after-429"), True, (210, _L1V_TIER), "deny-lateral-in",
+            "non_disruptive", "non_disruptive", (nth, "from-full"), "non_disruptive")
+
+
+@pytest.mark.parametrize("nth", [1, 3, 6])
+def test_an_isolation_left_on_a_former_address_is_said_gone_not_bypassed(monkeypatch, nth):
+    """L1V (#864): the night's sequence, then its failing rule, through the full disk and back. web's isolation
+    aims at the address it had (api's now), its new isolation refused; the customer widens deny-lateral-in: what
+    it opens, the isolation's denies don't close — not its bypass, no card required for it. What L1 owes there
+    is the disappearance, and the product says it: a card of the reassertion's on web for its isolation,
+    pending. Red on `origin/main` 4d351ef5: « L1: the isolation of …/web is bypassed by a customer allow »."""
+    from glorfindel import escalations
+
+    invariant_env(monkeypatch)
+    m = IsolationMachine()
+    try:
+        m.build(_L1V_NET)
+        for rule, *draws in _L1V_FOUND:
+            if not draws and "data" not in inspect.signature(getattr(m, rule)).parameters:
+                getattr(m, rule)()
+            else:
+                s = Script(*draws)
+                getattr(m, rule)(data=s)
+                assert not s.values, (rule, s.values)
+            m.never_more_open_than_designed()
+            m.customer_configuration_untouched()
+            m.one_vm_one_state_file()
+        assert m.fake.nics[_nic("rg-app1", "web-nic")]["ips"] == ["10.0.0.9"], "the world: web's address moved"
+        iso = m.fake.nsgs[_L1V_TIER]["rules"]["glorfindel-iso-web-web-nic-8b70f2"]
+        assert iso["destination_address_prefixes"] == ["10.0.0.4"], ("the world: its deny on the former address", iso)
+        s = Script(*_l1v_bypass(nth))
+        m.said_then_back_after_a_full_disk(data=s)
+        assert not s.values, s.values
+        said = [e for e in escalations.pending() if key(e.get("resource_id") or "") == key(WEB1)
+                and (e.get("signal_id") or "").startswith("reassert-") and e.get("action") == "isolate_vm"]
+        assert said, "L1: web's isolation does not hold; the reassertion says it, on a card of its own"
+    finally:
+        m.teardown()
+
+
+@pytest.mark.parametrize("isolation, rule", [(True, "deny-lateral-in"), (False, "allow-https")],
+                         ids=["isolation", "block"])
+def test_a_bypass_of_a_hold_is_still_required_to_be_said(monkeypatch, isolation, rule):
+    """L1V, the other side: what the hold's own denies close is still its bypass. web isolated by rules or
+    blocked on 22, on its own NSG, our deny at 101 behind a customer rule at 100; that rule widened into an
+    allow of all: the flows it opens, our deny evaluated first closes. The product made silent (`say_bypass`
+    does nothing), the oracle still demands the card — one that read no flow as the hold's (our denies not
+    moved first, or put last), or the judgement backwards, would let it pass."""
+    from glorfindel import reassert
+
+    tpl = (dict(access="Allow", direction="Inbound", source_address_prefix="Internet",
+                destination_address_prefix="*", destination_port_range="443") if rule == "allow-https" else
+           dict(access="Deny", direction="Inbound", source_address_prefix="VirtualNetwork",
+                destination_address_prefix="*", destination_port_range="*"))
+    monkeypatch.setattr(reassert, "say_bypass", lambda *a, **k: None)
+    with pytest.raises(AssertionError, match="is bypassed by a customer allow"):
+        _run(monkeypatch, _net(web_nic={"own": "dedicated", "rules": [_rule(rule, 100, tpl)]}),
+             ("said_then_back_after_a_full_disk", "bypass", WEB1, WEB1, None, isolation,
+              *([] if isolation else [22]), (101, _NSG_WEB), rule, "human_only", "human_only", (2, "from-full"),
+              "human_only"))
