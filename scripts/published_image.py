@@ -5,14 +5,20 @@ by its CD (infra/glorfindel-host/cd/eregion_cd.py), on the operator's machine fo
 
     published_image.py resolve IMAGE --commit C            the digest published for commit C
     published_image.py verify IMAGE --commit C [--digest D]  its signature and its provenance
+    published_image.py proven IMAGE --ref REF [--fetch]   SEC-C: REF's commit on origin/main, its published
+                                                           image signed and attested (make imladris-start)
     published_image.py fetch IMAGE --ref REF --tag NAME    resolved, verified, pulled by digest, tagged NAME
-    published_image.py archive IMAGE --ref REF --tag NAME --out DIR   resolved, verified, its OCI archive
-                                                           built from the registry's blobs (OI1)
+    published_image.py archive IMAGE --ref REF --tag NAME --out DIR [--read F … | --no-image] [--rollback]
+                                                           resolved, verified, its OCI archive built from
+                                                           the registry's blobs (OI1); never under the
+                                                           floor unless --rollback (SEC-C)
     published_image.py loaded IMAGE --digest D --expect-file F --inspect J   the image docker read back
                                                            on another host (J, `docker image inspect`) is this one
     published_image.py age IMAGE (--read F [--no-marker] | --no-image) [--ref R]   OI3: the image in service
                                                            on Orodruin (F: its tag's labels, then its
                                                            ~/.eregion-image) against the latest release
+    published_image.py raise-floor IMAGE --ref R --commit C   SEC-C: the floor of Orodruin on this
+                                                           workstation raised to R, once pushed and verified
     published_image.py install-cosign DEST                 cosign, pinned by its sha256
     published_image.py install-syft DEST                   syft (the SBOM), its archive pinned by its sha256
     published_image.py meta IMAGE --commit C               the workflow's names and labels ($GITHUB_OUTPUT)
@@ -930,12 +936,155 @@ def commit_of(ref: str, runner: Runner = run) -> str:
     return commit
 
 
-def latest_tag(runner: Runner = run) -> str:
+def release_tags(runner: Runner = run) -> list[str]:
+    """The tags v* of this checkout, the highest first (git's version order: v0.5.10 after v0.5.9)."""
     res = runner(["git", "-C", str(REPO), "tag", "-l", "v*", "--sort=-v:refname"])
-    tags = res.stdout.split() if res.returncode == 0 else []
+    tags = [t for t in (res.stdout.split() if res.returncode == 0 else []) if REF_RE.fullmatch(t)]
     if not tags:
         raise Unverified("aucun tag v* : préciser REF=<tag ou commit>")
-    return tags[0]
+    return tags
+
+
+# SEC-C (audit of 06/11, V-24): without REF, the release taken is the highest whose published image
+# is verified — its tag on origin/main, the image the CI published for its commit, signed and attested
+# by the publishing workflow —, never a local tag believed on its name alone. A tag refused is said and
+# set aside; the registry or sigstore silent stops everything (Unavailable: nothing proven).
+LATEST_TRIES = 5
+
+
+def latest_verified(image: str, cosign: Path, runner: Runner = run, tries: int = LATEST_TRIES) -> tuple[str, str, str]:
+    """(tag, commit, digest) of the highest release whose published image is verified."""
+    tags = release_tags(runner)
+    for tag in tags[:tries]:
+        try:
+            commit = commit_of(tag, runner)
+            digest = resolve(image, commit)
+            verify(image, digest, commit, cosign, runner=runner)
+        except Unverified as e:
+            print(f"  ⚠ {tag} écartée : {e}", file=sys.stderr)
+            continue
+        return tag, commit, digest
+    raise Unverified(f"aucune des {min(len(tags), tries)} plus hautes releases n'a d'image publiée vérifiée "
+                     "(ci-dessus) : préciser REF=<tag ou commit>")
+
+
+def proven(image: str, ref: str, cosign: Path, runner: Runner = run) -> tuple[str, str, str]:
+    """SEC-C: REF's commit on origin/main and its published image, signed and attested by the
+    publishing workflow at that commit: (ref, commit, digest). The deployment by hand of Imladris
+    builds only that commit (deploy.sh refuses another)."""
+    if not ref:
+        raise Unverified("REF exigée : un tag ou un commit de main, dont l'image publiée est vérifiée")
+    commit = commit_of(ref, runner)
+    digest = resolve(image, commit)
+    verify(image, digest, commit, cosign, runner=runner)
+    return ref, commit, digest
+
+
+# ── SEC-C (audit of 06/11, V-24): the floor of Orodruin's update ──────────────────────────────────
+# make orodruin-push and orodruin-update never send a release older than the highest already pushed and
+# verified, unless the way back is asked (ROLLBACK=1, on the command line). Two marks, the higher wins:
+# the image in service on Orodruin (its ~/.eregion-image, « commit digest », as OI3 reads it back — a dev
+# build or an unreadable marker marks nothing), and this workstation's memory (FLOOR_FILE: the highest
+# version it pushed and verified, never lowered), which still holds when Orodruin was rebuilt. Older: by
+# its version (vX.Y.Z), or by its commit, an ancestor of the mark's in git's history; a commit git cannot
+# place is never taken for « not older ».
+FLOOR_ENV = "EREGION_ORODRUIN_FLOOR"
+SEMVER_RE = re.compile(r"v(\d+)\.(\d+)\.(\d+)")
+
+
+def floor_file() -> Path:
+    return Path(os.environ.get(FLOOR_ENV) or Path.home() / ".eregion" / "orodruin_floor.json")
+
+
+def semver(tag: str) -> tuple[int, int, int] | None:
+    m = SEMVER_RE.fullmatch(tag or "")
+    return (int(m.group(1)), int(m.group(2)), int(m.group(3))) if m else None
+
+
+def tag_of(commit: str, runner: Runner = run) -> str:
+    """The highest tag v* on `commit` (version order), or ""."""
+    res = runner(["git", "-C", str(REPO), "tag", "--points-at", commit, "-l", "v*", "--sort=-v:refname"])
+    tags = [t for t in (res.stdout.split() if res.returncode == 0 else []) if semver(t)]
+    return tags[0] if tags else ""
+
+
+def read_floor(path: Path | None = None) -> dict:
+    """This workstation's floor: {"tag", "commit"}, {} when none. Unreadable: refused, never taken for none."""
+    path = path or floor_file()
+    if not path.exists():
+        return {}
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        doc = None
+    if not (isinstance(doc, dict) and semver(str(doc.get("tag") or "")) and COMMIT_RE.fullmatch(str(doc.get("commit") or ""))):
+        raise Unverified(f"le plancher d'Orodruin de ce poste ({path}) est illisible : rien n'est décidé — le "
+                         "réparer (« {\"tag\": \"vX.Y.Z\", \"commit\": \"<40 chiffres>\"} »), ou le retirer")
+    return {"tag": doc["tag"], "commit": doc["commit"]}
+
+
+def raise_floor(tag: str, commit: str, path: Path | None = None, runner: Runner = run) -> dict:
+    """Once a release is pushed and verified: the floor raised to it, never lowered (a way back
+    leaves it where it was). A reference without a version (a commit without tag) raises nothing."""
+    path = path or floor_file()
+    tag = tag if semver(tag) else tag_of(commit, runner)
+    floor = read_floor(path)
+    if not semver(tag) or not COMMIT_RE.fullmatch(commit or ""):
+        return floor
+    if floor and semver(floor["tag"]) >= semver(tag):
+        return floor
+    path.parent.mkdir(parents=True, exist_ok=True)
+    part = path.with_name(path.name + ".part")
+    part.write_text(json.dumps({"tag": tag, "commit": commit}) + "\n", encoding="utf-8")
+    part.replace(path)
+    return {"tag": tag, "commit": commit}
+
+
+def service_mark(marker: str | None, revision: str | None, runner: Runner = run) -> list[tuple[str, str, str]]:
+    """The image in service on Orodruin as a floor mark: its verified marker whose tag says the same
+    commit — nothing else marks (absent, unreadable, a dev build, a label of another commit)."""
+    m = VERIFIED_MARK.fullmatch(marker or "")
+    if not m or (revision is not None and revision != m.group(1)):
+        return []
+    return [(tag_of(m.group(1), runner), m.group(1), "en service sur Orodruin")]
+
+
+def memory_mark(path: Path | None = None) -> list[tuple[str, str, str]]:
+    floor = read_floor(path)
+    return [(floor["tag"], floor["commit"], "déjà poussée et vérifiée depuis ce poste")] if floor else []
+
+
+def below_floor(release: str, rcommit: str, marks: list[tuple[str, str, str]], runner: Runner = run) -> str:
+    """Why `release` (at `rcommit`) is older than a mark, or "" when it is not. A commit this
+    checkout does not know cannot be placed: Unverified, never taken for « not older »."""
+    mine = semver(release) or semver(tag_of(rcommit, runner))
+    for tag, commit, what in marks:
+        theirs = semver(tag)
+        if mine and theirs and mine < theirs:
+            return f"{release} est plus ancienne que {tag}, {what}"
+        if commit and commit != rcommit:
+            known = runner(["git", "-C", str(REPO), "cat-file", "-e", f"{commit}^{{commit}}"])
+            if known.returncode != 0:
+                raise Unverified(f"l'ordre de {release} et de {tag or commit[:12]} ({what}) ne se lit pas : "
+                                 f"{commit[:12]} est inconnu ici — git fetch origin, ou ROLLBACK=1 pour passer outre")
+            if _ancestor(rcommit, commit, runner):
+                return f"le commit de {release} ({rcommit[:12]}) précède {tag or commit[:12]}, {what}"
+    return ""
+
+
+def floor_held(release: str, rcommit: str, marks: list, rollback: bool, runner: Runner = run) -> None:
+    """Refused under the floor, unless the way back is asked (ROLLBACK=1) — then said."""
+    try:
+        why = below_floor(release, rcommit, marks, runner)
+    except Unverified:
+        if not rollback:
+            raise
+        why = "son ordre ne se lit pas"
+    if why and not rollback:
+        raise Unverified(f"{why} : jamais de retour arrière sans qu'on le demande — make orodruin-push "
+                         f"REF={release} ROLLBACK=1")
+    if why:
+        print(f"  ↩ retour arrière demandé (ROLLBACK=1) : {why}", file=sys.stderr)
 
 
 # ── OI3 (#522): the image in service on Orodruin, against the latest release ───────────────────
@@ -981,18 +1130,24 @@ def labelled(line: str) -> str:
 
 
 def image_age(marker: str | None, ref: str = "", image: bool = True, revision: str | None = None,
-              runner: Runner = run) -> dict:
+              runner: Runner = run, latest: tuple[str, str] | None = None, marks: list | None = None,
+              rollback: bool = False) -> dict:
     """The image in service on Orodruin (`marker`: the text of its ~/.eregion-image, None when the
     file is absent; `image`: False when eregion-annatar:orodruin itself is absent; `revision`: the
     commit its tag's label says, "" when it says none, None when not read) against the latest
-    release (or `ref`): {"state", "release", "release_commit", "said"}. state: equal, older, newer,
+    release verified (`latest`: its tag and commit, latest_verified's), or `ref`: {"state", "release",
+    "release_commit", "said"}. Under a floor mark (`marks`, this workstation's memory, SEC-C): refused,
+    unless `rollback`. state: equal, older, newer,
     dev, diverged (kept), absent, unreadable (replaced) — a verified marker whose tag says another
     commit is unreadable (a dev build loaded over it, its marker never written). Raises Unverified
     when the release, or the image's commit, cannot be read here — nothing is decided."""
-    release = ref or latest_tag(runner)
+    if not ref and not latest:
+        raise Unverified("aucune release vérifiée à comparer : préciser REF=<tag ou commit>")
+    release = ref or latest[0]
     if not REF_RE.fullmatch(release):
         raise Unverified(f"release illisible : {release[:40]!r}")
     rcommit = commit_of(release, runner)
+    floor_held(release, rcommit, marks or [], rollback, runner)
     named = f"{'dernière release' if not ref else 'release visée'} {release} ({rcommit[:12]})"
     out = {"release": release, "release_commit": rcommit}
     verified = VERIFIED_MARK.fullmatch(marker or "")
@@ -1019,7 +1174,7 @@ def image_age(marker: str | None, ref: str = "", image: bool = True, revision: s
     known = runner(["git", "-C", str(REPO), "cat-file", "-e", f"{commit}^{{commit}}"])
     if known.returncode != 0:
         raise Unverified(f"le commit de l'image en service ({commit[:12]}) est inconnu ici : git fetch origin, "
-                         f"ou make orodruin-push REF={release} pour la remplacer")
+                         f"ou make orodruin-push REF={release} ROLLBACK=1 pour la remplacer")
     said = f"image {version_of(commit, runner)}, {named}"
     if _ancestor(commit, rcommit, runner):
         return {**out, "state": "older", "said": f"{said} : plus ancienne"}
@@ -1070,14 +1225,33 @@ def _output(values: dict) -> None:
             f.writelines(f"{k}={v}\n" for k, v in values.items())
 
 
+def _service(a) -> tuple[str | None, str | None]:
+    """What Orodruin read back (--read: the labels of :orodruin, a line, then ~/.eregion-image):
+    (marker, revision) — the marker None when absent, "\0" when unreadable (never a commit)."""
+    marker, revision = None, None
+    if a.read:
+        try:
+            with open(a.read, "rb") as f:
+                raw = f.read(READ_MAX + 1)
+            labels_, _, rest = raw.decode("utf-8").partition("\n")
+            revision = labelled(labels_)
+            marker = rest if len(raw) <= READ_MAX and len(rest.encode()) <= MARKER_MAX else "\0"
+        except (OSError, UnicodeDecodeError):
+            marker = "\0"                 # unreadable: never taken for a commit
+        if a.no_marker:
+            marker = None
+    return marker, revision
+
+
 def default_cosign() -> Path:
     return Path(os.environ.get("EREGION_COSIGN") or Path.home() / ".eregion" / "cosign" / f"cosign-{COSIGN_VERSION}")
 
 
 def main(argv: list | None = None, runner: Runner = run) -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    p.add_argument("cmd", choices=["resolve", "verify", "fetch", "archive", "ids", "loaded", "age", "install-cosign",
-                                   "install-syft", "meta", "pushed", "harness-key", "sign-blob", "verify-blob"])
+    p.add_argument("cmd", choices=["resolve", "verify", "proven", "fetch", "archive", "ids", "loaded", "age",
+                                   "raise-floor", "install-cosign", "install-syft", "meta", "pushed", "harness-key",
+                                   "sign-blob", "verify-blob"])
     p.add_argument("image", nargs="?", default="")
     p.add_argument("--commit", default="")
     p.add_argument("--digest", default="")
@@ -1090,6 +1264,9 @@ def main(argv: list | None = None, runner: Runner = run) -> int:
                                               "then its ~/.eregion-image")
     p.add_argument("--no-marker", action="store_true", help="age: ~/.eregion-image absent on Orodruin")
     p.add_argument("--no-image", action="store_true", help="age: eregion-annatar:orodruin absent on Orodruin")
+    p.add_argument("--rollback", action="store_true", help="archive, age: the way back asked (ROLLBACK=1): "
+                                                             "under the floor, said, not refused (SEC-C)")
+    p.add_argument("--fetch", action="store_true", help="proven: git fetch --tags origin first")
     p.add_argument("--cosign", default="")
     p.add_argument("--key", default="", help="sign-blob: the private key (default: harness-key's)")
     p.add_argument("--pinned", default="", help="verify-blob: the key as host.env pins it (EREGION_HARNESS_KEY)")
@@ -1126,11 +1303,27 @@ def main(argv: list | None = None, runner: Runner = run) -> int:
             digest = a.digest or resolve(a.image, a.commit)
             verify(a.image, digest, a.commit, cosign, runner=runner)
             print(f"✓ {reference(a.image)}@{digest} : signée et attestée par {WORKFLOW} sur main, au commit {a.commit[:12]}")
+        elif a.cmd == "proven":
+            if a.fetch:
+                res = runner(["git", "-C", str(REPO), "fetch", "-q", "--tags", "origin"])
+                if res.returncode != 0:
+                    raise Unavailable(f"git fetch en échec (code {res.returncode}) : la référence ne se relit pas",
+                                      _last(res))
+            ref, commit, digest = proven(a.image, a.ref, cosign, runner)
+            print(f"✓ {reference(a.image)}@{digest[:19]}… : {ref} ({commit[:12]}), signée et attestée par "
+                  f"{WORKFLOW} sur main, à ce commit", file=sys.stderr)
+            _output({"ref": ref, "commit": commit, "digest": digest})
+        elif a.cmd == "raise-floor":
+            if not COMMIT_RE.fullmatch(a.commit) or not REF_RE.fullmatch(a.ref):
+                p.error("raise-floor IMAGE --ref R --commit C")
+            floor = raise_floor(a.ref, a.commit, runner=runner)
+            said = f"{floor['tag']} ({floor['commit'][:12]})" if floor else "aucun (une référence sans version)"
+            print(f"  plancher d'Orodruin sur ce poste : {said} ({floor_file()})", file=sys.stderr)
         elif a.cmd == "fetch":
-            ref = a.ref or latest_tag(runner)
-            commit = commit_of(ref, runner)
-            digest = resolve(a.image, commit)
-            verify(a.image, digest, commit, cosign, runner=runner)
+            ref, commit, digest = (a.ref, commit_of(a.ref, runner), "") if a.ref else latest_verified(a.image, cosign, runner)
+            if not digest:
+                digest = resolve(a.image, commit)
+                verify(a.image, digest, commit, cosign, runner=runner)
             pull(a.image, digest, a.tag or f"{NAMES[a.image]}:{ref}", commit, runner=runner)
             _output({"ref": ref, "commit": commit, "digest": digest})
         elif a.cmd == "ids":
@@ -1138,10 +1331,13 @@ def main(argv: list | None = None, runner: Runner = run) -> int:
         elif a.cmd == "archive":
             if not a.out or not a.tag:
                 p.error("archive IMAGE --ref REF --tag NAME --out DIR")
-            ref = a.ref or latest_tag(runner)
-            commit = commit_of(ref, runner)
-            digest = resolve(a.image, commit)
-            verify(a.image, digest, commit, cosign, runner=runner)
+            ref, commit, digest = (a.ref, commit_of(a.ref, runner), "") if a.ref else latest_verified(a.image, cosign, runner)
+            marker, revision = _service(a) if (a.read or a.no_image) else (None, None)
+            # SEC-C: never under the floor — the image in service, this workstation's memory — unless asked.
+            floor_held(ref, commit, service_mark(marker, revision, runner) + memory_mark(), a.rollback, runner)
+            if not digest:
+                digest = resolve(a.image, commit)
+                verify(a.image, digest, commit, cosign, runner=runner)
             expect = build_archive(a.image, digest, commit, a.tag, Path(a.out))
             print(f"✓ archive de {reference(a.image)}@{digest[:19]}… : son manifeste, sa configuration et ses "
                   f"{len(expect['diff_ids'])} couches, chacun vérifié par son sha256", file=sys.stderr)
@@ -1164,19 +1360,10 @@ def main(argv: list | None = None, runner: Runner = run) -> int:
         elif a.cmd == "age":
             if bool(a.read) == a.no_image:
                 p.error("age IMAGE (--read F [--no-marker] | --no-image) [--ref REF]")
-            marker, revision = None, None
-            if a.read:
-                try:
-                    with open(a.read, "rb") as f:
-                        raw = f.read(READ_MAX + 1)
-                    labels_, _, rest = raw.decode("utf-8").partition("\n")
-                    revision = labelled(labels_)
-                    marker = rest if len(raw) <= READ_MAX and len(rest.encode()) <= MARKER_MAX else "\0"
-                except (OSError, UnicodeDecodeError):
-                    marker = "\0"                 # unreadable: never taken for a commit
-                if a.no_marker:
-                    marker = None
-            age = image_age(marker, a.ref, image=not a.no_image, revision=revision, runner=runner)
+            marker, revision = _service(a)
+            latest = None if a.ref else latest_verified(a.image, cosign, runner)[:2]
+            age = image_age(marker, a.ref, image=not a.no_image, revision=revision, runner=runner, latest=latest,
+                            marks=memory_mark(), rollback=a.rollback)
             print(("✓ " if age["state"] == "equal" else "  ") + age["said"], file=sys.stderr)
             _output({k: age[k] for k in ("state", "release", "release_commit")})
         elif a.cmd == "meta":

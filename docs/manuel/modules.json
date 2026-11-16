@@ -374,13 +374,15 @@
   {
    "version": "0.6",
    "nom": "identity defended",
-   "etat": "montage",
+   "etat": "publiee",
+   "derniere": "0.6.0",
+   "date": "2026-11-15",
    "resume": "The Activity and Entra ID logs measured on the bench; a public technique against the test identity, seen by Glorfindel; the response to a stolen identity, on the card."
   },
   {
    "version": "0.x",
    "nom": "the proof at the customer's",
-   "etat": "prevue",
+   "etat": "montage",
    "resume": "Detection only in production, a sentinel VM, a twin and its gap report; precision measured on real data."
   },
   {
@@ -1154,8 +1156,9 @@
    "composant": "glorfindel",
    "poste": "g-verifier",
    "nom": "Proof: an acknowledged block drift stays said when one of its denies, still present, is turned into an allow since (a bypass, not a new disappearance), while a rule seen present and deleted since still breaks it; the product unchanged",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.0",
    "lots": [
     "L1Nc"
    ],
@@ -1427,6 +1430,31 @@
    "issue": 634
   },
   {
+   "id": "s-sec-c",
+   "composant": "socle",
+   "poste": "s-signer",
+   "nom": "Security hardening",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "SEC-C",
+    "SEC-C-workflow"
+   ],
+   "issue": 635
+  },
+  {
+   "id": "s-sec-fa",
+   "composant": "socle",
+   "poste": "s-signer",
+   "nom": "Security hardening",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "SEC-Fa"
+   ],
+   "issue": 852
+  },
+  {
    "id": "s-inf-fl",
    "composant": "socle",
    "poste": "s-signer",
@@ -1616,8 +1644,9 @@
    "composant": "annatar",
    "poste": "a-attaquer",
    "nom": "The control-plane injector's offline toolchain, staged onto the execution host",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.0",
    "lots": [
     "R2BS"
    ],
@@ -1643,8 +1672,9 @@
    "composant": "annatar",
    "poste": "a-attaquer",
    "nom": "The 0.6.0 identity card, directory side: a pinned public library adds a credential on a test directory identity, seen by Glorfindel",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.0",
    "lots": [
     "RID2"
    ],

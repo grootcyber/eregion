@@ -10,13 +10,13 @@ ENGINE = "annatar/runner/engine.py"
 _CLI_TESTS = "tests/unit/test_annatar_cli.py"
 _RUN_TESTS = "tests/unit/test_annatar_run_exit.py"
 
-_ONE_ERR = '        console.print(f"     {escape(err)}", emoji=False)\n    raise SystemExit(EXIT_SCENARIO_INVALID)\n'
-_ALL_ERR = '                    console.print(f"     {escape(err)}", emoji=False)\n'
-_ALL_LISTED = '                console.print(f"  [red]FAIL[/red] {escape(rel)}", emoji=False)\n'
+_ONE_ERR = '        console.print(f"     {outside(err)}", emoji=False)\n    raise SystemExit(EXIT_SCENARIO_INVALID)\n'
+_ALL_ERR = '                    console.print(f"     {outside(err)}", emoji=False)\n'
+_ALL_LISTED = '                console.print(f"  [red]FAIL[/red] {outside(rel)}", emoji=False)\n'
 
 MUTANTS = [
     ("M3650", "an invalid scenario said, and validate exits 0: a CI that trusts it sees it good (AV1)", CLI,
-     _ONE_ERR, '        console.print(f"     {escape(err)}", emoji=False)\n'),
+     _ONE_ERR, '        console.print(f"     {outside(err)}", emoji=False)\n'),
     ("M3651", "validate --all exits 0 with invalid scenarios (AV1)", CLI,
      _ALL_LISTED + "            raise SystemExit(EXIT_SCENARIO_INVALID)\n", _ALL_LISTED),
     ("M3652", "validate --all fails without the list of the invalid ones (AV1)", CLI,
@@ -28,14 +28,14 @@ MUTANTS = [
     ("M3670", "validate --all reads a cause as markup, said other than written (AV1)", CLI,
      _ALL_ERR, '                    console.print(f"     {err}", emoji=False)\n'),
     ("M3671", "validate --all reads an invalid scenario's file name as markup (AV1)", CLI,
-     '                console.print(f"[red]FAIL[/red] {escape(rel)}", emoji=False)\n',
+     '                console.print(f"[red]FAIL[/red] {outside(rel)}", emoji=False)\n',
      '                console.print(f"[red]FAIL[/red] {rel}", emoji=False)\n'),
     ("M3672", "a scenario name not found read as markup (AV1)", CLI,
-     "'{escape(scenario)}'", "'{scenario}'"),
+     "[/red] '{outside(scenario)}'\", emoji=False)", "[/red] '{scenario}'\", emoji=False)"),
     ("M3673", "validate --all prints a :fire: of the file (its path in a YAML error, an engine) as an emoji (AV1)", CLI,
-     _ALL_ERR, '                    console.print(f"     {escape(err)}")\n'),
+     _ALL_ERR, '                    console.print(f"     {outside(err)}")\n'),
     ("M3674", "the run's « Invalid scenario » reads what the file says as markup (AV1)", ENGINE,
-     '{escape(str(e))}", emoji=False)', '{e}", emoji=False)'),
+     '{outside(e)}", emoji=False)', '{e}", emoji=False)'),
 ]
 TESTS = {
     "M3650": f"{_CLI_TESTS} -k test_validate_one_invalid_scenario_exits_1_and_says_why",

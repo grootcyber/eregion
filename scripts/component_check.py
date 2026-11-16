@@ -93,7 +93,7 @@ COMPONENTS: dict[str, Component] = {
         tests=(
             "test_annatar_atomic.py", "test_annatar_stratus.py", "test_stratus_stage.py",
             "test_annatar_cli.py",
-            "test_annatar_detection.py",
+            "test_annatar_detection.py", "test_annatar_console.py",
             "test_annatar_run_exit.py", "test_annatar_wire.py", "test_campaign_channel.py", "test_campaign_declared.py",
             "test_campaign_manifest.py",
             "test_campaign_planner.py", "test_campaign_runner.py", "test_campaign_synthesizer.py", "test_campaign_drill.py",

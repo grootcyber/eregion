@@ -1,10 +1,12 @@
 #!/bin/bash
 # deploy.sh — on Glorfindel's VM (H0), in ~/eregion: deploy a named reference (M-3, #183).
 #
-#   make imladris-start REF=v0.3.1|<commit>      # sends this script over ssh
+#   make imladris-start REF=v0.3.1|<commit>      # verifies on the workstation, sends this script over ssh
 #
-#   deploy.sh REF                    fetch, check out REF detached, build the image, start
-#   deploy.sh --checkout-only REF    fetch and check out, nothing built or started
+#   deploy.sh REF COMMIT             fetch, check out COMMIT detached — the commit the workstation
+#                                    verified for REF (SEC-C): REF resolving to another commit here
+#                                    is refused —, build the image, start
+#   deploy.sh --checkout-only REF [COMMIT]   fetch and check out, nothing built or started
 #   deploy.sh --show                 the reference the running watch was built from
 #   deploy.sh --build-only REF [TAG] build eregion-glorfindel:REF (or :TAG) from the current
 #                                    directory, which must be checked out at REF (the CD's own
@@ -23,9 +25,14 @@
 #
 # REF is a tag or a commit, never a branch: a branch moves, and H0 ran whatever had just
 # been merged into main. REF is required (SEC14, V-22): this path builds on H0 — the emergency
-# path, outside CI3's verification — so it builds only what the operator names, never « the
-# latest tag » it found (a tag pushed by anyone with write access). The CD (H1) never builds
-# here: it pulls the published image, signature and provenance verified. The image carries
+# path — so it builds only what the operator names, never « the latest tag » it found (a tag
+# pushed by anyone with write access). And only what the workstation verified (SEC-C, audit of
+# 06/11, V-29): `make imladris-start` reads REF's commit on origin/main there, proves the signature
+# and the provenance of the image the CI published for that commit (scripts/published_image.py
+# proven, the pinned cosign — as the CD does), then hands this script REF and that commit. Here,
+# REF must resolve to that very commit, or nothing moves; the commit is checked out, never a name
+# resolved here. The CD (H1) never builds here: it pulls the published image, signature and
+# provenance verified. The image carries
 # the reference (labels org.opencontainers.image.version / .revision) — `--show`, and so
 # `make imladris-status`, read it back from the running container. Each image is also
 # tagged by its reference, and the three newest are kept, with the one running and the one
@@ -41,8 +48,25 @@ IMAGE="${EREGION_IMAGE:-eregion-glorfindel}"
 LABEL_REF="org.opencontainers.image.version"
 LABEL_REV="org.opencontainers.image.revision"
 KEEP_IMAGES=3
+# SEC-C (audit of 06/11, V-29): the repository's current name. The VM was cloned under the former one
+# (variables.tf, eregion_repo: changed at the next rebuild only); origin is pointed here before every
+# fetch, said when it changes. The CD passes its own (EREGION_REPO_URL); the tests, a local origin.
+REPO_URL="${EREGION_REPO_URL:-https://github.com/grootcyber/eregion.git}"
 
 die() { echo "✗ $*" >&2; exit 1; }
+
+# Origin at the repository's current name, before any fetch — said once, when it changes.
+point_origin() {
+  local have
+  have=$(git remote get-url origin 2>/dev/null || true)
+  [ "$have" = "$REPO_URL" ] && return 0
+  if [ -n "$have" ]; then
+    git remote set-url origin "$REPO_URL" || die "git remote set-url a échoué : rien n'est déployé"
+  else
+    git remote add origin "$REPO_URL" || die "git remote add a échoué : rien n'est déployé"
+  fi
+  echo "  ↪ origin du dépôt d'Imladris : ${have:-aucun} → $REPO_URL (SEC-C)" >&2
+}
 
 # One deployment at a time: the CD (H1) takes the lock for its pass and tells this script
 # so (EREGION_DEPLOY_LOCKED=1); by hand, the lock is taken here, or refused.
@@ -77,7 +101,8 @@ resolve() {
 }
 
 checkout() {
-  local want="${1:-}" tolerant="${2:-}" expect="${3:-}" pair dirty rules
+  local want="${1:-}" tolerant="${2:-}" expect="${3:-}" verified="${4:-}" pair dirty rules
+  point_origin
   if ! git fetch -q --tags --force origin; then
     [ -n "$tolerant" ] || die "git fetch a échoué : rien n'est déployé"
     echo "⚠ git fetch a échoué : la référence est résolue sur la VM" >&2
@@ -85,6 +110,10 @@ checkout() {
   # V-22 (SEC14): named, or nothing moves — never « the latest tag ».
   [ -n "$want" ] || die "REF exigée : un tag ou un commit (make imladris-start REF=<tag ou commit>) ; rien n'est déployé"
   pair=$(resolve "$want")
+  # SEC-C: the commit the workstation verified, or nothing moves — never a name resolved here alone.
+  if [ -n "$verified" ] && [ "${pair#* }" != "$verified" ]; then
+    die "« $want » désigne ${pair#* } sur la VM, le poste a vérifié $verified : rien n'est déployé (un tag réécrit, ou un autre dépôt ?)"
+  fi
   # The image was built from one commit (H1): a tag rewritten since names another — its compose,
   # its rules, its catalogue beside the old image. The image's own commit is checked out
   # instead, said; refused if the VM does not have it.
@@ -197,7 +226,8 @@ case "${1:-}" in
     show ;;
   --checkout-only)
     lock
-    checkout "${2:-}" ;;
+    [ -z "${3:-}" ] || [[ "${3:-}" =~ ^[0-9a-f]{40}$ ]] || die "commit vérifié invalide : « ${3:-} » (40 chiffres hexadécimaux)"
+    checkout "${2:-}" "" "" "${3:-}" ;;
   --build-only)
     [ -n "${2:-}" ] || die "--build-only REF : la référence manque"
     name="${3:-$2}"
@@ -223,7 +253,10 @@ case "${1:-}" in
     echo "✓ images gardées : les trois plus récentes et $*" ;;
   *)
     lock
-    pair=$(checkout "${1:-}")
+    # SEC-C: REF and the commit the workstation verified (make imladris-start), never REF alone.
+    [ -n "${1:-}" ] || die "REF exigée : un tag ou un commit (make imladris-start REF=<tag ou commit>) ; rien n'est déployé"
+    [[ "${2:-}" =~ ^[0-9a-f]{40}$ ]] || die "le commit vérifié manque : ce chemin ne déploie que ce que le poste a vérifié (make imladris-start REF=${1:-}, la signature de son image publiée) ; rien n'est déployé"
+    pair=$(checkout "${1:-}" "" "" "$2")
     before=$(running_ref)                  # the containers have not moved yet
     commit="${pair#* }"
     build "${pair% *}" "$commit" latest

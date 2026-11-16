@@ -131,8 +131,9 @@ make orodruin-lock                 # 2e apply, il REFERME la sortie : son plan m
                                    # sinon le plan retire ses droits à la watch du poste
 cp infra/orodruin/orodruin.env.example infra/orodruin/orodruin.env   # abonnement, plafond
 make orodruin-push                 # l'image d'Annatar publiée (CI3) : digest, signature et provenance vérifiés ici, archive tirée des blobs du registre (OI1) | ssh docker load ; + orodruin.env
-                                   # REF=<tag|commit> (défaut : le dernier tag v* — tant qu'il est d'avant CI3, il n'a pas d'image
-                                   # publiée et la cible échoue : donner REF=<un commit de main d'après CI3>)
+                                   # REF=<tag|commit> (défaut : la plus haute release dont l'image publiée est
+                                   # vérifiée, SEC-C — jamais un tag local cru sur son nom) ; jamais sous le
+                                   # plancher (plus bas) ; ROLLBACK=1, avec REF : le retour arrière demandé
                                    # make orodruin-push-dev : construite ici, non vérifiée (développement)
 make orodruin-check                # le contrat lu depuis la VM : armed ou passive ; avant lui, l'image en
                                    # service et la dernière release (plus ancienne : un avertissement, OI3)
@@ -191,6 +192,43 @@ jamais développés par make ; avant `az vm start` aussi, `ORO_SSH_FINGERPRINT` 
 `ORO_CHECK_TIMEOUT`. `make -n orodruin-start` montre ses lignes et n'en lance aucune. Rien ne change au réseau
 d'Orodruin ni à son contrat : la mise à jour est le même `orodruin-push`, depuis le poste. Le détail :
 `docs/design/orodruin-contract.md`, « L'image des injecteurs », « À jour au démarrage ».
+
+**Le plancher, le retour arrière (SEC-C, #635 ; audit du 06/11, V-24).** `make orodruin-push REF=` et
+`make orodruin-update REF=` acceptaient une release plus ancienne que celle en service : un `REF` nommé
+passait. Maintenant, une release plus ancienne que la plus haute déjà poussée et vérifiée est refusée,
+avant que rien ne parte (« … est plus ancienne que …, … : jamais de retour arrière sans qu'on le demande
+— make orodruin-push REF=… ROLLBACK=1 »). Le plancher a deux marques, la plus haute l'emporte :
+- **l'image en service sur Orodruin** : son `~/.eregion-image` (« commit digest »), lu d'abord par la
+  clé d'hôte épinglée, comme OI3 le lit. Une image de développement (`dev …`), un marqueur illisible
+  ou dont le tag dit un autre commit ne marquent rien. L'image en service illisible (docker qui ne
+  répond pas, ssh) : rien ne part ;
+- **la mémoire de ce poste**, `~/.eregion/orodruin_floor.json` (`{"tag", "commit"}`, hors du dépôt,
+  `EREGION_ORODRUIN_FLOOR` pour un autre chemin) : relevée à chaque poussée réussie, à la plus haute
+  version poussée et vérifiée depuis ce poste, jamais baissée — ni par un retour arrière, ni par une
+  référence sans version (un commit sans tag). Elle tient encore quand Orodruin a été reconstruit (plus
+  d'image, plus de marqueur). Illisible : refusé, jamais pris pour « aucun plancher » (la réparer, ou la
+  retirer).
+
+« Plus ancienne » se lit par la version (`vX.Y.Z`), puis par le commit dans l'histoire de git (le commit
+de la release, ancêtre de celui de la marque) ; un commit que ce poste ne connaît pas ne se place pas,
+et n'est jamais pris pour « pas plus ancien » : `git fetch origin`, ou `ROLLBACK=1`.
+
+```bash
+make orodruin-push REF=v0.5.9 ROLLBACK=1      # le retour arrière demandé : dit (« ↩ retour arrière demandé
+                                              # (ROLLBACK=1) : … »), vérifié comme toute release ; le
+                                              # plancher du poste ne baisse pas
+make orodruin-update REF=v0.5.9 ROLLBACK=1    # de même, l'image en service plus récente remplacée
+make orodruin-start REF=v0.5.9 ROLLBACK=1     # de même, au démarrage
+```
+
+`ROLLBACK` se donne sur la ligne de commande, avec `REF` (`ROLLBACK=1`, ou rien), validé avant tout,
+jamais développé par make ; une variable `ROLLBACK` de l'environnement est refusée. Sans `REF`, la
+release prise est la plus haute dont l'image publiée est vérifiée (son tag sur `origin/main`, son image
+signée et attestée par le workflow de publication) : une release plus haute dont l'image manque ou n'est
+pas signée est écartée, et c'est dit (« ⚠ v… écartée : … ») ; le registre ou sigstore muets arrêtent tout
+(rien n'est prouvé). `make orodruin-check` le lit de même, en avertissement. Ce que le plancher ne voit
+pas : un autre poste qui a poussé une release plus haute sur un Orodruin reconstruit depuis (sa mémoire
+est la sienne).
 
 **Urgence** : `make orodruin-kill` — depuis ton `az login`, quel que soit son abonnement
 courant. Le kill révoque toutes les attributions de rôle de l'identité **sur l'abonnement du

@@ -8,8 +8,8 @@ Eregion is before 1.0, maintained by one person. Fixes go into the **latest rele
 
 | Version | Supported |
 |---|---|
-| latest 0.5.x | yes |
-| older 0.5.x, 0.4.x and before | no — upgrade |
+| latest 0.6.x | yes |
+| older 0.6.x, 0.5.x and before | no — upgrade |
 
 This table follows the releases: each new minor version updates it in its own version pull request.
 

@@ -76,8 +76,9 @@ def _make(tmp_path, *args, touch_on_push: bool = False):
            "FAKE_LOG": str(log), "FAKE_H0": str(home), "FAKE_TOUCH": "1" if touch_on_push else ""}
     for k in ("HOST_SSH_FINGERPRINT", "HOST_KNOWN_HOSTS", "HOST_IP", "HOST_SSH_KEY", "CLIENT_RULES"):
         env.pop(k, None)
-    res = subprocess.run(["make", "-s", "--no-print-directory", "-C", str(ROOT), "imladris-client-rules",
-                          f"HOST_IP={IP}", f"PYTHON={sys.executable}", *args],
+    # The host key aside (tests/unit/test_host_ssh.py: required since SEC-C): the layer is what is read here.
+    res = subprocess.run(["make", "-s", "--no-print-directory", "-C", str(ROOT), "-o", "imladris-known",
+                          "imladris-client-rules", f"HOST_IP={IP}", f"PYTHON={sys.executable}", *args],
                          env=env, capture_output=True, text=True, timeout=120)
     return res, log.read_text().splitlines(), home
 

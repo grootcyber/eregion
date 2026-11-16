@@ -132,7 +132,7 @@ _V1_ANNATAR_GATE = (
     "        else:\n"
     "            no_watch = watch_gate.refusal()\n"
     "            if no_watch:\n"
-    '                console.print(f"[red]Refused — no live Glorfindel watch:[/red] {no_watch}")\n'
+    '                console.print(f"[red]Refused — no live Glorfindel watch:[/red] {outside(no_watch)}")\n'
     '                return RunOutcome(run_id, "unknown", error=f"glorfindel: {no_watch}", refused=True)\n')
 _V1_ANNATAR_ARM = '        verdict, session = arm(run_id, "annatar", request=self.request)\n'
 _V1_GOTHMOG_GATE = (
@@ -285,8 +285,8 @@ MUTANTS = [
      '            bare[t0["nic_id"]] = (original, q_bare)'),
     # O0 (eighth pass): the six bugs the inscription's specification names.
     ("M42", "the execution-time inscription check removed (O0)", ENG,
-     '        if not guard.allowed:\n            console.print(f"[red]Safety check failed:[/red] {guard.reason}")',
-     '        if False:\n            console.print(f"[red]Safety check failed:[/red] {guard.reason}")'),
+     '        if not guard.allowed:\n            console.print(f"[red]Safety check failed:[/red] {outside(guard.reason)}")',
+     '        if False:\n            console.print(f"[red]Safety check failed:[/red] {outside(guard.reason)}")'),
     ("M43", "an empty bench id accepted (O0)", INS,
      "    if not bench or not bench.strip():\n        return GuardResult(False, \"empty bench id",
      "    if False:\n        return GuardResult(False, \"empty bench id"),
@@ -351,8 +351,8 @@ MUTANTS = [
     ("M60", "an exercise card absorbs a real detection (B2)", "glorfindel/escalations.py",
      "                and (e.get(\"source\") or \"real\") == (source or \"real\")\n", ""),
     ("M61", "an Annatar run never closes its window (B2)", "annatar/runner/engine.py",
-     "        try:\n            if scenario.engine == \"atomic\":\n                return self._run_atomic_enrolled(scenario, executor, run_id, session, resolved)\n            if scenario.engine == \"local-script\":\n                return self._run_enrolled(scenario, executor, run_id)\n            # Unreachable once validate did its job — the explicit table refuses the rest.\n            console.print(f\"[red]Engine not runnable:[/red] {scenario.engine!r}\")\n            return RunOutcome(run_id, \"unknown\", error=f\"engine: {scenario.engine!r} not runnable\")\n        finally:\n            close_window(run_id, injector=\"annatar\")\n",   # re-anchored (SEC18)
-     "        if scenario.engine == \"atomic\":\n            return self._run_atomic_enrolled(scenario, executor, run_id, session, resolved)\n        if scenario.engine == \"local-script\":\n            return self._run_enrolled(scenario, executor, run_id)\n        console.print(f\"[red]Engine not runnable:[/red] {scenario.engine!r}\")\n        return RunOutcome(run_id, \"unknown\", error=f\"engine: {scenario.engine!r} not runnable\")\n"),
+     "        try:\n            if scenario.engine == \"atomic\":\n                return self._run_atomic_enrolled(scenario, executor, run_id, session, resolved)\n            if scenario.engine == \"local-script\":\n                return self._run_enrolled(scenario, executor, run_id)\n            # Unreachable once validate did its job — the explicit table refuses the rest.\n            console.print(f\"[red]Engine not runnable:[/red] {outside(repr(scenario.engine))}\")\n            return RunOutcome(run_id, \"unknown\", error=f\"engine: {scenario.engine!r} not runnable\")\n        finally:\n            close_window(run_id, injector=\"annatar\")\n",   # re-anchored (SEC18)
+     "        if scenario.engine == \"atomic\":\n            return self._run_atomic_enrolled(scenario, executor, run_id, session, resolved)\n        if scenario.engine == \"local-script\":\n            return self._run_enrolled(scenario, executor, run_id)\n        console.print(f\"[red]Engine not runnable:[/red] {outside(repr(scenario.engine))}\")\n        return RunOutcome(run_id, \"unknown\", error=f\"engine: {scenario.engine!r} not runnable\")\n"),
     # #105: the boot batch's sub-second gaps set the step again (blind 10 min after a boot).
     ("M62", "the ransomware step reads the boot batch (#105)", "glorfindel/rules/azure/detection_rules.yaml",
      "summarize Step = minif(Gap, Gap >= 1s) by Vm, InstanceName", "summarize Step = min(Gap) by Vm, InstanceName"),
@@ -1248,17 +1248,18 @@ MUTANTS = [
      "    _has_alerting = alerting_configured()\n",
      '    _has_alerting = bool(os.environ.get("GLORFINDEL_WEBHOOK_URL") '
      'or os.environ.get("DISCORD_CHANNEL_ID"))\n'),
+    # Re-anchored (SEC-C): the workstation's verification now sits between the check and the ssh.
     ("M524", "REF=--checkout-only reaches deploy.sh as an option (M-3, review)", MAKE,
-     '\t@case "$$EREGION_DEPLOY_REF" in -*|*[!A-Za-z0-9._-]*) echo "REF invalide : « $$EREGION_DEPLOY_REF » (un tag ou un commit)" >&2; exit 1;; esac\n\t@$(HOST_SSH)',
-     '\t@case "$$EREGION_DEPLOY_REF" in *[!A-Za-z0-9._-]*) echo "REF invalide : « $$EREGION_DEPLOY_REF » (un tag ou un commit)" >&2; exit 1;; esac\n\t@$(HOST_SSH)'),
+     '\t@case "$$EREGION_DEPLOY_REF" in -*|*[!A-Za-z0-9._-]*) echo "REF invalide : « $$EREGION_DEPLOY_REF » (un tag ou un commit)" >&2; exit 1;; esac\n\t@python3 scripts/published_image.py install-cosign\n\t@out=$$(python3 scripts/published_image.py proven',
+     '\t@case "$$EREGION_DEPLOY_REF" in *[!A-Za-z0-9._-]*) echo "REF invalide : « $$EREGION_DEPLOY_REF » (un tag ou un commit)" >&2; exit 1;; esac\n\t@python3 scripts/published_image.py install-cosign\n\t@out=$$(python3 scripts/published_image.py proven'),
     ("M525", "a REF exported in the environment is deployed in silence (M-3, review)", MAKE,
      '@case "$(origin REF)" in environment*) echo "REF vient de l\'environnement (« $$EREGION_DEPLOY_REF ») : rien n\'est déployé',
      '@case "$(origin REF)" in nowhere*) echo "REF vient de l\'environnement (« $$EREGION_DEPLOY_REF ») : rien n\'est déployé'),
     ("M526", "make expands a refused REF while exporting it: $(shell …) runs (M-3, review)", MAKE,
      "REF ?=\nunexport REF\n", "REF ?=\n"),
     ("M527", "the ssh line copies REF into the recipe: make expands it before it is checked (M-3, review)",
-     MAKE, """bash -s -- '"$$EREGION_DEPLOY_REF" < infra/glorfindel-host/deploy.sh""",
-     "bash -s -- $(REF)' < infra/glorfindel-host/deploy.sh"),
+     MAKE, """bash -s -- '"$$EREGION_DEPLOY_REF $$commit" < infra/glorfindel-host/deploy.sh""",   # re-anchored (SEC-C)
+     """bash -s -- $(REF) '"$$commit" < infra/glorfindel-host/deploy.sh"""),
     # P1 moved this check: a rules file modified on the VM is refused with what to do (migrate).
     ("M528", "rules the VM approved: refused in git's words, not with what to do (M-3, review; P1)",
      "infra/glorfindel-host/deploy.sh",
@@ -7007,10 +7008,10 @@ MUTANTS += [
      '_ARM_PATH = re.compile(r"/subscriptions/[^/?#%\\\\\\s]+(?:/[^/?#%\\\\\\s]+)+")\n',
      '_ARM_PATH = re.compile(r"/subscriptions/[^/?#%\\s]+(?:/[^/?#%\\s]+)+")\n'),
     ("M2494", "a campaign refused busy reads the holder's name as markup (#358, review)", "annatar/cli.py",
-     "✗ campaign {escape(campaign_id)} refused — busy: {escape(str(e))}[/red]\")\n",
+     "✗ campaign {outside(campaign_id)} refused — busy: {outside(str(e))}[/red]\")\n",
      "✗ campaign {campaign_id} refused — busy: {e}[/red]\")\n"),
     ("M2495", "a run refused busy reads the holder's name as markup (#358, review)", "annatar/cli.py",
-     '        console.print(f"[red]✗ run refused — busy: {escape(str(e))}[/red]")\n',
+     '        console.print(f"[red]✗ run refused — busy: {outside(str(e))}[/red]")\n',
      '        console.print(f"[red]✗ run refused — busy: {e}[/red]")\n'),
 ]
 TESTS.update({"M2491": _358_CORE, "M2492": _358_CORE, "M2493": _358_CORE,
@@ -9083,8 +9084,10 @@ TESTS["M2951"] = "tests/unit/test_makefile_exercise.py"
 
 # SEC14 (#420, V-32, V-34): Orodruin's host key pinned, never accept-new; its containers hardened.
 MUTANTS += [
-    ("M2953", "Orodruin without its host key's fingerprint falls back to accept-new (V-32)", MAKE,
-     ' "$(ORO_KNOWN_HOSTS)" ORO_SSH_FINGERPRINT required\n', ' "$(ORO_KNOWN_HOSTS)" ORO_SSH_FINGERPRINT\n'),
+    # Re-anchored (SEC-C): known_host.sh requires the fingerprint whatever its caller says.
+    ("M2953", "Orodruin without its host key's fingerprint lets its command go (V-32)",
+     "infra/glorfindel-host/known_host.sh", 'if [ -z "$want" ]; then\n  case "$var" in\n',
+     'if [ -z "$want" ]; then\n  [ "$var" = HOST_SSH_FINGERPRINT ] || exit 0\n  case "$var" in\n'),
     ("M2954", "an injector's container on Orodruin runs with its root writable and its capabilities (V-34)",
      MAKE, "ORO_RUN        = $(ORO_DIRS) docker run --rm $(ORO_HARDEN) ", "ORO_RUN        = $(ORO_DIRS) docker run --rm "),
 ]
