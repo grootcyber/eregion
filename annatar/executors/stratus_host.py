@@ -106,6 +106,7 @@ class StratusExecutor:
         self._run = run or subprocess.run
         self._get = get or _default_graph_get
         self._arm_get = arm_get or _default_arm_get
+        self._run_home_path: str | None = None   # a writable HOME built per run (R2BS)
 
     def resource_group_tags(self, subscription_id: str, resource_group: str) -> dict:
         """The bench group's tags, read through ARM — the control-plane enrollment guard
@@ -115,10 +116,60 @@ class StratusExecutor:
         body = self._arm_get(path, _RG_API)
         return (body.get("tags") if isinstance(body, dict) else {}) or {}
 
+    def _staged_terraform(self) -> str:
+        """The pinned Terraform binary staged read-only in the image (make stratus-stage, R2BS)."""
+        return os.path.join(self.layout.home, "terraform")
+
+    def _verify_staged_terraform(self) -> None:
+        """Re-check the staged Terraform before a run, like the Stratus binary (SEC5): its sha256
+        against the one `make stratus-stage` recorded beside it. Missing or mismatched → the run
+        refuses rather than provisioning with an unknown Terraform."""
+        import hashlib
+        from pathlib import Path
+        tf = Path(self._staged_terraform())
+        recorded = Path(self.layout.home) / "terraform.sha256"
+        try:
+            want = recorded.read_text(encoding="utf-8").split()[0]
+        except (OSError, IndexError) as e:
+            raise RuntimeError(
+                f"the staged Terraform checksum {recorded} is missing or empty "
+                f"({type(e).__name__}) — stage it with `make stratus-stage`; not run") from e
+        try:
+            got = hashlib.sha256(tf.read_bytes()).hexdigest()
+        except OSError as e:
+            raise RuntimeError(
+                f"the staged Terraform {tf} cannot be read ({type(e).__name__}) — stage it with "
+                "`make stratus-stage`; not run") from e
+        if got != want:
+            raise RuntimeError(
+                "the staged Terraform does not match the sha256 recorded beside it — not the "
+                "staged binary; not run")
+
+    def _ensure_run_home(self) -> str:
+        """A writable HOME for this run: Stratus writes its state under
+        ``<HOME>/.stratus-red-team/`` and the staged ``/opt/stratus/home`` is read-only in the
+        image (R2BS). Built once (the staged Terraform re-checked first), removed by ``close()``."""
+        if self._run_home_path is None:
+            self._verify_staged_terraform()
+            import tempfile
+            self._run_home_path = tempfile.mkdtemp(prefix="stratus-home-")
+        return self._run_home_path
+
+    def close(self) -> None:
+        """Remove the run-scoped HOME. The ``docker run --rm`` tmpfs clears it too, but a test or
+        a reused process should not leak it."""
+        if self._run_home_path is not None:
+            import shutil
+            shutil.rmtree(self._run_home_path, ignore_errors=True)
+            self._run_home_path = None
+
     def _env(self) -> dict[str, str]:
         """The process environment: the inherited one (Orodruin's Azure credentials) with the
-        offline overrides layered on (annatar/engines/stratus.py::airgap_env)."""
-        overrides = airgap_env(self.layout.home, plugin_cache=self.layout.plugin_cache,
+        offline overrides layered on (annatar/engines/stratus.py::airgap_env) — a writable run
+        HOME, the staged Terraform binary (STRATUS_TERRAFORM_BINARY_PATH) and the provider mirror
+        (TF_CLI_CONFIG_FILE)."""
+        overrides = airgap_env(self._ensure_run_home(),
+                               terraform_binary=self._staged_terraform(),
                                terraformrc=self.layout.terraformrc)
         return {**os.environ, **overrides}
 

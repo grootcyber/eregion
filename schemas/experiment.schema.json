@@ -33,12 +33,17 @@
     "target": {
       "description": "Legacy single-target shape (technique, local-script). Prefer `targets` for new experiments.",
       "type": "object",
-      "required": ["type", "resource_group"],
+      "required": ["type"],
       "additionalProperties": true,
       "properties": {
         "type": { "type": "string" },
         "resource_group": { "type": "string" },
         "vm_name": { "type": "string" }
+      },
+      "if": { "not": { "properties": { "type": { "const": "entra_id" } } } },
+      "then": {
+        "description": "An entra_id target (RID2) acts in the directory, under no resource group; every other target names its group.",
+        "required": ["resource_group"]
       }
     },
     "targets": {

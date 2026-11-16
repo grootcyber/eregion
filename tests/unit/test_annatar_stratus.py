@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -27,13 +28,14 @@ from annatar.engines.stratus import (
     resolve,
     verify_binary,
 )
-from annatar.executors.stratus_host import StratusExecutor, staged_layout
+from annatar.executors.stratus_host import StagedLayout, StratusExecutor, staged_layout
 from annatar.runner.engine import Engine
 from annatar.runner.parser import KNOWN_ENGINES, Scenario, ScenarioParser
 from eregion_core.orodruin import CapReached, Passive, Session
 
 TID = "azure.execution.vm-run-command"
 FIC = "azure.persistence.backdoor-managed-identity-fic"
+ENTRA_SP = "entra-id.persistence.backdoor-application-sp"  # RID2, the directory identity card
 RG_SCOPE = "/subscriptions/sub-123/resourceGroups/rg-celebrimbor"
 ENROLLED = {"eregion-target": "celebrimbor", "eregion-zone": "bench"}
 
@@ -84,7 +86,9 @@ def _ok_run(record: list | None = None):
 def test_allowed_techniques_is_the_catalog_closed_list():
     allowed = allowed_techniques()
     assert TID in allowed and FIC in allowed
-    assert all(a.startswith("azure.") for a in allowed)
+    # RID2 adds the directory identity card (entra-id.*) alongside the control-plane (azure.*)
+    assert ENTRA_SP in allowed
+    assert all(a.startswith(("azure.", "entra-id.")) for a in allowed)
 
 
 def test_resolve_refuses_a_technique_off_the_allowlist(tmp_path):
@@ -95,12 +99,14 @@ def test_resolve_refuses_a_technique_off_the_allowlist(tmp_path):
 
 
 @pytest.mark.parametrize("bad", [
-    "aws.execution.vm-run-command",          # not Azure
-    "gcp.persistence.x",                      # not Azure
+    "aws.execution.vm-run-command",          # not azure/entra-id
+    "gcp.persistence.x",                      # not azure/entra-id
+    "kubernetes.persistence.x",               # not azure/entra-id (RID2 adds entra-id only)
     "azure.execution.vm-run-command/extra",   # a path separator
     "azure.Execution.vm-run-command",         # upper case
     "azure.execution.--help",                 # an option-looking segment
     "azure.execution.vm run command",         # a space
+    "entra-id.persistence.x/extra",           # a path separator (entra-id too)
     "",                                        # empty
 ])
 def test_resolve_refuses_a_malformed_id(tmp_path, bad):
@@ -108,6 +114,17 @@ def test_resolve_refuses_a_malformed_id(tmp_path, bad):
     with pytest.raises(StratusError):
         resolve(bad, binary_path=binary, stratus_dir=_stratus_dir(tmp_path, digest),
                 catalog=_catalog(engine_ref=bad))
+
+
+def test_resolve_accepts_an_entra_id_technique(tmp_path):
+    """RID2: the adapter also runs Entra ID directory techniques (entra-id.<tactic>.<name>), held
+    to the catalog's closed allow-list exactly like the azure ones."""
+    binary, digest = _fake_binary(tmp_path)
+    tid = "entra-id.persistence.backdoor-application-sp"
+    r = resolve(tid, binary_path=binary, stratus_dir=_stratus_dir(tmp_path, digest),
+                catalog=_catalog(engine_ref=tid))
+    assert r.technique_id == tid
+    assert [p.name for p in r.phases] == list(PHASES)
 
 
 # ── The pinned binary is checked at run time (SEC5) ───────────────────────────────────
@@ -211,11 +228,12 @@ def test_graph_probe_holds_on_absence_and_presence():
 # ── The offline environment (Orodruin has no Internet) ────────────────────────────────
 
 def test_airgap_env_points_terraform_offline(tmp_path):
-    env = airgap_env(tmp_path / "home", plugin_cache=tmp_path / "cache",
+    env = airgap_env(tmp_path / "home", terraform_binary=tmp_path / "tf",
                      terraformrc=tmp_path / "rc")
     assert env["HOME"] == str(tmp_path / "home")
-    assert env["TF_PLUGIN_CACHE_DIR"] == str(tmp_path / "cache")
+    assert env["STRATUS_TERRAFORM_BINARY_PATH"] == str(tmp_path / "tf")
     assert env["TF_CLI_CONFIG_FILE"] == str(tmp_path / "rc")
+    assert "TF_PLUGIN_CACHE_DIR" not in env   # Stratus keeps its default, writable plugin cache
 
 
 def test_staged_layout_reads_the_environment():
@@ -226,14 +244,32 @@ def test_staged_layout_reads_the_environment():
 
 # ── The executor journals every phase through the armed contract ──────────────────────
 
-def _executor(tmp_path, *, dry_run=False, run=None, get=None, session=None, record=None):
+def _staged_home(tmp_path) -> Path:
+    """A staged ``/opt/stratus/home`` with a fake pinned Terraform and its recorded sha256 (R2BS):
+    what ``make stratus-stage`` lays into the read-only image."""
+    home = tmp_path / "staged-home"
+    home.mkdir(exist_ok=True)
+    tf = home / "terraform"
+    tf.write_bytes(b"#!/bin/sh\necho 'Terraform v1.3.10'\n")
+    tf.chmod(0o755)
+    (home / "terraform.sha256").write_text(
+        hashlib.sha256(tf.read_bytes()).hexdigest() + "  terraform\n", encoding="utf-8")
+    return home
+
+
+def _executor(tmp_path, *, dry_run=False, run=None, get=None, session=None, record=None,
+              layout=None):
     binary, digest = _fake_binary(tmp_path)
     r = resolve(TID, binary_path=binary, stratus_dir=_stratus_dir(tmp_path, digest),
                 catalog=_catalog(graph_probe={"name": "absent",
                                               "read": "/v1.0/applications?$select=id"}))
+    if layout is None:
+        layout = StagedLayout(binary=str(binary), home=str(_staged_home(tmp_path)),
+                              plugin_cache=str(tmp_path / "mirror"),
+                              terraformrc=str(tmp_path / "terraformrc"))
     return StratusExecutor(r, session if session is not None else _session(tmp_path),
                            target=RG_SCOPE, dry_run=dry_run,
-                           run=run or _ok_run(record), get=get)
+                           run=run or _ok_run(record), get=get, layout=layout)
 
 
 def test_executor_journals_each_phase_before_it_runs(tmp_path):
@@ -246,6 +282,7 @@ def test_executor_journals_each_phase_before_it_runs(tmp_path):
     actions = [r["action"] for r in journal if r.get("outcome") == "about_to_call"]
     assert actions == [f"stratus:{p}" for p in PHASES]
     assert all(r["target"] == RG_SCOPE for r in journal)
+    ex.close()
 
 
 def test_executor_sends_the_exact_argv_and_offline_env(tmp_path, monkeypatch):
@@ -255,8 +292,47 @@ def test_executor_sends_the_exact_argv_and_offline_env(tmp_path, monkeypatch):
     ex.detonate()
     assert record[0].argv[1:] == ["detonate", TID]
     assert record[0].env["AZURE_SUBSCRIPTION_ID"] == "sub-123"   # credentials inherited
-    assert record[0].env["HOME"] == ex.layout.home               # offline override layered on
-    assert "TF_PLUGIN_CACHE_DIR" in record[0].env
+    # HOME is a fresh, WRITABLE run-scoped dir — never the read-only staged home (R2BS)
+    assert record[0].env["HOME"] == ex._run_home_path != ex.layout.home
+    assert record[0].env["STRATUS_TERRAFORM_BINARY_PATH"] == ex._staged_terraform()
+    assert record[0].env["TF_CLI_CONFIG_FILE"] == ex.layout.terraformrc
+    assert "TF_PLUGIN_CACHE_DIR" not in record[0].env
+    ex.close()
+
+
+def test_executor_run_home_is_writable_and_close_removes_it(tmp_path):
+    """R2BS: the staged /opt/stratus/home is read-only in the image, so the executor builds a
+    fresh writable HOME per run (Stratus writes its state under <HOME>/.stratus-red-team/) and
+    close() removes it."""
+    ex = _executor(tmp_path)
+    home = ex._ensure_run_home()
+    assert os.path.isdir(home) and home != ex.layout.home
+    (Path(home) / ".stratus-red-team").mkdir()   # writable, as Stratus needs
+    ex.close()
+    assert not os.path.exists(home)
+
+
+def test_executor_refuses_when_the_staged_terraform_is_missing(tmp_path):
+    """R2BS: no staged Terraform (image not staged) → the run refuses before provisioning."""
+    empty = tmp_path / "empty-home"
+    empty.mkdir()
+    layout = StagedLayout(binary="/x/stratus", home=str(empty),
+                          plugin_cache="/m", terraformrc="/rc")
+    ex = _executor(tmp_path, layout=layout)
+    with pytest.raises(RuntimeError, match="staged Terraform"):
+        ex.detonate()
+
+
+def test_executor_refuses_a_staged_terraform_that_does_not_match_its_sha256(tmp_path):
+    """R2BS (SEC5): the staged Terraform re-checked before a run, like the Stratus binary — a
+    binary changed since its sha256 was recorded runs nothing."""
+    home = _staged_home(tmp_path)
+    (home / "terraform").write_bytes(b"tampered\n")   # changed after its sha256 was recorded
+    layout = StagedLayout(binary="/x/stratus", home=str(home),
+                          plugin_cache="/m", terraformrc="/rc")
+    ex = _executor(tmp_path, layout=layout)
+    with pytest.raises(RuntimeError, match="does not match"):
+        ex.detonate()
 
 
 def test_executor_passive_without_a_session(tmp_path):
@@ -711,6 +787,55 @@ def test_fic_identity_scenario_is_valid_and_resolves_to_the_catalog():
     assert d["graph_probe"] is not None and d["graph_probe"].expect_absent is True
     # grounding for the purple loop: a control-plane log source Glorfindel can anchor on
     assert scenario.detection_hints.get("log_source") == "azure_activity"
+
+
+# ── RID2: the Entra ID directory identity scenario (the 0.6.0 identity card, directory side) ──
+
+ENTRA_SP_SCENARIO = (
+    Path(__file__).resolve().parents[2]
+    / "annatar/scenarios/azure/backdoor-application-service-principal.yaml"
+)
+
+
+def test_entra_sp_scenario_is_valid_and_resolves_to_the_catalog():
+    """RID2: the shipped backdoor-application-sp scenario loads, names the catalog's directory
+    identity technique, and describes its cycle from the catalog alone (dry-run, no binary). Its
+    target is the directory (entra_id) — no resource_group — and its grounding is Entra AuditLogs."""
+    result = ScenarioParser().validate(str(ENTRA_SP_SCENARIO))
+    assert result.valid, result.errors
+    scenario = ScenarioParser().load(str(ENTRA_SP_SCENARIO))
+    assert scenario.engine == "stratus"
+    assert scenario.engine_ref == ENTRA_SP
+    assert scenario.target.get("type") == "entra_id"
+    assert "resource_group" not in scenario.target
+    assert ENTRA_SP in allowed_techniques()
+    d = describe(ENTRA_SP)
+    assert d["ttp"] == "T1098.001"
+    assert list(d["phases"]) == list(PHASES)
+    # the read-only Graph probe, held to the Graph v1.0 read grammar (spaces as %20)
+    assert d["graph_probe"] is not None and d["graph_probe"].expect_absent is True
+    # grounding for the purple loop: the Entra ID audit log Glorfindel's C2 detection anchors on
+    assert scenario.detection_hints.get("log_source") == "AuditLogs"
+
+
+def test_parser_accepts_an_entra_id_target_without_a_resource_group(tmp_path):
+    """RID2: an entra_id target acts in the directory, not under a resource group — the parser
+    requires no resource_group for it (every other target still names its group)."""
+    import yaml
+    path = tmp_path / "s.yaml"
+    path.write_text(yaml.safe_dump({
+        "name": "s", "description": "d", "mitre": "T1098.001", "engine": "stratus",
+        "engine_ref": ENTRA_SP,
+        "target": {"type": "entra_id"},
+    }), encoding="utf-8")
+    assert ScenarioParser().validate(str(path)).valid
+    # a control-plane target with no resource_group is still refused
+    path2 = tmp_path / "s2.yaml"
+    path2.write_text(yaml.safe_dump({
+        "name": "s", "description": "d", "mitre": "T1098", "engine": "stratus",
+        "engine_ref": FIC, "target": {"type": "azure_control_plane"},
+    }), encoding="utf-8")
+    assert any("resource_group" in e for e in ScenarioParser().validate(str(path2)).errors)
 
 
 def _stratus_yaml(tmp_path, **over):
