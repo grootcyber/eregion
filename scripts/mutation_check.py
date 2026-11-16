@@ -132,7 +132,7 @@ _V1_ANNATAR_GATE = (
     "        else:\n"
     "            no_watch = watch_gate.refusal()\n"
     "            if no_watch:\n"
-    '                console.print(f"[red]Refused — no live Glorfindel watch:[/red] {no_watch}")\n'
+    '                console.print(f"[red]Refused — no live Glorfindel watch:[/red] {outside(no_watch)}")\n'
     '                return RunOutcome(run_id, "unknown", error=f"glorfindel: {no_watch}", refused=True)\n')
 _V1_ANNATAR_ARM = '        verdict, session = arm(run_id, "annatar", request=self.request)\n'
 _V1_GOTHMOG_GATE = (
@@ -285,8 +285,8 @@ MUTANTS = [
      '            bare[t0["nic_id"]] = (original, q_bare)'),
     # O0 (eighth pass): the six bugs the inscription's specification names.
     ("M42", "the execution-time inscription check removed (O0)", ENG,
-     '        if not guard.allowed:\n            console.print(f"[red]Safety check failed:[/red] {guard.reason}")',
-     '        if False:\n            console.print(f"[red]Safety check failed:[/red] {guard.reason}")'),
+     '        if not guard.allowed:\n            console.print(f"[red]Safety check failed:[/red] {outside(guard.reason)}")',
+     '        if False:\n            console.print(f"[red]Safety check failed:[/red] {outside(guard.reason)}")'),
     ("M43", "an empty bench id accepted (O0)", INS,
      "    if not bench or not bench.strip():\n        return GuardResult(False, \"empty bench id",
      "    if False:\n        return GuardResult(False, \"empty bench id"),
@@ -351,8 +351,8 @@ MUTANTS = [
     ("M60", "an exercise card absorbs a real detection (B2)", "glorfindel/escalations.py",
      "                and (e.get(\"source\") or \"real\") == (source or \"real\")\n", ""),
     ("M61", "an Annatar run never closes its window (B2)", "annatar/runner/engine.py",
-     "        try:\n            if scenario.engine == \"atomic\":\n                return self._run_atomic_enrolled(scenario, executor, run_id, session, resolved)\n            if scenario.engine == \"local-script\":\n                return self._run_enrolled(scenario, executor, run_id)\n            # Unreachable once validate did its job — the explicit table refuses the rest.\n            console.print(f\"[red]Engine not runnable:[/red] {scenario.engine!r}\")\n            return RunOutcome(run_id, \"unknown\", error=f\"engine: {scenario.engine!r} not runnable\")\n        finally:\n            close_window(run_id, injector=\"annatar\")\n",   # re-anchored (SEC18)
-     "        if scenario.engine == \"atomic\":\n            return self._run_atomic_enrolled(scenario, executor, run_id, session, resolved)\n        if scenario.engine == \"local-script\":\n            return self._run_enrolled(scenario, executor, run_id)\n        console.print(f\"[red]Engine not runnable:[/red] {scenario.engine!r}\")\n        return RunOutcome(run_id, \"unknown\", error=f\"engine: {scenario.engine!r} not runnable\")\n"),
+     "        try:\n            if scenario.engine == \"atomic\":\n                return self._run_atomic_enrolled(scenario, executor, run_id, session, resolved)\n            if scenario.engine == \"local-script\":\n                return self._run_enrolled(scenario, executor, run_id)\n            # Unreachable once validate did its job — the explicit table refuses the rest.\n            console.print(f\"[red]Engine not runnable:[/red] {outside(repr(scenario.engine))}\")\n            return RunOutcome(run_id, \"unknown\", error=f\"engine: {scenario.engine!r} not runnable\")\n        finally:\n            close_window(run_id, injector=\"annatar\")\n",   # re-anchored (SEC18)
+     "        if scenario.engine == \"atomic\":\n            return self._run_atomic_enrolled(scenario, executor, run_id, session, resolved)\n        if scenario.engine == \"local-script\":\n            return self._run_enrolled(scenario, executor, run_id)\n        console.print(f\"[red]Engine not runnable:[/red] {outside(repr(scenario.engine))}\")\n        return RunOutcome(run_id, \"unknown\", error=f\"engine: {scenario.engine!r} not runnable\")\n"),
     # #105: the boot batch's sub-second gaps set the step again (blind 10 min after a boot).
     ("M62", "the ransomware step reads the boot batch (#105)", "glorfindel/rules/azure/detection_rules.yaml",
      "summarize Step = minif(Gap, Gap >= 1s) by Vm, InstanceName", "summarize Step = min(Gap) by Vm, InstanceName"),
@@ -7007,10 +7007,10 @@ MUTANTS += [
      '_ARM_PATH = re.compile(r"/subscriptions/[^/?#%\\\\\\s]+(?:/[^/?#%\\\\\\s]+)+")\n',
      '_ARM_PATH = re.compile(r"/subscriptions/[^/?#%\\s]+(?:/[^/?#%\\s]+)+")\n'),
     ("M2494", "a campaign refused busy reads the holder's name as markup (#358, review)", "annatar/cli.py",
-     "✗ campaign {escape(campaign_id)} refused — busy: {escape(str(e))}[/red]\")\n",
+     "✗ campaign {outside(campaign_id)} refused — busy: {outside(str(e))}[/red]\")\n",
      "✗ campaign {campaign_id} refused — busy: {e}[/red]\")\n"),
     ("M2495", "a run refused busy reads the holder's name as markup (#358, review)", "annatar/cli.py",
-     '        console.print(f"[red]✗ run refused — busy: {escape(str(e))}[/red]")\n',
+     '        console.print(f"[red]✗ run refused — busy: {outside(str(e))}[/red]")\n',
      '        console.print(f"[red]✗ run refused — busy: {e}[/red]")\n'),
 ]
 TESTS.update({"M2491": _358_CORE, "M2492": _358_CORE, "M2493": _358_CORE,

@@ -5,9 +5,8 @@ from datetime import datetime, timedelta, timezone
 
 from azure.identity import DefaultAzureCredential
 from azure.monitor.query import LogsQueryClient, LogsQueryStatus
-from rich.console import Console
 
-console = Console()
+from annatar.console import console, outside
 
 
 class AzureMonitorCollector:
@@ -29,7 +28,7 @@ class AzureMonitorCollector:
         )
         since_dt = datetime.fromtimestamp(since, tz=timezone.utc) if since is not None else None
         start = time.time()
-        console.print(f"  [dim]Waiting for Heartbeat from {vm_name}...[/dim]")
+        console.print(f"  [dim]Waiting for Heartbeat from {outside(vm_name)}...[/dim]")
         while True:
             elapsed = time.time() - start
             if elapsed >= timeout_s:
@@ -51,7 +50,7 @@ class AzureMonitorCollector:
                             console.print(f"  [green]Heartbeat received[/green] after {round(elapsed)}s")
                             return elapsed
             except Exception as e:
-                console.print(f"  [dim]Heartbeat poll error: {e}[/dim]")
+                console.print(f"  [dim]Heartbeat poll error: {outside(e)}[/dim]")
             time.sleep(interval_s)
 
     def poll_alert(self, query: str, source: str, timeout_s: float, since: float | None = None, interval_s: float = 10.0) -> float | None:
@@ -86,6 +85,6 @@ class AzureMonitorCollector:
                             console.print(f"  [green]Alert detected[/green] after {round(elapsed)}s")
                             return elapsed
             except Exception as e:
-                console.print(f"  [dim]Poll error: {e}[/dim]")
+                console.print(f"  [dim]Poll error: {outside(e)}[/dim]")
 
             time.sleep(interval_s)

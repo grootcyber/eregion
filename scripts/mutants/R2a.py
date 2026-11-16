@@ -78,9 +78,9 @@ MUTANTS = [
     # ── Review (Opus 5.5): control-plane guard, bench-only zone, warmup cleanup, binary check ─
     ("M4335", "the control-plane enrollment guard is disabled (unenrolled group runs)", RUN,
      '        if not guard.allowed:\n'
-     '            console.print(f"[red]Control-plane safety check failed:[/red] {guard.reason}")',
+     '            console.print(f"[red]Control-plane safety check failed:[/red] {outside(guard.reason)}")',
      '        if False:\n'
-     '            console.print(f"[red]Control-plane safety check failed:[/red] {guard.reason}")'),
+     '            console.print(f"[red]Control-plane safety check failed:[/red] {outside(guard.reason)}")'),
     ("M4336", "a Stratus technique runs outside zone bench (twin/production let through)", RUN,
      '        if guard.zone != "bench":', '        if guard.zone != "bench" and False:'),
     ("M4337", "the group's enrollment is not required as the target (always-refuse bug back)", RUN,
