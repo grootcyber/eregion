@@ -8598,6 +8598,235 @@ def test_a_block_moved_behind_an_allow_out_on_another_port_is_bypassed(monkeypat
         lambda m: m.block(Script(WEB1, WEB1, None, 22)), "glorfindel-block-")
 
 
+# ── L1Nd (#795): a block gone from Azure behind a quarantine nobody can judge — the config unread ──────
+# The night « Invariants (deep) » of 15/11 (run 43706627533, b5c10b29), red on macOS (api), replayed the same
+# on `main` 4d351ef5: « L1: the block on …/api vanished from Azure; the reassertion neither put it back nor said
+# so ». api blocked, then isolated in the quarantine (northeurope); the customer deletes api's own NSG, where
+# the block's rules lay, off the NIC; the configuration then turns unreadable — the quarantine's investigation
+# access unknown, its verdict `unknown`. The block's verification, its NIC in an unknown quarantine and no
+# placement on a NSG that governs it, said « non vérifiable » alone and never read its rules: an « unverified »
+# card, the disappearance unsaid while the config stays unread. The product's, not the oracle's: the rules are
+# read absent on Azure (their NSG deleted), a fact the quarantine's unknown does not make unknown (A0).
+_L1ND_NET = {
+    **_net(quarantine=True,
+           subnet_nsg=[_l1n_rule("allow-ssh", 100), _l1n_rule("allow-lateral-out", 100),
+                       _l1n_rule("deny-lateral-in", 130)],
+           tier_rules=[_l1n_rule("allow-ssh", 100), _l1n_rule("allow-lateral-out", 100),
+                       _l1n_rule("deny-lateral-in", 130)],
+           web_nic={"rules": [_l1n_rule("allow-lateral-out", 100)]},
+           db_nic_0={"own": "dedicated", "rules": [_l1n_rule("allow-ssh", 100)], "policy": True},
+           db_nic_1={"own": "dedicated", "rules": [_l1n_rule("allow-https", 100), _l1n_rule("allow-lateral-out", 100)]},
+           api_nic={"own": "dedicated", "rules": [_l1n_rule("allow-ssh", 100), _l1n_rule("allow-lateral-out", 100),
+                                                  _l1n_rule("deny-lateral-in", 130)]}),
+    "data_primary": False}
+_L1ND_API_NSG = _NSG.format(rg="rg-edge", name="nsg-api-nic")
+_L1ND_DB_NIC_0_NSG = _NSG.format(rg="rg-app1", name="nsg-db-nic-0")
+_L1ND_DB_NIC_1_NSG = _NSG.format(rg="rg-app1", name="nsg-db-nic-1")
+_L1ND_DB_BLOCK = (_L1ND_DB_NIC_0_NSG, "glorfindel-block-192-31-196-7-db--01-db-nic-0-0d0228")
+_L1ND_UNREADABLE = ({"quarantine": False, "rg": "", "forensic": [], "readable": True}, False)
+# Past the failure, `turned_then_address_reused` goes on (its `address_reused`, then a pass): the draws it then
+# takes, chosen here — the VM blocked, its state kept, the new VM's name taken (none made), no posture pass.
+_L1ND_AFTER = (False, 22, False, "rg-app1", "web", False, "human_only")
+_L1ND_FOUND = (
+    ("lose_everything", WEB1, WEB1, ("nic.get", "always-429"), WEB1, _Q1, "stop"),
+    ("address_reused_under_a_turned_rule", API, API, ("nic.get", "always-429"), 22,
+     (_L1ND_API_NSG, "glorfindel-block-192-31-196-7-api-api-nic-c272f2"), _nic("rg-edge", "api-nic"), 0, 4,
+     "rg-app1", "api", None, "Linux"),
+    ("customer_deletes_nsg", _L1ND_DB_NIC_0_NSG),
+    ("customer_deletes_nsg", _L1ND_DB_NIC_0_NSG),
+    ("guest_agent_held", False),
+    ("customer_removes_rule", _L1ND_API_NSG, "allow-lateral-out"),
+    ("tamper_with_our_rule", "port", (_Q1, "glorfindel-quarantine-deny-dns")),
+    ("customer_removes_rule", _L1ND_DB_NIC_1_NSG, "allow-https"),
+    ("isolate_two", WEB1, WEB1, None, WEB1, WEB1, None, True),
+    ("address_reused_under_a_turned_rule", DB, DB, (14, "before-429"), 22, _L1ND_DB_BLOCK,
+     _nic("rg-app1", "db-nic-0"), 0, 4, "rg-app1", "web"),
+    ("isolate_two", API, API, None, WEB1, WEB1, None, False),
+    ("customer_deletes_nsg", _L1ND_API_NSG),
+    ("block_perimeter", WEB1, WEB1, None, False),
+    ("reset_from_azure", WEB1, WEB1, None),
+    ("config_changes", *_L1ND_UNREADABLE),
+    ("turned_then_address_reused", WEB1, WEB1, None, 22, "both", 22, _L1ND_DB_BLOCK, "non_disruptive",
+     *_L1ND_AFTER))
+
+
+@pytest.mark.parametrize("steps", [_L1ND_FOUND], ids=["macOS api as found"])
+def test_a_block_gone_behind_a_quarantine_unjudged_is_said_gone(monkeypatch, steps):
+    """L1Nd (#795): « L1: the block on …/api vanished from Azure; the reassertion neither put it back nor said
+    so ». The block's rules lie on api's own NSG, off its NIC (in quarantine); that NSG deleted, they are gone.
+    The configuration unreadable, whether the quarantine cuts the attacker off is unknown: the verification said
+    the block « non vérifiable » alone, its rules never read — an « unverified » card, the disappearance unsaid
+    for as long as the config stays unread. Now its rules are read there, gone, said gone, the NIC left
+    unknown (never « plus bloquée »). The oracle is the machine's (`_block_vanished`, the world)."""
+    _replay(monkeypatch, _L1ND_NET, *steps)
+
+
+# Shrunk by hand (each rule removed in turn while L1 still fails on api), then written plain: api blocked, isolated
+# in the quarantine, its own NSG deleted by the customer, the configuration unreadable, a pass — in either mode.
+@pytest.mark.parametrize("mode", ["human_only", "non_disruptive"])
+def test_a_block_gone_behind_a_quarantine_unjudged_is_said_gone_reduced(monkeypatch, mode):
+    """L1Nd, the sequence reduced to five steps: red on `main` 4d351ef5, and on v0.5.13 and v0.5.0 (02/11) —
+    not a regression: the branch said « non vérifiable » alone before I4B (#333) moved it to verify_block.py."""
+    _replay(monkeypatch, _L1ND_NET,
+            ("block", API, API, None, 22),
+            ("isolate", API, API, None),
+            ("customer_deletes_nsg", _L1ND_API_NSG),
+            ("config_changes", *_L1ND_UNREADABLE),
+            ("reassert", mode, None))
+
+
+_L1ND_API_RULE = "glorfindel-block-192-31-196-7-api-api-nic-c272f2"
+_L1ND_API_KEY = f"rg-edge/nsg-api-nic/{_L1ND_API_RULE}"
+_L1ND_UNREAD = ["api-nic: nsg-glorfindel-quarantine-northeurope"]
+
+
+def _l1nd_blocked_in_an_unjudged_quarantine(monkeypatch):
+    """api blocked for itself, then isolated in the quarantine (northeurope): the block's pair on nsg-api-nic,
+    off api-nic; then the configuration unreadable — the quarantine's investigation access, hence its
+    verdict, unknown."""
+    from glorfindel import actions
+
+    invariant_env(monkeypatch)
+    m = IsolationMachine()
+    m.build(_L1ND_NET)
+    c = m.connector
+    assert c.block_suspicious_ip(ATTACKER, API, scope="vm", threat_port=22)["status"] == "blocked"
+    assert c.isolate_vm(API).get("status") in ("isolated", "isolated_partial"), "the world: api isolated"
+    now = m.fake.nics[_nic("rg-edge", "api-nic")]["nsg"]
+    assert now and actions._is_quarantine_nsg(now), f"the world: api-nic under the quarantine, not {now}"
+    assert {_L1ND_API_RULE, f"{_L1ND_API_RULE}-out"} <= set(m.fake.nsgs[key(_L1ND_API_NSG)]["rules"]), (
+        "the world: the block's pair on nsg-api-nic")
+    m.config_changes(data=Script(*_L1ND_UNREADABLE))
+    return m, c
+
+
+def _l1nd_take_off(m, how: str) -> list[str]:
+    """What the customer does to the block's pair on nsg-api-nic, off the NIC; the rules it leaves gone."""
+    rules = m.fake.nsgs[key(_L1ND_API_NSG)]["rules"]
+    if how == "nsg deleted":
+        assert m.fake.delete_nsg(m.fake.nsgs[key(_L1ND_API_NSG)]["id"]), "the world: nsg-api-nic deleted"
+        return [_L1ND_API_RULE, f"{_L1ND_API_RULE}-out"]
+    if how == "rules deleted":                  # a `terraform apply` there
+        for n in (_L1ND_API_RULE, f"{_L1ND_API_RULE}-out"):
+            del rules[n]
+        return [_L1ND_API_RULE, f"{_L1ND_API_RULE}-out"]
+    rules[_L1ND_API_RULE]["access"] = "Allow"   # its inbound deny turned into an allow: altered
+    return [_L1ND_API_RULE]
+
+
+@pytest.mark.parametrize("how", ["nsg deleted", "rules deleted", "deny turned"])
+def test_a_block_off_its_nic_in_an_unjudged_quarantine_is_said_gone_the_nic_unknown(monkeypatch, how):
+    """L1Nd, at the connector: the quarantine's verdict unknown (the config unread), the block's rules off the
+    NIC are read all the same. There, the verdict stays « non vérifiable », as before. Gone (their NSG
+    deleted, or the rules alone) or altered, they are said gone — `verified` False, the rules named —, and
+    the NIC unknown (`nics_unknown`, « quarantaine illisible »), never open: whether the quarantine cuts the
+    attacker off is not known. Said unknown alone, the disappearance went unsaid."""
+    import shutil
+
+    m, c = _l1nd_blocked_in_an_unjudged_quarantine(monkeypatch)
+    try:
+        v = c.verify_block_ip(ATTACKER, API)
+        assert v["verified"] is None and v.get("unreadable_rules") == _L1ND_UNREAD, v
+        assert not v.get("missing_rules"), v
+        gone = _l1nd_take_off(m, how)
+        after = c.verify_block_ip(ATTACKER, API)
+        assert after["verified"] is False and after["missing_rules"] == gone, after
+        assert after["nics_unknown"] == ["api-nic"], after
+        assert after["nics_unknown_why"] == {"api-nic": "quarantaine illisible"}, after
+        assert not after.get("open_nics") and not after.get("held_missing"), after
+        seen = after.get("rules_seen") or {}
+        if how != "deny turned":
+            assert {k: seen.get(k, "unread") for k in (_L1ND_API_KEY, f"{_L1ND_API_KEY}-out")} == {
+                _L1ND_API_KEY: None, f"{_L1ND_API_KEY}-out": None}, seen
+    finally:
+        shutil.rmtree(m.home, ignore_errors=True)
+
+
+def test_a_block_off_its_nic_in_an_unjudged_quarantine_unread_stays_unknown(monkeypatch):
+    """L1Nd: the NSG off the NIC unread (a 429 on its listing), the quarantine's verdict unknown — nothing is read
+    absent (A0): « non vérifiable » as before, no rule named gone, none in `rules_seen`."""
+    import shutil
+
+    from .fake_azure import throttled
+    m, c = _l1nd_blocked_in_an_unjudged_quarantine(monkeypatch)
+    try:
+        rules = c._network.security_rules
+        listing = rules.list
+
+        def throttled_there(rg, nsg_name):
+            if nsg_name.lower() == "nsg-api-nic":
+                raise throttled("rule.list")
+            return listing(rg, nsg_name)
+        monkeypatch.setattr(rules, "list", throttled_there)
+        v = c.verify_block_ip(ATTACKER, API)
+        assert v["verified"] is None and v.get("unreadable_rules") == _L1ND_UNREAD, v
+        assert not v.get("missing_rules") and not v.get("rules_seen"), v
+    finally:
+        shutil.rmtree(m.home, ignore_errors=True)
+
+
+def test_a_block_gone_in_an_unjudged_quarantine_is_said_once_and_not_again_once_judged(monkeypatch):
+    """L1Nd, at the reassertion, in human_only: nsg-api-nic deleted, the pass says the block gone — its rules
+    named, « on ne sait pas si l'IP est encore bloquée sur api-nic », never « n'est plus bloquée ». Acknowledged,
+    the next pass is silent; the configuration readable again, the quarantine cuts the attacker off: no worse
+    — no card more."""
+    import shutil
+
+    from glorfindel import escalations, reassert
+
+    from .test_invariants import _CURRENT
+    m, c = _l1nd_blocked_in_an_unjudged_quarantine(monkeypatch)
+    try:
+        _CURRENT.mode = "human_only"
+        _l1nd_take_off(m, "nsg deleted")
+        reassert.reassert_pass(c, None)
+        cards = [e for e in escalations.pending() if e.get("action") == "block_suspicious_ip"]
+        assert len(cards) == 1, cards
+        said = cards[0]["reason"]
+        assert "a disparu" in said and _L1ND_API_RULE in said, said
+        assert "on ne sait pas si l'IP est encore bloquée sur api-nic" in said and "n'est plus bloquée" not in said, said
+        escalations.resolve(cards[0]["id"])
+        reassert.reassert_pass(c, None)
+        assert not [e for e in escalations.pending() if e.get("action") == "block_suspicious_ip"], (
+            "acknowledged, nothing changed: no card more")
+        m.config_changes(data=Script({"quarantine": True, "rg": "", "forensic": [], "readable": True}, True))
+        assert c.verify_block_ip(ATTACKER, API).get("held_missing") == [_L1ND_API_RULE, f"{_L1ND_API_RULE}-out"]
+        reassert.reassert_pass(c, None)
+        assert not [e for e in escalations.pending() if e.get("action") == "block_suspicious_ip"], (
+            "judged now, held by the quarantine: no worse than said")
+    finally:
+        shutil.rmtree(m.home, ignore_errors=True)
+
+
+@pytest.mark.parametrize("deleted", ["nsg-db-nic-0", "nsg-db-nic-0-b"])
+def test_two_placements_off_their_nic_in_an_unjudged_quarantine_each_read(monkeypatch, deleted):
+    """L1Nd on L1Nb's world: db-nic-0's block on two NSGs, neither governing it, the NIC in the quarantine, the
+    configuration unread. Either NSG's pair deleted is said gone, the NIC unknown; the other still read.
+    Reading only the first placement (or the last) left the other's deletion unsaid."""
+    import shutil
+
+    m, c = _l1nb_two_placements_off(monkeypatch, "quarantine")
+    try:
+        m.config_changes(data=Script(*_L1ND_UNREADABLE))
+        v = c.verify_block_ip(ATTACKER, DB)
+        assert v["verified"] is None and not v.get("missing_rules"), v
+        nsg = _NSG.format(rg="rg-app1", name=deleted)
+        rules = m.fake.nsgs[key(nsg)]["rules"]
+        names = sorted(n for n in rules if n.startswith("glorfindel-block-") and "db-nic-0" in n)
+        assert len(names) == 2, ("the world: the pair of db-nic-0 there", sorted(rules))
+        for n in names:
+            del rules[n]
+        after = c.verify_block_ip(ATTACKER, DB)
+        assert after["verified"] is False and sorted(after["missing_rules"]) == names, after
+        assert "db-nic-0" in after["nics_unknown"] and "db-nic-0" not in (after.get("open_nics") or []), after
+        old, new = _l1nb_seen(after, _L1N_DB0_KEY), _l1nb_seen(after, _L1NB_PREFIX)
+        gone, kept = (old, new) if deleted == "nsg-db-nic-0" else (new, old)
+        assert len(gone) == 2 and not any(gone.values()), ("deleted, read None", after.get("rules_seen"))
+        assert len(kept) == 2 and all(kept.values()), ("the other still read", after.get("rules_seen"))
+    finally:
+        shutil.rmtree(m.home, ignore_errors=True)
+
+
 # ── L1V (#864): an isolation left on the VM's former address, then a customer allow — not its bypass ──
 # The night « Invariants (deep) » of 16/11 (run 43857768609, on 4d351ef5, 10 000 examples), red on ubuntu:
 # « L1: the isolation of …/rg-app1/…/web is bypassed by a customer allow (…); the reassertion doesn't say
