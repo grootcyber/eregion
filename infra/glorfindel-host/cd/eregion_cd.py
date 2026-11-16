@@ -123,6 +123,10 @@ HOME = Path.home()
 CD_HOME = Path(os.environ.get("EREGION_CD_HOME") or HOME / ".eregion-cd")
 REPO = Path(os.environ.get("EREGION_CD_REPO") or HOME / "eregion")
 SLUG = os.environ.get("EREGION_CD_GITHUB_REPO") or "grootcyber/eregion"
+# SEC-C (audit of 06/11, V-29): origin of Imladris's checkout, at the repository's current name — set
+# before every fetch (point_origin), and handed to deploy.sh (--activate fetches too). The VM was
+# cloned under the former name (eregion_repo, changed at the next rebuild only).
+REPO_URL = os.environ.get("EREGION_CD_REPO_URL") or f"https://github.com/{SLUG}.git"
 API = (os.environ.get("EREGION_CD_GITHUB_API") or "https://api.github.com").rstrip("/")
 CONSOLE = (os.environ.get("EREGION_CD_CONSOLE") or "http://127.0.0.1:7007").rstrip("/")
 HEARTBEAT = Path(os.environ.get("EREGION_CD_HEARTBEAT") or HOME / ".glorfindel" / "watch_heartbeat")
@@ -1111,6 +1115,22 @@ def keep_the_way_back(ref: str, dry: bool = False) -> None:
     raise Refused(f"pas d'image {IMAGE}:{ref} pour revenir en arrière : rien n'a basculé")
 
 
+def point_origin(state: dict) -> None:
+    """SEC-C: origin at the repository's current name before any fetch; said once, when it changes
+    (the journal, and #deploy without the mention). A failure: nothing fetched, the next pass tries
+    again."""
+    have = git("remote", "get-url", "origin", check=False).stdout.strip()
+    if have == REPO_URL:
+        return
+    res = git("remote", "set-url" if have else "add", "origin", REPO_URL, check=False)
+    if res.returncode != 0:
+        raise Quiet(f"origin du dépôt d'Imladris : git remote a échoué ({tail(res, 2)})")
+    print(f"origin du dépôt d'Imladris : {have or 'aucun'} → {REPO_URL}")
+    say_once(state, "_agent", "origin-url", "ℹ️ L'origin du dépôt d'Imladris vise le nom actuel du dépôt",
+             f"{REPO_URL} (SEC-C) : les fetch du CD et de deploy.sh partent de lui", color=nd.GREY)
+    save_state(state)
+
+
 def prune(*keep: str) -> None:
     """Once the health is green: the old images go, the new one and the one before stay."""
     res = sh("bash", str(CD_HOME / "deploy.sh"), "--prune", *[k for k in keep if k], cwd=REPO, check=False,
@@ -1121,7 +1141,7 @@ def prune(*keep: str) -> None:
 
 def activate(ref: str) -> None:
     res = sh("bash", str(CD_HOME / "deploy.sh"), "--activate", ref, cwd=REPO, check=False,
-             env={"EREGION_DEPLOY_LOCKED": "1"})
+             env={"EREGION_DEPLOY_LOCKED": "1", "EREGION_REPO_URL": REPO_URL})
     if res.returncode != 0:
         raise Unhealthy(f"deploy.sh --activate {ref} a échoué :\n{tail(res)}")
 
@@ -1572,6 +1592,7 @@ def run_pass(check: bool = False, back_to: str = "") -> int:
     done = state["outcomes"].get(tag, {}).get("result")
     if not check and not back_to and done in ("refused", "rolled back", "rollback failed"):
         raise Quiet(f"{tag} : {done} (make imladris-cd-retry pour réessayer)")
+    point_origin(state)
     try:
         git("fetch", "-q", "--tags", "--force", "origin")
     except subprocess.CalledProcessError as e:   # the network: the next pass tries again

@@ -15,11 +15,9 @@ import os
 import subprocess
 from dataclasses import dataclass
 
-from rich.console import Console
-
+from annatar.console import console, outside
 from annatar.engines.stratus import ResolvedTechnique, airgap_env
 
-console = Console()
 
 GRAPH = "https://graph.microsoft.com"
 
@@ -203,7 +201,7 @@ class StratusExecutor:
         In dry_run nothing starts; the argv and the offline environment are shown."""
         phase = self.resolved.phase(name)
         if self.dry_run:   # nothing runs, so nothing is journaled against the contract
-            console.print(f"  [yellow]DRY RUN[/yellow] stratus {name}: {' '.join(phase.argv)}")
+            console.print(f"  [yellow]DRY RUN[/yellow] stratus {name}: {outside(' '.join(phase.argv))}")
             return ""
         self._verify_binary_unchanged(phase)   # re-check the pinned sha256 before every phase
         self._before_call(name, phase.label)
@@ -217,7 +215,7 @@ class StratusExecutor:
                 f"stratus {name} {self.resolved.technique_id} exited "
                 f"{getattr(completed, 'returncode', '?')}: {err.strip()[-300:]}"
             )
-        console.print(f"  [dim]{out.strip()[-200:]}[/dim]")
+        console.print(f"  [dim]{outside(out.strip()[-200:])}[/dim]")   # what Stratus answered
         return out
 
     def warmup(self) -> str:
@@ -243,7 +241,7 @@ class StratusExecutor:
         if method != "GET":   # the adapter guarantees GET; defend it here all the same
             raise RuntimeError(f"graph probe {probe.name!r}: {method} is not read-only")
         if self.dry_run:
-            console.print(f"  [yellow]DRY RUN[/yellow] graph probe ({when}): GET {path}")
+            console.print(f"  [yellow]DRY RUN[/yellow] graph probe ({when}): GET {outside(path)}")
             return True
         if self._session is not None:
             self._session.declare(f"stratus:graph-probe:{when}", f"{probe.name} GET {path}")

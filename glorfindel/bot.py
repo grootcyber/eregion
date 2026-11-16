@@ -816,7 +816,9 @@ def _deposit_reset(esc: dict, user) -> dict:
         return {"error": f"refusé (proposal_missing) : {aq.REFUSALS['proposal_missing']}"}
     by = {"via": "discord", "user": str(getattr(user, "id", "") or ""),
           "name": str(getattr(user, "display_name", "") or "")[:100]}
-    return aq.deposit_request("bot", "reset", str(card.get("resource_id") or ""), by=by,
+    # SEC-B: the target as the watch signed it, at the byte — what the watch compares and runs.
+    target = proposal.get("resource_id") if isinstance(proposal.get("resource_id"), str) else ""
+    return aq.deposit_request("bot", "reset", target or str(card.get("resource_id") or ""), by=by,
                               card=(card["id"], aq.digest(proposal)))
 
 

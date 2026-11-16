@@ -101,9 +101,10 @@ MUTANTS = [
      "    for key, want in REQUIRED:\n"),
     ("M4758", "the origin of the variables not checked again in the internal -go targets: `make "
      "bench-run-go` called directly takes TARGET or POINT_MAX_H from the environment (MOB1, review round 2)",
+     # Re-anchored (SEC-C): bench-restore-go now runs its guard, then Imladris's key check, after the origin.
      MAKEFILE,
-     "\t@$(MOB1_ORIGIN)\n\t@$(PYTHON) scripts/$(subst -,_,$(@:-go=)).py\n",
-     "\t@$(PYTHON) scripts/$(subst -,_,$(@:-go=)).py\n"),
+     "bench-restore-go:\n\t@$(MOB1_ORIGIN)\n",
+     "bench-restore-go:\n"),
 ]
 TESTS = {
     "M4696": f"{_RUN}::test_a_code_session_is_refused_before_any_step",

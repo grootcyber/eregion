@@ -234,6 +234,7 @@ class H0:
                          "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.invalid",
                          "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.invalid"})
         origin, work, self.vm = tmp_path / "origin.git", tmp_path / "work", self.home / "eregion"
+        self.origin = origin
         _git(tmp_path, self.env, "init", "-q", "--bare", "-b", "main", str(origin))
         _git(tmp_path, self.env, "init", "-q", "-b", "main", str(work))
         files = {"requirements/glorfindel.txt": "litellm==1.86.1\n",
@@ -299,6 +300,7 @@ class H0:
             "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
             "FAKE_DOCKER_STATE": str(self.state), "FAKE_DOCKER_LOG": str(self.log), "FAKE_HEARTBEAT": str(self.heartbeat),
             "EREGION_CD_HOME": str(self.cd), "EREGION_CD_REPO": str(self.vm), "EREGION_CD_GITHUB_REPO": "o/r",
+            "EREGION_CD_REPO_URL": str(origin),             # SEC-C: the repository's current name, here
             "EREGION_CD_GITHUB_API": f"{fake.base}/gh", "EREGION_CD_CONSOLE": f"{fake.base}/console",
             "EREGION_CD_HEARTBEAT": str(self.heartbeat), "EREGION_CD_HEALTH_S": "0.2", "EREGION_CD_STEP_S": "0.05",
             "EREGION_DISCORD_ENV": os.devnull, "EREGION_REGISTRY_API": f"{fake.base}/registry",
@@ -396,6 +398,38 @@ def test_a_published_release_is_verified_pulled_by_its_digest_switched_and_said(
                for c in calls)                                         # H0's config, under A3
     assert [t.split(" ")[0] for t in _titles(h0)] == ["🚀", "✅"] and not _alerts(h0)
     assert h0.outcome("v0.4.0") == "deployed"
+
+
+def test_origin_is_pointed_at_the_current_name_before_the_fetch_said_once(h0):
+    """SEC-C (audit of 06/11, V-29): Imladris was cloned under the former name, which no longer holds
+    the release's tag. The CD points origin at the current name (REPO_URL) before its fetch, says it
+    once — the journal, #deploy without the mention — then deploys; the switch's deploy.sh gets the
+    same name. Without it, the tag would never be found."""
+    former = h0.tmp / "former.git"
+    _git(h0.tmp, h0.env, "clone", "-q", "--bare", str(h0.origin), str(former))
+    _git(former, h0.env, "tag", "-d", "v0.4.0")
+    _git(h0.vm, h0.env, "tag", "-d", "v0.4.0")
+    _git(h0.vm, h0.env, "remote", "set-url", "origin", str(former))
+    res = h0.run()
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert _git(h0.vm, h0.env, "remote", "get-url", "origin") == str(h0.origin)
+    assert f"origin du dépôt d'Imladris : {former} → {h0.origin}" in res.stdout
+    assert h0.running() == {"v0.4.0"} and h0.head() == h0.commits["c2"]
+    titles = _titles(h0)
+    assert titles[0] == "ℹ️ L'origin du dépôt d'Imladris vise le nom actuel du dépôt" and not _alerts(h0)
+    assert [t.split(" ")[0] for t in titles[1:]] == ["🚀", "✅"]
+    h0.fake.requests.clear()
+    h0.publish("v0.4.0")
+    assert h0.run().returncode == 0 and h0.posts() == []                  # said once
+
+
+def test_the_current_name_is_the_agent_s_default_and_reaches_its_switch():
+    text = AGENT.read_text(encoding="utf-8")
+    assert 'REPO_URL = os.environ.get("EREGION_CD_REPO_URL") or f"https://github.com/{SLUG}.git"' in text
+    run_pass = text.split("def run_pass(", 1)[1]
+    assert run_pass.index("    point_origin(state)\n") < run_pass.index('git("fetch", "-q", "--tags", "--force", "origin")')
+    activate = text.split("def activate(", 1)[1].split("\n\n", 1)[0]
+    assert '"EREGION_REPO_URL": REPO_URL' in activate
 
 
 def test_what_runs_already_does_nothing(h0):
@@ -2565,8 +2599,9 @@ def _cd_status_lines(tmp_path, systemd):
            "FAKE_SYSTEMD": str(systemd)}
     for k in ("HOST_SSH_FINGERPRINT", "HOST_KNOWN_HOSTS", "HOST_IP", "HOST_SSH_KEY"):
         env.pop(k, None)
-    res = subprocess.run(["make", "-s", "--no-print-directory", "-C", str(ROOT), "imladris-cd-status",
-                          "HOST_IP=192.0.2.10", f"HOST_KNOWN_HOSTS={tmp_path / 'kh'}"],
+    # The host key aside (tests/unit/test_host_ssh.py: SEC-C, required): the journal is what is read here.
+    res = subprocess.run(["make", "-s", "--no-print-directory", "-C", str(ROOT), "-o", "imladris-known",
+                          "imladris-cd-status", "HOST_IP=192.0.2.10", f"HOST_KNOWN_HOSTS={tmp_path / 'kh'}"],
                          env=env, capture_output=True, text=True, timeout=60)
     assert res.returncode == 0, res.stderr
     out = subprocess.run(["sh", "-c", remote.read_text()], env=env, capture_output=True, text=True,

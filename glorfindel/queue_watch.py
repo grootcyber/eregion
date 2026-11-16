@@ -5,7 +5,9 @@ queue up — behind ``EREGION_ACTION_QUEUE=1`` only, like the console and the bo
 **Its own thread** (``start``): every second, ``runs/console/queue/`` and ``runs/bot/queue/`` are
 read (each a writer's directory, read-only to the watch, SEC18), a bounded number of files per poll.
 Never the watch's loop, never its heartbeat: a request in flight runs in a worker of its own (at most
-``IN_FLIGHT``), under the VM's lock (``_vm_lock``), never cut midway.
+``IN_FLIGHT``), under the VM's lock (``_vm_lock``), never cut midway. SEC-B: judging never waits for
+a worker — an accepted request waits in a bounded wait list (``BACKLOG``), a containment before a
+lift; full, ``busy``; its life ended before its turn, ``no_slot``.
 
 **Each request, from the cheapest to the dearest, no call to the cloud before the execution**:
 - its name is its nonce (``<id>.json``), else it is passed over and said once;
@@ -21,9 +23,12 @@ Never the watch's loop, never its heartbeat: a request in flight runs in a worke
   approval in one click, its age read from the proposal's signed ``issued_at``, an address and a
   reach, the VM in the watch's perimeter, the block of this IP on this VM, the bot's human;
 - step 12, the posture: a read-only watch refuses;
-- the proposal consumed, written durably, before the execution — one proposal, one execution;
-- the receipt ``accepted``, then ``done`` or ``failed`` — or ``refused`` at the first step that
-  refuses, its code and its reason.
+- the receipt ``accepted``, the request in the wait list; its turn come, its proposal consumed, written
+  durably, before the execution — one proposal, one execution;
+- ``done`` or ``failed`` — or ``refused`` at the first step that refuses, its code and its reason.
+
+SEC-B: once attached, the request runs on the target and the address of the proposal the watch
+signed (``_signed_target``), never its own spelling of them.
 
 **What it writes**: its receipts and its status, in its own directory (``runs/glorfindel/queue/``),
 signed by its key under ``eregion.action-queue/1`` (``kind`` signed: a receipt never reads as a
@@ -39,9 +44,11 @@ mode) are not replayed: a human's approval is what they wait for.
 from __future__ import annotations
 
 import collections
-import concurrent.futures
+import dataclasses
+import itertools
 import json
 import os
+import queue
 import threading
 import time
 from datetime import datetime, timezone
@@ -54,6 +61,12 @@ POLL_S = 1.0
 PER_POLL = 16                 # requests judged per service and per poll
 SCAN_MAX = 512                # entries of a queue's directory looked at per poll
 IN_FLIGHT = 4                 # requests executing at once (each under its VM's lock)
+# SEC-B (audit du 06/11, V-09): the requests accepted that wait for an execution, at most — past it, a
+# request is refused at once (``busy``), never left to expire in silence.
+BACKLOG = 32
+# What contains runs before what lifts: an isolation, a block, its promotion and a snapshot before a
+# release, a reset or an unblock (SEC-B: the wait list is in this order, then the order of arrival).
+CONTAIN = frozenset({"isolate_vm", "block_ip", "promote_block", "snapshot"})
 RECEIPT_KEEP_S = 2 * 3600     # a receipt kept while its request may still be there (an hour)
 CRITICAL_EVERY_S = 3600       # at most one critical card per service and per hour
 STATUS_EVERY_S = 10
@@ -87,6 +100,20 @@ def _vm(resource_id: str) -> str:
     return (resource_id or "").rstrip("/").rsplit("/", 1)[-1]
 
 
+def _priority(verb: str) -> int:
+    """0 for what contains, 1 for what lifts: a lift never passes before a containment."""
+    return 0 if verb in CONTAIN else 1
+
+
+def _signed_target(req: aq.Request, proposal) -> aq.Request:
+    """SEC-B (audit du 06/11, V-08): the request as it runs — the target and the address of the
+    proposal the watch signed, never the request's own spelling of them. The guards, the VM's lock,
+    the connector and the receipt all read these."""
+    if not isinstance(proposal, dict):
+        return req
+    return dataclasses.replace(req, resource_id=proposal["resource_id"], ip=proposal["ip"] or req.ip)
+
+
 class _Guard(Exception):
     """A guard of the gesture refuses (§2.9) — said as ``guard``, with its reason."""
 
@@ -98,7 +125,7 @@ class QueueWatch:
 
     def __init__(self, signer, connector, *, root=None, pins: dict | None = None, pin_errors=(),
                  seen=None, consumed=None, rate=None, read_only: bool | None = None, say=print,
-                 environ=None, inline: bool = False):
+                 environ=None, inline: bool = False, clock=None):
         self.signer = signer
         self.connector = connector
         self.root = root
@@ -121,10 +148,15 @@ class QueueWatch:
         self._judged: dict[tuple[str, str], float] = {}
         self._said: set[tuple[str, str, int]] = set()
         self._lock = threading.Lock()
-        self._pool = None if inline else concurrent.futures.ThreadPoolExecutor(
-            max_workers=IN_FLIGHT, thread_name_prefix="queue-run")
-        self._in_flight = threading.BoundedSemaphore(IN_FLIGHT)
+        # SEC-B (audit du 06/11, V-09): the wait list — explicit, bounded (BACKLOG), in priority
+        # (``_priority``, then arrival); IN_FLIGHT workers take from it. Judging never waits for one.
+        self.clock = clock or (lambda: datetime.now(timezone.utc))
+        self._backlog: queue.PriorityQueue = queue.PriorityQueue()
+        self._arrival = itertools.count()
+        self._running = 0
+        self._workers: list[threading.Thread] = []
         self._last_status = 0.0
+        self._hold = None               # the lock of one watch per HOME (``start``)
 
     # ── The receipts ─────────────────────────────────────────────────────────────────
 
@@ -197,7 +229,8 @@ class QueueWatch:
                         key = (service, e.name, st.st_mtime_ns)
                         if key not in self._said:
                             self._said.add(key)
-                            self.refused["malformed"] += 1
+                            with self._lock:
+                                self.refused["malformed"] += 1
                             self.say(f"file d'actions : {service}/queue/{e.name[:60]!r} n'est pas une demande "
                                      "(son nom n'est pas son nonce) : jamais lue")
                         continue
@@ -241,9 +274,77 @@ class QueueWatch:
             if req.id != request_id:
                 raise aq.Refused("malformed", "its name is not its nonce")
             card, proposal = self._attach(req)
+            req = _signed_target(req, proposal)                  # SEC-B: what runs is what was signed
             ctx = self._guards(req, card, proposal, now)
             if self.read_only:                                   # 12. the posture
                 raise aq.Refused("read_only")
+            if not self.inline and self._backlog.qsize() >= BACKLOG:
+                raise aq.Refused("busy", f"{IN_FLIGHT} executions running and {BACKLOG} waiting: nothing is "
+                                         "run — ask again in a moment")
+        except aq.Refused as r:
+            return self._refuse(service, request_id, req, r, now)
+        except _Guard as g:
+            return self._refuse(service, request_id, req, aq.Refused("guard", str(g)), now)
+        accepted = self._receipt(service, request_id, "accepted", request=req, now=now)
+        self.say(f"file d'actions : {service} demande {req.verb} sur {_vm(req.resource_id)} — acceptée")
+        item = (service, req, card, proposal, ctx)
+        if self.inline:
+            return self._take(item, now)
+        self._backlog.put_nowait((_priority(req.verb), next(self._arrival), item))
+        self._serve()
+        return accepted
+
+    # ── The wait list, its workers (SEC-B) ───────────────────────────────────────────
+
+    def _serve(self) -> None:
+        """The workers, started at the first request accepted — IN_FLIGHT of them, each taking the
+        first of the wait list in turn."""
+        with self._lock:
+            self._workers = [t for t in self._workers if t.is_alive()]
+            while len(self._workers) < IN_FLIGHT:
+                t = threading.Thread(target=self._work, daemon=True, name=f"queue-run-{len(self._workers)}")
+                self._workers.append(t)
+                t.start()
+
+    def stop(self) -> None:
+        """The workers stopped once the wait list ahead of them is done (the tests)."""
+        with self._lock:
+            workers = list(self._workers)
+        for _ in workers:
+            self._backlog.put((2, next(self._arrival), None))
+
+    def _work(self) -> None:
+        while True:
+            _, _, item = self._backlog.get()
+            if item is None:
+                self._backlog.task_done()
+                return
+            with self._lock:
+                self._running += 1
+            try:
+                self._take(item)
+            except Exception as exc:            # a worker never dies on one request
+                self.say(f"file d'actions : exécution en erreur — {type(exc).__name__}: {exc}")
+            finally:
+                with self._lock:
+                    self._running -= 1
+                self._backlog.task_done()
+
+    def busy(self) -> dict:
+        """What the watch's executions hold now: running, and waiting."""
+        with self._lock:
+            return {"running": self._running, "waiting": self._backlog.qsize()}
+
+    def _take(self, item, now: datetime | None = None) -> dict:
+        """A request accepted, its turn come (``now``: the worker's clock; inline, the poll's): refused
+        when its life ended while it waited (said, never run late: ``no_slot``); else its proposal
+        consumed — one proposal, one execution — then run."""
+        service, req, card, proposal, ctx = item
+        now = now or self.clock()
+        try:
+            if now >= req.expires_at:
+                raise aq.Refused("no_slot", f"{aq.REFUSALS['no_slot']} (waited past its end of life, "
+                                            f"{(now - req.expires_at).total_seconds():.0f} s ago)")
             if proposal is not None:
                 try:
                     fresh = self.consumed.consume(req.proposal, req.card_id, now)
@@ -253,22 +354,12 @@ class QueueWatch:
                 if not fresh:
                     raise aq.Refused("proposal_consumed")
         except aq.Refused as r:
-            return self._refuse(service, request_id, req, r, now)
-        except _Guard as g:
-            return self._refuse(service, request_id, req, aq.Refused("guard", str(g)), now)
-        accepted = self._receipt(service, request_id, "accepted", request=req, now=now)
-        self.say(f"file d'actions : {service} demande {req.verb} sur {_vm(req.resource_id)} — acceptée")
-        if self._pool is None:
-            return self._run(service, req, card, ctx)
-        self._in_flight.acquire()
-
-        def _done(_future):
-            self._in_flight.release()
-        self._pool.submit(self._run, service, req, card, ctx).add_done_callback(_done)
-        return accepted
+            return self._refuse(service, req.id, req, r, now)
+        return self._run(service, req, card, ctx)
 
     def _refuse(self, service: str, request_id: str, req, refused: aq.Refused, now: datetime) -> dict:
-        self.refused[refused.code] += 1
+        with self._lock:              # the relève and the workers both refuse: never a count lost
+            self.refused[refused.code] += 1
         self.say(f"file d'actions : {service} {request_id[:8]} refusée — {refused.code} : {refused.reason}")
         if refused.critical or refused.code == "seen_store_unavailable":
             self._card(service, refused, now)
@@ -397,9 +488,17 @@ class QueueWatch:
             return {}
 
     def _settle(self, card) -> None:
-        if card is not None:
+        """The card settled once its action is done — SEC-B (audit du 06/11, V-12): a store that cannot
+        be rewritten (a full disk) never makes the receipt of an action done say ``failed``: said,
+        and the card stays open for the operator to close."""
+        if card is None:
+            return
+        try:
             from glorfindel import escalations
             escalations.resolve(card["id"], note="exécutée par la file d'actions (FS1b)")
+        except Exception as exc:
+            self.say(f"file d'actions : carte {str(card.get('id'))[:8]} non réglée ({type(exc).__name__}: "
+                     f"{str(exc)[:200]}) — l'action est faite, la carte reste ouverte")
 
     def _check(self, req, card, action: str, result, ip: str = "") -> dict:
         """``approval.verify_approved``; a card ``verification_failed`` it leaves bears the request's
@@ -474,10 +573,13 @@ class QueueWatch:
             return None
         self._last_status = at
         from eregion_core import watch_key
+        with self._lock:
+            refused = dict(sorted(self.refused.items()))
         body = {"posture": "read_only" if self.read_only else "write",
                 "pins": {s: (watch_key.fingerprint(self.pins[s]) if s in self.pins else "") for s in aq.SERVICES},
                 "pin_errors": [str(e)[:200] for e in self.pin_errors][:10],
-                "since": _iso(self.since), "at": _iso(now), "refused": dict(sorted(self.refused.items()))}
+                "since": _iso(self.since), "at": _iso(now), "refused": refused,
+                "executions": {**self.busy(), "slots": IN_FLIGHT, "backlog": BACKLOG}}
         doc = aq.sign_watch("status", body, self.signer)
         path = aq.receipts_dir(self.root) / aq.STATUS_NAME
         path.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
@@ -538,20 +640,63 @@ class _Said:
         self.ip, self.scope, self.card_id = doc.get("ip", ""), doc.get("scope", ""), doc.get("card")
 
 
+WATCH_LOCK = "watch.lock"
+
+
+class SecondWatch(RuntimeError):
+    """SEC-B (audit du 06/11, V-10): another watch picks the queue of this HOME up already."""
+
+
+def hold_the_queue(directory=None) -> int:
+    """SEC-B (audit du 06/11, V-10): one watch per HOME picks the queue up — an exclusive ``flock`` on
+    ``queue_dir()/watch.lock``, never waited for, held for the life of the process (the kernel lets
+    it go with it, a crash included), its pid written in it. The descriptor held; SecondWatch, the
+    other's pid said, when another process holds it."""
+    import fcntl
+    directory = Path(directory) if directory is not None else aq.queue_dir()
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    fd = os.open(directory / WATCH_LOCK, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        try:
+            other = os.pread(fd, 16, 0).decode("ascii", "replace").strip()
+        except OSError:
+            other = ""
+        os.close(fd)
+        raise SecondWatch(
+            f"une autre watch relève déjà la file d'actions de ce HOME ({directory / WATCH_LOCK}"
+            + (f", pid {other[:12]}" if other.isdigit() else "") + ") : deux watches sur les mêmes "
+            "registres doublent les actions — arrêter l'autre (make glorfindel-stop), puis relancer") from None
+    except BaseException:
+        os.close(fd)
+        raise
+    try:
+        os.ftruncate(fd, 0)
+        os.pwrite(fd, str(os.getpid()).encode("ascii"), 0)
+    except OSError:
+        pass
+    return fd
+
+
 def start(connector, signer_of, *, say=print, root=None) -> QueueWatch | None:
     """The watch's queue (glorfindel/cli.py, ``watch``): started only behind EREGION_ACTION_QUEUE=1,
-    and with the watch's key — without it, no proposal can be checked: nothing is picked up, said."""
+    and with the watch's key — without it, no proposal can be checked: nothing is picked up, said.
+    SEC-B: one watch per HOME — a second one raises SecondWatch (``hold_the_queue``), which the
+    watch command says, then refuses to run."""
     if not aq.enabled():
         return None
     signer = signer_of()
     if signer is None:
         say("File d'actions : la clé de la watch est indisponible — la file n'est pas relevée")
         return None
+    hold = hold_the_queue()
     pins, wrong = aq.pinned_keys()
     # FS1c: the start says each key that is missing or wrong — the same words as host_env.py --check.
     for line in aq.pin_problems(pins, wrong):
         say(f"File d'actions : {line}")
     q = QueueWatch(signer, connector, root=root, pins=pins, pin_errors=wrong, say=say)
+    q._hold = hold
     q.start()
     say(f"File d'actions relevée : runs/console/queue, runs/bot/queue → runs/glorfindel/queue "
         f"({'lecture seule' if q.read_only else 'écriture'})")

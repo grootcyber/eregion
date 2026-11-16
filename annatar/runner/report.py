@@ -6,11 +6,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from rich.console import Console
-
+from annatar.console import console, outside
 from eregion_core import run_report, runs_layout
 
-console = Console()
 RUNS_DIR = runs_layout.dir_of(runs_layout.ANNATAR)
 
 
@@ -20,23 +18,23 @@ class RunReport(run_report.RunReport):
 
     def render(self):
         color = "green" if self.result == "PASS" else "red"
-        console.print(f"\n[bold]Run:[/bold] {self.run_id}")
-        console.print(f"[bold]Scenario:[/bold] {self.scenario}  [bold]MITRE:[/bold] {self.mitre}")
-        console.print(f"[bold]Result:[/bold] [{color}]{self.result}[/{color}]")
+        console.print(f"\n[bold]Run:[/bold] {outside(self.run_id)}")
+        console.print(f"[bold]Scenario:[/bold] {outside(self.scenario)}  [bold]MITRE:[/bold] {outside(self.mitre)}")
+        console.print(f"[bold]Result:[/bold] [{color}]{outside(self.result)}[/{color}]")
         if self.metrics.get("without_glorfindel") is True:  # V1: run --without-glorfindel
             console.print("[bold]Detection:[/bold] [yellow]not measured, by choice "
                           "(--without-glorfindel)[/yellow]")
         elif "detection" in self.metrics:  # written after the wait for Glorfindel's result
             latency = self.metrics.get("detection_latency_s")
             after = f" ({latency:g} s after the attack)" if latency is not None else ""
-            console.print(f"[bold]Detection:[/bold] {self.metrics['detection']}{after}")
+            console.print(f"[bold]Detection:[/bold] {outside(self.metrics['detection'])}{after}")
         refused = self.metrics.get("detection_refused")
         if isinstance(refused, list) and refused:   # SEC21: never counted, said
             total = self.metrics.get("detection_refused_total")
             total = total if isinstance(total, int) and not isinstance(total, bool) else len(refused)
             console.print(f"[bold]Refused on the return channel[/bold]: {total} (never counted, SEC21):")
             for why in refused[:20]:   # what the channel holds, never read as markup
-                console.print("  - " + str(why)[:400], markup=False, style="yellow")
+                console.print("  - " + outside(str(why)[:400]), style="yellow")
         missing = self.metrics.get("detection_missing")
         if isinstance(missing, list) and missing:   # SEC21b: covered by the heartbeat, never read back
             total = self.metrics.get("detection_missing_total")
@@ -44,14 +42,14 @@ class RunReport(run_report.RunReport):
             console.print(f"[bold]Missing from the return channel[/bold]: {total} covered by the watch's "
                           "heartbeat, never read back — never a miss (SEC21b):")
             for name in missing[:20]:   # what the channel holds, never read as markup
-                console.print("  - " + str(name)[:400], markup=False, style="yellow")
+                console.print("  - " + outside(str(name)[:400]), style="yellow")
         console.print("[dim]Detection and RTO metrics are owned by Glorfindel.[/dim]")
 
     @staticmethod
     def display(run_id: str):
         path = RUNS_DIR / f"{run_id}.json"
         if not path.exists():
-            console.print(f"[red]Run not found:[/red] {run_id}")
+            console.print(f"[red]Run not found:[/red] {outside(run_id)}")
             return
         with open(path) as f:
             data = json.load(f)

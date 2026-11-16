@@ -34,6 +34,7 @@ D1: the shared core — the watch, the console and the bot read this module, non
 from __future__ import annotations
 
 import collections
+import contextlib
 import hashlib
 import json
 import os
@@ -129,6 +130,16 @@ REFUSALS = {
     "nothing_to_undo": "nothing the watch holds on this VM or this address to undo",
     "guard": "a guard of the gesture refuses it",
     "read_only": "the watch is read-only (GLORFINDEL_READ_ONLY)",
+    # SEC-B: an Azure id, an address, a reach and a card's id are ASCII — one that is not is never
+    # compared, folded nor acted on (a case folded outside ASCII names another string).
+    "not_ascii": "an identifier with a character out of ASCII: the resource, the address, the reach "
+                 "or the card — never one of Azure's",
+    # SEC-B: the watch's executions, all taken, and its wait list full — refused at once, never left
+    # to expire in silence; ask again in a moment.
+    "busy": "the watch's executions are all taken and its wait list is full: nothing is run — ask "
+            "again in a moment",
+    "no_slot": "accepted, but no execution of the watch came free before the request's end of life: "
+               "nothing is run — ask again",
 }
 # The refusals that say someone writes in a queue who should not (§2.11, « critique »): a card
 # decided by the code, never by a model (FS1b writes it).
@@ -439,6 +450,11 @@ def verify_request(data, *, service: str, pins: Mapping[str, bytes], now: dateti
         raise Refused("unknown_verb", f"{verb[:40]!r} is not a verb of the queue ({', '.join(VERBS)})")
     if verb not in SERVICE_VERBS.get(service, frozenset()):
         raise Refused("verb_not_allowed", f"the {service} may not ask {verb}")
+    # SEC-B (audit du 06/11, V-08): the identifiers, ASCII only — compared at the byte afterwards.
+    for name, value in (("resource_id", doc["resource_id"]), ("ip", doc["ip"]), ("scope", doc["scope"]),
+                        ("card", doc["card"]["id"] if doc["card"] else "")):
+        if not value.isascii():
+            raise Refused("not_ascii", f"{name} carries a character out of ASCII: never an identifier of Azure")
     card = doc["card"]
     return Request(id=doc["id"], service=service, by=dict(doc["by"]), verb=verb,
                    resource_id=doc["resource_id"], ip=doc["ip"], scope=doc["scope"],
@@ -452,6 +468,23 @@ def queue_dir() -> Path:
     """The watch's own directory for the queue (§2.5): beside its key, mounted by the watch alone —
     never under ~/.glorfindel nor runs/."""
     return QUEUE_DIR if QUEUE_DIR is not None else Path.home() / ".eregion" / "watch-queue"
+
+
+@contextlib.contextmanager
+def _between_processes(path: Path):
+    """SEC-B (audit du 06/11, V-10): one read-modify-write of a register at a time, across processes
+    too — an exclusive ``flock`` on ``<register>.lock`` beside it (a second watch on the same HOME,
+    the CLI), held while the register is read, changed and written back. Opened never through a
+    link, 0600; the kernel lets it go with the process, a crash included. Raises OSError when it
+    cannot be taken (the request is refused: ``seen_store_unavailable``)."""
+    import fcntl
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    fd = os.open(path.with_name(path.name + ".lock"), os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
 
 
 class MemorySeen:
@@ -499,9 +532,10 @@ class SeenFile:
         """FS1b: written durably — the file fsync'd, then its directory — before it returns: a
         nonce claimed is never lost to a crash of the host, its request never replayed in its
         window. Whatever the register holds, it refuses: OSError or ValueError, never another
-        exception (a nesting too deep, a time of another form)."""
+        exception (a nesting too deep, a time of another form). SEC-B: under a lock between
+        processes as well (``_between_processes``) — two watches on one HOME never lose a nonce."""
         from eregion_core import channel_reader
-        with self._lock:
+        with self._lock, _between_processes(self.path):
             try:
                 seen = self._read()
                 kept = {n: u for n, u in seen.items() if datetime.fromisoformat(u) > now}
@@ -579,9 +613,10 @@ class ConsumedFile:
             return frozenset(self._read())
 
     def consume(self, proposal: str, card: str, now: datetime) -> bool:
-        """True the first time ``proposal`` is consumed (then written durably), False after."""
+        """True the first time ``proposal`` is consumed (then written durably), False after. SEC-B:
+        under a lock between processes as well — one proposal, one execution, whatever the processes."""
         from eregion_core import channel_reader
-        with self._lock:
+        with self._lock, _between_processes(self.path):
             done = self._read()
             if proposal in done:
                 return False
@@ -650,15 +685,47 @@ def watch_refusal(body, kind: str, watch_public: bytes) -> str:
     return ""
 
 
-def sign_proposal(card: dict, signer: watch_key.Signer, at: datetime) -> dict:
-    """The proposal the watch joins to a card that holds an action (§2.4), signed by its key with its
-    counter: the card, its action, its target, its address and port, its type, when."""
+# SEC-B (audit du 06/11, V-06): what a proposal says of the action — the fields the watch signs,
+# taken from what it holds itself (its decision, or a proposal it signed), never from a card read
+# in the store.
+PROPOSED_FIELDS = ("action", "resource_id", "ip", "port", "escalation_type")
+
+
+def decision_fields(action: str, resource_id: str, escalation_type: str, action_params=None) -> dict:
+    """The fields of a proposal, from the watch's own decision: its action, its target, its type,
+    the address and the port of its ``action_params``."""
+    params = action_params if isinstance(action_params, dict) else {}
+    return {"action": str(action or ""), "resource_id": str(resource_id or ""),
+            "ip": _card_ip({"action_params": params}), "port": _card_port({"action_params": params}),
+            "escalation_type": str(escalation_type or "")}
+
+
+def card_fields(card: dict) -> dict:
+    """The fields of a proposal as a card says them — what ``proposal_refusal`` compares the
+    proposal with (the card unchanged since), never what the watch signs."""
+    return decision_fields(card.get("action"), card.get("resource_id"), card.get("escalation_type"),
+                           card.get("action_params"))
+
+
+def signable(fields: Mapping) -> bool:
+    """SEC-B: the watch signs a proposal only for a target and an address in ASCII — a request is
+    compared with it at the byte, and one out of ASCII is refused (``not_ascii``)."""
+    return all(isinstance(fields.get(f), str) and fields[f].isascii() for f in ("resource_id", "ip"))
+
+
+def sign_fields(card_id: str, fields: Mapping, signer: watch_key.Signer, at: datetime) -> dict:
+    """The proposal the watch joins to the card ``card_id`` (§2.4), signed by its key with its
+    counter: ``fields`` (``PROPOSED_FIELDS``, the watch's own) and when."""
     return sign_watch("proposal", {
-        "card": str(card["id"]), "action": str(card.get("action") or ""),
-        "resource_id": str(card.get("resource_id") or ""), "ip": _card_ip(card), "port": _card_port(card),
-        "escalation_type": str(card.get("escalation_type") or ""),
+        "card": str(card_id), **{f: fields[f] for f in PROPOSED_FIELDS},
         "issued_at": _iso(at), "seq": signer.next_seq(at),
     }, signer)
+
+
+def sign_proposal(card: dict, signer: watch_key.Signer, at: datetime) -> dict:
+    """A proposal for a card, signed from what the card says (the tests' forgeries: the watch
+    itself signs from its own fields, ``sign_fields``)."""
+    return sign_fields(card["id"], card_fields(card), signer, at)
 
 
 def digest(body: dict) -> str:
@@ -687,7 +754,7 @@ def proposal_refusal(card, request: Request, *, watch_public: bytes, consumed=fr
     if why:
         raise Refused("proposal_mismatch", f"the card's proposal: {why}")
     if (proposal["card"] != card.get("id") or proposal["action"] != card.get("action")
-            or str(proposal["resource_id"]).lower() != str(card.get("resource_id") or "").lower()
+            or not same_arm_id(proposal["resource_id"], card.get("resource_id"))
             or proposal["escalation_type"] != card.get("escalation_type") or proposal["ip"] != _card_ip(card)
             or proposal["port"] != _card_port(card)):
         raise Refused("proposal_mismatch", "the card changed since the watch proposed it")
@@ -695,7 +762,11 @@ def proposal_refusal(card, request: Request, *, watch_public: bytes, consumed=fr
         raise Refused("proposal_mismatch", "the request names another proposal than the card's")
     if request.verb not in proposed_verbs(proposal):
         raise Refused("proposal_mismatch", f"the card proposes no {request.verb}")
-    if request.resource_id.lower() != str(proposal["resource_id"]).lower():
+    if not request.resource_id.isascii() or not request.card_id.isascii():
+        raise Refused("not_ascii", "the request's resource or card carries a character out of ASCII")
+    # SEC-B (audit du 06/11, V-08): at the byte — the target that runs is the proposal's, and the
+    # request names it as the watch signed it (the console and the bot copy it from the proposal).
+    if request.resource_id != proposal["resource_id"]:
         raise Refused("proposal_mismatch", "the request aims at another resource than the card")
     if proposal["ip"] and request.ip not in ("", proposal["ip"]):
         raise Refused("proposal_mismatch", "the request names another address than the card")
@@ -703,20 +774,25 @@ def proposal_refusal(card, request: Request, *, watch_public: bytes, consumed=fr
         raise Refused("proposal_consumed")
 
 
-def proposal_fresh(card, proposal, watch_public: bytes, now: datetime, max_age_s: float) -> bool:
-    """FS1b: the proposal already on a card still stands — this watch signed it, for the card as
-    it is now (its action, target, address, port, type), less than ``max_age_s`` ago. Then the
-    watch does not sign it again when the card is seen again: re-signed at each refresh, its
-    digest changed, and a request named just before a lasting detection refreshed its card was
-    refused (``proposal_mismatch``)."""
-    if not isinstance(card, dict) or not isinstance(proposal, dict) or set(proposal) != set(PROPOSAL_FIELDS):
+def same_arm_id(a, b) -> bool:
+    """Two Azure ids that name one resource: ARM ids are case-insensitive — folded in ASCII only,
+    and both in ASCII (SEC-B: a case folded outside ASCII names another string)."""
+    return (isinstance(a, str) and isinstance(b, str) and a.isascii() and b.isascii()
+            and a.lower() == b.lower())
+
+
+def proposal_fresh(card_id, fields, proposal, watch_public: bytes, now: datetime, max_age_s: float) -> bool:
+    """FS1b: the proposal already on a card still stands — this watch signed it, for this card and
+    for ``fields`` (SEC-B: what the watch would sign now, its own — never the card as the store
+    says it), less than ``max_age_s`` ago. Then the watch does not sign it again when the card is
+    seen again: re-signed at each refresh, its digest changed, and a request named just before a
+    lasting detection refreshed its card was refused (``proposal_mismatch``)."""
+    if not isinstance(fields, Mapping) or not isinstance(proposal, dict) or set(proposal) != set(PROPOSAL_FIELDS):
         return False
     if watch_refusal(proposal, "proposal", watch_public):
         return False
-    said = (proposal["card"], proposal["action"], str(proposal["resource_id"]).lower(),
-            proposal["escalation_type"], proposal["ip"], proposal["port"])
-    held = (card.get("id"), card.get("action"), str(card.get("resource_id") or "").lower(),
-            card.get("escalation_type"), _card_ip(card), _card_port(card))
+    said = (proposal["card"], *(proposal[f] for f in PROPOSED_FIELDS))
+    held = (card_id, *(fields.get(f) for f in PROPOSED_FIELDS))
     if said != held:
         return False
     try:

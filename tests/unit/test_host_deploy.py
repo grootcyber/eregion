@@ -5,13 +5,19 @@ had just been merged. It now sends infra/glorfindel-host/deploy.sh over ssh, whi
 a tag or a commit — named, never « the latest tag » (SEC14, V-22) —, detached, and labels the image with it;
 `make imladris-status` reads the label back.
 
+SEC-C (audit of 06/11, V-29): the workstation verifies first — REF's commit on origin/main, the
+signature and the provenance of its published image (published_image.py proven) — and hands the
+VM REF and that commit; the VM refuses a REF that resolves to another. Origin is pointed at the
+repository's current name before every fetch (EREGION_REPO_URL: here, the local `origin`).
+
 Everything really runs — git, the script, the Makefile recipe — against local repositories
-(an `origin` and the VM's clone in a tmp dir) and fake `ssh` / `docker` first on the PATH:
-no network, no VM, no Docker.
+(an `origin` and the VM's clone in a tmp dir) and fake `ssh` / `docker` / `python3` (the
+workstation's published_image.py only) first on the PATH: no network, no VM, no Docker.
 """
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -64,6 +70,10 @@ class Repo:
         _git(self.work, self.env, "remote", "add", "origin", str(self.origin))
         _git(self.work, self.env, "push", "-q", "origin", "main", "--tags")
         _git(tmp_path, self.env, "clone", "-q", "--branch", "main", str(self.origin), str(self.vm))
+        self.env["EREGION_REPO_URL"] = str(self.origin)     # SEC-C: the repository's current name, here
+
+    def commit_of(self, ref):
+        return _git(self.work, self.env, "rev-parse", f"{ref}^{{commit}}")
 
     def head(self):
         return _git(self.vm, self.env, "rev-parse", "HEAD")
@@ -167,7 +177,7 @@ def test_rules_approved_on_the_vm_before_p1_stop_it_with_what_to_do(repo, tmp_pa
     before = repo.head()
     bin_dir, log, fake = _fake_bin(tmp_path)
     env = {**repo.env, **fake, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
-    res = repo.deploy(ref, env=env)
+    res = repo.deploy(ref, repo.commit_of(ref), env=env)
     assert res.returncode != 0
     assert "glorfindel/rules/azure/detection_rules.yaml" in res.stderr
     assert "avant P1" in res.stderr and "rien n'est déployé" in res.stderr
@@ -200,7 +210,7 @@ def test_the_image_carries_the_reference_it_was_built_from(repo, tmp_path):
     c2 = repo.commits[1]
     bin_dir, log, fake = _fake_bin(tmp_path)
     env = {**repo.env, **fake, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
-    res = repo.deploy("v0.10.0", env=env)
+    res = repo.deploy("v0.10.0", c2, env=env)
     assert res.returncode == 0, res.stderr
     calls = log.read_text().splitlines()
     build = next(c for c in calls if c.startswith("build "))
@@ -309,7 +319,7 @@ def test_the_migration_procedure_of_the_readme_runs_as_written(repo, tmp_path, m
 def test_a_refused_reference_builds_nothing(repo, tmp_path):
     bin_dir, log, fake = _fake_bin(tmp_path)
     env = {**repo.env, **fake, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
-    res = repo.deploy("main", env=env)
+    res = repo.deploy("main", repo.commits[2], env=env)
     assert res.returncode != 0 and log.read_text() == ""
 
 
@@ -341,6 +351,30 @@ def test_show_says_what_runs(repo, tmp_path, case):
 
 # ── the Makefile recipe, through a fake ssh that runs the remote command in the fake VM ──
 
+# The workstation's published_image.py, faked (SEC-C): `proven` answers REF's commit in the
+# operator's checkout (repo.work: a tag, or a hexadecimal commit id, as commit_of reads them) —
+# FAKE_PROVEN another commit, FAKE_UNPROVEN a refusal; every call logged. Anything else is the
+# real python. The real one is measured in tests/unit/test_published_image.py.
+FAKE_PIM = r'''#!/bin/bash
+if [ "$1" = scripts/published_image.py ]; then
+  echo "$*" >> "$FAKE_PIM_LOG"
+  case "$2" in
+    install-cosign) exit 0 ;;
+    proven)
+      [ -z "${FAKE_UNPROVEN:-}" ] || { echo "✗ signature absente" >&2; exit 1; }
+      ref=$5
+      if [ -n "${FAKE_PROVEN:-}" ]; then c=$FAKE_PROVEN
+      elif [[ "$ref" =~ ^[0-9a-f]{7,40}$ ]]; then c=$(git -C "$FAKE_POSTE" rev-parse -q --verify "$ref^{commit}") || exit 1
+      else c=$(git -C "$FAKE_POSTE" rev-parse -q --verify "refs/tags/$ref^{commit}") || { echo "✗ ni un tag ni un commit" >&2; exit 1; }
+      fi
+      printf 'ref=%s\ncommit=%s\ndigest=sha256:%064d\n' "$ref" "$c" 0; exit 0 ;;
+  esac
+  exit 2
+fi
+exec "$REAL_PYTHON" "$@"
+'''
+
+
 def _make_start(repo, tmp_path, *args, environ=None):
     vm_home = repo.vm.parent / "vmhome"
     vm_home.mkdir(exist_ok=True)
@@ -351,12 +385,18 @@ def _make_start(repo, tmp_path, *args, environ=None):
     ssh = bin_dir / "ssh"
     ssh.write_text('#!/bin/bash\necho "$*" >> "$FAKE_SSH_LOG"\ncd "$FAKE_VM_HOME" && exec bash -c "${@: -1}"\n')
     ssh.chmod(0o755)
-    ssh_log = tmp_path / "ssh.log"
+    (bin_dir / "python3").write_text(FAKE_PIM)
+    (bin_dir / "python3").chmod(0o755)
+    ssh_log, pim_log = tmp_path / "ssh.log", tmp_path / "pim.log"
     ssh_log.write_text("")
+    pim_log.write_text("")
     env = {**repo.env, **fake, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
-           "FAKE_VM_HOME": str(vm_home), "FAKE_SSH_LOG": str(ssh_log), **(environ or {})}
-    res = subprocess.run(["make", "-s", "--no-print-directory", "-C", str(ROOT), "imladris-start",
-                          "HOST_IP=203.0.113.9", *args], env=env, capture_output=True, text=True, timeout=120)
+           "FAKE_VM_HOME": str(vm_home), "FAKE_SSH_LOG": str(ssh_log), "FAKE_PIM_LOG": str(pim_log),
+           "FAKE_POSTE": str(repo.work), "REAL_PYTHON": sys.executable, **(environ or {})}
+    res = subprocess.run(["make", "-s", "--no-print-directory", "-C", str(ROOT), "-o", "imladris-known",
+                          "imladris-start", "HOST_IP=203.0.113.9", *args], env=env, capture_output=True, text=True,
+                         timeout=120)
+    _make_start.pim = pim_log.read_text()
     return res, log.read_text().splitlines(), ssh_log.read_text()
 
 
@@ -511,7 +551,7 @@ def test_a_deployment_by_hand_keeps_the_image_it_replaces(repo, tmp_path):
     """By hand there is no health watch: the image running before stays, however old."""
     env, log = _with_docker(repo, tmp_path, FAKE_IMAGES=_IMAGES)
     env["FAKE_REF"] = "v0.1.0"                                   # what the watch was built from
-    assert repo.deploy("v0.2.0", env=env).returncode == 0
+    assert repo.deploy("v0.2.0", repo.commits[0], env=env).returncode == 0
     removed = [c.split()[-1] for c in log.read_text().splitlines() if c.startswith("image rm")]
     assert removed == ["eregion-glorfindel:v0.3.0"]
 
@@ -524,7 +564,7 @@ def test_the_rollback_does_not_need_the_network(repo, tmp_path):
     res = repo.deploy("--activate", "v0.2.0", env=env)
     assert res.returncode == 0, res.stderr
     assert "git fetch a échoué" in res.stderr and repo.head() == repo.commits[0]
-    res = repo.deploy("v0.10.0", env=env)
+    res = repo.deploy("v0.10.0", repo.commits[1], env=env)
     assert res.returncode != 0 and "rien n'est déployé" in res.stderr
 
 
@@ -537,9 +577,100 @@ def test_a_deployment_by_hand_waits_for_the_cd(repo, tmp_path):
     with open(home / ".eregion-deploy.lock", "w") as held:
         fcntl.flock(held, fcntl.LOCK_EX)
         env, log = _with_docker(repo, tmp_path)
-        res = repo.deploy("v0.2.0", env=env)
+        res = repo.deploy("v0.2.0", repo.commits[0], env=env)
         assert res.returncode != 0 and "un déploiement est en cours" in res.stderr
         assert "(le CD d'Imladris, H1)" in res.stderr and "H0" not in res.stderr      # IML1c
         assert repo.head() == before and log.read_text() == ""
         res = repo.deploy("--activate", "v0.2.0", env={**env, "EREGION_DEPLOY_LOCKED": "1"})
         assert res.returncode == 0, res.stderr
+
+
+# ── SEC-C (audit of 06/11, V-29): origin at the repository's current name; the commit the
+#    workstation verified, or nothing moves ──
+
+def _old_origin(repo, tmp_path):
+    """The VM cloned under the former name: its origin a copy of the repository as it was then —
+    a tag pushed since is not there."""
+    old = tmp_path / "former.git"
+    _git(tmp_path, repo.env, "clone", "-q", "--bare", str(repo.origin), str(old))
+    _git(repo.vm, repo.env, "remote", "set-url", "origin", str(old))
+    c3 = repo.commits[2]
+    _git(repo.work, repo.env, "tag", "v0.11.0", c3)
+    _git(repo.work, repo.env, "push", "-q", "origin", "v0.11.0")
+    return old, c3
+
+
+@pytest.mark.parametrize("mode", ["--checkout-only", "deploy", "--activate"])
+def test_origin_is_pointed_at_the_current_name_before_the_fetch_and_said(repo, tmp_path, mode):
+    """deploy.sh fetched from whatever origin the VM was cloned with (the former name). It points
+    origin at the current name first, says it once, then fetches: the tag pushed there is found.
+    --activate (the CD's switch) too — its only change."""
+    old, c3 = _old_origin(repo, tmp_path)
+    env, log = _with_docker(repo, tmp_path, FAKE_IMAGE_REV=c3)
+    args = {"--checkout-only": ("--checkout-only", "v0.11.0"), "deploy": ("v0.11.0", c3),
+            "--activate": ("--activate", "v0.11.0")}[mode]
+    res = repo.deploy(*args, env=env)
+    assert res.returncode == 0, res.stderr
+    assert _git(repo.vm, repo.env, "remote", "get-url", "origin") == str(repo.origin)
+    assert f"origin du dépôt d'Imladris : {old} → {repo.origin} (SEC-C)" in res.stderr
+    assert repo.head() == c3
+    again = repo.deploy("--checkout-only", "v0.11.0", env=env)            # said when it changes, once
+    assert again.returncode == 0 and "origin du dépôt" not in again.stderr
+
+
+def test_the_current_name_is_the_default(repo):
+    """Without EREGION_REPO_URL (the deployment by hand: the VM's shell), the current name."""
+    text = DEPLOY.read_text(encoding="utf-8")
+    assert 'REPO_URL="${EREGION_REPO_URL:-https://github.com/grootcyber/eregion.git}"' in text
+    assert text.index("  point_origin\n") < text.index("git fetch -q --tags --force origin")
+
+
+def test_a_deployment_by_hand_without_the_verified_commit_builds_nothing(repo, tmp_path):
+    """REF alone is a name to resolve on the VM: refused, never built — the workstation's
+    verification (make imladris-start) hands the commit."""
+    env, log = _with_docker(repo, tmp_path)
+    before = repo.head()
+    for args in (("v0.2.0",), ("v0.2.0", "c1"), ("v0.2.0", repo.commits[0][:12])):
+        res = repo.deploy(*args, env=env)
+        assert res.returncode != 0 and "le commit vérifié manque" in res.stderr, args
+    assert log.read_text() == "" and repo.head() == before and not repo.detached()
+
+
+def test_a_reference_the_vm_resolves_to_another_commit_is_refused(repo, tmp_path):
+    """The workstation verified c1 for v0.10.0; on the VM, v0.10.0 is c2 (a tag rewritten, another
+    repository): nothing checked out, nothing built."""
+    c1, c2, _ = repo.commits
+    env, log = _with_docker(repo, tmp_path)
+    before = repo.head()
+    res = repo.deploy("v0.10.0", c1, env=env)
+    assert res.returncode != 0
+    assert f"« v0.10.0 » désigne {c2} sur la VM, le poste a vérifié {c1}" in res.stderr
+    assert log.read_text() == "" and repo.head() == before and not repo.detached()
+    res = repo.deploy("--checkout-only", "v0.10.0", c1)
+    assert res.returncode != 0 and "le poste a vérifié" in res.stderr and repo.head() == before
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+def test_make_start_verifies_the_published_image_before_anything_reaches_imladris(repo, tmp_path):
+    """make imladris-start: cosign installed, then REF proven on the workstation — its commit on
+    origin/main, its published image's signature and provenance — before any ssh. Unproven:
+    nothing sent, nothing built."""
+    res, docker_calls, ssh_calls = _make_start(repo, tmp_path, "REF=v0.2.0", environ={"FAKE_UNPROVEN": "1"})
+    assert res.returncode != 0 and "n'est pas vérifiée" in res.stderr and "rien n'est envoyé à Imladris" in res.stderr
+    assert ssh_calls == "" and docker_calls == [] and not repo.detached()
+    calls = _make_start.pim.splitlines()
+    assert calls[0] == "scripts/published_image.py install-cosign"
+    assert calls[1] == "scripts/published_image.py proven glorfindel --ref v0.2.0 --fetch"
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+def test_make_start_hands_the_vm_the_verified_commit_never_a_name_alone(repo, tmp_path):
+    c1, c2, _ = repo.commits
+    res, docker_calls, ssh_calls = _make_start(repo, tmp_path, "REF=v0.2.0")
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert f"bash -s -- v0.2.0 {c1}" in ssh_calls
+    assert repo.head() == c1 and any(f"revision={c1}" in c for c in docker_calls)
+    # The workstation proved another commit than the VM resolves: the VM refuses, nothing built.
+    res, docker_calls, _ = _make_start(repo, tmp_path, "REF=v0.10.0", environ={"FAKE_PROVEN": c1})
+    assert res.returncode != 0 and "le poste a vérifié" in res.stderr
+    assert not any(c.startswith("build") for c in docker_calls) and repo.head() == c1

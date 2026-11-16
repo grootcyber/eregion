@@ -349,8 +349,8 @@ collée telle quelle depuis le terminal du téléphone, la sortie repartait comm
 recette `imladris-*` commence maintenant par `@` et n'affiche plus sa commande — `-ssh`,
 `-tunnel`, `-start`, `-stop`, `-logs`, `-report`, `-cd-*`, et `-plan`, `-up`, `-down`, qui
 affichaient l'adresse de l'opérateur (`operator_cidr`) ; ce qu'elles font ne change pas. Les lignes
-de `known_host.sh` (« ⚠ HOST_SSH_FINGERPRINT absent : la clé d'hôte de <adresse> … », le ✓ de la
-première écriture) nomment encore l'adresse ; ce ne sont pas des commandes.
+de `known_host.sh` (le ✓ de la première écriture, le ✗ d'une clé qui n'a pas l'empreinte) nomment
+encore l'adresse ; ce ne sont pas des commandes. Sans `HOST_SSH_FINGERPRINT`, rien ne part (SEC-C).
 
 **Le retrait.** `make imladris-tunnel-off` à la fin du geste ; `make imladris-tunnel-remove` quand on
 n'en veut plus du tout. **Le secours** : le tunnel du poste non armé, `make imladris-tunnel` tient

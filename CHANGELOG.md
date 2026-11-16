@@ -4,6 +4,36 @@ Notable changes to Eregion. The format follows [Keep a Changelog](https://keepac
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-11-15 — "identity defended"
+
+### Added
+- **The pinned control-plane injector tool and its offline provisioning toolchain can be staged
+  onto the execution host** (`scripts/`, `Makefile`): one command downloads and verifies them
+  against their recorded checksums, then lays them out so the injector image carries them
+  read-only. The execution host keeps no Internet access; staging is the operator's only networked
+  step. In CI nothing is staged, so the image still builds and no control-plane technique runs.
+- **A pinned public library's directory identity technique is now a playable scenario**
+  (`annatar/scenarios/`), the directory side of the 0.6.0 identity card: the injector adapter now
+  also runs the library's directory techniques (not only control-plane ones), each held to the
+  same closed allow-list the catalogue vouches for, run from the injector host through the existing
+  cycle, with a read-only directory probe of the initial state. Its directory-log detection remains
+  to be measured at the bench (#844 open). (RID2, #844)
+
+### Changed
+- **A control-plane injection builds a writable, run-scoped home and re-checks the staged
+  provisioning tool before it runs** (`annatar/executors/`, `annatar/engines/`): the injector
+  container has a read-only root, so the tool's working state goes to a fresh per-run directory;
+  the staged tool's checksum is re-verified before a run, like the injector binary, and a tool
+  absent or changed since it was staged makes the run refuse.
+- **A directory injector-library scenario needs no resource group** (`annatar/runner/parser.py`,
+  `schemas/`): a directory technique acts in the tenant directory, under no resource group, so the
+  scenario and catalogue schemas require none for such a target; every other target still names its
+  group. (RID2, #844)
+
+### Fixed
+- **An acknowledged block drift is not said again when one of its denies, still present, is turned into an allow since** (L1Nc, #795; `docs/design/preuves.md`, L1N). No change to the product (#796 and #809 fixed the product's own misses). The nightly invariants stayed red on L1 after those two: a merged block (the perimeter and the VM), its perimeter pair gone and the loss acknowledged by the operator, then one of the VM's own denies — still present on its dedicated NSG, in force at the acknowledgement — turned into an allow since. The product says that, a bypass, by its own « contourné » card; but the oracle `_ack_holds` compared the entry's rules to the acknowledgement by their raw bytes (`_block_rules_now != seen`) and read the acknowledgement broken, demanding a « disparu » card for a rule that had not vanished. L1 is about rules gone: the acknowledgement of a disappearance now holds while no rule it saw present has vanished since — the perimeter pair deleted in addition, a NIC's rules deleted, said again (L1N stays strict) — while a rule still present but turned is a bypass, judged by the bypass invariants and said by the product's own card, not a new disappearance for L1 to demand twice. The oracle's measure, from the fake Azure's ground truth and the test's own journal, never the code's marks (A0).
+  - Tests: `tests/unit/test_invariant_regressions.py` (a block deny turned after an acknowledged perimeter loss is no worse; a rule seen present and deleted since breaks the acknowledgement). Mutants M5471–M5476.
+
 ## [0.5.13] — 2026-11-14 — "nothing invented"
 
 ### Security

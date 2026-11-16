@@ -704,7 +704,7 @@ La garde sait aussi, avant de lire, ce que Terraform lui donne (`terraform outpu
 Avant CI3, `make orodruin-push` construisait l'image d'Annatar sur le poste de l'opérateur et
 l'envoyait par SSH : rien ne liait ce qu'Orodruin exécute à ce que la CI avait éprouvé (P-02).
 
-**Maintenant, `make orodruin-push [REF=<tag|commit>]`** (sans `REF`, le dernier tag `v*` ; jusqu'à la 0.5.3, c'est la v0.5.2, signée par l'ancien nom du dépôt et refusée : `REF=<sha de la fusion de REN1>`) :
+**Maintenant, `make orodruin-push [REF=<tag|commit>] [ROLLBACK=1]`** (sans `REF`, la plus haute release dont l'image publiée est vérifiée, SEC-C — jamais un tag local cru sur son nom ; jamais sous le plancher, ci-dessous, « Le plancher de la mise à jour ») :
 1. **Sur le poste**, `scripts/published_image.py fetch annatar` : le commit de `REF`, qui doit être
    sur `origin/main` ; le digest de `ghcr.io/grootcyber/eregion-annatar:sha-<commit>`, lu sans jeton ;
    sa **signature** et sa **provenance** vérifiées par cosign (épinglé par son sha256) — le workflow
@@ -883,6 +883,34 @@ d'un armement.
 l'image en service. Un marqueur et une image réécrits ensemble sur Orodruin, pour nommer un commit plus
 récent, retiendraient une mise à jour ; jamais l'inverse : une image n'est remplacée que par la
 release vérifiée.
+
+**Le plancher de la mise à jour** (SEC-C, #635 ; audit du 06/11, V-24). `orodruin-push REF=` et
+`orodruin-update REF=` acceptaient une release plus ancienne que celle en service : OI3 ne remplaçait pas
+seul une image plus récente, mais un `REF` nommé passait. Maintenant :
+- **Jamais sous le plancher.** `orodruin-push` lit d'abord l'image en service (la lecture d'OI3, par la
+  clé épinglée, en lecture seule ; illisible : rien ne part), puis `published_image.py archive` refuse,
+  avant toute vérification et tout envoi, une release plus ancienne que la plus haute de deux marques :
+  l'image en service (son `~/.eregion-image` vérifié, son tag au même commit ; une image dev ou un
+  marqueur illisible ne marquent rien) et **la mémoire du poste**, `~/.eregion/orodruin_floor.json`,
+  la plus haute version poussée et vérifiée depuis ce poste — relevée après chaque poussée réussie
+  (`published_image.py raise-floor`), jamais baissée, et qui tient pour un Orodruin reconstruit.
+  `orodruin-update` lit la mémoire avant de décider (`published_image.py age`). « Plus ancienne » : par
+  la version, puis par le commit dans l'histoire de git ; un commit que le poste ne connaît pas, ou une
+  mémoire illisible, est un refus, jamais un « pas plus ancien ».
+- **Le retour arrière se demande** : `ROLLBACK=1`, avec `REF`, sur la ligne de commande (jamais de
+  l'environnement), transmis par make aux sous-make (`orodruin-start` → `orodruin-update` →
+  `orodruin-push`). Il est dit (« ↩ retour arrière demandé (ROLLBACK=1) : … ») ; la release est
+  vérifiée comme toute autre ; `orodruin-update` remplace alors une image en service plus récente,
+  qu'il garde sans lui. Le plancher du poste ne baisse pas.
+- **Sans `REF`**, la release est la plus haute dont l'image publiée est vérifiée (son tag sur
+  `origin/main`, son digest, sa signature et sa provenance) : une release plus haute dont l'image
+  manque ou n'est pas signée est écartée et dite ; cinq au plus sont essayées ; le registre ou sigstore
+  muets arrêtent tout.
+
+**Ce qui reste ouvert, pour SEC-C** : la mémoire est celle d'un poste — un Orodruin reconstruit, mis à
+jour d'un autre poste qui n'a jamais poussé la release plus haute, ne la voit pas ; et le marqueur reste
+la parole de l'image en service (un marqueur réécrit sur Orodruin, pour nommer un commit inconnu, se lit
+comme un refus, que `ROLLBACK=1` lève).
 
 **Ce qui reste ouvert, depuis CI3** : l'image n'est vérifiée que sur le poste qui l'envoie ; un poste compromis
 enverrait autre chose et la relecture de l'image, comparée sur ce même poste, ne le verrait

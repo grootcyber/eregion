@@ -88,7 +88,7 @@ def test_the_closed_lists_are_what_the_design_says():
         "malformed", "unsigned", "no_key_pinned", "unknown_key", "bad_signature", "wrong_service",
         "not_yet_valid", "too_long", "expired", "replayed", "seen_store_unavailable", "unknown_verb",
         "verb_not_allowed", "rate_limited", "proposal_missing", "proposal_mismatch", "proposal_consumed",
-        "card_not_pending", "nothing_to_undo", "guard", "read_only"}
+        "card_not_pending", "nothing_to_undo", "guard", "read_only", "not_ascii", "busy", "no_slot"}
     assert aq.CRITICAL == {"unsigned", "unknown_key", "bad_signature", "wrong_service", "replayed",
                            "verb_not_allowed"}
     assert all(reason.strip() for reason in aq.REFUSALS.values())
@@ -732,10 +732,13 @@ def test_fs1b_queue_keys_prints_the_line_to_pin_never_a_private_key(capsys):
 
 def test_fs1b_a_proposal_kept_only_while_it_stands_and_is_young():
     card = {"id": "c1", "action": "isolate_vm", "resource_id": VM, "escalation_type": "mode_hold"}
+    fields = aq.card_fields(card)
     p = aq.sign_proposal(card, WATCH, NOW)
-    assert aq.proposal_fresh(card, p, WATCH.public, NOW + timedelta(seconds=10), 600)
-    assert not aq.proposal_fresh(card, p, WATCH.public, NOW + timedelta(seconds=600), 600)
-    assert not aq.proposal_fresh(card, p, WATCH.public, NOW - timedelta(seconds=1), 600)    # dated ahead
-    assert not aq.proposal_fresh(card, p, STRANGER.public, NOW, 600)
-    assert not aq.proposal_fresh({**card, "action_params": {"port": 22}}, p, WATCH.public, NOW, 600)
-    assert not aq.proposal_fresh(card, None, WATCH.public, NOW, 600)
+    assert aq.proposal_fresh("c1", fields, p, WATCH.public, NOW + timedelta(seconds=10), 600)
+    assert not aq.proposal_fresh("c1", fields, p, WATCH.public, NOW + timedelta(seconds=600), 600)
+    assert not aq.proposal_fresh("c1", fields, p, WATCH.public, NOW - timedelta(seconds=1), 600)  # dated ahead
+    assert not aq.proposal_fresh("c1", fields, p, STRANGER.public, NOW, 600)
+    assert not aq.proposal_fresh("c1", {**fields, "port": 22}, p, WATCH.public, NOW, 600)
+    assert not aq.proposal_fresh("c2", fields, p, WATCH.public, NOW, 600)             # another card
+    assert not aq.proposal_fresh("c1", {**fields, "resource_id": VM.upper()}, p, WATCH.public, NOW, 600)
+    assert not aq.proposal_fresh("c1", fields, None, WATCH.public, NOW, 600)
