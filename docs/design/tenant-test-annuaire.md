@@ -67,7 +67,11 @@ C'est la **preuve de #844** : le `warmup`/`detonate` (créer l'app + le SP, assi
 Conséquences, à cadrer :
 
 - **Provisionnement** : une souscription liée au tenant dédié (payant — Jonathan est prêt), vide hormis le workspace ; un **paramètre de diagnostic Entra** (catégories `AuditLogs`, et `SignInLogs` si une règle les lit) → ce workspace.
-- **La watch lit un workspace d'un autre tenant.** ⚠️ **le point le plus lourd, à mesurer avant tout code.** Voies possibles : une application multi-tenant consentie en lecture dans le tenant dédié ; un principal/lecteur dédié scopé à ce seul workspace ; Azure Lighthouse (délégation cross-tenant de lecture). La voie exacte, le droit minimal (Log Analytics Reader sur le seul workspace), et la **latence des AuditLogs** (quelques minutes à ~15 min) sont à mesurer. La watch ne doit rien tenir d'autre dans le tenant dédié que cette lecture.
+- **La watch lit un workspace d'un autre tenant.** ⚠️ **le point le plus lourd.** Trois voies, et une **recommandation** :
+  - **(reco) Azure Lighthouse** — une délégation de gestion déléguée (*delegated resource management*) qui donne à l'identité de la watch, **dans le tenant d'Orodruin**, le rôle **Log Analytics Reader** scopé au **seul workspace** du tenant dédié. La watch interroge alors ce workspace depuis son propre tenant (expression `workspace()`), **sans identité invitée ni secret** dans le tenant dédié — Lighthouse est une délégation, pas un principal de l'annuaire, donc il ne viole pas « aucun pont » (§ 7). C'est la voie que Microsoft indique pour lire, cross-tenant, des journaux d'Entra routés en Log Analytics, et elle lève le piège « une identité qui interroge un workspace doit vivre dans son tenant » (vrai **sauf** délégation). Lighthouse est gratuit ; l'ingestion du workspace reste facturée à l'abonnement qui le porte (celui du tenant dédié).
+  - une **application multi-tenant** consentie en lecture dans le tenant dédié : porte un **secret/credential** (surface de plus), et un consentement administrateur dans le tenant dédié — moins propre que la délégation.
+  - un **principal invité** (B2B) de la watch dans le tenant dédié : **écartée** — c'est exactement le pont inter-tenants que § 7 interdit.
+  - **À mesurer au banc** (pas au design) : la **portée exacte** de la délégation Lighthouse (un seul workspace, Log Analytics Reader et rien d'autre), la **latence des AuditLogs** (quelques minutes à ~15–20 min d'après la doc), et que la watch ne tient, dans le tenant dédié, **que** cette lecture.
 - **AL1 décide sans modèle** sur des données contrôlées par qui agit dans le tenant dédié — à garder ainsi. La règle qui tire : la règle d'annuaire de RID2 (ajout d'application / de principal de service / d'un membre à un rôle, lue dans AuditLogs).
 
 Tant que §5 n'est pas tranché et mesuré, **#844 reste en détection non mesurée** : la technique est jouable (le run réussit), mais la preuve de détection attend ce pont de lecture.
@@ -107,7 +111,7 @@ Tous **manuels** (une session n'applique jamais, ne lance jamais une technique, 
 2. **`[J]` G-T2** — une **souscription** liée au tenant dédié (payant), vide hormis le workspace des AuditLogs.
 3. **`[J]` G-T3** — l'**application native** + son **credential** (certificat court) + les **rôles Graph d'écriture scopés au tenant dédié**, avec le **consentement administrateur** dans le tenant dédié. Relever appid / oid. Le rôle minimal est mesuré (§ À mesurer).
 4. **`[J]` G-T4** — le **paramètre de diagnostic Entra** (AuditLogs → workspace du tenant dédié), en Terraform via un alias `azuread`/`azurerm` sur le tenant dédié.
-5. **`[J]` G-T5** — le **lecteur cross-tenant de la watch** sur ce seul workspace (la voie exacte est à concevoir après la mesure, § 5).
+5. **`[J]` G-T5** — la **délégation Azure Lighthouse** (reco, § 5) : Log Analytics Reader à l'identité de la watch, scopé au **seul** workspace du tenant dédié, pour qu'elle le lise depuis le tenant d'Orodruin — sans identité invitée ni secret.
 6. **`[J]` G-T6** — **semer** les identités de test (§ 6).
 
 Ces gestes iront dans `docs/operations.md` au moment du code (avec la date), pas dans cette conception.
@@ -128,7 +132,7 @@ Ces gestes iront dans `docs/operations.md` au moment du code (avec la date), pas
 - Les **variables Graph** que lit Stratus (`AZURE_TENANT_ID`/`CLIENT_ID`/`CLIENT_SECRET`) pour viser le tenant dédié, et l'**échec attendu** si on vise le tenant réel.
 - Les **rôles Graph minimaux** pour le `warmup` de la technique (`Application.ReadWrite.OwnedBy` suffit-il, ou `.All` ? `RoleManagement.ReadWrite.Directory` nécessaire pour assigner le rôle d'annuaire ?).
 - Que les **AuditLogs** du tenant dédié arrivent dans son workspace, et leur **latence**.
-- **Comment la watch (Imladris) lit un workspace d'un autre tenant** (application multi-tenant consentie en lecture ? principal invité ? Azure Lighthouse ?), lecture seule, scopée au seul workspace — le point le plus lourd.
+- **La délégation Azure Lighthouse** par laquelle la watch (Imladris) lit le workspace du tenant dédié (§ 5, reco) : sa **portée exacte** (un seul workspace, Log Analytics Reader et rien d'autre) et la **latence** des AuditLogs jusqu'à la watch — le point le plus lourd.
 - La **procédure de suppression** du tenant (bridée : abonnements / licences à retirer d'abord), pour ne pas rester coincé.
 
 ## Les mutants (au code, plus tard) : M5670–M5699
@@ -140,5 +144,5 @@ Figés quand le code viendra : le contrôle **tenant dédié ≠ réel** (refus 
 ## Décisions à trancher par Jonathan (une à la fois, à la relecture)
 
 1. **§ 4** : bornage **structurel (a)** — Orodruin ne lit rien dans le tenant dédié — vs lecture cross-tenant (b). Reco : (a).
-2. **§ 5** : la **voie de lecture cross-tenant de la watch** (application multi-tenant / principal invité / Lighthouse), à choisir après la mesure.
+2. **§ 5** : la **voie de lecture cross-tenant de la watch** — reco **Azure Lighthouse** (délégation Log Analytics Reader sur le seul workspace du tenant dédié, sans identité invitée ni secret, donc sans pont d'annuaire) ; valider ce choix, la portée exacte et la latence restant à mesurer au banc.
 3. L'**ordre** : #857 (ce tenant) débloque la mesure de #844 ; faut-il livrer d'abord le tenant + l'identité (jouer la technique, run réussi) et la **détection** (§ 5) ensuite, ou les deux d'un bloc ?
