@@ -3,9 +3,9 @@
 # avant. Trois garde-fous, tous ÉTEINTS par défaut (stratus_guardrails_enabled = false) :
 #
 #   G5  Azure Policy sur l'abonnement dédié  — le vrai plafond de coût et de surface :
-#       régions / types / SKU autorisés (policies intégrées) + un refus maison d'une IP
-#       publique sur une carte réseau (le Bastion n'est PAS concerné : son IP publique vit
-#       sur la ressource bastionHosts, pas sur une NIC).
+#       régions / types / SKU de VM autorisés (policies intégrées) + un refus maison d'une IP
+#       publique sur une carte réseau (le Bastion n'est PAS concerné : son IP publique est une
+#       ressource publicIPAddresses attachée au bastionHosts, jamais une IP portée par une NIC).
 #   G6  Paramètre de diagnostic de l'abonnement dédié → Log Analytics du banc (catégorie
 #       Administrative) : la watch voit les techniques SANS aucun droit sur l'abonnement
 #       dédié. Pont à sens unique ; Imladris n'a rien sur l'abonnement dédié.
@@ -18,25 +18,33 @@
 
 # Le fournisseur de l'abonnement dédié. Vide (défaut) → subscription_id null → il retombe sur
 # ARM_SUBSCRIPTION_ID (celui d'Orodruin), mais aucune ressource ne l'emploie (count 0), il
-# reste inerte. Activé, var.stratus_subscription_id le vise. Jamais l'abonnement du banc : le
-# check ci-dessous refuse déjà qu'il vaille celui d'Orodruin, et le contrat (orodruin.py)
-# refuse en plus le banc, la VM et Imladris.
+# reste inerte. Activé, var.stratus_subscription_id le vise. Jamais l'abonnement du banc : la
+# precondition ci-dessous refuse déjà qu'il vaille celui d'Orodruin, et le contrat (orodruin.py)
+# le refusera en plus (R2c) s'il vaut le banc, la VM ou Imladris.
 provider "azurerm" {
-  alias = "stratus"
-  features {}
+  alias           = "stratus"
   subscription_id = var.stratus_subscription_id != "" ? var.stratus_subscription_id : null
+  features {}
 }
 
 # Première ligne de défense contre le bloquant v1 (viser le mauvais abonnement) : activé, la
-# cible doit être renseignée et DIFFÉRENTE de l'abonnement d'Orodruin. Le refus complet (banc,
-# VM, Imladris) reste au contrat, qui le relit au démarrage.
-check "stratus_subscription_is_dedicated" {
-  assert {
-    condition = !var.stratus_guardrails_enabled || (
-      var.stratus_subscription_id != "" &&
-      lower(var.stratus_subscription_id) != lower(data.azurerm_subscription.current.subscription_id)
-    )
-    error_message = "stratus_guardrails_enabled : renseigne stratus_subscription_id (l'abonnement de test DÉDIÉ), et jamais l'abonnement d'Orodruin — ce serait le bloquant v1 (droits atteignant tout le banc)."
+# cible doit être renseignée et DIFFÉRENTE de l'abonnement d'Orodruin. En Terraform, un `check`
+# raté n'est qu'un AVERTISSEMENT (l'apply continue) — le refus est donc une `precondition`, sur
+# une ressource dont dépendent les garde-fous (cf. infra/terraform/bench_reader.tf) : un plan
+# qui vise le mauvais abonnement échoue avant de rien poser. Le refus complet (banc, VM,
+# Imladris) viendra du contrat (R2c), relu au démarrage. Cette ressource est inerte (aucun
+# appel au cloud) et n'a pas de count : elle porte seule la garde, les autres en dépendent.
+resource "terraform_data" "stratus_guard" {
+  input = var.stratus_subscription_id
+
+  lifecycle {
+    precondition {
+      condition = !var.stratus_guardrails_enabled || (
+        var.stratus_subscription_id != "" &&
+        lower(var.stratus_subscription_id) != lower(data.azurerm_subscription.current.subscription_id)
+      )
+      error_message = "stratus_guardrails_enabled : renseigne stratus_subscription_id (l'abonnement de test DÉDIÉ), et jamais l'abonnement d'Orodruin — ce serait le bloquant v1 (droits atteignant tout le banc)."
+    }
   }
 }
 
@@ -46,18 +54,27 @@ check "stratus_subscription_is_dedicated" {
 # dédié (fournisseur stratus) pour que l'attribution du même abonnement puisse la viser.
 resource "azurerm_policy_definition" "stratus_deny_nic_public_ip" {
   count        = var.stratus_guardrails_enabled ? 1 : 0
+  depends_on   = [terraform_data.stratus_guard]
   provider     = azurerm.stratus
   name         = "eregion-stratus-deny-nic-public-ip"
   policy_type  = "Custom"
   mode         = "All"
   display_name = "Eregion Stratus — refuser une IP publique sur une carte réseau (le Bastion n'est pas concerné)"
-  description  = "Une NIC avec une IP publique ouvrirait une sortie Internet contournant « Orodruin sans Internet ». L'IP publique du Bastion vit sur bastionHosts, pas sur une NIC : elle passe."
+  description  = "Une NIC avec une IP publique ouvrirait une sortie Internet contournant « Orodruin sans Internet ». L'IP publique du Bastion est une ressource publicIPAddresses attachée au bastionHosts, pas une IP portée par une NIC : elle passe."
 
+  # « au moins une » ipConfig avec une IP publique = not(toutes sans). La forme [*]…exists ne
+  # refuserait que si TOUTES les ipConfigs en ont une — une NIC à deux ipConfigs (une sans, une
+  # avec) passerait ; `not { … notLike "*" }` attrape le cas « au moins une ».
   policy_rule = jsonencode({
     if = {
       allOf = [
         { field = "type", equals = "Microsoft.Network/networkInterfaces" },
-        { field = "Microsoft.Network/networkInterfaces/ipConfigurations[*].publicIPAddress.id", exists = "true" },
+        {
+          not = {
+            field   = "Microsoft.Network/networkInterfaces/ipConfigurations[*].publicIPAddress.id"
+            notLike = "*"
+          }
+        },
       ]
     }
     then = { effect = "deny" }
@@ -69,7 +86,7 @@ resource "azurerm_subscription_policy_assignment" "stratus_deny_nic_public_ip" {
   provider             = azurerm.stratus
   name                 = "eregion-stratus-deny-nic-pip"
   display_name         = "Eregion Stratus — pas d'IP publique sur une NIC"
-  subscription_id      = "/subscriptions/${var.stratus_subscription_id}"
+  subscription_id      = "/subscriptions/${terraform_data.stratus_guard.output}"
   policy_definition_id = azurerm_policy_definition.stratus_deny_nic_public_ip[0].id
 }
 
@@ -80,7 +97,7 @@ resource "azurerm_subscription_policy_assignment" "stratus_allowed_locations" {
   provider             = azurerm.stratus
   name                 = "eregion-stratus-locations"
   display_name         = "Eregion Stratus — régions autorisées"
-  subscription_id      = "/subscriptions/${var.stratus_subscription_id}"
+  subscription_id      = "/subscriptions/${terraform_data.stratus_guard.output}"
   policy_definition_id = "/providers/Microsoft.Authorization/policyDefinitions/e56962a6-4747-49cd-b67b-bf8b01975c4c"
   parameters = jsonencode({
     listOfAllowedLocations = { value = var.stratus_allowed_locations }
@@ -88,27 +105,29 @@ resource "azurerm_subscription_policy_assignment" "stratus_allowed_locations" {
 }
 
 # Types de ressources autorisés (policy intégrée). Doit inclure Microsoft.Network/bastionHosts
-# pour le lien partageable. Non posée tant que la liste est vide (même raison).
+# ET Microsoft.Network/publicIPAddresses (le Bastion et son IP publique, pour le lien
+# partageable). Non posée tant que la liste est vide (même raison).
 resource "azurerm_subscription_policy_assignment" "stratus_allowed_resource_types" {
   count                = var.stratus_guardrails_enabled && length(var.stratus_allowed_resource_types) > 0 ? 1 : 0
   provider             = azurerm.stratus
   name                 = "eregion-stratus-res-types"
   display_name         = "Eregion Stratus — types de ressources autorisés"
-  subscription_id      = "/subscriptions/${var.stratus_subscription_id}"
+  subscription_id      = "/subscriptions/${terraform_data.stratus_guard.output}"
   policy_definition_id = "/providers/Microsoft.Authorization/policyDefinitions/a08ec900-254a-4555-9bf5-e42af04b5c5c"
   parameters = jsonencode({
     listOfResourceTypesAllowed = { value = var.stratus_allowed_resource_types }
   })
 }
 
-# SKU de VM autorisés (policy intégrée) : inclure le SKU du Bastion Standard/Premium. Non posée
-# tant que la liste est vide.
+# SKU de VM autorisés (policy intégrée « Allowed virtual machine size SKUs ») : les SKU des VM
+# de test seules — cette policy ne vise que VM/VMSS (le Bastion est un type, pas un SKU de VM :
+# il passe par les types autorisés ci-dessus). Non posée tant que la liste est vide.
 resource "azurerm_subscription_policy_assignment" "stratus_allowed_vm_skus" {
   count                = var.stratus_guardrails_enabled && length(var.stratus_allowed_vm_skus) > 0 ? 1 : 0
   provider             = azurerm.stratus
   name                 = "eregion-stratus-vm-skus"
   display_name         = "Eregion Stratus — SKU de VM autorisés"
-  subscription_id      = "/subscriptions/${var.stratus_subscription_id}"
+  subscription_id      = "/subscriptions/${terraform_data.stratus_guard.output}"
   policy_definition_id = "/providers/Microsoft.Authorization/policyDefinitions/cccc23c7-8427-4f53-ad12-b6a63eb452b3"
   parameters = jsonencode({
     listOfAllowedSKUs = { value = var.stratus_allowed_vm_skus }
@@ -124,7 +143,7 @@ resource "azurerm_monitor_diagnostic_setting" "stratus_activity_log" {
   count                      = var.stratus_guardrails_enabled && var.stratus_bench_workspace_id != "" ? 1 : 0
   provider                   = azurerm.stratus
   name                       = "diag-eregion-stratus-activity"
-  target_resource_id         = "/subscriptions/${var.stratus_subscription_id}"
+  target_resource_id         = "/subscriptions/${terraform_data.stratus_guard.output}"
   log_analytics_workspace_id = var.stratus_bench_workspace_id
 
   enabled_log {
@@ -157,7 +176,7 @@ resource "azurerm_consumption_budget_subscription" "stratus" {
   count           = var.stratus_guardrails_enabled && var.stratus_monthly_budget > 0 && var.stratus_budget_start_date != "" ? 1 : 0
   provider        = azurerm.stratus
   name            = "budget-eregion-stratus"
-  subscription_id = "/subscriptions/${var.stratus_subscription_id}"
+  subscription_id = "/subscriptions/${terraform_data.stratus_guard.output}"
   amount          = var.stratus_monthly_budget
   time_grain      = "Monthly"
 

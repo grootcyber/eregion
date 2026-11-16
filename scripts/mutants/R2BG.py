@@ -1,6 +1,6 @@
 """Lot R2BG (Partie de #608) — les garde-fous de l'abonnement de test dédié de Stratus, en
 Terraform (infra/orodruin/stratus_guardrails.tf, variables.tf). Des bugs réinjectés un à un,
-chacun attrapé par un test de tests/unit/test_stratus_guardrails.py. M5650–M5656.
+chacun attrapé par un test de tests/unit/test_stratus_guardrails.py. M5650–M5659.
 
 Forme chargée par scripts/mutation_check.py : MUTANTS (id, description, fichier, old, new) et
 TESTS (ses ids → le test qui l'attrape) ; chemins en chaînes.
@@ -12,8 +12,8 @@ _DIAG = ("tests/unit/test_stratus_guardrails.py::"
          "test_the_diagnostic_setting_routes_only_administrative_to_the_bench_workspace")
 _AG_OUTSIDE = ("tests/unit/test_stratus_guardrails.py::"
                "test_the_budget_action_group_lives_outside_the_dedicated_subscription")
-_CHECK = ("tests/unit/test_stratus_guardrails.py::"
-          "test_a_check_refuses_pointing_at_orodruins_own_subscription")
+_PRECOND = ("tests/unit/test_stratus_guardrails.py::"
+            "test_a_precondition_refuses_pointing_at_orodruins_own_subscription")
 _EMPTY_LIST = ("tests/unit/test_stratus_guardrails.py::"
                "test_the_allow_list_policies_do_not_fire_on_an_empty_list")
 _DENY = ("tests/unit/test_stratus_guardrails.py::"
@@ -22,6 +22,12 @@ _OFF = ("tests/unit/test_stratus_guardrails.py::"
         "test_the_guardrails_are_off_by_default")
 _NO_ROLE = ("tests/unit/test_stratus_guardrails.py::"
             "test_no_closed_role_is_granted_here_yet")
+_ALIAS = ("tests/unit/test_stratus_guardrails.py::"
+          "test_the_alias_provider_targets_the_dedicated_subscription")
+_PROVIDER_EACH = ("tests/unit/test_stratus_guardrails.py::"
+                  "test_every_dedicated_subscription_resource_declares_the_stratus_provider")
+_NIC_ANY = ("tests/unit/test_stratus_guardrails.py::"
+            "test_the_nic_public_ip_policy_matches_any_ip_config")
 
 MUTANTS = [
     ("M5650", "the subscription diagnostic setting routes a wrong category (the watch would miss "
@@ -32,10 +38,10 @@ MUTANTS = [
      "— COLD/kill and « emptying the subscription » would then remove it", GUARD,
      '  name                = "ag-eregion-stratus-budget"',
      '  provider            = azurerm.stratus\n  name                = "ag-eregion-stratus-budget"'),
-    ("M5652", "the check's inequality inverted: the guardrails would be allowed to point at "
+    ("M5652", "the precondition's inequality inverted: the guardrails would be allowed to point at "
      "Orodruin's own subscription (the v1 blocker)", GUARD,
-     "      lower(var.stratus_subscription_id) != lower(data.azurerm_subscription.current.subscription_id)",
-     "      lower(var.stratus_subscription_id) == lower(data.azurerm_subscription.current.subscription_id)"),
+     "        lower(var.stratus_subscription_id) != lower(data.azurerm_subscription.current.subscription_id)",
+     "        lower(var.stratus_subscription_id) == lower(data.azurerm_subscription.current.subscription_id)"),
     ("M5653", "the allowed-locations policy no longer guarded on a non-empty list: an empty list "
      "in deny mode would refuse every creation", GUARD,
      "  count                = var.stratus_guardrails_enabled && length(var.stratus_allowed_locations) > 0 ? 1 : 0",
@@ -63,14 +69,29 @@ MUTANTS = [
      "# Stratus — les garde-fous de l'abonnement de test dédié (R2b, #608).",
      "# Stratus — les garde-fous de l'abonnement de test dédié (R2b, #608).\n"
      'resource "azurerm_role_definition" "stratus_closed_premature" {}'),
+    ("M5657", "the aliased provider is repointed at Orodruin's own subscription variable "
+     "(var.subscription_id) instead of the dedicated one", GUARD,
+     '  subscription_id = var.stratus_subscription_id != "" ? var.stratus_subscription_id : null',
+     '  subscription_id = var.subscription_id != "" ? var.subscription_id : null'),
+    ("M5658", "a dedicated-subscription resource (the public-IP policy definition) loses its "
+     "azurerm.stratus provider and falls back to Orodruin's subscription", GUARD,
+     "provider     = azurerm.stratus",
+     "provider     = azurerm.default"),
+    ("M5659", "the public-IP-on-a-NIC match reverts to the naive « all ipConfigs » form "
+     "(notLike → like): a NIC with one public and one private ipConfig would slip past", GUARD,
+     'notLike = "*"',
+     'like    = "*"'),
 ]
 
 TESTS = {
     "M5650": _DIAG,
     "M5651": _AG_OUTSIDE,
-    "M5652": _CHECK,
+    "M5652": _PRECOND,
     "M5653": _EMPTY_LIST,
     "M5654": _DENY,
     "M5655": _OFF,
     "M5656": _NO_ROLE,
+    "M5657": _ALIAS,
+    "M5658": _PROVIDER_EACH,
+    "M5659": _NIC_ANY,
 }

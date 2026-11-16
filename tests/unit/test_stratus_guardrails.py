@@ -66,23 +66,63 @@ def test_the_allow_lists_and_budget_are_empty_by_default():
     assert _var_default("stratus_budget_start_date") == '""'
 
 
-def test_every_resource_is_gated_on_the_enable_flag():
-    # Aucune ressource ni data du fichier ne s'instancie sans stratus_guardrails_enabled.
-    for m in re.finditer(r'^(resource|data)\s+"', _GUARDRAILS, re.MULTILINE):
-        block = _block(_GUARDRAILS, _GUARDRAILS[m.start() : _GUARDRAILS.index("{", m.start())].strip())
+def test_every_guardrail_resource_is_gated_on_the_enable_flag():
+    # Aucun garde-fou ne s'instancie sans stratus_guardrails_enabled. Le terraform_data
+    # stratus_guard est à part : il porte la precondition et existe toujours (inerte), mais sa
+    # condition passe trivialement quand le flag est faux.
+    for m in re.finditer(r'^(resource|data)\s+"([^"]+)"', _GUARDRAILS, re.MULTILINE):
+        if m.group(2) == "terraform_data":
+            continue
+        header = _GUARDRAILS[m.start() : _GUARDRAILS.index("{", m.start())].strip()
+        block = _block(_GUARDRAILS, header)
         assert "var.stratus_guardrails_enabled" in block, f"ressource non gardée : {block[:80]}"
 
 
-# ── Le refus de viser le mauvais abonnement ─────────────────────────────────────────────────
+# ── Le refus de viser le mauvais abonnement — une precondition, pas un check ─────────────────
 
 
-def test_a_check_refuses_pointing_at_orodruins_own_subscription():
-    block = _block(_GUARDRAILS, 'check "stratus_subscription_is_dedicated"')
+def test_a_precondition_refuses_pointing_at_orodruins_own_subscription():
+    # En Terraform un `check` raté n'est qu'un avertissement : le refus est une `precondition`
+    # sur terraform_data.stratus_guard, dont dépendent les garde-fous — un plan qui vise le
+    # mauvais abonnement échoue avant de rien poser.
+    block = _block(_GUARDRAILS, 'resource "terraform_data" "stratus_guard"')
+    assert "precondition" in block
     # La cible, comparée À l'abonnement d'Orodruin, doit DIFFÉRER (!=). On vise la comparaison
     # elle-même, pas un `!=` quelconque (le `!= ""` du contrôle de renseignement en est un autre).
     assert "!= lower(data.azurerm_subscription.current.subscription_id)" in block
     # activé ⇒ cible renseignée
     assert 'var.stratus_subscription_id != ""' in block
+
+
+def test_the_guardrails_depend_on_the_guard():
+    # Chaque ressource de l'abonnement dédié file l'abonnement validé par la garde
+    # (terraform_data.stratus_guard.output), ou en dépend ; aucune ne lit var.stratus_subscription_id
+    # en direct pour sa cible d'abonnement.
+    assert "terraform_data.stratus_guard.output" in _GUARDRAILS
+    assert "/subscriptions/${var.stratus_subscription_id}" not in _GUARDRAILS
+
+
+def test_the_alias_provider_targets_the_dedicated_subscription():
+    # Le seul bloc provider "azurerm" du fichier est l'alias stratus (le défaut est dans main.tf).
+    block = _block(_GUARDRAILS, 'provider "azurerm"')
+    assert re.search(r'alias\s*=\s*"stratus"', block)
+    assert "var.stratus_subscription_id" in block
+    # jamais repointé sur l'abonnement d'Orodruin (var.subscription_id)
+    assert "var.subscription_id" not in block
+
+
+def test_every_dedicated_subscription_resource_declares_the_stratus_provider():
+    # Chaque ressource de l'abonnement dédié passe par l'alias ; le groupe d'action du budget
+    # (abonnement d'Orodruin) ne doit PAS ; le garde-fou terraform_data est à part.
+    for m in re.finditer(r'^resource\s+"([^"]+)"\s+"([^"]+)"', _GUARDRAILS, re.MULTILINE):
+        rtype, rname = m.group(1), m.group(2)
+        block = _block(_GUARDRAILS, f'resource "{rtype}" "{rname}"')
+        if rtype == "azurerm_monitor_action_group":
+            assert "azurerm.stratus" not in block, f"{rname} ne doit pas viser l'abonnement dédié"
+        elif rtype == "terraform_data":
+            continue
+        else:
+            assert "azurerm.stratus" in block, f"{rname} doit déclarer provider = azurerm.stratus"
 
 
 # ── G5 — la Policy ──────────────────────────────────────────────────────────────────────────
@@ -93,6 +133,15 @@ def test_a_custom_policy_denies_a_public_ip_on_a_nic():
     assert "Microsoft.Network/networkInterfaces" in block
     assert "publicIPAddress" in block
     assert '"deny"' in block or "effect = \"deny\"" in block
+
+
+def test_the_nic_public_ip_policy_matches_any_ip_config():
+    block = _block(_GUARDRAILS, 'resource "azurerm_policy_definition" "stratus_deny_nic_public_ip"')
+    # « au moins une » ipConfig avec une IP publique = not{ … notLike = "*" }, pas le [*]…exists
+    # naïf qu'une NIC mixte (une ipConfig sans IP publique, une avec) contournerait. On vise
+    # l'attribut (notLike = "*"), pas un « notLike » quelconque (le commentaire en contient un).
+    assert re.search(r'notLike\s*=\s*"\*"', block)
+    assert 'exists = "true"' not in block
 
 
 def test_the_allow_list_policies_do_not_fire_on_an_empty_list():
@@ -116,8 +165,8 @@ def test_the_diagnostic_setting_routes_only_administrative_to_the_bench_workspac
     categories = re.findall(r"category\s*=\s*\"([^\"]+)\"", block)
     assert categories == ["Administrative"], categories
     assert "var.stratus_bench_workspace_id" in block
-    # cible = l'abonnement dédié tout entier, pas le banc
-    assert "/subscriptions/${var.stratus_subscription_id}" in block
+    # cible = l'abonnement dédié tout entier (l'abonnement validé par la garde), pas le banc
+    assert "/subscriptions/${terraform_data.stratus_guard.output}" in block
 
 
 # ── G7 — le budget, groupe d'action HORS de l'abonnement dédié ──────────────────────────────
@@ -134,7 +183,7 @@ def test_the_budget_action_group_lives_outside_the_dedicated_subscription():
 def test_the_budget_itself_is_on_the_dedicated_subscription_and_notifies_the_outside_group():
     block = _block(_GUARDRAILS, 'resource "azurerm_consumption_budget_subscription" "stratus"')
     assert "azurerm.stratus" in block
-    assert "/subscriptions/${var.stratus_subscription_id}" in block
+    assert "/subscriptions/${terraform_data.stratus_guard.output}" in block
     assert "azurerm_monitor_action_group.stratus_budget[0].id" in block
 
 

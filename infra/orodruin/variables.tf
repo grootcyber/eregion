@@ -156,7 +156,7 @@ variable "stratus_guardrails_enabled" {
 }
 
 variable "stratus_subscription_id" {
-  description = "L'abonnement de test dédié de Stratus (EREGION_STRATUS_SUBSCRIPTION) — vide par défaut, jamais en dur dans le dépôt public. Le contrat (eregion_core/orodruin.py) refuse en plus qu'il vaille le banc, la VM, Imladris ou l'abonnement d'Orodruin ; ici, un check refuse déjà qu'il vaille celui d'Orodruin."
+  description = "L'abonnement de test dédié de Stratus — vide par défaut, jamais en dur dans le dépôt public. Ici, une precondition (terraform_data.stratus_guard) refuse déjà qu'il vaille l'abonnement d'Orodruin. Le contrat (eregion_core/orodruin.py) le refusera EN PLUS (R2c) s'il vaut le banc, la VM ou Imladris — ce refus-là n'existe pas encore."
   type        = string
   default     = ""
 }
@@ -168,19 +168,19 @@ variable "stratus_allowed_locations" {
 }
 
 variable "stratus_allowed_resource_types" {
-  description = "G5 — types de ressources autorisés (policy intégrée « Allowed resource types »). Vide (défaut) → non posée. Doit inclure Microsoft.Network/bastionHosts pour le lien partageable. Rempli depuis M1."
+  description = "G5 — types de ressources autorisés (policy intégrée « Allowed resource types »). Vide (défaut) → non posée. Doit inclure Microsoft.Network/bastionHosts ET Microsoft.Network/publicIPAddresses (le Bastion et son IP publique, pour le lien partageable). Rempli depuis les besoins connus des techniques."
   type        = list(string)
   default     = []
 }
 
 variable "stratus_allowed_vm_skus" {
-  description = "G5 — SKU de VM autorisés (policy intégrée « Allowed virtual machine size SKUs »). Vide (défaut) → non posée. Rempli depuis M1."
+  description = "G5 — SKU de VM autorisés (policy intégrée « Allowed virtual machine size SKUs », qui ne vise que VM/VMSS — pas le Bastion, qui est un type de ressource, pas un SKU de VM). Vide (défaut) → non posée. Rempli depuis les SKU des VM de test."
   type        = list(string)
   default     = []
 }
 
 variable "stratus_bench_workspace_id" {
-  description = "G6 — l'id complet du Log Analytics du banc (…/workspaces/<nom>), cible du paramètre de diagnostic de l'abonnement dédié (catégorie Administrative). Vide (défaut) → le paramètre n'est pas posé. Lu par le Makefile dans l'état de infra/terraform ; jamais en dur. Le workspace doit vivre pendant toute la mesure (il part avec celebrimbor-down)."
+  description = "G6 — l'id complet du Log Analytics du banc (…/workspaces/<nom>), cible du paramètre de diagnostic de l'abonnement dédié (catégorie Administrative). Vide (défaut) → le paramètre n'est pas posé. Fourni par l'opérateur (p. ex. `terraform -chdir=infra/terraform output`), via un -var-file ou un *.auto.tfvars ; jamais en dur. Le workspace doit vivre pendant toute la mesure (il part avec celebrimbor-down)."
   type        = string
   default     = ""
 }
