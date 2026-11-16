@@ -308,6 +308,49 @@ def test_the_first_detection_before_the_isolation_dates_the_incident(monkeypatch
     assert signals == [] and "n'est pas antérieur" in _mine()[0]["reason"]
 
 
+# SEC-B (V-12): lines of the store that are not cards — unreadable JSON, an object a byte that is not
+# UTF-8 spoils. Before SEC-B, `pending()` raised on them, and the pass held every release by accident.
+_NOT_CARDS = ["{not json", '{"id": "esc-raw", "status": "pending", "reason": "\udcff"}', "[1, 2]"]
+
+
+def _spoil_the_store() -> None:
+    store = escalations._STORE
+    kept = store.read_bytes().decode("utf-8", "surrogateescape").splitlines() if store.exists() else []
+    store.write_bytes(("\n".join(_NOT_CARDS + kept) + "\n").encode("utf-8", "surrogateescape"))
+
+
+@pytest.mark.parametrize("point, lifts", [("p-between", False), ("p-before", True)])
+def test_lines_that_are_not_cards_lift_nothing_wrongly_the_readable_facts_decide(point, lifts):
+    """SEC-B: with lines of the store that are not cards, the pass raises nothing and decides on what
+    it can read — the first detection of the VM's readable pending card, its isolation: a point
+    between them lifts nothing, a point before them lifts, once. The lines stay in the store. (The
+    limit, docs/glorfindel.md, REC1: a line that is not a card is not read — were it the VM's
+    earliest card, its first detection would not date the incident.)"""
+    f, c, vm = _world()
+    escalations.record(signal_id="det-1", resource_id=vm, action="isolate_vm", escalation_type="mode_hold",
+                       reason="ransomware")
+    first = datetime.fromisoformat(escalations.pending()[0]["first_seen"]).timestamp()
+    _isolated(f, c, vm)
+    from glorfindel.actions import _save_isolation_state
+    _save_isolation_state(vm, {**_load_isolation_state(vm),
+                               "isolated_at": datetime.fromtimestamp(first + 1800, tz=timezone.utc).isoformat()})
+    f.add_point(vm, "p-before", datetime.fromtimestamp(first - 600, tz=timezone.utc))
+    f.add_point(vm, "p-between", datetime.fromtimestamp(first + 600, tz=timezone.utc))
+    _from_the_workstation(f, c, vm, point=point, start=40, end=60)
+    _spoil_the_store()
+    signals, report = _pass(c, 80)
+    if lifts:
+        assert [s["event"] for s in signals] == ["recovery_complete"], report
+        assert [r["outcome"] for r in report] == ["emitted"], report
+    else:
+        assert signals == [] and [r["outcome"] for r in report] == ["card"], report
+        assert "n'est pas antérieur" in _mine()[0]["reason"]
+    again, _ = _pass(c, 90)
+    assert again == []
+    text = escalations._STORE.read_bytes().decode("utf-8", "surrogateescape").splitlines()
+    assert all(line in text for line in _NOT_CARDS)
+
+
 def test_no_job_a_running_job_or_a_job_before_the_isolation_say_nothing():
     f, c, vm = _world()
     _isolated(f, c, vm)

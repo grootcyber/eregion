@@ -11,6 +11,7 @@ the receipts the watch signs — never the code's markers (A0). Mutants M3975–
 """
 from __future__ import annotations
 
+import collections
 import json
 import os
 import threading
@@ -829,3 +830,345 @@ def test_the_bots_and_the_registers_directories_are_made_before_compose_mounts_t
     made = team.index('mkdir -p "$(TEAM_DIR)/runs/glorfindel/queue"')
     assert team.index('test ! -L "$$d"') < made < team.index("up -d watch war-room")
     assert '"$(TEAM_DIR)/.eregion/bot" "$(TEAM_DIR)/.eregion/watch-queue"' in team
+
+
+# ── SEC-B (audit du 06/11) : la cible signée, la relève qui ne se fige pas, une watch par HOME,
+#    les lignes illisibles du magasin ──────────────────────────────────────────────────────────
+
+def test_what_runs_is_the_target_the_watch_signed_never_the_requests_spelling(world, monkeypatch):
+    """V-08 (M5430): the guards, the VM's lock, the connector and the receipt take the proposal's
+    target — even were the attachment to admit another spelling of it (here, let through)."""
+    monkeypatch.setattr(aq, "proposal_refusal", lambda *a, **k: None)
+    called = []
+    real = world["conn"].isolate_vm
+    monkeypatch.setattr(world["conn"], "isolate_vm", lambda rid: called.append(rid) or real(rid))
+    card = _card()
+    doc = _ask(world, "isolate_vm", card=card, resource_id=WEB.upper())
+    world["q"].poll()
+    r = _receipt(world, doc)
+    assert r["state"] == "done" and r["resource_id"] == WEB, r
+    assert called == [WEB], "the connector got the proposal's target, at the byte"
+
+
+def test_a_request_named_in_another_case_than_its_proposal_is_refused(world):
+    """V-08 (M5431): the request and the proposal compared at the byte — nothing reaches Azure."""
+    card = _card()
+    _untouched(world, _ask(world, "isolate_vm", card=card, resource_id=WEB.upper()), "proposal_mismatch")
+
+
+@pytest.mark.parametrize("field", ["resource_id", "ip", "scope"])
+def test_an_identifier_out_of_ascii_is_refused_and_said(world, field):
+    """V-08 (M5432): a character out of ASCII — one whose case folds into ASCII, here — never compared,
+    never acted on: its own code of the closed list."""
+    kelvin = "K"
+    assert kelvin.lower() == "k", "the fold the comparison at the byte closes"
+    card = _card("block_suspicious_ip", "low_confidence", ip=ATTACKER)
+    values = {"resource_id": WEB[:-1] + kelvin, "ip": ATTACKER + kelvin, "scope": "vm" + kelvin}
+    kw = {"resource_id": WEB, "ip": ATTACKER, "scope": "vm", field: values[field]}
+    doc = _ask(world, "block_ip", card=card, **kw)
+    _untouched(world, doc, "not_ascii")
+    assert field in _receipt(world, doc)["reason"]
+    assert "not_ascii" in aq.REFUSALS and not aq.Refused("not_ascii").critical
+
+
+class _Gate:
+    """The watch's executions held at will: ``_run`` records each request's verb, the first one
+    waits for ``gate``."""
+
+    def __init__(self, q, monkeypatch):
+        self.ran: list[str] = []
+        self.entered = threading.Event()
+        self.gate = threading.Event()
+        self.done = threading.Semaphore(0)
+
+        def run(service, req, card, ctx):
+            self.ran.append(req.verb)
+            if len(self.ran) == 1:
+                self.entered.set()
+                assert self.gate.wait(30), "the gate never opened"
+            self.done.release()
+            return {}
+        monkeypatch.setattr(q, "_run", run)
+
+    def wait_done(self, n: int) -> None:
+        for _ in range(n):
+            assert self.done.acquire(timeout=30), "an execution never ended"
+
+
+@pytest.fixture
+def threaded(world, monkeypatch):
+    """The watch's queue with its workers — one at a time (IN_FLIGHT 1), never inline; web isolated
+    and the attacker blocked on it, so that a release, an unblock and a promotion have their hold."""
+    monkeypatch.setattr(queue_watch, "IN_FLIGHT", 1)
+    monkeypatch.setattr(queue_watch, "STATUS_EVERY_S", 0)
+    q = queue_watch.QueueWatch(WATCH, world["conn"], root=world["root"], pins=PINS, say=world["said"].append,
+                               environ=ALLOWED)
+    world["conn"].isolate_vm(WEB)
+    world["conn"].block_suspicious_ip(ATTACKER, WEB)
+    yield q
+    q.stop()
+
+
+def _poll_within(q, seconds: float = 10.0, now=None) -> None:
+    """One poll, in a thread of its own: it must end within ``seconds`` — the relève never waits for
+    an execution."""
+    t = threading.Thread(target=q.poll, kwargs={"now": now}, daemon=True)
+    t.start()
+    t.join(seconds)
+    assert not t.is_alive(), "the poll waited for an execution"
+
+
+def _first_held(world, q, monkeypatch) -> "_Gate":
+    g = _Gate(q, monkeypatch)
+    _ask(world, "unblock_ip", ip=ATTACKER)
+    _poll_within(q)
+    assert g.entered.wait(10), "the first execution never started"
+    return g
+
+
+def test_judging_never_waits_for_an_execution(world, threaded, monkeypatch):
+    """V-09 (M5433): every execution taken, a request deposited is judged, accepted and its receipt
+    written at once — it waits for its turn in the wait list, never the poll."""
+    g = _first_held(world, threaded, monkeypatch)
+    second = _ask(world, "release_isolation")
+    _poll_within(threaded)
+    assert _receipt(world, second)["state"] == "accepted"
+    assert threaded.busy() == {"running": 1, "waiting": 1}
+    g.gate.set()
+    g.wait_done(2)
+    assert g.ran == ["unblock_ip", "release_isolation"]
+
+
+def test_the_status_is_written_again_while_every_execution_is_taken(world, threaded, monkeypatch):
+    """V-09 (M5434): the watch's signed status stays fresh while all its executions are taken — the
+    console keeps its buttons; the status says what runs and what waits."""
+    g = _first_held(world, threaded, monkeypatch)
+    later = datetime.now(timezone.utc) + timedelta(seconds=30)
+    _ask(world, "release_isolation", now=later)
+    _poll_within(threaded, now=later)
+    st = aq.read_status(root=world["root"], watch_public=WATCH.public)
+    assert st["at"] == later.astimezone(timezone.utc).isoformat(timespec="milliseconds"), st
+    assert st["executions"] == {"running": 1, "waiting": 1, "slots": 1, "backlog": queue_watch.BACKLOG}
+    g.gate.set()
+    g.wait_done(2)
+
+
+def test_a_containment_runs_before_a_lift_that_waited_longer(world, threaded, monkeypatch):
+    """V-09 (M5435): the wait list is in priority — a promotion of a block (it contains) runs before
+    a release (it lifts) deposited before it."""
+    g = _first_held(world, threaded, monkeypatch)
+    _ask(world, "release_isolation")
+    _poll_within(threaded)
+    _ask(world, "promote_block", ip=ATTACKER, scope="vm")
+    _poll_within(threaded)
+    g.gate.set()
+    g.wait_done(3)
+    assert g.ran == ["unblock_ip", "promote_block", "release_isolation"]
+
+
+def test_a_request_whose_life_ends_while_it_waits_is_refused_and_said(world, threaded, monkeypatch):
+    """V-09 (M5436): its turn come after its end of life, it is refused (``no_slot``), its receipt says
+    it — never run late, never left to expire in silence. Its proposal is not consumed: asked again,
+    it may run."""
+    g = _first_held(world, threaded, monkeypatch)
+    card = _card()
+    late = _ask(world, "isolate_vm", card=card)
+    _poll_within(threaded)
+    assert _receipt(world, late)["state"] == "accepted"
+    threaded.clock = lambda: datetime.now(timezone.utc) + timedelta(seconds=aq.MAX_LIFETIME_S + 5)
+    g.gate.set()
+    g.wait_done(1)
+    threaded._backlog.join()
+    assert _code(world, late) == "no_slot" and g.ran == ["unblock_ip"]
+    assert aq.digest(card["proposal"]) not in threaded.consumed.digests()
+
+
+class _CountedUnderLock(collections.Counter):
+    """The refusals counted — and every count that was not made under the watch's lock."""
+
+    def __init__(self, q):
+        super().__init__()
+        self.q, self.bare = q, []
+
+    def __setitem__(self, key, value):
+        if not self.q._lock.locked():
+            self.bare.append(key)
+        super().__setitem__(key, value)
+
+
+def test_the_refusals_are_counted_under_the_lock_by_the_releve_and_the_workers(world, threaded, monkeypatch):
+    """SEC-B: the relève and the workers both refuse (``no_slot`` is a worker's) — every count is made
+    under the watch's lock, never lost from the signed status."""
+    threaded.refused = counted = _CountedUnderLock(threaded)
+    g = _first_held(world, threaded, monkeypatch)
+    late = _ask(world, "isolate_vm", card=_card())
+    forged = _ask(world, "release_isolation", signer=BOT)          # the relève refuses it
+    _poll_within(threaded)
+    assert _receipt(world, forged)["state"] == "refused"
+    threaded.clock = lambda: datetime.now(timezone.utc) + timedelta(seconds=aq.MAX_LIFETIME_S + 5)
+    g.gate.set()
+    g.wait_done(1)
+    threaded._backlog.join()
+    assert _code(world, late) == "no_slot"
+    assert counted["no_slot"] == 1 and sum(counted.values()) == 2, counted
+    assert counted.bare == [], counted.bare
+    st = threaded.status(datetime.now(timezone.utc), force=True)
+    assert st["refused"] == {"no_slot": 1, **{k: 1 for k in counted if k != "no_slot"}}, st["refused"]
+
+
+def test_a_full_wait_list_refuses_at_once(world, threaded, monkeypatch):
+    """V-09 (M5444): the wait list is bounded — full, a request is refused at once (``busy``), said."""
+    monkeypatch.setattr(queue_watch, "BACKLOG", 1)
+    g = _first_held(world, threaded, monkeypatch)
+    waits = _ask(world, "release_isolation")
+    _poll_within(threaded)
+    full = _ask(world, "promote_block", ip=ATTACKER, scope="vm")
+    _poll_within(threaded)
+    assert _receipt(world, waits)["state"] == "accepted"
+    assert _code(world, full) == "busy"
+    g.gate.set()
+    g.wait_done(2)
+
+
+def test_a_second_watch_on_the_same_home_is_refused(world, monkeypatch):
+    """V-10 (M5439): with the queue, one watch per HOME — another holds it (here, another opening of
+    the lock: flock tells them apart as two processes): the start raises, says why, picks nothing up."""
+    import fcntl
+    monkeypatch.setenv(aq.FLAG_ENV, "1")
+    monkeypatch.setattr(queue_watch.QueueWatch, "start", lambda self: None)
+    lock = aq.queue_dir() / queue_watch.WATCH_LOCK
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock, "a") as other:
+        fcntl.flock(other, fcntl.LOCK_EX)
+        with pytest.raises(queue_watch.SecondWatch, match="une autre watch"):
+            queue_watch.start(world["conn"], lambda: WATCH, root=world["root"])
+    q = queue_watch.start(world["conn"], lambda: WATCH, root=world["root"])
+    assert q is not None and lock.read_text() == str(os.getpid())
+    os.close(q._hold)
+
+
+def test_the_watch_command_refuses_to_run_beside_another(tmp_path, monkeypatch):
+    """V-10 (M5445): the watch command, the queue on and another watch holding it, says it and stops
+    with an error — before its first heartbeat."""
+    from tests.unit.test_signal_origin import _run_watch
+    monkeypatch.setenv("AZURE_SUBSCRIPTION_ID", "00000000-0000-0000-0000-00000000aaaa")
+    monkeypatch.setenv(aq.FLAG_ENV, "1")
+
+    def refused(*a, **k):
+        raise queue_watch.SecondWatch("une autre watch relève déjà la file d'actions de ce HOME")
+    monkeypatch.setattr(queue_watch, "start", refused)
+    _, _, output = _run_watch(tmp_path, monkeypatch, [], 0, exit_code=1)
+    assert "Watch refusée" in output and "une autre watch" in output
+
+
+# V-12: a line of the store that is not a card.
+_NOT_CARDS = ["{not json", '["a list"]', "42", '"text"', "null", "\udcff\udcfe",
+              # an object a byte that is not UTF-8 spoils — raw (read in surrogateescape), and escaped
+              # in its JSON: a card no reader could write out again (/api/state, a log)
+              '{"id": "esc-raw", "status": "pending", "resource_id": "vm-raw", "reason": "\udcff"}',
+              '{"id": "esc-esc", "status": "pending", "resource_id": "vm-esc", "reason": "\\udcff"}']
+
+
+def _spoil(*lines: str) -> list[str]:
+    """The store with lines that are not cards, written before its own: as bytes."""
+    store = escalations._STORE
+    kept = store.read_bytes().decode("utf-8", "surrogateescape").splitlines() if store.exists() else []
+    store.write_bytes(("\n".join(list(lines) + kept) + "\n").encode("utf-8", "surrogateescape"))
+    return list(lines)
+
+
+def _still_there(lines: list[str]) -> None:
+    text = escalations._STORE.read_bytes().decode("utf-8", "surrogateescape").splitlines()
+    for line in lines:
+        assert line in text, f"{line!r} lost in a rewrite"
+
+
+def test_pending_passes_over_a_line_that_is_not_a_card_and_says_it_once(world, caplog):
+    """V-12 (M5440): ``pending`` reads the cards around it; the line said once, by its length and its
+    digest — never its text — however often the store is read."""
+    card = _card()
+    bad = _spoil(*_NOT_CARDS)
+    with caplog.at_level("WARNING", logger="glorfindel.escalations"):
+        assert [e["id"] for e in escalations.pending()] == [card["id"]]
+        assert [e["id"] for e in escalations.pending()] == [card["id"]]
+        assert [e["id"] for e in escalations.all_escalations()] == [card["id"]]
+    said = [r.getMessage() for r in caplog.records if "pas une carte" in r.getMessage()]
+    assert len(said) == len(_NOT_CARDS), said
+    assert not any("not json" in s or "a list" in s for s in said)
+    _still_there(bad)
+
+
+def test_resolve_closes_its_card_and_keeps_the_line_that_is_not_one(world):
+    """V-12 (M5441): ``resolve`` never fails on it, never loses it in its rewrite."""
+    card = _card()
+    bad = _spoil(*_NOT_CARDS)
+    escalations.resolve(card["id"], note="done")
+    assert not escalations.pending()
+    _still_there(bad)
+
+
+def test_resolve_by_resource_closes_its_cards_and_keeps_the_line_that_is_not_one(world):
+    """V-12 (M5442): ``resolve_by_resource`` never fails on it, never loses it."""
+    _card()
+    bad = _spoil(*_NOT_CARDS)
+    assert escalations.resolve_by_resource(WEB.upper(), "isolate_vm") == 1
+    assert not escalations.pending()
+    _still_there(bad)
+
+
+@pytest.mark.parametrize("read", ["refresh", "record", "set_verdict", "card_of", "resolve_by_proposal",
+                                  "note_identity_check"])
+def test_every_reader_of_the_store_passes_over_a_line_that_is_not_a_card(world, read):
+    """Every read of the store tolerates it, and every rewrite keeps it."""
+    card = _card()
+    bad = _spoil(*_NOT_CARDS)
+    calls = {
+        "refresh": lambda: escalations.refresh(card["id"], "said again"),
+        "record": lambda: escalations.record(signal_id="watch-rule-1", resource_id=WEB, action="isolate_vm",
+                                             escalation_type="mode_hold", reason="again"),
+        "set_verdict": lambda: escalations.set_verdict(card["id"], "right"),
+        "card_of": lambda: escalations.card_of(card["id"]),
+        "resolve_by_proposal": lambda: escalations.resolve_by_proposal("p-1"),
+        "note_identity_check": lambda: escalations.note_identity_check(card["id"], {"requested_at": ""}),
+    }
+    calls[read]()
+    _still_there(bad)
+    assert [e["id"] for e in escalations.all_escalations()] == [card["id"]]
+
+
+def test_an_action_done_says_done_whatever_the_store_holds(world):
+    """V-12: lines that are not cards in the store — the action done, its receipt says ``done``, its
+    card settled, the lines kept."""
+    card = _card()
+    bad = _spoil(*_NOT_CARDS)
+    doc = _ask(world, "isolate_vm", card=card)
+    world["q"].poll()
+    assert _receipt(world, doc)["state"] == "done"
+    assert card["id"] not in {e["id"] for e in escalations.pending()}
+    _still_there(bad)
+
+
+def test_a_card_that_cannot_be_settled_never_makes_an_action_done_say_failed(world, monkeypatch):
+    """V-12 (M5443): the store that cannot be rewritten (a full disk) — the action done says ``done``,
+    and the watch says the card stays open."""
+    def full(*a, **k):
+        raise OSError(28, "No space left on device")
+    monkeypatch.setattr(escalations, "resolve", full)
+    doc = _ask(world, "isolate_vm", card=_card())
+    world["q"].poll()
+    r = _receipt(world, doc)
+    assert r["state"] == "done" and r["verification"]["verified"] is True, r
+    assert not _flows(world)
+    assert any("non réglée" in s and "reste ouverte" in s for s in world["said"])
+
+
+def test_the_consoles_state_stands_with_a_line_that_is_not_a_card(world, monkeypatch):
+    """V-12: ``/api/state`` reads the pending cards — it answers, the line passed over."""
+    pytest.importorskip("fastapi")
+    api, client = _console(world, monkeypatch)
+    card = _card()
+    _spoil(*_NOT_CARDS)
+    got = client.get("/api/state")
+    assert got.status_code == 200, got.text[:300]
+    assert card["id"] in got.text
+    assert "esc-raw" not in got.text and "esc-esc" not in got.text    # the spoiled objects passed over

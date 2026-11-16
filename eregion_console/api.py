@@ -1774,6 +1774,9 @@ async def _approve_queued(esc: dict, ip: str, scope: str) -> dict:
     if not isinstance(proposal, dict):
         return {"error": _aq.REFUSALS["proposal_missing"], "refused": "proposal_missing", "via": "queue"}
     card = (esc["id"], _aq.digest(proposal))
+    # SEC-B: the target as the watch signed it, at the byte — what the watch compares and runs.
+    if isinstance(proposal.get("resource_id"), str) and proposal["resource_id"]:
+        resource_id = proposal["resource_id"]
     if verb != "block_ip":
         return await _queued(verb, resource_id, card=card, extra={"action": action})
     block_ip = ip or esc.get("ip") or (esc.get("action_params") or {}).get("ip") or ""

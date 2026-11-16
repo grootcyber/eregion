@@ -116,8 +116,8 @@ MUTANTS = [
      '        if self.cli_args[:1] == ["revert"]:\n'),
     # ── The proposal kept while young (§7) ─────────────────────────────────────────
     ("M4008", "a proposal signed again at each refresh: a request just named refused (FS1b, §7)", ESC,
-     '        if seen_again and action_queue.proposal_fresh(e, e.get("proposal"), signer.public, now, RESIGN_AFTER_S):\n'
-     "            return\n", ""),
+     '        if not action_queue.proposal_fresh(cid, fields, e.get("proposal"), signer.public, now, RESIGN_AFTER_S):\n',
+     "        if True:\n"),
     ("M4009", "a proposal kept on a card changed since: its port, its address no longer the card's (FS1b)", AQ,
      "    if said != held:\n        return False\n", "    if False:\n        return False\n"),
     ("M4010", "a proposal kept whatever its age: the age of an approval read wrong (FS1b)", AQ,

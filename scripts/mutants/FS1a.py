@@ -54,7 +54,7 @@ MUTANTS += [
     ("M3947", "a request asks another verb than the card proposes: an isolation on a snapshot's card (FS1a)", AQ,
      "    if request.verb not in proposed_verbs(proposal):\n", "    if False:\n"),
     ("M3948", "a request aims at another VM than the card's (FS1a)", AQ,
-     '    if request.resource_id.lower() != str(proposal["resource_id"]).lower():\n', "    if False:\n"),
+     '    if request.resource_id != proposal["resource_id"]:\n', "    if False:\n"),
     ("M3949", "a request names another address than the card proposes to block (FS1a)", AQ,
      '    if proposal["ip"] and request.ip not in ("", proposal["ip"]):\n', "    if False:\n"),
     ("M3950", "a card changed since its proposal (its action, target, address, port) still runs it (FS1a)", AQ,

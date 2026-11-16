@@ -129,11 +129,12 @@ with open(sys.argv[1], "a") as f:
 """
 
 
-def _run_watch(tmp_path, monkeypatch, lines, expect, prepare=None, slow_respond=0.0, slow_poll=0.0):
+def _run_watch(tmp_path, monkeypatch, lines, expect, prepare=None, slow_respond=0.0, slow_poll=0.0, exit_code=0):
     """The watch (dry-run) on tmp_path/runs, HOME in tmp_path; `lines` appended by ANOTHER
     process once it runs. Returns (what reached respond, what the poll was asked, output).
     `prepare(signals)`: what runs/annatar/ holds before the watch starts; `slow_respond`, `slow_poll`:
-    how long a decision, a search take (SEC8)."""
+    how long a decision, a search take (SEC8). `exit_code`: a watch that refuses to run (SEC-B) —
+    then it never beat."""
     from click.testing import CliRunner
 
     from glorfindel import cli
@@ -205,7 +206,10 @@ def _run_watch(tmp_path, monkeypatch, lines, expect, prepare=None, slow_respond=
 
     monkeypatch.setattr(cli.time, "sleep", _sleep)
     result = CliRunner().invoke(cli.cli, ["watch", str(runs), "--dry-run", "--interval", "0"])
-    assert result.exit_code == 0, result.output
+    assert result.exit_code == exit_code, result.output
+    if exit_code:
+        assert beat_seen == [] and not (home / ".glorfindel" / "injectors" / "watch_heartbeat").exists()
+        return responded, polled, result.output
     assert beat_seen == [True]
     assert not (home / ".glorfindel" / "injectors" / "watch_heartbeat").exists()     # removed at stop
     return responded, polled, result.output
