@@ -1197,6 +1197,19 @@
    "doc": "docs/design/preuves.md"
   },
   {
+   "id": "g-contournement-sans-tenue",
+   "composant": "glorfindel",
+   "poste": "g-verifier",
+   "nom": "Proof: a bypass is judged only on the flows the hold's own denies close; an isolation left on the VM's former address is said gone, not bypassed, while a bypass of what a hold still holds is said; the product unchanged",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "L1V"
+   ],
+   "issue": 864,
+   "doc": "docs/design/preuves.md"
+  },
+  {
    "id": "g-levee-probation",
    "composant": "glorfindel",
    "poste": "g-agir",

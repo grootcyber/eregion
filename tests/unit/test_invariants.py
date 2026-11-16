@@ -2717,7 +2717,8 @@ class IsolationMachine(RuleBasedStateMachine):
         """A VM isolated or blocked, then a customer's rule before our deny widened into an
         allow — bypassed, said —; the rule put back as it was during the full disk, then
         widened again. Bypassed is the test's own judgement: the allow opens flows of the VM
-        (the attacker's, for a block) that were closed without it."""
+        (the attacker's, for a block) that were closed without it, and that the hold's own
+        denies close (`bypassed`, L1V)."""
         vm, rid, _ = self._draw(data)
         isolation = data.draw(st.booleans(), label="isolation")
         port = None if isolation else data.draw(st.sampled_from([22, None]), label="threat_port")
@@ -2734,6 +2735,25 @@ class IsolationMachine(RuleBasedStateMachine):
             return self._open(vm, forensic="now") if isolation else self._attacker_flows(vm, port)
         closed = reached()
         marks = {_nic_hash(n) for n in self.fake.vms[key(vm)]["nics"]}
+        head = "glorfindel-iso-" if isolation else "glorfindel-block-"
+
+        def bypassed() -> frozenset:
+            """What the allow opens that this hold's own denies close (L1V, #864): of the flows
+            opened, those that close with our denies of this kind — the isolation's for an
+            isolation, the block's for a block, named for the VM's NICs (_gone_comes_back's) —
+            evaluated first, in the test's world. A flow the customer's rule closed itself, or
+            the VM's block for its isolation, or that our deny no longer names (a record left on
+            the VM's former address, another VM's since), is not this hold's bypass: what L1
+            owes there is the disappearance, said by its own card."""
+            world = self._world()
+            first = {**world, "nsgs": {k: {**g, "rules": {
+                n: {**r, "priority": 0} if (n.startswith(head) and any(h in n for h in marks)
+                                            and r["access"].lower() == "deny") else r
+                for n, r in g["rules"].items()}} for k, g in world["nsgs"].items()}}
+            still = (self._open(vm, forensic="now", world=first) if isolation
+                     else frozenset(f for f in self._open(vm, forensic=None, world=first)
+                                    if f[3] == ATTACKER and (f[2] == "out" or port is None or f[4] == port)))
+            return (reached() - closed) - still
         govern = {key(g) for n in self._nics(vm) for g in (n["nsg"], self.fake.subnets[key(n["subnet"])]["nsg"]) if g}
         ours = sorted((r["priority"], k) for k in govern & set(self._customer_nsgs())
                       for n, r in self.fake.nsgs[k]["rules"].items()
@@ -2763,13 +2783,13 @@ class IsolationMachine(RuleBasedStateMachine):
             return                                  # nothing it lets through: not a bypass
         _note(f"bypass of {'an isolation' if isolation else 'a block'}")
         self.reassert(_Drawn(data, fault=None))
-        self._bypass_said(vm, isolation, reached() - closed)
+        self._bypass_said(vm, isolation, bypassed())
         customer_writes(was)                        # taken off: their rule as it was
         self.reassert(_Drawn(data, fault=st.tuples(st.integers(1, 6), st.just("from-full"))))
         customer_writes(wide)                       # and back
         self.reassert(_Drawn(data, fault=None))
         _note(f"bypass of {'an isolation' if isolation else 'a block'} back")
-        self._bypass_said(vm, isolation, reached() - closed)
+        self._bypass_said(vm, isolation, bypassed())
 
     def _bypass_said(self, vm: str, isolation: bool, opened: frozenset):
         """L1 and L2 for a bypass (V-16, L2C): an isolation or a block of the VM, recorded,
