@@ -141,3 +141,74 @@ variable "graph_read_enabled" {
   default     = false
   nullable    = false
 }
+
+# ── R2b (#608) : les garde-fous de l'abonnement de test dédié de Stratus ────────────────────
+# docs/design/stratus-cible.md, § 6 (gestes G5, G6, G7). Posés par l'opérateur (jamais une
+# session), plan montré avant. Tout est VIDE/ÉTEINT par défaut : un apply normal d'Orodruin
+# n'y touche pas (count 0, fournisseur stratus inerte). Le rôle fermé (G3) N'est PAS ici : il
+# attend la mesure des actions minimales par technique (M1, § protocole). Valeurs réelles
+# jamais dans le dépôt — en variables, écrites par l'opérateur à l'apply.
+variable "stratus_guardrails_enabled" {
+  description = "Pose les garde-fous R2b (Azure Policy G5, paramètre de diagnostic G6, budget G7) sur l'abonnement de test dédié de Stratus. Défaut false : rien ne s'exécute. N'active PAS le rôle fermé de Stratus (G3, après mesure)."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "stratus_subscription_id" {
+  description = "L'abonnement de test dédié de Stratus (EREGION_STRATUS_SUBSCRIPTION) — vide par défaut, jamais en dur dans le dépôt public. Le contrat (eregion_core/orodruin.py) refuse en plus qu'il vaille le banc, la VM, Imladris ou l'abonnement d'Orodruin ; ici, un check refuse déjà qu'il vaille celui d'Orodruin."
+  type        = string
+  default     = ""
+}
+
+variable "stratus_allowed_locations" {
+  description = "G5 — régions autorisées sur l'abonnement dédié (policy intégrée « Allowed locations »). Vide (défaut) → la règle n'est pas posée (une liste vide refuserait TOUTE création). Rempli par l'opérateur à partir de la mesure M1."
+  type        = list(string)
+  default     = []
+}
+
+variable "stratus_allowed_resource_types" {
+  description = "G5 — types de ressources autorisés (policy intégrée « Allowed resource types »). Vide (défaut) → non posée. Doit inclure Microsoft.Network/bastionHosts pour le lien partageable. Rempli depuis M1."
+  type        = list(string)
+  default     = []
+}
+
+variable "stratus_allowed_vm_skus" {
+  description = "G5 — SKU de VM autorisés (policy intégrée « Allowed virtual machine size SKUs »). Vide (défaut) → non posée. Rempli depuis M1."
+  type        = list(string)
+  default     = []
+}
+
+variable "stratus_bench_workspace_id" {
+  description = "G6 — l'id complet du Log Analytics du banc (…/workspaces/<nom>), cible du paramètre de diagnostic de l'abonnement dédié (catégorie Administrative). Vide (défaut) → le paramètre n'est pas posé. Lu par le Makefile dans l'état de infra/terraform ; jamais en dur. Le workspace doit vivre pendant toute la mesure (il part avec celebrimbor-down)."
+  type        = string
+  default     = ""
+}
+
+variable "stratus_monthly_budget" {
+  description = "G7 — plafond du budget mensuel de l'abonnement dédié, en devise du compte. 0 (défaut) → pas de budget. Le budget est une NOTIFICATION, évaluée avec 8–24 h de retard — ce n'est pas un plafond temps réel (le vrai plafond est l'Azure Policy G5)."
+  type        = number
+  default     = 0
+
+  validation {
+    condition     = var.stratus_monthly_budget >= 0
+    error_message = "stratus_monthly_budget : un montant positif, ou 0 pour ne pas poser de budget."
+  }
+}
+
+variable "stratus_budget_start_date" {
+  description = "G7 — début de la période du budget, au format AAAA-MM-01T00:00:00Z (le 1er d'un mois présent ou à venir, exigé par Azure). Vide (défaut) → pas de budget. L'opérateur le règle à l'apply."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.stratus_budget_start_date == "" || can(regex("^[0-9]{4}-[0-9]{2}-01T00:00:00Z$", var.stratus_budget_start_date))
+    error_message = "stratus_budget_start_date : AAAA-MM-01T00:00:00Z (le 1er d'un mois), ou vide."
+  }
+}
+
+variable "stratus_budget_contact_emails" {
+  description = "G7 — adresses prévenues par le groupe d'action du budget. Le groupe d'action vit HORS de l'abonnement dédié (dans le groupe d'Orodruin), pour que COLD/kill et « vider l'abonnement » ne le touchent pas. Vide (défaut) : le groupe d'action est posé sans destinataire (à compléter)."
+  type        = list(string)
+  default     = []
+}
