@@ -163,7 +163,7 @@ DOCKER_GLORFINDEL_WATCH = $(WATCH_KEY_DIR) && $(RUNS_DIRS) && $(GLORFINDEL_AZURE
 	imladris-cd-install imladris-cd-check imladris-cd-enable imladris-cd-disable \
 	imladris-cd-status imladris-cd-retry imladris-cd-rollback imladris-cd-uninstall \
 	imladris-env imladris-report imladris-url imladris-status imladris-pull \
-	imladris-model imladris-campaign-report imladris-containment imladris-fault-rate imladris-known celebrimbor-workload \
+	imladris-model imladris-campaign-report imladris-containment imladris-fault-rate imladris-known imladris-fingerprint celebrimbor-workload \
 	orodruin-init orodruin-watch-guard orodruin-watch-principals orodruin-plan orodruin-up orodruin-lock orodruin-push orodruin-push-dev orodruin-check \
 	orodruin-stop orodruin-start orodruin-update orodruin-kill orodruin-down orodruin-ssh orodruin-exercise orodruin-exercise-guard \
 	orodruin-known orodruin-identity orodruin-identity-id orodruin-fingerprint watch-key imladris-watch-key queue-keys imladris-queue-keys harness-key harness-sign harness-verify \
@@ -274,7 +274,8 @@ help:
 	@echo "  make imladris-model MODEL=…                  Changer le modèle qui décide (ou MODEL=default)"
 	@echo "  make celebrimbor-workload                    Charge de bree (site + routine d'admin)"
 	@echo "  make imladris-status                         Tout tourne ? VMs, sauvegardes, services, erreurs, cartes à juger"
-	@echo "  make imladris-start REF=tag|commit           Déploie une référence nommée (exigée), jamais une branche"
+	@echo "  make imladris-fingerprint                    L'empreinte de sa clé d'hôte, lue par Azure (HOST_SSH_FINGERPRINT, exigée : SEC-C)"
+	@echo "  make imladris-start REF=tag|commit           Déploie une référence nommée (exigée), son image publiée vérifiée ici (SEC-C)"
 	@echo "  make imladris-stop / imladris-logs           Glorfindel + la console sur la VM"
 	@echo "  make imladris-ssh                            Un shell sur la VM (clé d'hôte épinglée)"
 	@echo "  make imladris-cd-install                     Le CD d'Imladris (H1) : agent + timer (désactivé), webhook #deploy"
@@ -300,7 +301,8 @@ help:
 	@echo "  make orodruin-lock [YES=1]                   Referme la sortie (apply) ; YES=1 = sans confirmation"
 	@echo "    WATCH_PRINCIPALS=<id>[,<id>…] : les watches qui écrivent le canal retour (défaut : Imladris) ;"
 	@echo "    sans Imladris, avec NO_WATCH=1 — la watch d'un poste ou d'une équipe (WC1)"
-	@echo "  make orodruin-push [REF=<tag|commit>]        Image d'Annatar publiée (digest vérifié ici) + orodruin.env"
+	@echo "  make orodruin-push [REF=<tag|commit>]        Image d'Annatar publiée (digest vérifié ici) + orodruin.env ; jamais sous le plancher"
+	@echo "    ROLLBACK=1 (avec REF) : le retour arrière demandé, vers une release plus ancienne que la plus haute poussée (SEC-C)"
 	@echo "  make orodruin-push-dev                       Développement : l'image construite ici, non vérifiée"
 	@echo "  make orodruin-check                          Le contrat, lu depuis la VM : armed ou passive ; l'image, et la dernière release"
 	@echo "  make orodruin-identity ID=<object id>        Une identité d'Entra ID est-elle inscrite (IDI1), lu depuis la VM"
@@ -580,9 +582,9 @@ azure-pairs-expiry:
 # rappelle dans #deploy (J-14, J-7, J-1, le jour même). pair-expiry-note note la date en place, sans
 # rien faire tourner. Refusées en session de code, pair-rotate aussi sans terminal : la garde seule
 # d'abord ; la cible -go la refait, puis lit l'adresse d'Imladris dans le shell (terraform output,
-# l'état local), jamais développée par make avant la garde, même appelée directement. known_host.sh
-# dit sur la sortie d'erreur une clé d'hôte acceptée sans empreinte (HOST_SSH_FINGERPRINT absent) ;
-# refusée, aucun ssh. PAIR et DAYS : jamais développés par make ($(value …), unexport — comme REF),
+# l'état local), jamais développée par make avant la garde, même appelée directement. La clé d'hôte
+# d'Imladris : sans empreinte (HOST_SSH_FINGERPRINT absent), refusée par known_host.sh (SEC-C), comme
+# une autre clé : aucun ssh, la date n'est pas notée sur Imladris, et c'est dit (scripts/pair_rotate.py). PAIR et DAYS : jamais développés par make ($(value …), unexport — comme REF),
 # vérifiés par le script ; DAYS vide, la durée par défaut du script (DEFAULT_DAYS, son seul endroit).
 # Le secret ne passe jamais sur une ligne de commande : ni ici, ni dans ce que lance le script.
 unexport PAIR
@@ -993,13 +995,14 @@ ORO_SSH_FINGERPRINT ?=
 ORO_KNOWN_HOSTS ?= $(HOME)/.eregion/orodruin_known_hosts
 SSH_OPTS       = -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$(ORO_KNOWN_HOSTS) -o HostKeyAlgorithms=ssh-ed25519 $(SSH_KEY_OPTS)
 # V-32 (SEC7) : la clé d'hôte d'Imladris, épinglée par son empreinte. HOST_SSH_FINGERPRINT (SHA256:…,
-# dans ton environnement, jamais dans le dépôt : relevée sur la VM, infra/glorfindel-host/README.md,
-# « SSH ») ; imladris-known écrit HOST_KNOWN_HOSTS à partir d'elle, et chaque commande vers Imladris
-# n'accepte que ce fichier (StrictHostKeyChecking=yes) : une autre clé refuse. Sans elle, accept-new
-# reste, et chaque commande le dit.
+# dans ton environnement, jamais dans le dépôt : lue sur la VM par Azure, make imladris-fingerprint) ;
+# imladris-known écrit HOST_KNOWN_HOSTS à partir d'elle, et chaque commande vers Imladris n'accepte que
+# ce fichier (StrictHostKeyChecking=yes) : une autre clé refuse. SEC-C (audit du 06/11, V-26) : exigée,
+# comme celle d'Orodruin — sans elle, rien ne part vers Imladris (scp de host.env compris), jamais
+# accept-new. Le CD d'Imladris tourne sur la VM : il ne la lit pas.
 HOST_SSH_FINGERPRINT ?=
 HOST_KNOWN_HOSTS ?= $(HOME)/.eregion/h0_known_hosts
-HOST_SSH_OPTS  = $(if $(HOST_SSH_FINGERPRINT),-o StrictHostKeyChecking=yes -o UserKnownHostsFile=$(HOST_KNOWN_HOSTS) -o HostKeyAlgorithms=ssh-ed25519,-o StrictHostKeyChecking=accept-new) $(SSH_KEY_OPTS)
+HOST_SSH_OPTS  = -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$(HOST_KNOWN_HOSTS) -o HostKeyAlgorithms=ssh-ed25519 $(SSH_KEY_OPTS)
 HOST_SSH       = ssh $(HOST_SSH_OPTS) $(HOST_USER)@$(HOST_IP)
 HOST_ENV      ?= infra/glorfindel-host/host.env
 # Local copies of the VM's ~/.glorfindel (verdicts, memory, state): the observation's data
@@ -1044,10 +1047,29 @@ imladris-down:
 imladris-env:
 	@.venv/bin/python infra/glorfindel-host/host_env.py infra/glorfindel-host/host.env
 
-# V-32 : avant chaque commande vers Imladris — la clé d'hôte vérifiée par HOST_SSH_FINGERPRINT, ou dit
-# qu'elle ne l'est pas (infra/glorfindel-host/known_host.sh).
+# V-32 : avant chaque commande vers Imladris — la clé d'hôte vérifiée par HOST_SSH_FINGERPRINT, ou rien
+# ne part (infra/glorfindel-host/known_host.sh, « required » : SEC-C).
+# HOST_KNOWN_CHECK : la même vérification, en ligne d'une recette qui doit d'abord passer ses gardes
+# (bench-run-go, bench-restore-go : le contrôle d'origine et le refus d'une session d'agent avant tout
+# contact, ssh-keyscan compris).
+HOST_KNOWN_CHECK = HOST_SSH_FINGERPRINT="$(HOST_SSH_FINGERPRINT)" bash infra/glorfindel-host/known_host.sh "$(HOST_IP)" "$(HOST_KNOWN_HOSTS)" HOST_SSH_FINGERPRINT required
 imladris-known:
-	@HOST_SSH_FINGERPRINT="$(HOST_SSH_FINGERPRINT)" bash infra/glorfindel-host/known_host.sh "$(HOST_IP)" "$(HOST_KNOWN_HOSTS)"
+	@$(HOST_KNOWN_CHECK)
+
+# SEC-C (audit du 06/11, V-26) : l'empreinte de la clé d'hôte d'Imladris, lue sur la VM par le plan de
+# contrôle d'Azure (ton az login, Run Command) — jamais par SSH, qu'elle sert à vérifier : le premier
+# contact. La VM : son id tiré du sous-réseau de l'état de infra/glorfindel-host (le même abonnement,
+# jamais le contexte courant de la CLI), vm-glorfindel (main.tf) ; IMLADRIS_VM_ID= pour la forcer. Une
+# fois par VM (reconstruite : une autre clé, relire, poser, retirer HOST_KNOWN_HOSTS).
+HOST_VM_ID     = $(or $(IMLADRIS_VM_ID),$(shell $(HOST_TF) output -no-color -raw subnet_id 2>/dev/null | sed -n -E 's#^(/subscriptions/[^/]+/resourceGroups/[^/]+)/providers/Microsoft\.Network/virtualNetworks/[^/]+/subnets/[^/]+$$#\1/providers/Microsoft.Compute/virtualMachines/vm-glorfindel#p'))
+FINGERPRINT_OF = out=$$(az vm run-command invoke --ids "$(1)" --command-id RunShellScript \
+		   --scripts 'ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub' --query 'value[0].message' -o tsv) || exit 1; \
+		 fp=$$(printf '%s\n' "$$out" | sed -n -E 's/^256 (SHA256:[A-Za-z0-9+\/]{43}) .*\(ED25519\)$$/\1/p' | head -1); \
+		 test -n "$$fp" || { echo "✗ pas d'empreinte ED25519 dans la réponse de la VM : rien à poser" >&2; exit 1; }; \
+		 echo "export $(2)=$$fp"
+imladris-fingerprint:
+	@test -n "$(HOST_VM_ID)" || { echo "✗ Pas d'Imladris ici (l'état de infra/glorfindel-host ne se lit pas : make imladris-init), ou IMLADRIS_VM_ID=" >&2; exit 1; }
+	@$(call FINGERPRINT_OF,$(HOST_VM_ID),HOST_SSH_FINGERPRINT)
 
 # host.env → ~/eregion/.env (lu par docker compose), et la config locale : le défaut forcé à
 # human_only, le mode de chaque VM gardé tel qu'il est sur Imladris (BL1c, décision de Jonathan du 02/11 ;
@@ -1094,10 +1116,14 @@ imladris-client-rules: imladris-known
 	 rc=$$?; rm -rf $$d; exit $$rc
 
 # M-3 (#183) : une référence nommée, jamais une branche — REF=<tag ou commit>, exigée (SEC14,
-# V-22 : ce chemin construit sur Imladris, hors de la vérification de CI3 — le chemin de secours ; il ne
-# construit que ce que l'opérateur nomme, jamais « le dernier tag »). Le CD d'Imladris ne construit
-# jamais : il tire l'image publiée, vérifiée. Checkout détaché, image étiquetée avec la référence
-# (deploy.sh, envoyé par ssh : celui du poste, quelle que soit la référence déployée).
+# V-22 : ce chemin construit sur Imladris — le chemin de secours ; il ne construit que ce que
+# l'opérateur nomme, jamais « le dernier tag »). Le CD d'Imladris ne construit jamais : il tire l'image
+# publiée, vérifiée. SEC-C (audit du 06/11, V-29) : vérifiée ici aussi, sur le poste, avant que rien ne
+# parte — le commit de REF sur origin/main, la signature et la provenance de l'image que la CI a publiée
+# pour lui (published_image.py proven, cosign épinglé : comme le CD). Une référence sans image publiée
+# vérifiée est refusée, sans geste pour passer outre. Puis deploy.sh reçoit REF et ce commit, jamais un
+# nom à résoudre seul : la VM refuse si REF y désigne un autre commit. Checkout détaché, image étiquetée
+# avec la référence (deploy.sh, envoyé par ssh : celui du poste, quelle que soit la référence déployée).
 # REF se donne sur la ligne de commande : une variable REF de l'environnement (un nom
 # générique, posé pour autre chose) est refusée, jamais déployée en silence. Le shell la lit
 # dans son environnement (EREGION_DEPLOY_REF), jamais recopiée dans la commande avant d'être
@@ -1111,7 +1137,13 @@ imladris-start: imladris-known
 	@case "$(origin REF)" in environment*) echo "REF vient de l'environnement (« $$EREGION_DEPLOY_REF ») : rien n'est déployé. La donner sur la ligne de commande : make imladris-start REF=<tag ou commit>." >&2; exit 1;; esac
 	@test -n "$$EREGION_DEPLOY_REF" || { echo "REF exigée : make imladris-start REF=<tag ou commit> — ce chemin construit sur Imladris, il ne prend jamais « le dernier tag » (le CD déploie la release publiée, vérifiée). Rien n'est déployé." >&2; exit 1; }
 	@case "$$EREGION_DEPLOY_REF" in -*|*[!A-Za-z0-9._-]*) echo "REF invalide : « $$EREGION_DEPLOY_REF » (un tag ou un commit)" >&2; exit 1;; esac
-	@$(HOST_SSH) 'test -f .eregion-host-ready && mkdir -p .eregion/analysis .eregion/console/requests && cd eregion && bash -s -- '"$$EREGION_DEPLOY_REF" < infra/glorfindel-host/deploy.sh
+	@python3 scripts/published_image.py install-cosign
+	@out=$$(python3 scripts/published_image.py proven glorfindel --ref "$$EREGION_DEPLOY_REF" --fetch) \
+	   || { echo "✗ l'image publiée de « $$EREGION_DEPLOY_REF » n'est pas vérifiée (ci-dessus) : rien n'est envoyé à Imladris" >&2; exit 1; }; \
+	 commit=$$(printf '%s\n' "$$out" | sed -n 's/^commit=//p'); \
+	 case "$$commit" in *[!0-9a-f]*|'') echo "✗ commit vérifié illisible : rien n'est envoyé à Imladris" >&2; exit 1;; esac; \
+	 [ $${#commit} -eq 40 ] || { echo "✗ commit vérifié illisible : rien n'est envoyé à Imladris" >&2; exit 1; }; \
+	 $(HOST_SSH) 'test -f .eregion-host-ready && mkdir -p .eregion/analysis .eregion/console/requests && cd eregion && bash -s -- '"$$EREGION_DEPLOY_REF $$commit" < infra/glorfindel-host/deploy.sh
 	@echo ""
 	@echo "  ⚠ Arrête le Glorfindel local (make glorfindel-stop) : deux watch sur le même banc = cartes en double ;"
 	@echo "    et aucun autre bot avec le même DISCORD_BOT_TOKEN."
@@ -1367,11 +1399,7 @@ imladris-queue-keys: imladris-known
 # une autre clé, relire, poser, retirer ORO_KNOWN_HOSTS) ; à poser dans ton environnement.
 orodruin-fingerprint:
 	@test -n "$(ORO_VM_ID)" || { echo "✗ Pas d'Orodruin (vm_id) : make orodruin-up, ou VM_ID=" >&2; exit 1; }
-	@out=$$(az vm run-command invoke --ids "$(ORO_VM_ID)" --command-id RunShellScript \
-	   --scripts 'ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub' --query 'value[0].message' -o tsv) || exit 1; \
-	 fp=$$(printf '%s\n' "$$out" | sed -n -E 's/^256 (SHA256:[A-Za-z0-9+\/]{43}) .*\(ED25519\)$$/\1/p' | head -1); \
-	 test -n "$$fp" || { echo "✗ pas d'empreinte ED25519 dans la réponse de la VM : rien à poser" >&2; exit 1; }; \
-	 echo "export ORO_SSH_FINGERPRINT=$$fp"
+	@$(call FINGERPRINT_OF,$(ORO_VM_ID),ORO_SSH_FINGERPRINT)
 
 # SEC7 (relecture de SEC5) : sans l'état de glorfindel-host lisible sur ce poste, l'identité et le
 # sous-réseau d'Imladris seraient vides, et le plan retirerait la lecture du canal par la watch et
@@ -1425,6 +1453,12 @@ orodruin-lock: orodruin-init orodruin-watch-guard
 # (« commit digest ») qu'au succès. REF se donne sur la ligne de commande, comme pour
 # imladris-start. UID 1000 = l'utilisateur de la VM. L'archive : un répertoire temporaire de
 # ce poste (TMPDIR ; ~630 Mo), retiré à la fin.
+# SEC-C (audit du 06/11, V-24) : jamais une release plus ancienne que la plus haute déjà poussée et vérifiée
+# — le plancher : l'image en service sur Orodruin (~/.eregion-image, lue d'abord, comme OI3 la lit) et la
+# mémoire de ce poste (~/.eregion/orodruin_floor.json, relevée à chaque poussée réussie, jamais baissée),
+# qui tient encore quand Orodruin a été reconstruit. Le retour arrière se demande : ROLLBACK=1, avec REF,
+# sur la ligne de commande — dit dans la sortie. Sans REF : la plus haute release dont l'image publiée est
+# vérifiée, jamais un tag local cru sur son nom. L'image en service illisible (docker, ssh) : rien ne part.
 # OI2 (#490) : relue, elle démarre une fois avant son tag — un run de contrôle qui ne lance que true,
 # sans réseau, sans tirer, sans rien de l'hôte (ni montage, ni orodruin.env), durci comme les
 # injecteurs (ORO_HARDEN), borné (ORO_CHECK_TIMEOUT secondes, KILL 10 s après). Au magasin
@@ -1437,6 +1471,11 @@ ORO_CHECK_TIMEOUT := 120
 # chiffres), jamais développé par make ($(value …), unexport — comme REF) : « $(…) » n'y est pas exécuté.
 unexport ORO_CHECK_TIMEOUT
 ORO_CHECK_RUN  =timeout -k 10 '"$$EREGION_CHECK_TIMEOUT"' docker run --rm $(ORO_HARDEN) --pull never --network none --no-healthcheck --name $(ORO_CHECK_NAME) --entrypoint true $(ORO_INCOMING)
+unexport ROLLBACK
+ORO_ROLLBACK_OK = case "$(origin ROLLBACK)" in environment*) echo "ROLLBACK vient de l'environnement : rien n'est fait. Sur la ligne de commande : make $@ REF=<tag> ROLLBACK=1" >&2; exit 1;; esac; \
+	case "$$EREGION_ROLLBACK" in ''|1) ;; *) echo "ROLLBACK invalide : « $$EREGION_ROLLBACK » (ROLLBACK=1, ou rien)" >&2; exit 1;; esac; \
+	[ -z "$$EREGION_ROLLBACK" ] || [ -n "$$EREGION_DEPLOY_REF" ] || { echo "ROLLBACK=1 demande REF=<la release visée> : rien n'est fait" >&2; exit 1; }
+orodruin-push orodruin-update orodruin-start: export EREGION_ROLLBACK = $(value ROLLBACK)
 orodruin-push: export EREGION_DEPLOY_REF = $(value REF)
 orodruin-push: export EREGION_CHECK_TIMEOUT = $(value ORO_CHECK_TIMEOUT)
 orodruin-push: orodruin-known
@@ -1444,10 +1483,13 @@ orodruin-push: orodruin-known
 	@case "$(origin REF)" in environment*) echo "REF vient de l'environnement (« $$EREGION_DEPLOY_REF ») : rien n'est envoyé. La donner sur la ligne de commande : make orodruin-push REF=<tag ou commit> (REF= : le dernier tag v*)." >&2; exit 1;; esac
 	@case "$$EREGION_DEPLOY_REF" in -*|*[!A-Za-z0-9._-]*) echo "REF invalide : « $$EREGION_DEPLOY_REF » (un tag ou un commit)" >&2; exit 1;; esac
 	@case "$$EREGION_CHECK_TIMEOUT" in ''|0*|*[!0-9]*) echo "ORO_CHECK_TIMEOUT invalide : « $$EREGION_CHECK_TIMEOUT » (des secondes, au moins 1)" >&2; exit 1;; esac
+	@$(ORO_ROLLBACK_OK)
 	@git fetch -q --tags origin
 	@python3 scripts/published_image.py install-cosign
 	@tmp=$$(mktemp -d) || exit 1; trap 'rm -rf "$$tmp"' EXIT; trap 'rm -rf "$$tmp"; exit 130' INT TERM HUP; \
-	 out=$$(python3 scripts/published_image.py archive annatar --ref "$$EREGION_DEPLOY_REF" --tag $(ORO_INCOMING) --out "$$tmp") \
+	 { rc=0; $(ORO_SSH) $(ORO_IMAGE_READ) 2>/dev/null || rc=$$?; echo $$rc > "$$tmp/rc"; } | head -c $(ORO_READ_MAX) > "$$tmp/read"; $(ORO_AGE_ARGS); \
+	 [ $$# -gt 0 ] || { echo "✗ l'image en service ne se lit pas (docker ou ssh, code $$rc) : son plancher non plus, rien n'est envoyé" >&2; exit 1; }; \
+	 out=$$(python3 scripts/published_image.py archive annatar --ref "$$EREGION_DEPLOY_REF" --tag $(ORO_INCOMING) --out "$$tmp" "$$@" $${EREGION_ROLLBACK:+--rollback}) \
 	   || { echo "✗ rien n'est envoyé : eregion-annatar:orodruin n'a pas changé" >&2; exit 1; }; \
 	 echo "$$out"; digest=$$(echo "$$out" | sed -n 's/^digest=//p'); commit=$$(echo "$$out" | sed -n 's/^commit=//p'); \
 	 $(ORO_SSH) 'rm -f .eregion-image' || exit 1; \
@@ -1466,6 +1508,9 @@ orodruin-push: orodruin-known
 	   && echo "$$commit $$digest" | $(ORO_SSH) 'cat > .eregion-image' \
 	   || { $(ORO_SSH) 'docker image rm $(ORO_INCOMING) >/dev/null 2>&1'; \
 	        echo "✗ l'image vérifiée n'a pas fini son arrivée (son tag, ou ~/.eregion-image) : ~/.eregion-image reste absent" >&2; exit 1; }; \
+	   ref=$$(echo "$$out" | sed -n 's/^ref=//p'); \
+	   python3 scripts/published_image.py raise-floor annatar --ref "$$ref" --commit "$$commit" \
+	     || echo "  ⚠ le plancher de ce poste n'a pas été relevé (ci-dessus) : l'image est en place" >&2; \
 	 else $(ORO_SSH) 'docker image rm $(ORO_INCOMING) >/dev/null 2>&1'; \
 	   echo "✗ l'image arrivée sur Orodruin n'est pas celle vérifiée : retirée, eregion-annatar:orodruin n'a pas changé" >&2; \
 	   exit 1; fi
@@ -1506,6 +1551,7 @@ ORO_SUBMAKE    = $(MAKE) --no-print-directory
 # pas d'être armé, et le code de sortie reste celui du contrat.
 orodruin-check: orodruin-known
 	@timeout 30 git fetch -q --tags origin 2>/dev/null || echo "  ⚠ git fetch impossible : la dernière release est celle que ce poste connaît" >&2
+	@python3 scripts/published_image.py install-cosign >/dev/null || echo "  ⚠ cosign absent : la dernière release vérifiée ne se lit pas" >&2
 	@tmp=$$(mktemp -d) || exit 0; trap 'rm -rf "$$tmp"' EXIT; \
 	 { rc=0; $(ORO_SSH) $(ORO_IMAGE_READ) 2>/dev/null || rc=$$?; echo $$rc > "$$tmp/rc"; } | head -c $(ORO_READ_MAX) > "$$tmp/read"; $(ORO_AGE_ARGS); \
 	 [ $$# -gt 0 ] || { echo "  ⚠ l'image en service ne se lit pas (docker ou ssh, code $$rc)" >&2; exit 0; }; \
@@ -1527,6 +1573,8 @@ orodruin-check: orodruin-known
 # ssh d'Imladris et d'Orodruin passent par l'environnement du script, jamais affichées ; TARGET, RUN, OUT et
 # POINT_MAX_H aussi, jamais développés par make ($(value …), unexport — comme REF), vérifiés par le
 # script. Le contrat d'Orodruin y est lu sans être publié (check() dans son conteneur durci, sans montage).
+# SEC-C (audit du 06/11, V-26) : la clé d'hôte d'Imladris vérifiée d'abord (imladris-known) — sans
+# HOST_SSH_FINGERPRINT, rien ne part, et known_host.sh dit comment la lire.
 unexport TARGET RUN OUT POINT_MAX_H
 bench-preflight bench-report: export BENCH_H0_SSH = $(HOST_SSH)
 bench-preflight bench-report: export BENCH_TARGET = $(value TARGET)
@@ -1535,10 +1583,10 @@ bench-preflight: export BENCH_ORO_RUN = docker run --rm $(ORO_HARDEN) --env-file
 bench-preflight: export BENCH_POINT_MAX_H = $(value POINT_MAX_H)
 bench-report: export BENCH_RUN = $(value RUN)
 bench-report: export BENCH_OUT = $(value OUT)
-bench-preflight:
+bench-preflight: imladris-known
 	@$(PYTHON) scripts/bench_preflight.py
 
-bench-report:
+bench-report: imladris-known
 	@$(PYTHON) scripts/bench_report.py
 
 # MOB1 (#686) : piloter le banc depuis le téléphone — l'opérateur tape toujours la commande sur son
@@ -1558,8 +1606,9 @@ bench-report:
 # bench-run et bench-restore ne développent avant lui que $(origin …) et $(PYTHON) : le garde tourne seul,
 # puis une sous-make lance la cible -go. Les cibles -go sont internes : appelées directement, make y
 # développe d'abord leurs export — HOST_IP et ORO_IP, lus par terraform output dans l'état local d'Imladris et
-# d'Orodruin, rien d'autre — puis refont le contrôle d'origine, puis le script refait le garde avant tout
-# ssh, az ou scp. TARGET, SCENARIO, BEFORE, RUN, POINT_MAX_H : sur la ligne de commande, jamais de
+# d'Orodruin, rien d'autre — puis refont le contrôle d'origine et le garde, puis vérifient la clé d'hôte
+# d'Imladris (HOST_KNOWN_CHECK, SEC-C : sans HOST_SSH_FINGERPRINT, rien ne part), puis le script refait
+# le garde avant tout ssh, az ou scp. TARGET, SCENARIO, BEFORE, RUN, POINT_MAX_H : sur la ligne de commande, jamais de
 # l'environnement (dans la sous-make, ils restent « command line »), jamais développés par make,
 # vérifiés par le script.
 unexport SCENARIO BEFORE
@@ -1587,11 +1636,14 @@ bench-restore-go: export BENCH_RUN = $(value RUN)
 bench-run-go:
 	@$(MOB1_ORIGIN)
 	@$(CONSOLE_GUARD) bench-run
+	@$(HOST_KNOWN_CHECK)
 	@t=""; if [ -f $(HOST_ENV) ]; then t="$(CONSOLE_TOKEN)"; fi; \
 	 BENCH_CONSOLE_TOKEN="$$t" $(PYTHON) scripts/bench_run.py
 
 bench-restore-go:
 	@$(MOB1_ORIGIN)
+	@$(PYTHON) scripts/$(subst -,_,$(@:-go=)).py --guard-only
+	@$(HOST_KNOWN_CHECK)
 	@$(PYTHON) scripts/$(subst -,_,$(@:-go=)).py
 
 # MOB1 : le poste, ouvert au téléphone, en lecture seule (scripts/mobile.py check) — le serveur SSH de WSL
@@ -1664,6 +1716,7 @@ orodruin-start:
 	@case "$(origin REF) $(origin NO_UPDATE)" in *environment*) echo "REF ou NO_UPDATE vient de l'environnement : rien n'est démarré. Sur la ligne de commande : make orodruin-start [NO_UPDATE=1] [REF=<tag ou commit>]" >&2; exit 1;; esac
 	@case "$$EREGION_DEPLOY_REF" in -*|*[!A-Za-z0-9._-]*) echo "REF invalide : « $$EREGION_DEPLOY_REF » (un tag ou un commit) : rien n'est démarré" >&2; exit 1;; esac
 	@case "$$EREGION_NO_UPDATE" in ''|1) ;; *) echo "NO_UPDATE invalide : « $$EREGION_NO_UPDATE » (NO_UPDATE=1, ou rien) : rien n'est démarré" >&2; exit 1;; esac
+	@$(ORO_ROLLBACK_OK)
 	@[ "$$EREGION_NO_UPDATE" = 1 ] || case "$$EREGION_ORO_FINGERPRINT" in SHA256:*[!A-Za-z0-9+/=]*|SHA256:) echo "ORO_SSH_FINGERPRINT illisible : rien n'est démarré (make orodruin-fingerprint)" >&2; exit 1;; SHA256:*) ;; *) echo "ORO_SSH_FINGERPRINT requis pour la mise à jour (la clé d'hôte d'Orodruin, make orodruin-fingerprint) : rien n'est démarré. Ou NO_UPDATE=1" >&2; exit 1;; esac
 	@case "$$EREGION_CHECK_TIMEOUT" in 0*|*[!0-9]*|'') echo "ORO_CHECK_TIMEOUT invalide : « $$EREGION_CHECK_TIMEOUT » (des secondes, au moins 1) : rien n'est démarré" >&2; exit 1;; esac
 	@echo "az vm start (vm-orodruin)" && az vm start --ids "$(ORO_VM_ID)"
@@ -1672,22 +1725,30 @@ orodruin-start:
 	   [ $$i -lt 12 ] || { echo "✗ Orodruin ne répond pas en SSH (2 min) : rien n'est mis à jour, rien n'est armé. La VM reste démarrée : make orodruin-update quand elle répond, make orodruin-stop pour l'éteindre" >&2; exit 1; }; sleep 5; done; \
 	 $(ORO_SUBMAKE) orodruin-update || { echo "✗ La VM reste démarrée : make orodruin-stop pour l'éteindre, make orodruin-start NO_UPDATE=1 pour démarrer sans mise à jour" >&2; exit 1; }
 
+# SEC-C : ROLLBACK=1 (avec REF) passe aux sous-make (make transmet ce qui est donné sur la ligne de
+# commande) : une image en service plus récente que REF est alors remplacée, dit ; sans lui, gardée.
 orodruin-update: export EREGION_DEPLOY_REF = $(value REF)
 orodruin-update: orodruin-known
 	@case "$(origin REF)" in environment*) echo "REF vient de l'environnement (« $$EREGION_DEPLOY_REF ») : rien n'est mis à jour. La donner sur la ligne de commande : make orodruin-update REF=<tag ou commit> (REF= : la dernière release)." >&2; exit 1;; esac
 	@case "$$EREGION_DEPLOY_REF" in -*|*[!A-Za-z0-9._-]*) echo "REF invalide : « $$EREGION_DEPLOY_REF » (un tag ou un commit)" >&2; exit 1;; esac
+	@$(ORO_ROLLBACK_OK)
 	@git fetch -q --tags origin || { echo "✗ git fetch : la dernière release ne se relit pas ; rien n'est mis à jour, rien n'est armé" >&2; exit 1; }
+	@python3 scripts/published_image.py install-cosign >/dev/null || { echo "✗ cosign : la dernière release vérifiée ne se lit pas ; rien n'est mis à jour, rien n'est armé" >&2; exit 1; }
 	@tmp=$$(mktemp -d) || exit 1; trap 'rm -rf "$$tmp"' EXIT; trap 'rm -rf "$$tmp"; exit 130' INT TERM HUP; \
 	 { rc=0; $(ORO_SSH) $(ORO_IMAGE_READ) || rc=$$?; echo $$rc > "$$tmp/rc"; } | head -c $(ORO_READ_MAX) > "$$tmp/read"; $(ORO_AGE_ARGS); \
 	 [ $$# -gt 0 ] || { case $$rc in 5) why="docker ne répond pas sur Orodruin";; *) why="ssh, code $$rc";; esac; \
 	   echo "✗ l'image en service ne se lit pas ($$why) : rien n'est mis à jour, rien n'est armé" >&2; exit 1; }; \
-	 out=$$(python3 scripts/published_image.py age annatar --ref "$$EREGION_DEPLOY_REF" "$$@") \
+	 out=$$(python3 scripts/published_image.py age annatar --ref "$$EREGION_DEPLOY_REF" "$$@" $${EREGION_ROLLBACK:+--rollback}) \
 	   || { echo "✗ l'image en service ne se compare pas à la release (ci-dessus) : rien n'est mis à jour, rien n'est armé" >&2; exit 1; }; \
 	 $(ORO_AGE_STATE); \
 	 case "$$release" in ''|-*|*[!A-Za-z0-9._-]*) echo "✗ release illisible : rien n'est mis à jour, rien n'est armé" >&2; exit 1;; esac; \
 	 case "$$state" in \
 	   equal) ;; \
-	   newer|dev|diverged) echo "  Gardée : elle n'est jamais remplacée sans qu'on le demande. Pour revenir à la release : make orodruin-push REF=$$release";; \
+	   newer) if [ "$$EREGION_ROLLBACK" = 1 ]; then echo "↩ Retour arrière demandé (ROLLBACK=1) : make orodruin-push REF=$$release ROLLBACK=1"; \
+	       $(ORO_SUBMAKE) orodruin-push REF="$$release" || { echo "✗ Le retour arrière a échoué (la cause ci-dessus) : rien n'est armé" >&2; exit 1; }; \
+	       echo "✓ Orodruin revenu à $$release. make orodruin-check : le contrat"; \
+	     else echo "  Gardée : elle n'est jamais remplacée sans qu'on le demande. Pour revenir à la release : make orodruin-push REF=$$release ROLLBACK=1"; fi;; \
+	   dev|diverged) echo "  Gardée : elle n'est jamais remplacée sans qu'on le demande. Pour revenir à la release : make orodruin-push REF=$$release";; \
 	   older|absent|unreadable) echo "→ Mise à jour vérifiée : make orodruin-push REF=$$release (digest, signature, provenance, archive des blobs, relecture, run de contrôle, tag)"; \
 	     $(ORO_SUBMAKE) orodruin-push REF="$$release" || { echo "✗ La mise à jour a échoué (la cause ci-dessus) : rien n'est armé" >&2; exit 1; }; \
 	     echo "✓ Orodruin à jour : $$release. make orodruin-check : le contrat";; \

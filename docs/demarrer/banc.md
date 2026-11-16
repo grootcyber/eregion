@@ -114,7 +114,7 @@ La VM seule, pour l'instant. Glorfindel y démarre à l'étape 5, une fois les c
 - **Orodruin lit l'état d'Imladris** : son identité et son sous-réseau, pour lui ouvrir le canal. `orodruin-plan`, `-up` et `-lock` refusent sans cet état (`orodruin-watch-guard`), sauf `NO_WATCH=1` (sans Imladris : [la watch de ton poste](#sans-imladris--la-watch-de-ton-poste)).
 - **Imladris a besoin des canaux d'Orodruin** dans son `host.env`.
 
-Facultatif, recommandé : l'empreinte de sa clé d'hôte dans `.envrc` (`HOST_SSH_FINGERPRINT`, relevée sur la VM : [`infra/glorfindel-host/README.md`](../../infra/glorfindel-host/README.md), « SSH »). Sans elle, chaque commande vers Imladris dit qu'elle accepte la première clé vue.
+Exigée (SEC-C) : l'empreinte de sa clé d'hôte dans `.envrc` (`HOST_SSH_FINGERPRINT`, lue sur la VM par Azure : `make imladris-fingerprint`, qui affiche sa ligne `export` ; [`infra/glorfindel-host/README.md`](../../infra/glorfindel-host/README.md), « SSH »). Sans elle, aucune commande ne part vers Imladris, `make bench-*` compris : jamais la première clé vue.
 
 ## 4. Orodruin
 

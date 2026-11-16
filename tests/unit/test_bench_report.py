@@ -270,7 +270,10 @@ def test_the_target_composes_the_command_without_expanding_it(tmp_path):
                           f"RUN=$(touch {tmp_path}/never)", "TARGET=vm-celebrimbor-gondolin", "OUT=x.json"],
                          capture_output=True, text=True, timeout=60, env=env)
     assert res.returncode == 0, res.stderr
-    assert res.stdout.strip() == ".venv/bin/python scripts/bench_report.py"
+    # SEC-C: Imladris's host key checked first (imladris-known), then the script, its command composed alone.
+    check, script = res.stdout.strip().splitlines()
+    assert "infra/glorfindel-host/known_host.sh" in check and check.endswith(" HOST_SSH_FINGERPRINT required")
+    assert script == ".venv/bin/python scripts/bench_report.py"
     assert not (tmp_path / "never").exists()
 
 

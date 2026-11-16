@@ -577,8 +577,10 @@ def _safe(check, ctx: Context) -> list:
 
 
 H0_UNPINNED = "Imladris : sa clé d'hôte n'est pas vérifiée par son empreinte (HOST_SSH_FINGERPRINT) : rien n'est envoyé"
-# What reaches Imladris by ssh: none of it without its host key verified (the make targets included: they
-# would connect in accept-new).
+# What reaches Imladris by ssh: none of it without its host key verified (the make targets included). Through
+# make, `bench-preflight` waits on `imladris-known` (SEC-C): without HOST_SSH_FINGERPRINT it does not start,
+# and the options are always pinned. This check stays for the script run by hand with options of its own,
+# as in bench_shared.read_h0, bench_run and bench_snapshot.
 H0_CHECKS = ("check_h0", "check_cd", "check_target_on_h0")
 
 

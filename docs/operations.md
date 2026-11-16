@@ -91,6 +91,12 @@ make components-check [COMPONENT=annatar]    # chaque composant tourne seul : se
 
 # Glorfindel hébergé (Imladris) — infra/glorfindel-host/README.md ; ses commandes : make imladris-* (IML1b,
 # les anciens noms glorfindel-host-* et mobile-* restent des alias muets jusqu'à IML2)
+make imladris-fingerprint                    # SEC-C : l'empreinte de sa clé d'hôte, lue sur la VM par Azure (Run Command,
+                                             # ton az login), jamais par SSH ; la ligne export HOST_SSH_FINGERPRINT=… à
+                                             # poser dans .envrc — exigée : sans elle, aucune commande ne part vers Imladris
+make imladris-start REF=<tag|commit>         # le chemin de secours : REF vérifiée sur le poste (son commit sur origin/main,
+                                             # la signature et la provenance de son image publiée), puis construite sur la VM
+                                             # à ce commit seul (SEC-C) ; une référence sans image publiée vérifiée : refusée
 make imladris-url                            # l'URL de la console d'Imladris ; le jeton de host.env :
                                              # EREGION_CONSOLE_TOKEN s'il n'est pas vide, sinon GLORFINDEL_WARROOM_TOKEN
                                              # (l'ancien nom reste valide, rien à renommer) ; le tunnel du poste
@@ -549,7 +555,8 @@ EREGION_DISCORD_MENTION=...                 # id de l'utilisateur que mentionnen
                                     # sur le poste : ~/.config/eregion/discord.env (600) si l'environnement ne les a pas
 GLORFINDEL_AZURE_CLIENT_ID=…        # V-17 : le principal de la watch (et …_SECRET) ; EREGION_CONSOLE_AZURE_CLIENT_* la console,
                                     # GLORFINDEL_BOT_AZURE_CLIENT_* le bot ; vides : aucun principal de service (l'identité managée de la VM s'il y en a une), jamais AZURE_CLIENT_* (SEC11)
-HOST_SSH_FINGERPRINT=SHA256:…       # V-32 : l'empreinte de la clé d'hôte d'Imladris, relevée sur la VM ; sans elle, accept-new et c'est dit
+HOST_SSH_FINGERPRINT=SHA256:…       # V-32 : l'empreinte de la clé d'hôte d'Imladris, lue sur la VM par Azure (make imladris-fingerprint) ;
+                                    # exigée (SEC-C) : sans elle, aucune commande ne part vers Imladris, jamais accept-new
                                     # (infra/glorfindel-host/README.md, « SSH ») ; HOST_KNOWN_HOSTS : son fichier (~/.eregion/h0_known_hosts)
 ORO_SSH_FINGERPRINT=SHA256:…        # V-32 (SEC14) : celle d'Orodruin, lue sur la VM par Azure (make orodruin-fingerprint) ; exigée par
                                     # toute commande vers Orodruin, jamais accept-new ; ORO_KNOWN_HOSTS : ~/.eregion/orodruin_known_hosts
@@ -728,7 +735,8 @@ vrai `~/.glorfindel` du poste (`vm_notices.jsonl` et son verrou, un verrou de jo
     `orodruin-known` (`~/.eregion/h0_known_hosts`, `~/.eregion/orodruin_known_hosts`, par
     `infra/glorfindel-host/known_host.sh`) ; `team-init` (`~/.eregion/teams/<équipe>/`). La liste
     vaut exemples : toute recette qui écrit sous `$(HOME)/.eregion` en est ;
-  - **`scripts/published_image.py`** (le binaire de cosign, `~/.eregion/cosign/`), un script autonome
+  - **`scripts/published_image.py`** (le binaire de cosign, `~/.eregion/cosign/` ; le plancher d'Orodruin,
+    `~/.eregion/orodruin_floor.json`, SEC-C), un script autonome
     qui n'importe aucun module du dépôt ;
   - **`scripts/mobile.py`**, qui écrit lui-même sous `~/.eregion/console-tunnel/` le `known_hosts`
     épinglé et l'échéance du tunnel (`_write` : `os.open`, `os.chmod`, `os.replace`) et y retire des
@@ -2946,8 +2954,9 @@ gh attestation verify oci://ghcr.io/grootcyber/eregion-glorfindel@sha256:<digest
 
 **Imladris** tire l'image de chaque release par son digest et la vérifie avant de la préflighter : son CD
 ne construit plus (`infra/glorfindel-host/README.md`, « Le CD d'Imladris »). **Orodruin** reçoit l'image
-d'Annatar publiée, vérifiée sur le poste : `make orodruin-push [REF=<tag|commit>]` (sans `REF`, le
-dernier tag `v*` : tant qu'il est d'avant CI3, il n'a pas d'image, et d'avant REN1, il est signé par l'ancien nom du dépôt ; donner `REF=`), sa sortie restant fermée (`docs/design/orodruin-contract.md`, « L'image des
+d'Annatar publiée, vérifiée sur le poste : `make orodruin-push [REF=<tag|commit>] [ROLLBACK=1]` (sans `REF`,
+la plus haute release dont l'image publiée est vérifiée, SEC-C ; jamais sous le plancher : plus bas, « Le
+plancher d'Orodruin »), sa sortie restant fermée (`docs/design/orodruin-contract.md`, « L'image des
 injecteurs »). **Depuis OI1 (#488)**, le docker du poste n'y prend plus part : l'archive est construite
 à partir des blobs du registre, sous le digest prouvé (`published_image.py archive`, chaque blob
 vérifié par son sha256 et sa taille avant d'y entrer ; ~630 Mo dans un répertoire temporaire, `TMPDIR`),
@@ -2992,6 +3001,15 @@ REF=vY » : un avertissement, son code reste celui du contrat. Tests : `tests/un
 (section OI3 : un vrai dépôt git jetable, v0.5.9 et v0.5.10, sur les faux d'OI1 et d'OI2),
 `tests/unit/test_host_ssh.py` (le SSH de la mise à jour) ; mutants M3630–M3639, M3685–M3693
 (`scripts/mutants/OI3.py`).
+
+**Le plancher d'Orodruin (SEC-C, #635 ; audit du 06/11, V-24).** `make orodruin-push` et `make
+orodruin-update` refusent une release plus ancienne que la plus haute déjà poussée et vérifiée — l'image
+en service sur Orodruin (`~/.eregion-image`, lu d'abord) et la mémoire du poste,
+`~/.eregion/orodruin_floor.json` (`EREGION_ORODRUIN_FLOOR` : un autre chemin), relevée à chaque poussée
+réussie, jamais baissée —, sauf `ROLLBACK=1` avec `REF`, sur la ligne de commande, dit dans la sortie.
+Sans `REF`, la plus haute release dont l'image publiée est vérifiée : une plus haute sans image signée est
+écartée et dite. Le détail : `infra/orodruin/README.md`, « Le plancher, le retour arrière ». Tests :
+`tests/unit/test_published_image.py` (section SEC-C) ; mutants M5454–M5460 (`scripts/mutants/SEC-C.py`).
 
 **Après le renommage du compte (REN1, 03/11).** Les images ont suivi le compte : le nouvel espace répond, l'ancien rend 403, sans redirection (mesuré). Celles d'avant (la v0.5.2 et avant) sont signées par l'ancien nom du dépôt, que `published_image.py` ne reconnaît plus : un retour arrière vers elles est refusé, sur Imladris comme sur Orodruin. **Imladris** : l'ordre dans `infra/glorfindel-host/README.md`, « REN1 change l'agent » (`cd-install`, la 0.5.3 publiée, `cd-check`, `cd-enable`). **Orodruin** : `make orodruin-push REF=<sha de la fusion de REN1>`, puis `make orodruin-check` ; sans `REF` (le dernier tag), seulement à partir de la 0.5.3.
 
@@ -4816,9 +4834,10 @@ make bench-report RUN=<run_id> [TARGET=…] [OUT=runs/bench/<run_id>.json]  # l'
   refusée, jamais créée). Sans réseau : ni IMDS, ni jeton, ni cloud. Il ne renvoie ni raisonnement, ni
   signal brut, ni id. Rien ne part tant que la clé d'hôte d'Imladris n'est pas vérifiée par son empreinte
   (`HOST_SSH_FINGERPRINT` : la première option `StrictHostKeyChecking` vaut `yes`, comme ssh la lit,
-  et un `UserKnownHostsFile` est donné) ; de même pour Orodruin. Sans elle, le préflight ne lance pas
-  non plus `make imladris-status` ni `imladris-cd-status`, qui se connecteraient en
-  `accept-new` : une seule ligne ✗ le dit. Le lecteur ne prend que les montages `bind` de la watch. La suite possible :
+  et un `UserKnownHostsFile` est donné) ; de même pour Orodruin. Par make, `HOST_SSH_FINGERPRINT` absente,
+  `bench-preflight` ne part pas du tout (`imladris-known`, SEC-C : le message dit `make imladris-fingerprint`) ;
+  lancé à la main avec d'autres options ssh, le préflight ne lance pas non plus `make imladris-status`
+  ni `imladris-cd-status` : une seule ligne ✗ le dit. Le lecteur ne prend que les montages `bind` de la watch. La suite possible :
   une sous-commande de lecture livrée dans l'image, à la place du script venu du checkout du poste.
 - **`bench-report`** (`scripts/bench_report.py`) : sur Imladris, le rapport du run, ses cycles, les levées,
   l'état d'isolement ; sur Azure, le journal d'activité des seules ressources de la cible, chacune lue

@@ -294,8 +294,11 @@ def test_the_bench_says_what_would_refuse_a_run(repo, home, oro, host, said):
 
 
 def test_the_bench_needs_its_files_and_its_fingerprint(repo, home):
-    names = failed(doctor.run_checks("bench", good_env(ORO_SSH_FINGERPRINT=None), home, repo, probes()))
-    for said in ("ORO_SSH_FINGERPRINT", "orodruin.env absent", "host.env absent", "terraform.tfvars absent"):
+    names = failed(doctor.run_checks("bench", good_env(ORO_SSH_FINGERPRINT=None, HOST_SSH_FINGERPRINT=None),
+                                     home, repo, probes()))
+    # SEC-C: Imladris's fingerprint fails as Orodruin's does — the bench profile holds Imladris.
+    for said in ("ORO_SSH_FINGERPRINT", "HOST_SSH_FINGERPRINT", "orodruin.env absent", "host.env absent",
+                 "terraform.tfvars absent"):
         assert any(said in n for n in names), said
     (repo / "glorfindel-config.yaml").unlink()
     (cfg,) = [c for c in doctor.configuration(repo, "bench") if c.status == doctor.FAIL]

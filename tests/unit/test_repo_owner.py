@@ -6,7 +6,8 @@ is held by an empty organisation, which never gets an `eregion` repository. A fi
 again — a workflow's guard, a script's default, an image's owner, a reviewer — points at what no
 longer answers, or trusts a name that is not the maintainer's any more. Only history keeps it:
 the changelog, the historical notes, the canary's note on the rename, and the default of H0's
-`eregion_repo`, cloned once through custom_data (changing it replaces the VM).
+`eregion_repo`, cloned once through custom_data (changing it replaces the VM) — and since SEC-C, never
+fetched from again: origin is pointed at the current name before every fetch.
 """
 import re
 from pathlib import Path
@@ -53,6 +54,11 @@ def test_the_owner_is_the_new_login_where_it_is_trusted():
     assert f"github.repository == '{NEW}/eregion'" in (ROOT / ".github/workflows/publish.yml").read_text(encoding="utf-8")
     cd = (ROOT / "infra/glorfindel-host/cd/eregion_cd.py").read_text(encoding="utf-8")
     assert f'or "{NEW}/eregion"' in cd
+    # SEC-C (audit of 06/11, V-29): Imladris's checkout fetches from the current name, whatever it was
+    # cloned with — deploy.sh (by hand, and the CD's switch) and the CD point origin there first.
+    assert 'REPO_URL = os.environ.get("EREGION_CD_REPO_URL") or f"https://github.com/{SLUG}.git"' in cd
+    deploy = (ROOT / "infra/glorfindel-host/deploy.sh").read_text(encoding="utf-8")
+    assert f'REPO_URL="${{EREGION_REPO_URL:-https://github.com/{NEW}/eregion.git}}"' in deploy
     owners = re.findall(r"@[\w.-]+", (ROOT / ".github/CODEOWNERS").read_text(encoding="utf-8"))
     assert owners and set(owners) == {f"@{NEW}"}
     for rel in ("docs/sessions.md", ".claude/skills/elrond/SKILL.md"):

@@ -1248,17 +1248,18 @@ MUTANTS = [
      "    _has_alerting = alerting_configured()\n",
      '    _has_alerting = bool(os.environ.get("GLORFINDEL_WEBHOOK_URL") '
      'or os.environ.get("DISCORD_CHANNEL_ID"))\n'),
+    # Re-anchored (SEC-C): the workstation's verification now sits between the check and the ssh.
     ("M524", "REF=--checkout-only reaches deploy.sh as an option (M-3, review)", MAKE,
-     '\t@case "$$EREGION_DEPLOY_REF" in -*|*[!A-Za-z0-9._-]*) echo "REF invalide : « $$EREGION_DEPLOY_REF » (un tag ou un commit)" >&2; exit 1;; esac\n\t@$(HOST_SSH)',
-     '\t@case "$$EREGION_DEPLOY_REF" in *[!A-Za-z0-9._-]*) echo "REF invalide : « $$EREGION_DEPLOY_REF » (un tag ou un commit)" >&2; exit 1;; esac\n\t@$(HOST_SSH)'),
+     '\t@case "$$EREGION_DEPLOY_REF" in -*|*[!A-Za-z0-9._-]*) echo "REF invalide : « $$EREGION_DEPLOY_REF » (un tag ou un commit)" >&2; exit 1;; esac\n\t@python3 scripts/published_image.py install-cosign\n\t@out=$$(python3 scripts/published_image.py proven',
+     '\t@case "$$EREGION_DEPLOY_REF" in *[!A-Za-z0-9._-]*) echo "REF invalide : « $$EREGION_DEPLOY_REF » (un tag ou un commit)" >&2; exit 1;; esac\n\t@python3 scripts/published_image.py install-cosign\n\t@out=$$(python3 scripts/published_image.py proven'),
     ("M525", "a REF exported in the environment is deployed in silence (M-3, review)", MAKE,
      '@case "$(origin REF)" in environment*) echo "REF vient de l\'environnement (« $$EREGION_DEPLOY_REF ») : rien n\'est déployé',
      '@case "$(origin REF)" in nowhere*) echo "REF vient de l\'environnement (« $$EREGION_DEPLOY_REF ») : rien n\'est déployé'),
     ("M526", "make expands a refused REF while exporting it: $(shell …) runs (M-3, review)", MAKE,
      "REF ?=\nunexport REF\n", "REF ?=\n"),
     ("M527", "the ssh line copies REF into the recipe: make expands it before it is checked (M-3, review)",
-     MAKE, """bash -s -- '"$$EREGION_DEPLOY_REF" < infra/glorfindel-host/deploy.sh""",
-     "bash -s -- $(REF)' < infra/glorfindel-host/deploy.sh"),
+     MAKE, """bash -s -- '"$$EREGION_DEPLOY_REF $$commit" < infra/glorfindel-host/deploy.sh""",   # re-anchored (SEC-C)
+     """bash -s -- $(REF) '"$$commit" < infra/glorfindel-host/deploy.sh"""),
     # P1 moved this check: a rules file modified on the VM is refused with what to do (migrate).
     ("M528", "rules the VM approved: refused in git's words, not with what to do (M-3, review; P1)",
      "infra/glorfindel-host/deploy.sh",
@@ -9083,8 +9084,10 @@ TESTS["M2951"] = "tests/unit/test_makefile_exercise.py"
 
 # SEC14 (#420, V-32, V-34): Orodruin's host key pinned, never accept-new; its containers hardened.
 MUTANTS += [
-    ("M2953", "Orodruin without its host key's fingerprint falls back to accept-new (V-32)", MAKE,
-     ' "$(ORO_KNOWN_HOSTS)" ORO_SSH_FINGERPRINT required\n', ' "$(ORO_KNOWN_HOSTS)" ORO_SSH_FINGERPRINT\n'),
+    # Re-anchored (SEC-C): known_host.sh requires the fingerprint whatever its caller says.
+    ("M2953", "Orodruin without its host key's fingerprint lets its command go (V-32)",
+     "infra/glorfindel-host/known_host.sh", 'if [ -z "$want" ]; then\n  case "$var" in\n',
+     'if [ -z "$want" ]; then\n  [ "$var" = HOST_SSH_FINGERPRINT ] || exit 0\n  case "$var" in\n'),
     ("M2954", "an injector's container on Orodruin runs with its root writable and its capabilities (V-34)",
      MAKE, "ORO_RUN        = $(ORO_DIRS) docker run --rm $(ORO_HARDEN) ", "ORO_RUN        = $(ORO_DIRS) docker run --rm "),
 ]
