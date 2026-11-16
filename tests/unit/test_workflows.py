@@ -419,6 +419,26 @@ def test_the_publishing_workflow_is_the_identity_h0_trusts():
     assert 'TRIGGER = "push"' in text and PUBLISH.exists()
 
 
+# SEC-C (audit of 06/11, V-25): the job that builds and signs read images.yml's cache, which main
+# writes, through a BuildKit the action picked. Nothing shared now, BuildKit pinned by its digest.
+BUILDKIT_PIN = re.compile(r"image=moby/buildkit@sha256:[0-9a-f]{64}")
+
+
+def test_sec_c_the_job_that_signs_reads_no_shared_cache_and_pins_its_buildkit():
+    doc = _load(PUBLISH)
+    assert list(doc["jobs"]) == ["publish"]                              # the job that builds is the one that signs
+    steps = doc["jobs"]["publish"]["steps"]
+    for s in steps:
+        assert not {"cache-from", "cache-to"} & set(s.get("with") or {}), s
+    text = PUBLISH.read_text(encoding="utf-8")
+    assert "type=gha" not in text and "cache-from" not in text and "cache-to" not in text
+    buildx = [s for s in steps if str(s.get("uses", "")).startswith("docker/setup-buildx-action@")]
+    assert len(buildx) == 1 and PINNED.match(buildx[0]["uses"])
+    assert BUILDKIT_PIN.fullmatch(str((buildx[0].get("with") or {}).get("driver-opts", "")).strip()), buildx
+    build = next(s for s in steps if str(s.get("uses", "")).startswith("docker/build-push-action"))
+    assert steps.index(buildx[0]) < steps.index(build)
+
+
 @pytest.mark.parametrize("perms, publishes", [
     ({"packages": "write"}, True), ({"id-token": "write"}, True), ({"attestations": "write"}, True),
     ("write-all", True), ({"packages": "read"}, False), ({"contents": "write"}, False), ("read-all", False),
