@@ -4,9 +4,8 @@ import time
 
 from azure.identity import DefaultAzureCredential
 from azure.mgmt.compute import ComputeManagementClient
-from rich.console import Console
 
-console = Console()
+from annatar.console import console, outside
 
 
 class AzureVMExecutor:
@@ -90,7 +89,7 @@ class AzureVMExecutor:
     def _run_shell(self, script_content: str, label: str,
                    params: list[str] | None = None) -> str:
         """The Run Command call itself, shared by run_script and run_command."""
-        console.print(f"  [dim]RunCommand → {self.vm_name} : {label}[/dim]")
+        console.print(f"  [dim]RunCommand → {outside(self.vm_name)} : {outside(label)}[/dim]")
 
         from azure.core.exceptions import HttpResponseError
         from azure.mgmt.compute.models import RunCommandInput, RunCommandInputParameter
@@ -109,7 +108,7 @@ class AzureVMExecutor:
                 )
                 result = poller.result()
                 output = result.value[0].message if result.value else ""
-                console.print(f"  [dim]{output.strip()[-200:]}[/dim]")
+                console.print(f"  [dim]{outside(output.strip()[-200:])}[/dim]")   # what the VM answered
                 return output
             except HttpResponseError as e:
                 if "Conflict" not in str(e) or delay is None:
@@ -182,7 +181,7 @@ class AzureVMExecutor:
             console.print("  [green]Integrity check: PASS[/green]")
         else:
             console.print("  [red]Integrity check: FAIL[/red]")
-            console.print(f"  [dim]{output.strip()}[/dim]")
+            console.print(f"  [dim]{outside(output.strip())}[/dim]")
         return passed
 
     def _get_subscription_id(self) -> str:

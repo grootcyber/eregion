@@ -2,9 +2,8 @@ import contextlib
 import os
 
 import click
-from rich.console import Console
 
-console = Console()
+from annatar.console import console, outside
 
 
 class _AnnatarCli(click.Group):
@@ -25,7 +24,7 @@ class _AnnatarCli(click.Group):
         except Exception as e:  # noqa: BLE001 — deliberate CLI boundary
             if os.environ.get("ANNATAR_DEBUG"):
                 raise
-            console.print(f"[red]✗ {type(e).__name__}: {e}[/red]")
+            console.print(f"[red]✗ {type(e).__name__}: {outside(e)}[/red]")
             msg = str(e)
             if "AZURE_SUBSCRIPTION_ID" in msg or "credential" in msg.lower():
                 console.print(
@@ -80,7 +79,7 @@ def run(scenario: str, dry_run: bool, yes: bool, skip_preflight: bool,
             path = resolved
         else:
             console.print(
-                f"[red]Scenario not found:[/red] '{scenario}'\n"
+                f"[red]Scenario not found:[/red] '{outside(scenario)}'\n"
                 "  Pass a file path or a scenario name from 'annatar list'."
             )
             raise SystemExit(1)
@@ -96,8 +95,7 @@ def run(scenario: str, dry_run: bool, yes: bool, skip_preflight: bool,
         with lock:
             outcome = engine.run(path, skip_confirm=yes)
     except Busy as e:
-        from rich.markup import escape   # the holder's name, never read as markup
-        console.print(f"[red]✗ run refused — busy: {escape(str(e))}[/red]")
+        console.print(f"[red]✗ run refused — busy: {outside(str(e))}[/red]")
         raise SystemExit(EXIT_RUN_FAILED)
     code = run_exit_code(outcome)
     if code:
@@ -151,8 +149,7 @@ def run_exit_code(outcome) -> int:
 
 def _print_run_failure(outcome) -> None:
     """One line, plus a hint when the refusal is a known one (like _AnnatarCli)."""
-    from rich.markup import escape   # the error may quote the scenario file: never markup
-    console.print(f"[red]✗ run {escape(outcome.run_id)}: {escape(outcome.error)}[/red]",
+    console.print(f"[red]✗ run {outside(outcome.run_id)}: {outside(outcome.error)}[/red]",
                   emoji=False)
     hint = next((h for prefix, h in _RUN_HINTS if outcome.error.startswith(prefix)), None)
     if hint:
@@ -188,7 +185,7 @@ def wire(technique: str, target: str, request: str, typed_name: str):
         raise click.UsageError("--request takes a request id (r-<YYYYMMDDTHHMMSSZ>-<6 hex>)")
     entry = load_catalog().get(technique)
     if not entry:
-        console.print(f"[red]✗ {technique}: not a technique of the catalogue — nothing run[/red]")
+        console.print(f"[red]✗ {outside(technique)}: not a technique of the catalogue — nothing run[/red]")
         raise SystemExit(EXIT_RUN_FAILED)
     rg = rg_from_id(target)
     scope = Scope(subscription_id=subscription_from_id(target),
@@ -203,13 +200,12 @@ def wire(technique: str, target: str, request: str, typed_name: str):
             made = synthesize(entry=entry, target_resource_id=target, scope=scope, out_dir=Path(tmp),
                               seq=1, allow_destructive=bool(typed_name))
             if not made.ok:
-                console.print(f"[red]✗ wire refused: {made.reason}[/red]")
+                console.print(f"[red]✗ wire refused: {outside(made.reason)}[/red]")
                 raise SystemExit(EXIT_RUN_FAILED)
             engine = Engine(publish_report=True, request=request, typed_name=typed_name)
             outcome = engine.run(str(made.path), skip_confirm=True)
     except Busy as e:
-        from rich.markup import escape   # the holder's name, never read as markup
-        console.print(f"[red]✗ wire refused — busy: {escape(str(e))}[/red]")
+        console.print(f"[red]✗ wire refused — busy: {outside(str(e))}[/red]")
         raise SystemExit(EXIT_RUN_FAILED)
     code = run_exit_code(outcome)
     if code:
@@ -249,7 +245,6 @@ def validate(scenario: str | None, validate_all: bool):
     """
     import glob
     import os
-    from rich.markup import escape   # a path, a YAML error: said as they are, never markup
     # ... and never an emoji code either: PyYAML copies the faulty line into its error, and
     # Rich would print a `:fire:` of the file as an emoji (emoji=False on what the file says).
     from annatar.runner.parser import (
@@ -272,17 +267,17 @@ def validate(scenario: str | None, validate_all: bool):
             result = parser.validate(f)
             rel = os.path.relpath(f, project_root)
             if result.valid:
-                console.print(f"[green]OK[/green]   {escape(rel)}", emoji=False)
+                console.print(f"[green]OK[/green]   {outside(rel)}", emoji=False)
             else:
                 invalid.append(rel)
-                console.print(f"[red]FAIL[/red] {escape(rel)}", emoji=False)
+                console.print(f"[red]FAIL[/red] {outside(rel)}", emoji=False)
                 for err in result.errors:
-                    console.print(f"     {escape(err)}", emoji=False)
+                    console.print(f"     {outside(err)}", emoji=False)
         summary = f"{len(files)} scenario(s)"
         if invalid:
             console.print(f"\n[red]{len(invalid)} invalid[/red] / {summary}:")
             for rel in invalid:
-                console.print(f"  [red]FAIL[/red] {escape(rel)}", emoji=False)
+                console.print(f"  [red]FAIL[/red] {outside(rel)}", emoji=False)
             raise SystemExit(EXIT_SCENARIO_INVALID)
         console.print(f"\n[green]All {summary} valid[/green]")
         return
@@ -294,16 +289,16 @@ def validate(scenario: str | None, validate_all: bool):
         if resolved:
             path = resolved
         else:
-            console.print(f"[red]Not found:[/red] '{escape(scenario)}'", emoji=False)
+            console.print(f"[red]Not found:[/red] '{outside(scenario)}'", emoji=False)
             raise SystemExit(EXIT_SCENARIO_INVALID)
 
     result = parser.validate(path)
     if result.valid:
-        console.print(f"[green]OK[/green] {escape(path)} is valid", emoji=False)
+        console.print(f"[green]OK[/green] {outside(path)} is valid", emoji=False)
         return
-    console.print(f"[red]FAIL[/red] {escape(path)} is invalid:", emoji=False)
+    console.print(f"[red]FAIL[/red] {outside(path)} is invalid:", emoji=False)
     for err in result.errors:
-        console.print(f"     {escape(err)}", emoji=False)
+        console.print(f"     {outside(err)}", emoji=False)
     raise SystemExit(EXIT_SCENARIO_INVALID)
 
 
@@ -335,8 +330,7 @@ def init(yes: bool, scenario: str | None):
         with request_lock(f"init {os.path.basename(scenario or '')}".strip()):
             InitRunner().run(auto_approve=yes, scenario_path=scenario)
     except Busy as e:
-        from rich.markup import escape   # the holder's name, never read as markup
-        console.print(f"[red]✗ init refused — busy: {escape(str(e))}[/red]")
+        console.print(f"[red]✗ init refused — busy: {outside(str(e))}[/red]")
         raise SystemExit(EXIT_RUN_FAILED)
 
 
@@ -359,8 +353,7 @@ def clean(scenario: str, without_glorfindel: bool):
         with request_lock(f"clean {os.path.basename(scenario)}"):
             InitRunner().clean(scenario, without_glorfindel=without_glorfindel)
     except Busy as e:
-        from rich.markup import escape   # the holder's name, never read as markup
-        console.print(f"[red]✗ clean refused — busy: {escape(str(e))}[/red]")
+        console.print(f"[red]✗ clean refused — busy: {outside(str(e))}[/red]")
         raise SystemExit(EXIT_RUN_FAILED)
 
 
@@ -405,7 +398,7 @@ def campaign_plan(target, objective, max_scenarios, allow_destructive, use_llm, 
     )
     res = guard.check(target, rg)
     if not res.allowed:
-        console.print(f"[red]Target rejected:[/red] {res.reason}")
+        console.print(f"[red]Target rejected:[/red] {outside(res.reason)}")
         raise SystemExit(1)
 
     catalog = load_catalog()
@@ -416,16 +409,16 @@ def campaign_plan(target, objective, max_scenarios, allow_destructive, use_llm, 
         try:
             decl = declared.load(declared_path)
         except ValueError as e:
-            console.print(f"[red]Declared campaign refused:[/red] {e}")
+            console.print(f"[red]Declared campaign refused:[/red] {outside(e)}")
             raise SystemExit(1)
         problems = declared.problems(decl, catalog)
         vm = target.rstrip("/").rsplit("/", 1)[-1].lower()
         if vm not in {t.lower() for t in decl.targets}:
             problems.append(f"target {vm} is not one of the declaration's ({', '.join(decl.targets)})")
         if problems:
-            console.print(f"[red]Declared campaign {decl.id or declared_path} refused:[/red]")
+            console.print(f"[red]Declared campaign {outside(decl.id or declared_path)} refused:[/red]")
             for p in problems:
-                console.print(f"  • {p}")
+                console.print(f"  • {outside(p)}")
             raise SystemExit(1)
         plan = CampaignPlan(objective=objective or f"declared: {decl.id}", techniques=[
             PlannedTechnique(ttp=ttp, tactic=catalog[ttp].get("tactic", ""), name=catalog[ttp].get("name", ""))
@@ -448,7 +441,7 @@ def campaign_plan(target, objective, max_scenarios, allow_destructive, use_llm, 
             out_dir=scen_dir, seq=i, allow_destructive=allow_destructive,
         )
         if not s.ok:
-            console.print(f"[yellow]skip {tech.ttp}: {s.reason}[/yellow]")
+            console.print(f"[yellow]skip {outside(tech.ttp)}: {outside(s.reason)}[/yellow]")
             continue
         entries.append(
             ScenarioEntry(
@@ -476,9 +469,9 @@ def campaign_plan(target, objective, max_scenarios, allow_destructive, use_llm, 
         scenarios=entries,
     )
     manifest.save(cdir)
-    console.print(f"[green]Planned campaign {cid}[/green] — {len(entries)} scenario(s):")
+    console.print(f"[green]Planned campaign {outside(cid)}[/green] — {len(entries)} scenario(s):")
     for e in entries:
-        console.print(f"  [{e.seq}] {e.tactic:22} {e.ttp}  {e.scenario_file}")
+        console.print(f"  [{e.seq}] {outside(e.tactic):22} {outside(e.ttp)}  {outside(e.scenario_file)}")
     # DG-e (#351): the campaign as a drill, author Annatar, beside its manifest — Orodruin never
     # writes the console's drills; the operator brings it to Dagorlad (« Import YAML », decision A
     # of 04/11). Its chain is the scenarios synthesized — a technique the synthesizer left out is
@@ -490,12 +483,12 @@ def campaign_plan(target, objective, max_scenarios, allow_destructive, use_llm, 
              else [(e.ttp, vm) for e in entries])
     _write_campaign_drill(cdir, cid, pairs, manifest.objective)
     console.print(
-        f"\n[dim]Review {cdir}/manifest.json, then:[/dim] "
-        f"annatar campaign run {cid} --yes"
+        f"\n[dim]Review {outside(cdir)}/manifest.json, then:[/dim] "
+        f"annatar campaign run {outside(cid)} --yes"
     )
     if declared_path and decl.faults:
         console.print(f"[dim]Its fault(s), played by Gothmog on the same target(s): "
-                      f"{', '.join(decl.faults)} (gothmog run <id>, docs/banc-bl1.md).[/dim]")
+                      f"{outside(', '.join(decl.faults))} (gothmog run <id>, docs/banc-bl1.md).[/dim]")
 
 
 def _load_manifest(manifest_cls, cdir):
@@ -504,7 +497,7 @@ def _load_manifest(manifest_cls, cdir):
     try:
         return manifest_cls.load(cdir)
     except OSError as exc:
-        console.print(f"[red]Manifest refused:[/red] {cdir / 'manifest.json'} — {exc}; never read")
+        console.print(f"[red]Manifest refused:[/red] {outside(cdir / 'manifest.json')} — {outside(exc)}; never read")
         raise SystemExit(1) from None
 
 
@@ -529,7 +522,7 @@ def campaign_run(campaign_id, yes, dry_run, runs_dir, without_glorfindel, report
 
     cdir = campaign_dir(campaign_id, runs_dir=runs_dir)
     if not (cdir / "manifest.json").exists():
-        console.print(f"[red]Campaign not found:[/red] {campaign_id}")
+        console.print(f"[red]Campaign not found:[/red] {outside(campaign_id)}")
         raise SystemExit(1)
 
     m = _load_manifest(CampaignManifest, cdir)
@@ -553,17 +546,16 @@ def campaign_run(campaign_id, yes, dry_run, runs_dir, without_glorfindel, report
                 m.save(cdir)
             result = CampaignRunner(cdir, dry_run=dry_run, without_glorfindel=without_glorfindel).run()
     except Busy as e:
-        from rich.markup import escape   # the holder's name and the id, never read as markup
-        console.print(f"[red]✗ campaign {escape(campaign_id)} refused — busy: {escape(str(e))}[/red]")
+        console.print(f"[red]✗ campaign {outside(campaign_id)} refused — busy: {outside(str(e))}[/red]")
         raise SystemExit(EXIT_RUN_FAILED)
     except CampaignRefused as e:  # V1: nothing ran, the manifest is as it was
-        console.print(f"[red]✗ {e}[/red]")
+        console.print(f"[red]✗ {outside(e)}[/red]")
         console.print(f"[dim]  → {_CAMPAIGN_HINT}[/dim]")
         raise SystemExit(EXIT_RUN_FAILED)
     if not dry_run:
         r = result.results
         console.print(
-            f"\n[bold]Campaign {result.campaign_id} → {result.state}[/bold]  "
+            f"\n[bold]Campaign {outside(result.campaign_id)} → {outside(result.state)}[/bold]  "
             f"executed={r['executed']} detected={r['detected']} "
             f"missed={r['missed']} skipped={r['skipped']} errors={r['errors']}"
         )
@@ -587,13 +579,12 @@ def _write_campaign_drill(cdir, cid, pairs, objective) -> None:
     manifest as ``<its name>.yaml`` — the name a drill's file bears, mode 600. One the drill's
     reader refuses (more wires than its ceiling…), or that cannot be written, is said, the
     campaign planned all the same."""
-    from rich.markup import escape
 
     from eregion_core import drill, proposal
     try:
         d = proposal.campaign_drill(cid, pairs, objective=objective)
     except drill.DrillRefused as e:
-        console.print(f"[yellow]No drill for this campaign: {escape(str(e))}[/yellow]")
+        console.print(f"[yellow]No drill for this campaign: {outside(str(e))}[/yellow]")
         return
     path, created = cdir / f"{d.name}.yaml", False
     try:
@@ -605,9 +596,9 @@ def _write_campaign_drill(cdir, cid, pairs, objective) -> None:
         if created:               # never a half-written drill left beside it
             with contextlib.suppress(OSError):
                 os.unlink(path)
-        console.print(f"[yellow]The campaign's drill not written: {escape(str(e))}[/yellow]")
+        console.print(f"[yellow]The campaign's drill not written: {outside(str(e))}[/yellow]")
         return
-    console.print(f"Drill {escape(d.name)} ({len(d.wires)} wire(s), author annatar): {escape(str(path))}\n"
+    console.print(f"Drill {outside(d.name)} ({len(d.wires)} wire(s), author annatar): {outside(str(path))}\n"
                   "[dim]  → Dagorlad, DRILLS, « Import YAML »: paste it, check its wires, then « Save as drill » "
                   "keeps it — replayed as any drill, by its request.[/dim]")
 
@@ -634,7 +625,7 @@ def _publish_campaign(cdir, runs_dir, state, without_glorfindel=False) -> bool:
         cid, names = exercise_channel.publish_campaign(cdir, Path(runs_dir))
     except Exception as exc:
         console.print(f"[yellow]Campaign not published to Imladris ({type(exc).__name__}: "
-                      f"{str(exc)[:120]})[/yellow]")
+                      f"{outside(str(exc)[:120])})[/yellow]")
         return False
     try:
         missing = exercise_channel.unpublished_runs(cdir, Path(runs_dir))
@@ -647,18 +638,18 @@ def _publish_campaign(cdir, runs_dir, state, without_glorfindel=False) -> bool:
         # Imladris waits for the report of every executed run: without them, it never writes the
         # campaign's (`--runs-dir` other than runs/annatar: the runs' reports stay there, SEC18).
         console.print(f"[yellow]Campaign published to Imladris[/yellow] ({len(names)} file(s)) — "
-                      f"{len(missing)} executed run(s) without a report under {runs_dir}/ "
+                      f"{len(missing)} executed run(s) without a report under {outside(runs_dir)}/ "
                       f"(not published): Imladris will not write its report on its own. By hand, "
                       f"where the campaign, its runs and the watch's files are: "
-                      f"make campaign-report CAMPAIGN={cid}")
+                      f"make campaign-report CAMPAIGN={outside(cid)}")
     elif state == "done":
         console.print(f"[green]Campaign published to Imladris[/green] ({len(names)} file(s)) — the "
-                      f"hosted watch writes its report: runs/glorfindel/campaigns/{cid}/report.md on Imladris "
-                      f"(make imladris-campaign-report CAMPAIGN={cid})")
+                      f"hosted watch writes its report: runs/glorfindel/campaigns/{outside(cid)}/report.md on Imladris "
+                      f"(make imladris-campaign-report CAMPAIGN={outside(cid)})")
     else:
         console.print(f"[yellow]Campaign published to Imladris[/yellow] ({len(names)} file(s)) — "
-                      f"'{state}': no report is written on its own; by hand, where the "
-                      f"campaign and the watch's files are: make campaign-report CAMPAIGN={cid}")
+                      f"'{outside(state)}': no report is written on its own; by hand, where the "
+                      f"campaign and the watch's files are: make campaign-report CAMPAIGN={outside(cid)}")
     return True
 
 
@@ -667,7 +658,7 @@ def _write_campaign_report(cdir) -> None:
     it reads the watch's cycles, which the red never reads, and writes in the watch's directory).
     Said, with the gesture: the campaign has run, its verdicts are in its manifest."""
     console.print(f"[yellow]Campaign report: written beside the watch, by the analysis — "
-                  f"make campaign-report CAMPAIGN={cdir.name} (Annatar never reads the watch's files, "
+                  f"make campaign-report CAMPAIGN={outside(cdir.name)} (Annatar never reads the watch's files, "
                   f"SEC18)[/yellow]")
 
 
@@ -688,11 +679,11 @@ def campaign_list(runs_dir):
         try:
             m = CampaignManifest.load(d)
         except OSError as exc:   # SEC-A1 (V-02): Refused — a pipe, a link, a file too large
-            console.print(f"[red]{d.name}: manifest refused[/red] — {exc}; never read")
+            console.print(f"[red]{outside(d.name)}: manifest refused[/red] — {outside(exc)}; never read")
             continue
         r = m.results
         console.print(
-            f"{m.campaign_id}  [{m.state}]  {len(m.scenarios)} scenario(s)  "
+            f"{outside(m.campaign_id)}  \\[{outside(m.state)}]  {len(m.scenarios)} scenario(s)  "
             f"detected={r['detected']}/{r['executed']}"
         )
 
@@ -707,16 +698,16 @@ def campaign_show(campaign_id, runs_dir):
 
     cdir = campaign_dir(campaign_id, runs_dir=runs_dir)
     if not (cdir / "manifest.json").exists():
-        console.print(f"[red]Campaign not found:[/red] {campaign_id}")
+        console.print(f"[red]Campaign not found:[/red] {outside(campaign_id)}")
         raise SystemExit(1)
     m = _load_manifest(CampaignManifest, cdir)
-    console.print(f"[bold]{m.campaign_id}[/bold]  state={m.state}  objective={m.objective!r}")
-    console.print(f"scope: {m.scope.allowed_resource_ids}")
+    console.print(f"[bold]{outside(m.campaign_id)}[/bold]  state={outside(m.state)}  objective={outside(repr(m.objective))}")
+    console.print(f"scope: {outside(m.scope.allowed_resource_ids)}")
     for e in m.scenarios:
         det = e.detection or "-"
         console.print(
-            f"  [{e.seq}] {e.ttp:12} {e.status:9} detection={det:9} "
-            f"run_id={e.run_id or '-'}"
+            f"  [{e.seq}] {outside(e.ttp):12} {outside(e.status):9} detection={outside(det):9} "
+            f"run_id={outside(e.run_id or '-')}"
         )
 
 

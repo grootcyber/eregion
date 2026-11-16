@@ -4,9 +4,8 @@ import json
 import subprocess
 from pathlib import Path
 
-from rich.console import Console
+from annatar.console import console, outside
 
-console = Console()
 
 TERRAFORM_DIR = Path(__file__).parent.parent.parent / "infra" / "terraform"
 
@@ -20,7 +19,7 @@ class InitRunner:
         self._terraform_apply(auto_approve)
         outputs = self._terraform_outputs()
         ws_id = outputs.get("log_analytics_workspace_id")
-        console.print(f"\n  [dim]log_analytics_workspace_id: {ws_id}[/dim]")
+        console.print(f"\n  [dim]log_analytics_workspace_id: {outside(ws_id)}[/dim]")
         console.print(
             "  [dim]Update your scenario YAML with this workspace ID if needed.[/dim]\n"
         )
@@ -78,7 +77,7 @@ class InitRunner:
         if not guard.allowed:
             raise RuntimeError(f"Safety check failed: {guard.reason}")
 
-        console.print(f"[cyan]->[/cyan] Preparing VM disk ({vm_name})...")
+        console.print(f"[cyan]->[/cyan] Preparing VM disk ({outside(vm_name)})...")
         if not without_glorfindel:  # read again right before the write (SEC5, N-03)
             no_watch = watch_gate.refusal()
             if no_watch:
