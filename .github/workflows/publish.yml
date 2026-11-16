@@ -57,12 +57,18 @@ jobs:
           COMMIT: ${{ github.sha }}
         run: python3 scripts/published_image.py meta "$IMAGE" --commit "$COMMIT"
 
+      # SEC-C (audit of 06/11, V-25): the job that signs builds from nothing shared. BuildKit pinned by
+      # its digest — moby/buildkit v0.34.2, its index, read on Docker Hub on 16/11 —, never the version
+      # the action would pick; and no cache, read or written (images.yml's, written on main, stays its
+      # own: it signs nothing).
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069   # v4.4.1
+        with:
+          driver-opts: image=moby/buildkit@sha256:c5f8862f52499773af85bc07695b2379ef08e8002352b0df2c4864c91d78dabe
 
       # As images.yml builds it, plus what the hosts need: the user of H0 and Orodruin (1000), the
       # reference and the commit (labels, and the console's header). Loaded, not pushed: pushed
       # only once proven, below. No buildx attestations: the image is a single manifest, and its
-      # provenance is GitHub's, below.
+      # provenance is GitHub's, below. No cache (SEC-C): every layer built here.
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc   # v7.4.0
         with:
           context: .
@@ -81,7 +87,6 @@ jobs:
             org.opencontainers.image.version=${{ steps.meta.outputs.version }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=https://github.com/grootcyber/eregion
-          cache-from: type=gha,scope=${{ matrix.image }}
 
       - name: In the image (nothing started, no network, no secret)
         env:
