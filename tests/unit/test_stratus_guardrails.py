@@ -78,8 +78,9 @@ def test_every_resource_is_gated_on_the_enable_flag():
 
 def test_a_check_refuses_pointing_at_orodruins_own_subscription():
     block = _block(_GUARDRAILS, 'check "stratus_subscription_is_dedicated"')
-    assert "data.azurerm_subscription.current.subscription_id" in block
-    assert "!=" in block
+    # La cible, comparée À l'abonnement d'Orodruin, doit DIFFÉRER (!=). On vise la comparaison
+    # elle-même, pas un `!=` quelconque (le `!= ""` du contrôle de renseignement en est un autre).
+    assert "!= lower(data.azurerm_subscription.current.subscription_id)" in block
     # activé ⇒ cible renseignée
     assert 'var.stratus_subscription_id != ""' in block
 
