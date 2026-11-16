@@ -28,6 +28,10 @@ _PROVIDER_EACH = ("tests/unit/test_stratus_guardrails.py::"
                   "test_every_dedicated_subscription_resource_declares_the_stratus_provider")
 _NIC_ANY = ("tests/unit/test_stratus_guardrails.py::"
             "test_the_nic_public_ip_policy_matches_any_ip_config")
+_GUID = ("tests/unit/test_stratus_guardrails.py::"
+         "test_the_subscription_id_is_validated_as_a_guid")
+_DEPEND = ("tests/unit/test_stratus_guardrails.py::"
+           "test_every_dedicated_subscription_resource_depends_on_the_guard")
 
 MUTANTS = [
     ("M5650", "the subscription diagnostic setting routes a wrong category (the watch would miss "
@@ -81,6 +85,18 @@ MUTANTS = [
      "(notLike → like): a NIC with one public and one private ipConfig would slip past", GUARD,
      'notLike = "*"',
      'like    = "*"'),
+    ("M5660", "the `not { … }` wrapper of the NIC rule is dropped (not → allOf): the policy "
+     "inverts — a fully-private NIC is denied, a 100%-public one passes", GUARD,
+     "not = {",
+     "allOf = {"),
+    ("M5661", "stratus_subscription_id loses its GUID format validation (regex → true): the path "
+     "form /subscriptions/<guid> would slip past and bypass the precondition", VARS,
+     'can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", var.stratus_subscription_id))',
+     "true"),
+    ("M5662", "a dedicated-subscription resource (the diagnostic setting) reads "
+     "var.stratus_subscription_id directly again instead of the guard's validated output", GUARD,
+     'terraform_data.stratus_guard.output}"\n  log_analytics_workspace_id',
+     'var.stratus_subscription_id}"\n  log_analytics_workspace_id'),
 ]
 
 TESTS = {
@@ -94,4 +110,7 @@ TESTS = {
     "M5657": _ALIAS,
     "M5658": _PROVIDER_EACH,
     "M5659": _NIC_ANY,
+    "M5660": _NIC_ANY,
+    "M5661": _GUID,
+    "M5662": _DEPEND,
 }

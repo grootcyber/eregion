@@ -142,6 +142,9 @@ def test_the_nic_public_ip_policy_matches_any_ip_config():
     # l'attribut (notLike = "*"), pas un « notLike » quelconque (le commentaire en contient un).
     assert re.search(r'notLike\s*=\s*"\*"', block)
     assert 'exists = "true"' not in block
+    # l'enveloppe `not { … }` : sans elle la policy est inversée (refuserait une NIC privée,
+    # laisserait passer une NIC 100 % IP publique). Le run Terraform l'asserte sur la règle décodée.
+    assert re.search(r"not\s*=\s*\{", block)
 
 
 def test_the_allow_list_policies_do_not_fire_on_an_empty_list():
@@ -185,6 +188,27 @@ def test_the_budget_itself_is_on_the_dedicated_subscription_and_notifies_the_out
     assert "azurerm.stratus" in block
     assert "/subscriptions/${terraform_data.stratus_guard.output}" in block
     assert "azurerm_monitor_action_group.stratus_budget[0].id" in block
+
+
+def test_the_subscription_id_is_validated_as_a_guid():
+    # Un GUID nu, jamais la forme chemin /subscriptions/<guid> : sinon l'abonnement d'Orodruin
+    # en forme chemin contournerait la precondition (comparaison de chaînes brutes).
+    block = _block(_VARIABLES, 'variable "stratus_subscription_id"')
+    assert "validation" in block
+    assert "[0-9a-fA-F]{12}" in block
+
+
+def test_every_dedicated_subscription_resource_depends_on_the_guard():
+    # Chaque ressource de l'abonnement dédié dépend de terraform_data.stratus_guard (elle file
+    # l'abonnement validé par sa sortie, ou un depends_on explicite) : un plan qui vise le mauvais
+    # abonnement échoue avant de rien poser. Le groupe d'action (abonnement d'Orodruin) et le
+    # garde-fou lui-même sont à part.
+    for m in re.finditer(r'^resource\s+"([^"]+)"\s+"([^"]+)"', _GUARDRAILS, re.MULTILINE):
+        rtype, rname = m.group(1), m.group(2)
+        if rtype in ("azurerm_monitor_action_group", "terraform_data"):
+            continue
+        block = _block(_GUARDRAILS, f'resource "{rtype}" "{rname}"')
+        assert "terraform_data.stratus_guard" in block, f"{rname} ne dépend pas de la garde"
 
 
 # ── Le rôle fermé (G3) n'est PAS encore écrit ───────────────────────────────────────────────

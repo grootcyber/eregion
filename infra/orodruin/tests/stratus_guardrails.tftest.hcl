@@ -109,8 +109,23 @@ run "refuses_orodruins_own_subscription" {
   ]
 }
 
-# Activé sur un abonnement DÉDIÉ (distinct) : les garde-fous se posent, chacun une fois, et les
-# sorties ne sont plus nulles — l'inverse exact du défaut.
+# La forme chemin « /subscriptions/<guid> » est refusée à la validation de la variable : sans ce
+# refus, l'abonnement d'Orodruin écrit en chemin contournerait la precondition (comparaison brute).
+run "refuses_the_subscription_id_in_path_form" {
+  command = plan
+
+  variables {
+    stratus_guardrails_enabled = true
+    stratus_subscription_id    = "/subscriptions/00000000-0000-0000-0000-000000000000"
+  }
+
+  expect_failures = [
+    var.stratus_subscription_id,
+  ]
+}
+
+# Activé sur un abonnement DÉDIÉ (distinct) : les garde-fous se posent, chacun une fois —
+# l'inverse exact du défaut (on asserte les comptes ; les ids de sortie ne sont connus qu'après apply).
 run "a_dedicated_subscription_poses_each_guardrail" {
   command = plan
 
@@ -126,6 +141,12 @@ run "a_dedicated_subscription_poses_each_guardrail" {
   assert {
     condition     = length(azurerm_policy_definition.stratus_deny_nic_public_ip) == 1 && length(azurerm_subscription_policy_assignment.stratus_deny_nic_public_ip) == 1
     error_message = "activé, le refus d'IP publique sur une NIC n'est pas posé"
+  }
+  # La règle décodée (jsonencode de constantes, connue au plan) : « au moins une ipConfig » est
+  # bien un not{ … notLike « * » } en deny — sans l'enveloppe not, la policy serait inversée.
+  assert {
+    condition     = jsondecode(azurerm_policy_definition.stratus_deny_nic_public_ip[0].policy_rule).if.allOf[1].not.notLike == "*" && jsondecode(azurerm_policy_definition.stratus_deny_nic_public_ip[0].policy_rule).then.effect == "deny"
+    error_message = "le refus d'IP publique n'est pas un not{ … notLike « * » } en deny (la policy serait inversée)"
   }
   assert {
     condition     = length(azurerm_subscription_policy_assignment.stratus_allowed_locations) == 1

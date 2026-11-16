@@ -159,6 +159,13 @@ variable "stratus_subscription_id" {
   description = "L'abonnement de test dédié de Stratus — vide par défaut, jamais en dur dans le dépôt public. Ici, une precondition (terraform_data.stratus_guard) refuse déjà qu'il vaille l'abonnement d'Orodruin. Le contrat (eregion_core/orodruin.py) le refusera EN PLUS (R2c) s'il vaut le banc, la VM ou Imladris — ce refus-là n'existe pas encore."
   type        = string
   default     = ""
+
+  # Un GUID nu, jamais la forme chemin « /subscriptions/<guid> » : sans ce contrôle, l'abonnement
+  # d'Orodruin écrit en chemin contournerait la precondition (qui compare des chaînes brutes).
+  validation {
+    condition     = var.stratus_subscription_id == "" || can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", var.stratus_subscription_id))
+    error_message = "stratus_subscription_id : un GUID d'abonnement nu (sans « /subscriptions/ »), ou vide."
+  }
 }
 
 variable "stratus_allowed_locations" {
