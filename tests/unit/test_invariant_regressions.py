@@ -8666,8 +8666,7 @@ def test_a_block_gone_behind_a_quarantine_unjudged_is_said_gone(monkeypatch, ste
 @pytest.mark.parametrize("mode", ["human_only", "non_disruptive"])
 def test_a_block_gone_behind_a_quarantine_unjudged_is_said_gone_reduced(monkeypatch, mode):
     """L1Nd, the sequence reduced to five steps: red on `main` 4d351ef5, and on v0.5.13 and v0.5.0 (02/11) —
-    not a regression, the branch has said « non vérifiable » alone since the quarantine's unknown verdict was
-    read (I4B, #333)."""
+    not a regression: the branch said « non vérifiable » alone before I4B (#333) moved it to verify_block.py."""
     _replay(monkeypatch, _L1ND_NET,
             ("block", API, API, None, 22),
             ("isolate", API, API, None),

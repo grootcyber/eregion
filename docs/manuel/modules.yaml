@@ -916,6 +916,16 @@ briques:
     pr: 843
     doc: docs/design/preuves.md
 
+  - id: g-blocage-quarantaine-inconnue
+    composant: glorfindel
+    poste: g-verifier
+    nom: "A block whose rules are gone behind a quarantine that can't be judged (the configuration unreadable) is said gone, the NIC left unknown, never said open"
+    etat: main
+    release: "0.6"
+    lots: [L1Nd]
+    issue: 795
+    doc: docs/glorfindel.md
+
   - id: g-isolation-coupee-remplace-levee
     composant: glorfindel
     poste: g-verifier

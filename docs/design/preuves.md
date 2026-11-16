@@ -802,6 +802,55 @@ rompt. Mutants M5471–M5476 (`scripts/mutants/L1Nc.py`) : l'oracle resserré à
 nouveau, la présence-à-l'acquittement ôtée, la disparition lue à l'envers) ou relâché jusqu'à être complaisant
 à L1N (le garde-fou ôté, exigé de toute règle, une règle partie lue « encore dite »). Les six sont attrapés.
 
+**Une quarantaine qu'on ne sait pas juger (L1Nd, #795).** La nuit du 15/11 (run 43706627533, sur b5c10b29)
+était rouge sur les deux systèmes. La séquence d'ubuntu était celle de L1Nc. Celle de macOS, sur api, se
+rejoue à l'identique sur `main` 4d351ef5 : « L1: the block on …/api vanished from Azure; the reassertion
+neither put it back nor said so ». La graine posée sur la classe (`reproduce_failure`), le temps d'un essai,
+échoue sur la passe de `block_turned_then_reasserted`, dans `turned_then_address_reused`. Elle passe une fois
+le correctif posé. Hypothesis dit alors `DidNotReproduce` : la règle continue au-delà du pas qui échouait.
+
+*Le monde.* Réduite à la main, chaque règle retirée tour à tour tant que L1 échoue sur api, la séquence tient
+en cinq pas. api est bloquée, puis isolée dans la quarantaine (northeurope). Les règles du blocage sont sur
+nsg-api-nic, le NSG propre de la carte, hors de la carte. Le client supprime ce NSG, ce qu'Azure permet : il
+ne gouverne plus rien. Puis la configuration devient illisible. La quarantaine n'est alors plus jugeable :
+ses denies tiennent, mais son accès d'investigation vient de la configuration, inconnu (`_quarantine_state`,
+U4). `_quarantine_blocks` répond `unknown`. Aucun placement de la carte n'est sur un NSG qui la gouverne, et
+la vérification disait « blocage non vérifiable : règles illisibles (api-nic: nsg-glorfindel-quarantine-…) »,
+sans lire les règles hors de la carte. La passe en faisait une carte « non vérifiée » (`review_unverified`),
+jamais une carte du blocage. La disparition restait tue tant que la configuration restait illisible.
+
+*Le produit, pas l'oracle.* `_block_vanished` lit le monde du faux : aucune règle du blocage n'est plus sur
+Azure. C'est un fait, et l'inconnu de la quarantaine ne le rend pas inconnu : le NSG supprimé se lit vide
+(`_list_rules`, un 404), jamais illisible. Ne pas savoir si la quarantaine coupe l'attaquant n'autorise pas à
+taire ce qu'on lit (A0). Ce n'est pas une régression : la séquence réduite échoue de même sur v0.5.13 et sur
+v0.5.0 (02/11). La branche de l'inconnu est plus ancienne encore : I4B (#333) n'a fait que la déplacer dans ce
+fichier. Les nuits la tirent rarement : il faut le blocage, l'isolation, le NSG supprimé et la configuration illisible, sur la même VM.
+C'est la branche sœur de L1N. L1N avait corrigé la quarantaine qui laisse passer l'attaquant (son NSG lu pour
+`rules_seen`). La quarantaine qui coupe lisait déjà les règles (`held_missing`). Restait l'inconnu.
+
+*Le correctif* (`providers/azure/verify_block.py`). Les règles des placements hors de la carte sont lues
+là aussi. Parties ou altérées, elles vont dans `missing_rules`, et le verdict devient `False`. La carte reste
+dans `nics_unknown` (« quarantaine illisible »), jamais dans `open_nics`. La carte de la passe dit donc « a
+disparu d'Azure (…) — on ne sait pas si l'IP est encore bloquée sur api-nic », comme là où un périmètre est
+illisible (`_lost`, I3P). Illisibles (un 429), les règles restent inconnues, le verdict « non vérifiable »
+comme avant. Hors `human_only`, la passe tente de les reposer : configuration illisible, la liste
+`never_block` l'est aussi, et le refus est dit (« le reposer a échoué »). La configuration lisible de
+nouveau, la quarantaine coupe l'attaquant, et les mêmes règles passent dans `held_missing` : pas pire, pas
+de carte de plus.
+
+*Mesures.* Figés dans `tests/unit/test_invariant_regressions.py`, d'abord la séquence telle que trouvée,
+rejouée par `_replay`. La règle qui échouait continue au-delà ; ses tirages d'après sont choisis et dits.
+Puis la séquence réduite, dans les deux modes. Au connecteur : le NSG supprimé, ses règles seules supprimées,
+sa deny tournée en allow. Chaque fois, avant le geste du client, « non vérifiable » ; après, les règles
+nommées, la carte inconnue, jamais ouverte. Le 429 laisse tout inconnu. À la réaffirmation, en `human_only` :
+dite une fois, acquittée, une passe muette, puis la configuration rendue, sans carte de plus. Le monde à deux
+placements de L1Nb, l'un ou l'autre NSG vidé : chacun est lu. Sur `main` 4d351ef5, 9 de ces 10 cas
+échouent ; seul le 429 passe, il fige ce qui ne change pas. La machine est verte à 500 exemples. Mutants
+M5477–M5484 (`scripts/mutants/L1Nd.py`) : le défaut revenu ; les règles parties tenues pour gardées (le
+verdict « non vérifiable » de nouveau) ; la deny tournée ignorée ; le 429 lu absent ; la carte dite ouverte ;
+un seul des deux placements lu (le premier, le dernier) ; la carte ôtée de l'inconnu une fois une règle dite
+partie. Les huit sont attrapés.
+
 ### Une isolation écrite en entier, coupée dans sa coupure de sessions, remplace la levée (I9A)
 
 La nuit « Invariants (deep) » du 14/11 (run 43585550169, sur f0df21d1, 10 000 exemples) est rouge sur
