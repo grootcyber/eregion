@@ -166,6 +166,7 @@ DOCKER_GLORFINDEL_WATCH = $(WATCH_KEY_DIR) && $(RUNS_DIRS) && $(GLORFINDEL_AZURE
 	imladris-model imladris-campaign-report imladris-containment imladris-fault-rate imladris-known imladris-fingerprint celebrimbor-workload \
 	orodruin-init orodruin-watch-guard orodruin-watch-principals orodruin-plan orodruin-up orodruin-lock orodruin-push orodruin-push-dev orodruin-check \
 	orodruin-stop orodruin-start orodruin-update orodruin-kill orodruin-down orodruin-ssh orodruin-exercise orodruin-exercise-guard \
+	orodruin-drill-check orodruin-drill-arm orodruin-drill-disarm \
 	orodruin-known orodruin-identity orodruin-identity-id orodruin-fingerprint watch-key imladris-watch-key queue-keys imladris-queue-keys harness-key harness-sign harness-verify \
 	gothmog-preflight gothmog-run \
 	orodruin-campaign-plan orodruin-campaign-run campaign-containment fault-rate \
@@ -318,6 +319,9 @@ help:
 	@echo "                                               les noms des cibles destructives, la porte sur Orodruin qui la rejuge et la lance"
 	@echo "  make orodruin-exercise DRILL=<nom> [TARGETS=<vm>,…|all] [DRY_RUN=1]  un drill (DG-d) : ses fils posés sur les VM"
 	@echo "                                               inscrites (un drill livré attend TARGETS), en demande, puis comme REQUEST="
+	@echo "  make orodruin-drill-check [DRILL=banc-hebdo TARGETS=<vm>]  Le drill de la semaine (DRL1), à blanc : rien n'est écrit"
+	@echo "  make orodruin-drill-arm DRILL=banc-hebdo TARGETS=<vm>      Jonathan : arme le minuteur (jamais TARGETS=all)"
+	@echo "  make orodruin-drill-disarm                   Désarme : minuteur, armement, permis, démarrage planifié, chacun dit"
 	@echo "  make orodruin-down                           Détruit la VM et l'identité"
 	@echo ""
 	@echo "Le banc (BNC1 : lu, jamais écrit ; MOB1 : les gestes, tapés sur le poste) — docs/banc-t1486.md :"
@@ -1756,9 +1760,54 @@ orodruin-update: orodruin-known
 
 # Urgence, depuis ton az login : révoquer d'abord, puis annuler le chaos en cours, désallouer, fermer
 # les fenêtres d'exercice ouvertes, et dire ce qui reste en vol (infra/orodruin/kill.py).
+# DRL1 : le kill désactive aussi le démarrage planifié du drill (la Logic App de DRL1c, juste après la
+# révocation), retire son permis, puis écrit son pouls « disarmed (killed) » (infra/orodruin/drill_ops.py).
 orodruin-kill:
 	@.venv/bin/python infra/orodruin/kill.py "$(ORO_PRINCIPAL)" "$(ORO_VM_ID)" --subscription "$(ORO_SUB)" \
-		--bench-rg "$(ORO_BENCH_RG)" --channel "$(ORO_CHANNEL)" $(if $(DRY_RUN),--dry-run)
+		--bench-rg "$(ORO_BENCH_RG)" --channel "$(ORO_CHANNEL)" --drill-autostart "$(ORO_DRILL_AUTOSTART)" $(if $(DRY_RUN),--dry-run)
+
+# ── Le drill de la semaine (DRL1a, docs/design/drill-banc.md) — le minuteur d'Orodruin ─────
+# Orodruin ne tire ni n'écoute rien : trois entrées décident d'une occurrence (le drill de l'image
+# vérifiée, l'armement sur son disque, l'horloge) ; le battement de la watch, le permis du canal et
+# l'état des cibles ne peuvent que refuser (eregion_core/scheduled_drill.py). Depuis ce poste, par la
+# clé d'hôte épinglée (orodruin-known, ORO_SSH_FINGERPRINT) et ton az login (infra/orodruin/drill_ops.py) :
+#   orodruin-drill-check   à blanc : le drill dans l'image d'Orodruin, son empreinte, le contrat, la
+#                          watch, le permis, les cibles, le démarrage planifié ; rien n'est écrit
+#   orodruin-drill-arm     Jonathan seul (DRILL= TARGETS=, jamais all) : refusé sans le démarrage planifié
+#                          de DRL1c, ou à une autre heure que le drill moins 20 min (« apply first ») ;
+#                          puis l'armement (~/drill/armed.json, 600), les unités systemd posées par SSH
+#                          (jamais par custom_data), le minuteur activé, le permis écrit, le démarrage
+#                          planifié activé, le pouls « armed »
+#   orodruin-drill-disarm  chacun de ses pas dit, une erreur si l'un manque ; Orodruin éteinte, sans
+#                          adresse ou sa clé d'hôte non vérifiée : ses deux pas sur Orodruin dits manqués
+#                          (une erreur), le permis et le démarrage planifié retirés quand même
+# DRILL et TARGETS se donnent sur la ligne de commande, jamais de l'environnement. Le démarrage planifié :
+# la sortie Terraform drill_autostart_id (DRL1c), lue par `terraform output -json` en trois cas — la sortie
+# absente (DRL1c non appliqué) : vide, « no scheduled start » ; l'état illisible (az login, le backend) :
+# « unreadable », une erreur pour le kill et le désarmement, jamais une absence ; un id : lu.
+# AUTOSTART=<id> pour le donner quand l'état ne se lit pas (comme PRINCIPAL= et VM_ID= pour le kill).
+ORO_DRILL_AUTOSTART = $(or $(AUTOSTART),$(shell out=$$($(ORO_TF) output -no-color -json 2>/dev/null) && printf '%s' "$$out" | $(PYTHON) infra/orodruin/drill_ops.py autostart-id 2>/dev/null || echo unreadable))
+ORO_DRILL_RUN  = docker run --rm $(ORO_HARDEN) --env-file orodruin.env --pull never $(ORO_IMAGE)
+orodruin-drill-check orodruin-drill-arm orodruin-drill-disarm: export EREGION_DRILL = $(value DRILL)
+orodruin-drill-check orodruin-drill-arm orodruin-drill-disarm: export EREGION_DRILL_TARGETS = $(value TARGETS)
+orodruin-drill-check orodruin-drill-arm orodruin-drill-disarm: export DRILL_ORO_SSH = $(ORO_SSH)
+orodruin-drill-check orodruin-drill-arm orodruin-drill-disarm: export DRILL_ORO_USER = $(ORO_USER)
+orodruin-drill-check orodruin-drill-arm orodruin-drill-disarm: export DRILL_ORO_RUN = $(ORO_DRILL_RUN)
+orodruin-drill-check orodruin-drill-arm orodruin-drill-disarm: export DRILL_AUTOSTART = $(ORO_DRILL_AUTOSTART)
+orodruin-drill-check orodruin-drill-arm orodruin-drill-disarm: export DRILL_CHANNEL = $(ORO_CHANNEL)
+ORO_DRILL_ORIGIN = case "$(origin DRILL) $(origin TARGETS)" in *environment*) echo "DRILL ou TARGETS vient de l'environnement : rien n'est fait. Sur la ligne de commande : make $@ DRILL=<nom> TARGETS=<vm>" >&2; exit 1;; esac
+orodruin-drill-check orodruin-drill-arm: orodruin-known
+	@$(ORO_DRILL_ORIGIN)
+	@case "$@" in orodruin-drill-arm) [ -n "$$EREGION_DRILL" ] && [ -n "$$EREGION_DRILL_TARGETS" ] || { echo "DRILL=<nom> et TARGETS=<vm>[,<vm>…] requis (jamais all) : rien n'est armé" >&2; exit 1; };; esac
+	@$(PYTHON) infra/orodruin/drill_ops.py $(@:orodruin-drill-%=%)
+
+# Le désarmement n'attend pas Orodruin : le permis et le démarrage planifié passent par ton az login.
+orodruin-drill-disarm:
+	@$(ORO_DRILL_ORIGIN)
+	@if [ -z "$(ORO_IP)" ]; then export DRILL_ORO_UNREACHED="no address: Orodruin stopped, or its state unread"; \
+	 elif ! ORO_SSH_FINGERPRINT="$(ORO_SSH_FINGERPRINT)" bash infra/glorfindel-host/known_host.sh "$(ORO_IP)" "$(ORO_KNOWN_HOSTS)" ORO_SSH_FINGERPRINT required; then \
+	   export DRILL_ORO_UNREACHED="its host key not verified (ORO_SSH_FINGERPRINT)"; fi; \
+	 $(PYTHON) infra/orodruin/drill_ops.py disarm
 
 # ── Dagorlad, phase (b) (DG-b) — une demande de la console, portée par l'opérateur ───
 # La console écrit la demande dans son propre répertoire (~/.eregion/console/requests/, sur Imladris) ;
@@ -1839,7 +1888,10 @@ orodruin-exercise: orodruin-exercise-guard $(if $(filter local,$(REQUEST_FROM)),
 	 scp -q $(SSH_OPTS) "$$d/$$id.json" "$$d/$$id.typed.json" $(ORO_USER)@$(ORO_IP):requests/ && \
 	 ssh $(SSH_OPTS) -o ServerAliveInterval=60 $(ORO_USER)@$(ORO_IP) "trap 'rm -f requests/$$id.typed.json' EXIT HUP INT TERM; "'$(ORO_RUN_REQUEST) python -m eregion_core.exercise_runner /app/requests/'"$$id"'.json'
 
+# DRL1 : le minuteur, l'armement et le registre du drill sont sur le disque d'Orodruin, le permis et le
+# pouls dans son canal : détruits avec elle. Le dire, avant.
 orodruin-down: orodruin-watch-principals
+	@echo "  drill armed: lost, re-arm after up (make orodruin-drill-arm, once Orodruin is back)"
 	$(ORO_TF) destroy $(ORO_VARS)$(if $(YES), -auto-approve)
 
 orodruin-ssh: orodruin-known

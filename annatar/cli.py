@@ -35,6 +35,25 @@ class _AnnatarCli(click.Group):
             ctx.exit(1)
 
 
+class Terminated(KeyboardInterrupt):
+    """SIGTERM, taken as an interrupt (DRL1, docs/design/drill-banc.md §3.1): the engine's
+    ``finally`` closes the window and runs the atomic's cleanup, as for Ctrl-C."""
+
+
+def stop_on_sigterm() -> None:
+    """A one-shot SIGTERM handler for a wire (DRL1): at the first signal, SIGTERM is ignored from
+    then on, then ``Terminated`` is raised — the window closes, the atomic's cleanup runs, and a
+    second signal never cuts it in the middle of its ``finally``. Without it, a Python first in its
+    container ignores SIGTERM, and the SIGKILL that follows leaves the window open."""
+    import signal
+
+    def _on_term(signum, frame):
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        raise Terminated("SIGTERM")
+
+    signal.signal(signal.SIGTERM, _on_term)
+
+
 @click.group(cls=_AnnatarCli)
 @click.version_option()
 def cli():
@@ -112,6 +131,8 @@ def run(scenario: str, dry_run: bool, yes: bool, skip_preflight: bool,
 # and goes on — this code is the single-run CLI's only.
 EXIT_OK = 0
 EXIT_RUN_FAILED = 1
+# A wire stopped by SIGTERM (DRL1): 128 + 15, as a shell says it.
+EXIT_STOPPED = 143
 
 # One hint per refusal, by the prefix Engine.run gives RunOutcome.error.
 _RUN_HINTS = (
@@ -193,6 +214,9 @@ def wire(technique: str, target: str, request: str, typed_name: str):
     # One run at a time (R-10): a wire holds its request's lock, handed down by Orodruin's runner;
     # launched any other way, it takes Orodruin's one lock itself — refused while anything runs.
     from eregion_core.exercise_runner import Busy, request_lock
+    # DRL1: stopped by SIGTERM (Orodruin's drill relays the service's stop), the wire closes its
+    # window and cleans up — one signal, never two.
+    stop_on_sigterm()
     # The scenario lives only for the run: never in runs/annatar/, where a local watch reads.
     try:
         with request_lock(f"wire {request}"), \
@@ -207,6 +231,9 @@ def wire(technique: str, target: str, request: str, typed_name: str):
     except Busy as e:
         console.print(f"[red]✗ wire refused — busy: {outside(str(e))}[/red]")
         raise SystemExit(EXIT_RUN_FAILED)
+    except Terminated:
+        console.print("[red]✗ wire stopped (SIGTERM): its window closed, its cleanup run[/red]")
+        raise SystemExit(EXIT_STOPPED)
     code = run_exit_code(outcome)
     if code:
         _print_run_failure(outcome)

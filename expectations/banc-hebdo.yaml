@@ -1,0 +1,9 @@
+# What the watch should see when the weekly drill plays (DRL1, docs/design/drill-banc.md).
+# Read on Imladris (VP1) and by the Banc session. Never copied into the injectors' image: Orodruin
+# cannot read it.
+drill: banc-hebdo
+wires:
+  - rank: 1
+    experiment: T1136.001
+    rule: t1136-001-local-account-creation-linux-v1
+    within_s: 900          # after the wire's T0

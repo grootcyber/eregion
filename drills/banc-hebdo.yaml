@@ -1,0 +1,14 @@
+# The weekly bench drill (DRL1, docs/design/drill-banc.md): shipped, reviewed in a PR. Orodruin's
+# timer plays it once a week, armed by the operator, who names its targets then. What the watch
+# should see is not here: expectations/banc-hebdo.yaml, never in the injectors' image.
+name: banc-hebdo
+author: eregion
+description: "The weekly proof on the bench: a public, non-destructive technique already proven from Orodruin."
+schedule:                  # this drill may be played by Orodruin's timer
+  day: tue                 # mon … sun
+  at: "19:00"              # UTC, HH:MM
+  max_injections: 6        # its own cap, at most the cap Orodruin declares
+  max_run_s: 1800
+wires:
+  - experiment: T1136.001
+    target: {zone: bench}

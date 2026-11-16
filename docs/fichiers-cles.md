@@ -635,6 +635,7 @@ en écriture chez lui seul, en lecture seule chez ceux qui le lisent._
 | La console, la CLI de Glorfindel, le bot (qui lance la CLI) | `manual_actions.jsonl` (les gestes de l'opérateur : levée, reset, déblocage, instantané, restore) | la console (fil, indicateurs), l'analyse (`containment` : les levées) |
 | Orodruin (`eregion_core/exercise_runner.py`, le contrat) | `orodruin/audit.jsonl` (chaque appel d'un injecteur, avant l'appel), `orodruin/requests/` (statut d'une demande, registre des demandes jouées, le verrou « un run à la fois ») | Orodruin lui-même (le plafond, le registre, le verrou) |
 | Dagorlad (la console) | rien dans `runs/` : ses demandes vont dans `~/.eregion/console/requests/` | Orodruin, par l'opérateur |
+| Le drill de la semaine sur Orodruin (`eregion_core/scheduled_drill.py`, DRL1a) | `orodruin/drills/played.jsonl` (une ligne par occurrence jouée : le drill, son empreinte, l'occurrence, l'heure), `orodruin/drill.json` (le pouls : armé ou désarmé, la prochaine et la dernière occurrence), aussi publié dans le canal ; hors de `runs/` : `~/drill/armed.json` (l'armement, mode 600, écrit par `make orodruin-drill-arm`, monté en lecture seule) | Orodruin lui-même (le registre) ; Imladris, `drill.json` et le permis `orodruin/drill-permit.json` du canal, écrit par l'opérateur à l'armement (DRL1b) |
 | Le canal d'Orodruin vers Imladris (`exercise_channel.py`) et le canal retour (`watch_channel.py`) | rien dans `runs/` sur Orodruin ; sur Imladris, ce que tire la watch (ci-dessus) | — |
 
 Montages avant SEC18 :
@@ -659,7 +660,7 @@ Le rouge écrivait donc où le bleu écrit ses décisions, et lisait le raisonne
 | `runs/bot/` | le bot, et la CLI qu'il lance (`EREGION_RUNS_WRITER=bot`, FS1c) | `manual_actions.jsonl`, `queue/` (FS1b) | la watch, la console (le fil, les levées) |
 | `runs/annatar/` | Annatar | `*_signals.jsonl`, `<run_id>.json`, `exercises/`, `campaigns/<id>/` | la watch, le bot (le moment d'un restore), la console |
 | `runs/gothmog/` | Gothmog | `*_signals.jsonl`, `<run_id>.json`, `exercises/` | la watch, la console |
-| `runs/orodruin/` | les injecteurs sur l'hôte d'Orodruin et son lanceur | `audit.jsonl`, `requests/` (statuts, registre, verrou), `.watch_seen.json` (SEC19 : le plus haut compteur de battement vu par clé, contre un rejeu) | — |
+| `runs/orodruin/` | les injecteurs sur l'hôte d'Orodruin et son lanceur ; le drill de la semaine (DRL1a) | `audit.jsonl`, `requests/` (statuts, registre, verrou), `.watch_seen.json` (SEC19 : le plus haut compteur de battement vu par clé, contre un rejeu), `drills/played.jsonl` (le registre des occurrences jouées, lu et écrit sous le verrou), `drill.json` (le pouls du drill, réécrit à chaque occurrence) | — |
 | `runs/verdicts/` | la watch, sans canal retour du stockage (le canal local des verdicts) | `heartbeat.json` (`at`, `since`, `windows`, `perimeter`), `detections/<run_id>/<n>.json` (`run_id`, `technique`, `verdict`, `detected_at`, `rule`, `latency_s`, `target` — rien d'autre) | Annatar, Gothmog |
 
 Le rouge ne monte ni `runs/glorfindel/` ni `runs/console/` : il ne lit plus le raisonnement de la

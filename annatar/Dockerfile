@@ -22,6 +22,10 @@ COPY eregion_core/ eregion_core/
 COPY analysis/ analysis/
 COPY scripts/ scripts/
 COPY technique_catalog.yaml .
+# Eregion's shipped drills (DG-d), where the drill of the week reads its own (DRL1,
+# eregion_core/scheduled_drill.py: /app/drills/). Never expectations/: what the watch should see is
+# not this image's to read (tests/unit/test_drill_expectations.py reads both Dockerfiles).
+COPY drills/ drills/
 
 # R2BS (#841): the pinned control-plane injector tool and its offline provisioning toolchain,
 # carried read-only at /opt/stratus/ (the adapter reads them there). `make stratus-stage` (the only

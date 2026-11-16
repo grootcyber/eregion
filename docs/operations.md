@@ -440,6 +440,28 @@ make orodruin-exercise DRILL=<nom> [TARGETS=<vm>,<vm>…|all] [DRY_RUN=1] [REQUE
 #   « Stop all » (le bouton de Dagorlad) : la commande make orodruin-kill, ce qu'elle arrêtera (les
 #   fenêtres ouvertes et leurs cibles) et ce qui reste en vol. La console ne révoque rien.
 
+# Le drill de la semaine (DRL1a, docs/design/drill-banc.md) — le minuteur d'Orodruin, armé par Jonathan
+make orodruin-drill-check [DRILL=banc-hebdo TARGETS=<vm>]   # à blanc, rien n'est écrit
+make orodruin-drill-arm DRILL=banc-hebdo TARGETS=<vm>[,<vm>…]   # Jonathan seul ; jamais TARGETS=all
+make orodruin-drill-disarm
+#   - check : le drill relu dans l'image d'Orodruin (son empreinte, son schedule), le contrat, la watch, le
+#     permis, les cibles (zone, isolation, état), le démarrage planifié de DRL1c, l'armement sur le disque ;
+#     ce que ferait la prochaine occurrence et quand. Aucune écriture, ni sur Orodruin ni sur Azure.
+#   - arm : refusé avant toute écriture sans le démarrage planifié, ou s'il ne réveille pas Orodruin à
+#     l'heure du drill moins 20 min (« apply first ») ; puis l'armement (~/drill/armed.json, 600), les
+#     unités systemd (eregion-drill.timer, eregion-drill.service) posées par SSH, le minuteur activé, le
+#     permis écrit dans le canal, le démarrage planifié activé, le pouls « armed » — chaque pas dit ; un
+#     pas en échec : partiel, dit, rien d'après. Refusé dans la session d'un lot (EREGION_AGENT_SESSION,
+#     un worktree de .claude/worktrees/).
+#   - disarm : le minuteur et ses unités, l'armement, le permis, le démarrage planifié, le pouls
+#     « disarmed » ; chacun dit, une erreur si l'un manque. Orodruin éteinte ou injoignable : ses deux pas
+#     sur Orodruin dits manqués, le reste fait quand même (une occurrence refuse alors sans permis).
+#   - DRILL et TARGETS sur la ligne de commande, jamais de l'environnement. Le démarrage planifié : la
+#     sortie Terraform drill_autostart_id, lue par terraform output -json (absente : « no scheduled
+#     start » ; l'état illisible : une erreur, jamais une absence) ; AUTOSTART=<id> pour la donner.
+#   - make orodruin-kill désactive aussi le démarrage planifié (juste après la révocation), supprime le
+#     permis et écrit le pouls « disarmed (killed) » ; make orodruin-down dit que l'armement est perdu.
+
 # Campagne (kill-chain générative + rapport IA0) — depuis Orodruin, sur le modèle de gothmog
 make orodruin-campaign-plan CAMPAIGN_TARGET=<resource_id de la VM inscrite> [CAMPAIGN_MAX=5]
 #   BL1 (#280) : CAMPAIGN_DECLARED=annatar/campaign/declared/bl1-reponse.yaml — exactement les

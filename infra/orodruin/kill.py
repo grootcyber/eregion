@@ -19,12 +19,21 @@ Then what is still in flight, which no step stops: a Run Command already sent ru
 end on its VM, and the atomic's cleanup may be left to replay; a cancelled fault may leave
 its VM down; a closed window still labels its targets during its grace.
 
+The drill of the week (DRL1, docs/design/drill-banc.md §3.1) adds three steps, by the same
+operator's identity (infra/orodruin/drill_ops.py ``kill_steps``), in eregion_core.orodruin.kill's
+order: right after revoke, its scheduled start disabled (the Logic App of DRL1c: nothing may wake
+Orodruin while the kill runs; absent, « no scheduled start ») and its permit removed (an
+occurrence refuses without it, whenever it comes); after close, its pulse written
+``disarmed (killed)`` — Orodruin's identity, revoked, can no longer write it. The last line says
+what they did (« drill: scheduled start disabled, permit removed; refused until re-armed »).
+Without ``--channel``, close, the permit and the pulse are not done: the kill exits 1.
+
 A failed step does not stop the next ones, and is reported: exit 1, never a kill that
 claims success. RBAC removal is not instantaneous (the control plane caches): the first
 refusal came under 3 s on the bench (19/10, a single measure — not a bound).
 
     python infra/orodruin/kill.py <principal_id> <vm_id> --subscription <id>
-        [--bench-rg rg-celebrimbor] [--channel <url>] [--dry-run]
+        [--bench-rg rg-celebrimbor] [--channel <url>] [--drill-autostart <id>] [--dry-run]
 """
 from __future__ import annotations
 
@@ -38,6 +47,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import drill_ops  # noqa: E402 — the drill's three steps (DRL1), beside this file
 from eregion_core import exercise, exercise_channel  # noqa: E402
 from eregion_core.held import arm_relative  # noqa: E402
 from eregion_core.orodruin import DEFAULT_BENCH_RG, kill  # noqa: E402
@@ -254,6 +265,8 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--subscription", default="", help="the contract's (AZURE_SUBSCRIPTION_ID)")
     ap.add_argument("--bench-rg", default=DEFAULT_BENCH_RG)
     ap.add_argument("--channel", default="", help="EREGION_EXERCISE_CHANNEL")
+    ap.add_argument("--drill-autostart", default="", help="the drill's scheduled start (DRL1c's "
+                    "output drill_autostart_id); empty: none")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args(argv)
     if not (args.principal_id and args.vm_id):
@@ -261,9 +274,13 @@ def main(argv: list[str]) -> int:
         return 2
     subs = subscriptions(args.subscription, args.vm_id)
     inflight: list[str] = []
+    said: dict = {}
     failures = kill(*steps(args.principal_id, args.vm_id, subscription=args.subscription,
                            bench_rg=args.bench_rg, channel=args.channel,
-                           dry_run=args.dry_run, inflight=inflight))
+                           dry_run=args.dry_run, inflight=inflight),
+                    **drill_ops.kill_steps(args.drill_autostart, channel=args.channel,
+                                           run=az, dry_run=args.dry_run, cli=_cli_credential,
+                                           said=said, say=lambda line: print(redact(line, subs))))
     if inflight:
         print("still in flight — no step of the kill stops these:")
         for line in inflight:
@@ -276,6 +293,9 @@ def main(argv: list[str]) -> int:
         return 1
     print("[dry-run] nothing done" if args.dry_run else
           "identity revoked, experiments cancelled, VM deallocating, windows closed")
+    if not args.dry_run:
+        # After each step's own line: what they did, never a disabling that did not happen.
+        print(drill_ops.summary(said))
     return 0
 
 

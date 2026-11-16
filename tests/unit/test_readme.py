@@ -93,7 +93,7 @@ def test_an_open_point_names_its_plan_never_its_use():
     """A public repository: what is open is « planifié : #n » or « planifié », never a recipe."""
     text = THREAT_MODEL.read_text(encoding="utf-8")
     opens = re.findall(r"\*\*Ouvert\*\* :(.*?)(?=\n---|\n## )", text, re.S)
-    assert len(opens) == 9
+    assert len(opens) == 10   # the tenth: the timer of Orodruin (DRL1a)
     item = re.compile(r"[^`/()_\[\]]{3,70} — planifié(?: : #\d+)?")   # a title, its plan: no name, no path
     for o in opens:
         points = [p.strip(" -;.\n") for p in re.split(r"\n- | ; ", o.strip()) if p.strip(" -;.\n")]

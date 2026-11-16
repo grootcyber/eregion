@@ -78,6 +78,11 @@ from eregion_core.channel_reader import Refused, read_json, read_regular
 # A run that outlives this was not closed (the injector died): its window lapses. A window
 # declared longer is refused (H-1).
 MAX_DURATION_S = 2 * 3600
+# DRL1 (docs/design/drill-banc.md §3.1): a wire of a request opens its window for the time its
+# runner leaves it (EREGION_MAX_RUN_S, which the runner hands down) plus this margin — never for
+# MAX_DURATION_S unasked: a wire killed outright leaves its VM « exercise » for its own time only.
+WIRE_MARGIN_S = 5 * 60
+WIRE_TIME_ENV = "EREGION_MAX_RUN_S"   # eregion_core/orodruin.py MAX_RUN_S_ENV
 # Detections arrive after the technique: the RulePoller's period plus Log Analytics
 # ingestion (84 s to 3 min 30 measured on the bench, 05–07/10), with margin.
 GRACE_AFTER_S = 15 * 60
@@ -164,6 +169,17 @@ def _publish(window: dict) -> None:
         exercise_channel.publish(window)
     except Exception as e:
         print(f"[exercise-channel] window {window.get('run_id')} not published: {e}")
+
+
+def wire_window_s(env=None) -> float:
+    """How long a wire's window is opened for (DRL1): ``min(time left + WIRE_MARGIN_S,
+    MAX_DURATION_S)`` — the time left being what its runner handed down (``WIRE_TIME_ENV``). Not
+    readable, or not a positive number of seconds: MAX_DURATION_S, the bound the watch holds anyway
+    (``window_refusal``)."""
+    raw = str((os.environ if env is None else env).get(WIRE_TIME_ENV) or "").strip()
+    if not raw.isdigit() or int(raw) <= 0:
+        return float(MAX_DURATION_S)
+    return float(min(int(raw) + WIRE_MARGIN_S, MAX_DURATION_S))
 
 
 def open_window(run_id: str, *, injector: str, kind: str, experiment: str,

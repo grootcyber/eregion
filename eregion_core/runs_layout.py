@@ -17,7 +17,8 @@ by those who read it (docs/fichiers-cles.md, « runs/ — qui écrit, qui lit, q
   ``campaigns/``;
 - ``runs/gothmog/`` — Gothmog: ``*_signals.jsonl``, ``<run_id>.json``, ``exercises/``;
 - ``runs/orodruin/`` — the injectors on Orodruin's host and its runner: ``audit.jsonl``,
-  ``requests/`` (the statuses, the registry, the lock of « one run at a time »);
+  ``requests/`` (the statuses, the registry, the lock of « one run at a time »); the drill of the
+  week (DRL1): ``drill.json`` (its pulse), ``drills/played.jsonl`` (its occurrences played);
 - ``runs/verdicts/`` — the watch's local channel of verdicts (``eregion_core/watch_channel.py``,
   ``LocalVerdicts``): ``heartbeat.json``, ``detections/<run_id>/`` — a run's verdict, never the
   reasoning; the one directory of the blue the red mounts, read-only. Not on Orodruin, where the
@@ -72,7 +73,7 @@ _FILES = {
     CONSOLE: ("manual_actions.jsonl",),
     ANNATAR: ("*_signals.jsonl", "*.json"),
     GOTHMOG: ("*_signals.jsonl", "*.json"),
-    ORODRUIN: ("audit.jsonl",),
+    ORODRUIN: ("audit.jsonl", "drill.json"),
     VERDICTS: ("heartbeat.json",),
     BOT: ("manual_actions.jsonl",),
 }
@@ -83,7 +84,7 @@ _DIRS = {
     CONSOLE: ("queue",),
     ANNATAR: ("campaigns", "exercises"),
     GOTHMOG: ("exercises",),
-    ORODRUIN: ("requests",),
+    ORODRUIN: ("requests", "drills"),
     VERDICTS: ("detections",),
     BOT: ("queue",),
 }

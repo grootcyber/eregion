@@ -936,6 +936,23 @@ contrat : ni droit, ni attribution, ni sortie réseau, ni canal. Conception :
 
 Orodruin ne tire rien et n'écoute rien : la commande vient de l'opérateur.
 
+**Le minuteur du drill de la semaine** (DRL1a, [`drill-banc.md`](drill-banc.md) ; la frontière 10 du
+[modèle de menace](modele-de-menace.md)). Armé par l'opérateur (`make orodruin-drill-arm`), Orodruin
+lance une occurrence sans commande, **toujours sans rien tirer ni écouter** : un minuteur systemd
+(`eregion-drill.timer`, `Persistent=false`) lance une commande fixe, sans argument
+(`python -m eregion_core.scheduled_drill run`), dans l'image vérifiée. Trois entrées seules décident et
+peuvent lancer : le drill de l'image (lu par son lecteur exact, la couche livrée seule, son empreinte
+égale à celle de l'armement), l'armement sur son disque (`~/drill/armed.json`, monté en lecture seule),
+l'horloge (dans les 30 min du `schedule`). Ce qui vient du dehors ne peut que refuser : le battement de
+la watch (V1), le permis de l'opérateur dans le canal (`orodruin/drill-permit.json`, réécrit à
+l'identique sous `If-Match`, jamais recréé), l'état des cibles. Puis tout se joue comme une demande :
+le même verrou (son descripteur passé au runner), un registre des occurrences sous le verrou (une par
+6 jours au plus), le même jugement, plus la zone `bench` seule, au jugement et avant chaque fil. Une VM
+arrêtée est démarrée par Orodruin, après le contrat et V1, journalisée avant l'appel et comptée dans le
+plafond ; une VM tenue par Glorfindel ne l'est jamais. Le kill désactive le démarrage planifié juste
+après la révocation, supprime le permis et écrit `drill.json` à `disarmed (killed)`, par l'identité de
+l'opérateur.
+
 **Une demande se joue une fois, et fraîche** (SEC14, R-11). Sous le verrou, avant tout jugement :
 - son identifiant est cherché dans le registre des demandes jouées
   (`runs/orodruin/requests/played.jsonl`) : déjà là, elle est refusée (`replayed`) ; un registre qui

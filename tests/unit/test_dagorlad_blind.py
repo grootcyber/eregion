@@ -10,8 +10,12 @@ of it.
 from __future__ import annotations
 
 import json
+import shutil
 from datetime import datetime, timezone
+from pathlib import Path
 
+from eregion_core import drill as dr
+from eregion_core import drill_arming as da
 from eregion_core import exercise_request as xr
 from glorfindel.agent import _build_user_message
 
@@ -46,3 +50,42 @@ def test_a_request_present_changes_nothing_glorfindel_tells_the_model(tmp_path, 
     after = _build_user_message(SIGNAL, PAST).encode()
     assert after == before
     assert req.id.encode() not in after
+
+
+def test_the_drill_of_the_week_present_changes_nothing_glorfindel_tells_the_model(tmp_path, monkeypatch):
+    """DRL1 (docs/design/drill-banc.md §8.1): the drill's request status with its ``drill``, its pulse
+    (runs/orodruin/drill.json), its permit, the drill and its expectations (expectations/banc-hebdo.yaml,
+    in the watch's image) present on the watch's host — the message is the same, to the byte."""
+    root = Path(__file__).resolve().parents[2]
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    (tmp_path / "runs").mkdir()
+    signal = {**SIGNAL, "raw_signal": {"ttp": "T1136.001", "normalized_signal": {
+        "indicator_key": "new_local_account", "indicator_value": 1, "resource": "vm-celebrimbor-gondolin"}}}
+    before = _build_user_message(signal, PAST).encode()
+
+    sha = dr.fingerprint((root / "drills" / "banc-hebdo.yaml").read_bytes())
+    req = xr.new([("T1136.001", VM)], now=datetime(2026, 11, 17, 19, 1, tzinfo=timezone.utc))
+    status = {"request": req.id, "state": "running", "at": "2026-11-17T19:02:00+00:00", "codes": [],
+              "wires": [{"rank": 1, "state": "running", "code": "", "runs": ["20261117T190200Z-ab12"],
+                         "result": ""}],
+              "drill": {"name": "banc-hebdo", "sha256": sha, "occurrence": "2026-11-17T19:00:00+00:00"}}
+    xr.read_status(status)
+    pulled = tmp_path / "runs" / "orodruin"
+    (pulled / "requests").mkdir(parents=True)
+    (pulled / "requests" / f"{req.id}.json").write_text(json.dumps(status))
+    pulse = da.pulse(state="armed", drill="banc-hebdo", sha256=sha, next_at="2026-11-24T19:00:00+00:00",
+                     last={"at": "2026-11-17T19:01:00+00:00", "occurrence": "2026-11-17T19:00:00+00:00",
+                           "state": "played", "code": "", "request": req.id},
+                     image="abc123 sha256:00", at="2026-11-17T19:01:00+00:00")
+    (pulled / "drill.json").write_text(json.dumps(pulse))
+    (pulled / "drill-permit.json").write_text(json.dumps(
+        {"drill": "banc-hebdo", "sha256": sha, "armed_at": "2026-11-16T10:00:00+00:00"}))
+    for d in ("drills", "expectations"):
+        (tmp_path / d).mkdir()
+        shutil.copy(root / d / "banc-hebdo.yaml", tmp_path / d / "banc-hebdo.yaml")
+
+    after = _build_user_message(signal, PAST).encode()
+    assert after == before
+    for seen in (b"banc-hebdo", sha.encode(), b"within_s", req.id.encode()):
+        assert seen not in after

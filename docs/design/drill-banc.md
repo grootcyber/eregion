@@ -1,7 +1,9 @@
 # Le drill du banc — un exercice chaque semaine, lancé par Orodruin (DRL1)
 
-_Conception — 06/11 (DRL1, #613) — statut : **conception seulement**, relue en Opus 5.5 (06/11) et
-corrigée ; les décisions de Jonathan du 06/11 sont au §10. Rien n'est codé, armé ni mesuré. L'armement reste à Jonathan._
+_Conception — 06/11 (DRL1, #613), relue en Opus 5.5 (06/11) et corrigée ; les décisions de Jonathan du
+06/11 sont au §10. Statut : **DRL1a fait** (16/11, le cœur sur Orodruin : le drill et ses attentes, le
+minuteur, l'armement, les gardes, le kill ; les écarts avec cette conception au §11). DRL1b (Imladris, anciennement H0) et
+DRL1c (la Logic App) restent à faire. Rien n'est armé ni mesuré : l'armement reste à Jonathan._
 
 > **Décision de Jonathan (06/11, « Cadence du banc », D1).** Un exercice planifié chaque semaine,
 > pour que l'âge de la dernière preuve (moins de 30 jours, un des cinq indicateurs de la 1.0) se
@@ -861,9 +863,9 @@ attaque. Aucune session n'arme, ne déclenche ni ne réarme le drill. La ligne �
 
 ## 7. Le modèle de menace : une frontière de plus (proposée)
 
-_Proposée ici, pas encore écrite dans [`modele-de-menace.md`](modele-de-menace.md). Le lot de code
-l'y porte, en §9 du tableau des frontières (la §8 est celle de la session Banc, BRO1), avec ses
-tests._
+_Écrite par DRL1a dans [`modele-de-menace.md`](modele-de-menace.md), en **§10** du tableau des
+frontières : le §9 y est devenu celui du téléphone (MOB1), après cette conception. Le texte ci-dessous
+garde son numéro d'origine._
 
 **9. Le minuteur d'Orodruin.** Jusqu'ici, chaque attaque sur le banc partait d'un geste humain : une
 commande, une demande portée par SSH. Le minuteur en lance une sans geste à chaque fois.
@@ -1028,6 +1030,45 @@ Prises une à une, en interactif ; toutes suivent la recommandation de la concep
 7. **Le calendrier** : public, dans le dépôt, et dit au modèle de menace (§7, ligne D).
 8. **gondolin** reste dans son mode réel (`non_disruptive`) : le drill ne touche jamais la
    configuration de Glorfindel (§8.1).
+
+## 11. Ce que DRL1a a codé, et ses écarts avec la conception (16/11)
+
+Le code suit les §2.3 et §3.1 dans leur ordre. Ce qui s'en écarte, ou que la conception laissait au lot :
+
+- **La frontière du modèle de menace** est la §10, pas la §9 (§7, ci-dessus).
+- **Le contrat avec la Logic App de DRL1c**, que DRL1c reprend tel quel :
+  - la sortie Terraform `drill_autostart_id` du module `infra/orodruin/` : l'id de ressource d'un
+    `Microsoft.Logic/workflows` ;
+  - son seul déclencheur, une `Recurrence` hebdomadaire en UTC (`frequency: Week`, `interval: 1`,
+    `timeZone: UTC`, `schedule: {weekDays: [<jour>], hours: [<h>], minutes: [<m>]}`), à l'heure du
+    `schedule` moins 20 min (`tue 18:40` pour `tue 19:00`, le jour reporté au-delà de minuit) ;
+  - créée `Disabled`, son état ignoré par Terraform ; activée par l'armement (`POST …/enable`), désactivée
+    par le désarmement et le kill (`POST …/disable`), api-version `2019-05-01`, par l'identité de
+    l'opérateur ;
+  - le Makefile la lit par `terraform output -json`, en trois cas : la sortie absente (DRL1c non
+    appliqué), « no scheduled start » ; l'état illisible (`az login`, le backend), la valeur
+    `unreadable`, une erreur pour le kill et le désarmement, jamais une absence ; un id, lu.
+    `AUTOSTART=<id>` la donne quand l'état ne se lit pas (comme `PRINCIPAL=` et `VM_ID=` pour le kill).
+    Un 404 sur l'id : « no scheduled start » ; toute autre lecture en échec : une erreur.
+- **Le désarmement sans Orodruin joignable** (éteinte, sans adresse, sa clé d'hôte non vérifiée) : il ne
+  s'arrête pas avant `drill_ops`. Ses deux pas sur Orodruin (les unités, l'armement) sont dits manqués,
+  une erreur ; le permis, le démarrage planifié et le pouls sont faits quand même, par l'identité de
+  l'opérateur : une occurrence, si Orodruin se rallume, refuse alors `no_permit`. Le refaire une fois
+  Orodruin rallumée.
+- **Le kill dit en dernier ce que ses pas ont fait** : « drill: scheduled start disabled, permit
+  removed; refused until re-armed » quand ils l'ont fait, sinon ce qu'ils ont trouvé (« no scheduled
+  start », « no permit in the channel »). Sans `--channel`, la fermeture des fenêtres, le permis et le
+  pouls ne sont pas faits : le kill sort en erreur, comme avant DRL1 pour les fenêtres.
+- **Deux codes de plus dans `drill.json`** : `not_eligible`, quand le catalogue de l'image ne tient plus
+  une technique d'un fil (publique, implémentée, non destructive) ; `crashed` (état `failed`), quand
+  l'occurrence casse après son registre : elle est dite, jamais un silence, et la semaine reste jouée.
+- **Un démarrage de la cible qui échoue** (ARM qui refuse, le journal impossible à écrire, le plafond
+  atteint) saute son fil `not_ready`, dit ; rien n'est compté qui n'a pas été journalisé.
+- **SIGTERM** : pris par n'importe quelle lecture, il reste `stopped` (jamais `permit_mismatch`,
+  `not_placed` ni `not_ready`) ; reçu entre le lancement du fil et sa prise en main, il lui est relayé ;
+  un second signal ne lève plus.
+
+---
 
 ## Ce que ce document ne décide pas
 
