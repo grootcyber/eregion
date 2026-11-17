@@ -33,7 +33,10 @@ SUBMODULE = REPO / "annatar" / "stratus" / "stratus-red-team"
 PATCH = REPO / "annatar" / "stratus" / "patches" / "bastion-sku.patch"
 PIN = REPO / "annatar" / "stratus" / "PIN"
 STAGED = REPO / "annatar" / "stratus" / "staged"
-GO = os.environ.get("EREGION_GO", "go")   # épingler la version Go (toolchain/CI) pour la repro
+GO = os.environ.get("EREGION_GO")   # défini → ce binaire go LOCAL (doit être go1.26.11) ; sinon le conteneur épinglé
+# La toolchain de build reproductible : go1.26.11, épinglée PAR DIGEST (l'image avec laquelle le banc
+# a construit 834976c9…). Pas besoin de Go local ; `make stratus-build` tourne dans ce conteneur.
+GO_IMAGE = "golang:1.26@sha256:4165ee6bf3b7811fd7b40373290405c83d0167dcb87ee5f29c427cdcef45ff8f"
 
 _PIN_LINE = re.compile(r"^#\s+([0-9a-f]{64})\s+(\S+)\s*$")
 _TF_VER = re.compile(r'TerraformVersion\s*=\s*"([^"]+)"')
@@ -88,18 +91,39 @@ def required_providers(submodule: Path = SUBMODULE) -> dict[str, str]:
     return out
 
 
+def _docker_build_argv(src: Path) -> list[str]:
+    """The reproducible container build command: go1.26.11 pinned by digest (GO_IMAGE), run AS the
+    operator (``--user`` so the temp source stays user-owned and cleans up), CGO off + ``-trimpath``
+    (user/path independent) → the pinned sha. GOCACHE/GOPATH/HOME land inside the mount, writable."""
+    uid, gid = os.getuid(), os.getgid()
+    return [
+        "docker", "run", "--rm",
+        "-v", f"{src}:/src", "-w", "/src/v2",
+        "-e", "CGO_ENABLED=0", "-e", "HOME=/src",
+        "-e", "GOCACHE=/src/.gocache", "-e", "GOPATH=/src/.gopath",
+        "--user", f"{uid}:{gid}", GO_IMAGE,
+        "go", "build", "-trimpath", "-ldflags=-w -s", "-o", "/src/stratus", "./cmd/stratus",
+    ]
+
+
 def _default_build(dest: Path, submodule: Path = SUBMODULE, patch: Path = PATCH) -> str:
-    """Copy the submodule source (sans its gitlink), apply our patch, build reproducibly, stage
-    the binary, return its sha256. The submodule stays pristine (= the official source)."""
+    """Copy the submodule source (sans its gitlink), apply our patch, build reproducibly, stage the
+    binary, return its sha256. The submodule stays pristine (= the official source). The build runs
+    in the pinned ``golang`` container by default (no local Go needed) ; ``EREGION_GO`` forces a
+    local go binary instead (which must be go1.26.11 to reproduce the pinned sha)."""
     dest.mkdir(parents=True, exist_ok=True)
     binary = dest / "stratus"
     with tempfile.TemporaryDirectory(prefix="stratus-src-") as tmp:
         src = Path(tmp) / "stratus-red-team"
         shutil.copytree(submodule, src, ignore=shutil.ignore_patterns(".git"))
         subprocess.run(["git", "apply", str(patch)], cwd=str(src), check=True)
-        subprocess.run(
-            [GO, "build", "-trimpath", "-ldflags=-w -s", "-o", str(binary), "./cmd/stratus"],
-            cwd=str(src / "v2"), check=True, env={**os.environ, "CGO_ENABLED": "0"})
+        if GO:
+            subprocess.run(
+                [GO, "build", "-trimpath", "-ldflags=-w -s", "-o", str(binary), "./cmd/stratus"],
+                cwd=str(src / "v2"), check=True, env={**os.environ, "CGO_ENABLED": "0"})
+        else:
+            subprocess.run(_docker_build_argv(src), check=True)
+            shutil.copy2(src / "stratus", binary)
     binary.chmod(0o755)
     return hashlib.sha256(binary.read_bytes()).hexdigest()
 

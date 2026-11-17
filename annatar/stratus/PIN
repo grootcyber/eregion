@@ -21,7 +21,10 @@
 #             offensive maison, bibliothèque publique » tient. vm-run-command a déjà le SKU corrigé
 #             en amont à v2.38.1, DataDog #1016.)
 #   Go      : go1.26.11   (repro stricte : construire avec go1.26.11 exactement ; un autre Go -> un
-#             autre sha, alors le build refuse contre ce PIN)
+#             autre sha, alors le build refuse contre ce PIN). Par défaut le build tourne dans le
+#             CONTENEUR golang épinglé PAR DIGEST (GO_IMAGE dans scripts/stratus_build.py :
+#             golang:1.26@sha256:4165ee6b…45ff8f, = go1.26.11) -> aucun Go local requis (R2BX).
+#             EREGION_GO=<chemin> force un go local (qui doit être go1.26.11).
 #
 # ── Le binaire QUE NOUS CONSTRUISONS (vérifié au run, BINARY_LABEL = "stratus") ─────────
 #   834976c9df9584c8d02e9559139cc4ca9a46af658134c160b2b1205d0d8db21e  stratus

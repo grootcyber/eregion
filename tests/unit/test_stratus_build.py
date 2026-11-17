@@ -143,6 +143,18 @@ def test_submodule_commit_reads_head(tmp_path):
     assert len(submodule_commit(submodule)) == 40
 
 
+def test_docker_build_argv_is_reproducible_and_pinned(tmp_path):
+    """R2BX: the default build runs in the pinned golang container (no local Go). The command must
+    stay reproducible and pin the toolchain by digest."""
+    argv = stratus_build._docker_build_argv(tmp_path / "src")
+    assert argv[0] == "docker"
+    assert stratus_build.GO_IMAGE in argv
+    assert "@sha256:" in stratus_build.GO_IMAGE            # toolchain pinned by digest (M5691)
+    assert "-trimpath" in argv                             # reproducible build (M5692)
+    assert "CGO_ENABLED=0" in argv                         # static, cross-user reproducible
+    assert "--user" in argv                                # built as the operator (temp stays user-owned)
+
+
 def test_build_lays_out_the_verified_tree(tmp_path):
     submodule, pin, fetch, build_binary, want = _world(tmp_path)
     dest = tmp_path / "staged"

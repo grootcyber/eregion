@@ -1741,6 +1741,18 @@
    "issue": 608
   },
   {
+   "id": "a-injecteur-build-conteneur",
+   "composant": "annatar",
+   "poste": "a-attaquer",
+   "nom": "The control-plane injector built in a digest-pinned golang container by default, no local Go required",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "R2BX"
+   ],
+   "issue": 608
+  },
+  {
    "id": "a-identite-banc",
    "composant": "annatar",
    "poste": "a-attaquer",
