@@ -28,8 +28,8 @@ COPY technique_catalog.yaml .
 COPY drills/ drills/
 
 # R2BS (#841): the pinned control-plane injector tool and its offline provisioning toolchain,
-# carried read-only at /opt/stratus/ (the adapter reads them there). `make stratus-stage` (the only
-# step with network) downloads + verifies them into annatar/stratus/staged/ — never committed. In
+# carried read-only at /opt/stratus/ (the adapter reads them there). `make stratus-build` (the only
+# step with network) builds + verifies them into annatar/stratus/staged/ — never committed. In
 # CI nothing is staged (only .gitkeep), so the image builds but no control-plane technique runs.
 COPY annatar/stratus/staged/ /opt/stratus/
 

@@ -1,0 +1,3 @@
+[submodule "annatar/stratus/stratus-red-team"]
+	path = annatar/stratus/stratus-red-team
+	url = https://github.com/DataDog/stratus-red-team.git
