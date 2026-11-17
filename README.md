@@ -867,7 +867,7 @@ A claim such as "the VM is isolated" must be true, not likely. Each layer of evi
 
 ```mermaid
 flowchart BT
-    U["Unit tests<br/>~7,000, 6 min"]
+    U["Unit tests<br/>~12,000, 6 min"]
     I["Property-based invariants<br/>in-memory Azure, a moving world,<br/>faults, two writers at once"]
     M["Mutation check<br/>real past bugs re-injected"]
     L["Cross-process locks<br/>real flock"]
@@ -899,7 +899,7 @@ flowchart BT
 ```bash
 make install          # the locked dependencies, hashes checked (requirements/dev.txt) — as CI and the image
 pytest
-# ~7,000 tests (about six minutes) — 0 Azure calls, 0 LLM calls, 0 writes to ~/.glorfindel
+# ~12,000 tests (about six minutes) — 0 Azure calls, 0 LLM calls, 0 writes to ~/.glorfindel
 GLORFINDEL_INVARIANT_EXAMPLES=5000 pytest tests/unit/test_invariants.py   # deep run (~8 min)
 python scripts/mutation_check.py --examples 500 --rounds 2                # measure the invariants
 python scripts/mutation_night.py --list                                   # the mutants only a machine kills, by night

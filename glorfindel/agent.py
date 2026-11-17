@@ -974,6 +974,14 @@ def _count(row: dict, column: str) -> int:
         return 0
 
 
+def _read_count(row: dict, column: str) -> int | None:
+    """A count the row carries, None when absent or unread (AL3: « none » is said only when read)."""
+    try:
+        return int(row[column])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def _succeeded_lines(row: dict) -> int:
     """How many of an operation's lines succeeded (`Succeeded`, AL1d); 0 when unread."""
     return _count(row, "Succeeded")
@@ -1010,6 +1018,11 @@ def _control_plane_text(signal: dict) -> tuple[str, list[str]]:
         else:
             what += (" Statut lu à sa dernière ligne, mais une de ses lignes a réussi : "
                      "l'opération a pris effet.")
+    # AL3: a rule that keeps the operations that only failed (Run Command, a Bastion link — a
+    # refused attempt says as much): the card says it failed, from the count its row carries.
+    elif status.lower() in ("failure", "failed") and _read_count(row, "Succeeded") == 0:
+        what += (" L'opération a échoué, sans aucune ligne en succès : une tentative (un refus "
+                 "d'autorisation, peut-être), escaladée comme une opération réussie.")
     # AL1d: one CorrelationId (the client's to choose), several callers named on its lines:
     # the card says so, and to read each line.
     if _named_callers(row) > 1:

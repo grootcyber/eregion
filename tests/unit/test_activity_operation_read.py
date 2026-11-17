@@ -12,7 +12,9 @@ the real AzureActivityDetector and RulePoller. What is held, for each rule:
   - what each rule already leaves out stays out: another operation, a line older than its
     window, Glorfindel's own isolation; one row per operation; the same columns, plus
     `Succeeded` and `Callers`; the dedup of an operation across polls is unchanged.
-The Run Command rule (SID1) keeps failures by design: every operation is read already. The
+The Run Command rule (SID1) keeps failures by design: every operation is read already — and so
+do the two rules of AL3 (Run Command by another caller, a Bastion link), held in
+tests/unit/test_run_command_callers.py. The
 restore point rule (AL2) reads what succeeded in its own form — held here with the others, and
 in tests/unit/test_restore_points.py. And in the first four rules, a latest line that names
 no caller keeps the caller its operation's other lines name: Glorfindel's own isolation stays
@@ -62,6 +64,9 @@ RULES = {
                                       f"{RG}/Microsoft.Compute/snapshots/snap-example"),
 }
 RUN_COMMAND = "run-command-by-glorfindel-outside-isolation"
+# AL3 (#867): two rules that read every operation, refused ones too (Jonathan, 17/11) — held in
+# tests/unit/test_run_command_callers.py.
+EVERY_OPERATION = ("run-command-by-external-caller", "bastion-shareable-link-created")
 RUN_OP = "MICROSOFT.COMPUTE/VIRTUALMACHINES/RUNCOMMAND/ACTION"
 # AL2's sister rule sets failures aside too, in its own form (Azure Backup excluded, the row's
 # columns taken on the lines that name someone else): held here for what every rule holds,
@@ -112,7 +117,7 @@ def test_every_shipped_activity_rule_is_held_here():
     """A new rule on the Activity Log is read here before it ships: it says whether it sets
     failures aside, and is held to read an operation that succeeded."""
     assert {n for n, r in SHIPPED.items() if r.get("source") == "azure_activity"} == {
-        *RULES, RUN_COMMAND, RESTOREPOINT}
+        *RULES, RUN_COMMAND, RESTOREPOINT, *EVERY_OPERATION}
 
 
 @pytest.mark.parametrize("rule", [*RULES, RESTOREPOINT])

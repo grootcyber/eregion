@@ -38,6 +38,14 @@ of Glorfindel may be. The drains seen are kept RECORDED_TTL_S after the state is
 release within minutes, the row later); a restart forgets them, and a drain that ran before
 it, seen after, is a card.
 
+Its sister rule (AL3, #867): `run-command-by-external-caller` reads the same operation for every
+OTHER caller, and projects `WatchedCaller = "others"`: under it, a row under Glorfindel's identity is
+dropped here, drain or not — whether it is its drain or not is this rule's to say, once (one card,
+never two). A row that names no caller, or read while Glorfindel's identity is unknown, stays: it
+may be another's (A0). A client's own rule on Run Command, without the column, is read as before:
+Glorfindel's drain dropped, its command outside a drain marked, every other caller kept — the
+drain is Glorfindel's own on every Run Command rule.
+
 What it does not hold. The attachment reads the local isolation state, and every container
 that writes it — the watch, the console, the bot (each mounts ~/.glorfindel) — can write a
 drain, or a whole state, then run its command inside the window; a drain seen is kept 2 h.
@@ -56,9 +64,11 @@ RUN_COMMAND = "microsoft.compute/virtualmachines/runcommand/action"
 # is missing, comes at most 300 s later (the drain waits that long, `result(timeout=300)`).
 DRAIN_BEFORE_S = 120.0
 DRAIN_AFTER_S = 300.0 + DRAIN_BEFORE_S
-# The column a rule projects to watch Glorfindel's identity only, and its value.
+# The column a rule projects to watch Glorfindel's identity only, and its value — or every
+# caller but Glorfindel (AL3: its sister rule, `run-command-by-external-caller`).
 SCOPE_COLUMN = "WatchedCaller"
 SCOPE_GLORFINDEL = "glorfindel"
+SCOPE_OTHERS = "others"
 # The column the kept row gains: why it is a card.
 MARK = "GlorfindelRunCommand"
 # How many drains an isolation state keeps (a VM isolated again and again).
@@ -102,8 +112,17 @@ def is_run_command(op: str) -> bool:
     return op == RUN_COMMAND
 
 
+def _scope(row: dict) -> str:
+    return str(row.get(SCOPE_COLUMN) or "").strip().lower()
+
+
 def watches_glorfindel_only(row: dict) -> bool:
-    return str(row.get(SCOPE_COLUMN) or "").strip().lower() == SCOPE_GLORFINDEL
+    return _scope(row) == SCOPE_GLORFINDEL
+
+
+def watches_others_only(row: dict) -> bool:
+    """The row's rule reads every caller but Glorfindel (AL3): its identity is the sister rule's."""
+    return _scope(row) == SCOPE_OTHERS
 
 
 def started(row: dict) -> float | None:
@@ -186,10 +205,12 @@ def attach(row: dict, rid: str, book: DrainBook, info: dict | None = None) -> st
 def mark(row: dict, op: str, rid: str, known: bool, mine: bool, book,
          has_caller: bool = True, info: dict | None = None) -> str | None:
     """For one row: "" — not a Run Command of this module (another operation; another caller
-    under a client's rule); None — dropped (Glorfindel's drain, or another caller under a rule
-    that watches Glorfindel only); else the reason it is a card. `book` is called once, when
-    needed (a DrainBook, or a function that returns one). Under the rule that watches
-    Glorfindel, a row that names no caller at all can't be told another's (A0): a card."""
+    under a client's rule or under the rule that reads the others); None — dropped (Glorfindel's
+    drain, another caller under a rule that watches Glorfindel only, or Glorfindel's identity
+    under the rule that reads the others: the sister rule's, AL3); else the reason it is a card.
+    `book` is called once, when needed (a DrainBook, or a function that returns one). Under the
+    rule that watches Glorfindel, a row that names no caller at all can't be told another's (A0):
+    a card."""
     if not is_run_command(op):
         return ""
     only = watches_glorfindel_only(row)
@@ -197,6 +218,8 @@ def mark(row: dict, op: str, rid: str, known: bool, mine: bool, book,
         return "caller_unreadable"
     if not known:
         return "identity_unknown" if only else ""
+    if mine and watches_others_only(row):
+        return None
     if not mine:
         return None if only else ""
     return attach(row, rid.rstrip("/").lower(), book() if callable(book) else book, info)
