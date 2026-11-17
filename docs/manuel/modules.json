@@ -375,8 +375,8 @@
    "version": "0.6",
    "nom": "identity defended",
    "etat": "publiee",
-   "derniere": "0.6.0",
-   "date": "2026-11-15",
+   "derniere": "0.6.1",
+   "date": "2026-11-17",
    "resume": "The Activity and Entra ID logs measured on the bench; a public technique against the test identity, seen by Glorfindel; the response to a stolen identity, on the card."
   },
   {
@@ -496,8 +496,9 @@
    "composant": "glorfindel",
    "poste": "g-detecter",
    "nom": "A Run Command by a caller other than Glorfindel and a Bastion shareable link, detected and escalated, refused attempts included; Glorfindel's own session drain never a card; a VM outside the discovery filed on its group, never dropped",
-   "etat": "main",
-   "release": "0.x",
+   "etat": "livree",
+   "release": "0.6",
+   "version": "0.6.1",
    "lots": [
     "AL3"
    ],
@@ -1184,8 +1185,9 @@
    "composant": "glorfindel",
    "poste": "g-verifier",
    "nom": "A block whose rules are gone behind a quarantine that can't be judged (the configuration unreadable) is said gone, the NIC left unknown, never said open",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.1",
    "lots": [
     "L1Nd"
    ],
@@ -1227,8 +1229,9 @@
    "composant": "glorfindel",
    "poste": "g-verifier",
    "nom": "Proof: a bypass is judged only on the flows the hold's own denies close; an isolation left on the VM's former address is said gone, not bypassed, while a bypass of what a hold still holds is said; the product unchanged",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.1",
    "lots": [
     "L1V"
    ],
@@ -1240,8 +1243,9 @@
    "composant": "glorfindel",
    "poste": "g-verifier",
    "nom": "Proof: the door's facts are tested on one clock, the isolation and its log, and their files pass again with the real clock a month ahead; the product unchanged",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.1",
    "lots": [
     "TD1"
    ],
@@ -1474,8 +1478,9 @@
    "composant": "socle",
    "poste": "s-signer",
    "nom": "Security hardening",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.1",
    "lots": [
     "SEC-B"
    ],
@@ -1486,8 +1491,9 @@
    "composant": "socle",
    "poste": "s-signer",
    "nom": "Security hardening",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.1",
    "lots": [
     "SEC-C",
     "SEC-C-workflow"
@@ -1499,8 +1505,9 @@
    "composant": "socle",
    "poste": "s-signer",
    "nom": "Security hardening",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.1",
    "lots": [
     "SEC-Fa"
    ],
@@ -1696,8 +1703,9 @@
    "composant": "annatar",
    "poste": "a-attaquer",
    "nom": "The guardrails for Stratus's dedicated test subscription (policy, diagnostic routing, budget)",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.1",
    "lots": [
     "R2BG"
    ],
@@ -1721,8 +1729,9 @@
    "composant": "annatar",
    "poste": "a-attaquer",
    "nom": "The control-plane injector pinned to the official v2.38.1 release, the main technique's warmup SKU fixed",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.1",
    "lots": [
     "R2BV"
    ],
@@ -1733,8 +1742,9 @@
    "composant": "annatar",
    "poste": "a-attaquer",
    "nom": "The control-plane injector built from the official vendored submodule plus our in-repo patch, not downloaded",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.1",
    "lots": [
     "R2BW"
    ],
@@ -1745,8 +1755,9 @@
    "composant": "annatar",
    "poste": "a-attaquer",
    "nom": "The control-plane injector built in a digest-pinned golang container by default, no local Go required",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.1",
    "lots": [
     "R2BX"
    ],
@@ -1757,8 +1768,9 @@
    "composant": "annatar",
    "poste": "a-attaquer",
    "nom": "A control-plane remote-access and persistence vector, as a playable bench scenario",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.1",
    "lots": [
     "BSL1"
    ],
@@ -1968,8 +1980,9 @@
    "composant": "orodruin",
    "poste": "o-executer",
    "nom": "The weekly drill on Orodruin's side: its timer, its arming by the operator, its guards and its stop; nothing armed yet",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.1",
    "lots": [
     "DRL1a"
    ],
@@ -2972,8 +2985,9 @@
    "composant": "socle",
    "poste": "s-documenter",
    "nom": "The attack-injector lots' public changelog stays blue-framed, with no technique name or code (FRN1b applied to the pending fragments)",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.1",
    "lots": [
     "FRN2"
    ],

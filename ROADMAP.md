@@ -90,7 +90,7 @@ Tenue par l'Orchestre (RM1, 02/11). Une ligne par release qui se prépare : sa v
 | 0.5.13 | nothing invented | CDJ1, CMD1, CMD1b, DEP3, FRN1, FRN1b, HY2b, HY2c, I3X, I9A, IR1f, JUG2c, JUG2d, L1N, L1Nb, LEV1b, MSK2c, MSK3b, MUT11, MUT12, MUT13, RAN1b, RID1, SNP1, SNP1b, TTL1 (fusionnés sur `main` depuis `v0.5.12`) | brouillon |
 | 0.5.x | — | G1 au banc ; MUT2, MAK2, OI4 | plus tard |
 | 0.6.0 | l'identité défendue | **recentrée (Jonathan, 12/11)** : ID1 allumé et mesuré ; IDI1 appliqué (fait) ; IR1a (le plan et « Vérifier » sur une **vraie carte d'identité**, provoquée par une technique publique sur l'identité de test, côté attaque — c'est **C2**, #199 ; la technique et sa bibliothèque restent à choisir) ; NT1 (le geste `never_target` des identités protégées). **R2 passe en 0.6.1.** À part : les techniques d'Entra de Stratus, dont la FIC, restent `planned`, hors R2b (`docs/design/stratus-cible.md`), et reviendront dans un lot dédié. | brouillon |
-| 0.6.1 | — | R2 (l'adaptateur Stratus, une technique du plan de contrôle, dans l'abonnement de test dédié de R2b ; R2b mesure `vm-run-command`, la technique principale, et `create-bastion-shareable-link`, `docs/design/stratus-cible.md`), vue par Glorfindel ; l'audit du 06/11 (SEC-A1 à SEC-D) ; le drill hebdomadaire du banc | plus tard |
+| 0.6.1 | — | R2 (l'adaptateur Stratus, une technique du plan de contrôle, dans l'abonnement de test dédié de R2b ; R2b mesure `vm-run-command`, la technique principale, et `create-bastion-shareable-link`, `docs/design/stratus-cible.md`), vue par Glorfindel ; l'audit du 06/11 (SEC-A1 à SEC-D) ; le drill hebdomadaire du banc | brouillon |
 
 ### Les lots
 
