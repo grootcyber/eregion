@@ -1333,6 +1333,15 @@ briques:
     lots: [R2BS]
     issue: 841
 
+  - id: a-injecteur-v2381
+    composant: annatar
+    poste: a-attaquer
+    nom: "The control-plane injector pinned to the official v2.38.1 release, vm-run-command's warmup SKU fixed"
+    etat: main
+    release: "0.6"
+    lots: [R2BV]
+    issue: 608
+
   - id: a-identite-banc
     composant: annatar
     poste: a-attaquer

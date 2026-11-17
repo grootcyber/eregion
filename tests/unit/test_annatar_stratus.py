@@ -157,10 +157,10 @@ def test_verify_binary_refuses_a_missing_binary(tmp_path):
 
 
 def test_repo_pin_records_the_stratus_binary():
-    """The committed PIN carries the v2.38.0 Linux x86_64 binary digest the adapter checks."""
+    """The committed PIN carries the v2.38.1 Linux x86_64 binary digest the adapter checks."""
     digests = pinned_digests(STRATUS_DIR)
     assert digests.get(BINARY_LABEL) == \
-        "376ceff19c170194f6adbc2f883e8b5658e99a13cb1057f0ab118524411d57bb"
+        "b37130e21e82c23373a021c4f22bbe86714bc154bac8f4633b2544143e09564d"
 
 
 # ── A resolved technique carries its phases, verified binary and probe ────────────────

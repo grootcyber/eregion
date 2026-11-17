@@ -157,7 +157,7 @@ def verify_binary(binary_path: str | Path, stratus_dir: Path | None = None) -> s
     if digest != pinned:
         raise StratusError(
             "the Stratus binary does not match its sha256 in annatar/stratus/PIN — not the "
-            "pinned binary (v2.38.0); not run"
+            "pinned binary (v2.38.1); not run"
         )
     return digest
 

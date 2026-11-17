@@ -27,9 +27,9 @@ REPO = Path(__file__).resolve().parent.parent
 PIN = REPO / "annatar" / "stratus" / "PIN"
 STAGED = REPO / "annatar" / "stratus" / "staged"
 
-STRATUS_VERSION = "v2.38.0"
+STRATUS_VERSION = "v2.38.1"
 TERRAFORM_VERSION = "1.3.10"
-# The providers azure.persistence.backdoor-managed-identity-fic's main.tf pins at v2.38.0
+# The providers azure.persistence.backdoor-managed-identity-fic's main.tf pins at v2.38.1
 # (hashicorp/<type> @ <version>); their zip sha256 are in PIN.
 PROVIDERS = {"azurerm": "4.81.0", "azuread": "2.53.1"}
 
