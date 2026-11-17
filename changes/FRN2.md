@@ -1,0 +1,2 @@
+### Changed
+- **The attack-injector lots' pending changelog fragments and manual bricks are re-framed blue, with no technique name or code** (FRN2, #803, FRN1b applied). The Stratus build/pin series (R2BV, R2BW) and the matching manual brick named specific attack techniques in their pending `changes/` fragments; per FRN1b (`changes/README.md`, `docs/sessions.md` « La frontière rouge »), the public changelog of an attack lot stays blue-framed, so those fragments now describe the injector tooling without naming techniques. No behaviour changes — changelog and manual text only.

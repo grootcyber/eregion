@@ -1336,7 +1336,7 @@ briques:
   - id: a-injecteur-v2381
     composant: annatar
     poste: a-attaquer
-    nom: "The control-plane injector pinned to the official v2.38.1 release, vm-run-command's warmup SKU fixed"
+    nom: "The control-plane injector pinned to the official v2.38.1 release, the main technique's warmup SKU fixed"
     etat: main
     release: "0.6"
     lots: [R2BV]
@@ -2287,6 +2287,15 @@ briques:
     issue: 803
     pr: 810
     doc: docs/sessions.md
+
+  - id: s-frontiere-rouge-neutre
+    composant: socle
+    poste: s-documenter
+    nom: "The attack-injector lots' public changelog stays blue-framed, with no technique name or code (FRN1b applied to the pending fragments)"
+    etat: main
+    release: "0.6"
+    lots: [FRN2]
+    issue: 803
 
   - id: s-replay
     composant: socle
