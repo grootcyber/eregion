@@ -1363,7 +1363,7 @@ briques:
   - id: a-scenario-bastion
     composant: annatar
     poste: a-attaquer
-    nom: "The Bastion shareable link (T1133), as a playable control-plane scenario"
+    nom: "A control-plane remote-access and persistence vector, as a playable bench scenario"
     etat: main
     release: "0.6"
     lots: [BSL1]
