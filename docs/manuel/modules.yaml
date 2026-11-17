@@ -1360,6 +1360,15 @@ briques:
     lots: [R2BX]
     issue: 608
 
+  - id: a-scenario-bastion
+    composant: annatar
+    poste: a-attaquer
+    nom: "The Bastion shareable link (T1133), as a playable control-plane scenario"
+    etat: main
+    release: "0.6"
+    lots: [BSL1]
+    issue: 608
+
   - id: a-identite-banc
     composant: annatar
     poste: a-attaquer
