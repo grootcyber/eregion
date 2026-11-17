@@ -1753,6 +1753,18 @@
    "issue": 608
   },
   {
+   "id": "a-scenario-bastion",
+   "composant": "annatar",
+   "poste": "a-attaquer",
+   "nom": "A control-plane remote-access and persistence vector, as a playable bench scenario",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "BSL1"
+   ],
+   "issue": 608
+  },
+  {
    "id": "a-identite-banc",
    "composant": "annatar",
    "poste": "a-attaquer",

@@ -1,0 +1,51 @@
+schema_version: "1"
+name: create-bastion-shareable-link
+description: >
+  T1133 — Services distants externes : création d'un lien partageable de Bastion, par la
+  bibliothèque publique épinglée (cycle warmup/detonate/revert/cleanup), depuis Orodruin armé, sur
+  le plan de contrôle. Un lien partageable ouvre un accès distant à une VM sans le client Bastion
+  ni le réseau du client — un accès porteur, rarement légitime. La technique crée ses propres
+  ressources dans le groupe inscrit du warmup (R2b), pas sur l'infra du client. La détection sur le
+  journal d'activité (azure_activity) est la règle bastion-shareable-link-created (AL3, #867),
+  mesurée au banc le 17/11 ; ici la détection reste « unknown », T0 émis pour cette mesure (ID1,
+  #281). Le SKU du gabarit cible est corrigé par notre patch en repo (F2 -> Standard_D2as_v7 +
+  image Gen2, annatar/stratus/patches/bastion-sku.patch) : le SKU hérité est indisponible sur un
+  abonnement neuf.
+kind: technique
+mitre: T1133
+version: "1.0.0"
+engine: stratus
+engine_ref: azure.persistence.create-bastion-shareable-link
+destructive: false
+
+target:
+  type: azure_control_plane
+  # Le groupe du warmup inscrit par Orodruin (eregion-target / eregion-zone=bench) — R2b.
+  # Remplacer par le vôtre ; un abonnement de test dédié (R2b). subscription_id est pris dans
+  # AZURE_SUBSCRIPTION_ID s'il n'est pas donné ici.
+  resource_group: rg-celebrimbor
+
+detection:
+  timeout: "1200s"
+  prerequisites:
+    - name: azure_activity_ingestion
+      table: AzureActivity
+      why: >
+        La technique agit sur le plan de contrôle (création d'un lien partageable sur un Bastion) ;
+        elle n'apparaît que dans le journal d'activité, dont l'ingestion au banc est ID1.
+      verify: "AzureActivity | where TimeGenerated > ago(1h) | limit 1"
+  hints:
+    log_source: azure_activity
+    attack_commands_summary: >
+      La bibliothèque publique épinglée crée dans le groupe inscrit un réseau, une VM et un Bastion,
+      puis ouvre un lien partageable vers la VM (detonate), le retire (revert) et détruit ses
+      prérequis (cleanup). L'indicateur de plan de contrôle est l'opération de création du lien
+      partageable sur le Bastion.
+    expected_indicators:
+      - "AzureActivity: création d'un lien partageable de Bastion (OperationNameValue =~ 'MICROSOFT.NETWORK/BASTIONHOSTS/CREATESHAREABLELINKS/ACTION')"
+      - "Caller / Claims (appid, objectid) : l'identité d'Orodruin (l'appelant du plan de contrôle)"
+      - "ActivityStatusValue / ResultType : Success (mais la règle lit aussi les opérations refusées)"
+    failure_candidates:
+      - "AzureActivity | where OperationNameValue =~ 'MICROSOFT.NETWORK/BASTIONHOSTS/CREATESHAREABLELINKS/ACTION' | where TimeGenerated > ago(30m)"
+      - "AzureActivity | where ResourceProviderValue == 'Microsoft.Network' and OperationNameValue has 'BASTIONHOSTS' | where TimeGenerated > ago(30m)"
+      - "Le journal d'activité peut arriver avec plusieurs minutes de retard — fenêtre de détection >= 1200 s (la règle : expected_latency_s 1200)"
