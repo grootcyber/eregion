@@ -17,7 +17,7 @@ What is held:
   - a row naming a VM the discovery does not know (another subscription) is a card on its
     group, unattributed, its `_ResourceId` as read — never dropped, never acted on; a VM the
     discovery knows and the rule does not watch (excluded) stays dropped.
-Mutants M5501–M5514 (scripts/mutants/AL3.py).
+Mutants M5501–M5519 (scripts/mutants/AL3.py).
 """
 from __future__ import annotations
 
