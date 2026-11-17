@@ -748,6 +748,118 @@ rules:
       | project TimeGenerated, Started, OperationNameValue, ActivityStatusValue, Callers, Caller, CallerIpAddress,
                 CallerAppId, CallerObjectId, _ResourceId, ResourceGroup, CorrelationId, WatchedCaller
 
+  # Run Command par un autre appelant que Glorfindel (AL3, #867) : le pendant de la règle SID1
+  # ci-dessus, qui ne surveille que son identité. Run Command s'exécute en root (SYSTEM sous
+  # Windows) sans SSH ni IP publique : de l'exécution de code par le plan de contrôle. Mesuré au
+  # banc le 17/11 : l'opération arrive dans AzureActivity avec son Caller (l'object id d'un
+  # principal de service) et le _ResourceId de la VM. La règle projette WatchedCaller = "others" :
+  # l'adaptateur (glorfindel/providers/azure/own_run_command.py) y écarte toute ligne sous
+  # l'identité de Glorfindel, coupure ou non — la règle SID1 la dit, une fois ; une coupure de
+  # Glorfindel n'est escaladée par aucune règle Run Command. Une ligne qui ne nomme aucun
+  # appelant, ou lue quand l'identité de Glorfindel est inconnue, reste (A0).
+  # Écart à la famille (AL1d : les opérations qui n'ont qu'échoué sont écartées) : ici TOUTES
+  # les opérations sont lues, réussies et refusées — une tentative refusée de lancer une commande
+  # en root en dit autant (décision de Jonathan, 17/11). La carte dit l'échec (Succeeded = 0).
+  # Aucune exclusion d'identité livrée : un automatisme d'exploitation légitime s'exclura dans la
+  # couche du client. Une VM hors de la découverte (un autre abonnement) : la carte va sur son
+  # groupe, jamais jetée (AL3). Décidée par le code, sans modèle, sans action (comme AL1).
+  - name: run-command-by-external-caller
+    description: >
+      Une commande lancée sur une VM par Run Command par un autre appelant que Glorfindel —
+      T1651 (Cloud Administration Command). Run Command s'exécute en root sans SSH ni IP
+      publique : de l'exécution de code par le plan de contrôle. Toutes les opérations, réussies
+      et refusées : la carte dit l'échec. Glorfindel lui-même n'est pas de cette règle (la règle
+      run-command-by-glorfindel-outside-isolation le surveille) ; un automatisme légitime
+      s'exclut dans la couche du client.
+    enabled: true
+    source: azure_activity
+    ttp: T1651
+    assets: [auto]
+    interval_s: 60
+    expected_latency_s: 1200
+    query: |
+      AzureActivity
+      | where TimeGenerated > ago(1h)
+      | where OperationNameValue =~ "MICROSOFT.COMPUTE/VIRTUALMACHINES/RUNCOMMAND/ACTION"
+      | extend CallerAppId = tostring(parse_json(Claims).appid),
+               CallerObjectId = tostring(parse_json(Claims)["http://schemas.microsoft.com/identity/claims/objectidentifier"])
+      // A line that names its caller (its Caller, or ids in Claims), and who, the three as one.
+      | extend Named = isnotempty(Caller) or isnotempty(CallerAppId) or isnotempty(CallerObjectId),
+               CallerKey = strcat(Caller, "|", CallerAppId, "|", CallerObjectId)
+      // One row per operation: its latest line, when its first line was written, how many of its
+      // lines succeeded, how many callers its lines name, and the caller they name. Every
+      // operation is read, the ones that only failed too (AL3): the card says it.
+      | summarize arg_max(TimeGenerated, *), Started = min(TimeGenerated),
+          Succeeded = countif(ActivityStatusValue in~ ("Success", "Succeeded")),
+          Callers = dcountif(CallerKey, Named),
+          NamedCaller = take_anyif(Caller, Named),
+          NamedCallerIp = take_anyif(CallerIpAddress, Named and isnotempty(CallerIpAddress)),
+          NamedCallerAppId = take_anyif(CallerAppId, Named),
+          NamedCallerObjectId = take_anyif(CallerObjectId, Named)
+          by CorrelationId, OperationNameValue, _ResourceId
+      // A latest line that names no caller takes the caller its operation's lines name — only
+      // when they name one. Else the row names no one: kept, it may be another's.
+      | extend Fill = not(Named) and Callers == 1
+      | extend Caller = iif(Fill, NamedCaller, Caller),
+               CallerIpAddress = iif(Fill, NamedCallerIp, CallerIpAddress),
+               CallerAppId = iif(Fill, NamedCallerAppId, CallerAppId),
+               CallerObjectId = iif(Fill, NamedCallerObjectId, CallerObjectId)
+      | extend WatchedCaller = "others"
+      | project TimeGenerated, Started, OperationNameValue, ActivityStatusValue, Succeeded, Callers, Caller,
+                CallerIpAddress, CallerAppId, CallerObjectId, _ResourceId, ResourceGroup, CorrelationId, WatchedCaller
+
+  # Un lien partageable de Bastion (AL3, #867) ouvre un accès distant à une VM sans le client
+  # Bastion ni le réseau du client : un accès porteur, un vecteur d'accès distant et de
+  # persistance (T1133), rarement légitime. Mesuré au banc le 17/11 : l'opération arrive dans
+  # AzureActivity, Caller et _ResourceId (le Bastion). Tout appelant est lu : Glorfindel n'en crée
+  # jamais — sous son identité, la ligne reste, marquée GlorfindelIdentity (critique), le Bastion
+  # n'est pas à lui. La carte va sur le groupe du Bastion (AL1c). Comme la règle Run Command
+  # ci-dessus, et à l'écart de la famille (AL1d) : toutes les opérations, réussies et refusées ;
+  # la carte dit l'échec. Aucune exclusion livrée : un outil d'accès légitime s'exclut dans la
+  # couche du client. Décidée par le code, sans modèle, sans action (comme AL1).
+  - name: bastion-shareable-link-created
+    description: >
+      Création d'un lien partageable de Bastion — T1133 (External Remote Services). Un lien
+      partageable ouvre un accès distant à une VM sans le client Bastion ni le réseau du
+      client : un accès porteur, rarement légitime. Tout appelant ; toutes les opérations,
+      réussies et refusées (la carte dit l'échec). Un usage attendu s'exclut dans la couche du
+      client.
+    enabled: true
+    source: azure_activity
+    ttp: T1133
+    assets: [auto]
+    interval_s: 60
+    expected_latency_s: 1200
+    query: |
+      AzureActivity
+      | where TimeGenerated > ago(1h)
+      | where OperationNameValue =~ "MICROSOFT.NETWORK/BASTIONHOSTS/CREATESHAREABLELINKS/ACTION"
+      | extend CallerAppId = tostring(parse_json(Claims).appid),
+               CallerObjectId = tostring(parse_json(Claims)["http://schemas.microsoft.com/identity/claims/objectidentifier"])
+      // A line that names its caller (its Caller, or ids in Claims), and who, the three as one.
+      | extend Named = isnotempty(Caller) or isnotempty(CallerAppId) or isnotempty(CallerObjectId),
+               CallerKey = strcat(Caller, "|", CallerAppId, "|", CallerObjectId)
+      // One row per operation: its latest line, how many of its lines succeeded, how many
+      // callers its lines name, and the caller they name. Every operation is read, the ones
+      // that only failed too (AL3): the card says it.
+      | summarize arg_max(TimeGenerated, *), Succeeded = countif(ActivityStatusValue in~ ("Success", "Succeeded")),
+          Callers = dcountif(CallerKey, Named),
+          NamedCaller = take_anyif(Caller, Named),
+          NamedCallerIp = take_anyif(CallerIpAddress, Named and isnotempty(CallerIpAddress)),
+          NamedCallerAppId = take_anyif(CallerAppId, Named),
+          NamedCallerObjectId = take_anyif(CallerObjectId, Named)
+          by CorrelationId, OperationNameValue, _ResourceId
+      // A latest line that names no caller takes the caller its operation's lines name, the
+      // four columns from that caller's lines — only when they name one. Else the row stays as
+      // its latest line, naming no one; Callers says how many.
+      | extend Fill = not(Named) and Callers == 1
+      | extend Caller = iif(Fill, NamedCaller, Caller),
+               CallerIpAddress = iif(Fill, NamedCallerIp, CallerIpAddress),
+               CallerAppId = iif(Fill, NamedCallerAppId, CallerAppId),
+               CallerObjectId = iif(Fill, NamedCallerObjectId, CallerObjectId)
+      | project TimeGenerated, OperationNameValue, ActivityStatusValue, Succeeded, Callers, Caller, CallerIpAddress,
+                CallerAppId, CallerObjectId, _ResourceId, ResourceGroup, CorrelationId
+
   # ── Identités : les journaux d'Entra ID (AuditLogs, AADServicePrincipalSignInLogs, C2) ──
   # Détection seule : une détection sur Entra ID n'entraîne JAMAIS d'action autonome —
   # `decide` construit la décision par le code, sans appel au modèle (aucun UPN ne part au

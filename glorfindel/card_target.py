@@ -14,6 +14,8 @@ read in its ``_ResourceId`` and the type of the resource:
     snapshot still exists, then the disk's VM; otherwise the group, the limit said;
   - **a role assignment**: on its scope — the VM when the scope is the VM (the RulePoller's own
     attribution), else the group;
+  - **a VM the discovery does not know** (a Run Command on a VM of another subscription, AL3): on
+    its group, the limit said — never on it as if it were known, never dropped unsaid;
   - **anything else**: on its resource group, or on « the control plane » when there is none.
 
 A VM the row was routed to only by the address that made the call (an NSG written from a VM)
@@ -74,6 +76,11 @@ _GONE_OR_HIDDEN = "deleted, or outside the watch's rights"
 # whole discovery — never « unknown to the discovery » on that alone (second review, AL1c).
 _UNWATCHED_SHORT = "that the rule does not watch"
 _UNWATCHED = f"{_UNWATCHED_SHORT} (missing from the discovery, excluded from the rule, or on another backend)"
+# What a VM the row names, routed to none, is: the RulePoller drops a row whose own resource is a
+# VM the discovery knows and the rule does not watch (excluded, another backend's) — the one it
+# keeps names a VM the discovery does not know (AL3).
+_UNDISCOVERED = ("that the discovery does not know (another subscription, not yet discovered, or "
+                 "evicted): filed on its group, its id as the row gives it, no action")
 
 
 class Topology:
@@ -259,18 +266,18 @@ def control_target(row: dict, targets=(), topology=None) -> dict:
         scope = m.group("scope") or "/"
         via = f"role assignment, scope {_short(scope) or '/'}"
         if _VM_RE.search(scope):
-            # On a VM the RulePoller did not route the row to: its group. Never reached from the
-            # poller — a row naming a VM the rule does not watch is dropped (`_route`, AL1).
-            return _group_target(scope, row, via=via, limit=f"The scope's VM is a VM {_UNWATCHED}.")
+            # On a VM the RulePoller did not route the row to: one the discovery does not know —
+            # one it knows, excluded or another backend's, is dropped (`_route`, AL1, AL3). Its group.
+            return _group_target(scope, row, via=via, limit=f"The scope's VM is a VM {_UNDISCOVERED}.")
         if _GROUP_RE.match(scope):
             return _group_target(scope, row, via=via)
         return control_plane_target(limit="The assignment's scope is not a resource group "
                                           "(the subscription, a management group).")
     if _VM_RE.search(rid):
-        # A VM the RulePoller did not route the row to: never filed on it as if it were known.
-        # Never reached from the poller either (`_route` drops the row), only from a direct call.
+        # A VM the RulePoller did not route the row to, one the discovery does not know (a Run
+        # Command on a VM of another subscription, AL3): never filed on it as if it were known.
         return _group_target(rid, row, via=_short(rid),
-                             limit=f"The VM named is a VM {_UNWATCHED}.")
+                             limit=f"The VM named is a VM {_UNDISCOVERED}.")
     return _group_target(rid, row, via=_short(rid) if rid else "")
 
 

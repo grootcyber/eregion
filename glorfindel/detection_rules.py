@@ -1370,6 +1370,15 @@ def _names_vm_resource(row: dict) -> bool:
     return isinstance(rid, str) and "/microsoft.compute/virtualmachines/" in rid.lower()
 
 
+def _names_known_vm(row: dict, discovered: frozenset, auto: bool) -> bool:
+    """The row's own resource is a VM the discovery knows (`discovered`: lowercase ids) — one
+    excluded from the rule, or another backend's (AL3) —, or any VM for a rule bound to one asset
+    by the operator (not `auto`)."""
+    if not _names_vm_resource(row):
+        return False
+    return not auto or _vm_id_of(str(row.get("_ResourceId") or row.get("ResourceId"))) in discovered
+
+
 def _short_id(resource_id: str) -> str:
     """A resource id's last segment (a VM's name), '' for none."""
     return str(resource_id or "").rstrip("/").split("/")[-1]
@@ -1574,6 +1583,17 @@ class RulePoller:
     def _owners(self) -> dict:
         return {} if self._ip_owners is None else self._ip_owners()
 
+    def _discovered(self) -> frozenset:
+        """Every VM the discovery knows, on any backend, excluded from a rule or not (lowercase
+        ids, AL3). Unreadable: none — a row of the control plane is then kept, never dropped on
+        an unknown."""
+        try:
+            assets = self._registry.all() if self._registry is not None else []
+            return frozenset(str(a.resource_id).rstrip("/").lower() for a in assets if a.resource_id)
+        except Exception as exc:
+            logger.warning("discovery unreadable for the control plane's routing (%s) — no row dropped", exc)
+            return frozenset()
+
     def _route(self, rule: DetectionRule, rows: list[dict],
                targets: list[tuple[str, str]]) -> dict[str, tuple]:
         """target key → ((resource_id, name) | None, rows). A row naming a VM this rule
@@ -1581,16 +1601,21 @@ class RulePoller:
         keyed "unattributed". Each row read by `attribute_row`.
 
         A row of the control plane or of an identity is about what it names (AL1c): dropped
-        only when its own resource is a VM this rule doesn't watch (AL1) — never because the
-        address that made the call is such a VM's (an NSG written from an excluded VM, or with
-        no VM watched): that row stays, unattributed (third review, AL1c)."""
+        only when its own resource is a VM the discovery knows and this rule doesn't watch — one
+        excluded from it, another backend's (AL1) —, never because the address that made the
+        call is such a VM's (an NSG written from an excluded VM, or with no VM watched): that row
+        stays, unattributed (third review, AL1c). Its own resource a VM the discovery does not
+        know (another subscription, not yet discovered, evicted): kept too, unattributed, filed on
+        its group — a Run Command on it was dropped unsaid (AL3); a rule bound to one asset drops
+        it, as before."""
         control = self._plane(rule) != "data"
         # SEC-A4 (review R1): a row of the data plane read by the keys its query proves only.
         index = RowAttribution(targets, self._owners, keys=None if control else self._proven(rule))
+        discovered = self._discovered() if control else frozenset()
         out: dict[str, tuple] = {}
         for row in rows:
             named, tgt = index.attribute(row)
-            if named and tgt is None and (not control or _names_vm_resource(row)):
+            if named and tgt is None and (not control or _names_known_vm(row, discovered, rule.auto_apply)):
                 continue
             key = tgt[0].lower() if tgt else "unattributed"
             out.setdefault(key, (tgt, []))[1].append(row)

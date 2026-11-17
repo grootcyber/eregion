@@ -85,6 +85,13 @@ Aujourd'hui `RowAttribution` (`detection_rules.py:1158-1163, 1327-1329`) lit le 
 - lister les règles **AL1** qui vont tirer sur le `warmup`/`cleanup` : p. ex. `nsg-change-outside-glorfindel` sur le NSG que crée la technique (carte critique) ;
 - dire qu'**aucune règle actuelle** ne détecte Run Command, ni le lien Bastion par un autre appelant — c'est ID1, mais à écrire. Les lignes `AzureActivity` de l'abonnement dédié sont des **données contrôlées** par qui agit dedans ; AL1 décide **sans modèle**, à garder ainsi.
 
+**État (AL3, #867, 17/11).** Deux points sont faits côté watch, l'étiquetage « exercice » non :
+
+- `_route` ne jette plus en silence une ligne du plan de contrôle dont la VM n'est pas dans la découverte : la carte va sur son **groupe**, non attribuée, son `_ResourceId` tel que lu, sans action (`docs/glorfindel.md`, « Attribution ») ; une VM que la découverte connaît et que la règle ne surveille pas (exclue) reste ignorée.
+- deux règles de base détectent désormais Run Command par un autre appelant que Glorfindel (`run-command-by-external-caller`, T1651) et le lien partageable de Bastion (`bastion-shareable-link-created`, T1133), toutes opérations, refusées comprises ; une coupure des sessions de Glorfindel n'en fait aucune carte.
+
+Reste à R2b : l'étiquetage sur le `SubscriptionId` et l'appelant de Stratus (N7), `source_of`, `is_enrolled` et `zone_allows` (N4), les refus de N8, et la liste des règles AL1 qui tireront sur le `warmup`/`cleanup`. La preuve au banc reste ID1 (#281).
+
 ### Le kill — révoquer, puis vider l'abonnement (constats 2, 9)
 
 `orodruin-kill` révoque l'identité **d'Orodruin** (banc, VM) et ferme les fenêtres ; le rôle de l'identité **Stratus** sur l'abonnement dédié est révoqué par l'**opérateur** (§ 1, le kill — Orodruin n'y a que la lecture). Le nettoyage de l'abonnement dédié **ne peut pas** non plus passer par `stratus cleanup --all` depuis le poste de l'opérateur : l'état Terraform de Stratus vit dans le `HOME` d'Orodruin, que le kill vient de désallouer — il n'y a plus d'état. Le bon geste, rendu possible par l'abonnement dédié : **vider l'abonnement** — `az group list --subscription <dédié>` puis `az group delete` de chaque groupe **hors de la liste des groupes qu'Azure crée lui-même** (§ 4), sous le `az login` de l'opérateur, et vérifier qu'il est vide.

@@ -492,6 +492,19 @@
    "issue": 597
   },
   {
+   "id": "g-plan-controle-run-command",
+   "composant": "glorfindel",
+   "poste": "g-detecter",
+   "nom": "A Run Command by a caller other than Glorfindel and a Bastion shareable link, detected and escalated, refused attempts included; Glorfindel's own session drain never a card; a VM outside the discovery filed on its group, never dropped",
+   "etat": "main",
+   "release": "0.x",
+   "lots": [
+    "AL3"
+   ],
+   "issue": 867,
+   "doc": "docs/glorfindel.md"
+  },
+  {
    "id": "s-sec-a4",
    "composant": "socle",
    "poste": "s-signer",
