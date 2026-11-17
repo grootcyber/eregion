@@ -4003,6 +4003,7 @@ sur une semaine, `P15D` pour les règles (la base de connexions remonte à 14 jo
 rule() { python -c "import sys,yaml; print(next(r['query'] for r in yaml.safe_load(open('glorfindel/rules/azure/detection_rules.yaml'))['rules'] if r['name']==sys.argv[1]))" "$1"; }
 for r in nsg-change-outside-glorfindel role-assignment-write snapshot-by-unexpected-caller \
          run-command-by-glorfindel-outside-isolation restorepoint-by-unexpected-caller \
+         run-command-by-external-caller bastion-shareable-link-created \
          entra-credential-added entra-app-consent entra-privileged-role-assigned entra-sp-unusual-signin; do
   # P15D : la base d'entra-sp-unusual-signin lit ago(14d) .. ago(1h) ; chaque règle borne elle-même sa fenêtre
   echo "== $r"; az monitor log-analytics query -w <customerId> --analytics-query "$(rule $r)" --timespan P15D -o table
@@ -4011,9 +4012,14 @@ done
 
 Attendu : au moins une ligne par opération de test (`entra-sp-unusual-signin` après les 3 jours de
 base), et sur Imladris la carte correspondante (`control_plane_change`, `identity_change`) ;
-`glorfindel rules check --live` sur Imladris dit `ok` pour les neuf. `run-command-by-glorfindel-outside-isolation`
+`glorfindel rules check --live` sur Imladris dit `ok` pour les onze. `run-command-by-glorfindel-outside-isolation`
 (SID1) ne fait **aucune** carte pour une isolation de gondolin par Imladris (sa coupure des sessions), ni pour
 un Run Command de l'opérateur ou d'Annatar (une autre identité) ; sa requête montre pourtant leurs lignes.
+`run-command-by-external-caller` (AL3) ne fait, elle non plus, aucune carte pour la coupure des sessions
+d'Imladris — mais **une carte `high` pour chaque Run Command de l'opérateur ou d'Annatar** (tout appelant
+externe, aucune exclusion livrée : décision du 17/11, à affiner sur ce premier relevé), réussi ou refusé ;
+`bastion-shareable-link-created` (AL3), une carte pour chaque lien partageable de Bastion, la VM d'un autre
+abonnement sur son groupe.
 
 **La latence, de l'événement à l'ingestion** (le T0 noté donne le bout en bout ; la carte d'Imladris
 ajoute l'intervalle de la règle, 60 s pour AL1, 120 à 300 s pour C2 ; `--timespan P1D`) :
