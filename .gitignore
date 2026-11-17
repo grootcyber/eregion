@@ -73,8 +73,8 @@ infra/orodruin/orodruin.env
 cosign.key
 *.key
 
-# R2BS (#841): the staged injector binary + offline Terraform toolchain (make stratus-stage) —
-# downloaded and verified, never committed. The dir and .gitkeep stay so the Dockerfile COPY works
+# R2BS (#841), R2BW (#608): the staged injector binary + offline Terraform toolchain (make stratus-build) —
+# built (binary) + downloaded (toolchain) and verified, never committed. The dir and .gitkeep stay so the COPY works
 # in CI, where nothing is staged.
 annatar/stratus/staged/*
 !annatar/stratus/staged/.gitkeep

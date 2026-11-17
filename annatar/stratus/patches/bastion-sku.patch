@@ -1,0 +1,22 @@
+diff --git a/v2/internal/attacktechniques/azure/persistence/create-bastion-shareable-link/main.tf b/v2/internal/attacktechniques/azure/persistence/create-bastion-shareable-link/main.tf
+index eb3bb22..f3dc8fd 100644
+--- a/v2/internal/attacktechniques/azure/persistence/create-bastion-shareable-link/main.tf
++++ b/v2/internal/attacktechniques/azure/persistence/create-bastion-shareable-link/main.tf
+@@ -91,7 +91,7 @@ resource "azurerm_windows_virtual_machine" "lab_windows_vm" {
+   name                = "srt-vm-bsl" # 15 character limit: stratus red team - vm - bastion shareable link
+   resource_group_name = azurerm_resource_group.lab_environment.name
+   location            = azurerm_resource_group.lab_environment.location
+-  size                = "Standard_F2"
++  size                = "Standard_D2as_v7"
+   admin_username      = "local_admin_user"
+   admin_password      = random_password.password.result
+   user_data           = base64encode(var.correlation.short)
+@@ -108,7 +108,7 @@ resource "azurerm_windows_virtual_machine" "lab_windows_vm" {
+   source_image_reference {
+     publisher = "MicrosoftWindowsServer"
+     offer     = "WindowsServer"
+-    sku       = "2016-Datacenter"
++    sku       = "2022-datacenter-g2"
+     version   = "latest"
+   }
+ }

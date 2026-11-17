@@ -157,10 +157,11 @@ def test_verify_binary_refuses_a_missing_binary(tmp_path):
 
 
 def test_repo_pin_records_the_stratus_binary():
-    """The committed PIN carries the v2.38.1 Linux x86_64 binary digest the adapter checks."""
+    """The committed PIN carries the digest of the binary we BUILD from the pinned submodule +
+    our patch (R2BW) — the one the adapter re-checks before every phase."""
     digests = pinned_digests(STRATUS_DIR)
     assert digests.get(BINARY_LABEL) == \
-        "b37130e21e82c23373a021c4f22bbe86714bc154bac8f4633b2544143e09564d"
+        "834976c9df9584c8d02e9559139cc4ca9a46af658134c160b2b1205d0d8db21e"
 
 
 # ── A resolved technique carries its phases, verified binary and probe ────────────────
@@ -246,7 +247,7 @@ def test_staged_layout_reads_the_environment():
 
 def _staged_home(tmp_path) -> Path:
     """A staged ``/opt/stratus/home`` with a fake pinned Terraform and its recorded sha256 (R2BS):
-    what ``make stratus-stage`` lays into the read-only image."""
+    what ``make stratus-build`` lays into the read-only image."""
     home = tmp_path / "staged-home"
     home.mkdir(exist_ok=True)
     tf = home / "terraform"

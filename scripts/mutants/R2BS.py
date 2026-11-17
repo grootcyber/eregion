@@ -5,12 +5,15 @@ empreintes (pose et runtime) et sur le HOME inscrite par run. M5386–M5392.
 Forme chargée par scripts/mutation_check.py : MUTANTS (id, description, fichier, old, new) et
 TESTS (ses ids → le test qui l'attrape) ; chemins en chaînes.
 """
-STAGE = "scripts/stratus_stage.py"
+# R2BW (#608) a remplacé scripts/stratus_stage.py (download) par scripts/stratus_build.py (build
+# depuis le submodule) ; verify() + le refus fail-closed sans checksum y sont préservés à l'octet
+# près, donc ces deux mutants restent valides, réancrés sur le nouveau fichier et son test.
+STAGE = "scripts/stratus_build.py"
 HOST = "annatar/executors/stratus_host.py"
 ENG = "annatar/engines/stratus.py"
 
-_MISMATCH = "tests/unit/test_stratus_stage.py::test_verify_refuses_a_mismatch"
-_NOPIN = "tests/unit/test_stratus_stage.py::test_stage_refuses_when_the_pin_has_no_checksum"
+_MISMATCH = "tests/unit/test_stratus_build.py::test_verify_refuses_a_mismatch"
+_NOPIN = "tests/unit/test_stratus_build.py::test_build_refuses_when_the_pin_has_no_checksum"
 _TF_MISMATCH = ("tests/unit/test_annatar_stratus.py::"
                 "test_executor_refuses_a_staged_terraform_that_does_not_match_its_sha256")
 _TF_MISSING = ("tests/unit/test_annatar_stratus.py::"

@@ -117,12 +117,12 @@ class StratusExecutor:
         return (body.get("tags") if isinstance(body, dict) else {}) or {}
 
     def _staged_terraform(self) -> str:
-        """The pinned Terraform binary staged read-only in the image (make stratus-stage, R2BS)."""
+        """The pinned Terraform binary staged read-only in the image (make stratus-build, R2BS)."""
         return os.path.join(self.layout.home, "terraform")
 
     def _verify_staged_terraform(self) -> None:
         """Re-check the staged Terraform before a run, like the Stratus binary (SEC5): its sha256
-        against the one `make stratus-stage` recorded beside it. Missing or mismatched → the run
+        against the one `make stratus-build` recorded beside it. Missing or mismatched → the run
         refuses rather than provisioning with an unknown Terraform."""
         import hashlib
         from pathlib import Path
@@ -133,13 +133,13 @@ class StratusExecutor:
         except (OSError, IndexError) as e:
             raise RuntimeError(
                 f"the staged Terraform checksum {recorded} is missing or empty "
-                f"({type(e).__name__}) — stage it with `make stratus-stage`; not run") from e
+                f"({type(e).__name__}) — stage it with `make stratus-build`; not run") from e
         try:
             got = hashlib.sha256(tf.read_bytes()).hexdigest()
         except OSError as e:
             raise RuntimeError(
                 f"the staged Terraform {tf} cannot be read ({type(e).__name__}) — stage it with "
-                "`make stratus-stage`; not run") from e
+                "`make stratus-build`; not run") from e
         if got != want:
             raise RuntimeError(
                 "the staged Terraform does not match the sha256 recorded beside it — not the "

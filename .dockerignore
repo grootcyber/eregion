@@ -7,3 +7,6 @@ tests/
 *.tfstate*
 terraform.tfvars
 .env
+
+# R2BW (#608): the Stratus submodule is a BUILD INPUT (make stratus-build), never in the image.
+annatar/stratus/stratus-red-team/
