@@ -1009,6 +1009,31 @@ place, ou mises en dernier (l'oracle aveugle à tout contournement). Les six son
 la graine ne se rejoue plus (`DidNotReproduce` : la règle passe le premier « dit » sans l'assertion, puis
 le blob s'épuise au tirage suivant).
 
+### Une date du calendrier contre une isolation à l'heure réelle (TD1)
+
+Depuis le 17/11, `test_the_pass_writes_the_facts_for_information_and_reads_again_only_after_its_interval`
+(`tests/unit/test_door_facts.py`) est rouge sur main, donc dans la CI de toute PR : `assert 'none' == 'seen'`.
+Le test fige son moment (`NOW`, le 10/11 à midi) et écrit le geste du tiers 30 minutes avant. `isolate_vm`,
+lui, horodate l'isolation à l'horloge réelle. La passe lit à partir de 7 jours avant l'isolation (§4.3,
+`_since`) : une semaine après `NOW`, le geste sort de sa fenêtre. Deux horloges dans un test, et une bombe à
+retardement.
+
+**C'était le test, pas le produit.** La watch appelle la passe sans `now` : l'isolation et la lecture sont
+sur l'horloge de l'hôte, le journal sur celle d'Azure. Le paramètre `now` de `facts_pass` ne sert qu'aux tests.
+
+**Le correctif.** Les cinq tests qui isolent puis passent tiennent une seule horloge : la fixture `one_clock`
+gèle `datetime.now` au moment du test, celui du journal du faux Azure. Le test garde ses exigences : le
+verdict `seen`, deux acteurs, l'intervalle avant une nouvelle lecture. La fenêtre est vérifiée exactement :
+l'isolation au moment du test, le début 7 jours avant.
+
+**Le garde.** `test_these_files_pass_thirty_days_later` relance les fichiers qui figent un moment à côté
+d'une isolation (`test_door_facts.py`, `test_door_console.py`, `test_recovery_watch.py`,
+`test_own_run_command.py`) avec l'horloge réelle avancée de 30 jours (`time.time` et `datetime.now`, par un
+greffon chargé avant eux), et vérifie la date lue. Sans `one_clock`, il échoue dès aujourd'hui : une bombe de
+ce genre se voit un mois avant sa date. Le garde ne vaut que pour ces fichiers. Sur toute la suite, un tel
+décalage fait tomber des tests qui comparent l'heure à la date d'un fichier (`st_mtime`), que le greffon ne
+décale pas. Ce ne sont pas des bombes.
+
 ### Les cinq survivants de la porte de la 0.5.13 (MUT11)
 
 La porte de la 0.5.13 (run 43597369855, job « mutants (every shard, the count) ») est rouge sur cinq

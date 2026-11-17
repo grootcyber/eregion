@@ -970,6 +970,16 @@ briques:
     issue: 864
     doc: docs/design/preuves.md
 
+  - id: g-porte-une-horloge
+    composant: glorfindel
+    poste: g-verifier
+    nom: "Proof: the door's facts are tested on one clock, the isolation and its log, and their files pass again with the real clock a month ahead; the product unchanged"
+    etat: main
+    release: "0.6"
+    lots: [TD1]
+    issue: 868
+    doc: docs/design/preuves.md
+
   - id: g-levee-probation
     composant: glorfindel
     poste: g-agir
