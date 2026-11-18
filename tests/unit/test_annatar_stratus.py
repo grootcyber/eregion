@@ -59,7 +59,7 @@ def _stratus_dir(tmp_path: Path, digest: str) -> Path:
 
 
 def _catalog(engine_ref: str = TID, **over) -> dict:
-    entry = {"ttp": "T1651", "tactic": "execution", "status": "planned",
+    entry = {"ttp": "T1651", "tactic": "execution", "status": "implemented",
              "name": "Run Command", "engine": "stratus", "engine_ref": engine_ref}
     entry.update(over)
     return {entry["ttp"]: entry}
@@ -126,6 +126,34 @@ def test_resolve_accepts_an_entra_id_technique(tmp_path):
                 catalog=_catalog(engine_ref=tid))
     assert r.technique_id == tid
     assert [p.name for p in r.phases] == list(PHASES)
+
+
+# ── A technique runs only when the catalog marks it ready (V31) ───────────────────────
+
+def test_resolve_refuses_a_planned_technique(tmp_path):
+    """V31 (#889): a technique the catalog still marks `planned` (design only, not yet ready to
+    test) is refused before resolution — it never reaches a run."""
+    binary, digest = _fake_binary(tmp_path)
+    with pytest.raises(StratusError, match="not implemented or proven"):
+        resolve(TID, binary_path=binary, stratus_dir=_stratus_dir(tmp_path, digest),
+                catalog=_catalog(status="planned"))
+
+
+def test_resolve_accepts_a_proven_technique(tmp_path):
+    """V31: `proven` (measured at the bench — the maturity model's top state) resolves like
+    `implemented`; the gate is forward-compatible with it (STM1)."""
+    binary, digest = _fake_binary(tmp_path)
+    r = resolve(TID, binary_path=binary, stratus_dir=_stratus_dir(tmp_path, digest),
+                catalog=_catalog(status="proven"))
+    assert r.technique_id == TID
+
+
+def test_resolve_fails_closed_on_an_unset_status(tmp_path):
+    """V31: fail closed — an entry with no status (or an unknown one) does not resolve."""
+    binary, digest = _fake_binary(tmp_path)
+    with pytest.raises(StratusError, match="not implemented or proven"):
+        resolve(TID, binary_path=binary, stratus_dir=_stratus_dir(tmp_path, digest),
+                catalog=_catalog(status=""))
 
 
 # ── The pinned binary is checked at run time (SEC5) ───────────────────────────────────
@@ -363,6 +391,54 @@ def test_executor_sends_the_exact_argv_and_offline_env(tmp_path, monkeypatch):
     assert record[0].env["TF_CLI_CONFIG_FILE"] == ex.layout.terraformrc
     assert "TF_PLUGIN_CACHE_DIR" not in record[0].env
     ex.close()
+
+
+def test_executor_env_is_minimal_and_drops_host_secrets(tmp_path, monkeypatch):
+    """V31 (#889): the subprocess inherits only the toolchain and the Azure scope — a host secret
+    (the model key, a watch key, a channel URL) never reaches the third-party binary; the scope and
+    the offline overrides do."""
+    monkeypatch.setenv("AZURE_SUBSCRIPTION_ID", "sub-123")           # the scope — inherited
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-should-not-leak")
+    monkeypatch.setenv("EREGION_WATCH_KEY", "watch-should-not-leak")
+    monkeypatch.setenv("EREGION_EXERCISE_CHANNEL", "https://chan.example")
+    record: list = []
+    ex = _executor(tmp_path, record=record)
+    ex.detonate()
+    env = record[0].env
+    assert env["AZURE_SUBSCRIPTION_ID"] == "sub-123"                 # scope present
+    assert env["HOME"] == ex._run_home_path                         # offline override present
+    assert "ANTHROPIC_API_KEY" not in env                            # secret dropped
+    assert "EREGION_WATCH_KEY" not in env
+    assert "EREGION_EXERCISE_CHANNEL" not in env
+    ex.close()
+
+
+def test_resource_group_tags_refuses_a_malformed_group_name(tmp_path):
+    """V31: a group name with a path character ('/', '..') is refused before the ARM read, so it
+    cannot steer the request to another group's tags."""
+    seen: list = []
+    ex = _executor(tmp_path)
+    ex._arm_get = lambda path, api: seen.append(path) or {"tags": {}}
+    for bad in ("rg/../other", "rg/evil", "..", "rg name"):
+        with pytest.raises(RuntimeError, match="not an Azure group name"):
+            ex.resource_group_tags("00000000-0000-0000-0000-000000000000", bad)
+    assert seen == []   # the ARM reader was never reached
+
+
+def test_resource_group_tags_refuses_a_non_guid_subscription(tmp_path):
+    """V31: the subscription id must be a GUID before it enters the ARM path."""
+    ex = _executor(tmp_path)
+    ex._arm_get = lambda path, api: {"tags": {}}
+    with pytest.raises(RuntimeError, match="not a GUID"):
+        ex.resource_group_tags("not-a-guid", "rg-celebrimbor")
+
+
+def test_resource_group_tags_reads_a_well_formed_group(tmp_path):
+    """V31: a well-formed subscription and group pass validation through to the ARM read."""
+    ex = _executor(tmp_path)
+    ex._arm_get = lambda path, api: {"tags": {"eregion-zone": "bench"}}
+    tags = ex.resource_group_tags("00000000-0000-0000-0000-000000000000", "rg-celebrimbor")
+    assert tags == {"eregion-zone": "bench"}
 
 
 def _only_managed_identity(monkeypatch):
