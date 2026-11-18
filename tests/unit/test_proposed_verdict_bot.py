@@ -122,3 +122,85 @@ def test_a_settled_message_greys_the_proposals_buttons_too():
         return [i.custom_id for i in bot._SettledView("abcdef0123").children]
     ids = asyncio.run(build())
     assert f"{bot._JUDGE_PREFIX}confirm_abcdef01" in ids and f"{bot._JUDGE_PREFIX}refuse_abcdef01" in ids
+
+
+# ── VP1b (#917): the remainders of VP1's review ────────────────────────────────────────────────
+
+class _Thread(bot.discord.Thread):
+    """A Discord thread without Discord: only what the callbacks and the sync use."""
+
+    def __init__(self):
+        self.archived, self.archive_calls, self.edits = False, 0, []
+
+    def get_partial_message(self, mid):
+        edits = self.edits
+
+        class _Partial:
+            async def edit(self, embed, view):
+                edits.append((embed, view))
+        return _Partial()
+
+    async def edit(self, archived, reason):
+        self.archived, self.archive_calls = archived, self.archive_calls + 1
+
+
+def _click_in(esc, pick, channel):
+    interaction = _Interaction()
+    interaction.channel = channel
+
+    async def click():
+        view = bot.EscalationView(esc)
+        await next(i for i in view.children if pick(i)).callback(interaction)
+        return view
+    return asyncio.run(click()), interaction
+
+
+def _confirm(item) -> bool:
+    return isinstance(item, bot._ProposedButton) and item.what == "confirm"
+
+
+def test_after_a_confirmation_the_vms_thread_is_archived_as_after_a_verdict():
+    thread = _Thread()
+    _click_in(_stored(_exercise_card()), _confirm, thread)
+    assert thread.archived and thread.archive_calls == 1
+
+
+def test_a_confirmation_leaves_the_thread_open_while_a_card_still_waits_in_it():
+    other = escalations.record("rule-b-rule-0123abcd", VM, "isolate_vm", "mode_hold", "held", rule_name="b-rule")
+    thread = _Thread()
+    _click_in(_stored(_exercise_card()), _confirm, thread)
+    assert not thread.archived and _stored(other)["status"] == "pending"
+
+
+def test_confirmed_then_judged_by_hand_the_bot_no_longer_says_proposed():
+    esc_id = _exercise_card()
+    _click_in(_stored(esc_id), _confirm, None)
+    assert _stored(esc_id)["verdict_from"] == "proposed"
+    _click_in(_stored(esc_id), lambda i: isinstance(i, bot._VerdictButton) and i.verdict == "wrong", None)
+    esc = _stored(esc_id)
+    assert esc["verdict"] == "wrong" and "verdict_from" not in esc
+    embed = bot._build_embed(esc)
+    shown = " ".join([embed.title or "", embed.description or ""] + [f"{f.name} {f.value}" for f in embed.fields])
+    assert "propos" not in shown.lower()
+
+
+def test_an_empty_signature_suffix_edits_no_message_already_posted():
+    """The signature of a card with nothing proposed is the one kept before VP1: the first pass after
+    the upgrade edits none of the messages of the last 14 days."""
+    real = escalations.record("rule-a-rule-0123abcd", VM, "isolate_vm", "mode_hold", "held", rule_name="a-rule")
+    plain = escalations.record("rule-a-rule-0123abcd", VM, "snapshot", "low_confidence", "held",
+                               rule_name="a-rule", source="exercise", exercise_run="r1")
+    before = {e: "pending||1" for e in (real, plain)}          # what was kept before VP1
+    assert {e: bot._card_signature(_stored(e)) for e in before} == before
+
+    async def scenario():
+        b = bot.GlorfindelBot(channel_id=1, ping_role=None)
+        thread = _Thread()
+        b._threads = {VM: 99}
+        b.get_channel = lambda tid: thread
+        b._messages = {real: 4242, plain: 4243}
+        b._synced = dict(before)
+        return await b._sync_messages(), thread
+
+    edited, thread = asyncio.run(scenario())
+    assert edited == 0 and thread.edits == []
