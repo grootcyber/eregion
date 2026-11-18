@@ -172,10 +172,17 @@ sa levée :
   qui y tient est vérifié, jamais reposé en double ;
 - **jamais cru sur le nom** : une règle sous un ancien nom n'est à une carte que si l'état de sa VM l'enregistre
   pour elle (la levée et le déblocage défont leurs placements par leur nom ; le `reset` les lit dans l'état, même
-  si l'adresse de la carte a changé depuis), ou si c'est un refus qui s'applique à ses adresses ; celle d'un
-  homonyme dont le hash a rencontré le sien, visant ses adresses à lui, reste ; de même sur le NSG qu'une carte
-  laissée nue ne porte plus, et pour une VM supprimée (par les adresses que ses enregistrements lui donnent) :
-  une règle d'un ancien nom qui ne s'y applique pas est laissée et dite, jamais une levée « faite » ;
+  si l'adresse de la carte a changé depuis), ou, sur un NSG qui gouverne la carte, si c'est un refus qui
+  s'applique à ses adresses — celle d'un homonyme dont le hash a rencontré le sien, visant d'autres adresses,
+  reste ;
+- **hors de vue** : sur le NSG qu'une carte laissée nue ne porte plus, et pour une VM supprimée (sur tous les NSG
+  de l'abonnement), deux VM de deux VNet ont souvent la même adresse privée — un refus qui la vise n'y prouve rien.
+  Une règle d'un ancien nom n'y est à la carte que si l'état de sa VM l'enregistre sur ce NSG pour elle, ou si
+  c'est un refus de ses adresses (pour une VM supprimée, celles que ses enregistrements lui donnent) qui ne couvre
+  l'adresse d'aucune autre carte vivante que ce NSG gouverne (attachée, ou sur l'un de ses subnets) ; toute autre
+  est laissée et dite (`older_names.py`), jamais une levée « faite » — un homonyme dont le hash a rencontré le sien
+  peut ainsi retenir la levée, dite, jamais perdre son refus ; les marques de 8 hex (un nom tronqué) suivent la
+  même règle ;
 - **reposé sous les nouveaux noms** : une isolation ou un blocage écrit de nouveau (la réaffirmation après une
   disparition, une ré-isolation) part sous les nouveaux noms ; l'état garde les deux placements, la levée défait
   les deux ;
@@ -202,15 +209,18 @@ dit chaque VM qu'elle saute, et sur une carte (`reassert-busy-…`) à partir de
 
 **La mesure au banc** (avant la fusion de SEC-H, geste de l'opérateur) : ce qu'une version d'avant a posé,
 lu et levé par la nouvelle. Depuis le poste, `.envrc` chargé, sur des VM du banc qu'Imladris ne tient pas
-(l'ancien Imladris ignore les noms en 32 hex : son balayage des orphelines ne lit que 6 ou 8). Deux checkouts,
-le même `~/.glorfindel` : `<ancien>` (la release qui tourne, ou `origin/main` d'avant la fusion) et `<branche>`.
-Placeholders : `<rg>`, `<vm1>`, `<vm2>`, `<vm3>` (et leurs ids `<rid1>`…), `<nsg>` (le NSG de leurs cartes),
-`<rg-q>` et `<région>` (le NSG de quarantaine), `<nic>`, `<ip>` (une adresse de documentation, 203.0.113.x).
+(l'ancien Imladris ignore les noms en 32 hex : son balayage des orphelines ne lit que 6 ou 8), **inscrites en
+zone `bench`** — une action refuse une VM hors du périmètre — et passées par leur **id complet** `<ridN>`
+(`/subscriptions/<abonnement>/resourceGroups/<rg>/providers/Microsoft.Compute/virtualMachines/<vmN>`, que
+donne `glorfindel list --ids` une fois la VM découverte sur le poste). Deux checkouts, le même `~/.glorfindel` :
+`<ancien>` (la release qui tourne, ou `origin/main` d'avant la fusion) et `<branche>`. Placeholders : `<rid1>`,
+`<rid2>`, `<rid3>`, `<rg>` (leur groupe), `<nsg>` (le NSG de leurs cartes), `<rg-q>` et `<région>` (le NSG de
+quarantaine), `<nic>`, `<ip>` (une adresse de documentation, 203.0.113.x).
 
 1. **Avec `<ancien>`** :
-   - `glorfindel block <ip> <rg>/<vm1> --yes` ;
-   - `GLORFINDEL_QUARANTINE_NSG=0 glorfindel isolate <rg>/<vm2> --yes` (par règles) ;
-   - `glorfindel isolate <rg>/<vm3> --yes` (par la quarantaine).
+   - `glorfindel block <ip> <rid1> --yes` ;
+   - `GLORFINDEL_QUARANTINE_NSG=0 glorfindel isolate <rid2> --yes` (par règles) ;
+   - `glorfindel isolate <rid3> --yes` (par la quarantaine).
 
    Contrôles : `az network nsg rule list -g <rg> --nsg-name <nsg> --query "[?starts_with(name,'glorfindel-')].name" -o tsv`
    liste des noms qui finissent par 6 hex ; `az network nsg show -g <rg-q> -n nsg-glorfindel-quarantine-<région>
@@ -218,10 +228,10 @@ Placeholders : `<rg>`, `<vm1>`, `<vm2>`, `<vm3>` (et leurs ids `<rid1>`…), `<n
 2. **Avec `<branche>`**, en lecture :
    `.venv/bin/python -c "from glorfindel.actions import AzureConnector as C; c=C(dry_run=False); print(c.verify_block_ip('<ip>','<rid1>')['verified'], c.verify_isolation('<rid2>')['verified'], c.verify_isolation('<rid3>')['verified'])"`
    affiche `True True True`.
-3. **Avec `<branche>`** : `GLORFINDEL_QUARANTINE_NSG=0 glorfindel isolate <rg>/<vm2> --yes`. Une paire
+3. **Avec `<branche>`** : `GLORFINDEL_QUARANTINE_NSG=0 glorfindel isolate <rid2> --yes`. Une paire
    `glorfindel-iso-…-<32 hex>` apparaît à côté de l'ancienne, et Azure l'accepte (80 caractères au plus).
-4. **Avec `<branche>`** : `glorfindel unblock <ip> <rg>/<vm1> --yes` répond `unblocked` ; `glorfindel release
-   <rg>/<vm2> --yes` et `glorfindel release <rg>/<vm3> --yes` répondent `released`.
+4. **Avec `<branche>`** : `glorfindel unblock <ip> <rid1> --yes` répond `unblocked` ; `glorfindel release
+   <rid2> --yes` et `glorfindel release <rid3> --yes` répondent `released`.
 
    Contrôles : plus aucune règle `glorfindel-` sur ces NSG (la commande de l'étape 1) ; plus aucun tag
    `glorfindel-orig-` pour ces cartes ; chaque carte sur son NSG d'origine (`az network nic show -g <rg> -n <nic>

@@ -6,7 +6,8 @@ from __future__ import annotations
 
 import re
 
-from glorfindel.providers.azure.nsg import _deny_applies, _rule_name
+from glorfindel.providers.azure.nsg import _rule_name
+from glorfindel.providers.azure.older_names import older_not_ours
 from glorfindel.providers.azure.turned import _aims_elsewhere, _held_by_turned, _turned_guard
 from glorfindel.providers.azure.quarantine import QUARANTINE_NSG_PREFIX
 from glorfindel.response.ids import _parse_nsg_resource_id, _parse_vm_resource_id
@@ -147,15 +148,17 @@ class AwayRulesMixin:
                                   "ip_scoped": True, "out_of_sight": why})
         return views
 
-    def _away_rules(self, vm_name: str, targets: list[dict], stuck: set, guard: dict, mates: list) -> list[str]:
+    def _away_rules(self, vm_name: str, targets: list[dict], stuck: set, guard: dict, mates: list,
+                    recorded: dict | None = None) -> list[str]:
         """The release's (_sweep_isolation): what _away_split keeps, said; the rest taken
         off — `stuck`, the placements whose undo just failed, not tried twice."""
         said, off = self._away_split(vm_name, targets, guard, mates,
-                                     lambda k, name: (*k, name.lower()) in stuck)
+                                     lambda k, name: (*k, name.lower()) in stuck, recorded=recorded)
         return said + [err for err in (self._delete_rule(*x) for x in off) if err]
 
     def _away_split(self, vm_name: str, targets: list[dict], guard: dict, mates: list, skip,
-                    blocks: bool = False, unverified: str = "levée non vérifiée") -> tuple[list[str], list[tuple]]:
+                    blocks: bool = False, unverified: str = "levée non vérifiée",
+                    recorded: dict | None = None) -> tuple[list[str], list[tuple]]:
         """A NIC of the VM with no NSG of its own (taken off by someone, its quarantine
         lifted to « none »): the NSG it carried is out of the sweep's sight, and a rule of
         its isolation kept there by an earlier release (I4C: a rule someone turned into an
@@ -208,11 +211,12 @@ class AwayRulesMixin:
                                                               t["nic_id"]) for n in (b, f"{b}-out")}), None)
                     if t0 is None or k in views[t0["nic_id"]] or skip(k, name):
                         continue
-                    if not _deny_applies(r, t0.get("private_ips") or None):
+                    if why := older_not_ours(self._network, guard, nsg, r, t0["nic_id"],
+                                             t0.get("private_ips") or None, recorded or {}, mates):
                         said.append(f"{n_rg}/{n_name}/{name} laissée : nom d'une version antérieure, partagé par "
-                                    f"des cartes dont le hash s'est rencontré, et qui ne refuse pas les adresses "
-                                    f"de {t0['nic_short']} — à retirer à la main si c'est la sienne (az network "
-                                    f"nsg rule delete -g {n_rg} --nsg-name {n_name} -n {name}), {unverified}")
+                                    f"des cartes dont le hash s'est rencontré, et {why} — à retirer à la main si "
+                                    f"c'est celle de {t0['nic_short']} (az network nsg rule delete -g {n_rg} "
+                                    f"--nsg-name {n_name} -n {name}), {unverified}")
                         continue
                 elif k in views[t0["nic_id"]] or skip(k, name):
                     continue

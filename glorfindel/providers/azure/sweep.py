@@ -5,6 +5,7 @@ The NSG listing the watch's pass shares, and one quarantine NSG read by its id (
 from __future__ import annotations
 
 from glorfindel.providers.azure.narrow import _freed, _narrow_rule, _narrowed
+from glorfindel.providers.azure.older_names import recorded_names as _recorded_names
 from glorfindel.providers.azure.nsg import _is_mark, _nic_hash, _nic_mark, _nic_owns, _rule_name
 from glorfindel.providers.azure.turned import (
     _aims_elsewhere, _chain, _governed_by, _held_by_turned, _turned_allows, _turned_behind, _turned_still,
@@ -27,24 +28,6 @@ from glorfindel.response.state import (
     _update_block_entry,
     unreadable_states,
 )
-
-
-def _recorded_names(state: dict, blocks: list) -> dict[tuple, set[str]]:
-    """The rule names this VM's own state records, by (NSG, NIC): its isolation's placements and
-    its blocks'. The state is the VM's — found by its full id (SEC-H) —, so a name it records for a
-    NIC is that NIC's, an older one included: whatever it covers now, it is ours to take off."""
-    out: dict[tuple, set[str]] = {}
-    placements = [p for p in (state or {}).get("placements") or [] if isinstance(p, dict)]
-    placements += [p for e in blocks or [] if isinstance(e, dict) for p in e.get("placements") or []
-                   if isinstance(p, dict)]
-    for p in placements:
-        if p.get("kind") == "quarantine" or not p.get("nic_id") or not p.get("nsg_name"):
-            continue
-        names = {str(n).lower() for n in (p.get("rule_in"), p.get("rule_out"), p.get("rule")) if n}
-        names |= {f"{n}-out" for n in names if not n.endswith("-out")}
-        k = ((str(p.get("nsg_rg") or "").lower(), str(p["nsg_name"]).lower()), str(p["nic_id"]).rstrip("/").lower())
-        out.setdefault(k, set()).update(names)
-    return out
 
 
 class SweepMixin:
@@ -181,6 +164,7 @@ class SweepMixin:
                     seen.add((nsg_key, name.lower()))
                     kept.append(f'{t["nsg_rg"]}/{t["nsg_name"]}/{name}')   # perimeter block
         held, gone = self._away_split(vm_name, targets, guard, mates, lambda k, n: (k, n.lower()) in seen,
+                                      recorded=recorded,
                                       blocks=True, unverified="reset non vérifié")   # a bare NIC's (D80)
         unreadable += held
         to_delete += gone

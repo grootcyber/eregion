@@ -10,7 +10,9 @@ restore by the full id, the vault's job by its container (glorfindel/jobs.py, ba
 writes and the writers' lock waited a bounded time, the VM the reassertion skips said (sdk.py,
 glorfindel/reassert.py). M5801–M5820; M5941–M5945 for the review (an earlier version's names on
 the NSG a bare NIC left and for a deleted VM, a name per IPv6 address, the conflict said at the
-release — numbers handed by the Orchestre), measured by tests/unit/test_wide_marks.py,
+release — numbers handed by the Orchestre); M6221–M6225 for the second review (an older name on an
+NSG the NIC does not carry taken only when its state records it there, or when it covers no other
+live NIC behind that NSG; the conflict kept on a re-application), measured by tests/unit/test_wide_marks.py,
 tests/unit/test_full_id_keys.py and the frozen two hosts of tests/unit/test_invariant_regressions.py."""
 NSG = "glorfindel/providers/azure/nsg.py"
 REL = "glorfindel/providers/azure/release.py"
@@ -27,6 +29,7 @@ JOBS = "glorfindel/jobs.py"
 AWY = "glorfindel/providers/azure/away.py"
 GON = "glorfindel/providers/azure/gone.py"
 NET = "glorfindel/providers/azure/network.py"
+OLD = "glorfindel/providers/azure/older_names.py"
 RA = "glorfindel/reassert.py"
 _W = "tests/unit/test_wide_marks.py"
 _K = "tests/unit/test_full_id_keys.py"
@@ -93,15 +96,30 @@ MUTANTS = [
     ("M5941", "a bare NIC's NSG out of sight read for the new names only: an earlier version's pair left, "
      "the release said done (SEC-H, review)", AWY,
      "                    t0 = older.get(name.lower())\n", "                    t0 = None\n"),
-    ("M5942", "an older name on an NSG out of sight taken whatever it aims at (SEC-H, review)", AWY,
-     '                    if not _deny_applies(r, t0.get("private_ips") or None):\n', "                    if False:\n"),
+    ("M5942", "an older name on an NSG out of sight taken whatever it aims at (SEC-H, review)", OLD,
+     "    if not _deny_applies(rule, ips):\n", "    if False:\n"),
     ("M5943", "a deleted VM's older pair never looked for (SEC-H, review)", GON,
-     "                    names.add(name.lower())\n", "                    continue\n"),
+     "                if (name.lower() in older and name.lower() not in names\n",
+     "                if (False and name.lower() not in names\n"),
     ("M5944", "two IPv6 blocks cut to one name (SEC-H, review)", NET,
      '                base = f"{prefix[:80 - 4 - 1 - len(mark) - 1 - len(held)]}-{held}-{mark}"\n',
      '                base = f"{prefix[:80 - 4 - 1 - len(mark)]}-{mark}"\n'),
     ("M5945", "the conflict met at the isolation forgotten at the release (SEC-H, review)", REL,
      '                            if p.get("original_conflict"):\n', "                            if False:\n"),
+    ("M6221", "an older name off the NIC's NSGs taken though it covers another live NIC behind that NSG: a "
+     "homonym at the same address in another VNet loses its deny (SEC-H, review 2)", OLD,
+     "    if other:                                                       # (b) another live NIC behind it\n",
+     "    if False:\n"),
+    ("M6222", "a deleted VM's older pair, its address recorded, never taken off (SEC-H, review 2)", GON,
+     "                    taken = True\n", "                    continue\n"),
+    ("M6223", "the NICs on an NSG's subnets not counted behind it (SEC-H, review 2)", OLD,
+     "            if ip and (own == nsg_key or subnet in subnets):\n", "            if ip and own == nsg_key:\n"),
+    ("M6224", "the conflict forgotten when the quarantine is applied again on the NIC (SEC-H, review 2)", QUA,
+     '                                      if p.get("original_conflict")), "")\n',
+     '                                      if False), "")\n'),
+    ("M6225", "an older name on an NSG a bare NIC left taken whatever it covers (SEC-H, review 2)", AWY,
+     '                    if why := older_not_ours(self._network, guard, nsg, r, t0["nic_id"],\n',
+     '                    if why := "" and older_not_ours(self._network, guard, nsg, r, t0["nic_id"],\n'),
 ]
 TESTS = {
     "M5801": f"{_W}::test_the_two_nics_meet_on_the_older_mark_never_on_ours "
@@ -131,4 +149,9 @@ TESTS = {
     "M5943": f"{_W}::test_a_gone_vms_older_pair_its_record_rewritten_is_lifted_by_its_recorded_address",
     "M5944": f"{_W}::test_two_long_ipv6_blocks_never_share_a_name",
     "M5945": f"{_K}::test_the_conflict_met_at_the_isolation_is_said_again_at_the_release",
+    "M6221": f"{_W}::test_a_homonyms_older_pair_in_another_vnet_stays_whatever_its_address",
+    "M6222": f"{_W}::test_a_gone_vms_older_pair_its_record_rewritten_is_lifted_by_its_recorded_address",
+    "M6223": f"{_W}::test_a_homonyms_older_pair_in_another_vnet_stays_whatever_its_address",
+    "M6224": f"{_K}::test_the_conflict_met_at_the_isolation_is_said_again_at_the_release",
+    "M6225": f"{_W}::test_a_homonyms_older_pair_in_another_vnet_stays_whatever_its_address",
 }

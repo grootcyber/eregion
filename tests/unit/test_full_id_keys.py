@@ -322,6 +322,11 @@ def test_the_conflict_met_at_the_isolation_is_said_again_at_the_release(monkeypa
     assert c.isolate_vm(rid)["status"] == "isolated"
     p = next(p for p in _load_isolation_state(rid)["placements"] if p.get("kind") == "quarantine")
     assert "original_nsg_id" not in p and "rg-evil/nsg-glorfindel-quarantine-westeurope" in p["original_conflict"]
+    # Applied again on the NIC already in quarantine (the reassertion, a re-isolation): still unknown,
+    # the reason kept on the new placement.
+    assert c.isolate_vm(rid)["status"] == "isolated"
+    p = next(p for p in _load_isolation_state(rid)["placements"] if p.get("kind") == "quarantine")
+    assert "rg-evil/nsg-glorfindel-quarantine-westeurope" in p.get("original_conflict", "")
     out = c.release_isolation(rid)
     assert out["status"] == "release_partial" and "rg-evil/nsg-glorfindel-quarantine-westeurope" in " ".join(
         out["failed"]), out

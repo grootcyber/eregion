@@ -11,7 +11,9 @@ from glorfindel.providers.azure.quarantine_origin import OriginalConflict, Origi
 from glorfindel.providers.azure.sdk import _enum_text, _finished, _is_not_found
 from glorfindel.response.ids import _parse_nsg_resource_id, _same_id
 from glorfindel.response.locks import _quarantine_lock
-from glorfindel.response.state import _held_or_unreadable, _recorded_or_unknown, _UNKNOWN
+from glorfindel.response.state import (
+    _held_or_unreadable, _quarantine_placements, _recorded_or_unknown, _UNKNOWN,
+)
 
 
 # Lot L4 — Glorfindel's own quarantine NSG, attached to a NIC that has none of its own.
@@ -113,6 +115,10 @@ class QuarantineMixin(OriginMixin):
                     original = self._original_from_tags(q, t["nic_id"])
                 except OriginalUnknown:
                     original = _UNKNOWN
+            if original is _UNKNOWN:
+                # Still unknown: why, as the first isolation met it, stays on the new placement (SEC-H).
+                conflict_said = next((str(p["original_conflict"]) for p in _quarantine_placements(t["nic_id"])
+                                      if p.get("original_conflict")), "")
         else:
             original = t.get("own_nsg_id") or None
             tag_unread = False

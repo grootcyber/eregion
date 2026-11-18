@@ -6,8 +6,11 @@ on the 6 hex of SHA-1 an earlier version ended the rule names with (found in a f
 whoever can create a group and a NIC in the subscription finds one as fast). Under those names they
 shared one name per rule: the release of one took off the other's deny, the isolation of one wrote
 over the other's. Under ours they never meet. Placed before the upgrade, an isolation or a block under
-the old names is still read (verified), and lifted through its state; a rule of an old name that is
-not this NIC's — a homonym's whose hash met — stays.
+the old names is still read (verified), and lifted through its state. A rule of an old name is this
+NIC's only when its VM's state records it there, or — on an NSG that governs the NIC — as a deny of its
+addresses; on an NSG it does not carry (left bare, or its VM deleted), as such a deny that covers no other
+live NIC behind that NSG: two VMs of two VNets often share an address. A homonym's whose hash met stays,
+whatever its address: said, the release not done.
 
 On the in-memory Azure of tests/unit/fake_azure.py: 0 Azure call, 0 LLM call.
 """
@@ -318,3 +321,40 @@ def test_a_gone_vms_older_pair_its_record_rewritten_is_lifted_by_its_recorded_ad
         f.nics.pop(key(n))
     assert c.release_isolation(A)["status"] == "released"
     assert not _ours(f, s_nsg)
+
+
+@pytest.mark.parametrize("behind", ["nic", "subnet"])
+@pytest.mark.parametrize("b_ip", ["10.0.0.4", "10.1.0.4"])
+@pytest.mark.parametrize("path", ["away", "gone"])
+def test_a_homonyms_older_pair_in_another_vnet_stays_whatever_its_address(monkeypatch, path, b_ip, behind):
+    """The second review's sequence: B isolated by the earlier version on its NSG, in another VNet —
+    often at the same private address as A (10.0.0.4) —, A isolated since, then left bare or deleted.
+    A's release looks for its older names on NSGs it does not carry: B's pair, under the same name,
+    aimed at an address B's NIC holds behind that NSG — B's. Left, said; B still isolated."""
+    monkeypatch.setenv("GLORFINDEL_QUARANTINE_NSG", "0")
+    f = FakeAzure()
+    nsg_a, nsg_b = f.add_nsg(A_RG, "nsg-a"), f.add_nsg(B_RG, "nsg-b")
+    # B behind nsg-b on its NIC, or on its subnet (`behind`).
+    sa = f.add_subnet(A_RG, "vnet-a", "app", None)
+    sb = f.add_subnet(B_RG, "vnet-b", "app", nsg_b if behind == "subnet" else None)
+    f.add_vm(A_RG, "web", [{"rg": A_RG, "name": "web-nic", "ips": ["10.0.0.4"], "subnet": sa, "nsg": nsg_a}])
+    f.add_vm(B_RG, "web", [{"rg": B_RG, "name": "web-nic", "ips": [b_ip], "subnet": sb,
+                            "nsg": nsg_b if behind == "nic" else None}])
+    c = AzureConnector(dry_run=False, read_only=False)
+    c._network, c._compute = f.network, f.compute
+    c._subscription_id = "s"
+    c.recent_changes = lambda *a, **k: []
+    with monkeypatch.context() as m:
+        m.setattr(NetworkMixin, "_placement_rule_base", _older_base)
+        assert c.isolate_vm(B)["status"] == "isolated"
+    b_rules = {n: dict(r) for n, r in f.nsgs[key(nsg_b)]["rules"].items() if n.startswith("glorfindel-")}
+    assert c.isolate_vm(A)["status"] == "isolated"
+    if path == "away":
+        f.nics[key(A_NIC)]["nsg"] = None
+    else:
+        for n in f.vms.pop(key(A))["nics"]:
+            f.nics.pop(key(n))
+    out = c.release_isolation(A)
+    assert out["status"] == "release_partial" and "laissée" in " ".join(out["failed"]), out
+    assert {n: r for n, r in f.nsgs[key(nsg_b)]["rules"].items() if n.startswith("glorfindel-")} == b_rules
+    assert c.verify_isolation(B)["verified"] is True

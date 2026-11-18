@@ -4,7 +4,8 @@ subscription (I7S, #303), for the release and the unblock (I5R) (moved from rele
 """
 from __future__ import annotations
 
-from glorfindel.providers.azure.nsg import _deny_applies, _rule_name
+from glorfindel.providers.azure.nsg import _rule_name
+from glorfindel.providers.azure.older_names import older_not_ours, recorded_names
 from glorfindel.providers.azure.turned import _turned_guard
 from glorfindel.providers.azure.sdk import _is_not_found
 from glorfindel.response.ids import _parse_nsg_resource_id, _same_id
@@ -100,8 +101,8 @@ class GoneVmMixin:
                 continue
             names |= {n for b in self._placement_rule_bases(prefix, vm_name, nid.rsplit("/", 1)[-1], nid)
                       for n in (b, f"{b}-out")}
-            # An earlier version's names (SEC-H): this NIC's only as a deny aimed at the addresses its
-            # records give it; any other said, left.
+            # An earlier version's names (SEC-H): this NIC's only when its state records them there, or
+            # as a deny aimed at the addresses its records give it and at no other live NIC (older_names).
             older.update({n.lower(): nid for b in self._older_rule_bases(prefix, vm_name, nid.rsplit("/", 1)[-1], nid)
                           for n in (b, f"{b}-out")})
         if not names and not older:
@@ -113,20 +114,25 @@ class GoneVmMixin:
             return failed + [f"{vm_name} supprimée : les règles de ses cartes n'ont pas été cherchées sur les "
                              f"NSG de l'abonnement (liste illisible : {_first_line(exc)[:_ERR_MAX]}), "
                              f"{_GONE_WORDS[act][0]} non vérifiée"]
+        from glorfindel.response.state import _load_block_entries, _load_isolation_state
+        recorded = recorded_names(_load_isolation_state(resource_id) or {}, _load_block_entries(resource_id))
+        cache: dict = {}
         for nsg in nsgs:
             n_rg, n_name = _parse_nsg_resource_id(nsg.id)
             for r in (getattr(nsg, "security_rules", None) or []):
                 name = _rule_name(r)
+                taken = False                       # an older name, judged on this NSG only
                 if (name.lower() in older and name.lower() not in names
                         and (n_rg.lower(), n_name.lower(), name.lower()) not in stuck):
-                    ips = _recorded_ips(resource_id, older[name.lower()])
-                    if not ips or not _deny_applies(r, ips):
-                        failed.append(f"{name} ({n_name}) laissée : nom d'une version antérieure, que ne lie à "
-                                      f"cette carte aucune adresse enregistrée — à retirer à la main si c'est la "
-                                      f"sienne, {_GONE_WORDS[act][0]} non vérifiée")
+                    nid = older[name.lower()]
+                    if why := older_not_ours(self._network, cache, nsg, r, nid, _recorded_ips(resource_id, nid),
+                                             recorded):
+                        failed.append(f"{name} ({n_name}) laissée : nom d'une version antérieure, et {why} — à "
+                                      f"retirer à la main si c'est celle de la VM supprimée, "
+                                      f"{_GONE_WORDS[act][0]} non vérifiée")
                         continue
-                    names.add(name.lower())
-                if name.lower() in names and (n_rg.lower(), n_name.lower(), name.lower()) not in stuck:
+                    taken = True
+                if (name.lower() in names or taken) and (n_rg.lower(), n_name.lower(), name.lower()) not in stuck:
                     if why := held_back(nsg, r):
                         failed.append(f"{name} ({n_name}) gardée : {why}")
                         continue

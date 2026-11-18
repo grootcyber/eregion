@@ -7142,7 +7142,7 @@ _D80_SEQ = ("tests/unit/test_invariant_regressions.py::test_a_release_after_a_lo
             "tests/unit/test_invariant_regressions.py::test_a_bare_nics_rule_kept_on_its_mates_nsg_is_said")
 MUTANTS += [
     ("M2340", "the release's sweep blind away from a bare NIC: a rule kept on the NSG it carried, `released` (D80)", REL,
-     "        return failed + self._away_rules(vm_name, targets, stuck, guard, mates)   # a bare NIC's (D80)\n",
+     "        return failed + self._away_rules(vm_name, targets, stuck, guard, mates, recorded)   # a bare NIC's (D80)\n",
      "        return failed\n"),
     ("M2341", "a bare NIC's rule found away from it taken off without the guard: the VM behind it cut (D80)", AWY,
      '                why = _held_by_turned(self._network, guard, n_rg, n_name, name, t0["nic_id"], mates)\n',
@@ -7158,6 +7158,7 @@ MUTANTS += [
      '            for b in self._placement_rule_bases("glorfindel-iso", vm_name, t0["nic_short"], t0["nic_id"])[:1]:\n'),
     ("M2345", "`reset --from-azure` blind away from a bare NIC: a rule kept on its mate's NSG unsaid (D80, macOS #391)",
      SWP, ('        held, gone = self._away_split(vm_name, targets, guard, mates, lambda k, n: (k, n.lower()) in seen,\n'
+           '                                      recorded=recorded,\n'
            '                                      blocks=True, unverified="reset non vérifié")   # a bare NIC\'s (D80)\n'),
      "        held, gone = [], []\n"),
     ("M2346", "the reset's search away from a bare NIC blind to its blocks: one left on the NSG it carried (D80)", SWP,

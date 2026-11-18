@@ -391,4 +391,8 @@ class ReleaseMixin:
                 failed += [f"{u} : laissée" for u in self._unattributable_fixed(t, rules)]
         failed += self._left_quarantine_rules(vm_name, targets, left, guard, mates, own_ips, cache, stuck,
                                               {} if keep is None else keep)
-        return failed + self._away_rules(vm_name, targets, stuck, guard, mates)   # a bare NIC's (D80)
+        from glorfindel.providers.azure.older_names import recorded_names
+        from glorfindel.response.state import _load_block_entries
+        recorded = recorded_names(_load_isolation_state(resource_id) or {}, _load_block_entries(resource_id)) \
+            if resource_id else {}
+        return failed + self._away_rules(vm_name, targets, stuck, guard, mates, recorded)   # a bare NIC's (D80)
