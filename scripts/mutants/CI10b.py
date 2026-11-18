@@ -20,8 +20,8 @@ MUTANTS = [
               "gate only (CI10b, L16)", CI,
      "      - name: Mutants anchored to this tree\n        run: python scripts/mutant_anchors.py\n", ""),
     ("M4191", "ci.yml's tests in one process again: a pull request green in 14 min, not 7 (CI10b, L8)", CI,
-     "        run: python -m pytest tests/ -q -n 4 --dist load -o faulthandler_timeout=480",
-     "        run: python -m pytest tests/ -q -o faulthandler_timeout=480"),
+     "        run: python -m pytest tests/ -q -n 4 --dist load --ignore=tests/unit/test_invariants.py",
+     "        run: python -m pytest tests/ -q --ignore=tests/unit/test_invariants.py"),
     ("M4192", "pytest-xdist out of the dev extra: the lock no longer follows what pyproject declares, `-n 4` "
               "gone at the next make lock (CI10b, L8)", "pyproject.toml",
      '    "pytest-xdist>=3.6",     # the suite in 4 processes in the CI (CI10b, #581: `-n 4 --dist load`)\n', ""),

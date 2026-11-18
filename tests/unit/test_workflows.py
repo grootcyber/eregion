@@ -247,17 +247,23 @@ def test_a_pull_request_and_a_push_stay_derandomized():
 
 def test_a_push_replays_the_failures_the_night_kept_on_both_machines():
     """ci.yml's Linux job restores the database and runs every test with it — both
-    machines among them, at the push budget."""
+    machines among them, at the push budget. CI12 (#899): Azure's in a step of its own, after the
+    rest — each machine run by exactly one step, each with the database and the budget."""
     steps = _load(ROOT / ".github" / "workflows" / "ci.yml")["jobs"]["test"]["steps"]
     assert any("actions/cache/restore" in (s.get("uses") or "") and
                (s.get("with") or {}).get("path") == ".hypothesis-invariants" for s in steps)
-    runs = [s for s in steps if "pytest tests/ " in (s.get("run") or "")]
-    assert runs and all((ROOT / m).is_file() for m in _MACHINES), runs     # under tests/, run by it
-    env = runs[0].get("env") or {}
-    assert env.get("GLORFINDEL_INVARIANT_DB") == ".hypothesis-invariants", env
-    # CI5 (#512): 500 on a push to main, 200 on a pull request.
-    assert _expr(env.get("GLORFINDEL_INVARIANT_EXAMPLES"), "push") == "500", env
-    assert _expr(env.get("GLORFINDEL_INVARIANT_EXAMPLES"), "pull_request") == "200", env
+    runs = [s for s in steps if re.search(r"\bpytest tests/(?: |unit/test_invariants\.py )", s.get("run") or "")]
+    assert len(runs) == 2 and all((ROOT / m).is_file() for m in _MACHINES), runs     # under tests/
+    for machine in _MACHINES:
+        by = [s for s in runs if machine in s["run"].split()
+              or ("pytest tests/ " in s["run"] and f"--ignore={machine}" not in s["run"].split())]
+        assert len(by) == 1, (machine, by)
+    for step in runs:
+        env = step.get("env") or {}
+        assert env.get("GLORFINDEL_INVARIANT_DB") == ".hypothesis-invariants", env
+        # CI5 (#512): 500 on a push to main, 200 on a pull request.
+        assert _expr(env.get("GLORFINDEL_INVARIANT_EXAMPLES"), "push") == "500", env
+        assert _expr(env.get("GLORFINDEL_INVARIANT_EXAMPLES"), "pull_request") == "200", env
 
 
 @pytest.mark.parametrize("job", ["test", "test-macos"])
@@ -1778,11 +1784,11 @@ _TOKEN = re.compile(r"'[^']*'|&&|\|\||!=|==|!|\(|\)|,|\d+|[A-Za-z_][\w.\-]*|\s+"
 
 
 def _expr(text, event: str, *, needs: dict | None = None, number: int = 7, run_id: int = 4242,
-          workflow: str = "CI", cancelled: bool = False, outputs: dict | None = None):
+          workflow: str = "CI", cancelled: bool = False, outputs: dict | None = None, steps: dict | None = None):
     if not isinstance(text, str):
         return text
     kw = {"needs": needs, "number": number, "run_id": run_id, "workflow": workflow, "cancelled": cancelled,
-          "outputs": outputs}
+          "outputs": outputs, "steps": steps}
     whole = re.fullmatch(r"\s*\$\{\{((?:(?!\}\}).)*)\}\}\s*", text, re.S)
     if not whole:   # a plain value, or a template: each ${{ … }} replaced by its value
         return re.sub(r"\$\{\{((?:(?!\}\}).)*)\}\}", lambda x: str(_expr("${{" + x.group(1) + "}}", event, **kw)),
@@ -1794,6 +1800,8 @@ def _expr(text, event: str, *, needs: dict | None = None, number: int = 7, run_i
     names |= {f"needs.{job}.result": result for job, result in (needs or {}).items()}
     # A job's outputs (MUT7): {"job": {"name": value}}.
     names |= {f"needs.{job}.outputs.{k}": v for job, said in (outputs or {}).items() for k, v in said.items()}
+    # A step's outcome in its job (CI12): {"id": "success" | "failure" | "skipped"}.
+    names |= {f"steps.{step}.outcome": outcome for step, outcome in (steps or {}).items()}
     out, at, src = [], 0, m.group(1)
     while at < len(src):
         tok = _TOKEN.match(src, at)
@@ -2300,7 +2308,7 @@ def test_ci10b_the_suite_runs_in_four_processes_from_the_dev_lock():
     and locked with its hashes (M-3), the same tests, both Pythons, 200 sequences on a pull request
     and 500 on a push; and the gate's every other test in four processes too."""
     (tests,) = [s for s in _ci_test_steps() if (s.get("run") or "").startswith("python -m pytest tests/ ")]
-    assert tests["run"] == f"python -m pytest tests/ -q {XDIST} -o faulthandler_timeout=480"
+    assert tests["run"] == f"python -m pytest tests/ -q {XDIST} --ignore={AZURE_MACHINE} -o faulthandler_timeout=480"
     assert _load(CI)["jobs"]["test"]["strategy"]["matrix"]["python-version"] == ["3.11", "3.12"]
     assert _expr(tests["env"]["GLORFINDEL_INVARIANT_EXAMPLES"], "pull_request") == "200"
     assert XDIST in _gate_pytest("invariants-rest")
@@ -2313,6 +2321,43 @@ def test_ci10b_the_suite_runs_in_four_processes_from_the_dev_lock():
     # A dev tool only: never in an image's lock.
     for image in ("glorfindel.txt", "annatar.txt"):
         assert "pytest-xdist" not in (ROOT / "requirements" / image).read_text(encoding="utf-8"), image
+
+
+def test_ci12_azure_s_machine_runs_alone_after_the_rest_at_the_push_budget():
+    """CI12 (#899): ci.yml's Linux job runs Azure's machine in a step of its own, after the rest, as
+    the gate does (L6) — the suite in four processes leaves out its file alone, the next step runs
+    that file and nothing else, in one process (among four, the machine outlasted 8 min on 3.12 and
+    the stack faulthandler wrote then killed its worker: docs/operations.md, « La CI au bon endroit »).
+    The same budget (500 on a push, 200 on a pull request) and the same database as the rest; run
+    whenever the step before ran, red or green, never when it was skipped or the run cancelled; a
+    hang still says where it waits, after 8 min, before the job's bound."""
+    steps = _ci_test_steps()
+    (rest,) = [s for s in steps if (s.get("run") or "").startswith("python -m pytest tests/ ")]
+    (machine,) = [s for s in steps if (s.get("run") or "").split()[3:4] == [AZURE_MACHINE]]
+    assert steps.index(rest) < steps.index(machine)
+    # Each test in exactly one of the two steps: the rest leaves out the machine's file, nothing else.
+    left_out = [a.split("=", 1)[1] for a in rest["run"].split() if a.startswith(("--ignore", "--deselect"))]
+    assert left_out == [AZURE_MACHINE], rest["run"]
+    assert machine["run"] == f"python -m pytest {AZURE_MACHINE} -q -o faulthandler_timeout=480"
+    assert "-n" not in machine["run"].split() and "--dist" not in machine["run"]
+    for event, budget in (("push", "500"), ("pull_request", "200")):
+        assert _expr(machine["env"]["GLORFINDEL_INVARIANT_EXAMPLES"], event) == budget, event
+        assert _expr(rest["env"]["GLORFINDEL_INVARIANT_EXAMPLES"], event) == budget, event
+    assert machine["env"] == rest["env"]
+    assert set(machine["env"]) == {"GLORFINDEL_INVARIANT_EXAMPLES", "GLORFINDEL_INVARIANT_DB"}
+    # Run when the rest passed or failed; skipped with it (a red lint), never on a cancelled run.
+    cond, ident = machine.get("if"), rest.get("id")
+    assert ident and not ({"continue-on-error", "timeout-minutes"} & set(machine))
+    for outcome, cancelled, runs in (("success", False, True), ("failure", False, True),
+                                     ("skipped", False, False), ("failure", True, False)):
+        assert _expr(cond, "push", steps={ident: outcome}, cancelled=cancelled) is runs, (outcome, cancelled)
+    # The machine's 8 min, then the job's bound: its stack is written before the job is cancelled.
+    assert 480 < 60 * _load(CI)["jobs"]["test"]["timeout-minutes"]
+    # The file holds the machine alone: nothing else leaves the suite in four processes with it.
+    import ast
+    tree = ast.parse((ROOT / AZURE_MACHINE).read_text(encoding="utf-8"))
+    assert [n.name for n in tree.body if isinstance(n, (ast.FunctionDef, ast.ClassDef))
+            and n.name.startswith(("test_", "Test"))] == ["test_isolation_invariants"]
 
 
 def _components() -> list[str]:

@@ -218,7 +218,10 @@ pas : un fil qui boucle sans jamais rendre son tour ni prendre de verrou piloté
 boucle **en rendant son tour** — des appels Azure sans fin, chaque tour productif — ne sont vus que
 par la borne du job. Les jobs qui lancent la machine sont bornés : CI Linux 30 min, macOS 25 min, nuit
 150 min (M1347, M1348) ; sur Linux comme sur macOS, un test qui dure plus de 8 min écrit la pile de
-ses fils (M1441).
+ses fils (M1441). Cette pile est sûre pour un fil bloqué, pas pour un fil qui tourne : faulthandler lit
+ses cadres sans le GIL, et le processus peut mourir pendant la lecture. Sur Linux, la machine d'Azure
+tourne donc seule, après le reste, loin de ses 8 min (CI12, M6236–M6243 ; `docs/operations.md`, « La
+CI au bon endroit »).
 
 ## La mesure par mutation
 

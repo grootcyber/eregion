@@ -2660,6 +2660,47 @@ chaque mutant sur l'arbre publié, une fois, sans travail en double. Le côté h
   seul processus.
   Sur un runner (4 vCPU), l'étude estime l'étape des tests de 13,5 à environ 5 min, une PR verte en 6 à
   8 min au lieu de 14,6 : à mesurer sur les premières PR.
+- **La machine d'Azure seule, après le reste** (CI12, #899, 18/11). Le job `lint + tests (py3.12)` d'un
+  push sur `main` tombait de plus en plus souvent (le 17/11 sur f22b9d6c, le 18/11 sur e13824bf,
+  c64b2bdb et 21de24aa), jamais sur un contre-exemple : une relance passait. **Ce qui a été mesuré**
+  (les journaux de dix jobs du 17 et du 18/11, sans appel payant) :
+  - parmi les quatre processus, `test_isolation_invariants` à 500 séquences dure de 8 à 12 min sous
+    3.12 (moins de 8 sous 3.11) : à 8 min, `-o faulthandler_timeout=480` écrit la pile de chaque
+    thread, sur six des sept jobs 3.12 relus ;
+  - quatre de ces six vidages ont tué le worker (« node down: Not properly terminated ») : la pile du
+    thread principal s'arrête après une ou deux lignes, sans aucun message ;
+  - seule, la même machine prend de 3 à 6 min pour 500 séquences sur un runner (les 2 000 de la
+    porte, job `invariants-azure`, en 13 à 23 min ; sur un poste, 141 s seule et 172 s dans la suite).
+
+  **La cause.** Le chien de garde de faulthandler (`dump_traceback_later`) lit les cadres de chaque
+  thread sans tenir le GIL, pendant qu'ils tournent. Un thread qui exécute du Python empile et dépile
+  ses cadres, et CPython libère sous lui la mémoire qu'il lit. La lecture fait alors un SIGSEGV dans
+  un thread qui bloque tous les signaux : le noyau tue le processus sans que le gestionnaire de
+  faulthandler n'écrive rien. Reproduit sur un poste (CPython 3.12.3) :
+  - la vraie machine, vidée une fois à 5 s : le worker meurt une fois sur six, la même trace qu'en CI ;
+  - vidée toutes les 50 ms : il meurt trois fois sur trois en moins de 6 s ; sans vidage, elle passe ;
+  - une récursion Python seule, vidée toutes les 50 ms, meurt en moins d'une demi-seconde (code 139),
+    sans message, alors qu'un SIGSEGV du thread principal écrit « Fatal Python error » ;
+  - un thread bloqué dans une attente survit à 10 s de vidages toutes les 1 ms : ses cadres ne bougent
+    pas. Le vidage reste sûr là où il sert, un vrai blocage.
+
+  **La correction** (poussée par Jonathan, l'App des sessions n'a pas le droit Workflows :
+  `changes/CI12-workflow.md`). Le job Linux fait comme la porte (L6) : `pytest tests/ -n 4 --dist load
+  --ignore=tests/unit/test_invariants.py`, puis l'étape « Azure's invariant machine (alone, after the
+  rest) », qui lance ce fichier seul dans un processus, au même budget (500 sur un push, 200 sur une
+  PR) et avec la même base. Elle tourne dès que l'étape d'avant a tourné, rouge ou verte ; jamais
+  après un lint rouge, ni sur un run annulé. Ses 8 min avant la pile redeviennent celles d'un
+  blocage : de 33 à 167 % de marge sur sa durée seule.
+  - Écartés : un délai plus long dans les quatre processus (15 min laissaient 25 % de marge sur les
+    12 min mesurées, et la pile d'un blocage arrivait 7 min avant la borne de 30 min) ; la machine
+    découpée (cinq fois 100 séquences ne valent pas 500 pour Hypothesis, et la base, le harnais de
+    mutation et la porte nomment le test entier).
+  - Le job garde sa borne de 30 min. Estimé, à relire sur les premiers pushs : de 12 à 14 min pour le
+    reste (les trois autres processus finissaient vers la 14e minute), puis de 3 à 6 pour la machine,
+    soit les 17 à 19 min d'avant. Une machine bloquée écrit sa pile vers la 22e minute du job, avant
+    la borne.
+  - Ce qui ne change pas : le macOS (la machine y tient en 3 à 6 min), la porte (2 400 s pour une
+    machine de 13 à 23 min), la nuit (aucun délai de pile).
 - **Sur un poste, la suite en priorité basse** (NICE1, #620). Hors CI (`CI` absente ou
   vide), dès que pytest charge `tests/unit/conftest.py`, chaque processus qui collecte (le pytest seul,
   chaque worker de xdist, chaque run d'un mutant) se monte à `nice 10`, jamais plus bas que ce qu'il

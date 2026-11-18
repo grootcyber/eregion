@@ -8,8 +8,11 @@ MUTANTS = [
     ("M3587", "the macOS job back on every pull request, never acquired by a runner (CI5)", CI,
      "    if: ${{ github.event_name == 'push' || github.event_name == 'schedule' }}\n    runs-on: macos-latest\n",
      "    runs-on: macos-latest\n"),
+    # CI12 (#899): the budget is said twice, the suite's and Azure's machine's; this one is the suite's.
     ("M3588", "500 invariant sequences on each push of a pull request (CI5)", CI,
-     "${{ github.event_name == 'pull_request' && '200' || '500' }}", '"500"'),
+     "${{ github.event_name == 'pull_request' && '200' || '500' }}\n"
+     "          GLORFINDEL_INVARIANT_DB: .hypothesis-invariants\n        # CI10b",
+     '"500"\n          GLORFINDEL_INVARIANT_DB: .hypothesis-invariants\n        # CI10b'),
     ("M3589", "a run of main cancelled by the next push (CI5)", CI,
      "  cancel-in-progress: ${{ github.event_name == 'pull_request' }}\n", "  cancel-in-progress: true\n"),
 ]
