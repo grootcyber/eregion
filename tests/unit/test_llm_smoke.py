@@ -501,3 +501,116 @@ def test_attest_on_the_lock_of_the_latest_tag_asks_for_the_release_before(attest
     assert attest.main(["--models", MODEL, "--runs", "3"]) == 0
     said = capsys.readouterr().out
     assert "déjà celui de v0.4.6" in said and "BASE=<la release d'avant v0.4.6>" in said
+
+
+# ── SEC-A4b: the rule proposals, measured — the share that carries the routing key ─────────────
+# A simulated model (litellm.completion replaced): no call to a real one. It keeps `_ResourceId`
+# when its system prompt asks it to, routes by `Computer` otherwise — what the harness must tell.
+
+def _proposing_model(calls: list):
+    import json as _json
+    from types import SimpleNamespace
+    from glorfindel.detection_authoring import ROUTING_KEY_INSTRUCTION
+
+    def completion(**kw):
+        system = kw["messages"][0]["content"][0]["text"]
+        calls.append({"system": system, "user": kw["messages"][1]["content"], "model": kw["model"]})
+        by = "Computer, _ResourceId" if ROUTING_KEY_INSTRUCTION in system else "Computer"
+        args = {"analysis": "a", "rule_name": "r", "interval_s": 60, "explanation": "e",
+                "confidence": 0.7,
+                "proposed_query": f'Syslog | where SyslogMessage has "x" | summarize n = count() by {by}'}
+        call = SimpleNamespace(function=SimpleNamespace(arguments=_json.dumps(args)))
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(tool_calls=[call]))])
+    return completion
+
+
+def test_the_two_prompts_differ_by_the_routing_key_bullet_only(smoke):
+    import hashlib
+    from glorfindel import detection_authoring as da
+    prompts = smoke.proposal_prompts()
+    assert prompts["after"] == da.RULE_PROPOSAL_SYSTEM_PROMPT
+    assert da.ROUTING_KEY_INSTRUCTION not in prompts["before"]
+    # `before` is origin/main's prompt before SEC-A4b, to the byte.
+    assert hashlib.sha256(prompts["before"].encode()).hexdigest() == \
+        "0d28780f90580b64f9e9ae606dce86483ab9fb217be2b658c2533a5a108e9fc3"
+
+
+def test_the_proposal_cases_are_the_catalogs_data_plane_techniques_and_a_missed_detection(smoke):
+    from glorfindel.detection_authoring import load_catalog
+    cases = smoke.proposal_cases()
+    implemented = {t for t, e in load_catalog().items() if e.get("status") == "implemented"}
+    proactive = {c["ttp"] for c in cases if not c.get("failed_query")}
+    assert proactive == implemented and len(proactive) >= 5
+    reactive = [c for c in cases if c.get("failed_query")]
+    assert len(reactive) == 1 and "by Computer" in reactive[0]["failed_query"]
+    det = smoke._SchemaOnly()
+    for table in ("Perf", "Syslog", "StorageBlobLogs"):
+        cols = {r["ColumnName"] for r in det.run_query(f"{table} | getschema | project ColumnName, ColumnType")}
+        assert "Computer" in cols or "CallerIpAddress" in cols
+        assert "_ResourceId" not in cols
+    assert "_ResourceId" in {r["ColumnName"] for r in smoke._SchemaOnly(with_key=True).run_query("Syslog")}
+
+
+def test_the_harness_measures_the_share_that_carries_the_key_before_and_after(smoke, monkeypatch):
+    from glorfindel import detection_authoring as da
+    shipped = da.RULE_PROPOSAL_SYSTEM_PROMPT
+    calls: list = []
+    monkeypatch.setattr("litellm.completion", _proposing_model(calls))
+    out = smoke.run_proposals("sim/model", 2)
+    n = len(smoke.proposal_cases()) * 2
+    assert out["drawn"] == {"before": n, "after": n}
+    assert out["carried"] == {"before": 0, "after": n}
+    assert out["errors"] == {"before": 0, "after": 0}
+    assert len(calls) == 2 * n and all(c["model"] == "sim/model" for c in calls)
+    # Grounded as in production: the served schema reached the model's message.
+    assert any("SyslogMessage: string" in c["user"] for c in calls)
+    assert any("Query that failed" in c["user"] and "by Computer" in c["user"] for c in calls)
+    # The shipped prompt is put back after every draw.
+    assert da.RULE_PROPOSAL_SYSTEM_PROMPT == shipped
+    refused = out["cases"][0]["draws"]["before"][0]
+    assert refused["carries_key"] is False and "_ResourceId" in refused["refusal"]
+
+
+def test_a_proposal_without_a_tool_call_is_counted_and_said(smoke, monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setattr("litellm.completion", lambda **kw: SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(tool_calls=None))]))
+    out = smoke.run_proposals("sim/model", 1, ("after",))
+    assert out["carried"] == {"after": 0} and out["errors"]["after"] == len(smoke.proposal_cases())
+
+
+def test_proposals_mode_writes_its_measure_and_never_an_attestation(smoke, monkeypatch, tmp_path, capsys):
+    import json
+    calls: list = []
+    monkeypatch.setattr("litellm.completion", _proposing_model(calls))
+    monkeypatch.setattr(smoke, "_run_one", lambda *a, **k: pytest.fail("the decision is not run"))
+    out = tmp_path / "proposals.json"
+    monkeypatch.setattr(sys, "argv", ["llm_smoke.py", "--proposals", "--models", "sim/a,sim/b",
+                                      "--runs", "1", "--json", str(out)])
+    assert smoke.main() == 0
+    said = capsys.readouterr().out
+    assert "KEY CARRIED" in said and "Key carried: before 0/" in said
+    written = json.loads(out.read_text())
+    assert written["mode"] == "proposals" and [m["model"] for m in written["models"]] == ["sim/a", "sim/b"]
+    calls.clear()
+    for extra in (["--attest", str(tmp_path / "h.json")], ["--pass-out", str(tmp_path / "p.json")],
+                  ["--kinds", "act"], ["--prompts", "later"]):
+        monkeypatch.setattr(sys, "argv", ["llm_smoke.py", "--proposals", "--runs", "3", *extra])
+        assert smoke.main() == 2
+    assert calls == [] and not (tmp_path / "h.json").exists() and not (tmp_path / "p.json").exists()
+
+
+def test_make_llm_compare_proposals_runs_the_proposals_mode():
+    import shutil
+    import subprocess
+    if shutil.which("make") is None:
+        pytest.skip("make not installed")
+
+    def dry(*args):
+        return subprocess.run(["make", "-n", "--no-print-directory", "-C", str(ROOT), "llm-compare", *args],
+                              capture_output=True, text=True, timeout=60).stdout
+    out = dry("MODELS=m/a", "PROPOSALS=1", "JSON_OUT=p.json")
+    assert "scripts/llm_smoke.py --proposals --models m/a --runs 3 --json p.json" in out
+    assert "harness_attest" not in out
+    # With ATTEST too: the harness refuses it before any call (--proposals never attests).
+    assert "--attest" in dry("MODELS=m/a", "PROPOSALS=1", "ATTEST=1")

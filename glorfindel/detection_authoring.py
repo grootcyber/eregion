@@ -217,6 +217,23 @@ RULE_PROPOSAL_TOOL = {
     },
 }
 
+# SEC-A4b: the key each row is routed by, asked of the model. A rule of the data plane whose rows
+# carry neither `_ResourceId` nor `CallerIpAddress` as Azure wrote them is refused at load and at
+# approval (eregion_core/rule_routing.py), and judged unapprovable as soon as it is proposed
+# (proposed_rules.approval_refusal): the model is told, so its proposals carry the key. One
+# bullet of the grounding rules, frozen to the byte by tests/unit/test_detection_authoring.py;
+# scripts/llm_smoke.py --proposals measures the share of proposals that carry it, without then
+# with this bullet (the prompt without it is origin/main's before SEC-A4b, to the byte).
+ROUTING_KEY_INSTRUCTION = """\
+- In KQL on a Log Analytics table, keep `_ResourceId` in the query's output exactly as the table \
+holds it: name it in the last `project` and in the `by` of every `summarize`, and never write, rename \
+or recompute it (`extend`, `project _ResourceId = …`, `project-rename`). Glorfindel routes each \
+row to its VM by `_ResourceId`, never by `Computer` (the VM writes its own host name): a rule \
+whose rows lose it is refused. `_ResourceId` is a standard column of every Log Analytics table, \
+even when the table schema provided does not list it. On a storage table (StorageBlobLogs…), keep \
+`CallerIpAddress` as well, as the service wrote it — the address that made the call names the VM.
+"""
+
 RULE_PROPOSAL_SYSTEM_PROMPT = """\
 You are Glorfindel's detection engineering module.
 
@@ -235,7 +252,7 @@ extract/parse on a message field) rather than assuming it exists.
 - Keep the time window tight to minimise false positives.
 - Include only filters that distinguish malicious from benign activity.
 - If a prior query was close, fix only what was wrong; do not over-engineer.
-
+""" + ROUTING_KEY_INSTRUCTION + """
 You always call the propose_detection_rule tool — never respond in plain text.
 """
 

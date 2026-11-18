@@ -432,9 +432,13 @@ def resolve_attack_started(signal: dict, ip_owners=None) -> dict:
     data_plane = not (is_control_plane_source(source) or is_identity_source(source)
                       or entra_query or activity_query)
     vm_rid = signal.get("resource_id") or ""
-    # SEC-A4 (review R1): the row read by the keys the polled query proves. A line of runs/ never
-    # brings a query of its own (SEC3, SEC8): it is a loaded rule's, already proven at load, or the
-    # operator's (`respond` on a file of his) — proven here the same way.
+    # SEC-A4 (review R1): the row read by the keys the polled query proves. A line the watch takes
+    # from runs/ never brings a query of its own (SEC3, SEC8: `signal_origin.admit` drops
+    # `detection_query`): the query is a loaded rule's, already proven at load. `respond <file>`
+    # does not go through the admission and keeps the file's `detection_query` — the operator's,
+    # never proven at load: its keys are read here, by the same reader (none proven: no row of it
+    # names the VM: each is pinned `unattributed`, the attribution guard holds its isolation and
+    # its block) (SEC-A4b).
     from glorfindel.detection_rules import proven_keys
     names_vm = _row_reader(vm_rid, ip_owners, keys=proven_keys(query)) if data_plane else None
 
@@ -2859,11 +2863,16 @@ The existing rule may be correct and no change needed."""
     )
     d = proposed_rule  # field access below mirrors the proposal dict
 
+    from glorfindel import proposed_rules as _pr
+    # SEC-A4b: judged as soon as the model proposes it, by the reader of the load and of the
+    # approval — a rule its approval would refuse (its rows name no VM but by their host name) is
+    # recorded unapprovable, and its card carries no proposal to approve.
+    unapprovable = _pr.approval_refusal(d.get("source") or source, d.get("query") or "")
+
     # Save the proposed rule immediately so proposal_id is available for the
     # escalation card (escalate_to_human runs before store_cycle).
     pid = ""
     if not state.get("dry_run"):
-        from glorfindel import proposed_rules as _pr
         run_id = signal.get("context", {}).get("run_id", "")
         # grounded_schema is audit metadata (kept in state/debug.jsonl), not a
         # record() field — strip it from the persisted-proposal kwargs.
@@ -2875,6 +2884,29 @@ The existing rule may be correct and no change needed."""
             resource_id=signal.get("resource_id", ""),
             **record_kwargs,
         )
+
+    if unapprovable:
+        # Said on the card, never offered: no proposal id, so no Approve (console) nor
+        # approve-rule (CLI); the recorded proposal keeps its reason, outside `pending`.
+        return {
+            **state,
+            "reasoning": d["analysis"],
+            "confidence": d["confidence"],
+            "action": "improve_detection",
+            "reversible": True,
+            "explanation": d["explanation"],
+            "escalate": True,
+            "escalation_reason": f"Règle proposée non approuvable : {unapprovable}.\n\n{d['analysis']}",
+            "suggested_steps": [
+                f"The proposed query for {signal.get('ttp', '')} cannot be approved: its rows do not "
+                "carry `_ResourceId` (nor, on a storage table, `CallerIpAddress`) as Azure wrote them",
+                "Write the rule by hand in the client's layer, `_ResourceId` kept in its last `project` "
+                "or `summarize … by`, or re-run the scenario for a new proposal",
+            ],
+            "proposed_rule": {**proposed_rule, "unapprovable": unapprovable, "recorded_id": pid},
+            "proposal_id": "",
+            "outcome": None,
+        }
 
     return {
         **state,

@@ -143,6 +143,41 @@ def test_author_rule_grounds_on_schema_when_detector_present():
     assert "MaxWrite: real" in sent
 
 
+# SEC-A4b: the routing key asked of the model that proposes rules — the bullet, to the byte.
+_ROUTING_KEY_BULLET = (
+    "- In KQL on a Log Analytics table, keep `_ResourceId` in the query's output exactly as the "
+    "table holds it: name it in the last `project` and in the `by` of every `summarize`, and never "
+    "write, rename or recompute it (`extend`, `project _ResourceId = …`, `project-rename`). "
+    "Glorfindel routes each row to its VM by `_ResourceId`, never by `Computer` (the VM writes its "
+    "own host name): a rule whose rows lose it is refused. `_ResourceId` is a standard column of "
+    "every Log Analytics table, even when the table schema provided does not list it. On a storage "
+    "table (StorageBlobLogs…), keep `CallerIpAddress` as well, as the service wrote it — the "
+    "address that made the call names the VM.\n")
+# The prompt without the bullet: origin/main's before SEC-A4b, to the byte (the harness's
+# `before`, scripts/llm_smoke.py --proposals).
+_PROMPT_BEFORE_SHA256 = "0d28780f90580b64f9e9ae606dce86483ab9fb217be2b658c2533a5a108e9fc3"
+
+
+def test_the_proposal_prompt_asks_to_keep_the_routing_key_to_the_byte():
+    import hashlib
+    assert da.ROUTING_KEY_INSTRUCTION == _ROUTING_KEY_BULLET
+    prompt = da.RULE_PROPOSAL_SYSTEM_PROMPT
+    assert prompt.count(_ROUTING_KEY_BULLET) == 1
+    # One bullet of the grounding rules, the last; nothing else of the prompt changed.
+    assert ("- If a prior query was close, fix only what was wrong; do not over-engineer.\n"
+            + _ROUTING_KEY_BULLET + "\nYou always call the propose_detection_rule tool") in prompt
+    before = prompt.replace(_ROUTING_KEY_BULLET, "", 1)
+    assert hashlib.sha256(before.encode()).hexdigest() == _PROMPT_BEFORE_SHA256
+
+
+def test_the_bullet_reaches_the_model_that_proposes_rules():
+    with patch("litellm.completion", return_value=_fake_completion(_VALID_ARGS)) as m:
+        da.author_rule(ttp="T1486", resource_id="/sub/rg/vm1", source="azure_monitor",
+                       workspace_id="ws", model="claude-test")
+    system = m.call_args.kwargs["messages"][0]["content"][0]["text"]
+    assert _ROUTING_KEY_BULLET in system
+
+
 def test_author_rule_raises_on_no_tool_call():
     bad = SimpleNamespace(choices=[SimpleNamespace(
         message=SimpleNamespace(tool_calls=None))])

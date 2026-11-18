@@ -26,6 +26,8 @@ Usage:
     make llm-smoke MODEL=ollama/llama3.1
     make llm-compare MODELS=<Imladris's model> RUNS=3 ATTEST=1 [BASE=<tag>]   # H3: two passes, one
         # attestation (requirements/harness.json) — the reference lock, then this checkout's
+    make llm-compare MODELS=<Imladris's model> RUNS=3 PROPOSALS=1   # SEC-A4b: the rule proposals,
+        # the share that carries the routing key, without then with the prompt's bullet (--proposals)
 
 For Ollama: `ollama serve` + `ollama pull llama3.1` (a TOOL-CAPABLE model is required —
 the decide step forces a function call). Set GLORFINDEL_LLM_BASE_URL if not on
@@ -463,6 +465,140 @@ def _run_one(model: str, runs: int, kinds: set[str] | None = None) -> dict:
             "sampling": _temperature_line(all_slots), "cases": cases}
 
 
+# ── The rule proposals (SEC-A4b) ──────────────────────────────────────────────────
+# `--proposals`: the real `detection_authoring.author_rule` (the model that proposes rules, not
+# the one that decides), on every implemented technique of the catalog read on the data plane, and
+# on one missed detection whose query routed by the host name. Each proposal is judged by the
+# reader of the load and of the approval (`proposed_rules.approval_refusal`): does it carry the
+# key (`_ResourceId`, or `CallerIpAddress` on a storage table)? Each case is drawn under the two
+# prompts — `before`, the prompt without the routing-key bullet (origin/main's before SEC-A4b, to
+# the byte), and `after`, the prompt as shipped — and the share of proposals that carry the key is
+# said for each. Nothing of the cloud: the table schemas are served by `_SchemaOnly`, as getschema
+# would return them; `_ResourceId`, a hidden standard column, is not listed unless --schema-key
+# (whether getschema lists it is not measured here).
+_PROPOSAL_SCHEMAS = {
+    "Perf": ["TimeGenerated:datetime", "Computer:string", "ObjectName:string", "CounterName:string",
+             "InstanceName:string", "CounterValue:real", "CounterPath:string", "SourceSystem:string",
+             "TenantId:string", "Type:string"],
+    "Syslog": ["TimeGenerated:datetime", "Computer:string", "HostName:string", "HostIP:string",
+               "Facility:string", "SeverityLevel:string", "ProcessName:string", "ProcessID:int",
+               "SyslogMessage:string", "EventTime:datetime", "SourceSystem:string", "TenantId:string",
+               "Type:string"],
+    "StorageBlobLogs": ["TimeGenerated:datetime", "AccountName:string", "OperationName:string",
+                        "StatusCode:string", "StatusText:string", "CallerIpAddress:string",
+                        "Uri:string", "UserAgentHeader:string", "AuthenticationType:string",
+                        "RequesterObjectId:string", "ObjectKey:string", "RequestBodySize:long",
+                        "Category:string", "TenantId:string", "Type:string"],
+}
+# A missed detection (the reactive path, `propose_detection_rule`): the query that timed out routed
+# its rows by the host name. « Fix only what was wrong » — does the model keep `by Computer`?
+_REACTIVE_CASE = {
+    "label": "missed detection — the failed query routed by Computer (reactive)",
+    "ttp": "T1110.001",
+    "failed_query": ('Syslog\n| where ProcessName == "sshd" and SyslogMessage has "Failed password"\n'
+                     "| summarize FailedAttempts = count() by Computer, bin(TimeGenerated, 10m)\n"
+                     "| where FailedAttempts >= 10"),
+    "attack_summary": "Repeated SSH password attempts from one external address against the VM.",
+    "expected_indicators": ["FailedAttempts", "SourceIP"],
+}
+PROMPT_VARIANTS = ("before", "after")
+
+
+class _SchemaOnly:
+    """A detector that answers getschema only, from `_PROPOSAL_SCHEMAS` — no cloud."""
+
+    def __init__(self, with_key: bool = False):
+        self.with_key = with_key
+
+    def run_query(self, query: str) -> list[dict]:
+        table = query.split("|", 1)[0].strip()
+        cols = list(_PROPOSAL_SCHEMAS.get(table, ()))
+        if self.with_key and cols:
+            cols.append("_ResourceId:string")
+        return [{"ColumnName": c.split(":")[0], "ColumnType": c.split(":")[1]} for c in cols]
+
+
+def proposal_prompts() -> dict[str, str]:
+    """The two prompts drawn: `before` (the routing-key bullet out), `after` (as shipped)."""
+    from glorfindel import detection_authoring as da
+    after = da.RULE_PROPOSAL_SYSTEM_PROMPT
+    before = after.replace(da.ROUTING_KEY_INSTRUCTION, "", 1)
+    if before == after:
+        raise RuntimeError("the routing-key bullet is not in RULE_PROPOSAL_SYSTEM_PROMPT: "
+                           "no before/after to measure")
+    return {"before": before, "after": after}
+
+
+def proposal_cases() -> list[dict]:
+    """Every implemented technique of the catalog whose table is read on the data plane (its rows
+    routed to a VM: the key is asked of them), then the reactive case."""
+    from eregion_core.rule_routing import data_plane
+    from glorfindel.detection_authoring import load_catalog
+    cases = []
+    for ttp, entry in load_catalog().items():
+        table = entry.get("log_source") or ""
+        if entry.get("status") != "implemented" or table not in _PROPOSAL_SCHEMAS:
+            continue
+        if not data_plane("azure_monitor", f"{table} | take 1"):
+            continue
+        cases.append({"label": f"{ttp} on {table} (proactive)", "ttp": ttp})
+    return cases + [_REACTIVE_CASE]
+
+
+def _proposal_draw(case: dict, model: str, prompt: str, detector) -> dict:
+    """One proposal under one prompt: whether it carries the key, or why not."""
+    from glorfindel import detection_authoring as da
+    from glorfindel.proposed_rules import approval_refusal
+    shipped = da.RULE_PROPOSAL_SYSTEM_PROMPT
+    da.RULE_PROPOSAL_SYSTEM_PROMPT = prompt          # read by author_rule at call time
+    try:
+        p = da.author_rule(
+            ttp=case["ttp"], resource_id=_RID, source="azure_monitor", workspace_id="(harness)",
+            model=model, detector=detector, attack_summary=case.get("attack_summary", ""),
+            expected_indicators=case.get("expected_indicators"),
+            failed_query=case.get("failed_query"),
+            detection_timeout_s=300 if case.get("failed_query") else None)
+    except Exception as e:
+        return {"carries_key": False, "error": type(e).__name__, "refusal": "", "rule_name": ""}
+    finally:
+        da.RULE_PROPOSAL_SYSTEM_PROMPT = shipped
+    refusal = approval_refusal(p.get("source") or "azure_monitor", p.get("query") or "")
+    return {"carries_key": not refusal, "error": None, "refusal": refusal[:160],
+            "rule_name": str(p.get("rule_name") or "")[:64]}
+
+
+def _share(draws: list[dict]) -> str:
+    n = len(draws)
+    k = sum(1 for d in draws if d["carries_key"])
+    return f"{k}/{n} ({100 * k // n}%)" if n else "—"
+
+
+def run_proposals(model: str, runs: int, variants=PROMPT_VARIANTS, schema_key: bool = False) -> dict:
+    """Every proposal case against ONE model, under each prompt: the share that carries the key."""
+    prompts = proposal_prompts()
+    detector = _SchemaOnly(with_key=schema_key)
+    print(f"Rule proposals (SEC-A4b) — model: {model} · runs: {runs} · prompts: {', '.join(variants)}"
+          f" · schema {'with' if schema_key else 'without'} `_ResourceId`")
+    print("-" * 72)
+    cases = []
+    for case in proposal_cases():
+        by = {v: [_proposal_draw(case, model, prompts[v], detector) for _ in range(runs)] for v in variants}
+        cases.append({"label": case["label"], "ttp": case["ttp"], "draws": by})
+        line = " · ".join(f"{v} {_share(by[v])}" for v in variants)
+        errors = sum(1 for v in variants for d in by[v] if d["error"])
+        print(f"  {case['label']} — key carried: {line}" + (f"  [{errors} error(s)]" if errors else ""))
+    print("-" * 72)
+    totals = {v: [d for c in cases for d in c["draws"][v]] for v in variants}
+    errors = {v: sum(1 for d in totals[v] if d["error"]) for v in variants}
+    print("Key carried: " + " · ".join(f"{v} {_share(totals[v])}" for v in variants)
+          + " — proposals the approval would accept (the reader of the load)")
+    print("Errors     : " + " · ".join(f"{v} {errors[v]}" for v in variants)
+          + " (no usable tool-call: counted as not carrying the key)")
+    return {"model": model, "runs": runs, "schema_key": schema_key,
+            "carried": {v: sum(1 for d in totals[v] if d["carries_key"]) for v in variants},
+            "drawn": {v: len(totals[v]) for v in variants}, "errors": errors, "cases": cases}
+
+
 # ── The attestation (H1, then H3) ─────────────────────────────────────────────────
 # Imladris's CD deploys a new lock only with the harness's attestation. Since H3 (#324) it holds two
 # passes: the candidate (the lock of this checkout) and the reference (the lock in service on
@@ -525,6 +661,41 @@ def read_reference(path: str, models: list[str], runs: int) -> tuple[dict | None
     return ref, ""
 
 
+def _main_proposals(args, models: list[str], runs: int, kinds) -> int:
+    """`--proposals` (SEC-A4b): the rule proposals' measure, said and written (--json) — never an
+    attestation (the CD of Imladris judges the decision's cases only)."""
+    import json
+    if args.attest or args.pass_out or args.reference or kinds:
+        print("--proposals measures the rule proposals only: no --attest, --pass-out, --reference "
+              "nor --kinds — nothing run")
+        return 2
+    variants = tuple(v.strip() for v in args.prompts.split(",") if v.strip())
+    if not variants or any(v not in PROMPT_VARIANTS for v in variants):
+        print(f"--prompts: among {', '.join(PROMPT_VARIANTS)} — nothing run")
+        return 2
+    results = []
+    for i, model in enumerate(models):
+        if i:
+            print("\n" + "=" * 72 + "\n")
+        results.append(run_proposals(model, runs, variants, schema_key=args.schema_key))
+    if len(results) > 1:
+        print("\n" + "=" * 72)
+        print("KEY CARRIED — " + " · ".join(variants))
+        print("-" * 72)
+        for r in results:
+            print(f"{r['model']:<28} " + "  ".join(
+                f"{v} {r['carried'][v]}/{r['drawn'][v]}" for v in variants))
+        print("=" * 72)
+    if args.json:
+        Path(args.json).write_text(json.dumps({"mode": "proposals", "runs": runs, "models": results},
+                                              indent=2, ensure_ascii=False, default=str))
+        print(f"Proposals written to {args.json}")
+    if any(r["errors"][v] for r in results for v in variants):
+        print("→ At least one proposal came back without a usable tool-call.")
+        return 1
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--model", default=os.environ.get("GLORFINDEL_LLM_MODEL", "ollama/llama3.1"))
@@ -556,10 +727,20 @@ def main() -> int:
                     help="the lock this pass runs on, for its sha256 (default: this checkout's "
                          "requirements/glorfindel.txt).")
     ap.add_argument("--ref", default="", help="the release whose lock this pass runs on (said only).")
+    ap.add_argument("--proposals", action="store_true",
+                    help="measure the rule proposals instead of the decision (SEC-A4b): the share "
+                         "of proposals that carry the routing key, under the prompt without then "
+                         "with its bullet (make llm-compare PROPOSALS=1). No attestation.")
+    ap.add_argument("--prompts", default="before,after",
+                    help="with --proposals: the prompts drawn, comma-separated (before, after).")
+    ap.add_argument("--schema-key", action="store_true",
+                    help="with --proposals: the schema served lists `_ResourceId`.")
     args = ap.parse_args()
     runs = max(1, args.runs)
     kinds = {k.strip() for k in args.kinds.split(",") if k.strip()} or None
     models = [m.strip() for m in args.models.split(",") if m.strip()] or [args.model]
+    if args.proposals:
+        return _main_proposals(args, models, runs, kinds)
     lock = Path(args.lock) if args.lock else Path(__file__).resolve().parents[1] / LOCK_REL
     # H3: an attestation holds the reference, checked before a single paid call.
     reference = None
