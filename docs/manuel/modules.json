@@ -18,6 +18,7 @@
   653,
   666,
   845,
+  846,
   847
  ],
  "composants": [
@@ -1538,6 +1539,18 @@
     "SEC-F"
    ],
    "issue": 845
+  },
+  {
+   "id": "s-sec-e",
+   "composant": "socle",
+   "poste": "s-signer",
+   "nom": "Security hardening",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "SEC-E"
+   ],
+   "issue": 846
   },
   {
    "id": "s-inf-fl",

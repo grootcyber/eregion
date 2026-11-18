@@ -514,7 +514,8 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 démarrage depuis SEC10 (le jeton vit dans ~/.eregion/console/token)
   incidents.jsonl             → incidents actifs ; écrit par la watch et `glorfindel respond` : sous flock
                                 (`incidents.jsonl.lock`), réécrit entier, 0600 (SEC13, V-10 ; `test_locks.py`,
-                                deux vrais processus)
+                                deux vrais processus). Les faits de B3a datés (`confirmed_at`, un TTL absolu) ;
+                                `glorfindel release` et `reset` y oublient ceux de la VM levée (SEC-E)
   isolation/<vm>--<h>.json    → état NSG isolation + TTL. Clé = nom + hash de l'ID de ressource (troisième
                                 passe : deux VMs homonymes partageaient `<vm>.json`) ; un ancien `<vm>.json` n'est
                                 lu que s'il porte cet ID, migré à la première écriture ; par nom seul, un nom
