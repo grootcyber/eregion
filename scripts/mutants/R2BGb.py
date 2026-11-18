@@ -40,6 +40,9 @@ MUTANTS = [
     ("M6186", "the file flag's value is ignored — `false` in the tfvars is read as on, so the guard "
      "allows the destruction the file asked to avoid (R2BGb)",
      GUARD, '        return in_file.group(1) == "true"', "        return True"),
+    ("M6187", "a quoted bool in the tfvars is no longer matched — a quoted false falls back to the "
+     "env, which reads true, and the guard allows the destruction it should stop (R2BGb)",
+     GUARD, '=[ \\t]*"?(true|false)\\b', "=[ \\t]*(true|false)\\b"),
 ]
 
 TESTS = {
@@ -49,4 +52,5 @@ TESTS = {
     "M6184": _WINS,
     "M6185": _MAIN,
     "M6186": _OFF,
+    "M6187": _WINS,
 }

@@ -77,24 +77,28 @@ def test_the_flag_is_off_when_neither_says_true():
 def test_the_auto_tfvars_wins_over_the_env():
     """Terraform gives *.auto.tfvars precedence over TF_VAR_* : a file saying `false` with the env
     saying `true` is OFF — so the guard refuses (the transition case that would otherwise destroy)."""
-    env_true, file_false = {"TF_VAR_stratus_guardrails_enabled": "true"}, "stratus_guardrails_enabled = false\n"
+    env_true = {"TF_VAR_stratus_guardrails_enabled": "true"}
+    file_false = "stratus_guardrails_enabled = false\n"
     assert sg.guardrails_enabled(env_true, file_false) is False
+    # a quoted bool is coerced to false by Terraform too — the guard must read it off as well
+    assert sg.guardrails_enabled(env_true, 'stratus_guardrails_enabled = "false"\n') is False
     refuse, _ = sg.decide([GUARD, BUDGET], enabled=sg.guardrails_enabled(env_true, file_false))
     assert refuse is True
 
 
-def test_main_refuses_when_the_state_is_guarded_and_the_flag_is_off(monkeypatch):
-    """main returns 1 (the Makefile's `&&` then stops the plan). The state is injected; no terraform."""
+def test_main_refuses_when_the_state_is_guarded_and_the_flag_is_off(tmp_path, monkeypatch):
+    """main returns 1 (the Makefile's `&&` then stops the plan). The oro dir is tmp_path (no
+    stratus.auto.tfvars there), so the test never reads the operator's real file; state injected."""
     monkeypatch.delenv("TF_VAR_stratus_guardrails_enabled", raising=False)
     monkeypatch.delenv("STRATUS_GUARD_ACK", raising=False)
-    assert sg.main([], state_reader=lambda oro_dir: [GUARD, BUDGET]) == 1
+    assert sg.main([str(tmp_path)], state_reader=lambda oro_dir: [GUARD, BUDGET]) == 1
 
 
-def test_ack_bypasses_the_guard_even_when_it_would_refuse(monkeypatch):
+def test_ack_bypasses_the_guard_even_when_it_would_refuse(tmp_path, monkeypatch):
     """STRATUS_GUARD_ACK=1 for an intentional removal — main returns 0 even on a guarded state."""
     monkeypatch.delenv("TF_VAR_stratus_guardrails_enabled", raising=False)
     monkeypatch.setenv("STRATUS_GUARD_ACK", "1")
-    assert sg.main([], state_reader=lambda oro_dir: [GUARD, BUDGET]) == 0
+    assert sg.main([str(tmp_path)], state_reader=lambda oro_dir: [GUARD, BUDGET]) == 0
 
 
 def _tfvars_value(text, name):

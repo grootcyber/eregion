@@ -43,8 +43,9 @@ GUARDRAIL_PREFIXES = (
 # Terraform gives a *.auto.tfvars file PRECEDENCE over TF_VAR_* (and -var-file over both). So if the
 # file DEFINES the flag, its value — true OR false — is authoritative; matching only "= true" would
 # read it as on while Terraform reads it off (and destroys). [ \t] (not \s) stays on the one line, so
-# a commented "# stratus_guardrails_enabled = true" is not matched.
-_TFVARS_FLAG = re.compile(r"^[ \t]*stratus_guardrails_enabled[ \t]*=[ \t]*(true|false)\b", re.MULTILINE)
+# a commented "# stratus_guardrails_enabled = true" is not matched; the optional "? reads a quoted
+# bool (stratus_guardrails_enabled = "false"), which Terraform coerces to a bool just the same.
+_TFVARS_FLAG = re.compile(r'^[ \t]*stratus_guardrails_enabled[ \t]*=[ \t]*"?(true|false)\b', re.MULTILINE)
 _TRUE = ("1", "true", "yes", "on")
 
 
