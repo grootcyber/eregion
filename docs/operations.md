@@ -265,11 +265,14 @@ glorfindel audit --all                       # toutes ressources de detection_ru
 glorfindel audit --all --vault <nom>         # vault non-défaut (défaut: rsv-celebrimbor-erebor)
 
 # Boucle purple team — apprentissage détection
-glorfindel pending                           # voir les règles proposées (proposed_rule)
+glorfindel pending                           # voir les règles proposées (proposed_rule) — les approuvables seules
 glorfindel propose-rules [--ttp T..] [--include-planned] [--dry-run]  # autoring PROACTIF cold-start :
                                              # génère la détection depuis technique_catalog.yaml AVANT
                                              # l'attaque (getschema sur le vrai LAW → KQL groundée).
-                                             # Skip les TTPs déjà couverts. Sortie = propositions.
+                                             # Skip les TTPs déjà couverts. Sortie = propositions ;
+                                             # une règle sans `_ResourceId` (ni `CallerIpAddress` sur le
+                                             # stockage) : « Non approuvable », inscrite hors de
+                                             # pending, jamais offerte à approve-rule (SEC-A4b)
 glorfindel approve-rule <id>                 # appliquer la règle → couche du client (~/.glorfindel/client_rules.yaml, P1)
                                              # ; jamais à la place d'une règle livrée (nom suffixé -proposed,
                                              # dit), et dit si elle remplace une règle du client (SEC2)
@@ -2551,6 +2554,31 @@ verrou, ne couvre pas le modèle par défaut, n'a pas de référence, ou est à 
 
 Les deux images sont construites et éprouvées en CI à chaque PR qui touche le verrou (CI1,
 ci-dessous) : un verrou cassé échoue dans la PR.
+
+### Le harnais des propositions de règles (SEC-A4b, #660)
+
+`make llm-compare` mesure la décision (`decide`). `PROPOSALS=1` mesure à la place le modèle qui
+**propose les règles** (`detection_authoring.author_rule`, celui de `glorfindel propose-rules` et
+d'une détection manquée) : la part des propositions qui portent la clé de routage — `_ResourceId`,
+ou `CallerIpAddress` sur une table du stockage, telles qu'Azure les écrit —, jugée par le lecteur du
+chargement et de l'approbation (`proposed_rules.approval_refusal`). Chaque cas est tiré sous deux
+prompts : `before`, le prompt sans la puce de la clé (celui d'avant SEC-A4b, à l'octet), et `after`,
+le prompt livré. Appels payants : le geste de Jonathan.
+
+```bash
+make llm-compare MODELS=<modèle d'Imladris> RUNS=3 PROPOSALS=1 JSON_OUT=proposals.json
+```
+
+Les cas : chaque technique `implemented` du catalogue lue sur le plan des données (proactif, comme
+`propose-rules`), plus une détection manquée dont la requête en échec rangeait ses lignes par
+`Computer` (réactif : « ne corrige que ce qui était faux » garde-t-il `by Computer` ?). Rien du
+cloud : les schémas des tables sont servis par le script, comme `getschema` les rendrait, sans
+`_ResourceId` (colonne standard cachée ; `--schema-key` la liste — que `getschema` la liste ou non
+n'est pas mesuré ici). Ce qu'il dit, par cas puis au total : « Key carried: before k/n (p %) · after
+k/n (p %) », et les tirages sans appel d'outil utilisable (comptés comme ne portant pas la clé, code
+de sortie 1). `JSON_OUT` garde chaque tirage (la règle, la raison du refus). Jamais d'attestation :
+`--attest`, `--pass-out`, `--reference` et `--kinds` sont refusés avant tout appel. La mesure se
+joint à la PR qui change le prompt, avant la fusion.
 
 ### Les providers de Terraform, verrouillés (CI4, #389)
 
