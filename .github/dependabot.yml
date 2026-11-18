@@ -1,8 +1,8 @@
 # SEC-G (audit du 13/11, P-06) : l'empreinte de l'image de base des deux images, proposée à la montée.
 #
 # glorfindel/Dockerfile et annatar/Dockerfile partent de python:3.12-slim épinglé par son digest
-# (SEC14) : un digest ne bouge pas, et rien ne le rafraîchissait — les images publiées embarquaient des
-# paquets que Debian avait déjà corrigés. Chaque lundi, Dependabot regarde le digest de python:3.12-slim
+# (SEC14) : un digest ne bouge pas, et rien ne le rafraîchissait — un correctif de Debian n'arrivait dans
+# les images qu'à une montée faite à la main. Chaque lundi, Dependabot regarde le digest de python:3.12-slim
 # et ouvre une seule PR pour les deux Dockerfile (le groupe ci-dessous) quand il a bougé ; jamais une
 # autre version de Python (3.13 : une montée mineure, ignorée — elle se décide, elle ne se propose pas).
 # La PR passe la CI et la relecture comme une autre (docs/sessions.md, « Les releases »), avant la porte

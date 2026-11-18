@@ -538,6 +538,25 @@ def test_activate_checks_out_its_image_s_own_commit_when_the_tag_was_rewritten(r
     assert res.returncode == 0 and "réécrit" not in res.stderr and repo.head() == c1
 
 
+def test_activate_takes_a_prefix_only_when_its_image_names_the_whole_commit(repo, tmp_path):
+    """An image deployed by hand under a prefix before SEC-G, labelled by it: the way back (--activate)
+    takes it when the image's own revision has 40 characters, starts with the prefix, and the VM has
+    that commit — nothing resolved by the prefix. Any other case is refused, as by hand."""
+    c2 = repo.commits[1]
+    prefix = c2[:9]
+    env, log = _with_docker(repo, tmp_path, FAKE_IMAGE_REV=c2)
+    res = repo.deploy("--activate", prefix, env=env)
+    assert res.returncode == 0, res.stderr
+    assert repo.head() == c2 and repo.detached() and f"tag eregion-glorfindel:{prefix} eregion-glorfindel" in log.read_text()
+    for rev in (repo.commits[0], "", c2[:39], prefix + "f" * 31):
+        env, log = _with_docker(repo, tmp_path, FAKE_IMAGE_REV=rev)
+        res = repo.deploy("--activate", prefix, env=env)
+        assert res.returncode != 0 and "préfixe de commit" in res.stderr, rev
+        assert not any(c.startswith(("tag", "compose")) for c in log.read_text().splitlines())
+    res = repo.deploy("--checkout-only", prefix)                                # by hand, never
+    assert res.returncode != 0 and "préfixe de commit" in res.stderr
+
+
 def test_activate_without_its_image_moves_nothing(repo, tmp_path):
     before = repo.head()
     env, log = _with_docker(repo, tmp_path, FAKE_MISSING="eregion-glorfindel:v0.2.0")

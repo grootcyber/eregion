@@ -765,9 +765,13 @@ def release_refusal(tag: str) -> str:
 
 def tag_commit(tag: str) -> str:
     """SEC-G (audit of 13/11, V-38): the commit of the release's tag, read on the API of the repository
-    at its current name (SLUG) — never on the origin alone: an annotated tag followed once. Refused
-    when the API does not name a commit."""
+    at its current name (SLUG) — never on the origin alone: an annotated tag followed once. A 404 (the
+    ref, or the annotated tag's object, not there yet: GitHub's replicas lag behind a publication) waits
+    for the next pass (Quiet), never remembered as refused; an answer that names no commit, or a tag of
+    a tag, is Refused."""
     ref = github(f"/git/ref/tags/{tag}")
+    if ref is None:
+        raise Quiet(f"{tag} : son tag ne se lit pas encore sur l'API du dépôt ({SLUG}), le passage suivant réessaie")
     obj = ref.get("object") if isinstance(ref, dict) and ref.get("ref") == f"refs/tags/{tag}" else None
     for _ in range(2):
         if not isinstance(obj, dict) or not re.fullmatch(r"[0-9a-f]{40}", str(obj.get("sha") or "")):
@@ -777,6 +781,9 @@ def tag_commit(tag: str) -> str:
         if obj.get("type") != "tag":
             break
         annotated = github(f"/git/tags/{obj['sha']}")
+        if annotated is None:
+            raise Quiet(f"{tag} : son tag annoté ne se lit pas encore sur l'API du dépôt ({SLUG}), le passage "
+                        "suivant réessaie")
         obj = annotated.get("object") if isinstance(annotated, dict) else None
     raise Refused(f"le commit de {tag} ne se lit pas sur l'API du dépôt ({SLUG}) : jamais l'origin seul")
 

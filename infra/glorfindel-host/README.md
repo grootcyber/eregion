@@ -252,6 +252,10 @@ Vue d'ensemble, l'onglet Glorfindel ; un ancien favori `/atelier` mène à `/`.
 - **Une référence nommée, jamais une branche.** `make imladris-start REF=v0.3.1` (un tag)
   ou `REF=<commit>` (le commit entier, ses 40 chiffres hexadécimaux : un préfixe, qui peut nommer un autre
   commit du dépôt de la VM, est refusé sur le poste puis par `deploy.sh` — SEC-G, audit du 13/11, V-38) ;
+  un retour arrière du CD (`deploy.sh --activate`) vers une image déployée à la main sous un préfixe, avant
+  SEC-G, passe encore : le préfixe n'est admis là que si l'image sur la VM porte une révision de 40
+  caractères qui commence par lui, et que la VM a ce commit — sinon, `make imladris-start REF=<le commit
+  entier>` la reconstruit sous son nom complet ;
   **sans `REF`, rien n'est déployé** (SEC14,
   V-22) : ce chemin construit l'image sur Imladris, et ne prend donc
   jamais « le dernier tag » qu'il trouverait — un tag que quiconque peut écrire dans le dépôt

@@ -1,10 +1,10 @@
 """SEC-G (#848; audit of 13/11, V-07, V-35, V-38, V-39, V-40, P-06): the release Imladris's CD deploys —
 a v<semver> tag a rule reserves, at the commit the repository's API names —,
 a commit named by its 40 characters, the manual tunnel as the workstation's, one public IPv4 address as
-the SSH source, Orodruin's channel journaled, a High or Critical CVE fixed upstream judged. M5761–M5778,
-but M5763, M5764 and M5768, left free: the check of the release's author they mutated is gone (Jonathan's
-decision of 18/11), and the way back has no branch of its own left. M5779–M5780 (the release gate's job)
-go with Jonathan's patch of release-gate.yml (scripts/mutants/SEC-G-workflow.py).
+the SSH source, Orodruin's channel journaled, a High or Critical CVE fixed upstream judged. M5761–M5778;
+M5763, M5764 and M5768, freed when the check of the release's author went (Jonathan's decision of 18/11),
+hold the review's points: a 404 of the API that waits, a severity of another word, its case. M5779–M5780
+(the release gate's job) go with Jonathan's patch of release-gate.yml (scripts/mutants/SEC-G-workflow.py).
 """
 CD = "infra/glorfindel-host/cd/eregion_cd.py"
 DEPLOY = "infra/glorfindel-host/deploy.sh"
@@ -32,6 +32,8 @@ MUTANTS = [
     # V-38: the commit, on the API; never a prefix.
     ("M5767", "the CD trusts the commit Imladris's origin gives the tag: the repository's API never read (SEC-G)",
      CD, "        named = tag_commit(tag)\n", "        named = commit\n"),
+    ("M5763", "a 404 of the API on the tag's ref refuses the release for good: a replica's lag, never retried "
+     "(SEC-G)", CD, "    if ref is None:\n        raise Quiet(", "    if ref is None:\n        raise Refused("),
     ("M5769", "deploy.sh takes a commit prefix again: one off every branch deployed (SEC-G)", DEPLOY,
      '  if [[ "$ref" =~ ^[0-9a-f]{40}$ ]] \\\n      && commit=$(git rev-parse -q --verify "$ref^{commit}" 2>/dev/null) '
      '\\\n      && [ "$commit" = "$ref" ]; then\n',
@@ -58,7 +60,12 @@ MUTANTS = [
      "(SEC-G)", ORO, '  enabled_log {\n    category = "StorageRead"\n  }\n', ""),
     # P-06: the judgement the release gate runs.
     ("M5777", "the CVE gate lets a High vulnerability fixed upstream through: only Critical refuses (SEC-G)", CVES,
-     'REFUSED_SEVERITIES = frozenset({"High", "Critical"})', 'REFUSED_SEVERITIES = frozenset({"Critical"})'),
+     'REFUSED_SEVERITIES = frozenset({"high", "critical"})', 'REFUSED_SEVERITIES = frozenset({"critical"})'),
+    ("M5764", "a severity of another word passes the CVE gate as a mild one (SEC-G)", CVES,
+     "        if severity.lower() not in SEVERITIES:\n            raise Unreadable(",
+     "        if False:\n            raise Unreadable("),
+    ("M5768", "the CVE gate reads the severity with its case: « HIGH » passes (SEC-G)", CVES,
+     "        if (severity.lower() in REFUSED_SEVERITIES and", "        if (severity in REFUSED_SEVERITIES and"),
     ("M5778", "a report that saw no distribution passes the CVE gate: the system's packages never read (SEC-G)",
      CVES, "    if not name:\n        raise Unreadable(", "    if False:\n        raise Unreadable("),
 ]
@@ -69,8 +76,11 @@ TESTS = {
     "M5765": _CD + "test_a_missing_tag_rule_refuses_the_release_said_with_the_mention_once " + _CD
     + "test_check_refuses_a_missing_tag_rule",
     "M5766": _CD + "test_a_tag_rule_that_cannot_be_read_holds_the_release_said_once_then_deploys",
+    "M5763": _CD + "test_a_tag_the_api_does_not_find_yet_waits_then_deploys",
+    "M5764": _I + "test_a_severity_of_another_word_proves_nothing_never_a_mild_one",
     "M5767": _CD + "test_a_tag_whose_commit_the_api_names_otherwise_is_refused " + _CD
-    + "test_a_tag_the_api_does_not_name_is_refused",
+    + "test_a_tag_the_api_does_not_find_yet_waits_then_deploys",
+    "M5768": _I + "test_the_severity_is_compared_without_its_case",
     "M5769": _D + "test_a_commit_prefix_is_refused_even_of_a_commit_off_every_branch",
     "M5770": _D + "test_make_start_refuses_a_commit_prefix_before_anything",
     "M5771": _C + "test_the_tunnel_by_hand_reads_no_ssh_config_binds_the_loopback_and_pins_the_key",

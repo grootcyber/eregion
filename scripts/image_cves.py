@@ -43,8 +43,12 @@ GRYPE_SHA256 = "bc3ea3f9e6fd56ac781c08c6c5e614271b79f438200757f6932085c19b0a4657
 GRYPE_URL = (f"https://github.com/anchore/grype/releases/download/{GRYPE_VERSION}/"
              f"grype_{GRYPE_VERSION[1:]}_linux_amd64.tar.gz")
 GRYPE_MAX = 150 * 1024 * 1024
-# What refuses: a severity among these, a fix published, a package of the operating system.
-REFUSED_SEVERITIES = frozenset({"High", "Critical"})
+# The severities grype says (lower-cased: compared without their case); any other word proves nothing —
+# Unreadable, never taken for a mild one.
+SEVERITIES = frozenset({"negligible", "low", "medium", "high", "critical", "unknown"})
+# What refuses: a severity among these, a fix published, a package of the operating system. A CVE the
+# distribution rates « Unknown » or « Negligible » never refuses (a known limit: docs/operations.md).
+REFUSED_SEVERITIES = frozenset({"high", "critical"})
 OS_TYPES = frozenset({"deb", "rpm", "apk"})
 SAID = 20     # vulnerabilities named; the others counted
 
@@ -96,14 +100,17 @@ def refused(report: dict) -> tuple[list[dict], int, str]:
         art = m.get("artifact") if isinstance(m, dict) else None
         if not isinstance(vuln, dict) or not isinstance(art, dict):
             raise Unreadable("une correspondance sans vulnérabilité ni paquet")
+        severity = str(vuln.get("severity") or "").strip()
+        if severity.lower() not in SEVERITIES:
+            raise Unreadable(f"une sévérité inconnue ({severity[:20]!r}) : jamais tenue pour une moindre")
         fix = vuln.get("fix") if isinstance(vuln.get("fix"), dict) else {}
         versions = [str(v) for v in fix.get("versions") or [] if v]
         key = (str(vuln.get("id")), str(art.get("name")), str(art.get("version")))
-        if (vuln.get("severity") in REFUSED_SEVERITIES and fix.get("state") == "fixed" and versions
+        if (severity.lower() in REFUSED_SEVERITIES and fix.get("state") == "fixed" and versions
                 and art.get("type") in OS_TYPES):
             if key not in seen:
                 seen.add(key)
-                out.append({"id": key[0], "severity": vuln["severity"], "package": key[1], "version": key[2],
+                out.append({"id": key[0], "severity": severity, "package": key[1], "version": key[2],
                             "fixed": ", ".join(versions)})
         else:
             others += 1

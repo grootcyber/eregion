@@ -1,7 +1,7 @@
 """SEC-G (audit of 13/11, P-06): no release publishes a system package its distribution already fixed.
 
-The base image of both images is pinned by its digest and nothing refreshed it: the published images of
-v0.5.12 carried three High CVEs of Debian fixed upstream. Now Dependabot proposes the digest's bump every
+The base image of both images is pinned by its digest and nothing refreshed it: a fix of the distribution
+reached the images only by a bump made by hand. Now Dependabot proposes the digest's bump every
 week (.github/dependabot.yml), and the release gate builds both images and runs scripts/image_cves.py:
 a High or Critical CVE, fixed upstream, in a package of the operating system refuses the release.
 
@@ -31,7 +31,7 @@ sys.path.remove(str(SCRIPT.parent))
 DEBIAN = {"name": "debian", "version": "13"}
 
 
-def _match(cve="CVE-2026-0001", severity="High", state="fixed", versions=("1.2-1+deb13u1",), name="zlib1g",
+def _match(cve="CVE-2026-0001", severity="High", state="fixed", versions=("1.2-1+deb13u1",), name="libexample1",
            version="1.2-1", kind="deb"):
     return {"vulnerability": {"id": cve, "severity": severity, "fix": {"state": state, "versions": list(versions)}},
             "artifact": {"name": name, "version": version, "type": kind}}
@@ -52,7 +52,7 @@ def _judge(tmp_path, report, summary=None):
 def test_a_high_or_critical_cve_fixed_upstream_in_a_system_package_refuses(tmp_path, severity, kind):
     res = _judge(tmp_path, {"distro": DEBIAN, "matches": [_match(severity=severity, kind=kind)]})
     assert res.returncode == 1
-    assert "CVE-2026-0001" in res.stdout and "zlib1g" in res.stdout and "1.2-1+deb13u1" in res.stdout
+    assert "CVE-2026-0001" in res.stdout and "libexample1" in res.stdout and "1.2-1+deb13u1" in res.stdout
     assert "la porte est rouge" in res.stdout and "Monter l'empreinte de l'image de base" in res.stdout
 
 
@@ -72,6 +72,28 @@ def test_what_has_no_fix_is_less_grave_or_outside_the_system_s_packages_passes_s
     assert "1 autre(s) correspondance(s)" in res.stdout
 
 
+@pytest.mark.parametrize("severity", ["HIGH", "high", "critical", " Critical "])
+def test_the_severity_is_compared_without_its_case(tmp_path, severity):
+    res = _judge(tmp_path, {"distro": DEBIAN, "matches": [_match(severity=severity)]})
+    assert res.returncode == 1 and "CVE-2026-0001" in res.stdout
+
+
+@pytest.mark.parametrize("severity", ["Severe", "Important", "", None, "Hi gh", 7])
+def test_a_severity_of_another_word_proves_nothing_never_a_mild_one(tmp_path, severity):
+    """Another word (a scanner that changed, a field moved) is never taken for a severity that passes."""
+    match = _match()
+    match["vulnerability"]["severity"] = severity
+    res = _judge(tmp_path, {"distro": DEBIAN, "matches": [match]})
+    assert res.returncode == 2 and "une sévérité inconnue" in res.stderr
+
+
+@pytest.mark.parametrize("severity", ["Unknown", "Negligible"])
+def test_a_cve_the_distribution_rates_unknown_or_negligible_never_refuses(tmp_path, severity):
+    """The known limit (docs/operations.md, « Les images publiées »): the gate follows the distribution's rating."""
+    res = _judge(tmp_path, {"distro": DEBIAN, "matches": [_match(severity=severity)]})
+    assert res.returncode == 0
+
+
 def test_one_refusing_among_many_refuses_each_said_once(tmp_path):
     matches = [_match(severity="Medium"), _match(cve="CVE-2026-0002", severity="Critical", name="apt"),
                _match(cve="CVE-2026-0002", severity="Critical", name="apt"), _match(state="not-fixed", versions=())]
@@ -83,7 +105,7 @@ def test_one_refusing_among_many_refuses_each_said_once(tmp_path):
 def test_the_judgement_goes_to_the_run_s_summary(tmp_path):
     summary = tmp_path / "summary.md"
     res = _judge(tmp_path, {"distro": DEBIAN, "matches": [_match()]}, summary=summary)
-    assert res.returncode == 1 and "| CVE-2026-0001 | High | zlib1g |" in summary.read_text()
+    assert res.returncode == 1 and "| CVE-2026-0001 | High | libexample1 |" in summary.read_text()
 
 
 @pytest.mark.parametrize("report", [

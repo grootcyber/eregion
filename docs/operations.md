@@ -3058,8 +3058,8 @@ viennent par une montée, dans une PR : `docker buildx imagetools inspect python
 `Digest:`), le même digest dans `annatar/Dockerfile` et `glorfindel/Dockerfile`
 (`tests/unit/test_published_image.py` exige les deux identiques).
 
-**Rafraîchie à chaque release** (SEC-G, #848 ; audit du 13/11, P-06 : les images de la v0.5.12
-embarquaient trois CVE élevées de Debian déjà corrigées, le digest n'ayant pas bougé). Deux pièces :
+**Rafraîchie à chaque release** (SEC-G, #848 ; audit du 13/11, P-06 : le digest épinglé, que rien ne
+rafraîchissait). Deux pièces :
 - **Dependabot propose la montée** chaque lundi (`.github/dependabot.yml`) : le digest de
   `python:3.12-slim` des deux Dockerfile, en une seule PR (le groupe `base-image`), jamais une autre
   version de Python (une montée mineure ou majeure se décide, elle ne se propose pas). Elle passe la CI
@@ -3070,7 +3070,10 @@ embarquaient trois CVE élevées de Debian déjà corrigées, le digest n'ayant 
   l'examen). Une vulnérabilité **High ou Critical, corrigée en amont** (une version corrigée publiée),
   dans un **paquet du système** (deb, rpm, apk) rend la porte rouge, nommée dans le résumé du run ; une
   vulnérabilité sans correctif, moins grave, ou d'un paquet Python (l'affaire de `pip-audit`) est
-  comptée, jamais un refus. Un rapport qui ne voit aucune distribution ne passe pas : il ne prouve rien.
+  comptée, jamais un refus. Un rapport qui ne voit aucune distribution ne passe pas : il ne prouve rien ;
+  une sévérité d'un autre mot que Negligible, Low, Medium, High, Critical ou Unknown (comparés sans tenir
+  compte de la casse) non plus. **Limite** : une CVE que Debian note « Unknown » ou « Negligible » ne refuse
+  pas l'image, même corrigée en amont — la porte suit la note de la distribution.
   Rouge : fusionner la PR de Dependabot (ou faire la montée à la main, ci-dessus), puis relancer la
   porte. **Ce job vient avec le patch de `release-gate.yml`, que Jonathan pousse** (l'App n'a pas le
   droit *Workflows*) : d'ici là, `python3 scripts/image_cves.py scan <image> --grype <chemin>` se lance

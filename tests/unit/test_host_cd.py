@@ -668,8 +668,34 @@ def test_a_tag_whose_commit_the_api_names_otherwise_is_refused(h0):
     assert f"son tag désigne {h0.commits['c1'][:12]} sur l'API du dépôt" in said and not h0.sig.calls()
 
 
-def test_a_tag_the_api_does_not_name_is_refused(h0):
+def test_a_tag_the_api_does_not_find_yet_waits_then_deploys(h0):
+    """A 404 on the tag's ref (GitHub's replicas lag behind a publication): the pass waits, nothing
+    pulled, nothing remembered as refused, nothing said; the next pass that reads it deploys."""
+    real = h0.fake.tag_resolver
     h0.fake.tag_resolver = lambda tag: None
+    res = h0.run()
+    assert res.returncode == 0 and "ne se lit pas encore sur l'API du dépôt" in res.stdout
+    assert h0.running() == {"v0.3.1"} and h0.outcome("v0.4.0") is None and not h0.posts() and not h0.sig.calls()
+    h0.fake.tag_resolver = real
+    assert h0.run().returncode == 0 and h0.running() == {"v0.4.0"}
+
+
+def test_an_annotated_tag_whose_object_is_not_found_yet_waits(h0):
+    h0.fake.gh["tag_refs"]["v0.4.0"] = {"type": "tag", "sha": "a" * 40}
+    assert h0.run().returncode == 0 and h0.outcome("v0.4.0") is None and h0.running() == {"v0.3.1"}
+    h0.fake.gh["tag_objects"]["a" * 40] = {"object": {"type": "commit", "sha": h0.commits["c2"]}}
+    assert h0.run().returncode == 0 and h0.running() == {"v0.4.0"}
+
+
+@pytest.mark.parametrize("obj, objects", [
+    ({"type": "blob", "sha": "b" * 40}, {}),                                       # names no commit
+    ({"type": "commit", "sha": "not-a-sha"}, {}),
+    ({"type": "tag", "sha": "a" * 40}, {"a" * 40: {"object": {"type": "tag", "sha": "c" * 40}},
+                                       "c" * 40: {"object": {"type": "commit", "sha": "d" * 40}}}),   # a tag of a tag
+])
+def test_an_api_answer_that_names_no_commit_is_refused(h0, obj, objects):
+    h0.fake.gh["tag_refs"]["v0.4.0"] = obj
+    h0.fake.gh["tag_objects"].update(objects)
     assert h0.run().returncode == 1 and h0.outcome("v0.4.0") == "refused"
     assert "ne se lit pas sur l'API du dépôt" in _alerts(h0)[0]["embeds"][0]["description"]
 
