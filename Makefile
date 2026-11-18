@@ -1143,6 +1143,7 @@ imladris-start: imladris-known
 	@case "$(origin REF)" in environment*) echo "REF vient de l'environnement (« $$EREGION_DEPLOY_REF ») : rien n'est déployé. La donner sur la ligne de commande : make imladris-start REF=<tag ou commit>." >&2; exit 1;; esac
 	@test -n "$$EREGION_DEPLOY_REF" || { echo "REF exigée : make imladris-start REF=<tag ou commit> — ce chemin construit sur Imladris, il ne prend jamais « le dernier tag » (le CD déploie la release publiée, vérifiée). Rien n'est déployé." >&2; exit 1; }
 	@case "$$EREGION_DEPLOY_REF" in -*|*[!A-Za-z0-9._-]*) echo "REF invalide : « $$EREGION_DEPLOY_REF » (un tag ou un commit)" >&2; exit 1;; esac
+	@case "$$EREGION_DEPLOY_REF" in *[!0-9a-f]*) ;; *) [ $${#EREGION_DEPLOY_REF} -eq 40 ] || { echo "REF « $$EREGION_DEPLOY_REF » : un préfixe de commit — le commit entier (40 caractères) ou un tag v* (SEC-G). Rien n'est déployé." >&2; exit 1; };; esac
 	@python3 scripts/published_image.py install-cosign
 	@out=$$(python3 scripts/published_image.py proven glorfindel --ref "$$EREGION_DEPLOY_REF" --fetch) \
 	   || { echo "✗ l'image publiée de « $$EREGION_DEPLOY_REF » n'est pas vérifiée (ci-dessus) : rien n'est envoyé à Imladris" >&2; exit 1; }; \
@@ -1242,6 +1243,10 @@ imladris-url:
 # 12 h. Affiche l'URL avec son jeton, puis tient le tunnel au premier plan (Ctrl+C pour fermer).
 # MOB2 : the guard alone first, before imladris-known (an ssh-keyscan) and $(HOST_IP) (terraform
 # output) — the -go target carries them, and runs the guard again.
+# SEC-G (audit du 13/11, V-35) : comme le tunnel systemd du poste — -F none (aucun ~/.ssh/config lu :
+# ni LocalForward, ni ProxyCommand, ni GatewayPorts glissés), l'écoute fixée sur 127.0.0.1, la clé d'hôte
+# épinglée (HOST_SSH_OPTS : StrictHostKeyChecking=yes, HOST_KNOWN_HOSTS seul) ; 7007 déjà tenu, ssh sort.
+# Sans ~/.ssh/config, la clé vient de l'agent SSH ou de HOST_SSH_KEY.
 imladris-tunnel:
 	@$(CONSOLE_GUARD) $@
 	@$(MAKE) --no-print-directory $@-go
@@ -1252,7 +1257,7 @@ imladris-tunnel-go: imladris-known
 	@if [ -f $(HOST_ENV) ]; then t="$(CONSOLE_TOKEN)"; \
 	 if [ -n "$$t" ]; then echo "  Console → http://localhost:7007/?token=$$t"; else echo "  ⚠ $(NO_CONSOLE_TOKEN)"; fi; \
 	 echo "  (Ctrl+C ferme le tunnel)"; fi
-	@ssh $(HOST_SSH_OPTS) -N -L 7007:127.0.0.1:7007 $(HOST_USER)@$(HOST_IP)
+	@ssh -F none $(HOST_SSH_OPTS) -o GlobalKnownHostsFile=/dev/null -o UpdateHostKeys=no -o ExitOnForwardFailure=yes -N -L 127.0.0.1:7007:127.0.0.1:7007 $(HOST_USER)@$(HOST_IP)
 
 imladris-ssh: imladris-known
 	@$(HOST_SSH)

@@ -76,8 +76,9 @@ lock() {
   flock -n 9 || die "un déploiement est en cours (le CD d'Imladris, H1) : rien n'est fait. Réessayer après, ou make imladris-cd-status."
 }
 
-# The ref to deploy → "<ref> <full commit>", or die. A tag (refs/tags/REF) or a hexadecimal
-# commit id (7 to 40 digits) that the commit it names starts with. Anything else — main,
+# The ref to deploy → "<ref> <full commit>", or die. A tag (refs/tags/REF) or a full commit id (40
+# hexadecimal digits — SEC-G, audit of 13/11, V-38: a prefix names whichever commit of the VM's
+# repository starts with it, one off every branch included). Anything else — a prefix, main,
 # origin/main, HEAD, HEAD~1, a name that is both — is refused.
 resolve() {
   local ref="$1" commit
@@ -88,14 +89,17 @@ resolve() {
     echo "$ref $commit"
     return
   fi
-  if [[ "$ref" =~ ^[0-9a-f]{7,40}$ ]] \
+  if [[ "$ref" =~ ^[0-9a-f]{40}$ ]] \
       && commit=$(git rev-parse -q --verify "$ref^{commit}" 2>/dev/null) \
-      && [[ "$commit" == "$ref"* ]]; then
+      && [ "$commit" = "$ref" ]; then
     echo "$ref $commit"
     return
   fi
   if git show-ref -q --verify "refs/heads/$ref" || git show-ref -q --verify "refs/remotes/origin/$ref"; then
     die "« $ref » est une branche : elle bouge. Déployer un tag (v*) ou un commit."
+  fi
+  if [[ "$ref" =~ ^[0-9a-f]{1,39}$ ]]; then
+    die "« $ref » est un préfixe de commit : le commit entier (40 caractères) ou un tag — un préfixe peut nommer un autre commit (SEC-G)."
   fi
   die "« $ref » n'est ni un tag ni un commit connu (après git fetch)."
 }
