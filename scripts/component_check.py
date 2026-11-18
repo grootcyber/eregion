@@ -129,7 +129,7 @@ TOGETHER = (
     "test_makefile_bench.py", "test_operator_cidr.py", "test_image_cves.py", "test_makefile_campaign.py", "test_makefile_orodruin_run.py", "test_makefile_exercise.py", "test_makefile_secrets.py", "test_bench_logs.py", "test_bench_auditd.py", "test_bench_identity.py", "test_bench_users.py", "test_bench_reader.py", "test_bench_flow_logs.py",
     "test_identity_executor_host.py",
     "test_notify_discord.py", "test_observation.py", "test_proposed_verdict.py", "test_orodruin_kill.py", "test_orodruin_word.py", "test_palantir.py",
-    "test_drill_expectations.py", "test_drill_sigterm.py", "test_drill_ops.py",
+    "test_drill_expectations.py", "test_drill_sigterm.py", "test_drill_ops.py", "test_drill_watch.py",
     "test_pip_audit_issues.py",
     "test_provider_boundary.py", "test_roadmap_discord.py",
     "test_repo_hermetic.py", "test_suite_priority.py", "test_chroma_model.py",
@@ -163,6 +163,13 @@ BRIDGES = {
 CROSSINGS = {
     ("glorfindel/cli.py", "eregion_console"): "`glorfindel war-room`, the former name of "
                                               "`eregion console`",
+    ("glorfindel/drill_watch.py", "eregion_console"): "the proof of an occurrence of the drill of the "
+                                                      "week is C1's (eregion_console.indicators."
+                                                      "decision_of: detected, the watch's decision "
+                                                      "attached), one rule for the tile and the drill "
+                                                      "(DRL1b) — the console is in Imladris's image; "
+                                                      "without it, a detected occurrence stays "
+                                                      "unattached, then unknown, said",
     ("glorfindel/cli.py", "analysis"): "the watch writes the report of the campaigns Orodruin "
                                        "publishes (IA0) — never stops the watch. The report "
                                        "needs Annatar's package (the bridge "

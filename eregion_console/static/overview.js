@@ -120,6 +120,8 @@ function indicators() {
     lp ? (age < 21 ? '✓ under 30 days' : age <= 30 ? '⚠ nearly 30 days' : '✗ over 30 days')
       // SEC15: its T0 not believed, the proof is dated by the watch's own detection — said.
       + (lp.dated_by === 'detection' ? ' · dated by the watch\'s detection (T0 not believed)' : '')
+      // DRL1b (§1.1): a proof of the drill of the week is said so, the stalest technique beside it.
+      + (lp.drill ? ` · from the weekly drill ${esc(lp.drill)}${(i.stalest || []).length ? ' · stalest: ' + esc(i.stalest[0].ttp) + ' ' + (i.stalest[0].at ? esc(ago(i.stalest[0].at)) + ' ago' : 'never proven') : ''}` : '')
       + ` · <a href="/runs/${encodeURIComponent(lp.run_id)}">run ▸</a>` : 'no attack detected with a decision',
     !lp || age > 30 ? 'bad' : age >= 21 ? 'warn' : 'ok',
     'The most recent attack detected with a decision of Glorfindel attached (detection and response), dated by its T0 — or, its T0 not believed (its window, its request, what the watch saw), by the watch\'s own detection. Each technique, the stalest first: ' + stale);

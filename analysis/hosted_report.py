@@ -385,6 +385,28 @@ def pull_orodruin(runs_dir: Path, *, channel: str | None = None, credential=None
     return written
 
 
+def pull_drill(runs_dir: Path, *, channel: str | None = None, credential=None, get=None,
+               say=_say) -> dict:
+    """DRL1b: the drill's two blobs listed (``exercise_channel.pull_drill``) — the permit judged by the
+    listing, the pulse kept — into ``runs/glorfindel/orodruin/``, where the watch judges each occurrence
+    (glorfindel/drill_watch.py). A listing that fails is written down there, and said once while it
+    lasts. Never raises."""
+    where = Path(runs_dir) / exercise_channel.ORODRUIN
+    try:
+        seen = exercise_channel.pull_drill(where, channel=channel, credential=credential, get=get)
+    except Exception as e:   # pull_drill never raises; a guard all the same
+        _say_once(where, "drill", f"the drill's blobs not listed: {e}", say, key=_error_key(e))
+        return {}
+    if seen and not seen.get("listed"):
+        why = str(seen.get("why") or "")
+        status = re.search(r"HTTP \d{3}", why)    # what stays the same while it lasts, as _error_key
+        _say_once(where, "drill", f"the drill's blobs not listed: {why}", say,
+                  key=why.split(":", 1)[0] + (f" {status.group(0)}" if status else ""))
+    else:
+        _said.pop((_key(where), "drill"), None)
+    return seen
+
+
 def tick(runs_dir: Path, *, channel: str | None = None, credential=None, get=None,
          model: str | None = None, llm=None, index_path: Path | None = None,
          now: float | None = None, say=_say) -> dict[str, str]:
@@ -399,6 +421,9 @@ def tick(runs_dir: Path, *, channel: str | None = None, credential=None, get=Non
     root = runs_dir / exercise_channel.CAMPAIGNS
     kw = {"channel": channel, "credential": credential, "get": get}
     pull_runs(runs_dir, say=say, **kw)
+    # DRL1b: the drill's blobs, on their own listing — written down whether it goes through or not
+    # (``channel_unread``), before the campaigns' listing can end this pass.
+    pull_drill(runs_dir, say=say, **kw)
     # A failure is said once while it lasts (every 30 s, it would fill the watch's log), and
     # again if it comes back after a pull that went through.
     try:
