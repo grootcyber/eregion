@@ -39,8 +39,8 @@ VAULT = "rsv-test"
 # under test dates the isolation, the cards and the activity on the real clock, the test its points
 # and jobs on `_NOW`. Frozen at import, `_NOW` aged by the time between the collection and the test —
 # over ten minutes on the CI, 12 400 tests under xdist (FLK3, #900) — and a point « 10 min after the
-# isolation » fell before it.
-_NOW = time.time()
+# isolation » fell before it. `_IMPORTED` keeps the import's clock, for the test that says so.
+_NOW = _IMPORTED = time.time()
 # The workstation's console principal, which restores (GLORFINDEL_RESTORE_PRINCIPALS on H0); H0's
 # own identity runs the session drain; an attacker's has ARM's Run Command.
 CONSOLE = "console-oid"
@@ -129,7 +129,7 @@ def _points(f, vm):
 def test_the_tests_clock_is_the_tests_never_the_imports():
     """FLK3 (#900): `_NOW` is taken at the start of the test, so the test's points and jobs and the
     real clock of the code under test stay minutes apart, never by how long ago the file was imported."""
-    assert 0 <= time.time() - _NOW < 5
+    assert _NOW != _IMPORTED and 0 <= time.time() - _NOW < 5
 
 # ── the restore proven: the release follows, once ─────────────────────────────────────────────
 
