@@ -68,6 +68,8 @@ GET  /api/dagorlad/plan?wire=<exp>@<rid>… → chaque fil jugé comme Orodruin 
 POST /api/dagorlad/requests           → DG-b : {"wires": [{"experiment", "target"}]} — jugés, puis la demande écrite dans
      ~/.eregion/console/requests/ seulement ; la réponse donne `make orodruin-exercise REQUEST=<id>` (aucun nom tapé ici)
 GET  /api/dagorlad/drills            → DG-d : les drills de l'instance et les livrés ; /<nom> : posé sur les VM inscrites ; /<nom>/yaml : l'export
+GET  /api/dagorlad/drill             → DRL1b : « Weekly drill » — le verdict du drill de la semaine tel que la watch l'a jugé
+     (glorfindel/drill_watch.py), ses occurrences d'avant ; lecture seule
 POST /api/dagorlad/drills            → « Save as drill » : {"name", "wires", "description"?, "replace"?, "author"?} (author : operator | annatar)
 GET  /api/dagorlad/propose?target=<rid> → DG-e : la chaîne d'Annatar sur une VM inscrite (catalogue, jamais Glorfindel) — rien n'est écrit
 POST /api/dagorlad/drills/import     → DG-e : {"yaml"} — un drill relu par le lecteur exact, posé comme « Load » — rien n'est écrit

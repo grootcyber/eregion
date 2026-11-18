@@ -164,6 +164,16 @@ juge et la lance.
    publie son verdict et le statut de la demande ; sous le plan, la page dit « Orodruin: armed », ou
    « unknown here » tant qu'il n'a rien publié. La page suit alors chaque fil, en direct.
 
+## Le drill de la semaine : la ligne « Weekly drill »
+
+Sous le tableau, une ligne dit le drill de la semaine (`banc-hebdo`) tel que la watch d'Imladris l'a
+jugé, chaque minute, par le code (DRL1b, `docs/design/drill-banc.md` §4.2) : sa dernière occurrence et
+son état, pourquoi, la prochaine, l'armement. `proof` : détectée, la décision rattachée ; `missed`,
+`not_run` et `self_disarmed` : en rouge, le bot a mentionné le rôle ; `rearm_expected` : une release a
+changé le drill, ou le permis a expiré, réarmer ; `channel_unread` : le canal n'a pas pu être listé.
+Un drill jamais armé, désarmé ou tué : `disarmed`, rien n'est attendu. La page ne lance rien, et
+n'arme rien : l'armement reste celui de l'opérateur (`make orodruin-drill-arm`).
+
 ## Garder et rejouer un drill
 
 Un **drill**, ce sont des fils gardés sous un nom, pour les rejouer : un exercice qu'on répète pour

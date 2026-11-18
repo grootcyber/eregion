@@ -287,6 +287,13 @@ Après I1F, AL1, C2 et A3 (27/10) :
   control plane » (`held_by` de la ligne de debug).
 - **TO JUDGE laisse de côté** les cartes qui ne sont pas des décisions, comme Glorfindel
   (`escalations._NOT_DECISIONS`, quarantaine modifiée comprise).
+- **La ligne « Weekly drill »** (DRL1b, #613 ; `docs/design/drill-banc.md` §4.2, §13) : sur la page de
+  Dagorlad, entre le tableau et les drills, le drill de la semaine tel que la watch l'a jugé
+  (`GET /api/dagorlad/drill`, lecture seule) — la dernière occurrence, son état (`proof`, `missed`,
+  `not_run`, `rearm_expected`… ; « @ » quand le bot a mentionné le rôle), pourquoi, la prochaine,
+  l'armement tel qu'Imladris le lit, les occurrences d'avant. La tuile LAST PROOF de l'accueil dit
+  « from the weekly drill <nom> » quand la dernière preuve vient d'une occurrence du drill, avec la
+  technique la moins récemment prouvée à côté (le biais du §1.1). Tout échappé, aucun script en ligne.
 - **Un verdict proposé sur la carte d'exercice attendue** (VP1, #615 ; `docs/design/drill-banc.md`
   §8.2) : la carte qui est la détection que le drill de la semaine attend — sa règle, sur sa cible,
   dans le délai de son attente après le T0 et dans la fenêtre, la première du fil — porte, sous son

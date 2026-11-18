@@ -1628,6 +1628,16 @@ briques:
     issue: 613
     doc: docs/design/drill-banc.md
 
+  - id: k-drill-semaine
+    composant: console
+    poste: k-suivre
+    nom: "The weekly drill on Imladris's side: each occurrence judged by the code, the absence alarm, the bot's thread, the Weekly drill line on the console; nothing armed yet"
+    etat: main
+    release: "0.6"
+    lots: [DRL1b]
+    issue: 613
+    doc: docs/design/drill-banc.md
+
   - id: o-banc-autonome
     composant: orodruin
     poste: o-executer
