@@ -2,7 +2,7 @@
 not name the VM, says what one click approves there (glorfindel/agent.py, _root_compromise_floor):
 the mode's card (`mode_hold`, human_only) approves the model's snapshot, never an isolation; the
 attribution's card (`unattributed_signal`) approves nothing, whatever gate held the decision before
-(never_block, the release precondition…). M6311–M6320, measured by tests/unit/test_root_floor.py."""
+(never_block, the release precondition…). M6311–M6317, measured by tests/unit/test_root_floor.py."""
 AGENT = "glorfindel/agent.py"
 AQ = "eregion_core/action_queue.py"
 _F = "tests/unit/test_root_floor.py"

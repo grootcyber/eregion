@@ -17,7 +17,7 @@ succeed (neighbouring signals): the model's choice stands.
 
 No Azure call, no model call (the model is patched, dry_run or a recording connector).
 Mutants M4375–M4379 (scripts/mutants/B3a.py) and M5721–M5740 (scripts/mutants/SEC-E.py) are
-measured here and in tests/unit/test_decision_queue.py; M6311–M6320 (scripts/mutants/SEC-Ec.py:
+measured here and in tests/unit/test_decision_queue.py; M6311–M6317 (scripts/mutants/SEC-Ec.py:
 the reason says what one click approves) here.
 """
 from __future__ import annotations
