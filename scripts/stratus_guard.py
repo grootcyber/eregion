@@ -40,7 +40,11 @@ GUARDRAIL_PREFIXES = (
     "azurerm_consumption_budget_subscription.stratus",
 )
 
-_TFVARS_ENABLED = re.compile(r"^\s*stratus_guardrails_enabled\s*=\s*true\b", re.MULTILINE)
+# Terraform gives a *.auto.tfvars file PRECEDENCE over TF_VAR_* (and -var-file over both). So if the
+# file DEFINES the flag, its value — true OR false — is authoritative; matching only "= true" would
+# read it as on while Terraform reads it off (and destroys). [ \t] (not \s) stays on the one line, so
+# a commented "# stratus_guardrails_enabled = true" is not matched.
+_TFVARS_FLAG = re.compile(r"^[ \t]*stratus_guardrails_enabled[ \t]*=[ \t]*(true|false)\b", re.MULTILINE)
 _TRUE = ("1", "true", "yes", "on")
 
 
@@ -50,11 +54,13 @@ def has_guardrails(resources) -> bool:
 
 
 def guardrails_enabled(environ, tfvars_text: str) -> bool:
-    """The effective flag: the ``TF_VAR_stratus_guardrails_enabled`` env var, or
-    ``stratus_guardrails_enabled = true`` in ``stratus.auto.tfvars``."""
-    if (environ.get("TF_VAR_stratus_guardrails_enabled") or "").strip().lower() in _TRUE:
-        return True
-    return bool(_TFVARS_ENABLED.search(tfvars_text or ""))
+    """The EFFECTIVE flag, in Terraform's own precedence: if ``stratus.auto.tfvars`` defines
+    ``stratus_guardrails_enabled`` its value wins (``true`` or ``false``); else the
+    ``TF_VAR_stratus_guardrails_enabled`` env var; else off."""
+    in_file = _TFVARS_FLAG.search(tfvars_text or "")
+    if in_file:
+        return in_file.group(1) == "true"
+    return (environ.get("TF_VAR_stratus_guardrails_enabled") or "").strip().lower() in _TRUE
 
 
 def decide(resources, enabled: bool) -> tuple[bool, str]:
@@ -64,9 +70,9 @@ def decide(resources, enabled: bool) -> tuple[bool, str]:
         return True, (
             "the Terraform state holds the Stratus guardrails (budget, activity-log diagnostic, "
             "policy limits) but stratus_guardrails_enabled is off — this plan would DESTROY them and "
-            f"blind the bench's activity-log detection. Put the stratus_* vars in {ORO_DIR}/{TFVARS} "
-            "(Terraform loads it every plan), or export TF_VAR_stratus_guardrails_enabled=true and the "
-            "rest; an intentional removal sets STRATUS_GUARD_ACK=1. Not planning."
+            f"blind the bench's activity-log detection. Set stratus_guardrails_enabled = true (and the "
+            f"other stratus_* vars) in {ORO_DIR}/{TFVARS} — Terraform loads it every plan and it wins "
+            "over the environment. An intentional removal sets STRATUS_GUARD_ACK=1. Not planning."
         )
     return False, ""
 
@@ -82,11 +88,15 @@ def _state_resources(oro_dir: str) -> list[str]:
         print(f"stratus_guard: terraform state list did not run ({e}); not blocking", file=sys.stderr)
         return []
     if out.returncode != 0:
-        return []   # no state yet, or a backend error: fail open
+        err = (out.stderr or "").strip()
+        if "No state file" not in err:   # a real backend error (not just a first, stateless apply)
+            print(f"stratus_guard: terraform state list failed (rc {out.returncode}); not blocking",
+                  file=sys.stderr)
+        return []   # no state yet, or a backend error: fail open (the auto.tfvars is the real guard)
     return [line.strip() for line in out.stdout.splitlines() if line.strip()]
 
 
-def main(argv: list[str]) -> int:
+def main(argv: list[str], state_reader=None) -> int:
     if (os.environ.get("STRATUS_GUARD_ACK") or "").strip().lower() in _TRUE:
         print("stratus_guard: STRATUS_GUARD_ACK set — guard bypassed (intentional removal)",
               file=sys.stderr)
@@ -96,7 +106,8 @@ def main(argv: list[str]) -> int:
         tfvars_text = (Path(oro_dir) / TFVARS).read_text(encoding="utf-8")
     except OSError:
         tfvars_text = ""
-    refuse, reason = decide(_state_resources(oro_dir), guardrails_enabled(os.environ, tfvars_text))
+    resources = (state_reader or _state_resources)(oro_dir)
+    refuse, reason = decide(resources, guardrails_enabled(os.environ, tfvars_text))
     if refuse:
         print(f"✗ stratus guard: {reason}", file=sys.stderr)
         return 1

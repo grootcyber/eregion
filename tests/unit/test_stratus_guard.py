@@ -8,6 +8,7 @@ guardrail resources but the flag is OFF, it refuses before the plan (an apply wo
 on a fake state list (no terraform), and the Makefile wiring (the guard on plan/up/lock, not on down).
 """
 import importlib.util
+import re
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "stratus_guard.py"
 MAKEFILE = ROOT / "Makefile"
+EXAMPLE = ROOT / "infra" / "orodruin" / "stratus.auto.tfvars.example"
+VARIABLES = ROOT / "infra" / "orodruin" / "variables.tf"
 
 _spec = importlib.util.spec_from_file_location("stratus_guard", SCRIPT)
 sg = importlib.util.module_from_spec(_spec)
@@ -71,10 +74,48 @@ def test_the_flag_is_off_when_neither_says_true():
     assert sg.guardrails_enabled({"TF_VAR_stratus_guardrails_enabled": "no"}, "") is False
 
 
-def test_ack_bypasses_the_guard(monkeypatch):
-    """STRATUS_GUARD_ACK=1 for an intentional removal — main returns 0 without reading the state."""
+def test_the_auto_tfvars_wins_over_the_env():
+    """Terraform gives *.auto.tfvars precedence over TF_VAR_* : a file saying `false` with the env
+    saying `true` is OFF — so the guard refuses (the transition case that would otherwise destroy)."""
+    env_true, file_false = {"TF_VAR_stratus_guardrails_enabled": "true"}, "stratus_guardrails_enabled = false\n"
+    assert sg.guardrails_enabled(env_true, file_false) is False
+    refuse, _ = sg.decide([GUARD, BUDGET], enabled=sg.guardrails_enabled(env_true, file_false))
+    assert refuse is True
+
+
+def test_main_refuses_when_the_state_is_guarded_and_the_flag_is_off(monkeypatch):
+    """main returns 1 (the Makefile's `&&` then stops the plan). The state is injected; no terraform."""
+    monkeypatch.delenv("TF_VAR_stratus_guardrails_enabled", raising=False)
+    monkeypatch.delenv("STRATUS_GUARD_ACK", raising=False)
+    assert sg.main([], state_reader=lambda oro_dir: [GUARD, BUDGET]) == 1
+
+
+def test_ack_bypasses_the_guard_even_when_it_would_refuse(monkeypatch):
+    """STRATUS_GUARD_ACK=1 for an intentional removal — main returns 0 even on a guarded state."""
+    monkeypatch.delenv("TF_VAR_stratus_guardrails_enabled", raising=False)
     monkeypatch.setenv("STRATUS_GUARD_ACK", "1")
-    assert sg.main([]) == 0
+    assert sg.main([], state_reader=lambda oro_dir: [GUARD, BUDGET]) == 0
+
+
+def _tfvars_value(text, name):
+    m = re.search(rf'^\s*{name}\s*=\s*"([^"]*)"', text, re.MULTILINE)
+    return m.group(1) if m else None
+
+
+def _variable_regex(text, name):
+    block = re.search(rf'variable "{name}".*?(?=\nvariable |\Z)', text, re.DOTALL)
+    m = re.search(r'regex\("([^"]+)"', block.group(0)) if block else None
+    return m.group(1) if m else None
+
+
+@pytest.mark.parametrize("name", ["stratus_subscription_id", "stratus_budget_start_date"])
+def test_the_example_values_pass_the_variable_validation(name):
+    """constat 2: copying the example must not break an apply — its values satisfy the validations
+    of infra/orodruin/variables.tf (a variable validation runs whatever the flag's value)."""
+    pattern = _variable_regex(VARIABLES.read_text(encoding="utf-8"), name)
+    value = _tfvars_value(EXAMPLE.read_text(encoding="utf-8"), name)
+    assert pattern and value is not None, (name, pattern, value)
+    assert re.match(pattern, value), f"{name}={value!r} fails {pattern!r}"
 
 
 def test_the_guard_is_wired_on_the_converging_applies_not_on_destroy():
