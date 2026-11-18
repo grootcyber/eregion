@@ -56,3 +56,4 @@ while :; do
   sleep "$wait"
   n=$((n + 1))
 done
+# Essai SEC-K (18/11) : une PR qui touche ce fichier attend le propriétaire du code. Jamais fusionnée.
