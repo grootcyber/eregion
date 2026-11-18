@@ -89,8 +89,9 @@ class GlorfindelState(TypedDict):
     decision_temperature: float | None  # temperature of the first draw; None = model's default (D-1)
     decision_draws: list[dict]  # every draw asked before a disruptive autonomous action (D-1)
     uncontained: str            # a characterized detection a snapshot alone answers (V-11): its card's reason
-    floor: str                  # why decide raised the action to isolate_vm (B3a): brute force succeeded, then root
-    floor_displaced: str        # the action only a human approves that the floor set aside (B3a): its own card
+    floor: str                  # why the floor proposes isolate_vm (B3a): brute force succeeded, then root
+    floor_card: bool            # the model's own action runs alone: the floor's card is apart (SEC-E, store_cycle)
+    floor_displaced: str        # the action only a human approves the floor's card set aside (B3a): in its reason
     identity_plan: dict | None  # the plan of an identity card (IR1a, entra_plan): on the card, never to the model
 
 
@@ -782,7 +783,12 @@ _HELD_BY_TYPE = {
     "control_plane": "control_plane_change",
     "identity": "identity_change",
     "never_block": "protected_address",
+    "floor": "floor_proposal",
 }
+# SEC-E (#846; Jonathan, 15/11): the card of B3a's floor — isolate_vm proposed to a human, never run
+# by the floor, whatever the mode, until its facts are proven by a source the VM does not write
+# (SEC-A3). Approvable in one click, as the other held cards.
+FLOOR_TYPE = "floor_proposal"
 
 # Actions aimed at ONE VM. On a detection the RulePoller could not tie to that VM (a row
 # aggregated by attacker IP, several VMs monitored) they are held: the same row is
@@ -1319,50 +1325,60 @@ def confirm_facts(state: GlorfindelState, *, incidents: IncidentRegistry) -> Glo
 
 
 def _root_compromise_floor(d: dict, signal: dict, incident: dict | None) -> str:
-    """At least isolate_vm, whatever the model chose, when the correlation confirmed on this VM
-    a brute force that succeeded and an elevation to root (B3a, #609; Jonathan, 06/11).
+    """A card that proposes isolate_vm, whatever the model chose, when the correlation confirmed on
+    this VM a brute force that succeeded and an elevation to root (B3a, #609; Jonathan, 06/11) —
+    and never an isolation run by the floor, whatever the mode (SEC-E, #846; Jonathan, 15/11).
 
     The paired case of the harness drew a block one time in three, above the gate: the source
     blocked, the VM where root was taken left standing. A floor independent of the model, like
     the snapshot's (V-11): both facts confirmed on the same VM — this detection's, and those
-    its incident kept from the detections before it. A brute force alone, a sudo alone, two
-    VMs, failures the correlation never saw succeed: the model's choice stands. A decision
-    already isolating keeps it. The action raised, every gate after it still applies (the
-    confidence, the signal, the attribution, the telemetry, the mode — in human_only nothing
-    runs, the card proposes it — the agreement of the draws, each draw floored alike).
+    its incident kept from the detections before it, still within their TTL (`live_facts`). A
+    brute force alone, a sudo alone, two VMs, failures the correlation never saw succeed: the
+    model's choice stands. A decision already isolating keeps it, judged by its gates.
 
-    An action only a human approves (a restore…) is never lost: the VM is contained first,
-    the action set aside is kept (`d["displaced"]`) — said in the card's reason when the
-    cycle escalates, its own card once the isolation ran (`store_cycle`). Only on a
-    detection: never on a recovery_complete (the release after a restore) nor a timeout.
+    Both facts are read in lines the VM writes, under the tag the writer declares: until a source
+    the VM does not write proves them (SEC-A3), the floor only proposes. Last, on the decision as
+    every gate left it — the confidence, the signal, the attribution, the telemetry, the mode and
+    the agreement of the draws judged the model's own choice, never a raised action:
+      - the model's action runs alone (an autonomous one, not held): it runs as its gates judged
+        it, and the floor's card is apart (`floor_card`, `store_cycle`);
+      - otherwise the decision's card is the floor's (`held_by` « floor », `floor_proposal`): it
+        proposes isolate_vm in the place of the model's choice, named in its reason with the
+        model's confidence in that choice — never in the isolation. An action only a human
+        approves (a restore…) is never lost: said in the reason (`d["displaced"]`).
+    Only on a detection: never on a recovery_complete (the release after a restore) nor a timeout.
     Returns the reason, or "" when the floor does not play."""
     if signal.get("event") != "detection" or d["action"] == "isolate_vm":
         return ""
     facts = set(confirmed_facts(signal))
     rid = signal.get("resource_id")
     if incident and incident.get("resource_id", rid) == rid:
-        kept = incident.get("confirmed")
-        facts |= set(kept if isinstance(kept, list) else [])
+        from glorfindel.incidents import live_facts
+        facts |= set(live_facts(incident))
     if not {LOGIN_AFTER_BRUTE_FORCE, ROOT_ELEVATION} <= facts:
         return ""
     before = d["action"] or "aucune action"
     ip = _correlation_row(signal).get("SourceIP") if _is_compromise(signal) else ""
-    d["action"] = "isolate_vm"
-    d["reversible"] = True
+    said = (
+        f"Plancher déterministe (B3a) : sur cette VM, la corrélation a confirmé un brute force "
+        f"SSH suivi d'une connexion réussie{f' depuis {ip}' if ip else ''}, et une élévation "
+        f"vers root (sudo) — 'isolate_vm' proposée à un humain, jamais exécutée par le plancher : "
+        f"ces deux faits sont lus dans des lignes que la VM écrit. Le choix du modèle : '{before}' "
+        f"(confiance {d['confidence']:.0%}, sur ce choix)")
+    if not d["escalate"] and d["action"] in AUTONOMOUS_ACTIONS:
+        return f"{said}, exécuté seul comme ses gardes l'ont jugé ; une carte propose l'isolation."
     if before in HUMAN_APPROVAL_REQUIRED:
         d["displaced"] = before
-        why = (f"'{before}' reste proposée à un humain : la VM est contenue d'abord, "
-               f"'{before}' attend son approbation.")
+        why = f"'{before}' reste proposée à un humain, après l'isolation."
     elif before == "block_suspicious_ip":
         why = "bloquer la source laisse debout la VM où root a été pris."
     else:
         why = "la VM où root a été pris doit être contenue."
-    return (
-        f"Plancher déterministe (B3a) : sur cette VM, la corrélation a confirmé un brute force "
-        f"SSH suivi d'une connexion réussie{f' depuis {ip}' if ip else ''}, et une élévation "
-        f"vers root (sudo) — 'isolate_vm' au moins, quel que soit le choix du modèle "
-        f"('{before}') : {why}"
-    )
+    d["action"] = "isolate_vm"
+    d["reversible"] = True
+    d["escalate"] = True
+    d["held_by"] = "floor"
+    return f"{said} ; la carte propose 'isolate_vm' à sa place : {why}"
 
 
 def _uncontained_floor(d: dict, signal: dict) -> str:
@@ -1611,13 +1627,13 @@ def _draw_label(x: dict) -> str:
     return f"{label}, escaladée" if x.get("escalate") else label
 
 
-def _confirming_draws(litellm, call: dict, n: int, threshold: float,
-                      floor=None) -> tuple[list[dict], list]:
+def _confirming_draws(litellm, call: dict, n: int, threshold: float) -> tuple[list[dict], list]:
     """`n` more draws of the same decision (same messages, same tool), at the model's default
     sampling: the variance the first draw's temperature removes is the one they probe. Each
-    is parsed, raised by the floor of the first (`floor`, B3a: the same facts, the same
-    floor), and passed through the executable guard and the confidence gate, like the
-    first. A call that fails is a draw that did not agree. Returns (draws, responses)."""
+    is parsed and passed through the executable guard and the confidence gate, like the
+    first — the model's own choice, never raised by B3a's floor (SEC-E, V-03: the floor plays
+    after the agreement, and only proposes). A call that fails is a draw that did not agree.
+    Returns (draws, responses)."""
     from concurrent.futures import ThreadPoolExecutor
     from eregion_core.llm_call import completion_with_tool
 
@@ -1628,8 +1644,6 @@ def _confirming_draws(litellm, call: dict, n: int, threshold: float,
             return {"action": "", "confidence": 0.0, "escalate": True,
                     "error": _first_line(exc)}, None
         x, raw_conf = _parse_decision(resp)
-        if floor is not None:
-            floor(x)
         _apply_executable_guard(x)
         _apply_confidence_gate(x, raw_conf, threshold)
         return _draw_summary(x), resp
@@ -1749,12 +1763,13 @@ def decide(
     Entra ID's logs, `_identity_decision`).
 
     Gates, in order (each a pure helper, testable on its own): parsing defaults →
-    the floor of a confirmed compromise (B3a: a brute force that succeeded and a sudo to root
-    on this VM raise the action to at least isolate_vm, whatever the model chose) →
     executable guard → confidence gate → deterministic signal guardrail → attribution
     guard → telemetry guard → release precondition → autonomy mode → agreement of the
     draws (D-1: a disruptive action about to run alone is drawn again, at the model's
-    default sampling, and held unless every draw agrees). The first draw is asked at
+    default sampling, and held unless every draw agrees) → the floor of a confirmed
+    compromise (B3a: a brute force that succeeded and a sudo to root on this VM — a card
+    that proposes isolate_vm, never run by the floor, whatever the mode: SEC-E, #846; the
+    gates and the draws judged the model's own choice). The first draw is asked at
     temperature 0, or at the model's default when it refuses one. A failed LLM call
     (after retries, each bounded by GLORFINDEL_LLM_TIMEOUT_S) escalates as
     `cycle_failed`. The gate that escalates is recorded (`held_by`) and gives the
@@ -1840,11 +1855,7 @@ def decide(
 
     d, raw_conf = _parse_decision(response)
     threshold = _confidence_threshold()
-    # B3a: at least isolate_vm where a brute force succeeded and root was taken (the
-    # correlation's facts, never the model's) — first, so every gate below judges the
-    # isolation as it would the model's own, the mode included.
     incident = state.get("incident")
-    floor = _root_compromise_floor(d, signal, incident)
     _apply_executable_guard(d)
     _apply_confidence_gate(d, raw_conf, threshold)
     _apply_signal_guardrail(d, signal)
@@ -1863,20 +1874,28 @@ def decide(
         required = _decision_draws()
         draws = [_draw_summary(d)]
         if required:
-            more, more_responses = _confirming_draws(
-                litellm, call, required - 1, threshold,
-                floor=lambda x: _root_compromise_floor(x, signal, incident))
+            # SEC-E (V-03): the draws judge the model's own choice, never an action raised.
+            more, more_responses = _confirming_draws(litellm, call, required - 1, threshold)
             draws += more
             responses += more_responses
         _apply_agreement_guard(d, draws, required)
 
-    # Last, on the decision as it stands: a characterized detection a snapshot alone
-    # answers gets its card (V-11) — store_cycle records it once the snapshot ran.
-    uncontained = _uncontained_floor(d, signal)
+    # B3a, last (SEC-E, #846): where a brute force succeeded and root was taken (the
+    # correlation's facts, never the model's), a card proposes isolate_vm — the floor never
+    # runs it; the model's own choice, as every gate above judged it, runs alone or not.
+    floor = _root_compromise_floor(d, signal, incident)
+    floor_card = bool(floor) and not d["escalate"]
 
-    # B3a: the card says why the floor played (or the notification, the isolation run alone).
+    # Last, on the decision as it stands: a characterized detection a snapshot alone
+    # answers gets its card (V-11) — store_cycle records it once the snapshot ran. The
+    # floor's card says more (isolate_vm proposed): one card, not two.
+    uncontained = _uncontained_floor(d, signal)
+    if floor:
+        uncontained = ""
+
+    # B3a: the card says why the floor played (or the notification of the action run alone).
     if floor and d["escalate"]:
-        d["escalation_reason"] = f"{d.get('escalation_reason') or ''} — {floor}".lstrip(" —")
+        d["escalation_reason"] = f"{floor} — {d.get('escalation_reason') or ''}".rstrip(" —")
     elif floor:
         d["explanation"] = f"{floor} {d['explanation']}".strip()
 
@@ -1899,6 +1918,7 @@ def decide(
         "decision_draws": draws,
         "uncontained": uncontained,
         "floor": floor,
+        "floor_card": floor_card,
         "floor_displaced": d.get("displaced", "") if floor else "",
     }
 
@@ -2044,6 +2064,14 @@ def execute_action(
         }
     action_s = round(time.time() - t_start)
 
+    # SEC-E (#846): the isolation released whole (the release after a restore) — what the VM's
+    # incidents confirmed for B3a is forgotten, as after a human's release (glorfindel/gestures.py).
+    if action == "release_isolation" and outcome.get("status") == "released":
+        try:
+            incidents.forget_facts(resource_id)
+        except Exception as exc:          # said; the release stands
+            _console.print(f"[yellow]Faits de B3a non oubliés après la levée — {_outside(exc)}[/yellow]")
+
     incident = state.get("incident")
     if incident:
         inv_ctx = state["signal"].get("raw_signal", {}).get("investigative_context")
@@ -2163,6 +2191,10 @@ def escalate_to_human(state: GlorfindelState) -> GlorfindelState:
     # judgment ("unknown action", "low confidence").
     elif state.get("cycle_error"):
         escalation_type = "cycle_failed"
+    # SEC-E (#846): B3a's floor proposes isolate_vm in the place of the model's choice — its own
+    # type whatever the mode, a human_only VM's included: the floor never runs it.
+    elif state.get("held_by") == "floor":
+        escalation_type = FLOOR_TYPE
     # mode_hold takes precedence: the action would have run autonomously but was
     # held back by the asset's human_only mode — NOT by low confidence. The
     # operator must understand it's a policy hold, with a one-click approve path.
@@ -2454,7 +2486,7 @@ def store_cycle(state: GlorfindelState, *, memory: CycleMemory) -> GlorfindelSta
         _console.print(f"[yellow]store_cycle: notify_action failed: {_outside(exc)}[/yellow]")
 
     _record_uncontained(state, source, exercise_run)
-    _record_displaced(state, source, exercise_run)
+    _record_floor_card(state, source, exercise_run)
 
     # Debug JSONL — always written, even if ChromaDB or webhook failed
     _write_debug_record(state)
@@ -2558,13 +2590,12 @@ def _record_executed(state: GlorfindelState, source: str, exercise_run: str) -> 
         return ""
 
 
-def _record_displaced(state: GlorfindelState, source: str, exercise_run: str) -> None:
-    """B3a: the action only a human approves (a restore…) that the floor set aside for an
-    isolation, once the isolation ran — its own card, never lost behind the containment. A
-    cycle that escalated instead said it in its card's reason (the floor's)."""
-    outcome = state.get("outcome") or {}
-    displaced = state.get("floor_displaced") or ""
-    if not displaced or state.get("dry_run") or not outcome.get("executed"):
+def _record_floor_card(state: GlorfindelState, source: str, exercise_run: str) -> None:
+    """B3a (SEC-E, #846): the model's own action ran alone, as its gates judged it, on a VM where
+    the floor's facts are confirmed — the floor's card apart, which proposes isolate_vm to a human
+    (approvable in one click), whatever the action's outcome. A cycle the decision escalated has
+    it already: its card is the floor's. Never in dry-run."""
+    if not state.get("floor_card") or state.get("dry_run"):
         return
     signal = state["signal"]
     try:
@@ -2572,22 +2603,26 @@ def _record_displaced(state: GlorfindelState, source: str, exercise_run: str) ->
         escalations.record(
             signal_id=signal.get("signal_id", ""),
             resource_id=signal.get("resource_id", ""),
-            action=displaced,
-            escalation_type="destructive_action",
-            reason=(f"{state.get('floor') or ''} La VM est isolée ; '{displaced}', proposée "
-                    "par le modèle, attend une approbation humaine.").strip(),
+            action="isolate_vm",
+            escalation_type=FLOOR_TYPE,
+            reason=str(state.get("floor") or ""),
             run_id=(signal.get("context") or {}).get("run_id", ""),
-            suggested_steps=list(state.get("suggested_steps") or []),
+            suggested_steps=[
+                "Juger la VM : un brute force qui a réussi puis root, lus dans ses lignes Syslog — "
+                "un compte local de la VM peut les avoir écrits.",
+                "Approuver l'isolation si la VM est compromise ; sinon, chercher qui écrit ces lignes.",
+            ],
             ttp=signal.get("ttp", ""),
             severity=signal.get("severity", ""),
             confidence=state.get("confidence", 0.0),
             rule_name=(signal.get("context") or {}).get("rule_name", ""),
             source=source,
             exercise_run=exercise_run,
+            target=_card_target(signal),
             explanation=state.get("explanation", ""),
         )
     except Exception as exc:          # said, and the debug line still written
-        _console.print(f"[red]store_cycle: carte de '{_esc_markup(displaced)}' non écrite — {_outside(exc)}[/red]")
+        _console.print(f"[red]store_cycle: carte du plancher (B3a) non écrite — {_outside(exc)}[/red]")
 
 
 def _record_uncontained(state: GlorfindelState, source: str, exercise_run: str) -> None:

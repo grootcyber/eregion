@@ -486,6 +486,9 @@ def release(resource_id: str, dry_run: bool, yes: bool):
     else:
         console.print(f"[green]✓ Isolation released.[/green]  ({_esc_markup(_ids_masked(result))})")
         _record_manual_action("release_isolation", resource_id, result)
+        if result.get("status") == "released":
+            from glorfindel.gestures import released
+            released(resource_id)            # SEC-E (#846): B3a's facts forgotten
 
 
 @cli.command()
