@@ -1464,6 +1464,14 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
         _exercise.observe()
         _layout.say_strays(runs_dir, lambda text: _say_channel(f"Canal runs/ : {text}"))
 
+    def _propose_verdicts() -> None:
+        """VP1 (#615): every minute, the exercise cards of the week still to judge, held to what the
+        drill of the week expected (its copy and its expectations in this image, Orodruin's status,
+        the run's report, the window) — a verdict proposed on the expected one, why not on the others
+        (glorfindel/proposed_verdict.py). Never a verdict given; the decision never reads it."""
+        from glorfindel import proposed_verdict
+        proposed_verdict.refresh(runs_dir)
+
     _relay_thread: list = [None]
     # JUG2c (#788): a notice queued where no webhook may be waited for (a VM's lock, the
     # reassertion's pass) starts a pass at once, in its own thread — never left to the next minute.
@@ -1726,6 +1734,10 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
                             _task()
                         except Exception as exc:
                             _say_failure(console, f"watch: {_task.__name__} en erreur", exc, _output_lock)
+                    try:
+                        _propose_verdicts()  # VP1: after the windows are read, on the cards of the week
+                    except Exception as exc:
+                        _say_failure(console, "watch: _propose_verdicts en erreur", exc, _output_lock)
             except Exception as exc:
                 # The daemon outlives a bad iteration (unreadable file, transient Azure
                 # error in the TTL/jobs housekeeping); the next poll retries. SEC-F: said escaped —

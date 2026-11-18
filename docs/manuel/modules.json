@@ -2486,12 +2486,13 @@
    "composant": "console",
    "poste": "k-juger",
    "nom": "A verdict proposed on an expected exercise card",
-   "etat": "prevue",
-   "release": "0.x",
+   "etat": "main",
+   "release": "0.6",
    "lots": [
     "VP1"
    ],
-   "issue": 615
+   "issue": 615,
+   "doc": "docs/design/drill-banc.md"
   },
   {
    "id": "i-separee",

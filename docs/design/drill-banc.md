@@ -2,7 +2,8 @@
 
 _Conception — 06/11 (DRL1, #613), relue en Opus 5.5 (06/11) et corrigée ; les décisions de Jonathan du
 06/11 sont au §10. Statut : **DRL1a fait** (16/11, le cœur sur Orodruin : le drill et ses attentes, le
-minuteur, l'armement, les gardes, le kill ; les écarts avec cette conception au §11). DRL1b (Imladris, anciennement H0) et
+minuteur, l'armement, les gardes, le kill ; les écarts avec cette conception au §11). **VP1 fait** (18/11,
+le verdict proposé, §8.2 et §12). DRL1b (Imladris, anciennement H0) et
 DRL1c (la Logic App) restent à faire. Rien n'est armé ni mesuré : l'armement reste à Jonathan._
 
 > **Décision de Jonathan (06/11, « Cadence du banc », D1).** Un exercice planifié chaque semaine,
@@ -970,6 +971,8 @@ décision attendue : le dire, ce serait juger le modèle par une attente écrite
 décision reste à Jonathan. Le nom du verdict proposé, et son registre à part des verdicts posés,
 sont à VP1. Le drill lui donne ce qu'il lit, rien de plus.
 
+**Statut : fait (VP1, #615, 18/11)** — ce qui en a été codé, et ses choix, au §12.
+
 ---
 
 ## 9. Le code à venir (proposé)
@@ -1069,6 +1072,32 @@ Le code suit les §2.3 et §3.1 dans leur ordre. Ce qui s'en écarte, ou que la 
   `not_placed` ni `not_ready`) ; reçu entre le lancement du fil et sa prise en main, il lui est relayé ;
   un second signal ne lève plus.
 
+## 12. Ce que VP1 a codé (18/11)
+
+- **Où** : `glorfindel/proposed_verdict.py` (`assess`, `refresh`), la passe de la watch chaque minute
+  (`glorfindel/cli.py`, `_propose_verdicts`), après la lecture des fenêtres ; le registre sur la carte
+  (`glorfindel/escalations.py`) ; la console (TO JUDGE, la carte ouverte) et le bot.
+- **Le registre** : trois champs de la carte, à part de `verdict` — `proposed_verdict` (le verdict
+  proposé, `right`, et ce qui a été comparé : le drill, son empreinte, la demande, le rang, le run, la
+  règle, le délai, l'écart au T0), `proposed_why` (la raison quand rien n'est proposé : un code et une
+  phrase, sans identifiant), `proposed_refused`. Une proposition faite reste jusqu'au clic ; refusée,
+  elle ne revient jamais ; seule une carte d'exercice de décision, sans verdict, en reçoit une
+  (`escalations.proposable`, relu sous le verrou à l'écriture). Une carte de plus de 7 jours n'est plus
+  regardée.
+- **Le confirmer** en fait le verdict de l'opérateur (`confirm_proposed`, `verdict_from: proposed`),
+  et acquitte la carte comme tout verdict ; **le refuser** l'efface (`refuse_proposed`).
+- **Le rang** : la demande du drill pose chaque fil du drill sur chaque cible armée, dans cet ordre
+  (`scheduled_drill._place`). L'attente d'un fil de la demande est celle du fil du drill qu'il pose :
+  le rang de la demande ramené à celui du drill, et la même expérience au drill, à l'attente, au
+  rapport et à la fenêtre.
+- **Le T0** : l'heure de l'attaque du rapport du run (`metrics.attack_time`), tenue elle-même dans la
+  fenêtre ; la fenêtre est celle que la watch croit (`exercise.load_windows`), d'une seule cible.
+- **La première carte du fil** : la première carte de décision, par son heure, des runs du fil et de la
+  règle attendue — quoi qu'elle soit devenue (jugée, refusée, sur une autre VM) : une seule carte par
+  fil peut jamais en recevoir une.
+- **Mutants** M5921–M5940 (`scripts/mutants/VP1.py`), dont les deux du §9 (M5921 : le drill lu comme
+  `drill.find` ; M5922 : une autre VM).
+
 ---
 
 ## Ce que ce document ne décide pas
@@ -1076,7 +1105,7 @@ Le code suit les §2.3 et §3.1 dans leur ordre. Ce qui s'en écarte, ou que la 
 - Rien n'est mesuré : les comportements d'Azure (la Logic App et le droit qu'il lui faut, le
   démarrage à froid, la latence, l'arrêt d'un conteneur sous `--init`, le nettoyage de l'atomic en
   75 s, la rétention du canal) sont des hypothèses, à prouver au banc.
-- Le format du verdict proposé et son registre sont à VP1. L'identité de la session « Banc » et la
+- Le format du verdict proposé et son registre : décidés par VP1 (§12). L'identité de la session « Banc » et la
   façon de la lui donner sont à BRO1.
 - Les drills des instances d'un client (couche `instance`) ne se planifient pas, et n'ont pas
   d'attentes en v1 : seul un drill livré porte `schedule` et des attentes. Un client qui voudrait son

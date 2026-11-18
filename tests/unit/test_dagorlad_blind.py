@@ -89,3 +89,45 @@ def test_the_drill_of_the_week_present_changes_nothing_glorfindel_tells_the_mode
     assert after == before
     for seen in (b"banc-hebdo", sha.encode(), b"within_s", req.id.encode()):
         assert seen not in after
+
+
+def test_a_verdict_proposed_changes_nothing_glorfindel_tells_the_model(tmp_path, monkeypatch):
+    """VP1 (#615, docs/design/drill-banc.md §8.2): the watch's pass over the drill's files proposes a
+    verdict on the expected exercise card, and the message of ``_build_user_message()`` stays the same,
+    to the byte: the decision reads no card, nor anything VP1 reads."""
+    from glorfindel import escalations
+    from glorfindel import proposed_verdict as pv
+    root = Path(__file__).resolve().parents[2]
+    monkeypatch.chdir(tmp_path)
+    runs = tmp_path / "runs"
+    exp = pv.ex.load_file(root / "expectations" / "banc-hebdo.yaml").wires[0]
+    signal = {**SIGNAL, "raw_signal": {"ttp": exp.experiment, "normalized_signal": {
+        "indicator_key": "new_local_account", "indicator_value": 1, "resource": "vm-celebrimbor-gondolin"}}}
+    before = _build_user_message(signal, PAST).encode()
+
+    now = datetime.now(timezone.utc)
+    run, req = "20261117T190200Z-ab12", "r-20261117T190000Z-abc123"
+    sha = dr.fingerprint((root / "drills" / "banc-hebdo.yaml").read_bytes())
+    (runs / "glorfindel" / "orodruin" / "requests").mkdir(parents=True)
+    (runs / "glorfindel" / "orodruin" / "requests" / f"{req}.json").write_text(json.dumps({
+        "request": req, "state": "finished", "at": now.isoformat(), "codes": [],
+        "wires": [{"rank": 1, "state": "done", "code": "", "runs": [run], "result": "detected"}],
+        "drill": {"name": "banc-hebdo", "sha256": sha, "occurrence": now.isoformat()}}))
+    t0 = now.timestamp() - 60
+    (runs / "glorfindel" / f"{run}.json").write_text(json.dumps({
+        "scenario": "s", "run_id": run, "mitre": exp.experiment, "result": "PASS", "thresholds": {}, "checks": {},
+        "metrics": {"kind": "technique", "injector": "annatar", "experiment_id": exp.experiment,
+                    "resource_id": VM, "request": req, "attack_time": t0}}))
+    window = {"run_id": run, "injector": "annatar", "kind": "technique", "experiment": exp.experiment,
+              "targets": [VM.lower()], "start": datetime.fromtimestamp(t0 - 30, timezone.utc).isoformat(),
+              "end": None, "expires": datetime.fromtimestamp(t0 + 3600, timezone.utc).isoformat(),
+              "destructive": False, "request": req}
+    card = escalations.record(f"rule-{exp.rule}-0123abcd", VM, "snapshot", "low_confidence", "held",
+                              rule_name=exp.rule, source="exercise", exercise_run=run)
+    assert pv.refresh(runs, windows=[window]) == 1
+    assert next(e for e in escalations.all_escalations() if e["id"] == card)[escalations.PROPOSED_FIELD]
+
+    after = _build_user_message(signal, PAST).encode()
+    assert after == before
+    for seen in (b"proposed", b"banc-hebdo", run.encode(), req.encode()):
+        assert seen not in after
