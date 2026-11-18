@@ -3096,9 +3096,10 @@ def coverage_matrix(now: float | None = None) -> dict:
 @app.get("/api/coverage")
 async def coverage_route(kind: str = "") -> dict:
     """The coverage matrix (C1, #80): for each technique of the catalog and each declared fault,
-    its last run and its last proof, its state (proven, aging, stale, regressed, unproven,
-    never), its last outcomes, and the evolution of the coverage week by week. ``kind``
-    (``technique`` | ``fault``) keeps one half — Annatar's page or Gothmog's."""
+    its last run and its last proof, its state (fresh, aging, stale, regressed, unproven,
+    never — « proven » is the catalogue's status, FRS1), its last outcomes, and the evolution
+    of the coverage week by week. ``kind`` (``technique`` | ``fault``) keeps one half —
+    Annatar's page or Gothmog's."""
     if kind not in ("", "technique", "fault"):
         return {"error": "kind: technique or fault"}
     m = await asyncio.to_thread(coverage_matrix)

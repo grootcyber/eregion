@@ -111,7 +111,7 @@ watch en marche. Les états :
 
 | État | Sens |
 |---|---|
-| `proven` | dernière preuve de moins de 21 jours |
+| `fresh` | dernière preuve de moins de 21 jours (jamais « proven » : ce mot est le statut du catalogue, une entrée mesurée au banc, FRS1) |
 | `aging` | de 21 à 30 jours |
 | `stale` | plus de 30 jours : l'indicateur « âge de la dernière preuve » est en alerte |
 | `REGRESSED` | détectée avant, ratée depuis |

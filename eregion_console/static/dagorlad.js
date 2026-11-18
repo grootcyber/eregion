@@ -227,8 +227,9 @@ function _dispatch(ev, name) {
 for (const [type, name] of Object.entries(_EVENTS)) document.addEventListener(type, ev => _dispatch(ev, name), true);
 
 // ── Red cards: the catalogue, each with its last proof (the coverage matrix, C1) ───────
+// A proof under 21 days is « fresh » (FRS1, #904): « proven » is the catalogue's status.
 const PROOF = {
-  proven: ['c-ok', 'proven'], aging: ['c-warn', 'aging'], stale: ['c-bad', 'stale'],
+  fresh: ['c-ok', 'fresh'], aging: ['c-warn', 'aging'], stale: ['c-bad', 'stale'],
   regressed: ['c-bad', 'REGRESSED'], unproven: ['c-warn', 'no proof'], never: ['', 'never run'],
   unknown: ['c-warn', 'proof unreadable'],
 };

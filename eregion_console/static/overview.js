@@ -105,7 +105,7 @@ function indicators() {
   const wrong = box('WRONG DISRUPTIVE', w30.judged ? `${pc(w30.rate)} of ${esc(w30.judged)} judged` : '— none judged',
     `real traffic, ${days} d · 7 d: ${w7.judged ? pc(w7.rate) + ' of ' + esc(w7.judged) : 'none judged'}`,
     w30.wrong ? 'warn' : '', 'Isolations and blocks judged wrong, among those judged (right or wrong), on real traffic — exercise cards left out (glorfindel report). The last 7 days, those of the Monday summary, aside.');
-  // C1: the coverage matrix feeds it — a technique (or a fault) proven before and failed since
+  // C1: the coverage matrix feeds it — a technique (or a fault) held before and failed since
   // is said here, red, with the way to its row.
   const lost = (cov.regressed || []).concat(cov.faults_regressed || []);
   const coverage = box(`COVERAGE · EXERCISES · ${days} d`, `${esc(cov.implemented_detected)} / ${esc(cov.implemented)} implemented`,
@@ -113,15 +113,15 @@ function indicators() {
       + (lost.length ? ` · <a class="bad" href="/${(cov.regressed || []).length ? 'annatar' : 'gothmog'}">✗ ${Number(lost.length)} regressed ▸</a>` : '')
       + (Number(cov.stale) ? ` · <span class="warn">${Number(cov.stale)} stale</span>` : ''),
     lost.length ? 'bad' : '', 'Techniques detected by an attack run of the last ' + days + ' days, over those the bench can play (implemented), then over the whole catalogue, planned ones included. Faults aside.'
-      + (lost.length ? ' Regressed — proven before, failed since: ' + lost.join(', ') + ' (the coverage matrix, Annatar and Gothmog).' : ''));
+      + (lost.length ? ' Regressed — held before, failed since: ' + lost.join(', ') + ' (the coverage matrix, Annatar and Gothmog).' : ''));
   const age = lp ? lp.age_s / 86400 : null;
-  const stale = (i.stalest || []).map(s => `${s.ttp}: ${s.at ? ago(s.at) + ' ago' : 'never proven'}`).join(' · ');
+  const stale = (i.stalest || []).map(s => `${s.ttp}: ${s.at ? ago(s.at) + ' ago' : 'no proof yet'}`).join(' · ');
   const proof = box('LAST PROOF · EXERCISE', lp ? `${ago(lp.at)} ago · ${esc(lp.ttp)}` : 'none',
     lp ? (age < 21 ? '✓ under 30 days' : age <= 30 ? '⚠ nearly 30 days' : '✗ over 30 days')
       // SEC15: its T0 not believed, the proof is dated by the watch's own detection — said.
       + (lp.dated_by === 'detection' ? ' · dated by the watch\'s detection (T0 not believed)' : '')
       // DRL1b (§1.1): a proof of the drill of the week is said so, the stalest technique beside it.
-      + (lp.drill ? ` · from the weekly drill ${esc(lp.drill)}${(i.stalest || []).length ? ' · stalest: ' + esc(i.stalest[0].ttp) + ' ' + (i.stalest[0].at ? esc(ago(i.stalest[0].at)) + ' ago' : 'never proven') : ''}` : '')
+      + (lp.drill ? ` · from the weekly drill ${esc(lp.drill)}${(i.stalest || []).length ? ' · stalest: ' + esc(i.stalest[0].ttp) + ' ' + (i.stalest[0].at ? esc(ago(i.stalest[0].at)) + ' ago' : 'no proof yet') : ''}` : '')
       + ` · <a href="/runs/${encodeURIComponent(lp.run_id)}">run ▸</a>` : 'no attack detected with a decision',
     !lp || age > 30 ? 'bad' : age >= 21 ? 'warn' : 'ok',
     'The most recent attack detected with a decision of Glorfindel attached (detection and response), dated by its T0 — or, its T0 not believed (its window, its request, what the watch saw), by the watch\'s own detection. Each technique, the stalest first: ' + stale);
