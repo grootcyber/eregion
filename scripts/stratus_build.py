@@ -91,6 +91,37 @@ def required_providers(submodule: Path = SUBMODULE) -> dict[str, str]:
     return out
 
 
+# R2BY (#608): providers a technique USES (a ``resource``/``data`` of that type) but does NOT
+# declare in ``required_providers`` — Terraform auto-resolves them from the registry, which an
+# OFFLINE mirror must still carry, or the warmup fails (`provider … was not found`, measured at the
+# bench). The techniques pin no version for these, so they are pinned here. Fail closed: a used-but-
+# unpinned provider refuses the build (add it here). At v2.38.1 the only one is ``random``.
+IMPLICIT_VERSIONS = {"random": "3.6.3"}
+_RESOURCE = re.compile(r'(?:resource|data)\s+"([a-z][a-z0-9]*)_\w+"')
+
+
+def implicit_providers(submodule: Path = SUBMODULE,
+                       declared: set[str] | None = None) -> dict[str, str]:
+    """``hashicorp/<type> @ <pinned version>`` for providers the azure techniques use via a
+    ``resource``/``data`` of that type without declaring them (so an offline mirror still carries
+    them). ``declared`` (the ``required_providers`` set) is excluded; a used provider with no pin in
+    ``IMPLICIT_VERSIONS`` refuses the build."""
+    if declared is None:
+        declared = set(required_providers(submodule))
+    base = submodule / "v2" / "internal" / "attacktechniques" / "azure"
+    used: set[str] = set()
+    for tf in sorted(base.glob("**/main.tf")):
+        used |= set(_RESOURCE.findall(tf.read_text(encoding="utf-8")))
+    out: dict[str, str] = {}
+    for ptype in sorted(used - declared):
+        if ptype not in IMPLICIT_VERSIONS:
+            raise SystemExit(
+                f"the techniques use provider hashicorp/{ptype} without declaring it, and it has "
+                f"no pin in IMPLICIT_VERSIONS — add its version; refused")
+        out[ptype] = IMPLICIT_VERSIONS[ptype]
+    return out
+
+
 def _docker_build_argv(src: Path) -> list[str]:
     """The reproducible container build command: go1.26.11 pinned by digest (GO_IMAGE), run AS the
     operator (``--user`` so the temp source stays user-owned and cleans up), CGO off + ``-trimpath``
@@ -175,8 +206,12 @@ def build(dest: Path = STAGED, *, fetch=_default_fetch, build_binary=_default_bu
     (home / "terraform.sha256").write_text(
         hashlib.sha256(tf).hexdigest() + "  terraform\n", encoding="utf-8")
 
-    # 3. The providers (versions from the submodule), official HashiCorp, verified against PIN.
-    for ptype, pver in required_providers(submodule).items():
+    # 3. The providers, official HashiCorp, verified against PIN: those the techniques DECLARE
+    #    (versions read from the submodule) and those they only USE (implicit, pinned here — R2BY,
+    #    else the offline warmup fails with `provider … was not found`).
+    declared = required_providers(submodule)
+    providers = {**declared, **implicit_providers(submodule, set(declared))}
+    for ptype, pver in providers.items():
         name = f"terraform-provider-{ptype}_{pver}_linux_amd64.zip"
         plugin = fetch(f"https://releases.hashicorp.com/terraform-provider-{ptype}/{pver}/{name}")
         verify(plugin, need(name), name)
