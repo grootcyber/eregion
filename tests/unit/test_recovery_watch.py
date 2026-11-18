@@ -35,6 +35,11 @@ from glorfindel.providers.azure.restore import NEUTRALIZED_MARKER
 from .fake_azure import FakeAzure, key, open_flows
 
 VAULT = "rsv-test"
+# The test's « now », taken again at the start of each test (`_env`), never once at import: the code
+# under test dates the isolation, the cards and the activity on the real clock, the test its points
+# and jobs on `_NOW`. Frozen at import, `_NOW` aged by the time between the collection and the test —
+# over ten minutes on the CI, 12 400 tests under xdist (FLK3, #900) — and a point « 10 min after the
+# isolation » fell before it.
 _NOW = time.time()
 # The workstation's console principal, which restores (GLORFINDEL_RESTORE_PRINCIPALS on H0); H0's
 # own identity runs the session drain; an attacker's has ARM's Run Command.
@@ -49,6 +54,8 @@ def _t(minutes: float) -> datetime:
 
 @pytest.fixture(autouse=True)
 def _env(monkeypatch):
+    global _NOW
+    _NOW = time.time()
     monkeypatch.setenv("AZURE_SUBSCRIPTION_ID", "s")
     monkeypatch.setenv("GLORFINDEL_BACKUP_VAULT", VAULT)
     monkeypatch.setenv("GLORFINDEL_RESTORE_PRINCIPALS", f"{CONSOLE}, another-restorer")
@@ -117,6 +124,12 @@ def _points(f, vm):
     f.add_point(vm, "p-clean", _t(-60))
     f.add_point(vm, "p-during", _t(10))      # taken after the isolation: during the incident
 
+
+
+def test_the_tests_clock_is_the_tests_never_the_imports():
+    """FLK3 (#900): `_NOW` is taken at the start of the test, so the test's points and jobs and the
+    real clock of the code under test stay minutes apart, never by how long ago the file was imported."""
+    assert 0 <= time.time() - _NOW < 5
 
 # ── the restore proven: the release follows, once ─────────────────────────────────────────────
 
