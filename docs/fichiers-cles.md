@@ -521,7 +521,10 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 lu que s'il porte cet ID, migré à la première écriture ; par nom seul, un nom
                                 ambigu ne résout rien. Toujours lire via `_load_isolation_state(resource_id)`.
                                 Nom en minuscules ; un fichier est retrouvé par son HASH quelle que soit la casse
-                                (`_hash_variants`) ; à l'écriture, les autres variantes sont supprimées SAUF celle qui
+                                (`_hash_variants`) ; **il n'est celui d'une VM que si le `resource_id` qu'il enregistre
+                                est le sien** (SEC-H, `glorfindel/response/state_files.py`) : le hash de 8 hex (32 bits)
+                                est un nom, jamais une preuve — deux homonymes dont les ids se rencontrent dessus gardent
+                                deux fichiers, le second sous `<vm>--<128 bits du SHA-256 de son id>.json` ; à l'écriture, les autres variantes sont supprimées SAUF celle qui
                                 est la cible (`samefile` — sur macOS/Windows/Docker Desktop `VM-Foo--h` et `vm-foo--h`
                                 sont le même fichier : cinquième passe C1) ; `migrate_state_files()` au démarrage du watch.
                                 CI : job macOS (APFS insensible à la casse) ; `main` protégée, checks requis.
@@ -530,7 +533,9 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 sur place, les disques d'origine, des preuves. Un état sans eux se relit (d'avant LEV2).
                                 `nsg_rules_at_isolation` (Q16) : les règles de chaque NSG client que l'isolement a lues,
                                 par id de NSG ; vide sur le chemin du NSG de quarantaine
-  blocks/<vm>--<h>.json       → IPs bloquées par VM (même clé)
+  blocks/<vm>--<h>.json       → IPs bloquées par VM (même clé). Illisible, il est mis de côté dans `blocks/aside/`
+                                avant un nouveau blocage, comme l'état d'isolation, et lever le blocage d'une adresse
+                                ne le supprime plus avec les entrées des autres (SEC-H)
                                 **Illisible = inconnu (SEC3, SEC4b)** : un fichier d'isolation ou de blocage qui ne se lit
                                 pas (JSON cassé, autre forme — dont des `placements` sans `resource_id` —, `unreadable_states`)
                                 n'est jamais lu « rien ». Un fichier de blocage arrête le balayage des orphelines ; un
@@ -610,7 +615,11 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 verdict « prête ») ; un nom seul ambigu ne résout rien → VM retenue : dernier contrôle de préparation + réserves acceptées
                                 (active_since, alerted) — écrit par le watch (tracker) et la console
   discovered_assets.json      → cache assets découverts (AssetRegistry) — survit aux redémarrages
-  active_jobs/<vm>.json       → état persisté du job snapshot/restore en cours (partagé CLI/console)
+  active_jobs/<vm>--<k>.json  → état persisté du job snapshot/restore en cours (partagé CLI/console). Clé = nom +
+                                128 bits du SHA-256 de l'ID de ressource (SEC-H), comme `recovery/<vm>--<k>.json` (le
+                                dernier restore) et la réclamation `active_jobs/<vm>--<k>.restore-claim` ; un ancien
+                                `<vm>.json` n'est lu que s'il porte cet ID, retiré à la prochaine écriture ; par nom
+                                seul, deux homonymes qui ont chacun un enregistrement ne résolvent rien
                                 réconcilié par la boucle watch (`jobs.reconcile_jobs`, cadence TTL ~1min) :
                                 poll Azure (`refresh_job`, source unique CLI+API+watch) → Completed/Failed ;
                                 garde-fou déterministe → `Stale` si InProgress > 24h (job mort, sinon InProgress

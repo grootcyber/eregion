@@ -155,6 +155,52 @@ journal). Les droits : `Microsoft.Insights/eventtypes/values/read` et
 le filtre exact sans les enfants (H9), la ressource de chaque opération (H7), la latence (H12),
 les attributions héritées lues à la portée de la VM (H1), les éligibilités sous `*/read` (H2).
 
+### Les noms par l'identifiant complet (SEC-H, #849)
+
+**Nos règles finissent par 128 bits de l'id de leur carte réseau** (`_nic_mark`, SHA-256 de l'id en minuscules,
+32 hex) : `glorfindel-iso-<vm>-<carte>-<marque>`, `glorfindel-block-<ip>-<vm>-<carte>-<marque>`, et leur second
+nom `…-b-<marque>`. Une version antérieure les finissait par 6 hex de SHA-1 (8 quand le nom tronqué n'avait plus
+la carte) : deux cartes de même nom, dans deux VM de même nom, dont les ids s'y rencontrent (2^24 essais hors
+ligne) partageaient leurs noms — la levée de l'une retirait le refus de l'autre, l'isolement de l'une réécrivait
+celui de l'autre. Sur 128 bits, deux cartes ne se rencontrent jamais ; un nom trop long pour la carte et la VM
+garde la VM, coupée, et la marque entière (au plus 80 caractères avec `-out`).
+
+**La migration** : rien n'est renommé sur Azure. Ce qu'une version antérieure a posé reste sous ses noms jusqu'à
+sa levée :
+- **lu** : la vérification et la réaffirmation lisent ces noms (`_older_rule_bases`), une isolation ou un blocage
+  qui y tient est vérifié, jamais reposé en double ;
+- **jamais cru sur le nom** : une règle sous un ancien nom n'est à une carte que si l'état de sa VM l'enregistre
+  pour elle (la levée et le déblocage défont leurs placements par leur nom ; le `reset` les lit dans l'état, même
+  si l'adresse de la carte a changé depuis), ou si c'est un refus qui s'applique à ses adresses ; celle d'un
+  homonyme dont le hash a rencontré le sien, visant ses adresses à lui, reste ;
+- **reposé sous les nouveaux noms** : une isolation ou un blocage écrit de nouveau (la réaffirmation après une
+  disparition, une ré-isolation) part sous les nouveaux noms ; l'état garde les deux placements, la levée défait
+  les deux ;
+- **les orphelines** : le balayage reconnaît les deux marques (32 hex, et 6 ou 8) ; une carte vivante porte les
+  trois.
+
+**Le tag d'original sur le NSG de quarantaine partagé** : sa clé tient sur 128 bits de l'id de la carte
+(`glorfindel-orig-<32 hex>`), au lieu de 48 ; la clé d'une version antérieure est lue quand la nôtre manque,
+jamais réécrite, retirée avec la nôtre. **Ce qu'un tag peut nommer** : l'id d'un NSG de l'abonnement où agit
+Glorfindel, jamais un de nos NSG de quarantaine — sinon l'original est inconnu et la carte reste en quarantaine ;
+sa région, Azure la tient (un NSG d'une autre région est refusé sur la carte, et la levée le dit). **Où il se lit
+pour une carte nue** : sur le NSG de quarantaine du groupe où nous les créons (le groupe configuré, sinon celui de
+la VM), et nulle part ailleurs ne choisit. Un NSG de quarantaine d'un autre groupe qui nomme un original pour la
+carte — un autre hôte configuré sur un autre groupe (I8S), ou un leurre que n'importe qui peut nommer et étiqueter
+comme le nôtre — n'est jamais suivi : la carte reste telle quelle, dite (`OriginalConflict`), jusqu'à ce que
+l'opérateur pose l'original sur notre tag ; une ré-isolation retire alors notre « aucun » périmé (relu), et la
+levée demande l'original.
+
+**Les états locaux** (`glorfindel/response/state_files.py`) : un fichier n'est celui d'une VM que si le
+`resource_id` qu'il enregistre est le sien (`docs/fichiers-cles.md`). **Les écritures ARM** de l'isolement et du
+blocage attendent au plus `GLORFINDEL_ARM_WRITE_TIMEOUT_S` (300 s), et un écrivain derrière le verrou d'une VM au
+plus `GLORFINDEL_VM_LOCK_WAIT_S` (900 s) : au-delà, l'écriture est dite en échec, jamais faite ; la réaffirmation
+dit chaque VM qu'elle saute, et sur une carte (`reassert-busy-…`) à partir de la cinquième passe de suite.
+
+**La mesure au banc** (avant la fusion) : une isolation et un blocage posés par la version d'avant, sur une VM du
+banc, puis la version de la branche : vérifiés sous leurs anciens noms, reposés sous les nouveaux après une
+disparition, tout levé — le guide est dans le rapport du lot (#849).
+
 ## Pitfalls opérateur
 
 `backup_agent_check` retourne toujours `[]` sur les Linux VMs — `\\Process(*)\\IO Write Bytes/sec` est un counter Windows-only, Linux AMA ne le collecte pas. Idem pour `top_write_processes` (même counter). **C'est le comportement voulu** : résultats vides → le LLM ne peut pas exclure le ransomware → escalade forcée. L'alternative (`az backup job list` via RunCommand) ajouterait latence 15-30s + dépendance AZ CLI in-guest pour un résultat qui rendrait le produit trop confiant sur des données incomplètes.
