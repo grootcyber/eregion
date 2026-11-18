@@ -14,15 +14,24 @@ import time
 from pathlib import Path
 
 import click
-from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.markup import escape as _esc_markup
 
 from glorfindel.masking import ids_masked as _ids_masked, shown as _shown
+from glorfindel.terminal import GlorfindelConsole, outside as _outside, say_failure as _say_failure
 from glorfindel.vm_command import UNNAMED, group_and_name
 
-console = Console()
+# SEC-F (#845): a print never raises on markup — the last guard; text from outside is escaped
+# where it is printed (`_outside`, glorfindel/terminal.py).
+console = GlorfindelConsole()
+
+
+def _signal_head(sig) -> None:
+    """A signal's head as the watch and `respond` print it: its id, technique and gravity — each
+    written by whoever wrote the line (an injector, a file), said as it is (SEC-F)."""
+    console.rule(f"[bold cyan]Signal — {_outside(sig.signal_id)}[/bold cyan]")
+    console.print(f"  TTP      : {_outside(sig.ttp)}  |  Severity: [red]{_outside(sig.severity)}[/red]")
 
 
 def _record_manual_action(action: str, resource_id: str, outcome: dict, hand: str | None = None) -> None:
@@ -105,7 +114,7 @@ def _admit_from_runs(data: dict, source: str):
         _refuse_from_runs(data, adm.refused, source)
         return None
     if adm.dropped:
-        console.print(f"[yellow]{source} : champs ignorés ({_esc_markup(', '.join(adm.dropped[:8]))}) — "
+        console.print(f"[yellow]{_outside(source)} : champs ignorés ({_esc_markup(', '.join(adm.dropped[:8]))}) — "
                       "un injecteur ne les écrit pas[/yellow]")
     sig = Signal(**{k: adm.signal.get(k, "") for k in Signal.__dataclass_fields__})
     return adm.signal, sig
@@ -117,7 +126,7 @@ def _parsed_or_said(path: Path, line: str, say) -> list:
     try:
         return [_parse_signal_line(line.strip())]
     except Exception as exc:
-        say(f"Ligne de signal ignorée ({path.name}) : {exc}")
+        say(f"Ligne de signal ignorée ({path.name}) : {exc}")     # `say` escapes it (SEC-F)
         return []
 
 
@@ -362,10 +371,9 @@ def respond(signals_file: str, dry_run: bool, model: str, memory_path: str | Non
     for sig in signals:
         if trusted and sig.event == "recovery_complete":
             signal_origin.vouch({"signal_id": sig.signal_id})
-        console.rule(f"[bold cyan]Signal — {sig.signal_id}[/bold cyan]")
-        console.print(f"  TTP      : {sig.ttp}  |  Severity: [red]{sig.severity}[/red]")
-        console.print(f"  Event    : {sig.event}  |  Resource: {sig.resource_type}")
-        console.print(f"  Provider : {sig.provider}\n")
+        _signal_head(sig)
+        console.print(f"  Event    : {_outside(sig.event)}  |  Resource: {_outside(sig.resource_type)}")
+        console.print(f"  Provider : {_outside(sig.provider)}\n")
 
         state = agent.respond(sig.__dict__ if hasattr(sig, '__dict__') else dict(sig))
 
@@ -857,7 +865,7 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
         _INJECTORS_DIR.mkdir(mode=0o755, parents=True, exist_ok=True)
         os.chmod(_INJECTORS_DIR, 0o755)      # theirs to read, whatever the umask
     except OSError as exc:
-        console.print(f"[yellow]~/.glorfindel/injectors non créé ({exc})[/yellow]")
+        console.print(f"[yellow]~/.glorfindel/injectors non créé ({_outside(exc)})[/yellow]")
 
     # A badly written config is refused, and said (A3): the watch used to start on it —
     # "Could not load rules", then no detection at all, or the defaults standing in for
@@ -882,7 +890,7 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
         if _moved:
             console.print(f"[dim]State: {_moved} file(s) migrated to the lowercase keyed names.[/dim]")
     except Exception as exc:
-        console.print(f"[yellow]State migration skipped: {exc}[/yellow]")
+        console.print(f"[yellow]State migration skipped: {_outside(exc)}[/yellow]")
 
     agent = GlorfindelAgent(
         dry_run=dry_run, model=model, memory_path=memory_path,
@@ -897,7 +905,7 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
         # `default = <--mode>` the banner showed.
         console.print(
             f"[bold]Autonomy:[/bold] [yellow]glorfindel-config.yaml illisible "
-            f"({agent.config_error[:200]}) — toutes les VM en human_only"
+            f"({_outside(agent.config_error[:200])}) — toutes les VM en human_only"
             + (f", --mode {mode_override} ignoré" if mode_override else "")
             + " jusqu'à correction[/yellow]"
         )
@@ -993,11 +1001,10 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
                     _dq.record_undecided(_data, "full", why, dry_run=dry_run)
                     with _output_lock:
                         console.print(f"[bold red]File pleine ({_esc_markup(str(resource_id))}) :[/bold red] "
-                                      f"{_esc_markup(_sig.signal_id)} — {_esc_markup(why)} ; carte "
+                                      f"{_outside(_sig.signal_id)} — {_esc_markup(why)} ; carte "
                                       "undecided_detection")
                 except Exception as e:
-                    with _output_lock:
-                        console.print(f"[red]Error recording {_esc_markup(_sig.signal_id)}:[/red] {e}")
+                    _say_failure(console, f"Error recording {_sig.signal_id}", e, _output_lock)
                 finally:
                     if _from_channel:
                         with _channel_lock:
@@ -1006,54 +1013,61 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
             q = _dq.DecisionQueue(on_drop=_left)
             _resource_queues[key] = q
 
+            def _one(item) -> None:
+                """One detection of this VM's queue: shown, decided (or its card), the decision shown.
+                SEC-F: what is shown never stands between a detection and its decision — an error
+                of display is said, and the decision is taken all the same."""
+                _data, _sig, _from_channel = item
+                waiting = False
+                try:
+                    try:
+                        with _output_lock:
+                            _signal_head(_sig)
+                            console.print(f"  Event    : {_outside(_sig.event)}  |  "
+                                          f"Resource: {_outside(_sig.resource_type)}\n")
+                    except Exception as e:
+                        _say_failure(console, "Affichage du signal en erreur", e, _output_lock)
+                    # SEC-A2: dedup and ceiling before any call — a card, never an action;
+                    # a grave detection past the ceiling waits in its queue for the room.
+                    state, why, wait_s = _dq.decide_or_card(
+                        _data, agent.respond, _decision_gate, dry_run=dry_run,
+                        incidents=getattr(agent, "incidents", None))
+                    if wait_s:
+                        q.put_back(item, wait_s)   # left at once if the queue is full: said, counted
+                        waiting = True
+                    with _output_lock:
+                        if wait_s:
+                            console.print(f"[yellow]En attente du plafond ({int(wait_s)} s) :[/yellow] "
+                                          f"{_esc_markup(why)}\n")
+                        elif state is None:
+                            console.print(f"[yellow]Non décidée par le modèle :[/yellow] "
+                                          f"{_esc_markup(why)} — carte undecided_detection\n")
+                        else:
+                            _render_decision(state, dry_run)
+                            console.print()
+                finally:
+                    # Put back, it still waits (or left by `_left`, which counted it): its channel
+                    # line counts until it is decided.
+                    if _from_channel and not waiting:
+                        with _channel_lock:
+                            _channel_waiting[key] = max(0, _channel_waiting.get(key, 0) - 1)
+                    q.task_done()
+
             def _worker(q=q):
+                """This VM's decision thread (SEC-F): it never ends but on its queue's end. Whatever one
+                detection raised — its decision, its display — is said, escaped, by `_say_failure`,
+                which never raises in turn: an `except` that printed the error raw raised again on the
+                tag it quoted, and the thread died in silence — its queue without a consumer, every
+                later detection of the VM undecided until the watch restarted."""
                 while True:
                     item = q.get()
                     if item is None:
                         break
-                    _data, _sig, _from_channel = item
-                    waiting = False
                     try:
-                        with _output_lock:
-                            console.rule(f"[bold cyan]Signal — {_sig.signal_id}[/bold cyan]")
-                            console.print(
-                                f"  TTP      : {_sig.ttp}  |  "
-                                f"Severity: [red]{_sig.severity}[/red]"
-                            )
-                            console.print(
-                                f"  Event    : {_sig.event}  |  "
-                                f"Resource: {_sig.resource_type}\n"
-                            )
-                        # SEC-A2: dedup and ceiling before any call — a card, never an action;
-                        # a grave detection past the ceiling waits in its queue for the room.
-                        state, why, wait_s = _dq.decide_or_card(
-                            _data, agent.respond, _decision_gate, dry_run=dry_run,
-                            incidents=getattr(agent, "incidents", None))
-                        if wait_s:
-                            q.put_back(item, wait_s)   # left at once if the queue is full: said, counted
-                            waiting = True
-                        with _output_lock:
-                            if wait_s:
-                                console.print(f"[yellow]En attente du plafond ({int(wait_s)} s) :[/yellow] "
-                                              f"{_esc_markup(why)}\n")
-                            elif state is None:
-                                console.print(f"[yellow]Non décidée par le modèle :[/yellow] "
-                                              f"{_esc_markup(why)} — carte undecided_detection\n")
-                            else:
-                                _render_decision(state, dry_run)
-                                console.print()
+                        _one(item)
                     except Exception as e:
-                        with _output_lock:
-                            console.print(
-                                f"[red]Error processing {_sig.signal_id}:[/red] {e}"
-                            )
-                    finally:
-                        # Put back, it still waits (or left by `_left`, which counted it): its channel
-                        # line counts until it is decided.
-                        if _from_channel and not waiting:
-                            with _channel_lock:
-                                _channel_waiting[key] = max(0, _channel_waiting.get(key, 0) - 1)
-                        q.task_done()
+                        _say_failure(console, f"Error processing {getattr(item[1], 'signal_id', '?')}",
+                                     e, _output_lock)
 
             vm_short = resource_id.split("/")[-1]
             t = _threading.Thread(
@@ -1112,12 +1126,12 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
         if data.get("event") == "attack_started":
             def _poll_and_enqueue():
                 src = data.get("raw_signal", {}).get("detection_source", "azure_monitor")
-                with _output_lock:
-                    console.rule(f"[bold cyan]Signal — {sig.signal_id}[/bold cyan]")
-                    console.print(
-                        f"  TTP      : {sig.ttp}  |  Severity: [red]{sig.severity}[/red]"
-                    )
-                    console.print(f"  Event    : attack_started → polling {src}...\n")
+                try:
+                    with _output_lock:
+                        _signal_head(sig)
+                        console.print(f"  Event    : attack_started → polling {_outside(src)}...\n")
+                except Exception as e:      # SEC-F: never a search left for a display
+                    _say_failure(console, "Affichage du signal en erreur", e, _output_lock)
                 try:
                     # The row is read as the RulePoller reads it, the private IPs included
                     # (SEC4a), from the listing it reads too (SEC4c).
@@ -1128,11 +1142,8 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
                     # enqueued, and nothing said detection had been blind.
                     from glorfindel.agent import record_cycle_failure
                     record_cycle_failure(data, exc, stage="detection", dry_run=dry_run)
-                    with _output_lock:
-                        console.print(
-                            f"[red]Détection impossible pour {sig.signal_id} :[/red] {exc} "
-                            "— escalade cycle_failed enregistrée"
-                        )
+                    _say_failure(console, f"Détection impossible pour {sig.signal_id} "
+                                 "(escalade cycle_failed enregistrée)", exc, _output_lock)
                     return
                 if _watch_channel is not None and hasattr(_watch_channel, "note_poll"):
                     _watch_channel.note_poll(resolved)   # SEC18: the local verdict; never raises
@@ -1151,7 +1162,7 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
             vm_short = resource_id.split("/")[-1]
             t = _threading.Thread(
                 target=_poll_then_free, daemon=True,
-                name=f"poll-{vm_short}-{sig.signal_id[-6:]}",
+                name=f"poll-{vm_short}-{str(sig.signal_id)[-6:]}",
             )
             t.start()
             return
@@ -1214,7 +1225,7 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
         from glorfindel.reassert import ttl_alerts
         for a in ttl_alerts(ttl_h):
             with _output_lock:
-                console.print(f"[yellow]⚠ TTL exceeded[/yellow] — {a['vm']} isolated {a['age_h']:.1f}h "
+                console.print(f"[yellow]⚠ TTL exceeded[/yellow] — {_outside(a['vm'])} isolated {a['age_h']:.1f}h "
                               f"(limit {ttl_h}h): escalated, NOT released")
 
     def _reconcile_jobs() -> None:
@@ -1226,7 +1237,8 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
             return  # cheap local check — no Azure call when nothing is pending
         for j in _jobs.reconcile_jobs(None if dry_run else ttl_connector):
             vm_short = j.get("resource_id", "").rsplit("/", 1)[-1]
-            console.print(f"[dim]Job {j.get('type')} {vm_short} → {j.get('status')}[/dim]")
+            console.print(f"[dim]Job {_outside(j.get('type'))} {_outside(vm_short)} → "
+                          f"{_outside(j.get('status'))}[/dim]")
 
     # Reassert isolations/blocks whose rules vanished from Azure (terraform apply on an
     # NSG with inline rules, removal in the portal): re-apply once, then alert only.
@@ -1273,10 +1285,10 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
             try:
                 for r in run_requested():
                     with _output_lock:
-                        console.print(f"[dim]Vérification d'identité {r['id'][:8]} : {r['verdict']}[/dim]")
+                        console.print(f"[dim]Vérification d'identité {_outside(r['id'][:8])} : "
+                                      f"{_outside(r['verdict'])}[/dim]")
             except Exception as exc:
-                with _output_lock:
-                    console.print(f"[red]watch: vérification d'identité en erreur — {exc}[/red]")
+                _say_failure(console, "watch: vérification d'identité en erreur", exc, _output_lock)
 
         import threading as _thr
         _identity_thread[0] = _thr.Thread(target=_run, daemon=True, name="identity-checks")
@@ -1374,7 +1386,7 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
                 console.print(f"[dim]Clé de la watch : {signer.fingerprint} (make watch-key pour l'épingler)[/dim]")
             else:
                 console.print(f"[red]Clé de la watch indisponible — battements non signés, les injecteurs "
-                              f"les refusent (SEC19) :[/red] {why}")
+                              f"les refusent (SEC19) :[/red] {_outside(why)}")
         return signer
 
     # FS1a (#551): each card this watch writes that holds an action carries the proposal it signs
@@ -1411,7 +1423,7 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
             # read: nothing secret. SEC19: signed by the watch's key.
             _atomic_write_text(_INJECTOR_BEAT, json.dumps(beat_body(at, signer=_signer())), mode=0o644)
         except OSError as exc:          # a directory docker made as root: the watch goes on
-            console.print(f"[yellow]Battement pour les injecteurs non écrit ({exc}) — "
+            console.print(f"[yellow]Battement pour les injecteurs non écrit ({_outside(exc)}) — "
                           "`make glorfindel-start` crée ~/.glorfindel/injectors[/yellow]")
 
     # Remove the heartbeat on exit so a fast restart (docker compose restart / stop+up)
@@ -1470,8 +1482,7 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
             try:
                 said = _vm_notices.relay_pass()
             except Exception as exc:
-                with _output_lock:
-                    console.print(f"[red]watch: _relay_notices en erreur — {exc}[/red]")
+                _say_failure(console, "watch: _relay_notices en erreur", exc, _output_lock)
                 return
             if said:
                 with _output_lock:
@@ -1489,13 +1500,13 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
         from eregion_core import watch_channel as _wc
         _watch_channel = _wc.start()
         if _watch_channel is not None:
-            console.print(f"[dim]Canal retour : {_watch_channel.channel}[/dim]")
+            console.print(f"[dim]Canal retour : {_outside(_watch_channel.channel)}[/dim]")
         else:
             # SEC18: no storage channel — the local channel of verdicts, the one directory of the
             # blue the red mounts (read-only): a run's verdict, never the reasoning.
             _watch_channel = _wc.start_local(_layout.dir_of(_layout.VERDICTS, runs_dir))
             if _watch_channel is not None:
-                console.print(f"[dim]Canal des verdicts (local) : {_watch_channel.directory}/[/dim]")
+                console.print(f"[dim]Canal des verdicts (local) : {_outside(_watch_channel.directory)}/[/dim]")
         # IA0 (#167): the campaigns published by Orodruin get their report written here.
         # SEC18: everything it pulls and writes goes to the watch's own directory.
         if _start_campaign_reports(_layout.dir_of(_layout.GLORFINDEL, runs_dir)):
@@ -1591,7 +1602,7 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
                             try:
                                 _rule_poller.expand_for_discovered(_registry, _glorfindel_cfg)
                             except Exception as exc:
-                                console.print(f"[yellow]expand rules: {exc}[/yellow]")
+                                console.print(f"[yellow]expand rules: {_outside(exc)}[/yellow]")
                             _t.sleep(60)
                     _td.Thread(target=_expand_loop, daemon=True, name="expand-rules").start()
 
@@ -1599,7 +1610,7 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
                 static_count = len(rules) - auto_count
                 console.print(
                     f"[dim]Detection rules:[/dim] {static_count} static, "
-                    f"{auto_count} auto-apply — from [dim]{_rules_file}[/dim]"
+                    f"{auto_count} auto-apply — from [dim]{_outside(_rules_file)}[/dim]"
                 )
             # P1: the client's layer, and what it did to the base — said, not silent.
             if det_cfg.client_file:
@@ -1627,7 +1638,7 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
                               f"note ci-dessus dit laquelle tourne) ; reprendre la copie dans "
                               f"[dim]{det_cfg.client_file}[/dim].")
         except Exception as exc:
-            console.print(f"[yellow]⚠ Could not load rules: {exc}[/yellow]")
+            console.print(f"[yellow]⚠ Could not load rules: {_outside(exc)}[/yellow]")
 
     # Non-blocking audit at startup — warn if remediation capabilities are missing
     if not dry_run and _rules_file:
@@ -1665,8 +1676,8 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
                             vm = rid.split("/")[-1]
                             gaps = [c for c in result.checks if c.status == "fail"]
                             console.print(
-                                f"[yellow]⚠ Audit gap on {vm}:[/yellow] "
-                                + "; ".join(c.name for c in gaps)
+                                f"[yellow]⚠ Audit gap on {_outside(vm)}:[/yellow] "
+                                + _outside("; ".join(c.name for c in gaps))
                                 + " — run 'glorfindel audit' for details"
                             )
             except Exception:
@@ -1674,13 +1685,13 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
 
         _threading.Thread(target=_startup_audit, daemon=True, name="audit-startup").start()
 
-    msg = f"[bold]Glorfindel watching[/bold] [dim]{runs_dir}/[/dim]  (TTL={ttl_h}h, Ctrl+C to stop)"
+    msg = f"[bold]Glorfindel watching[/bold] [dim]{_outside(runs_dir)}/[/dim]  (TTL={ttl_h}h, Ctrl+C to stop)"
     console.print(msg + "\n")
     _write_heartbeat()
     try:
         _observe_windows()
     except Exception as exc:   # the windows fall toward real; the watch goes on
-        console.print(f"[red]watch: _observe_windows en erreur — {exc}[/red]")
+        _say_failure(console, "watch: _observe_windows en erreur", exc)
     try:
         while True:
             try:
@@ -1690,8 +1701,7 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
                     try:
                         _identity_checks()
                     except Exception as exc:
-                        with _output_lock:
-                            console.print(f"[red]watch: _identity_checks en erreur — {exc}[/red]")
+                        _say_failure(console, "watch: _identity_checks en erreur", exc, _output_lock)
                 if _ttl_check_counter % 30 == 0:  # housekeeping every 30 polls (~1 min at 2s interval)
                     # Each task on its own: one that keeps failing (an old isolation the
                     # subscription guard refuses…) no longer skips the reassertion and the
@@ -1699,28 +1709,25 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
                     try:
                         _recoveries()       # REC1: its own thread, started here at most once a pass
                     except Exception as exc:
-                        with _output_lock:
-                            console.print(f"[red]watch: _recoveries en erreur — {exc}[/red]")
+                        _say_failure(console, "watch: _recoveries en erreur", exc, _output_lock)
                     try:
                         _door_facts()       # LEV2: information on the isolation card, its own thread
                     except Exception as exc:
-                        with _output_lock:
-                            console.print(f"[red]watch: _door_facts en erreur — {exc}[/red]")
+                        _say_failure(console, "watch: _door_facts en erreur", exc, _output_lock)
                     try:
                         _relay_notices()    # JUG2: the bot mute, the webhook says the actions
                     except Exception as exc:
-                        with _output_lock:
-                            console.print(f"[red]watch: _relay_notices en erreur — {exc}[/red]")
+                        _say_failure(console, "watch: _relay_notices en erreur", exc, _output_lock)
                     for _task in (_check_ttl, _reconcile_jobs, _reassert, _write_heartbeat, _observe_windows):
                         try:
                             _task()
                         except Exception as exc:
-                            with _output_lock:
-                                console.print(f"[red]watch: {_task.__name__} en erreur — {exc}[/red]")
+                            _say_failure(console, f"watch: {_task.__name__} en erreur", exc, _output_lock)
             except Exception as exc:
                 # The daemon outlives a bad iteration (unreadable file, transient Azure
-                # error in the TTL/jobs housekeeping); the next poll retries.
-                console.print(f"[red]watch: itération en erreur — {exc}[/red]")
+                # error in the TTL/jobs housekeeping); the next poll retries. SEC-F: said escaped —
+                # printed raw, a tag the error quoted raised here, out of the loop: the watch died.
+                _say_failure(console, "watch: itération en erreur", exc, _output_lock)
             time.sleep(interval)
     except KeyboardInterrupt:
         if _rule_poller:
@@ -2016,7 +2023,7 @@ def _render_proposal(p: dict) -> None:
     conf_pct = int(p["confidence"] * 100)
     console.print(
         f"  [bold cyan]{_esc_markup(p['rule_name'])}[/bold cyan]  "
-        f"[dim]{p['ttp']}  {vm}  {conf_pct}% confidence[/dim]"
+        f"[dim]{_outside(p['ttp'])}  {_outside(vm)}  {conf_pct}% confidence[/dim]"
     )
     if p.get("renamed_from"):
         console.print(f"  [yellow]Nom proposé « {_esc_markup(p['renamed_from'])} » : celui d'une règle "
@@ -2030,10 +2037,10 @@ def _render_proposal(p: dict) -> None:
     console.print(f"  Why better: {_esc_markup(_ids_masked(p['explanation'])[:100])}")
     console.print(Syntax(_ids_masked(p["query"]).strip(), "sql", theme="monokai", line_numbers=False))
     console.print(
-        f"  [dim]→ approve: glorfindel approve-rule {p['id']}[/dim]"
+        f"  [dim]→ approve: glorfindel approve-rule {_outside(shlex.quote(str(p['id'])))}[/dim]"
     )
     console.print(
-        f"  [dim]→ dismiss: glorfindel reject-rule {p['id']}[/dim]\n"
+        f"  [dim]→ dismiss: glorfindel reject-rule {_outside(shlex.quote(str(p['id'])))}[/dim]\n"
     )
 
 
@@ -2049,18 +2056,19 @@ def _render_escalation(e: dict) -> None:
     table = Table(show_header=False, box=None, padding=(0, 1))
     table.add_column(style="dim", width=18)
     table.add_column()
-    table.add_row("ID", f"[dim]{e['id']}[/dim]")
+    # SEC-F: every field read from the cards' store, said as it is — the action is the model's.
+    table.add_row("ID", f"[dim]{_outside(e['id'])}[/dim]")
     table.add_row("Time", f"{ts.strftime('%H:%M')} ({age_m}m ago)")
-    table.add_row("Action", f"[bold yellow]{e['action']}[/bold yellow]")
-    table.add_row("Resource", resource_short)
-    table.add_row("Type", e["escalation_type"])
+    table.add_row("Action", f"[bold yellow]{_outside(e['action'])}[/bold yellow]")
+    table.add_row("Resource", _outside(resource_short))
+    table.add_row("Type", _outside(e["escalation_type"]))
     reason = _ids_masked(e["reason"])                   # the model's words: masked, then cut (MSK2)
     table.add_row("Reason", _esc_markup(reason[:120]) + ("…" if len(reason) > 120 else ""))
-    table.add_row("Run", e["run_id"])
+    table.add_row("Run", _outside(e["run_id"]))
     console.print(table)
 
     _render_next_steps(e)
-    console.print(f"  [dim]glorfindel ack {e['id']}[/dim]\n")
+    console.print(f"  [dim]glorfindel ack {_outside(shlex.quote(str(e['id'])))}[/dim]\n")
 
 
 
@@ -2116,7 +2124,7 @@ def _render_next_steps(e: dict) -> None:
             f"Check VM state: az vm show -g <rg> -n {_short_name(e['resource_id'])} --query powerState",
             f"If compromise confirmed: glorfindel restore {rid} --yes --before {_card_moment(e)}"
             "   # un instant avant le début de l'attaque",
-            f"If false positive: glorfindel ack {e['id']}",
+            f"If false positive: glorfindel ack {shlex.quote(str(e['id']))}",
         ]
     elif action == "restore_from_backup":
         steps = [
@@ -2133,7 +2141,7 @@ def _render_next_steps(e: dict) -> None:
         ]
     elif esc_type == "destructive_action":
         steps = [
-            f"glorfindel {action.replace('_', '-')} {rid} --yes",
+            f"glorfindel {shlex.quote(str(action).replace('_', '-'))} {rid} --yes",
             "Requires explicit human approval — review before executing",
         ]
     else:
@@ -2141,7 +2149,17 @@ def _render_next_steps(e: dict) -> None:
 
     console.print("  [bold cyan]Next steps:[/bold cyan]")
     for i, step in enumerate(steps, 1):
-        console.print(f"  [cyan]{i}.[/cyan] {step}")
+        console.print(f"  [cyan]{i}.[/cyan] {_outside(step)}")     # the action is the model's (SEC-F)
+
+
+def _render_card_or_say(render, card) -> None:
+    """`render(card)`, or what kept it from being shown, said (SEC-F): a card the store holds
+    malformed — or one a writer of the store forged — never hides the cards after it."""
+    try:
+        render(card)
+    except Exception as exc:
+        cid = card.get("id") if isinstance(card, dict) else None
+        _say_failure(console, f"Carte {str(cid or '?')[:8]} illisible", exc)
 
 
 @cli.command()
@@ -2168,11 +2186,11 @@ def pending(watch: bool):
                 f"[bold yellow]Glorfindel — {len(items)} pending escalation(s)[/bold yellow]"
             )
             for e in items:
-                _render_escalation(e)
+                _render_card_or_say(_render_escalation, e)
         if proposals:
             console.rule("[bold cyan]Proposed detection rules[/bold cyan]")
             for p in proposals:
-                _render_proposal(p)
+                _render_card_or_say(_render_proposal, p)
         return
 
     # Watch mode — poll every 2s, print new escalations as they arrive
@@ -2180,7 +2198,7 @@ def pending(watch: bool):
     if items:
         console.rule(f"[bold yellow]Glorfindel — {len(items)} existing escalation(s)[/bold yellow]")
         for e in items:
-            _render_escalation(e)
+            _render_card_or_say(_render_escalation, e)
 
     console.print("[dim]Watching for escalations... (Ctrl+C to stop)[/dim]")
     try:
@@ -2190,7 +2208,7 @@ def pending(watch: bool):
                 if e["id"] not in seen_ids:
                     seen_ids.add(e["id"])
                     console.rule("[bold red]NEW ESCALATION[/bold red]")
-                    _render_escalation(e)
+                    _render_card_or_say(_render_escalation, e)
     except KeyboardInterrupt:
         console.print("\n[dim]Stopped.[/dim]")
 
@@ -2225,10 +2243,11 @@ def ack(escalation_id: str | None, all_pending: bool):
     except (KeyError, ValueError) as exc:
         raise click.ClickException(str(exc).strip(chr(39))) from None
     if e.get("status") != "pending":
-        console.print(f"[yellow]Escalation {e['id'][:8]} already {e.get('status', 'resolved')}.[/yellow]")
+        console.print(f"[yellow]Escalation {_outside(str(e['id'])[:8])} already "
+                      f"{_outside(e.get('status', 'resolved'))}.[/yellow]")
         return
     escalations.resolve(e["id"])
-    console.print(f"[green]✓ Escalation {e['id']} acknowledged.[/green]")
+    console.print(f"[green]✓ Escalation {_outside(e['id'])} acknowledged.[/green]")
 
 
 @cli.command()
@@ -2247,7 +2266,7 @@ def verdict(escalation_id: str, judgement: str, note: str):
     except (KeyError, ValueError) as exc:
         console.print(f"[red]✗ {str(exc).strip(chr(39))}[/red]")
         raise SystemExit(1)
-    console.print(f"[green]✓ {e['action']} on {e['resource_id'].rstrip('/').rsplit('/', 1)[-1]}: "
+    console.print(f"[green]✓ {_outside(e['action'])} on {_outside(e['resource_id'].rstrip('/').rsplit('/', 1)[-1])}: "
                   f"{judgement}[/green]")
 
 
@@ -2293,7 +2312,7 @@ def report(since_text: str, as_json: bool):
         for col in ("", "right", "wrong", "unsure", "not judged"):
             table.add_column(col, justify="left" if not col else "right")
         for name, b in sorted(rows.items()):
-            table.add_row(name, str(b["right"]), str(b["wrong"]), str(b["unsure"]), str(b["unjudged"]))
+            table.add_row(_outside(name), str(b["right"]), str(b["wrong"]), str(b["unsure"]), str(b["unjudged"]))
         console.print(table)
     if r["cards"] and r["judged"] < r["cards"]:
         console.print(f"[dim]{r['cards'] - r['judged']} card(s) not judged: glorfindel verdict <id> right|wrong|unsure[/dim]")
@@ -2975,7 +2994,8 @@ def _write_signal(signal: dict) -> Path:
 
 
 def _render_decision(state: dict, dry_run: bool) -> None:
-    action = state.get("action", "?")
+    # SEC-F: the action is the model's free text — no guard replaces it before it is shown here.
+    action = _outside(state.get("action", "?"))
     escalated = state.get("escalate", False)
     confidence = state.get("confidence", 0.0)
     outcome = state.get("outcome") or {}
@@ -2995,9 +3015,9 @@ def _render_decision(state: dict, dry_run: bool) -> None:
     if "action_s" in outcome and not escalated and not dry_run:
         detection_s = state.get("signal", {}).get("raw_signal", {}).get("detection_time_s")
         action_s = outcome["action_s"]
-        timing = f"{action_s}s"
+        timing = f"{_outside(action_s)}s"
         if detection_s:
-            timing = f"detect {detection_s}s + {action} {action_s}s"
+            timing = f"detect {_outside(detection_s)}s + {action} {_outside(action_s)}s"
         table.add_row("Timing", f"[dim]{timing}[/dim]")
     if "verified" in outcome and not escalated:
         if verified is True:

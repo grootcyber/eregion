@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import TypedDict
 
 from langgraph.graph import StateGraph, END
-from rich.console import Console
 from rich.markup import escape as _esc_markup
 
 from glorfindel.actions import (
@@ -20,8 +19,11 @@ from glorfindel.config import load_glorfindel_config
 from glorfindel.detection_authoring import author_rule
 from glorfindel.incidents import IncidentRegistry
 from glorfindel.memory import CycleMemory
+from glorfindel.terminal import GlorfindelConsole, outside as _outside
 
-_console = Console()
+# SEC-F (#845): a print never raises on markup (glorfindel/terminal.py) — this console prints inside
+# the decision of a VM, in its thread of the watch.
+_console = GlorfindelConsole()
 
 
 def _load_few_shot_examples() -> str:
@@ -325,7 +327,7 @@ def _row_reader(resource_id: str, ip_owners=None, keys=None):
     try:
         owners = {ip: str(rid).lower() for ip, rid in ((ip_owners() if ip_owners else None) or {}).items()}
     except Exception as exc:            # unreadable: an address names no VM (held, never a guess)
-        _console.print(f"  [yellow]IP privées des VMs illisibles ({_first_line(exc)}) — une ligne "
+        _console.print(f"  [yellow]IP privées des VMs illisibles ({_outside(_first_line(exc))}) — une ligne "
                        "sans ressource reste non attribuée[/yellow]")
         owners = {}
     # An appliance's address names no VM (SEC-A4): its owner is no target.
@@ -400,7 +402,7 @@ def resolve_attack_started(signal: dict, ip_owners=None) -> dict:
             if rule.expected_latency_s > timeout_s:
                 timeout_s = float(rule.expected_latency_s)
             _console.print(
-                f"  [dim]Using detection rule '{rule.name}' from detection_rules.yaml"
+                f"  [dim]Using detection rule '{_outside(rule.name)}' from detection_rules.yaml"
                 f" (timeout={int(timeout_s)}s)[/dim]"
             )
 
@@ -416,7 +418,7 @@ def resolve_attack_started(signal: dict, ip_owners=None) -> dict:
     try:
         detector = detector_for(source, workspace_id=workspace_id)
     except ValueError as e:
-        _console.print(f"[yellow]poll: {e} — skipping[/yellow]")
+        _console.print(f"[yellow]poll: {_outside(e)} — skipping[/yellow]")
         return {**signal, "event": "detection_timeout"}
 
     # A query on one of Entra ID's tables, whatever its source (C2): an identity
@@ -436,7 +438,7 @@ def resolve_attack_started(signal: dict, ip_owners=None) -> dict:
     from glorfindel.detection_rules import proven_keys
     names_vm = _row_reader(vm_rid, ip_owners, keys=proven_keys(query)) if data_plane else None
 
-    _console.print(f"[cyan]->[/cyan] Polling {source} (timeout={int(timeout_s)}s)...")
+    _console.print(f"[cyan]->[/cyan] Polling {_outside(source)} (timeout={int(timeout_s)}s)...")
     if data_plane:
         result = detector.poll_alert(query, since=attack_time, timeout_s=timeout_s,
                                      match_row=lambda row: names_vm(row) is not False)
@@ -2416,7 +2418,7 @@ def store_cycle(state: GlorfindelState, *, memory: CycleMemory) -> GlorfindelSta
         if not (_is_control_plane(signal) or _is_identity(signal)):
             memory.store(cycle)
     except Exception as exc:
-        _console.print(f"[yellow]store_cycle: ChromaDB write failed: {exc}[/yellow]")
+        _console.print(f"[yellow]store_cycle: ChromaDB write failed: {_outside(exc)}[/yellow]")
 
     # Notify autonomous actions (not escalations, not dry-run)
     # Non-fatal: webhook/notification failure must not suppress the debug file
@@ -2449,7 +2451,7 @@ def store_cycle(state: GlorfindelState, *, memory: CycleMemory) -> GlorfindelSta
                 mode=state.get("autonomy_mode", ""),
             )
     except Exception as exc:
-        _console.print(f"[yellow]store_cycle: notify_action failed: {exc}[/yellow]")
+        _console.print(f"[yellow]store_cycle: notify_action failed: {_outside(exc)}[/yellow]")
 
     _record_uncontained(state, source, exercise_run)
     _record_displaced(state, source, exercise_run)
@@ -2585,7 +2587,7 @@ def _record_displaced(state: GlorfindelState, source: str, exercise_run: str) ->
             explanation=state.get("explanation", ""),
         )
     except Exception as exc:          # said, and the debug line still written
-        _console.print(f"[red]store_cycle: carte de '{_esc_markup(displaced)}' non écrite — {exc}[/red]")
+        _console.print(f"[red]store_cycle: carte de '{_esc_markup(displaced)}' non écrite — {_outside(exc)}[/red]")
 
 
 def _record_uncontained(state: GlorfindelState, source: str, exercise_run: str) -> None:
@@ -2618,7 +2620,7 @@ def _record_uncontained(state: GlorfindelState, source: str, exercise_run: str) 
             explanation=state.get("explanation", ""),
         )
     except Exception as exc:          # said, and the debug line still written
-        _console.print(f"[red]store_cycle: carte de la détection non contenue non écrite — {exc}[/red]")
+        _console.print(f"[red]store_cycle: carte de la détection non contenue non écrite — {_outside(exc)}[/red]")
 
 
 def _write_debug_record(state: GlorfindelState) -> None:
@@ -2771,7 +2773,7 @@ def propose_detection_rule(
     from glorfindel.detection_rules import rulepoller_recently_matched
     if rulepoller_recently_matched(ttp, detection_timeout_s + 180):
         _console.print(
-            f"  [dim]propose_detection_rule: RulePoller matched '{ttp}' recently "
+            f"  [dim]propose_detection_rule: RulePoller matched '{_outside(ttp)}' recently "
             f"— detection_missed is a false negative, skipping proposal[/dim]"
         )
         # Nothing for a human to do: route straight to store_cycle (debug trail kept).
@@ -2813,7 +2815,7 @@ def propose_detection_rule(
     try:
         existing_rule = _find_rule_for_ttp(ttp, glorfindel_cfg=load_glorfindel_config())
     except Exception as e:
-        _console.print(f"  [dim]rule-coverage gate unavailable: {e}[/dim]")
+        _console.print(f"  [dim]rule-coverage gate unavailable: {_outside(e)}[/dim]")
         existing_rule = None
     if existing_rule is not None:
         return _detection_blocked(state, existing_rule, actions_summary)
@@ -2838,7 +2840,7 @@ The existing rule may be correct and no change needed."""
             from glorfindel.detectors import detector_for
             detector = detector_for(source, workspace_id=workspace_id)
         except Exception as e:  # never let detector wiring break authoring
-            _console.print(f"  [dim]schema introspection unavailable: {e}[/dim]")
+            _console.print(f"  [dim]schema introspection unavailable: {_outside(e)}[/dim]")
 
     past_summaries = [c.get("summary", "") for c in state.get("past_cycles", []) if c.get("summary")]
     proposed_rule = author_rule(
@@ -3131,11 +3133,11 @@ def record_cycle_failure(
                 target=_card_target(signal),        # AL1c: filed where the signal is
             )
         except Exception as rec_exc:  # the trace must not raise in turn
-            _console.print(f"[red]cycle_failed: escalation non enregistrée — {rec_exc}[/red]")
+            _console.print(f"[red]cycle_failed: escalation non enregistrée — {_outside(rec_exc)}[/red]")
     try:
         _write_debug_record(state)
     except Exception as dbg_exc:
-        _console.print(f"[red]cycle_failed: debug non écrit — {dbg_exc}[/red]")
+        _console.print(f"[red]cycle_failed: debug non écrit — {_outside(dbg_exc)}[/red]")
     return state
 
 
