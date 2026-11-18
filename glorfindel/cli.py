@@ -816,7 +816,9 @@ def _start_campaign_reports(runs_dir) -> bool:
         from analysis import campaign_report  # noqa: F401
         return hosted_report.start(runs_dir) is not None
     except Exception as exc:  # the watch goes on without campaign reports
-        console.print(f"[yellow]Rapports de campagne désactivés — {type(exc).__name__}: {exc}[/yellow]")
+        # What the import said, as it is (SEC-Fc): a `[/…]` in it raised out of this guard.
+        console.print(f"[yellow]Rapports de campagne désactivés — {type(exc).__name__}: "
+                      f"{_outside(exc)}[/yellow]")
         return False
 
 
@@ -1046,7 +1048,14 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
                             console.print(f"[yellow]Non décidée par le modèle :[/yellow] "
                                           f"{_esc_markup(why)} — carte undecided_detection\n")
                         else:
-                            _render_decision(state, dry_run)
+                            # SEC-Fc: the decision is taken — its action, its cycle stored by
+                            # `respond` — before it is shown. Its display failing is said as
+                            # such, never as « Error processing »: nothing left to process.
+                            try:
+                                _render_decision(state, dry_run)
+                            except Exception as e:
+                                _say_failure(console, f"Décision prise pour {_sig.signal_id}, "
+                                             "son affichage a échoué", e)   # the lock held already
                             console.print()
                 finally:
                     # Put back, it still waits (or left by `_left`, which counted it): its channel
@@ -2136,7 +2145,9 @@ def _render_next_steps(e: dict) -> None:
     # Fallback statique pour les escalades sans suggested_steps (anciennes ou dry-run)
     if esc_type == "low_confidence" and action == "snapshot":
         steps = [
-            f"Check VM state: az vm show -g <rg> -n {_short_name(e['resource_id'])} --query powerState",
+            # The name from the cards' store, quoted for the shell like every other (SEC-Fc).
+            f"Check VM state: az vm show -g <rg> -n {shlex.quote(_short_name(e['resource_id']))} "
+            "--query powerState",
             f"If compromise confirmed: glorfindel restore {rid} --yes --before {_card_moment(e)}"
             "   # un instant avant le début de l'attaque",
             f"If false positive: glorfindel ack {shlex.quote(str(e['id']))}",

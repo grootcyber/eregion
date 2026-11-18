@@ -1542,6 +1542,18 @@
    "issue": 845
   },
   {
+   "id": "s-sec-fc",
+   "composant": "socle",
+   "poste": "s-signer",
+   "nom": "Security hardening",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "SEC-Fc"
+   ],
+   "issue": 907
+  },
+  {
    "id": "s-sec-g",
    "composant": "socle",
    "poste": "s-signer",
