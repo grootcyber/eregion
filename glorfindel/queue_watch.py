@@ -536,6 +536,9 @@ class QueueWatch:
             return "failed", result, None, "released in part: rules still in place — " + "; ".join(
                 str(x) for x in result.get("failed", []))[:600]
         self._settle(card)
+        if result.get("status") == "released":
+            from glorfindel.gestures import released
+            released(req.resource_id)        # SEC-E (#846): B3a's facts forgotten
         return "done", result, self._check(req, card, "release_isolation", {"status": "released"}), ""
 
     def _do_reset(self, req, card, ctx):

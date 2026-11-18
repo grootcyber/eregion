@@ -18,6 +18,7 @@
   653,
   666,
   845,
+  846,
   847,
   848
  ],
@@ -1552,6 +1553,18 @@
     "SEC-G-workflow"
    ],
    "issue": 848
+  },
+  {
+   "id": "s-sec-e",
+   "composant": "socle",
+   "poste": "s-signer",
+   "nom": "Security hardening",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "SEC-E"
+   ],
+   "issue": 846
   },
   {
    "id": "s-inf-fl",

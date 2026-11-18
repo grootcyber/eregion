@@ -366,6 +366,15 @@ retenue :
 
 ### 3.8 Le plancher B3a
 
+> **État (SEC-E, #846, décision de Jonathan du 15/11).** D'ici SEC-A3, le plancher ne fait que
+> proposer, quel que soit le mode : il joue après l'accord des tirages, qui juge le choix du modèle
+> tel quel (aucun tirage n'est plus relevé). L'action du modèle qui part seule part, et une carte
+> `floor_proposal` propose `isolate_vm` à côté ; sinon la carte du cycle est celle du plancher. Ses
+> faits sont datés (`Incident.confirmed_at`, un TTL absolu) et oubliés à la levée de l'isolation.
+> C'est déjà le choix ci-dessous, « le blocage corroboré part seul, et la carte propose
+> `isolate_vm` en plus », sans la corroboration : SEC-A3b part de cet état. Ce qui suit décrit le
+> code d'avant SEC-E.
+
 Le plancher relève l'action à `isolate_vm` (`_root_compromise_floor`, `agent.py:1272`). Il passe
 avant les gardes et reste tel quel. La garde de corroboration la retient ensuite, sauf si les
 **deux** faits de l'incident sont corroborés par l'audit : la connexion réussie par
