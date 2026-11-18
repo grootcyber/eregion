@@ -75,9 +75,9 @@ MUTANTS += [
     # CI10b (#581, L7): the total needs every job that blocks and no other — no INFORMATIVE list left
     # in it; M3604 and M3605 kept their meaning on its `needs`.
     ("M3604", "Terraform out of the total's needs, beside macOS: its red never blocks (CI6, H1c)", GATE,
-     "mutants-total, terraform]\n", "mutants-total]\n"),
+     "mutants-total, terraform, image-cves]\n", "mutants-total, image-cves]\n"),
     ("M3605", "the gate's last job asks macOS to be green again (CI6, H1c)", GATE,
-     "mutants-total, terraform]\n", "mutants-total, macos, terraform]\n"),
+     "mutants-total, terraform, image-cves]\n", "mutants-total, macos, terraform, image-cves]\n"),
 ]
 TESTS.update({
     "M3597": f"{_WF}test_the_last_job_is_green_only_when_every_job_that_blocks_is",
