@@ -5336,6 +5336,105 @@ AUD1), à mesurer : les comm et exe réels du bruit, la forme des enregistrement
 `crontab` écrit, le volume de `shell_exec`, et si un `echo 0>` sur un journal existant (O_TRUNC) est vu
 par la surveillance du répertoire.
 
+## La mesure au banc des deux règles de SEC-I (#850)
+
+SEC-I change deux règles livrées : `data-exfiltration-blob` ne compte que les écritures écrites (code
+HTTP 2xx) ; `t1070-002-log-tamper` n'écarte un écrivain que sur un événement d'un seul enregistrement
+SYSCALL de sa clé. Le lot change aussi l'enquête (`investigate` bornée par `_ResourceId`). **Les trois se
+mesurent avant la fusion, par Jonathan** ; aucune session ne le fait. Les requêtes sont en lecture
+seule ; les écritures (une écriture refusée, une ligne `local6`) ne se font que sur le banc ou sur un
+abonnement de test, jamais sur une charge réelle. Les noms ci-dessous sont des gabarits (`<…>`).
+
+### Les hypothèses
+
+| | Hypothèse | Mesure | Si elle tient | Sinon |
+|---|---|---|---|---|
+| **SI1** | Azure Storage journalise dans `StorageBlobLogs` une écriture **refusée** (403), avec l'adresse privée de l'appelant dans `CallerIpAddress` (l'auditeur l'a laissée en hypothèse) | étapes 1 à 3, Q-SI1 | la règle d'avant comptait l'écriture refusée : la correction tient | une écriture refusée n'est pas journalisée, ou sans l'adresse privée : la correction ne change rien au banc, le dire dans `docs/azure.md` |
+| **SI2** | `StatusCode` est un texte (`"201"` pour `PutBlob`, `PutBlock`, `PutBlockList` réussis ; `"403"` refusé) que `toint()` lit | Q-SI1 | rien | une autre forme (un nombre, un autre code de succès) : corriger le filtre de la règle et son test |
+| **SI3** | Une écriture réussie par l'identité managée et une par SAS rendent toutes deux un code 2xx (`StatusText` peut différer : `Success`, autre chose) | étape 2, Q-SI1 | le filtre par le code est le bon | un succès hors 2xx : élargir le filtre, jamais aux refus |
+| **SI4** | Le noyau écrit un seul enregistrement SYSCALL par événement d'audit ; une ligne `local6` écrite au numéro d'un événement est lue par la règle comme un second enregistrement | étapes 5 à 8, Q-SI2 | la règle d'avant effaçait l'événement, la nouvelle en fait une carte | deux SYSCALL vrais dans un même événement : la règle ferait des cartes à tort — en décider avec Jonathan |
+| **SI5** | `_ResourceId` est rempli, à l'identifiant de la VM, sur les lignes `Perf` et `Heartbeat` de l'agent Azure Monitor (il l'est sur `Syslog`, que le routage lit) | Q-SI3 | l'enquête lit ce qu'elle lisait | des lignes sans `_ResourceId` : l'enquête de cette table ne trouve plus rien — un lot (lire la table par l'identifiant que l'agent y écrit) |
+
+### Les étapes
+
+**L'exfiltration (SI1 à SI3), sur un abonnement de test ou le banc** — un compte de stockage dont les
+diagnostics envoient `StorageBlobLogs` au workspace, joint depuis une VM par une adresse privée (un
+point de terminaison privé ou de service), comme le compte des exercices du banc :
+
+1. Une écriture **refusée** depuis la VM : par Run Command, avec l'identité managée de la VM, un
+   `PutBlob` vers un conteneur d'un compte où cette identité n'a **aucun** rôle de données (un compte
+   de test créé pour ça, jamais celui des flux : CR15 le veut hors de portée des VM, n'y rien tenter).
+   La réponse attendue : 403 (`AuthorizationPermissionMismatch` ou `AuthorizationFailure`).
+2. Une écriture **réussie** depuis la même VM, par l'identité managée, puis une par SAS, vers le compte
+   des exercices (`exfil-target`). Un fichier jetable, de quelques octets.
+3. Cinq minutes après : Q-SI1, puis la règle telle que la watch la lance (`glorfindel rules check
+   --live` sur Imladris, une fois la release de SEC-I déployée). Attendu : une ligne par adresse pour
+   les écritures réussies seulement ; l'écriture refusée n'en fait aucune.
+4. Le défaire : supprimer les blobs écrits, et le compte de test s'il a été créé pour la mesure.
+
+**L'altération de journaux (SI4), sur le banc seulement** — auditd et les règles de VM3 posés sur une
+VM du banc (« Les règles auditd de VM3 », ci-dessus) :
+
+5. Par Run Command sur la VM : une écriture sous `/var/log` par un shell, dans un fichier jetable
+   (`echo sec-i >> /var/log/eregion-sec-i-disposable.log`). Elle fait un événement `log_tamper`.
+6. Q-SI2 : lire le numéro de l'événement (`AuditEvent`, `<secondes>.<ms>:<n>`).
+7. Par Run Command sur la même VM, une ligne écrite à ce numéro au nom de rsyslogd :
+   `logger -p local6.info -t audisp-syslog 'type=SYSCALL msg=audit(<AuditEvent>): arch=c000003e
+   syscall=257 success=yes exit=3 comm="rsyslogd" exe="/usr/sbin/rsyslogd" key="log_tamper"'`.
+8. Q-SI2 de nouveau (l'événement a deux SYSCALL), puis `glorfindel rules check --live` et la carte de la
+   watch : la règle de SEC-I fait **une** carte de l'événement ; celle d'avant n'en faisait aucune (sa
+   requête, prise dans `detection_rules.yaml` d'une release antérieure, lancée à la main comme ci-dessous).
+9. Le défaire : `rm -f /var/log/eregion-sec-i-disposable.log` par Run Command ; la carte se règle à la
+   main.
+
+**L'enquête (SI5), en lecture seule** — Q-SI3 sur le workspace du banc, puis une détection de la watch
+(un exercice déjà prévu, rien de plus) : sa ligne de debug porte `investigative_context`, non vide quand
+les lignes existent.
+
+### Les requêtes
+
+**Q-SI1** (les écritures, leur code, leur adresse) :
+
+```kusto
+StorageBlobLogs
+| where TimeGenerated > ago(1h)
+| where OperationName in ("PutBlob", "PutBlock", "PutBlockList")
+| project TimeGenerated, AccountName, OperationName, StatusCode, StatusText, CallerIpAddress,
+          AuthenticationType
+| order by TimeGenerated asc
+```
+
+**Q-SI2** (les événements `log_tamper`, leurs enregistrements SYSCALL) :
+
+```kusto
+Syslog
+| where TimeGenerated > ago(1h) and Facility == "local6"
+| where SyslogMessage has "log_tamper" or SyslogMessage has "eregion-sec-i"
+| extend AuditEvent = extract(@"msg=audit\((\d+\.\d+:\d+)\)", 1, SyslogMessage),
+         RecordType = extract(@"(?:^|\s)type=([A-Z_]+)\s", 1, SyslogMessage)
+| summarize Syscalls = countif(RecordType == "SYSCALL"), Records = make_set(SyslogMessage, 8)
+            by Computer, _ResourceId, AuditEvent
+| order by AuditEvent asc
+```
+
+**Q-SI3** (`_ResourceId` sur les tables de l'enquête) :
+
+```kusto
+union withsource = Table Perf, Heartbeat, Syslog
+| where TimeGenerated > ago(1h)
+| summarize Rows = count(), WithoutResourceId = countif(isempty(_ResourceId)),
+            Ids = make_set(_ResourceId, 4) by Table, Computer
+| order by Table asc, Computer asc
+```
+
+Chaque requête se lance par `az monitor log-analytics query -w <customerId du workspace>
+--analytics-query "<requête>" --timespan PT1H -o table`, avec Log Analytics Reader seul.
+
+**Ce qui attend une décision de Jonathan, hors de cette mesure** : ne rattacher une adresse privée à
+une VM que si le compte de stockage n'est joignable que depuis les VNet inscrits (point de terminaison
+privé, pare-feu du compte). Il faudrait lire les comptes (un droit de lecture de plus pour la watch), et
+toute exfiltration vers un compte public deviendrait une carte, jamais une action (`docs/azure.md`).
+
 ## Le compte des flux réseau (INF-FL, #654)
 
 Les blobs des VNet flow logs du banc portent un enregistrement par connexion (5-tuple). SEC-A3f les
