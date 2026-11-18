@@ -147,7 +147,13 @@ commence par « Connexion après brute force non vérifiée ». Les comptes port
 
 Décision de Jonathan (06/11), issue #609 : quand la corrélation a confirmé, **sur une même VM**, un
 brute force qui a réussi puis une élévation vers root, `decide` propose **au moins `isolate_vm`**,
-quel que soit le choix du modèle. Le harnais du CD d'Imladris (anciennement H0) tirait `block_suspicious_ip` une fois sur
+quel que soit le choix du modèle.
+
+**Il ne fait que proposer, quel que soit le mode** (SEC-E, #846 ; décision de Jonathan du 15/11).
+Les deux faits sont lus dans des lignes Syslog que la VM écrit, sous l'étiquette que l'émetteur
+déclare : un compte local peut les forger. D'ici leur preuve par une source que la VM n'écrit pas
+(SEC-A3, [`corroboration.md`](corroboration.md), §3.8, Q6), le plancher pose une carte
+`floor_proposal` qui propose `isolate_vm`, et n'isole jamais lui-même. Le harnais du CD d'Imladris (anciennement H0) tirait `block_suspicious_ip` une fois sur
 trois sur son cas apparié (2/2, « brute force après un sudo vers root sur la même VM »), au-dessus de
 la porte : l'attaquant bloqué, la VM où il a pris root laissée debout.
 
@@ -168,23 +174,36 @@ que soit le tirage du modèle, la preuve de bout en bout du plancher dans le CD.
   ceux de son incident (même `resource_id`), dans les deux ordres d'arrivée. Un brute force seul (même
   réussi), un sudo seul, deux VM, des échecs sans connexion vue, une vérification impossible
   (`LoginCheck: unchecked`) : pas de plancher, le choix du modèle reste.
-- **Les gardes et le mode s'appliquent ensuite.** En `human_only`, rien ne s'exécute, la carte propose
-  `isolate_vm` et dit pourquoi (« Plancher déterministe (B3a) : … »). Une action que seul un humain
-  approuve (une restauration) n'est jamais perdue : la VM est contenue d'abord, puis une carte la
-  propose. Seulement sur une détection : un `recovery_complete` ou un `detection_timeout` gardent le
-  choix du modèle. Le détail : `docs/glorfindel.md`, les gardes de `decide`.
+- **Le plancher joue en dernier, il propose.** Les gardes, le mode et l'accord des tirages jugent le
+  choix du modèle, jamais une action relevée. Si l'action du modèle part seule (un blocage, un
+  instantané, en `non_disruptive` sur une VM prête), elle part comme ses gardes l'ont jugée, et une
+  carte `floor_proposal` propose `isolate_vm` à côté. Sinon (aucune action, une action retenue,
+  `human_only`), la carte du cycle est celle du plancher : elle propose `isolate_vm` à la place du
+  choix du modèle et dit pourquoi (« Plancher déterministe (B3a) : … »), avec la confiance que le
+  modèle donnait à son propre choix. Elle s'approuve en un clic. Une action que seul un humain
+  approuve (une restauration) n'est jamais perdue : la raison de la carte la nomme. Seulement sur
+  une détection : un `recovery_complete` ou un `detection_timeout` gardent le choix du modèle. Le
+  détail : `docs/glorfindel.md`, les gardes de `decide`.
+- **Les faits ont un TTL à eux, absolu** (SEC-E) : chacun daté à sa confirmation, il compte 900 s
+  (`FACT_TTL_S`) depuis, quels que soient les signaux de la VM qui suivent ; confirmé de nouveau tant
+  qu'il vit, il garde sa date. Une détection que la file de décision retient inscrit ses faits sans
+  prolonger l'incident. **Une levée entière de l'isolation les oublie** : par un humain (`release`,
+  `reset`, la console, le bot, une demande de la file d'actions) ou par la watch après une
+  restauration (`recovery_complete`). La détection suivante de la VM est jugée de nouveau. Une levée
+  que le modèle choisit sur une détection ne les oublie pas.
+- **Une détection qui ne nomme pas la VM** (non attribuée, ou derrière une appliance) garde la carte
+  de l'attribution, jamais approuvable en un clic : le plancher ne se dit que dans sa raison.
 - **Limites.**
-  - L'ordre des deux faits n'est pas vérifié, seulement leur présence dans l'incident en cours.
-  - **Le TTL de l'incident est glissant** : tout signal de la VM le prolonge (300 s depuis le
-    dernier). Et **`confirmed` n'est jamais vidé** : une levée d'isolation par un humain ne l'efface
-    pas. Tant que l'incident vit, toute détection suivante de la VM est relevée à `isolate_vm`.
-  - **En `respond`**, un poll plus long que le TTL (480 s de latence attendue pour Syslog, contre
-    300 s) peut laisser l'incident expirer entre deux détections : un fait est alors perdu pour la
-    suivante, et le plancher ne joue pas.
+  - L'ordre des deux faits n'est pas vérifié, seulement leur présence dans l'incident en cours,
+    chacun dans son TTL.
+  - **En `respond`**, un poll plus long que le TTL de l'incident (480 s de latence attendue pour
+    Syslog, contre 300 s) peut laisser l'incident expirer entre deux détections : un fait est alors
+    perdu pour la suivante, et le plancher ne joue pas.
   - Une commande sensible en root lue par auditd (AUD1, T1059.004) ne compte pas encore comme
     élévation.
-  - Une ligne forgée sur la VM peut faire isoler la VM (jamais l'inverse ; l'isolation est
-    réversible).
+  - Une ligne forgée sur la VM fait proposer l'isolation de la VM : une carte devant un humain,
+    jamais une isolation, et jamais moins que ce que le modèle a choisi. La preuve de ces faits par
+    une source que la VM n'écrit pas reste à SEC-A3.
 
 ## Ses limites, assumées
 

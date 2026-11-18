@@ -116,10 +116,10 @@ def test_a_tag_pushed_after_the_clone_is_fetched(repo):
     assert repo.head() == c3 and res.stdout.split()[-2:] == ["v0.11.0", c3]
 
 
-@pytest.mark.parametrize("which", ["tag", "full", "short"])
+@pytest.mark.parametrize("which", ["tag", "full"])
 def test_a_named_tag_or_commit_is_deployed(repo, which):
     c1, _, c3 = repo.commits
-    ref, want = {"tag": ("v0.2.0", c1), "full": (c3, c3), "short": (c3[:9], c3)}[which]
+    ref, want = {"tag": ("v0.2.0", c1), "full": (c3, c3)}[which]
     res = repo.deploy("--checkout-only", ref)
     assert res.returncode == 0, res.stderr
     assert repo.head() == want and repo.detached()
@@ -132,7 +132,7 @@ def test_a_named_tag_or_commit_is_deployed(repo, which):
     ("HEAD", "branche"),                    # origin/HEAD: the branch it points to
     ("HEAD~1", "invalide"),
     ("v9.9.9", "ni un tag ni un commit"),
-    ("deadbee", "ni un tag ni un commit"),  # hexadecimal, but no such commit
+    ("deadbee", "préfixe de commit"),       # hexadecimal, but no such commit — a prefix, refused as one
     ("v0.10.0;touch pwned", "invalide"),
     ("--detach", "invalide"),
 ])
@@ -143,6 +143,25 @@ def test_anything_but_a_tag_or_a_commit_is_refused_and_nothing_moves(repo, ref, 
     assert said in res.stderr
     assert repo.head() == before and not repo.detached()
     assert not (repo.vm / "pwned").exists()
+
+
+@pytest.mark.parametrize("length", [7, 12, 39])
+def test_a_commit_prefix_is_refused_even_of_a_commit_off_every_branch(repo, length):
+    """SEC-G (audit of 13/11, V-38): a prefix names whichever commit of the VM's repository starts with
+    it — one off every branch, a commit fetched from another origin. The full commit (40) or a tag."""
+    c1 = repo.commits[0]
+    _git(repo.work, repo.env, "checkout", "-q", "--detach", c1)
+    (repo.work / "app.py").write_text("VERSION = 'off every branch'\n")
+    _git(repo.work, repo.env, "commit", "-qam", "off")
+    off = _git(repo.work, repo.env, "rev-parse", "HEAD")
+    _git(repo.work, repo.env, "push", "-q", "origin", f"{off}:refs/heads/tmp")
+    _git(repo.vm, repo.env, "fetch", "-q", "origin")
+    _git(repo.work, repo.env, "push", "-q", "origin", ":refs/heads/tmp")
+    before = repo.head()
+    for ref in (off[:length], repo.commits[2][:length]):
+        res = repo.deploy("--checkout-only", ref)
+        assert res.returncode != 0 and "préfixe de commit" in res.stderr and "40 caractères" in res.stderr, ref
+        assert repo.head() == before and not repo.detached()
 
 
 def test_a_branch_named_like_a_commit_is_still_a_branch(repo):
@@ -519,6 +538,25 @@ def test_activate_checks_out_its_image_s_own_commit_when_the_tag_was_rewritten(r
     assert res.returncode == 0 and "réécrit" not in res.stderr and repo.head() == c1
 
 
+def test_activate_takes_a_prefix_only_when_its_image_names_the_whole_commit(repo, tmp_path):
+    """An image deployed by hand under a prefix before SEC-G, labelled by it: the way back (--activate)
+    takes it when the image's own revision has 40 characters, starts with the prefix, and the VM has
+    that commit — nothing resolved by the prefix. Any other case is refused, as by hand."""
+    c2 = repo.commits[1]
+    prefix = c2[:9]
+    env, log = _with_docker(repo, tmp_path, FAKE_IMAGE_REV=c2)
+    res = repo.deploy("--activate", prefix, env=env)
+    assert res.returncode == 0, res.stderr
+    assert repo.head() == c2 and repo.detached() and f"tag eregion-glorfindel:{prefix} eregion-glorfindel" in log.read_text()
+    for rev in (repo.commits[0], "", c2[:39], prefix + "f" * 31):
+        env, log = _with_docker(repo, tmp_path, FAKE_IMAGE_REV=rev)
+        res = repo.deploy("--activate", prefix, env=env)
+        assert res.returncode != 0 and "préfixe de commit" in res.stderr, rev
+        assert not any(c.startswith(("tag", "compose")) for c in log.read_text().splitlines())
+    res = repo.deploy("--checkout-only", prefix)                                # by hand, never
+    assert res.returncode != 0 and "préfixe de commit" in res.stderr
+
+
 def test_activate_without_its_image_moves_nothing(repo, tmp_path):
     before = repo.head()
     env, log = _with_docker(repo, tmp_path, FAKE_MISSING="eregion-glorfindel:v0.2.0")
@@ -661,6 +699,15 @@ def test_make_start_verifies_the_published_image_before_anything_reaches_imladri
     calls = _make_start.pim.splitlines()
     assert calls[0] == "scripts/published_image.py install-cosign"
     assert calls[1] == "scripts/published_image.py proven glorfindel --ref v0.2.0 --fetch"
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+@pytest.mark.parametrize("length", [7, 12, 39])
+def test_make_start_refuses_a_commit_prefix_before_anything(repo, tmp_path, length):
+    """SEC-G (V-38): REF a commit prefix — refused on the workstation, before cosign, before any ssh."""
+    res, docker_calls, ssh_calls = _make_start(repo, tmp_path, f"REF={repo.commits[2][:length]}")
+    assert res.returncode != 0 and "un préfixe de commit" in res.stderr and "40 caractères" in res.stderr
+    assert ssh_calls == "" and docker_calls == [] and _make_start.pim == ""
 
 
 @pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")

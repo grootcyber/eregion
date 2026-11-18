@@ -101,7 +101,9 @@ make imladris-url                            # l'URL de la console d'Imladris ; 
                                              # EREGION_CONSOLE_TOKEN s'il n'est pas vide, sinon GLORFINDEL_WARROOM_TOKEN
                                              # (l'ancien nom reste valide, rien à renommer) ; le tunnel du poste
                                              # pas armé, une ligne dit make imladris-tunnel-on
-make imladris-tunnel                         # le secours : le tunnel au premier plan (Ctrl+C), et la même URL
+make imladris-tunnel                         # le secours : le tunnel au premier plan (Ctrl+C), et la même URL ;
+                                             # -F none, écoute sur 127.0.0.1, la clé d'hôte épinglée (SEC-G) :
+                                             # la clé SSH vient de l'agent SSH ou de HOST_SSH_KEY, jamais de ~/.ssh/config
 make imladris-status                         # tout tourne ? lit le jeton sur la VM sous l'un ou l'autre nom, sans l'afficher
 make imladris-push                           # host_env.py --check d'abord : refuse un host.env sans jeton de la console (et dit, sans refuser, une variable de never_target vide, NT1)
 make imladris-client-rules                  # WL1 : les règles du banc (infra/glorfindel-host/client_rules.bench.yaml) fondues dans la couche du client d'Imladris, par nom ; la watch redémarre (README, « La couche du client du banc »)
@@ -3056,6 +3058,33 @@ viennent par une montée, dans une PR : `docker buildx imagetools inspect python
 `Digest:`), le même digest dans `annatar/Dockerfile` et `glorfindel/Dockerfile`
 (`tests/unit/test_published_image.py` exige les deux identiques).
 
+**Rafraîchie à chaque release** (SEC-G, #848 ; audit du 13/11, P-06 : le digest épinglé, que rien ne
+rafraîchissait). Deux pièces :
+- **Dependabot propose la montée** chaque lundi (`.github/dependabot.yml`) : le digest de
+  `python:3.12-slim` des deux Dockerfile, en une seule PR (le groupe `base-image`), jamais une autre
+  version de Python (une montée mineure ou majeure se décide, elle ne se propose pas). Elle passe la CI
+  et la relecture comme une autre, et fusionne avant la PR de version ;
+- **la porte de release la vérifie** : son job « image CVEs » construit les deux images depuis l'arbre
+  qu'elle mesure et les passe à grype (`scripts/image_cves.py`, grype `v0.121.1` épinglé par le sha256
+  de son archive, sa base de vulnérabilités tirée dans un pas à part, relancé, jamais pendant
+  l'examen). Une vulnérabilité **High ou Critical, corrigée en amont** (une version corrigée publiée),
+  dans un **paquet du système** (deb, rpm, apk) rend la porte rouge, nommée dans le résumé du run ; une
+  vulnérabilité sans correctif, moins grave, ou d'un paquet Python (l'affaire de `pip-audit`) est
+  comptée, jamais un refus. Un rapport qui ne voit aucune distribution ne passe pas : il ne prouve rien ;
+  une sévérité d'un autre mot que Negligible, Low, Medium, High, Critical ou Unknown (comparés sans tenir
+  compte de la casse) non plus. **Limite** : une CVE que Debian note « Unknown » ou « Negligible » ne refuse
+  pas l'image, même corrigée en amont — la porte suit la note de la distribution.
+  Rouge : fusionner la PR de Dependabot (ou faire la montée à la main, ci-dessus), puis relancer la
+  porte. **Ce job vient avec le patch de `release-gate.yml`, que Jonathan pousse** (l'App n'a pas le
+  droit *Workflows*) : d'ici là, `python3 scripts/image_cves.py scan <image> --grype <chemin>` se lance
+  à la main sur une image construite.
+
+**Pourquoi pas un `apt-get upgrade` dans les Dockerfile** : l'image ne serait plus ce que dit son digest,
+mais ce que les miroirs de Debian servaient le jour de sa construction. Deux constructions du même commit
+pourraient différer (l'image de la porte et celle que `publish.yml` signe, le même jour ou non), et
+l'image signée ne se reconstruirait plus à l'identique. Le prix de la reproductibilité est trop haut pour
+une montée que Dependabot propose chaque semaine et que la porte exige.
+
 Tests : `tests/unit/test_published_image.py` (un faux registre, un faux cosign qui répond comme
 cosign v3.1.3, un faux docker), `tests/unit/test_host_cd.py` (le CD de bout en bout),
 `tests/unit/test_workflows.py`. Mutants M1650–M1669.
@@ -3261,6 +3290,10 @@ qu'elle publie. La PR de version ne passait que la CI d'une PR (200 invariants a
 mesurait en entier le commit publié.
 
 **La batterie** (`.github/workflows/release-gate.yml`), un job par partie :
+- `image-cves` (SEC-G, #848 ; avec le patch de Jonathan) : les deux images construites depuis l'arbre de
+  la porte, aucune vulnérabilité High ou Critical corrigée en amont dans leurs paquets du système
+  (`scripts/image_cves.py`, « Les images publiées », plus haut). Un job de plus au départ : 17 à la fois,
+  sous les 20 de GitHub ;
 - `invariants-azure` et `invariants-rest` : toute la suite, 2 000 séquences par machine d'invariants
   (Azure, AWS), sur Linux, la base Hypothesis de la nuit rejouée d'abord. En deux jobs côte à côte depuis
   CI10b (#581) : la machine Azure seule (un test, environ 22 min), et tout le reste en quatre processus

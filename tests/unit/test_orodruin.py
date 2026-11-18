@@ -826,6 +826,19 @@ def test_the_channel_keeps_its_blobs_for_a_bounded_time():
     assert journal_days > days
 
 
+def test_every_read_write_and_delete_of_the_channel_is_journaled_to_the_bench_workspace():
+    """SEC-G (audit of 13/11, V-39): the channel account's data plane journaled — its blob service, the
+    three categories, toward the bench's workspace, where the identities admitted to the channel only
+    read (Log Analytics Reader). Planned in infra/orodruin/tests/channel_journal.tftest.hcl."""
+    diag = _block("azurerm_monitor_diagnostic_setting", "channel_blobs")
+    assert 'target_resource_id         = "${azurerm_storage_account.channel.id}/blobServices/default"' in diag
+    assert "log_analytics_workspace_id = data.azurerm_log_analytics_workspace.bench.id" in diag
+    assert sorted(re.findall(r'category = "(\w+)"', diag)) == ["StorageDelete", "StorageRead", "StorageWrite"]
+    assert not re.search(r"^\s*(count|for_each)\s*=", diag, re.M)               # always posed
+    reader = _block("azurerm_role_assignment", "bench_logs_reader")
+    assert 'role_definition_name = "Log Analytics Reader"' in reader
+
+
 def test_the_host_acts_on_the_bench_only_and_is_no_target():
     tf = _tf()
     scopes = re.findall(r'resource "azurerm_role_assignment" "(\w+)" \{\n(?:.*\n)*?\s+scope\s+=\s+(\S+)', tf)

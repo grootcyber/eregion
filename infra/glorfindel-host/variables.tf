@@ -11,12 +11,19 @@ variable "subscription_id" {
 }
 
 variable "operator_cidr" {
-  description = "Seule source autorisée en SSH (ton IP publique, en /32). `make imladris-plan OPERATOR_CIDR=…` ; sans valeur, le Makefile la détecte."
+  description = "Seule source autorisée en SSH : ton adresse IPv4 publique, en /32. `make imladris-plan OPERATOR_CIDR=<ton IP>/32` ; sans valeur, le Makefile la lit sur un service tiers, la dit et la vérifie (scripts/operator_cidr.py)."
   type        = string
 
+  # SEC-G (audit du 13/11, V-40) : une seule adresse IPv4 publique, en /32 — jamais une plage (0.0.0.0/1,
+  # /24…), une IPv6 (la VM n'a qu'une adresse publique IPv4), ni une adresse des plages réservées
+  # ci-dessous (les mêmes que scripts/operator_cidr.py, tests/unit/test_operator_cidr.py les garde égales).
+  # L'adresse au préfixe de chaque plage a l'adresse de réseau de la plage : elle en est.
   validation {
-    condition     = can(cidrhost(var.operator_cidr, 0)) && var.operator_cidr != "0.0.0.0/0"
-    error_message = "operator_cidr doit être un CIDR précis (ton IP en /32), jamais 0.0.0.0/0."
+    condition = can(regex("^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}/32$", var.operator_cidr)) && try(alltrue([
+      for r in ["0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16", "172.16.0.0/12", "192.0.0.0/24", "192.168.0.0/16", "198.18.0.0/15", "224.0.0.0/4", "240.0.0.0/4"] :
+      cidrhost("${split("/", var.operator_cidr)[0]}/${split("/", r)[1]}", 0) != cidrhost(r, 0)
+    ]), false)
+    error_message = "operator_cidr doit être ton adresse IPv4 publique en /32 (make … OPERATOR_CIDR=<ton IP>/32) : jamais une plage, une IPv6, une adresse privée ou réservée."
   }
 }
 
