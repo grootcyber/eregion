@@ -1151,8 +1151,8 @@ imladris-start: imladris-known
 	@test -n "$(HOST_IP)" || { echo "Pas de VM : make imladris-up d'abord"; exit 1; }
 	@case "$(origin REF)" in environment*) echo "REF vient de l'environnement (« $$EREGION_DEPLOY_REF ») : rien n'est déployé. La donner sur la ligne de commande : make imladris-start REF=<tag ou commit>." >&2; exit 1;; esac
 	@test -n "$$EREGION_DEPLOY_REF" || { echo "REF exigée : make imladris-start REF=<tag ou commit> — ce chemin construit sur Imladris, il ne prend jamais « le dernier tag » (le CD déploie la release publiée, vérifiée). Rien n'est déployé." >&2; exit 1; }
-	@case "$$EREGION_DEPLOY_REF" in -*|*[!A-Za-z0-9._-]*) echo "REF invalide : « $$EREGION_DEPLOY_REF » (un tag ou un commit)" >&2; exit 1;; esac
 	@case "$$EREGION_DEPLOY_REF" in *[!0-9a-f]*) ;; *) [ $${#EREGION_DEPLOY_REF} -eq 40 ] || { echo "REF « $$EREGION_DEPLOY_REF » : un préfixe de commit — le commit entier (40 caractères) ou un tag v* (SEC-G). Rien n'est déployé." >&2; exit 1; };; esac
+	@case "$$EREGION_DEPLOY_REF" in -*|*[!A-Za-z0-9._-]*) echo "REF invalide : « $$EREGION_DEPLOY_REF » (un tag ou un commit)" >&2; exit 1;; esac
 	@python3 scripts/published_image.py install-cosign
 	@out=$$(python3 scripts/published_image.py proven glorfindel --ref "$$EREGION_DEPLOY_REF" --fetch) \
 	   || { echo "✗ l'image publiée de « $$EREGION_DEPLOY_REF » n'est pas vérifiée (ci-dessus) : rien n'est envoyé à Imladris" >&2; exit 1; }; \
