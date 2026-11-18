@@ -40,6 +40,9 @@ _WEEKLY_HOUR_UTC = 8
 # DRN2 (#754): the keys of the notices (glorfindel/vm_notices.py) this bot posted in a VM's thread —
 # a restart of the bot never posts one twice.
 _NOTICES_POSTED_STORE = Path.home() / ".glorfindel" / "bot_notices_posted.json"
+# DRL1b (#613): the verdicts of the drill of the week this bot posted in the drill's thread, by their key
+# (glorfindel/drill_watch.py ``key``) — a restart never posts one twice.
+_DRILL_POSTED_STORE = Path.home() / ".glorfindel" / "bot_drill_posted.json"
 
 
 def _write_store(path: Path, data) -> None:
@@ -75,6 +78,13 @@ def _younger(at, oldest) -> bool:
 def _load_notices_posted() -> set[str]:
     try:
         return {str(k) for k in json.loads(_NOTICES_POSTED_STORE.read_text())}
+    except (OSError, ValueError, TypeError):
+        return set()
+
+
+def _load_drill_posted() -> set[str]:
+    try:
+        return {str(k) for k in json.loads(_DRILL_POSTED_STORE.read_text())}
     except (OSError, ValueError, TypeError):
         return set()
 
@@ -191,6 +201,8 @@ def _thread_name(key: str) -> str:
     """What the thread is called: the resource's short name, or « Entra ID — identités »."""
     if key == _IDENTITY_THREAD[0]:
         return _IDENTITY_THREAD[1]
+    if key.startswith("drill:"):                         # DRL1b: the drill's own thread
+        return f"drill · {key[len('drill:'):]}"
     return masking.name_said(key) or "unknown"          # never a subscription's id (MSK3)
 
 
@@ -1404,6 +1416,7 @@ class GlorfindelBot(discord.Client):
         self._messages: dict[str, int] = _load_messages()
         self._synced: dict[str, str] = _load_synced()
         self._notices_posted: set[str] = _load_notices_posted()
+        self._drill_posted: set[str] = _load_drill_posted()
         try:
             self._weekly_last: str | None = json.loads(_WEEKLY_STORE.read_text()).get("last")
         except (OSError, ValueError, AttributeError):
@@ -1502,7 +1515,7 @@ class GlorfindelBot(discord.Client):
                     )
 
         thread = await channel.create_thread(
-            name=f"🔴 {vm_name}",
+            name=f"{'🎯' if resource_id.startswith('drill:') else '🔴'} {vm_name}",
             type=discord.ChannelType.public_thread,
         )
         self._threads[resource_id] = thread.id
@@ -1573,6 +1586,10 @@ class GlorfindelBot(discord.Client):
                     await self._post_notices(channel)
                 except Exception as e:      # the notices never stop the cards, the week, the sync
                     _console.print(f"[red]Bot notices error: {_esc_markup(str(e))}[/red]")
+                try:
+                    await self._post_drill(channel)
+                except Exception as e:      # the drill never stops the cards, the week, the sync
+                    _say_failure(_console, "Bot drill error", e)
                 await self._post_weekly(channel)
                 if turn % _SYNC_EVERY == 0:
                     try:
@@ -1697,6 +1714,33 @@ class GlorfindelBot(discord.Client):
             _write_store(_NOTICES_POSTED_STORE, sorted(self._notices_posted))
             posted += 1
         return posted
+
+    async def _post_drill(self, channel) -> bool:
+        """DRL1b (#613; docs/design/drill-banc.md §4.2): the drill of the week's verdict, as the watch
+        judged it (glorfindel/drill_watch.py), posted once in the drill's own thread (« drill · <name> »),
+        opened again or created without the « Incident opened » ping. Its text passes by
+        glorfindel/chat_text.py (``drill_watch.bot_message``); it mentions the role configured — and no
+        one else — only when §4.2 says so. A quiet verdict (disarmed, waiting) says nothing. Returns
+        whether one was posted."""
+        from glorfindel import drill_watch
+        v = drill_watch.load().get("current")
+        if not isinstance(v, dict) or not drill_watch.alerts(v) or not v.get("drill"):
+            return False
+        from eregion_core import drill as dr
+        if not dr.valid_name(v["drill"]):          # a thread's name: a drill's name only, never a store's word
+            return False
+        k = drill_watch.key(v)
+        if k in self._drill_posted:
+            return False
+        thread = await self._get_or_create_thread(channel, drill_watch.thread_key(str(v["drill"])), ping=False)
+        text = drill_watch.bot_message(v)
+        if v.get("mention") and self.ping_role:
+            await thread.send(f"<@&{self.ping_role}> {text}", allowed_mentions=self._role_mentions())
+        else:
+            await thread.send(text, allowed_mentions=discord.AllowedMentions.none())
+        self._drill_posted = (self._drill_posted | {k})
+        _write_store(_DRILL_POSTED_STORE, sorted(self._drill_posted)[-200:])
+        return True
 
     async def _post_weekly(self, channel) -> bool:
         from datetime import datetime, timedelta, timezone

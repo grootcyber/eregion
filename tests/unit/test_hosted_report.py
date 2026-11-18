@@ -836,8 +836,10 @@ def _windows_fail(c):
 
 def _but_runs(said):
     """What a pass says of the campaigns and the windows: the runs' reports (#193, their own
-    listing, said once too) are left out — tests/unit/test_run_channel.py."""
-    return lambda m: None if m.startswith("run reports not pulled") else said.append(m)
+    listing, said once too) are left out — tests/unit/test_run_channel.py; so are the drill's blobs
+    (DRL1b: their own listing, said once too — tests/unit/test_drill_watch.py)."""
+    return lambda m: None if m.startswith(("run reports not pulled", "the drill's blobs not listed")) \
+        else said.append(m)
 
 
 def test_a_failing_pull_is_said_once_while_it_lasts(tmp_path, monkeypatch, index):

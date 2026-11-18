@@ -1481,6 +1481,13 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
         from glorfindel import proposed_verdict
         proposed_verdict.refresh(runs_dir)
 
+    def _judge_drill() -> None:
+        """DRL1b (#613): every minute, the drill of the week judged — its last occurrence's verdict,
+        the absence alarm, by the code over what this host pulled (glorfindel/drill_watch.py), kept for
+        the bot and the console. Never the model; the decision never reads it."""
+        from glorfindel import drill_watch
+        drill_watch.refresh(runs_dir)
+
     _relay_thread: list = [None]
     # JUG2c (#788): a notice queued where no webhook may be waited for (a VM's lock, the
     # reassertion's pass) starts a pass at once, in its own thread — never left to the next minute.
@@ -1747,6 +1754,10 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
                         _propose_verdicts()  # VP1: after the windows are read, on the cards of the week
                     except Exception as exc:
                         _say_failure(console, "watch: _propose_verdicts en erreur", exc, _output_lock)
+                    try:
+                        _judge_drill()       # DRL1b: the drill of the week's verdict, for the bot and the console
+                    except Exception as exc:
+                        _say_failure(console, "watch: _judge_drill en erreur", exc, _output_lock)
             except Exception as exc:
                 # The daemon outlives a bad iteration (unreadable file, transient Azure
                 # error in the TTL/jobs housekeeping); the next poll retries. SEC-F: said escaped —

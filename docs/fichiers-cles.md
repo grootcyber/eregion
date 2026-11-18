@@ -258,6 +258,17 @@ glorfindel/
                           détection attendue par le drill de la semaine (sa copie et ses attentes dans l'image,
                           le statut de la demande, le rapport du run, la fenêtre) reçoit un verdict proposé ;
                           les autres, la raison (docs/design/drill-banc.md §8.2)
+  drill_watch.py        → DRL1b (#613) : le drill de la semaine jugé sur Imladris, chaque minute par la watch —
+                          le verdict de la dernière occurrence (proof, missed, unknown, refused, skipped,
+                          stopped, not_run, rearm_expected, self_disarmed, channel_unread ; sa mention du §4.2),
+                          l'alarme d'absence sur ses quatre conditions ; ~/.glorfindel/drill_verdicts.json (le
+                          verdict courant, l'état des douze dernières occurrences), lu par le bot (son fil
+                          « drill · <nom> », ~/.glorfindel/bot_drill_posted.json) et la console (« Weekly drill »).
+                          Ce qu'Imladris garde du drill, tiré par la watch : runs/glorfindel/orodruin/drill-seen.json
+                          (la dernière liste du canal : listée ou non, depuis quand illisible, le permis tel que
+                          la liste le dit et quand il y était pour la dernière fois, le dernier pouls lu), un
+                          seul fichier écrit d'un coup — aucune copie du permis d'un tirage à l'autre
+                          (docs/design/drill-banc.md §13)
   signal_origin.py      → SEC3 (#274) : ce que la watch prend de runs/*_signals.jsonl — les événements qu'un
                           injecteur émet (attack_started → la règle de la watch, detection_missed → une proposition),
                           et d'eux les seuls champs qu'il écrit ; le reste refusé (journal, compteur), jamais décidé. Le recovery_complete : seul celui de `glorfindel restore` (ce

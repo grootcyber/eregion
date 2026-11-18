@@ -3162,7 +3162,13 @@ async def indicators() -> dict:
                         windows=_read_windows(), runs=runs, liftings=_manual_liftings(since.timestamp()))
         out.update(contain=real["contain"], alone=real["alone"], t0=real["t0"])
         return coverage.feed(out, coverage_matrix(t))
-    return await asyncio.to_thread(gather)
+
+    def told() -> dict:
+        out = gather()
+        if out.get("last_proof"):   # DRL1b (§1.1): the tile says when it comes from the drill of the week
+            out["last_proof"] = {**out["last_proof"], "drill": _drill_of_proof(out["last_proof"])}
+        return out
+    return await asyncio.to_thread(told)
 
 
 def _exercise_indicators(since: datetime, now: datetime, cat: list[dict]):
@@ -3388,6 +3394,34 @@ async def exercise_board() -> dict:
             "glorfindel": board.glorfindel_card(await watch_status(), rules, st, gate),
             "targets": board.blue_cards(vms, st, rules, bench=_bench()),
             "targets_error": targets_error, "other_types": board.other_types(catalog_)}
+
+
+@app.get("/api/dagorlad/drill")
+async def weekly_drill() -> dict:
+    """DRL1b (#613): « Weekly drill » — the drill of the week as the watch judged it last
+    (glorfindel/drill_watch.py, its store): the last occurrence, its state and why, the next one, the
+    arming as Imladris reads it. Read only; what the bot says comes from the same verdict."""
+    from glorfindel import drill_watch
+    store = await asyncio.to_thread(drill_watch.load)
+    current = store.get("current") if isinstance(store.get("current"), dict) else None
+    history = store.get("history") if isinstance(store.get("history"), dict) else {}
+    return {"verdict": current, "alerts": bool(current and drill_watch.alerts(current)),
+            "history": [{"occurrence": str(k), "state": str((h or {}).get("state") or ""),
+                         "code": str((h or {}).get("code") or "")}
+                        for k, h in sorted(history.items())][-6:]}
+
+
+def _drill_of_proof(last: dict | None) -> str:
+    """DRL1b (§1.1): the drill of the week whose occurrence made the last proof — "" when it is not one."""
+    from glorfindel import drill_watch
+    from eregion_core import run_report
+    if not last or not last.get("run_id"):
+        return ""
+    path = _run_reports().get(str(last["run_id"]))
+    runs = run_report.read_reports({str(last["run_id"]): path}, runs_reader.read_json) if path else []
+    if not runs or not runs[0].get("request"):
+        return ""
+    return drill_watch.drill_of_run(_RUNS, str(last["run_id"]), runs[0]["request"])
 
 
 @app.get("/api/dagorlad/plan")
