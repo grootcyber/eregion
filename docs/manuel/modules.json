@@ -1829,6 +1829,18 @@
    "issue": 608
   },
   {
+   "id": "a-injecteur-providers-implicites",
+   "composant": "annatar",
+   "poste": "a-attaquer",
+   "nom": "The offline provider mirror carries the providers the techniques use but do not declare",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "R2BY"
+   ],
+   "issue": 608
+  },
+  {
    "id": "a-injecteur-host-exec",
    "composant": "annatar",
    "poste": "a-attaquer",
