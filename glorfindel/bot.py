@@ -373,6 +373,7 @@ def _embed_body(esc: dict) -> tuple[str, list[tuple[str, str, bool]]]:
         fields += _executed_fields(executed, why)
     elif explanation and why and reason != explanation:
         fields.append(("Pourquoi rien n'est exécuté", discord_text(why)[:1024], False))
+    fields += _proposed_fields(esc)
     plan = esc.get("identity_plan")
     if isinstance(plan, dict) and plan.get("items"):
         fields += _plan_fields(plan)
@@ -380,6 +381,26 @@ def _embed_body(esc: dict) -> tuple[str, list[tuple[str, str, bool]]]:
         steps = "\n".join(f"• {discord_text(s)}" for s in esc["suggested_steps"][:3])
         fields.append(("Prochaines étapes", steps[:1024], False))
     return discord_text(explanation or reason)[:2048], fields
+
+
+def _proposed_fields(esc: dict) -> list[tuple[str, str, bool]]:
+    """VP1 (#615): the verdict proposed on an exercise card — the detection the drill of the week
+    expected — or why none; never on another card. Every value escaped (SEC6, chat_text)."""
+    if esc.get("source") != "exercise" or esc.get("verdict"):
+        return []
+    p = esc.get(esc_module.PROPOSED_FIELD)
+    if isinstance(p, dict):
+        said = (f"{discord_code(p.get('verdict'))} — la détection attendue par le drill "
+                f"{discord_code(p.get('drill'))} : règle {discord_code(p.get('rule'))}, sur sa cible, "
+                f"{int(p.get('after_s') or 0)} s après le T0 (≤ {int(p.get('within_s') or 0)} s). Seule la "
+                "détection est comparée : ne confirmer que si l'action était proportionnée.")
+        return [("Verdict proposé", said[:_FIELD_MAX], False)]
+    if isinstance(esc.get(esc_module.PROPOSED_REFUSED), dict):
+        return [("Verdict proposé", "refusé — à juger", False)]
+    why = esc.get(esc_module.PROPOSED_WHY)
+    if isinstance(why, dict) and why.get("said"):
+        return [("Pas de verdict proposé", discord_text(str(why["said"]))[:_FIELD_MAX], False)]
+    return []
 
 
 def _executed_fields(executed: dict, said: str) -> list[tuple[str, str, bool]]:
@@ -608,7 +629,21 @@ def _save_synced(synced: dict[str, str]) -> None:
 
 
 def _card_signature(esc: dict) -> str:
-    return f"{esc.get('status', '')}|{esc.get('verdict') or ''}|{int(esc.get('occurrences') or 1)}"
+    return (f"{esc.get('status', '')}|{esc.get('verdict') or ''}|{int(esc.get('occurrences') or 1)}"
+            f"|{_proposed_state(esc)}")
+
+
+def _proposed_state(esc: dict) -> str:
+    """VP1: what the card says of its verdict proposed — made, refused, or why none — so that its
+    message is edited when the watch's pass proposes one (it comes after the card, with the run's report)."""
+    if esc.get("source") != "exercise":
+        return ""
+    if isinstance(esc.get(esc_module.PROPOSED_FIELD), dict):
+        return "proposed:" + str(esc[esc_module.PROPOSED_FIELD].get("verdict") or "")
+    if isinstance(esc.get(esc_module.PROPOSED_REFUSED), dict):
+        return "refused"
+    why = esc.get(esc_module.PROPOSED_WHY)
+    return "why:" + str(why.get("code") or "") if isinstance(why, dict) else ""
 
 
 def _card_state_line(esc: dict) -> str:
@@ -1182,6 +1217,42 @@ class _VerdictButton(discord.ui.Button):
             await interaction.channel.edit(archived=True, reason="All escalations handled")
 
 
+_PROPOSED_WORDS = {"confirm": "✓ Confirmer le verdict proposé", "refuse": "✗ Refuser la proposition"}
+
+
+class _ProposedButton(discord.ui.Button):
+    """VP1 (#615): the verdict proposed on an expected exercise card, confirmed — it becomes the
+    verdict of whoever clicks (``confirm_proposed``) — or refused (``refuse_proposed``: gone, the
+    card still to judge). A judge's button (``_JUDGE_PREFIX``): greyed once the card is judged."""
+
+    def __init__(self, esc: dict, what: str, style: discord.ButtonStyle) -> None:
+        super().__init__(label=_PROPOSED_WORDS[what], style=style,
+                         custom_id=f"{_JUDGE_PREFIX}{what}_{esc['id'][:8]}", row=3)
+        self.esc = esc
+        self.what = what
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        who = discord_text(interaction.user.display_name)
+        try:
+            if self.what == "confirm":
+                e = esc_module.confirm_proposed(self.esc["id"], "")
+            else:
+                e = esc_module.refuse_proposed(self.esc["id"], "")
+        except (KeyError, ValueError) as exc:
+            await interaction.response.send_message(f"✗ {discord_text(_masked(exc, self.esc))}", ephemeral=True)
+            return
+        if self.what == "refuse":
+            await interaction.response.edit_message(embed=_build_embed(e), view=_build_view(e))
+            await interaction.followup.send(f"Verdict proposé refusé par **{who}** — la carte reste à juger")
+            return
+        esc_module.resolve(self.esc["id"])        # one click: a judged card is also acknowledged
+        for item in self.view.children:  # type: ignore[union-attr]
+            item.disabled = True  # type: ignore[attr-defined]
+        await interaction.response.edit_message(view=self.view)  # type: ignore[union-attr]
+        await interaction.followup.send(
+            f"{_VERDICT_WORDS.get(e['verdict'], discord_code(e['verdict']))} (proposé, confirmé) — jugé par **{who}**")
+
+
 class EscalationView(discord.ui.View):
     def __init__(self, esc: dict):
         super().__init__(timeout=None)
@@ -1194,6 +1265,9 @@ class EscalationView(discord.ui.View):
             self.add_item(_VerdictButton(esc, "right", discord.ButtonStyle.success))
             self.add_item(_VerdictButton(esc, "wrong", discord.ButtonStyle.danger))
             self.add_item(_VerdictButton(esc, "unsure", discord.ButtonStyle.secondary))
+            if esc.get("source") == "exercise" and isinstance(esc.get(esc_module.PROPOSED_FIELD), dict):
+                self.add_item(_ProposedButton(esc, "confirm", discord.ButtonStyle.success))
+                self.add_item(_ProposedButton(esc, "refuse", discord.ButtonStyle.secondary))
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         """Every button of the card, before its callback (M-3): the clicker must be allowed
@@ -1272,7 +1346,7 @@ class _SettledView(discord.ui.View):
         self.esc_id = esc_id
         short = str(esc_id)[:8]
         ids = ["glorfindel_ack", "glorfindel_cmd", f"glorfindel_exec_{short}",
-               *(f"{_JUDGE_PREFIX}{v}_{short}" for v in _VERDICT_WORDS)]
+               *(f"{_JUDGE_PREFIX}{v}_{short}" for v in (*_VERDICT_WORDS, *_PROPOSED_WORDS))]
         for cid in ids:
             self.add_item(discord.ui.Button(label=cid, custom_id=cid, disabled=True))
 

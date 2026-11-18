@@ -2485,6 +2485,7 @@ function renderToJudge() {
       </div>
       <div class="judge-why" style="-webkit-line-clamp:1;color:var(--text)" title="${anchored ? _attr(_DETECTION_ONLY.has(c.escalation_type) ? _FILED_BEFORE : 'The detection does not name this VM: the card is only filed on it') : _attr((t && t.limit) || c.resource_id || '')}">${anchored ? '⚓ ' : (t ? '🎯 ' : '')}${_attr(vm)}${c.rule_name ? ` · rule ${_attr(c.rule_name)}` : ''}${c.ttp ? ` · ${_attr(c.ttp)}` : ''}${c.severity === 'critical' ? ' · <b style="color:var(--red)">critical</b>' : ''}</div>
       ${c.exercise ? `<div class="judge-why" style="-webkit-line-clamp:1;color:var(--blue)" title="An injector's exercise window covered this VM at that time. A window is the injectors' claim: check the run before trusting it.">⚑ exercise${c.exercise_run ? ` · run <a href="/runs/${encodeURIComponent(c.exercise_run)}" ${_on('click', 'stop')}>${_attr(c.exercise_run)}</a> — check the run ▸` : ' — check the run'}</div>` : ''}
+      ${_proposedLine(c)}
       ${c.recurrence ? `<div class="judge-why" style="-webkit-line-clamp:1;color:var(--yellow)" title="An earlier card on the same IP: in observation nothing is blocked, so a scanner comes back">↻ same IP seen ${_attr(c.recurrence.previous)}× in 7 days — last ${c.recurrence.last_seen ? _relTime(c.recurrence.last_seen) : ''}${c.recurrence.last_verdict ? ', judged ' + _attr(c.recurrence.last_verdict) : ''}</div>` : ''}
       <div class="judge-why" title="${_attr(why)}">${_attr(why)}</div>
       <div class="judge-actions" ${_on('click', 'stop')}>
@@ -2499,6 +2500,56 @@ function renderToJudge() {
   if (_focusCard && document.getElementById('judge-' + _focusCard)) {
     document.getElementById('judge-' + _focusCard).scrollIntoView({ block: 'nearest' });
     _focusCard = null;
+  }
+}
+
+// VP1 (#615): the verdict proposed on an exercise card — the detection the drill of the week expected
+// (its rule, on its target, within its delay after T0). Never a verdict given: the card stays to judge
+// until the operator confirms it (it becomes their verdict) or refuses it (gone, never proposed again).
+// An exercise card without one says why. On the detection only: the decision stays to judge.
+function _proposedLine(c, inModal) {
+  if (!c || !c.exercise) return '';
+  const p = c.proposed_verdict;
+  if (p && typeof p === 'object') {
+    const after = Number(p.after_s), within = Number(p.within_s);
+    return `<div class="judge-why" style="-webkit-line-clamp:2;color:var(--green)" title="The drill ${_attr(p.drill)} expected this detection: rule ${_attr(p.rule)}, on its target, within ${within} s of the run's T0. Only the detection is compared: confirm only if the action was proportionate too.">⚖ proposed: <b>${_attr(p.verdict)}</b> — the detection the drill ${_attr(p.drill)} expected (rule ${_attr(p.rule)}, its target, ${after} s after T0 ≤ ${within} s); the decision stays yours
+      <span ${_on('click', 'stop')}><button class="action" style="color:var(--green)" title="It becomes your verdict" ${inModal ? _on('click', 'confirmProposedFromModal', c.id) : _on('click', 'confirmProposed', c.id)}>✓ Confirm ${_attr(p.verdict)}</button>
+      <button class="action" style="color:var(--dim)" title="The proposal is erased, never made again; the card stays to judge" ${inModal ? _on('click', 'refuseProposedFromModal', c.id) : _on('click', 'refuseProposed', c.id)}>✗ Refuse</button></span></div>`;
+  }
+  if (c.proposed_refused && typeof c.proposed_refused === 'object') {
+    return `<div class="judge-why" style="-webkit-line-clamp:1;color:var(--dim)">⚖ proposed verdict refused — yours to judge</div>`;
+  }
+  const w = c.proposed_why;
+  if (w && typeof w === 'object') {
+    return `<div class="judge-why" style="-webkit-line-clamp:1;color:var(--dim)" title="${_attr(w.code)}">⚖ no proposed verdict: ${_attr(w.said)}</div>`;
+  }
+  return '';
+}
+
+async function confirmProposed(escId, noteId) {
+  const note = (document.getElementById(noteId || 'judge-note-' + escId)?.value || '').trim();
+  try {
+    const r = await _post(`/api/escalations/${_seg(escId)}/proposed/confirm`, { note });
+    const d = await r.json();
+    if (d.error) { toast('✗ ' + d.error); return; }
+    await _post(`/api/action/ack/${_seg(escId)}`);      // as any verdict: one click, the card acknowledged
+    toast(`✓ Proposed verdict confirmed (${d.verdict})`);
+    refreshObservation();
+    refreshState();
+  } catch (e) {
+    toast('✗ ' + e.message);
+  }
+}
+
+async function refuseProposed(escId) {
+  try {
+    const r = await _post(`/api/escalations/${_seg(escId)}/proposed/refuse`, {});
+    const d = await r.json();
+    if (d.error) { toast('✗ ' + d.error); return; }
+    toast('Proposed verdict refused — the card stays to judge');
+    refreshObservation();
+  } catch (e) {
+    toast('✗ ' + e.message);
   }
 }
 
@@ -3322,6 +3373,7 @@ function openJudgeCard(escId) {
   bodyEl.innerHTML = `<div style="border-left:2px solid var(--purple);padding:10px;background:color-mix(in srgb,var(--purple) 4%,var(--bg1))">
       <div style="color:var(--dim);font-size:10px;margin-bottom:6px">${_escCtx(e, e.confidence ? Math.round(e.confidence * 100) + '%' : '', false)}${e.rule_name ? ` · rule ${_attr(e.rule_name)}` : ''} · ${_attr(e.first_seen ? _relTime(e.first_seen) : '')} · ${_attr(e.status || '')}</div>
       ${_cardBody(e, vmName)}${_cardSteps(e)}
+      ${e.verdict || !listed ? '' : _proposedLine(listed, true)}
       <div class="judge-actions" style="margin-top:8px">${verdicts}</div>
     </div>`;
   const btn = document.getElementById('modal-confirm');
@@ -3691,6 +3743,9 @@ const ACTIONS = {
   verifyIdentity,                                 // an identity card's plan, read again on Graph by the watch (IR1a)
   openJudgeCard,                                  // a card's details and its verdict, from TO JUDGE or a tile (JUG1)
   judgeFromModal(id, verdict) { judgeCard(id, verdict, 'judge-modal-note'); closeModal(); },
+  confirmProposed, refuseProposed,                // VP1: a verdict proposed on an exercise card, confirmed or refused
+  confirmProposedFromModal(id) { confirmProposed(id, 'judge-modal-note'); closeModal(); },
+  refuseProposedFromModal(id) { refuseProposed(id); closeModal(); },
   _glowNsgVms,
   stop() {},                                      // only keeps the click from the element around
   ackAllAndClose(ids) { doAckAll(ids); closeModal(); },

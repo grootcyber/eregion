@@ -2043,6 +2043,29 @@ async def set_verdict(esc_id: str, body: dict) -> dict:
     return {"ok": True, "verdict": e["verdict"]}
 
 
+@app.post("/api/escalations/{esc_id}/proposed/confirm")
+async def confirm_proposed(esc_id: str, body: dict) -> dict:
+    """VP1 (#615): the verdict proposed on an expected exercise card, confirmed — it becomes the
+    operator's verdict (``escalations.confirm_proposed``). Never on a card without a proposal."""
+    from glorfindel import escalations as esc_module
+    try:
+        e = esc_module.confirm_proposed(esc_id, str((body or {}).get("note", ""))[:300])
+    except (KeyError, ValueError) as exc:
+        return {"error": str(exc).strip("'")}
+    return {"ok": True, "verdict": e["verdict"]}
+
+
+@app.post("/api/escalations/{esc_id}/proposed/refuse")
+async def refuse_proposed(esc_id: str, body: dict) -> dict:
+    """VP1: the verdict proposed refused — gone, never proposed again; the card stays to judge."""
+    from glorfindel import escalations as esc_module
+    try:
+        esc_module.refuse_proposed(esc_id, str((body or {}).get("note", ""))[:300])
+    except (KeyError, ValueError) as exc:
+        return {"error": str(exc).strip("'")}
+    return {"ok": True}
+
+
 def _since_start(since: str):
     """'7d', '24h', '4w' → the datetime that far back; 'all' → None. Raises ValueError."""
     from datetime import datetime, timedelta, timezone
