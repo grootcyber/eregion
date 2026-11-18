@@ -441,9 +441,10 @@ de `.github/workflows/` (un script de `scripts/`, le canari, les fichiers du CD 
 le tient** (SEC-K, #847, décisions de Jonathan du 15/11 et du 18/11) : `.github/CODEOWNERS` nomme
 chacun de ces fichiers, plus le Terraform du banc (`infra/terraform/`, ses `local-exec`), et eux
 seuls — `tests/unit/test_codeowners.py` les tire des workflows et échoue si l'un manque. **Pas le
-`Makefile`** (décision du 18/11) : ses recettes tournent avec les droits de Jonathan, dont
-`make imladris-cd-install`, qui pousse `discord.env` sur Imladris et y lance `install.sh` en root ; un
-lot de suivi sortira cette recette dans un script sous `infra/glorfindel-host/cd/`. Une fois
+`Makefile`** (décision du 18/11) : ses recettes tournent avec les droits de Jonathan. Celle de
+`make imladris-cd-install`, qui pousse `discord.env` sur Imladris et y lance `install.sh` en root, vit
+dans un script possédé avec le reste du CD, `infra/glorfindel-host/cd/install_from_workstation.sh`
+(CDI1, #918) : la cible vérifie la clé d'Imladris, puis ne fait que l'appeler. Une fois
 « Require review from Code Owners » posé sur la règle de `main` (le geste de Jonathan, après la fusion
 de SEC-K : « Les règles du dépôt », plus bas), une PR qui en touche un attend son approbation ; les
 autres fusionnent comme avant. **D'ici ce réglage, rien ne l'impose.** La clé de l'App est lisible par les sessions : elles
