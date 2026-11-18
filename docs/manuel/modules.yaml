@@ -28,7 +28,7 @@
 # (SEC-D #639, SEC-A1 #643, SEC-A2 #645, SEC-A3 #653, SEC-A4 #666): their titles often carry the finding.
 # GitHub numbers issues and pull requests in one sequence: a number names only one of the two. A brick
 # whose issue or one of whose pull requests is listed here is a security brick.
-issues_securite: [630, 631, 632, 633, 634, 635, 636, 638, 642, 644, 654, 660, 639, 643, 645, 653, 666]
+issues_securite: [630, 631, 632, 633, 634, 635, 636, 638, 642, 644, 654, 660, 639, 643, 645, 653, 666, 847]
 
 composants:
   - id: glorfindel
@@ -1175,6 +1175,15 @@ briques:
     version: "0.6.1"
     lots: [SEC-Fa]
     issue: 852
+
+  - id: s-sec-k
+    composant: socle
+    poste: s-signer
+    nom: "Security hardening"
+    etat: main
+    release: "0.6"
+    lots: [SEC-K]
+    issue: 847
 
   - id: s-inf-fl
     composant: socle

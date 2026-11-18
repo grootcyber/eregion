@@ -435,7 +435,13 @@ droit *Workflows*.** Ses droits : *Contents*, *Pull requests* et *Issues* en éc
 administration, ni secrets, ni environnements, ni paquets. Sans *Workflows*, une branche qui touche
 `.github/workflows/` est refusée au push de l'App : Jonathan pousse et fusionne ce changement lui-même.
 Les workflows tiennent les jetons OIDC (publication des images, canari) et les secrets. Sans ce droit,
-une session ne change pas ce qui tourne avec eux. La clé de l'App est lisible par les sessions : elles
+une session ne change pas un workflow ; mais elle change et fusionne les fichiers qu'ils exécutent hors
+de `.github/workflows/` (un script de `scripts/`, le canari, le CD d'Imladris). **Ce qui le tient**
+(SEC-K, #847, décision de Jonathan du 15/11) : `.github/CODEOWNERS` nomme chacun de ces fichiers, et
+eux seuls — `tests/unit/test_codeowners.py` les tire des workflows et échoue si l'un manque. Une fois
+« Require review from Code Owners » posé sur la règle de `main` (le geste de Jonathan, après la fusion
+de SEC-K : « Les règles du dépôt », plus bas), une PR qui en touche un attend son approbation ; les
+autres fusionnent comme avant. **D'ici ce réglage, rien ne l'impose.** La clé de l'App est lisible par les sessions : elles
 tournent sous le même utilisateur Unix. Elle ne donne que les droits de l'App.
 
 ### L'App (fait, 02/11)
@@ -579,7 +585,16 @@ ci-dessous présents dans le ruleset « main »** : sans eux, une PR rouge devie
        - `lint + tests (py3.12)` ;
        - `terraform test (mock providers)` (CI4, `docs/operations.md`) ;
        - `image (glorfindel)` ;
-       - `image (annatar)`.
+       - `image (annatar)` ;
+     - **Require review from Code Owners** (SEC-K, #847, décision du 15/11) — **seulement une fois
+       SEC-K fusionné** : avant, l'ancien `CODEOWNERS` (sa ligne `*`) ferait attendre chaque PR. Avec
+       lui, une PR qui touche un chemin de `.github/CODEOWNERS` (ce que les workflows à secrets ou à
+       OIDC exécutent, le canari, le CD d'Imladris, `.github/`) attend ton approbation ; les autres
+       fusionnent comme avant. Avec, **Dismiss stale pull request approvals when new commits are
+       pushed** : sans lui, une approbation reste valable pour un commit poussé ensuite. Vérifier, à
+       ce réglage, le nombre d'approbations exigé (il reste à 0 pour les autres PR), puis l'essai :
+       une PR d'une session qui touche `scripts/retry.sh` dit « Review required », une qui ne touche
+       que `docs/` fusionne sans toi.
 
    **Le CD d'Imladris bloque une release sur ces cinq checks**, et sur `publish (glorfindel)`, l'image
    qu'il tire (H1c, #518) : un autre check rouge ou annulé, macOS compris, est dit dans `#deploy`,

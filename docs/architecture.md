@@ -96,14 +96,18 @@ flowchart TB
     W -->|"KQL"| LAW[("Log Analytics")]
     W -->|"LiteLLM"| LLM["LLM<br/>Claude par défaut"]
     W -->|"GET seulement, IR1a"| GR["Microsoft Graph<br/>en lecture"]
+    W -->|"GET seulement, sous Reader :<br/>jobs du coffre, VM, disques (REC1)<br/>journal d'activité (REC1b, LEV2)<br/>attributions de rôle (LEV2)"| ARM["Azure en lecture<br/>Backup, ARM, journal d'activité"]
+    WR & BOT -->|"restore : ses droits lus d'abord,<br/>dont listKeys du compte de transit (RST1)"| AZ
+    BOT -->|"fils, cartes, boutons"| DS["Discord<br/>le salon"]
+    W & WR -->|"webhook, à sens unique :<br/>sans bot, ou bot muet (JUG1, JUG2)"| DS
     classDef blue fill:#2f6fd6,stroke:#1d4a9a,color:#ffffff
     classDef human fill:#2e9e6a,stroke:#1d6b47,color:#ffffff
     classDef data fill:#e9edf3,stroke:#8a96a8,color:#18212b
     classDef azure fill:#7b5cd6,stroke:#4f3a99,color:#ffffff
     class W blue
     class WR,BOT,CLI human
-    class S,K,Q,LLM data
-    class AZ,LAW,GR azure
+    class S,K,Q,LLM,DS data
+    class AZ,LAW,GR,ARM azure
     style Host fill:#f4f7fb,stroke:#aab4c3,color:#18212b
 ```
 
@@ -114,6 +118,28 @@ flowchart TB
 - **La watch lit Microsoft Graph, en lecture seule** (IR1a) : les paramètres du plan d'une carte
   d'identité, et sa vérification après le geste d'un humain. Sans droit sur Graph, elle dit
   « unreadable », jamais « held ». Elle n'écrit jamais sur Entra ID.
+- **La watch lit la reprise d'une VM isolée sur Azure** (REC1, REC1b ; toutes les 60 s dès qu'un
+  coffre est configuré) : le job de restore, sur place, d'un point antérieur à l'incident, la VM
+  démarrée, et la dernière Run Command faite par un principal qui restaure
+  (`GLORFINDEL_RESTORE_PRINCIPALS`). Sur ces faits seuls, elle émet son propre `recovery_complete`,
+  qui suit le chemin de la levée ([plus bas](#la-vie-dune-isolation)) ; un fait qui manque fait une
+  carte, jamais une levée (`glorfindel/recovery_watch.py`).
+- **La watch lit qui a agi sur une VM isolée** (LEV2 ; toutes les 900 s) : le journal d'activité et
+  les attributions de rôle, sous Reader, écrits dans `~/.glorfindel/door/` pour la carte
+  d'isolement. Une information : rien ne lève ni ne retient sur ces faits, le modèle ne les voit pas
+  (`glorfindel/door_facts.py`).
+- **Le restore lit ses droits avant de toucher la VM** (RST1) : la console et le bot, qui
+  restaurent, lisent sur le coffre, la VM et le compte de transit les droits qu'un restore demande
+  — dont les clés du seul compte de transit, un cinquième rôle personnalisé (« Eregion Glorfindel
+  Restore Staging »), jamais donné à la watch ni à l'identité d'Imladris. Un refus d'Azure est dit
+  entier, sans identifiant (`glorfindel/providers/azure/restore_rights.py`).
+- **Deux chemins vers le salon** : le bot (un fil par VM, les cartes, les boutons) et le webhook, à
+  sens unique, de la watch et de la console. Sans bot, le webhook porte les escalades et l'annonce
+  de chaque action prise seule ; bot configuré, il se tait, sauf quand le bot est muet (son
+  battement absent ou de plus de 3 min) : il porte alors l'annonce d'une action prise seule, avec la
+  mention du rôle `DISCORD_PING_ROLE` (JUG1, JUG2 ; [`glorfindel.md`](glorfindel.md), « alerting
+  webhook + bot Discord »). Son URL porte son jeton : c'est un secret ([carte des
+  identités](design/identites.md)).
 
 - **Un fichier d'état par VM**, nommé `<nom>--<empreinte de l'ID>.json` en minuscules : deux VMs
   homonymes dans deux groupes ne se mélangent pas, et la casse de l'ID ne crée pas de doublon.
@@ -201,7 +227,9 @@ qu'elle n'est pas prête reçoit en plus, du contrôle de préparation, une cart
 flowchart LR
     LLM["Réponse du LLM<br/>tool call"] --> P{"décision<br/>lisible ?"}
     P -->|non| E0["escalade forcée"]
-    P -->|oui| K{"quelle<br/>action ?"}
+    P -->|oui| F{"plancher B3a :<br/>brute force réussi et root<br/>confirmés sur la VM ?"}
+    F -->|"oui : isolate_vm,<br/>quel que soit le modèle"| K{"quelle<br/>action ?"}
+    F -->|"non : le choix<br/>du modèle"| K
     K -->|"destructive<br/>restore, delete…"| E7["destructive_action<br/>jamais autonome"]
     K -->|"inconnue"| E1["proposed_action"]
     K -->|"autonome"| X{"implémentée ?"}
@@ -214,7 +242,7 @@ flowchart LR
     A -->|non| E4["unattributed_signal"]
     A -->|oui| T{"isoler, bloquer :<br/>télémétrie lue ?"}
     T -->|"requête d'enquête<br/>en échec"| E8["telemetry_gap"]
-    T -->|oui| R{"lever :<br/>après recovery_complete ?"}
+    T -->|oui| R{"lever : un recovery_complete<br/>émis par Glorfindel,<br/>neutralisation prouvée ?"}
     R -->|non| E5["release_hold"]
     R -->|oui| M{"mode effectif<br/>de la VM"}
     M -->|"human_only, ou VM<br/>pas encore prête"| E6["mode_hold"]
@@ -227,7 +255,7 @@ flowchart LR
     classDef warn fill:#fbe3e3,stroke:#d64545,color:#7a1f1f
     classDef go fill:#2e9e6a,stroke:#1d6b47,color:#ffffff
     class LLM blue
-    class P,K,X,C,S,A,T,R,M,D guard
+    class P,F,K,X,C,S,A,T,R,M,D guard
     class E0,E1,E2,E3,E4,E5,E6,E7,E8,E9,E10 warn
     class GO go
 ```
@@ -235,6 +263,16 @@ flowchart LR
 Le mode configuré n'est qu'une intention : une VM ne devient autonome qu'une fois contrôlée
 **prête** (droits, préséance des règles, coupure des sessions possible), ou après que ses
 réserves ont été montrées et acceptées.
+
+**Le plancher B3a, appliqué avant toutes les gardes** (`glorfindel/agent.py`,
+`_root_compromise_floor`) : quand la corrélation a confirmé sur la VM — par cette détection ou par
+celles que son incident garde — un brute force SSH suivi d'une connexion réussie et une élévation
+vers root, l'action devient `isolate_vm`, par-dessus le choix du modèle ; une action qui demande un
+humain (un restore…) reste proposée, sur sa propre carte. Chaque tirage de confirmation est élevé de
+même : l'accord des tirages ne le contredit pas. Les gardes et le mode jugent ensuite l'isolation
+comme celle du modèle : en `human_only`, une carte la propose ; en `non_disruptive`, sur une VM
+prête, elle part seule. Ces deux faits sont lus dans des lignes Syslog que la VM écrit : ce qui
+reste ouvert, et ce qui est planifié, est au [modèle de menace](design/modele-de-menace.md), §4.
 
 ## La vie d'une isolation
 
@@ -283,6 +321,13 @@ stateDiagram-v2
   une seule VM : il le déclare (`platform_open`).
 - **La levée balaie toujours** : elle défait ce que l'état connaît, puis relit chaque carte et
   retire ce que l'état ignore (crash, réponse perdue, ancienne adresse d'une carte).
+- **Qui lève** : un humain (la CLI, la console, le bot), ou la watch seule, sur un
+  `recovery_complete` que Glorfindel a émis lui-même et qui prouve la neutralisation de la dernière
+  Run Command — celui de `glorfindel restore --wait` sur cet hôte, ou celui que la watch construit
+  sur les faits qu'elle lit sur Azure après un restore fait ailleurs (REC1, REC1b). Seule une VM en
+  `non_disruptive` est levée seule ; en `human_only`, une carte propose la levée. Les faits de la
+  porte (LEV2) sont montrés sur la carte d'isolement, pour information : la levée ne les lit pas
+  encore ([`design/levee-probation.md`](design/levee-probation.md)).
 
 ## La réaffirmation
 
