@@ -1815,6 +1815,18 @@
    "issue": 608
   },
   {
+   "id": "a-injecteur-identite-managee",
+   "composant": "annatar",
+   "poste": "a-attaquer",
+   "nom": "The control-plane warmup authenticates by the host's managed identity (ARM_USE_MSI), never forced over a service-principal secret",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "MSI1"
+   ],
+   "issue": 608
+  },
+  {
    "id": "a-scenario-bastion",
    "composant": "annatar",
    "poste": "a-attaquer",
