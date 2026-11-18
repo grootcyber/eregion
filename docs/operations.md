@@ -5360,7 +5360,7 @@ un geste de Jonathan. Les noms sont des gabarits (`<…>`) : aucun identifiant r
 |---|---|---|---|---|
 | **SI1** | Azure Storage journalise dans `StorageBlobLogs` une écriture **refusée** (403), avec l'adresse privée de l'appelant dans `CallerIpAddress` (l'auditeur l'a laissée en hypothèse) | étapes 0 à 3, Q-SI1, les deux requêtes de la règle | la règle d'`origin/main` comptait l'écriture refusée, celle de la branche non : la correction tient | une écriture refusée n'est pas journalisée, ou sans l'adresse privée : la correction ne change rien au banc ; le dire dans `docs/azure.md` |
 | **SI2** | `StatusCode` est un texte (`"201"` pour `PutBlob`, `PutBlock`, `PutBlockList` réussis, `"403"` refusé) que `toint()` lit | Q-SI1 | rien | une autre forme (un nombre, un autre code de succès) : corriger le filtre de la règle et son test |
-| **SI3** | Une écriture réussie rend un code 2xx, par l'identité managée comme par SAS (`StatusText` peut différer : `Success`, `SASSuccess`…) | étape 2 ; pour la SAS, Q-SI1 sur 30 jours là où une SAS écrit déjà | le filtre par le code est le bon | un succès hors 2xx : élargir le filtre, jamais aux refus. Sans écriture par SAS au banc, la partie SAS reste ouverte : le dire dans `docs/azure.md` |
+| **SI3** | Une écriture réussie rend un code 2xx, par l'identité managée comme par SAS (`StatusText` peut différer : `Success`, `SASSuccess`…) | étape 2 ; pour la SAS, Q-SI1 sur 30 jours (`ago(30d)`, `--timespan P30D` ; au plus la rétention du workspace) là où une SAS écrit déjà | le filtre par le code est le bon | un succès hors 2xx : élargir le filtre, jamais aux refus. Sans écriture par SAS au banc, la partie SAS reste ouverte : le dire dans `docs/azure.md` |
 | **SI4** | Le noyau écrit un seul enregistrement SYSCALL par événement d'audit. Une ligne `local6` écrite au numéro d'un événement est lue par la règle comme un second enregistrement, distinct | étapes 5 à 8, Q-SI2, les deux requêtes de la règle | la règle d'`origin/main` effaçait l'événement, celle de la branche en fait une carte | deux SYSCALL vrais et distincts dans un même événement : la règle ferait des cartes à tort — en décider avec Jonathan |
 | **SI5** | `_ResourceId` est rempli, à l'identifiant de la VM, sur les lignes `Perf` et `Heartbeat` de l'agent Azure Monitor (il l'est sur `Syslog`, que le routage lit) | Q-SI3 | l'enquête lit ce qu'elle lisait | des lignes sans `_ResourceId` : l'enquête de cette table ne trouve plus rien — un lot (lire la table par l'identifiant que l'agent y écrit) |
 
@@ -5402,10 +5402,15 @@ az network private-endpoint dns-zone-group create -g $RG --endpoint-name pe-$SA 
 **Les contrôles, avant d'écrire :**
 
 ```zsh
-# Aucun rôle de données pour l'identité de la VM, ni sur le compte, ni au-dessus.
+# La VM a une identité managée système : sans elle, principalId est vide et le contrôle suivant ne
+# vérifie rien (l'étape 1 écrit avec cette identité).
+az vm show -g $RG -n $VM --query identity.type -o tsv          # → SystemAssigned (ou « SystemAssigned, UserAssigned »)
 PRINCIPAL=$(az vm show -g $RG -n $VM --query identity.principalId -o tsv)
-az role assignment list --assignee $PRINCIPAL --all --query "[].{role:roleDefinitionName, scope:scope}" -o table
-# → aucune ligne « Storage Blob Data … » sur $SA_ID, son groupe ou l'abonnement.
+[[ -n $PRINCIPAL ]] && echo "principal lu" || echo "AUCUNE identité système : s'arrêter ici"
+# Aucun rôle de données pour elle, ni sur le compte, ni au-dessus, ni hérité, ni par un groupe.
+az role assignment list --assignee $PRINCIPAL --all --include-inherited --include-groups \
+  --query "[].{role:roleDefinitionName, scope:scope}" -o table
+# → aucune ligne « Storage Blob Data … » sur $SA_ID, son groupe, l'abonnement ou un groupe d'administration.
 az monitor diagnostic-settings list --resource "${SA_ID}/blobServices/default" -o table   # → sec-i-blob
 az network private-endpoint show -g $RG -n pe-$SA --query "customDnsConfigs[].ipAddresses[]" -o tsv
 # → une adresse privée ; depuis la VM (Run Command), « getent hosts <compte>.blob.core.windows.net »
@@ -5429,9 +5434,11 @@ La sortie attendue est `403`.
 **Étape 2, les écritures réussies.** Depuis la même VM, par son identité managée, vers un compte où elle
 écrit déjà par une adresse privée : au banc, celui des exercices (`exfil-target`). Le même script, le
 conteneur et le compte changés, rend `201`. Pour la SAS (SI3), Q-SI1 sur 30 jours là où une SAS écrit
-déjà. Sans écriture par SAS, la partie SAS de SI3 reste ouverte.
+déjà : dans `q-si1.kql`, `ago(1h)` devient `ago(30d)`, et la commande prend `--timespan P30D`. La
+rétention du workspace borne cette durée (30 jours au banc ; moins, si elle est plus courte). Sans
+écriture par SAS, la partie SAS de SI3 reste ouverte.
 
-**Étape 3, la mesure, cinq minutes après :**
+**Étape 3, la mesure, quinze minutes après** (`StorageBlobLogs` met souvent 5 à 15 minutes à arriver) :
 1. Q-SI1 : la ligne refusée doit avoir `StatusCode == "403"` et une adresse privée, les réussies `"201"`.
 2. La requête de `data-exfiltration-blob` de la branche (`rule-branch.kql`, plus bas) : une ligne par
    adresse pour les écritures réussies **seulement**.
@@ -5467,7 +5474,7 @@ auditd et les règles de VM3 sont posés sur une VM du banc (« Les règles audi
    az vm run-command invoke -g rg-celebrimbor -n <VM du banc> --command-id RunShellScript --scripts @sec-i-forged.sh
    ```
 
-8. La mesure, dans les dix minutes (la fenêtre de la règle) :
+8. La mesure, quelques minutes après (les fenêtres des requêtes de règle élargies, plus bas) :
    - Q-SI2 : l'événement a deux SYSCALL distincts ;
    - la requête de `t1070-002-log-tamper` de la branche : **une** ligne pour l'événement ;
    - celle d'`origin/main` : aucune.
@@ -5492,7 +5499,8 @@ az monitor log-analytics query -w $WS_CUSTOMER --analytics-query "$(< q-si1.kql)
 
 Log Analytics Reader suffit.
 
-**La requête d'une règle**, depuis une copie à jour du dépôt, la branche récupérée :
+**La requête d'une règle**, depuis une copie à jour du dépôt. `origin/lot/sec-i-enquete-memoire` n'existe
+qu'une fois la branche poussée, avec la PR, avant la fusion :
 
 ```zsh
 git fetch origin
@@ -5504,8 +5512,19 @@ for which in branch main; do
 done
 ```
 
-Puis `--analytics-query "$(< rule-branch.kql)"`, puis `"$(< rule-main.kql)"`. Chaque requête garde son
-propre `ago()` (5 min pour le blob, 10 min pour les journaux) : la lancer dans cette fenêtre.
+Chaque requête garde la fenêtre de sa règle : `ago(5m)` pour le blob, `ago(10m)` pour les journaux.
+`StorageBlobLogs` arrive souvent 5 à 15 minutes après l'écriture : lancée dans les cinq minutes, la
+requête rendrait vide, celle de la branche comme celle de main, et rien ne se comparerait. La fenêtre
+s'élargit donc **dans les deux fichiers extraits seulement**, à l'identique, avant de les lancer ; la règle
+livrée ne change pas :
+
+```zsh
+sed -i 's/ago(5m)/ago(1h)/; s/ago(10m)/ago(1h)/' rule-branch.kql rule-main.kql
+grep -c 'ago(1h)' rule-branch.kql rule-main.kql      # → 1 et 1 : une seule fenêtre par requête
+```
+
+Puis `--analytics-query "$(< rule-branch.kql)"`, puis `"$(< rule-main.kql)"`, avec `--timespan PT1H`.
+Lancées dans l'heure qui suit les écritures, sans autre écriture vers ces comptes dans l'heure.
 
 **Q-SI1** (les écritures, leur code, leur adresse), dans `q-si1.kql` :
 
