@@ -143,3 +143,127 @@ def test_a_next_page_on_arm_is_followed():
     pages = [_page([{"a": 1}], "https://management.azure.com/next?page=2"), _page([{"b": 2}])]
     with patch("requests.get", side_effect=lambda *a, **k: pages.pop(0)):
         assert c._activity_events(VM, "2026-11-18T09:00:00Z") == [{"a": 1}, {"b": 2}]
+
+
+# ── The block file that can't be read ──────────────────────────────────────────────────────
+
+def _rid(rg: str, name: str = "web") -> str:
+    return f"/subscriptions/{SUB}/resourceGroups/{rg}/providers/Microsoft.Compute/virtualMachines/{name}"
+
+
+def _block(rid: str, ip: str) -> None:
+    from glorfindel import actions
+    actions._save_block_state("web", ip, rid, nsg="rg-app/nsg-web", nsg_scope="nic", rule=f"r-{ip}",
+                              placements=[{"nsg_rg": "rg-app", "nsg_name": "nsg-web", "rule": f"r-{ip}"}])
+
+
+def _spoil(rid: str) -> None:
+    from glorfindel import actions
+    actions._state_file(actions._BLOCK_STATE_DIR, rid).write_text("{not json")
+
+
+def test_unblocking_one_address_of_an_unreadable_file_keeps_the_file():
+    """The lab's sequence: two addresses blocked, the file corrupted, one unblocked — the file was
+    deleted with the other's entry. It stays, listed unreadable."""
+    from glorfindel import actions
+    rid = _rid("rg-app")
+    _block(rid, "203.0.113.7")
+    _block(rid, "198.51.100.9")
+    _spoil(rid)
+    actions._clear_block_state(rid, "203.0.113.7")
+    f = actions._state_file(actions._BLOCK_STATE_DIR, rid)
+    assert f is not None and f.read_text() == "{not json"
+    assert f"blocks/{f.name}" in actions.unreadable_states()
+
+
+def test_a_readable_file_keeps_the_other_addresses_entries():
+    """Witness: a readable file loses the unblocked address only."""
+    from glorfindel import actions
+    rid = _rid("rg-app")
+    _block(rid, "203.0.113.7")
+    _block(rid, "198.51.100.9")
+    actions._clear_block_state(rid, "203.0.113.7")
+    assert [e["ip"] for e in actions._load_block_entries(rid)] == ["198.51.100.9"]
+
+
+def test_a_new_block_sets_an_unreadable_file_aside_never_writes_over_it():
+    from glorfindel import actions
+    rid = _rid("rg-app")
+    _block(rid, "203.0.113.7")
+    _spoil(rid)
+    _block(rid, "198.51.100.9")
+    aside = list((actions._BLOCK_STATE_DIR / actions.ASIDE_DIR).glob("*.json"))
+    assert len(aside) == 1 and aside[0].read_text() == "{not json"
+    assert [e["ip"] for e in actions._load_block_entries(rid)] == ["198.51.100.9"]
+    assert f"blocks/{actions.ASIDE_DIR}/{aside[0].name}" in actions.unreadable_states()
+    # Never a state again: out of the blocks listed.
+    assert [e["ip"] for e in actions.active_blocks()] == ["198.51.100.9"]
+
+
+def test_an_annotation_never_writes_over_an_unreadable_file():
+    from glorfindel import actions
+    rid = _rid("rg-app")
+    _block(rid, "203.0.113.7")
+    _spoil(rid)
+    actions._update_block_entry(rid, "203.0.113.7", unblock_failed=["x"])
+    assert actions._state_file(actions._BLOCK_STATE_DIR, rid).read_text() == "{not json"
+
+
+# ── A state file is a VM's only when the id it records is ─────────────────────────────────
+
+# Two VMs named `web` in two groups whose ids meet on the 8 hex of a state file's name (32 bits: found
+# in a few seconds; whoever can create a group and a VM in the subscription finds it as fast).
+HOMONYM_A, HOMONYM_B = _rid("rg-14652"), _rid("rg-42874")
+
+
+def _iso(rid: str, at: str) -> None:
+    from glorfindel import actions
+    actions._save_isolation_state(rid, {"resource_id": rid, "placements": [], "isolated_at": at})
+
+
+def test_the_two_homonyms_meet_on_their_8_hex():
+    from glorfindel import actions
+    assert actions._rid_hash(HOMONYM_A) == actions._rid_hash(HOMONYM_B)
+    assert actions._rid_key(HOMONYM_A) != actions._rid_key(HOMONYM_B)
+
+
+def test_two_homonyms_whose_keys_meet_keep_two_states():
+    """The second's state wrote over the first's — the first out of the reassertion, REC1, the TTL card."""
+    from glorfindel import actions
+    _iso(HOMONYM_A, "a")
+    _iso(HOMONYM_B, "b")
+    assert actions._load_isolation_state(HOMONYM_A)["isolated_at"] == "a"
+    assert actions._load_isolation_state(HOMONYM_B)["isolated_at"] == "b"
+    assert sorted(i["resource_id"] for i in actions.active_isolations()) == sorted([HOMONYM_A, HOMONYM_B])
+    actions._clear_isolation_state(HOMONYM_B)
+    assert actions._load_isolation_state(HOMONYM_A)["isolated_at"] == "a"
+    assert actions._load_isolation_state(HOMONYM_B) is None
+
+
+def test_a_file_found_by_its_name_is_read_only_when_its_id_is_the_vms():
+    """The file of the first homonym, there under the 8-hex name: never the second's."""
+    from glorfindel import actions
+    _iso(HOMONYM_A, "a")
+    assert actions._state_file(actions._ISOLATION_STATE_DIR, HOMONYM_B) is None
+    assert actions._load_isolation_state(HOMONYM_B) is None
+
+
+def test_the_start_up_migration_keeps_both_homonyms():
+    from glorfindel import actions
+    _iso(HOMONYM_A, "a")
+    _iso(HOMONYM_B, "b")
+    actions.migrate_state_files()
+    assert actions._load_isolation_state(HOMONYM_A)["isolated_at"] == "a"
+    assert actions._load_isolation_state(HOMONYM_B)["isolated_at"] == "b"
+
+
+def test_the_second_homonym_finds_its_file_once_the_first_is_gone():
+    """Its 128-bit file, read by id whatever the 8-hex name holds; written again under the 8-hex one."""
+    from glorfindel import actions
+    _iso(HOMONYM_A, "a")
+    _iso(HOMONYM_B, "b")
+    actions._clear_isolation_state(HOMONYM_A)
+    assert actions._load_isolation_state(HOMONYM_B)["isolated_at"] == "b"
+    _iso(HOMONYM_B, "c")
+    files = list(actions._ISOLATION_STATE_DIR.glob("*.json"))
+    assert len(files) == 1 and actions._load_isolation_state(HOMONYM_B)["isolated_at"] == "c"
