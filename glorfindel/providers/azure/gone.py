@@ -5,7 +5,7 @@ subscription (I7S, #303), for the release and the unblock (I5R) (moved from rele
 from __future__ import annotations
 
 from glorfindel.providers.azure.nsg import _rule_name
-from glorfindel.providers.azure.older_names import older_not_ours, recorded_names
+from glorfindel.providers.azure.older_names import older_left, older_taken, recorded_names
 from glorfindel.providers.azure.turned import _turned_guard
 from glorfindel.providers.azure.sdk import _is_not_found
 from glorfindel.response.ids import _parse_nsg_resource_id, _same_id
@@ -115,8 +115,8 @@ class GoneVmMixin:
                              f"NSG de l'abonnement (liste illisible : {_first_line(exc)[:_ERR_MAX]}), "
                              f"{_GONE_WORDS[act][0]} non vérifiée"]
         from glorfindel.response.state import _load_block_entries, _load_isolation_state
-        recorded = recorded_names(_load_isolation_state(resource_id) or {}, _load_block_entries(resource_id))
-        cache: dict = {}
+        recorded = recorded_names(_load_isolation_state(resource_id) or {}, _load_block_entries(resource_id),
+                                  resource_id)
         for nsg in nsgs:
             n_rg, n_name = _parse_nsg_resource_id(nsg.id)
             for r in (getattr(nsg, "security_rules", None) or []):
@@ -125,11 +125,9 @@ class GoneVmMixin:
                 if (name.lower() in older and name.lower() not in names
                         and (n_rg.lower(), n_name.lower(), name.lower()) not in stuck):
                     nid = older[name.lower()]
-                    if why := older_not_ours(self._network, cache, nsg, r, nid, _recorded_ips(resource_id, nid),
-                                             recorded):
-                        failed.append(f"{name} ({n_name}) laissée : nom d'une version antérieure, et {why} — à "
-                                      f"retirer à la main si c'est celle de la VM supprimée, "
-                                      f"{_GONE_WORDS[act][0]} non vérifiée")
+                    if not older_taken(r, n_rg, n_name, nid, (), recorded):
+                        failed.append(older_left(n_rg, n_name, r, f"la carte {nid.rsplit('/', 1)[-1]} de la VM "
+                                                 "supprimée", f"{_GONE_WORDS[act][0]} non vérifiée"))
                         continue
                     taken = True
                 if (name.lower() in names or taken) and (n_rg.lower(), n_name.lower(), name.lower()) not in stuck:
@@ -142,13 +140,3 @@ class GoneVmMixin:
                     elif deleted is not None:
                         deleted.append(name)
         return failed
-
-
-def _recorded_ips(resource_id: str, nic_id: str) -> list[str]:
-    """The addresses this VM's local records give a NIC (its isolation's placements, its blocks')."""
-    from glorfindel.response.state import _load_block_entries, _load_isolation_state
-    rows = list((_load_isolation_state(resource_id) or {}).get("placements") or [])
-    rows += [p for e in _load_block_entries(resource_id) for p in e.get("placements") or []]
-    want = nic_id.rstrip("/").lower()
-    return sorted({ip for p in rows if isinstance(p, dict) and (p.get("nic_id") or "").rstrip("/").lower() == want
-                   for ip in p.get("ips") or [] if isinstance(ip, str)})

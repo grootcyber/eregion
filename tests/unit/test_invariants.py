@@ -3559,13 +3559,32 @@ class IsolationMachine(RuleBasedStateMachine):
 
     def _release_until_done(self, vm: str) -> dict:
         out = {}
-        for _ in range(3):
+        for _ in range(4):
             out = self.connector.release_isolation(vm)
             if out["status"] == "released":
                 if vm not in self.deleted:
                     assert self._released(vm, own=True), f"I3: release said released, {vm} is not back to its design"
                 break
+            self._operator_takes_off_the_older_said(out)
         return out
+
+    def _operator_takes_off_the_older_said(self, out: dict) -> list:
+        """SEC-H, Jonathan's decision (19/11): a rule under an earlier version's name that nothing
+        proves the VM's — its state lost, written over since — is left and said, with the command
+        that takes it off by hand. The operator runs it (the machine's homonyms never meet on those
+        names: what is said is the VM's own). Only what the message names."""
+        import re as _re
+
+        from .fake_azure import nsg_id
+        taken = []
+        for text in out.get("failed") or []:
+            if "version antérieure" not in text:
+                continue
+            for rg, nsg, name in _re.findall(r"az network nsg rule delete -g (\S+) --nsg-name (\S+) -n (\S+)", text):
+                g = self.fake.nsgs.get(key(nsg_id(rg, nsg)))
+                if g is not None and g["rules"].pop(name.rstrip(" ;,"), None) is not None:
+                    taken.append(name)
+        return taken
 
     def _operator_supplies_originals(self, vm: str, out: dict):
         """I7 with Q7: a NIC whose original NSG is unknown or gone stays in quarantine,
@@ -3638,10 +3657,12 @@ class IsolationMachine(RuleBasedStateMachine):
                 self._operator_supplies_originals(vm, out)
                 out = self._release_until_done(vm)
             assert out["status"] == "released", f"I7: {vm} could not be released: {out}"
-            for _ in range(3):
+            for _ in range(4):
                 unblocked = self.connector.unblock_ip(ATTACKER, vm)
                 if unblocked["status"] in _LIFTS["unblock"][0]:
                     break
+                if self._operator_takes_off_the_older_said(unblocked):
+                    continue                    # said, taken off by hand (SEC-H): tried again
                 # U7D (seed 1006 at 60): a release just put another VM back on an NSG where one
                 # of this VM's rules, turned into an allow, aims at the address it took — kept
                 # for it, and so the deny that waits behind. Said (checked, as by the rule), then

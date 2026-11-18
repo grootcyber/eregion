@@ -170,22 +170,24 @@ pour la VM (un blocage IPv6) garde son début et 64 bits de l'empreinte de l'adr
 sa levée :
 - **lu** : la vérification et la réaffirmation lisent ces noms (`_older_rule_bases`), une isolation ou un blocage
   qui y tient est vérifié, jamais reposé en double ;
-- **jamais cru sur le nom** : une règle sous un ancien nom n'est à une carte que si l'état de sa VM l'enregistre
-  pour elle (la levée et le déblocage défont leurs placements par leur nom ; le `reset` les lit dans l'état, même
-  si l'adresse de la carte a changé depuis), ou, sur un NSG qui gouverne la carte, si elle ne couvre l'adresse
-  d'aucune autre carte vivante que ce NSG gouverne — quoi qu'elle couvre maintenant (l'adresse de la carte a pu
-  changer, L26), retournée en autorisation ou non (A0) ; celle qui couvre une autre carte vivante (un homonyme
-  dont le hash a rencontré le sien, sur un NSG que deux VNet partagent, ou la carte qui a pris l'ancienne
-  adresse) reste ; le NSG ou les cartes illisibles, elle n'est ni retirée ni lue partie : dite, l'opération non
-  vérifiée ;
-- **hors de vue** : sur le NSG qu'une carte laissée nue ne porte plus, et pour une VM supprimée (sur tous les NSG
-  de l'abonnement), deux VM de deux VNet ont souvent la même adresse privée — un refus qui la vise n'y prouve rien.
-  Une règle d'un ancien nom n'y est à la carte que si l'état de sa VM l'enregistre sur ce NSG pour elle, ou si
-  c'est un refus de ses adresses (pour une VM supprimée, celles que ses enregistrements lui donnent) qui ne couvre
-  l'adresse d'aucune autre carte vivante que ce NSG gouverne (attachée, ou sur l'un de ses subnets) ; toute autre
-  est laissée et dite (`older_names.py`), jamais une levée « faite » — un homonyme dont le hash a rencontré le sien
-  peut ainsi retenir la levée, dite, jamais perdre son refus ; les marques de 8 hex (un nom tronqué) suivent la
-  même règle ;
+- **jamais cru sur le nom — on ne retire que ce qui est prouvé** (décision de Jonathan, 19/11) : une règle sous
+  un ancien nom (6 ou 8 hex, un nom tronqué compris) n'est retirée que si **les trois** tiennent : l'état de sa VM
+  enregistre cette règle, sur ce NSG, pour cette carte ; le côté de la carte dans la règle (sa destination en entrée,
+  sa source en sortie) ne nomme que des adresses que ce placement a enregistrées (`ips` : l'adresse d'alors, L26) ou
+  que la carte tient maintenant — chacune une adresse, jamais `*`, une plage ou une étiquette ; et l'état d'aucune
+  autre VM n'enregistre cette règle sur ce NSG (`glorfindel/providers/azure/older_names.py`, `older_taken`). Le
+  défaire d'un placement par son nom le vérifie aussi (`older_undo_refusal`) : réécrite depuis par un homonyme dont
+  le hash a rencontré le sien, la règle n'est plus celle du placement. Rien ne se déduit d'Azure : deux VM de deux
+  VNet ont souvent la même adresse privée, et les cartes d'un groupe identique (VMSS) ne sont pas listées ;
+- **tout le reste est laissé et dit**, sur toutes les voies — la levée (`release_partial`), le `reset`
+  (`swept_partial`), le déblocage (`unblock_partial`), la vérification de la levée (inconnue, jamais vraie), le NSG
+  qu'une carte laissée nue ne porte plus, une VM supprimée —, avec la commande qui la retire à la main
+  (`az network nsg rule delete …`). La règle d'un homonyme n'est jamais retirée par la levée d'un autre ;
+- **ce que cela coûte, pendant la transition** : une isolation ou un blocage d'une version antérieure dont l'état
+  local est perdu (ou réécrit depuis sans ses anciens noms) n'est plus levé seul — il est dit, et retiré à la main ;
+  les deux homonymes dont le hash s'est rencontré retiennent chacun la levée de l'autre tant que leurs règles
+  communes restent. `verify_isolation` lit toujours une paire par son contenu (elle isole, quel que soit son
+  auteur) ;
 - **reposé sous les nouveaux noms** : une isolation ou un blocage écrit de nouveau (la réaffirmation après une
   disparition, une ré-isolation) part sous les nouveaux noms ; l'état garde les deux placements, la levée défait
   les deux ;

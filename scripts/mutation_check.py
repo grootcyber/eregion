@@ -5175,8 +5175,8 @@ MUTANTS += [
      '            return ""\n'),
     ("M1891", "the unblock takes its placements' rules off by name, unread: the turned allow with them (I4B)", UNB,
      "                err = (_held_by_turned(self._network, guard, p_rg, p_name, nm, nic_id, mates)\n"
-     "                       or self._delete_rule(p_rg, p_name, nm))\n",
-     "                err = self._delete_rule(p_rg, p_name, nm)\n"),
+     "                       or self._delete_rule(p_rg, p_name, nm)) if nm not in said else said[nm]\n",
+     "                err = self._delete_rule(p_rg, p_name, nm) if nm not in said else said[nm]\n"),
     ("M1892", "the unblock's sweep takes off by the NIC's mark whatever the rule became (I4B)", UNB,
      "                        err = (_aims_elsewhere(r, own_ips) and _held_by_turned(\n",
      "                        err = (False and _held_by_turned(\n"),
@@ -8898,8 +8898,8 @@ MUTANTS += [
     ("M3197", "`reset --dry-run` says « Reset complete — <vm> is clean » on a preview (I3V)", GCLI,
      "    if dry_run:\n        # An outline, never « clean »", "    if False:\n        # An outline, never « clean »"),
     ("M3198", "another NIC's rule on the quarantine NSG left holds the verification: never verified (I3V)", AWY,
-     "                          for r in self._iso_rules_on(vm_name, view, rules)]\n",
-     "                          for r in rules if _rule_name(r).startswith(\"glorfindel-iso\")]\n"),
+     "                      for r in self._iso_rules_on(vm_name, view, rules, placed, unproven)]\n",
+     "                      for r in rules if _rule_name(r).startswith(\"glorfindel-iso\")]\n"),
 ]
 TESTS.update({
     "M3192": (f"{_I3V_SEQ} {_I3V_UNIT}::test_the_verification_of_a_partial_release_looks_on_the_quarantine_nsg_it_left "

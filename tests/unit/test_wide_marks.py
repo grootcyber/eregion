@@ -6,18 +6,19 @@ on the 6 hex of SHA-1 an earlier version ended the rule names with (found in a f
 whoever can create a group and a NIC in the subscription finds one as fast). Under those names they
 shared one name per rule: the release of one took off the other's deny, the isolation of one wrote
 over the other's. Under ours they never meet. Placed before the upgrade, an isolation or a block under
-the old names is still read (verified), and lifted through its state. A rule of an old name is this
-NIC's only when its VM's state records it there, or — on an NSG that governs the NIC — when it covers no
-other live NIC that NSG governs, whatever it covers now (its address moved: L26); on an NSG it does not
-carry (left bare, or its VM deleted), as a deny of its addresses that covers no other live NIC behind
-that NSG: two VMs of two VNets often share an address. A homonym's whose hash met stays, whatever its
-address — said there, the release not done.
+the old names is still read (verified), and lifted through its state. Only what is proven is taken off
+(Jonathan's decision, 19/11): a rule of an old name goes only when its VM's state records it on that NSG
+for that NIC, its NIC's side names only addresses that placement recorded (L26) or the NIC holds, and no
+other VM's state records it — the undo of a placement by its name included. Anything else is left and
+said, with the command that takes it off by hand: a homonym's rule is never taken off by another's lift,
+and an old isolation whose state is lost is taken off by hand (`_by_hand`, the operator's step).
 
 On the in-memory Azure of tests/unit/fake_azure.py: 0 Azure call, 0 LLM call.
 """
 from __future__ import annotations
 
 import hashlib
+import re
 
 import pytest
 
@@ -134,14 +135,17 @@ def test_isolated_again_it_goes_under_the_new_names_and_both_are_lifted(world, m
 
 def test_a_homonyms_rule_under_the_shared_older_name_stays(world, monkeypatch):
     """B isolated by an earlier version (its rules under the older name A's NIC meets), A isolated
-    and released now: A's sweep reads the older name — B's deny, aimed at B — and leaves it."""
+    and released now: the older name is A's too, but A's state doesn't record it — not proven A's.
+    Left and said, A's release not done; B's deny stays."""
     f, c, s_nsg = world
     with monkeypatch.context() as m:
         m.setattr(NetworkMixin, "_placement_rule_base", _older_base)
         c.isolate_vm(B)
     b_rules = {n: dict(r) for n, r in _ours(f, s_nsg).items()}
     assert c.isolate_vm(A)["status"] == "isolated"
-    assert c.release_isolation(A)["status"] == "released"
+    out = c.release_isolation(A)
+    assert out["status"] == "release_partial" and "laissée" in " ".join(out["failed"]), out
+    assert "az network nsg rule delete" in " ".join(out["failed"])
     assert {n: r for n, r in _ours(f, s_nsg).items()} == b_rules
     assert c.verify_isolation(B)["verified"] is True
 
@@ -170,33 +174,50 @@ def test_a_block_under_the_older_names_is_verified_then_lifted(world, monkeypatc
     assert not _ours(f, s_nsg)
 
 
+def _by_hand(f, failed) -> list[str]:
+    """The operator's step: each rule a lift left and said, taken off by the command it gives."""
+    taken = []
+    for text in failed or []:
+        for rg, nsg, name in re.findall(r"az network nsg rule delete -g (\S+) --nsg-name (\S+) -n (\S+)", text):
+            k = key(f"/subscriptions/s/resourceGroups/{rg}/providers/Microsoft.Network/networkSecurityGroups/{nsg}")
+            if f.nsgs.get(k, {}).get("rules", {}).pop(name.rstrip(" ;,"), None) is not None:
+                taken.append(name)
+    return taken
+
+
 def _lose_states() -> None:
     for d in (actions._ISOLATION_STATE_DIR, actions._BLOCK_STATE_DIR):
         for f in d.glob("*.json"):
             f.unlink()
 
 
-def test_an_isolation_under_the_older_names_its_state_lost_is_still_found(world, monkeypatch):
-    """No state to name them: the older names are read on the NIC's NSGs — verified, lifted (their
-    denies apply to the NIC's addresses)."""
+def test_an_isolation_under_the_older_names_its_state_lost_is_left_and_said(world, monkeypatch):
+    """No state to name them: nothing proves the older pair the NIC's — never taken off, said with
+    the command; the verification never says released. The operator takes it off: then it is."""
     f, c, s_nsg = world
     with monkeypatch.context() as m:
         m.setattr(NetworkMixin, "_placement_rule_base", _older_base)
         c.isolate_vm(A)
     _lose_states()
-    assert c.verify_isolation(A)["verified"] is True
+    assert c.verify_isolation(A)["verified"] is True      # read under its older names: it isolates
+    assert c.verify_release(A)["verified"] is not True
+    out = c.release_isolation(A)
+    assert out["status"] == "release_partial" and len(_ours(f, s_nsg)) == 2, out
+    assert len(_by_hand(f, out["failed"])) == 2
     assert c.release_isolation(A)["status"] == "released"
-    assert not _ours(f, s_nsg)
+    assert c.verify_release(A)["verified"] is True
 
 
-def test_a_block_under_the_older_names_its_state_lost_is_still_found(world, monkeypatch):
+def test_a_block_under_the_older_names_its_state_lost_is_left_and_said(world, monkeypatch):
     f, c, s_nsg = world
     with monkeypatch.context() as m:
         m.setattr(NetworkMixin, "_placement_rule_base", _older_base)
         c.block_suspicious_ip("203.0.113.7", A)
     _lose_states()
-    assert c.verify_block_ip("203.0.113.7", A)["verified"] is True
-    assert c.unblock_ip("203.0.113.7", A)["status"] == "unblocked"
+    assert c.verify_block_ip("203.0.113.7", A)["verified"] is True    # read under its older names: it blocks
+    out = c.unblock_ip("203.0.113.7", A)
+    assert out["status"] == "unblock_partial" and len(_ours(f, s_nsg)) == 2, out
+    assert len(_by_hand(f, out["failed"])) == 2
     assert not _ours(f, s_nsg)
 
 
@@ -261,10 +282,10 @@ def own_nsg_world(monkeypatch):
 
 
 @pytest.mark.parametrize("lose", [True, False])
-def test_an_older_isolation_on_the_nsg_a_bare_nic_left_is_lifted(own_nsg_world, monkeypatch, lose):
+def test_an_older_isolation_on_the_nsg_a_bare_nic_left(own_nsg_world, monkeypatch, lose):
     """The review's sequence: an earlier version's isolation on the NIC's own NSG, someone takes that
-    NSG off the NIC, the state lost: the release looked for the new names only there — `released`,
-    the pair left, the VM cut off once its NSG comes back. Its deny aimed at the NIC: lifted."""
+    NSG off the NIC. Its state kept: proven, lifted. Its state lost: left and said — never `released`
+    with the pair there, the VM cut off once its NSG comes back."""
     f, c, own = own_nsg_world
     with monkeypatch.context() as m:
         m.setattr(NetworkMixin, "_placement_rule_base", _older_base)
@@ -272,8 +293,13 @@ def test_an_older_isolation_on_the_nsg_a_bare_nic_left_is_lifted(own_nsg_world, 
     f.nics[key(A_NIC)]["nsg"] = None
     if lose:
         _lose_states()
-    assert c.release_isolation(A)["status"] == "released"
-    assert not [n for n in f.nsgs[key(own)]["rules"] if n.startswith("glorfindel-")]
+    out = c.release_isolation(A)
+    left = [n for n in f.nsgs[key(own)]["rules"] if n.startswith("glorfindel-")]
+    if lose:
+        assert out["status"] == "release_partial" and len(left) == 2, out
+        assert "az network nsg rule delete" in " ".join(out["failed"])
+    else:
+        assert out["status"] == "released" and not left, out
 
 
 def test_an_older_name_on_that_nsg_aimed_elsewhere_is_left_and_said(own_nsg_world, monkeypatch):
@@ -307,9 +333,9 @@ def test_two_long_ipv6_blocks_never_share_a_name():
     assert len(names) == 4
 
 
-def test_a_gone_vms_older_pair_its_record_rewritten_is_lifted_by_its_recorded_address(world, monkeypatch):
-    """The VM deleted, its record rewritten since under the new names (a later isolation): its older
-    pair is looked for on every NSG, a NIC's only as a deny aimed at an address its records give it."""
+def test_a_gone_vms_older_pair_its_record_rewritten_is_left_and_said(world, monkeypatch):
+    """The VM deleted, its record rewritten since under the new names: its older pair is looked for on
+    every NSG — nothing records it any more, so nothing proves it the VM's. Left, said."""
     f, c, s_nsg = world
     with monkeypatch.context() as m:
         m.setattr(NetworkMixin, "_placement_rule_base", _older_base)
@@ -319,6 +345,18 @@ def test_a_gone_vms_older_pair_its_record_rewritten_is_lifted_by_its_recorded_ad
     for p in state["placements"]:
         p["rule_in"], p["rule_out"] = new, f"{new}-out"
     actions._save_isolation_state(A, state)
+    for n in f.vms.pop(key(A))["nics"]:
+        f.nics.pop(key(n))
+    out = c.release_isolation(A)
+    assert out["status"] == "release_partial" and len(_ours(f, s_nsg)) == 2, out
+
+
+def test_a_gone_vms_older_pair_its_record_kept_is_lifted(world, monkeypatch):
+    """Witness: the VM deleted, its record naming the older pair at its address: proven, lifted."""
+    f, c, s_nsg = world
+    with monkeypatch.context() as m:
+        m.setattr(NetworkMixin, "_placement_rule_base", _older_base)
+        c.isolate_vm(A)
     for n in f.vms.pop(key(A))["nics"]:
         f.nics.pop(key(n))
     assert c.release_isolation(A)["status"] == "released"
@@ -363,11 +401,10 @@ def test_a_homonyms_older_pair_in_another_vnet_stays_whatever_its_address(monkey
 
 
 @pytest.mark.parametrize("access", ["Deny", "Allow"])
-def test_an_older_block_its_address_moved_and_its_state_lost_is_lifted(world, monkeypatch, access):
-    """The machine's sequence (SEC-H, third review): a block under the older names, one of its rules
-    turned into an allow by someone, the NIC's address moved, the state lost — the unblock said
-    `unblocked`, the pair left on the NSG. On an NSG that governs the NIC, an older name covering no
-    other live NIC goes, whatever it covers now (L26) — the turned allow too (A0)."""
+def test_an_older_block_its_address_moved_and_its_state_lost_is_left_and_said(world, monkeypatch, access):
+    """The machine's sequence (third review): a block under the older names, one of its rules turned
+    into an allow, the NIC's address moved, the state lost — the unblock said `unblocked`, the pair left.
+    Nothing proves it the NIC's now: left and said, the unblock not done."""
     f, c, s_nsg = world
     with monkeypatch.context() as m:
         m.setattr(NetworkMixin, "_placement_rule_base", _older_base)
@@ -376,8 +413,35 @@ def test_an_older_block_its_address_moved_and_its_state_lost_is_lifted(world, mo
     f.nsgs[key(s_nsg)]["rules"][older]["access"] = access
     f.nics[key(A_NIC)]["ips"] = ["10.0.0.9"]
     _lose_states()
-    assert c.unblock_ip("203.0.113.7", A)["status"] in ("unblocked", "not_found")
+    out = c.unblock_ip("203.0.113.7", A)
+    assert out["status"] == "unblock_partial" and len(_ours(f, s_nsg)) == 2, out
+
+
+def test_an_older_block_its_address_moved_its_state_kept_is_lifted(world, monkeypatch):
+    """Witness (L26): the state records the pair and the address it had then — proven, lifted."""
+    f, c, s_nsg = world
+    with monkeypatch.context() as m:
+        m.setattr(NetworkMixin, "_placement_rule_base", _older_base)
+        c.block_suspicious_ip("203.0.113.7", A)
+    f.nics[key(A_NIC)]["ips"] = ["10.0.0.9"]
+    assert c.unblock_ip("203.0.113.7", A)["status"] == "unblocked"
     assert not _ours(f, s_nsg)
+
+
+def test_a_rule_rewritten_under_its_older_name_at_other_addresses_stays(world, monkeypatch):
+    """The third review's case (2): the state records the older name, but the rule under it was written
+    again for other addresses (a homonym whose hash met, its isolation under the same name on a shared
+    NSG): beyond the addresses the placement recorded and the NIC holds — not proven, left, said."""
+    f, c, s_nsg = world
+    with monkeypatch.context() as m:
+        m.setattr(NetworkMixin, "_placement_rule_base", _older_base)
+        c.isolate_vm(A)
+    for r in f.nsgs[key(s_nsg)]["rules"].values():
+        for side in ("destination", "source"):
+            if r.get(f"{side}_address_prefixes") == ["10.0.0.4"]:
+                r[f"{side}_address_prefixes"] = ["10.0.0.5"]
+    out = c.sweep_vm_rules(A)
+    assert out["status"] != "swept" and len(_ours(f, s_nsg)) == 2, out
 
 
 def test_an_older_block_whose_address_another_live_nic_took_stays(world, monkeypatch):
@@ -394,21 +458,91 @@ def test_an_older_block_whose_address_another_live_nic_took_stays(world, monkeyp
     assert len(_ours(f, s_nsg)) == 2
 
 
-def test_an_older_name_whose_owner_cant_be_read_is_never_read_gone(world, monkeypatch):
-    """The machine's sequence (third review, seed at 500): the NICs unread while an older name is
-    judged — read « not ours », verify_release said released with the earlier version's isolation
-    there. Unknown: the release not done, the verification not True."""
-    from glorfindel.providers.azure import older_names
+def test_an_older_name_left_is_never_read_released(world, monkeypatch):
+    """The third review's case (3): an older name the judge refuses, on an NSG that governs the NIC —
+    left in silence, and the tools said « released, verified ». Said: the verification unknown, never
+    True, its name given."""
     f, c, s_nsg = world
     with monkeypatch.context() as m:
         m.setattr(NetworkMixin, "_placement_rule_base", _older_base)
         c.isolate_vm(A)
     _lose_states()
+    v = c.verify_release(A)
+    older = c._older_rule_bases("glorfindel-iso", "web", "web-nic", A_NIC)[0]
+    assert v["verified"] is not True and older in str(v), v
 
-    def unread(*a, **k):
-        raise RuntimeError("(TooManyRequests) throttled")
-    monkeypatch.setattr(older_names, "_governed", unread)
-    assert c.verify_release(A)["verified"] is not True
+
+def _hub_world(monkeypatch, b_ip):
+    """A and B, homonyms whose NICs meet on the older mark, on one NSG two VNets share (nsg-x)."""
+    monkeypatch.setenv("GLORFINDEL_QUARANTINE_NSG", "0")
+    f = FakeAzure()
+    x = f.add_nsg("rg-hub", "nsg-x")
+    sa, sb = f.add_subnet(A_RG, "vnet-a", "app", None), f.add_subnet(B_RG, "vnet-b", "app", None)
+    f.add_vm(A_RG, "web", [{"rg": A_RG, "name": "web-nic", "ips": ["10.0.0.4"], "subnet": sa, "nsg": x}])
+    f.add_vm(B_RG, "web", [{"rg": B_RG, "name": "web-nic", "ips": [b_ip], "subnet": sb, "nsg": x}])
+    c = AzureConnector(dry_run=False, read_only=False)
+    c._network, c._compute = f.network, f.compute
+    c._subscription_id = "s"
+    c.recent_changes = lambda *a, **k: []
+    return f, c, x
+
+
+def _older_both(c, monkeypatch, how: str = "isolate") -> None:
+    with monkeypatch.context() as m:
+        m.setattr(NetworkMixin, "_placement_rule_base", _older_base)
+        for vm in (A, B):                      # B's under the same name: written over A's
+            (c.isolate_vm(vm) if how == "isolate" else c.block_suspicious_ip("203.0.113.7", vm))
+
+
+def _glorfindel(f, x) -> dict:
+    return {n: dict(r) for n, r in f.nsgs[key(x)]["rules"].items() if n.startswith("glorfindel-")}
+
+
+@pytest.mark.parametrize("b_ip", ["10.1.0.4", "10.0.0.4"])
+def test_a_placement_written_over_by_a_homonym_is_not_undone_by_its_name(monkeypatch, b_ip):
+    """The third review's case (probe 4): both isolated by the earlier version on one NSG, B's pair
+    written over A's under the same name. A's release undid its placement by the name — B's pair went.
+    The rule under it is no longer proven A's (other addresses, or another VM's state records it): left."""
+    f, c, x = _hub_world(monkeypatch, b_ip)
+    _older_both(c, monkeypatch)
+    b_rules = _glorfindel(f, x)
     out = c.release_isolation(A)
-    assert out["status"] == "release_partial" and "n'a pu être jugée" in " ".join(out["failed"]), out
-    assert len(_ours(f, s_nsg)) == 2
+    assert out["status"] == "release_partial" and "laissée" in " ".join(out["failed"]), out
+    assert _glorfindel(f, x) == b_rules
+    assert c.verify_isolation(B)["verified"] is True
+
+
+def test_a_rule_another_vms_state_records_stays(monkeypatch):
+    """Same name, same NSG, same address: the rule is either VM's — B's state records it too. The reset
+    of A leaves it, said."""
+    f, c, x = _hub_world(monkeypatch, "10.0.0.4")
+    _older_both(c, monkeypatch)
+    out = c.sweep_vm_rules(A)
+    assert out["status"] == "swept_partial", out
+    assert len(_glorfindel(f, x)) == 2
+
+
+def test_a_block_placement_written_over_by_a_homonym_is_not_undone_by_its_name(monkeypatch):
+    f, c, x = _hub_world(monkeypatch, "10.1.0.4")
+    _older_both(c, monkeypatch, "block")
+    b_rules = _glorfindel(f, x)
+    out = c.unblock_ip("203.0.113.7", A)
+    assert out["status"] == "unblock_partial" and "laissée" in " ".join(out["failed"]), out
+    assert _glorfindel(f, x) == b_rules
+
+
+@pytest.mark.parametrize("wide", ["*", None])
+def test_an_older_rule_widened_to_every_address_stays(world, monkeypatch, wide):
+    """Its state records it, but the rule under it now names every address (`*`, or no address on its
+    side): beyond the addresses recorded — not proven, left."""
+    f, c, s_nsg = world
+    with monkeypatch.context() as m:
+        m.setattr(NetworkMixin, "_placement_rule_base", _older_base)
+        c.isolate_vm(A)
+    for r in f.nsgs[key(s_nsg)]["rules"].values():
+        for side in ("destination", "source"):
+            if r.get(f"{side}_address_prefixes") == ["10.0.0.4"]:
+                r[f"{side}_address_prefixes"] = None
+                r[f"{side}_address_prefix"] = wide
+    out = c.sweep_vm_rules(A)
+    assert out["status"] != "swept" and len(_ours(f, s_nsg)) == 2, out

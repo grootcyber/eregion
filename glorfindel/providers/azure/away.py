@@ -7,7 +7,7 @@ from __future__ import annotations
 import re
 
 from glorfindel.providers.azure.nsg import _rule_name
-from glorfindel.providers.azure.older_names import OlderUnread, older_not_ours
+from glorfindel.providers.azure.older_names import older_left, older_taken, recorded_names
 from glorfindel.providers.azure.turned import _aims_elsewhere, _held_by_turned, _turned_guard
 from glorfindel.providers.azure.quarantine import QUARANTINE_NSG_PREFIX
 from glorfindel.response.ids import _parse_nsg_resource_id, _parse_vm_resource_id
@@ -61,19 +61,21 @@ class AwayRulesMixin:
         return left
 
     def _left_quarantine_rules(self, vm_name: str, targets: list[dict], left: dict, guard: dict,
-                               mates: list, own_ips: list, cache: dict, stuck: set, keep: dict) -> list[str]:
+                               mates: list, own_ips: list, cache: dict, stuck: set, keep: dict,
+                               placed: dict | None = None) -> list[str]:
         """The release's (_sweep_isolation): a NIC that left our quarantine NSG (`left`, NIC →
         the NSG) may have rules of its own there — an isolation written while that NSG had lost
         our tag, placed on it as on any NSG the NIC carried. Off it, the NIC no longer sees it:
         the release put its NSG back and said `released`, the rules left (I3R, #431). Looked
-        for there as on an NSG that governs the NIC — its hash, or an older name aimed at its
-        addresses, the guard asked for one aimed elsewhere. A NIC still in it is skipped (its
+        for there as on an NSG that governs the NIC — its hash, or an older name proven its
+        (older_names, else said), the guard asked for one aimed elsewhere. A NIC still in it is skipped (its
         undo failed: they may be all that cuts it off), and a bare one (_away_rules looks
         for its rules on every NSG, this one included: said once). A NIC whose search there
         fails or keeps a rule goes into `keep` (NIC → the NSG), for the partial state: off the
         quarantine NSG now, its retry would no longer know to look there. `stuck`: the
         placements whose undo just failed — not tried, nor said, twice."""
         failed: list[str] = []
+        placed = placed or {}                   # the VM's state's placements (older_names, SEC-H)
         for t0 in targets:
             q = left.get(t0["nic_id"].rstrip("/").lower())
             if q is None or not (t0.get("own_nsg_id") or t0.get("quarantine")):
@@ -88,11 +90,9 @@ class AwayRulesMixin:
                 failed.append(f"{q[0]}/{q[1]} : règles illisibles, levée non vérifiée")
                 rules = []
             view = {**t0, "nsg_rg": q[0], "nsg_name": q[1], "scope": "nic", "shared_nsg": True, "ip_scoped": True}
-            try:
-                own = self._iso_rules_on(vm_name, view, rules)
-            except OlderUnread as exc:
-                failed.append(f"{_first_line(exc)[:_ERR_MAX]}, levée non vérifiée")
-                own = []
+            unproven: list = []
+            own = self._iso_rules_on(vm_name, view, rules, placed, unproven)
+            failed += [older_left(q[0], q[1], r, t0["nic_short"], "levée non vérifiée") for r in unproven]
             for r in own:
                 name = _rule_name(r)
                 if (q[0].lower(), q[1].lower(), name.lower()) in stuck:
@@ -115,17 +115,18 @@ class AwayRulesMixin:
         (still there, unreadable)."""
         still: list[str] = []
         unknown: list[str] = []
+        placed = recorded_names(state if isinstance(state, dict) else {}, [])
         for view in self._out_of_sight_views(targets, state):
             where = f'{view["nsg_name"]}, groupe {view["nsg_rg"]} : {view["out_of_sight"]}'
             rules = self._list_rules(cache, view["nsg_rg"], view["nsg_name"])
             if rules is None:
                 unknown.append(f'{view["nic_short"]}:{where}')
                 continue
-            try:
-                still += [f'{view["nic_short"]}:{_rule_name(r)} (sur {where})'
-                          for r in self._iso_rules_on(vm_name, view, rules)]
-            except OlderUnread as exc:
-                unknown.append(f'{view["nic_short"]}:{_first_line(exc)[:_ERR_MAX]}')
+            unproven: list = []
+            still += [f'{view["nic_short"]}:{_rule_name(r)} (sur {where})'
+                      for r in self._iso_rules_on(vm_name, view, rules, placed, unproven)]
+            unknown += [f'{view["nic_short"]}:{_rule_name(r)} (nom d\'une version antérieure, sur {where}, que '
+                        "rien ne prouve être le sien)" for r in unproven]
         return still, unknown
 
     def _out_of_sight_views(self, targets: list[dict], state: dict) -> list[dict]:
@@ -219,12 +220,8 @@ class AwayRulesMixin:
                                                               t["nic_id"]) for n in (b, f"{b}-out")}), None)
                     if t0 is None or k in views[t0["nic_id"]] or skip(k, name):
                         continue
-                    if why := older_not_ours(self._network, guard, nsg, r, t0["nic_id"],
-                                             t0.get("private_ips") or None, recorded or {}, mates):
-                        said.append(f"{n_rg}/{n_name}/{name} laissée : nom d'une version antérieure, partagé par "
-                                    f"des cartes dont le hash s'est rencontré, et {why} — à retirer à la main si "
-                                    f"c'est celle de {t0['nic_short']} (az network nsg rule delete -g {n_rg} "
-                                    f"--nsg-name {n_name} -n {name}), {unverified}")
+                    if not older_taken(r, n_rg, n_name, t0["nic_id"], t0.get("private_ips"), recorded or {}):
+                        said.append(older_left(n_rg, n_name, r, t0["nic_short"], unverified))
                         continue
                 elif k in views[t0["nic_id"]] or skip(k, name):
                     continue

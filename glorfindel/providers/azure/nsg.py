@@ -384,9 +384,9 @@ def _nic_owns(rule, hashed: set[str], names: set[str], ips: list[str] | None,
         # into (an allow, by hand), it goes with the NIC's release (A0).
         return True
     if name in older:
-        # An earlier version's name (SEC-H), shared by NICs whose hash met: judged by `judge`
-        # (older_names.view_judge: recorded by the state, or covering no other live NIC) — a deny,
-        # or one turned into an allow (A0), as a hashed name was.
+        # An earlier version's name (SEC-H), shared by NICs whose hash met: taken only when proven
+        # (`judge`, older_names.older_taken: the state records it there, at addresses it recorded
+        # or the NIC holds, no other VM's state recording it) — a deny, or one turned into an allow.
         return judge is not None and judge(rule)
     return _enum_text(getattr(rule, "access", "")) == "deny" and name in names and _deny_applies(rule, ips)
 

@@ -269,6 +269,9 @@ class VerifyMixin:
         recorded = {(p.get("nic_id") or "").rstrip("/").lower(): p
                     for p in state.get("placements") or []
                     if p.get("kind") == "quarantine"}
+        from glorfindel.providers.azure.older_names import recorded_names
+        from glorfindel.response.state import _load_block_entries
+        placed = recorded_names(state, _load_block_entries(resource_id), resource_id)
         for t0 in targets:
             if t0.get("quarantine") or t0.get("own_nsg_id"):
                 continue
@@ -309,10 +312,12 @@ class VerifyMixin:
             if rules is None:
                 unknown.append(f'{t["nic_short"]}:{t["nsg_name"]}')
                 continue
-            try:
-                still += [f'{t["nic_short"]}:{_rule_name(r)}' for r in self._iso_rules_on(vm_name, t, rules)]
-            except Exception as exc:              # an older name whose owner can't be read (SEC-H)
-                unknown.append(f'{t["nic_short"]}:{_first_line(exc)[:_ERR_MAX]}')
+            unproven: list = []
+            still += [f'{t["nic_short"]}:{_rule_name(r)}'
+                      for r in self._iso_rules_on(vm_name, t, rules, placed, unproven)]
+            # An earlier version's name not proven the NIC's (SEC-H): left by the release, never read gone.
+            unknown += [f'{t["nic_short"]}:{_rule_name(r)} (nom d\'une version antérieure, sur {t["nsg_name"]}, '
+                        "que rien ne prouve être le sien : à retirer à la main si c'est le cas)" for r in unproven]
             unknown += self._unattributable_fixed(t, rules)
         # Where the release looks besides, that the NICs no longer carry — the quarantine NSG a
         # partial release left (I3R), a placement's NSG: out of the views above — « verified »,
