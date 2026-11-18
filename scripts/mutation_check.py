@@ -8529,7 +8529,7 @@ MUTANTS += [
      "    say_refused(path, LINK if stat.S_ISLNK(st.st_mode) else channel_reader._kind(st.st_mode))\n",
      "    os.close(channel_reader.open_regular(path))\n"),
     ("M3143", "a name of runs/ read as markup by the TUI (SEC15)", TUI,
-     "{_esc_markup(path.name)} : {exc} — jamais lu", "{path.name} : {exc} — jamais lu"),
+     "{_outside(path.name)} : {exc} — jamais lu", "{path.name} : {exc} — jamais lu"),
     ("M3144", "a name of runs/ written raw into the console's log (SEC15)", RRD,
      '    print(f"  ⚠ console: {shown(path)} — ', '    print(f"  ⚠ console: {path} — '),
     ("M3145", "the matrix kept 30 s past a window that changes a T0's verdict (SEC15)", CON,

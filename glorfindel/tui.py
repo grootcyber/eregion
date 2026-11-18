@@ -15,7 +15,6 @@ from pathlib import Path
 
 from rich.layout import Layout
 from rich.live import Live
-from rich.markup import escape as _esc_markup
 from rich.panel import Panel
 from rich.text import Text
 
@@ -33,6 +32,8 @@ from glorfindel.vm_command import group_and_name
 # `<groupe>/<nom>` (`group_and_name`, which never names a subscription), what the operator types,
 # and the names of runs/' files (the FEED's title, a file refused: a run's name, which the injectors'
 # runner draws from its moment and its scenario — neither a card nor a signal; escaped, SEC15).
+# Unmasked, never raw: every value from outside, in every panel, is said with its control
+# characters shown — `_literal` in a `Text`, `_outside` in a string read as markup (SEC-Fc, SEC-Fd).
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -320,7 +321,8 @@ def _resources_renderable(now: datetime) -> Panel:
 
     lines = Text(overflow="fold")
     for resource_id in all_ids:
-        lines.append(f"  {_name_said(resource_id)}\n", style="bold white")
+        # SEC-Fd: the resource and its blocks come from the state files — said, never obeyed.
+        lines.append(f"  {_literal(_name_said(resource_id))}\n", style="bold white")
 
         if resource_id in isolations:
             age = _age(isolations[resource_id].get("isolated_at", ""), now)
@@ -330,7 +332,7 @@ def _resources_renderable(now: datetime) -> Panel:
         for b in blocks.get(resource_id, []):
             age = _age(b.get("blocked_at", ""), now)
             lines.append("  🟡 BLOCKED ", style="bold yellow")
-            lines.append(f"  {b['ip']}  {age} ago\n", style="dim")
+            lines.append(f"  {_literal(b['ip'])}  {age} ago\n", style="dim")
 
         lines.append("\n")
 
@@ -531,7 +533,7 @@ def _load_feed(max_entries: int = 60) -> list[str]:
             # A name in runs/ is written by another container: never read as markup (SEC15) — nor
             # the reason, which may quote it (SEC-F).
             exc = _outside(exc)
-            refused.append(f"[yellow]⚠ {_esc_markup(path.name)} : {exc} — jamais lu[/yellow]")
+            refused.append(f"[yellow]⚠ {_outside(path.name)} : {exc} — jamais lu[/yellow]")
             continue
         except OSError:
             continue
@@ -557,7 +559,7 @@ def _feed_renderable(feed_lines: list[str], run_label: str) -> Panel:
             text.append(line)
         text.append("\n")
     title = (
-        f"[bold]FEED[/bold]  [dim]{_esc_markup(run_label)}[/dim]"
+        f"[bold]FEED[/bold]  [dim]{_outside(run_label)}[/dim]"      # a name of runs/ (SEC-Fd)
         if run_label
         else "[bold]FEED[/bold]"
     )

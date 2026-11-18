@@ -1209,7 +1209,7 @@ briques:
     nom: "Security hardening"
     etat: main
     release: "0.6"
-    lots: [SEC-Fc]
+    lots: [SEC-Fc, SEC-Fd]
     issue: 907
 
   - id: s-sec-g
