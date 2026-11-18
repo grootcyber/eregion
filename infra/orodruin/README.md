@@ -241,6 +241,11 @@ peut laisser arrêtée. Il sort en 1 si une étape a échoué.
   `orodruin.env` est illisible.
 - Pour fermer les fenêtres, l'opérateur écrit sur le conteneur `exercises` (`channel_operator`,
   posé par `make orodruin-lock`).
+- Le kill lit **tout** le canal, page après page (SEC-A1b) : jamais les 200 premières fenêtres
+  d'un tirage de la watch. Une liste qu'il ne lit pas en entier (plus de `KILL_MAX_BLOBS`, 100 000
+  noms) ou une fenêtre qu'il ne peut télécharger font échouer l'étape `close` : jamais « no
+  exercise window open » sans les avoir toutes vues. Il dit combien il en a lu. Mis à jour sur
+  Orodruin par sa mise à jour (OI3), après la release.
 
 **Le drill de la semaine** (DRL1a, `docs/design/drill-banc.md`). Trois pas de plus au kill, par
 ton `az login`, dans cet ordre : `revoke`, puis le démarrage planifié du drill désactivé (la Logic App

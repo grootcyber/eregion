@@ -482,7 +482,11 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 sur cet hôte (sans canal), et sa fermeture : une fenêtre antidatée ou réécrite n'est pas
                                 crue (eregion_core/exercise.py, ``observe``). Le tirage du canal y note chaque fenêtre
                                 qu'il écrit (`note_pulled`) : seule preuve qu'elle vient du canal. Sous un flock
-                                (`exercise_seen.json.lock`). Hors de runs/, que l'injecteur écrit
+                                (`exercise_seen.json.lock`). Hors de runs/, que l'injecteur écrit. SEC-A1b (#642) :
+                                une entrée ne garde que des dates et des empreintes (celle de la fenêtre, une par
+                                cible), jamais ce que la fenêtre a écrit ; seule une fenêtre crue y entre ; au plus
+                                RECORD_PER_WRITER (4 096) entrées par écrivain et RECORD_BYTES (8 Mio) en tout,
+                                lu par le lecteur borné — au-delà, la fenêtre n'est pas crue (ses cycles « real »)
   escalations.jsonl           → escalades persistées. SEC3 (V-10) : chaque lecture-modification-écriture sous un
                                 verrou (`flock` sur `escalations.jsonl.lock`, `response/locks.py::_file_lock`), le
                                 magasin réécrit entier : aucune carte perdue entre écrivains, aucune lecture tronquée
@@ -655,7 +659,7 @@ Le rouge écrivait donc où le bleu écrit ses décisions, et lisait le raisonne
 
 | Répertoire | Écrivain | Ce qu'il y écrit | Monté en lecture seule par |
 |---|---|---|---|
-| `runs/glorfindel/` | la watch, et ce qui tourne dans son conteneur : le tirage du canal, le rapport de campagne, l'analyse ; la CLI de Glorfindel quand elle rejoue des signaux (`respond`) | `*_debug.jsonl`, `campaigns/<id>/` (tirées sur Imladris ; `report.md`, `report.error`, `triage.*`, `replay.json` partout), `<run_id>.json` et `.pulled-runs/` tirés, `exercises/` tirées, `orodruin/` tiré | la console |
+| `runs/glorfindel/` | la watch, et ce qui tourne dans son conteneur : le tirage du canal, le rapport de campagne, l'analyse ; la CLI de Glorfindel quand elle rejoue des signaux (`respond`) | `*_debug.jsonl`, `campaigns/<id>/` (tirées sur Imladris ; `report.md`, `report.error`, `triage.*`, `replay.json` partout), `<run_id>.json` et `.pulled-runs/` tirés, `exercises/` tirées (SEC-A1b : seulement des fenêtres, chacune sous 64 Kio ; au plus 4 096 fichiers et 32 Mio, au-delà aucune nouvelle n'est tirée ; ce qui n'est pas une fenêtre y est purgé, une pierre tombale retirée une semaine après la purge), `orodruin/` tiré | la console |
 | `runs/console/` | la console, la CLI de Glorfindel | `manual_actions.jsonl`, `queue/` (FS1b) | la watch (l'analyse des levées, la file) |
 | `runs/bot/` | le bot, et la CLI qu'il lance (`EREGION_RUNS_WRITER=bot`, FS1c) | `manual_actions.jsonl`, `queue/` (FS1b) | la watch, la console (le fil, les levées) |
 | `runs/annatar/` | Annatar | `*_signals.jsonl`, `<run_id>.json`, `exercises/`, `campaigns/<id>/` | la watch, le bot (le moment d'un restore), la console |
