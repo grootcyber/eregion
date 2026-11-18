@@ -272,6 +272,8 @@ glorfindel propose-rules [--ttp T..] [--include-planned] [--dry-run]  # autoring
                                              # génère la détection depuis technique_catalog.yaml AVANT
                                              # l'attaque (getschema sur le vrai LAW → KQL groundée).
                                              # Skip les TTPs déjà couverts. Sortie = propositions.
+                                             # Une technique implemented ou proven (STM1g) ; planned
+                                             # seulement avec --include-planned.
 glorfindel approve-rule <id>                 # appliquer la règle → couche du client (~/.glorfindel/client_rules.yaml, P1)
                                              # ; jamais à la place d'une règle livrée (nom suffixé -proposed,
                                              # dit), et dit si elle remplace une règle du client (SEC2)

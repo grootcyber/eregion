@@ -1540,8 +1540,8 @@ def test_two_jobs_of_one_name_in_one_attempt_refuse(repo, tmp_path, capsys, atte
 
 def test_the_workflow_s_job_names_are_unique():
     """What the fake GitHub gives, one job per name, as GitHub's attempt does — 18 since CI10b (#581):
-    ten shards for fourteen, the tests in two jobs."""
-    assert len(WORKFLOW_JOBS) == len(set(WORKFLOW_JOBS)) == 18
+    ten shards for fourteen, the tests in two jobs; 19 since SEC-G (#848), the images' CVEs."""
+    assert len(WORKFLOW_JOBS) == len(set(WORKFLOW_JOBS)) == 19
 
 
 def test_99_jobs_still_read(repo, tmp_path, capsys):

@@ -17,7 +17,10 @@ technique_catalog.yaml          → CONTRAT PARTAGÉ Annatar↔Glorfindel (boucl
                                    (log_source/indicator_columns/expected_latency_s) consommé par
                                    detection_authoring (autoring grounded) ; bloc red (destructive/
                                    safe_target/testdata_marker/params/reference_script) par le synthé
-                                   Annatar. status: implemented | planned. Versionné (≠ config locale) ;
+                                   Annatar. status: implemented | planned (proven, mesurée au banc, viendra
+                                   avec STM1 : un cran au-dessus d'implemented, jamais moins — tout lecteur
+                                   bleu demande eregion_core.experiment.is_ready, jamais le mot seul, STM1g).
+                                   Versionné (≠ config locale) ;
                                    monté en Docker (compose) + COPY Dockerfile (image autonome).
 
 eregion_core/channel_reader.py  → SEC8, SEC16 : le seul lecteur de runs/, pour tous les composants (la watch,
@@ -248,7 +251,13 @@ glorfindel/
   escalations.py        → ~/.glorfindel/escalations.jsonl + labels (proposed_rule, improve_detection ajoutés) ;
                           SEC3 : chaque écriture sous le verrou du magasin, le magasin réécrit entier ; JUG1 : la
                           carte « exécutée » (`autonomous_action`) d'une action prise seule, une par clé
-                          (`executed_key`, `action_keys`) ; `notify_action` l'annonce par `vm_notices.say`
+                          (`executed_key`, `action_keys`) ; `notify_action` l'annonce par `vm_notices.say` ;
+                          VP1 : le verdict proposé, son champ à part (`proposed_verdict`, `proposed_why`,
+                          `proposed_refused`), `note_proposals`, `confirm_proposed`, `refuse_proposed`
+  proposed_verdict.py   → VP1 (#615) : la passe de la watch, chaque minute — la carte d'exercice qui est la
+                          détection attendue par le drill de la semaine (sa copie et ses attentes dans l'image,
+                          le statut de la demande, le rapport du run, la fenêtre) reçoit un verdict proposé ;
+                          les autres, la raison (docs/design/drill-banc.md §8.2)
   signal_origin.py      → SEC3 (#274) : ce que la watch prend de runs/*_signals.jsonl — les événements qu'un
                           injecteur émet (attack_started → la règle de la watch, detection_missed → une proposition),
                           et d'eux les seuls champs qu'il écrit ; le reste refusé (journal, compteur), jamais décidé. Le recovery_complete : seul celui de `glorfindel restore` (ce

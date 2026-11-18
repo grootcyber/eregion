@@ -1530,13 +1530,14 @@ def test_the_gate_runs_the_whole_mutation_in_shards_control_set_included():
 
 
 def test_the_gate_s_jobs_fit_githubs_twenty_at_once():
-    """CI10b (#581, L5): the jobs that start at once — the shards, the two invariant jobs, Terraform and
-    macOS — are 16, under the 20 GitHub gives a public repository; four runners more for the pull
-    requests than with fourteen shards (19). The count and the total wait for them."""
+    """CI10b (#581, L5): the jobs that start at once — the shards, the two invariant jobs, Terraform,
+    macOS and, since SEC-G, the images' CVEs — are 17, under the 20 GitHub gives a public repository;
+    three runners more for the pull requests than with fourteen shards (19). The count and the total
+    wait for them."""
     jobs = _gate()["jobs"]
     first = [j for j in jobs.values() if not j.get("needs")]
     width = sum(len(((j.get("strategy") or {}).get("matrix") or {}).get("shard", [None])) for j in first)
-    assert width == MUTANT_SHARDS + CONTROL_SHARDS + len(GATE_TESTS) + 2 == 16 <= 20
+    assert width == MUTANT_SHARDS + CONTROL_SHARDS + len(GATE_TESTS) + 3 == 17 <= 20
     assert {k for k, j in jobs.items() if j.get("needs")} == {"mutants-total", "gate"}
 
 
@@ -1664,6 +1665,38 @@ def test_the_jobs_that_install_terraform_refresh_hashicorp_s_source_alone():
             assert "Error-Mode=any" in update, (where, update)
             assert "Dir::Etc::sourcelist=/etc/apt/sources.list.d/hashicorp.list" in update, (where, update)
             assert "Dir::Etc::sourceparts=-" in update, (where, update)
+
+
+IMAGES = ("glorfindel", "annatar")
+
+
+def test_sec_g_the_gate_refuses_a_high_cve_fixed_upstream_in_either_image():
+    """SEC-G (#848, P-06): both images built from the gate's tree, judged by grype pinned by its archive's
+    sha256 — its database fetched before, retried; the scan never retried, both images judged, a red one
+    never masked (`|| true`, `continue-on-error`). The total waits for it."""
+    jobs = _gate()["jobs"]
+    job = jobs["image-cves"]
+    assert job["name"] == "image CVEs (release gate)" and "image-cves" in jobs["gate"]["needs"]
+    assert "strategy" not in job and "services" not in job and "container" not in job
+    runs = [str(s.get("run") or "") for s in job["steps"]]
+    install = runs.index(RETRY + 'python3 scripts/image_cves.py install "$RUNNER_TEMP/grype"')
+    database = runs.index(RETRY + '"$RUNNER_TEMP/grype" db update')
+    (build,) = [i for i, r in enumerate(runs) if "docker build" in r]
+    (scan,) = [i for i, r in enumerate(runs) if "image_cves.py scan" in r]
+    assert install < database < build < scan
+    for image in IMAGES:
+        assert f"docker build -f {image}/Dockerfile -t eregion-gate/{image} ." in runs[build]
+        assert (f'python3 scripts/image_cves.py scan eregion-gate/{image} --grype "$RUNNER_TEMP/grype" '
+                f"--json cves-{image}.json || rc=1") in runs[scan]
+    assert runs[scan].strip().endswith('exit "$rc"') and "|| true" not in runs[scan]
+    assert "push" not in runs[build] and "--build-arg" not in runs[build]
+
+
+def test_sec_g_the_images_the_gate_judges_are_every_image_the_publication_signs():
+    """publish.yml signs eregion-glorfindel and eregion-annatar: the gate judges those two, and no other
+    Dockerfile is published."""
+    matrix = _load(ROOT / ".github" / "workflows" / "publish.yml")["jobs"]["publish"]["strategy"]["matrix"]
+    assert tuple(matrix["image"]) == IMAGES
 
 
 def test_the_last_job_waits_for_every_job_that_blocks_never_macos():
@@ -1990,12 +2023,13 @@ CHROMA_STEP = "ChromaDB's embedding model (fetched when the cache misses, retrie
 # ChromaDB's model.
 DOWNLOADS = re.compile(
     r"""\bpip"? install\b(?!.*--no-deps)|\bapt-get (?:update|install)\b|\bcurl\b.*apt\.releases\.hashicorp\.com"""
-    r"|\bterraform\b.*\binit\b|published_image\.py install-|scripts/chroma_model\.py")
+    r"|\bterraform\b.*\binit\b|published_image\.py install-|scripts/chroma_model\.py"
+    r"|image_cves\.py install|/grype\"? db update")
 # What measures — never retried, never in a step that is: a step that downloads then tests is cut.
 MEASURES = re.compile(
     r"\bpytest\b|mutation_check\.py|mutation_night\.py|component_check\.py|image_check\.py|pip_audit_issues\.py|\bruff\b"
     r"|\bterraform\b.*\b(?:test|validate)\b|jit-terraform/run\.sh|profiles-check"
-    r"|published_image\.py (?:verify|resolve)")
+    r"|published_image\.py (?:verify|resolve)|image_cves\.py (?:scan|judge)")
 # Every step retried, by workflow, job and name: the list grows only with a download.
 _INSTALL, _TF = "Install", "Install Terraform (HashiCorp's apt repository, pinned)"
 _INITS = tuple(f"Terraform init — {m} (the locked providers, retried)"
@@ -2007,6 +2041,8 @@ RETRIED = {
     *(("ci.yml", "terraform-test", s) for s in (_TF, *_INITS)),
     *(("release-gate.yml", job, s) for job in (*GATE_TESTS, "mutants", "control") for s in (_INSTALL, CHROMA_STEP)),
     ("release-gate.yml", "macos", _INSTALL),
+    *(("release-gate.yml", "image-cves", s) for s in ("grype (pinned by its archive's sha256, retried)",
+                                                      "grype's vulnerability database (retried)")),
     *(("release-gate.yml", "terraform", s) for s in (_TF, *_INITS)),
     *(("mutants.yml", job, s) for job in ("mutants", "control") for s in (_INSTALL, CHROMA_STEP)),
     *(("components.yml", job, s) for job in ("component", "components") for s in (_INSTALL, CHROMA_STEP)),

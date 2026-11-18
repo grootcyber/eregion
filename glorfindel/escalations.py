@@ -934,6 +934,19 @@ def set_verdict(escalation_id: str, verdict: str, note: str = "") -> dict:
     prefix, KeyError when no card matches. Returns the updated card."""
     if verdict not in VERDICTS:
         raise ValueError(f"verdict must be one of {', '.join(VERDICTS)}")
+    lines, i, e = _one_card(escalation_id)
+    e["verdict"] = verdict
+    e["verdict_at"] = datetime.now(timezone.utc).isoformat()
+    e["verdict_note"] = note
+    lines[i] = json.dumps(e, default=str)
+    _write_lines(lines)
+    return e
+
+
+def _one_card(escalation_id: str) -> tuple[list[str], int, dict]:
+    """The store's lines, and the one card `escalation_id` names (its full id, or a unique prefix of
+    at least 6 characters) with its line's index. ValueError: a prefix too short or ambiguous;
+    KeyError: no card. Read under the caller's lock."""
     ref = (escalation_id or "").strip().lower()
     if len(ref) < 6:
         raise ValueError("give the card id, or at least its first 6 characters")
@@ -952,9 +965,92 @@ def set_verdict(escalation_id: str, verdict: str, note: str = "") -> dict:
     if len(hits) > 1:
         raise ValueError(f"{escalation_id} matches {len(hits)} cards — give more characters")
     i, e = hits[0]
-    e["verdict"] = verdict
+    return lines, i, e
+
+
+# ── VP1 (#615): a verdict proposed on an expected exercise card, confirmed in one click ──────────
+#
+# The drill of the week declares the detection it expects (docs/design/drill-banc.md §8.2): the card
+# that is that detection — the right rule, on its target, in time — receives a *proposed* verdict
+# (glorfindel/proposed_verdict.py computes it, the watch writes it here). Its own field, never
+# `verdict`: a verdict proposed is never counted as given — not by the report, not by the indicators,
+# and the card stays in TO JUDGE until the operator confirms it (it becomes their verdict, given by
+# `confirm_proposed`) or refuses it (`refuse_proposed`: it is gone, and never proposed again).
+# A card whose run is an exercise but no proposal could be made carries why (`proposed_why`).
+PROPOSED_FIELD = "proposed_verdict"
+PROPOSED_WHY = "proposed_why"
+PROPOSED_REFUSED = "proposed_refused"
+
+
+def proposable(e: dict) -> bool:
+    """A card a verdict may be proposed on: a decision on a detection, of an exercise (its run named),
+    not judged, its proposal neither made nor refused. Any other card never carries one."""
+    return (is_decision(e) and e.get("source") == "exercise" and bool(e.get("exercise_run"))
+            and e.get("verdict") not in VERDICTS and not e.get(PROPOSED_FIELD) and not e.get(PROPOSED_REFUSED))
+
+
+@_locked
+def note_proposals(results: dict[str, dict]) -> int:
+    """The watch's pass of VP1 written on the cards (``glorfindel.proposed_verdict.refresh``):
+    ``results`` maps a card's id to ``{"proposed": <the proposal>}`` or ``{"why": {"code", "said"}}``.
+    Each card is held to ``proposable`` again, as the store holds it now — a card judged or refused
+    since, or one that is no exercise's, is left as it is. A proposal once made stays, until the
+    operator confirms or refuses it. Returns the number of cards changed."""
+    if not results or not _STORE.exists():
+        return 0
+    lines = _read_lines()
+    changed = 0
+    for i, line in enumerate(lines):
+        e = _card_of(line)
+        if e is None or str(e.get("id") or "") not in results or not proposable(e):
+            continue
+        r = results[str(e["id"])]
+        proposal = r.get("proposed")
+        if isinstance(proposal, dict) and proposal.get("verdict") in VERDICTS:
+            e[PROPOSED_FIELD] = dict(proposal)
+            e.pop(PROPOSED_WHY, None)
+        elif isinstance(r.get("why"), dict) and e.get(PROPOSED_WHY) != r["why"]:
+            e[PROPOSED_WHY] = dict(r["why"])
+        else:
+            continue
+        lines[i] = json.dumps(e, default=str)
+        changed += 1
+    if changed:
+        _write_lines(lines)
+    return changed
+
+
+@_locked
+def confirm_proposed(escalation_id: str, note: str = "") -> dict:
+    """The operator confirms the verdict proposed on a card: it becomes their verdict, given as
+    ``set_verdict`` gives one (``verdict_from: proposed``). ValueError when the card carries no
+    proposal — or one written on a card that is no exercise's —, or was judged already."""
+    lines, i, e = _one_card(escalation_id)
+    proposal = e.get(PROPOSED_FIELD)
+    if e.get("verdict") in VERDICTS:
+        raise ValueError(f"the card is judged already ({e['verdict']})")
+    if e.get("source") != "exercise" or not isinstance(proposal, dict) or proposal.get("verdict") not in VERDICTS:
+        raise ValueError("the card carries no proposed verdict")      # only an exercise card ever does
+    e["verdict"] = proposal["verdict"]
     e["verdict_at"] = datetime.now(timezone.utc).isoformat()
     e["verdict_note"] = note
+    e["verdict_from"] = "proposed"
+    lines[i] = json.dumps(e, default=str)
+    _write_lines(lines)
+    return e
+
+
+@_locked
+def refuse_proposed(escalation_id: str, note: str = "") -> dict:
+    """The operator refuses the verdict proposed on a card: the proposal is gone — kept as refused,
+    never proposed again — and the card stays to judge. ValueError when it carries none."""
+    lines, i, e = _one_card(escalation_id)
+    proposal = e.get(PROPOSED_FIELD)
+    if not isinstance(proposal, dict):
+        raise ValueError("the card carries no proposed verdict")
+    e.pop(PROPOSED_FIELD, None)
+    e[PROPOSED_REFUSED] = {"at": datetime.now(timezone.utc).isoformat(),
+                           "verdict": str(proposal.get("verdict") or ""), "note": note}
     lines[i] = json.dumps(e, default=str)
     _write_lines(lines)
     return e
@@ -1038,6 +1134,9 @@ def to_judge(since: datetime | None = None, limit: int = 100) -> list[dict]:
             "suggested_steps", "executed", "run_id", "signal_id")}
         card["exercise"] = e.get("source") == "exercise"
         card["exercise_run"] = (e.get("exercise_run") or "") if card["exercise"] else ""
+        # VP1: the verdict proposed, apart from a verdict given — on an exercise card only.
+        for k in (PROPOSED_FIELD, PROPOSED_WHY, PROPOSED_REFUSED):
+            card[k] = e.get(k) if card["exercise"] and isinstance(e.get(k), dict) else None
         card["recurrence"] = recurrence(e, escs)
         out.append(card)
     out.sort(key=lambda c: str(c.get("first_seen") or ""), reverse=True)

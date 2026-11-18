@@ -139,7 +139,8 @@ jobs:
   # CI10a took the unmutated runs of the machine out of the shards (`--skip-machine-baseline`: the
   # invariant jobs above prove the base at 2 000) and narrowed the CD's targets, ten shards take as
   # long as fourteen — the floor is one mutant of about 20 min — and four runners go back to the pull
-  # requests: the gate starts 16 jobs at once (19 before), under GitHub's 20. The bound leaves room.
+  # requests: the gate starts 16 jobs at once (19 before), under GitHub's 20 — 17 since SEC-G's image-cves.
+  # The bound leaves room.
   mutants:
     name: mutants (shard ${{ matrix.shard }}/10)
     if: ${{ github.event_name == 'workflow_dispatch' || (startsWith(github.head_ref, 'chore/release-') && github.event.pull_request.head.repo.full_name == github.repository) }}
@@ -389,6 +390,42 @@ jobs:
           terraform -chdir=infra/orodruin validate -no-color
           terraform -chdir=infra/orodruin test -no-color
 
+  # SEC-G (#848, P-06): no release publishes a package its distribution already fixed. Both images built
+  # from the tree the gate measures (as images.yml builds them: their Dockerfile, the repository as
+  # context, no build argument; nothing pushed, no registry), then grype — pinned by its archive's sha256
+  # (scripts/image_cves.py), its database fetched in a step of its own, retried, never during the scan:
+  # a High or Critical vulnerability, fixed upstream, in a package of the operating system is red, named
+  # in the run's summary. Both images are judged, whichever fails first. docs/operations.md, « Les images
+  # publiées ». One job, both images: one runner more at the start (17), never two.
+  image-cves:
+    name: image CVEs (release gate)
+    if: ${{ github.event_name == 'workflow_dispatch' || (startsWith(github.head_ref, 'chore/release-') && github.event.pull_request.head.repo.full_name == github.repository) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09   # v5.1.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: grype (pinned by its archive's sha256, retried)
+        run: bash scripts/retry.sh python3 scripts/image_cves.py install "$RUNNER_TEMP/grype"
+
+      - name: grype's vulnerability database (retried)
+        run: bash scripts/retry.sh "$RUNNER_TEMP/grype" db update
+
+      - name: Both images, built from this tree (nothing pushed)
+        run: |
+          docker build -f glorfindel/Dockerfile -t eregion-gate/glorfindel .
+          docker build -f annatar/Dockerfile -t eregion-gate/annatar .
+
+      - name: No High or Critical CVE fixed upstream in their system packages
+        run: |
+          rc=0
+          python3 scripts/image_cves.py scan eregion-gate/glorfindel --grype "$RUNNER_TEMP/grype" --json cves-glorfindel.json || rc=1
+          python3 scripts/image_cves.py scan eregion-gate/annatar --grype "$RUNNER_TEMP/grype" --json cves-annatar.json || rc=1
+          exit "$rc"
+
   # Green only when every job that blocks is: `always()`, so it runs and says so when one failed,
   # was cancelled (its bound, a runner never acquired) or skipped — each of those is red here.
   # It needs every job but macOS (CI10b, #581, L7): a job that informs never holds the total back
@@ -396,7 +433,7 @@ jobs:
   # macOS says itself in the run's summary.
   gate:
     name: release gate
-    needs: [invariants-azure, invariants-rest, mutants, control, mutants-total, terraform]
+    needs: [invariants-azure, invariants-rest, mutants, control, mutants-total, terraform, image-cves]
     if: ${{ always() && (github.event_name == 'workflow_dispatch' || (startsWith(github.head_ref, 'chore/release-') && github.event.pull_request.head.repo.full_name == github.repository)) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
