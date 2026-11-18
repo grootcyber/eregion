@@ -223,7 +223,7 @@ def test_a_former_command_is_read_but_in_the_history_and_the_kept_texts(tmp_path
         "tests/unit/test_x.py": "# " + cited, "scripts/mutants/X1.py": "# " + cited,
         ".github/workflows/x.yml": "# " + cited,
         "CLAUDE.md": "Imladris ne déploie qu'un tag (`make glorfindel-host-start REF=…`).\n",
-        "ROADMAP.md": "| 0.5.10 | la console, `make mobile-check`) | publiée |\n",
+        "infra/glorfindel-host/README.md": "Le message dit `make glorfindel-host-cd-install` (qui marche encore).\n",
         "infra/glorfindel-host/main.tf": "# " + cited, "infra/glorfindel-host/cd/eregion_cd.py": "# " + cited,
         "infra/glorfindel-host/deploy.sh": "# " + cited, "Makefile": "# " + cited,
     })
@@ -232,10 +232,12 @@ def test_a_former_command_is_read_but_in_the_history_and_the_kept_texts(tmp_path
     assert found == ["CLAUDE.md", "Makefile", "infra/glorfindel-host/cd/eregion_cd.py",
                      "infra/glorfindel-host/deploy.sh", "infra/glorfindel-host/main.tf"]
     assert "CLAUDE.md" not in host_name.OLD_KEPT
-    _tree(tmp_path, {"ROADMAP.md": "Puis `make glorfindel-host-push`.\n"})
+    _tree(tmp_path, {"ROADMAP.md": "Puis `make glorfindel-host-push`.\n",
+                     "infra/glorfindel-host/README.md": "Le message a changé.\n"})
     said = host_name.problems(tmp_path)
     assert any(p.startswith("ROADMAP.md:1: a former command") for p in said)
-    assert any("the kept command « `make mobile-check`) » is gone" in p for p in said)
+    assert any("the kept command « `make glorfindel-host-cd-install` (qui marche encore) » is gone" in p
+               for p in said)
 
 
 def test_the_kept_former_commands_are_where_they_are_said():

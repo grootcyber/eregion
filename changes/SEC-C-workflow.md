@@ -1,3 +1,0 @@
-### Security
-- **The job that builds and signs the images reads no shared cache, and its BuildKit is pinned by its digest** (SEC-C, #635; audit of 06/11, V-25; `docs/design/modele-de-menace.md`, §6). `publish.yml` no longer reads the GitHub Actions cache that `images.yml` writes on `main`; `docker/setup-buildx-action` starts `moby/buildkit` v0.34.2 (the fixes of GHSA-2fqp-xg6f-v7gj and GHSA-w26x-xg27-7qjc) by the digest of its index, never the version the action would pick. Its change to `publish.yml` is committed by the maintainer (the App of the sessions has no `Workflows` right).
-  - Tests: `tests/unit/test_workflows.py` (mutants M5464–M5465, `scripts/mutants/SEC-C-workflow.py`).

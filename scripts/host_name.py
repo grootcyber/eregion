@@ -109,9 +109,6 @@ OLD_NOT_READ = {
     "scripts/host_name.py": "this check: it quotes the forms it refuses",
 }
 OLD_KEPT = {
-    "ROADMAP.md": (
-        ("`make mobile-check`)", "the line of a release published: what it shipped, in its names"),
-    ),
     "infra/glorfindel-host/README.md": (
         ("`make glorfindel-host-cd-install` (qui marche encore)",
          "the quotation of the former agent's message in #deploy: what the screen shows until the agent "
