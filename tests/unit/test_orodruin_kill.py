@@ -99,10 +99,11 @@ def _experiment(name):
 class FakeChannel:
     """The exercises container, as exercise_channel's pull and publish reach it."""
 
-    def __init__(self, windows, status=200):
+    def __init__(self, windows, status=200, listed_at=None):
         self.blobs = {f"{w['run_id']}.json": json.dumps(w).encode() for w in windows}
         self.status = status
         self.puts = {}
+        self.listed_at = listed_at
 
     def get(self, url, headers=None, params=None, timeout=None):
         if self.status != 200:
@@ -110,7 +111,7 @@ class FakeChannel:
         if params and params.get("comp") == "list":
             # Written when its window opened, five minutes ago (SEC-A1b: a window pulled starts
             # within FUTURE_SKEW_S of its blob's creation).
-            when = format_datetime(NOW - timedelta(minutes=5), usegmt=True)
+            when = format_datetime(self.listed_at or NOW - timedelta(minutes=5), usegmt=True)
             items = "".join(f"<Blob><Name>{n}</Name><Properties><Last-Modified>"
                             f"{when}</Last-Modified></Properties></Blob>"
                             for n in self.blobs)
@@ -276,6 +277,22 @@ def test_the_open_windows_are_closed_and_what_ran_is_said(kill_script):
     assert "r-open: a Run Command already sent runs to its end on vm-celebrimbor-gondolin" in text
     assert "r-fault: the fault may leave vm-celebrimbor-gondolin down" in text
     assert f"until {NOW + timedelta(seconds=exercise.GRACE_AFTER_S):%H:%M} UTC" in text  # the grace after the close
+
+
+def test_the_kill_judges_a_blobs_age_by_its_own_moment(kill_script):
+    """SEC-A1b (relecture) : le kill saute un blob trop vieux pour être ouvert d'après l'heure qu'on
+    lui donne (`steps(now=…)`), jamais d'après l'horloge réelle. Un kill daté d'un autre moment
+    sauterait sinon tous les blobs, et dirait à tort qu'aucune fenêtre n'est ouverte."""
+    then = NOW - timedelta(days=3)
+    window = _window("r-then", expires=then + timedelta(hours=1))
+    window["start"] = (then - timedelta(minutes=5)).isoformat()
+    channel = FakeChannel([window], listed_at=then - timedelta(minutes=5))
+    inflight, said = [], []
+    failures = orodruin.kill(*kill_script.steps(
+        "oid-1", VM, subscription=CONTRACT, channel=CHANNEL, run=FakeAz(), credential=CRED,
+        get=channel.get, put=channel.put, say=said.append, inflight=inflight, now=then))
+    assert failures == []
+    assert set(channel.puts) == {"r-then.json"} and channel.puts["r-then.json"]["end"] == then.isoformat()
 
 
 def test_a_vm_a_fault_may_leave_down_is_said_once(kill_script):

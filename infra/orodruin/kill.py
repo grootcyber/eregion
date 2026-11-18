@@ -234,7 +234,7 @@ def steps(principal_id: str, vm_id: str, *, subscription: str = "",
             with tempfile.TemporaryDirectory() as tmp:
                 # SEC-A1b: every window of the channel, never the first pull's bounded share.
                 read = exercise_channel.pull_whole(Path(tmp), channel=channel, credential=cred,
-                                                   get=get, say=say)
+                                                   get=get, say=say, now=at)
                 # Read at the kill's own moment: the purge and the bounds of a window by one clock.
                 windows = exercise.load_windows(Path(tmp), now=at, max_files=None)
         except Exception as e:
