@@ -23,10 +23,27 @@ Contrat (garanties, vérifications, kill, mutants) :
 - **Le compte du canal derrière son pare-feu** (SEC5) : seuls les sous-réseaux d'Orodruin et de
   Imladris, anciennement H0 (points de terminaison de service) et les IP d'Orodruin, d'Imladris et de l'opérateur y entrent.
   Appliquer `infra/glorfindel-host` d'abord (le point de terminaison d'Imladris), puis ce module.
+- **Le canal journalisé** (SEC-G, #848 ; audit du 13/11, V-39) : un réglage de diagnostic du service de
+  blobs du compte (`channel_blobs`) envoie chaque lecture, écriture et suppression (`StorageRead`,
+  `StorageWrite`, `StorageDelete` : qui, quand, d'où, quel blob) vers le workspace du banc
+  (`bench_workspace`), table `StorageBlobLogs`. Ce workspace, parce qu'aucune identité que ce module ou
+  celui d'Imladris admet au canal ne peut l'effacer ni en purger les lignes : Orodruin et la watch
+  hébergée n'y ont que `Log Analytics Reader`, et aucun droit sur le réglage, posé dans le groupe
+  d'Orodruin. L'opérateur, propriétaire de l'abonnement, le peut : ce journal ne le garde pas de lui-même.
+  Il vit avec le banc (`celebrimbor-down` l'emporte). Le pare-feu du compte (Deny) ne retient pas ces
+  journaux : Azure Monitor les émet hors du plan de données. **Le prix** : l'ingestion des lignes — la
+  watch lit le battement et les fenêtres chaque minute, quelques milliers de lignes par jour, à mesurer
+  au banc (`StorageBlobLogs | summarize count() by bin(TimeGenerated, 1d)`). Posé au prochain
+  `make orodruin-lock` (son plan relu : une création, `azurerm_monitor_diagnostic_setting.channel_blobs`).
+  Test : `infra/orodruin/tests/channel_journal.tftest.hcl`.
 - **Sortie fermée** hors périmètre : API de contrôle d'Azure, Entra ID, API du modèle
   (`160.79.104.0/23`), DNS et IMDS ; le reste d'Internet refusé. Pas de peering avec le banc :
   Run Command passe par l'API de contrôle.
-- **Entrée** : SSH depuis ton IP seulement.
+- **Entrée** : SSH depuis ton IP seulement — une adresse IPv4 publique, en `/32` (SEC-G, audit du 13/11,
+  V-40) : `OPERATOR_CIDR=<ton IP>/32`, ou, sans lui, la réponse d'un service tiers (`api.ipify.org`), dite
+  et vérifiée par `scripts/operator_cidr.py` avant tout plan. Une plage (`0.0.0.0/1`, `/24`), une IPv6, une
+  adresse privée, partagée ou réservée est refusée, par le Makefile puis par la validation
+  d'`operator_cidr` : la même adresse entre aussi au pare-feu du canal, qui ne prend que l'IPv4.
 - Pas de tag `eregion-target` : Orodruin n'est pas une cible.
 - **La lecture de Microsoft Graph** (IDI1, #546), désactivée par défaut : `graph_read_enabled = true`
   donne à l'identité d'Orodruin les rôles d'application `Application.Read.All` et
