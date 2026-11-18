@@ -28,20 +28,25 @@ sent, and status says so. The journal gets a line only when something happens (a
 no webhook while a tier is due, a date that does not read — its year between 2000 and 2999), never at every pass. No Graph, no identity: a rotation made outside
 the command is not seen here.
 
-The trigger is Jonathan publishing a release (sessions prepare drafts). A pass:
+The trigger is Jonathan creating and publishing a release (SEC-G: its author is him). A pass:
   0. a pass cut after its switch (a reboot, a timeout) is taken up first: its health, then
      kept or rolled back — a switch is written down before it happens;
   1. the latest release (GitHub's public API, outbound, no token; drafts and pre-releases are
      not in it); nothing to do when it runs already (the three containers), or failed or was
-     refused before; a tag seen before on another commit is refused (a moved tag);
+     refused before; refused, before anything is fetched (SEC-G, audit of 13/11, V-07): a tag not of
+     the form v<semver> (v0.6.1: never « 0.6.1 »), a release whose author is not the maintainer — an
+     App, a bot, another account (his id pinned on Imladris, EREGION_CD_MAINTAINER_ID, else the
+     repository's owner when a person); a tag seen before on another commit is refused (a moved tag);
+     its commit read on the repository's API (SEC-G, V-38), the origin's refused when it differs;
   2. its tag on origin/main, never older than what runs nor than the floor (the highest version
      deployed on Imladris, never lowered) — by its version (vX.Y.Z) or by its commit: refused and
      said with the mention, unless the way back was asked on Imladris for this very tag (`rollback TAG`,
-     a published release, never a pre-release; SEC12); what runs unreadable, or two commits git
-     cannot order (merge-base: 128), refused — never taken for newer; whether a rule of the repository reserves its tag (its
-     creation, update and deletion) read without a token, and said: seen with the start, in
-     orange when absent or unreadable — never a refusal (what GitHub shows without a token is
-     to be measured on Imladris); the checks that hold it (H1c: the five the rule of main requires,
+     a published release, never a pre-release; SEC12 — the way back passes the same tag and author
+     rule); what runs unreadable, or two commits git
+     cannot order (merge-base: 128), refused — never taken for newer; a rule of the repository that
+     reserves its tag (its creation, update and deletion), read without a token: seen, named with
+     the start; absent, refused (SEC-G, V-07); unreadable, the release waits, said once with the
+     mention; the checks that hold it (H1c: the five the rule of main requires,
      REQUIRED_CHECKS, and the image's, publish (glorfindel)) completed, none red (still running:
      wait for the next pass, said once; absent an hour: refused); every other check only said —
      red or cancelled, once per tag, in orange; still running, never waited for;
@@ -189,10 +194,19 @@ CHECK_WORDS = {"success": "vert", "neutral": "neutre", "skipped": "sauté", "fai
                "startup_failure": "pas démarré", "stale": "périmé", "queued": "en file", "in_progress": "en cours",
                "waiting": "en attente", "requested": "demandé", "pending": "en attente"}
 COSIGN = CD_HOME / "cosign"   # pinned (published_image.COSIGN_SHA256), checked before each use
-TAG_RE = r"[A-Za-z0-9][A-Za-z0-9._-]*"
-# SEC12: a release's version, compared with what runs. A tag of another shape is compared by its
-# commit only.
-VERSION_RE = re.compile(r"v?(\d+)\.(\d+)\.(\d+)")
+# SEC-G (audit of 13/11, V-07): the only tag a release deploys under — « v », then a semantic version
+# without a leading zero (v0.6.1, v1.0.0): the form the rule of the repository's tags reserves, and the
+# form the publication labels the image with. Any other (« 0.6.1 », « release-1 », « v0.6.1-rc1 »)
+# is refused, never compared by its commit alone.
+TAG_RE = r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+# SEC12: a release's version, compared with what runs — of the same form: a « v » required (a label of
+# another shape, a commit deployed by hand, has no version and is compared by its commit only).
+VERSION_RE = re.compile(TAG_RE)
+# SEC-G (V-07): the release's author is the maintainer, a person — never an App nor a bot. His account's
+# id (digits, immutable through a rename) pinned in Imladris's own config (~/eregion/.env, from
+# host.env), never read from the release; unset, the owner of the repository on GitHub's API, when
+# that owner is a person.
+MAINTAINER_KEY = "EREGION_CD_MAINTAINER_ID"
 # SEC12: what a rule of the repository must forbid, but to the maintainer, on the release's tag.
 TAG_RULES = ("creation", "update", "deletion")
 LOCK = "requirements/glorfindel.txt"
@@ -735,6 +749,70 @@ def tag_rule(tag: str) -> tuple[str, str]:
         if covered and set(TAG_RULES) <= kinds:
             return "held", f"🔒 {tag} réservé par la règle « {discord_text(full.get('name'))} »"
     return "absent", f"aucune règle active ne réserve {ref} (création, mise à jour, suppression)"
+
+
+def shown(tag: str) -> str:
+    """A tag as it may be said: what a rule never formats, at most 64 characters."""
+    return discord_text(tag)[:64] or "?"
+
+
+def maintainer() -> tuple[int | None, str]:
+    """SEC-G (V-07): the maintainer's account id — pinned on Imladris (MAINTAINER_KEY), else the owner
+    of the repository when it is a person — and where it comes from; (None, why) when neither reads."""
+    pinned = env_value(REPO / ".env", MAINTAINER_KEY)
+    if pinned:
+        if re.fullmatch(r"[1-9][0-9]{0,19}", pinned):
+            return int(pinned), f"épinglé sur Imladris ({MAINTAINER_KEY})"
+        return None, f"{MAINTAINER_KEY} illisible dans la config d'Imladris (l'id du compte, des chiffres)"
+    repo = github("")
+    owner = repo.get("owner") if isinstance(repo, dict) else None
+    if not isinstance(owner, dict) or owner.get("type") != "User":
+        return None, ("le propriétaire du dépôt n'est pas une personne, ou ne se lit pas : épingler l'id du "
+                      f"mainteneur sur Imladris ({MAINTAINER_KEY} dans host.env, puis make imladris-push)")
+    oid = owner.get("id")
+    if not isinstance(oid, int) or isinstance(oid, bool) or oid <= 0:
+        return None, "l'id du propriétaire du dépôt ne se lit pas"
+    return oid, f"propriétaire du dépôt {SLUG}"
+
+
+def release_refusal(tag: str, release: dict) -> str:
+    """SEC-G (audit of 13/11, V-07): why this release is never deployed, whatever else it passes — its
+    tag not of the form v<semver>, or its author not the maintainer: an App, a bot, another account,
+    or none said. '' when neither. A way back follows the same rule."""
+    if not re.fullmatch(TAG_RE, tag):
+        return (f"son tag, « {shown(tag)} », n'est pas de la forme v<majeur>.<mineur>.<correctif> : seule une "
+                "release v<semver>, dont la règle du dépôt réserve le tag, se déploie")
+    author = release.get("author")
+    if not isinstance(author, dict):
+        return "son auteur ne se lit pas : seule une release publiée par le mainteneur se déploie"
+    login, kind, aid = shown(str(author.get("login") or "")), author.get("type"), author.get("id")
+    if kind != "User":
+        return (f"son auteur, {login}, est un compte de type « {shown(str(kind))} » : une App ou un bot ne "
+                "publie jamais ce que le CD déploie — seul le mainteneur crée et publie une release")
+    want, where = maintainer()
+    if want is None:
+        return f"le mainteneur ne se lit pas ({where}) : aucune release ne se déploie sans savoir qui la publie"
+    if aid != want or isinstance(aid, bool):
+        return f"son auteur, {login}, n'est pas le mainteneur ({where}) : seule une release qu'il publie se déploie"
+    return ""
+
+
+def tag_commit(tag: str) -> str:
+    """SEC-G (audit of 13/11, V-38): the commit of the release's tag, read on the API of the repository
+    at its current name (SLUG) — never on the origin alone: an annotated tag followed once. Refused
+    when the API does not name a commit."""
+    ref = github(f"/git/ref/tags/{tag}")
+    obj = ref.get("object") if isinstance(ref, dict) and ref.get("ref") == f"refs/tags/{tag}" else None
+    for _ in range(2):
+        if not isinstance(obj, dict) or not re.fullmatch(r"[0-9a-f]{40}", str(obj.get("sha") or "")):
+            break
+        if obj.get("type") == "commit":
+            return obj["sha"]
+        if obj.get("type") != "tag":
+            break
+        annotated = github(f"/git/tags/{obj['sha']}")
+        obj = annotated.get("object") if isinstance(annotated, dict) else None
+    raise Refused(f"le commit de {tag} ne se lit pas sur l'API du dépôt ({SLUG}) : jamais l'origin seul")
 
 
 def h0_model(commit: str) -> str:
@@ -1571,7 +1649,7 @@ def run_pass(check: bool = False, back_to: str = "") -> int:
             return resume(state, *cut[-1])
     if back_to:
         if not re.fullmatch(TAG_RE, back_to):
-            print(f"tag illisible : {back_to!r}")
+            print(f"tag illisible : {back_to!r} (un tag v<majeur>.<mineur>.<correctif>, SEC-G)")
             return 2
         release = github(f"/releases/tags/{back_to}")
         if not isinstance(release, dict) or release.get("tag_name") != back_to:
@@ -1587,11 +1665,22 @@ def run_pass(check: bool = False, back_to: str = "") -> int:
     if not isinstance(release, dict):
         raise Quiet("releases/latest : réponse illisible de GitHub")
     tag, url = str(release.get("tag_name") or ""), str(release.get("html_url") or "")
-    if not re.fullmatch(TAG_RE, tag):
-        raise Quiet(f"tag de release illisible : {tag!r}")
+    if not tag:
+        raise Quiet("releases/latest : release sans tag")
     done = state["outcomes"].get(tag, {}).get("result")
     if not check and not back_to and done in ("refused", "rolled back", "rollback failed"):
-        raise Quiet(f"{tag} : {done} (make imladris-cd-retry pour réessayer)")
+        raise Quiet(f"{shown(tag)} : {done} (make imladris-cd-retry pour réessayer)")
+    # SEC-G (V-07): a tag the rule does not reserve, an author who is not the maintainer — refused before
+    # anything is fetched, said with the mention, remembered; a way back as any release.
+    why = release_refusal(tag, release)
+    if why:
+        if check:
+            say(f"⛔ À blanc : {shown(tag)} serait refusée", why, color=nd.RED)
+            return 1
+        state["outcomes"][tag] = {"result": "refused", "why": why, "at": int(time.time())}
+        save_state(state)
+        say(f"⛔ {shown(tag)} refusée : Imladris reste sur ce qui tourne", why, color=nd.RED, alert=True, url=url)
+        return 1
     point_origin(state)
     try:
         git("fetch", "-q", "--tags", "--force", "origin")
@@ -1631,17 +1720,27 @@ def run_pass(check: bool = False, back_to: str = "") -> int:
             return check_running(tag, commit, url, state)
         raise Quiet(f"{tag} tourne déjà")
     try:
+        # SEC-G (V-38): the tag's commit as the repository's API names it — the origin agreeing, or refused.
+        named = tag_commit(tag)
+        if named != commit:
+            raise Refused(f"son tag désigne {named[:12]} sur l'API du dépôt ({SLUG}), {commit[:12]} sur l'origin "
+                          "d'Imladris : rien ne se déploie depuis un origin qui dit autre chose")
         checks = verify(tag, commit, dep_commit, state, dep_ref, back_to, check=check)
         harness = lock_guard(tag, commit, dep_commit, dep_ref) or {}
         rule, rule_said = tag_rule(tag)
-        if rule != "held":     # SEC12: said, never a refusal (to measure: what GitHub shows without a token)
-            title = (f"⚠️ {tag} : aucune règle du dépôt ne réserve son tag" if rule == "absent"
-                     else f"⚠️ {tag} : la règle des tags n'a pas pu être lue")
-            text = f"{rule_said} — Settings → Rules → Rulesets (docs/sessions.md, « Les règles du dépôt »)"
+        # SEC-G (audit of 13/11, V-07): a tag no active rule reserves is refused — whoever can write the
+        # repository could have made it; a rule that cannot be read holds the release, said once, until
+        # it reads (Settings → Rules → Rulesets, docs/sessions.md, « Les règles du dépôt »).
+        text = f"{rule_said} — Settings → Rules → Rulesets (docs/sessions.md, « Les règles du dépôt »)"
+        if rule == "absent":
+            raise Refused(f"aucune règle active du dépôt ne réserve son tag : {text}")
+        if rule != "held":
             if check:
-                say(f"À blanc : {title}", text, color=nd.ORANGE)
-            else:
-                say_once(state, tag, "tag-rule", title, text, color=nd.ORANGE, alert=rule == "absent", url=url)
+                say(f"⚠️ À blanc : {tag} serait retenue : la règle des tags n'a pas pu être lue", text, color=nd.ORANGE)
+                return 1
+            say_once(state, tag, "tag-rule", f"⚠️ {tag} retenue : la règle des tags n'a pas pu être lue", text,
+                     color=nd.ORANGE, alert=True, url=url)
+            raise Quiet(f"{tag} : la règle des tags ne se lit pas, la release attend")
         aside(commit)
         digest = fetch(tag, commit, state)
         if not check:
