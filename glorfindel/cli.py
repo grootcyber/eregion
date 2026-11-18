@@ -2243,10 +2243,11 @@ def ack(escalation_id: str | None, all_pending: bool):
     except (KeyError, ValueError) as exc:
         raise click.ClickException(str(exc).strip(chr(39))) from None
     if e.get("status") != "pending":
-        console.print(f"[yellow]Escalation {e['id'][:8]} already {e.get('status', 'resolved')}.[/yellow]")
+        console.print(f"[yellow]Escalation {_outside(str(e['id'])[:8])} already "
+                      f"{_outside(e.get('status', 'resolved'))}.[/yellow]")
         return
     escalations.resolve(e["id"])
-    console.print(f"[green]✓ Escalation {e['id']} acknowledged.[/green]")
+    console.print(f"[green]✓ Escalation {_outside(e['id'])} acknowledged.[/green]")
 
 
 @cli.command()
@@ -2265,7 +2266,7 @@ def verdict(escalation_id: str, judgement: str, note: str):
     except (KeyError, ValueError) as exc:
         console.print(f"[red]✗ {str(exc).strip(chr(39))}[/red]")
         raise SystemExit(1)
-    console.print(f"[green]✓ {e['action']} on {e['resource_id'].rstrip('/').rsplit('/', 1)[-1]}: "
+    console.print(f"[green]✓ {_outside(e['action'])} on {_outside(e['resource_id'].rstrip('/').rsplit('/', 1)[-1])}: "
                   f"{judgement}[/green]")
 
 
@@ -2311,7 +2312,7 @@ def report(since_text: str, as_json: bool):
         for col in ("", "right", "wrong", "unsure", "not judged"):
             table.add_column(col, justify="left" if not col else "right")
         for name, b in sorted(rows.items()):
-            table.add_row(name, str(b["right"]), str(b["wrong"]), str(b["unsure"]), str(b["unjudged"]))
+            table.add_row(_outside(name), str(b["right"]), str(b["wrong"]), str(b["unsure"]), str(b["unjudged"]))
         console.print(table)
     if r["cards"] and r["judged"] < r["cards"]:
         console.print(f"[dim]{r['cards'] - r['judged']} card(s) not judged: glorfindel verdict <id> right|wrong|unsure[/dim]")

@@ -523,3 +523,17 @@ def test_the_tui_quotes_each_argument_of_a_command(monkeypatch):
     assert _args_after(restore.split("→", 1)[1].split("#", 1)[0].strip(" │"), "--before") == FORGED
     ack = next(line for line in text.splitlines() if "glorfindel ack" in line)
     assert shlex.split(ack.split("→", 1)[1].strip(" │")) == ["glorfindel", "ack", "def`id`y"]
+
+
+def test_ack_and_verdict_say_a_card_from_outside_as_it_is(monkeypatch):
+    from click.testing import CliRunner
+
+    from glorfindel import cli
+    console, buf = _console()
+    monkeypatch.setattr(cli, "console", console)
+    esc_id = escalations.record("s-1", VM, EVIL, "mode_hold", "held", confidence=0.5)
+    assert CliRunner().invoke(cli.cli, ["verdict", esc_id, "right"]).exit_code == 0
+    assert CliRunner().invoke(cli.cli, ["ack", esc_id]).exit_code == 0
+    out = buf.getvalue()
+    assert f"✓ {EVIL} on web: right" in out and f"Escalation {esc_id} acknowledged" in out
+    assert "[/" not in _plain(out)
