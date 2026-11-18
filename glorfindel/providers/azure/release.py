@@ -4,6 +4,7 @@ doesn't know (moved from actions.py, A1).
 from __future__ import annotations
 
 from glorfindel.providers.azure.nsg import _deny_applies, _deny_isolates, _ip_scoped, _nic_owns, _rule_name
+from glorfindel.providers.azure.older_names import OlderUnread
 from glorfindel.providers.azure.quarantine import OriginalUnknown, _is_quarantine_nsg
 from glorfindel.providers.azure.turned import _aims_elsewhere, _held_by_turned
 from glorfindel.providers.azure.sdk import _is_not_found
@@ -55,14 +56,21 @@ class ReleaseMixin:
                 return _rule_name(r_in)
         return None
 
-    def _iso_rules_on(self, vm_name: str, t: dict, rules: list) -> list:
+    def _iso_rules_on(self, vm_name: str, t: dict, rules: list, mates=(), recorded: dict | None = None,
+                      cache: dict | None = None) -> list:
         """The isolation rules of THIS NIC in `rules` (the NSG's listing): see _nic_owns.
-        Names compare without case — Azure's do."""
+        Names compare without case — Azure's do. An earlier version's names judged by
+        older_names.view_judge (`mates`: the VM's NICs; `recorded`: its state's names)."""
+        from glorfindel.providers.azure.older_names import view_judge
         names = {n.lower() for n in self._isolation_names_for_target(vm_name, t)}
         hashed = {n for b in self._placement_rule_bases("glorfindel-iso", vm_name, t["nic_short"], t["nic_id"])
                   for n in (b, f"{b}-out")}
+        older = {n.lower() for b in self._older_rule_bases("glorfindel-iso", vm_name, t["nic_short"], t["nic_id"])
+                 for n in (b, f"{b}-out")} - hashed
+        judge = view_judge(self._network, {} if cache is None else cache, t["nsg_rg"], t["nsg_name"], t["nic_id"],
+                           recorded or {}, mates)
         ips = t.get("private_ips") or None
-        return [r for r in rules if _nic_owns(r, hashed, names, ips)]
+        return [r for r in rules if _nic_owns(r, hashed, names, ips, older, judge)]
 
     def _original_view(self, t0: dict, original: str) -> dict:
         """The NIC as seen from its original NSG (away while in quarantine, or not yet put
@@ -372,6 +380,10 @@ class ReleaseMixin:
         guard = {} if guard is None else guard
         own_ips = [a for t0 in targets for a in t0.get("private_ips") or []]
         mates = [t0["nic_id"] for t0 in targets]
+        from glorfindel.providers.azure.older_names import recorded_names
+        from glorfindel.response.state import _load_block_entries
+        recorded = recorded_names(_load_isolation_state(resource_id) or {}, _load_block_entries(resource_id)) \
+            if resource_id else {}
         for t0 in targets:
             if t0.get("subnet_unreadable"):
                 failed.append(f'{t0["nic_short"]} : NSG du subnet illisible, levée non vérifiée')
@@ -380,7 +392,12 @@ class ReleaseMixin:
                 if rules is None:
                     failed.append(f'{t["nsg_rg"]}/{t["nsg_name"]} : règles illisibles, levée non vérifiée')
                     continue
-                for r in self._iso_rules_on(vm_name, t, rules):
+                try:
+                    own = self._iso_rules_on(vm_name, t, rules, mates, recorded, cache)
+                except OlderUnread as exc:
+                    failed.append(f"{_first_line(exc)[:_ERR_MAX]}, levée non vérifiée")
+                    continue
+                for r in own:
                     if (t["nsg_rg"].lower(), t["nsg_name"].lower(), _rule_name(r).lower()) in stuck:
                         continue
                     err = (_aims_elsewhere(r, own_ips) and _held_by_turned(
@@ -391,8 +408,4 @@ class ReleaseMixin:
                 failed += [f"{u} : laissée" for u in self._unattributable_fixed(t, rules)]
         failed += self._left_quarantine_rules(vm_name, targets, left, guard, mates, own_ips, cache, stuck,
                                               {} if keep is None else keep)
-        from glorfindel.providers.azure.older_names import recorded_names
-        from glorfindel.response.state import _load_block_entries
-        recorded = recorded_names(_load_isolation_state(resource_id) or {}, _load_block_entries(resource_id)) \
-            if resource_id else {}
         return failed + self._away_rules(vm_name, targets, stuck, guard, mates, recorded)   # a bare NIC's (D80)

@@ -8898,9 +8898,8 @@ MUTANTS += [
     ("M3197", "`reset --dry-run` says « Reset complete — <vm> is clean » on a preview (I3V)", GCLI,
      "    if dry_run:\n        # An outline, never « clean »", "    if False:\n        # An outline, never « clean »"),
     ("M3198", "another NIC's rule on the quarantine NSG left holds the verification: never verified (I3V)", AWY,
-     "                      for r in self._iso_rules_on(vm_name, view, rules)]\n        return still, unknown\n",
-     "                      for r in rules if _rule_name(r).startswith(\"glorfindel-iso\")]\n"
-     "        return still, unknown\n"),
+     "                          for r in self._iso_rules_on(vm_name, view, rules)]\n",
+     "                          for r in rules if _rule_name(r).startswith(\"glorfindel-iso\")]\n"),
 ]
 TESTS.update({
     "M3192": (f"{_I3V_SEQ} {_I3V_UNIT}::test_the_verification_of_a_partial_release_looks_on_the_quarantine_nsg_it_left "

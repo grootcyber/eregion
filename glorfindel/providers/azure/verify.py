@@ -309,7 +309,10 @@ class VerifyMixin:
             if rules is None:
                 unknown.append(f'{t["nic_short"]}:{t["nsg_name"]}')
                 continue
-            still += [f'{t["nic_short"]}:{_rule_name(r)}' for r in self._iso_rules_on(vm_name, t, rules)]
+            try:
+                still += [f'{t["nic_short"]}:{_rule_name(r)}' for r in self._iso_rules_on(vm_name, t, rules)]
+            except Exception as exc:              # an older name whose owner can't be read (SEC-H)
+                unknown.append(f'{t["nic_short"]}:{_first_line(exc)[:_ERR_MAX]}')
             unknown += self._unattributable_fixed(t, rules)
         # Where the release looks besides, that the NICs no longer carry — the quarantine NSG a
         # partial release left (I3R), a placement's NSG: out of the views above — « verified »,

@@ -172,9 +172,12 @@ sa levée :
   qui y tient est vérifié, jamais reposé en double ;
 - **jamais cru sur le nom** : une règle sous un ancien nom n'est à une carte que si l'état de sa VM l'enregistre
   pour elle (la levée et le déblocage défont leurs placements par leur nom ; le `reset` les lit dans l'état, même
-  si l'adresse de la carte a changé depuis), ou, sur un NSG qui gouverne la carte, si c'est un refus qui
-  s'applique à ses adresses — celle d'un homonyme dont le hash a rencontré le sien, visant d'autres adresses,
-  reste ;
+  si l'adresse de la carte a changé depuis), ou, sur un NSG qui gouverne la carte, si elle ne couvre l'adresse
+  d'aucune autre carte vivante que ce NSG gouverne — quoi qu'elle couvre maintenant (l'adresse de la carte a pu
+  changer, L26), retournée en autorisation ou non (A0) ; celle qui couvre une autre carte vivante (un homonyme
+  dont le hash a rencontré le sien, sur un NSG que deux VNet partagent, ou la carte qui a pris l'ancienne
+  adresse) reste ; le NSG ou les cartes illisibles, elle n'est ni retirée ni lue partie : dite, l'opération non
+  vérifiée ;
 - **hors de vue** : sur le NSG qu'une carte laissée nue ne porte plus, et pour une VM supprimée (sur tous les NSG
   de l'abonnement), deux VM de deux VNet ont souvent la même adresse privée — un refus qui la vise n'y prouve rien.
   Une règle d'un ancien nom n'y est à la carte que si l'état de sa VM l'enregistre sur ce NSG pour elle, ou si

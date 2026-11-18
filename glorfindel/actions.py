@@ -23,7 +23,7 @@ The code that lived here (4 394 lines) is split by concern, nothing changed in i
     isolation.py, release.py, verify.py      isolation by quarantine or by rules
     older.py                    an older version's isolation undone by its record (I4E)
     gone.py                     a VM gone: its NICs' rules looked for everywhere (I7S, I5R)
-    older_names.py              an earlier version's name on an NSG the NIC does not carry: whose it is (SEC-H)
+    older_names.py              an earlier version's name: whose it is, on an NSG the NIC carries or not (SEC-H)
     blocks.py, unblock.py       IP blocks
     perimeter.py                a perimeter block merged with a VM block (RB1)
     backup.py, restore.py       restore points

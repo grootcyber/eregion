@@ -371,7 +371,8 @@ def _deny_applies(rule, ips: list[str] | None) -> bool:
     return _side_covers(rule, side, ips or None)
 
 
-def _nic_owns(rule, hashed: set[str], names: set[str], ips: list[str] | None) -> bool:
+def _nic_owns(rule, hashed: set[str], names: set[str], ips: list[str] | None,
+              older=frozenset(), judge=None) -> bool:
     """A deny of this NIC's, to remove. Named with the NIC's hash (`hashed`, unique to
     the NIC): its own, whatever addresses it covers now — the NIC's IP may have changed
     since, and a deny left on the old address would cut off whoever gets it next (L26).
@@ -382,6 +383,11 @@ def _nic_owns(rule, hashed: set[str], names: set[str], ips: list[str] | None) ->
         # Only Glorfindel names a rule with a NIC's hash: whatever it has been turned
         # into (an allow, by hand), it goes with the NIC's release (A0).
         return True
+    if name in older:
+        # An earlier version's name (SEC-H), shared by NICs whose hash met: judged by `judge`
+        # (older_names.view_judge: recorded by the state, or covering no other live NIC) — a deny,
+        # or one turned into an allow (A0), as a hashed name was.
+        return judge is not None and judge(rule)
     return _enum_text(getattr(rule, "access", "")) == "deny" and name in names and _deny_applies(rule, ips)
 
 

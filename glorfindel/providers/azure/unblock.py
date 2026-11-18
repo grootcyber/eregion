@@ -12,6 +12,7 @@ from glorfindel.providers.azure.nsg import (
     _nic_owns,
     _rule_name,
 )
+from glorfindel.providers.azure.older_names import OlderUnread, recorded_names, view_judge
 from glorfindel.providers.azure.quarantine import OriginalUnknown
 from glorfindel.providers.azure.sdk import _is_not_found
 from glorfindel.providers.azure.turned import _aims_elsewhere, _held_by_turned
@@ -154,6 +155,8 @@ class UnblockMixin:
         unplaced: list[str] = []
         seen: set = set()
         known = {n.rstrip("/").lower() for n in named if n}
+        recorded = recorded_names(_load_isolation_state(resource_id) or {}, _load_block_entries(resource_id)) \
+            if resource_id else {}
         for t0 in targets:
             if t0.get("subnet_unreadable"):
                 failed.append(f'{t0["nic_short"]} : NSG du subnet illisible, déblocage non vérifié')
@@ -178,9 +181,19 @@ class UnblockMixin:
                 names = self._block_names_for_target(ip, vm_name, t)
                 hashed = {n for b in self._placement_rule_bases(self._block_rule_prefix(ip), vm_name,
                                                                 t["nic_short"], t["nic_id"]) for n in (b, f"{b}-out")}
+                # An earlier version's names (SEC-H), judged (older_names.view_judge).
+                older = {n.lower() for b in self._older_rule_bases(self._block_rule_prefix(ip), vm_name,
+                                                                   t["nic_short"], t["nic_id"])
+                         for n in (b, f"{b}-out")} - hashed
+                judge = view_judge(self._network, cache, t["nsg_rg"], t["nsg_name"], t["nic_id"], recorded, mates)
                 for r in rules:
                     name = _rule_name(r)
-                    if _nic_owns(r, hashed, names, t.get("private_ips") or None):
+                    try:
+                        mine = _nic_owns(r, hashed, names, t.get("private_ips") or None, older, judge)
+                    except OlderUnread as exc:
+                        failed.append(f"{_first_line(exc)[:_ERR_MAX]}, déblocage non vérifié")
+                        continue
+                    if mine:
                         seen.add((t["nsg_rg"].lower(), t["nsg_name"].lower(), name.lower()))
                         err = (_aims_elsewhere(r, own_ips) and _held_by_turned(
                             self._network, guard, t["nsg_rg"], t["nsg_name"], name, t0["nic_id"], mates)

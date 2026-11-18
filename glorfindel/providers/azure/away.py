@@ -7,7 +7,7 @@ from __future__ import annotations
 import re
 
 from glorfindel.providers.azure.nsg import _rule_name
-from glorfindel.providers.azure.older_names import older_not_ours
+from glorfindel.providers.azure.older_names import OlderUnread, older_not_ours
 from glorfindel.providers.azure.turned import _aims_elsewhere, _held_by_turned, _turned_guard
 from glorfindel.providers.azure.quarantine import QUARANTINE_NSG_PREFIX
 from glorfindel.response.ids import _parse_nsg_resource_id, _parse_vm_resource_id
@@ -88,7 +88,12 @@ class AwayRulesMixin:
                 failed.append(f"{q[0]}/{q[1]} : règles illisibles, levée non vérifiée")
                 rules = []
             view = {**t0, "nsg_rg": q[0], "nsg_name": q[1], "scope": "nic", "shared_nsg": True, "ip_scoped": True}
-            for r in self._iso_rules_on(vm_name, view, rules):
+            try:
+                own = self._iso_rules_on(vm_name, view, rules)
+            except OlderUnread as exc:
+                failed.append(f"{_first_line(exc)[:_ERR_MAX]}, levée non vérifiée")
+                own = []
+            for r in own:
                 name = _rule_name(r)
                 if (q[0].lower(), q[1].lower(), name.lower()) in stuck:
                     continue
@@ -116,8 +121,11 @@ class AwayRulesMixin:
             if rules is None:
                 unknown.append(f'{view["nic_short"]}:{where}')
                 continue
-            still += [f'{view["nic_short"]}:{_rule_name(r)} (sur {where})'
-                      for r in self._iso_rules_on(vm_name, view, rules)]
+            try:
+                still += [f'{view["nic_short"]}:{_rule_name(r)} (sur {where})'
+                          for r in self._iso_rules_on(vm_name, view, rules)]
+            except OlderUnread as exc:
+                unknown.append(f'{view["nic_short"]}:{_first_line(exc)[:_ERR_MAX]}')
         return still, unknown
 
     def _out_of_sight_views(self, targets: list[dict], state: dict) -> list[dict]:

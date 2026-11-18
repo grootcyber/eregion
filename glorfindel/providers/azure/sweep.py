@@ -5,7 +5,7 @@ The NSG listing the watch's pass shares, and one quarantine NSG read by its id (
 from __future__ import annotations
 
 from glorfindel.providers.azure.narrow import _freed, _narrow_rule, _narrowed
-from glorfindel.providers.azure.older_names import recorded_names as _recorded_names
+from glorfindel.providers.azure.older_names import OlderUnread, recorded_names as _recorded_names, view_judge
 from glorfindel.providers.azure.nsg import _is_mark, _nic_hash, _nic_mark, _nic_owns, _rule_name
 from glorfindel.providers.azure.turned import (
     _aims_elsewhere, _chain, _governed_by, _held_by_turned, _turned_allows, _turned_behind, _turned_still,
@@ -153,7 +153,16 @@ class SweepMixin:
                 # unless its name carries this NIC's hash (_nic_owns). A rule of the VM's
                 # other NIC waits for that NIC's pass (it used to be marked seen here,
                 # and skipped there).
-                if _nic_owns(r, hashed, owned, t.get("private_ips") or None):
+                older = {n.lower() for b in self._older_rule_bases(
+                    prefix if m else "glorfindel-iso", vm_name, t["nic_short"], t["nic_id"])
+                    for n in (b, f"{b}-out")} - hashed
+                judge = view_judge(self._network, guard, t["nsg_rg"], t["nsg_name"], t["nic_id"], {}, mates)
+                try:
+                    mine = _nic_owns(r, hashed, owned, t.get("private_ips") or None, older, judge)
+                except OlderUnread as exc:
+                    unreadable.append(_first_line(exc)[:_ERR_MAX])
+                    continue
+                if mine:
                     seen.add((nsg_key, name.lower()))
                     if _aims_elsewhere(r, own_ips) and (why := _held_by_turned(
                             self._network, guard, t["nsg_rg"], t["nsg_name"], name, t["nic_id"], mates)):
