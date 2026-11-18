@@ -48,7 +48,7 @@ def _response(state: dict) -> dict[str, list[str]]:
 
 def proofs(matrix: dict | None) -> dict[str, dict]:
     """Each entry's row of the coverage matrix (C1, eregion_console/coverage.py), by its id: its
-    state (proven, aging, stale, regressed, unproven, never), the age of its last proof, its last
+    state (fresh, aging, stale, regressed, unproven, never), the age of its last proof, its last
     run. An entry the matrix does not hold was never run here."""
     out: dict[str, dict] = {}
     for r in [*((matrix or {}).get("techniques") or []), *((matrix or {}).get("faults") or [])]:
