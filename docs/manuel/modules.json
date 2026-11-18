@@ -2896,6 +2896,18 @@
    "issue": 723
   },
   {
+   "id": "s-tests-intermittents",
+   "composant": "socle",
+   "poste": "s-prouver",
+   "nom": "Three intermittent tests steadied without weakening them: each reads its clock and its marker where the code under test does",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "FLK3"
+   ],
+   "issue": 900
+  },
+  {
    "id": "s-ci-terraform-source",
    "composant": "socle",
    "poste": "s-prouver",
