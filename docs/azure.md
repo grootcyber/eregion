@@ -184,7 +184,7 @@ sa levée :
   entière), la vérification de la levée (inconnue, jamais vraie, sur les NSG qu'elle lit : ceux que la carte
   porte, ceux qu'elle a quittés, et, pour une carte laissée nue, ceux de l'abonnement comme la levée), le NSG
   qu'une carte laissée nue ne porte plus, une VM supprimée —, avec la commande qui la retire à la main
-  (`az network nsg rule delete …`). La règle d'un homonyme n'est jamais retirée par la levée d'un autre . Un état local illisible
+  (`az network nsg rule delete …`). La règle d'un homonyme n'est jamais retirée par la levée d'un autre. Un état local illisible
   (d'une autre VM comprise) suspend tout retrait d'un ancien nom, dit « état local illisible » : ce qu'il enregistre
   est inconnu, jamais « rien » ;
 - **ce que cela coûte, pendant la transition** : une isolation ou un blocage d'une version antérieure dont l'état
@@ -196,7 +196,10 @@ sa levée :
   disparition, une ré-isolation) part sous les nouveaux noms ; l'état garde les deux placements, la levée défait
   les deux ;
 - **les orphelines** : le balayage reconnaît les deux marques (32 hex, et 6 ou 8) ; une carte vivante porte les
-  trois.
+  trois. Cette voie ne suit pas la règle des trois conditions ci-dessus mais la sienne (A3, U1G) : une règle n'y
+  est retirée que si aucune carte listée ne porte sa marque, qu'elle coupe une carte vivante, qu'aucun état n'est
+  illisible et qu'aucune VM tenue n'est visée. Elle garde l'angle mort des cartes de VMSS, qui ne sont pas listées : une règle d'une instance de
+  VMSS dont la marque ne se lit sur aucune carte listée peut y être prise pour orpheline, comme avant ce lot.
 
 **Le tag d'original sur le NSG de quarantaine partagé** : sa clé tient sur 128 bits de l'id de la carte
 (`glorfindel-orig-<32 hex>`), au lieu de 48 ; la clé d'une version antérieure est lue quand la nôtre manque,
