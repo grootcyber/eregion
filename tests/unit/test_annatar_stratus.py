@@ -313,6 +313,37 @@ def test_executor_run_home_is_writable_and_close_removes_it(tmp_path):
     assert not os.path.exists(home)
 
 
+def test_executor_run_home_uses_the_exec_tmpfs_when_present(tmp_path, monkeypatch):
+    """R2BZ: on an armed Orodruin a dedicated EXEC tmpfs is mounted, so Terraform can execute the
+    providers (extracted under HOME) while /tmp stays noexec; the run HOME is built there."""
+    exec_home = tmp_path / "stratus-home"
+    exec_home.mkdir()
+    monkeypatch.setattr("annatar.executors.stratus_host.EXEC_HOME", str(exec_home))
+    ex = _executor(tmp_path)
+    home = ex._ensure_run_home()
+    assert Path(home).parent == exec_home   # built under the exec tmpfs, not /tmp
+    ex.close()
+
+
+def test_executor_run_home_falls_back_without_the_exec_tmpfs(tmp_path, monkeypatch):
+    """R2BZ: absent (a test, a non-container run), the default temp dir is used."""
+    monkeypatch.setattr("annatar.executors.stratus_host.EXEC_HOME", str(tmp_path / "absent"))
+    ex = _executor(tmp_path)
+    home = ex._ensure_run_home()
+    assert os.path.isdir(home) and Path(home).parent != tmp_path / "absent"
+    ex.close()
+
+
+def test_oro_harden_mounts_an_exec_home_and_keeps_tmp_noexec():
+    """R2BZ: the hardened Orodruin container mounts a dedicated EXEC tmpfs for the stratus run HOME
+    (so Terraform runs the providers) while /tmp stays noexec — the surgical relaxation."""
+    makefile = (Path(__file__).resolve().parents[2] / "Makefile").read_text(encoding="utf-8")
+    harden = next(ln for ln in makefile.splitlines() if ln.startswith("ORO_HARDEN"))
+    assert "--tmpfs /stratus-home:exec" in harden   # the providers execute here (M6081)
+    assert "--tmpfs /tmp:exec" not in harden         # /tmp stays noexec (the hardening held)
+    assert "--tmpfs /tmp" in harden                  # /tmp is still a tmpfs
+
+
 def test_executor_refuses_when_the_staged_terraform_is_missing(tmp_path):
     """R2BS: no staged Terraform (image not staged) → the run refuses before provisioning."""
     empty = tmp_path / "empty-home"

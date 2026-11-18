@@ -21,6 +21,12 @@ from annatar.engines.stratus import ResolvedTechnique, airgap_env
 
 GRAPH = "https://graph.microsoft.com"
 
+# R2BZ (#608): a dedicated EXEC tmpfs mounted on an armed Orodruin (ORO_HARDEN). The warmup's
+# Terraform extracts the providers under HOME and EXECUTES them, so HOME must be on an executable
+# filesystem — while the container's /tmp stays noexec (the hardening). The run HOME is built here
+# when this mount is present; absent (a test, a non-container run), tempfile's default is used.
+EXEC_HOME = "/stratus-home"
+
 # The layout to stage inside the Orodruin image (annatar/stratus/README.md) — not delivered yet:
 # the staging step comes with R2b (#608).
 # Env overrides so the image can place them where it likes; the tests point them at a fake tree.
@@ -152,7 +158,8 @@ class StratusExecutor:
         if self._run_home_path is None:
             self._verify_staged_terraform()
             import tempfile
-            self._run_home_path = tempfile.mkdtemp(prefix="stratus-home-")
+            base = EXEC_HOME if os.path.isdir(EXEC_HOME) else None
+            self._run_home_path = tempfile.mkdtemp(prefix="stratus-home-", dir=base)
         return self._run_home_path
 
     def close(self) -> None:

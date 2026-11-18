@@ -1346,7 +1346,7 @@ ORO_IMAGE     := eregion-annatar:orodruin
 # fois », les statuts des demandes) ; le lanceur d'une demande, qui lance les deux, les trois. Aucun
 # ne monte ~/runs entier, sauf la migration de l'ancienne disposition (ORO_MIGRATE, à orodruin-push).
 # Les répertoires créés au nom de l'utilisateur de la VM avant chaque docker run (sinon à root).
-ORO_HARDEN     = --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges:true
+ORO_HARDEN     = --read-only --tmpfs /tmp --tmpfs /stratus-home:exec --cap-drop ALL --security-opt no-new-privileges:true
 ORO_DIRS       = for d in $$HOME/runs/annatar $$HOME/runs/gothmog $$HOME/runs/orodruin; do { test ! -L "$$d" && { test ! -e "$$d" || test -d "$$d"; }; } || { echo "✗ $$d : pas un répertoire (un lien ?), rien ne part (SEC18)" >&2; exit 1; }; mkdir -p "$$d"; done &&
 ORO_MOUNT      = -v $$HOME/runs/$(1):/app/runs/$(1)
 ORO_RUN        = $(ORO_DIRS) docker run --rm $(ORO_HARDEN) --env-file orodruin.env $(call ORO_MOUNT,annatar) $(call ORO_MOUNT,orodruin) $(ORO_IMAGE)

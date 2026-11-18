@@ -10399,8 +10399,8 @@ MUTANTS += [
      "ORO_RUN_CONTRACT = $(ORO_DIRS) docker run --rm $(ORO_HARDEN)",
      "ORO_RUN_CONTRACT = $(ORO_DIRS) docker run --rm --volumes-from eregion-watch $(ORO_HARDEN)"),
     ("M3529", "Orodruin's injectors run without their seccomp profile (SEC20b)", MAKE,
-     "ORO_HARDEN     = --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges:true",
-     "ORO_HARDEN     = --read-only --tmpfs /tmp --cap-drop ALL --security-opt seccomp=unconfined"),
+     "ORO_HARDEN     = --read-only --tmpfs /tmp --tmpfs /stratus-home:exec --cap-drop ALL --security-opt no-new-privileges:true",
+     "ORO_HARDEN     = --read-only --tmpfs /tmp --tmpfs /stratus-home:exec --cap-drop ALL --security-opt seccomp=unconfined"),
 ]
 TESTS.update({f"M{n}": _SEC20 for n in range(3525, 3530)})
 # SEC20b after OI2: a launch that ends a quoted command (`ssh '… image'`) is read, its closing quote
