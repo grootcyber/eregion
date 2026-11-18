@@ -3,21 +3,24 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shlex
 import sys
 from pathlib import Path
 
 import discord
 from discord import app_commands
-from rich.console import Console
 from rich.markup import escape as _esc_markup
 
 from glorfindel import bot_beat, masking
 from glorfindel import escalations as esc_module
 from glorfindel.card_target import IDENTITY_PREFIX as _IDENTITY_PREFIX
-from glorfindel.chat_text import discord_code, discord_text
+from glorfindel.chat_text import discord_code, discord_fenced, discord_text
 from glorfindel.escalations import _ACTION_LABELS, _ESCALATION_LABELS
+from glorfindel.terminal import GlorfindelConsole, outside as _outside, say_failure as _say_failure
 
-_console = Console()
+# SEC-F (#845): a print never raises on markup — the last guard; what comes from outside (a card's
+# fields, a member's or a channel's name, an exception) is escaped where it is printed.
+_console = GlorfindelConsole()
 _POSTED_STORE = Path.home() / ".glorfindel" / "bot_posted.json"
 _THREADS_STORE = Path.home() / ".glorfindel" / "bot_threads.json"
 # escalation id → the Discord message that carries its buttons. A restarted bot gives each
@@ -191,10 +194,17 @@ def _thread_name(key: str) -> str:
     return masking.name_said(key) or "unknown"          # never a subscription's id (MSK3)
 
 
+def _arg(value) -> str:
+    """One argument of a command to copy, quoted for the shell (SEC-F, V-22): the card's fields come
+    from its store, which the bot and the console write — never a substitution pasted."""
+    return shlex.quote(str(value))
+
+
 def _cli_command(esc: dict) -> str:
-    """Return CLI command(s) the operator should run for this escalation."""
+    """Return CLI command(s) the operator should run for this escalation. Every argument read from
+    the card quoted for the shell (`_arg`; the VM by `_vm_for_a_command`, quoted already, MSK3)."""
     action = esc["action"]
-    esc_id = esc["id"]
+    esc_id = _arg(esc["id"])
     if esc.get("escalation_type") in _ANCHORED_TYPES:
         return f"glorfindel ack {esc_id}"
     # MSK3: the VM by the name a command takes back to it, never its full id — the message is
@@ -204,15 +214,17 @@ def _cli_command(esc: dict) -> str:
         # JUG1: an action Glorfindel took alone — judged, and undone (if judged wrong) by the
         # usual path, never by a button of its card.
         vm = rid
-        ip = str((esc.get("action_params") or {}).get("ip") or "<ip>")
+        ip = (esc.get("action_params") or {}).get("ip")
+        ip = _arg(ip) if ip else "<ip>"
         undo = (f"glorfindel release {vm} --yes" if action == "isolate_vm"
                 else f"glorfindel unblock {ip} {vm} --yes")
-        return (f"glorfindel verdict {esc_id[:8]} right|wrong|unsure\n"
+        return (f"glorfindel verdict {_arg(str(esc['id'])[:8])} right|wrong|unsure\n"
                 f"# jugée à tort : la défaire par le chemin habituel\n{undo}\n"
                 f"glorfindel ack {esc_id}")
     if action == "restore_from_backup":
         # The moment is asked (SEC4c): the card's first detection — the attack began before.
-        before = esc.get("first_seen") or esc.get("timestamp") or "<ISO8601>"
+        before = esc.get("first_seen") or esc.get("timestamp")
+        before = _arg(before) if before else "<ISO8601>"
         return (
             "# --before : un instant avant le début de l'attaque (ici la 1re détection de la carte)\n"
             f"glorfindel restore {rid} --yes --before {before}\n"
@@ -575,7 +587,8 @@ async def _still_waits(interaction: discord.Interaction, esc_id: str, kind: str)
     if not why:
         return True
     custom_id = (getattr(interaction, "data", None) or {}).get("custom_id", "?")
-    _console.print(f"[dim]Stale button on {esc_id[:8]} [{custom_id}] — {why}[/dim]")
+    _console.print(f"[dim]Stale button on {_outside(esc_id[:8])} {_outside(f'[{custom_id}]')} — "
+                   f"{_outside(why)}[/dim]")
     await interaction.response.send_message(
         f"✓ Carte réglée — {why} : ce bouton ne lance plus rien.", ephemeral=True)
     return False
@@ -690,6 +703,15 @@ class ButtonPolicy:
         return bool(held & self.roles)
 
 
+def _refusal_logged(what: str, user, where: str, why: str) -> None:
+    """The log of a refused click or command (M-3). SEC-F: the member's name is theirs to choose,
+    the button's id comes with the click — each said as it is."""
+    _console.print(
+        f"[yellow]{what} refused: user {_outside(getattr(user, 'id', '?'))} "
+        f"({_outside(getattr(user, 'display_name', '?'))}) on {_outside(where)} — {why}[/yellow]"
+    )
+
+
 async def _refuse(interaction: discord.Interaction, esc_id: str, policy, command: str = "") -> None:
     """Refused, said to the clicker and logged. `command`: a slash command's name, refused
     under the same policy as the buttons (SEC13, R-16)."""
@@ -702,10 +724,11 @@ async def _refuse(interaction: discord.Interaction, esc_id: str, policy, command
     else:
         custom_id = (getattr(interaction, "data", None) or {}).get("custom_id", "?")
         where, what = f"{esc_id[:8]} [{custom_id}]", "Button"
-    _console.print(
-        f"[yellow]{what} refused: user {getattr(user, 'id', '?')} "
-        f"({getattr(user, 'display_name', '?')}) on {where} — {why}[/yellow]"
-    )
+    # SEC-F: the log never stands between the refusal and its answer.
+    try:
+        _refusal_logged(what, user, where, why)
+    except Exception as exc:
+        _say_failure(_console, f"{what} refused (log)", exc)
     await interaction.response.send_message(
         f"✗ {'Commande' if command else 'Bouton'} refusé{'e' if command else ''} : {why}. Un opérateur "
         f"ajoute ton id Discord à `{_ALLOWED_USERS_ENV}` (ou un de tes rôles à `{_ALLOWED_ROLES_ENV}`).",
@@ -1218,7 +1241,7 @@ class EscalationView(discord.ui.View):
     ):
         cmds = _cli_command(self.esc)
         await interaction.response.send_message(
-            f"Command to run:\n```\n{cmds}\n```",
+            f"Command to run:\n```\n{discord_fenced(cmds)}\n```",     # never closed by its content
             ephemeral=True,
         )
 
@@ -1285,7 +1308,8 @@ async def _renamed_if_it_names_a_subscription(thread, key: str, vm_name: str) ->
     except discord.NotFound:
         raise
     except discord.HTTPException as exc:
-        _console.print(f"[yellow]Thread {getattr(thread, 'id', '?')} not renamed: {exc}[/yellow]")
+        _console.print(f"[yellow]Thread {_outside(getattr(thread, 'id', '?'))} not renamed: "
+                       f"{_outside(exc)}[/yellow]")
         return False
     return True
 
@@ -1338,14 +1362,15 @@ class GlorfindelBot(discord.Client):
                     self.add_view(_SettledView(esc_id), message_id=message_id)
                     settled += 1
             except Exception as exc:  # one bad card must not stop the bot
-                _console.print(f"[yellow]View not restored for {str(esc_id)[:8]}: {exc}[/yellow]")
+                _console.print(f"[yellow]View not restored for {_outside(str(esc_id)[:8])}: "
+                               f"{_outside(exc)}[/yellow]")
         if restored or settled:
             _console.print(f"[dim]  → {restored} message(s) given their buttons back, {settled} settled[/dim]")
         return restored
 
     async def on_ready(self) -> None:
         _console.print(
-            f"[green]🔵 Glorfindel bot connecté : {self.user}[/green]"
+            f"[green]🔵 Glorfindel bot connecté : {_outside(self.user)}[/green]"
         )
         channel = self.get_channel(self.channel_id)
         if channel is None:
@@ -1355,7 +1380,7 @@ class GlorfindelBot(discord.Client):
                 "invité dans le serveur.[/red]"
             )
         else:
-            _console.print(f"[green]  → Channel : #{channel.name}[/green]")
+            _console.print(f"[green]  → Channel : #{_outside(channel.name)}[/green]")
 
         if self._posted:
             _console.print(
@@ -1363,7 +1388,25 @@ class GlorfindelBot(discord.Client):
                 "already posted (bot_posted.json)[/dim]"
             )
 
-        self.bg_task = self.loop.create_task(self._watch_escalations())
+        # SEC-F: the loop runs under its guard — an error that ends it is said, and the loop
+        # started again; a reconnection (on_ready again) never starts a second one.
+        if getattr(self, "bg_task", None) is None or self.bg_task.done():
+            self.bg_task = self.loop.create_task(self._watch_forever())
+
+    async def _watch_forever(self) -> None:
+        """The bot's loop, never left ended (SEC-F): whatever stops `_watch_escalations` — an
+        error its own guards let through — is said, and the loop is started again after a
+        pause: its cards, its notices and its heartbeat go on. Only a cancellation stops it."""
+        while True:
+            try:
+                await self._watch_escalations()
+                why: object = "la boucle a rendu la main"
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                why = exc
+            _say_failure(_console, "Boucle du bot arrêtée — relancée dans 5 s", why)
+            await asyncio.sleep(5)
 
     async def _get_or_create_thread(
         self, channel: discord.TextChannel, resource_id: str, ping: bool = True
@@ -1391,8 +1434,8 @@ class GlorfindelBot(discord.Client):
         self._threads[resource_id] = thread.id
         _save_threads(self._threads)
         _console.print(
-            f"[cyan]New thread created: {thread.name} "
-            f"(id={thread.id})[/cyan]"
+            f"[cyan]New thread created: {_outside(thread.name)} "
+            f"(id={_outside(thread.id)})[/cyan]"
         )
 
         if self.ping_role and ping:
@@ -1427,7 +1470,7 @@ class GlorfindelBot(discord.Client):
                         )
                         continue
                     _console.print(
-                        f"[dim]Watch: channel #{channel.name} ready[/dim]"
+                        f"[dim]Watch: channel #{_outside(channel.name)} ready[/dim]"
                     )
                 # JUG2 (#765): alive, its channel read — the watch leaves the announcements of the
                 # actions taken alone to it; mute, the webhook says them (glorfindel/bot_beat.py).
@@ -1446,12 +1489,12 @@ class GlorfindelBot(discord.Client):
                         await self._post_escalation(channel, esc)
                         self._posted.add(esc["id"])
                         _save_posted(self._posted)
-                        _console.print(
-                            f"[green]✓ Posted {esc['id'][:8]} "
-                            f"({esc['action']})[/green]"
+                        _console.print(     # the action is the model's free text (SEC-F)
+                            f"[green]✓ Posted {_outside(str(esc['id'])[:8])} "
+                            f"({_outside(esc['action'])})[/green]"
                         )
-                    except Exception as e:
-                        _console.print(f"[red]Bot post error: {e}[/red]")
+                    except Exception as e:      # one card never stops the others (SEC-F)
+                        _say_failure(_console, "Bot post error", e)
                 try:
                     await self._post_notices(channel)
                 except Exception as e:      # the notices never stop the cards, the week, the sync
@@ -1461,9 +1504,9 @@ class GlorfindelBot(discord.Client):
                     try:
                         await self._sync_messages()
                     except Exception as e:
-                        _console.print(f"[red]Bot sync error: {e}[/red]")
+                        _say_failure(_console, "Bot sync error", e)
             except Exception as e:
-                _console.print(f"[red]Watch loop error: {e}[/red]")
+                _say_failure(_console, "Watch loop error", e)
 
     async def _post_escalation(
         self, channel: discord.TextChannel, esc: dict
@@ -1528,7 +1571,7 @@ class GlorfindelBot(discord.Client):
                 _save_messages(self._messages)
                 continue
             except discord.HTTPException as exc:
-                _console.print(f"[yellow]Sync {esc['id'][:8]}: {exc}[/yellow]")
+                _console.print(f"[yellow]Sync {_outside(str(esc['id'])[:8])}: {_outside(exc)}[/yellow]")
                 continue
             finally:
                 touched.add(_thread_key(esc))
@@ -1639,7 +1682,7 @@ def run() -> None:
     ping_role = int(ping_role_str) if ping_role_str else None
     policy, bad = ButtonPolicy.from_env(os.environ)
     for b in bad:
-        _console.print(f"[yellow]⚠ « {b} » n'est pas un id Discord : ignoré "
+        _console.print(f"[yellow]⚠ « {_outside(b)} » n'est pas un id Discord : ignoré "
                        f"({_ALLOWED_USERS_ENV} / {_ALLOWED_ROLES_ENV})[/yellow]")
     if policy.configured:
         _console.print(f"[dim]  → Boutons : {len(policy.users)} utilisateur(s), "
