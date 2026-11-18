@@ -1,19 +1,43 @@
-# Who reviews what (SEC6, #277) — indicative: GitHub asks these owners for a review, it
-# requires one only under the branch rule « Require review from Code Owners », a setting of the
-# maintainer's, not enabled (one maintainer). Every path is his; the lines below name again the
-# paths that matter most — the response that writes on the cloud, its providers, the
-# infrastructure and the CI itself — so that a later, wider list of owners keeps them.
-# docs/design/modele-de-menace.md, « La CI et le CD ».
-# It holds nothing on its own (P-07, SEC12): the agent sessions merge on their own. What holds is
-# elsewhere — the repository's rules (a pull request and the required checks on main, the tags
-# v* to the maintainer alone), the review's verdict posted on the pull request before the merge,
-# and the CD of H0 refusing a release older than what runs. docs/design/modele-de-menace.md,
-# « Les sessions d'agents → main → le CD ».
+# Who must approve what (SEC-K, #847; Jonathan's decision of 15/11): the files that a workflow
+# holding a secret, a write permission or an OIDC token runs, and the CD of Imladris — nothing else,
+# so that every other pull request merges as before, without waiting for anyone.
+#
+# It holds once the maintainer has turned on « Require review from Code Owners » in main's rule —
+# after this file is merged, never before (with the former `*` line, every pull request would have
+# waited for him). Then a pull request that touches one of these paths waits for his approval: the
+# sessions' App, which has no Workflows right, can no longer change unseen what runs with the
+# secrets by changing a script outside .github/workflows/. Until then, it is indicative only.
+#
+# tests/unit/test_codeowners.py keeps this list against the workflows: it reads each job of
+# .github/workflows/ that holds a secret, a write permission or `id-token: write`, takes the files of
+# the repository it runs (named in a `run:`, a local action, the code of a sparse checkout, a
+# requirements file it installs, what a script imports next to it or a shell script calls next to
+# it), adds what Imladris's CD installs (AGENT_FILES), and fails when one of them has no line here —
+# or when a line owns none of them, but the three directories owned whole. The form it reads: one
+# owner, the maintainer; an anchored path, a file or a directory (a trailing /), no pattern.
+# docs/design/modele-de-menace.md, §6 and §7.
 
-*                       @grootcyber
+# The CI itself, this file included.
+/.github/                               @grootcyber
 
-/glorfindel/response/   @grootcyber
-/glorfindel/providers/  @grootcyber
-/infra/                 @grootcyber
-/.github/               @grootcyber
-/SECURITY.md            @grootcyber
+# publish.yml: the OIDC token that signs the images, packages: write, attestations: write.
+/scripts/published_image.py             @grootcyber
+/scripts/image_check.py                 @grootcyber
+/scripts/retry.sh                       @grootcyber
+
+# notify.yml, roadmap.yml: the Discord secrets of the workshop (its sparse checkout, all of it).
+/scripts/notify_discord.py              @grootcyber
+/scripts/roadmap_discord.py             @grootcyber
+/glorfindel/chat_text.py                @grootcyber
+/.claude/skills/elrond/palantir.py      @grootcyber
+
+# pip-audit.yml: issues: write — the script, and the lock of the pip-audit it installs.
+/scripts/pip_audit_issues.py            @grootcyber
+/requirements/audit.txt                 @grootcyber
+
+# canary-azurerm.yml: the canary's OIDC token (Network Contributor on its group).
+/infra/canary/                          @grootcyber
+
+# The CD of Imladris, and what it installs next to it (AGENT_FILES).
+/infra/glorfindel-host/cd/              @grootcyber
+/infra/glorfindel-host/deploy.sh        @grootcyber
