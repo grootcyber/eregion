@@ -127,8 +127,9 @@ def test_the_security_documents_links_resolve():
         assert [t for t in targets if not (path.parent / t).exists()] == [], path.name
 
 
-def test_codeowners_covers_the_paths_that_write_and_the_ci():
+def test_codeowners_covers_the_sensitive_paths_and_no_catch_all():
     lines = [line.split() for line in (ROOT / ".github" / "CODEOWNERS").read_text(encoding="utf-8").splitlines()
              if line.strip() and not line.startswith("#")]
     owned = {parts[0] for parts in lines if len(parts) >= 2 and parts[1].startswith("@")}
-    assert {"*", "/glorfindel/response/", "/glorfindel/providers/", "/infra/", "/.github/"} <= owned
+    # SEC-K (#847): the sensitive paths only, no catch-all (tests/unit/test_codeowners.py derives them).
+    assert {"/.github/", "/infra/canary/", "/infra/glorfindel-host/cd/"} <= owned and "*" not in owned
