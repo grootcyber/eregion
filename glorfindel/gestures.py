@@ -11,6 +11,19 @@ prompt (``zone_of``), never a reason to refuse.
 from __future__ import annotations
 
 
+def released(resource_id: str) -> None:
+    """SEC-E (#846): the VM's isolation lifted whole by a human (``release``, ``reset``, the console's
+    approval, a request of the queue) — what its incidents confirmed for B3a's floor is forgotten: the
+    human judged the VM, the next detection is judged anew. Never raises: the release stands, said."""
+    try:
+        from glorfindel.incidents import IncidentRegistry
+        IncidentRegistry().forget_facts(resource_id)
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("B3a facts not forgotten after the release of %s: %s",
+                                            resource_id, exc)
+
+
 def release_needed(connector, resource_id: str) -> bool:
     """False when no NIC still carries an isolation rule — then the stale state is cleared, so the
     console updates. A partially isolated VM (one NIC still cut off) needs its release: the former
@@ -47,6 +60,8 @@ def reset_apply(connector, resource_id: str, isolations: list[dict], blocks: lis
         if say is not None:
             say(f"  [cyan]release_isolation[/cyan] → {r.get('status', '?')}")
         leftovers += r.get("failed", [])
+        if r.get("status") == "released":
+            released(resource_id)            # SEC-E: B3a's facts forgotten
     for b in blocks:
         r = connector.unblock_ip(b["ip"], resource_id)
         if say is not None:

@@ -4,7 +4,10 @@ ceiling of calls per minute; the older lines of a pass named on a card (glorfind
 glorfindel/detection_rules.py). One mutant per property, M4525–M4529, measured by
 tests/unit/test_decision_queue.py; M4567–M4572, the review's: a compromise never held by the ceiling
 and keyed by its address, the facts of B3a kept and its pair never held, the grave class's own room,
-the window opened only by a decision that contained or put a card before a human."""
+the window opened only by a decision that contained or put a card before a human. M4567 (a compromise never
+held by the ceiling) and M4568 (a compromise keyed by its address) retired by SEC-E (#846), which reverses
+both — its own measure, scripts/mutants/SEC-E.py (M5729, M5732); M4570 measures the pair's exemption from
+the ceiling only (SEC-E, #644 point 2)."""
 QUEUE = "glorfindel/decision_queue.py"
 RULES = "glorfindel/detection_rules.py"
 _T = "tests/unit/test_decision_queue.py"
@@ -16,8 +19,8 @@ MUTANTS = [
      "        if False:\n"),
     ("M4526", "no dedup: each detection of the same rule on the same VM calls the model (SEC-A2)",
      QUEUE,
-     "                    if at is not None and now - at < self.window_s:\n",
-     "                    if False:\n"),
+     "                if at is not None and now - at < self.window_s:\n",
+     "                if False:\n"),
     ("M4527", "first come, first served whatever the gravity: a ransomware detection waits behind a "
      "forged burst (SEC-A2)", QUEUE,
      "        self._classify = classify or (lambda item: gravity(item[0]))\n",
@@ -30,20 +33,12 @@ MUTANTS = [
      "(SEC-A2, V-13)", RULES,
      "                    if others:\n",
      "                    if False:\n"),
-    ("M4567", "a compromise (COR1) held by the ceiling: a card, its decision and B3a's floor lost "
-     "(SEC-A2, review)", QUEUE,
-     "                    limit, full = self.per_min, False          # COR1: never held by the ceiling\n",
-     "                    limit, full = self.per_min, n >= self.per_min\n"),
-    ("M4568", "a compromise keyed without its address: a second address deduplicated behind the first "
-     "(SEC-A2, review)", QUEUE,
-     '        addr = str(_row(data).get("SourceIP") or "") if cls == CRITICAL else ""\n',
-     '        addr = ""\n'),
     ("M4569", "a held detection's facts never written on its VM's incident: B3a's pair never complete "
      "(SEC-A2, review)", QUEUE,
      "        keep_facts(data, incidents)\n",
      "        pass\n"),
-    ("M4570", "B3a's pair complete on the VM, its detection still deduplicated: the floor never plays "
-     "(SEC-A2, review)", QUEUE,
+    ("M4570", "B3a's pair complete on the VM, its detection held by the ceiling: the floor never plays "
+     "(SEC-A2, review; SEC-E)", QUEUE,
      "            if not self._floor(data, confirmed or [], now):\n",
      "            if True:\n"),
     ("M4571", "the grave class without a room of its own: the low class's draws fill the minute, a "
@@ -63,11 +58,9 @@ TESTS = {
     "M4528": f"{_T}::test_the_ceiling_of_calls_holds_and_beyond_it_a_card_never_an_action "
              f"{_T}::test_a_burst_of_low_detections_never_uses_the_room_of_a_grave_one",
     "M4529": f"{_T}::test_a_decoy_line_after_the_real_one_never_hides_it",
-    "M4567": f"{_T}::test_a_compromise_is_never_held_by_the_ceiling_one_decision_per_address",
-    "M4568": f"{_T}::test_a_compromise_is_never_held_by_the_ceiling_one_decision_per_address",
     "M4569": f"{_T}::test_a_held_detection_keeps_its_facts_and_the_pair_is_never_held "
              f"{_T}::test_a_held_brute_force_that_succeeded_writes_its_fact",
-    "M4570": f"{_T}::test_a_held_detection_keeps_its_facts_and_the_pair_is_never_held",
+    "M4570": f"{_T}::test_the_pair_lifts_the_ceiling_only_never_the_window",
     "M4571": f"{_T}::test_six_low_decisions_of_three_draws_never_take_the_room_of_a_grave_one",
     "M4572": f"{_T}::test_a_decoy_judged_nothing_never_hides_the_next_line",
 }
