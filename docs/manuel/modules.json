@@ -2562,7 +2562,8 @@
    "etat": "main",
    "release": "0.6",
    "lots": [
-    "VP1"
+    "VP1",
+    "VP1b"
    ],
    "issue": 615,
    "doc": "docs/design/drill-banc.md"
