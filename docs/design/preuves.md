@@ -2478,7 +2478,7 @@ injecteur.
 | M1806 | une détection sans décision rattachée vaut preuve | « prouvé » sans la réponse |
 | M1807 | pas d'« aging » entre 21 et 30 jours | l'alerte arrive sans le jaune d'avant |
 | M1808 | l'indicateur garde sa preuve sur 30 jours | une preuve de 40 jours dite « none » |
-| M1809 | la non-régression ne se déclenche jamais | une technique perdue reste « proven » |
+| M1809 | la non-régression ne se déclenche jamais | une technique perdue reste « fresh » |
 | M1810 | une détection inconnue prise pour un raté | un run qui n'a rien mesuré fait régresser |
 | M1811 | tout raté de l'histoire fait régresser | une technique détectée de nouveau reste rouge |
 | M1812 | jamais détectée dite régressée | une régression sans rien de perdu |

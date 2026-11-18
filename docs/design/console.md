@@ -257,6 +257,16 @@ cycles de la watch ; les fenêtres ne servent qu'à confronter le T0 (SEC15) : n
 donne aucun temps, et sa preuve est datée par la détection de la watch, ce que dit la tuile. Détail : `docs/glorfindel.md`, « Matrice de
 couverture » ; le run au format commun : `docs/architecture.md`, « Le run, unifié ».
 
+**« fresh », jamais « proven » (FRS1, #904, 18/11).** Un mot, un sens : « proven » est le statut
+d'une entrée du catalogue, mesurée au banc (STM1g, `eregion_core.experiment`), et lui seul.
+L'état d'une ligne dont la dernière preuve a moins de 21 jours est `fresh` : la valeur (`state`,
+la clé du résumé), son libellé dans la matrice, sur la puce de preuve d'une carte rouge de
+Dagorlad et dans `eregion coverage`. Le compteur au-dessus de la matrice dit « N fresh », puis
+« M aging » à part (une preuve de 21 à 30 jours n'est pas fraîche : il les additionnait sous
+« proven »). La valeur a changé avec son libellé parce que seule la console lit la matrice ;
+`tests/unit/test_fresh_proven.py` le vérifie sur tous les fichiers suivis, et tombe si « proven »
+revient pour la fraîcheur ou si « fresh » devient un statut du catalogue (mutants M6261–M6270).
+
 ### Les cartes (#248)
 
 Après I1F, AL1, C2 et A3 (27/10) :
@@ -856,7 +866,7 @@ PLAN · 4 wires · 1 refused   ✓ watch live  ? Orodruin unknown here  ✓ enro
 | destructive ou non | le catalogue, seul : jamais le navigateur, jamais une demande |
 | implémentée ou prévue | le catalogue (`status`) : une entrée prévue est grisée, sans poignée |
 | ce qu'on attend : la règle et le délai ; pour une panne, rien de disruptif | voir « Le résultat attendu » |
-| dernière preuve et état de sa ligne (`proven`, `aging`, `stale`, `regressed`, `never`) | la matrice de C1 (`eregion_console/coverage.py`), sur tout ce que l'hôte garde — avec la vue Runs, après la fusion de C1 |
+| dernière preuve et état de sa ligne (`fresh`, `aging`, `stale`, `regressed`, `never`) | la matrice de C1 (`eregion_console/coverage.py`), sur tout ce que l'hôte garde — avec la vue Runs, après la fusion de C1 |
 
 Un injecteur absent laisse ses cartes grisées, avec ce qu'il ajouterait (la page d'installation
 d'aujourd'hui, §3, règle 5).
@@ -1287,7 +1297,7 @@ Posées une à une. La réponse est reportée ici avec sa date.
   gardée (308, jusqu'à la 1.0) ; `/runs/<id>` mène aux Runs (302). Les vues ont leur bande, Board | Runs.
 - **L'en-tête** : trois onglets, Overview, Glorfindel, Dagorlad. Dagorlad est grisé quand aucun
   injecteur n'est installé ici.
-- **La dernière preuve** sur chaque carte rouge du Board, lue dans la matrice de C1 : son état (proven,
+- **La dernière preuve** sur chaque carte rouge du Board, lue dans la matrice de C1 : son état (fresh,
   aging, stale, REGRESSED, no proof, never run) et l'âge de sa dernière preuve.
 - **Mutants M1995–M1999** : `/annatar` qui ne mène plus aux Runs, la redirection qui perd sa requête, un
   lien de run qui ouvre le Board, une carte rouge sans sa preuve, l'en-tête qui garde l'onglet

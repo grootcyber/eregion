@@ -639,7 +639,7 @@ isolation au cycle d'après) n'y a pas de `contain_s` (BL1).
 
 **La matrice de couverture** (`eregion_console/coverage.py`) en tire, pour chaque technique du
 catalogue et chaque panne déclarée, la dernière preuve, son âge et l'état de la ligne
-(`regressed`, `proven`, `aging`, `stale`, `unproven`, `never`), et l'évolution semaine par
+(`regressed`, `fresh`, `aging`, `stale`, `unproven`, `never` ; « proven » reste le statut du catalogue, FRS1), et l'évolution semaine par
 semaine ; elle nourrit la couverture et l'âge de la dernière preuve (`docs/glorfindel.md`,
 « Matrice de couverture »). Tout est lu dans les fichiers de l'hôte : aucun appel au cloud.
 
