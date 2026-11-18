@@ -2251,6 +2251,16 @@ briques:
     lots: [CI11]
     issue: 728
 
+  - id: s-ci-machine-seule
+    composant: socle
+    poste: s-prouver
+    nom: "The push CI runs Azure's invariant machine alone, after the rest: a stack dump of a running thread no longer kills it"
+    etat: main
+    release: "0.6"
+    lots: [CI12, CI12-workflow]
+    issue: 899
+    doc: docs/operations.md
+
   - id: s-verrous
     composant: socle
     poste: s-signer
