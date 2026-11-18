@@ -571,6 +571,7 @@ _DRL1a (#613), 16/11. Décision de Jonathan du 06/11 (D1, [`drill-banc.md`](dril
 **Ouvert** :
 - la Logic App du démarrage planifié, son identité et son rôle — planifié : #613
 - le magasin des verdicts du drill, monté en écriture hors de la watch — planifié : #851
+- le magasin des verdicts du drill, écrit par la console et le bot, FS1f — planifié : #413
 - l'armement par Jonathan et la première occurrence mesurée — planifié : #613
 
 ---

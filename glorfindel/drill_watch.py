@@ -307,7 +307,7 @@ def judge(src: Sources, now: datetime | None = None) -> dict:
     if seen is None:
         # Never pulled: quiet a while (the watch just started), then said — never a quiet state without end.
         before = src.previous if src.previous.get("code") == "not_pulled" else {}
-        since = _when(before.get("since")) or now
+        since = min(_when(before.get("since")) or now, now)   # a since to come never holds it quiet
         v["since"] = since.isoformat()
         if (now - since).total_seconds() < PULL_STALE_S:
             return out("waiting", "not_pulled", "the channel not pulled yet on this host")

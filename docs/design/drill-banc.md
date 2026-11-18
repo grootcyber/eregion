@@ -1137,8 +1137,9 @@ Le code suit les §2.3 et §3.1 dans leur ordre. Ce qui s'en écarte, ou que la 
   n'écrivent le pouls `disarmed` qu'après (le kill, après avoir fermé les fenêtres : des minutes). Le
   permis sorti de la liste depuis moins de 30 min (`DISARM_GRACE_S`, par l'heure de sa dernière présence,
   `permit.last_listed`), le pouls encore `armed` : calme (`waiting disarming`), jamais
-  `rearm_expected` ; au-delà, « réarmement attendu ». Un permis expiré l'était depuis des jours : pas de
-  grâce.
+  `rearm_expected` ; au-delà, « réarmement attendu ». Un permis retiré par un autre
+  geste que le désarmement ou le kill (sa rétention, une identité qui le supprime) est donc dit au bout de
+  30 min : `rearm_expected no_permit`, sans mention.
 - **Jamais un calme sans fin** : aucun tirage écrit sur cet hôte, un canal configuré, plus de 15 min
   (`PULL_STALE_S`) : `channel_unread` (`not_pulled`) ; le dernier tirage plus vieux que 15 min (son fil
   arrêté) : `channel_unread` (`stale`), jamais son dernier mot. Avec mention au-delà de 8 jours, comme

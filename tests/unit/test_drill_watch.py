@@ -537,6 +537,15 @@ def test_never_pulled_is_quiet_a_while_then_said_unread(tmp_path):
     assert said(v) == ("channel_unread", "not_pulled", False) and v["since"] == AT.isoformat()
 
 
+def test_a_since_to_come_in_a_forged_store_never_holds_never_pulled_quiet(tmp_path):
+    root = tmp_path / "runs"
+    forged = {"state": "waiting", "code": "not_pulled", "since": (AT + timedelta(days=365)).isoformat()}
+    first = dw.judge(dw.Sources(root, channel=True, previous=forged), AT)
+    assert (first["state"], first["code"], first["since"]) == ("waiting", "not_pulled", AT.isoformat())
+    v = dw.judge(dw.Sources(root, channel=True, previous=first), AT + timedelta(minutes=16))
+    assert (v["state"], v["code"]) == ("channel_unread", "not_pulled")
+
+
 def test_a_pull_that_stopped_is_unread_never_its_last_word(world):
     world.played()
     world.pulled_at = AT + timedelta(hours=1)
