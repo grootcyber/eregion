@@ -243,7 +243,10 @@ waagent et les extensions sous `/var/log/azure/`, dpkg et apt.
   **Un écrivain n'est écarté que sur un événement d'un seul enregistrement SYSCALL de la clé (SEC-I,
   #850)** : le noyau n'en écrit qu'un par événement ; un second, au même numéro, est une ligne écrite sur
   `local6`, que tout utilisateur local peut écrire — au nom de rsyslogd, il effaçait l'événement entier.
-  Un événement de deux est une carte (comme AUD1 en fait une) ; à mesurer au banc avec la règle.
+  Un événement de deux est une carte (comme AUD1 en fait une). Les enregistrements sont comptés distincts,
+  ligne entière (`dcountif(SyslogMessage, Tamper)`) : une ligne que l'agent livre deux fois reste un
+  enregistrement, jamais une carte ; un faux enregistrement au nom d'un démon diffère de celui du shell et
+  compte toujours pour deux. À mesurer au banc avant la fusion (`docs/operations.md`, SI4).
   Un démon (rsyslogd, journald, logrotate, auditd) est écarté entièrement : un `logrotate` lancé avec une
   configuration choisie pour tronquer un journal n'est pas vu. Le resserrer couperait le bruit réel :
   tourner tous les journaux est son travail, et son `exe` ne dit pas qui l'a lancé. Un `echo 0>` sur un

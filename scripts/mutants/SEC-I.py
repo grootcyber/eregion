@@ -4,7 +4,7 @@ name (glorfindel/correlation.py); the blob exfiltration rule on written writes o
 rule setting a writer aside only on an event of one SYSCALL record (glorfindel/rules/azure/
 detection_rules.yaml); the memory weighing the VM and the rule, one precedent per VM, the VM and the
 rule stored, never an anchor's, no cycle said corroborated (glorfindel/memory.py, glorfindel/agent.py).
-M5821–M5839, measured by tests/unit/test_enquiry_memory.py."""
+M5821–M5840, measured by tests/unit/test_enquiry_memory.py."""
 AGENT = "glorfindel/agent.py"
 COR = "glorfindel/correlation.py"
 RULES = "glorfindel/rules/azure/detection_rules.yaml"
@@ -30,12 +30,13 @@ MUTANTS = [
     ("M5825", "a refused blob write counts as an exfiltration again (SEC-I, V-10)", RULES,
      "      | where toint(StatusCode) between (200 .. 299)\n",
      ""),
-    ("M5826", "the blob rule's status range widened to the refusals (SEC-I, V-10)", RULES,
-     "      | where toint(StatusCode) between (200 .. 299)\n",
-     "      | where toint(StatusCode) between (200 .. 499)\n"),
+    ("M5826", "the log-tamper rule counts lines, not distinct records: a line delivered twice makes a card "
+     "(SEC-I, V-24, review)", RULES,
+     "      | extend Alone = Syscalls == 1\n",
+     "      | extend Alone = Tampers == 1\n"),
     ("M5827", "Tampers > 0 again: an event of two SYSCALL records still set aside (SEC-I, V-24)", RULES,
-     "      | extend Alone = Tampers == 1\n",
-     "      | extend Alone = Tampers > 0\n"),
+     "      | extend Alone = Syscalls == 1\n",
+     "      | extend Alone = Syscalls > 0\n"),
     ("M5828", "a daemon's record added to the event sets it aside again (SEC-I, V-24)", RULES,
      "      | where not(Alone and Daemons > 0)\n",
      "      | where Daemons == 0\n"),
@@ -52,7 +53,7 @@ MUTANTS = [
      "                if key in seen or per_vm.get(owner, 0) >= PER_VM:\n",
      "                if key in seen:\n"),
     ("M5833", "no search past a VM at its bound: a flood hides the other VMs' cycles (SEC-I, V-11)", MEM,
-     '            if len(cycles) == n or not full or not gather({"resource_id": {"$nin": full}}):\n',
+     '            if len(cycles) == n or not full or not gather({"resource_id": {"$nin": full}}, wide="" in full):\n',
      "            if True:\n"),
     ("M5834", "a cycle stored without its VM: every cycle one VM unknown (SEC-I, V-11)", MEM,
      '                "resource_id": _vm_key(cycle.get("resource_id")),\n',
@@ -71,6 +72,10 @@ MUTANTS = [
     ("M5838", "the VM keyed in the case it came in: the registry's and the row's never meet (SEC-I)", MEM,
      '    return resource_id.rstrip("/").lower() if isinstance(resource_id, str) else ""\n',
      '    return resource_id.rstrip("/") if isinstance(resource_id, str) else ""\n'),
+    ("M5840", "the search past the VM unknown reads as few as before: cycles stored before SEC-I hide the "
+     "other VMs (SEC-I, V-11, review)", MEM,
+     'gather({"resource_id": {"$nin": full}}, wide="" in full)',
+     'gather({"resource_id": {"$nin": full}})'),
     ("M5839", "the anchor of an unattributed signal weighed as its VM (SEC-I, V-11)", MEM,
      '    if (signal.get("context") or {}).get("attribution") == "unattributed":\n        return ""\n'
      '    return _vm_key(signal.get("resource_id"))\n',
@@ -85,7 +90,7 @@ TESTS = {
     "M5824": f"{_T}::test_the_correlation_scope_is_the_resource_id_only "
              f"{_T}::test_a_brute_force_row_without_its_resource_id_is_left_unchecked",
     "M5825": f"{_T}::test_a_refused_write_moved_nothing",
-    "M5826": f"{_T}::test_a_refused_write_moved_nothing",
+    "M5826": f"{_T}::test_a_record_the_agent_delivers_twice_is_one_record",
     "M5827": f"{_T}::test_a_daemons_record_added_to_the_event_no_longer_sets_it_aside",
     "M5828": f"{_T}::test_a_daemons_record_added_to_the_event_no_longer_sets_it_aside",
     "M5829": f"{_T}::test_a_known_writers_record_added_to_the_event_no_longer_sets_it_aside",
@@ -100,4 +105,5 @@ TESTS = {
     "M5838": f"{_T}::test_a_cycle_keeps_its_vm_rule_and_says_it_was_not_corroborated "
              f"{_T}::test_the_vms_own_cycle_is_found_past_a_flood_of_nearer_ones",
     "M5839": f"{_T}::test_an_unattributed_signal_is_weighed_by_no_vm",
+    "M5840": f"{_T}::test_more_cycles_that_name_no_vm_than_a_search_reads_never_hide_the_other_vms",
 }

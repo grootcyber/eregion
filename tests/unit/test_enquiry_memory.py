@@ -13,7 +13,7 @@
   (no verdict exists before SEC-A3), in its metadata — never in what the model reads.
 
 The rules run as written on placeholder lines through the suite's KQL reader (kql_subset). No Azure
-call, no model call. Mutants M5821–M5839 (scripts/mutants/SEC-I.py) are measured here.
+call, no model call. Mutants M5821–M5840 (scripts/mutants/SEC-I.py) are measured here.
 """
 from __future__ import annotations
 
@@ -232,6 +232,23 @@ def test_a_known_writers_record_added_to_the_event_no_longer_sets_it_aside():
     assert len(_tamper(rows)) == 1
 
 
+def test_a_record_the_agent_delivers_twice_is_one_record():
+    """M5826: the lines counted, not the distinct records — rsyslogd's own write, its SYSCALL line
+    delivered twice by the agent (at least once), made a card."""
+    rows = _audit(9004, _syscall("/usr/sbin/rsyslogd"), _path("/var/log/syslog"))
+    assert _tamper(rows + rows[:1]) == []
+    sshd = _audit(9005, _syscall("/usr/sbin/sshd", "sshd"), _path("/var/log/btmp"))
+    assert _tamper(sshd + sshd) == []
+
+
+def test_a_forged_daemons_record_still_counts_as_a_second_one_beside_duplicates():
+    """Distinct records: a daemon's line written at the serial differs from the shell's — two,
+    whatever the agent delivers twice."""
+    rows = _audit(9006, _syscall("/usr/bin/dash", "dash"), _path("/var/log/auth.log"),
+                  _syscall("/usr/sbin/rsyslogd"))
+    assert len(_tamper(rows + rows)) == 1
+
+
 @pytest.mark.parametrize("exe,path", [
     ("/usr/sbin/rsyslogd", "/var/log/syslog"),
     ("/usr/sbin/sshd", "/var/log/btmp"),
@@ -332,6 +349,25 @@ def test_cycles_that_name_no_vm_count_as_one_vm_unknown(mem):
     mem.store(_cycle("b-own", VM_B))
     found = mem.retrieve_similar(_signal(VM_C), n=3)
     assert sorted(c["signal_id"].split("-")[0] for c in found) == ["b", "legacy"]
+
+
+def test_more_cycles_that_name_no_vm_than_a_search_reads_never_hide_the_other_vms(mem):
+    """M5840: a cycle stored before SEC-I has no `resource_id`, which no `$nin` leaves out — once the
+    VM unknown was at its bound, its cycles filled every place the search past it read, and the
+    other VMs' precedents never came: one precedent instead of three. Nothing stored is rewritten."""
+    for i in range(20):                                  # more than a search reads (n × 4)
+        mem._collection.add(ids=[f"cycle-legacy-{i}"],
+                            documents=["TTP: T1110.001 | severity: critical | resource_type: vm | "
+                                       f"event: detection | action: block_suspicious_ip | legacy {i}"],
+                            metadatas=[{"source": "real", "signal_id": f"legacy-{i}", "action": "x",
+                                        "run_id": "r", "ttp": "T1110.001", "stored_at": int(time.time())}])
+    far = {"severity": "high", "ttp": "T1078", "resource_type": "identity", "event": "detection_timeout"}
+    mem.store(_cycle("a-far", VM_A, **far))
+    mem.store(_cycle("b-far", VM_B, **far))
+    found = mem.retrieve_similar(_signal(VM_C, rule="other-rule"), n=3)
+    assert sorted(c["signal_id"].split("-")[0] for c in found) == ["a", "b", "legacy"]
+    legacy = mem._collection.get(ids=["cycle-legacy-0"], include=["metadatas"])["metadatas"][0]
+    assert "resource_id" not in legacy                   # the memory read, never migrated
 
 
 def test_a_cycle_keeps_its_vm_rule_and_says_it_was_not_corroborated(mem):

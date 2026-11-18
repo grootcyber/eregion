@@ -141,7 +141,11 @@ class CycleMemory:
         type, event, provider); and at most ``PER_VM`` cycles of any one VM, the signal's own
         included — a VM whose local account provokes detections at will no longer fills the
         places of its neighbours, nor its own. Each search past a VM at its bound reads the
-        others (a flood of one VM's cycles never hides the rest), a bounded number of times."""
+        others (a flood of one VM's cycles never hides the rest), a bounded number of times.
+        A cycle stored before SEC-I names no VM, and a filter cannot leave out a key a cycle
+        lacks: once the VM unknown is at its bound, the search past it reads the whole memory
+        (its cycles would otherwise fill every place it reads, and hide the other VMs) —
+        nothing stored is rewritten for it."""
         if self._collection.count() == 0:
             return []
         query_text = _signal_to_text(signal)
@@ -149,9 +153,9 @@ class CycleMemory:
         vm, rule = _signal_vm(signal), _signal_rule(signal)
         pool: dict[str, tuple] = {}
 
-        def gather(extra: dict | None) -> int:
+        def gather(extra: dict | None, wide: bool = False) -> int:
             before = len(pool)
-            for cid, row in self._search(query_text, size, extra):
+            for cid, row in self._search(query_text, self._collection.count() if wide else size, extra):
                 pool.setdefault(cid, row)
             return len(pool) - before
 
@@ -179,7 +183,9 @@ class CycleMemory:
                 per_vm[owner] = per_vm.get(owner, 0) + 1
                 cycles.append((rank((distance, doc, meta)), {"summary": doc, **meta}))
             full = sorted(v for v, c in per_vm.items() if c >= PER_VM)
-            if len(cycles) == n or not full or not gather({"resource_id": {"$nin": full}}):
+            # The VM unknown at its bound: its cycles (no `resource_id`) pass any `$nin` — read
+            # past them, the whole memory.
+            if len(cycles) == n or not full or not gather({"resource_id": {"$nin": full}}, wide="" in full):
                 break
         return [c for _r, c in sorted(cycles, key=lambda pair: pair[0])]
 
