@@ -23,6 +23,7 @@ from annatar.engines.stratus import (
     StratusError,
     airgap_env,
     allowed_techniques,
+    azure_provider_env,
     describe,
     pinned_digests,
     resolve,
@@ -243,6 +244,40 @@ def test_staged_layout_reads_the_environment():
     assert layout.home and layout.plugin_cache and layout.terraformrc   # defaults for the rest
 
 
+# ── The azurerm provider authenticates the warmup by the host's managed identity (MSI1) ──
+
+def test_azure_provider_env_uses_msi_when_only_a_managed_identity():
+    """On an armed Orodruin there is no service-principal secret — only the host's managed
+    identity — so the provider is told to use it: ARM_USE_MSI with the subscription and tenant."""
+    env = azure_provider_env({"AZURE_SUBSCRIPTION_ID": "sub-123",
+                              "EREGION_TENANT_ID": "tenant-abc"})
+    assert env == {"ARM_USE_MSI": "true", "ARM_SUBSCRIPTION_ID": "sub-123",
+                   "ARM_TENANT_ID": "tenant-abc"}
+
+
+def test_azure_provider_env_leaves_service_principal_auth_untouched():
+    """A developer run carries a service-principal secret — MSI is NOT forced over it (returns
+    nothing, so the provider keeps authenticating by the secret)."""
+    base = {"AZURE_SUBSCRIPTION_ID": "sub-123", "EREGION_TENANT_ID": "tenant-abc"}
+    assert azure_provider_env({**base, "ARM_CLIENT_SECRET": "x"}) == {}
+    assert azure_provider_env({**base, "AZURE_CLIENT_SECRET": "x"}) == {}
+
+
+def test_azure_provider_env_sets_nothing_without_both_subscription_and_tenant():
+    """A half-configured provider fails less clearly than the unchanged one — so with the
+    subscription or the tenant missing, nothing is set."""
+    assert azure_provider_env({"AZURE_SUBSCRIPTION_ID": "sub-123"}) == {}   # no tenant
+    assert azure_provider_env({"EREGION_TENANT_ID": "tenant-abc"}) == {}    # no subscription
+    assert azure_provider_env({}) == {}
+
+
+def test_azure_provider_env_prefers_the_explicit_arm_names():
+    """ARM_* names win over Eregion's own when both are present (an operator override)."""
+    env = azure_provider_env({"ARM_SUBSCRIPTION_ID": "arm-sub", "AZURE_SUBSCRIPTION_ID": "az-sub",
+                              "ARM_TENANT_ID": "arm-tenant", "EREGION_TENANT_ID": "er-tenant"})
+    assert env["ARM_SUBSCRIPTION_ID"] == "arm-sub" and env["ARM_TENANT_ID"] == "arm-tenant"
+
+
 # ── The executor journals every phase through the armed contract ──────────────────────
 
 def _staged_home(tmp_path) -> Path:
@@ -298,6 +333,41 @@ def test_executor_sends_the_exact_argv_and_offline_env(tmp_path, monkeypatch):
     assert record[0].env["STRATUS_TERRAFORM_BINARY_PATH"] == ex._staged_terraform()
     assert record[0].env["TF_CLI_CONFIG_FILE"] == ex.layout.terraformrc
     assert "TF_PLUGIN_CACHE_DIR" not in record[0].env
+    ex.close()
+
+
+def _only_managed_identity(monkeypatch):
+    """A host carrying only a managed identity: the subscription and bench tenant named, no
+    service-principal secret and no ARM_* overrides from the ambient shell."""
+    monkeypatch.setenv("AZURE_SUBSCRIPTION_ID", "sub-123")
+    monkeypatch.setenv("EREGION_TENANT_ID", "tenant-abc")
+    for var in ("ARM_SUBSCRIPTION_ID", "ARM_TENANT_ID", "AZURE_TENANT_ID",
+                "ARM_USE_MSI", "ARM_CLIENT_SECRET", "AZURE_CLIENT_SECRET"):
+        monkeypatch.delenv(var, raising=False)
+
+
+def test_executor_hands_the_warmup_the_managed_identity_directive(tmp_path, monkeypatch):
+    """MSI1: on a host carrying only a managed identity, the subprocess env carries ARM_USE_MSI
+    with the subscription and tenant, so the warmup's azurerm provider authenticates by it."""
+    _only_managed_identity(monkeypatch)
+    record: list = []
+    ex = _executor(tmp_path, record=record)
+    ex.detonate()
+    assert record[0].env["ARM_USE_MSI"] == "true"
+    assert record[0].env["ARM_SUBSCRIPTION_ID"] == "sub-123"
+    assert record[0].env["ARM_TENANT_ID"] == "tenant-abc"
+    ex.close()
+
+
+def test_executor_omits_the_msi_directive_under_a_service_principal_secret(tmp_path, monkeypatch):
+    """A developer run authenticating by a service-principal secret keeps it — MSI is not forced,
+    so ARM_USE_MSI never reaches the subprocess."""
+    _only_managed_identity(monkeypatch)
+    monkeypatch.setenv("ARM_CLIENT_SECRET", "a-secret")
+    record: list = []
+    ex = _executor(tmp_path, record=record)
+    ex.detonate()
+    assert "ARM_USE_MSI" not in record[0].env
     ex.close()
 
 

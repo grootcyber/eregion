@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -291,3 +292,43 @@ def airgap_env(run_home: str | Path, *, terraform_binary: str | Path | None = No
     if terraformrc is not None:
         env["TF_CLI_CONFIG_FILE"] = str(terraformrc)
     return env
+
+
+# The warmup's Terraform authenticates to Azure through the azurerm provider, which reads ``ARM_*``
+# (its provider schema). On an armed Orodruin the hardened container carries ONLY the host's managed
+# identity — no service-principal secret, no Azure CLI — so the provider, which otherwise finds no
+# credential offline, must be told to use that identity (MSI1, #608).
+ARM_USE_MSI_ENV = "ARM_USE_MSI"
+ARM_SUBSCRIPTION_ENV = "ARM_SUBSCRIPTION_ID"
+ARM_TENANT_ENV = "ARM_TENANT_ID"
+# A service-principal secret present in the environment means a developer run authenticating by it;
+# MSI is then NOT forced over working credentials.
+_SP_SECRET_ENV = ("ARM_CLIENT_SECRET", "AZURE_CLIENT_SECRET")
+# The subscription and tenant the managed identity acts in (the IMDS token names neither). Read
+# from the ARM_* names first, then Eregion's own (AZURE_SUBSCRIPTION_ID is mandatory; the bench
+# tenant is EREGION_TENANT_ID, the name Orodruin's contract already uses).
+_SUBSCRIPTION_SRC = ("ARM_SUBSCRIPTION_ID", "AZURE_SUBSCRIPTION_ID")
+_TENANT_SRC = ("ARM_TENANT_ID", "EREGION_TENANT_ID", "AZURE_TENANT_ID")
+
+
+def azure_provider_env(environ: Mapping[str, str]) -> dict[str, str]:
+    """Tell Terraform's azurerm provider to authenticate the warmup by the HOST's managed identity.
+
+    On an armed Orodruin there is no service-principal secret in the environment — the hardened
+    container holds only the host's managed identity — and the provider finds no credential offline
+    (no SP secret, no Azure CLI), so it must be told to use that identity: ``ARM_USE_MSI`` with the
+    subscription and tenant (the IMDS token names neither). When a service-principal secret IS
+    present (a developer run with ``.envrc`` credentials) the provider's own auth is left untouched
+    and this returns nothing — MSI is never forced over working credentials. Both the subscription
+    and the tenant must be named, else nothing is set: a half-configured provider would fail less
+    clearly than the unchanged one.
+
+    Returned as overrides the executor layers over the process environment
+    (``annatar/executors/stratus_host.py``)."""
+    if any(environ.get(k) for k in _SP_SECRET_ENV):
+        return {}
+    sub = next((environ[k] for k in _SUBSCRIPTION_SRC if environ.get(k)), None)
+    tenant = next((environ[k] for k in _TENANT_SRC if environ.get(k)), None)
+    if not (sub and tenant):
+        return {}
+    return {ARM_USE_MSI_ENV: "true", ARM_SUBSCRIPTION_ENV: sub, ARM_TENANT_ENV: tenant}
