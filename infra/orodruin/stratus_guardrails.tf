@@ -12,9 +12,9 @@
 #   G7  Budget de l'abonnement dédié + groupe d'action HORS de cet abonnement (dans le groupe
 #       d'Orodruin), pour que COLD/kill et « vider l'abonnement » ne le touchent pas.
 #
-# Le rôle fermé de Stratus (G3) et l'AUTHZ_READ_ONLY d'Orodruin sur l'abonnement dédié (G4)
-# ne sont PAS ici : ils attendent la mesure des actions minimales par technique (M1). Les
-# poser sur un rôle vide refuserait tout ; les poser larges aveuglerait la mesure.
+# Le rôle fermé de Stratus (G3), l'AUTHZ_READ_ONLY d'Orodruin sur l'abonnement dédié (G4) et le
+# credential fédéré « on ne devient Stratus que depuis Orodruin » (G2) sont posés plus bas (R2BGc,
+# #608), maintenant que les actions minimales par technique sont mesurées (M1, Étape 1 au réel).
 
 # Le fournisseur de l'abonnement dédié. Vide (défaut) → subscription_id null → il retombe sur
 # ARM_SUBSCRIPTION_ID (celui d'Orodruin), mais aucune ressource ne l'emploie (count 0), il
@@ -199,4 +199,144 @@ resource "azurerm_consumption_budget_subscription" "stratus" {
     threshold_type = "Forecasted"
     contact_groups = [azurerm_monitor_action_group.stratus_budget[0].id]
   }
+}
+
+# ── R2BGc (#608) — G3 le rôle fermé de Stratus, G4 l'AUTHZ_READ_ONLY d'Orodruin, G2 le credential
+#    fédéré. docs/design/stratus-cible.md, § 6 et § protocole. Posés maintenant que les actions
+#    minimales par technique sont mesurées (M1, Étape 1 au réel). Gestes de l'opérateur, jamais une
+#    session ; plan montré avant. Tout s'éteint à stratus_guardrails_enabled = false (count 0).
+
+# ── G3 — le rôle fermé de Stratus ───────────────────────────────────────────────────────────
+# Les 19 actions mesurées (écritures / suppressions / actions des deux techniques) + les 9
+# lectures (le journal d'activité ne trace NI les lectures NI les contrôles d'accès — ajouts
+# fermes) + les 3 join. AUCUNE action Microsoft.Authorization, AUCUN joker : la liste est fermée,
+# le joker est interdit à la source (test_the_closed_role_has_no_wildcard… + mutant M4448) ET une
+# ceinture not_actions le retirerait s'il entrait (protocole § 6 point 2 ; chaque not_action est
+# nommée dans la ligne « stratus » de la matrice §3). Les actions sont EN LIGNE : scripts/identity_map.py
+# les lit (§3.0 de docs/design/identites.md) ; ajouter une lecture candidate pendant le cycle = une
+# ligne ici + sa ligne en §3.0 + un plan et un apply (jamais une variable surchargeable).
+resource "azurerm_role_definition" "stratus_closed" {
+  count       = var.stratus_guardrails_enabled ? 1 : 0
+  provider    = azurerm.stratus
+  name        = "eregion-stratus-closed"
+  scope       = "/subscriptions/${terraform_data.stratus_guard.output}"
+  description = "Stratus (Eregion R2c) : les actions minimales mesurées des techniques, sur l'abonnement dédié seulement. Aucune action Microsoft.Authorization — on ne s'élargit pas depuis Stratus."
+
+  permissions {
+    actions = [
+      # Les 19 de M1 — écritures, suppressions, actions des deux techniques.
+      "Microsoft.Compute/disks/delete",
+      "Microsoft.Compute/virtualMachines/delete",
+      "Microsoft.Compute/virtualMachines/write",
+      "Microsoft.Compute/virtualMachines/runCommand/action",
+      "Microsoft.Network/bastionHosts/write",
+      "Microsoft.Network/bastionHosts/delete",
+      "Microsoft.Network/bastionHosts/createShareableLinks/action",
+      "Microsoft.Network/bastionHosts/getShareableLinks/action",
+      "Microsoft.Network/bastionHosts/deleteShareableLinks/action",
+      "Microsoft.Network/networkInterfaces/write",
+      "Microsoft.Network/networkInterfaces/delete",
+      "Microsoft.Network/publicIPAddresses/write",
+      "Microsoft.Network/publicIPAddresses/delete",
+      "Microsoft.Network/virtualNetworks/write",
+      "Microsoft.Network/virtualNetworks/delete",
+      "Microsoft.Network/virtualNetworks/subnets/write",
+      "Microsoft.Network/virtualNetworks/subnets/delete",
+      "Microsoft.Resources/subscriptions/resourceGroups/write",
+      "Microsoft.Resources/subscriptions/resourceGroups/delete",
+      # Les 9 lectures — par type écrit + celles du contrat.
+      "Microsoft.Resources/subscriptions/resourceGroups/read",
+      "Microsoft.Network/virtualNetworks/read",
+      "Microsoft.Network/virtualNetworks/subnets/read",
+      "Microsoft.Network/networkInterfaces/read",
+      "Microsoft.Network/publicIPAddresses/read",
+      "Microsoft.Network/bastionHosts/read",
+      "Microsoft.Compute/virtualMachines/read",
+      "Microsoft.Compute/disks/read",
+      "Microsoft.Insights/diagnosticSettings/read",
+      # Les 3 join.
+      "Microsoft.Network/virtualNetworks/subnets/join/action",
+      "Microsoft.Network/networkInterfaces/join/action",
+      "Microsoft.Network/publicIPAddresses/join/action",
+    ]
+    # La ceinture (protocole § 6 point 2) : sur une liste fermée sans joker elle ne retire rien
+    # aujourd'hui, mais elle retirerait un joker s'il entrait. Chaque not_action est nommée dans la
+    # matrice §3 (ligne « stratus »), exigé par scripts/identity_map.py.
+    not_actions = [
+      "Microsoft.Insights/diagnosticSettings/write",
+      "Microsoft.Insights/diagnosticSettings/delete",
+      "Microsoft.Consumption/*",
+      "Microsoft.CostManagement/*",
+      "Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials/write",
+      "Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials/delete",
+    ]
+  }
+
+  assignable_scopes = ["/subscriptions/${terraform_data.stratus_guard.output}"]
+}
+
+# L'attribution à Stratus ne se pose qu'avec l'object id de son principal (vide → rôle défini, non
+# attribué). principal_type explicite : pas d'attente de cohérence côté Azure pour un SP connu.
+resource "azurerm_role_assignment" "stratus_closed" {
+  count              = var.stratus_guardrails_enabled && var.stratus_principal_id != "" ? 1 : 0
+  provider           = azurerm.stratus
+  scope              = "/subscriptions/${terraform_data.stratus_guard.output}"
+  role_definition_id = azurerm_role_definition.stratus_closed[0].role_definition_resource_id
+  principal_id       = var.stratus_principal_id
+  principal_type     = "ServicePrincipal"
+}
+
+# ── G4 — l'AUTHZ_READ_ONLY d'Orodruin sur l'abonnement dédié ─────────────────────────────────
+# Orodruin doit prouver, depuis l'abonnement dédié, qu'il n'y a AUCUN droit dessus (M5 : une liste
+# vide ≠ absence de droit — Azure ne liste que ce que l'appelant peut lire). Ce rôle lui donne
+# EXACTEMENT roleAssignments/read + roleDefinitions/read, comme contract_reader sur le banc. Reader
+# casserait le contrat (eregion_core/orodruin.py, AUTHZ_READ_ONLY) : trop large.
+resource "azurerm_role_definition" "stratus_contract_reader" {
+  count       = var.stratus_guardrails_enabled ? 1 : 0
+  provider    = azurerm.stratus
+  name        = "eregion-orodruin-stratus-contract-reader"
+  scope       = "/subscriptions/${terraform_data.stratus_guard.output}"
+  description = "Orodruin (Eregion R2c) : lire ses propres attributions sur l'abonnement dédié de Stratus, pour prouver le contrat (M5). Rien d'autre."
+
+  permissions {
+    actions = [
+      "Microsoft.Authorization/roleAssignments/read",
+      "Microsoft.Authorization/roleDefinitions/read",
+    ]
+    not_actions = []
+  }
+
+  assignable_scopes = ["/subscriptions/${terraform_data.stratus_guard.output}"]
+}
+
+resource "azurerm_role_assignment" "stratus_contract_reader" {
+  count              = var.stratus_guardrails_enabled ? 1 : 0
+  provider           = azurerm.stratus
+  scope              = "/subscriptions/${terraform_data.stratus_guard.output}"
+  role_definition_id = azurerm_role_definition.stratus_contract_reader[0].role_definition_resource_id
+  principal_id       = azurerm_linux_virtual_machine.host.identity[0].principal_id
+}
+
+# ── G2 — le credential fédéré : on ne devient Stratus que depuis Orodruin ─────────────────────
+# L'app de Stratus fait confiance à un jeton d'Entra ID dont le SUJET est l'identité managée
+# d'Orodruin : le bac à sable échange le jeton de l'identité d'Orodruin contre un jeton de l'app
+# Stratus (ARM_USE_OIDC, WorkloadIdentityCredential). JAMAIS l'identité managée d'Orodruin
+# directement : elle n'a aucun rôle sur l'abonnement dédié (M4). azidentity (DefaultAzureCredential)
+# retomberait sinon sur l'identité managée — AZURE_TOKEN_CREDENTIALS=WorkloadIdentityCredential l'en
+# empêche (défense en profondeur), mais la frontière reste « aucun rôle » (M4). L'apply ÉCRIT sur
+# l'app (Graph) : il tourne sous le login de l'opérateur, jamais sous l'identité d'Orodruin
+# (GRAPH_READ_ONLY intact). L'id de ressource de l'app est lu (data), jamais écrit en dur.
+data "azuread_application" "stratus" {
+  count     = var.stratus_guardrails_enabled && var.stratus_client_id != "" ? 1 : 0
+  client_id = var.stratus_client_id
+}
+
+resource "azuread_application_federated_identity_credential" "stratus_from_orodruin" {
+  count          = var.stratus_guardrails_enabled && var.stratus_client_id != "" ? 1 : 0
+  application_id = data.azuread_application.stratus[0].id
+  display_name   = "orodruin-sandbox"
+  description    = "Eregion R2c : on ne devient Stratus que depuis le bac à sable d'Orodruin (son identité managée comme sujet). Posé sous le login de l'opérateur."
+  audiences      = ["api://AzureADTokenExchange"]
+  issuer         = "https://login.microsoftonline.com/${data.azurerm_subscription.current.tenant_id}/v2.0"
+  subject        = azurerm_linux_virtual_machine.host.identity[0].principal_id
 }

@@ -37,7 +37,13 @@ mock_provider "azurerm" {
   alias = "stratus"
 }
 
-mock_provider "azuread" {}
+mock_provider "azuread" {
+  mock_data "azuread_application" {
+    defaults = {
+      id = "/applications/44444444-4444-4444-4444-444444444444"
+    }
+  }
+}
 
 override_resource {
   target          = azurerm_storage_container.exercises
@@ -160,5 +166,54 @@ run "a_dedicated_subscription_poses_each_guardrail" {
   assert {
     condition     = length(azurerm_subscription_policy_assignment.stratus_allowed_resource_types) == 0 && length(azurerm_subscription_policy_assignment.stratus_allowed_vm_skus) == 0
     error_message = "une liste autorisée vide a quand même posé sa policy"
+  }
+}
+
+# R2BGc (#608) — G3/G4/G2 sur un abonnement dédié, avec l'identité de Stratus renseignée : le rôle
+# fermé porte les 31 actions mesurées (sans joker, sans Microsoft.Authorization), l'AUTHZ d'Orodruin
+# est EXACTEMENT roleAssignments/read + roleDefinitions/read, et le credential fédéré est posé.
+run "the_closed_role_authz_and_federation_are_posed_and_bounded" {
+  command = plan
+
+  variables {
+    stratus_guardrails_enabled = true
+    stratus_subscription_id    = "11111111-1111-1111-1111-111111111111"
+    stratus_principal_id       = "22222222-2222-2222-2222-222222222222"
+    stratus_client_id          = "33333333-3333-3333-3333-333333333333"
+  }
+
+  # G3 — le rôle fermé : les 31 actions mesurées, aucun joker, aucune action Microsoft.Authorization.
+  assert {
+    condition     = length(azurerm_role_definition.stratus_closed[0].permissions[0].actions) == 31
+    error_message = "le rôle fermé n'a pas 31 actions (19 + 9 + 3)"
+  }
+  assert {
+    condition     = length([for a in azurerm_role_definition.stratus_closed[0].permissions[0].actions : a if strcontains(a, "*")]) == 0
+    error_message = "une action du rôle fermé porte un joker"
+  }
+  assert {
+    condition     = length([for a in azurerm_role_definition.stratus_closed[0].permissions[0].actions : a if startswith(lower(a), "microsoft.authorization/")]) == 0
+    error_message = "le rôle fermé porte une action Microsoft.Authorization"
+  }
+  # G3 — l'attribution se pose (principal donné), en ServicePrincipal.
+  assert {
+    condition     = length(azurerm_role_assignment.stratus_closed) == 1 && azurerm_role_assignment.stratus_closed[0].principal_type == "ServicePrincipal"
+    error_message = "l'attribution du rôle fermé ne se pose pas, ou pas en ServicePrincipal"
+  }
+
+  # G4 — l'AUTHZ d'Orodruin : exactement les deux lectures de contrôle d'accès, rien d'autre.
+  assert {
+    condition     = length(azurerm_role_definition.stratus_contract_reader[0].permissions[0].actions) == 2 && contains(azurerm_role_definition.stratus_contract_reader[0].permissions[0].actions, "Microsoft.Authorization/roleAssignments/read") && contains(azurerm_role_definition.stratus_contract_reader[0].permissions[0].actions, "Microsoft.Authorization/roleDefinitions/read")
+    error_message = "l'AUTHZ d'Orodruin n'est pas exactement roleAssignments/read + roleDefinitions/read"
+  }
+  assert {
+    condition     = length(azurerm_role_assignment.stratus_contract_reader) == 1
+    error_message = "l'attribution de l'AUTHZ d'Orodruin ne se pose pas"
+  }
+
+  # G2 — le credential fédéré se pose, sujet = l'identité d'Orodruin, audience d'échange de jeton.
+  assert {
+    condition     = length(azuread_application_federated_identity_credential.stratus_from_orodruin) == 1 && azuread_application_federated_identity_credential.stratus_from_orodruin[0].subject == "00000000-0000-0000-0000-0000000000a0" && contains(azuread_application_federated_identity_credential.stratus_from_orodruin[0].audiences, "api://AzureADTokenExchange")
+    error_message = "le credential fédéré ne se pose pas, ou ne fait pas confiance à l'identité d'Orodruin"
   }
 }
