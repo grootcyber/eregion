@@ -981,13 +981,22 @@ celebrimbor-start:
 # human_only). L'apply demande confirmation (pas d'--auto-approve).
 HOST_TF       := terraform -chdir=infra/glorfindel-host
 HOST_USER     ?= glorfindel
-# Sans OPERATOR_CIDR, ton IP publique du moment, en /32 (seule source SSH autorisée).
-OPERATOR_CIDR ?= $(shell curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null)/32
+# La seule source SSH autorisée vers Imladris et Orodruin : ton adresse publique, en /32 (SEC-G, audit
+# du 13/11, V-40). OPERATOR_CIDR=<ton IP>/32 ; sans lui, lue sur api.ipify.org (un service tiers, dit).
+# L'une comme l'autre passe scripts/operator_cidr.py avant tout plan : une IPv4 publique en /32, jamais
+# une plage, une IPv6, une adresse privée ou réservée — refusée, rien n'est planifié. La valeur va au
+# shell par l'environnement (jamais développée par make), et à terraform par $$cidr : l'adresse
+# n'apparaît pas sur la ligne de la commande.
+OPERATOR_CIDR ?=
+unexport OPERATOR_CIDR
+OPERATOR_CIDR_TARGETS = imladris-plan imladris-up imladris-down orodruin-plan orodruin-up orodruin-lock orodruin-down
+$(OPERATOR_CIDR_TARGETS): export EREGION_OPERATOR_CIDR = $(value OPERATOR_CIDR)
+OPERATOR_CIDR_READ = cidr=$$(python3 scripts/operator_cidr.py) &&
 # La coupure des sessions d'Imladris (SEC11, R-03) : infra/glorfindel-host/session_drain.auto.tfvars,
 # que Terraform lit de lui-même à chaque plan — rien à passer ici. De même la neutralisation avant
 # un restore (SEC17) : restore.auto.tfvars (commité) et principals.auto.tfvars (les object
 # id de la console et du bot, sur le poste seulement, ignoré par git ; la coupure de la console aussi).
-HOST_VARS      = -var-file=../terraform/terraform.tfvars -var="operator_cidr=$(OPERATOR_CIDR)"
+HOST_VARS      = -var-file=../terraform/terraform.tfvars -var="operator_cidr=$$cidr"
 HOST_IP        = $(shell $(HOST_TF) output -no-color -raw public_ip 2>/dev/null | grep -E '^[0-9.]+$$')
 # HOST_SSH_KEY : la clé privée qui va avec admin_ssh_public_key (terraform.tfvars), si ton agent
 # SSH ne la propose pas.
@@ -1037,15 +1046,15 @@ imladris-init:
 	@$(HOST_TF) init
 
 imladris-plan: imladris-init
-	@$(HOST_TF) plan $(HOST_VARS)
+	@$(OPERATOR_CIDR_READ) $(HOST_TF) plan $(HOST_VARS)
 
 # YES=1 : sans confirmation (le plan n'est alors pas relu avant l'apply).
 imladris-up: imladris-init
-	@$(HOST_TF) apply $(HOST_VARS)$(if $(YES), -auto-approve)
+	@$(OPERATOR_CIDR_READ) $(HOST_TF) apply $(HOST_VARS)$(if $(YES), -auto-approve)
 	@echo "" && echo "  Ensuite : make imladris-env (ou copier host.env.example et remplir), make imladris-push"
 
 imladris-down:
-	@$(HOST_TF) destroy $(HOST_VARS)
+	@$(OPERATOR_CIDR_READ) $(HOST_TF) destroy $(HOST_VARS)
 
 # host.env depuis ton environnement (.envrc chargé) : abonnement, clé du modèle, webhook ;
 # jamais de secret Azure (identité managée) ; READ_ONLY=1 et un jeton de la console tiré au sort
@@ -1331,7 +1340,7 @@ WATCH_PRINCIPALS ?=
 unexport WATCH_PRINCIPALS
 ORO_GUID       = [0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}
 ORO_WATCH_IDS  = $(if $(value WATCH_PRINCIPALS), -var="watch_principal_ids=$$(printf '%s' "$$EREGION_WATCH_PRINCIPALS" | tr A-F a-f | sed 's/[^,][^,]*/"&"/g; s/.*/[&]/')")
-ORO_VARS       = -var-file=../terraform/terraform.tfvars -var="operator_cidr=$(OPERATOR_CIDR)" -var="watch_principal_id=$(ORO_WATCH_ID)"$(ORO_WATCH_IDS)
+ORO_VARS       = -var-file=../terraform/terraform.tfvars -var="operator_cidr=$$cidr" -var="watch_principal_id=$(ORO_WATCH_ID)"$(ORO_WATCH_IDS)
 orodruin-plan orodruin-up orodruin-lock orodruin-down orodruin-watch-principals: export EREGION_WATCH_PRINCIPALS = $(value WATCH_PRINCIPALS)
 # SEC5 (V-31) : le sous-réseau et l'IP d'Imladris, admis par le pare-feu du compte du canal — dans
 # l'environnement de terraform, jamais sur la ligne affichée (l'id du sous-réseau nomme
@@ -1439,16 +1448,16 @@ orodruin-watch-principals:
 	  || { echo "✗ WATCH_PRINCIPALS nomme une identité deux fois : rien n'est fait." >&2; exit 1; }
 
 orodruin-plan: orodruin-init orodruin-watch-guard
-	$(ORO_TF) plan $(ORO_VARS)
+	$(OPERATOR_CIDR_READ) $(ORO_TF) plan $(ORO_VARS)
 
 # Premier apply : sortie ouverte, le temps d'installer Docker. Ensuite orodruin-lock.
 # YES=1 : sans confirmation (-auto-approve), pour un lancement non interactif.
 orodruin-up: orodruin-init orodruin-watch-guard
-	$(ORO_TF) apply $(ORO_VARS) -var="egress_locked=false"$(if $(YES), -auto-approve)
+	$(OPERATOR_CIDR_READ) $(ORO_TF) apply $(ORO_VARS) -var="egress_locked=false"$(if $(YES), -auto-approve)
 	@echo "" && echo "  VM prête quand ~/.orodruin-ready existe (make orodruin-ssh) ; puis make orodruin-lock"
 
 orodruin-lock: orodruin-init orodruin-watch-guard
-	$(ORO_TF) apply $(ORO_VARS)$(if $(YES), -auto-approve)
+	$(OPERATOR_CIDR_READ) $(ORO_TF) apply $(ORO_VARS)$(if $(YES), -auto-approve)
 
 # CI3 : l'image d'Annatar que la CI a publiée (publish.yml), jamais construite ici. Sur ce poste :
 # son digest lu sur GHCR pour le commit de REF (un tag, ou un commit de main ; sans REF, le dernier
@@ -1899,7 +1908,7 @@ orodruin-exercise: orodruin-exercise-guard $(if $(filter local,$(REQUEST_FROM)),
 # pouls dans son canal : détruits avec elle. Le dire, avant.
 orodruin-down: orodruin-watch-principals
 	@echo "  drill armed: lost, re-arm after up (make orodruin-drill-arm, once Orodruin is back)"
-	$(ORO_TF) destroy $(ORO_VARS)$(if $(YES), -auto-approve)
+	$(OPERATOR_CIDR_READ) $(ORO_TF) destroy $(ORO_VARS)$(if $(YES), -auto-approve)
 
 orodruin-ssh: orodruin-known
 	$(ORO_SSH)
