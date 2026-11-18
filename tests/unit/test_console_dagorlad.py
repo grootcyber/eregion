@@ -240,13 +240,13 @@ def test_a_wire_is_removed_by_its_own_cross_never_by_drawing_it_again():
 def test_a_red_card_carries_its_last_proof_from_the_coverage_matrix(client, monkeypatch):
     """The coverage matrix (C1) gives each entry its state and the age of its last proof; an
     entry it does not hold was never run here."""
-    matrix = {"techniques": [{"id": "T1110.001", "state": "proven", "last_proof": {"age_s": 518400, "run_id": "r-1"},
+    matrix = {"techniques": [{"id": "T1110.001", "state": "fresh", "last_proof": {"age_s": 518400, "run_id": "r-1"},
                               "last_run": {"run_id": "r-1", "at": "2026-10-24T08:00:00+00:00"}}],
               "faults": [{"id": "vm-shutdown", "state": "regressed", "last_proof": None,
                           "last_run": {"run_id": "g-2", "at": "2026-10-29T08:00:00+00:00"}}]}
     monkeypatch.setattr(api, "coverage_matrix", lambda now=None: matrix)
     reds = {r["id"]: r for r in client.get("/api/dagorlad/board").json()["reds"]}
-    assert reds["T1110.001"]["proof"] == {"state": "proven", "proof_age_s": 518400, "last_run": "r-1",
+    assert reds["T1110.001"]["proof"] == {"state": "fresh", "proof_age_s": 518400, "last_run": "r-1",
                                           "last_run_at": "2026-10-24T08:00:00+00:00"}
     assert reds["vm-shutdown"]["proof"]["state"] == "regressed"
     assert reds["T1486"]["proof"]["state"] == "never"

@@ -342,12 +342,14 @@ function renderContainment(c) {
 // share), the watch's cycles and the catalogue — the whole history, not the 7 days of the
 // windows. A row says its state, its last outcomes (oldest first) and the age of its last
 // proof; open, its last run and its last proof; a technique that regressed is red.
+// FRS1 (#904): a proof under 21 days is « fresh » — « proven » is the catalogue's status
+// (measured on the bench), never the age of a proof.
 const STATE = {
-  regressed: { cls: 'bad', label: 'REGRESSED', title: 'Proven before, failed since: the last measured run lost what an earlier one had proven' },
+  regressed: { cls: 'bad', label: 'REGRESSED', title: 'Held before, failed since: the last measured run lost what an earlier one had held (detected, or PASS)' },
   stale: { cls: 'bad', label: 'stale', title: 'Last proof over 30 days old' },
   aging: { cls: 'warn', label: 'aging', title: 'Last proof between 21 and 30 days old' },
-  proven: { cls: 'ok', label: 'proven', title: 'Last proof under 21 days old' },
-  unproven: { cls: 'warn', label: 'no proof', title: 'Run, never proven: no detection with a decision attached (a fault: no PASS with the watch running)' },
+  fresh: { cls: 'ok', label: 'fresh', title: 'Fresh: last proof under 21 days old' },
+  unproven: { cls: 'warn', label: 'no proof', title: 'Run, no proof yet: no detection with a decision attached (a fault: no PASS with the watch running)' },
   never: { cls: 'wait', label: 'never run', title: 'No run on this host' },
 };
 const OUTCOME = {
@@ -432,7 +434,7 @@ function renderCatalog() {
   const halves = ABOUT.kind === 'fault' ? ['faults'] : ABOUT.kind === 'technique' ? ['techniques'] : ['techniques', 'faults'];
   $('cat-count').innerHTML = halves.map(h => {
     const s = (S.cat.summary || {})[h] || {}, lost = Array.isArray(s.regressed) ? s.regressed : [];
-    return `${halves.length > 1 ? (h === 'faults' ? 'faults ' : 'techniques ') : ''}${Number(s.implemented)} implemented · <span class="r-ok">${Number(s.proven) + Number(s.aging)} proven</span>${Number(s.stale) ? ` · <span class="r-bad">${Number(s.stale)} stale</span>` : ''}${lost.length ? ` · <span class="r-bad">${Number(lost.length)} regressed</span>` : ''}`;
+    return `${halves.length > 1 ? (h === 'faults' ? 'faults ' : 'techniques ') : ''}${Number(s.implemented)} implemented · <span class="r-ok" title="last proof under 21 days old">${num(s.fresh)} fresh</span>${num(s.aging) ? ` · <span class="r-warn" title="last proof 21 to 30 days old">${num(s.aging)} aging</span>` : ''}${Number(s.stale) ? ` · <span class="r-bad">${Number(s.stale)} stale</span>` : ''}${lost.length ? ` · <span class="r-bad">${Number(lost.length)} regressed</span>` : ''}`;
   }).join(' │ ');
   const groups = {};
   for (const r of rows) {

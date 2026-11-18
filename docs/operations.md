@@ -311,7 +311,7 @@ eregion console [--sections annatar,gothmog] # la console web sur http://localho
                                              # (~/.eregion/console/token, 600), jamais imprimé : make console-url le lit
 eregion coverage [--json] [--check]          # la matrice de couverture (C1), depuis runs/ du répertoire courant : chaque
                                              # technique du catalogue et chaque panne, son dernier run, sa dernière preuve,
-                                             # son état (proven, aging > 21 j, stale > 30 j, regressed, unproven, never) et
+                                             # son état (fresh < 21 j, aging, stale > 30 j, regressed, unproven, never) et
                                              # ses derniers résultats (✓ ✗ ? ·) ; fichiers seulement, ni cloud ni modèle.
                                              # --check : la non-régression, sort en 1 sur une technique ou une panne
                                              # prouvée avant et ratée depuis (après un rejeu du catalogue sur le banc,
