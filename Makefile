@@ -1346,10 +1346,15 @@ ORO_IMAGE     := eregion-annatar:orodruin
 # fois », les statuts des demandes) ; le lanceur d'une demande, qui lance les deux, les trois. Aucun
 # ne monte ~/runs entier, sauf la migration de l'ancienne disposition (ORO_MIGRATE, à orodruin-push).
 # Les répertoires créés au nom de l'utilisateur de la VM avant chaque docker run (sinon à root).
-ORO_HARDEN     = --read-only --tmpfs /tmp --tmpfs /stratus-home:exec --cap-drop ALL --security-opt no-new-privileges:true
+ORO_HARDEN     = --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges:true
+# R2BZ (#608): a dedicated EXEC tmpfs for the stratus run HOME, added ONLY to the annatar run defs
+# below (those that may run the control-plane library) — NOT to the shared ORO_HARDEN, which stays
+# hardened exactly as docker-compose. /tmp stays noexec; only /stratus-home, where Terraform extracts
+# and EXECUTES the providers, is executable. The control/gothmog/contract runs never get it.
+ORO_EXEC_HOME  = --tmpfs /stratus-home:exec
 ORO_DIRS       = for d in $$HOME/runs/annatar $$HOME/runs/gothmog $$HOME/runs/orodruin; do { test ! -L "$$d" && { test ! -e "$$d" || test -d "$$d"; }; } || { echo "✗ $$d : pas un répertoire (un lien ?), rien ne part (SEC18)" >&2; exit 1; }; mkdir -p "$$d"; done &&
 ORO_MOUNT      = -v $$HOME/runs/$(1):/app/runs/$(1)
-ORO_RUN        = $(ORO_DIRS) docker run --rm $(ORO_HARDEN) --env-file orodruin.env $(call ORO_MOUNT,annatar) $(call ORO_MOUNT,orodruin) $(ORO_IMAGE)
+ORO_RUN        = $(ORO_DIRS) docker run --rm $(ORO_HARDEN) $(ORO_EXEC_HOME) --env-file orodruin.env $(call ORO_MOUNT,annatar) $(call ORO_MOUNT,orodruin) $(ORO_IMAGE)
 ORO_RUN_GOTHMOG = $(ORO_DIRS) docker run --rm $(ORO_HARDEN) --env-file orodruin.env $(call ORO_MOUNT,gothmog) $(call ORO_MOUNT,orodruin) $(ORO_IMAGE)
 ORO_RUN_CONTRACT = $(ORO_DIRS) docker run --rm $(ORO_HARDEN) --env-file orodruin.env $(call ORO_MOUNT,orodruin) $(ORO_IMAGE)
 ORO_MIGRATE    = docker run --rm $(ORO_HARDEN) -v $$HOME/runs:/app/runs $(ORO_IMAGE) python -m eregion_core.runs_layout migrate /app/runs --orodruin
@@ -1584,7 +1589,7 @@ unexport TARGET RUN OUT POINT_MAX_H
 bench-preflight bench-report: export BENCH_H0_SSH = $(HOST_SSH)
 bench-preflight bench-report: export BENCH_TARGET = $(value TARGET)
 bench-preflight: export BENCH_ORO_SSH = $(ORO_SSH)
-bench-preflight: export BENCH_ORO_RUN = docker run --rm $(ORO_HARDEN) --env-file orodruin.env $(ORO_IMAGE)
+bench-preflight: export BENCH_ORO_RUN = docker run --rm $(ORO_HARDEN) $(ORO_EXEC_HOME) --env-file orodruin.env $(ORO_IMAGE)
 bench-preflight: export BENCH_POINT_MAX_H = $(value POINT_MAX_H)
 bench-report: export BENCH_RUN = $(value RUN)
 bench-report: export BENCH_OUT = $(value OUT)
@@ -1625,7 +1630,7 @@ bench-run bench-restore:
 
 bench-run-go bench-restore-go: export BENCH_H0_SSH = $(HOST_SSH)
 bench-run-go: export BENCH_ORO_SSH = $(ORO_SSH)
-bench-run-go: export BENCH_ORO_RUN = docker run --rm $(ORO_HARDEN) --env-file orodruin.env $(ORO_IMAGE)
+bench-run-go: export BENCH_ORO_RUN = docker run --rm $(ORO_HARDEN) $(ORO_EXEC_HOME) --env-file orodruin.env $(ORO_IMAGE)
 bench-run-go: export BENCH_ORO_RUN_REQUEST = $(ORO_RUN_REQUEST)
 bench-run-go: export BENCH_SCENARIO = $(value SCENARIO)
 bench-run-go: export BENCH_POINT_MAX_H = $(value POINT_MAX_H)
@@ -1831,7 +1836,7 @@ orodruin-drill-disarm:
 REQUEST ?=
 unexport REQUEST
 REQUEST_FROM  ?= h0
-ORO_RUN_REQUEST = $(ORO_DIRS) docker run --rm $(ORO_HARDEN) --env-file orodruin.env $(call ORO_MOUNT,annatar) $(call ORO_MOUNT,gothmog) $(call ORO_MOUNT,orodruin) -v $$HOME/requests:/app/requests:ro $(ORO_IMAGE)
+ORO_RUN_REQUEST = $(ORO_DIRS) docker run --rm $(ORO_HARDEN) $(ORO_EXEC_HOME) --env-file orodruin.env $(call ORO_MOUNT,annatar) $(call ORO_MOUNT,gothmog) $(call ORO_MOUNT,orodruin) -v $$HOME/requests:/app/requests:ro $(ORO_IMAGE)
 orodruin-exercise: export EREGION_REQUEST_ID = $(value REQUEST)
 orodruin-exercise: export EREGION_DRILL = $(value DRILL)
 orodruin-exercise: export EREGION_DRILL_TARGETS = $(value TARGETS)

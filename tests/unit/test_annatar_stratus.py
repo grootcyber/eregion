@@ -334,14 +334,22 @@ def test_executor_run_home_falls_back_without_the_exec_tmpfs(tmp_path, monkeypat
     ex.close()
 
 
-def test_oro_harden_mounts_an_exec_home_and_keeps_tmp_noexec():
-    """R2BZ: the hardened Orodruin container mounts a dedicated EXEC tmpfs for the stratus run HOME
-    (so Terraform runs the providers) while /tmp stays noexec — the surgical relaxation."""
+def test_the_exec_home_is_only_on_the_annatar_runs_not_the_shared_hardening():
+    """R2BZ: the dedicated exec tmpfs (so Terraform runs the providers) is added only to the annatar
+    run defs — those that may run the control-plane library — never to the shared ORO_HARDEN, which
+    stays hardened exactly as docker-compose, nor to the control/gothmog/contract runs; /tmp noexec."""
     makefile = (Path(__file__).resolve().parents[2] / "Makefile").read_text(encoding="utf-8")
-    harden = next(ln for ln in makefile.splitlines() if ln.startswith("ORO_HARDEN"))
-    assert "--tmpfs /stratus-home:exec" in harden   # the providers execute here (M6081)
-    assert "--tmpfs /tmp:exec" not in harden         # /tmp stays noexec (the hardening held)
-    assert "--tmpfs /tmp" in harden                  # /tmp is still a tmpfs
+
+    def line(prefix):
+        return next(ln for ln in makefile.splitlines() if ln.startswith(prefix))
+
+    harden = line("ORO_HARDEN")
+    assert "/stratus-home" not in harden and "--tmpfs /tmp:exec" not in harden   # shared hardening strict
+    assert "ORO_EXEC_HOME  = --tmpfs /stratus-home:exec" in makefile             # the exec tmpfs (M6081)
+    assert "$(ORO_EXEC_HOME)" in line("ORO_RUN ")                                # annatar run
+    assert "$(ORO_EXEC_HOME)" in line("ORO_RUN_REQUEST")                         # the exercise run
+    assert "$(ORO_EXEC_HOME)" not in line("ORO_RUN_GOTHMOG")                     # gothmog: never
+    assert "$(ORO_EXEC_HOME)" not in line("ORO_RUN_CONTRACT")                    # the contract: never
 
 
 def test_executor_refuses_when_the_staged_terraform_is_missing(tmp_path):
