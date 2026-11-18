@@ -19,6 +19,7 @@ The code that lived here (4 394 lines) is split by concern, nothing changed in i
     narrow.py                   an orphan rule narrowed to the addresses of the VMs held (U1G)
     network.py                  NICs and NSGs: reads, rule writes, names
     quarantine.py               the quarantine NSG
+    quarantine_origin.py        the original NSG its tag keeps, a bare NIC's looked up (SEC-H)
     isolation.py, release.py, verify.py      isolation by quarantine or by rules
     older.py                    an older version's isolation undone by its record (I4E)
     gone.py                     a VM gone: its NICs' rules looked for everywhere (I7S, I5R)
@@ -63,6 +64,7 @@ _MODULES = tuple(_importlib.import_module(name) for name in (
     "glorfindel.providers.azure.nsg",
     "glorfindel.providers.azure.turned",
     "glorfindel.providers.azure.narrow",
+    "glorfindel.providers.azure.quarantine_origin",
     "glorfindel.providers.azure.quarantine",
     "glorfindel.providers.azure.network",
     "glorfindel.providers.azure.run_command",

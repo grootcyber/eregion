@@ -84,13 +84,14 @@ def approval_refusal(esc: dict, vm_name: str, *, dated: str | None = None,
                 "Acquitter et laisser la détection se reproduire, ou agir depuis la CLI.")
     from glorfindel import jobs as _jobs
     try:
-        text = (_jobs._RECOVERY_DIR / f"{vm_name}.json").read_text()
-    except FileNotFoundError:
-        return None                     # no restore of this VM recorded
+        # By the card's full id (SEC-H): by the name alone, a homonym's restore refused it.
+        text = _jobs.restore_record(str(esc.get("resource_id") or "") or vm_name)
     except OSError as exc:
         return f"Restore illisible ({type(exc).__name__}) : agir depuis la CLI."
     # A record there but unreadable never reads as « no restore » (FS1b review): a list, a date
     # without its zone, a field missing — the approval is refused, as it never ran before (a 500).
+    if text is None:
+        return None                     # no restore of this VM recorded
     try:
         restored = datetime.fromisoformat(json.loads(text)["last_restore_at"])
         after = restored > seen_dt

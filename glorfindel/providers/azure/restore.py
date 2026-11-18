@@ -225,7 +225,7 @@ class RestoreMixin:
                 f"qu'une fois sûr qu'aucun restore ne tourne ({restart}).")
 
         restore_job = self._find_backup_job(
-            backup_client, vault, v_rg, "Restore", vm_name, triggered_at)
+            backup_client, vault, v_rg, "Restore", vm_name, triggered_at, vm_rg=rg)
         if restore_job is None:
             raise RuntimeError(
                 f"Restore job for {vm_name} not found after trigger ({job_search_s('Restore')} s) — un job a pu "

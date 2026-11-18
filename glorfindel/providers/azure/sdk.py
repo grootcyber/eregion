@@ -121,3 +121,28 @@ def _is_iam_error(err: str) -> bool:
     """Return True if the error is an Azure authorization/permission failure."""
     markers = ("AuthorizationFailed", "Forbidden", "403", "does not have authorization")
     return any(m in err for m in markers)
+
+
+def arm_write_timeout_s() -> float:
+    """How long an ARM write is waited for (GLORFINDEL_ARM_WRITE_TIMEOUT_S, 300 s): a rule, a NIC, a
+    quarantine NSG — seconds when Azure answers (SEC-H). Past it, the write is unknown, never done."""
+    import os
+    try:
+        value = float(os.environ.get("GLORFINDEL_ARM_WRITE_TIMEOUT_S") or 300)
+    except ValueError:
+        return 300.0
+    return value if value > 0 else 300.0
+
+
+def _finished(poller, what: str = ""):
+    """The result of an ARM long-running operation, waited for `arm_write_timeout_s` at most (SEC-H).
+    `.result()` without a delay held the VM's lock, and the worker, for as long as Azure took — the
+    VM's response frozen, its reassertion skipped. Not done by then: TimeoutError — the write may
+    still land; the caller treats it as failed, and the next read says what Azure holds."""
+    timeout = arm_write_timeout_s()
+    result = poller.result(timeout=timeout)
+    done = getattr(poller, "done", None)
+    if callable(done) and done() is False:
+        raise TimeoutError(f"écriture ARM non terminée après {timeout:.0f} s{f' ({what})' if what else ''} : "
+                           "son effet est inconnu, relu au prochain passage")
+    return result

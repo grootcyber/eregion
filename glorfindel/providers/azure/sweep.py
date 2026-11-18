@@ -5,7 +5,7 @@ The NSG listing the watch's pass shares, and one quarantine NSG read by its id (
 from __future__ import annotations
 
 from glorfindel.providers.azure.narrow import _freed, _narrow_rule, _narrowed
-from glorfindel.providers.azure.nsg import _nic_hash, _nic_owns, _rule_name
+from glorfindel.providers.azure.nsg import _is_mark, _nic_hash, _nic_mark, _nic_owns, _rule_name
 from glorfindel.providers.azure.turned import (
     _aims_elsewhere, _chain, _governed_by, _held_by_turned, _turned_allows, _turned_behind, _turned_still,
     _turned_text,
@@ -27,6 +27,24 @@ from glorfindel.response.state import (
     _update_block_entry,
     unreadable_states,
 )
+
+
+def _recorded_names(state: dict, blocks: list) -> dict[tuple, set[str]]:
+    """The rule names this VM's own state records, by (NSG, NIC): its isolation's placements and
+    its blocks'. The state is the VM's — found by its full id (SEC-H) —, so a name it records for a
+    NIC is that NIC's, an older one included: whatever it covers now, it is ours to take off."""
+    out: dict[tuple, set[str]] = {}
+    placements = [p for p in (state or {}).get("placements") or [] if isinstance(p, dict)]
+    placements += [p for e in blocks or [] if isinstance(e, dict) for p in e.get("placements") or []
+                   if isinstance(p, dict)]
+    for p in placements:
+        if p.get("kind") == "quarantine" or not p.get("nic_id") or not p.get("nsg_name"):
+            continue
+        names = {str(n).lower() for n in (p.get("rule_in"), p.get("rule_out"), p.get("rule")) if n}
+        names |= {f"{n}-out" for n in names if not n.endswith("-out")}
+        k = ((str(p.get("nsg_rg") or "").lower(), str(p["nsg_name"]).lower()), str(p["nic_id"]).rstrip("/").lower())
+        out.setdefault(k, set()).update(names)
+    return out
 
 
 class SweepMixin:
@@ -108,6 +126,7 @@ class SweepMixin:
         guard: dict = {}
         own_ips = [a for t0 in targets for a in t0.get("private_ips") or []]
         mates = [t0["nic_id"] for t0 in targets]
+        recorded = _recorded_names(own_state, _load_block_entries(resource_id))
         for t in views:
             nsg_key = (t["nsg_rg"].lower(), t["nsg_name"].lower())
             h = hashlib.sha1(t["nic_id"].encode()).hexdigest()[:8]
@@ -139,9 +158,13 @@ class SweepMixin:
                               for n in (b, f"{b}-out")}
                     owned = {f"{prefix}-{x}".lower() for x in (
                         vm_name, f"{vm_name}-{t['nic_short']}", f"{vm_name[:40]}-{h}")}
+                    owned |= set(self._older_rule_bases(prefix, vm_name, t["nic_short"], t["nic_id"]))
                     owned = {n for b in owned for n in (b, f"{b}-out")}
                 else:
                     hashed, owned = {n for b in iso_bases for n in (b, f"{b}-out")}, iso_names
+                # An older name this VM's own state records on this NSG, for this NIC: ours, whatever
+                # it covers now (SEC-H) — its address changed since, it still went (L26).
+                hashed = hashed | recorded.get((nsg_key, t["nic_id"].rstrip("/").lower()), set())
                 # Named for this VM is not enough: a homonym behind the same NSG has the
                 # same legacy names — only a rule that applies to THIS NIC goes (L24),
                 # unless its name carries this NIC's hash (_nic_owns). A rule of the VM's
@@ -282,7 +305,7 @@ class SweepMixin:
         for nic in self._network.network_interfaces.list_all():
             nid = nic.id.rstrip("/").lower()
             listed.add(nid)
-            marks |= {_nic_hash(nid, 6), _nic_hash(nid, 8),
+            marks |= {_nic_mark(nid), _nic_hash(nid, 6), _nic_hash(nid, 8),
                       hashlib.sha1(nic.id.rstrip("/").encode()).hexdigest()[:8]}
             vm_id = getattr(getattr(nic, "virtual_machine", None), "id", None) or ""
             live_names |= {ref.rstrip("/").rsplit("/", 1)[-1].rsplit("-", 1)[-1].lower()
@@ -315,7 +338,7 @@ class SweepMixin:
                         or _enum_text(getattr(r, "access", "")) != "deny"):
                     continue
                 mark = (name[:-4] if name.endswith("-out") else name).rsplit("-", 1)[-1]
-                if (len(mark) not in (6, 8) or any(c not in "0123456789abcdef" for c in mark)
+                if (not _is_mark(mark)
                         or mark in marks or mark in live_names):
                     continue
                 if mark in state_nics:
@@ -396,7 +419,7 @@ class SweepMixin:
             for p in entry.get("placements") or []:
                 nid = (p.get("nic_id") or "").rstrip("/")
                 if nid:
-                    for mark in (_nic_hash(nid, 6), _nic_hash(nid, 8)):
+                    for mark in (_nic_mark(nid), _nic_hash(nid, 6), _nic_hash(nid, 8)):
                         out.setdefault(mark, nid)
         return out
 

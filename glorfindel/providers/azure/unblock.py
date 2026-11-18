@@ -7,6 +7,8 @@ from glorfindel.providers.azure.nsg import (
     _deny_applies,
     _ip_scoped,
     _nic_hash,
+    _nic_mark,
+    MARK_SIZE,
     _nic_owns,
     _rule_name,
 )
@@ -123,6 +125,7 @@ class UnblockMixin:
         block, an operator's decision covering every VM)."""
         prefix = self._block_rule_prefix(ip)
         bases = [*self._placement_rule_bases(prefix, vm_name, t["nic_short"], t["nic_id"]),
+                 *self._older_rule_bases(prefix, vm_name, t["nic_short"], t["nic_id"]),
                  self._legacy_rule_base(prefix, vm_name, t["nic_short"], t["nic_id"]),
                  self._block_rule_name(ip, vm_name, "subnet")]
         if not _ip_scoped(t):
@@ -247,13 +250,17 @@ class UnblockMixin:
         unblock says it again while it stays: taken off, the next unblock is done."""
         prefix = self._block_rule_prefix(ip).lower()
         mine = f"{prefix}-{vm_name}".lower()
+        # A name too long for the NIC's carries the VM's name cut to its room (SEC-H: the mark takes 32).
+        room = 80 - 4 - len(prefix) - 2 - MARK_SIZE
+        heads = tuple({f"{mine}-", *([f"{prefix}-{vm_name[:room]}-".lower()] if room >= 1 else [])})
         try:
             nsgs = list(self._network.network_security_groups.list_all())
             nics = list(self._network.network_interfaces.list_all())
         except Exception as exc:
             return [f"{vm_name} supprimée : NSG ou cartes de l'abonnement illisibles "
                     f"({_first_line(exc)[:_ERR_MAX]}), déblocage non vérifié"]
-        marks = {_nic_hash(n, size) for n in [*known, *(getattr(c, "id", None) or "" for c in nics)] if n
+        marks = {_nic_mark(n) for n in [*known, *(getattr(c, "id", None) or "" for c in nics)] if n}
+        marks |= {_nic_hash(n, size) for n in [*known, *(getattr(c, "id", None) or "" for c in nics)] if n
                  for size in (6, 8)}
         tied = self._perimeters_recorded(ip, lost) if lost else set()
         said: list[str] = []
@@ -263,7 +270,7 @@ class UnblockMixin:
                 name = _rule_name(r).lower()
                 how = (f" : laissée — à retirer à la main{{}} : az network nsg rule delete -g {n_rg} "
                        f"--nsg-name {n_name} -n {_rule_name(r)} ; le déblocage la redira tant qu'elle reste")
-                if name == mine or (name.startswith(f"{mine}-")
+                if name == mine or (name.startswith(heads)
                                     and name.removesuffix("-out").rsplit("-", 1)[-1] not in marks):
                     said.append(f"{n_name}:{_rule_name(r)} (nommée pour une VM {vm_name} supprimée, carte que "
                                 "rien ne nomme plus)" + how.format(" si aucune VM vivante de ce nom ne bloque "

@@ -276,7 +276,7 @@ def _one(connector, emit, iso: dict, vault: str, vault_rg: str, now: float, repo
     isolated_at = _epoch(iso.get("isolated_at"))
     if not rid or isolated_at is None or iso.get("releasing_at"):
         return                                  # a release running: left to it
-    if restore_in_progress(vm):
+    if restore_in_progress(rid):
         return                                  # restored from here: its own process releases
     since = datetime.fromtimestamp(isolated_at, tz=timezone.utc).isoformat()
     obs = connector.observed_restore(rid, since, vault=vault, vault_rg=vault_rg)

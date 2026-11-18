@@ -32,6 +32,7 @@ class ReleaseMixin:
         VM alone — on a shared NSG they could belong to another VM's isolation. A name
         is never proof on its own: see _isolating_pair / _iso_rules_on."""
         bases = [*self._placement_rule_bases("glorfindel-iso", vm_name, t["nic_short"], t["nic_id"]),
+                 *self._older_rule_bases("glorfindel-iso", vm_name, t["nic_short"], t["nic_id"]),
                  self._legacy_rule_base("glorfindel-iso", vm_name, t["nic_short"], t["nic_id"]),
                  f"{self.ISOLATION_RULE_NAME}-{vm_name}"]
         if not _ip_scoped(t):

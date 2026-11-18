@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import ipaddress
 
-from glorfindel.providers.azure.sdk import _enum_text
+from glorfindel.providers.azure.sdk import _enum_text, _finished
 from glorfindel.response.policy import _ERR_MAX, _first_line
 
 
@@ -60,7 +60,7 @@ def _narrow_rule(network, nsg_rg: str, nsg_name: str, name: str, side: str, list
     setattr(rule, f"{side}_address_prefix", None)
     setattr(rule, f"{side}_address_prefixes", list(keep))
     try:
-        network.security_rules.begin_create_or_update(nsg_rg, nsg_name, name, rule).result()
+        _finished(network.security_rules.begin_create_or_update(nsg_rg, nsg_name, name, rule), f"règle {name}")
     except Exception as exc:
         return f"{nsg_rg}/{nsg_name}/{name}: {_first_line(exc)[:_ERR_MAX]}"
     return None

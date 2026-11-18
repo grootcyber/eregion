@@ -377,7 +377,8 @@ def test_reassertion_skips_a_vm_whose_lock_is_busy():
     old = ra._LOCK_WAIT_S
     ra._LOCK_WAIT_S = 0.2
     try:
-        assert reassert_active(c, _ACT) == []
+        # Skipped, and said in the report since SEC-H (a card past a few passes in a row).
+        assert [r["outcome"] for r in reassert_active(c, _ACT)] == ["skipped"]
     finally:
         ra._LOCK_WAIT_S = old
         release.set()

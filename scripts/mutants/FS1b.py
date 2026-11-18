@@ -101,7 +101,8 @@ MUTANTS = [
      '        doc = aq.sign_watch("receipt", body, self.signer)\n',
      '        doc = {**body, "kind": "receipt", "v": 1}\n'),
     ("M4003", "a request executed outside its VM's lock (FS1b)", QW,
-     "            with _vm_lock(_vm(req.resource_id)):\n", "            if True:\n"),
+     "            with _vm_lock(_vm(req.resource_id), timeout=writer_wait_s()):   # bounded (SEC-H)\n",
+     "            if True:\n"),
     # ── The flag ───────────────────────────────────────────────────────────────────
     ("M4004", "the watch picks the queue up without EREGION_ACTION_QUEUE (FS1b)", QW,
      "    if not aq.enabled():\n        return None\n", ""),

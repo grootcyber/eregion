@@ -537,8 +537,15 @@ _LIFTS = {"unblock": (("unblocked", "not_found"), ("glorfindel-block-",)),
 def _nic_hash(nic_id: str) -> str:
     """The NIC part of Glorfindel's rule names — the convention, restated here so a
     leftover is found by its name even when it no longer applies to the NIC's
-    addresses (its IP changed, its VM is gone)."""
-    return hashlib.sha1(nic_id.rstrip("/").lower().encode()).hexdigest()[:6]
+    addresses (its IP changed, its VM is gone): 128 bits of SHA-256 of its id (SEC-H)."""
+    return hashlib.sha256(nic_id.rstrip("/").lower().encode()).hexdigest()[:32]
+
+
+def _nic_marks(nic_id: str) -> tuple[str, ...]:
+    """Every mark a NIC's rule names can end with: ours (`_nic_hash`), and the 6 or 8 hex of
+    SHA-1 an earlier version wrote — still on Azure until their release (SEC-H's migration)."""
+    old = hashlib.sha1(nic_id.rstrip("/").lower().encode()).hexdigest()
+    return _nic_hash(nic_id), old[:6], old[:8]
 
 
 class IsolationMachine(RuleBasedStateMachine):
@@ -761,9 +768,9 @@ class IsolationMachine(RuleBasedStateMachine):
         return frozenset(f for f in open_flows(world, vm) if not investigation(f))
 
     def _other_marks(self, vm: str) -> set:
-        mine = {_nic_hash(n) for n in self.fake.vms[key(vm)]["nics"]}
-        return ({_nic_hash(n["id"]) for n in self.fake.nics.values()}
-                | {_nic_hash(n) for nics in self.deleted.values() for n in nics}) - mine
+        mine = {m for n in self.fake.vms[key(vm)]["nics"] for m in _nic_marks(n)}
+        return ({m for n in self.fake.nics.values() for m in _nic_marks(n["id"])}
+                | {m for nics in self.deleted.values() for n in nics for m in _nic_marks(n)}) - mine
 
     @staticmethod
     def _scoped(r: dict) -> bool:
@@ -846,18 +853,20 @@ class IsolationMachine(RuleBasedStateMachine):
         """Rules of `prefix` named for one of these NICs, on any NSG — applying to their
         addresses or not (a changed IP, a deleted VM). `skip`: (NSG key, NIC mark) pairs
         not counted."""
-        marks = {_nic_hash(n) for n in nic_ids}
+        marks = {m for n in nic_ids for m in _nic_marks(n)}
         return [f'{n["id"].rsplit("/", 1)[-1]}/{r["name"]}' for k, n in self.fake.nsgs.items()
                 for r in n["rules"].values()
                 if r["name"].lower().startswith(prefix) and any(
                     m in r["name"].lower() and (k, m) not in skip for m in marks)]
 
     def _nic_of_tag(self, tag: str) -> str | None:
-        """The NIC (key) a `glorfindel-orig-<hash>` tag names — live or deleted."""
+        """The NIC (key) a `glorfindel-orig-<hash>` tag names — live or deleted: 128 bits of SHA-256
+        of its id (SEC-H), or the 48 bits of SHA-1 an earlier version wrote."""
         import hashlib
         nics = list(self.fake.nics) + [key(n) for nics in self.deleted.values() for n in nics]
-        return next((n for n in nics if "glorfindel-orig-" + hashlib.sha1(
-            n.rstrip("/").lower().encode()).hexdigest()[:12] == tag), None)
+        return next((n for n in nics if tag in (
+            "glorfindel-orig-" + hashlib.sha256(n.rstrip("/").lower().encode()).hexdigest()[:32],
+            "glorfindel-orig-" + hashlib.sha1(n.rstrip("/").lower().encode()).hexdigest()[:12])), None)
 
     def _untied(self, vm: str) -> frozenset:
         """NICs of the VM left bare whose own NSG nothing ties to them any more, by the
@@ -886,8 +895,8 @@ class IsolationMachine(RuleBasedStateMachine):
         # Glorfindel's own rules named for an untied NIC, on its own NSG off it, are out of
         # the release's reach — as I8 judges them (_isolation_recorded).
         untied = self._untied(vm)
-        skip = frozenset((key(n["design_nsg"]), _nic_hash(n["id"])) for n in self._nics(vm)
-                         if key(n["id"]) in untied and n["design_nsg"])
+        skip = frozenset((key(n["design_nsg"]), m) for n in self._nics(vm)
+                         if key(n["id"]) in untied and n["design_nsg"] for m in _nic_marks(n["id"]))
         left = self._named_leftovers(self.fake.vms[key(vm)]["nics"], skip=skip)
         return (self._back_to_design(vm, own) and self._nics_as_designed(vm) and self._state(vm) is None
                 and not left and not self._held_unknown(vm))
@@ -1330,7 +1339,7 @@ class IsolationMachine(RuleBasedStateMachine):
         oracles after its pass: no oracle of this rule's own."""
         vm, rid, _ = self._draw(data)
         how = data.draw(st.sampled_from(["address", "moved", "gone"]), label="how it moves")
-        marks = {_nic_hash(n) for n in self.fake.vms[key(vm)]["nics"]}
+        marks = {m for n in self.fake.vms[key(vm)]["nics"] for m in _nic_marks(n)}
 
         def ours(prefix: str, out_only: bool = False) -> list:
             return sorted((k, n) for k, g in self.fake.nsgs.items() for n, r in g["rules"].items()
@@ -1449,6 +1458,30 @@ class IsolationMachine(RuleBasedStateMachine):
         if err is None:
             self._block_recorded(vm, "block_suspicious_ip")
         self._others_unchanged(vm, flows, states)
+
+    @rule(data=st.data())
+    def an_earlier_version_isolates_or_blocks(self, data):
+        """SEC-H's migration: an isolation or a block placed by the version before this one, under
+        its names (6 or 8 hex of SHA-1 at the end of each rule) and its tag's key (48 bits) — then the
+        machine goes on with this version: read under those names, lifted through its state, written
+        again under the new ones, every invariant held. Only this operation runs as the earlier one."""
+        from glorfindel.providers.azure.network import NetworkMixin
+        from glorfindel.providers.azure.quarantine_origin import OriginMixin
+        vm, rid, fault = self._draw(data)
+        how = data.draw(st.sampled_from(["isolate", "block"]), label="by the earlier version")
+        port = data.draw(st.sampled_from([22, None]), label="threat_port") if how == "block" else None
+        real = (NetworkMixin._placement_rule_base, OriginMixin.__dict__["_orig_tag"],
+                OriginMixin.__dict__["_older_orig_tag"])
+        NetworkMixin._placement_rule_base = lambda c, *a: NetworkMixin._older_rule_bases(c, *a)[0]
+        OriginMixin._orig_tag = staticmethod(real[2].__func__)
+        OriginMixin._older_orig_tag = staticmethod(lambda nic_id: "glorfindel-orig-of-no-version")
+        try:
+            if how == "isolate":
+                self._isolate(vm, rid, fault)
+            else:
+                self._block(vm, rid, fault, port)
+        finally:
+            NetworkMixin._placement_rule_base, OriginMixin._orig_tag, OriginMixin._older_orig_tag = real
 
     @rule(data=st.data())
     def block_perimeter(self, data):
@@ -1695,7 +1728,7 @@ class IsolationMachine(RuleBasedStateMachine):
         if mixed:
             # Nothing written for a VM in human_only (L1Qs): its NICs carry what they carried,
             # and no rule named for one of them was written or taken off by the pass.
-            marks = {_nic_hash(n): vm for vm in human for n in self.fake.vms[key(vm)]["nics"]}
+            marks = {m: vm for vm in human for n in self.fake.vms[key(vm)]["nics"] for m in _nic_marks(n)}
             for vm in human:
                 for n in self.fake.vms[key(vm)]["nics"]:
                     assert self.fake.nics[key(n)]["nsg"] == nics_before[key(n)], (
@@ -2607,7 +2640,7 @@ class IsolationMachine(RuleBasedStateMachine):
         closed = reached()
         if {f for f in closed if f[3] not in (AZURE_DNS, AZURE_IMDS)}:
             return                      # passed from the start (an allow before our deny): no hold to lose
-        marks = {_nic_hash(n) for n in self.fake.vms[key(vm)]["nics"]}
+        marks = {m for n in self.fake.vms[key(vm)]["nics"] for m in _nic_marks(n)}
         head = "glorfindel-iso-" if isolation else "glorfindel-block-"
         ours = {(k, n): dict(r) for k, g in self.fake.nsgs.items() for n, r in g["rules"].items()
                 if n.startswith(head) and any(h in n for h in marks)}
@@ -2734,7 +2767,7 @@ class IsolationMachine(RuleBasedStateMachine):
         def reached() -> frozenset:
             return self._open(vm, forensic="now") if isolation else self._attacker_flows(vm, port)
         closed = reached()
-        marks = {_nic_hash(n) for n in self.fake.vms[key(vm)]["nics"]}
+        marks = {m for n in self.fake.vms[key(vm)]["nics"] for m in _nic_marks(n)}
         head = "glorfindel-iso-" if isolation else "glorfindel-block-"
 
         def bypassed() -> frozenset:
@@ -2857,7 +2890,7 @@ class IsolationMachine(RuleBasedStateMachine):
         ours = sorted((k, n) for k, g in self.fake.nsgs.items() for n, r in g["rules"].items()
                       if n.startswith("glorfindel-block-") and r["access"].lower() == "deny")
         if ours:
-            marks = {_nic_hash(n) for n in self.fake.vms[key(vm)]["nics"]}
+            marks = {m for n in self.fake.vms[key(vm)]["nics"] for m in _nic_marks(n)}
             mine = [r for r in ours if r[1].rsplit("-", 1)[-1] in marks] or ours
             self._tamper_with_our_rule(_Drawn(data, how="access", rule=st.one_of(
                 st.sampled_from(mine), st.sampled_from(ours))))
@@ -2897,7 +2930,7 @@ class IsolationMachine(RuleBasedStateMachine):
         vm, rid, _ = self._draw(data)
         port = data.draw(st.sampled_from([22, None]), label="threat_port")
         self._block(vm, rid, None, port)
-        marks = {_nic_hash(n) for n in self.fake.vms[key(vm)]["nics"]}
+        marks = {m for n in self.fake.vms[key(vm)]["nics"] for m in _nic_marks(n)}
         mine = sorted((k, n) for k, g in self.fake.nsgs.items() for n, r in g["rules"].items()
                       if n.startswith("glorfindel-block-") and r["access"].lower() == "deny"
                       and n.removesuffix("-out").rsplit("-", 1)[-1] in marks)
@@ -2926,7 +2959,7 @@ class IsolationMachine(RuleBasedStateMachine):
             return
         vm, rid, _ = self._draw(data)
         then = data.draw(st.sampled_from(["unblock", "reset", "release"]), label="then")
-        marks = {_nic_hash(n) for n in self.fake.vms[key(vm)]["nics"]}
+        marks = {m for n in self.fake.vms[key(vm)]["nics"] for m in _nic_marks(n)}
 
         def ours(prefix: str) -> list:
             return sorted((k, n) for k, g in self.fake.nsgs.items() for n, r in g["rules"].items()
@@ -2994,7 +3027,7 @@ class IsolationMachine(RuleBasedStateMachine):
             return
         vm, rid, _ = self._draw(data)
         self._block(vm, rid, None, data.draw(st.sampled_from([22, None]), label="threat_port"))
-        nics = {_nic_hash(n): key(n) for n in self.fake.vms[key(vm)]["nics"]}
+        nics = {m: key(n) for n in self.fake.vms[key(vm)]["nics"] for m in _nic_marks(n)}
         mine = sorted((k, n) for k, g in self.fake.nsgs.items() for n, r in g["rules"].items()
                       if n.startswith("glorfindel-block-") and r["access"].lower() == "deny"
                       and n.removesuffix("-out").rsplit("-", 1)[-1] in nics)
@@ -3355,7 +3388,7 @@ class IsolationMachine(RuleBasedStateMachine):
             return
         closed = self._attacker_flows(mate, port)
         self._tamper_with_our_rule(_Drawn(data, how="access", rule=st.sampled_from(pair())))
-        marks = {_nic_hash(n) for n in self.fake.vms[key(mate)]["nics"]}
+        marks = {m for n in self.fake.vms[key(mate)]["nics"] for m in _nic_marks(n)}
         for k in self._customer_nsgs():
             rules = self.fake.nsgs[k]["rules"]
             for name in [n for n in rules if n.startswith("glorfindel-block-")
@@ -3619,7 +3652,7 @@ class IsolationMachine(RuleBasedStateMachine):
                 if vm not in self.deleted:
                     self._kept_said(vm, unblocked, None, "the teardown's unblock", *_LIFTS["unblock"])
                     kept = {(k, n.lower()) for k, n in self._kept(vm, _LIFTS["unblock"][1])}
-                    marks = {_nic_hash(n) for n in self.fake.vms[key(vm)]["nics"]}
+                    marks = {m for n in self.fake.vms[key(vm)]["nics"] for m in _nic_marks(n)}
                     extra = sorted(f'{g["id"].rsplit("/", 1)[-1]}/{r["name"]}' for k, g in self.fake.nsgs.items()
                                    for r in g["rules"].values() if r["name"].lower().startswith("glorfindel-block-")
                                    and any(m in r["name"].lower() for m in marks)
@@ -3814,7 +3847,7 @@ class IsolationMachine(RuleBasedStateMachine):
         NSG or its subnet's. From the test's records (the NICs it deleted, the naming
         convention), never from what the code reports. `spare`: VMs whose NICs don't
         count (held by Glorfindel)."""
-        gone = {_nic_hash(n) for nics in self.deleted.values() for n in nics}
+        gone = {m for nics in self.deleted.values() for n in nics for m in _nic_marks(n)}
         if not gone:
             return set()
         spared = {key(n) for v in self.fake.vms.values() if key(v["id"]) in spare for n in v["nics"]}
@@ -3874,7 +3907,7 @@ class IsolationMachine(RuleBasedStateMachine):
             values = [v for v in [r.get(f"{side}_address_prefix")] + list(r.get(f"{side}_address_prefixes") or [])
                       if v] or ["*"]
             mine = ({key(c) for c in self.fake.vms.get(key(owner), {}).get("nics", [])} if owner else
-                    {key(c) for vm in self.fake.vms.values() if any(_nic_hash(c) in n for c in vm["nics"])
+                    {key(c) for vm in self.fake.vms.values() if any(m in n for c in vm["nics"] for m in _nic_marks(c))
                      for c in vm["nics"]})
             others = [c for ck, c in self.fake.nics.items() if ck not in mine and k in {
                 key(g) for g in (c["nsg"], self.fake.subnets[key(c["subnet"])]["nsg"]) if g}]
@@ -3970,7 +4003,7 @@ class IsolationMachine(RuleBasedStateMachine):
             # And the VM's own rules of today's names (D79's review, as U7D's unblock): each one
             # left is one the oracle says kept (_kept, the test's journal) — the operator's step
             # would hide a placement rule kept without a reason, taken off at the retry.
-            marks = {_nic_hash(c) for c in self.fake.vms[key(vm)]["nics"]}
+            marks = {m for c in self.fake.vms[key(vm)]["nics"] for m in _nic_marks(c)}
             kept = {(k, n.lower()) for k, n in self._kept(vm, ("glorfindel-iso-",))}
             extra = sorted(f'{g["id"].rsplit("/", 1)[-1]}/{r["name"]}' for k, g in self.fake.nsgs.items()
                            for r in g["rules"].values() if r["name"].lower().startswith("glorfindel-iso-")
@@ -4000,7 +4033,7 @@ class IsolationMachine(RuleBasedStateMachine):
         address that one of ours turned waits behind (_behind_turned). The convention (the
         NIC's hash in the name) and the test's records (`tampered`), never the code's.
         (NSG key, rule name) pairs."""
-        marks = {_nic_hash(c) for c in (nics if nics is not None else self.fake.vms[key(vm)]["nics"])}
+        marks = {m for c in (nics if nics is not None else self.fake.vms[key(vm)]["nics"]) for m in _nic_marks(c)}
         found = self._turned_aimed_elsewhere() | set(self._behind_turned(self._cutting_orphans()
                                                                          | self._cutting_others()))
         return sorted({(k, n) for (k, n) in found if n.startswith(prefixes) and any(m in n for m in marks)})
@@ -4074,7 +4107,7 @@ class IsolationMachine(RuleBasedStateMachine):
                 ips = set([r.get(f"{side}_address_prefix")] + list(r.get(f"{side}_address_prefixes") or []))
                 for n in self.fake.nics.values():
                     governs = k in {key(x) for x in (n["nsg"], self.fake.subnets[key(n["subnet"])]["nsg"]) if x}
-                    if governs and ips & set(n["ips"]) and _nic_hash(n["id"]) not in name:
+                    if governs and ips & set(n["ips"]) and not any(m in name for m in _nic_marks(n["id"])):
                         out.add((k, name))
         return out
 
@@ -4194,7 +4227,7 @@ class IsolationMachine(RuleBasedStateMachine):
         card). The rule's owner is told by the hash in its name, recomputed here."""
         if not getattr(self, "design", None) or not self.deleted:
             return
-        gone = {_nic_hash(n) for nics in self.deleted.values() for n in nics}
+        gone = {m for nics in self.deleted.values() for n in nics for m in _nic_marks(n)}
         live_ips = {ip for n in self.fake.nics.values() for ip in n["ips"]}
         harmful = set()
         for g in self.fake.nsgs.values():
