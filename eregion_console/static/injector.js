@@ -439,16 +439,16 @@ function renderCatalog() {
     const g = r.in_catalog ? String(r.resource_type || '').toUpperCase() : 'OUTSIDE THE CATALOGUE';
     (groups[g] = groups[g] || []).push(r);
   }
-  const rank = r => (r.state === 'regressed' ? 0 : r.status === 'implemented' || r.runs ? 1 : 2);
+  const rank = r => (r.state === 'regressed' ? 0 : r.ready || r.runs ? 1 : 2);
   list.innerHTML = banner + ahead + evolutionLine() + Object.entries(groups).map(([g, rs]) => {
     rs.sort((a, b) => rank(a) - rank(b) || String(a.id).localeCompare(String(b.id)));
     return `<div class="cat-group">${esc(g)}</div>` + rs.map(r => {
       const st = STATE[r.state] || STATE.never, key = 'm:' + r.id, isOpen = S.open.has(key);
       const age = r.last_proof ? `${dur(Number(r.last_proof.age_s))}` : '—';
-      return `<div class="cat st-${esc(r.state)} ${r.status === 'implemented' || r.runs ? '' : 'planned'}" id="${rowId(key)}" data-toggle="${esc(key)}" title="${esc(r.name)} — ${esc(r.engine || '')}${r.destructive ? ' · destructive' : ''} · ${esc(st.title)}">
+      return `<div class="cat st-${esc(r.state)} ${r.ready || r.runs ? '' : 'planned'}" id="${rowId(key)}" data-toggle="${esc(key)}" title="${esc(r.name)} — ${esc(r.engine || '')}${r.destructive ? ' · destructive' : ''} · ${esc(st.title)}">
         <span style="color:${r.kind === 'fault' ? 'var(--orange)' : 'var(--purple)'}">${r.kind === 'fault' ? '⚡' : '⚔'}</span>
         <span class="id">${esc(r.id)}</span>
-        <span class="nm">${esc(r.name)} <small>${esc(r.tactic || r.engine || '')}${r.destructive ? ' · <span style="color:var(--red)">destructive</span>' : ''}${r.status && r.status !== 'implemented' ? ' · ' + esc(r.status) : ''}</small></span>
+        <span class="nm">${esc(r.name)} <small>${esc(r.tactic || r.engine || '')}${r.destructive ? ' · <span style="color:var(--red)">destructive</span>' : ''}${r.status && !r.ready ? ' · ' + esc(r.status) : ''}</small></span>
         <span class="hist">${historyStrip(r)}</span>
         <span class="last r-${st.cls}" title="${esc(st.title)}">${r.state === 'regressed' || r.state === 'never' || r.state === 'unproven' ? esc(st.label) : esc(age)}</span></div>
         ${isOpen ? matrixDetail(r) : ''}`;

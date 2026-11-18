@@ -25,6 +25,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from eregion_core import drill as _drill
+from eregion_core.experiment import is_ready
 
 # ATT&CK's tactics in kill-chain order: access → execution → persistence → … → impact.
 CANONICAL_TACTIC_ORDER: list[str] = [
@@ -66,7 +67,7 @@ def chain(catalog: dict, *, max_wires: int = DEFAULT_WIRES, available: set[str] 
     ceiling). ``catalog``: ``eregion_core.exercise_plan.load_catalog``'s."""
     n = max(1, min(int(max_wires), _drill.MAX_WIRES))
     picked = [e for e in catalog.values()
-              if e.kind == "technique" and e.status == "implemented" and e.destructive is False
+              if e.kind == "technique" and is_ready(e.status) and e.destructive is False
               and e.resource_type == resource_type and (available is None or e.id in available)]
     picked.sort(key=lambda e: (tactic_rank(e.tactic), e.id))
     return [e.id for e in picked[:n]]

@@ -81,7 +81,8 @@ Jonathan ── arme (une fois, puis à chaque changement du drill) ──▶ Or
 
 Une technique entre dans le drill de la semaine si elle tient **toutes** ces conditions :
 
-1. au catalogue (`technique_catalog.yaml`), `status: implemented` : script ou atomic, règle et
+1. au catalogue (`technique_catalog.yaml`), `status: implemented` (ou `proven`, mesurée au banc :
+   le même cran, STM1g) : script ou atomic, règle et
    validation en réel existent ;
 2. `destructive: false`, dans le catalogue (le mot du catalogue, `catalog_destructive`, SEC5) ;
 3. d'une **bibliothèque publique**, version épinglée (`engine: atomic`, plus tard `stratus`). Jamais

@@ -16,7 +16,9 @@ Le terrain où l'on fait face aux forces d'Annatar : le **rouge** d'un côté, l
 - **À gauche, les cartes rouges** : les techniques d'Annatar et les pannes de Gothmog, telles que le
   catalogue les déclare (`technique_catalog.yaml`). Chacune dit son injecteur et son moteur
   (Atomic Red Team, Chaos Studio), si elle est destructive, la règle de Glorfindel qui doit la voir, et
-  sa dernière preuve. Une entrée prévue (`planned`) est grisée, sans poignée.
+  sa dernière preuve. Une entrée prévue (`planned`) est grisée, sans poignée ; une entrée `proven`
+  (mesurée au banc) a la sienne, comme une `implemented`, et compte avec elles partout : la
+  couverture, les indicateurs, la proposition d'Annatar, les drills (STM1g).
 - **À droite, les cartes bleues** : Glorfindel, puis les cibles que Celebrimbor a inscrites, avec leur
   zone (`bench`, `twin`, `production`) et leur mode d'autonomie. Une VM du périmètre qui n'est pas
   inscrite n'a pas de carte : bree, la VM à vraie charge, n'y apparaît jamais.
@@ -76,7 +78,7 @@ Les refus ont des codes stables, les mêmes que ceux d'`orodruin-check`. Le prem
 | Code | Refusé quand |
 |---|---|
 | `unknown_experiment` | l'entrée n'est pas au catalogue |
-| `not_implemented` | l'entrée est prévue, pas implémentée |
+| `not_implemented` | l'entrée est prévue, pas implémentée (`proven` compte comme `implemented`) |
 | `wrong_target_type` | la cible n'est pas du type de l'entrée |
 | `outside_scope` | la cible est hors du périmètre du banc |
 | `not_enrolled` | la cible n'est pas inscrite, ou sa zone manque |

@@ -17,7 +17,10 @@ technique_catalog.yaml          → CONTRAT PARTAGÉ Annatar↔Glorfindel (boucl
                                    (log_source/indicator_columns/expected_latency_s) consommé par
                                    detection_authoring (autoring grounded) ; bloc red (destructive/
                                    safe_target/testdata_marker/params/reference_script) par le synthé
-                                   Annatar. status: implemented | planned. Versionné (≠ config locale) ;
+                                   Annatar. status: implemented | planned (proven, mesurée au banc, viendra
+                                   avec STM1 : un cran au-dessus d'implemented, jamais moins — tout lecteur
+                                   bleu demande eregion_core.experiment.is_ready, jamais le mot seul, STM1g).
+                                   Versionné (≠ config locale) ;
                                    monté en Docker (compose) + COPY Dockerfile (image autonome).
 
 eregion_core/channel_reader.py  → SEC8, SEC16 : le seul lecteur de runs/, pour tous les composants (la watch,
