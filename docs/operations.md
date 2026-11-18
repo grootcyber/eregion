@@ -2690,7 +2690,7 @@ chaque mutant sur l'arbre publié, une fois, sans travail en double. Le côté h
   rest) », qui lance ce fichier seul dans un processus, au même budget (500 sur un push, 200 sur une
   PR) et avec la même base. Elle tourne dès que l'étape d'avant a tourné, rouge ou verte ; jamais
   après un lint rouge, ni sur un run annulé. Ses 8 min avant la pile redeviennent celles d'un
-  blocage : de 33 à 160 % de marge sur sa durée seule.
+  blocage : de 33 à 167 % de marge sur sa durée seule.
   - Écartés : un délai plus long dans les quatre processus (15 min laissaient 25 % de marge sur les
     12 min mesurées, et la pile d'un blocage arrivait 7 min avant la borne de 30 min) ; la machine
     découpée (cinq fois 100 séquences ne valent pas 500 pour Hypothesis, et la base, le harnais de
