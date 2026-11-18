@@ -512,6 +512,8 @@ When an escalation fires, `glorfindel pending` shows **context-aware next steps 
 
 `GLORFINDEL_WEBHOOK_URL` sends two distinct notifications: escalations (`:rotating_light:` — human action required) and autonomous actions (`:robot_face:` — `isolate_vm ✓`, `block_suspicious_ip ✓`, etc.). A disruptive action Glorfindel takes alone (`isolate_vm`, `block_suspicious_ip`), once verified, also makes a card to judge (JUG1): it enters TO JUDGE and the count of the disruptive actions taken wrongly, one per action, with nothing to approve on it; its announcement names it.
 
+The exercise card that is the detection the weekly drill expects — its rule, on its target, in time, the first of its wire — carries a **proposed verdict** (VP1, [`docs/design/drill-banc.md`](docs/design/drill-banc.md) §8.2), computed by the watch from the drill's copy in its own image: in TO JUDGE and in the bot's thread, **Confirm** makes it your verdict, **Refuse** erases it. Until then it is never counted, and it compares the detection only — the decision stays yours to judge.
+
 **Interactive Discord bot** (`glorfindel bot`): creates one thread per VM (`🔴 vm-name`) and posts escalations as structured embeds. Buttons:
 - **✓ Acknowledge** — marks escalation resolved, archives thread when done
 - **📋 Command** — shows the CLI command to run (ephemeral)

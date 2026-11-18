@@ -90,6 +90,18 @@ Dans la console, **une ligne de TO JUDGE ouvre sa carte** (ses détails, une not
 tuile qui replie plusieurs cartes (« ×6 ») les montre toutes dans ses détails, chacune avec sa raison,
 son explication et son chemin vers le verdict.
 
+**Un verdict proposé sur la carte d'exercice attendue** (VP1, #615, `docs/design/drill-banc.md` §8.2).
+Le drill de la semaine déclare la détection qu'il attend (sa règle, sur sa cible, dans un délai après
+le T0) : la carte d'exercice qui l'est — la première du fil — reçoit un **verdict proposé**, `right`,
+calculé par la watch sur Imladris. C'est un champ à part (`proposed_verdict`), jamais le verdict :
+la carte reste dans TO JUDGE, son compte compris, et **ni le rapport ni les indicateurs ne le
+comptent** — seuls les verdicts posés comptent. L'opérateur le confirme d'un clic (console ou Discord :
+il devient son verdict, `verdict_from: proposed`) ou le refuse (il s'efface, et n'est jamais reproposé).
+Il ne compare que la détection, jamais la décision : ne le confirmer que si l'action était
+proportionnée. Une carte d'exercice sans proposition dit pourquoi (une autre règle, une autre VM,
+hors du délai ou de la fenêtre, une seconde carte, deux versions du drill…). Les cartes d'exercice
+restent hors du rapport, comme avant.
+
 Le verdict est indépendant de l'acquittement : on peut juger une carte avant ou après
 l'avoir acquittée. Une carte qui se répète (« 12× depuis 3 h ») compte une seule fois. La
 note est gardée avec le verdict : c'est elle qui dira, plus tard, quelle règle affiner.

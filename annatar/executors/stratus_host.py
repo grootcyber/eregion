@@ -16,10 +16,16 @@ import subprocess
 from dataclasses import dataclass
 
 from annatar.console import console, outside
-from annatar.engines.stratus import ResolvedTechnique, airgap_env
+from annatar.engines.stratus import ResolvedTechnique, airgap_env, azure_provider_env
 
 
 GRAPH = "https://graph.microsoft.com"
+
+# R2BZ (#608): a dedicated EXEC tmpfs mounted on an armed Orodruin (ORO_HARDEN). The warmup's
+# Terraform extracts the providers under HOME and EXECUTES them, so HOME must be on an executable
+# filesystem — while the container's /tmp stays noexec (the hardening). The run HOME is built here
+# when this mount is present; absent (a test, a non-container run), tempfile's default is used.
+EXEC_HOME = "/stratus-home"
 
 # The layout to stage inside the Orodruin image (annatar/stratus/README.md) — not delivered yet:
 # the staging step comes with R2b (#608).
@@ -152,7 +158,8 @@ class StratusExecutor:
         if self._run_home_path is None:
             self._verify_staged_terraform()
             import tempfile
-            self._run_home_path = tempfile.mkdtemp(prefix="stratus-home-")
+            base = EXEC_HOME if os.path.isdir(EXEC_HOME) else None
+            self._run_home_path = tempfile.mkdtemp(prefix="stratus-home-", dir=base)
         return self._run_home_path
 
     def close(self) -> None:
@@ -167,11 +174,14 @@ class StratusExecutor:
         """The process environment: the inherited one (Orodruin's Azure credentials) with the
         offline overrides layered on (annatar/engines/stratus.py::airgap_env) — a writable run
         HOME, the staged Terraform binary (STRATUS_TERRAFORM_BINARY_PATH) and the provider mirror
-        (TF_CLI_CONFIG_FILE)."""
+        (TF_CLI_CONFIG_FILE) — plus the azurerm provider's identity directive (MSI1): on a host
+        carrying only a managed identity (no service-principal secret), ARM_USE_MSI with the
+        subscription and tenant, so the warmup's Terraform authenticates by that identity."""
         overrides = airgap_env(self._ensure_run_home(),
                                terraform_binary=self._staged_terraform(),
                                terraformrc=self.layout.terraformrc)
-        return {**os.environ, **overrides}
+        identity = azure_provider_env(os.environ)
+        return {**os.environ, **overrides, **identity}
 
     def _before_call(self, phase: str, detail: str) -> None:
         """The journal precedes the call (O1) — a phase runs only from an armed contract."""

@@ -126,6 +126,34 @@ def test_gravity_reads_the_severity_then_the_technique():
     assert dq.gravity(_ssh(1)) == dq.LOW
 
 
+def _from_the_channel(ttp: str, severity: str = "critical") -> dict:
+    """A line of the runs/ channel as the watch admits it (signal_origin.admit), then resolved by
+    its rule: its gravity as the injector wrote it."""
+    from glorfindel import signal_origin
+    line = {"event": "attack_started", "signal_id": "20261106T100000Z_ab12_attack_started",
+            "resource_id": _vm(), "resource_type": "vm", "ttp": ttp, "severity": severity,
+            "timestamp": "2026-11-06T10:00:00+00:00",
+            "raw_signal": {"attack_time": time.time() - 60},
+            "context": {"run_id": "20261106T100000Z_ab12", "scenario": "x"}}
+    admitted = signal_origin.admit(line, known={ttp})
+    assert admitted.signal is not None, admitted.refused
+    return {**admitted.signal, "event": "detection",
+            "raw_signal": {**admitted.signal["raw_signal"], "detected_data": {"Computer": "vm-example-01"}}}
+
+
+@pytest.mark.parametrize("ttp,cls", [("T1110.001", dq.LOW), ("T1486", dq.GRAVE)])
+def test_a_line_of_the_channel_never_says_critical(ttp, cls):
+    """SEC-E (V-08): the gravity a line of runs/ writes is kept as it is (the model reads it as
+    before), never read by the queue: its class is its technique's — never the critical one, which
+    passed before the grave ones and chased them out of a full queue."""
+    data = _from_the_channel(ttp)
+    assert data["severity"] == "critical"
+    assert dq.gravity(data) == cls
+    q = DecisionQueue(maxsize=1)
+    q.put((_ransomware(), None, False))
+    assert q.put((data, None, False)) is False             # a full queue keeps the grave one
+
+
 # ── The queue is bounded: what leaves it is said and counted ────────────────────────────────────
 
 def test_the_queue_is_bounded_and_what_leaves_it_is_a_card():
@@ -267,14 +295,74 @@ def _sudo(i: int = 0, **kw) -> dict:
                 **kw)
 
 
-def test_a_compromise_is_never_held_by_the_ceiling_one_decision_per_address():
-    respond = _Respond()
-    gate = DecisionGate(clock=_Clock(), per_min=0, low_per_min=0)
+# ── SEC-E (#846; audit of 13/11, V-02; #644, points 1 and 2): the critical class, bounded ─────
+
+def test_a_compromise_counts_as_a_grave_one_in_the_ceiling():
+    """A critical detection (COR1) is no longer outside the ceiling: it takes the grave class's
+    room, reserved but finite, and waits in its queue beyond it — never a card, never unheld."""
+    clock, respond = _Clock(), _Respond(escalate=False, action="")      # judged « nothing »: no window
+    gate = DecisionGate(clock=clock, per_min=2, low_per_min=1)
     for ip in ("198.51.100.7", "198.51.100.8"):
         state, _why, wait_s = decide_or_card(_compromise(ip), respond, gate)
         assert state is not None and wait_s == 0
-    state, why, _wait = decide_or_card(_compromise("198.51.100.7"), respond, gate)   # the same address
-    assert state is None and "dédoublonnée" in why and len(respond.seen) == 2
+    state, why, wait_s = decide_or_card(_compromise("198.51.100.9"), respond, gate)
+    assert state is None and wait_s > 0 and "plafond" in why and "critique" in why
+    assert not [c for c in _cards() if c["escalation_type"] == "undecided_detection"]
+    clock.t += 61
+    state, _why, wait_s = decide_or_card(_compromise("198.51.100.9"), respond, gate)
+    assert state is not None and wait_s == 0
+
+
+def test_a_compromise_is_deduplicated_by_vm_and_rule_the_address_for_the_card():
+    """One decision of the model per VM and rule in the window, whatever the address: a flood of
+    forged compromises from new addresses is one decision; each address is named on the card."""
+    respond = _Respond()
+    gate = DecisionGate(clock=_Clock())
+    for i in range(20):
+        decide_or_card(_compromise(f"198.51.100.{i}"), respond, gate)
+    assert len(respond.seen) == 1
+    [card] = [c for c in _cards() if c["escalation_type"] == "undecided_detection"]
+    assert "19 dédoublonnées" in card["reason"] and "198.51.100.19" in card["reason"]
+
+
+def test_a_flood_of_compromises_from_distinct_addresses_is_bounded():
+    """No window opened (each decision judged « nothing », or failed): at most CRITICAL_ADDRESSES
+    distinct addresses of one VM call the model in a window; the others are named on a card. The
+    same address again, and another VM, are not held by it; past the window, it is open again."""
+    clock, respond = _Clock(), _Respond(escalate=False, action="")
+    gate = DecisionGate(clock=clock)
+    for i in range(12):
+        decide_or_card(_compromise(f"198.51.100.{i}"), respond, gate)
+    assert len(respond.seen) == dq.CRITICAL_ADDRESSES
+    [card] = [c for c in _cards() if c["escalation_type"] == "undecided_detection"]
+    assert f"{12 - dq.CRITICAL_ADDRESSES} adresses au-delà du plafond" in card["reason"]
+    state, _why, _wait = decide_or_card(_compromise("198.51.100.0"), respond, gate)   # an address known
+    assert state is not None
+    state, _why, _wait = decide_or_card(_compromise("198.51.100.50", vm=_vm("vm-example-02")), respond, gate)
+    assert state is not None
+    clock.t += dq.DEDUP_WINDOW_S + 1
+    state, _why, _wait = decide_or_card(_compromise("198.51.100.60"), respond, gate)
+    assert state is not None
+
+
+def test_a_full_queue_of_compromises_never_chases_a_grave_detection():
+    """The queue of a VM full of critical detections, then a ransomware detection: it enters, the
+    newest critical one leaves (its card) — the reverse never: a queue full of grave detections
+    refuses a critical one."""
+    left: list = []
+    q = DecisionQueue(on_drop=lambda item, why: left.append(item[0]))
+    for i in range(dq.QUEUE_MAX):
+        q.put((_compromise(f"198.51.100.{i}"), None, False))
+    assert q.put((_ransomware(), None, False)) is True
+    assert [d["raw_signal"]["first_result_row"]["SourceIP"] for d in left] == [f"198.51.100.{dq.QUEUE_MAX - 1}"]
+    taken = [q.get()[0] for _ in range(q.qsize())]
+    assert sum(1 for d in taken if d["ttp"] == "T1486") == 1
+    graves = DecisionQueue(maxsize=3, on_drop=lambda item, why: left.append(item[0]))
+    for _ in range(3):
+        graves.put((_ransomware(), None, False))
+    assert graves.put((_compromise("198.51.100.200"), None, False)) is False
+    assert graves.put((_ransomware(), None, False)) is False       # a burst of graves: the newest says it
+    assert graves.qsize() == 3
 
 
 def test_a_held_detection_keeps_its_facts_and_the_pair_is_never_held(tmp_path):
@@ -287,23 +375,40 @@ def test_a_held_detection_keeps_its_facts_and_the_pair_is_never_held(tmp_path):
     state, _why, _wait = decide_or_card(_sudo(2), respond, gate, incidents=incidents)   # deduplicated
     assert state is None
     assert incidents.get_active(_vm()).confirmed == [ROOT_ELEVATION]
-    # The brute force that succeeded, held too (its address decided already): its fact is kept.
+    # The brute force that succeeded, held too (its rule decided already): its fact is kept.
     decide_or_card(_compromise("198.51.100.7"), respond, gate, incidents=incidents)
-    state, _why, _wait = decide_or_card(_compromise("198.51.100.7", run_id="watch-ssh-brute-force-2"),
+    state, _why, _wait = decide_or_card(_compromise("198.51.100.8", run_id="watch-ssh-brute-force-2"),
                                         respond, gate, incidents=incidents)
     assert state is None
     assert set(incidents.get_active(_vm()).confirmed) == {LOGIN_AFTER_BRUTE_FORCE, ROOT_ELEVATION}
-    # The pair complete on the VM: the next sudo is decided (B3a's floor), whatever the dedup —
-    # one per pass of its rule.
-    seen = len(respond.seen)
-    later = _sudo(3)
-    later["timestamp"] = "2026-11-06T10:00:30+00:00"
-    state, _why, _wait = decide_or_card(later, respond, gate, incidents=incidents)
-    assert state is not None and len(respond.seen) == seen + 1
-    again = _sudo(4)
-    again["timestamp"] = later["timestamp"]
-    state, _why, _wait = decide_or_card(again, respond, gate, incidents=incidents)
-    assert state is None and len(respond.seen) == seen + 1
+
+
+def test_the_pair_lifts_the_ceiling_only_never_the_window(tmp_path):
+    """#644, point 2: B3a's pair complete on the VM, its detection is not held by the ceiling —
+    once per pass of its rule —, but a decision that opened the window of its rule holds the
+    next: the floor's card is there; no new call, pass after pass."""
+    from glorfindel.agent import LOGIN_AFTER_BRUTE_FORCE, ROOT_ELEVATION
+    from glorfindel.incidents import IncidentRegistry
+    incidents = IncidentRegistry(path=tmp_path / "incidents.jsonl")
+    incidents.get_or_create(_vm(), "T1548.003")
+    incidents.confirm(_vm(), [ROOT_ELEVATION, LOGIN_AFTER_BRUTE_FORCE])
+    clock = _Clock()
+    gate = DecisionGate(clock=clock, per_min=0, low_per_min=0)
+    # The floor's card beside the model's own action, run alone: the card alone opens the window.
+    nothing = _Respond(escalate=False, action="")
+    card = _Respond(escalate=False, action="snapshot", floor="Plancher déterministe (B3a) : …")
+    first = _sudo(1)
+    state, _why, _wait = decide_or_card(first, nothing, gate, incidents=incidents)     # past the ceiling
+    assert state is not None
+    same_pass = {**_sudo(2), "timestamp": first["timestamp"]}
+    state, why, _wait = decide_or_card(same_pass, nothing, gate, incidents=incidents)
+    assert state is None and "plafond" in why
+    for i in range(3, 6):                                    # later passes: the floor's card each time
+        clock.t += 30
+        later = {**_sudo(i), "timestamp": f"2026-11-06T10:0{i}:00+00:00"}
+        decide_or_card(later, card, gate, incidents=incidents)
+    assert len(card.seen) == 1                               # its card opened the window
+    assert dq.opens_window({"floor": "Plancher déterministe (B3a) : …", "escalate": False})
 
 
 def test_a_held_brute_force_that_succeeded_writes_its_fact(tmp_path):

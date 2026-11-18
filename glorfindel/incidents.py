@@ -1,4 +1,11 @@
-"""Persistent incident registry — groups signals by resource_id within a TTL window."""
+"""Persistent incident registry — groups signals by resource_id within a TTL window.
+
+What a detection confirmed on its VM (B3a, #609: `Incident.confirmed`) lives on the incident, each
+fact with its date (`confirmed_at`) and a TTL of its own, absolute (SEC-E, #846): `FACT_TTL_S` after
+it was confirmed, whatever the signals of the VM since — the incident's TTL slides with each signal,
+a fact's never does. A fact without a date (a row written before SEC-E) is no longer one. And a
+release of the VM's isolation forgets them (`forget_facts`): a human who lifted it judged the VM.
+"""
 from __future__ import annotations
 
 import contextlib
@@ -9,6 +16,37 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+
+# SEC-E (#846): how long a fact confirmed on a VM counts for B3a's floor, from its confirmation —
+# never prolonged by another signal of the VM, nor by a detection held by the decision queue. Fifteen
+# minutes: the pair's two detections (a sudo to root, a brute force seen succeed) come from rules
+# polled every 30 s over a window of ten, with up to 480 s of Syslog latency.
+FACT_TTL_S = 900
+
+
+def _parse(at) -> datetime | None:
+    try:
+        when = datetime.fromisoformat(str(at))
+    except (TypeError, ValueError):
+        return None
+    return when if when.tzinfo is not None else when.replace(tzinfo=timezone.utc)
+
+
+def live_facts(incident, now: datetime | None = None) -> list[str]:
+    """The facts of `incident` (an Incident, or its dict) still within their TTL (`FACT_TTL_S`, from
+    their confirmation): a fact without a date, or older, is none. Never raises."""
+    get = incident.get if isinstance(incident, dict) else (lambda k, d=None: getattr(incident, k, d))
+    facts = get("confirmed") or []
+    dates = get("confirmed_at") or {}
+    if not isinstance(facts, list) or not isinstance(dates, dict):
+        return []
+    now = now or datetime.now(timezone.utc)
+    live = []
+    for fact in facts:
+        at = _parse(dates.get(fact)) if isinstance(fact, str) else None
+        if at is not None and 0 <= (now - at).total_seconds() < FACT_TTL_S:
+            live.append(fact)
+    return live
 
 
 @dataclass
@@ -24,6 +62,8 @@ class Incident:
     # What a detection on this VM confirmed (B3a, #609: `agent.confirmed_facts`) — never
     # shown to the model; a row written before B3a has none.
     confirmed: list = field(default_factory=list)
+    # When each fact was confirmed (SEC-E, #846): its TTL, absolute, runs from there.
+    confirmed_at: dict = field(default_factory=dict)
 
 
 class IncidentRegistry:
@@ -88,20 +128,54 @@ class IncidentRegistry:
             self._write_all(rows + [inc])
             return inc
 
-    def confirm(self, resource_id: str, facts: list[str]) -> Incident | None:
-        """Add what a detection confirmed on this VM to its active incident (B3a, #609).
-        Returns the incident, or None when the VM has no active one (nothing to add to)."""
+    def confirm(self, resource_id: str, facts: list[str], *, ttp: str = "",
+                open_new: bool = False) -> Incident | None:
+        """Add what a detection confirmed on this VM to its active incident (B3a, #609), each fact
+        dated (SEC-E, #846): a fact still live keeps its date — confirmed again, it is not prolonged —,
+        an expired one is dropped, or dated anew when this detection confirms it again. Never a
+        signal of the incident: neither its count nor its last signal move (a detection the decision
+        queue held does not prolong the incident). `open_new`: with no active incident, open one for
+        these facts (that held detection, the first on its VM). Returns the incident, or None when
+        the VM has none (and none was opened)."""
         with self._locked():
             rows = self._load_all()
             active = self._find_active(resource_id, rows)
-            if active is None:
-                return None
-            have = active.confirmed if isinstance(active.confirmed, list) else []
-            new = [f for f in facts if f not in have]
-            if new:
-                active.confirmed = have + new
+            created = active is None
+            if created:
+                if not open_new or not facts:
+                    return None
+                active = Incident(
+                    incident_id=str(uuid.uuid4())[:8], resource_id=resource_id,
+                    ttps=[ttp] if ttp else [], started_at=_now_iso(), last_signal_at=_now_iso(),
+                    actions_taken=[], signals_count=1, state="active")
+                rows.append(active)
+            now = datetime.now(timezone.utc)
+            live = live_facts(active, now)
+            dates = active.confirmed_at if isinstance(active.confirmed_at, dict) else {}
+            kept = {f: dates[f] for f in live}
+            for f in facts:
+                if f not in kept:
+                    kept[f] = now.isoformat()
+            if created or list(kept) != active.confirmed or kept != dates:
+                active.confirmed, active.confirmed_at = list(kept), kept
                 self._write_all(rows)
             return active
+
+    def forget_facts(self, resource_id: str) -> int:
+        """SEC-E (#846): a release of this VM's isolation — what its incidents confirmed is forgotten
+        (B3a's floor no longer reads it), the incidents themselves kept. Compared as Azure does, case
+        and trailing slash aside (the RulePoller carries a lowercase id, the CLI the canonical one).
+        Returns how many incidents had facts."""
+        want = str(resource_id or "").rstrip("/").lower()
+        with self._locked():
+            rows = self._load_all()
+            had = [inc for inc in rows if str(inc.resource_id or "").rstrip("/").lower() == want
+                   and (inc.confirmed or inc.confirmed_at)]
+            for inc in had:
+                inc.confirmed, inc.confirmed_at = [], {}
+            if had:
+                self._write_all(rows)
+            return len(had)
 
     def record_action(
         self,

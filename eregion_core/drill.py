@@ -36,6 +36,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from eregion_core.experiment import is_ready
 from eregion_core.orodruin import CEILING_INJECTIONS
 
 SHIPPED, INSTANCE = "shipped", "instance"
@@ -170,7 +171,7 @@ def eligible(experiment) -> str:
         return "not in the catalogue"
     if experiment.kind != "technique":
         return f"{experiment.id} is a {experiment.kind}, not a technique"
-    if experiment.status != "implemented":
+    if not is_ready(experiment.status):
         return f"{experiment.id} is {experiment.status or 'not implemented'} in the catalogue"
     if experiment.destructive is not False:
         return f"{experiment.id} is not declared non-destructive in the catalogue"

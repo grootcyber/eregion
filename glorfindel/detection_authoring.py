@@ -29,6 +29,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from eregion_core.experiment import is_ready
+
 try:
     import yaml
 except ImportError:  # pragma: no cover - yaml is a hard dep in practice
@@ -106,7 +108,7 @@ def techniques_needing_rules(
     """Select catalog techniques to cold-start author (proactive `propose-rules`).
 
     Skips TTPs already covered by a detection rule (``existing_ttps``). By default
-    only ``status: implemented`` techniques qualify — a ``planned`` one has no real
+    only techniques an injector plays (``implemented`` or ``proven``, ``is_ready``) qualify — a ``planned`` one has no real
     table to ground against — unless ``include_planned``. ``only_ttps`` restricts
     the selection. Ordered as the catalog (kill-chain-stable).
     """
@@ -116,7 +118,7 @@ def techniques_needing_rules(
             continue
         if ttp in existing_ttps:
             continue
-        if entry.get("status") != "implemented" and not include_planned:
+        if not is_ready(entry.get("status")) and not include_planned:
             continue
         out.append(entry)
     return out

@@ -106,7 +106,7 @@ else echo "SUB n'est pas un GUID : source .envrc, puis relancer le bloc"; fi
 ## 3. Glorfindel : la VM d'Imladris
 
 ```bash
-make imladris-plan             # lecture seule ; OPERATOR_CIDR=<ton ip>/32, sinon ton IP du moment
+make imladris-plan             # lecture seule ; OPERATOR_CIDR=<ton ip>/32 (une IPv4 publique), sinon lue sur un service tiers, dite et vérifiée
 make imladris-up               # la VM ; confirmation demandée
 ```
 

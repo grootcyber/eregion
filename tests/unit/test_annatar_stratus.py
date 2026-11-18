@@ -23,6 +23,7 @@ from annatar.engines.stratus import (
     StratusError,
     airgap_env,
     allowed_techniques,
+    azure_provider_env,
     describe,
     pinned_digests,
     resolve,
@@ -243,6 +244,69 @@ def test_staged_layout_reads_the_environment():
     assert layout.home and layout.plugin_cache and layout.terraformrc   # defaults for the rest
 
 
+# ── The azurerm provider authenticates the warmup by the host's managed identity (MSI1) ──
+
+def test_azure_provider_env_uses_msi_when_only_a_managed_identity():
+    """On an armed Orodruin there is no service-principal secret — only the host's managed
+    identity — so the provider is told to use it: ARM_USE_MSI with the subscription and tenant."""
+    env = azure_provider_env({"AZURE_SUBSCRIPTION_ID": "sub-123",
+                              "EREGION_TENANT_ID": "tenant-abc"})
+    assert env == {"ARM_USE_MSI": "true", "ARM_SUBSCRIPTION_ID": "sub-123",
+                   "ARM_TENANT_ID": "tenant-abc"}
+
+
+def test_azure_provider_env_leaves_service_principal_auth_untouched():
+    """A developer run carries a service-principal secret — MSI is NOT forced over it (returns
+    nothing, so the provider keeps authenticating by the secret)."""
+    base = {"AZURE_SUBSCRIPTION_ID": "sub-123", "EREGION_TENANT_ID": "tenant-abc"}
+    assert azure_provider_env({**base, "ARM_CLIENT_SECRET": "x"}) == {}
+    assert azure_provider_env({**base, "AZURE_CLIENT_SECRET": "x"}) == {}
+
+
+def test_azure_provider_env_sets_nothing_without_both_subscription_and_tenant():
+    """A half-configured provider fails less clearly than the unchanged one — so with the
+    subscription or the tenant missing, nothing is set."""
+    assert azure_provider_env({"AZURE_SUBSCRIPTION_ID": "sub-123"}) == {}   # no tenant
+    assert azure_provider_env({"EREGION_TENANT_ID": "tenant-abc"}) == {}    # no subscription
+    assert azure_provider_env({}) == {}
+
+
+def test_azure_provider_env_prefers_the_explicit_arm_names():
+    """ARM_* names win over Eregion's own when both are present (an operator override)."""
+    env = azure_provider_env({"ARM_SUBSCRIPTION_ID": "arm-sub", "AZURE_SUBSCRIPTION_ID": "az-sub",
+                              "ARM_TENANT_ID": "arm-tenant", "EREGION_TENANT_ID": "er-tenant"})
+    assert env["ARM_SUBSCRIPTION_ID"] == "arm-sub" and env["ARM_TENANT_ID"] == "arm-tenant"
+
+
+def test_azure_provider_env_accepts_the_azure_tenant_name():
+    """A control-plane technique with no Graph probe may leave EREGION_TENANT_ID unset, so the
+    tenant is taken from AZURE_TENANT_ID too (else the warmup would no-op silently)."""
+    env = azure_provider_env({"AZURE_SUBSCRIPTION_ID": "sub-123", "AZURE_TENANT_ID": "tenant-abc"})
+    assert env == {"ARM_USE_MSI": "true", "ARM_SUBSCRIPTION_ID": "sub-123",
+                   "ARM_TENANT_ID": "tenant-abc"}
+
+
+def test_azure_provider_env_ignores_blank_values():
+    """Whitespace is not a value (as graph_declared strips the tenant): a blank tenant is treated
+    as absent, and a blank credential does not block MSI (orodruin.env warns empty vars mask the
+    identity)."""
+    assert azure_provider_env({"AZURE_SUBSCRIPTION_ID": "sub-123",
+                               "EREGION_TENANT_ID": "   "}) == {}            # blank tenant → absent
+    env = azure_provider_env({"AZURE_SUBSCRIPTION_ID": "sub-123", "EREGION_TENANT_ID": "tenant-abc",
+                              "AZURE_CLIENT_SECRET": ""})                    # blank secret ignored
+    assert env["ARM_USE_MSI"] == "true"
+
+
+def test_azure_provider_env_leaves_every_service_principal_form_untouched():
+    """A service principal authenticates by a secret, a certificate or a federated/OIDC token — each
+    carries a client id the managed identity lacks; any of them means a credential is configured, so
+    MSI is not forced over it."""
+    base = {"AZURE_SUBSCRIPTION_ID": "sub-123", "EREGION_TENANT_ID": "tenant-abc"}
+    for marker in ("ARM_CLIENT_ID", "AZURE_CLIENT_ID", "ARM_CLIENT_CERTIFICATE_PATH",
+                   "AZURE_CLIENT_CERTIFICATE_PATH", "ARM_USE_OIDC", "AZURE_FEDERATED_TOKEN_FILE"):
+        assert azure_provider_env({**base, marker: "x"}) == {}, marker
+
+
 # ── The executor journals every phase through the armed contract ──────────────────────
 
 def _staged_home(tmp_path) -> Path:
@@ -301,6 +365,44 @@ def test_executor_sends_the_exact_argv_and_offline_env(tmp_path, monkeypatch):
     ex.close()
 
 
+def _only_managed_identity(monkeypatch):
+    """A host carrying only a system-assigned managed identity: the subscription and bench tenant
+    named, no service-principal credential of any form and no ARM_* overrides from the ambient
+    shell."""
+    monkeypatch.setenv("AZURE_SUBSCRIPTION_ID", "sub-123")
+    monkeypatch.setenv("EREGION_TENANT_ID", "tenant-abc")
+    for var in ("ARM_SUBSCRIPTION_ID", "ARM_TENANT_ID", "AZURE_TENANT_ID", "ARM_USE_MSI",
+                "ARM_CLIENT_ID", "AZURE_CLIENT_ID", "ARM_CLIENT_SECRET", "AZURE_CLIENT_SECRET",
+                "ARM_CLIENT_CERTIFICATE_PATH", "AZURE_CLIENT_CERTIFICATE_PATH",
+                "ARM_USE_OIDC", "AZURE_FEDERATED_TOKEN_FILE"):
+        monkeypatch.delenv(var, raising=False)
+
+
+def test_executor_hands_the_warmup_the_managed_identity_directive(tmp_path, monkeypatch):
+    """MSI1: on a host carrying only a managed identity, the subprocess env carries ARM_USE_MSI
+    with the subscription and tenant, so the warmup's azurerm provider authenticates by it."""
+    _only_managed_identity(monkeypatch)
+    record: list = []
+    ex = _executor(tmp_path, record=record)
+    ex.detonate()
+    assert record[0].env["ARM_USE_MSI"] == "true"
+    assert record[0].env["ARM_SUBSCRIPTION_ID"] == "sub-123"
+    assert record[0].env["ARM_TENANT_ID"] == "tenant-abc"
+    ex.close()
+
+
+def test_executor_omits_the_msi_directive_under_a_service_principal_secret(tmp_path, monkeypatch):
+    """A developer run authenticating by a service-principal secret keeps it — MSI is not forced,
+    so ARM_USE_MSI never reaches the subprocess."""
+    _only_managed_identity(monkeypatch)
+    monkeypatch.setenv("ARM_CLIENT_SECRET", "a-secret")
+    record: list = []
+    ex = _executor(tmp_path, record=record)
+    ex.detonate()
+    assert "ARM_USE_MSI" not in record[0].env
+    ex.close()
+
+
 def test_executor_run_home_is_writable_and_close_removes_it(tmp_path):
     """R2BS: the staged /opt/stratus/home is read-only in the image, so the executor builds a
     fresh writable HOME per run (Stratus writes its state under <HOME>/.stratus-red-team/) and
@@ -311,6 +413,45 @@ def test_executor_run_home_is_writable_and_close_removes_it(tmp_path):
     (Path(home) / ".stratus-red-team").mkdir()   # writable, as Stratus needs
     ex.close()
     assert not os.path.exists(home)
+
+
+def test_executor_run_home_uses_the_exec_tmpfs_when_present(tmp_path, monkeypatch):
+    """R2BZ: on an armed Orodruin a dedicated EXEC tmpfs is mounted, so Terraform can execute the
+    providers (extracted under HOME) while /tmp stays noexec; the run HOME is built there."""
+    exec_home = tmp_path / "stratus-home"
+    exec_home.mkdir()
+    monkeypatch.setattr("annatar.executors.stratus_host.EXEC_HOME", str(exec_home))
+    ex = _executor(tmp_path)
+    home = ex._ensure_run_home()
+    assert Path(home).parent == exec_home   # built under the exec tmpfs, not /tmp
+    ex.close()
+
+
+def test_executor_run_home_falls_back_without_the_exec_tmpfs(tmp_path, monkeypatch):
+    """R2BZ: absent (a test, a non-container run), the default temp dir is used."""
+    monkeypatch.setattr("annatar.executors.stratus_host.EXEC_HOME", str(tmp_path / "absent"))
+    ex = _executor(tmp_path)
+    home = ex._ensure_run_home()
+    assert os.path.isdir(home) and Path(home).parent != tmp_path / "absent"
+    ex.close()
+
+
+def test_the_exec_home_is_only_on_the_annatar_runs_not_the_shared_hardening():
+    """R2BZ: the dedicated exec tmpfs (so Terraform runs the providers) is added only to the annatar
+    run defs — those that may run the control-plane library — never to the shared ORO_HARDEN, which
+    stays hardened exactly as docker-compose, nor to the control/gothmog/contract runs; /tmp noexec."""
+    makefile = (Path(__file__).resolve().parents[2] / "Makefile").read_text(encoding="utf-8")
+
+    def line(prefix):
+        return next(ln for ln in makefile.splitlines() if ln.startswith(prefix))
+
+    harden = line("ORO_HARDEN")
+    assert "/stratus-home" not in harden and "--tmpfs /tmp:exec" not in harden   # shared hardening strict
+    assert "ORO_EXEC_HOME  = --tmpfs /stratus-home:exec" in makefile             # the exec tmpfs (M6081)
+    assert "$(ORO_EXEC_HOME)" in line("ORO_RUN ")                                # annatar run
+    assert "$(ORO_EXEC_HOME)" in line("ORO_RUN_REQUEST")                         # the exercise run
+    assert "$(ORO_EXEC_HOME)" not in line("ORO_RUN_GOTHMOG")                     # gothmog: never
+    assert "$(ORO_EXEC_HOME)" not in line("ORO_RUN_CONTRACT")                    # the contract: never
 
 
 def test_executor_refuses_when_the_staged_terraform_is_missing(tmp_path):

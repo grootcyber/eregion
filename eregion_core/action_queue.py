@@ -72,6 +72,8 @@ VERB_OF_ACTION = {"isolate_vm": "isolate_vm", "block_suspicious_ip": "block_ip",
 # (eregion_console/api.py, _APPROVABLE_TYPES; tests/unit/test_action_proposal.py keeps them one).
 APPROVABLE_TYPES = frozenset({"mode_hold", "low_confidence", "uncharacterized_signal", "release_hold",
                               "telemetry_gap", "unstable_decision"})
+# SEC-E (#846): the card of B3a's floor — isolate_vm proposed, never run by the floor.
+APPROVABLE_TYPES |= {"floor_proposal"}
 UNDO_TYPE = "verification_failed"
 
 REQUEST_FIELDS = ("v", "kind", "id", "service", "by", "verb", "resource_id", "ip", "scope", "card",

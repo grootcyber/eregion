@@ -287,6 +287,20 @@ Après I1F, AL1, C2 et A3 (27/10) :
   control plane » (`held_by` de la ligne de debug).
 - **TO JUDGE laisse de côté** les cartes qui ne sont pas des décisions, comme Glorfindel
   (`escalations._NOT_DECISIONS`, quarantaine modifiée comprise).
+- **Un verdict proposé sur la carte d'exercice attendue** (VP1, #615 ; `docs/design/drill-banc.md`
+  §8.2) : la carte qui est la détection que le drill de la semaine attend — sa règle, sur sa cible,
+  dans le délai de son attente après le T0 et dans la fenêtre, la première du fil — porte, sous son
+  « ⚑ exercise », une ligne « ⚖ proposed: right — the detection the drill … expected (rule …, its
+  target, N s after T0 ≤ M s); the decision stays yours », avec **✓ Confirm right** et **✗ Refuse**
+  (dans la ligne et dans la carte ouverte). Confirmer en fait le verdict de l'opérateur
+  (`POST /api/escalations/<id>/proposed/confirm`, `escalations.confirm_proposed` : `verdict_from:
+  proposed`), et acquitte la carte comme tout verdict ; refuser l'efface, et il n'est jamais reproposé
+  (`…/proposed/refuse`) : la carte reste à juger. Une carte d'exercice sans proposition dit pourquoi,
+  en gris (« ⚖ no proposed verdict: … »). Un verdict proposé n'est jamais un verdict : la carte reste
+  dans TO JUDGE et dans son compte, le rapport et les indicateurs ne le comptent pas. Il ne compare que
+  la détection : la décision reste à juger. Aucune autre carte n'en montre (`to_judge` ne le porte que
+  sur une carte d'exercice). Textes échappés (`_attr`), actions dans `ACTIONS` (`confirmProposed`,
+  `refuseProposed` et leurs variantes de la carte ouverte).
 - **Une ligne de TO JUDGE ouvre sa carte** (JUG1, #760 ; au banc du 12/11, elle ne s'ouvrait pas) :
   `openJudgeCard` montre la carte telle que TO JUDGE la porte (`/api/to-judge` : ses étapes, et ce
   qu'a fait une action prise seule), complétée par la carte en attente de `/api/state` quand elle y
@@ -887,7 +901,7 @@ l'emporte :
 | Code | Refusé quand | Règle |
 |---|---|---|
 | `unknown_experiment` | l'identifiant n'est pas au catalogue | E1 |
-| `not_implemented` | l'entrée est `planned` | E1 |
+| `not_implemented` | l'entrée est `planned` (une entrée `proven`, mesurée au banc, joue comme une `implemented` : `is_ready`, STM1g) | E1 |
 | `wrong_target_type` | la cible n'est pas du type de l'entrée | catalogue |
 | `outside_scope` | hors du périmètre du banc (`Scope.check`) | O0 |
 | `not_enrolled` | `eregion-target` absent, vide ou d'un autre banc ; zone absente, ou en désaccord avec le groupe | O0 (`enrollment`) |

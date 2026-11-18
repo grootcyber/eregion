@@ -18,7 +18,9 @@
   653,
   666,
   845,
-  847
+  846,
+  847,
+  848
  ],
  "composants": [
   {
@@ -1540,6 +1542,31 @@
    "issue": 845
   },
   {
+   "id": "s-sec-g",
+   "composant": "socle",
+   "poste": "s-signer",
+   "nom": "Security hardening",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "SEC-G",
+    "SEC-G-workflow"
+   ],
+   "issue": 848
+  },
+  {
+   "id": "s-sec-e",
+   "composant": "socle",
+   "poste": "s-signer",
+   "nom": "Security hardening",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "SEC-E"
+   ],
+   "issue": 846
+  },
+  {
    "id": "s-inf-fl",
    "composant": "socle",
    "poste": "s-signer",
@@ -1738,6 +1765,18 @@
    "issue": 608
   },
   {
+   "id": "a-stratus-garde-fous-preserves",
+   "composant": "annatar",
+   "poste": "a-attaquer",
+   "nom": "An Orodruin apply never destroys the Stratus guardrails by omission — always-loaded auto.tfvars and a pre-plan guard",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "R2BGb"
+   ],
+   "issue": 897
+  },
+  {
    "id": "a-injecteur-stage",
    "composant": "annatar",
    "poste": "a-attaquer",
@@ -1802,6 +1841,30 @@
    "issue": 608
   },
   {
+   "id": "a-injecteur-host-exec",
+   "composant": "annatar",
+   "poste": "a-attaquer",
+   "nom": "The hardened execution host lets Terraform providers execute, from a dedicated exec tmpfs, with /tmp still noexec",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "R2BZ"
+   ],
+   "issue": 608
+  },
+  {
+   "id": "a-injecteur-identite-managee",
+   "composant": "annatar",
+   "poste": "a-attaquer",
+   "nom": "The control-plane warmup authenticates by the host's managed identity (ARM_USE_MSI), never forced over a service-principal secret",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "MSI1"
+   ],
+   "issue": 608
+  },
+  {
    "id": "a-scenario-bastion",
    "composant": "annatar",
    "poste": "a-attaquer",
@@ -1811,6 +1874,18 @@
    "version": "0.6.1",
    "lots": [
     "BSL1"
+   ],
+   "issue": 608
+  },
+  {
+   "id": "a-orodruin-run",
+   "composant": "annatar",
+   "poste": "a-attaquer",
+   "nom": "Playing one scenario on the armed execution host, in one guarded command",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "ORU1"
    ],
    "issue": 608
   },
@@ -2419,16 +2494,29 @@
    "doc": "docs/design/console.md"
   },
   {
+   "id": "k-proven-compte",
+   "composant": "console",
+   "poste": "k-suivre",
+   "nom": "A catalogue entry proven on the bench counts as an implemented one, in the coverage, the board, the drills and the rules proposed",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "STM1g"
+   ],
+   "issue": 894
+  },
+  {
    "id": "k-verdict-propose",
    "composant": "console",
    "poste": "k-juger",
    "nom": "A verdict proposed on an expected exercise card",
-   "etat": "prevue",
-   "release": "0.x",
+   "etat": "main",
+   "release": "0.6",
    "lots": [
     "VP1"
    ],
-   "issue": 615
+   "issue": 615,
+   "doc": "docs/design/drill-banc.md"
   },
   {
    "id": "i-separee",

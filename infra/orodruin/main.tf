@@ -447,6 +447,32 @@ resource "azurerm_storage_account" "channel" {
   }
 }
 
+# SEC-G (audit du 13/11, V-39) : le plan de données du canal journalisé — chaque lecture, écriture et
+# suppression d'un blob (StorageRead, StorageWrite, StorageDelete : qui, quand, d'où, quel blob), vers le
+# workspace du banc (bench_workspace), comme le compte d'exfiltration du banc (infra/terraform/storage.tf).
+# Pourquoi ce workspace : aucune identité admise au canal ne peut l'effacer ni en purger les lignes —
+# Orodruin et la watch hébergée n'y ont que Log Analytics Reader (ci-dessus, et infra/glorfindel-host) ;
+# ni l'une ni l'autre n'a de droit sur ce réglage, dans le groupe d'Orodruin. L'opérateur, propriétaire de
+# l'abonnement, le peut : il n'est pas ce que ce journal garde. Il vit avec le banc (celebrimbor-down
+# l'emporte, et ce module le lit déjà). Le pare-feu du compte (Deny) ne retient pas ces journaux : Azure
+# Monitor les émet hors du plan de données. Le prix : l'ingestion de StorageBlobLogs — la watch lit le
+# pouls et les fenêtres chaque minute, quelques milliers de lignes par jour, à mesurer au banc.
+resource "azurerm_monitor_diagnostic_setting" "channel_blobs" {
+  name                       = "diag-eregion-orodruin-channel"
+  target_resource_id         = "${azurerm_storage_account.channel.id}/blobServices/default"
+  log_analytics_workspace_id = data.azurerm_log_analytics_workspace.bench.id
+
+  enabled_log {
+    category = "StorageRead"
+  }
+  enabled_log {
+    category = "StorageWrite"
+  }
+  enabled_log {
+    category = "StorageDelete"
+  }
+}
+
 # SEC5 (V-21) : une rétention, sans quoi la liste — alphabétique, des run_id horodatés — finirait
 # par dépasser MAX_BLOBS et laisser au-delà les fenêtres les plus récentes. Les blobs de bloc
 # (fenêtres à la racine, campaigns/, runs/, et du côté de `watch` les détections) partent
