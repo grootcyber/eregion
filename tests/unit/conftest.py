@@ -731,6 +731,8 @@ def isolated_exercise_windows(tmp_path, monkeypatch):
     # SEC-A1: the spans of the watch's record, the chain's words said: fresh for every test.
     monkeypatch.setattr(exercise, "_record_spans", {})
     monkeypatch.setattr(exercise, "_chained", {})
+    # SEC-A1b: the floods of window files said once — fresh for every test too.
+    monkeypatch.setattr(exercise, "_flooded", set())
     # Most tests write windows dated in the past, as if seen then: the watch's record of when it
     # saw each local window (SEC14, V-20) is off here, and tested on its own (test_exercise.py,
     # ``seen_record`` puts the real one back, in tmp).

@@ -100,6 +100,20 @@ WINDOW_BYTES = 64 * 1024
 # windows (PURGE_AFTER_S) at one run every five minutes on each injector is about 4 000: a busy
 # bench stays under it; a flood past it only refuses more windows (their cycles fall toward real).
 MAX_WINDOW_FILES = 4096
+# SEC-A1b (#642): the names one read lists in each directory of windows, at most — a flood of
+# names is never listed whole before the cut (``_window_paths``).
+LIST_MAX = 4 * MAX_WINDOW_FILES
+# SEC-A1b: what a window may name — at most MAX_TARGETS targets, each at most TARGET_CHARS
+# characters (a VM's resource id is under 300). Past either, it is refused: the watch's record keeps
+# a digest of each target, never a list it cannot bound.
+MAX_TARGETS = 16
+TARGET_CHARS = 512
+# SEC-A1b: the watch's record of the windows it saw (``seen_path()``) — at most
+# RECORD_PER_WRITER entries per writer (each injector's directory, the watch's own for the windows
+# pulled from the channel) and RECORD_BYTES in all, read as runs/ is read. Past either, a window not
+# written down is not believed (fail closed: its cycles fall toward real). An entry is under 700 bytes.
+RECORD_PER_WRITER = MAX_WINDOW_FILES
+RECORD_BYTES = 8 * 1024 * 1024
 # SEC-A1 (V-21): the windows on one VM cover it, together, at most CHAIN_MAX_S of the
 # CHAIN_HORIZON_S before each one starts (``chain_refusal``) — chained one after the other, each
 # within its own bounds, they would otherwise keep a VM in exercise for good. At the watch, the
@@ -219,8 +233,8 @@ def close_window(run_id: str, *, injector: str = "", now: datetime | None = None
         window = read_json(path, WINDOW_BYTES)   # SEC-A1: a regular file, bounded, never blocking
     except (OSError, ValueError, RecursionError):
         return None
-    if not isinstance(window, dict):
-        return None
+    if not isinstance(window, dict) or window.get("purged_at"):
+        return None                     # a tombstone is never closed again (SEC-A1b)
     window["end"] = (now or _now()).isoformat()
     _write(path, window)
     _publish(window)
@@ -252,6 +266,9 @@ def window_refusal(window, now: datetime | None = None,
     targets = window.get("targets")
     if not isinstance(targets, list) or not all(isinstance(t, str) for t in targets):
         return "its targets are not a list of resource ids"
+    if len(targets) > MAX_TARGETS or any(len(t) > TARGET_CHARS for t in targets):
+        return (f"it names more than {MAX_TARGETS} targets (MAX_TARGETS), or one longer than "
+                f"{TARGET_CHARS} characters")
     start, expires = _parse(window.get("start")), _parse(window.get("expires"))
     if start is None or expires is None:
         return "its start or its expiry is unreadable"
@@ -328,32 +345,73 @@ def seen_refusal(window: dict, entry: dict) -> str:
                 f"(more than FUTURE_SKEW_S, {FUTURE_SKEW_S} s): antedated")
     if _fields(window) != entry.get("fields"):
         return "rewritten after the watch first saw it (only its closure may come)"
-    if entry.get("end") is not None and window.get("end") != entry.get("end"):
+    if entry.get("end") is not None and _iso(window.get("end")) != _iso(entry.get("end")):
         return "its end withdrawn or moved after the watch saw it closed"
     return ""
 
 
+def _iso(value) -> str | None:
+    """A date as the watch's record writes it — parsed, then written again: bounded, one spelling
+    (SEC-A1b). None when it is no date."""
+    dt = _parse(value) if value is not None else None
+    return dt.isoformat() if dt is not None else None
+
+
+def _key(target: str) -> str:
+    """What the watch's record keeps of a target (SEC-A1b): 16 hex of the sha256 of its
+    lower-cased id — what the chain compares, never the id."""
+    return hashlib.sha256(target.lower().encode()).hexdigest()[:16]
+
+
 def _span_of(window: dict) -> dict:
     """What the watch's record keeps of a window for the chain (SEC-A1, V-21): its start, its
-    expiry and its targets, as first seen (its end comes with its closure)."""
-    return {"start": window.get("start"), "expires": window.get("expires"),
-            "targets": [t for t in window.get("targets") or [] if isinstance(t, str)]}
+    expiry and a digest of each of its targets, as first seen (its end comes with its closure) —
+    dates and digests only, never what the window wrote (SEC-A1b)."""
+    return {"start": _iso(window.get("start")), "expires": _iso(window.get("expires")),
+            "target_keys": [_key(t) for t in window.get("targets") or [] if isinstance(t, str)]}
 
 
 # The spans of the windows in the watch's record, as ``_observe`` last read it, by run_id:
-# (targets, start, last moment). The chain counts them, their files deleted or not (SEC-A1).
+# (the digests of its targets, start, last moment). The chain counts them, their files deleted or
+# not (SEC-A1).
 _record_spans: dict[str, tuple[frozenset, datetime, datetime]] = {}
+
+
+def _entry_keys(entry: dict) -> list[str] | None:
+    """The digests of an entry's targets — those of a record written before SEC-A1b, which kept the
+    targets themselves, digested here. None when it holds neither."""
+    if isinstance(entry.get("target_keys"), list):
+        return [k for k in entry["target_keys"] if isinstance(k, str)]
+    if isinstance(entry.get("targets"), list):
+        return [_key(t) for t in entry["targets"] if isinstance(t, str)]
+    return None
 
 
 def _spans_of_record(seen: dict) -> dict[str, tuple[frozenset, datetime, datetime]]:
     out = {}
     for rid, entry in seen.items():
-        if not isinstance(entry, dict) or not isinstance(entry.get("targets"), list):
+        keys = _entry_keys(entry) if isinstance(entry, dict) else None
+        if keys is None:
             continue
         start, last = _parse(entry.get("start")), last_moment(entry)
         if start is not None and last is not None and last >= start:
-            out[str(rid)] = (frozenset(t.lower() for t in entry["targets"] if isinstance(t, str)), start, last)
+            out[str(rid)] = (frozenset(keys), start, last)
     return out
+
+
+def _read_record(registry: Path) -> dict:
+    """The watch's record, read as runs/ is read (SEC-A1b: ``read_regular`` — a regular
+    file, never through a link, never blocking, at most RECORD_BYTES). {} when there is none;
+    OSError (Refused) or ValueError when it cannot be read; RecursionError when it nests too
+    deep."""
+    try:
+        data, _ = read_regular(registry, RECORD_BYTES)
+    except FileNotFoundError:
+        return {}
+    seen = json.loads(data.decode("utf-8"))
+    if not isinstance(seen, dict):
+        raise ValueError("not a JSON object")
+    return seen
 
 
 def _update_seen(registry: Path, change) -> None:
@@ -361,22 +419,25 @@ def _update_seen(registry: Path, change) -> None:
     under an exclusive ``flock`` (the watch, ``glorfindel respond``, the console's process may
     each read windows) and through a temporary file of its own (``mkstemp``), then replaced:
     never half written, never two writers at once. Raises OSError or ValueError when it cannot
-    be read or written."""
+    be read or written — a record past RECORD_BYTES is neither read nor written (SEC-A1b)."""
     import fcntl
     import tempfile
 
+    from eregion_core.channel_reader import open_lock
     registry.parent.mkdir(parents=True, exist_ok=True)
-    with _seen_lock, open(registry.with_name(registry.name + ".lock"), "a") as lock:
+    # The lock opened as runs/ is (``open_lock``): never through a link, never blocking on a pipe.
+    with _seen_lock, os.fdopen(open_lock(registry.with_name(registry.name + ".lock")), "rb") as lock:
         fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
-        seen = json.loads(registry.read_text(encoding="utf-8")) if registry.exists() else {}
-        if not isinstance(seen, dict):
-            raise ValueError("not a JSON object")
+        seen = _read_record(registry)
         if not change(seen):
             return
+        text = json.dumps(seen, separators=(",", ":"))
+        if len(text.encode("utf-8")) > RECORD_BYTES:
+            raise ValueError(f"the record would hold more than {RECORD_BYTES} bytes (RECORD_BYTES)")
         fd, tmp = tempfile.mkstemp(prefix=f".{registry.name}.", dir=registry.parent)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(seen, f, indent=1)
+                f.write(text)
             os.replace(tmp, registry)
         except BaseException:
             with contextlib.suppress(OSError):
@@ -384,34 +445,58 @@ def _update_seen(registry: Path, change) -> None:
             raise
 
 
+def _held(seen: dict) -> dict[str, int]:
+    """How many windows the record holds, by writer (SEC-A1b) — an entry written before
+    SEC-A1b names none: counted apart."""
+    out: dict[str, int] = {}
+    for v in seen.values():
+        if isinstance(v, dict):
+            w = str(v.get("writer", ""))
+            out[w] = out.get(w, 0) + 1
+    return out
+
+
+def _full_refusal(writer: str) -> str:
+    return (f"the watch's record holds {RECORD_PER_WRITER} windows of {writer or 'this directory'} "
+            "already (RECORD_PER_WRITER): not written down, not believed")
+
+
 def note_pulled(registry: Path | None, window: dict) -> None:
     """The exercise channel's pull wrote this window (eregion_core/exercise_channel.py): the watch
     writes down, in its own state, that it came from the channel, when its blob was created and
     what it said — the window's own ``channel_created`` is believed only if this says the same
     (SEC14, V-20). A window the channel brings again replaces the entry (its closure, checked by
-    ``rewrite_refusal`` before). Never raises: a failure leaves the window to the local bound."""
+    ``rewrite_refusal`` before). Only a window the watch believes, with the date of its blob, is
+    written down — its dates and digests, never what it wrote —, and no more than
+    RECORD_PER_WRITER of the channel's (SEC-A1b). Never raises: a failure leaves the window
+    to the local bound."""
     if registry is None or not isinstance(window, dict) or not window.get("run_id"):
         return
+    if window_refusal(window) or _iso(window.get(CHANNEL_CREATED)) is None:
+        return                          # SEC-A1b: never a blob that is no window
+    rid = str(window["run_id"])
 
     def change(seen: dict) -> bool:
-        seen[str(window["run_id"])] = {"seen": str(window.get(CHANNEL_CREATED) or ""), "channel": True,
-                                       "fields": _fields(window), "end": window.get("end"),
-                                       **_span_of(window)}
+        if rid not in seen and _held(seen).get(runs_layout.GLORFINDEL, 0) >= RECORD_PER_WRITER:
+            print(f"[exercise] window {rid}: its pull not written down — "
+                  f"{_full_refusal(runs_layout.GLORFINDEL)}")
+            return False
+        seen[rid] = {"seen": _iso(window.get(CHANNEL_CREATED)), "channel": True,
+                     "fields": _fields(window), "end": _iso(window.get("end")),
+                     "writer": runs_layout.GLORFINDEL, **_span_of(window)}
         return True
     try:
         _update_seen(registry, change)
-    except (OSError, ValueError) as e:
-        print(f"[exercise] window {window.get('run_id')}: its pull not written down ({e})")
+    except (OSError, ValueError, RecursionError) as e:
+        print(f"[exercise] window {rid}: its pull not written down ({e})")
 
 
 def noted_pulled(registry: Path) -> set[str]:
     """The run_ids the pull wrote down as pulled from the channel (``note_pulled``) — empty when
     the record cannot be read: every copy is then pulled again, within the pull's bounds."""
     try:
-        seen = json.loads(registry.read_text(encoding="utf-8")) if registry.exists() else {}
-    except (OSError, ValueError):
-        return set()
-    if not isinstance(seen, dict):
+        seen = _read_record(registry)
+    except (OSError, ValueError, RecursionError):
         return set()
     return {rid for rid, v in seen.items() if isinstance(v, dict) and v.get("channel")}
 
@@ -423,33 +508,47 @@ def _observe(windows: list[tuple[Path, dict]], now: datetime, registry: Path) ->
     field is the file's word, written by whoever writes the file —, and is then bounded by the
     blob's creation; any other is local, bounded by when the watch first saw it. Either way, once
     written down, it may come again only closed. A registry that cannot be read or written
-    believes none of them."""
+    believes none of them. Its writer (the directory its file is in) has at most RECORD_PER_WRITER
+    entries: past them, a window not written down is not believed (SEC-A1b)."""
     if not windows:
         return {}
     out: dict[str, str] = {}
 
     def change(seen: dict) -> bool:
         changed = False
+        for entry in seen.values():          # a record of before SEC-A1b: its targets digested
+            if isinstance(entry, dict) and "targets" in entry:
+                entry["target_keys"] = _entry_keys(entry)
+                del entry["targets"]
+                changed = True
+        held = _held(seen)
         for path, w in windows:
             rid = str(w.get("run_id"))
             entry = seen.get(rid)
             if not isinstance(entry, dict):
+                writer = runs_layout.writer_of(path)
+                if held.get(writer, 0) >= RECORD_PER_WRITER:     # SEC-A1b: fail closed
+                    out[str(path)] = _full_refusal(writer)
+                    continue
+                held[writer] = held.get(writer, 0) + 1
                 entry = seen[rid] = {"seen": now.isoformat(), "fields": _fields(w), "end": w.get("end")}
                 entry.update(_span_of(w))       # SEC-A1: what the chain counts, as first seen
+                entry.update(end=_iso(w.get("end")), writer=writer)   # SEC-A1b: dates, one spelling
                 changed = True
-            if entry.get("channel") and w.get(CHANNEL_CREATED) != entry.get("seen"):
+            if entry.get("channel") and _iso(w.get(CHANNEL_CREATED)) != _iso(entry.get("seen")):
                 out[str(path)] = "its channel_created is not what the pull wrote down"
                 continue
             why = seen_refusal(w, entry)
             if why:
                 out[str(path)] = why
             elif entry.get("end") is None and w.get("end") is not None:
-                entry["end"] = w["end"]          # its closure, the one change it may bring
+                entry["end"] = _iso(w["end"])    # its closure, the one change it may bring
                 changed = True
-        # Forget what was seen long ago: the window is purged by then (PURGE_AFTER_S).
+        # Forget what was seen long ago: the window is purged by then (PURGE_AFTER_S). An entry
+        # that says no date is forgotten too (SEC-A1b): it can never bound anything.
         horizon = now - timedelta(seconds=PURGE_AFTER_S + MAX_DURATION_S + GRACE_AFTER_S)
         for rid in [k for k, v in seen.items() if not isinstance(v, dict)
-                    or (_parse(v.get("seen")) or now) < horizon]:
+                    or (_parse(v.get("seen")) or horizon - timedelta(seconds=1)) < horizon]:
             del seen[rid]
             changed = True
         global _record_spans
@@ -457,7 +556,7 @@ def _observe(windows: list[tuple[Path, dict]], now: datetime, registry: Path) ->
         return changed
     try:
         _update_seen(registry, change)
-    except (OSError, ValueError) as e:
+    except (OSError, ValueError, RecursionError) as e:
         return {str(p): f"the watch's record of the windows it saw cannot be read or written ({e})"
                 for p, _ in windows}
     return out
@@ -469,8 +568,75 @@ def observe(now: datetime | None = None) -> list[dict]:
     return load_windows(now=now)
 
 
+def _listed(directory: Path, limit: int | None) -> tuple[list[Path], bool]:
+    """The window files of one directory, newest first (a window is named after its run, a
+    timestamp), and whether its listing stopped at ``limit`` names (SEC-A1b: a flood of names is
+    never listed whole). A name that starts with a dot is a write in progress, never read."""
+    names: list[str] = []
+    cut = False
+    try:
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                if entry.name.startswith(".") or not entry.name.endswith(".json"):
+                    continue
+                if limit is not None and len(names) >= limit:
+                    cut = True
+                    break
+                names.append(entry.name)
+    except OSError:
+        return [], False
+    return [directory / n for n in sorted(names, reverse=True)], cut
+
+
+# The directories whose windows went past MAX_WINDOW_FILES at the last read: said once per flood.
+_flooded: set[str] = set()
+
+
+def _window_paths(dirs: list[Path], own: Path, max_files: int | None) -> list[Path]:
+    """The window files one read reads, at most ``max_files`` (SEC-A1, SEC-A1b #642): the watch's
+    own directory first, then each injector's, in turn — one file of each, the newest first —, so
+    a writer that floods its own directory never pushes another's windows out. Past the bound, the
+    rest is refused, said once while the flood lasts (again after it ended and came back)."""
+    from itertools import zip_longest
+    lists, cut = [], False
+    for d in sorted(dirs, key=lambda d: d != own):
+        paths, stopped = _listed(d, None if max_files is None else LIST_MAX)
+        lists.append(paths)
+        cut = cut or stopped
+    paths = [p for turn in zip_longest(*lists) for p in turn if p is not None]
+    key = str(own)
+    if max_files is not None and (cut or len(paths) > max_files):
+        if key not in _flooded:
+            _flooded.add(key)
+            print(f"[exercise] window files past MAX_WINDOW_FILES ({max_files}): "
+                  f"{'more than ' if cut else ''}{len(paths) - max_files} never read — each "
+                  "directory its turn, the newest first; said once while it lasts")
+        paths = paths[:max_files]
+    else:
+        _flooded.discard(key)
+    return sorted(paths)    # read in the order of their paths, as before: the choice is made
+
+
+def _forget_said(dirs: list[Path], listed: list[Path]) -> None:
+    """What load_windows said of a refused file, forgotten once the file is gone (SEC-A1b)."""
+    kept, inside = {str(p) for p in listed}, {str(d) for d in dirs}
+    for k in [k for k in _refused if str(Path(k).parent) in inside and k not in kept]:
+        del _refused[k]
+
+
+def _not_a_window(e: Exception) -> bool:
+    """A file of the watch's own directory that can never be a window (SEC-A1b): not a regular
+    file, too large, not JSON — never a file only unreadable now (a permission, the disk)."""
+    return isinstance(e, (Refused, ValueError, RecursionError))
+
+
+# load_windows reads at most MAX_WINDOW_FILES files unless told otherwise (the kill: None, all).
+_BOUNDED = object()
+
+
 def load_windows(directory: Path | None = None, *, now: datetime | None = None,
-                 seen: Path | None = None, pull: bool = True) -> list[dict]:
+                 seen: Path | None = None, pull: bool = True,
+                 max_files: int | None | object = _BOUNDED) -> list[dict]:
     """Every window believed (``window_refusal``, declared at its file's mtime); a
     malformed or refused file is skipped — said once, never fatal: each file is read as runs/ is
     read (``_read_window``, SEC-A1) — and a window whose last
@@ -479,7 +645,10 @@ def load_windows(directory: Path | None = None, *, now: datetime | None = None,
     the channel) is also held against what the watch saw of it (``seen``: the watch's record;
     ``seen_path()`` for the default directory — SEC14, V-20). By default, every directory of
     windows of this host (``windows_dirs``, SEC18): the injectors', read-only, and the watch's
-    own, where the pull writes — the only one where a window is purged."""
+    own, where the pull writes — the only one where a window is purged. There too (SEC-A1b):
+    a file that is no window (not JSON, too large, not a regular file) is purged as a window is,
+    and a tombstone PURGE_AFTER_S old is removed. At most ``max_files`` files read
+    (``_window_paths``); None, every one — the kill's, which must see them all (SEC-A1b)."""
     if directory is None:
         from eregion_core import exercise_channel
         if pull:   # the local channel of verdicts reads without pulling (no storage channel there)
@@ -491,11 +660,8 @@ def load_windows(directory: Path | None = None, *, now: datetime | None = None,
         return []
     now = now or _now()
     read: list[tuple[Path, dict, datetime]] = []
-    paths = sorted(p for d in dirs for p in d.glob("*.json"))
-    if len(paths) > MAX_WINDOW_FILES:    # SEC-A1: the rest refused, said once (again when it changes)
-        _say_refused(own / "*.json", f"{len(paths) - MAX_WINDOW_FILES} window file(s) past "
-                     f"MAX_WINDOW_FILES ({MAX_WINDOW_FILES}) never read")
-        paths = paths[:MAX_WINDOW_FILES]
+    paths = _window_paths(dirs, own, MAX_WINDOW_FILES if max_files is _BOUNDED else max_files)
+    _forget_said(dirs, paths)
     for path in paths:
         try:
             w, declared = _read_window(path)
@@ -505,13 +671,28 @@ def load_windows(directory: Path | None = None, *, now: datetime | None = None,
             # Refused: a pipe, a link, a device, a file too large — in the reader's own words.
             _say_refused(path, f"never read: {e}" if isinstance(e, Refused)
                          else f"unreadable ({type(e).__name__})")
+            if path.parent == own and _not_a_window(e):
+                _purge(path, {"run_id": path.stem})   # SEC-A1b: what is no window, purged here
             continue
         if isinstance(w, dict) and w.get("purged_at"):
-            continue                     # purged already: its tombstone (``_purge``)
+            # Purged already: its tombstone (``_purge``) — itself removed PURGE_AFTER_S later.
+            purged = _parse(w.get("purged_at"))
+            if path.parent == own and (purged is None or purged < now - timedelta(seconds=PURGE_AFTER_S)):
+                with contextlib.suppress(OSError):
+                    path.unlink()
+            continue
+        if not isinstance(w, dict):
+            if path.parent == own:
+                _purge(path, {"run_id": path.stem})   # SEC-A1b: JSON, but no window
+            _say_refused(path, "not a JSON object")
+            continue
         read.append((path, w, declared))
     unseen = {}
     if seen is not None:
-        unseen = _observe([(p, w) for p, w, _ in read if isinstance(w, dict) and not window_refusal(w)],
+        # SEC-A1b: only the windows believed are written down — never a file that is none.
+        unseen = _observe([(p, w) for p, w, declared in read
+                           if not window_refusal(w, now, declared, local=p.parent != own)
+                           and not runs_layout.window_refusal_of(p, w)],
                           now, seen)
     out = []
     for path, w, declared in read:
@@ -536,7 +717,7 @@ def _purge(path: Path, window: dict) -> None:
     when it was purged, under its file's own mtime — so the channel's copy, not newer, is
     never pulled again (eregion_core/exercise_channel.py ``pull``). Never raises."""
     try:
-        st = path.stat()
+        st = os.lstat(path)          # SEC-A1b: a link in its place is replaced, never followed
         _write(path, {"run_id": window.get("run_id"), "purged_at": _now().isoformat()})
         os.utime(path, (st.st_atime, st.st_mtime))
     except OSError:
@@ -608,17 +789,42 @@ def _zone_reader(enrolled):
     return zone
 
 
+def _perimeter_reader(enrolled):
+    """``perimeter(resource_id) -> why`` of the check in use, or None when it reads none."""
+    perimeter = getattr(enrolled, "perimeter", None)
+    if perimeter is None and enrolled is is_enrolled:
+        perimeter = getattr(_enrollment_check, "perimeter", None)
+    return perimeter
+
+
 def zone_allows(window: dict, resource_id: str, enrolled=None) -> bool:
-    """A window marks a VM in zone ``production`` only if it declares a technique that is not
-    destructive (SEC5, V-20) — the production rule of O0. The zone is the reader's, from the
-    VM's tags (eregion_core/inscription.py ``TagEnrollment.zone``); a check that reads none
+    """The injectors' own guard, held by the reader before a window marks a VM (SEC-A1b;
+    eregion_core/inscription.py ``check_target``): the VM inside the bench's perimeter
+    (``Scope.check``: the subscription, the bench's resource groups — ``TagEnrollment.perimeter``),
+    and its zone one of ``bench``, ``twin``, ``production`` exactly, where the window's kind may run
+    (``check_zone``): in ``production``, a technique declared non-destructive only (SEC5, V-20,
+    the production rule of O0); a zone written otherwise (``Production``, a space) marks nothing.
+    The zone is the reader's, from the VM's tags (``TagEnrollment.zone``); a check that reads none
     leaves the rule to the injector's own (O0)."""
-    zone = _zone_reader(enrolled or is_enrolled)
+    from eregion_core.inscription import check_zone
+    reader = enrolled or is_enrolled
+    perimeter = _perimeter_reader(reader)
+    if perimeter is not None:
+        try:
+            if perimeter(resource_id):
+                return False
+        except Exception:
+            return False
+    zone = _zone_reader(reader)
     if zone is None:
         return True
     try:
         z = zone(resource_id)
     except Exception:
+        return False
+    # SEC-A1b: as the injectors' ``check_zone`` — the zone exactly one of ZONES, a kind it
+    # knows; what the window declares of its destructiveness, held below (the production rule).
+    if not check_zone(z, kind=str(window.get("kind") or ""), destructive=False).allowed:
         return False
     if z != "production":
         return True
@@ -635,13 +841,18 @@ def chain_refusals(resource_id: str, windows: list[dict]) -> dict[str, str]:
     nor any after it until the earlier ones fall out of the horizon. The earlier windows keep their
     mark: a flood never takes a VM out of the real, only refuses more. Counted: the believed
     windows of the list and, at the watch, every window its record saw (``_record_spans``, SEC14),
-    their files deleted or not. Once for the list: sorted, then swept (O(n log n))."""
+    their files deleted or not — never a window its reader refused (``refusal``, SEC-A1b). Once for
+    the list: sorted, then swept (O(n log n))."""
     import bisect
-    rid = resource_id.lower()
+    vm = resource_id.lower()
+    rid = _key(vm)                     # the record keeps a digest of each target (SEC-A1b)
     spans: dict[str, tuple[datetime, datetime]] = {
         r: (s, last) for r, (targets, s, last) in _record_spans.items() if rid in targets}
     for w in windows:
-        if not isinstance(w, dict) or rid not in (w.get("targets") or []) or window_refusal(w):
+        # SEC-A1b (#642, point 4): a window its reader refused (the console's ``refusal``) counts
+        # no more than one the watch refused — never in the chain of the others.
+        if not isinstance(w, dict) or w.get("refusal") or vm not in (w.get("targets") or []) \
+                or window_refusal(w):
             continue
         r, s, last = str(w.get("run_id")), _parse(w.get("start")), last_moment(w)
         if s is not None and last is not None and r not in spans:

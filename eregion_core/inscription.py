@@ -300,7 +300,8 @@ class TagEnrollment:
     TTL_S = 600.0
     FAIL_TTL_S = 60.0
 
-    def __init__(self, *, bench: str | None = None, credential=None, get=None, clock=None):
+    def __init__(self, *, bench: str | None = None, credential=None, get=None, clock=None,
+                 scope: Scope | None = None):
         import threading
         import time
         self.bench = bench or os.environ.get(BENCH_ENV, DEFAULT_BENCH)
@@ -310,6 +311,23 @@ class TagEnrollment:
         self._cache: dict[str, tuple[float, bool, str]] = {}
         self._lock = threading.Lock()
         self._said: dict[str, str] = {}
+        # SEC-A1b: the perimeter a window may mark in — the injectors' own (``Scope``): this
+        # bench, in the subscription the reader watches (AZURE_SUBSCRIPTION_ID).
+        self.scope = scope or replace(Scope.for_bench(), sandbox=self.bench)
+
+    def perimeter(self, resource_id: str) -> str:
+        """Why a window may not mark this VM, as the injectors' guard says it (``Scope.check``:
+        the subscription, the bench's resource groups, SEC-A1b) — "" when it is inside. Said
+        once per VM; read from the id, no call."""
+        verdict = self.scope.check(resource_id)
+        if verdict.allowed:
+            return ""
+        key = "perimeter " + resource_id.lower()
+        if self._said.get(key) != verdict.reason:
+            self._said[key] = verdict.reason
+            print(f"[exercise] {resource_id.rsplit('/', 1)[-1]} outside the bench's perimeter, no "
+                  f"window marks it: {verdict.reason}")
+        return verdict.reason
 
     def _headers(self) -> dict:
         if self._credential is None:

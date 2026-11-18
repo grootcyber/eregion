@@ -43,7 +43,7 @@ MUTANTS = [
      "        r: (s, last) for r, (targets, s, last) in {}.items() if rid in targets}\n"),
     ("M4564", "every window file read at each read: a flood of files holds the watch's loop (SEC-A1)",
      EXERCISE,
-     "    if len(paths) > MAX_WINDOW_FILES:",
+     "    if max_files is not None and (cut or len(paths) > max_files):",
      "    if False:"),
     ("M4565", "the console takes a channel_created in an injector's directory at its word (SEC-A1)",
      CONSOLE,

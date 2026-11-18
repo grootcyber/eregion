@@ -22,7 +22,9 @@ blocks, or that does not end, stops all of them. So:
   one card per line. A file waiting only for the channel's minute is read later, nothing lost;
 - **bounded effects.** What the lines admitted start in the watch is bounded too: CHANNEL_POLLS
   searches in flight (one per VM and technique), CHANNEL_QUEUED_PER_VM lines waiting per VM,
-  CHANNEL_VMS VMs named; beyond, a line is refused and said (glorfindel/cli.py).
+  CHANNEL_VMS VMs named; beyond, a line is refused and said (glorfindel/cli.py);
+- **bounded memory** (SEC-A1b). At most TRACKED_MAX files followed per writer's directory, the
+  newest; a name gone from the directory is forgotten at the next poll.
 
 The lines read are then admitted, or refused, by `glorfindel/signal_origin.py`.
 """
@@ -44,6 +46,11 @@ READ_LINES = 200
 LINE_BYTES = 64 * 1024
 # The files one poll opens — those with something new; the others wait for the next poll, in turn.
 FILES_PER_POLL = 32
+# SEC-A1b (#642): the files of one writer's directory the reader follows, at most — the newest
+# by name (a run's file is named after its run id, a timestamp). An older one, a run long over, is no
+# longer followed: what it holds is never read again, and if it comes back among the newest it is
+# followed from its end, nothing replayed. A name gone from the directory is forgotten.
+TRACKED_MAX = 512
 # The lines admitted per minute: per file, and for the channel as a whole.
 PER_WRITER_PER_MIN = 30
 CHANNEL_PER_MIN = 120
@@ -416,11 +423,48 @@ class ChannelReader:
         self._refused: dict[Path, str] = {}
         self._ino: dict[Path, int | None] = {}
         self._cursor = 0
+        # SEC-A1b: the names past TRACKED_MAX, not followed — until they are gone or among the
+        # newest again (then followed from their end). Never more than the directory lists.
+        self._untracked: set[Path] = set()
+        self._flooded = False
+
+    def _listing(self) -> list[Path]:
+        return sorted(self.runs_dir.glob("*_signals.jsonl"))
 
     def track_existing(self) -> None:
-        """The files there at start: read from their end (only new lines are processed)."""
-        for path in self.runs_dir.glob("*_signals.jsonl"):
+        """The files there at start: read from their end (only new lines are processed) — the
+        TRACKED_MAX newest; the others are not followed (SEC-A1b)."""
+        listed = self._listing()
+        for path in listed[-TRACKED_MAX:]:
             self.offsets[path], self._ino[path] = _start(path)
+        self._untracked = set(listed[:-TRACKED_MAX])
+
+    def _follow(self, listed: list[Path]) -> None:
+        """What the directory lists now, followed (SEC-A1b): the names gone forgotten, the
+        TRACKED_MAX newest followed — a new one from its start, one that comes back among them from
+        its end —, the older ones not, said once while there are any."""
+        present = set(listed)
+        for path in [p for p in self.offsets if p not in present]:
+            self._forget(path)                  # gone: forgotten, a new file of this name read whole
+        self._untracked &= present
+        older = listed[:-TRACKED_MAX]
+        for path in older:
+            if path in self.offsets:
+                self._forget(path)
+            self._untracked.add(path)
+        if older and not self._flooded:
+            self.say(f"{len(older)} fichier(s) de {self.runs_dir.name} au-delà des {TRACKED_MAX} "
+                     "plus récents : plus suivis (SEC-A1b)", "refused")
+        self._flooded = bool(older)
+        for path in listed[-TRACKED_MAX:]:
+            if path in self.offsets:
+                continue
+            if path in self._untracked:          # among the newest again: from its end
+                self._untracked.discard(path)
+                self.offsets[path], self._ino[path] = _start(path)
+                continue
+            self.offsets[path] = 0              # new file — read from beginning
+            self.say(f"New run: {path.name}", "new")
 
     def _forget(self, path: Path) -> None:
         for kept in (self.offsets, self._skipping, self._refused, self._ino):
@@ -446,10 +490,7 @@ class ChannelReader:
             self.say(f"{path.name} refusé : {why} — jamais lu (SEC8)", "refused")
 
     def poll(self) -> list[tuple[Path, str]]:
-        for path in sorted(self.runs_dir.glob("*_signals.jsonl")):
-            if path not in self.offsets:
-                self.offsets[path] = 0          # new file — read from beginning
-                self.say(f"New run: {path.name}", "new")
+        self._follow(self._listing())
         out: list[tuple[str, str]] = []
         paths = list(self.offsets)
         start = self._cursor % len(paths) if paths else 0

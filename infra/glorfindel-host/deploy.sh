@@ -152,6 +152,10 @@ start() {
   # Created as the operator before compose mounts them: left to docker, they would be root's,
   # and the console could not write its requests (DG-b), nor the watch its index (IA0).
   mkdir -p "$HOME/.eregion/analysis" "$HOME/.eregion/console/requests"
+  # SEC-A1b: the injectors' heartbeat directory, which the console and the bot mount
+  # read-only inside ~/.glorfindel — made here, as the operator (left to docker, it would be root's,
+  # and the watch could no longer write its heartbeat there).
+  mkdir -p "$HOME/.glorfindel/injectors"
   # SEC19 (N-03): the watch's key, drawn at its first start in a directory only the watch mounts —
   # made here, 0700, as the operator (left to docker, it would be root's: no key, beats unsigned).
   mkdir -p -m 700 "$HOME/.eregion/watch-key"
