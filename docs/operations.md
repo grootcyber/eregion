@@ -5501,3 +5501,5 @@ des seuls flux d'après la bascule (CF2) ; l'écriture d'essai depuis gondolin r
   (~3 Ko par exécution d'un humain en root), à mesurer (« auditd au banc (AUD1) », ci-dessus).
 - **Le compte des flux réseau (INF-FL)** : un compte de stockage n'a pas de frais fixes ; on paie la capacité et les opérations, à l'usage (Azure Blob Storage). Les blobs des flux, leurs écritures (un ajout par minute) et les lectures de traffic analytics **changent de compte, ils ne doublent pas** : le coût total reste celui d'avant. Le seul surcoût est passager : l'ancien historique, 7 jours au plus, dans le compte des exercices. Le coût réel se relève sur la facture, avec ceux des flux (`docs/design/corroboration.md`, §5.2, étape 1).
 - **Chaos Studio (G0)** : facturé à l'usage des expériences (une panne de 5 min sur une VM). Feu vert du 15/10 sur une estimation de 11 à 42 € par mois pour 2 à 4 campagnes (ROADMAP) ; le coût réel est à relever sur la facture après le premier run.
+
+<!-- Essai SEC-K (18/11) : une PR qui ne touche que docs/ fusionne sans le propriétaire. Jamais fusionnée. -->
