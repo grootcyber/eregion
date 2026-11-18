@@ -8,7 +8,8 @@ of the runs/ channel its technique's (glorfindel/decision_queue.py). M5721–M57
 (the review: a detection that does not name the VM keeps the attribution's card; only the release
 after a restore forgets the facts — numbers handed by the Orchestre), measured by
 tests/unit/test_root_floor.py and tests/unit/test_decision_queue.py. M4375, M4401 (B3a) and M4567,
-M4568 (SEC-A2) retired with what they measured; M4526 and M4570 (SEC-A2) follow the code."""
+M4568 (SEC-A2) retired with what they measured; M4526 and M4570 (SEC-A2) follow the code, and M5910
+too (SEC-Ec, #913: the redundant `or held_by == "attribution"` removed)."""
 AGENT = "glorfindel/agent.py"
 INC = "glorfindel/incidents.py"
 GEST = "glorfindel/gestures.py"
@@ -94,8 +95,8 @@ MUTANTS = [
      '    if (state.get("outcome") or {}).get("compromise_card"):\n'),
     ("M5910", "the floor's card on a detection that does not name the VM: an unattributed or appliance "
      "card made approvable in one click (SEC-E, review)", AGENT,
-     '    if (signal.get("context") or {}).get("attribution") == "unattributed" or d.get("held_by") == "attribution":\n',
-     "    if False:\n"),
+     '    if (signal.get("context") or {}).get("attribution") == "unattributed":\n        if not d["escalate"]',
+     '    if False:\n        if not d["escalate"]'),
     ("M5911", "any release by the watch forgets the facts: a release the model chose on a detection wipes a "
      "compromise's (SEC-E, review)", AGENT,
      '            and state["signal"].get("event") == "recovery_complete"):\n',
