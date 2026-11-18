@@ -1,0 +1,28 @@
+# Les garde-fous Stratus de l'abonnement de test DÉDIÉ (R2BGb, #897). Terraform charge tout
+# *.auto.tfvars de lui-même à chaque plan/apply (comme session_drain.auto.tfvars), donc ces valeurs
+# sont TOUJOURS passées : un `make orodruin-lock` ne peut plus détruire les garde-fous par omission.
+#
+# Copier en  infra/orodruin/stratus.auto.tfvars  (ignoré par git — jamais de valeur réelle dans le
+# dépôt), renseigner tes valeurs, puis mettre stratus_guardrails_enabled = true. Jamais l'abonnement
+# d'Orodruin (une precondition le refuse), ni le banc, la VM ou Imladris (le contrat le refusera, R2c).
+
+# Laisser false tant que les valeurs ci-dessous ne sont pas réelles ; passer à true pour poser les
+# garde-fous. Éteint avec des garde-fous déjà en place, `scripts/stratus_guard.py` refuse le plan.
+stratus_guardrails_enabled = false
+
+# L'abonnement de test dédié (un GUID nu, sans « /subscriptions/ ») :
+stratus_subscription_id = "00000000-0000-0000-0000-000000000000"
+
+# Le workspace Log Analytics du banc (l'id complet) — le diagnostic activity-log y remonte :
+stratus_bench_workspace_id = "/subscriptions/<banc>/resourceGroups/<rg>/providers/Microsoft.OperationalInsights/workspaces/<ws>"
+
+# Les limites de stratégie (listes NON vides, sinon la stratégie n'est pas posée). Garder
+# bastionHosts + publicIPAddresses dans les types (le Bastion et son IP publique du lien partageable) :
+stratus_allowed_locations      = ["westus"]
+stratus_allowed_resource_types = ["Microsoft.Network/bastionHosts", "Microsoft.Network/publicIPAddresses"]
+stratus_allowed_vm_skus        = ["Standard_B1s"]
+
+# Le budget (une notification, pas un plafond) + le début de période + les destinataires email :
+stratus_monthly_budget        = 50
+stratus_budget_start_date     = "2026-11-01"
+stratus_budget_contact_emails = ["ops@example.com"]
