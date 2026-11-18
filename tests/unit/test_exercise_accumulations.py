@@ -71,6 +71,30 @@ def test_a_window_names_a_bounded_number_of_bounded_targets():
     assert "MAX_TARGETS" in exercise.window_refusal(_window(targets=[VM + "x" * exercise.TARGET_CHARS]))
 
 
+def test_a_run_id_is_bounded_and_every_writer_keeps_its_share():
+    """The run_id bounds an entry of the record (RUN_ID_CHARS); the record holds every writer's
+    full share of the largest entries, so one writer never takes another's room."""
+    assert exercise.window_refusal(_window("r" * exercise.RUN_ID_CHARS)) == ""
+    assert "RUN_ID_CHARS" in exercise.window_refusal(_window("r" * (exercise.RUN_ID_CHARS + 1)))
+    now = _now().isoformat()
+    largest = {"r" * exercise.RUN_ID_CHARS: {
+        "seen": now, "channel": True, "fields": "f" * 64, "end": now, "writer": "glorfindel",
+        "start": now, "expires": now, "target_keys": ["k" * 16] * exercise.MAX_TARGETS}}
+    assert len(json.dumps(largest, separators=(",", ":"))) + 1 <= exercise.ENTRY_BYTES
+    assert exercise.RECORD_BYTES >= exercise.RECORD_WRITERS * exercise.RECORD_PER_WRITER * exercise.ENTRY_BYTES
+    assert exercise.RECORD_WRITERS >= len(runs_layout.INJECTORS) + 2     # the watch's own, and ""
+
+
+def test_a_pulled_window_starts_within_its_blobs_creation():
+    """A window is written when it opens: pulled, it may start no more than FUTURE_SKEW_S after its
+    blob was created — what lets the kill leave an old blob unread."""
+    now = _now()
+    w = _window(start=now)
+    assert exercise.window_refusal({**w, "channel_created": now.isoformat()}) == ""
+    late = (now - timedelta(seconds=exercise.FUTURE_SKEW_S + 60)).isoformat()
+    assert "after it was declared" in exercise.window_refusal({**w, "channel_created": late})
+
+
 def test_the_record_keeps_digests_and_dates_never_what_the_window_wrote(tmp_path, record):
     """M5782: an entry keeps a digest of each target and dates written again in one spelling —
     never the targets themselves, never a date of 1 000 digits."""
@@ -207,6 +231,16 @@ def test_the_watch_directory_is_bounded_its_closures_still_come(tmp_path, monkey
     c.put(f"{URL}/r0.json", data=json.dumps({**windows[0], "end": _now().isoformat()}).encode())
     assert _pull(c, d, say=said.append) == 1
     assert json.loads((d / "r0.json").read_text())["end"]
+    # Said once while it lasts — not at every pull (every 30 s).
+    assert sum("no new window pulled" in s for s in said) == 1
+    _pull(c, d, say=said.append)
+    assert sum("no new window pulled" in s for s in said) == 1
+    # Room again (a window purged), then full again: said once more.
+    (d / "r1.json").unlink()
+    c.put(f"{URL}/r3.json", data=json.dumps(_window("r3")).encode())
+    c.put(f"{URL}/r4.json", data=json.dumps(_window("r4")).encode())
+    _pull(c, d, say=said.append)
+    assert sum("no new window pulled" in s for s in said) == 2
 
 
 def test_what_is_no_window_in_the_watch_directory_is_purged(capsys):
@@ -413,28 +447,77 @@ def test_a_zone_not_written_exactly_marks_nothing(zone):
                                              "kind": "fault"}], enrolled=_Zones("twin")) == ["r1"]
 
 
+TWIN = VM.replace("rg-celebrimbor", "rg-twin").replace("gondolin", "twin1")
+
+
 def _tags_get(url, headers=None, params=None, timeout=None):
+    """The tags of each VM and of its group: enrolled, in the zone its group says."""
+    zone = "production" if "rg-prod" in url else "twin" if "rg-twin" in url else "bench"
     return SimpleNamespace(ok=True, status_code=200,
-                           json=lambda: {"tags": {"eregion-target": "celebrimbor", "eregion-zone": "bench"}})
+                           json=lambda: {"tags": {"eregion-target": "celebrimbor", "eregion-zone": zone}})
 
 
-def test_a_vm_outside_the_bench_perimeter_is_never_marked(monkeypatch):
-    """M5797: the watch marked a VM by its tags alone — a real VM of another group or another
-    subscription, tagged by mistake, left the observation report. The injectors' Scope.check first."""
+def _marks(check, target, **change):
+    now = _now()
+    w = {**_window(start=now - timedelta(minutes=1), targets=[target]), **change}
+    return exercise.covering_runs(target, now, [w], enrolled=check) == ["r1"]
+
+
+@pytest.fixture
+def tags(monkeypatch):
     from eregion_core.inscription import Scope, TagEnrollment
     monkeypatch.setenv("AZURE_SUBSCRIPTION_ID", "s")
     check = TagEnrollment(credential=CRED, get=_tags_get)
     assert check.scope == Scope(sandbox="celebrimbor", subscription_id="s")
+    return check
+
+
+def test_the_sentinel_in_production_is_marked_by_a_non_destructive_technique_only(tags):
+    """Decision of 18/11: the marking follows the injectors' guard. A technique declared
+    non-destructive is held as Annatar holds its target — its subscription and its group —, the
+    tags decide the rest: the sentinel, in zone production outside the bench, is marked (O0)."""
+    assert _marks(tags, PROD)
+    assert not _marks(tags, PROD, destructive=True)
+    assert not _marks(tags, PROD, destructive=None)
+    assert not _marks(tags, PROD, kind="fault")
+
+
+def test_a_twin_outside_the_bench_is_marked_by_its_tags(tags):
+    """A twin outside rg-celebrimbor*: a non-destructive technique marks it, by its tags."""
+    assert _marks(tags, TWIN)
+    assert tags(TWIN) is True and tags.zone(TWIN) == "twin"
+
+
+def test_a_fault_or_a_destructive_gesture_marks_the_bench_only(tags):
+    """M5797: a fault, or a gesture nobody declared non-destructive, keeps the bench's perimeter —
+    its subscription, its groups —, as Gothmog and a destructive run are held: a twin outside the
+    bench, a VM of another subscription, tagged by mistake, are never marked by them."""
+    assert _marks(tags, VM, kind="fault") and _marks(tags, VM, destructive=True)
+    for target in (TWIN, ELSEWHERE):
+        assert not _marks(tags, target, kind="fault"), target
+        assert not _marks(tags, target, destructive=True), target
+        assert tags(target) is True                     # enrolled by its tags all the same
+    exercise.set_enrollment_check(tags)
     now = _now()
-    for target, marks in ((VM, ["r1"]), (PROD, []), (ELSEWHERE, [])):
-        w = _window(start=now - timedelta(minutes=1), targets=[target])
-        assert exercise.covering_runs(target, now, [w], enrolled=check) == marks, target
-        assert check(target) is True                    # enrolled by its tags, all three
-    exercise.set_enrollment_check(check)
-    w = _window(start=now - timedelta(minutes=1), targets=[PROD])
-    assert exercise.source_of(PROD, now, run_id="r1", windows=[w]) == ("real", "")
-    # Without a subscription, the perimeter names none: nothing is marked.
+    w = {**_window(start=now - timedelta(minutes=1), targets=[TWIN]), "kind": "fault"}
+    assert exercise.source_of(TWIN, now, run_id="r1", windows=[w]) == ("real", "")
+    # A technique declared non-destructive: the subscription and the group of its target.
+    assert _marks(tags, ELSEWHERE)
+
+
+def test_a_zone_written_otherwise_marks_nothing_outside_the_bench(tags, monkeypatch):
+    """Whatever the branch: a zone not written exactly marks nothing."""
+    monkeypatch.setattr(tags, "zone", lambda rid: "Production")
+    for change in ({}, {"kind": "fault"}, {"destructive": True}):
+        assert not _marks(tags, PROD, **change), change
+        assert not _marks(tags, VM, **change), change
+
+
+def test_a_perimeter_names_its_subscription(tags):
+    """Without a subscription, the bench's perimeter names none: nothing is marked by a fault."""
+    from eregion_core.inscription import Scope, TagEnrollment
     assert TagEnrollment(credential=CRED, get=_tags_get, scope=Scope()).perimeter(VM)
+    assert TagEnrollment(credential=CRED, get=_tags_get, scope=Scope()).perimeter(VM, bench=False) == ""
 
 
 # ── 9. The kill sees every window (SEC-A1b) ────────────────────────────────────────────────────
@@ -485,6 +568,38 @@ def test_the_kill_fails_when_the_channel_cannot_be_listed_whole(kill_script, mon
     with pytest.raises(RuntimeError, match="not all seen"):
         _close(kill_script, c, said)()
     assert not any("no exercise window open" in s for s in said)
+
+
+def test_the_kill_leaves_unread_only_a_blob_that_can_no_longer_be_open(kill_script):
+    """A blob created more than MAX_DURATION_S + FUTURE_SKEW_S (and the margin) ago carries no
+    window open now: not downloaded. Every other one is — exhaustive on what can be open."""
+    c = FakeContainer()
+    now = _now()
+    old = now - timedelta(seconds=exercise.MAX_DURATION_S + exercise.FUTURE_SKEW_S
+                          + channel.KILL_MARGIN_S + 60)
+    edge = now - timedelta(seconds=exercise.MAX_DURATION_S + exercise.FUTURE_SKEW_S)
+    c.put(f"{URL}/old.json", data=json.dumps(_window("old", start=old, lasts=7200)).encode())
+    c.put(f"{URL}/edge.json", data=json.dumps(_window("edge", start=edge, lasts=7200)).encode())
+    c.put(f"{URL}/open.json", data=json.dumps(_window("open", start=now - timedelta(minutes=5))).encode())
+    said: list[str] = []
+    _close(kill_script, c, said)()
+    assert "old.json" not in c.gets and {"edge.json", "open.json"} <= set(c.gets)
+    assert json.loads(c.body("open.json"))["closed_by"] == "orodruin-kill"
+
+
+def test_a_window_gone_between_the_listing_and_its_download_fails_closed(kill_script, monkeypatch):
+    """A blob listed, then gone before its download (404): the step fails — run the kill again."""
+    c = FakeContainer()
+    c.put(f"{URL}/a1.json", data=json.dumps(_window("a1")).encode())
+    real_get = c.get
+
+    def get(url, headers=None, params=None, timeout=None, stream=None):
+        if not params:
+            c.blobs.pop(url.rsplit("/", 1)[1], None)        # deleted after the listing
+        return real_get(url, headers=headers, params=params, timeout=timeout)
+    c.get = get
+    with pytest.raises(RuntimeError, match="HTTP 404"):
+        _close(kill_script, c, [])()
 
 
 def test_the_kill_fails_on_a_window_it_cannot_download(kill_script):

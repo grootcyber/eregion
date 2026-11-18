@@ -473,6 +473,15 @@ route 1.0 envisage, en production, des pannes des seules dépendances de Glorfin
 télémétrie, configuration), jamais des charges du client : O0 les refuse comme toute panne ; une
 exception, si elle vient, viendra par un lot explicite.
 
+La watch tient la même garde avant qu'une fenêtre d'exercice marque une carte « exercice »
+(SEC-A1b, #642 ; `eregion_core/exercise.py`, `zone_allows`). Une panne, ou un geste qu'aucune
+fenêtre ne déclare non destructif, ne marque qu'une VM du périmètre du banc (son abonnement, les
+groupes `rg-celebrimbor*`) ; une technique déclarée non destructive marque une VM de l'abonnement
+et du groupe que nomme sa cible, comme Annatar se garde, et ses tags décident du reste — ainsi la
+sentinelle en `production`, ou un `twin` hors du banc. Puis, pour toutes : la zone écrite
+exactement `bench`, `twin` ou `production` (une autre casse, une espace : rien n'est marqué), et
+en `production` une technique non destructive seulement.
+
 #### Une identité d'Entra ID (IDI1, #546)
 
 Une identité d'Entra ID ne porte pas de tag ARM. Elle s'inscrit par **deux clés, une par plan**,

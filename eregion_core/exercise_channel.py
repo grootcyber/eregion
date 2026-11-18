@@ -117,9 +117,15 @@ MAX_PULL_BYTES = 32 * 1024 * 1024
 # (eregion_core/exercise.py), refused at the pull past it.
 MAX_PULLED_FILES = 4096
 MAX_PULLED_BYTES = 32 * 1024 * 1024
+# The watch's directories found full by a pull: said once while it lasts — again only after a pull
+# found room there, then found it full again (every 30 s otherwise).
+_full_dirs: set[str] = set()
 # SEC-A1b: what the kill lists of the channel at most, page after page (``pull_whole``) — past it, the
 # kill fails, never « no window open ». Retention is 9 days (infra/orodruin/variables.tf).
 KILL_MAX_BLOBS = 100_000
+# SEC-A1b: the margin of clocks the kill leaves before it takes a blob for one that can no longer be
+# open (``_never_open``) — Azure's, the operator's, Orodruin's.
+KILL_MARGIN_S = 15 * 60
 _CHUNK = 64 * 1024
 # SEC5 (V-20): in a window pulled from the channel, when its blob was created — the
 # listing's word, never the window's (eregion_core/exercise.py reads it).
@@ -490,11 +496,14 @@ def _pull_windows(directory: Path, url: str, headers: dict, get, say, budget: Bu
             if room is None:
                 room = list(_pulled_room(directory))
             if room[0] >= MAX_PULLED_FILES or room[1] >= MAX_PULLED_BYTES:
-                say(f"[exercise-channel] the watch's directory of windows holds {room[0]} files, "
-                    f"{room[1]} bytes (MAX_PULLED_FILES {MAX_PULLED_FILES}, MAX_PULLED_BYTES "
-                    f"{MAX_PULLED_BYTES}): no new window pulled until its windows are purged")
-                room[0] = room[1] = 1 << 62     # said once for this pull: every new one waits
+                if str(directory) not in _full_dirs:     # said once while it lasts
+                    _full_dirs.add(str(directory))
+                    say(f"[exercise-channel] the watch's directory of windows holds {room[0]} files, "
+                        f"{room[1]} bytes (MAX_PULLED_FILES {MAX_PULLED_FILES}, MAX_PULLED_BYTES "
+                        f"{MAX_PULLED_BYTES}): no new window pulled until its windows are purged — "
+                        "said once while it lasts")
                 continue
+            _full_dirs.discard(str(directory))     # room again: a new flood will be said
         downloads += 1
         try:
             # SEC-A1b: a window is under 1 KiB; a blob past WINDOW_BYTES is no window.
@@ -553,16 +562,38 @@ def _pull_windows(directory: Path, url: str, headers: dict, get, say, budget: Bu
             pass                     # not JSON: the watch refuses it anyway
 
 
+def _never_open(blob, now: datetime) -> bool:
+    """This blob can carry no window open now (SEC-A1b): created — the listing's Creation-Time, else
+    its Last-Modified, never earlier — more than MAX_DURATION_S + FUTURE_SKEW_S + KILL_MARGIN_S
+    ago. A window the watch believes starts within FUTURE_SKEW_S of its blob's creation
+    (``exercise.window_refusal``) and lasts at most MAX_DURATION_S: open now, its blob was created
+    after ``now - MAX_DURATION_S - FUTURE_SKEW_S``. Unreadable dates: it may be open."""
+    from eregion_core.exercise import FUTURE_SKEW_S, MAX_DURATION_S
+    from datetime import timedelta
+    for field in ("Properties/Creation-Time", "Properties/Last-Modified"):
+        value = blob.findtext(field)
+        if value:
+            try:
+                born = parsedate_to_datetime(value).astimezone(timezone.utc)
+            except (TypeError, ValueError):
+                return False
+            return born < now - timedelta(seconds=MAX_DURATION_S + FUTURE_SKEW_S + KILL_MARGIN_S)
+    return False
+
+
 def pull_whole(directory: Path, *, channel: str | None = None, credential=None, get=None,
-               say=print, max_blobs: int | None = None) -> int:
+               say=print, max_blobs: int | None = None, now: datetime | None = None) -> int:
     """For the kill (SEC-A1b): copy into ``directory`` (an empty one of its own) every window of the
     channel, page after page of the whole listing — not the MAX_BLOBS names nor the MAX_DOWNLOADS
     blobs a pull of the watch stops at, which leave out the windows listed after them. Each window
     carries when its blob was created (``CREATED``), as ``pull`` writes it. A blob past
     WINDOW_BYTES, or that is no window (``window_shape_refusal``), is said and left: the watch never
     pulls it either. Raises — never a partial list taken for the whole — when the listing goes past
-    ``max_blobs`` (KILL_MAX_BLOBS), a listing page past its bound, or a window cannot be downloaded.
-    Returns how many were written."""
+    ``max_blobs`` (KILL_MAX_BLOBS), a listing page past its bound, or a window cannot be downloaded
+    — a blob gone between the listing and its download (404) too: deleted (the retention, a
+    writer), it fails closed, the kill run again. A blob that can no longer carry an open window
+    (``_never_open``: created too long ago) is not downloaded: every one that can is. Returns how
+    many were written."""
     import json
 
     from eregion_core.exercise import WINDOW_BYTES
@@ -574,10 +605,11 @@ def pull_whole(directory: Path, *, channel: str | None = None, credential=None, 
     if why := runs_layout.pull_root(directory) or runs_layout.parents_hold(Path(directory), Path(directory) / "w.json"):
         raise RuntimeError(f"windows not pulled: {why}")
     limit = KILL_MAX_BLOBS if max_blobs is None else max_blobs
+    now = now or datetime.now(timezone.utc)
     written = 0
     for blob in _whole_listing(get, url, headers, limit):
         name = blob.findtext("Name") or ""
-        if not _SAFE_NAME.match(name):
+        if not _SAFE_NAME.match(name) or _never_open(blob, now):
             continue
         try:
             r, body = fetch(get, f"{url}/{name}", headers, limit=WINDOW_BYTES, what=f"window {name}")

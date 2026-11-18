@@ -311,15 +311,25 @@ class TagEnrollment:
         self._cache: dict[str, tuple[float, bool, str]] = {}
         self._lock = threading.Lock()
         self._said: dict[str, str] = {}
-        # SEC-A1b: the perimeter a window may mark in — the injectors' own (``Scope``): this
-        # bench, in the subscription the reader watches (AZURE_SUBSCRIPTION_ID).
+        # SEC-A1b: the bench's perimeter, where a fault or a destructive gesture may mark — the
+        # injectors' own (``Scope``): this bench, in the subscription the reader watches
+        # (AZURE_SUBSCRIPTION_ID).
         self.scope = scope or replace(Scope.for_bench(), sandbox=self.bench)
 
-    def perimeter(self, resource_id: str) -> str:
-        """Why a window may not mark this VM, as the injectors' guard says it (``Scope.check``:
-        the subscription, the bench's resource groups, SEC-A1b) — "" when it is inside. Said
-        once per VM; read from the id, no call."""
-        verdict = self.scope.check(resource_id)
+    def perimeter(self, resource_id: str, *, bench: bool = True) -> str:
+        """Why a window may not mark this VM, as the injectors' guard says it (``Scope.check``,
+        SEC-A1b) — "" when it is inside. ``bench`` (a fault, a destructive gesture): the bench's
+        perimeter — its subscription, its resource groups. Otherwise (a technique declared
+        non-destructive), the perimeter Annatar gives itself for its target (annatar/cli.py
+        ``wire``, ``campaign``): the subscription and the group the id names — the tags decide
+        the rest (``enrollment``, the zone). Said once per VM; read from the id, no call."""
+        if bench:
+            scope = self.scope
+        else:
+            rg = rg_from_id(resource_id)
+            scope = Scope(sandbox=self.bench, subscription_id=subscription_from_id(resource_id),
+                          allowed_resource_groups=[rg] if rg else [], allowed_resource_ids=[resource_id])
+        verdict = scope.check(resource_id)
         if verdict.allowed:
             return ""
         key = "perimeter " + resource_id.lower()

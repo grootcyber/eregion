@@ -108,12 +108,20 @@ LIST_MAX = 4 * MAX_WINDOW_FILES
 # a digest of each target, never a list it cannot bound.
 MAX_TARGETS = 16
 TARGET_CHARS = 512
+# SEC-A1b: a run_id is at most RUN_ID_CHARS characters (an injector's is under 40): what bounds an
+# entry of the watch's record.
+RUN_ID_CHARS = 128
 # SEC-A1b: the watch's record of the windows it saw (``seen_path()``) — at most
 # RECORD_PER_WRITER entries per writer (each injector's directory, the watch's own for the windows
-# pulled from the channel) and RECORD_BYTES in all, read as runs/ is read. Past either, a window not
-# written down is not believed (fail closed: its cycles fall toward real). An entry is under 700 bytes.
+# pulled from the channel; "" for EREGION_EXERCISES_DIR, and the entries written before SEC-A1b),
+# read as runs/ is read, at most RECORD_BYTES. Past its share, a window not written down is not
+# believed (fail closed: its cycles fall toward real). An entry is about 340 bytes for a window of
+# one target, at most ENTRY_BYTES (738 measured: a run_id of RUN_ID_CHARS, MAX_TARGETS digests,
+# its dates) — RECORD_BYTES holds every writer's full share, so one writer never takes another's.
 RECORD_PER_WRITER = MAX_WINDOW_FILES
-RECORD_BYTES = 8 * 1024 * 1024
+ENTRY_BYTES = 768
+RECORD_WRITERS = 4          # annatar, gothmog, the watch's own, and ""
+RECORD_BYTES = RECORD_WRITERS * RECORD_PER_WRITER * ENTRY_BYTES
 # SEC-A1 (V-21): the windows on one VM cover it, together, at most CHAIN_MAX_S of the
 # CHAIN_HORIZON_S before each one starts (``chain_refusal``) — chained one after the other, each
 # within its own bounds, they would otherwise keep a VM in exercise for good. At the watch, the
@@ -261,6 +269,8 @@ def window_refusal(window, now: datetime | None = None,
     rid = str(window.get("run_id") or "")
     if not _SAFE_RUN_ID.match(rid) or ".." in rid:
         return "its run_id is not a plain name"
+    if len(rid) > RUN_ID_CHARS:          # SEC-A1b: what bounds an entry of the watch's record
+        return f"its run_id is longer than {RUN_ID_CHARS} characters (RUN_ID_CHARS)"
     if rid.lower().startswith(_WATCH_RUN_PREFIX):
         return "its run_id takes the RulePoller's name (watch-…)"
     targets = window.get("targets")
@@ -293,7 +303,13 @@ def window_refusal(window, now: datetime | None = None,
             return (f"its {'end' if window.get('end') is not None else 'start'} is "
                     f"{(declared_at - latest).total_seconds():.0f} s before its file was written "
                     f"(more than FUTURE_SKEW_S, {FUTURE_SKEW_S} s): antedated")
+    # SEC-A1b: pulled, it may not start more than FUTURE_SKEW_S after its blob was created either —
+    # a window is written when it opens; so one the channel created long ago is never open now
+    # (what lets the kill leave it unread, ``exercise_channel.pull_whole``).
+    created = _parse(window.get(CHANNEL_CREATED)) if CHANNEL_CREATED in window else None
     refs = [t for t in (now, declared_at) if t is not None]
+    if created is not None:
+        refs.append(created)
     if refs and start > min(refs) + timedelta(seconds=FUTURE_SKEW_S):
         return (f"it starts {(start - min(refs)).total_seconds():.0f} s after it was declared "
                 f"(more than FUTURE_SKEW_S, {FUTURE_SKEW_S} s)")
@@ -799,19 +815,24 @@ def _perimeter_reader(enrolled):
 
 def zone_allows(window: dict, resource_id: str, enrolled=None) -> bool:
     """The injectors' own guard, held by the reader before a window marks a VM (SEC-A1b;
-    eregion_core/inscription.py ``check_target``): the VM inside the bench's perimeter
-    (``Scope.check``: the subscription, the bench's resource groups — ``TagEnrollment.perimeter``),
-    and its zone one of ``bench``, ``twin``, ``production`` exactly, where the window's kind may run
-    (``check_zone``): in ``production``, a technique declared non-destructive only (SEC5, V-20,
-    the production rule of O0); a zone written otherwise (``Production``, a space) marks nothing.
-    The zone is the reader's, from the VM's tags (``TagEnrollment.zone``); a check that reads none
-    leaves the rule to the injector's own (O0)."""
+    eregion_core/inscription.py ``check_target``, ``TagEnrollment.perimeter``). A fault, or a
+    gesture not declared non-destructive: the VM inside the bench's perimeter (``Scope.check``:
+    the subscription, the bench's resource groups), as Gothmog and a destructive run are held. A
+    technique declared non-destructive: the perimeter Annatar gives itself for its target — the
+    subscription and the group its id names — and the tags decide the rest. Then, for every
+    window, the zone one of ``bench``, ``twin``, ``production`` exactly, where the window's kind
+    may run (``check_zone``): in ``production`` (the sentinel), a technique declared
+    non-destructive only (SEC5, V-20, the production rule of O0); a zone written otherwise
+    (``Production``, a space) marks nothing. The zone is the reader's, from the VM's tags
+    (``TagEnrollment.zone``); a check that reads none leaves the rule to the injector's own (O0)."""
     from eregion_core.inscription import check_zone
     reader = enrolled or is_enrolled
     perimeter = _perimeter_reader(reader)
     if perimeter is not None:
+        # A fault, or what nobody declared non-destructive: the bench's perimeter only.
+        on_bench = window.get("kind") != "technique" or window.get("destructive") is not False
         try:
-            if perimeter(resource_id):
+            if perimeter(resource_id, bench=on_bench):
                 return False
         except Exception:
             return False

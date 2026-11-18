@@ -14,6 +14,18 @@ URL = "https://exampleaccount.blob.core.windows.net/exercises"
 CRED = SimpleNamespace(get_token=lambda scope: SimpleNamespace(token="tok"))
 
 
+def _opened(data) -> datetime | None:
+    """When a window's blob was first written: its start — None for any other blob."""
+    import json
+    try:
+        start = json.loads(bytes(data)).get("start")
+        dt = datetime.fromisoformat(str(start).replace("Z", "+00:00"))
+    except (ValueError, TypeError, AttributeError):
+        return None
+    # To the second, as the listing writes it.
+    return (dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)).replace(microsecond=0)
+
+
 def _answer(status: int, content: bytes = b"") -> SimpleNamespace:
     return SimpleNamespace(ok=200 <= status < 300, status_code=status, content=content)
 
@@ -23,7 +35,10 @@ class FakeContainer:
         self.url = url
         self.page_size = page_size
         self.blobs: dict[str, tuple[bytes, datetime]] = {}
-        self.created: dict[str, datetime] = {}  # a blob's Creation-Time: its first write
+        # A blob's Creation-Time: its first write — for a window, its start, as an injector
+        # publishes it when it opens (SEC-A1b: a window pulled starts within FUTURE_SKEW_S of its
+        # blob's creation); else the container's clock. A test sets it to say otherwise.
+        self.created: dict[str, datetime] = {}
         self.clock = datetime(2020, 1, 1, tzinfo=timezone.utc)
         self.puts: list[str] = []          # blob names written, in order
         self.gets: list[str] = []          # blob names downloaded, in order
@@ -51,7 +66,7 @@ class FakeContainer:
         if (headers or {}).get("If-None-Match") == "*" and name in self.blobs:
             return _answer(409)
         self.blobs[name] = (bytes(data), self.clock)
-        self.created.setdefault(name, self.clock)
+        self.created.setdefault(name, _opened(data) or self.clock)
         self.puts.append(name)
         return _answer(201)
 

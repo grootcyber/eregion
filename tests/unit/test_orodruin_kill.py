@@ -7,6 +7,7 @@ test_orodruin.py."""
 import importlib.util
 import json
 from datetime import datetime, timedelta, timezone
+from email.utils import format_datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -107,8 +108,11 @@ class FakeChannel:
         if self.status != 200:
             return SimpleNamespace(ok=False, status_code=self.status, content=b"")
         if params and params.get("comp") == "list":
+            # Written when its window opened, five minutes ago (SEC-A1b: a window pulled starts
+            # within FUTURE_SKEW_S of its blob's creation).
+            when = format_datetime(NOW - timedelta(minutes=5), usegmt=True)
             items = "".join(f"<Blob><Name>{n}</Name><Properties><Last-Modified>"
-                            "Mon, 26 Oct 2026 09:00:00 GMT</Last-Modified></Properties></Blob>"
+                            f"{when}</Last-Modified></Properties></Blob>"
                             for n in self.blobs)
             body = f"<EnumerationResults><Blobs>{items}</Blobs><NextMarker/></EnumerationResults>"
             return SimpleNamespace(ok=True, status_code=200, content=body.encode())

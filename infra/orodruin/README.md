@@ -244,8 +244,13 @@ peut laisser arrêtée. Il sort en 1 si une étape a échoué.
 - Le kill lit **tout** le canal, page après page (SEC-A1b) : jamais les 200 premières fenêtres
   d'un tirage de la watch. Une liste qu'il ne lit pas en entier (plus de `KILL_MAX_BLOBS`, 100 000
   noms) ou une fenêtre qu'il ne peut télécharger font échouer l'étape `close` : jamais « no
-  exercise window open » sans les avoir toutes vues. Il dit combien il en a lu. Mis à jour sur
-  Orodruin par sa mise à jour (OI3), après la release.
+  exercise window open » sans les avoir toutes vues. Il dit combien il en a lu. Il ne télécharge
+  pas un blob créé il y a plus de 2 h 20 (`MAX_DURATION_S` + `FUTURE_SKEW_S` + 15 min de marge) :
+  la watch ne croit une fenêtre tirée que si elle commence à moins de 5 min de la création de son
+  blob, et une fenêtre dure 2 h au plus — un tel blob ne porte aucune fenêtre ouverte. **Un blob
+  disparu entre la liste et son téléchargement (404)** — effacé par la rétention ou par un écrivain —
+  fait échouer l'étape, fermé : relance le kill. Mis à jour sur Orodruin par sa mise à jour (OI3),
+  après la release.
 
 **Le drill de la semaine** (DRL1a, `docs/design/drill-banc.md`). Trois pas de plus au kill, par
 ton `az login`, dans cet ordre : `revoke`, puis le démarrage planifié du drill désactivé (la Logic App

@@ -485,8 +485,15 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 (`exercise_seen.json.lock`). Hors de runs/, que l'injecteur écrit. SEC-A1b (#642) :
                                 une entrée ne garde que des dates et des empreintes (celle de la fenêtre, une par
                                 cible), jamais ce que la fenêtre a écrit ; seule une fenêtre crue y entre ; au plus
-                                RECORD_PER_WRITER (4 096) entrées par écrivain et RECORD_BYTES (8 Mio) en tout,
-                                lu par le lecteur borné — au-delà, la fenêtre n'est pas crue (ses cycles « real »)
+                                RECORD_PER_WRITER (4 096) entrées par écrivain et RECORD_BYTES (12 Mio : la part pleine de chaque écrivain) en tout,
+                                lu par le lecteur borné — au-delà, la fenêtre n'est pas crue (ses cycles « real »).
+                                Un registre au-delà de sa borne (écrit par un autre que la watch) ne se lit plus :
+                                toutes les fenêtres locales sont refusées. Reprise : arrêter la watch, supprimer
+                                `exercise_seen.json`, la relancer. Ce que cela fait : la watch oublie quand elle a vu
+                                chaque fenêtre ; à sa lecture suivante, une fenêtre locale est vue « maintenant », et
+                                refusée si elle commence plus de 5 min avant (ses cycles « real ») ; une fenêtre tirée
+                                perd sa preuve de tirage et est tirée une fois encore, puis notée ; la chaîne ne compte
+                                plus les fenêtres dont le fichier a disparu (jusqu'à 8 h de plus sur une VM, sur 24 h)
   escalations.jsonl           → escalades persistées. SEC3 (V-10) : chaque lecture-modification-écriture sous un
                                 verrou (`flock` sur `escalations.jsonl.lock`, `response/locks.py::_file_lock`), le
                                 magasin réécrit entier : aucune carte perdue entre écrivains, aucune lecture tronquée
