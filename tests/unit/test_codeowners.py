@@ -27,6 +27,10 @@ What it does not see:
   job that signs, and the code they copy into the image, are not read — the image's code is the one
   a session merges (the threat model's decision « Qui fusionne sur `main` publie une image… »);
 - a module run by its name (`python -m pkg.mod` in a `run:`): only paths are read;
+- a relative import (`from . import x`), and a file loaded by its path
+  (`importlib.util.spec_from_file_location`, as `scripts/notify_discord.py` loads
+  `glorfindel/chat_text.py`): today that file is found by the partial checkouts and by the CD's
+  `AGENT_FILES`, but a job with a full checkout running such a script would not derive it;
 - the Makefile, left out by decision (18/11): its recipes run with the maintainer's rights.
 """
 from __future__ import annotations

@@ -163,7 +163,7 @@ Trois canaux, à ne pas confondre :
 
 **Où c'est dans le code** : `glorfindel/bot.py` (`ButtonPolicy`, `allowed_mentions`), `glorfindel/chat_text.py`, `glorfindel/escalations.py` (le webhook), `scripts/notify_discord.py` ; tests `tests/unit/test_bot.py`, `tests/unit/test_chat_escaping.py`, `tests/unit/test_notify_discord.py`.
 
-**Ouvert** : le texte du dehors au terminal de la watch et dans le bot — planifié : #845 ; rien de connu au-delà, hors du choix du salon, qui revient à l'opérateur.
+**Ouvert** : ce que le socle imprime pendant un run — planifié : #855 ; rien de connu au-delà, hors du choix du salon, qui revient à l'opérateur.
 
 ---
 
@@ -427,7 +427,7 @@ _SEC12 (#418), 02/11. Décision de Jonathan : une identité propre aux sessions 
 - un utilisateur Unix propre aux sessions — planifié
 - la règle des tags lue par Imladris sans jeton, à mesurer — planifié : #418
 - la fusion d'une PR de workflow par l'App, à mesurer — planifié
-- l'approbation des propriétaires de code, réglée sur main — planifié : #847
+- l'approbation des propriétaires de code, geste du mainteneur — planifié : #418
 - la recette d'installation du CD, sortie du Makefile — planifié
 
 ---

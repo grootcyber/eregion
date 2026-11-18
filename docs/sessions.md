@@ -593,7 +593,7 @@ ci-dessous présents dans le ruleset « main »** : sans eux, une PR rouge devie
      - **Require review from Code Owners** (SEC-K, #847, décision du 15/11) — **seulement une fois
        SEC-K fusionné** : avant, l'ancien `CODEOWNERS` (sa ligne `*`) ferait attendre chaque PR. Avec
        lui, une PR qui touche un chemin de `.github/CODEOWNERS` (ce que les workflows à secrets ou à
-       OIDC exécutent, le canari, le CD d'Imladris, `.github/`) attend ton approbation ; les autres
+       OIDC exécutent, le canari, le CD d'Imladris, le Terraform du banc `infra/terraform/`, `.github/`) attend ton approbation ; les autres
        fusionnent comme avant. Avec, **Dismiss stale pull request approvals when new commits are
        pushed** : sans lui, une approbation reste valable pour un commit poussé ensuite. Vérifier, à
        ce réglage, le nombre d'approbations exigé (il reste à 0 pour les autres PR), puis l'essai :
