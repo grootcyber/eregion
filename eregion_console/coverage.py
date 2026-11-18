@@ -53,6 +53,7 @@ from __future__ import annotations
 
 from eregion_console.indicators import WINDOW_DAYS, decision_of, detections, t0_confronted
 from eregion_core.exercise import FUTURE_SKEW_S
+from eregion_core.experiment import is_ready
 from eregion_core.run_report import epoch, iso, timeline
 
 DAY = 86400.0
@@ -160,6 +161,8 @@ def row(entry: dict, runs: list[dict], cycles: list[dict], now: float,
     return {
         **{k: entry.get(k) for k in ("id", "kind", "name", "tactic", "status", "resource_type",
                                      "engine", "destructive")},
+        # implemented or proven (STM1g): the one predicate, said to the page as it is.
+        "ready": is_ready(entry.get("status")),
         "in_catalog": entry.get("in_catalog", True),
         "runs": len(runs),
         "history": [{"run_id": r["run_id"], "at": iso(r["at"]), "outcome": outcome(r)}
@@ -176,9 +179,9 @@ def _summary(rows: list[dict]) -> dict:
     or one with runs (a planned entry never run is no gap of the proof). ``regressed``: their
     ids."""
     catalog = [r for r in rows if r["in_catalog"]]
-    counted = [r for r in rows if r["status"] == "implemented" or r["runs"]]
+    counted = [r for r in rows if is_ready(r["status"]) or r["runs"]]
     out = {"catalog": len(catalog),
-           "implemented": sum(1 for r in catalog if r["status"] == "implemented")}
+           "implemented": sum(1 for r in catalog if is_ready(r["status"]))}
     for s in ("proven", "aging", "stale", "unproven", "never"):
         out[s] = sum(1 for r in counted if r["state"] == s)
     out["regressed"] = [r["id"] for r in counted if r["state"] == "regressed"]
@@ -192,7 +195,7 @@ def evolution(runs: list[dict], catalog: list[dict], now: float,
     over the implemented ones and over the catalog (today's statuses), faults PASS in those 30
     days, and the rows regressed that day."""
     techniques = {e["id"] for e in catalog if e["kind"] == "technique"}
-    implemented = {e["id"] for e in catalog if e["kind"] == "technique" and e.get("status") == "implemented"}
+    implemented = {e["id"] for e in catalog if e["kind"] == "technique" and is_ready(e.get("status"))}
     points = []
     for k in range(weeks - 1, -1, -1):
         t = now - k * 7 * DAY
@@ -244,7 +247,7 @@ def matrix(runs: list[dict], cycles: list[dict], catalog: list[dict], now: float
              "dated_by": newest["last_proof"]["dated_by"], "t0_refused": newest["last_proof"]["t0_refused"]}
             if newest else None)
     # The implemented techniques, the least recently proven first (never proven before all).
-    stalest = sorted((r for r in techniques if r["status"] == "implemented"),
+    stalest = sorted((r for r in techniques if is_ready(r["status"])),
                      key=lambda r: (r["last_proof"]["at"] if r["last_proof"] else "", r["id"]))
     return {
         "generated_at": iso(now), "aging_days": AGING_DAYS, "stale_days": STALE_DAYS,

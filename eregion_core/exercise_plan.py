@@ -18,6 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from eregion_core.experiment import is_ready
 from eregion_core.inscription import Scope, check_zone, enrollment
 from eregion_core.orodruin import CEILING_INJECTIONS, CEILING_RUN_S
 
@@ -137,7 +138,7 @@ def judge(experiment_id: str, target_id: str, target: Target | None, *,
     e = catalog.get(experiment_id)
     if e is None:
         return v.refuse("unknown_experiment", f"{experiment_id!r} is not in the catalogue")
-    if e.status != "implemented":
+    if not is_ready(e.status):
         return v.refuse("not_implemented", f"{e.id} is {e.status or 'not implemented'} in the catalogue: "
                                            "nothing runs it yet")
     rtype = target.resource_type if target is not None else "azure_vm"
