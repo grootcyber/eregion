@@ -1227,7 +1227,7 @@ briques:
     nom: "Security hardening"
     etat: main
     release: "0.6"
-    lots: [SEC-E]
+    lots: [SEC-E, SEC-Ec]
     issue: 846
 
   - id: s-inf-fl

@@ -17,7 +17,8 @@ succeed (neighbouring signals): the model's choice stands.
 
 No Azure call, no model call (the model is patched, dry_run or a recording connector).
 Mutants M4375–M4379 (scripts/mutants/B3a.py) and M5721–M5740 (scripts/mutants/SEC-E.py) are
-measured here and in tests/unit/test_decision_queue.py.
+measured here and in tests/unit/test_decision_queue.py; M6311–M6317 (scripts/mutants/SEC-Ec.py:
+the reason says what one click approves) here.
 """
 from __future__ import annotations
 
@@ -28,6 +29,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from eregion_core.action_queue import proposed_verbs
 from glorfindel import agent
 from glorfindel.config import AutonomyConfig
 from glorfindel.incidents import IncidentRegistry
@@ -237,6 +239,90 @@ def test_an_unattributed_snapshot_run_alone_gets_no_floor():
     signal = _sudo(attribution="unattributed")
     out, _ = _decide(signal, _decision("snapshot"), _incident(agent.ROOT_ELEVATION, agent.LOGIN_AFTER_BRUTE_FORCE))
     assert out["floor"] == "" and out["floor_card"] is False and out["action"] == "snapshot"
+
+
+# ── SEC-Ec: the reason says what one click approves; every earlier hold the attribution's ───
+
+def _unattributed(signal: dict) -> dict:
+    signal["context"] = {**signal["context"], "attribution": "unattributed", "candidates": ["vm-b3a"]}
+    return signal
+
+
+def test_an_unattributed_snapshot_held_by_the_mode_says_what_one_click_approves():
+    """human_only, the pair live, a detection that does not name the VM, the model's snapshot: the
+    card stays the mode's (`mode_hold`), approvable for the snapshot only — never an isolation —,
+    and its reason says so, never « rien ne s'y approuve en un clic » (SEC-Ec, #913)."""
+    from glorfindel.approval import approval_refusal
+    both = _incident(agent.ROOT_ELEVATION, agent.LOGIN_AFTER_BRUTE_FORCE)
+    out, _ = _decide(_sudo(attribution="unattributed"), _decision("snapshot"), both, mode="human_only")
+    assert out["escalate"] is True and out["mode_hold"] is True and out["floor_card"] is False
+    assert out["action"] == "snapshot" and out["held_by"] == "attribution"
+    assert "ne nomme pas cette VM" in out["floor"] and "rien ne s'y approuve" not in out["floor"]
+    assert "seul 'snapshot' s'y approuve en un clic, jamais l'isolation" in out["floor"]
+    assert "la carte reste celle du mode human_only" in out["floor"]
+    agent.escalate_to_human({**out, "dry_run": False})
+    [card] = [c for c in _cards() if c["resource_id"] == RID]
+    assert card["escalation_type"] == "mode_hold" and card["action"] == "snapshot"
+    assert card["reason"].startswith(out["floor"])
+    assert approval_refusal(card, "vm-b3a") is None
+    assert proposed_verbs(card) == {"snapshot"}                 # the snapshot, never an isolation
+
+
+@pytest.mark.parametrize("pair", [True, False], ids=["pair-live", "no-pair"])
+def test_a_protected_address_then_the_attribution(pair):
+    """An unattributed detection whose address is on the never-block list: the never-block guard
+    holds the block (`protected_address`); with the pair live, the floor's attribution branch makes
+    it the attribution's (`unattributed_signal`) — both refused by the approval (SEC-Ec, #913)."""
+    from glorfindel.approval import approval_refusal
+    signal = _unattributed(_brute_force(SourceIP="10.0.0.5"))
+    incident = _incident(agent.ROOT_ELEVATION, agent.LOGIN_AFTER_BRUTE_FORCE) if pair else None
+    out, _ = _decide(signal, _decision("block_suspicious_ip"), incident)
+    assert out["escalate"] is True and out["action"] == "block_suspicious_ip"
+    assert out["held_by"] == ("attribution" if pair else "never_block")
+    agent.escalate_to_human({**out, "dry_run": False})
+    [card] = [c for c in _cards() if c["resource_id"] == RID]
+    assert card["escalation_type"] == ("unattributed_signal" if pair else "protected_address")
+    assert approval_refusal(card, "vm-b3a") and proposed_verbs(card) == frozenset()
+    if pair:
+        assert "rien ne s'y approuve en un clic" in card["reason"]
+
+
+@pytest.mark.parametrize("pair", [True, False], ids=["pair-live", "no-pair"])
+def test_a_release_hold_then_the_attribution(pair):
+    """An unattributed detection, the model releases the isolation: the release precondition holds
+    it (`release_hold`, approvable); with the pair live, the floor's attribution branch makes it
+    the attribution's (`unattributed_signal`), refused by the approval — the more prudent (SEC-Ec)."""
+    from glorfindel.approval import approval_refusal
+    signal = _unattributed(_brute_force())
+    incident = _incident(agent.ROOT_ELEVATION, agent.LOGIN_AFTER_BRUTE_FORCE) if pair else None
+    out, _ = _decide(signal, _decision("release_isolation"), incident)
+    assert out["escalate"] is True and out["action"] == "release_isolation"
+    assert out["held_by"] == ("attribution" if pair else "release_precondition")
+    agent.escalate_to_human({**out, "dry_run": False})
+    [card] = [c for c in _cards() if c["resource_id"] == RID]
+    assert card["escalation_type"] == ("unattributed_signal" if pair else "release_hold")
+    assert bool(approval_refusal(card, "vm-b3a")) is pair
+    assert proposed_verbs(card) == (frozenset() if pair else {"release_isolation"})
+    if pair:
+        assert "rien ne s'y approuve en un clic" in card["reason"]
+
+
+@pytest.mark.parametrize("pair", [True, False], ids=["pair-live", "no-pair"])
+def test_a_low_confidence_hold_then_the_attribution(pair):
+    """An unattributed detection, the model's snapshot under the threshold: the confidence gate
+    holds it (`low_confidence`, approvable); with the pair live, the attribution's card — the mode
+    never held it, so the card is not the mode's (SEC-Ec, docs/glorfindel.md)."""
+    from glorfindel.approval import approval_refusal
+    incident = _incident(agent.ROOT_ELEVATION, agent.LOGIN_AFTER_BRUTE_FORCE) if pair else None
+    out, _ = _decide(_sudo(attribution="unattributed"), _decision("snapshot", confidence=0.2),
+                     incident, mode="human_only")
+    assert out["escalate"] is True and out["mode_hold"] is False and out["action"] == "snapshot"
+    assert out["held_by"] == ("attribution" if pair else "confidence")
+    agent.escalate_to_human({**out, "dry_run": False})
+    [card] = [c for c in _cards() if c["resource_id"] == RID]
+    assert card["escalation_type"] == ("unattributed_signal" if pair else "low_confidence")
+    assert bool(approval_refusal(card, "vm-b3a")) is pair
+    assert proposed_verbs(card) == (frozenset() if pair else {"snapshot"})
 
 
 def test_the_message_to_the_model_is_the_same_to_the_byte():
