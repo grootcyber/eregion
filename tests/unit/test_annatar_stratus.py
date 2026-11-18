@@ -278,6 +278,35 @@ def test_azure_provider_env_prefers_the_explicit_arm_names():
     assert env["ARM_SUBSCRIPTION_ID"] == "arm-sub" and env["ARM_TENANT_ID"] == "arm-tenant"
 
 
+def test_azure_provider_env_accepts_the_azure_tenant_name():
+    """A control-plane technique with no Graph probe may leave EREGION_TENANT_ID unset, so the
+    tenant is taken from AZURE_TENANT_ID too (else the warmup would no-op silently)."""
+    env = azure_provider_env({"AZURE_SUBSCRIPTION_ID": "sub-123", "AZURE_TENANT_ID": "tenant-abc"})
+    assert env == {"ARM_USE_MSI": "true", "ARM_SUBSCRIPTION_ID": "sub-123",
+                   "ARM_TENANT_ID": "tenant-abc"}
+
+
+def test_azure_provider_env_ignores_blank_values():
+    """Whitespace is not a value (as graph_declared strips the tenant): a blank tenant is treated
+    as absent, and a blank credential does not block MSI (orodruin.env warns empty vars mask the
+    identity)."""
+    assert azure_provider_env({"AZURE_SUBSCRIPTION_ID": "sub-123",
+                               "EREGION_TENANT_ID": "   "}) == {}            # blank tenant → absent
+    env = azure_provider_env({"AZURE_SUBSCRIPTION_ID": "sub-123", "EREGION_TENANT_ID": "tenant-abc",
+                              "AZURE_CLIENT_SECRET": ""})                    # blank secret ignored
+    assert env["ARM_USE_MSI"] == "true"
+
+
+def test_azure_provider_env_leaves_every_service_principal_form_untouched():
+    """A service principal authenticates by a secret, a certificate or a federated/OIDC token — each
+    carries a client id the managed identity lacks; any of them means a credential is configured, so
+    MSI is not forced over it."""
+    base = {"AZURE_SUBSCRIPTION_ID": "sub-123", "EREGION_TENANT_ID": "tenant-abc"}
+    for marker in ("ARM_CLIENT_ID", "AZURE_CLIENT_ID", "ARM_CLIENT_CERTIFICATE_PATH",
+                   "AZURE_CLIENT_CERTIFICATE_PATH", "ARM_USE_OIDC", "AZURE_FEDERATED_TOKEN_FILE"):
+        assert azure_provider_env({**base, marker: "x"}) == {}, marker
+
+
 # ── The executor journals every phase through the armed contract ──────────────────────
 
 def _staged_home(tmp_path) -> Path:
@@ -337,12 +366,15 @@ def test_executor_sends_the_exact_argv_and_offline_env(tmp_path, monkeypatch):
 
 
 def _only_managed_identity(monkeypatch):
-    """A host carrying only a managed identity: the subscription and bench tenant named, no
-    service-principal secret and no ARM_* overrides from the ambient shell."""
+    """A host carrying only a system-assigned managed identity: the subscription and bench tenant
+    named, no service-principal credential of any form and no ARM_* overrides from the ambient
+    shell."""
     monkeypatch.setenv("AZURE_SUBSCRIPTION_ID", "sub-123")
     monkeypatch.setenv("EREGION_TENANT_ID", "tenant-abc")
-    for var in ("ARM_SUBSCRIPTION_ID", "ARM_TENANT_ID", "AZURE_TENANT_ID",
-                "ARM_USE_MSI", "ARM_CLIENT_SECRET", "AZURE_CLIENT_SECRET"):
+    for var in ("ARM_SUBSCRIPTION_ID", "ARM_TENANT_ID", "AZURE_TENANT_ID", "ARM_USE_MSI",
+                "ARM_CLIENT_ID", "AZURE_CLIENT_ID", "ARM_CLIENT_SECRET", "AZURE_CLIENT_SECRET",
+                "ARM_CLIENT_CERTIFICATE_PATH", "AZURE_CLIENT_CERTIFICATE_PATH",
+                "ARM_USE_OIDC", "AZURE_FEDERATED_TOKEN_FILE"):
         monkeypatch.delenv(var, raising=False)
 
 
