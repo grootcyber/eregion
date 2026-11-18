@@ -843,7 +843,7 @@ EREGION  Overview  Glorfindel 3  [Dagorlad]            ● watch · 12s ago  ●
 EXERCISES  Plan only — this page launches nothing. Glorfindel is never told.
 RED · TECHNIQUES & FAULTS                                              BLUE · ENROLLED TARGETS
 ┌ T1110.001 Brute Force: SSH ────┐                                    ┌ GLORFINDEL ● watching ──────┐
-│ Atomic · proven 6d             ●━━━ detected ~2 min · card ━━━━━━━━━│ 12 rules · never told       │
+│ Atomic · fresh 6d              ●━━━ detected ~2 min · card ━━━━━━━━━│ 12 rules · never told       │
 │ non-destructive · ssh-brute-…  │╲                                   └─────────────────────────────┘
 └────────────────────────────────┘ ╲━━ detected · isolate alone ━━━━●┌ vm-…-bree  BENCH  HUMAN-ONLY ┐
 ┌ T1486 Data Encrypted ──────────┐                                   └──────────────────────────────┘

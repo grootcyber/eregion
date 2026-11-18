@@ -5980,7 +5980,7 @@ MUTANTS += [
      '        return "fresh" if age <= STALE_DAYS * DAY else "stale"\n'),
     ("M1808", "the indicator's last proof stays on 30 days: older, it says « none » (C1)", COV,
      '    indicators["last_proof"] = m["last_proof"]\n', ""),
-    ("M1809", "the non-regression never fires: a technique proven then missed stays proven (C1)", COV,
+    ("M1809", "the non-regression never fires: a technique held then missed stays fresh (C1)", COV,
      '    if not measured or outcome(measured[-1]) != BAD[measured[-1]["kind"]]:\n',
      "    if True:\n"),
     ("M1810", "an unknown detection taken for a miss: a run that measured nothing regresses (C1)", COV,
