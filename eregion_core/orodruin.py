@@ -711,7 +711,8 @@ def arm(run_id: str, injector: str, verdict: Verdict | None = None,
 def kill(revoke: Callable[[], None], cancel: Callable[[], None], stop: Callable[[], None],
          close: Callable[[], None], *, disable_start: Callable[[], None] | None = None,
          remove_permit: Callable[[], None] | None = None,
-         disarm: Callable[[], None] | None = None) -> list[str]:
+         disarm: Callable[[], None] | None = None,
+         revoke_stratus: Callable[[], None] | None = None) -> list[str]:
     """``orodruin-kill``: revoke the identity, cancel the chaos experiments still running,
     stop the VM, close the open exercise windows — in that order. Revoke first, so a
     running injector loses its rights even if the rest drags (a stopped VM keeps its
@@ -723,7 +724,12 @@ def kill(revoke: Callable[[], None], cancel: Callable[[], None], stop: Callable[
     The drill of the week (DRL1, docs/design/drill-banc.md §3.1), by the operator's identity:
     right after the revocation and before the VM is stopped, its scheduled start disabled
     (nothing may wake Orodruin while the kill runs), then its permit removed (an occurrence
-    refuses without it, whenever it comes); last, its pulse written ``disarmed (killed)``."""
+    refuses without it, whenever it comes); last, its pulse written ``disarmed (killed)``.
+
+    ``revoke_stratus`` (R2c, docs/design/stratus-cible.md §1), when a Stratus identity is given:
+    right after Orodruin's own revocation, the operator cuts the Stratus identity's role on its
+    dedicated subscription. Orodruin cannot (there it holds only AUTHZ_READ_ONLY); kill.py tools
+    the operator's gesture. Absent when no Stratus identity is given."""
     failures = []
 
     def run(name: str, step: Callable[[], None] | None) -> None:
@@ -739,6 +745,8 @@ def kill(revoke: Callable[[], None], cancel: Callable[[], None], stop: Callable[
             run("disable_start", disable_start)
             run("remove_permit", remove_permit)
         run(name, step)
+        if name == "revoke":   # R2c: the operator cuts the Stratus identity's role too, on its
+            run("revoke_stratus", revoke_stratus)  # own dedicated subscription (Orodruin cannot)
     run("disarm", disarm)
     return failures
 

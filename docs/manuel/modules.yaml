@@ -1644,6 +1644,16 @@ briques:
     issue: 522
     doc: infra/orodruin/README.md
 
+  - id: o-kill-stratus
+    composant: orodruin
+    poste: o-armer
+    nom: "The kill cuts the Stratus identity's role too, on its own dedicated subscription — the operator's gesture, tooled"
+    etat: main
+    release: "0.6"
+    lots: [R2c]
+    issue: 608
+    doc: docs/design/stratus-cible.md
+
   - id: o-kubernetes
     composant: orodruin
     poste: o-armer

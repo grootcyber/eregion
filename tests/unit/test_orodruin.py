@@ -697,6 +697,33 @@ def test_a_failed_revocation_still_runs_the_rest_and_is_reported():
     assert len(failures) == 1 and failures[0].startswith("revoke:")
 
 
+# ── R2c: the operator cuts the Stratus identity's role too, right after the revocation ──
+
+def test_revoke_stratus_runs_right_after_the_revocation_when_given():
+    """stratus-cible.md §1: the Stratus identity is cut right after Orodruin's own, so a
+    running warmup loses its rights before the rest of the kill drags."""
+    order = []
+    orodruin.kill(*(_step(order, n) for n in ("revoke", "cancel", "stop", "close")),
+                  revoke_stratus=_step(order, "revoke_stratus"))
+    assert order == ["revoke", "revoke_stratus", "cancel", "stop", "close"]
+
+
+def test_revoke_stratus_absent_is_simply_skipped():
+    order = []
+    failures = orodruin.kill(*(_step(order, n) for n in ("revoke", "cancel", "stop", "close")),
+                             revoke_stratus=None)
+    assert order == ["revoke", "cancel", "stop", "close"] and failures == []
+
+
+def test_a_failed_stratus_revocation_still_runs_the_rest_and_is_reported():
+    order = []
+    failures = orodruin.kill(
+        *(_step(order, n) for n in ("revoke", "cancel", "stop", "close")),
+        revoke_stratus=_step(order, "revoke_stratus", RuntimeError("403")))
+    assert order == ["revoke", "revoke_stratus", "cancel", "stop", "close"]
+    assert len(failures) == 1 and failures[0].startswith("revoke_stratus:")
+
+
 # ── The Terraform module (the kill script: test_orodruin_kill.py) ─────────────
 
 import re  # noqa: E402
