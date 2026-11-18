@@ -887,7 +887,7 @@ l'emporte :
 | Code | Refusé quand | Règle |
 |---|---|---|
 | `unknown_experiment` | l'identifiant n'est pas au catalogue | E1 |
-| `not_implemented` | l'entrée est `planned` | E1 |
+| `not_implemented` | l'entrée est `planned` (une entrée `proven`, mesurée au banc, joue comme une `implemented` : `is_ready`, STM1g) | E1 |
 | `wrong_target_type` | la cible n'est pas du type de l'entrée | catalogue |
 | `outside_scope` | hors du périmètre du banc (`Scope.check`) | O0 |
 | `not_enrolled` | `eregion-target` absent, vide ou d'un autre banc ; zone absente, ou en désaccord avec le groupe | O0 (`enrollment`) |
