@@ -10,13 +10,15 @@ restore by the full id, the vault's job by its container (glorfindel/jobs.py, ba
 writes and the writers' lock waited a bounded time, the VM the reassertion skips said (sdk.py,
 glorfindel/reassert.py). M5801–M5820; M5941–M5945 for the review (an earlier version's names on
 the NSG a bare NIC left and for a deleted VM, a name per IPv6 address, the conflict said at the
-release — numbers handed by the Orchestre); M6224 for the second review (the conflict kept on a re-application); M6226–M6235 for the third, Jonathan's decision of 19/11 — an older
-name taken off only when proven: its VM's state records it there, at addresses the placement recorded or
-the NIC holds, no other VM's state recording it; everything else left and said, the undo of a placement
-by its name included. M6221 and M6223 retired with the rule they measured; M6222 too (a deleted VM's
-older pair taken by the search everywhere: its proven case is undone by the placement first, out of
-reach) (« no other live NIC », which
-the listing of NICs can't make whole); M5804, M5942 and M6225 measure the new rule. Measured by tests/unit/test_wide_marks.py,
+release — numbers handed by the Orchestre); M6224 for the second review (the conflict kept on a
+re-application); M6226–M6235 for the third, Jonathan's decision of 19/11 — an older name taken off only
+when proven: its VM's state records it there, at addresses the placement recorded or the NIC holds, no
+other VM's state recording it; everything else left and said, the undo of a placement by its name
+included; M6256–M6260 for the fourth (the promotion's drop, a state unreadable, verify_release on the NSG
+a bare NIC left). Retired: M6221 and M6223 with the rule they measured (« no other live NIC », which the
+listing of NICs can't make whole); M6222, a deleted VM's older pair taken by the search everywhere — its
+proven case is undone by its placement first, out of reach. M5804, M5942 and M6225 measure the new rule.
+Measured by tests/unit/test_wide_marks.py,
 tests/unit/test_full_id_keys.py and the frozen two hosts of tests/unit/test_invariant_regressions.py."""
 NSG = "glorfindel/providers/azure/nsg.py"
 REL = "glorfindel/providers/azure/release.py"
@@ -33,6 +35,7 @@ JOBS = "glorfindel/jobs.py"
 AWY = "glorfindel/providers/azure/away.py"
 GON = "glorfindel/providers/azure/gone.py"
 UNB = "glorfindel/providers/azure/unblock.py"
+PER = "glorfindel/providers/azure/perimeter.py"
 NET = "glorfindel/providers/azure/network.py"
 OLD = "glorfindel/providers/azure/older_names.py"
 VER = "glorfindel/providers/azure/verify.py"
@@ -136,15 +139,37 @@ MUTANTS = [
      "            unknown += [f'{t[\"nic_short\"]}:{_rule_name(r)} (nom d\\'une version antérieure, sur {t[\"nsg_name\"]}, '\n",
      "            unknown += [] and [f'{t[\"nic_short\"]}:{_rule_name(r)} (nom d\\'une version antérieure, sur {t[\"nsg_name\"]}, '\n"),
     ("M6232", "the release leaves an older rule unsaid: « released » with it there (SEC-H, review 3)", REL,
-     '                failed += [older_left(t["nsg_rg"], t["nsg_name"], r, t["nic_short"], "levée non vérifiée")\n',
-     '                failed += [] and [older_left(t["nsg_rg"], t["nsg_name"], r, t["nic_short"], "levée non vérifiée")\n'),
+     '                failed += [older_left(t["nsg_rg"], t["nsg_name"], r, t["nic_short"], "levée non vérifiée", recorded)\n',
+     '                failed += [] and [older_left(t["nsg_rg"], t["nsg_name"], r, t["nic_short"], "levée non vérifiée", '
+     'recorded)\n'),
     ("M6233", "the reset leaves an older rule unsaid: « swept » with it there (SEC-H, review 3)", SWP,
-     '                    unreadable.append(older_left(t["nsg_rg"], t["nsg_name"], r, t["nic_short"], "reset non vérifié"))\n',
+     '                    unreadable.append(older_left(t["nsg_rg"], t["nsg_name"], r, t["nic_short"], "reset non vérifié",\n'
+     "                                                  recorded))\n",
      "                    pass\n"),
     ("M6234", "the unblock leaves an older rule unsaid: « unblocked » with it there (SEC-H, review 3)", UNB,
      "                    if not mine and name.lower() in older:\n", "                    if False:\n"),
     ("M6235", "a deleted VM's older pair taken off unproven (SEC-H, review 3)", GON,
      "                    if not older_taken(r, n_rg, n_name, nid, (), recorded):\n", "                    if False:\n"),
+    ("M6256", "a promotion to the perimeter drops an older placement by its name whatever the rule became "
+     "(SEC-H, review 4)", PER,
+     "            said = [w for n in names if (w := older_undo_refusal(self._network, nsg_rg, nsg_name, n, nic, short,\n",
+     "            said = [w for n in names if False and (w := older_undo_refusal(self._network, nsg_rg, nsg_name, n, nic,"
+     " short,\n"),
+    ("M6257", "a local state that can't be read read as recording nothing: an older name taken off (SEC-H, review 4)",
+     OLD, "    if placed.get(_UNREAD):\n        return False", "    if False:\n        return False"),
+    ("M6258", "verify_release blind to the NSG a bare NIC left: « verified » with an older pair there (SEC-H, "
+     "review 4)", VER,
+     "        still += [f\"{n_rg}/{n_name}/{name} (sur un NSG qu'une carte nue ne porte plus)\" for n_rg, n_name, name "
+     "in off]\n        unknown += said\n",
+     "        still += []\n        unknown += []\n"),
+    ("M6259", "the promotion judges without the block's entries: its own proven older pair kept for ever (SEC-H, "
+     "review 4)", PER,
+     "        placed = recorded_names({}, _load_block_entries(resource_id) if resource_id else [], resource_id)\n",
+     "        placed = recorded_names({}, [], resource_id)\n"),
+    ("M6260", "the VM's own placements counted as another VM's: none of its older names ever taken off (SEC-H, "
+     "review 4)", OLD,
+     '        if not mine or str(e.get("resource_id") or "").rstrip("/").lower() == mine:\n',
+     '        if not mine or str(e.get("resource_id") or "").rstrip("/").lower() == "-":\n'),
 ]
 TESTS = {
     "M5801": f"{_W}::test_the_two_nics_meet_on_the_older_mark_never_on_ours "
@@ -187,4 +212,9 @@ TESTS = {
     "M6233": f"{_W}::test_a_rule_rewritten_under_its_older_name_at_other_addresses_stays",
     "M6234": f"{_W}::test_a_block_under_the_older_names_its_state_lost_is_left_and_said",
     "M6235": f"{_W}::test_a_gone_vms_older_pair_its_record_rewritten_is_left_and_said",
+    "M6256": f"{_W}::test_a_promotion_never_drops_a_homonyms_pair_written_over_its_own",
+    "M6257": f"{_W}::test_another_vms_unreadable_state_keeps_every_older_name",
+    "M6258": f"{_W}::test_verify_release_reads_the_nsg_a_bare_nic_left",
+    "M6259": f"{_W}::test_a_promotion_drops_its_own_older_pair",
+    "M6260": f"{_W}::test_an_isolation_under_the_older_names_is_verified_then_lifted",
 }

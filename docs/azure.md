@@ -180,9 +180,13 @@ sa levée :
   le hash a rencontré le sien, la règle n'est plus celle du placement. Rien ne se déduit d'Azure : deux VM de deux
   VNet ont souvent la même adresse privée, et les cartes d'un groupe identique (VMSS) ne sont pas listées ;
 - **tout le reste est laissé et dit**, sur toutes les voies — la levée (`release_partial`), le `reset`
-  (`swept_partial`), le déblocage (`unblock_partial`), la vérification de la levée (inconnue, jamais vraie), le NSG
+  (`swept_partial`), le déblocage (`unblock_partial`), la promotion d'un blocage en périmètre (la paire gardée
+  entière), la vérification de la levée (inconnue, jamais vraie, sur les NSG qu'elle lit : ceux que la carte
+  porte, ceux qu'elle a quittés, et, pour une carte laissée nue, ceux de l'abonnement comme la levée), le NSG
   qu'une carte laissée nue ne porte plus, une VM supprimée —, avec la commande qui la retire à la main
-  (`az network nsg rule delete …`). La règle d'un homonyme n'est jamais retirée par la levée d'un autre ;
+  (`az network nsg rule delete …`). La règle d'un homonyme n'est jamais retirée par la levée d'un autre . Un état local illisible
+  (d'une autre VM comprise) suspend tout retrait d'un ancien nom, dit « état local illisible » : ce qu'il enregistre
+  est inconnu, jamais « rien » ;
 - **ce que cela coûte, pendant la transition** : une isolation ou un blocage d'une version antérieure dont l'état
   local est perdu (ou réécrit depuis sans ses anciens noms) n'est plus levé seul — il est dit, et retiré à la main ;
   les deux homonymes dont le hash s'est rencontré retiennent chacun la levée de l'autre tant que leurs règles

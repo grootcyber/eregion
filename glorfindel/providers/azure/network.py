@@ -383,10 +383,11 @@ class NetworkMixin:
     def _older_rule_bases(self, prefix: str, vm_name: str, nic_short: str, nic_id: str) -> tuple[str, str]:
         """The NIC's two bases as an earlier version wrote them, ended by 6 or 8 hex of SHA-1
         (SEC-H): read, never written again. Two NICs met on them, so they are older names —
-        a rule under one is this NIC's only when the state records it there, or when it is
-        a deny that applies to the NIC (`_nic_owns`), never by the name alone. Placed
-        before the upgrade, a pair under them is undone through its state's placement, and
-        an isolation or a block written again goes under the new names."""
+        a rule under one is taken off only when proven the NIC's (older_names.older_taken: its
+        state records it there, at addresses it recorded or the NIC holds, no other state
+        recording it, none unreadable), never by the name alone; anything else is left and said.
+        Placed before the upgrade, a pair under them is undone through its state's placement,
+        and an isolation or a block written again goes under the new names."""
         base = f"{prefix}-{vm_name}-{nic_short}-{_nic_hash(nic_id, 6)}"
         if len(base) + 4 > 80:
             room = max(80 - 4 - len(prefix) - 2 - 8, 1)

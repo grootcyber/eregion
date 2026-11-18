@@ -546,3 +546,70 @@ def test_an_older_rule_widened_to_every_address_stays(world, monkeypatch, wide):
                 r[f"{side}_address_prefix"] = wide
     out = c.sweep_vm_rules(A)
     assert out["status"] != "swept" and len(_ours(f, s_nsg)) == 2, out
+
+
+def test_a_promotion_never_drops_a_homonyms_pair_written_over_its_own(monkeypatch):
+    """The fourth review's case (probe promote): A and B blocked by the earlier version on one NSG, B's
+    pair written over A's; A's block promoted to its subnet's perimeter dropped its placement by the
+    name — B's block went. The rule under it is no longer proven A's: the pair kept whole, said."""
+    monkeypatch.setenv("GLORFINDEL_QUARANTINE_NSG", "0")
+    f = FakeAzure()
+    x = f.add_nsg("rg-hub", "nsg-x")
+    sa = f.add_subnet(A_RG, "vnet-a", "app", f.add_nsg(A_RG, "nsg-sub-a"))
+    sb = f.add_subnet(B_RG, "vnet-b", "app", f.add_nsg(B_RG, "nsg-sub-b"))
+    f.add_vm(A_RG, "web", [{"rg": A_RG, "name": "web-nic", "ips": ["10.0.0.4"], "subnet": sa, "nsg": x}])
+    f.add_vm(B_RG, "web", [{"rg": B_RG, "name": "web-nic", "ips": ["10.1.0.4"], "subnet": sb, "nsg": x}])
+    c = AzureConnector(dry_run=False, read_only=False)
+    c._network, c._compute = f.network, f.compute
+    c._subscription_id = "s"
+    c.recent_changes = lambda *a, **k: []
+    _older_both(c, monkeypatch, "block")
+    b_rules = _glorfindel(f, x)
+    out = c.block_suspicious_ip("203.0.113.7", A, scope="subnet", replace=True)
+    assert "laissée" in str(out), out
+    assert _glorfindel(f, x) == b_rules
+    assert c.verify_block_ip("203.0.113.7", B)["verified"] is True
+
+
+def test_another_vms_unreadable_state_keeps_every_older_name(monkeypatch):
+    """The fourth review's case (probe unread): B's state unreadable — what it records is unknown,
+    never « nothing »: A's release took off the pair both records, and said released. Left, said."""
+    f, c, x = _hub_world(monkeypatch, "10.0.0.4")
+    _older_both(c, monkeypatch)
+    for p in actions._ISOLATION_STATE_DIR.glob("*.json"):
+        if B_RG in p.read_text():
+            p.write_text("{not json")
+    out = c.release_isolation(A)
+    assert out["status"] == "release_partial" and "état local illisible" in " ".join(out["failed"]), out
+    assert len(_glorfindel(f, x)) == 2
+
+
+def test_verify_release_reads_the_nsg_a_bare_nic_left(own_nsg_world, monkeypatch):
+    """A bare NIC, its state lost, an earlier version's pair on the NSG it carried: verify_release read
+    only the NSGs the NIC carries — « verified » with the pair there. It reads that NSG as the release."""
+    f, c, own = own_nsg_world
+    with monkeypatch.context() as m:
+        m.setattr(NetworkMixin, "_placement_rule_base", _older_base)
+        c.isolate_vm(A)
+    f.nics[key(A_NIC)]["nsg"] = None
+    _lose_states()
+    v = c.verify_release(A)
+    assert v["verified"] is not True and "nsg-web-nic" in str(v), v
+
+def test_a_promotion_drops_its_own_older_pair(monkeypatch):
+    """Witness: A alone blocked by the earlier version, its block promoted to its subnet's perimeter —
+    its entry records the pair at A's address: proven, dropped as before."""
+    monkeypatch.setenv("GLORFINDEL_QUARANTINE_NSG", "0")
+    f = FakeAzure()
+    x = f.add_nsg("rg-hub", "nsg-x")
+    sa = f.add_subnet(A_RG, "vnet-a", "app", f.add_nsg(A_RG, "nsg-sub-a"))
+    f.add_vm(A_RG, "web", [{"rg": A_RG, "name": "web-nic", "ips": ["10.0.0.4"], "subnet": sa, "nsg": x}])
+    c = AzureConnector(dry_run=False, read_only=False)
+    c._network, c._compute = f.network, f.compute
+    c._subscription_id = "s"
+    c.recent_changes = lambda *a, **k: []
+    with monkeypatch.context() as m:
+        m.setattr(NetworkMixin, "_placement_rule_base", _older_base)
+        c.block_suspicious_ip("203.0.113.7", A)
+    out = c.block_suspicious_ip("203.0.113.7", A, scope="subnet", replace=True)
+    assert out.get("promoted_from") and not _glorfindel(f, x), out

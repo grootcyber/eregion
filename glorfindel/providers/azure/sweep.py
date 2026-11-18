@@ -159,7 +159,8 @@ class SweepMixin:
                 mine = _nic_owns(r, hashed, owned, t.get("private_ips") or None, older, judge)
                 if not mine and name.lower() in older:
                     seen.add((nsg_key, name.lower()))
-                    unreadable.append(older_left(t["nsg_rg"], t["nsg_name"], r, t["nic_short"], "reset non vérifié"))
+                    unreadable.append(older_left(t["nsg_rg"], t["nsg_name"], r, t["nic_short"], "reset non vérifié",
+                                                  recorded))
                     continue
                 if mine:
                     seen.add((nsg_key, name.lower()))

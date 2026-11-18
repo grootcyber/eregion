@@ -325,6 +325,13 @@ class VerifyMixin:
         away_still, away_unknown = self._out_of_sight_seen(vm_name, targets, state, cache)
         still += away_still
         unknown += away_unknown
+        # A NIC left bare: its rules on the NSG it carried, looked for as the release does (_away_split,
+        # read only — SEC-H): its state lost, the NSG it no longer carries was never read, and an earlier
+        # version's pair left there by the release read « verified ».
+        said, off = self._away_split(vm_name, targets, {}, [t0["nic_id"] for t0 in targets],
+                                     lambda k, name: False, recorded=placed)
+        still += [f"{n_rg}/{n_name}/{name} (sur un NSG qu'une carte nue ne porte plus)" for n_rg, n_name, name in off]
+        unknown += said
         # An older version's single-NSG record names its rules — its state, or kept by a
         # later isolation (I4E): there, whatever the NSG's sharing now (its fixed names only
         # count on a dedicated NSG) — the release deletes them by that record, the

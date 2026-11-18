@@ -3,12 +3,13 @@
 An earlier version ended our names with 6 or 8 hex of SHA-1: NICs named alike in VMs named alike meet
 there, two VMs of two VNets often hold the same private address, and the NICs Azure lists are not all
 of them (a scale set's are not listed): nothing read on Azure proves whose such a rule is. Only what is
-proven is taken off (Jonathan's decision, 19/11) — a rule under an older name goes only when BOTH hold:
-  - the VM's own state records that rule, on that NSG, for that NIC (a placement); and
+proven is taken off (Jonathan's decision, 19/11) — a rule under an older name goes only when the THREE
+hold, and no local state is unreadable (what one holds is unknown: SEC3, as the orphan sweep):
+  - the VM's own state records that rule, on that NSG, for that NIC (a placement);
   - the NIC's side of the rule (its destination inbound, its source outbound) names only addresses
     that placement recorded (`ips`, the address it had then: L26) or that the NIC holds now — each an
-    address, never `*`, a range or a tag.
-  - and no other VM's state records that rule on that NSG: under one name, two VMs' placements meet
+    address, never `*`, a range or a tag;
+  - no other VM's state records that rule on that NSG: under one name, two VMs' placements meet
     (their hash met), and the rule there is either's.
 Anything else is left, and said with the command that takes it off by hand: on every path — the
 release (`release_partial`), the undo of a placement by its name, the reset, the unblock, the
@@ -25,6 +26,7 @@ from glorfindel.providers.azure.sdk import _enum_text
 
 
 _OTHERS = ("others",)
+_UNREAD = ("unread",)
 
 
 def recorded_names(state: dict, blocks: list, resource_id: str = "") -> dict:
@@ -36,6 +38,8 @@ def recorded_names(state: dict, blocks: list, resource_id: str = "") -> dict:
     rid = (resource_id or (state or {}).get("resource_id") or next(
         (e.get("resource_id") for e in blocks or [] if isinstance(e, dict) and e.get("resource_id")), "") or "")
     out[_OTHERS] = _claimed_by_others(str(rid))
+    from glorfindel.response.state import unreadable_states
+    out[_UNREAD] = tuple(unreadable_states())  # another VM's state unread: what it records is unknown
     placements = [p for p in (state or {}).get("placements") or [] if isinstance(p, dict)]
     placements += [p for e in blocks or [] if isinstance(e, dict) for p in e.get("placements") or []
                    if isinstance(p, dict)]
@@ -104,6 +108,8 @@ def older_taken(rule, nsg_rg: str, nsg_name: str, nic_id: str, current_ips, plac
     values = [_address(v) for v in _own_side(rule)]
     if not values:
         return False                       # no address on its side: every address
+    if placed.get(_UNREAD):
+        return False                       # a state that can't be read may record it (SEC3)
     if (k[0], name) in placed.get(_OTHERS, set()):
         return False                       # another VM's state records it there too
     now = {_address(ip) for ip in current_ips or []} - {""}
@@ -115,12 +121,19 @@ def older_judge(nsg_rg: str, nsg_name: str, nic_id: str, current_ips, placed: di
     return lambda rule: older_taken(rule, nsg_rg, nsg_name, nic_id, current_ips, placed)
 
 
-def older_left(nsg_rg: str, nsg_name: str, rule, nic_short: str, unverified: str) -> str:
+def older_left(nsg_rg: str, nsg_name: str, rule, nic_short: str, unverified: str, placed: dict | None = None) -> str:
     """What a rule under an older name left in place says: why, and how to take it off by hand."""
     name = _rule_name(rule)
+    unread = (placed or {}).get(_UNREAD) or ()
+    if unread:
+        more = f" (+{len(unread) - 3})" if len(unread) > 3 else ""
+        why = (f"état local illisible ({', '.join(unread[:3])}{more}) : ce qu'il enregistre est inconnu, peut-être "
+               "cette règle — le réparer ou le retirer à la main, puis relancer")
+    else:
+        why = (f"que l'état de la VM n'enregistre pas pour {nic_short} à ces adresses — rien ne prouve qu'elle "
+               "est la sienne")
     return (f"{nsg_rg}/{nsg_name}/{name} laissée : nom d'une version antérieure (partagé par les cartes dont le "
-            f"hash s'est rencontré), que l'état de la VM n'enregistre pas pour {nic_short} à ces adresses — rien "
-            f"ne prouve qu'elle est la sienne. Si elle l'est : az network nsg rule delete -g {nsg_rg} "
+            f"hash s'est rencontré), {why}. Si elle l'est : az network nsg rule delete -g {nsg_rg} "
             f"--nsg-name {nsg_name} -n {name} ; {unverified}")
 
 
@@ -140,4 +153,4 @@ def older_undo_refusal(network, nsg_rg: str, nsg_name: str, name: str, nic_id: s
         return f"{nsg_rg}/{nsg_name}/{name} : règle d'un nom d'une version antérieure illisible ({str(exc)[:120]}), {unverified}"
     if older_taken(rule, nsg_rg, nsg_name, nic_id, (), placed):
         return ""
-    return older_left(nsg_rg, nsg_name, rule, nic_short, unverified)
+    return older_left(nsg_rg, nsg_name, rule, nic_short, unverified, placed)

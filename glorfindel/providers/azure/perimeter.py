@@ -81,7 +81,7 @@ class PerimeterMixin:
                                 for v in self._nic_nsg_views(t) if v.get("nsg_rg")}]
 
     def _promote(self, prev: dict | None, off_ids: set | None, nic_id: str, nsg: str,
-                 rule_name: str) -> tuple[list[str], list[dict], list[str]]:
+                 rule_name: str, resource_id: str = "") -> tuple[list[str], list[dict], list[str]]:
         """A promotion's drop of the VM block `prev` once the perimeter `rule_name` stands on
         `nsg` (rg/name): (dropped, kept, guarded). Each placement of a NIC behind it goes —
         but each of its two rules asks first the guard every removal by name asks
@@ -95,15 +95,27 @@ class PerimeterMixin:
         either way the placement stays in the state and the unblock reads it again (before,
         swallowed: the rule left on Azure, unknown to the state). `guarded`: what stays, said
         (« …/rule gardée : … », or the delete's error). A NIC off the perimeter (`off_ids`),
-        or unknown (None): kept as before. A legacy single-rule entry: the primary NIC's."""
+        or unknown (None): kept as before. A legacy single-rule entry: the primary NIC's. A rule
+        under an earlier version's name goes only when proven the placement's (older_names,
+        SEC-H): written over since by a homonym whose hash met, the pair stays whole, said."""
         dropped: list[str] = []
         kept: list[dict] = []
         guarded: list[str] = []
         guard: dict = {}
         mates = [x.get("nic_id", "") for x in (prev or {}).get("placements", [])]
 
+        from glorfindel.providers.azure.older_names import older_undo_refusal, recorded_names
+        from glorfindel.response.state import _load_block_entries
+        placed = recorded_names({}, _load_block_entries(resource_id) if resource_id else [], resource_id)
+
         def drops(nsg_rg: str, nsg_name: str, rule: str, nic: str, mates) -> bool:
             names = (rule, f"{rule}-out")
+            short = nic.rstrip("/").rsplit("/", 1)[-1]
+            said = [w for n in names if (w := older_undo_refusal(self._network, nsg_rg, nsg_name, n, nic, short,
+                                                                 placed, "promotion non vérifiée"))]
+            if said:
+                guarded.extend(said)
+                return False
             held = [w for n in names if (w := _held_by_turned(self._network, guard, nsg_rg, nsg_name, n, nic, mates))]
             held = held or next(([e] for n in names if (e := self._delete_rule(nsg_rg, nsg_name, n))), [])
             guarded.extend(held)

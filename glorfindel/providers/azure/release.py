@@ -403,7 +403,7 @@ class ReleaseMixin:
                     continue
                 unproven: list = []
                 own = self._iso_rules_on(vm_name, t, rules, recorded, unproven)
-                failed += [older_left(t["nsg_rg"], t["nsg_name"], r, t["nic_short"], "levée non vérifiée")
+                failed += [older_left(t["nsg_rg"], t["nsg_name"], r, t["nic_short"], "levée non vérifiée", recorded)
                            for r in unproven]
                 for r in own:
                     if (t["nsg_rg"].lower(), t["nsg_name"].lower(), _rule_name(r).lower()) in stuck:

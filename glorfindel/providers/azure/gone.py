@@ -101,8 +101,8 @@ class GoneVmMixin:
                 continue
             names |= {n for b in self._placement_rule_bases(prefix, vm_name, nid.rsplit("/", 1)[-1], nid)
                       for n in (b, f"{b}-out")}
-            # An earlier version's names (SEC-H): this NIC's only when its state records them there, or
-            # as a deny aimed at the addresses its records give it and at no other live NIC (older_names).
+            # An earlier version's names (SEC-H): taken off only when proven this NIC's
+            # (older_names.older_taken), else left and said.
             older.update({n.lower(): nid for b in self._older_rule_bases(prefix, vm_name, nid.rsplit("/", 1)[-1], nid)
                           for n in (b, f"{b}-out")})
         if not names and not older:
@@ -127,7 +127,7 @@ class GoneVmMixin:
                     nid = older[name.lower()]
                     if not older_taken(r, n_rg, n_name, nid, (), recorded):
                         failed.append(older_left(n_rg, n_name, r, f"la carte {nid.rsplit('/', 1)[-1]} de la VM "
-                                                 "supprimée", f"{_GONE_WORDS[act][0]} non vérifiée"))
+                                                 "supprimée", f"{_GONE_WORDS[act][0]} non vérifiée", recorded))
                         continue
                     taken = True
                 if (name.lower() in names or taken) and (n_rg.lower(), n_name.lower(), name.lower()) not in stuck:

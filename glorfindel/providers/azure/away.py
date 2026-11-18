@@ -92,7 +92,7 @@ class AwayRulesMixin:
             view = {**t0, "nsg_rg": q[0], "nsg_name": q[1], "scope": "nic", "shared_nsg": True, "ip_scoped": True}
             unproven: list = []
             own = self._iso_rules_on(vm_name, view, rules, placed, unproven)
-            failed += [older_left(q[0], q[1], r, t0["nic_short"], "levée non vérifiée") for r in unproven]
+            failed += [older_left(q[0], q[1], r, t0["nic_short"], "levée non vérifiée", placed) for r in unproven]
             for r in own:
                 name = _rule_name(r)
                 if (q[0].lower(), q[1].lower(), name.lower()) in stuck:
@@ -185,8 +185,8 @@ class AwayRulesMixin:
                  for t0 in bare}
         names: dict[str, dict] = {}
         # An earlier version's names (6 or 8 hex, SEC-H): shared by NICs whose hash met, so a rule under
-        # one is this NIC's only as a deny aimed at its addresses; any other is said, left — never a
-        # release « verified » with the pair still on the NSG the NIC comes back to.
+        # one is taken off only when proven this NIC's (older_names.older_taken); any other is said,
+        # left — never a release « verified » with the pair still on the NSG the NIC comes back to.
         older: dict[str, dict] = {}
         for t0 in bare:
             for b in self._placement_rule_bases("glorfindel-iso", vm_name, t0["nic_short"], t0["nic_id"]):
@@ -221,7 +221,7 @@ class AwayRulesMixin:
                     if t0 is None or k in views[t0["nic_id"]] or skip(k, name):
                         continue
                     if not older_taken(r, n_rg, n_name, t0["nic_id"], t0.get("private_ips"), recorded or {}):
-                        said.append(older_left(n_rg, n_name, r, t0["nic_short"], unverified))
+                        said.append(older_left(n_rg, n_name, r, t0["nic_short"], unverified, recorded))
                         continue
                 elif k in views[t0["nic_id"]] or skip(k, name):
                     continue

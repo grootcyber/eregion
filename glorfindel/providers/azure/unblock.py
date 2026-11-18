@@ -199,7 +199,7 @@ class UnblockMixin:
                     mine = _nic_owns(r, hashed, names, t.get("private_ips") or None, older, judge)
                     if not mine and name.lower() in older:
                         failed.append(older_left(t["nsg_rg"], t["nsg_name"], r, t["nic_short"],
-                                                 "déblocage non vérifié"))
+                                                 "déblocage non vérifié", recorded))
                         continue
                     if mine:
                         seen.add((t["nsg_rg"].lower(), t["nsg_name"].lower(), name.lower()))
