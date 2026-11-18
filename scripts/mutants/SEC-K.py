@@ -1,6 +1,6 @@
 """SEC-K (#847): .github/CODEOWNERS names the files that a workflow holding a credential runs, and
-nothing else; tests/unit/test_codeowners.py derives them from the workflows. M5741–M5751: the list
-itself (a path dropped, the catch-all back), the job that signs running a script every lot changes,
+nothing else; tests/unit/test_codeowners.py derives them from the workflows. M5741–M5752: the list
+itself (a path dropped, the catch-all back, a directory owned by decision dropped), the job that signs running a script every lot changes,
 and each way the test sees a file — so that it never passes by seeing nothing.
 """
 OWNERS = ".github/CODEOWNERS"
@@ -38,6 +38,8 @@ MUTANTS = [
     ("M5751", "a line taken to cover a path it only begins: /script/ for scripts/ (SEC-K)",
      GUARD, '    return pattern == f"/{rel}" or (pattern.endswith("/") and f"/{rel}/".startswith(pattern))\n',
      '    return f"/{rel}".startswith(pattern.rstrip("/"))\n'),
+    ("M5752", "the bench's Terraform owned by no line: its local-exec runs, unseen in the plan, unapproved (SEC-K)",
+     OWNERS, "/infra/terraform/                       @grootcyber\n", ""),
 ]
 TESTS = {
     "M5741": T + "test_every_file_a_credentialed_job_runs_is_owned",
@@ -51,4 +53,5 @@ TESTS = {
     "M5749": T + "test_a_file_named_after_the_standard_library_next_to_a_script_is_found",
     "M5750": T + "test_a_job_that_checks_nothing_out_runs_nothing_of_the_repository",
     "M5751": T + "test_a_line_covers_its_file_or_what_its_directory_holds",
+    "M5752": T + "test_every_line_owns_a_file_a_credentialed_job_runs",
 }

@@ -21,6 +21,13 @@ the standard library: Python would import it first, from a path no line owns.
 
 Once the maintainer has turned « Require review from Code Owners » on in main's rule, a pull request
 that touches one of these files waits for his approval (docs/design/modele-de-menace.md, §7).
+
+What it does not see:
+- the inputs of an action (`with:`): the Dockerfiles that `docker/build-push-action` builds in the
+  job that signs, and the code they copy into the image, are not read — the image's code is the one
+  a session merges (the threat model's decision « Qui fusionne sur `main` publie une image… »);
+- a module run by its name (`python -m pkg.mod` in a `run:`): only paths are read;
+- the Makefile, left out by decision (18/11): its recipes run with the maintainer's rights.
 """
 from __future__ import annotations
 
@@ -36,8 +43,11 @@ ROOT = Path(__file__).resolve().parents[2]
 CODEOWNERS = ROOT / ".github" / "CODEOWNERS"
 OWNER = "@grootcyber"
 CD = "infra/glorfindel-host/cd/eregion_cd.py"
-# Owned whole by decision (Q3, 15/11), not derived: the CI itself, the canary, the CD of Imladris.
-DECIDED = ("/.github/", "/infra/canary/", "/infra/glorfindel-host/cd/")
+# Owned whole by decision, not derived: the CI itself, the canary, the CD of Imladris (Q3, 15/11);
+# the bench's Terraform (18/11), whose `local-exec` provisioners run with the rights of whoever
+# applies, at `terraform apply`, without showing in the plan (infra/terraform/entra_bench_unit.tf,
+# vm.tf).
+DECIDED = ("/.github/", "/infra/canary/", "/infra/glorfindel-host/cd/", "/infra/terraform/")
 # Read, never run — unless installed (`-r`).
 DATA = {".md", ".txt", ".json", ".yaml", ".yml", ".toml", ".csv", ".hujson"}
 SECRET = re.compile(r"\bsecrets\s*[.\[]|\bgithub\s*\.\s*token\b|\bgithub\s*\[\s*'token'\s*\]")

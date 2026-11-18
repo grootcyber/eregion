@@ -226,7 +226,9 @@ qu'elle n'est pas prête reçoit en plus, du contrôle de préparation, une cart
 ```mermaid
 flowchart LR
     LLM["Réponse du LLM<br/>tool call"] --> P{"décision<br/>lisible ?"}
-    P -->|non| E0["escalade forcée"]
+    P -->|non| F0{"plancher B3a :<br/>les mêmes faits ?"}
+    F0 -->|non| E0["escalade forcée"]
+    F0 -->|"oui"| E0F["escalade forcée<br/>isolate_vm proposée"]
     P -->|oui| F{"plancher B3a :<br/>brute force réussi et root<br/>confirmés sur la VM ?"}
     F -->|"oui : isolate_vm,<br/>quel que soit le modèle"| K{"quelle<br/>action ?"}
     F -->|"non : le choix<br/>du modèle"| K
@@ -255,8 +257,8 @@ flowchart LR
     classDef warn fill:#fbe3e3,stroke:#d64545,color:#7a1f1f
     classDef go fill:#2e9e6a,stroke:#1d6b47,color:#ffffff
     class LLM blue
-    class P,F,K,X,C,S,A,T,R,M,D guard
-    class E0,E1,E2,E3,E4,E5,E6,E7,E8,E9,E10 warn
+    class P,F0,F,K,X,C,S,A,T,R,M,D guard
+    class E0,E0F,E1,E2,E3,E4,E5,E6,E7,E8,E9,E10 warn
     class GO go
 ```
 
@@ -267,8 +269,9 @@ réserves ont été montrées et acceptées.
 **Le plancher B3a, appliqué avant toutes les gardes** (`glorfindel/agent.py`,
 `_root_compromise_floor`) : quand la corrélation a confirmé sur la VM — par cette détection ou par
 celles que son incident garde — un brute force SSH suivi d'une connexion réussie et une élévation
-vers root, l'action devient `isolate_vm`, par-dessus le choix du modèle ; une action qui demande un
-humain (un restore…) reste proposée, sur sa propre carte. Chaque tirage de confirmation est élevé de
+vers root, l'action devient `isolate_vm`, par-dessus le choix du modèle — y compris quand la
+décision du modèle est illisible : elle reste une escalade forcée, qui propose alors `isolate_vm` ;
+une action qui demande un humain (un restore…) reste proposée, sur sa propre carte. Chaque tirage de confirmation est élevé de
 même : l'accord des tirages ne le contredit pas. Les gardes et le mode jugent ensuite l'isolation
 comme celle du modèle : en `human_only`, une carte la propose ; en `non_disruptive`, sur une VM
 prête, elle part seule. Ces deux faits sont lus dans des lignes Syslog que la VM écrit : ce qui

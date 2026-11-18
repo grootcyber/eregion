@@ -436,9 +436,13 @@ administration, ni secrets, ni environnements, ni paquets. Sans *Workflows*, une
 `.github/workflows/` est refusée au push de l'App : Jonathan pousse et fusionne ce changement lui-même.
 Les workflows tiennent les jetons OIDC (publication des images, canari) et les secrets. Sans ce droit,
 une session ne change pas un workflow ; mais elle change et fusionne les fichiers qu'ils exécutent hors
-de `.github/workflows/` (un script de `scripts/`, le canari, le CD d'Imladris). **Ce qui le tient**
-(SEC-K, #847, décision de Jonathan du 15/11) : `.github/CODEOWNERS` nomme chacun de ces fichiers, et
-eux seuls — `tests/unit/test_codeowners.py` les tire des workflows et échoue si l'un manque. Une fois
+de `.github/workflows/` (un script de `scripts/`, le canari, les fichiers du CD d'Imladris). **Ce qui
+le tient** (SEC-K, #847, décisions de Jonathan du 15/11 et du 18/11) : `.github/CODEOWNERS` nomme
+chacun de ces fichiers, plus le Terraform du banc (`infra/terraform/`, ses `local-exec`), et eux
+seuls — `tests/unit/test_codeowners.py` les tire des workflows et échoue si l'un manque. **Pas le
+`Makefile`** (décision du 18/11) : ses recettes tournent avec les droits de Jonathan, dont
+`make imladris-cd-install`, qui pousse `discord.env` sur Imladris et y lance `install.sh` en root ; un
+lot de suivi sortira cette recette dans un script sous `infra/glorfindel-host/cd/`. Une fois
 « Require review from Code Owners » posé sur la règle de `main` (le geste de Jonathan, après la fusion
 de SEC-K : « Les règles du dépôt », plus bas), une PR qui en touche un attend son approbation ; les
 autres fusionnent comme avant. **D'ici ce réglage, rien ne l'impose.** La clé de l'App est lisible par les sessions : elles
@@ -594,7 +598,10 @@ ci-dessous présents dans le ruleset « main »** : sans eux, une PR rouge devie
        pushed** : sans lui, une approbation reste valable pour un commit poussé ensuite. Vérifier, à
        ce réglage, le nombre d'approbations exigé (il reste à 0 pour les autres PR), puis l'essai :
        une PR d'une session qui touche `scripts/retry.sh` dit « Review required », une qui ne touche
-       que `docs/` fusionne sans toi.
+       que `docs/` fusionne sans toi. **Ta propre PR** (un changement de workflow, qui touche
+       `/.github/`) : GitHub ne te laisse pas approuver la tienne ; tu la fusionnes par ta dérogation
+       d'administrateur (« For pull requests only », la case de contournement au moment de fusionner),
+       comme aujourd'hui pour une PR qui ne passe pas une règle.
 
    **Le CD d'Imladris bloque une release sur ces cinq checks**, et sur `publish (glorfindel)`, l'image
    qu'il tire (H1c, #518) : un autre check rouge ou annulé, macOS compris, est dit dans `#deploy`,

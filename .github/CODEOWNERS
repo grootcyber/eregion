@@ -1,6 +1,13 @@
-# Who must approve what (SEC-K, #847; Jonathan's decision of 15/11): the files that a workflow
-# holding a secret, a write permission or an OIDC token runs, and the CD of Imladris — nothing else,
-# so that every other pull request merges as before, without waiting for anyone.
+# Who must approve what (SEC-K, #847; Jonathan's decisions of 15/11 and 18/11): the files that a
+# workflow holding a secret, a write permission or an OIDC token runs, the CD of Imladris, and the
+# bench's Terraform — nothing else, so that every other pull request merges as before, without
+# waiting for anyone.
+#
+# Not here, by decision (18/11): the Makefile. Its recipes run with the maintainer's own rights —
+# `make imladris-cd-install` among them, which copies the CD's files and discord.env to Imladris and
+# runs install.sh there as root. So the CD of Imladris is owned here for its files, not for the
+# recipe that installs them: a follow-up lot moves that recipe into a script under
+# infra/glorfindel-host/cd/, owned with the rest. docs/design/modele-de-menace.md, §7.
 #
 # It holds once the maintainer has turned on « Require review from Code Owners » in main's rule —
 # after this file is merged, never before (with the former `*` line, every pull request would have
@@ -13,7 +20,7 @@
 # the repository it runs (named in a `run:`, a local action, the code of a sparse checkout, a
 # requirements file it installs, what a script imports next to it or a shell script calls next to
 # it), adds what Imladris's CD installs (AGENT_FILES), and fails when one of them has no line here —
-# or when a line owns none of them, but the three directories owned whole. The form it reads: one
+# or when a line owns none of them, but the four directories owned whole (DECIDED in the test). The form it reads: one
 # owner, the maintainer; an anchored path, a file or a directory (a trailing /), no pattern.
 # docs/design/modele-de-menace.md, §6 and §7.
 
@@ -41,3 +48,7 @@
 # The CD of Imladris, and what it installs next to it (AGENT_FILES).
 /infra/glorfindel-host/cd/              @grootcyber
 /infra/glorfindel-host/deploy.sh        @grootcyber
+
+# The bench's Terraform (decision of 18/11): its local-exec provisioners run with the rights of
+# whoever applies, at `terraform apply`, and never show in the plan.
+/infra/terraform/                       @grootcyber
