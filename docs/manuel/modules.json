@@ -1778,6 +1778,18 @@
    "issue": 608
   },
   {
+   "id": "a-stratus-garde-fous-preserves",
+   "composant": "annatar",
+   "poste": "a-attaquer",
+   "nom": "An Orodruin apply never destroys the Stratus guardrails by omission — always-loaded auto.tfvars and a pre-plan guard",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "R2BGb"
+   ],
+   "issue": 897
+  },
+  {
    "id": "a-injecteur-stage",
    "composant": "annatar",
    "poste": "a-attaquer",

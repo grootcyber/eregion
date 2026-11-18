@@ -310,6 +310,25 @@ Imladris en 11 s ; gondolin redémarrée par Chaos Studio. Après le réarmement
 `make gothmog-preflight` avant de relancer une panne.
 Détail : [« L'arrêt d'urgence arrête ce qui tourne »](../../docs/design/orodruin-contract.md).
 
+## Les garde-fous Stratus (R2b, R2BGb)
+
+L'abonnement de test **dédié** de Stratus porte trois garde-fous (R2b) : les limites d'Azure Policy
+(régions, types, SKU, pas d'IP publique sur une NIC), le diagnostic qui remonte son journal d'activité
+au Log Analytics du banc (ce que lit la détection), et un budget. Leurs variables vivent dans
+`infra/orodruin/stratus.auto.tfvars` — copie `stratus.auto.tfvars.example`, renseigne tes valeurs,
+puis mets `stratus_guardrails_enabled = true`. Ce fichier est **ignoré par git** (règle `*.tfvars`) et
+Terraform le charge **de lui-même à chaque plan** (comme `session_drain.auto.tfvars`) : les variables
+sont donc toujours passées.
+
+Pourquoi ce fichier plutôt qu'un export de shell : un `make orodruin-lock` lancé sans ces variables
+voit `count = 0` et **détruit les garde-fous** en silence (incident du 18/11). Avec le fichier, ça
+n'arrive plus. En dernier recours, `scripts/stratus_guard.py` tourne avant `orodruin-plan`/`-up`/
+`-lock` : si l'état Terraform porte des garde-fous Stratus mais que le drapeau est éteint, il refuse
+le plan. Le fichier fait foi sur l'environnement (la précédence de Terraform).
+
+Pour **retirer** volontairement les garde-fous, lance avec `STRATUS_GUARD_ACK=1`. `make orodruin-down`
+les emporte aussi (même état qu'un hôte jetable), sans la garde.
+
 ## À mesurer sur le banc (O1, partie B)
 
 1. ~~L'identité peut-elle lire ses attributions au niveau de l'abonnement avec ses seuls droits

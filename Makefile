@@ -992,6 +992,12 @@ unexport OPERATOR_CIDR
 OPERATOR_CIDR_TARGETS = imladris-plan imladris-up imladris-down orodruin-plan orodruin-up orodruin-lock orodruin-down
 $(OPERATOR_CIDR_TARGETS): export EREGION_OPERATOR_CIDR = $(value OPERATOR_CIDR)
 OPERATOR_CIDR_READ = cidr=$$(python3 scripts/operator_cidr.py) &&
+# R2BGb (#897) : avant tout plan/apply d'Orodruin, refuser de détruire les garde-fous Stratus par
+# omission (l'état porte des ressources de garde-fou + le drapeau est éteint → l'apply les détruirait,
+# aveuglant la détection activity-log du banc). Le script lit l'état et le drapeau effectif
+# (TF_VAR_stratus_guardrails_enabled ou infra/orodruin/stratus.auto.tfvars) ; STRATUS_GUARD_ACK=1 pour
+# un retrait volontaire. Pas sur orodruin-down (démontage délibéré).
+STRATUS_GUARD = python3 scripts/stratus_guard.py &&
 # La coupure des sessions d'Imladris (SEC11, R-03) : infra/glorfindel-host/session_drain.auto.tfvars,
 # que Terraform lit de lui-même à chaque plan — rien à passer ici. De même la neutralisation avant
 # un restore (SEC17) : restore.auto.tfvars (commité) et principals.auto.tfvars (les object
@@ -1453,16 +1459,16 @@ orodruin-watch-principals:
 	  || { echo "✗ WATCH_PRINCIPALS nomme une identité deux fois : rien n'est fait." >&2; exit 1; }
 
 orodruin-plan: orodruin-init orodruin-watch-guard
-	$(OPERATOR_CIDR_READ) $(ORO_TF) plan $(ORO_VARS)
+	$(STRATUS_GUARD) $(OPERATOR_CIDR_READ) $(ORO_TF) plan $(ORO_VARS)
 
 # Premier apply : sortie ouverte, le temps d'installer Docker. Ensuite orodruin-lock.
 # YES=1 : sans confirmation (-auto-approve), pour un lancement non interactif.
 orodruin-up: orodruin-init orodruin-watch-guard
-	$(OPERATOR_CIDR_READ) $(ORO_TF) apply $(ORO_VARS) -var="egress_locked=false"$(if $(YES), -auto-approve)
+	$(STRATUS_GUARD) $(OPERATOR_CIDR_READ) $(ORO_TF) apply $(ORO_VARS) -var="egress_locked=false"$(if $(YES), -auto-approve)
 	@echo "" && echo "  VM prête quand ~/.orodruin-ready existe (make orodruin-ssh) ; puis make orodruin-lock"
 
 orodruin-lock: orodruin-init orodruin-watch-guard
-	$(OPERATOR_CIDR_READ) $(ORO_TF) apply $(ORO_VARS)$(if $(YES), -auto-approve)
+	$(STRATUS_GUARD) $(OPERATOR_CIDR_READ) $(ORO_TF) apply $(ORO_VARS)$(if $(YES), -auto-approve)
 
 # CI3 : l'image d'Annatar que la CI a publiée (publish.yml), jamais construite ici. Sur ce poste :
 # son digest lu sur GHCR pour le commit de REF (un tag, ou un commit de main ; sans REF, le dernier
