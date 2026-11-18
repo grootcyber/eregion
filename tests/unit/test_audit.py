@@ -460,3 +460,113 @@ def test_no_vault_configured_is_a_clear_failure():
     result = _audit_run(RESOURCE_ID, _connector())
     bk = next(ch for ch in result.checks if ch.name == "Backup vault")
     assert bk.status == "fail" and "Aucun coffre" in bk.message
+
+
+# ── SEC-Ib (#910, V-09) : la VM lue par son identifiant, jamais par son nom d'hôte ──────────
+
+from datetime import datetime, timedelta, timezone  # noqa: E402
+
+from . import kql_subset  # noqa: E402
+
+_NOW = datetime(2026, 11, 18, 12, 0, tzinfo=timezone.utc)
+# Made-up identifiers (public repository): the audited VM, and another VM of the same workspace
+# whose host name is the audited VM's name (root on it chose it, or a clone, an Arc machine).
+_OWN = ("/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-example"
+        "/providers/Microsoft.Compute/virtualMachines/vm-example-01")
+_OTHER = ("/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-other"
+          "/providers/Microsoft.Compute/virtualMachines/vm-elsewhere")
+
+
+class _Workspace:
+    """A Log Analytics workspace in memory: each query's row selection (its `where`s) runs as
+    written over the rows (`kql_subset`); its `summarize` is read here — the Perf cadence as
+    one sample every 10 s, the other counts as the number of rows kept."""
+
+    def __init__(self, rows, fail_unattributed=False):
+        self.rows, self.queries, self.fail_unattributed = rows, [], fail_unattributed
+
+    def run_query(self, query, timespan=None):
+        self.queries.append(query)
+        if self.fail_unattributed and "isempty(_ResourceId)" in query:
+            raise RuntimeError("LAW throttled")
+        head, _, tail = query.partition(" | summarize")
+        kept = kql_subset.run(head, self.rows, now=_NOW)
+        if "prev(" in tail:
+            return [{"n": len(kept), "step": 10, "gaps": len(kept) - 1}] if kept else []
+        return [{"n": len(kept), "facilities": ", ".join(sorted({r.get("Facility", "") for r in kept}))}]
+
+
+def _syslog(resource_id, computer="vm-example-01", n=3, facility="authpriv"):
+    return [{"Type": "Syslog", "TimeGenerated": _NOW - timedelta(minutes=5 + i), "Computer": computer,
+             "_ResourceId": resource_id, "Facility": facility} for i in range(n)]
+
+
+def _perf(resource_id, computer="vm-example-01", n=6):
+    return [{"Type": "Perf", "TimeGenerated": _NOW - timedelta(seconds=10 * (i + 1)), "Computer": computer,
+             "_ResourceId": resource_id, "ObjectName": "LogicalDisk", "CounterName": "Disk Write Bytes/sec",
+             "InstanceName": "/"} for i in range(n)]
+
+
+def _both(rows, **kw):
+    from glorfindel.audit import _check_perf_sampling, _check_syslog
+    ws = _Workspace(rows, **kw)
+    return _check_perf_sampling(_OWN, "ws", ws), _check_syslog(_OWN, "ws", ws), ws
+
+
+def test_a_namesake_never_makes_a_blind_vm_present():
+    """V-09: a host of the workspace named like the VM, under another resource id, made the
+    audit say the VM's telemetry present — a blind VM passed for ready. Now it is absent."""
+    perf, syslog, ws = _both(_syslog(_OTHER) + _perf(_OTHER))
+    for check in (perf, syslog):
+        assert check.status == "warn" and check.data == {"present": False}, check
+        assert "aveugle" in check.message and check.fix
+    main = [q for q in ws.queries if "isempty(_ResourceId)" not in q]
+    assert len(main) == 2 and all("Computer" not in q and f'_ResourceId =~ "{_OWN}"' in q for q in main)
+
+
+def test_the_vm_under_its_resource_id_is_present():
+    """The witness: the VM's own rows, its resource id in any case (Azure writes it lowercased
+    in some tables), say it present — and no question is asked about its host name."""
+    perf, syslog, ws = _both(_syslog(_OWN.lower()) + _perf(_OWN.lower()) + _syslog(_OTHER, n=9))
+    assert syslog.status == "ok" and syslog.data["present"] is True and syslog.data["rows"] == 3
+    assert perf.status == "ok" and perf.data == {"present": True, "samples": 6, "step_s": 10}
+    assert not [q for q in ws.queries if "isempty(_ResourceId)" in q]
+
+
+def test_lines_without_a_resource_id_are_told_never_taken_for_the_vm():
+    """SI5 (SEC-I's hypothesis): some agents leave `_ResourceId` empty. Those lines may be the
+    VM's or a namesake's: the VM is absent — the rules route by the resource id only, they are
+    blind for it too — and the lines are counted and said, with what to look at."""
+    perf, syslog, _ = _both(_syslog("", n=4) + _perf("", n=5) + _syslog(_OTHER, n=2))
+    assert syslog.status == "warn" and syslog.data == {"present": False, "unattributed": 4}
+    assert perf.status == "warn" and perf.data == {"present": False, "unattributed": 5}
+    for check in (perf, syslog):
+        assert "sans identifiant de ressource" in check.message and "autre hôte" in check.message
+        assert "_ResourceId" in check.fix
+
+
+def test_a_namesake_under_another_id_is_not_counted_as_unattributed():
+    """Only lines without a resource id are unattributed: a line under another id is another VM."""
+    perf, syslog, _ = _both(_syslog(_OTHER) + _perf(_OTHER) + _syslog("", computer="vm-unrelated"))
+    assert perf.data == {"present": False} and syslog.data == {"present": False}
+    assert "sans identifiant" not in perf.message + syslog.message
+
+
+def test_an_unreadable_reason_leaves_the_vm_absent():
+    """The count of unattributed lines fails: the VM stays absent, its reason unsaid."""
+    perf, syslog, _ = _both(_syslog("") + _perf(""), fail_unattributed=True)
+    assert perf.data == {"present": False} and syslog.data == {"present": False}
+    assert perf.status == syslog.status == "warn"
+
+
+def test_the_rules_are_said_blind_for_a_vm_whose_lines_carry_no_resource_id(monkeypatch):
+    """What the operator reads last: the rules that read Perf and Syslog are blind for it."""
+    from glorfindel import audit
+    ws = _Workspace(_syslog("", n=4) + _perf("", n=5))
+    monkeypatch.setattr("glorfindel.detectors.detector_for", lambda kind, workspace_id: ws)
+    monkeypatch.setattr(audit, "_load_rules", lambda: (_SHIPPED, None))
+    result = audit.run(_OWN, _connector(), vault="rsv-test", workspace_id="ws")
+    cov = next(c for c in result.checks if c.name == "Detection rules")
+    states = {r["name"]: r["state"] for r in cov.data["rules"]}
+    assert states == {"ransomware-disk-write": "blind", "ssh-brute-force": "blind",
+                      "data-exfiltration-blob": "not_vm"}

@@ -1185,6 +1185,15 @@ briques:
     lots: [SEC-K]
     issue: 847
 
+  - id: s-sec-ib
+    composant: socle
+    poste: s-signer
+    nom: "Security hardening"
+    etat: main
+    release: "0.6"
+    lots: [SEC-Ib]
+    issue: 910
+
   - id: s-sec-f
     composant: socle
     poste: s-signer
