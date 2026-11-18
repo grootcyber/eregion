@@ -24,6 +24,11 @@ Azure call, no model call. Mutants M5701–M5720 (scripts/mutants/SEC-F.py) are 
    on; a decision taken whose display fails said as such; the name in `pending`'s `az vm show`
    quoted; the TUI's panels never handing a control character to the terminal. Mutants
    M6271–M6290 (scripts/mutants/SEC-Fc.py).
+7. SEC-Fd (#908), the whole TUI: the RESOURCES panel (a resource's name, a block's IP), the FEED's
+   title and a file of runs/ refused, the restore's confirmation (its moment, its warning, an
+   unreadable vault's error, a point's time), the moment typed and the `revert` command — each
+   with its control characters shown, never handed to the terminal. Mutants M6321–M6330
+   (scripts/mutants/SEC-Fd.py).
 """
 from __future__ import annotations
 
@@ -679,3 +684,133 @@ def test_the_control_the_tui_s_panels_at_normal_values(monkeypatch):
     plain = tui._escalations_renderable(datetime.now(timezone.utc), None, False).renderable.plain
     assert "[ab000001]" in plain and "isolate_vm" in plain and "• look at web" in plain
     assert "glorfindel ack ab000001" in plain and "\\x" not in plain
+
+
+# ── 7. SEC-Fd: the whole TUI — resources, feed, the restore's confirmation ──────────────────────
+
+# An escape sequence a file name can hold (no « / »): a CSI, then a one-byte C1 CSI.
+NAME_ESC = "\x1b[2Jx\x9b"
+_CONTROLS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+
+
+def _never_raw(text: str) -> str:
+    assert not _CONTROLS.search(text), repr(text)
+    return text
+
+
+def test_the_tui_s_resources_never_hand_a_control_character_to_the_terminal(monkeypatch):
+    """A resource's id (its name) and a block's IP, from the state files, each with an escape
+    sequence: shown `\\x1b`, `\\x9b`, never obeyed."""
+    import glorfindel.actions as actions
+    from glorfindel import tui
+    isolated = VM.rsplit("/", 1)[0] + f"/db{NAME_ESC}"
+    monkeypatch.setattr(actions, "active_isolations", lambda: [{"resource_id": isolated}])
+    monkeypatch.setattr(actions, "active_blocks", lambda: [{"resource_id": VM, "ip": f"203.0.113.9{ESC}"}])
+    plain = _never_raw(tui._resources_renderable(datetime.now(timezone.utc)).renderable.plain)
+    assert "db\\x1b[2Jx\\x9b" in plain                                   # the resource's name
+    assert "203.0.113.9\\x1b[2J\\x1b]8;;https://e\\x07x\\x9b" in plain    # the block's IP
+
+
+def test_the_control_the_tui_s_resources_at_normal_values(monkeypatch):
+    import glorfindel.actions as actions
+    from glorfindel import tui
+    monkeypatch.setattr(actions, "active_isolations", lambda: [{"resource_id": VM}])
+    monkeypatch.setattr(actions, "active_blocks", lambda: [{"resource_id": VM, "ip": "203.0.113.9"}])
+    plain = tui._resources_renderable(datetime.now(timezone.utc)).renderable.plain
+    assert plain.startswith("  web\n  🔴 ISOLATED") and "  🟡 BLOCKED   203.0.113.9  " in plain
+    assert "\\x" not in plain
+
+
+def _runs(tmp_path, monkeypatch, name: str) -> None:
+    """runs/ with a run `name`: its signals a regular file, its cycles a link — refused, said."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "runs" / "annatar").mkdir(parents=True)
+    (tmp_path / "runs" / "glorfindel").mkdir()
+    (tmp_path / "runs" / "annatar" / f"{name}_signals.jsonl").write_text(
+        json.dumps({"timestamp": "2026-11-13T10:00:00", "event": "attack_started", "resource_id": VM}) + "\n")
+    (tmp_path / "runs" / "glorfindel" / f"{name}_debug.jsonl").symlink_to(tmp_path / "elsewhere")
+
+
+def test_the_tui_s_feed_never_hands_a_control_character_to_the_terminal(tmp_path, monkeypatch):
+    """A name of runs/, written by another container, with an escape sequence: the FEED's title
+    and the line of a file refused show it `\\x1b`, never obey it — as markup, nor as a control."""
+    from glorfindel import tui
+    _runs(tmp_path, monkeypatch, f"r{NAME_ESC}[bold]")
+    feed = tui._load_feed()
+    refused = _never_raw(Text.from_markup(feed[0]).plain)
+    assert refused == "⚠ r\\x1b[2Jx\\x9b[bold]_debug.jsonl : un lien, jamais suivi — jamais lu"
+    label = tui._current_run_label()
+    title = _never_raw(Text.from_markup(tui._feed_renderable(feed, label).title).plain)
+    assert title == "FEED  r\\x1b[2Jx\\x9b[bold]"
+
+
+def test_the_control_the_tui_s_feed_at_normal_values(tmp_path, monkeypatch):
+    from glorfindel import tui
+    _runs(tmp_path, monkeypatch, "r1")
+    feed = tui._load_feed()
+    assert feed[0] == "[yellow]⚠ r1_debug.jsonl : un lien, jamais suivi — jamais lu[/yellow]"
+    assert tui._feed_renderable(feed, tui._current_run_label()).title == "[bold]FEED[/bold]  [dim]r1[/dim]"
+
+
+def _confirm_panel(**over) -> str:
+    from glorfindel import tui
+    pending = {"esc": _card("cd000002", "restore_from_backup"), "stage": "points",
+               "label": "restore web from backup (~20 min)", "before": "2026-11-13T10:00:00+00:00",
+               "warning": "", "points": [], "points_error": ""}
+    pending.update(over)
+    return tui._restore_panel(pending).renderable.plain
+
+
+def test_the_tui_s_restore_confirmation_never_hands_a_control_character_to_the_terminal():
+    """The moment confirmed, its warning, a point's time (Azure's), an unreadable vault's error —
+    each with an escape sequence: shown `\\x1b`, `\\x9b`, never obeyed."""
+    plain = _never_raw(_confirm_panel(before=f"2026{ESC}", warning=f"late {ESC}",
+                                      points=[{"time": f"2026-11-13{ESC}", "vault_tier": True}]))
+    assert "Before 2026\\x1b[2J\\x1b]8;;https://e\\x07x\\x9b\n" in plain          # the moment
+    assert "⚠ late \\x1b[2J" in plain                                             # its warning
+    assert "  2026-11-13\\x1b[2J\\x1b]8;;https://e\\x07x\\x9b · vault tier  ← restored" in plain
+    plain = _never_raw(_confirm_panel(points_error=f"HttpResponseError: denied {ESC}"))
+    assert "recovery points unreadable: HttpResponseError: denied \\x1b[2J" in plain
+
+
+def test_the_control_the_tui_s_restore_confirmation_at_normal_values():
+    plain = _confirm_panel(warning="a point taken after the attack began",
+                           points=[{"time": "2026-11-13T09:00:00+00:00", "vault_tier": True},
+                                   {"time": "2026-11-12T09:00:00+00:00"}])
+    assert "  Before 2026-11-13T10:00:00+00:00\n  ⚠ a point taken after the attack began\n" in plain
+    assert "  2026-11-13T09:00:00+00:00 · vault tier  ← restored\n  2026-11-12T09:00:00+00:00\n" in plain
+    assert "\\x" not in plain
+    plain = _confirm_panel(points_error="HttpResponseError: denied")
+    assert "  recovery points unreadable: HttpResponseError: denied\n" in plain
+
+
+def test_the_tui_s_moment_typed_never_hands_a_control_character_to_the_terminal():
+    """The moment's field, filled from the card (`proposed_moment`) before the operator types."""
+    from glorfindel import tui
+    pending = {"esc": _card("cd000002", "restore_from_backup"), "stage": "moment",
+               "label": "restore web", "buffer": f"2026{ESC}", "why": "", "error": ""}
+    plain = _never_raw(tui._restore_panel(pending).renderable.plain)
+    assert "2026\\x1b[2J\\x1b]8;;https://e\\x07x\\x9b▌" in plain
+    pending["buffer"] = "2026-11-13T10:00"                # the control, at a normal value
+    assert "before: 2026-11-13T10:00▌\n" in tui._restore_panel(pending).renderable.plain
+
+
+def _revert(monkeypatch, resource_id: str) -> str:
+    from glorfindel import tui
+    monkeypatch.setattr(escalations, "pending", lambda: [_card("ef000003", "release_isolation",
+                                                               escalation_type="verification_failed",
+                                                               resource_id=resource_id)])
+    monkeypatch.setattr(tui, "_last_restore", {})
+    plain = tui._escalations_renderable(datetime.now(timezone.utc), None, False).renderable.plain
+    return next(line for line in plain.splitlines() if "glorfindel revert" in line)
+
+
+def test_the_tui_s_revert_command_never_hands_a_control_character_to_the_terminal(monkeypatch):
+    """A failed verification's card: its `revert` names the VM by `<groupe>/<nom>`, from the card's
+    id — an escape sequence in it shown `\\x1b`, never obeyed."""
+    line = _never_raw(_revert(monkeypatch, VM.replace("/rg/", f"/rg{NAME_ESC}/")))
+    assert line == "    → glorfindel revert 'rg\\x1b[2Jx\\x9b/web' --yes"
+
+
+def test_the_control_the_tui_s_revert_command_at_normal_values(monkeypatch):
+    assert _revert(monkeypatch, VM) == "    → glorfindel revert rg/web --yes"

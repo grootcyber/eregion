@@ -1549,7 +1549,8 @@
    "etat": "main",
    "release": "0.6",
    "lots": [
-    "SEC-Fc"
+    "SEC-Fc",
+    "SEC-Fd"
    ],
    "issue": 907
   },
