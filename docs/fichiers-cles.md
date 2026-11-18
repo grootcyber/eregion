@@ -302,7 +302,7 @@ eregion_console/                → la console d'Eregion (`eregion console`, doc
                           T0 de chaque run confronté comme le rapport de campagne (`t0_confronted`, SEC15) ;
                           `GET /api/indicators`, `GET /api/dagorlad/indicators`
   coverage.py           → C1 : la matrice de couverture — par technique du catalogue et par panne, dernier run,
-                          dernière preuve, état (proven, aging, stale, regressed, unproven, never), évolution sur
+                          dernière preuve, état (fresh, aging, stale, regressed, unproven, never), évolution sur
                           douze semaines ; toute l'histoire des rapports et des cycles ; nourrit la couverture et
                           l'âge de la dernière preuve ; `GET /api/coverage`, `eregion coverage [--json] [--check]`
   follow.py             → DG-c : le suivi en direct d'une demande de Dagorlad — sa phase (écrite, en cours, finie)
