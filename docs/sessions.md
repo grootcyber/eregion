@@ -392,7 +392,8 @@ d'une autre session) ne compte pas. Elle prépare la commande, et Jonathan la la
 - publier une release : brouillon seulement, Jonathan publie (publier redéploie Imladris) ;
 - lancer ou relancer la porte de release (`gh workflow run release-gate.yml --ref main`, « Re-run failed
   jobs ») : l'App n'a qu'*Actions* en lecture (CI6) ;
-- créer, déplacer ou supprimer un tag `v*` : une règle du dépôt les lui réserve (SEC12) ;
+- créer, déplacer ou supprimer un tag : une règle du dépôt les lui réserve (SEC12 ; tous les tags depuis
+  SEC-G, `v*` avant) ;
 - un retour arrière d'Imladris vers une release plus ancienne (`make imladris-cd-rollback TAG=…`) ;
 - une PR qui touche `.github/workflows/` : l'App des sessions n'a pas le droit *Workflows* (décision de Jonathan, 02/11, SEC12) ;
 - `terraform apply` ou un `YES=1`, le plan montré avant ;
@@ -561,14 +562,26 @@ Une fois la bascule vérifiée :
 classique de `main`, sans la remplacer. **Ne retire la protection classique qu'une fois les cinq checks
 ci-dessous présents dans le ruleset « main »** : sans eux, une PR rouge deviendrait fusionnable.
 
-1. **« tags v* » (New tag ruleset).**
+1. **« tags » (New tag ruleset ; créée « tags v* » par SEC12, ruleset 26381272).**
    - Enforcement status : **Active** ;
    - Bypass list : **Repository admin**, mode **Always** (toi seul) ;
-   - Target tags : **Include by pattern** `v*` ;
+   - Target tags : **Include all tags** (`~ALL` dans l'API) — **SEC-G, #848** : étendue de `v*` à tous les
+     tags. Avant, un tag sans « v » (`0.6.2`) n'était couvert par aucune règle : toute identité qui écrit
+     le dépôt, l'App des sessions comprise, pouvait le créer et publier une release dessus. Le geste :
+     Settings → Rules → Rulesets → la règle des tags → Target tags, retirer `v*`, **Add target → Include
+     all tags**, Save ; puis renommer la règle « tags » ;
    - Rules : **Restrict creations**, **Restrict updates**, **Restrict deletions**.
 
    Publier une release crée son tag : tu passes par ta dérogation, l'App est refusée. Une release
-   en brouillon ne crée pas de tag : les sessions en préparent toujours.
+   en brouillon ne crée pas de tag : les sessions en préparent toujours. **Le CD refuse** (SEC-G) un tag
+   qu'aucune règle active ne réserve, et un tag qui n'est pas de la forme `v<semver>` : c'est cette règle,
+   sur tous les tags, qui ferme la publication par l'App. Le CD ne lit pas l'auteur d'une release (décision
+   de Jonathan du 18/11) : GitHub garde pour auteur l'App, qui a créé le brouillon que tu publies.
+
+   **Contrôle, sans jeton** (ce que lit Imladris) : `curl -s https://api.github.com/repos/grootcyber/eregion/rulesets/26381272`
+   montre `"include": ["~ALL"]` sous `conditions.ref_name`, `"enforcement": "active"`, et les trois
+   règles `creation`, `update`, `deletion`. Puis, depuis une session : `git tag 0.0.0-sec-g && git push
+   origin 0.0.0-sec-g` est refusé (« repository rule violations »), puis `git tag -d 0.0.0-sec-g`.
 
    **Si le rôle « Repository admin » n'est pas proposé dans la Bypass list** (le cas possible d'un dépôt
    personnel), n'active pas la règle telle quelle : elle te bloquerait toi-même, et plus aucune release

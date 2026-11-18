@@ -981,13 +981,22 @@ celebrimbor-start:
 # human_only). L'apply demande confirmation (pas d'--auto-approve).
 HOST_TF       := terraform -chdir=infra/glorfindel-host
 HOST_USER     ?= glorfindel
-# Sans OPERATOR_CIDR, ton IP publique du moment, en /32 (seule source SSH autorisée).
-OPERATOR_CIDR ?= $(shell curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null)/32
+# La seule source SSH autorisée vers Imladris et Orodruin : ton adresse publique, en /32 (SEC-G, audit
+# du 13/11, V-40). OPERATOR_CIDR=<ton IP>/32 ; sans lui, lue sur api.ipify.org (un service tiers, dit).
+# L'une comme l'autre passe scripts/operator_cidr.py avant tout plan : une IPv4 publique en /32, jamais
+# une plage, une IPv6, une adresse privée ou réservée — refusée, rien n'est planifié. La valeur va au
+# shell par l'environnement (jamais développée par make), et à terraform par $$cidr : l'adresse
+# n'apparaît pas sur la ligne de la commande.
+OPERATOR_CIDR ?=
+unexport OPERATOR_CIDR
+OPERATOR_CIDR_TARGETS = imladris-plan imladris-up imladris-down orodruin-plan orodruin-up orodruin-lock orodruin-down
+$(OPERATOR_CIDR_TARGETS): export EREGION_OPERATOR_CIDR = $(value OPERATOR_CIDR)
+OPERATOR_CIDR_READ = cidr=$$(python3 scripts/operator_cidr.py) &&
 # La coupure des sessions d'Imladris (SEC11, R-03) : infra/glorfindel-host/session_drain.auto.tfvars,
 # que Terraform lit de lui-même à chaque plan — rien à passer ici. De même la neutralisation avant
 # un restore (SEC17) : restore.auto.tfvars (commité) et principals.auto.tfvars (les object
 # id de la console et du bot, sur le poste seulement, ignoré par git ; la coupure de la console aussi).
-HOST_VARS      = -var-file=../terraform/terraform.tfvars -var="operator_cidr=$(OPERATOR_CIDR)"
+HOST_VARS      = -var-file=../terraform/terraform.tfvars -var="operator_cidr=$$cidr"
 HOST_IP        = $(shell $(HOST_TF) output -no-color -raw public_ip 2>/dev/null | grep -E '^[0-9.]+$$')
 # HOST_SSH_KEY : la clé privée qui va avec admin_ssh_public_key (terraform.tfvars), si ton agent
 # SSH ne la propose pas.
@@ -1037,15 +1046,15 @@ imladris-init:
 	@$(HOST_TF) init
 
 imladris-plan: imladris-init
-	@$(HOST_TF) plan $(HOST_VARS)
+	@$(OPERATOR_CIDR_READ) $(HOST_TF) plan $(HOST_VARS)
 
 # YES=1 : sans confirmation (le plan n'est alors pas relu avant l'apply).
 imladris-up: imladris-init
-	@$(HOST_TF) apply $(HOST_VARS)$(if $(YES), -auto-approve)
+	@$(OPERATOR_CIDR_READ) $(HOST_TF) apply $(HOST_VARS)$(if $(YES), -auto-approve)
 	@echo "" && echo "  Ensuite : make imladris-env (ou copier host.env.example et remplir), make imladris-push"
 
 imladris-down:
-	@$(HOST_TF) destroy $(HOST_VARS)
+	@$(OPERATOR_CIDR_READ) $(HOST_TF) destroy $(HOST_VARS)
 
 # host.env depuis ton environnement (.envrc chargé) : abonnement, clé du modèle, webhook ;
 # jamais de secret Azure (identité managée) ; READ_ONLY=1 et un jeton de la console tiré au sort
@@ -1142,6 +1151,7 @@ imladris-start: imladris-known
 	@test -n "$(HOST_IP)" || { echo "Pas de VM : make imladris-up d'abord"; exit 1; }
 	@case "$(origin REF)" in environment*) echo "REF vient de l'environnement (« $$EREGION_DEPLOY_REF ») : rien n'est déployé. La donner sur la ligne de commande : make imladris-start REF=<tag ou commit>." >&2; exit 1;; esac
 	@test -n "$$EREGION_DEPLOY_REF" || { echo "REF exigée : make imladris-start REF=<tag ou commit> — ce chemin construit sur Imladris, il ne prend jamais « le dernier tag » (le CD déploie la release publiée, vérifiée). Rien n'est déployé." >&2; exit 1; }
+	@case "$$EREGION_DEPLOY_REF" in *[!0-9a-f]*) ;; *) [ $${#EREGION_DEPLOY_REF} -eq 40 ] || { echo "REF « $$EREGION_DEPLOY_REF » : un préfixe de commit — le commit entier (40 caractères) ou un tag v* (SEC-G). Rien n'est déployé." >&2; exit 1; };; esac
 	@case "$$EREGION_DEPLOY_REF" in -*|*[!A-Za-z0-9._-]*) echo "REF invalide : « $$EREGION_DEPLOY_REF » (un tag ou un commit)" >&2; exit 1;; esac
 	@python3 scripts/published_image.py install-cosign
 	@out=$$(python3 scripts/published_image.py proven glorfindel --ref "$$EREGION_DEPLOY_REF" --fetch) \
@@ -1242,6 +1252,10 @@ imladris-url:
 # 12 h. Affiche l'URL avec son jeton, puis tient le tunnel au premier plan (Ctrl+C pour fermer).
 # MOB2 : the guard alone first, before imladris-known (an ssh-keyscan) and $(HOST_IP) (terraform
 # output) — the -go target carries them, and runs the guard again.
+# SEC-G (audit du 13/11, V-35) : comme le tunnel systemd du poste — -F none (aucun ~/.ssh/config lu :
+# ni LocalForward, ni ProxyCommand, ni GatewayPorts glissés), l'écoute fixée sur 127.0.0.1, la clé d'hôte
+# épinglée (HOST_SSH_OPTS : StrictHostKeyChecking=yes, HOST_KNOWN_HOSTS seul) ; 7007 déjà tenu, ssh sort.
+# Sans ~/.ssh/config, la clé vient de l'agent SSH ou de HOST_SSH_KEY.
 imladris-tunnel:
 	@$(CONSOLE_GUARD) $@
 	@$(MAKE) --no-print-directory $@-go
@@ -1252,7 +1266,7 @@ imladris-tunnel-go: imladris-known
 	@if [ -f $(HOST_ENV) ]; then t="$(CONSOLE_TOKEN)"; \
 	 if [ -n "$$t" ]; then echo "  Console → http://localhost:7007/?token=$$t"; else echo "  ⚠ $(NO_CONSOLE_TOKEN)"; fi; \
 	 echo "  (Ctrl+C ferme le tunnel)"; fi
-	@ssh $(HOST_SSH_OPTS) -N -L 7007:127.0.0.1:7007 $(HOST_USER)@$(HOST_IP)
+	@ssh -F none $(HOST_SSH_OPTS) -o GlobalKnownHostsFile=/dev/null -o UpdateHostKeys=no -o ExitOnForwardFailure=yes -N -L 127.0.0.1:7007:127.0.0.1:7007 $(HOST_USER)@$(HOST_IP)
 
 imladris-ssh: imladris-known
 	@$(HOST_SSH)
@@ -1326,7 +1340,7 @@ WATCH_PRINCIPALS ?=
 unexport WATCH_PRINCIPALS
 ORO_GUID       = [0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}
 ORO_WATCH_IDS  = $(if $(value WATCH_PRINCIPALS), -var="watch_principal_ids=$$(printf '%s' "$$EREGION_WATCH_PRINCIPALS" | tr A-F a-f | sed 's/[^,][^,]*/"&"/g; s/.*/[&]/')")
-ORO_VARS       = -var-file=../terraform/terraform.tfvars -var="operator_cidr=$(OPERATOR_CIDR)" -var="watch_principal_id=$(ORO_WATCH_ID)"$(ORO_WATCH_IDS)
+ORO_VARS       = -var-file=../terraform/terraform.tfvars -var="operator_cidr=$$cidr" -var="watch_principal_id=$(ORO_WATCH_ID)"$(ORO_WATCH_IDS)
 orodruin-plan orodruin-up orodruin-lock orodruin-down orodruin-watch-principals: export EREGION_WATCH_PRINCIPALS = $(value WATCH_PRINCIPALS)
 # SEC5 (V-31) : le sous-réseau et l'IP d'Imladris, admis par le pare-feu du compte du canal — dans
 # l'environnement de terraform, jamais sur la ligne affichée (l'id du sous-réseau nomme
@@ -1439,16 +1453,16 @@ orodruin-watch-principals:
 	  || { echo "✗ WATCH_PRINCIPALS nomme une identité deux fois : rien n'est fait." >&2; exit 1; }
 
 orodruin-plan: orodruin-init orodruin-watch-guard
-	$(ORO_TF) plan $(ORO_VARS)
+	$(OPERATOR_CIDR_READ) $(ORO_TF) plan $(ORO_VARS)
 
 # Premier apply : sortie ouverte, le temps d'installer Docker. Ensuite orodruin-lock.
 # YES=1 : sans confirmation (-auto-approve), pour un lancement non interactif.
 orodruin-up: orodruin-init orodruin-watch-guard
-	$(ORO_TF) apply $(ORO_VARS) -var="egress_locked=false"$(if $(YES), -auto-approve)
+	$(OPERATOR_CIDR_READ) $(ORO_TF) apply $(ORO_VARS) -var="egress_locked=false"$(if $(YES), -auto-approve)
 	@echo "" && echo "  VM prête quand ~/.orodruin-ready existe (make orodruin-ssh) ; puis make orodruin-lock"
 
 orodruin-lock: orodruin-init orodruin-watch-guard
-	$(ORO_TF) apply $(ORO_VARS)$(if $(YES), -auto-approve)
+	$(OPERATOR_CIDR_READ) $(ORO_TF) apply $(ORO_VARS)$(if $(YES), -auto-approve)
 
 # CI3 : l'image d'Annatar que la CI a publiée (publish.yml), jamais construite ici. Sur ce poste :
 # son digest lu sur GHCR pour le commit de REF (un tag, ou un commit de main ; sans REF, le dernier
@@ -1899,7 +1913,7 @@ orodruin-exercise: orodruin-exercise-guard $(if $(filter local,$(REQUEST_FROM)),
 # pouls dans son canal : détruits avec elle. Le dire, avant.
 orodruin-down: orodruin-watch-principals
 	@echo "  drill armed: lost, re-arm after up (make orodruin-drill-arm, once Orodruin is back)"
-	$(ORO_TF) destroy $(ORO_VARS)$(if $(YES), -auto-approve)
+	$(OPERATOR_CIDR_READ) $(ORO_TF) destroy $(ORO_VARS)$(if $(YES), -auto-approve)
 
 orodruin-ssh: orodruin-known
 	$(ORO_SSH)
