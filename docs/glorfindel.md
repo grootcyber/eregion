@@ -555,8 +555,10 @@ La carte garde son id complet dans `resource_id`, le signal et les journaux auss
   ligne pour une preuve (`proof`), une alerte pour les autres états du §4.2, rien pour un drill désarmé ou
   pas encore dû. Le texte passe par `chat_text.py` (`drill_watch.bot_message`) ; il ne mentionne que le
   rôle configuré (`DISCORD_PING_ROLE`), et seulement là où le §4.2 met une mention (`missed`, `not_run`,
-  `self_disarmed`, un refus hors `drill_changed`, `no_permit`, `watch`, `busy`, `unknown` deux fois de
-  suite, le canal illisible 8 jours de suite). Le jeton du bot de l'atelier ne vient jamais sur Imladris,
+  `self_disarmed`, un refus hors `drill_changed`, `no_permit`, `watch`, `busy` ; `watch` ou `busy` et
+  `unknown` deux fois de suite, le canal illisible 8 jours de suite). D'une liste du canal qui échoue, il
+  ne dit que le type de l'erreur et son statut HTTP ; un nom de drill qui n'en est pas un n'ouvre aucun
+  fil. Le jeton du bot de l'atelier ne vient jamais sur Imladris,
   et Orodruin n'a toujours aucune sortie vers Discord (décision 4).
 - **Résumé de la semaine** (17/10) : chaque lundi dès 08:00 UTC, le bot poste dans le salon ce que dit `glorfindel report --since 7d` — cartes, jugées, part des isolations/blocages jugés faux, détail par règle, cartes à juger (`_weekly_summary`, une fois par semaine, `bot_weekly.json`).
 - **Boutons après un redémarrage** : le bot retient le message de chaque carte (`~/.glorfindel/bot_messages.json`) et lui rend ses boutons au démarrage (`add_view`), pour les cartes des 14 derniers jours qui attendent encore (V-08, SEC7) : en attente, ou une décision encore à juger — avant, chaque redéploiement laissait les boutons répondre « échec de l'interaction ». Les messages postés avant ce changement ne sont pas connus. **Au clic, la carte est relue** : acquittée (son action, son acquittement, sa commande), déjà jugée (ses verdicts), postée il y a plus de 14 jours, ou dont la VM n'est plus dans la découverte (registre lisible et non vide), le bouton répond « ✓ Carte réglée — … : ce bouton ne lance plus rien » et rien ne part ; le formulaire et la confirmation d'un restore aussi. La même règle grise les boutons à la synchronisation : une carte acquittée garde ses boutons de verdict tant qu'elle n'est pas jugée. Un message posté qui n'est pas réarmé (rien n'y attend, ou sa carte a quitté le registre) reçoit au redémarrage une vue inerte : ses boutons, même affichés actifs, répondent « carte réglée » au lieu de « l'interaction a échoué ».

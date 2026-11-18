@@ -1,7 +1,7 @@
 """DRL1b (#613): the drill of the week on Imladris's side — each occurrence's verdict, the absence
 alarm, the bot's thread (docs/design/drill-banc.md §4.2, §9). glorfindel/drill_watch.py, the pull of
 eregion_core/exercise_channel.py (``pull_drill``), glorfindel/bot.py (``_post_drill``). M5861–M5880,
-measured by tests/unit/test_drill_watch.py. M5861–M5863 are the one §9 gives DRL1b: the absence alarm
+and M6291–M6300 (the second review, round 1), measured by tests/unit/test_drill_watch.py. M5861–M5863 are the one §9 gives DRL1b: the absence alarm
 armed on a drill disarmed, or killed, or on a fingerprint Imladris does not have.
 """
 DW = "glorfindel/drill_watch.py"
@@ -69,8 +69,8 @@ MUTANTS = [
      "        if k in self._drill_posted:\n            return False\n",
      ""),
     ("M5877", "the permit kept from an earlier pull: a permit removed from the channel still seen (DRL1b)", XC,
-     '    permit = {"listed": False, "doc": None, "why": ""}\n',
-     '    permit = before.get("permit") or {"listed": False, "doc": None, "why": ""}\n'),
+     '    permit = {"listed": False, "doc": None, "why": "", "last_listed": str(was.get("last_listed") or "")}\n',
+     '    permit = dict(was) if was else {"listed": False, "doc": None, "why": "", "last_listed": ""}\n'),
     ("M5878", "a listing that fails taken for one that went through: the permit « absent », never « unread » "
      "(DRL1b)", XC,
      '        seen = {"at": at, "listed": False, "why": f"{type(e).__name__}: {e}"[:300],\n',
@@ -82,6 +82,40 @@ MUTANTS = [
     ("M5880", "not_run before two hours after the occurrence's hour (DRL1b)", DW,
      "    if (now - o).total_seconds() < NOT_RUN_AFTER_S:\n",
      "    if False:\n"),
+    # The second review (round 1): M6291–M6300.
+    ("M6291", "the week before's word stands for this occurrence: a drill not run said as last week's result, "
+     "the absence alarm silent (DRL1b)", DW,
+     '    return last if _when(last.get("occurrence")) == _when(v["occurrence"]) else None\n',
+     "    return last\n"),
+    ("M6292", "the status's drill never held to this occurrence (its name, its planned hour) (DRL1b)", DW,
+     '    if not isinstance(drill, dict) or drill.get("name") != v["drill"] or _when(drill.get("occurrence")) != o:\n',
+     "    if False:\n"),
+    ("M6293", "a run without Glorfindel counted as a proof (DRL1b)", DW,
+     '        if run["kind"] != "technique" or run["without_glorfindel"]:\n',
+     '        if run["kind"] != "technique":\n'),
+    ("M6294", "missed only when every run missed: one wire's regression hidden by another's proof (DRL1b)", DW,
+     '    if "missed" in measured:\n',
+     '    if all(m == "missed" for m in measured):\n'),
+    ("M6295", "a permit listed but refused by its reader not said: the judgment breaks on it (DRL1b)", DW,
+     "    if listed and permit is None:\n",
+     "    if False:\n"),
+    ("M6296", "the grace after the permit left never ends: an expired permit, the pulse armed, never says "
+     "« re-arm expected » (DRL1b)", DW,
+     "        if gone is not None and (now - gone).total_seconds() < DISARM_GRACE_S:\n",
+     "        if gone is not None:\n"),
+    ("M6297", "no grace after the permit left: every disarming and every kill alerts « re-arm expected » "
+     "(DRL1b)", DW,
+     "        if gone is not None and (now - gone).total_seconds() < DISARM_GRACE_S:\n",
+     "        if False:\n"),
+    ("M6298", "a pull that stopped believed: its last word stands for ever (DRL1b)", DW,
+     '    if seen["listed"] and (now - pulled).total_seconds() > PULL_STALE_S:\n',
+     "    if False:\n"),
+    ("M6299", "watch and busy never with a mention, however many weeks in a row (DRL1b)", DW,
+     '            return previous == "refused" and previous_code in REFUSED_REPEAT\n',
+     "            return False\n"),
+    ("M6300", "never pulled stays quiet without end (DRL1b)", DW,
+     "        if (now - since).total_seconds() < PULL_STALE_S:\n",
+     "        if True:\n"),
 ]
 TESTS = {
     "M5861": T + "test_drill_changed_on_orodruin_the_occurrence_refused_without_mention_then_rearm",
@@ -104,4 +138,15 @@ TESTS = {
     "M5878": T + "test_a_listing_that_fails_is_unread_never_absent_and_its_first_moment_kept",
     "M5879": T + "test_a_listing_that_fails_is_unread_never_absent_and_its_first_moment_kept",
     "M5880": T + "test_not_run_when_everything_agrees_and_no_status_two_hours_after",
+    "M6291": T + "test_last_weeks_word_never_stands_for_this_occurrence_not_run_after_two_hours",
+    "M6292": T + "test_a_status_of_another_hour_is_unknown_never_a_proof",
+    "M6293": T + "test_a_run_without_glorfindel_is_no_proof",
+    "M6294": T + "test_one_run_missed_among_two_is_missed",
+    "M6295": T + "test_a_permit_listed_but_refused_by_its_reader_is_unknown_said",
+    "M6296": T + "test_the_permit_just_gone_while_drill_json_still_says_armed_is_quiet_a_while",
+    "M6297": T + "test_a_disarming_or_a_kill_seen_by_the_pull_says_nothing_at_any_moment "
+             + T + "test_the_permit_just_gone_while_drill_json_still_says_armed_is_quiet_a_while",
+    "M6298": T + "test_a_pull_that_stopped_is_unread_never_its_last_word",
+    "M6299": T + "test_watch_and_busy_twice_in_a_row_mention",
+    "M6300": T + "test_never_pulled_is_quiet_a_while_then_said_unread",
 }

@@ -57,26 +57,35 @@ class World:
         self.oro = root / "glorfindel" / "orodruin"
         self.oro.mkdir(parents=True)
         self.history: dict = {}
+        self.previous: dict = {}
+        self.pulled_at: datetime | None = None      # None: the last pull is a minute before the judge
+        self._pulse = None
         self.seen()
         self.pulse()
 
     def seen(self, *, listed=True, permit=True, permit_doc=None, permit_why="", pulse_listed=True,
-             pulse_why="", modified=None, unread_since="", why="") -> None:
+             pulse_why="", modified=None, unread_since="", why="", last_listed=None) -> None:
         doc = permit_doc if permit_doc is not None else {"drill": DRILL, "sha256": SHA, "armed_at": ARMED_AT.isoformat()}
-        seen = {"at": (AT + timedelta(hours=1)).isoformat(), "listed": listed, "why": why,
-                "listed_at": "", "unread_since": unread_since,
-                "permit": {"listed": permit, "doc": doc if permit and not permit_why else None, "why": permit_why},
-                "pulse": {"listed": pulse_listed, "why": pulse_why,
-                          "modified": (modified or AT + timedelta(minutes=20)).isoformat()}}
-        (self.oro / xc.SEEN_FILE).write_text(json.dumps(seen))
+        self._seen = {"listed": listed, "why": why, "listed_at": "", "unread_since": unread_since,
+                      "permit": {"listed": permit, "doc": doc if permit and not permit_why else None,
+                                 "why": permit_why, "last_listed": last_listed.isoformat() if last_listed else ""},
+                      "pulse": {"listed": pulse_listed, "why": pulse_why,
+                                "modified": (modified or AT + timedelta(minutes=20)).isoformat()}}
+        self.write(AT + timedelta(hours=1))
 
     def pulse(self, *, state="armed", reason="", sha=SHA, drill=DRILL, last=None, at=None) -> None:
-        doc = da.pulse(state=state, reason=reason, drill=drill, sha256=sha, next_at=(AT + timedelta(days=7)).isoformat(),
-                       last=last, image="commit 0123abc", at=(at or AT + timedelta(minutes=20)).isoformat())
-        (self.oro / xc.PULSE_FILE).write_text(json.dumps(doc))
+        self._pulse = da.pulse(state=state, reason=reason, drill=drill, sha256=sha,
+                               next_at=(AT + timedelta(days=7)).isoformat(), last=last, image="commit 0123abc",
+                               at=(at or AT + timedelta(minutes=20)).isoformat())
+        self.write(AT + timedelta(hours=1))
 
     def no_pulse(self) -> None:
-        (self.oro / xc.PULSE_FILE).unlink()
+        self._pulse = None
+        self.write(AT + timedelta(hours=1))
+
+    def write(self, at: datetime) -> None:
+        seen = {**self._seen, "at": at.isoformat(), "pulse": {**self._seen["pulse"], "doc": self._pulse}}
+        (self.oro / xc.SEEN_FILE).write_text(json.dumps(seen))
 
     @staticmethod
     def last(state="played", code="", occurrence=AT, request=REQ) -> dict:
@@ -108,8 +117,10 @@ class World:
             os.utime(path, (seen_at.timestamp() + 30, seen_at.timestamp() + 30))
 
     def judge(self, now: datetime | None = None, **kw) -> dict:
-        src = dw.Sources(self.root, channel=True, history=self.history, **kw)
-        return dw.judge(src, now or AT + timedelta(hours=4))
+        now = now or AT + timedelta(hours=4)
+        self.write(self.pulled_at or now - timedelta(minutes=1))
+        src = dw.Sources(self.root, channel=True, history=self.history, previous=self.previous, **kw)
+        return dw.judge(src, now)
 
 
 @pytest.fixture
@@ -153,14 +164,16 @@ def test_unknown_without_mention_the_first_time_with_one_two_in_a_row(world):
 
 def test_unknown_twice_in_a_row_across_two_passes_of_the_watch(world, tmp_path):
     world.played(detection="unknown", decision=False)
+    world.write(AT + timedelta(hours=4) - timedelta(minutes=1))
     dw.refresh(world.root, now=AT + timedelta(hours=4), channel=True)
     assert dw.load()["current"]["mention"] is False
     later = AT + timedelta(days=7)
-    world.pulse(last=World.last(occurrence=later), at=later + timedelta(minutes=20))
     world.seen(modified=later + timedelta(minutes=20))
+    world.pulse(last=World.last(occurrence=later), at=later + timedelta(minutes=20))
     doc = json.loads((world.oro / "requests" / f"{REQ}.json").read_text())
     doc["drill"]["occurrence"] = later.isoformat()
     (world.oro / "requests" / f"{REQ}.json").write_text(json.dumps(doc))
+    world.write(later + timedelta(hours=4) - timedelta(minutes=1))
     v = dw.refresh(world.root, now=later + timedelta(hours=4), channel=True)
     assert said(v) == ("unknown", "unknown", True)
     assert dw.load()["history"][AT.isoformat()]["state"] == "unknown"
@@ -368,16 +381,20 @@ def test_the_pull_lists_the_permit_and_keeps_the_pulse(pulled):
     seen = _pull(pulled, _channel())
     assert seen["listed"] is True and seen["permit"]["listed"] is True
     assert seen["permit"]["doc"]["sha256"] == SHA
-    assert seen["pulse"] == {"listed": True, "modified": "2026-11-17T19:20:00+00:00", "why": ""}
-    assert da.read_pulse(json.loads((pulled / xc.PULSE_FILE).read_text()))["state"] == "armed"
+    assert {k: seen["pulse"][k] for k in ("listed", "modified", "why")} == {
+        "listed": True, "modified": "2026-11-17T19:20:00+00:00", "why": ""}
+    assert da.read_pulse(seen["pulse"]["doc"])["state"] == "armed"
+    assert seen["permit"]["last_listed"] == (AT + timedelta(hours=1)).isoformat()
     assert xc.read_seen(pulled) == seen
-    assert not (pulled / "drill-permit.json").exists()          # no copy of the permit is ever kept
+    assert sorted(p.name for p in pulled.iterdir()) == [xc.SEEN_FILE]   # one file; no copy of the permit
 
 
 def test_the_permit_absent_from_the_listing_is_absent_whatever_was_seen_before(pulled):
     _pull(pulled, _channel())
-    seen = _pull(pulled, _channel(names=(xc.DRILL_BLOB,)))
-    assert seen["listed"] is True and seen["permit"] == {"listed": False, "doc": None, "why": ""}
+    seen = _pull(pulled, _channel(names=(xc.DRILL_BLOB,)), now=AT + timedelta(hours=2))
+    assert seen["listed"] is True
+    assert seen["permit"] == {"listed": False, "doc": None, "why": "",
+                              "last_listed": (AT + timedelta(hours=1)).isoformat()}   # when it was last there
 
 
 def test_a_listing_that_fails_is_unread_never_absent_and_its_first_moment_kept(pulled):
@@ -397,7 +414,7 @@ def test_a_permit_or_a_pulse_refused_by_its_reader_is_said(pulled):
     seen = _pull(pulled, _channel(pulse=bad, permit={"drill": DRILL}))
     assert seen["permit"]["listed"] is True and seen["permit"]["doc"] is None and "refused" in seen["permit"]["why"]
     assert seen["pulse"]["listed"] is True and "never holds" in seen["pulse"]["why"]
-    assert da.read_pulse(json.loads((pulled / xc.PULSE_FILE).read_text()))["at"] == (AT + timedelta(minutes=20)).isoformat()
+    assert seen["pulse"]["doc"]["at"] == (AT + timedelta(minutes=20)).isoformat()   # the copy before stays
 
 
 def test_without_a_channel_nothing_is_written(tmp_path, monkeypatch):
@@ -432,6 +449,153 @@ def test_the_drills_listing_failing_is_said_once_while_it_lasts(tmp_path, monkey
     hosted_report.pull_drill(runs, channel=URL, credential=_CRED, get=_channel(), say=said.append)
     hosted_report.pull_drill(runs, channel=URL, credential=_CRED, get=fails, say=said.append)
     assert len(said) == 2                                  # back after a listing that went through
+
+
+# ── The second review (DRL1b, round 1): the guards it found untested, the false alerts ───────
+
+def test_last_weeks_word_never_stands_for_this_occurrence_not_run_after_two_hours(world):
+    """The pulse's ``last`` is the occurrence of a week before, the permit and the pulse agree: Orodruin
+    did not run this one — ``not_run``, never the week before's result."""
+    before = AT - timedelta(days=7)
+    world.seen(modified=before + timedelta(minutes=20),
+               permit_doc={"drill": DRILL, "sha256": SHA, "armed_at": (before - timedelta(days=3)).isoformat()})
+    world.pulse(last=World.last("refused", "busy", occurrence=before), at=before + timedelta(minutes=20))
+    assert world.judge(AT + timedelta(hours=1))["state"] == "waiting"
+    assert said(world.judge(AT + timedelta(hours=2, minutes=1))) == ("not_run", "no_status", True)
+
+
+def test_a_status_of_another_hour_is_unknown_never_a_proof(world):
+    world.played()
+    path = world.oro / "requests" / f"{REQ}.json"
+    doc = json.loads(path.read_text())
+    doc["drill"]["occurrence"] = (AT - timedelta(days=7)).isoformat()
+    path.write_text(json.dumps(doc))
+    assert said(world.judge()) == ("unknown", "status_drill", False)
+
+
+def test_a_run_without_glorfindel_is_no_proof(world):
+    world.played()
+    path = world.root / "glorfindel" / f"{RUN}.json"
+    doc = json.loads(path.read_text())
+    doc["metrics"]["without_glorfindel"] = True
+    path.write_text(json.dumps(doc))
+    assert said(world.judge()) == ("unknown", "unknown", False)
+
+
+def test_one_run_missed_among_two_is_missed(world):
+    world.played()
+    other = "20261117T190500Z-cd34"
+    path = world.oro / "requests" / f"{REQ}.json"
+    doc = json.loads(path.read_text())
+    doc["wires"].append({"rank": 2, "state": "done", "code": "", "runs": [other], "result": "missed"})
+    path.write_text(json.dumps(doc))
+    report = json.loads((world.root / "glorfindel" / f"{RUN}.json").read_text())
+    report["run_id"] = other
+    report["metrics"].update(detection="missed", detection_latency_s=None)
+    (world.root / "glorfindel" / f"{other}.json").write_text(json.dumps(report))
+    assert said(world.judge()) == ("missed", "missed", True)
+
+
+def test_a_permit_listed_but_refused_by_its_reader_is_unknown_said(world):
+    world.seen(permit_why="refused: the permit lacks armed_at")
+    v = world.judge(AT + timedelta(hours=5))
+    assert said(v) == ("unknown", "permit_unread", False) and "lacks armed_at" in v["said"]
+
+
+def test_the_permit_just_gone_while_drill_json_still_says_armed_is_quiet_a_while(world):
+    world.seen(permit=False, last_listed=AT + timedelta(hours=4, minutes=50))
+    v = world.judge(AT + timedelta(hours=5))
+    assert (v["state"], v["code"]) == ("waiting", "disarming") and not dw.alerts(v)
+    assert said(world.judge(AT + timedelta(hours=5, minutes=21))) == ("rearm_expected", "no_permit", False)
+
+
+@pytest.mark.parametrize(("reason", "late"), [("operator", 1), ("killed", 8)])
+def test_a_disarming_or_a_kill_seen_by_the_pull_says_nothing_at_any_moment(pulled, reason, late):
+    """The disarming and the kill remove the permit, then write the pulse — the kill after it closed
+    the windows, minutes later. Every pull between them, judged: never an alert (§4.2)."""
+    root = pulled.parents[1]
+    t = AT + timedelta(minutes=30)
+    armed = da.pulse(state="armed", drill=DRILL, sha256=SHA, at=(AT + timedelta(minutes=20)).isoformat())
+    disarmed = da.pulse(state="disarmed", reason=reason, drill=DRILL, sha256=SHA,
+                        at=(t + timedelta(minutes=late)).isoformat())
+    steps = [(t, _channel(pulse=armed)),                                      # armed
+             (t + timedelta(seconds=30), _channel(names=(xc.DRILL_BLOB,), pulse=armed)),   # the permit removed
+             (t + timedelta(minutes=late, seconds=30), _channel(names=(xc.DRILL_BLOB,), pulse=disarmed))]
+    verdicts = []
+    for when, get in steps:
+        _pull(pulled, get, now=when)
+        verdicts.append(dw.judge(dw.Sources(root, channel=True), when + timedelta(seconds=10)))
+    assert [v["state"] for v in verdicts] == ["waiting", "waiting", "disarmed"]
+    assert not any(dw.alerts(v) for v in verdicts)
+
+
+def test_never_pulled_is_quiet_a_while_then_said_unread(tmp_path):
+    root = tmp_path / "runs"
+    first = dw.judge(dw.Sources(root, channel=True), AT)
+    assert (first["state"], first["code"]) == ("waiting", "not_pulled")
+    v = dw.judge(dw.Sources(root, channel=True, previous=first), AT + timedelta(minutes=16))
+    assert said(v) == ("channel_unread", "not_pulled", False) and v["since"] == AT.isoformat()
+
+
+def test_a_pull_that_stopped_is_unread_never_its_last_word(world):
+    world.played()
+    world.pulled_at = AT + timedelta(hours=1)
+    v = world.judge(AT + timedelta(hours=4))
+    assert said(v) == ("channel_unread", "stale", False)
+
+
+def test_the_unread_said_names_the_error_never_its_text(world):
+    world.seen(listed=False, why="ConnectionError: HTTPSConnectionPool(host='acct.blob.core.windows.net') "
+               "HTTP 503", unread_since=AT.isoformat())
+    v = world.judge(AT + timedelta(hours=1))
+    assert "ConnectionError HTTP 503" in v["said"] and "acct" not in v["said"]
+
+
+@pytest.mark.parametrize("code", dw.REFUSED_REPEAT)
+def test_watch_and_busy_twice_in_a_row_mention(world, code):
+    world.pulse(last=World.last("refused", code))
+    assert said(world.judge()) == ("refused", code, False)
+    world.history[(AT - timedelta(days=7)).isoformat()] = {"state": "refused", "code": "watch"}
+    assert said(world.judge()) == ("refused", code, True)
+
+
+def test_a_second_pass_without_change_reads_nothing_again(world, monkeypatch):
+    world.played()
+    assert world.judge()["state"] == "proof"
+    reads = []
+    real = dw.channel_reader.read_text
+    monkeypatch.setattr(dw.channel_reader, "read_text",
+                        lambda *a, **k: (reads.append(a) if str(a[0]).endswith("_debug.jsonl") else None) or real(*a, **k))
+    assert world.judge()["state"] == "proof"
+    assert reads == []                                      # the cycles not read again
+    (world.root / "glorfindel" / "watch-rule-2_debug.jsonl").write_text("")
+    os.utime(world.root / "glorfindel" / "watch-rule-2_debug.jsonl",
+             (AT.timestamp() + 600, AT.timestamp() + 600))
+    world.judge()
+    assert reads                                            # a cycle file more: measured again
+
+
+def test_the_cycles_read_are_those_the_console_reads(world):
+    """The five fields kept of a cycle (``Sources.cycles``) give C1's ``decision_of`` what the console's
+    own reading gives it (``api._slim_cycle``), line for line."""
+    pytest.importorskip("fastapi")
+    import eregion_console.api as api
+    from eregion_console.indicators import decision_of
+    world.played()
+    other = {"timestamp": (AT + timedelta(minutes=4)).isoformat(), "action": "",
+             "signal": {"event": "detection", "ttp": EXPERIMENT, "timestamp": (AT + timedelta(minutes=4)).isoformat(),
+                        "resource_id": VM}}
+    path = world.root / "glorfindel" / "watch-rule-1_debug.jsonl"
+    path.write_text(path.read_text() + json.dumps(other) + "\n")
+    os.utime(path, (AT.timestamp() + 600, AT.timestamp() + 600))
+    lines = [json.loads(x) for x in path.read_text().splitlines()]
+    console = [c for rec in lines if (c := api._slim_cycle(rec))]
+    ours = dw.Sources(world.root).cycles(AT)
+    run = dw.Sources(world.root).report(RUN)
+    assert decision_of(run, console) == decision_of(run, console) is not None
+    assert {k: decision_of(run, ours)[k] for k in ours[0]} == {k: decision_of(run, console)[k] for k in ours[0]}
+    for field in ("event", "action", "signal_at", "ttp", "resource_id"):
+        assert [c[field] for c in ours] == [c[field] for c in console]
 
 
 # ── The bot: its own thread, its text by chat_text, the mention §4.2 gives ───────────────────
@@ -504,6 +668,12 @@ def test_the_bots_text_passes_by_chat_text(world):
     assert "\\*\\*now\\*\\*" in text and "`x_y`" in text
 
 
+def test_a_store_naming_no_drill_opens_no_thread(world):
+    _store(_verdict(world, drill="../../a thread"))
+    threads: dict = {}
+    assert asyncio.run(_bot(threads)._post_drill(None)) is False and threads == {}
+
+
 def test_the_thread_is_named_after_the_drill():
     pytest.importorskip("discord")
     from glorfindel import bot
@@ -525,6 +695,7 @@ def test_the_console_shows_the_weekly_drill_as_the_watch_judged_it(world):
     pytest.importorskip("fastapi")
     from .console_client import console
     world.played(detection="missed", decision=False)
+    world.write(AT + timedelta(hours=4) - timedelta(minutes=1))
     dw.refresh(world.root, now=AT + timedelta(hours=4), channel=True)
     with console() as c:
         d = c.get("/api/dagorlad/drill").json()

@@ -1105,9 +1105,10 @@ Le code suit les §2.3 et §3.1 dans leur ordre. Ce qui s'en écarte, ou que la 
   - le tirage, `exercise_channel.pull_drill`, appelé par le fil de la watch qui tire le canal
     (`analysis/hosted_report.py`, `tick`), avant les campagnes : une liste à part du préfixe
     `orodruin/drill`, entière ou en erreur ; ce qu'elle a vu dans `runs/glorfindel/orodruin/drill-seen.json`
-    (listée ou non, depuis quand illisible, le permis présent dans la liste et ce qu'il dit, le
-    `Last-Modified` de `drill.json`), le pouls gardé dans `drill.json` à côté. Aucune copie du permis
-    n'est gardée : la liste seule dit qu'il est là ;
+    (listée ou non, depuis quand illisible, le permis présent dans la liste, ce qu'il dit et quand il y
+    était pour la dernière fois, le `Last-Modified` de `drill.json` et sa dernière copie lisible) — **un
+    seul fichier**, écrit d'un coup : le juge ne lit jamais la moitié d'un tirage avec la moitié d'un
+    autre. Aucune copie du permis n'est gardée d'un tirage à l'autre : la liste seule dit qu'il est là ;
   - le jugement, `glorfindel/drill_watch.py` (`judge`, `refresh`), chaque minute dans la passe de la
     watch (`glorfindel/cli.py`, `_judge_drill`), après VP1 ; son magasin, `~/.glorfindel/drill_verdicts.json`
     (le verdict courant et l'état de chaque occurrence, les douze dernières), que lisent le bot et la
@@ -1122,22 +1123,51 @@ Le code suit les §2.3 et §3.1 dans leur ordre. Ce qui s'en écarte, ou que la 
 - **La preuve** est celle de C1 (`eregion_console.indicators.decision_of`), lue sur les cycles de la
   watch : une passerelle déclarée (`scripts/component_check.py`, `CROSSINGS`). Sans la console dans
   l'image, une occurrence détectée reste « non rattachée », puis `unknown`, dite.
-- **Les refus** : sans mention pour `drill_changed`, `no_permit`, et pour `watch` et `busy` (le
-  tableau ne les nomme pas avec mention ; le pouls ne dit pas qui tenait le verrou). Avec mention pour
-  les six du tableau **et pour tout autre code** (`not_eligible`, `over_cap`, ceux du contrat) : le
-  plus prudent. `crashed` (état `failed` du pouls) est `unknown`.
+- **Les refus** : sans mention pour `drill_changed` et `no_permit`. Pour `watch` et `busy`, que le
+  tableau ne nomme ni d'un côté ni de l'autre : sans mention la première fois, **avec mention quand
+  l'occurrence d'avant a été refusée par l'un d'eux aussi** (le pouls ne dit pas qui tenait le verrou).
+  Avec mention pour les six du tableau **et pour tout autre code** (`not_eligible`, `over_cap`, ceux du
+  contrat) : le plus prudent. `crashed` (état `failed` du pouls) est `unknown`.
 - **Les délais choisis** : `not_run` 2 h après l'heure ; « Orodruin silent » au-delà de 8 jours, par le
   `Last-Modified` du canal (l'horloge d'Azure, jamais le mot d'Orodruin) ; une occurrence jouée et pas
   conclue 3 h après l'heure : `unknown` ; un permis présent dont le pouls n'est pas encore lu (l'armement
   écrit le permis, puis le pouls) : 1 h de calme, puis `unknown`. Un pouls écrit avant l'heure de
   l'armement du permis n'est pas son mot.
+- **La grâce du désarmement et du kill** (relecture, tour 1) : tous deux retirent le permis d'abord, et
+  n'écrivent le pouls `disarmed` qu'après (le kill, après avoir fermé les fenêtres : des minutes). Le
+  permis sorti de la liste depuis moins de 30 min (`DISARM_GRACE_S`, par l'heure de sa dernière présence,
+  `permit.last_listed`), le pouls encore `armed` : calme (`waiting disarming`), jamais
+  `rearm_expected` ; au-delà, « réarmement attendu ». Un permis expiré l'était depuis des jours : pas de
+  grâce.
+- **Jamais un calme sans fin** : aucun tirage écrit sur cet hôte, un canal configuré, plus de 15 min
+  (`PULL_STALE_S`) : `channel_unread` (`not_pulled`) ; le dernier tirage plus vieux que 15 min (son fil
+  arrêté) : `channel_unread` (`stale`), jamais son dernier mot. Avec mention au-delà de 8 jours, comme
+  le canal illisible.
+- **Ce qui part dans Discord d'une liste qui a échoué** : le type de l'erreur et son statut HTTP, jamais
+  son texte (il peut nommer le compte de stockage), comme `_error_key`.
+- **Le coût** : les mesures d'une occurrence jouée sont gardées tant que rien de ce sur quoi elles
+  reposent n'a changé (le statut, les rapports, les fichiers de cycles écrits depuis l'heure : leurs
+  versions, lues par `lstat` seul) ; une passe sans changement ne relit aucun fichier de cycles.
 - **Ce qui l'emporte** : canal illisible, puis un pouls ou un permis que cet Imladris refuse (`unknown`,
   §4.1), puis `self_disarmed`, puis le mot de l'occurrence elle-même (le `last` du pouls, à l'heure
   prévue par la copie d'Imladris), puis `rearm_expected`, puis l'alarme.
 - **Pas fait** : « Orodruin behind » (le commit de l'image du pouls comparé à la version d'Imladris,
   §3.2) ; le pouls dit son commit, la ligne de la console le montre, rien ne le compare.
-- **Mutants** M5861–M5880 (`scripts/mutants/DRL1b.py`), dont celui du §9 (M5861–M5863 : l'alarme
-  armée sur un drill désarmé, tué, ou sur une empreinte qu'Imladris n'a pas).
+- **Mutants** M5861–M5880 et M6291–M6300 (`scripts/mutants/DRL1b.py`), dont celui du §9
+  (M5861–M5863 : l'alarme armée sur un drill désarmé, tué, ou sur une empreinte qu'Imladris n'a pas).
+
+**Questions ouvertes, à trancher par Jonathan** (le code a pris le parti qui alerte) :
+1. **`watch` et `busy` deux semaines de suite**, avec mention ? Le code dit oui : un refus `watch` qui
+   revient chaque semaine dit qu'aucune watch vivante n'est vue à l'heure du drill, et ne doit pas
+   rester calme. L'autre parti : jamais de mention pour eux, comme `drill_changed`.
+2. **Un pouls `disarmed` de raison `drill_changed`, le permis encore présent.** Le code ne le prend pas
+   pour `self_disarmed` (avec mention) : c'est ce qu'Orodruin écrit de bonne foi quand une release a
+   changé le drill sans réarmement, et le permis reste alors dans le canal. Il dit `refused drill_changed`
+   pour l'occurrence de l'heure, sinon `rearm_expected`, **sans mention**. Ce qu'un Orodruin compromis
+   en fait : en écrivant ce pouls-là au lieu d'un `disarmed operator`, il fait passer l'alerte de « avec
+   mention » à « sans mention » — il ne peut pas la taire (elle est dite, dans le fil et sur la
+   console), et il n'en a pas besoin pour attaquer (§7). Le comportement est gardé : le changer
+   ferait mentionner chaque release qui change le drill, ce que le §4.2 exclut.
 
 ---
 

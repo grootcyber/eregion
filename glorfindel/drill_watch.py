@@ -11,7 +11,8 @@ what the console shows (« Weekly drill »).
   ``runs/glorfindel/orodruin/drill-seen.json``) — there or not, and what it said then; never a copy
   kept from an earlier pull, and never what ``drill.json`` says;
 - **the pulse** (``drill.json``): its last copy that read, by its one reader, and when the channel
-  last wrote it (its ``Last-Modified``, Azure's clock);
+  last wrote it (its ``Last-Modified``, Azure's clock) — in the same file as the permit, written whole
+  by one pull: never half of one pull with half of another;
 - **the occurrence**: Orodruin's status of its request (``runs/glorfindel/orodruin/requests/<id>.json``)
   and the report of each of its runs, the proof as C1 counts it (detected, and the watch's decision
   attached: ``eregion_console.indicators.decision_of``, over the watch's own cycles).
@@ -43,7 +44,6 @@ from pathlib import Path
 
 from eregion_core import channel_reader, run_report, runs_layout
 from eregion_core import drill as dr
-from eregion_core import drill_arming as da
 from eregion_core import exercise_channel as xc
 from eregion_core import exercise_request as xr
 
@@ -53,10 +53,13 @@ STATES = ("proof", "missed", "unknown", "refused", "skipped", "stopped", "not_ru
 QUIET = ("disarmed", "waiting", "off")
 # The states an occurrence ends in, kept by occurrence (``history``): « two unknown in a row ».
 OCCURRENCE_STATES = ("proof", "missed", "unknown", "refused", "skipped", "stopped", "not_run")
-# A refusal said without a mention (§4.2): expected after a release, a kill, a permit expired — and
-# the two the table names without one (the watch's heartbeat, the lock held). Every other code, those
-# §4.2 names with a mention and any other (not_eligible, over_cap, the contract's), with one.
-REFUSED_QUIET = ("drill_changed", "no_permit", "watch", "busy")
+# A refusal said without a mention (§4.2): expected after a release, a kill, a permit expired. The two
+# the table names neither way (the watch's heartbeat, the lock held): without one the first time, with
+# one when the occurrence before was refused by one of them too — the more careful reading, to be
+# confirmed by Jonathan (docs/design/drill-banc.md §13). Every other code, those §4.2 names with a
+# mention and any other (not_eligible, over_cap, the contract's), with one.
+REFUSED_QUIET = ("drill_changed", "no_permit")
+REFUSED_REPEAT = ("watch", "busy")
 REFUSED_MENTION = ("passive", "not_placed", "not_bench", "off_schedule", "too_soon", "permit_mismatch")
 # No status for the occurrence this long after its hour: ``not_run``.
 NOT_RUN_AFTER_S = 2 * 3600
@@ -69,6 +72,13 @@ SETTLE_S = 3 * 3600
 # The permit there, its pulse not read yet (the arming writes the permit, then the pulse): this long
 # without a word, then ``unknown``.
 ARMING_GRACE_S = 3600
+# The permit gone from the listing, the pulse still armed: the disarming and the kill remove the permit
+# first and write the pulse after (the kill, after it closed the windows): this long quiet, then
+# « re-arm expected ».
+DISARM_GRACE_S = 30 * 60
+# The last pull this old, or none at all with a channel configured: the pull no longer says anything
+# (its thread stopped, its file never written) — ``channel_unread``, never a quiet state without end.
+PULL_STALE_S = 15 * 60
 HISTORY = 12
 
 _STORE = Path.home() / ".glorfindel" / "drill_verdicts.json"
@@ -84,14 +94,18 @@ def _when(value) -> datetime | None:
     return at.astimezone(timezone.utc) if at.tzinfo else None
 
 
-def mention(state: str, code: str = "", *, previous: str = "", unread_s: float = 0.0) -> bool:
-    """Whether the alert of this state mentions the role (§4.2) — ``previous``: the state of the
-    occurrence before (``unknown`` twice in a row); ``unread_s``: how long the channel is unread."""
+def mention(state: str, code: str = "", *, previous: str = "", previous_code: str = "",
+            unread_s: float = 0.0) -> bool:
+    """Whether the alert of this state mentions the role (§4.2) — ``previous`` and ``previous_code``:
+    the state and code of the occurrence before (``unknown``, ``watch``, ``busy`` twice in a row);
+    ``unread_s``: how long the channel is unread."""
     if state in ("missed", "not_run", "self_disarmed"):
         return True
     if state == "unknown":
         return previous == "unknown"
     if state == "refused":
+        if code in REFUSED_REPEAT:
+            return previous == "refused" and previous_code in REFUSED_REPEAT
         return code not in REFUSED_QUIET
     if state == "channel_unread":
         return unread_s >= UNREAD_MENTION_S
@@ -108,8 +122,10 @@ class Sources:
     drills_dir: Path | None = None
     channel: bool | None = None
     history: dict = field(default_factory=dict)
+    previous: dict = field(default_factory=dict)    # the verdict of the pass before (the store's)
     _cycles: list | None = None
     _reports: dict | None = None
+    _seen: dict | None = None
 
     @property
     def orodruin(self) -> Path:
@@ -119,14 +135,15 @@ class Sources:
         return bool(xc.channel_url()) if self.channel is None else self.channel
 
     def seen(self) -> dict | None:
-        return xc.read_seen(self.orodruin)
+        """What the last pull saw — one file, read once a pass: the permit and the pulse of one pull."""
+        if self._seen is None:
+            self._seen = xc.read_seen(self.orodruin) or {}
+        return self._seen or None
 
     def pulse(self) -> dict | None:
-        """The pulse's last copy kept here, by its one reader — None when absent or refused."""
-        try:
-            return da.read_pulse(channel_reader.read_json(self.orodruin / xc.PULSE_FILE))
-        except (OSError, ValueError, RecursionError):
-            return None
+        """The pulse's last copy that read, as the last pull kept it — None when there is none."""
+        doc = ((self.seen() or {}).get("pulse") or {}).get("doc")
+        return doc if isinstance(doc, dict) else None
 
     def copy(self, name: str) -> tuple[dr.Drill | None, str]:
         """The drill's copy in this host's image, the shipped layer — never ``drill.find``."""
@@ -211,6 +228,44 @@ class Sources:
             return "unattached"
         return "proof" if decision_of(run, self.cycles(since)) is not None else "unattached"
 
+    def signature(self, request_id: str, runs: list[str], since: datetime) -> tuple:
+        """What the measures of an occurrence stand on, by their files' versions (the status, the run
+        reports, the watch's cycle files written since ``since``) — stat only, nothing read: a pass
+        where none changed measures nothing again (``_MEASURES``)."""
+        def version(path) -> tuple:
+            try:
+                st = os.lstat(path)
+            except OSError:
+                return ()
+            return (st.st_mtime_ns, st.st_size, st.st_ino)
+        if self._reports is None:
+            self._reports = runs_layout.run_reports(self.root)
+        floor = since.timestamp() - 60
+        cycles = []
+        for path in sorted(runs_layout.dir_of(runs_layout.GLORFINDEL, self.root).glob("*_debug.jsonl")):
+            v = version(path)
+            if v and v[0] / 1e9 >= floor:
+                cycles.append((path.name, v))
+        return (str(Path(self.root).absolute()), request_id, since.isoformat(),
+                version(self.orodruin / "requests" / f"{request_id}.json"),
+                tuple((r, str(self._reports.get(r) or ""), version(self._reports[r]) if r in self._reports else ())
+                      for r in runs),
+                tuple(cycles))
+
+    def measures(self, request_id: str, runs: list[str], since: datetime) -> list[str]:
+        """Each run's measure, from the cache while nothing it stands on changed (``signature``)."""
+        sig = self.signature(request_id, runs, since)
+        if sig not in _MEASURES:
+            if len(_MEASURES) >= 32:
+                _MEASURES.clear()
+            _MEASURES[sig] = [self.measure(r, since) for r in runs]
+        return list(_MEASURES[sig])
+
+
+# The measures of an occurrence by what they stand on (``Sources.signature``): the watch judges every
+# minute, all week; the files of the watch's cycles are read again only when one of them changed.
+_MEASURES: dict[tuple, list[str]] = {}
+
 
 # ── The verdict ─────────────────────────────────────────────────────────────────────────────
 
@@ -226,7 +281,7 @@ def judge(src: Sources, now: datetime | None = None) -> dict:
     alert mentions the role, the next occurrence and the arming as this host reads them."""
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     v = {"drill": "", "occurrence": "", "next": "", "state": "off", "code": "", "said": "",
-         "mention": False, "armed": "", "reason": "", "request": "", "image": "", "pulse_at": "",
+         "mention": False, "armed": "", "reason": "", "request": "", "image": "", "pulse_at": "", "since": "",
          "at": now.isoformat()}
 
     def out(state: str, code: str = "", said: str = "", **kw) -> dict:
@@ -250,14 +305,29 @@ def judge(src: Sources, now: datetime | None = None) -> dict:
         v.update(armed=pulse["state"], reason=pulse["reason"], image=pulse["image"],
                  pulse_at=str(((seen or {}).get("pulse") or {}).get("modified") or pulse["at"]))
     if seen is None:
-        return out("waiting", "not_pulled", "the channel not pulled yet on this host")
+        # Never pulled: quiet a while (the watch just started), then said — never a quiet state without end.
+        before = src.previous if src.previous.get("code") == "not_pulled" else {}
+        since = _when(before.get("since")) or now
+        v["since"] = since.isoformat()
+        if (now - since).total_seconds() < PULL_STALE_S:
+            return out("waiting", "not_pulled", "the channel not pulled yet on this host")
+        return out("channel_unread", "not_pulled", f"no pull of the drill's blobs written on this host since "
+                   f"{since.isoformat(timespec='minutes')}: the permit's state is unknown",
+                   mention=mention("channel_unread", unread_s=(now - since).total_seconds()))
 
-    # 1. The listing: unread, the permit's state is unknown — neither not_run nor rearm_expected.
+    # 1. The listing: unread, the permit's state is unknown — neither not_run nor rearm_expected. A last
+    # pull too old says nothing more of the channel than one that failed.
+    pulled = _when(seen["at"]) or now
+    if seen["listed"] and (now - pulled).total_seconds() > PULL_STALE_S:
+        return out("channel_unread", "stale", f"the last pull of the drill's blobs is of "
+                   f"{pulled.isoformat(timespec='minutes')}: the permit's state is unknown",
+                   mention=mention("channel_unread", unread_s=(now - pulled).total_seconds()))
     if not seen["listed"]:
         since = _when(seen["unread_since"]) or now
         unread = (now - since).total_seconds()
         return out("channel_unread", "unread", f"the channel could not be listed since {since.isoformat(timespec='minutes')}"
-                   f" ({seen['why']}): the permit's state is unknown", mention=mention("channel_unread", unread_s=unread))
+                   f" ({_error_said(seen['why'])}): the permit's state is unknown",
+                   mention=mention("channel_unread", unread_s=unread))
     listed = permit_seen.get("listed") is True
     pulse_seen = seen.get("pulse") or {}
     if pulse_seen.get("listed") and pulse_seen.get("why"):   # §4.1: an Imladris older than Orodruin
@@ -291,6 +361,10 @@ def judge(src: Sources, now: datetime | None = None) -> dict:
         if pulse["state"] == "disarmed":
             return out("rearm_expected", "drill_changed", "Orodruin's image holds another drill than the "
                        "one armed: re-arm expected")
+        gone = _when(permit_seen.get("last_listed"))
+        if gone is not None and (now - gone).total_seconds() < DISARM_GRACE_S:
+            return out("waiting", "disarming", "the permit just left the channel: a disarming or a kill "
+                       "writes its pulse after it")
         return out("rearm_expected", "no_permit", "drill.json says armed, no permit in the channel "
                    "(expired, or removed): re-arm expected")
 
@@ -332,15 +406,26 @@ def _own_word(pulse: dict | None, v: dict) -> dict | None:
     return last if _when(last.get("occurrence")) == _when(v["occurrence"]) else None
 
 
-def _previous(src: Sources, v: dict) -> str:
+def _error_said(why: str) -> str:
+    """What a failure to list says outside this host: its type and its HTTP status — never its text,
+    which may name the storage account (as analysis/hosted_report.py ``_error_key``)."""
+    import re
+    kind = re.match(r"[A-Za-z_][A-Za-z0-9_.]*", why or "")
+    status = re.search(r"HTTP \d{3}", why or "")
+    return " ".join(x for x in ((kind.group(0) if kind else "an error"), status.group(0) if status else "") if x)
+
+
+def _previous(src: Sources, v: dict) -> tuple[str, str]:
+    """The state and the code of the occurrence before this one (``history``)."""
     o = _when(v["occurrence"])
     if o is None:
-        return ""
-    return str((src.history.get((o - timedelta(days=7)).isoformat()) or {}).get("state") or "")
+        return "", ""
+    h = src.history.get((o - timedelta(days=7)).isoformat()) or {}
+    return str(h.get("state") or ""), str(h.get("code") or "")
 
 
 def _previous_unknown(src: Sources, v: dict) -> bool:
-    return mention("unknown", previous=_previous(src, v))
+    return mention("unknown", previous=_previous(src, v)[0])
 
 
 def _result(src: Sources, v: dict, last: dict, now: datetime, out) -> dict:
@@ -348,7 +433,9 @@ def _result(src: Sources, v: dict, last: dict, now: datetime, out) -> dict:
     state, code = last["state"], last["code"]
     v["request"] = last["request"]
     if state == "refused":
-        return out("refused", code, f"refused before any call: {code}", mention=mention("refused", code))
+        before, before_code = _previous(src, v)
+        return out("refused", code, f"refused before any call: {code}",
+                   mention=mention("refused", code, previous=before, previous_code=before_code))
     if state == "skipped":
         return out("skipped", code, f"a wire skipped: {code}")
     if state == "stopped":
@@ -377,7 +464,7 @@ def _result(src: Sources, v: dict, last: dict, now: datetime, out) -> dict:
     runs = [r for w in status["wires"] for r in w["runs"]]
     if not runs:
         return pending("no_runs", "its request has no run")
-    measured = [src.measure(r, o) for r in runs]
+    measured = src.measures(last["request"], runs, o)
     if "missed" in measured:
         return out("missed", "missed", "the technique played, no detection: a regression", mention=mention("missed"))
     if all(m == "proof" for m in measured):
@@ -403,7 +490,8 @@ def refresh(root: str | Path = "runs", *, now: datetime | None = None, drills_di
     states kept (``history``, the last ``HISTORY``). Returns the verdict."""
     store = load()
     history = store.get("history") if isinstance(store.get("history"), dict) else {}
-    src = Sources(Path(root), drills_dir, channel, history)
+    current = store.get("current") if isinstance(store.get("current"), dict) else {}
+    src = Sources(Path(root), drills_dir, channel, history, current)
     v = judge(src, now)
     if v["occurrence"] and v["state"] in OCCURRENCE_STATES:
         history[v["occurrence"]] = {"state": v["state"], "code": v["code"]}

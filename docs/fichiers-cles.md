@@ -266,7 +266,8 @@ glorfindel/
                           « drill · <nom> », ~/.glorfindel/bot_drill_posted.json) et la console (« Weekly drill »).
                           Ce qu'Imladris garde du drill, tiré par la watch : runs/glorfindel/orodruin/drill-seen.json
                           (la dernière liste du canal : listée ou non, depuis quand illisible, le permis tel que
-                          la liste le dit) et drill.json (le dernier pouls lu) — aucune copie du permis
+                          la liste le dit et quand il y était pour la dernière fois, le dernier pouls lu), un
+                          seul fichier écrit d'un coup — aucune copie du permis d'un tirage à l'autre
                           (docs/design/drill-banc.md §13)
   signal_origin.py      → SEC3 (#274) : ce que la watch prend de runs/*_signals.jsonl — les événements qu'un
                           injecteur émet (attack_started → la règle de la watch, detection_missed → une proposition),

@@ -153,13 +153,13 @@ def test_the_drill_judged_changes_nothing_glorfindel_tells_the_model(tmp_path, m
     oro = runs / "glorfindel" / "orodruin"
     oro.mkdir(parents=True)
     permit = {"drill": "banc-hebdo", "sha256": sha, "armed_at": "2026-11-10T10:00:00+00:00"}
+    pulse = da.pulse(state="armed", drill="banc-hebdo", sha256=sha, next_at=o.isoformat(), image="abc123",
+                     at="2026-11-12T10:00:00+00:00")
+    pulled = o.replace(hour=21, minute=59).isoformat()
     (oro / xc.SEEN_FILE).write_text(json.dumps({
-        "at": o.isoformat(), "listed": True, "why": "", "listed_at": o.isoformat(), "unread_since": "",
-        "permit": {"listed": True, "doc": permit, "why": ""},
-        "pulse": {"listed": True, "modified": "2026-11-12T10:00:00+00:00", "why": ""}}))
-    (oro / xc.PULSE_FILE).write_text(json.dumps(da.pulse(
-        state="armed", drill="banc-hebdo", sha256=sha, next_at=o.isoformat(), image="abc123",
-        at="2026-11-12T10:00:00+00:00")))
+        "at": pulled, "listed": True, "why": "", "listed_at": pulled, "unread_since": "",
+        "permit": {"listed": True, "doc": permit, "why": "", "last_listed": pulled},
+        "pulse": {"listed": True, "modified": "2026-11-12T10:00:00+00:00", "why": "", "doc": pulse}}))
     v = drill_watch.refresh(runs, now=o.replace(hour=22), channel=True)
     assert (v["state"], v["mention"]) == ("not_run", True)
     assert drill_watch.load()["current"]["state"] == "not_run"

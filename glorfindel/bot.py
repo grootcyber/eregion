@@ -1726,6 +1726,9 @@ class GlorfindelBot(discord.Client):
         v = drill_watch.load().get("current")
         if not isinstance(v, dict) or not drill_watch.alerts(v) or not v.get("drill"):
             return False
+        from eregion_core import drill as dr
+        if not dr.valid_name(v["drill"]):          # a thread's name: a drill's name only, never a store's word
+            return False
         k = drill_watch.key(v)
         if k in self._drill_posted:
             return False
