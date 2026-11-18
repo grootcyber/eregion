@@ -3424,8 +3424,9 @@ MUTANTS += [
     ("M1440", "a race thread that never unwound holds web's lock: the teardown waits behind it (U3F)",
      INVARIANTS, '            if getattr(self, "hung", None):\n', "            if False:\n"),
     ("M1441", "the CI's Linux tests hang without saying where (U3F)", ".github/workflows/ci.yml",
-     "        run: python -m pytest tests/ -q -n 4 --dist load -o faulthandler_timeout=480\n",   # CI10b: 4 processes
-     "        run: python -m pytest tests/ -q -n 4 --dist load\n"),
+     # CI10b: 4 processes; CI12: Azure's machine in the next step
+     "        run: python -m pytest tests/ -q -n 4 --dist load --ignore=tests/unit/test_invariants.py -o faulthandler_timeout=480\n",
+     "        run: python -m pytest tests/ -q -n 4 --dist load --ignore=tests/unit/test_invariants.py\n"),
 ]
 TESTS.update({"M1349": "tests/unit/test_invariant_regressions.py -k reverse_order",
               "M1440": "tests/unit/test_invariant_regressions.py -k out_of_sight_holding",
