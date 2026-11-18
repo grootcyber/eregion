@@ -4,6 +4,7 @@ import json
 import os
 import queue
 import select
+import shlex
 import stat
 import subprocess
 import sys
@@ -12,7 +13,6 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from rich.console import Console
 from rich.layout import Layout
 from rich.live import Live
 from rich.markup import escape as _esc_markup
@@ -20,6 +20,7 @@ from rich.panel import Panel
 from rich.text import Text
 
 from glorfindel.masking import name_said as _name_said, shown as _shown
+from glorfindel.terminal import GlorfindelConsole, outside as _outside
 from glorfindel.vm_command import group_and_name
 
 # What the TUI writes of a card or a signal goes through the CLI's masking (MSK2c, #798; MSK2,
@@ -390,12 +391,17 @@ def _escalations_renderable(
             step = _shown(str(step), e["resource_id"])
             lines.append(f"    • {step[:72]}\n", style="dim")
 
+        # SEC-F (V-22): every argument of a command to copy quoted for the shell — the card's
+        # fields come from its store; the VM by `group_and_name`, quoted already (MSK3b).
+        ack_id = shlex.quote(str(esc_id))
+        before = e.get("first_seen") or e.get("timestamp")
+        before = shlex.quote(str(before)) if before else "<ISO8601>"
         if esc_type in _ANCHORED_TYPES:   # its VM is an anchor: ack only (SEC5, V-35)
-            lines.append(f"    → glorfindel ack {esc_id}\n", style="dim cyan")
+            lines.append(f"    → glorfindel ack {ack_id}\n", style="dim cyan")
         elif action == "restore_from_backup":
             lines.append(
                 f"    → glorfindel restore {vm_arg} --yes --before "
-                f"{e.get('first_seen') or e.get('timestamp') or '<ISO8601>'}  # before the attack began\n",
+                f"{before}  # before the attack began\n",
                 style="dim cyan"
             )
         elif esc_type == "verification_failed":
@@ -403,7 +409,7 @@ def _escalations_renderable(
                 f"    → glorfindel revert {vm_arg} --yes\n", style="dim cyan"
             )
         else:
-            lines.append(f"    → glorfindel ack {esc_id}\n", style="dim cyan")
+            lines.append(f"    → glorfindel ack {ack_id}\n", style="dim cyan")
 
     if len(items) > 4:
         lines.append(
@@ -427,11 +433,13 @@ def _escalations_renderable(
 
 
 def _format_signal(s: dict) -> str:
-    ts = s.get("timestamp", "")[:19].replace("T", " ")
+    """A line of an injector's signals, as markup: every value from the line said as it is — the
+    file is written by another container (SEC-F)."""
+    ts = _outside(str(s.get("timestamp", ""))[:19].replace("T", " "))
     rid = s.get("resource_id", "")
     event = _shown(s.get("event", "unknown"), rid)
-    ttp = _shown(s.get("ttp", ""), rid)
-    resource = _name_said(rid)
+    ttp = _outside(f"{_shown(s.get('ttp', ''), rid):<14}")
+    resource = _outside(_name_said(rid))
     color = {
         "attack_started": "yellow",
         "detection": "green",
@@ -440,19 +448,21 @@ def _format_signal(s: dict) -> str:
         "recovery_failed": "red",
     }.get(event, "white")
     return (
-        f"[dim]{ts}[/dim]  [{color}]{event:<22}[/{color}]"
-        f"  [dim]{ttp:<14}  {resource}[/dim]"
+        f"[dim]{ts}[/dim]  [{color}]{_outside(f'{event:<22}')}[/{color}]"
+        f"  [dim]{ttp}  {resource}[/dim]"
     )
 
 
 def _format_debug(d: dict) -> str:
-    ts = d.get("timestamp", "")[:19].replace("T", " ")
+    """A line of the watch's cycles, as markup: its action is the model's free text, said as it is
+    (SEC-F)."""
+    ts = _outside(str(d.get("timestamp", ""))[:19].replace("T", " "))
     rid = d.get("signal", {}).get("resource_id", "")
     action = _shown(d.get("action", ""), rid)
     confidence = d.get("confidence", 0.0)
     escalate = d.get("escalate", False)
     verified = d.get("outcome", {}).get("verified")
-    ttp = _shown(d.get("signal", {}).get("ttp", ""), rid)
+    ttp = _outside(f"{_shown(d.get('signal', {}).get('ttp', ''), rid):<14}")
     pct = f"{int(confidence * 100)}%"
 
     if escalate:
@@ -465,8 +475,8 @@ def _format_debug(d: dict) -> str:
         icon, color, label = "⚡", "cyan", action
 
     return (
-        f"[dim]{ts}[/dim]  [{color}]{icon} {label:<28}[/{color}]"
-        f"  [dim]{ttp:<14}  {pct}[/dim]"
+        f"[dim]{ts}[/dim]  [{color}]{icon} {_outside(f'{label:<28}')}[/{color}]"
+        f"  [dim]{ttp}  {pct}[/dim]"
     )
 
 
@@ -514,7 +524,9 @@ def _load_feed(max_entries: int = 60) -> list[str]:
         try:
             lines = channel_reader.tail_lines(path)
         except channel_reader.Refused as exc:
-            # A name in runs/ is written by another container: never read as markup (SEC15).
+            # A name in runs/ is written by another container: never read as markup (SEC15) — nor
+            # the reason, which may quote it (SEC-F).
+            exc = _outside(exc)
             refused.append(f"[yellow]⚠ {_esc_markup(path.name)} : {exc} — jamais lu[/yellow]")
             continue
         except OSError:
@@ -535,7 +547,10 @@ def _load_feed(max_entries: int = 60) -> list[str]:
 def _feed_renderable(feed_lines: list[str], run_label: str) -> Panel:
     text = Text(overflow="fold")
     for line in feed_lines:
-        text.append_text(Text.from_markup(line))
+        try:
+            text.append_text(Text.from_markup(line))
+        except Exception:            # never the screen lost for one line: said without markup (SEC-F)
+            text.append(line)
         text.append("\n")
     title = (
         f"[bold]FEED[/bold]  [dim]{_esc_markup(run_label)}[/dim]"
@@ -602,7 +617,7 @@ def run() -> None:
 
     interactive = _start_key_reader()
 
-    console = Console()
+    console = GlorfindelConsole()     # a print never raises on markup (SEC-F)
 
     def _header() -> Text:
         now = datetime.now(timezone.utc)
