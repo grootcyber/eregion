@@ -50,6 +50,13 @@ def discord_code(text) -> str:
     return f"`{_no_mention(s) or '—'}`"
 
 
+def discord_fenced(text) -> str:
+    """A text in Glorfindel's own ``` block (the bot's command to copy): its lines kept, no backtick
+    of its own — the block is never closed early, what follows never let out as Markdown (SEC-F)."""
+    s = ("" if text is None else str(text)).replace("`", "ˋ")
+    return _no_mention(s)
+
+
 def webhook_text(text) -> str:
     """Prose for the webhook (Slack's format): one line, no link nor mention of its own."""
     s = " ".join(("" if text is None else str(text)).split())

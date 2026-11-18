@@ -18,7 +18,8 @@ which the watch does not read), each for what it is:
                     one of Glorfindel's config (`config_workspace`): a line naming another is
                     refused (SEC8).
 
-and, of each, only the fields the injector writes (`_FIELDS`), its durations finite and bounded
+and, of each, only the fields the injector writes (`_FIELDS`), its gravity one of SEVERITIES, its
+signal id and resource type of a bounded form (`form_refusal`, SEC-F), its durations finite and bounded
 (`duration_refusal`), its technique one the watch knows (`known_techniques`: the catalog's, its
 rules' — another is refused, no search and no call to the model; SEC8): a line cannot hand the
 defender a query of its own, an IP to block or an attribution. Anything else —
@@ -71,6 +72,14 @@ _FIELDS = {
 _TOP = ("signal_id", "timestamp", "provider", "resource_id", "resource_type", "ttp", "severity", "event")
 # A run id names files (runs/<run_id>_debug.jsonl): a plain name, never a path.
 _RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
+# SEC-F (#845): the rest of what a line says of itself, of a bounded form — printed by the watch,
+# filed on a card, ranked in a queue. The gravity, one of those the injectors write
+# (eregion_core/signals.py); the signal id, a plain name (« <run_id>_<event> »); the resource
+# type, a plain word (« vm », « azure_vm », « Microsoft.Compute/virtualMachines »). Absent, a
+# field stays absent; present and out of its form, the line is refused.
+SEVERITIES = ("critical", "high", "medium", "low")
+_SIGNAL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,199}")
+_RESOURCE_TYPE = re.compile(r"[A-Za-z][A-Za-z0-9._/-]{0,79}")
 
 _LOCK = threading.Lock()
 _REFUSED: dict[str, int] = {}
@@ -213,6 +222,19 @@ class Admission:
         self.signal, self.what, self.refused, self.dropped = signal, what, refused, list(dropped)
 
 
+def form_refusal(clean: dict) -> str:
+    """Why a line's gravity, signal id or resource type is refused (SEC-F), or "" when each is
+    absent or of its form. Never raises."""
+    severity, sid, rtype = clean.get("severity"), clean.get("signal_id"), clean.get("resource_type")
+    if severity not in (None, "") and severity not in SEVERITIES:
+        return f"gravité hors de la liste ({str(severity)[:20]!r} ; {', '.join(SEVERITIES)})"
+    if sid not in (None, "") and not (isinstance(sid, str) and _SIGNAL_ID.fullmatch(sid)):
+        return f"identifiant de signal hors forme ({str(sid)[:40]!r})"
+    if rtype not in (None, "") and not (isinstance(rtype, str) and _RESOURCE_TYPE.fullmatch(rtype)):
+        return f"type de ressource hors forme ({str(rtype)[:40]!r})"
+    return ""
+
+
 def admit(data: dict, now: float | None = None, known=None, workspaces=None) -> Admission:
     """The line as the watch may take it from runs/, or why it is refused. Never raises.
     `now`: the moment an attack_time is bounded around (default: the clock); `known`: the
@@ -237,6 +259,9 @@ def admit(data: dict, now: float | None = None, known=None, workspaces=None) -> 
         return Admission(None, refused=f"identifiant de run invalide ({str(run_id)[:40]!r})")
     if not isinstance(clean["resource_id"], str):
         return Admission(None, refused="resource_id n'est pas une chaîne")
+    why = form_refusal(clean)
+    if why:
+        return Admission(None, refused=why)
     if event == "attack_started" and "attack_time" in clean["raw_signal"]:
         why = attack_time_refusal(clean["raw_signal"]["attack_time"], now=now)
         if why:
