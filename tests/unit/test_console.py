@@ -732,14 +732,33 @@ def test_no_token_at_all_refuses_everything(runs, monkeypatch):
 
 # ── The cookie: a session, not the token (SEC1) ────────────────────────────────────────
 
+def _session_issued(client, name: str):
+    """``?token=`` on `client`: the response, once its cookie is checked. The cookie is dated by the
+    second the console issued it, read from the cookie itself, never recomputed on the clock after
+    the request — that second may have turned since (FLK3, #900). Its name is `name`, its date lies
+    within the request on the console's clock, its value is the one the token issues for that date,
+    to the byte."""
+    before = int(api.time.time())
+    r = client.get(f"/?token={TOKEN}", follow_redirects=False)
+    after = int(api.time.time())
+    cookie = r.headers["set-cookie"]
+    got, _, rest = cookie.partition("=")
+    value = rest.split(";", 1)[0]
+    parts = value.split(".")
+    assert got == name and len(parts) == 3 and parts[1].isdigit(), cookie
+    assert before <= int(parts[1]) <= after, cookie
+    assert value == api._session(TOKEN, int(parts[1])), cookie
+    return r
+
+
 def test_the_cookie_is_a_session_derived_from_the_token(runs):
     """M1179, M1180: ?token= sets a cookie that is not the token (HttpOnly, SameSite=Strict); the
     token as a cookie, or the session as a bearer, opens nothing."""
     c = console(token=None)
-    r = c.get(f"/?token={TOKEN}", follow_redirects=False)
+    r = _session_issued(c, COOKIE)
     cookie = r.headers["set-cookie"]
     assert r.status_code == 303 and TOKEN not in cookie
-    assert f"{COOKIE}={api._session(TOKEN)}" in cookie and api._session(TOKEN) != TOKEN
+    assert api._session(TOKEN) != TOKEN
     assert "httponly" in cookie.lower() and "samesite=strict" in cookie.lower()
     assert "secure" not in cookie.lower()                 # http://localhost: the SSH tunnel
     assert c.get("/api/sections").status_code == 200
@@ -879,8 +898,7 @@ def test_each_console_has_its_own_cookie(runs):
     assert api._cookie_name("localhost:7007", "http") == "eregion_console_7007"
     assert api._cookie_name("eregion.example", "https") == "eregion_console_443"
     team = console(token=None, base_url="http://localhost:7008")
-    r = team.get(f"/?token={TOKEN}", follow_redirects=False)
-    assert r.headers["set-cookie"].startswith(f"eregion_console_7008={api._session(TOKEN)}")
+    _session_issued(team, "eregion_console_7008")
     local = console(token=None, base_url="http://localhost:7008")
     local.cookies.set("eregion_console_7007", api._session(TOKEN))
     assert local.get("/api/sections").status_code == 401        # 7007's cookie is not 7008's
