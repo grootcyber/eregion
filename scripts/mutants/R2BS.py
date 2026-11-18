@@ -32,7 +32,7 @@ MUTANTS = [
     ("M5389", "the staged provisioning tool is not re-verified before a run (R2BS)",
      HOST, "            self._verify_staged_terraform()", "            pass"),
     ("M5390", "the read-only staged home is used as HOME instead of a writable run HOME (R2BS)",
-     HOST, '            self._run_home_path = tempfile.mkdtemp(prefix="stratus-home-")',
+     HOST, '            self._run_home_path = tempfile.mkdtemp(prefix="stratus-home-", dir=base)',
      "            self._run_home_path = self.layout.home"),
     ("M5391", "the run-scoped HOME is never removed on close (R2BS)",
      HOST, "            shutil.rmtree(self._run_home_path, ignore_errors=True)",

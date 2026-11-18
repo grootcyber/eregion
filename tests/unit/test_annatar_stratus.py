@@ -313,6 +313,45 @@ def test_executor_run_home_is_writable_and_close_removes_it(tmp_path):
     assert not os.path.exists(home)
 
 
+def test_executor_run_home_uses_the_exec_tmpfs_when_present(tmp_path, monkeypatch):
+    """R2BZ: on an armed Orodruin a dedicated EXEC tmpfs is mounted, so Terraform can execute the
+    providers (extracted under HOME) while /tmp stays noexec; the run HOME is built there."""
+    exec_home = tmp_path / "stratus-home"
+    exec_home.mkdir()
+    monkeypatch.setattr("annatar.executors.stratus_host.EXEC_HOME", str(exec_home))
+    ex = _executor(tmp_path)
+    home = ex._ensure_run_home()
+    assert Path(home).parent == exec_home   # built under the exec tmpfs, not /tmp
+    ex.close()
+
+
+def test_executor_run_home_falls_back_without_the_exec_tmpfs(tmp_path, monkeypatch):
+    """R2BZ: absent (a test, a non-container run), the default temp dir is used."""
+    monkeypatch.setattr("annatar.executors.stratus_host.EXEC_HOME", str(tmp_path / "absent"))
+    ex = _executor(tmp_path)
+    home = ex._ensure_run_home()
+    assert os.path.isdir(home) and Path(home).parent != tmp_path / "absent"
+    ex.close()
+
+
+def test_the_exec_home_is_only_on_the_annatar_runs_not_the_shared_hardening():
+    """R2BZ: the dedicated exec tmpfs (so Terraform runs the providers) is added only to the annatar
+    run defs — those that may run the control-plane library — never to the shared ORO_HARDEN, which
+    stays hardened exactly as docker-compose, nor to the control/gothmog/contract runs; /tmp noexec."""
+    makefile = (Path(__file__).resolve().parents[2] / "Makefile").read_text(encoding="utf-8")
+
+    def line(prefix):
+        return next(ln for ln in makefile.splitlines() if ln.startswith(prefix))
+
+    harden = line("ORO_HARDEN")
+    assert "/stratus-home" not in harden and "--tmpfs /tmp:exec" not in harden   # shared hardening strict
+    assert "ORO_EXEC_HOME  = --tmpfs /stratus-home:exec" in makefile             # the exec tmpfs (M6081)
+    assert "$(ORO_EXEC_HOME)" in line("ORO_RUN ")                                # annatar run
+    assert "$(ORO_EXEC_HOME)" in line("ORO_RUN_REQUEST")                         # the exercise run
+    assert "$(ORO_EXEC_HOME)" not in line("ORO_RUN_GOTHMOG")                     # gothmog: never
+    assert "$(ORO_EXEC_HOME)" not in line("ORO_RUN_CONTRACT")                    # the contract: never
+
+
 def test_executor_refuses_when_the_staged_terraform_is_missing(tmp_path):
     """R2BS: no staged Terraform (image not staged) → the run refuses before provisioning."""
     empty = tmp_path / "empty-home"

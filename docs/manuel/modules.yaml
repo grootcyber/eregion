@@ -1398,6 +1398,15 @@ briques:
     lots: [R2BX]
     issue: 608
 
+  - id: a-injecteur-host-exec
+    composant: annatar
+    poste: a-attaquer
+    nom: "The hardened execution host lets Terraform providers execute, from a dedicated exec tmpfs, with /tmp still noexec"
+    etat: main
+    release: "0.6"
+    lots: [R2BZ]
+    issue: 608
+
   - id: a-scenario-bastion
     composant: annatar
     poste: a-attaquer
