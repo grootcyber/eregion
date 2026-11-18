@@ -436,9 +436,9 @@ def resolve_attack_started(signal: dict, ip_owners=None) -> dict:
     # from runs/ never brings a query of its own (SEC3, SEC8: `signal_origin.admit` drops
     # `detection_query`): the query is a loaded rule's, already proven at load. `respond <file>`
     # does not go through the admission and keeps the file's `detection_query` — the operator's,
-    # never proven at load: its keys are read here, by the same reader (none proven: no row of it
-    # names the VM: each is pinned `unattributed`, the attribution guard holds its isolation and
-    # its block) (SEC-A4b).
+    # never proven at load: its keys are read here, by the same reader. When none is proven, no row
+    # of it names the VM: each is pinned `unattributed`, and the attribution guard holds its
+    # isolation and its block (SEC-A4b).
     from glorfindel.detection_rules import proven_keys
     names_vm = _row_reader(vm_rid, ip_owners, keys=proven_keys(query)) if data_plane else None
 

@@ -507,18 +507,26 @@ def test_attest_on_the_lock_of_the_latest_tag_asks_for_the_release_before(attest
 # A simulated model (litellm.completion replaced): no call to a real one. It keeps `_ResourceId`
 # when its system prompt asks it to, routes by `Computer` otherwise — what the harness must tell.
 
-def _proposing_model(calls: list):
+def _proposing_model(calls: list, overreach: bool = False):
+    """`overreach`: under the bullet, it also adds `_ResourceId` to the Activity Log's `by` — the
+    threshold per caller made one per resource, what the bullet's bound forbids."""
     import json as _json
     from types import SimpleNamespace
     from glorfindel.detection_authoring import ROUTING_KEY_INSTRUCTION
 
     def completion(**kw):
         system = kw["messages"][0]["content"][0]["text"]
-        calls.append({"system": system, "user": kw["messages"][1]["content"], "model": kw["model"]})
-        by = "Computer, _ResourceId" if ROUTING_KEY_INSTRUCTION in system else "Computer"
+        user = kw["messages"][1]["content"]
+        calls.append({"system": system, "user": user, "model": kw["model"]})
+        told = ROUTING_KEY_INSTRUCTION in system
+        if "AzureActivity" in user:
+            by = "Caller, _ResourceId" if told and overreach else "Caller"
+            query = f"AzureActivity | summarize Writes = count() by {by} | where Writes >= 5"
+        else:
+            by = "Computer, _ResourceId" if told else "Computer"
+            query = f'Syslog | where SyslogMessage has "x" | summarize n = count() by {by}'
         args = {"analysis": "a", "rule_name": "r", "interval_s": 60, "explanation": "e",
-                "confidence": 0.7,
-                "proposed_query": f'Syslog | where SyslogMessage has "x" | summarize n = count() by {by}'}
+                "confidence": 0.7, "proposed_query": query}
         call = SimpleNamespace(function=SimpleNamespace(arguments=_json.dumps(args)))
         return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(tool_calls=[call]))])
     return completion
@@ -541,8 +549,13 @@ def test_the_proposal_cases_are_the_catalogs_data_plane_techniques_and_a_missed_
     implemented = {t for t, e in load_catalog().items() if e.get("status") == "implemented"}
     proactive = {c["ttp"] for c in cases if not c.get("failed_query")}
     assert proactive == implemented and len(proactive) >= 5
-    reactive = [c for c in cases if c.get("failed_query")]
+    reactive = [c for c in cases if c.get("failed_query") and not c.get("grouping")]
     assert len(reactive) == 1 and "by Computer" in reactive[0]["failed_query"]
+    # The bound: one control-plane case, an Activity Log threshold per caller, read off the data plane.
+    from eregion_core.rule_routing import data_plane
+    [control] = [c for c in cases if c.get("grouping")]
+    assert control["grouping"] == "Caller" and "by Caller" in control["failed_query"]
+    assert not data_plane("azure_monitor", control["failed_query"])
     det = smoke._SchemaOnly()
     for table in ("Perf", "Syslog", "StorageBlobLogs"):
         cols = {r["ColumnName"] for r in det.run_query(f"{table} | getschema | project ColumnName, ColumnType")}
@@ -557,11 +570,13 @@ def test_the_harness_measures_the_share_that_carries_the_key_before_and_after(sm
     calls: list = []
     monkeypatch.setattr("litellm.completion", _proposing_model(calls))
     out = smoke.run_proposals("sim/model", 2)
-    n = len(smoke.proposal_cases()) * 2
+    n = (len(smoke.proposal_cases()) - 1) * 2            # the control-plane case aside
     assert out["drawn"] == {"before": n, "after": n}
     assert out["carried"] == {"before": 0, "after": n}
+    assert out["bound_drawn"] == {"before": 2, "after": 2}
+    assert out["bound_held"] == {"before": 2, "after": 2}
     assert out["errors"] == {"before": 0, "after": 0}
-    assert len(calls) == 2 * n and all(c["model"] == "sim/model" for c in calls)
+    assert len(calls) == 2 * (n + 2) and all(c["model"] == "sim/model" for c in calls)
     # Grounded as in production: the served schema reached the model's message.
     assert any("SyslogMessage: string" in c["user"] for c in calls)
     assert any("Query that failed" in c["user"] and "by Computer" in c["user"] for c in calls)
@@ -571,12 +586,30 @@ def test_the_harness_measures_the_share_that_carries_the_key_before_and_after(sm
     assert refused["carries_key"] is False and "_ResourceId" in refused["refusal"]
 
 
+def test_the_harness_says_when_after_turns_a_threshold_per_caller_into_one_per_resource(smoke, monkeypatch):
+    """The bullet's bound, measured: a model that adds `_ResourceId` to the Activity Log's `by`
+    under the bullet is said (bound held: after 0/n), apart from the key's share."""
+    monkeypatch.setattr("litellm.completion", _proposing_model([], overreach=True))
+    out = smoke.run_proposals("sim/model", 2)
+    assert out["bound_held"] == {"before": 2, "after": 0}
+    control = next(c for c in out["cases"] if c["grouping"])
+    assert [d["keeps_grouping"] for d in control["draws"]["after"]] == [False, False]
+    # What the reading takes for a kept grouping, and for a lost one.
+    keeps = smoke._keeps_caller_grouping
+    assert keeps("AzureActivity | summarize n = count() by Caller, bin(TimeGenerated, 1h)", "Caller")
+    assert not keeps("AzureActivity | summarize n = count() by Caller, _ResourceId", "Caller")
+    assert not keeps("AzureActivity | summarize n = count() by _ResourceId", "Caller")
+    assert not keeps('AzureActivity | where Caller == "x"', "Caller")      # no threshold left
+    assert not keeps('AzureActivity | summarize n = count() by Caller | where x == "', "Caller")
+
+
 def test_a_proposal_without_a_tool_call_is_counted_and_said(smoke, monkeypatch):
     from types import SimpleNamespace
     monkeypatch.setattr("litellm.completion", lambda **kw: SimpleNamespace(
         choices=[SimpleNamespace(message=SimpleNamespace(tool_calls=None))]))
     out = smoke.run_proposals("sim/model", 1, ("after",))
-    assert out["carried"] == {"after": 0} and out["errors"]["after"] == len(smoke.proposal_cases())
+    assert out["carried"] == {"after": 0} and out["bound_held"] == {"after": 0}
+    assert out["errors"]["after"] == len(smoke.proposal_cases())
 
 
 def test_proposals_mode_writes_its_measure_and_never_an_attestation(smoke, monkeypatch, tmp_path, capsys):

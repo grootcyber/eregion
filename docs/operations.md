@@ -2571,14 +2571,32 @@ make llm-compare MODELS=<modèle d'Imladris> RUNS=3 PROPOSALS=1 JSON_OUT=proposa
 
 Les cas : chaque technique `implemented` du catalogue lue sur le plan des données (proactif, comme
 `propose-rules`), plus une détection manquée dont la requête en échec rangeait ses lignes par
-`Computer` (réactif : « ne corrige que ce qui était faux » garde-t-il `by Computer` ?). Rien du
-cloud : les schémas des tables sont servis par le script, comme `getschema` les rendrait, sans
-`_ResourceId` (colonne standard cachée ; `--schema-key` la liste — que `getschema` la liste ou non
-n'est pas mesuré ici). Ce qu'il dit, par cas puis au total : « Key carried: before k/n (p %) · after
-k/n (p %) », et les tirages sans appel d'outil utilisable (comptés comme ne portant pas la clé, code
-de sortie 1). `JSON_OUT` garde chaque tirage (la règle, la raison du refus). Jamais d'attestation :
-`--attest`, `--pass-out`, `--reference` et `--kinds` sont refusés avant tout appel. La mesure se
-joint à la PR qui change le prompt, avant la fusion.
+`Computer` (réactif : « ne corrige que ce qui était faux » garde-t-il `by Computer` ?), plus la
+borne de la puce : une détection manquée du journal d'activité, à seuil par appelant
+(`summarize … by Caller`). La puce ne vaut que pour le plan des données : sur `AzureActivity` et
+les tables d'Entra ID, un seuil par appelant devenu un seuil par ressource laisserait passer une
+attaque étalée sur plusieurs ressources. Ce cas est jugé à part, jamais dans la part de la clé :
+chaque `summarize` groupe encore par `Caller`, sans `_ResourceId` ajouté. Rien du cloud : les
+schémas des tables sont servis par le script, comme `getschema` les rendrait, sans `_ResourceId`
+(colonne standard cachée ; `--schema-key` la liste — que `getschema` la liste ou non n'est pas
+mesuré ici). Ce qu'il dit, par cas puis au total : « Key carried: before k/n (p %) · after k/n
+(p %) » (le plan des données), « Bound held: before k/n · after k/n » (le cas du plan de contrôle),
+et les tirages sans appel d'outil utilisable (comptés comme manquant leur cas, code de sortie 1).
+`JSON_OUT` garde chaque tirage (la règle, la raison du refus, le groupement gardé). Jamais
+d'attestation : `--attest`, `--pass-out`, `--reference` et `--kinds` sont refusés avant tout appel.
+La mesure se joint à la PR qui change le prompt, avant la fusion : **after** nettement au-dessus
+de **before** pour la clé, et la borne tenue des deux côtés.
+
+**Ce que le lot laisse derrière lui** (les données d'avant SEC-A4b) :
+- **Une carte `proposed_rule` inscrite avant le lot**, pour une proposition sans clé, garde son
+  `proposal_id` : la console y montre encore Approve et Reject, et ses étapes `approve-rule <id>`.
+  L'approbation la refuse et le dit (« non approuvée : … », la proposition reste en attente) ; rien
+  n'est écrit. La carte se ferme par Reject (ou `glorfindel reject-rule <id>`), qui la résout avec la
+  proposition, ou par `glorfindel ack <carte>`. Les cartes écrites depuis le lot n'en portent plus.
+- **Une proposition `pending` d'avant le lot, sans clé**, n'apparaît plus nulle part : ni dans
+  `glorfindel pending`, ni dans la console, ni dans le bot (`pending()` la relit et l'écarte). Elle
+  reste `pending` dans `~/.glorfindel/proposed_rules.jsonl`, et ne se retire que par
+  `glorfindel reject-rule <id>` — son identifiant se lit dans ce fichier, ou sur sa carte.
 
 ### Les providers de Terraform, verrouillés (CI4, #389)
 

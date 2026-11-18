@@ -1,7 +1,8 @@
 """SEC-A4b (#660): a proposed rule judged as soon as the model proposes it — one whose rows carry
 neither `_ResourceId` nor `CallerIpAddress` as Azure wrote them is recorded unapprovable, with its
 reason, and never enters the queue of proposals to approve; the routing key asked of the model in
-the proposal prompt; the harness that measures the share of proposals carrying it. M5901–M5908,
+the proposal prompt, bounded to the data plane (M5909); the harness that measures the share of
+proposals carrying it, and that the bound holds. M5901–M5909,
 measured by tests/unit/test_proposed_rules.py, test_detection_authoring.py and test_llm_smoke.py.
 The approval's own refusal (defence in depth) stays M4543 (SEC-A4)."""
 PROPOSED = "glorfindel/proposed_rules.py"
@@ -31,6 +32,14 @@ MUTANTS = [
     ("M5904", "the routing key no longer asked of the model that proposes rules (SEC-A4b)", AUTHORING,
      '""" + ROUTING_KEY_INSTRUCTION + """\n',
      '""" + """\n'),
+    ("M5909", "the bullet's bound removed: asked on the Activity Log and Entra ID too, a threshold per "
+     "caller turned into one per resource lets an attack spread over several resources pass (SEC-A4b)",
+     AUTHORING,
+     "storage account there: do not add it to a `by`. \\\n"
+     "This never applies to AzureActivity nor to an Entra ID table (AuditLogs, SigninLogs and the other \\\n"
+     "sign-in logs): keep their grouping as it is, and never add `_ResourceId` to a `by` that groups by \\\n"
+     "caller, identity or address.\n",
+     "storage account there: do not add it to a `by`.\n"),
     ("M5905", "the card of a missed detection offers an unapprovable rule: its proposal id, Approve "
      "in the console, approve-rule in its steps (SEC-A4b)", AGENT,
      "    if unapprovable:\n"
@@ -59,6 +68,8 @@ TESTS = {
     "M5903": f"{_P}::test_a_pending_proposal_recorded_before_the_judgment_never_enters_pending",
     "M5904": f"{_A}::test_the_proposal_prompt_asks_to_keep_the_routing_key_to_the_byte "
              f"{_A}::test_the_bullet_reaches_the_model_that_proposes_rules",
+    "M5909": f"{_A}::test_the_bullet_is_bounded_to_the_data_plane_where_the_refusal_applies "
+             f"{_A}::test_the_proposal_prompt_asks_to_keep_the_routing_key_to_the_byte",
     "M5905": f"{_P}::test_the_propose_node_never_offers_an_unapprovable_rule",
     "M5906": f"{_P}::test_an_unapprovable_proposal_is_never_approved_and_says_why",
     "M5907": f"{_P}::test_propose_rules_says_an_unapprovable_proposal_and_keeps_it_out_of_pending",

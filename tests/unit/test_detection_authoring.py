@@ -144,15 +144,20 @@ def test_author_rule_grounds_on_schema_when_detector_present():
 
 
 # SEC-A4b: the routing key asked of the model that proposes rules — the bullet, to the byte.
+_ROUTING_KEY_BOUND = (
+    "This never applies to AzureActivity nor to an Entra ID table (AuditLogs, SigninLogs and the other "
+    "sign-in logs): keep their grouping as it is, and never add `_ResourceId` to a `by` that groups by "
+    "caller, identity or address.\n")
 _ROUTING_KEY_BULLET = (
-    "- In KQL on a Log Analytics table, keep `_ResourceId` in the query's output exactly as the "
-    "table holds it: name it in the last `project` and in the `by` of every `summarize`, and never "
-    "write, rename or recompute it (`extend`, `project _ResourceId = …`, `project-rename`). "
-    "Glorfindel routes each row to its VM by `_ResourceId`, never by `Computer` (the VM writes its "
-    "own host name): a rule whose rows lose it is refused. `_ResourceId` is a standard column of "
-    "every Log Analytics table, even when the table schema provided does not list it. On a storage "
-    "table (StorageBlobLogs…), keep `CallerIpAddress` as well, as the service wrote it — the "
-    "address that made the call names the VM.\n")
+    "- On a data-plane table, one a VM or a storage service writes (Perf, Syslog, the storage logs…), "
+    "Glorfindel routes each row to its VM by a key, never by `Computer` (the VM writes its own host "
+    "name): a rule whose rows lose the key is refused. Keep the key in the query's output exactly as "
+    "the table holds it: name it in the last `project` and in the `by` of every `summarize`, and never "
+    "write, rename or recompute it (`extend`, `project <key> = …`, `project-rename`). The key is "
+    "`_ResourceId`, a standard column of every Log Analytics table, even when the table schema "
+    "provided does not list it; on a storage table (StorageBlobLogs…), it is `CallerIpAddress` as the "
+    "service wrote it — the address that made the call names the VM, while `_ResourceId` names the "
+    "storage account there: do not add it to a `by`. " + _ROUTING_KEY_BOUND)
 # The prompt without the bullet: origin/main's before SEC-A4b, to the byte (the harness's
 # `before`, scripts/llm_smoke.py --proposals).
 _PROMPT_BEFORE_SHA256 = "0d28780f90580b64f9e9ae606dce86483ab9fb217be2b658c2533a5a108e9fc3"
@@ -168,6 +173,23 @@ def test_the_proposal_prompt_asks_to_keep_the_routing_key_to_the_byte():
             + _ROUTING_KEY_BULLET + "\nYou always call the propose_detection_rule tool") in prompt
     before = prompt.replace(_ROUTING_KEY_BULLET, "", 1)
     assert hashlib.sha256(before.encode()).hexdigest() == _PROMPT_BEFORE_SHA256
+
+
+def test_the_bullet_is_bounded_to_the_data_plane_where_the_refusal_applies():
+    """The control plane and identities keep their grouping: a threshold per caller made one per
+    resource would let an attack spread over several resources pass under it. The bullet names
+    the data plane as the routing refusal reads it, and excludes the others in so many words."""
+    from eregion_core.rule_routing import data_plane
+    bullet = da.ROUTING_KEY_INSTRUCTION
+    assert bullet.startswith("- On a data-plane table,") and bullet.endswith(_ROUTING_KEY_BOUND)
+    for table in ("Perf", "Syslog", "StorageBlobLogs"):          # named as data plane
+        assert table in bullet and data_plane("azure_monitor", f"{table} | take 1")
+    for table in ("AzureActivity", "AuditLogs", "SigninLogs"):   # named as excluded
+        assert table in _ROUTING_KEY_BOUND and not data_plane("azure_monitor", f"{table} | take 1")
+    # Never asked to add `_ResourceId` where the key is the caller's address (the storage tables,
+    # `data-exfiltration-blob`: `by CallerIpAddress, AccountName`).
+    assert "`_ResourceId` names the storage account there: do not add it to a `by`" in bullet
+    assert "In KQL on a Log Analytics table" not in bullet
 
 
 def test_the_bullet_reaches_the_model_that_proposes_rules():

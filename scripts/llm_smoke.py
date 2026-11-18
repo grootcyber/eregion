@@ -473,7 +473,8 @@ def _run_one(model: str, runs: int, kinds: set[str] | None = None) -> dict:
 # key (`_ResourceId`, or `CallerIpAddress` on a storage table)? Each case is drawn under the two
 # prompts — `before`, the prompt without the routing-key bullet (origin/main's before SEC-A4b, to
 # the byte), and `after`, the prompt as shipped — and the share of proposals that carry the key is
-# said for each. Nothing of the cloud: the table schemas are served by `_SchemaOnly`, as getschema
+# said for each. One case of the control plane holds the bullet's bound: an Activity Log threshold
+# per caller must stay one (`after` never adds `_ResourceId` to its `by`), said apart. Nothing of the cloud: the table schemas are served by `_SchemaOnly`, as getschema
 # would return them; `_ResourceId`, a hidden standard column, is not listed unless --schema-key
 # (whether getschema lists it is not measured here).
 _PROPOSAL_SCHEMAS = {
@@ -501,7 +502,39 @@ _REACTIVE_CASE = {
     "attack_summary": "Repeated SSH password attempts from one external address against the VM.",
     "expected_indicators": ["FailedAttempts", "SourceIP"],
 }
+# The bound of the bullet (the control plane keeps its grouping): a missed detection on the Activity
+# Log, a threshold per caller. Judged apart (`_keeps_caller_grouping`), never in the key's share:
+# `after` must not turn the caller's threshold into a resource's (`by Caller, _ResourceId`).
+_CONTROL_CASE = {
+    "label": "missed detection — Activity Log, a threshold per caller (control plane)",
+    "ttp": "T1098",
+    "grouping": "Caller",
+    "failed_query": ('AzureActivity\n| where OperationNameValue =~ '
+                     '"Microsoft.Authorization/roleAssignments/write"\n'
+                     "| summarize Writes = count() by Caller, bin(TimeGenerated, 1h)\n"
+                     "| where Writes >= 5"),
+    "attack_summary": "One identity wrote role assignments on several resources within the hour.",
+    "expected_indicators": ["Caller", "Writes"],
+}
 PROMPT_VARIANTS = ("before", "after")
+
+
+def _keeps_caller_grouping(query: str, column: str) -> bool:
+    """A control-plane query still thresholds per `column`: every `summarize … by` groups by it,
+    none adds `_ResourceId` (a query without one has lost its grouping). Read on the masked text."""
+    import re
+    from eregion_core.rule_routing import mask, split_top
+    try:
+        text, _ = mask(query or "")
+    except ValueError:
+        return False
+    bys = []
+    for stage in split_top(text, "|"):
+        if re.match(r"\s*summarize\b", stage):
+            m = re.search(r"\bby\b(.*)$", stage, re.S)
+            bys.append(m.group(1) if m else "")
+    return bool(bys) and all(re.search(rf"(?<![\w.]){column}\b", b) and "_ResourceId" not in b
+                             for b in bys)
 
 
 class _SchemaOnly:
@@ -531,7 +564,8 @@ def proposal_prompts() -> dict[str, str]:
 
 def proposal_cases() -> list[dict]:
     """Every implemented technique of the catalog whose table is read on the data plane (its rows
-    routed to a VM: the key is asked of them), then the reactive case."""
+    routed to a VM: the key is asked of them), then the reactive case, then the control-plane case
+    (the bullet's bound: its grouping per caller kept)."""
     from eregion_core.rule_routing import data_plane
     from glorfindel.detection_authoring import load_catalog
     cases = []
@@ -542,7 +576,7 @@ def proposal_cases() -> list[dict]:
         if not data_plane("azure_monitor", f"{table} | take 1"):
             continue
         cases.append({"label": f"{ttp} on {table} (proactive)", "ttp": ttp})
-    return cases + [_REACTIVE_CASE]
+    return cases + [_REACTIVE_CASE, _CONTROL_CASE]
 
 
 def _proposal_draw(case: dict, model: str, prompt: str, detector) -> dict:
@@ -559,17 +593,20 @@ def _proposal_draw(case: dict, model: str, prompt: str, detector) -> dict:
             failed_query=case.get("failed_query"),
             detection_timeout_s=300 if case.get("failed_query") else None)
     except Exception as e:
-        return {"carries_key": False, "error": type(e).__name__, "refusal": "", "rule_name": ""}
+        return {"carries_key": False, "keeps_grouping": False, "error": type(e).__name__,
+                "refusal": "", "rule_name": ""}
     finally:
         da.RULE_PROPOSAL_SYSTEM_PROMPT = shipped
-    refusal = approval_refusal(p.get("source") or "azure_monitor", p.get("query") or "")
+    query = p.get("query") or ""
+    refusal = approval_refusal(p.get("source") or "azure_monitor", query)
     return {"carries_key": not refusal, "error": None, "refusal": refusal[:160],
-            "rule_name": str(p.get("rule_name") or "")[:64]}
+            "rule_name": str(p.get("rule_name") or "")[:64],
+            "keeps_grouping": _keeps_caller_grouping(query, case["grouping"]) if case.get("grouping") else None}
 
 
-def _share(draws: list[dict]) -> str:
+def _share(draws: list[dict], field: str = "carries_key") -> str:
     n = len(draws)
-    k = sum(1 for d in draws if d["carries_key"])
+    k = sum(1 for d in draws if d[field])
     return f"{k}/{n} ({100 * k // n}%)" if n else "—"
 
 
@@ -583,20 +620,29 @@ def run_proposals(model: str, runs: int, variants=PROMPT_VARIANTS, schema_key: b
     cases = []
     for case in proposal_cases():
         by = {v: [_proposal_draw(case, model, prompts[v], detector) for _ in range(runs)] for v in variants}
-        cases.append({"label": case["label"], "ttp": case["ttp"], "draws": by})
-        line = " · ".join(f"{v} {_share(by[v])}" for v in variants)
+        cases.append({"label": case["label"], "ttp": case["ttp"], "grouping": case.get("grouping", ""),
+                      "draws": by})
+        field, what = (("keeps_grouping", f"grouping by {case['grouping']} kept") if case.get("grouping")
+                       else ("carries_key", "key carried"))
+        line = " · ".join(f"{v} {_share(by[v], field)}" for v in variants)
         errors = sum(1 for v in variants for d in by[v] if d["error"])
-        print(f"  {case['label']} — key carried: {line}" + (f"  [{errors} error(s)]" if errors else ""))
+        print(f"  {case['label']} — {what}: {line}" + (f"  [{errors} error(s)]" if errors else ""))
     print("-" * 72)
-    totals = {v: [d for c in cases for d in c["draws"][v]] for v in variants}
-    errors = {v: sum(1 for d in totals[v] if d["error"]) for v in variants}
-    print("Key carried: " + " · ".join(f"{v} {_share(totals[v])}" for v in variants)
-          + " — proposals the approval would accept (the reader of the load)")
+    keyed = {v: [d for c in cases if not c["grouping"] for d in c["draws"][v]] for v in variants}
+    grouped = {v: [d for c in cases if c["grouping"] for d in c["draws"][v]] for v in variants}
+    errors = {v: sum(1 for c in cases for d in c["draws"][v] if d["error"]) for v in variants}
+    print("Key carried: " + " · ".join(f"{v} {_share(keyed[v])}" for v in variants)
+          + " — data-plane proposals the approval would accept (the reader of the load)")
+    print("Bound held : " + " · ".join(f"{v} {_share(grouped[v], 'keeps_grouping')}" for v in variants)
+          + " — control-plane proposals still grouped by caller, no `_ResourceId` added")
     print("Errors     : " + " · ".join(f"{v} {errors[v]}" for v in variants)
-          + " (no usable tool-call: counted as not carrying the key)")
+          + " (no usable tool-call: counted as failing its case)")
     return {"model": model, "runs": runs, "schema_key": schema_key,
-            "carried": {v: sum(1 for d in totals[v] if d["carries_key"]) for v in variants},
-            "drawn": {v: len(totals[v]) for v in variants}, "errors": errors, "cases": cases}
+            "carried": {v: sum(1 for d in keyed[v] if d["carries_key"]) for v in variants},
+            "drawn": {v: len(keyed[v]) for v in variants},
+            "bound_held": {v: sum(1 for d in grouped[v] if d["keeps_grouping"]) for v in variants},
+            "bound_drawn": {v: len(grouped[v]) for v in variants},
+            "errors": errors, "cases": cases}
 
 
 # ── The attestation (H1, then H3) ─────────────────────────────────────────────────
@@ -680,11 +726,12 @@ def _main_proposals(args, models: list[str], runs: int, kinds) -> int:
         results.append(run_proposals(model, runs, variants, schema_key=args.schema_key))
     if len(results) > 1:
         print("\n" + "=" * 72)
-        print("KEY CARRIED — " + " · ".join(variants))
+        print("KEY CARRIED (data plane), BOUND HELD (control plane) — " + " · ".join(variants))
         print("-" * 72)
         for r in results:
             print(f"{r['model']:<28} " + "  ".join(
-                f"{v} {r['carried'][v]}/{r['drawn'][v]}" for v in variants))
+                f"{v} key {r['carried'][v]}/{r['drawn'][v]} bound {r['bound_held'][v]}/{r['bound_drawn'][v]}"
+                for v in variants))
         print("=" * 72)
     if args.json:
         Path(args.json).write_text(json.dumps({"mode": "proposals", "runs": runs, "models": results},
