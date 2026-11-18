@@ -4,7 +4,9 @@ choice (glorfindel/agent.py); its facts dated, a TTL of their own, absolute, for
 never prolonged by a held detection (glorfindel/incidents.py, glorfindel/gestures.py); the critical
 class counted as a grave one in the ceiling, deduplicated by VM and rule, a ceiling of distinct
 addresses, never chasing a detection of a grave technique out of a full queue, the gravity of a line
-of the runs/ channel its technique's (glorfindel/decision_queue.py). M5721–M5740, measured by
+of the runs/ channel its technique's (glorfindel/decision_queue.py). M5721–M5740, and M5910–M5911
+(the review: a detection that does not name the VM keeps the attribution's card; only the release
+after a restore forgets the facts — numbers handed by the Orchestre), measured by
 tests/unit/test_root_floor.py and tests/unit/test_decision_queue.py. M4375, M4401 (B3a) and M4567,
 M4568 (SEC-A2) retired with what they measured; M4526 and M4570 (SEC-A2) follow the code."""
 AGENT = "glorfindel/agent.py"
@@ -90,6 +92,14 @@ MUTANTS = [
      "point 2)", QUEUE,
      '    if state.get("floor") or (state.get("outcome") or {}).get("compromise_card"):\n',
      '    if (state.get("outcome") or {}).get("compromise_card"):\n'),
+    ("M5910", "the floor's card on a detection that does not name the VM: an unattributed or appliance "
+     "card made approvable in one click (SEC-E, review)", AGENT,
+     '    if (signal.get("context") or {}).get("attribution") == "unattributed" or d.get("held_by") == "attribution":\n',
+     "    if False:\n"),
+    ("M5911", "any release by the watch forgets the facts: a release the model chose on a detection wipes a "
+     "compromise's (SEC-E, review)", AGENT,
+     '            and state["signal"].get("event") == "recovery_complete"):\n',
+     "            ):\n"),
 ]
 TESTS = {
     "M5721": f"{_F}::test_no_action_is_raised_to_isolate_vm {_F}::test_the_floor_never_isolates_whatever_the_mode",
@@ -115,4 +125,7 @@ TESTS = {
     "M5738": f"{_F}::test_human_only_runs_nothing_and_the_card_proposes_isolate_vm",
     "M5739": f"{_F}::test_the_floor_never_isolates_whatever_the_mode",
     "M5740": f"{_Q}::test_the_pair_lifts_the_ceiling_only_never_the_window",
+    "M5910": f"{_F}::test_a_detection_that_does_not_name_the_vm_keeps_the_attributions_card "
+             f"{_F}::test_an_unattributed_snapshot_run_alone_gets_no_floor",
+    "M5911": f"{_F}::test_a_release_the_model_chose_on_a_detection_keeps_the_facts",
 }

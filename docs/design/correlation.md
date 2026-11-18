@@ -189,7 +189,10 @@ que soit le tirage du modèle, la preuve de bout en bout du plancher dans le CD.
   qu'il vit, il garde sa date. Une détection que la file de décision retient inscrit ses faits sans
   prolonger l'incident. **Une levée entière de l'isolation les oublie** : par un humain (`release`,
   `reset`, la console, le bot, une demande de la file d'actions) ou par la watch après une
-  restauration. La détection suivante de la VM est jugée de nouveau.
+  restauration (`recovery_complete`). La détection suivante de la VM est jugée de nouveau. Une levée
+  que le modèle choisit sur une détection ne les oublie pas.
+- **Une détection qui ne nomme pas la VM** (non attribuée, ou derrière une appliance) garde la carte
+  de l'attribution, jamais approuvable en un clic : le plancher ne se dit que dans sa raison.
 - **Limites.**
   - L'ordre des deux faits n'est pas vérifié, seulement leur présence dans l'incident en cours,
     chacun dans son TTL.

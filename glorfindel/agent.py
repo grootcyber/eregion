@@ -1358,13 +1358,27 @@ def _root_compromise_floor(d: dict, signal: dict, incident: dict | None) -> str:
     if not {LOGIN_AFTER_BRUTE_FORCE, ROOT_ELEVATION} <= facts:
         return ""
     before = d["action"] or "aucune action"
-    ip = _correlation_row(signal).get("SourceIP") if _is_compromise(signal) else ""
-    said = (
+    # The address of the row only when this detection confirms a fact of this VM: an unattributed
+    # row's address is no fact of the VM it is anchored on (SEC-E, review).
+    ip = (_correlation_row(signal).get("SourceIP")
+          if _is_compromise(signal) and confirmed_facts(signal) else "")
+    facts_said = (
         f"Plancher déterministe (B3a) : sur cette VM, la corrélation a confirmé un brute force "
         f"SSH suivi d'une connexion réussie{f' depuis {ip}' if ip else ''}, et une élévation "
-        f"vers root (sudo) — 'isolate_vm' proposée à un humain, jamais exécutée par le plancher : "
-        f"ces deux faits sont lus dans des lignes que la VM écrit. Le choix du modèle : '{before}' "
-        f"(confiance {d['confidence']:.0%}, sur ce choix)")
+        f"vers root (sudo)")
+    choice = (f"Le choix du modèle : '{before}' (confiance {d['confidence']:.0%}, sur ce choix)")
+    # SEC-E (review): a detection that does not name this VM — unattributed, or a call from behind
+    # an appliance (SEC-A4) — keeps the attribution's card: never approvable in one click, never a
+    # floor's card on a VM the detection may not concern. The floor is said in its reason only.
+    if (signal.get("context") or {}).get("attribution") == "unattributed" or d.get("held_by") == "attribution":
+        if not d["escalate"] and d["action"] in AUTONOMOUS_ACTIONS:
+            return ""
+        d["escalate"] = True
+        d["held_by"] = "attribution"
+        return (f"{facts_said} — mais cette détection ne nomme pas cette VM : la carte reste celle de "
+                f"l'attribution, rien ne s'y approuve en un clic ; juger la VM depuis la CLI. {choice}.")
+    said = (f"{facts_said} — 'isolate_vm' proposée à un humain, jamais exécutée par le plancher : "
+            f"ces deux faits sont lus dans des lignes que la VM écrit. {choice}")
     if not d["escalate"] and d["action"] in AUTONOMOUS_ACTIONS:
         return f"{said}, exécuté seul comme ses gardes l'ont jugé ; une carte propose l'isolation."
     if before in HUMAN_APPROVAL_REQUIRED:
@@ -2064,9 +2078,11 @@ def execute_action(
         }
     action_s = round(time.time() - t_start)
 
-    # SEC-E (#846): the isolation released whole (the release after a restore) — what the VM's
-    # incidents confirmed for B3a is forgotten, as after a human's release (glorfindel/gestures.py).
-    if action == "release_isolation" and outcome.get("status") == "released":
+    # SEC-E (#846): the isolation released whole after a restore (recovery_complete) — what the
+    # VM's incidents confirmed for B3a is forgotten, as after a human's release (glorfindel/
+    # gestures.py). Never a release the model chose on a detection: a compromise's facts stay.
+    if (action == "release_isolation" and outcome.get("status") == "released"
+            and state["signal"].get("event") == "recovery_complete"):
         try:
             incidents.forget_facts(resource_id)
         except Exception as exc:          # said; the release stands

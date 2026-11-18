@@ -20,7 +20,7 @@ MUTANTS = [
     ("M4526", "no dedup: each detection of the same rule on the same VM calls the model (SEC-A2)",
      QUEUE,
      "                if at is not None and now - at < self.window_s:\n",
-     "                    if False:\n"),
+     "                if False:\n"),
     ("M4527", "first come, first served whatever the gravity: a ransomware detection waits behind a "
      "forged burst (SEC-A2)", QUEUE,
      "        self._classify = classify or (lambda item: gravity(item[0]))\n",

@@ -207,6 +207,38 @@ def test_the_floor_never_isolates_whatever_the_mode(mode, answer):
     assert conn.writes() == ([answer] if ran else [])
 
 
+@pytest.mark.parametrize("via", ["unattributed", "appliance"])
+@pytest.mark.parametrize("answer", ["block_suspicious_ip", "no_action"])
+def test_a_detection_that_does_not_name_the_vm_keeps_the_attributions_card(via, answer):
+    """The pair live on the VM, and a detection the RulePoller could not tie to it — anchored
+    there, or a call from behind an appliance (SEC-A4): the card stays `unattributed_signal`,
+    never approvable in one click (approval_refusal), never the floor's; the floor is said in its
+    reason, and the row's address is never told as a fact of this VM."""
+    from glorfindel.approval import approval_refusal
+    ctx = {"attribution": "unattributed", "candidates": ["vm-b3a"]}
+    if via == "appliance":
+        ctx.update(attribution_via="appliance", appliance="vm-hub-fw")
+    signal = _brute_force()
+    signal["context"] = {**signal["context"], **ctx}
+    both = _incident(agent.ROOT_ELEVATION, agent.LOGIN_AFTER_BRUTE_FORCE)
+    out, _ = _decide(signal, _decision(answer), both)
+    assert out["escalate"] is True and out["held_by"] == "attribution" and out["floor_card"] is False
+    assert out["action"] == answer and "ne nomme pas cette VM" in out["floor"]
+    assert IP not in out["floor"]
+    agent.escalate_to_human({**out, "dry_run": False})
+    [card] = [c for c in _cards() if c["resource_id"] == RID]
+    assert card["escalation_type"] == "unattributed_signal"
+    assert approval_refusal(card, "vm-b3a")
+
+
+def test_an_unattributed_snapshot_run_alone_gets_no_floor():
+    """The model's snapshot runs alone on an unattributed detection: no floor's card on a VM the
+    detection may not concern."""
+    signal = _sudo(attribution="unattributed")
+    out, _ = _decide(signal, _decision("snapshot"), _incident(agent.ROOT_ELEVATION, agent.LOGIN_AFTER_BRUTE_FORCE))
+    assert out["floor"] == "" and out["floor_card"] is False and out["action"] == "snapshot"
+
+
 def test_the_message_to_the_model_is_the_same_to_the_byte():
     """The floor is in the code, never in the prompt: the same detection, with and without the
     pair on its incident (and the facts' dates), sends the model the same messages."""
@@ -502,6 +534,16 @@ def test_the_watch_forgets_the_facts_when_it_releases(tmp_path):
     assert reg.get_active(RID).confirmed != []
     agent.execute_action(state, connector=Recorder(), incidents=reg)
     assert reg.get_active(RID).confirmed == []
+
+
+def test_a_release_the_model_chose_on_a_detection_keeps_the_facts(tmp_path):
+    """A release the model chose on a detection (not the release after a restore): the facts of a
+    compromise stay — only a human's release, or the watch's after a restore, forgets them."""
+    reg = IncidentRegistry(path=tmp_path / "inc.jsonl")
+    _both(reg)
+    state = {"signal": _sudo(), "action": "release_isolation", "incident": None}
+    agent.execute_action(state, connector=Recorder(), incidents=reg)
+    assert set(reg.get_active(RID).confirmed) == {agent.ROOT_ELEVATION, agent.LOGIN_AFTER_BRUTE_FORCE}
 
 
 def test_a_human_release_forgets_the_facts(monkeypatch):
