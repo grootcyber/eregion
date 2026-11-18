@@ -192,7 +192,11 @@ que soit le tirage du modèle, la preuve de bout en bout du plancher dans le CD.
   restauration (`recovery_complete`). La détection suivante de la VM est jugée de nouveau. Une levée
   que le modèle choisit sur une détection ne les oublie pas.
 - **Une détection qui ne nomme pas la VM** (non attribuée, ou derrière une appliance) garde la carte
-  de l'attribution, jamais approuvable en un clic : le plancher ne se dit que dans sa raison.
+  de l'attribution, jamais approuvable en un clic : le plancher ne se dit que dans sa raison. La
+  garde qui a retenu la décision avant lui (une adresse protégée, une levée retenue, une confiance
+  basse) y cède sa place : la carte devient celle de l'attribution, plus prudente (SEC-Ec). Seule
+  exception, le mode `human_only` qui retient un instantané du modèle : la carte reste celle du
+  mode, où seul l'instantané s'approuve en un clic, jamais l'isolation, et sa raison le dit.
 - **Limites.**
   - L'ordre des deux faits n'est pas vérifié, seulement leur présence dans l'incident en cours,
     chacun dans son TTL.
