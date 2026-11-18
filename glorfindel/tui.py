@@ -20,7 +20,7 @@ from rich.panel import Panel
 from rich.text import Text
 
 from glorfindel.masking import name_said as _name_said, shown as _shown
-from glorfindel.terminal import GlorfindelConsole, outside as _outside
+from glorfindel.terminal import GlorfindelConsole, literal as _literal, outside as _outside
 from glorfindel.vm_command import group_and_name
 
 # What the TUI writes of a card or a signal goes through the CLI's masking (MSK2c, #798; MSK2,
@@ -259,36 +259,38 @@ def _start_restore(esc: dict, before: str) -> None:
 
 
 def _last_restore_said() -> str:
-    """What the restore said, masked by its VM's id (MSK2c): the CLI's output, or an exception's."""
-    return _shown(_last_restore.get("text", ""), _last_restore.get("rid", ""))
+    """What the restore said, masked by its VM's id (MSK2c): the CLI's output, or an exception's —
+    its control characters shown, never obeyed (SEC-Fc: a `Text` hands them to the terminal)."""
+    return _literal(_shown(_last_restore.get("text", ""), _last_restore.get("rid", "")))
 
 
 def _restore_panel(pending: dict) -> Panel:
     rid = pending["esc"].get("resource_id", "")
     lines = Text(overflow="fold")
-    lines.append(f"\n  ⚡ {pending['label']}\n\n", style="bold yellow")
+    # SEC-Fc: what the card, the operator and Azure said, its control characters shown (`_literal`).
+    lines.append(f"\n  ⚡ {_literal(pending['label'])}\n\n", style="bold yellow")
     if pending["stage"] == "moment":
         lines.append("  Restore to the newest point from before: ", style="white")
-        lines.append(pending["buffer"] + "▌\n", style="bold cyan")
-        lines.append(f"  {_shown(pending['why'], rid)}\n", style="dim")
+        lines.append(_literal(pending["buffer"]) + "▌\n", style="bold cyan")
+        lines.append(f"  {_literal(_shown(pending['why'], rid))}\n", style="dim")
         if pending["error"]:
-            lines.append(f"  ✗ {_shown(pending['error'], rid)}\n", style="red")
+            lines.append(f"  ✗ {_literal(_shown(pending['error'], rid))}\n", style="red")
         lines.append("\n  [Enter] points before it   [Esc] cancel\n", style="cyan")
     else:
-        lines.append(f"  Before {pending['before']}\n", style="bold cyan")
+        lines.append(f"  Before {_literal(pending['before'])}\n", style="bold cyan")
         if pending.get("warning"):
-            lines.append(f"  ⚠ {_shown(pending['warning'], rid)}\n", style="yellow")
+            lines.append(f"  ⚠ {_literal(_shown(pending['warning'], rid))}\n", style="yellow")
         points = pending.get("points")
         if points is None:
             lines.append("  reading the recovery points…\n", style="dim")
         elif pending.get("points_error"):
             # Azure's 403 cites the vault's scope, its subscription's id with it (MSK2c).
-            lines.append(f"  recovery points unreadable: {_shown(pending['points_error'], rid)[:200]}\n",
+            lines.append(f"  recovery points unreadable: {_literal(_shown(pending['points_error'], rid)[:200])}\n",
                          style="yellow")
         elif not points:
             lines.append("  no recovery point before it: the restore would be refused\n", style="red")
         for i, p in enumerate((points or [])[:6]):
-            lines.append(f"  {p.get('time')}{' · vault tier' if p.get('vault_tier') else ''}"
+            lines.append(f"  {_literal(str(p.get('time')))}{' · vault tier' if p.get('vault_tier') else ''}"
                          f"{' · taken during the incident' if p.get('during_incident') else ''}"
                          f"{'  ← restored' if i == 0 else ''}\n", style="green" if i == 0 else "dim")
         lines.append("\n  Confirm?   [y] Yes   [n] Cancel\n", style="cyan")
@@ -360,7 +362,7 @@ def _escalations_renderable(
     lines = Text(overflow="fold")
 
     if pending:
-        lines.append(f"\n  ⚡ {pending['label']}\n\n", style="bold yellow")
+        lines.append(f"\n  ⚡ {_literal(pending['label'])}\n\n", style="bold yellow")
         lines.append("  Confirm?   [y] Yes   [n] Cancel\n", style="cyan")
         return Panel(
             lines,
@@ -382,14 +384,16 @@ def _escalations_renderable(
         action = e["action"]
         esc_type = e.get("escalation_type", "")
 
-        lines.append(f"  [{esc_id}]  ", style="dim")
-        lines.append(f"{_shown(action, e['resource_id'])}", style="bold yellow")   # a model's proposal
-        lines.append(f"  {vm_short}  {age} ago\n", style="dim")
+        # SEC-Fc: a `Text` never reads markup, but hands an escape sequence to the terminal as it
+        # is — every field of the card said with its control characters shown (`_literal`).
+        lines.append(f"  [{_literal(esc_id)}]  ", style="dim")
+        lines.append(_literal(_shown(action, e['resource_id'])), style="bold yellow")   # a model's proposal
+        lines.append(f"  {_literal(vm_short)}  {age} ago\n", style="dim")
 
         for step in (e.get("suggested_steps") or [])[:2]:
             # As the CLI's `pending` says it (MSK2c): masked by the card's id, then cut — never before.
             step = _shown(str(step), e["resource_id"])
-            lines.append(f"    • {step[:72]}\n", style="dim")
+            lines.append(f"    • {_literal(step[:72])}\n", style="dim")
 
         # SEC-F (V-22): every argument of a command to copy quoted for the shell — the card's
         # fields come from its store; the VM by `group_and_name`, quoted already (MSK3b).
@@ -397,19 +401,19 @@ def _escalations_renderable(
         before = e.get("first_seen") or e.get("timestamp")
         before = shlex.quote(str(before)) if before else "<ISO8601>"
         if esc_type in _ANCHORED_TYPES:   # its VM is an anchor: ack only (SEC5, V-35)
-            lines.append(f"    → glorfindel ack {ack_id}\n", style="dim cyan")
+            lines.append(_literal(f"    → glorfindel ack {ack_id}\n"), style="dim cyan")
         elif action == "restore_from_backup":
-            lines.append(
+            lines.append(_literal(
                 f"    → glorfindel restore {vm_arg} --yes --before "
-                f"{before}  # before the attack began\n",
+                f"{before}  # before the attack began\n"),
                 style="dim cyan"
             )
         elif esc_type == "verification_failed":
             lines.append(
-                f"    → glorfindel revert {vm_arg} --yes\n", style="dim cyan"
+                _literal(f"    → glorfindel revert {vm_arg} --yes\n"), style="dim cyan"
             )
         else:
-            lines.append(f"    → glorfindel ack {ack_id}\n", style="dim cyan")
+            lines.append(_literal(f"    → glorfindel ack {ack_id}\n"), style="dim cyan")
 
     if len(items) > 4:
         lines.append(
