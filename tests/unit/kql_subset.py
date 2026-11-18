@@ -10,7 +10,8 @@ Analytics, exact at the few values a rule counts —, several of them), `project
 (case-insensitive on strings — AL2, AL1d), `matches regex`, `startswith`, `endswith` (both
 case-insensitive, as in KQL — WL1), `contains`, `!contains` (case-insensitive — CAN2), `and`, `or`, `not(…)`; functions `ago()`, `extract()`,
 `iif()` (or `iff()`), `isempty()`, `isnotempty()`, `isnotnull()`, `strcat()`, `toint()`,
-`tolong()`, `tostring()`, `parse_json()`; a member (`.appid`) or an index (`["…"]`) on a column or on what a
+`tolong()`, `tostring()`, `parse_json()`, `split()` and an array's element `[n]`, the aggregation
+`sum(col)` (SEC-I: the blob rule); a member (`.appid`) or an index (`["…"]`) on a column or on what a
 function returns — the Activity Log's `Claims`, AL2, AL1d. For the Entra sign-in rule (CAN3):
 `let name = <tabular>;` statements, a let's name as a source, `distinct`, `join kind=inner` and
 `kind=leftanti` on a let's name (`on col, …`; a right column the left already has is suffixed
@@ -227,6 +228,14 @@ class _Parser:
         while self.peek() in (("op", "."), ("op", "[")):
             if self.take()[1] == ".":
                 key = self.take("ident")[1]
+            elif self.peek()[0] == "num":
+                # An array's element, `[0]` (SEC-I: `split(CallerIpAddress, ":")[0]`): null past
+                # its end or on a value that is not an array, as in KQL.
+                i = int(self.take("num")[1])
+                self.take("op", "]")
+                f = (lambda inner, i: lambda r: (inner(r)[i] if isinstance(inner(r), list)
+                                                 and -len(inner(r)) <= i < len(inner(r)) else None))(f, i)
+                continue
             else:
                 key = self.take("str")[1]
                 self.take("op", "]")
@@ -276,6 +285,11 @@ class _Parser:
                 m = re.search(pat(r), str(src(r) or ""), re.ASCII)
                 return (m.group(grp(r)) or "") if m else ""
             return extract
+        if name == "split":
+            # KQL's split: the string cut at each delimiter, an array (SEC-I: the blob rule's
+            # caller address and its port); null on a null.
+            (_, f), (_, sep) = args
+            return lambda r: None if f(r) is None else str(f(r)).split(sep(r))
         if name in ("toint", "tolong"):
             (_, f), = args
 
@@ -521,6 +535,8 @@ _AGGREGATES = {
     "dcount": lambda members, f: len({f(r) for r in members if f(r) is not None}),
     "make_set": _make_set,
     "countif": lambda members, pred: sum(1 for r in members if pred(r)),
+    # KQL's sum: the numbers added, nulls left out (SEC-I: the blob rule's EgressBytes).
+    "sum": lambda members, f: sum(v for v in (f(r) for r in members) if isinstance(v, (int, float))),
     "min": _min,
     "max": _max,
     "take_any": lambda members, f: next((f(r) for r in members if f(r) is not None), None),
