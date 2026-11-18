@@ -169,7 +169,7 @@ DOCKER_GLORFINDEL_WATCH = $(WATCH_KEY_DIR) && $(RUNS_DIRS) && $(GLORFINDEL_AZURE
 	orodruin-drill-check orodruin-drill-arm orodruin-drill-disarm \
 	orodruin-known orodruin-identity orodruin-identity-id orodruin-fingerprint watch-key imladris-watch-key queue-keys imladris-queue-keys harness-key harness-sign harness-verify \
 	gothmog-preflight gothmog-run \
-	orodruin-campaign-plan orodruin-campaign-run campaign-containment fault-rate \
+	orodruin-campaign-plan orodruin-campaign-run orodruin-run campaign-containment fault-rate \
 	profile-discover profile-detection profile-resilience profile-proven profiles-check \
 	team-check team-init team-start team-stop team-logs team-config components-check images-check \
 	console-shots doctor
@@ -342,6 +342,7 @@ help:
 	@echo "Campagne (R1 + IA0) — kill-chain + rapport, depuis Orodruin :"
 	@echo "  make orodruin-campaign-plan CAMPAIGN_TARGET=<rid> [CAMPAIGN_MAX=5]  Planifie (rend un id)"
 	@echo "  make orodruin-campaign-run  CAMPAIGN=<id>    Joue la campagne (la watch d'Imladris répond selon le mode de chaque VM)"
+	@echo "  make orodruin-run           SCENARIO=<nom> [DRY_RUN=1]   Joue UN scénario sur Orodruin armé (geste opérateur ; DRY_RUN pour sonder)"
 	@echo "  make imladris-campaign-report CAMPAIGN=<id>  Son rapport, écrit seul sur Imladris"
 	@echo "    (#167 : code, tests et mutants — rien de mesuré sur le banc)"
 	@echo "  CAMPAIGN_DECLARED=annatar/campaign/declared/bl1-reponse.yaml  Le plan : exactement ses techniques (BL1)"
@@ -1942,6 +1943,17 @@ orodruin-campaign-plan: orodruin-known
 orodruin-campaign-run: orodruin-known
 	@test -n "$(CAMPAIGN)" || { echo "CAMPAIGN=<id> requis (rendu par orodruin-campaign-plan)"; exit 1; }
 	ssh $(SSH_OPTS) -o ServerAliveInterval=60 $(ORO_USER)@$(ORO_IP) '$(ORO_RUN) annatar campaign run $(CAMPAIGN) --yes$(ORO_WITHOUT)'
+
+# ORU1 (#608) : jouer UN scénario sur Orodruin armé, en une commande gardée. SCENARIO est un nom de
+# scénario (annatar list). La garde de session (scripts/orodruin_run.py) refuse un lancement depuis
+# une session de code (une session ne lance jamais une attaque, SEC12/MOB1) : la garde d'abord, puis
+# l'ssh. DRY_RUN=1 montre sans agir (aucun appel cloud) ; WITHOUT_GLORFINDEL=1 : run de dév (V1).
+orodruin-run: orodruin-known
+	@test -n "$(SCENARIO)" || { echo "SCENARIO=<nom de scénario> requis (annatar list ; DRY_RUN=1 pour sonder)"; exit 1; }
+	@case "$(SCENARIO)" in ''|*[!A-Za-z0-9._-]*) echo "SCENARIO invalide : « $(SCENARIO) » (un nom de scénario)"; exit 1;; esac
+	@case "$(DRY_RUN)" in ''|1) ;; *) echo "DRY_RUN invalide : « $(DRY_RUN) » (DRY_RUN=1, ou rien)"; exit 1;; esac
+	@$(PYTHON) scripts/orodruin_run.py --guard-only
+	ssh $(SSH_OPTS) -o ServerAliveInterval=60 $(ORO_USER)@$(ORO_IP) '$(ORO_RUN) annatar run $(SCENARIO)$(if $(filter 1,$(DRY_RUN)), --dry-run) --yes$(ORO_WITHOUT)'
 
 # ── Profils d'usage (D1) — docs/profils/ ──────────────────────────────────────
 # Glorfindel est toujours là (docs/design/console.md, §2) : chaque profil démarre sa watch et la
