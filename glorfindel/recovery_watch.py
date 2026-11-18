@@ -84,8 +84,9 @@ def start_wait_s() -> float:
 
 def restore_principals() -> frozenset[str]:
     """The principals that restore, whose Run Command neutralizes (GLORFINDEL_RESTORE_PRINCIPALS:
-    their object ids or appIds, comma-separated; on Imladris, the workstation's console principal, in
-    host.env). None given: no neutralization is ever proven."""
+    their OBJECT ids, comma-separated; on Imladris, the workstation's console principal, in host.env).
+    An appId matches nothing (SEC-H): a user's delegated token carries the appId of the application
+    it signed in through. None given: no neutralization is ever proven."""
     raw = os.environ.get("GLORFINDEL_RESTORE_PRINCIPALS", "")
     return frozenset(p.strip().lower() for p in raw.split(",") if p.strip())
 
@@ -178,7 +179,10 @@ def neutralized_by_the_control_plane(obs: dict, job_start: float, trusted: froze
         return False, "aucune Run Command réussie sur la VM entre l'isolement et le restore : rien n'a été neutralisé"
     if not ours(before[-1]):
         who = ", ".join(before[-1].get("callers") or []) or "?"
-        return False, f"la dernière Run Command avant le restore vient de {who[:80]}, pas d'un principal qui restaure"
+        hint = (" (GLORFINDEL_RESTORE_PRINCIPALS nomme l'appId de son application : y mettre son object id)"
+                if set(before[-1].get("apps") or []) & trusted else "")
+        return False, (f"la dernière Run Command avant le restore vient de {who[:80]}, pas d'un principal qui "
+                       f"restaure{hint}")
     neutralized_at = _epoch(before[-1]["at"])
     other = next((r for r in runs if _epoch(r["at"]) > neutralized_at and not ours(r)), None)
     if other is not None:
