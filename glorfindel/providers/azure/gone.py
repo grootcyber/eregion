@@ -4,7 +4,7 @@ subscription (I7S, #303), for the release and the unblock (I5R) (moved from rele
 """
 from __future__ import annotations
 
-from glorfindel.providers.azure.nsg import _rule_name
+from glorfindel.providers.azure.nsg import _deny_applies, _rule_name
 from glorfindel.providers.azure.turned import _turned_guard
 from glorfindel.providers.azure.sdk import _is_not_found
 from glorfindel.response.ids import _parse_nsg_resource_id, _same_id
@@ -91,6 +91,7 @@ class GoneVmMixin:
         The unblock's too (I5R): `act` "block", `prefix` the block's, the rules it takes
         off added to `deleted`."""
         names: set[str] = set()
+        older: dict[str, str] = {}
         failed: list[str] = []
         for nid in nic_ids:
             why = self._gone_nic_check(resource_id, vm_name, nid, act)
@@ -99,7 +100,11 @@ class GoneVmMixin:
                 continue
             names |= {n for b in self._placement_rule_bases(prefix, vm_name, nid.rsplit("/", 1)[-1], nid)
                       for n in (b, f"{b}-out")}
-        if not names:
+            # An earlier version's names (SEC-H): this NIC's only as a deny aimed at the addresses its
+            # records give it; any other said, left.
+            older.update({n.lower(): nid for b in self._older_rule_bases(prefix, vm_name, nid.rsplit("/", 1)[-1], nid)
+                          for n in (b, f"{b}-out")})
+        if not names and not older:
             return failed
         try:
             nsgs = list(self._network.network_security_groups.list_all())
@@ -112,6 +117,15 @@ class GoneVmMixin:
             n_rg, n_name = _parse_nsg_resource_id(nsg.id)
             for r in (getattr(nsg, "security_rules", None) or []):
                 name = _rule_name(r)
+                if (name.lower() in older and name.lower() not in names
+                        and (n_rg.lower(), n_name.lower(), name.lower()) not in stuck):
+                    ips = _recorded_ips(resource_id, older[name.lower()])
+                    if not ips or not _deny_applies(r, ips):
+                        failed.append(f"{name} ({n_name}) laissée : nom d'une version antérieure, que ne lie à "
+                                      f"cette carte aucune adresse enregistrée — à retirer à la main si c'est la "
+                                      f"sienne, {_GONE_WORDS[act][0]} non vérifiée")
+                        continue
+                    names.add(name.lower())
                 if name.lower() in names and (n_rg.lower(), n_name.lower(), name.lower()) not in stuck:
                     if why := held_back(nsg, r):
                         failed.append(f"{name} ({n_name}) gardée : {why}")
@@ -122,3 +136,13 @@ class GoneVmMixin:
                     elif deleted is not None:
                         deleted.append(name)
         return failed
+
+
+def _recorded_ips(resource_id: str, nic_id: str) -> list[str]:
+    """The addresses this VM's local records give a NIC (its isolation's placements, its blocks')."""
+    from glorfindel.response.state import _load_block_entries, _load_isolation_state
+    rows = list((_load_isolation_state(resource_id) or {}).get("placements") or [])
+    rows += [p for e in _load_block_entries(resource_id) for p in e.get("placements") or []]
+    want = nic_id.rstrip("/").lower()
+    return sorted({ip for p in rows if isinstance(p, dict) and (p.get("nic_id") or "").rstrip("/").lower() == want
+                   for ip in p.get("ips") or [] if isinstance(ip, str)})

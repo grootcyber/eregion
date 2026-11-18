@@ -236,3 +236,85 @@ def test_the_original_is_kept_under_128_bits_and_read_under_the_older_key():
     tags[c._older_orig_tag(A_NIC)] = "none"
     c._forget_original(q, A_NIC)
     assert not set(tags) & c._orig_tags(A_NIC)
+
+
+# ── A NIC left bare, its NSG out of sight: what an earlier version left there ─────────────────
+
+@pytest.fixture
+def own_nsg_world(monkeypatch):
+    """web's NIC on an NSG of its own, isolation by rules."""
+    monkeypatch.setenv("GLORFINDEL_QUARANTINE_NSG", "0")
+    f = FakeAzure()
+    own = f.add_nsg(A_RG, "nsg-web-nic")
+    subnet = f.add_subnet("rg-net", "vnet", "app", None)
+    f.add_vm(A_RG, "web", [{"rg": A_RG, "name": "web-nic", "ips": ["10.0.0.4"], "subnet": subnet, "nsg": own}])
+    c = AzureConnector(dry_run=False, read_only=False)
+    c._network, c._compute = f.network, f.compute
+    c._subscription_id = "s"
+    c.recent_changes = lambda *a, **k: []
+    return f, c, own
+
+
+@pytest.mark.parametrize("lose", [True, False])
+def test_an_older_isolation_on_the_nsg_a_bare_nic_left_is_lifted(own_nsg_world, monkeypatch, lose):
+    """The review's sequence: an earlier version's isolation on the NIC's own NSG, someone takes that
+    NSG off the NIC, the state lost: the release looked for the new names only there — `released`,
+    the pair left, the VM cut off once its NSG comes back. Its deny aimed at the NIC: lifted."""
+    f, c, own = own_nsg_world
+    with monkeypatch.context() as m:
+        m.setattr(NetworkMixin, "_placement_rule_base", _older_base)
+        assert c.isolate_vm(A)["status"] == "isolated"
+    f.nics[key(A_NIC)]["nsg"] = None
+    if lose:
+        _lose_states()
+    assert c.release_isolation(A)["status"] == "released"
+    assert not [n for n in f.nsgs[key(own)]["rules"] if n.startswith("glorfindel-")]
+
+
+def test_an_older_name_on_that_nsg_aimed_elsewhere_is_left_and_said(own_nsg_world, monkeypatch):
+    """Under an older name but aimed at another address — a homonym's whose hash met, or ours moved by
+    hand: whose it is can't be told. Left, said — never `released`."""
+    f, c, own = own_nsg_world
+    with monkeypatch.context() as m:
+        m.setattr(NetworkMixin, "_placement_rule_base", _older_base)
+        c.isolate_vm(A)
+    rules = f.nsgs[key(own)]["rules"]
+    for r in rules.values():
+        for side in ("destination", "source"):
+            if r.get(f"{side}_address_prefixes") == ["10.0.0.4"]:
+                r[f"{side}_address_prefixes"] = ["10.0.0.99"]
+    f.nics[key(A_NIC)]["nsg"] = None
+    _lose_states()
+    out = c.release_isolation(A)
+    assert out["status"] == "release_partial" and "laissée" in " ".join(out["failed"]), out
+    assert len([n for n in rules if n.startswith("glorfindel-")]) == 2
+
+
+def test_two_long_ipv6_blocks_never_share_a_name():
+    """A prefix with no room for the VM (an IPv6 block): the address kept as its own hash, one name
+    per address — cut to the room, two neighbours took the same name."""
+    c = AzureConnector()
+    names = set()
+    for ip in ("2001:db8:85a3:1111:2222:3333:4444:5555", "2001:db8:85a3:1111:2222:3333:4444:5556"):
+        for base in c._placement_rule_bases(c._block_rule_prefix(ip), "web", "web-nic", A_NIC):
+            assert len(f"{base}-out") <= 80 and base.endswith(_nic_mark(A_NIC)), base
+            names.add(base)
+    assert len(names) == 4
+
+
+def test_a_gone_vms_older_pair_its_record_rewritten_is_lifted_by_its_recorded_address(world, monkeypatch):
+    """The VM deleted, its record rewritten since under the new names (a later isolation): its older
+    pair is looked for on every NSG, a NIC's only as a deny aimed at an address its records give it."""
+    f, c, s_nsg = world
+    with monkeypatch.context() as m:
+        m.setattr(NetworkMixin, "_placement_rule_base", _older_base)
+        c.isolate_vm(A)
+    state = actions._load_isolation_state(A)
+    new = c._placement_rule_base("glorfindel-iso", "web", "web-nic", A_NIC)
+    for p in state["placements"]:
+        p["rule_in"], p["rule_out"] = new, f"{new}-out"
+    actions._save_isolation_state(A, state)
+    for n in f.vms.pop(key(A))["nics"]:
+        f.nics.pop(key(n))
+    assert c.release_isolation(A)["status"] == "released"
+    assert not _ours(f, s_nsg)

@@ -102,6 +102,7 @@ class QuarantineMixin(OriginMixin):
         # while verify_release said verified (sixth review, S1).
         q = (self._ensure_quarantine_nsg(t.get("location"), default_rg, at=current) if current
              else self._ensure_quarantine_nsg(t.get("location"), default_rg))
+        conflict_said = ""                      # another group's original, kept for the release (SEC-H)
         if current:
             # The state knows the original; the tag is the fallback. Neither says →
             # unknown, never recorded as "none" (the placement then carries no
@@ -125,12 +126,12 @@ class QuarantineMixin(OriginMixin):
                 if prior is _UNKNOWN or prior is None:
                     try:
                         prior = self._bare_nic_original(t, default_rg)[0]
-                    except OriginalConflict:
+                    except OriginalConflict as exc:
                         # A quarantine NSG of another group names its original (SEC-H): never
                         # followed, nor our "none" kept over it — unknown, our stale tag taken off
-                        # (read back): the release keeps the NIC in quarantine and asks for it.
+                        # (read back): the release keeps the NIC in quarantine and says why.
                         self._forget_original(q, t["nic_id"], strict=True)
-                        prior, conflict = _UNKNOWN, True
+                        prior, conflict, conflict_said = _UNKNOWN, True, str(exc)[:400]
                     except Exception:
                         # Our tag unreadable (a 429): what it says is unknown. Read as
                         # "none", it was written over the tag — a valid original lost
@@ -179,6 +180,7 @@ class QuarantineMixin(OriginMixin):
             "nic_id": t["nic_id"], "kind": "quarantine", "scope": "quarantine",
             "nsg_rg": q["nsg_rg"], "nsg_name": q["nsg_name"], "nsg_id": q["nsg_id"],
             **({} if original is _UNKNOWN else {"original_nsg_id": original}),
+            **({"original_conflict": conflict_said} if conflict_said and original is _UNKNOWN else {}),
             "shared_nsg": False, "ips": t["private_ips"], "priority": 100,
             "rule_in": QUARANTINE_RULE_IN, "rule_out": QUARANTINE_RULE_OUT,
             "bumped": [], "applied": ["nic-attach"], "shadowed_by": [],

@@ -357,8 +357,14 @@ class NetworkMixin:
         base = f"{prefix}-{vm_name}-{nic_short}-{mark}"
         if len(base) + 4 > 80:
             room = 80 - 4 - len(prefix) - 2 - len(mark)
-            base = (f"{prefix}-{vm_name[:room]}-{mark}" if room >= 1
-                    else f"{prefix[:80 - 4 - 1 - len(mark)]}-{mark}")
+            if room >= 1:
+                base = f"{prefix}-{vm_name[:room]}-{mark}"
+            else:
+                # The address too long to keep whole beside the mark (an IPv6 block): cut, it
+                # gave two neighbours one name — kept as 64 bits of its hash after what fits.
+                import hashlib
+                held = hashlib.sha256(prefix.lower().encode()).hexdigest()[:16]
+                base = f"{prefix[:80 - 4 - 1 - len(mark) - 1 - len(held)]}-{held}-{mark}"
         return base.lower()
 
     def _placement_rule_bases(self, prefix: str, vm_name: str, nic_short: str, nic_id: str) -> tuple[str, str]:

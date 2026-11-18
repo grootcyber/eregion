@@ -190,7 +190,11 @@ class ReleaseMixin:
                         try:
                             original = (p["original_nsg_id"] if "original_nsg_id" in p
                                         else self._original_from_tags(p, p["nic_id"]))
-                        except OriginalUnknown:
+                        except OriginalUnknown as exc:
+                            if p.get("original_conflict"):
+                                # Why it is unknown, as the isolation met it (SEC-H): another group's
+                                # quarantine NSG names an original, never followed.
+                                raise RuntimeError(f"{p['original_conflict']} ({_first_line(exc)})")
                             if not bare:
                                 raise
                             # Left bare by someone, its original unknown: it is not "in

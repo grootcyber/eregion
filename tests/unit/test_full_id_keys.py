@@ -309,6 +309,30 @@ def test_a_decoy_quarantine_nsg_in_another_group_never_chooses_the_original(monk
     assert f.nics[key(nic)]["nsg"] is None                     # never the decoy's choice
 
 
+def test_the_conflict_met_at_the_isolation_is_said_again_at_the_release(monkeypatch):
+    """The NIC isolated again while another group's quarantine NSG names its original: unknown, and
+    why — kept on the placement, said at the release with that NSG's name, not only « unknown »."""
+    from glorfindel.actions import _load_isolation_state
+    from .fake_azure import key
+    f, c, nic, _ = _bare_world(monkeypatch)
+    chosen = f.add_nsg("rg-evil", "nsg-open")
+    f.add_nsg("rg-evil", "nsg-glorfindel-quarantine-westeurope",
+              tags={"managed-by": "glorfindel", c._orig_tag(nic): chosen})
+    rid = "/subscriptions/s/resourceGroups/rg-app/providers/Microsoft.Compute/virtualMachines/web"
+    assert c.isolate_vm(rid)["status"] == "isolated"
+    p = next(p for p in _load_isolation_state(rid)["placements"] if p.get("kind") == "quarantine")
+    assert "original_nsg_id" not in p and "rg-evil/nsg-glorfindel-quarantine-westeurope" in p["original_conflict"]
+    out = c.release_isolation(rid)
+    assert out["status"] == "release_partial" and "rg-evil/nsg-glorfindel-quarantine-westeurope" in " ".join(
+        out["failed"]), out
+    assert actions_is_quarantine(f.nics[key(nic)]["nsg"])
+
+
+def actions_is_quarantine(nsg) -> bool:
+    from glorfindel.actions import _is_quarantine_nsg
+    return bool(nsg) and _is_quarantine_nsg(nsg)
+
+
 def test_without_a_decoy_the_authentic_none_stands(monkeypatch):
     f, c, nic, _ = _bare_world(monkeypatch)
     t0 = {"nic_id": nic, "nic_short": "web-nic", "location": "westeurope"}

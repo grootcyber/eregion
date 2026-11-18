@@ -163,7 +163,8 @@ nom `…-b-<marque>`. Une version antérieure les finissait par 6 hex de SHA-1 (
 la carte) : deux cartes de même nom, dans deux VM de même nom, dont les ids s'y rencontrent (2^24 essais hors
 ligne) partageaient leurs noms — la levée de l'une retirait le refus de l'autre, l'isolement de l'une réécrivait
 celui de l'autre. Sur 128 bits, deux cartes ne se rencontrent jamais ; un nom trop long pour la carte et la VM
-garde la VM, coupée, et la marque entière (au plus 80 caractères avec `-out`).
+garde la VM, coupée, et la marque entière (au plus 80 caractères avec `-out`) ; un préfixe trop long même
+pour la VM (un blocage IPv6) garde son début et 64 bits de l'empreinte de l'adresse : un nom par adresse.
 
 **La migration** : rien n'est renommé sur Azure. Ce qu'une version antérieure a posé reste sous ses noms jusqu'à
 sa levée :
@@ -172,7 +173,9 @@ sa levée :
 - **jamais cru sur le nom** : une règle sous un ancien nom n'est à une carte que si l'état de sa VM l'enregistre
   pour elle (la levée et le déblocage défont leurs placements par leur nom ; le `reset` les lit dans l'état, même
   si l'adresse de la carte a changé depuis), ou si c'est un refus qui s'applique à ses adresses ; celle d'un
-  homonyme dont le hash a rencontré le sien, visant ses adresses à lui, reste ;
+  homonyme dont le hash a rencontré le sien, visant ses adresses à lui, reste ; de même sur le NSG qu'une carte
+  laissée nue ne porte plus, et pour une VM supprimée (par les adresses que ses enregistrements lui donnent) :
+  une règle d'un ancien nom qui ne s'y applique pas est laissée et dite, jamais une levée « faite » ;
 - **reposé sous les nouveaux noms** : une isolation ou un blocage écrit de nouveau (la réaffirmation après une
   disparition, une ré-isolation) part sous les nouveaux noms ; l'état garde les deux placements, la levée défait
   les deux ;
@@ -188,8 +191,8 @@ pour une carte nue** : sur le NSG de quarantaine du groupe où nous les créons 
 la VM), et nulle part ailleurs ne choisit. Un NSG de quarantaine d'un autre groupe qui nomme un original pour la
 carte — un autre hôte configuré sur un autre groupe (I8S), ou un leurre que n'importe qui peut nommer et étiqueter
 comme le nôtre — n'est jamais suivi : la carte reste telle quelle, dite (`OriginalConflict`), jusqu'à ce que
-l'opérateur pose l'original sur notre tag ; une ré-isolation retire alors notre « aucun » périmé (relu), et la
-levée demande l'original.
+l'opérateur pose l'original sur notre tag ; une ré-isolation retire alors notre « aucun » périmé (relu), garde
+la raison sur son placement (`original_conflict`), et la levée la redit, le NSG de l'autre groupe nommé.
 
 **Les états locaux** (`glorfindel/response/state_files.py`) : un fichier n'est celui d'une VM que si le
 `resource_id` qu'il enregistre est le sien (`docs/fichiers-cles.md`). **Les écritures ARM** de l'isolement et du
@@ -197,9 +200,32 @@ blocage attendent au plus `GLORFINDEL_ARM_WRITE_TIMEOUT_S` (300 s), et un écriv
 plus `GLORFINDEL_VM_LOCK_WAIT_S` (900 s) : au-delà, l'écriture est dite en échec, jamais faite ; la réaffirmation
 dit chaque VM qu'elle saute, et sur une carte (`reassert-busy-…`) à partir de la cinquième passe de suite.
 
-**La mesure au banc** (avant la fusion) : une isolation et un blocage posés par la version d'avant, sur une VM du
-banc, puis la version de la branche : vérifiés sous leurs anciens noms, reposés sous les nouveaux après une
-disparition, tout levé — le guide est dans le rapport du lot (#849).
+**La mesure au banc** (avant la fusion de SEC-H, geste de l'opérateur) : ce qu'une version d'avant a posé,
+lu et levé par la nouvelle. Depuis le poste, `.envrc` chargé, sur des VM du banc qu'Imladris ne tient pas
+(l'ancien Imladris ignore les noms en 32 hex : son balayage des orphelines ne lit que 6 ou 8). Deux checkouts,
+le même `~/.glorfindel` : `<ancien>` (la release qui tourne, ou `origin/main` d'avant la fusion) et `<branche>`.
+Placeholders : `<rg>`, `<vm1>`, `<vm2>`, `<vm3>` (et leurs ids `<rid1>`…), `<nsg>` (le NSG de leurs cartes),
+`<rg-q>` et `<région>` (le NSG de quarantaine), `<nic>`, `<ip>` (une adresse de documentation, 203.0.113.x).
+
+1. **Avec `<ancien>`** :
+   - `glorfindel block <ip> <rg>/<vm1> --yes` ;
+   - `GLORFINDEL_QUARANTINE_NSG=0 glorfindel isolate <rg>/<vm2> --yes` (par règles) ;
+   - `glorfindel isolate <rg>/<vm3> --yes` (par la quarantaine).
+
+   Contrôles : `az network nsg rule list -g <rg> --nsg-name <nsg> --query "[?starts_with(name,'glorfindel-')].name" -o tsv`
+   liste des noms qui finissent par 6 hex ; `az network nsg show -g <rg-q> -n nsg-glorfindel-quarantine-<région>
+   --query tags` montre un tag `glorfindel-orig-<12 hex>`.
+2. **Avec `<branche>`**, en lecture :
+   `.venv/bin/python -c "from glorfindel.actions import AzureConnector as C; c=C(dry_run=False); print(c.verify_block_ip('<ip>','<rid1>')['verified'], c.verify_isolation('<rid2>')['verified'], c.verify_isolation('<rid3>')['verified'])"`
+   affiche `True True True`.
+3. **Avec `<branche>`** : `GLORFINDEL_QUARANTINE_NSG=0 glorfindel isolate <rg>/<vm2> --yes`. Une paire
+   `glorfindel-iso-…-<32 hex>` apparaît à côté de l'ancienne, et Azure l'accepte (80 caractères au plus).
+4. **Avec `<branche>`** : `glorfindel unblock <ip> <rg>/<vm1> --yes` répond `unblocked` ; `glorfindel release
+   <rg>/<vm2> --yes` et `glorfindel release <rg>/<vm3> --yes` répondent `released`.
+
+   Contrôles : plus aucune règle `glorfindel-` sur ces NSG (la commande de l'étape 1) ; plus aucun tag
+   `glorfindel-orig-` pour ces cartes ; chaque carte sur son NSG d'origine (`az network nic show -g <rg> -n <nic>
+   --query networkSecurityGroup.id`).
 
 ## Pitfalls opérateur
 

@@ -8,7 +8,9 @@ aside, never deleted with the other addresses' entries (glorfindel/response/stat
 REC1's callers by object id, its next pages on ARM (recovery.py); the jobs, the claims and the last
 restore by the full id, the vault's job by its container (glorfindel/jobs.py, backup.py); the ARM
 writes and the writers' lock waited a bounded time, the VM the reassertion skips said (sdk.py,
-glorfindel/reassert.py). M5801–M5820, measured by tests/unit/test_wide_marks.py,
+glorfindel/reassert.py). M5801–M5820; M5941–M5945 for the review (an earlier version's names on
+the NSG a bare NIC left and for a deleted VM, a name per IPv6 address, the conflict said at the
+release — numbers handed by the Orchestre), measured by tests/unit/test_wide_marks.py,
 tests/unit/test_full_id_keys.py and the frozen two hosts of tests/unit/test_invariant_regressions.py."""
 NSG = "glorfindel/providers/azure/nsg.py"
 REL = "glorfindel/providers/azure/release.py"
@@ -22,6 +24,9 @@ SDK = "glorfindel/providers/azure/sdk.py"
 STF = "glorfindel/response/state_files.py"
 STA = "glorfindel/response/state.py"
 JOBS = "glorfindel/jobs.py"
+AWY = "glorfindel/providers/azure/away.py"
+GON = "glorfindel/providers/azure/gone.py"
+NET = "glorfindel/providers/azure/network.py"
 RA = "glorfindel/reassert.py"
 _W = "tests/unit/test_wide_marks.py"
 _K = "tests/unit/test_full_id_keys.py"
@@ -85,6 +90,18 @@ MUTANTS = [
      "                if (False and isinstance(container, str) and container\n"),
     ("M5820", "an ARM write not done by its deadline read done (SEC-H)", SDK,
      "    if callable(done) and done() is False:\n", "    if False:\n"),
+    ("M5941", "a bare NIC's NSG out of sight read for the new names only: an earlier version's pair left, "
+     "the release said done (SEC-H, review)", AWY,
+     "                    t0 = older.get(name.lower())\n", "                    t0 = None\n"),
+    ("M5942", "an older name on an NSG out of sight taken whatever it aims at (SEC-H, review)", AWY,
+     '                    if not _deny_applies(r, t0.get("private_ips") or None):\n', "                    if False:\n"),
+    ("M5943", "a deleted VM's older pair never looked for (SEC-H, review)", GON,
+     "                    names.add(name.lower())\n", "                    continue\n"),
+    ("M5944", "two IPv6 blocks cut to one name (SEC-H, review)", NET,
+     '                base = f"{prefix[:80 - 4 - 1 - len(mark) - 1 - len(held)]}-{held}-{mark}"\n',
+     '                base = f"{prefix[:80 - 4 - 1 - len(mark)]}-{mark}"\n'),
+    ("M5945", "the conflict met at the isolation forgotten at the release (SEC-H, review)", REL,
+     '                            if p.get("original_conflict"):\n', "                            if False:\n"),
 ]
 TESTS = {
     "M5801": f"{_W}::test_the_two_nics_meet_on_the_older_mark_never_on_ours "
@@ -109,4 +126,9 @@ TESTS = {
     "M5818": f"{_K}::test_a_homonyms_restore_is_never_this_vms",
     "M5819": f"{_K}::test_the_vaults_job_of_a_homonym_is_never_this_vms",
     "M5820": f"{_K}::test_an_arm_write_that_does_not_end_is_never_read_done",
+    "M5941": f"{_W}::test_an_older_isolation_on_the_nsg_a_bare_nic_left_is_lifted",
+    "M5942": f"{_W}::test_an_older_name_on_that_nsg_aimed_elsewhere_is_left_and_said",
+    "M5943": f"{_W}::test_a_gone_vms_older_pair_its_record_rewritten_is_lifted_by_its_recorded_address",
+    "M5944": f"{_W}::test_two_long_ipv6_blocks_never_share_a_name",
+    "M5945": f"{_K}::test_the_conflict_met_at_the_isolation_is_said_again_at_the_release",
 }

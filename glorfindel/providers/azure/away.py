@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import re
 
-from glorfindel.providers.azure.nsg import _rule_name
+from glorfindel.providers.azure.nsg import _deny_applies, _rule_name
 from glorfindel.providers.azure.turned import _aims_elsewhere, _held_by_turned, _turned_guard
 from glorfindel.providers.azure.quarantine import QUARANTINE_NSG_PREFIX
 from glorfindel.response.ids import _parse_nsg_resource_id, _parse_vm_resource_id
@@ -172,9 +172,15 @@ class AwayRulesMixin:
         views = {t0["nic_id"]: {(t["nsg_rg"].lower(), t["nsg_name"].lower()) for t in self._nic_nsg_views(t0)}
                  for t0 in bare}
         names: dict[str, dict] = {}
+        # An earlier version's names (6 or 8 hex, SEC-H): shared by NICs whose hash met, so a rule under
+        # one is this NIC's only as a deny aimed at its addresses; any other is said, left — never a
+        # release « verified » with the pair still on the NSG the NIC comes back to.
+        older: dict[str, dict] = {}
         for t0 in bare:
             for b in self._placement_rule_bases("glorfindel-iso", vm_name, t0["nic_short"], t0["nic_id"]):
                 names.update({n.lower(): t0 for n in (b, f"{b}-out")})
+            for b in self._older_rule_bases("glorfindel-iso", vm_name, t0["nic_short"], t0["nic_id"]):
+                older.update({n.lower(): t0 for n in (b, f"{b}-out")})
         try:
             nsgs = (list(guard["nsgs"].values()) if "nsgs" in guard
                     else list(self._network.network_security_groups.list_all()))
@@ -194,7 +200,21 @@ class AwayRulesMixin:
                     t0 = next((t for t in bare if name.lower() in {
                         n for b in self._placement_rule_bases(name[: m.start("rest") - 1], vm_name, t["nic_short"],
                                                               t["nic_id"]) for n in (b, f"{b}-out")}), None)
-                if t0 is None or k in views[t0["nic_id"]] or skip(k, name):
+                if t0 is None:
+                    t0 = older.get(name.lower())
+                    if t0 is None and blocks and (m := _BLOCK_RE.match(name)):
+                        t0 = next((t for t in bare if name.lower() in {
+                            n for b in self._older_rule_bases(name[: m.start("rest") - 1], vm_name, t["nic_short"],
+                                                              t["nic_id"]) for n in (b, f"{b}-out")}), None)
+                    if t0 is None or k in views[t0["nic_id"]] or skip(k, name):
+                        continue
+                    if not _deny_applies(r, t0.get("private_ips") or None):
+                        said.append(f"{n_rg}/{n_name}/{name} laissée : nom d'une version antérieure, partagé par "
+                                    f"des cartes dont le hash s'est rencontré, et qui ne refuse pas les adresses "
+                                    f"de {t0['nic_short']} — à retirer à la main si c'est la sienne (az network "
+                                    f"nsg rule delete -g {n_rg} --nsg-name {n_name} -n {name}), {unverified}")
+                        continue
+                elif k in views[t0["nic_id"]] or skip(k, name):
                     continue
                 if "why" not in guard:
                     # The guard reads the listing just made, not a second one (D80's review).
