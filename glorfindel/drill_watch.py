@@ -274,7 +274,7 @@ def judge(src: Sources, now: datetime | None = None) -> dict:
     # 2. The permit there, Orodruin says it is disarmed: never silent.
     if listed and pulse is not None and pulse["state"] == "disarmed" and pulse["reason"] != "drill_changed":
         return out("self_disarmed", pulse["reason"], "permit present, Orodruin says it is disarmed "
-                   f"({pulse['reason']})", mention=True)
+                   f"({pulse['reason']})", mention=mention("self_disarmed"))
     if listed and pulse is None:
         if (now - (_when(permit["armed_at"]) or now)).total_seconds() < ARMING_GRACE_S:
             return out("waiting", "arming", "armed: its pulse not read yet")
@@ -312,7 +312,7 @@ def judge(src: Sources, now: datetime | None = None) -> dict:
     at = _when(v["pulse_at"]) or _when(pulse["at"]) or now
     if (now - at).total_seconds() > SILENT_AFTER_S:
         return out("not_run", "silent", f"Orodruin silent: drill.json not written since "
-                   f"{at.isoformat(timespec='minutes')}", mention=True)
+                   f"{at.isoformat(timespec='minutes')}", mention=mention("not_run"))
     o = _when(v["occurrence"])
     if o is None or o < (_when(permit["armed_at"]) or now):
         return out("waiting", "first", "armed: its first occurrence is the next one")
@@ -321,7 +321,7 @@ def judge(src: Sources, now: datetime | None = None) -> dict:
     if (now - o).total_seconds() < NOT_RUN_AFTER_S:
         return out("waiting", "due", "armed: the occurrence is due, its status not here yet")
     return out("not_run", "no_status", f"no status of the occurrence {NOT_RUN_AFTER_S // 3600} h after "
-               "its hour: Orodruin did not run it", mention=True)
+               "its hour: Orodruin did not run it", mention=mention("not_run"))
 
 
 def _own_word(pulse: dict | None, v: dict) -> dict | None:
@@ -379,7 +379,7 @@ def _result(src: Sources, v: dict, last: dict, now: datetime, out) -> dict:
         return pending("no_runs", "its request has no run")
     measured = [src.measure(r, o) for r in runs]
     if "missed" in measured:
-        return out("missed", "missed", "the technique played, no detection: a regression", mention=True)
+        return out("missed", "missed", "the technique played, no detection: a regression", mention=mention("missed"))
     if all(m == "proof" for m in measured):
         return out("proof", "", f"a proof: {len(runs)} run(s) detected, the decision attached (C1)")
     worst = next(m for m in measured if m != "proof")

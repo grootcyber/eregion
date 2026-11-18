@@ -3160,11 +3160,14 @@ async def indicators() -> dict:
         real = ind.real(cycles, every, confidence_threshold(), since.timestamp(), now=t,
                         windows=_read_windows(), runs=runs, liftings=_manual_liftings(since.timestamp()))
         out.update(contain=real["contain"], alone=real["alone"], t0=real["t0"])
-        out = coverage.feed(out, coverage_matrix(t))
+        return coverage.feed(out, coverage_matrix(t))
+
+    def told() -> dict:
+        out = gather()
         if out.get("last_proof"):   # DRL1b (§1.1): the tile says when it comes from the drill of the week
             out["last_proof"] = {**out["last_proof"], "drill": _drill_of_proof(out["last_proof"])}
         return out
-    return await asyncio.to_thread(gather)
+    return await asyncio.to_thread(told)
 
 
 def _exercise_indicators(since: datetime, now: datetime, cat: list[dict]):
