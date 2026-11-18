@@ -53,10 +53,8 @@ class FakeDiscord:
                    "rulesets": [{"id": 11, "name": "tags v*", "target": "tag", "enforcement": "active",
                                  "conditions": {"ref_name": {"include": ["refs/tags/v*"], "exclude": []}},
                                  "rules": [{"type": "creation"}, {"type": "update"}, {"type": "deletion"}]}],
-                   # SEC-G: the repository (its owner, the maintainer — a person), and its tags as the
-                   # API names them: `tag_refs` by tag ({"type", "sha"}), else `tag_resolver(tag)`;
-                   # an annotated tag's object in `tag_objects` by its sha.
-                   "repo": {"full_name": "o/r", "owner": {"login": "maintainer", "id": 1, "type": "User"}},
+                   # SEC-G: the repository's tags as the API names them: `tag_refs` by tag ({"type",
+                   # "sha"}), else `tag_resolver(tag)`; an annotated tag's object in `tag_objects`.
                    "tag_refs": {}, "tag_objects": {}}
         self.tag_resolver = None
         self.console_token, self.console_status = "", 200
@@ -233,8 +231,6 @@ class FakeDiscord:
         if p.startswith("/gh/repos/o/r/rulesets/"):
             r = next((r for r in self.gh["rulesets"] or [] if str(r.get("id")) == p.rsplit("/", 1)[1]), None)
             return (200, r, {}) if r else (404, {"message": "Not Found"}, {})
-        if p == "/gh/repos/o/r":
-            return (200, self.gh["repo"], {}) if self.gh["repo"] else (404, {"message": "Not Found"}, {})
         if p.startswith("/gh/repos/o/r/git/ref/tags/"):
             tag = p[len("/gh/repos/o/r/git/ref/tags/"):]
             obj = self.gh["tag_refs"].get(tag) or (self.tag_resolver(tag) if self.tag_resolver else None)

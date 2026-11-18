@@ -43,9 +43,8 @@ SECRET = "DEPLOY-SECRET-xyz"
 SIGNER = placeholder_key("maintainer")
 OTHER_KEY = placeholder_key("someone else")
 H0_SIGNER_ENV = f"EREGION_HARNESS_KEY={pinned(SIGNER)}\n"
-# SEC-G (V-07): who creates and publishes a release — the maintainer, the repository's owner in the fake
-# (tests/unit/fake_discord.py, gh["repo"]); the sessions' App, a bot, never.
-MAINTAINER = {"login": "maintainer", "id": 1, "type": "User"}
+# SEC-G (Jonathan's decision of 18/11): the sessions' App drafts every release, Jonathan publishes it, and
+# GitHub keeps the App as its author — the CD never reads it. Every release of these tests is the App's.
 THE_APP = {"login": "eregion-agents[bot]", "id": 2, "type": "Bot"}
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None or shutil.which("bash") is None,
@@ -338,10 +337,10 @@ class H0:
             self.sig.publish(f"ghcr.io/{GHCR_REPO}", digest, "o/r", commit, **over)
         return digest
 
-    def publish(self, tag, author=None):
-        """The release Jonathan creates and publishes (SEC-G: its author, the maintainer — `author`: another)."""
+    def publish(self, tag):
+        """The release the App drafted and Jonathan published: its author, the App, as GitHub says it."""
         self.fake.gh["release"] = {"tag_name": tag, "html_url": f"https://example.invalid/releases/{tag}",
-                                   "author": dict(author or MAINTAINER)}
+                                   "author": dict(THE_APP)}
 
     def run(self, mode="run", *args, **env):
         return subprocess.run([sys.executable, str(self.clock), str(self.cd / "eregion_cd.py"), mode, *args],
@@ -506,7 +505,7 @@ def _published_back(h0):
     assert h0.run().returncode == 0
     h0.image("c1", "v0.3.1")
     h0.fake.gh["releases"]["v0.3.1"] = {"tag_name": "v0.3.1", "html_url": "https://example.invalid/releases/v0.3.1",
-                                        "prerelease": False, "draft": False, "author": dict(MAINTAINER)}
+                                        "prerelease": False, "draft": False, "author": dict(THE_APP)}
     h0.fake.requests.clear()
 
 
@@ -615,7 +614,7 @@ def test_check_refuses_a_missing_tag_rule(h0):
     assert any(t.startswith("⛔ À blanc : v0.4.0 serait refusée") for t in _titles(h0)) and not _alerts(h0)
 
 
-# ── SEC-G (audit of 13/11, V-07, V-38): the tag v<semver>, the maintainer's release, the API's commit ──
+# ── SEC-G (audit of 13/11, V-07, V-38): the tag v<semver>, its rule, the API's commit ───────────────────
 
 @pytest.mark.parametrize("tag", ["0.4.1", "release-0.4.1", "v0.4.1-rc1", "v00.4.1", "V0.4.1"])
 def test_a_release_whose_tag_is_not_v_semver_is_refused_before_anything_is_fetched(h0, tag):
@@ -632,68 +631,25 @@ def test_a_release_whose_tag_is_not_v_semver_is_refused_before_anything_is_fetch
     assert h0.head() == h0.commits["c1"]
 
 
-@pytest.mark.parametrize("author, said", [
-    (THE_APP, "de type « Bot »"),
-    ({"login": "someone", "id": 3, "type": "User"}, "n'est pas le mainteneur"),
-    ({"login": "maintainer", "id": 1, "type": "Organization"}, "de type « Organization »"),
-    ({"login": "maintainer", "type": "User"}, "n'est pas le mainteneur"),               # no id said
-    (None, "son auteur ne se lit pas"),
-])
-def test_a_release_the_maintainer_did_not_create_is_refused(h0, author, said):
-    """The release's author is the maintainer, a person: an App (the sessions' own), a bot, another
-    account, none said — refused, whatever else the release passes."""
-    h0.publish("v0.4.0")
+@pytest.mark.parametrize("author", [THE_APP, {"login": "someone", "id": 3, "type": "User"}, None])
+def test_a_release_the_app_drafted_and_jonathan_published_deploys_whatever_its_author(h0, author):
+    """Jonathan's decision of 18/11: the author is never read — GitHub keeps the App as the author of the
+    draft it created, published by Jonathan; the rule of the tags, which the App cannot pass, holds."""
     if author is None:
         h0.fake.gh["release"].pop("author")
     else:
         h0.fake.gh["release"]["author"] = dict(author)
-    res = h0.run()
-    assert res.returncode == 1 and h0.running() == {"v0.3.1"} and h0.outcome("v0.4.0") == "refused"
-    (alert,) = _alerts(h0)
-    assert said in alert["embeds"][0]["description"] and not h0.sig.calls()
+    assert h0.run().returncode == 0 and h0.running() == {"v0.4.0"} and not _alerts(h0)
 
 
-def test_the_maintainer_pinned_on_imladris_stands_for_the_repository_s_owner(h0):
-    """EREGION_CD_MAINTAINER_ID in Imladris's config: the repository's owner is no longer read — his
-    release deploys; one by the owner the pin does not name is refused."""
-    env = h0.vm / ".env"
-    env.write_text(env.read_text() + "EREGION_CD_MAINTAINER_ID=7\n")
-    h0.fake.gh["repo"] = None                    # not read: a 404 would refuse
-    h0.publish("v0.4.0", author={"login": "jonathan", "id": 7, "type": "User"})
-    assert h0.run().returncode == 0 and h0.running() == {"v0.4.0"}
-    h0.fake.requests.clear()
-    _on_main(h0, "c3", "v0.4.1")
-    assert h0.run().returncode == 1 and h0.outcome("v0.4.1") == "refused"
-    assert "épinglé sur Imladris" in _alerts(h0)[-1]["embeds"][0]["description"]
-
-
-@pytest.mark.parametrize("repo", [None, {"owner": {"login": "org", "id": 1, "type": "Organization"}},
-                                  {"owner": {"login": "maintainer", "id": "1", "type": "User"}}])
-def test_without_a_pin_an_owner_that_is_not_a_person_refuses_every_release(h0, repo):
-    h0.fake.gh["repo"] = repo
-    assert h0.run().returncode == 1 and h0.running() == {"v0.3.1"}
-    assert "le mainteneur ne se lit pas" in _alerts(h0)[0]["embeds"][0]["description"]
-
-
-def test_a_pin_that_does_not_read_refuses_never_falls_back_to_the_owner(h0):
-    env = h0.vm / ".env"
-    env.write_text(env.read_text() + "EREGION_CD_MAINTAINER_ID=jonathan\n")
-    assert h0.run().returncode == 1 and "EREGION_CD_MAINTAINER_ID illisible" in _alerts(h0)[0]["embeds"][0]["description"]
-
-
-def test_check_says_a_release_by_the_app_would_be_refused(h0):
-    h0.publish("v0.4.0", author=THE_APP)
-    assert h0.run("check").returncode == 1 and h0.outcome("v0.4.0") is None
-    assert any(t.startswith("⛔ À blanc : v0.4.0 serait refusée") for t in _titles(h0)) and not _alerts(h0)
-
-
-def test_a_way_back_follows_the_same_rule_its_release_by_the_app_refused(h0):
-    """SEC12's way back, asked on Imladris: a release the maintainer did not create stays refused."""
+def test_a_way_back_to_a_tag_no_rule_reserves_is_refused(h0):
+    """SEC12's way back, asked on Imladris, follows the same rule: a tag no active rule reserves refused."""
     _published_back(h0)
-    h0.fake.gh["releases"]["v0.3.1"]["author"] = dict(THE_APP)
+    h0.fake.gh["rulesets"] = [_ruleset(conditions={"ref_name": {"include": ["refs/tags/v*"],
+                                                                "exclude": ["refs/tags/v0.3.*"]}})]
     res = h0.run("rollback", "v0.3.1")
     assert res.returncode == 1 and h0.running() == {"v0.4.0"} and h0.outcome("v0.4.0") == "deployed"
-    assert "de type « Bot »" in _alerts(h0)[0]["embeds"][0]["description"]
+    assert "aucune règle active du dépôt ne réserve son tag" in _alerts(h0)[0]["embeds"][0]["description"]
 
 
 def test_a_way_back_to_a_tag_not_v_semver_is_refused_as_unreadable(h0):
@@ -732,18 +688,6 @@ def test_an_annotated_tag_is_followed_to_its_commit_on_the_api(h0):
 def test_the_only_tag_deployed_is_v_semver(agent, tag, ok):
     assert (agent.re.fullmatch(agent.TAG_RE, tag) is not None) is ok
     assert (agent.version_of(tag) is not None) is ok
-
-
-def test_the_author_is_read_by_id_never_by_login(agent, monkeypatch):
-    """A login changes with a rename (the maintainer's did, 04/11); an id never: a namesake refused."""
-    monkeypatch.setattr(agent, "github", lambda path: {"owner": {"login": "grootcyber", "id": 9, "type": "User"}})
-    monkeypatch.setattr(agent, "env_value", lambda path, key: "")
-    rel = lambda a: {"tag_name": "v0.6.1", "author": a}  # noqa: E731
-    assert agent.release_refusal("v0.6.1", rel({"login": "grootcyber", "id": 9, "type": "User"})) == ""
-    assert "n'est pas le mainteneur" in agent.release_refusal(
-        "v0.6.1", rel({"login": "grootcyber", "id": 10, "type": "User"}))
-    assert "n'est pas le mainteneur" in agent.release_refusal(
-        "v0.6.1", rel({"login": "renamed", "id": True, "type": "User"}))
 
 
 def _ruleset(**over):
@@ -841,7 +785,7 @@ def test_a_deployment_raises_the_floor_and_a_way_back_keeps_it(h0):
     assert floor() == {"tag": "v0.4.0", "commit": h0.commits["c2"]}
     h0.image("c1", "v0.3.1")
     h0.fake.gh["releases"]["v0.3.1"] = {"tag_name": "v0.3.1", "html_url": "", "prerelease": False,
-                                        "author": dict(MAINTAINER)}
+                                        "author": dict(THE_APP)}
     assert h0.run("rollback", "v0.3.1").returncode == 0 and h0.running() == {"v0.3.1"}
     assert floor() == {"tag": "v0.4.0", "commit": h0.commits["c2"]}
 

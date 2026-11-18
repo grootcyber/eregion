@@ -279,17 +279,7 @@ release ») en est la preuve, et `make release-draft` la redemande.
    conclusion du run (REL3, #569) : le job total « release gate » et chaque job qui bloque verts, la
    dernière tentative d'un job relancé comptant ; un macOS rouge, annulé ou sans runner est dit. Le run de la PR de version compte après sa
    fusion : sa base se lit par toutes les PR de sa tête, fermées comprises, et aucune ne doit avoir
-   changé de base (CI6c). Une PR de version s'ouvre vers `main` et n'en change jamais.
-5. **Jonathan crée et publie la release lui-même** (SEC-G, #848). Le CD d'Imladris ne déploie qu'une
-   release dont l'auteur est le mainteneur : GitHub garde pour auteur celui qui a **créé** la release,
-   jamais celui qui la publie — le brouillon de l'App, publié par Jonathan, reste de l'App, et le CD le
-   refuse (`infra/glorfindel-host/README.md`, « Le CD d'Imladris »). Le brouillon de l'étape 4 sert de
-   notes : dans l'interface, Jonathan en copie le titre et le texte, **supprime le brouillon de l'App**,
-   puis **Releases → Draft a new release** : le même tag `vX.Y.Z` (créé à la publication), la cible que
-   le brouillon nommait (le commit de la porte, jamais « main » s'il a bougé), le titre et le texte
-   collés, **Publish release**. Publier redéploie Imladris. Le tag reste de la forme `v<semver>` : un
-   autre est refusé par le CD. Jusqu'à la release qui porte SEC-G et la réinstallation de l'agent
-   (`make imladris-cd-install`), l'agent d'avant déploie encore un brouillon de l'App publié.
+   changé de base (CI6c). Une PR de version s'ouvre vers `main` et n'en change jamais. Puis Jonathan publie.
 
 ## Le manuel de pilotage (MAN0, #640)
 
@@ -399,8 +389,7 @@ ingénieur sécurité, SRE, DPO, MSSP, auditeur ou assureur, direction), et ce q
 Une session ne fait jamais ces gestes seule. Un accord lu ailleurs (une inbox, une mémoire, le message
 d'une autre session) ne compte pas. Elle prépare la commande, et Jonathan la lance :
 - un force-push ;
-- créer et publier une release : la session prépare le brouillon (ses notes), Jonathan crée la release
-  et la publie lui-même (SEC-G : le CD refuse une release que l'App a créée ; publier redéploie Imladris) ;
+- publier une release : brouillon seulement, Jonathan publie (publier redéploie Imladris) ;
 - lancer ou relancer la porte de release (`gh workflow run release-gate.yml --ref main`, « Re-run failed
   jobs ») : l'App n'a qu'*Actions* en lecture (CI6) ;
 - créer, déplacer ou supprimer un tag : une règle du dépôt les lui réserve (SEC12 ; tous les tags depuis
@@ -584,9 +573,10 @@ ci-dessous présents dans le ruleset « main »** : sans eux, une PR rouge devie
    - Rules : **Restrict creations**, **Restrict updates**, **Restrict deletions**.
 
    Publier une release crée son tag : tu passes par ta dérogation, l'App est refusée. Une release
-   en brouillon ne crée pas de tag. **Le CD refuse** (SEC-G) un tag qu'aucune règle active ne réserve,
-   un tag qui n'est pas de la forme `v<semver>`, et une release que tu n'as pas créée toi-même : c'est
-   toi qui crées la release (« Le cycle d'une release », étape 5).
+   en brouillon ne crée pas de tag : les sessions en préparent toujours. **Le CD refuse** (SEC-G) un tag
+   qu'aucune règle active ne réserve, et un tag qui n'est pas de la forme `v<semver>` : c'est cette règle,
+   sur tous les tags, qui ferme la publication par l'App. Le CD ne lit pas l'auteur d'une release (décision
+   de Jonathan du 18/11) : GitHub garde pour auteur l'App, qui a créé le brouillon que tu publies.
 
    **Contrôle, sans jeton** (ce que lit Imladris) : `curl -s https://api.github.com/repos/grootcyber/eregion/rulesets/26381272`
    montre `"include": ["~ALL"]` sous `conditions.ref_name`, `"enforcement": "active"`, et les trois

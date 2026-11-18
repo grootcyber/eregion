@@ -28,21 +28,20 @@ sent, and status says so. The journal gets a line only when something happens (a
 no webhook while a tier is due, a date that does not read — its year between 2000 and 2999), never at every pass. No Graph, no identity: a rotation made outside
 the command is not seen here.
 
-The trigger is Jonathan creating and publishing a release (SEC-G: its author is him). A pass:
+The trigger is Jonathan publishing a release (sessions prepare drafts). A pass:
   0. a pass cut after its switch (a reboot, a timeout) is taken up first: its health, then
      kept or rolled back — a switch is written down before it happens;
   1. the latest release (GitHub's public API, outbound, no token; drafts and pre-releases are
      not in it); nothing to do when it runs already (the three containers), or failed or was
      refused before; refused, before anything is fetched (SEC-G, audit of 13/11, V-07): a tag not of
-     the form v<semver> (v0.6.1: never « 0.6.1 »), a release whose author is not the maintainer — an
-     App, a bot, another account (his id pinned on Imladris, EREGION_CD_MAINTAINER_ID, else the
-     repository's owner when a person); a tag seen before on another commit is refused (a moved tag);
+     the form v<semver> (v0.6.1: never « 0.6.1 »); a tag seen before on another commit is refused (a
+     moved tag);
      its commit read on the repository's API (SEC-G, V-38), the origin's refused when it differs;
   2. its tag on origin/main, never older than what runs nor than the floor (the highest version
      deployed on Imladris, never lowered) — by its version (vX.Y.Z) or by its commit: refused and
      said with the mention, unless the way back was asked on Imladris for this very tag (`rollback TAG`,
-     a published release, never a pre-release; SEC12 — the way back passes the same tag and author
-     rule); what runs unreadable, or two commits git
+     a published release, never a pre-release; SEC12 — the way back passes the same tag rule); what
+     runs unreadable, or two commits git
      cannot order (merge-base: 128), refused — never taken for newer; a rule of the repository that
      reserves its tag (its creation, update and deletion), read without a token: seen, named with
      the start; absent, refused (SEC-G, V-07); unreadable, the release waits, said once with the
@@ -202,11 +201,6 @@ TAG_RE = r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
 # SEC12: a release's version, compared with what runs — of the same form: a « v » required (a label of
 # another shape, a commit deployed by hand, has no version and is compared by its commit only).
 VERSION_RE = re.compile(TAG_RE)
-# SEC-G (V-07): the release's author is the maintainer, a person — never an App nor a bot. His account's
-# id (digits, immutable through a rename) pinned in Imladris's own config (~/eregion/.env, from
-# host.env), never read from the release; unset, the owner of the repository on GitHub's API, when
-# that owner is a person.
-MAINTAINER_KEY = "EREGION_CD_MAINTAINER_ID"
 # SEC12: what a rule of the repository must forbid, but to the maintainer, on the release's tag.
 TAG_RULES = ("creation", "update", "deletion")
 LOCK = "requirements/glorfindel.txt"
@@ -756,44 +750,16 @@ def shown(tag: str) -> str:
     return discord_text(tag)[:64] or "?"
 
 
-def maintainer() -> tuple[int | None, str]:
-    """SEC-G (V-07): the maintainer's account id — pinned on Imladris (MAINTAINER_KEY), else the owner
-    of the repository when it is a person — and where it comes from; (None, why) when neither reads."""
-    pinned = env_value(REPO / ".env", MAINTAINER_KEY)
-    if pinned:
-        if re.fullmatch(r"[1-9][0-9]{0,19}", pinned):
-            return int(pinned), f"épinglé sur Imladris ({MAINTAINER_KEY})"
-        return None, f"{MAINTAINER_KEY} illisible dans la config d'Imladris (l'id du compte, des chiffres)"
-    repo = github("")
-    owner = repo.get("owner") if isinstance(repo, dict) else None
-    if not isinstance(owner, dict) or owner.get("type") != "User":
-        return None, ("le propriétaire du dépôt n'est pas une personne, ou ne se lit pas : épingler l'id du "
-                      f"mainteneur sur Imladris ({MAINTAINER_KEY} dans host.env, puis make imladris-push)")
-    oid = owner.get("id")
-    if not isinstance(oid, int) or isinstance(oid, bool) or oid <= 0:
-        return None, "l'id du propriétaire du dépôt ne se lit pas"
-    return oid, f"propriétaire du dépôt {SLUG}"
-
-
-def release_refusal(tag: str, release: dict) -> str:
+def release_refusal(tag: str) -> str:
     """SEC-G (audit of 13/11, V-07): why this release is never deployed, whatever else it passes — its
-    tag not of the form v<semver>, or its author not the maintainer: an App, a bot, another account,
-    or none said. '' when neither. A way back follows the same rule."""
+    tag not of the form v<semver>, the only form the rule of the repository's tags is meant to reserve
+    and the publication labels the image with; '' when it is. Its author is not read (Jonathan's decision
+    of 18/11): the sessions' App drafts every release, Jonathan publishes it, and GitHub keeps the App as
+    its author — the rule of the tags, which the App cannot pass, is what holds. A way back follows the
+    same rule."""
     if not re.fullmatch(TAG_RE, tag):
         return (f"son tag, « {shown(tag)} », n'est pas de la forme v<majeur>.<mineur>.<correctif> : seule une "
                 "release v<semver>, dont la règle du dépôt réserve le tag, se déploie")
-    author = release.get("author")
-    if not isinstance(author, dict):
-        return "son auteur ne se lit pas : seule une release publiée par le mainteneur se déploie"
-    login, kind, aid = shown(str(author.get("login") or "")), author.get("type"), author.get("id")
-    if kind != "User":
-        return (f"son auteur, {login}, est un compte de type « {shown(str(kind))} » : une App ou un bot ne "
-                "publie jamais ce que le CD déploie — seul le mainteneur crée et publie une release")
-    want, where = maintainer()
-    if want is None:
-        return f"le mainteneur ne se lit pas ({where}) : aucune release ne se déploie sans savoir qui la publie"
-    if aid != want or isinstance(aid, bool):
-        return f"son auteur, {login}, n'est pas le mainteneur ({where}) : seule une release qu'il publie se déploie"
     return ""
 
 
@@ -1670,9 +1636,9 @@ def run_pass(check: bool = False, back_to: str = "") -> int:
     done = state["outcomes"].get(tag, {}).get("result")
     if not check and not back_to and done in ("refused", "rolled back", "rollback failed"):
         raise Quiet(f"{shown(tag)} : {done} (make imladris-cd-retry pour réessayer)")
-    # SEC-G (V-07): a tag the rule does not reserve, an author who is not the maintainer — refused before
-    # anything is fetched, said with the mention, remembered; a way back as any release.
-    why = release_refusal(tag, release)
+    # SEC-G (V-07): a tag not of the form v<semver> — refused before anything is fetched, said with the
+    # mention, remembered; a way back as any release.
+    why = release_refusal(tag)
     if why:
         if check:
             say(f"⛔ À blanc : {shown(tag)} serait refusée", why, color=nd.RED)
