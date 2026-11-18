@@ -649,6 +649,7 @@ glorfindel-logs:
 	docker compose logs -f
 
 glorfindel-ui: build-glorfindel
+	mkdir -p $(HOME)/.glorfindel/injectors
 	docker compose up -d --no-deps war-room
 	@$(MAKE) --no-print-directory console-url || true
 	@echo "  (watch untouched)"

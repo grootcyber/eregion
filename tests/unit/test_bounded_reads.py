@@ -114,14 +114,14 @@ def test_a_window_file_too_large_is_refused_never_read_whole(capsys):
 
 
 def test_the_window_files_read_are_bounded_the_rest_said_once(monkeypatch, capsys):
-    """M4564: a flood of window files is read up to MAX_WINDOW_FILES at each read; the rest is
-    refused, said once."""
+    """M4564: a flood of window files is read up to MAX_WINDOW_FILES at each read — the newest
+    first (SEC-A1b, #642) —; the rest is refused, said once."""
     monkeypatch.setattr(exercise, "MAX_WINDOW_FILES", 3)
     d = exercise.exercises_dir()
     for i in range(5):
         _put(d, _window(f"r{i}"))
-    assert [w["run_id"] for w in _quick(load_windows)] == ["r0", "r1", "r2"]
-    assert "2 window file(s) past MAX_WINDOW_FILES (3) never read" in capsys.readouterr().out
+    assert [w["run_id"] for w in _quick(load_windows)] == ["r2", "r3", "r4"]
+    assert "window files past MAX_WINDOW_FILES (3): 2 never read" in capsys.readouterr().out
     _quick(load_windows)
     assert "MAX_WINDOW_FILES" not in capsys.readouterr().out
 
@@ -277,7 +277,9 @@ def test_the_watch_counts_the_windows_its_record_saw_their_files_deleted(tmp_pat
         _seen_then(d, {**w, "end": (start + timedelta(minutes=110)).isoformat()}, registry,
                    at=start + timedelta(minutes=110))
     entry = json.loads(registry.read_text())["c0"]
-    assert entry["targets"] == [VM] and entry["start"] and entry["expires"] and entry["end"]
+    # SEC-A1b: a digest of each target, never the targets themselves.
+    assert entry["target_keys"] == [exercise._key(VM)] and entry["start"] and entry["expires"] and entry["end"]
+    assert "targets" not in entry
     for i in range(4):
         (d / f"c{i}.json").unlink()            # the spent windows deleted
     fresh = _window("fresh", start=now)

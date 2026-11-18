@@ -13,7 +13,9 @@ order eregion_core.orodruin.kill runs them:
   stop    deallocate the VM, without waiting.
   close   close the exercise windows still open in the channel (B2), so the hosted watch
           stops labelling what their targets do as an exercise. The operator writes them
-          (`channel_operator`, main.tf): Orodruin's identity has just been revoked.
+          (`channel_operator`, main.tf): Orodruin's identity has just been revoked. It reads
+          the whole channel, page after page (SEC-A1b): a listing it cannot read whole, or a
+          window it cannot download, fails the step — never « no window open » unseen.
 
 Then what is still in flight, which no step stops: a Run Command already sent runs to its
 end on its VM, and the atomic's cleanup may be left to replay; a cancelled fault may leave
@@ -230,9 +232,11 @@ def steps(principal_id: str, vm_id: str, *, subscription: str = "",
         at = now or datetime.now(timezone.utc)
         try:
             with tempfile.TemporaryDirectory() as tmp:
-                exercise_channel.pull(Path(tmp), channel=channel, credential=cred, get=get)
+                # SEC-A1b: every window of the channel, never the first pull's bounded share.
+                read = exercise_channel.pull_whole(Path(tmp), channel=channel, credential=cred,
+                                                   get=get, say=say, now=at)
                 # Read at the kill's own moment: the purge and the bounds of a window by one clock.
-                windows = exercise.load_windows(Path(tmp), now=at)
+                windows = exercise.load_windows(Path(tmp), now=at, max_files=None)
         except Exception as e:
             raise RuntimeError(
                 f"{e} — the operator writes the windows (channel_operator: make orodruin-lock "
@@ -241,7 +245,7 @@ def steps(principal_id: str, vm_id: str, *, subscription: str = "",
                 f"{exercise.GRACE_AFTER_S // 60} min") from e
         open_ = [w for w in windows if not w.get("end") and not _lapsed(w, at)]
         if not open_:
-            say("no exercise window open in the channel")
+            say(f"no exercise window open in the channel ({read} read: the whole channel)")
         still_open = []
         for w in open_:
             closed = {**w, "end": at.isoformat(), "closed_by": "orodruin-kill"}

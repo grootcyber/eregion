@@ -100,7 +100,10 @@ tentée avant l'arrêt.
 
 Depuis M-1 (26/10), le kill arrête aussi ce qui tourne sans l'identité d'Orodruin : il annule
 les expériences de chaos en cours et ferme les fenêtres d'exercice ouvertes, puis dit ce qui
-reste en vol. Voir « L'arrêt d'urgence arrête ce qui tourne ».
+reste en vol. Voir « L'arrêt d'urgence arrête ce qui tourne ». Depuis SEC-A1b (#642), il lit le
+canal en entier, page après page, et son étape `close` échoue sur une liste qu'il ne lit pas
+toute ou une fenêtre qu'il ne peut télécharger : il ne dit jamais les fenêtres closes sans les
+avoir toutes vues (`exercise_channel.pull_whole`).
 
 ## Les cibles Make
 
