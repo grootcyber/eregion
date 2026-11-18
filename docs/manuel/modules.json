@@ -2518,6 +2518,18 @@
    "issue": 894
   },
   {
+   "id": "k-fresh-proven",
+   "composant": "console",
+   "poste": "k-suivre",
+   "nom": "A proof under 21 days is fresh; proven is the catalogue's status only",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "FRS1"
+   ],
+   "issue": 904
+  },
+  {
    "id": "k-verdict-propose",
    "composant": "console",
    "poste": "k-juger",
