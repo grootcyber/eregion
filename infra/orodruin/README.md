@@ -81,6 +81,33 @@ Contrat (garanties, vérifications, kill, mutants) :
   Dans l'autre ordre, les runs d'Orodruin restent `unknown` (« unsigned … update Glorfindel », ou
   « the heartbeat does not say which detections it covers ») tant que la watch n'est pas à jour
   (`docs/design/watch-key.md`, « Les détections signées », « Ce que le battement couvre »).
+- **Le démarrage planifié du drill, et l'extinction de 23:00 UTC** (DRL1c, #613 ;
+  `drill_autostart.tf`, `drill_autostart.json` ; `docs/design/drill-banc.md` §5.1, §14). Orodruin est
+  désallouée entre les sessions, et un minuteur ne part pas d'une VM éteinte :
+  - **une Logic App** (Consumption, `logic-orodruin-drill`) la démarre chaque semaine à
+    `drill_autostart_at` (`tue 18:40` UTC : le `schedule` du drill moins 20 min). Elle est **déployée
+    `Disabled`** par un modèle ARM qui porte l'état lui-même : Terraform ne suit que le déploiement,
+    jamais l'état de la Logic App. Seul `make orodruin-drill-arm` l'active ; `-disarm` et le kill la
+    désactivent. **Un apply ne l'active jamais** ; s'il la redéploie (une heure, un nom changés), il la
+    remet `Disabled` : réarmer. Pourquoi pas `azurerm_logic_app_workflow` : son déclencheur et son action
+    réécrivent le workflow sans son état (le §14 de la conception) ;
+  - **son identité** est la sienne, managée, et ne peut qu'une chose : un rôle d'une seule action,
+    `Microsoft.Compute/virtualMachines/start/action`, défini et assignable dans `rg-orodruin`, attribué à
+    la portée de `vm-orodruin` seule. L'identité d'Orodruin ne gagne rien, et le contrat ne change pas ;
+  - **l'extinction quotidienne**, le planning DevTest de la VM : chaque jour à 23:00 UTC, drill ou non,
+    elle désalloue Orodruin (une session plus tardive est coupée : `make orodruin-start` la rallume) ;
+  - **la sortie `drill_autostart_id`**, l'id de la Logic App, que lisent `orodruin-drill-check`, `-arm`,
+    `-disarm` et le kill (`drill_ops.py autostart-id`). Avant l'apply : « no scheduled start », et
+    l'armement refuse (« apply first »).
+
+  **Le geste** (Jonathan) : `make orodruin-plan`, le plan relu — quatre créations
+  (`azurerm_resource_group_template_deployment.drill_autostart`, `azurerm_role_definition.drill_autostart`,
+  `azurerm_role_assignment.drill_autostart`, `azurerm_dev_test_global_vm_shutdown_schedule.host`), rien de
+  changé ni de détruit —, puis `make orodruin-lock`. Puis la mesure du §6.2, point 2 : la Logic App
+  allume Orodruin avec le seul `start/action` (ou il lui faut `virtualMachines/read`) ; son identité ne
+  peut rien d'autre ; l'extinction désalloue ; un `make orodruin-lock` après une désactivation ne la
+  réactive pas. Test : `infra/orodruin/tests/drill_autostart.tftest.hcl`,
+  `tests/unit/test_drill_autostart.py`.
 - **Qui écrit le canal retour** (WC1, #523) : par défaut la watch d'Imladris seule, comme avant. Sans Imladris,
   la watch d'un poste ou d'une équipe : `WATCH_PRINCIPALS=<id>[,<id>…]` (la variable
   `watch_principal_ids`), voir ci-dessous.

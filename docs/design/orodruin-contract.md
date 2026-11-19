@@ -956,6 +956,17 @@ plafond ; une VM tenue par Glorfindel ne l'est jamais. Le kill désactive le dé
 après la révocation, supprime le permis et écrit `drill.json` à `disarmed (killed)`, par l'identité de
 l'opérateur.
 
+**Le démarrage planifié** (DRL1c, `infra/orodruin/drill_autostart.tf`, [`drill-banc.md`](drill-banc.md)
+§5.1, §14). Orodruin est désallouée entre les sessions : une Logic App la réveille 20 min avant l'heure
+du drill (`drill_autostart_at`, `tue 18:40` UTC), et le planning DevTest l'éteint chaque soir à
+23:00 UTC. La Logic App a sa propre identité, qui ne peut qu'une chose : démarrer la VM d'Orodruin (un
+rôle d'une seule action, `virtualMachines/start/action`, assignable dans `rg-orodruin` seul, attribué à
+la portée de `vm-orodruin`). **L'identité d'Orodruin ne gagne rien**, et le contrat ne change pas : il
+ne lit que les attributions de l'identité d'Orodruin. Réveillée, Orodruin ne fait rien de plus qu'à un
+démarrage à la main : le minuteur ne joue qu'armé, à son heure, sous ce contrat. La Logic App est
+déployée `Disabled` ; seul l'armement l'active ; le désarmement et le kill la désactivent ; un apply
+ne l'active jamais, et la redésactive s'il la redéploie (une heure changée : réarmer).
+
 **Une demande se joue une fois, et fraîche** (SEC14, R-11). Sous le verrou, avant tout jugement :
 - son identifiant est cherché dans le registre des demandes jouées
   (`runs/orodruin/requests/played.jsonl`) : déjà là, elle est refusée (`replayed`) ; un registre qui
