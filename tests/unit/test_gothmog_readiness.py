@@ -149,8 +149,9 @@ def test_a_right_its_role_takes_back_is_not_held():
     assert not held(START, [{"actions": ["microsoft.chaos/experiments/start/actions"]}, "x"])
 
 
-@pytest.mark.parametrize("answer", ["403", "next page"])
+@pytest.mark.parametrize("answer", ["403", "next page", "no list"])
 def test_rights_that_cannot_be_read_are_not_held(idle, answer):
+    """Never « not held » on an answer that lists nothing: unreadable, not orodruin-lock."""
     _, make, engine = idle
     if answer == "403":
         w = make(fail={"/providers/Microsoft.Authorization/permissions": 403})
@@ -158,12 +159,13 @@ def test_rights_that_cannot_be_read_are_not_held(idle, answer):
         w = make()
         route = w._route
 
-        def paged(method, url, params, body=None):
+        def odd(method, url, params, body=None):
             r = route(method, url, params, body)
             if url.endswith("/permissions"):
-                r._body = {**r._body, "nextLink": url + "?$skiptoken=2"}
+                r._body = ({**r._body, "nextLink": url + "?$skiptoken=2"} if answer == "next page"
+                           else {})
             return r
-        w._route = paged
+        w._route = odd
     out = engine().preflight("vm-disk-write")
     assert out.result == "REFUSED"
     assert _ready(out)[f"{DISK} rights"]["observed"].startswith("unreadable: RuntimeError")
@@ -180,17 +182,35 @@ def test_a_chaos_agent_not_installed_is_not_ready(idle, status):
     assert "vm-celebrimbor-gondolin chaos agent" in out.error
 
 
-@pytest.mark.parametrize("suffix, nth, line", [
-    ("/virtualmachines/vm-celebrimbor-gondolin", 3, "vm-celebrimbor-gondolin chaos agent"),
-    (f"/experiments/{DISK}", 2, f"{DISK} agent targets"),
-])
-def test_an_agent_that_cannot_be_read_is_not_installed(idle, suffix, nth, line):
-    """The gate read the VM and the experiment; the preflight's own read of them answers 429."""
+def test_an_agent_that_cannot_be_read_is_not_installed(idle):
+    """The gate read the VM (its tags, then its steady state); the preflight's own read answers 429."""
     _, make, engine = idle
-    _fails_on(make(), suffix, nth)
+    _fails_on(make(), "/virtualmachines/vm-celebrimbor-gondolin", 3)
     out = engine().preflight("vm-disk-write")
     assert out.result == "REFUSED"
-    assert _ready(out)[line]["observed"].startswith("unreadable: RuntimeError: HTTP 429")
+    assert _ready(out)["vm-celebrimbor-gondolin chaos agent"]["observed"].startswith(
+        "unreadable: RuntimeError: HTTP 429")
+
+
+def test_the_agent_is_asked_on_the_experiment_the_gate_validated(idle):
+    """Review 1: read again, an experiment answering ``{}`` named no agent target — no agent
+    asked, and a VM without one was ready. The experiment is read once, by the gate."""
+    _, make, engine = idle
+    w = make(agent=None)
+    route, reads = w._route, []
+
+    def emptied(method, url, params, body=None):
+        if method == "get" and url.endswith(f"/experiments/{DISK}"):
+            reads.append(url)
+            if len(reads) > 1:
+                return Resp(200, {})
+        return route(method, url, params, body)
+    w._route = emptied
+    out = engine().preflight("vm-disk-write")
+    assert out.result == "REFUSED"
+    assert _ready(out)["vm-celebrimbor-gondolin chaos agent"]["observed"] == "absent"
+    assert len(reads) == 1
+    assert out.report["experiment"]["agents"] == [VM]
 
 
 def test_a_series_never_collected_under_the_effect_s_names_is_not_ready(idle):

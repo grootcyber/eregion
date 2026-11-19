@@ -1,7 +1,7 @@
 """G1b (Partie de #76): the preflight says whether a fault could run, and be seen — Orodruin's
 rights on the experiment, the Chaos agent on each VM it reaches that way, each series the effect
-reads collected; reads only, one not held or unreadable: not ready. M6586–M6605, measured by
-tests/unit/test_gothmog_readiness.py."""
+reads collected; reads only, one not held or unreadable: not ready. M6586–M6605 and M6616 (after
+the review), measured by tests/unit/test_gothmog_readiness.py."""
 CS = "gothmog/engines/chaos_studio.py"
 PR = "gothmog/probes.py"
 EN = "gothmog/runner/engine.py"
@@ -68,11 +68,12 @@ MUTANTS = [
      "        if False:\n"),
     ("M6601", "the agent asked on every target, a shutdown's included: G0 refused for an agent it "
      "never needs (G1b)", EN,
-     "            agents = agent_vms(bench.experiment(name))\n",
-     "            agents = list(vms)\n"),
-    ("M6602", "the experiment unreadable on the preflight's read: no agent asked, ready (G1b)", EN,
-     '            out.append(ProbeResult(f"{name} agent targets", False,\n',
-     '            out.append(ProbeResult(f"{name} agent targets", True,\n'),
+     '        seen["experiment"] = {"name": name, "duration_s": duration, "agents": agent_vms(experiment)}\n',
+     '        seen["experiment"] = {"name": name, "duration_s": duration, "agents": list(vms)}\n'),
+    ("M6602", "the preflight reads the experiment again for its agents: answering {}, no agent asked, "
+     "a VM without one ready (G1b, review 1)", EN,
+     '        for vm in seen["experiment"]["agents"]:\n',
+     '        for vm in agent_vms(bench.experiment(name)):\n'),
     ("M6603", "an agent absent from the VM said installed (G1b)", CS,
      "    return AGENT_ABSENT\n",
      "    return AGENT_INSTALLED\n"),
@@ -83,6 +84,12 @@ MUTANTS = [
      "experiment by experiment never seen (G1b)", EN,
      "            perms = bench.permissions(bench.experiment_id(name))\n",
      '            perms = bench.permissions(bench.experiment_id(name).rsplit("/providers/", 1)[0])\n'),
+    ("M6616", "a rights answer that lists nothing read as no right: « orodruin-lock » said where "
+     "the rights were unreadable (G1b, review 2)", CS,
+     "        if not isinstance(value, list):\n"
+     '            raise RuntimeError("the rights answer holds no list of them: not read")\n'
+     "        return value\n",
+     "        return value or []\n"),
 ]
 
 TESTS = {
@@ -104,9 +111,10 @@ TESTS = {
     "M6599": f"{_T}::test_a_series_never_collected_under_the_effect_s_names_is_not_ready",
     "M6600": f"{_T}::test_without_orodruin_lock_the_preflight_says_a_start_would_be_refused",
     "M6601": f"{_T}::test_a_fault_on_the_vm_itself_asks_its_rights_and_no_agent_nor_series",
-    "M6602": f"{_T}::test_an_agent_that_cannot_be_read_is_not_installed",
+    "M6602": f"{_T}::test_the_agent_is_asked_on_the_experiment_the_gate_validated",
     "M6603": f"{_T}::test_a_chaos_agent_not_installed_is_not_ready "
              f"{_T}::test_the_agent_is_read_only_on_the_vms_it_reaches",
     "M6604": f"{_T}::test_the_names_read_are_those_celebrimbor_and_orodruin_declare",
     "M6605": f"{_T}::test_a_noise_ready_to_run_says_each_thing_it_read_and_writes_nothing",
+    "M6616": f"{_T}::test_rights_that_cannot_be_read_are_not_held",
 }

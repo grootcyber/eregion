@@ -255,7 +255,10 @@ class ChaosStudio:
                           AUTHZ_API).json()
         if body.get("nextLink"):
             raise RuntimeError("the rights go on past their first page: not read")
-        return body.get("value") or []
+        value = body.get("value")
+        if not isinstance(value, list):
+            raise RuntimeError("the rights answer holds no list of them: not read")
+        return value
 
     def query(self, kql: str) -> list[dict]:
         r = self._call("post", f"{self.workspace_id()}/api/query", LOGS_API,

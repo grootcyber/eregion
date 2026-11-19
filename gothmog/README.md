@@ -162,8 +162,9 @@ a sa ligne, ✓ ou ✗, et un ✗ refuse : « not ready ».
 
 Une lecture qui échoue n'est jamais « prêt ». Le seuil de l'effet n'est pas demandé : au repos, le
 bruit n'est pas encore là, et c'est le run qui le demande. Un arrêt (`vm-shutdown`, `vm-restart`)
-cible la VM elle-même et lit son effet dans ARM : seuls ses droits sont demandés. Le run ne change
-pas.
+cible la VM elle-même et lit son effet dans ARM : seuls ses droits sont demandés. L'agent est lu
+sur les VM que l'expérience validée par le gate atteint par lui, sans relire l'expérience. Les
+étapes du run ne changent pas ; son rapport nomme aussi ces VM (`experiment.agents`).
 
 **Ce que le préflight ne lit pas.** Que stress-ng soit présent sur la VM, et que l'agent joigne
 Chaos Studio : rien dans le plan de contrôle ne le montre. L'effet de la panne, lu pendant le run,
@@ -203,7 +204,7 @@ sans poignée) jusqu'au premier run. La séance, dans l'ordre. Chaque geste est 
    |---|---|
    | `start` ou `cancel` : `not held` | `make orodruin-lock YES=1`, puis le préflight à nouveau |
    | `chaos agent` : `absent`, ou un autre état que `ProvisioningState/succeeded` | l'extension : relire le plan et son état dans le portail. Ne pas lancer |
-   | une série : `nothing in the last 30 min under these names` | le compteur n'est pas collecté sous ce nom (pour le CPU : l'objet sous l'agent Azure Monitor). Relever le nom réel dans Log Analytics : `Perf \| where _ResourceId =~ '<id de gondolin>' \| distinct ObjectName, CounterName, InstanceName`. L'expérience se corrige par une PR, puis le préflight à nouveau |
+   | une série : `nothing in the last 30 min under these names`, ou `no row` | le compteur n'est pas collecté sous ce nom (pour le CPU : l'objet sous l'agent Azure Monitor). Relever le nom réel dans Log Analytics : `Perf \| where _ResourceId =~ '<id de gondolin>' \| distinct ObjectName, CounterName, InstanceName`. L'expérience se corrige par une PR, puis le préflight à nouveau |
    | `unreadable` | relancer une fois ; si ça tient, le signaler |
 
 3. **Lancer, une panne à la fois**, chacune jusqu'à son rapport (`make gothmog-run FAULT=…`, environ

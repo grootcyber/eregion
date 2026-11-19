@@ -190,7 +190,9 @@ class Engine:
             duration = fault_duration_s(experiment)
         except ValueError as e:
             return seen, f"experiment {name}: {e}"
-        seen["experiment"] = {"name": name, "duration_s": duration}
+        # The VMs it reaches through the Chaos agent, from the experiment validated here — the
+        # preflight asks their agent without reading the experiment again (G1b, review 1).
+        seen["experiment"] = {"name": name, "duration_s": duration, "agents": agent_vms(experiment)}
 
         declared = {n.lower() for n in fault["targets"]["names"]}
         actual = {vm.rsplit("/", 1)[-1].lower() for vm in vms}
@@ -257,7 +259,7 @@ class Engine:
         if refusal:
             console.print(f"[red]Refused:[/red] {refusal}")
             return RunOutcome(run_id, "REFUSED", error=refusal, report=seen)
-        ready = self._ready(fault, seen["targets"], bench)
+        ready = self._ready(fault, seen, bench)
         seen["ready"] = [vars(r) for r in ready]
         for r in ready:
             mark = "[green]✓[/green]" if r.ok else "[red]✗[/red]"
@@ -270,10 +272,11 @@ class Engine:
         console.print("[green]Preflight: the fault could run — nothing was written.[/green]")
         return RunOutcome(run_id, "OK", report=seen)
 
-    def _ready(self, fault: dict, vms: list[str], bench) -> list[ProbeResult]:
+    def _ready(self, fault: dict, seen: dict, bench) -> list[ProbeResult]:
         """What the run needs that the gate does not read (G1b) — reads only: Orodruin's rights on
-        the experiment, the Chaos agent on each VM it reaches that way, each series the effect
-        reads collected on each target. A read that fails is said, never held."""
+        the experiment, the Chaos agent on each VM it reaches that way (the experiment the gate
+        validated, never read again), each series the effect reads collected on each target. A
+        read that fails is said, never held."""
         name = fault["engine_ref"]
         out: list[ProbeResult] = []
         try:
@@ -285,13 +288,7 @@ class Engine:
         except Exception as e:
             out.append(ProbeResult(f"{name} rights", False,
                                    f"{UNREADABLE}: {type(e).__name__}: {e}"[:200], "held"))
-        try:
-            agents = agent_vms(bench.experiment(name))
-        except Exception as e:
-            agents = []
-            out.append(ProbeResult(f"{name} agent targets", False,
-                                   f"{UNREADABLE}: {type(e).__name__}: {e}"[:200], AGENT_INSTALLED))
-        for vm in agents:
+        for vm in seen["experiment"]["agents"]:
             try:
                 status = chaos_agent_status(bench.vm(vm))
             except Exception as e:
@@ -299,7 +296,7 @@ class Engine:
             out.append(ProbeResult(f"{vm.rsplit('/', 1)[-1]} chaos agent", status == AGENT_INSTALLED,
                                    status, AGENT_INSTALLED))
         effect = (fault.get("effect") or {}).get("probes") or []
-        for vm in vms:
+        for vm in seen["targets"]:
             for r in collected(effect, vm, bench, now=self._now()):
                 out.append(ProbeResult(f"{vm.rsplit('/', 1)[-1]} {r.name}", r.ok, r.observed, r.expect))
         return out
