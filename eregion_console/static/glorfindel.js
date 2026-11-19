@@ -3011,6 +3011,8 @@ const _FEED_DEDUP_MS = 5000;
 // The gate that held a decision with no action (debug line `held_by`, agent.py).
 // CPT1b: a card of incomplete telemetry (CPT1) says so in the feed, never « review ».
 const _HELD_BY_WORDS = { control_plane: 'control plane (detection only)', identity: 'identity (detection only)',
+  // CPT1c: a reply of the journal out of the rule's schema.
+  control_plane_unreadable: 'control plane, unreadable reply (detection only)',
   control_plane_incomplete: 'control plane, incomplete telemetry (detection only)' };
 
 // CON-D: a line that is not of today, in UTC, says its day — « yesterday », or its date (10/11,

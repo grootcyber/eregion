@@ -1274,6 +1274,79 @@ def names_no_one(row: dict) -> bool:
     return not any(_said(row.get(c)) for c in RESOURCE_COLUMNS)
 
 
+# CPT1c (#940): the columns of the shipped rules of the control plane that say what a row is — the
+# operation, its correlation, who made it, what it was on, its group. A row that carries none of
+# them is no operation read: the reply was out of the rule's schema (seen on Imladris, 16/11: a
+# row of `TimeGenerated` alone, the text « Exceptions », and Glorfindel's two marks).
+UNREADABLE_EXPECTED = ("OperationNameValue", "CorrelationId", "Caller", "CallerAppId",
+                       "CallerObjectId", "_ResourceId", "ResourceGroup")
+# Glorfindel's own marks (`activity.prepare_rows`): never what the reply carried.
+_OWN_MARKS = ("GlorfindelManaged", "GlorfindelIdentity", "GlorfindelRunCommand")
+# What the card keeps of the rows: the first few, each column's value cut — enough to read, never
+# the whole reply.
+_UNREADABLE_SHOWN = 5
+_UNREADABLE_COLUMNS = 20
+_UNREADABLE_VALUE = 80
+
+
+def unreadable_reply(row: dict) -> bool:
+    """CPT1c (#940): a row of the control plane that carries neither its operation
+    (`OperationNameValue`, nor its `CorrelationId`) nor any column that names its caller (`Caller`,
+    the ids drawn from `Claims`, a `Claims` that names one, `Callers`) or its resource (`_ResourceId`,
+    `ResourceId`, `ResourceGroup`): a reply of the journal out of the rule's schema, no operation
+    read. Its card says « réponse du journal illisible », of a lower severity than high, never
+    approvable, never dropped — one per rule and poll, its rows counted (`unreadable_card`). A grave
+    row (`_grave`) is never one of them: it stays critical. Nor a summary card of operations. A row
+    of CPT1 (its operation, no caller nor resource) stays « télémétrie incomplète » (`names_no_one`).
+    The card itself (`UnreadableRows`) is read as one too."""
+    if not isinstance(row, dict) or row.get("OmittedOperations") or _grave(row):
+        return False
+    if any(_said(row.get(c)) for c in ("OperationNameValue", "CorrelationId", "ResourceGroup")):
+        return False
+    if any(_said(row.get(c)) for c in (*CALLER_COLUMNS, *RESOURCE_COLUMNS)) or _claims_name_someone(row):
+        return False
+    try:
+        return int(row.get("Callers") or 0) <= 0
+    except (TypeError, ValueError):     # a count unread is something of the schema: as before
+        return False
+
+
+def _shown(value) -> str | int | float | bool | None:
+    """A value of the reply as the card keeps it: a number, a boolean or nothing as it is; a text cut;
+    anything else by its type alone."""
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, str):
+        return value[:_UNREADABLE_VALUE]
+    return f"<{type(value).__name__}>"
+
+
+def unreadable_card(rows: list[dict]) -> dict:
+    """The one card of a poll's unreadable rows (CPT1c): how many (`UnreadableCount`) and what the
+    first ones carried (`UnreadableRows`, their columns but Glorfindel's marks, each value cut)."""
+    return {
+        "GlorfindelManaged": False, "GlorfindelIdentity": False,
+        "UnreadableCount": len(rows),
+        "UnreadableRows": [
+            {str(k)[:64]: _shown(v) for k, v in list(r.items())[:_UNREADABLE_COLUMNS] if k not in _OWN_MARKS}
+            for r in rows[:_UNREADABLE_SHOWN]],
+    }
+
+
+def unreadable_counts(status: dict) -> dict:
+    """CPT1c (#940): a rule's unreadable rows (a reply out of its schema), as its status holds them —
+    the console and `status_snapshot` read them here: how many rows, how many cards, the last poll
+    that read one."""
+    ur = status.get("unreadable") if isinstance(status, dict) else None
+    ur = ur if isinstance(ur, dict) else {}
+
+    def n(k: str) -> int:
+        v = ur.get(k)
+        return v if type(v) is int and v >= 0 else 0
+    return {"unreadable_rows": n("rows"), "unreadable_cards": n("cards"),
+            "unreadable_last": str(ur.get("last") or "")}
+
+
 def _control_plane_operations(rows: list[dict]) -> list[dict]:
     """One row per operation (its lines Start, Accept, Success share an identity: the
     latest is kept), the gravest first, then the newest."""
@@ -1675,6 +1748,7 @@ class RulePoller:
                     "match_count": s.get("match_count", 0),
                     **expected_counts(s),
                     **own_channel_counts(s),
+                    **unreadable_counts(s),
                     **({"auditd": s["auditd"]} if isinstance(s.get("auditd"), dict) else {}),
                 })
             return out
@@ -1866,9 +1940,22 @@ class RulePoller:
             budget = _CONTROL_PLANE_CARDS_PER_POLL
             data_budget = _DATA_CARDS_PER_POLL
             expected_n = origin_n = confirmed_n = 0
+            # CPT1c (#940): a rule of the control plane (its source, or its query on AzureActivity)
+            # whose reply carries rows out of its schema — no operation, no caller, no resource:
+            # one card per rule and poll says so, with their number, whatever key they were routed
+            # to. Never a high card that names no one, never one card per row, never dropped.
+            guard = self._plane(rule) == "control"
+            unreadable: list[dict] = []
+            unreadable_ids: dict[str, list[str]] = {}
             for key, (tgt, krows) in routed.items():
                 seen = dispatched.get(key, {})
                 new = [r for r in krows if _row_identity(r) not in seen]
+                if guard:
+                    bad = [r for r in new if unreadable_reply(r)]
+                    if bad:
+                        unreadable += bad
+                        unreadable_ids[key] = [_row_identity(r) for r in bad]
+                        new = [r for r in new if not unreadable_reply(r)]
                 if not new:
                     continue
                 if control:
@@ -1923,6 +2010,10 @@ class RulePoller:
                 elif rest:
                     send.append(_data_summary(rest))
                 plan.append((key, tgt, send, extra))
+            if unreadable:
+                plan.append(("unreadable", None, [unreadable_card(unreadable)], []))
+                for key, ids in unreadable_ids.items():
+                    sent_ids[key] = sent_ids.get(key, []) + ids
 
         for key, tgt, send, extra in plan:
             for row, card_only in [(r, "") for r in send] + [(r, _SAME_PASS) for r in extra]:
@@ -1962,6 +2053,11 @@ class RulePoller:
                     **({"container": channel.container} if channel is not None else {}),
                     **({"unread": now_iso} if own["unread"] else {}),
                 }
+            if unreadable:
+                # CPT1c: the reply out of the rule's schema, said where the console reads the rules.
+                was = unreadable_counts(st)
+                st["unreadable"] = {"rows": was["unreadable_rows"] + len(unreadable),
+                                    "cards": was["unreadable_cards"] + 1, "last": now_iso}
             if auditd.reads(rule.name, rule.ttp):
                 # AUD1: what the rule's window holds at this poll — zero events says no line arrives.
                 st["auditd"] = auditd.window(audit_n, now_iso)
@@ -2058,6 +2154,9 @@ class RulePoller:
         # CPT1 (#930): an operation whose row names neither its caller nor its resource — a card,
         # always, of a lower severity than high.
         unnamed = plane == "control" and not grave and names_no_one(row)
+        # CPT1c (#940): a reply out of the rule's schema — no operation read, a card of a lower
+        # severity than high too.
+        unnamed = unnamed or (plane == "control" and not grave and unreadable_reply(row))
         signal = {
             "signal_id": f"rule-{rule.name}-{uuid.uuid4().hex[:8]}",
             "event": "detection",

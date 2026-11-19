@@ -1002,6 +1002,7 @@ async def config() -> dict:
                 expected_counts,
                 load_config,
                 own_channel_counts,
+                unreadable_counts,
             )
             cfg = load_config(rules_path, glorfindel_cfg=glorfindel_cfg)
             status = _load_status()
@@ -1071,6 +1072,8 @@ async def config() -> dict:
                     **expected_counts(s),
                     # SLF1: the watch's own writes in its return channel, set aside — counted.
                     **own_channel_counts(s),
+                    # CPT1c: the rows of a reply out of the rule's schema, each poll's one card.
+                    **unreadable_counts(s),
                 })
         except Exception:
             pass
