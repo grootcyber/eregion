@@ -1539,6 +1539,17 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
         # SEC18: everything it pulls and writes goes to the watch's own directory.
         if _start_campaign_reports(_layout.dir_of(_layout.GLORFINDEL, runs_dir)):
             console.print("[dim]Rapports de campagne : runs/glorfindel/campaigns/<id>/report.md[/dim]")
+    # SLF1 (#929): the watch's own writes in its return channel, set aside from the exfiltration
+    # rule (its identity, its container, its objects) — counted on the rule, never silent.
+    from glorfindel import own_channel as _own_channel
+    _own_source = _own_channel.of_publisher(_watch_channel) if _watch_channel is not None else None
+    _own_channel.register(_own_source)
+    if _own_source is not None:
+        console.print("[dim]Voie de retour : ses propres écritures (l'identité de la watch, son conteneur, "
+                      "ses objets) écartées de la règle d'exfiltration, comptées sur la règle[/dim]")
+    elif getattr(_watch_channel, "channel", ""):
+        console.print("[yellow]Voie de retour : URL illisible — aucune de ses écritures n'est écartée "
+                      "de la règle d'exfiltration[/yellow]")
 
     if _rules_file:
         try:
@@ -2090,6 +2101,18 @@ def _render_escalation(e: dict) -> None:
     when = (f"{ts.strftime('%H:%M')} ({int((now - ts).total_seconds() // 60)}m ago)" if ts.tzinfo is not None
             else f"{_outside(str(e['timestamp']))} (no time zone: age unknown)")
     resource_short = e["resource_id"].split("/")[-1]
+    # SLF1 (#929): a detection attributed to no VM — « not attributed », its candidates, never the
+    # name of the VM it is filed on.
+    from glorfindel import escalations as _esc
+    loose = _esc.unattributed(e)
+    if loose is not None:
+        cands = loose["candidates"]
+        resource_short = "not attributed"
+        if loose["appliance"]:
+            resource_short += f" — through the appliance {loose['appliance']}"
+        elif cands:
+            more = f" and {len(cands) - 8} more" if len(cands) > 8 else ""
+            resource_short += f" — candidates: {', '.join(cands[:8])}{more}"
 
     table = Table(show_header=False, box=None, padding=(0, 1))
     table.add_column(style="dim", width=18)

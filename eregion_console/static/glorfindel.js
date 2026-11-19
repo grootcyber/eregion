@@ -221,12 +221,36 @@ function _targetNote(e, vmName) {
       ? `<div class="esc-context" style="color:var(--dim)" title="What the row, and Azure, could not say">limit: ${_attr(t.limit)}</div>` : '';
     return `<div class="esc-context" title="What the detection is about, read in its row">🎯 about ${kind}${named}${via}${covers}</div>${limit}`;
   }
+  // SLF1 (#929): a detection attributed to no VM — « not attributed », its candidates; never the
+  // name of the VM it is filed on.
+  const loose = _unattributed(e);
+  if (loose) return `<div class="esc-context" title="${_attr(_LOOSE_TITLE)}">⚓ ${_attr(_unattributedTxt(loose))}</div>`;
   if (!_isAnchored(e) || e.escalation_type === 'unattributed_signal') return '';
   // Filed before AL1c: on the first VM online, or on the VM itself (a role on the VM, a signal of
   // `respond`) — the card cannot tell which.
   return `<div class="esc-context" title="${_attr(_FILED_BEFORE)}">⚓ filed on ${_attr(vmName)}, may not be about it</div>`;
 }
 const _FILED_BEFORE = 'Filed before AL1c, without its target: the detection may not be about this VM';
+// SLF1 (#929): what a card on a detection attributed to no VM says in place of its resource
+// (glorfindel/escalations.py `unattributed`): its candidates, or the appliance it came through. A
+// card recorded so (`attribution`), or held by the attribution guard (its candidates not kept);
+// never a card filed on its target (AL1c).
+const _LOOSE_TITLE = 'The detection names no VM, and no watched VM made the call: the card is only filed on this tile. Check which VM it is about before acting.';
+function _unattributed(e) {
+  if (!e || _targetOf(e)) return null;
+  const a = e.attribution;
+  if (a && typeof a === 'object' && a.state === 'unattributed') {
+    return { candidates: Array.isArray(a.candidates) ? a.candidates.filter(c => typeof c === 'string') : [],
+             appliance: typeof a.appliance === 'string' ? a.appliance : '' };
+  }
+  return e.escalation_type === 'unattributed_signal' ? { candidates: [], appliance: '' } : null;
+}
+function _unattributedTxt(u) {
+  if (u.appliance) return `not attributed — the call came from ${u.appliance}, which forwards packets: the source VM is behind it`;
+  if (!u.candidates.length) return 'not attributed — the detection names no VM';
+  const more = u.candidates.length > _VMS_SHOWN ? ` and ${u.candidates.length - _VMS_SHOWN} more` : '';
+  return `not attributed — candidates: ${u.candidates.slice(0, _VMS_SHOWN).join(', ')}${more}`;
+}
 function escTitle(e) {
   // Real remediation action → its label; otherwise a readable type title.
   if (e.action && ACTION_LABELS[e.action]) return ACTION_LABELS[e.action];
@@ -1185,12 +1209,15 @@ function _renderModules(rules, detectBackends, recoverBackends, resources) {
     // COR1: of them, the root shells whose every SSH session came from an expected origin.
     const exOrigin = r.origin_count > 0 ? `, ${r.origin_count} root shell(s) from an expected origin (COR1, ${_originProofTxt(r)})` : '';
     const ex  = r.expected_count > 0 ? `<span style="color:var(--dim);font-size:9px;flex-shrink:0" title="${_attr(`${r.expected_count} expected sudo set aside, no card (ADM1)${exOrigin} — glorfindel report`)}">${_attr(r.expected_count)} expected</span>` : '';
+    // SLF1 (#929): the watch's own writes in its return channel, set aside — counted, never silent.
+    const own = r.own_channel_count > 0 ? `<span style="color:var(--dim);font-size:9px;flex-shrink:0" title="${_attr(_ownChannelTxt(r))}">${_attr(r.own_channel_count)} own</span>` : '';
     return `<div class="row rule-item" ${_on('click', 'showRuleByIdx', idx)}
       style="padding:3px 4px;font-size:10px">
       <span style="color:${dc};font-size:9px">●</span>
       <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${_attr(r.name)}">${_attr(r.name)}</span>
       ${r.ttp ? `<span style="color:var(--dim);font-size:9px">${_attr(r.ttp)}</span>` : ''}
       ${ex}
+      ${own}
       ${mt}
       <span style="color:var(--dim);font-size:9px">▸</span>
     </div>`;
@@ -1564,6 +1591,73 @@ function _renderNsgNode(resource, vmEscs, slotIdx = 0) {
 
 // ── Asset nodes ────────────────────────────────────────────────────────────────
 
+// ── A VM's own addresses (IPS1, #931) ──────────────────────────────────────────
+// Read by the NSG audit, NIC by NIC: `ips` (its private addresses) and `public_ips` (IPS1a: each
+// `{address}`, or `{address: null, error}` when its read failed). On the card folded and unfolded
+// (Jonathan, 19/11, option A): Ctrl+F finds the VM of an address without opening a card, and a
+// public address shows a VM the Internet can reach. Never an attacker's address: those are the
+// BLOCKED badges, below. Everything here comes from Azure: escaped, never written raw (#254).
+const _ADDR_FOLDED = 4;   // private addresses on the folded line, then « +N »
+function _vmNet(auditEntry) {
+  if (!auditEntry) return null;                       // not audited (yet): nothing said
+  const check = (auditEntry.checks || []).find(c => c.name === 'NSG access');
+  if (!check || check.status !== 'ok') return { unread: (check && check.message) || 'no NSG audit for this VM' };
+  const nsgs = Array.isArray(check.data?.nsgs) ? check.data.nsgs : [];
+  return {
+    at: auditEntry.timestamp,
+    nics: nsgs.map(x => ({
+      nic: String(x?.nic_id || '').split('/').pop(),
+      ips: (Array.isArray(x?.ips) ? x.ips : []).filter(Boolean).map(String),
+      pubs: (Array.isArray(x?.public_ips) ? x.public_ips : []).filter(p => p && typeof p === 'object'),
+    })),
+  };
+}
+function _addrBtn(a, pub) {
+  return `<button type="button" class="vm-ip${pub ? ' pub' : ''}" ${_on('click', 'copyAddr', String(a))} title="${_attr('Copy ' + a)}">${_attr(a)}</button>`;
+}
+// A public IP whose address did not read is said, never left out: the VM is still exposed.
+function _pubAddr(p, unfolded) {
+  if (p.address) return `<span class="vm-pub">🌐 ${_addrBtn(String(p.address), true)}${unfolded ? ' <span class="vm-pubtag">PUBLIC</span>' : ''}</span>`;
+  const why = String(p.error || 'unknown');
+  return unfolded
+    ? `<span class="vm-pub unread">🌐 public IP not read: ${_attr(why)}</span>`
+    : `<span class="vm-pub unread" title="${_attr('Public IP not read: ' + why)}">🌐 ?</span>`;
+}
+function _addrLine(net) {
+  if (!net) return '';
+  if (net.unread) return `<div class="vm-addr" title="${_attr('Addresses not read: ' + net.unread)}">ip —</div>`;
+  const priv = [...new Set(net.nics.flatMap(n => n.ips))];
+  const pubs = net.nics.flatMap(n => n.pubs);
+  if (!priv.length && !pubs.length) return `<div class="vm-addr" title="No address on the VM's NICs">ip —</div>`;
+  const more = priv.length > _ADDR_FOLDED ? `<span title="Unfold the card for every address">+${Number(priv.length - _ADDR_FOLDED)}</span>` : '';
+  return `<div class="vm-addr">${priv.slice(0, _ADDR_FOLDED).map(a => _addrBtn(a, false)).join('')}${more}${pubs.map(p => _pubAddr(p, false)).join('')}</div>`;
+}
+function _netBlock(net) {
+  if (!net) return '';
+  if (net.unread) return `<div class="vm-net"><span class="vm-netfoot">addresses not read — ${_attr(net.unread)}</span></div>`;
+  const nics = net.nics.map(n => `<div class="vm-nic"><span class="vm-nicname">⇄ ${_attr(n.nic || 'NIC')}</span>${n.ips.map(a => _addrBtn(a, false)).join('')}${n.pubs.map(p => _pubAddr(p, true)).join('')}</div>`).join('');
+  return `<div class="vm-net">${nics}<div class="vm-netfoot">read by the NSG audit ${_attr(_relTime(net.at))}</div></div>`;
+}
+// A copy by the clipboard where the page may write it (a secure context: the loopback, the SSH
+// tunnel). Elsewhere (a plain http address of the tailnet), the address selected and copied by the
+// browser at once, during the click: a selection left for Ctrl+C would go with the next refresh,
+// 5 s at most. The address is selectable (`.vm-ip`: user-select, the card being draggable sets
+// none). The toast says what happened, never a copy that did not (review of IPS1b, measured).
+function copyAddr(a) {
+  const el = _target;
+  const text = String(a);
+  const byBrowser = () => {
+    const r = document.createRange(); r.selectNodeContents(el);
+    const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+    let copied = false;
+    try { copied = String(s) === text && document.execCommand('copy'); } catch (e) { copied = false; }
+    s.removeAllRanges();
+    toast(copied ? `✓ ${text} copied` : `✗ ${text} not copied — select it and copy it by hand`);
+  };
+  if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(() => toast(`✓ ${text} copied`), byBrowser);
+  else byBrowser();
+}
+
 function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
   const { resource_id, vm_name, states: _rawStates = [], last_seen, monitoring_backend } = resource;
   // Subnet-wide blocks live on the shared subnet NSG, not on this VM — they're shown
@@ -1663,6 +1757,7 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
   ].filter(Boolean).join('');
 
   const auditEntry = (_auditData?.audits || []).find(a => a.resource_id === resource_id);
+  const net        = _vmNet(auditEntry);              // its addresses (IPS1)
   const readiness  = auditEntry
     ? ACTION_GROUPS.map(g => {
         const st = _worstStatus(auditEntry.checks, g.actions);
@@ -1875,6 +1970,7 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
   const expandedBody = `
     ${readinessExpanded}
     ${nsgLine}
+    ${_netBlock(net)}
     ${modeSelector}
     ${fallbackRows.length ? `<div style="display:flex;flex-direction:column;gap:5px;margin-top:6px">${fallbackRows.join('')}</div>` : ''}
     ${decisionHtml || ''}
@@ -1931,6 +2027,7 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
         ${modeBadge}
         ${readiness && !isExpanded ? `<span style="color:var(--dim);font-size:9px;margin-left:auto">${readiness}</span>` : ''}
       </div>` : ''}
+      ${_addrLine(net)}
       ${_handledLines(resource_id, vm_name)}
     </div>
     ${isExpanded ? expandedBody : compactBody}
@@ -2493,10 +2590,14 @@ function renderToJudge() {
     // was anchored on; one from before AL1c keeps its ⚓, and says it may not be about that VM
     // (on the first VM online, or on the VM itself: the card cannot tell which).
     const t = _targetOf(c);
+    // SLF1 (#929): a detection attributed to no VM says so, with its candidates — never the name of
+    // the VM it is filed on.
+    const loose = _unattributed(c);
     const vm = t ? (t.kind === 'control_plane' ? _TARGET_KINDS[t.kind]
       : (t.kind === 'identity' ? (t.identity_type || 'identity') : _TARGET_KINDS[t.kind]) + ' ' + (t.name || '?'))
+      : loose ? _unattributedTxt(loose)
       : (c.resource_id || '').split('/').pop();
-    const anchored = !t && _isAnchored(c);
+    const anchored = !t && (_isAnchored(c) || !!loose);
     const times = c.occurrences > 1 ? ` · ${Number(c.occurrences)}×` : '';
     const id = _attr(c.id);
     // JUG1: the line opens its card (its details, its verdict); its own note and buttons keep the click.
@@ -3133,6 +3234,19 @@ function _originProofTxt(r) {
   if (ok >= n) return 'every one confirmed outside the VM, COR2';
   return `${ok} confirmed outside the VM (COR2), ${n - ok} read in the VM only`;
 }
+// SLF1 (#929): the writes of the watch's own return channel a rule set aside — how many, why —, and
+// its identity not read (nothing set aside), said.
+function _ownChannelTxt(r) {
+  const n = Number(r.own_channel_count) || 0;
+  const rows = Number(r.own_channel_rows) || 0;
+  const said = n > 0
+    ? `${n} write(s) of the watch's own return channel set aside (${rows} row(s) left without a card) — its identity, the container of EREGION_WATCH_CHANNEL, the objects it writes there (SLF1)${r.own_channel_last ? ' · last ' + _relTime(r.own_channel_last) : ''}`
+    : '';
+  const unread = r.own_channel_unread
+    ? `return channel configured, the watch's identity not read (${_relTime(r.own_channel_unread)}): none of its writes set aside`
+    : '';
+  return [said, unread].filter(Boolean).join(' · ');
+}
 
 function showRuleDetail(rule) {
   const statusTxt = rule.last_error
@@ -3172,6 +3286,7 @@ function showRuleDetail(rule) {
     <div style="font-size:10px;color:var(--dim);margin-bottom:8px">${_attr(statusTxt)}</div>
     ${expectedTxt ? `<div style="font-size:10px;color:var(--dim);margin-bottom:8px">${_attr(expectedTxt)}</div>` : ''}
     ${corrTxt ? `<div style="font-size:10px;color:var(--dim);margin-bottom:8px">${_attr(corrTxt)}</div>` : ''}
+    ${_ownChannelTxt(rule) ? `<div style="font-size:10px;color:var(--dim);margin-bottom:8px">${_attr(_ownChannelTxt(rule))}</div>` : ''}
     <div style="font-size:10px;color:var(--dim);margin-bottom:4px;text-transform:uppercase;letter-spacing:1px">Query</div>
     <div class="modal-query">${_attr((rule.query || '').trim())}</div>`;
 
@@ -3389,7 +3504,8 @@ function openJudgeCard(escId) {
   const vmName = _ownTile(e) || String(e.resource_id || '').split('/').pop();
   const label = _isExecuted(e) ? `${actionLabel(e.action)} — done alone, to judge`
     : (e.action ? actionLabelVerb(e.action) : escTitle(e));
-  document.getElementById('modal-title').textContent = `To judge — ${label} — ${vmName}`;
+  // SLF1: a detection attributed to no VM is about none — never its anchor's name in the title.
+  document.getElementById('modal-title').textContent = `To judge — ${label} — ${_unattributed(e) ? 'not attributed' : vmName}`;
   document.getElementById('modal-cmd').style.display = 'none';
   document.getElementById('modal-cancel').style.display = 'none';
   const bodyEl = document.getElementById('modal-body');
@@ -3771,6 +3887,7 @@ const ACTIONS = {
   filterBlocks, showBlocks,                       // a VM's blocks, in their window (CON-K)
   verifyIdentity,                                 // an identity card's plan, read again on Graph by the watch (IR1a)
   openJudgeCard,                                  // a card's details and its verdict, from TO JUDGE or a tile (JUG1)
+  copyAddr,                                       // a VM's address, copied from its card (IPS1)
   judgeFromModal(id, verdict) { judgeCard(id, verdict, 'judge-modal-note'); closeModal(); },
   confirmProposed, refuseProposed,                // VP1: a verdict proposed on an exercise card, confirmed or refused
   confirmProposedFromModal(id) { confirmProposed(id, 'judge-modal-note'); closeModal(); },

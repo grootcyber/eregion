@@ -27,7 +27,7 @@ from glorfindel.detectors import (  # noqa: E402  (after optional deps)
     is_identity_source,
     plane_of,
 )
-from glorfindel import auditd, card_target, correlation, expected_sudo  # noqa: E402
+from glorfindel import auditd, card_target, correlation, expected_sudo, own_channel  # noqa: E402
 from eregion_core import rule_routing  # noqa: E402
 
 logger = logging.getLogger("glorfindel.detection_rules")
@@ -54,6 +54,20 @@ def expected_counts(status: dict) -> dict:
     return {"expected_count": n(es, "count"), "expected_last": str(es.get("last") or ""),
             "origin_count": n(es, "origin_count"), "origin_confirmed": n(es, "origin_confirmed"),
             "correlation": {k: n(co, k) for k in correlation.COUNTS}}
+
+
+def own_channel_counts(status: dict) -> dict:
+    """SLF1 (#929): the writes of the watch's own return channel a rule set aside, as its status
+    holds them — the console and `status_snapshot` read them here. `own_channel_unread`: when the
+    channel is configured and the watch's identity could not be read (nothing set aside)."""
+    oc = status.get("own_channel") if isinstance(status, dict) else None
+    oc = oc if isinstance(oc, dict) else {}
+
+    def n(k: str) -> int:
+        v = oc.get(k)
+        return v if type(v) is int and v >= 0 else 0
+    return {"own_channel_count": n("writes"), "own_channel_rows": n("rows"),
+            "own_channel_last": str(oc.get("last") or ""), "own_channel_unread": str(oc.get("unread") or "")}
 
 # P1: the client's layer — the rules of THIS deployment (approved, overriding a base rule,
 # disabling one), outside the repository, loaded over the shipped base
@@ -1509,8 +1523,12 @@ class RulePoller:
         dry_run: bool = False,
         ip_owners: Callable[[], dict] | None = None,
         topology=None,
+        channel: Callable[[], "own_channel.Channel | None"] | None = None,
     ) -> None:
         RulePoller._live.add(self)
+        # SLF1 (#929): the watch's own return channel, set aside from the exfiltration rule —
+        # read at each pass (glorfindel/own_channel.py); the one `glorfindel watch` registers.
+        self._channel = channel or own_channel.current
         self._rules = rules
         self._dispatch = dispatch
         self._dry_run = dry_run
@@ -1604,6 +1622,7 @@ class RulePoller:
                     "last_error": s.get("last_error", ""),
                     "match_count": s.get("match_count", 0),
                     **expected_counts(s),
+                    **own_channel_counts(s),
                     **({"auditd": s["auditd"]} if isinstance(s.get("auditd"), dict) else {}),
                 })
             return out
@@ -1726,6 +1745,22 @@ class RulePoller:
         # (`last_error`), and the pass goes on with the rows as read — nothing set aside that
         # was not read (review, AUD1: a forged line made the poll raise, and its thread die).
         faults: list[str] = []
+        # SLF1 (#929): the watch's own return channel set aside — its identity, its container,
+        # its objects —, before any routing; `BlobWriters` taken off every row, whatever.
+        channel = None
+        try:
+            channel = self._channel()
+            rows, own = own_channel.settle(rows, channel)
+        except Exception as exc:  # nothing set aside, the column taken off all the same
+            rows, own = own_channel.strip(rows), {"writes": 0, "rows": 0, "unread": False}
+            faults.append(f"own_channel: {type(exc).__name__}: {exc}")
+        if own["writes"]:
+            logger.info("detection rule '%s': %d write(s) set aside (%d row(s) left without a card) — %s",
+                        rule.name, own["writes"], own["rows"], own_channel.REASON)
+        if own["unread"] and not self.__dict__.get("_own_unread_said"):
+            self._own_unread_said = True       # said once by this watch; the status says it at each pass
+            logger.warning("detection rule '%s': the return channel is configured but the watch's identity "
+                           "could not be read — none of its writes set aside (SLF1)", rule.name)
         # AUD1 (#408): auditd's execs of a human login as root, read before any signal and
         # outside the lock — a command of ADM1's sensitive list stays, the rest is no card.
         policy = getattr(self._cfg, "expected_sudo", None)
@@ -1858,6 +1893,18 @@ class RulePoller:
                                        "origin_confirmed": expected_counts(st)["origin_confirmed"] + confirmed_n}
             if any(corr.values()):
                 st["correlation"] = correlation.add_counts(st.get("correlation"), corr, now_iso)
+            if own["writes"] or own["unread"]:
+                # SLF1: the watch's own writes set aside, counted where the console reads the rules;
+                # its identity not read, said (nothing set aside).
+                was = own_channel_counts(st)
+                st["own_channel"] = {
+                    "writes": was["own_channel_count"] + own["writes"],
+                    "rows": was["own_channel_rows"] + own["rows"],
+                    "last": now_iso if own["writes"] else was["own_channel_last"],
+                    "reason": own_channel.REASON,
+                    **({"container": channel.container} if channel is not None else {}),
+                    **({"unread": now_iso} if own["unread"] else {}),
+                }
             if auditd.reads(rule.name, rule.ttp):
                 # AUD1: what the rule's window holds at this poll — zero events says no line arrives.
                 st["auditd"] = auditd.window(audit_n, now_iso)

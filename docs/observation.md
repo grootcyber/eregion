@@ -96,6 +96,14 @@ boutons d'action refusent (« heure illisible (sans fuseau) ») : son âge n'est
 `glorfindel pending` la montre, son heure telle qu'écrite, « age unknown ». Mesuré à la relecture
 de VP1b : une seule de ces cartes faisait tomber toute la liste et le rapport (`TypeError`).
 
+**Une carte non attribuée le dit** (SLF1, #929, 19/11). Une détection qui ne nomme aucune VM (aucune
+VM surveillée n'a fait l'appel) est rangée sur une VM d'ancrage ; sa ligne de TO JUDGE, sa note, son
+titre, le champ « Ressource » de Discord et `glorfindel pending` disent « not attributed » (« non
+attribuée ») et ses candidates, jamais le nom de cette VM comme ressource. Juger la carte, c'est juger
+la détection : la VM concernée est à trouver avant d'agir ([glorfindel.md](glorfindel.md), « La voie
+de retour de la watch »). Les écritures de la voie de retour de la watch elle-même ne font plus de
+carte : comptées sur la règle `data-exfiltration-blob`.
+
 Dans la console, **une ligne de TO JUDGE ouvre sa carte** (ses détails, une note, son verdict), et une
 tuile qui replie plusieurs cartes (« ×6 ») les montre toutes dans ses détails, chacune avec sa raison,
 son explication et son chemin vers le verdict.

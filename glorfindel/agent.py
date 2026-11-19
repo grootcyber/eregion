@@ -439,6 +439,23 @@ def resolve_attack_started(signal: dict, ip_owners=None) -> dict:
     from glorfindel.detection_rules import proven_keys
     names_vm = _row_reader(vm_rid, ip_owners, keys=proven_keys(query)) if data_plane else None
 
+    # SLF1 (#929): the watch's own writes in its return channel are no detection of the run — set
+    # aside as the RulePoller sets them aside (a row of them names no VM: it read as the run's);
+    # `BlobWriters` taken off the row the model reads.
+    from glorfindel import own_channel
+    channel = own_channel.current() if data_plane else None
+
+    def settled(row):
+        kept, _ = own_channel.settle([row], channel)
+        return kept[0] if kept else None
+    if names_vm is not None:
+        reader = names_vm
+
+        def names_vm(row):
+            r = settled(row)
+            return False if r is None else reader(r)
+        names_vm.appliance = reader.appliance        # type: ignore[attr-defined]  (SEC-A4)
+
     _console.print(f"[cyan]->[/cyan] Polling {_outside(source)} (timeout={int(timeout_s)}s)...")
     if data_plane:
         result = detector.poll_alert(query, since=attack_time, timeout_s=timeout_s,
@@ -448,6 +465,7 @@ def resolve_attack_started(signal: dict, ip_owners=None) -> dict:
 
     if result is not None:
         detection_s, detected_row = result
+        detected_row = settled(detected_row) or own_channel.strip([detected_row])[0]
         # Measure from the attack (Annatar's T0), not from when the signal arrived:
         # attack_started is emitted after the attack steps, so the poll's own elapsed
         # time said 42 s for ~135 s of real detection time (run 2026-10-05).
@@ -2221,6 +2239,7 @@ def compromise_card(state: GlorfindelState) -> GlorfindelState:
             action_params={"ip": str(ip)} if ip else None,
             rule_name=(signal.get("context") or {}).get("rule_name", ""),
             source=source, exercise_run=exercise_run, explanation=state.get("explanation", ""),
+            attribution=_card_attribution(signal),
         )
     return {**state, "outcome": {**out, "compromise_card": True}}
 
@@ -2231,6 +2250,21 @@ def _card_target(signal: dict) -> dict | None:
     None for a signal that carries none (an attack_started on the Activity Log names its VM)."""
     target = (signal.get("context") or {}).get("target")
     return dict(target) if isinstance(target, dict) and target.get("kind") else None
+
+
+def _card_attribution(signal: dict) -> dict | None:
+    """SLF1 (#929): a detection of the data plane attributed to no VM — the RulePoller anchored it
+    on one VM it does not name (`attribution: unattributed`, its `candidates`): what its card says in
+    place of a resource. None for a detection that names its VM, or a card filed on its target
+    (AL1c). Read from the signal as it is, never written into it: what the model reads is unchanged."""
+    ctx = signal.get("context") or {}
+    if ctx.get("attribution") != "unattributed" or _card_target(signal) is not None:
+        return None
+    cands = ctx.get("candidates")
+    return {"state": "unattributed",
+            "candidates": sorted(str(c) for c in cands) if isinstance(cands, list) else [],
+            **({"appliance": str(ctx.get("appliance") or "")}
+               if ctx.get("attribution_via") == "appliance" and ctx.get("appliance") else {})}
 
 
 def escalate_to_human(state: GlorfindelState) -> GlorfindelState:
@@ -2332,6 +2366,8 @@ def escalate_to_human(state: GlorfindelState) -> GlorfindelState:
             explanation=state.get("explanation", ""),
             # IR1a: the plan, for the console's « Verify » — an identity card's only.
             identity_plan=state.get("identity_plan") if escalation_type == "identity_change" else None,
+            # SLF1: a detection attributed to no VM says so on its card, never its anchor's name.
+            attribution=_card_attribution(signal),
             # AL1c: what a card of the control plane or of an identity is filed on — whatever its
             # type (a cycle that failed on one is filed there too).
             target=_card_target(signal),
@@ -2652,6 +2688,7 @@ def _record_executed(state: GlorfindelState, source: str, exercise_run: str) -> 
             rule_name=(signal.get("context") or {}).get("rule_name", ""),
             source=source, exercise_run=exercise_run, explanation=state.get("explanation", ""),
             target=_card_target(signal), action_key=_executed_key(state), executed=executed,
+            attribution=_card_attribution(signal),
         )
     except Exception as exc:          # said, and the announcement and the debug line still go
         _console.print(f"[red]store_cycle: carte de l'action autonome '{_esc_markup(action)}' "
@@ -2689,6 +2726,7 @@ def _record_floor_card(state: GlorfindelState, source: str, exercise_run: str) -
             exercise_run=exercise_run,
             target=_card_target(signal),
             explanation=state.get("explanation", ""),
+            attribution=_card_attribution(signal),
         )
     except Exception as exc:          # said, and the debug line still written
         _console.print(f"[red]store_cycle: carte du plancher (B3a) non écrite — {_outside(exc)}[/red]")
@@ -2722,6 +2760,7 @@ def _record_uncontained(state: GlorfindelState, source: str, exercise_run: str) 
             source=source,
             exercise_run=exercise_run,
             explanation=state.get("explanation", ""),
+            attribution=_card_attribution(signal),
         )
     except Exception as exc:          # said, and the debug line still written
         _console.print(f"[red]store_cycle: carte de la détection non contenue non écrite — {_outside(exc)}[/red]")
@@ -3235,6 +3274,7 @@ def record_cycle_failure(
                 source=source,
                 exercise_run=exercise_run,
                 target=_card_target(signal),        # AL1c: filed where the signal is
+                attribution=_card_attribution(signal),
             )
         except Exception as rec_exc:  # the trace must not raise in turn
             _console.print(f"[red]cycle_failed: escalation non enregistrée — {_outside(rec_exc)}[/red]")
