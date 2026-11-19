@@ -57,8 +57,11 @@ LEAD_MIN = 20
 # Orodruin's DevTest shutdown, every day at 23:00 UTC (drill_autostart.tf, daily_recurrence_time),
 # in minutes past midnight UTC.
 SHUTDOWN_MIN = 23 * 60
-# The service's ceiling (RuntimeMaxSec), and the grace of its stop after it (docker stop --time).
-RUNTIME_MAX_S, STOP_S = 3600, 90
+# The service's ceiling (RuntimeMaxSec); the grace docker gives its container (docker stop --time);
+# and systemd's bound on the whole stop (TimeoutStopSec), after which it kills: the occurrence's last
+# second is RUNTIME_MAX_S + TIMEOUT_STOP_S after its hour, never later (DRL1e).
+RUNTIME_MAX_S, STOP_S, TIMEOUT_STOP_S = 3600, 90, 120
+SERVICE_BOUND_S = RUNTIME_MAX_S + TIMEOUT_STOP_S
 SERVICE, TIMER = "eregion-drill.service", "eregion-drill.timer"
 UNIT_DIR = "/etc/systemd/system"
 IMAGE = "eregion-annatar:orodruin"
@@ -181,10 +184,11 @@ def shutdown_guard(schedule: dr.Schedule) -> tuple[str, str]:
     """The drill against Orodruin's shutdown of 23:00 UTC (DRL1e, docs/design/drill-banc.md §16):
     (``refuse``, why) when a shutdown falls between the scheduled start's wake (the drill's hour less
     LEAD_MIN) and the drill's hour plus its ``max_run_s`` — the budget the drill declares cut for
-    certain; (``warn``, why) when it falls only before the service's ceiling (``RuntimeMaxSec``, then
-    the stop's grace) — an occurrence slow to start may be cut; ("", "") when neither."""
+    certain; (``warn``, why) when it falls only before the service's bound (``RuntimeMaxSec``, then
+    ``TimeoutStopSec``, systemd's bound on the stop) — an occurrence slow to start may be cut; ("", "")
+    when neither."""
     at = schedule.weekday * 86400 + schedule.minutes * 60
-    wake, budget, ceiling = at - LEAD_MIN * 60, at + schedule.max_run_s, at + RUNTIME_MAX_S + STOP_S
+    wake, budget, ceiling = at - LEAD_MIN * 60, at + schedule.max_run_s, at + SERVICE_BOUND_S
     hm = f"{SHUTDOWN_MIN // 60:02d}:{SHUTDOWN_MIN % 60:02d}"
     if _crosses_shutdown(wake, budget):
         return "refuse", (f"the drill ({schedule.day} {schedule.at} UTC, max_run_s {schedule.max_run_s} s) ends "
@@ -192,7 +196,8 @@ def shutdown_guard(schedule: dr.Schedule) -> tuple[str, str]:
                           "schedule, or a shorter max_run_s")
     if _crosses_shutdown(budget, ceiling):
         return "warn", (f"the drill's max_run_s ends before Orodruin's shutdown of {hm} UTC, not the service's "
-                        f"ceiling ({RUNTIME_MAX_S} s, then {STOP_S} s to stop): an occurrence slow to start "
+                        f"bound ({RUNTIME_MAX_S} s, then at most {TIMEOUT_STOP_S} s to stop): an occurrence slow "
+                        "to start "
                         "may be cut")
     return "", ""
 
@@ -235,7 +240,7 @@ def units(schedule: dr.Schedule, user: str) -> dict[str, str]:
         f"--env-file orodruin.env {mounts} -v {home}/drill:/app/drill:ro {IMAGE} "
         "python -m eregion_core.scheduled_drill run\n"
         f"ExecStop=-/usr/bin/docker stop --time {STOP_S} {CONTAINER}\n"
-        "TimeoutStopSec=120\n"
+        f"TimeoutStopSec={TIMEOUT_STOP_S}\n"
         f"RuntimeMaxSec={RUNTIME_MAX_S}\n")
     return {TIMER: timer, SERVICE: service}
 
@@ -406,11 +411,14 @@ def _autostart_refusal(logic_id: str, schedule: dr.Schedule, run: Callable) -> s
     return _read_start(logic_id, schedule, run)[0]
 
 
-def state_line(state: str | None, armed: bool, unread: str = "") -> tuple[bool, str]:
+def state_line(state: str | None, armed: bool, unread: str = "", why: str = "") -> tuple[bool, str]:
     """The scheduled start's state said against the arming on Orodruin's disk (DRL1e): (ok, the
     line). Armed, anything but ``Enabled`` fails, and says why — never a silent refusal of the next
-    occurrence, seen only as Imladris's ``not_run``. ``unread``: why the Logic App did not read."""
+    occurrence, seen only as Imladris's ``not_run``. ``unread``: why the Logic App did not read;
+    ``why``: why its trigger does not do (another hour): enabled then, no ✓ said — it fails."""
     if armed:
+        if state == "Enabled" and why:
+            return False, ""
         if state == "Enabled":
             return True, "✓ scheduled start enabled: it wakes Orodruin for the armed drill"
         if state == "Disabled":
@@ -467,7 +475,7 @@ def check(name: str, targets: list[str], *, oro, oro_run: str, logic_id: str, ru
         except (ValueError, da.ArmingRefused) as e:
             say(f"✗ arming unreadable: {e}")
             ok = False
-    state_ok, line = state_line(state, armed_here, unread)
+    state_ok, line = state_line(state, armed_here, unread, why)
     if line:
         say(line)
     ok = ok and state_ok

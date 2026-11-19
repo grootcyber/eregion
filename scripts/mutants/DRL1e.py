@@ -30,15 +30,15 @@ MUTANTS = [
      "    state = autostart_state(wf)\n", '    state = "Enabled"\n'),
     ("M6482", "the check says the scheduled start's state without the arming: armed and Disabled passes "
      "(DRL1e)", OPS,
-     "    state_ok, line = state_line(state, armed_here, unread)\n",
-     "    state_ok, line = state_line(state, False, unread)\n"),
+     "    state_ok, line = state_line(state, armed_here, unread, why)\n",
+     "    state_ok, line = state_line(state, False, unread, why)\n"),
     ("M6483", "the arming's guard of the 23:00 UTC shutdown removed: a drill Orodruin's shutdown would cut "
      "is armed (DRL1e)", OPS,
      '    verdict, said = shutdown_guard(schedule)\n    if verdict == "refuse":\n        say(f"✗ {said} — nothing armed")',
      '    verdict, said = "", ""\n    if verdict == "refuse":\n        say(f"✗ {said} — nothing armed")'),
     ("M6484", "the guard counts the drill's hour, not its max_run_s: a drill whose budget runs past 23:00 "
      "UTC only warned (DRL1e)", OPS,
-     "at - LEAD_MIN * 60, at + schedule.max_run_s, at + RUNTIME_MAX_S", "at - LEAD_MIN * 60, at, at + RUNTIME_MAX_S"),
+     "at - LEAD_MIN * 60, at + schedule.max_run_s, at + SERVICE_BOUND_S", "at - LEAD_MIN * 60, at, at + SERVICE_BOUND_S"),
     ("M6485", "the search for an apply enabling the scheduled start limited again to drill_autostart.tf: a "
      "local-exec from main.tf passes (DRL1e)", TAUTO,
      'for p in sorted(where.glob("*.tf"))}', 'for p in sorted(where.glob("drill_autostart.tf"))}'),

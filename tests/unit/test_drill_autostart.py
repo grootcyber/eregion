@@ -112,9 +112,39 @@ def test_the_logic_app_is_created_disabled_by_the_template_itself():
     assert wf["apiVersion"] == "2019-05-01"
 
 
+_HEREDOC = re.compile(r"<<-?([A-Za-z_]\w*)[ \t]*\n")
+
+
 def _code(text: str) -> str:
-    """A .tf file's code, its comment lines dropped: what an apply runs."""
-    return "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+    """A .tf file's code, its HCL comments dropped (``#`` and ``//`` to the end of the line,
+    ``/* … */``): what an apply runs. A string and a heredoc are kept whole — ``"Microsoft.X/*"`` is
+    not a comment, nor a ``#`` in a cloud-init script (DRL1e)."""
+    out, i, n, quoted = [], 0, len(text), False
+    while i < n:
+        c = text[i]
+        if quoted:
+            out.append(text[i:i + 2] if c == "\\" else c)
+            i += 2 if c == "\\" else 1
+            quoted = c != '"'
+            continue
+        if c == '"':
+            out.append(c)
+            quoted, i = True, i + 1
+        elif m := _HEREDOC.match(text, i):
+            end = re.compile(rf"^[ \t]*{m.group(1)}[ \t]*$", re.M).search(text, m.end())
+            stop = end.end() if end else n
+            out.append(text[i:stop])
+            i = stop
+        elif c == "#" or text.startswith("//", i):
+            nl = text.find("\n", i)
+            i = n if nl < 0 else nl
+        elif text.startswith("/*", i):
+            close = text.find("*/", i + 2)
+            i = n if close < 0 else close + 2
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out)
 
 
 def _module_tf(where: Path = ORO) -> dict[str, str]:
@@ -136,16 +166,21 @@ def _provisioners(code: str) -> list[str]:
 
 def _activations(module: dict[str, str]) -> list[str]:
     """What, in any file of the module, could enable the scheduled start at an apply: a call to
-    …/enable (or the word enable), a provisioner naming the Logic App, an azurerm Logic App resource,
-    and outside drill_autostart.tf, the Logic App named anywhere but in a description."""
+    …/enable, the word enable on a line naming the Logic App (logic, workflow, autostart), a
+    provisioner naming it, an azurerm Logic App resource, and outside drill_autostart.tf, the Logic
+    App named anywhere but in a description. A bare ``enable`` is not one: ``systemctl enable`` in a
+    cloud-init has nothing to do with the Logic App (DRL1e)."""
     found = []
     for name, code in module.items():
-        if "/enable" in code or re.search(r"\benable\b", code, re.I):
-            found.append(f"{name}: enable")
+        if "/enable" in code:
+            found.append(f"{name}: /enable")
+        for line in code.splitlines():
+            if re.search(r"\benable\b", line, re.I) and re.search(r"logic|workflow|autostart", line, re.I):
+                found.append(f"{name}: enable, on the Logic App ({line.strip()[:60]})")
         if "azurerm_logic_app" in code:
             found.append(f"{name}: an azurerm Logic App resource")
         for block in _provisioners(code):
-            if re.search(r"logic|workflow|autostart|enable", block, re.I):
+            if re.search(r"logic|workflow|autostart", block, re.I):
                 found.append(f"{name}: a provisioner on the Logic App")
         if name != "drill_autostart.tf":
             for line in code.splitlines():
@@ -203,13 +238,48 @@ _ENABLE_FROM = {
 def test_an_apply_enabling_the_scheduled_start_from_any_file_of_the_module_fails_the_test(tmp_path, where, form):
     """The search reads every .tf of the module: the module copied, an activation added to main.tf (or
     another file than drill_autostart.tf), and the search finds it (DRL1e, M6485)."""
-    for p in ORO.glob("*.tf"):
-        (tmp_path / p.name).write_text(p.read_text(encoding="utf-8"), encoding="utf-8")
+    _module_copy(tmp_path)
     assert _activations(_module_tf(tmp_path)) == []
     target = tmp_path / where
     target.write_text(target.read_text(encoding="utf-8") + "\n" + _ENABLE_FROM[form], encoding="utf-8")
     found = _activations(_module_tf(tmp_path))
     assert found and all(f.startswith(f"{where}:") for f in found), found
+
+
+def _module_copy(tmp_path: Path) -> Path:
+    for p in ORO.glob("*.tf"):
+        (tmp_path / p.name).write_text(p.read_text(encoding="utf-8"), encoding="utf-8")
+    return tmp_path
+
+
+def test_a_systemctl_enable_in_main_tf_s_cloud_init_is_no_activation(tmp_path):
+    """A unit enabled by Orodruin's cloud-init (custom_data) has nothing to do with the Logic App:
+    never an alarm — another lot's line in main.tf would otherwise fail this module's tests (DRL1e)."""
+    where = _module_copy(tmp_path) / "main.tf"
+    text = where.read_text(encoding="utf-8")
+    head = "custom_data = base64encode(<<-EOF\n"
+    assert text.count(head) == 1
+    where.write_text(text.replace(head, head + "    systemctl enable --now eregion-watch.timer\n"
+                                         "    systemctl enable docker\n"), encoding="utf-8")
+    module = _module_tf(tmp_path)
+    assert "systemctl enable --now eregion-watch.timer" in module["main.tf"]
+    assert _activations(module) == []
+
+
+def test_hcl_comments_are_dropped_and_strings_and_heredocs_kept():
+    """An activation in a comment is no code (``#``, ``//``, ``/* … */``); a string that holds
+    ``/*`` or ``//``, and a heredoc's ``#`` lines, are code (DRL1e)."""
+    text = ('# az rest --url x/enable\nlocals {\n  a = "Microsoft.Consumption/*", // logic /enable\n'
+            '  b = "api://x" /* provisioner "local-exec" { command = "az logic workflow" } */\n'
+            '  c = <<-EOF\n    #!/bin/bash\n    echo "/*"\n  EOF\n  d = "q\\"/*" # x */\n}\n')
+    code = _code(text)
+    for gone in ("/enable", "logic", "provisioner", "# az"):
+        assert gone not in code, gone
+    for kept in ('"Microsoft.Consumption/*"', '"api://x"', "#!/bin/bash", 'echo "/*"', '"q\\"/*"', "d = "):
+        assert kept in code, kept
+    assert _activations({"main.tf": code}) == []
+    # Every .tf of the module reads the same: its strings with /* kept.
+    assert '"Microsoft.Consumption/*"' in _module_tf()["stratus_guardrails.tf"]
 
 
 def test_its_one_action_starts_orodruins_vm_by_its_own_identity():

@@ -437,14 +437,14 @@ def test_the_check_without_an_arming_says_the_state_and_fails_only_on_the_rest(o
 # ── The shutdown of 23:00 UTC: the arming refuses a drill it would cut (DRL1e) ───────────
 
 @pytest.mark.parametrize("day, at, max_run_s, want", [
-    ("tue", "19:00", 1800, ""),          # the shipped drill: ends 19:30, its service 20:01:30
+    ("tue", "19:00", 1800, ""),          # the shipped drill: ends 19:30, its service by 20:02
     ("tue", "22:30", 1800, "refuse"),    # its budget ends at 23:00 itself
     ("tue", "22:50", 1800, "refuse"),    # ends 23:20
     ("tue", "23:10", 60, "refuse"),      # woken 22:50, shut down at 23:00 before its hour
     ("sun", "22:50", 600, "refuse"),     # across the week's end: Sunday's shutdown
-    ("tue", "22:00", 1800, "warn"),      # its budget ends 22:30, its service's ceiling 23:01:30
-    ("tue", "21:59", 1800, "warn"),      # the ceiling and the stop's grace end 23:00:30
-    ("tue", "21:58", 1800, ""),          # they end 22:59:30
+    ("tue", "22:00", 1800, "warn"),      # its budget ends 22:30, its service's bound 23:02
+    ("tue", "21:58", 1800, "warn"),      # RuntimeMaxSec, then TimeoutStopSec: 23:00 itself
+    ("tue", "21:57", 1800, ""),          # they end 22:59
     ("mon", "00:10", 3600, ""),          # woken Sunday 23:50, after Sunday's shutdown
     ("tue", "23:20", 600, "refuse"),     # woken at 23:00, the shutdown's own minute
     ("tue", "23:30", 3600, ""),          # woken 23:10, after the shutdown; ends 00:30
@@ -497,12 +497,34 @@ def test_the_check_says_the_shutdown_guard(ops):
     assert code == 0 and "✓ Orodruin's shutdown of 23:00 UTC: the drill ends before it" in said
 
 
-def test_the_service_s_ceiling_the_guard_counts_is_the_unit_s_own(ops):
-    """The guard counts RuntimeMaxSec and the stop's grace as the service says them."""
+def test_the_service_s_bound_the_guard_counts_is_the_unit_s_own(ops):
+    """The guard counts the service's real bound, read in the unit: RuntimeMaxSec, then
+    TimeoutStopSec — systemd's bound on the whole stop, docker's own grace within it (DRL1e)."""
+    import re
     service = ops.units(dr.Schedule("tue", "19:00", 6, 1800), "orodruin")[ops.SERVICE]
-    assert f"RuntimeMaxSec={ops.RUNTIME_MAX_S}\n" in service
-    assert f"docker stop --time {ops.STOP_S} " in service
-    assert (ops.RUNTIME_MAX_S, ops.STOP_S) == (3600, 90)
+    runtime = int(re.search(r"^RuntimeMaxSec=(\d+)$", service, re.M).group(1))
+    stop = int(re.search(r"^TimeoutStopSec=(\d+)$", service, re.M).group(1))
+    grace = int(re.search(r"^ExecStop=.*docker stop --time (\d+) ", service, re.M).group(1))
+    assert ops.SERVICE_BOUND_S == runtime + stop == 3720
+    assert grace == ops.STOP_S < stop
+    # The guard's warning falls at that bound, to the minute: the hour whose bound is 23:00 warns,
+    # the minute before it does not.
+    last = (23 * 60 * 60 - ops.SERVICE_BOUND_S) // 60
+    at = f"{last // 60:02d}:{last % 60:02d}"
+    before = f"{(last - 1) // 60:02d}:{(last - 1) % 60:02d}"
+    assert ops.shutdown_guard(dr.Schedule("tue", at, 6, 600))[0] == "warn"
+    assert ops.shutdown_guard(dr.Schedule("tue", before, 6, 600))[0] == ""
+
+
+def test_an_armed_drill_whose_enabled_start_is_at_another_hour_never_says_it_enabled(ops):
+    """Armed, the Logic App Enabled but at another hour: « apply first » said, never « ✓ scheduled
+    start enabled » beside it; the check fails (DRL1e)."""
+    wf = _workflow(hour=19, minute=0)
+    wf["properties"]["state"] = "Enabled"
+    code, said = _check(ops, Oro(armed=ARMED), Logic(wf))
+    assert code == 1, said
+    assert any(s.startswith("✗ scheduled start:") and "apply first" in s for s in said), said
+    assert not any(s.startswith("✓ scheduled start") for s in said), said
 
 
 # ── arm: refused before anything is written, else each step said ───────────────────

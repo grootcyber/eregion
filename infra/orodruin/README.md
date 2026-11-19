@@ -104,7 +104,8 @@ Contrat (garanties, vérifications, kill, mutants) :
     peut laisser un échauffement ou un nettoyage inachevé sur sa cible, et rien n'alerte. Pour le drill,
     l'armement le garde (DRL1e, §16 de la conception) : refus si l'extinction tombe entre le réveil et
     l'heure du drill plus son `max_run_s`, avertissement si elle ne tombe qu'avant le plafond du service
-    (`RuntimeMaxSec`, puis 90 s d'arrêt). Le drill livré, 19:00 + 30 min, passe sans rien dire ;
+    (`RuntimeMaxSec`, puis `TimeoutStopSec` : 3 720 s). Le drill livré, 19:00 + 30 min, passe sans rien
+    dire ;
   - **la sortie `drill_autostart_id`**, l'id de la Logic App, que lisent `orodruin-drill-check`, `-arm`,
     `-disarm` et le kill (`drill_ops.py autostart-id`). Avant l'apply : « no scheduled start », et
     l'armement refuse (« apply first »).

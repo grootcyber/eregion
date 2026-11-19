@@ -1340,19 +1340,28 @@ et ses tests ; ni `main.tf`, ni `kill.py`, ni le `Makefile` ne changent.
   - **refus**, si une extinction tombe entre le réveil (l'heure du drill moins 20 min) et l'heure du
     drill plus son `max_run_s`, bornes comprises. C'est le budget que le drill déclare : sa coupure est
     certaine, ou Orodruin s'éteint avant même l'heure du drill. L'armement dit pourquoi et n'écrit rien ;
-  - **avertissement**, si l'extinction ne tombe qu'avant le plafond du service (`RuntimeMaxSec`, 3 600 s,
-    puis les 90 s de son arrêt) : le runner tient, mais une occurrence lente à démarrer (V1, gondolin
-    démarrée à froid, §3.1) peut être coupée. L'armement le dit, puis continue.
+  - **avertissement**, si l'extinction ne tombe qu'avant la borne réelle du service : `RuntimeMaxSec`
+    (3 600 s), puis `TimeoutStopSec` (120 s), la borne que systemd met à tout l'arrêt avant de tuer (les
+    90 s de `docker stop --time` sont dedans), soit 3 720 s après l'heure du drill. Le runner tient, mais
+    une occurrence lente à démarrer (V1, gondolin démarrée à froid, §3.1) peut être coupée. L'armement le
+    dit, puis continue.
 
   Le check dit la même garde, et un refus le fait échouer. Le drill livré (`tue 19:00`, 1 800 s) finit
-  à 19:30, son service au plus tard à 20:01:30 : ni refus ni avertissement. L'heure de l'extinction est
-  celle de `drill_autostart.tf` (`daily_recurrence_time = "2300"`), et un test les compare ; le plafond
-  est celui de l'unité (`RuntimeMaxSec`, `docker stop --time`), lu par un autre test.
+  à 19:30, son service au plus tard à 20:02 : ni refus ni avertissement. L'heure de l'extinction est
+  celle de `drill_autostart.tf` (`daily_recurrence_time = "2300"`), et un test les compare ; la borne
+  est celle de l'unité (`RuntimeMaxSec` plus `TimeoutStopSec`), relue dans son texte par un autre test,
+  qui place l'avertissement à la minute près.
+- **Armé, `Enabled`, mais à une autre heure** : le check dit « ✗ … apply first », et pas la ligne
+  « ✓ scheduled start enabled » à côté. Il sort en 1.
 - **Les deux tests resserrés.** `test_no_apply_enables_the_scheduled_start` cherche une activation dans
-  **chaque `.tf` du module**, et non plus dans `drill_autostart.tf` seul : un appel à `…/enable`, un
-  provisionneur qui nomme la Logic App, une ressource `azurerm_logic_app`, la Logic App nommée hors d'une
-  `description`. Un test copie le module, ajoute une activation à `main.tf` (ou un autre fichier), et
-  exige que la recherche la trouve. `_run_options` lit le `Makefile` jusqu'à `$(ORO_IMAGE)`. Il écarte
+  **chaque `.tf` du module**, et non plus dans `drill_autostart.tf` seul : un appel à `…/enable`, le mot
+  `enable` sur une ligne qui nomme la Logic App (`logic`, `workflow`, `autostart`), un provisionneur qui
+  la nomme, une ressource `azurerm_logic_app`, la Logic App nommée hors d'une `description`. Le mot
+  `enable` seul n'est pas une activation : un `systemctl enable` dans le cloud-init de `main.tf` n'a rien
+  à voir avec la Logic App, et un cas témoin le fige. Le code lu est celui que l'apply exécute : les
+  commentaires HCL (`#`, `//`, `/* … */`) sont retirés, les chaînes et les heredocs gardés entiers
+  (`"Microsoft.Consumption/*"` n'est pas un commentaire). Un test copie le module, ajoute une activation à
+  `main.tf` (ou un autre fichier), et exige que la recherche la trouve. `_run_options` lit le `Makefile` jusqu'à `$(ORO_IMAGE)`. Il écarte
   `--env-file`, `-v`, `$(call ORO_MOUNT,…)` et `--pull`, et un test y pose une option après
   `--env-file` et parmi les montages.
 - **Mutants** M6481–M6490 (`scripts/mutants/DRL1e.py`) : le check qui ne lit plus l'état, ou le dit sans
