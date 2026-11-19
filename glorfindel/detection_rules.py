@@ -1747,10 +1747,15 @@ class RulePoller:
         faults: list[str] = []
         # SLF1 (#929): the watch's own return channel set aside — its identity, its container,
         # its objects —, before any routing; `BlobWriters` taken off every row, whatever.
+        # ATT1 (#936): the shipped rule only, by its name and its query to the byte — never a rule of
+        # the client's layer computing a wider `Known` under its name: its rows stay cards.
         channel = None
         try:
             channel = self._channel()
-            rows, own = own_channel.settle(rows, channel)
+            if own_channel.is_shipped(rule.query, rule.name):
+                rows, own = own_channel.settle(rows, channel)
+            else:
+                rows, own = own_channel.strip(rows), {"writes": 0, "rows": 0, "unread": False}
         except Exception as exc:  # nothing set aside, the column taken off all the same
             rows, own = own_channel.strip(rows), {"writes": 0, "rows": 0, "unread": False}
             faults.append(f"own_channel: {type(exc).__name__}: {exc}")

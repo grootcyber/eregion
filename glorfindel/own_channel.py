@@ -25,15 +25,26 @@ The row of a card then has its counts less the watch's own writes, and ``BlobWri
 reads (``_build_user_message``) is unchanged to the byte. What is set aside is counted
 (``rule_status.json``, ``own_channel``), shown on the rule's line in the console, and written to the
 watch's log; never silent.
+
+ATT1 (#936): only for the shipped rule — ``data-exfiltration-blob``, known by its name **and** the
+fingerprint of its query as the base ships it (``is_shipped``) —, never for a rule of the client's
+layer that would compute a wider ``Known`` under that name (an override, a copy that changed its
+query): its rows stay cards, the column taken off all the same. A copy of the shipped rule to the
+letter (WL1, ``base_sha256``) computes the same ``Known``: set aside as the shipped one.
 """
 from __future__ import annotations
 
+import functools
+import hashlib
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable
 from urllib.parse import urlsplit
 
 WRITERS = "BlobWriters"
+# ATT1: the one rule whose rows may be set aside, as the base ships it.
+SHIPPED_RULE = "data-exfiltration-blob"
 REASON = ("the watch's own return channel: its identity, the container of EREGION_WATCH_CHANNEL, "
           "the objects it writes there (SLF1)")
 # Azure's container names: 3 to 63 of lowercase letters, digits and single hyphens.
@@ -99,6 +110,38 @@ def current() -> Channel | None:
         return _SOURCE() if _SOURCE is not None else None
     except Exception:
         return None
+
+
+def query_sha256(query) -> str:
+    """sha256 of a rule's query, as text, to the byte."""
+    return hashlib.sha256(str(query or "").encode("utf-8")).hexdigest()
+
+
+@functools.lru_cache(maxsize=4)
+def _shipped_sha256(path: str) -> str:
+    from glorfindel.detection_rules import _named, _read_layer
+    rule = next((r for r in _named(_read_layer(Path(path)).get("rules")) if r.get("name") == SHIPPED_RULE),
+                None)
+    return query_sha256(rule.get("query")) if isinstance(rule, dict) and rule.get("query") else ""
+
+
+def shipped_sha256() -> str:
+    """The fingerprint of the shipped rule's query, read from the base shipped with Glorfindel
+    (``detection_rules.shipped_rules_path``); "" when it cannot be read — then nothing is set aside."""
+    try:
+        from glorfindel.detection_rules import shipped_rules_path
+        return _shipped_sha256(str(shipped_rules_path()))
+    except Exception:
+        return ""
+
+
+def is_shipped(query, name: str = SHIPPED_RULE) -> bool:
+    """ATT1 (#936): the rule whose rows `settle` may set aside — named as the shipped one, its query
+    the shipped one to the byte. Never a rule of the client's layer that changed it (a ``Known``
+    wider than the channel's objects, another container, any writer). An `attack_started` names no
+    rule: its query alone says it (`name` left to the shipped one's)."""
+    sha = shipped_sha256()
+    return bool(sha) and name == SHIPPED_RULE and query_sha256(query) == sha
 
 
 def _count(value) -> int | None:

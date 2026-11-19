@@ -1955,6 +1955,10 @@ def _restore_refusal(esc_id: str, vm_name: str) -> tuple[str | None, str]:
     if esc.get("escalation_type") in _ANCHORED_TYPES:
         return ("This card is anchored on a VM the detection does not name: no restore from "
                 f"the console — identify the VM, then the CLI: {cli}"), rid
+    if _esc.unattributed(esc) is not None:
+        # ATT1 (#936): a card that says it is unattributed, whatever its type, is filed on that VM only.
+        return ("This card is anchored on a VM the detection does not name (not attributed): no "
+                f"restore from the console — identify the VM, then the CLI: {cli}"), rid
     if esc.get("action") != "restore_from_backup":
         return f"This card does not hold a restore — CLI: {cli}", rid
     if rid.rstrip("/").split("/")[-1] != vm_name:

@@ -197,6 +197,10 @@ que soit le tirage du modèle, la preuve de bout en bout du plancher dans le CD.
   basse) y cède sa place : la carte devient celle de l'attribution, plus prudente (SEC-Ec). Seule
   exception, le mode `human_only` qui retient un instantané du modèle : la carte reste celle du
   mode, où seul l'instantané s'approuve en un clic, jamais l'isolation, et sa raison le dit.
+  Depuis ATT1 (#936), la garde d'attribution elle-même prime de même, plancher ou non : toute
+  action qui vise la VM sur une détection non attribuée est la carte de l'attribution, quelle que
+  soit la garde qui l'a retenue avant ([glorfindel.md](../glorfindel.md), « La garde d'attribution
+  prime sur toute retenue antérieure »).
 - **Limites.**
   - L'ordre des deux faits n'est pas vérifié, seulement leur présence dans l'incident en cours,
     chacun dans son TTL.

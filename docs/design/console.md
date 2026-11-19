@@ -278,6 +278,17 @@ Après I1F, AL1, C2 et A3 (27/10) :
   `_ANCHORED_TYPES` du bot) porte sur une VM que la détection ne nomme pas. Elle n'a ni « 🔄 Restore »
   ni commande visant cette VM (seulement `glorfindel ack`), et la console dit « ⚓ filed on …, not about
   it » — sauf une carte du plan de contrôle ou d'identité d'avant AL1c, ci-dessous.
+- **Une carte non attribuée, quel que soit son type** (ATT1, #936) : une carte qui porte
+  `attribution: {state: unattributed}` (SLF1) et une action qui vise sa VM (`isolate_vm`,
+  `block_suspicious_ip`, `release_isolation` : `_VM_AIMED`, l'ensemble `VM_AIMED_ACTIONS` du serveur)
+  n'a pas de « ▶ Approve & execute » (`_isHeld`, `_aimsLoose`), et aucune carte non attribuée n'a
+  « 📸 Snapshot » (`_isSnapshotPending`) ni « 🔄 Restore » (la route le refuse, `_restore_refusal`) ;
+  son `📋 Cmd` dit « not attributed », ses candidates, renvoie
+  au jugement depuis la CLI, puis `glorfindel ack`. Appelé directement, le serveur la refuse
+  (`approval_refusal`). Une carte `mode_hold` d'un instantané non attribué reste approuvable pour
+  l'instantané. Son titre dit le verbe, retenu (« Isolate VM — held: not attributed », `_looseTitle`), jamais le
+  libellé au passé ; le « 📸 Snapshot » de la tuile reste caché tant qu'une carte non attribuée d'instantané y
+  attend ; les étapes du modèle sont précédées d'une ligne qui dit qu'elles visent la VM d'ancrage (`_looseSteps`).
 - **Une carte sur ce qu'elle vise** (AL1c, #597) : depuis AL1c, une carte du plan de contrôle ou
   d'identité porte sa cible (`target`, `glorfindel/card_target.py`) et n'est plus ancrée sur une VM.
   La carte dit « 🎯 about NSG nsg-… · règle … · covers vm-a, vm-b » (huit VM nommées au plus, puis

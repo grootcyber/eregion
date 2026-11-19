@@ -5,7 +5,8 @@ signed action queue (glorfindel/queue_watch.py) before any call to the cloud. Ne
 guard changed here is changed for both.
 
 - **The approval in one click** (``approval_refusal``): never a card anchored on a VM the detection
-  does not name, only the types one may approve (``action_queue.APPROVABLE_TYPES``), a card younger
+  does not name — nor, whatever its type, an action aimed at that VM on a card that says it is
+  unattributed (``action_queue.unattributed_aim``, ATT1) —, only the types one may approve (``action_queue.APPROVABLE_TYPES``), a card younger
   than ``GLORFINDEL_APPROVAL_MAX_AGE_H`` (2 h; zero or less closes the approval), and no restore of
   the VM after the card. The card's date: the one the caller trusts — the console, the card's
   ``last_seen`` (as before FS1b); the watch, the ``issued_at`` it signed on its proposal, never
@@ -63,6 +64,12 @@ def approval_refusal(esc: dict, vm_name: str, *, dated: str | None = None,
     if etype == "unattributed_signal":
         return ("Détection non attribuée : la carte est ancrée sur une VM que la détection "
                 "ne nomme pas. Identifier la VM concernée, puis agir depuis la CLI.")
+    if action_queue.unattributed_aim(esc):
+        # ATT1 (#936): whatever its type (a low confidence, the mode, a card written before ATT1),
+        # an action aimed at a VM the detection does not name is never run in one click.
+        return (f"Détection non attribuée : '{str(esc.get('action') or '?')[:40]}' viserait une VM "
+                "que la détection ne nomme pas (la carte n'y est que rangée). Identifier la VM "
+                "concernée, puis agir depuis la CLI.")
     if etype not in action_queue.APPROVABLE_TYPES:
         return f"Ce type de carte ({etype or '?'}) ne s'exécute pas en un clic."
     seen = dated if dated is not None else (esc.get("last_seen") or esc.get("timestamp") or "")

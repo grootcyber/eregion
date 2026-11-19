@@ -212,11 +212,24 @@ def _arg(value) -> str:
     return shlex.quote(str(value))
 
 
+def _plain(value) -> str:
+    """A name from the card's store said on one line of a command to copy (ATT1): its control
+    characters and backticks dropped (a newline would start a line of its own), then cut."""
+    return "".join(ch for ch in str(value) if ch.isprintable() and ch != "`")[:_NAME_MAX]
+
+
 def _cli_command(esc: dict) -> str:
     """Return CLI command(s) the operator should run for this escalation. Every argument read from
     the card quoted for the shell (`_arg`; the VM by `_vm_for_a_command`, quoted already, MSK3)."""
     action = esc["action"]
     esc_id = _arg(esc["id"])
+    loose = esc_module.unattributed(esc)
+    if loose is not None:
+        # ATT1 (#936): a detection attributed to no VM — whatever the card's type, never a command
+        # on the VM it is filed on: « non attribuée », its candidates, and the judgement to the CLI.
+        said = _unattributed_said(loose, _plain)
+        return (f"# {said}\n# juger depuis la CLI quelle VM elle concerne (glorfindel pending, la "
+                f"ligne de détection), puis agir sur celle-là\nglorfindel ack {esc_id}")
     if esc.get("escalation_type") in _ANCHORED_TYPES:
         return f"glorfindel ack {esc_id}"
     # MSK3: the VM by the name a command takes back to it, never its full id — the message is
@@ -409,6 +422,11 @@ def _embed_body(esc: dict) -> tuple[str, list[tuple[str, str, bool]]]:
         fields += _plan_fields(plan)
     elif esc.get("suggested_steps"):
         steps = "\n".join(f"• {discord_text(s)}" for s in esc["suggested_steps"][:3])
+        loose_steps = esc_module.unattributed(esc)
+        if loose_steps is not None:
+            # ATT1 (#936): the model's steps may name the VM the card is filed on — said first, by the code.
+            said = _unattributed_said(loose_steps, lambda v: discord_code(str(v or "?")[:_NAME_MAX]))
+            steps = f"⚓ {said} ; juger depuis la CLI, ces étapes visent la VM d'ancrage\n{steps}"
         fields.append(("Prochaines étapes", steps[:1024], False))
     return discord_text(explanation or reason)[:2048], fields
 
@@ -1209,6 +1227,10 @@ def _make_action_button(esc: dict) -> discord.ui.Button | None:
     # chosen among the watched ones — one click on it would restore or revert a VM the
     # detection says nothing of.
     if esc_type in _ANCHORED_TYPES:
+        return None
+    # ATT1 (#936): nor on a card that says it is unattributed, whatever its type — a restore or a
+    # revert there would act on the VM the card is filed on, not one the detection names.
+    if esc_module.unattributed(esc) is not None:
         return None
     if action == "restore_from_backup":
         return _RestoreButton(esc)
