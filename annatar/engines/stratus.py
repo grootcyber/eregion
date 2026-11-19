@@ -224,6 +224,25 @@ def _lookup(technique_id: str, catalog: dict | None) -> tuple[str, dict]:
     return tid, entry
 
 
+# A technique runs only once its implementation is ready: the catalog marks it ``implemented``
+# (scenario written and reviewed — ready to test and measure) or ``proven`` (already measured at the
+# bench). A ``planned`` entry (design only) is refused before resolution — it would otherwise reach a
+# run and act with the identity's rights without a reviewed implementation behind it (V31, #889).
+# ``proven`` belongs to the maturity model (STM1); the gate accepts it now so it needs no change then.
+_RUNNABLE_STATUS = ("implemented", "proven")
+
+
+def _require_runnable_status(tid: str, entry: dict) -> None:
+    """Fail closed unless the catalog marks the technique runnable (``implemented`` or ``proven``)."""
+    status = str(entry.get("status") or "").strip().lower()
+    if status not in _RUNNABLE_STATUS:
+        raise StratusError(
+            f"technique {tid!r} is {status or 'unset'!r} in the catalog, not "
+            f"{' or '.join(_RUNNABLE_STATUS)} — only a technique whose implementation is ready "
+            "(scenario reviewed) runs; not resolved"
+        )
+
+
 def resolve(technique_id: str, *, binary_path: str | Path,
             stratus_dir: Path | None = None, catalog: dict | None = None) -> ResolvedTechnique:
     """Resolve a Stratus technique id to the phases to run — or refuse (fail closed).
@@ -231,6 +250,7 @@ def resolve(technique_id: str, *, binary_path: str | Path,
     ``binary_path`` is the staged Stratus binary; its sha256 is checked against the PIN here,
     so a resolved technique already carries a verified binary."""
     tid, entry = _lookup(technique_id, catalog)
+    _require_runnable_status(tid, entry)
     digest = verify_binary(binary_path, stratus_dir)
     binary = str(binary_path)
     phases = [

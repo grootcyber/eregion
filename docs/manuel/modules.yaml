@@ -1461,6 +1461,15 @@ briques:
     lots: [MSI1]
     issue: 608
 
+  - id: a-injecteur-host-durci
+    composant: annatar
+    poste: a-attaquer
+    nom: "The execution host passes the injector a minimal environment (no host secret), requires the catalog's implemented/proven status to run, and validates the group name before the ARM read"
+    etat: main
+    release: "0.6"
+    lots: [V31]
+    issue: 889
+
   - id: a-scenario-bastion
     composant: annatar
     poste: a-attaquer

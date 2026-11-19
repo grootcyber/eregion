@@ -12,6 +12,7 @@ cloud call and no LLM call.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from dataclasses import dataclass
 
@@ -42,6 +43,20 @@ _DEFAULTS = {
     TERRAFORMRC_ENV: "/opt/stratus/terraformrc",
 }
 
+# V31 (#889): only these names are inherited from Orodruin's environment into the control-plane
+# subprocess — the toolchain basics and the (non-secret) Azure scope. Everything else is DROPPED, so
+# no secret (the model key ANTHROPIC_API_KEY, the watch keys, the channel URLs) reaches the
+# third-party binary or Terraform. HOME and the provider mirror come from airgap_env, the azurerm
+# identity (ARM_*) from azure_provider_env; a genuinely missing name is added here when the binary
+# ships (the run then fails loudly, never silently with a secret in its environment).
+_INHERITED_ENV = (
+    "PATH",                                      # find and exec terraform and its providers
+    "LANG", "LC_ALL", "LC_CTYPE",                # locale
+    "SSL_CERT_FILE", "SSL_CERT_DIR",             # TLS roots for the Azure API
+    "TMPDIR",                                    # a temp dir, if the host sets one
+    "AZURE_SUBSCRIPTION_ID", "AZURE_TENANT_ID",  # the scope (identifiers, not secrets)
+)
+
 # A Stratus phase can provision/destroy cloud infrastructure; give it room, but bounded.
 PHASE_TIMEOUT_S = 900
 
@@ -69,6 +84,23 @@ def staged_layout(env=None) -> StagedLayout:
 
 ARM = "https://management.azure.com"
 _RG_API = "2021-04-01"
+
+_GUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+_RG_NAME = re.compile(r"[A-Za-z0-9._()\-]{1,90}")
+
+
+def _validate_arm_ids(subscription_id: str, resource_group: str) -> None:
+    """Hold the subscription id and group name to their Azure shapes BEFORE they enter the ARM path
+    read for the enrollment guard (V31, #889): a name carrying a '/', a '..' or another path
+    character could otherwise steer the request to a different group's tags. The group name is
+    Azure's own — letters, digits, '._()-', 1–90 chars, never ending in a period."""
+    if not _GUID.fullmatch(str(subscription_id or "")):
+        raise RuntimeError(f"subscription id {subscription_id!r} is not a GUID — not read")
+    rg = str(resource_group or "")
+    if not _RG_NAME.fullmatch(rg) or rg.endswith("."):
+        raise RuntimeError(
+            f"resource group name {resource_group!r} is not an Azure group name "
+            "(letters, digits, '._()-', 1–90 chars, no '/' or '..') — not read")
 
 
 def _default_graph_get(path: str) -> dict:
@@ -118,6 +150,7 @@ class StratusExecutor:
         """The bench group's tags, read through ARM — the control-plane enrollment guard
         (eregion_core/inscription.py). The reader (``arm_get``) is injected in the tests; a
         read that fails raises, so the run refuses before anything is provisioned."""
+        _validate_arm_ids(subscription_id, resource_group)
         path = f"/subscriptions/{subscription_id}/resourceGroups/{resource_group}"
         body = self._arm_get(path, _RG_API)
         return (body.get("tags") if isinstance(body, dict) else {}) or {}
@@ -171,17 +204,20 @@ class StratusExecutor:
             self._run_home_path = None
 
     def _env(self) -> dict[str, str]:
-        """The process environment: the inherited one (Orodruin's Azure credentials) with the
-        offline overrides layered on (annatar/engines/stratus.py::airgap_env) — a writable run
-        HOME, the staged Terraform binary (STRATUS_TERRAFORM_BINARY_PATH) and the provider mirror
-        (TF_CLI_CONFIG_FILE) — plus the azurerm provider's identity directive (MSI1): on a host
-        carrying only a managed identity (no service-principal secret), ARM_USE_MSI with the
-        subscription and tenant, so the warmup's Terraform authenticates by that identity."""
+        """The subprocess environment — MINIMAL (V31): only the toolchain and Azure-scope names the
+        binary and Terraform need are inherited from the host (``_INHERITED_ENV``); everything else
+        of Orodruin's environment (the model key, the channel URLs, the watch keys) is DROPPED and
+        never reaches the third-party binary. Over that base: the offline overrides (airgap_env — a
+        writable run HOME, the staged Terraform ``STRATUS_TERRAFORM_BINARY_PATH`` and the provider
+        mirror ``TF_CLI_CONFIG_FILE``) and the azurerm identity directive (MSI1, ``azure_provider_env``
+        — ``ARM_USE_MSI`` with the subscription and tenant, so the warmup authenticates by the host's
+        managed identity)."""
         overrides = airgap_env(self._ensure_run_home(),
                                terraform_binary=self._staged_terraform(),
                                terraformrc=self.layout.terraformrc)
         identity = azure_provider_env(os.environ)
-        return {**os.environ, **overrides, **identity}
+        base = {k: v for k in _INHERITED_ENV if (v := os.environ.get(k)) is not None}
+        return {**base, **overrides, **identity}
 
     def _before_call(self, phase: str, detail: str) -> None:
         """The journal precedes the call (O1) — a phase runs only from an armed contract."""

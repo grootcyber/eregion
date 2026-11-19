@@ -43,8 +43,8 @@ MUTANTS = [
     ("M6104", "the executor drops the identity directive — ARM_USE_MSI never reaches the warmup "
      "subprocess, so the provider on an armed Orodruin cannot authenticate (MSI1)",
      HOST,
-     "        return {**os.environ, **overrides, **identity}",
-     "        return {**os.environ, **overrides}"),
+     "        return {**base, **overrides, **identity}",
+     "        return {**base, **overrides}"),
     ("M6105", "a blank value is taken for the subscription/tenant — a whitespace EREGION_TENANT_ID "
      "yields ARM_TENANT_ID='  ' and the provider fails opaquely instead of no-op (MSI1)",
      ENGINE,
