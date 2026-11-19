@@ -1611,17 +1611,24 @@ function _netBlock(net) {
   const nics = net.nics.map(n => `<div class="vm-nic"><span class="vm-nicname">⇄ ${_attr(n.nic || 'NIC')}</span>${n.ips.map(a => _addrBtn(a, false)).join('')}${n.pubs.map(p => _pubAddr(p, true)).join('')}</div>`).join('');
   return `<div class="vm-net">${nics}<div class="vm-netfoot">read by the NSG audit ${_attr(_relTime(net.at))}</div></div>`;
 }
-// A copy where the page may write the clipboard (a secure context: the loopback, the SSH tunnel);
-// elsewhere (a plain http address of the tailnet) the address is selected, for Ctrl+C.
+// A copy by the clipboard where the page may write it (a secure context: the loopback, the SSH
+// tunnel). Elsewhere (a plain http address of the tailnet), the address selected and copied by the
+// browser at once, during the click: a selection left for Ctrl+C would go with the next refresh,
+// 5 s at most. The address is selectable (`.vm-ip`: user-select, the card being draggable sets
+// none). The toast says what happened, never a copy that did not (review of IPS1b, measured).
 function copyAddr(a) {
   const el = _target;
-  const select = () => {
+  const text = String(a);
+  const byBrowser = () => {
     const r = document.createRange(); r.selectNodeContents(el);
     const s = getSelection(); s.removeAllRanges(); s.addRange(r);
-    toast(`${a} selected — Ctrl+C to copy`);
+    let copied = false;
+    try { copied = String(s) === text && document.execCommand('copy'); } catch (e) { copied = false; }
+    s.removeAllRanges();
+    toast(copied ? `✓ ${text} copied` : `✗ ${text} not copied — select it and copy it by hand`);
   };
-  if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(String(a)).then(() => toast(`✓ ${a} copied`), select);
-  else select();
+  if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(() => toast(`✓ ${text} copied`), byBrowser);
+  else byBrowser();
 }
 
 function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {

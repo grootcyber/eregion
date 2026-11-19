@@ -91,9 +91,24 @@ def test_an_address_is_escaped_and_copied_in_one_click_never_unfolding_its_card(
     assert re.search(r"^  copyAddr,", actions, re.M)
 
 
-def test_the_copy_falls_back_to_a_selection_where_the_page_may_not_write_the_clipboard():
+def test_where_the_page_may_not_write_the_clipboard_the_browser_copies_during_the_click():
+    """Outside a secure context (a plain http address of the tailnet): the address selected and
+    copied by the browser at once, during the click — a selection left for Ctrl+C would go with
+    the next refresh. Measured on http://console.test (isSecureContext false): a real click copies;
+    a copy refused (execCommand false) or an address not selectable says « not copied »."""
     copy = body("function copyAddr(a) {")
-    assert ("if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(String(a))"
-            ".then(() => toast(`✓ ${a} copied`), select);") in copy
-    assert "else select();" in copy
+    assert ("if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text)"
+            ".then(() => toast(`✓ ${text} copied`), byBrowser);") in copy
+    assert "else byBrowser();" in copy
     assert "r.selectNodeContents(el);" in copy and "const el = _target;" in copy
+    # Copied by the browser at once, only what was selected — and its answer read, never assumed.
+    assert "try { copied = String(s) === text && document.execCommand('copy'); } catch (e) { copied = false; }" in copy
+    assert "toast(copied ? `✓ ${text} copied` : `✗ ${text} not copied — select it and copy it by hand`);" in copy
+    assert copy.count("toast(") == 2 and "selected — Ctrl+C" not in copy
+
+
+def test_an_address_is_selectable_though_its_card_is_draggable():
+    # A draggable card gets user-select: none in Chromium, and its buttons with it: selectNodeContents
+    # then selects nothing (measured, review of IPS1b).
+    rule = HTML.split(".vm-ip    {", 1)[1].split("}", 1)[0]
+    assert "-webkit-user-select: text; user-select: text;" in rule

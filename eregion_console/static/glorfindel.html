@@ -442,7 +442,8 @@
      never a filled badge, which stays the BLOCKED one of an attacker's address. */
   .vm-addr  { margin-top: 5px; font-size: 10px; color: var(--dim); display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; cursor: default; }
   .vm-ip    { font: inherit; font-size: 10px; color: var(--text); background: none; border: 0; padding: 0;
-              border-bottom: 1px dotted var(--border); border-radius: 0; cursor: copy; }
+              border-bottom: 1px dotted var(--border); border-radius: 0; cursor: copy;
+              -webkit-user-select: text; user-select: text; }   /* the card is draggable: none, else */
   .vm-ip:hover { border-bottom-color: var(--text); background: none; }
   .vm-ip.pub, .vm-pub { color: var(--yellow); }
   .vm-pub.unread { cursor: help; }

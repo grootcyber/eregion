@@ -416,8 +416,14 @@ décisions, plus haut).
 - **Dépliée**, sous la ligne du NSG, le détail par carte réseau (`⇄ <nic>`) et l'âge de la
   lecture (« read by the NSG audit … », le `timestamp` de l'audit de la VM).
 - **Une adresse se copie d'un clic** (`copyAddr`). Le bouton prend le clic, la carte ne se déplie
-  pas. Le presse-papiers ne s'écrit que dans un contexte sûr (la boucle locale, le tunnel SSH) ;
-  ailleurs (une adresse http du tailnet), l'adresse est sélectionnée, pour Ctrl+C.
+  pas. Dans un contexte sûr (la boucle locale, le tunnel SSH), la page écrit le presse-papiers.
+  Ailleurs (une adresse http du tailnet), il n'y a pas de presse-papiers pour la page : le
+  navigateur copie l'adresse sélectionnée pendant le clic même (`execCommand('copy')`), car une
+  sélection laissée pour Ctrl+C partirait au rafraîchissement suivant. L'adresse doit être
+  sélectionnable : une carte `draggable` reçoit `user-select: none` de Chromium, d'où
+  `user-select: text` sur `.vm-ip`. Le toast dit ce qui s'est passé, « copied » ou « not copied »,
+  d'après la réponse du navigateur, jamais une copie qui n'a pas eu lieu. La première relecture
+  a mesuré le défaut (l'adresse annoncée « selected », rien de sélectionné).
 - **Ce qui ne s'est pas lu est dit.** Un audit NSG en échec donne « ip — », sa raison au survol,
   et en entier sur la carte dépliée. Une IP publique dont l'adresse ne s'est pas lue donne
   « 🌐 ? » (la raison au survol) : la VM reste montrée exposée.
@@ -435,9 +441,12 @@ tard. Tout ce qui vient d'Azure passe par `_attr`. Le bot Discord n'est pas touc
 **Mesuré** dans Chromium sans tête sur la console du jeu d'exemple, avec un audit simulé par des
 adresses de documentation (RFC 5737) et une valeur piégée : les quatre cas (IP publique, multi-NIC
 avec « +1 », audit en échec, IP publique illisible) ; la copie (le presse-papiers tient l'adresse,
-la carte reste repliée) ; la valeur piégée écrite en texte, aucun élément créé. Aucune capture de
+la carte reste repliée) ; la valeur piégée écrite en texte, aucun élément créé. Hors contexte
+sûr (la console servie sous `http://console.test`, `isSecureContext` faux, pas de
+`navigator.clipboard`) : un vrai clic copie l'adresse ; une copie refusée (`execCommand` rend
+`false`) ou une adresse non sélectionnable dit « not copied ». Aucune capture de
 la doc ne montre la page Glorfindel : le jeu d'exemple n'a pas d'adresses à porter.
-Tests : `tests/unit/test_console_ips.py` ; mutants M6431–M6440 (`scripts/mutants/IPS1b.py`).
+Tests : `tests/unit/test_console_ips.py` ; mutants M6431–M6442 (`scripts/mutants/IPS1b.py`).
 
 ### Les blocages d'une VM (CON-K, #498, 04/11)
 
