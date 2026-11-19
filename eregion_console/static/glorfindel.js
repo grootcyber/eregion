@@ -2896,7 +2896,9 @@ async function setDefaultMode(mode) {
 const _feedDedup = new Map(); // key → {el, count, ts}
 const _FEED_DEDUP_MS = 5000;
 // The gate that held a decision with no action (debug line `held_by`, agent.py).
-const _HELD_BY_WORDS = { control_plane: 'control plane (detection only)', identity: 'identity (detection only)' };
+// CPT1b: a card of incomplete telemetry (CPT1) says so in the feed, never « review ».
+const _HELD_BY_WORDS = { control_plane: 'control plane (detection only)', identity: 'identity (detection only)',
+  control_plane_incomplete: 'control plane, incomplete telemetry (detection only)' };
 
 // CON-D: a line that is not of today, in UTC, says its day — « yesterday », or its date (10/11,
 // and its year when it is not this one); a line of today, its time alone. The day and the time

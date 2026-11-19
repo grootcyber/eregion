@@ -19,12 +19,13 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from glorfindel.agent import INCOMPLETE_TELEMETRY
-from glorfindel.detection_rules import names_no_one
+from glorfindel.agent import INCOMPLETE_TELEMETRY, _control_plane_text
+from glorfindel.detection_rules import _control_plane_summary, names_no_one, normalize_row
 from glorfindel.providers.azure.monitor import AzureMonitorDetector
 
 from . import kql_subset
@@ -252,3 +253,199 @@ def test_a_summary_card_and_a_data_row_are_not_cards_of_incomplete_telemetry():
     assert not names_no_one({**_BARE_ROW, "OmittedOperations": [dict(_BARE_ROW)]})
     assert not names_no_one({"Computer": "vm1", "SyslogMessage": "x"})
     assert not names_no_one({**_BARE_ROW, "OperationNameValue": ""})
+
+
+# ── CPT1b (#940): the summary card names who and what, as each individual card does ──────────
+#
+# Past 5 operations in one poll (SEC2), one summary card lists the others (`OmittedOperations`).
+# It read each one's caller in `Caller` alone, « ? » else: an operation whose caller the rules name
+# from `Claims` (`CallerObjectId`, `CallerAppId`) read « … par ? sur … », whereas its own card would
+# have named it. Each operation is now read by the individual card's readings (`_caller_said`,
+# `operation_resource`); a true void stays « appelant inconnu ». The shipped queries never give a row
+# without its `OperationNameValue`: the « ? » of an operation cannot come from them.
+
+UPN_URI = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn"
+NAME_URI = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name"
+SOMEONE_ELSE = "someone-else@example.org"
+
+
+def _target(rule_name, i):
+    return f"{RULES[rule_name][1]}-{i}"
+
+
+def _ops(rule_name, n, **kw):
+    """n operations of the rule, each its own CorrelationId and resource, the oldest last."""
+    return [_line(rule_name, "Success", 5 + i, corr=f"c-{i}", target=_target(rule_name, i), **kw)
+            for i in range(n)]
+
+
+def _summary_of(workspace, rule_name, lines):
+    p, rule, sent = _poller(rule_name)
+    workspace += lines
+    p.poll_once(rule)
+    summaries = [s for s in sent if s["raw_signal"]["first_result_row"].get("OmittedOperations")]
+    assert len(sent) == 6 and len(summaries) == 1 and sent[-1] is summaries[0], sent
+    return summaries[0]
+
+
+def _listed(signal):
+    return _control_plane_text(signal)[0]
+
+
+@pytest.mark.parametrize("rule_name", TWO)
+def test_a_summary_card_names_the_caller_and_the_resource_of_each_operation(
+        tmp_path, monkeypatch, workspace, rule_name):
+    """Fini quand: more than 5 operations that the log names — the summary names each one's caller
+    and resource, never « ? »; its card, through the graph, says the same."""
+    sig = _summary_of(workspace, rule_name, _ops(rule_name, 8))
+    what = _listed(sig)
+    assert "3 opération(s) de plus" in what
+    for i in (5, 6, 7):
+        assert f"par {OUTSIDER} sur {_target(rule_name, i)} (" in what, what
+    assert "par ?" not in what and "sur ?" not in what and "appelant inconnu" not in what
+    _final, card = _card(tmp_path, monkeypatch, sig)
+    assert card["severity"] == "high" and INCOMPLETE_TELEMETRY not in card["reason"]
+    for i in (5, 6, 7):
+        assert f"par {OUTSIDER} sur {_target(rule_name, i)} (" in card["explanation"]
+
+
+@pytest.mark.parametrize("rule_name", TWO)
+def test_a_summary_operation_whose_caller_is_in_claims_alone_is_named(workspace, rule_name):
+    """The form that read « par ? »: `Caller` empty, the caller's object id in `Claims` (the rules
+    project it as CallerObjectId) — named as its own card names it; the application id alone too."""
+    lines = _ops(rule_name, 6) + [
+        _line(rule_name, "Success", 30, corr="c-oid", target=_target(rule_name, "oid"), caller=""),
+        _line(rule_name, "Success", 31, corr="c-app", target=_target(rule_name, "app"), caller="",
+              oid="", app=APP)]
+    sig = _summary_of(workspace, rule_name, lines)
+    omitted = sig["raw_signal"]["first_result_row"]["OmittedOperations"]
+    assert [(o["Caller"], o["CallerObjectId"], o["CallerAppId"]) for o in omitted[-2:]] == [
+        ("", OUTSIDER_OID, ""), ("", "", APP)]
+    what = _listed(sig)
+    assert (f"par l'identité d'objet {OUTSIDER_OID} (lue dans Claims, Caller vide) sur "
+            f"{_target(rule_name, 'oid')} (") in what
+    assert f"par l'application {APP} (lue dans Claims, Caller vide" in what
+    assert f"sur {_target(rule_name, 'app')} (" in what
+    assert "par ?" not in what and "appelant inconnu" not in what
+
+
+@pytest.mark.parametrize("rule_name", TWO)
+def test_a_true_void_in_a_summary_stays_unknown(workspace, rule_name):
+    """An operation whose lines name no one and nothing: « appelant inconnu », its resource « ? » —
+    nothing made up; the others of the summary still named."""
+    lines = _ops(rule_name, 7) + [_bare(rule_name, "Success", 30, corr="c-bare")]
+    sig = _summary_of(workspace, rule_name, lines)
+    what = _listed(sig)
+    assert f"{RULES[rule_name][0]} par appelant inconnu sur ? (" in what
+    assert what.count("appelant inconnu") == 1
+    for i in (5, 6):
+        assert f"par {OUTSIDER} sur {_target(rule_name, i)} (" in what
+
+
+def test_a_summary_reads_what_a_clients_rule_projects():
+    """A rule that projects `Claims` itself and `ResourceId` (a client's): each operation is read by
+    the same readings as its own card — its name in Claims (the long URIs), its oid, its app, its
+    resource."""
+    op = RULES["role-assignment-write"][0]
+    rows = [{"OperationNameValue": op, "TimeGenerated": f"2026-11-19T10:00:0{i}Z", "CorrelationId": f"c-{i}",
+             "ResourceId": f"/subscriptions/x/r-{i}", "Claims": json.dumps(claims)}
+            for i, claims in enumerate([{UPN_URI: SOMEONE_ELSE}, {NAME_URI: "Some One"},
+                                        {"oid": OUTSIDER_OID}, {"azp": APP}])]
+    summary = _control_plane_summary(rows)
+    listed = _listed({"raw_signal": {"first_result_row": summary}})
+    for row, entry in zip(rows, summary["OmittedOperations"]):
+        own_card = _listed({"raw_signal": {"first_result_row": row}})
+        who = own_card.split(" par ", 1)[1].split(" sur ", 1)[0]
+        assert who != "appelant inconnu" and f"par {who} sur {row['ResourceId']} (" in listed, who
+        assert entry["_ResourceId"] == row["ResourceId"]
+    assert [e["CallerName"] for e in summary["OmittedOperations"]] == [SOMEONE_ELSE, "Some One", "", ""]
+    assert [e["CallerObjectId"] for e in summary["OmittedOperations"]] == ["", "", OUTSIDER_OID, ""]
+    assert [e["CallerAppId"] for e in summary["OmittedOperations"]] == ["", "", "", APP]
+
+
+def test_an_older_summary_card_with_caller_alone_reads_as_before():
+    """A summary written before CPT1b (its operations with `Caller` alone): read as it was, a true
+    void said « appelant inconnu »."""
+    op = RULES["role-assignment-write"][0]
+    row = {"OperationNameValue": op, "OmittedOperations": [
+        {"OperationNameValue": op, "Caller": OUTSIDER, "_ResourceId": "/r/1", "TimeGenerated": ""},
+        {"OperationNameValue": op, "Caller": "", "_ResourceId": "", "TimeGenerated": ""}]}
+    what = _listed({"raw_signal": {"first_result_row": row}})
+    assert f"{op} par {OUTSIDER} sur /r/1 ()" in what and f"{op} par appelant inconnu sur ? ()" in what
+
+
+@pytest.mark.parametrize("rule_name", TWO)
+def test_the_individual_card_is_unchanged(workspace, rule_name):
+    """The witness: the five individual cards of the same poll read word for word as before."""
+    p, rule, sent = _poller(rule_name)
+    workspace += _ops(rule_name, 8)
+    p.poll_once(rule)
+    for i, sig in enumerate(sent[:5]):
+        assert _listed(sig) == (f"Plan de contrôle : {RULES[rule_name][0]} (Success) par {OUTSIDER} "
+                                f"depuis 203.0.113.7 sur {_target(rule_name, i)}.")
+        assert sig["raw_signal"]["normalized_signal"]["resource"] == _target(rule_name, i)
+
+
+@pytest.mark.parametrize("rule_name", TWO)
+def test_the_shipped_queries_never_give_an_operation_without_its_name(rule_name):
+    """The other path to « ? » — a row without `OperationNameValue` — cannot come from these two
+    rules: they keep only their operations and group by it; bare lines, named ones, all statuses."""
+    lines = (_ops(rule_name, 3) + [_bare(rule_name, s, 6 + k, corr=f"b-{k}")
+                                   for k, s in enumerate(("Start", "Accept", "Success"))]
+             + [_line(rule_name, "Success", 9, op="MICROSOFT.X/Y/WRITE", corr="c-other")])
+    rows = kql_subset.run(op_read.SHIPPED[rule_name]["query"], lines, now=op_read.NOW)
+    assert len(rows) == 6
+    assert all(r["OperationNameValue"] == RULES[rule_name][0] for r in rows)
+    assert all(normalize_row(r)["indicator_value"] == RULES[rule_name][0] for r in rows)
+
+
+# ── CPT1b: the limits CPT1's review left ─────────────────────────────────────────
+
+def test_a_critical_signal_on_a_bare_row_never_says_lower_severity(tmp_path, monkeypatch, workspace):
+    """« Télémétrie incomplète … Sévérité moindre » only when the card is lowered: a signal that came
+    critical stays critical, and its text says no lower severity."""
+    rule_name = "role-assignment-write"
+    sig = _signal(workspace, rule_name, [_bare(rule_name, "Success", 5)])
+    critical = {**sig, "severity": "critical"}
+    what, _steps = _control_plane_text(critical)
+    assert INCOMPLETE_TELEMETRY not in what and "Sévérité moindre" not in what
+    final, card = _card(tmp_path, monkeypatch, critical)
+    assert card["severity"] == "critical" and final["held_by"] == "control_plane"
+    assert "Sévérité : critique" in card["reason"] and "Sévérité moindre" not in card["reason"]
+    # Lowered, it says so.
+    assert "Sévérité moindre" in _listed(sig)
+
+
+@pytest.mark.parametrize("claim", [UPN_URI, NAME_URI])
+def test_the_long_uris_of_upn_and_name_name_the_caller(claim):
+    """`Claims` as the Activity Log writes it: the long URIs of `upn` and `name` name the caller —
+    the row is no incomplete telemetry, and its card names them."""
+    row = {**_BARE_ROW, "Claims": json.dumps({claim: SOMEONE_ELSE})}
+    assert not names_no_one(row)
+    assert not names_no_one({**_BARE_ROW, "Claims_d": {claim: SOMEONE_ELSE}})
+    what = _listed({"raw_signal": {"first_result_row": row}})
+    assert f"par {SOMEONE_ELSE} (lu dans Claims, Caller vide)" in what and INCOMPLETE_TELEMETRY not in what
+
+
+def test_a_row_with_the_callers_address_alone_is_lowered(tmp_path, monkeypatch, workspace):
+    """As the doc says: an address (`CallerIpAddress`) names no caller — the row is incomplete
+    telemetry, its card `medium`, and says the address it read."""
+    assert names_no_one({**_BARE_ROW, "CallerIpAddress": "203.0.113.7"})
+    rule_name = "nsg-change-outside-glorfindel"
+    line = _bare(rule_name, "Success", 5)
+    line["CallerIpAddress"] = "203.0.113.7"
+    sig = _signal(workspace, rule_name, [line])
+    assert sig["raw_signal"]["first_result_row"]["CallerIpAddress"] == "203.0.113.7"
+    assert sig["severity"] == "medium"
+    _final, card = _card(tmp_path, monkeypatch, sig)
+    assert card["severity"] == "medium" and card["reason"].startswith(INCOMPLETE_TELEMETRY)
+    assert "depuis 203.0.113.7" in card["explanation"]
+
+
+def test_the_console_feed_names_a_card_of_incomplete_telemetry():
+    """The console's feed (glorfindel.js, read in its text: no browser in the suite) says what holds
+    the card, never « review »."""
+    js = (Path(__file__).resolve().parents[2] / "eregion_console/static/glorfindel.js").read_text()
+    words = js.split("const _HELD_BY_WORDS = {", 1)[1].split("};", 1)[0]
+    assert "control_plane_incomplete: 'control plane, incomplete telemetry (detection only)'" in words
+    assert "control_plane: 'control plane (detection only)'" in words

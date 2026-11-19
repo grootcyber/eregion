@@ -1024,14 +1024,23 @@ def _named_callers(row: dict) -> int:
 def _caller_said(norm: dict, row: dict) -> str:
     """Who made the operation, as the row names it (CPT1, #930): its `Caller`, else the ids the
     shipped rules draw from `Claims` and project — the object id, then the application's (under a
-    user's token, the tool's: said as such) —; « appelant inconnu » only when none is there."""
+    user's token, the tool's: said as such) —; « appelant inconnu » only when none is there.
+    CPT1b: a rule that projects `Claims` itself (a client's) is read the same, its name first —
+    the claims `names_no_one` reads; and each operation of a summary card is read by this too."""
+    from glorfindel.detection_rules import claimed_caller
     who = str(norm.get("caller") or row.get("Caller") or "").strip()
     if who:
         return who
+    claimed = claimed_caller(row)
+    name = str(row.get("CallerName") or "").strip() or claimed["name"]
+    if name:
+        return f"{name} (lu dans Claims, Caller vide)"
     oid = str(row.get("CallerObjectId") or "").strip()
+    oid = oid or claimed["oid"]
     if oid:
         return f"l'identité d'objet {oid} (lue dans Claims, Caller vide)"
     app = str(row.get("CallerAppId") or "").strip()
+    app = app or claimed["app"]
     if app:
         return (f"l'application {app} (lue dans Claims, Caller vide ; sous le jeton d'un "
                 "utilisateur, c'est l'outil, pas l'utilisateur)")
@@ -1043,11 +1052,20 @@ def _caller_said(norm: dict, row: dict) -> str:
 INCOMPLETE_TELEMETRY = "Télémétrie incomplète"
 
 
+def _incomplete_telemetry(signal: dict) -> bool:
+    """CPT1 (#930): the card is lowered to incomplete telemetry — its row names neither its caller
+    nor its resource, and the signal is not critical (a critical one stays critical). CPT1b: the
+    one test of the decision's severity and of the card's text, which never says « Sévérité
+    moindre » on a card that stays critical."""
+    from glorfindel.detection_rules import names_no_one
+    return signal.get("severity") != "critical" and names_no_one(_control_plane_row(signal))
+
+
 def _control_plane_text(signal: dict) -> tuple[str, list[str]]:
     """What a control-plane detection says, from the row alone (AL1): the operation, its
     status as read, the caller, its address, the target, the gravest marks, the
     operations a summary card carries — and the next steps for a human."""
-    from glorfindel.detection_rules import names_no_one, normalize_row
+    from glorfindel.detection_rules import normalize_row, operation_resource
     row = _control_plane_row(signal)
     norm = (signal.get("raw_signal") or {}).get("normalized_signal") or normalize_row(row, signal.get("ttp", ""))
     op = norm.get("indicator_value") or "?"
@@ -1081,7 +1099,7 @@ def _control_plane_text(signal: dict) -> tuple[str, list[str]]:
                  "lire chacune avant de conclure sur l'appelant.")
     steps = ["Vérifier dans le journal d'activité qui a fait cette opération, et pourquoi"
              + (f" (CorrelationId {row['CorrelationId']})" if row.get("CorrelationId") else "") + "."]
-    if names_no_one(row):
+    if _incomplete_telemetry(signal):
         # CPT1 (#930): neither the caller nor the resource on the row — the fact is shown, at a
         # lower severity, never approvable; what it may be is not said as known.
         what = (f"{INCOMPLETE_TELEMETRY} : la ligne ne nomme ni l'appelant (Caller, Claims) ni la "
@@ -1112,8 +1130,9 @@ def _control_plane_text(signal: dict) -> tuple[str, list[str]]:
     omitted = row.get("OmittedOperations") or []
     if omitted:
         listed = "; ".join(
-            f"{o.get('OperationNameValue') or '?'} par {o.get('Caller') or '?'} sur "
-            f"{o.get('_ResourceId') or '?'} ({str(o.get('TimeGenerated') or '')[:19]})"
+            # CPT1b: each operation's caller and resource read as its own card reads them.
+            f"{o.get('OperationNameValue') or '?'} par {_caller_said({}, o)} sur "
+            f"{operation_resource(o) or '?'} ({str(o.get('TimeGenerated') or '')[:19]})"
             for o in omitted)
         what = (f"Plan de contrôle : {len(omitted)} opération(s) de plus dans le même relevé, "
                 f"au-delà des cartes individuelles — chacune listée ici : {listed}.")
@@ -1141,13 +1160,12 @@ def _control_plane_decision(state: GlorfindelState) -> GlorfindelState:
     one click, whose reason says the operation, the target, the caller, the gravest cases
     — a write by someone else on a rule Glorfindel manages (an isolation or a block may be
     gone), Glorfindel's identity outside what it does — and the severity."""
-    from glorfindel.detection_rules import names_no_one
     signal = state["signal"]
     what, steps = _control_plane_text(signal)
     # CPT1 (#930): a row that names neither its caller nor its resource is a card of incomplete
     # telemetry — never a high one, whatever severity the signal came with (a signal written
     # before CPT1, replayed); a critical one stays critical.
-    incomplete = signal.get("severity") != "critical" and names_no_one(_control_plane_row(signal))
+    incomplete = _incomplete_telemetry(signal)
     if incomplete:
         signal = {**signal, "severity": "medium"}
     severity = "critique" if signal.get("severity") == "critical" else "moyenne" if incomplete else "haute"

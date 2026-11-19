@@ -514,11 +514,12 @@
    "id": "g-plan-controle-telemetrie",
    "composant": "glorfindel",
    "poste": "g-detecter",
-   "nom": "A control-plane operation that names neither its caller nor its resource: a card of incomplete telemetry, of lower severity, never approvable, never dropped; the caller named from its token's ids when the log leaves it empty",
+   "nom": "A control-plane operation that names neither its caller nor its resource: a card of incomplete telemetry, of lower severity, never approvable, never dropped; the caller named from its token's ids when the log leaves it empty, on every operation of a summary card too",
    "etat": "main",
    "release": "0.6",
    "lots": [
-    "CPT1"
+    "CPT1",
+    "CPT1b"
    ],
    "issue": 930,
    "doc": "docs/glorfindel.md"
