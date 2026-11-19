@@ -221,12 +221,36 @@ function _targetNote(e, vmName) {
       ? `<div class="esc-context" style="color:var(--dim)" title="What the row, and Azure, could not say">limit: ${_attr(t.limit)}</div>` : '';
     return `<div class="esc-context" title="What the detection is about, read in its row">🎯 about ${kind}${named}${via}${covers}</div>${limit}`;
   }
+  // SLF1 (#929): a detection attributed to no VM — « not attributed », its candidates; never the
+  // name of the VM it is filed on.
+  const loose = _unattributed(e);
+  if (loose) return `<div class="esc-context" title="${_attr(_LOOSE_TITLE)}">⚓ ${_attr(_unattributedTxt(loose))}</div>`;
   if (!_isAnchored(e) || e.escalation_type === 'unattributed_signal') return '';
   // Filed before AL1c: on the first VM online, or on the VM itself (a role on the VM, a signal of
   // `respond`) — the card cannot tell which.
   return `<div class="esc-context" title="${_attr(_FILED_BEFORE)}">⚓ filed on ${_attr(vmName)}, may not be about it</div>`;
 }
 const _FILED_BEFORE = 'Filed before AL1c, without its target: the detection may not be about this VM';
+// SLF1 (#929): what a card on a detection attributed to no VM says in place of its resource
+// (glorfindel/escalations.py `unattributed`): its candidates, or the appliance it came through. A
+// card recorded so (`attribution`), or held by the attribution guard (its candidates not kept);
+// never a card filed on its target (AL1c).
+const _LOOSE_TITLE = 'The detection names no VM, and no watched VM made the call: the card is only filed on this tile. Check which VM it is about before acting.';
+function _unattributed(e) {
+  if (!e || _targetOf(e)) return null;
+  const a = e.attribution;
+  if (a && typeof a === 'object' && a.state === 'unattributed') {
+    return { candidates: Array.isArray(a.candidates) ? a.candidates.filter(c => typeof c === 'string') : [],
+             appliance: typeof a.appliance === 'string' ? a.appliance : '' };
+  }
+  return e.escalation_type === 'unattributed_signal' ? { candidates: [], appliance: '' } : null;
+}
+function _unattributedTxt(u) {
+  if (u.appliance) return `not attributed — the call came from ${u.appliance}, which forwards packets: the source VM is behind it`;
+  if (!u.candidates.length) return 'not attributed — the detection names no VM';
+  const more = u.candidates.length > _VMS_SHOWN ? ` and ${u.candidates.length - _VMS_SHOWN} more` : '';
+  return `not attributed — candidates: ${u.candidates.slice(0, _VMS_SHOWN).join(', ')}${more}`;
+}
 function escTitle(e) {
   // Real remediation action → its label; otherwise a readable type title.
   if (e.action && ACTION_LABELS[e.action]) return ACTION_LABELS[e.action];
@@ -1185,12 +1209,15 @@ function _renderModules(rules, detectBackends, recoverBackends, resources) {
     // COR1: of them, the root shells whose every SSH session came from an expected origin.
     const exOrigin = r.origin_count > 0 ? `, ${r.origin_count} root shell(s) from an expected origin (COR1, ${_originProofTxt(r)})` : '';
     const ex  = r.expected_count > 0 ? `<span style="color:var(--dim);font-size:9px;flex-shrink:0" title="${_attr(`${r.expected_count} expected sudo set aside, no card (ADM1)${exOrigin} — glorfindel report`)}">${_attr(r.expected_count)} expected</span>` : '';
+    // SLF1 (#929): the watch's own writes in its return channel, set aside — counted, never silent.
+    const own = r.own_channel_count > 0 ? `<span style="color:var(--dim);font-size:9px;flex-shrink:0" title="${_attr(_ownChannelTxt(r))}">${_attr(r.own_channel_count)} own</span>` : '';
     return `<div class="row rule-item" ${_on('click', 'showRuleByIdx', idx)}
       style="padding:3px 4px;font-size:10px">
       <span style="color:${dc};font-size:9px">●</span>
       <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${_attr(r.name)}">${_attr(r.name)}</span>
       ${r.ttp ? `<span style="color:var(--dim);font-size:9px">${_attr(r.ttp)}</span>` : ''}
       ${ex}
+      ${own}
       ${mt}
       <span style="color:var(--dim);font-size:9px">▸</span>
     </div>`;
@@ -2563,10 +2590,14 @@ function renderToJudge() {
     // was anchored on; one from before AL1c keeps its ⚓, and says it may not be about that VM
     // (on the first VM online, or on the VM itself: the card cannot tell which).
     const t = _targetOf(c);
+    // SLF1 (#929): a detection attributed to no VM says so, with its candidates — never the name of
+    // the VM it is filed on.
+    const loose = _unattributed(c);
     const vm = t ? (t.kind === 'control_plane' ? _TARGET_KINDS[t.kind]
       : (t.kind === 'identity' ? (t.identity_type || 'identity') : _TARGET_KINDS[t.kind]) + ' ' + (t.name || '?'))
+      : loose ? _unattributedTxt(loose)
       : (c.resource_id || '').split('/').pop();
-    const anchored = !t && _isAnchored(c);
+    const anchored = !t && (_isAnchored(c) || !!loose);
     const times = c.occurrences > 1 ? ` · ${Number(c.occurrences)}×` : '';
     const id = _attr(c.id);
     // JUG1: the line opens its card (its details, its verdict); its own note and buttons keep the click.
@@ -3203,6 +3234,19 @@ function _originProofTxt(r) {
   if (ok >= n) return 'every one confirmed outside the VM, COR2';
   return `${ok} confirmed outside the VM (COR2), ${n - ok} read in the VM only`;
 }
+// SLF1 (#929): the writes of the watch's own return channel a rule set aside — how many, why —, and
+// its identity not read (nothing set aside), said.
+function _ownChannelTxt(r) {
+  const n = Number(r.own_channel_count) || 0;
+  const rows = Number(r.own_channel_rows) || 0;
+  const said = n > 0
+    ? `${n} write(s) of the watch's own return channel set aside (${rows} row(s) left without a card) — its identity, the container of EREGION_WATCH_CHANNEL, the objects it writes there (SLF1)${r.own_channel_last ? ' · last ' + _relTime(r.own_channel_last) : ''}`
+    : '';
+  const unread = r.own_channel_unread
+    ? `return channel configured, the watch's identity not read (${_relTime(r.own_channel_unread)}): none of its writes set aside`
+    : '';
+  return [said, unread].filter(Boolean).join(' · ');
+}
 
 function showRuleDetail(rule) {
   const statusTxt = rule.last_error
@@ -3242,6 +3286,7 @@ function showRuleDetail(rule) {
     <div style="font-size:10px;color:var(--dim);margin-bottom:8px">${_attr(statusTxt)}</div>
     ${expectedTxt ? `<div style="font-size:10px;color:var(--dim);margin-bottom:8px">${_attr(expectedTxt)}</div>` : ''}
     ${corrTxt ? `<div style="font-size:10px;color:var(--dim);margin-bottom:8px">${_attr(corrTxt)}</div>` : ''}
+    ${_ownChannelTxt(rule) ? `<div style="font-size:10px;color:var(--dim);margin-bottom:8px">${_attr(_ownChannelTxt(rule))}</div>` : ''}
     <div style="font-size:10px;color:var(--dim);margin-bottom:4px;text-transform:uppercase;letter-spacing:1px">Query</div>
     <div class="modal-query">${_attr((rule.query || '').trim())}</div>`;
 
@@ -3459,7 +3504,8 @@ function openJudgeCard(escId) {
   const vmName = _ownTile(e) || String(e.resource_id || '').split('/').pop();
   const label = _isExecuted(e) ? `${actionLabel(e.action)} — done alone, to judge`
     : (e.action ? actionLabelVerb(e.action) : escTitle(e));
-  document.getElementById('modal-title').textContent = `To judge — ${label} — ${vmName}`;
+  // SLF1: a detection attributed to no VM is about none — never its anchor's name in the title.
+  document.getElementById('modal-title').textContent = `To judge — ${label} — ${_unattributed(e) ? 'not attributed' : vmName}`;
   document.getElementById('modal-cmd').style.display = 'none';
   document.getElementById('modal-cancel').style.display = 'none';
   const bodyEl = document.getElementById('modal-body');
