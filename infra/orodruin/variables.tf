@@ -131,7 +131,7 @@ variable "watch_principal_ids" {
   default     = null
 
   validation {
-    condition     = alltrue([for id in (var.watch_principal_ids == null ? [] : var.watch_principal_ids) : can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", id))])
+    condition     = alltrue([for id in(var.watch_principal_ids == null ? [] : var.watch_principal_ids) : can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", id))])
     error_message = "watch_principal_ids : des object ids d'Entra ID (un GUID chacun), rien d'autre."
   }
 
@@ -152,11 +152,12 @@ variable "graph_read_enabled" {
 # ── R2b (#608) : les garde-fous de l'abonnement de test dédié de Stratus ────────────────────
 # docs/design/stratus-cible.md, § 6 (gestes G5, G6, G7). Posés par l'opérateur (jamais une
 # session), plan montré avant. Tout est VIDE/ÉTEINT par défaut : un apply normal d'Orodruin
-# n'y touche pas (count 0, fournisseur stratus inerte). Le rôle fermé (G3) N'est PAS ici : il
-# attend la mesure des actions minimales par technique (M1, § protocole). Valeurs réelles
-# jamais dans le dépôt — en variables, écrites par l'opérateur à l'apply.
+# n'y touche pas (count 0, fournisseur stratus inerte). Le rôle fermé (G3), l'AUTHZ_READ_ONLY
+# d'Orodruin (G4) et le credential fédéré (G2) sont posés par R2BGc (M1 mesuré) : ils s'ARMENT en
+# renseignant stratus_principal_id (G3) et stratus_client_id (G2) — vides, le squelette existe
+# sans attribution ni confiance. Valeurs réelles jamais dans le dépôt — en variables, à l'apply.
 variable "stratus_guardrails_enabled" {
-  description = "Pose les garde-fous R2b (Azure Policy G5, paramètre de diagnostic G6, budget G7) sur l'abonnement de test dédié de Stratus. Défaut false : rien ne s'exécute. N'active PAS le rôle fermé de Stratus (G3, après mesure)."
+  description = "Pose les garde-fous de l'abonnement de test dédié de Stratus : les caps Azure Policy (G5), le paramètre de diagnostic (G6), le budget (G7), le rôle fermé de Stratus (G3, sa définition) et l'AUTHZ_READ_ONLY d'Orodruin (G4). Défaut false : rien ne s'exécute. Le rôle fermé ne s'ATTRIBUE à Stratus que si stratus_principal_id est donné ; le credential fédéré (G2) ne se pose que si stratus_client_id est donné."
   type        = bool
   default     = false
   nullable    = false
@@ -225,4 +226,29 @@ variable "stratus_budget_contact_emails" {
   description = "G7 — adresses prévenues par le groupe d'action du budget. Le groupe d'action vit HORS de l'abonnement dédié (dans le groupe d'Orodruin), pour que COLD/kill et « vider l'abonnement » ne le touchent pas. Vide (défaut) : le groupe d'action est posé sans destinataire (à compléter)."
   type        = list(string)
   default     = []
+}
+
+# ── R2BGc (#608) — l'identité de Stratus : à qui le rôle fermé (G3) est attribué, et depuis qui on
+#    devient Stratus (G2). Vides par défaut : le squelette existe sans attribution ni confiance.
+
+variable "stratus_principal_id" {
+  description = "G3 — l'object id du principal de service de l'identité DÉDIÉE de Stratus (jamais son client id), à qui le rôle fermé (les actions minimales mesurées) est attribué sur l'abonnement dédié seulement. Vide (défaut) : le rôle est DÉFINI mais non attribué. Valeur réelle jamais dans le dépôt."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.stratus_principal_id == "" || can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", var.stratus_principal_id))
+    error_message = "stratus_principal_id : un object id d'Entra ID (un GUID), ou vide."
+  }
+}
+
+variable "stratus_client_id" {
+  description = "G2 — le client id (application id) de l'app DÉDIÉE de Stratus, pour poser le credential fédéré qui fait confiance à l'identité managée d'Orodruin (on ne devient Stratus que depuis Orodruin). Vide (défaut) : pas de credential fédéré. L'id de RESSOURCE de l'app (/applications/<object id>) est lu par data.azuread_application, jamais écrit en dur. Valeur réelle jamais dans le dépôt."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.stratus_client_id == "" || can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", var.stratus_client_id))
+    error_message = "stratus_client_id : un client id d'Entra ID (un GUID), ou vide."
+  }
 }

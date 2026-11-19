@@ -96,7 +96,7 @@ SOURCES = ("dépôt", "dépôt, à la main", "code", "à la main", "prévue")
 COLUMNS = 9
 FRONTIER = re.compile(r"§([1-9])\b")
 # The identities the 0.6.0 must show although nothing declares them yet (the fiche of IDM1).
-PLANNED = ("stratus", "executeur-restore", "totp", "graph-dediee")
+PLANNED = ("executeur-restore", "totp", "graph-dediee")
 LINE_ID = re.compile(r"^`([a-z0-9-]+)`")
 
 
