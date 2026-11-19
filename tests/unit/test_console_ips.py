@@ -33,8 +33,10 @@ def test_the_addresses_are_the_nsg_audits_and_a_failed_audit_says_why():
     net = body("function _vmNet(auditEntry) {")
     assert "if (!auditEntry) return null;" in net
     assert "const check = (auditEntry.checks || []).find(c => c.name === 'NSG access');" in net
-    # Only a check that read the NICs gives addresses; any other says why it did not.
-    assert "if (!check || check.status !== 'ok') return { unread: (check && check.message) || 'no NSG audit for this VM' };" in net
+    # A check that read no NIC says why; one that failed but read them (a VM without NSG, IPS2)
+    # gives its addresses, and stays a failure (`failed`).
+    assert "const failed = !check || check.status !== 'ok';" in net
+    assert "if (failed && !nsgs.length) return { unread: (check && check.message) || 'no NSG audit for this VM' };" in net
     assert "at: auditEntry.timestamp," in net
     assert "ips: (Array.isArray(x?.ips) ? x.ips : []).filter(Boolean).map(String)," in net
     assert "pubs: (Array.isArray(x?.public_ips) ? x.public_ips : []).filter(p => p && typeof p === 'object')," in net
@@ -57,18 +59,19 @@ def test_the_folded_line_four_private_addresses_then_plus_n_then_the_public_ones
     assert "if (net.unread) return `<div class=\"vm-addr\" title=\"${_attr('Addresses not read: ' + net.unread)}\">ip —</div>`;" in line
     assert "const priv = [...new Set(net.nics.flatMap(n => n.ips))];" in line
     assert "const more = priv.length > _ADDR_FOLDED ? `<span title=\"Unfold the card for every address\">+${Number(priv.length - _ADDR_FOLDED)}</span>` : '';" in line
+    assert "const pubs = net.nics.flatMap(n => n.pubs.map(p => [p, n.bare]));" in line
     assert ("return `<div class=\"vm-addr\">${priv.slice(0, _ADDR_FOLDED).map(a => _addrBtn(a, false)).join('')}${more}"
-            "${pubs.map(p => _pubAddr(p, false)).join('')}</div>`;") in line
+            "${pubs.map(([p, bare]) => _pubAddr(p, false, bare)).join('')}</div>`;") in line
 
 
 def test_a_public_address_is_marked_and_one_that_did_not_read_is_said():
-    pub = body("function _pubAddr(p, unfolded) {")
-    assert "if (p.address) return `<span class=\"vm-pub\">🌐 ${_addrBtn(String(p.address), true)}" in pub
+    pub = body("function _pubAddr(p, unfolded, bare) {")
+    assert "    return `<span class=\"vm-pub\">🌐 ${_addrBtn(a, true)}" in pub
     # The address did not read: its reason is said at once, folded or not — never nothing.
-    assert "const why = String(p.error || 'unknown');\n  return unfolded\n" in pub
-    assert pub.count("return") == 2
-    assert "? `<span class=\"vm-pub unread\">🌐 public IP not read: ${_attr(why)}</span>`" in pub
-    assert ": `<span class=\"vm-pub unread\" title=\"${_attr('Public IP not read: ' + why)}\">🌐 ?</span>`;" in pub
+    assert "  const why = _pubReason(p);\n  return unfolded\n" in pub
+    assert pub.count("return") == 3
+    assert "🌐 public IP not read: ${_attr(why.said)}</span>`" in pub
+    assert ": `<span class=\"vm-pub unread\" title=\"${_attr('Public IP not read: ' + why.said)}\">🌐 ?</span>`;" in pub
     # Yellow text, never a filled badge: the filled orange one stays an attacker's address (BLOCKED).
     assert re.search(r"\.vm-ip\.pub, \.vm-pub \{ color: var\(--yellow\); \}", HTML)
     assert "background" not in HTML.split(".vm-ip.pub, .vm-pub {", 1)[1].split("}", 1)[0]
@@ -77,7 +80,8 @@ def test_a_public_address_is_marked_and_one_that_did_not_read_is_said():
 def test_unfolded_each_nic_its_addresses_and_the_age_of_the_read():
     block = body("function _netBlock(net) {")
     assert "if (net.unread) return `<div class=\"vm-net\"><span class=\"vm-netfoot\">addresses not read — ${_attr(net.unread)}</span></div>`;" in block
-    assert "<span class=\"vm-nicname\">⇄ ${_attr(n.nic || 'NIC')}</span>${n.ips.map(a => _addrBtn(a, false)).join('')}${n.pubs.map(p => _pubAddr(p, true)).join('')}" in block
+    assert ("<span class=\"vm-nicname\">⇄ ${_attr(n.nic || 'NIC')}${n.bare ? ' · <span class=\"vm-bare-txt\">no NSG</span>' : ''}</span>"
+            "${n.ips.map(a => _addrBtn(a, false)).join('')}${n.pubs.map(p => _pubAddr(p, true, n.bare)).join('')}") in block
     assert "read by the NSG audit ${_attr(_relTime(net.at))}" in block
 
 

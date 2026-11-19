@@ -1,0 +1,7 @@
+### Added
+- **A VM without NSG shows its addresses on its card, and says nothing filters it** (IPS2, #950, part b; `docs/design/console.md`, « Une VM sans NSG »). Jonathan's choice on a mockup (19/11). Such a VM, with no NSG on its NIC nor on its subnet, said « ip — » though it is the most exposed.
+  - Its addresses, a « NO NSG » chip in the row of its mode (on hover: the NICs without NSG), and the public address of a NIC without NSG in red (on hover: « nothing filters <address> »). The red is set NIC by NIC: a filtered NIC's public address stays yellow.
+  - Its NSG check is still a failure: the readiness keeps its ✗, the unfolded card says « NSG audit failed: … », and neither the NSG line nor PROTECT's fallback inventory reads a failed check. The coverage window says « no NSG » for such a NIC, never « NIC NSG (this VM) ».
+- **A public IP that did not read is said in English, by its code** (IPS2b): « access denied (Reader missing on its resource group?) », « not found (deleted?) », « no address allocated (a dynamic IP on a stopped VM?) », « unreadable »; Glorfindel's own words on hover. An unknown code, or a key of the prototype, shows the words as they are.
+  - Everything from Azure is escaped; the Discord bot is unchanged; the sample is not touched.
+  - Tests: `tests/unit/test_console_no_nsg.py`; mutants M6521–M6530 (`scripts/mutants/IPS2b.py`); the tests and mutants of IPS1b moved to the new code.

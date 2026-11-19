@@ -21,17 +21,17 @@ _T = "tests/unit/test_console_ips.py::"
 MUTANTS = [
     ("M6431", "the public address left off the folded line: the VM's exposure no longer seen at a glance "
               "(IPS1b)", JS,
-     "${more}${pubs.map(p => _pubAddr(p, false)).join('')}</div>`;\n",
+     "${more}${pubs.map(([p, bare]) => _pubAddr(p, false, bare)).join('')}</div>`;\n",
      "${more}</div>`;\n"),
     ("M6432", "a public IP whose address did not read left unsaid: the VM looks unexposed (IPS1b)", JS,
-     "  const why = String(p.error || 'unknown');\n",
-     "  const why = String(p.error || 'unknown');\n  if (!p.address) return '';\n"),
+     "  const why = _pubReason(p);\n  return unfolded\n",
+     "  const why = _pubReason(p);\n  return '';\n  return unfolded\n"),
     ("M6433", "an address from Azure written raw into the page (IPS1b, #254)", JS,
      "title=\"${_attr('Copy ' + a)}\">${_attr(a)}</button>`;\n",
      "title=\"${_attr('Copy ' + a)}\">${a}</button>`;\n"),
     ("M6434", "a failed NSG audit read as a VM without addresses: its reason lost (IPS1b)", JS,
-     "  if (!check || check.status !== 'ok') return { unread: (check && check.message) || 'no NSG audit for this VM' };\n",
-     "  if (!check) return { unread: 'no NSG audit for this VM' };\n"),
+     "  if (failed && !nsgs.length) return { unread: (check && check.message) || 'no NSG audit for this VM' };\n",
+     "  if (failed && !nsgs.length) return { unread: 'no NSG audit for this VM' };\n"),
     ("M6435", "the line of addresses on the unfolded card only: Ctrl+F no longer finds a folded VM "
               "(IPS1b, option C set aside)", JS,
      "      ${_addrLine(net)}\n",
@@ -50,8 +50,8 @@ MUTANTS = [
      "${priv.slice(0, _ADDR_FOLDED).map(a => _addrBtn(a, false)).join('')}${more}",
      "${priv.slice(0, _ADDR_FOLDED).map(a => _addrBtn(a, false)).join('')}"),
     ("M6440", "a public address shown as a private one, not marked (IPS1b)", JS,
-     "  if (p.address) return `<span class=\"vm-pub\">🌐 ${_addrBtn(String(p.address), true)}",
-     "  if (p.address) return `<span>${_addrBtn(String(p.address), false)}"),
+     "    return `<span class=\"vm-pub\">🌐 ${_addrBtn(a, true)}",
+     "    return `<span>${_addrBtn(a, false)}"),
     ("M6441", "the address not selectable on a draggable card: outside a secure context nothing is ever "
               "copied (IPS1b, review: the defect back)", HTML,
      "              -webkit-user-select: text; user-select: text; }   /* the card is draggable: none, else */\n",

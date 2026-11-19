@@ -434,8 +434,9 @@ function showCoverageModal(idx) {
   const verb = c.type === 'isolated' ? 'Isolation' : c.type === 'nsg' ? 'NSG' : 'Block';
   const rows = (c.placements || []).map((p, i) => {
     const nsg   = (p.nsg || `${p.nsg_rg || ''}/${p.nsg_name || ''}`).split('/').pop();
-    const scope = p.scope === 'subnet' ? 'subnet NSG (shared)' : 'NIC NSG (this VM)';
-    const scopeCol = p.scope === 'subnet' ? 'var(--orange)' : 'var(--dim)';
+    // A NIC without NSG, nor on its subnet (`scope: "none"`, `nsg: ""`): said so, never « NIC NSG » (IPS2).
+    const scope = p.scope === 'subnet' ? 'subnet NSG (shared)' : p.scope === 'none' ? 'no NSG' : 'NIC NSG (this VM)';
+    const scopeCol = p.scope === 'subnet' ? 'var(--orange)' : p.scope === 'none' ? 'var(--red)' : 'var(--dim)';
     const nic   = p.nic_id ? p.nic_id.split('/').pop() : `NIC ${i + 1}`;
     const ips   = Array.isArray(p.ips) && p.ips.length ? p.ips.join(', ') : '';
     const rules = p.rule_in || p.rule_out
@@ -446,7 +447,7 @@ function showCoverageModal(idx) {
         <span style="color:var(--cyan);font-weight:600;font-size:11px;flex:1">${_attr(nic)}</span>
         <span style="color:${scopeCol};font-size:9px">${scope}</span>
       </div>
-      <div style="color:var(--dim);font-size:10px;margin-top:2px">🛡 ${_attr(nsg)}${ips ? ` · ${_attr(ips)}` : ''}</div>
+      <div style="color:var(--dim);font-size:10px;margin-top:2px">🛡 ${_attr(nsg || '—')}${ips ? ` · ${_attr(ips)}` : ''}</div>
       ${rules ? `<div style="color:var(--dim);font-size:9px;margin-top:1px">rule: ${_attr(rules)}</div>` : ''}
     </div>`;
   }).join('');
@@ -1368,6 +1369,7 @@ function _renderModules(rules, detectBackends, recoverBackends, resources) {
   // keys when the inventory hasn't loaded.
   const nsgInv = (_nsgItems && Array.isArray(_nsgItems.nsgs)) ? _nsgItems.nsgs : null;
   (_auditData?.audits || []).forEach(a => (a.checks || []).forEach(c => {
+    if (c.status !== 'ok') return;             // a failed check names no NSG (IPS2)
     if (c.data && c.data.nsg) nsgKeys.add(c.data.nsg);
     (c.data?.nsgs || []).forEach(x => x.nsg && nsgKeys.add(x.nsg));
   }));
@@ -1663,45 +1665,77 @@ function _renderNsgNode(resource, vmEscs, slotIdx = 0) {
 // public address shows a VM the Internet can reach. Never an attacker's address: those are the
 // BLOCKED badges, below. Everything here comes from Azure: escaped, never written raw (#254).
 const _ADDR_FOLDED = 4;   // private addresses on the folded line, then « +N »
+// IPS2 (#950, Jonathan 19/11 on a mockup): a VM without an NSG on its NIC nor on its subnet shows its
+// addresses all the same — IPS2a: its « NSG access » check stays `fail` but carries `data.nsgs`, a NIC
+// without NSG at `nsg_scope: "none"`. A failed check is never read as a good one: its addresses are
+// shown, its checks and buttons stay those of a failure (`failed`, the ✗ of the readiness).
 function _vmNet(auditEntry) {
   if (!auditEntry) return null;                       // not audited (yet): nothing said
   const check = (auditEntry.checks || []).find(c => c.name === 'NSG access');
-  if (!check || check.status !== 'ok') return { unread: (check && check.message) || 'no NSG audit for this VM' };
-  const nsgs = Array.isArray(check.data?.nsgs) ? check.data.nsgs : [];
+  const nsgs = Array.isArray(check?.data?.nsgs) ? check.data.nsgs : [];
+  const failed = !check || check.status !== 'ok';
+  if (failed && !nsgs.length) return { unread: (check && check.message) || 'no NSG audit for this VM' };
   return {
     at: auditEntry.timestamp,
+    failed: failed ? String(check.message || 'NSG audit failed') : '',
     nics: nsgs.map(x => ({
       nic: String(x?.nic_id || '').split('/').pop(),
+      bare: x?.nsg_scope === 'none',                  // nothing filters this NIC (IPS2)
       ips: (Array.isArray(x?.ips) ? x.ips : []).filter(Boolean).map(String),
       pubs: (Array.isArray(x?.public_ips) ? x.public_ips : []).filter(p => p && typeof p === 'object'),
     })),
   };
 }
+// A NIC without NSG, nor on its subnet: said once on the card, in the row of its mode (IPS2).
+function _bareChip(net) {
+  const bare = (net && net.nics || []).filter(n => n.bare);
+  if (!bare.length) return '';
+  return `<span class="vm-bare" title="${_attr('No NSG on ' + bare.map(n => n.nic || 'a NIC').join(', ') + ' nor on its subnet: nothing filters its traffic')}">NO NSG</span>`;
+}
 function _addrBtn(a, pub) {
   return `<button type="button" class="vm-ip${pub ? ' pub' : ''}" ${_on('click', 'copyAddr', String(a))} title="${_attr('Copy ' + a)}">${_attr(a)}</button>`;
 }
-// A public IP whose address did not read is said, never left out: the VM is still exposed.
-function _pubAddr(p, unfolded) {
-  if (p.address) return `<span class="vm-pub">🌐 ${_addrBtn(String(p.address), true)}${unfolded ? ' <span class="vm-pubtag">PUBLIC</span>' : ''}</span>`;
-  const why = String(p.error || 'unknown');
+// Why a public IP did not read, in the page's language: IPS2a gives a code beside its own words
+// (French, free text, never matched). A code the page does not know: the words as they are.
+const _PUB_REASONS = {
+  forbidden: 'access denied (Reader missing on its resource group?)',
+  not_found: 'not found (deleted?)',
+  not_allocated: 'no address allocated (a dynamic IP on a stopped VM?)',
+  unreadable: 'unreadable',
+};
+function _pubReason(p) {
+  const words = String(p.error || 'unknown');
+  const said = Object.prototype.hasOwnProperty.call(_PUB_REASONS, p.code) ? _PUB_REASONS[p.code] : '';
+  return { said: said || words, words: said ? words : '' };
+}
+// A public IP whose address did not read is said, never left out: the VM is still exposed. On a NIC
+// without NSG (`bare`), the address in red: nothing filters it (IPS2).
+function _pubAddr(p, unfolded, bare) {
+  if (p.address) {
+    const a = String(p.address);
+    if (bare) return `<span class="vm-pub bare" title="${_attr('No NSG on the NIC nor on its subnet: nothing filters ' + a)}">🌐 ${_addrBtn(a, true)}${unfolded ? ' <span class="vm-pubtag">PUBLIC</span>' : ''}</span>`;
+    return `<span class="vm-pub">🌐 ${_addrBtn(a, true)}${unfolded ? ' <span class="vm-pubtag">PUBLIC</span>' : ''}</span>`;
+  }
+  const why = _pubReason(p);
   return unfolded
-    ? `<span class="vm-pub unread">🌐 public IP not read: ${_attr(why)}</span>`
-    : `<span class="vm-pub unread" title="${_attr('Public IP not read: ' + why)}">🌐 ?</span>`;
+    ? `<span class="vm-pub unread"${why.words ? ` title="${_attr(why.words)}"` : ''}>🌐 public IP not read: ${_attr(why.said)}</span>`
+    : `<span class="vm-pub unread" title="${_attr('Public IP not read: ' + why.said)}">🌐 ?</span>`;
 }
 function _addrLine(net) {
   if (!net) return '';
   if (net.unread) return `<div class="vm-addr" title="${_attr('Addresses not read: ' + net.unread)}">ip —</div>`;
   const priv = [...new Set(net.nics.flatMap(n => n.ips))];
-  const pubs = net.nics.flatMap(n => n.pubs);
+  const pubs = net.nics.flatMap(n => n.pubs.map(p => [p, n.bare]));
   if (!priv.length && !pubs.length) return `<div class="vm-addr" title="No address on the VM's NICs">ip —</div>`;
   const more = priv.length > _ADDR_FOLDED ? `<span title="Unfold the card for every address">+${Number(priv.length - _ADDR_FOLDED)}</span>` : '';
-  return `<div class="vm-addr">${priv.slice(0, _ADDR_FOLDED).map(a => _addrBtn(a, false)).join('')}${more}${pubs.map(p => _pubAddr(p, false)).join('')}</div>`;
+  return `<div class="vm-addr">${priv.slice(0, _ADDR_FOLDED).map(a => _addrBtn(a, false)).join('')}${more}${pubs.map(([p, bare]) => _pubAddr(p, false, bare)).join('')}</div>`;
 }
 function _netBlock(net) {
   if (!net) return '';
   if (net.unread) return `<div class="vm-net"><span class="vm-netfoot">addresses not read — ${_attr(net.unread)}</span></div>`;
-  const nics = net.nics.map(n => `<div class="vm-nic"><span class="vm-nicname">⇄ ${_attr(n.nic || 'NIC')}</span>${n.ips.map(a => _addrBtn(a, false)).join('')}${n.pubs.map(p => _pubAddr(p, true)).join('')}</div>`).join('');
-  return `<div class="vm-net">${nics}<div class="vm-netfoot">read by the NSG audit ${_attr(_relTime(net.at))}</div></div>`;
+  const nics = net.nics.map(n => `<div class="vm-nic"><span class="vm-nicname">⇄ ${_attr(n.nic || 'NIC')}${n.bare ? ' · <span class="vm-bare-txt">no NSG</span>' : ''}</span>${n.ips.map(a => _addrBtn(a, false)).join('')}${n.pubs.map(p => _pubAddr(p, true, n.bare)).join('')}</div>`).join('');
+  const failed = net.failed ? `<div class="vm-netfoot">NSG audit failed: ${_attr(net.failed)}</div>` : '';
+  return `<div class="vm-net">${nics}${failed}<div class="vm-netfoot">read by the NSG audit ${_attr(_relTime(net.at))}</div></div>`;
 }
 // A copy by the clipboard where the page may write it (a secure context: the loopback, the SSH
 // tunnel). Elsewhere (a plain http address of the tailnet), the address selected and copied by the
@@ -2015,7 +2049,9 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
 
   // VM ↔ its NSG (from the audit's structured NSG check) — NIC NSG = this VM only,
   // subnet NSG = shared with the subnet.
-  const _nsgData = ((auditEntry?.checks || []).find(c => c.name === 'NSG access') || {}).data || {};
+  // A failed check carries the NICs of a VM without NSG (IPS2): never an NSG line from it.
+  const _nsgCheck = (auditEntry?.checks || []).find(c => c.name === 'NSG access');
+  const _nsgData = (_nsgCheck && _nsgCheck.status === 'ok' && _nsgCheck.data) || {};
   // Multi-NIC at rest: data.nsgs[] enumerates every NIC's NSG. With >1, show a clickable
   // "N NSGs" chip → same per-NIC modal as the isolation coverage popover. Single NIC keeps
   // the inline one-liner. data.nsg/nsg_scope (primary NIC) is the back-compat fallback.
@@ -2092,6 +2128,7 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
         ${unmonitoredBadge}
         ${staleBadge}
         ${modeBadge}
+        ${_bareChip(net)}
         ${readiness && !isExpanded ? `<span style="color:var(--dim);font-size:9px;margin-left:auto">${readiness}</span>` : ''}
       </div>` : ''}
       ${_addrLine(net)}
