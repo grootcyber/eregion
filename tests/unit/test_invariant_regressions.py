@@ -8964,3 +8964,208 @@ def test_a_bypass_of_a_hold_is_still_required_to_be_said(monkeypatch, isolation,
              ("said_then_back_after_a_full_disk", "bypass", WEB1, WEB1, None, isolation,
               *([] if isolation else [22]), (101, _NSG_WEB), rule, "human_only", "human_only", (2, "from-full"),
               "human_only"))
+
+
+# SEC-Hb (#947): I7 red on CI py3.12 (#945), as Hypothesis printed them (6.170.10), each rule's draws in order.
+# The quarantine on, in the VM's group (no `quarantine_rg`): a VM created at a freed address (`api`, in
+# rg-new, or rg-app2 under the same name as web's group), isolated, its release cut off, its NIC then left
+# bare by someone, its state lost; the configuration then names rg-sec, the quarantine off there. Our tag on
+# the VM's group's quarantine NSG names the NIC's original: our own isolation, but nothing proves it ours
+# any more — refused, as a decoy is (OriginalConflict, SEC-H). The way out it said, a tag on our group's
+# NSG, could not be taken: rg-sec holds none. I7 failed for ever: the operator could do nothing said.
+_I7G_NSG1 = "/subscriptions/s/resourcegroups/rg-app1/providers/microsoft.network/networksecuritygroups/nsg-web-nic"
+_I7G_NSG2 = "/subscriptions/s/resourcegroups/rg-app2/providers/microsoft.network/networksecuritygroups/nsg-web-nic"
+_I7G_DESIGN1 = "/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Network/networkSecurityGroups/nsg-web-nic"
+_I7G_DESIGN2 = "/subscriptions/s/resourceGroups/rg-app2/providers/Microsoft.Network/networkSecurityGroups/nsg-web-nic"
+
+
+def _i7g_api(rg: str) -> str:
+    return f"/subscriptions/s/resourceGroups/{rg}/providers/Microsoft.Compute/virtualMachines/api"
+
+
+def _i7g_net():
+    from .test_invariants import _TEMPLATES
+
+    def r(name, prio):
+        return _rule(name, prio, _TEMPLATES[name])
+    lateral = [r("allow-ssh", 100), r("allow-lateral-out", 100), r("deny-lateral-in", 130)]
+    return {**_net(quarantine=True, tier_rules=[r("allow-https", 100)],
+                   web_nic={"own": "dedicated", "rules": [r("allow-https", 100)], "policy": True},
+                   db_nic_0={"rules": lateral}, db_nic_1={"rules": list(lateral), "policy": True},
+                   api_nic={"rules": [r("allow-ssh", 100)]}),
+            "data_primary": True}
+
+
+_I7G_FOUND = {
+    "rg-new": (
+    ('taken_up_by_its_lowercase_id', DB, 'isolation', 'human_only', 'human_only', 'human_only'),
+    ('time_passes',),
+    ('recover',),
+    ('verify', DB, DB.lower(), (3, 'after-crash')),
+    ('address_reused_under_a_turned_rule', WEB1, WEB1, None, 22, (_I7G_NSG1, 'glorfindel-block-192-31-196-7-web-web-nic-eac6a0ca6f60403dd58999aa40946459-out'), _nic("rg-app1", "web-nic"), 0, 4, 'rg-app1', 'api', _I7G_DESIGN2, 'Windows'),
+    ('release', WEB1, WEB1.lower(), (3, 'after-crash')),
+    ('address_reused_under_a_turned_rule', WEB1, WEB1.lower(), ('nsg.get', 'always-429'), 22, (_I7G_NSG1, 'glorfindel-block-192-31-196-7-web-web-nic-b-eac6a0ca6f60403dd58999aa40946459-out'), _nic("rg-app1", "web-nic"), 0, 4, 'rg-new', 'api', _I7G_DESIGN2, 'Linux'),
+    ('kept_at_the_lift', _i7g_api("rg-app1"), _i7g_api("rg-app1"), (5, 'after-429'), 'unblock', 22, (_I7G_NSG2, 'glorfindel-block-192-31-196-7-api-api-nic-4-c61d4680e44b55e95599b2a816849c01-out'), _nic("rg-app1", "api-nic-4"), 0, 4, 'rg-app2', 'web', False),
+    ('redeploy_nic', _nic("rg-app1", "web-nic")),
+    ('another_subscription', WEB2, 'unblock'),
+    ('interrupted_release', _i7g_api('rg-new'), _i7g_api('rg-new'), ('nsg.get', 'always-429'), 1, 'after-crash', True, 'human_only', None),
+    ('promoted_beside_a_turned_block', API, API.lower(), None, 22),
+    ('release', DB, DB.lower(), ('nsg.get', 'always-429')),
+    ('taken_up_by_its_lowercase_id', API, 'block', None, 'non_disruptive', API.lower(), None, 'non_disruptive', 'non_disruptive'),
+    ('an_earlier_version_isolates_or_blocks', WEB2, WEB2, ('nsg.get', 'always-429'), 'block', 22),
+    ('perimeter_lifted_beside_a_block', WEB2, WEB2.lower(), ('subnet.get', 'always-429'), _i7g_api("rg-app1"), True, _i7g_api("rg-app1"), None),
+    ('someone_detaches_the_quarantine', _nic("rg-new", "api-nic-5")),
+    ('address_reused', WEB2, WEB2, None, True, False, 'rg-app1', 'batch', _I7G_DESIGN2, 'Windows', True, (5, 'before-crash'), 'human_only'),
+    ('reassert', 'non_disruptive', (1, 'after-crash')),
+    ('block_perimeter', WEB1, WEB1.lower(), None, True),
+    ('reassert', 'non_disruptive', None),
+    ('kept_at_the_lift',),
+    ('lose_state', _i7g_api('rg-new')),
+    ('reassert', 'human_only', ('nic.get', 'always-429')),
+    ('create_vm', 'northeurope'),
+    ('said_then_back_after_a_full_disk', 'unreadable state', 'human_only', True, 'non_disruptive', (6, 'from-full'), 'human_only'),
+    ('another_subscription', WEB1, 'reset'),
+    ('turned_perimeter_left_out', WEB1, WEB1.lower(), (12, 'before-crash')),
+    ('config_changes', {'quarantine': False, 'readable': True, 'forensic': [], 'rg': 'rg-sec'}, False),
+    ),
+    "rg-app2": (
+    ('taken_up_by_its_lowercase_id', DB, 'block', 22, 'human_only', DB, 22, 'human_only', 'human_only'),
+    ('recover',),
+    ('verify', WEB1, WEB1, None),
+    ('address_reused_under_a_turned_rule', WEB1, WEB1, None, 22, (_I7G_NSG1, 'glorfindel-block-192-31-196-7-web-web-nic-eac6a0ca6f60403dd58999aa40946459'), _nic("rg-app1", "web-nic"), 0, 4, 'rg-app1', 'api', _I7G_DESIGN1, 'Linux'),
+    ('release', WEB1, WEB1, None),
+    ('address_reused_under_a_turned_rule', WEB1, WEB1, None, 22, (_I7G_NSG1, 'glorfindel-block-192-31-196-7-web-web-nic-b-eac6a0ca6f60403dd58999aa40946459'), _nic("rg-app1", "web-nic"), 0, 4, 'rg-app2', 'api', _I7G_DESIGN2, 'Linux'),
+    ('kept_at_the_lift', _i7g_api("rg-app1"), _i7g_api("rg-app1"), (5, 'after-429'), 'unblock', 22, (_I7G_NSG1, 'glorfindel-block-192-31-196-7-api-api-nic-4-c61d4680e44b55e95599b2a816849c01-out'), _nic("rg-app1", "api-nic-4"), 0, 4, 'rg-app2', 'web', False),
+    ('redeploy_nic', _nic("rg-app1", "web-nic")),
+    ('another_subscription', WEB2, 'unblock'),
+    ('interrupted_release', _i7g_api('rg-app2'), _i7g_api('rg-app2'), ('nsg.get', 'always-429'), 1, 'after-crash', True, 'human_only', None),
+    ('promoted_beside_a_turned_block', API, API.lower(), None, 22),
+    ('release', DB, DB.lower(), ('nsg.get', 'always-429')),
+    ('taken_up_by_its_lowercase_id', API, 'block', None, 'non_disruptive', API.lower(), None, 'non_disruptive', 'non_disruptive'),
+    ('an_earlier_version_isolates_or_blocks', WEB2, WEB2, ('nsg.get', 'always-429'), 'block', 22),
+    ('perimeter_lifted_beside_a_block', WEB2, WEB2.lower(), ('subnet.get', 'always-429'), _i7g_api("rg-app1"), True, _i7g_api("rg-app1"), None),
+    ('someone_detaches_the_quarantine', _nic("rg-app2", "api-nic-5")),
+    ('address_reused', WEB2, WEB2, None, True, False, 'rg-app1', 'batch', _I7G_DESIGN2, 'Windows', True, (5, 'before-crash'), 'human_only'),
+    ('reassert', 'non_disruptive', (1, 'after-crash')),
+    ('block_perimeter', WEB1, WEB1.lower(), None, True),
+    ('reassert', 'non_disruptive', None),
+    ('kept_at_the_lift',),
+    ('lose_state', _i7g_api('rg-app2')),
+    ('reassert', 'human_only', ('nic.get', 'always-429')),
+    ('create_vm', 'northeurope'),
+    ('said_then_back_after_a_full_disk', 'unreadable state', 'human_only', True, 'non_disruptive', (6, 'from-full'), 'human_only'),
+    ('another_subscription', WEB1, 'reset'),
+    ('turned_perimeter_left_out', WEB1, WEB1.lower(), (12, 'before-crash')),
+    ('config_changes', {'quarantine': False, 'readable': True, 'forensic': [], 'rg': 'rg-sec'}, False),
+    ('recover',),
+    ),
+}
+
+
+@pytest.mark.parametrize("rg", ["rg-new", "rg-app2"])
+def test_a_bare_nics_quarantine_outside_the_configured_group_says_a_way_out_that_exists(monkeypatch, rg):
+    """SEC-Hb (#947). The refusal stands — nothing proves ours an NSG outside the group the configuration
+    names, its state lost —, and the release now says a way out the operator can take: our group holding no
+    quarantine NSG, the NSG put back on the NIC by hand (`az network nic update`), the NSG for the operator
+    to name, never the other group's choice. The operator runs it (the teardown), the release completes:
+    I7. Red on `origin/main` 771e0fab: « I7: …/api could not be released: … poser le tag … (rg-sec) »."""
+    import inspect
+
+    from .fake_azure import nsg_id
+    invariant_env(monkeypatch)
+    m = IsolationMachine()
+    try:
+        m.build(_i7g_net())
+        found = _I7G_FOUND[rg]
+        last = found[-1] == ("recover",)                # rg-app2's: the teardown's I7 met at a `recover` first
+        for rule, *draws in found[:-1] if last else found:
+            if not draws and "data" not in inspect.signature(getattr(m, rule)).parameters:
+                getattr(m, rule)()
+            else:
+                s = Script(*draws)
+                getattr(m, rule)(data=s)
+                assert not s.values, (rule, s.values)
+            m.never_more_open_than_designed()
+            m.customer_configuration_untouched()
+            m.one_vm_one_state_file()
+        nic, api = _nic(rg, "api-nic-5"), _i7g_api(rg)
+        # The world, the test's own: the NIC bare; our tag naming its original on the VM's group's
+        # quarantine NSG only; the configuration naming rg-sec, where no quarantine NSG is.
+        assert m.fake.nics[nic]["nsg"] is None, "the world: api-nic-5 left bare"
+        tag = m.connector._orig_tag(nic)
+        assert [k for k, g in m.fake.nsgs.items() if tag in g["tags"]] == [
+            key(nsg_id(rg, "nsg-glorfindel-quarantine-westeurope"))], "the world: our tag in the VM's group only"
+        assert m.config["rg"] == "rg-sec" and not any("/resourcegroups/rg-sec/" in k for k in m.fake.nsgs)
+        m.chaos.plan, m.config["readable"] = None, True
+        m._write_config()
+        out = m.connector.release_isolation(api)
+        assert out["status"] == "release_partial", out                  # the refusal stands (SEC-H)
+        assert m.fake.nics[nic]["nsg"] is None, "never the other group's choice put back"
+        said = " ".join(out["failed"])
+        assert f"az network nic update -g {rg} -n api-nic-5 --network-security-group <id du NSG>" in said, said
+        if last:
+            m.recover()                                 # as found: I7 within the sequence too
+    finally:
+        m.teardown()                    # I7: the operator runs the command said, the release completes
+
+
+# SEC-Hb, the machine at 2 000 (19/11, on `origin/main` 771e0fab too): an earlier version's block of api, then
+# this version's, its drift acknowledged, written again; an address freed and given to a new VM's NIC
+# (api-nic-4) under one of our denies turned into an allow; the unblock lifts api. The earlier version's pair,
+# that nothing proves api's, is left and said « laissée », the command given (SEC-H) — and it also holds a
+# turned rule back for api-nic-4: the oracle asked « gardée » of it, and read it unsaid.
+def _i3l_net():
+    from .test_invariants import _TEMPLATES
+
+    def r(name, prio):
+        return _rule(name, prio, _TEMPLATES[name])
+    lateral = [r("allow-ssh", 100), r("allow-lateral-out", 100), r("deny-lateral-in", 130)]
+    return {**_net(subnet_nsg=[r("deny-lateral-in", 130)],
+                   tier_rules=[r("allow-https", 100), r("allow-lateral-out", 100)],
+                   web_nic={"rules": [r("allow-https", 100), r("allow-lateral-out", 100), r("deny-lateral-in", 130)]},
+                   db_nic_0={"rules": lateral},
+                   db_nic_1={"own": "dedicated", "rules": [r("deny-lateral-in", 130)], "policy": True},
+                   api_nic={"own": "dedicated", "rules": list(lateral), "policy": True},
+                   data_subnet=[r("allow-https", 100), r("allow-lateral-out", 100)]),
+            "edge_nsg": [r("allow-lateral-out", 100), r("deny-lateral-in", 130)], "data_primary": True}
+
+
+_I3L_EDGE = "/subscriptions/s/resourcegroups/rg-edge/providers/microsoft.network/networksecuritygroups/nsg-edge"
+_I3L_FOUND = (
+    ("recover",),
+    ("release", WEB1, WEB1, None),
+    ("customer_removes_rule", "/subscriptions/s/resourcegroups/rg-net/providers/microsoft.network/"
+     "networksecuritygroups/nsg-tier", "allow-https"),
+    ("an_earlier_version_isolates_or_blocks", API, API, ("subnet.get", "always-429"), "block", 22),
+    ("customer_removes_rule", "/subscriptions/s/resourcegroups/rg-app1/providers/microsoft.network/"
+     "networksecuritygroups/nsg-db-nic-1", "deny-lateral-in"),
+    ("blocked_again_after_an_acknowledged_drift", API, API, None),
+    ("kept_at_the_lift", API, API, None, "unblock", 22,
+     (_I3L_EDGE, "glorfindel-block-192-31-196-7-api-api-nic-52b92bd666d22061a692e8a8d952ab5e"),
+     _nic("rg-edge", "api-nic"), 0, 4, "rg-app1", "api",
+     "/subscriptions/s/resourceGroups/rg-edge/providers/Microsoft.Network/networkSecurityGroups/nsg-api-nic",
+     "Linux", True))
+
+
+def test_an_earlier_versions_pair_left_and_said_is_said_though_another_vm_hangs_on_it(monkeypatch):
+    """SEC-Hb: the earlier version's pair is named in `failed`, « laissée », with the command that takes it
+    off — said. Red on `origin/main` 771e0fab: « I3 (said): unblock said unblock_partial, rules of …/api kept
+    without saying so: ['glorfindel-block-192-31-196-7-api-api-nic-c272f2'] »."""
+    import inspect
+
+    invariant_env(monkeypatch)
+    m = IsolationMachine()
+    try:
+        m.build(_i3l_net())
+        for rule, *draws in _I3L_FOUND:
+            if not draws and "data" not in inspect.signature(getattr(m, rule)).parameters:
+                getattr(m, rule)()
+            else:
+                s = Script(*draws)
+                getattr(m, rule)(data=s)
+                assert not s.values, (rule, s.values)
+            m.never_more_open_than_designed()
+            m.customer_configuration_untouched()
+            m.one_vm_one_state_file()
+    finally:
+        m.teardown()

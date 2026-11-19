@@ -338,6 +338,112 @@ def actions_is_quarantine(nsg) -> bool:
     return bool(nsg) and _is_quarantine_nsg(nsg)
 
 
+def test_the_conflict_says_our_tag_when_our_groups_quarantine_nsg_exists(monkeypatch):
+    """SEC-Hb (#947): our group holds the region's quarantine NSG — the way out is our tag there."""
+    from glorfindel.providers.azure.quarantine_origin import OriginalConflict
+    f, c, nic, _ = _bare_world(monkeypatch)
+    f.add_nsg("rg-evil", "nsg-glorfindel-quarantine-westeurope",
+              tags={"managed-by": "glorfindel", c._orig_tag(nic): f.add_nsg("rg-evil", "nsg-open")})
+    t0 = {"nic_id": nic, "nic_short": "web-nic", "location": "westeurope"}
+    with pytest.raises(OriginalConflict) as said:
+        c._bare_nic_original(t0, "rg-app")
+    assert f"poser le tag {c._orig_tag(nic)}=<id du NSG> sur nsg-glorfindel-quarantine-westeurope (rg-app)" in str(
+        said.value) and "az network nic update" not in str(said.value)
+
+
+def test_with_no_quarantine_nsg_in_our_group_the_conflict_says_the_nsg_put_back_by_hand(monkeypatch):
+    """SEC-Hb (#947): the invariant machine's sequences, CI py3.12 — our own isolation made in the VM's
+    group, its state lost, the configuration naming another group since, the quarantine off there. Nothing
+    proves the VM's group's NSG ours: refused, as a decoy (SEC-H). Its way out said a tag on our group's NSG,
+    which doesn't exist: no way out. Now: the NSG put back on the NIC by hand, the NIC's own group and name,
+    the NSG for the operator to name — never the other group's choice, written in for a copy and paste."""
+    from glorfindel.providers.azure.quarantine_origin import OriginalConflict
+
+    from .fake_azure import FakeAzure, nic_id
+    f = FakeAzure()
+    subnet = f.add_subnet("rg-net", "vnet-hub", "app", None)
+    f.add_vm("rg-app", "web", [{"rg": "rg-nics", "name": "web-nic", "ips": ["10.0.0.4"], "subnet": subnet,
+                                "nsg": None}])
+    c = AzureConnector(dry_run=False, read_only=False)
+    c._network, c._compute = f.network, f.compute
+    c._subscription_id = "s"
+    c._quarantine_settings = lambda: (False, "rg-sec")          # quarantine_nsg: false, quarantine_rg: rg-sec
+    nic = nic_id("rg-nics", "web-nic")
+    chosen = f.add_nsg("rg-app", "nsg-web")
+    f.add_nsg("rg-app", "nsg-glorfindel-quarantine-westeurope",
+              tags={"managed-by": "glorfindel", c._orig_tag(nic): chosen})
+    t0 = {"nic_id": nic, "nic_short": "web-nic", "location": "westeurope"}
+    with pytest.raises(OriginalConflict) as said:
+        c._bare_nic_original(t0, "rg-app")
+    text = str(said.value)
+    assert "hors du groupe rg-sec" in text and "rg-app/nsg-glorfindel-quarantine-westeurope" in text, text
+    assert "az network nic update -g rg-nics -n web-nic --network-security-group <id du NSG>" in text, text
+    assert chosen not in text and "poser le tag" not in text, text
+
+
+# Azure's longest names (SEC-Hb's review): a resource group 90 characters, a NIC 80.
+_LONG_RG, _LONG_NIC_RG, _LONG_Q_RG = ("rg-" + "a" * 87), ("rg-" + "n" * 87), ("rg-" + "q" * 87)
+_LONG_NIC = "nic-" + "x" * 76
+
+
+def _long_world(monkeypatch, ours: bool):
+    """web's NIC bare, in a group of 90 characters, named on 80; our quarantine group of 90 configured,
+    its NSG there (ours) or not; a quarantine NSG of another group of 90 naming an original for it."""
+    from .fake_azure import FakeAzure, nic_id
+    f = FakeAzure()
+    subnet = f.add_subnet("rg-net", "vnet-hub", "app", None)
+    f.add_vm(_LONG_RG, "web", [{"rg": _LONG_NIC_RG, "name": _LONG_NIC, "ips": ["10.0.0.4"], "subnet": subnet,
+                                "nsg": None}])
+    c = AzureConnector(dry_run=False, read_only=False)
+    c._network, c._compute = f.network, f.compute
+    c._subscription_id = "s"
+    c.recent_changes = lambda *a, **k: []
+    c._quarantine_settings = lambda: (True, _LONG_Q_RG)
+    monkeypatch.setenv("GLORFINDEL_QUARANTINE_NSG", "1")
+    nic = nic_id(_LONG_NIC_RG, _LONG_NIC)
+    if ours:
+        f.add_nsg(_LONG_Q_RG, "nsg-glorfindel-quarantine-westeurope",
+                  tags={"managed-by": "glorfindel", "purpose": "incident-quarantine"})
+    f.add_nsg(_LONG_RG, "nsg-glorfindel-quarantine-westeurope",
+              tags={"managed-by": "glorfindel", c._orig_tag(nic): f.add_nsg(_LONG_RG, "nsg-" + "w" * 76)})
+    return f, c, nic
+
+
+def _tag_way(c, nic) -> str:
+    return (f"poser le tag {c._orig_tag(nic)}=<id du NSG> sur nsg-glorfindel-quarantine-westeurope ({_LONG_Q_RG}), "
+            "puis relancer")
+
+
+@pytest.mark.parametrize("ours", [True, False], ids=["tag", "by-hand"])
+def test_the_way_out_is_whole_in_the_release_with_azures_longest_names(monkeypatch, ours):
+    """SEC-Hb's review: the release keeps `_ERR_MAX` characters of the conflict; the way out came last,
+    and with long names (667 characters at 33–38) it lost `--network-security-group <id du NSG>, puis
+    relancer`. Said first now: whole, with the NSG to tag and its group, for both ways."""
+    from glorfindel.providers.azure.quarantine_origin import OriginalConflict
+    from glorfindel.response.policy import _ERR_MAX
+    f, c, nic = _long_world(monkeypatch, ours)
+    t0 = {"nic_id": nic, "nic_short": _LONG_NIC, "location": "westeurope"}
+    with pytest.raises(OriginalConflict) as said:
+        c._bare_nic_original(t0, _LONG_RG)
+    kept = str(said.value)[:_ERR_MAX]
+    way = (_tag_way(c, nic) if ours else
+           f"az network nic update -g {_LONG_NIC_RG} -n {_LONG_NIC} --network-security-group <id du NSG>, "
+           "puis relancer")
+    assert way in kept, kept
+
+
+def test_the_way_out_kept_on_the_placement_is_whole_with_azures_longest_names(monkeypatch):
+    """SEC-Hb's review: the isolation keeps the conflict on its placement — cut at 400, the tag's way lost
+    its « sur <NSG> (<groupe>) » from 532 characters. Kept as the release keeps it, the way out first."""
+    from glorfindel.actions import _load_isolation_state
+    f, c, nic = _long_world(monkeypatch, ours=True)
+    rid = f"/subscriptions/s/resourceGroups/{_LONG_RG}/providers/Microsoft.Compute/virtualMachines/web"
+    assert c.isolate_vm(rid)["status"] == "isolated"
+    p = next(p for p in _load_isolation_state(rid)["placements"] if p.get("kind") == "quarantine")
+    assert "original_nsg_id" not in p
+    assert _tag_way(c, nic) in p["original_conflict"], p["original_conflict"]
+
+
 def test_without_a_decoy_the_authentic_none_stands(monkeypatch):
     f, c, nic, _ = _bare_world(monkeypatch)
     t0 = {"nic_id": nic, "nic_short": "web-nic", "location": "westeurope"}

@@ -213,6 +213,13 @@ carte — un autre hôte configuré sur un autre groupe (I8S), ou un leurre que 
 comme le nôtre — n'est jamais suivi : la carte reste telle quelle, dite (`OriginalConflict`), jusqu'à ce que
 l'opérateur pose l'original sur notre tag ; une ré-isolation retire alors notre « aucun » périmé (relu), garde
 la raison sur son placement (`original_conflict`), et la levée la redit, le NSG de l'autre groupe nommé.
+**Quand notre groupe n'a pas ce NSG** (SEC-Hb, #947, 19/11) — la quarantaine coupée là, par exemple : notre
+propre isolation posée dans le groupe de la VM avant qu'un `quarantine_rg` soit configuré, son état perdu ; rien
+ne prouve plus que ce NSG est le nôtre, le refus tient —, il n'y a rien à étiqueter : le message dit alors de
+remettre le NSG sur la carte à la main (`az network nic update -g <groupe de la carte> -n <carte>
+--network-security-group <id du NSG>`), l'id à nommer par l'opérateur, jamais celui que l'autre groupe choisit. La sortie vient en tête du message, avant l'explication : la levée en garde 600 caractères, le placement autant, et les noms d'Azure sont longs (un groupe 90, une carte 80).
+Avant, il disait de poser le tag sur un NSG absent : aucune sortie, la levée restait `release_partial` (I7 rouge
+sur la CI py3.12 de #945).
 
 **Les états locaux** (`glorfindel/response/state_files.py`) : un fichier n'est celui d'une VM que si le
 `resource_id` qu'il enregistre est le sien (`docs/fichiers-cles.md`). **Les écritures ARM** de l'isolement et du
