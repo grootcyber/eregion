@@ -89,13 +89,20 @@ Contrat (garanties, vérifications, kill, mutants) :
     `Disabled`** par un modèle ARM qui porte l'état lui-même : Terraform ne suit que le déploiement,
     jamais l'état de la Logic App. Seul `make orodruin-drill-arm` l'active ; `-disarm` et le kill la
     désactivent. **Un apply ne l'active jamais** ; s'il la redéploie (une heure, un nom changés), il la
-    remet `Disabled` : réarmer. Pourquoi pas `azurerm_logic_app_workflow` : son déclencheur et son action
+    remet `Disabled` (à mesurer, §6.2) : réarmer. Le plan d'une heure changée met à jour le déploiement sur
+    place, et peut annoncer le remplacement de l'attribution du rôle : son `principal_id` vient de la sortie
+    du déploiement, connue seulement après l'apply. L'identité de la Logic App ne change pas (à mesurer) :
+    ce remplacement n'est pas une alarme. Pourquoi pas `azurerm_logic_app_workflow` : son déclencheur et son action
     réécrivent le workflow sans son état (le §14 de la conception) ;
   - **son identité** est la sienne, managée, et ne peut qu'une chose : un rôle d'une seule action,
     `Microsoft.Compute/virtualMachines/start/action`, défini et assignable dans `rg-orodruin`, attribué à
     la portée de `vm-orodruin` seule. L'identité d'Orodruin ne gagne rien, et le contrat ne change pas ;
   - **l'extinction quotidienne**, le planning DevTest de la VM : chaque jour à 23:00 UTC, drill ou non,
-    elle désalloue Orodruin (une session plus tardive est coupée : `make orodruin-start` la rallume) ;
+    elle désalloue Orodruin (une session plus tardive est coupée : `make orodruin-start` la rallume).
+    **Finir ou nettoyer avant 23:00 UTC** (minuit à Paris en hiver, 1 h en été) : un run coupé au milieu
+    peut laisser un échauffement ou un nettoyage inachevé sur sa cible, et rien n'alerte. Limite connue :
+    rien ne vérifie encore que le `schedule` du drill plus son `max_run_s` finit avant 23:00 UTC (le drill
+    livré : 19:00 + 30 min) ;
   - **la sortie `drill_autostart_id`**, l'id de la Logic App, que lisent `orodruin-drill-check`, `-arm`,
     `-disarm` et le kill (`drill_ops.py autostart-id`). Avant l'apply : « no scheduled start », et
     l'armement refuse (« apply first »).

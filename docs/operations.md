@@ -468,7 +468,7 @@ make orodruin-drill-disarm
 #   - Le démarrage planifié (DRL1c, infra/orodruin/drill_autostart.tf) : une Logic App, posée par
 #     make orodruin-plan puis make orodruin-lock (Jonathan), déployée Disabled ; elle réveille Orodruin
 #     à drill_autostart_at (tue 18:40 UTC, le drill moins 20 min). Un apply ne l'active jamais ; s'il la
-#     redéploie (une heure changée), il la remet Disabled : réarmer. Orodruin s'éteint chaque jour à
+#     redéploie (une heure changée), il la remet Disabled (à mesurer) : réarmer. Orodruin s'éteint chaque jour à
 #     23:00 UTC (le planning DevTest, qui désalloue), drill ou non : une session plus tardive est coupée.
 
 # Campagne (kill-chain générative + rapport IA0) — depuis Orodruin, sur le modèle de gothmog

@@ -965,7 +965,8 @@ la portée de `vm-orodruin`). **L'identité d'Orodruin ne gagne rien**, et le co
 ne lit que les attributions de l'identité d'Orodruin. Réveillée, Orodruin ne fait rien de plus qu'à un
 démarrage à la main : le minuteur ne joue qu'armé, à son heure, sous ce contrat. La Logic App est
 déployée `Disabled` ; seul l'armement l'active ; le désarmement et le kill la désactivent ; un apply
-ne l'active jamais, et la redésactive s'il la redéploie (une heure changée : réarmer).
+ne l'active jamais, et la redésactive s'il la redéploie (une heure changée : réarmer ; à mesurer,
+`drill-banc.md` §6.2).
 
 **Une demande se joue une fois, et fraîche** (SEC14, R-11). Sous le verrou, avant tout jugement :
 - son identifiant est cherché dans le registre des demandes jouées

@@ -845,6 +845,9 @@ attaque. Aucune session n'arme, ne déclenche ni ne réarme le drill. La ligne �
    - (DRL1c, §14) le déploiement garde `timeZone: UTC` avec son `startTime` ; l'action démarre la VM sans
      suivre l'opération (`DisableAsyncPattern`) ; un apply qui redéploie le modèle (une heure changée) la
      remet `Disabled`, et l'identité de la Logic App ne change pas ;
+   - juste après l'apply, un second `make orodruin-plan` ne dit aucun changement : sinon, un écart
+     permanent (sur `template_content`, par exemple) redéploierait la Logic App à chaque `orodruin-lock`,
+     et la désarmerait à chaque fois ;
    - `orodruin-down` l'emporte (le fournisseur supprime ce que le déploiement a posé).
 3. gondolin démarrée à froid par le drill :
    - le délai jusqu'au premier Heartbeat (le budget de 10 min tient-il ?) ;
@@ -1212,10 +1215,15 @@ Le code suit les §2.3 et §3.1 dans leur ordre. Ce qui s'en écarte, ou que la 
   `state: Disabled` dans le PUT même qui la crée, et Terraform ne suit que le déploiement, jamais l'état
   de la Logic App : l'armement qui l'active ne fait aucun écart au plan. C'est l'« équivalent » que le
   §11 admet, fermé de plus : **un apply qui redéploie le modèle** (une heure, une VM, un nom changés) **la
-  remet `Disabled`**. Le drill est alors suspendu, jamais réveillé sans armement. Il faut réarmer, ce que
+  remet `Disabled`** (à mesurer, §6.2). Le drill est alors suspendu, jamais réveillé sans armement. Il faut réarmer, ce que
   le §5.1 demande déjà d'un `schedule` changé. Entre l'apply et le réarmement, une occurrence où Orodruin
   est éteinte ne joue pas, et Imladris dit `not_run` : l'alarme d'absence le voit. Le déploiement est `Incremental` : `Complete` supprimerait tout le reste du
   groupe d'Orodruin, et un mutant le garde.
+- **Le plan d'une heure changée** : le déploiement est mis à jour sur place, et l'attribution du rôle peut
+  être annoncée à remplacer, parce que son `principal_id` vient de la sortie du déploiement et n'est connu
+  qu'après l'apply. L'identité de la Logic App, elle, ne change pas : un PUT de la même Logic App garde son
+  identité système. Les deux sont à mesurer (§6.2) ; un remplacement de l'attribution dans ce plan-là
+  n'est pas une alarme.
 - **L'action** : un appel HTTP `POST <vm>/start?api-version=2024-07-01`, par l'identité managée de la
   Logic App (`ManagedServiceIdentity`, l'audience d'ARM), **sans suivre l'opération**
   (`DisableAsyncPattern`) : la suivre lirait l'opération asynchrone d'ARM, un droit que le rôle ne porte
