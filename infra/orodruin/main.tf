@@ -255,6 +255,26 @@ resource "azurerm_linux_virtual_machine" "host" {
     apt-get install -y -q docker.io
     usermod -aG docker ${var.admin_username}
     sudo -u ${var.admin_username} mkdir -p /home/${var.admin_username}/runs /home/${var.admin_username}/.annatar
+    # R2c pièce 3 — le bac à sable de Stratus : un réseau docker dédié d'où la sortie vers ARM
+    # passe mais l'IMDS est coupé, posé à chaque démarrage par un service systemd (après docker).
+    # Un container de Stratus sur ce réseau ne peut pas obtenir le jeton de l'identité managée
+    # d'Orodruin (M4 : IMDS 000, témoin bridge 200). orodruin-check vérifie la règle avant de
+    # s'armer pour Stratus (eregion_core/orodruin.py, read_sandbox). La Pièce 4 lance Stratus
+    # dessus ; jamais --network host, ni le socket docker, ni NET_ADMIN (ORO_HARDEN conservé).
+    docker network create --subnet 172.30.250.0/24 eregion-stratus-sandbox || true
+    S=/etc/systemd/system/eregion-stratus-sandbox.service
+    echo '[Unit]' > "$S"
+    echo 'Description=Eregion R2c: coupe l IMDS depuis le bac a sable de Stratus' >> "$S"
+    echo 'After=docker.service' >> "$S"
+    echo 'Requires=docker.service' >> "$S"
+    echo '[Service]' >> "$S"
+    echo 'Type=oneshot' >> "$S"
+    echo 'RemainAfterExit=yes' >> "$S"
+    echo "ExecStart=/bin/sh -c 'iptables -C DOCKER-USER -s 172.30.250.0/24 -d 169.254.169.254/32 -j DROP || iptables -I DOCKER-USER -s 172.30.250.0/24 -d 169.254.169.254/32 -j DROP'" >> "$S"
+    echo '[Install]' >> "$S"
+    echo 'WantedBy=multi-user.target' >> "$S"
+    systemctl daemon-reload
+    systemctl enable --now eregion-stratus-sandbox.service || true
     touch /home/${var.admin_username}/.orodruin-ready
   EOF
   )
