@@ -164,7 +164,7 @@ Une lecture qui échoue n'est jamais « prêt ». Le seuil de l'effet n'est pas 
 bruit n'est pas encore là, et c'est le run qui le demande. Un arrêt (`vm-shutdown`, `vm-restart`)
 cible la VM elle-même et lit son effet dans ARM : seuls ses droits sont demandés. L'agent est lu
 sur les VM que l'expérience validée par le gate atteint par lui, sans relire l'expérience. Les
-étapes du run ne changent pas ; son rapport nomme aussi ces VM (`experiment.agents`).
+étapes du run ne changent pas ; son rapport nomme aussi ces VM (`metrics.experiment.agents`).
 
 **Ce que le préflight ne lit pas.** Que stress-ng soit présent sur la VM, et que l'agent joigne
 Chaos Studio : rien dans le plan de contrôle ne le montre. L'effet de la panne, lu pendant le run,
@@ -175,7 +175,7 @@ expérience. On suppose qu'elle répond à l'identité d'Orodruin comme à la po
 contrat la fait déjà. Si elle répond 403, le préflight dit « unreadable » et refuse : le signaler,
 ne pas le contourner.
 
-**Mutants** : M6586–M6605 (`tests/unit/test_gothmog_readiness.py`).
+**Mutants** : M6586–M6605 et M6616 (`tests/unit/test_gothmog_readiness.py`).
 
 ### Reste, sur le banc, avec Jonathan
 

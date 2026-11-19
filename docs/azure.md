@@ -321,9 +321,8 @@ privées (`ips`), et **ses IP publiques (`public_ips`)**. Le reste de la forme n
   `human_only` tant que la réserve n'est pas confirmée, et la carte du bot), la posture (le manque
   critique `nsg_reachable`). Aucun lecteur de Glorfindel (l'audit, la préparation, la porte, la
   posture, le bot) ne lit `data.nsgs` comme la preuve qu'un NSG se lit, ni qu'une isolation ou un
-  blocage est possible (`tests/unit/test_audit_no_nsg.py`). La page de la console, elle, ne le
-  garantit qu'avec IPS2b (#953) : jusque-là, une VM à plusieurs cartes dont l'une est sans NSG y
-  compte encore ses entrées comme des NSG (« N NSGs across NICs »).
+  blocage est possible (`tests/unit/test_audit_no_nsg.py`). La page de la console, elle, le
+  garantit depuis IPS2b (#953).
 
   L'échec est écrit par le lecteur, jamais lu dans une erreur : `iam` est toujours faux, et le
   contrôle n'est jamais un `warn` passager ni une correction de droits, quel que soit le nom de la
