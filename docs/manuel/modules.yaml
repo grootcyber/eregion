@@ -404,6 +404,16 @@ briques:
     issue: 867
     doc: docs/glorfindel.md
 
+  - id: g-plan-controle-telemetrie
+    composant: glorfindel
+    poste: g-detecter
+    nom: "A control-plane operation that names neither its caller nor its resource: a card of incomplete telemetry, of lower severity, never approvable, never dropped; the caller named from its token's ids when the log leaves it empty"
+    etat: main
+    release: "0.6"
+    lots: [CPT1]
+    issue: 930
+    doc: docs/glorfindel.md
+
   - id: s-sec-a4
     composant: socle
     poste: s-signer
