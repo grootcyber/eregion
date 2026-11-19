@@ -768,7 +768,9 @@ C'est une hypothèse à mesurer : l'action d'ARM de la Logic App peut demander a
 **Son heure.** Terraform la tient d'une variable, `drill_autostart_at` (le jour et l'heure,
 T − 20 min : `tue 18:40` UTC). `orodruin-drill-arm` relit la Logic App et refuse d'armer si son heure
 n'est pas celle du `schedule` du drill moins 20 min, et dit « apply first ». Un `schedule` changé
-demande donc une PR, un apply du module (DRL1c), puis le réarmement.
+demande donc une PR, un apply du module (DRL1c), puis le réarmement. L'armement refuse aussi un drill
+que l'extinction de 23:00 UTC couperait, et `orodruin-drill-check` dit l'état de la Logic App face à
+l'armement (DRL1e, §16).
 
 **Son état.** Terraform la crée **désactivée**, et ignore ensuite son état
 (`lifecycle { ignore_changes = [enabled] }`). Seuls `orodruin-drill-arm` l'active, et
@@ -1221,7 +1223,8 @@ Le code suit les §2.3 et §3.1 dans leur ordre. Ce qui s'en écarte, ou que la 
   §11 admet, fermé de plus : **un apply qui redéploie le modèle** (une heure, une VM, un nom changés) **la
   remet `Disabled`** (à mesurer, §6.2). Le drill est alors suspendu, jamais réveillé sans armement. Il faut réarmer, ce que
   le §5.1 demande déjà d'un `schedule` changé. Entre l'apply et le réarmement, une occurrence où Orodruin
-  est éteinte ne joue pas, et Imladris dit `not_run` : l'alarme d'absence le voit. Le déploiement est `Incremental` : `Complete` supprimerait tout le reste du
+  est éteinte ne joue pas, et Imladris dit `not_run` : l'alarme d'absence le voit. Depuis DRL1e (§16),
+  `make orodruin-drill-check` le dit avant : « armed but scheduled start disabled: re-arm ». Le déploiement est `Incremental` : `Complete` supprimerait tout le reste du
   groupe d'Orodruin, et un mutant le garde.
 - **Le plan d'une heure changée** : le déploiement est mis à jour sur place, et l'attribution du rôle peut
   être annoncée à remplacer, parce que son `principal_id` vient de la sortie du déploiement et n'est connu
@@ -1242,7 +1245,7 @@ Le code suit les §2.3 et §3.1 dans leur ordre. Ce qui s'en écarte, ou que la 
   qui suffit, puisqu'elle n'allume qu'Orodruin.
 - **L'extinction** : le planning DevTest de la VM d'Orodruin (`azurerm_dev_test_global_vm_shutdown_schedule`),
   chaque jour à 23:00 UTC, sans notification, comme le banc. Elle ne se règle pas : elle vaut tous les
-  jours (décision 1).
+  jours (décision 1). L'armement la garde depuis DRL1e (§16).
 - **Le fournisseur** : rien ne s'ajoute ni ne monte (azurerm 4.81.0, azuread 3.10.0) ;
   `.terraform.lock.hcl` inchangé.
 - **Mutants** M5881–M5900 (`scripts/mutants/DRL1c.py`), dont celui du §9 : l'apply qui réactive le
@@ -1300,6 +1303,65 @@ Le code suit les §2.3 et §3.1 dans leur ordre. Ce qui s'en écarte, ou que la 
 
   À mesurer à la première occurrence qui joue une technique du plan de contrôle : son préchauffage passe
   sous le drill comme à la main.
+- **Resserré par DRL1e** (§16) : le test lit chaque définition du `Makefile` jusqu'à `$(ORO_IMAGE)`, et
+  non plus jusqu'à `--env-file`. Une option posée après la configuration ou parmi les montages, dans
+  `ORO_RUN` ou `ORO_DRILL_RUN`, ne passe plus inaperçue.
+
+## 16. Ce que DRL1e a ajouté : l'état du démarrage planifié, la garde des 23:00, des tests resserrés (19/11)
+
+Les suites des relectures de DRL1c et de DRL1d (le 19/11). Tout est dans `infra/orodruin/drill_ops.py`
+et ses tests ; ni `main.tf`, ni `kill.py`, ni le `Makefile` ne changent.
+
+- **`orodruin-drill-check` dit l'état du démarrage planifié face à l'armement.** Le défaut : un apply
+  qui redéploie la Logic App la remet `Disabled` (§14). `~/drill/armed.json` disait armé, le check
+  affichait « ✓ scheduled start », et l'occurrence manquée ne se voyait qu'au `not_run` d'Imladris.
+  Le check lit maintenant `properties.state` dans la **même lecture** que l'heure du déclencheur : le
+  même `GET` de la Logic App (`az rest`, api-version 2019-05-01), par l'`az login` de l'opérateur. Il ne
+  demande donc aucun droit de plus : `Microsoft.Logic/workflows/read`, celui que l'armement demande
+  déjà pour lire l'heure. Face à l'armement sur le disque d'Orodruin :
+
+  | Armé ? | `properties.state` | Le check dit | Sortie |
+  |---|---|---|---|
+  | oui | `Enabled` | ✓ scheduled start enabled | 0 (si le reste passe) |
+  | oui | `Disabled` | ✗ armed but scheduled start disabled: re-arm | 1 |
+  | oui | illisible (le `GET` refusé, l'état absent, ou un autre, `Suspended`) | ✗ armed but the scheduled start's state does not read (…): never taken for enabled | 1 |
+  | oui | pas de Logic App | ✗ armed but no scheduled start: apply first, then re-arm | 1 |
+  | non | `Enabled` | ! scheduled start enabled with nothing armed (Orodruin réveillée pour rien) | inchangée |
+  | non | `Disabled` | · scheduled start disabled (nothing armed) | inchangée |
+
+  Une Logic App illisible ne coupe plus le check : il le dit, puis lit quand même l'armement et le
+  contrôle à blanc. Seul `Enabled` réveille Orodruin : tout autre état est dit, jamais pris pour activé.
+  **La limite** : c'est une lecture à l'instant du check. Un apply fait après le check, et avant
+  l'occurrence, ne se voit qu'au check suivant ou au `not_run` d'Imladris. Que le redéploiement remette
+  bien `Disabled` reste à mesurer (§6.2, point 2).
+- **L'armement garde l'extinction de 23:00 UTC** (`drill_ops.shutdown_guard`). Orodruin s'éteint chaque
+  jour à 23:00 UTC (§14), et un drill coupé au milieu peut laisser une cible sans son nettoyage. Deux
+  fenêtres sont comptées, en UTC, d'un bout à l'autre de la semaine :
+  - **refus**, si une extinction tombe entre le réveil (l'heure du drill moins 20 min) et l'heure du
+    drill plus son `max_run_s`, bornes comprises. C'est le budget que le drill déclare : sa coupure est
+    certaine, ou Orodruin s'éteint avant même l'heure du drill. L'armement dit pourquoi et n'écrit rien ;
+  - **avertissement**, si l'extinction ne tombe qu'avant le plafond du service (`RuntimeMaxSec`, 3 600 s,
+    puis les 90 s de son arrêt) : le runner tient, mais une occurrence lente à démarrer (V1, gondolin
+    démarrée à froid, §3.1) peut être coupée. L'armement le dit, puis continue.
+
+  Le check dit la même garde, et un refus le fait échouer. Le drill livré (`tue 19:00`, 1 800 s) finit
+  à 19:30, son service au plus tard à 20:01:30 : ni refus ni avertissement. L'heure de l'extinction est
+  celle de `drill_autostart.tf` (`daily_recurrence_time = "2300"`), et un test les compare ; le plafond
+  est celui de l'unité (`RuntimeMaxSec`, `docker stop --time`), lu par un autre test.
+- **Les deux tests resserrés.** `test_no_apply_enables_the_scheduled_start` cherche une activation dans
+  **chaque `.tf` du module**, et non plus dans `drill_autostart.tf` seul : un appel à `…/enable`, un
+  provisionneur qui nomme la Logic App, une ressource `azurerm_logic_app`, la Logic App nommée hors d'une
+  `description`. Un test copie le module, ajoute une activation à `main.tf` (ou un autre fichier), et
+  exige que la recherche la trouve. `_run_options` lit le `Makefile` jusqu'à `$(ORO_IMAGE)`. Il écarte
+  `--env-file`, `-v`, `$(call ORO_MOUNT,…)` et `--pull`, et un test y pose une option après
+  `--env-file` et parmi les montages.
+- **Mutants** M6481–M6490 (`scripts/mutants/DRL1e.py`) : le check qui ne lit plus l'état, ou le dit sans
+  l'armement ; un état illisible pris pour activé ; la garde des 23:00 retirée, ou qui oublie
+  `max_run_s` ; la recherche limitée de nouveau à un fichier, ou qui ne cherche plus la Logic App hors de
+  `drill_autostart.tf` ; `_run_options` arrêté à `--env-file` ; une option posée après `--env-file` dans
+  `ORO_RUN` ou dans `ORO_DRILL_RUN`.
+- **Ce qui reste à Jonathan** : rien à appliquer. `make orodruin-drill-check` dit l'état dès le prochain
+  passage, depuis un poste à jour de `main`.
 
 ---
 
