@@ -2679,6 +2679,19 @@
    "doc": "docs/design/console.md"
   },
   {
+   "id": "k-vm-sans-nsg",
+   "composant": "console",
+   "poste": "k-voir",
+   "nom": "A VM without NSG shows its addresses and says nothing filters it; a public IP not read is said in English",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "IPS2b"
+   ],
+   "issue": 950,
+   "doc": "docs/design/console.md"
+  },
+  {
    "id": "i-separee",
    "composant": "analyse",
    "poste": "i-lire",
