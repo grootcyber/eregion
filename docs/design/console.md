@@ -376,6 +376,31 @@ Après I1F, AL1, C2 et A3 (27/10) :
 - M574 : une résolution reste sur la tuile au-delà de 24 h.
 - M575 : un acquittement passe pour un geste de Glorfindel.
 
+### La carte de l'infra au scroll (TOPO1, #927, 19/11)
+
+La carte de l'infra se redessine toutes les 5 s. Avec beaucoup de cartes, elle sautait au scroll.
+Les causes ont été mesurées dans Chromium sans tête, sur le jeu d'exemple augmenté de 30 VM :
+- **Les fils se décalaient.** Le svg défile avec les cartes, mais les points étaient pris dans le
+  repère de l'écran. Chaque rafraîchissement pendant un scroll posait les fils 400 px trop haut,
+  la distance défilée.
+- **Le scroll était coupé.** Le conteneur de scroll était lui-même remplacé, puis sa position
+  remise à la main.
+- **Le redimensionnement n'était pas suivi.** Après un redimensionnement, 11 fils sur 34 tombaient
+  à côté de leur carte.
+
+Les règles, dans `glorfindel.js` :
+- `#topo-graph` (le conteneur de scroll) et `#topo-svg` (les fils) restent d'un rendu à l'autre.
+  Seul `#topo-body` est remplacé ; il n'a pas de boîte à lui (`display: contents`).
+- Un point se prend dans le repère du contenu : sa position à l'écran, plus `scrollTop` et
+  `scrollLeft`.
+- Un `ResizeObserver` sur la carte et sa rangée de cartes redessine les fils, au plus une fois par
+  image.
+
+Mesuré après le correctif : un écart sous le pixel, la carte défilée ou non, et le même conteneur
+après le rafraîchissement. Après un redimensionnement, les 34 fils tombent sur leur carte. Un
+rendu de 34 cartes coûte 4 ms : le remplacement du contenu ne fait pas sauter le scroll.
+Tests : `tests/unit/test_console_topology.py` ; mutants M6386–M6390 (`scripts/mutants/TOPO1.py`).
+
 ### Les blocages d'une VM (CON-K, #498, 04/11)
 
 Avant : dépliée, une carte rattachait à sa ligne de décision le premier blocage de la VM et taisait
