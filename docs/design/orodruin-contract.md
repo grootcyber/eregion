@@ -259,6 +259,10 @@ le canal des fenêtres dans l'autre sens : un conteneur `watch` dans le même co
   le battement de cœur **seulement quand plus rien n'attend** : un battement de cœur garantit que
   tout ce qui le précède a été livré. Une détection vue avant sa fenêtre est publiée quand la
   fenêtre arrive. Une détection qui n'a pas pu être notée avance `since`, comme un redémarrage.
+  Ses propres écritures dans ce conteneur (`PutBlob` depuis son adresse privée) ne font plus
+  déclencher `data-exfiltration-blob` : écartées par son identité (l'`oid` de son jeton), ce
+  conteneur et ces deux sortes d'objets seulement, et comptées (SLF1, #929 ;
+  [`../glorfindel.md`](../glorfindel.md), « La voie de retour de la watch »).
 - **Côté run** (`annatar/runner/engine.py`, `_wait_and_emit_feedback`) : sans watch locale, un
   battement de cœur frais dans le canal compte comme une watch active ; pendant l'attente, les
   détections de `detections/<run_id>/` passent par la règle de #157 (`detection_latency` : même

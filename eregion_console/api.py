@@ -1001,6 +1001,7 @@ async def config() -> dict:
                 detection_inert,
                 expected_counts,
                 load_config,
+                own_channel_counts,
             )
             cfg = load_config(rules_path, glorfindel_cfg=glorfindel_cfg)
             status = _load_status()
@@ -1068,6 +1069,8 @@ async def config() -> dict:
                     "match_count": s.get("match_count", 0),
                     # ADM1: the administrators' sudo that opened no card, counted.
                     **expected_counts(s),
+                    # SLF1: the watch's own writes in its return channel, set aside — counted.
+                    **own_channel_counts(s),
                 })
         except Exception:
             pass

@@ -619,7 +619,9 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 `correlation` : queries, origin, card, unknown, compromised, unchecked, confirmed,
                                 unconfirmed, last — COR1, COR2 ; lus par la console ;
                                 `auditd` : events, sensitive, unreadable, at — AUD1, ce que la fenêtre de
-                                `auditd-sensitive-root-command` contient à sa dernière passe, lu par `glorfindel report`)
+                                `auditd-sensitive-root-command` contient à sa dernière passe, lu par `glorfindel report` ;
+                                `own_channel` : writes, rows, last, reason, container, unread — SLF1, les écritures de
+                                la voie de retour de la watch écartées de `data-exfiltration-blob`, lu par la console)
   expected_sudo.jsonl         → ADM1 : chaque sudo d'administrateur attendu écarté par le RulePoller (at, rule,
                                 asset, account, command ≤ 300 car., logged_at ; un shell root écarté par l'origine de
                                 ses sessions SSH : via « origin », origin — COR1 ; proof « bastion » ou « flows »
