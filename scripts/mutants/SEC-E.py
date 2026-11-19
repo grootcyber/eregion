@@ -127,6 +127,6 @@ TESTS = {
     "M5739": f"{_F}::test_the_floor_never_isolates_whatever_the_mode",
     "M5740": f"{_Q}::test_the_pair_lifts_the_ceiling_only_never_the_window",
     "M5910": f"{_F}::test_a_detection_that_does_not_name_the_vm_keeps_the_attributions_card "
-             f"{_F}::test_an_unattributed_snapshot_run_alone_gets_no_floor",
+             f"{_F}::test_an_unattributed_snapshot_never_runs_and_gets_no_floor_s_card",
     "M5911": f"{_F}::test_a_release_the_model_chose_on_a_detection_keeps_the_facts",
 }

@@ -1257,7 +1257,7 @@ briques:
     nom: "Security hardening"
     etat: main
     release: "0.6"
-    lots: [SEC-E, SEC-Ec]
+    lots: [SEC-E, SEC-Ec, SEC-Ed]
     issue: 846
 
   - id: s-sec-h
