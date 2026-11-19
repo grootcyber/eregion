@@ -476,6 +476,16 @@ briques:
     issue: 929
     doc: docs/glorfindel.md
 
+  - id: g-attribution-prime
+    composant: glorfindel
+    poste: g-decider
+    nom: "A card attributed to no VM is never approvable in one click, whatever gate held it first; its suggested commands never name the VM it is filed on; the return channel set aside under the shipped rule only"
+    etat: main
+    release: "0.6"
+    lots: [ATT1]
+    issue: 936
+    doc: docs/glorfindel.md
+
   - id: g-charges-ia
     composant: glorfindel
     poste: g-detecter
