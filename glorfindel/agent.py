@@ -799,6 +799,9 @@ _HELD_BY_TYPE = {
     "telemetry": "telemetry_gap",
     "agreement": "unstable_decision",
     "control_plane": "control_plane_change",
+    # CPT1 (#930): incomplete telemetry on the control plane — the same card, never approvable,
+    # never folded, filed on its target; its severity lower, its text saying so.
+    "control_plane_incomplete": "control_plane_change",
     "identity": "identity_change",
     "never_block": "protected_address",
     "floor": "floor_proposal",
@@ -1018,16 +1021,38 @@ def _named_callers(row: dict) -> int:
     return _count(row, "Callers")
 
 
+def _caller_said(norm: dict, row: dict) -> str:
+    """Who made the operation, as the row names it (CPT1, #930): its `Caller`, else the ids the
+    shipped rules draw from `Claims` and project — the object id, then the application's (under a
+    user's token, the tool's: said as such) —; « appelant inconnu » only when none is there."""
+    who = str(norm.get("caller") or row.get("Caller") or "").strip()
+    if who:
+        return who
+    oid = str(row.get("CallerObjectId") or "").strip()
+    if oid:
+        return f"l'identité d'objet {oid} (lue dans Claims, Caller vide)"
+    app = str(row.get("CallerAppId") or "").strip()
+    if app:
+        return (f"l'application {app} (lue dans Claims, Caller vide ; sous le jeton d'un "
+                "utilisateur, c'est l'outil, pas l'utilisateur)")
+    return "appelant inconnu"
+
+
+# CPT1 (#930): what a card of the control plane says of an operation its row names nobody and
+# nothing for.
+INCOMPLETE_TELEMETRY = "Télémétrie incomplète"
+
+
 def _control_plane_text(signal: dict) -> tuple[str, list[str]]:
     """What a control-plane detection says, from the row alone (AL1): the operation, its
     status as read, the caller, its address, the target, the gravest marks, the
     operations a summary card carries — and the next steps for a human."""
-    from glorfindel.detection_rules import normalize_row
+    from glorfindel.detection_rules import names_no_one, normalize_row
     row = _control_plane_row(signal)
     norm = (signal.get("raw_signal") or {}).get("normalized_signal") or normalize_row(row, signal.get("ttp", ""))
     op = norm.get("indicator_value") or "?"
     status = str(row.get("ActivityStatusValue") or "").strip()
-    who = norm.get("caller") or "appelant inconnu"
+    who = _caller_said(norm, row)
     where = f" depuis {norm['caller_ip']}" if norm.get("caller_ip") else ""
     target = norm.get("resource") or "?"
     what = f"Plan de contrôle : {op}{f' ({status})' if status else ''} par {who}{where} sur {target}."
@@ -1056,6 +1081,15 @@ def _control_plane_text(signal: dict) -> tuple[str, list[str]]:
                  "lire chacune avant de conclure sur l'appelant.")
     steps = ["Vérifier dans le journal d'activité qui a fait cette opération, et pourquoi"
              + (f" (CorrelationId {row['CorrelationId']})" if row.get("CorrelationId") else "") + "."]
+    if names_no_one(row):
+        # CPT1 (#930): neither the caller nor the resource on the row — the fact is shown, at a
+        # lower severity, never approvable; what it may be is not said as known.
+        what = (f"{INCOMPLETE_TELEMETRY} : la ligne ne nomme ni l'appelant (Caller, Claims) ni la "
+                f"ressource (_ResourceId). {what} Un événement de la plateforme (la mise en place de "
+                "l'infra) peut-être : rien ne l'établit. Sévérité moindre ; jamais une action.")
+        steps.insert(0, "Lire toutes les lignes de cette opération dans le journal d'activité, "
+                        "par son CorrelationId : Claims, Properties, Authorization, HTTPRequest, "
+                        "Hierarchy — l'appelant ou la ressource y sont peut-être.")
     if _named_callers(row) > 1:
         steps.append("Lire chacune de ses lignes : plusieurs appelants sous ce CorrelationId.")
     if norm.get("glorfindel_managed"):
@@ -1107,13 +1141,21 @@ def _control_plane_decision(state: GlorfindelState) -> GlorfindelState:
     one click, whose reason says the operation, the target, the caller, the gravest cases
     — a write by someone else on a rule Glorfindel manages (an isolation or a block may be
     gone), Glorfindel's identity outside what it does — and the severity."""
+    from glorfindel.detection_rules import names_no_one
     signal = state["signal"]
     what, steps = _control_plane_text(signal)
-    severity = "critique" if signal.get("severity") == "critical" else "haute"
+    # CPT1 (#930): a row that names neither its caller nor its resource is a card of incomplete
+    # telemetry — never a high one, whatever severity the signal came with (a signal written
+    # before CPT1, replayed); a critical one stays critical.
+    incomplete = signal.get("severity") != "critical" and names_no_one(_control_plane_row(signal))
+    if incomplete:
+        signal = {**signal, "severity": "medium"}
+    severity = "critique" if signal.get("severity") == "critical" else "moyenne" if incomplete else "haute"
     reason = (f"{what} Sévérité : {severity}. Détection seule : aucune action autonome sur le "
               "plan de contrôle — décision déterministe, sans appel au modèle ; revue humaine.")
     return {
         **state,
+        "signal": signal,
         "reasoning": "Plan de contrôle : décision déterministe (AL1), sans appel au modèle.",
         "confidence": 0.0,
         "action": "",
@@ -1125,7 +1167,7 @@ def _control_plane_decision(state: GlorfindelState) -> GlorfindelState:
         "llm_usage": None,
         "autonomy_mode": "",
         "mode_hold": False,
-        "held_by": "control_plane",
+        "held_by": "control_plane_incomplete" if incomplete else "control_plane",
         "autonomy_gate": {},
         "decision_draws": [],
     }

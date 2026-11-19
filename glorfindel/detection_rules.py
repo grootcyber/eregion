@@ -1178,6 +1178,52 @@ def _grave(row: dict) -> bool:
             or bool(row.get("GlorfindelRunCommand")))
 
 
+# CPT1 (#930): where a row of the Activity Log names who made the operation — its `Caller`, the
+# ids the shipped rules draw from `Claims` (`CallerAppId`, `CallerObjectId`) — and, for a rule
+# that projects it, `Claims` itself; where it names what the operation was on.
+CALLER_COLUMNS = ("Caller", "CallerAppId", "CallerObjectId")
+_CALLER_CLAIMS = ("appid", "azp", "oid", "http://schemas.microsoft.com/identity/claims/objectidentifier",
+                  "upn", "unique_name")
+RESOURCE_COLUMNS = ("_ResourceId", "ResourceId")
+
+
+def _said(value) -> bool:
+    return isinstance(value, (str, int, float)) and not isinstance(value, bool) and bool(str(value).strip())
+
+
+def _claims_name_someone(row: dict) -> bool:
+    raw = row.get("Claims_d") or row.get("Claims")
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw) if raw.strip() else {}
+        except ValueError:
+            return False
+    return isinstance(raw, dict) and any(_said(raw.get(k)) for k in _CALLER_CLAIMS)
+
+
+def names_no_one(row: dict) -> bool:
+    """CPT1 (#930): an operation of the control plane whose row names neither its caller nor its
+    resource — no `Caller`, no id drawn from `Claims`, no `Claims` that names one, no
+    `_ResourceId` nor `ResourceId`; its lines name no caller either (`Callers`, AL1d: several
+    callers on its lines is no missing telemetry). Its card says « télémétrie incomplète », of a
+    lower severity than high, never approvable, never dropped: an operation of which the caller is
+    unknown stays a fact to show. A grave row (a write on Glorfindel's rules, its identity, its Run
+    Command — `_grave`) is never one of them: it stays critical. Nor a summary card (each of its
+    operations names its own). A row that names one of the two keeps the card it had."""
+    if not isinstance(row, dict) or not row.get("OperationNameValue") or row.get("OmittedOperations"):
+        return False
+    if _grave(row):
+        return False
+    try:
+        if int(row.get("Callers") or 0) > 0:
+            return False
+    except (TypeError, ValueError):
+        return False
+    if any(_said(row.get(c)) for c in CALLER_COLUMNS) or _claims_name_someone(row):
+        return False
+    return not any(_said(row.get(c)) for c in RESOURCE_COLUMNS)
+
+
 def _control_plane_operations(rows: list[dict]) -> list[dict]:
     """One row per operation (its lines Start, Accept, Success share an identity: the
     latest is kept), the gravest first, then the newest."""
@@ -1952,7 +1998,10 @@ class RulePoller:
         grave = control and _grave(row)
         # COR1: a brute force followed by a login from its address — an account compromised.
         grave = grave or row.get("Correlation") == correlation.COMPROMISED
-        return {
+        # CPT1 (#930): an operation whose row names neither its caller nor its resource — a card,
+        # always, of a lower severity than high.
+        unnamed = plane == "control" and not grave and names_no_one(row)
+        signal = {
             "signal_id": f"rule-{rule.name}-{uuid.uuid4().hex[:8]}",
             "event": "detection",
             "ttp": rule.ttp,
@@ -1982,3 +2031,6 @@ class RulePoller:
                 "normalized_signal": normalize_row(row, ttp=rule.ttp),
             },
         }
+        if unnamed:
+            signal["severity"] = "medium"
+        return signal

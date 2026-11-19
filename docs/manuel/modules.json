@@ -510,6 +510,19 @@
    "doc": "docs/glorfindel.md"
   },
   {
+   "id": "g-plan-controle-telemetrie",
+   "composant": "glorfindel",
+   "poste": "g-detecter",
+   "nom": "A control-plane operation that names neither its caller nor its resource: a card of incomplete telemetry, of lower severity, never approvable, never dropped; the caller named from its token's ids when the log leaves it empty",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "CPT1"
+   ],
+   "issue": 930,
+   "doc": "docs/glorfindel.md"
+  },
+  {
    "id": "s-sec-a4",
    "composant": "socle",
    "poste": "s-signer",
@@ -2610,6 +2623,20 @@
    ],
    "issue": 927,
    "doc": "docs/design/console.md"
+  },
+  {
+   "id": "k-ip-publique",
+   "composant": "console",
+   "poste": "k-voir",
+   "nom": "The audit reads each network interface's public IP for the VM's card; one it cannot read is said, the audit holds",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "IPS1a",
+    "IPS1b"
+   ],
+   "issue": 931,
+   "doc": "docs/azure.md"
   },
   {
    "id": "i-separee",
