@@ -317,6 +317,11 @@
   /* What a refresh replaces, inside the container it keeps: no box of its own, the layers stay
      the column's (TOPO1 #927). */
   .topo-body { display: contents; }
+  /* The readiness audit not read, said once above the cards (TOPO1b): above the edges' layer. */
+  .topo-band { position: relative; z-index: 1; margin: 0 0 10px; padding: 6px 10px; border-radius: 6px;
+               font-size: 10px; color: var(--orange); background: color-mix(in srgb, var(--orange) 8%, var(--bg));
+               border: 1px solid color-mix(in srgb, var(--orange) 50%, transparent); }
+  .topo-band-dim { color: var(--dim); }
   .topo-layer {
     position: relative;
     z-index: 1;
