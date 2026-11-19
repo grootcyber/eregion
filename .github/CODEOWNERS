@@ -4,7 +4,7 @@
 # waiting for anyone.
 #
 # Not here, by decision (18/11): the Makefile. Its recipes run with the maintainer's own rights. What
-# of them acts as root on Imladris, or decides which host key ssh trusts, lives in scripts owned here
+# of them runs sudo on Imladris, or decides which host key ssh trusts, lives in scripts owned here
 # (Jonathan's decision of 19/11), the targets only calling them with what the Makefile computes:
 #   - the installation of the CD, `make imladris-cd-install`: infra/glorfindel-host/cd/install_from_workstation.sh
 #     (CDI1, #918);
@@ -17,8 +17,14 @@
 # What stays, assumed: a hostile Makefile may no longer call these scripts, and run its own ssh, sudo
 # included. That is assumed: the recipes run with the maintainer's rights, on his workstation, and he
 # reads what he runs. The other recipes toward Imladris (push, start, stop, logs, the CD's check,
-# status, retry, rollback…) run as its unprivileged user through HOST_SSH, their remote commands
-# written in the Makefile: assumed alike. docs/design/modele-de-menace.md, §7.
+# status, retry, rollback…) run through HOST_SSH, their remote commands written in the Makefile, as the
+# VM's user — a member of the docker group, which is as good as root (`docker run -v /:/h …`;
+# infra/glorfindel-host/main.tf, required by cd/install.sh), and probably given a passwordless sudo by
+# cloud-init on Azure's Ubuntu image (not measured). No sudo is written in the Makefile, but a docker
+# command there can do as much: this lot closes the written sudo and the key's pinning, not that way.
+# Orodruin's SSH options (SSH_OPTS, ORO_SSH) also stay in the Makefile, no owned script; only
+# orodruin-known goes through known_host.sh. All assumed alike, for the same reason.
+# docs/design/modele-de-menace.md, §7.
 #
 # It holds once the maintainer has turned on « Require review from Code Owners » in main's rule —
 # after this file is merged, never before (with the former `*` line, every pull request would have

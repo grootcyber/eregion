@@ -450,8 +450,10 @@ dans un script possédé avec le reste du CD, `infra/glorfindel-host/cd/install_
 de sa clé d'hôte (`imladris-known` : `infra/glorfindel-host/known_host.sh`) et ses options SSH
 (`HOST_SSH_OPTS` : `infra/glorfindel-host/ssh_opts.sh`, que chaque script possédé revérifie avant tout
 geste). Ces refus attrapent une dérive, pas un `Makefile` hostile, qui peut ne plus les appeler : c'est
-assumé, comme les autres recettes vers Imladris, sous son utilisateur sans privilège
-(`docs/design/modele-de-menace.md`, §7). Une fois
+assumé, comme les autres recettes vers Imladris. Elles tournent sous l'utilisateur de la VM, membre du
+groupe `docker` (l'équivalent de root) : aucun `sudo` n'est écrit dans le `Makefile`, mais une commande
+`docker` peut faire autant. Assumé pour la même raison : le mainteneur lance ces recettes sur son poste,
+et lit ce qu'il lance (`docs/design/modele-de-menace.md`, §7). Une fois
 « Require review from Code Owners » posé sur la règle de `main` (le geste de Jonathan, après la fusion
 de SEC-K : « Les règles du dépôt », plus bas), une PR qui en touche un attend son approbation ; les
 autres fusionnent comme avant. **D'ici ce réglage, rien ne l'impose.** La clé de l'App est lisible par les sessions : elles

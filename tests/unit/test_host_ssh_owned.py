@@ -111,6 +111,8 @@ def test_each_sudo_recipe_sends_ssh_the_same_arguments_to_the_byte(tmp_path, ver
 
 @pytest.mark.parametrize("verb", sorted(GESTURES))
 def test_with_the_maintainer_s_key_too(tmp_path, verb):
+    """The same bytes, but for a `~`: with HOST_SSH_KEY=~/…, the recipe's shell expanded it before CDI2;
+    the script now passes « -i ~/… » to ssh as it is, and OpenSSH expands it itself — no effect."""
     key = tmp_path / "id_imladris"
     res, calls, known = _make(tmp_path, f"imladris-cd-{verb}", f"HOST_SSH_KEY={key}", "HOST_USER=azureuser")
     assert res.returncode == 0, res.stdout + res.stderr
