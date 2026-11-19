@@ -20,8 +20,9 @@ _DENY = ("tests/unit/test_stratus_guardrails.py::"
          "test_a_custom_policy_denies_a_public_ip_on_a_nic")
 _OFF = ("tests/unit/test_stratus_guardrails.py::"
         "test_the_guardrails_are_off_by_default")
-_NO_ROLE = ("tests/unit/test_stratus_guardrails.py::"
-            "test_no_closed_role_is_granted_here_yet")
+# M5656 (« un rôle fermé écrit avant la mesure M1 ») et son test _NO_ROLE ont été retirés par
+# R2BGc (#608) : le rôle fermé G3/G4/G2 est maintenant écrit ici (M1 mesuré), l'invariant « pas
+# encore de rôle » n'a plus lieu d'être. Les nouveaux invariants vivent dans scripts/mutants/R2BGc.py.
 _ALIAS = ("tests/unit/test_stratus_guardrails.py::"
           "test_the_alias_provider_targets_the_dedicated_subscription")
 _PROVIDER_EACH = ("tests/unit/test_stratus_guardrails.py::"
@@ -56,23 +57,15 @@ MUTANTS = [
      '    then = { effect = "audit" }'),
     ("M5655", "the guardrails default on (not inert): a normal Orodruin apply would touch the "
      "dedicated subscription", VARS,
-     'variable "stratus_guardrails_enabled" {\n'
-     '  description = "Pose les garde-fous R2b (Azure Policy G5, paramètre de diagnostic G6, '
-     'budget G7) sur l\'abonnement de test dédié de Stratus. Défaut false : rien ne s\'exécute. '
-     'N\'active PAS le rôle fermé de Stratus (G3, après mesure)."\n'
+     'ne se pose que si stratus_client_id est donné."\n'
      "  type        = bool\n"
      "  default     = false",
-     'variable "stratus_guardrails_enabled" {\n'
-     '  description = "Pose les garde-fous R2b (Azure Policy G5, paramètre de diagnostic G6, '
-     'budget G7) sur l\'abonnement de test dédié de Stratus. Défaut false : rien ne s\'exécute. '
-     'N\'active PAS le rôle fermé de Stratus (G3, après mesure)."\n'
+     'ne se pose que si stratus_client_id est donné."\n'
      "  type        = bool\n"
      "  default     = true"),
-    ("M5656", "a closed Stratus role (G3) is written here, before the minimal per-technique "
-     "actions are measured (M1)", GUARD,
-     "# Stratus — les garde-fous de l'abonnement de test dédié (R2b, #608).",
-     "# Stratus — les garde-fous de l'abonnement de test dédié (R2b, #608).\n"
-     'resource "azurerm_role_definition" "stratus_closed_premature" {}'),
+    # M5656 retiré par R2BGc (#608) : il injectait un rôle fermé « prématuré » et s'appuyait sur
+    # l'invariant « pas encore de rôle ici », que R2BGc lève (le rôle G3/G4/G2 est maintenant écrit,
+    # M1 mesuré). Les invariants du rôle fermé vivent dans scripts/mutants/R2BGc.py.
     ("M5657", "the aliased provider is repointed at Orodruin's own subscription variable "
      "(var.subscription_id) instead of the dedicated one", GUARD,
      '  subscription_id = var.stratus_subscription_id != "" ? var.stratus_subscription_id : null',
@@ -106,7 +99,6 @@ TESTS = {
     "M5653": _EMPTY_LIST,
     "M5654": _DENY,
     "M5655": _OFF,
-    "M5656": _NO_ROLE,
     "M5657": _ALIAS,
     "M5658": _PROVIDER_EACH,
     "M5659": _NIC_ANY,
