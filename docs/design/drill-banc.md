@@ -1267,9 +1267,10 @@ Le code suit les §2.3 et §3.1 dans leur ordre. Ce qui s'en écarte, ou que la 
   `--tmpfs /tmp`, `--cap-drop ALL`, `--security-opt no-new-privileges:true`), puis `ORO_EXEC_HOME`
   (`--tmpfs /stratus-home:exec`). Aucune variable d'environnement : `HOME` n'est pas posé par
   `docker run`. L'adaptateur trouve le montage et y crée le `HOME` du run (`mkdtemp`, `stratus-home-…`) ;
-  sans lui, il retombe sur `/tmp`, sans exec. Le reste de la ligne (`--env-file orodruin.env`, les
-  montages de `~/runs`, l'image) est déjà le même ; `--pull never`, `--init` et `--name` sont propres au
-  service (§2.1).
+  sans lui, il retombe sur `/tmp`, sans exec. `--env-file orodruin.env` et l'image sont ceux
+  d'`ORO_RUN`. Les montages de `~/runs` sont ceux d'une demande (`ORO_RUN_REQUEST`, sans `requests`),
+  plus `~/drill` en lecture seule : `ORO_RUN` ne monte pas `gothmog`. Cet écart est antérieur à DRL1d et
+  reste hors du lot. `--pull never`, `--init` et `--name` sont propres au service (§2.1).
 - **Ce qui change** : l'`ExecStart` porte `RUN_OPTS`, `HARDEN` puis `EXEC_HOME`
   (`infra/orodruin/drill_ops.py`). Le drill ne joue que des runs d'Annatar (une technique, jamais une
   panne en v1 : `drill.eligible`) : le service le reçoit toujours. Les lectures du drill (`fingerprint`,
@@ -1287,8 +1288,10 @@ Le code suit les §2.3 et §3.1 dans leur ordre. Ce qui s'en écarte, ou que la 
   `Makefile` qui durcit sans que la copie suive, la racine accessible en écriture, `no-new-privileges`
   retiré.
 - **Ce qui reste à Jonathan** : rien ne change sur Orodruin avant le prochain armement. Les unités sont
-  posées par `make orodruin-drill-arm` : un drill armé avant DRL1d garde l'ancienne ligne. Réarmer
-  (`make orodruin-drill-disarm`, puis `make orodruin-drill-arm DRILL=… TARGETS=…`) réécrit
+  posées par `make orodruin-drill-arm` : un drill armé avant DRL1d garde l'ancienne ligne. Le réarmement
+  se fait depuis un poste à jour de `main` (`drill_ops.py` tourne sur le poste), l'image chargée sur
+  Orodruin poussée après R2BZ (son adaptateur crée le `HOME` dans `EXEC_HOME`) :
+  `make orodruin-drill-disarm`, puis `make orodruin-drill-arm DRILL=… TARGETS=…`. Il réécrit
   `eregion-drill.service`, et `systemctl cat eregion-drill.service` montre alors :
 
   ```
