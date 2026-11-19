@@ -4,6 +4,9 @@ key, then calls it. M6351–M6360: a gesture removed, the order changed, umask r
 failed gesture lost, the TTY lost, a refusal of what the Makefile passes lost, the recipe back in the
 Makefile."""
 SCRIPT = "infra/glorfindel-host/cd/install_from_workstation.sh"
+# Re-anchored (CDI2, #922): the checks of the address, the user and SSH_OPTS moved, line for line, into
+# infra/glorfindel-host/ssh_opts.sh, which the script calls before any gesture.
+OPTS = "infra/glorfindel-host/ssh_opts.sh"
 _TEST = "tests/unit/test_host_cd_install.py"
 
 MUTANTS = [
@@ -41,7 +44,7 @@ MUTANTS = [
     ("M6358", "the TTY lost: sudo cannot ask for its password, install.sh never runs (CDI1)", SCRIPT,
      "ssh -t $SSH_OPTS \"$TO\" 'sudo bash .eregion-cd/install.sh'\n",
      "ssh $SSH_OPTS \"$TO\" 'sudo bash .eregion-cd/install.sh'\n"),
-    ("M6359", "SSH options taken as they come: a key accepted at first contact (CDI1)", SCRIPT,
+    ("M6359", "SSH options taken as they come: a key accepted at first contact (CDI1)", OPTS,
      "if ! pinned_form; then\n",
      "if false; then\n"),
     ("M6360", "the Makefile's list of files taken as it comes: any file of the checkout under an agent's name "
@@ -52,35 +55,35 @@ MUTANTS = [
 # The review's first round: the form of SSH_OPTS checked word for word — ssh keeps an option's first value.
 MUTANTS += [
     ("M6361", "an option added after the whole form, the key's included: -o ProxyCommand=… or -F … goes "
-     "(CDI1 review)", SCRIPT,
+     "(CDI1 review)", OPTS,
      '  [ "$#" -eq 6 ] || [ "$#" -eq 10 ] || return 1\n',
      ""),
-    ("M6362", "the first value of StrictHostKeyChecking unread: « no » first wins in ssh (CDI1 review)", SCRIPT,
+    ("M6362", "the first value of StrictHostKeyChecking unread: « no » first wins in ssh (CDI1 review)", OPTS,
      '  [ "$1 $2" = "-o StrictHostKeyChecking=yes" ] || return 1\n',
      ""),
-    ("M6363", "the known_hosts option unread: -o KnownHostsCommand=… in its place goes (CDI1 review)", SCRIPT,
+    ("M6363", "the known_hosts option unread: -o KnownHostsCommand=… in its place goes (CDI1 review)", OPTS,
      '  [ "$3" = -o ] && case "$4" in UserKnownHostsFile=*) plain_path "${4#UserKnownHostsFile=}" ;; *) false ;; '
      "esac || return 1\n",
      ""),
-    ("M6364", "the host key algorithm unread: -o ProxyCommand=… in its place goes (CDI1 review)", SCRIPT,
+    ("M6364", "the host key algorithm unread: -o ProxyCommand=… in its place goes (CDI1 review)", OPTS,
      '  [ "$5 $6" = "-o HostKeyAlgorithms=ssh-ed25519" ] || return 1\n',
      ""),
-    ("M6365", "the key's options unread: -i … -o ProxyCommand=… goes (CDI1 review)", SCRIPT,
+    ("M6365", "the key's options unread: -i … -o ProxyCommand=… goes (CDI1 review)", OPTS,
      '  [ "$#" -eq 6 ] || { [ "$7" = -i ] && plain_path "$8" && [ "$9 ${10}" = "-o IdentitiesOnly=yes" ]; }\n',
      '  [ "$#" -eq 6 ] || [ "$7" = -i ]\n'),
 ]
 # The review's second round: « user@address », ssh's last word, never an option; the key's path, a path.
 MUTANTS += [
     ("M6381", "the address taken as it comes: « -oProxyCommand=… » reaches ssh as an option (CDI1 review 2)",
-     SCRIPT,
+     OPTS,
      '[[ $HOST_IP =~ $ip_re ]] || { echo "✗ HOST_IP n\'est pas une adresse IPv4 : rien ne part vers Imladris" >&2;'
      " exit 1; }\n",
      ""),
-    ("M6382", "the user taken as it comes: « -oProxyCommand=… » reaches ssh as an option (CDI1 review 2)", SCRIPT,
+    ("M6382", "the user taken as it comes: « -oProxyCommand=… » reaches ssh as an option (CDI1 review 2)", OPTS,
      '[[ $HOST_USER =~ $user_re ]] || { echo "✗ HOST_USER n\'est pas un nom d\'utilisateur Unix : rien ne part vers'
      ' Imladris" >&2; exit 1; }\n',
      ""),
-    ("M6383", "the key's path unread: « -i -F » or a %-token goes (CDI1 review 2)", SCRIPT,
+    ("M6383", "the key's path unread: « -i -F » or a %-token goes (CDI1 review 2)", OPTS,
      '[ "$7" = -i ] && plain_path "$8" && [ "$9 ${10}"',
      '[ "$7" = -i ] && [ "$9 ${10}"'),
 ]
