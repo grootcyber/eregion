@@ -173,10 +173,10 @@ def test_restore_takes_this_vm_s_moment_and_says_why(tmp_path, monkeypatch):
     assert "attack_started de runs/annatar/20261029T100000Z_signals.jsonl" in said
 
 
-def test_restore_before_is_read_as_utc_and_wins(tmp_path, monkeypatch):
+def test_restore_before_is_read_in_utc_and_wins(tmp_path, monkeypatch):
     cli, started = _restore_env(tmp_path, monkeypatch)
     _write_runs(tmp_path / "runs", "20261029T100000Z", [_attack(VM, time.time() - 300)])
-    out = CliRunner().invoke(cli.cli, ["restore", VM, "--yes", "--before", "2026-10-29T07:30:00"])
+    out = CliRunner().invoke(cli.cli, ["restore", VM, "--yes", "--before", "2026-10-29T07:30:00Z"])
     assert out.exit_code == 0, out.output
     assert started == [(VM, "2026-10-29T07:30:00+00:00")]
     bad = CliRunner().invoke(cli.cli, ["restore", VM, "--yes", "--before", "hier"])
@@ -317,8 +317,10 @@ def test_the_points_before_a_moment_put_the_one_restored_first(monkeypatch):
     got = restore_plan.points_before(VM, "2026-10-29T08:00:00Z", connector=_Conn())
     assert [p["name"] for p in got] == ["rp-vault", "rp-snap", "rp-old"]     # never after; vault first
     assert asked == [(VM, "rsv-example", "rg-backup")]
-    assert restore_plan.restore_args(VM, "2026-10-29T08:00:00") == [
+    assert restore_plan.restore_args(VM, "2026-10-29T08:00:00Z") == [
         "restore", VM, "--yes", "--before", "2026-10-29T08:00:00+00:00"]
+    with pytest.raises(ValueError, match="sans fuseau"):          # RTZ1: never taken for UTC
+        restore_plan.restore_args(VM, "2026-10-29T08:00:00")
 
 
 def test_the_provider_lists_its_points_read_only(monkeypatch):

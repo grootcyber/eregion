@@ -84,6 +84,14 @@ class RestoreMixin:
             raise RuntimeError(NO_VAULT_MSG)
         import time
         from datetime import datetime, timezone
+        # RTZ1 (#923): a moment without its time zone is refused before any call, never taken for
+        # UTC — the point restored hangs on it.
+        attack_dt = datetime.fromisoformat(before_attack_time.replace("Z", "+00:00"))
+        if attack_dt.tzinfo is None:
+            raise RuntimeError(
+                f"restore_from_backup : {before_attack_time[:60]!r}, une heure sans fuseau, jamais "
+                "devinée — donner un instant ISO 8601 avec fuseau (ex. 2026-11-19T14:05:00Z).")
+        attack_dt = attack_dt.astimezone(timezone.utc)
         from azure.mgmt.recoveryservicesbackup import RecoveryServicesBackupClient
 
         self._ensure_clients()
@@ -107,11 +115,7 @@ class RestoreMixin:
 
         # The most recent clean recovery point — it must predate the attack, or the
         # restored disk already holds what the attack did. A point without a time can't be
-        # placed before anything: never taken.
-        attack_dt = datetime.fromisoformat(before_attack_time.replace("Z", "+00:00"))
-        if attack_dt.tzinfo is None:
-            attack_dt = attack_dt.replace(tzinfo=timezone.utc)
-        attack_dt = attack_dt.astimezone(timezone.utc)
+        # placed before anything: never taken (`attack_dt`, read above).
         pre_attack = [
             rp for rp in rps
             if _rp_time(rp) is not None and _rp_time(rp) < attack_dt

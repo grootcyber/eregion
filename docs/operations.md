@@ -236,14 +236,17 @@ glorfindel reset <resource_id> --from-azure  # source de vérité = Azure (sans 
 glorfindel snapshot <resource_id> --yes      # backup on-demand RSV (setup scénario, ~5-20min)
 glorfindel restore <resource_id> --yes       # Azure Backup fire-and-forget ; point = le plus récent AVANT
                                              # le début de l'attaque sur CETTE VM : --before <ISO8601>
-                                             # (UTC sans décalage), sinon le moment de la 1re carte en attente
+                                             # (avec son fuseau : sans fuseau → refusé, jamais deviné, RTZ1),
+                                             # sinon le moment de la 1re carte en attente
                                              # de la VM (sa 1re détection, ou son isolation si avant ; pour
                                              # une carte d'exercice, l'attack_started de son run, jamais
                                              # après sa 1re détection — jamais runs/ sur un incident réel,
                                              # SEC8) ; inconnu → refusé, --before demandé (SEC4c). Nom court :
                                              # deux VMs de ce nom (état ou découverte) → refusé ;
                                              # un autre restore de la VM en cours → refusé ; un moment
-                                             # futur ou hors calendrier → refusé ; après l'isolation → dit
+                                             # futur ou hors calendrier → refusé ; après l'isolation → dit ;
+                                             # une carte ou une isolation datée sans fuseau → aucun moment
+                                             # proposé, ce qu'elle porte dit, --before demandé (RTZ1)
 glorfindel restore <resource_id> --yes --wait  # workflow complet : attend recovery_complete → release_isolation auto
 glorfindel jobs <vm-name> [--refresh]        # état du job snapshot/restore en cours
 glorfindel ack <escalation_id>               # acquitter escalade (l'id, ou ses 6 premiers caractères au moins :

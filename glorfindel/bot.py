@@ -249,6 +249,9 @@ def _cli_command(esc: dict) -> str:
     if action == "restore_from_backup":
         # The moment is asked (SEC4c): the card's first detection — the attack began before.
         before = esc.get("first_seen") or esc.get("timestamp")
+        from glorfindel.restore_plan import zone_missing
+        # RTZ1: a time without its zone is no moment to copy — never guessed, the CLI would refuse it.
+        before = None if zone_missing(before) else before
         before = _arg(before) if before else "<ISO8601>"
         return (
             "# --before : un instant avant le début de l'attaque (ici la 1re détection de la carte)\n"
