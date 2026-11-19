@@ -180,3 +180,50 @@ def test_an_action_taken_alone_is_never_acknowledged_with_a_card_of_another_type
     group = _function(_js(), "function _groupEscs(escs)")
     assert "const kind = _isExecuted(e) ? `executed|${origin}` : origin;" in group
     assert "map.get(kind).push(e);" in group
+
+
+# ── VP1c (#920): a card's time without a time zone ─────────────────────────────────────────────
+
+def _redate_naive(esc_id: str) -> None:
+    import json
+    out = []
+    for line in escalations._STORE.read_text().splitlines():
+        e = json.loads(line)
+        if e["id"] == esc_id:
+            e["timestamp"] = e["first_seen"] = e["last_seen"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+        out.append(json.dumps(e))
+    escalations._STORE.write_text("\n".join(out) + "\n")
+
+
+def _held(vm: str) -> str:
+    return escalations.record("rule-ssh-brute-force-0123abcd", VM.replace("/web", f"/{vm}"), "block_suspicious_ip",
+                              "mode_hold", "held", action_params={"ip": "198.51.100.7", "port": 22},
+                              rule_name="ssh-brute-force")
+
+
+def test_to_judge_by_the_console_holds_a_card_without_a_time_zone_flagged():
+    """/api/to-judge (since=7d, what the page reads): the whole list fell on such a card (VP1b's review,
+    19/11). It holds; the card stays, flagged; the others as before. The report holds too."""
+    a, n = _held("web"), _held("db")
+    _redate_naive(n)
+    body = console().get("/api/to-judge").json()
+    assert "error" not in body
+    assert [(c["id"], c["time_unreadable"]) for c in body["cards"]] == [(n, True), (a, False)]
+    report = console().get("/api/report?since=7d").json()
+    assert (report["cards"], report["undated"]) == (1, 1)
+
+
+def test_the_page_says_a_card_without_a_time_zone_never_dates_it():
+    """The line says « time unreadable » and dates nothing; any age the page computes refuses a time
+    without a zone — a browser would take it for its own local time."""
+    js = _js()
+    render = _function(js, "function renderToJudge() {")
+    assert "c.time_unreadable ?" in render and "⚠ time unreadable" in render
+    assert "${c.time_unreadable ? '' : (c.first_seen ? _relTime(c.first_seen) : '')}" in render
+    rel = _function(js, "function _relTime(iso) {")
+    assert "if (!_ZONED.test(String(iso).trim()) || Number.isNaN(t)) return 'time unreadable';" in rel
+    zoned = re.search(r"const _ZONED = /(.*)/i;", js).group(1).replace("\\\\", "\\")
+    for text, ok in (("2026-11-19T10:00:00+00:00", True), ("2026-11-19T10:00:00Z", True),
+                     ("2026-11-19T10:00:00.123-05:00", True), ("2026-11-19T10:00:00", False),
+                     ("2026-11-19T10:00:00.123456", False)):
+        assert bool(re.search(zoned, text, re.I)) is ok, text
