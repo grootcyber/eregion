@@ -11,6 +11,7 @@ from glorfindel.providers.azure.quarantine_origin import OriginalConflict, Origi
 from glorfindel.providers.azure.sdk import _enum_text, _finished, _is_not_found
 from glorfindel.response.ids import _parse_nsg_resource_id, _same_id
 from glorfindel.response.locks import _quarantine_lock
+from glorfindel.response.policy import _ERR_MAX
 from glorfindel.response.state import (
     _held_or_unreadable, _quarantine_placements, _recorded_or_unknown, _UNKNOWN,
 )
@@ -137,7 +138,7 @@ class QuarantineMixin(OriginMixin):
                         # followed, nor our "none" kept over it — unknown, our stale tag taken off
                         # (read back): the release keeps the NIC in quarantine and says why.
                         self._forget_original(q, t["nic_id"], strict=True)
-                        prior, conflict, conflict_said = _UNKNOWN, True, str(exc)[:400]
+                        prior, conflict, conflict_said = _UNKNOWN, True, str(exc)[:_ERR_MAX]
                     except Exception:
                         # Our tag unreadable (a 429): what it says is unknown. Read as
                         # "none", it was written over the tag — a valid original lost
