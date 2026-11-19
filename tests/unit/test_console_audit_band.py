@@ -5,7 +5,8 @@ cannot be read at all, a band above the cards — « ⚠ Readiness audit not rea
 and addresses unknown on every card · next try within 5 min ». The last good audit kept (a
 refresh failed after one), the band says when it was read: « cards show the read of HH:MM:SS
 UTC ». Before, the cards lost their checks and their addresses in silence, and only the dot of
-the GLORFINDEL node went red; a 500 was read as an audit without VMs.
+the GLORFINDEL node went red; an HTTP error with a JSON body (a 404, a 422 `{detail}`) was read as
+an audit without VMs.
 
 Measured in a headless Chromium on the sample console (the PR says how); read here in the page's
 text: no browser in the suite (as test_card_target.py does).

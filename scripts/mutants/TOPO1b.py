@@ -1,8 +1,8 @@
 """TOPO1b (#949): the readiness audit not read, said once above the cards of the infra map (Jonathan,
 19/11, on a mockup), and the four remarks of TOPO1's review. Each mutant brings back what was
 there: the band left out of the map (M6501), an audit not read at all left unsaid (M6502), the band
-of a kept audit without the time of its read (M6503), the reason written raw (M6504), a 500 read as
-an audit without VMs (M6505), a browser without ResizeObserver breaking the render (M6506), the
+of a kept audit without the time of its read (M6503), the reason written raw (M6504), an HTTP error
+with a JSON body read as an audit without VMs (M6505), a browser without ResizeObserver breaking the render (M6506), the
 row of cards no longer observed (M6507), every observation drawing — the draw of more, every 5 s
 (M6508), the shell checked by its container only (M6509), the band staying after a good audit
 (M6510). M6501–M6510, measured by tests/unit/test_console_audit_band.py and
@@ -29,7 +29,8 @@ MUTANTS = [
     ("M6504", "the reason of a failed audit written raw into the page (TOPO1b, #254)", JS,
      "⚠ Readiness audit not read: ${_attr(_auditData.error)} <span",
      "⚠ Readiness audit not read: ${_auditData.error} <span"),
-    ("M6505", "a 500 read as an audit without VMs: every card silent, no band (TOPO1b)", JS,
+    ("M6505", "an HTTP error with a JSON body (a 404, a 422 {detail}) read as an audit without VMs: every card "
+              "silent, no band (TOPO1b)", JS,
      "    if (!r.ok) throw new Error(`HTTP ${r.status}`);\n",
      ""),
     ("M6506", "a browser without ResizeObserver: the render throws before its edges are queued (TOPO1b, "

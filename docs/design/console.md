@@ -466,7 +466,9 @@ sur une maquette (ligne « Un audit illisible » des décisions, plus haut).
 - **Le dernier bon audit est gardé** (un rafraîchissement en échec après lui) : « ⚠ Readiness audit
   not read: <raison> · cards show the read of HH:MM:SS UTC ». Les cartes gardent ce qu'il disait.
 - **Une réponse qui n'est pas un audit est un échec** : un code HTTP d'erreur, ou un corps sans
-  `audits`. Avant, une erreur 500 se lisait comme un audit sans VM, et toutes les cartes se taisaient.
+  `audits`. Avant, une erreur HTTP dont le corps est du JSON (un 404 ou un 422 `{detail}`, celle
+  d'un mandataire) se lisait comme un audit sans VM, et toutes les cartes se taisaient. Un corps qui
+  n'est pas du JSON (la 500 de Starlette) échouait déjà à la lecture.
 - Un audit relu retire la bande. La raison vient du navigateur ou du serveur : elle passe par `_attr`.
 
 Mesuré dans Chromium sans tête, sur la console du jeu d'exemple avec un audit qui échoue à la

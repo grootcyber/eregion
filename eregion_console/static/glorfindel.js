@@ -3847,8 +3847,9 @@ async function refreshAuditData() {
   const timer = setTimeout(() => ctrl.abort(), 20000);
   try {
     const r = await fetch('/api/audit', { signal: ctrl.signal });
-    // An answer that is not an audit is a failure, said as one (TOPO1b #949): before, a 500 was
-    // read as an audit without VMs, every card silent.
+    // An answer that is not an audit is a failure, said as one (TOPO1b #949): before, an HTTP error
+    // with a JSON body (a 404 or a 422 `{detail}`, a proxy's) was read as an audit without VMs, every
+    // card silent. A body that is not JSON (Starlette's 500) already failed at r.json().
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const d = await r.json();
     if (!Array.isArray(d?.audits)) throw new Error('the answer holds no audit');
