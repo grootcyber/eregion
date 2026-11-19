@@ -2714,7 +2714,8 @@
    "release": "0.6",
    "lots": [
     "IPS1a",
-    "IPS1b"
+    "IPS1b",
+    "IPS2a"
    ],
    "issue": 931,
    "doc": "docs/design/console.md"
