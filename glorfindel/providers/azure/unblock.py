@@ -7,9 +7,12 @@ from glorfindel.providers.azure.nsg import (
     _deny_applies,
     _ip_scoped,
     _nic_hash,
+    _nic_mark,
+    MARK_SIZE,
     _nic_owns,
     _rule_name,
 )
+from glorfindel.providers.azure.older_names import older_judge, older_left, older_undo_refusal, recorded_names
 from glorfindel.providers.azure.quarantine import OriginalUnknown
 from glorfindel.providers.azure.sdk import _is_not_found
 from glorfindel.providers.azure.turned import _aims_elsewhere, _held_by_turned
@@ -61,11 +64,19 @@ class UnblockMixin:
         mates = [x.get("nic_id", "") for x in (entry or {}).get("placements", [])]
         gone: set = set()          # the placements whose two rules are off Azure now (U7D)
 
+        placed = recorded_names(_load_isolation_state(resource_id) or {}, _load_block_entries(resource_id),
+                                resource_id)
+
         def _del(p_rg: str, p_name: str, rule: str, nic_id: str = "") -> bool:
             done = True
+            # An older name (SEC-H): undone by its name only when still the placement's, else said.
+            said = {nm: why for nm in (rule, f"{rule}-out")
+                    if (why := older_undo_refusal(self._network, p_rg, p_name, nm, nic_id,
+                                                  nic_id.rstrip("/").rsplit("/", 1)[-1] or vm_name, placed,
+                                                  "déblocage non vérifié"))}
             for nm in (rule, f"{rule}-out"):
                 err = (_held_by_turned(self._network, guard, p_rg, p_name, nm, nic_id, mates)
-                       or self._delete_rule(p_rg, p_name, nm))
+                       or self._delete_rule(p_rg, p_name, nm)) if nm not in said else said[nm]
                 if err:
                     failed.extend([err] if err not in failed else [])
                     done = False
@@ -123,6 +134,7 @@ class UnblockMixin:
         block, an operator's decision covering every VM)."""
         prefix = self._block_rule_prefix(ip)
         bases = [*self._placement_rule_bases(prefix, vm_name, t["nic_short"], t["nic_id"]),
+                 *self._older_rule_bases(prefix, vm_name, t["nic_short"], t["nic_id"]),
                  self._legacy_rule_base(prefix, vm_name, t["nic_short"], t["nic_id"]),
                  self._block_rule_name(ip, vm_name, "subnet")]
         if not _ip_scoped(t):
@@ -151,6 +163,8 @@ class UnblockMixin:
         unplaced: list[str] = []
         seen: set = set()
         known = {n.rstrip("/").lower() for n in named if n}
+        recorded = recorded_names(_load_isolation_state(resource_id) or {}, _load_block_entries(resource_id),
+                                  resource_id) if resource_id else {}
         for t0 in targets:
             if t0.get("subnet_unreadable"):
                 failed.append(f'{t0["nic_short"]} : NSG du subnet illisible, déblocage non vérifié')
@@ -175,9 +189,19 @@ class UnblockMixin:
                 names = self._block_names_for_target(ip, vm_name, t)
                 hashed = {n for b in self._placement_rule_bases(self._block_rule_prefix(ip), vm_name,
                                                                 t["nic_short"], t["nic_id"]) for n in (b, f"{b}-out")}
+                # An earlier version's names (SEC-H): taken only when proven (older_names.older_taken).
+                older = {n.lower() for b in self._older_rule_bases(self._block_rule_prefix(ip), vm_name,
+                                                                   t["nic_short"], t["nic_id"])
+                         for n in (b, f"{b}-out")} - hashed
+                judge = older_judge(t["nsg_rg"], t["nsg_name"], t["nic_id"], t.get("private_ips"), recorded)
                 for r in rules:
                     name = _rule_name(r)
-                    if _nic_owns(r, hashed, names, t.get("private_ips") or None):
+                    mine = _nic_owns(r, hashed, names, t.get("private_ips") or None, older, judge)
+                    if not mine and name.lower() in older:
+                        failed.append(older_left(t["nsg_rg"], t["nsg_name"], r, t["nic_short"],
+                                                 "déblocage non vérifié", recorded))
+                        continue
+                    if mine:
                         seen.add((t["nsg_rg"].lower(), t["nsg_name"].lower(), name.lower()))
                         err = (_aims_elsewhere(r, own_ips) and _held_by_turned(
                             self._network, guard, t["nsg_rg"], t["nsg_name"], name, t0["nic_id"], mates)
@@ -247,13 +271,17 @@ class UnblockMixin:
         unblock says it again while it stays: taken off, the next unblock is done."""
         prefix = self._block_rule_prefix(ip).lower()
         mine = f"{prefix}-{vm_name}".lower()
+        # A name too long for the NIC's carries the VM's name cut to its room (SEC-H: the mark takes 32).
+        room = 80 - 4 - len(prefix) - 2 - MARK_SIZE
+        heads = tuple({f"{mine}-", *([f"{prefix}-{vm_name[:room]}-".lower()] if room >= 1 else [])})
         try:
             nsgs = list(self._network.network_security_groups.list_all())
             nics = list(self._network.network_interfaces.list_all())
         except Exception as exc:
             return [f"{vm_name} supprimée : NSG ou cartes de l'abonnement illisibles "
                     f"({_first_line(exc)[:_ERR_MAX]}), déblocage non vérifié"]
-        marks = {_nic_hash(n, size) for n in [*known, *(getattr(c, "id", None) or "" for c in nics)] if n
+        marks = {_nic_mark(n) for n in [*known, *(getattr(c, "id", None) or "" for c in nics)] if n}
+        marks |= {_nic_hash(n, size) for n in [*known, *(getattr(c, "id", None) or "" for c in nics)] if n
                  for size in (6, 8)}
         tied = self._perimeters_recorded(ip, lost) if lost else set()
         said: list[str] = []
@@ -263,7 +291,7 @@ class UnblockMixin:
                 name = _rule_name(r).lower()
                 how = (f" : laissée — à retirer à la main{{}} : az network nsg rule delete -g {n_rg} "
                        f"--nsg-name {n_name} -n {_rule_name(r)} ; le déblocage la redira tant qu'elle reste")
-                if name == mine or (name.startswith(f"{mine}-")
+                if name == mine or (name.startswith(heads)
                                     and name.removesuffix("-out").rsplit("-", 1)[-1] not in marks):
                     said.append(f"{n_name}:{_rule_name(r)} (nommée pour une VM {vm_name} supprimée, carte que "
                                 "rien ne nomme plus)" + how.format(" si aucune VM vivante de ce nom ne bloque "

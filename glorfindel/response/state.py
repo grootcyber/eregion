@@ -6,11 +6,22 @@ from __future__ import annotations
 
 import json
 import os
-import tempfile
 from pathlib import Path
 
 from glorfindel.response.ids import _same_id
 from glorfindel.response.policy import _console
+from glorfindel.response.state_files import (  # noqa: F401 — re-exported: the state's names, as before
+    _atomic_write_text,
+    _file_rid,
+    _hash_variants,
+    _rid_hash,
+    _rid_key,
+    _same_file,
+    _state_file,
+    _target_file,
+    _vm_ref,
+    _write_state,
+)
 
 
 _ISOLATION_STATE_DIR = Path.home() / ".glorfindel" / "isolation"
@@ -84,127 +95,6 @@ def _held_or_unreadable(nic_id: str) -> bool:
 _BLOCK_STATE_DIR = Path.home() / ".glorfindel" / "blocks"
 
 
-def _atomic_write_text(path: Path, text: str, mode: int = 0o600) -> None:
-    """Write through a temp file + os.replace.
-
-    A reader (War Room, a concurrent CLI, the watch) never sees a half-written state
-    file, and a crash mid-write leaves the previous version intact instead of a
-    truncated JSON that would break the next release.
-
-    Readable by its owner only (SEC3, V-27): 0600, its directory made 0700 — the watch,
-    the console, the bot and the CLI run as the operator; nothing else reads it. `mode`:
-    what is written for others to read (the injectors' heartbeat), its directory 0755.
-    """
-    path.parent.mkdir(mode=0o755 if mode & 0o044 else 0o700, parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", errors="surrogateescape") as f:   # SEC-B: a byte kept, written back
-            f.write(text)
-        os.chmod(tmp, mode)
-        os.replace(tmp, path)
-    except BaseException:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
-
-
-def _vm_ref(ref: str) -> tuple[str, str]:
-    """(VM name, resource id) from a short name or a full resource id."""
-    if "/" in (ref or ""):
-        return ref.rstrip("/").split("/")[-1], ref
-    return ref, ""
-
-
-def _rid_hash(resource_id: str) -> str:
-    import hashlib
-    return hashlib.sha1(resource_id.rstrip("/").lower().encode()).hexdigest()[:8]
-
-
-def _file_rid(f: Path) -> str:
-    """The resource id a state file belongs to ("" if unreadable or not recorded)."""
-    try:
-        data = json.loads(f.read_text())
-    except Exception:
-        return ""
-    if isinstance(data, list):
-        data = data[0] if data else {}
-    return str((data or {}).get("resource_id") or "").rstrip("/").lower()
-
-
-def _hash_variants(directory: Path, rid: str) -> list[Path]:
-    """Every `*--<hash>.json` of this resource id, whatever the case of its name part
-    (the hash itself ignores case). Newest first."""
-    if not directory.exists():
-        return []
-    files = [f for f in directory.glob(f"*--{_rid_hash(rid)}.json")
-             if _file_rid(f) in ("", rid.rstrip("/").lower())]
-    return sorted(files, key=lambda f: f.stat().st_mtime, reverse=True)
-
-
-def _state_file(directory: Path, ref: str) -> Path | None:
-    """The state file of a VM, keyed `<name in lowercase>--<hash of its resource id>.json`.
-
-    Keyed by name only, two VMs with the same name in two resource groups shared one
-    file (third review). The name part is lowercase (fourth review, Q9), and a file is
-    found by its HASH whatever the case of its name — a mixed-case file of an earlier
-    version stayed invisible to lowercase ids (fifth review, C2). A legacy `<name>.json`
-    is used only when it belongs to that resource id; by name alone, an ambiguous name
-    resolves to nothing."""
-    name, rid = _vm_ref(ref)
-    legacy = directory / f"{name}.json"
-    if rid:
-        target = directory / f"{name.lower()}--{_rid_hash(rid)}.json"
-        if target.exists():
-            return target
-        variants = _hash_variants(directory, rid)
-        if variants:
-            return variants[0]
-        if legacy.exists() and _file_rid(legacy) in ("", rid.rstrip("/").lower()):
-            return legacy
-        return None
-    if legacy.exists():
-        return legacy
-    if not directory.exists():
-        return None
-    keyed = sorted({f for f in directory.glob("*--*.json")
-                    if _file_rid(f).rsplit("/", 1)[-1] == name.lower()})
-    return keyed[0] if len(keyed) == 1 else None
-
-
-def _same_file(a: Path, b: Path) -> bool:
-    try:
-        return a.samefile(b)
-    except OSError:
-        return False
-
-
-def _write_state(directory: Path, ref: str, rid: str, payload) -> None:
-    """Write under the keyed name, then remove this VM's OTHER files (plain name, other
-    cases of the name part). Never one that IS the target: on a case-insensitive file
-    system (macOS, Windows, Docker Desktop mounts) `VM-Foo--h.json` and `vm-foo--h.json`
-    are the same file — removing the "old" one deleted the state just written (fifth
-    review, C1)."""
-    name, ref_rid = _vm_ref(ref)
-    rid = rid or ref_rid
-    if not rid:
-        _atomic_write_text(directory / f"{name}.json", json.dumps(payload))
-        return
-    target = directory / f"{name.lower()}--{_rid_hash(rid)}.json"
-    olds = [old for old in [directory / f"{name}.json", *_hash_variants(directory, rid)]
-            if old.name != target.name and old.exists() and not _same_file(old, target)
-            and _file_rid(old) in ("", rid.rstrip("/").lower())]
-    if olds and not target.exists():
-        # Moved first (one atomic rename), then rewritten: a crash between writing the
-        # new file and removing the old one left two — a lookup by name read the old
-        # one (A0, an older version's state in the invariant machine).
-        os.replace(olds.pop(0), target)
-    _atomic_write_text(target, json.dumps(payload))
-    for old in olds:
-        old.unlink()
-
-
 def _owner_only(directory: Path) -> None:
     """A state directory of an earlier version, and its files, made owner-only (0700 /
     0600, SEC3 V-27). One that isn't ours to change (root's, from the old image: `make
@@ -233,7 +123,7 @@ def migrate_state_files() -> int:
                 continue
             seen.add(rid)
             name = rid.rsplit("/", 1)[-1]
-            target = directory / f"{name.lower()}--{_rid_hash(rid)}.json"
+            target = _target_file(directory, name, rid)
             if f.name != target.name and not _same_file(f, target):
                 _atomic_write_text(target, f.read_text())
                 f.unlink()
@@ -259,19 +149,27 @@ def _save_isolation_state(vm_ref: str, state: dict) -> None:
 ASIDE_DIR = "aside"
 
 
-def _set_aside_unreadable(vm_ref: str) -> None:
-    """This VM's unreadable state moved to `isolation/aside/` before a new one is written
-    (SEC4b): never written over, never a state again (out of the states' `*.json`), listed
-    by `unreadable_states` until the operator removes it."""
-    if not _isolation_unreadable(vm_ref):
+def _set_aside_unreadable(vm_ref: str, directory: Path | None = None) -> None:
+    """This VM's unreadable state moved to `<directory>/aside/` before a new one is written
+    (SEC4b; a block file too, SEC-H): never written over, never a state again (out of the
+    states' `*.json`), listed by `unreadable_states` until the operator removes it.
+    `directory`: the isolations' by default."""
+    directory = _ISOLATION_STATE_DIR if directory is None else directory
+    if not _unreadable_in(directory, vm_ref):
         return
-    f = _state_file(_ISOLATION_STATE_DIR, vm_ref)
-    (_ISOLATION_STATE_DIR / ASIDE_DIR).mkdir(mode=0o700, exist_ok=True)
-    n, aside = 1, _ISOLATION_STATE_DIR / ASIDE_DIR / f.name
+    f = _state_file(directory, vm_ref)
+    (directory / ASIDE_DIR).mkdir(mode=0o700, exist_ok=True)
+    n, aside = 1, directory / ASIDE_DIR / f.name
     while aside.exists():
         n += 1
-        aside = _ISOLATION_STATE_DIR / ASIDE_DIR / f"{f.stem}-{n}.json"
+        aside = directory / ASIDE_DIR / f"{f.stem}-{n}.json"
     os.replace(f, aside)
+
+
+def _unreadable_in(directory: Path, vm_ref: str) -> bool:
+    """This VM's state file in `directory` is there and can't be read (SEC4b, SEC-H)."""
+    f = _state_file(directory, vm_ref)
+    return f is not None and f"{directory.name}/{f.name}" in unreadable_states()
 
 
 def _load_isolation_state(vm_ref: str) -> dict | None:
@@ -301,8 +199,7 @@ def _load_isolation_state(vm_ref: str) -> dict | None:
 
 def _isolation_unreadable(vm_ref: str) -> bool:
     """This VM's isolation state file is there and can't be read (SEC4b)."""
-    f = _state_file(_ISOLATION_STATE_DIR, vm_ref)
-    return f is not None and f"{_ISOLATION_STATE_DIR.name}/{f.name}" in unreadable_states()
+    return _unreadable_in(_ISOLATION_STATE_DIR, vm_ref)
 
 
 def _clear_isolation_state(vm_ref: str) -> None:
@@ -320,9 +217,10 @@ def unreadable_states() -> list[str]:
     `<directory>/` (SEC13, R-07: `Path.glob` read it as empty, every reader with it).
     Set aside (SEC4b): listed while it exists, readable or not — to report by hand into
     the current state, never a state of its own again."""
-    out, iso = [], _ISOLATION_STATE_DIR.name
-    for directory, shape, label in ((_ISOLATION_STATE_DIR, dict, iso), (_BLOCK_STATE_DIR, list, _BLOCK_STATE_DIR.name),
-                                    (_ISOLATION_STATE_DIR / ASIDE_DIR, None, f"{iso}/{ASIDE_DIR}")):
+    out, iso, blk = [], _ISOLATION_STATE_DIR.name, _BLOCK_STATE_DIR.name
+    for directory, shape, label in ((_ISOLATION_STATE_DIR, dict, iso), (_BLOCK_STATE_DIR, list, blk),
+                                    (_ISOLATION_STATE_DIR / ASIDE_DIR, None, f"{iso}/{ASIDE_DIR}"),
+                                    (_BLOCK_STATE_DIR / ASIDE_DIR, None, f"{blk}/{ASIDE_DIR}")):
         try:
             names = os.listdir(directory)
         except FileNotFoundError:
@@ -402,6 +300,10 @@ def _save_block_state(
     placements: list | None = None, partial: bool = False, threat_port: int | None = None, alive=None,
 ) -> None:
     from datetime import datetime, timezone
+    # A file that can't be read is set aside first (SEC-H), as an isolation's: read as no entry
+    # and written over, the blocks of the other addresses it held were lost — their rules left on
+    # Azure, never reasserted.
+    _set_aside_unreadable(resource_id or vm_name, _BLOCK_STATE_DIR)
     entries = _load_block_entries(resource_id or vm_name)
     prev = next((e for e in entries if e.get("ip") == ip), None)
     if prev is None:
@@ -456,14 +358,18 @@ def _load_block_entries(vm_ref: str) -> list[dict]:
     if f is None:
         return []
     try:
-        return json.loads(f.read_text())
+        data = json.loads(f.read_text())
     except Exception:
         return []
+    return data if _readable_shape(data, list) else []
 
 
 def _clear_block_state(vm_ref: str, ip: str) -> None:
+    """This IP's entry gone from the VM's block file — the others kept. A file that can't be read
+    stays as it is (SEC-H): read as empty, it was deleted with the blocks of the other addresses,
+    their rules left on Azure without a state; it is the operator's, listed by `unreadable_states`."""
     f = _state_file(_BLOCK_STATE_DIR, vm_ref)
-    if f is None:
+    if f is None or _unreadable_in(_BLOCK_STATE_DIR, vm_ref):
         return
     entries = [e for e in _load_block_entries(vm_ref) if e.get("ip") != ip]
     if entries:
@@ -473,9 +379,10 @@ def _clear_block_state(vm_ref: str, ip: str) -> None:
 
 
 def _update_block_entry(vm_ref: str, ip: str, **fields) -> None:
-    """Annotate an existing block entry (e.g. the rules an unblock could not remove)."""
+    """Annotate an existing block entry (e.g. the rules an unblock could not remove). A file
+    that can't be read is left as it is (SEC-H)."""
     f = _state_file(_BLOCK_STATE_DIR, vm_ref)
-    if f is None:
+    if f is None or _unreadable_in(_BLOCK_STATE_DIR, vm_ref):
         return
     entries = _load_block_entries(vm_ref)
     for e in entries:

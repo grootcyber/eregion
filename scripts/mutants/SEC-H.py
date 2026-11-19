@@ -1,0 +1,220 @@
+"""SEC-H (#849): REC1 and the local state, by the full identifier — our rule names end with 128 bits
+of the NIC's id, the names of an earlier version read and never trusted on the name alone, the reset
+lifting an older name its state records (glorfindel/providers/azure/nsg.py, network.py, release.py,
+sweep.py, verify_block.py); the original's tag on 128 bits, the earlier key read, a tag naming only an
+NSG of the subscription, a quarantine NSG of another group never followed (quarantine.py,
+quarantine_origin.py); a state file a VM's only when it records its id, an unreadable block file set
+aside, never deleted with the other addresses' entries (glorfindel/response/state_files.py, state.py);
+REC1's callers by object id, its next pages on ARM (recovery.py); the jobs, the claims and the last
+restore by the full id, the vault's job by its container (glorfindel/jobs.py, backup.py); the ARM
+writes and the writers' lock waited a bounded time, the VM the reassertion skips said (sdk.py,
+glorfindel/reassert.py). M5801–M5820; M5941–M5945 for the review (an earlier version's names on
+the NSG a bare NIC left and for a deleted VM, a name per IPv6 address, the conflict said at the
+release — numbers handed by the Orchestre); M6224 for the second review (the conflict kept on a
+re-application); M6226–M6235 for the third, Jonathan's decision of 19/11 — an older name taken off only
+when proven: its VM's state records it there, at addresses the placement recorded or the NIC holds, no
+other VM's state recording it; everything else left and said, the undo of a placement by its name
+included; M6256–M6260 for the fourth (the promotion's drop, a state unreadable, verify_release on the NSG
+a bare NIC left). Retired: M6221 and M6223 with the rule they measured (« no other live NIC », which the
+listing of NICs can't make whole); M6222, a deleted VM's older pair taken by the search everywhere — its
+proven case is undone by its placement first, out of reach. M5804, M5942 and M6225 measure the new rule.
+Measured by tests/unit/test_wide_marks.py,
+tests/unit/test_full_id_keys.py and the frozen two hosts of tests/unit/test_invariant_regressions.py."""
+NSG = "glorfindel/providers/azure/nsg.py"
+REL = "glorfindel/providers/azure/release.py"
+SWP = "glorfindel/providers/azure/sweep.py"
+VBL = "glorfindel/providers/azure/verify_block.py"
+QUA = "glorfindel/providers/azure/quarantine.py"
+QOR = "glorfindel/providers/azure/quarantine_origin.py"
+REC = "glorfindel/providers/azure/recovery.py"
+BCK = "glorfindel/providers/azure/backup.py"
+SDK = "glorfindel/providers/azure/sdk.py"
+STF = "glorfindel/response/state_files.py"
+STA = "glorfindel/response/state.py"
+JOBS = "glorfindel/jobs.py"
+AWY = "glorfindel/providers/azure/away.py"
+GON = "glorfindel/providers/azure/gone.py"
+UNB = "glorfindel/providers/azure/unblock.py"
+PER = "glorfindel/providers/azure/perimeter.py"
+NET = "glorfindel/providers/azure/network.py"
+OLD = "glorfindel/providers/azure/older_names.py"
+VER = "glorfindel/providers/azure/verify.py"
+RA = "glorfindel/reassert.py"
+_W = "tests/unit/test_wide_marks.py"
+_K = "tests/unit/test_full_id_keys.py"
+_R = "tests/unit/test_invariant_regressions.py"
+
+MUTANTS = [
+    ("M5801", "our rule names end with 6 hex of SHA-1 again: two NICs that meet share their rules (SEC-H)", NSG,
+     '    return hashlib.sha256(nic_id.rstrip("/").lower().encode()).hexdigest()[:MARK_SIZE]\n',
+     '    return hashlib.sha1(nic_id.rstrip("/").lower().encode()).hexdigest()[:6]\n'),
+    ("M5802", "an older name read as ours by the name alone: a homonym's deny under it taken off (SEC-H)", REL,
+     '        hashed = {n for b in self._placement_rule_bases("glorfindel-iso", vm_name, t["nic_short"], t["nic_id"])\n'
+     '                  for n in (b, f"{b}-out")}\n',
+     '        hashed = {n for b in (*self._placement_rule_bases("glorfindel-iso", vm_name, t["nic_short"], t["nic_id"]),\n'
+     '                              *self._older_rule_bases("glorfindel-iso", vm_name, t["nic_short"], t["nic_id"]))\n'
+     '                  for n in (b, f"{b}-out")}\n'),
+    ("M5803", "an isolation placed under the older names, its state lost, never read (SEC-H)", REL,
+     '                 *self._older_rule_bases("glorfindel-iso", vm_name, t["nic_short"], t["nic_id"]),\n', ""),
+    ("M5805", "a block placed under the older names, its state lost, read missing (SEC-H)", VBL,
+     '                     *self._older_rule_bases(prefix, vm_name, t0["nic_short"], t0["nic_id"]),\n', ""),
+    ("M5806", "the orphan sweep reads the older marks only: an orphan under ours never found (SEC-H)", NSG,
+     '    return len(text) in (6, 8, MARK_SIZE) and all(c in "0123456789abcdef" for c in text)\n',
+     '    return len(text) in (6, 8) and all(c in "0123456789abcdef" for c in text)\n'),
+    ("M5807", "a state file whose 8 hex meet another id's written over: one homonym's state replaces the "
+     "other's (SEC-H)", STF,
+     '    if owner and owner != rid.rstrip("/").lower():\n', "    if False:\n"),
+    ("M5808", "a state file under its 128-bit key never found again (SEC-H)", STF,
+     '    files = {f for pattern in (f"*--{_rid_hash(rid)}.json", f"*--{_rid_key(rid)}.json")\n',
+     '    files = {f for pattern in (f"*--{_rid_hash(rid)}.json",)\n'),
+    ("M5809", "the original's tag keyed on 48 bits again (SEC-H)", QOR,
+     '        return "glorfindel-orig-" + hashlib.sha256(nic_id.rstrip("/").lower().encode()).hexdigest()[:32]\n',
+     '        return "glorfindel-orig-" + hashlib.sha1(nic_id.rstrip("/").lower().encode()).hexdigest()[:12]\n'),
+    ("M5810", "the original an earlier version tagged never read: its NIC kept in quarantine (SEC-H)", QUA,
+     "        value = tags.get(key) or tags.get(self._older_orig_tag(nic_id))\n",
+     "        value = tags.get(key)\n"),
+    ("M5811", "REC1 reads a token's appid as its caller: a user through the application of a principal that "
+     "restores counts for it (SEC-H)", REC,
+     '    ids = [claims.get(_OID_CLAIM), claims.get("oid")]\n',
+     '    ids = [claims.get(_OID_CLAIM), claims.get("oid"), claims.get("appid")]\n'),
+    ("M5812", "the reassertion skips a VM whose lock is held in silence again (SEC-H)", RA,
+     '            skips.skipped(report, snapshot["vm_name"], snapshot["resource_id"])\n', ""),
+    ("M5813", "REC1 follows a next page off Azure Resource Manager with its token (SEC-H)", REC,
+     "            if not str(url).startswith(ARM_PREFIX):\n", "            if False:\n"),
+    ("M5814", "a new block writes over an unreadable block file (SEC-H)", STA,
+     "    _set_aside_unreadable(resource_id or vm_name, _BLOCK_STATE_DIR)\n", ""),
+    ("M5815", "unblocking one address deletes an unreadable block file with the others' entries (SEC-H)", STA,
+     "    if f is None or _unreadable_in(_BLOCK_STATE_DIR, vm_ref):\n        return\n    entries = [",
+     "    if f is None:\n        return\n    entries = ["),
+    ("M5816", "a tag naming an NSG of another subscription taken for the original (SEC-H)", QOR,
+     "        if mine and _subscription_of(value).lower() != mine:\n", "        if False:\n"),
+    ("M5817", "a re-isolation that meets another group's original keeps our stale « none »: the release "
+     "leaves the NIC bare (SEC-H)", QUA,
+     '                        self._forget_original(q, t["nic_id"], strict=True)\n', ""),
+    ("M5818", "the jobs and the last restore keyed by the short name again (SEC-H)", JOBS,
+     '    return f"{name.lower()}--{_rid_key(rid)}" if rid else name\n', "    return name\n"),
+    ("M5819", "the vault's job of a homonym in another group taken for this VM's (SEC-H)", BCK,
+     "                if (vm_rg and isinstance(container, str) and container\n",
+     "                if (False and isinstance(container, str) and container\n"),
+    ("M5820", "an ARM write not done by its deadline read done (SEC-H)", SDK,
+     "    if callable(done) and done() is False:\n", "    if False:\n"),
+    ("M5941", "a bare NIC's NSG out of sight read for the new names only: an earlier version's pair left, "
+     "the release said done (SEC-H, review)", AWY,
+     "                    t0 = older.get(name.lower())\n", "                    t0 = None\n"),
+    ("M5943", "a deleted VM's older pair never looked for (SEC-H, review)", GON,
+     "                if (name.lower() in older and name.lower() not in names\n",
+     "                if (False and name.lower() not in names\n"),
+    ("M5944", "two IPv6 blocks cut to one name (SEC-H, review)", NET,
+     '                base = f"{prefix[:80 - 4 - 1 - len(mark) - 1 - len(held)]}-{held}-{mark}"\n',
+     '                base = f"{prefix[:80 - 4 - 1 - len(mark)]}-{mark}"\n'),
+    ("M5945", "the conflict met at the isolation forgotten at the release (SEC-H, review)", REL,
+     '                            if p.get("original_conflict"):\n', "                            if False:\n"),
+    ("M6224", "the conflict forgotten when the quarantine is applied again on the NIC (SEC-H, review 2)", QUA,
+     '                                      if p.get("original_conflict")), "")\n',
+     '                                      if False), "")\n'),
+    ("M5804", "the reset judges the older names without its state: their deny left, proven or not (SEC-H)", SWP,
+     '                judge = older_judge(t["nsg_rg"], t["nsg_name"], t["nic_id"], t.get("private_ips"), recorded)\n',
+     '                judge = older_judge(t["nsg_rg"], t["nsg_name"], t["nic_id"], t.get("private_ips"), {})\n'),
+    ("M5942", "an older rule naming no address on its side — every address — taken off as the placement's "
+     "(SEC-H)", OLD, "    if not values:\n        return False", "    if False:\n        return False"),
+    ("M6225", "an older name on an NSG a bare NIC left taken unproven (SEC-H, review 2)", AWY,
+     '                    if not older_taken(r, n_rg, n_name, t0["nic_id"], t0.get("private_ips"), recorded or {}):\n',
+     "                    if False:\n"),
+    ("M6226", "an older name taken without the state: aimed at the NIC's addresses is enough again (SEC-H, review 3)",
+     OLD, "    return any(name in names and set(values) <= (ips | now) for names, ips in placed.get(k, []))\n",
+     "    return set(values) <= now or any(name in names and set(values) <= (ips | now)"
+     " for names, ips in placed.get(k, []))\n"),
+    ("M6227", "an older name its state records taken whatever addresses the rule names now (SEC-H, review 3)", OLD,
+     "    return any(name in names and set(values) <= (ips | now) for names, ips in placed.get(k, []))\n",
+     "    return any(name in names for names, ips in placed.get(k, []))\n"),
+    ("M6228", "an older name another VM's state records too taken off (SEC-H, review 3)", OLD,
+     "    if (k[0], name) in placed.get(_OTHERS, set()):\n", "    if False:\n"),
+    ("M6229", "the release undoes an older placement by its name whatever the rule became (SEC-H, review 3)", REL,
+     "                        and (why := older_undo_refusal(self._network, p_rg, p_name, name, p.get(\"nic_id\", \"\"),\n",
+     "                        and False and (why := older_undo_refusal(self._network, p_rg, p_name, name, p.get(\"nic_id\", \"\"),\n"),
+    ("M6230", "the unblock undoes an older placement by its name whatever the rule became (SEC-H, review 3)", UNB,
+     "                    if (why := older_undo_refusal(self._network, p_rg, p_name, nm, nic_id,\n",
+     "                    if False and (why := older_undo_refusal(self._network, p_rg, p_name, nm, nic_id,\n"),
+    ("M6231", "verify_release reads an older rule left as gone: « verified » with it there (SEC-H, review 3)", VER,
+     "            unknown += [f'{t[\"nic_short\"]}:{_rule_name(r)} (nom d\\'une version antérieure, sur {t[\"nsg_name\"]}, '\n",
+     "            unknown += [] and [f'{t[\"nic_short\"]}:{_rule_name(r)} (nom d\\'une version antérieure, sur {t[\"nsg_name\"]}, '\n"),
+    ("M6232", "the release leaves an older rule unsaid: « released » with it there (SEC-H, review 3)", REL,
+     '                failed += [older_left(t["nsg_rg"], t["nsg_name"], r, t["nic_short"], "levée non vérifiée", recorded)\n',
+     '                failed += [] and [older_left(t["nsg_rg"], t["nsg_name"], r, t["nic_short"], "levée non vérifiée", '
+     'recorded)\n'),
+    ("M6233", "the reset leaves an older rule unsaid: « swept » with it there (SEC-H, review 3)", SWP,
+     '                    unreadable.append(older_left(t["nsg_rg"], t["nsg_name"], r, t["nic_short"], "reset non vérifié",\n'
+     "                                                  recorded))\n",
+     "                    pass\n"),
+    ("M6234", "the unblock leaves an older rule unsaid: « unblocked » with it there (SEC-H, review 3)", UNB,
+     "                    if not mine and name.lower() in older:\n", "                    if False:\n"),
+    ("M6235", "a deleted VM's older pair taken off unproven (SEC-H, review 3)", GON,
+     "                    if not older_taken(r, n_rg, n_name, nid, (), recorded):\n", "                    if False:\n"),
+    ("M6256", "a promotion to the perimeter drops an older placement by its name whatever the rule became "
+     "(SEC-H, review 4)", PER,
+     "            said = [w for n in names if (w := older_undo_refusal(self._network, nsg_rg, nsg_name, n, nic, short,\n",
+     "            said = [w for n in names if False and (w := older_undo_refusal(self._network, nsg_rg, nsg_name, n, nic,"
+     " short,\n"),
+    ("M6257", "a local state that can't be read read as recording nothing: an older name taken off (SEC-H, review 4)",
+     OLD, "    if placed.get(_UNREAD):\n        return False", "    if False:\n        return False"),
+    ("M6258", "verify_release blind to the NSG a bare NIC left: « verified » with an older pair there (SEC-H, "
+     "review 4)", VER,
+     "        still += [f\"{n_rg}/{n_name}/{name} (sur un NSG qu'une carte nue ne porte plus)\" for n_rg, n_name, name "
+     "in off]\n        unknown += said\n",
+     "        still += []\n        unknown += []\n"),
+    ("M6259", "the promotion judges without the block's entries: its own proven older pair kept for ever (SEC-H, "
+     "review 4)", PER,
+     "        placed = recorded_names({}, _load_block_entries(resource_id) if resource_id else [], resource_id)\n",
+     "        placed = recorded_names({}, [], resource_id)\n"),
+    ("M6260", "the VM's own placements counted as another VM's: none of its older names ever taken off (SEC-H, "
+     "review 4)", OLD,
+     '        if not mine or str(e.get("resource_id") or "").rstrip("/").lower() == mine:\n',
+     '        if not mine or str(e.get("resource_id") or "").rstrip("/").lower() == "-":\n'),
+]
+TESTS = {
+    "M5801": f"{_W}::test_the_two_nics_meet_on_the_older_mark_never_on_ours "
+             f"{_W}::test_the_release_of_one_never_takes_off_the_others_deny",
+    "M5802": f"{_W}::test_a_homonyms_rule_under_the_shared_older_name_stays",
+    "M5803": f"{_W}::test_an_isolation_under_the_older_names_its_state_lost_is_left_and_said",
+    "M5805": f"{_W}::test_a_block_under_the_older_names_its_state_lost_is_left_and_said",
+    "M5806": f"{_W}::test_an_orphan_under_the_new_mark_is_found",
+    "M5807": f"{_K}::test_two_homonyms_whose_keys_meet_keep_two_states",
+    "M5808": f"{_K}::test_the_second_homonym_finds_its_file_once_the_first_is_gone",
+    "M5809": f"{_W}::test_the_original_is_kept_under_128_bits_and_read_under_the_older_key",
+    "M5810": f"{_W}::test_the_original_is_kept_under_128_bits_and_read_under_the_older_key",
+    "M5811": f"{_K}::test_a_users_delegated_token_is_never_its_applications_principal "
+             f"{_K}::test_a_user_through_the_trusted_application_neutralizes_nothing",
+    "M5812": f"{_K}::test_a_vm_skipped_pass_after_pass_is_said_on_one_card",
+    "M5813": f"{_K}::test_a_next_page_outside_arm_is_refused_before_the_token_goes_there",
+    "M5814": f"{_K}::test_a_new_block_sets_an_unreadable_file_aside_never_writes_over_it",
+    "M5815": f"{_K}::test_unblocking_one_address_of_an_unreadable_file_keeps_the_file",
+    "M5816": f"{_K}::test_a_tag_that_names_what_cant_be_an_original_is_unknown",
+    "M5817": f"{_R}::test_two_hosts_a_stale_none_never_leaves_the_nic_bare",
+    "M5818": f"{_K}::test_a_homonyms_restore_is_never_this_vms",
+    "M5819": f"{_K}::test_the_vaults_job_of_a_homonym_is_never_this_vms",
+    "M5820": f"{_K}::test_an_arm_write_that_does_not_end_is_never_read_done",
+    "M5941": f"{_W}::test_an_older_isolation_on_the_nsg_a_bare_nic_left",
+    "M5943": f"{_W}::test_a_gone_vms_older_pair_its_record_rewritten_is_left_and_said",
+    "M5944": f"{_W}::test_two_long_ipv6_blocks_never_share_a_name",
+    "M5945": f"{_K}::test_the_conflict_met_at_the_isolation_is_said_again_at_the_release",
+    "M6224": f"{_K}::test_the_conflict_met_at_the_isolation_is_said_again_at_the_release",
+    "M5804": f"{_W}::test_the_reset_lifts_an_older_name_its_state_records_after_the_address_moved",
+    "M5942": f"{_W}::test_an_older_rule_widened_to_every_address_stays",
+    "M6225": f"{_W}::test_a_homonyms_older_pair_in_another_vnet_stays_whatever_its_address",
+    "M6226": f"{_W}::test_an_isolation_under_the_older_names_its_state_lost_is_left_and_said "
+             f"{_W}::test_a_homonyms_older_pair_in_another_vnet_stays_whatever_its_address",
+    "M6227": f"{_W}::test_a_rule_rewritten_under_its_older_name_at_other_addresses_stays",
+    "M6228": f"{_W}::test_a_rule_another_vms_state_records_stays",
+    "M6229": f"{_W}::test_a_placement_written_over_by_a_homonym_is_not_undone_by_its_name",
+    "M6230": f"{_W}::test_a_block_placement_written_over_by_a_homonym_is_not_undone_by_its_name",
+    "M6231": f"{_W}::test_an_older_name_left_is_never_read_released",
+    "M6232": f"{_W}::test_an_isolation_under_the_older_names_its_state_lost_is_left_and_said",
+    "M6233": f"{_W}::test_a_rule_rewritten_under_its_older_name_at_other_addresses_stays",
+    "M6234": f"{_W}::test_a_block_under_the_older_names_its_state_lost_is_left_and_said",
+    "M6235": f"{_W}::test_a_gone_vms_older_pair_its_record_rewritten_is_left_and_said",
+    "M6256": f"{_W}::test_a_promotion_never_drops_a_homonyms_pair_written_over_its_own",
+    "M6257": f"{_W}::test_another_vms_unreadable_state_keeps_every_older_name",
+    "M6258": f"{_W}::test_verify_release_reads_the_nsg_a_bare_nic_left",
+    "M6259": f"{_W}::test_a_promotion_drops_its_own_older_pair",
+    "M6260": f"{_W}::test_an_isolation_under_the_older_names_is_verified_then_lifted",
+}

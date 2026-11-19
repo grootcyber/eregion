@@ -5,10 +5,10 @@ from __future__ import annotations
 
 import re
 
-from glorfindel.providers.azure.nsg import _nic_hash, _rule_name
+from glorfindel.providers.azure.nsg import _nic_hash, _nic_mark, _rule_name
 from glorfindel.providers.azure.public_ips import public_ip_ids
 from glorfindel.providers.azure.quarantine import _is_quarantine_nsg
-from glorfindel.providers.azure.sdk import _is_not_found
+from glorfindel.providers.azure.sdk import _finished, _is_not_found
 from glorfindel.response.ids import _parse_nic_resource_id, _parse_nsg_resource_id, _same_id
 from glorfindel.response.policy import _ERR_MAX, _first_line
 
@@ -47,15 +47,15 @@ class NetworkMixin:
             kwargs["destination_address_prefixes"] = dsts
         else:
             kwargs["destination_address_prefix"] = dst
-        self._network.security_rules.begin_create_or_update(
+        _finished(self._network.security_rules.begin_create_or_update(
             nsg_rg, nsg_name, name, SecurityRule(**kwargs)
-        ).result()
+        ), f"règle {name}")
 
     def _delete_rule(self, nsg_rg: str, nsg_name: str, rule_name: str) -> str | None:
         """Delete one security rule. None on success or if it was already gone; else a
         short description of the failure (the rule may still be in place)."""
         try:
-            self._network.security_rules.begin_delete(nsg_rg, nsg_name, rule_name).result()
+            _finished(self._network.security_rules.begin_delete(nsg_rg, nsg_name, rule_name), f"retrait de {rule_name}")
             return None
         except Exception as e:
             if _is_not_found(e):
@@ -70,7 +70,8 @@ class NetworkMixin:
             try:
                 r = self._network.security_rules.get(nsg_rg, nsg_name, info["name"])
                 r.priority = info["original_priority"]
-                self._network.security_rules.begin_create_or_update(nsg_rg, nsg_name, r.name, r).result()
+                _finished(self._network.security_rules.begin_create_or_update(nsg_rg, nsg_name, r.name, r),
+                          f"priorité de {r.name}")
             except Exception as e:
                 if _is_not_found(e):
                     continue  # its owner deleted it meanwhile — nothing to put back
@@ -231,7 +232,7 @@ class NetworkMixin:
         if expect is not None and not _same_id(current or "", expect):
             return False
         nic.network_security_group = NetworkSecurityGroup(id=nsg_id) if nsg_id else None
-        self._network.network_interfaces.begin_create_or_update(nic_rg, nic_name, nic).result()
+        _finished(self._network.network_interfaces.begin_create_or_update(nic_rg, nic_name, nic), f"carte {nic_name}")
         return True
 
     def _nsg_is_shared(self, nsg_rg: str, nsg_name: str) -> bool:
@@ -283,7 +284,7 @@ class NetworkMixin:
             return False
         from glorfindel.response.state import _unreadable_isolations, active_isolations
         nsg_id = getattr(nsg, "id", "") or ""
-        mine = {self._orig_tag(n) for n in counted if n}
+        mine = {k for n in counted if n for k in self._orig_tags(n)}   # both keys (SEC-H)
 
         def names_this(original) -> bool:
             return isinstance(original, str) and _same_id(original, nsg_id)
@@ -298,12 +299,13 @@ class NetworkMixin:
             tags = getattr(q, "tags", None) or {}
             if not _is_quarantine_nsg(getattr(q, "id", "") or "") or tags.get("managed-by") != "glorfindel":
                 continue
-            held |= {self._orig_tag(n.id) for n in (getattr(q, "network_interfaces", None) or [])
-                     if getattr(n, "id", None)}
+            held |= {k for n in (getattr(q, "network_interfaces", None) or [])
+                     if getattr(n, "id", None) for k in self._orig_tags(n.id)}
             tied |= {tag for tag, value in tags.items() if tag.startswith("glorfindel-orig-") and names_this(value)}
         # The local state says it too — the tag lost, it still does.
-        tied |= {self._orig_tag(p["nic_id"]) for iso in active_isolations() for p in iso.get("placements") or []
-                 if p.get("kind") == "quarantine" and p.get("nic_id") and names_this(p.get("original_nsg_id"))}
+        tied |= {k for iso in active_isolations() for p in iso.get("placements") or []
+                 if p.get("kind") == "quarantine" and p.get("nic_id") and names_this(p.get("original_nsg_id"))
+                 for k in self._orig_tags(p["nic_id"])}
         tied -= mine
         if tied & held:
             return True
@@ -317,7 +319,7 @@ class NetworkMixin:
         try:
             for n in self._network.network_interfaces.list_all():
                 now = getattr(getattr(n, "network_security_group", None), "id", None)
-                if self._orig_tag(n.id) in tied and (now is None or _is_quarantine_nsg(now)):
+                if self._orig_tags(n.id) & tied and (now is None or _is_quarantine_nsg(now)):
                     return True
         except Exception:
             return None
@@ -350,11 +352,22 @@ class NetworkMixin:
         two resource groups, with NICs named alike, behind one NSG (a hub subnet, a
         "tier" NSG) got the same name — isolating one rewrote the other's rule, and the
         other's verification found it by name (L24). Lowercase: the canonical id and
-        Log Analytics' lowercase one give one name."""
-        base = f"{prefix}-{vm_name}-{nic_short}-{_nic_hash(nic_id, 6)}"
+        Log Analytics' lowercase one give one name. The hash, 128 bits of SHA-256 (SEC-H,
+        `_nic_mark`): on the 24 of an earlier version, a NIC made to meet another's shared
+        its names, and whatever is « ours by the hash » with them. A prefix too long for
+        the VM's name in it (an IPv6 block) keeps the mark whole, the prefix cut."""
+        mark = _nic_mark(nic_id)
+        base = f"{prefix}-{vm_name}-{nic_short}-{mark}"
         if len(base) + 4 > 80:
-            room = max(80 - 4 - len(prefix) - 2 - 8, 1)
-            base = f"{prefix}-{vm_name[:room]}-{_nic_hash(nic_id, 8)}"
+            room = 80 - 4 - len(prefix) - 2 - len(mark)
+            if room >= 1:
+                base = f"{prefix}-{vm_name[:room]}-{mark}"
+            else:
+                # The address too long to keep whole beside the mark (an IPv6 block): cut, it
+                # gave two neighbours one name — kept as 64 bits of its hash after what fits.
+                import hashlib
+                held = hashlib.sha256(prefix.lower().encode()).hexdigest()[:16]
+                base = f"{prefix[:80 - 4 - 1 - len(mark) - 1 - len(held)]}-{held}-{mark}"
         return base.lower()
 
     def _placement_rule_bases(self, prefix: str, vm_name: str, nic_short: str, nic_id: str) -> tuple[str, str]:
@@ -363,9 +376,26 @@ class NetworkMixin:
         aimed at an address that is no longer the NIC's — another VM's now, or nobody
         knows: rewritten, it changed that VM's flows. Same mark at the end (the NIC's
         hash): whatever reads our rules by it reads both."""
-        base = self._placement_rule_base(prefix, vm_name, nic_short, nic_id)
+        return self._second_base(self._placement_rule_base(prefix, vm_name, nic_short, nic_id))
+
+    @staticmethod
+    def _second_base(base: str) -> tuple[str, str]:
         head, mark = base.rsplit("-", 1)
         return base, f"{head[:80 - 4 - 3 - len(mark)]}-b-{mark}"
+
+    def _older_rule_bases(self, prefix: str, vm_name: str, nic_short: str, nic_id: str) -> tuple[str, str]:
+        """The NIC's two bases as an earlier version wrote them, ended by 6 or 8 hex of SHA-1
+        (SEC-H): read, never written again. Two NICs met on them, so they are older names —
+        a rule under one is taken off only when proven the NIC's (older_names.older_taken: its
+        state records it there, at addresses it recorded or the NIC holds, no other state
+        recording it, none unreadable), never by the name alone; anything else is left and said.
+        Placed before the upgrade, a pair under them is undone through its state's placement,
+        and an isolation or a block written again goes under the new names."""
+        base = f"{prefix}-{vm_name}-{nic_short}-{_nic_hash(nic_id, 6)}"
+        if len(base) + 4 > 80:
+            room = max(80 - 4 - len(prefix) - 2 - 8, 1)
+            base = f"{prefix}-{vm_name[:room]}-{_nic_hash(nic_id, 8)}"
+        return self._second_base(base.lower())
 
     @staticmethod
     def _legacy_rule_base(prefix: str, vm_name: str, nic_short: str, nic_id: str) -> str:

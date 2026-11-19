@@ -384,7 +384,8 @@ class BlockMixin:
             # Subnet rule now in place → drop the prior VM-scoped rules of the NICs behind it,
             # each asked about first (I4P, _promote).
             prev = next((e for e in _load_block_entries(resource_id) if e.get("ip") == ip), None)
-            dropped, kept, guarded = self._promote(prev, off_ids, nic_id, f"{nsg_rg}/{nsg_name}", rule_name)
+            dropped, kept, guarded = self._promote(prev, off_ids, nic_id, f"{nsg_rg}/{nsg_name}", rule_name,
+                                                   resource_id)
             if prev:
                 _clear_block_state(resource_id, ip)
             promoted_from = dropped or None

@@ -4,6 +4,7 @@ doesn't know (moved from actions.py, A1).
 from __future__ import annotations
 
 from glorfindel.providers.azure.nsg import _deny_applies, _deny_isolates, _ip_scoped, _nic_owns, _rule_name
+from glorfindel.providers.azure.older_names import older_left, older_undo_refusal, recorded_names
 from glorfindel.providers.azure.quarantine import OriginalUnknown, _is_quarantine_nsg
 from glorfindel.providers.azure.turned import _aims_elsewhere, _held_by_turned
 from glorfindel.providers.azure.sdk import _is_not_found
@@ -32,6 +33,7 @@ class ReleaseMixin:
         VM alone — on a shared NSG they could belong to another VM's isolation. A name
         is never proof on its own: see _isolating_pair / _iso_rules_on."""
         bases = [*self._placement_rule_bases("glorfindel-iso", vm_name, t["nic_short"], t["nic_id"]),
+                 *self._older_rule_bases("glorfindel-iso", vm_name, t["nic_short"], t["nic_id"]),
                  self._legacy_rule_base("glorfindel-iso", vm_name, t["nic_short"], t["nic_id"]),
                  f"{self.ISOLATION_RULE_NAME}-{vm_name}"]
         if not _ip_scoped(t):
@@ -54,14 +56,23 @@ class ReleaseMixin:
                 return _rule_name(r_in)
         return None
 
-    def _iso_rules_on(self, vm_name: str, t: dict, rules: list) -> list:
+    def _iso_rules_on(self, vm_name: str, t: dict, rules: list, recorded: dict | None = None,
+                      left: list | None = None) -> list:
         """The isolation rules of THIS NIC in `rules` (the NSG's listing): see _nic_owns.
-        Names compare without case — Azure's do."""
+        Names compare without case — Azure's do. An earlier version's names: taken only when
+        proven (older_names.older_taken, `recorded`: the VM's state); the others go to `left`."""
+        from glorfindel.providers.azure.older_names import older_judge
         names = {n.lower() for n in self._isolation_names_for_target(vm_name, t)}
         hashed = {n for b in self._placement_rule_bases("glorfindel-iso", vm_name, t["nic_short"], t["nic_id"])
                   for n in (b, f"{b}-out")}
+        older = {n.lower() for b in self._older_rule_bases("glorfindel-iso", vm_name, t["nic_short"], t["nic_id"])
+                 for n in (b, f"{b}-out")} - hashed
+        judge = older_judge(t["nsg_rg"], t["nsg_name"], t["nic_id"], t.get("private_ips"), recorded or {})
         ips = t.get("private_ips") or None
-        return [r for r in rules if _nic_owns(r, hashed, names, ips)]
+        own = [r for r in rules if _nic_owns(r, hashed, names, ips, older, judge)]
+        if left is not None:
+            left += [r for r in rules if _rule_name(r).lower() in older and r not in own]
+        return own
 
     def _original_view(self, t0: dict, original: str) -> dict:
         """The NIC as seen from its original NSG (away while in quarantine, or not yet put
@@ -163,6 +174,8 @@ class ReleaseMixin:
         remaining: list[dict] = []
         turned: dict = {}                    # the I5Q guard, the NSGs listed once if a rule is to go
         if state.get("placements"):
+            from glorfindel.response.state import _load_block_entries
+            placed = recorded_names(state, _load_block_entries(resource_id), resource_id)   # SEC-H
             # Its other NICs are no other VM (I4D's review, seed 9001): the live ones, not the
             # placements' — a partial release keeps only those that failed.
             mates = self._own_nics(rg, vm_name)
@@ -189,7 +202,11 @@ class ReleaseMixin:
                         try:
                             original = (p["original_nsg_id"] if "original_nsg_id" in p
                                         else self._original_from_tags(p, p["nic_id"]))
-                        except OriginalUnknown:
+                        except OriginalUnknown as exc:
+                            if p.get("original_conflict"):
+                                # Why it is unknown, as the isolation met it (SEC-H): another group's
+                                # quarantine NSG names an original, never followed.
+                                raise RuntimeError(f"{p['original_conflict']} ({_first_line(exc)})")
                             if not bare:
                                 raise
                             # Left bare by someone, its original unknown: it is not "in
@@ -230,11 +247,17 @@ class ReleaseMixin:
                             remaining.append(p)
                     continue
                 p_rg, p_name = p["nsg_rg"], p["nsg_name"]
-                p_failed = [
+                short = (p.get("nic_id") or "").rstrip("/").rsplit("/", 1)[-1]
+                # An older name (SEC-H): undone by its name only when the rule under it is still the
+                # placement's (older_names.older_undo_refusal) — else left, said.
+                said = {name: why for name in (p.get("rule_in"), p.get("rule_out")) if name
+                        and (why := older_undo_refusal(self._network, p_rg, p_name, name, p.get("nic_id", ""),
+                                                       short, placed, "levée non vérifiée"))}
+                p_failed = list(said.values()) + [
                     err for err in (
                         _held_by_turned(self._network, turned, p_rg, p_name, name, p.get("nic_id", ""), mates)
                         or self._delete_rule(p_rg, p_name, name)
-                        for name in (p.get("rule_in"), p.get("rule_out")) if name
+                        for name in (p.get("rule_in"), p.get("rule_out")) if name and name not in said
                     ) if err
                 ]
                 left = self._restore_bumped(p_rg, p_name, p.get("bumped", []))
@@ -367,6 +390,9 @@ class ReleaseMixin:
         guard = {} if guard is None else guard
         own_ips = [a for t0 in targets for a in t0.get("private_ips") or []]
         mates = [t0["nic_id"] for t0 in targets]
+        from glorfindel.response.state import _load_block_entries
+        recorded = recorded_names(_load_isolation_state(resource_id) or {}, _load_block_entries(resource_id),
+                                  resource_id) if resource_id else {}
         for t0 in targets:
             if t0.get("subnet_unreadable"):
                 failed.append(f'{t0["nic_short"]} : NSG du subnet illisible, levée non vérifiée')
@@ -375,7 +401,11 @@ class ReleaseMixin:
                 if rules is None:
                     failed.append(f'{t["nsg_rg"]}/{t["nsg_name"]} : règles illisibles, levée non vérifiée')
                     continue
-                for r in self._iso_rules_on(vm_name, t, rules):
+                unproven: list = []
+                own = self._iso_rules_on(vm_name, t, rules, recorded, unproven)
+                failed += [older_left(t["nsg_rg"], t["nsg_name"], r, t["nic_short"], "levée non vérifiée", recorded)
+                           for r in unproven]
+                for r in own:
                     if (t["nsg_rg"].lower(), t["nsg_name"].lower(), _rule_name(r).lower()) in stuck:
                         continue
                     err = (_aims_elsewhere(r, own_ips) and _held_by_turned(
@@ -385,5 +415,5 @@ class ReleaseMixin:
                         failed.append(err)
                 failed += [f"{u} : laissée" for u in self._unattributable_fixed(t, rules)]
         failed += self._left_quarantine_rules(vm_name, targets, left, guard, mates, own_ips, cache, stuck,
-                                              {} if keep is None else keep)
-        return failed + self._away_rules(vm_name, targets, stuck, guard, mates)   # a bare NIC's (D80)
+                                              {} if keep is None else keep, recorded)
+        return failed + self._away_rules(vm_name, targets, stuck, guard, mates, recorded)   # a bare NIC's (D80)

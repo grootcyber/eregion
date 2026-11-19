@@ -7,10 +7,13 @@ from __future__ import annotations
 import os
 
 from glorfindel.providers.azure.nsg import _rule_name, _rule_signature
-from glorfindel.providers.azure.sdk import _enum_text, _is_not_found
+from glorfindel.providers.azure.quarantine_origin import OriginalConflict, OriginMixin
+from glorfindel.providers.azure.sdk import _enum_text, _finished, _is_not_found
 from glorfindel.response.ids import _parse_nsg_resource_id, _same_id
 from glorfindel.response.locks import _quarantine_lock
-from glorfindel.response.state import _held_or_unreadable, _recorded_or_unknown, _UNKNOWN
+from glorfindel.response.state import (
+    _held_or_unreadable, _quarantine_placements, _recorded_or_unknown, _UNKNOWN,
+)
 
 
 # Lot L4 — Glorfindel's own quarantine NSG, attached to a NIC that has none of its own.
@@ -77,7 +80,7 @@ class OriginalUnknown(RuntimeError):
     on a guess left NICs without their NSG (fourth review, Q7)."""
 
 
-class QuarantineMixin:
+class QuarantineMixin(OriginMixin):
     """The quarantine NSG: placement, original NSG, content (part of AzureConnector)."""
 
     def _quarantine_placement(self, t: dict, default_rg: str) -> dict:
@@ -101,6 +104,7 @@ class QuarantineMixin:
         # while verify_release said verified (sixth review, S1).
         q = (self._ensure_quarantine_nsg(t.get("location"), default_rg, at=current) if current
              else self._ensure_quarantine_nsg(t.get("location"), default_rg))
+        conflict_said = ""                      # another group's original, kept for the release (SEC-H)
         if current:
             # The state knows the original; the tag is the fallback. Neither says →
             # unknown, never recorded as "none" (the placement then carries no
@@ -111,6 +115,10 @@ class QuarantineMixin:
                     original = self._original_from_tags(q, t["nic_id"])
                 except OriginalUnknown:
                     original = _UNKNOWN
+            if original is _UNKNOWN:
+                # Still unknown: why, as the first isolation met it, stays on the new placement (SEC-H).
+                conflict_said = next((str(p["original_conflict"]) for p in _quarantine_placements(t["nic_id"])
+                                      if p.get("original_conflict")), "")
         else:
             original = t.get("own_nsg_id") or None
             tag_unread = False
@@ -120,10 +128,16 @@ class QuarantineMixin:
                 # Re-isolating it recorded "none" over it, and the release then left it
                 # with no NSG (seventh review, U2).
                 recorded = prior = _recorded_or_unknown(t["nic_id"])
-                unread = False
+                unread = conflict = False
                 if prior is _UNKNOWN or prior is None:
                     try:
                         prior = self._bare_nic_original(t, default_rg)[0]
+                    except OriginalConflict as exc:
+                        # A quarantine NSG of another group names its original (SEC-H): never
+                        # followed, nor our "none" kept over it — unknown, our stale tag taken off
+                        # (read back): the release keeps the NIC in quarantine and says why.
+                        self._forget_original(q, t["nic_id"], strict=True)
+                        prior, conflict, conflict_said = _UNKNOWN, True, str(exc)[:400]
                     except Exception:
                         # Our tag unreadable (a 429): what it says is unknown. Read as
                         # "none", it was written over the tag — a valid original lost
@@ -132,6 +146,8 @@ class QuarantineMixin:
                         prior, unread = _UNKNOWN, True
                 if prior and prior is not _UNKNOWN:
                     original = prior
+                elif conflict:
+                    original = _UNKNOWN
                 elif unread and recorded is _UNKNOWN:
                     original = _UNKNOWN
                 elif unread and recorded is None:
@@ -170,15 +186,11 @@ class QuarantineMixin:
             "nic_id": t["nic_id"], "kind": "quarantine", "scope": "quarantine",
             "nsg_rg": q["nsg_rg"], "nsg_name": q["nsg_name"], "nsg_id": q["nsg_id"],
             **({} if original is _UNKNOWN else {"original_nsg_id": original}),
+            **({"original_conflict": conflict_said} if conflict_said and original is _UNKNOWN else {}),
             "shared_nsg": False, "ips": t["private_ips"], "priority": 100,
             "rule_in": QUARANTINE_RULE_IN, "rule_out": QUARANTINE_RULE_OUT,
             "bumped": [], "applied": ["nic-attach"], "shadowed_by": [],
         }
-
-    @staticmethod
-    def _orig_tag(nic_id: str) -> str:
-        import hashlib
-        return "glorfindel-orig-" + hashlib.sha1(nic_id.rstrip("/").lower().encode()).hexdigest()[:12]
 
     def _quarantine_tags(self, q: dict) -> dict:
         nsg = self._network.network_security_groups.get(q["nsg_rg"], q["nsg_name"])
@@ -203,6 +215,7 @@ class QuarantineMixin:
         with _quarantine_lock(q["nsg_id"]):
             tags = self._quarantine_tags(q)
             tags[key] = value
+            tags.pop(self._older_orig_tag(nic_id), None)      # superseded: never read over ours (SEC-H)
             self._write_quarantine_tags(q, tags)
             if self._quarantine_tags(q).get(key) != value:
                 raise RuntimeError(f"original NSG of {nic_id.rsplit('/', 1)[-1]} not recorded "
@@ -215,22 +228,37 @@ class QuarantineMixin:
         (OriginalUnknown): written for every NIC since the fourth review (Q7), its
         absence is an unknown — a lost write, a hand edit — not "none"."""
         key = self._orig_tag(nic_id)
-        value = self._quarantine_tags(q).get(key)
+        tags = self._quarantine_tags(q)
+        # The tag an earlier version wrote (48 bits of the NIC's id), read when ours isn't there (SEC-H).
+        value = tags.get(key) or tags.get(self._older_orig_tag(nic_id))
         if not value:
             raise OriginalUnknown(
                 f"NSG d'origine de {nic_id.rstrip('/').rsplit('/', 1)[-1]} inconnu : ni l'état local "
                 f"ni le tag {key} de {q['nsg_name']} ne le disent. La carte reste en quarantaine — "
                 f"poser le tag ({key}=<id du NSG> ou {key}={self._NO_ORIGINAL}) puis relancer la levée.")
-        return None if value == self._NO_ORIGINAL else value
+        if value == self._NO_ORIGINAL:
+            return None
+        if why := self._not_an_original(value):
+            raise OriginalUnknown(
+                f"le tag {key} de {q['nsg_name']} ne nomme pas un NSG d'origine possible ({why}) : la carte "
+                f"{nic_id.rstrip('/').rsplit('/', 1)[-1]} reste en quarantaine — corriger le tag "
+                f"({key}=<id du NSG> ou {key}={self._NO_ORIGINAL}) puis relancer la levée.")
+        return value
 
-    def _forget_original(self, q: dict, nic_id: str) -> None:
+    def _forget_original(self, q: dict, nic_id: str, strict: bool = False) -> None:
+        """Our tag of this NIC's original taken off. `strict` (SEC-H): read back, and raises when it
+        is still there — a stale "none" left would be read as the original."""
         try:
             with _quarantine_lock(q["nsg_id"]):
                 tags = self._quarantine_tags(q)
-                if tags.pop(self._orig_tag(nic_id), None) is not None:
+                if [k for k in self._orig_tags(nic_id) if tags.pop(k, None) is not None]:
                     self._write_quarantine_tags(q, tags)
+                    if strict and set(self._quarantine_tags(q)) & self._orig_tags(nic_id):
+                        raise RuntimeError(f"tag d'origine de {nic_id.rsplit('/', 1)[-1]} non retiré de {q['nsg_name']}")
         except Exception:
-            pass     # a stale tag is harmless: it is only read for a NIC carrying our NSG
+            if strict:
+                raise
+            # a stale tag is harmless: it is only read for a NIC carrying our NSG
 
     def _managed_by_glorfindel(self, nsg_id: str) -> bool:
         """A customer NSG whose name happens to start like ours is not ours: a stateless
@@ -260,54 +288,6 @@ class QuarantineMixin:
                     f"{(now or 'aucun NSG').rsplit('/', 1)[-1]} au lieu de "
                     f"{(original or 'aucun NSG').rsplit('/', 1)[-1]}")
         self._forget_original(q, nic_id)
-
-    def _bare_nic_original(self, t0: dict, vm_rg: str):
-        """A NIC with no NSG at all that was in our quarantine: someone took our NSG off
-        and left it bare (seventh review, U2). Our tag still says what it carried — it
-        goes only once the original is back. (original or None, the quarantine NSG) when
-        a tag is found, (_UNKNOWN, None) otherwise. Looked up on the region's quarantine
-        NSG, in the configured group and in the VM's, then in the subscription. A tag that
-        names an NSG wins over a "none" found first: two hosts, two groups (I8S)."""
-        if t0.get("quarantine") or t0.get("own_nsg_id"):
-            return _UNKNOWN, None
-        name = f"{QUARANTINE_NSG_PREFIX}-{(t0.get('location') or 'unknown').lower()}"
-        groups = [vm_rg]
-        try:
-            cfg_rg = self._quarantine_settings()[1]
-            if cfg_rg:
-                groups.insert(0, cfg_rg)
-        except Exception:
-            pass
-        tag = self._orig_tag(t0["nic_id"])
-
-        def found(nsg):
-            tags = getattr(nsg, "tags", None) or {}
-            value = tags.get(tag) if tags.get("managed-by") == "glorfindel" else None
-            if not value:
-                return None
-            q_rg, q_name = _parse_nsg_resource_id(nsg.id)
-            return (None if value == self._NO_ORIGINAL else value), {"nsg_rg": q_rg, "nsg_name": q_name, "nsg_id": nsg.id}
-
-        none = None
-        for q_rg in dict.fromkeys(g.lower() for g in groups):
-            try:
-                hit = found(self._network.network_security_groups.get(q_rg, name))
-            except Exception as exc:
-                if _is_not_found(exc):
-                    continue
-                raise
-            if hit and hit[0]:
-                return hit
-            none = none or hit
-        # The quarantine group may have changed since (or the config can't be read):
-        # every quarantine NSG of ours in the subscription, by its name and our tag.
-        for nsg in self._network.network_security_groups.list_all():
-            if (getattr(nsg, "name", "") or "").lower() == name:
-                hit = found(nsg)
-                if hit and hit[0]:
-                    return hit
-                none = none or hit
-        return none or (_UNKNOWN, None)
 
     # ── L4: Glorfindel's quarantine NSG ─────────────────────────────────────────
 
@@ -346,11 +326,11 @@ class QuarantineMixin:
             except Exception as exc:
                 if not _is_not_found(exc):
                     raise
-                nsg = self._network.network_security_groups.begin_create_or_update(q_rg, name, NetworkSecurityGroup(
+                nsg = _finished(self._network.network_security_groups.begin_create_or_update(q_rg, name, NetworkSecurityGroup(
                     location=location,
                     tags={"managed-by": "glorfindel", "purpose": "incident-quarantine"},
                     security_rules=list(wanted.values()),
-                )).result()
+                )), f"NSG {name}")
         # Never adopt an NSG that only has our name (Q6): our rules would land in a
         # customer's NSG, and its own rules would be removed below.
         if (getattr(nsg, "tags", None) or {}).get("managed-by") != "glorfindel":
@@ -362,7 +342,8 @@ class QuarantineMixin:
             # Missing, or changed — turned into an allow, moved, narrowed (Q6), or the
             # forensic sources changed in the config: put it back as it must be.
             if current is None or _rule_signature(current) != _rule_signature(rule):
-                self._network.security_rules.begin_create_or_update(q_rg, name, rule_name, rule).result()
+                _finished(self._network.security_rules.begin_create_or_update(q_rg, name, rule_name, rule),
+                          f"règle {rule_name}")
         # A rule that isn't ours goes only if it could let traffic through before our
         # denies — an allow ahead of them (an allow added by hand, the forensic rule the
         # config no longer wants). A policy's deny (DINE / Modify) is left alone: removed
@@ -370,7 +351,8 @@ class QuarantineMixin:
         # (sixth review, S6).
         for low, current in rules.items():
             if low not in {w.lower() for w in wanted} and _opens_quarantine(current):
-                self._network.security_rules.begin_delete(q_rg, name, _rule_name(current)).result()
+                _finished(self._network.security_rules.begin_delete(q_rg, name, _rule_name(current)),
+                          f"retrait de {_rule_name(current)}")
         return {"nsg_rg": q_rg, "nsg_name": name, "nsg_id": nsg.id}
 
     def _quarantine_wanted(self, with_forensic: bool = True) -> dict:

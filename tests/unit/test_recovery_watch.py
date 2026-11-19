@@ -707,12 +707,12 @@ def test_without_restore_principals_or_the_activity_log_the_neutralization_is_un
 
 
 def test_the_control_plane_reads_who_ran_each_command():
-    """The callers the activity log gives (UPN, appId, object id in the claims) and the decision on
-    them: the last before the job, one of the principals that restore; none of another after."""
+    """The callers the activity log gives — object ids only since SEC-H: never an appId (a user's
+    delegated token carries its client application's), never a UPN — and the decision on them: the
+    last before the job, one of the principals that restore; none of another after."""
     from glorfindel.providers.azure.recovery import _callers
     assert _callers({"caller": "Ops@Example.org", "claims": {
-        "appid": "APP-1", "http://schemas.microsoft.com/identity/claims/objectidentifier": "oid-1"}}) == [
-        "app-1", "oid-1", "ops@example.org"]
+        "appid": "APP-1", "http://schemas.microsoft.com/identity/claims/objectidentifier": "oid-1"}}) == ["oid-1"]
     trusted = frozenset({"oid-1"})
     ran = lambda at, who: {"at": _t(at).isoformat(), "callers": [who]}  # noqa: E731
     start = _t(20).timestamp()

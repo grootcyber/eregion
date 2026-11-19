@@ -152,9 +152,9 @@ def contain(connector, action: str, resource_id: str, *, ip: str = "", scope: st
     if getattr(connector, "dry_run", False):
         return {"result": _act(), "verification": None}
     from glorfindel import approval
-    from glorfindel.response.locks import _vm_lock
+    from glorfindel.response.locks import _vm_lock, writer_wait_s
     from glorfindel.response.policy import PartialActionError
-    with _vm_lock(resource_id.rstrip("/").rsplit("/", 1)[-1]):
+    with _vm_lock(resource_id.rstrip("/").rsplit("/", 1)[-1], timeout=writer_wait_s()):   # bounded (SEC-H)
         try:
             result = _act()
         except PartialActionError as exc:

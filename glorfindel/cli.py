@@ -1873,7 +1873,7 @@ def jobs(resource_id: str, refresh: bool):
     from glorfindel.jobs import get_job, refresh_job, save_job
 
     vm_name = resource_id.split("/")[-1]
-    job = get_job(vm_name)
+    job = get_job(resource_id)          # by its full id (SEC-H): a homonym's job is another VM's
     if not job:
         console.print(f"[dim]No active job recorded for {vm_name}.[/dim]")
         return
@@ -1884,7 +1884,7 @@ def jobs(resource_id: str, refresh: bool):
         try:
             refresh_job(job, AzureConnector())
             if job.get("status") != before:
-                save_job(vm_name, job)
+                save_job(resource_id, job)
         except Exception as e:
             console.print(f"[yellow]Azure poll error: {_esc_markup(_ids_masked(e))}[/yellow]")
 
@@ -1983,7 +1983,7 @@ def restore(resource_id: str, vault: str, dry_run: bool, yes: bool, keep_isolate
 
     # One restore at a time per VM (SEC4c): another one running, or about to, refuses this one.
     from glorfindel.jobs import restore_in_progress
-    busy = restore_in_progress(resource_id.rstrip("/").split("/")[-1])
+    busy = restore_in_progress(resource_id)          # by its full id (SEC-H)
     if busy and not dry_run:
         raise click.ClickException(f"Restore refusé : {busy}.")
 
@@ -3015,7 +3015,7 @@ def _restore_claimed(resource_id: str):
     """The VM claimed for this restore while it starts (glorfindel/jobs.py, SEC4c), or the
     command refused: another restore of it is running or about to."""
     from glorfindel.jobs import RestoreBusy, restore_claim
-    claim = restore_claim(resource_id.rstrip("/").split("/")[-1])
+    claim = restore_claim(resource_id)          # by its full id (SEC-H)
     try:
         claim.__enter__()
     except RestoreBusy as exc:

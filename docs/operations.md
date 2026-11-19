@@ -600,9 +600,17 @@ GLORFINDEL_RECOVERY_INTERVAL_S=60   # REC1 : la watch relit sur Azure la reprise
                                     # (VM arrêtée au-delà : une carte)
 GLORFINDEL_DOOR_FACTS_INTERVAL_S=900  # LEV2 : la watch relit qui a agi sur chaque VM isolée, et ses droits, pour la
                                     # carte d'isolement — pour information, rien ne lève ni ne retient (0 : jamais)
-GLORFINDEL_RESTORE_PRINCIPALS=oid   # REC1 : les principaux qui restaurent (object id ou appId, séparés par des virgules) ;
-                                    # leur Run Command, au journal d'activité, prouve la neutralisation ; vide : une carte
-                                    # — docs/glorfindel.md, « La reprise lue sur Azure »
+GLORFINDEL_ARM_WRITE_TIMEOUT_S=300  # SEC-H : l'attente d'une écriture ARM (règle, carte, NSG de quarantaine) ; au-delà,
+                                    # l'écriture est inconnue, jamais faite : dite en échec, relue au passage suivant
+GLORFINDEL_VM_LOCK_WAIT_S=900       # SEC-H : l'attente d'un écrivain derrière le verrou d'une VM ; au-delà, l'écriture est
+                                    # refusée et dite (la levée, l'isolation, le blocage, la file d'actions)
+GLORFINDEL_REASSERT_SKIPS_SAID=5    # SEC-H : une VM que la réaffirmation saute (son verrou tenu) autant de passes de
+                                    # suite est dite sur une carte, fermée à la première passe qui la relit
+GLORFINDEL_RESTORE_PRINCIPALS=oid   # REC1 : les principaux qui restaurent (leurs object id seulement, séparés par des
+                                    # virgules ; un appId ne compte pas : le jeton délégué d'un utilisateur porte celui de
+                                    # l'application par laquelle il s'est connecté — SEC-H, `az ad sp show --id <appId>
+                                    # --query id -o tsv` donne l'object id) ; leur Run Command, au journal d'activité,
+                                    # prouve la neutralisation ; vide : une carte — docs/glorfindel.md, « La reprise lue sur Azure »
 EREGION_CONSOLE_HOSTS=nom,nom       # SEC1 : noms (sans port) sous lesquels la console répond, en plus de localhost / 127.0.0.1 / [::1] ; une
                                     # modification n'est acceptée que de l'origine de la console sous ce nom (compose la passe à la console)
 GLORFINDEL_APPROVAL_MAX_AGE_H=2     # âge max d'une carte exécutable en un clic (console, « Approve & execute ») ; nan/inf → 2 ; ≤0 → approbation en un clic fermée

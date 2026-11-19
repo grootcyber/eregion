@@ -269,6 +269,9 @@ class VerifyMixin:
         recorded = {(p.get("nic_id") or "").rstrip("/").lower(): p
                     for p in state.get("placements") or []
                     if p.get("kind") == "quarantine"}
+        from glorfindel.providers.azure.older_names import recorded_names
+        from glorfindel.response.state import _load_block_entries
+        placed = recorded_names(state, _load_block_entries(resource_id), resource_id)
         for t0 in targets:
             if t0.get("quarantine") or t0.get("own_nsg_id"):
                 continue
@@ -309,7 +312,12 @@ class VerifyMixin:
             if rules is None:
                 unknown.append(f'{t["nic_short"]}:{t["nsg_name"]}')
                 continue
-            still += [f'{t["nic_short"]}:{_rule_name(r)}' for r in self._iso_rules_on(vm_name, t, rules)]
+            unproven: list = []
+            still += [f'{t["nic_short"]}:{_rule_name(r)}'
+                      for r in self._iso_rules_on(vm_name, t, rules, placed, unproven)]
+            # An earlier version's name not proven the NIC's (SEC-H): left by the release, never read gone.
+            unknown += [f'{t["nic_short"]}:{_rule_name(r)} (nom d\'une version antérieure, sur {t["nsg_name"]}, '
+                        "que rien ne prouve être le sien : à retirer à la main si c'est le cas)" for r in unproven]
             unknown += self._unattributable_fixed(t, rules)
         # Where the release looks besides, that the NICs no longer carry — the quarantine NSG a
         # partial release left (I3R), a placement's NSG: out of the views above — « verified »,
@@ -317,6 +325,13 @@ class VerifyMixin:
         away_still, away_unknown = self._out_of_sight_seen(vm_name, targets, state, cache)
         still += away_still
         unknown += away_unknown
+        # A NIC left bare: its rules on the NSG it carried, looked for as the release does (_away_split,
+        # read only — SEC-H): its state lost, the NSG it no longer carries was never read, and an earlier
+        # version's pair left there by the release read « verified ».
+        said, off = self._away_split(vm_name, targets, {}, [t0["nic_id"] for t0 in targets],
+                                     lambda k, name: False, recorded=placed)
+        still += [f"{n_rg}/{n_name}/{name} (sur un NSG qu'une carte nue ne porte plus)" for n_rg, n_name, name in off]
+        unknown += said
         # An older version's single-NSG record names its rules — its state, or kept by a
         # later isolation (I4E): there, whatever the NSG's sharing now (its fixed names only
         # count on a dedicated NSG) — the release deletes them by that record, the
