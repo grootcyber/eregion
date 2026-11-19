@@ -97,6 +97,8 @@ calculé par la watch sur Imladris. C'est un champ à part (`proposed_verdict`),
 la carte reste dans TO JUDGE, son compte compris, et **ni le rapport ni les indicateurs ne le
 comptent** — seuls les verdicts posés comptent. L'opérateur le confirme d'un clic (console ou Discord :
 il devient son verdict, `verdict_from: proposed`) ou le refuse (il s'efface, et n'est jamais reproposé).
+Rejugée ensuite à la main, la carte porte le verdict de l'opérateur, et ne dit plus qu'il vient de la
+proposition (`verdict_from` retiré, VP1b).
 Il ne compare que la détection, jamais la décision : ne le confirmer que si l'action était
 proportionnée. Une carte d'exercice sans proposition dit pourquoi (une autre règle, une autre VM,
 hors du délai ou de la fenêtre, une seconde carte, deux versions du drill…). Les cartes d'exercice

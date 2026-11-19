@@ -388,7 +388,7 @@ def test_the_reasons_name_no_identifier(bench):
 
 def test_the_watch_runs_the_pass_every_minute():
     cli = (Path(__file__).resolve().parents[2] / "glorfindel" / "cli.py").read_text(encoding="utf-8")
-    assert "        proposed_verdict.refresh(runs_dir)\n" in cli
+    assert "        proposed_verdict.refresh(runs_dir, say=lambda text: _say_channel(" in cli
     assert "_propose_verdicts()  # VP1" in cli
 
 
@@ -411,3 +411,74 @@ def test_the_api_confirms_and_refuses(bench, monkeypatch):
     bench.refresh()
     assert client.post(f"/api/escalations/{c}/proposed/confirm", json={}).json() == {"ok": True, "verdict": "right"}
     assert the(c)["verdict"] == "right"
+
+
+# ── VP1b (#917): the remainders of VP1's review ────────────────────────────────────────────────
+
+def test_confirmed_then_judged_by_hand_it_no_longer_says_proposed(bench, monkeypatch):
+    """A card confirmed from its proposal, then judged again by hand — in the console, by its API —
+    is the operator's own verdict: neither the card, nor TO JUDGE, nor the report says « proposed »."""
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    from .console_client import console
+    monkeypatch.delenv("GLORFINDEL_WARROOM_TOKEN", raising=False)
+    client = console()
+    c = card()
+    bench.refresh()
+    assert client.post(f"/api/escalations/{c}/proposed/confirm", json={}).json() == {"ok": True, "verdict": "right"}
+    assert the(c)["verdict_from"] == "proposed"
+    said = client.post(f"/api/escalations/{c}/verdict", json={"verdict": "wrong", "note": "disproportionate"}).json()
+    assert said == {"ok": True, "verdict": "wrong"}
+    e = the(c)
+    assert (e["verdict"], e["verdict_note"]) == ("wrong", "disproportionate") and "verdict_from" not in e
+    assert c not in {x["id"] for x in client.get("/api/to-judge?since=7d").json()["cards"]}
+    assert "proposed" not in json.dumps(escalations.observation_report())
+    # By the CLI's path too (set_verdict): a verdict given by hand, never « proposed ».
+    escalations.set_verdict(c[:8], "unsure", "")
+    assert "verdict_from" not in the(c)
+
+
+def test_a_card_without_a_time_zone_among_others_the_others_proposed(bench):
+    """A card whose time carries no time zone raised in the pass, and the whole pass stopped each
+    minute: nothing more was proposed. It is skipped — never proposed, its zone never guessed —, said
+    once on the card, and the others are proposed."""
+    a = card(rule="another-rule", action="isolate_vm", kind="mode_hold")
+    n = card(rule="a-third-rule", action="isolate_vm", kind="low_confidence")
+    redate(n, (bench.now - timedelta(seconds=60)).replace(tzinfo=None))
+    c = card()
+    assert bench.refresh() == 3
+    assert the(c)[escalations.PROPOSED_FIELD]["verdict"] == "right"
+    assert why(a) == "rule" and why(n) == "no_tz"
+    assert escalations.PROPOSED_FIELD not in the(n)
+    assert bench.refresh() == 0                      # said once: the next pass changes nothing
+
+
+def test_a_card_without_a_time_zone_in_the_wire_which_came_first_is_never_guessed(bench):
+    """The same rule on the same wire: the first card cannot be told — none of them is proposed."""
+    n = card()
+    redate(n, (bench.now - timedelta(seconds=60)).replace(tzinfo=None))
+    c = card(action="isolate_vm", kind="mode_hold")
+    bench.refresh()
+    assert why(n) == "no_tz" and why(c) == "unordered"
+    assert escalations.PROPOSED_FIELD not in the(c)
+
+
+def test_a_card_the_pass_cannot_assess_is_skipped_said_once_the_others_proposed(bench, monkeypatch):
+    monkeypatch.setattr(pv, "_SKIPPED", set())
+    bad, c = card(rule="another-rule", action="isolate_vm", kind="mode_hold"), card()
+    real = pv.assess
+
+    def assess(card_, cards, src):
+        if card_["id"] == bad:
+            raise TypeError("a card the pass cannot read <@everyone>")
+        return real(card_, cards, src)
+
+    monkeypatch.setattr(pv, "assess", assess)
+    said = []
+    assert bench.refresh(say=said.append) == 1
+    assert the(c)[escalations.PROPOSED_FIELD]["verdict"] == "right"
+    assert escalations.PROPOSED_FIELD not in the(bad) and escalations.PROPOSED_WHY not in the(bad)
+    assert len(said) == 1 and bad[:8] in said[0] and "TypeError" in said[0]
+    assert "everyone" not in said[0]                  # the error's kind, never its text
+    bench.refresh(say=said.append)
+    assert len(said) == 1                             # once

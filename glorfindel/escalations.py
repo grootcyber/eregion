@@ -927,7 +927,9 @@ def all_escalations() -> list[dict]:
 
 @_locked
 def set_verdict(escalation_id: str, verdict: str, note: str = "") -> dict:
-    """Record the operator's judgement of a card — independent of its acknowledgement.
+    """Record the operator's judgement of a card — independent of its acknowledgement. A verdict
+    given here is given by hand: whatever the card said of where its verdict came from
+    (``verdict_from``, VP1's confirmation) is gone.
 
     `escalation_id`: the full id or a unique prefix of at least 6 characters (the War
     Room and `pending` show 8). Raises ValueError on an unknown verdict or an ambiguous
@@ -938,6 +940,9 @@ def set_verdict(escalation_id: str, verdict: str, note: str = "") -> dict:
     e["verdict"] = verdict
     e["verdict_at"] = datetime.now(timezone.utc).isoformat()
     e["verdict_note"] = note
+    # VP1b (#917): a verdict given by hand is the operator's own — a card confirmed from its
+    # proposal, then judged again by hand, no longer says the verdict came from the proposal.
+    e.pop("verdict_from", None)
     lines[i] = json.dumps(e, default=str)
     _write_lines(lines)
     return e
