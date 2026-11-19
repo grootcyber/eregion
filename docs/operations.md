@@ -5355,6 +5355,28 @@ SEC-I change deux règles livrées. `data-exfiltration-blob` ne compte que les �
 HTTP 2xx). `t1070-002-log-tamper` n'écarte un écrivain que sur un événement d'un seul enregistrement
 SYSCALL de sa clé, compté distinct. Le lot change aussi l'enquête (`investigate` bornée par
 `_ResourceId`). **Les trois se mesurent avant la fusion, par Jonathan** ; aucune session ne le fait.
+La mesure est faite le 19/11, et conforme sur tout ce que le banc permet (« Le résultat », juste
+après).
+
+### Le résultat, le 19/11
+
+Mesuré par Jonathan, sur un compte de test joint par un point de terminaison privé. La VM de test y a
+fait deux écritures avec son identité managée : l'une refusée, sans rôle, l'autre réussie, avec un
+rôle sur un seul conteneur.
+
+| | Résultat | Ce qui est vu |
+|---|---|---|
+| **SI1** | **conforme** | L'écriture refusée est journalisée dans `StorageBlobLogs` : `StatusCode` `403` (`AuthorizationPermissionMismatch`), l'adresse privée de l'appelant dans `CallerIpAddress`, en OAuth. |
+| **SI2** | **conforme** | `StatusCode` est un texte, `"403"` ou `"201"`, que `toint()` lit. |
+| **SI3** | **conforme pour l'identité managée** ; **ouvert pour la SAS** | L'écriture réussie rend `201`. Le banc n'a aucune écriture par SAS : la partie SAS reste à mesurer là où une SAS écrit (Q-SI1 sur 30 jours, plus bas). |
+| **SI4** | **reporté** | Aucune ligne `local6` en 30 jours : auditd n'est posé sur aucune VM du banc. `t1070-002-log-tamper` ne peut donc s'y déclencher nulle part aujourd'hui, avec SEC-I comme sans. La mesure se fera quand auditd et les règles de VM3 seront posés au banc. |
+| **SI5** | **conforme** | Sur les lignes `Perf`, `Heartbeat` et `Syslog` de la VM qui tourne, `WithoutResourceId` vaut 0 : l'enquête bornée par `_ResourceId` retrouve ses lignes. |
+
+**La correction ferme bien le comptage de l'écriture refusée.** Sur ce compte, pour l'adresse de la VM,
+la requête d'`origin/main` comptait `PutBlobCount = 2` : l'écriture refusée comprise, avec les 279
+octets de sa réponse d'erreur. Celle de la branche n'en compte que `1`.
+
+Le compte de test, son point de terminaison privé et le rôle sont retirés.
 
 Comment se fait la mesure :
 - **Avant la fusion**, la règle n'est encore sur aucun hôte. Sa requête se prend donc dans le
@@ -5373,7 +5395,7 @@ un geste de Jonathan. Les noms sont des gabarits (`<…>`) : aucun identifiant r
 |---|---|---|---|---|
 | **SI1** | Azure Storage journalise dans `StorageBlobLogs` une écriture **refusée** (403), avec l'adresse privée de l'appelant dans `CallerIpAddress` (l'auditeur l'a laissée en hypothèse) | étapes 0 à 3, Q-SI1, les deux requêtes de la règle | la règle d'`origin/main` comptait l'écriture refusée, celle de la branche non : la correction tient | une écriture refusée n'est pas journalisée, ou sans l'adresse privée : la correction ne change rien au banc ; le dire dans `docs/azure.md` |
 | **SI2** | `StatusCode` est un texte (`"201"` pour `PutBlob`, `PutBlock`, `PutBlockList` réussis, `"403"` refusé) que `toint()` lit | Q-SI1 | rien | une autre forme (un nombre, un autre code de succès) : corriger le filtre de la règle et son test |
-| **SI3** | Une écriture réussie rend un code 2xx, par l'identité managée comme par SAS (`StatusText` peut différer : `Success`, `SASSuccess`…) | étape 2 ; pour la SAS, Q-SI1 sur 30 jours (`ago(30d)`, `--timespan P30D` ; au plus la rétention du workspace) là où une SAS écrit déjà | le filtre par le code est le bon | un succès hors 2xx : élargir le filtre, jamais aux refus. Sans écriture par SAS au banc, la partie SAS reste ouverte : le dire dans `docs/azure.md` |
+| **SI3** | Une écriture réussie rend un code 2xx, par l'identité managée comme par SAS (`StatusText` peut différer : `Success`, `SASSuccess`…) | étape 2 ; pour la SAS, Q-SI1 sur 30 jours (`ago(30d)`, `--timespan P30D`, `\| where AuthenticationType == "SAS"` ; au plus la rétention du workspace) là où une SAS écrit déjà | le filtre par le code est le bon | un succès hors 2xx : élargir le filtre, jamais aux refus. Sans écriture par SAS au banc, la partie SAS reste ouverte : le dire dans `docs/azure.md` |
 | **SI4** | Le noyau écrit un seul enregistrement SYSCALL par événement d'audit. Une ligne `local6` écrite au numéro d'un événement est lue par la règle comme un second enregistrement, distinct | étapes 5 à 8, Q-SI2, les deux requêtes de la règle | la règle d'`origin/main` effaçait l'événement, celle de la branche en fait une carte | deux SYSCALL vrais et distincts dans un même événement : la règle ferait des cartes à tort — en décider avec Jonathan |
 | **SI5** | `_ResourceId` est rempli, à l'identifiant de la VM, sur les lignes `Perf` et `Heartbeat` de l'agent Azure Monitor (il l'est sur `Syslog`, que le routage lit) | Q-SI3 | l'enquête lit ce qu'elle lisait | des lignes sans `_ResourceId` : l'enquête de cette table ne trouve plus rien — un lot (lire la table par l'identifiant que l'agent y écrit) |
 
@@ -5421,7 +5443,9 @@ az vm show -g $RG -n $VM --query identity.type -o tsv          # → SystemAssig
 PRINCIPAL=$(az vm show -g $RG -n $VM --query identity.principalId -o tsv)
 [[ -n $PRINCIPAL ]] && echo "principal lu" || echo "AUCUNE identité système : s'arrêter ici"
 # Aucun rôle de données pour elle, ni sur le compte, ni au-dessus, ni hérité, ni par un groupe.
-az role assignment list --assignee $PRINCIPAL --all --include-inherited --include-groups \
+# Avec --all, la liste porte déjà les attributions faites au-dessus, groupes d'administration compris
+# (--include-inherited ne sert qu'avec --scope) ; --include-groups ajoute celles de ses groupes.
+az role assignment list --assignee $PRINCIPAL --all --include-groups \
   --query "[].{role:roleDefinitionName, scope:scope}" -o table
 # → aucune ligne « Storage Blob Data … » sur $SA_ID, son groupe, l'abonnement ou un groupe d'administration.
 az monitor diagnostic-settings list --resource "${SA_ID}/blobServices/default" -o table   # → sec-i-blob
@@ -5447,8 +5471,9 @@ La sortie attendue est `403`.
 **Étape 2, les écritures réussies.** Depuis la même VM, par son identité managée, vers un compte où elle
 écrit déjà par une adresse privée : au banc, celui des exercices (`exfil-target`). Le même script, le
 conteneur et le compte changés, rend `201`. Pour la SAS (SI3), Q-SI1 sur 30 jours là où une SAS écrit
-déjà : dans `q-si1.kql`, `ago(1h)` devient `ago(30d)`, et la commande prend `--timespan P30D`. La
-rétention du workspace borne cette durée (30 jours au banc ; moins, si elle est plus courte). Sans
+déjà : dans `q-si1.kql`, `ago(1h)` devient `ago(30d)`, une ligne `| where AuthenticationType == "SAS"`
+s'ajoute après la fenêtre (sur 30 jours, sans elle, la requête rend les écritures de tous les comptes du
+workspace), et la commande prend `--timespan P30D`. La rétention du workspace borne cette durée (30 jours au banc ; moins, si elle est plus courte). Sans
 écriture par SAS, la partie SAS de SI3 reste ouverte.
 
 **Étape 3, la mesure, quinze minutes après** (`StorageBlobLogs` met souvent 5 à 15 minutes à arriver) :
@@ -5573,11 +5598,11 @@ union withsource = Table Perf, Heartbeat, Syslog
 | order by Table asc, Computer asc
 ```
 
-**Ce qui attend une décision de Jonathan, hors de cette mesure** : ne rattacher une adresse privée à
-une VM que si le compte de stockage n'est joignable que depuis les VNet inscrits (point de terminaison
-privé, pare-feu du compte). Il faudrait lire les comptes, donc donner un droit de lecture de plus à la
-watch, et toute exfiltration vers un compte public deviendrait une carte, jamais une action
-(`docs/azure.md`).
+**Hors de cette mesure, la suite** : ne rattacher une adresse privée à une VM que si le compte de
+stockage n'est joignable que depuis les VNet inscrits (point de terminaison privé, pare-feu du compte).
+Jonathan l'a décidé le 19/11 : un lot de la 0.6.3, SEC-Ic. Il lira la portée réseau des comptes, ce qui
+donne un droit de lecture de plus à la watch, posé par le plan et l'apply de Jonathan, et toute
+exfiltration vers un compte public deviendra une carte, jamais une action (`docs/azure.md`).
 
 ## Le compte des flux réseau (INF-FL, #654)
 
