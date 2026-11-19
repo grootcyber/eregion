@@ -6,10 +6,14 @@ ORO_SSH); what is written in the channel and on the scheduled start goes by the 
 ``az login`` — never Orodruin's identity:
 
     check   dry: the drill read in Orodruin's image (its fingerprint, its schedule), the contract,
-            the watch, the permit, the targets; the scheduled start of DRL1c; the arming on the disk.
-            Nothing is written, on Orodruin or on Azure.
+            the watch, the permit, the targets; the scheduled start of DRL1c, its hour, and its state
+            (``properties.state``, the same read) said against the arming on the disk — « armed but
+            scheduled start disabled: re-arm » after an apply that redeployed it; the shutdown of
+            23:00 UTC. Nothing is written, on Orodruin or on Azure.
     arm     DRILL= TARGETS=<vm>[,<vm>…] — never ``all``: refused unless the scheduled start exists
-            and its hour is the schedule's less 20 min (« apply first »); then the arming
+            and its hour is the schedule's less 20 min (« apply first »), and unless the drill's
+            budget ends before Orodruin's shutdown of 23:00 UTC (a warning when only the service's
+            ceiling passes it: ``shutdown_guard``, DRL1e); then the arming
             (~/drill/armed.json, mode 600), the units (eregion-drill.timer, eregion-drill.service),
             the timer enabled; the permit written, the scheduled start enabled, the pulse « armed »
     disarm  the timer disabled and its units removed, the arming removed, the permit removed, the
@@ -50,6 +54,11 @@ ARM = "https://management.azure.com"
 LOGIC_API = "2019-05-01"
 # The scheduled start wakes Orodruin this long before the drill's hour (§5.1).
 LEAD_MIN = 20
+# Orodruin's DevTest shutdown, every day at 23:00 UTC (drill_autostart.tf, daily_recurrence_time),
+# in minutes past midnight UTC.
+SHUTDOWN_MIN = 23 * 60
+# The service's ceiling (RuntimeMaxSec), and the grace of its stop after it (docker stop --time).
+RUNTIME_MAX_S, STOP_S = 3600, 90
 SERVICE, TIMER = "eregion-drill.service", "eregion-drill.timer"
 UNIT_DIR = "/etc/systemd/system"
 IMAGE = "eregion-annatar:orodruin"
@@ -153,6 +162,41 @@ def expected_at(schedule: dr.Schedule) -> tuple[str, str]:
     return dr.DAYS[total // 1440], f"{(total % 1440) // 60:02d}:{total % 60:02d}"
 
 
+def autostart_state(workflow: dict) -> str:
+    """The Logic App's ``properties.state`` as ARM says it (``Enabled``, ``Disabled``, …) — "" when
+    it does not read. Only ``Enabled`` wakes Orodruin."""
+    props = workflow.get("properties") if isinstance(workflow, dict) else None
+    state = props.get("state") if isinstance(props, dict) else None
+    return state if isinstance(state, str) else ""
+
+
+def _crosses_shutdown(start_s: int, end_s: int) -> bool:
+    """Whether a shutdown of 23:00 UTC falls in [start_s, end_s], seconds from Monday 00:00 UTC (the
+    week's edges carried across: a wake on Sunday before midnight, an end on Monday after it)."""
+    first = SHUTDOWN_MIN * 60 - 86400
+    return any(start_s <= first + k * 86400 <= end_s for k in range(10))
+
+
+def shutdown_guard(schedule: dr.Schedule) -> tuple[str, str]:
+    """The drill against Orodruin's shutdown of 23:00 UTC (DRL1e, docs/design/drill-banc.md §16):
+    (``refuse``, why) when a shutdown falls between the scheduled start's wake (the drill's hour less
+    LEAD_MIN) and the drill's hour plus its ``max_run_s`` — the budget the drill declares cut for
+    certain; (``warn``, why) when it falls only before the service's ceiling (``RuntimeMaxSec``, then
+    the stop's grace) — an occurrence slow to start may be cut; ("", "") when neither."""
+    at = schedule.weekday * 86400 + schedule.minutes * 60
+    wake, budget, ceiling = at - LEAD_MIN * 60, at + schedule.max_run_s, at + RUNTIME_MAX_S + STOP_S
+    hm = f"{SHUTDOWN_MIN // 60:02d}:{SHUTDOWN_MIN % 60:02d}"
+    if _crosses_shutdown(wake, budget):
+        return "refuse", (f"the drill ({schedule.day} {schedule.at} UTC, max_run_s {schedule.max_run_s} s) ends "
+                          f"after Orodruin's shutdown of {hm} UTC: the occurrence would be cut — an earlier "
+                          "schedule, or a shorter max_run_s")
+    if _crosses_shutdown(budget, ceiling):
+        return "warn", (f"the drill's max_run_s ends before Orodruin's shutdown of {hm} UTC, not the service's "
+                        f"ceiling ({RUNTIME_MAX_S} s, then {STOP_S} s to stop): an occurrence slow to start "
+                        "may be cut")
+    return "", ""
+
+
 def set_autostart(logic_id: str, enabled: bool, run: Callable = az) -> None:
     run(["rest", "--method", "post", "--url",
          f"{ARM}{logic_id}/{'enable' if enabled else 'disable'}?api-version={LOGIC_API}"])
@@ -190,9 +234,9 @@ def units(schedule: dr.Schedule, user: str) -> dict[str, str]:
         f"ExecStart=/usr/bin/docker run --rm --pull never --init --name {CONTAINER} {RUN_OPTS} "
         f"--env-file orodruin.env {mounts} -v {home}/drill:/app/drill:ro {IMAGE} "
         "python -m eregion_core.scheduled_drill run\n"
-        f"ExecStop=-/usr/bin/docker stop --time 90 {CONTAINER}\n"
+        f"ExecStop=-/usr/bin/docker stop --time {STOP_S} {CONTAINER}\n"
         "TimeoutStopSec=120\n"
-        "RuntimeMaxSec=3600\n")
+        f"RuntimeMaxSec={RUNTIME_MAX_S}\n")
     return {TIMER: timer, SERVICE: service}
 
 
@@ -338,38 +382,78 @@ def _schedule(fp: dict) -> dr.Schedule:
     return dr.Schedule(fp["day"], fp["at"], int(fp["max_injections"]), int(fp["max_run_s"]))
 
 
-def _autostart_refusal(logic_id: str, schedule: dr.Schedule, run: Callable) -> str:
-    """Why the arming may not go on, by the scheduled start — "" when it may."""
+def _read_start(logic_id: str, schedule: dr.Schedule, run: Callable) -> tuple[str, str | None]:
+    """The scheduled start, in one read: (why the arming may not go on — "" when it may; its state —
+    None when there is no Logic App, "" when its state does not read). Raises when it does not read."""
     wf = read_autostart(logic_id, run)
     if wf is None:
         return ("no scheduled start (the Logic App of DRL1c): apply first — make orodruin-plan, then "
-                "make orodruin-lock")
+                "make orodruin-lock"), None
+    state = autostart_state(wf)
     try:
         day, at = autostart_at(wf)
     except (ValueError, TypeError) as e:
-        return f"the scheduled start's trigger does not read ({e}): apply first"
+        return f"the scheduled start's trigger does not read ({e}): apply first", state
     want = expected_at(schedule)
     if (day, at) != want:
         return (f"the scheduled start wakes Orodruin {day} {at} UTC, not {want[0]} {want[1]} (the drill's "
-                f"{schedule.day} {schedule.at} less {LEAD_MIN} min): apply first")
-    return ""
+                f"{schedule.day} {schedule.at} less {LEAD_MIN} min): apply first"), state
+    return "", state
+
+
+def _autostart_refusal(logic_id: str, schedule: dr.Schedule, run: Callable) -> str:
+    """Why the arming may not go on, by the scheduled start — "" when it may."""
+    return _read_start(logic_id, schedule, run)[0]
+
+
+def state_line(state: str | None, armed: bool, unread: str = "") -> tuple[bool, str]:
+    """The scheduled start's state said against the arming on Orodruin's disk (DRL1e): (ok, the
+    line). Armed, anything but ``Enabled`` fails, and says why — never a silent refusal of the next
+    occurrence, seen only as Imladris's ``not_run``. ``unread``: why the Logic App did not read."""
+    if armed:
+        if state == "Enabled":
+            return True, "✓ scheduled start enabled: it wakes Orodruin for the armed drill"
+        if state == "Disabled":
+            return False, ("✗ armed but scheduled start disabled: re-arm — make orodruin-drill-disarm, then "
+                           "make orodruin-drill-arm (an apply that redeploys it puts it back Disabled)")
+        if state is None:
+            return False, "✗ armed but no scheduled start: apply first, then re-arm"
+        why = unread or (f"its state is {state!r}" if state else "no properties.state")
+        return False, f"✗ armed but the scheduled start's state does not read ({why}): never taken for enabled"
+    if state == "Enabled":
+        return True, ("! scheduled start enabled with nothing armed: it wakes Orodruin for nothing — "
+                      "make orodruin-drill-disarm")
+    if state == "Disabled":
+        return True, "· scheduled start disabled (nothing armed)"
+    return True, ""
 
 
 def check(name: str, targets: list[str], *, oro, oro_run: str, logic_id: str, run: Callable = az,
           say=print) -> int:
     """orodruin-drill-check: nothing written. Exit 0 when the next occurrence would play."""
-    ok = True
     try:
         fp = _fingerprint(oro, oro_run, name)
         say(f"✓ the drill {name} in Orodruin's image: {fp['sha256'][:12]}…, {fp['day']} {fp['at']} UTC")
-        why = _autostart_refusal(logic_id, _schedule(fp), run)
-        say(f"{'✗' if why else '✓'} scheduled start: {why or 'its hour is the drill less 20 min'}")
-        ok = not why
+        schedule = _schedule(fp)
     except RuntimeError as e:
         say(f"✗ {e}")
         return 1
+    unread = ""
+    try:
+        why, state = _read_start(logic_id, schedule, run)
+        say(f"{'✗' if why else '✓'} scheduled start: {why or 'its hour is the drill less 20 min'}")
+    except RuntimeError as e:
+        # Unreadable (az login lapsed, a 403, Terraform's state): said, and the check goes on.
+        why, state, unread = str(e), "", str(e)[:200]
+        say(f"✗ scheduled start unreadable: {e}")
+    ok = not why
+    verdict, said = shutdown_guard(schedule)
+    say({"refuse": "✗ ", "warn": "! "}.get(verdict, "✓ ")
+        + (said or "Orodruin's shutdown of 23:00 UTC: the drill ends before it"))
+    ok = ok and verdict != "refuse"
     code, out, _ = oro("test -f drill/armed.json && head -c 16384 drill/armed.json")
-    if code:
+    armed_here = code == 0
+    if not armed_here:
         say("· arming: none on Orodruin (make orodruin-drill-arm)")
     else:
         try:
@@ -383,6 +467,10 @@ def check(name: str, targets: list[str], *, oro, oro_run: str, logic_id: str, ru
         except (ValueError, da.ArmingRefused) as e:
             say(f"✗ arming unreadable: {e}")
             ok = False
+    state_ok, line = state_line(state, armed_here, unread)
+    if line:
+        say(line)
+    ok = ok and state_ok
     args = f" --targets {shlex.quote(','.join(targets))}" if targets else ""
     code, out, err = oro(f"{oro_run} python -m eregion_core.scheduled_drill check {shlex.quote(name)}{args}")
     for line in (out or err).strip().splitlines():
@@ -393,7 +481,9 @@ def check(name: str, targets: list[str], *, oro, oro_run: str, logic_id: str, ru
 def arm(name: str, targets: list[str], *, oro, oro_run: str, user: str, logic_id: str, channel: str,
         run: Callable = az, credential=None, put=None, now=_now, say=print) -> int:
     """orodruin-drill-arm: refused before anything is written unless the drill reads in Orodruin's
-    image and the scheduled start is there, at the drill's hour less 20 min. Then each step said."""
+    image, the scheduled start is there, at the drill's hour less 20 min, and the drill's budget ends
+    before Orodruin's shutdown of 23:00 UTC (``shutdown_guard``: a warning when only the service's
+    ceiling passes it). Then each step said."""
     if not channel:
         say("✗ no exercise channel (EREGION_EXERCISE_CHANNEL): the permit could not be written — nothing armed")
         return 1
@@ -407,6 +497,12 @@ def arm(name: str, targets: list[str], *, oro, oro_run: str, user: str, logic_id
     if why:
         say(f"✗ {why} — nothing armed")
         return 1
+    verdict, said = shutdown_guard(schedule)
+    if verdict == "refuse":
+        say(f"✗ {said} — nothing armed")
+        return 1
+    if verdict == "warn":
+        say(f"! {said}")
     code, image, _ = oro("head -c 200 .eregion-image 2>/dev/null")
     image = " ".join(image.split()) if code == 0 else ""
     try:

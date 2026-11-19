@@ -112,13 +112,59 @@ def test_the_logic_app_is_created_disabled_by_the_template_itself():
     assert wf["apiVersion"] == "2019-05-01"
 
 
+def _code(text: str) -> str:
+    """A .tf file's code, its comment lines dropped: what an apply runs."""
+    return "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+
+
+def _module_tf(where: Path = ORO) -> dict[str, str]:
+    """Every .tf file of the module, by name, its code only — never one file picked (DRL1e)."""
+    return {p.name: _code(p.read_text(encoding="utf-8")) for p in sorted(where.glob("*.tf"))}
+
+
+def _provisioners(code: str) -> list[str]:
+    """Each ``provisioner "…" { … }`` block of a file's code, its braces matched."""
+    blocks = []
+    for m in re.finditer(r'provisioner\s+"[^"]*"\s*\{', code):
+        depth, i = 1, m.end()
+        while depth and i < len(code):
+            depth += {"{": 1, "}": -1}.get(code[i], 0)
+            i += 1
+        blocks.append(code[m.start():i])
+    return blocks
+
+
+def _activations(module: dict[str, str]) -> list[str]:
+    """What, in any file of the module, could enable the scheduled start at an apply: a call to
+    …/enable (or the word enable), a provisioner naming the Logic App, an azurerm Logic App resource,
+    and outside drill_autostart.tf, the Logic App named anywhere but in a description."""
+    found = []
+    for name, code in module.items():
+        if "/enable" in code or re.search(r"\benable\b", code, re.I):
+            found.append(f"{name}: enable")
+        if "azurerm_logic_app" in code:
+            found.append(f"{name}: an azurerm Logic App resource")
+        for block in _provisioners(code):
+            if re.search(r"logic|workflow|autostart|enable", block, re.I):
+                found.append(f"{name}: a provisioner on the Logic App")
+        if name != "drill_autostart.tf":
+            for line in code.splitlines():
+                if re.search(r"logic", line, re.I) and not re.match(r'\s*description\s*=\s*"', line):
+                    found.append(f"{name}: the Logic App named ({line.strip()[:60]})")
+    return found
+
+
 def test_no_apply_enables_the_scheduled_start():
     """Terraform never holds the Logic App's state: no azurerm_logic_app_workflow (whose `enabled` an
     apply would put back), no trigger or action component (azurerm rewrites the whole workflow without
-    its state), no provisioner, no call to …/enable; the template deployed incrementally — Complete
-    would delete every other resource of Orodruin's group."""
+    its state), no provisioner, no call to …/enable — in any .tf file of the module, main.tf included
+    (DRL1e); the template deployed incrementally — Complete would delete every other resource of
+    Orodruin's group."""
+    module = _module_tf()
+    assert {"main.tf", "drill_autostart.tf", "outputs.tf", "variables.tf", "stratus_guardrails.tf"} <= set(module)
+    assert _activations(module) == []
     tf = _text("drill_autostart.tf")
-    code = "\n".join(line for line in tf.splitlines() if not line.lstrip().startswith("#"))
+    code = module["drill_autostart.tf"]
     assert re.findall(r'resource "(\w+)" "(\w+)"', code) == [
         ("azurerm_resource_group_template_deployment", "drill_autostart"),
         ("azurerm_role_definition", "drill_autostart"),
@@ -131,8 +177,39 @@ def test_no_apply_enables_the_scheduled_start():
     assert _attr(deploy, "deployment_mode") == '"Incremental"'
     assert _attr(deploy, "template_content") == 'file("${path.module}/drill_autostart.json")'
     assert _attr(deploy, "resource_group_name") == "azurerm_resource_group.host.name"
-    others = "".join(_text(f) for f in ("main.tf", "stratus_guardrails.tf", "outputs.tf", "variables.tf"))
+    others = "".join(code for name, code in module.items() if name != "drill_autostart.tf")
     assert "azurerm_logic_app" not in others and "Microsoft.Logic" not in others
+
+
+_ENABLE_FROM = {
+    "a local-exec posting …/enable": (
+        'resource "terraform_data" "autostart_on" {\n  provisioner "local-exec" {\n    command = "az rest '
+        '--method post --url https://management.azure.com${local.autostart_outputs.workflowId.value}/enable'
+        '?api-version=2019-05-01"\n  }\n}\n'),
+    "a local-exec by az logic": (
+        'resource "terraform_data" "autostart_on" {\n  provisioner "local-exec" {\n    command = "az logic '
+        'workflow update --ids ${local.autostart_outputs.workflowId.value} --state Enabled"\n  }\n}\n'),
+    "an external data source by az logic, no provisioner": (
+        'data "external" "wake" {\n  program = ["az", "logic", "workflow", "update", "--state", "Enabled", '
+        '"--ids", local.autostart_outputs.workflowId.value]\n}\n'),
+    "a remote-exec by its output": (
+        'resource "null_resource" "wake" {\n  provisioner "remote-exec" {\n    inline = ["az rest --method post '
+        '--url ${local.autostart_outputs.workflowId.value}/start"]\n  }\n}\n'),
+}
+
+
+@pytest.mark.parametrize("where", ["main.tf", "stratus_guardrails.tf", "outputs.tf"])
+@pytest.mark.parametrize("form", sorted(_ENABLE_FROM))
+def test_an_apply_enabling_the_scheduled_start_from_any_file_of_the_module_fails_the_test(tmp_path, where, form):
+    """The search reads every .tf of the module: the module copied, an activation added to main.tf (or
+    another file than drill_autostart.tf), and the search finds it (DRL1e, M6485)."""
+    for p in ORO.glob("*.tf"):
+        (tmp_path / p.name).write_text(p.read_text(encoding="utf-8"), encoding="utf-8")
+    assert _activations(_module_tf(tmp_path)) == []
+    target = tmp_path / where
+    target.write_text(target.read_text(encoding="utf-8") + "\n" + _ENABLE_FROM[form], encoding="utf-8")
+    found = _activations(_module_tf(tmp_path))
+    assert found and all(f.startswith(f"{where}:") for f in found), found
 
 
 def test_its_one_action_starts_orodruins_vm_by_its_own_identity():
@@ -217,13 +294,15 @@ def test_orodruins_own_identity_gains_nothing():
 
 # ── The shutdown of 23:00 UTC ────────────────────────────────────────────────────────────────
 
-def test_orodruin_is_shut_down_every_day_at_23_utc():
+def test_orodruin_is_shut_down_every_day_at_23_utc(ops):
     off = _block(_text("drill_autostart.tf"), "azurerm_dev_test_global_vm_shutdown_schedule", "host")
     assert _attr(off, "virtual_machine_id") == "azurerm_linux_virtual_machine.host.id"
     assert _attr(off, "enabled") == "true"
     assert _attr(off, "daily_recurrence_time") == '"2300"'
     assert _attr(off, "timezone") == '"UTC"'
     assert "count" not in off and "for_each" not in off
+    # The hour the arming guards (drill_ops.shutdown_guard, DRL1e) is this one.
+    assert _attr(off, "daily_recurrence_time") == f'"{ops.SHUTDOWN_MIN // 60:02d}{ops.SHUTDOWN_MIN % 60:02d}"'
 
 
 # ── The output: the contract drill_ops reads ─────────────────────────────────────────────────
