@@ -10,14 +10,21 @@ gate before it (the confidence) had held the decision.
 Now, on such a detection, an action aimed at the VM (`isolate_vm`, `block_suspicious_ip`,
 `release_isolation`) is always the attribution's card (`unattributed_signal`), whatever held it
 first — the confidence, never_block, the release precondition —, the reason before kept. The mode's
-hold stays the mode's: a `mode_hold` card there approves the model's own action only when it is not
-aimed at the VM (a snapshot). And everywhere one approves — the server (`approval_refusal`, the
+hold stays the mode's: a `mode_hold` card there approves nothing aimed at the VM. And everywhere one approves — the server (`approval_refusal`, the
 signed queue), the console's buttons, the bot, the TUI —, a card that says it is unattributed and
 holds an action aimed at the VM has no one-click approval; the suggested commands never name the VM
 it is filed on. Last, the exclusion of the watch's return channel (SLF1) is the shipped rule's only.
 
+SEC-Ed (#954; Jonathan, 19/11): the snapshot too. Before, on such a detection, the answer surest of
+itself got the most permissive card: a snapshot at a high confidence held by the mode stayed approvable
+in one click (`mode_hold`), and ran alone in `non_disruptive` on the VM the card is filed on, while the
+same snapshot under the threshold was the attribution's card. Now it is the attribution's card, whatever
+the confidence and the mode — never run alone, never approvable in one click (the server, the signed
+queue, the bot, the console) —, and the card says the human chooses the VM to snapshot. An attributed
+detection keeps its snapshot, approvable, and autonomous in `non_disruptive`.
+
 No Azure call, no model call (the model is patched), a throwaway store (tests/unit/conftest.py).
-Mutants M6451–M6465 (scripts/mutants/ATT1.py).
+Mutants M6451–M6465 (scripts/mutants/ATT1.py) and M6546–M6555 (scripts/mutants/SEC-Ed.py).
 """
 from __future__ import annotations
 
@@ -126,10 +133,10 @@ def watch():
 def test_the_guard_holds_the_approval_s_own_set():
     """One list (the decision never imports the signed queue, FS1a): the actions the guard holds
     are the ones no approval runs on an unattributed card — the VM's isolation, a block on its NSG,
-    the release of its isolation; never the snapshot."""
+    the release of its isolation, and its snapshot (SEC-Ed): every autonomous action."""
     assert agent._ATTRIBUTION_HELD == action_queue.VM_AIMED_ACTIONS
-    assert {"isolate_vm", "block_suspicious_ip", "release_isolation"} <= action_queue.VM_AIMED_ACTIONS
-    assert "snapshot" not in action_queue.VM_AIMED_ACTIONS
+    assert {"isolate_vm", "block_suspicious_ip", "release_isolation", "snapshot"} <= action_queue.VM_AIMED_ACTIONS
+    assert set(agent.AUTONOMOUS_ACTIONS) <= agent._ATTRIBUTION_HELD
     page = re.search(r"const _VM_AIMED = new Set\(\[([^\]]*)\]\);", JS.read_text())
     assert page and set(re.findall(r"'([a-z_]+)'", page.group(1))) == action_queue.VM_AIMED_ACTIONS
 
@@ -175,11 +182,15 @@ def test_an_attack_started_line_unattributed_keeps_the_reason_before_too():
     assert " — Low confidence (40%)" in out["escalation_reason"]
 
 
-def test_a_snapshot_on_an_unattributed_detection_is_not_held_by_the_guard():
-    """The snapshot is not aimed at the VM (SEC-Ec: what it does there stays Jonathan's): below the
-    threshold, it stays the confidence's card."""
+def test_a_snapshot_on_an_unattributed_detection_is_held_by_the_guard(watch):
+    """SEC-Ed (#954): the snapshot is aimed at the VM too — below the threshold, the attribution's
+    card, never the confidence's (`low_confidence`); the confidence's reason kept after its own."""
     out = _decide(_signal(), _decision("snapshot", 0.5))
-    assert out["held_by"] == "confidence"
+    assert out["held_by"] == "attribution" and out["mode_hold"] is False
+    assert " — Low confidence (50%)" in out["escalation_reason"]
+    card = _card_of(out)
+    assert card["escalation_type"] == "unattributed_signal"
+    _no_one_click(card)
 
 
 # ── The mode's hold stays the mode's ─────────────────────────────────────────────────────────────
@@ -194,16 +205,17 @@ def test_human_only_never_holds_an_unattributed_isolation_for_approval(watch):
     _no_one_click(card)
 
 
-def test_a_mode_hold_on_an_unattributed_detection_approves_the_snapshot_only(watch):
-    """human_only, the model's snapshot: the card stays the mode's, approvable for the snapshot —
-    its own action, not aimed at the VM. A `mode_hold` card that would hold an isolation there (one
-    written before ATT1, another writer of the store) approves nothing in one click."""
+def test_a_mode_hold_on_an_unattributed_detection_approves_nothing(watch):
+    """SEC-Ed (#954): human_only, the model's snapshot at 95 %: the guard holds it before the mode —
+    the attribution's card, never `mode_hold`. A `mode_hold` card that would hold an action aimed at
+    the VM there, the snapshot included (one written before ATT1 or SEC-Ed, another writer of the
+    store), approves nothing in one click."""
     out = _decide(_signal(), _decision("snapshot", 0.95), mode="human_only")
-    assert out["mode_hold"] is True
+    assert out["mode_hold"] is False and out["held_by"] == "attribution"
     snap = _card_of(out)
-    assert snap["escalation_type"] == "mode_hold" and snap["attribution"] == LOOSE
-    assert approval_refusal(snap, "vm-b3a") is None and proposed_verbs(snap) == {"snapshot"}
-    for action in ("isolate_vm", "block_suspicious_ip", "release_isolation"):
+    assert snap["escalation_type"] == "unattributed_signal" and snap["attribution"] == LOOSE
+    _no_one_click(snap)
+    for action in ("isolate_vm", "block_suspicious_ip", "release_isolation", "snapshot"):
         cid = escalations.record(signal_id=f"s-{action}", resource_id=RID, action=action,
                                  escalation_type="mode_hold", reason="held", attribution=LOOSE,
                                  action_params={"ip": IP} if action == "block_suspicious_ip" else None)
@@ -218,6 +230,179 @@ def test_no_approvable_type_runs_an_unattributed_isolation(watch, etype):
     cid = escalations.record(signal_id=f"s-{etype}", resource_id=RID, action="isolate_vm",
                              escalation_type=etype, reason="held", attribution=LOOSE)
     _no_one_click(next(c for c in escalations.pending() if c["id"] == cid))
+
+
+# ── SEC-Ed: the snapshot of an unattributed detection, never approvable, never run alone ────────
+
+@pytest.mark.parametrize("mode", ["human_only", "non_disruptive"])
+@pytest.mark.parametrize("confidence", [0.95, 0.5], ids=["sure", "under-the-threshold"])
+def test_an_unattributed_snapshot_is_the_attribution_s_card_whatever_the_confidence_and_the_mode(
+        watch, mode, confidence):
+    """Fini quand: whatever the confidence and the mode, the model's snapshot on a detection that
+    names no VM is the attribution's card — never the mode's (`mode_hold`), never the confidence's,
+    never run alone —; the card says why, and that the human chooses the VM to snapshot; nowhere
+    approvable in one click."""
+    out = _decide(_signal(), _decision("snapshot", confidence), mode=mode)
+    assert out["escalate"] is True and out["action"] == "snapshot"
+    assert out["held_by"] == "attribution" and out["mode_hold"] is False
+    reason = out["escalation_reason"]
+    assert reason.startswith("Détection non attribuable à une VM") and "vm-b3a, vm-b3b" in reason
+    assert "jamais approuvable en un clic" in reason and "Choisir la VM à capturer" in reason
+    assert "`glorfindel snapshot <groupe>/<nom> --yes` sur celle-là" in reason and "rg/vm-b3a" not in reason
+    assert (" — Low confidence (50%)" in reason) is (confidence < 0.7)     # the hold before, kept
+    card = _card_of(out)
+    assert card["escalation_type"] == "unattributed_signal" and card["attribution"] == LOOSE
+    _no_one_click(card)
+
+
+@pytest.mark.parametrize("action", sorted(agent.AUTONOMOUS_ACTIONS))
+def test_the_mode_never_holds_an_action_on_an_unattributed_detection(action):
+    """Every autonomous action is held by the guard before the mode on a detection that names no
+    VM (SEC-Ed): no `mode_hold` there, so no card of the mode that one click would approve."""
+    out = _decide(_signal(), _decision(action, 0.95), mode="human_only")
+    assert out["held_by"] == "attribution" and out["mode_hold"] is False
+
+
+@pytest.fixture
+def graph(monkeypatch):
+    """The production agent on a recording connector (tests/unit/test_dependency_failures.py): a
+    snapshot has a vault to go to, its job kept out of ~/.glorfindel."""
+    from glorfindel import jobs
+
+    from .test_dependency_failures import FakeMemory, Recorder, _agent
+    monkeypatch.setattr(agent, "CycleMemory", FakeMemory)
+    monkeypatch.setattr(agent, "_backup_vault_target", lambda: ("rsv-b3a", "rg"))
+    monkeypatch.setattr(jobs, "record_snapshot_job", lambda *a, **kw: None)
+
+    def run(signal, resp, mode):
+        conn = Recorder()
+        with patch("litellm.completion", return_value=resp), \
+                patch("glorfindel.detectors.detector_for", side_effect=RuntimeError("no LAW")):
+            final = _agent(conn, autonomy=AutonomyConfig(default=mode)).respond(signal)
+        return final, conn
+    return run
+
+
+@pytest.mark.parametrize("mode", ["non_disruptive", "human_only"])
+def test_an_unattributed_snapshot_never_runs_on_the_anchor(graph, mode):
+    """Through the graph: the model's snapshot at 95 % on a detection that names no VM is never
+    taken — not of the VM the card is filed on, whatever the mode —; one card, the attribution's."""
+    final, conn = graph(_signal(), _decision("snapshot", 0.95), mode)
+    assert "snapshot" not in conn.calls and conn.writes() == []
+    assert final["escalate"] is True and not (final.get("outcome") or {}).get("executed")
+    assert [c["escalation_type"] for c in escalations.pending()] == ["unattributed_signal"]
+
+
+def test_an_attributed_snapshot_runs_alone_and_stays_approvable(graph, watch):
+    """The witness (Fini quand: an attributed detection does not change): its snapshot runs alone in
+    `non_disruptive`; held by the mode in `human_only`, approvable in one click and proposed."""
+    final, conn = graph(_signal(attributed=True), _decision("snapshot", 0.95), "non_disruptive")
+    assert "snapshot" in conn.calls and final["escalate"] is False
+    assert final["outcome"]["executed"] is True
+    held = _signal(attributed=True)
+    held["signal_id"] += "-human-only"             # its own card, beside the one the run left (V-11)
+    out = _decide(held, _decision("snapshot", 0.95), mode="human_only")
+    assert out["mode_hold"] is True and out["held_by"] == ""
+    card = _card_of(out)
+    assert card["escalation_type"] == "mode_hold" and "attribution" not in card
+    assert approval_refusal(card, "vm-b3a") is None and proposed_verbs(card) == {"snapshot"}
+
+
+def _old_snapshot_card() -> dict:
+    """A `mode_hold` snapshot's card on a detection that names no VM, written before SEC-Ed: the watch
+    signed its proposal then (the snapshot was approvable there) — the store edited as another writer
+    would, the proposal kept (it signs no attribution)."""
+    cid = escalations.record(signal_id="s-old-snapshot", resource_id=RID, action="snapshot",
+                             escalation_type="mode_hold", reason="Mode human_only — held")
+    store = escalations._STORE
+    lines = [json.loads(x) for x in store.read_text().splitlines()]
+    for x in lines:
+        if x["id"] == cid:
+            assert x.get("proposal"), "signed while it was approvable"
+            x["attribution"] = dict(LOOSE)
+    store.write_text("\n".join(json.dumps(x) for x in lines) + "\n")
+    return next(c for c in escalations.pending() if c["id"] == cid)
+
+
+def test_an_old_mode_hold_snapshot_card_is_refused_by_the_server_the_queue_and_the_bot(
+        tmp_path, monkeypatch):
+    """Fini quand: a card written before SEC-Ed that holds an unattributed snapshot in `mode_hold` —
+    the server refuses it (`approval_refusal`), the watch signs it no proposal now, the signed queue
+    refuses the console's request bound to its old proposal (the guard replayed), the bot has no
+    button and may not ask a snapshot; the connector never called."""
+    from . import test_action_queue_watch as qw
+    world = qw.make_world(tmp_path, monkeypatch)
+
+    def no_snapshot(*_a, **_k):
+        raise AssertionError("no snapshot of the anchor")
+    monkeypatch.setattr(world["conn"], "snapshot", no_snapshot)
+    card = _old_snapshot_card()
+    why = approval_refusal(card, "vm-b3a")
+    assert why and "non attribuée" in why.lower() and "'snapshot'" in why
+    assert proposed_verbs(card) == frozenset()
+    # The signed queue: the console's request on the old proposal, refused by the guard.
+    doc = qw._ask(world, "snapshot", card=card, resource_id=RID)
+    world["q"].poll()
+    receipt = qw._receipt(world, doc)
+    assert (receipt["state"], receipt["code"]) == ("refused", "guard"), receipt
+    assert "non attribuée" in receipt["reason"].lower()
+    assert [c["id"] for c in escalations.pending()] == [card["id"]]       # still waiting
+    # The bot: a snapshot is no verb it may ask — its request on that card refused —, and its card
+    # has no button.
+    bot = qw._ask(world, "snapshot", service="bot", card=card, resource_id=RID)
+    world["q"].poll()
+    assert qw._receipt(world, bot)["code"] == "verb_not_allowed"
+    assert card["id"] in {c["id"] for c in escalations.pending()}         # still waiting
+    pytest.importorskip("discord")
+    from glorfindel.bot import _make_action_button
+    assert _make_action_button(card) is None
+
+
+def test_the_console_s_approve_route_refuses_an_old_unattributed_snapshot(watch, monkeypatch):
+    """The console's route, called directly on that old card: refused before any connector."""
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    from .console_client import console
+    monkeypatch.setattr("glorfindel.actions.AzureConnector",
+                        lambda **k: (_ for _ in ()).throw(AssertionError("no Azure")))
+    card = _old_snapshot_card()
+    error = console().post(f"/api/action/approve/{card['id']}", json={}).json()["error"]
+    assert "non attribuée" in error.lower() and "snapshot" in error
+    assert [c["id"] for c in escalations.pending()] == [card["id"]]
+
+
+def test_the_page_offers_no_approval_nor_snapshot_on_an_unattributed_snapshot():
+    """The console: a card that says it is unattributed and holds a snapshot — of any type, `mode_hold`
+    included — has no « ▶ Approve & execute » (`_aimsLoose`: the snapshot is aimed at the VM) nor
+    « 📸 Snapshot »; its note and its command say the human chooses the VM, a constant through
+    `_attr`, never a command on the VM it is filed on."""
+    js = JS.read_text()
+    aimed = re.search(r"const _VM_AIMED = new Set\(\[([^\]]*)\]\);", js)
+    assert aimed and "'snapshot'" in aimed.group(1)
+    assert "&& !_unattributed(e)" in _fn(js, "function _isSnapshotPending(e) {")
+    assert "const _LOOSE_SNAPSHOT_SAID = 'the detection names no VM: choose the VM to snapshot';" in js
+    note = _fn(js, "function _targetNote(e, vmName) {")
+    assert "const choose = _looseSnapshot(e) ? ` · ${_attr(_LOOSE_SNAPSHOT_SAID)}` : '';" in note
+    cmd = _fn(js, "function cliCommand(esc) {").split("if (loose) {", 1)[1].split("\n  }\n", 1)[0]
+    assert "const choose = _looseSnapshot(esc)" in cmd and "${choose}glorfindel ack ${id}" in cmd
+    assert "_vmArg" not in cmd and "rid" not in cmd
+
+
+def test_the_bot_s_command_says_the_human_chooses_the_vm_to_snapshot():
+    """Discord's `📋 Command` on an unattributed snapshot: a comment line says the human chooses the VM,
+    then the ack — never a command on the VM it is filed on; not on another action's card."""
+    pytest.importorskip("discord")
+    from glorfindel.bot import _cli_command
+    for etype in ("mode_hold", "low_confidence", "unattributed_signal"):
+        cmd = _cli_command(_card("snapshot", etype, loose=True))
+        assert "# la détection ne nomme aucune VM : choisir la VM à capturer" in cmd
+        assert [ln for ln in cmd.splitlines() if not ln.startswith("#")] == [f"glorfindel ack {_cmd_id(cmd)}"]
+        assert "rg/vm-b3a" not in cmd
+    assert "choisir la VM à capturer" not in _cli_command(_card("isolate_vm", "low_confidence", loose=True))
+
+
+def _cmd_id(cmd: str) -> str:
+    return cmd.rsplit("glorfindel ack ", 1)[1].strip()
 
 
 # ── The witness: an attributed card keeps its behaviour ──────────────────────────────────────────

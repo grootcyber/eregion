@@ -1604,17 +1604,15 @@ def test_graph_release_precondition_has_its_own_type(tmp_path, monkeypatch, tmp_
 def test_unattributed_detection_holds_isolation_and_ip_block():
     """An unattributed detection is dispatched once, anchored on one monitored VM.
     Isolating that VM — or blocking the IP on its NSG only — would act on a guess
-    (third review, L11/L13). An attributed one runs as before."""
+    (third review, L11/L13) — and so would its snapshot (SEC-Ed, #954). An attributed one runs as
+    before."""
     from glorfindel.agent import _apply_attribution_guard
     signal = {"context": {"attribution": "unattributed", "candidates": ["vm1", "vm2"]}}
-    for action in ("isolate_vm", "block_suspicious_ip"):
+    for action in ("isolate_vm", "block_suspicious_ip", "snapshot"):
         d = {"action": action, "escalate": False}
         _apply_attribution_guard(d, signal)
         assert d["escalate"] is True and d["held_by"] == "attribution"
         assert "vm1, vm2" in d["escalation_reason"]
-    snap = {"action": "snapshot", "escalate": False}
-    _apply_attribution_guard(snap, signal)
-    assert snap["escalate"] is False
     asset = {"action": "isolate_vm", "escalate": False}
     _apply_attribution_guard(asset, {"context": {"attribution": "asset"}})
     assert asset["escalate"] is False
