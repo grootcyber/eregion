@@ -1564,6 +1564,66 @@ function _renderNsgNode(resource, vmEscs, slotIdx = 0) {
 
 // ── Asset nodes ────────────────────────────────────────────────────────────────
 
+// ── A VM's own addresses (IPS1, #931) ──────────────────────────────────────────
+// Read by the NSG audit, NIC by NIC: `ips` (its private addresses) and `public_ips` (IPS1a: each
+// `{address}`, or `{address: null, error}` when its read failed). On the card folded and unfolded
+// (Jonathan, 19/11, option A): Ctrl+F finds the VM of an address without opening a card, and a
+// public address shows a VM the Internet can reach. Never an attacker's address: those are the
+// BLOCKED badges, below. Everything here comes from Azure: escaped, never written raw (#254).
+const _ADDR_FOLDED = 4;   // private addresses on the folded line, then « +N »
+function _vmNet(auditEntry) {
+  if (!auditEntry) return null;                       // not audited (yet): nothing said
+  const check = (auditEntry.checks || []).find(c => c.name === 'NSG access');
+  if (!check || check.status !== 'ok') return { unread: (check && check.message) || 'no NSG audit for this VM' };
+  const nsgs = Array.isArray(check.data?.nsgs) ? check.data.nsgs : [];
+  return {
+    at: auditEntry.timestamp,
+    nics: nsgs.map(x => ({
+      nic: String(x?.nic_id || '').split('/').pop(),
+      ips: (Array.isArray(x?.ips) ? x.ips : []).filter(Boolean).map(String),
+      pubs: (Array.isArray(x?.public_ips) ? x.public_ips : []).filter(p => p && typeof p === 'object'),
+    })),
+  };
+}
+function _addrBtn(a, pub) {
+  return `<button type="button" class="vm-ip${pub ? ' pub' : ''}" ${_on('click', 'copyAddr', String(a))} title="${_attr('Copy ' + a)}">${_attr(a)}</button>`;
+}
+// A public IP whose address did not read is said, never left out: the VM is still exposed.
+function _pubAddr(p, unfolded) {
+  if (p.address) return `<span class="vm-pub">🌐 ${_addrBtn(String(p.address), true)}${unfolded ? ' <span class="vm-pubtag">PUBLIC</span>' : ''}</span>`;
+  const why = String(p.error || 'unknown');
+  return unfolded
+    ? `<span class="vm-pub unread">🌐 public IP not read: ${_attr(why)}</span>`
+    : `<span class="vm-pub unread" title="${_attr('Public IP not read: ' + why)}">🌐 ?</span>`;
+}
+function _addrLine(net) {
+  if (!net) return '';
+  if (net.unread) return `<div class="vm-addr" title="${_attr('Addresses not read: ' + net.unread)}">ip —</div>`;
+  const priv = [...new Set(net.nics.flatMap(n => n.ips))];
+  const pubs = net.nics.flatMap(n => n.pubs);
+  if (!priv.length && !pubs.length) return `<div class="vm-addr" title="No address on the VM's NICs">ip —</div>`;
+  const more = priv.length > _ADDR_FOLDED ? `<span title="Unfold the card for every address">+${Number(priv.length - _ADDR_FOLDED)}</span>` : '';
+  return `<div class="vm-addr">${priv.slice(0, _ADDR_FOLDED).map(a => _addrBtn(a, false)).join('')}${more}${pubs.map(p => _pubAddr(p, false)).join('')}</div>`;
+}
+function _netBlock(net) {
+  if (!net) return '';
+  if (net.unread) return `<div class="vm-net"><span class="vm-netfoot">addresses not read — ${_attr(net.unread)}</span></div>`;
+  const nics = net.nics.map(n => `<div class="vm-nic"><span class="vm-nicname">⇄ ${_attr(n.nic || 'NIC')}</span>${n.ips.map(a => _addrBtn(a, false)).join('')}${n.pubs.map(p => _pubAddr(p, true)).join('')}</div>`).join('');
+  return `<div class="vm-net">${nics}<div class="vm-netfoot">read by the NSG audit ${_attr(_relTime(net.at))}</div></div>`;
+}
+// A copy where the page may write the clipboard (a secure context: the loopback, the SSH tunnel);
+// elsewhere (a plain http address of the tailnet) the address is selected, for Ctrl+C.
+function copyAddr(a) {
+  const el = _target;
+  const select = () => {
+    const r = document.createRange(); r.selectNodeContents(el);
+    const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+    toast(`${a} selected — Ctrl+C to copy`);
+  };
+  if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(String(a)).then(() => toast(`✓ ${a} copied`), select);
+  else select();
+}
+
 function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
   const { resource_id, vm_name, states: _rawStates = [], last_seen, monitoring_backend } = resource;
   // Subnet-wide blocks live on the shared subnet NSG, not on this VM — they're shown
@@ -1663,6 +1723,7 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
   ].filter(Boolean).join('');
 
   const auditEntry = (_auditData?.audits || []).find(a => a.resource_id === resource_id);
+  const net        = _vmNet(auditEntry);              // its addresses (IPS1)
   const readiness  = auditEntry
     ? ACTION_GROUPS.map(g => {
         const st = _worstStatus(auditEntry.checks, g.actions);
@@ -1875,6 +1936,7 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
   const expandedBody = `
     ${readinessExpanded}
     ${nsgLine}
+    ${_netBlock(net)}
     ${modeSelector}
     ${fallbackRows.length ? `<div style="display:flex;flex-direction:column;gap:5px;margin-top:6px">${fallbackRows.join('')}</div>` : ''}
     ${decisionHtml || ''}
@@ -1931,6 +1993,7 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
         ${modeBadge}
         ${readiness && !isExpanded ? `<span style="color:var(--dim);font-size:9px;margin-left:auto">${readiness}</span>` : ''}
       </div>` : ''}
+      ${_addrLine(net)}
       ${_handledLines(resource_id, vm_name)}
     </div>
     ${isExpanded ? expandedBody : compactBody}
@@ -3771,6 +3834,7 @@ const ACTIONS = {
   filterBlocks, showBlocks,                       // a VM's blocks, in their window (CON-K)
   verifyIdentity,                                 // an identity card's plan, read again on Graph by the watch (IR1a)
   openJudgeCard,                                  // a card's details and its verdict, from TO JUDGE or a tile (JUG1)
+  copyAddr,                                       // a VM's address, copied from its card (IPS1)
   judgeFromModal(id, verdict) { judgeCard(id, verdict, 'judge-modal-note'); closeModal(); },
   confirmProposed, refuseProposed,                // VP1: a verdict proposed on an exercise card, confirmed or refused
   confirmProposedFromModal(id) { confirmProposed(id, 'judge-modal-note'); closeModal(); },

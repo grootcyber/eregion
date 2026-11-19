@@ -438,6 +438,21 @@
   .node-asset-name   { font-weight: 700; font-size: 12px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .node-asset-states { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
   .node-asset-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  /* A VM's own addresses (IPS1): plain text under its name, the public one in yellow behind 🌐 —
+     never a filled badge, which stays the BLOCKED one of an attacker's address. */
+  .vm-addr  { margin-top: 5px; font-size: 10px; color: var(--dim); display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; cursor: default; }
+  .vm-ip    { font: inherit; font-size: 10px; color: var(--text); background: none; border: 0; padding: 0;
+              border-bottom: 1px dotted var(--border); border-radius: 0; cursor: copy; }
+  .vm-ip:hover { border-bottom-color: var(--text); background: none; }
+  .vm-ip.pub, .vm-pub { color: var(--yellow); }
+  .vm-pub.unread { cursor: help; }
+  .vm-pubtag { font-size: 8px; font-weight: 700; letter-spacing: .5px; padding: 0 4px; border-radius: 3px;
+               border: 1px solid color-mix(in srgb, var(--yellow) 55%, transparent); }
+  .vm-net   { margin-top: 6px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg);
+              display: flex; flex-direction: column; gap: 4px; font-size: 10px; }
+  .vm-nic   { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; }
+  .vm-nicname { flex-basis: 100%; color: var(--dim); font-size: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .vm-netfoot { color: var(--dim); font-size: 9px; }
 
   /* Drag-and-drop cards */
   .node-asset { transition: opacity 0.15s; }
