@@ -117,7 +117,7 @@ sans changement de texte, un module par préoccupation, aucun au-delà de 430 li
 | `backup.py`, `restore.py` | points de restauration, statut d'un job de restauration, restauration |
 | `restore_rights.py` | les droits d'un restore lus avant de toucher la VM, les refus d'Azure dits en entier, sans id (RST1) |
 | `sweep.py`, `readers.py` | `reset` et règles orphelines ; droits, inventaire NSG, lectures de l'audit |
-| `public_ips.py` | l'IP publique de chaque carte, lue pour l'audit, une lecture qui échoue dite avec sa raison (IPS1a) ; ci-dessous, « L'IP publique de chaque carte » |
+| `public_ips.py` | l'IP publique de chaque carte, lue pour l'audit, une lecture qui échoue dite avec sa raison et son code (IPS1a, IPS2a) ; ci-dessous, « L'IP publique de chaque carte » |
 | `narrow.py` | une règle orpheline réduite aux adresses des VM que Glorfindel tient, quand elle coupe aussi une VM qu'il ne tient pas (U1G) |
 | `turned.py` | nos règles retournées en autorisation (`_TURNED_NAMES`), et les refus qu'elles attendent derrière (I5Q) ; la garde de chaque retrait par son nom (`_held_by_turned`), qui lit aussi une ancienne version retournée sous son nom (`_OLDER_NAMES`, I4G) |
 | `sdk.py`, `capabilities.py`, `monitor.py` | préchauffage du SDK ; capacités déclarées ; Log Analytics |
@@ -257,7 +257,7 @@ quarantaine), `<nic>`, `<ip>` (une adresse de documentation, 203.0.113.x).
    `glorfindel-orig-` pour ces cartes ; chaque carte sur son NSG d'origine (`az network nic show -g <rg> -n <nic>
    --query networkSecurityGroup.id`).
 
-### L'IP publique de chaque carte, dans l'audit (IPS1a, #931)
+### L'IP publique de chaque carte, dans l'audit (IPS1a, #931 ; IPS2a, #950)
 
 L'audit d'une VM (`check_nsg_access`, `readers.py`, que la console relit par `/api/audit` toutes
 les 5 min) rend une entrée de `nsgs[]` par carte réseau : son NSG, sa portée, son id, ses IP
@@ -267,27 +267,56 @@ privées (`ips`), et **ses IP publiques (`public_ips`)**. Le reste de la forme n
 {"nsg": "rg-app/nsg-web", "nsg_scope": "subnet", "nic_id": "…/networkInterfaces/web-nic",
  "ips": ["10.0.0.4", "10.0.0.5"],
  "public_ips": [{"address": "198.51.100.10"},
-                {"address": null, "error": "lecture refusée (droits) : (AuthorizationFailed) …"}]}
+                {"address": null, "error": "lecture refusée (droits) : (AuthorizationFailed) …",
+                 "code": "forbidden"}]}
 ```
 
 - **Le champ** : une liste, vide quand la carte n'a pas d'IP publique ; un élément par IP publique
   des configurations IP de la carte, dans leur ordre. `{"address": "<adresse>"}`, ou
-  `{"address": null, "error": "<raison>"}` quand la lecture a échoué.
+  `{"address": null, "error": "<raison>", "code": "<code>"}` quand la lecture a échoué. Un élément
+  lu n'a pas de `code`.
 - **La lecture** : pour chaque `ip_configurations[].public_ip_address.id` (la carte est déjà lue par
   `_get_vm_nic_targets`, qui note ces ids), un `publicIPAddresses.get` par le SDK réseau, **dans le
   groupe de ressources de l'IP, pris dans son id** (il peut différer de celui de la VM). Une même IP
   n'est lue qu'une fois par appel. Rien d'écrit. `dry_run` rend toujours `{"ok": true, "nsg": "dry_run"}`.
 - **Une lecture qui échoue ne fait jamais échouer l'audit** : le contrôle « NSG access » reste `ok`,
-  l'élément dit `address: null` et sa raison — `lecture refusée (droits) : …` (un 403),
-  `introuvable` (un 404), `pas d'adresse allouée (…)` (une IP dynamique sur une VM arrêtée),
-  `illisible : …` (le reste, un 429 par exemple). Les mots d'Azure : leur première ligne, sans id
-  (un id ARM devient sa sorte, un GUID `<id>`, comme RST1), 200 caractères au plus.
+  l'élément dit `address: null`, sa raison (`error`, le texte en français) et son code (`code`,
+  IPS2a : ce qu'une page teste, jamais le texte) — `forbidden` et `lecture refusée (droits) : …`
+  (un 403), `not_found` et `introuvable` (un 404), `not_allocated` et `pas d'adresse allouée (…)`
+  (une IP dynamique sur une VM arrêtée), `unreadable` et `illisible : …` (le reste, un 429 par
+  exemple). Les mots d'Azure : leur première ligne, sans id (un id ARM devient sa sorte, un GUID
+  `<id>`, comme RST1), 200 caractères au plus.
 - **Le droit** : `Microsoft.Network/publicIPAddresses/read`, sous le `*/read` du Reader. Imladris
   tient le Reader sur le groupe du banc seulement (`infra/glorfindel-host/main.tf`, `bench_reader`) :
   une IP publique dans un autre groupe y est refusée, dite comme telle, et l'audit tient. Pour la
   lire, Reader (ou un rôle qui porte `publicIPAddresses/read`) sur ce groupe, posé par Jonathan.
-- **La limite connue** : une VM sans NSG ni sur sa carte ni sur son sous-réseau fait échouer
-  l'audit (`_get_vm_nic_targets` lève, « cannot isolate VM ») ; son adresse ne se lit donc pas.
+- **Une VM sans NSG** (IPS2a, #950), ni sur une de ses cartes ni sur le sous-réseau de celle-ci :
+  le cas le plus exposé. Le contrôle « NSG access » reste **`fail`**, avec la même raison qu'avant
+  (`NSG not found or VM has no NSG — NIC <carte> and its subnet have no NSG — cannot isolate VM`,
+  la même correction), et porte en plus `data.nsgs[]`, une entrée par carte : celle qui n'a pas de
+  NSG dit `nsg_scope: "none"` et **`nsg: ""`** (vide, jamais absent : chaque entrée a les mêmes
+  clés), les autres comme ci-dessus ; `ips` et `public_ips` pour chacune. Le contrôle ne porte rien
+  d'autre (ni `nsg` ni `nsg_scope` au premier niveau de `data`), et `check_nsg_access` ni nombre de
+  règles ni préséance :
+
+  ```json
+  {"name": "NSG access", "status": "fail",
+   "message": "NSG not found or VM has no NSG — NIC web-nic and its subnet have no NSG — cannot isolate VM",
+   "fix": "Attach an NSG to the VM's NIC in resource group rg-app",
+   "data": {"nsgs": [{"nsg": "", "nsg_scope": "none", "nic_id": "…/networkInterfaces/web-nic",
+                      "ips": ["10.0.0.4"], "public_ips": [{"address": "198.51.100.10"}]}]}}
+  ```
+
+  **Un `fail` qui porte des données reste un échec pour chaque lecteur** : le verdict de l'audit
+  (`ready` faux : la console par `/api/audit`, l'audit au démarrage de la watch, `glorfindel
+  audit`), la préparation (la réserve `no_nsg_for_blocks` : l'isolation passe par le NSG de
+  quarantaine, pas le blocage d'une IP ; donc la garde d'autonomie de `decide`, qui tient la VM en
+  `human_only` tant que la réserve n'est pas confirmée, et la carte du bot), la posture (le manque
+  critique `nsg_reachable`). Aucun ne lit `data.nsgs` comme la preuve qu'un NSG se lit, ni qu'une
+  isolation ou un blocage est possible (`tests/unit/test_audit_no_nsg.py`). Le contrôle n'est jamais
+  un `warn` passager ni une correction de droits, quel que soit le nom de la carte. Une carte dont
+  le sous-réseau ne se lit pas n'est pas « sans NSG » (L24) : l'échec reste celui d'avant, sans
+  données.
 - **Les autres fournisseurs** : l'adaptateur AWS (et son faux, `tests/unit/fake_aws.py`) ne rend
   pas `check_nsg_access`, donc pas de `nsgs[]` ni de `public_ips`.
 

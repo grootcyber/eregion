@@ -241,19 +241,31 @@ class ReadersMixin:
         Enumerates EVERY NIC's governing NSG (`nsgs`), so the War Room shows the full
         multi-NIC NSG picture at rest (not just the primary NIC). `nsg`/`scope` mirror
         the first NIC for back-compat. Each entry carries the NIC's public IPs
-        (`public_ips`, IPS1a): `[{"address": …}]`, or `{"address": None, "error": …}` for
-        one that can't be read — empty without any.
+        (`public_ips`, IPS1a): `[{"address": …}]`, or `{"address": None, "error": …, "code": …}`
+        for one that can't be read — empty without any.
+
+        A VM with a NIC that has no NSG, neither its own nor its subnet's (IPS2a, #950), still
+        FAILS (`ok` False, the same error as before) and carries `nsgs` all the same: its
+        addresses read, that NIC said `nsg_scope: "none"` and `nsg: ""`. Those data never say an
+        NSG is readable, nor that an isolation or a block is possible. A NIC whose subnet could
+        not be read is not "none" (L24): that failure carries no data, as before.
         """
         if self.dry_run:
             return {"ok": True, "nsg": "dry_run"}
         try:
             self._ensure_clients()
             rg, vm_name = _parse_vm_resource_id(resource_id)
-            targets = self._get_vm_nic_targets(rg, vm_name)
+            targets = self._get_vm_nic_targets(rg, vm_name, allow_no_nsg=True)
+            bare = [t for t in targets if t["scope"] == "none"]
+            if bare:
+                no_nsg = f'NIC {bare[0]["nic_short"]} and its subnet have no NSG — cannot isolate VM'
+                failed = {"ok": False, "iam": _is_iam_error(no_nsg), "error": no_nsg}
+                if any(t.get("subnet_unreadable") for t in bare):
+                    return failed             # unknown, not "none": no address claimed
             read: dict = {}           # each public IP read once per call (IPS1a)
             nsgs = [
                 {
-                    "nsg": f'{t["nsg_rg"]}/{t["nsg_name"]}',
+                    "nsg": f'{t["nsg_rg"]}/{t["nsg_name"]}' if t["scope"] != "none" else "",
                     "nsg_scope": t["scope"],
                     "nic_id": t["nic_id"],
                     "ips": t["private_ips"],
@@ -262,6 +274,9 @@ class ReadersMixin:
                 }
                 for t in targets
             ]
+            if bare:
+                # A failure that carries the addresses (IPS2a): never ok, no rule count.
+                return {**failed, "nsgs": nsgs}
             first = targets[0]
             # rule count on the primary NIC's NSG (cheap signal that we can read it)
             rules = list(self._network.security_rules.list(first["nsg_rg"], first["nsg_name"]))

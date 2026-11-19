@@ -17,7 +17,8 @@ class AuditCheck:
     message: str
     fix: str = ""     # actionable CLI command to resolve the gap
     # Structured extras so the War Room doesn't have to parse `message`.
-    # NSG check → {"nsg": "rg/name", "nsg_scope": "nic"|"subnet"}.
+    # NSG check → {"nsg": "rg/name", "nsg_scope": "nic"|"subnet", "nsgs": [...]}; failed on a VM
+    # without NSG (IPS2a) → {"nsgs": [...]} only: still a failure, never an NSG that reads.
     # Backup check → {"points": int, "protected": bool} (when available).
     data: dict = field(default_factory=dict)
 
@@ -554,7 +555,11 @@ def _check_nsg(resource_id: str, connector) -> AuditCheck:
         return [access, precedence] if precedence else access
 
     err = res.get("error", "")[:120]
-    if res.get("iam"):
+    # A NIC without NSG (IPS2a, #950): the check fails as before and carries the addresses read
+    # (`nsgs`, that NIC `nsg_scope: "none"`) — never ok, never a transient warn nor an IAM fix,
+    # whatever the NIC's name. Those data never say an NSG is readable.
+    bare = res.get("nsgs") or []
+    if res.get("iam") and not bare:
         return AuditCheck(
             action="isolate_vm, block_suspicious_ip",
             name="NSG access",
@@ -568,7 +573,7 @@ def _check_nsg(resource_id: str, connector) -> AuditCheck:
                 f"--scope /subscriptions/$AZURE_SUBSCRIPTION_ID/resourceGroups/{rg}"
             ),
         )
-    if _is_transient_error(err):
+    if _is_transient_error(err) and not bare:
         return _transient_check("isolate_vm, block_suspicious_ip", "NSG access", err)
     return AuditCheck(
         action="isolate_vm, block_suspicious_ip",
@@ -576,6 +581,7 @@ def _check_nsg(resource_id: str, connector) -> AuditCheck:
         status="fail",
         message=f"NSG not found or VM has no NSG — {err}",
         fix=f"Attach an NSG to the VM's NIC in resource group {rg}",
+        data={"nsgs": bare} if bare else {},
     )
 
 
