@@ -380,8 +380,8 @@
    "version": "0.6",
    "nom": "identity defended",
    "etat": "publiee",
-   "derniere": "0.6.1",
-   "date": "2026-11-17",
+   "derniere": "0.6.2",
+   "date": "2026-11-19",
    "resume": "The Activity and Entra ID logs measured on the bench; a public technique against the test identity, seen by Glorfindel; the response to a stolen identity, on the card."
   },
   {
@@ -515,8 +515,9 @@
    "composant": "glorfindel",
    "poste": "g-detecter",
    "nom": "A control-plane operation that names neither its caller nor its resource: a card of incomplete telemetry, of lower severity, never approvable, never dropped; the caller named from its token's ids when the log leaves it empty",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.2",
    "lots": [
     "CPT1"
    ],
@@ -598,8 +599,9 @@
    "composant": "glorfindel",
    "poste": "g-detecter",
    "nom": "The watch's own return channel no longer fires the exfiltration rule, set aside by its identity, its container and its objects, and counted; a card attributed to no VM says so, with its candidates",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.2",
    "lots": [
     "SLF1"
    ],
@@ -1549,8 +1551,9 @@
    "composant": "socle",
    "poste": "s-signer",
    "nom": "Security hardening",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.2",
    "lots": [
     "SEC-K",
     "CDI1"
@@ -1562,8 +1565,9 @@
    "composant": "socle",
    "poste": "s-signer",
    "nom": "Security hardening",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.2",
    "lots": [
     "SEC-Ib"
    ],
@@ -1574,8 +1578,9 @@
    "composant": "socle",
    "poste": "s-signer",
    "nom": "Security hardening",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.2",
    "lots": [
     "SEC-F"
    ],
@@ -1586,8 +1591,9 @@
    "composant": "socle",
    "poste": "s-signer",
    "nom": "Security hardening",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.2",
    "lots": [
     "SEC-Fc",
     "SEC-Fd"
@@ -1599,8 +1605,9 @@
    "composant": "socle",
    "poste": "s-signer",
    "nom": "Security hardening",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.2",
    "lots": [
     "SEC-G",
     "SEC-G-workflow"
@@ -1612,8 +1619,9 @@
    "composant": "socle",
    "poste": "s-signer",
    "nom": "Security hardening",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.2",
    "lots": [
     "SEC-E",
     "SEC-Ec"
@@ -1625,8 +1633,9 @@
    "composant": "socle",
    "poste": "s-signer",
    "nom": "Security hardening",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.2",
    "lots": [
     "SEC-H"
    ],
@@ -1835,8 +1844,9 @@
    "composant": "annatar",
    "poste": "a-attaquer",
    "nom": "An Orodruin apply never destroys the Stratus guardrails by omission — always-loaded auto.tfvars and a pre-plan guard",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.2",
    "lots": [
     "R2BGb"
    ],
@@ -1847,8 +1857,9 @@
    "composant": "annatar",
    "poste": "a-attaquer",
    "nom": "Stratus's closed role, Orodruin's read-only authz and the federated credential, as Terraform on the dedicated subscription (G2/G3/G4)",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.2",
    "lots": [
     "R2BGc"
    ],
@@ -1911,8 +1922,9 @@
    "composant": "annatar",
    "poste": "a-attaquer",
    "nom": "The offline provider mirror carries the providers the techniques use but do not declare",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.2",
    "lots": [
     "R2BY"
    ],
@@ -1923,8 +1935,9 @@
    "composant": "annatar",
    "poste": "a-attaquer",
    "nom": "The hardened execution host lets Terraform providers execute, from a dedicated exec tmpfs, with /tmp still noexec",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.2",
    "lots": [
     "R2BZ"
    ],
@@ -1935,8 +1948,9 @@
    "composant": "annatar",
    "poste": "a-attaquer",
    "nom": "The control-plane warmup authenticates by the host's managed identity (ARM_USE_MSI), never forced over a service-principal secret",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.2",
    "lots": [
     "MSI1"
    ],
@@ -1960,8 +1974,9 @@
    "composant": "annatar",
    "poste": "a-attaquer",
    "nom": "Playing one scenario on the armed execution host, in one guarded command",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.2",
    "lots": [
     "ORU1"
    ],
@@ -2185,8 +2200,9 @@
    "composant": "orodruin",
    "poste": "o-executer",
    "nom": "The weekly drill's scheduled start: a Logic App that wakes Orodruin before the drill, shipped disabled, its identity able only to start Orodruin; Orodruin shut down every day at 23:00 UTC; nothing applied yet",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.2",
    "lots": [
     "DRL1c"
    ],
@@ -2198,8 +2214,9 @@
    "composant": "orodruin",
    "poste": "o-executer",
    "nom": "The weekly drill's service runs with the options of the injector's runs, its executable run HOME included, /tmp still noexec; the parity with the Makefile held by a test; reaches Orodruin at the next arming",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.2",
    "lots": [
     "DRL1d"
    ],
@@ -2211,8 +2228,9 @@
    "composant": "console",
    "poste": "k-suivre",
    "nom": "The weekly drill on Imladris's side: each occurrence judged by the code, the absence alarm, the bot's thread, the Weekly drill line on the console; nothing armed yet",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.2",
    "lots": [
     "DRL1b"
    ],
@@ -2615,8 +2633,9 @@
    "composant": "console",
    "poste": "k-suivre",
    "nom": "A catalogue entry proven on the bench counts as an implemented one, in the coverage, the board, the drills and the rules proposed",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.2",
    "lots": [
     "STM1g"
    ],
@@ -2627,8 +2646,9 @@
    "composant": "console",
    "poste": "k-suivre",
    "nom": "A proof under 21 days is fresh; proven is the catalogue's status only",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.2",
    "lots": [
     "FRS1",
     "FRS1b"
@@ -2640,8 +2660,9 @@
    "composant": "console",
    "poste": "k-juger",
    "nom": "A verdict proposed on an expected exercise card",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.2",
    "lots": [
     "VP1",
     "VP1b",
@@ -2655,8 +2676,9 @@
    "composant": "console",
    "poste": "k-voir",
    "nom": "The infrastructure map holds while it scrolls, however many cards: each edge on its card",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.2",
    "lots": [
     "TOPO1"
    ],
@@ -2668,8 +2690,9 @@
    "composant": "console",
    "poste": "k-voir",
    "nom": "A VM's card shows its private and public addresses, folded or not, and copies one in a click; a public IP the audit cannot read is said, the audit holds",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.2",
    "lots": [
     "IPS1a",
     "IPS1b"
@@ -3071,8 +3094,9 @@
    "composant": "socle",
    "poste": "s-prouver",
    "nom": "Three intermittent tests steadied without weakening them: each reads its clock and its marker where the code under test does",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.2",
    "lots": [
     "FLK3"
    ],
@@ -3096,8 +3120,9 @@
    "composant": "socle",
    "poste": "s-prouver",
    "nom": "The push CI runs Azure's invariant machine alone, after the rest: a stack dump of a running thread no longer kills it",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.2",
    "lots": [
     "CI12",
     "CI12-workflow"
@@ -3224,8 +3249,9 @@
    "composant": "socle",
    "poste": "s-signer",
    "nom": "Security hardening",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.2",
    "lots": [
     "SEC-A1b"
    ],

@@ -1,3 +1,0 @@
-### Fixed
-- **The push CI no longer falls red on Azure's invariant machine outlasting 8 min** (CI12, #899; `docs/operations.md`, « La CI au bon endroit »). The Linux job of `ci.yml` runs the suite in four processes without `tests/unit/test_invariants.py`, then that file alone in one process, as the release gate does. It keeps the same budget (500 sequences on a push, 200 on a pull request) and the same database. The machine runs whenever the suite's step ran, red or green. Alone it takes 3 to 6 min, so its 8 min before a stack dump are a hang's again. The macOS job, the release gate and the night are unchanged.
-  - Tests: `tests/unit/test_workflows.py` (mutants M6236–M6243, `scripts/mutants/CI12-workflow.py`; M1441, M3588 and M4191 follow the lines they mutate).
