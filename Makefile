@@ -333,7 +333,7 @@ help:
 	@echo "    Le poste ouvert au téléphone, la console d'Imladris : plus haut (make imladris-tunnel-check)"
 	@echo ""
 	@echo "Gothmog (G0, G1) — une panne déclarée, depuis Orodruin (gothmog/README.md) :"
-	@echo "  make gothmog-preflight [FAULT=vm-shutdown]   Contrat, cibles, état normal — rien d'écrit"
+	@echo "  make gothmog-preflight [FAULT=vm-shutdown]   Contrat, cibles, état normal, droits, agent, séries — rien d'écrit"
 	@echo "  make gothmog-run [FAULT=vm-shutdown]         La panne, son retour vérifié (~15 min)"
 	@echo "    Sans watch de Glorfindel vivante, refusé (V1) ; WITHOUT_GLORFINDEL=1 : run de dév, dit au rapport"
 	@echo "    FAULT=vm-disk-write | vm-cpu-pressure | vm-restart : le bruit bénin (G1)"

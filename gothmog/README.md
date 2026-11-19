@@ -54,7 +54,7 @@ par sa propre télémétrie, comme pour une vraie panne.
 Depuis Orodruin (contrat armé), gondolin allumée :
 
 ```bash
-make gothmog-preflight      # watch de Glorfindel, contrat, cibles, état normal — rien d'écrit
+make gothmog-preflight      # watch, contrat, cibles, état normal, puis droits, agent, séries (G1b) — rien d'écrit
 make gothmog-run            # la panne et son retour vérifié (~15 min)
 make gothmog-run WITHOUT_GLORFINDEL=1   # run de développement sans watch vivante, dit au rapport
 ```
@@ -149,27 +149,68 @@ variable `chaos_noise_vms` (`variables.tf`), car un test ne peut pas remplacer u
 décide. Ne la pose ni dans `terraform.tfvars` ni par `TF_VAR_chaos_noise_vms` : le bruit s'allume
 dans `config.yaml`, plan montré, par Jonathan seul.
 
+### Le préflight dit si la panne peut tourner, et être vue (G1b)
+
+Après l'état normal, `gothmog preflight <panne>` lit trois choses de plus, sans rien écrire. Chacune
+a sa ligne, ✓ ou ✗, et un ✗ refuse : « not ready ».
+
+| Lu | Où | Ce qu'un manque éviterait |
+|---|---|---|
+| Les droits d'Orodruin de démarrer **et** d'annuler cette expérience | `Microsoft.Authorization/permissions`, à la portée de l'expérience | un démarrage qui répond 403, ou une panne lancée qu'on ne peut plus annuler. Le contrat arme sur l'expérience de G0 seule : une expérience appliquée après le dernier `make orodruin-lock YES=1` n'a pas ses droits |
+| L'agent Chaos installé, sur chaque VM que l'expérience atteint par lui | l'`instanceView` de la VM : l'extension `ChaosLinuxAgent` en `ProvisioningState/succeeded` | une panne d'agent qui ne démarre pas |
+| Chaque série que lit l'effet, collectée sur chaque cible | la requête de l'effet elle-même, sur les 30 dernières minutes : un nombre, quelle que soit sa valeur | dix minutes de bruit jamais vues, parce qu'un compteur est collecté sous un autre nom (`fault_effective` FAIL) |
+
+Une lecture qui échoue n'est jamais « prêt ». Le seuil de l'effet n'est pas demandé : au repos, le
+bruit n'est pas encore là, et c'est le run qui le demande. Un arrêt (`vm-shutdown`, `vm-restart`)
+cible la VM elle-même et lit son effet dans ARM : seuls ses droits sont demandés. Le run ne change
+pas.
+
+**Ce que le préflight ne lit pas.** Que stress-ng soit présent sur la VM, et que l'agent joigne
+Chaos Studio : rien dans le plan de contrôle ne le montre. L'effet de la panne, lu pendant le run,
+le dit : s'il manque, le run échoue fermé.
+
+**Une hypothèse, à mesurer à la première séance.** La lecture des droits se fait à la portée d'une
+expérience. On suppose qu'elle répond à l'identité d'Orodruin comme à la portée du groupe, où le
+contrat la fait déjà. Si elle répond 403, le préflight dit « unreadable » et refuse : le signaler,
+ne pas le contourner.
+
+**Mutants** : M6586–M6605 (`tests/unit/test_gothmog_readiness.py`).
+
 ### Reste, sur le banc, avec Jonathan
 
 Rien n'est appliqué ni mesuré : les trois pannes sont `planned` au catalogue (Dagorlad les montre
-sans poignée) jusqu'au premier run.
-1. `make celebrimbor-plan`, avec `chaos.noise_vms: [gondolin]`. Le plan ajoute l'identité de
-   l'agent (et la modification de gondolin qui la porte), la cible Microsoft-Agent (azapi, un
-   provider de plus, au verrou du module depuis CI4 : `celebrimbor-plan` l'installe), l'extension, deux capacités,
-   trois expériences et leurs trois rôles. Puis `make celebrimbor-up YES=1`, et
-   `make orodruin-lock YES=1` : Orodruin reçoit ses droits de démarrer et d'annuler expérience par
-   expérience, à son propre apply (`infra/orodruin/main.tf`, `experiment_injector`). Sans lui, le
-   démarrage d'une nouvelle panne répond 403.
-2. Vérifier ce qui n'est pas mesuré :
-   - que stress-ng est installé par l'extension ;
-   - que l'agent joint Chaos Studio ;
-   - que le Heartbeat de gondolin tient après l'ajout de l'identité ;
-   - le nom de l'objet CPU sous l'agent Azure Monitor (`Processor`, `_Total`).
+sans poignée) jusqu'au premier run. La séance, dans l'ordre. Chaque geste est celui de Jonathan.
 
-   `make gothmog-preflight FAULT=vm-disk-write` lit l'état normal sans rien écrire.
-3. Depuis Orodruin armé, une panne à la fois (`gothmog run vm-disk-write`, puis `vm-cpu-pressure`,
-   puis `vm-restart`), en `human_only` sur gondolin. Puis `make imladris-fault-rate` (sur Imladris).
-   Le taux mesuré va ici, et les pannes passent `implemented`.
+1. **Appliquer.** `chaos.noise_vms: [gondolin]` dans `config.yaml`, puis `make celebrimbor-plan`.
+   Le plan ajoute l'identité de l'agent (et la modification de gondolin qui la porte), la cible
+   Microsoft-Agent (azapi, un provider de plus, au verrou du module depuis CI4 :
+   `celebrimbor-plan` l'installe), l'extension, deux capacités, trois expériences et leurs trois
+   rôles. Puis `make celebrimbor-up YES=1`, et `make orodruin-lock YES=1` : Orodruin reçoit ses
+   droits de démarrer et d'annuler expérience par expérience, à son propre apply
+   (`infra/orodruin/main.tf`, `experiment_injector`).
+2. **Préflighter chaque panne**, gondolin en `human_only` (console) :
+
+   ```bash
+   make gothmog-preflight FAULT=vm-disk-write
+   make gothmog-preflight FAULT=vm-cpu-pressure
+   make gothmog-preflight FAULT=vm-restart
+   make gothmog-preflight FAULT=vm-shutdown
+   ```
+
+   Un ✗, et ce qu'il demande :
+
+   | La ligne dit | À faire |
+   |---|---|
+   | `start` ou `cancel` : `not held` | `make orodruin-lock YES=1`, puis le préflight à nouveau |
+   | `chaos agent` : `absent`, ou un autre état que `ProvisioningState/succeeded` | l'extension : relire le plan et son état dans le portail. Ne pas lancer |
+   | une série : `nothing in the last 30 min under these names` | le compteur n'est pas collecté sous ce nom (pour le CPU : l'objet sous l'agent Azure Monitor). Relever le nom réel dans Log Analytics : `Perf \| where _ResourceId =~ '<id de gondolin>' \| distinct ObjectName, CounterName, InstanceName`. L'expérience se corrige par une PR, puis le préflight à nouveau |
+   | `unreadable` | relancer une fois ; si ça tient, le signaler |
+
+3. **Lancer, une panne à la fois**, chacune jusqu'à son rapport (`make gothmog-run FAULT=…`, environ
+   15 minutes chacune) : `vm-disk-write`, `vm-cpu-pressure`, `vm-restart`, puis `vm-shutdown`. La
+   preuve de G0 date du 31/10 : elle passe les 30 jours le 30/11, et la même séance la rafraîchit.
+4. **Le taux.** `make imladris-fault-rate` (sur Imladris). Le taux mesuré va ici, et les trois
+   pannes passent `implemented`, par une PR de la session Gothmog.
 
 ## G2 — les pannes des dépendances de Glorfindel
 

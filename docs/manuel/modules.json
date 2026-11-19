@@ -2076,6 +2076,19 @@
    "doc": "gothmog/README.md"
   },
   {
+   "id": "x-bruit-preflight",
+   "composant": "gothmog",
+   "poste": "x-eprouver",
+   "nom": "The preflight says whether a fault can run and be seen: Orodruin's rights on its experiment, the Chaos agent, the series its effect reads",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "G1b"
+   ],
+   "issue": 76,
+   "doc": "gothmog/README.md"
+  },
+  {
    "id": "x-bruit-banc",
    "composant": "gothmog",
    "poste": "x-eprouver",

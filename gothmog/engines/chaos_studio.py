@@ -26,6 +26,9 @@ COMPUTE_API = "2024-07-01"
 RESOURCES_API = "2022-09-01"
 # Log Analytics through ARM, not api.loganalytics.io: Orodruin's egress lets only ARM out.
 LOGS_API = "2017-01-01-preview"
+# The caller's own rights at a scope (Microsoft.Authorization/permissions), as the contract reads
+# them on the bench's group (eregion_core/orodruin.py).
+AUTHZ_API = "2022-04-01"
 
 BENCH_RG_ENV = "EREGION_BENCH_RG"
 DEFAULT_BENCH_RG = "rg-celebrimbor"
@@ -44,6 +47,16 @@ _VM_TARGET = re.compile(
     r"/virtualmachines/[^/]+)/providers/microsoft\.chaos/targets/"
     r"(?:microsoft-virtualmachine|microsoft-agent)$",
     re.IGNORECASE)
+_AGENT_TARGET = re.compile(r"/providers/microsoft\.chaos/targets/microsoft-agent$", re.IGNORECASE)
+# The Chaos agent's extension, as Celebrimbor installs it (infra/terraform/chaos.tf, G1): its
+# name there, and its type as an instanceView names an extension (publisher.type).
+CHAOS_AGENT_EXTENSION = "chaoslinuxagent"
+CHAOS_AGENT_TYPE = "microsoft.azure.chaos.chaoslinuxagent"
+AGENT_INSTALLED = "ProvisioningState/succeeded"
+AGENT_ABSENT = "absent"
+# What a run writes on an experiment: both, or a fault that starts could not be cancelled.
+EXPERIMENT_WRITES = ("Microsoft.Chaos/experiments/start/action",
+                     "Microsoft.Chaos/experiments/cancel/action")
 _ISO_DURATION = re.compile(r"^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$", re.IGNORECASE)
 
 
@@ -68,6 +81,43 @@ def experiment_targets(experiment: dict) -> list[str]:
     if not vms:
         raise ValueError("the experiment names no target")
     return vms
+
+
+def agent_vms(experiment: dict) -> list[str]:
+    """The VMs the experiment reaches through the Chaos agent installed on them (G1b): their
+    Microsoft-Agent target is in its selectors. A shutdown's target is the VM itself: none."""
+    vms: list[str] = []
+    for sel in (experiment.get("properties") or {}).get("selectors") or []:
+        for t in sel.get("targets") or []:
+            tid = t.get("id") or ""
+            m = _VM_TARGET.match(tid)
+            if m and _AGENT_TARGET.search(tid) and tid[:m.end("vm")].lower() not in {v.lower() for v in vms}:
+                vms.append(tid[:m.end("vm")])
+    return vms
+
+
+def chaos_agent_status(vm: dict) -> str:
+    """The Chaos agent's extension on the VM, as its instanceView says it (G1b): the extension's
+    provisioning status, or ``absent``. Installed says nothing of stress-ng, nor of the agent
+    reaching Chaos Studio: the fault's effect, read during the run, says those."""
+    for ext in ((vm.get("properties") or {}).get("instanceView") or {}).get("extensions") or []:
+        if (str(ext.get("name") or "").lower() == CHAOS_AGENT_EXTENSION
+                or str(ext.get("type") or "").lower() == CHAOS_AGENT_TYPE):
+            return next((s["code"] for s in ext.get("statuses") or []
+                         if str(s.get("code") or "").startswith("ProvisioningState/")),
+                        "ProvisioningState/unknown")
+    return AGENT_ABSENT
+
+
+def held(action: str, perms: list[dict]) -> bool:
+    """``action`` is held by one of the permission entries: in its actions (wildcards), not in
+    its notActions — each entry is one role, its notActions only take from its own actions."""
+    import fnmatch
+    a = action.lower()
+    return any(
+        any(fnmatch.fnmatch(a, str(x).lower()) for x in (p.get("actions") or []))
+        and not any(fnmatch.fnmatch(a, str(x).lower()) for x in (p.get("notActions") or []))
+        for p in perms if isinstance(p, dict))
 
 
 def iso_seconds(value: str) -> float:
@@ -197,6 +247,15 @@ class ChaosStudio:
     def resource_group_tags(self, rg: str) -> dict:
         path = f"/subscriptions/{self.subscription_id}/resourcegroups/{rg}"
         return self._call("get", path, RESOURCES_API).json().get("tags") or {}
+
+    def permissions(self, scope: str) -> list[dict]:
+        """The caller's own rights at ``scope`` — read, nothing written (G1b). One page: a
+        listing that goes on is not followed, and raises — never held on half of it."""
+        body = self._call("get", f"{scope}/providers/Microsoft.Authorization/permissions",
+                          AUTHZ_API).json()
+        if body.get("nextLink"):
+            raise RuntimeError("the rights go on past their first page: not read")
+        return body.get("value") or []
 
     def query(self, kql: str) -> list[dict]:
         r = self._call("post", f"{self.workspace_id()}/api/query", LOGS_API,
