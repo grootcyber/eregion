@@ -318,6 +318,11 @@ Après I1F, AL1, C2 et A3 (27/10) :
   la détection : la décision reste à juger. Aucune autre carte n'en montre (`to_judge` ne le porte que
   sur une carte d'exercice). Textes échappés (`_attr`), actions dans `ACTIONS` (`confirmProposed`,
   `refuseProposed` et leurs variantes de la carte ouverte).
+- **Une carte sans fuseau reste dans TO JUDGE** (VP1c, #920 ; `docs/observation.md`) : `/api/to-judge`
+  la garde quelle que soit la période, en tête, `time_unreadable: true` ; la ligne dit « ⚠ time
+  unreadable — judge it all the same » (`_UNTIMED` en titre) et ne la date pas. Tout âge que la page
+  calcule (`_relTime`) refuse une heure sans fuseau ou illisible (« time unreadable ») : un navigateur
+  la prendrait pour son heure locale.
 - **Une ligne de TO JUDGE ouvre sa carte** (JUG1, #760 ; au banc du 12/11, elle ne s'ouvrait pas) :
   `openJudgeCard` montre la carte telle que TO JUDGE la porte (`/api/to-judge` : ses étapes, et ce
   qu'a fait une action prise seule), complétée par la carte en attente de `/api/state` quand elle y
