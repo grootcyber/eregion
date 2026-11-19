@@ -228,8 +228,11 @@ def _cli_command(esc: dict) -> str:
         # ATT1 (#936): a detection attributed to no VM — whatever the card's type, never a command
         # on the VM it is filed on: « non attribuée », its candidates, and the judgement to the CLI.
         said = _unattributed_said(loose, _plain)
+        # SEC-Ed (#954): a snapshot there — the human chooses the VM, never the one it is filed on.
+        choose = ("# la détection ne nomme aucune VM : choisir la VM à capturer, puis glorfindel "
+                  "snapshot <groupe>/<nom> --yes sur celle-là\n" if action == "snapshot" else "")
         return (f"# {said}\n# juger depuis la CLI quelle VM elle concerne (glorfindel pending, la "
-                f"ligne de détection), puis agir sur celle-là\nglorfindel ack {esc_id}")
+                f"ligne de détection), puis agir sur celle-là\n{choose}glorfindel ack {esc_id}")
     if esc.get("escalation_type") in _ANCHORED_TYPES:
         return f"glorfindel ack {esc_id}"
     # MSK3: the VM by the name a command takes back to it, never its full id — the message is

@@ -107,7 +107,8 @@ const _APPROVABLE = new Set(['isolate_vm', 'block_suspicious_ip', 'release_isola
 // ATT1 (#936): the actions aimed at the card's VM (eregion_core/action_queue.py VM_AIMED_ACTIONS).
 // On a card that says it is unattributed, whatever its type, never an « Approve & execute »: the VM
 // is the one the card is filed on, not one the detection names — the server refuses it too.
-const _VM_AIMED = new Set(['isolate_vm', 'block_suspicious_ip', 'release_isolation', 'revoke_temp_access']);
+// SEC-Ed (#954): the snapshot too — the human chooses the VM to snapshot, whatever the card's type.
+const _VM_AIMED = new Set(['isolate_vm', 'block_suspicious_ip', 'release_isolation', 'revoke_temp_access', 'snapshot']);
 function _aimsLoose(e) { return !!_unattributed(e) && _VM_AIMED.has(e.action); }
 function _isHeld(e) {
   return _HELD_TYPES.has(e.escalation_type) && _APPROVABLE.has(e.action)
@@ -117,6 +118,8 @@ function _isHeld(e) {
 // A held snapshot to take by hand (« 📸 Snapshot ») — never on an unattributed card (ATT1): it would
 // snapshot the VM the card is filed on, which the detection does not name.
 function _looseSnapshot(e) { return e.action === 'snapshot' && !!_unattributed(e); }
+// SEC-Ed (#954): what such a card says — the human chooses the VM (a constant, nothing from outside).
+const _LOOSE_SNAPSHOT_SAID = 'the detection names no VM: choose the VM to snapshot';
 function _isSnapshotPending(e) {
   return e.action === 'snapshot' && e.escalation_type === 'low_confidence' && !_unattributed(e);
 }
@@ -236,7 +239,10 @@ function _targetNote(e, vmName) {
   // SLF1 (#929): a detection attributed to no VM — « not attributed », its candidates; never the
   // name of the VM it is filed on.
   const loose = _unattributed(e);
-  if (loose) return `<div class="esc-context" title="${_attr(_LOOSE_TITLE)}">⚓ ${_attr(_unattributedTxt(loose))}</div>`;
+  if (loose) {
+    const choose = _looseSnapshot(e) ? ` · ${_attr(_LOOSE_SNAPSHOT_SAID)}` : '';
+    return `<div class="esc-context" title="${_attr(_LOOSE_TITLE)}">⚓ ${_attr(_unattributedTxt(loose))}${choose}</div>`;
+  }
   if (!_isAnchored(e) || e.escalation_type === 'unattributed_signal') return '';
   // Filed before AL1c: on the first VM online, or on the VM itself (a role on the VM, a signal of
   // `respond`) — the card cannot tell which.
@@ -542,7 +548,10 @@ function cliCommand(esc) {
   if (loose) {
     // A name from the store on one line (a newline would start a command of its own).
     const said = _unattributedTxt(loose).replace(/[\u0000-\u001f\u007f]/g, ' ');
-    return `# ${said}\n# judge which VM it is about from the CLI (glorfindel pending, the detection's row), then act on that VM\nglorfindel ack ${id}`;
+    // SEC-Ed (#954): a snapshot there — the human chooses the VM, never the one the card is filed on.
+    const choose = _looseSnapshot(esc)
+      ? `# ${_LOOSE_SNAPSHOT_SAID}, then glorfindel snapshot <group>/<name> --yes on that one\n` : '';
+    return `# ${said}\n# judge which VM it is about from the CLI (glorfindel pending, the detection's row), then act on that VM\n${choose}glorfindel ack ${id}`;
   }
   if (_isAnchored(esc)) return `glorfindel ack ${id}`;
   if (_isHeld(esc)) {

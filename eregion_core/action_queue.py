@@ -78,9 +78,12 @@ UNDO_TYPE = "verification_failed"
 # ATT1 (#936): the actions aimed at the card's VM — its isolation, a block on its NSG, the release of
 # its isolation. On a detection attributed to no VM (the card is filed on a VM the detection does not
 # name), never approvable in one click, whatever the card's type nor the gate that held it before:
-# the attribution guard's (glorfindel/agent.py) and the approval's one set. The snapshot is not one
-# (SEC-Ec: what it does there stays Jonathan's to decide).
+# the attribution guard's (glorfindel/agent.py) and the approval's one set.
 VM_AIMED_ACTIONS = frozenset({"isolate_vm", "block_suspicious_ip", "release_isolation", "revoke_temp_access"})
+# SEC-Ed (#954; Jonathan, 19/11): the snapshot too — it would capture the VM the card is filed on, which
+# the detection does not name. Never approvable in one click there, whatever the confidence or the
+# mode: the human chooses the VM to snapshot.
+VM_AIMED_ACTIONS |= {"snapshot"}
 UNATTRIBUTED_TYPE = "unattributed_signal"
 
 
