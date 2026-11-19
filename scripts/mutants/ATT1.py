@@ -2,7 +2,8 @@
 to no VM is never approvable in one click (the server, the signed queue, the console, the bot), its
 suggested commands never name the VM it is filed on, and the exclusion of the watch's return channel
 is the shipped rule's only. One mutant per property, M6451–M6465, measured by
-tests/unit/test_attribution_prime.py."""
+tests/unit/test_attribution_prime.py; M6449–M6450 (from MUT14's range, the relecture's two findings): the
+title of an unattributed card said done, the model's steps shown without their note."""
 AGENT = "glorfindel/agent.py"
 _T = "tests/unit/test_attribution_prime.py"
 _HELD = f"{_T}::test_an_unattributed_detection_held_before_is_the_attribution_s_card"
@@ -10,6 +11,14 @@ _FORGED = f"{_T}::test_no_approvable_type_runs_an_unattributed_isolation"
 _PAGE = f"{_T}::test_the_page_offers_no_one_click_approval_on_an_unattributed_card"
 
 MUTANTS = [
+    ("M6449", "the console's title of an unattributed card back to its past label: « VM isolated from "
+     "network » for an isolation nothing ran (ATT1)", "eregion_console/static/glorfindel.js",
+     "  const loose = _looseTitle(e);\n  if (loose) return loose;\n",
+     "  const loose = _looseTitle(e);\n"),
+    ("M6450", "`glorfindel pending` shows the model's steps of an unattributed card without saying they "
+     "aim at the VM it is filed on (ATT1)", "glorfindel/cli.py",
+     "        loose_steps = _esc_steps.unattributed(e)\n        if loose_steps is not None:\n",
+     "        loose_steps = _esc_steps.unattributed(e)\n        if False:\n"),
     ("M6451", "the attribution guard leaves at once when a gate before it held the decision: a "
      "low_confidence card on an unattributed detection, approvable (ATT1)", AGENT,
      "    if d[\"action\"] not in _ATTRIBUTION_HELD:\n        return\n",
@@ -76,6 +85,8 @@ MUTANTS = [
      "            if True:\n"),
 ]
 TESTS = {
+    "M6449": f"{_T}::test_the_page_never_says_an_unattributed_card_s_action_done",
+    "M6450": f"{_T}::test_the_model_s_steps_of_an_unattributed_card_are_said_aimed_at_the_anchor",
     "M6451": _HELD,
     "M6452": _HELD,
     "M6453": _HELD,

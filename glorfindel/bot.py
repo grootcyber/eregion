@@ -422,6 +422,11 @@ def _embed_body(esc: dict) -> tuple[str, list[tuple[str, str, bool]]]:
         fields += _plan_fields(plan)
     elif esc.get("suggested_steps"):
         steps = "\n".join(f"• {discord_text(s)}" for s in esc["suggested_steps"][:3])
+        loose_steps = esc_module.unattributed(esc)
+        if loose_steps is not None:
+            # ATT1 (#936): the model's steps may name the VM the card is filed on — said first, by the code.
+            said = _unattributed_said(loose_steps, lambda v: discord_code(str(v or "?")[:_NAME_MAX]))
+            steps = f"⚓ {said} ; juger depuis la CLI, ces étapes visent la VM d'ancrage\n{steps}"
         fields.append(("Prochaines étapes", steps[:1024], False))
     return discord_text(explanation or reason)[:2048], fields
 

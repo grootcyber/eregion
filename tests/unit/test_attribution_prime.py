@@ -294,7 +294,7 @@ def test_the_page_offers_no_one_click_approval_on_an_unattributed_card():
     assert js.count("isSnapshotPending = _isSnapshotPending(") == 3
     assert "e.action === 'snapshot' && e.escalation_type === 'low_confidence')" not in js.replace(
         "&& !(e.action === 'snapshot' && e.escalation_type === 'low_confidence')", "")
-    assert "const hasSnapshotEsc = myEscs.some(_isSnapshotPending);" in js
+    assert "const hasSnapshotEsc = myEscs.some(e => _isSnapshotPending(e) || _looseSnapshot(e));" in js
 
 
 def test_the_page_s_command_never_names_the_vm_of_an_unattributed_card():
@@ -307,6 +307,43 @@ def test_the_page_s_command_never_names_the_vm_of_an_unattributed_card():
     assert "${said}" in loose and "judge which VM it is about from the CLI" in loose
     assert "glorfindel ack ${id}" in loose
     assert ".replace(/[\\u0000-\\u001f\\u007f]/g, ' ')" in loose     # one line: no command slipped in
+
+
+def test_the_page_never_says_an_unattributed_card_s_action_done():
+    """A card no longer `_isHeld` took its past label (« VM isolated from network ») — said of an
+    isolation nothing ran. On a card that says it is unattributed: its verb, « held: not attributed »,
+    wherever its title is drawn (the tile's card, its details, the command's window); never on a card
+    whose action did run."""
+    js = JS.read_text()
+    loose = _fn(js, "function _looseTitle(e) {")
+    assert "if (!_unattributed(e) || !ACTION_LABELS_VERB[e.action] || _RAN_TYPES.has(e.escalation_type)) return '';" in loose
+    assert "return `${ACTION_LABELS_VERB[e.action]} — held: not attributed`;" in loose
+    ran = re.search(r"const _RAN_TYPES = new Set\(\[([^\]]*)\]\);", js)
+    assert ran and set(re.findall(r"'([a-z_]+)'", ran.group(1))) == {
+        "autonomous_action", "verification_failed", "write_blocked", "action_failed"}
+    title = _fn(js, "function escTitle(e) {")
+    assert title.index("if (loose) return loose;") < title.index("ACTION_LABELS[e.action]")
+    assert "const loose = _looseTitle(e);" in title
+    assert ": isSnapshotPending ? 'Snapshot recommended' : (_looseTitle(esc) || actionLabel(esc.action));" in js
+    # The tile's card and its details fall to escTitle for a card not held.
+    assert "\n    : escTitle(e);\n" in js and "\n      : escTitle(e);\n" in js
+
+
+def test_the_tile_s_snapshot_stays_hidden_while_an_unattributed_snapshot_waits():
+    """The card of an unattributed snapshot has no « 📸 Snapshot »: the tile's own button stays hidden
+    too while it waits — it would snapshot the VM the detection does not name."""
+    js = JS.read_text()
+    assert "function _looseSnapshot(e) { return e.action === 'snapshot' && !!_unattributed(e); }" in js
+    assert js.count("      : hasSnapshotEsc\n        ? ''\n") == 2
+
+
+def test_the_bot_says_an_unattributed_card_s_action_not_done():
+    """Discord's title says what is recommended, not done — an unattributed card's included."""
+    pytest.importorskip("discord")
+    from glorfindel.bot import _embed_title
+    for etype in ("low_confidence", "unattributed_signal"):
+        title = _embed_title(_card("isolate_vm", etype, loose=True))
+        assert "non exécuté" in title and "isolée" not in title, title
 
 
 # ── The suggested commands ───────────────────────────────────────────────────────────────────────
@@ -338,6 +375,39 @@ def test_glorfindel_pending_never_names_the_vm_an_unattributed_card_is_filed_on(
     assert "-n vm-b3a" not in steps and "rg/vm-b3a" not in steps and "<id: glorfindel list --ids>" not in steps
     for verb in ("restore", "release", "az vm show", "delete"):
         assert verb not in steps.replace("glorfindel ack", "")
+
+
+def _with_steps(loose: bool) -> dict:
+    return _card("isolate_vm", "low_confidence", loose=loose,
+                 suggested_steps=["glorfindel isolate rg/vm-b3a --yes", "Vérifier les journaux"])
+
+
+def test_the_model_s_steps_of_an_unattributed_card_are_said_aimed_at_the_anchor():
+    """The model's steps, shown as written, may name the VM the card is filed on: on an unattributed
+    card, a line of the code says so before them — `glorfindel pending`, the console's details,
+    Discord; never on an attributed one. The model's message is untouched (no zone of the prompt)."""
+    lines = _cli_steps(_with_steps(True))
+    note = next(i for i, ln in enumerate(lines) if "these steps aim at the VM the card is filed on" in ln)
+    assert "Not attributed — candidates: vm-b3a, vm-b3b; judge from the CLI" in lines[note]
+    assert note < next(i for i, ln in enumerate(lines) if "glorfindel isolate" in ln)
+    assert not any("these steps aim" in ln for ln in _cli_steps(_with_steps(False)))
+    js = JS.read_text()
+    steps = _fn(js, "function _looseSteps(e) {")
+    assert "if (!loose || !(e.suggested_steps || []).length) return '';" in steps
+    assert "${_attr(_unattributedTxt(loose))}; judge from the CLI — these steps aim at the VM the card is filed on" in steps
+    assert "return _looseSteps(e) + (e.suggested_steps || [])" in js
+    assert "_identityPlan(e) : _looseSteps(e) + (e.suggested_steps || [])" in js
+
+
+def test_discord_says_the_model_s_steps_of_an_unattributed_card_aim_at_the_anchor():
+    pytest.importorskip("discord")
+    from glorfindel.bot import _embed_body
+    [steps] = [v for k, v, _ in _embed_body(_with_steps(True))[1] if k == "Prochaines étapes"]
+    first = steps.splitlines()[0]
+    assert first.startswith("⚓ non attribuée — candidates : `vm-b3a`, `vm-b3b`")
+    assert first.endswith("juger depuis la CLI, ces étapes visent la VM d'ancrage")
+    [own] = [v for k, v, _ in _embed_body(_with_steps(False))[1] if k == "Prochaines étapes"]
+    assert "⚓" not in own and own.startswith("• ")
 
 
 def test_glorfindel_pending_keeps_its_commands_on_an_attributed_card():

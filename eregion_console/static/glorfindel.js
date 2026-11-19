@@ -116,6 +116,7 @@ function _isHeld(e) {
 }
 // A held snapshot to take by hand (« 📸 Snapshot ») — never on an unattributed card (ATT1): it would
 // snapshot the VM the card is filed on, which the detection does not name.
+function _looseSnapshot(e) { return e.action === 'snapshot' && !!_unattributed(e); }
 function _isSnapshotPending(e) {
   return e.action === 'snapshot' && e.escalation_type === 'low_confidence' && !_unattributed(e);
 }
@@ -262,7 +263,17 @@ function _unattributedTxt(u) {
   const more = u.candidates.length > _VMS_SHOWN ? ` and ${u.candidates.length - _VMS_SHOWN} more` : '';
   return `not attributed — candidates: ${u.candidates.slice(0, _VMS_SHOWN).join(', ')}${more}`;
 }
+// ATT1 (#936): a card on a detection attributed to no VM holds an action nothing ran — never its
+// past label (« VM isolated from network »): its verb, held, not attributed. Not a card whose action
+// did run (taken alone, a failed check, a write refused or failed).
+const _RAN_TYPES = new Set(['autonomous_action', 'verification_failed', 'write_blocked', 'action_failed']);
+function _looseTitle(e) {
+  if (!_unattributed(e) || !ACTION_LABELS_VERB[e.action] || _RAN_TYPES.has(e.escalation_type)) return '';
+  return `${ACTION_LABELS_VERB[e.action]} — held: not attributed`;
+}
 function escTitle(e) {
+  const loose = _looseTitle(e);
+  if (loose) return loose;
   // Real remediation action → its label; otherwise a readable type title.
   if (e.action && ACTION_LABELS[e.action]) return ACTION_LABELS[e.action];
   return _ESC_TITLES[e.escalation_type] || escLabel(e.escalation_type) || e.action || '?';
@@ -645,7 +656,7 @@ function openCommandModal(escId) {
   const isSnapshotPending = _isSnapshotPending(esc);
   const isCmdModeHold = _isHeld(esc);
   const label = isCmdModeHold ? actionLabelVerb(esc.action) + ' — ' + _heldWord(esc)
-              : isSnapshotPending ? 'Snapshot recommended' : actionLabel(esc.action);
+              : isSnapshotPending ? 'Snapshot recommended' : (_looseTitle(esc) || actionLabel(esc.action));
   document.getElementById('modal-title').textContent = '📋 ' + label;
   document.getElementById('modal-body').textContent = 'CLI command to run for this escalation:';
   const cmdEl = document.getElementById('modal-cmd');
@@ -1932,7 +1943,9 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
   // Yellow, distinct from Failed (red) — it may still be running, just unverified.
   const snapshotStale      = activeJob?.type === 'snapshot' && activeJob?.status === 'Stale';
   // Escalade snapshot pending : bouton déjà dans la carte d'escalade — ne pas doubler dans BACKUP
-  const hasSnapshotEsc = myEscs.some(_isSnapshotPending);
+  // ATT1: nor while an unattributed snapshot's card waits on this tile — the detection does not name
+  // this VM, its card has no Snapshot: the tile's own button would take it back.
+  const hasSnapshotEsc = myEscs.some(e => _isSnapshotPending(e) || _looseSnapshot(e));
   const snapshotBtn = snapshotInProgress
     ? `<button class="action" disabled style="margin-left:auto;font-size:9px;padding:2px 7px;opacity:.5;cursor:default">⏳ Snapshot…</button>`
     : snapshotStale
@@ -3512,8 +3525,15 @@ function _cardBody(e, vmName) {
     ${explanation}${_executedDetail(e)}`;
 }
 function _cardSteps(e) {
-  return (e.suggested_steps || [])
+  return _looseSteps(e) + (e.suggested_steps || [])
     .map(st => `<div style="color:var(--dim);font-size:10px;padding:2px 0 2px 8px">• ${_attr(st)}</div>`).join('');
+}
+// ATT1 (#936): the model's steps of an unattributed card may name the VM it is filed on, which the
+// detection does not name — said before them, by the page, never by the model.
+function _looseSteps(e) {
+  const loose = _unattributed(e);
+  if (!loose || !(e.suggested_steps || []).length) return '';
+  return `<div style="color:var(--yellow);font-size:10px;padding:2px 0 2px 8px">⚓ ${_attr(_unattributedTxt(loose))}; judge from the CLI — these steps aim at the VM the card is filed on</div>`;
 }
 
 // JUG1: a line of TO JUDGE opens its card — its details as the store holds them (a card still
@@ -3588,7 +3608,7 @@ function showEscModal(vmName) {
     // type already encoded in title for these — keep ctx lean
     const ctx   = _escCtx(e, '', isModeHold || isWriteBlocked || isActionFailed);
     // An identity card with its plan (IR1a) shows the plan — the same steps, structured, with Verify.
-    const steps = e.identity_plan ? _identityPlan(e) : (e.suggested_steps || [])
+    const steps = e.identity_plan ? _identityPlan(e) : _looseSteps(e) + (e.suggested_steps || [])
       .map(s => `<div style="color:var(--dim);font-size:10px;padding:2px 0 2px 8px">• ${_attr(s)}</div>`).join('');
     const query = _cardQuery(e);
     const pid   = e.proposal_id || '';

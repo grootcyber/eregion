@@ -2181,6 +2181,13 @@ def _render_next_steps(e: dict) -> None:
     llm_steps = e.get("suggested_steps") or []
     if llm_steps:
         console.print("  [bold cyan]Next steps (Glorfindel):[/bold cyan]")
+        from glorfindel import escalations as _esc_steps
+        loose_steps = _esc_steps.unattributed(e)
+        if loose_steps is not None:
+            # ATT1 (#936): the model's steps as written — they may name the VM the card is filed on,
+            # which the detection does not name. Said first, by the code, never by the model.
+            console.print(f"  [yellow]{_outside(_loose_words(loose_steps))}; judge from the CLI — "
+                          "these steps aim at the VM the card is filed on[/yellow]")
         for i, step in enumerate(llm_steps, 1):
             # A command of the card naming its VM by its id or its name alone (a card written before
             # MSK3b, the model's) names it by « <groupe>/<nom> »: masked, an id is no command (MSK3b).
