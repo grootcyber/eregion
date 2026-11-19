@@ -407,10 +407,10 @@ briques:
   - id: g-plan-controle-telemetrie
     composant: glorfindel
     poste: g-detecter
-    nom: "A control-plane operation that names neither its caller nor its resource: a card of incomplete telemetry, of lower severity, never approvable, never dropped; the caller named from its token's ids when the log leaves it empty, on every operation of a summary card too"
+    nom: "A control-plane operation that names neither its caller nor its resource: a card of incomplete telemetry, of lower severity, never approvable, never dropped; the caller named from its token's ids when the log leaves it empty, on every operation of a summary card too; a reply of the journal out of the rule's schema, one card per rule and poll that says it unreadable, counted in the rule's status"
     etat: main
     release: "0.6"
-    lots: [CPT1, CPT1b]
+    lots: [CPT1, CPT1b, CPT1c]
     issue: 930
     doc: docs/glorfindel.md
 
