@@ -1093,20 +1093,36 @@ def _when(e: dict) -> datetime | None:
         return None
 
 
+def _zoned(e: dict) -> datetime | None:
+    """The card's time when it can be placed — read, and with a time zone; None otherwise (VP1c,
+    #920). A time without a zone is never compared to one with a zone, nor taken for UTC: where it
+    lies is not known, and never guessed."""
+    at = _when(e)
+    return at if at is not None and at.tzinfo is not None else None
+
+
+def _aware(since: datetime | None) -> datetime | None:
+    """`since` as the reads of the cards take it: with a time zone, or None. A `since` without one
+    is a caller's mistake, said — never compared, never taken for UTC (VP1c)."""
+    if since is not None and since.tzinfo is None:
+        raise ValueError("since carries no time zone")
+    return since
+
+
 def recurrence(e: dict, escs: list[dict] | None = None, days: int = 7) -> dict | None:
     """The earlier cards on the same IP in the last `days` days — in observation nothing is
     blocked, so a scanner comes back and opens a new card after each ack (three cards for
     one attacker on bree, 16–17/10). Said on the card, never judged for the operator."""
-    ip, me = _ip_of(e), _when(e)
+    ip, me = _ip_of(e), _zoned(e)          # VP1c: only times with a zone are ever compared
     if not ip or me is None:
         return None
     window = timedelta(days=days)
-    prev = [x for x in (all_escalations() if escs is None else escs)
+    prev = [(w, x) for x in (all_escalations() if escs is None else escs)
             if x.get("id") != e.get("id") and _ip_of(x) == ip
-            and (w := _when(x)) is not None and w < me and me - w <= window]
+            and (w := _zoned(x)) is not None and w < me and me - w <= window]
     if not prev:
         return None
-    last = max(prev, key=_when)
+    last = max(prev, key=lambda p: p[0])[1]
     return {"previous": len(prev), "last_id": last.get("id"), "last_seen": last.get("first_seen"),
             "last_verdict": last.get("verdict")}
 
@@ -1117,19 +1133,20 @@ def to_judge(since: datetime | None = None, limit: int = 100) -> list[dict]:
     list shows during an observation. An exercise card stays in the list, flagged
     (``exercise``, ``exercise_run``) — H-1: a window is a claim from the injectors' host, and
     whoever can write one could otherwise hide a real attack from the operator. The
-    observation report still counts it apart (``observation_report``)."""
+    observation report still counts it apart (``observation_report``).
+
+    VP1c (#920): a card whose time cannot be placed — without a time zone, or unreadable — is never
+    dated by a guess, nor left out: it stays in the list whatever ``since``, flagged
+    ``time_unreadable``, first, where ``limit`` never cuts it — for the operator to judge all the same."""
+    since = _aware(since)
     out = []
     escs = all_escalations()
     for e in escs:
         if not is_decision(e) or e.get("verdict") in VERDICTS:
             continue
-        when = e.get("first_seen") or e.get("timestamp") or ""
-        if since is not None:
-            try:
-                if datetime.fromisoformat(str(when).replace("Z", "+00:00")) < since:
-                    continue
-            except ValueError:
-                continue
+        at = _zoned(e)
+        if since is not None and at is not None and at < since:
+            continue
         card = {k: e.get(k) for k in (
             "id", "action", "escalation_type", "resource_id", "ttp", "severity", "confidence",
             "reason", "explanation", "action_params", "first_seen", "last_seen", "occurrences",
@@ -1143,9 +1160,11 @@ def to_judge(since: datetime | None = None, limit: int = 100) -> list[dict]:
         for k in (PROPOSED_FIELD, PROPOSED_WHY, PROPOSED_REFUSED):
             card[k] = e.get(k) if card["exercise"] and isinstance(e.get(k), dict) else None
         card["recurrence"] = recurrence(e, escs)
-        out.append(card)
-    out.sort(key=lambda c: str(c.get("first_seen") or ""), reverse=True)
-    return out[:limit]
+        card["time_unreadable"] = at is None
+        out.append((at, card))
+    # Newest first by the time itself (an offset is no string order); those without one ahead of all.
+    out.sort(key=lambda p: (p[0] is None, p[0].timestamp() if p[0] is not None else 0.0), reverse=True)
+    return [card for _, card in out[:limit]]
 
 
 _NO_ACTION_LABELLED = frozenset({"account_compromised", "compromise_unchecked"})
@@ -1154,7 +1173,13 @@ _NO_ACTION_LABELLED = frozenset({"account_compromised", "compromise_unchecked"})
 def observation_report(since: datetime | None = None) -> dict:
     """Counts of the operator's verdicts on decision cards since `since` (all if None).
     A card counts once, however many times it re-fired (its `occurrences`). An exercise
-    card (B2: an injector's window covered the VM) is left out — counted in `exercises`."""
+    card (B2: an injector's window covered the VM) is left out — counted in `exercises`.
+
+    VP1c (#920): a card whose time cannot be placed — without a time zone, or unreadable — is never
+    dated by a guess: with a `since`, whether it lies in the window is not known, so it is left out
+    of the counts and said apart, in `undated`."""
+    since = _aware(since)
+
     def bucket() -> dict:
         return {"right": 0, "wrong": 0, "unsure": 0, "unjudged": 0}
 
@@ -1163,16 +1188,17 @@ def observation_report(since: datetime | None = None) -> dict:
     disruptive = bucket()
     cards = 0
     exercises = 0
+    undated = 0
     block_ips: list[str] = []
     for e in all_escalations():
         if not is_decision(e):
             continue
-        when = e.get("first_seen") or e.get("timestamp") or ""
         if since is not None:
-            try:
-                if datetime.fromisoformat(str(when).replace("Z", "+00:00")) < since:
-                    continue
-            except ValueError:
+            at = _zoned(e)
+            if at is None:                  # VP1c: in the window or not, unknown — said, never guessed
+                undated += 1
+                continue
+            if at < since:
                 continue
         if e.get("source") == "exercise":
             exercises += 1
@@ -1193,6 +1219,7 @@ def observation_report(since: datetime | None = None) -> dict:
         "since": since.isoformat() if since else None,
         "cards": cards,
         "exercises": exercises,
+        "undated": undated,
         # A returning scanner opens a card per visit: how many attackers behind the blocks.
         "blocks": {"cards": len(block_ips), "distinct_ips": len(set(block_ips))},
         "judged": sum(b["right"] + b["wrong"] + b["unsure"] for b in by_action.values()),

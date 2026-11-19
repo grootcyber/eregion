@@ -1987,7 +1987,7 @@ briques:
     nom: "A verdict proposed on an expected exercise card"
     etat: main
     release: "0.6"
-    lots: [VP1, VP1b]
+    lots: [VP1, VP1b, VP1c]
     issue: 615
     doc: docs/design/drill-banc.md
 
