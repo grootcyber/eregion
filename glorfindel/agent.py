@@ -811,13 +811,18 @@ FLOOR_TYPE = "floor_proposal"
 
 # Actions aimed at ONE VM. On a detection the RulePoller could not tie to that VM (a row
 # aggregated by attacker IP, several VMs monitored) they are held: the same row is
-# dispatched for every VM. A snapshot stays autonomous.
+# dispatched for every VM.
 _VM_TARGETED_ACTIONS = {"isolate_vm", "revoke_temp_access"}
 # ATT1 (#936): what the attribution guard holds on an unattributed detection — the VM's isolation,
 # a block on its NSG, the release of its isolation —, the approval's own set (`VM_AIMED_ACTIONS` of
 # the signed queue in eregion_core; the decision never imports it, FS1a — a test keeps the two
 # equal, tests/unit/test_attribution_prime.py).
 _ATTRIBUTION_HELD = frozenset(_VM_TARGETED_ACTIONS | {"block_suspicious_ip", "release_isolation"})
+# SEC-Ed (#954; Jonathan, 19/11): the snapshot too, for this guard — it would capture the VM the card
+# is only filed on. Never run alone there (non_disruptive), never approvable in one click (the mode's
+# hold, the confidence's): the attribution's card, the human chooses the VM to snapshot. Every
+# autonomous action is so held there: the mode never holds one on an unattributed detection.
+_ATTRIBUTION_HELD |= {"snapshot"}
 
 
 def _as_bool(v) -> bool:
@@ -1380,7 +1385,11 @@ def _apply_attribution_guard(d: dict, signal: dict) -> None:
     gate held the decision before — the confidence, the signal, the telemetry, the release
     precondition, never_block —, its card becomes the attribution's (`unattributed_signal`, never
     approvable in one click), the reason before kept after its own. The guard runs after those
-    gates, before the mode: the mode never holds what it holds. A snapshot is not held."""
+    gates, before the mode: the mode never holds what it holds.
+
+    SEC-Ed (#954; Jonathan, 19/11): the snapshot too — it would capture the VM the card is only
+    filed on. Never run alone (non_disruptive), never the mode's card nor the confidence's: the
+    attribution's, whatever the confidence; its reason says the human chooses the VM to snapshot."""
     ctx = signal.get("context") or {}
     if ctx.get("attribution") == "unattributed" and ctx.get("attribution_via") == "appliance":
         before = d.get("escalation_reason") if d["escalate"] else ""
@@ -1409,6 +1418,19 @@ def _apply_attribution_guard(d: dict, signal: dict) -> None:
             f"La ligne de détection trouvée ne nomme pas la VM que désigne le signal "
             f"attack_started ({candidates}) — '{d['action']}' retenue pour revue humaine. "
             "Vérifier dans la ligne de détection quelle VM elle concerne avant d'agir."
+            # SEC-Ed (#954): a snapshot there too — the human chooses the VM to capture.
+            + (" Choisir la VM à capturer : jamais d'instantané en un clic, la carte n'est que rangée "
+               "sur cette VM." if d["action"] == "snapshot" else "")
+            + (f" — {before}" if before else "")
+        )
+        return
+    if d["action"] == "snapshot":
+        # SEC-Ed (#954): the human chooses the VM to capture — never the one the card is filed on.
+        d["escalation_reason"] = (
+            f"Détection non attribuable à une VM (la ligne ne nomme aucune VM, et aucune IP "
+            f"de VM surveillée n'est à l'origine) — 'snapshot' retenu, jamais approuvable en un "
+            f"clic : la carte n'est que rangée sur cette VM. VMs surveillées : {candidates}. "
+            "Choisir la VM à capturer, puis `glorfindel snapshot <groupe>/<nom> --yes` sur celle-là."
             + (f" — {before}" if before else "")
         )
         return
@@ -1486,7 +1508,7 @@ def confirm_facts(state: GlorfindelState, *, incidents: IncidentRegistry) -> Glo
     return {**state, "incident": asdict(inc)} if inc is not None else state
 
 
-def _root_compromise_floor(d: dict, signal: dict, incident: dict | None, *, mode_hold: bool) -> str:
+def _root_compromise_floor(d: dict, signal: dict, incident: dict | None) -> str:
     """A card that proposes isolate_vm, whatever the model chose, when the correlation confirmed on
     this VM a brute force that succeeded and an elevation to root (B3a, #609; Jonathan, 06/11) —
     and never an isolation run by the floor, whatever the mode (SEC-E, #846; Jonathan, 15/11).
@@ -1509,8 +1531,8 @@ def _root_compromise_floor(d: dict, signal: dict, incident: dict | None, *, mode
         model's confidence in that choice — never in the isolation. An action only a human
         approves (a restore…) is never lost: said in the reason (`d["displaced"]`).
     Only on a detection: never on a recovery_complete (the release after a restore) nor a timeout.
-    `mode_hold`: the mode held the model's own action (human_only) — on a detection that does not
-    name the VM, the card stays the mode's, and its reason says what one click approves there.
+    On a detection that does not name the VM, the card is the attribution's, whatever the mode: the
+    mode never holds an action there (SEC-Ed, #954: the attribution guard holds the snapshot too).
     Returns the reason, or "" when the floor does not play."""
     if signal.get("event") != "detection" or d["action"] == "isolate_vm":
         return ""
@@ -1537,17 +1559,14 @@ def _root_compromise_floor(d: dict, signal: dict, incident: dict | None, *, mode
     # `held_by` « attribution » is set by the attribution guard only, on an unattributed detection:
     # the context alone says it. Whatever gate held the decision before (never_block, the release
     # precondition, the confidence…), its `held_by` becomes the attribution's: never approvable
-    # (SEC-Ec). The mode's hold stays the mode's (escalate_to_human: mode_hold before held_by) —
-    # only the model's own action is approved there, never an isolation: the reason says so.
+    # (SEC-Ec). SEC-Ed (#954): the guard holds every autonomous action there, the snapshot included —
+    # the mode never holds one, so no card of the mode on such a detection (an action that runs
+    # alone, here, would be one the guard does not hold: the floor still never plays on it).
     if (signal.get("context") or {}).get("attribution") == "unattributed":
         if not d["escalate"] and d["action"] in AUTONOMOUS_ACTIONS:
             return ""
         d["escalate"] = True
         d["held_by"] = "attribution"
-        if mode_hold:
-            return (f"{facts_said} — mais cette détection ne nomme pas cette VM : aucune isolation "
-                    f"n'est proposée ; la carte reste celle du mode human_only, seul '{before}' s'y "
-                    f"approuve en un clic, jamais l'isolation ; juger la VM depuis la CLI. {choice}.")
         return (f"{facts_said} — mais cette détection ne nomme pas cette VM : la carte reste celle de "
                 f"l'attribution, rien ne s'y approuve en un clic ; juger la VM depuis la CLI. {choice}.")
     said = (f"{facts_said} — 'isolate_vm' proposée à un humain, jamais exécutée par le plancher : "
@@ -2072,7 +2091,7 @@ def decide(
     # B3a, last (SEC-E, #846): where a brute force succeeded and root was taken (the
     # correlation's facts, never the model's), a card proposes isolate_vm — the floor never
     # runs it; the model's own choice, as every gate above judged it, runs alone or not.
-    floor = _root_compromise_floor(d, signal, incident, mode_hold=mode_hold)
+    floor = _root_compromise_floor(d, signal, incident)
     floor_card = bool(floor) and not d["escalate"]
 
     # Last, on the decision as it stands: a characterized detection a snapshot alone

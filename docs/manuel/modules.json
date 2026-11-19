@@ -1632,7 +1632,8 @@
    "release": "0.6",
    "lots": [
     "SEC-E",
-    "SEC-Ec"
+    "SEC-Ec",
+    "SEC-Ed"
    ],
    "issue": 846
   },
