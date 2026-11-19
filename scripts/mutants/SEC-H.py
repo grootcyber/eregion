@@ -218,15 +218,3 @@ TESTS = {
     "M6259": f"{_W}::test_a_promotion_drops_its_own_older_pair",
     "M6260": f"{_W}::test_an_isolation_under_the_older_names_is_verified_then_lifted",
 }
-
-# MUT14 (the 0.6.2 release gate): M2343 (D80, scripts/mutation_check.py) survived from this lot on.
-# Its text, `if t0 is None or k in views[t0["nic_id"]] or skip(k, name):` at 16 spaces, was the one
-# check of the search away from a bare NIC (away.py, _away_split). This lot split it in two: the new
-# names pass `elif k in views[t0["nic_id"]] or skip(k, name):`, the older names (6 or 8 hex) a copy of
-# the old line indented by 20, which M2343's text, a substring of it, matches once. M2343 mutates the
-# older names' path since, which D80's test (a rule under the new name) never takes; the new names'
-# check holds (D80's test fails without it). The test added: an older-name pair of the bare NIC on its
-# subnet's NSG, which governs the NIC — said once by the sweep, twice under M2343. No new mutant.
-TESTS_ALSO = {
-    "M2343": "tests/unit/test_release_away.py::test_an_older_name_on_the_bare_nics_subnet_nsg_is_said_once",
-}
