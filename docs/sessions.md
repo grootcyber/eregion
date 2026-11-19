@@ -448,7 +448,7 @@ dans un script possédé avec le reste du CD, `infra/glorfindel-host/cd/install_
 une dérive des options SSH ou des fichiers, pas un `Makefile` hostile, qui peut ne pas l'appeler : les
 options SSH, `imladris-known`, `known_host.sh`, les recettes qui lancent `sudo` sur Imladris
 (`imladris-cd-enable`, `-cd-disable`, `-cd-uninstall`) et toute autre recette restent hors du
-CODEOWNERS (`docs/design/modele-de-menace.md`, §7). Une fois
+CODEOWNERS (`docs/design/modele-de-menace.md`, §7 ; le suivi : CDI2, #922). Une fois
 « Require review from Code Owners » posé sur la règle de `main` (le geste de Jonathan, après la fusion
 de SEC-K : « Les règles du dépôt », plus bas), une PR qui en touche un attend son approbation ; les
 autres fusionnent comme avant. **D'ici ce réglage, rien ne l'impose.** La clé de l'App est lisible par les sessions : elles

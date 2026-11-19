@@ -69,4 +69,19 @@ MUTANTS += [
      '  [ "$#" -eq 6 ] || { [ "$7" = -i ] && plain_path "$8" && [ "$9 ${10}" = "-o IdentitiesOnly=yes" ]; }\n',
      '  [ "$#" -eq 6 ] || [ "$7" = -i ]\n'),
 ]
+# The review's second round: « user@address », ssh's last word, never an option; the key's path, a path.
+MUTANTS += [
+    ("M6381", "the address taken as it comes: « -oProxyCommand=… » reaches ssh as an option (CDI1 review 2)",
+     SCRIPT,
+     '[[ $HOST_IP =~ $ip_re ]] || { echo "✗ HOST_IP n\'est pas une adresse IPv4 : rien ne part vers Imladris" >&2;'
+     " exit 1; }\n",
+     ""),
+    ("M6382", "the user taken as it comes: « -oProxyCommand=… » reaches ssh as an option (CDI1 review 2)", SCRIPT,
+     '[[ $HOST_USER =~ $user_re ]] || { echo "✗ HOST_USER n\'est pas un nom d\'utilisateur Unix : rien ne part vers'
+     ' Imladris" >&2; exit 1; }\n',
+     ""),
+    ("M6383", "the key's path unread: « -i -F » or a %-token goes (CDI1 review 2)", SCRIPT,
+     '[ "$7" = -i ] && plain_path "$8" && [ "$9 ${10}"',
+     '[ "$7" = -i ] && [ "$9 ${10}"'),
+]
 TESTS = {mid: _TEST for mid, *_ in MUTANTS}

@@ -222,6 +222,9 @@ ALGO = "-o HostKeyAlgorithms=ssh-ed25519"
     f"{PINNED} -i /tmp/id -o KnownHostsCommand=/bin/true",
     f"{PINNED} -i /tmp/id -o IdentitiesOnly=yes -o ProxyCommand=/bin/false",     # the whole form, then more
     f"{PINNED} -i /tmp/id -o IdentitiesOnly=yes -F /tmp/ssh_config",
+    # The key's path, read as a path: never an option, never ssh's %-tokens (review of CDI1, round 2).
+    f"{PINNED} -i -F -o IdentitiesOnly=yes",
+    f"{PINNED} -i /tmp/%h -o IdentitiesOnly=yes",
     f"-o StrictHostKeyChecking=yes {KH} -o ProxyCommand=/bin/false",
     f"-o StrictHostKeyChecking=yes -o KnownHostsCommand=/bin/true {ALGO}",
     f"-o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/kh {ALGO}",
@@ -263,6 +266,29 @@ def test_the_same_list_spaced_otherwise_goes(tmp_path):
     res, calls = _script(tmp_path, CD_FILES="  " + FILES.replace(" ", "   \t") + " ")
     assert res.returncode == 0, res.stderr
     assert f"scp -q {PINNED} {FILES} glorfindel@{IP}:.eregion-cd/" in calls
+
+
+@pytest.mark.parametrize("given, said", [
+    # « user@address » is ssh's last word before the command: a user that starts with « - » is an option.
+    ({"HOST_USER": "-oProxyCommand=sh"}, "HOST_USER n'est pas"),
+    ({"HOST_USER": "Glorfindel"}, "HOST_USER n'est pas"),
+    ({"HOST_USER": "glorfindel@other"}, "HOST_USER n'est pas"),
+    ({"HOST_USER": "op user"}, "HOST_USER n'est pas"),
+    ({"HOST_IP": "-oProxyCommand=sh"}, "HOST_IP n'est pas"),
+    ({"HOST_IP": "imladris.example"}, "HOST_IP n'est pas"),
+    ({"HOST_IP": "192.0.2.10 -oProxyCommand=sh"}, "HOST_IP n'est pas"),
+    ({"HOST_IP": "192.0.2"}, "HOST_IP n'est pas"),
+])
+def test_the_script_takes_an_address_and_a_user_never_an_option(tmp_path, given, said):
+    res, calls = _script(tmp_path, **given)
+    assert res.returncode != 0 and calls == [] and said in res.stderr, res.stderr
+
+
+@pytest.mark.parametrize("user, ip", [("glorfindel", IP), ("azureuser", "10.0.0.4"), ("_op-1", "203.0.113.255")])
+def test_the_address_and_users_the_makefile_computes_go(tmp_path, user, ip):
+    res, calls = _script(tmp_path, HOST_USER=user, HOST_IP=ip)
+    assert res.returncode == 0, res.stderr
+    assert calls[-1].endswith(f" {user}@{ip} sudo bash .eregion-cd/install.sh")
 
 
 @pytest.mark.parametrize("name", ["HOST_USER", "SSH_OPTS", "CD_FILES"])

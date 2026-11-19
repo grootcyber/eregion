@@ -9,7 +9,7 @@
 # imladris-known, then calls it. Its refusals catch a drift of the SSH options or of the files, not a
 # hostile Makefile, which may not call it: the SSH options, imladris-known and
 # infra/glorfindel-host/known_host.sh, the recipes that run sudo on Imladris (imladris-cd-enable,
-# -cd-disable, -cd-uninstall) and every other recipe stay unowned. docs/design/modele-de-menace.md, §7.
+# -cd-disable, -cd-uninstall) and every other recipe stay unowned (follow-up: CDI2, #922). docs/design/modele-de-menace.md, §7.
 #
 # It holds once the maintainer has turned on « Require review from Code Owners » in main's rule —
 # after this file is merged, never before (with the former `*` line, every pull request would have

@@ -36,6 +36,13 @@ set -f          # the lists below are split on blanks, never globbed: what the M
 HOST_IP="${HOST_IP:-}"
 [ -n "$HOST_IP" ] || { echo "Pas de VM : make imladris-up d'abord"; exit 1; }
 HOST_USER="${HOST_USER:?HOST_USER manque (make imladris-cd-install le passe)}"
+# The address and the user go into « user@address », ssh's last word before the command: a user
+# « -oProxyCommand=… » arrives as an option (review of CDI1, round 2). Their forms only, in ASCII
+# whatever the locale: an IPv4 address (terraform output, as the Makefile greps it), a Unix user name.
+ip_re='^[[:digit:]]{1,3}(\.[[:digit:]]{1,3}){3}$'
+user_re='^[abcdefghijklmnopqrstuvwxyz_][abcdefghijklmnopqrstuvwxyz0123456789_-]*$'
+[[ $HOST_IP =~ $ip_re ]] || { echo "✗ HOST_IP n'est pas une adresse IPv4 : rien ne part vers Imladris" >&2; exit 1; }
+[[ $HOST_USER =~ $user_re ]] || { echo "✗ HOST_USER n'est pas un nom d'utilisateur Unix : rien ne part vers Imladris" >&2; exit 1; }
 SSH_OPTS="${SSH_OPTS:?SSH_OPTS manque (make imladris-cd-install le passe : la clé épinglée d’Imladris)}"
 CD_FILES="${CD_FILES:?CD_FILES manque (make imladris-cd-install le passe)}"
 # V-32 (SEC-C): SSH_OPTS taken only in the form the Makefile computes (HOST_SSH_OPTS), word for word:
@@ -59,7 +66,8 @@ pinned_form() {
 }
 if ! pinned_form; then
   echo "✗ SSH_OPTS n'est pas la forme que calcule le Makefile (-o StrictHostKeyChecking=yes" \
-       "-o UserKnownHostsFile=… -o HostKeyAlgorithms=ssh-ed25519, puis -i … -o IdentitiesOnly=yes) :" \
+       "-o UserKnownHostsFile=… -o HostKeyAlgorithms=ssh-ed25519, puis -i … -o IdentitiesOnly=yes ;" \
+       "un chemin n'y a que lettres, chiffres et -_./~@+, sans accent sous la locale C) :" \
        "rien ne part vers Imladris" >&2
   exit 1
 fi
