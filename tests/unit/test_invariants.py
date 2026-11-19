@@ -4102,8 +4102,16 @@ class IsolationMachine(RuleBasedStateMachine):
         `deleted`) —, never « gardée »: nothing kept it. Before, the oracle asked « gardée » of
         it, as of a rule kept for another VM (the machine during MUT3's review). A name is
         matched as a whole word (_named): never as the start of another (`…-0d0228` in
-        `…-0d0228-out`)."""
+        `…-0d0228-out`).
+
+        SEC-Hb (the machine at 2 000, seed of 19/11, on main too): a rule under an earlier version's
+        name — 6 or 8 hex of SHA-1 at its end, read from the name the test sees, never from a record of
+        the code's — that nothing proves the VM's is left and said « laissée », with the command that
+        takes it off (SEC-H, Jonathan's decision of 19/11): said, by its name, in `failed`. Also held
+        back for another VM's flows, it is no less said: the oracle asked « gardée » of it alone."""
         import re
+
+        _older = re.compile(r"-[0-9a-f]{6}(?:[0-9a-f]{2})?(?:-out)?$")
 
         def _named(n: str, s: str) -> bool:
             """`n` in `s` as a whole name, as `word()` of _older_kept_put_back."""
@@ -4129,7 +4137,10 @@ class IsolationMachine(RuleBasedStateMachine):
             itself = self._held_for_itself(vm) if nics is None else set()
             unsaid = sorted({n for k, n in kept if (reach is None or k in reach)
                              and not (any(_named(n, s) and "gardée" in s for s in texts)
-                                      or ((k, n) in itself and any(_named(n, s) for s in failed)))})
+                                      or ((k, n) in itself and any(_named(n, s) for s in failed))
+                                      or (_older.search(n) and any(
+                                          _named(n, s) and "laissée" in s and "version antérieure" in s
+                                          for s in failed)))})
             assert not unsaid, (f"I3 (said): {what} said {out.get('status')}, rules of {vm} kept without "
                                 f"saying so: {unsaid}")
 

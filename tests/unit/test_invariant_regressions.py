@@ -9107,3 +9107,65 @@ def test_a_bare_nics_quarantine_outside_the_configured_group_says_a_way_out_that
             m.recover()                                 # as found: I7 within the sequence too
     finally:
         m.teardown()                    # I7: the operator runs the command said, the release completes
+
+
+# SEC-Hb, the machine at 2 000 (19/11, on `origin/main` 771e0fab too): an earlier version's block of api, then
+# this version's, its drift acknowledged, written again; an address freed and given to a new VM's NIC
+# (api-nic-4) under one of our denies turned into an allow; the unblock lifts api. The earlier version's pair,
+# that nothing proves api's, is left and said « laissée », the command given (SEC-H) — and it also holds a
+# turned rule back for api-nic-4: the oracle asked « gardée » of it, and read it unsaid.
+def _i3l_net():
+    from .test_invariants import _TEMPLATES
+
+    def r(name, prio):
+        return _rule(name, prio, _TEMPLATES[name])
+    lateral = [r("allow-ssh", 100), r("allow-lateral-out", 100), r("deny-lateral-in", 130)]
+    return {**_net(subnet_nsg=[r("deny-lateral-in", 130)],
+                   tier_rules=[r("allow-https", 100), r("allow-lateral-out", 100)],
+                   web_nic={"rules": [r("allow-https", 100), r("allow-lateral-out", 100), r("deny-lateral-in", 130)]},
+                   db_nic_0={"rules": lateral},
+                   db_nic_1={"own": "dedicated", "rules": [r("deny-lateral-in", 130)], "policy": True},
+                   api_nic={"own": "dedicated", "rules": list(lateral), "policy": True},
+                   data_subnet=[r("allow-https", 100), r("allow-lateral-out", 100)]),
+            "edge_nsg": [r("allow-lateral-out", 100), r("deny-lateral-in", 130)], "data_primary": True}
+
+
+_I3L_EDGE = "/subscriptions/s/resourcegroups/rg-edge/providers/microsoft.network/networksecuritygroups/nsg-edge"
+_I3L_FOUND = (
+    ("recover",),
+    ("release", WEB1, WEB1, None),
+    ("customer_removes_rule", "/subscriptions/s/resourcegroups/rg-net/providers/microsoft.network/"
+     "networksecuritygroups/nsg-tier", "allow-https"),
+    ("an_earlier_version_isolates_or_blocks", API, API, ("subnet.get", "always-429"), "block", 22),
+    ("customer_removes_rule", "/subscriptions/s/resourcegroups/rg-app1/providers/microsoft.network/"
+     "networksecuritygroups/nsg-db-nic-1", "deny-lateral-in"),
+    ("blocked_again_after_an_acknowledged_drift", API, API, None),
+    ("kept_at_the_lift", API, API, None, "unblock", 22,
+     (_I3L_EDGE, "glorfindel-block-192-31-196-7-api-api-nic-52b92bd666d22061a692e8a8d952ab5e"),
+     _nic("rg-edge", "api-nic"), 0, 4, "rg-app1", "api",
+     "/subscriptions/s/resourceGroups/rg-edge/providers/Microsoft.Network/networkSecurityGroups/nsg-api-nic",
+     "Linux", True))
+
+
+def test_an_earlier_versions_pair_left_and_said_is_said_though_another_vm_hangs_on_it(monkeypatch):
+    """SEC-Hb: the earlier version's pair is named in `failed`, « laissée », with the command that takes it
+    off — said. Red on `origin/main` 771e0fab: « I3 (said): unblock said unblock_partial, rules of …/api kept
+    without saying so: ['glorfindel-block-192-31-196-7-api-api-nic-c272f2'] »."""
+    import inspect
+
+    invariant_env(monkeypatch)
+    m = IsolationMachine()
+    try:
+        m.build(_i3l_net())
+        for rule, *draws in _I3L_FOUND:
+            if not draws and "data" not in inspect.signature(getattr(m, rule)).parameters:
+                getattr(m, rule)()
+            else:
+                s = Script(*draws)
+                getattr(m, rule)(data=s)
+                assert not s.values, (rule, s.values)
+            m.never_more_open_than_designed()
+            m.customer_configuration_untouched()
+            m.one_vm_one_state_file()
+    finally:
+        m.teardown()
