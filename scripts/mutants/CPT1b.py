@@ -4,7 +4,7 @@ object id or the application id from `Claims`; `_ResourceId`, else `ResourceId` 
 « appelant inconnu »; « Sévérité moindre » only on a card really lowered; the long URIs of `upn` and
 `name` read, and the short `name`; a client's `CallerName` names the caller; a name, then the
 object id, then the application; the console's feed names a card of incomplete telemetry.
-M6466–M6480, measured by
+M6466–M6480, M6447 and M6448 (ceded from MUT14's range), measured by
 tests/unit/test_control_plane_incomplete.py."""
 RULES = "glorfindel/detection_rules.py"
 AGENT = "glorfindel/agent.py"
@@ -38,7 +38,8 @@ MUTANTS = [
      '            "CallerObjectId": _text(row.get("CallerObjectId")) or claimed["oid"],\n',
      '            "CallerObjectId": _text(row.get("CallerObjectId")),\n'),
     ("M6477", "the summary drops the caller's name drawn from Claims (CPT1b)", RULES,
-     '            "CallerName": claimed["name"],\n', '            "CallerName": "",\n'),
+     '            "CallerName": _text(row.get("CallerName")) or claimed["name"],\n',
+     '            "CallerName": _text(row.get("CallerName")),\n'),
     ("M6478", "an operation's resource read in _ResourceId alone (CPT1b)", RULES,
      '    return next((_text(row.get(c)) for c in RESOURCE_COLUMNS if _said(row.get(c))), "")\n',
      '    return _text(row.get("_ResourceId"))\n'),
@@ -60,6 +61,11 @@ MUTANTS = [
     if name:
         return f"{name} (lu dans Claims, Caller vide)"
 '''),
+    ("M6447", "the summary drops the CallerName a client's rule projects (CPT1b)", RULES,
+     '            "CallerName": _text(row.get("CallerName")) or claimed["name"],\n',
+     '            "CallerName": claimed["name"],\n'),
+    ("M6448", "the short name claim unread in Claims (CPT1b)", RULES,
+     '               "name")\n', "               )\n"),
 ]
 TESTS = {
     "M6466": f"{_T}::test_a_summary_operation_whose_caller_is_in_claims_alone_is_named",
@@ -77,4 +83,6 @@ TESTS = {
     "M6478": f"{_T}::test_a_summary_reads_what_a_clients_rule_projects",
     "M6479": f"{_T}::test_a_clients_rule_that_projects_the_callers_name_alone_is_not_lowered",
     "M6480": f"{_T}::test_the_caller_is_named_by_its_name_then_its_object_id_then_its_application",
+    "M6447": f"{_T}::test_a_summary_reads_what_a_clients_rule_projects",
+    "M6448": f"{_T}::test_the_short_name_claim_names_the_caller",
 }

@@ -1234,12 +1234,13 @@ def _text(value) -> str:
 
 def caller_columns(row: dict) -> dict:
     """The columns a card names the caller from (CPT1b), as the individual card reads them
-    (`agent._caller_said`): `Caller`; the name `Claims` gives (`CallerName`); the object id and the
+    (`agent._caller_said`): `Caller`; a name — the `CallerName` a client's rule projects, else the
+    one `Claims` gives (`CallerName`); the object id and the
     application id the rules project, else drawn from `Claims` (`CallerObjectId`, `CallerAppId`).
     What a summary card keeps of each of its operations: never `Caller` alone."""
     claimed = claimed_caller(row)
     return {"Caller": _text(row.get("Caller")),
-            "CallerName": claimed["name"],
+            "CallerName": _text(row.get("CallerName")) or claimed["name"],
             "CallerObjectId": _text(row.get("CallerObjectId")) or claimed["oid"],
             "CallerAppId": _text(row.get("CallerAppId")) or claimed["app"]}
 

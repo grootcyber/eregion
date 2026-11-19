@@ -351,6 +351,9 @@ def test_a_summary_reads_what_a_clients_rule_projects():
              "ResourceId": f"/subscriptions/x/r-{i}", "Claims": json.dumps(claims)}
             for i, claims in enumerate([{UPN_URI: SOMEONE_ELSE}, {NAME_URI: "Some One"},
                                         {"oid": OUTSIDER_OID}, {"azp": APP}])]
+    # A client's rule that projects `CallerName` alone, `Caller` empty, no Claims.
+    rows.append({"OperationNameValue": op, "TimeGenerated": "2026-11-19T10:00:09Z", "CorrelationId": "c-9",
+                 "Caller": "", "CallerName": "alice@example.com", "ResourceId": "/subscriptions/x/r-9"})
     summary = _control_plane_summary(rows)
     listed = _listed({"raw_signal": {"first_result_row": summary}})
     for row, entry in zip(rows, summary["OmittedOperations"]):
@@ -358,9 +361,9 @@ def test_a_summary_reads_what_a_clients_rule_projects():
         who = own_card.split(" par ", 1)[1].split(" sur ", 1)[0]
         assert who != "appelant inconnu" and f"par {who} sur {row['ResourceId']} (" in listed, who
         assert entry["_ResourceId"] == row["ResourceId"]
-    assert [e["CallerName"] for e in summary["OmittedOperations"]] == [SOMEONE_ELSE, "Some One", "", ""]
-    assert [e["CallerObjectId"] for e in summary["OmittedOperations"]] == ["", "", OUTSIDER_OID, ""]
-    assert [e["CallerAppId"] for e in summary["OmittedOperations"]] == ["", "", "", APP]
+    assert [e["CallerName"] for e in summary["OmittedOperations"]] == [SOMEONE_ELSE, "Some One", "", "", "alice@example.com"]
+    assert [e["CallerObjectId"] for e in summary["OmittedOperations"]] == ["", "", OUTSIDER_OID, "", ""]
+    assert [e["CallerAppId"] for e in summary["OmittedOperations"]] == ["", "", "", APP, ""]
 
 
 def test_an_older_summary_card_with_caller_alone_reads_as_before():
