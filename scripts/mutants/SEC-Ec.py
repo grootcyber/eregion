@@ -42,12 +42,17 @@ MUTANTS = [
 TESTS = {
     "M6311": f"{_F}::test_an_unattributed_snapshot_held_by_the_mode_says_what_one_click_approves",
     "M6312": f"{_F}::test_an_unattributed_snapshot_held_by_the_mode_says_what_one_click_approves",
+    # ATT1 (#936): the attribution guard now holds an unattributed block or release first — the
+    # floor's own rewrite is seen where the guard does not hold: the snapshot under the threshold.
     "M6313": f"{_F}::test_a_protected_address_then_the_attribution "
-             f"{_F}::test_a_release_hold_then_the_attribution",
+             f"{_F}::test_a_release_hold_then_the_attribution {_F}::test_a_low_confidence_hold_then_the_attribution",
     "M6314": f"{_F}::test_a_release_hold_then_the_attribution {_F}::test_a_low_confidence_hold_then_the_attribution",
     "M6315": f"{_F}::test_a_protected_address_then_the_attribution "
              f"{_F}::test_a_release_hold_then_the_attribution",
+    # ATT1 (#936): the attribution's card is refused by its type before the list is read, and
+    # proposed nothing (`unattributed_aim`) — the list itself is held by its own test.
     "M6316": f"{_F}::test_a_protected_address_then_the_attribution "
-             f"{_F}::test_a_release_hold_then_the_attribution",
+             f"{_F}::test_a_release_hold_then_the_attribution "
+             "tests/unit/test_attribution_prime.py::test_the_attribution_s_card_is_no_approvable_type",
     "M6317": f"{_F}::test_an_unattributed_snapshot_held_by_the_mode_says_what_one_click_approves",
 }

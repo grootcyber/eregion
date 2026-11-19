@@ -134,6 +134,15 @@ def test_the_guard_holds_the_approval_s_own_set():
     assert page and set(re.findall(r"'([a-z_]+)'", page.group(1))) == action_queue.VM_AIMED_ACTIONS
 
 
+def test_the_attribution_s_card_is_no_approvable_type():
+    """The attribution's card is never one of the types a human approves in one click — on the
+    server (the queue's list, the console's) nor on the page (`_HELD_TYPES`) — whatever else
+    refuses it before (its type, `unattributed_aim`): one refusal never stands for the others."""
+    assert "unattributed_signal" not in action_queue.APPROVABLE_TYPES
+    page = re.search(r"const _HELD_TYPES = new Set\(\[([^\]]*)\]\);", JS.read_text())
+    assert page and "unattributed_signal" not in page.group(1)
+
+
 @pytest.mark.parametrize("action,before,row", [
     ("isolate_vm", "Low confidence (50%)", {}),                                  # the confidence
     ("block_suspicious_ip", "Blocage de 10.0.0.5 retenu : adresse protégée", {"SourceIP": "10.0.0.5"}),
