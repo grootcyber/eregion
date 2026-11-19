@@ -566,7 +566,7 @@ glorfindel block <ip> <group>/<name> --yes      # block one host address by hand
 # the watch there never rereads it (it is said), and the two hosts share no VM lock.
 glorfindel reset <resource_id> --yes           # reset: release isolation + unblock all IPs
 glorfindel snapshot <resource_id> --yes         # on-demand Recovery Services Vault backup (~5-20min)
-glorfindel restore <resource_id> --yes          # Azure Backup restore: newest point before the attack on THIS VM (--before, else its card's first detection — an exercise card: its run's attack_started; unknown → asked)
+glorfindel restore <resource_id> --yes          # Azure Backup restore: newest point before the attack on THIS VM (--before, with its time zone — a time without one is refused, never guessed —, else its card's first detection — an exercise card: its run's attack_started; unknown → asked)
 glorfindel jobs <vm-name> [--refresh]           # snapshot/restore job status
 glorfindel list                                 # all VMs with active actions (isolation + blocked IPs)
 glorfindel list --ids                           # the same with their full ARM ids (this terminal only)
