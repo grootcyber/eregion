@@ -8,13 +8,16 @@ l'orchestration (l'étape appelée, à la bonne place) et sur l'outil `stratus_r
 l'abonnement). M4440–M4447. Mesurés par tests/unit/test_orodruin.py et test_orodruin_kill.py.
 M4448–M4460 sont allés à R2BGc (les garde-fous en Terraform) ; M4461–M4466 = le contrat qui
 s'arme POUR Stratus (Pièce 2, ci-dessous, eregion_core/orodruin.py), mesurés par
-tests/unit/test_stratus_contract.py ; M4467–M4469 restent réservés au bac à sable durci (Pièce 3).
+tests/unit/test_stratus_contract.py ; M4467–M4469 = la vérif du bac à sable côté contrat (Pièce 3B,
+read_sandbox / sandbox_drops_imds) ; M4482–M4484 = le bac à sable posé au démarrage (Pièce 3A,
+infra/orodruin/main.tf, mesuré par tests/unit/test_orodruin.py).
 
 Forme chargée par scripts/mutation_check.py : MUTANTS (id, description, fichier, old, new) et
 TESTS (ses ids → le test qui l'attrape) ; chemins en chaînes.
 """
 ORODRUIN = "eregion_core/orodruin.py"
 KILL = "infra/orodruin/kill.py"
+MAIN = "infra/orodruin/main.tf"
 
 _TO = "tests/unit/test_orodruin.py"
 _TK = "tests/unit/test_orodruin_kill.py"
@@ -32,6 +35,12 @@ _BEYOND = f"{_TC}::test_a_right_beyond_the_closed_role_is_passive"
 _AUTHZ = f"{_TC}::test_an_authorization_action_is_more_than_the_closed_role"
 _COLD = f"{_TC}::test_a_subscription_that_is_not_cold_is_passive"
 _DIAG = f"{_TC}::test_a_missing_or_dead_diagnostic_is_passive"
+
+# Pièce 3 — le bac à sable durci (sandbox_drops_imds / read_sandbox).
+_SANDBOX_MISS = f"{_TC}::test_read_sandbox_flags_a_missing_rule"
+_SANDBOX_DEST = f"{_TC}::test_a_drop_to_another_destination_does_not_count"
+_SANDBOX_SRC = f"{_TC}::test_a_drop_from_another_network_does_not_count"
+_SANDBOX_POSED = f"{_TO}::test_the_stratus_sandbox_is_posed_at_startup"
 
 # The listing spans two lines; built here so the whitespace is exact (32-space continuation).
 _LIST_ALL = '"list", "--all",\n' + " " * 32 + '"--assignee-object-id"'
@@ -96,6 +105,32 @@ MUTANTS = [
     ("M4466", "a missing activity-log diagnostic no longer holds the contract — Stratus arms "
      "though the watch would be blind to it (R2c, pièce 2)",
      ORODRUIN, "    if not diag_ok:", "    if diag_ok:"),
+    # ── Pièce 3 — le bac à sable durci (sandbox_drops_imds, read_sandbox) ──
+    ("M4467", "orodruin-check no longer refuses an open sandbox — it arms for Stratus though no "
+     "DOCKER-USER rule cuts the IMDS, so a Stratus container could read Orodruin's token "
+     "(R2c, pièce 3)",
+     ORODRUIN, "    if not sandbox_drops_imds(rules):", "    if sandbox_drops_imds(rules):"),
+    ("M4468", "the DROP rule's destination is no longer checked — a rule dropping the sandbox net "
+     "to ANY address passes for the IMDS cut, though the IMDS stays reachable (R2c, pièce 3)",
+     ORODRUIN, '        if _flag_value(p, "-s") == SANDBOX_NET and _flag_value(p, "-d") in imds:',
+     '        if _flag_value(p, "-s") == SANDBOX_NET:'),
+    ("M4469", "the DROP rule's source is no longer checked — a rule on another network passes for "
+     "the sandbox's IMDS cut, though the sandbox stays open (R2c, pièce 3)",
+     ORODRUIN, '        if _flag_value(p, "-s") == SANDBOX_NET and _flag_value(p, "-d") in imds:',
+     '        if _flag_value(p, "-d") in imds:'),
+    # ── Pièce 3, partie A — le bac à sable posé au démarrage (infra/orodruin/main.tf) ──
+    ("M4482", "the DROP rule is gone from the cloud-init — the sandbox network exists but its "
+     "traffic to the IMDS is no longer cut, so a Stratus container could read Orodruin's token "
+     "(R2c, pièce 3)", MAIN,
+     "iptables -C DOCKER-USER -s 172.30.250.0/24 -d 169.254.169.254/32 -j DROP || iptables -I "
+     "DOCKER-USER -s 172.30.250.0/24 -d 169.254.169.254/32 -j DROP", "true"),
+    ("M4483", "the dedicated sandbox network is no longer created — Stratus would fall back to the "
+     "bridge, where the IMDS is reachable (the DROP rule binds only the sandbox network) "
+     "(R2c, pièce 3)", MAIN,
+     "docker network create --subnet 172.30.250.0/24 eregion-stratus-sandbox || true", "true"),
+    ("M4484", "the DROP service no longer runs after docker — it could apply the rule before the "
+     "DOCKER-USER chain exists, leaving the IMDS reachable until the next boot (R2c, pièce 3)",
+     MAIN, "After=docker.service", "After=network.target"),
 ]
 
 TESTS = {
@@ -113,4 +148,10 @@ TESTS = {
     "M4464": _AUTHZ,
     "M4465": _COLD,
     "M4466": _DIAG,
+    "M4467": _SANDBOX_MISS,
+    "M4468": _SANDBOX_DEST,
+    "M4469": _SANDBOX_SRC,
+    "M4482": _SANDBOX_POSED,
+    "M4483": _SANDBOX_POSED,
+    "M4484": _SANDBOX_POSED,
 }

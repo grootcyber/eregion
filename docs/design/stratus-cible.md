@@ -252,7 +252,7 @@ Mutants **M4461–M4466** : sous interdit non refusé ; liste vide/partielle arm
 
 ### Pièce 3 — le bac à sable durci, posé au démarrage (`infra/orodruin/`, **GATED**)
 
-Au démarrage d'Orodruin (cloud-init/systemd, avant tout run Stratus) : un **réseau docker dédié** `172.30.250.0/24` et une règle **`DOCKER-USER -s <réseau> -d 169.254.169.254 -j DROP`** (l'IMDS injoignable depuis le bac à sable — M4 : HTTP 000 mesuré, témoin bridge 200). **Jamais** `--network host`, ni le socket docker, ni `NET_ADMIN`. `orodruin-check` **vérifie la règle DROP** (côté `eregion_core`, pas gated) avant de s'armer pour Stratus : sans elle, passif. Reste de **M4461–M4469**.
+Au démarrage d'Orodruin (cloud-init/systemd, avant tout run Stratus) : un **réseau docker dédié** `172.30.250.0/24` et une règle **`DOCKER-USER -s <réseau> -d 169.254.169.254 -j DROP`** (l'IMDS injoignable depuis le bac à sable — M4 : HTTP 000 mesuré, témoin bridge 200). **Jamais** `--network host`, ni le socket docker, ni `NET_ADMIN`. `orodruin-check` **vérifie la règle DROP** (côté `eregion_core`, `read_sandbox` / `sandbox_drops_imds`, pas gated) avant de s'armer pour Stratus : sans elle, passif. Mutants **M4467–M4469** (la vérif côté contrat) + **M4482–M4484** (la pose au démarrage dans `main.tf`).
 
 ### Pièce 4 — le lancement de Stratus depuis le bac à sable (`annatar/…`)
 

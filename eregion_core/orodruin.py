@@ -767,8 +767,65 @@ def read_stratus(*, orodruin_credential=None, stratus_credential=None, get=None,
                           diag_ok=diag_ok)
 
 
+# ── R2c pièce 3: the hardened sandbox — the IMDS unreachable from Stratus's network ───────────
+# At Orodruin's startup a dedicated docker network carries Stratus's egress to ARM, but a
+# DOCKER-USER rule drops its traffic to the IMDS (infra/orodruin/main.tf): a Stratus container on
+# it cannot obtain Orodruin's managed-identity token (M4: IMDS 000 measured, bridge witness 200).
+# orodruin-check reads the rule before arming for Stratus — read-only, nothing changed; absent or
+# unreadable, passive. Reading the DOCKER-USER chain needs the privilege to read iptables; without
+# it the read fails and the contract stays passive (fail closed).
+SANDBOX_NET = "172.30.250.0/24"
+IMDS_ADDR = "169.254.169.254"
+
+
+def _flag_value(parts: list[str], flag: str) -> str:
+    try:
+        return parts[parts.index(flag) + 1]
+    except (ValueError, IndexError):
+        return ""
+
+
+def sandbox_drops_imds(rules: str) -> bool:
+    """A line of ``iptables -S DOCKER-USER`` drops the sandbox network's traffic to the IMDS: an
+    append to DOCKER-USER, jump DROP, source the sandbox network, destination the IMDS (iptables
+    writes the host address as /32)."""
+    imds = {IMDS_ADDR, IMDS_ADDR + "/32"}
+    for line in rules.splitlines():
+        p = line.split()
+        if p[:2] != ["-A", "DOCKER-USER"] or _flag_value(p, "-j") != "DROP":
+            continue
+        if _flag_value(p, "-s") == SANDBOX_NET and _flag_value(p, "-d") in imds:
+            return True
+    return False
+
+
+def read_sandbox(*, run=None, env=None) -> list[dict]:
+    """The hardened sandbox read (R2c pièce 3): the DOCKER-USER rule that cuts the IMDS from
+    Stratus's network. Inert without EREGION_STRATUS_SUBSCRIPTION. A rule that cannot be read, or
+    is absent, is missing — never armed on an open sandbox (fail closed, see ``check``)."""
+    env = os.environ if env is None else env
+    if not stratus_subscription(env):
+        return []
+    if run is None:
+        import subprocess
+
+        def run(cmd):
+            return subprocess.run(cmd, capture_output=True, text=True,
+                                  timeout=15, check=True).stdout
+    try:
+        rules = run(["iptables", "-S", "DOCKER-USER"])
+    except Exception as e:
+        return [_miss("stratus_sandbox_unreadable",
+                      f"cannot read the DOCKER-USER rules: {type(e).__name__}: {e}"[:200])]
+    if not sandbox_drops_imds(rules):
+        return [_miss("stratus_sandbox_open",
+                      f"no DOCKER-USER rule drops {SANDBOX_NET} to the IMDS — a Stratus container "
+                      "could reach Orodruin's managed-identity token")]
+    return []
+
+
 READERS = {"identity": read_identity, "graph": read_graph, "network": read_network,
-           "cap": read_cap, "stratus": read_stratus}
+           "cap": read_cap, "stratus": read_stratus, "sandbox": read_sandbox}
 
 
 def check(readers: dict | None = None) -> Verdict:
@@ -778,7 +835,7 @@ def check(readers: dict | None = None) -> Verdict:
     missing: list[dict] = []
     notes: list[dict] = []
     cap: dict = {}
-    for name in ("identity", "graph", "network", "cap", "stratus"):
+    for name in ("identity", "graph", "network", "cap", "stratus", "sandbox"):
         reader = readers.get(name)
         if reader is None:   # a test may pass a partial set; "stratus" is inert without its env
             continue

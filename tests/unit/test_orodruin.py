@@ -739,6 +739,20 @@ def _block(kind: str, name: str) -> str:
     return _tf().split(f'resource "{kind}" "{name}"')[1].split("\n}\n")[0]
 
 
+def test_the_stratus_sandbox_is_posed_at_startup():
+    """R2c pièce 3: Orodruin's cloud-init creates a dedicated docker network for Stratus and a
+    systemd service (after docker) that drops its traffic to the IMDS — so a Stratus container on
+    it cannot reach Orodruin's managed-identity token (M4). The rule uses the same network and
+    IMDS address the contract reads (eregion_core/orodruin.py); running Stratus on it without a
+    privileged container is pièce 4."""
+    tf = _tf()
+    assert "docker network create --subnet 172.30.250.0/24 eregion-stratus-sandbox" in tf
+    assert "eregion-stratus-sandbox.service" in tf
+    assert "After=docker.service" in tf
+    assert "DOCKER-USER -s 172.30.250.0/24 -d 169.254.169.254/32 -j DROP" in tf
+    assert orodruin.SANDBOX_NET in tf and orodruin.IMDS_ADDR in tf
+
+
 def test_the_injector_roles_grant_exactly_what_the_contract_checks():
     """SEC5 (V-29): three roles — the reads, the VM's writes, the experiment's — each one the
     contract's list, nothing more."""

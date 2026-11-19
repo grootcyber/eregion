@@ -198,6 +198,54 @@ def test_check_still_arms_with_a_reader_set_that_has_no_stratus():
     assert orodruin.check(readers).armed
 
 
+# ── read_sandbox: the DOCKER-USER rule that cuts the IMDS from Stratus's network (pièce 3) ──
+
+_DROP = f"-A DOCKER-USER -s {orodruin.SANDBOX_NET} -d {orodruin.IMDS_ADDR}/32 -j DROP"
+
+
+def test_the_sandbox_rule_drops_the_net_to_the_imds():
+    assert orodruin.sandbox_drops_imds(f"-N DOCKER-USER\n{_DROP}\n-A DOCKER-USER -j RETURN")
+
+
+def test_a_drop_to_another_destination_does_not_count():
+    assert not orodruin.sandbox_drops_imds(
+        f"-A DOCKER-USER -s {orodruin.SANDBOX_NET} -d 8.8.8.8 -j DROP")
+
+
+def test_a_drop_from_another_network_does_not_count():
+    assert not orodruin.sandbox_drops_imds(
+        f"-A DOCKER-USER -s 10.0.0.0/24 -d {orodruin.IMDS_ADDR}/32 -j DROP")
+
+
+def test_an_accept_to_the_imds_does_not_count():
+    assert not orodruin.sandbox_drops_imds(
+        f"-A DOCKER-USER -s {orodruin.SANDBOX_NET} -d {orodruin.IMDS_ADDR} -j ACCEPT")
+
+
+def test_read_sandbox_is_inert_without_its_subscription():
+    assert orodruin.read_sandbox(env={}) == []
+
+
+def test_read_sandbox_arms_when_the_rule_is_present():
+    env = {"EREGION_STRATUS_SUBSCRIPTION": STRATUS_SUB}
+    assert orodruin.read_sandbox(env=env, run=lambda cmd: f"-N DOCKER-USER\n{_DROP}") == []
+
+
+def test_read_sandbox_flags_a_missing_rule():
+    env = {"EREGION_STRATUS_SUBSCRIPTION": STRATUS_SUB}
+    missing = orodruin.read_sandbox(
+        env=env, run=lambda cmd: "-N DOCKER-USER\n-A DOCKER-USER -j RETURN")
+    assert [m["code"] for m in missing] == ["stratus_sandbox_open"]
+
+
+def test_read_sandbox_fails_closed_when_the_rules_cannot_be_read():
+    def boom(cmd):
+        raise PermissionError("must be root")
+    env = {"EREGION_STRATUS_SUBSCRIPTION": STRATUS_SUB}
+    missing = orodruin.read_sandbox(env=env, run=boom)
+    assert [m["code"] for m in missing] == ["stratus_sandbox_unreadable"]
+
+
 # ── the allow-list held EQUAL to the Terraform's closed role (R2BGc) ─────────────────────────
 
 _GUARDRAILS = (Path(__file__).resolve().parents[2] / "infra" / "orodruin"
