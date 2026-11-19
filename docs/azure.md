@@ -312,11 +312,22 @@ privées (`ips`), et **ses IP publiques (`public_ips`)**. Le reste de la forme n
   audit`), la préparation (la réserve `no_nsg_for_blocks` : l'isolation passe par le NSG de
   quarantaine, pas le blocage d'une IP ; donc la garde d'autonomie de `decide`, qui tient la VM en
   `human_only` tant que la réserve n'est pas confirmée, et la carte du bot), la posture (le manque
-  critique `nsg_reachable`). Aucun ne lit `data.nsgs` comme la preuve qu'un NSG se lit, ni qu'une
-  isolation ou un blocage est possible (`tests/unit/test_audit_no_nsg.py`). Le contrôle n'est jamais
-  un `warn` passager ni une correction de droits, quel que soit le nom de la carte. Une carte dont
-  le sous-réseau ne se lit pas n'est pas « sans NSG » (L24) : l'échec reste celui d'avant, sans
-  données.
+  critique `nsg_reachable`). Aucun lecteur de Glorfindel (l'audit, la préparation, la porte, la
+  posture, le bot) ne lit `data.nsgs` comme la preuve qu'un NSG se lit, ni qu'une isolation ou un
+  blocage est possible (`tests/unit/test_audit_no_nsg.py`). La page de la console, elle, ne le
+  garantit qu'avec IPS2b (#953) : jusque-là, une VM à plusieurs cartes dont l'une est sans NSG y
+  compte encore ses entrées comme des NSG (« N NSGs across NICs »).
+
+  L'échec est écrit par le lecteur, jamais lu dans une erreur : `iam` est toujours faux, et le
+  contrôle n'est jamais un `warn` passager ni une correction de droits, quel que soit le nom de la
+  carte (`web-403-forbidden`, `web-timeout`). **L'ordre des cartes ne relâche jamais la réserve** :
+  une carte sans NSG lue avant une carte dont la lecture échoue (un 429, une expiration) garde
+  l'échec « no NSG », sans données (l'autre carte n'est pas lue) ; la préparation garde
+  `no_nsg_for_blocks`, la posture son manque critique. Une carte dont le sous-réseau ne se lit pas
+  n'est pas « sans NSG » (L24) : l'échec reste celui d'avant, sans données.
+- **La limite connue** : cette carte au sous-réseau illisible donne encore le texte « and its
+  subnet have no NSG » (comme avant IPS2a ; ce n'est pas une régression). Dire « sous-réseau
+  illisible » reviendra à un lot de suite.
 - **Les autres fournisseurs** : l'adaptateur AWS (et son faux, `tests/unit/fake_aws.py`) ne rend
   pas `check_nsg_access`, donc pas de `nsgs[]` ni de `public_ips`.
 

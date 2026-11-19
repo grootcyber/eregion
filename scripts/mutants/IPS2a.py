@@ -1,9 +1,10 @@
 """IPS2a (Partie de #950): the NSG audit gives the addresses of a VM without NSG — the check stays a
 failure, carries `data.nsgs[]` (a NIC without NSG said `nsg_scope: "none"`), and a failed public IP
 read carries its `code` beside its French text. A failure that carries data stays a failure for
-every reader (the audit's verdict, the readiness, the posture). M6511–M6520."""
+every reader (the audit's verdict, the readiness, the posture). M6511–M6520, M6531–M6532."""
 PUBLIC_IPS = "glorfindel/providers/azure/public_ips.py"
 READERS = "glorfindel/providers/azure/readers.py"
+NETWORK = "glorfindel/providers/azure/network.py"
 AUDIT = "glorfindel/audit.py"
 READINESS = "glorfindel/readiness.py"
 POSTURE = "glorfindel/posture.py"
@@ -44,5 +45,15 @@ MUTANTS = [
     ("M6520", "a NIC whose subnet did not read said without NSG, its addresses claimed (IPS2a)", READERS,
      '                    return failed             # unknown, not "none": no address claimed\n',
      '                    pass\n'),
+    # The review of IPS2a (PR #952): ids handed out by the Orchestre.
+    ("M6531", "a NIC without NSG read before a NIC whose read fails no longer said « no NSG »: the "
+     "reserve loosened by the order of the NICs (IPS2a)", READERS,
+     '            if bare:                  # a NIC without NSG read already: that, not the error\n',
+     '            if False:\n'),
+    ("M6532", "`iam` computed on the message of a VM without NSG, not False: a NIC's name makes it "
+     "an IAM failure (IPS2a)", NETWORK,
+     '    return {"ok": False, "iam": False, "no_nsg": True,\n',
+     '    from glorfindel.providers.azure.sdk import _is_iam_error\n'
+     '    return {"ok": False, "iam": _is_iam_error(bare[0]["nic_short"]), "no_nsg": True,\n'),
 ]
 TESTS = {m[0]: _TEST for m in MUTANTS}

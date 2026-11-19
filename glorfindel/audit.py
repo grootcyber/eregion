@@ -557,9 +557,11 @@ def _check_nsg(resource_id: str, connector) -> AuditCheck:
     err = res.get("error", "")[:120]
     # A NIC without NSG (IPS2a, #950): the check fails as before and carries the addresses read
     # (`nsgs`, that NIC `nsg_scope: "none"`) — never ok, never a transient warn nor an IAM fix,
-    # whatever the NIC's name. Those data never say an NSG is readable.
+    # whatever the NIC's name (`no_nsg`: the failure written by the reader, data or not). Those
+    # data never say an NSG is readable.
     bare = res.get("nsgs") or []
-    if res.get("iam") and not bare:
+    no_nsg = bool(res.get("no_nsg") or bare)
+    if res.get("iam") and not no_nsg:
         return AuditCheck(
             action="isolate_vm, block_suspicious_ip",
             name="NSG access",
@@ -573,7 +575,7 @@ def _check_nsg(resource_id: str, connector) -> AuditCheck:
                 f"--scope /subscriptions/$AZURE_SUBSCRIPTION_ID/resourceGroups/{rg}"
             ),
         )
-    if _is_transient_error(err) and not bare:
+    if _is_transient_error(err) and not no_nsg:
         return _transient_check("isolate_vm, block_suspicious_ip", "NSG access", err)
     return AuditCheck(
         action="isolate_vm, block_suspicious_ip",

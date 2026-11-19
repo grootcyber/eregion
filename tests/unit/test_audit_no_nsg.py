@@ -77,7 +77,7 @@ def test_a_vm_without_nsg_fails_and_carries_its_addresses():
     assert entry == {"nsg": "", "nsg_scope": "none", "nic_id": nic_id("rg-app", "web-nic"),
                      "ips": ["10.0.0.4"], "public_ips": [{"address": PUBLIC}]}
     # Nothing that would say an NSG reads: no rule count, no precedence, no primary NSG.
-    assert set(res) == {"ok", "iam", "error", "nsgs"}
+    assert set(res) == {"ok", "iam", "no_nsg", "error", "nsgs"}
 
 
 def test_the_audit_check_stays_fail_with_its_reason_and_carries_nsgs():
@@ -131,7 +131,7 @@ def test_a_subnet_that_does_not_read_is_never_said_none():
     f, c, _ = _one_bare_nic(**{"web-pip": ("rg-app", PUBLIC)})
     f.chaos = chaos
     res = c.check_nsg_access(WEB)
-    assert res == {"ok": False, "iam": False, "error": NO_NSG}
+    assert res == {"ok": False, "iam": False, "no_nsg": True, "error": NO_NSG}
     assert f.public_ip_reads == []
     check = _access(c)
     assert check.status == "fail" and check.data == {}
@@ -285,3 +285,79 @@ def test_the_posture_still_says_the_nsg_gap():
     [gap] = [g for g in gaps if g.check == "nsg_reachable"]
     assert gap.severity == "critical" and "impossible" in gap.message
     assert not getattr(checker, "_inconclusive", set())
+
+
+# ── The order of the NICs never loosens the failure (review of IPS2a) ──────────
+
+def _posture_gaps(res: dict):
+    conn = MagicMock()
+    conn.check_nsg_access.return_value = res
+    cfg = GlorfindelConfig(action_backends=[ActionBackendConfig(
+        name="rsv", type="azure_backup_vault", vault_name="", resource_group="rg-app")])
+    checker = PostureChecker(cfg, conn, dry_run=False)
+    checker._state = {}
+    gaps = checker._check_asset(DiscoveredAsset(name="web", resource_id=WEB, monitoring_backend="law",
+                                                last_seen="2026-11-19T00:00:00Z"))
+    return gaps, getattr(checker, "_inconclusive", set())
+
+
+def _assert_still_no_nsg(res: dict, name: str = "web-nic"):
+    """Every reader still says the VM without NSG: the audit fails (never a warn, never an IAM
+    fix), the readiness keeps `no_nsg_for_blocks`, the posture its critical gap."""
+    no_nsg = f"NIC {name} and its subnet have no NSG — cannot isolate VM"
+    assert res["ok"] is False and res["iam"] is False and res["error"] == no_nsg, res
+    conn = MagicMock()
+    conn.check_nsg_access.return_value = res
+    check = _access(conn)
+    assert check.status == "fail" and check.message == f"NSG not found or VM has no NSG — {no_nsg}"
+    assert check.fix == "Attach an NSG to the VM's NIC in resource group rg-app"
+    a = assess(WEB, _readiness_conn(res))
+    assert "no_nsg_for_blocks" in a["reserve_codes"] and "nsg_unreadable" not in a["reserve_codes"]
+    gaps, inconclusive = _posture_gaps(res)
+    [gap] = [g for g in gaps if g.check == "nsg_reachable"]
+    assert gap.severity == "critical" and not inconclusive
+
+
+def _second_nic_fails(exc_of, first: str = "web-nic"):
+    """`first` (no NSG, its subnet readable) read first, then web-nic2's read raises."""
+    f, c, _ = _world([{"name": first, "ips": ["10.0.0.4"], "subnet": "bare"},
+                      {"name": "web-nic2", "ips": ["10.0.1.4"], "subnet": "app"}])
+    reads = []
+
+    def chaos(op, phase, write):
+        if op == "nic.get":
+            reads.append(op)
+            if len(reads) == 2:
+                raise exc_of(op)
+    f.chaos = chaos
+    return c
+
+
+def test_a_nic_without_nsg_read_before_a_throttled_one_keeps_the_failure():
+    c = _second_nic_fails(throttled)
+    res = c.check_nsg_access(WEB)
+    assert "nsgs" not in res and res["no_nsg"] is True    # the other NIC unread: no data
+    _assert_still_no_nsg(res)
+
+
+def test_a_nic_without_nsg_read_before_a_timed_out_one_keeps_the_failure():
+    c = _second_nic_fails(lambda op: TimeoutError(f"{op}: connection timed out"))
+    res = c.check_nsg_access(WEB)
+    assert "nsgs" not in res
+    _assert_still_no_nsg(res)
+
+
+def test_a_nic_named_like_an_authorization_error_is_never_an_iam_failure():
+    from glorfindel.providers.azure.sdk import _is_iam_error
+    name = "web-403-forbidden"
+    assert _is_iam_error(f"NIC {name} and its subnet have no NSG — cannot isolate VM")
+    f, c, _ = _world([{"name": name, "ips": ["10.0.0.4"], "subnet": "bare"}])
+    res = c.check_nsg_access(WEB)
+    assert res["nsgs"][0]["nsg_scope"] == "none"
+    _assert_still_no_nsg(res, name)
+    assert _access(c).data["nsgs"] == res["nsgs"]
+
+
+def test_a_nic_named_like_a_timeout_after_a_failed_read_is_never_a_warn():
+    c = _second_nic_fails(throttled, first="web-timeout")
+    _assert_still_no_nsg(c.check_nsg_access(WEB), "web-timeout")

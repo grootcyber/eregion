@@ -7,6 +7,7 @@ from __future__ import annotations
 import ipaddress
 import os
 
+from glorfindel.providers.azure.network import _no_nsg_failure
 from glorfindel.providers.azure.nsg import _shadowing_rules
 from glorfindel.providers.azure.public_ips import read_public_ips
 from glorfindel.providers.azure.quarantine import _is_quarantine_nsg
@@ -37,7 +38,6 @@ def _within(addr: str, ips: list[str]) -> bool:
         except ValueError:
             return True
     return False
-
 
 class ReadersMixin:
     """Read-only questions: rights, inventory, audit (part of AzureConnector)."""
@@ -248,18 +248,20 @@ class ReadersMixin:
         FAILS (`ok` False, the same error as before) and carries `nsgs` all the same: its
         addresses read, that NIC said `nsg_scope: "none"` and `nsg: ""`. Those data never say an
         NSG is readable, nor that an isolation or a block is possible. A NIC whose subnet could
-        not be read is not "none" (L24): that failure carries no data, as before.
+        not be read is not "none" (L24): that failure carries no data, as before. A NIC
+        without NSG read before another NIC's read raised (a 429, a timeout) keeps the "no
+        NSG" failure, without data: never a reserve loosened by the order of the NICs.
         """
         if self.dry_run:
             return {"ok": True, "nsg": "dry_run"}
+        so_far: list[dict] = []       # the NICs read, kept if a later one raises (IPS2a)
         try:
             self._ensure_clients()
             rg, vm_name = _parse_vm_resource_id(resource_id)
-            targets = self._get_vm_nic_targets(rg, vm_name, allow_no_nsg=True)
+            targets = self._get_vm_nic_targets(rg, vm_name, allow_no_nsg=True, into=so_far)
             bare = [t for t in targets if t["scope"] == "none"]
             if bare:
-                no_nsg = f'NIC {bare[0]["nic_short"]} and its subnet have no NSG — cannot isolate VM'
-                failed = {"ok": False, "iam": _is_iam_error(no_nsg), "error": no_nsg}
+                failed = _no_nsg_failure(bare)
                 if any(t.get("subnet_unreadable") for t in bare):
                     return failed             # unknown, not "none": no address claimed
             read: dict = {}           # each public IP read once per call (IPS1a)
@@ -289,6 +291,9 @@ class ReadersMixin:
                 "precedence": self._precedence_issues(targets),
             }
         except Exception as e:
+            bare = [t for t in so_far if t.get("scope") == "none"]
+            if bare:                  # a NIC without NSG read already: that, not the error
+                return _no_nsg_failure(bare)
             return {"ok": False, "iam": _is_iam_error(str(e)), "error": str(e)}
 
     def _precedence_issues(self, targets: list[dict]) -> list[dict]:
