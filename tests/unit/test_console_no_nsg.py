@@ -88,3 +88,12 @@ def test_a_public_ip_that_did_not_read_is_said_in_english_by_its_code():
     assert "return { said: said || words, words: said ? words : '' };" in why
     pub = body("function _pubAddr(p, unfolded, bare) {")
     assert "? `<span class=\"vm-pub unread\"${why.words ? ` title=\"${_attr(why.words)}\"` : ''}>🌐 public IP not read: ${_attr(why.said)}</span>`" in pub
+
+
+def test_the_coverage_window_says_a_nic_without_nsg():
+    # A placement at `scope: "none"`, `nsg: ""` (an isolation on a bare NIC, IPS2a's contract): « no NSG »
+    # in red and « — » for its NSG, never « NIC NSG (this VM) » and an empty name.
+    modal = body("function showCoverageModal(idx) {")
+    assert "const scope = p.scope === 'subnet' ? 'subnet NSG (shared)' : p.scope === 'none' ? 'no NSG' : 'NIC NSG (this VM)';" in modal
+    assert "const scopeCol = p.scope === 'subnet' ? 'var(--orange)' : p.scope === 'none' ? 'var(--red)' : 'var(--dim)';" in modal
+    assert "🛡 ${_attr(nsg || '—')}" in modal

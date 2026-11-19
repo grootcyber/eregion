@@ -412,8 +412,9 @@ function showCoverageModal(idx) {
   const verb = c.type === 'isolated' ? 'Isolation' : c.type === 'nsg' ? 'NSG' : 'Block';
   const rows = (c.placements || []).map((p, i) => {
     const nsg   = (p.nsg || `${p.nsg_rg || ''}/${p.nsg_name || ''}`).split('/').pop();
-    const scope = p.scope === 'subnet' ? 'subnet NSG (shared)' : 'NIC NSG (this VM)';
-    const scopeCol = p.scope === 'subnet' ? 'var(--orange)' : 'var(--dim)';
+    // A NIC without NSG, nor on its subnet (`scope: "none"`, `nsg: ""`): said so, never « NIC NSG » (IPS2).
+    const scope = p.scope === 'subnet' ? 'subnet NSG (shared)' : p.scope === 'none' ? 'no NSG' : 'NIC NSG (this VM)';
+    const scopeCol = p.scope === 'subnet' ? 'var(--orange)' : p.scope === 'none' ? 'var(--red)' : 'var(--dim)';
     const nic   = p.nic_id ? p.nic_id.split('/').pop() : `NIC ${i + 1}`;
     const ips   = Array.isArray(p.ips) && p.ips.length ? p.ips.join(', ') : '';
     const rules = p.rule_in || p.rule_out
@@ -424,7 +425,7 @@ function showCoverageModal(idx) {
         <span style="color:var(--cyan);font-weight:600;font-size:11px;flex:1">${_attr(nic)}</span>
         <span style="color:${scopeCol};font-size:9px">${scope}</span>
       </div>
-      <div style="color:var(--dim);font-size:10px;margin-top:2px">🛡 ${_attr(nsg)}${ips ? ` · ${_attr(ips)}` : ''}</div>
+      <div style="color:var(--dim);font-size:10px;margin-top:2px">🛡 ${_attr(nsg || '—')}${ips ? ` · ${_attr(ips)}` : ''}</div>
       ${rules ? `<div style="color:var(--dim);font-size:9px;margin-top:1px">rule: ${_attr(rules)}</div>` : ''}
     </div>`;
   }).join('');
