@@ -10,7 +10,8 @@ M4448–M4460 sont allés à R2BGc (les garde-fous en Terraform) ; M4461–M4466
 s'arme POUR Stratus (Pièce 2, ci-dessous, eregion_core/orodruin.py), mesurés par
 tests/unit/test_stratus_contract.py ; M4467–M4469 = la vérif du bac à sable côté contrat (Pièce 3B,
 read_sandbox / sandbox_drops_imds) ; M4482–M4484 = le bac à sable posé au démarrage (Pièce 3A,
-infra/orodruin/main.tf, mesuré par tests/unit/test_orodruin.py).
+infra/orodruin/main.tf, mesuré par tests/unit/test_orodruin.py) ; M4485–M4489 = le lancement sous
+l'identité dédiée par l'échange fédéré (Pièce 4, annatar/, tests/unit/test_annatar_stratus.py).
 
 Forme chargée par scripts/mutation_check.py : MUTANTS (id, description, fichier, old, new) et
 TESTS (ses ids → le test qui l'attrape) ; chemins en chaînes.
@@ -18,6 +19,8 @@ TESTS (ses ids → le test qui l'attrape) ; chemins en chaînes.
 ORODRUIN = "eregion_core/orodruin.py"
 KILL = "infra/orodruin/kill.py"
 MAIN = "infra/orodruin/main.tf"
+STRATUS_ENGINE = "annatar/engines/stratus.py"
+STRATUS_HOST = "annatar/executors/stratus_host.py"
 
 _TO = "tests/unit/test_orodruin.py"
 _TK = "tests/unit/test_orodruin_kill.py"
@@ -41,6 +44,13 @@ _SANDBOX_MISS = f"{_TC}::test_read_sandbox_flags_a_missing_rule"
 _SANDBOX_DEST = f"{_TC}::test_a_drop_to_another_destination_does_not_count"
 _SANDBOX_SRC = f"{_TC}::test_a_drop_from_another_network_does_not_count"
 _SANDBOX_POSED = f"{_TO}::test_the_stratus_sandbox_is_posed_at_startup"
+
+# Pièce 4 — le lancement sous l'identité dédiée, par l'échange fédéré (annatar/).
+_TAS = "tests/unit/test_annatar_stratus.py"
+_FED_EMPTY = f"{_TAS}::test_stratus_run_env_is_empty_without_the_dedicated_subscription"
+_FED_AUTH = f"{_TAS}::test_stratus_run_env_authenticates_as_stratus_by_the_federated_exchange"
+_FED_REFUSE = f"{_TAS}::test_stratus_run_env_refuses_an_incomplete_federated_identity"
+_FED_EXEC = f"{_TAS}::test_the_executor_env_uses_the_federated_identity_over_msi"
 
 # The listing spans two lines; built here so the whitespace is exact (32-space continuation).
 _LIST_ALL = '"list", "--all",\n' + " " * 32 + '"--assignee-object-id"'
@@ -131,6 +141,27 @@ MUTANTS = [
     ("M4484", "the DROP service no longer runs after docker — it could apply the rule before the "
      "DOCKER-USER chain exists, leaving the IMDS reachable until the next boot (R2c, pièce 3)",
      MAIN, "After=docker.service", "After=network.target"),
+    # ── Pièce 4 — le lancement sous l'identité dédiée, par l'échange fédéré (annatar/) ──
+    ("M4485", "the federated identity is never used — a Stratus run with its dedicated subscription "
+     "falls through instead of authenticating as Stratus by the federated exchange (R2c, pièce 4)",
+     STRATUS_ENGINE, "    if not sub:", "    if sub:"),
+    ("M4486", "an incomplete federated identity no longer refuses — a dedicated-subscription run with "
+     "a missing client id, token file or tenant falls back to the managed identity or the bench "
+     "(the v1 blocker) instead of failing closed (R2c, pièce 4)",
+     STRATUS_ENGINE, "    if not (client_id and token_file and tenant):",
+     "    if (client_id and token_file and tenant):"),
+    ("M4487", "the run's subscription is read from the bench, not the dedicated one — Stratus would "
+     "act on the bench subscription (R2c, pièce 4)",
+     STRATUS_ENGINE, "    sub = _first_set(environ, (STRATUS_SUBSCRIPTION_ENV,))",
+     '    sub = _first_set(environ, ("AZURE_SUBSCRIPTION_ID",))'),
+    ("M4488", "the exchange directive becomes the managed-identity one — the run would try the IMDS "
+     "(blocked from the sandbox) instead of the federated exchange (R2c, pièce 4)",
+     STRATUS_ENGINE, '        "ARM_USE_OIDC": "true",', '        "ARM_USE_MSI": "true",'),
+    ("M4489", "the executor no longer prefers the federated identity — a configured dedicated "
+     "identity is ignored and the run authenticates by the managed identity (R2c, pièce 4)",
+     STRATUS_HOST,
+     "        identity = stratus_run_env(os.environ) or azure_provider_env(os.environ)",
+     "        identity = azure_provider_env(os.environ)"),
 ]
 
 TESTS = {
@@ -154,4 +185,9 @@ TESTS = {
     "M4482": _SANDBOX_POSED,
     "M4483": _SANDBOX_POSED,
     "M4484": _SANDBOX_POSED,
+    "M4485": _FED_EMPTY,
+    "M4486": _FED_REFUSE,
+    "M4487": _FED_AUTH,
+    "M4488": _FED_AUTH,
+    "M4489": _FED_EXEC,
 }
