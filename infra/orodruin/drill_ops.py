@@ -56,6 +56,14 @@ IMAGE = "eregion-annatar:orodruin"
 CONTAINER = "eregion-drill"
 # As ORO_HARDEN in the Makefile: every injector's docker run on Orodruin.
 HARDEN = "--read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges:true"
+# As ORO_EXEC_HOME in the Makefile (R2BZ): the one executable tmpfs of Annatar's runs, where its
+# control-plane adapter builds the run HOME (annatar/executors/stratus_host.py, EXEC_HOME) and
+# Terraform executes its providers; /tmp stays noexec. The drill plays Annatar's runs only (a
+# technique, never a fault in v1: eregion_core/drill.py), so its service gets it (DRL1d).
+EXEC_HOME = "--tmpfs /stratus-home:exec"
+# The options of the drill's docker run, those of ORO_RUN (Annatar's runs on Orodruin): ORO_HARDEN
+# then ORO_EXEC_HOME, no more, no less (tests/unit/test_drill_ops.py reads them in the Makefile).
+RUN_OPTS = f"{HARDEN} {EXEC_HOME}"
 _LOGIC_ID = re.compile(r"/subscriptions/[0-9a-fA-F-]{36}/resourceGroups/[-\w._()]{1,90}/providers/"
                        r"Microsoft\.Logic/workflows/[A-Za-z0-9][A-Za-z0-9._-]{0,79}", re.ASCII)
 _WEEKDAYS = {"Monday": "mon", "Tuesday": "tue", "Wednesday": "wed", "Thursday": "thu",
@@ -179,7 +187,7 @@ def units(schedule: dr.Schedule, user: str) -> dict[str, str]:
         f"User={user}\n"
         f"WorkingDirectory={home}\n"
         f"ExecStartPre=-/usr/bin/docker rm -f {CONTAINER}\n"
-        f"ExecStart=/usr/bin/docker run --rm --pull never --init --name {CONTAINER} {HARDEN} "
+        f"ExecStart=/usr/bin/docker run --rm --pull never --init --name {CONTAINER} {RUN_OPTS} "
         f"--env-file orodruin.env {mounts} -v {home}/drill:/app/drill:ro {IMAGE} "
         "python -m eregion_core.scheduled_drill run\n"
         f"ExecStop=-/usr/bin/docker stop --time 90 {CONTAINER}\n"
