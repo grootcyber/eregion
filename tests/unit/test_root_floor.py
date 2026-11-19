@@ -271,17 +271,19 @@ def test_an_unattributed_snapshot_held_by_the_mode_says_what_one_click_approves(
 @pytest.mark.parametrize("pair", [True, False], ids=["pair-live", "no-pair"])
 def test_a_protected_address_then_the_attribution(pair):
     """An unattributed detection whose address is on the never-block list: the never-block guard
-    holds the block (`protected_address`); with the pair live, the floor's attribution branch makes
-    it the attribution's (`unattributed_signal`) — both refused by the approval (SEC-Ec, #913)."""
+    holds the block first; the attribution guard primes over it (ATT1, #936) — the card is the
+    attribution's (`unattributed_signal`), pair live or not, refused by the approval (SEC-Ec, #913),
+    the protected address still said in its reason."""
     from glorfindel.approval import approval_refusal
     signal = _unattributed(_brute_force(SourceIP="10.0.0.5"))
     incident = _incident(agent.ROOT_ELEVATION, agent.LOGIN_AFTER_BRUTE_FORCE) if pair else None
     out, _ = _decide(signal, _decision("block_suspicious_ip"), incident)
     assert out["escalate"] is True and out["action"] == "block_suspicious_ip"
-    assert out["held_by"] == ("attribution" if pair else "never_block")
+    assert out["held_by"] == "attribution"
+    assert "adresse protégée" in out["escalation_reason"]
     agent.escalate_to_human({**out, "dry_run": False})
     [card] = [c for c in _cards() if c["resource_id"] == RID]
-    assert card["escalation_type"] == ("unattributed_signal" if pair else "protected_address")
+    assert card["escalation_type"] == "unattributed_signal"
     assert approval_refusal(card, "vm-b3a") and proposed_verbs(card) == frozenset()
     if pair:
         assert "rien ne s'y approuve en un clic" in card["reason"]
@@ -290,19 +292,20 @@ def test_a_protected_address_then_the_attribution(pair):
 @pytest.mark.parametrize("pair", [True, False], ids=["pair-live", "no-pair"])
 def test_a_release_hold_then_the_attribution(pair):
     """An unattributed detection, the model releases the isolation: the release precondition holds
-    it (`release_hold`, approvable); with the pair live, the floor's attribution branch makes it
-    the attribution's (`unattributed_signal`), refused by the approval — the more prudent (SEC-Ec)."""
+    it first (it was a `release_hold`, approvable, before ATT1); the attribution guard primes over
+    it (ATT1, #936) — the attribution's card (`unattributed_signal`), pair live or not, refused by
+    the approval, no proposal (SEC-Ec)."""
     from glorfindel.approval import approval_refusal
     signal = _unattributed(_brute_force())
     incident = _incident(agent.ROOT_ELEVATION, agent.LOGIN_AFTER_BRUTE_FORCE) if pair else None
     out, _ = _decide(signal, _decision("release_isolation"), incident)
     assert out["escalate"] is True and out["action"] == "release_isolation"
-    assert out["held_by"] == ("attribution" if pair else "release_precondition")
+    assert out["held_by"] == "attribution"
     agent.escalate_to_human({**out, "dry_run": False})
     [card] = [c for c in _cards() if c["resource_id"] == RID]
-    assert card["escalation_type"] == ("unattributed_signal" if pair else "release_hold")
-    assert bool(approval_refusal(card, "vm-b3a")) is pair
-    assert proposed_verbs(card) == (frozenset() if pair else {"release_isolation"})
+    assert card["escalation_type"] == "unattributed_signal"
+    assert approval_refusal(card, "vm-b3a")
+    assert proposed_verbs(card) == frozenset()
     if pair:
         assert "rien ne s'y approuve en un clic" in card["reason"]
 

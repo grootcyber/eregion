@@ -104,9 +104,20 @@ function _isLocalState(rid) { return /^~\//.test(rid || ''); }
 // the server refuses to execute it (fourth review, Q4).
 const _HELD_TYPES = new Set(['mode_hold', 'low_confidence', 'uncharacterized_signal', 'release_hold', 'telemetry_gap', 'unstable_decision', 'floor_proposal']);
 const _APPROVABLE = new Set(['isolate_vm', 'block_suspicious_ip', 'release_isolation', 'snapshot']);
+// ATT1 (#936): the actions aimed at the card's VM (eregion_core/action_queue.py VM_AIMED_ACTIONS).
+// On a card that says it is unattributed, whatever its type, never an « Approve & execute »: the VM
+// is the one the card is filed on, not one the detection names — the server refuses it too.
+const _VM_AIMED = new Set(['isolate_vm', 'block_suspicious_ip', 'release_isolation', 'revoke_temp_access']);
+function _aimsLoose(e) { return !!_unattributed(e) && _VM_AIMED.has(e.action); }
 function _isHeld(e) {
   return _HELD_TYPES.has(e.escalation_type) && _APPROVABLE.has(e.action)
-    && !(e.action === 'snapshot' && e.escalation_type === 'low_confidence');
+    && !(e.action === 'snapshot' && e.escalation_type === 'low_confidence')
+    && !_aimsLoose(e);
+}
+// A held snapshot to take by hand (« 📸 Snapshot ») — never on an unattributed card (ATT1): it would
+// snapshot the VM the card is filed on, which the detection does not name.
+function _isSnapshotPending(e) {
+  return e.action === 'snapshot' && e.escalation_type === 'low_confidence' && !_unattributed(e);
 }
 // JUG1 (#760): a disruptive action Glorfindel took alone, its check held — done, to judge after
 // the fact. Nothing to approve on it: it is undone, if judged wrong, by the usual paths.
@@ -506,6 +517,14 @@ function cliCommand(esc) {
   const rid = esc.resource_id;
   const id  = esc.id.slice(0, 8);
   // Never a command aimed at the anchor VM (AL1): acknowledge, act from what the card says.
+  // ATT1 (#936): nor on a card that says it is unattributed, whatever its type — it says so, and its
+  // candidates, and sends the judgement to the CLI.
+  const loose = _unattributed(esc);
+  if (loose) {
+    // A name from the store on one line (a newline would start a command of its own).
+    const said = _unattributedTxt(loose).replace(/[\u0000-\u001f\u007f]/g, ' ');
+    return `# ${said}\n# judge which VM it is about from the CLI (glorfindel pending, the detection's row), then act on that VM\nglorfindel ack ${id}`;
+  }
   if (_isAnchored(esc)) return `glorfindel ack ${id}`;
   if (_isHeld(esc)) {
     const vm = _vmArg(rid);
@@ -623,7 +642,7 @@ function openCommandModal(escId) {
   const esc = _escById[escId];
   if (!esc) return;
   const cmd = cliCommand(esc);
-  const isSnapshotPending = esc.action === 'snapshot' && esc.escalation_type === 'low_confidence';
+  const isSnapshotPending = _isSnapshotPending(esc);
   const isCmdModeHold = _isHeld(esc);
   const label = isCmdModeHold ? actionLabelVerb(esc.action) + ' — ' + _heldWord(esc)
               : isSnapshotPending ? 'Snapshot recommended' : actionLabel(esc.action);
@@ -710,7 +729,7 @@ function _groupEscs(escs) {
 
 function _renderEscGroup(group) {
   const e     = group[0]; // most recent / representative
-  const isSnapshotPending = e.action === 'snapshot' && e.escalation_type === 'low_confidence';
+  const isSnapshotPending = _isSnapshotPending(e);
   const isModeHold        = _isHeld(e);
   const isWriteBlocked    = e.escalation_type === 'write_blocked';
   const isActionFailed    = e.escalation_type === 'action_failed';
@@ -744,6 +763,8 @@ function _renderEscGroup(group) {
     : '';
   // No Restore on an anchored card: it would restore a VM the detection does not name.
   const isRestore = e.action === 'restore_from_backup' && !_isAnchored(e);
+  // ATT1 (#936): nor on a card that says it is unattributed, whatever its type.
+  const restoreOffered = isRestore && !_unattributed(e);
   const isReadinessHold = e.escalation_type === 'readiness_hold';
   const actionBtns = isRule
     ? ruleButtons
@@ -755,7 +776,7 @@ function _renderEscGroup(group) {
     ? `<button class="action primary" ${_on('click', 'doApproveAction', e.id, vmName)} style="font-size:9px;padding:2px 7px">▶ Approve & execute</button>
        <button class="action" ${_on('click', 'doAckAll', ids)} style="font-size:9px;padding:2px 7px">✓ Ack</button>
        <button class="action" ${_on('click', 'openCommandModal', e.id)} style="font-size:9px;padding:2px 7px">📋 Cmd</button>`
-    : isRestore
+    : restoreOffered
     ? `<button class="action primary" ${_on('click', 'confirmRestore', vmName, e.id)} style="font-size:9px;padding:2px 7px">🔄 Restore</button>
        <button class="action" ${_on('click', 'doAckAll', ids)} style="font-size:9px;padding:2px 7px">✓ Ack</button>
        <button class="action" ${_on('click', 'openCommandModal', e.id)} style="font-size:9px;padding:2px 7px">📋 Cmd</button>`
@@ -1911,7 +1932,7 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
   // Yellow, distinct from Failed (red) — it may still be running, just unverified.
   const snapshotStale      = activeJob?.type === 'snapshot' && activeJob?.status === 'Stale';
   // Escalade snapshot pending : bouton déjà dans la carte d'escalade — ne pas doubler dans BACKUP
-  const hasSnapshotEsc = myEscs.some(e => e.action === 'snapshot' && e.escalation_type === 'low_confidence');
+  const hasSnapshotEsc = myEscs.some(_isSnapshotPending);
   const snapshotBtn = snapshotInProgress
     ? `<button class="action" disabled style="margin-left:auto;font-size:9px;padding:2px 7px;opacity:.5;cursor:default">⏳ Snapshot…</button>`
     : snapshotStale
@@ -3552,7 +3573,7 @@ function showEscModal(vmName) {
     const ids   = group.map(g => g.id).join(','); // CSV — one string argument of the button's action (_on)
     const count = Number(group.length);
     const isModeHold        = _isHeld(e);
-    const isSnapshotPending = e.action === 'snapshot' && e.escalation_type === 'low_confidence';
+    const isSnapshotPending = _isSnapshotPending(e);
     const isWriteBlocked    = e.escalation_type === 'write_blocked';
     const isActionFailed    = e.escalation_type === 'action_failed';
     const isRule            = e.action === 'improve_detection' && e.proposal_id;

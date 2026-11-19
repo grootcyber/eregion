@@ -442,8 +442,10 @@ def resolve_attack_started(signal: dict, ip_owners=None) -> dict:
     # SLF1 (#929): the watch's own writes in its return channel are no detection of the run — set
     # aside as the RulePoller sets them aside (a row of them names no VM: it read as the run's);
     # `BlobWriters` taken off the row the model reads.
+    # ATT1 (#936): by the shipped rule's query only, to the byte — a query of another rule (the
+    # client's layer) sets nothing aside.
     from glorfindel import own_channel
-    channel = own_channel.current() if data_plane else None
+    channel = own_channel.current() if data_plane and own_channel.is_shipped(query) else None
 
     def settled(row):
         kept, _ = own_channel.settle([row], channel)
@@ -813,8 +815,13 @@ FLOOR_TYPE = "floor_proposal"
 
 # Actions aimed at ONE VM. On a detection the RulePoller could not tie to that VM (a row
 # aggregated by attacker IP, several VMs monitored) they are held: the same row is
-# dispatched for every VM. An IP block or a snapshot stays autonomous.
+# dispatched for every VM. A snapshot stays autonomous.
 _VM_TARGETED_ACTIONS = {"isolate_vm", "revoke_temp_access"}
+# ATT1 (#936): what the attribution guard holds on an unattributed detection — the VM's isolation,
+# a block on its NSG, the release of its isolation —, the approval's own set (`VM_AIMED_ACTIONS` of
+# the signed queue in eregion_core; the decision never imports it, FS1a — a test keeps the two
+# equal, tests/unit/test_attribution_prime.py).
+_ATTRIBUTION_HELD = frozenset(_VM_TARGETED_ACTIONS | {"block_suspicious_ip", "release_isolation"})
 
 
 def _as_bool(v) -> bool:
@@ -1281,7 +1288,13 @@ def _apply_attribution_guard(d: dict, signal: dict) -> None:
     A call made from an appliance's address (`attribution_via: appliance`, a VM that forwards
     packets: SEC-A4, V-05) holds every action, whatever the model or a gate before said: the
     card may be anchored on the appliance itself — isolating it cuts a whole hub, and the VM
-    that exfiltrates, behind it, stays untouched. The card says where to look."""
+    that exfiltrates, behind it, stays untouched. The card says where to look.
+
+    ATT1 (#936): the same precedence for any action aimed at the VM (`_ATTRIBUTION_HELD`): whatever
+    gate held the decision before — the confidence, the signal, the telemetry, the release
+    precondition, never_block —, its card becomes the attribution's (`unattributed_signal`, never
+    approvable in one click), the reason before kept after its own. The guard runs after those
+    gates, before the mode: the mode never holds what it holds. A snapshot is not held."""
     ctx = signal.get("context") or {}
     if ctx.get("attribution") == "unattributed" and ctx.get("attribution_via") == "appliance":
         before = d.get("escalation_reason") if d["escalate"] else ""
@@ -1296,11 +1309,12 @@ def _apply_attribution_guard(d: dict, signal: dict) -> None:
             + (f" — {before}" if before else "")
         )
         return
-    if d["escalate"] or d["action"] not in _VM_TARGETED_ACTIONS | {"block_suspicious_ip"}:
+    if d["action"] not in _ATTRIBUTION_HELD:
         return
     if ctx.get("attribution") != "unattributed":
         return
     candidates = ", ".join(ctx.get("candidates") or []) or "?"
+    before = d.get("escalation_reason") if d["escalate"] else ""
     d["escalate"] = True
     d["held_by"] = "attribution"
     if ctx.get("attribution_from") == "attack_started":
@@ -1309,6 +1323,7 @@ def _apply_attribution_guard(d: dict, signal: dict) -> None:
             f"La ligne de détection trouvée ne nomme pas la VM que désigne le signal "
             f"attack_started ({candidates}) — '{d['action']}' retenue pour revue humaine. "
             "Vérifier dans la ligne de détection quelle VM elle concerne avant d'agir."
+            + (f" — {before}" if before else "")
         )
         return
     d["escalation_reason"] = (
@@ -1316,6 +1331,7 @@ def _apply_attribution_guard(d: dict, signal: dict) -> None:
         f"de VM surveillée n'est à l'origine) — '{d['action']}' retenue pour revue "
         f"humaine. VMs surveillées : {candidates}. Vérifier laquelle est concernée "
         "(ou bloquer au périmètre) avant d'agir."
+        + (f" — {before}" if before else "")
     )
 
 
@@ -1944,10 +1960,12 @@ def decide(
     _apply_executable_guard(d)
     _apply_confidence_gate(d, raw_conf, threshold)
     _apply_signal_guardrail(d, signal)
-    _apply_attribution_guard(d, signal)
     _apply_telemetry_guard(d, state.get("telemetry_gaps") or [])
     _apply_release_precondition(d, signal)
     _apply_never_block_guard(d, signal)
+    # ATT1 (#936): after every gate that may hold the decision, before the mode — on a detection
+    # that names no VM, its card is the attribution's, whatever held it first.
+    _apply_attribution_guard(d, signal)
 
     mode_hold = _apply_autonomy_mode(d, mode, gate)
 
@@ -2267,6 +2285,17 @@ def _card_attribution(signal: dict) -> dict | None:
                if ctx.get("attribution_via") == "appliance" and ctx.get("appliance") else {})}
 
 
+def _loose_said(loose: dict) -> str:
+    """ATT1: an unattributed card's candidates, or the appliance its call came through, in words."""
+    if loose.get("appliance"):
+        return f"l'appel vient de {loose['appliance']}, qui fait suivre les paquets"
+    cands = loose.get("candidates") or []
+    if not cands:
+        return "la détection ne nomme aucune VM"
+    more = f" et {len(cands) - 8} autre(s)" if len(cands) > 8 else ""
+    return f"candidates : {', '.join(cands[:8])}{more}"
+
+
 def escalate_to_human(state: GlorfindelState) -> GlorfindelState:
     """Mark the decision as escalated — human must approve before any action."""
     said = _correlation_said(state["signal"])
@@ -2322,7 +2351,16 @@ def escalate_to_human(state: GlorfindelState) -> GlorfindelState:
 
     signal = state["signal"]
     steps = list(state.get("suggested_steps") or [])
-    if action == "snapshot":
+    loose = _card_attribution(signal)
+    if action == "snapshot" and loose is not None:
+        # ATT1 (#936): never a command on the VM the card is only filed on — the detection does not
+        # name it; the human judges which VM it is about, from the CLI.
+        steps.append(
+            f"Détection non attribuée ({_loose_said(loose)}) : juger depuis la CLI quelle VM elle "
+            "concerne (`glorfindel pending`, la ligne de détection) avant tout instantané, puis "
+            "`glorfindel snapshot <groupe>/<nom> --yes` sur celle-là."
+        )
+    elif action == "snapshot":
         from glorfindel.vm_command import group_and_name
         steps.append(           # the VM by « <groupe>/<nom> », never its full id (MSK3b)
             f"Si tu confirmes la compromission après vérification : "
