@@ -80,7 +80,11 @@ rules:
       | summarize MaxWrite = max(Peak) by Computer, _ResourceId
 
   - name: data-exfiltration-blob
-    description: "Blob writes (PutBlob, PutBlock) from a VM private IP — T1041 exfiltration via MSI"
+    description: >
+      Blob writes (PutBlob, PutBlock) from a VM private IP — T1041 exfiltration via MSI. Written
+      writes only (HTTP 2xx): a refused write moved nothing (SEC-I). LIMIT: the address is the
+      last hop the storage service sees — behind an application relay (an explicit proxy, a jump
+      host) without IP forwarding, the relay is taken for the source.
     enabled: true
     ttp: T1041
     assets: [auto]
@@ -92,6 +96,11 @@ rules:
       // PutBlockList: PutBlob alone let them through (L21). PutBlobCount counts writes.
       | where OperationName in ("PutBlob", "PutBlock", "PutBlockList")
       | where TimeGenerated > ago(5m)
+      // Written writes only (SEC-I): a write the account refused (403, 404, 409…) moved no data
+      // out — it counted as an exfiltration and put a card on the VM. By the HTTP code, not by
+      // StatusText, whose wording may follow the authorization (MSI, SAS: a hypothesis measured
+      // on the bench); an unreadable code (« Unknown ») is no write.
+      | where toint(StatusCode) between (200 .. 299)
       | where CallerIpAddress matches regex @"^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)"
       // The caller's address comes with its source port (10.10.1.4:50374): one row per
       // connection, each one a new detection. Grouped by address alone (L21).
@@ -309,7 +318,9 @@ rules:
       seulement ; l'interpréteur python3 du système (/usr/bin/python3 ou python3.N, rien d'autre)
       sur /var/log/azure/, waagent.log, unattended-upgrades ; dpkg et apt sur /var/log/apt/ et
       dpkg.log. Jugé sur `exe` (le chemin du noyau) et sur les chemins, jamais sur `comm` (que
-      l'attaquant choisit). LIMITES (VM3b) : waagent, le gestionnaire de l'agent de supervision et
+      l'attaquant choisit) ; un écrivain n'est écarté que sur un événement d'un seul
+      enregistrement SYSCALL de la clé — deux, c'est une ligne écrite à son numéro : une carte
+      (SEC-I). LIMITES (VM3b) : waagent, le gestionnaire de l'agent de supervision et
       unattended-upgrades sont des scripts, leur `exe` est l'interpréteur — un script python3
       quelconque qui écrit ces fichiers-là n'est donc pas vu (auditd ne nomme pas le script ;
       proctitle et comm sont à l'attaquant) ; et un démon est écarté sur tout /var/log, puisque
@@ -360,6 +371,7 @@ rules:
                                       or Name startswith "/var/log/unattended-upgrades/")
       | extend PackageFile = Entry and (Name startswith "/var/log/apt/" or Name == "/var/log/dpkg.log")
       | summarize TimeGenerated = min(TimeGenerated), Tampers = countif(Tamper),
+                  Syscalls = dcountif(SyslogMessage, Tamper),
                   Daemons = countif(Daemon), Sessions = countif(Session), Agents = countif(Agent),
                   Pythons = countif(Python), Packages = countif(Package), Entries = countif(Entry),
                   SessionFiles = countif(SessionFile), AgentFiles = countif(AgentFile),
@@ -368,13 +380,20 @@ rules:
                   Records = make_set_if(Record, Tamper or Entry, 8)
                   by Computer, _ResourceId, AuditEvent
       | where Tampers > 0
-      | where Daemons == 0
+      // The kernel writes one SYSCALL record per event (SEC-I): a second one at the event's
+      // serial is a line written — local6 is open to any local user — and a daemon's, added,
+      // set the whole event aside. A writer is set aside only on an event of one such record;
+      // an event of two or more is a card, as AUD1 cards one (fail closed). Distinct records,
+      // whole (never the 1,000 characters a card keeps: an exe path past them would make two
+      // records one): a line the agent delivers twice is one record, never a card.
+      | extend Alone = Syscalls == 1
+      | where not(Alone and Daemons > 0)
       // A known writer is set aside only when every entry it touched is one of its own files;
       // an event with no entry read is kept (fail closed).
-      | where not(Sessions > 0 and Entries > 0 and SessionFiles == Entries)
-      | where not(Agents > 0 and Entries > 0 and AgentFiles == Entries)
-      | where not(Pythons > 0 and Entries > 0 and PythonFiles == Entries)
-      | where not(Packages > 0 and Entries > 0 and PackageFiles == Entries)
+      | where not(Alone and Sessions > 0 and Entries > 0 and SessionFiles == Entries)
+      | where not(Alone and Agents > 0 and Entries > 0 and AgentFiles == Entries)
+      | where not(Alone and Pythons > 0 and Entries > 0 and PythonFiles == Entries)
+      | where not(Alone and Packages > 0 and Entries > 0 and PackageFiles == Entries)
       // No SyslogMessage of its own: the row is told apart by its event (_row_identity), and no
       // writer's name in a free text can characterize it (useradd ≠ account_creation here).
       | project TimeGenerated, Writer, Paths, Computer, _ResourceId, AuditEvent, Records

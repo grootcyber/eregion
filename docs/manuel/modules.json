@@ -21,7 +21,8 @@
   846,
   847,
   848,
-  849
+  849,
+  850
  ],
  "composants": [
   {
@@ -1646,6 +1647,18 @@
     "SEC-Hb"
    ],
    "issue": 849
+  },
+  {
+   "id": "s-sec-i",
+   "composant": "socle",
+   "poste": "s-signer",
+   "nom": "Security hardening",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "SEC-I"
+   ],
+   "issue": 850
   },
   {
    "id": "s-inf-fl",

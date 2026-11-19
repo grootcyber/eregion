@@ -525,15 +525,19 @@ def poll_detection(state: GlorfindelState, ip_owners=None) -> GlorfindelState:
 
 # ── Investigative queries (post-detection enrichment) ─────────────────────────
 
-# Query templates — {vm} is replaced at runtime with the VM hostname, {ip} with the
-# detection's source address: each a KQL string literal (glorfindel/kql.py), checked for
-# what it is first (SEC4c) — a value read from a log line never leaves its literal.
+# Query templates — {vm} is replaced at runtime with the VM's resource id as the registry
+# holds it (the signal's, never the line's), {ip} with the detection's source address: each a
+# KQL string literal (glorfindel/kql.py), checked for what it is first (SEC4c) — a value read
+# from a log line never leaves its literal. Scoped by `_ResourceId`, which the agent writes,
+# never by `Computer`, which root on any host of the workspace chooses (SEC-I, V-09): a host
+# named like the VM wrote the rows the model read for it. `=~`: the registry's case may differ
+# from Log Analytics' (the routing compares them lowered too).
 # All queries use ago(5m) to stay within the detection window.
 # Kept short: investigate must complete in <15s total.
 
 _IQ_HEARTBEAT_GAP = """
 Heartbeat
-| where Computer == {vm}
+| where _ResourceId =~ {vm}
 | where TimeGenerated > ago(2h)
 | order by TimeGenerated asc
 | extend PrevBeat = prev(TimeGenerated)
@@ -547,7 +551,7 @@ Heartbeat
 _IQ_DISK_PROCESSES = """
 Perf
 | where TimeGenerated > ago(5m)
-| where Computer == {vm}
+| where _ResourceId =~ {vm}
 | where ObjectName == "Process"
 | where CounterName == "IO Write Bytes/sec"
 | where InstanceName !in ("_Total", "Idle", "System")
@@ -568,7 +572,7 @@ Perf
 _IQ_BACKUP_AGENT = """
 Perf
 | where TimeGenerated > ago(10m)
-| where Computer == {vm}
+| where _ResourceId =~ {vm}
 | where ObjectName == "Process"
 | where CounterName == "IO Write Bytes/sec"
 | where InstanceName in~ ("waagent", "WALinuxAgent", "azure-backup", "snapd", "MicrosoftAzureRecoveryServices")
@@ -578,7 +582,7 @@ Perf
 _IQ_SUCCESS_AUTH = """
 Syslog
 | where TimeGenerated > ago(5m)
-| where Computer == {vm}
+| where _ResourceId =~ {vm}
 | where Facility == "auth"
 | where ProcessName in ("sshd", "sshd-session")
 // sshd's own wording, at the start of the line (SEC2): never a user name holding it.
@@ -593,7 +597,7 @@ Syslog
 _IQ_ROOT_COMMANDS = """
 Syslog
 | where TimeGenerated > ago(10m)
-| where Computer == {vm}
+| where _ResourceId =~ {vm}
 // sudo logs to authpriv (measured under AMA).
 | where Facility in ("auth", "authpriv")
 // sudo's own lines (SEC2): the word is its tag (ProcessName), not in the message.
@@ -606,7 +610,7 @@ Syslog
 _IQ_DISK_AFTER_ESC = """
 Perf
 | where TimeGenerated > ago(10m)
-| where Computer == {vm}
+| where _ResourceId =~ {vm}
 | where ObjectName in ("Logical Disk", "LogicalDisk")
 | where CounterName == "Disk Write Bytes/sec"
 | summarize MaxWriteMBs = round(max(CounterValue) / 1048576, 1),
@@ -634,7 +638,8 @@ def investigate(state: GlorfindelState) -> GlorfindelState:
     """Enrich the signal with targeted investigative queries before decide.
 
     Only runs on event=detection with a resolvable workspace_id.
-    Queries are chosen based on signal content (not TTP label).
+    Queries are chosen based on signal content (not TTP label), and scoped by the VM the
+    registry names (`_ResourceId`, SEC-I): a detection attributed to no VM runs none.
     Results land in raw_signal.investigative_context — the LLM sees them.
     A failed query is best-effort for the model (it sees [] as before) but not for the
     gates: its name goes to `telemetry_gaps` (state and debug line, never the signal),
@@ -673,23 +678,13 @@ def investigate(state: GlorfindelState) -> GlorfindelState:
     first_row = raw.get("detected_data") or raw.get("first_result_row") or {}
     syslog_msg = str(first_row.get("SyslogMessage", ""))
 
-    # Prefer the OS hostname from the query result (Computer field in LAW tables).
-    # The ARM resource name (.split("/")[-1]) is a fallback only — it may differ
-    # from the OS hostname, in which case Perf/Syslog queries return empty silently.
-    hostname_from_signal = (
-        first_row.get("Computer")
-        or first_row.get("computer")
-        or first_row.get("host")
-    )
-    using_arm_fallback = not hostname_from_signal
-    vm = str(hostname_from_signal or signal.get("resource_id", "").split("/")[-1])
-
-    if using_arm_fallback:
-        _console.print(
-            f"  [dim]investigate: Computer absent from signal — "
-            f"using ARM name '{_esc_markup(vm)}' as hostname fallback "
-            f"(queries may return empty if OS hostname differs)[/dim]"
-        )
+    # SEC-I (V-09): the queries are scoped by the VM the registry names — the signal's
+    # resource id, never the line's `Computer` (root on any host of the workspace writes it). A
+    # detection not attributed to a VM (its resource id an anchor, the line naming none) has no
+    # VM to enquire on: its queries are not run — unknown, a gap, never another VM's rows.
+    rid = str(signal.get("resource_id") or "")
+    vm = rid.rstrip("/").split("/")[-1] or "?"
+    unattributed = (signal.get("context") or {}).get("attribution") == "unattributed"
 
     ctx: dict[str, list[dict]] = {}
     gaps: list[str] = []
@@ -708,7 +703,7 @@ def investigate(state: GlorfindelState) -> GlorfindelState:
             refused.setdefault(str(raw_value)[:60], str(exc))
             return None
 
-    vm_lit = value(kql.name, vm)
+    vm_lit = None if unattributed else value(kql.resource_id, rid)
 
     def run(name: str, template: str, **values) -> None:
         if any(v is None for v in values.values()):
@@ -744,6 +739,11 @@ def investigate(state: GlorfindelState) -> GlorfindelState:
     if not ctx:
         return state
 
+    if unattributed:
+        _console.print(
+            "  [yellow]investigate: détection non attribuée à une VM — requête(s) d'enquête non "
+            "lancée(s) (aucune VM du registre à interroger)[/yellow]"
+        )
     if refused:
         _console.print(
             "  [yellow]investigate: valeur refusée, requête(s) non lancée(s) — "
@@ -757,17 +757,11 @@ def investigate(state: GlorfindelState) -> GlorfindelState:
             f"autonome sur ce cycle[/yellow]"
         )
 
-    if all(len(v) == 0 for v in ctx.values()):
-        if using_arm_fallback:
-            _console.print(
-                f"  [yellow]investigate: all queries empty for '{_esc_markup(vm)}' (ARM fallback) "
-                f"— likely hostname mismatch, check OS hostname vs ARM name[/yellow]"
-            )
-        else:
-            _console.print(
-                f"  [dim]investigate: all queries empty for '{_esc_markup(vm)}' "
-                f"— data not yet ingested (LAW latency ~60s, normal)[/dim]"
-            )
+    if all(len(v) == 0 for v in ctx.values()) and not gaps:
+        _console.print(
+            f"  [dim]investigate: all queries empty for '{_esc_markup(vm)}' "
+            f"— data not yet ingested (LAW latency ~60s, normal)[/dim]"
+        )
 
     enriched = {
         **signal,
@@ -2601,6 +2595,13 @@ def store_cycle(state: GlorfindelState, *, memory: CycleMemory) -> GlorfindelSta
         "autonomy_gate": state.get("autonomy_gate") or {},
         "source": source,
         "exercise_run": exercise_run,
+        # SEC-I (V-11): the VM and the rule, which the retrieval weighs and bounds (never in the
+        # cycle's text, so never in what the model reads) — no VM for a detection attributed to
+        # none (its resource id is an anchor); and no corroboration verdict before SEC-A3.
+        "resource_id": "" if (signal.get("context") or {}).get("attribution") == "unattributed"
+                       else signal.get("resource_id", ""),
+        "rule_name": (signal.get("context") or {}).get("rule_name", ""),
+        "corroborated": False,
     }
     # ChromaDB write — non-fatal: debug JSONL must still be written on failure. Never a
     # control-plane cycle (AL1): decided by the code, not the model, on a VM that may be an

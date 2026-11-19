@@ -53,7 +53,10 @@ GONDOLIN_IP = "10.0.1.5"
 NOW = datetime(2026, 11, 19, 10, 0, tzinfo=timezone.utc)
 CHANNEL = own_channel.Channel(ACCOUNT, CONTAINER, WATCH_OID)
 
-# The rule's query before SLF1, as it ran on Imladris: what the model read is held to it.
+# The rule's query before SLF1, as it ran on Imladris: what the model read is held to it. The shipped
+# one also keeps the written writes only (SEC-I, `toint(StatusCode) between (200 .. 299)`): the writes
+# forged here are written ones (201), where the two agree — a refused write, which the query of before
+# counted, is tested in test_enquiry_memory.py.
 BEFORE_SLF1 = """StorageBlobLogs
 | where OperationName in ("PutBlob", "PutBlock", "PutBlockList")
 | where TimeGenerated > ago(5m)
@@ -72,7 +75,7 @@ def _write(blob, oid=WATCH_OID, ip=WATCH_IP, account=ACCOUNT, container=CONTAINE
     return {"Type": "StorageBlobLogs", "TimeGenerated": NOW - timedelta(minutes=minutes),
             "OperationName": op, "CallerIpAddress": f"{ip}:50374", "AccountName": account,
             "ObjectKey": f"/{account}/{container}/{blob}", "RequesterObjectId": oid,
-            "ResponseBodySize": size, "StatusCode": 201}
+            "ResponseBodySize": size, "StatusCode": "201"}     # a text, as measured (SEC-I, SI2)
 
 
 def _channel_writes(oid=WATCH_OID, **kw):

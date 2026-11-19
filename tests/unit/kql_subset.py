@@ -16,8 +16,8 @@ function returns — the Activity Log's `Claims`, AL2, AL1d. For the Entra sign-
 `kind=leftanti` on a let's name (`on col, …`; a right column the left already has is suffixed
 `1`, as in KQL), `between (a .. b)` (both ends included), `project Name = expr`, the
 aggregations `dcount(f)` and `make_set(f[, n])`, the functions `bin(t, span)` (a datetime
-floored to the span, from the epoch) and `strcat_array(a, sep)`. For the exfiltration rule (SLF1): `split(s, sep)` and an index
-(`[2]`) on the array it returns (null past its end), `bag_pack(k, v, …)`, the aggregations
+floored to the span, from the epoch) and `strcat_array(a, sep)`. For the exfiltration rule (SLF1, SEC-I): `split(s, sep)` and an index
+(`[0]`, `[2]`) on the array it returns (null past its end), `bag_pack(k, v, …)`, the aggregations
 `sum(f)` and `make_list(f[, n])`, and a `summarize` over what a `summarize` returned. Anything
 else raises NotImplementedError: a rule this reader cannot follow fails its test, never
 passes it by accident. `has` is KQL's term match (case-insensitive, at term boundaries);
@@ -230,7 +230,8 @@ class _Parser:
             if self.take()[1] == ".":
                 key = self.take("ident")[1]
             elif self.peek()[0] == "num":
-                # An index on an array (SLF1: `split(ObjectKey, "/")[2]`): null past its end, as in KQL.
+                # An index on an array (SLF1: `split(ObjectKey, "/")[2]`; SEC-I:
+                # `split(CallerIpAddress, ":")[0]`): null past its end, as in KQL.
                 i = int(self.take("num")[1])
                 self.take("op", "]")
                 f = (lambda inner, i: lambda r: (inner(r)[i] if isinstance(inner(r), list)
