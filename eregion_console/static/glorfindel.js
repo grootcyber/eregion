@@ -920,14 +920,17 @@ async function refreshActionsData() {
 function renderInfra() {
   if (_configMode) return;
   const list           = document.getElementById('incidents-list');
-  // The scroll container (#topo-graph) and the edges' layer (#topo-svg) outlive a refresh:
-  // only what they hold (#topo-body) is replaced. Replaced every 5 s with the rest, the
-  // container cut a scroll in progress (wheel, momentum, the scrollbar held) and its position
-  // had to be put back by hand (TOPO1 #927). Built once, again only if something else emptied it.
+  // The scroll container (#topo-graph), the edges' layer (#topo-svg) and #topo-body outlive a
+  // refresh: only the content of #topo-body is replaced, never an element of the shell. Replaced
+  // every 5 s with the rest, the container cut a scroll in progress (wheel, momentum, the scrollbar
+  // held) and its position had to be put back by hand (TOPO1 #927). Built once, again only if one
+  // of the three is missing — something else emptied the list (TOPO1b #949: #topo-body checked too).
   let graph = document.getElementById('topo-graph');
-  if (!graph || !list.contains(graph)) {
+  let body  = graph && graph.querySelector('#topo-body');
+  if (!graph || !list.contains(graph) || !body || !graph.querySelector('#topo-svg')) {
     list.innerHTML = `<div class="topo-graph" id="topo-graph"><svg class="topo-svg" id="topo-svg"></svg><div class="topo-body" id="topo-body"></div></div>`;
     graph = document.getElementById('topo-graph');
+    body  = document.getElementById('topo-body');
   }
   // The PROTECT NSG list's own inner scroll is inside #topo-body: recreated, put back.
   const _prevNsg = document.getElementById('nsg-scroll');
@@ -1046,7 +1049,7 @@ function renderInfra() {
     if (!hasIncident) _collapsedVms.delete(r.vm_name); // allow re-expand on next incident; don't force-collapse user-expanded clean cards
   });
 
-  document.getElementById('topo-body').innerHTML = `
+  body.innerHTML = `
       <!-- Layer 1 — Agent -->
       <div class="topo-layer">
         ${_renderAgentNode(rules, detectBackends, recoverBackends, discovered)}
@@ -1060,6 +1063,8 @@ function renderInfra() {
       </div>
 
       <div class="topo-spacer"></div>
+
+      ${_auditBand()}
 
       <!-- Layer 3 — Assets -->
       <div class="topo-assets" id="topo-assets">
@@ -1117,19 +1122,47 @@ function renderInfra() {
   _applyReadOnlyGuards(list);
 }
 
+// The readiness audit not read, said once above the cards (TOPO1b #949, Jonathan 19/11 on a
+// mockup; « ip ? » on every card set aside). Before, the cards lost their checks and their
+// addresses in silence, and only the dot of the GLORFINDEL node went red. The last good audit
+// kept: the band says when it was read. The reason comes from the browser or the server: escaped.
+function _auditBand() {
+  if (_auditStale) {
+    const when = _auditLastRun ? `cards show the read of ${_attr(fmtTime(_auditLastRun))}` : 'cards show the last read';
+    return `<div class="topo-band" role="status">⚠ Readiness audit not read: ${_attr(_auditStale)} <span class="topo-band-dim">· ${when}</span></div>`;
+  }
+  if (_auditData?.error)
+    return `<div class="topo-band" role="status">⚠ Readiness audit not read: ${_attr(_auditData.error)} <span class="topo-band-dim">· checks and addresses unknown on every card · next try within 5 min</span></div>`;
+  return '';
+}
+
 // The edges follow the map: drawn again, once per frame at most, when the map or its cards
 // change size without a render — the window resized, the column beside it, a font loaded.
 // Before, they stayed where the last render had put them (TOPO1 #927).
 let _topoResize = null;
 let _topoDrawQueued = false;
+let _topoSeen = {};                     // the last size the observer saw, of the map and of its row
 function _queueTopologyEdges() {
   if (_topoDrawQueued) return;
   _topoDrawQueued = true;
   requestAnimationFrame(() => { _topoDrawQueued = false; _drawTopologyEdges(); });
 }
+// Each render observes its new row of cards, and an observation starts with a notification: drawn
+// on it, every refresh drew its edges twice (review of TOPO1). A size already seen draws nothing;
+// a size that changed (a resize, a card grown without a render) draws again (TOPO1b #949).
+function _onTopologyResize(entries) {
+  let changed = false;
+  for (const e of entries) {
+    const role = e.target.id === 'topo-graph' ? 'graph' : 'assets';
+    const size = `${Math.round(e.contentRect.width)}x${Math.round(e.contentRect.height)}`;
+    if (_topoSeen[role] !== size) { _topoSeen[role] = size; changed = true; }
+  }
+  if (changed) _queueTopologyEdges();
+}
+// A browser without ResizeObserver: the edges are drawn at each render, not on a resize.
 function _watchTopology(graph) {
   if (typeof ResizeObserver !== 'function') return;
-  if (!_topoResize) _topoResize = new ResizeObserver(_queueTopologyEdges);
+  if (!_topoResize) _topoResize = new ResizeObserver(_onTopologyResize);
   _topoResize.disconnect();             // the cards' row of the last render is gone
   _topoResize.observe(graph);
   const assets = document.getElementById('topo-assets');
@@ -3814,7 +3847,12 @@ async function refreshAuditData() {
   const timer = setTimeout(() => ctrl.abort(), 20000);
   try {
     const r = await fetch('/api/audit', { signal: ctrl.signal });
-    _auditData    = await r.json();
+    // An answer that is not an audit is a failure, said as one (TOPO1b #949): before, a 500 was
+    // read as an audit without VMs, every card silent.
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    if (!Array.isArray(d?.audits)) throw new Error('the answer holds no audit');
+    _auditData    = d;
     _auditLastRun = new Date().toISOString();
     _auditStale   = null;
   } catch (e) {
