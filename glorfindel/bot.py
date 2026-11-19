@@ -641,8 +641,12 @@ def _save_synced(synced: dict[str, str]) -> None:
 
 
 def _card_signature(esc: dict) -> str:
-    return (f"{esc.get('status', '')}|{esc.get('verdict') or ''}|{int(esc.get('occurrences') or 1)}"
-            f"|{_proposed_state(esc)}")
+    """What the card's message shows of it: a message whose signature did not change is never edited.
+    VP1's state is added only when there is one (VP1b, #917): an empty suffix changed every signature
+    kept before it, and the first pass edited at once every message of the last 14 days."""
+    sig = f"{esc.get('status', '')}|{esc.get('verdict') or ''}|{int(esc.get('occurrences') or 1)}"
+    state = _proposed_state(esc)
+    return f"{sig}|{state}" if state else sig
 
 
 def _proposed_state(esc: dict) -> str:
@@ -1216,17 +1220,24 @@ class _VerdictButton(discord.ui.Button):
         except (KeyError, ValueError) as exc:
             await interaction.response.send_message(f"✗ {discord_text(_masked(exc, self.esc))}", ephemeral=True)
             return
-        # One click: a judged card is also acknowledged (Jonathan, 16/10).
-        esc_module.resolve(self.esc["id"])
-        for item in self.view.children:  # type: ignore[union-attr]
-            item.disabled = True  # type: ignore[attr-defined]
-        await interaction.response.edit_message(view=self.view)  # type: ignore[union-attr]
-        await interaction.followup.send(
-            f"{_VERDICT_WORDS[self.verdict]} — jugé par **{discord_text(interaction.user.display_name)}**"
-        )
-        remaining = [e for e in esc_module.pending() if _thread_key(e) == _thread_key(self.esc)]
-        if not remaining and isinstance(interaction.channel, discord.Thread):
-            await interaction.channel.edit(archived=True, reason="All escalations handled")
+        await _judged(self, interaction,
+                      f"{_VERDICT_WORDS[self.verdict]} — jugé par **{discord_text(interaction.user.display_name)}**")
+
+
+async def _judged(button: discord.ui.Button, interaction: discord.Interaction, said: str) -> None:
+    """A card judged from Discord — by a verdict's button, or by confirming its proposed verdict (VP1b,
+    #917: one path for both). One click: the card also acknowledged (Jonathan, 16/10); its buttons
+    greyed; who judged said (``said``, escaped by the caller); and the VM's thread archived when
+    nothing is left pending in it."""
+    esc = button.esc  # type: ignore[attr-defined]
+    esc_module.resolve(esc["id"])
+    for item in button.view.children:  # type: ignore[union-attr]
+        item.disabled = True  # type: ignore[attr-defined]
+    await interaction.response.edit_message(view=button.view)  # type: ignore[union-attr]
+    await interaction.followup.send(said)
+    remaining = [e for e in esc_module.pending() if _thread_key(e) == _thread_key(esc)]
+    if not remaining and isinstance(interaction.channel, discord.Thread):
+        await interaction.channel.edit(archived=True, reason="All escalations handled")
 
 
 _PROPOSED_WORDS = {"confirm": "✓ Confirmer le verdict proposé", "refuse": "✗ Refuser la proposition"}
@@ -1257,12 +1268,9 @@ class _ProposedButton(discord.ui.Button):
             await interaction.response.edit_message(embed=_build_embed(e), view=_build_view(e))
             await interaction.followup.send(f"Verdict proposé refusé par **{who}** — la carte reste à juger")
             return
-        esc_module.resolve(self.esc["id"])        # one click: a judged card is also acknowledged
-        for item in self.view.children:  # type: ignore[union-attr]
-            item.disabled = True  # type: ignore[attr-defined]
-        await interaction.response.edit_message(view=self.view)  # type: ignore[union-attr]
-        await interaction.followup.send(
-            f"{_VERDICT_WORDS.get(e['verdict'], discord_code(e['verdict']))} (proposé, confirmé) — jugé par **{who}**")
+        # VP1b: the path of any verdict given — acknowledged, greyed, said, the thread archived.
+        await _judged(self, interaction,
+                      f"{_VERDICT_WORDS.get(e['verdict'], discord_code(e['verdict']))} (proposé, confirmé) — jugé par **{who}**")
 
 
 class EscalationView(discord.ui.View):

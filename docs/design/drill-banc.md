@@ -1098,6 +1098,19 @@ Le code suit les §2.3 et §3.1 dans leur ordre. Ce qui s'en écarte, ou que la 
   fil peut jamais en recevoir une.
 - **Mutants** M5921–M5940 (`scripts/mutants/VP1.py`), dont les deux du §9 (M5921 : le drill lu comme
   `drill.find` ; M5922 : une autre VM).
+- **Les restes de sa relecture (VP1b, #917, 19/11)** :
+  - un verdict posé à la main (`set_verdict` : la console, le bot, la CLI) retire `verdict_from` : une
+    carte confirmée puis rejugée ne dit plus « proposed » ;
+  - la passe tient carte par carte : une carte qu'elle ne sait pas évaluer est sautée, dite une fois
+    dans le canal de la watch (son identifiant court et le genre de l'erreur, jamais son texte), et les
+    autres sont proposées ; une carte dont l'heure n'a pas de fuseau n'est jamais proposée, son fuseau
+    jamais deviné (`no_tz`, dit sur la carte), et une telle carte dans le fil et la règle attendue fait
+    taire le fil : laquelle vient d'abord n'est pas devinée non plus (`unordered`) ;
+  - le bot n'ajoute l'état de la proposition à la signature d'un message que s'il y en a un : une carte
+    sans proposition garde la signature d'avant VP1, et aucun message n'est réédité pour rien ;
+  - une confirmation dans Discord prend le chemin de tout verdict posé (`bot._judged`) : la carte
+    acquittée, ses boutons grisés, le fil de la VM archivé quand plus rien n'y attend ;
+  - mutants M6336–M6346 (`scripts/mutants/VP1b.py`).
 
 ## 13. Ce que DRL1b a codé, et ses écarts avec la conception (18/11)
 

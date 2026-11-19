@@ -1479,7 +1479,8 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
         the run's report, the window) — a verdict proposed on the expected one, why not on the others
         (glorfindel/proposed_verdict.py). Never a verdict given; the decision never reads it."""
         from glorfindel import proposed_verdict
-        proposed_verdict.refresh(runs_dir)
+        # VP1b: a card the pass cannot assess is skipped and said once, here — the others still proposed.
+        proposed_verdict.refresh(runs_dir, say=lambda text: _say_channel(f"Verdict proposé : {text}"))
 
     def _judge_drill() -> None:
         """DRL1b (#613): every minute, the drill of the week judged — its last occurrence's verdict,
