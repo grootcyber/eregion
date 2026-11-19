@@ -896,14 +896,16 @@ async function refreshActionsData() {
 function renderInfra() {
   if (_configMode) return;
   const list           = document.getElementById('incidents-list');
-  // Preserve scroll position across the full innerHTML swap below. The actual scroll
-  // container is #topo-graph (overflow-y:auto), NOT #incidents-list — and topo-graph
-  // is destroyed/recreated by the swap, so save its scrollTop now and reapply it to
-  // the fresh element afterwards. With asset order stable backend-side (99b4882),
-  // this keeps the operator where they were instead of yanking back to the top.
-  const _prevGraph = document.getElementById('topo-graph');
-  const _savedScroll = _prevGraph ? _prevGraph.scrollTop : 0;
-  // Same for the PROTECT NSG list's own inner scroll (recreated by the swap too).
+  // The scroll container (#topo-graph) and the edges' layer (#topo-svg) outlive a refresh:
+  // only what they hold (#topo-body) is replaced. Replaced every 5 s with the rest, the
+  // container cut a scroll in progress (wheel, momentum, the scrollbar held) and its position
+  // had to be put back by hand (TOPO1 #927). Built once, again only if something else emptied it.
+  let graph = document.getElementById('topo-graph');
+  if (!graph || !list.contains(graph)) {
+    list.innerHTML = `<div class="topo-graph" id="topo-graph"><svg class="topo-svg" id="topo-svg"></svg><div class="topo-body" id="topo-body"></div></div>`;
+    graph = document.getElementById('topo-graph');
+  }
+  // The PROTECT NSG list's own inner scroll is inside #topo-body: recreated, put back.
   const _prevNsg = document.getElementById('nsg-scroll');
   const _savedNsgScroll = _prevNsg ? _prevNsg.scrollTop : 0;
   const rules          = _cfgData?.detection?.rules     || [];
@@ -1020,10 +1022,7 @@ function renderInfra() {
     if (!hasIncident) _collapsedVms.delete(r.vm_name); // allow re-expand on next incident; don't force-collapse user-expanded clean cards
   });
 
-  list.innerHTML = `
-    <div class="topo-graph" id="topo-graph">
-      <svg class="topo-svg" id="topo-svg"></svg>
-
+  document.getElementById('topo-body').innerHTML = `
       <!-- Layer 1 — Agent -->
       <div class="topo-layer">
         ${_renderAgentNode(rules, detectBackends, recoverBackends, discovered)}
@@ -1083,19 +1082,34 @@ function renderInfra() {
         <span style="font-size:10px"><span style="color:var(--red)">●</span> <span style="color:var(--dim)">isolated</span></span>
         <span style="font-size:10px"><span style="color:var(--blue)">●</span> <span style="color:var(--dim)">restoring</span></span>
         <span style="font-size:10px"><span style="color:var(--purple)">●</span> <span style="color:var(--dim)">escalation</span></span>
-      </div>
-    </div>`;
+      </div>`;
 
-  if (_savedScroll) {
-    const _newGraph = document.getElementById('topo-graph');
-    if (_newGraph) _newGraph.scrollTop = _savedScroll;
-  }
   if (_savedNsgScroll) {
     const _newNsg = document.getElementById('nsg-scroll');
     if (_newNsg) _newNsg.scrollTop = _savedNsgScroll;
   }
-  requestAnimationFrame(_drawTopologyEdges);
+  _watchTopology(graph);
+  _queueTopologyEdges();
   _applyReadOnlyGuards(list);
+}
+
+// The edges follow the map: drawn again, once per frame at most, when the map or its cards
+// change size without a render — the window resized, the column beside it, a font loaded.
+// Before, they stayed where the last render had put them (TOPO1 #927).
+let _topoResize = null;
+let _topoDrawQueued = false;
+function _queueTopologyEdges() {
+  if (_topoDrawQueued) return;
+  _topoDrawQueued = true;
+  requestAnimationFrame(() => { _topoDrawQueued = false; _drawTopologyEdges(); });
+}
+function _watchTopology(graph) {
+  if (typeof ResizeObserver !== 'function') return;
+  if (!_topoResize) _topoResize = new ResizeObserver(_queueTopologyEdges);
+  _topoResize.disconnect();             // the cards' row of the last render is gone
+  _topoResize.observe(graph);
+  const assets = document.getElementById('topo-assets');
+  if (assets) _topoResize.observe(assets);
 }
 
 function renderIncidents() { renderInfra(); }
@@ -1944,18 +1958,23 @@ function _drawTopologyEdges() {
   const svg   = document.getElementById('topo-svg');
   const graph = document.getElementById('topo-graph');
   if (!svg || !graph) return;
+  // In the content's coordinates, not the screen's: the svg scrolls with the cards, so a point
+  // is where the screen shows it plus how far the map is scrolled. Drawn on the screen's, every
+  // refresh made while scrolled put each edge `scrollTop` pixels above its card (TOPO1 #927).
   const base = graph.getBoundingClientRect();
+  const ox = base.left + graph.clientLeft - graph.scrollLeft;
+  const oy = base.top  + graph.clientTop  - graph.scrollTop;
 
   function pt(el, side) {
     if (!el) return null;
     const r = el.getBoundingClientRect();
-    const x = r.left - base.left + r.width / 2;
+    const x = r.left - ox + r.width / 2;
     return {
       x,
-      top:    r.top    - base.top,
-      bottom: r.bottom - base.top,
-      left:   r.left   - base.left,
-      right:  r.right  - base.left,
+      top:    r.top    - oy,
+      bottom: r.bottom - oy,
+      left:   r.left   - ox,
+      right:  r.right  - ox,
       width:  r.width,
     };
   }
@@ -1976,7 +1995,8 @@ function _drawTopologyEdges() {
   const isBlocked  = resources.some(r => r.states?.some(s => s.type === 'blocked'));
 
   const agent = pt(document.getElementById('node-agent'));
-  if (!agent) return;
+  // The layer outlives a render now: nothing to draw from, the last edges go with it.
+  if (!agent) { svg.innerHTML = ''; return; }
 
   const lines = [`<defs>
     <filter id="glow-r"><feGaussianBlur stdDeviation="2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>

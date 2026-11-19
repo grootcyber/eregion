@@ -314,6 +314,9 @@
     z-index: 0;
     overflow: visible;
   }
+  /* What a refresh replaces, inside the container it keeps: no box of its own, the layers stay
+     the column's (TOPO1 #927). */
+  .topo-body { display: contents; }
   .topo-layer {
     position: relative;
     z-index: 1;
