@@ -3,11 +3,13 @@
 # bench's Terraform — nothing else, so that every other pull request merges as before, without
 # waiting for anyone.
 #
-# Not here, by decision (18/11): the Makefile. Its recipes run with the maintainer's own rights —
-# `make imladris-cd-install` among them, which copies the CD's files and discord.env to Imladris and
-# runs install.sh there as root. So the CD of Imladris is owned here for its files, not for the
-# recipe that installs them: a follow-up lot moves that recipe into a script under
-# infra/glorfindel-host/cd/, owned with the rest. docs/design/modele-de-menace.md, §7.
+# Not here, by decision (18/11): the Makefile. Its recipes run with the maintainer's own rights. The
+# recipe that installs the CD of Imladris as root, `make imladris-cd-install`, lives in a script owned
+# with the rest, infra/glorfindel-host/cd/install_from_workstation.sh (CDI1, #918); its target runs
+# imladris-known, then calls it. Its refusals catch a drift of the SSH options or of the files, not a
+# hostile Makefile, which may not call it: the SSH options, imladris-known and
+# infra/glorfindel-host/known_host.sh, the recipes that run sudo on Imladris (imladris-cd-enable,
+# -cd-disable, -cd-uninstall) and every other recipe stay unowned (follow-up: CDI2, #922). docs/design/modele-de-menace.md, §7.
 #
 # It holds once the maintainer has turned on « Require review from Code Owners » in main's rule —
 # after this file is merged, never before (with the former `*` line, every pull request would have

@@ -1288,17 +1288,12 @@ HOST_CD_FILES = infra/glorfindel-host/cd/eregion_cd.py infra/glorfindel-host/cd/
                 scripts/published_image.py
 HOST_SSH_TTY   = ssh -t $(HOST_SSH_OPTS) $(HOST_USER)@$(HOST_IP)
 
-# CI3 : cosign (published_image.py, version et sha256 épinglés) téléchargé par la VM elle-même,
-# depuis la release de sigstore sur GitHub, et gardé seulement si son sha256 est l'épinglé.
+# CDI1 (#918) : la recette vit dans infra/glorfindel-host/cd/install_from_workstation.sh, que le
+# CODEOWNERS possède avec le reste du CD — ses gestes, leur ordre, ses refus (cosign, discord.env sous
+# umask 077, installed-from, install.sh en root). La cible vérifie la clé d'Imladris, puis ne fait que
+# l'appeler, avec ce que le Makefile calcule : l'adresse, l'utilisateur, les options SSH, les fichiers.
 imladris-cd-install: imladris-known
-	@test -n "$(HOST_IP)" || { echo "Pas de VM : make imladris-up d'abord"; exit 1; }
-	@lines=$$(python3 infra/glorfindel-host/cd/eregion_cd.py export-discord-env) || exit 1; \
-	 $(HOST_SSH) 'mkdir -p .eregion-cd && chmod 700 .eregion-cd' && \
-	 scp -q $(HOST_SSH_OPTS) $(HOST_CD_FILES) $(HOST_USER)@$(HOST_IP):.eregion-cd/ && \
-	 $(HOST_SSH) 'python3 .eregion-cd/published_image.py install-cosign .eregion-cd/cosign' && \
-	 printf '%s\n' "$$lines" | $(HOST_SSH) 'umask 077 && cat > .eregion-cd/discord.env' && \
-	 git rev-parse HEAD | $(HOST_SSH) 'cat > .eregion-cd/installed-from'
-	@$(HOST_SSH_TTY) 'sudo bash .eregion-cd/install.sh'
+	@HOST_IP="$(HOST_IP)" HOST_USER="$(HOST_USER)" SSH_OPTS="$(HOST_SSH_OPTS)" CD_FILES="$(HOST_CD_FILES)" bash infra/glorfindel-host/cd/install_from_workstation.sh
 
 imladris-cd-check: imladris-known
 	@test -n "$(HOST_IP)" || { echo "Pas de VM : make imladris-up d'abord"; exit 1; }

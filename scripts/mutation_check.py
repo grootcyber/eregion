@@ -3148,9 +3148,11 @@ TESTS["M1052"] = "tests/unit/test_host_cd.py"
 MUTANTS += [
     ("M1053", "an older release asks to reinstall the agent from it: deploy.sh without --activate breaks the CD",
      CD, "    if installed == release or not is_ancestor(installed, release):\n", "    if False:\n"),
-    ("M1054", "the installation never notes its commit: no release can tell it is newer than the agent", "Makefile",
-     "'umask 077 && cat > .eregion-cd/discord.env' && \\\n\t git rev-parse HEAD | $(HOST_SSH) 'cat > .eregion-cd/installed-from'\n",
-     "'umask 077 && cat > .eregion-cd/discord.env'\n"),
+    # CDI1 (#918): the recipe moved from the Makefile to the owned script that the target calls.
+    ("M1054", "the installation never notes its commit: no release can tell it is newer than the agent",
+     "infra/glorfindel-host/cd/install_from_workstation.sh",
+     "git rev-parse HEAD | on_imladris 'cat > .eregion-cd/installed-from'\n",
+     ""),
 ]
 TESTS.update({"M1053": "tests/unit/test_host_cd.py", "M1054": "tests/unit/test_host_cd.py"})
 # After its review: the same files say nothing; installed-from is a commit id, never a name.

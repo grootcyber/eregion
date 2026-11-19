@@ -2124,12 +2124,10 @@ def test_a_newer_release_with_the_same_agent_says_nothing(tmp_path, fake):
     assert not any("Agent de CD" in t or "L'agent de CD" in t for t in _titles(h0))
 
 
-@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
 def test_the_installation_writes_the_commit_it_installs_from():
-    res = subprocess.run(["make", "-n", "--no-print-directory", "-C", str(ROOT), "imladris-cd-install",
-                          "HOST_IP=203.0.113.9"], capture_output=True, text=True, timeout=60)
-    assert res.returncode == 0, res.stderr
-    assert "git rev-parse HEAD |" in res.stdout and "cat > .eregion-cd/installed-from" in res.stdout
+    """CDI1 (#918): the recipe lives in the owned script; tests/unit/test_host_cd_install.py runs it."""
+    script = (ROOT / "infra" / "glorfindel-host" / "cd" / "install_from_workstation.sh").read_text()
+    assert "git rev-parse HEAD | on_imladris 'cat > .eregion-cd/installed-from'" in script
 
 
 # ── H2 (#266): every rule the release loads runs once after the switch ─────────────────
@@ -2674,7 +2672,9 @@ def test_the_installation_carries_the_verifier():
     res = subprocess.run(["make", "-n", "--no-print-directory", "-C", str(ROOT), "imladris-cd-install",
                           "HOST_IP=203.0.113.9"], capture_output=True, text=True, timeout=60)
     assert res.returncode == 0 and "scripts/published_image.py" in res.stdout
-    assert "published_image.py install-cosign .eregion-cd/cosign" in res.stdout
+    # CDI1 (#918): the gestures live in the owned script, that the target calls.
+    script = (ROOT / "infra" / "glorfindel-host" / "cd" / "install_from_workstation.sh").read_text()
+    assert "published_image.py install-cosign .eregion-cd/cosign" in script
 
 
 # --- CDJ1 (#783): make imladris-cd-status shows the last lines of the day's journal ---------------
