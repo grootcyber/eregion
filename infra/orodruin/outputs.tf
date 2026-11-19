@@ -1,3 +1,10 @@
+# DRL1c (#613) — le contrat de DRL1a (docs/design/drill-banc.md §11) : l'id de la Logic App du démarrage
+# planifié, que le Makefile lit par `terraform output -json` (infra/orodruin/drill_ops.py autostart-id).
+output "drill_autostart_id" {
+  description = "DRILL_AUTOSTART — la Logic App qui réveille Orodruin avant le drill de la semaine : créée Disabled, activée par orodruin-drill-arm, désactivée par -disarm et le kill."
+  value       = local.autostart_outputs.workflowId.value
+}
+
 output "public_ip" {
   description = "IP publique de la VM (SSH depuis operator_cidr seulement)."
   value       = azurerm_public_ip.host.ip_address

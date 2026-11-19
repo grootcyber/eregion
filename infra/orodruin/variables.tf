@@ -252,3 +252,16 @@ variable "stratus_client_id" {
     error_message = "stratus_client_id : un client id d'Entra ID (un GUID), ou vide."
   }
 }
+
+# ── DRL1c (#613) : le démarrage planifié du drill de la semaine (drill_autostart.tf) ────────
+variable "drill_autostart_at" {
+  description = "Quand la Logic App du drill réveille Orodruin, en UTC : « <jour> HH:MM », le jour en trois lettres (mon … sun). Le schedule du drill moins 20 min (drills/banc-hebdo.yaml : tue 19:00 → tue 18:40), le jour reporté au-delà de minuit ; orodruin-drill-arm refuse d'armer sur une autre heure (« apply first »). Un schedule changé : une PR qui change ce défaut, un apply, puis le réarmement."
+  type        = string
+  default     = "tue 18:40"
+  nullable    = false
+
+  validation {
+    condition     = can(regex("^(mon|tue|wed|thu|fri|sat|sun) ([01][0-9]|2[0-3]):[0-5][0-9]$", var.drill_autostart_at))
+    error_message = "drill_autostart_at : « <jour> HH:MM » en UTC, le jour en trois lettres (mon … sun), l'heure sur 24 h — par exemple « tue 18:40 »."
+  }
+}
