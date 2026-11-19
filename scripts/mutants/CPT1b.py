@@ -2,7 +2,9 @@
 caller and the resource of each operation as its own card does — `Caller`, else the name, the
 object id or the application id from `Claims`; `_ResourceId`, else `ResourceId` —, a true void said
 « appelant inconnu »; « Sévérité moindre » only on a card really lowered; the long URIs of `upn` and
-`name` read; the console's feed names a card of incomplete telemetry. M6466–M6478, measured by
+`name` read, and the short `name`; a client's `CallerName` names the caller; a name, then the
+object id, then the application; the console's feed names a card of incomplete telemetry.
+M6466–M6480, measured by
 tests/unit/test_control_plane_incomplete.py."""
 RULES = "glorfindel/detection_rules.py"
 AGENT = "glorfindel/agent.py"
@@ -27,7 +29,7 @@ MUTANTS = [
      '_CLAIM_NAME = ("upn", "unique_name", "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn",\n',
      '_CLAIM_NAME = ("upn", "unique_name",\n'),
     ("M6473", "the long URI of name unread in Claims (CPT1b)", RULES,
-     '               "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name")\n', "               )\n"),
+     '               "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name",\n', ""),
     ("M6474", "a true void of a summary said « ? », not « appelant inconnu » (CPT1b)", AGENT,
      '    return "appelant inconnu"\n', '    return "?"\n'),
     ("M6475", "the card no longer reads the caller in a projected Claims (CPT1b)", AGENT,
@@ -40,6 +42,24 @@ MUTANTS = [
     ("M6478", "an operation's resource read in _ResourceId alone (CPT1b)", RULES,
      '    return next((_text(row.get(c)) for c in RESOURCE_COLUMNS if _said(row.get(c))), "")\n',
      '    return _text(row.get("_ResourceId"))\n'),
+    ("M6479", "a client's CallerName alone lowered to incomplete telemetry (CPT1b)", RULES,
+     '                  "CallerName")\n', "                  )\n"),
+    ("M6480", "the object id named before the caller's name (CPT1b)", AGENT,
+     '''    name = str(row.get("CallerName") or "").strip() or claimed["name"]
+    if name:
+        return f"{name} (lu dans Claims, Caller vide)"
+    oid = str(row.get("CallerObjectId") or "").strip()
+    oid = oid or claimed["oid"]
+    if oid:
+        return f"l'identité d'objet {oid} (lue dans Claims, Caller vide)"
+''', '''    oid = str(row.get("CallerObjectId") or "").strip()
+    oid = oid or claimed["oid"]
+    if oid:
+        return f"l'identité d'objet {oid} (lue dans Claims, Caller vide)"
+    name = str(row.get("CallerName") or "").strip() or claimed["name"]
+    if name:
+        return f"{name} (lu dans Claims, Caller vide)"
+'''),
 ]
 TESTS = {
     "M6466": f"{_T}::test_a_summary_operation_whose_caller_is_in_claims_alone_is_named",
@@ -55,4 +75,6 @@ TESTS = {
     "M6476": f"{_T}::test_a_summary_reads_what_a_clients_rule_projects",
     "M6477": f"{_T}::test_a_summary_reads_what_a_clients_rule_projects",
     "M6478": f"{_T}::test_a_summary_reads_what_a_clients_rule_projects",
+    "M6479": f"{_T}::test_a_clients_rule_that_projects_the_callers_name_alone_is_not_lowered",
+    "M6480": f"{_T}::test_the_caller_is_named_by_its_name_then_its_object_id_then_its_application",
 }

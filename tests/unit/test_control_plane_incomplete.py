@@ -427,6 +427,44 @@ def test_the_long_uris_of_upn_and_name_name_the_caller(claim):
     assert f"par {SOMEONE_ELSE} (lu dans Claims, Caller vide)" in what and INCOMPLETE_TELEMETRY not in what
 
 
+def test_a_clients_rule_that_projects_the_callers_name_alone_is_not_lowered():
+    """A client's rule that projects `CallerName` alone (no `Caller`, no ids, no Claims): the row
+    names its caller — never « ne nomme ni l'appelant … par ops@… »; the card high, the name said."""
+    row = {**_BARE_ROW, "CallerName": "ops@example.org"}
+    assert not names_no_one(row)
+    what = _listed({"raw_signal": {"first_result_row": row}})
+    assert INCOMPLETE_TELEMETRY not in what and "par ops@example.org (lu dans Claims, Caller vide)" in what
+    assert names_no_one({**_BARE_ROW, "CallerName": "  "})       # blank is nothing
+
+
+def test_the_short_name_claim_names_the_caller():
+    """The short `name` claim, read on the prudent side: the row is no incomplete telemetry, and
+    its card names it."""
+    row = {**_BARE_ROW, "Claims": json.dumps({"name": "Some One"})}
+    assert not names_no_one(row)
+    what = _listed({"raw_signal": {"first_result_row": row}})
+    assert "par Some One (lu dans Claims, Caller vide)" in what and INCOMPLETE_TELEMETRY not in what
+
+
+def test_the_caller_is_named_by_its_name_then_its_object_id_then_its_application():
+    """`Caller` empty: a name first, then the object id, then the application — on its own card as
+    on a summary's."""
+    both = json.dumps({UPN_URI: SOMEONE_ELSE, "oid": OUTSIDER_OID, "appid": APP})
+    ids = json.dumps({"oid": OUTSIDER_OID, "appid": APP})
+    for claims, said, unsaid in ((both, f"par {SOMEONE_ELSE} (lu dans Claims", (OUTSIDER_OID, APP)),
+                                 (ids, f"par l'identité d'objet {OUTSIDER_OID}", (APP, SOMEONE_ELSE))):
+        row = {**_BARE_ROW, "Claims": claims}
+        summary = _control_plane_summary([dict(row, CorrelationId=f"c-{i}") for i in range(2)])
+        for what in (_listed({"raw_signal": {"first_result_row": row}}),
+                     _listed({"raw_signal": {"first_result_row": summary}})):
+            assert said in what, what
+            assert all(u not in what for u in unsaid), what
+    # The columns the shipped rules project, in the same order.
+    what = _listed({"raw_signal": {"first_result_row": {
+        **_BARE_ROW, "CallerObjectId": OUTSIDER_OID, "CallerAppId": APP}}})
+    assert f"par l'identité d'objet {OUTSIDER_OID}" in what and APP not in what
+
+
 def test_a_row_with_the_callers_address_alone_is_lowered(tmp_path, monkeypatch, workspace):
     """As the doc says: an address (`CallerIpAddress`) names no caller — the row is incomplete
     telemetry, its card `medium`, and says the address it read."""

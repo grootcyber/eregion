@@ -1180,12 +1180,17 @@ def _grave(row: dict) -> bool:
 
 # CPT1 (#930): where a row of the Activity Log names who made the operation — its `Caller`, the
 # ids the shipped rules draw from `Claims` (`CallerAppId`, `CallerObjectId`) — and, for a rule
-# that projects it, `Claims` itself; where it names what the operation was on.
-CALLER_COLUMNS = ("Caller", "CallerAppId", "CallerObjectId")
+# that projects it, `Claims` itself; where it names what the operation was on. CPT1b: the name a
+# client's rule projects (`CallerName`, the column a summary keeps) names the caller too — a row
+# that carries it is never lowered to incomplete telemetry while its card names it.
+CALLER_COLUMNS = ("Caller", "CallerAppId", "CallerObjectId",
+                  "CallerName")
 # The claims that name the caller, by what they name (CPT1b: the long URIs of `upn` and `name` too,
-# as the Activity Log writes them): a name, the object id, the client application.
+# as the Activity Log writes them, and the short `name`): a name, the object id, the client
+# application. Read on the prudent side: a claim that names someone keeps the card high.
 _CLAIM_NAME = ("upn", "unique_name", "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn",
-               "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name")
+               "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name",
+               "name")
 _CLAIM_OID = ("oid", "http://schemas.microsoft.com/identity/claims/objectidentifier")
 _CLAIM_APP = ("appid", "azp")
 _CALLER_CLAIMS = (*_CLAIM_APP, *_CLAIM_OID, *_CLAIM_NAME)
