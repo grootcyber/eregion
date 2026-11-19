@@ -21,6 +21,9 @@ KILL = "infra/orodruin/kill.py"
 MAIN = "infra/orodruin/main.tf"
 STRATUS_ENGINE = "annatar/engines/stratus.py"
 STRATUS_HOST = "annatar/executors/stratus_host.py"
+PARSER = "annatar/runner/parser.py"
+STRATUS_ASSERT = "annatar/executors/stratus_assertion.py"
+MAKEFILE = "Makefile"
 
 _TO = "tests/unit/test_orodruin.py"
 _TK = "tests/unit/test_orodruin_kill.py"
@@ -51,6 +54,14 @@ _FED_EMPTY = f"{_TAS}::test_stratus_run_env_is_empty_without_the_dedicated_subsc
 _FED_AUTH = f"{_TAS}::test_stratus_run_env_authenticates_as_stratus_by_the_federated_exchange"
 _FED_REFUSE = f"{_TAS}::test_stratus_run_env_refuses_an_incomplete_federated_identity"
 _FED_EXEC = f"{_TAS}::test_the_executor_env_uses_the_federated_identity_over_msi"
+
+# Pièce 4D — le scope Stratus refuse kind:fault (annatar/runner/parser.py, authoring).
+_KIND_FAULT = f"{_TAS}::test_stratus_scenario_with_kind_fault_is_refused"
+
+# Pièce 4B — le run fédéré depuis le bac à sable (assertion côté hôte, câblage Makefile).
+_ASSERT_AUD = f"{_TAS}::test_the_assertion_is_fetched_for_the_exchange_audience"
+_ASSERT_EMPTY = f"{_TAS}::test_an_empty_assertion_fails_closed"
+_STRATUS_WIRED = f"{_TAS}::test_the_orodruin_stratus_run_is_wired_for_the_federated_exchange"
 
 # The listing spans two lines; built here so the whitespace is exact (32-space continuation).
 _LIST_ALL = '"list", "--all",\n' + " " * 32 + '"--assignee-object-id"'
@@ -162,6 +173,24 @@ MUTANTS = [
      STRATUS_HOST,
      "        identity = stratus_run_env(os.environ) or azure_provider_env(os.environ)",
      "        identity = azure_provider_env(os.environ)"),
+    ("M6606", "the stratus engine no longer refuses a kind:fault scenario — a fault could be "
+     "routed through the Stratus adapter, which runs control-plane techniques only (R2c, pièce 4D)",
+     PARSER, '            if str(data.get("kind") or "technique") == "fault":',
+     '            if str(data.get("kind") or "technique") == "technique":'),
+    ("M6607", "the assertion is fetched for the wrong audience — the federated exchange gets a "
+     "token the Stratus app does not trust and the run cannot authenticate (R2c, pièce 4B)",
+     STRATUS_ASSERT, 'EXCHANGE_AUDIENCE = "api://AzureADTokenExchange"',
+     'EXCHANGE_AUDIENCE = "api://Wrong"'),
+    ("M6608", "an empty managed-identity assertion no longer fails closed — the run would start "
+     "without a real assertion (R2c, pièce 4B)",
+     STRATUS_ASSERT, "    if not token:", "    if token:"),
+    ("M6609", "the federated Stratus run drops the sandbox network for the host network — the IMDS "
+     "becomes reachable and the run could fall back to Orodruin's identity (R2c, pièce 4B)",
+     MAKEFILE, "--network $(ORO_SANDBOX_NET) --env-file", "--network host --env-file"),
+    ("M6610", "the run no longer names the mounted assertion to EREGION_STRATUS_ASSERTION_FILE — "
+     "stratus_run_env sees an incomplete federated identity (R2c, pièce 4B)",
+     MAKEFILE, "-e EREGION_STRATUS_ASSERTION_FILE=$(ORO_STRATUS_MOUNT)",
+     "-e EREGION_STRATUS_ASSERTION_FILE=/wrong/path"),
 ]
 
 TESTS = {
@@ -190,4 +219,9 @@ TESTS = {
     "M4487": _FED_AUTH,
     "M4488": _FED_AUTH,
     "M4489": _FED_EXEC,
+    "M6606": _KIND_FAULT,
+    "M6607": _ASSERT_AUD,
+    "M6608": _ASSERT_EMPTY,
+    "M6609": _STRATUS_WIRED,
+    "M6610": _STRATUS_WIRED,
 }

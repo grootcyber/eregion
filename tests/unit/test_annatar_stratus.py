@@ -30,6 +30,7 @@ from annatar.engines.stratus import (
     stratus_run_env,
     verify_binary,
 )
+from annatar.executors.stratus_assertion import EXCHANGE_AUDIENCE, fetch_assertion
 from annatar.executors.stratus_host import StagedLayout, StratusExecutor, staged_layout
 from annatar.runner.engine import Engine
 from annatar.runner.parser import KNOWN_ENGINES, Scenario, ScenarioParser
@@ -318,7 +319,7 @@ def test_stratus_run_env_is_empty_without_the_dedicated_subscription():
 def test_stratus_run_env_authenticates_as_stratus_by_the_federated_exchange():
     env = stratus_run_env({"EREGION_STRATUS_SUBSCRIPTION": "ded-sub",
                            "EREGION_STRATUS_CLIENT_ID": "stratus-app",
-                           "EREGION_STRATUS_TOKEN_FILE": "/run/assertion",
+                           "EREGION_STRATUS_ASSERTION_FILE": "/run/assertion",
                            "EREGION_TENANT_ID": "tenant-abc",
                            "AZURE_SUBSCRIPTION_ID": "bench-sub"})   # the bench sub is NOT used
     assert env["ARM_USE_OIDC"] == "true"
@@ -333,8 +334,8 @@ def test_stratus_run_env_refuses_an_incomplete_federated_identity():
     # the dedicated subscription is set but the federated identity is incomplete: refuse rather than
     # fall back to the managed identity or the bench subscription (the v1 blocker, fail closed).
     full = {"EREGION_STRATUS_SUBSCRIPTION": "ded-sub", "EREGION_STRATUS_CLIENT_ID": "stratus-app",
-            "EREGION_STRATUS_TOKEN_FILE": "/run/assertion", "EREGION_TENANT_ID": "tenant-abc"}
-    for missing in ("EREGION_STRATUS_CLIENT_ID", "EREGION_STRATUS_TOKEN_FILE", "EREGION_TENANT_ID"):
+            "EREGION_STRATUS_ASSERTION_FILE": "/run/assertion", "EREGION_TENANT_ID": "tenant-abc"}
+    for missing in ("EREGION_STRATUS_CLIENT_ID", "EREGION_STRATUS_ASSERTION_FILE", "EREGION_TENANT_ID"):
         env = {k: v for k, v in full.items() if k != missing}
         with pytest.raises(RuntimeError, match="federated identity is incomplete"):
             stratus_run_env(env)
@@ -344,11 +345,30 @@ def test_stratus_run_env_ignores_a_blank_dedicated_subscription():
     assert stratus_run_env({"EREGION_STRATUS_SUBSCRIPTION": "   "}) == {}
 
 
+def test_the_assertion_is_fetched_for_the_exchange_audience():
+    """R2c pièce 4B: the host fetches Orodruin's managed-identity token for the exchange audience
+    (api://AzureADTokenExchange) — the federated assertion the sandbox run exchanges for a Stratus
+    token. The scope is that audience's /.default."""
+    asked: list[str] = []
+    token = fetch_assertion(get_token=lambda scope: asked.append(scope) or "the-jwt")
+    assert token == "the-jwt"
+    assert asked == [f"{EXCHANGE_AUDIENCE}/.default"]
+    assert EXCHANGE_AUDIENCE == "api://AzureADTokenExchange"
+
+
+def test_an_empty_assertion_fails_closed():
+    """An empty (or whitespace) managed-identity token is a failure, never a value — the Stratus
+    run must not start without a real assertion."""
+    import pytest
+    with pytest.raises(RuntimeError, match="assertion"):
+        fetch_assertion(get_token=lambda scope: "   ")
+
+
 def test_the_executor_env_uses_the_federated_identity_over_msi(tmp_path, monkeypatch):
     # when the dedicated identity is configured, _env authenticates as Stratus, not by MSI.
     for k, v in {"EREGION_STRATUS_SUBSCRIPTION": "ded-sub",
                  "EREGION_STRATUS_CLIENT_ID": "stratus-app",
-                 "EREGION_STRATUS_TOKEN_FILE": "/run/assertion",
+                 "EREGION_STRATUS_ASSERTION_FILE": "/run/assertion",
                  "EREGION_TENANT_ID": "tenant-abc", "AZURE_SUBSCRIPTION_ID": "bench-sub"}.items():
         monkeypatch.setenv(k, v)
     env = _executor(tmp_path, dry_run=True)._env()
@@ -501,6 +521,28 @@ def test_the_exec_home_is_only_on_the_annatar_runs_not_the_shared_hardening():
     assert "$(ORO_EXEC_HOME)" in line("ORO_RUN_REQUEST")                         # the exercise run
     assert "$(ORO_EXEC_HOME)" not in line("ORO_RUN_GOTHMOG")                     # gothmog: never
     assert "$(ORO_EXEC_HOME)" not in line("ORO_RUN_CONTRACT")                    # the contract: never
+
+
+def test_the_orodruin_stratus_run_is_wired_for_the_federated_exchange():
+    """R2c pièce 4B: orodruin-stratus runs on the sandbox network (the IMDS is DROPped there, pièce
+    3), mounts Orodruin's assertion read-only and names it to the run, and fetches that assertion on
+    the host (default bridge, IMDS reachable) for the exchange audience — so the run authenticates as
+    Stratus by the federated exchange, never by Orodruin's managed identity (unreachable there)."""
+    makefile = (Path(__file__).resolve().parents[2] / "Makefile").read_text(encoding="utf-8")
+
+    def line(prefix):
+        return next(ln for ln in makefile.splitlines() if ln.startswith(prefix))
+
+    run = line("ORO_RUN_STRATUS")
+    assert "--network $(ORO_SANDBOX_NET)" in run                           # the sandbox (IMDS blocked)
+    assert "--network host" not in run                                     # never host (IMDS exposed)
+    assert "-v $(ORO_STRATUS_ASSERTION):$(ORO_STRATUS_MOUNT):ro" in run    # assertion mounted read-only
+    assert "-e EREGION_STRATUS_ASSERTION_FILE=$(ORO_STRATUS_MOUNT)" in run     # named to stratus_run_env
+    assert "ORO_SANDBOX_NET = eregion-stratus-sandbox" in makefile         # the pièce 3 network
+    fetch = line("ORO_STRATUS_FETCH")
+    assert "python -m annatar.executors.stratus_assertion" in fetch        # Orodruin's assertion
+    assert "--network" not in fetch                                        # default bridge: IMDS reachable
+    assert "$(ORO_STRATUS_FETCH) && $(ORO_RUN_STRATUS)" in makefile        # fetch on the host, then run
 
 
 def test_executor_refuses_when_the_staged_terraform_is_missing(tmp_path):
@@ -1056,6 +1098,16 @@ def test_stratus_scenario_on_a_vm_target_is_refused(tmp_path):
         target={"type": "azure_control_plane", "resource_group": "rg-celebrimbor",
                 "vm_name": "vm-celebrimbor-gondolin"})
     assert any("not a VM" in e for e in ScenarioParser().validate(path2).errors)
+
+
+def test_stratus_scenario_with_kind_fault_is_refused(tmp_path):
+    """R2c pièce 4D: the stratus engine runs control-plane techniques, never a fault (that is
+    Gothmog's engine) — a kind: fault routed through stratus is a misauthoring, refused at
+    authoring before any run. A technique (and the absent default) stays valid."""
+    result = ScenarioParser().validate(_stratus_yaml(tmp_path, kind="fault"))
+    assert not result.valid and any("never a fault" in e for e in result.errors)
+    assert ScenarioParser().validate(_stratus_yaml(tmp_path, kind="technique")).valid
+    assert ScenarioParser().validate(_stratus_yaml(tmp_path)).valid
 
 
 def test_stratus_authoring_checks_do_not_touch_other_engines(tmp_path):

@@ -1374,6 +1374,19 @@ ORO_RUN        = $(ORO_DIRS) docker run --rm $(ORO_HARDEN) $(ORO_EXEC_HOME) --en
 ORO_RUN_GOTHMOG = $(ORO_DIRS) docker run --rm $(ORO_HARDEN) --env-file orodruin.env $(call ORO_MOUNT,gothmog) $(call ORO_MOUNT,orodruin) $(ORO_IMAGE)
 ORO_RUN_CONTRACT = $(ORO_DIRS) docker run --rm $(ORO_HARDEN) --env-file orodruin.env $(call ORO_MOUNT,orodruin) $(ORO_IMAGE)
 ORO_MIGRATE    = docker run --rm $(ORO_HARDEN) -v $$HOME/runs:/app/runs $(ORO_IMAGE) python -m eregion_core.runs_layout migrate /app/runs --orodruin
+# R2c pièce 4B : un run Stratus sous l'identité dédiée, par l'échange fédéré, DEPUIS LE BAC À SABLE
+# (pièce 3). Deux temps sur l'hôte d'Orodruin (où l'IMDS est joignable) : d'abord ORO_STRATUS_FETCH
+# tire l'assertion de l'identité gérée d'Orodruin pour api://AzureADTokenExchange (un conteneur bref
+# sur le bridge par défaut, l'IMDS joignable), l'écrit dans un fichier ; puis ORO_RUN_STRATUS lance
+# le run sur le réseau eregion-stratus-sandbox — où l'IMDS est DROP (pièce 3), donc pas de repli sur
+# l'identité d'Orodruin — avec l'assertion montée en lecture seule et EREGION_STRATUS_ASSERTION_FILE qui
+# la nomme. L'abonnement dédié et le client id de Stratus viennent d'orodruin.env (sorties R2BGc) ;
+# stratus_run_env (annatar/engines/stratus.py) les tourne en ARM_USE_OIDC pour l'échange du provider.
+ORO_SANDBOX_NET = eregion-stratus-sandbox
+ORO_STRATUS_ASSERTION = $$HOME/runs/orodruin/stratus-assertion.jwt
+ORO_STRATUS_MOUNT = /run/stratus/assertion.jwt
+ORO_STRATUS_FETCH = $(ORO_DIRS) docker run --rm $(ORO_HARDEN) --env-file orodruin.env $(ORO_IMAGE) python -m annatar.executors.stratus_assertion > "$(ORO_STRATUS_ASSERTION)" && test -s "$(ORO_STRATUS_ASSERTION)"
+ORO_RUN_STRATUS = $(ORO_DIRS) docker run --rm $(ORO_HARDEN) $(ORO_EXEC_HOME) --network $(ORO_SANDBOX_NET) --env-file orodruin.env -e EREGION_STRATUS_ASSERTION_FILE=$(ORO_STRATUS_MOUNT) -v $(ORO_STRATUS_ASSERTION):$(ORO_STRATUS_MOUNT):ro $(call ORO_MOUNT,annatar) $(call ORO_MOUNT,orodruin) $(ORO_IMAGE)
 # PRINCIPAL / VM_ID : pour un kill même si l'état Terraform est illisible.
 ORO_PRINCIPAL  = $(or $(PRINCIPAL),$(shell $(ORO_TF) output -no-color -raw principal_id 2>/dev/null))
 ORO_VM_ID      = $(or $(VM_ID),$(shell $(ORO_TF) output -no-color -raw vm_id 2>/dev/null))
@@ -1974,6 +1987,19 @@ orodruin-run: orodruin-known
 	@case "$(DRY_RUN)" in ''|1) ;; *) echo "DRY_RUN invalide : « $(DRY_RUN) » (DRY_RUN=1, ou rien)"; exit 1;; esac
 	@$(PYTHON) scripts/orodruin_run.py --guard-only
 	ssh $(SSH_OPTS) -o ServerAliveInterval=60 $(ORO_USER)@$(ORO_IP) '$(ORO_RUN) annatar run $(SCENARIO)$(if $(filter 1,$(DRY_RUN)), --dry-run) --yes$(ORO_WITHOUT)'
+
+# R2c pièce 4B : le run Stratus fédéré depuis le bac à sable. Comme orodruin-run (même garde de
+# session — SEC12/MOB1, une session de code ne lance jamais d'attaque), mais l'assertion d'Orodruin
+# est tirée côté hôte (ORO_STRATUS_FETCH, bridge par défaut où l'IMDS répond) puis le run part sur le
+# réseau sandbox (IMDS DROP, pièce 3), l'assertion montée en lecture seule. EREGION_STRATUS_*
+# (sous dédié, client id) viennent d'orodruin.env (sorties R2BGc). DRY_RUN=1 tire l'assertion (lecture
+# bénigne) et montre l'argv sans détoner — pour valider la plomberie avant le vrai run.
+orodruin-stratus: orodruin-known
+	@test -n "$(SCENARIO)" || { echo "SCENARIO=<nom de scénario Stratus> requis (annatar list ; DRY_RUN=1 pour sonder)"; exit 1; }
+	@case "$(SCENARIO)" in ''|*[!A-Za-z0-9._-]*) echo "SCENARIO invalide : « $(SCENARIO) » (un nom de scénario)"; exit 1;; esac
+	@case "$(DRY_RUN)" in ''|1) ;; *) echo "DRY_RUN invalide : « $(DRY_RUN) » (DRY_RUN=1, ou rien)"; exit 1;; esac
+	@$(PYTHON) scripts/orodruin_run.py --guard-only
+	ssh $(SSH_OPTS) -o ServerAliveInterval=60 $(ORO_USER)@$(ORO_IP) '$(ORO_STRATUS_FETCH) && $(ORO_RUN_STRATUS) annatar run $(SCENARIO)$(if $(filter 1,$(DRY_RUN)), --dry-run) --yes$(ORO_WITHOUT)'
 
 # ── Profils d'usage (D1) — docs/profils/ ──────────────────────────────────────
 # Glorfindel est toujours là (docs/design/console.md, §2) : chaque profil démarre sa watch et la
