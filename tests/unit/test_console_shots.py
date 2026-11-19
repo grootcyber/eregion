@@ -16,6 +16,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -120,6 +121,141 @@ def test_a_missing_tool_is_said_and_nothing_is_rendered(tmp_path, monkeypatch, c
     err = capsys.readouterr().err
     assert "a Chromium" in err and "ffmpeg" in err and "nothing rendered" in err
     assert sorted(p.name for p in IMAGES.iterdir()) == before
+
+
+# ── Failing fast, saying why, leaving nothing behind (FRS1b) ─────────────────────────────
+# The 18/11 run: Chromium found in Playwright's cache but without its system libraries, the
+# console left behind holding the caller's output — a command that seemed to hang for 600 s.
+
+def _program(tmp_path: Path, name: str, body: str) -> Path:
+    path = tmp_path / name
+    path.write_text("#!/bin/sh\n" + body, encoding="utf-8")
+    path.chmod(0o755)
+    return path
+
+
+_NO_LIBRARIES = ('echo "$0: error while loading shared libraries: libnspr4.so: cannot open shared object '
+                 'file: No such file or directory" >&2\nexit 127\n')
+
+
+def _gone(pid: int) -> bool:
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text()
+    except OSError:
+        return True
+    return stat.rsplit(")", 1)[-1].split()[0] == "Z"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="a shell script stands for Chromium")
+def test_a_chromium_that_does_not_run_is_said_and_nothing_starts(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("EREGION_CHROMIUM", str(_program(tmp_path, "chrome", _NO_LIBRARIES)))
+    started = []
+    monkeypatch.setattr(cs, "start_server", lambda *a, **k: started.append(a) or (_ for _ in ()).throw(
+        AssertionError("the console started for a Chromium that cannot run")))
+    before = sorted(p.name for p in IMAGES.iterdir())
+    assert cs.main(["--out", str(tmp_path / "out")]) == 3
+    err = capsys.readouterr().err
+    assert "libnspr4.so" in err and "libnss3" in err and "nothing rendered" in err, err
+    assert not started and not (tmp_path / "out").exists()
+    assert sorted(p.name for p in IMAGES.iterdir()) == before
+    assert cs.main(["--check"]) == 3
+    assert "broken:" in capsys.readouterr().out
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="a shell script stands for Chromium")
+def test_a_chromium_that_runs_or_hangs_on_its_version(tmp_path):
+    assert cs.chromium_refusal(str(_program(tmp_path, "ok", 'echo "Chromium 1.0"\n'))) == ""
+    slow = cs.chromium_refusal(str(_program(tmp_path, "slow", "exec sleep 30\n")), timeout=1)
+    assert "did not answer in 1 s" in slow
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="a shell script stands for Chromium")
+def test_chromium_that_does_not_start_is_said_in_its_own_words_and_ended(tmp_path):
+    pytest.importorskip("websockets.sync.client")
+    broken = _program(tmp_path, "broken", _NO_LIBRARIES)
+    with pytest.raises(SystemExit) as e:
+        cs.Browser(str(broken), tmp_path / "chrome")
+    assert "did not start (exit 127)" in str(e.value) and "libnspr4.so" in str(e.value)
+    # Silent, alive: the wait is bounded, and the process ended.
+    pid_file = tmp_path / "pid"
+    silent = _program(tmp_path, "silent", f'echo $$ > "{pid_file}"\nexec sleep 30\n')
+    with pytest.raises(SystemExit) as e:
+        cs.Browser(str(silent), tmp_path / "chrome2", start_s=1)
+    assert "no DevTools in 1 s" in str(e.value)
+    assert _gone(int(pid_file.read_text()))
+
+
+def test_the_consoles_refusal_is_said_at_once_never_on_the_callers_output(tmp_path, capfd):
+    """The console started where it refuses to serve: start_server says why, from its log — the
+    console's output is never the caller's, which a console left behind would hold open."""
+    work = tmp_path / "w"
+    where = cs.materialize(SAMPLE, work)
+    (where["home"] / cs.MARK).unlink()
+    with pytest.raises(SystemExit) as e:
+        cs.start_server(work, "t")
+    assert "did not start (exit 2)" in str(e.value) and "carries no mark" in str(e.value), str(e.value)
+    out, err = capfd.readouterr()
+    assert "refused" not in out + err
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="signals and /proc")
+def test_the_console_and_chromium_end_when_the_render_fails(tmp_path, monkeypatch):
+    pytest.importorskip("websockets.sync.client")
+    monkeypatch.setenv("EREGION_CHROMIUM", str(_program(tmp_path, "chrome", 'echo "Chromium 1.0"\n')))
+    console = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    monkeypatch.setattr(cs, "start_server", lambda work, token: (console, 1))
+
+    def no_chromium(*a, **k):
+        raise SystemExit("console_shots: Chromium did not start (exit 127): libnspr4.so")
+    monkeypatch.setattr(cs, "Browser", no_chromium)
+    try:
+        with pytest.raises(SystemExit, match="Chromium did not start"):
+            cs.main(["--out", str(tmp_path / "out")])
+        assert console.poll() is not None, "the console was left running"
+    finally:
+        console.kill()
+        console.wait()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="getppid and /proc")
+def test_the_console_ends_when_the_script_that_started_it_is_gone(tmp_path):
+    """Killed by a signal it cannot catch, the script leaves its console orphaned: the console
+    sees its parent change, and ends."""
+    code = f"""
+import importlib.util, os, subprocess, sys
+child = '''
+import importlib.util, sys, time
+spec = importlib.util.spec_from_file_location("cs", {str(SCRIPT)!r})
+cs = importlib.util.module_from_spec(spec); spec.loader.exec_module(cs)
+cs.exit_with_parent(int(sys.argv[1]), poll=0.1)
+time.sleep(30)
+'''
+p = subprocess.Popen([sys.executable, "-c", child, str(os.getpid())], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                     stderr=subprocess.DEVNULL)
+print(p.pid, flush=True)
+"""
+    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60)
+    pid = int(r.stdout.split()[0])
+    try:
+        deadline = time.monotonic() + 15
+        while not _gone(pid) and time.monotonic() < deadline:
+            time.sleep(0.1)
+        assert _gone(pid), "the orphaned console kept running"
+    finally:
+        if not _gone(pid):
+            os.kill(pid, 9)
+
+
+def test_the_samples_windows_are_believed(tmp_path):
+    """Each exercise window written as Orodruin writes it, when it closes: a file younger than
+    its end is antedated, and the Runs view would say « not believed » of the sample."""
+    from eregion_core import exercise
+    where = cs.materialize(SAMPLE, tmp_path / "w")
+    windows = sorted((where["runs"] / "exercises").glob("*.json"))
+    assert windows
+    for path in windows:
+        window, declared_at = exercise._read_window(path)
+        assert exercise.window_refusal(window, declared_at=declared_at, local=True) == "", path.name
 
 
 # ── The server: its throwaway directory, no Azure variable, the loopback only ────────────
