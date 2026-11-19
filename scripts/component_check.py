@@ -107,7 +107,7 @@ COMPONENTS: dict[str, Component] = {
     "gothmog": Component(
         own=("gothmog", "eregion_core"),
         absent_deps=GLORFINDEL_ONLY_DEPS + ("litellm",),
-        tests=("test_gothmog.py", "test_gothmog_noise.py"),
+        tests=("test_gothmog.py", "test_gothmog_noise.py", "test_gothmog_readiness.py"),
     ),
 }
 

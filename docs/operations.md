@@ -380,7 +380,7 @@ annatar run annatar/scenarios/azure/account-creation-atomic.yaml  # R1 : un test
 #   `unknown`, sans detection_missed, et la raison s'affiche (« channel unreadable », « does not know the run's window »…).
 
 # Gothmog (G0) — depuis Orodruin seulement (ailleurs le contrat est passif)
-make gothmog-preflight [FAULT=vm-shutdown]   # watch de Glorfindel, contrat, cibles relues dans l'expérience, état normal — rien d'écrit
+make gothmog-preflight [FAULT=vm-shutdown]   # watch de Glorfindel, contrat, cibles relues dans l'expérience, état normal, puis droits d'Orodruin sur l'expérience, agent Chaos, séries de l'effet (G1b) — rien d'écrit
 make gothmog-run [FAULT=vm-shutdown]         # la panne, son retour vérifié par sonde (~15 min) ; WITHOUT_GLORFINDEL=1 : sans watch (V1)
 #   G1 : FAULT=vm-disk-write | vm-cpu-pressure | vm-restart, le bruit bénin (planned : chaos.noise_vms
 #   à appliquer avec Jonathan, gothmog/README.md « G1 »)

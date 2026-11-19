@@ -28,7 +28,12 @@ normal checked before, during and after, the return to the initial state verifie
                  window closed, and with an exercise channel the report goes to Imladris with it
                  (#193); signals beside it (``gothmog/signals/emitter.py``)
 
-``preflight`` runs 0–3 with no session at all: a write there is refused by construction.
+``preflight`` runs 0–3 with no session at all: a write there is refused by construction. Then
+what the run needs that 0–3 do not read (G1b), each a read, nothing written: Orodruin's own rights
+to start and cancel this experiment (``make orodruin-lock YES=1`` grants them, experiment by
+experiment: without them a start answers 403), the Chaos agent installed on each VM it reaches
+through the agent, and each series the fault's effect reads collected on each target (a counter
+named otherwise, and the noise would run unseen). One not held, or unreadable: not ready.
 """
 from __future__ import annotations
 
@@ -49,9 +54,10 @@ from eregion_core.exercise_channel import carry_run
 from eregion_core.inscription import BENCH_ENV, DEFAULT_BENCH, Scope, check_target, rg_from_id
 from eregion_core.orodruin import arm
 from gothmog.engines.chaos_studio import (
-    DOWN, ChaosStudio, _parse, experiment_targets, fault_duration_s, is_terminal,
-    latest_execution, power_state)
-from gothmog.probes import UNREADABLE, declared_errors, effect_errors, evaluate, holds, observe
+    AGENT_INSTALLED, DOWN, EXPERIMENT_WRITES, ChaosStudio, _parse, agent_vms, chaos_agent_status,
+    experiment_targets, fault_duration_s, held, is_terminal, latest_execution, power_state)
+from gothmog.probes import (
+    UNREADABLE, ProbeResult, collected, declared_errors, effect_errors, evaluate, holds, observe)
 from gothmog.runner.report import RunReport
 from gothmog.signals.emitter import SignalEmitter
 
@@ -184,7 +190,9 @@ class Engine:
             duration = fault_duration_s(experiment)
         except ValueError as e:
             return seen, f"experiment {name}: {e}"
-        seen["experiment"] = {"name": name, "duration_s": duration}
+        # The VMs it reaches through the Chaos agent, from the experiment validated here — the
+        # preflight asks their agent without reading the experiment again (G1b, review 1).
+        seen["experiment"] = {"name": name, "duration_s": duration, "agents": agent_vms(experiment)}
 
         declared = {n.lower() for n in fault["targets"]["names"]}
         actual = {vm.rsplit("/", 1)[-1].lower() for vm in vms}
@@ -246,12 +254,52 @@ class Engine:
         if session is None:
             console.print(f"[red]Orodruin passive — nothing read:[/red] {verdict.reasons()}")
             return RunOutcome(run_id, "PASSIVE", error=verdict.reasons())
-        seen, refusal = self._gate(fault, run_id, self._bench_factory(None), verdict)
+        bench = self._bench_factory(None)
+        seen, refusal = self._gate(fault, run_id, bench, verdict)
         if refusal:
             console.print(f"[red]Refused:[/red] {refusal}")
             return RunOutcome(run_id, "REFUSED", error=refusal, report=seen)
+        ready = self._ready(fault, seen, bench)
+        seen["ready"] = [vars(r) for r in ready]
+        for r in ready:
+            mark = "[green]✓[/green]" if r.ok else "[red]✗[/red]"
+            console.print(f"  {mark} {escape(r.name)}: {escape(r.observed)} (expect {escape(r.expect)})")
+        missing = [r for r in ready if not r.ok]
+        if missing:
+            why = "not ready: " + "; ".join(f"{r.name} {r.observed}" for r in missing)
+            console.print(f"[red]Refused:[/red] {escape(why)}")
+            return RunOutcome(run_id, "REFUSED", error=why, report=seen)
         console.print("[green]Preflight: the fault could run — nothing was written.[/green]")
         return RunOutcome(run_id, "OK", report=seen)
+
+    def _ready(self, fault: dict, seen: dict, bench) -> list[ProbeResult]:
+        """What the run needs that the gate does not read (G1b) — reads only: Orodruin's rights on
+        the experiment, the Chaos agent on each VM it reaches that way (the experiment the gate
+        validated, never read again), each series the effect reads collected on each target. A
+        read that fails is said, never held."""
+        name = fault["engine_ref"]
+        out: list[ProbeResult] = []
+        try:
+            perms = bench.permissions(bench.experiment_id(name))
+            for action in EXPERIMENT_WRITES:
+                ok = held(action, perms)
+                out.append(ProbeResult(f"{name} {action.rsplit('/', 2)[-2]}", ok,
+                                       "held" if ok else "not held: make orodruin-lock YES=1", "held"))
+        except Exception as e:
+            out.append(ProbeResult(f"{name} rights", False,
+                                   f"{UNREADABLE}: {type(e).__name__}: {e}"[:200], "held"))
+        for vm in seen["experiment"]["agents"]:
+            try:
+                status = chaos_agent_status(bench.vm(vm))
+            except Exception as e:
+                status = f"{UNREADABLE}: {type(e).__name__}: {e}"[:200]
+            out.append(ProbeResult(f"{vm.rsplit('/', 1)[-1]} chaos agent", status == AGENT_INSTALLED,
+                                   status, AGENT_INSTALLED))
+        effect = (fault.get("effect") or {}).get("probes") or []
+        for vm in seen["targets"]:
+            for r in collected(effect, vm, bench, now=self._now()):
+                out.append(ProbeResult(f"{vm.rsplit('/', 1)[-1]} {r.name}", r.ok, r.observed, r.expect))
+        return out
 
     # ── The run ───────────────────────────────────────────────────────────────────────
 
