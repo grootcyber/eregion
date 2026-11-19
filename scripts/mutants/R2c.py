@@ -6,8 +6,9 @@ l'orchestration (l'étape appelée, à la bonne place) et sur l'outil `stratus_r
 (la relecture après suppression, la suppression elle-même, le motif M191 `--all` /
 `--assignee-object-id` / `--subscription`, la garde « absente sans identité », la rédaction de
 l'abonnement). M4440–M4447. Mesurés par tests/unit/test_orodruin.py et test_orodruin_kill.py.
-M4448–M4469 restent réservés aux pièces suivantes de R2c (refus du contrat, scope Stratus +
-`kind: fault`, rôle fermé, fédération) — à monter avec la session Annatar.
+M4448–M4460 sont allés à R2BGc (les garde-fous en Terraform) ; M4461–M4466 = le contrat qui
+s'arme POUR Stratus (Pièce 2, ci-dessous, eregion_core/orodruin.py), mesurés par
+tests/unit/test_stratus_contract.py ; M4467–M4469 restent réservés au bac à sable durci (Pièce 3).
 
 Forme chargée par scripts/mutation_check.py : MUTANTS (id, description, fichier, old, new) et
 TESTS (ses ids → le test qui l'attrape) ; chemins en chaînes.
@@ -22,6 +23,15 @@ _STILL = f"{_TK}::test_a_stratus_role_still_listed_after_the_deletion_is_an_erro
 _GONE = f"{_TK}::test_the_stratus_role_is_revoked_and_proven_gone"
 _ABSENT = f"{_TK}::test_the_stratus_step_is_absent_without_an_identity"
 _REDACT = f"{_TK}::test_the_stratus_subscription_is_never_printed"
+
+# Pièce 2 — le contrat s'arme POUR Stratus (eregion_core/orodruin.py, assess_stratus).
+_TC = "tests/unit/test_stratus_contract.py"
+_FORBIDDEN = f"{_TC}::test_a_forbidden_subscription_is_refused_and_stops_everything"
+_UNPROVABLE = f"{_TC}::test_an_empty_or_partial_listing_is_never_an_absence"
+_BEYOND = f"{_TC}::test_a_right_beyond_the_closed_role_is_passive"
+_AUTHZ = f"{_TC}::test_an_authorization_action_is_more_than_the_closed_role"
+_COLD = f"{_TC}::test_a_subscription_that_is_not_cold_is_passive"
+_DIAG = f"{_TC}::test_a_missing_or_dead_diagnostic_is_passive"
 
 # The listing spans two lines; built here so the whitespace is exact (32-space continuation).
 _LIST_ALL = '"list", "--all",\n' + " " * 32 + '"--assignee-object-id"'
@@ -56,6 +66,36 @@ MUTANTS = [
      KILL,
      'say(redact(("[dry-run] az " if dry_run else "az ") + " ".join(args), [subscription]))',
      'say(("[dry-run] az " if dry_run else "az ") + " ".join(args))'),
+    # ── Pièce 2 — le contrat s'arme POUR Stratus (assess_stratus) ──
+    ("M4461", "a forbidden subscription is not refused — the contract arms for Stratus on the "
+     "bench's, the VM's or Imladris's subscription, where its rights would reach the bench (the "
+     "v1 blocker) (R2c, pièce 2)",
+     ORODRUIN, "    if subscription.lower() in protected:",
+     "    if subscription.lower() in frozenset():"),
+    ("M4462", "an empty or partial listing is taken for an absence — an assignment Orodruin cannot "
+     "read is assumed not to exist, so Stratus arms though it may hold more elsewhere (M5) "
+     "(R2c, pièce 2)",
+     ORODRUIN,
+     '    if not sees_subscription:  # M5: a listing Orodruin cannot fully read is no absence\n'
+     '        missing.append(_miss("stratus_identity_unprovable",',
+     '    if sees_subscription:  # M5: a listing Orodruin cannot fully read is no absence\n'
+     '        missing.append(_miss("stratus_identity_unprovable",'),
+    ("M4463", "a right beyond the closed role is not caught — the allow-list subtraction is "
+     "neutered, so Stratus arms while holding more than its measured role (SEC11) (R2c, pièce 2)",
+     ORODRUIN, "        unlisted = sorted(actions - STRATUS_CLOSED_ROLE_ACTIONS)",
+     "        unlisted = sorted(actions - actions)"),
+    ("M4464", "a Microsoft.Authorization action slips into the allow-list — Stratus could grant "
+     "itself roles and still be armed (the one family the closed role must never hold) "
+     "(R2c, pièce 2)",
+     ORODRUIN, '    "Microsoft.Network/publicIPAddresses/join/action",',
+     '    "Microsoft.Authorization/roleAssignments/write",'),
+    ("M4465", "COLD is no longer checked — the contract arms on a subscription that is not empty "
+     "(a leftover group of a previous run beside Azure's own) (M6) (R2c, pièce 2)",
+     ORODRUIN, "    extra = sorted(g for g in groups if not _azure_own_group(g))",
+     "    extra = []"),
+    ("M4466", "a missing activity-log diagnostic no longer holds the contract — Stratus arms "
+     "though the watch would be blind to it (R2c, pièce 2)",
+     ORODRUIN, "    if not diag_ok:", "    if diag_ok:"),
 ]
 
 TESTS = {
@@ -67,4 +107,10 @@ TESTS = {
     "M4445": _GONE,
     "M4446": _ABSENT,
     "M4447": _REDACT,
+    "M4461": _FORBIDDEN,
+    "M4462": _UNPROVABLE,
+    "M4463": _BEYOND,
+    "M4464": _AUTHZ,
+    "M4465": _COLD,
+    "M4466": _DIAG,
 }
