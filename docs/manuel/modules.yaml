@@ -466,6 +466,16 @@ briques:
     issue: 758
     doc: docs/banc-retard.md
 
+  - id: g-voie-de-retour
+    composant: glorfindel
+    poste: g-detecter
+    nom: "The watch's own return channel no longer fires the exfiltration rule, set aside by its identity, its container and its objects, and counted; a card attributed to no VM says so, with its candidates"
+    etat: main
+    release: "0.6"
+    lots: [SLF1]
+    issue: 929
+    doc: docs/glorfindel.md
+
   - id: g-charges-ia
     composant: glorfindel
     poste: g-detecter

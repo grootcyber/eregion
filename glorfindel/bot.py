@@ -299,6 +299,20 @@ _NAME_MAX = 120          # a name from outside, cut before it is escaped: never 
 _VMS_SHOWN = 8           # the VMs an NSG covers, named; beyond, counted
 
 
+def _unattributed_said(loose: dict, name) -> str:
+    """SLF1 (#929): « non attribuée », then the VMs watched that it could be (up to _VMS_SHOWN, the
+    rest counted), or the appliance it came through — every name cut, then escaped."""
+    if loose.get("appliance"):
+        return (f"non attribuée — l'appel vient de l'adresse de {name(loose['appliance'])}, qui fait "
+                "suivre les paquets : la VM source est derrière")
+    cands = [str(c) for c in loose.get("candidates") or []]
+    if not cands:
+        return "non attribuée — la détection ne nomme aucune VM"
+    shown = cands[:_VMS_SHOWN]
+    more = f" et {len(cands) - len(shown)} autre(s)" if len(cands) > len(shown) else ""
+    return f"non attribuée — candidates : {', '.join(name(c) for c in shown)}{more}"
+
+
 def _target_fields(esc: dict) -> list[tuple[str, str, bool]]:
     """What the card is about (AL1c, #597): the resource a card of the control plane is filed on
     — the NSG and the VMs it covers, the VM of a disk, a role's scope, the group, the control
@@ -312,6 +326,10 @@ def _target_fields(esc: dict) -> list[tuple[str, str, bool]]:
     t = esc.get("target")
     rid = str(esc.get("resource_id") or "")
     if not isinstance(t, dict) or not t.get("kind"):
+        loose = esc_module.unattributed(esc)
+        if loose is not None:
+            # SLF1 (#929): a detection attributed to no VM — never the name of the VM it is filed on.
+            return [("Ressource", _unattributed_said(loose, name), False)]
         short = name(masking.name_said(rid))            # never a subscription's own id (MSK3)
         if esc.get("escalation_type") in ("control_plane_change", "identity_change"):
             # Filed before AL1c: on the first VM online — or on the VM itself (a role on the VM,
@@ -807,7 +825,9 @@ async def _pending_reply(interaction: discord.Interaction) -> None:
     for e in escs[:5]:
         label = _ACTION_LABELS.get(e["action"]) or discord_text(_masked(e["action"], e))
         short = masking.name_said(e["resource_id"])     # MSK3
-        lines.append(f"• {discord_code(e['id'][:8])} — **{label}** sur {discord_code(short)}")
+        # SLF1: a detection attributed to no VM is on none — never its anchor's name.
+        on = "non attribuée" if esc_module.unattributed(e) is not None else f"sur {discord_code(short)}"
+        lines.append(f"• {discord_code(e['id'][:8])} — **{label}** {on}")
     if len(escs) > 5:
         lines.append(f"_... et {len(escs) - 5} autre(s)_")
     await interaction.response.send_message("\n".join(lines), ephemeral=True)

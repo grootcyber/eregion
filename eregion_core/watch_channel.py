@@ -45,6 +45,7 @@ ignored, and said.
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import math
@@ -90,10 +91,26 @@ MAX_COVERS_BYTES = MAX_BLOB_BYTES // 2
 MAX_MISSING = 20
 # A blob name part: a run_id or a signal_id, never a path.
 _SAFE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+# SLF1 (#929): an Entra object id, as a token's `oid` claim writes it.
+_OID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
 
 def channel_url() -> str:
     return (os.environ.get(CHANNEL_ENV) or "").strip().rstrip("/")
+
+
+def token_object_id(token: str) -> str:
+    """SLF1 (#929): the object id (`oid`) a storage token names — the identity that writes with it,
+    as Azure Storage logs it (`RequesterObjectId`). The token is the watch's own, asked for by its
+    credential: its claims are read, never trusted as anyone else's. "" when it is not a JWT, or
+    its `oid` is not an object id."""
+    try:
+        payload = str(token or "").split(".")[1]
+        claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+        oid = str(claims.get("oid") or "").lower() if isinstance(claims, dict) else ""
+    except (IndexError, ValueError, TypeError):
+        return ""
+    return oid if _OID.match(oid) else ""
 
 
 def _now() -> datetime:
@@ -137,6 +154,19 @@ class Publisher:
         self._sent: set[tuple[str, str]] = set()
         self._last_beat: datetime | None = None
         self.last_error = ""
+        self._writer = ""
+
+    def writer(self) -> str:
+        """SLF1 (#929): the object id of the identity this publisher writes with — the `oid` of the
+        storage token its own credential gives (the one ``_write`` sends), read once; "" while it
+        cannot be read (no token, not a JWT). Never raises: the RulePoller asks it."""
+        if not self._writer:
+            try:
+                header = auth_headers(self._credential, self.channel).get("Authorization", "")
+            except Exception:
+                return ""
+            self._writer = token_object_id(header.removeprefix("Bearer "))
+        return self._writer
 
     def note(self, signal: dict) -> None:
         try:

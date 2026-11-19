@@ -294,6 +294,35 @@ def _keys_of(e: dict) -> list[str]:
     return [k for k in keys if isinstance(k, str)] if isinstance(keys, list) else []
 
 
+UNATTRIBUTED = "unattributed"
+
+
+def unattributed(e: dict) -> dict | None:
+    """SLF1 (#929): what a card on a detection attributed to no VM says in place of its resource —
+    ``{"candidates": [the VMs watched, sorted], "appliance": ""}`` —, or None for a card whose
+    resource is its own. The RulePoller anchors such a detection on a VM it does not name (one card,
+    VM-aimed actions held): the card is filed there, never about it. A card recorded so
+    (`attribution`), or held by the attribution guard (`unattributed_signal`, before SLF1: its
+    candidates not kept). Never a card filed on its target (AL1c): it names what it is about."""
+    if not isinstance(e, dict) or isinstance(e.get("target"), dict):
+        return None
+    a = e.get("attribution")
+    if isinstance(a, dict) and a.get("state") == UNATTRIBUTED:
+        cands = a.get("candidates")
+        return {"candidates": [str(c) for c in cands if isinstance(c, str)] if isinstance(cands, list) else [],
+                "appliance": str(a.get("appliance") or "")}
+    if e.get("escalation_type") == "unattributed_signal":
+        return {"candidates": [], "appliance": ""}
+    return None
+
+
+def _attribution_of(e: dict) -> str:
+    """The dedup's word on a card (SEC-A4's anchor, SLF1): an unattributed detection never folds into
+    a card of its anchor VM, nor the reverse."""
+    a = e.get("attribution") if isinstance(e, dict) else None
+    return UNATTRIBUTED if isinstance(a, dict) and a.get("state") == UNATTRIBUTED else ""
+
+
 @_locked
 def record(
     signal_id: str,
@@ -318,8 +347,14 @@ def record(
     target: dict | None = None,
     action_key: str = "",
     executed: dict | None = None,
+    attribution: dict | None = None,
 ) -> str:
     """Append an escalation and return its id.
+
+    `attribution` (SLF1, #929): on a detection of the data plane attributed to no VM, what the card
+    says in place of its resource — ``{"state": "unattributed", "candidates": […]}`` (`unattributed`);
+    its `resource_id` stays the VM it is anchored on, where it is filed. Part of the dedup: such a
+    card never folds into a card of its anchor VM, nor the reverse.
 
     `action_key` (JUG1, #760: `executed_key`): the autonomous action this card stands for. A card
     that already holds it — pending or not, judged or not — is the one: its id is returned and
@@ -384,6 +419,9 @@ def record(
                 and e.get("action") == action
                 and e.get("escalation_type") == escalation_type
                 and (e.get("source") or "real") == (source or "real")
+                # SLF1: a detection attributed to no VM, on its anchor's card, would be counted as
+                # that VM's (a hundred re-fires of the watch's own channel on one VM's card).
+                and _attribution_of(e) == _attribution_of({"attribution": None if target else attribution})
                 # A control-plane card is one operation (who, what, which resource — AL1):
                 # the next one, perhaps on Glorfindel's own rules, is never folded into it.
                 and escalation_type != "control_plane_change"
@@ -473,6 +511,11 @@ def record(
         # AL1c (#597): what a card of the control plane or of an identity is filed on — its
         # `resource_id` is the target's id; `vms`, the VMs an NSG covers, where the console shows it.
         esc["target"] = target
+    if isinstance(attribution, dict) and attribution.get("state") == UNATTRIBUTED and not target:
+        # SLF1: filed on its anchor VM, about none — the card says so, and names the candidates.
+        esc["attribution"] = {"state": UNATTRIBUTED,
+                              "candidates": [str(c) for c in (attribution.get("candidates") or [])],
+                              **({"appliance": str(attribution["appliance"])} if attribution.get("appliance") else {})}
     if identity_plan:
         # IR1a: the plan of an identity card, and the thread of its checks (« Verify »). Never a
         # proposal of FS1a: an identity card holds no action (`action_queue.proposed_verbs`).
@@ -1151,6 +1194,8 @@ def to_judge(since: datetime | None = None, limit: int = 100) -> list[dict]:
             "id", "action", "escalation_type", "resource_id", "ttp", "severity", "confidence",
             "reason", "explanation", "action_params", "first_seen", "last_seen", "occurrences",
             "status", "rule_name", "target",
+            # SLF1: a detection attributed to no VM — the line says so, never its anchor's name.
+            "attribution",
             # JUG1: what the console opens a line on — the card's steps, and what an action taken
             # alone did and how it was checked.
             "suggested_steps", "executed", "run_id", "signal_id")}
