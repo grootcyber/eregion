@@ -217,7 +217,7 @@ la raison sur son placement (`original_conflict`), et la levée la redit, le NSG
 propre isolation posée dans le groupe de la VM avant qu'un `quarantine_rg` soit configuré, son état perdu ; rien
 ne prouve plus que ce NSG est le nôtre, le refus tient —, il n'y a rien à étiqueter : le message dit alors de
 remettre le NSG sur la carte à la main (`az network nic update -g <groupe de la carte> -n <carte>
---network-security-group <id du NSG>`), l'id à nommer par l'opérateur, jamais celui que l'autre groupe choisit.
+--network-security-group <id du NSG>`), l'id à nommer par l'opérateur, jamais celui que l'autre groupe choisit. La sortie vient en tête du message, avant l'explication : la levée en garde 600 caractères, le placement autant, et les noms d'Azure sont longs (un groupe 90, une carte 80).
 Avant, il disait de poser le tag sur un NSG absent : aucune sortie, la levée restait `release_partial` (I7 rouge
 sur la CI py3.12 de #945).
 

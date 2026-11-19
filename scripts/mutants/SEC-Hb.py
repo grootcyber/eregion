@@ -2,7 +2,8 @@
 configured group records (our own isolation made in the VM's group before `quarantine_rg` was set, its
 state lost). The refusal stands (SEC-H); the way out it says is one the operator can take: our tag on our
 group's quarantine NSG when it exists, else the NSG put back on the NIC by hand, in the NIC's own group,
-the NSG for the operator to name (glorfindel/providers/azure/quarantine_origin.py). M6491–M6495.
+the NSG for the operator to name, said first — whole within the release's cut with Azure's longest names, and
+kept so on the placement (glorfindel/providers/azure/quarantine_origin.py, quarantine.py). M6491–M6496.
 Measured by tests/unit/test_full_id_keys.py and the two sequences frozen in
 tests/unit/test_invariant_regressions.py (the operator runs the command said: I7).
 """
@@ -17,8 +18,8 @@ MUTANTS = [
      '            way = (f"poser le tag {key}=<id du NSG> sur {name} ({q_rg})" if True else\n'),
     ("M6492", "the other group's choice written into the command: a copy and paste puts the decoy's NSG on "
               "(SEC-Hb)", QOR,
-     '                   f"az network nic update -g {nic_rg} -n {nic_name} --network-security-group <id du NSG>")',
-     '                   f"az network nic update -g {nic_rg} -n {nic_name} --network-security-group {value}")'),
+     '                   "--network-security-group <id du NSG>")',
+     '                   f"--network-security-group {value}")'),
     ("M6493", "the command names the VM's group, not the NIC's: it fails on a NIC of another group (SEC-Hb)",
      QOR,
      '            nic_rg, nic_name = _nic_rg_and_name(t0["nic_id"])\n',
@@ -34,9 +35,15 @@ MUTANTS = [
      '            return elsewhere[0][1], {"nsg_rg": _parse_nsg_resource_id(elsewhere[0][0])[0],\n'
      '                                     "nsg_name": name, "nsg_id": elsewhere[0][0]}\n'
      "        if elsewhere:\n            where, value = elsewhere[0]\n"),
+    ("M6496", "the way out said last again: Azure's long names, the release's cut at _ERR_MAX takes it off "
+              "(SEC-Hb's review)", QOR,
+     '''            raise OriginalConflict(f"{t0.get('nic_short') or nic_name} : NSG d'origine non suivi ; {said} {why}")''',
+     '''            raise OriginalConflict(f"{t0.get('nic_short') or nic_name} : NSG d'origine non suivi ; {why} {said}")'''),
 ]
 
 TESTS = {
+    "M6496": f"{_K}::test_the_way_out_is_whole_in_the_release_with_azures_longest_names "
+             f"{_K}::test_the_way_out_kept_on_the_placement_is_whole_with_azures_longest_names",
     "M6491": f"{_K}::test_with_no_quarantine_nsg_in_our_group_the_conflict_says_the_nsg_put_back_by_hand "
              f"{_R}::test_a_bare_nics_quarantine_outside_the_configured_group_says_a_way_out_that_exists",
     "M6492": f"{_K}::test_with_no_quarantine_nsg_in_our_group_the_conflict_says_the_nsg_put_back_by_hand",

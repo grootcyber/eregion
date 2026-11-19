@@ -98,16 +98,18 @@ class OriginMixin:
             nic_rg, nic_name = _nic_rg_and_name(t0["nic_id"])
             # The way out the operator can take (SEC-Hb): our tag only on an NSG that exists — none in
             # our group (the quarantine turned off there, or never needed), the NSG put back by hand.
-            # Never the other group's choice written in: the operator names the NSG.
+            # Never the other group's choice written in: the operator names the NSG. Said first: the
+            # release keeps `_ERR_MAX` characters of it, the isolation as much — Azure's names are long
+            # (a group 90, a NIC 80), and the way out is all the operator can act on.
             way = (f"poser le tag {key}=<id du NSG> sur {name} ({q_rg})" if nsg is not None else
-                   f"le remettre à la main sur la carte ({name} absent de {q_rg}) : "
-                   f"az network nic update -g {nic_rg} -n {nic_name} --network-security-group <id du NSG>")
-            raise OriginalConflict(
-                f"{t0.get('nic_short') or nic_name} : le NSG de quarantaine "
-                f"{'/'.join(_parse_nsg_resource_id(where))}, hors du groupe {q_rg}, nomme "
-                f"{value.rstrip('/').rsplit('/', 1)[-1]} comme son NSG d'origine — un autre hôte Glorfindel "
-                "configuré sur un autre groupe, ou un leurre : jamais suivi. La carte reste telle quelle ; si "
-                f"c'est bien son NSG, {way}, puis relancer")
+                   f"le remettre à la main : az network nic update -g {nic_rg} -n {nic_name} "
+                   "--network-security-group <id du NSG>")
+            said = f"si c'est bien son NSG, {way}, puis relancer."
+            why = (f"Le NSG de quarantaine {'/'.join(_parse_nsg_resource_id(where))}, hors du groupe {q_rg}, "
+                   f"nomme {value.rstrip('/').rsplit('/', 1)[-1]} comme son NSG d'origine — un autre hôte "
+                   "Glorfindel configuré sur un autre groupe, ou un leurre : jamais suivi, la carte reste telle "
+                   "quelle.")
+            raise OriginalConflict(f"{t0.get('nic_short') or nic_name} : NSG d'origine non suivi ; {said} {why}")
         return found
 
     def _tagged(self, nsg, nic_id: str) -> str | None:
