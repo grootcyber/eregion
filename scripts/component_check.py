@@ -130,7 +130,7 @@ TOGETHER = (
     "test_makefile_bench.py", "test_operator_cidr.py", "test_image_cves.py", "test_makefile_campaign.py", "test_makefile_orodruin_run.py", "test_makefile_exercise.py", "test_makefile_secrets.py", "test_bench_logs.py", "test_bench_auditd.py", "test_bench_identity.py", "test_bench_users.py", "test_bench_reader.py", "test_bench_flow_logs.py",
     "test_identity_executor_host.py",
     "test_notify_discord.py", "test_observation.py", "test_proposed_verdict.py", "test_orodruin_kill.py", "test_orodruin_word.py", "test_palantir.py",
-    "test_drill_expectations.py", "test_drill_sigterm.py", "test_drill_ops.py", "test_drill_watch.py",
+    "test_drill_expectations.py", "test_drill_sigterm.py", "test_drill_ops.py", "test_drill_autostart.py", "test_drill_watch.py",
     "test_pip_audit_issues.py",
     "test_provider_boundary.py", "test_roadmap_discord.py",
     "test_repo_hermetic.py", "test_suite_priority.py", "test_chroma_model.py",

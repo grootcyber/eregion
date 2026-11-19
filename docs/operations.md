@@ -465,6 +465,11 @@ make orodruin-drill-disarm
 #     start » ; l'état illisible : une erreur, jamais une absence) ; AUTOSTART=<id> pour la donner.
 #   - make orodruin-kill désactive aussi le démarrage planifié (juste après la révocation), supprime le
 #     permis et écrit le pouls « disarmed (killed) » ; make orodruin-down dit que l'armement est perdu.
+#   - Le démarrage planifié (DRL1c, infra/orodruin/drill_autostart.tf) : une Logic App, posée par
+#     make orodruin-plan puis make orodruin-lock (Jonathan), déployée Disabled ; elle réveille Orodruin
+#     à drill_autostart_at (tue 18:40 UTC, le drill moins 20 min). Un apply ne l'active jamais ; s'il la
+#     redéploie (une heure changée), il la remet Disabled (à mesurer) : réarmer. Orodruin s'éteint chaque jour à
+#     23:00 UTC (le planning DevTest, qui désalloue), drill ou non : une session plus tardive est coupée.
 
 # Campagne (kill-chain générative + rapport IA0) — depuis Orodruin, sur le modèle de gothmog
 make orodruin-campaign-plan CAMPAIGN_TARGET=<resource_id de la VM inscrite> [CAMPAIGN_MAX=5]
@@ -5576,4 +5581,5 @@ des seuls flux d'après la bascule (CF2) ; l'écriture d'essai depuis gondolin r
   en West Europe au-delà des 5 Go gratuits du mois — estimées à moins de 1 USD par mois sur le banc
   (~3 Ko par exécution d'un humain en root), à mesurer (« auditd au banc (AUD1) », ci-dessus).
 - **Le compte des flux réseau (INF-FL)** : un compte de stockage n'a pas de frais fixes ; on paie la capacité et les opérations, à l'usage (Azure Blob Storage). Les blobs des flux, leurs écritures (un ajout par minute) et les lectures de traffic analytics **changent de compte, ils ne doublent pas** : le coût total reste celui d'avant. Le seul surcoût est passager : l'ancien historique, 7 jours au plus, dans le compte des exercices. Le coût réel se relève sur la facture, avec ceux des flux (`docs/design/corroboration.md`, §5.2, étape 1).
+- **Orodruin et le drill de la semaine (DRL1c)** : la VM (D2als_v6) éteinte chaque soir à 23:00 UTC, et réveillée le mardi à 18:40 UTC par la Logic App du drill, une fois armé : environ 4 h 20 de VM par semaine, quelques euros par mois ; la Logic App (Consumption) coûte une exécution d'une action par semaine, négligeable. Ordre de grandeur, moins de 10 € par mois avec gondolin (`docs/design/drill-banc.md`, §5.3), à relever sur la facture après une semaine armée.
 - **Chaos Studio (G0)** : facturé à l'usage des expériences (une panne de 5 min sur une VM). Feu vert du 15/10 sur une estimation de 11 à 42 € par mois pour 2 à 4 campagnes (ROADMAP) ; le coût réel est à relever sur la facture après le premier run.
