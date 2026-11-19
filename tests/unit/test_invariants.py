@@ -3589,8 +3589,22 @@ class IsolationMachine(RuleBasedStateMachine):
     def _operator_supplies_originals(self, vm: str, out: dict):
         """I7 with Q7: a NIC whose original NSG is unknown or gone stays in quarantine,
         and the release says so. The operator then does what the message says: puts the
-        customer's NSG back if it was deleted, sets the tag."""
+        customer's NSG back if it was deleted, sets the tag.
+
+        SEC-Hb (seeds of #947, CI py3.12): a bare NIC whose original only a quarantine NSG outside the
+        group the configuration names records — our own isolation, made in the VM's group before
+        `quarantine_rg` was set, its state lost: nothing proves that NSG ours, the release refuses it as
+        it refuses a decoy (OriginalConflict, SEC-H). The tag on our group's NSG is the way out; when
+        our group holds none (the quarantine turned off there), there is nothing to tag, and the release
+        says to put the NSG back on the NIC by hand — the operator runs that command, with the NSG the NIC
+        must carry (its design, the test's own), never the one the other group names. No command said
+        for it: the operator can't get out, and I7 says so below."""
+        import re as _re
+
         assert out.get("failed"), f"I7: release of {vm} not done and nothing said: {out}"
+        by_hand = {(rg.lower(), name.lower()) for text in out["failed"]
+                   for rg, name in _re.findall(r"az network nic update -g (\S+) -n (\S+) "
+                                               r"--network-security-group <id du NSG>", text)}
         ours = [g for g in self.fake.nsgs.values() if g["tags"].get("managed-by") == "glorfindel"]
         for nic in self._nics(vm):
             in_q = nic["nsg"] and actions._is_quarantine_nsg(nic["nsg"])
@@ -3605,6 +3619,9 @@ class IsolationMachine(RuleBasedStateMachine):
             # outside Glorfindel): on our NSGs, where the release looks for it.
             for q in ([self.fake.nsgs[key(nic["nsg"])]] if in_q else ours):
                 q["tags"][self.connector._orig_tag(nic["id"])] = want or self.connector._NO_ORIGINAL
+            where = key(nic["id"]).split("/")
+            if nic["nsg"] is None and want and (where[4], where[-1]) in by_hand:
+                nic["nsg"] = want                     # as said: by hand, the NSG it must carry (SEC-Hb)
 
     def _recover_everything(self, lose_state: bool):
         """I7: whatever was reached, release brings every VM back to its design."""

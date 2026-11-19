@@ -338,6 +338,50 @@ def actions_is_quarantine(nsg) -> bool:
     return bool(nsg) and _is_quarantine_nsg(nsg)
 
 
+def test_the_conflict_says_our_tag_when_our_groups_quarantine_nsg_exists(monkeypatch):
+    """SEC-Hb (#947): our group holds the region's quarantine NSG — the way out is our tag there."""
+    from glorfindel.providers.azure.quarantine_origin import OriginalConflict
+    f, c, nic, _ = _bare_world(monkeypatch)
+    f.add_nsg("rg-evil", "nsg-glorfindel-quarantine-westeurope",
+              tags={"managed-by": "glorfindel", c._orig_tag(nic): f.add_nsg("rg-evil", "nsg-open")})
+    t0 = {"nic_id": nic, "nic_short": "web-nic", "location": "westeurope"}
+    with pytest.raises(OriginalConflict) as said:
+        c._bare_nic_original(t0, "rg-app")
+    assert f"poser le tag {c._orig_tag(nic)}=<id du NSG> sur nsg-glorfindel-quarantine-westeurope (rg-app)" in str(
+        said.value) and "az network nic update" not in str(said.value)
+
+
+def test_with_no_quarantine_nsg_in_our_group_the_conflict_says_the_nsg_put_back_by_hand(monkeypatch):
+    """SEC-Hb (#947): the invariant machine's sequences, CI py3.12 — our own isolation made in the VM's
+    group, its state lost, the configuration naming another group since, the quarantine off there. Nothing
+    proves the VM's group's NSG ours: refused, as a decoy (SEC-H). Its way out said a tag on our group's NSG,
+    which doesn't exist: no way out. Now: the NSG put back on the NIC by hand, the NIC's own group and name,
+    the NSG for the operator to name — never the other group's choice, written in for a copy and paste."""
+    from glorfindel.providers.azure.quarantine_origin import OriginalConflict
+
+    from .fake_azure import FakeAzure, nic_id
+    f = FakeAzure()
+    subnet = f.add_subnet("rg-net", "vnet-hub", "app", None)
+    f.add_vm("rg-app", "web", [{"rg": "rg-nics", "name": "web-nic", "ips": ["10.0.0.4"], "subnet": subnet,
+                                "nsg": None}])
+    c = AzureConnector(dry_run=False, read_only=False)
+    c._network, c._compute = f.network, f.compute
+    c._subscription_id = "s"
+    c._quarantine_settings = lambda: (False, "rg-sec")          # quarantine_nsg: false, quarantine_rg: rg-sec
+    nic = nic_id("rg-nics", "web-nic")
+    chosen = f.add_nsg("rg-app", "nsg-web")
+    f.add_nsg("rg-app", "nsg-glorfindel-quarantine-westeurope",
+              tags={"managed-by": "glorfindel", c._orig_tag(nic): chosen})
+    t0 = {"nic_id": nic, "nic_short": "web-nic", "location": "westeurope"}
+    with pytest.raises(OriginalConflict) as said:
+        c._bare_nic_original(t0, "rg-app")
+    text = str(said.value)
+    assert "hors du groupe rg-sec" in text and "rg-app/nsg-glorfindel-quarantine-westeurope" in text, text
+    assert "az network nic update -g rg-nics -n web-nic --network-security-group <id du NSG>" in text, text
+    assert chosen not in text and "poser le tag" not in text, text
+    assert len(text) <= 600, len(text)                # whole in the release's error (_ERR_MAX)
+
+
 def test_without_a_decoy_the_authentic_none_stands(monkeypatch):
     f, c, nic, _ = _bare_world(monkeypatch)
     t0 = {"nic_id": nic, "nic_short": "web-nic", "location": "westeurope"}

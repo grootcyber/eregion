@@ -61,7 +61,10 @@ class OriginMixin:
 
         One of another group naming an NSG for this NIC — another host's, configured with
         another quarantine group (I8S), or anyone's decoy — never chooses: OriginalConflict,
-        the NIC kept as it is and said, until the operator writes the original on our tag."""
+        the NIC kept as it is and said, until the operator writes the original on our tag — or, our
+        group holding no such NSG (the quarantine off there, our own isolation made in the VM's group
+        before `quarantine_rg` was set, its state lost: nothing proves it ours), puts the NSG back on
+        the NIC by hand, as the message says (SEC-Hb)."""
         from glorfindel.providers.azure.quarantine import QUARANTINE_NSG_PREFIX
         if t0.get("quarantine") or t0.get("own_nsg_id"):
             return _UNKNOWN, None
@@ -92,12 +95,19 @@ class OriginMixin:
         if elsewhere:
             where, value = elsewhere[0]
             key = self._orig_tag(t0["nic_id"])
+            nic_rg, nic_name = _nic_rg_and_name(t0["nic_id"])
+            # The way out the operator can take (SEC-Hb): our tag only on an NSG that exists — none in
+            # our group (the quarantine turned off there, or never needed), the NSG put back by hand.
+            # Never the other group's choice written in: the operator names the NSG.
+            way = (f"poser le tag {key}=<id du NSG> sur {name} ({q_rg})" if nsg is not None else
+                   f"le remettre à la main sur la carte ({name} absent de {q_rg}) : "
+                   f"az network nic update -g {nic_rg} -n {nic_name} --network-security-group <id du NSG>")
             raise OriginalConflict(
-                f"{t0.get('nic_short') or t0['nic_id'].rsplit('/', 1)[-1]} : le NSG de quarantaine "
+                f"{t0.get('nic_short') or nic_name} : le NSG de quarantaine "
                 f"{'/'.join(_parse_nsg_resource_id(where))}, hors du groupe {q_rg}, nomme "
                 f"{value.rstrip('/').rsplit('/', 1)[-1]} comme son NSG d'origine — un autre hôte Glorfindel "
                 "configuré sur un autre groupe, ou un leurre : jamais suivi. La carte reste telle quelle ; si "
-                f"c'est bien son NSG, poser le tag {key}=<id du NSG> sur {name} ({q_rg}), puis relancer")
+                f"c'est bien son NSG, {way}, puis relancer")
         return found
 
     def _tagged(self, nsg, nic_id: str) -> str | None:
@@ -110,6 +120,14 @@ class OriginMixin:
         if not value or (value != self._NO_ORIGINAL and self._not_an_original(value)):
             return None
         return value
+
+
+def _nic_rg_and_name(nic_id: str) -> tuple[str, str]:
+    """The resource group and the name of a NIC, from its id (…/resourceGroups/<rg>/…/<name>)."""
+    parts = nic_id.rstrip("/").split("/")
+    low = [p.lower() for p in parts]
+    rg = parts[low.index("resourcegroups") + 1] if "resourcegroups" in low[:-1] else ""
+    return rg, parts[-1]
 
 
 class OriginalConflict(RuntimeError):
