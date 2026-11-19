@@ -6,7 +6,8 @@ minuteur, l'armement, les gardes, le kill ; les écarts avec cette conception au
 le verdict proposé, §8.2 et §12). **DRL1b fait** (18/11, Imladris, anciennement H0 : le verdict de
 chaque occurrence, l'alarme d'absence, le fil du bot, la ligne « Weekly drill » ; ses écarts au §13).
 **DRL1c fait** (19/11, le Terraform : la Logic App du démarrage planifié, livrée désactivée, son identité et
-son rôle, l'extinction de 23:00 UTC ; ses écarts au §14). Rien n'est appliqué, armé ni mesuré : l'apply,
+son rôle, l'extinction de 23:00 UTC ; ses écarts au §14). **DRL1d fait** (19/11, le service du drill lancé
+aux options des runs d'Annatar, dont le tmpfs exécutable du `HOME` ; §15). Rien n'est appliqué, armé ni mesuré : l'apply,
 la mesure et l'armement restent à Jonathan._
 
 > **Décision de Jonathan (06/11, « Cadence du banc », D1).** Un exercice planifié chaque semaine,
@@ -266,13 +267,15 @@ secret. Les conteneurs le montent en lecture seule, et ne peuvent donc pas le r�
   - `Persistent=false` : une occurrence manquée n'est **jamais rattrapée** au démarrage suivant. Elle
     est dite manquée (§4), elle ne part pas à une heure où personne ne l'attend ;
   - `AccuracySec=1min`.
-- `eregion-drill.service` : un `docker run` durci comme les autres (ORO_HARDEN) :
+- `eregion-drill.service` : un `docker run` aux options des runs d'Annatar (`ORO_RUN` : `ORO_HARDEN`,
+  puis `ORO_EXEC_HOME`, ni plus ni moins, DRL1d, §15) :
   - `docker run --rm --pull never` : l'image est celle qu'`orodruin-push` a chargée et vérifiée
     (`eregion-annatar:orodruin`), jamais tirée ; absente, le service échoue, et Imladris le dit (`not_run`) ;
   - un nom fixe (`--name eregion-drill`) et `--init` (§3.1, l'arrêt du service) ;
   - `--env-file orodruin.env`, comme `ORO_RUN` : le contrat se lit dans la même configuration que
     pour une demande ;
-  - racine en lecture seule, aucune capacité ;
+  - racine en lecture seule, aucune capacité, aucun gain de privilège, `/tmp` en tmpfs sans exec ;
+  - un seul tmpfs exécutable, `/stratus-home`, où l'adaptateur d'Annatar bâtit le `HOME` du run ;
   - `~/runs/{annatar,gothmog,orodruin}` montés comme pour une demande ;
   - l'armement en lecture seule ;
   - une commande fixe, `python -m eregion_core.scheduled_drill run`, sans argument venu d'ailleurs ;
@@ -995,6 +998,7 @@ sont à VP1. Le drill lui donne ce qu'il lit, rien de plus.
 | **DRL1a** (Orodruin, cœur) | `schedule` dans le lecteur de drill ; `drills/banc-hebdo.yaml` ; `expectations/banc-hebdo.yaml` et son lecteur exact ; `COPY drills/` dans l'image des injecteurs (jamais `expectations/`), `COPY expectations/` dans celle de Glorfindel, et leur test ; `eregion_core/scheduled_drill.py` (l'armement, les gardes de §2.3, le verrou et son descripteur passé au runner, le registre sous le verrou, le démarrage de la cible et le Heartbeat, la demande, le permis exigé et réécrit sous `If-Match`, `drill.json`, le `launch` du drill par `Popen`, le gestionnaire SIGTERM qui relaie et attend) ; le paramètre `zones` du runner, passé à `exercise_plan.judge` (premier jugement et `_recheck`) ; le permis écrit par `orodruin-drill-arm`, supprimé par `-disarm` et le kill ; la fenêtre d'un fil bornée par son temps restant ; le champ `drill` du statut, optionnel dans son lecteur exact ; les cibles Make `orodruin-drill-check`, `-arm`, `-disarm` ; les unités systemd ; le pas « drill » du kill ; la ligne de `orodruin-down` ; le gestionnaire SIGTERM d'`annatar wire` (dit à la session Annatar) ; le test de CI drill ↔ attentes ↔ catalogue ↔ règles ; l'extension de `test_dagorlad_blind.py` | `eregion_core/`, `drills/`, `expectations/`, `annatar/Dockerfile`, `glorfindel/Dockerfile`, `annatar/cli.py`, `Makefile`, `infra/orodruin/kill.py` |
 | **DRL1b** (Imladris) | le verdict de chaque occurrence, l'alarme d'absence, les alertes par le bot de Glorfindel, la ligne « Weekly drill » de la console, la tuile de la dernière preuve qui dit le drill ; les lecteurs exacts de `drill.json` et du permis, jugé par la liste du canal ; l'alarme d'absence armée seulement sur des empreintes égales à la copie d'Imladris, sinon « réarmement attendu » | `eregion_console/`, `glorfindel/` (le pull, le bot) |
 | **DRL1c** (Terraform, fait, §14) | la Logic App, créée désactivée et son état ignoré, son heure tirée de `drill_autostart_at` ; son identité ; son rôle personnalisé (`start/action` seul, assignable dans le groupe d'Orodruin, attribué à la VM d'Orodruin) ; l'extinction de 23:00 UTC | `infra/orodruin/` |
+| **DRL1d** (Orodruin, fait, §15) | le service du drill lancé aux options des runs d'Annatar (`ORO_HARDEN` puis `ORO_EXEC_HOME`), la parité avec le `Makefile` tenue par un test | `infra/orodruin/drill_ops.py` |
 | VP1, BRO1 | ce qu'ils lisent du drill et des attentes (§4.3, §8.2) | leurs lots |
 
 **Tests hermétiques** : faux `systemd`, fausse horloge, faux Azure, faux canal. Aucun appel Azure ni
@@ -1249,6 +1253,50 @@ Le code suit les §2.3 et §3.1 dans leur ordre. Ce qui s'en écarte, ou que la 
 - **Ce qui reste à Jonathan** (rien n'est appliqué) : `make orodruin-plan`, le plan relu (quatre ressources
   ajoutées, rien de changé ni de détruit), puis `make orodruin-lock` ; la mesure du §6.2, point 2 ; puis
   `make orodruin-drill-check`, l'armement et la première occurrence.
+
+## 15. Ce que DRL1d a corrigé : le drill lancé comme les runs d'Annatar (19/11)
+
+- **Le défaut** (relevé à la relecture de R2BZ, le 18/11, antérieur à DRL1d) : l'`ExecStart` du service
+  reprenait `HARDEN`, la copie d'`ORO_HARDEN`, et rien de plus. Les runs d'Annatar sur Orodruin
+  (`ORO_RUN`, `ORO_RUN_REQUEST`, `BENCH_ORO_RUN`) portent en plus `ORO_EXEC_HOME`
+  (`--tmpfs /stratus-home:exec`, R2BZ) : le seul tmpfs exécutable, où l'adaptateur de la bibliothèque du
+  plan de contrôle bâtit le `HOME` du run (`annatar/executors/stratus_host.py`, `EXEC_HOME`), et où
+  Terraform extrait puis exécute ses fournisseurs. Une technique du plan de contrôle jouée par le drill
+  aurait échoué (`fork/exec … permission denied`) là où le même run, lancé à la main, passe.
+- **Ce que les runs d'Annatar reçoivent, lu dans le `Makefile`** : `ORO_HARDEN` (`--read-only`,
+  `--tmpfs /tmp`, `--cap-drop ALL`, `--security-opt no-new-privileges:true`), puis `ORO_EXEC_HOME`
+  (`--tmpfs /stratus-home:exec`). Aucune variable d'environnement : `HOME` n'est pas posé par
+  `docker run`. L'adaptateur trouve le montage et y crée le `HOME` du run (`mkdtemp`, `stratus-home-…`) ;
+  sans lui, il retombe sur `/tmp`, sans exec. Le reste de la ligne (`--env-file orodruin.env`, les
+  montages de `~/runs`, l'image) est déjà le même ; `--pull never`, `--init` et `--name` sont propres au
+  service (§2.1).
+- **Ce qui change** : l'`ExecStart` porte `RUN_OPTS`, `HARDEN` puis `EXEC_HOME`
+  (`infra/orodruin/drill_ops.py`). Le drill ne joue que des runs d'Annatar (une technique, jamais une
+  panne en v1 : `drill.eligible`) : le service le reçoit toujours. Les lectures du drill (`fingerprint`,
+  `check`, `ORO_DRILL_RUN`) ne jouent aucun run et gardent `ORO_HARDEN` seul, comme le contrat et
+  Gothmog. Le durcissement ne bouge pas : `/tmp` sans exec, aucune capacité, aucun gain de privilège, la
+  racine en lecture seule.
+- **Une seule source** : les copies du script ne peuvent plus diverger du `Makefile`. Un test lit
+  `ORO_HARDEN`, `ORO_EXEC_HOME` et `ORO_RUN`, les développe, et exige que les options du `docker run`
+  du service, hors de ses options de lancement, soient exactement celles d'`ORO_RUN` ; que chaque run
+  d'Annatar porte les mêmes ; que le tmpfs exécutable soit le chemin de l'adaptateur, le seul exécutable ;
+  qu'aucun `HOME` ne soit posé autrement (`tests/unit/test_drill_ops.py`).
+- **Mutants** M5991–M6000 (`scripts/mutants/DRL1d.py`) : le tmpfs exécutable retiré du drill, `/tmp`
+  rendu exécutable, la parité qui perd `ORO_EXEC_HOME`, le `HOME` dirigé ailleurs (le montage à un autre
+  chemin, un `-e HOME=/tmp`), une option de plus, les lectures qui reçoivent le tmpfs exécutable, le
+  `Makefile` qui durcit sans que la copie suive, la racine accessible en écriture, `no-new-privileges`
+  retiré.
+- **Ce qui reste à Jonathan** : rien ne change sur Orodruin avant le prochain armement. Les unités sont
+  posées par `make orodruin-drill-arm` : un drill armé avant DRL1d garde l'ancienne ligne. Réarmer
+  (`make orodruin-drill-disarm`, puis `make orodruin-drill-arm DRILL=… TARGETS=…`) réécrit
+  `eregion-drill.service`, et `systemctl cat eregion-drill.service` montre alors :
+
+  ```
+  ExecStart=/usr/bin/docker run --rm --pull never --init --name eregion-drill --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /stratus-home:exec --env-file orodruin.env -v /home/<user>/runs/annatar:/app/runs/annatar -v /home/<user>/runs/gothmog:/app/runs/gothmog -v /home/<user>/runs/orodruin:/app/runs/orodruin -v /home/<user>/drill:/app/drill:ro eregion-annatar:orodruin python -m eregion_core.scheduled_drill run
+  ```
+
+  À mesurer à la première occurrence qui joue une technique du plan de contrôle : son préchauffage passe
+  sous le drill comme à la main.
 
 ---
 

@@ -1685,6 +1685,16 @@ briques:
     issue: 613
     doc: docs/design/drill-banc.md
 
+  - id: o-drill-home-exec
+    composant: orodruin
+    poste: o-executer
+    nom: "The weekly drill's service runs with the options of the injector's runs, its executable run HOME included, /tmp still noexec; the parity with the Makefile held by a test; reaches Orodruin at the next arming"
+    etat: main
+    release: "0.6"
+    lots: [DRL1d]
+    issue: 613
+    doc: docs/design/drill-banc.md
+
   - id: k-drill-semaine
     composant: console
     poste: k-suivre
