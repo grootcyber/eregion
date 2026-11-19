@@ -16,7 +16,8 @@ import subprocess
 from dataclasses import dataclass
 
 from annatar.console import console, outside
-from annatar.engines.stratus import ResolvedTechnique, airgap_env, azure_provider_env
+from annatar.engines.stratus import (ResolvedTechnique, airgap_env, azure_provider_env,
+                                      stratus_run_env)
 
 
 GRAPH = "https://graph.microsoft.com"
@@ -176,11 +177,14 @@ class StratusExecutor:
         HOME, the staged Terraform binary (STRATUS_TERRAFORM_BINARY_PATH) and the provider mirror
         (TF_CLI_CONFIG_FILE) — plus the azurerm provider's identity directive (MSI1): on a host
         carrying only a managed identity (no service-principal secret), ARM_USE_MSI with the
-        subscription and tenant, so the warmup's Terraform authenticates by that identity."""
+        subscription and tenant, so the warmup's Terraform authenticates by that identity. R2c
+        pièce 4: when the dedicated Stratus identity is configured (EREGION_STRATUS_SUBSCRIPTION),
+        the run authenticates AS STRATUS by the federated exchange instead (stratus_run_env), on
+        the dedicated subscription — never Orodruin's managed identity nor the bench."""
         overrides = airgap_env(self._ensure_run_home(),
                                terraform_binary=self._staged_terraform(),
                                terraformrc=self.layout.terraformrc)
-        identity = azure_provider_env(os.environ)
+        identity = stratus_run_env(os.environ) or azure_provider_env(os.environ)
         return {**os.environ, **overrides, **identity}
 
     def _before_call(self, phase: str, detail: str) -> None:

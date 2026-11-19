@@ -37,7 +37,7 @@ MUTANTS = [
      'not row.get("OperationNameValue") or row.get("OmittedOperations"):',
      'not row.get("OperationNameValue"):'),
     ("M6418", "the card of incomplete telemetry no longer says so (CPT1)", AGENT,
-     "    if names_no_one(row):\n        # CPT1", "    if False:\n        # CPT1"),
+     "    if _incomplete_telemetry(signal):\n        # CPT1", "    if False:\n        # CPT1"),
     ("M6419", "the card of incomplete telemetry loses its type, mapped to none (CPT1)", AGENT,
      '    "control_plane_incomplete": "control_plane_change",\n', ""),
 ]

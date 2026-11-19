@@ -354,3 +354,45 @@ def azure_provider_env(environ: Mapping[str, str]) -> dict[str, str]:
     if not (sub and tenant):
         return {}
     return {ARM_USE_MSI_ENV: "true", ARM_SUBSCRIPTION_ENV: sub, ARM_TENANT_ENV: tenant}
+
+
+# R2c pièce 4: when the dedicated Stratus identity is configured, the Stratus run authenticates AS
+# STRATUS by the federated exchange (the FIC posed by R2BGc), on the DEDICATED subscription — never
+# Orodruin's managed identity (MSI1: the IMDS is blocked from the sandbox, pièce 3) nor the bench
+# subscription. Orodruin's managed-identity assertion is fetched on the HOST (where the IMDS is
+# reachable), written to a file and mounted into the sandbox container; the provider exchanges it
+# for a Stratus token against login.microsoftonline.com, which the sandbox network reaches. The
+# exact OIDC env names (azurerm's ARM_OIDC_*, the Go SDK's AZURE_FEDERATED_*) are confirmed at the
+# real run (ID1, #281); both families are set here.
+STRATUS_CLIENT_ID_ENV = "EREGION_STRATUS_CLIENT_ID"
+STRATUS_SUBSCRIPTION_ENV = "EREGION_STRATUS_SUBSCRIPTION"
+STRATUS_TOKEN_FILE_ENV = "EREGION_STRATUS_TOKEN_FILE"
+
+
+def stratus_run_env(environ: Mapping[str, str]) -> dict[str, str]:
+    """The auth overrides for a Stratus run under its dedicated identity. Empty when
+    ``EREGION_STRATUS_SUBSCRIPTION`` is not set — the run keeps MSI1 / its own credentials (a
+    developer run). Set, the run authenticates AS STRATUS by the federated exchange, on the
+    dedicated subscription (never Orodruin's managed identity nor the bench subscription): its
+    client id, the assertion token file (fetched on the host, mounted in) and the tenant must ALL
+    be present — else it RAISES rather than fall back to the managed identity or the bench (the v1
+    blocker, fail closed). Both the ARM_* (azurerm) and AZURE_* (the Go SDK's azidentity) OIDC
+    names are set; the exact ones are confirmed at the bench (ID1, #281)."""
+    sub = _first_set(environ, (STRATUS_SUBSCRIPTION_ENV,))
+    if not sub:
+        return {}
+    client_id = _first_set(environ, (STRATUS_CLIENT_ID_ENV,))
+    token_file = _first_set(environ, (STRATUS_TOKEN_FILE_ENV,))
+    tenant = _first_set(environ, _TENANT_SRC)
+    if not (client_id and token_file and tenant):
+        raise RuntimeError(
+            "EREGION_STRATUS_SUBSCRIPTION is set but the federated identity is incomplete "
+            "(EREGION_STRATUS_CLIENT_ID, EREGION_STRATUS_TOKEN_FILE, the tenant) — refusing to "
+            "fall back to the managed identity or the bench subscription")
+    return {
+        "ARM_USE_OIDC": "true",
+        "ARM_CLIENT_ID": client_id, "AZURE_CLIENT_ID": client_id,
+        "ARM_TENANT_ID": tenant, "AZURE_TENANT_ID": tenant,
+        "ARM_SUBSCRIPTION_ID": sub, "AZURE_SUBSCRIPTION_ID": sub,
+        "ARM_OIDC_TOKEN_FILE_PATH": token_file, "AZURE_FEDERATED_TOKEN_FILE": token_file,
+    }

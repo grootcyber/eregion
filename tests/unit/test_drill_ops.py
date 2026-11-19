@@ -366,6 +366,167 @@ def test_the_dry_check_says_a_scheduled_start_absent_or_at_another_hour(ops, wor
     assert code == 1 and any(said_ in s for s in said) and oro.writes == []
 
 
+# ── check: the scheduled start's state, against the arming (DRL1e) ───────────────────
+
+ARMED = {"drill": "banc-hebdo", "sha256": SHA, "targets": ["vm-celebrimbor-gondolin"],
+         "armed_at": "2026-11-16T10:00:00+00:00", "image": "abc123 sha256:00"}
+
+
+def _check(ops, oro, logic):
+    said = []
+    code = ops.check("banc-hebdo", [], oro=oro, oro_run="docker run …", logic_id=LOGIC, run=logic, say=said.append)
+    return code, said
+
+
+def _with_state(state):
+    wf = _workflow()
+    if state is None:
+        del wf["properties"]["state"]
+    else:
+        wf["properties"]["state"] = state
+    return wf
+
+
+def test_the_check_says_armed_but_scheduled_start_disabled_re_arm(ops):
+    """An apply that redeployed the Logic App put it back Disabled: armed.json says armed, and the
+    check says it — never « ✓ scheduled start » alone, the missed occurrence seen only at Imladris's
+    not_run (DRL1e, M6481, M6482). Nothing written."""
+    oro, logic = Oro(armed=ARMED), Logic(_with_state("Disabled"))
+    code, said = _check(ops, oro, logic)
+    assert code == 1, said
+    assert any(s.startswith("✗ armed but scheduled start disabled: re-arm") for s in said), said
+    assert oro.writes == [] and all(m == "get" for m, _ in logic.calls)
+    # One read of the Logic App: its hour and its state, the same GET.
+    assert logic.calls == [("get", "la-orodruin-drill")]
+
+
+def test_the_check_says_the_scheduled_start_enabled_for_the_armed_drill(ops):
+    oro, logic = Oro(armed=ARMED), Logic(_with_state("Enabled"))
+    code, said = _check(ops, oro, logic)
+    assert code == 0, said
+    assert "✓ scheduled start enabled: it wakes Orodruin for the armed drill" in said
+    assert not any("re-arm" in s for s in said)
+
+
+@pytest.mark.parametrize("workflow, fail, why", [
+    (_workflow(), "AuthorizationFailed", "AuthorizationFailed"),     # the GET refused: az login, a 403
+    (_with_state(None), "", "no properties.state"),                    # read, its state absent
+    (_with_state("Suspended"), "", "'Suspended'"),                     # a state that does not wake it
+])
+def test_an_unreadable_state_against_the_arming_is_said_never_taken_for_enabled(ops, workflow, fail, why):
+    """The Logic App unreadable, or its state absent or another than Enabled/Disabled: the check says
+    the state does not read, exits 1, and still says the arming and the dry check (DRL1e)."""
+    oro, logic = Oro(armed=ARMED), Logic(workflow, fail=fail)
+    code, said = _check(ops, oro, logic)
+    assert code == 1, said
+    line = next(s for s in said if s.startswith("✗ armed but the scheduled start's state does not read"))
+    assert why in line and "never taken for enabled" in line
+    assert any(s.startswith("✓ arming: banc-hebdo") for s in said)
+    assert any("scheduled_drill check" in c for c in oro.commands) and oro.writes == []
+
+
+def test_the_check_without_an_arming_says_the_state_and_fails_only_on_the_rest(ops):
+    """Nothing armed: Disabled is the state the disarming leaves, said; Enabled wakes Orodruin for
+    nothing, a warning — neither fails the check."""
+    for state, line in (("Disabled", "· scheduled start disabled (nothing armed)"),
+                        ("Enabled", "! scheduled start enabled with nothing armed")):
+        code, said = _check(ops, Oro(), Logic(_with_state(state)))
+        assert code == 0 and any(s.startswith(line) for s in said), said
+
+
+# ── The shutdown of 23:00 UTC: the arming refuses a drill it would cut (DRL1e) ───────────
+
+@pytest.mark.parametrize("day, at, max_run_s, want", [
+    ("tue", "19:00", 1800, ""),          # the shipped drill: ends 19:30, its service by 20:02
+    ("tue", "22:30", 1800, "refuse"),    # its budget ends at 23:00 itself
+    ("tue", "22:50", 1800, "refuse"),    # ends 23:20
+    ("tue", "23:10", 60, "refuse"),      # woken 22:50, shut down at 23:00 before its hour
+    ("sun", "22:50", 600, "refuse"),     # across the week's end: Sunday's shutdown
+    ("tue", "22:00", 1800, "warn"),      # its budget ends 22:30, its service's bound 23:02
+    ("tue", "21:58", 1800, "warn"),      # RuntimeMaxSec, then TimeoutStopSec: 23:00 itself
+    ("tue", "21:57", 1800, ""),          # they end 22:59
+    ("mon", "00:10", 3600, ""),          # woken Sunday 23:50, after Sunday's shutdown
+    ("tue", "23:20", 600, "refuse"),     # woken at 23:00, the shutdown's own minute
+    ("tue", "23:30", 3600, ""),          # woken 23:10, after the shutdown; ends 00:30
+])
+def test_the_shutdown_guard_refuses_a_certain_cut_and_warns_at_the_limit(ops, day, at, max_run_s, want):
+    verdict, why = ops.shutdown_guard(dr.Schedule(day, at, 6, max_run_s))
+    assert verdict == want, (day, at, max_run_s, why)
+    assert (why == "") == (want == "")
+    if want:
+        assert "23:00 UTC" in why
+
+
+def _arm_at(ops, at, max_run_s, autostart):
+    fp = {**FP, "at": at, "max_run_s": max_run_s, "on_calendar": f"Tue *-*-* {at}:00 UTC"}
+    oro, logic, channel = Oro(fp=fp), Logic(_workflow(hour=autostart[0], minute=autostart[1])), Channel()
+    code, said = _arm(ops, oro, logic, channel)
+    return code, said, oro, logic, channel
+
+
+def test_the_arming_of_a_drill_that_overruns_23_utc_is_refused_and_writes_nothing(ops):
+    """The drill tue 22:50, 30 min: its scheduled start right (22:30), but its budget ends 23:20,
+    after Orodruin's shutdown — refused, nothing on Orodruin, nothing in the channel, nothing enabled
+    (DRL1e, M6483, M6484)."""
+    code, said, oro, logic, channel = _arm_at(ops, "22:50", 1800, (22, 30))
+    assert code == 1 and said[-1].endswith("nothing armed"), said
+    assert "shutdown of 23:00 UTC" in said[-1] and "would be cut" in said[-1]
+    assert oro.writes == [] and channel.blobs == {}
+    assert not [c for c in logic.calls if c[0] == "post"]
+
+
+def test_the_arming_at_the_limit_of_23_utc_warns_and_goes_on(ops):
+    """The drill tue 22:00, 30 min: its budget ends 22:30, its service's ceiling after 23:00 — a
+    warning said before the steps, and the arming goes on (DRL1e)."""
+    code, said, oro, logic, channel = _arm_at(ops, "22:00", 1800, (21, 40))
+    assert code == 0, said
+    warn = [i for i, s in enumerate(said) if s.startswith("! ")]
+    assert len(warn) == 1 and "23:00 UTC" in said[warn[0]] and "may be cut" in said[warn[0]]
+    assert warn[0] < min(i for i, s in enumerate(said) if s.startswith("✓ "))
+    assert logic.state == "Enabled"
+
+
+def test_the_check_says_the_shutdown_guard(ops):
+    """The check says the same guard, and a refusal fails it."""
+    fp = {**FP, "at": "22:50", "max_run_s": 1800}
+    said = []
+    code = ops.check("banc-hebdo", [], oro=Oro(fp=fp), oro_run="", logic_id=LOGIC,
+                     run=Logic(_workflow(hour=22, minute=30)), say=said.append)
+    assert code == 1 and any(s.startswith("✗ the drill (tue 22:50 UTC") for s in said), said
+    code, said = _check(ops, Oro(), Logic(_workflow()))
+    assert code == 0 and "✓ Orodruin's shutdown of 23:00 UTC: the drill ends before it" in said
+
+
+def test_the_service_s_bound_the_guard_counts_is_the_unit_s_own(ops):
+    """The guard counts the service's real bound, read in the unit: RuntimeMaxSec, then
+    TimeoutStopSec — systemd's bound on the whole stop, docker's own grace within it (DRL1e)."""
+    import re
+    service = ops.units(dr.Schedule("tue", "19:00", 6, 1800), "orodruin")[ops.SERVICE]
+    runtime = int(re.search(r"^RuntimeMaxSec=(\d+)$", service, re.M).group(1))
+    stop = int(re.search(r"^TimeoutStopSec=(\d+)$", service, re.M).group(1))
+    grace = int(re.search(r"^ExecStop=.*docker stop --time (\d+) ", service, re.M).group(1))
+    assert ops.SERVICE_BOUND_S == runtime + stop == 3720
+    assert grace == ops.STOP_S < stop
+    # The guard's warning falls at that bound, to the minute: the hour whose bound is 23:00 warns,
+    # the minute before it does not.
+    last = (23 * 60 * 60 - ops.SERVICE_BOUND_S) // 60
+    at = f"{last // 60:02d}:{last % 60:02d}"
+    before = f"{(last - 1) // 60:02d}:{(last - 1) % 60:02d}"
+    assert ops.shutdown_guard(dr.Schedule("tue", at, 6, 600))[0] == "warn"
+    assert ops.shutdown_guard(dr.Schedule("tue", before, 6, 600))[0] == ""
+
+
+def test_an_armed_drill_whose_enabled_start_is_at_another_hour_never_says_it_enabled(ops):
+    """Armed, the Logic App Enabled but at another hour: « apply first » said, never « ✓ scheduled
+    start enabled » beside it; the check fails (DRL1e)."""
+    wf = _workflow(hour=19, minute=0)
+    wf["properties"]["state"] = "Enabled"
+    code, said = _check(ops, Oro(armed=ARMED), Logic(wf))
+    assert code == 1, said
+    assert any(s.startswith("✗ scheduled start:") and "apply first" in s for s in said), said
+    assert not any(s.startswith("✓ scheduled start") for s in said), said
+
+
 # ── arm: refused before anything is written, else each step said ───────────────────
 
 @pytest.mark.parametrize("workflow", [None, _workflow(hour=19, minute=0), _workflow(day="Wednesday"),
@@ -579,10 +740,27 @@ def _expand(value: str, text: str) -> str:
     return value
 
 
+# What a Makefile run def carries that is not an execution option, each with its argument: its
+# configuration, its mounts, its pull policy (``$(call ORO_MOUNT,…)`` is a mount too).
+_DEF_LAUNCH_ARGS = {"--env-file", "-v", "--pull"}
+
+
 def _run_options(definition: str, text: str) -> list[str]:
-    """The execution options of a Makefile ``docker run --rm … --env-file`` definition, expanded."""
-    seg = definition.split("docker run --rm ", 1)[1].split(" --env-file", 1)[0]
-    return _expand(seg, text).split()
+    """The execution options of a Makefile ``docker run --rm … $(ORO_IMAGE)`` definition, expanded:
+    every word up to the image, ``--env-file``, ``-v``, ``$(call ORO_MOUNT,…)`` and ``--pull``
+    set apart — an option after ``--env-file`` is read too (DRL1e)."""
+    import re
+    assert definition.count("docker run --rm ") == 1 and " $(ORO_IMAGE)" in definition, definition
+    seg = definition.split("docker run --rm ", 1)[1].split(" $(ORO_IMAGE)", 1)[0]
+    seg = re.sub(r"\$\(call ORO_MOUNT,[a-z]+\)", " ", seg)
+    words, out, i = _expand(seg, text).split(), [], 0
+    while i < len(words):
+        if words[i] in _DEF_LAUNCH_ARGS:
+            i += 2
+        else:
+            out.append(words[i])
+            i += 1
+    return out
 
 
 def _exec_start(ops) -> list[str]:
@@ -668,3 +846,20 @@ def test_the_drills_reads_that_play_no_run_get_nothing_more_than_the_hardening()
     tmpfs — as the contract's and Gothmog's runs (M5998)."""
     text = _makefile()
     assert _run_options(_make_var("ORO_DRILL_RUN", text), text) == _make_var("ORO_HARDEN", text).split()
+
+
+@pytest.mark.parametrize("after", ["--cap-add SYS_ADMIN", "--privileged", "--tmpfs /tmp:exec", "-e HOME=/tmp"])
+def test_an_option_after_the_env_file_or_the_mounts_is_read_never_missed(after):
+    """The reading goes up to the image, not to ``--env-file``: an option posed after the
+    configuration or among the mounts, in ORO_RUN or ORO_DRILL_RUN, is an execution option, and the
+    parity sees it (DRL1e, M6487); the launch options alone are set apart."""
+    text = _makefile()
+    want = _make_var("ORO_HARDEN", text).split() + _make_var("ORO_EXEC_HOME", text).split()
+    for where in ("--env-file orodruin.env ", "$(call ORO_MOUNT,annatar) ", "/app/requests:ro "):
+        definition = ("$(ORO_DIRS) docker run --rm $(ORO_HARDEN) $(ORO_EXEC_HOME) --env-file orodruin.env "
+                      "$(call ORO_MOUNT,annatar) -v $$HOME/requests:/app/requests:ro --pull never $(ORO_IMAGE)")
+        assert definition.count(where) == 1
+        definition = definition.replace(where, f"{where}{after} ", 1)
+        assert _run_options(definition, text) == want + after.split(), definition
+    plain = "docker run --rm $(ORO_HARDEN) --env-file orodruin.env $(call ORO_MOUNT,gothmog) --pull never $(ORO_IMAGE)"
+    assert _run_options(plain, text) == _make_var("ORO_HARDEN", text).split()

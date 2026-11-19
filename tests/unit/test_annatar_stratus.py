@@ -27,6 +27,7 @@ from annatar.engines.stratus import (
     describe,
     pinned_digests,
     resolve,
+    stratus_run_env,
     verify_binary,
 )
 from annatar.executors.stratus_host import StagedLayout, StratusExecutor, staged_layout
@@ -305,6 +306,54 @@ def test_azure_provider_env_leaves_every_service_principal_form_untouched():
     for marker in ("ARM_CLIENT_ID", "AZURE_CLIENT_ID", "ARM_CLIENT_CERTIFICATE_PATH",
                    "AZURE_CLIENT_CERTIFICATE_PATH", "ARM_USE_OIDC", "AZURE_FEDERATED_TOKEN_FILE"):
         assert azure_provider_env({**base, marker: "x"}) == {}, marker
+
+
+# ── R2c pièce 4: the dedicated Stratus identity, by the federated exchange ─────────────
+
+def test_stratus_run_env_is_empty_without_the_dedicated_subscription():
+    # a developer run: no dedicated identity — the run keeps MSI1 / its own credentials.
+    assert stratus_run_env({"AZURE_SUBSCRIPTION_ID": "bench-sub"}) == {}
+
+
+def test_stratus_run_env_authenticates_as_stratus_by_the_federated_exchange():
+    env = stratus_run_env({"EREGION_STRATUS_SUBSCRIPTION": "ded-sub",
+                           "EREGION_STRATUS_CLIENT_ID": "stratus-app",
+                           "EREGION_STRATUS_TOKEN_FILE": "/run/assertion",
+                           "EREGION_TENANT_ID": "tenant-abc",
+                           "AZURE_SUBSCRIPTION_ID": "bench-sub"})   # the bench sub is NOT used
+    assert env["ARM_USE_OIDC"] == "true"
+    assert env["ARM_CLIENT_ID"] == "stratus-app" and env["AZURE_CLIENT_ID"] == "stratus-app"
+    assert env["ARM_SUBSCRIPTION_ID"] == "ded-sub" and env["AZURE_SUBSCRIPTION_ID"] == "ded-sub"
+    assert env["ARM_OIDC_TOKEN_FILE_PATH"] == "/run/assertion"
+    assert env["AZURE_FEDERATED_TOKEN_FILE"] == "/run/assertion"
+    assert env["ARM_TENANT_ID"] == "tenant-abc"
+
+
+def test_stratus_run_env_refuses_an_incomplete_federated_identity():
+    # the dedicated subscription is set but the federated identity is incomplete: refuse rather than
+    # fall back to the managed identity or the bench subscription (the v1 blocker, fail closed).
+    full = {"EREGION_STRATUS_SUBSCRIPTION": "ded-sub", "EREGION_STRATUS_CLIENT_ID": "stratus-app",
+            "EREGION_STRATUS_TOKEN_FILE": "/run/assertion", "EREGION_TENANT_ID": "tenant-abc"}
+    for missing in ("EREGION_STRATUS_CLIENT_ID", "EREGION_STRATUS_TOKEN_FILE", "EREGION_TENANT_ID"):
+        env = {k: v for k, v in full.items() if k != missing}
+        with pytest.raises(RuntimeError, match="federated identity is incomplete"):
+            stratus_run_env(env)
+
+
+def test_stratus_run_env_ignores_a_blank_dedicated_subscription():
+    assert stratus_run_env({"EREGION_STRATUS_SUBSCRIPTION": "   "}) == {}
+
+
+def test_the_executor_env_uses_the_federated_identity_over_msi(tmp_path, monkeypatch):
+    # when the dedicated identity is configured, _env authenticates as Stratus, not by MSI.
+    for k, v in {"EREGION_STRATUS_SUBSCRIPTION": "ded-sub",
+                 "EREGION_STRATUS_CLIENT_ID": "stratus-app",
+                 "EREGION_STRATUS_TOKEN_FILE": "/run/assertion",
+                 "EREGION_TENANT_ID": "tenant-abc", "AZURE_SUBSCRIPTION_ID": "bench-sub"}.items():
+        monkeypatch.setenv(k, v)
+    env = _executor(tmp_path, dry_run=True)._env()
+    assert env["ARM_USE_OIDC"] == "true" and "ARM_USE_MSI" not in env
+    assert env["ARM_SUBSCRIPTION_ID"] == "ded-sub"
 
 
 # ── The executor journals every phase through the armed contract ──────────────────────

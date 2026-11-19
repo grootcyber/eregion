@@ -717,7 +717,8 @@ def test_no_button_nor_command_on_a_card_anchored_on_a_vm(etype):
     for action in ("restore_from_backup", "isolate_vm", ""):
         esc = {"id": "e1", "action": action, "escalation_type": etype, "resource_id": VM1}
         assert _make_action_button(esc) is None
-        assert _cli_command(esc) == "glorfindel ack e1"
+        # ATT1: an unattributed one says so in a comment line; the only command, its ack.
+        assert [ln for ln in _cli_command(esc).splitlines() if not ln.startswith("#")] == ["glorfindel ack e1"]
     # Elsewhere, unchanged.
     restore = {"id": "e2", "action": "restore_from_backup", "escalation_type": "destructive_action",
                "resource_id": VM1}
