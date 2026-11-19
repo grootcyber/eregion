@@ -105,7 +105,12 @@ _ANCHORED_TYPES = {"control_plane_change", "identity_change", "unattributed_sign
 
 
 def _anchored(esc: dict) -> bool:
-    return esc.get("escalation_type") in _ANCHORED_TYPES
+    """A card whose VM is an anchor: of an anchored type, or — ATT1 (#936), whatever its type — one
+    that says its detection is attributed to no VM (SLF1, `escalations.unattributed`)."""
+    if esc.get("escalation_type") in _ANCHORED_TYPES:
+        return True
+    from glorfindel import escalations
+    return escalations.unattributed(esc) is not None
 
 
 def _can_restore(esc: dict) -> bool:
@@ -402,7 +407,7 @@ def _escalations_renderable(
         ack_id = shlex.quote(str(esc_id))
         before = e.get("first_seen") or e.get("timestamp")
         before = shlex.quote(str(before)) if before else "<ISO8601>"
-        if esc_type in _ANCHORED_TYPES:   # its VM is an anchor: ack only (SEC5, V-35)
+        if _anchored(e):   # its VM is an anchor: ack only (SEC5, V-35; ATT1: unattributed too)
             lines.append(_literal(f"    → glorfindel ack {ack_id}\n"), style="dim cyan")
         elif action == "restore_from_backup":
             lines.append(_literal(

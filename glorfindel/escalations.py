@@ -108,6 +108,8 @@ def _propose(e: dict, decision: dict | None = None) -> bool:
         fields = _held(e) if decision is None else decision
         if not cid or fields is None or not action_queue.proposable(fields) or not action_queue.signable(fields):
             return False
+        if action_queue.unattributed_aim(e):    # ATT1: never a proposal on a VM the detection does not name
+            return False
         signer = _PROPOSER()
         if signer is None:
             return False

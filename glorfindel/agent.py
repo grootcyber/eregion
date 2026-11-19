@@ -442,8 +442,10 @@ def resolve_attack_started(signal: dict, ip_owners=None) -> dict:
     # SLF1 (#929): the watch's own writes in its return channel are no detection of the run — set
     # aside as the RulePoller sets them aside (a row of them names no VM: it read as the run's);
     # `BlobWriters` taken off the row the model reads.
+    # ATT1 (#936): by the shipped rule's query only, to the byte — a query of another rule (the
+    # client's layer) sets nothing aside.
     from glorfindel import own_channel
-    channel = own_channel.current() if data_plane else None
+    channel = own_channel.current() if data_plane and own_channel.is_shipped(query) else None
 
     def settled(row):
         kept, _ = own_channel.settle([row], channel)
@@ -523,15 +525,19 @@ def poll_detection(state: GlorfindelState, ip_owners=None) -> GlorfindelState:
 
 # ── Investigative queries (post-detection enrichment) ─────────────────────────
 
-# Query templates — {vm} is replaced at runtime with the VM hostname, {ip} with the
-# detection's source address: each a KQL string literal (glorfindel/kql.py), checked for
-# what it is first (SEC4c) — a value read from a log line never leaves its literal.
+# Query templates — {vm} is replaced at runtime with the VM's resource id as the registry
+# holds it (the signal's, never the line's), {ip} with the detection's source address: each a
+# KQL string literal (glorfindel/kql.py), checked for what it is first (SEC4c) — a value read
+# from a log line never leaves its literal. Scoped by `_ResourceId`, which the agent writes,
+# never by `Computer`, which root on any host of the workspace chooses (SEC-I, V-09): a host
+# named like the VM wrote the rows the model read for it. `=~`: the registry's case may differ
+# from Log Analytics' (the routing compares them lowered too).
 # All queries use ago(5m) to stay within the detection window.
 # Kept short: investigate must complete in <15s total.
 
 _IQ_HEARTBEAT_GAP = """
 Heartbeat
-| where Computer == {vm}
+| where _ResourceId =~ {vm}
 | where TimeGenerated > ago(2h)
 | order by TimeGenerated asc
 | extend PrevBeat = prev(TimeGenerated)
@@ -545,7 +551,7 @@ Heartbeat
 _IQ_DISK_PROCESSES = """
 Perf
 | where TimeGenerated > ago(5m)
-| where Computer == {vm}
+| where _ResourceId =~ {vm}
 | where ObjectName == "Process"
 | where CounterName == "IO Write Bytes/sec"
 | where InstanceName !in ("_Total", "Idle", "System")
@@ -566,7 +572,7 @@ Perf
 _IQ_BACKUP_AGENT = """
 Perf
 | where TimeGenerated > ago(10m)
-| where Computer == {vm}
+| where _ResourceId =~ {vm}
 | where ObjectName == "Process"
 | where CounterName == "IO Write Bytes/sec"
 | where InstanceName in~ ("waagent", "WALinuxAgent", "azure-backup", "snapd", "MicrosoftAzureRecoveryServices")
@@ -576,7 +582,7 @@ Perf
 _IQ_SUCCESS_AUTH = """
 Syslog
 | where TimeGenerated > ago(5m)
-| where Computer == {vm}
+| where _ResourceId =~ {vm}
 | where Facility == "auth"
 | where ProcessName in ("sshd", "sshd-session")
 // sshd's own wording, at the start of the line (SEC2): never a user name holding it.
@@ -591,7 +597,7 @@ Syslog
 _IQ_ROOT_COMMANDS = """
 Syslog
 | where TimeGenerated > ago(10m)
-| where Computer == {vm}
+| where _ResourceId =~ {vm}
 // sudo logs to authpriv (measured under AMA).
 | where Facility in ("auth", "authpriv")
 // sudo's own lines (SEC2): the word is its tag (ProcessName), not in the message.
@@ -604,7 +610,7 @@ Syslog
 _IQ_DISK_AFTER_ESC = """
 Perf
 | where TimeGenerated > ago(10m)
-| where Computer == {vm}
+| where _ResourceId =~ {vm}
 | where ObjectName in ("Logical Disk", "LogicalDisk")
 | where CounterName == "Disk Write Bytes/sec"
 | summarize MaxWriteMBs = round(max(CounterValue) / 1048576, 1),
@@ -632,7 +638,8 @@ def investigate(state: GlorfindelState) -> GlorfindelState:
     """Enrich the signal with targeted investigative queries before decide.
 
     Only runs on event=detection with a resolvable workspace_id.
-    Queries are chosen based on signal content (not TTP label).
+    Queries are chosen based on signal content (not TTP label), and scoped by the VM the
+    registry names (`_ResourceId`, SEC-I): a detection attributed to no VM runs none.
     Results land in raw_signal.investigative_context — the LLM sees them.
     A failed query is best-effort for the model (it sees [] as before) but not for the
     gates: its name goes to `telemetry_gaps` (state and debug line, never the signal),
@@ -671,23 +678,13 @@ def investigate(state: GlorfindelState) -> GlorfindelState:
     first_row = raw.get("detected_data") or raw.get("first_result_row") or {}
     syslog_msg = str(first_row.get("SyslogMessage", ""))
 
-    # Prefer the OS hostname from the query result (Computer field in LAW tables).
-    # The ARM resource name (.split("/")[-1]) is a fallback only — it may differ
-    # from the OS hostname, in which case Perf/Syslog queries return empty silently.
-    hostname_from_signal = (
-        first_row.get("Computer")
-        or first_row.get("computer")
-        or first_row.get("host")
-    )
-    using_arm_fallback = not hostname_from_signal
-    vm = str(hostname_from_signal or signal.get("resource_id", "").split("/")[-1])
-
-    if using_arm_fallback:
-        _console.print(
-            f"  [dim]investigate: Computer absent from signal — "
-            f"using ARM name '{_esc_markup(vm)}' as hostname fallback "
-            f"(queries may return empty if OS hostname differs)[/dim]"
-        )
+    # SEC-I (V-09): the queries are scoped by the VM the registry names — the signal's
+    # resource id, never the line's `Computer` (root on any host of the workspace writes it). A
+    # detection not attributed to a VM (its resource id an anchor, the line naming none) has no
+    # VM to enquire on: its queries are not run — unknown, a gap, never another VM's rows.
+    rid = str(signal.get("resource_id") or "")
+    vm = rid.rstrip("/").split("/")[-1] or "?"
+    unattributed = (signal.get("context") or {}).get("attribution") == "unattributed"
 
     ctx: dict[str, list[dict]] = {}
     gaps: list[str] = []
@@ -706,7 +703,7 @@ def investigate(state: GlorfindelState) -> GlorfindelState:
             refused.setdefault(str(raw_value)[:60], str(exc))
             return None
 
-    vm_lit = value(kql.name, vm)
+    vm_lit = None if unattributed else value(kql.resource_id, rid)
 
     def run(name: str, template: str, **values) -> None:
         if any(v is None for v in values.values()):
@@ -742,6 +739,11 @@ def investigate(state: GlorfindelState) -> GlorfindelState:
     if not ctx:
         return state
 
+    if unattributed:
+        _console.print(
+            "  [yellow]investigate: détection non attribuée à une VM — requête(s) d'enquête non "
+            "lancée(s) (aucune VM du registre à interroger)[/yellow]"
+        )
     if refused:
         _console.print(
             "  [yellow]investigate: valeur refusée, requête(s) non lancée(s) — "
@@ -755,17 +757,11 @@ def investigate(state: GlorfindelState) -> GlorfindelState:
             f"autonome sur ce cycle[/yellow]"
         )
 
-    if all(len(v) == 0 for v in ctx.values()):
-        if using_arm_fallback:
-            _console.print(
-                f"  [yellow]investigate: all queries empty for '{_esc_markup(vm)}' (ARM fallback) "
-                f"— likely hostname mismatch, check OS hostname vs ARM name[/yellow]"
-            )
-        else:
-            _console.print(
-                f"  [dim]investigate: all queries empty for '{_esc_markup(vm)}' "
-                f"— data not yet ingested (LAW latency ~60s, normal)[/dim]"
-            )
+    if all(len(v) == 0 for v in ctx.values()) and not gaps:
+        _console.print(
+            f"  [dim]investigate: all queries empty for '{_esc_markup(vm)}' "
+            f"— data not yet ingested (LAW latency ~60s, normal)[/dim]"
+        )
 
     enriched = {
         **signal,
@@ -813,8 +809,13 @@ FLOOR_TYPE = "floor_proposal"
 
 # Actions aimed at ONE VM. On a detection the RulePoller could not tie to that VM (a row
 # aggregated by attacker IP, several VMs monitored) they are held: the same row is
-# dispatched for every VM. An IP block or a snapshot stays autonomous.
+# dispatched for every VM. A snapshot stays autonomous.
 _VM_TARGETED_ACTIONS = {"isolate_vm", "revoke_temp_access"}
+# ATT1 (#936): what the attribution guard holds on an unattributed detection — the VM's isolation,
+# a block on its NSG, the release of its isolation —, the approval's own set (`VM_AIMED_ACTIONS` of
+# the signed queue in eregion_core; the decision never imports it, FS1a — a test keeps the two
+# equal, tests/unit/test_attribution_prime.py).
+_ATTRIBUTION_HELD = frozenset(_VM_TARGETED_ACTIONS | {"block_suspicious_ip", "release_isolation"})
 
 
 def _as_bool(v) -> bool:
@@ -1024,14 +1025,23 @@ def _named_callers(row: dict) -> int:
 def _caller_said(norm: dict, row: dict) -> str:
     """Who made the operation, as the row names it (CPT1, #930): its `Caller`, else the ids the
     shipped rules draw from `Claims` and project — the object id, then the application's (under a
-    user's token, the tool's: said as such) —; « appelant inconnu » only when none is there."""
+    user's token, the tool's: said as such) —; « appelant inconnu » only when none is there.
+    CPT1b: a rule that projects `Claims` itself (a client's) is read the same, its name first —
+    the claims `names_no_one` reads; and each operation of a summary card is read by this too."""
+    from glorfindel.detection_rules import claimed_caller
     who = str(norm.get("caller") or row.get("Caller") or "").strip()
     if who:
         return who
+    claimed = claimed_caller(row)
+    name = str(row.get("CallerName") or "").strip() or claimed["name"]
+    if name:
+        return f"{name} (lu dans Claims, Caller vide)"
     oid = str(row.get("CallerObjectId") or "").strip()
+    oid = oid or claimed["oid"]
     if oid:
         return f"l'identité d'objet {oid} (lue dans Claims, Caller vide)"
     app = str(row.get("CallerAppId") or "").strip()
+    app = app or claimed["app"]
     if app:
         return (f"l'application {app} (lue dans Claims, Caller vide ; sous le jeton d'un "
                 "utilisateur, c'est l'outil, pas l'utilisateur)")
@@ -1043,11 +1053,20 @@ def _caller_said(norm: dict, row: dict) -> str:
 INCOMPLETE_TELEMETRY = "Télémétrie incomplète"
 
 
+def _incomplete_telemetry(signal: dict) -> bool:
+    """CPT1 (#930): the card is lowered to incomplete telemetry — its row names neither its caller
+    nor its resource, and the signal is not critical (a critical one stays critical). CPT1b: the
+    one test of the decision's severity and of the card's text, which never says « Sévérité
+    moindre » on a card that stays critical."""
+    from glorfindel.detection_rules import names_no_one
+    return signal.get("severity") != "critical" and names_no_one(_control_plane_row(signal))
+
+
 def _control_plane_text(signal: dict) -> tuple[str, list[str]]:
     """What a control-plane detection says, from the row alone (AL1): the operation, its
     status as read, the caller, its address, the target, the gravest marks, the
     operations a summary card carries — and the next steps for a human."""
-    from glorfindel.detection_rules import names_no_one, normalize_row
+    from glorfindel.detection_rules import normalize_row, operation_resource
     row = _control_plane_row(signal)
     norm = (signal.get("raw_signal") or {}).get("normalized_signal") or normalize_row(row, signal.get("ttp", ""))
     op = norm.get("indicator_value") or "?"
@@ -1081,7 +1100,7 @@ def _control_plane_text(signal: dict) -> tuple[str, list[str]]:
                  "lire chacune avant de conclure sur l'appelant.")
     steps = ["Vérifier dans le journal d'activité qui a fait cette opération, et pourquoi"
              + (f" (CorrelationId {row['CorrelationId']})" if row.get("CorrelationId") else "") + "."]
-    if names_no_one(row):
+    if _incomplete_telemetry(signal):
         # CPT1 (#930): neither the caller nor the resource on the row — the fact is shown, at a
         # lower severity, never approvable; what it may be is not said as known.
         what = (f"{INCOMPLETE_TELEMETRY} : la ligne ne nomme ni l'appelant (Caller, Claims) ni la "
@@ -1112,8 +1131,9 @@ def _control_plane_text(signal: dict) -> tuple[str, list[str]]:
     omitted = row.get("OmittedOperations") or []
     if omitted:
         listed = "; ".join(
-            f"{o.get('OperationNameValue') or '?'} par {o.get('Caller') or '?'} sur "
-            f"{o.get('_ResourceId') or '?'} ({str(o.get('TimeGenerated') or '')[:19]})"
+            # CPT1b: each operation's caller and resource read as its own card reads them.
+            f"{o.get('OperationNameValue') or '?'} par {_caller_said({}, o)} sur "
+            f"{operation_resource(o) or '?'} ({str(o.get('TimeGenerated') or '')[:19]})"
             for o in omitted)
         what = (f"Plan de contrôle : {len(omitted)} opération(s) de plus dans le même relevé, "
                 f"au-delà des cartes individuelles — chacune listée ici : {listed}.")
@@ -1141,13 +1161,12 @@ def _control_plane_decision(state: GlorfindelState) -> GlorfindelState:
     one click, whose reason says the operation, the target, the caller, the gravest cases
     — a write by someone else on a rule Glorfindel manages (an isolation or a block may be
     gone), Glorfindel's identity outside what it does — and the severity."""
-    from glorfindel.detection_rules import names_no_one
     signal = state["signal"]
     what, steps = _control_plane_text(signal)
     # CPT1 (#930): a row that names neither its caller nor its resource is a card of incomplete
     # telemetry — never a high one, whatever severity the signal came with (a signal written
     # before CPT1, replayed); a critical one stays critical.
-    incomplete = signal.get("severity") != "critical" and names_no_one(_control_plane_row(signal))
+    incomplete = _incomplete_telemetry(signal)
     if incomplete:
         signal = {**signal, "severity": "medium"}
     severity = "critique" if signal.get("severity") == "critical" else "moyenne" if incomplete else "haute"
@@ -1281,7 +1300,13 @@ def _apply_attribution_guard(d: dict, signal: dict) -> None:
     A call made from an appliance's address (`attribution_via: appliance`, a VM that forwards
     packets: SEC-A4, V-05) holds every action, whatever the model or a gate before said: the
     card may be anchored on the appliance itself — isolating it cuts a whole hub, and the VM
-    that exfiltrates, behind it, stays untouched. The card says where to look."""
+    that exfiltrates, behind it, stays untouched. The card says where to look.
+
+    ATT1 (#936): the same precedence for any action aimed at the VM (`_ATTRIBUTION_HELD`): whatever
+    gate held the decision before — the confidence, the signal, the telemetry, the release
+    precondition, never_block —, its card becomes the attribution's (`unattributed_signal`, never
+    approvable in one click), the reason before kept after its own. The guard runs after those
+    gates, before the mode: the mode never holds what it holds. A snapshot is not held."""
     ctx = signal.get("context") or {}
     if ctx.get("attribution") == "unattributed" and ctx.get("attribution_via") == "appliance":
         before = d.get("escalation_reason") if d["escalate"] else ""
@@ -1296,11 +1321,12 @@ def _apply_attribution_guard(d: dict, signal: dict) -> None:
             + (f" — {before}" if before else "")
         )
         return
-    if d["escalate"] or d["action"] not in _VM_TARGETED_ACTIONS | {"block_suspicious_ip"}:
+    if d["action"] not in _ATTRIBUTION_HELD:
         return
     if ctx.get("attribution") != "unattributed":
         return
     candidates = ", ".join(ctx.get("candidates") or []) or "?"
+    before = d.get("escalation_reason") if d["escalate"] else ""
     d["escalate"] = True
     d["held_by"] = "attribution"
     if ctx.get("attribution_from") == "attack_started":
@@ -1309,6 +1335,7 @@ def _apply_attribution_guard(d: dict, signal: dict) -> None:
             f"La ligne de détection trouvée ne nomme pas la VM que désigne le signal "
             f"attack_started ({candidates}) — '{d['action']}' retenue pour revue humaine. "
             "Vérifier dans la ligne de détection quelle VM elle concerne avant d'agir."
+            + (f" — {before}" if before else "")
         )
         return
     d["escalation_reason"] = (
@@ -1316,6 +1343,7 @@ def _apply_attribution_guard(d: dict, signal: dict) -> None:
         f"de VM surveillée n'est à l'origine) — '{d['action']}' retenue pour revue "
         f"humaine. VMs surveillées : {candidates}. Vérifier laquelle est concernée "
         "(ou bloquer au périmètre) avant d'agir."
+        + (f" — {before}" if before else "")
     )
 
 
@@ -1944,10 +1972,12 @@ def decide(
     _apply_executable_guard(d)
     _apply_confidence_gate(d, raw_conf, threshold)
     _apply_signal_guardrail(d, signal)
-    _apply_attribution_guard(d, signal)
     _apply_telemetry_guard(d, state.get("telemetry_gaps") or [])
     _apply_release_precondition(d, signal)
     _apply_never_block_guard(d, signal)
+    # ATT1 (#936): after every gate that may hold the decision, before the mode — on a detection
+    # that names no VM, its card is the attribution's, whatever held it first.
+    _apply_attribution_guard(d, signal)
 
     mode_hold = _apply_autonomy_mode(d, mode, gate)
 
@@ -2267,6 +2297,17 @@ def _card_attribution(signal: dict) -> dict | None:
                if ctx.get("attribution_via") == "appliance" and ctx.get("appliance") else {})}
 
 
+def _loose_said(loose: dict) -> str:
+    """ATT1: an unattributed card's candidates, or the appliance its call came through, in words."""
+    if loose.get("appliance"):
+        return f"l'appel vient de {loose['appliance']}, qui fait suivre les paquets"
+    cands = loose.get("candidates") or []
+    if not cands:
+        return "la détection ne nomme aucune VM"
+    more = f" et {len(cands) - 8} autre(s)" if len(cands) > 8 else ""
+    return f"candidates : {', '.join(cands[:8])}{more}"
+
+
 def escalate_to_human(state: GlorfindelState) -> GlorfindelState:
     """Mark the decision as escalated — human must approve before any action."""
     said = _correlation_said(state["signal"])
@@ -2322,7 +2363,16 @@ def escalate_to_human(state: GlorfindelState) -> GlorfindelState:
 
     signal = state["signal"]
     steps = list(state.get("suggested_steps") or [])
-    if action == "snapshot":
+    loose = _card_attribution(signal)
+    if action == "snapshot" and loose is not None:
+        # ATT1 (#936): never a command on the VM the card is only filed on — the detection does not
+        # name it; the human judges which VM it is about, from the CLI.
+        steps.append(
+            f"Détection non attribuée ({_loose_said(loose)}) : juger depuis la CLI quelle VM elle "
+            "concerne (`glorfindel pending`, la ligne de détection) avant tout instantané, puis "
+            "`glorfindel snapshot <groupe>/<nom> --yes` sur celle-là."
+        )
+    elif action == "snapshot":
         from glorfindel.vm_command import group_and_name
         steps.append(           # the VM by « <groupe>/<nom> », never its full id (MSK3b)
             f"Si tu confirmes la compromission après vérification : "
@@ -2545,6 +2595,13 @@ def store_cycle(state: GlorfindelState, *, memory: CycleMemory) -> GlorfindelSta
         "autonomy_gate": state.get("autonomy_gate") or {},
         "source": source,
         "exercise_run": exercise_run,
+        # SEC-I (V-11): the VM and the rule, which the retrieval weighs and bounds (never in the
+        # cycle's text, so never in what the model reads) — no VM for a detection attributed to
+        # none (its resource id is an anchor); and no corroboration verdict before SEC-A3.
+        "resource_id": "" if (signal.get("context") or {}).get("attribution") == "unattributed"
+                       else signal.get("resource_id", ""),
+        "rule_name": (signal.get("context") or {}).get("rule_name", ""),
+        "corroborated": False,
     }
     # ChromaDB write — non-fatal: debug JSONL must still be written on failure. Never a
     # control-plane cycle (AL1): decided by the code, not the model, on a VM that may be an

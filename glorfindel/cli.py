@@ -2162,6 +2162,17 @@ def _name_for_a_command(resource_id: str) -> str:
     return named
 
 
+def _loose_words(loose: dict) -> str:
+    """ATT1: « not attributed », then its candidates (eight, the rest counted) or the appliance."""
+    if loose.get("appliance"):
+        return f"Not attributed — the call came through the appliance {loose['appliance']}"
+    cands = loose.get("candidates") or []
+    if not cands:
+        return "Not attributed — the detection names no VM"
+    more = f" and {len(cands) - 8} more" if len(cands) > 8 else ""
+    return f"Not attributed — candidates: {', '.join(cands[:8])}{more}"
+
+
 def _render_next_steps(e: dict) -> None:
     rid = _name_for_a_command(e["resource_id"])      # never the full id on the card (MSK2)
     action = e["action"]
@@ -2170,6 +2181,13 @@ def _render_next_steps(e: dict) -> None:
     llm_steps = e.get("suggested_steps") or []
     if llm_steps:
         console.print("  [bold cyan]Next steps (Glorfindel):[/bold cyan]")
+        from glorfindel import escalations as _esc_steps
+        loose_steps = _esc_steps.unattributed(e)
+        if loose_steps is not None:
+            # ATT1 (#936): the model's steps as written — they may name the VM the card is filed on,
+            # which the detection does not name. Said first, by the code, never by the model.
+            console.print(f"  [yellow]{_outside(_loose_words(loose_steps))}; judge from the CLI — "
+                          "these steps aim at the VM the card is filed on[/yellow]")
         for i, step in enumerate(llm_steps, 1):
             # A command of the card naming its VM by its id or its name alone (a card written before
             # MSK3b, the model's) names it by « <groupe>/<nom> »: masked, an id is no command (MSK3b).
@@ -2180,7 +2198,18 @@ def _render_next_steps(e: dict) -> None:
         return
 
     # Fallback statique pour les escalades sans suggested_steps (anciennes ou dry-run)
-    if esc_type == "low_confidence" and action == "snapshot":
+    from glorfindel import escalations as _esc
+    unnamed = _esc.unattributed(e)
+    if unnamed is not None:
+        # ATT1 (#936): a detection attributed to no VM — whatever the card's type, never a command on
+        # the VM it is filed on (`az vm show`, `restore`, `release`…): « not attributed », its
+        # candidates, and the judgement to the CLI.
+        steps = [
+            f"{_loose_words(unnamed)}: judge which VM the detection is about (its row, in Log "
+            "Analytics), then act on that VM from the CLI",
+            f"If it is a false positive: glorfindel ack {shlex.quote(str(e['id']))}",
+        ]
+    elif esc_type == "low_confidence" and action == "snapshot":
         steps = [
             # The name from the cards' store, quoted for the shell like every other (SEC-Fc).
             f"Check VM state: az vm show -g <rg> -n {shlex.quote(_short_name(e['resource_id']))} "

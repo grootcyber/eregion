@@ -30,6 +30,8 @@ tourne.
 | Une VM sans NSG sur sa carte (IPS2, #950, 19/11, sur une maquette) | **ses adresses, une puce « NO NSG », l'IP publique d'une carte réseau sans NSG en rouge** | les adresses seules, sans signal |
 | La raison d'une IP publique illisible (IPS2, #950, 19/11, sur une maquette) | **un code dans l'audit, un libellé anglais dans la console**, les mots d'origine au survol | garder le français tel quel |
 | Les adresses d'une VM sur sa carte (IPS1, #931, 19/11, sur une maquette) | **A, une ligne sous le nom, repliée comme dépliée** : les IP privées (quatre, puis « +N »), puis la publique derrière 🌐, en jaune ; une adresse se copie d'un clic ; dépliée, le détail par carte réseau et l'âge de la lecture ; « ip — » et pourquoi quand l'audit NSG a échoué. **Un seul lot**, privées et publiques | B, une puce « PUBLIC » seule, les adresses sur la carte dépliée ; C, la carte dépliée seulement ; deux lots (les privées d'abord) |
+| Un audit illisible (TOPO1b, #949, 19/11, sur une maquette) | **une bande au-dessus des cartes** : « Readiness audit not read », sa raison, et l'heure du dernier bon audit quand il est gardé | « ip ? » et « ? ? ? » sur chaque carte |
+| Le clic sur une adresse d'une carte repliée (TOPO1b, #949, 19/11, sur une maquette) | **A, il copie** l'adresse, comme IPS1 l'a fait ; le nom et la rangée du mode déplient | B, tout clic déplie (copier depuis la carte dépliée) ; C, les adresses en bas de la carte |
 
 **Choisi par défaut, sans objection :**
 - `/atelier` redirige vers `/`.
@@ -280,6 +282,17 @@ Après I1F, AL1, C2 et A3 (27/10) :
   `_ANCHORED_TYPES` du bot) porte sur une VM que la détection ne nomme pas. Elle n'a ni « 🔄 Restore »
   ni commande visant cette VM (seulement `glorfindel ack`), et la console dit « ⚓ filed on …, not about
   it » — sauf une carte du plan de contrôle ou d'identité d'avant AL1c, ci-dessous.
+- **Une carte non attribuée, quel que soit son type** (ATT1, #936) : une carte qui porte
+  `attribution: {state: unattributed}` (SLF1) et une action qui vise sa VM (`isolate_vm`,
+  `block_suspicious_ip`, `release_isolation` : `_VM_AIMED`, l'ensemble `VM_AIMED_ACTIONS` du serveur)
+  n'a pas de « ▶ Approve & execute » (`_isHeld`, `_aimsLoose`), et aucune carte non attribuée n'a
+  « 📸 Snapshot » (`_isSnapshotPending`) ni « 🔄 Restore » (la route le refuse, `_restore_refusal`) ;
+  son `📋 Cmd` dit « not attributed », ses candidates, renvoie
+  au jugement depuis la CLI, puis `glorfindel ack`. Appelé directement, le serveur la refuse
+  (`approval_refusal`). Une carte `mode_hold` d'un instantané non attribué reste approuvable pour
+  l'instantané. Son titre dit le verbe, retenu (« Isolate VM — held: not attributed », `_looseTitle`), jamais le
+  libellé au passé ; le « 📸 Snapshot » de la tuile reste caché tant qu'une carte non attribuée d'instantané y
+  attend ; les étapes du modèle sont précédées d'une ligne qui dit qu'elles visent la VM d'ancrage (`_looseSteps`).
 - **Une carte sur ce qu'elle vise** (AL1c, #597) : depuis AL1c, une carte du plan de contrôle ou
   d'identité porte sa cible (`target`, `glorfindel/card_target.py`) et n'est plus ancrée sur une VM.
   La carte dit « 🎯 about NSG nsg-… · règle … · covers vm-a, vm-b » (huit VM nommées au plus, puis
@@ -392,12 +405,17 @@ Les causes ont été mesurées dans Chromium sans tête, sur le jeu d'exemple au
   à côté de leur carte.
 
 Les règles, dans `glorfindel.js` :
-- `#topo-graph` (le conteneur de scroll) et `#topo-svg` (les fils) restent d'un rendu à l'autre.
-  Seul `#topo-body` est remplacé ; il n'a pas de boîte à lui (`display: contents`).
+- `#topo-graph` (le conteneur de scroll), `#topo-svg` (les fils) et `#topo-body` restent d'un
+  rendu à l'autre. Seul le contenu de `#topo-body` est remplacé ; `#topo-body` n'a pas de boîte
+  à lui (`display: contents`). La coquille n'est reconstruite que s'il manque l'un des trois
+  (TOPO1b : avant, un `#topo-body` absent levait une erreur).
 - Un point se prend dans le repère du contenu : sa position à l'écran, plus `scrollTop` et
   `scrollLeft`.
 - Un `ResizeObserver` sur la carte et sa rangée de cartes redessine les fils, au plus une fois par
-  image.
+  image, et seulement quand une taille a changé. Chaque rendu observe sa nouvelle rangée, et une
+  observation commence par une notification : sans ce contrôle, chaque rafraîchissement dessinait
+  les fils deux fois (TOPO1b, mesuré : 4 tracés pour 2 rafraîchissements, puis 2). Sans
+  `ResizeObserver`, les fils se dessinent à chaque rendu, pas au redimensionnement.
 
 Mesuré après le correctif : un écart sous le pixel, la carte défilée ou non, et le même conteneur
 après le rafraîchissement. Après un redimensionnement, les 34 fils tombent sur leur carte. Un
@@ -473,6 +491,29 @@ sûr (la console servie sous `http://console.test`, `isSecureContext` faux, pas 
 `false`) ou une adresse non sélectionnable dit « not copied ». Aucune capture de
 la doc ne montre la page Glorfindel : le jeu d'exemple n'a pas d'adresses à porter.
 Tests : `tests/unit/test_console_ips.py` ; mutants M6431–M6442 (`scripts/mutants/IPS1b.py`).
+
+### La bande d'un audit illisible (TOPO1b, #949, 19/11)
+
+L'audit de préparation (`/api/audit` : NSG, sauvegarde, calcul, et les adresses des VM) se relit
+toutes les 5 min. Quand il ne se lisait pas, les cartes perdaient leurs coches et leurs adresses
+sans rien dire, et seul le point du nœud GLORFINDEL passait au rouge. Jonathan a choisi une bande
+sur une maquette (ligne « Un audit illisible » des décisions, plus haut).
+- **Rien n'a été lu** (premier audit en échec) : au-dessus des cartes, « ⚠ Readiness audit not read:
+  <raison> · checks and addresses unknown on every card · next try within 5 min ».
+- **Le dernier bon audit est gardé** (un rafraîchissement en échec après lui) : « ⚠ Readiness audit
+  not read: <raison> · cards show the read of HH:MM:SS UTC ». Les cartes gardent ce qu'il disait.
+- **Une réponse qui n'est pas un audit est un échec** : un code HTTP d'erreur, ou un corps sans
+  `audits`. Avant, une erreur HTTP dont le corps est du JSON (un 404 ou un 422 `{detail}`, celle
+  d'un mandataire) se lisait comme un audit sans VM, et toutes les cartes se taisaient. Un corps qui
+  n'est pas du JSON (la 500 de Starlette) échouait déjà à la lecture.
+- Un audit relu retire la bande. La raison vient du navigateur ou du serveur : elle passe par `_attr`.
+
+Mesuré dans Chromium sans tête, sur la console du jeu d'exemple avec un audit qui échoue à la
+demande : la bande, dans ses deux formes, au-dessus des cartes ; sa disparition au retour de
+l'audit ; la coquille reconstruite sans erreur après le retrait de `#topo-body` ; après un
+redimensionnement de la carte défilée, chaque fil sur sa carte.
+Tests : `tests/unit/test_console_audit_band.py`, `tests/unit/test_console_topology.py` ; mutants
+M6501–M6510 (`scripts/mutants/TOPO1b.py`).
 
 ### Les blocages d'une VM (CON-K, #498, 04/11)
 

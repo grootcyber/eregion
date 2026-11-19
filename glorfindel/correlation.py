@@ -196,13 +196,14 @@ def instant(value) -> datetime | None:
 
 def scope(row: dict) -> str | None:
     """The KQL predicate that names this row's VM — its `_ResourceId` as Log Analytics wrote it,
-    else its `Computer` — each value checked and written as a literal (SEC4c); None if neither."""
-    for col, check in (("_ResourceId", kql.resource_id), ("Computer", kql.name)):
-        try:
-            return f"{col} == {kql.literal(check(row.get(col)))}"
-        except kql.UnsafeValue:
-            continue
-    return None
+    checked and written as a literal (SEC4c); None when it has none, or one that is not a resource
+    id: the VM is then unknown, and its row a card (SEC-I, V-09). Never its `Computer`: root on any
+    host of the workspace chooses that name, and a host named like the VM wrote the sessions read
+    for it."""
+    try:
+        return f"_ResourceId == {kql.literal(kql.resource_id(row.get('_ResourceId')))}"
+    except kql.UnsafeValue:
+        return None
 
 
 # ── The sessions ──────────────────────────────────────────────────────────────────

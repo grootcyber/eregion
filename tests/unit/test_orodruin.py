@@ -697,6 +697,33 @@ def test_a_failed_revocation_still_runs_the_rest_and_is_reported():
     assert len(failures) == 1 and failures[0].startswith("revoke:")
 
 
+# ── R2c: the operator cuts the Stratus identity's role too, right after the revocation ──
+
+def test_revoke_stratus_runs_right_after_the_revocation_when_given():
+    """stratus-cible.md §1: the Stratus identity is cut right after Orodruin's own, so a
+    running warmup loses its rights before the rest of the kill drags."""
+    order = []
+    orodruin.kill(*(_step(order, n) for n in ("revoke", "cancel", "stop", "close")),
+                  revoke_stratus=_step(order, "revoke_stratus"))
+    assert order == ["revoke", "revoke_stratus", "cancel", "stop", "close"]
+
+
+def test_revoke_stratus_absent_is_simply_skipped():
+    order = []
+    failures = orodruin.kill(*(_step(order, n) for n in ("revoke", "cancel", "stop", "close")),
+                             revoke_stratus=None)
+    assert order == ["revoke", "cancel", "stop", "close"] and failures == []
+
+
+def test_a_failed_stratus_revocation_still_runs_the_rest_and_is_reported():
+    order = []
+    failures = orodruin.kill(
+        *(_step(order, n) for n in ("revoke", "cancel", "stop", "close")),
+        revoke_stratus=_step(order, "revoke_stratus", RuntimeError("403")))
+    assert order == ["revoke", "revoke_stratus", "cancel", "stop", "close"]
+    assert len(failures) == 1 and failures[0].startswith("revoke_stratus:")
+
+
 # ── The Terraform module (the kill script: test_orodruin_kill.py) ─────────────
 
 import re  # noqa: E402
@@ -710,6 +737,20 @@ def _tf() -> str:
 
 def _block(kind: str, name: str) -> str:
     return _tf().split(f'resource "{kind}" "{name}"')[1].split("\n}\n")[0]
+
+
+def test_the_stratus_sandbox_is_posed_at_startup():
+    """R2c pièce 3: Orodruin's cloud-init creates a dedicated docker network for Stratus and a
+    systemd service (after docker) that drops its traffic to the IMDS — so a Stratus container on
+    it cannot reach Orodruin's managed-identity token (M4). The rule uses the same network and
+    IMDS address the contract reads (eregion_core/orodruin.py); running Stratus on it without a
+    privileged container is pièce 4."""
+    tf = _tf()
+    assert "docker network create --subnet 172.30.250.0/24 eregion-stratus-sandbox" in tf
+    assert "eregion-stratus-sandbox.service" in tf
+    assert "After=docker.service" in tf
+    assert "DOCKER-USER -s 172.30.250.0/24 -d 169.254.169.254/32 -j DROP" in tf
+    assert orodruin.SANDBOX_NET in tf and orodruin.IMDS_ADDR in tf
 
 
 def test_the_injector_roles_grant_exactly_what_the_contract_checks():

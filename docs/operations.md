@@ -5349,6 +5349,261 @@ AUD1), à mesurer : les comm et exe réels du bruit, la forme des enregistrement
 `crontab` écrit, le volume de `shell_exec`, et si un `echo 0>` sur un journal existant (O_TRUNC) est vu
 par la surveillance du répertoire.
 
+## La mesure au banc des deux règles de SEC-I (#850)
+
+SEC-I change deux règles livrées. `data-exfiltration-blob` ne compte que les écritures écrites (code
+HTTP 2xx). `t1070-002-log-tamper` n'écarte un écrivain que sur un événement d'un seul enregistrement
+SYSCALL de sa clé, compté distinct. Le lot change aussi l'enquête (`investigate` bornée par
+`_ResourceId`). **Les trois se mesurent avant la fusion, par Jonathan** ; aucune session ne le fait.
+La mesure est faite le 19/11, et conforme sur tout ce que le banc permet (« Le résultat », juste
+après).
+
+### Le résultat, le 19/11
+
+Mesuré par Jonathan, sur un compte de test joint par un point de terminaison privé. La VM de test y a
+fait deux écritures avec son identité managée : l'une refusée, sans rôle, l'autre réussie, avec un
+rôle sur un seul conteneur.
+
+| | Résultat | Ce qui est vu |
+|---|---|---|
+| **SI1** | **conforme** | L'écriture refusée est journalisée dans `StorageBlobLogs` : `StatusCode` `403` (`AuthorizationPermissionMismatch`), l'adresse privée de l'appelant dans `CallerIpAddress`, en OAuth. |
+| **SI2** | **conforme** | `StatusCode` est un texte, `"403"` ou `"201"`, que `toint()` lit. |
+| **SI3** | **conforme pour l'identité managée** ; **ouvert pour la SAS** | L'écriture réussie rend `201`. Le banc n'a aucune écriture par SAS : la partie SAS reste à mesurer là où une SAS écrit (Q-SI1 sur 30 jours, plus bas). |
+| **SI4** | **reporté** | Aucune ligne `local6` en 30 jours : auditd n'est posé sur aucune VM du banc. `t1070-002-log-tamper` ne peut donc s'y déclencher nulle part aujourd'hui, avec SEC-I comme sans. La mesure se fera quand auditd et les règles de VM3 seront posés au banc. |
+| **SI5** | **conforme** | Sur les lignes `Perf`, `Heartbeat` et `Syslog` de la VM qui tourne, `WithoutResourceId` vaut 0 : l'enquête bornée par `_ResourceId` retrouve ses lignes. |
+
+**La correction ferme bien le comptage de l'écriture refusée.** Sur ce compte, pour l'adresse de la VM,
+la requête d'`origin/main` comptait `PutBlobCount = 2` : l'écriture refusée comprise, avec les 279
+octets de sa réponse d'erreur. Celle de la branche n'en compte que `1`.
+
+Le compte de test, son point de terminaison privé et le rôle sont retirés.
+
+Comment se fait la mesure :
+- **Avant la fusion**, la règle n'est encore sur aucun hôte. Sa requête se prend donc dans le
+  `detection_rules.yaml` de la branche `lot/sec-i-enquete-memoire` et se lance à la main (« Lancer une
+  requête », plus bas). Celle d'avant se prend dans `origin/main`, pour comparer.
+- **Après le déploiement** de la release, `glorfindel rules check --live` sur Imladris et la carte de la
+  watch servent de contrôle, sans plus.
+
+Les requêtes sont en lecture seule. Les écritures (une écriture refusée, une ligne `local6`) ne se font
+que sur un abonnement de test ou sur le banc, jamais sur une charge réelle. Chaque geste ci-dessous est
+un geste de Jonathan. Les noms sont des gabarits (`<…>`) : aucun identifiant réel n'entre dans le dépôt.
+
+### Les hypothèses
+
+| | Hypothèse | Mesure | Si elle tient | Sinon |
+|---|---|---|---|---|
+| **SI1** | Azure Storage journalise dans `StorageBlobLogs` une écriture **refusée** (403), avec l'adresse privée de l'appelant dans `CallerIpAddress` (l'auditeur l'a laissée en hypothèse) | étapes 0 à 3, Q-SI1, les deux requêtes de la règle | la règle d'`origin/main` comptait l'écriture refusée, celle de la branche non : la correction tient | une écriture refusée n'est pas journalisée, ou sans l'adresse privée : la correction ne change rien au banc ; le dire dans `docs/azure.md` |
+| **SI2** | `StatusCode` est un texte (`"201"` pour `PutBlob`, `PutBlock`, `PutBlockList` réussis, `"403"` refusé) que `toint()` lit | Q-SI1 | rien | une autre forme (un nombre, un autre code de succès) : corriger le filtre de la règle et son test |
+| **SI3** | Une écriture réussie rend un code 2xx, par l'identité managée comme par SAS (`StatusText` peut différer : `Success`, `SASSuccess`…) | étape 2 ; pour la SAS, Q-SI1 sur 30 jours (`ago(30d)`, `--timespan P30D`, `\| where AuthenticationType == "SAS"` ; au plus la rétention du workspace) là où une SAS écrit déjà | le filtre par le code est le bon | un succès hors 2xx : élargir le filtre, jamais aux refus. Sans écriture par SAS au banc, la partie SAS reste ouverte : le dire dans `docs/azure.md` |
+| **SI4** | Le noyau écrit un seul enregistrement SYSCALL par événement d'audit. Une ligne `local6` écrite au numéro d'un événement est lue par la règle comme un second enregistrement, distinct | étapes 5 à 8, Q-SI2, les deux requêtes de la règle | la règle d'`origin/main` effaçait l'événement, celle de la branche en fait une carte | deux SYSCALL vrais et distincts dans un même événement : la règle ferait des cartes à tort — en décider avec Jonathan |
+| **SI5** | `_ResourceId` est rempli, à l'identifiant de la VM, sur les lignes `Perf` et `Heartbeat` de l'agent Azure Monitor (il l'est sur `Syslog`, que le routage lit) | Q-SI3 | l'enquête lit ce qu'elle lisait | des lignes sans `_ResourceId` : l'enquête de cette table ne trouve plus rien — un lot (lire la table par l'identifiant que l'agent y écrit) |
+
+### L'exfiltration (SI1 à SI3), sur un abonnement de test
+
+**Étape 0, le compte de test (geste de Jonathan, sur l'abonnement de test).** Il faut un compte de
+stockage où l'identité de la VM n'a **aucun** rôle, dont les diagnostics envoient `StorageBlobLogs` au
+workspace, et que la VM joint par une adresse privée (un point de terminaison privé). Sans adresse
+privée, SI1 ne mesure rien : la règle ne lit que les appelants privés. Ce n'est jamais le compte des
+flux du banc : CR15 le veut hors de portée des VM, il ne faut rien y tenter. Dans une fenêtre où
+`az account show` dit l'abonnement de test :
+
+```zsh
+RG=<groupe de test> LOC=<région> SA=<compte de test, 3 à 24 minuscules ou chiffres>
+VM=<VM de test> VNET=<VNet de la VM> SUBNET=<sous-réseau du point de terminaison>
+WS=<identifiant ARM du workspace>       # …/providers/Microsoft.OperationalInsights/workspaces/<nom>
+
+# Le compte : sans clé partagée, sans accès public, et un conteneur créé par l'API de gestion.
+az storage account create -g $RG -n $SA -l $LOC --sku Standard_LRS --kind StorageV2 \
+  --allow-shared-key-access false --allow-blob-public-access false --public-network-access Disabled
+az storage container-rm create -g $RG --storage-account $SA -n sec-i-refused
+SA_ID=$(az storage account show -g $RG -n $SA --query id -o tsv)
+
+# Les journaux des écritures vers le workspace.
+az monitor diagnostic-settings create -n sec-i-blob --resource "${SA_ID}/blobServices/default" \
+  --workspace $WS --logs '[{"category":"StorageWrite","enabled":true}]'
+
+# Le point de terminaison privé, et son nom résolu dans le VNet (si une zone privatelink.blob existe
+# déjà, liée au VNet, ne pas la recréer : seulement le groupe de zones).
+az network private-endpoint create -g $RG -n pe-$SA -l $LOC --vnet-name $VNET --subnet $SUBNET \
+  --private-connection-resource-id $SA_ID --group-id blob --connection-name pe-$SA-blob
+az network private-dns zone create -g $RG -n privatelink.blob.core.windows.net
+az network private-dns link vnet create -g $RG -z privatelink.blob.core.windows.net -n link-sec-i \
+  -v $VNET -e false
+az network private-endpoint dns-zone-group create -g $RG --endpoint-name pe-$SA -n default \
+  --private-dns-zone privatelink.blob.core.windows.net --zone-name blob
+```
+
+**Les contrôles, avant d'écrire :**
+
+```zsh
+# La VM a une identité managée système : sans elle, principalId est vide et le contrôle suivant ne
+# vérifie rien (l'étape 1 écrit avec cette identité).
+az vm show -g $RG -n $VM --query identity.type -o tsv          # → SystemAssigned (ou « SystemAssigned, UserAssigned »)
+PRINCIPAL=$(az vm show -g $RG -n $VM --query identity.principalId -o tsv)
+[[ -n $PRINCIPAL ]] && echo "principal lu" || echo "AUCUNE identité système : s'arrêter ici"
+# Aucun rôle de données pour elle, ni sur le compte, ni au-dessus, ni hérité, ni par un groupe.
+# Avec --all, la liste porte déjà les attributions faites au-dessus, groupes d'administration compris
+# (--include-inherited ne sert qu'avec --scope) ; --include-groups ajoute celles de ses groupes.
+az role assignment list --assignee $PRINCIPAL --all --include-groups \
+  --query "[].{role:roleDefinitionName, scope:scope}" -o table
+# → aucune ligne « Storage Blob Data … » sur $SA_ID, son groupe, l'abonnement ou un groupe d'administration.
+az monitor diagnostic-settings list --resource "${SA_ID}/blobServices/default" -o table   # → sec-i-blob
+az network private-endpoint show -g $RG -n pe-$SA --query "customDnsConfigs[].ipAddresses[]" -o tsv
+# → une adresse privée ; depuis la VM (Run Command), « getent hosts <compte>.blob.core.windows.net »
+#   doit rendre cette adresse.
+```
+
+**Étape 1, l'écriture refusée.** Depuis la VM, par Run Command, avec son identité managée, un `PutBlob`
+vers `sec-i-refused`. Le script va dans un fichier, `<compte>` remplacé, puis part par Run Command :
+
+```zsh
+cat > sec-i-refused.sh <<'EOF'
+TOKEN=$(curl -s -H Metadata:true "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://storage.azure.com/" | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')
+curl -s -o /dev/null -w '%{http_code}\n' -X PUT -H "Authorization: Bearer $TOKEN" -H "x-ms-version: 2021-08-06" \
+  -H "x-ms-blob-type: BlockBlob" --data-binary sec-i "https://<compte>.blob.core.windows.net/sec-i-refused/refused.txt"
+EOF
+az vm run-command invoke -g $RG -n $VM --command-id RunShellScript --scripts @sec-i-refused.sh
+```
+
+La sortie attendue est `403`.
+
+**Étape 2, les écritures réussies.** Depuis la même VM, par son identité managée, vers un compte où elle
+écrit déjà par une adresse privée : au banc, celui des exercices (`exfil-target`). Le même script, le
+conteneur et le compte changés, rend `201`. Pour la SAS (SI3), Q-SI1 sur 30 jours là où une SAS écrit
+déjà : dans `q-si1.kql`, `ago(1h)` devient `ago(30d)`, une ligne `| where AuthenticationType == "SAS"`
+s'ajoute après la fenêtre (sur 30 jours, sans elle, la requête rend les écritures de tous les comptes du
+workspace), et la commande prend `--timespan P30D`. La rétention du workspace borne cette durée (30 jours au banc ; moins, si elle est plus courte). Sans
+écriture par SAS, la partie SAS de SI3 reste ouverte.
+
+**Étape 3, la mesure, quinze minutes après** (`StorageBlobLogs` met souvent 5 à 15 minutes à arriver) :
+1. Q-SI1 : la ligne refusée doit avoir `StatusCode == "403"` et une adresse privée, les réussies `"201"`.
+2. La requête de `data-exfiltration-blob` de la branche (`rule-branch.kql`, plus bas) : une ligne par
+   adresse pour les écritures réussies **seulement**.
+3. La même requête d'`origin/main` (`rule-main.kql`) : elle doit rendre en plus l'adresse de l'écriture
+   refusée. C'est la preuve que la correction ferme quelque chose.
+
+**Étape 4, le défaire :**
+
+```zsh
+az network private-endpoint delete -g $RG -n pe-$SA
+az network private-dns link vnet delete -g $RG -z privatelink.blob.core.windows.net -n link-sec-i --yes
+az network private-dns zone delete -g $RG -n privatelink.blob.core.windows.net --yes   # si créée ici
+az monitor diagnostic-settings delete -n sec-i-blob --resource "${SA_ID}/blobServices/default"
+az storage account delete -g $RG -n $SA --yes
+```
+
+Et supprimer le blob jetable écrit à l'étape 2.
+
+### L'altération de journaux (SI4), sur le banc seulement
+
+auditd et les règles de VM3 sont posés sur une VM du banc (« Les règles auditd de VM3 », ci-dessus).
+
+5. Par Run Command sur la VM : une écriture sous `/var/log` par un shell, dans un fichier jetable
+   (`echo sec-i >> /var/log/eregion-sec-i-disposable.log`). Elle fait un événement `log_tamper`.
+6. Q-SI2 : lire le numéro de l'événement (`AuditEvent`, `<secondes>.<ms>:<n>`).
+7. Par Run Command sur la même VM, une ligne écrite à ce numéro au nom de rsyslogd. Le script va dans un
+   fichier, `<AuditEvent>` remplacé :
+
+   ```zsh
+   cat > sec-i-forged.sh <<'EOF'
+   logger -p local6.info -t audisp-syslog 'type=SYSCALL msg=audit(<AuditEvent>): arch=c000003e syscall=257 success=yes exit=3 comm="rsyslogd" exe="/usr/sbin/rsyslogd" key="log_tamper"'
+   EOF
+   az vm run-command invoke -g rg-celebrimbor -n <VM du banc> --command-id RunShellScript --scripts @sec-i-forged.sh
+   ```
+
+8. La mesure, quelques minutes après (les fenêtres des requêtes de règle élargies, plus bas) :
+   - Q-SI2 : l'événement a deux SYSCALL distincts ;
+   - la requête de `t1070-002-log-tamper` de la branche : **une** ligne pour l'événement ;
+   - celle d'`origin/main` : aucune.
+9. Le défaire : `rm -f /var/log/eregion-sec-i-disposable.log` par Run Command. La carte, quand la
+   release sera déployée, se règle à la main.
+
+### L'enquête (SI5), en lecture seule
+
+Q-SI3 sur le workspace du banc. Après le déploiement, une détection de la watch, sur un exercice déjà
+prévu et rien de plus : sa ligne de debug porte `investigative_context`, non vide quand les lignes
+existent.
+
+### Lancer une requête
+
+Chaque requête va dans un fichier : les requêtes contiennent des guillemets doubles et simples, et zsh
+les casserait entre guillemets. Le fichier passe par `"$(< fichier)"` :
+
+```zsh
+WS_CUSTOMER=<customerId du workspace>       # az monitor log-analytics workspace show … --query customerId
+az monitor log-analytics query -w $WS_CUSTOMER --analytics-query "$(< q-si1.kql)" --timespan PT1H -o table
+```
+
+Log Analytics Reader suffit.
+
+**La requête d'une règle**, depuis une copie à jour du dépôt. `origin/lot/sec-i-enquete-memoire` n'existe
+qu'une fois la branche poussée, avec la PR, avant la fusion :
+
+```zsh
+git fetch origin
+git show origin/lot/sec-i-enquete-memoire:glorfindel/rules/azure/detection_rules.yaml > rules-branch.yaml
+git show origin/main:glorfindel/rules/azure/detection_rules.yaml > rules-main.yaml
+for which in branch main; do
+  .venv/bin/python -c 'import sys, yaml; r = {x["name"]: x for x in yaml.safe_load(open(sys.argv[1]))["rules"]}; print(r[sys.argv[2]]["query"])' \
+    rules-$which.yaml data-exfiltration-blob > rule-$which.kql      # ou t1070-002-log-tamper
+done
+```
+
+Chaque requête garde la fenêtre de sa règle : `ago(5m)` pour le blob, `ago(10m)` pour les journaux.
+`StorageBlobLogs` arrive souvent 5 à 15 minutes après l'écriture : lancée dans les cinq minutes, la
+requête rendrait vide, celle de la branche comme celle de main, et rien ne se comparerait. La fenêtre
+s'élargit donc **dans les deux fichiers extraits seulement**, à l'identique, avant de les lancer ; la règle
+livrée ne change pas :
+
+```zsh
+sed -i 's/ago(5m)/ago(1h)/; s/ago(10m)/ago(1h)/' rule-branch.kql rule-main.kql
+grep -c 'ago(1h)' rule-branch.kql rule-main.kql      # → 1 et 1 : une seule fenêtre par requête
+```
+
+Puis `--analytics-query "$(< rule-branch.kql)"`, puis `"$(< rule-main.kql)"`, avec `--timespan PT1H`.
+Lancées dans l'heure qui suit les écritures, sans autre écriture vers ces comptes dans l'heure.
+
+**Q-SI1** (les écritures, leur code, leur adresse), dans `q-si1.kql` :
+
+```kusto
+StorageBlobLogs
+| where TimeGenerated > ago(1h)
+| where OperationName in ("PutBlob", "PutBlock", "PutBlockList")
+| project TimeGenerated, AccountName, OperationName, StatusCode, StatusText, CallerIpAddress,
+          AuthenticationType
+| order by TimeGenerated asc
+```
+
+**Q-SI2** (les événements `log_tamper`, leurs enregistrements SYSCALL), dans `q-si2.kql` :
+
+```kusto
+Syslog
+| where TimeGenerated > ago(1h) and Facility == "local6"
+| where SyslogMessage has "log_tamper" or SyslogMessage has "eregion-sec-i"
+| extend AuditEvent = extract(@"msg=audit\((\d+\.\d+:\d+)\)", 1, SyslogMessage),
+         RecordType = extract(@"(?:^|\s)type=([A-Z_]+)\s", 1, SyslogMessage)
+| summarize Syscalls = dcountif(SyslogMessage, RecordType == "SYSCALL"), Records = make_set(SyslogMessage, 8)
+            by Computer, _ResourceId, AuditEvent
+| order by AuditEvent asc
+```
+
+**Q-SI3** (`_ResourceId` sur les tables de l'enquête), dans `q-si3.kql` :
+
+```kusto
+union withsource = Table Perf, Heartbeat, Syslog
+| where TimeGenerated > ago(1h)
+| summarize Rows = count(), WithoutResourceId = countif(isempty(_ResourceId)),
+            Ids = make_set(_ResourceId, 4) by Table, Computer
+| order by Table asc, Computer asc
+```
+
+**Hors de cette mesure, la suite** : ne rattacher une adresse privée à une VM que si le compte de
+stockage n'est joignable que depuis les VNet inscrits (point de terminaison privé, pare-feu du compte).
+Jonathan l'a décidé le 19/11 : un lot de la 0.6.3, SEC-Ic. Il lira la portée réseau des comptes, ce qui
+donne un droit de lecture de plus à la watch, posé par le plan et l'apply de Jonathan, et toute
+exfiltration vers un compte public deviendra une carte, jamais une action (`docs/azure.md`).
+
 ## Le compte des flux réseau (INF-FL, #654)
 
 Les blobs des VNet flow logs du banc portent un enregistrement par connexion (5-tuple). SEC-A3f les

@@ -22,7 +22,7 @@ MUTANTS = [
      "  const oy = base.top  + graph.clientTop;\n"),
     ("M6387", "the scroll container built again at every refresh: a scroll in progress cut (TOPO1, the defect "
               "back)", JS,
-     "  if (!graph || !list.contains(graph)) {\n",
+     "  if (!graph || !list.contains(graph) || !body || !graph.querySelector('#topo-svg')) {\n",
      "  if (true) {\n"),
     ("M6388", "the map no longer watched: resized, its edges stay where the last render put them (TOPO1, the "
               "defect back)", JS,

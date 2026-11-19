@@ -104,9 +104,21 @@ function _isLocalState(rid) { return /^~\//.test(rid || ''); }
 // the server refuses to execute it (fourth review, Q4).
 const _HELD_TYPES = new Set(['mode_hold', 'low_confidence', 'uncharacterized_signal', 'release_hold', 'telemetry_gap', 'unstable_decision', 'floor_proposal']);
 const _APPROVABLE = new Set(['isolate_vm', 'block_suspicious_ip', 'release_isolation', 'snapshot']);
+// ATT1 (#936): the actions aimed at the card's VM (eregion_core/action_queue.py VM_AIMED_ACTIONS).
+// On a card that says it is unattributed, whatever its type, never an « Approve & execute »: the VM
+// is the one the card is filed on, not one the detection names — the server refuses it too.
+const _VM_AIMED = new Set(['isolate_vm', 'block_suspicious_ip', 'release_isolation', 'revoke_temp_access']);
+function _aimsLoose(e) { return !!_unattributed(e) && _VM_AIMED.has(e.action); }
 function _isHeld(e) {
   return _HELD_TYPES.has(e.escalation_type) && _APPROVABLE.has(e.action)
-    && !(e.action === 'snapshot' && e.escalation_type === 'low_confidence');
+    && !(e.action === 'snapshot' && e.escalation_type === 'low_confidence')
+    && !_aimsLoose(e);
+}
+// A held snapshot to take by hand (« 📸 Snapshot ») — never on an unattributed card (ATT1): it would
+// snapshot the VM the card is filed on, which the detection does not name.
+function _looseSnapshot(e) { return e.action === 'snapshot' && !!_unattributed(e); }
+function _isSnapshotPending(e) {
+  return e.action === 'snapshot' && e.escalation_type === 'low_confidence' && !_unattributed(e);
 }
 // JUG1 (#760): a disruptive action Glorfindel took alone, its check held — done, to judge after
 // the fact. Nothing to approve on it: it is undone, if judged wrong, by the usual paths.
@@ -251,7 +263,17 @@ function _unattributedTxt(u) {
   const more = u.candidates.length > _VMS_SHOWN ? ` and ${u.candidates.length - _VMS_SHOWN} more` : '';
   return `not attributed — candidates: ${u.candidates.slice(0, _VMS_SHOWN).join(', ')}${more}`;
 }
+// ATT1 (#936): a card on a detection attributed to no VM holds an action nothing ran — never its
+// past label (« VM isolated from network »): its verb, held, not attributed. Not a card whose action
+// did run (taken alone, a failed check, a write refused or failed).
+const _RAN_TYPES = new Set(['autonomous_action', 'verification_failed', 'write_blocked', 'action_failed']);
+function _looseTitle(e) {
+  if (!_unattributed(e) || !ACTION_LABELS_VERB[e.action] || _RAN_TYPES.has(e.escalation_type)) return '';
+  return `${ACTION_LABELS_VERB[e.action]} — held: not attributed`;
+}
 function escTitle(e) {
+  const loose = _looseTitle(e);
+  if (loose) return loose;
   // Real remediation action → its label; otherwise a readable type title.
   if (e.action && ACTION_LABELS[e.action]) return ACTION_LABELS[e.action];
   return _ESC_TITLES[e.escalation_type] || escLabel(e.escalation_type) || e.action || '?';
@@ -507,6 +529,14 @@ function cliCommand(esc) {
   const rid = esc.resource_id;
   const id  = esc.id.slice(0, 8);
   // Never a command aimed at the anchor VM (AL1): acknowledge, act from what the card says.
+  // ATT1 (#936): nor on a card that says it is unattributed, whatever its type — it says so, and its
+  // candidates, and sends the judgement to the CLI.
+  const loose = _unattributed(esc);
+  if (loose) {
+    // A name from the store on one line (a newline would start a command of its own).
+    const said = _unattributedTxt(loose).replace(/[\u0000-\u001f\u007f]/g, ' ');
+    return `# ${said}\n# judge which VM it is about from the CLI (glorfindel pending, the detection's row), then act on that VM\nglorfindel ack ${id}`;
+  }
   if (_isAnchored(esc)) return `glorfindel ack ${id}`;
   if (_isHeld(esc)) {
     const vm = _vmArg(rid);
@@ -624,10 +654,10 @@ function openCommandModal(escId) {
   const esc = _escById[escId];
   if (!esc) return;
   const cmd = cliCommand(esc);
-  const isSnapshotPending = esc.action === 'snapshot' && esc.escalation_type === 'low_confidence';
+  const isSnapshotPending = _isSnapshotPending(esc);
   const isCmdModeHold = _isHeld(esc);
   const label = isCmdModeHold ? actionLabelVerb(esc.action) + ' — ' + _heldWord(esc)
-              : isSnapshotPending ? 'Snapshot recommended' : actionLabel(esc.action);
+              : isSnapshotPending ? 'Snapshot recommended' : (_looseTitle(esc) || actionLabel(esc.action));
   document.getElementById('modal-title').textContent = '📋 ' + label;
   document.getElementById('modal-body').textContent = 'CLI command to run for this escalation:';
   const cmdEl = document.getElementById('modal-cmd');
@@ -711,7 +741,7 @@ function _groupEscs(escs) {
 
 function _renderEscGroup(group) {
   const e     = group[0]; // most recent / representative
-  const isSnapshotPending = e.action === 'snapshot' && e.escalation_type === 'low_confidence';
+  const isSnapshotPending = _isSnapshotPending(e);
   const isModeHold        = _isHeld(e);
   const isWriteBlocked    = e.escalation_type === 'write_blocked';
   const isActionFailed    = e.escalation_type === 'action_failed';
@@ -745,6 +775,8 @@ function _renderEscGroup(group) {
     : '';
   // No Restore on an anchored card: it would restore a VM the detection does not name.
   const isRestore = e.action === 'restore_from_backup' && !_isAnchored(e);
+  // ATT1 (#936): nor on a card that says it is unattributed, whatever its type.
+  const restoreOffered = isRestore && !_unattributed(e);
   const isReadinessHold = e.escalation_type === 'readiness_hold';
   const actionBtns = isRule
     ? ruleButtons
@@ -756,7 +788,7 @@ function _renderEscGroup(group) {
     ? `<button class="action primary" ${_on('click', 'doApproveAction', e.id, vmName)} style="font-size:9px;padding:2px 7px">▶ Approve & execute</button>
        <button class="action" ${_on('click', 'doAckAll', ids)} style="font-size:9px;padding:2px 7px">✓ Ack</button>
        <button class="action" ${_on('click', 'openCommandModal', e.id)} style="font-size:9px;padding:2px 7px">📋 Cmd</button>`
-    : isRestore
+    : restoreOffered
     ? `<button class="action primary" ${_on('click', 'confirmRestore', vmName, e.id)} style="font-size:9px;padding:2px 7px">🔄 Restore</button>
        <button class="action" ${_on('click', 'doAckAll', ids)} style="font-size:9px;padding:2px 7px">✓ Ack</button>
        <button class="action" ${_on('click', 'openCommandModal', e.id)} style="font-size:9px;padding:2px 7px">📋 Cmd</button>`
@@ -921,14 +953,17 @@ async function refreshActionsData() {
 function renderInfra() {
   if (_configMode) return;
   const list           = document.getElementById('incidents-list');
-  // The scroll container (#topo-graph) and the edges' layer (#topo-svg) outlive a refresh:
-  // only what they hold (#topo-body) is replaced. Replaced every 5 s with the rest, the
-  // container cut a scroll in progress (wheel, momentum, the scrollbar held) and its position
-  // had to be put back by hand (TOPO1 #927). Built once, again only if something else emptied it.
+  // The scroll container (#topo-graph), the edges' layer (#topo-svg) and #topo-body outlive a
+  // refresh: only the content of #topo-body is replaced, never an element of the shell. Replaced
+  // every 5 s with the rest, the container cut a scroll in progress (wheel, momentum, the scrollbar
+  // held) and its position had to be put back by hand (TOPO1 #927). Built once, again only if one
+  // of the three is missing — something else emptied the list (TOPO1b #949: #topo-body checked too).
   let graph = document.getElementById('topo-graph');
-  if (!graph || !list.contains(graph)) {
+  let body  = graph && graph.querySelector('#topo-body');
+  if (!graph || !list.contains(graph) || !body || !graph.querySelector('#topo-svg')) {
     list.innerHTML = `<div class="topo-graph" id="topo-graph"><svg class="topo-svg" id="topo-svg"></svg><div class="topo-body" id="topo-body"></div></div>`;
     graph = document.getElementById('topo-graph');
+    body  = document.getElementById('topo-body');
   }
   // The PROTECT NSG list's own inner scroll is inside #topo-body: recreated, put back.
   const _prevNsg = document.getElementById('nsg-scroll');
@@ -1047,7 +1082,7 @@ function renderInfra() {
     if (!hasIncident) _collapsedVms.delete(r.vm_name); // allow re-expand on next incident; don't force-collapse user-expanded clean cards
   });
 
-  document.getElementById('topo-body').innerHTML = `
+  body.innerHTML = `
       <!-- Layer 1 — Agent -->
       <div class="topo-layer">
         ${_renderAgentNode(rules, detectBackends, recoverBackends, discovered)}
@@ -1061,6 +1096,8 @@ function renderInfra() {
       </div>
 
       <div class="topo-spacer"></div>
+
+      ${_auditBand()}
 
       <!-- Layer 3 — Assets -->
       <div class="topo-assets" id="topo-assets">
@@ -1118,19 +1155,47 @@ function renderInfra() {
   _applyReadOnlyGuards(list);
 }
 
+// The readiness audit not read, said once above the cards (TOPO1b #949, Jonathan 19/11 on a
+// mockup; « ip ? » on every card set aside). Before, the cards lost their checks and their
+// addresses in silence, and only the dot of the GLORFINDEL node went red. The last good audit
+// kept: the band says when it was read. The reason comes from the browser or the server: escaped.
+function _auditBand() {
+  if (_auditStale) {
+    const when = _auditLastRun ? `cards show the read of ${_attr(fmtTime(_auditLastRun))}` : 'cards show the last read';
+    return `<div class="topo-band" role="status">⚠ Readiness audit not read: ${_attr(_auditStale)} <span class="topo-band-dim">· ${when}</span></div>`;
+  }
+  if (_auditData?.error)
+    return `<div class="topo-band" role="status">⚠ Readiness audit not read: ${_attr(_auditData.error)} <span class="topo-band-dim">· checks and addresses unknown on every card · next try within 5 min</span></div>`;
+  return '';
+}
+
 // The edges follow the map: drawn again, once per frame at most, when the map or its cards
 // change size without a render — the window resized, the column beside it, a font loaded.
 // Before, they stayed where the last render had put them (TOPO1 #927).
 let _topoResize = null;
 let _topoDrawQueued = false;
+let _topoSeen = {};                     // the last size the observer saw, of the map and of its row
 function _queueTopologyEdges() {
   if (_topoDrawQueued) return;
   _topoDrawQueued = true;
   requestAnimationFrame(() => { _topoDrawQueued = false; _drawTopologyEdges(); });
 }
+// Each render observes its new row of cards, and an observation starts with a notification: drawn
+// on it, every refresh drew its edges twice (review of TOPO1). A size already seen draws nothing;
+// a size that changed (a resize, a card grown without a render) draws again (TOPO1b #949).
+function _onTopologyResize(entries) {
+  let changed = false;
+  for (const e of entries) {
+    const role = e.target.id === 'topo-graph' ? 'graph' : 'assets';
+    const size = `${Math.round(e.contentRect.width)}x${Math.round(e.contentRect.height)}`;
+    if (_topoSeen[role] !== size) { _topoSeen[role] = size; changed = true; }
+  }
+  if (changed) _queueTopologyEdges();
+}
+// A browser without ResizeObserver: the edges are drawn at each render, not on a resize.
 function _watchTopology(graph) {
   if (typeof ResizeObserver !== 'function') return;
-  if (!_topoResize) _topoResize = new ResizeObserver(_queueTopologyEdges);
+  if (!_topoResize) _topoResize = new ResizeObserver(_onTopologyResize);
   _topoResize.disconnect();             // the cards' row of the last render is gone
   _topoResize.observe(graph);
   const assets = document.getElementById('topo-assets');
@@ -1945,7 +2010,9 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
   // Yellow, distinct from Failed (red) — it may still be running, just unverified.
   const snapshotStale      = activeJob?.type === 'snapshot' && activeJob?.status === 'Stale';
   // Escalade snapshot pending : bouton déjà dans la carte d'escalade — ne pas doubler dans BACKUP
-  const hasSnapshotEsc = myEscs.some(e => e.action === 'snapshot' && e.escalation_type === 'low_confidence');
+  // ATT1: nor while an unattributed snapshot's card waits on this tile — the detection does not name
+  // this VM, its card has no Snapshot: the tile's own button would take it back.
+  const hasSnapshotEsc = myEscs.some(e => _isSnapshotPending(e) || _looseSnapshot(e));
   const snapshotBtn = snapshotInProgress
     ? `<button class="action" disabled style="margin-left:auto;font-size:9px;padding:2px 7px;opacity:.5;cursor:default">⏳ Snapshot…</button>`
     : snapshotStale
@@ -2933,7 +3000,9 @@ async function setDefaultMode(mode) {
 const _feedDedup = new Map(); // key → {el, count, ts}
 const _FEED_DEDUP_MS = 5000;
 // The gate that held a decision with no action (debug line `held_by`, agent.py).
-const _HELD_BY_WORDS = { control_plane: 'control plane (detection only)', identity: 'identity (detection only)' };
+// CPT1b: a card of incomplete telemetry (CPT1) says so in the feed, never « review ».
+const _HELD_BY_WORDS = { control_plane: 'control plane (detection only)', identity: 'identity (detection only)',
+  control_plane_incomplete: 'control plane, incomplete telemetry (detection only)' };
 
 // CON-D: a line that is not of today, in UTC, says its day — « yesterday », or its date (10/11,
 // and its year when it is not this one); a line of today, its time alone. The day and the time
@@ -3528,8 +3597,15 @@ function _cardBody(e, vmName) {
     ${explanation}${_executedDetail(e)}`;
 }
 function _cardSteps(e) {
-  return (e.suggested_steps || [])
+  return _looseSteps(e) + (e.suggested_steps || [])
     .map(st => `<div style="color:var(--dim);font-size:10px;padding:2px 0 2px 8px">• ${_attr(st)}</div>`).join('');
+}
+// ATT1 (#936): the model's steps of an unattributed card may name the VM it is filed on, which the
+// detection does not name — said before them, by the page, never by the model.
+function _looseSteps(e) {
+  const loose = _unattributed(e);
+  if (!loose || !(e.suggested_steps || []).length) return '';
+  return `<div style="color:var(--yellow);font-size:10px;padding:2px 0 2px 8px">⚓ ${_attr(_unattributedTxt(loose))}; judge from the CLI — these steps aim at the VM the card is filed on</div>`;
 }
 
 // JUG1: a line of TO JUDGE opens its card — its details as the store holds them (a card still
@@ -3589,7 +3665,7 @@ function showEscModal(vmName) {
     const ids   = group.map(g => g.id).join(','); // CSV — one string argument of the button's action (_on)
     const count = Number(group.length);
     const isModeHold        = _isHeld(e);
-    const isSnapshotPending = e.action === 'snapshot' && e.escalation_type === 'low_confidence';
+    const isSnapshotPending = _isSnapshotPending(e);
     const isWriteBlocked    = e.escalation_type === 'write_blocked';
     const isActionFailed    = e.escalation_type === 'action_failed';
     const isRule            = e.action === 'improve_detection' && e.proposal_id;
@@ -3604,7 +3680,7 @@ function showEscModal(vmName) {
     // type already encoded in title for these — keep ctx lean
     const ctx   = _escCtx(e, '', isModeHold || isWriteBlocked || isActionFailed);
     // An identity card with its plan (IR1a) shows the plan — the same steps, structured, with Verify.
-    const steps = e.identity_plan ? _identityPlan(e) : (e.suggested_steps || [])
+    const steps = e.identity_plan ? _identityPlan(e) : _looseSteps(e) + (e.suggested_steps || [])
       .map(s => `<div style="color:var(--dim);font-size:10px;padding:2px 0 2px 8px">• ${_attr(s)}</div>`).join('');
     const query = _cardQuery(e);
     const pid   = e.proposal_id || '';
@@ -3851,7 +3927,13 @@ async function refreshAuditData() {
   const timer = setTimeout(() => ctrl.abort(), 20000);
   try {
     const r = await fetch('/api/audit', { signal: ctrl.signal });
-    _auditData    = await r.json();
+    // An answer that is not an audit is a failure, said as one (TOPO1b #949): before, an HTTP error
+    // with a JSON body (a 404 or a 422 `{detail}`, a proxy's) was read as an audit without VMs, every
+    // card silent. A body that is not JSON (Starlette's 500) already failed at r.json().
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    if (!Array.isArray(d?.audits)) throw new Error('the answer holds no audit');
+    _auditData    = d;
     _auditLastRun = new Date().toISOString();
     _auditStale   = null;
   } catch (e) {

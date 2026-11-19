@@ -39,17 +39,21 @@ def test_an_edge_is_placed_in_the_contents_coordinates_scrolled_or_not():
 
 def test_the_scroll_container_and_its_edges_outlive_a_refresh():
     infra = body("function renderInfra() {")
-    # The shell (container + svg + what a refresh replaces) is built only when it is missing.
-    guard = "if (!graph || !list.contains(graph)) {"
+    # The shell (container + svg + what a refresh replaces) is built only when one of its three
+    # elements is missing — #topo-body and #topo-svg checked too (TOPO1b, #949: before, a missing
+    # #topo-body threw a TypeError).
+    assert "let body  = graph && graph.querySelector('#topo-body');" in infra
+    guard = "if (!graph || !list.contains(graph) || !body || !graph.querySelector('#topo-svg')) {"
     assert guard in infra
     shell = infra.split(guard, 1)[1].split("\n  }\n", 1)[0]
     assert ('list.innerHTML = `<div class="topo-graph" id="topo-graph"><svg class="topo-svg" id="topo-svg">'
             '</svg><div class="topo-body" id="topo-body"></div></div>`;') in shell
+    assert "body  = document.getElementById('topo-body');" in shell
     assert infra.count("list.innerHTML") == 1
-    # A refresh replaces the inside only, never the container nor the svg.
-    assert "document.getElementById('topo-body').innerHTML = `" in infra
-    refresh = infra.split("document.getElementById('topo-body').innerHTML = `", 1)[1]
-    assert 'id="topo-graph"' not in refresh and 'id="topo-svg"' not in refresh
+    # A refresh replaces the content of #topo-body only, never an element of the shell.
+    assert "  body.innerHTML = `" in infra
+    refresh = infra.split("  body.innerHTML = `", 1)[1]
+    assert 'id="topo-graph"' not in refresh and 'id="topo-svg"' not in refresh and 'id="topo-body"' not in refresh
     # Nothing puts the map's scroll back by hand any more: it is never lost.
     assert "_savedScroll" not in infra and "_newGraph" not in infra
     # The NSG list's own scroll is inside what is replaced: still put back.
@@ -68,10 +72,30 @@ def test_the_edges_are_drawn_again_when_the_map_or_its_cards_change_size():
     assert "if (_topoDrawQueued) return;" in queue
     assert "requestAnimationFrame(() => { _topoDrawQueued = false; _drawTopologyEdges(); });" in queue
     watch = body("function _watchTopology(graph) {")
-    assert "new ResizeObserver(_queueTopologyEdges)" in watch
+    assert "new ResizeObserver(_onTopologyResize)" in watch
     # The row of the last render let go, the map and the new row watched.
     assert watch.index("_topoResize.disconnect();") < watch.index("_topoResize.observe(graph);")
-    assert "if (assets) _topoResize.observe(assets);" in watch
+    assert "  const assets = document.getElementById('topo-assets');\n  if (assets) _topoResize.observe(assets);" in watch
+
+
+def test_a_browser_without_resizeobserver_still_draws_at_each_render():
+    # TOPO1b (#949, review of TOPO1): the guard comes first — without it, `new ResizeObserver`
+    # throws, and the render stops before its edges are queued.
+    watch = body("function _watchTopology(graph) {")
+    assert watch.lstrip().startswith("if (typeof ResizeObserver !== 'function') return;\n")
+    infra = body("function renderInfra() {")
+    assert infra.index("_watchTopology(graph);") < infra.index("_queueTopologyEdges();")
+
+
+def test_a_refresh_draws_its_edges_once_a_resize_draws_them_again():
+    # TOPO1b (#949, review of TOPO1): each render observes its new row, and an observation starts
+    # with a notification — drawn on it, every refresh drew twice. A size already seen draws
+    # nothing; a size changed (a resize, a card grown without a render) draws again.
+    seen = body("function _onTopologyResize(entries) {")
+    assert "const role = e.target.id === 'topo-graph' ? 'graph' : 'assets';" in seen
+    assert "const size = `${Math.round(e.contentRect.width)}x${Math.round(e.contentRect.height)}`;" in seen
+    assert "if (_topoSeen[role] !== size) { _topoSeen[role] = size; changed = true; }" in seen
+    assert seen.rstrip().endswith("if (changed) _queueTopologyEdges();")
 
 
 def test_with_nothing_to_draw_from_the_last_edges_are_taken_off():

@@ -65,6 +65,7 @@ _Extrait tel quel de `CLAUDE.md` le 2026-10-15 (lot DX1) : le comportement d'Azu
 - **Un blocage de périmètre ne couvre que le subnet de la carte primaire (RB1, relecture)** : une VM dont une carte est sur un autre subnet — `scope="subnet"` dit `blocked_partial` et nomme les cartes qu'il laisse ouvertes et que rien ne bloque (`uncovered_nics` ; cartes illisibles : `nics_unread`, jamais `blocked` sur une inconnue). La promotion (`replace=True`) garde le blocage propre de ces cartes (de toutes, si elles ne se lisent pas) ; avant, elle le retirait des deux, la seconde carte ouverte, `blocked` dit, vérification vraie. La vérification d'un blocage de périmètre seul lit aussi les cartes de la VM : une carte hors du périmètre la rend fausse (`uncovered_nics`) — sauf si une règle de périmètre de l'IP, sur un NSG qui la gouverne (celle d'une autre VM, sur l'autre sous-réseau), la coupe : tenue (`held_by_perimeter`) ; illisible, la vérification ne conclut pas (`perimeter_unread`) (L1Qs, #424 : « l'IP les atteint » était dit d'une carte que l'autre périmètre coupait). Une carte dont le sous-réseau n'a pu être lu (un 429) n'est ni couverte ni hors du périmètre : `nics_unread`, jamais `uncovered_nics` (L1Qs, la graine 9 d'I3G) ; la réaffirmation le dit une fois, sans rien réécrire (« non couverte depuis le blocage »). De même quand la vérification que le blocage fait juste après son écriture ne conclut pas : une de ses lectures en 429 (la paire, la préséance, les cartes, l'autre périmètre), ou la vérification qui lève. Le blocage dit alors ses cartes non lues (`nics_unread`, avec l'erreur), `blocked_partial`. Il ne les dit jamais hors du périmètre, ni `blocked`. Avant, il les nommait toutes `uncovered_nics`, « l'IP les atteint encore ». C'était faux d'une carte que le périmètre d'une autre VM coupe, et rien d'elle n'avait été lu (I3N, #746, la nuit du 12/11 sur macOS). La vérification suivante, une fois lisible, dit laquelle : tenue ou non couverte. Et quand elle conclut `False` (une carte prouvée ouverte, ou un blocage à nous contourné), le blocage trie ses cartes hors du périmètre en trois : prouvées tenues (`blocked_nics`, `held_by_perimeter`), hors des listes ; prouvées ouvertes (`open_nics`), dans `uncovered_nics`, « {ip} still reaches them » ; les autres, non lues, dans `nics_unread` avec leur nom et la raison (« db-nic-0 (périmètre illisible) » ; pour une carte que la vérification n'a pu juger, sa raison à elle, `nics_unknown_why` : quarantaine, NSG du subnet, règles ou préséance illisibles ; « cartes illisibles » quand elle n'a pu lister les cartes), « unread … whether {ip} reaches them is unverified ». Les deux clés peuvent coexister, la note dit les deux, et le statut reste `blocked_partial`. Le périmètre seul dont la paire est contournée ou a disparu arrête sa vérification avant les cartes hors de lui : le blocage demande alors lui-même chacune à son périmètre (`_sort_off_perimeter`) — tenue, inconnue, ou atteinte — sauf une carte qui a un blocage à elle, dite « non lue » ; une paire disparue est dite (`missing_rules`, `blocked_partial`). Avant, seules les cartes prouvées tenues sortaient de la liste : une carte non lue restait dite « atteinte », et la réponse ne portait qu'une clé (I3Q, #771). La paire du périmètre lue disparue ou altérée à la vérification est dite dans chaque branche, aussi quand la VM reste tenue par son propre blocage et que la vérification est vraie : `blocked_partial`, la paire dans `missing_rules`, et la note dit « … is no longer denied by it for the VMs on the subnet until it is put back » (une moitié partie : le sens perdu, « no longer denied outbound by it »), jamais « denied for ALL VMs ». La vérification la dit à part (`perimeter_gone`, et son NSG, `perimeter_nsg`), son verdict inchangé : vrai de la VM. Une paire illisible n'est jamais dite disparue : nommée (`pair_unread`), la tête dit que ce qu'elle tient pour les VM du sous-réseau n'est pas vérifié ; une carte laissée à cette paire par une promotion est inconnue (« périmètre illisible »), jamais « no rule of this block », et la fenêtre de promotion de la console dit la paire illisible. Avant, le blocage disait `blocked` et l'IP atteignait les autres VM du sous-réseau ; la réaffirmation reposait la paire à la passe suivante. La carte de dérive dit alors « l'IP reste bloquée sur la VM ; sur les autres VM derrière <NSG>, la règle de périmètre ne tient plus » (« … en sortie », « … en entrée » pour une moitié). Le blocage ne relit sa paire que s'il vérifie, c'est-à-dire si la VM a une carte hors du périmètre : pour une VM tout entière sur le sous-réseau, sa réponse s'appuie sur l'écriture seule, et une paire ôtée juste après est vue par la réaffirmation. Une carte sans règle du blocage est dite à part (`missing_nics`), jamais comme une règle (I3W, #778). Une carte dont le sous-réseau n'a pu être lu n'a, dans ses vues, aucun NSG de sous-réseau. Le placement de son blocage propre posé sur ce NSG n'est plus lu « ne gouverne plus » (règle manquante, carte ouverte, remise sur une supposition) : la carte est inconnue, « NSG du subnet illisible », sauf si un autre placement la prouve bloquée. Un non-lu l'emporte sur un manquant (A0) : si un autre placement de cette carte, sur un NSG qui la gouverne, a perdu sa paire, la règle n'est pas dite manquante (`missing_rules`) et n'est pas reposée tant que le sous-réseau ne se relit pas. De même, un périmètre n'y est plus lu « absent » : il est inconnu (`perimeter_unread`, `_perimeter_holds`) (I3N). Après une promotion, une carte laissée au périmètre de l'entrée, que ce périmètre tient, est couverte par conception : ni dérive dite, ni règles de la VM réécrites par-dessus. Pour couper ces cartes : bloquer aussi la VM (`scope="vm"`). Une repose dont une écriture échoue n'est jamais « reposé » (`partial`, l'erreur dite), et une paire de périmètre illisible rend la vérification inconnue.
 - **La promotion en périmètre ne coupe jamais une autre VM (I4P, #466, 03/11)** : promu (`replace=True`), un blocage par VM retirait ses règles par carte **par leurs noms**, sans demander la garde de tout autre retrait par son nom (`turned._held_by_turned`, I4B). L'une d'elles retournée en autorisation par quelqu'un, qui laisse l'attaquant joindre une autre VM — l'adresse qu'elle vise reprise depuis, ou le NSG de carte donné à une VM d'**un autre subnet**, hors du périmètre (le périmètre ne couvre que le subnet de la carte primaire, RB1) —, partait : cette VM perdait ce qu'elle lui ouvrait, là où aucun périmètre ne la couvre ; de même une règle retournée sur le NSG du périmètre, avant lui, qui ouvrait la sortie d'une VM ayant reçu ce NSG. Maintenant chacune des deux règles d'une paire est demandée à la garde (`perimeter._promote`) ; l'une gardée, **la paire reste entière** — sur Azure et dans l'état, son placement gardé pour le déblocage, qui la redemande (gardée de nouveau : `unblock_partial`) ; à moitié retirée, la passe suivante aurait lu notre propre retrait comme une disparition. **Compte rendu** : le statut reste celui de la VM (`blocked`, ou `blocked_partial` pour une carte hors du périmètre) — le périmètre coupe l'attaquant de cette VM, quoi que la règle gardée laisse passer ailleurs (comme le blocage par VM d'I4A garde `blocked` avec `left_rules`) ; ce qui reste est dit comme le déblocage le dit (`kept_rules` : « rg/NSG/règle gardée : notre règle …, retournée en autorisation par quelqu'un, vise 10.0.0.4 — l'adresse de … maintenant : … », repris dans `note`), et absent de `promoted_from`. Un retrait qui échoue arrête ceux de la paire, son erreur dite : la première refusée, la seconde n'est pas tentée, la paire reste entière ; la seconde refusée, la première est partie — dans les deux cas le placement reste dans l'état, et le déblocage le relit (avant : avalé, la règle restait sur Azure, son placement sorti de l'état, le déblocage aveugle). Une entrée ancienne à règle unique passe par la même garde ; gardée, elle devient un placement de la carte primaire. **La consigne** d'une règle gardée qui ouvre une autre carte (`_opens_text`) ne dit « la remettre en refus » que pour une règle de blocage (`glorfindel-block-`) sur une adresse : remise en refus, elle ne coupe que l'attaquant de la VM qu'elle ouvre. Une règle d'isolation (`glorfindel-iso-`) sur l'adresse d'une autre carte vivante, remise en refus, couperait tout ce qui entre dans cette VM (ou en sort, pour `-out`) ; sur `*`, ou un refus total ancien, toutes les cartes derrière le NSG (I4G) : la consigne dit alors seulement de la retirer à la main si elle n'est plus voulue ; si une autre VM a besoin de ce flux, de le recréer sous un nom à elle, puis de relancer. **De même la consigne d'un refus gardé pour une règle retournée derrière lui** (I5Q, `_turned_text`, la relecture d'I4P ; le défaut était déjà sur `main`) : un refus orphelin d'un blocage — l'attaquant seul — sur l'adresse d'une carte vivante, gardé pour une règle `glorfindel-iso-` retournée qui vise cette adresse, disait « la remettre en refus » quelle que soit la règle ; remise en refus, une règle d'isolation couperait tous les flux de cette VM de son côté. Elle ne le dit plus que pour une règle de blocage sur ses adresses ; sinon : la retirer à la main si elle n'est plus voulue, ou recréer le flux sous un nom à elle. Tests : `tests/unit/test_promotion_guard.py`, `tests/unit/test_turned_names.py`, `tests/unit/test_invariant_regressions.py` (`test_the_promotion_never_cuts_off_…`, trois).
 - StorageBlobLogs : latence secondes. `AzureNetworkAnalytics_CL` inutilisable (10-60min).
+- **`data-exfiltration-blob` ne compte que les écritures écrites (SEC-I, #850)** : `toint(StatusCode) between (200 .. 299)` — une écriture que le compte refuse (403, 404, 409…) n'a rien sorti, et elle mettait une carte sur la VM qui porte l'adresse appelante. Par le code HTTP plutôt que par `StatusText`, dont le libellé peut dépendre de l'autorisation (`Success`, `SASSuccess`…) ; un code illisible (« Unknown ») n'est pas une écriture. **Mesuré au banc le 19/11** (`docs/operations.md`, « La mesure au banc des deux règles de SEC-I ») : une écriture refusée est journalisée dans `StorageBlobLogs`, `StatusCode` `"403"` (`AuthorizationPermissionMismatch`), avec l'adresse privée de l'appelant ; `StatusCode` est un texte (`"403"`, `"201"`) ; une écriture réussie par l'identité managée rend `"201"`. La requête d'avant comptait l'écriture refusée (`PutBlobCount = 2`), celle-ci non (`1`). **Reste ouvert** : le code d'une écriture réussie par SAS, faute d'écriture par SAS au banc. **L'attribution d'une adresse privée ne change pas** (`private_ip_owners` : une adresse tenue par une seule VM de l'abonnement, l'appliance marquée). Ses limites, dites : un relais applicatif sans IP forwarding (proxy explicite, hôte de rebond) est tenu pour la source ; une adresse privée en recouvrement hors de l'abonnement (VNet appairé d'un autre abonnement, site relié par VPN) serait rattachée à la VM qui la porte ici ; la table des adresses est relue toutes les 5 minutes. Ne rattacher une adresse qu'à un compte joignable seulement depuis les VNet inscrits (point de terminaison privé, pare-feu du compte) demande de lire les comptes de stockage, un droit de plus pour la watch, et fait de toute exfiltration vers un compte public une carte : **décidé par Jonathan le 19/11, un lot de la 0.6.3 (SEC-Ic)**, rien n'est codé ici.
 - Restore via REST API `IaasVMRestoreRequest OriginalLocation` → VM deallocated puis redémarrée.
 - **Le restore depuis la console, mesuré au banc le 09/11 (RST1, #680)** — le premier restore sous le principal de la console (le 05/10, l'ancien principal partagé avait `Contributor`). Ce qui a changé :
   - **Les droits sont lus avant de toucher la VM** (`providers/azure/restore_rights.py`) : `Microsoft.Authorization/permissions` sur le coffre, la VM et le compte de transit, avant la neutralisation et la désallocation. Lus : le restore du coffre, `deallocate` et `start` sur la VM (ce que le code appelle), `listKeys` sur le compte de transit (le droit lié qu'Azure a nommé au banc). Les jokers et les `notActions` se lisent comme Azure les lit, rôle par rôle. Un droit qui manque refuse le restore en le nommant, avec son rôle (« Restore refusé avant de toucher la VM »), la VM ni neutralisée ni désallouée. Les autres droits du rôle Restore (l'écriture de la VM, des disques, du compte de transit) ne sont pas lus : aucun refus du banc ne prouve qu'Azure les vérifie au déclenchement, et un restore n'est jamais refusé sur un besoin non prouvé. Run Command absent sur la VM n'est pas un refus (SEC17) : la sortie le dit, la VM est restaurée quand même. **Hypothèses à mesurer au banc** : `Reader` sur le groupe suffit à lire ces droits ; illisibles, la sortie le dit et le restore continue comme avant — une lecture refusée (403) signale probablement elle-même un droit qui manque, que le déclenchement dira alors en entier. Le droit du restore est lu à la portée du coffre : une attribution posée plus bas (sur l'élément protégé seulement) n'y serait pas vue, et le restore serait refusé à tort — le rôle du dépôt s'attribue sur le groupe du coffre. L'API ne rend ni les refus explicites (deny assignments), ni les verrous, ni les conditions, ni PIM : un droit lu comme tenu peut encore être refusé, et le refus est alors dit en entier.
@@ -117,7 +118,7 @@ sans changement de texte, un module par préoccupation, aucun au-delà de 430 li
 | `backup.py`, `restore.py` | points de restauration, statut d'un job de restauration, restauration |
 | `restore_rights.py` | les droits d'un restore lus avant de toucher la VM, les refus d'Azure dits en entier, sans id (RST1) |
 | `sweep.py`, `readers.py` | `reset` et règles orphelines ; droits, inventaire NSG, lectures de l'audit |
-| `public_ips.py` | l'IP publique de chaque carte, lue pour l'audit, une lecture qui échoue dite avec sa raison (IPS1a) ; ci-dessous, « L'IP publique de chaque carte » |
+| `public_ips.py` | l'IP publique de chaque carte, lue pour l'audit, une lecture qui échoue dite avec sa raison et son code (IPS1a, IPS2a) ; ci-dessous, « L'IP publique de chaque carte » |
 | `narrow.py` | une règle orpheline réduite aux adresses des VM que Glorfindel tient, quand elle coupe aussi une VM qu'il ne tient pas (U1G) |
 | `turned.py` | nos règles retournées en autorisation (`_TURNED_NAMES`), et les refus qu'elles attendent derrière (I5Q) ; la garde de chaque retrait par son nom (`_held_by_turned`), qui lit aussi une ancienne version retournée sous son nom (`_OLDER_NAMES`, I4G) |
 | `sdk.py`, `capabilities.py`, `monitor.py` | préchauffage du SDK ; capacités déclarées ; Log Analytics |
@@ -257,7 +258,7 @@ quarantaine), `<nic>`, `<ip>` (une adresse de documentation, 203.0.113.x).
    `glorfindel-orig-` pour ces cartes ; chaque carte sur son NSG d'origine (`az network nic show -g <rg> -n <nic>
    --query networkSecurityGroup.id`).
 
-### L'IP publique de chaque carte, dans l'audit (IPS1a, #931)
+### L'IP publique de chaque carte, dans l'audit (IPS1a, #931 ; IPS2a, #950)
 
 L'audit d'une VM (`check_nsg_access`, `readers.py`, que la console relit par `/api/audit` toutes
 les 5 min) rend une entrée de `nsgs[]` par carte réseau : son NSG, sa portée, son id, ses IP
@@ -267,27 +268,67 @@ privées (`ips`), et **ses IP publiques (`public_ips`)**. Le reste de la forme n
 {"nsg": "rg-app/nsg-web", "nsg_scope": "subnet", "nic_id": "…/networkInterfaces/web-nic",
  "ips": ["10.0.0.4", "10.0.0.5"],
  "public_ips": [{"address": "198.51.100.10"},
-                {"address": null, "error": "lecture refusée (droits) : (AuthorizationFailed) …"}]}
+                {"address": null, "error": "lecture refusée (droits) : (AuthorizationFailed) …",
+                 "code": "forbidden"}]}
 ```
 
 - **Le champ** : une liste, vide quand la carte n'a pas d'IP publique ; un élément par IP publique
   des configurations IP de la carte, dans leur ordre. `{"address": "<adresse>"}`, ou
-  `{"address": null, "error": "<raison>"}` quand la lecture a échoué.
+  `{"address": null, "error": "<raison>", "code": "<code>"}` quand la lecture a échoué. Un élément
+  lu n'a pas de `code`.
 - **La lecture** : pour chaque `ip_configurations[].public_ip_address.id` (la carte est déjà lue par
   `_get_vm_nic_targets`, qui note ces ids), un `publicIPAddresses.get` par le SDK réseau, **dans le
   groupe de ressources de l'IP, pris dans son id** (il peut différer de celui de la VM). Une même IP
   n'est lue qu'une fois par appel. Rien d'écrit. `dry_run` rend toujours `{"ok": true, "nsg": "dry_run"}`.
 - **Une lecture qui échoue ne fait jamais échouer l'audit** : le contrôle « NSG access » reste `ok`,
-  l'élément dit `address: null` et sa raison — `lecture refusée (droits) : …` (un 403),
-  `introuvable` (un 404), `pas d'adresse allouée (…)` (une IP dynamique sur une VM arrêtée),
-  `illisible : …` (le reste, un 429 par exemple). Les mots d'Azure : leur première ligne, sans id
-  (un id ARM devient sa sorte, un GUID `<id>`, comme RST1), 200 caractères au plus.
+  l'élément dit `address: null`, sa raison (`error`, le texte en français) et son code (`code`,
+  IPS2a : ce qu'une page teste, jamais le texte) — `forbidden` et `lecture refusée (droits) : …`
+  (un 403), `not_found` et `introuvable` (un 404), `not_allocated` et `pas d'adresse allouée (…)`
+  (une IP dynamique sur une VM arrêtée), `unreadable` et `illisible : …` (le reste, un 429 par
+  exemple). Les mots d'Azure : leur première ligne, sans id (un id ARM devient sa sorte, un GUID
+  `<id>`, comme RST1), 200 caractères au plus.
 - **Le droit** : `Microsoft.Network/publicIPAddresses/read`, sous le `*/read` du Reader. Imladris
   tient le Reader sur le groupe du banc seulement (`infra/glorfindel-host/main.tf`, `bench_reader`) :
   une IP publique dans un autre groupe y est refusée, dite comme telle, et l'audit tient. Pour la
   lire, Reader (ou un rôle qui porte `publicIPAddresses/read`) sur ce groupe, posé par Jonathan.
-- **La limite connue** : une VM sans NSG ni sur sa carte ni sur son sous-réseau fait échouer
-  l'audit (`_get_vm_nic_targets` lève, « cannot isolate VM ») ; son adresse ne se lit donc pas.
+- **Une VM sans NSG** (IPS2a, #950), ni sur une de ses cartes ni sur le sous-réseau de celle-ci :
+  le cas le plus exposé. Le contrôle « NSG access » reste **`fail`**, avec la même raison qu'avant
+  (`NSG not found or VM has no NSG — NIC <carte> and its subnet have no NSG — cannot isolate VM`,
+  la même correction), et porte en plus `data.nsgs[]`, une entrée par carte : celle qui n'a pas de
+  NSG dit `nsg_scope: "none"` et **`nsg: ""`** (vide, jamais absent : chaque entrée a les mêmes
+  clés), les autres comme ci-dessus ; `ips` et `public_ips` pour chacune. Le contrôle ne porte rien
+  d'autre (ni `nsg` ni `nsg_scope` au premier niveau de `data`), et `check_nsg_access` ni nombre de
+  règles ni préséance :
+
+  ```json
+  {"name": "NSG access", "status": "fail",
+   "message": "NSG not found or VM has no NSG — NIC web-nic and its subnet have no NSG — cannot isolate VM",
+   "fix": "Attach an NSG to the VM's NIC in resource group rg-app",
+   "data": {"nsgs": [{"nsg": "", "nsg_scope": "none", "nic_id": "…/networkInterfaces/web-nic",
+                      "ips": ["10.0.0.4"], "public_ips": [{"address": "198.51.100.10"}]}]}}
+  ```
+
+  **Un `fail` qui porte des données reste un échec pour chaque lecteur** : le verdict de l'audit
+  (`ready` faux : la console par `/api/audit`, l'audit au démarrage de la watch, `glorfindel
+  audit`), la préparation (la réserve `no_nsg_for_blocks` : l'isolation passe par le NSG de
+  quarantaine, pas le blocage d'une IP ; donc la garde d'autonomie de `decide`, qui tient la VM en
+  `human_only` tant que la réserve n'est pas confirmée, et la carte du bot), la posture (le manque
+  critique `nsg_reachable`). Aucun lecteur de Glorfindel (l'audit, la préparation, la porte, la
+  posture, le bot) ne lit `data.nsgs` comme la preuve qu'un NSG se lit, ni qu'une isolation ou un
+  blocage est possible (`tests/unit/test_audit_no_nsg.py`). La page de la console, elle, ne le
+  garantit qu'avec IPS2b (#953) : jusque-là, une VM à plusieurs cartes dont l'une est sans NSG y
+  compte encore ses entrées comme des NSG (« N NSGs across NICs »).
+
+  L'échec est écrit par le lecteur, jamais lu dans une erreur : `iam` est toujours faux, et le
+  contrôle n'est jamais un `warn` passager ni une correction de droits, quel que soit le nom de la
+  carte (`web-403-forbidden`, `web-timeout`). **L'ordre des cartes ne relâche jamais la réserve** :
+  une carte sans NSG lue avant une carte dont la lecture échoue (un 429, une expiration) garde
+  l'échec « no NSG », sans données (l'autre carte n'est pas lue) ; la préparation garde
+  `no_nsg_for_blocks`, la posture son manque critique. Une carte dont le sous-réseau ne se lit pas
+  n'est pas « sans NSG » (L24) : l'échec reste celui d'avant, sans données.
+- **La limite connue** : cette carte au sous-réseau illisible donne encore le texte « and its
+  subnet have no NSG » (comme avant IPS2a ; ce n'est pas une régression). Dire « sous-réseau
+  illisible » reviendra à un lot de suite.
 - **Les autres fournisseurs** : l'adaptateur AWS (et son faux, `tests/unit/fake_aws.py`) ne rend
   pas `check_nsg_access`, donc pas de `nsgs[]` ni de `public_ips`.
 
@@ -375,6 +416,13 @@ waagent et les extensions sous `/var/log/azure/`, dpkg et apt.
 - **`log_tamper`** juge l'écrivain par `exe` (le chemin que le noyau écrit) et par les chemins touchés,
   jamais par `comm`, que l'attaquant choisit ; un écrivain connu (sshd, l'agent, apt) n'est écarté que
   si **toutes** les entrées touchées sont ses fichiers, et un événement sans entrée lue reste une carte.
+  **Un écrivain n'est écarté que sur un événement d'un seul enregistrement SYSCALL de la clé (SEC-I,
+  #850)** : le noyau n'en écrit qu'un par événement ; un second, au même numéro, est une ligne écrite sur
+  `local6`, que tout utilisateur local peut écrire — au nom de rsyslogd, il effaçait l'événement entier.
+  Un événement de deux est une carte (comme AUD1 en fait une). Les enregistrements sont comptés distincts,
+  ligne entière (`dcountif(SyslogMessage, Tamper)`) : une ligne que l'agent livre deux fois reste un
+  enregistrement, jamais une carte ; un faux enregistrement au nom d'un démon diffère de celui du shell et
+  compte toujours pour deux. La mesure au banc (`docs/operations.md`, SI4) est reportée : aucune VM du banc ne porte auditd (aucune ligne `local6` en 30 jours, le 19/11), la règle ne s'y déclenche nulle part ; elle se fera quand auditd et les règles de VM3 y seront posés.
   Un démon (rsyslogd, journald, logrotate, auditd) est écarté entièrement : un `logrotate` lancé avec une
   configuration choisie pour tronquer un journal n'est pas vu. Le resserrer couperait le bruit réel :
   tourner tous les journaux est son travail, et son `exe` ne dit pas qui l'a lancé. Un `echo 0>` sur un
