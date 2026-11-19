@@ -1,7 +1,7 @@
 """RTZ1 (#923): on the restore path, a time without its time zone is refused, never taken for UTC —
 a moment given (--before, the TUI, the console, the bot), a card's first detection, the VM's isolation,
 the provider last. M6556–M6570: the naive time taken for UTC at each point, a zero offset written wrong
-let through, a time with its zone refused, the message lost."""
+let through, a time with its zone refused, the message lost. After the review, M6621–M6623."""
 PLAN = "glorfindel/restore_plan.py"
 GCLI = "glorfindel/cli.py"
 TUI = "glorfindel/tui.py"
@@ -44,7 +44,7 @@ MUTANTS = [
      'restore_plan.zone_missing(self.moment.value) else ""))\n'),
     ("M6564", "a card's time without its zone guessed as UTC: `glorfindel pending` copies a guessed --before (RTZ1)",
      PLAN,
-     '        return "", f"la carte porte {text[:60]!r} : {NO_ZONE}"\n',
+     '        return "", _unzoned_card_why(esc, text)\n',
      '        return parse_moment(text + "+00:00"), ""\n'),
     ("M6565", "a card's first detection without its zone read as UTC: the incident dated on a guess (RTZ1)", PLAN,
      '        return float("-inf")\n',
@@ -52,7 +52,7 @@ MUTANTS = [
     ("M6566", "the restore's field filled with a card's time without its zone, taken for UTC (RTZ1)", PLAN,
      "    except NoTimeZone:   # RTZ1: what the card carries, said; no moment proposed\n"
      '        return {"before": "", "source": "", "no_zone": first[:60],\n'
-     '                "why": f"la carte porte {first[:60]!r} : {NO_ZONE}"}\n',
+     '                "why": _unzoned_card_why(esc, first)}\n',
      "    except NoTimeZone:   # RTZ1: what the card carries, said; no moment proposed\n"
      '        before = parse_moment(first + "+00:00")\n'),
     ("M6567", "an isolation without its zone passed over: the card's moment proposed, unbounded by it (RTZ1)", PLAN,
@@ -69,4 +69,22 @@ MUTANTS = [
      '    return [] if moment else [f"--before: {why}"]\n',
      "    return []\n"),
 ]
+# After the review (#956): M6621–M6623 — an earlier card without zone beside the one clicked, the
+# console's copied command, the recovery watch's step.
+JSP = "eregion_console/static/glorfindel.js"
+REC = "glorfindel/recovery_watch.py"
+MUTANTS += [
+    ("M6621", "an earlier pending card of the VM without its zone passed over: the console, the bot and the "
+     "TUI propose the clicked card's moment, or the isolation's (RTZ1 review)", PLAN,
+     '    if earliest is not None and _first_seen(earliest) == float("-inf"):\n',
+     "    if False:\n"),
+    ("M6622", "the console's 📋 Cmd copies a card's time without its zone (RTZ1 review)", JSP,
+     "  return _ZONED_TIME.test(text) ? text : otherwise;\n",
+     "  return text || otherwise;\n"),
+    ("M6623", "the recovery watch's step writes `--before ?` when the incident's start is unknown (RTZ1 review)",
+     REC,
+     'tz=timezone.utc).isoformat() if first is not None else "<ISO8601>")\n',
+     'tz=timezone.utc).isoformat() if first is not None else "?")\n'),
+]
 TESTS = {f"M{n}": _T for n in range(6556, 6571)}
+TESTS.update({"M6621": _T, "M6622": _T, "M6623": "tests/unit/test_recovery_watch.py"})

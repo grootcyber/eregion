@@ -142,11 +142,11 @@ def test_the_help_no_longer_says_utc_when_no_offset():
 
 def test_restore_without_before_on_a_card_without_zone_refuses_and_says_what_it_carries(tmp_path, monkeypatch):
     cli, started = _restore_env(tmp_path, monkeypatch, iso={"isolated_at": "2026-10-29T09:00:00+00:00"})
-    _unzone(_card(), "2026-10-29T06:00:00")             # earlier than the isolation, if it were UTC
+    naive = _unzone(_card(), "2026-10-29T06:00:00")     # earlier than the isolation, if it were UTC
     out = CliRunner().invoke(cli.cli, ["restore", VM, "--yes"], terminal_width=250)
     assert out.exit_code != 0 and started == []
     flat = " ".join(out.output.split())
-    assert "non deviné" in flat and "la carte porte '2026-10-29T06:00:00'" in flat
+    assert "non deviné" in flat and f"la carte {naive['id'][:8]} porte '2026-10-29T06:00:00'" in flat
     _asks_a_zone(flat)
 
 
@@ -173,12 +173,72 @@ def test_the_control_a_normal_card_still_gives_its_moment(tmp_path, monkeypatch)
 def test_a_card_without_zone_gives_no_moment_and_the_reason(monkeypatch):
     monkeypatch.setattr("glorfindel.actions._load_isolation_state", lambda rid: None)
     esc = _unzone(_card())
-    assert restore_plan.card_moment(esc) == ("", f"la carte porte {NAIVE!r} : {restore_plan.NO_ZONE}")
+    assert restore_plan.card_moment(esc) == ("", f"la carte {esc['id'][:8]} porte {NAIVE!r} : {restore_plan.NO_ZONE}")
     plan = restore_plan.proposed_moment(VM, esc)
     assert plan["before"] == "" and plan["no_zone"] == NAIVE
     _asks_a_zone(plan["why"])
     normal = _pending(escalations.record("rule-other-0123abcd", VM, "snapshot", "low_confidence", "r"))
     assert restore_plan.card_moment(normal) == (restore_plan.parse_moment(normal["first_seen"]), "")
+
+
+def test_a_card_given_without_zone_gives_no_moment_even_out_of_the_store(monkeypatch):
+    monkeypatch.setattr("glorfindel.actions._load_isolation_state",
+                        lambda rid: {"isolated_at": "2026-10-29T09:00:00+00:00"})
+    plan = restore_plan.proposed_moment(VM, {"id": "abcdef0123", "first_seen": "2026-10-29T06:00:00"})
+    assert plan["before"] == "" and "la carte abcdef01 porte '2026-10-29T06:00:00'" in plan["why"]
+
+
+# ── RTZ1 review: the card clicked has its zone, an earlier pending one of the VM has none ─────────
+# The console, the bot and the TUI ask the moment of the card clicked: an earlier card of the same VM
+# without a zone may date the attack before it, and before the isolation — no moment proposed.
+
+def _beside(monkeypatch) -> tuple[dict, dict]:
+    """Card A, pending, without a zone (06:00, before the isolation if it were UTC); card B, the
+    restore's, with its zone; the VM isolated at 09:00 UTC. (A, B) as the store holds them."""
+    monkeypatch.setattr("glorfindel.actions._load_isolation_state",
+                        lambda rid: {"isolated_at": "2026-10-29T09:00:00+00:00"})
+    a = _unzone(escalations.record("rule-other-0123abcd", VM, "snapshot", "low_confidence", "earlier"),
+                "2026-10-29T06:00:00")
+    b = _pending(_card())
+    return a, b
+
+
+def test_an_earlier_card_without_zone_of_the_vm_holds_the_moment_of_the_card_clicked(monkeypatch):
+    a, b = _beside(monkeypatch)
+    plan = restore_plan.proposed_moment(VM, b)
+    assert plan["before"] == "" and plan["no_zone"] == "2026-10-29T06:00:00"
+    assert f"la carte {a['id'][:8]} porte '2026-10-29T06:00:00'" in plan["why"]
+    _asks_a_zone(plan["why"])
+
+
+def test_the_console_the_bot_and_the_tui_propose_no_moment_beside_such_a_card(console, monkeypatch):
+    a, b = _beside(monkeypatch)
+    said = f"la carte {a['id'][:8]} porte '2026-10-29T06:00:00'"
+    d = console.get(f"/api/restore/plan/vm-example-01?escalation={b['id']}").json()
+    assert d["before"] == "" and d["moment"] == "" and said in d["why"]
+    from glorfindel import tui
+    pending = tui._restore_pending(b)
+    assert pending["buffer"] == "" and said in pending["why"]
+    bot = pytest.importorskip("glorfindel.bot")
+    clicked = SimpleNamespace(modals=[], response=None, message=None)
+
+    class _Response:
+        async def send_modal(self, modal):
+            clicked.modals.append(modal)
+    clicked.response = _Response()
+    view = bot.EscalationView(b)
+    button = next(i for i in view.children if isinstance(i, bot._RestoreButton))
+    asyncio.run(button.callback(clicked))
+    form = clicked.modals[0]
+    assert not form.moment.default and form.plan["before"] == "" and said in form.plan["why"]
+
+
+def test_the_control_beside_a_card_with_its_zone_the_card_clicked_keeps_its_moment(monkeypatch):
+    monkeypatch.setattr("glorfindel.actions._load_isolation_state",
+                        lambda rid: {"isolated_at": "2999-01-01T00:00:00+00:00"})
+    escalations.record("rule-other-0123abcd", VM, "snapshot", "low_confidence", "earlier")
+    b = _pending(_card())
+    assert restore_plan.proposed_moment(VM, b)["before"] == restore_plan.parse_moment(b["first_seen"])
 
 
 def test_a_card_without_zone_is_the_one_a_restore_answers_and_dates_nothing(monkeypatch):
@@ -189,7 +249,7 @@ def test_a_card_without_zone_is_the_one_a_restore_answers_and_dates_nothing(monk
     naive = _unzone(_card(), "2026-10-29T06:00:00")    # before the isolation, if it were UTC
     assert restore_plan.card_of(VM)["id"] == naive["id"] != later
     first, why = restore_plan.incident_start(VM)
-    assert first is None and "la carte porte '2026-10-29T06:00:00'" in why
+    assert first is None and f"la carte {naive['id'][:8]} porte '2026-10-29T06:00:00'" in why
 
 
 def test_an_isolation_without_zone_is_never_read_as_a_moment(monkeypatch):
@@ -234,7 +294,7 @@ def test_the_cli_steps_of_a_card_without_zone_carry_no_time_and_say_why(monkeypa
     e = {"resource_id": VM, "action": action, "escalation_type": esc_type, "id": "e1", "first_seen": NAIVE}
     said = _cli_steps(e)
     assert "--before <ISO8601>" in said and f"--before {NAIVE}" not in said and "+00:00" not in said
-    assert f"la carte porte {NAIVE!r}" in said
+    assert f"la carte e1 porte {NAIVE!r}" in said
     _asks_a_zone(said)
 
 
@@ -285,8 +345,9 @@ def test_the_tui_refuses_a_moment_without_zone_and_takes_one_with_it(monkeypatch
 
 def test_the_tui_proposes_no_moment_for_a_card_without_zone(monkeypatch):
     from glorfindel import tui
-    pending = tui._restore_pending(_unzone(_card()))
-    assert pending["buffer"] == "" and f"la carte porte {NAIVE!r}" in pending["why"]
+    naive = _unzone(_card())
+    pending = tui._restore_pending(naive)
+    assert pending["buffer"] == "" and f"la carte {naive['id'][:8]} porte {NAIVE!r}" in pending["why"]
 
 
 @pytest.fixture()
@@ -323,7 +384,7 @@ def test_the_console_refuses_a_moment_without_zone_and_starts_nothing(console, m
 def test_the_console_proposes_no_moment_for_a_card_without_zone(console):
     esc_id = _unzone(_card())["id"]
     d = console.get(f"/api/restore/plan/vm-example-01?escalation={esc_id}").json()
-    assert d["before"] == "" and d["moment"] == "" and f"la carte porte {NAIVE!r}" in d["why"]
+    assert d["before"] == "" and d["moment"] == "" and f"la carte {esc_id[:8]} porte {NAIVE!r}" in d["why"]
 
 
 class _Interaction:
@@ -391,3 +452,28 @@ def test_the_control_the_provider_takes_a_moment_with_its_zone(monkeypatch):
     out = connector.restore_from_backup(_RID, vault="rsv", wait=False, staging_storage="st",
                                         before_attack_time=local)
     assert out["recovery_point"] == "rp-before"
+
+
+# ── The console's 📋 Cmd (its page) ───────────────────────────────────────────────────────
+
+def _page() -> str:
+    from pathlib import Path
+    return (Path(__file__).resolve().parents[2] / "eregion_console" / "static" / "glorfindel.js").read_text()
+
+
+def test_the_console_s_copied_command_carries_no_time_without_zone():
+    """RTZ1 review: the page copies the card's time only when it carries its zone; the test of the
+    page, read from it and run here (the same regular expression in Python), on both kinds of time."""
+    import re
+    js = _page()
+    command = js[js.index("function cliCommand(esc) {"):js.index("if (esc.escalation_type === 'readiness_hold')")]
+    assert "--before ${_zonedOr(esc.first_seen || esc.timestamp, '<ISO8601>')}" in command
+    assert "--before ${esc.first_seen" not in js and "--before ${esc.timestamp" not in js
+    found = re.search(r"const _ZONED_TIME = /(.+)/;\n", js)
+    assert found and "_ZONED_TIME.test(text) ? text : otherwise" in js
+    zoned = re.compile(found.group(1))
+    for text in ("2026-10-29T07:30:00+00:00", "2026-10-29T07:30:00Z", "2026-10-29T08:30:00.123456+01:00",
+                 "2026-10-29T02:30:00-0500", "2026-10-29T07:30:00+00"):
+        assert zoned.search(text), text
+    for text in (NAIVE, "2026-10-29", "2026-10-29T07:30:00.250000", "2026-10-29 07:30", ""):
+        assert not zoned.search(text), text

@@ -66,6 +66,12 @@ def parse_moment(text, now: float | None = None) -> str:
     return dt.isoformat()
 
 
+def _unzoned_card_why(esc: dict | None, text: str) -> str:
+    """What a card whose time carries no zone is said to carry (RTZ1): by its short id, its text."""
+    short = str((esc or {}).get("id") or "")[:8]
+    return f"la carte {short + ' ' if short else ''}porte {text[:60]!r} : {NO_ZONE}"
+
+
 def card_moment(esc: dict | None) -> tuple[str, str]:
     """(the card's first detection as an ISO 8601 moment in UTC, "") — the moment a restore's
     --before starts from, the attack began before it (SEC4c) — or ("", why not). A card whose
@@ -74,7 +80,7 @@ def card_moment(esc: dict | None) -> tuple[str, str]:
     try:
         return parse_moment(text), ""
     except NoTimeZone:
-        return "", f"la carte porte {text[:60]!r} : {NO_ZONE}"
+        return "", _unzoned_card_why(esc, text)
     except ValueError as exc:
         return "", f"l'heure de la carte ne se lit pas ({exc})"
 
@@ -216,12 +222,19 @@ def proposed_moment(resource_id: str, esc: dict | None = None, runs_dir=None,
     if loose:            # RTZ1: the earliest safe moment can't be told — asked, never guessed
         return {"before": "", "source": "", "no_zone": loose[:60],
                 "why": f"l'état d'isolation de la VM porte {loose[:60]!r} : {NO_ZONE}"}
+    # RTZ1, review: a pending card of this VM whose time carries no zone — the card clicked, or an
+    # earlier one beside it (`card_of` sorts it first) — may date the attack before all the others:
+    # no moment is proposed from a later card, nor from the isolation, on any face.
+    earliest = card_of(resource_id)
+    if earliest is not None and _first_seen(earliest) == float("-inf"):
+        text = str(earliest.get("first_seen") or earliest.get("timestamp") or "")
+        return {"before": "", "source": "", "no_zone": text[:60], "why": _unzoned_card_why(earliest, text)}
     first = str((esc or {}).get("first_seen") or (esc or {}).get("timestamp") or "")
     try:
         before = parse_moment(first)
     except NoTimeZone:   # RTZ1: what the card carries, said; no moment proposed
         return {"before": "", "source": "", "no_zone": first[:60],
-                "why": f"la carte porte {first[:60]!r} : {NO_ZONE}"}
+                "why": _unzoned_card_why(esc, first)}
     except ValueError:
         before = ""
     run = card_run(esc)
