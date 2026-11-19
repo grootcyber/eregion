@@ -17,7 +17,7 @@ succeed (neighbouring signals): the model's choice stands.
 
 No Azure call, no model call (the model is patched, dry_run or a recording connector).
 Mutants M4375–M4379 (scripts/mutants/B3a.py) and M5721–M5740 (scripts/mutants/SEC-E.py) are
-measured here and in tests/unit/test_decision_queue.py; M6313–M6316 (scripts/mutants/SEC-Ec.py:
+measured here and in tests/unit/test_decision_queue.py; M6313, M6315, M6316 (scripts/mutants/SEC-Ec.py:
 every earlier hold the attribution's) here — M6311, M6312, M6314, M6317 retired by SEC-Ed (#954): on a
 detection that does not name the VM, the mode no longer holds the snapshot, the attribution guard does.
 """
