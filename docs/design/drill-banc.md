@@ -1188,10 +1188,11 @@ Le code suit les §2.3 et §3.1 dans leur ordre. Ce qui s'en écarte, ou que la 
 - **Mutants** M5861–M5880 et M6291–M6300 (`scripts/mutants/DRL1b.py`), dont celui du §9
   (M5861–M5863 : l'alarme armée sur un drill désarmé, tué, ou sur une empreinte qu'Imladris n'a pas).
 
-**Questions ouvertes, à trancher par Jonathan** (le code a pris le parti qui alerte) :
+**Deux questions, tranchées par Jonathan le 19/11** (les deux partis du code sont gardés) :
 1. **`watch` et `busy` deux semaines de suite**, avec mention ? Le code dit oui : un refus `watch` qui
    revient chaque semaine dit qu'aucune watch vivante n'est vue à l'heure du drill, et ne doit pas
-   rester calme. L'autre parti : jamais de mention pour eux, comme `drill_changed`.
+   rester calme. L'autre parti : jamais de mention pour eux, comme `drill_changed`. **Tranché le
+   19/11 : avec mention** (le code, inchangé).
 2. **Un pouls `disarmed` de raison `drill_changed`, le permis encore présent.** Le code ne le prend pas
    pour `self_disarmed` (avec mention) : c'est ce qu'Orodruin écrit de bonne foi quand une release a
    changé le drill sans réarmement, et le permis reste alors dans le canal. Il dit `refused drill_changed`
@@ -1199,7 +1200,8 @@ Le code suit les §2.3 et §3.1 dans leur ordre. Ce qui s'en écarte, ou que la 
    en fait : en écrivant ce pouls-là au lieu d'un `disarmed operator`, il fait passer l'alerte de « avec
    mention » à « sans mention » — il ne peut pas la taire (elle est dite, dans le fil et sur la
    console), et il n'en a pas besoin pour attaquer (§7). Le comportement est gardé : le changer
-   ferait mentionner chaque release qui change le drill, ce que le §4.2 exclut.
+   ferait mentionner chaque release qui change le drill, ce que le §4.2 exclut. **Tranché le 19/11 :
+   sans mention** (le code, inchangé) ; le revers face à un Orodruin compromis, ci-dessus, reste vrai.
 
 ## 14. Ce que DRL1c a codé, et ses écarts avec la conception (19/11)
 

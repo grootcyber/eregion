@@ -479,7 +479,7 @@ clés. Écarté : garder le français.
 
 Mesuré dans Chromium sans tête, sur la console du jeu d'exemple avec un audit simulé au contrat
 d'IPS2a : une VM sans aucun NSG, une VM dont une carte réseau sur deux n'en a pas (le rouge sur la
-seule IP publique de celle-là), les trois cas de raison, une valeur piégée écrite en texte.
+seule IP publique de celle-là), les quatre codes de raison, et un code inconnu dit tel quel, une valeur piégée écrite en texte.
 Tests : `tests/unit/test_console_no_nsg.py` ; mutants M6521–M6530 (`scripts/mutants/IPS2b.py`).
 
 **Mesuré** dans Chromium sans tête sur la console du jeu d'exemple, avec un audit simulé par des
