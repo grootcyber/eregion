@@ -333,6 +333,7 @@ class VerifyBlockMixin:
         pair_cache: dict = {}
         for t0 in targets:
             bases = (*self._placement_rule_bases(prefix, vm_name, t0["nic_short"], t0["nic_id"]),
+                     *self._older_rule_bases(prefix, vm_name, t0["nic_short"], t0["nic_id"]),
                      self._legacy_rule_base(prefix, vm_name, t0["nic_short"], t0["nic_id"]))
             present = [(t, base) for t in self._nic_nsg_views(t0) for base in bases
                        if self._rules_present(t["nsg_rg"], t["nsg_name"], [base, f"{base}-out"])]

@@ -118,6 +118,7 @@ sans changement de texte, un module par préoccupation, aucun au-delà de 430 li
 | `backup.py`, `restore.py` | points de restauration, statut d'un job de restauration, restauration |
 | `restore_rights.py` | les droits d'un restore lus avant de toucher la VM, les refus d'Azure dits en entier, sans id (RST1) |
 | `sweep.py`, `readers.py` | `reset` et règles orphelines ; droits, inventaire NSG, lectures de l'audit |
+| `public_ips.py` | l'IP publique de chaque carte, lue pour l'audit, une lecture qui échoue dite avec sa raison (IPS1a) ; ci-dessous, « L'IP publique de chaque carte » |
 | `narrow.py` | une règle orpheline réduite aux adresses des VM que Glorfindel tient, quand elle coupe aussi une VM qu'il ne tient pas (U1G) |
 | `turned.py` | nos règles retournées en autorisation (`_TURNED_NAMES`), et les refus qu'elles attendent derrière (I5Q) ; la garde de chaque retrait par son nom (`_held_by_turned`), qui lit aussi une ancienne version retournée sous son nom (`_OLDER_NAMES`, I4G) |
 | `sdk.py`, `capabilities.py`, `monitor.py` | préchauffage du SDK ; capacités déclarées ; Log Analytics |
@@ -155,6 +156,141 @@ journal). Les droits : `Microsoft.Insights/eventtypes/values/read` et
 `Microsoft.Authorization/*/read`, tous deux sous `*/read`. **À mesurer** ([`banc-lev2.md`](banc-lev2.md)) :
 le filtre exact sans les enfants (H9), la ressource de chaque opération (H7), la latence (H12),
 les attributions héritées lues à la portée de la VM (H1), les éligibilités sous `*/read` (H2).
+
+### Les noms par l'identifiant complet (SEC-H, #849)
+
+**Nos règles finissent par 128 bits de l'id de leur carte réseau** (`_nic_mark`, SHA-256 de l'id en minuscules,
+32 hex) : `glorfindel-iso-<vm>-<carte>-<marque>`, `glorfindel-block-<ip>-<vm>-<carte>-<marque>`, et leur second
+nom `…-b-<marque>`. Une version antérieure les finissait par 6 hex de SHA-1 (8 quand le nom tronqué n'avait plus
+la carte) : deux cartes de même nom, dans deux VM de même nom, dont les ids s'y rencontrent (2^24 essais hors
+ligne) partageaient leurs noms — la levée de l'une retirait le refus de l'autre, l'isolement de l'une réécrivait
+celui de l'autre. Sur 128 bits, deux cartes ne se rencontrent jamais ; un nom trop long pour la carte et la VM
+garde la VM, coupée, et la marque entière (au plus 80 caractères avec `-out`) ; un préfixe trop long même
+pour la VM (un blocage IPv6) garde son début et 64 bits de l'empreinte de l'adresse : un nom par adresse.
+
+**La migration** : rien n'est renommé sur Azure. Ce qu'une version antérieure a posé reste sous ses noms jusqu'à
+sa levée :
+- **lu** : la vérification et la réaffirmation lisent ces noms (`_older_rule_bases`), une isolation ou un blocage
+  qui y tient est vérifié, jamais reposé en double ;
+- **jamais cru sur le nom — on ne retire que ce qui est prouvé** (décision de Jonathan, 19/11) : une règle sous
+  un ancien nom (6 ou 8 hex, un nom tronqué compris) n'est retirée que si **les trois** tiennent : l'état de sa VM
+  enregistre cette règle, sur ce NSG, pour cette carte ; le côté de la carte dans la règle (sa destination en entrée,
+  sa source en sortie) ne nomme que des adresses que ce placement a enregistrées (`ips` : l'adresse d'alors, L26) ou
+  que la carte tient maintenant — chacune une adresse, jamais `*`, une plage ou une étiquette ; et l'état d'aucune
+  autre VM n'enregistre cette règle sur ce NSG (`glorfindel/providers/azure/older_names.py`, `older_taken`). Le
+  défaire d'un placement par son nom le vérifie aussi (`older_undo_refusal`) : réécrite depuis par un homonyme dont
+  le hash a rencontré le sien, la règle n'est plus celle du placement. Rien ne se déduit d'Azure : deux VM de deux
+  VNet ont souvent la même adresse privée, et les cartes d'un groupe identique (VMSS) ne sont pas listées ;
+- **tout le reste est laissé et dit**, sur toutes les voies — la levée (`release_partial`), le `reset`
+  (`swept_partial`), le déblocage (`unblock_partial`), la promotion d'un blocage en périmètre (la paire gardée
+  entière), la vérification de la levée (inconnue, jamais vraie, sur les NSG qu'elle lit : ceux que la carte
+  porte, ceux qu'elle a quittés, et, pour une carte laissée nue, ceux de l'abonnement comme la levée), le NSG
+  qu'une carte laissée nue ne porte plus, une VM supprimée —, avec la commande qui la retire à la main
+  (`az network nsg rule delete …`). La règle d'un homonyme n'est jamais retirée par la levée d'un autre. Un état local illisible
+  (d'une autre VM comprise) suspend tout retrait d'un ancien nom, dit « état local illisible » : ce qu'il enregistre
+  est inconnu, jamais « rien » ;
+- **ce que cela coûte, pendant la transition** : une isolation ou un blocage d'une version antérieure dont l'état
+  local est perdu (ou réécrit depuis sans ses anciens noms) n'est plus levé seul — il est dit, et retiré à la main ;
+  les deux homonymes dont le hash s'est rencontré retiennent chacun la levée de l'autre tant que leurs règles
+  communes restent. `verify_isolation` lit toujours une paire par son contenu (elle isole, quel que soit son
+  auteur) ;
+- **reposé sous les nouveaux noms** : une isolation ou un blocage écrit de nouveau (la réaffirmation après une
+  disparition, une ré-isolation) part sous les nouveaux noms ; l'état garde les deux placements, la levée défait
+  les deux ;
+- **les orphelines** : le balayage reconnaît les deux marques (32 hex, et 6 ou 8) ; une carte vivante porte les
+  trois. Cette voie ne suit pas la règle des trois conditions ci-dessus mais la sienne (A3, U1G) : une règle n'y
+  est retirée que si aucune carte listée ne porte sa marque, qu'elle coupe une carte vivante, qu'aucun état n'est
+  illisible et qu'aucune VM tenue n'est visée. Elle garde l'angle mort des cartes de VMSS, qui ne sont pas listées : une règle d'une instance de
+  VMSS dont la marque ne se lit sur aucune carte listée peut y être prise pour orpheline, comme avant ce lot.
+
+**Le tag d'original sur le NSG de quarantaine partagé** : sa clé tient sur 128 bits de l'id de la carte
+(`glorfindel-orig-<32 hex>`), au lieu de 48 ; la clé d'une version antérieure est lue quand la nôtre manque,
+jamais réécrite, retirée avec la nôtre. **Ce qu'un tag peut nommer** : l'id d'un NSG de l'abonnement où agit
+Glorfindel, jamais un de nos NSG de quarantaine — sinon l'original est inconnu et la carte reste en quarantaine ;
+sa région, Azure la tient (un NSG d'une autre région est refusé sur la carte, et la levée le dit). **Où il se lit
+pour une carte nue** : sur le NSG de quarantaine du groupe où nous les créons (le groupe configuré, sinon celui de
+la VM), et nulle part ailleurs ne choisit. Un NSG de quarantaine d'un autre groupe qui nomme un original pour la
+carte — un autre hôte configuré sur un autre groupe (I8S), ou un leurre que n'importe qui peut nommer et étiqueter
+comme le nôtre — n'est jamais suivi : la carte reste telle quelle, dite (`OriginalConflict`), jusqu'à ce que
+l'opérateur pose l'original sur notre tag ; une ré-isolation retire alors notre « aucun » périmé (relu), garde
+la raison sur son placement (`original_conflict`), et la levée la redit, le NSG de l'autre groupe nommé.
+**Quand notre groupe n'a pas ce NSG** (SEC-Hb, #947, 19/11) — la quarantaine coupée là, par exemple : notre
+propre isolation posée dans le groupe de la VM avant qu'un `quarantine_rg` soit configuré, son état perdu ; rien
+ne prouve plus que ce NSG est le nôtre, le refus tient —, il n'y a rien à étiqueter : le message dit alors de
+remettre le NSG sur la carte à la main (`az network nic update -g <groupe de la carte> -n <carte>
+--network-security-group <id du NSG>`), l'id à nommer par l'opérateur, jamais celui que l'autre groupe choisit. La sortie vient en tête du message, avant l'explication : la levée en garde 600 caractères, le placement autant, et les noms d'Azure sont longs (un groupe 90, une carte 80).
+Avant, il disait de poser le tag sur un NSG absent : aucune sortie, la levée restait `release_partial` (I7 rouge
+sur la CI py3.12 de #945).
+
+**Les états locaux** (`glorfindel/response/state_files.py`) : un fichier n'est celui d'une VM que si le
+`resource_id` qu'il enregistre est le sien (`docs/fichiers-cles.md`). **Les écritures ARM** de l'isolement et du
+blocage attendent au plus `GLORFINDEL_ARM_WRITE_TIMEOUT_S` (300 s), et un écrivain derrière le verrou d'une VM au
+plus `GLORFINDEL_VM_LOCK_WAIT_S` (900 s) : au-delà, l'écriture est dite en échec, jamais faite ; la réaffirmation
+dit chaque VM qu'elle saute, et sur une carte (`reassert-busy-…`) à partir de la cinquième passe de suite.
+
+**La mesure au banc** (avant la fusion de SEC-H, geste de l'opérateur) : ce qu'une version d'avant a posé,
+lu et levé par la nouvelle. Depuis le poste, `.envrc` chargé, sur des VM du banc qu'Imladris ne tient pas
+(l'ancien Imladris ignore les noms en 32 hex : son balayage des orphelines ne lit que 6 ou 8), **inscrites en
+zone `bench`** — une action refuse une VM hors du périmètre — et passées par leur **id complet** `<ridN>`
+(`/subscriptions/<abonnement>/resourceGroups/<rg>/providers/Microsoft.Compute/virtualMachines/<vmN>`, que
+donne `glorfindel list --ids` une fois la VM découverte sur le poste). Deux checkouts, le même `~/.glorfindel` :
+`<ancien>` (la release qui tourne, ou `origin/main` d'avant la fusion) et `<branche>`. Placeholders : `<rid1>`,
+`<rid2>`, `<rid3>`, `<rg>` (leur groupe), `<nsg>` (le NSG de leurs cartes), `<rg-q>` et `<région>` (le NSG de
+quarantaine), `<nic>`, `<ip>` (une adresse de documentation, 203.0.113.x).
+
+1. **Avec `<ancien>`** :
+   - `glorfindel block <ip> <rid1> --yes` ;
+   - `GLORFINDEL_QUARANTINE_NSG=0 glorfindel isolate <rid2> --yes` (par règles) ;
+   - `glorfindel isolate <rid3> --yes` (par la quarantaine).
+
+   Contrôles : `az network nsg rule list -g <rg> --nsg-name <nsg> --query "[?starts_with(name,'glorfindel-')].name" -o tsv`
+   liste des noms qui finissent par 6 hex ; `az network nsg show -g <rg-q> -n nsg-glorfindel-quarantine-<région>
+   --query tags` montre un tag `glorfindel-orig-<12 hex>`.
+2. **Avec `<branche>`**, en lecture :
+   `.venv/bin/python -c "from glorfindel.actions import AzureConnector as C; c=C(dry_run=False); print(c.verify_block_ip('<ip>','<rid1>')['verified'], c.verify_isolation('<rid2>')['verified'], c.verify_isolation('<rid3>')['verified'])"`
+   affiche `True True True`.
+3. **Avec `<branche>`** : `GLORFINDEL_QUARANTINE_NSG=0 glorfindel isolate <rid2> --yes`. Une paire
+   `glorfindel-iso-…-<32 hex>` apparaît à côté de l'ancienne, et Azure l'accepte (80 caractères au plus).
+4. **Avec `<branche>`** : `glorfindel unblock <ip> <rid1> --yes` répond `unblocked` ; `glorfindel release
+   <rid2> --yes` et `glorfindel release <rid3> --yes` répondent `released`.
+
+   Contrôles : plus aucune règle `glorfindel-` sur ces NSG (la commande de l'étape 1) ; plus aucun tag
+   `glorfindel-orig-` pour ces cartes ; chaque carte sur son NSG d'origine (`az network nic show -g <rg> -n <nic>
+   --query networkSecurityGroup.id`).
+
+### L'IP publique de chaque carte, dans l'audit (IPS1a, #931)
+
+L'audit d'une VM (`check_nsg_access`, `readers.py`, que la console relit par `/api/audit` toutes
+les 5 min) rend une entrée de `nsgs[]` par carte réseau : son NSG, sa portée, son id, ses IP
+privées (`ips`), et **ses IP publiques (`public_ips`)**. Le reste de la forme ne change pas.
+
+```json
+{"nsg": "rg-app/nsg-web", "nsg_scope": "subnet", "nic_id": "…/networkInterfaces/web-nic",
+ "ips": ["10.0.0.4", "10.0.0.5"],
+ "public_ips": [{"address": "198.51.100.10"},
+                {"address": null, "error": "lecture refusée (droits) : (AuthorizationFailed) …"}]}
+```
+
+- **Le champ** : une liste, vide quand la carte n'a pas d'IP publique ; un élément par IP publique
+  des configurations IP de la carte, dans leur ordre. `{"address": "<adresse>"}`, ou
+  `{"address": null, "error": "<raison>"}` quand la lecture a échoué.
+- **La lecture** : pour chaque `ip_configurations[].public_ip_address.id` (la carte est déjà lue par
+  `_get_vm_nic_targets`, qui note ces ids), un `publicIPAddresses.get` par le SDK réseau, **dans le
+  groupe de ressources de l'IP, pris dans son id** (il peut différer de celui de la VM). Une même IP
+  n'est lue qu'une fois par appel. Rien d'écrit. `dry_run` rend toujours `{"ok": true, "nsg": "dry_run"}`.
+- **Une lecture qui échoue ne fait jamais échouer l'audit** : le contrôle « NSG access » reste `ok`,
+  l'élément dit `address: null` et sa raison — `lecture refusée (droits) : …` (un 403),
+  `introuvable` (un 404), `pas d'adresse allouée (…)` (une IP dynamique sur une VM arrêtée),
+  `illisible : …` (le reste, un 429 par exemple). Les mots d'Azure : leur première ligne, sans id
+  (un id ARM devient sa sorte, un GUID `<id>`, comme RST1), 200 caractères au plus.
+- **Le droit** : `Microsoft.Network/publicIPAddresses/read`, sous le `*/read` du Reader. Imladris
+  tient le Reader sur le groupe du banc seulement (`infra/glorfindel-host/main.tf`, `bench_reader`) :
+  une IP publique dans un autre groupe y est refusée, dite comme telle, et l'audit tient. Pour la
+  lire, Reader (ou un rôle qui porte `publicIPAddresses/read`) sur ce groupe, posé par Jonathan.
+- **La limite connue** : une VM sans NSG ni sur sa carte ni sur son sous-réseau fait échouer
+  l'audit (`_get_vm_nic_targets` lève, « cannot isolate VM ») ; son adresse ne se lit donc pas.
+- **Les autres fournisseurs** : l'adaptateur AWS (et son faux, `tests/unit/fake_aws.py`) ne rend
+  pas `check_nsg_access`, donc pas de `nsgs[]` ni de `public_ips`.
 
 ## Pitfalls opérateur
 

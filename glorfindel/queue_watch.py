@@ -471,9 +471,9 @@ class QueueWatch:
     def _run(self, service: str, req: aq.Request, card, ctx: dict) -> dict:
         """Under the VM's lock, with the watch's own functions; the receipt ``done`` or ``failed``.
         Never raises."""
-        from glorfindel.response.locks import _vm_lock
+        from glorfindel.response.locks import _vm_lock, writer_wait_s
         try:
-            with _vm_lock(_vm(req.resource_id)):
+            with _vm_lock(_vm(req.resource_id), timeout=writer_wait_s()):   # bounded (SEC-H)
                 state, result, verification, reason = getattr(self, f"_do_{req.verb}")(req, card, ctx)
         except Exception as exc:
             state, result, verification = "failed", None, None

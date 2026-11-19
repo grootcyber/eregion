@@ -7,11 +7,12 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone
 
-from rich.console import Console
-
 from glorfindel.providers.interface import DetectionConnector
+from glorfindel.terminal import GlorfindelConsole, outside
 
-_console = Console()
+# SEC-Fc: a console that never raises on markup — the last guard; what Azure said is escaped
+# where it is printed.
+_console = GlorfindelConsole()
 
 
 class AzureMonitorDetector(DetectionConnector):
@@ -85,7 +86,9 @@ class AzureMonitorDetector(DetectionConnector):
             except Exception as e:
                 last_error = str(e)  # set regardless of verbose (the poller is non-verbose)
                 if verbose:
-                    _console.print(f"  [dim]Poll error: {e}[/dim]")
+                    # What Azure said, as it is (SEC-Fc): a `[/…]` in its text raised here, out of
+                    # the poll — the search ended as a cycle_failed card on a transient error.
+                    _console.print(f"  [dim]Poll error: {outside(e)}[/dim]")
             if verbose:
                 _console.print(f"  [dim]Still polling... {round(elapsed)}s elapsed[/dim]")
             time.sleep(interval_s)

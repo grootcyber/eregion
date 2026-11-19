@@ -619,6 +619,8 @@ def isolated_glorfindel_home(tmp_path, monkeypatch):
     monkeypatch.setattr(signal_origin, "REFUSALS_FILE", home / "channel_refusals.json")
     import glorfindel.recovery_watch as recovery_watch   # REC1: what the watch did of each restore job
     monkeypatch.setattr(recovery_watch, "RECOVERIES_FILE", home / "recoveries.json")
+    import glorfindel.reassert_skipped as reassert_skipped   # SEC-H: the VMs the reassertion skipped, counted
+    monkeypatch.setattr(reassert_skipped, "_SKIPPED", {})
     import glorfindel.door_facts as door_facts           # LEV2: the door's facts of each isolated VM
     monkeypatch.setattr(door_facts, "FACTS_DIR", home / "door")
     monkeypatch.setattr(door_facts, "_LAST_READ", {})
@@ -631,6 +633,8 @@ def isolated_glorfindel_home(tmp_path, monkeypatch):
     monkeypatch.setattr(bot_beat, "_STORE", home / "bot_heartbeat.json")
     from glorfindel.providers.azure import run_command   # DRN2: the drains replaced before their end
     monkeypatch.setattr(run_command, "_SUPERSEDED", {})
+    import glorfindel.drill_watch as drill_watch     # DRL1b: the drill of the week's verdicts
+    monkeypatch.setattr(drill_watch, "_STORE", home / "drill_verdicts.json")
     import glorfindel.cli as glorfindel_cli          # the injectors' heartbeat directory (SEC3)
     monkeypatch.setattr(glorfindel_cli, "_INJECTORS_DIR", home / "injectors")
     try:
@@ -764,6 +768,7 @@ def isolated_bot_state(tmp_path, monkeypatch):
     monkeypatch.setattr(bot, "_SYNCED_STORE", tmp_path / "bot_synced.json")
     monkeypatch.setattr(bot, "_WEEKLY_STORE", tmp_path / "bot_weekly.json")
     monkeypatch.setattr(bot, "_NOTICES_POSTED_STORE", tmp_path / "bot_notices_posted.json")   # DRN2
+    monkeypatch.setattr(bot, "_DRILL_POSTED_STORE", tmp_path / "bot_drill_posted.json")   # DRL1b
 
 
 @pytest.fixture(autouse=True)

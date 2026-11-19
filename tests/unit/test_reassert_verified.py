@@ -432,7 +432,8 @@ def test_a_partial_pair_whose_second_time_found_its_lock_held_is_said_the_next_p
     monkeypatch.setattr(actions, "_vm_lock", busy_second)
     blind.append(1)
     try:
-        assert reassert_active(c, _ACT) == []                     # the first time wrote, the second waited
+        # The first time wrote, the second waited: skipped, said in the report (SEC-H).
+        assert [r["outcome"] for r in reassert_active(c, _ACT)] == ["skipped"]
     finally:
         blind.clear()
     assert _cards() == [] and _load_block_entries(_WEB)[0].get("partial_unsaid")

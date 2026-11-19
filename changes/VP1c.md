@@ -1,0 +1,7 @@
+### Fixed
+- **TO JUDGE and the observation report hold before a card whose time carries no time zone** (VP1c, #920; `docs/observation.md`, `docs/design/console.md`).
+  - Such a time — or one that cannot be read — is never compared to a time with a zone, nor taken for UTC. Measured on VP1b's review: one such card made `to_judge` raise (`TypeError`) as soon as a `since` was given, and the recurrence made it raise even without one — the whole TO JUDGE list fell (`/api/to-judge`), and the observation report with it.
+  - The card stays in TO JUDGE whatever the period, first (no limit cuts it), flagged `time_unreadable` — the console says « ⚠ time unreadable — judge it all the same », and any age the page computes refuses a time without a zone. It has no recurrence and counts in no other card's. A card whose time could not be read, once left out of a period, now stays too.
+  - The observation report leaves it out of a period it cannot place it in, and says so (`undated`; « N card(s) left out » in `glorfindel report`). A `since` without a time zone is refused (`ValueError`).
+  - The bot keeps its message in line and its verdict buttons; its action buttons refuse (« heure illisible (sans fuseau) »): its age is not known. `glorfindel pending` shows it, its time as written, « age unknown ».
+  - Tests: `tests/unit/test_observation.py`, `tests/unit/test_judge_console.py`, `tests/unit/test_bot.py`; mutants M6366–M6375 (`scripts/mutants/VP1c.py`).

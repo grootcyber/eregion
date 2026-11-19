@@ -21,6 +21,7 @@
   846,
   847,
   848,
+  849,
   850
  ],
  "composants": [
@@ -511,6 +512,20 @@
    "doc": "docs/glorfindel.md"
   },
   {
+   "id": "g-plan-controle-telemetrie",
+   "composant": "glorfindel",
+   "poste": "g-detecter",
+   "nom": "A control-plane operation that names neither its caller nor its resource: a card of incomplete telemetry, of lower severity, never approvable, never dropped; the caller named from its token's ids when the log leaves it empty, on every operation of a summary card too",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "CPT1",
+    "CPT1b"
+   ],
+   "issue": 930,
+   "doc": "docs/glorfindel.md"
+  },
+  {
    "id": "s-sec-a4",
    "composant": "socle",
    "poste": "s-signer",
@@ -579,6 +594,32 @@
    ],
    "issue": 758,
    "doc": "docs/banc-retard.md"
+  },
+  {
+   "id": "g-voie-de-retour",
+   "composant": "glorfindel",
+   "poste": "g-detecter",
+   "nom": "The watch's own return channel no longer fires the exfiltration rule, set aside by its identity, its container and its objects, and counted; a card attributed to no VM says so, with its candidates",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "SLF1"
+   ],
+   "issue": 929,
+   "doc": "docs/glorfindel.md"
+  },
+  {
+   "id": "g-attribution-prime",
+   "composant": "glorfindel",
+   "poste": "g-decider",
+   "nom": "A card attributed to no VM is never approvable in one click, whatever gate held it first; its suggested commands never name the VM it is filed on; the return channel set aside under the shipped rule only",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "ATT1"
+   ],
+   "issue": 936,
+   "doc": "docs/glorfindel.md"
   },
   {
    "id": "g-charges-ia",
@@ -1526,9 +1567,22 @@
    "etat": "main",
    "release": "0.6",
    "lots": [
-    "SEC-K"
+    "SEC-K",
+    "CDI1"
    ],
    "issue": 847
+  },
+  {
+   "id": "s-sec-ib",
+   "composant": "socle",
+   "poste": "s-signer",
+   "nom": "Security hardening",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "SEC-Ib"
+   ],
+   "issue": 910
   },
   {
    "id": "s-sec-f",
@@ -1541,6 +1595,19 @@
     "SEC-F"
    ],
    "issue": 845
+  },
+  {
+   "id": "s-sec-fc",
+   "composant": "socle",
+   "poste": "s-signer",
+   "nom": "Security hardening",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "SEC-Fc",
+    "SEC-Fd"
+   ],
+   "issue": 907
   },
   {
    "id": "s-sec-g",
@@ -1563,9 +1630,23 @@
    "etat": "main",
    "release": "0.6",
    "lots": [
-    "SEC-E"
+    "SEC-E",
+    "SEC-Ec"
    ],
    "issue": 846
+  },
+  {
+   "id": "s-sec-h",
+   "composant": "socle",
+   "poste": "s-signer",
+   "nom": "Security hardening",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "SEC-H",
+    "SEC-Hb"
+   ],
+   "issue": 849
   },
   {
    "id": "s-sec-i",
@@ -1788,6 +1869,18 @@
     "R2BGb"
    ],
    "issue": 897
+  },
+  {
+   "id": "a-stratus-role-ferme",
+   "composant": "annatar",
+   "poste": "a-attaquer",
+   "nom": "Stratus's closed role, Orodruin's read-only authz and the federated credential, as Terraform on the dedicated subscription (G2/G3/G4)",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "R2BGc"
+   ],
+   "issue": 608
   },
   {
    "id": "a-injecteur-stage",
@@ -2064,6 +2157,19 @@
    "doc": "infra/orodruin/README.md"
   },
   {
+   "id": "o-kill-stratus",
+   "composant": "orodruin",
+   "poste": "o-armer",
+   "nom": "The kill cuts the Stratus identity's role too, on its own dedicated subscription — the operator's gesture, tooled",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "R2c"
+   ],
+   "issue": 608,
+   "doc": "docs/design/stratus-cible.md"
+  },
+  {
    "id": "o-kubernetes",
    "composant": "orodruin",
    "poste": "o-armer",
@@ -2111,6 +2217,46 @@
    "version": "0.6.1",
    "lots": [
     "DRL1a"
+   ],
+   "issue": 613,
+   "doc": "docs/design/drill-banc.md"
+  },
+  {
+   "id": "o-drill-reveil",
+   "composant": "orodruin",
+   "poste": "o-executer",
+   "nom": "The weekly drill's scheduled start: a Logic App that wakes Orodruin before the drill, shipped disabled, its identity able only to start Orodruin; Orodruin shut down every day at 23:00 UTC, a drill it would cut refused at the arming; the dry check says the scheduled start's state against the arming; nothing applied yet",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "DRL1c",
+    "DRL1e"
+   ],
+   "issue": 613,
+   "doc": "docs/design/drill-banc.md"
+  },
+  {
+   "id": "o-drill-home-exec",
+   "composant": "orodruin",
+   "poste": "o-executer",
+   "nom": "The weekly drill's service runs with the options of the injector's runs, its executable run HOME included, /tmp still noexec; the parity with the Makefile held by a test; reaches Orodruin at the next arming",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "DRL1d"
+   ],
+   "issue": 613,
+   "doc": "docs/design/drill-banc.md"
+  },
+  {
+   "id": "k-drill-semaine",
+   "composant": "console",
+   "poste": "k-suivre",
+   "nom": "The weekly drill on Imladris's side: each occurrence judged by the code, the absence alarm, the bot's thread, the Weekly drill line on the console; nothing armed yet",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "DRL1b"
    ],
    "issue": 613,
    "doc": "docs/design/drill-banc.md"
@@ -2526,7 +2672,8 @@
    "etat": "main",
    "release": "0.6",
    "lots": [
-    "FRS1"
+    "FRS1",
+    "FRS1b"
    ],
    "issue": 904
   },
@@ -2538,10 +2685,39 @@
    "etat": "main",
    "release": "0.6",
    "lots": [
-    "VP1"
+    "VP1",
+    "VP1b",
+    "VP1c"
    ],
    "issue": 615,
    "doc": "docs/design/drill-banc.md"
+  },
+  {
+   "id": "k-carte-scroll",
+   "composant": "console",
+   "poste": "k-voir",
+   "nom": "The infrastructure map holds while it scrolls, however many cards: each edge on its card",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "TOPO1"
+   ],
+   "issue": 927,
+   "doc": "docs/design/console.md"
+  },
+  {
+   "id": "k-ip-publique",
+   "composant": "console",
+   "poste": "k-voir",
+   "nom": "A VM's card shows its private and public addresses, folded or not, and copies one in a click; a public IP the audit cannot read is said, the audit holds",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "IPS1a",
+    "IPS1b"
+   ],
+   "issue": 931,
+   "doc": "docs/design/console.md"
   },
   {
    "id": "i-separee",

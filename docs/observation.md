@@ -86,6 +86,24 @@ carte, jamais repliée dans celle d'une autre : chacune se juge et compte. Mesur
 n'avait laissé aucune carte à juger. Une vérification en échec, elle, devient toujours une carte
 `verification_failed`, et une action retenue par le mode sa carte `mode_hold`.
 
+**Une carte dont l'heure n'a pas de fuseau reste dans TO JUDGE** (VP1c, #920, 19/11). Une heure sans
+fuseau (ou illisible) n'est jamais comparée à une heure qui en a un, ni prise pour de l'UTC : où elle
+tombe n'est pas connu, et jamais deviné. La carte reste dans la liste quelle que soit la période,
+en tête (aucune limite ne la coupe), marquée « ⚠ time unreadable — judge it all the same »
+(`time_unreadable` dans `/api/to-judge`), pour être jugée quand même ; elle n'a pas de récurrence et
+n'entre dans celle d'aucune autre. Le bot garde son message à jour et ses boutons de verdict ; ses
+boutons d'action refusent (« heure illisible (sans fuseau) ») : son âge n'est pas connu.
+`glorfindel pending` la montre, son heure telle qu'écrite, « age unknown ». Mesuré à la relecture
+de VP1b : une seule de ces cartes faisait tomber toute la liste et le rapport (`TypeError`).
+
+**Une carte non attribuée le dit** (SLF1, #929, 19/11). Une détection qui ne nomme aucune VM (aucune
+VM surveillée n'a fait l'appel) est rangée sur une VM d'ancrage ; sa ligne de TO JUDGE, sa note, son
+titre, le champ « Ressource » de Discord et `glorfindel pending` disent « not attributed » (« non
+attribuée ») et ses candidates, jamais le nom de cette VM comme ressource. Juger la carte, c'est juger
+la détection : la VM concernée est à trouver avant d'agir ([glorfindel.md](glorfindel.md), « La voie
+de retour de la watch »). Les écritures de la voie de retour de la watch elle-même ne font plus de
+carte : comptées sur la règle `data-exfiltration-blob`.
+
 Dans la console, **une ligne de TO JUDGE ouvre sa carte** (ses détails, une note, son verdict), et une
 tuile qui replie plusieurs cartes (« ×6 ») les montre toutes dans ses détails, chacune avec sa raison,
 son explication et son chemin vers le verdict.
@@ -97,6 +115,8 @@ calculé par la watch sur Imladris. C'est un champ à part (`proposed_verdict`),
 la carte reste dans TO JUDGE, son compte compris, et **ni le rapport ni les indicateurs ne le
 comptent** — seuls les verdicts posés comptent. L'opérateur le confirme d'un clic (console ou Discord :
 il devient son verdict, `verdict_from: proposed`) ou le refuse (il s'efface, et n'est jamais reproposé).
+Rejugée ensuite à la main, la carte porte le verdict de l'opérateur, et ne dit plus qu'il vient de la
+proposition (`verdict_from` retiré, VP1b).
 Il ne compare que la détection, jamais la décision : ne le confirmer que si l'action était
 proportionnée. Une carte d'exercice sans proposition dit pourquoi (une autre règle, une autre VM,
 hors du délai ou de la fenêtre, une seconde carte, deux versions du drill…). Les cartes d'exercice
@@ -129,6 +149,11 @@ fenêtre d'un injecteur (Annatar, puis Gothmog) porte `source: exercise` et le r
 JUDGE, marquées (H-1) — la carte « exécutée » d'un isolement autonome d'un exercice aussi (plus haut) : une fenêtre d'exercice est l'affirmation de l'hôte des injecteurs, et une carte cachée
 sur cette seule foi laisserait passer une vraie attaque qu'une fenêtre forgée couvrirait. Un compte créé à la main pour un test, comme celui du
 16/10 sur bree, n'est pas un exercice déclaré : il compte, d'où la note du verdict.
+
+Une carte dont l'heure n'a pas de fuseau, ou ne se lit pas (VP1c), n'est comptée dans aucune
+période : dans la fenêtre ou non, on ne le sait pas, et on ne le devine pas. Le rapport la compte à
+part, `undated` (« N card(s) left out: their time carries no time zone… ») ; `--since all`, sans
+fenêtre à trancher, la compte comme les autres.
 
 Une carte non jugée n'entre pas dans le taux. Un taux calculé sur trois cartes ne dit rien :
 le rapport donne aussi les effectifs.

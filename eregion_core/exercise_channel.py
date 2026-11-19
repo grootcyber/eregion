@@ -1022,8 +1022,8 @@ def publish_doc(name: str, doc: dict, *, channel: str | None = None, credential=
 # by Orodruin at each occurrence, by the operator at the arming, the disarming and the kill) and the
 # operator's permit (``drill-permit.json``: written at the arming, removed by the disarming and the
 # kill, rewritten by Orodruin as it was, under If-Match). Under Orodruin's prefix, the same container,
-# the same assignments: no right more. ``pull_orodruin`` takes neither (its pattern does not): their
-# readers are Imladris's (DRL1b).
+# the same assignments: no right more. ``pull_orodruin`` takes neither (its pattern does not): Imladris
+# lists them with ``pull_drill`` (DRL1b, below), each read by its one reader (eregion_core/drill_arming.py).
 DRILL_BLOB = f"{ORODRUIN}/drill.json"
 PERMIT_BLOB = f"{ORODRUIN}/drill-permit.json"
 DRILL_BLOBS = (DRILL_BLOB, PERMIT_BLOB)
@@ -1177,3 +1177,132 @@ def pull_orodruin(directory: Path, *, channel: str | None = None, credential=Non
         tmp.replace(local)
         written += 1
     return written, skipped
+
+
+# ── DRL1b (docs/design/drill-banc.md §2.4, §4.1, §4.2): the drill's two blobs, as Imladris sees them ──
+# What the last pull saw of them, beside Orodruin's other blobs (``runs/glorfindel/orodruin/``), in one
+# file written whole: whether it could list the channel, whether the permit was in that listing (what
+# it said, and when it was last listed), and the pulse — its last copy that read, and when the channel
+# last wrote it. One file: the judge never reads half of one pull with half of another.
+SEEN_FILE = "drill-seen.json"
+SEEN_FIELDS = ("at", "listed", "why", "listed_at", "unread_since", "permit", "pulse")
+PERMIT_SEEN = ("listed", "doc", "why", "last_listed")
+PULSE_SEEN = ("listed", "modified", "why", "doc")
+
+
+def _drill_listing(get, url: str, headers: dict, budget: Budget) -> dict:
+    """The drill's blobs the channel lists now, by name — the listing whole, or it raises: a listing
+    cut, or that fails, is never taken for « no permit » (§4.2: the permit's state is then unknown)."""
+    cut: list[str] = []
+    found = {}
+    for blob in _blobs(get, url, headers, f"{ORODRUIN}/drill", delimiter="/", say=cut.append,
+                       budget=budget):
+        name = blob.findtext("Name") or ""
+        if name in DRILL_BLOBS:
+            found[name] = blob
+    if cut:
+        raise Truncated(cut[0])
+    return found
+
+
+def _drill_doc(get, url: str, name: str, headers: dict, budget: Budget, reader) -> tuple[dict | None, str, bool]:
+    """(the blob read by its one reader, why not, still there) — a blob gone between the listing and
+    its download (404) is no longer there."""
+    import json
+    try:
+        r, body = fetch(get, f"{url}/{name}", headers, what=name, budget=budget)
+    except TooLarge as e:
+        return None, f"refused: {e}", True
+    if r.status_code == 404:
+        return None, "gone since it was listed", False
+    if not r.ok:
+        return None, f"HTTP {r.status_code} downloading it", True
+    try:
+        doc = reader(json.loads(body))
+    except (ValueError, RecursionError) as e:
+        return None, f"refused: {e}"[:300], True
+    return doc, "", True
+
+
+def read_seen(directory: Path) -> dict | None:
+    """What the last pull saw of the drill's blobs (``pull_drill``), or None: never pulled, or the file
+    unreadable, or not of its shape. The permit and the pulse it carries are read again by their one
+    reader: one that does not read is None."""
+    from eregion_core import channel_reader, drill_arming
+    try:
+        doc = channel_reader.read_json(Path(directory) / SEEN_FILE)
+    except (OSError, ValueError, RecursionError):
+        return None
+    if not isinstance(doc, dict) or set(doc) != set(SEEN_FIELDS) or not isinstance(doc["listed"], bool) \
+            or not all(isinstance(doc[k], str) for k in ("at", "why", "listed_at", "unread_since")) \
+            or not isinstance(doc["permit"], dict) or set(doc["permit"]) != set(PERMIT_SEEN) \
+            or not isinstance(doc["pulse"], dict) or set(doc["pulse"]) != set(PULSE_SEEN):
+        return None
+    for part, reader in (("permit", drill_arming.read_permit), ("pulse", drill_arming.read_pulse)):
+        if doc[part]["doc"] is not None:
+            try:
+                reader(doc[part]["doc"])
+            except ValueError:
+                doc[part]["doc"] = None
+    return doc
+
+
+def pull_drill(directory: Path, *, channel: str | None = None, credential=None, get=None,
+               now: datetime | None = None) -> dict:
+    """List the drill's two blobs in the channel, on Imladris (DRL1b), and write down what was seen, in
+    one file written whole (``drill-seen.json`` in ``directory``: ``runs/glorfindel/orodruin`` on
+    Imladris, SEC18):
+
+    - ``listed``: whether the listing went through, whole — else ``why``, and ``unread_since``, the
+      first pull that could not list since the last one that could (§4.2, ``channel_unread``);
+    - ``permit``: whether **the listing** names it (``listed``) and, when it does, what it says, read
+      by its one reader (``drill_arming.read_permit``) — never a copy of an earlier pull: the listing
+      alone says the permit is there; ``last_listed``, the last pull whose listing named it (the
+      disarming and the kill remove it before they write the pulse: a grace, glorfindel/drill_watch.py);
+    - ``pulse``: whether the listing names ``drill.json``, when the channel last wrote it (its
+      ``Last-Modified``, Azure's clock — never Orodruin's word), why it did not read, and its last copy
+      that read (``doc``, by ``drill_arming.read_pulse``) — refused (an Imladris older than Orodruin) or
+      no longer listed, the copy before stays and ``why`` says it.
+
+    Without a channel, nothing is written ({}). Never raises: a failure is a listing that did not go
+    through, written down."""
+    import json
+    from eregion_core import channel_reader, drill_arming, runs_layout
+
+    now = now or datetime.now(timezone.utc)
+    url = channel if channel is not None else channel_url()
+    if not url:
+        return {}
+    directory = Path(directory)
+    before = read_seen(directory) or {}
+    at = now.isoformat()
+    was = before.get("permit") or {}
+    permit = {"listed": False, "doc": None, "why": "", "last_listed": str(was.get("last_listed") or "")}
+    kept = before.get("pulse") or {}
+    pulse = {"listed": False, "modified": str(kept.get("modified") or ""), "why": "", "doc": kept.get("doc")}
+    try:
+        headers = auth_headers(credential, url)
+        budget = Budget()
+        listed = _drill_listing(get, url, headers, budget)
+        if PERMIT_BLOB in listed:
+            doc, why, there = _drill_doc(get, url, PERMIT_BLOB, headers, budget, drill_arming.read_permit)
+            permit.update(listed=there, doc=doc, why=why, last_listed=at if there else permit["last_listed"])
+        if DRILL_BLOB in listed:
+            modified = listed[DRILL_BLOB].findtext("Properties/Last-Modified") or ""
+            doc, why, there = _drill_doc(get, url, DRILL_BLOB, headers, budget, drill_arming.read_pulse)
+            pulse.update(listed=there, why=why)
+            if doc is not None:
+                pulse.update(doc=doc, modified=(parsedate_to_datetime(modified).astimezone(timezone.utc).isoformat()
+                                                if modified else at))
+    except Exception as e:   # unread: the permit's state is unknown, never « absent »
+        seen = {"at": at, "listed": False, "why": f"{type(e).__name__}: {e}"[:300],
+                "listed_at": str(before.get("listed_at") or ""),
+                "unread_since": (str(before.get("unread_since") or at) if before.get("listed") is False else at),
+                "permit": before.get("permit") or permit, "pulse": before.get("pulse") or pulse}
+    else:
+        seen = {"at": at, "listed": True, "why": "", "listed_at": at, "unread_since": "",
+                "permit": permit, "pulse": pulse}
+    if not (runs_layout.pull_root(directory) or runs_layout.parents_hold(directory, directory / SEEN_FILE)):
+        with contextlib.suppress(OSError):
+            channel_reader.write_file(directory / SEEN_FILE, json.dumps(seen))
+    return seen

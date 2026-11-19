@@ -439,6 +439,25 @@ def resolve_attack_started(signal: dict, ip_owners=None) -> dict:
     from glorfindel.detection_rules import proven_keys
     names_vm = _row_reader(vm_rid, ip_owners, keys=proven_keys(query)) if data_plane else None
 
+    # SLF1 (#929): the watch's own writes in its return channel are no detection of the run — set
+    # aside as the RulePoller sets them aside (a row of them names no VM: it read as the run's);
+    # `BlobWriters` taken off the row the model reads.
+    # ATT1 (#936): by the shipped rule's query only, to the byte — a query of another rule (the
+    # client's layer) sets nothing aside.
+    from glorfindel import own_channel
+    channel = own_channel.current() if data_plane and own_channel.is_shipped(query) else None
+
+    def settled(row):
+        kept, _ = own_channel.settle([row], channel)
+        return kept[0] if kept else None
+    if names_vm is not None:
+        reader = names_vm
+
+        def names_vm(row):
+            r = settled(row)
+            return False if r is None else reader(r)
+        names_vm.appliance = reader.appliance        # type: ignore[attr-defined]  (SEC-A4)
+
     _console.print(f"[cyan]->[/cyan] Polling {_outside(source)} (timeout={int(timeout_s)}s)...")
     if data_plane:
         result = detector.poll_alert(query, since=attack_time, timeout_s=timeout_s,
@@ -448,6 +467,7 @@ def resolve_attack_started(signal: dict, ip_owners=None) -> dict:
 
     if result is not None:
         detection_s, detected_row = result
+        detected_row = settled(detected_row) or own_channel.strip([detected_row])[0]
         # Measure from the attack (Annatar's T0), not from when the signal arrived:
         # attack_started is emitted after the attack steps, so the poll's own elapsed
         # time said 42 s for ~135 s of real detection time (run 2026-10-05).
@@ -775,6 +795,9 @@ _HELD_BY_TYPE = {
     "telemetry": "telemetry_gap",
     "agreement": "unstable_decision",
     "control_plane": "control_plane_change",
+    # CPT1 (#930): incomplete telemetry on the control plane — the same card, never approvable,
+    # never folded, filed on its target; its severity lower, its text saying so.
+    "control_plane_incomplete": "control_plane_change",
     "identity": "identity_change",
     "never_block": "protected_address",
     "floor": "floor_proposal",
@@ -786,8 +809,13 @@ FLOOR_TYPE = "floor_proposal"
 
 # Actions aimed at ONE VM. On a detection the RulePoller could not tie to that VM (a row
 # aggregated by attacker IP, several VMs monitored) they are held: the same row is
-# dispatched for every VM. An IP block or a snapshot stays autonomous.
+# dispatched for every VM. A snapshot stays autonomous.
 _VM_TARGETED_ACTIONS = {"isolate_vm", "revoke_temp_access"}
+# ATT1 (#936): what the attribution guard holds on an unattributed detection — the VM's isolation,
+# a block on its NSG, the release of its isolation —, the approval's own set (`VM_AIMED_ACTIONS` of
+# the signed queue in eregion_core; the decision never imports it, FS1a — a test keeps the two
+# equal, tests/unit/test_attribution_prime.py).
+_ATTRIBUTION_HELD = frozenset(_VM_TARGETED_ACTIONS | {"block_suspicious_ip", "release_isolation"})
 
 
 def _as_bool(v) -> bool:
@@ -994,16 +1022,56 @@ def _named_callers(row: dict) -> int:
     return _count(row, "Callers")
 
 
+def _caller_said(norm: dict, row: dict) -> str:
+    """Who made the operation, as the row names it (CPT1, #930): its `Caller`, else the ids the
+    shipped rules draw from `Claims` and project — the object id, then the application's (under a
+    user's token, the tool's: said as such) —; « appelant inconnu » only when none is there.
+    CPT1b: a rule that projects `Claims` itself (a client's) is read the same, its name first —
+    the claims `names_no_one` reads; and each operation of a summary card is read by this too."""
+    from glorfindel.detection_rules import claimed_caller
+    who = str(norm.get("caller") or row.get("Caller") or "").strip()
+    if who:
+        return who
+    claimed = claimed_caller(row)
+    name = str(row.get("CallerName") or "").strip() or claimed["name"]
+    if name:
+        return f"{name} (lu dans Claims, Caller vide)"
+    oid = str(row.get("CallerObjectId") or "").strip()
+    oid = oid or claimed["oid"]
+    if oid:
+        return f"l'identité d'objet {oid} (lue dans Claims, Caller vide)"
+    app = str(row.get("CallerAppId") or "").strip()
+    app = app or claimed["app"]
+    if app:
+        return (f"l'application {app} (lue dans Claims, Caller vide ; sous le jeton d'un "
+                "utilisateur, c'est l'outil, pas l'utilisateur)")
+    return "appelant inconnu"
+
+
+# CPT1 (#930): what a card of the control plane says of an operation its row names nobody and
+# nothing for.
+INCOMPLETE_TELEMETRY = "Télémétrie incomplète"
+
+
+def _incomplete_telemetry(signal: dict) -> bool:
+    """CPT1 (#930): the card is lowered to incomplete telemetry — its row names neither its caller
+    nor its resource, and the signal is not critical (a critical one stays critical). CPT1b: the
+    one test of the decision's severity and of the card's text, which never says « Sévérité
+    moindre » on a card that stays critical."""
+    from glorfindel.detection_rules import names_no_one
+    return signal.get("severity") != "critical" and names_no_one(_control_plane_row(signal))
+
+
 def _control_plane_text(signal: dict) -> tuple[str, list[str]]:
     """What a control-plane detection says, from the row alone (AL1): the operation, its
     status as read, the caller, its address, the target, the gravest marks, the
     operations a summary card carries — and the next steps for a human."""
-    from glorfindel.detection_rules import normalize_row
+    from glorfindel.detection_rules import normalize_row, operation_resource
     row = _control_plane_row(signal)
     norm = (signal.get("raw_signal") or {}).get("normalized_signal") or normalize_row(row, signal.get("ttp", ""))
     op = norm.get("indicator_value") or "?"
     status = str(row.get("ActivityStatusValue") or "").strip()
-    who = norm.get("caller") or "appelant inconnu"
+    who = _caller_said(norm, row)
     where = f" depuis {norm['caller_ip']}" if norm.get("caller_ip") else ""
     target = norm.get("resource") or "?"
     what = f"Plan de contrôle : {op}{f' ({status})' if status else ''} par {who}{where} sur {target}."
@@ -1032,6 +1100,15 @@ def _control_plane_text(signal: dict) -> tuple[str, list[str]]:
                  "lire chacune avant de conclure sur l'appelant.")
     steps = ["Vérifier dans le journal d'activité qui a fait cette opération, et pourquoi"
              + (f" (CorrelationId {row['CorrelationId']})" if row.get("CorrelationId") else "") + "."]
+    if _incomplete_telemetry(signal):
+        # CPT1 (#930): neither the caller nor the resource on the row — the fact is shown, at a
+        # lower severity, never approvable; what it may be is not said as known.
+        what = (f"{INCOMPLETE_TELEMETRY} : la ligne ne nomme ni l'appelant (Caller, Claims) ni la "
+                f"ressource (_ResourceId). {what} Un événement de la plateforme (la mise en place de "
+                "l'infra) peut-être : rien ne l'établit. Sévérité moindre ; jamais une action.")
+        steps.insert(0, "Lire toutes les lignes de cette opération dans le journal d'activité, "
+                        "par son CorrelationId : Claims, Properties, Authorization, HTTPRequest, "
+                        "Hierarchy — l'appelant ou la ressource y sont peut-être.")
     if _named_callers(row) > 1:
         steps.append("Lire chacune de ses lignes : plusieurs appelants sous ce CorrelationId.")
     if norm.get("glorfindel_managed"):
@@ -1054,8 +1131,9 @@ def _control_plane_text(signal: dict) -> tuple[str, list[str]]:
     omitted = row.get("OmittedOperations") or []
     if omitted:
         listed = "; ".join(
-            f"{o.get('OperationNameValue') or '?'} par {o.get('Caller') or '?'} sur "
-            f"{o.get('_ResourceId') or '?'} ({str(o.get('TimeGenerated') or '')[:19]})"
+            # CPT1b: each operation's caller and resource read as its own card reads them.
+            f"{o.get('OperationNameValue') or '?'} par {_caller_said({}, o)} sur "
+            f"{operation_resource(o) or '?'} ({str(o.get('TimeGenerated') or '')[:19]})"
             for o in omitted)
         what = (f"Plan de contrôle : {len(omitted)} opération(s) de plus dans le même relevé, "
                 f"au-delà des cartes individuelles — chacune listée ici : {listed}.")
@@ -1085,11 +1163,18 @@ def _control_plane_decision(state: GlorfindelState) -> GlorfindelState:
     gone), Glorfindel's identity outside what it does — and the severity."""
     signal = state["signal"]
     what, steps = _control_plane_text(signal)
-    severity = "critique" if signal.get("severity") == "critical" else "haute"
+    # CPT1 (#930): a row that names neither its caller nor its resource is a card of incomplete
+    # telemetry — never a high one, whatever severity the signal came with (a signal written
+    # before CPT1, replayed); a critical one stays critical.
+    incomplete = _incomplete_telemetry(signal)
+    if incomplete:
+        signal = {**signal, "severity": "medium"}
+    severity = "critique" if signal.get("severity") == "critical" else "moyenne" if incomplete else "haute"
     reason = (f"{what} Sévérité : {severity}. Détection seule : aucune action autonome sur le "
               "plan de contrôle — décision déterministe, sans appel au modèle ; revue humaine.")
     return {
         **state,
+        "signal": signal,
         "reasoning": "Plan de contrôle : décision déterministe (AL1), sans appel au modèle.",
         "confidence": 0.0,
         "action": "",
@@ -1101,7 +1186,7 @@ def _control_plane_decision(state: GlorfindelState) -> GlorfindelState:
         "llm_usage": None,
         "autonomy_mode": "",
         "mode_hold": False,
-        "held_by": "control_plane",
+        "held_by": "control_plane_incomplete" if incomplete else "control_plane",
         "autonomy_gate": {},
         "decision_draws": [],
     }
@@ -1215,7 +1300,13 @@ def _apply_attribution_guard(d: dict, signal: dict) -> None:
     A call made from an appliance's address (`attribution_via: appliance`, a VM that forwards
     packets: SEC-A4, V-05) holds every action, whatever the model or a gate before said: the
     card may be anchored on the appliance itself — isolating it cuts a whole hub, and the VM
-    that exfiltrates, behind it, stays untouched. The card says where to look."""
+    that exfiltrates, behind it, stays untouched. The card says where to look.
+
+    ATT1 (#936): the same precedence for any action aimed at the VM (`_ATTRIBUTION_HELD`): whatever
+    gate held the decision before — the confidence, the signal, the telemetry, the release
+    precondition, never_block —, its card becomes the attribution's (`unattributed_signal`, never
+    approvable in one click), the reason before kept after its own. The guard runs after those
+    gates, before the mode: the mode never holds what it holds. A snapshot is not held."""
     ctx = signal.get("context") or {}
     if ctx.get("attribution") == "unattributed" and ctx.get("attribution_via") == "appliance":
         before = d.get("escalation_reason") if d["escalate"] else ""
@@ -1230,11 +1321,12 @@ def _apply_attribution_guard(d: dict, signal: dict) -> None:
             + (f" — {before}" if before else "")
         )
         return
-    if d["escalate"] or d["action"] not in _VM_TARGETED_ACTIONS | {"block_suspicious_ip"}:
+    if d["action"] not in _ATTRIBUTION_HELD:
         return
     if ctx.get("attribution") != "unattributed":
         return
     candidates = ", ".join(ctx.get("candidates") or []) or "?"
+    before = d.get("escalation_reason") if d["escalate"] else ""
     d["escalate"] = True
     d["held_by"] = "attribution"
     if ctx.get("attribution_from") == "attack_started":
@@ -1243,6 +1335,7 @@ def _apply_attribution_guard(d: dict, signal: dict) -> None:
             f"La ligne de détection trouvée ne nomme pas la VM que désigne le signal "
             f"attack_started ({candidates}) — '{d['action']}' retenue pour revue humaine. "
             "Vérifier dans la ligne de détection quelle VM elle concerne avant d'agir."
+            + (f" — {before}" if before else "")
         )
         return
     d["escalation_reason"] = (
@@ -1250,6 +1343,7 @@ def _apply_attribution_guard(d: dict, signal: dict) -> None:
         f"de VM surveillée n'est à l'origine) — '{d['action']}' retenue pour revue "
         f"humaine. VMs surveillées : {candidates}. Vérifier laquelle est concernée "
         "(ou bloquer au périmètre) avant d'agir."
+        + (f" — {before}" if before else "")
     )
 
 
@@ -1318,7 +1412,7 @@ def confirm_facts(state: GlorfindelState, *, incidents: IncidentRegistry) -> Glo
     return {**state, "incident": asdict(inc)} if inc is not None else state
 
 
-def _root_compromise_floor(d: dict, signal: dict, incident: dict | None) -> str:
+def _root_compromise_floor(d: dict, signal: dict, incident: dict | None, *, mode_hold: bool) -> str:
     """A card that proposes isolate_vm, whatever the model chose, when the correlation confirmed on
     this VM a brute force that succeeded and an elevation to root (B3a, #609; Jonathan, 06/11) —
     and never an isolation run by the floor, whatever the mode (SEC-E, #846; Jonathan, 15/11).
@@ -1341,6 +1435,8 @@ def _root_compromise_floor(d: dict, signal: dict, incident: dict | None) -> str:
         model's confidence in that choice — never in the isolation. An action only a human
         approves (a restore…) is never lost: said in the reason (`d["displaced"]`).
     Only on a detection: never on a recovery_complete (the release after a restore) nor a timeout.
+    `mode_hold`: the mode held the model's own action (human_only) — on a detection that does not
+    name the VM, the card stays the mode's, and its reason says what one click approves there.
     Returns the reason, or "" when the floor does not play."""
     if signal.get("event") != "detection" or d["action"] == "isolate_vm":
         return ""
@@ -1364,11 +1460,20 @@ def _root_compromise_floor(d: dict, signal: dict, incident: dict | None) -> str:
     # SEC-E (review): a detection that does not name this VM — unattributed, or a call from behind
     # an appliance (SEC-A4) — keeps the attribution's card: never approvable in one click, never a
     # floor's card on a VM the detection may not concern. The floor is said in its reason only.
-    if (signal.get("context") or {}).get("attribution") == "unattributed" or d.get("held_by") == "attribution":
+    # `held_by` « attribution » is set by the attribution guard only, on an unattributed detection:
+    # the context alone says it. Whatever gate held the decision before (never_block, the release
+    # precondition, the confidence…), its `held_by` becomes the attribution's: never approvable
+    # (SEC-Ec). The mode's hold stays the mode's (escalate_to_human: mode_hold before held_by) —
+    # only the model's own action is approved there, never an isolation: the reason says so.
+    if (signal.get("context") or {}).get("attribution") == "unattributed":
         if not d["escalate"] and d["action"] in AUTONOMOUS_ACTIONS:
             return ""
         d["escalate"] = True
         d["held_by"] = "attribution"
+        if mode_hold:
+            return (f"{facts_said} — mais cette détection ne nomme pas cette VM : aucune isolation "
+                    f"n'est proposée ; la carte reste celle du mode human_only, seul '{before}' s'y "
+                    f"approuve en un clic, jamais l'isolation ; juger la VM depuis la CLI. {choice}.")
         return (f"{facts_said} — mais cette détection ne nomme pas cette VM : la carte reste celle de "
                 f"l'attribution, rien ne s'y approuve en un clic ; juger la VM depuis la CLI. {choice}.")
     said = (f"{facts_said} — 'isolate_vm' proposée à un humain, jamais exécutée par le plancher : "
@@ -1867,10 +1972,12 @@ def decide(
     _apply_executable_guard(d)
     _apply_confidence_gate(d, raw_conf, threshold)
     _apply_signal_guardrail(d, signal)
-    _apply_attribution_guard(d, signal)
     _apply_telemetry_guard(d, state.get("telemetry_gaps") or [])
     _apply_release_precondition(d, signal)
     _apply_never_block_guard(d, signal)
+    # ATT1 (#936): after every gate that may hold the decision, before the mode — on a detection
+    # that names no VM, its card is the attribution's, whatever held it first.
+    _apply_attribution_guard(d, signal)
 
     mode_hold = _apply_autonomy_mode(d, mode, gate)
 
@@ -1891,7 +1998,7 @@ def decide(
     # B3a, last (SEC-E, #846): where a brute force succeeded and root was taken (the
     # correlation's facts, never the model's), a card proposes isolate_vm — the floor never
     # runs it; the model's own choice, as every gate above judged it, runs alone or not.
-    floor = _root_compromise_floor(d, signal, incident)
+    floor = _root_compromise_floor(d, signal, incident, mode_hold=mode_hold)
     floor_card = bool(floor) and not d["escalate"]
 
     # Last, on the decision as it stands: a characterized detection a snapshot alone
@@ -2162,6 +2269,7 @@ def compromise_card(state: GlorfindelState) -> GlorfindelState:
             action_params={"ip": str(ip)} if ip else None,
             rule_name=(signal.get("context") or {}).get("rule_name", ""),
             source=source, exercise_run=exercise_run, explanation=state.get("explanation", ""),
+            attribution=_card_attribution(signal),
         )
     return {**state, "outcome": {**out, "compromise_card": True}}
 
@@ -2172,6 +2280,32 @@ def _card_target(signal: dict) -> dict | None:
     None for a signal that carries none (an attack_started on the Activity Log names its VM)."""
     target = (signal.get("context") or {}).get("target")
     return dict(target) if isinstance(target, dict) and target.get("kind") else None
+
+
+def _card_attribution(signal: dict) -> dict | None:
+    """SLF1 (#929): a detection of the data plane attributed to no VM — the RulePoller anchored it
+    on one VM it does not name (`attribution: unattributed`, its `candidates`): what its card says in
+    place of a resource. None for a detection that names its VM, or a card filed on its target
+    (AL1c). Read from the signal as it is, never written into it: what the model reads is unchanged."""
+    ctx = signal.get("context") or {}
+    if ctx.get("attribution") != "unattributed" or _card_target(signal) is not None:
+        return None
+    cands = ctx.get("candidates")
+    return {"state": "unattributed",
+            "candidates": sorted(str(c) for c in cands) if isinstance(cands, list) else [],
+            **({"appliance": str(ctx.get("appliance") or "")}
+               if ctx.get("attribution_via") == "appliance" and ctx.get("appliance") else {})}
+
+
+def _loose_said(loose: dict) -> str:
+    """ATT1: an unattributed card's candidates, or the appliance its call came through, in words."""
+    if loose.get("appliance"):
+        return f"l'appel vient de {loose['appliance']}, qui fait suivre les paquets"
+    cands = loose.get("candidates") or []
+    if not cands:
+        return "la détection ne nomme aucune VM"
+    more = f" et {len(cands) - 8} autre(s)" if len(cands) > 8 else ""
+    return f"candidates : {', '.join(cands[:8])}{more}"
 
 
 def escalate_to_human(state: GlorfindelState) -> GlorfindelState:
@@ -2229,7 +2363,16 @@ def escalate_to_human(state: GlorfindelState) -> GlorfindelState:
 
     signal = state["signal"]
     steps = list(state.get("suggested_steps") or [])
-    if action == "snapshot":
+    loose = _card_attribution(signal)
+    if action == "snapshot" and loose is not None:
+        # ATT1 (#936): never a command on the VM the card is only filed on — the detection does not
+        # name it; the human judges which VM it is about, from the CLI.
+        steps.append(
+            f"Détection non attribuée ({_loose_said(loose)}) : juger depuis la CLI quelle VM elle "
+            "concerne (`glorfindel pending`, la ligne de détection) avant tout instantané, puis "
+            "`glorfindel snapshot <groupe>/<nom> --yes` sur celle-là."
+        )
+    elif action == "snapshot":
         from glorfindel.vm_command import group_and_name
         steps.append(           # the VM by « <groupe>/<nom> », never its full id (MSK3b)
             f"Si tu confirmes la compromission après vérification : "
@@ -2273,6 +2416,8 @@ def escalate_to_human(state: GlorfindelState) -> GlorfindelState:
             explanation=state.get("explanation", ""),
             # IR1a: the plan, for the console's « Verify » — an identity card's only.
             identity_plan=state.get("identity_plan") if escalation_type == "identity_change" else None,
+            # SLF1: a detection attributed to no VM says so on its card, never its anchor's name.
+            attribution=_card_attribution(signal),
             # AL1c: what a card of the control plane or of an identity is filed on — whatever its
             # type (a cycle that failed on one is filed there too).
             target=_card_target(signal),
@@ -2600,6 +2745,7 @@ def _record_executed(state: GlorfindelState, source: str, exercise_run: str) -> 
             rule_name=(signal.get("context") or {}).get("rule_name", ""),
             source=source, exercise_run=exercise_run, explanation=state.get("explanation", ""),
             target=_card_target(signal), action_key=_executed_key(state), executed=executed,
+            attribution=_card_attribution(signal),
         )
     except Exception as exc:          # said, and the announcement and the debug line still go
         _console.print(f"[red]store_cycle: carte de l'action autonome '{_esc_markup(action)}' "
@@ -2637,6 +2783,7 @@ def _record_floor_card(state: GlorfindelState, source: str, exercise_run: str) -
             exercise_run=exercise_run,
             target=_card_target(signal),
             explanation=state.get("explanation", ""),
+            attribution=_card_attribution(signal),
         )
     except Exception as exc:          # said, and the debug line still written
         _console.print(f"[red]store_cycle: carte du plancher (B3a) non écrite — {_outside(exc)}[/red]")
@@ -2670,6 +2817,7 @@ def _record_uncontained(state: GlorfindelState, source: str, exercise_run: str) 
             source=source,
             exercise_run=exercise_run,
             explanation=state.get("explanation", ""),
+            attribution=_card_attribution(signal),
         )
     except Exception as exc:          # said, and the debug line still written
         _console.print(f"[red]store_cycle: carte de la détection non contenue non écrite — {_outside(exc)}[/red]")
@@ -3183,6 +3331,7 @@ def record_cycle_failure(
                 source=source,
                 exercise_run=exercise_run,
                 target=_card_target(signal),        # AL1c: filed where the signal is
+                attribution=_card_attribution(signal),
             )
         except Exception as rec_exc:  # the trace must not raise in turn
             _console.print(f"[red]cycle_failed: escalation non enregistrée — {_outside(rec_exc)}[/red]")

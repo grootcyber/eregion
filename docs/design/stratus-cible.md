@@ -229,3 +229,37 @@ _Protocole — 2026-11-06, v3 (R2b/#608). **On mesure directement sur l'abonneme
 - **(3) sonde COLD + `orodruin-check`** : l'abonnement est vide (hors la liste M6), le rôle fermé et `AUTHZ_READ_ONLY` sont en place → `orodruin-check` s'arme pour Stratus. **Invariant R2c (mutant)** : `orodruin-check` reste **passif** tant que l'identité Stratus tient autre chose que le rôle fermé.
 - **(4) R2c** : le code hermétique, avec les valeurs mesurées (mutants **M4440–M4469**) ; sa PR corrige la doc (C1–C6).
 - **(5) ID1 (#281)** : le run réel au banc et la mesure de détection (AL1).
+
+---
+
+## Le code hermétique de R2c (Étape 4)
+
+_Rédigé après l'Étape 2 (G2/G3/G4 posés et **prouvés au réel le 19/11** : témoin fédéré XCH=200 / ARM dédié=200 / ARM banc=403, IMDS bac à sable 000 ; cycle Bastion sous le rôle fermé rc=0 ; `orodruin-check` « armed » en non-régression). Découpage, identification du rôle fermé (**allow-list**) et valeurs mesurées **tranchés avec Jonathan le 19/11**. Mutants **M4440–M4469** : M4440–M4447 le kill (pièce 1), M4448–M4460 R2BGc (le Terraform), M4461–M4469 le code ci-dessous. Les pièces 2 et 4 ne touchent pas `infra/orodruin/` ; seule la pièce 3 y vit._
+
+### Pièce 2 — le contrat s'arme POUR Stratus (`eregion_core/orodruin.py`)
+
+Un **garant « stratus »** s'ajoute aux quatre lecteurs de `check()` (`identity`, `graph`, `network`, `cap`), **actif seulement quand `EREGION_STRATUS_SUBSCRIPTION` est posé** — sinon le contrat d'Orodruin reste tel quel (non-régression mesurée le 19/11). Il lit **par jeton** (§ 1, N1) :
+
+- **(a)** les attributions de **Stratus** sur l'abonnement dédié, avec le **jeton d'Orodruin** (`AUTHZ_READ_ONLY`, son seul droit là-bas) : chaque action que Stratus tient doit appartenir à l'**allow-list du rôle fermé** (les actions mesurées en M1 + `diagnosticSettings/read` + `resourceGroups/read`), **aucune hors-liste, aucune `Microsoft.Authorization`, aucun joker** — le patron SEC11 déjà en place pour le banc (`allowed_at`). **Le rôle fermé s'identifie par l'allow-list des actions**, jamais par un id de définition en dur (Jonathan, 19/11) ; un test tient l'allow-list du contrat **égale** aux `Actions` du rôle de `infra/orodruin/stratus_guardrails.tf` (R2BGc), contre la dérive.
+- **(b)** le **paramètre de diagnostic** (présent, pointant un workspace **vivant**) et les **groupes (COLD)**, avec le **jeton de Stratus**, par le processus d'Orodruin **hors du bac à sable** (sens voulu).
+- **l'absence ailleurs** (banc, VM) avec le jeton d'Orodruin, filtré `assignedTo('<oid de Stratus>')`.
+
+Il reste **passif** si : l'identité Stratus **tient autre chose que le rôle fermé** (l'**invariant R2c**, et son mutant) ; `EREGION_STRATUS_SUBSCRIPTION` vaut l'abonnement du **banc, de la VM, d'Imladris ou de la VM d'Orodruin** (sinon le bloquant v1 revient) ; une lecture rend une **liste vide ou partielle** là où `roleAssignments/read` n'est pas prouvé → `identity_unprovable` (M5, tout abonnement non prouvé compris) ; le sous n'est pas **COLD** (un groupe hors la liste ci-dessous) ou le diag est **absent/mort**.
+
+**Valeurs mesurées** (constantes, tenues par des mutants) : la liste fermée des **groupes qu'Azure crée lui-même** (`NetworkWatcherRG`, `DefaultResourceGroup-*`, M6) ; l'allow-list = les 31 actions de R2BGc (test d'égalité au Terraform).
+
+Mutants **M4461–M4466** : sous interdit non refusé ; liste vide/partielle armée ; Stratus tient une action en plus → armé ; `Microsoft.Authorization` non attrapée ; COLD non vérifié ; diag absent → armé. Tests sur un **faux abonnement dédié** (modèle `tests/unit/fake_azure.py`).
+
+### Pièce 3 — le bac à sable durci, posé au démarrage (`infra/orodruin/`, **GATED**)
+
+Au démarrage d'Orodruin (cloud-init/systemd, avant tout run Stratus) : un **réseau docker dédié** `172.30.250.0/24` et une règle **`DOCKER-USER -s <réseau> -d 169.254.169.254 -j DROP`** (l'IMDS injoignable depuis le bac à sable — M4 : HTTP 000 mesuré, témoin bridge 200). **Jamais** `--network host`, ni le socket docker, ni `NET_ADMIN`. `orodruin-check` **vérifie la règle DROP** (côté `eregion_core`, `read_sandbox` / `sandbox_drops_imds`, pas gated) avant de s'armer pour Stratus : sans elle, passif. Mutants **M4467–M4469** (la vérif côté contrat) + **M4482–M4484** (la pose au démarrage dans `main.tf`).
+
+### Pièce 4 — le lancement de Stratus depuis le bac à sable (`annatar/…`)
+
+- l'abonnement du sous-processus vient **seulement** de `EREGION_STRATUS_SUBSCRIPTION` (remplace `AZURE_SUBSCRIPTION_ID`/`ARM_SUBSCRIPTION_ID`, **plus de repli sur le banc** — § 2) ; le **scope Stratus** borné au dédié, zone `bench`, **refuse `kind: fault`** ;
+- l'**échange fédéré** depuis le bac à sable (`WorkloadIdentityCredential` / `ARM_USE_OIDC`) : l'**`aud` du jeton = le GUID de l'app d'échange OU l'URI `api://AzureADTokenExchange`** — le code **accepte les deux formes** (mesuré 19/11 : Entra a rendu le GUID, XCH=200) ;
+- le **M3** (à qui Orodruin fait confiance) se lit **par sujet des deux côtés** (applications + principaux de service) : `$count gt 0` est refusé sur `/servicePrincipals` (mesuré 19/11, `Request_UnsupportedQuery`) ;
+- le masquage du lien Bastion, le timeout de warmup par technique, le catalogue (`resource_prefix` + adresse Terraform par technique), le retrait de la `graph_probe` de la technique FIC (§ 5). Mutants : **nouvelle plage**, à ouvrir avec l'Orchestre.
+
+### Après le code
+**ID1c au banc** (= ID1, #281) : le run réel d'une **écriture**-technique depuis Orodruin armé, vu par Glorfindel (le témoin fédéré, une lecture, n'entre pas dans les Activity Logs). La PR corrige la doc (C1–C6).

@@ -1,0 +1,97 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "description": "Eregion DRL1c (docs/design/drill-banc.md §5.1, §11): the drill's scheduled start. One Logic App (Consumption), created Disabled, whose one trigger is a weekly Recurrence in UTC and whose one action starts Orodruin's VM by its own managed identity. Deployed by infra/orodruin/drill_autostart.tf; enabled by make orodruin-drill-arm, disabled by -disarm and the kill."
+  },
+  "parameters": {
+    "name": {
+      "type": "string"
+    },
+    "location": {
+      "type": "string"
+    },
+    "tags": {
+      "type": "object"
+    },
+    "vmId": {
+      "type": "string"
+    },
+    "weekDay": {
+      "type": "string",
+      "allowedValues": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    },
+    "hour": {
+      "type": "int",
+      "minValue": 0,
+      "maxValue": 23
+    },
+    "minute": {
+      "type": "int",
+      "minValue": 0,
+      "maxValue": 59
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Logic/workflows",
+      "apiVersion": "2019-05-01",
+      "name": "[parameters('name')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "state": "Disabled",
+        "definition": {
+          "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {},
+          "triggers": {
+            "weekly": {
+              "type": "Recurrence",
+              "recurrence": {
+                "frequency": "Week",
+                "interval": 1,
+                "startTime": "2026-01-01T00:00:00",
+                "timeZone": "UTC",
+                "schedule": {
+                  "weekDays": ["[parameters('weekDay')]"],
+                  "hours": ["[parameters('hour')]"],
+                  "minutes": ["[parameters('minute')]"]
+                }
+              }
+            }
+          },
+          "actions": {
+            "start_orodruin": {
+              "type": "Http",
+              "runAfter": {},
+              "operationOptions": "DisableAsyncPattern",
+              "inputs": {
+                "method": "POST",
+                "uri": "[concat('https://management.azure.com', parameters('vmId'), '/start?api-version=2024-07-01')]",
+                "authentication": {
+                  "type": "ManagedServiceIdentity",
+                  "audience": "https://management.azure.com/"
+                }
+              }
+            }
+          },
+          "outputs": {}
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "workflowId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Logic/workflows', parameters('name'))]"
+    },
+    "principalId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Logic/workflows', parameters('name')), '2019-05-01', 'Full').identity.principalId]"
+    }
+  }
+}

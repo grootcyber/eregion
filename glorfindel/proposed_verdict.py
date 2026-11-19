@@ -32,6 +32,8 @@ and whether it was proportionate, stay the operator's to judge; the proposal say
 **Glorfindel stays blind**: the decision never reads a card, nor any of this
 (``_build_user_message``; tests/unit/test_dagorlad_blind.py). The watch runs the pass every minute
 (``refresh``, its housekeeping): a pure computation over the files of this host, no Azure, no model.
+Held card by card (VP1b): a card it cannot assess is skipped and said once, the others still proposed;
+a card whose time carries no time zone is never proposed — its zone is never guessed.
 """
 from __future__ import annotations
 
@@ -163,6 +165,8 @@ _SAID = {
     "window": "the card falls outside its window and its grace",
     "second": "a card of this wire and this rule came first: only the first is proposed",
     "no_time": "the card or its run has no readable time",
+    "no_tz": "the card's time carries no time zone: it is never guessed",
+    "unordered": "a card of this wire and this rule has a time without a time zone: which came first is never guessed",
 }
 
 
@@ -229,6 +233,8 @@ def assess(card: dict, cards: list[dict], src: Sources) -> Outcome:
     t0, at = _when(run["at"]), esc._when(card)
     if start is None or last is None or t0 is None or at is None:
         return _said("no_time")
+    if at.tzinfo is None:                  # VP1b: never compared to an aware time, never guessed
+        return _said("no_tz")
     if not start <= t0 <= last:
         return _said("t0")
     if _vm(card.get("resource_id")) != target:
@@ -241,7 +247,9 @@ def assess(card: dict, cards: list[dict], src: Sources) -> Outcome:
         return _said("late")
     if not start <= at <= last:
         return _said("window")
-    first = _first(cards, set(wire["runs"]), exp.rule)
+    first, unordered = _first(cards, set(wire["runs"]), exp.rule)
+    if unordered:
+        return _said("unordered")
     if first is None or first.get("id") != card.get("id"):
         return _said("second")
     return Outcome({
@@ -251,24 +259,44 @@ def assess(card: dict, cards: list[dict], src: Sources) -> Outcome:
     })
 
 
-def _first(cards: list[dict], runs: set[str], rule: str) -> dict | None:
+def _first(cards: list[dict], runs: set[str], rule: str) -> tuple[dict | None, bool]:
     """The first decision card of the wire's runs and of the rule expected, by its time then its
-    place in the store — whatever became of it since (judged, refused, on another VM)."""
+    place in the store — whatever became of it since (judged, refused, on another VM). And whether
+    one of them has a time without a time zone (VP1b): then which came first is not known, and never
+    guessed — ``(None, True)``."""
     found = [(t, i, c) for i, c in enumerate(cards)
              if esc.is_decision(c) and c.get("source") == "exercise" and c.get("exercise_run") in runs
              and esc.rule_of(c) == rule and (t := esc._when(c)) is not None]
-    return min(found, key=lambda f: (f[0], f[1]))[2] if found else None
+    if any(t.tzinfo is None for t, _, _ in found):
+        return None, True
+    return (min(found, key=lambda f: (f[0], f[1]))[2] if found else None), False
+
+
+# VP1b (#917): the cards a pass could not assess — an error of its own, never the pass's — said once
+# each, by their id, for the life of the watch.
+_SKIPPED: set[str] = set()
+
+
+def _recent(card: dict, now: datetime) -> bool:
+    """A card of TO JUDGE's week — or one whose time carries no time zone: its age is not known, and
+    never guessed; ``assess`` says why it is not proposed (``no_tz``)."""
+    at = esc._when(card)
+    return at is not None and (at.tzinfo is None or now - at <= HORIZON)
 
 
 def refresh(root: str | Path = "runs", *, windows: list[dict] | None = None, drills_dir: Path | None = None,
-            expectations_dir: Path | None = None, now: datetime | None = None) -> int:
+            expectations_dir: Path | None = None, now: datetime | None = None, say=None) -> int:
     """The watch's pass (every minute): each exercise card of the week still waiting for a verdict,
     without a proposal made or refused, assessed — its proposal, or why not, written on it
     (``escalations.note_proposals``). ``windows``: the windows the watch believes
-    (``exercise.load_windows``, read only when a card is to assess). Returns the cards changed."""
+    (``exercise.load_windows``, read only when a card is to assess). Returns the cards changed.
+
+    VP1b (#917): the pass is held card by card — a card whose assessment fails is skipped, said once
+    (``say``, the watch's channel; its id and the error's kind, never the error's text), and the
+    others are still proposed: one faulty card never stops the pass, minute after minute."""
     now = now or datetime.now(timezone.utc)
     cards = esc.all_escalations()
-    todo = [c for c in cards if esc.proposable(c) and (at := esc._when(c)) is not None and now - at <= HORIZON]
+    todo = [c for c in cards if esc.proposable(c) and _recent(c, now)]
     if not todo:
         return 0
     if windows is None:
@@ -276,6 +304,15 @@ def refresh(root: str | Path = "runs", *, windows: list[dict] | None = None, dri
     src = Sources(Path(root), windows, drills_dir, expectations_dir)
     results = {}
     for c in todo:
-        o = assess(c, cards, src)
-        results[str(c["id"])] = {"proposed": o.proposal} if o.proposal else {"why": {"code": o.code, "said": o.said}}
+        cid = str(c["id"])
+        try:
+            o = assess(c, cards, src)
+        except Exception as exc:          # the card skipped, the pass goes on (VP1b)
+            if cid not in _SKIPPED:
+                _SKIPPED.add(cid)
+                if say is not None:
+                    say(f"card {cid[:8]} skipped by the proposed-verdict pass ({type(exc).__name__}): "
+                        "nothing is proposed on it")
+            continue
+        results[cid] = {"proposed": o.proposal} if o.proposal else {"why": {"code": o.code, "said": o.said}}
     return esc.note_proposals(results)

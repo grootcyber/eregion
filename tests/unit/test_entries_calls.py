@@ -522,7 +522,8 @@ def test_the_audit_runs_no_query_on_an_id_that_is_not_one(check, hostile):
     res = getattr(audit, check)(hostile, "ws", det)
     assert not det.run_query.called and res.status == "warn" and "non lancée" in res.message
     getattr(audit, check)(VM, "ws", det)
-    assert f'_ResourceId =~ "{VM}" or Computer =~ "vm-example-01"' in det.run_query.call_args.args[0]
+    query = det.run_query.call_args_list[0].args[0]
+    assert f'_ResourceId =~ "{VM}"' in query and "Computer" not in query      # SEC-Ib
 
 
 # ── 3. Timeouts ───────────────────────────────────────────────────────────────────────

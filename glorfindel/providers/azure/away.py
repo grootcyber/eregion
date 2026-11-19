@@ -7,6 +7,7 @@ from __future__ import annotations
 import re
 
 from glorfindel.providers.azure.nsg import _rule_name
+from glorfindel.providers.azure.older_names import older_left, older_taken, recorded_names
 from glorfindel.providers.azure.turned import _aims_elsewhere, _held_by_turned, _turned_guard
 from glorfindel.providers.azure.quarantine import QUARANTINE_NSG_PREFIX
 from glorfindel.response.ids import _parse_nsg_resource_id, _parse_vm_resource_id
@@ -60,19 +61,21 @@ class AwayRulesMixin:
         return left
 
     def _left_quarantine_rules(self, vm_name: str, targets: list[dict], left: dict, guard: dict,
-                               mates: list, own_ips: list, cache: dict, stuck: set, keep: dict) -> list[str]:
+                               mates: list, own_ips: list, cache: dict, stuck: set, keep: dict,
+                               placed: dict | None = None) -> list[str]:
         """The release's (_sweep_isolation): a NIC that left our quarantine NSG (`left`, NIC →
         the NSG) may have rules of its own there — an isolation written while that NSG had lost
         our tag, placed on it as on any NSG the NIC carried. Off it, the NIC no longer sees it:
         the release put its NSG back and said `released`, the rules left (I3R, #431). Looked
-        for there as on an NSG that governs the NIC — its hash, or an older name aimed at its
-        addresses, the guard asked for one aimed elsewhere. A NIC still in it is skipped (its
+        for there as on an NSG that governs the NIC — its hash, or an older name proven its
+        (older_names, else said), the guard asked for one aimed elsewhere. A NIC still in it is skipped (its
         undo failed: they may be all that cuts it off), and a bare one (_away_rules looks
         for its rules on every NSG, this one included: said once). A NIC whose search there
         fails or keeps a rule goes into `keep` (NIC → the NSG), for the partial state: off the
         quarantine NSG now, its retry would no longer know to look there. `stuck`: the
         placements whose undo just failed — not tried, nor said, twice."""
         failed: list[str] = []
+        placed = placed or {}                   # the VM's state's placements (older_names, SEC-H)
         for t0 in targets:
             q = left.get(t0["nic_id"].rstrip("/").lower())
             if q is None or not (t0.get("own_nsg_id") or t0.get("quarantine")):
@@ -87,7 +90,10 @@ class AwayRulesMixin:
                 failed.append(f"{q[0]}/{q[1]} : règles illisibles, levée non vérifiée")
                 rules = []
             view = {**t0, "nsg_rg": q[0], "nsg_name": q[1], "scope": "nic", "shared_nsg": True, "ip_scoped": True}
-            for r in self._iso_rules_on(vm_name, view, rules):
+            unproven: list = []
+            own = self._iso_rules_on(vm_name, view, rules, placed, unproven)
+            failed += [older_left(q[0], q[1], r, t0["nic_short"], "levée non vérifiée", placed) for r in unproven]
+            for r in own:
                 name = _rule_name(r)
                 if (q[0].lower(), q[1].lower(), name.lower()) in stuck:
                     continue
@@ -109,14 +115,18 @@ class AwayRulesMixin:
         (still there, unreadable)."""
         still: list[str] = []
         unknown: list[str] = []
+        placed = recorded_names(state if isinstance(state, dict) else {}, [])
         for view in self._out_of_sight_views(targets, state):
             where = f'{view["nsg_name"]}, groupe {view["nsg_rg"]} : {view["out_of_sight"]}'
             rules = self._list_rules(cache, view["nsg_rg"], view["nsg_name"])
             if rules is None:
                 unknown.append(f'{view["nic_short"]}:{where}')
                 continue
+            unproven: list = []
             still += [f'{view["nic_short"]}:{_rule_name(r)} (sur {where})'
-                      for r in self._iso_rules_on(vm_name, view, rules)]
+                      for r in self._iso_rules_on(vm_name, view, rules, placed, unproven)]
+            unknown += [f'{view["nic_short"]}:{_rule_name(r)} (nom d\'une version antérieure, sur {where}, que '
+                        "rien ne prouve être le sien)" for r in unproven]
         return still, unknown
 
     def _out_of_sight_views(self, targets: list[dict], state: dict) -> list[dict]:
@@ -147,15 +157,17 @@ class AwayRulesMixin:
                                   "ip_scoped": True, "out_of_sight": why})
         return views
 
-    def _away_rules(self, vm_name: str, targets: list[dict], stuck: set, guard: dict, mates: list) -> list[str]:
+    def _away_rules(self, vm_name: str, targets: list[dict], stuck: set, guard: dict, mates: list,
+                    recorded: dict | None = None) -> list[str]:
         """The release's (_sweep_isolation): what _away_split keeps, said; the rest taken
         off — `stuck`, the placements whose undo just failed, not tried twice."""
         said, off = self._away_split(vm_name, targets, guard, mates,
-                                     lambda k, name: (*k, name.lower()) in stuck)
+                                     lambda k, name: (*k, name.lower()) in stuck, recorded=recorded)
         return said + [err for err in (self._delete_rule(*x) for x in off) if err]
 
     def _away_split(self, vm_name: str, targets: list[dict], guard: dict, mates: list, skip,
-                    blocks: bool = False, unverified: str = "levée non vérifiée") -> tuple[list[str], list[tuple]]:
+                    blocks: bool = False, unverified: str = "levée non vérifiée",
+                    recorded: dict | None = None) -> tuple[list[str], list[tuple]]:
         """A NIC of the VM with no NSG of its own (taken off by someone, its quarantine
         lifted to « none »): the NSG it carried is out of the sweep's sight, and a rule of
         its isolation kept there by an earlier release (I4C: a rule someone turned into an
@@ -172,9 +184,15 @@ class AwayRulesMixin:
         views = {t0["nic_id"]: {(t["nsg_rg"].lower(), t["nsg_name"].lower()) for t in self._nic_nsg_views(t0)}
                  for t0 in bare}
         names: dict[str, dict] = {}
+        # An earlier version's names (6 or 8 hex, SEC-H): shared by NICs whose hash met, so a rule under
+        # one is taken off only when proven this NIC's (older_names.older_taken); any other is said,
+        # left — never a release « verified » with the pair still on the NSG the NIC comes back to.
+        older: dict[str, dict] = {}
         for t0 in bare:
             for b in self._placement_rule_bases("glorfindel-iso", vm_name, t0["nic_short"], t0["nic_id"]):
                 names.update({n.lower(): t0 for n in (b, f"{b}-out")})
+            for b in self._older_rule_bases("glorfindel-iso", vm_name, t0["nic_short"], t0["nic_id"]):
+                older.update({n.lower(): t0 for n in (b, f"{b}-out")})
         try:
             nsgs = (list(guard["nsgs"].values()) if "nsgs" in guard
                     else list(self._network.network_security_groups.list_all()))
@@ -194,7 +212,18 @@ class AwayRulesMixin:
                     t0 = next((t for t in bare if name.lower() in {
                         n for b in self._placement_rule_bases(name[: m.start("rest") - 1], vm_name, t["nic_short"],
                                                               t["nic_id"]) for n in (b, f"{b}-out")}), None)
-                if t0 is None or k in views[t0["nic_id"]] or skip(k, name):
+                if t0 is None:
+                    t0 = older.get(name.lower())
+                    if t0 is None and blocks and (m := _BLOCK_RE.match(name)):
+                        t0 = next((t for t in bare if name.lower() in {
+                            n for b in self._older_rule_bases(name[: m.start("rest") - 1], vm_name, t["nic_short"],
+                                                              t["nic_id"]) for n in (b, f"{b}-out")}), None)
+                    if t0 is None or k in views[t0["nic_id"]] or skip(k, name):
+                        continue
+                    if not older_taken(r, n_rg, n_name, t0["nic_id"], t0.get("private_ips"), recorded or {}):
+                        said.append(older_left(n_rg, n_name, r, t0["nic_short"], unverified, recorded))
+                        continue
+                elif k in views[t0["nic_id"]] or skip(k, name):
                     continue
                 if "why" not in guard:
                     # The guard reads the listing just made, not a second one (D80's review).

@@ -816,7 +816,9 @@ def _start_campaign_reports(runs_dir) -> bool:
         from analysis import campaign_report  # noqa: F401
         return hosted_report.start(runs_dir) is not None
     except Exception as exc:  # the watch goes on without campaign reports
-        console.print(f"[yellow]Rapports de campagne désactivés — {type(exc).__name__}: {exc}[/yellow]")
+        # What the import said, as it is (SEC-Fc): a `[/…]` in it raised out of this guard.
+        console.print(f"[yellow]Rapports de campagne désactivés — {type(exc).__name__}: "
+                      f"{_outside(exc)}[/yellow]")
         return False
 
 
@@ -1046,7 +1048,14 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
                             console.print(f"[yellow]Non décidée par le modèle :[/yellow] "
                                           f"{_esc_markup(why)} — carte undecided_detection\n")
                         else:
-                            _render_decision(state, dry_run)
+                            # SEC-Fc: the decision is taken — its action, its cycle stored by
+                            # `respond` — before it is shown. Its display failing is said as
+                            # such, never as « Error processing »: nothing left to process.
+                            try:
+                                _render_decision(state, dry_run)
+                            except Exception as e:
+                                _say_failure(console, f"Décision prise pour {_sig.signal_id}, "
+                                             "son affichage a échoué", e)   # the lock held already
                             console.print()
                 finally:
                     # Put back, it still waits (or left by `_left`, which counted it): its channel
@@ -1470,7 +1479,15 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
         the run's report, the window) — a verdict proposed on the expected one, why not on the others
         (glorfindel/proposed_verdict.py). Never a verdict given; the decision never reads it."""
         from glorfindel import proposed_verdict
-        proposed_verdict.refresh(runs_dir)
+        # VP1b: a card the pass cannot assess is skipped and said once, here — the others still proposed.
+        proposed_verdict.refresh(runs_dir, say=lambda text: _say_channel(f"Verdict proposé : {text}"))
+
+    def _judge_drill() -> None:
+        """DRL1b (#613): every minute, the drill of the week judged — its last occurrence's verdict,
+        the absence alarm, by the code over what this host pulled (glorfindel/drill_watch.py), kept for
+        the bot and the console. Never the model; the decision never reads it."""
+        from glorfindel import drill_watch
+        drill_watch.refresh(runs_dir)
 
     _relay_thread: list = [None]
     # JUG2c (#788): a notice queued where no webhook may be waited for (a VM's lock, the
@@ -1522,6 +1539,17 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
         # SEC18: everything it pulls and writes goes to the watch's own directory.
         if _start_campaign_reports(_layout.dir_of(_layout.GLORFINDEL, runs_dir)):
             console.print("[dim]Rapports de campagne : runs/glorfindel/campaigns/<id>/report.md[/dim]")
+    # SLF1 (#929): the watch's own writes in its return channel, set aside from the exfiltration
+    # rule (its identity, its container, its objects) — counted on the rule, never silent.
+    from glorfindel import own_channel as _own_channel
+    _own_source = _own_channel.of_publisher(_watch_channel) if _watch_channel is not None else None
+    _own_channel.register(_own_source)
+    if _own_source is not None:
+        console.print("[dim]Voie de retour : ses propres écritures (l'identité de la watch, son conteneur, "
+                      "ses objets) écartées de la règle d'exfiltration, comptées sur la règle[/dim]")
+    elif getattr(_watch_channel, "channel", ""):
+        console.print("[yellow]Voie de retour : URL illisible — aucune de ses écritures n'est écartée "
+                      "de la règle d'exfiltration[/yellow]")
 
     if _rules_file:
         try:
@@ -1738,6 +1766,10 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
                         _propose_verdicts()  # VP1: after the windows are read, on the cards of the week
                     except Exception as exc:
                         _say_failure(console, "watch: _propose_verdicts en erreur", exc, _output_lock)
+                    try:
+                        _judge_drill()       # DRL1b: the drill of the week's verdict, for the bot and the console
+                    except Exception as exc:
+                        _say_failure(console, "watch: _judge_drill en erreur", exc, _output_lock)
             except Exception as exc:
                 # The daemon outlives a bad iteration (unreadable file, transient Azure
                 # error in the TTL/jobs housekeeping); the next poll retries. SEC-F: said escaped —
@@ -1841,7 +1873,7 @@ def jobs(resource_id: str, refresh: bool):
     from glorfindel.jobs import get_job, refresh_job, save_job
 
     vm_name = resource_id.split("/")[-1]
-    job = get_job(vm_name)
+    job = get_job(resource_id)          # by its full id (SEC-H): a homonym's job is another VM's
     if not job:
         console.print(f"[dim]No active job recorded for {vm_name}.[/dim]")
         return
@@ -1852,7 +1884,7 @@ def jobs(resource_id: str, refresh: bool):
         try:
             refresh_job(job, AzureConnector())
             if job.get("status") != before:
-                save_job(vm_name, job)
+                save_job(resource_id, job)
         except Exception as e:
             console.print(f"[yellow]Azure poll error: {_esc_markup(_ids_masked(e))}[/yellow]")
 
@@ -1951,7 +1983,7 @@ def restore(resource_id: str, vault: str, dry_run: bool, yes: bool, keep_isolate
 
     # One restore at a time per VM (SEC4c): another one running, or about to, refuses this one.
     from glorfindel.jobs import restore_in_progress
-    busy = restore_in_progress(resource_id.rstrip("/").split("/")[-1])
+    busy = restore_in_progress(resource_id)          # by its full id (SEC-H)
     if busy and not dry_run:
         raise click.ClickException(f"Restore refusé : {busy}.")
 
@@ -2065,15 +2097,29 @@ def _render_escalation(e: dict) -> None:
 
     now = datetime.now(timezone.utc)
     ts = datetime.fromisoformat(e["timestamp"])
-    age_m = int((now - ts).total_seconds() // 60)
+    # VP1c (#920): a time without a zone is said as written — its age not known, never guessed.
+    when = (f"{ts.strftime('%H:%M')} ({int((now - ts).total_seconds() // 60)}m ago)" if ts.tzinfo is not None
+            else f"{_outside(str(e['timestamp']))} (no time zone: age unknown)")
     resource_short = e["resource_id"].split("/")[-1]
+    # SLF1 (#929): a detection attributed to no VM — « not attributed », its candidates, never the
+    # name of the VM it is filed on.
+    from glorfindel import escalations as _esc
+    loose = _esc.unattributed(e)
+    if loose is not None:
+        cands = loose["candidates"]
+        resource_short = "not attributed"
+        if loose["appliance"]:
+            resource_short += f" — through the appliance {loose['appliance']}"
+        elif cands:
+            more = f" and {len(cands) - 8} more" if len(cands) > 8 else ""
+            resource_short += f" — candidates: {', '.join(cands[:8])}{more}"
 
     table = Table(show_header=False, box=None, padding=(0, 1))
     table.add_column(style="dim", width=18)
     table.add_column()
     # SEC-F: every field read from the cards' store, said as it is — the action is the model's.
     table.add_row("ID", f"[dim]{_outside(e['id'])}[/dim]")
-    table.add_row("Time", f"{ts.strftime('%H:%M')} ({age_m}m ago)")
+    table.add_row("Time", when)
     table.add_row("Action", f"[bold yellow]{_outside(e['action'])}[/bold yellow]")
     table.add_row("Resource", _outside(resource_short))
     table.add_row("Type", _outside(e["escalation_type"]))
@@ -2116,6 +2162,17 @@ def _name_for_a_command(resource_id: str) -> str:
     return named
 
 
+def _loose_words(loose: dict) -> str:
+    """ATT1: « not attributed », then its candidates (eight, the rest counted) or the appliance."""
+    if loose.get("appliance"):
+        return f"Not attributed — the call came through the appliance {loose['appliance']}"
+    cands = loose.get("candidates") or []
+    if not cands:
+        return "Not attributed — the detection names no VM"
+    more = f" and {len(cands) - 8} more" if len(cands) > 8 else ""
+    return f"Not attributed — candidates: {', '.join(cands[:8])}{more}"
+
+
 def _render_next_steps(e: dict) -> None:
     rid = _name_for_a_command(e["resource_id"])      # never the full id on the card (MSK2)
     action = e["action"]
@@ -2124,6 +2181,13 @@ def _render_next_steps(e: dict) -> None:
     llm_steps = e.get("suggested_steps") or []
     if llm_steps:
         console.print("  [bold cyan]Next steps (Glorfindel):[/bold cyan]")
+        from glorfindel import escalations as _esc_steps
+        loose_steps = _esc_steps.unattributed(e)
+        if loose_steps is not None:
+            # ATT1 (#936): the model's steps as written — they may name the VM the card is filed on,
+            # which the detection does not name. Said first, by the code, never by the model.
+            console.print(f"  [yellow]{_outside(_loose_words(loose_steps))}; judge from the CLI — "
+                          "these steps aim at the VM the card is filed on[/yellow]")
         for i, step in enumerate(llm_steps, 1):
             # A command of the card naming its VM by its id or its name alone (a card written before
             # MSK3b, the model's) names it by « <groupe>/<nom> »: masked, an id is no command (MSK3b).
@@ -2134,9 +2198,22 @@ def _render_next_steps(e: dict) -> None:
         return
 
     # Fallback statique pour les escalades sans suggested_steps (anciennes ou dry-run)
-    if esc_type == "low_confidence" and action == "snapshot":
+    from glorfindel import escalations as _esc
+    unnamed = _esc.unattributed(e)
+    if unnamed is not None:
+        # ATT1 (#936): a detection attributed to no VM — whatever the card's type, never a command on
+        # the VM it is filed on (`az vm show`, `restore`, `release`…): « not attributed », its
+        # candidates, and the judgement to the CLI.
         steps = [
-            f"Check VM state: az vm show -g <rg> -n {_short_name(e['resource_id'])} --query powerState",
+            f"{_loose_words(unnamed)}: judge which VM the detection is about (its row, in Log "
+            "Analytics), then act on that VM from the CLI",
+            f"If it is a false positive: glorfindel ack {shlex.quote(str(e['id']))}",
+        ]
+    elif esc_type == "low_confidence" and action == "snapshot":
+        steps = [
+            # The name from the cards' store, quoted for the shell like every other (SEC-Fc).
+            f"Check VM state: az vm show -g <rg> -n {shlex.quote(_short_name(e['resource_id']))} "
+            "--query powerState",
             f"If compromise confirmed: glorfindel restore {rid} --yes --before {_card_moment(e)}"
             "   # un instant avant le début de l'attaque",
             f"If false positive: glorfindel ack {shlex.quote(str(e['id']))}",
@@ -2336,6 +2413,9 @@ def report(since_text: str, as_json: bool):
         console.print(f"Block recommendations: {b['cards']} card(s) for {b['distinct_ips']} distinct IP(s)")
     if r.get("exercises"):
         console.print(f"[dim]{r['exercises']} exercise card(s) left out (an injector's window covered the VM)[/dim]")
+    if r.get("undated"):
+        console.print(f"[yellow]{r['undated']} card(s) left out: their time carries no time zone or cannot be read — "
+                      "in the period or not, unknown, never guessed (glorfindel report --since all counts them)[/yellow]")
     _print_expected_sudo(r["expected_sudo"])
     _print_memory(r["memory"])
     _print_auditd()
@@ -2964,7 +3044,7 @@ def _restore_claimed(resource_id: str):
     """The VM claimed for this restore while it starts (glorfindel/jobs.py, SEC4c), or the
     command refused: another restore of it is running or about to."""
     from glorfindel.jobs import RestoreBusy, restore_claim
-    claim = restore_claim(resource_id.rstrip("/").split("/")[-1])
+    claim = restore_claim(resource_id)          # by its full id (SEC-H)
     try:
         claim.__enter__()
     except RestoreBusy as exc:

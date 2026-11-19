@@ -1,7 +1,11 @@
 """Persistent state for long-running Azure backup/restore jobs.
 
-Jobs are persisted in ~/.glorfindel/active_jobs/<vm>.json so their status
-is readable by both the CLI and the console's API without coupling.
+Jobs are persisted in ~/.glorfindel/active_jobs/<vm>--<key>.json so their status
+is readable by both the CLI and the console's API without coupling — keyed by the VM's
+full resource id (SEC-H: by its short name, a homonym's restore read as this VM's, in the
+model's message, the approval and REC1). `<key>`: 128 bits of the id's SHA-256. A file of an
+earlier version, `<vm>.json`, is read when the id it records is the VM's, and replaced at
+the next write.
 """
 from __future__ import annotations
 
@@ -20,23 +24,78 @@ _RECOVERY_DIR = Path.home() / ".glorfindel" / "recovery"
 _STALE_AGE_H = 24.0
 
 
-def get_last_restore(vm_name: str) -> dict | None:
-    """Return last restore metadata if triggered within 60 minutes, else None."""
-    p = _RECOVERY_DIR / f"{vm_name}.json"
-    if not p.exists():
-        return None
+def _ref(ref: str) -> tuple[str, str]:
+    """(VM name, full resource id lowercase, "" when given a short name)."""
+    text = str(ref or "").rstrip("/")
+    if "/" in text:
+        return text.rsplit("/", 1)[-1], text.lower()
+    return text, ""
+
+
+def _key(ref: str) -> str:
+    """A record's file stem: `<name>--<128 bits of the id>` for a full resource id, the bare
+    name (an earlier version's) otherwise."""
+    from glorfindel.response.state_files import _rid_key
+    name, rid = _ref(ref)
+    return f"{name.lower()}--{_rid_key(rid)}" if rid else name
+
+
+def _recorded_rid(f: Path) -> str:
     try:
-        data = json.loads(p.read_text())
-        restore_time = datetime.fromisoformat(data["last_restore_at"])
-        age_s = (datetime.now(timezone.utc) - restore_time).total_seconds()
-        return data if age_s < 3600 else None
-    except Exception:
-        return None
+        data = json.loads(f.read_text())
+    except (OSError, ValueError):
+        return ""
+    return str((data if isinstance(data, dict) else {}).get("resource_id") or "").rstrip("/").lower()
+
+
+def _records(directory: Path, ref: str) -> list[Path]:
+    """This VM's record files in `directory`, newest first. By id: its keyed file, and an
+    earlier version's `<name>.json` only when the id it records is this one. By a short name:
+    every record of that name whose ids are ONE VM's — two homonyms' records read as nothing,
+    never as one of them."""
+    name, rid = _ref(ref)
+    if not directory.exists():
+        return []
+    legacy = directory / f"{name}.json"
+    if rid:
+        keyed = directory / f"{_key(ref)}.json"
+        # An earlier version's file that records no id (unreadable, or written without one) may be
+        # this VM's: read, never « no record » — the approval refuses on it, as before.
+        found = [f for f in (keyed, legacy) if f.exists() and (f is keyed or _recorded_rid(f) in ("", rid))]
+    else:
+        found = [f for f in directory.glob(f"{name.lower()}--*.json")
+                 if _recorded_rid(f).rsplit("/", 1)[-1] == name.lower()]
+        found += [legacy] if legacy.exists() else []
+        if len({_recorded_rid(f) for f in found}) > 1:
+            return []
+    return sorted(set(found), key=lambda f: f.stat().st_mtime, reverse=True)
+
+
+def get_last_restore(vm_name: str) -> dict | None:
+    """Return last restore metadata if triggered within 60 minutes, else None. `vm_name`: the
+    VM's full resource id — only its own restore —, or its short name: the restore of the one
+    VM of that name that has a record (what an earlier version read), never one of two."""
+    for p in _records(_RECOVERY_DIR, vm_name)[:1]:
+        try:
+            data = json.loads(p.read_text())
+            restore_time = datetime.fromisoformat(data["last_restore_at"])
+            age_s = (datetime.now(timezone.utc) - restore_time).total_seconds()
+            return data if age_s < 3600 else None
+        except Exception:
+            return None
+    return None
+
+
+def restore_record(ref: str) -> str | None:
+    """The text of this VM's last restore record, None when there is none. Raises OSError when
+    it is there and can't be read (the approval refuses then: never « no restore »)."""
+    found = _records(_RECOVERY_DIR, ref)
+    return found[0].read_text() if found else None
 
 
 def _path(vm_name: str) -> Path:
     _JOBS_DIR.mkdir(parents=True, exist_ok=True)
-    return _JOBS_DIR / f"{vm_name}.json"
+    return _JOBS_DIR / f"{_key(vm_name)}.json"
 
 
 def _now() -> str:
@@ -50,17 +109,24 @@ def _atomic_write(path: Path, text: str) -> None:
 
 
 def save_job(vm_name: str, job: dict) -> None:
-    _atomic_write(_path(vm_name), json.dumps(job, default=str))
+    """The job written under its VM's full id (the job's `resource_id`, else `vm_name`); an
+    earlier version's `<name>.json` of the same VM goes."""
+    ref = str(job.get("resource_id") or "") or vm_name
+    _atomic_write(_path(ref), json.dumps(job, default=str))
+    name, rid = _ref(ref)
+    legacy = _JOBS_DIR / f"{name}.json"
+    if rid and legacy.exists() and _recorded_rid(legacy) == rid:
+        legacy.unlink()
 
 
 def get_job(vm_name: str) -> dict | None:
-    p = _path(vm_name)
-    return json.loads(p.read_text()) if p.exists() else None
+    """This VM's job — `vm_name` its full resource id, or a short name only one VM's jobs bear."""
+    found = _records(_JOBS_DIR, vm_name)
+    return json.loads(found[0].read_text()) if found else None
 
 
 def clear_job(vm_name: str) -> None:
-    p = _path(vm_name)
-    if p.exists():
+    for p in _records(_JOBS_DIR, vm_name):
         p.unlink()
 
 
@@ -162,7 +228,7 @@ def record_snapshot_job(
     """
     vm_name = resource_id.split("/")[-1]
     if not overwrite_running:
-        current = get_job(vm_name)
+        current = get_job(resource_id)
         if current and current.get("status") == "InProgress":
             return None
     job = {
@@ -236,10 +302,15 @@ def start_restore(
         "completed_at": None,
     }
     save_job(vm_name, job)
-    _atomic_write(_RECOVERY_DIR / f"{vm_name}.json", json.dumps({
+    # Keyed by the VM's full id (SEC-H): by its name, a homonym's restore said « restored N min
+    # ago » in the model's message, and refused its approvals.
+    _atomic_write(_RECOVERY_DIR / f"{_key(resource_id)}.json", json.dumps({
         "last_restore_at": datetime.now(timezone.utc).isoformat(),
         "resource_id": resource_id,
     }))
+    legacy = _RECOVERY_DIR / f"{vm_name}.json"
+    if legacy.exists() and _recorded_rid(legacy) == resource_id.rstrip("/").lower():
+        legacy.unlink()
     return job
 
 
@@ -282,21 +353,31 @@ def _claim_held(path: Path) -> bool | None:
 
 
 def restore_in_progress(vm_name: str) -> str:
-    """Why a restore of `vm_name` is in progress, or ""."""
+    """Why a restore of this VM is in progress, or "". `vm_name`: its full resource id (SEC-H: a
+    homonym's restore is another VM's), or a short name — an earlier version's call. A claim an
+    earlier version took, by the name alone, counts for every VM of that name until it lapses."""
     import time
+    ref, vm_name = vm_name, _ref(vm_name)[0]
     try:
-        job = get_job(vm_name)
+        job = get_job(ref)
     except (OSError, ValueError):
         job = None
     if job and job.get("type") == "restore" and job.get("status") == "InProgress":
         return (f"un restore de {vm_name} est en cours (job {job.get('restore_job_name') or job.get('job_id')}, "
                 f"lancé le {job.get('started_at', '?')}) — `glorfindel jobs {vm_name} --refresh`")
-    claim = _JOBS_DIR / f"{vm_name}.restore-claim"
+    for claim in dict.fromkeys((_JOBS_DIR / f"{_key(ref)}.restore-claim", _JOBS_DIR / f"{vm_name}.restore-claim")):
+        if why := _claim_says(claim, vm_name, time.time()):
+            return why
+    return ""
+
+
+def _claim_says(claim: Path, vm_name: str, now: float) -> str:
+    """Why this claim's file holds the VM, or ""."""
     try:
         taken = claim.stat().st_mtime
     except OSError:
         return ""
-    age = time.time() - taken
+    age = now - taken
     held = _claim_held(claim)
     if held:
         return f"un restore de {vm_name} est en train de partir ou en cours (depuis {int(age)} s, son processus vit)"
@@ -312,11 +393,12 @@ def restore_in_progress(vm_name: str) -> str:
 
 
 class restore_claim:
-    """`with restore_claim(vm):` — the VM claimed for one restore, or RestoreBusy."""
+    """`with restore_claim(vm):` — the VM claimed for one restore, or RestoreBusy. `vm`: its full
+    resource id (SEC-H), its claim keyed by it."""
 
     def __init__(self, vm_name: str) -> None:
         self.vm_name = vm_name
-        self.path = _JOBS_DIR / f"{vm_name}.restore-claim"
+        self.path = _JOBS_DIR / f"{_key(vm_name)}.restore-claim"
         self._fh = None
         self._token = ""
 
@@ -326,7 +408,7 @@ class restore_claim:
         import socket
         from glorfindel.response.locks import _file_lock
         _JOBS_DIR.mkdir(parents=True, exist_ok=True)
-        with _file_lock(_JOBS_DIR / f"{self.vm_name}.restore.lock"):
+        with _file_lock(_JOBS_DIR / f"{_key(self.vm_name)}.restore.lock"):
             busy = restore_in_progress(self.vm_name)
             if busy:
                 raise RestoreBusy(busy)

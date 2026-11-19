@@ -81,6 +81,43 @@ Contrat (garanties, vérifications, kill, mutants) :
   Dans l'autre ordre, les runs d'Orodruin restent `unknown` (« unsigned … update Glorfindel », ou
   « the heartbeat does not say which detections it covers ») tant que la watch n'est pas à jour
   (`docs/design/watch-key.md`, « Les détections signées », « Ce que le battement couvre »).
+- **Le démarrage planifié du drill, et l'extinction de 23:00 UTC** (DRL1c, #613 ;
+  `drill_autostart.tf`, `drill_autostart.json` ; `docs/design/drill-banc.md` §5.1, §14). Orodruin est
+  désallouée entre les sessions, et un minuteur ne part pas d'une VM éteinte :
+  - **une Logic App** (Consumption, `logic-orodruin-drill`) la démarre chaque semaine à
+    `drill_autostart_at` (`tue 18:40` UTC : le `schedule` du drill moins 20 min). Elle est **déployée
+    `Disabled`** par un modèle ARM qui porte l'état lui-même : Terraform ne suit que le déploiement,
+    jamais l'état de la Logic App. Seul `make orodruin-drill-arm` l'active ; `-disarm` et le kill la
+    désactivent. **Un apply ne l'active jamais** ; s'il la redéploie (une heure, un nom changés), il la
+    remet `Disabled` (à mesurer, §6.2) : réarmer. `make orodruin-drill-check` le dit (« armed but scheduled
+    start disabled: re-arm », DRL1e). Le plan d'une heure changée met à jour le déploiement sur
+    place, et peut annoncer le remplacement de l'attribution du rôle : son `principal_id` vient de la sortie
+    du déploiement, connue seulement après l'apply. L'identité de la Logic App ne change pas (à mesurer) :
+    ce remplacement n'est pas une alarme. Pourquoi pas `azurerm_logic_app_workflow` : son déclencheur et son action
+    réécrivent le workflow sans son état (le §14 de la conception) ;
+  - **son identité** est la sienne, managée, et ne peut qu'une chose : un rôle d'une seule action,
+    `Microsoft.Compute/virtualMachines/start/action`, défini et assignable dans `rg-orodruin`, attribué à
+    la portée de `vm-orodruin` seule. L'identité d'Orodruin ne gagne rien, et le contrat ne change pas ;
+  - **l'extinction quotidienne**, le planning DevTest de la VM : chaque jour à 23:00 UTC, drill ou non,
+    elle désalloue Orodruin (une session plus tardive est coupée : `make orodruin-start` la rallume).
+    **Finir ou nettoyer avant 23:00 UTC** (minuit à Paris en hiver, 1 h en été) : un run coupé au milieu
+    peut laisser un échauffement ou un nettoyage inachevé sur sa cible, et rien n'alerte. Pour le drill,
+    l'armement le garde (DRL1e, §16 de la conception) : refus si l'extinction tombe entre le réveil et
+    l'heure du drill plus son `max_run_s`, avertissement si elle ne tombe qu'avant le plafond du service
+    (`RuntimeMaxSec`, puis `TimeoutStopSec` : 3 720 s). Le drill livré, 19:00 + 30 min, passe sans rien
+    dire ;
+  - **la sortie `drill_autostart_id`**, l'id de la Logic App, que lisent `orodruin-drill-check`, `-arm`,
+    `-disarm` et le kill (`drill_ops.py autostart-id`). Avant l'apply : « no scheduled start », et
+    l'armement refuse (« apply first »).
+
+  **Le geste** (Jonathan) : `make orodruin-plan`, le plan relu — quatre créations
+  (`azurerm_resource_group_template_deployment.drill_autostart`, `azurerm_role_definition.drill_autostart`,
+  `azurerm_role_assignment.drill_autostart`, `azurerm_dev_test_global_vm_shutdown_schedule.host`), rien de
+  changé ni de détruit —, puis `make orodruin-lock`. Puis la mesure du §6.2, point 2 : la Logic App
+  allume Orodruin avec le seul `start/action` (ou il lui faut `virtualMachines/read`) ; son identité ne
+  peut rien d'autre ; l'extinction désalloue ; un `make orodruin-lock` après une désactivation ne la
+  réactive pas. Test : `infra/orodruin/tests/drill_autostart.tftest.hcl`,
+  `tests/unit/test_drill_autostart.py`.
 - **Qui écrit le canal retour** (WC1, #523) : par défaut la watch d'Imladris seule, comme avant. Sans Imladris,
   la watch d'un poste ou d'une équipe : `WATCH_PRINCIPALS=<id>[,<id>…]` (la variable
   `watch_principal_ids`), voir ci-dessous.
@@ -172,11 +209,17 @@ contre une réponse simulée seulement).
 
 **Les conteneurs durcis (V-34, SEC14).** Chaque `docker run` d'un injecteur sur Orodruin tourne comme
 le compose : racine en lecture seule, `/tmp` en tmpfs, aucune capacité, aucun gain de privilège
-(`ORO_HARDEN`). Il n'écrit que dans son répertoire de `~/runs` (SEC18, N-05) : Annatar dans
-`~/runs/annatar`, Gothmog dans `~/runs/gothmog`, l'un et l'autre dans `~/runs/orodruin` (le journal
-avant chaque appel, le verrou « un run à la fois », les statuts des demandes) ; le lanceur d'une demande
-monte les trois, puisqu'il lance les deux. Aucun ne monte `~/runs` entier : seule la migration de
-l'ancienne disposition le fait, une fois, à `make orodruin-push` (`ORO_MIGRATE`, `eregion_core/runs_layout.py`).
+(`ORO_HARDEN`). Les runs d'Annatar (`ORO_RUN`, `ORO_RUN_REQUEST`, `BENCH_ORO_RUN`) et le service du
+drill de la semaine, qui ne joue que des runs d'Annatar, portent en plus `ORO_EXEC_HOME`
+(`--tmpfs /stratus-home:exec`, R2BZ) : le seul tmpfs exécutable, où l'adaptateur de la bibliothèque du
+plan de contrôle bâtit le `HOME` du run ; `/tmp` reste sans exec. Le contrat, Gothmog et les lectures
+du drill ne le reçoivent pas. Le service du drill reprend ces options à l'identique, et un test les relit
+dans le `Makefile` (DRL1d, `tests/unit/test_drill_ops.py`). Chaque injecteur n'écrit que dans son
+répertoire de `~/runs` (SEC18, N-05) : Annatar dans `~/runs/annatar`, Gothmog dans `~/runs/gothmog`,
+l'un et l'autre dans `~/runs/orodruin` (le journal avant chaque appel, le verrou « un run à la fois »,
+les statuts des demandes) ; le lanceur d'une demande monte les trois, puisqu'il lance les deux. Aucun ne
+monte `~/runs` entier : seule la migration de l'ancienne disposition le fait, une fois, à
+`make orodruin-push` (`ORO_MIGRATE`, `eregion_core/runs_layout.py`).
 
 Un run se lance ensuite depuis la VM (`make orodruin-ssh`, puis `docker run … annatar run …`) :
 le moteur relit le contrat au démarrage, journalise chaque appel dans `~/runs/orodruin/audit.jsonl`
@@ -288,9 +331,17 @@ make orodruin-drill-arm DRILL=banc-hebdo TARGETS=gondolin       # Jonathan seul,
 make orodruin-drill-disarm                                      # chacun de ses pas dit
 ```
 
-- **L'armement** refuse avant toute écriture si le drill ne se lit pas dans l'image d'Orodruin, ou si
+- **Le contrôle à blanc** lit la Logic App une fois, son heure et son état (`properties.state`, par ton
+  `az login`, le droit de lecture que l'armement demande déjà), et dit l'état face à l'armement sur le
+  disque d'Orodruin : armé et `Disabled` (un apply l'a redéployée), « armed but scheduled start disabled:
+  re-arm », sortie 1 ; armé et un état illisible, dit, jamais pris pour activé, sortie 1 ; rien d'armé et
+  `Enabled`, un avertissement. Limite : une lecture à l'instant du contrôle (DRL1e). Il dit aussi la garde
+  de 23:00 UTC.
+- **L'armement** refuse avant toute écriture si le drill ne se lit pas dans l'image d'Orodruin, si
   le démarrage planifié manque ou ne réveille pas Orodruin à l'heure du drill moins 20 min
-  (« apply first » : `make orodruin-plan`, puis `make orodruin-lock`). Puis, chaque pas dit : l'armement
+  (« apply first » : `make orodruin-plan`, puis `make orodruin-lock`), ou si l'extinction de 23:00 UTC
+  couperait le drill (son heure plus son `max_run_s`, DRL1e ; un avertissement seulement quand elle ne
+  tombe qu'avant le plafond du service). Puis, chaque pas dit : l'armement
   (`~/drill/armed.json`, mode 600), les unités systemd posées par SSH (jamais par `custom_data`), le
   minuteur activé, le permis écrit, le démarrage planifié activé, le pouls `armed`. Un pas en échec :
   l'armement est partiel, c'est dit, rien d'après n'est fait — `make orodruin-drill-disarm`, puis

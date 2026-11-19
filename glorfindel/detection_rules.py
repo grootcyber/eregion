@@ -27,7 +27,7 @@ from glorfindel.detectors import (  # noqa: E402  (after optional deps)
     is_identity_source,
     plane_of,
 )
-from glorfindel import auditd, card_target, correlation, expected_sudo  # noqa: E402
+from glorfindel import auditd, card_target, correlation, expected_sudo, own_channel  # noqa: E402
 from eregion_core import rule_routing  # noqa: E402
 
 logger = logging.getLogger("glorfindel.detection_rules")
@@ -54,6 +54,20 @@ def expected_counts(status: dict) -> dict:
     return {"expected_count": n(es, "count"), "expected_last": str(es.get("last") or ""),
             "origin_count": n(es, "origin_count"), "origin_confirmed": n(es, "origin_confirmed"),
             "correlation": {k: n(co, k) for k in correlation.COUNTS}}
+
+
+def own_channel_counts(status: dict) -> dict:
+    """SLF1 (#929): the writes of the watch's own return channel a rule set aside, as its status
+    holds them — the console and `status_snapshot` read them here. `own_channel_unread`: when the
+    channel is configured and the watch's identity could not be read (nothing set aside)."""
+    oc = status.get("own_channel") if isinstance(status, dict) else None
+    oc = oc if isinstance(oc, dict) else {}
+
+    def n(k: str) -> int:
+        v = oc.get(k)
+        return v if type(v) is int and v >= 0 else 0
+    return {"own_channel_count": n("writes"), "own_channel_rows": n("rows"),
+            "own_channel_last": str(oc.get("last") or ""), "own_channel_unread": str(oc.get("unread") or "")}
 
 # P1: the client's layer — the rules of THIS deployment (approved, overriding a base rule,
 # disabling one), outside the repository, loaded over the shipped base
@@ -266,7 +280,7 @@ def normalize_row(row: dict, ttp: str = "") -> dict:
         }
     if row.get("OperationNameValue"):
         return {
-            "resource": str(row.get("_ResourceId") or row.get("ResourceId") or ""),
+            "resource": operation_resource(row),
             "indicator_key": "control_plane_operation",
             "indicator_value": row["OperationNameValue"],
             "caller": row.get("Caller") or "",
@@ -1164,6 +1178,102 @@ def _grave(row: dict) -> bool:
             or bool(row.get("GlorfindelRunCommand")))
 
 
+# CPT1 (#930): where a row of the Activity Log names who made the operation — its `Caller`, the
+# ids the shipped rules draw from `Claims` (`CallerAppId`, `CallerObjectId`) — and, for a rule
+# that projects it, `Claims` itself; where it names what the operation was on. CPT1b: the name a
+# client's rule projects (`CallerName`, the column a summary keeps) names the caller too — a row
+# that carries it is never lowered to incomplete telemetry while its card names it.
+CALLER_COLUMNS = ("Caller", "CallerAppId", "CallerObjectId",
+                  "CallerName")
+# The claims that name the caller, by what they name (CPT1b: the long URIs of `upn` and `name` too,
+# as the Activity Log writes them, and the short `name`): a name, the object id, the client
+# application. Read on the prudent side: a claim that names someone keeps the card high.
+_CLAIM_NAME = ("upn", "unique_name", "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn",
+               "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name",
+               "name")
+_CLAIM_OID = ("oid", "http://schemas.microsoft.com/identity/claims/objectidentifier")
+_CLAIM_APP = ("appid", "azp")
+_CALLER_CLAIMS = (*_CLAIM_APP, *_CLAIM_OID, *_CLAIM_NAME)
+RESOURCE_COLUMNS = ("_ResourceId", "ResourceId")
+
+
+def _said(value) -> bool:
+    return isinstance(value, (str, int, float)) and not isinstance(value, bool) and bool(str(value).strip())
+
+
+def _claims(row: dict) -> dict:
+    """The row's `Claims` (a rule that projects it, a client's), read; {} when absent or unread."""
+    raw = row.get("Claims_d") or row.get("Claims")
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw) if raw.strip() else {}
+        except ValueError:
+            return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def _claims_name_someone(row: dict) -> bool:
+    raw = _claims(row)
+    return any(_said(raw.get(k)) for k in _CALLER_CLAIMS)
+
+
+def claimed_caller(row: dict) -> dict:
+    """Who `Claims` names as the caller (CPT1b), when the rule projects it — the name, the object
+    id, the client application; "" for each it does not give. The same claims `names_no_one` reads:
+    a row it says names someone is named on its card."""
+    raw = _claims(row)
+
+    def first(keys):
+        return next((str(raw[k]).strip() for k in keys if _said(raw.get(k))), "")
+    return {"name": first(_CLAIM_NAME), "oid": first(_CLAIM_OID), "app": first(_CLAIM_APP)}
+
+
+def _text(value) -> str:
+    return str(value).strip() if _said(value) else ""
+
+
+def caller_columns(row: dict) -> dict:
+    """The columns a card names the caller from (CPT1b), as the individual card reads them
+    (`agent._caller_said`): `Caller`; a name — the `CallerName` a client's rule projects, else the
+    one `Claims` gives (`CallerName`); the object id and the
+    application id the rules project, else drawn from `Claims` (`CallerObjectId`, `CallerAppId`).
+    What a summary card keeps of each of its operations: never `Caller` alone."""
+    claimed = claimed_caller(row)
+    return {"Caller": _text(row.get("Caller")),
+            "CallerName": _text(row.get("CallerName")) or claimed["name"],
+            "CallerObjectId": _text(row.get("CallerObjectId")) or claimed["oid"],
+            "CallerAppId": _text(row.get("CallerAppId")) or claimed["app"]}
+
+
+def operation_resource(row: dict) -> str:
+    """What an operation of the Activity Log was on, as its card reads it: `_ResourceId`, else
+    `ResourceId` (CPT1b: one reading, for the individual card and the summary's)."""
+    return next((_text(row.get(c)) for c in RESOURCE_COLUMNS if _said(row.get(c))), "")
+
+
+def names_no_one(row: dict) -> bool:
+    """CPT1 (#930): an operation of the control plane whose row names neither its caller nor its
+    resource — no `Caller`, no id drawn from `Claims`, no `Claims` that names one, no
+    `_ResourceId` nor `ResourceId`; its lines name no caller either (`Callers`, AL1d: several
+    callers on its lines is no missing telemetry). Its card says « télémétrie incomplète », of a
+    lower severity than high, never approvable, never dropped: an operation of which the caller is
+    unknown stays a fact to show. A grave row (a write on Glorfindel's rules, its identity, its Run
+    Command — `_grave`) is never one of them: it stays critical. Nor a summary card (each of its
+    operations names its own). A row that names one of the two keeps the card it had."""
+    if not isinstance(row, dict) or not row.get("OperationNameValue") or row.get("OmittedOperations"):
+        return False
+    if _grave(row):
+        return False
+    try:
+        if int(row.get("Callers") or 0) > 0:
+            return False
+    except (TypeError, ValueError):
+        return False
+    if any(_said(row.get(c)) for c in CALLER_COLUMNS) or _claims_name_someone(row):
+        return False
+    return not any(_said(row.get(c)) for c in RESOURCE_COLUMNS)
+
+
 def _control_plane_operations(rows: list[dict]) -> list[dict]:
     """One row per operation (its lines Start, Accept, Success share an identity: the
     latest is kept), the gravest first, then the newest."""
@@ -1188,8 +1298,10 @@ def _control_plane_summary(rest: list[dict]) -> dict:
             {"TimeGenerated": r.get("TimeGenerated") or "",
              "OperationNameValue": r.get("OperationNameValue") or "",
              "ActivityStatusValue": r.get("ActivityStatusValue") or "",
-             "Caller": r.get("Caller") or "",
-             "_ResourceId": r.get("_ResourceId") or r.get("ResourceId") or "",
+             # CPT1b: who and what, read as the individual card reads them — `Caller` alone
+             # said « ? » for a caller the rules name from `Claims`.
+             **caller_columns(r),
+             "_ResourceId": operation_resource(r),
              "GlorfindelManaged": r.get("GlorfindelManaged") is True,
              "GlorfindelIdentity": r.get("GlorfindelIdentity") is True,
              "GlorfindelRunCommand": r.get("GlorfindelRunCommand") or "",
@@ -1463,8 +1575,12 @@ class RulePoller:
         dry_run: bool = False,
         ip_owners: Callable[[], dict] | None = None,
         topology=None,
+        channel: Callable[[], "own_channel.Channel | None"] | None = None,
     ) -> None:
         RulePoller._live.add(self)
+        # SLF1 (#929): the watch's own return channel, set aside from the exfiltration rule —
+        # read at each pass (glorfindel/own_channel.py); the one `glorfindel watch` registers.
+        self._channel = channel or own_channel.current
         self._rules = rules
         self._dispatch = dispatch
         self._dry_run = dry_run
@@ -1558,6 +1674,7 @@ class RulePoller:
                     "last_error": s.get("last_error", ""),
                     "match_count": s.get("match_count", 0),
                     **expected_counts(s),
+                    **own_channel_counts(s),
                     **({"auditd": s["auditd"]} if isinstance(s.get("auditd"), dict) else {}),
                 })
             return out
@@ -1680,6 +1797,27 @@ class RulePoller:
         # (`last_error`), and the pass goes on with the rows as read — nothing set aside that
         # was not read (review, AUD1: a forged line made the poll raise, and its thread die).
         faults: list[str] = []
+        # SLF1 (#929): the watch's own return channel set aside — its identity, its container,
+        # its objects —, before any routing; `BlobWriters` taken off every row, whatever.
+        # ATT1 (#936): the shipped rule only, by its name and its query to the byte — never a rule of
+        # the client's layer computing a wider `Known` under its name: its rows stay cards.
+        channel = None
+        try:
+            channel = self._channel()
+            if own_channel.is_shipped(rule.query, rule.name):
+                rows, own = own_channel.settle(rows, channel)
+            else:
+                rows, own = own_channel.strip(rows), {"writes": 0, "rows": 0, "unread": False}
+        except Exception as exc:  # nothing set aside, the column taken off all the same
+            rows, own = own_channel.strip(rows), {"writes": 0, "rows": 0, "unread": False}
+            faults.append(f"own_channel: {type(exc).__name__}: {exc}")
+        if own["writes"]:
+            logger.info("detection rule '%s': %d write(s) set aside (%d row(s) left without a card) — %s",
+                        rule.name, own["writes"], own["rows"], own_channel.REASON)
+        if own["unread"] and not self.__dict__.get("_own_unread_said"):
+            self._own_unread_said = True       # said once by this watch; the status says it at each pass
+            logger.warning("detection rule '%s': the return channel is configured but the watch's identity "
+                           "could not be read — none of its writes set aside (SLF1)", rule.name)
         # AUD1 (#408): auditd's execs of a human login as root, read before any signal and
         # outside the lock — a command of ADM1's sensitive list stays, the rest is no card.
         policy = getattr(self._cfg, "expected_sudo", None)
@@ -1812,6 +1950,18 @@ class RulePoller:
                                        "origin_confirmed": expected_counts(st)["origin_confirmed"] + confirmed_n}
             if any(corr.values()):
                 st["correlation"] = correlation.add_counts(st.get("correlation"), corr, now_iso)
+            if own["writes"] or own["unread"]:
+                # SLF1: the watch's own writes set aside, counted where the console reads the rules;
+                # its identity not read, said (nothing set aside).
+                was = own_channel_counts(st)
+                st["own_channel"] = {
+                    "writes": was["own_channel_count"] + own["writes"],
+                    "rows": was["own_channel_rows"] + own["rows"],
+                    "last": now_iso if own["writes"] else was["own_channel_last"],
+                    "reason": own_channel.REASON,
+                    **({"container": channel.container} if channel is not None else {}),
+                    **({"unread": now_iso} if own["unread"] else {}),
+                }
             if auditd.reads(rule.name, rule.ttp):
                 # AUD1: what the rule's window holds at this poll — zero events says no line arrives.
                 st["auditd"] = auditd.window(audit_n, now_iso)
@@ -1905,7 +2055,10 @@ class RulePoller:
         grave = control and _grave(row)
         # COR1: a brute force followed by a login from its address — an account compromised.
         grave = grave or row.get("Correlation") == correlation.COMPROMISED
-        return {
+        # CPT1 (#930): an operation whose row names neither its caller nor its resource — a card,
+        # always, of a lower severity than high.
+        unnamed = plane == "control" and not grave and names_no_one(row)
+        signal = {
             "signal_id": f"rule-{rule.name}-{uuid.uuid4().hex[:8]}",
             "event": "detection",
             "ttp": rule.ttp,
@@ -1935,3 +2088,6 @@ class RulePoller:
                 "normalized_signal": normalize_row(row, ttp=rule.ttp),
             },
         }
+        if unnamed:
+            signal["severity"] = "medium"
+        return signal

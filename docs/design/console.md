@@ -27,6 +27,7 @@ tourne.
 | Ce que Glorfindel a fait seul (#248) | **une ligne verte sur la tuile, 24 h** : la note d'une carte qu'il a résolue lui-même (A3 : règle orpheline retirée) | dans le fil en direct ; rien dans la console |
 | Le drill d'une campagne d'Annatar dans Dagorlad (DG-e, 04/11) | **A, le drill écrit à côté du manifeste, puis « Import YAML »** : `annatar campaign plan` (sur Orodruin, qui n'écrit jamais les drills de la console) écrit le drill de la campagne et l'affiche ; Dagorlad le relit par le lecteur exact et le pose sur le tableau, sans rien écrire ; « Save as drill » le garde, auteur annatar. `campaign run` garde son exécution | B : le drill écrit seul, sans import ; C : `campaign run` par le chemin des demandes (un second lot) |
 | Les blocages d'une VM (CON-K, 03/11) | **A, un résumé et une fenêtre** : repliée ou dépliée, la carte dit « BLOCKED ×N IPs · newest … · oldest … » ; dépliée, elle garde la dernière décision (son raisonnement) et « Manage the N blocks ▸ », qui ouvre la fenêtre : tous les blocages, du plus récent au plus ancien, filtrables, chacun avec « Extend to subnet » et « Unblock ». Un seul blocage : montré avec ses boutons, sans fenêtre | B : les trois plus récents et « and N more » ; C : une liste repliable qui défile dans la carte |
+| Les adresses d'une VM sur sa carte (IPS1, #931, 19/11, sur une maquette) | **A, une ligne sous le nom, repliée comme dépliée** : les IP privées (quatre, puis « +N »), puis la publique derrière 🌐, en jaune ; une adresse se copie d'un clic ; dépliée, le détail par carte réseau et l'âge de la lecture ; « ip — » et pourquoi quand l'audit NSG a échoué. **Un seul lot**, privées et publiques | B, une puce « PUBLIC » seule, les adresses sur la carte dépliée ; C, la carte dépliée seulement ; deux lots (les privées d'abord) |
 
 **Choisi par défaut, sans objection :**
 - `/atelier` redirige vers `/`.
@@ -277,6 +278,17 @@ Après I1F, AL1, C2 et A3 (27/10) :
   `_ANCHORED_TYPES` du bot) porte sur une VM que la détection ne nomme pas. Elle n'a ni « 🔄 Restore »
   ni commande visant cette VM (seulement `glorfindel ack`), et la console dit « ⚓ filed on …, not about
   it » — sauf une carte du plan de contrôle ou d'identité d'avant AL1c, ci-dessous.
+- **Une carte non attribuée, quel que soit son type** (ATT1, #936) : une carte qui porte
+  `attribution: {state: unattributed}` (SLF1) et une action qui vise sa VM (`isolate_vm`,
+  `block_suspicious_ip`, `release_isolation` : `_VM_AIMED`, l'ensemble `VM_AIMED_ACTIONS` du serveur)
+  n'a pas de « ▶ Approve & execute » (`_isHeld`, `_aimsLoose`), et aucune carte non attribuée n'a
+  « 📸 Snapshot » (`_isSnapshotPending`) ni « 🔄 Restore » (la route le refuse, `_restore_refusal`) ;
+  son `📋 Cmd` dit « not attributed », ses candidates, renvoie
+  au jugement depuis la CLI, puis `glorfindel ack`. Appelé directement, le serveur la refuse
+  (`approval_refusal`). Une carte `mode_hold` d'un instantané non attribué reste approuvable pour
+  l'instantané. Son titre dit le verbe, retenu (« Isolate VM — held: not attributed », `_looseTitle`), jamais le
+  libellé au passé ; le « 📸 Snapshot » de la tuile reste caché tant qu'une carte non attribuée d'instantané y
+  attend ; les étapes du modèle sont précédées d'une ligne qui dit qu'elles visent la VM d'ancrage (`_looseSteps`).
 - **Une carte sur ce qu'elle vise** (AL1c, #597) : depuis AL1c, une carte du plan de contrôle ou
   d'identité porte sa cible (`target`, `glorfindel/card_target.py`) et n'est plus ancrée sur une VM.
   La carte dit « 🎯 about NSG nsg-… · règle … · covers vm-a, vm-b » (huit VM nommées au plus, puis
@@ -297,6 +309,13 @@ Après I1F, AL1, C2 et A3 (27/10) :
   control plane » (`held_by` de la ligne de debug).
 - **TO JUDGE laisse de côté** les cartes qui ne sont pas des décisions, comme Glorfindel
   (`escalations._NOT_DECISIONS`, quarantaine modifiée comprise).
+- **La ligne « Weekly drill »** (DRL1b, #613 ; `docs/design/drill-banc.md` §4.2, §13) : sur la page de
+  Dagorlad, entre le tableau et les drills, le drill de la semaine tel que la watch l'a jugé
+  (`GET /api/dagorlad/drill`, lecture seule) — la dernière occurrence, son état (`proof`, `missed`,
+  `not_run`, `rearm_expected`… ; « @ » quand le bot a mentionné le rôle), pourquoi, la prochaine,
+  l'armement tel qu'Imladris le lit, les occurrences d'avant. La tuile LAST PROOF de l'accueil dit
+  « from the weekly drill <nom> » quand la dernière preuve vient d'une occurrence du drill, avec la
+  technique la moins récemment prouvée à côté (le biais du §1.1). Tout échappé, aucun script en ligne.
 - **Un verdict proposé sur la carte d'exercice attendue** (VP1, #615 ; `docs/design/drill-banc.md`
   §8.2) : la carte qui est la détection que le drill de la semaine attend — sa règle, sur sa cible,
   dans le délai de son attente après le T0 et dans la fenêtre, la première du fil — porte, sous son
@@ -311,6 +330,11 @@ Après I1F, AL1, C2 et A3 (27/10) :
   la détection : la décision reste à juger. Aucune autre carte n'en montre (`to_judge` ne le porte que
   sur une carte d'exercice). Textes échappés (`_attr`), actions dans `ACTIONS` (`confirmProposed`,
   `refuseProposed` et leurs variantes de la carte ouverte).
+- **Une carte sans fuseau reste dans TO JUDGE** (VP1c, #920 ; `docs/observation.md`) : `/api/to-judge`
+  la garde quelle que soit la période, en tête, `time_unreadable: true` ; la ligne dit « ⚠ time
+  unreadable — judge it all the same » (`_UNTIMED` en titre) et ne la date pas. Tout âge que la page
+  calcule (`_relTime`) refuse une heure sans fuseau ou illisible (« time unreadable ») : un navigateur
+  la prendrait pour son heure locale.
 - **Une ligne de TO JUDGE ouvre sa carte** (JUG1, #760 ; au banc du 12/11, elle ne s'ouvrait pas) :
   `openJudgeCard` montre la carte telle que TO JUDGE la porte (`/api/to-judge` : ses étapes, et ce
   qu'a fait une action prise seule), complétée par la carte en attente de `/api/state` quand elle y
@@ -363,6 +387,77 @@ Après I1F, AL1, C2 et A3 (27/10) :
 - M573 : le fil perd `held_by`.
 - M574 : une résolution reste sur la tuile au-delà de 24 h.
 - M575 : un acquittement passe pour un geste de Glorfindel.
+
+### La carte de l'infra au scroll (TOPO1, #927, 19/11)
+
+La carte de l'infra se redessine toutes les 5 s. Avec beaucoup de cartes, elle sautait au scroll.
+Les causes ont été mesurées dans Chromium sans tête, sur le jeu d'exemple augmenté de 30 VM :
+- **Les fils se décalaient.** Le svg défile avec les cartes, mais les points étaient pris dans le
+  repère de l'écran. Chaque rafraîchissement pendant un scroll posait les fils 400 px trop haut,
+  la distance défilée.
+- **Le scroll était coupé.** Le conteneur de scroll était lui-même remplacé, puis sa position
+  remise à la main.
+- **Le redimensionnement n'était pas suivi.** Après un redimensionnement, 11 fils sur 34 tombaient
+  à côté de leur carte.
+
+Les règles, dans `glorfindel.js` :
+- `#topo-graph` (le conteneur de scroll) et `#topo-svg` (les fils) restent d'un rendu à l'autre.
+  Seul `#topo-body` est remplacé ; il n'a pas de boîte à lui (`display: contents`).
+- Un point se prend dans le repère du contenu : sa position à l'écran, plus `scrollTop` et
+  `scrollLeft`.
+- Un `ResizeObserver` sur la carte et sa rangée de cartes redessine les fils, au plus une fois par
+  image.
+
+Mesuré après le correctif : un écart sous le pixel, la carte défilée ou non, et le même conteneur
+après le rafraîchissement. Après un redimensionnement, les 34 fils tombent sur leur carte. Un
+rendu de 34 cartes coûte 4 ms : le remplacement du contenu ne fait pas sauter le scroll.
+Tests : `tests/unit/test_console_topology.py` ; mutants M6386–M6390 (`scripts/mutants/TOPO1.py`).
+
+### Les adresses d'une VM sur sa carte (IPS1, #931, 19/11)
+
+Une alerte nomme une adresse (une ligne de flux, une requête KQL) : il faut retrouver sa VM, et
+savoir si Internet peut la joindre. Avant IPS1, la seule IP d'une carte était celle d'un attaquant
+bloqué. Jonathan a choisi l'option A sur une maquette (ligne « Les adresses d'une VM » des
+décisions, plus haut).
+
+**Ce que la carte montre.**
+- **Repliée comme dépliée**, une ligne sous la rangée du mode : les IP privées (quatre au plus,
+  puis « +N »), puis l'IP publique derrière 🌐, en jaune. Ctrl+F retrouve donc la VM d'une
+  adresse sans déplier, jusqu'à quatre adresses ; au-delà, il faut déplier la carte.
+- **Dépliée**, sous la ligne du NSG, le détail par carte réseau (`⇄ <nic>`) et l'âge de la
+  lecture (« read by the NSG audit … », le `timestamp` de l'audit de la VM).
+- **Une adresse se copie d'un clic** (`copyAddr`). Le bouton prend le clic, la carte ne se déplie
+  pas. Dans un contexte sûr (la boucle locale, le tunnel SSH), la page écrit le presse-papiers.
+  Ailleurs (une adresse http du tailnet), il n'y a pas de presse-papiers pour la page : le
+  navigateur copie l'adresse sélectionnée pendant le clic même (`execCommand('copy')`), car une
+  sélection laissée pour Ctrl+C partirait au rafraîchissement suivant. L'adresse doit être
+  sélectionnable : une carte `draggable` reçoit `user-select: none` de Chromium, d'où
+  `user-select: text` sur `.vm-ip`. Le toast dit ce qui s'est passé, « copied » ou « not copied »,
+  d'après la réponse du navigateur, jamais une copie qui n'a pas eu lieu. La première relecture
+  a mesuré le défaut (l'adresse annoncée « selected », rien de sélectionné).
+- **Ce qui ne s'est pas lu est dit.** Un audit NSG en échec donne « ip — », sa raison au survol,
+  et en entier sur la carte dépliée. Une IP publique dont l'adresse ne s'est pas lue donne
+  « 🌐 ? » (la raison au survol) : la VM reste montrée exposée.
+- **Deux sortes d'IP sur une carte.** Les adresses de la VM sont du texte simple ; l'adresse
+  publique est en jaune, jamais un badge plein. Le badge orange plein reste l'adresse d'un
+  attaquant bloqué (« BLOCKED »).
+
+**D'où viennent les adresses.** De l'audit NSG (`check_nsg_access`, chaque entrée de `nsgs[]`) :
+`ips` (déjà là) et `public_ips` (IPS1a : `{address}`, ou `{address: null, error}`). La page les
+relit avec l'audit, toutes les 5 min : une adresse dynamique peut avoir changé depuis, et l'âge
+de la lecture le dit. Une VM sans NSG ni sur sa carte réseau ni sur son sous-réseau fait échouer
+l'audit, donc on ne lit pas son adresse (`docs/azure.md`) ; découpler la lecture viendra plus
+tard. Tout ce qui vient d'Azure passe par `_attr`. Le bot Discord n'est pas touché.
+
+**Mesuré** dans Chromium sans tête sur la console du jeu d'exemple, avec un audit simulé par des
+adresses de documentation (RFC 5737) et une valeur piégée : les quatre cas (IP publique, multi-NIC
+avec « +1 », audit en échec, IP publique illisible) ; la copie (le presse-papiers tient l'adresse,
+la carte reste repliée) ; la valeur piégée écrite en texte, aucun élément créé. Hors contexte
+sûr (la console servie sous `http://console.test`, `isSecureContext` faux, pas de
+`navigator.clipboard`) : un vrai clic copie l'adresse ; une copie refusée (`execCommand` rend
+`false`) ou une adresse non sélectionnable dit « not copied ». Aucune capture de
+la doc ne montre la page Glorfindel : le jeu d'exemple n'a pas d'adresses à porter.
+Tests : `tests/unit/test_console_ips.py` ; mutants M6431–M6442 (`scripts/mutants/IPS1b.py`).
 
 ### Les blocages d'une VM (CON-K, #498, 04/11)
 

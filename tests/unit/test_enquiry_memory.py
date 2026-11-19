@@ -166,10 +166,19 @@ def test_a_brute_force_row_without_its_resource_id_is_left_unchecked():
 
 # ── 3. The blob exfiltration rule: written writes only ───────────────────────────────────────
 
+WRITER_OID = "00000000-0000-0000-0000-0000000000c3"     # a placeholder, never a real id
+
+
 def _write(ip: str, status: str, text: str, op: str = "PutBlob", size: int = 0) -> dict:
     return {"Type": "StorageBlobLogs", "TimeGenerated": NOW - timedelta(minutes=1), "OperationName": op,
             "CallerIpAddress": f"{ip}:50374", "AccountName": "stexample", "StatusCode": status,
-            "StatusText": text, "ResponseBodySize": size}
+            "StatusText": text, "ResponseBodySize": size, "ObjectKey": "/stexample/drop/loot.bin",
+            "RequesterObjectId": WRITER_OID}
+
+
+def _writers(writes: int) -> list[dict]:
+    """The rule's BlobWriters (SLF1): who wrote, in which container — the written writes only."""
+    return [{"container": "drop", "writer": WRITER_OID, "writes": writes, "bytes": 0, "known": 0}]
 
 
 def _blob(rows):
@@ -179,7 +188,7 @@ def _blob(rows):
 def test_a_written_write_counts():
     rows = [_write("10.0.1.4", "201", "Success", "PutBlock"), _write("10.0.1.4", "201", "Success", "PutBlockList")]
     assert _blob(rows) == [{"CallerIpAddress": "10.0.1.4", "AccountName": "stexample",
-                            "PutBlobCount": 2, "EgressBytes": 0}]
+                            "PutBlobCount": 2, "EgressBytes": 0, "BlobWriters": _writers(2)}]
 
 
 @pytest.mark.parametrize("status,text", [("403", "AuthorizationPermissionMismatch"), ("404", "ContainerNotFound"),
@@ -192,7 +201,9 @@ def test_a_refused_write_moved_nothing(status, text):
 def test_only_the_written_writes_are_counted_beside_refused_ones():
     rows = [_write("10.0.1.6", "403", "AuthorizationFailure")] * 5 + [_write("10.0.1.6", "201", "Success")]
     [hit] = _blob(rows)
-    assert hit["PutBlobCount"] == 1
+    # Filtered before the first summarize: a refused write is in neither the count nor BlobWriters,
+    # whose writes the return channel's setting aside subtracts from the count (SLF1).
+    assert hit["PutBlobCount"] == 1 and hit["BlobWriters"] == _writers(1)
 
 
 # ── 4. The log-tampering rule: one SYSCALL record per event ──────────────────────────────────
