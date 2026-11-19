@@ -544,3 +544,127 @@ def test_the_disarming_target_runs_without_orodruin_and_says_why(tmp_path):
     assert res.returncode == 0, res.stderr
     lines = log.read_text().splitlines()
     assert lines[-1].startswith("infra/orodruin/drill_ops.py disarm|no address")
+
+
+# ── The service's docker run: the options of Annatar's runs on Orodruin (DRL1d) ──────────
+#
+# The drill plays Annatar's runs (a technique, never a fault in v1: eregion_core/drill.py, eligible),
+# the control-plane library's among them, whose Terraform executes its providers under the run HOME.
+# Its service runs as ORO_RUN does: ORO_HARDEN then ORO_EXEC_HOME, read in the Makefile, no more,
+# no less; /tmp stays noexec; the run HOME is where the adapter builds it.
+
+# The drill's own launch options, never execution options (with their argument for the second set).
+_LAUNCH_FLAGS = {"--rm", "--init"}
+_LAUNCH_ARGS = {"--pull", "--name", "--env-file", "-v"}
+
+
+def _makefile() -> str:
+    return (ROOT / "Makefile").read_text(encoding="utf-8")
+
+
+def _make_var(name: str, text: str) -> str:
+    """A Makefile definition's value, ``NAME = …`` or ``NAME := …`` (a target's ``export`` too)."""
+    import re
+    m = re.search(rf"(?m)^{re.escape(name)}\s*:?=(.*)$", text)
+    assert m, f"{name} not defined in the Makefile"
+    return m.group(1).strip()
+
+
+def _expand(value: str, text: str) -> str:
+    """A Makefile value's simple variables expanded as make does (``$(X)``, recursively)."""
+    import re
+    for _ in range(5):
+        value = re.sub(r"\$\(([A-Z_]+)\)", lambda m: _make_var(m.group(1), text), value)
+    assert "$(" not in value, value
+    return value
+
+
+def _run_options(definition: str, text: str) -> list[str]:
+    """The execution options of a Makefile ``docker run --rm … --env-file`` definition, expanded."""
+    seg = definition.split("docker run --rm ", 1)[1].split(" --env-file", 1)[0]
+    return _expand(seg, text).split()
+
+
+def _exec_start(ops) -> list[str]:
+    import shlex
+    service = ops.units(dr.Schedule("tue", "19:00", 6, 1800), "orodruin")[ops.SERVICE]
+    starts = [ln for ln in service.splitlines() if ln.startswith("ExecStart=")]
+    assert len(starts) == 1, starts
+    argv = shlex.split(starts[0].split("=", 1)[1])
+    assert argv[:2] == ["/usr/bin/docker", "run"], argv
+    return argv
+
+
+def _drill_options(argv: list[str], image: str) -> list[str]:
+    """What the service's docker run carries beyond its launch options, up to the image."""
+    rest, i = [], 2
+    while argv[i] != image:
+        if argv[i] in _LAUNCH_FLAGS:
+            i += 1
+        elif argv[i] in _LAUNCH_ARGS:
+            i += 2
+        else:
+            rest.append(argv[i])
+            i += 1
+    return rest
+
+
+def _tmpfs(argv: list[str]) -> dict[str, list[str]]:
+    """Each ``--tmpfs`` of a docker run: its path, its mount options."""
+    out = {}
+    for i, a in enumerate(argv):
+        if a == "--tmpfs":
+            path, _, opts = argv[i + 1].partition(":")
+            out[path] = [o for o in opts.split(",") if o]
+    return out
+
+
+def test_the_drills_hardening_is_the_makefiles_oro_harden_and_its_exec_home_oro_exec_home(ops):
+    """The two copies, word for word: HARDEN is ORO_HARDEN, EXEC_HOME is ORO_EXEC_HOME, and the
+    service's options are the one then the other (M5992, M5993, M5995, M5999, M6000)."""
+    text = _makefile()
+    assert ops.HARDEN.split() == _make_var("ORO_HARDEN", text).split()
+    assert ops.EXEC_HOME.split() == _make_var("ORO_EXEC_HOME", text).split()
+    assert ops.RUN_OPTS.split() == ops.HARDEN.split() + ops.EXEC_HOME.split()
+
+
+def test_the_drills_service_runs_with_the_options_of_annatars_runs_no_more_no_less(ops):
+    """The service's docker run carries ORO_RUN's options, read in the Makefile and expanded:
+    ORO_HARDEN then ORO_EXEC_HOME — one dropped, or one more, and the drill diverges from the run
+    that passes by hand (M5991, M5996, M5997). Every Annatar run def of the Makefile carries the
+    same: ORO_RUN is Annatar's run."""
+    text = _makefile()
+    want = _run_options(_make_var("ORO_RUN", text), text)
+    assert want == _make_var("ORO_HARDEN", text).split() + _make_var("ORO_EXEC_HOME", text).split()
+    for other in ("ORO_RUN_REQUEST", "bench-preflight: export BENCH_ORO_RUN", "bench-run-go: export BENCH_ORO_RUN"):
+        assert _run_options(_make_var(other, text), text) == want, other
+    argv = _exec_start(ops)
+    assert _drill_options(argv, ops.IMAGE) == want
+    # The same configuration and image as ORO_RUN.
+    oro_run = _make_var("ORO_RUN", text)
+    assert argv[argv.index("--env-file") + 1] == oro_run.split("--env-file ", 1)[1].split()[0]
+    assert ops.IMAGE == _make_var("ORO_IMAGE", text) and oro_run.endswith("$(ORO_IMAGE)")
+
+
+def test_the_drills_run_home_is_the_exec_tmpfs_where_the_adapter_builds_it_and_tmp_stays_noexec(ops):
+    """One executable tmpfs, at the path where Annatar's adapter builds the run HOME (its EXEC_HOME),
+    and no HOME given another way (M5993, M5994); /tmp a tmpfs without exec (M5992); the root
+    read-only, no capability, no privilege gained (M5995, M6000)."""
+    from annatar.executors import stratus_host
+    argv = _exec_start(ops)
+    mounts = _tmpfs(argv)
+    assert {p for p, o in mounts.items() if "exec" in o} == {stratus_host.EXEC_HOME}, mounts
+    assert mounts[stratus_host.EXEC_HOME] == ["exec"]
+    assert "/tmp" in mounts and "exec" not in mounts["/tmp"], mounts
+    opts = _drill_options(argv, ops.IMAGE)
+    assert "--read-only" in opts and opts[opts.index("--cap-drop") + 1] == "ALL"
+    assert opts[opts.index("--security-opt") + 1] == "no-new-privileges:true"
+    assert not any(o.startswith(("--privileged", "--cap-add")) for o in opts)
+    assert not any(a in ("-e", "--env") or a.startswith(("--env=", "HOME=")) for a in argv)
+
+
+def test_the_drills_reads_that_play_no_run_get_nothing_more_than_the_hardening():
+    """fingerprint and check (ORO_DRILL_RUN) play no Annatar run: ORO_HARDEN alone, never the exec
+    tmpfs — as the contract's and Gothmog's runs (M5998)."""
+    text = _makefile()
+    assert _run_options(_make_var("ORO_DRILL_RUN", text), text) == _make_var("ORO_HARDEN", text).split()
