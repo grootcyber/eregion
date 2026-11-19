@@ -2447,6 +2447,9 @@ async function refreshObservation() {
   } catch (e) {}
 }
 
+// VP1c (#920): the card's time carries no time zone, or cannot be read — kept in the list whatever the
+// period, never dated by a guess (escalations.to_judge, `time_unreadable`).
+const _UNTIMED = 'The card\'s time carries no time zone, or cannot be read: when it fired is not known, and never guessed. It stays here, whatever the period, for you to judge.';
 function renderToJudge() {
   const list = document.getElementById('judge-list');
   const count = document.getElementById('judge-count');
@@ -2481,8 +2484,9 @@ function renderToJudge() {
       <div class="judge-head">
         <span class="judge-what" style="color:${disruptive ? 'var(--red)' : 'var(--orange)'}">${_attr(what)}</span>
         <span style="flex:1"></span>
-        <span class="judge-ts">${c.first_seen ? _relTime(c.first_seen) : ''}${times}</span>
+        <span class="judge-ts">${c.time_unreadable ? '' : (c.first_seen ? _relTime(c.first_seen) : '')}${times}</span>
       </div>
+      ${c.time_unreadable ? `<div class="judge-why judge-untimed" style="-webkit-line-clamp:1;color:var(--yellow)" title="${_attr(_UNTIMED)}">⚠ time unreadable — judge it all the same</div>` : ''}
       <div class="judge-why" style="-webkit-line-clamp:1;color:var(--text)" title="${anchored ? _attr(_DETECTION_ONLY.has(c.escalation_type) ? _FILED_BEFORE : 'The detection does not name this VM: the card is only filed on it') : _attr((t && t.limit) || c.resource_id || '')}">${anchored ? '⚓ ' : (t ? '🎯 ' : '')}${_attr(vm)}${c.rule_name ? ` · rule ${_attr(c.rule_name)}` : ''}${c.ttp ? ` · ${_attr(c.ttp)}` : ''}${c.severity === 'critical' ? ' · <b style="color:var(--red)">critical</b>' : ''}</div>
       ${c.exercise ? `<div class="judge-why" style="-webkit-line-clamp:1;color:var(--blue)" title="An injector's exercise window covered this VM at that time. A window is the injectors' claim: check the run before trusting it.">⚑ exercise${c.exercise_run ? ` · run <a href="/runs/${encodeURIComponent(c.exercise_run)}" ${_on('click', 'stop')}>${_attr(c.exercise_run)}</a> — check the run ▸` : ' — check the run'}</div>` : ''}
       ${_proposedLine(c)}
@@ -3087,9 +3091,14 @@ function ttpStatus(c) {
   return ['— unknown', 'dim'];
 }
 
+// VP1c (#920): a time without a zone is never dated by a guess — a browser would take it for its own
+// local time. Said unreadable, as a time that cannot be read.
+const _ZONED = /(?:Z|[+-]\d{2}:?\d{2})$/i;
 function _relTime(iso) {
   if (!iso) return '—';
-  const age = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  const t = new Date(iso).getTime();
+  if (!_ZONED.test(String(iso).trim()) || Number.isNaN(t)) return 'time unreadable';
+  const age = Math.floor((Date.now() - t) / 1000);
   if (age < 60) return `${age}s ago`;
   if (age < 3600) return `${Math.floor(age / 60)}m ago`;
   return `${Math.floor(age / 3600)}h ago`;

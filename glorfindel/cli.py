@@ -2086,7 +2086,9 @@ def _render_escalation(e: dict) -> None:
 
     now = datetime.now(timezone.utc)
     ts = datetime.fromisoformat(e["timestamp"])
-    age_m = int((now - ts).total_seconds() // 60)
+    # VP1c (#920): a time without a zone is said as written — its age not known, never guessed.
+    when = (f"{ts.strftime('%H:%M')} ({int((now - ts).total_seconds() // 60)}m ago)" if ts.tzinfo is not None
+            else f"{_outside(str(e['timestamp']))} (no time zone: age unknown)")
     resource_short = e["resource_id"].split("/")[-1]
 
     table = Table(show_header=False, box=None, padding=(0, 1))
@@ -2094,7 +2096,7 @@ def _render_escalation(e: dict) -> None:
     table.add_column()
     # SEC-F: every field read from the cards' store, said as it is — the action is the model's.
     table.add_row("ID", f"[dim]{_outside(e['id'])}[/dim]")
-    table.add_row("Time", f"{ts.strftime('%H:%M')} ({age_m}m ago)")
+    table.add_row("Time", when)
     table.add_row("Action", f"[bold yellow]{_outside(e['action'])}[/bold yellow]")
     table.add_row("Resource", _outside(resource_short))
     table.add_row("Type", _outside(e["escalation_type"]))
@@ -2359,6 +2361,9 @@ def report(since_text: str, as_json: bool):
         console.print(f"Block recommendations: {b['cards']} card(s) for {b['distinct_ips']} distinct IP(s)")
     if r.get("exercises"):
         console.print(f"[dim]{r['exercises']} exercise card(s) left out (an injector's window covered the VM)[/dim]")
+    if r.get("undated"):
+        console.print(f"[yellow]{r['undated']} card(s) left out: their time carries no time zone or cannot be read — "
+                      "in the period or not, unknown, never guessed (glorfindel report --since all counts them)[/yellow]")
     _print_expected_sudo(r["expected_sudo"])
     _print_memory(r["memory"])
     _print_auditd()

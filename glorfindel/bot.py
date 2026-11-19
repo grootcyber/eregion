@@ -544,7 +544,8 @@ def _posted_within(escs: list[dict], messages: dict[str, int], now=None) -> list
     for e in escs:
         mid = messages.get(e.get("id", ""))
         when = _posted_at(e) if mid else None
-        if when is not None and now - when <= timedelta(days=_RESTORE_DAYS):
+        # VP1c (#920): a card's time without a zone — its age not known, never guessed — stays in line.
+        if when is not None and (when.tzinfo is None or now - when <= timedelta(days=_RESTORE_DAYS)):
             out.append((e, mid))
     return out
 
@@ -577,7 +578,11 @@ def _stale_reason(esc: dict | None, kind: str, now=None, known_vms: set[str] | N
         return "carte introuvable"
     now = now or datetime.now(timezone.utc)
     when = _posted_at(esc)
-    if when is None or now - when > timedelta(days=_RESTORE_DAYS):
+    if when is not None and when.tzinfo is None:
+        # VP1c (#920): its age is not known, never guessed — judged all the same, never acted on here.
+        if kind != "judge":
+            return "heure illisible (sans fuseau)"
+    elif when is None or now - when > timedelta(days=_RESTORE_DAYS):
         return f"expirée (plus de {_RESTORE_DAYS} jours)"
     rid = str(esc.get("resource_id") or "").lower()
     if (known_vms is not None and esc.get("escalation_type") not in _ANCHORED_TYPES
