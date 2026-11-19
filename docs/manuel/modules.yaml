@@ -1978,7 +1978,7 @@ briques:
     nom: "A proof under 21 days is fresh; proven is the catalogue's status only"
     etat: main
     release: "0.6"
-    lots: [FRS1]
+    lots: [FRS1, FRS1b]
     issue: 904
 
   - id: k-verdict-propose

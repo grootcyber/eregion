@@ -3,10 +3,10 @@
   "sample": "tests/fixtures/dagorlad_sample.json",
   "sample_sha256": "928c31316241222839d98f2839a87a5ffd920804f66c97a820b9e92e02e07f54",
   "images": {
-    "annatar.png": "855aec9573ef841e91f65bf1475c0325aef505020700a5b01916e62c7bb4bc76",
-    "board.png": "7162bc514c4bef9f09b99bb0f95ea6276050175621b83ade044bb9900d86002c",
-    "drills.png": "5a3b32541e2d7b4a7ed8c6d55e74a6d12aba84d7b1f9e6219cf36e95775470ba",
-    "loop.webp": "f3e2b1c3e44c8e21609d5df03d75afd373de4c9baa22095b74b8199fbd21ecda",
-    "runs.png": "0d5e2dc782f8c528ca4737050e848d86a8bc58fd5f1227aa09308fa8635c0a74"
+    "annatar.png": "a0177757d01bf8fa31cef1d7837740f6353f9f624f0694c1190d045afc6b4fc9",
+    "board.png": "3918b356ff834060086d54001c055b5bb2d95190def3ef89da5b4b8c8252a1b3",
+    "drills.png": "df9f76de67babfe68da47ee4b5c7d329146341b0d0fcfa61f34d6a4813c3e856",
+    "loop.webp": "394c8be2c68c832d8eaecb51d9a1fb65a28950263f52092471f08833b79282a7",
+    "runs.png": "c13c4879ef72b35fba7fcb136215ee53859d99b75aa031dcfc7b4b3bfe1c42d2"
   }
 }

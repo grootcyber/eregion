@@ -2552,7 +2552,8 @@
    "etat": "main",
    "release": "0.6",
    "lots": [
-    "FRS1"
+    "FRS1",
+    "FRS1b"
    ],
    "issue": 904
   },
