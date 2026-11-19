@@ -6,6 +6,7 @@ from __future__ import annotations
 import re
 
 from glorfindel.providers.azure.nsg import _nic_hash, _nic_mark, _rule_name
+from glorfindel.providers.azure.public_ips import public_ip_ids
 from glorfindel.providers.azure.quarantine import _is_quarantine_nsg
 from glorfindel.providers.azure.sdk import _finished, _is_not_found
 from glorfindel.response.ids import _parse_nic_resource_id, _parse_nsg_resource_id, _same_id
@@ -187,6 +188,8 @@ class NetworkMixin:
                 **({"sharing_unknown": True} if sharing is None else {}),
                 "ip_scoped": scope in ("subnet", "none") or shared,
                 "private_ips": [ip for ip in ips if ip],
+                # Its public IPs, as ids: the audit reads their addresses (IPS1a).
+                "public_ip_ids": public_ip_ids(nic),
                 # The subnet's NSG when the NIC also has its own: the other place a deny
                 # holds (traffic must pass both).
                 "alt_nsg": alt_nsg,

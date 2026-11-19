@@ -26,6 +26,7 @@ build = stratus_build.build
 submodule_commit = stratus_build.submodule_commit
 terraform_version = stratus_build.terraform_version
 required_providers = stratus_build.required_providers
+implicit_providers = stratus_build.implicit_providers
 
 
 def _sha(data: bytes) -> str:
@@ -52,9 +53,11 @@ def _main_tf(providers: dict[str, str]) -> str:
 
 
 def _fake_submodule(tmp_path: Path, *, providers: dict[str, str] | None = None,
-                    extra_tf: str | None = None) -> Path:
+                    extra_tf: str | None = None, uses: tuple[str, ...] = ("random",)) -> Path:
     """A tiny git repo mirroring the submodule layout: the Terraform version const and one azure
-    technique's main.tf. ``extra_tf`` adds a second technique (to exercise divergent pins)."""
+    technique's main.tf. ``extra_tf`` adds a second technique (to exercise divergent pins). ``uses``
+    adds a ``resource "<provider>_x"`` for each — a provider the technique USES but does not declare
+    (``random`` by default, like the real bastion's ``random_password``)."""
     providers = providers or {"azurerm": "4.81.0", "azuread": "2.53.1"}
     sub = tmp_path / "stratus-red-team"
     runner = sub / "v2" / "pkg" / "stratus" / "runner"
@@ -62,7 +65,8 @@ def _fake_submodule(tmp_path: Path, *, providers: dict[str, str] | None = None,
     (runner / "terraform.go").write_text(_TERRAFORM_GO, encoding="utf-8")
     tech = sub / "v2" / "internal" / "attacktechniques" / "azure" / "persistence" / "fic"
     tech.mkdir(parents=True)
-    (tech / "main.tf").write_text(_main_tf(providers), encoding="utf-8")
+    uses_tf = "".join(f'\nresource "{p}_x" "x" {{}}\n' for p in uses)
+    (tech / "main.tf").write_text(_main_tf(providers) + uses_tf, encoding="utf-8")
     if extra_tf is not None:
         tech2 = sub / "v2" / "internal" / "attacktechniques" / "azure" / "execution" / "run"
         tech2.mkdir(parents=True)
@@ -84,10 +88,12 @@ def _world(tmp_path):
     tf_zip = _zip({"terraform": tf})
     azurerm = b"fake-azurerm-4.81.0\n"
     azuread = b"fake-azuread-2.53.1\n"
+    random = b"fake-random-3.6.3\n"   # an implicit provider (used, not declared — R2BY)
     served = {
         "terraform_1.3.10_linux_amd64.zip": tf_zip,
         "terraform-provider-azurerm_4.81.0_linux_amd64.zip": azurerm,
         "terraform-provider-azuread_2.53.1_linux_amd64.zip": azuread,
+        "terraform-provider-random_3.6.3_linux_amd64.zip": random,
     }
     recorded = dict(served)
     recorded["stratus"] = binary   # the built binary's sha is pinned (the reproducibility guard)
@@ -138,6 +144,25 @@ def test_required_providers_refuses_divergent_pins(tmp_path):
         required_providers(submodule)
 
 
+def test_implicit_providers_finds_a_used_undeclared_one(tmp_path):
+    # the technique uses random_x but declares only azurerm/azuread — random must be mirrored (R2BY)
+    submodule = _fake_submodule(tmp_path)
+    assert implicit_providers(submodule) == {"random": "3.6.3"}
+
+
+def test_implicit_providers_excludes_the_declared_ones(tmp_path):
+    # a resource of a declared provider (azurerm_*) is not an implicit provider
+    submodule = _fake_submodule(tmp_path, uses=("azurerm", "random"))
+    assert implicit_providers(submodule) == {"random": "3.6.3"}
+
+
+def test_implicit_providers_refuses_an_unpinned_one(tmp_path):
+    # a used, undeclared provider with no pin in IMPLICIT_VERSIONS fails closed
+    submodule = _fake_submodule(tmp_path, uses=("tls",))
+    with pytest.raises(SystemExit, match="no pin in IMPLICIT_VERSIONS"):
+        implicit_providers(submodule)
+
+
 def test_submodule_commit_reads_head(tmp_path):
     submodule = _fake_submodule(tmp_path)
     assert len(submodule_commit(submodule)) == 40
@@ -165,6 +190,8 @@ def test_build_lays_out_the_verified_tree(tmp_path):
     mirror = dest / "plugin-cache" / "registry.terraform.io" / "hashicorp"
     assert (mirror / "azurerm" / "terraform-provider-azurerm_4.81.0_linux_amd64.zip").exists()
     assert (mirror / "azuread" / "terraform-provider-azuread_2.53.1_linux_amd64.zip").exists()
+    # the implicit provider (used by the technique, not declared) is mirrored too (R2BY)
+    assert (mirror / "random" / "terraform-provider-random_3.6.3_linux_amd64.zip").exists()
     assert "/opt/stratus/plugin-cache" in (dest / "terraformrc").read_text()
 
 

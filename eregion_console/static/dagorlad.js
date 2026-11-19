@@ -227,8 +227,9 @@ function _dispatch(ev, name) {
 for (const [type, name] of Object.entries(_EVENTS)) document.addEventListener(type, ev => _dispatch(ev, name), true);
 
 // ── Red cards: the catalogue, each with its last proof (the coverage matrix, C1) ───────
+// A proof under 21 days is « fresh » (FRS1, #904): « proven » is the catalogue's status.
 const PROOF = {
-  proven: ['c-ok', 'proven'], aging: ['c-warn', 'aging'], stale: ['c-bad', 'stale'],
+  fresh: ['c-ok', 'fresh'], aging: ['c-warn', 'aging'], stale: ['c-bad', 'stale'],
   regressed: ['c-bad', 'REGRESSED'], unproven: ['c-warn', 'no proof'], never: ['', 'never run'],
   unknown: ['c-warn', 'proof unreadable'],
 };
@@ -886,6 +887,34 @@ function validPending(w) {
       && (c.last_run_at === null || typeof c.last_run_at === 'number'));
 }
 
+// ── The drill of the week (DRL1b): its last occurrence, its state, the next one, the arming — as the
+// watch judged it (GET /api/dagorlad/drill, read only). Every value escaped.
+const WEEKLY_CLASS = { proof: 'c-ok', missed: 'c-bad', not_run: 'c-bad', self_disarmed: 'c-bad',
+  unknown: 'c-warn', refused: 'c-warn', skipped: 'c-warn', stopped: 'c-warn', rearm_expected: 'c-warn',
+  channel_unread: 'c-warn' };
+function weeklyLine(d) {
+  const v = d && d.verdict;
+  if (!v) return '<b>WEEKLY DRILL</b> <span class="meta">not judged yet on this host (the watch judges it every minute)</span>';
+  const cls = Object.hasOwn(WEEKLY_CLASS, v.state) ? WEEKLY_CLASS[v.state] : '';
+  const when = x => x ? esc(String(x).slice(0, 16).replace('T', ' ')) + ' UTC' : '—';
+  const past = (d.history || []).map(h => `${esc(String(h.occurrence).slice(5, 10))} ${esc(h.state)}`).join(' · ');
+  return `<b>WEEKLY DRILL</b> <span>${esc(v.drill || '—')}</span>
+    <span class="chip ${cls}" title="${esc(v.said)}">${esc(v.state)}${v.code ? ' · ' + esc(v.code) : ''}${v.mention ? ' · @' : ''}</span>
+    <span class="meta">last ${when(v.occurrence)} · next ${when(v.next)} · arming: ${esc(v.armed || 'none')}${v.reason ? ' (' + esc(v.reason) + ')' : ''}</span>
+    <span class="meta">${esc(v.said)}</span>
+    ${past ? `<span class="meta" title="The occurrences before, as judged">before: ${past}</span>` : ''}`;
+}
+async function loadWeekly() {
+  const box = $('weekly');
+  if (!box) return;
+  try {
+    const d = await getJSON('/api/dagorlad/drill');
+    box.innerHTML = weeklyLine(d);
+  } catch (e) {
+    box.innerHTML = `<b>WEEKLY DRILL</b> <span class="r-bad">/api/dagorlad/drill — ${esc(e.message)}</span>`;
+  }
+}
+
 // ── Fetching ──────────────────────────────────────────────────────────────────────────
 async function loadBoard() {
   try {
@@ -938,6 +967,8 @@ async function refreshPlan() {
   S.lastAt = S.last ? Date.now() : 0;
   loadBoard().then(refreshPlan).then(refreshFollow);
   loadDrills();
+  loadWeekly();
+  setInterval(loadWeekly, 60000);
   setInterval(() => loadBoard().then(refreshPlan), 30000);
   setInterval(refreshFollow, 10000);
   window.addEventListener('resize', drawWires);

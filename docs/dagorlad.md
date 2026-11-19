@@ -31,7 +31,8 @@ Glorfindel voit », plus bas).
 ## Les deux vues
 
 - **Board** (`/dagorlad`) : les cartes, les fils et le plan. Quand ses cartes dépassent l'écran,
-  la colonne rouge défile ; la capture ci-dessus est rendue en 1440 × 1100 pour les montrer toutes.
+  la colonne rouge défile ; la capture ci-dessus est rendue en 1440 × 1200, la colonne ouverte sur
+  la première carte câblée qui porte une preuve, pour montrer toutes les cartes câblées.
 - **Runs** (`/dagorlad?view=runs`) : ce qui a tourné, des deux injecteurs. On y trouve :
   - en tête, **le temps pour contenir et la part contenue seule des exercices**, sur 30 jours :
     les runs d'attaque, mesurés comme BL1, avec l'ombre et les pannes prises pour une attaque
@@ -111,7 +112,7 @@ watch en marche. Les états :
 
 | État | Sens |
 |---|---|
-| `proven` | dernière preuve de moins de 21 jours |
+| `fresh` | dernière preuve de moins de 21 jours (jamais « proven » : ce mot est le statut du catalogue, une entrée mesurée au banc, FRS1) |
 | `aging` | de 21 à 30 jours |
 | `stale` | plus de 30 jours : l'indicateur « âge de la dernière preuve » est en alerte |
 | `REGRESSED` | détectée avant, ratée depuis |
@@ -163,6 +164,16 @@ juge et la lance.
 4. **Le retour.** Chaque fenêtre porte l'identifiant de la demande ; la vue Runs les montre. Orodruin
    publie son verdict et le statut de la demande ; sous le plan, la page dit « Orodruin: armed », ou
    « unknown here » tant qu'il n'a rien publié. La page suit alors chaque fil, en direct.
+
+## Le drill de la semaine : la ligne « Weekly drill »
+
+Sous le tableau, une ligne dit le drill de la semaine (`banc-hebdo`) tel que la watch d'Imladris l'a
+jugé, chaque minute, par le code (DRL1b, `docs/design/drill-banc.md` §4.2) : sa dernière occurrence et
+son état, pourquoi, la prochaine, l'armement. `proof` : détectée, la décision rattachée ; `missed`,
+`not_run` et `self_disarmed` : en rouge, le bot a mentionné le rôle ; `rearm_expected` : une release a
+changé le drill, ou le permis a expiré, réarmer ; `channel_unread` : le canal n'a pas pu être listé.
+Un drill jamais armé, désarmé ou tué : `disarmed`, rien n'est attendu. La page ne lance rien, et
+n'arme rien : l'armement reste celui de l'opérateur (`make orodruin-drill-arm`).
 
 ## Garder et rejouer un drill
 
@@ -382,7 +393,18 @@ python scripts/console_shots.py --check     # quels outils sont là ; ne rend ri
   - ffmpeg pour la vidéo seulement. Avec libx264, elle sort en mp4 ; sinon en WebM (VP9), comme avec
     le ffmpeg de Playwright.
 
-  S'il en manque un, le script le dit et s'arrête (code 3).
+  S'il en manque un, le script le dit et s'arrête (code 3). Un Chromium trouvé mais qui ne tourne
+  pas (le cache de Playwright sans les bibliothèques du système, `libnss3`, `libnspr4`) est essayé
+  par `--version` avant tout : le script dit sa propre erreur et quoi installer (`sudo apt install
+  libnss3 libnspr4`), puis s'arrête (code 3). `--check` le dit aussi (`broken:`).
+- **Jamais une attente sans fin** (FRS1b). Chaque attente est bornée : la console répond en 30 s,
+  Chromium dit où écoute DevTools en 30 s, sinon le script s'arrête et cite leur propre sortie.
+  - La sortie de la console va dans le répertoire jetable (`server.log`), jamais dans celle de
+    l'appelant. Le 18/11, une console laissée derrière tenait ouverte la sortie de l'appelant : la
+    commande semblait bloquée bien après la fin du script.
+  - Quoi qu'il arrive (Chromium qui ne démarre pas, une page qui ne vient pas, un `timeout` qui
+    envoie SIGTERM), le script arrête la console et Chromium avant de rendre la main. Tué sans
+    pouvoir réagir (SIGKILL), il laisse une console qui s'arrête seule dès qu'elle perd son parent.
 - **Les images restent liées au jeu.** `docs/images/dagorlad/shots.json` garde l'empreinte du jeu et
   celle de chaque image. `tests/unit/test_console_shots.py` les vérifie, avec les identifiants du jeu,
   les tailles (moins de 300 Ko par capture, 3 Mo pour la boucle) et la durée de la boucle (10 à 15 s).

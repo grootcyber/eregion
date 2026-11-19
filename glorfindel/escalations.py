@@ -294,6 +294,35 @@ def _keys_of(e: dict) -> list[str]:
     return [k for k in keys if isinstance(k, str)] if isinstance(keys, list) else []
 
 
+UNATTRIBUTED = "unattributed"
+
+
+def unattributed(e: dict) -> dict | None:
+    """SLF1 (#929): what a card on a detection attributed to no VM says in place of its resource —
+    ``{"candidates": [the VMs watched, sorted], "appliance": ""}`` —, or None for a card whose
+    resource is its own. The RulePoller anchors such a detection on a VM it does not name (one card,
+    VM-aimed actions held): the card is filed there, never about it. A card recorded so
+    (`attribution`), or held by the attribution guard (`unattributed_signal`, before SLF1: its
+    candidates not kept). Never a card filed on its target (AL1c): it names what it is about."""
+    if not isinstance(e, dict) or isinstance(e.get("target"), dict):
+        return None
+    a = e.get("attribution")
+    if isinstance(a, dict) and a.get("state") == UNATTRIBUTED:
+        cands = a.get("candidates")
+        return {"candidates": [str(c) for c in cands if isinstance(c, str)] if isinstance(cands, list) else [],
+                "appliance": str(a.get("appliance") or "")}
+    if e.get("escalation_type") == "unattributed_signal":
+        return {"candidates": [], "appliance": ""}
+    return None
+
+
+def _attribution_of(e: dict) -> str:
+    """The dedup's word on a card (SEC-A4's anchor, SLF1): an unattributed detection never folds into
+    a card of its anchor VM, nor the reverse."""
+    a = e.get("attribution") if isinstance(e, dict) else None
+    return UNATTRIBUTED if isinstance(a, dict) and a.get("state") == UNATTRIBUTED else ""
+
+
 @_locked
 def record(
     signal_id: str,
@@ -318,8 +347,14 @@ def record(
     target: dict | None = None,
     action_key: str = "",
     executed: dict | None = None,
+    attribution: dict | None = None,
 ) -> str:
     """Append an escalation and return its id.
+
+    `attribution` (SLF1, #929): on a detection of the data plane attributed to no VM, what the card
+    says in place of its resource — ``{"state": "unattributed", "candidates": […]}`` (`unattributed`);
+    its `resource_id` stays the VM it is anchored on, where it is filed. Part of the dedup: such a
+    card never folds into a card of its anchor VM, nor the reverse.
 
     `action_key` (JUG1, #760: `executed_key`): the autonomous action this card stands for. A card
     that already holds it — pending or not, judged or not — is the one: its id is returned and
@@ -384,6 +419,9 @@ def record(
                 and e.get("action") == action
                 and e.get("escalation_type") == escalation_type
                 and (e.get("source") or "real") == (source or "real")
+                # SLF1: a detection attributed to no VM, on its anchor's card, would be counted as
+                # that VM's (a hundred re-fires of the watch's own channel on one VM's card).
+                and _attribution_of(e) == _attribution_of({"attribution": None if target else attribution})
                 # A control-plane card is one operation (who, what, which resource — AL1):
                 # the next one, perhaps on Glorfindel's own rules, is never folded into it.
                 and escalation_type != "control_plane_change"
@@ -473,6 +511,11 @@ def record(
         # AL1c (#597): what a card of the control plane or of an identity is filed on — its
         # `resource_id` is the target's id; `vms`, the VMs an NSG covers, where the console shows it.
         esc["target"] = target
+    if isinstance(attribution, dict) and attribution.get("state") == UNATTRIBUTED and not target:
+        # SLF1: filed on its anchor VM, about none — the card says so, and names the candidates.
+        esc["attribution"] = {"state": UNATTRIBUTED,
+                              "candidates": [str(c) for c in (attribution.get("candidates") or [])],
+                              **({"appliance": str(attribution["appliance"])} if attribution.get("appliance") else {})}
     if identity_plan:
         # IR1a: the plan of an identity card, and the thread of its checks (« Verify »). Never a
         # proposal of FS1a: an identity card holds no action (`action_queue.proposed_verbs`).
@@ -927,7 +970,9 @@ def all_escalations() -> list[dict]:
 
 @_locked
 def set_verdict(escalation_id: str, verdict: str, note: str = "") -> dict:
-    """Record the operator's judgement of a card — independent of its acknowledgement.
+    """Record the operator's judgement of a card — independent of its acknowledgement. A verdict
+    given here is given by hand: whatever the card said of where its verdict came from
+    (``verdict_from``, VP1's confirmation) is gone.
 
     `escalation_id`: the full id or a unique prefix of at least 6 characters (the War
     Room and `pending` show 8). Raises ValueError on an unknown verdict or an ambiguous
@@ -938,6 +983,9 @@ def set_verdict(escalation_id: str, verdict: str, note: str = "") -> dict:
     e["verdict"] = verdict
     e["verdict_at"] = datetime.now(timezone.utc).isoformat()
     e["verdict_note"] = note
+    # VP1b (#917): a verdict given by hand is the operator's own — a card confirmed from its
+    # proposal, then judged again by hand, no longer says the verdict came from the proposal.
+    e.pop("verdict_from", None)
     lines[i] = json.dumps(e, default=str)
     _write_lines(lines)
     return e
@@ -1088,20 +1136,36 @@ def _when(e: dict) -> datetime | None:
         return None
 
 
+def _zoned(e: dict) -> datetime | None:
+    """The card's time when it can be placed — read, and with a time zone; None otherwise (VP1c,
+    #920). A time without a zone is never compared to one with a zone, nor taken for UTC: where it
+    lies is not known, and never guessed."""
+    at = _when(e)
+    return at if at is not None and at.tzinfo is not None else None
+
+
+def _aware(since: datetime | None) -> datetime | None:
+    """`since` as the reads of the cards take it: with a time zone, or None. A `since` without one
+    is a caller's mistake, said — never compared, never taken for UTC (VP1c)."""
+    if since is not None and since.tzinfo is None:
+        raise ValueError("since carries no time zone")
+    return since
+
+
 def recurrence(e: dict, escs: list[dict] | None = None, days: int = 7) -> dict | None:
     """The earlier cards on the same IP in the last `days` days — in observation nothing is
     blocked, so a scanner comes back and opens a new card after each ack (three cards for
     one attacker on bree, 16–17/10). Said on the card, never judged for the operator."""
-    ip, me = _ip_of(e), _when(e)
+    ip, me = _ip_of(e), _zoned(e)          # VP1c: only times with a zone are ever compared
     if not ip or me is None:
         return None
     window = timedelta(days=days)
-    prev = [x for x in (all_escalations() if escs is None else escs)
+    prev = [(w, x) for x in (all_escalations() if escs is None else escs)
             if x.get("id") != e.get("id") and _ip_of(x) == ip
-            and (w := _when(x)) is not None and w < me and me - w <= window]
+            and (w := _zoned(x)) is not None and w < me and me - w <= window]
     if not prev:
         return None
-    last = max(prev, key=_when)
+    last = max(prev, key=lambda p: p[0])[1]
     return {"previous": len(prev), "last_id": last.get("id"), "last_seen": last.get("first_seen"),
             "last_verdict": last.get("verdict")}
 
@@ -1112,23 +1176,26 @@ def to_judge(since: datetime | None = None, limit: int = 100) -> list[dict]:
     list shows during an observation. An exercise card stays in the list, flagged
     (``exercise``, ``exercise_run``) — H-1: a window is a claim from the injectors' host, and
     whoever can write one could otherwise hide a real attack from the operator. The
-    observation report still counts it apart (``observation_report``)."""
+    observation report still counts it apart (``observation_report``).
+
+    VP1c (#920): a card whose time cannot be placed — without a time zone, or unreadable — is never
+    dated by a guess, nor left out: it stays in the list whatever ``since``, flagged
+    ``time_unreadable``, first, where ``limit`` never cuts it — for the operator to judge all the same."""
+    since = _aware(since)
     out = []
     escs = all_escalations()
     for e in escs:
         if not is_decision(e) or e.get("verdict") in VERDICTS:
             continue
-        when = e.get("first_seen") or e.get("timestamp") or ""
-        if since is not None:
-            try:
-                if datetime.fromisoformat(str(when).replace("Z", "+00:00")) < since:
-                    continue
-            except ValueError:
-                continue
+        at = _zoned(e)
+        if since is not None and at is not None and at < since:
+            continue
         card = {k: e.get(k) for k in (
             "id", "action", "escalation_type", "resource_id", "ttp", "severity", "confidence",
             "reason", "explanation", "action_params", "first_seen", "last_seen", "occurrences",
             "status", "rule_name", "target",
+            # SLF1: a detection attributed to no VM — the line says so, never its anchor's name.
+            "attribution",
             # JUG1: what the console opens a line on — the card's steps, and what an action taken
             # alone did and how it was checked.
             "suggested_steps", "executed", "run_id", "signal_id")}
@@ -1138,9 +1205,11 @@ def to_judge(since: datetime | None = None, limit: int = 100) -> list[dict]:
         for k in (PROPOSED_FIELD, PROPOSED_WHY, PROPOSED_REFUSED):
             card[k] = e.get(k) if card["exercise"] and isinstance(e.get(k), dict) else None
         card["recurrence"] = recurrence(e, escs)
-        out.append(card)
-    out.sort(key=lambda c: str(c.get("first_seen") or ""), reverse=True)
-    return out[:limit]
+        card["time_unreadable"] = at is None
+        out.append((at, card))
+    # Newest first by the time itself (an offset is no string order); those without one ahead of all.
+    out.sort(key=lambda p: (p[0] is None, p[0].timestamp() if p[0] is not None else 0.0), reverse=True)
+    return [card for _, card in out[:limit]]
 
 
 _NO_ACTION_LABELLED = frozenset({"account_compromised", "compromise_unchecked"})
@@ -1149,7 +1218,13 @@ _NO_ACTION_LABELLED = frozenset({"account_compromised", "compromise_unchecked"})
 def observation_report(since: datetime | None = None) -> dict:
     """Counts of the operator's verdicts on decision cards since `since` (all if None).
     A card counts once, however many times it re-fired (its `occurrences`). An exercise
-    card (B2: an injector's window covered the VM) is left out — counted in `exercises`."""
+    card (B2: an injector's window covered the VM) is left out — counted in `exercises`.
+
+    VP1c (#920): a card whose time cannot be placed — without a time zone, or unreadable — is never
+    dated by a guess: with a `since`, whether it lies in the window is not known, so it is left out
+    of the counts and said apart, in `undated`."""
+    since = _aware(since)
+
     def bucket() -> dict:
         return {"right": 0, "wrong": 0, "unsure": 0, "unjudged": 0}
 
@@ -1158,16 +1233,17 @@ def observation_report(since: datetime | None = None) -> dict:
     disruptive = bucket()
     cards = 0
     exercises = 0
+    undated = 0
     block_ips: list[str] = []
     for e in all_escalations():
         if not is_decision(e):
             continue
-        when = e.get("first_seen") or e.get("timestamp") or ""
         if since is not None:
-            try:
-                if datetime.fromisoformat(str(when).replace("Z", "+00:00")) < since:
-                    continue
-            except ValueError:
+            at = _zoned(e)
+            if at is None:                  # VP1c: in the window or not, unknown — said, never guessed
+                undated += 1
+                continue
+            if at < since:
                 continue
         if e.get("source") == "exercise":
             exercises += 1
@@ -1188,6 +1264,7 @@ def observation_report(since: datetime | None = None) -> dict:
         "since": since.isoformat() if since else None,
         "cards": cards,
         "exercises": exercises,
+        "undated": undated,
         # A returning scanner opens a card per visit: how many attackers behind the blocks.
         "blocks": {"cards": len(block_ips), "distinct_ips": len(set(block_ips))},
         "judged": sum(b["right"] + b["wrong"] + b["unsure"] for b in by_action.values()),

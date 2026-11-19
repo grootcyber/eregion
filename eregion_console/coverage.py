@@ -24,11 +24,13 @@ watch running — one run ``--without-glorfindel`` measured nothing of Glorfinde
 - ``regressed`` — the non-regression: its last measured run failed (missed, or a fault FAIL)
   after an earlier one succeeded (detected, or PASS). **It is the detection that regresses**:
   the earlier success needs no decision attached — a technique detected, then missed, has lost
-  its detection whether its response was ever proven or not. A run that measured nothing
+  its detection whether its response was ever proved or not. A run that measured nothing
   (``unknown``, ``--without-glorfindel``, a fault REFUSED or whose start failed — its
   ``checks.fault_started`` not PASS) neither proves nor regresses;
-- ``proven`` (last proof under 21 days), ``aging`` (21 to 30), ``stale`` (over 30 days: the
-  alert of the indicator « age of the last proof »);
+- ``fresh`` (last proof under 21 days), ``aging`` (21 to 30), ``stale`` (over 30 days: the
+  alert of the indicator « age of the last proof »). Never ``proven`` (FRS1, #904): that word is
+  the catalogue's status, measured on the bench (``eregion_core.experiment``), not the age of a
+  proof — one word, one meaning;
 - ``unproven`` — runs, none a proof;
 - ``never`` — no run.
 
@@ -89,7 +91,7 @@ def is_proof(run: dict, cycles: list[dict]) -> bool:
 
 
 def regression(runs: list[dict]) -> dict | None:
-    """The run that lost what an earlier one had proven: the last measured run is a failure,
+    """The run that lost what an earlier one had held: the last measured run is a failure,
     and an earlier measured run a success. ``runs`` oldest first."""
     measured = [r for r in runs if outcome(r) in (GOOD[r["kind"]], BAD[r["kind"]])]
     if not measured or outcome(measured[-1]) != BAD[measured[-1]["kind"]]:
@@ -141,7 +143,7 @@ def state(runs: list[dict], proof: dict | None, regressed: dict | None, now: flo
         return "regressed"
     if proof:
         age = now - proof["at"]
-        return "proven" if age < AGING_DAYS * DAY else "aging" if age <= STALE_DAYS * DAY else "stale"
+        return "fresh" if age < AGING_DAYS * DAY else "aging" if age <= STALE_DAYS * DAY else "stale"
     return "unproven" if runs else "never"
 
 
@@ -182,7 +184,7 @@ def _summary(rows: list[dict]) -> dict:
     counted = [r for r in rows if is_ready(r["status"]) or r["runs"]]
     out = {"catalog": len(catalog),
            "implemented": sum(1 for r in catalog if is_ready(r["status"]))}
-    for s in ("proven", "aging", "stale", "unproven", "never"):
+    for s in ("fresh", "aging", "stale", "unproven", "never"):
         out[s] = sum(1 for r in counted if r["state"] == s)
     out["regressed"] = [r["id"] for r in counted if r["state"] == "regressed"]
     return out

@@ -31,7 +31,9 @@ What it does not see:
   (`importlib.util.spec_from_file_location`, as `scripts/notify_discord.py` loads
   `glorfindel/chat_text.py`): today that file is found by the partial checkouts and by the CD's
   `AGENT_FILES`, but a job with a full checkout running such a script would not derive it;
-- the Makefile, left out by decision (18/11): its recipes run with the maintainer's rights.
+- the Makefile, left out by decision (18/11): its recipes run with the maintainer's rights. The one that
+  installs Imladris's CD as root, `make imladris-cd-install`, only calls an owned script (CDI1, #918):
+  kept by `test_the_cd_s_installation_recipe_lives_in_an_owned_script`.
 """
 from __future__ import annotations
 
@@ -272,6 +274,19 @@ def test_every_line_owns_a_file_a_credentialed_job_runs():
     stale = [p for p, _ in owned_lines() if p not in DECIDED and not any(covers(p, rel) for rel in files)]
     assert stale == [], f"owned, but no credentialed job runs it: {stale}"
     assert {p for p, _ in owned_lines()} >= set(DECIDED)
+
+
+def test_the_cd_s_installation_recipe_lives_in_an_owned_script():
+    """CDI1 (#918; Jonathan's decision of 18/11): `make imladris-cd-install` copies the CD's files and
+    discord.env to Imladris and runs install.sh there as root. Its recipe lived in the Makefile, owned by
+    no line: it lives in a script under an owned path now, and the target calls that script alone."""
+    text = (ROOT / "Makefile").read_text(encoding="utf-8")
+    (recipe,) = re.findall(r"(?m)^imladris-cd-install:[^\n=]*\n((?:\t.*\n)*)", text)
+    scripts = re.findall(r"\bbash ([\w./-]+)", recipe)
+    assert scripts == ["infra/glorfindel-host/cd/install_from_workstation.sh"], recipe
+    assert (ROOT / scripts[0]).is_file()
+    lines = [pattern for pattern, _ in owned_lines()]
+    assert [p for p in lines if covers(p, scripts[0])], f"{scripts[0]}: owned by no line of .github/CODEOWNERS"
 
 
 def test_no_file_next_to_a_script_shadows_the_standard_library():

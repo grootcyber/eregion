@@ -96,10 +96,21 @@ rules:
       // The caller's address comes with its source port (10.10.1.4:50374): one row per
       // connection, each one a new detection. Grouped by address alone (L21).
       | extend CallerIpAddress = tostring(split(CallerIpAddress, ":")[0])
-      | summarize PutBlobCount = count(), EgressBytes = sum(ResponseBodySize)
+      // Who wrote, in which container, and how many of the objects a return channel of the watch
+      // holds (heartbeat.json, detections/<run>/<signal>.json): one entry per writer and container
+      // in BlobWriters (SLF1). The watch sets its own writes aside — its identity, the container of
+      // its configured channel, those objects only —, says how many, and takes the column off
+      // before any signal: the row is then the one of before, column for column.
+      | extend BlobContainer = tostring(split(ObjectKey, "/")[2])
+      | summarize Writes = count(), Bytes = sum(ResponseBodySize),
+            Known = countif(ObjectKey matches regex @"^/[^/]+/[^/]+/(heartbeat\.json|detections/[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*\.json)$")
+            by CallerIpAddress, AccountName, BlobContainer, RequesterObjectId
+      | summarize PutBlobCount = sum(Writes), EgressBytes = sum(Bytes),
+            BlobWriters = make_list(bag_pack("container", BlobContainer, "writer", RequesterObjectId,
+                                             "writes", Writes, "bytes", Bytes, "known", Known), 64)
             by CallerIpAddress, AccountName
       | where PutBlobCount >= 1
-      | project CallerIpAddress, AccountName, PutBlobCount, EgressBytes
+      | project CallerIpAddress, AccountName, PutBlobCount, EgressBytes, BlobWriters
 
   - name: ssh-brute-force
     description: "Repeated SSH failures from an external IP — T1110.001"

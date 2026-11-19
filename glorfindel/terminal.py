@@ -11,10 +11,13 @@ panel titles read their text as markup. A closing tag with no opening one (`[/x]
 - a Discord member's display name, a channel's or a thread's name;
 - an exception — it quotes what Azure, a file, a library or a value said.
 
-This module holds three things:
+This module holds four things:
 
 - `outside(value)`: the text said as it is — its markup escaped, its control characters shown
   (`\\x1b`), never obeyed. Every such value goes through it where it is printed.
+- `literal(value)`: the same for a Rich `Text` built by `append`, which never reads markup but
+  hands an escape sequence to the terminal as it is — its control characters shown, its brackets
+  kept (SEC-Fc: escaped, a `Text` would show their backslashes).
 - `GlorfindelConsole`: a Rich console whose prints never raise on markup — a string Rich cannot
   read as markup is said without it, that string only. The last guard, never the first: a value
   from outside is escaped where it is printed, or a tag it holds that opens would be obeyed.
@@ -45,6 +48,12 @@ def _controls_shown(value: object) -> str:
 def outside(value: object) -> str:
     """`value` as text, said as it is: its control characters shown, its markup escaped."""
     return escape(_controls_shown(value))
+
+
+def literal(value: object) -> str:
+    """`value` as text for a `Text` literal (`Text.append`, `Text(…)`): its control characters
+    shown, never obeyed — its markup left as it is, a `Text` never reads it (SEC-Fc)."""
+    return _controls_shown(value)
 
 
 class GlorfindelConsole(Console):

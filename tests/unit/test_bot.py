@@ -797,3 +797,20 @@ def test_pending_lists_the_cards_to_the_allowed_only(monkeypatch):
         asyncio.run(bot._pending_reply(cmd))
         ((text, ephemeral),) = cmd.replies
         assert "vm-celebrimbor-bree" in text and ephemeral is True, text
+
+
+def test_a_card_without_a_time_zone_stays_in_line_judged_never_acted_on():
+    """VP1c (#920): a card whose time carries no zone — its age not known, never guessed. The sync
+    and the buttons compared it to an aware now (TypeError); now the sync keeps its message in line,
+    its verdict buttons still answer, and its action buttons refuse, saying why."""
+    from datetime import datetime, timezone
+    naive = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+    card = _card(id="untimed", first_seen=naive)
+    assert [e["id"] for e, _ in bot._posted_within([card], {"untimed": 1})] == ["untimed"]
+    assert bot._stale_reason(card, "judge") == ""
+    assert bot._stale_reason(card, "act") == "heure illisible (sans fuseau)"
+    assert [e["id"] for e, _ in bot._views_to_restore([card], {"untimed": 1})] == ["untimed"]
+    # The witness: a card with a zone, its buttons live; an old one expired, both kinds.
+    fresh, old = _card(id="fresh"), _card(id="old", first_seen="2020-01-01T00:00:00+00:00")
+    assert bot._stale_reason(fresh, "act") == "" and bot._stale_reason(fresh, "judge") == ""
+    assert bot._stale_reason(old, "judge").startswith("expirée")

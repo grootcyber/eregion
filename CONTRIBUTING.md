@@ -179,6 +179,8 @@ pytest -k "isolate"             # filter by name
 
 No Azure credentials or Anthropic API key needed. All cloud calls and LLM calls are mocked.
 
+Time in a test (FLK3, #900): when the code under test reads the real clock, take the test's « now » at the start of the test (a fixture), never once at the module's import — under xdist a worker runs a file it imported minutes earlier (over ten on the CI). Compare a value the code dated, a cookie or a record, to the date it carries, never to one recomputed after the call: the second may have turned. And a subprocess says « ready » from inside the region that handles the signal the test then sends it, never before.
+
 ## Commit convention
 
 Every commit that changes behavior: update the doc concerned (`README.md`, `docs/`, `CHANGELOG.md`). Change `CLAUDE.md` only when a rule or a convention changes — every session loads it, so it stays under 25 KB (`tests/unit/test_docs_budget.py` fails above); the details live in `docs/` (see its "Où trouver quoi" index).

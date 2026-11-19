@@ -131,3 +131,40 @@ def test_a_verdict_proposed_changes_nothing_glorfindel_tells_the_model(tmp_path,
     assert after == before
     for seen in (b"proposed", b"banc-hebdo", run.encode(), req.encode()):
         assert seen not in after
+
+
+def test_the_drill_judged_changes_nothing_glorfindel_tells_the_model(tmp_path, monkeypatch):
+    """DRL1b (#613, docs/design/drill-banc.md §8.1): what DRL1b reads and writes on the watch's host —
+    the last pull's sight of the drill's blobs (``drill-seen.json``, the permit as the listing said it),
+    the pulse kept, the status of the occurrence's request, and the verdict the watch's pass writes
+    (``~/.glorfindel/drill_verdicts.json``), a ``not_run`` with its mention — and the message of
+    ``_build_user_message()`` stays the same, to the byte."""
+    from eregion_core import exercise_channel as xc
+    from glorfindel import drill_watch
+    root = Path(__file__).resolve().parents[2]
+    monkeypatch.chdir(tmp_path)
+    runs = tmp_path / "runs"
+    signal = {**SIGNAL, "raw_signal": {"ttp": "T1136.001", "normalized_signal": {
+        "indicator_key": "new_local_account", "indicator_value": 1, "resource": "vm-celebrimbor-gondolin"}}}
+    before = _build_user_message(signal, PAST).encode()
+
+    drill, sha = dr.loaded(root / "drills" / "banc-hebdo.yaml", dr.SHIPPED)
+    o = drill.schedule.occurrence(datetime(2026, 11, 20, tzinfo=timezone.utc))
+    oro = runs / "glorfindel" / "orodruin"
+    oro.mkdir(parents=True)
+    permit = {"drill": "banc-hebdo", "sha256": sha, "armed_at": "2026-11-10T10:00:00+00:00"}
+    pulse = da.pulse(state="armed", drill="banc-hebdo", sha256=sha, next_at=o.isoformat(), image="abc123",
+                     at="2026-11-12T10:00:00+00:00")
+    pulled = o.replace(hour=21, minute=59).isoformat()
+    (oro / xc.SEEN_FILE).write_text(json.dumps({
+        "at": pulled, "listed": True, "why": "", "listed_at": pulled, "unread_since": "",
+        "permit": {"listed": True, "doc": permit, "why": "", "last_listed": pulled},
+        "pulse": {"listed": True, "modified": "2026-11-12T10:00:00+00:00", "why": "", "doc": pulse}}))
+    v = drill_watch.refresh(runs, now=o.replace(hour=22), channel=True)
+    assert (v["state"], v["mention"]) == ("not_run", True)
+    assert drill_watch.load()["current"]["state"] == "not_run"
+
+    after = _build_user_message(signal, PAST).encode()
+    assert after == before
+    for seen in (b"banc-hebdo", sha.encode(), b"not_run", b"permit"):
+        assert seen not in after

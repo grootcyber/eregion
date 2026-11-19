@@ -16,7 +16,9 @@ function returns — the Activity Log's `Claims`, AL2, AL1d. For the Entra sign-
 `kind=leftanti` on a let's name (`on col, …`; a right column the left already has is suffixed
 `1`, as in KQL), `between (a .. b)` (both ends included), `project Name = expr`, the
 aggregations `dcount(f)` and `make_set(f[, n])`, the functions `bin(t, span)` (a datetime
-floored to the span, from the epoch) and `strcat_array(a, sep)`. Anything
+floored to the span, from the epoch) and `strcat_array(a, sep)`. For the exfiltration rule (SLF1): `split(s, sep)` and an index
+(`[2]`) on the array it returns (null past its end), `bag_pack(k, v, …)`, the aggregations
+`sum(f)` and `make_list(f[, n])`, and a `summarize` over what a `summarize` returned. Anything
 else raises NotImplementedError: a rule this reader cannot follow fails its test, never
 passes it by accident. `has` is KQL's term match (case-insensitive, at term boundaries);
 regexes are read by Python's `re` in ASCII mode (`\\d` is 0–9 only, as in RE2: AUD1's review —
@@ -227,6 +229,13 @@ class _Parser:
         while self.peek() in (("op", "."), ("op", "[")):
             if self.take()[1] == ".":
                 key = self.take("ident")[1]
+            elif self.peek()[0] == "num":
+                # An index on an array (SLF1: `split(ObjectKey, "/")[2]`): null past its end, as in KQL.
+                i = int(self.take("num")[1])
+                self.take("op", "]")
+                f = (lambda inner, i: lambda r: (inner(r)[i] if isinstance(inner(r), list)
+                                                 and -len(inner(r)) <= i < len(inner(r)) else None))(f, i)
+                continue
             else:
                 key = self.take("str")[1]
                 self.take("op", "]")
@@ -304,6 +313,16 @@ class _Parser:
         if name == "strcat_array":
             (_, f), (_, sep) = args
             return lambda r: str(sep(r)).join("" if v is None else str(v) for v in (f(r) or []))
+        if name == "split":
+            # KQL's split (SLF1): the string cut at each delimiter, an array — a null as "".
+            (_, f), (_, sep) = args
+            return lambda r: str("" if f(r) is None else f(r)).split(str(sep(r)))
+        if name == "bag_pack":
+            # KQL's bag_pack (SLF1): a property bag of its key, value pairs.
+            fs = [f for _, f in args]
+            if len(fs) % 2:
+                raise NotImplementedError("KQL subset: bag_pack() with an odd number of arguments")
+            return lambda r: {str(fs[i](r)): fs[i + 1](r) for i in range(0, len(fs), 2)}
         if name == "tostring":
             (_, f), = args
             return lambda r: "" if f(r) is None else str(f(r))
@@ -514,8 +533,22 @@ def _make_set(members, f, n=None):
     return out
 
 
+def _sum(members, f):
+    """KQL's sum: nulls left out (SLF1: the bytes of the writes)."""
+    return sum(v for v in (f(r) for r in members) if v is not None)
+
+
+def _make_list(members, f, n=None):
+    """KQL's make_list: every value, nulls left out, in the members' order, at most n (SLF1)."""
+    limit = n(members[0]) if n is not None and members else None
+    out = [v for v in (f(r) for r in members) if v is not None]
+    return out if limit is None else out[:limit]
+
+
 _AGGREGATES = {
     "count": lambda members: len(members),
+    "sum": _sum,
+    "make_list": _make_list,
     # KQL's dcount (an estimate in Log Analytics, exact at the few values a rule counts): how many
     # distinct values, nulls left out (CAN3: the days a principal was seen).
     "dcount": lambda members, f: len({f(r) for r in members if f(r) is not None}),

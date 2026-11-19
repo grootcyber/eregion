@@ -86,6 +86,7 @@ jobs:
           restore-keys: invariants-db-
 
       - name: Tests (0 Azure call, 0 LLM call, 0 write in ~/.glorfindel)
+        id: tests
         env:
           # CI5: 200 sequences on a pull request, 500 on a push to main; the night's 10 000 are
           # invariants.yml's.
@@ -94,9 +95,25 @@ jobs:
         # CI10b (#581, L8): in four processes (pytest-xdist, from the dev lock), test by test
         # (`--dist load`): the same tests at the same budget, on both Pythons, each process a
         # share of the suite — measured: docs/operations.md, « La CI au bon endroit ».
-        # As on macOS: a test still running after 8 min writes every thread's stack to the log —
-        # a hang says where it waits before the job's bound.
-        run: python -m pytest tests/ -q -n 4 --dist load -o faulthandler_timeout=480
+        # Every test but Azure's machine, the next step's (CI12). As on macOS: a test still
+        # running after 8 min writes every thread's stack to the log — a hang says where it
+        # waits before the job's bound.
+        run: python -m pytest tests/ -q -n 4 --dist load --ignore=tests/unit/test_invariants.py -o faulthandler_timeout=480
+
+      # CI12 (#899): Azure's invariant machine alone, after the rest, as the release gate runs it
+      # (CI10b, L6) — the same budget, the same database. Among the four processes it outlasted
+      # 8 min on Python 3.12 (8 to 12 min, main's pushes of 17-18/11), and the stack written then
+      # killed its worker four times in six: faulthandler reads the frames of a thread that runs
+      # without holding the GIL, and CPython frees them under it (a SIGSEGV in a thread that
+      # blocks every signal: no message). Alone, 3 to 6 min per 500 sequences (the gate's 2 000
+      # in 13 to 23 min): its 8 min are a hang's again, whose frames hold still. Run whenever
+      # the step before ran, red or green.
+      - name: Azure's invariant machine (alone, after the rest)
+        if: ${{ !cancelled() && steps.tests.outcome != 'skipped' }}
+        env:
+          GLORFINDEL_INVARIANT_EXAMPLES: ${{ github.event_name == 'pull_request' && '200' || '500' }}
+          GLORFINDEL_INVARIANT_DB: .hypothesis-invariants
+        run: python -m pytest tests/unit/test_invariants.py -q -o faulthandler_timeout=480
 
   # SEC14 (P-03): the advisories of the locks on each push and pull request, read only — the issues
   # are pip-audit.yml's, weekly. On a pull request, red only for an advisory with a fixed version

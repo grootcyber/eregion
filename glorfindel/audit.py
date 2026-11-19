@@ -155,10 +155,53 @@ def _workspace_id() -> str:
 
 _COARSE_STEP_S = 25
 
+# The rows each telemetry check reads, before it is scoped to the VM by its resource id.
+_PERF_ROWS = ("Perf | where TimeGenerated > ago(1h)"
+              ' | where ObjectName == "Logical Disk" or ObjectName == "LogicalDisk"'
+              ' | where CounterName == "Disk Write Bytes/sec"')
+_SYSLOG_ROWS = "Syslog | where TimeGenerated > ago(1h)"
+
+
+def _unattributed(detector, rows: str, name: str) -> int:
+    """How many of `rows` carry the VM's name as their host name but no resource id (SEC-Ib).
+
+    Hypothesis SI5 (SEC-I): some agents leave `_ResourceId` empty on Perf or Syslog. Such
+    rows may be this VM's — or any host of the workspace named like it: they are never
+    counted as the VM's, only told, so the operator looks at the agent rather than only at
+    the DCR. A row under the name with another resource id is another VM, not counted.
+    Unreadable → 0: the check stays « absent », its reason unsaid."""
+    try:
+        out = detector.run_query(f"{rows} | where isempty(_ResourceId) and Computer =~ {name}"
+                                 " | summarize n = count()")
+        return int((out[0].get("n") if out else 0) or 0)
+    except Exception:
+        return 0
+
+
+def _absent(name: str, message: str, fix: str, unattributed: int, unit: str) -> AuditCheck:
+    """The VM sends nothing under its resource id: absent — the rules route a row by its
+    resource id only (SEC-A4), so for them this VM is blind, whatever its host name carries.
+    Lines under its host name without a resource id are said, never taken for the VM's."""
+    data: dict = {"present": False}
+    if unattributed:
+        data["unattributed"] = unattributed
+        message += (f" {unattributed} {unit} portent son nom d'hôte sans identifiant de ressource "
+                    "(`_ResourceId` vide) : ni l'audit ni les règles ne les rattachent à cette VM, "
+                    "elles peuvent venir d'elle (un agent qui ne le renseigne pas) ou d'un autre "
+                    "hôte du workspace qui porte ce nom.")
+        fix = (fix + " Vérifier que l'agent de la VM renseigne `_ResourceId` (Azure Monitor Agent, "
+               "VM associée à la DCR).")
+    return AuditCheck("detection", name, "warn", message, fix, data=data)
+
 
 def _query_scope(resource_id: str) -> tuple[str, str] | str:
     """(the resource id, the VM's name) as KQL literals, each checked for what it is
-    (SEC4c) — or, when one is not, why the query is not run."""
+    (SEC4c) — or, when one is not, why the query is not run.
+
+    A telemetry check says a VM present by its resource id only, never by its host name
+    (SEC-Ib, #910, V-09): `Computer` is written by whichever host sends the line, and a
+    host of the same workspace named like the VM made a blind VM look ready. The name
+    serves only to say why a VM is absent (`_unattributed`), never that it is present."""
     from glorfindel import kql
     try:
         rid = kql.resource_id(resource_id)
@@ -179,10 +222,8 @@ def _check_perf_sampling(resource_id: str, workspace_id: str, detector=None) -> 
     if isinstance(scope, str):
         return AuditCheck("detection", name, "warn", scope, data={"present": None})
     query = (
-        "Perf | where TimeGenerated > ago(1h)"
-        ' | where ObjectName == "Logical Disk" or ObjectName == "LogicalDisk"'
-        ' | where CounterName == "Disk Write Bytes/sec"'
-        f" | where _ResourceId =~ {scope[0]} or Computer =~ {scope[1]}"
+        _PERF_ROWS
+        + f" | where _ResourceId =~ {scope[0]}"
         # The cadence is the smallest gap between two seconds that each carry ONE sample of
         # the series. A second with several is an agent batch: its first upload after a boot
         # sends them under one timestamp (measured, 15/10) — read as a 0-s step, it claimed
@@ -205,11 +246,9 @@ def _check_perf_sampling(resource_id: str, workspace_id: str, detector=None) -> 
     fix = ("Collecter \\LogicalDisk(*)\\Disk Write Bytes/sec dans la DCR Perf, toutes les "
            "10 à 15 s.")
     if not rows or int(rows[0].get("n") or 0) < 2:
-        return AuditCheck(
-            "detection", name, "warn",
-            "Aucun échantillon « Disk Write Bytes/sec » depuis 1 h : la détection ransomware est "
-            "aveugle pour cette VM (compteur absent de la DCR) — ou la VM est éteinte.", fix,
-            data={"present": False})
+        message = ("Aucun échantillon « Disk Write Bytes/sec » depuis 1 h : la détection ransomware "
+                   "est aveugle pour cette VM (compteur absent de la DCR) — ou la VM est éteinte.")
+        return _absent(name, message, fix, _unattributed(detector, _PERF_ROWS, scope[1]), "échantillons")
     n = int(rows[0]["n"])
     if not int(rows[0].get("gaps") or 0) or rows[0].get("step") is None:
         return AuditCheck(
@@ -239,8 +278,8 @@ def _check_syslog(resource_id: str, workspace_id: str, detector=None) -> AuditCh
     if isinstance(scope, str):
         return AuditCheck("detection", name, "warn", scope, data={"present": None})
     query = (
-        "Syslog | where TimeGenerated > ago(1h)"
-        f" | where _ResourceId =~ {scope[0]} or Computer =~ {scope[1]}"
+        _SYSLOG_ROWS
+        + f" | where _ResourceId =~ {scope[0]}"
         " | summarize n = count(), facilities = strcat_array(make_set(Facility, 12), ', ')"
     )
     try:
@@ -253,12 +292,12 @@ def _check_syslog(resource_id: str, workspace_id: str, detector=None) -> AuditCh
                           data={"present": None})
     n = int((rows[0].get("n") if rows else 0) or 0)
     if not n:
-        return AuditCheck(
-            "detection", name, "warn",
+        return _absent(
+            name,
             "Aucune ligne Syslog depuis 1 h : les règles qui lisent Syslog sont aveugles pour "
             "cette VM (DCR Syslog absente) — ou la VM est éteinte.",
             "Associer la VM à une DCR Syslog (facilities auth et authpriv au moins).",
-            data={"present": False})
+            _unattributed(detector, _SYSLOG_ROWS, scope[1]), "lignes")
     facilities = str(rows[0].get("facilities") or "")
     return AuditCheck("detection", name, "ok",
                       f"{n} lignes Syslog depuis 1 h" + (f" ({facilities})" if facilities else "") + ".",

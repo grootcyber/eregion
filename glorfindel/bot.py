@@ -40,6 +40,9 @@ _WEEKLY_HOUR_UTC = 8
 # DRN2 (#754): the keys of the notices (glorfindel/vm_notices.py) this bot posted in a VM's thread —
 # a restart of the bot never posts one twice.
 _NOTICES_POSTED_STORE = Path.home() / ".glorfindel" / "bot_notices_posted.json"
+# DRL1b (#613): the verdicts of the drill of the week this bot posted in the drill's thread, by their key
+# (glorfindel/drill_watch.py ``key``) — a restart never posts one twice.
+_DRILL_POSTED_STORE = Path.home() / ".glorfindel" / "bot_drill_posted.json"
 
 
 def _write_store(path: Path, data) -> None:
@@ -75,6 +78,13 @@ def _younger(at, oldest) -> bool:
 def _load_notices_posted() -> set[str]:
     try:
         return {str(k) for k in json.loads(_NOTICES_POSTED_STORE.read_text())}
+    except (OSError, ValueError, TypeError):
+        return set()
+
+
+def _load_drill_posted() -> set[str]:
+    try:
+        return {str(k) for k in json.loads(_DRILL_POSTED_STORE.read_text())}
     except (OSError, ValueError, TypeError):
         return set()
 
@@ -191,6 +201,8 @@ def _thread_name(key: str) -> str:
     """What the thread is called: the resource's short name, or « Entra ID — identités »."""
     if key == _IDENTITY_THREAD[0]:
         return _IDENTITY_THREAD[1]
+    if key.startswith("drill:"):                         # DRL1b: the drill's own thread
+        return f"drill · {key[len('drill:'):]}"
     return masking.name_said(key) or "unknown"          # never a subscription's id (MSK3)
 
 
@@ -287,6 +299,20 @@ _NAME_MAX = 120          # a name from outside, cut before it is escaped: never 
 _VMS_SHOWN = 8           # the VMs an NSG covers, named; beyond, counted
 
 
+def _unattributed_said(loose: dict, name) -> str:
+    """SLF1 (#929): « non attribuée », then the VMs watched that it could be (up to _VMS_SHOWN, the
+    rest counted), or the appliance it came through — every name cut, then escaped."""
+    if loose.get("appliance"):
+        return (f"non attribuée — l'appel vient de l'adresse de {name(loose['appliance'])}, qui fait "
+                "suivre les paquets : la VM source est derrière")
+    cands = [str(c) for c in loose.get("candidates") or []]
+    if not cands:
+        return "non attribuée — la détection ne nomme aucune VM"
+    shown = cands[:_VMS_SHOWN]
+    more = f" et {len(cands) - len(shown)} autre(s)" if len(cands) > len(shown) else ""
+    return f"non attribuée — candidates : {', '.join(name(c) for c in shown)}{more}"
+
+
 def _target_fields(esc: dict) -> list[tuple[str, str, bool]]:
     """What the card is about (AL1c, #597): the resource a card of the control plane is filed on
     — the NSG and the VMs it covers, the VM of a disk, a role's scope, the group, the control
@@ -300,6 +326,10 @@ def _target_fields(esc: dict) -> list[tuple[str, str, bool]]:
     t = esc.get("target")
     rid = str(esc.get("resource_id") or "")
     if not isinstance(t, dict) or not t.get("kind"):
+        loose = esc_module.unattributed(esc)
+        if loose is not None:
+            # SLF1 (#929): a detection attributed to no VM — never the name of the VM it is filed on.
+            return [("Ressource", _unattributed_said(loose, name), False)]
         short = name(masking.name_said(rid))            # never a subscription's own id (MSK3)
         if esc.get("escalation_type") in ("control_plane_change", "identity_change"):
             # Filed before AL1c: on the first VM online — or on the VM itself (a role on the VM,
@@ -532,7 +562,8 @@ def _posted_within(escs: list[dict], messages: dict[str, int], now=None) -> list
     for e in escs:
         mid = messages.get(e.get("id", ""))
         when = _posted_at(e) if mid else None
-        if when is not None and now - when <= timedelta(days=_RESTORE_DAYS):
+        # VP1c (#920): a card's time without a zone — its age not known, never guessed — stays in line.
+        if when is not None and (when.tzinfo is None or now - when <= timedelta(days=_RESTORE_DAYS)):
             out.append((e, mid))
     return out
 
@@ -565,7 +596,11 @@ def _stale_reason(esc: dict | None, kind: str, now=None, known_vms: set[str] | N
         return "carte introuvable"
     now = now or datetime.now(timezone.utc)
     when = _posted_at(esc)
-    if when is None or now - when > timedelta(days=_RESTORE_DAYS):
+    if when is not None and when.tzinfo is None:
+        # VP1c (#920): its age is not known, never guessed — judged all the same, never acted on here.
+        if kind != "judge":
+            return "heure illisible (sans fuseau)"
+    elif when is None or now - when > timedelta(days=_RESTORE_DAYS):
         return f"expirée (plus de {_RESTORE_DAYS} jours)"
     rid = str(esc.get("resource_id") or "").lower()
     if (known_vms is not None and esc.get("escalation_type") not in _ANCHORED_TYPES
@@ -629,8 +664,12 @@ def _save_synced(synced: dict[str, str]) -> None:
 
 
 def _card_signature(esc: dict) -> str:
-    return (f"{esc.get('status', '')}|{esc.get('verdict') or ''}|{int(esc.get('occurrences') or 1)}"
-            f"|{_proposed_state(esc)}")
+    """What the card's message shows of it: a message whose signature did not change is never edited.
+    VP1's state is added only when there is one (VP1b, #917): an empty suffix changed every signature
+    kept before it, and the first pass edited at once every message of the last 14 days."""
+    sig = f"{esc.get('status', '')}|{esc.get('verdict') or ''}|{int(esc.get('occurrences') or 1)}"
+    state = _proposed_state(esc)
+    return f"{sig}|{state}" if state else sig
 
 
 def _proposed_state(esc: dict) -> str:
@@ -786,7 +825,9 @@ async def _pending_reply(interaction: discord.Interaction) -> None:
     for e in escs[:5]:
         label = _ACTION_LABELS.get(e["action"]) or discord_text(_masked(e["action"], e))
         short = masking.name_said(e["resource_id"])     # MSK3
-        lines.append(f"• {discord_code(e['id'][:8])} — **{label}** sur {discord_code(short)}")
+        # SLF1: a detection attributed to no VM is on none — never its anchor's name.
+        on = "non attribuée" if esc_module.unattributed(e) is not None else f"sur {discord_code(short)}"
+        lines.append(f"• {discord_code(e['id'][:8])} — **{label}** {on}")
     if len(escs) > 5:
         lines.append(f"_... et {len(escs) - 5} autre(s)_")
     await interaction.response.send_message("\n".join(lines), ephemeral=True)
@@ -1204,17 +1245,24 @@ class _VerdictButton(discord.ui.Button):
         except (KeyError, ValueError) as exc:
             await interaction.response.send_message(f"✗ {discord_text(_masked(exc, self.esc))}", ephemeral=True)
             return
-        # One click: a judged card is also acknowledged (Jonathan, 16/10).
-        esc_module.resolve(self.esc["id"])
-        for item in self.view.children:  # type: ignore[union-attr]
-            item.disabled = True  # type: ignore[attr-defined]
-        await interaction.response.edit_message(view=self.view)  # type: ignore[union-attr]
-        await interaction.followup.send(
-            f"{_VERDICT_WORDS[self.verdict]} — jugé par **{discord_text(interaction.user.display_name)}**"
-        )
-        remaining = [e for e in esc_module.pending() if _thread_key(e) == _thread_key(self.esc)]
-        if not remaining and isinstance(interaction.channel, discord.Thread):
-            await interaction.channel.edit(archived=True, reason="All escalations handled")
+        await _judged(self, interaction,
+                      f"{_VERDICT_WORDS[self.verdict]} — jugé par **{discord_text(interaction.user.display_name)}**")
+
+
+async def _judged(button: discord.ui.Button, interaction: discord.Interaction, said: str) -> None:
+    """A card judged from Discord — by a verdict's button, or by confirming its proposed verdict (VP1b,
+    #917: one path for both). One click: the card also acknowledged (Jonathan, 16/10); its buttons
+    greyed; who judged said (``said``, escaped by the caller); and the VM's thread archived when
+    nothing is left pending in it."""
+    esc = button.esc  # type: ignore[attr-defined]
+    esc_module.resolve(esc["id"])
+    for item in button.view.children:  # type: ignore[union-attr]
+        item.disabled = True  # type: ignore[attr-defined]
+    await interaction.response.edit_message(view=button.view)  # type: ignore[union-attr]
+    await interaction.followup.send(said)
+    remaining = [e for e in esc_module.pending() if _thread_key(e) == _thread_key(esc)]
+    if not remaining and isinstance(interaction.channel, discord.Thread):
+        await interaction.channel.edit(archived=True, reason="All escalations handled")
 
 
 _PROPOSED_WORDS = {"confirm": "✓ Confirmer le verdict proposé", "refuse": "✗ Refuser la proposition"}
@@ -1245,12 +1293,9 @@ class _ProposedButton(discord.ui.Button):
             await interaction.response.edit_message(embed=_build_embed(e), view=_build_view(e))
             await interaction.followup.send(f"Verdict proposé refusé par **{who}** — la carte reste à juger")
             return
-        esc_module.resolve(self.esc["id"])        # one click: a judged card is also acknowledged
-        for item in self.view.children:  # type: ignore[union-attr]
-            item.disabled = True  # type: ignore[attr-defined]
-        await interaction.response.edit_message(view=self.view)  # type: ignore[union-attr]
-        await interaction.followup.send(
-            f"{_VERDICT_WORDS.get(e['verdict'], discord_code(e['verdict']))} (proposé, confirmé) — jugé par **{who}**")
+        # VP1b: the path of any verdict given — acknowledged, greyed, said, the thread archived.
+        await _judged(self, interaction,
+                      f"{_VERDICT_WORDS.get(e['verdict'], discord_code(e['verdict']))} (proposé, confirmé) — jugé par **{who}**")
 
 
 class EscalationView(discord.ui.View):
@@ -1404,6 +1449,7 @@ class GlorfindelBot(discord.Client):
         self._messages: dict[str, int] = _load_messages()
         self._synced: dict[str, str] = _load_synced()
         self._notices_posted: set[str] = _load_notices_posted()
+        self._drill_posted: set[str] = _load_drill_posted()
         try:
             self._weekly_last: str | None = json.loads(_WEEKLY_STORE.read_text()).get("last")
         except (OSError, ValueError, AttributeError):
@@ -1502,7 +1548,7 @@ class GlorfindelBot(discord.Client):
                     )
 
         thread = await channel.create_thread(
-            name=f"🔴 {vm_name}",
+            name=f"{'🎯' if resource_id.startswith('drill:') else '🔴'} {vm_name}",
             type=discord.ChannelType.public_thread,
         )
         self._threads[resource_id] = thread.id
@@ -1573,6 +1619,10 @@ class GlorfindelBot(discord.Client):
                     await self._post_notices(channel)
                 except Exception as e:      # the notices never stop the cards, the week, the sync
                     _console.print(f"[red]Bot notices error: {_esc_markup(str(e))}[/red]")
+                try:
+                    await self._post_drill(channel)
+                except Exception as e:      # the drill never stops the cards, the week, the sync
+                    _say_failure(_console, "Bot drill error", e)
                 await self._post_weekly(channel)
                 if turn % _SYNC_EVERY == 0:
                     try:
@@ -1697,6 +1747,33 @@ class GlorfindelBot(discord.Client):
             _write_store(_NOTICES_POSTED_STORE, sorted(self._notices_posted))
             posted += 1
         return posted
+
+    async def _post_drill(self, channel) -> bool:
+        """DRL1b (#613; docs/design/drill-banc.md §4.2): the drill of the week's verdict, as the watch
+        judged it (glorfindel/drill_watch.py), posted once in the drill's own thread (« drill · <name> »),
+        opened again or created without the « Incident opened » ping. Its text passes by
+        glorfindel/chat_text.py (``drill_watch.bot_message``); it mentions the role configured — and no
+        one else — only when §4.2 says so. A quiet verdict (disarmed, waiting) says nothing. Returns
+        whether one was posted."""
+        from glorfindel import drill_watch
+        v = drill_watch.load().get("current")
+        if not isinstance(v, dict) or not drill_watch.alerts(v) or not v.get("drill"):
+            return False
+        from eregion_core import drill as dr
+        if not dr.valid_name(v["drill"]):          # a thread's name: a drill's name only, never a store's word
+            return False
+        k = drill_watch.key(v)
+        if k in self._drill_posted:
+            return False
+        thread = await self._get_or_create_thread(channel, drill_watch.thread_key(str(v["drill"])), ping=False)
+        text = drill_watch.bot_message(v)
+        if v.get("mention") and self.ping_role:
+            await thread.send(f"<@&{self.ping_role}> {text}", allowed_mentions=self._role_mentions())
+        else:
+            await thread.send(text, allowed_mentions=discord.AllowedMentions.none())
+        self._drill_posted = (self._drill_posted | {k})
+        _write_store(_DRILL_POSTED_STORE, sorted(self._drill_posted)[-200:])
+        return True
 
     async def _post_weekly(self, channel) -> bool:
         from datetime import datetime, timedelta, timezone

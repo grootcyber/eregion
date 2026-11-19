@@ -443,7 +443,7 @@ def record_undecided(data: dict, kind: str, why: str, *, dry_run: bool = False) 
     rule = str(ctx.get("rule_name") or "")
     raw = data.get("raw_signal") if isinstance(data.get("raw_signal"), dict) else {}
     labels, n = row_labels(raw.get("first_result_row") or raw.get("detected_data") or {})
-    from glorfindel.agent import _card_target, _cycle_source
+    from glorfindel.agent import _card_attribution, _card_target, _cycle_source
     source, exercise_run = _cycle_source(data)
     key = (str(data.get("resource_id") or "").lower(), rule, source)
     with _SEEN_LOCK:
@@ -480,6 +480,7 @@ def record_undecided(data: dict, kind: str, why: str, *, dry_run: bool = False) 
         source=source,
         exercise_run=exercise_run,
         target=_card_target(data),
+        attribution=_card_attribution(data),        # SLF1: a detection attributed to no VM says so
     )
 
 

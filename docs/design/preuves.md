@@ -218,7 +218,10 @@ pas : un fil qui boucle sans jamais rendre son tour ni prendre de verrou piloté
 boucle **en rendant son tour** — des appels Azure sans fin, chaque tour productif — ne sont vus que
 par la borne du job. Les jobs qui lancent la machine sont bornés : CI Linux 30 min, macOS 25 min, nuit
 150 min (M1347, M1348) ; sur Linux comme sur macOS, un test qui dure plus de 8 min écrit la pile de
-ses fils (M1441).
+ses fils (M1441). Cette pile est sûre pour un fil bloqué, pas pour un fil qui tourne : faulthandler lit
+ses cadres sans le GIL, et le processus peut mourir pendant la lecture. Sur Linux, la machine d'Azure
+tourne donc seule, après le reste, loin de ses 8 min (CI12, M6236–M6243 ; `docs/operations.md`, « La
+CI au bon endroit »).
 
 ## La mesure par mutation
 
@@ -2475,7 +2478,7 @@ injecteur.
 | M1806 | une détection sans décision rattachée vaut preuve | « prouvé » sans la réponse |
 | M1807 | pas d'« aging » entre 21 et 30 jours | l'alerte arrive sans le jaune d'avant |
 | M1808 | l'indicateur garde sa preuve sur 30 jours | une preuve de 40 jours dite « none » |
-| M1809 | la non-régression ne se déclenche jamais | une technique perdue reste « proven » |
+| M1809 | la non-régression ne se déclenche jamais | une technique perdue reste « fresh » |
 | M1810 | une détection inconnue prise pour un raté | un run qui n'a rien mesuré fait régresser |
 | M1811 | tout raté de l'histoire fait régresser | une technique détectée de nouveau reste rouge |
 | M1812 | jamais détectée dite régressée | une régression sans rien de perdu |

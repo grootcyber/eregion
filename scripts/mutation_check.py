@@ -3149,9 +3149,11 @@ TESTS["M1052"] = "tests/unit/test_host_cd.py"
 MUTANTS += [
     ("M1053", "an older release asks to reinstall the agent from it: deploy.sh without --activate breaks the CD",
      CD, "    if installed == release or not is_ancestor(installed, release):\n", "    if False:\n"),
-    ("M1054", "the installation never notes its commit: no release can tell it is newer than the agent", "Makefile",
-     "'umask 077 && cat > .eregion-cd/discord.env' && \\\n\t git rev-parse HEAD | $(HOST_SSH) 'cat > .eregion-cd/installed-from'\n",
-     "'umask 077 && cat > .eregion-cd/discord.env'\n"),
+    # CDI1 (#918): the recipe moved from the Makefile to the owned script that the target calls.
+    ("M1054", "the installation never notes its commit: no release can tell it is newer than the agent",
+     "infra/glorfindel-host/cd/install_from_workstation.sh",
+     "git rev-parse HEAD | on_imladris 'cat > .eregion-cd/installed-from'\n",
+     ""),
 ]
 TESTS.update({"M1053": "tests/unit/test_host_cd.py", "M1054": "tests/unit/test_host_cd.py"})
 # After its review: the same files say nothing; installed-from is a commit id, never a name.
@@ -3425,8 +3427,9 @@ MUTANTS += [
     ("M1440", "a race thread that never unwound holds web's lock: the teardown waits behind it (U3F)",
      INVARIANTS, '            if getattr(self, "hung", None):\n', "            if False:\n"),
     ("M1441", "the CI's Linux tests hang without saying where (U3F)", ".github/workflows/ci.yml",
-     "        run: python -m pytest tests/ -q -n 4 --dist load -o faulthandler_timeout=480\n",   # CI10b: 4 processes
-     "        run: python -m pytest tests/ -q -n 4 --dist load\n"),
+     # CI10b: 4 processes; CI12: Azure's machine in the next step
+     "        run: python -m pytest tests/ -q -n 4 --dist load --ignore=tests/unit/test_invariants.py -o faulthandler_timeout=480\n",
+     "        run: python -m pytest tests/ -q -n 4 --dist load --ignore=tests/unit/test_invariants.py\n"),
 ]
 TESTS.update({"M1349": "tests/unit/test_invariant_regressions.py -k reverse_order",
               "M1440": "tests/unit/test_invariant_regressions.py -k out_of_sight_holding",
@@ -5975,12 +5978,12 @@ MUTANTS += [
     ("M1806", "a detection without a decision attached counts as a proof (C1)", COV,
      '    return outcome(run) == "detected" and decision_of(run, cycles) is not None\n',
      '    return outcome(run) == "detected"\n'),
-    ("M1807", "no « aging » between 21 and 30 days: a proof is proven up to 30 (C1)", COV,
-     '        return "proven" if age < AGING_DAYS * DAY else "aging" if age <= STALE_DAYS * DAY else "stale"\n',
-     '        return "proven" if age <= STALE_DAYS * DAY else "stale"\n'),
+    ("M1807", "no « aging » between 21 and 30 days: a proof is fresh up to 30 (C1, FRS1)", COV,
+     '        return "fresh" if age < AGING_DAYS * DAY else "aging" if age <= STALE_DAYS * DAY else "stale"\n',
+     '        return "fresh" if age <= STALE_DAYS * DAY else "stale"\n'),
     ("M1808", "the indicator's last proof stays on 30 days: older, it says « none » (C1)", COV,
      '    indicators["last_proof"] = m["last_proof"]\n', ""),
-    ("M1809", "the non-regression never fires: a technique proven then missed stays proven (C1)", COV,
+    ("M1809", "the non-regression never fires: a technique held then missed stays fresh (C1)", COV,
      '    if not measured or outcome(measured[-1]) != BAD[measured[-1]["kind"]]:\n',
      "    if True:\n"),
     ("M1810", "an unknown detection taken for a miss: a run that measured nothing regresses (C1)", COV,
@@ -8530,7 +8533,7 @@ MUTANTS += [
      "    say_refused(path, LINK if stat.S_ISLNK(st.st_mode) else channel_reader._kind(st.st_mode))\n",
      "    os.close(channel_reader.open_regular(path))\n"),
     ("M3143", "a name of runs/ read as markup by the TUI (SEC15)", TUI,
-     "{_esc_markup(path.name)} : {exc} — jamais lu", "{path.name} : {exc} — jamais lu"),
+     "{_outside(path.name)} : {exc} — jamais lu", "{path.name} : {exc} — jamais lu"),
     ("M3144", "a name of runs/ written raw into the console's log (SEC15)", RRD,
      '    print(f"  ⚠ console: {shown(path)} — ', '    print(f"  ⚠ console: {path} — '),
     ("M3145", "the matrix kept 30 s past a window that changes a T0's verdict (SEC15)", CON,

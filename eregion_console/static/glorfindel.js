@@ -221,12 +221,36 @@ function _targetNote(e, vmName) {
       ? `<div class="esc-context" style="color:var(--dim)" title="What the row, and Azure, could not say">limit: ${_attr(t.limit)}</div>` : '';
     return `<div class="esc-context" title="What the detection is about, read in its row">🎯 about ${kind}${named}${via}${covers}</div>${limit}`;
   }
+  // SLF1 (#929): a detection attributed to no VM — « not attributed », its candidates; never the
+  // name of the VM it is filed on.
+  const loose = _unattributed(e);
+  if (loose) return `<div class="esc-context" title="${_attr(_LOOSE_TITLE)}">⚓ ${_attr(_unattributedTxt(loose))}</div>`;
   if (!_isAnchored(e) || e.escalation_type === 'unattributed_signal') return '';
   // Filed before AL1c: on the first VM online, or on the VM itself (a role on the VM, a signal of
   // `respond`) — the card cannot tell which.
   return `<div class="esc-context" title="${_attr(_FILED_BEFORE)}">⚓ filed on ${_attr(vmName)}, may not be about it</div>`;
 }
 const _FILED_BEFORE = 'Filed before AL1c, without its target: the detection may not be about this VM';
+// SLF1 (#929): what a card on a detection attributed to no VM says in place of its resource
+// (glorfindel/escalations.py `unattributed`): its candidates, or the appliance it came through. A
+// card recorded so (`attribution`), or held by the attribution guard (its candidates not kept);
+// never a card filed on its target (AL1c).
+const _LOOSE_TITLE = 'The detection names no VM, and no watched VM made the call: the card is only filed on this tile. Check which VM it is about before acting.';
+function _unattributed(e) {
+  if (!e || _targetOf(e)) return null;
+  const a = e.attribution;
+  if (a && typeof a === 'object' && a.state === 'unattributed') {
+    return { candidates: Array.isArray(a.candidates) ? a.candidates.filter(c => typeof c === 'string') : [],
+             appliance: typeof a.appliance === 'string' ? a.appliance : '' };
+  }
+  return e.escalation_type === 'unattributed_signal' ? { candidates: [], appliance: '' } : null;
+}
+function _unattributedTxt(u) {
+  if (u.appliance) return `not attributed — the call came from ${u.appliance}, which forwards packets: the source VM is behind it`;
+  if (!u.candidates.length) return 'not attributed — the detection names no VM';
+  const more = u.candidates.length > _VMS_SHOWN ? ` and ${u.candidates.length - _VMS_SHOWN} more` : '';
+  return `not attributed — candidates: ${u.candidates.slice(0, _VMS_SHOWN).join(', ')}${more}`;
+}
 function escTitle(e) {
   // Real remediation action → its label; otherwise a readable type title.
   if (e.action && ACTION_LABELS[e.action]) return ACTION_LABELS[e.action];
@@ -896,14 +920,16 @@ async function refreshActionsData() {
 function renderInfra() {
   if (_configMode) return;
   const list           = document.getElementById('incidents-list');
-  // Preserve scroll position across the full innerHTML swap below. The actual scroll
-  // container is #topo-graph (overflow-y:auto), NOT #incidents-list — and topo-graph
-  // is destroyed/recreated by the swap, so save its scrollTop now and reapply it to
-  // the fresh element afterwards. With asset order stable backend-side (99b4882),
-  // this keeps the operator where they were instead of yanking back to the top.
-  const _prevGraph = document.getElementById('topo-graph');
-  const _savedScroll = _prevGraph ? _prevGraph.scrollTop : 0;
-  // Same for the PROTECT NSG list's own inner scroll (recreated by the swap too).
+  // The scroll container (#topo-graph) and the edges' layer (#topo-svg) outlive a refresh:
+  // only what they hold (#topo-body) is replaced. Replaced every 5 s with the rest, the
+  // container cut a scroll in progress (wheel, momentum, the scrollbar held) and its position
+  // had to be put back by hand (TOPO1 #927). Built once, again only if something else emptied it.
+  let graph = document.getElementById('topo-graph');
+  if (!graph || !list.contains(graph)) {
+    list.innerHTML = `<div class="topo-graph" id="topo-graph"><svg class="topo-svg" id="topo-svg"></svg><div class="topo-body" id="topo-body"></div></div>`;
+    graph = document.getElementById('topo-graph');
+  }
+  // The PROTECT NSG list's own inner scroll is inside #topo-body: recreated, put back.
   const _prevNsg = document.getElementById('nsg-scroll');
   const _savedNsgScroll = _prevNsg ? _prevNsg.scrollTop : 0;
   const rules          = _cfgData?.detection?.rules     || [];
@@ -1020,10 +1046,7 @@ function renderInfra() {
     if (!hasIncident) _collapsedVms.delete(r.vm_name); // allow re-expand on next incident; don't force-collapse user-expanded clean cards
   });
 
-  list.innerHTML = `
-    <div class="topo-graph" id="topo-graph">
-      <svg class="topo-svg" id="topo-svg"></svg>
-
+  document.getElementById('topo-body').innerHTML = `
       <!-- Layer 1 — Agent -->
       <div class="topo-layer">
         ${_renderAgentNode(rules, detectBackends, recoverBackends, discovered)}
@@ -1083,19 +1106,34 @@ function renderInfra() {
         <span style="font-size:10px"><span style="color:var(--red)">●</span> <span style="color:var(--dim)">isolated</span></span>
         <span style="font-size:10px"><span style="color:var(--blue)">●</span> <span style="color:var(--dim)">restoring</span></span>
         <span style="font-size:10px"><span style="color:var(--purple)">●</span> <span style="color:var(--dim)">escalation</span></span>
-      </div>
-    </div>`;
+      </div>`;
 
-  if (_savedScroll) {
-    const _newGraph = document.getElementById('topo-graph');
-    if (_newGraph) _newGraph.scrollTop = _savedScroll;
-  }
   if (_savedNsgScroll) {
     const _newNsg = document.getElementById('nsg-scroll');
     if (_newNsg) _newNsg.scrollTop = _savedNsgScroll;
   }
-  requestAnimationFrame(_drawTopologyEdges);
+  _watchTopology(graph);
+  _queueTopologyEdges();
   _applyReadOnlyGuards(list);
+}
+
+// The edges follow the map: drawn again, once per frame at most, when the map or its cards
+// change size without a render — the window resized, the column beside it, a font loaded.
+// Before, they stayed where the last render had put them (TOPO1 #927).
+let _topoResize = null;
+let _topoDrawQueued = false;
+function _queueTopologyEdges() {
+  if (_topoDrawQueued) return;
+  _topoDrawQueued = true;
+  requestAnimationFrame(() => { _topoDrawQueued = false; _drawTopologyEdges(); });
+}
+function _watchTopology(graph) {
+  if (typeof ResizeObserver !== 'function') return;
+  if (!_topoResize) _topoResize = new ResizeObserver(_queueTopologyEdges);
+  _topoResize.disconnect();             // the cards' row of the last render is gone
+  _topoResize.observe(graph);
+  const assets = document.getElementById('topo-assets');
+  if (assets) _topoResize.observe(assets);
 }
 
 function renderIncidents() { renderInfra(); }
@@ -1171,12 +1209,15 @@ function _renderModules(rules, detectBackends, recoverBackends, resources) {
     // COR1: of them, the root shells whose every SSH session came from an expected origin.
     const exOrigin = r.origin_count > 0 ? `, ${r.origin_count} root shell(s) from an expected origin (COR1, ${_originProofTxt(r)})` : '';
     const ex  = r.expected_count > 0 ? `<span style="color:var(--dim);font-size:9px;flex-shrink:0" title="${_attr(`${r.expected_count} expected sudo set aside, no card (ADM1)${exOrigin} — glorfindel report`)}">${_attr(r.expected_count)} expected</span>` : '';
+    // SLF1 (#929): the watch's own writes in its return channel, set aside — counted, never silent.
+    const own = r.own_channel_count > 0 ? `<span style="color:var(--dim);font-size:9px;flex-shrink:0" title="${_attr(_ownChannelTxt(r))}">${_attr(r.own_channel_count)} own</span>` : '';
     return `<div class="row rule-item" ${_on('click', 'showRuleByIdx', idx)}
       style="padding:3px 4px;font-size:10px">
       <span style="color:${dc};font-size:9px">●</span>
       <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${_attr(r.name)}">${_attr(r.name)}</span>
       ${r.ttp ? `<span style="color:var(--dim);font-size:9px">${_attr(r.ttp)}</span>` : ''}
       ${ex}
+      ${own}
       ${mt}
       <span style="color:var(--dim);font-size:9px">▸</span>
     </div>`;
@@ -1550,6 +1591,73 @@ function _renderNsgNode(resource, vmEscs, slotIdx = 0) {
 
 // ── Asset nodes ────────────────────────────────────────────────────────────────
 
+// ── A VM's own addresses (IPS1, #931) ──────────────────────────────────────────
+// Read by the NSG audit, NIC by NIC: `ips` (its private addresses) and `public_ips` (IPS1a: each
+// `{address}`, or `{address: null, error}` when its read failed). On the card folded and unfolded
+// (Jonathan, 19/11, option A): Ctrl+F finds the VM of an address without opening a card, and a
+// public address shows a VM the Internet can reach. Never an attacker's address: those are the
+// BLOCKED badges, below. Everything here comes from Azure: escaped, never written raw (#254).
+const _ADDR_FOLDED = 4;   // private addresses on the folded line, then « +N »
+function _vmNet(auditEntry) {
+  if (!auditEntry) return null;                       // not audited (yet): nothing said
+  const check = (auditEntry.checks || []).find(c => c.name === 'NSG access');
+  if (!check || check.status !== 'ok') return { unread: (check && check.message) || 'no NSG audit for this VM' };
+  const nsgs = Array.isArray(check.data?.nsgs) ? check.data.nsgs : [];
+  return {
+    at: auditEntry.timestamp,
+    nics: nsgs.map(x => ({
+      nic: String(x?.nic_id || '').split('/').pop(),
+      ips: (Array.isArray(x?.ips) ? x.ips : []).filter(Boolean).map(String),
+      pubs: (Array.isArray(x?.public_ips) ? x.public_ips : []).filter(p => p && typeof p === 'object'),
+    })),
+  };
+}
+function _addrBtn(a, pub) {
+  return `<button type="button" class="vm-ip${pub ? ' pub' : ''}" ${_on('click', 'copyAddr', String(a))} title="${_attr('Copy ' + a)}">${_attr(a)}</button>`;
+}
+// A public IP whose address did not read is said, never left out: the VM is still exposed.
+function _pubAddr(p, unfolded) {
+  if (p.address) return `<span class="vm-pub">🌐 ${_addrBtn(String(p.address), true)}${unfolded ? ' <span class="vm-pubtag">PUBLIC</span>' : ''}</span>`;
+  const why = String(p.error || 'unknown');
+  return unfolded
+    ? `<span class="vm-pub unread">🌐 public IP not read: ${_attr(why)}</span>`
+    : `<span class="vm-pub unread" title="${_attr('Public IP not read: ' + why)}">🌐 ?</span>`;
+}
+function _addrLine(net) {
+  if (!net) return '';
+  if (net.unread) return `<div class="vm-addr" title="${_attr('Addresses not read: ' + net.unread)}">ip —</div>`;
+  const priv = [...new Set(net.nics.flatMap(n => n.ips))];
+  const pubs = net.nics.flatMap(n => n.pubs);
+  if (!priv.length && !pubs.length) return `<div class="vm-addr" title="No address on the VM's NICs">ip —</div>`;
+  const more = priv.length > _ADDR_FOLDED ? `<span title="Unfold the card for every address">+${Number(priv.length - _ADDR_FOLDED)}</span>` : '';
+  return `<div class="vm-addr">${priv.slice(0, _ADDR_FOLDED).map(a => _addrBtn(a, false)).join('')}${more}${pubs.map(p => _pubAddr(p, false)).join('')}</div>`;
+}
+function _netBlock(net) {
+  if (!net) return '';
+  if (net.unread) return `<div class="vm-net"><span class="vm-netfoot">addresses not read — ${_attr(net.unread)}</span></div>`;
+  const nics = net.nics.map(n => `<div class="vm-nic"><span class="vm-nicname">⇄ ${_attr(n.nic || 'NIC')}</span>${n.ips.map(a => _addrBtn(a, false)).join('')}${n.pubs.map(p => _pubAddr(p, true)).join('')}</div>`).join('');
+  return `<div class="vm-net">${nics}<div class="vm-netfoot">read by the NSG audit ${_attr(_relTime(net.at))}</div></div>`;
+}
+// A copy by the clipboard where the page may write it (a secure context: the loopback, the SSH
+// tunnel). Elsewhere (a plain http address of the tailnet), the address selected and copied by the
+// browser at once, during the click: a selection left for Ctrl+C would go with the next refresh,
+// 5 s at most. The address is selectable (`.vm-ip`: user-select, the card being draggable sets
+// none). The toast says what happened, never a copy that did not (review of IPS1b, measured).
+function copyAddr(a) {
+  const el = _target;
+  const text = String(a);
+  const byBrowser = () => {
+    const r = document.createRange(); r.selectNodeContents(el);
+    const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+    let copied = false;
+    try { copied = String(s) === text && document.execCommand('copy'); } catch (e) { copied = false; }
+    s.removeAllRanges();
+    toast(copied ? `✓ ${text} copied` : `✗ ${text} not copied — select it and copy it by hand`);
+  };
+  if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(() => toast(`✓ ${text} copied`), byBrowser);
+  else byBrowser();
+}
+
 function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
   const { resource_id, vm_name, states: _rawStates = [], last_seen, monitoring_backend } = resource;
   // Subnet-wide blocks live on the shared subnet NSG, not on this VM — they're shown
@@ -1649,6 +1757,7 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
   ].filter(Boolean).join('');
 
   const auditEntry = (_auditData?.audits || []).find(a => a.resource_id === resource_id);
+  const net        = _vmNet(auditEntry);              // its addresses (IPS1)
   const readiness  = auditEntry
     ? ACTION_GROUPS.map(g => {
         const st = _worstStatus(auditEntry.checks, g.actions);
@@ -1861,6 +1970,7 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
   const expandedBody = `
     ${readinessExpanded}
     ${nsgLine}
+    ${_netBlock(net)}
     ${modeSelector}
     ${fallbackRows.length ? `<div style="display:flex;flex-direction:column;gap:5px;margin-top:6px">${fallbackRows.join('')}</div>` : ''}
     ${decisionHtml || ''}
@@ -1917,6 +2027,7 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
         ${modeBadge}
         ${readiness && !isExpanded ? `<span style="color:var(--dim);font-size:9px;margin-left:auto">${readiness}</span>` : ''}
       </div>` : ''}
+      ${_addrLine(net)}
       ${_handledLines(resource_id, vm_name)}
     </div>
     ${isExpanded ? expandedBody : compactBody}
@@ -1944,18 +2055,23 @@ function _drawTopologyEdges() {
   const svg   = document.getElementById('topo-svg');
   const graph = document.getElementById('topo-graph');
   if (!svg || !graph) return;
+  // In the content's coordinates, not the screen's: the svg scrolls with the cards, so a point
+  // is where the screen shows it plus how far the map is scrolled. Drawn on the screen's, every
+  // refresh made while scrolled put each edge `scrollTop` pixels above its card (TOPO1 #927).
   const base = graph.getBoundingClientRect();
+  const ox = base.left + graph.clientLeft - graph.scrollLeft;
+  const oy = base.top  + graph.clientTop  - graph.scrollTop;
 
   function pt(el, side) {
     if (!el) return null;
     const r = el.getBoundingClientRect();
-    const x = r.left - base.left + r.width / 2;
+    const x = r.left - ox + r.width / 2;
     return {
       x,
-      top:    r.top    - base.top,
-      bottom: r.bottom - base.top,
-      left:   r.left   - base.left,
-      right:  r.right  - base.left,
+      top:    r.top    - oy,
+      bottom: r.bottom - oy,
+      left:   r.left   - ox,
+      right:  r.right  - ox,
       width:  r.width,
     };
   }
@@ -1976,7 +2092,8 @@ function _drawTopologyEdges() {
   const isBlocked  = resources.some(r => r.states?.some(s => s.type === 'blocked'));
 
   const agent = pt(document.getElementById('node-agent'));
-  if (!agent) return;
+  // The layer outlives a render now: nothing to draw from, the last edges go with it.
+  if (!agent) { svg.innerHTML = ''; return; }
 
   const lines = [`<defs>
     <filter id="glow-r"><feGaussianBlur stdDeviation="2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
@@ -2447,6 +2564,9 @@ async function refreshObservation() {
   } catch (e) {}
 }
 
+// VP1c (#920): the card's time carries no time zone, or cannot be read — kept in the list whatever the
+// period, never dated by a guess (escalations.to_judge, `time_unreadable`).
+const _UNTIMED = 'The card\'s time carries no time zone, or cannot be read: when it fired is not known, and never guessed. It stays here, whatever the period, for you to judge.';
 function renderToJudge() {
   const list = document.getElementById('judge-list');
   const count = document.getElementById('judge-count');
@@ -2470,10 +2590,14 @@ function renderToJudge() {
     // was anchored on; one from before AL1c keeps its ⚓, and says it may not be about that VM
     // (on the first VM online, or on the VM itself: the card cannot tell which).
     const t = _targetOf(c);
+    // SLF1 (#929): a detection attributed to no VM says so, with its candidates — never the name of
+    // the VM it is filed on.
+    const loose = _unattributed(c);
     const vm = t ? (t.kind === 'control_plane' ? _TARGET_KINDS[t.kind]
       : (t.kind === 'identity' ? (t.identity_type || 'identity') : _TARGET_KINDS[t.kind]) + ' ' + (t.name || '?'))
+      : loose ? _unattributedTxt(loose)
       : (c.resource_id || '').split('/').pop();
-    const anchored = !t && _isAnchored(c);
+    const anchored = !t && (_isAnchored(c) || !!loose);
     const times = c.occurrences > 1 ? ` · ${Number(c.occurrences)}×` : '';
     const id = _attr(c.id);
     // JUG1: the line opens its card (its details, its verdict); its own note and buttons keep the click.
@@ -2481,8 +2605,9 @@ function renderToJudge() {
       <div class="judge-head">
         <span class="judge-what" style="color:${disruptive ? 'var(--red)' : 'var(--orange)'}">${_attr(what)}</span>
         <span style="flex:1"></span>
-        <span class="judge-ts">${c.first_seen ? _relTime(c.first_seen) : ''}${times}</span>
+        <span class="judge-ts">${c.time_unreadable ? '' : (c.first_seen ? _relTime(c.first_seen) : '')}${times}</span>
       </div>
+      ${c.time_unreadable ? `<div class="judge-why judge-untimed" style="-webkit-line-clamp:1;color:var(--yellow)" title="${_attr(_UNTIMED)}">⚠ time unreadable — judge it all the same</div>` : ''}
       <div class="judge-why" style="-webkit-line-clamp:1;color:var(--text)" title="${anchored ? _attr(_DETECTION_ONLY.has(c.escalation_type) ? _FILED_BEFORE : 'The detection does not name this VM: the card is only filed on it') : _attr((t && t.limit) || c.resource_id || '')}">${anchored ? '⚓ ' : (t ? '🎯 ' : '')}${_attr(vm)}${c.rule_name ? ` · rule ${_attr(c.rule_name)}` : ''}${c.ttp ? ` · ${_attr(c.ttp)}` : ''}${c.severity === 'critical' ? ' · <b style="color:var(--red)">critical</b>' : ''}</div>
       ${c.exercise ? `<div class="judge-why" style="-webkit-line-clamp:1;color:var(--blue)" title="An injector's exercise window covered this VM at that time. A window is the injectors' claim: check the run before trusting it.">⚑ exercise${c.exercise_run ? ` · run <a href="/runs/${encodeURIComponent(c.exercise_run)}" ${_on('click', 'stop')}>${_attr(c.exercise_run)}</a> — check the run ▸` : ' — check the run'}</div>` : ''}
       ${_proposedLine(c)}
@@ -3087,9 +3212,14 @@ function ttpStatus(c) {
   return ['— unknown', 'dim'];
 }
 
+// VP1c (#920): a time without a zone is never dated by a guess — a browser would take it for its own
+// local time. Said unreadable, as a time that cannot be read.
+const _ZONED = /(?:Z|[+-]\d{2}:?\d{2})$/i;
 function _relTime(iso) {
   if (!iso) return '—';
-  const age = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  const t = new Date(iso).getTime();
+  if (!_ZONED.test(String(iso).trim()) || Number.isNaN(t)) return 'time unreadable';
+  const age = Math.floor((Date.now() - t) / 1000);
   if (age < 60) return `${age}s ago`;
   if (age < 3600) return `${Math.floor(age / 60)}m ago`;
   return `${Math.floor(age / 3600)}h ago`;
@@ -3103,6 +3233,19 @@ function _originProofTxt(r) {
   if (ok <= 0) return 'origin read in the VM only';
   if (ok >= n) return 'every one confirmed outside the VM, COR2';
   return `${ok} confirmed outside the VM (COR2), ${n - ok} read in the VM only`;
+}
+// SLF1 (#929): the writes of the watch's own return channel a rule set aside — how many, why —, and
+// its identity not read (nothing set aside), said.
+function _ownChannelTxt(r) {
+  const n = Number(r.own_channel_count) || 0;
+  const rows = Number(r.own_channel_rows) || 0;
+  const said = n > 0
+    ? `${n} write(s) of the watch's own return channel set aside (${rows} row(s) left without a card) — its identity, the container of EREGION_WATCH_CHANNEL, the objects it writes there (SLF1)${r.own_channel_last ? ' · last ' + _relTime(r.own_channel_last) : ''}`
+    : '';
+  const unread = r.own_channel_unread
+    ? `return channel configured, the watch's identity not read (${_relTime(r.own_channel_unread)}): none of its writes set aside`
+    : '';
+  return [said, unread].filter(Boolean).join(' · ');
 }
 
 function showRuleDetail(rule) {
@@ -3143,6 +3286,7 @@ function showRuleDetail(rule) {
     <div style="font-size:10px;color:var(--dim);margin-bottom:8px">${_attr(statusTxt)}</div>
     ${expectedTxt ? `<div style="font-size:10px;color:var(--dim);margin-bottom:8px">${_attr(expectedTxt)}</div>` : ''}
     ${corrTxt ? `<div style="font-size:10px;color:var(--dim);margin-bottom:8px">${_attr(corrTxt)}</div>` : ''}
+    ${_ownChannelTxt(rule) ? `<div style="font-size:10px;color:var(--dim);margin-bottom:8px">${_attr(_ownChannelTxt(rule))}</div>` : ''}
     <div style="font-size:10px;color:var(--dim);margin-bottom:4px;text-transform:uppercase;letter-spacing:1px">Query</div>
     <div class="modal-query">${_attr((rule.query || '').trim())}</div>`;
 
@@ -3360,7 +3504,8 @@ function openJudgeCard(escId) {
   const vmName = _ownTile(e) || String(e.resource_id || '').split('/').pop();
   const label = _isExecuted(e) ? `${actionLabel(e.action)} — done alone, to judge`
     : (e.action ? actionLabelVerb(e.action) : escTitle(e));
-  document.getElementById('modal-title').textContent = `To judge — ${label} — ${vmName}`;
+  // SLF1: a detection attributed to no VM is about none — never its anchor's name in the title.
+  document.getElementById('modal-title').textContent = `To judge — ${label} — ${_unattributed(e) ? 'not attributed' : vmName}`;
   document.getElementById('modal-cmd').style.display = 'none';
   document.getElementById('modal-cancel').style.display = 'none';
   const bodyEl = document.getElementById('modal-body');
@@ -3742,6 +3887,7 @@ const ACTIONS = {
   filterBlocks, showBlocks,                       // a VM's blocks, in their window (CON-K)
   verifyIdentity,                                 // an identity card's plan, read again on Graph by the watch (IR1a)
   openJudgeCard,                                  // a card's details and its verdict, from TO JUDGE or a tile (JUG1)
+  copyAddr,                                       // a VM's address, copied from its card (IPS1)
   judgeFromModal(id, verdict) { judgeCard(id, verdict, 'judge-modal-note'); closeModal(); },
   confirmProposed, refuseProposed,                // VP1: a verdict proposed on an exercise card, confirmed or refused
   confirmProposedFromModal(id) { confirmProposed(id, 'judge-modal-note'); closeModal(); },
