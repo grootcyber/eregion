@@ -388,12 +388,12 @@ def _graph_card(tmp_path, monkeypatch, sig, action="isolate_vm", confidence=0.99
     return final, card
 
 
-@pytest.mark.parametrize("confidence,etype", [(0.99, "unattributed_signal"), (0.5, "low_confidence")])
+@pytest.mark.parametrize("confidence,etype", [(0.99, "unattributed_signal"), (0.5, "unattributed_signal")])
 def test_an_unattributed_card_says_so_and_names_its_candidates(tmp_path, monkeypatch, confidence, etype):
     """Fini quand: the card of a detection attributed to no VM says « not attributed » with its
-    candidates — in the store, TO JUDGE, the CLI, Discord — never one VM as its resource. Its type
-    and what is approvable unchanged: the attribution guard holds the isolation at 99 % (it runs
-    after the confidence gate, which held it first at 50 %)."""
+    candidates — in the store, TO JUDGE, the CLI, Discord — never one VM as its resource. The
+    attribution guard holds the isolation at 99 %, and at 50 % too since ATT1 (#936): it primes over
+    the confidence gate, which held it first and made it a `low_confidence` card, approvable."""
     sig = _unattributed_signal()
     final, card = _graph_card(tmp_path, monkeypatch, sig, confidence=confidence)
     assert final["outcome"]["escalation_type"] == card["escalation_type"] == etype
@@ -483,9 +483,10 @@ def test_the_console_says_not_attributed_never_its_anchor():
     assert "if (loose) return `<div class=\"esc-context\" title=\"${_attr(_LOOSE_TITLE)}\">⚓ ${_attr(_unattributedTxt(loose))}</div>`;" in note
     assert note.index("if (loose)") < note.index("if (!_isAnchored(e)")
     assert "${_unattributed(e) ? 'not attributed' : vmName}" in js
-    # What is approvable stays the server's and `_isHeld`'s: never read from the attribution here.
+    # ATT1 (#936): what `_isHeld` reads of the attribution is `_aimsLoose` only — an action aimed at
+    # the VM on an unattributed card is never approved in one click (tests/unit/test_attribution_prime.py).
     held = js.split("function _isHeld(e) {", 1)[1].split("\n}\n", 1)[0]
-    assert "_unattributed" not in held and "attribution" not in held
+    assert "&& !_aimsLoose(e)" in held and "attribution" not in held
 
 
 def test_the_console_counts_the_writes_set_aside_on_the_rule():
