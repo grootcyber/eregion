@@ -26,6 +26,7 @@ The code that lived here (4 394 lines) is split by concern, nothing changed in i
     backup.py, restore.py       restore points
     restore_rights.py           a restore's rights read first, Azure's refusals said whole (RST1)
     sweep.py, readers.py        reset and orphans; rights, inventory, audit reads
+    public_ips.py               each NIC's public IP address, read for the audit (IPS1a)
     reset_bare.py               the reset's bare NICs, their original put back
     sdk.py                      SDK warm-up, error and enum helpers
     capabilities.py             what the adapter declares (read by the readiness check)
@@ -59,6 +60,7 @@ _MODULES = tuple(_importlib.import_module(name) for name in (
     "glorfindel.providers.azure.sdk",
     "glorfindel.providers.azure.capabilities",
     "glorfindel.providers.azure.nsg",
+    "glorfindel.providers.azure.public_ips",
     "glorfindel.providers.azure.turned",
     "glorfindel.providers.azure.narrow",
     "glorfindel.providers.azure.quarantine",
