@@ -280,7 +280,7 @@ def normalize_row(row: dict, ttp: str = "") -> dict:
         }
     if row.get("OperationNameValue"):
         return {
-            "resource": str(row.get("_ResourceId") or row.get("ResourceId") or ""),
+            "resource": operation_resource(row),
             "indicator_key": "control_plane_operation",
             "indicator_value": row["OperationNameValue"],
             "caller": row.get("Caller") or "",
@@ -1180,10 +1180,20 @@ def _grave(row: dict) -> bool:
 
 # CPT1 (#930): where a row of the Activity Log names who made the operation — its `Caller`, the
 # ids the shipped rules draw from `Claims` (`CallerAppId`, `CallerObjectId`) — and, for a rule
-# that projects it, `Claims` itself; where it names what the operation was on.
-CALLER_COLUMNS = ("Caller", "CallerAppId", "CallerObjectId")
-_CALLER_CLAIMS = ("appid", "azp", "oid", "http://schemas.microsoft.com/identity/claims/objectidentifier",
-                  "upn", "unique_name")
+# that projects it, `Claims` itself; where it names what the operation was on. CPT1b: the name a
+# client's rule projects (`CallerName`, the column a summary keeps) names the caller too — a row
+# that carries it is never lowered to incomplete telemetry while its card names it.
+CALLER_COLUMNS = ("Caller", "CallerAppId", "CallerObjectId",
+                  "CallerName")
+# The claims that name the caller, by what they name (CPT1b: the long URIs of `upn` and `name` too,
+# as the Activity Log writes them, and the short `name`): a name, the object id, the client
+# application. Read on the prudent side: a claim that names someone keeps the card high.
+_CLAIM_NAME = ("upn", "unique_name", "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn",
+               "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name",
+               "name")
+_CLAIM_OID = ("oid", "http://schemas.microsoft.com/identity/claims/objectidentifier")
+_CLAIM_APP = ("appid", "azp")
+_CALLER_CLAIMS = (*_CLAIM_APP, *_CLAIM_OID, *_CLAIM_NAME)
 RESOURCE_COLUMNS = ("_ResourceId", "ResourceId")
 
 
@@ -1191,14 +1201,54 @@ def _said(value) -> bool:
     return isinstance(value, (str, int, float)) and not isinstance(value, bool) and bool(str(value).strip())
 
 
-def _claims_name_someone(row: dict) -> bool:
+def _claims(row: dict) -> dict:
+    """The row's `Claims` (a rule that projects it, a client's), read; {} when absent or unread."""
     raw = row.get("Claims_d") or row.get("Claims")
     if isinstance(raw, str):
         try:
             raw = json.loads(raw) if raw.strip() else {}
         except ValueError:
-            return False
-    return isinstance(raw, dict) and any(_said(raw.get(k)) for k in _CALLER_CLAIMS)
+            return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def _claims_name_someone(row: dict) -> bool:
+    raw = _claims(row)
+    return any(_said(raw.get(k)) for k in _CALLER_CLAIMS)
+
+
+def claimed_caller(row: dict) -> dict:
+    """Who `Claims` names as the caller (CPT1b), when the rule projects it — the name, the object
+    id, the client application; "" for each it does not give. The same claims `names_no_one` reads:
+    a row it says names someone is named on its card."""
+    raw = _claims(row)
+
+    def first(keys):
+        return next((str(raw[k]).strip() for k in keys if _said(raw.get(k))), "")
+    return {"name": first(_CLAIM_NAME), "oid": first(_CLAIM_OID), "app": first(_CLAIM_APP)}
+
+
+def _text(value) -> str:
+    return str(value).strip() if _said(value) else ""
+
+
+def caller_columns(row: dict) -> dict:
+    """The columns a card names the caller from (CPT1b), as the individual card reads them
+    (`agent._caller_said`): `Caller`; a name — the `CallerName` a client's rule projects, else the
+    one `Claims` gives (`CallerName`); the object id and the
+    application id the rules project, else drawn from `Claims` (`CallerObjectId`, `CallerAppId`).
+    What a summary card keeps of each of its operations: never `Caller` alone."""
+    claimed = claimed_caller(row)
+    return {"Caller": _text(row.get("Caller")),
+            "CallerName": _text(row.get("CallerName")) or claimed["name"],
+            "CallerObjectId": _text(row.get("CallerObjectId")) or claimed["oid"],
+            "CallerAppId": _text(row.get("CallerAppId")) or claimed["app"]}
+
+
+def operation_resource(row: dict) -> str:
+    """What an operation of the Activity Log was on, as its card reads it: `_ResourceId`, else
+    `ResourceId` (CPT1b: one reading, for the individual card and the summary's)."""
+    return next((_text(row.get(c)) for c in RESOURCE_COLUMNS if _said(row.get(c))), "")
 
 
 def names_no_one(row: dict) -> bool:
@@ -1248,8 +1298,10 @@ def _control_plane_summary(rest: list[dict]) -> dict:
             {"TimeGenerated": r.get("TimeGenerated") or "",
              "OperationNameValue": r.get("OperationNameValue") or "",
              "ActivityStatusValue": r.get("ActivityStatusValue") or "",
-             "Caller": r.get("Caller") or "",
-             "_ResourceId": r.get("_ResourceId") or r.get("ResourceId") or "",
+             # CPT1b: who and what, read as the individual card reads them — `Caller` alone
+             # said « ? » for a caller the rules name from `Claims`.
+             **caller_columns(r),
+             "_ResourceId": operation_resource(r),
              "GlorfindelManaged": r.get("GlorfindelManaged") is True,
              "GlorfindelIdentity": r.get("GlorfindelIdentity") is True,
              "GlorfindelRunCommand": r.get("GlorfindelRunCommand") or "",
