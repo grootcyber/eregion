@@ -92,6 +92,10 @@ def subnet_id(rg: str, vnet: str, name: str) -> str:
     return f"{SUB}/resourceGroups/{rg}/providers/Microsoft.Network/virtualNetworks/{vnet}/subnets/{name}"
 
 
+def public_ip_id(rg: str, name: str) -> str:
+    return f"{SUB}/resourceGroups/{rg}/providers/Microsoft.Network/publicIPAddresses/{name}"
+
+
 def key(resource_id: str) -> str:
     return (resource_id or "").rstrip("/").lower()
 
@@ -185,9 +189,12 @@ class FakeAzure:
         # I2 by author, without asking the code what it meant to do.
         self.journal: list[dict] = []
         self.authored: set[tuple[str, str]] = set()
+        # IPS1a: the public IP resources (`add_public_ip`), and every read of one.
+        self.public_ips: dict[str, dict] = {}
+        self.public_ip_reads: list[tuple[str, str]] = []
         self.network = SimpleNamespace(
             network_interfaces=_Nics(self), network_security_groups=_Nsgs(self),
-            security_rules=_Rules(self), subnets=_Subnets(self))
+            security_rules=_Rules(self), subnets=_Subnets(self), public_ip_addresses=_PublicIps(self))
         self.compute = SimpleNamespace(virtual_machines=_Vms(self), virtual_machine_extensions=_Extensions(self),
                                        virtual_machine_run_commands=_ManagedRunCommands(self))
         # Azure Backup (REC1): one vault, its restore jobs, each VM's recovery points.
@@ -233,6 +240,13 @@ class FakeAzure:
                                "rules": {}}
         for r in rules:
             self._put_rule(self.nsgs[key(rid)], _rule_record(r))
+        return rid
+
+    def add_public_ip(self, rg: str, name: str, address: str | None) -> str:
+        """A public IP resource in `rg`; `address` None: not allocated yet (a dynamic IP on a
+        stopped VM). Put on a NIC by its id in `add_vm`'s `public_ips`."""
+        rid = public_ip_id(rg, name)
+        self.public_ips[key(rid)] = {"id": rid, "address": address}
         return rid
 
     def add_subnet(self, rg: str, vnet: str, name: str, nsg: str | None) -> str:
@@ -583,8 +597,10 @@ class _Nics:
                 network_security_group=SimpleNamespace(id=n["nsg"]) if n["nsg"] else None,
                 ip_configurations=[SimpleNamespace(
                     private_ip_address=ip, subnet=SimpleNamespace(id=n["subnet"]),
+                    # `public_ips[i]` None: this configuration has none (IPS1a).
                     public_ip_address=(SimpleNamespace(id=n["public_ips"][i])
-                                       if i < len(n.get("public_ips") or []) else None),
+                                       if i < len(n.get("public_ips") or []) and n["public_ips"][i]
+                                       else None),
                     application_security_groups=[SimpleNamespace(id=a) for a in n.get("asgs") or []])
                     for i, ip in enumerate(n["ips"])])
         return self.az.call("nic.get", False, read)
@@ -706,6 +722,24 @@ class _Subnets:
             return SimpleNamespace(id=s["id"], network_security_group=(
                 SimpleNamespace(id=s["nsg"]) if s["nsg"] else None))
         return self.az.call("subnet.get", False, read)
+
+
+class _PublicIps:
+    """`publicIPAddresses.get` (IPS1a): the address, None while not allocated; 403 on an id in
+    `unreadable`; every read in `public_ip_reads` (rg, name), in order."""
+    def __init__(self, az: FakeAzure):
+        self.az = az
+
+    def get(self, rg, name):
+        def read():
+            rid = public_ip_id(rg, name)
+            self.az.public_ip_reads.append((rg, name))
+            self.az.readable(rid)
+            p = self.az.public_ips.get(key(rid))
+            if p is None:
+                raise not_found(f"publicIPAddresses/{name}")
+            return SimpleNamespace(id=p["id"], ip_address=p["address"])
+        return self.az.call("public_ip.get", False, read)
 
 
 class _Vms:

@@ -1804,6 +1804,18 @@
    "issue": 897
   },
   {
+   "id": "a-stratus-role-ferme",
+   "composant": "annatar",
+   "poste": "a-attaquer",
+   "nom": "Stratus's closed role, Orodruin's read-only authz and the federated credential, as Terraform on the dedicated subscription (G2/G3/G4)",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "R2BGc"
+   ],
+   "issue": 608
+  },
+  {
    "id": "a-injecteur-stage",
    "composant": "annatar",
    "poste": "a-attaquer",
@@ -2587,13 +2599,14 @@
    "doc": "docs/design/console.md"
   },
   {
-   "id": "k-adresses-vm",
+   "id": "k-ip-publique",
    "composant": "console",
    "poste": "k-voir",
-   "nom": "A VM's card shows its private and public addresses, folded or not; one click copies one",
+   "nom": "A VM's card shows its private and public addresses, folded or not, and copies one in a click; a public IP the audit cannot read is said, the audit holds",
    "etat": "main",
    "release": "0.6",
    "lots": [
+    "IPS1a",
     "IPS1b"
    ],
    "issue": 931,

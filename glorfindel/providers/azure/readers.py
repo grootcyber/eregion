@@ -8,6 +8,7 @@ import ipaddress
 import os
 
 from glorfindel.providers.azure.nsg import _shadowing_rules
+from glorfindel.providers.azure.public_ips import read_public_ips
 from glorfindel.providers.azure.quarantine import _is_quarantine_nsg
 from glorfindel.providers.azure.sdk import _enum_text, _is_iam_error, _is_not_found
 from glorfindel.response.ids import _parse_nic_resource_id, _parse_nsg_resource_id, _parse_vm_resource_id
@@ -239,7 +240,9 @@ class ReadersMixin:
 
         Enumerates EVERY NIC's governing NSG (`nsgs`), so the War Room shows the full
         multi-NIC NSG picture at rest (not just the primary NIC). `nsg`/`scope` mirror
-        the first NIC for back-compat.
+        the first NIC for back-compat. Each entry carries the NIC's public IPs
+        (`public_ips`, IPS1a): `[{"address": …}]`, or `{"address": None, "error": …}` for
+        one that can't be read — empty without any.
         """
         if self.dry_run:
             return {"ok": True, "nsg": "dry_run"}
@@ -247,12 +250,15 @@ class ReadersMixin:
             self._ensure_clients()
             rg, vm_name = _parse_vm_resource_id(resource_id)
             targets = self._get_vm_nic_targets(rg, vm_name)
+            read: dict = {}           # each public IP read once per call (IPS1a)
             nsgs = [
                 {
                     "nsg": f'{t["nsg_rg"]}/{t["nsg_name"]}',
                     "nsg_scope": t["scope"],
                     "nic_id": t["nic_id"],
                     "ips": t["private_ips"],
+                    # Never raises: an unreadable address is said, the audit holds.
+                    "public_ips": read_public_ips(self._network, t.get("public_ip_ids") or [], read),
                 }
                 for t in targets
             ]

@@ -144,7 +144,7 @@ glorfindel/
                           isolation.py (+ run_command.py : la Run Command attendue une fois, puis son statut relu sur
                           Azure — la coupure `pending`, son poller gardé, DRN1), release.py (+ gone.py : la VM supprimée, I7S), verify.py, blocks.py, verify_block.py, unblock.py, backup.py (+ restore_job_status,
                           lu par jobs.py), restore.py (+ restore_rights.py : ses droits lus avant de toucher la VM, les refus dits sans id, RST1), sweep.py (+ reset_bare.py : ses cartes nues), readers.py (check_permissions, check_nsg_access,
-                          list_nsgs, check_compute_access…), sdk.py (warm-up), capabilities.py, monitor.py
+                          list_nsgs, check_compute_access… ; + public_ips.py : l'IP publique de chaque carte, IPS1a), sdk.py (warm-up), capabilities.py, monitor.py
                           (AzureMonitorDetector, réexporté par detectors.py), activity.py (AzureActivityDetector, AL1 :
                           le journal d'activité, détection seule ; écritures de Glorfindel écartées, ses règles marquées),
                           own_run_command.py (SID1 : son Run Command hors de la coupure des sessions d'une
