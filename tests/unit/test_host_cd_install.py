@@ -202,16 +202,48 @@ def test_the_script_alone_with_what_the_makefile_passes_goes(tmp_path):
                              f"ssh {PINNED}", f"ssh -t {PINNED}"]
 
 
+KH = "-o UserKnownHostsFile=/home/op/.eregion/h0_known_hosts"
+ALGO = "-o HostKeyAlgorithms=ssh-ed25519"
+
+
 @pytest.mark.parametrize("opts", [
     "-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null",
     "-o UserKnownHostsFile=/dev/null",
     "-o StrictHostKeyChecking=yesno",
+    # ssh keeps an option's first value: « no » before « yes » is « no » (`ssh -G`, review of CDI1).
+    f"-o StrictHostKeyChecking=no -o StrictHostKeyChecking=yes {KH} {ALGO}",
+    f"-oStrictHostKeyChecking=no {PINNED}",
+    f"-o StrictHostKeyChecking=no {KH} {ALGO}",
+    # The form, then an option that undoes the pinning or goes around it.
+    f"{PINNED} -o ProxyCommand=/bin/false",
+    f"{PINNED} -F /tmp/ssh_config",
+    f"{PINNED} -J jump.example",
+    f"{PINNED} -i /tmp/id -o ProxyCommand=/bin/false",
+    f"{PINNED} -i /tmp/id -o KnownHostsCommand=/bin/true",
+    f"{PINNED} -i /tmp/id -o IdentitiesOnly=yes -o ProxyCommand=/bin/false",     # the whole form, then more
+    f"{PINNED} -i /tmp/id -o IdentitiesOnly=yes -F /tmp/ssh_config",
+    f"-o StrictHostKeyChecking=yes {KH} -o ProxyCommand=/bin/false",
+    f"-o StrictHostKeyChecking=yes -o KnownHostsCommand=/bin/true {ALGO}",
+    f"-o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/kh {ALGO}",
+    f"{KH} -o StrictHostKeyChecking=yes {ALGO}",
 ])
 def test_the_script_never_goes_without_the_pinned_key(tmp_path, opts):
-    """Without StrictHostKeyChecking=yes: refused before any gesture (SEC-C), the webhook unread."""
+    """Only the form the Makefile computes, word for word: anything else refused before any gesture (SEC-C),
+    the webhook unread."""
     res, calls = _script(tmp_path, SSH_OPTS=opts)
     assert res.returncode != 0 and calls == []
     assert "StrictHostKeyChecking=yes" in res.stderr
+
+
+@pytest.mark.parametrize("opts", [
+    f"-o StrictHostKeyChecking=yes {KH} {ALGO}",
+    f"-o StrictHostKeyChecking=yes {KH} {ALGO} -i ~/.ssh/id_imladris -o IdentitiesOnly=yes",
+    f"-o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/op_1/k.h+@ {ALGO} -i /k/id-1 -o IdentitiesOnly=yes",
+])
+def test_the_forms_the_makefile_computes_go(tmp_path, opts):
+    res, calls = _script(tmp_path, SSH_OPTS=opts)
+    assert res.returncode == 0, res.stderr
+    assert _tools(calls)[-1] == f"ssh -t {opts}"
 
 
 @pytest.mark.parametrize("files", [

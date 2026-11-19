@@ -14,7 +14,8 @@
 # From the Makefile, what it computes — nothing recomputed here: HOST_IP (terraform output), HOST_USER,
 # SSH_OPTS (HOST_SSH_OPTS: the pinned key, StrictHostKeyChecking=yes on HOST_KNOWN_HOSTS alone),
 # CD_FILES (HOST_CD_FILES). Two of them checked before any gesture, since the Makefile is not owned:
-# SSH_OPTS must pin the key, CD_FILES must be the list owned here (OWNED_FILES). Run from the root of
+# SSH_OPTS must be the form it computes, word for word, CD_FILES the list owned here (OWNED_FILES) —
+# a drift caught, never a hostile Makefile, that may not call this script at all. Run from the root of
 # the checkout, as make runs it: CD_FILES and `git rev-parse HEAD` are read there.
 #
 # The gestures, in this order, each stopping the installation when it fails, as the recipe did:
@@ -37,11 +38,31 @@ HOST_IP="${HOST_IP:-}"
 HOST_USER="${HOST_USER:?HOST_USER manque (make imladris-cd-install le passe)}"
 SSH_OPTS="${SSH_OPTS:?SSH_OPTS manque (make imladris-cd-install le passe : la clé épinglée d’Imladris)}"
 CD_FILES="${CD_FILES:?CD_FILES manque (make imladris-cd-install le passe)}"
-# V-32 (SEC-C): never a command toward Imladris without its pinned key — whatever passed SSH_OPTS.
-case " $SSH_OPTS " in
-  *" -o StrictHostKeyChecking=yes "*) ;;
-  *) echo "✗ SSH_OPTS sans StrictHostKeyChecking=yes : rien ne part vers Imladris sans sa clé épinglée" >&2; exit 1 ;;
-esac
+# V-32 (SEC-C): SSH_OPTS taken only in the form the Makefile computes (HOST_SSH_OPTS), word for word:
+#   -o StrictHostKeyChecking=yes -o UserKnownHostsFile=<path> -o HostKeyAlgorithms=ssh-ed25519
+#   [-i <path> -o IdentitiesOnly=yes]
+# Anything else refuses, before any gesture: ssh keeps the first value of an option, so a check for
+# « =yes » somewhere let « -o StrictHostKeyChecking=no » before it through (review of CDI1), and so
+# would any other option added (-F, ProxyCommand, ProxyJump, KnownHostsCommand…). What it holds: a
+# drift of the options, visible here. Not a hostile Makefile: it chooses the known_hosts file, it runs
+# the key's check (imladris-known, infra/glorfindel-host/known_host.sh, neither owned), and it may not
+# call this script at all (docs/design/modele-de-menace.md, §7).
+plain_path() { case "$1" in '' | -* | *[!-[:alnum:]_./~@+]*) return 1 ;; esac; }
+pinned_form() {
+  # shellcheck disable=SC2086
+  set -- $SSH_OPTS
+  [ "$#" -eq 6 ] || [ "$#" -eq 10 ] || return 1
+  [ "$1 $2" = "-o StrictHostKeyChecking=yes" ] || return 1
+  [ "$3" = -o ] && case "$4" in UserKnownHostsFile=*) plain_path "${4#UserKnownHostsFile=}" ;; *) false ;; esac || return 1
+  [ "$5 $6" = "-o HostKeyAlgorithms=ssh-ed25519" ] || return 1
+  [ "$#" -eq 6 ] || { [ "$7" = -i ] && plain_path "$8" && [ "$9 ${10}" = "-o IdentitiesOnly=yes" ]; }
+}
+if ! pinned_form; then
+  echo "✗ SSH_OPTS n'est pas la forme que calcule le Makefile (-o StrictHostKeyChecking=yes" \
+       "-o UserKnownHostsFile=… -o HostKeyAlgorithms=ssh-ed25519, puis -i … -o IdentitiesOnly=yes) :" \
+       "rien ne part vers Imladris" >&2
+  exit 1
+fi
 # What goes to ~/.eregion-cd/: this list, owned here, the Makefile's HOST_CD_FILES checked against it,
 # never taken as it comes. scp copies by base name: a list from elsewhere could put any file of the
 # checkout under an agent's name, or one that Python imports before the standard library next to

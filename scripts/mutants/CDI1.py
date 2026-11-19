@@ -41,13 +41,32 @@ MUTANTS = [
     ("M6358", "the TTY lost: sudo cannot ask for its password, install.sh never runs (CDI1)", SCRIPT,
      "ssh -t $SSH_OPTS \"$TO\" 'sudo bash .eregion-cd/install.sh'\n",
      "ssh $SSH_OPTS \"$TO\" 'sudo bash .eregion-cd/install.sh'\n"),
-    ("M6359", "SSH options without the pinned key taken as they come: a key accepted at first contact (CDI1)", SCRIPT,
-     '  *) echo "✗ SSH_OPTS sans StrictHostKeyChecking=yes : rien ne part vers Imladris sans sa clé épinglée" >&2;'
-     " exit 1 ;;\n",
-     "  *) ;;\n"),
+    ("M6359", "SSH options taken as they come: a key accepted at first contact (CDI1)", SCRIPT,
+     "if ! pinned_form; then\n",
+     "if false; then\n"),
     ("M6360", "the Makefile's list of files taken as it comes: any file of the checkout under an agent's name "
      "(CDI1)", SCRIPT,
      '[ "$(printf \'%s \' $CD_FILES)" = "$OWNED_FILES " ] || {\n',
      "true || {\n"),
+]
+# The review's first round: the form of SSH_OPTS checked word for word — ssh keeps an option's first value.
+MUTANTS += [
+    ("M6361", "an option added after the whole form, the key's included: -o ProxyCommand=… or -F … goes "
+     "(CDI1 review)", SCRIPT,
+     '  [ "$#" -eq 6 ] || [ "$#" -eq 10 ] || return 1\n',
+     ""),
+    ("M6362", "the first value of StrictHostKeyChecking unread: « no » first wins in ssh (CDI1 review)", SCRIPT,
+     '  [ "$1 $2" = "-o StrictHostKeyChecking=yes" ] || return 1\n',
+     ""),
+    ("M6363", "the known_hosts option unread: -o KnownHostsCommand=… in its place goes (CDI1 review)", SCRIPT,
+     '  [ "$3" = -o ] && case "$4" in UserKnownHostsFile=*) plain_path "${4#UserKnownHostsFile=}" ;; *) false ;; '
+     "esac || return 1\n",
+     ""),
+    ("M6364", "the host key algorithm unread: -o ProxyCommand=… in its place goes (CDI1 review)", SCRIPT,
+     '  [ "$5 $6" = "-o HostKeyAlgorithms=ssh-ed25519" ] || return 1\n',
+     ""),
+    ("M6365", "the key's options unread: -i … -o ProxyCommand=… goes (CDI1 review)", SCRIPT,
+     '  [ "$#" -eq 6 ] || { [ "$7" = -i ] && plain_path "$8" && [ "$9 ${10}" = "-o IdentitiesOnly=yes" ]; }\n',
+     '  [ "$#" -eq 6 ] || [ "$7" = -i ]\n'),
 ]
 TESTS = {mid: _TEST for mid, *_ in MUTANTS}
