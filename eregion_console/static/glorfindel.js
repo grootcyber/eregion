@@ -531,6 +531,13 @@ function _vmArg(rid) {
   return '<id: glorfindel list --ids>';
 }
 
+// RTZ1 (#923): a card's time without its zone is no moment to copy — never guessed, the CLI refuses it.
+const _ZONED_TIME = /\d\d:\d\d(:\d\d(\.\d+)?)?(Z|[+-]\d\d(:?\d\d)?)$/;
+function _zonedOr(t, otherwise) {
+  const text = String(t || '').trim();
+  return _ZONED_TIME.test(text) ? text : otherwise;
+}
+
 function cliCommand(esc) {
   const rid = esc.resource_id;
   const id  = esc.id.slice(0, 8);
@@ -562,7 +569,7 @@ function cliCommand(esc) {
   if (esc.action === 'restore_from_backup') {
     // The moment is asked (SEC4c): the card's first detection — the attack began before it.
     return `# --before: an instant before the attack began (the card's first detection here — go back if it began earlier)\n`
-      + `glorfindel restore ${_vmArg(rid)} --yes --before ${esc.first_seen || esc.timestamp || '<ISO8601>'}\nglorfindel ack ${id}`;
+      + `glorfindel restore ${_vmArg(rid)} --yes --before ${_zonedOr(esc.first_seen || esc.timestamp, '<ISO8601>')}\nglorfindel ack ${id}`;
   }
   if (esc.escalation_type === 'readiness_hold') {
     return `# Shows the reserves, then asks you to accept them\nglorfindel activate ${_vmArg(rid)}`;

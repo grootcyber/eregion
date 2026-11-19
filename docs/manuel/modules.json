@@ -1026,6 +1026,19 @@
    "doc": "docs/azure.md"
   },
   {
+   "id": "g-restore-fuseau",
+   "composant": "glorfindel",
+   "poste": "g-agir",
+   "nom": "The restore refuses a time without its time zone, never taken for UTC: a moment given, a card or an isolation dated without one",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "RTZ1"
+   ],
+   "issue": 923,
+   "doc": "docs/azure.md"
+  },
+  {
    "id": "g-coupure-suivie",
    "composant": "glorfindel",
    "poste": "g-verifier",

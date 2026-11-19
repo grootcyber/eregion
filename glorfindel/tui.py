@@ -406,6 +406,9 @@ def _escalations_renderable(
         # fields come from its store; the VM by `group_and_name`, quoted already (MSK3b).
         ack_id = shlex.quote(str(esc_id))
         before = e.get("first_seen") or e.get("timestamp")
+        from glorfindel.restore_plan import zone_missing
+        # RTZ1: a time without its zone is no moment to copy — never guessed, the CLI would refuse it.
+        before = None if zone_missing(before) else before
         before = shlex.quote(str(before)) if before else "<ISO8601>"
         if _anchored(e):   # its VM is an anchor: ack only (SEC5, V-35; ATT1: unattributed too)
             lines.append(_literal(f"    → glorfindel ack {ack_id}\n"), style="dim cyan")

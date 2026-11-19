@@ -336,7 +336,8 @@ def _one(connector, emit, iso: dict, vault: str, vault_rg: str, now: float, repo
     at = _epoch(point["time"])
     first, why = restore_plan.incident_start(rid)
     if first is None or at is None or at >= first:
-        when = (datetime.fromtimestamp(first, tz=timezone.utc).isoformat() if first is not None else "?")
+        # No moment known (a card or a state whose time has no zone, RTZ1): none written in the command.
+        when = (datetime.fromtimestamp(first, tz=timezone.utc).isoformat() if first is not None else "<ISO8601>")
         return card("point_after",
                     f"{head}, finie) : son point de restauration ({point['time']}) n'est pas antérieur au "
                     f"début de l'incident ({when} : {why}). Le disque restauré peut porter l'attaque : "

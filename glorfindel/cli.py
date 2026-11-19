@@ -1925,11 +1925,11 @@ def jobs(resource_id: str, refresh: bool):
               help="Skip recovery_complete signal — VM stays isolated after restore. "
                    "Also honoured via GLORFINDEL_KEEP_ISOLATED=1.")
 @click.option("--before", default=None, metavar="ISO8601",
-              help="Restore the newest recovery point before this moment (ISO8601, UTC "
-                   "when no offset): when the attack began. Without it, the moment of this "
-                   "VM's card (its first detection; an exercise's attack_started, never on a "
-                   "real incident); unknown → the command asks for it. "
-                   "Example: 2026-05-24T13:44:00+00:00")
+              help="Restore the newest recovery point before this moment (ISO8601 with its "
+                   "time zone; a time without one is refused, never guessed): when the attack "
+                   "began. Without it, the moment of this VM's card (its first detection; an "
+                   "exercise's attack_started, never on a real incident); unknown → the "
+                   "command asks for it. Example: 2026-11-19T14:05:00Z")
 @click.option("--model", default=lambda: glorfindel_model(), show_default=True)
 @click.option("--memory-path", default=None)
 @click.option("--wait", is_flag=True, help="Block until restore completes (~15-30 min). Default: fire-and-forget.")
@@ -2135,12 +2135,17 @@ def _render_escalation(e: dict) -> None:
 
 def _card_moment(e: dict) -> str:
     """The card's first detection (UTC), the moment a restore's --before starts from: the
-    attack began before it (SEC4c)."""
-    from glorfindel.restore_plan import parse_moment
-    try:
-        return parse_moment(str(e.get("first_seen") or e.get("timestamp") or ""))
-    except ValueError:
-        return "<ISO8601>"
+    attack began before it (SEC4c) — « <ISO8601> » when it has none, a time without its zone
+    too (RTZ1: never guessed; `_card_moment_said` says what the card carries)."""
+    from glorfindel.restore_plan import card_moment
+    return card_moment(e)[0] or "<ISO8601>"
+
+
+def _card_moment_said(e: dict) -> list[str]:
+    """The step that says why a card's restore names no moment, when its time does not read (RTZ1)."""
+    from glorfindel.restore_plan import card_moment
+    moment, why = card_moment(e)
+    return [] if moment else [f"--before: {why}"]
 
 
 def _name_for_a_command(resource_id: str) -> str:
@@ -2216,12 +2221,14 @@ def _render_next_steps(e: dict) -> None:
             "--query powerState",
             f"If compromise confirmed: glorfindel restore {rid} --yes --before {_card_moment(e)}"
             "   # un instant avant le début de l'attaque",
+            *_card_moment_said(e),
             f"If false positive: glorfindel ack {shlex.quote(str(e['id']))}",
         ]
     elif action == "restore_from_backup":
         steps = [
             f"glorfindel restore {rid} --yes --before {_card_moment(e)}"
             "   # un instant avant le début de l'attaque",
+            *_card_moment_said(e),
             "Glorfindel releases isolation automatically after restore (~20 min)",
         ]
     elif action == "release_isolation":
@@ -2979,7 +2986,8 @@ def _restore_before(resource_id: str, before: str | None) -> tuple[str, str]:
     """(the moment the recovery point must precede, ISO 8601 UTC; why that one) — or
     ("", what to do) when nothing says when the attack on this VM began (SEC4c).
 
-    --before wins (UTC when it has no offset). Otherwise the moment the console and the bot
+    --before wins (with its time zone: one without is refused, never guessed, RTZ1). Otherwise
+    the moment the console and the bot
     propose for this VM's first-detected pending card (glorfindel/restore_plan.py, `card_of`,
     `proposed_moment`): the
     earliest the defender recorded — the card's first detection, the VM's isolation —, or, for
@@ -2994,9 +3002,12 @@ def _restore_before(resource_id: str, before: str | None) -> tuple[str, str]:
     plan = restore_plan.proposed_moment(resource_id, restore_plan.card_of(resource_id))
     if plan["before"]:
         return plan["before"], plan["why"]
+    vm = resource_id.rstrip("/").split("/")[-1]
+    if plan.get("no_zone"):      # RTZ1: what the card or the state carries, said — never guessed
+        return "", (f"Moment de l'attaque non deviné pour {vm} : {plan['why']}. Passer --before "
+                    "<ISO 8601 avec fuseau>, un instant avant son début.")
     _, isolated = restore_plan.isolation_time(resource_id)
     hint = f" La VM est isolée depuis {isolated} : l'attaque a commencé avant." if isolated else ""
-    vm = resource_id.rstrip("/").split("/")[-1]
     return "", (f"Moment de l'attaque inconnu pour {vm} : aucune carte en attente de cette VM "
                 "n'en donne un (sa première détection, ou pour un exercice la ligne "
                 "attack_started de son run). Le point le plus récent peut être postérieur à "
