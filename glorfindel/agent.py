@@ -798,6 +798,8 @@ _HELD_BY_TYPE = {
     # CPT1 (#930): incomplete telemetry on the control plane — the same card, never approvable,
     # never folded, filed on its target; its severity lower, its text saying so.
     "control_plane_incomplete": "control_plane_change",
+    # CPT1c (#940): a reply of the journal out of the rule's schema — the same card again.
+    "control_plane_unreadable": "control_plane_change",
     "identity": "identity_change",
     "never_block": "protected_address",
     "floor": "floor_proposal",
@@ -1062,12 +1064,80 @@ def _incomplete_telemetry(signal: dict) -> bool:
     return signal.get("severity") != "critical" and names_no_one(_control_plane_row(signal))
 
 
+# CPT1c (#940): what a card of the control plane says of a reply out of the rule's schema.
+UNREADABLE_REPLY = "Réponse du journal illisible"
+
+
+def _unreadable_reply(signal: dict) -> bool:
+    """CPT1c (#940): the card is a reply of the journal out of the rule's schema — no operation,
+    no caller, no resource on its row — and the signal is not critical (a critical one stays
+    critical, whatever its row). A signal whose normalised indicator names the operation is read by
+    it, as its card reads it (`_control_plane_text`)."""
+    from glorfindel.detection_rules import unreadable_reply
+    norm = (signal.get("raw_signal") or {}).get("normalized_signal") or {}
+    if norm.get("indicator_key") == "control_plane_operation" and norm.get("indicator_value"):
+        return False
+    return signal.get("severity") != "critical" and unreadable_reply(_control_plane_row(signal))
+
+
+def _said_value(value) -> str:
+    """A value of an unreadable reply, as text on the card: quoted, its control characters taken
+    out (the card's value is already cut, `detection_rules.unreadable_card`)."""
+    text = "".join(c if c.isprintable() else " " for c in str(value))
+    return f"« {text} »"
+
+
+def _unreadable_text(row: dict) -> tuple[str, list[str]]:
+    """CPT1c (#940): what the card says of a poll's rows out of the rule's schema — how many, the
+    columns expected and absent (or empty), what the first rows carried — and what to do."""
+    from glorfindel.detection_rules import UNREADABLE_EXPECTED
+    shown = row.get("UnreadableRows") if isinstance(row.get("UnreadableRows"), list) else [row]
+    shown = [r for r in shown if isinstance(r, dict)]
+    try:
+        count = max(int(row.get("UnreadableCount") or 0), len(shown), 1)
+    except (TypeError, ValueError):
+        count = max(len(shown), 1)
+    first = shown[0] if shown else {}
+    absent = [c for c in UNREADABLE_EXPECTED if c not in first]
+    empty = [c for c in UNREADABLE_EXPECTED if c in first]
+    carried = []
+    for i, r in enumerate(shown, 1):
+        cols = [f"{k} = {_said_value(v)}" for k, v in r.items()
+                if not str(k).startswith("Glorfindel")]
+        when = r.get("TimeGenerated")
+        if isinstance(when, str) and when and not when[:4].isdigit():
+            cols.append("TimeGenerated est un texte, pas une date")
+        carried.append(f"ligne {i} : " + ("; ".join(cols) if cols else "aucune colonne"))
+    what = (f"{UNREADABLE_REPLY} : colonnes attendues absentes. {count} ligne(s) de cette règle, "
+            "dans ce relevé, ne portent ni l'opération (OperationNameValue) ni aucune colonne qui "
+            "nomme l'appelant ou la ressource : une réponse hors du schéma de la règle, pas une "
+            "opération lue.")
+    if absent:
+        what += " Absentes : " + ", ".join(absent) + "."
+    if empty:
+        what += " Vides : " + ", ".join(empty) + "."
+    what += " Ce que portaient les lignes — " + " | ".join(carried) + "."
+    if count > len(shown):
+        what += f" ({count - len(shown)} ligne(s) de plus, non montrées.)"
+    what += (" Rien n'établit ce qui s'est passé : ni une opération, ni son absence. "
+             "Sévérité moindre ; jamais une action.")
+    steps = ["Rejouer la requête de la règle sur le workspace, en lecture seule, sur la fenêtre de ce "
+             "relevé : des lignes complètes disent que la réponse de ce relevé était hors schéma.",
+             "Lire le journal d'activité sur cette fenêtre pour les opérations de la règle : si une "
+             "opération a eu lieu, son appelant et sa ressource y sont.",
+             "Si la forme revient : relever le nom des tables de la réponse et le nombre de valeurs "
+             "de ses lignes face à ses colonnes (docs/azure.md, « Journal d'activité »)."]
+    return what, steps
+
+
 def _control_plane_text(signal: dict) -> tuple[str, list[str]]:
     """What a control-plane detection says, from the row alone (AL1): the operation, its
     status as read, the caller, its address, the target, the gravest marks, the
     operations a summary card carries — and the next steps for a human."""
     from glorfindel.detection_rules import normalize_row, operation_resource
     row = _control_plane_row(signal)
+    if _unreadable_reply(signal):
+        return _unreadable_text(row)
     norm = (signal.get("raw_signal") or {}).get("normalized_signal") or normalize_row(row, signal.get("ttp", ""))
     op = norm.get("indicator_value") or "?"
     status = str(row.get("ActivityStatusValue") or "").strip()
@@ -1167,6 +1237,9 @@ def _control_plane_decision(state: GlorfindelState) -> GlorfindelState:
     # telemetry — never a high one, whatever severity the signal came with (a signal written
     # before CPT1, replayed); a critical one stays critical.
     incomplete = _incomplete_telemetry(signal)
+    # CPT1c (#940): a reply out of the rule's schema — lowered as well, never a high card.
+    unreadable = _unreadable_reply(signal)
+    incomplete = incomplete or unreadable
     if incomplete:
         signal = {**signal, "severity": "medium"}
     severity = "critique" if signal.get("severity") == "critical" else "moyenne" if incomplete else "haute"
@@ -1186,7 +1259,8 @@ def _control_plane_decision(state: GlorfindelState) -> GlorfindelState:
         "llm_usage": None,
         "autonomy_mode": "",
         "mode_hold": False,
-        "held_by": "control_plane_incomplete" if incomplete else "control_plane",
+        "held_by": ("control_plane_unreadable" if unreadable else
+                    "control_plane_incomplete" if incomplete else "control_plane"),
         "autonomy_gate": {},
         "decision_draws": [],
     }
