@@ -1212,7 +1212,7 @@ briques:
     nom: "Security hardening"
     etat: main
     release: "0.6"
-    lots: [SEC-K, CDI1]
+    lots: [SEC-K, CDI1, CDI2]
     issue: 847
 
   - id: s-sec-ib
