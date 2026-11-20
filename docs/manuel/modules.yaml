@@ -1258,7 +1258,7 @@ briques:
     nom: "Security hardening"
     etat: main
     release: "0.6"
-    lots: [SEC-G, SEC-G-workflow]
+    lots: [SEC-G, SEC-G-workflow, ZLIB1]
     issue: 848
 
   - id: s-sec-e

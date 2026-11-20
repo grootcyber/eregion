@@ -1633,7 +1633,8 @@
    "release": "0.6",
    "lots": [
     "SEC-G",
-    "SEC-G-workflow"
+    "SEC-G-workflow",
+    "ZLIB1"
    ],
    "issue": 848
   },
