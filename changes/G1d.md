@@ -1,0 +1,11 @@
+### Added
+- **A fault waits for the previous exercise window on its target, and says until when** (G1d, part of #76; `gothmog/README.md`, « Une panne attend la fenêtre de la précédente »). On 20/11, three faults on gondolin ran 5 to 13 min apart. A card of the first fell inside its window (its end plus 15 min of grace) after the next fault had started. Two faults were left unmeasured, and a third was taken for an attack it was not.
+  - `gothmog run` and `gothmog preflight` now first read this host's Gothmog windows, before the watch (V1), the contract and anything that reaches the cloud. A window on one of the fault's targets that still runs, grace included, refuses the fault and says until when, in UTC.
+  - The target is compared without its case. Without a subscription, it is compared by the VM's name alone.
+  - No window ever written lets the fault go. A directory that cannot be read, a file that cannot be read or holds no window: refused. What cannot be read is never « no window ».
+  - The run's window is now opened and closed on the engine's clock.
+  - Only a fault's window counts: a fault waits for the previous fault, never for a technique. Since SEC18, Annatar's windows are not mounted in Gothmog's container on Orodruin anyway.
+  - A technique and a fault on the same VM bias the rate both ways. A Dagorlad request chains them on purpose (DG-b). `analysis/fault_rate.py` sets a decision aside for a technique only if it carries the technique's `ttp`, on that VM, within `[T0, T0 + 15 min]`. So it hides a card of the fault that carries that `ttp`. It also counts against the fault a card of the technique from another rule, or seen later, that falls in the fault's window. `make imladris-fault-rate` reads 30 days of runs, so a DG-b trial of the month enters it. **Read the rate on sessions of faults alone, or set those runs aside.** The fix on the analysis side is a lot of its own.
+  - The target is compared by its full id and by its VM's name, in union: a VM of another topology (`rg-celebrimbor-*`) holds the next fault too.
+  - The README says what to do with a window a killed run left open, and past 4096 windows: nothing purges Gothmog's directory on Orodruin.
+  - Tests: `tests/unit/test_gothmog.py` (mutants M6865–M6874 and M6893–M6896, `scripts/mutants/G1d.py`).
