@@ -460,6 +460,12 @@
   .vm-bare  { font-size: 8px; font-weight: 700; letter-spacing: .5px; padding: 1px 5px; border-radius: 3px; cursor: help;
               color: var(--red); border: 1px solid color-mix(in srgb, var(--red) 55%, transparent);
               background: color-mix(in srgb, var(--red) 12%, transparent); }
+  /* A VM's identity on its unfolded card (VMI1): each value a copy button, the id on two lines at most. */
+  .vm-id    { margin-top: 6px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg);
+              display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 3px 8px; font-size: 10px; align-items: baseline; }
+  .vm-id-k  { color: var(--dim); font-size: 9px; }
+  .vm-id .vm-ip { justify-self: start; text-align: left; overflow-wrap: anywhere; }
+  .vm-id .vm-ip.long { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .vm-net   { margin-top: 6px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg);
               display: flex; flex-direction: column; gap: 4px; font-size: 10px; }
   .vm-nic   { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; }
