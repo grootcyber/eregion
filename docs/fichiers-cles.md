@@ -733,6 +733,8 @@ Montages après SEC18 (`tests/unit/test_runs_mounts.py` les tient) :
 | Orodruin `ORO_RUN` | Annatar | `annatar`, `orodruin` | — |
 | Orodruin `ORO_RUN_GOTHMOG` | Gothmog | `gothmog`, `orodruin` | — |
 | Orodruin `ORO_RUN_CONTRACT` | le contrat (`orodruin-check`) | `orodruin` | — |
+| Orodruin `ORO_RUN_DETONATOR` | les sous-processus Stratus (bac à sable, R2c sidecar) | `orodruin/stratus-ipc` | l'assertion fédérée (jamais un montage de run d'Orodruin) |
+| Orodruin `ORO_RUN_ENGINE` | le moteur Stratus (bridge, R2c sidecar) | `annatar`, `orodruin`, `orodruin/stratus-ipc` | l'assertion, la preuve sandbox |
 | Orodruin `ORO_RUN_REQUEST` | le lanceur d'une demande (il lance les deux) | `annatar`, `gothmog`, `orodruin` | — |
 | Orodruin `ORO_MIGRATE` | la migration, une fois, à `orodruin-push` | `~/runs` entier | — |
 | Imladris (`deploy.sh` → compose) | `watch`, `war-room`, `bot` | comme le compose | comme le compose |
@@ -806,6 +808,7 @@ noyau, non mesurée ici (aucun conteneur).
 | Makefile `annatar-shell` | Annatar, un shell | `runs/annatar`, `runs/orodruin`, `~/.annatar/.bash_history` | et l'historique du shell, ce seul fichier, jamais `~/.annatar` ; son `.bashrc`, qu'il lance, en lecture seule |
 | Makefile `annatar-validate`, `annatar-list` | Annatar | rien | — |
 | Orodruin `ORO_RUN`, `ORO_RUN_GOTHMOG`, `ORO_RUN_CONTRACT`, `ORO_RUN_REQUEST` | les injecteurs, le contrat, le lanceur d'une demande | leurs répertoires de `~/runs` (le tableau ci-dessus) | ce que SEC18 dit ; `~/requests`, ce que juge le lanceur, en lecture seule |
+| Orodruin `ORO_RUN_DETONATOR`, `ORO_RUN_ENGINE` (R2c sidecar) | le détonateur (bac à sable), le moteur (bridge) | le détonateur : `~/runs/orodruin/stratus-ipc` seul ; le moteur : `~/runs/annatar`, `~/runs/orodruin`, et l'IPC | le canal IPC (fichiers requête/réponse) ; l'assertion fédérée et la preuve sandbox en lecture seule ; aucun montage de run d'Orodruin dans le détonateur |
 | Orodruin `ORO_MIGRATE` | la migration, une fois | `~/runs` entier | des données seulement, rien qu'on exécute |
 | Orodruin `ORO_CHECK_RUN` (`orodruin-push`, OI2) | l'image reçue, lancée une fois sans réseau avant son tag | rien | — (aucun montage) |
 

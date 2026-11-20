@@ -2233,6 +2233,19 @@
    "doc": "docs/design/stratus-cible.md"
   },
   {
+   "id": "o-stratus-sidecar",
+   "composant": "orodruin",
+   "poste": "o-armer",
+   "nom": "The federated Stratus run detonates in the hardened sandbox while the engine keeps the controls on the bridge (sidecar); the sandbox proof is read from a file — proven end to end at the bench",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "R2c"
+   ],
+   "issue": 608,
+   "doc": "docs/design/stratus-cible.md"
+  },
+  {
    "id": "o-kubernetes",
    "composant": "orodruin",
    "poste": "o-armer",

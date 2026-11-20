@@ -21,6 +21,11 @@ KILL = "infra/orodruin/kill.py"
 MAIN = "infra/orodruin/main.tf"
 STRATUS_ENGINE = "annatar/engines/stratus.py"
 STRATUS_HOST = "annatar/executors/stratus_host.py"
+STRATUS_DETONATOR = "annatar/executors/stratus_detonator.py"
+ENGINE = "annatar/runner/engine.py"
+PARSER = "annatar/runner/parser.py"
+STRATUS_ASSERT = "annatar/executors/stratus_assertion.py"
+MAKEFILE = "Makefile"
 
 _TO = "tests/unit/test_orodruin.py"
 _TK = "tests/unit/test_orodruin_kill.py"
@@ -51,6 +56,30 @@ _FED_EMPTY = f"{_TAS}::test_stratus_run_env_is_empty_without_the_dedicated_subsc
 _FED_AUTH = f"{_TAS}::test_stratus_run_env_authenticates_as_stratus_by_the_federated_exchange"
 _FED_REFUSE = f"{_TAS}::test_stratus_run_env_refuses_an_incomplete_federated_identity"
 _FED_EXEC = f"{_TAS}::test_the_executor_env_uses_the_federated_identity_over_msi"
+
+# Pièce 4D — le scope Stratus refuse kind:fault (annatar/runner/parser.py, authoring).
+_KIND_FAULT = f"{_TAS}::test_stratus_scenario_with_kind_fault_is_refused"
+
+# Pièce 4B — le run fédéré depuis le bac à sable (assertion côté hôte, câblage Makefile).
+_ASSERT_AUD = f"{_TAS}::test_the_assertion_is_fetched_for_the_exchange_audience"
+_ASSERT_EMPTY = f"{_TAS}::test_an_empty_assertion_fails_closed"
+_STRATUS_WIRED = f"{_TAS}::test_the_orodruin_stratus_run_is_wired_for_the_federated_exchange"
+
+# Decision A — la garde sandbox lit une preuve en fichier (fraîcheur, pose, montage).
+_SANDBOX_STALE = f"{_TC}::test_read_sandbox_refuses_a_stale_proof"
+_SANDBOX_MOUNTED = f"{_TAS}::test_the_sandbox_proof_is_mounted_into_the_contract_and_the_run"
+_STRATUS_CRED = f"{_TC}::test_the_stratus_credential_is_built_from_the_dedicated_env"
+
+# Pièce 4 (sidecar) — le moteur (bridge) délègue chaque phase au détonateur (sandbox) par l'IPC.
+_TARGET = f"{_TAS}::test_the_orodruin_stratus_target_starts_the_detonator_then_the_engine"
+_DELEGATES = f"{_TAS}::test_run_phase_delegates_the_subprocess_to_the_detonator_when_set"
+_DETO_STOP = f"{_TAS}::test_the_detonator_stops_only_on_the_stop_sentinel"
+_ROUNDTRIP = f"{_TAS}::test_the_sidecar_protocol_round_trips_each_phase"
+_DETO_CRASH = f"{_TAS}::test_the_detonator_reports_a_crashing_phase_as_a_failure"
+_DETO_IDPAIR = f"{_TAS}::test_the_delegate_ignores_a_response_for_another_phase"
+_DETO_TIMEOUT = f"{_TAS}::test_the_delegate_raises_when_the_detonator_never_answers"
+_DELEGATE_ENV = f"{_TAS}::test_the_phase_delegate_is_built_only_with_an_ipc_dir"
+_DETO_ORDER = f"{_TAS}::test_the_detonator_clears_the_request_before_it_answers"
 
 # The listing spans two lines; built here so the whitespace is exact (32-space continuation).
 _LIST_ALL = '"list", "--all",\n' + " " * 32 + '"--assignee-object-id"'
@@ -162,6 +191,97 @@ MUTANTS = [
      STRATUS_HOST,
      "        identity = stratus_run_env(os.environ) or azure_provider_env(os.environ)",
      "        identity = azure_provider_env(os.environ)"),
+    ("M6606", "the stratus engine no longer refuses a kind:fault scenario — a fault could be "
+     "routed through the Stratus adapter, which runs control-plane techniques only (R2c, pièce 4D)",
+     PARSER, '            if str(data.get("kind") or "technique") == "fault":',
+     '            if str(data.get("kind") or "technique") == "technique":'),
+    ("M6607", "the assertion is fetched for the wrong audience — the federated exchange gets a "
+     "token the Stratus app does not trust and the run cannot authenticate (R2c, pièce 4B)",
+     STRATUS_ASSERT, 'EXCHANGE_AUDIENCE = "api://AzureADTokenExchange"',
+     'EXCHANGE_AUDIENCE = "api://Wrong"'),
+    ("M6608", "an empty managed-identity assertion no longer fails closed — the run would start "
+     "without a real assertion (R2c, pièce 4B)",
+     STRATUS_ASSERT, "    if not token:", "    if token:"),
+    ("M6609", "the detonator drops the sandbox network for the host network — the IMDS becomes "
+     "reachable and the Stratus subprocess could fall back to Orodruin's identity (R2c, pièce 4B)",
+     MAKEFILE, "--network $(ORO_SANDBOX_NET) --env-file", "--network host --env-file"),
+    ("M6610", "the detonator no longer names the mounted assertion to EREGION_STRATUS_ASSERTION_FILE "
+     "— stratus_run_env sees an incomplete federated identity (R2c, pièce 4B)",
+     MAKEFILE, "-e EREGION_STRATUS_ASSERTION_FILE=$(ORO_STRATUS_MOUNT) -v $(ORO_STRATUS_ASSERTION)",
+     "-e EREGION_STRATUS_ASSERTION_FILE=/wrong/path -v $(ORO_STRATUS_ASSERTION)"),
+    ("M6611", "the sandbox proof's freshness is no longer checked — a stale proof arms, so a DROP "
+     "rule removed after the last refresh would not be caught (R2c, pièce 3, decision A)",
+     ORODRUIN, "    if now() - mtime > SANDBOX_PROOF_MAX_AGE_S:",
+     "    if now() - mtime > SANDBOX_PROOF_MAX_AGE_S + 10**9:"),
+    ("M6612", "the root service no longer writes the DROP-rule proof — read_sandbox has nothing to "
+     "read from the hardened container, the contract can never arm for Stratus (R2c, pièce 3, dec. A)",
+     MAIN, "iptables -S DOCKER-USER > /run/eregion-sandbox-rules",
+     "iptables -S DOCKER-USER > /dev/null"),
+    ("M6613", "the proof timer is not enabled — the proof is written once and goes stale, so the "
+     "contract stops arming after SANDBOX_PROOF_MAX_AGE_S (R2c, pièce 3, decision A)",
+     MAIN, "systemctl enable --now eregion-stratus-sandbox.timer",
+     "systemctl enable --now eregion-stratus-sandbox.service"),
+    ("M6614", "the proof is no longer mounted into the contract run — read_sandbox cannot read it "
+     "and the contract never arms for Stratus (R2c, pièce 3, decision A)",
+     MAKEFILE,
+     "--env-file orodruin.env -v $(ORO_SANDBOX_PROOF):$(ORO_SANDBOX_PROOF):ro $(call ORO_MOUNT,orodruin) $(ORO_IMAGE)",
+     "--env-file orodruin.env $(call ORO_MOUNT,orodruin) $(ORO_IMAGE)"),
+    ("M6615", "the Stratus read credential's fail-closed guard is inverted — an incomplete federated "
+     "identity would be used, or a complete one refused, breaking the contract's read as Stratus "
+     "(R2c, pièce 2/4B)",
+     ORODRUIN, "    if not (client_id and tenant_id and token_file):",
+     "    if (client_id and tenant_id and token_file):"),
+    # ── Pièce 4 (sidecar) — le moteur délègue la phase, le détonateur la joue dans le bac à sable ──
+    ("M6641", "run_phase ignores the detonator and runs the raw Stratus subprocess on the bridge — "
+     "the sidecar is defeated and the subprocess reaches the IMDS under Orodruin's identity "
+     "(R2c, pièce 4)",
+     STRATUS_HOST,
+     "out, err, rc = self._detonate(name) if self._detonate else self.run_subprocess(name)",
+     "out, err, rc = self.run_subprocess(name)"),
+    ("M6642", "the detonator loop treats a real phase as the stop sentinel — it exits before running "
+     "the phase, so nothing is detonated and the engine's delegate hangs (R2c, pièce 4)",
+     STRATUS_DETONATOR, "        if phase == STOP:", "        if phase != STOP:"),
+    ("M6643", "a crash inside the detonator is answered as a success (rc 0) — a phase that never ran "
+     "is taken for a clean one (R2c, pièce 4)",
+     STRATUS_DETONATOR, '"stderr": f"detonator: {type(e).__name__}: {e}"[:500], "rc": 1}',
+     '"stderr": f"detonator: {type(e).__name__}: {e}"[:500], "rc": 0}'),
+    ("M6644", "the delegate drops the id that pairs a response to its request — a stale answer from "
+     "another phase is taken for this one (R2c, pièce 4)",
+     STRATUS_DETONATOR, "                if resp.get(\"id\") == rid:",
+     "                if resp.get(\"id\") is not None:"),
+    ("M6645", "the delegate returns a success instead of raising when the detonator never answers — "
+     "a hung phase passes for a clean one (R2c, pièce 4)",
+     STRATUS_DETONATOR,
+     "        raise RuntimeError(f\"the Stratus detonator did not answer phase {name!r} "
+     "within {timeout}s\")",
+     "        return \"\", \"\", 0"),
+    ("M6646", "the detonator never writes the response — the engine's delegate waits forever (then "
+     "times out) though the phase ran (R2c, pièce 4)",
+     STRATUS_DETONATOR, "        _atomic_write(d / RESP, resp)", "        pass"),
+    ("M6647", "the engine builds a detonator delegate only when NO IPC directory is set — the real "
+     "run (IPC set, from the Makefile) never delegates and runs on the bridge (R2c, pièce 4)",
+     ENGINE,
+     "    ipc = environ.get(\"EREGION_STRATUS_IPC\")\n    if not ipc:\n        return None",
+     "    ipc = environ.get(\"EREGION_STRATUS_IPC\")\n    if ipc:\n        return None"),
+    ("M6648", "the orodruin-stratus recipe never starts the detonator — the engine's delegate finds "
+     "nothing in the sandbox and the run times out (R2c, pièce 4)",
+     MAKEFILE,
+     "$(ORO_RUN_DETONATOR) python -m annatar.executors.stratus_detonator $(ORO_IPC_MOUNT) "
+     "$(SCENARIO) &&",
+     "true &&"),
+    ("M6649", "the detonator is never torn down after the run — it leaks on the host and the next "
+     "run reuses a stale container (R2c, pièce 4)",
+     MAKEFILE, "rc=$$?; docker rm -f eregion-stratus-detonator >/dev/null 2>&1; exit $$rc",
+     "rc=$$?; exit $$rc"),
+    ("M6650", "the detonator gains Orodruin's run mount — Orodruin's identity state enters the "
+     "sandbox container where the third-party Stratus code runs (R2c, pièce 4)",
+     MAKEFILE, "-v $(ORO_IPC_HOST):$(ORO_IPC_MOUNT) $(ORO_IMAGE)",
+     "-v $(ORO_IPC_HOST):$(ORO_IPC_MOUNT) $(call ORO_MOUNT,orodruin) $(ORO_IMAGE)"),
+    ("M6733", "the detonator writes the response BEFORE clearing the request — the engine, seeing the "
+     "response, writes the next phase's request, which this trailing unlink then clobbers; the run "
+     "hangs then times out (a cross-process race found in review) (R2c, pièce 4)",
+     STRATUS_DETONATOR, "        req_path.unlink()\n        _atomic_write(d / RESP, resp)",
+     "        _atomic_write(d / RESP, resp)\n        req_path.unlink()"),
 ]
 
 TESTS = {
@@ -190,4 +310,25 @@ TESTS = {
     "M4487": _FED_AUTH,
     "M4488": _FED_AUTH,
     "M4489": _FED_EXEC,
+    "M6606": _KIND_FAULT,
+    "M6607": _ASSERT_AUD,
+    "M6608": _ASSERT_EMPTY,
+    "M6609": _STRATUS_WIRED,
+    "M6610": _STRATUS_WIRED,
+    "M6611": _SANDBOX_STALE,
+    "M6612": _SANDBOX_POSED,
+    "M6613": _SANDBOX_POSED,
+    "M6614": _SANDBOX_MOUNTED,
+    "M6615": _STRATUS_CRED,
+    "M6641": _DELEGATES,
+    "M6642": _DETO_STOP,
+    "M6643": _DETO_CRASH,
+    "M6644": _DETO_IDPAIR,
+    "M6645": _DETO_TIMEOUT,
+    "M6646": _ROUNDTRIP,
+    "M6647": _DELEGATE_ENV,
+    "M6648": _TARGET,
+    "M6649": _TARGET,
+    "M6650": _STRATUS_WIRED,
+    "M6733": _DETO_ORDER,
 }

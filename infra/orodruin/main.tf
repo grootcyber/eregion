@@ -264,17 +264,29 @@ resource "azurerm_linux_virtual_machine" "host" {
     docker network create --subnet 172.30.250.0/24 eregion-stratus-sandbox || true
     S=/etc/systemd/system/eregion-stratus-sandbox.service
     echo '[Unit]' > "$S"
-    echo 'Description=Eregion R2c: coupe l IMDS depuis le bac a sable de Stratus' >> "$S"
+    echo 'Description=Eregion R2c: coupe l IMDS depuis le bac a sable, et ecrit la preuve' >> "$S"
     echo 'After=docker.service' >> "$S"
     echo 'Requires=docker.service' >> "$S"
     echo '[Service]' >> "$S"
     echo 'Type=oneshot' >> "$S"
-    echo 'RemainAfterExit=yes' >> "$S"
-    echo "ExecStart=/bin/sh -c 'iptables -C DOCKER-USER -s 172.30.250.0/24 -d 169.254.169.254/32 -j DROP || iptables -I DOCKER-USER -s 172.30.250.0/24 -d 169.254.169.254/32 -j DROP'" >> "$S"
+    echo "ExecStart=/bin/sh -c '{ iptables -C DOCKER-USER -s 172.30.250.0/24 -d 169.254.169.254/32 -j DROP || iptables -I DOCKER-USER -s 172.30.250.0/24 -d 169.254.169.254/32 -j DROP; } && iptables -S DOCKER-USER > /run/eregion-sandbox-rules && chmod 0644 /run/eregion-sandbox-rules'" >> "$S"
     echo '[Install]' >> "$S"
     echo 'WantedBy=multi-user.target' >> "$S"
+    # R2c decision A : un timer re-pose la regle et reecrit la preuve (iptables -S DOCKER-USER) pour
+    # que read_sandbox (eregion_core/orodruin.py) la lise fraiche depuis le conteneur durci, qui ne
+    # peut pas lire iptables lui-meme ; la garde de fraicheur refuse une preuve perimee (fail closed).
+    T=/etc/systemd/system/eregion-stratus-sandbox.timer
+    echo '[Unit]' > "$T"
+    echo 'Description=Eregion R2c: rafraichit la preuve de la regle sandbox' >> "$T"
+    echo '[Timer]' >> "$T"
+    echo 'OnBootSec=15s' >> "$T"
+    echo 'OnUnitActiveSec=60s' >> "$T"
+    echo 'AccuracySec=5s' >> "$T"
+    echo '[Install]' >> "$T"
+    echo 'WantedBy=timers.target' >> "$T"
     systemctl daemon-reload
-    systemctl enable --now eregion-stratus-sandbox.service || true
+    systemctl enable --now eregion-stratus-sandbox.timer || true
+    systemctl start eregion-stratus-sandbox.service || true
     touch /home/${var.admin_username}/.orodruin-ready
   EOF
   )

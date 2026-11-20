@@ -740,17 +740,23 @@ def _block(kind: str, name: str) -> str:
 
 
 def test_the_stratus_sandbox_is_posed_at_startup():
-    """R2c pièce 3: Orodruin's cloud-init creates a dedicated docker network for Stratus and a
-    systemd service (after docker) that drops its traffic to the IMDS — so a Stratus container on
-    it cannot reach Orodruin's managed-identity token (M4). The rule uses the same network and
-    IMDS address the contract reads (eregion_core/orodruin.py); running Stratus on it without a
-    privileged container is pièce 4."""
+    """R2c pièce 3 (decision A): Orodruin's cloud-init creates a dedicated docker network for
+    Stratus and a systemd service (after docker) that drops its traffic to the IMDS — so a Stratus
+    container on it cannot reach Orodruin's managed-identity token (M4). The service also WRITES the
+    proof (`iptables -S DOCKER-USER` to the file the contract reads, since the contract cannot read
+    live iptables), and a timer re-poses the rule and rewrites the proof so read_sandbox sees it
+    fresh. The rule uses the same network and IMDS address the contract reads."""
     tf = _tf()
     assert "docker network create --subnet 172.30.250.0/24 eregion-stratus-sandbox" in tf
     assert "eregion-stratus-sandbox.service" in tf
     assert "After=docker.service" in tf
     assert "DOCKER-USER -s 172.30.250.0/24 -d 169.254.169.254/32 -j DROP" in tf
     assert orodruin.SANDBOX_NET in tf and orodruin.IMDS_ADDR in tf
+    # decision A: the proof the contract reads, written by the root service and refreshed by a timer.
+    assert f"iptables -S DOCKER-USER > {orodruin.SANDBOX_PROOF}" in tf
+    assert "eregion-stratus-sandbox.timer" in tf
+    assert "OnUnitActiveSec=" in tf
+    assert "systemctl enable --now eregion-stratus-sandbox.timer" in tf
 
 
 def test_the_injector_roles_grant_exactly_what_the_contract_checks():
