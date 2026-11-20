@@ -71,8 +71,8 @@ def table(rows: list[dict], types: dict[str, str] | None = None, name: str = "Pr
     """One table of the reply: its columns (in the rows' order, or `columns`), each typed by
     `types` or by its values (`column_type`), its rows on the wire."""
     types = types or {}
-    if columns is None:
-        columns = list(dict.fromkeys(c for r in rows for c in r))
+    if columns is None:     # no row: the columns `types` names — the service sends them even so
+        columns = list(dict.fromkeys(c for r in rows for c in r)) or list(types)
     typed = {c: types.get(c) or column_type(r.get(c) for r in rows) for c in columns}
     unknown = {c: t for c, t in typed.items() if t not in TYPES}
     if unknown:
@@ -168,7 +168,8 @@ class Workspace:
         session = requests.Session()
         for prefix in ("https://", "http://"):
             session.mount(prefix, _Adapter(self))
-        return LogsQueryClient(_Credential(), transport=RequestsTransport(session=session))
+        # session_owner=False: a client closed, then opened again, never makes a real session of its own.
+        return LogsQueryClient(_Credential(), transport=RequestsTransport(session=session, session_owner=False))
 
     def detector(self, cls=None, workspace_id: str = "ws-test", **kw):
         """The real detector (`AzureMonitorDetector`, or `cls`), its client this workspace's."""

@@ -92,7 +92,9 @@ def test_every_type_comes_out_as_the_sdk_hands_it_on():
     assert isinstance(out["Writers"], str) and json.loads(out["Writers"]) == row["Writers"]
     assert isinstance(out["Bag"], str) and json.loads(out["Bag"]) == {"k": "v"}
     assert isinstance(out["TimeGenerated"], datetime) and out["TimeGenerated"] == AT
-    assert out["TimeGenerated"].tzinfo is not timezone.utc           # the SDK's, not Python's
+    # The SDK's own UTC (isodate's), not Python's: a reader that compares `tzinfo is timezone.utc`
+    # would take an aware time for a naive one; one that compares instants is right either way.
+    assert out["TimeGenerated"].tzinfo is not timezone.utc and out["TimeGenerated"].utcoffset().total_seconds() == 0
     assert (out["N"], out["Ratio"], out["Ok"], out["Name"], out["Id"], out["Small"]) == (
         3, 1.5, True, "vm-example-01", OWN_OID, 7)
     assert type(out["N"]) is int and type(out["Ratio"]) is float and type(out["Ok"]) is bool

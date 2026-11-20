@@ -234,8 +234,10 @@ def test_would_have_caught_reads_the_sdk_s_rows_and_its_errors():
     from datetime import datetime, timedelta, timezone
 
     from . import sdk_logs
-    # Six digits of a second that end in none: the SDK writes a fraction without its last zeros.
-    t0 = (datetime.now(timezone.utc) - timedelta(minutes=40)).replace(microsecond=123456)
+    # Six digits of a second that end in none: the SDK writes a fraction without its last zeros. Back
+    # 30 s first: the replace moves t0 by under a second either way, never across the minute the
+    # lookback floors (`(now - t0) // 60`, 40 min, so ago(55m)).
+    t0 = (datetime.now(timezone.utc) - timedelta(minutes=40, seconds=30)).replace(microsecond=123456)
     rows = [{"TimeGenerated": t0 + timedelta(minutes=1), "Computer": "vm-example-01", "Paths": ["/var/log/x"]}]
     ws = sdk_logs.Workspace(sdk_logs.constant(sdk_logs.body_of(rows)))
     caught, detail = cr.would_have_caught(ws.detector(), "Syslog | where TimeGenerated > ago(10m)", t0=t0)

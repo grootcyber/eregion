@@ -56,8 +56,8 @@ production. Chaque lecteur de lignes de Glorfindel passe donc au moins une fois 
 `tests/unit/sdk_logs.py`. L'utilitaire écrit le corps d'une réponse comme le service l'envoie, ses
 colonnes typées. Le vrai `LogsQueryClient` de la version épinglée le lit, sur le transport
 d'azure-core : seule la socket est remplacée. Les contrats sont dans
-`tests/unit/test_sdk_contracts.py`, `test_own_channel_sdk.py`, `test_control_plane_unreadable.py` et
-`test_campaign_replay.py`. La borne de `pyproject.toml` est tenue face au verrou par
+`tests/unit/test_sdk_contracts.py`, `test_own_channel_sdk.py`, `test_control_plane_unreadable.py`,
+`test_campaign_replay.py` et `test_entra_msi.py` (les lignes du 20/11 écartées par MID1). La borne de `pyproject.toml` est tenue face au verrou par
 `test_dependency_lock.py`. Une limite connue, non corrigée : une ligne agrégée (sans `TimeGenerated`)
 qui porte une colonne `dynamic` change d'identité dès que son contenu change, et refait une carte. Les
 tests sur des listes ne le voyaient pas. Aucune règle livrée n'en a : le `BlobWriters` de SLF1 est
