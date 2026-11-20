@@ -1156,3 +1156,85 @@ def test_a_technique_s_window_does_not_hold_a_fault(bench):
     assert engine().preflight("vm-shutdown").result == "OK"
     _put_window("old-unsaid", raw={"run_id": "old-unsaid", **base})
     assert engine().preflight("vm-shutdown").result == "REFUSED"
+
+
+# ── G1e: Gothmog arms on the base contract, a Stratus subscription set or not ───────────
+#
+# The 20/11 bench: EREGION_STRATUS_SUBSCRIPTION set in Orodruin's orodruin.env, neither the federated
+# assertion nor the sandbox proof mounted in Gothmog's container (ORO_RUN_GOTHMOG) — the contract
+# judged the two Stratus guarantees at every arming and Gothmog fell passive. ORG1 (#1003) scopes
+# them to an arming for Stratus; this holds Gothmog's side: the real arm(), the real check() on
+# READERS, the base readers' transport faked (no network), the Stratus guarantees left as they are.
+# Mutants M6924–M6925 (scripts/mutants/G1e.py).
+
+def _oid_token(oid):
+    import base64
+    payload = base64.urlsafe_b64encode(json.dumps({"oid": oid}).encode()).decode().rstrip("=")
+    return f"h.{payload}.s"
+
+
+def _base_contract_over_a_faked_transport(monkeypatch):
+    """The base contract's real readers, each on a faked transport: ARM answering what
+    infra/orodruin/main.tf assigns (reads on the group, start and Run Command on the VM, start and
+    cancel on the experiment), a Graph token with no role (undeclared), an egress that refuses,
+    the cap from the environment. The Stratus guarantees are left as READERS holds them."""
+    from unittest.mock import MagicMock
+    monkeypatch.setenv("AZURE_SUBSCRIPTION_ID", SUB)
+    monkeypatch.setenv(orodruin.MAX_INJECTIONS_ENV, "10")
+    monkeypatch.setenv(orodruin.MAX_RUN_S_ENV, "3600")
+    bench_rg = RG
+    experiment = f"{RG}/providers/Microsoft.Chaos/experiments/{EXPERIMENT}"
+    roles = {"/defs/read": list(orodruin.READ_ACTIONS), "/defs/vm": list(orodruin.VM_ACTIONS),
+             "/defs/chaos": list(orodruin.CHAOS_ACTIONS)}
+    assignments = [{"properties": {"scope": scope, "roleDefinitionId": role}}
+                   for scope, role in ((bench_rg, "/defs/read"), (VM, "/defs/vm"), (experiment, "/defs/chaos"))]
+    credential = MagicMock()
+    credential.get_token.return_value.token = _oid_token("oid-orodruin")
+
+    def get(url, headers=None, params=None, timeout=None):
+        r = MagicMock(ok=True, status_code=200)
+        path = url[len(orodruin.ARM):]
+        if url.endswith("/roleAssignments"):
+            r.json.return_value = {"value": assignments}
+        elif url.endswith(f"/subscriptions/{SUB}/providers/Microsoft.Authorization/permissions"):
+            r.json.return_value = {"value": [{"actions": sorted(orodruin.AUTHZ_READ_ONLY)}]}
+        elif url.endswith("/permissions"):
+            r.json.return_value = {"value": [{"actions": list(orodruin.READ_ACTIONS), "notActions": []}]}
+        elif url.endswith("/providers/Microsoft.Chaos/experiments"):
+            r.json.return_value = {"value": [{"id": experiment}]}
+        else:
+            r.json.return_value = {"properties": {"permissions": [{"actions": roles[path]}]}}
+        return r
+
+    def refused(*a, **kw):
+        raise OSError("the egress is closed")
+    # conftest swaps READERS for four lambdas that hold; here every reader of the contract is the
+    # real one again — the cloud's on a faked transport, the cap and the two Stratus guarantees
+    # exactly as eregion_core/orodruin.py ships them.
+    monkeypatch.setattr(orodruin, "READERS", {
+        "identity": lambda: orodruin.read_identity(credential=credential, get=get),
+        "graph": lambda: orodruin.read_graph(credential=credential),
+        "network": lambda: orodruin.read_network(connect=refused),
+        "cap": orodruin.read_cap,
+        "stratus": orodruin.read_stratus,
+        "sandbox": orodruin.read_sandbox,
+    })
+    monkeypatch.setattr(engine_mod, "arm", orodruin.arm)        # the real gate, not the fixture's
+
+
+@pytest.mark.parametrize("call", ["preflight", "run"])
+def test_gothmog_arms_with_a_stratus_subscription_set_and_no_stratus_proof(bench, monkeypatch, call):
+    _, world, engine = bench
+    world()
+    _base_contract_over_a_faked_transport(monkeypatch)
+    monkeypatch.setenv(orodruin.STRATUS_SUB_ENV, "sub-stratus-dedicated")
+    for name in (orodruin.STRATUS_CLIENT_ID_ENV, orodruin.STRATUS_ASSERTION_FILE_ENV):
+        monkeypatch.delenv(name, raising=False)
+    # The premise: judged, the Stratus guarantees — and they alone — would refuse here (no
+    # assertion, no proof); the base contract holds on its real readers.
+    assert {m["code"] for m in orodruin.check(for_stratus=True).missing} == {
+        "stratus_unreadable", "stratus_sandbox_unreadable"}
+    assert orodruin.check().armed
+    out = (engine().preflight("vm-shutdown") if call == "preflight"
+           else engine().run("vm-shutdown", skip_confirm=True))
+    assert out.result == ("OK" if call == "preflight" else "PASS"), (out.error, out.report)

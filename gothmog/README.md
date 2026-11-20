@@ -235,7 +235,9 @@ est déclaré dans `config.yaml` (G1c). La séance, dans l'ordre. Chaque geste e
 
    `PowerState/running`. Puis Orodruin : `make orodruin-start`, `make orodruin-check` (`armed`).
    Une ligne `EREGION_STRATUS_SUBSCRIPTION` dans l'`orodruin.env` ne gêne plus l'armement de
-   Gothmog : les garants de Stratus ne jugent que l'armement pour Stratus (#1003).
+   Gothmog : les garants de Stratus ne jugent que l'armement pour Stratus (#1003). Côté Gothmog,
+   un test le tient (G1e) : le préflight et le run arment par le vrai contrat, cet abonnement
+   posé, sans assertion ni preuve de bac à sable (mutants M6924–M6925).
 1. **Appliquer le bruit, à lui seul.** Jamais `make celebrimbor-up` complet : son plan retirerait
    les règles de Glorfindel du NSG partagé (le plan du 12/11). Jamais terraform à la main : les
    deux cibles vérifient l'abonnement avant de le lancer (`CELEBRIMBOR_SUB_GUARD`).

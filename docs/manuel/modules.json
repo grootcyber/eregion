@@ -2217,6 +2217,19 @@
    "doc": "gothmog/README.md"
   },
   {
+   "id": "x-arme-sans-stratus",
+   "composant": "gothmog",
+   "poste": "x-eprouver",
+   "nom": "Gothmog arms on the base contract with a Stratus subscription set: held on its side by a test through the real contract",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "G1e"
+   ],
+   "issue": 76,
+   "doc": "gothmog/README.md"
+  },
+  {
    "id": "x-bruit-banc",
    "composant": "gothmog",
    "poste": "x-eprouver",
