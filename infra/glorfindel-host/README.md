@@ -171,6 +171,7 @@ make imladris-start REF=…            # un tag ou un commit (exigé), son image
 make imladris-tunnel-install         # une fois : l'unité du tunnel du poste vers la console (MOB2, docs/demarrer/mobile.md)
 make imladris-tunnel-on              # l'arme pour 12 h au plus (imladris-tunnel-off l'arrête) ; le téléphone y passe par son propre tunnel SSH vers le poste
 make imladris-url                    # l'URL de la console avec son jeton ; une ligne de plus si le tunnel n'est pas armé
+make imladris-console-rotate         # tous les 90 jours (#deploy le rappelle) : un nouveau jeton de la console, poussé, la console seule relancée, l'ancien refusé (ROT2)
 make imladris-tunnel                 # le secours (macOS, ou un coup d'œil sans armer les 12 h) : le tunnel au premier plan, jusqu'à Ctrl+C ;
                                      # comme celui du poste (SEC-G) : -F none, écoute sur 127.0.0.1, la clé d'hôte épinglée — la clé SSH vient de l'agent ou de HOST_SSH_KEY
 make imladris-logs                   # vérifier « heartbeat → N VM(s) » et l'absence d'erreur d'identité
@@ -221,6 +222,20 @@ son onglet est grisé. Les anciennes adresses (`/atelier`, `/api/atelier/*`) red
   `host.env` (`host_env.py --check`) : il dit sous quel nom est le jeton, sans sa valeur, et
   refuse un fichier sans jeton (la console tournerait sans) ou dont le jeton est un commentaire —
   ou sans la clé du fournisseur de son modèle (OL1, plus haut).
+- **Le faire tourner** (ROT2, #968) : `make imladris-console-rotate`, depuis le poste. Un nouveau
+  jeton dans `host.env` — sa seule ligne, sous `EREGION_CONSOLE_TOKEN`, à sa place (une ligne de
+  l'ancien nom, `GLORFINDEL_WARROOM_TOKEN`, remplacée si c'est elle qui le portait, retirée sinon) ;
+  écrit à côté en 0600, vérifié par `host_env.py --check`, puis renommé —, poussé par
+  `make imladris-push` (qui repousse aussi `glorfindel-config.yaml` : vérifier sa config locale
+  avant), la console seule relancée sous le verrou des déploiements (`docker compose up -d --no-deps
+  --force-recreate war-room` : la watch et le bot ne bougent pas ; un déploiement en cours, refusé et
+  dit), puis vérifiée par la sonde d'`imladris-status` :
+  le nouveau jeton répond, l'ancien est refusé, et toutes ses sessions avec lui. Le jeton n'est
+  jamais affiché : `make imladris-url` le relit. Le jour de le refaire (le tirage + 90 jours) est
+  noté sur Imladris sous `console-token`, que le CD rappelle dans `#deploy` (« Les rappels
+  d'échéance », plus bas) ; `make imladris-console-token-note` le note pour le jeton en place, sans le
+  faire tourner. Refusées en session d'agent. Le détail, ses refus et sa reprise :
+  `docs/operations.md`, « Faire tourner le jeton de la console d'Imladris ».
 - **Avant UI-1** : une référence antérieure (`v0.3.0` et avant) ne lit que
   `GLORFINDEL_WARROOM_TOKEN`. Un `host.env` neuf, qui n'a que `EREGION_CONSOLE_TOKEN`, se déploie
   donc avec une référence qui contient UI-1 (`REF=<commit>` ou un tag postérieur) : sinon la War
@@ -729,6 +744,7 @@ d'exercice non marqués (B2), qui n'ont rien à faire dans une observation.
   1. `make imladris-cd-install`, depuis un checkout de `main` à jour (`git switch main && git pull` ; le timer reste comme il était ; les unités ne changent pas) ;
   2. `make imladris-cd-status`, où une ligne dit « rappels : aucune date de fin notée » (l'agent d'avant n'a pas cette ligne) ;
   3. depuis le poste, `make pair-expiry-note PAIR=console` : la date du secret de la console, qui n'a pas été posé par `make pair-rotate`. Elle dit « ✓ Imladris : fin le … notée » et les dates des rappels.
+- **ROT2 change l'agent** (#968 : `eregion_cd.py`, le jeton de la console parmi les rappels, sous `console-token`). Comme ROT1, juste après la fusion, sans attendre la release : `make imladris-cd-install`, depuis un checkout de `main` à jour (le timer reste comme il était). Puis, une fois, depuis le poste : `make imladris-console-rotate` (le jeton en place date de la création d'Imladris), ou `make imladris-console-token-note` pour le garder et seulement poser son rappel. Un agent d'avant ROT2 ne lit que les trois paires : la commande le dit (« une version d'avant ROT2 »), la date notée quand même.
 - **IML1b change l'agent** (#747 : `eregion_cd.py`, `install.sh`, ses unités) : ses messages dans `#deploy` et son journal donnent les commandes sous leur nouveau nom, `make imladris-*` (`make imladris-status`, `make imladris-cd-retry`, `make imladris-cd-install`…), et nomment l'hôte Imladris (« ✅ Imladris tourne sur … », « ⛔ … refusée : Imladris reste sur … »). Rien d'autre ne change : ni les checks requis, ni la vérification, ni le déploiement. La release qui le porte est déployée par l'agent d'avant, qui parle encore sous les anciens noms : `#deploy` demande la mise à jour sous l'ancien nom, `make glorfindel-host-cd-install` (qui marche encore), et la redemande à chaque déploiement tant que l'agent n'est pas réinstallé. On lance `make imladris-cd-install`, depuis un checkout de `main` à jour (le timer reste comme il était). IML1c (#752) change aussi `deploy.sh`, l'un des fichiers de l'agent : son refus pendant un déploiement dit « le CD d'Imladris » ; le même `make imladris-cd-install` le pose. Les anciens noms (`glorfindel-host-*`, `mobile-*`) marchent encore, sans rien dire, jusqu'à IML2 (#689).
 - **SEC-C change l'agent** (#635 : `eregion_cd.py`, `deploy.sh`) : le CD pointe l'origin du dépôt d'Imladris vers le nom actuel avant son `fetch`, et passe ce nom au `deploy.sh` de sa bascule. Rien d'autre ne change dans un passage : ni les checks, ni la vérification, ni `--build-only`, ni `--activate`. L'agent installé avant ne le fait pas : il tire encore par l'ancien nom, que GitHub redirige. `make imladris-cd-install`, depuis un checkout de `main` à jour, le pose (le timer reste comme il était) ; il faut pour cela `HOST_SSH_FINGERPRINT` posée (« Ce que SEC-C change », plus bas). Le `deploy.sh` du chemin à la main part du poste : il vaut dès la fusion.
 - **Le retirer** : `make imladris-cd-uninstall` (les unités ; `~/.eregion-cd/` reste).
@@ -744,6 +760,8 @@ Les secrets des trois paires du poste (la watch, la console, le bot) expirent ; 
 - **un message que Discord refuse** repart au passage suivant, cinq minutes plus tard ;
 - **une date illisible** est dite dans le journal, jamais devinée ; `make imladris-cd-status` dit chaque date notée, ses paliers et ceux déjà envoyés ;
 - **une rotation faite hors de la commande n'est pas vue** : la date reste l'ancienne, jusqu'à `make pair-expiry-note`. `make azure-pairs-expiry` et le préflight du banc restent le filet.
+
+**Le jeton de la console d'Imladris** (ROT2, #968) suit les mêmes règles, sous son propre nom, `console-token` (`~/.eregion-cd/expiry/console-token.json`) : `make imladris-console-rotate` note le jour de le refaire (le tirage + 90 jours), `make imladris-console-token-note` celui du jeton en place. Le rappel dit « 🔑 Le jeton de la console d'Imladris est à faire tourner dans 14 jours, le … », puis `make imladris-console-rotate`. La console accepte encore le jeton après cette date : c'est un rappel, pas une fin. Le CD ne lit jamais le jeton, seulement sa date.
 
 Le webhook est celui de `#deploy`, déjà dans `~/.eregion-cd/discord.env` : aucun secret nouveau, aucun timer nouveau, aucune identité nouvelle.
 
