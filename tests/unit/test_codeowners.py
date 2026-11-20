@@ -11,7 +11,10 @@ repository's default). What such a job runs, of the repository:
 - then, from each file found: what a Python script imports from its directory or from the root of
   the repository, and the files next to a shell script that it names (`"$SRC/redact.py"`), but data.
 A job that checks nothing out runs nothing of the repository, whatever its text names.
-To that, Imladris's CD: the files it installs (`AGENT_FILES`, infra/glorfindel-host/cd/eregion_cd.py).
+To that, Imladris's CD: the files it installs (`AGENT_FILES`, infra/glorfindel-host/cd/eregion_cd.py);
+and what the Makefile's recipes toward Imladris call (`workstation`, CDI2, #922; Jonathan's decision of
+19/11): the bash scripts of `imladris-known`, of the CD's recipes that run sudo there, and of
+`HOST_SSH_OPTS` (the host key's check, the SSH options that pin it), with what they call.
 
 Each of them must be owned by a line of the CODEOWNERS; each line must own one of them, but the
 directories owned whole by decision (`DECIDED`). The form is kept plain, so that this test reads it
@@ -31,9 +34,11 @@ What it does not see:
   (`importlib.util.spec_from_file_location`, as `scripts/notify_discord.py` loads
   `glorfindel/chat_text.py`): today that file is found by the partial checkouts and by the CD's
   `AGENT_FILES`, but a job with a full checkout running such a script would not derive it;
-- the Makefile, left out by decision (18/11): its recipes run with the maintainer's rights. The one that
-  installs Imladris's CD as root, `make imladris-cd-install`, only calls an owned script (CDI1, #918):
-  kept by `test_the_cd_s_installation_recipe_lives_in_an_owned_script`.
+- the Makefile, left out by decision (18/11): its recipes run with the maintainer's rights. Those that
+  act as root on Imladris (`make imladris-cd-install`, CDI1, #918; `-cd-enable`, `-cd-disable`,
+  `-cd-uninstall`, CDI2, #922) or decide which host key ssh trusts (`imladris-known`, `HOST_SSH_OPTS`)
+  only call owned scripts: kept by `test_what_acts_on_imladris_from_the_makefile_lives_in_owned_scripts`.
+  A hostile Makefile may no longer call them: assumed (docs/design/modele-de-menace.md, §7).
 """
 from __future__ import annotations
 
@@ -59,6 +64,11 @@ DATA = {".md", ".txt", ".json", ".yaml", ".yml", ".toml", ".csv", ".hujson"}
 SECRET = re.compile(r"\bsecrets\s*[.\[]|\bgithub\s*\.\s*token\b|\bgithub\s*\[\s*'token'\s*\]")
 TOKEN = re.compile(r"[\w./-]+")
 REQUIREMENT = re.compile(r"(?:^|\s)(?:-r|--requirement)(?:\s+|=)([\w./-]+)")
+# CDI2 (#922): the Makefile's rules and variables that act as root on Imladris or decide which host key ssh
+# trusts — what their recipes run with `bash <script>` is owned.
+WORKSTATION_RULES = ("imladris-known", "imladris-cd-install", "imladris-cd-enable", "imladris-cd-disable",
+                     "imladris-cd-uninstall")
+WORKSTATION_VARIABLES = ("HOST_SSH_OPTS", "HOST_KNOWN_CHECK")
 
 
 def _workflows(root: Path) -> list[Path]:
@@ -203,8 +213,33 @@ def credentialed(root: Path) -> dict[tuple[str, str], tuple[str, set[str], bool]
     return out
 
 
+def workstation(root: Path) -> set[str]:
+    """The scripts the Makefile's recipes toward Imladris run (WORKSTATION_RULES, WORKSTATION_VARIABLES),
+    and the scripts these call by their path (« "$HERE/../ssh_opts.sh" »)."""
+    makefile = root / "Makefile"
+    if not makefile.is_file():
+        return set()
+    text = makefile.read_text(encoding="utf-8")
+    bodies = []
+    for name in WORKSTATION_RULES:
+        bodies += re.findall(rf"(?m)^{re.escape(name)}:[^\n=]*\n((?:\t.*\n)*)", text)
+    for name in WORKSTATION_VARIABLES:
+        bodies += re.findall(rf"(?m)^{re.escape(name)}\s*=(.*)$", text)
+    todo = set(re.findall(r"\bbash ([\w./-]+\.sh)\b", "\n".join(bodies)))
+    seen: set[str] = set()
+    while todo:
+        rel = todo.pop()
+        if rel in seen or not (root / rel).is_file():
+            continue
+        seen.add(rel)
+        for name in re.findall(r"/\.\./([\w.-]+\.sh)\b", _code_lines(root / rel)):
+            todo.add((Path(rel).parent.parent / name).as_posix())
+    return seen
+
+
 def sensitive(root: Path) -> set[str]:
     files = closure(root, cd_files(root)) if (root / CD).is_file() else set()
+    files |= workstation(root)
     for _, ran, _ in credentialed(root).values():
         files |= ran
     return files
@@ -276,17 +311,34 @@ def test_every_line_owns_a_file_a_credentialed_job_runs():
     assert {p for p, _ in owned_lines()} >= set(DECIDED)
 
 
-def test_the_cd_s_installation_recipe_lives_in_an_owned_script():
-    """CDI1 (#918; Jonathan's decision of 18/11): `make imladris-cd-install` copies the CD's files and
-    discord.env to Imladris and runs install.sh there as root. Its recipe lived in the Makefile, owned by
-    no line: it lives in a script under an owned path now, and the target calls that script alone."""
+@pytest.mark.parametrize("rule, script", [
+    ("imladris-cd-install", "infra/glorfindel-host/cd/install_from_workstation.sh"),
+    ("imladris-cd-enable", "infra/glorfindel-host/cd/sudo_from_workstation.sh"),
+    ("imladris-cd-disable", "infra/glorfindel-host/cd/sudo_from_workstation.sh"),
+    ("imladris-cd-uninstall", "infra/glorfindel-host/cd/sudo_from_workstation.sh"),
+])
+def test_what_acts_on_imladris_from_the_makefile_lives_in_owned_scripts(rule, script):
+    """CDI1 (#918; Jonathan's decision of 18/11), CDI2 (#922; 19/11): what runs as root on Imladris lived in
+    the Makefile, owned by no line — the CD's installation, its timer turned on or off, its removal. It lives
+    in scripts under an owned path now, and each target calls its script alone."""
     text = (ROOT / "Makefile").read_text(encoding="utf-8")
-    (recipe,) = re.findall(r"(?m)^imladris-cd-install:[^\n=]*\n((?:\t.*\n)*)", text)
-    scripts = re.findall(r"\bbash ([\w./-]+)", recipe)
-    assert scripts == ["infra/glorfindel-host/cd/install_from_workstation.sh"], recipe
-    assert (ROOT / scripts[0]).is_file()
+    (recipe,) = re.findall(rf"(?m)^{rule}:[^\n=]*\n((?:\t.*\n)*)", text)
+    assert re.findall(r"\bbash ([\w./-]+)", recipe) == [script], recipe
+    assert recipe.count("\n") == 1, recipe
+    assert (ROOT / script).is_file()
     lines = [pattern for pattern, _ in owned_lines()]
-    assert [p for p in lines if covers(p, scripts[0])], f"{scripts[0]}: owned by no line of .github/CODEOWNERS"
+    assert [p for p in lines if covers(p, script)], f"{script}: owned by no line of .github/CODEOWNERS"
+
+
+def test_the_host_key_s_check_and_the_ssh_options_are_owned():
+    """CDI2 (#922): the scripts the Makefile runs to decide which host key ssh trusts toward Imladris, and
+    those that act as root there, found from its rules — each owned by its line."""
+    found = workstation(ROOT)
+    assert found == {"infra/glorfindel-host/known_host.sh", "infra/glorfindel-host/ssh_opts.sh",
+                     "infra/glorfindel-host/cd/install_from_workstation.sh",
+                     "infra/glorfindel-host/cd/sudo_from_workstation.sh"}, found
+    lines = [pattern for pattern, _ in owned_lines()]
+    assert "/infra/glorfindel-host/known_host.sh" in lines and "/infra/glorfindel-host/ssh_opts.sh" in lines
 
 
 def test_no_file_next_to_a_script_shadows_the_standard_library():

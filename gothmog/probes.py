@@ -29,6 +29,11 @@ telemetry sees it — a noise never seen there would pass for a noise Glorfindel
                   the fault's start and end (or now); its first row's ``Peak`` must be above N
                                                                         expect: above <N>
 
+Before the fault (G1b, the preflight), each effect query is read over the last minutes: it must
+give a number, whatever its value — the series it reads is collected under the names it uses.
+Idle, the noise is not there yet: its threshold is not asked. A ``power_state`` effect reads ARM,
+nothing collected.
+
 A probe that cannot be read is not normal (fail closed). An expectation Gothmog cannot
 evaluate is refused when the experiment is loaded (``declared_errors``), never guessed.
 """
@@ -121,6 +126,40 @@ def _kql_time(t: datetime) -> str:
     return t.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _effect_query(verify: str, target: str, start: datetime, end: datetime) -> str:
+    return (verify.replace("{target}", target.replace("'", ""))
+            .replace("{start}", _kql_time(start)).replace("{end}", _kql_time(end)))
+
+
+def _number(value) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+COLLECTED = "collected"
+COLLECTED_WINDOW = timedelta(minutes=30)
+
+
+def collected(probes: list[dict], target: str, bench, *, now: datetime,
+              window: timedelta = COLLECTED_WINDOW) -> list[ProbeResult]:
+    """Each effect query on ``target`` over the last ``window`` (G1b): a number, whatever its
+    value — the series it reads is collected, under the names it uses. Not its threshold: idle,
+    the noise is not there yet. A ``power_state`` effect reads ARM: not listed."""
+    out = []
+    for p in probes:
+        if p["verify"] == "power_state":
+            continue
+        try:
+            rows = bench.query(_effect_query(p["verify"], target, now - window, now))
+            peak = rows[0].get("Peak") if rows else None
+            ok = _number(peak)
+            observed = COLLECTED if ok else "no row" if not rows else \
+                f"nothing in the last {int(window.total_seconds() // 60)} min under these names"
+        except Exception as e:  # unreadable is not collected
+            observed, ok = f"{UNREADABLE}: {type(e).__name__}: {e}"[:200], False
+        out.append(ProbeResult(p["name"], ok, observed, COLLECTED))
+    return out
+
+
 def observe(probes: list[dict], target: str, bench, *, start: datetime,
             end: datetime) -> list[ProbeResult]:
     """Each effect probe against ``target``, the fault running from ``start`` to ``end``. A
@@ -136,8 +175,7 @@ def observe(probes: list[dict], target: str, bench, *, start: datetime,
                 ok = observed in DOWN
             else:
                 floor = float(_ABOVE.match(expect).group(1))
-                rows = bench.query(verify.replace("{target}", target.replace("'", ""))
-                                   .replace("{start}", _kql_time(start)).replace("{end}", _kql_time(end)))
+                rows = bench.query(_effect_query(verify, target, start, end))
                 peak = rows[0].get("Peak") if rows else None
                 ok = isinstance(peak, (int, float)) and not isinstance(peak, bool) and peak > floor
                 observed = "no row" if not rows else str(peak) if peak is not None else \

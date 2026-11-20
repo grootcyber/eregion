@@ -333,7 +333,7 @@ help:
 	@echo "    Le poste ouvert au téléphone, la console d'Imladris : plus haut (make imladris-tunnel-check)"
 	@echo ""
 	@echo "Gothmog (G0, G1) — une panne déclarée, depuis Orodruin (gothmog/README.md) :"
-	@echo "  make gothmog-preflight [FAULT=vm-shutdown]   Contrat, cibles, état normal — rien d'écrit"
+	@echo "  make gothmog-preflight [FAULT=vm-shutdown]   Contrat, cibles, état normal, droits, agent, séries — rien d'écrit"
 	@echo "  make gothmog-run [FAULT=vm-shutdown]         La panne, son retour vérifié (~15 min)"
 	@echo "    Sans watch de Glorfindel vivante, refusé (V1) ; WITHOUT_GLORFINDEL=1 : run de dév, dit au rapport"
 	@echo "    FAULT=vm-disk-write | vm-cpu-pressure | vm-restart : le bruit bénin (G1)"
@@ -1023,7 +1023,14 @@ SSH_OPTS       = -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$(ORO_KNOWN_
 # accept-new. Le CD d'Imladris tourne sur la VM : il ne la lit pas.
 HOST_SSH_FINGERPRINT ?=
 HOST_KNOWN_HOSTS ?= $(HOME)/.eregion/h0_known_hosts
-HOST_SSH_OPTS  = -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$(HOST_KNOWN_HOSTS) -o HostKeyAlgorithms=ssh-ed25519 $(SSH_KEY_OPTS)
+# CDI2 (#922) : ces options viennent d'infra/glorfindel-host/ssh_opts.sh, que le CODEOWNERS possède (le
+# Makefile ne l'est pas : décision du 18/11) — les mêmes octets qu'avant ; l'épinglage n'y change que par
+# une PR qu'approuve Jonathan. Rien d'imprimé (un chemin qui n'en est pas un, le script absent) : make
+# s'arrête, jamais un ssh sans elles. Les scripts possédés qui agissent sur Imladris
+# (cd/install_from_workstation.sh, cd/sudo_from_workstation.sh) les revérifient eux-mêmes
+# (ssh_opts.sh check). Un Makefile hostile peut ne plus les appeler : c'est assumé, ses recettes tournent
+# avec les droits du mainteneur, sur son poste (docs/design/modele-de-menace.md, §7).
+HOST_SSH_OPTS  = $(or $(shell bash infra/glorfindel-host/ssh_opts.sh print "$(HOST_KNOWN_HOSTS)" "$(HOST_SSH_KEY)"),$(error infra/glorfindel-host/ssh_opts.sh n'a rien rendu : rien ne part vers Imladris))
 HOST_SSH       = ssh $(HOST_SSH_OPTS) $(HOST_USER)@$(HOST_IP)
 HOST_ENV      ?= infra/glorfindel-host/host.env
 # Local copies of the VM's ~/.glorfindel (verdicts, memory, state): the observation's data
@@ -1069,7 +1076,8 @@ imladris-env:
 	@.venv/bin/python infra/glorfindel-host/host_env.py infra/glorfindel-host/host.env
 
 # V-32 : avant chaque commande vers Imladris — la clé d'hôte vérifiée par HOST_SSH_FINGERPRINT, ou rien
-# ne part (infra/glorfindel-host/known_host.sh, « required » : SEC-C).
+# ne part (infra/glorfindel-host/known_host.sh, « required » : SEC-C). CDI2 (#922) : known_host.sh est
+# possédé par le CODEOWNERS ; imladris-known ne fait que l'appeler.
 # HOST_KNOWN_CHECK : la même vérification, en ligne d'une recette qui doit d'abord passer ses gardes
 # (bench-run-go, bench-restore-go : le contrôle d'origine et le refus d'une session d'agent avant tout
 # contact, ssh-keyscan compris).
@@ -1286,12 +1294,17 @@ HOST_CD_FILES = infra/glorfindel-host/cd/eregion_cd.py infra/glorfindel-host/cd/
                 infra/glorfindel-host/cd/eregion-cd.service infra/glorfindel-host/cd/eregion-cd.timer \
                 infra/glorfindel-host/deploy.sh scripts/notify_discord.py glorfindel/chat_text.py \
                 scripts/published_image.py
-HOST_SSH_TTY   = ssh -t $(HOST_SSH_OPTS) $(HOST_USER)@$(HOST_IP)
 
-# CDI1 (#918) : la recette vit dans infra/glorfindel-host/cd/install_from_workstation.sh, que le
-# CODEOWNERS possède avec le reste du CD — ses gestes, leur ordre, ses refus (cosign, discord.env sous
-# umask 077, installed-from, install.sh en root). La cible vérifie la clé d'Imladris, puis ne fait que
-# l'appeler, avec ce que le Makefile calcule : l'adresse, l'utilisateur, les options SSH, les fichiers.
+# Ce qui agit en root sur Imladris, ou décide quelle clé d'hôte ssh croit, vit dans des scripts que le
+# CODEOWNERS possède ; le Makefile, qui ne l'est pas (décision du 18/11), ne fait que les appeler, avec
+# ce qu'il calcule : l'adresse, l'utilisateur, les options SSH (ssh_opts.sh), les fichiers. Chaque script
+# revérifie lui-même ces options (ssh_opts.sh check : la forme épinglée mot pour mot, le known_hosts dédié,
+# non vide, qui tient la clé d'Imladris) avant tout geste. La clé d'hôte : imladris-known,
+# infra/glorfindel-host/known_host.sh (CDI2, #922). Aucun sudo vers Imladris n'est écrit ici.
+# CDI1 (#918) : l'installation, infra/glorfindel-host/cd/install_from_workstation.sh — ses gestes, leur
+# ordre, ses refus (cosign, discord.env sous umask 077, installed-from, install.sh en root).
+# CDI2 (#922) : le timer allumé, éteint, le CD retiré (sudo systemctl, install.sh --remove),
+# infra/glorfindel-host/cd/sudo_from_workstation.sh — le même geste chacun, à l'octet, dans un TTY.
 imladris-cd-install: imladris-known
 	@HOST_IP="$(HOST_IP)" HOST_USER="$(HOST_USER)" SSH_OPTS="$(HOST_SSH_OPTS)" CD_FILES="$(HOST_CD_FILES)" bash infra/glorfindel-host/cd/install_from_workstation.sh
 
@@ -1300,10 +1313,10 @@ imladris-cd-check: imladris-known
 	@$(HOST_SSH) 'python3 .eregion-cd/eregion_cd.py check'
 
 imladris-cd-enable: imladris-known
-	@$(HOST_SSH_TTY) 'sudo systemctl enable --now eregion-cd.timer && systemctl list-timers eregion-cd.timer --no-pager'
+	@HOST_IP="$(HOST_IP)" HOST_USER="$(HOST_USER)" SSH_OPTS="$(HOST_SSH_OPTS)" bash infra/glorfindel-host/cd/sudo_from_workstation.sh enable
 
 imladris-cd-disable: imladris-known
-	@$(HOST_SSH_TTY) 'sudo systemctl disable --now eregion-cd.timer'
+	@HOST_IP="$(HOST_IP)" HOST_USER="$(HOST_USER)" SSH_OPTS="$(HOST_SSH_OPTS)" bash infra/glorfindel-host/cd/sudo_from_workstation.sh disable
 
 # Le journal du dernier jour, ses 15 dernières lignes (CDJ1, #783). Jamais `--since` avec `-n` : sur
 # Imladris (Ubuntu 22.04, systemd 249), journalctl lit alors vers l'avant depuis --since et s'arrête aux
@@ -1323,7 +1336,7 @@ imladris-cd-rollback: imladris-known
 	@$(HOST_SSH) 'python3 .eregion-cd/eregion_cd.py rollback $(TAG)'
 
 imladris-cd-uninstall: imladris-known
-	@$(HOST_SSH_TTY) 'sudo bash .eregion-cd/install.sh --remove'
+	@HOST_IP="$(HOST_IP)" HOST_USER="$(HOST_USER)" SSH_OPTS="$(HOST_SSH_OPTS)" bash infra/glorfindel-host/cd/sudo_from_workstation.sh uninstall
 
 # ── Orodruin (O1) — l'hôte d'où les injecteurs agissent ───────────────────────
 # État séparé de Celebrimbor et de Glorfindel. Le contrat est relu par la VM elle-même (son

@@ -107,7 +107,8 @@ const _APPROVABLE = new Set(['isolate_vm', 'block_suspicious_ip', 'release_isola
 // ATT1 (#936): the actions aimed at the card's VM (eregion_core/action_queue.py VM_AIMED_ACTIONS).
 // On a card that says it is unattributed, whatever its type, never an « Approve & execute »: the VM
 // is the one the card is filed on, not one the detection names — the server refuses it too.
-const _VM_AIMED = new Set(['isolate_vm', 'block_suspicious_ip', 'release_isolation', 'revoke_temp_access']);
+// SEC-Ed (#954): the snapshot too — the human chooses the VM to snapshot, whatever the card's type.
+const _VM_AIMED = new Set(['isolate_vm', 'block_suspicious_ip', 'release_isolation', 'revoke_temp_access', 'snapshot']);
 function _aimsLoose(e) { return !!_unattributed(e) && _VM_AIMED.has(e.action); }
 function _isHeld(e) {
   return _HELD_TYPES.has(e.escalation_type) && _APPROVABLE.has(e.action)
@@ -117,6 +118,8 @@ function _isHeld(e) {
 // A held snapshot to take by hand (« 📸 Snapshot ») — never on an unattributed card (ATT1): it would
 // snapshot the VM the card is filed on, which the detection does not name.
 function _looseSnapshot(e) { return e.action === 'snapshot' && !!_unattributed(e); }
+// SEC-Ed (#954): what such a card says — the human chooses the VM (a constant, nothing from outside).
+const _LOOSE_SNAPSHOT_SAID = 'the detection names no VM: choose the VM to snapshot';
 function _isSnapshotPending(e) {
   return e.action === 'snapshot' && e.escalation_type === 'low_confidence' && !_unattributed(e);
 }
@@ -236,7 +239,10 @@ function _targetNote(e, vmName) {
   // SLF1 (#929): a detection attributed to no VM — « not attributed », its candidates; never the
   // name of the VM it is filed on.
   const loose = _unattributed(e);
-  if (loose) return `<div class="esc-context" title="${_attr(_LOOSE_TITLE)}">⚓ ${_attr(_unattributedTxt(loose))}</div>`;
+  if (loose) {
+    const choose = _looseSnapshot(e) ? ` · ${_attr(_LOOSE_SNAPSHOT_SAID)}` : '';
+    return `<div class="esc-context" title="${_attr(_LOOSE_TITLE)}">⚓ ${_attr(_unattributedTxt(loose))}${choose}</div>`;
+  }
   if (!_isAnchored(e) || e.escalation_type === 'unattributed_signal') return '';
   // Filed before AL1c: on the first VM online, or on the VM itself (a role on the VM, a signal of
   // `respond`) — the card cannot tell which.
@@ -434,8 +440,9 @@ function showCoverageModal(idx) {
   const verb = c.type === 'isolated' ? 'Isolation' : c.type === 'nsg' ? 'NSG' : 'Block';
   const rows = (c.placements || []).map((p, i) => {
     const nsg   = (p.nsg || `${p.nsg_rg || ''}/${p.nsg_name || ''}`).split('/').pop();
-    const scope = p.scope === 'subnet' ? 'subnet NSG (shared)' : 'NIC NSG (this VM)';
-    const scopeCol = p.scope === 'subnet' ? 'var(--orange)' : 'var(--dim)';
+    // A NIC without NSG, nor on its subnet (`scope: "none"`, `nsg: ""`): said so, never « NIC NSG » (IPS2).
+    const scope = p.scope === 'subnet' ? 'subnet NSG (shared)' : p.scope === 'none' ? 'no NSG' : 'NIC NSG (this VM)';
+    const scopeCol = p.scope === 'subnet' ? 'var(--orange)' : p.scope === 'none' ? 'var(--red)' : 'var(--dim)';
     const nic   = p.nic_id ? p.nic_id.split('/').pop() : `NIC ${i + 1}`;
     const ips   = Array.isArray(p.ips) && p.ips.length ? p.ips.join(', ') : '';
     const rules = p.rule_in || p.rule_out
@@ -446,7 +453,7 @@ function showCoverageModal(idx) {
         <span style="color:var(--cyan);font-weight:600;font-size:11px;flex:1">${_attr(nic)}</span>
         <span style="color:${scopeCol};font-size:9px">${scope}</span>
       </div>
-      <div style="color:var(--dim);font-size:10px;margin-top:2px">🛡 ${_attr(nsg)}${ips ? ` · ${_attr(ips)}` : ''}</div>
+      <div style="color:var(--dim);font-size:10px;margin-top:2px">🛡 ${_attr(nsg || '—')}${ips ? ` · ${_attr(ips)}` : ''}</div>
       ${rules ? `<div style="color:var(--dim);font-size:9px;margin-top:1px">rule: ${_attr(rules)}</div>` : ''}
     </div>`;
   }).join('');
@@ -524,6 +531,13 @@ function _vmArg(rid) {
   return '<id: glorfindel list --ids>';
 }
 
+// RTZ1 (#923): a card's time without its zone is no moment to copy — never guessed, the CLI refuses it.
+const _ZONED_TIME = /\d\d:\d\d(:\d\d(\.\d+)?)?(Z|[+-]\d\d(:?\d\d)?)$/;
+function _zonedOr(t, otherwise) {
+  const text = String(t || '').trim();
+  return _ZONED_TIME.test(text) ? text : otherwise;
+}
+
 function cliCommand(esc) {
   const rid = esc.resource_id;
   const id  = esc.id.slice(0, 8);
@@ -534,7 +548,10 @@ function cliCommand(esc) {
   if (loose) {
     // A name from the store on one line (a newline would start a command of its own).
     const said = _unattributedTxt(loose).replace(/[\u0000-\u001f\u007f]/g, ' ');
-    return `# ${said}\n# judge which VM it is about from the CLI (glorfindel pending, the detection's row), then act on that VM\nglorfindel ack ${id}`;
+    // SEC-Ed (#954): a snapshot there — the human chooses the VM, never the one the card is filed on.
+    const choose = _looseSnapshot(esc)
+      ? `# ${_LOOSE_SNAPSHOT_SAID}, then glorfindel snapshot <group>/<name> --yes on that one\n` : '';
+    return `# ${said}\n# judge which VM it is about from the CLI (glorfindel pending, the detection's row), then act on that VM\n${choose}glorfindel ack ${id}`;
   }
   if (_isAnchored(esc)) return `glorfindel ack ${id}`;
   if (_isHeld(esc)) {
@@ -552,7 +569,7 @@ function cliCommand(esc) {
   if (esc.action === 'restore_from_backup') {
     // The moment is asked (SEC4c): the card's first detection — the attack began before it.
     return `# --before: an instant before the attack began (the card's first detection here — go back if it began earlier)\n`
-      + `glorfindel restore ${_vmArg(rid)} --yes --before ${esc.first_seen || esc.timestamp || '<ISO8601>'}\nglorfindel ack ${id}`;
+      + `glorfindel restore ${_vmArg(rid)} --yes --before ${_zonedOr(esc.first_seen || esc.timestamp, '<ISO8601>')}\nglorfindel ack ${id}`;
   }
   if (esc.escalation_type === 'readiness_hold') {
     return `# Shows the reserves, then asks you to accept them\nglorfindel activate ${_vmArg(rid)}`;
@@ -952,14 +969,17 @@ async function refreshActionsData() {
 function renderInfra() {
   if (_configMode) return;
   const list           = document.getElementById('incidents-list');
-  // The scroll container (#topo-graph) and the edges' layer (#topo-svg) outlive a refresh:
-  // only what they hold (#topo-body) is replaced. Replaced every 5 s with the rest, the
-  // container cut a scroll in progress (wheel, momentum, the scrollbar held) and its position
-  // had to be put back by hand (TOPO1 #927). Built once, again only if something else emptied it.
+  // The scroll container (#topo-graph), the edges' layer (#topo-svg) and #topo-body outlive a
+  // refresh: only the content of #topo-body is replaced, never an element of the shell. Replaced
+  // every 5 s with the rest, the container cut a scroll in progress (wheel, momentum, the scrollbar
+  // held) and its position had to be put back by hand (TOPO1 #927). Built once, again only if one
+  // of the three is missing — something else emptied the list (TOPO1b #949: #topo-body checked too).
   let graph = document.getElementById('topo-graph');
-  if (!graph || !list.contains(graph)) {
+  let body  = graph && graph.querySelector('#topo-body');
+  if (!graph || !list.contains(graph) || !body || !graph.querySelector('#topo-svg')) {
     list.innerHTML = `<div class="topo-graph" id="topo-graph"><svg class="topo-svg" id="topo-svg"></svg><div class="topo-body" id="topo-body"></div></div>`;
     graph = document.getElementById('topo-graph');
+    body  = document.getElementById('topo-body');
   }
   // The PROTECT NSG list's own inner scroll is inside #topo-body: recreated, put back.
   const _prevNsg = document.getElementById('nsg-scroll');
@@ -1078,7 +1098,7 @@ function renderInfra() {
     if (!hasIncident) _collapsedVms.delete(r.vm_name); // allow re-expand on next incident; don't force-collapse user-expanded clean cards
   });
 
-  document.getElementById('topo-body').innerHTML = `
+  body.innerHTML = `
       <!-- Layer 1 — Agent -->
       <div class="topo-layer">
         ${_renderAgentNode(rules, detectBackends, recoverBackends, discovered)}
@@ -1092,6 +1112,8 @@ function renderInfra() {
       </div>
 
       <div class="topo-spacer"></div>
+
+      ${_auditBand()}
 
       <!-- Layer 3 — Assets -->
       <div class="topo-assets" id="topo-assets">
@@ -1149,19 +1171,47 @@ function renderInfra() {
   _applyReadOnlyGuards(list);
 }
 
+// The readiness audit not read, said once above the cards (TOPO1b #949, Jonathan 19/11 on a
+// mockup; « ip ? » on every card set aside). Before, the cards lost their checks and their
+// addresses in silence, and only the dot of the GLORFINDEL node went red. The last good audit
+// kept: the band says when it was read. The reason comes from the browser or the server: escaped.
+function _auditBand() {
+  if (_auditStale) {
+    const when = _auditLastRun ? `cards show the read of ${_attr(fmtTime(_auditLastRun))}` : 'cards show the last read';
+    return `<div class="topo-band" role="status">⚠ Readiness audit not read: ${_attr(_auditStale)} <span class="topo-band-dim">· ${when}</span></div>`;
+  }
+  if (_auditData?.error)
+    return `<div class="topo-band" role="status">⚠ Readiness audit not read: ${_attr(_auditData.error)} <span class="topo-band-dim">· checks and addresses unknown on every card · next try within 5 min</span></div>`;
+  return '';
+}
+
 // The edges follow the map: drawn again, once per frame at most, when the map or its cards
 // change size without a render — the window resized, the column beside it, a font loaded.
 // Before, they stayed where the last render had put them (TOPO1 #927).
 let _topoResize = null;
 let _topoDrawQueued = false;
+let _topoSeen = {};                     // the last size the observer saw, of the map and of its row
 function _queueTopologyEdges() {
   if (_topoDrawQueued) return;
   _topoDrawQueued = true;
   requestAnimationFrame(() => { _topoDrawQueued = false; _drawTopologyEdges(); });
 }
+// Each render observes its new row of cards, and an observation starts with a notification: drawn
+// on it, every refresh drew its edges twice (review of TOPO1). A size already seen draws nothing;
+// a size that changed (a resize, a card grown without a render) draws again (TOPO1b #949).
+function _onTopologyResize(entries) {
+  let changed = false;
+  for (const e of entries) {
+    const role = e.target.id === 'topo-graph' ? 'graph' : 'assets';
+    const size = `${Math.round(e.contentRect.width)}x${Math.round(e.contentRect.height)}`;
+    if (_topoSeen[role] !== size) { _topoSeen[role] = size; changed = true; }
+  }
+  if (changed) _queueTopologyEdges();
+}
+// A browser without ResizeObserver: the edges are drawn at each render, not on a resize.
 function _watchTopology(graph) {
   if (typeof ResizeObserver !== 'function') return;
-  if (!_topoResize) _topoResize = new ResizeObserver(_queueTopologyEdges);
+  if (!_topoResize) _topoResize = new ResizeObserver(_onTopologyResize);
   _topoResize.disconnect();             // the cards' row of the last render is gone
   _topoResize.observe(graph);
   const assets = document.getElementById('topo-assets');
@@ -1335,6 +1385,7 @@ function _renderModules(rules, detectBackends, recoverBackends, resources) {
   // keys when the inventory hasn't loaded.
   const nsgInv = (_nsgItems && Array.isArray(_nsgItems.nsgs)) ? _nsgItems.nsgs : null;
   (_auditData?.audits || []).forEach(a => (a.checks || []).forEach(c => {
+    if (c.status !== 'ok') return;             // a failed check names no NSG (IPS2)
     if (c.data && c.data.nsg) nsgKeys.add(c.data.nsg);
     (c.data?.nsgs || []).forEach(x => x.nsg && nsgKeys.add(x.nsg));
   }));
@@ -1630,45 +1681,77 @@ function _renderNsgNode(resource, vmEscs, slotIdx = 0) {
 // public address shows a VM the Internet can reach. Never an attacker's address: those are the
 // BLOCKED badges, below. Everything here comes from Azure: escaped, never written raw (#254).
 const _ADDR_FOLDED = 4;   // private addresses on the folded line, then « +N »
+// IPS2 (#950, Jonathan 19/11 on a mockup): a VM without an NSG on its NIC nor on its subnet shows its
+// addresses all the same — IPS2a: its « NSG access » check stays `fail` but carries `data.nsgs`, a NIC
+// without NSG at `nsg_scope: "none"`. A failed check is never read as a good one: its addresses are
+// shown, its checks and buttons stay those of a failure (`failed`, the ✗ of the readiness).
 function _vmNet(auditEntry) {
   if (!auditEntry) return null;                       // not audited (yet): nothing said
   const check = (auditEntry.checks || []).find(c => c.name === 'NSG access');
-  if (!check || check.status !== 'ok') return { unread: (check && check.message) || 'no NSG audit for this VM' };
-  const nsgs = Array.isArray(check.data?.nsgs) ? check.data.nsgs : [];
+  const nsgs = Array.isArray(check?.data?.nsgs) ? check.data.nsgs : [];
+  const failed = !check || check.status !== 'ok';
+  if (failed && !nsgs.length) return { unread: (check && check.message) || 'no NSG audit for this VM' };
   return {
     at: auditEntry.timestamp,
+    failed: failed ? String(check.message || 'NSG audit failed') : '',
     nics: nsgs.map(x => ({
       nic: String(x?.nic_id || '').split('/').pop(),
+      bare: x?.nsg_scope === 'none',                  // nothing filters this NIC (IPS2)
       ips: (Array.isArray(x?.ips) ? x.ips : []).filter(Boolean).map(String),
       pubs: (Array.isArray(x?.public_ips) ? x.public_ips : []).filter(p => p && typeof p === 'object'),
     })),
   };
 }
+// A NIC without NSG, nor on its subnet: said once on the card, in the row of its mode (IPS2).
+function _bareChip(net) {
+  const bare = (net && net.nics || []).filter(n => n.bare);
+  if (!bare.length) return '';
+  return `<span class="vm-bare" title="${_attr('No NSG on ' + bare.map(n => n.nic || 'a NIC').join(', ') + ' nor on its subnet: nothing filters its traffic')}">NO NSG</span>`;
+}
 function _addrBtn(a, pub) {
   return `<button type="button" class="vm-ip${pub ? ' pub' : ''}" ${_on('click', 'copyAddr', String(a))} title="${_attr('Copy ' + a)}">${_attr(a)}</button>`;
 }
-// A public IP whose address did not read is said, never left out: the VM is still exposed.
-function _pubAddr(p, unfolded) {
-  if (p.address) return `<span class="vm-pub">🌐 ${_addrBtn(String(p.address), true)}${unfolded ? ' <span class="vm-pubtag">PUBLIC</span>' : ''}</span>`;
-  const why = String(p.error || 'unknown');
+// Why a public IP did not read, in the page's language: IPS2a gives a code beside its own words
+// (French, free text, never matched). A code the page does not know: the words as they are.
+const _PUB_REASONS = {
+  forbidden: 'access denied (Reader missing on its resource group?)',
+  not_found: 'not found (deleted?)',
+  not_allocated: 'no address allocated (a dynamic IP on a stopped VM?)',
+  unreadable: 'unreadable',
+};
+function _pubReason(p) {
+  const words = String(p.error || 'unknown');
+  const said = Object.prototype.hasOwnProperty.call(_PUB_REASONS, p.code) ? _PUB_REASONS[p.code] : '';
+  return { said: said || words, words: said ? words : '' };
+}
+// A public IP whose address did not read is said, never left out: the VM is still exposed. On a NIC
+// without NSG (`bare`), the address in red: nothing filters it (IPS2).
+function _pubAddr(p, unfolded, bare) {
+  if (p.address) {
+    const a = String(p.address);
+    if (bare) return `<span class="vm-pub bare" title="${_attr('No NSG on the NIC nor on its subnet: nothing filters ' + a)}">🌐 ${_addrBtn(a, true)}${unfolded ? ' <span class="vm-pubtag">PUBLIC</span>' : ''}</span>`;
+    return `<span class="vm-pub">🌐 ${_addrBtn(a, true)}${unfolded ? ' <span class="vm-pubtag">PUBLIC</span>' : ''}</span>`;
+  }
+  const why = _pubReason(p);
   return unfolded
-    ? `<span class="vm-pub unread">🌐 public IP not read: ${_attr(why)}</span>`
-    : `<span class="vm-pub unread" title="${_attr('Public IP not read: ' + why)}">🌐 ?</span>`;
+    ? `<span class="vm-pub unread"${why.words ? ` title="${_attr(why.words)}"` : ''}>🌐 public IP not read: ${_attr(why.said)}</span>`
+    : `<span class="vm-pub unread" title="${_attr('Public IP not read: ' + why.said)}">🌐 ?</span>`;
 }
 function _addrLine(net) {
   if (!net) return '';
   if (net.unread) return `<div class="vm-addr" title="${_attr('Addresses not read: ' + net.unread)}">ip —</div>`;
   const priv = [...new Set(net.nics.flatMap(n => n.ips))];
-  const pubs = net.nics.flatMap(n => n.pubs);
+  const pubs = net.nics.flatMap(n => n.pubs.map(p => [p, n.bare]));
   if (!priv.length && !pubs.length) return `<div class="vm-addr" title="No address on the VM's NICs">ip —</div>`;
   const more = priv.length > _ADDR_FOLDED ? `<span title="Unfold the card for every address">+${Number(priv.length - _ADDR_FOLDED)}</span>` : '';
-  return `<div class="vm-addr">${priv.slice(0, _ADDR_FOLDED).map(a => _addrBtn(a, false)).join('')}${more}${pubs.map(p => _pubAddr(p, false)).join('')}</div>`;
+  return `<div class="vm-addr">${priv.slice(0, _ADDR_FOLDED).map(a => _addrBtn(a, false)).join('')}${more}${pubs.map(([p, bare]) => _pubAddr(p, false, bare)).join('')}</div>`;
 }
 function _netBlock(net) {
   if (!net) return '';
   if (net.unread) return `<div class="vm-net"><span class="vm-netfoot">addresses not read — ${_attr(net.unread)}</span></div>`;
-  const nics = net.nics.map(n => `<div class="vm-nic"><span class="vm-nicname">⇄ ${_attr(n.nic || 'NIC')}</span>${n.ips.map(a => _addrBtn(a, false)).join('')}${n.pubs.map(p => _pubAddr(p, true)).join('')}</div>`).join('');
-  return `<div class="vm-net">${nics}<div class="vm-netfoot">read by the NSG audit ${_attr(_relTime(net.at))}</div></div>`;
+  const nics = net.nics.map(n => `<div class="vm-nic"><span class="vm-nicname">⇄ ${_attr(n.nic || 'NIC')}${n.bare ? ' · <span class="vm-bare-txt">no NSG</span>' : ''}</span>${n.ips.map(a => _addrBtn(a, false)).join('')}${n.pubs.map(p => _pubAddr(p, true, n.bare)).join('')}</div>`).join('');
+  const failed = net.failed ? `<div class="vm-netfoot">NSG audit failed: ${_attr(net.failed)}</div>` : '';
+  return `<div class="vm-net">${nics}${failed}<div class="vm-netfoot">read by the NSG audit ${_attr(_relTime(net.at))}</div></div>`;
 }
 // A copy by the clipboard where the page may write it (a secure context: the loopback, the SSH
 // tunnel). Elsewhere (a plain http address of the tailnet), the address selected and copied by the
@@ -1982,7 +2065,9 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
 
   // VM ↔ its NSG (from the audit's structured NSG check) — NIC NSG = this VM only,
   // subnet NSG = shared with the subnet.
-  const _nsgData = ((auditEntry?.checks || []).find(c => c.name === 'NSG access') || {}).data || {};
+  // A failed check carries the NICs of a VM without NSG (IPS2): never an NSG line from it.
+  const _nsgCheck = (auditEntry?.checks || []).find(c => c.name === 'NSG access');
+  const _nsgData = (_nsgCheck && _nsgCheck.status === 'ok' && _nsgCheck.data) || {};
   // Multi-NIC at rest: data.nsgs[] enumerates every NIC's NSG. With >1, show a clickable
   // "N NSGs" chip → same per-NIC modal as the isolation coverage popover. Single NIC keeps
   // the inline one-liner. data.nsg/nsg_scope (primary NIC) is the back-compat fallback.
@@ -2059,6 +2144,7 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
         ${unmonitoredBadge}
         ${staleBadge}
         ${modeBadge}
+        ${_bareChip(net)}
         ${readiness && !isExpanded ? `<span style="color:var(--dim);font-size:9px;margin-left:auto">${readiness}</span>` : ''}
       </div>` : ''}
       ${_addrLine(net)}
@@ -2932,6 +3018,8 @@ const _FEED_DEDUP_MS = 5000;
 // The gate that held a decision with no action (debug line `held_by`, agent.py).
 // CPT1b: a card of incomplete telemetry (CPT1) says so in the feed, never « review ».
 const _HELD_BY_WORDS = { control_plane: 'control plane (detection only)', identity: 'identity (detection only)',
+  // CPT1c: a reply of the journal out of the rule's schema.
+  control_plane_unreadable: 'control plane, unreadable reply (detection only)',
   control_plane_incomplete: 'control plane, incomplete telemetry (detection only)' };
 
 // CON-D: a line that is not of today, in UTC, says its day — « yesterday », or its date (10/11,
@@ -3857,7 +3945,13 @@ async function refreshAuditData() {
   const timer = setTimeout(() => ctrl.abort(), 20000);
   try {
     const r = await fetch('/api/audit', { signal: ctrl.signal });
-    _auditData    = await r.json();
+    // An answer that is not an audit is a failure, said as one (TOPO1b #949): before, an HTTP error
+    // with a JSON body (a 404 or a 422 `{detail}`, a proxy's) was read as an audit without VMs, every
+    // card silent. A body that is not JSON (Starlette's 500) already failed at r.json().
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    if (!Array.isArray(d?.audits)) throw new Error('the answer holds no audit');
+    _auditData    = d;
     _auditLastRun = new Date().toISOString();
     _auditStale   = null;
   } catch (e) {

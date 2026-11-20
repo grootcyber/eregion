@@ -24,6 +24,14 @@ def _fixed_name(name: str, isolation_name: str) -> bool:
     return low in (isolation_name.lower(), f"{isolation_name}-out".lower()) or bool(_PLAIN_BLOCK.match(low))
 
 
+def _no_nsg_failure(bare: list[dict]) -> dict:
+    """The NSG audit's failure for a VM with a NIC without NSG (targets of scope 'none'): a
+    message written here, never an authorization error nor a transient one, whatever the NIC's
+    name (IPS2a): `no_nsg` says so to the audit and the posture, which never read the name."""
+    return {"ok": False, "iam": False, "no_nsg": True,
+            "error": f'NIC {bare[0]["nic_short"]} and its subnet have no NSG — cannot isolate VM'}
+
+
 class NetworkMixin:
     """Reads and writes on NICs and NSGs (part of AzureConnector)."""
 
@@ -119,7 +127,7 @@ class NetworkMixin:
         return primary.id
 
     def _get_vm_nic_targets(self, rg: str, vm_name: str, allow_no_nsg: bool = False,
-                            seen: list | None = None) -> list[dict]:
+                            seen: list | None = None, into: list | None = None) -> list[dict]:
         """Every NIC of the VM with its governing NSG + all private IPs.
 
         Isolation must cover EVERY NIC: a VM with 2 NICs each behind its own NSG is
@@ -138,11 +146,15 @@ class NetworkMixin:
 
         seen: the VM as read here is appended to it (the isolation notes its disks from it,
         LEV2: no read more).
+
+        into: the list the targets are appended to as each NIC is read (returned too): the
+        caller keeps what was read when a later NIC's read raises — the NSG audit still says
+        a NIC without NSG read before it (IPS2a).
         """
         vm = self._compute.virtual_machines.get(rg, vm_name)
         if seen is not None:
             seen.append(vm)
-        targets: list[dict] = []
+        targets: list[dict] = [] if into is None else into
         for ref in vm.network_profile.network_interfaces:
             nic_id = ref.id
             nic_rg, nic_name = _parse_nic_resource_id(nic_id)

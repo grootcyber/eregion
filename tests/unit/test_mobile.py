@@ -885,7 +885,8 @@ def test_the_console_s_token_never_reaches_a_code_session(tmp_path, where, capsy
 # ── through make ─────────────────────────────────────────────────────────────
 
 OPERATOR_FILES = ("Makefile", "scripts/mobile.py", "scripts/bench_shared.py",
-                  "infra/poste/eregion-console-tunnel.service", "infra/glorfindel-host/known_host.sh")
+                  "infra/poste/eregion-console-tunnel.service", "infra/glorfindel-host/known_host.sh",
+                  "infra/glorfindel-host/ssh_opts.sh")          # CDI2: HOST_SSH_OPTS, printed by it
 SPY = ("systemctl", "systemd-run", "terraform", "ssh-keyscan", "ssh", "loginctl", "ss")
 
 

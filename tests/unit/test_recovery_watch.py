@@ -246,6 +246,27 @@ def test_a_point_after_the_incident_lifts_nothing_and_says_it_once():
     assert _load_isolation_state(vm) is not None
 
 
+def test_an_isolation_dated_without_zone_lifts_nothing_and_writes_no_time(monkeypatch):
+    """RTZ1 (#923): the isolation's state dated without a time zone dates no incident — a point even
+    a day older is not proven before it, the release is held, and the step's command carries
+    `--before <ISO8601>`, never a guessed time (nor « ? »)."""
+    f, c, vm = _world()
+    _isolated(f, c, vm)
+    from glorfindel.actions import _save_isolation_state
+    state = _load_isolation_state(vm)
+    naive = datetime.fromisoformat(state["isolated_at"]).astimezone(timezone.utc).replace(tzinfo=None).isoformat()
+    _save_isolation_state(vm, {**state, "isolated_at": naive})
+    _points(f, vm)
+    _from_the_workstation(f, c, vm, point="p-old")
+    signals, report = _pass(c)
+    assert signals == [] and [r["outcome"] for r in report] == ["card"]
+    [held] = _mine()
+    assert "n'est pas antérieur" in held["reason"] and "sans fuseau" in held["reason"]
+    steps = " ".join(held["suggested_steps"])
+    assert "--before <ISO8601>" in steps and "--before ?" not in steps
+    assert _load_isolation_state(vm) is not None
+
+
 @pytest.mark.parametrize("status", ["Failed", "Cancelled", "CompletedWithWarnings"])
 def test_a_job_that_did_not_succeed_lifts_nothing(status):
     f, c, vm = _world()

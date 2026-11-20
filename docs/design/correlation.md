@@ -24,13 +24,16 @@ elle tourne avant tout signal :
 
 ## Ce qu'elle lit
 
-Elle lit les lignes Syslog `auth` et `authpriv` de la VM, que celle-ci soit désignée par
-`_ResourceId` ou par `Computer`. Les valeurs sont vérifiées puis écrites en littéraux KQL (SEC4c).
-Depuis SEC-A4 (#633), une ligne n'est rattachée à sa VM que par la ressource qu'Azure écrit
-(`_ResourceId`), jamais par son `Computer`, que root sur la VM choisit : une ligne corrélée a donc
-toujours sa ressource, et le repli sur `Computer` ne sert qu'à écrire la requête d'une ligne dont la
-ressource serait illisible, jamais à choisir la VM ([glorfindel.md](../glorfindel.md), « L'attribution
-d'une ligne »).
+Elle lit les lignes Syslog `auth` et `authpriv` de la VM, désignée par son `_ResourceId`, celui que
+l'agent écrit sur la ligne corrélée (`scope`). Les valeurs sont vérifiées puis écrites en littéraux KQL
+(SEC4c). Depuis SEC-A4 (#633), une ligne n'est rattachée à sa VM que par la ressource qu'Azure écrit
+(`_ResourceId`), jamais par son `Computer`, que root sur la VM choisit. **Depuis SEC-I (#850), la
+requête non plus** : `scope` n'a plus de repli sur `Computer`. Ce repli servait à écrire la requête
+d'une ligne dont la ressource manquait ou était illisible ; un hôte du même workspace qui portait le
+nom de la VM y mettait alors ses sessions, lues comme celles de la VM. Une ligne sans `_ResourceId`
+lisible ne nomme plus sa VM : son origine est **inconnue**, une carte (« la ligne ne nomme pas sa VM ») ;
+un brute force est dit non vérifié (`LoginCheck`). Les règles livrées gardent toutes `_ResourceId` : rien
+ne change pour elles ([glorfindel.md](../glorfindel.md), « L'attribution d'une ligne »).
 
 | Ligne | Ce qu'elle en tire |
 |---|---|
@@ -194,13 +197,13 @@ que soit le tirage du modèle, la preuve de bout en bout du plancher dans le CD.
 - **Une détection qui ne nomme pas la VM** (non attribuée, ou derrière une appliance) garde la carte
   de l'attribution, jamais approuvable en un clic : le plancher ne se dit que dans sa raison. La
   garde qui a retenu la décision avant lui (une adresse protégée, une levée retenue, une confiance
-  basse) y cède sa place : la carte devient celle de l'attribution, plus prudente (SEC-Ec). Seule
-  exception, le mode `human_only` qui retient un instantané du modèle : la carte reste celle du
-  mode, où seul l'instantané s'approuve en un clic, jamais l'isolation, et sa raison le dit.
+  basse) y cède sa place : la carte devient celle de l'attribution, plus prudente (SEC-Ec).
   Depuis ATT1 (#936), la garde d'attribution elle-même prime de même, plancher ou non : toute
   action qui vise la VM sur une détection non attribuée est la carte de l'attribution, quelle que
   soit la garde qui l'a retenue avant ([glorfindel.md](../glorfindel.md), « La garde d'attribution
-  prime sur toute retenue antérieure »).
+  prime sur toute retenue antérieure »). Depuis SEC-Ed (#954), l'instantané aussi : plus
+  d'exception pour le mode `human_only`, rien ne s'approuve en un clic sur une telle carte, et
+  l'humain choisit la VM à capturer.
 - **Limites.**
   - L'ordre des deux faits n'est pas vérifié, seulement leur présence dans l'incident en cours,
     chacun dans son TTL.

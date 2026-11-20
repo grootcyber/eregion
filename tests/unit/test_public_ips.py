@@ -114,14 +114,14 @@ def test_a_public_ip_without_an_address_says_so():
     f, c, _ = _with_pips({"web-pip": ("rg-app", None)},
                          [{"name": "web-nic", "ips": ["10.0.0.4"], "public_ips": ["web-pip"]}])
     res = _audit(c)
-    assert res["nsgs"][0]["public_ips"] == [{"address": None, "error": NOT_ALLOCATED}]
+    assert res["nsgs"][0]["public_ips"] == [{"address": None, "error": NOT_ALLOCATED, "code": "not_allocated"}]
 
 
 def test_a_public_ip_gone_is_said_not_found():
     f, c, _ = _with_pips({}, [{"name": "web-nic", "ips": ["10.0.0.4"]}])
     f.nics[key(f.vms[key(WEB)]["nics"][0])]["public_ips"] = [public_ip_id("rg-app", "gone-pip")]
     res = _audit(c)
-    assert res["nsgs"][0]["public_ips"] == [{"address": None, "error": NOT_FOUND}]
+    assert res["nsgs"][0]["public_ips"] == [{"address": None, "error": NOT_FOUND, "code": "not_found"}]
 
 
 def test_a_throttled_read_is_said_and_the_audit_holds():

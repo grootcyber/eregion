@@ -107,6 +107,12 @@ run "the_scheduled_start_is_created_disabled_on_its_one_weekly_trigger" {
     )
     error_message = "sa récurrence n'est pas hebdomadaire, toutes les semaines, en UTC"
   }
+  # DRL1f (#963) : en UTC, Azure exige un startTime « yyyy-MM-ddTHH:mm:ssZ » (InvalidWorkflowTriggerRecurrence
+  # au banc le 20/11) ; ce faux azurerm ne déploie rien et ne le verrait pas.
+  assert {
+    condition     = can(regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$", jsondecode(azurerm_resource_group_template_deployment.drill_autostart.template_content).resources[0].properties.definition.triggers.weekly.recurrence.startTime))
+    error_message = "son startTime n'est pas « yyyy-MM-ddTHH:mm:ssZ » : Azure refuse le modèle en UTC sans le Z"
+  }
   assert {
     condition     = jsondecode(azurerm_resource_group_template_deployment.drill_autostart.parameters_content).weekDay.value == "Tuesday"
     error_message = "le démarrage planifié ne tombe pas le mardi"

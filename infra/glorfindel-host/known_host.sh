@@ -21,6 +21,9 @@
 #     ssh then connects with StrictHostKeyChecking=yes on that file alone (the Makefile's
 #     HOST_SSH_OPTS): a key changed afterwards refuses too.
 #   - Without it: refused, nothing runs — said with the target that reads it.
+#   - A known_hosts that is not a dedicated file (/dev/null, ~/.ssh/known_hosts): refused (CDI2).
+# Owned by .github/CODEOWNERS (CDI2, #922; Jonathan's decision of 19/11): the Makefile, which is not,
+# only calls it (imladris-known, orodruin-known) — a change here changes which key ssh trusts.
 # Exit 0: go on; 1: refused. No secret here, nothing written but that known_hosts.
 set -euo pipefail
 
@@ -50,6 +53,15 @@ case "$want" in
      exit 1 ;;
 esac
 [ -n "$file" ] || { echo "✗ pas de fichier known_hosts" >&2; exit 1; }
+# CDI2 (#922): the dedicated file, before any ssh-keyscan — never one that keeps nothing (/dev/null: the
+# key « written », then nothing pinned), nor the account's or the system's known_hosts, which hold keys
+# accepted elsewhere (-ef: the same file, through any link).
+if { [ -e "$file" ] && [ ! -f "$file" ]; } || [ "$file" -ef "${HOME:-/nonexistent}/.ssh/known_hosts" ] \
+   || [ "$file" -ef /etc/ssh/ssh_known_hosts ]; then
+  echo "✗ $file : pas un known_hosts dédié (un fichier à lui seul, ni /dev/null, ni ~/.ssh/known_hosts," \
+       "ni /etc/ssh/ssh_known_hosts) : rien n'est lancé." >&2
+  exit 1
+fi
 
 # The fingerprint of each key line read on stdin (ssh-keygen -lf - : one line per key).
 fingerprints() { ssh-keygen -lf - 2>/dev/null | awk '{print $2}'; }

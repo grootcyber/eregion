@@ -317,6 +317,11 @@
   /* What a refresh replaces, inside the container it keeps: no box of its own, the layers stay
      the column's (TOPO1 #927). */
   .topo-body { display: contents; }
+  /* The readiness audit not read, said once above the cards (TOPO1b): above the edges' layer. */
+  .topo-band { position: relative; z-index: 1; margin: 0 0 10px; padding: 6px 10px; border-radius: 6px;
+               font-size: 10px; color: var(--orange); background: color-mix(in srgb, var(--orange) 8%, var(--bg));
+               border: 1px solid color-mix(in srgb, var(--orange) 50%, transparent); }
+  .topo-band-dim { color: var(--dim); }
   .topo-layer {
     position: relative;
     z-index: 1;
@@ -449,6 +454,12 @@
   .vm-pub.unread { cursor: help; }
   .vm-pubtag { font-size: 8px; font-weight: 700; letter-spacing: .5px; padding: 0 4px; border-radius: 3px;
                border: 1px solid color-mix(in srgb, var(--yellow) 55%, transparent); }
+  /* A NIC without NSG, nor on its subnet (IPS2): nothing filters it — its public address in red,
+     and the card says it once, in the row of its mode. */
+  .vm-pub.bare, .vm-pub.bare .vm-ip.pub, .vm-bare-txt { color: var(--red); }
+  .vm-bare  { font-size: 8px; font-weight: 700; letter-spacing: .5px; padding: 1px 5px; border-radius: 3px; cursor: help;
+              color: var(--red); border: 1px solid color-mix(in srgb, var(--red) 55%, transparent);
+              background: color-mix(in srgb, var(--red) 12%, transparent); }
   .vm-net   { margin-top: 6px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg);
               display: flex; flex-direction: column; gap: 4px; font-size: 10px; }
   .vm-nic   { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; }

@@ -7,7 +7,7 @@ le verdict proposé, §8.2 et §12). **DRL1b fait** (18/11, Imladris, ancienneme
 chaque occurrence, l'alarme d'absence, le fil du bot, la ligne « Weekly drill » ; ses écarts au §13).
 **DRL1c fait** (19/11, le Terraform : la Logic App du démarrage planifié, livrée désactivée, son identité et
 son rôle, l'extinction de 23:00 UTC ; ses écarts au §14). **DRL1d fait** (19/11, le service du drill lancé
-aux options des runs d'Annatar, dont le tmpfs exécutable du `HOME` ; §15). Rien n'est appliqué, armé ni mesuré : l'apply,
+aux options des runs d'Annatar, dont le tmpfs exécutable du `HOME` ; §15). **DRL1f fait** (20/11, le `startTime` de la Logic App avec le `Z` qu'Azure exige en UTC, relevé au banc ; §14). Rien n'est appliqué, armé ni mesuré : l'apply,
 la mesure et l'armement restent à Jonathan._
 
 > **Décision de Jonathan (06/11, « Cadence du banc », D1).** Un exercice planifié chaque semaine,
@@ -847,7 +847,8 @@ attaque. Aucune session n'arme, ne déclenche ni ne réarme le drill. La ligne �
    - son identité ne peut rien d'autre : une tentative sur une autre VM échoue ;
    - l'extinction de 23:00 UTC désalloue ;
    - un `make orodruin-lock` après une désactivation ne la réactive pas ;
-   - (DRL1c, §14) le déploiement garde `timeZone: UTC` avec son `startTime` ; l'action démarre la VM sans
+   - (DRL1c, §14) le déploiement garde `timeZone: UTC` avec son `startTime`, son `Z` compris (DRL1f :
+     sans lui, Azure refuse le modèle) ; l'action démarre la VM sans
      suivre l'opération (`DisableAsyncPattern`) ; un apply qui redéploie le modèle (une heure changée) la
      remet `Disabled`, et l'identité de la Logic App ne change pas ;
    - juste après l'apply, un second `make orodruin-plan` ne dit aucun changement : sinon, un écart
@@ -1188,10 +1189,11 @@ Le code suit les §2.3 et §3.1 dans leur ordre. Ce qui s'en écarte, ou que la 
 - **Mutants** M5861–M5880 et M6291–M6300 (`scripts/mutants/DRL1b.py`), dont celui du §9
   (M5861–M5863 : l'alarme armée sur un drill désarmé, tué, ou sur une empreinte qu'Imladris n'a pas).
 
-**Questions ouvertes, à trancher par Jonathan** (le code a pris le parti qui alerte) :
+**Deux questions, tranchées par Jonathan le 19/11** (les deux partis du code sont gardés) :
 1. **`watch` et `busy` deux semaines de suite**, avec mention ? Le code dit oui : un refus `watch` qui
    revient chaque semaine dit qu'aucune watch vivante n'est vue à l'heure du drill, et ne doit pas
-   rester calme. L'autre parti : jamais de mention pour eux, comme `drill_changed`.
+   rester calme. L'autre parti : jamais de mention pour eux, comme `drill_changed`. **Tranché le
+   19/11 : avec mention** (le code, inchangé).
 2. **Un pouls `disarmed` de raison `drill_changed`, le permis encore présent.** Le code ne le prend pas
    pour `self_disarmed` (avec mention) : c'est ce qu'Orodruin écrit de bonne foi quand une release a
    changé le drill sans réarmement, et le permis reste alors dans le canal. Il dit `refused drill_changed`
@@ -1199,7 +1201,8 @@ Le code suit les §2.3 et §3.1 dans leur ordre. Ce qui s'en écarte, ou que la 
    en fait : en écrivant ce pouls-là au lieu d'un `disarmed operator`, il fait passer l'alerte de « avec
    mention » à « sans mention » — il ne peut pas la taire (elle est dite, dans le fil et sur la
    console), et il n'en a pas besoin pour attaquer (§7). Le comportement est gardé : le changer
-   ferait mentionner chaque release qui change le drill, ce que le §4.2 exclut.
+   ferait mentionner chaque release qui change le drill, ce que le §4.2 exclut. **Tranché le 19/11 :
+   sans mention** (le code, inchangé) ; le revers face à un Orodruin compromis, ci-dessus, reste vrai.
 
 ## 14. Ce que DRL1c a codé, et ses écarts avec la conception (19/11)
 
@@ -1236,8 +1239,27 @@ Le code suit les §2.3 et §3.1 dans leur ordre. Ce qui s'en écarte, ou que la 
   (`DisableAsyncPattern`) : la suivre lirait l'opération asynchrone d'ARM, un droit que le rôle ne porte
   pas. Hypothèse à mesurer (§6.2, point 2) : `start/action` seul suffit alors ; sinon
   `virtualMachines/read` s'ajoute, à la même portée.
-- **Un `startTime`** (`2026-01-01T00:00:00`, sans décalage) accompagne `timeZone: UTC` : la documentation
-  des Logic Apps ne fait valoir le fuseau qu'avec une heure de départ. Le lecteur de DRL1a ne le lit pas.
+- **Un `startTime`** (`2026-01-01T00:00:00Z`) accompagne `timeZone: UTC` : la documentation des Logic
+  Apps ne fait valoir le fuseau qu'avec une heure de départ. Le lecteur de DRL1a ne le lit pas.
+  - **Son `Z` est exigé (DRL1f, #963, relevé au banc le 20/11).** DRL1c l'avait écrit sans décalage
+    (`2026-01-01T00:00:00`), et Azure a refusé le modèle à l'apply, `make orodruin-up` et
+    `make orodruin-lock` en échec sur main :
+    > `InvalidWorkflowTriggerRecurrence: … invalid start time '2026-01-01T00:00:00.0000000' zone
+    > designator for time zone 'UTC'. Expected … 'yyyy-MM-ddTHH:mm:ssZ'.`
+
+    C'est la réponse réelle d'Azure, et elle prime sur sa documentation, qui dit parfois l'inverse pour
+    un fuseau nommé (une heure de départ sans décalage). Le format exigé, en `timeZone: UTC` :
+    `yyyy-MM-ddTHH:mm:ssZ`, ni `+00:00`, ni une date seule. Rien d'autre ne change dans le modèle
+    (`state: Disabled`, `timeZone: UTC`, le `schedule`).
+  - **Ce que les fournisseurs simulés ne voient pas** : le `terraform test` de la CI planifie contre un
+    faux azurerm, qui ne déploie rien ; le modèle ARM n'est validé que par Azure, à l'apply. Son format,
+    pas plus que ses autres règles (une action qui n'existe pas, un `schedule` refusé), n'y est donc
+    jamais vu. `tests/unit/test_drill_autostart.py` ne lisait pas le `startTime` ; il le lit désormais
+    (`test_a_trigger_in_utc_starts_at_an_hour_ending_in_z`, sur le modèle rempli comme Terraform le
+    remplit), et le plan simulé vérifie le même format (`tests/drill_autostart.tftest.hcl`), sans
+    l'éprouver plus qu'un test : seul un apply le prouve. Le lecteur de DRL1a lit toujours le modèle,
+    `Z` compris. Mutants M6636–M6640 (`scripts/mutants/DRL1f.py`) : le `Z` retiré, `+00:00`, une date
+    seule, un espace pour le `T`, le `startTime` retiré.
 - **Le rôle** : `eregion-orodruin-autostart`, une action (`Microsoft.Compute/virtualMachines/start/action`),
   défini et assignable dans `rg-orodruin` seul, attribué à la portée de `vm-orodruin` seule, à l'identité
   que le déploiement rend (`principalId`, `principal_type = ServicePrincipal`). L'identité d'Orodruin ne

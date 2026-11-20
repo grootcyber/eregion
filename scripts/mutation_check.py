@@ -3639,13 +3639,13 @@ MUTANTS += [
     ("M1245", "the card of an uncontained detection never written (SEC4a, V-11)", AGT,
      "    _record_uncontained(state, source, exercise_run)\n", ""),
     ("M1246", "a signal given exercise cycles: the retrieval does not filter (SEC4a, V-12)", MEM,
-     '            where={"$and": [{"source": "real"}, {"stored_at": {"$gte": cutoff}}]},\n',
-     '            where={"stored_at": {"$gte": cutoff}},\n'),     # re-anchored by SEC17
+     '            where=where({"source": "real"}, {"stored_at": {"$gte": self._cutoff()}}, extra))\n',
+     '            where=where({"stored_at": {"$gte": self._cutoff()}}, extra))\n'),     # re-anchored by SEC17, SEC-I
     ("M1247", "a cycle's id taken from its signal and upserted: a reused id overwrites a real cycle (SEC4a, V-12)",
      MEM, ('cycle_id = f"cycle-{uuid.uuid4().hex}"', "self._collection.add("),
      ("cycle_id = f\"{cycle['signal_id']}_{cycle['action']}\"", "self._collection.upsert(")),
     ("M1248", "a replayed cycle fills every place of the retrieval (SEC4a, V-12)", MEM,
-     "            if key in seen:\n                continue\n", ""),
+     "                if key in seen or per_vm", "                if per_vm"),     # re-anchored by SEC-I
     ("M1249", "an attack_started's row naming no VM pinned to the line's VM, unheld (SEC4a)", AGT,
      "        if data_plane and names_vm(detected_row) is not True:\n", "        if False:\n"),
     ("M1330", "an attack_started's poll takes a row naming another VM (SEC4a)", AGT,
@@ -5486,9 +5486,10 @@ MUTANTS += [
      """    if printf '%s\\n' "$known" | fingerprints | grep -qxF -- "$want"; then\n""", "    if true; then\n"),
     ("M1419", "the key H0 presents written without its fingerprint checked (SEC7, V-32)", KH,
      """  if [ "$(printf '%s\\n' "$line" | fingerprints)" = "$want" ]; then\n""", "  if true; then\n"),
-    ("M1420", "ssh to H0 accepts a new key beside the pinned file (SEC7, V-32)", MAKE,
-     "-o StrictHostKeyChecking=yes -o UserKnownHostsFile=$(HOST_KNOWN_HOSTS)",
-     "-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$(HOST_KNOWN_HOSTS)"),
+    # Re-anchored (CDI2, #922): HOST_SSH_OPTS is printed by infra/glorfindel-host/ssh_opts.sh now.
+    ("M1420", "ssh to H0 accepts a new key beside the pinned file (SEC7, V-32)", "infra/glorfindel-host/ssh_opts.sh",
+     "-o StrictHostKeyChecking=yes -o UserKnownHostsFile=$known",
+     "-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$known"),
     ("M1421", "the tunnel to H0 opened without the host key checked (SEC7, V-32)", MAKE,
      "imladris-tunnel-go: imladris-known\n", "imladris-tunnel-go:\n"),
     ("M1422", "Gothmog's container writes its image (SEC7, V-34)", "docker-compose.yml",
@@ -8722,8 +8723,8 @@ TESTS.update({f"M{n}": "tests/unit/test_config.py" for n in range(3180, 3185)})
 # bounded by the config's age (90 days), what it leaves out counted and said. M3200–M3206.
 MUTANTS += [
     ("M3200", "the search ignores a cycle's age: a year-old precedent weighs as yesterday's (SEC17, V-12)", MEM,
-     '            where={"$and": [{"source": "real"}, {"stored_at": {"$gte": cutoff}}]},\n',
-     '            where={"source": "real"},\n'),
+     '            where=where({"source": "real"}, {"stored_at": {"$gte": self._cutoff()}}, extra))\n',
+     '            where=where({"source": "real"}, extra))\n'),     # re-anchored by SEC-I
     ("M3201", "a cycle dated by what it carries, not by the host: it stays young for ever (SEC17, V-12)", MEM,
      '                "stored_at": int(self._clock()),\n',
      '                "stored_at": int(cycle.get("stored_at") or self._clock()),\n'),

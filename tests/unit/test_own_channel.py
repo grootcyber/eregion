@@ -53,7 +53,10 @@ GONDOLIN_IP = "10.0.1.5"
 NOW = datetime(2026, 11, 19, 10, 0, tzinfo=timezone.utc)
 CHANNEL = own_channel.Channel(ACCOUNT, CONTAINER, WATCH_OID)
 
-# The rule's query before SLF1, as it ran on Imladris: what the model read is held to it.
+# The rule's query before SLF1, as it ran on Imladris: what the model read is held to it. The shipped
+# one also keeps the written writes only (SEC-I, `toint(StatusCode) between (200 .. 299)`): the writes
+# forged here are written ones (201), where the two agree — a refused write, which the query of before
+# counted, is tested in test_enquiry_memory.py.
 BEFORE_SLF1 = """StorageBlobLogs
 | where OperationName in ("PutBlob", "PutBlock", "PutBlockList")
 | where TimeGenerated > ago(5m)
@@ -72,7 +75,7 @@ def _write(blob, oid=WATCH_OID, ip=WATCH_IP, account=ACCOUNT, container=CONTAINE
     return {"Type": "StorageBlobLogs", "TimeGenerated": NOW - timedelta(minutes=minutes),
             "OperationName": op, "CallerIpAddress": f"{ip}:50374", "AccountName": account,
             "ObjectKey": f"/{account}/{container}/{blob}", "RequesterObjectId": oid,
-            "ResponseBodySize": size, "StatusCode": 201}
+            "ResponseBodySize": size, "StatusCode": "201"}     # a text, as measured (SEC-I, SI2)
 
 
 def _channel_writes(oid=WATCH_OID, **kw):
@@ -480,7 +483,10 @@ def test_the_console_says_not_attributed_never_its_anchor():
     assert ": loose ? _unattributedTxt(loose)\n" in judge
     assert "${_attr(vm)}" in judge
     note = js.split("function _targetNote(e, vmName) {", 1)[1].split("\n}\n", 1)[0]
-    assert "if (loose) return `<div class=\"esc-context\" title=\"${_attr(_LOOSE_TITLE)}\">⚓ ${_attr(_unattributedTxt(loose))}</div>`;" in note
+    assert ("return `<div class=\"esc-context\" title=\"${_attr(_LOOSE_TITLE)}\">⚓ ${_attr(_unattributedTxt(loose))}"
+            "${choose}</div>`;") in note
+    # SEC-Ed (#954): on a snapshot's card, a constant says the human chooses the VM — through `_attr`.
+    assert "const choose = _looseSnapshot(e) ? ` · ${_attr(_LOOSE_SNAPSHOT_SAID)}` : '';" in note
     assert note.index("if (loose)") < note.index("if (!_isAnchored(e)")
     assert "${_unattributed(e) ? 'not attributed' : vmName}" in js
     # ATT1 (#936): what `_isHeld` reads of the attribution is `_aimsLoose` only — an action aimed at

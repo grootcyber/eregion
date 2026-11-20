@@ -27,7 +27,11 @@ tourne.
 | Ce que Glorfindel a fait seul (#248) | **une ligne verte sur la tuile, 24 h** : la note d'une carte qu'il a résolue lui-même (A3 : règle orpheline retirée) | dans le fil en direct ; rien dans la console |
 | Le drill d'une campagne d'Annatar dans Dagorlad (DG-e, 04/11) | **A, le drill écrit à côté du manifeste, puis « Import YAML »** : `annatar campaign plan` (sur Orodruin, qui n'écrit jamais les drills de la console) écrit le drill de la campagne et l'affiche ; Dagorlad le relit par le lecteur exact et le pose sur le tableau, sans rien écrire ; « Save as drill » le garde, auteur annatar. `campaign run` garde son exécution | B : le drill écrit seul, sans import ; C : `campaign run` par le chemin des demandes (un second lot) |
 | Les blocages d'une VM (CON-K, 03/11) | **A, un résumé et une fenêtre** : repliée ou dépliée, la carte dit « BLOCKED ×N IPs · newest … · oldest … » ; dépliée, elle garde la dernière décision (son raisonnement) et « Manage the N blocks ▸ », qui ouvre la fenêtre : tous les blocages, du plus récent au plus ancien, filtrables, chacun avec « Extend to subnet » et « Unblock ». Un seul blocage : montré avec ses boutons, sans fenêtre | B : les trois plus récents et « and N more » ; C : une liste repliable qui défile dans la carte |
+| Une VM sans NSG sur sa carte (IPS2, #950, 19/11, sur une maquette) | **ses adresses, une puce « NO NSG », l'IP publique d'une carte réseau sans NSG en rouge** | les adresses seules, sans signal |
+| La raison d'une IP publique illisible (IPS2, #950, 19/11, sur une maquette) | **un code dans l'audit, un libellé anglais dans la console**, les mots d'origine au survol | garder le français tel quel |
 | Les adresses d'une VM sur sa carte (IPS1, #931, 19/11, sur une maquette) | **A, une ligne sous le nom, repliée comme dépliée** : les IP privées (quatre, puis « +N »), puis la publique derrière 🌐, en jaune ; une adresse se copie d'un clic ; dépliée, le détail par carte réseau et l'âge de la lecture ; « ip — » et pourquoi quand l'audit NSG a échoué. **Un seul lot**, privées et publiques | B, une puce « PUBLIC » seule, les adresses sur la carte dépliée ; C, la carte dépliée seulement ; deux lots (les privées d'abord) |
+| Un audit illisible (TOPO1b, #949, 19/11, sur une maquette) | **une bande au-dessus des cartes** : « Readiness audit not read », sa raison, et l'heure du dernier bon audit quand il est gardé | « ip ? » et « ? ? ? » sur chaque carte |
+| Le clic sur une adresse d'une carte repliée (TOPO1b, #949, 19/11, sur une maquette) | **A, il copie** l'adresse, comme IPS1 l'a fait ; le nom et la rangée du mode déplient | B, tout clic déplie (copier depuis la carte dépliée) ; C, les adresses en bas de la carte |
 
 **Choisi par défaut, sans objection :**
 - `/atelier` redirige vers `/`.
@@ -401,12 +405,17 @@ Les causes ont été mesurées dans Chromium sans tête, sur le jeu d'exemple au
   à côté de leur carte.
 
 Les règles, dans `glorfindel.js` :
-- `#topo-graph` (le conteneur de scroll) et `#topo-svg` (les fils) restent d'un rendu à l'autre.
-  Seul `#topo-body` est remplacé ; il n'a pas de boîte à lui (`display: contents`).
+- `#topo-graph` (le conteneur de scroll), `#topo-svg` (les fils) et `#topo-body` restent d'un
+  rendu à l'autre. Seul le contenu de `#topo-body` est remplacé ; `#topo-body` n'a pas de boîte
+  à lui (`display: contents`). La coquille n'est reconstruite que s'il manque l'un des trois
+  (TOPO1b : avant, un `#topo-body` absent levait une erreur).
 - Un point se prend dans le repère du contenu : sa position à l'écran, plus `scrollTop` et
   `scrollLeft`.
 - Un `ResizeObserver` sur la carte et sa rangée de cartes redessine les fils, au plus une fois par
-  image.
+  image, et seulement quand une taille a changé. Chaque rendu observe sa nouvelle rangée, et une
+  observation commence par une notification : sans ce contrôle, chaque rafraîchissement dessinait
+  les fils deux fois (TOPO1b, mesuré : 4 tracés pour 2 rafraîchissements, puis 2). Sans
+  `ResizeObserver`, les fils se dessinent à chaque rendu, pas au redimensionnement.
 
 Mesuré après le correctif : un écart sous le pixel, la carte défilée ou non, et le même conteneur
 après le rafraîchissement. Après un redimensionnement, les 34 fils tombent sur leur carte. Un
@@ -445,9 +454,33 @@ décisions, plus haut).
 **D'où viennent les adresses.** De l'audit NSG (`check_nsg_access`, chaque entrée de `nsgs[]`) :
 `ips` (déjà là) et `public_ips` (IPS1a : `{address}`, ou `{address: null, error}`). La page les
 relit avec l'audit, toutes les 5 min : une adresse dynamique peut avoir changé depuis, et l'âge
-de la lecture le dit. Une VM sans NSG ni sur sa carte réseau ni sur son sous-réseau fait échouer
-l'audit, donc on ne lit pas son adresse (`docs/azure.md`) ; découpler la lecture viendra plus
-tard. Tout ce qui vient d'Azure passe par `_attr`. Le bot Discord n'est pas touché.
+de la lecture le dit. Tout ce qui vient d'Azure passe par `_attr`. Le bot Discord n'est pas touché.
+
+**Une VM sans NSG (IPS2, #950, 19/11).** Une VM sans NSG ni sur sa carte réseau ni sur son
+sous-réseau faisait échouer l'audit avant la lecture de ses cartes réseau : sa carte disait
+« ip — », alors que c'est la plus exposée. Jonathan a choisi, sur une maquette, de montrer ses
+adresses et de dire que rien ne la filtre (écarté : les adresses seules, sans signal).
+- IPS2a garde le check « NSG access » en `fail`, mais lui fait porter `data.nsgs[]` : une carte
+  réseau sans NSG y est à `nsg_scope: "none"`.
+- La carte montre ses adresses, une puce « NO NSG » dans la rangée du mode (au survol : les cartes
+  réseau sans NSG, « nothing filters its traffic »), et l'IP publique d'une carte réseau sans NSG
+  en rouge (au survol : « nothing filters <adresse> »). Le rouge se pose carte réseau par carte
+  réseau : l'IP publique d'une autre carte, filtrée, reste jaune.
+- Un check en échec n'est jamais lu comme réussi : la coche reste ✗, la carte dépliée dit « NSG
+  audit failed: … », et ni la ligne du NSG ni l'inventaire de repli de PROTECT ne lisent un check
+  en échec (sans cela, « 2 NSGs across NICs » pour une VM qui n'en a aucun).
+
+**La raison en anglais (IPS2).** Un élément de `public_ips` en échec porte un `code`
+(`forbidden`, `not_found`, `not_allocated`, `unreadable`) à côté de ses mots, en français, en
+texte libre. La page affiche un libellé anglais par code (« access denied (Reader missing on its
+resource group?) »…), et les mots d'origine au survol. Un code qu'elle ne connaît pas, ou une clé
+du prototype (`constructor`), donne les mots tels quels : la table ne se lit que par ses propres
+clés. Écarté : garder le français.
+
+Mesuré dans Chromium sans tête, sur la console du jeu d'exemple avec un audit simulé au contrat
+d'IPS2a : une VM sans aucun NSG, une VM dont une carte réseau sur deux n'en a pas (le rouge sur la
+seule IP publique de celle-là), les quatre codes de raison, et un code inconnu dit tel quel, une valeur piégée écrite en texte.
+Tests : `tests/unit/test_console_no_nsg.py` ; mutants M6521–M6530 (`scripts/mutants/IPS2b.py`).
 
 **Mesuré** dans Chromium sans tête sur la console du jeu d'exemple, avec un audit simulé par des
 adresses de documentation (RFC 5737) et une valeur piégée : les quatre cas (IP publique, multi-NIC
@@ -458,6 +491,29 @@ sûr (la console servie sous `http://console.test`, `isSecureContext` faux, pas 
 `false`) ou une adresse non sélectionnable dit « not copied ». Aucune capture de
 la doc ne montre la page Glorfindel : le jeu d'exemple n'a pas d'adresses à porter.
 Tests : `tests/unit/test_console_ips.py` ; mutants M6431–M6442 (`scripts/mutants/IPS1b.py`).
+
+### La bande d'un audit illisible (TOPO1b, #949, 19/11)
+
+L'audit de préparation (`/api/audit` : NSG, sauvegarde, calcul, et les adresses des VM) se relit
+toutes les 5 min. Quand il ne se lisait pas, les cartes perdaient leurs coches et leurs adresses
+sans rien dire, et seul le point du nœud GLORFINDEL passait au rouge. Jonathan a choisi une bande
+sur une maquette (ligne « Un audit illisible » des décisions, plus haut).
+- **Rien n'a été lu** (premier audit en échec) : au-dessus des cartes, « ⚠ Readiness audit not read:
+  <raison> · checks and addresses unknown on every card · next try within 5 min ».
+- **Le dernier bon audit est gardé** (un rafraîchissement en échec après lui) : « ⚠ Readiness audit
+  not read: <raison> · cards show the read of HH:MM:SS UTC ». Les cartes gardent ce qu'il disait.
+- **Une réponse qui n'est pas un audit est un échec** : un code HTTP d'erreur, ou un corps sans
+  `audits`. Avant, une erreur HTTP dont le corps est du JSON (un 404 ou un 422 `{detail}`, celle
+  d'un mandataire) se lisait comme un audit sans VM, et toutes les cartes se taisaient. Un corps qui
+  n'est pas du JSON (la 500 de Starlette) échouait déjà à la lecture.
+- Un audit relu retire la bande. La raison vient du navigateur ou du serveur : elle passe par `_attr`.
+
+Mesuré dans Chromium sans tête, sur la console du jeu d'exemple avec un audit qui échoue à la
+demande : la bande, dans ses deux formes, au-dessus des cartes ; sa disparition au retour de
+l'audit ; la coquille reconstruite sans erreur après le retrait de `#topo-body` ; après un
+redimensionnement de la carte défilée, chaque fil sur sa carte.
+Tests : `tests/unit/test_console_audit_band.py`, `tests/unit/test_console_topology.py` ; mutants
+M6501–M6510 (`scripts/mutants/TOPO1b.py`).
 
 ### Les blocages d'une VM (CON-K, #498, 04/11)
 

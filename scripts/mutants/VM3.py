@@ -51,8 +51,8 @@ MUTANTS = [
      '      | extend Daemon = Tamper and Exe in ("/usr/sbin/rsyslogd", "/usr/lib/systemd/systemd-journald",',
      '      | extend Daemon = Tamper and Exe in ("/usr/lib/systemd/systemd-journald",'),
     ("M3850", "log-tamper rule sets a session writer aside on any file — sshd on auth.log missed (VM3, C2)", RULES,
-     "      | where not(Sessions > 0 and Entries > 0 and SessionFiles == Entries)",
-     "      | where not(Sessions > 0)"),
+     "      | where not(Alone and Sessions > 0 and Entries > 0 and SessionFiles == Entries)",
+     "      | where not(Alone and Sessions > 0)"),     # re-anchored by SEC-I
     ("M3851", "shell rule fires on a shell exec OR a /tmp arg, not both (VM3)", RULES,
      "      | where Shells > 0 and Tmp > 0",
      "      | where Shells > 0 or Tmp > 0"),

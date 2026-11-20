@@ -54,7 +54,7 @@
               "recurrence": {
                 "frequency": "Week",
                 "interval": 1,
-                "startTime": "2026-01-01T00:00:00",
+                "startTime": "2026-01-01T00:00:00Z",
                 "timeZone": "UTC",
                 "schedule": {
                   "weekDays": ["[parameters('weekDay')]"],
