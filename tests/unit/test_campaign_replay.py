@@ -223,3 +223,27 @@ def test_replay_campaign_cli_dry_run(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     assert "T1041" in result.output
     assert not (campaign_dir(cid, tmp_path / "glorfindel") / "replay.json").exists()  # dry-run wrote nothing
+
+
+# ── SDK1a (#992): the replay's query through the pinned SDK's own client ─────────────────────
+
+def test_would_have_caught_reads_the_sdk_s_rows_and_its_errors():
+    """The proposed query run once through the SDK (tests/unit/sdk_logs.py): its rows counted, the
+    window it asks reaching back to T0 as the client sends it; a query the SDK refuses is « query
+    failed », never a row."""
+    from datetime import datetime, timedelta, timezone
+
+    from . import sdk_logs
+    # Six digits of a second that end in none: the SDK writes a fraction without its last zeros.
+    t0 = (datetime.now(timezone.utc) - timedelta(minutes=40)).replace(microsecond=123456)
+    rows = [{"TimeGenerated": t0 + timedelta(minutes=1), "Computer": "vm-example-01", "Paths": ["/var/log/x"]}]
+    ws = sdk_logs.Workspace(sdk_logs.constant(sdk_logs.body_of(rows)))
+    caught, detail = cr.would_have_caught(ws.detector(), "Syslog | where TimeGenerated > ago(10m)", t0=t0)
+    assert (caught, detail) == (True, "1 row(s) in attack window")
+    [sent] = ws.requests
+    assert sent["query"] == "Syslog | where TimeGenerated > ago(55m)"
+    start = (t0 - timedelta(minutes=5)).astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    assert sent["timespan"].startswith(f"{start}/")
+    refused = sdk_logs.Workspace(sdk_logs.constant(sdk_logs.failure(403, "InsufficientAccessError", "no access")))
+    caught, detail = cr.would_have_caught(refused.detector(), "Syslog | take 1", t0=t0)
+    assert caught is False and detail.startswith("query failed: ") and "InsufficientAccessError" in detail

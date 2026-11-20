@@ -9,8 +9,9 @@ the 12 columns the rules project. `names_no_one` (CPT1) did not lower it: it wan
 
 The reading side (`AzureMonitorDetector.run_query`) is not changed here: the SDK (azure-monitor-query
 2.0.0) keeps every table of the reply and a row shorter than its columns, and `zip` cuts — the row of
-the 16/11 comes out of either, read here on the SDK's own objects; what Azure sent is not established
-(docs/azure.md, « Journal d'activité »). The guard is on the card.
+the 16/11 comes out of either, read here on the SDK's own objects (its client, tests/unit/sdk_logs.py
+since SDK1a); what Azure sent is not established (docs/azure.md, « Journal d'activité »). The guard
+is on the card.
 
 Every identifier is made up (repository public). No Azure, no model.
 """
@@ -30,7 +31,7 @@ from glorfindel.detection_rules import (
 )
 from glorfindel.providers.azure.monitor import AzureMonitorDetector
 
-from . import kql_subset
+from . import kql_subset, sdk_logs
 from . import test_activity_operation_read as op_read
 from .test_activity_logs import _graph, _initial, _llm
 from .test_activity_operation_read import (  # noqa: F401 — its clock, set when each test starts
@@ -50,21 +51,18 @@ def _no_ambient_identity(monkeypatch):
 
 
 def _table(name, columns, rows):
+    """A table of the reply as written here: its rows on the wire already (a row of the 16/11 is
+    shorter than its columns, which `sdk_logs.table` would never write)."""
     return {"name": name, "columns": [{"name": c, "type": _TYPES.get(c, "string")} for c in columns],
             "rows": rows}
 
 
 @pytest.fixture()
 def reply(monkeypatch):
-    """The workspace answers with the SDK's own objects (`LogsQueryResult._from_generated`, the
-    parse of a reply's body): the tables set here, as Azure's body would carry them."""
-    from azure.monitor.query._models import LogsQueryResult
+    """The workspace answers through the SDK's own client (tests/unit/sdk_logs.py): the tables set
+    here, as Azure's body would carry them."""
     body: dict = {"tables": []}
-
-    class _Client:
-        def query_workspace(self, workspace_id, query, timespan=None):
-            return LogsQueryResult._from_generated(json.loads(json.dumps(body)))
-    monkeypatch.setattr(AzureMonitorDetector, "_logs_client", lambda self: _Client())
+    sdk_logs.Workspace(lambda _query, _timespan: body).serve(monkeypatch)
     return body
 
 

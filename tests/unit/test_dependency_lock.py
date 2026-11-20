@@ -155,6 +155,23 @@ def test_ci_and_make_install_use_the_dev_lock():
     assert "--require-hashes -r requirements/dev.txt" in make and "--no-deps" in make
 
 
+
+# ── SDK1a (#992): the floor of the SDK the readers of Log Analytics are tested on ───────────────
+
+@pytest.mark.parametrize("lock", [IMAGE, DEV], ids=["image", "dev"])
+@pytest.mark.parametrize("python", ["3.11", "3.12"])
+def test_the_floor_of_the_log_analytics_sdk_is_the_release_line_the_lock_tests(lock, python):
+    """Glorfindel's extra admits azure-monitor-query from the major version its lock pins, never an
+    older one its readers were never read on (tests/unit/test_sdk_contracts.py, through the SDK's
+    own client: a `dynamic` column as its text, a `datetime` column as a `datetime`). A lock moved
+    to another major fails here until the floor follows it."""
+    from packaging.version import Version
+    pinned = Version(_for(_lock(lock), python)["azure-monitor-query"])
+    [req] = [r for r in _declared("glorfindel") if canonicalize_name(r.name) == "azure-monitor-query"]
+    floors = [Version(s.version) for s in req.specifier if s.operator in (">=", "==", "~=")]
+    assert floors, f"{req}: no floor"
+    assert max(floors) <= pinned and max(floors).major == pinned.major, (str(req), str(pinned))
+
 # ── DEP2 (#590): one package raised alone, and kept there by the next make lock ──────────────
 _spec = importlib.util.spec_from_file_location("lock_flags", ROOT / "scripts" / "lock_flags.py")
 lock_flags = importlib.util.module_from_spec(_spec)
