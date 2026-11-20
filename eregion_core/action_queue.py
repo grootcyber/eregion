@@ -72,7 +72,31 @@ VERB_OF_ACTION = {"isolate_vm": "isolate_vm", "block_suspicious_ip": "block_ip",
 # (eregion_console/api.py, _APPROVABLE_TYPES; tests/unit/test_action_proposal.py keeps them one).
 APPROVABLE_TYPES = frozenset({"mode_hold", "low_confidence", "uncharacterized_signal", "release_hold",
                               "telemetry_gap", "unstable_decision"})
+# SEC-E (#846): the card of B3a's floor — isolate_vm proposed, never run by the floor.
+APPROVABLE_TYPES |= {"floor_proposal"}
 UNDO_TYPE = "verification_failed"
+# ATT1 (#936): the actions aimed at the card's VM — its isolation, a block on its NSG, the release of
+# its isolation. On a detection attributed to no VM (the card is filed on a VM the detection does not
+# name), never approvable in one click, whatever the card's type nor the gate that held it before:
+# the attribution guard's (glorfindel/agent.py) and the approval's one set.
+VM_AIMED_ACTIONS = frozenset({"isolate_vm", "block_suspicious_ip", "release_isolation", "revoke_temp_access"})
+# SEC-Ed (#954; Jonathan, 19/11): the snapshot too — it would capture the VM the card is filed on, which
+# the detection does not name. Never approvable in one click there, whatever the confidence or the
+# mode: the human chooses the VM to snapshot.
+VM_AIMED_ACTIONS |= {"snapshot"}
+UNATTRIBUTED_TYPE = "unattributed_signal"
+
+
+def unattributed_aim(card) -> bool:
+    """The card of a detection attributed to no VM that holds an action aimed at its VM (ATT1) — the
+    attribution guard's own card, or any other that says it is unattributed (``attribution``, SLF1)
+    and holds one of ``VM_AIMED_ACTIONS``. Never approvable in one click, never a proposal signed."""
+    if not isinstance(card, dict):
+        return False
+    if card.get("escalation_type") == UNATTRIBUTED_TYPE:
+        return True
+    a = card.get("attribution")
+    return isinstance(a, dict) and a.get("state") == "unattributed" and card.get("action") in VM_AIMED_ACTIONS
 
 REQUEST_FIELDS = ("v", "kind", "id", "service", "by", "verb", "resource_id", "ip", "scope", "card",
                   "issued_at", "expires_at", "key", "sig")
@@ -638,6 +662,8 @@ def proposed_verbs(card) -> frozenset[str]:
     etype = card.get("escalation_type")
     if etype == UNDO_TYPE:
         return frozenset({"reset"})
+    if unattributed_aim(card):              # ATT1: its VM is an anchor, never aimed at
+        return frozenset()
     if etype in APPROVABLE_TYPES and card.get("action") in VERB_OF_ACTION:
         return frozenset({VERB_OF_ACTION[card["action"]]})
     return frozenset()

@@ -3,11 +3,28 @@
 # bench's Terraform — nothing else, so that every other pull request merges as before, without
 # waiting for anyone.
 #
-# Not here, by decision (18/11): the Makefile. Its recipes run with the maintainer's own rights —
-# `make imladris-cd-install` among them, which copies the CD's files and discord.env to Imladris and
-# runs install.sh there as root. So the CD of Imladris is owned here for its files, not for the
-# recipe that installs them: a follow-up lot moves that recipe into a script under
-# infra/glorfindel-host/cd/, owned with the rest. docs/design/modele-de-menace.md, §7.
+# Not here, by decision (18/11): the Makefile. Its recipes run with the maintainer's own rights. What
+# of them runs sudo on Imladris, or decides which host key ssh trusts, lives in scripts owned here
+# (Jonathan's decision of 19/11), the targets only calling them with what the Makefile computes:
+#   - the installation of the CD, `make imladris-cd-install`: infra/glorfindel-host/cd/install_from_workstation.sh
+#     (CDI1, #918);
+#   - the CD's timer turned on or off, the CD removed (`make imladris-cd-enable`, -cd-disable,
+#     -cd-uninstall, sudo in a TTY): infra/glorfindel-host/cd/sudo_from_workstation.sh (CDI2, #922);
+#   - the host key's check, `make imladris-known` (and orodruin-known): infra/glorfindel-host/known_host.sh;
+#   - the SSH options toward Imladris (HOST_SSH_OPTS, so HOST_SSH): infra/glorfindel-host/ssh_opts.sh, whose
+#     `check` each of these scripts runs itself before any gesture — the pinned form word for word, the
+#     dedicated known_hosts, not empty, holding Imladris's key — instead of believing the Makefile.
+# What stays, assumed: a hostile Makefile may no longer call these scripts, and run its own ssh, sudo
+# included. That is assumed: the recipes run with the maintainer's rights, on his workstation, and he
+# reads what he runs. The other recipes toward Imladris (push, start, stop, logs, the CD's check,
+# status, retry, rollback…) run through HOST_SSH, their remote commands written in the Makefile, as the
+# VM's user — a member of the docker group, which is as good as root (`docker run -v /:/h …`;
+# infra/glorfindel-host/main.tf, required by cd/install.sh), and probably given a passwordless sudo by
+# cloud-init on Azure's Ubuntu image (not measured). No sudo is written in the Makefile, but a docker
+# command there can do as much: this lot closes the written sudo and the key's pinning, not that way.
+# Orodruin's SSH options (SSH_OPTS, ORO_SSH) also stay in the Makefile, no owned script; only
+# orodruin-known goes through known_host.sh. All assumed alike, for the same reason.
+# docs/design/modele-de-menace.md, §7.
 #
 # It holds once the maintainer has turned on « Require review from Code Owners » in main's rule —
 # after this file is merged, never before (with the former `*` line, every pull request would have
@@ -19,8 +36,10 @@
 # .github/workflows/ that holds a secret, a write permission or `id-token: write`, takes the files of
 # the repository it runs (named in a `run:`, a local action, the code of a sparse checkout, a
 # requirements file it installs, what a script imports next to it or a shell script calls next to
-# it), adds what Imladris's CD installs (AGENT_FILES), and fails when one of them has no line here —
-# or when a line owns none of them, but the four directories owned whole (DECIDED in the test). The form it reads: one
+# it), adds what Imladris's CD installs (AGENT_FILES) and the scripts the Makefile's recipes toward
+# Imladris call (WORKSTATION: the bash scripts of imladris-known, of the CD's recipes and of
+# HOST_SSH_OPTS, and what they call), and fails when one of them has no line here — or when a line owns
+# none of them, but the four directories owned whole (DECIDED in the test). The form it reads: one
 # owner, the maintainer; an anchored path, a file or a directory (a trailing /), no pattern.
 # docs/design/modele-de-menace.md, §6 and §7.
 
@@ -48,6 +67,11 @@
 # The CD of Imladris, and what it installs next to it (AGENT_FILES).
 /infra/glorfindel-host/cd/              @grootcyber
 /infra/glorfindel-host/deploy.sh        @grootcyber
+
+# What the Makefile calls to reach Imladris from the maintainer's workstation (CDI2, #922): the host
+# key's check, and the SSH options that pin it. The CD's recipes that run sudo there are under cd/.
+/infra/glorfindel-host/known_host.sh    @grootcyber
+/infra/glorfindel-host/ssh_opts.sh      @grootcyber
 
 # The bench's Terraform (decision of 18/11): its local-exec provisioners run with the rights of
 # whoever applies, at `terraform apply`, and never show in the plan.

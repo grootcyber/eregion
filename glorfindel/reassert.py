@@ -129,6 +129,7 @@ def reassert_active(connector, autonomy=None) -> list[dict]:
     Returns one record per isolation/block whose rules were missing:
     {"kind", "vm", "ip"?, "outcome": "reapplied" | "escalated" | "partial" | "failed", "detail"}.
     """
+    from glorfindel import reassert_skipped as skips
     from glorfindel.actions import active_blocks, active_isolations, _vm_lock
 
     new_pass()
@@ -140,10 +141,13 @@ def reassert_active(connector, autonomy=None) -> list[dict]:
         # State is read by resource id: two VMs may share a name.
         try:
             with _vm_lock(snapshot["vm_name"], timeout=_LOCK_WAIT_S):
+                skips.read(snapshot["vm_name"], snapshot["resource_id"])
                 _reassert_isolation(connector, autonomy, snapshot["vm_name"], report,
                                     ref=snapshot["resource_id"])
         except TimeoutError:
-            continue          # a write is running on this VM: next pass
+            # A write is running on this VM: next pass — said, a card past a few (SEC-H).
+            skips.skipped(report, snapshot["vm_name"], snapshot["resource_id"])
+            continue
         except OSError as exc:
             # Its state not written (a full disk): said, and the others still read — a pass
             # cut off at the first VM never saw the next one held again (L2C, review).
@@ -156,9 +160,11 @@ def reassert_active(connector, autonomy=None) -> list[dict]:
             continue
         try:
             with _vm_lock(snapshot["vm_name"], timeout=_LOCK_WAIT_S):
+                skips.read(snapshot["vm_name"], snapshot["resource_id"], snapshot.get("ip", ""))
                 _reassert_block(connector, autonomy, snapshot["vm_name"], snapshot.get("ip", ""), report,
                                 ref=snapshot["resource_id"], put_back=put_back)
         except TimeoutError:
+            skips.skipped(report, snapshot["vm_name"], snapshot["resource_id"], snapshot.get("ip", ""))
             continue
         except OSError as exc:
             report.append(unrecorded(snapshot["vm_name"], exc, snapshot.get("ip", "")))

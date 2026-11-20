@@ -81,11 +81,12 @@ def _age(seconds) -> str:
 @cli.command()
 @click.option("--json", "as_json", is_flag=True, help="The matrix as GET /api/coverage gives it.")
 @click.option("--check", is_flag=True,
-              help="Exit 1 when a technique or a fault regressed: proven before, failed since.")
+              help="Exit 1 when a technique or a fault regressed: held before, failed since.")
 def coverage(as_json: bool, check: bool):
     """The coverage matrix (C1), from runs/ in this directory: each technique of the catalog and
-    each declared fault, its last run, its last proof and its state — proven, aging (21 days),
-    stale (over 30), regressed, unproven, never.
+    each declared fault, its last run, its last proof and its state — fresh (a proof under 21
+    days), aging, stale (over 30), regressed, unproven, never. Never « proven »: that word is the
+    catalogue's status, measured on the bench (FRS1).
 
     Reads the run reports, the watch's cycles and the catalog only: no cloud, no model. After a
     replay of the catalog on the bench (from Orodruin), `eregion coverage --check` is the
@@ -118,7 +119,7 @@ def coverage(as_json: bool, check: bool):
         point = m["evolution"][-1] if m["evolution"] else {}
         click.echo(f"coverage: {point.get('implemented_detected', 0)} / {s['implemented']} implemented "
                    f"techniques detected in {m['window_days']} d · stale {s['stale']} · "
-                   f"never proven {s['never'] + s['unproven']}")
+                   f"no proof {s['never'] + s['unproven']}")
         click.echo("regressed: " + (", ".join(_printable(i) for i in regressed) if regressed else "none"))
         if m.get("future"):   # left out of every row: a date ahead of the clock
             click.echo("dated in the future, left out: "

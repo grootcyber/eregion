@@ -35,6 +35,9 @@
 # providers (required_providers des techniques azure, lus du submodule) :
 #       79a8d17fefe647040fcb9ee8821a4f09f395427c4fd49493489b9a93a9a1038e  terraform-provider-azurerm_4.81.0_linux_amd64.zip
 #       4c895e450e18335ad8714cc6d3488fc1a78816ad2851a91b06cb2ef775dd7c66  terraform-provider-azuread_2.53.1_linux_amd64.zip
+# providers IMPLICITES (utilisés par une technique mais non déclarés ; épinglés dans
+# scripts/stratus_build.py IMPLICIT_VERSIONS — R2BY ; sinon le warmup hors-ligne échoue) :
+#       4b4c11ccfba7319e901df2dac836b1ae8f12185e37249e8d870ee10bb87a13fe  terraform-provider-random_3.6.3_linux_amd64.zip
 #
 # Pour upgrader (« quand on veut ») : bumper le submodule sur un nouveau commit/tag officiel
 # (`git -C annatar/stratus/stratus-red-team fetch && checkout <tag>` ; `git add` le submodule),

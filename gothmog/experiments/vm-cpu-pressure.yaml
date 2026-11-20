@@ -44,6 +44,9 @@ steady_state:
 # Ce que la DCR du banc collecte : \Processor(_Total)\% Processor Time. Le nom de l'objet sous
 # l'agent Azure Monitor (Processor, instance _Total) reste à mesurer sur le banc. S'il diffère,
 # l'effet n'est pas vu et le run échoue fermé.
+# DCR1 (#985) : ce nom Windows n'était jamais collecté sous Linux ; la DCR déclare désormais
+# \Processor(*)\% Processor Time (docs/azure.md). Les instances mesurées après l'apply recaleront
+# cette requête, dans un lot de Gothmog.
 effect:
   probes:
     - name: cpu-load-seen

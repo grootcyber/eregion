@@ -5,6 +5,7 @@ subscription (I7S, #303), for the release and the unblock (I5R) (moved from rele
 from __future__ import annotations
 
 from glorfindel.providers.azure.nsg import _rule_name
+from glorfindel.providers.azure.older_names import older_left, older_taken, recorded_names
 from glorfindel.providers.azure.turned import _turned_guard
 from glorfindel.providers.azure.sdk import _is_not_found
 from glorfindel.response.ids import _parse_nsg_resource_id, _same_id
@@ -91,6 +92,7 @@ class GoneVmMixin:
         The unblock's too (I5R): `act` "block", `prefix` the block's, the rules it takes
         off added to `deleted`."""
         names: set[str] = set()
+        older: dict[str, str] = {}
         failed: list[str] = []
         for nid in nic_ids:
             why = self._gone_nic_check(resource_id, vm_name, nid, act)
@@ -99,7 +101,11 @@ class GoneVmMixin:
                 continue
             names |= {n for b in self._placement_rule_bases(prefix, vm_name, nid.rsplit("/", 1)[-1], nid)
                       for n in (b, f"{b}-out")}
-        if not names:
+            # An earlier version's names (SEC-H): taken off only when proven this NIC's
+            # (older_names.older_taken), else left and said.
+            older.update({n.lower(): nid for b in self._older_rule_bases(prefix, vm_name, nid.rsplit("/", 1)[-1], nid)
+                          for n in (b, f"{b}-out")})
+        if not names and not older:
             return failed
         try:
             nsgs = list(self._network.network_security_groups.list_all())
@@ -108,11 +114,23 @@ class GoneVmMixin:
             return failed + [f"{vm_name} supprimée : les règles de ses cartes n'ont pas été cherchées sur les "
                              f"NSG de l'abonnement (liste illisible : {_first_line(exc)[:_ERR_MAX]}), "
                              f"{_GONE_WORDS[act][0]} non vérifiée"]
+        from glorfindel.response.state import _load_block_entries, _load_isolation_state
+        recorded = recorded_names(_load_isolation_state(resource_id) or {}, _load_block_entries(resource_id),
+                                  resource_id)
         for nsg in nsgs:
             n_rg, n_name = _parse_nsg_resource_id(nsg.id)
             for r in (getattr(nsg, "security_rules", None) or []):
                 name = _rule_name(r)
-                if name.lower() in names and (n_rg.lower(), n_name.lower(), name.lower()) not in stuck:
+                taken = False                       # an older name, judged on this NSG only
+                if (name.lower() in older and name.lower() not in names
+                        and (n_rg.lower(), n_name.lower(), name.lower()) not in stuck):
+                    nid = older[name.lower()]
+                    if not older_taken(r, n_rg, n_name, nid, (), recorded):
+                        failed.append(older_left(n_rg, n_name, r, f"la carte {nid.rsplit('/', 1)[-1]} de la VM "
+                                                 "supprimée", f"{_GONE_WORDS[act][0]} non vérifiée", recorded))
+                        continue
+                    taken = True
+                if (name.lower() in names or taken) and (n_rg.lower(), n_name.lower(), name.lower()) not in stuck:
                     if why := held_back(nsg, r):
                         failed.append(f"{name} ({n_name}) gardée : {why}")
                         continue

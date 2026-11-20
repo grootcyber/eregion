@@ -19,6 +19,16 @@ store, a Discord member's name, an exception — is said as it is (`glorfindel/t
 
 Each path has its control at normal values. The values below are made up (repository public); no
 Azure call, no model call. Mutants M5701–M5720 (scripts/mutants/SEC-F.py) are measured here.
+
+6. SEC-Fc (#907), the rest of SEC-F's review: Azure's poll error said as it is, the search going
+   on; a decision taken whose display fails said as such; the name in `pending`'s `az vm show`
+   quoted; the TUI's panels never handing a control character to the terminal. Mutants
+   M6271–M6290 (scripts/mutants/SEC-Fc.py).
+7. SEC-Fd (#908), the whole TUI: the RESOURCES panel (a resource's name, a block's IP), the FEED's
+   title and a file of runs/ refused, the restore's confirmation (its moment, its warning, an
+   unreadable vault's error, a point's time), the moment typed and the `revert` command — each
+   with its control characters shown, never handed to the terminal. Mutants M6321–M6330
+   (scripts/mutants/SEC-Fd.py).
 """
 from __future__ import annotations
 
@@ -217,7 +227,8 @@ def test_a_display_that_fails_never_leaves_the_detection_undecided(tmp_path, mon
 
 def test_whatever_one_detection_raised_the_thread_takes_the_next(tmp_path, monkeypatch):
     """The model's call raising (a tag in what it said), then its display failing: the thread lives,
-    the error said escaped, the next detection of the VM decided."""
+    the error said escaped, the next detection of the VM decided. A display that fails after the
+    decision is said as such (SEC-Fc), never « Error processing »."""
     def decide(data):
         if data["signal_id"] == "first_detection_missed":
             raise RuntimeError(EVIL)
@@ -230,7 +241,8 @@ def test_whatever_one_detection_raised_the_thread_takes_the_next(tmp_path, monke
     assert [d["signal_id"] for d in responded] == [
         "first_detection_missed", "second_detection_missed", "next_detection_missed"]
     assert f"Error processing first_detection_missed : {EVIL}" in out
-    assert "Error processing second_detection_missed" in out
+    assert "Error processing second_detection_missed" not in out
+    assert "Décision prise pour second_detection_missed, son affichage a échoué" in out
     assert "Signal — next_detection_missed" in out
 
 
@@ -514,7 +526,7 @@ def test_the_control_the_tui_feed_at_normal_values():
 def test_the_tui_quotes_each_argument_of_a_command(monkeypatch):
     from glorfindel import tui
     cards = [_card("abc$(id)x", "restore_from_backup", first_seen=FORGED),
-             _card("def`id`yz", escalation_type="identity_change")]
+             _card("d e;`id`yz", escalation_type="identity_change")]
     monkeypatch.setattr(escalations, "pending", lambda: cards)
     console = Console(record=True, width=400, file=io.StringIO())
     console.print(tui._escalations_renderable(datetime.now(timezone.utc), None, False))
@@ -522,7 +534,7 @@ def test_the_tui_quotes_each_argument_of_a_command(monkeypatch):
     restore = next(line for line in text.splitlines() if "glorfindel restore" in line)
     assert _args_after(restore.split("→", 1)[1].split("#", 1)[0].strip(" │"), "--before") == FORGED
     ack = next(line for line in text.splitlines() if "glorfindel ack" in line)
-    assert shlex.split(ack.split("→", 1)[1].strip(" │")) == ["glorfindel", "ack", "def`id`y"]
+    assert shlex.split(ack.split("→", 1)[1].strip(" │")) == ["glorfindel", "ack", "d e;`id`"]  # one argument (SEC-Fc)
 
 
 def test_ack_and_verdict_say_a_card_from_outside_as_it_is(monkeypatch):
@@ -537,3 +549,268 @@ def test_ack_and_verdict_say_a_card_from_outside_as_it_is(monkeypatch):
     out = buf.getvalue()
     assert f"✓ {EVIL} on web: right" in out and f"Escalation {esc_id} acknowledged" in out
     assert "[/" not in _plain(out)
+
+
+# ── 6. SEC-Fc: the rest of SEC-F's review ───────────────────────────────────────────────────────
+
+class _Workspace:
+    """A Log Analytics client: each query raises the next error of `errors`, then answers its row."""
+
+    def __init__(self, errors):
+        self.errors = list(errors)
+        self.queries = 0
+
+    def query_workspace(self, workspace_id, query, timespan):
+        from azure.monitor.query import LogsQueryStatus
+        self.queries += 1
+        if self.errors:
+            raise self.errors.pop(0)
+        return SimpleNamespace(status=LogsQueryStatus.SUCCESS, tables=[SimpleNamespace(
+            columns=["TimeGenerated", "Computer"], rows=[["2026-11-13T10:00:00Z", "web"]])])
+
+
+def _detector(monkeypatch, errors):
+    """The real Azure Monitor detector on `_Workspace`, its console a plain one (an escape missing
+    raises, as Rich does), its wait between two queries none."""
+    from glorfindel.providers.azure import monitor
+    det = monitor.AzureMonitorDetector("ws-0000")
+    det._client = _Workspace(errors)
+    console, buf = _console()
+    monkeypatch.setattr(monitor, "_console", console)
+    monkeypatch.setattr(monitor, "time", SimpleNamespace(time=time.time, sleep=lambda s: None))
+    return det, buf
+
+
+def _search(monkeypatch, det):
+    """The search of an attack_started line, as the watch's poll thread runs it."""
+    from glorfindel import agent
+    monkeypatch.setattr("glorfindel.detectors.detector_for", lambda source, **kw: det)
+    return agent.resolve_attack_started({**_line("s-1", event="attack_started"), "raw_signal": {
+        "detection_source": "azure_monitor", "detection_query": "Heartbeat | take 1",
+        "log_analytics_workspace_id": "ws-0000", "detection_timeout_s": 60,
+        "attack_time": time.time()}})
+
+
+def test_a_poll_error_from_azure_is_said_as_it_is_and_the_search_goes_on(monkeypatch):
+    """A transient error whose text holds a tag that closes nothing: said as it is, the next query
+    made, the row found — no exception out of the search, so no cycle_failed card."""
+    det, buf = _detector(monkeypatch, [RuntimeError(f"throttled {EVIL}")])
+    resolved = _search(monkeypatch, det)
+    assert resolved["event"] == "detection" and det._client.queries == 2
+    assert f"Poll error: throttled {EVIL}" in buf.getvalue()
+    assert "[/" not in _plain(buf.getvalue())
+
+
+def test_the_control_a_poll_error_at_normal_values(monkeypatch):
+    det, buf = _detector(monkeypatch, [RuntimeError("throttled (429)")])
+    assert _search(monkeypatch, det)["event"] == "detection" and det._client.queries == 2
+    assert "Poll error: throttled (429)" in buf.getvalue()
+
+
+def test_a_decision_whose_display_fails_is_said_taken_never_error_processing(tmp_path, monkeypatch):
+    """`_render_decision` raising after the decision: its cycle stored (by `respond`, before the
+    display), the failure said as a display's, the next detection of the VM decided."""
+    from glorfindel import cli
+
+    def _broken(state, dry_run):
+        raise RuntimeError(f"render {EVIL}")
+    monkeypatch.setattr(cli, "_render_decision", _broken)
+    stored: list[str] = []
+
+    def decide(data):
+        stored.append(data["signal_id"])           # what `respond` does before it returns: the cycle
+        return _decided()
+    lines = [_line("first_detection_missed"), _line("next_detection_missed")]
+    responded, out = _watch(tmp_path, monkeypatch, lines, decide, 2)
+    assert stored == ["first_detection_missed", "next_detection_missed"]
+    assert "Error processing" not in out
+    assert (f"Décision prise pour first_detection_missed, son affichage a échoué : render {EVIL}"
+            in out)
+    assert "Décision prise pour next_detection_missed, son affichage a échoué" in out
+
+
+def test_pending_s_fallback_steps_quote_the_card_s_name_and_id(monkeypatch):
+    """A card without the model's steps (an older one, a dry-run): its `az vm show` names the VM by
+    one argument, its ack the card by one — whatever the store holds."""
+    name = "we b;id"
+    card = _card(FORGED, "snapshot", escalation_type="low_confidence",
+                 resource_id=VM.rsplit("/", 1)[0] + "/" + name)
+    result, out = _pending(monkeypatch, [card])
+    assert result.exit_code == 0, result.output
+    show = next(line for line in out.splitlines() if "az vm show" in line)
+    assert _args_after(show.split("Check VM state:", 1)[1], "-n") == name
+    ack = next(line for line in out.splitlines() if "If false positive:" in line)
+    assert shlex.split(ack.split("If false positive:", 1)[1]) == ["glorfindel", "ack", FORGED]
+
+
+def test_the_control_pending_s_fallback_steps_at_normal_values(monkeypatch):
+    result, out = _pending(monkeypatch, [_card("good0001-aaaa", "snapshot",
+                                               escalation_type="low_confidence")])
+    assert "az vm show -g <rg> -n web --query powerState" in out
+    assert "If false positive: glorfindel ack good0001-aaaa" in out
+
+
+ESC = "\x1b[2J\x1b]8;;https://e\x07x\x9b"
+
+
+def test_the_tui_s_panels_never_hand_a_control_character_to_the_terminal(monkeypatch):
+    """A card's id, action, steps and first detection, a restore's words: each with an escape
+    sequence (ESC, a C1 CSI). The panel's text holds none, each shown as `\\x1b`."""
+    from glorfindel import tui
+    cards = [_card(f"ab{ESC}", f"isolate{ESC}", suggested_steps=[f"look {ESC}"]),
+             _card(f"cd{ESC}", "restore_from_backup", first_seen=f"2026{ESC}"),
+             _card("ef000003", resource_id=f"{VM}\x1b[2Jx\x9b")]
+    monkeypatch.setattr(escalations, "pending", lambda: cards)
+    monkeypatch.setattr(tui, "_last_restore", {"text": f"done {ESC}", "rid": VM, "ok": True})
+    panel = tui._escalations_renderable(datetime.now(timezone.utc), None, False).renderable
+    assert not re.search(r"[\x1b\x9b\x07]", panel.plain)
+    assert panel.plain.count("\\x1b") >= 10 and "\\x9b" in panel.plain
+    assert "glorfindel restore" in panel.plain and "done \\x1b" in panel.plain
+    assert "web\\x1b[2Jx\\x9b" in panel.plain          # the VM's name, from the card
+    confirm = tui._escalations_renderable(datetime.now(timezone.utc), {"label": f"ack {ESC}"}, False)
+    assert not re.search(r"[\x1b\x9b\x07]", confirm.renderable.plain)
+    assert "ack \\x1b" in confirm.renderable.plain
+    restore = tui._restore_panel({"esc": cards[1], "stage": "moment", "label": f"restore {ESC}",
+                                  "buffer": "2026", "why": f"why {ESC}", "error": f"no {ESC}"})
+    assert not re.search(r"[\x1b\x9b\x07]", restore.renderable.plain)
+    assert "why \\x1b" in restore.renderable.plain and "no \\x1b" in restore.renderable.plain
+
+
+def test_the_control_the_tui_s_panels_at_normal_values(monkeypatch):
+    from glorfindel import tui
+    monkeypatch.setattr(escalations, "pending", lambda: [_card("ab000001-x", "isolate_vm",
+                                                                suggested_steps=["look at web"])])
+    monkeypatch.setattr(tui, "_last_restore", {})
+    plain = tui._escalations_renderable(datetime.now(timezone.utc), None, False).renderable.plain
+    assert "[ab000001]" in plain and "isolate_vm" in plain and "• look at web" in plain
+    assert "glorfindel ack ab000001" in plain and "\\x" not in plain
+
+
+# ── 7. SEC-Fd: the whole TUI — resources, feed, the restore's confirmation ──────────────────────
+
+# An escape sequence a file name can hold (no « / »): a CSI, then a one-byte C1 CSI.
+NAME_ESC = "\x1b[2Jx\x9b"
+_CONTROLS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+
+
+def _never_raw(text: str) -> str:
+    assert not _CONTROLS.search(text), repr(text)
+    return text
+
+
+def test_the_tui_s_resources_never_hand_a_control_character_to_the_terminal(monkeypatch):
+    """A resource's id (its name) and a block's IP, from the state files, each with an escape
+    sequence: shown `\\x1b`, `\\x9b`, never obeyed."""
+    import glorfindel.actions as actions
+    from glorfindel import tui
+    isolated = VM.rsplit("/", 1)[0] + f"/db{NAME_ESC}"
+    monkeypatch.setattr(actions, "active_isolations", lambda: [{"resource_id": isolated}])
+    monkeypatch.setattr(actions, "active_blocks", lambda: [{"resource_id": VM, "ip": f"203.0.113.9{ESC}"}])
+    plain = _never_raw(tui._resources_renderable(datetime.now(timezone.utc)).renderable.plain)
+    assert "db\\x1b[2Jx\\x9b" in plain                                   # the resource's name
+    assert "203.0.113.9\\x1b[2J\\x1b]8;;https://e\\x07x\\x9b" in plain    # the block's IP
+
+
+def test_the_control_the_tui_s_resources_at_normal_values(monkeypatch):
+    import glorfindel.actions as actions
+    from glorfindel import tui
+    monkeypatch.setattr(actions, "active_isolations", lambda: [{"resource_id": VM}])
+    monkeypatch.setattr(actions, "active_blocks", lambda: [{"resource_id": VM, "ip": "203.0.113.9"}])
+    plain = tui._resources_renderable(datetime.now(timezone.utc)).renderable.plain
+    assert plain.startswith("  web\n  🔴 ISOLATED") and "  🟡 BLOCKED   203.0.113.9  " in plain
+    assert "\\x" not in plain
+
+
+def _runs(tmp_path, monkeypatch, name: str) -> None:
+    """runs/ with a run `name`: its signals a regular file, its cycles a link — refused, said."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "runs" / "annatar").mkdir(parents=True)
+    (tmp_path / "runs" / "glorfindel").mkdir()
+    (tmp_path / "runs" / "annatar" / f"{name}_signals.jsonl").write_text(
+        json.dumps({"timestamp": "2026-11-13T10:00:00", "event": "attack_started", "resource_id": VM}) + "\n")
+    (tmp_path / "runs" / "glorfindel" / f"{name}_debug.jsonl").symlink_to(tmp_path / "elsewhere")
+
+
+def test_the_tui_s_feed_never_hands_a_control_character_to_the_terminal(tmp_path, monkeypatch):
+    """A name of runs/, written by another container, with an escape sequence: the FEED's title
+    and the line of a file refused show it `\\x1b`, never obey it — as markup, nor as a control."""
+    from glorfindel import tui
+    _runs(tmp_path, monkeypatch, f"r{NAME_ESC}[bold]")
+    feed = tui._load_feed()
+    refused = _never_raw(Text.from_markup(feed[0]).plain)
+    assert refused == "⚠ r\\x1b[2Jx\\x9b[bold]_debug.jsonl : un lien, jamais suivi — jamais lu"
+    label = tui._current_run_label()
+    title = _never_raw(Text.from_markup(tui._feed_renderable(feed, label).title).plain)
+    assert title == "FEED  r\\x1b[2Jx\\x9b[bold]"
+
+
+def test_the_control_the_tui_s_feed_at_normal_values(tmp_path, monkeypatch):
+    from glorfindel import tui
+    _runs(tmp_path, monkeypatch, "r1")
+    feed = tui._load_feed()
+    assert feed[0] == "[yellow]⚠ r1_debug.jsonl : un lien, jamais suivi — jamais lu[/yellow]"
+    assert tui._feed_renderable(feed, tui._current_run_label()).title == "[bold]FEED[/bold]  [dim]r1[/dim]"
+
+
+def _confirm_panel(**over) -> str:
+    from glorfindel import tui
+    pending = {"esc": _card("cd000002", "restore_from_backup"), "stage": "points",
+               "label": "restore web from backup (~20 min)", "before": "2026-11-13T10:00:00+00:00",
+               "warning": "", "points": [], "points_error": ""}
+    pending.update(over)
+    return tui._restore_panel(pending).renderable.plain
+
+
+def test_the_tui_s_restore_confirmation_never_hands_a_control_character_to_the_terminal():
+    """The moment confirmed, its warning, a point's time (Azure's), an unreadable vault's error —
+    each with an escape sequence: shown `\\x1b`, `\\x9b`, never obeyed."""
+    plain = _never_raw(_confirm_panel(before=f"2026{ESC}", warning=f"late {ESC}",
+                                      points=[{"time": f"2026-11-13{ESC}", "vault_tier": True}]))
+    assert "Before 2026\\x1b[2J\\x1b]8;;https://e\\x07x\\x9b\n" in plain          # the moment
+    assert "⚠ late \\x1b[2J" in plain                                             # its warning
+    assert "  2026-11-13\\x1b[2J\\x1b]8;;https://e\\x07x\\x9b · vault tier  ← restored" in plain
+    plain = _never_raw(_confirm_panel(points_error=f"HttpResponseError: denied {ESC}"))
+    assert "recovery points unreadable: HttpResponseError: denied \\x1b[2J" in plain
+
+
+def test_the_control_the_tui_s_restore_confirmation_at_normal_values():
+    plain = _confirm_panel(warning="a point taken after the attack began",
+                           points=[{"time": "2026-11-13T09:00:00+00:00", "vault_tier": True},
+                                   {"time": "2026-11-12T09:00:00+00:00"}])
+    assert "  Before 2026-11-13T10:00:00+00:00\n  ⚠ a point taken after the attack began\n" in plain
+    assert "  2026-11-13T09:00:00+00:00 · vault tier  ← restored\n  2026-11-12T09:00:00+00:00\n" in plain
+    assert "\\x" not in plain
+    plain = _confirm_panel(points_error="HttpResponseError: denied")
+    assert "  recovery points unreadable: HttpResponseError: denied\n" in plain
+
+
+def test_the_tui_s_moment_typed_never_hands_a_control_character_to_the_terminal():
+    """The moment's field, filled from the card (`proposed_moment`) before the operator types."""
+    from glorfindel import tui
+    pending = {"esc": _card("cd000002", "restore_from_backup"), "stage": "moment",
+               "label": "restore web", "buffer": f"2026{ESC}", "why": "", "error": ""}
+    plain = _never_raw(tui._restore_panel(pending).renderable.plain)
+    assert "2026\\x1b[2J\\x1b]8;;https://e\\x07x\\x9b▌" in plain
+    pending["buffer"] = "2026-11-13T10:00"                # the control, at a normal value
+    assert "before: 2026-11-13T10:00▌\n" in tui._restore_panel(pending).renderable.plain
+
+
+def _revert(monkeypatch, resource_id: str) -> str:
+    from glorfindel import tui
+    monkeypatch.setattr(escalations, "pending", lambda: [_card("ef000003", "release_isolation",
+                                                               escalation_type="verification_failed",
+                                                               resource_id=resource_id)])
+    monkeypatch.setattr(tui, "_last_restore", {})
+    plain = tui._escalations_renderable(datetime.now(timezone.utc), None, False).renderable.plain
+    return next(line for line in plain.splitlines() if "glorfindel revert" in line)
+
+
+def test_the_tui_s_revert_command_never_hands_a_control_character_to_the_terminal(monkeypatch):
+    """A failed verification's card: its `revert` names the VM by `<groupe>/<nom>`, from the card's
+    id — an escape sequence in it shown `\\x1b`, never obeyed."""
+    line = _never_raw(_revert(monkeypatch, VM.replace("/rg/", f"/rg{NAME_ESC}/")))
+    assert line == "    → glorfindel revert 'rg\\x1b[2Jx\\x9b/web' --yes"
+
+
+def test_the_control_the_tui_s_revert_command_at_normal_values(monkeypatch):
+    assert _revert(monkeypatch, VM) == "    → glorfindel revert rg/web --yes"

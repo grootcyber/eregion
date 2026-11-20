@@ -697,6 +697,33 @@ def test_a_failed_revocation_still_runs_the_rest_and_is_reported():
     assert len(failures) == 1 and failures[0].startswith("revoke:")
 
 
+# ── R2c: the operator cuts the Stratus identity's role too, right after the revocation ──
+
+def test_revoke_stratus_runs_right_after_the_revocation_when_given():
+    """stratus-cible.md §1: the Stratus identity is cut right after Orodruin's own, so a
+    running warmup loses its rights before the rest of the kill drags."""
+    order = []
+    orodruin.kill(*(_step(order, n) for n in ("revoke", "cancel", "stop", "close")),
+                  revoke_stratus=_step(order, "revoke_stratus"))
+    assert order == ["revoke", "revoke_stratus", "cancel", "stop", "close"]
+
+
+def test_revoke_stratus_absent_is_simply_skipped():
+    order = []
+    failures = orodruin.kill(*(_step(order, n) for n in ("revoke", "cancel", "stop", "close")),
+                             revoke_stratus=None)
+    assert order == ["revoke", "cancel", "stop", "close"] and failures == []
+
+
+def test_a_failed_stratus_revocation_still_runs_the_rest_and_is_reported():
+    order = []
+    failures = orodruin.kill(
+        *(_step(order, n) for n in ("revoke", "cancel", "stop", "close")),
+        revoke_stratus=_step(order, "revoke_stratus", RuntimeError("403")))
+    assert order == ["revoke", "revoke_stratus", "cancel", "stop", "close"]
+    assert len(failures) == 1 and failures[0].startswith("revoke_stratus:")
+
+
 # ── The Terraform module (the kill script: test_orodruin_kill.py) ─────────────
 
 import re  # noqa: E402
@@ -710,6 +737,26 @@ def _tf() -> str:
 
 def _block(kind: str, name: str) -> str:
     return _tf().split(f'resource "{kind}" "{name}"')[1].split("\n}\n")[0]
+
+
+def test_the_stratus_sandbox_is_posed_at_startup():
+    """R2c pièce 3 (decision A): Orodruin's cloud-init creates a dedicated docker network for
+    Stratus and a systemd service (after docker) that drops its traffic to the IMDS — so a Stratus
+    container on it cannot reach Orodruin's managed-identity token (M4). The service also WRITES the
+    proof (`iptables -S DOCKER-USER` to the file the contract reads, since the contract cannot read
+    live iptables), and a timer re-poses the rule and rewrites the proof so read_sandbox sees it
+    fresh. The rule uses the same network and IMDS address the contract reads."""
+    tf = _tf()
+    assert "docker network create --subnet 172.30.250.0/24 eregion-stratus-sandbox" in tf
+    assert "eregion-stratus-sandbox.service" in tf
+    assert "After=docker.service" in tf
+    assert "DOCKER-USER -s 172.30.250.0/24 -d 169.254.169.254/32 -j DROP" in tf
+    assert orodruin.SANDBOX_NET in tf and orodruin.IMDS_ADDR in tf
+    # decision A: the proof the contract reads, written by the root service and refreshed by a timer.
+    assert f"iptables -S DOCKER-USER > {orodruin.SANDBOX_PROOF}" in tf
+    assert "eregion-stratus-sandbox.timer" in tf
+    assert "OnUnitActiveSec=" in tf
+    assert "systemctl enable --now eregion-stratus-sandbox.timer" in tf
 
 
 def test_the_injector_roles_grant_exactly_what_the_contract_checks():
@@ -824,6 +871,19 @@ def test_the_channel_keeps_its_blobs_for_a_bounded_time():
     assert floor * 86400 > PURGE_AFTER_S + MAX_DURATION_S + GRACE_AFTER_S and days >= floor
     journal_days = int(re.search(r'variable "journal_retention_days" \{.*?default     = (\d+)', variables, re.S)[1])
     assert journal_days > days
+
+
+def test_every_read_write_and_delete_of_the_channel_is_journaled_to_the_bench_workspace():
+    """SEC-G (audit of 13/11, V-39): the channel account's data plane journaled — its blob service, the
+    three categories, toward the bench's workspace, where the identities admitted to the channel only
+    read (Log Analytics Reader). Planned in infra/orodruin/tests/channel_journal.tftest.hcl."""
+    diag = _block("azurerm_monitor_diagnostic_setting", "channel_blobs")
+    assert 'target_resource_id         = "${azurerm_storage_account.channel.id}/blobServices/default"' in diag
+    assert "log_analytics_workspace_id = data.azurerm_log_analytics_workspace.bench.id" in diag
+    assert sorted(re.findall(r'category = "(\w+)"', diag)) == ["StorageDelete", "StorageRead", "StorageWrite"]
+    assert not re.search(r"^\s*(count|for_each)\s*=", diag, re.M)               # always posed
+    reader = _block("azurerm_role_assignment", "bench_logs_reader")
+    assert 'role_definition_name = "Log Analytics Reader"' in reader
 
 
 def test_the_host_acts_on_the_bench_only_and_is_no_target():

@@ -716,6 +716,25 @@ def test_the_watch_goes_on_when_the_reports_cannot_start(tmp_path, monkeypatch):
     assert _never_raises(gcli._start_campaign_reports, tmp_path) is False
 
 
+def test_the_reports_off_say_their_error_as_it_is(tmp_path, monkeypatch):
+    """SEC-Fc (#907): the error that keeps the reports off, said as it is — a tag in its text that
+    closes nothing raised out of the guard, on a plain console, and stopped the watch at its start."""
+    import io
+
+    from rich.console import Console
+
+    from glorfindel import cli as gcli
+    evil = "[blink]z[/blink][/x]"
+    buf = io.StringIO()
+    monkeypatch.setattr(gcli, "console", Console(file=buf, width=300, color_system=None))
+
+    def boom(runs_dir):
+        raise ImportError(f"no module {evil}")
+    monkeypatch.setattr(hr, "start", boom)
+    assert _never_raises(gcli._start_campaign_reports, tmp_path) is False
+    assert f"Rapports de campagne désactivés — ImportError: no module {evil}" in buf.getvalue()
+
+
 def test_without_annatar_the_watch_says_once_that_the_reports_are_off(tmp_path, monkeypatch):
     """M870: the report reads a run's detections with Annatar's reader (a bridge, D1). On a
     Glorfindel without Annatar, with a channel, the watch says so at start, once — no thread
@@ -817,8 +836,10 @@ def _windows_fail(c):
 
 def _but_runs(said):
     """What a pass says of the campaigns and the windows: the runs' reports (#193, their own
-    listing, said once too) are left out — tests/unit/test_run_channel.py."""
-    return lambda m: None if m.startswith("run reports not pulled") else said.append(m)
+    listing, said once too) are left out — tests/unit/test_run_channel.py; so are the drill's blobs
+    (DRL1b: their own listing, said once too — tests/unit/test_drill_watch.py)."""
+    return lambda m: None if m.startswith(("run reports not pulled", "the drill's blobs not listed")) \
+        else said.append(m)
 
 
 def test_a_failing_pull_is_said_once_while_it_lasts(tmp_path, monkeypatch, index):

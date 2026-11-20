@@ -173,10 +173,10 @@ def test_restore_takes_this_vm_s_moment_and_says_why(tmp_path, monkeypatch):
     assert "attack_started de runs/annatar/20261029T100000Z_signals.jsonl" in said
 
 
-def test_restore_before_is_read_as_utc_and_wins(tmp_path, monkeypatch):
+def test_restore_before_is_read_in_utc_and_wins(tmp_path, monkeypatch):
     cli, started = _restore_env(tmp_path, monkeypatch)
     _write_runs(tmp_path / "runs", "20261029T100000Z", [_attack(VM, time.time() - 300)])
-    out = CliRunner().invoke(cli.cli, ["restore", VM, "--yes", "--before", "2026-10-29T07:30:00"])
+    out = CliRunner().invoke(cli.cli, ["restore", VM, "--yes", "--before", "2026-10-29T07:30:00Z"])
     assert out.exit_code == 0, out.output
     assert started == [(VM, "2026-10-29T07:30:00+00:00")]
     bad = CliRunner().invoke(cli.cli, ["restore", VM, "--yes", "--before", "hier"])
@@ -317,8 +317,10 @@ def test_the_points_before_a_moment_put_the_one_restored_first(monkeypatch):
     got = restore_plan.points_before(VM, "2026-10-29T08:00:00Z", connector=_Conn())
     assert [p["name"] for p in got] == ["rp-vault", "rp-snap", "rp-old"]     # never after; vault first
     assert asked == [(VM, "rsv-example", "rg-backup")]
-    assert restore_plan.restore_args(VM, "2026-10-29T08:00:00") == [
+    assert restore_plan.restore_args(VM, "2026-10-29T08:00:00Z") == [
         "restore", VM, "--yes", "--before", "2026-10-29T08:00:00+00:00"]
+    with pytest.raises(ValueError, match="sans fuseau"):          # RTZ1: never taken for UTC
+        restore_plan.restore_args(VM, "2026-10-29T08:00:00")
 
 
 def test_the_provider_lists_its_points_read_only(monkeypatch):
@@ -473,21 +475,30 @@ def test_each_value_is_checked_for_what_it_is(value, check, accepted):
             check(value)
 
 
-def _investigate(monkeypatch, row: dict):
+def _investigate(monkeypatch, row: dict, resource_id: str = VM):
     ran: list[str] = []
     monkeypatch.setattr(agent, "_run_investigative_query", lambda ws, q: ran.append(q) or [])
     state = {"dry_run": False, "signal": {
-        "event": "detection", "resource_id": VM, "ttp": "T1110.001",
+        "event": "detection", "resource_id": resource_id, "ttp": "T1110.001",
         "raw_signal": {"log_analytics_workspace_id": "00000000-0000-0000-0000-0000000000dd",
                        "detected_data": row}}}
     return agent.investigate(state), ran
 
 
-def test_a_host_name_that_is_not_one_runs_no_query(monkeypatch, capsys):
-    out, ran = _investigate(monkeypatch, {"Computer": 'vm" or 1==1 | union *', "MaxWrite": 80})
+def test_a_resource_id_that_is_not_one_runs_no_query(monkeypatch, capsys):
+    """The enquiry is scoped by the registry's resource id (SEC-I): one that is not one runs nothing."""
+    out, ran = _investigate(monkeypatch, {"Computer": "vm-example-01", "MaxWrite": 80},
+                            resource_id=VM + '" or 1==1 | union *')
     assert ran == []
     assert set(out["telemetry_gaps"]) == {"top_write_processes", "backup_agent_check", "heartbeat_gap"}
     assert "valeur refusée" in capsys.readouterr().out
+
+
+def test_a_hostile_host_name_is_never_read(monkeypatch):
+    """The line's Computer never enters a query (SEC-I, V-09): the registry's VM does."""
+    out, ran = _investigate(monkeypatch, {"Computer": 'vm" or 1==1 | union *', "MaxWrite": 80})
+    assert len(ran) == 3 and out["telemetry_gaps"] == []
+    assert all(f'_ResourceId =~ "{VM}"' in q and "Computer" not in q for q in ran)
 
 
 def test_an_address_that_is_not_one_runs_no_login_query(monkeypatch):
@@ -501,7 +512,7 @@ def test_valid_values_run_their_queries_as_before(monkeypatch):
     out, ran = _investigate(monkeypatch, {"Computer": "vm-example-01", "FailedAttempts": 12,
                                           "SourceIP": "203.0.113.5"})
     assert len(ran) == 1 and out["telemetry_gaps"] == []
-    assert 'Computer == "vm-example-01"' in ran[0] and 'has "203.0.113.5"' in ran[0]
+    assert f'_ResourceId =~ "{VM}"' in ran[0] and 'has "203.0.113.5"' in ran[0]
 
 
 @pytest.mark.parametrize("hostile", [VM + '" or true', _vm("vm-example-01", 'rg" or 1==1 or "')])
@@ -513,7 +524,8 @@ def test_the_audit_runs_no_query_on_an_id_that_is_not_one(check, hostile):
     res = getattr(audit, check)(hostile, "ws", det)
     assert not det.run_query.called and res.status == "warn" and "non lancée" in res.message
     getattr(audit, check)(VM, "ws", det)
-    assert f'_ResourceId =~ "{VM}" or Computer =~ "vm-example-01"' in det.run_query.call_args.args[0]
+    query = det.run_query.call_args_list[0].args[0]
+    assert f'_ResourceId =~ "{VM}"' in query and "Computer" not in query      # SEC-Ib
 
 
 # ── 3. Timeouts ───────────────────────────────────────────────────────────────────────

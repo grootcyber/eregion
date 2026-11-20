@@ -50,6 +50,11 @@ RUN_COMMAND_OP = "microsoft.compute/virtualmachines/runcommand/action"
 # The activity log read at most this many pages; one left past it is an error, never « all read ».
 ACTIVITY_PAGES = 20
 _OID_CLAIM = "http://schemas.microsoft.com/identity/claims/objectidentifier"
+_SCOPE_CLAIM = "http://schemas.microsoft.com/identity/claims/scope"
+_UPN_CLAIM = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn"
+# Where the activity log is read, and its next pages: Azure Resource Manager only — the bearer token
+# goes nowhere else (SEC-H, as door._arm_paged and restore_rights, SEC8).
+ARM_PREFIX = "https://management.azure.com/"
 # A refusal of the platform (REC1b, measured 09/11 on a deallocated VM): the HTTP status and the
 # error code ARM gives a Run Command it never sent to the guest. Any other failure may have reached
 # it, and a code that can't be read is not this one.
@@ -108,11 +113,34 @@ def _sections(message: str) -> tuple[str, str]:
 
 
 def _callers(event: dict) -> list[str]:
-    """The identifiers of who made an activity log event, lowercased: its `caller` (a user's UPN, a
-    service principal's appId or object id depending on the token), and its claims' appid and oid."""
+    """The object ids of who made an activity log event, lowercased (SEC-H): its token's `oid`, and
+    for an APPLICATION's token (a service principal, a managed identity: `activity.is_app_token`) its
+    `caller` — the object id too, measured on the bench. Never an `appid`: a user's delegated token
+    carries the client application's, and a user who signs in through the application a principal
+    that restores uses was read as that principal. Never a user's `caller`: its UPN."""
     claims = event.get("claims") if isinstance(event.get("claims"), dict) else {}
-    ids = [event.get("caller"), claims.get("appid"), claims.get(_OID_CLAIM), claims.get("oid")]
-    return sorted({str(i).strip().lower() for i in ids if i and str(i).strip()})
+    ids = [claims.get(_OID_CLAIM), claims.get("oid")]
+    if _app_token(claims):
+        ids.append(event.get("caller"))
+    return sorted({str(i).strip().lower() for i in ids if i and str(i).strip() and "@" not in str(i)})
+
+
+def _apps(event: dict) -> list[str]:
+    """The `appid` of an application's token, lowercased — said only, never an identity: a
+    GLORFINDEL_RESTORE_PRINCIPALS that names it (an appId, not an object id) is told so."""
+    claims = event.get("claims") if isinstance(event.get("claims"), dict) else {}
+    if not _app_token(claims):
+        return []
+    return sorted({str(claims[k]).strip().lower() for k in ("appid", "azp") if claims.get(k)} - {""})
+
+
+def _app_token(claims: dict) -> bool:
+    """`activity.is_app_token`, the claims' long names read as their short ones (an event's claims
+    carry `…/claims/scope` and `…/claims/upn`)."""
+    from glorfindel.providers.azure.activity import is_app_token
+    return is_app_token({**claims,
+                         "scp": claims.get("scp") or claims.get(_SCOPE_CLAIM) or "",
+                         "upn": claims.get("upn") or claims.get(_UPN_CLAIM) or claims.get("unique_name") or ""})
 
 
 def _fold(value) -> str:
@@ -331,7 +359,8 @@ class RecoveryMixin:
             at = _utc(e.get("eventTimestamp"))
             if op != RUN_COMMAND_OP or rid != want or at is None:
                 continue
-            mine.append((e, {"at": at.isoformat(), "callers": _callers(e), "status": status}))
+            mine.append((e, {"at": at.isoformat(), "callers": _callers(e), "status": status,
+                             **({"apps": _apps(e)} if _apps(e) else {})}))
         refused = _refused_operations([e for e, _ in mine])
         out = [{**r, "refused": _refused(e) or _fold(e.get("operationId")) in refused} for e, r in mine]
         return sorted(out, key=lambda e: e["at"])
@@ -353,6 +382,8 @@ class RecoveryMixin:
                               "properties,resourceId")}
         events: list[dict] = []
         for _ in range(ACTIVITY_PAGES):        # bounded: a VM's few hours of events
+            if not str(url).startswith(ARM_PREFIX):
+                raise RuntimeError("journal d'activité : page suivante hors d'Azure Resource Manager, refusée")
             r = requests.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=20, params=params)
             if not r.ok:
                 raise RuntimeError(f"journal d'activité : {r.status_code} {r.text[:120]}")

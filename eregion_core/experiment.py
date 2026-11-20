@@ -27,6 +27,20 @@ EXPERIMENT_SCHEMA = SCHEMA_DIR / "experiment.schema.json"
 CATALOG_SCHEMA = SCHEMA_DIR / "technique_catalog.schema.json"
 CATALOG = SCHEMA_DIR.parent / "technique_catalog.yaml"
 
+# The status of a catalogue entry (STM1g, #894): ``planned`` — nothing runs it yet;
+# ``implemented`` — an injector plays it; ``proven`` — measured on the bench (STM1), a notch
+# above: a proven entry stays an implementation, never counted less. Every reader of the
+# status asks ``is_ready`` — never the word ``implemented`` alone (tests/unit/test_catalog_ready.py
+# reads the code for it): an entry turned ``proven`` would otherwise vanish from the coverage,
+# the indicators, the board, the drills and the rules proposed.
+READY_STATUSES = ("implemented", "proven")
+
+
+def is_ready(status: Any) -> bool:
+    """True when a catalogue entry's status says an injector plays it: ``implemented`` or
+    ``proven``. ``planned``, unknown, absent or not a string: False."""
+    return isinstance(status, str) and status in READY_STATUSES
+
 
 @lru_cache(maxsize=None)
 def _schema(path: str) -> dict:

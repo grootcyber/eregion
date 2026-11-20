@@ -2,8 +2,13 @@
 
 _Conception — 06/11 (DRL1, #613), relue en Opus 5.5 (06/11) et corrigée ; les décisions de Jonathan du
 06/11 sont au §10. Statut : **DRL1a fait** (16/11, le cœur sur Orodruin : le drill et ses attentes, le
-minuteur, l'armement, les gardes, le kill ; les écarts avec cette conception au §11). DRL1b (Imladris, anciennement H0) et
-DRL1c (la Logic App) restent à faire. Rien n'est armé ni mesuré : l'armement reste à Jonathan._
+minuteur, l'armement, les gardes, le kill ; les écarts avec cette conception au §11). **VP1 fait** (18/11,
+le verdict proposé, §8.2 et §12). **DRL1b fait** (18/11, Imladris, anciennement H0 : le verdict de
+chaque occurrence, l'alarme d'absence, le fil du bot, la ligne « Weekly drill » ; ses écarts au §13).
+**DRL1c fait** (19/11, le Terraform : la Logic App du démarrage planifié, livrée désactivée, son identité et
+son rôle, l'extinction de 23:00 UTC ; ses écarts au §14). **DRL1d fait** (19/11, le service du drill lancé
+aux options des runs d'Annatar, dont le tmpfs exécutable du `HOME` ; §15). **DRL1f fait** (20/11, le `startTime` de la Logic App avec le `Z` qu'Azure exige en UTC, relevé au banc ; §14). Rien n'est appliqué, armé ni mesuré : l'apply,
+la mesure et l'armement restent à Jonathan._
 
 > **Décision de Jonathan (06/11, « Cadence du banc », D1).** Un exercice planifié chaque semaine,
 > pour que l'âge de la dernière preuve (moins de 30 jours, un des cinq indicateurs de la 1.0) se
@@ -81,7 +86,8 @@ Jonathan ── arme (une fois, puis à chaque changement du drill) ──▶ Or
 
 Une technique entre dans le drill de la semaine si elle tient **toutes** ces conditions :
 
-1. au catalogue (`technique_catalog.yaml`), `status: implemented` : script ou atomic, règle et
+1. au catalogue (`technique_catalog.yaml`), `status: implemented` (ou `proven`, mesurée au banc :
+   le même cran, STM1g) : script ou atomic, règle et
    validation en réel existent ;
 2. `destructive: false`, dans le catalogue (le mot du catalogue, `catalog_destructive`, SEC5) ;
 3. d'une **bibliothèque publique**, version épinglée (`engine: atomic`, plus tard `stratus`). Jamais
@@ -261,13 +267,15 @@ secret. Les conteneurs le montent en lecture seule, et ne peuvent donc pas le r�
   - `Persistent=false` : une occurrence manquée n'est **jamais rattrapée** au démarrage suivant. Elle
     est dite manquée (§4), elle ne part pas à une heure où personne ne l'attend ;
   - `AccuracySec=1min`.
-- `eregion-drill.service` : un `docker run` durci comme les autres (ORO_HARDEN) :
+- `eregion-drill.service` : un `docker run` aux options des runs d'Annatar (`ORO_RUN` : `ORO_HARDEN`,
+  puis `ORO_EXEC_HOME`, ni plus ni moins, DRL1d, §15) :
   - `docker run --rm --pull never` : l'image est celle qu'`orodruin-push` a chargée et vérifiée
     (`eregion-annatar:orodruin`), jamais tirée ; absente, le service échoue, et Imladris le dit (`not_run`) ;
   - un nom fixe (`--name eregion-drill`) et `--init` (§3.1, l'arrêt du service) ;
   - `--env-file orodruin.env`, comme `ORO_RUN` : le contrat se lit dans la même configuration que
     pour une demande ;
-  - racine en lecture seule, aucune capacité ;
+  - racine en lecture seule, aucune capacité, aucun gain de privilège, `/tmp` en tmpfs sans exec ;
+  - un seul tmpfs exécutable, `/stratus-home`, où l'adaptateur d'Annatar bâtit le `HOME` du run ;
   - `~/runs/{annatar,gothmog,orodruin}` montés comme pour une demande ;
   - l'armement en lecture seule ;
   - une commande fixe, `python -m eregion_core.scheduled_drill run`, sans argument venu d'ailleurs ;
@@ -655,7 +663,7 @@ sans identifiant affiché, dont le JSON (`runs/bench/<run_id>.json`) est prêt p
 
 | État | Ce qu'il veut dire | Alerte |
 |---|---|---|
-| `proven` | détectée, et la décision rattachée : une preuve, la règle de C1 | aucune ; une ligne dans le fil du drill, et la tuile de l'accueil |
+| `proof` | détectée, et la décision rattachée : une preuve, la règle de C1 (nommé `proof`, pas `proven` : « proven » est réservé au statut du catalogue, décision de Jonathan du 18/11) | aucune ; une ligne dans le fil du drill, et la tuile de l'accueil |
 | `missed` | la technique a joué, aucune détection, la fin d'attente signée par la watch | **oui, avec mention** : c'est une régression (`regressed` dans la matrice) |
 | `unknown` | la mesure n'a pas pu conclure : canal coupé, détection refusée, Orodruin en retard | sans mention la première fois ; **deux de suite, avec mention** : la mesure est cassée |
 | `refused` | avant tout appel : `passive`, `watch`, `not_placed`, `not_bench`, `busy`, `off_schedule`, `too_soon`, `no_permit`, `permit_mismatch`, `drill_changed` | oui. Avec mention pour `passive`, `not_placed`, `not_bench`, `off_schedule`, `too_soon`, `permit_mismatch`. Sans mention pour `drill_changed` et `no_permit`, attendus après une release, un kill ou un permis expiré |
@@ -760,7 +768,9 @@ C'est une hypothèse à mesurer : l'action d'ARM de la Logic App peut demander a
 **Son heure.** Terraform la tient d'une variable, `drill_autostart_at` (le jour et l'heure,
 T − 20 min : `tue 18:40` UTC). `orodruin-drill-arm` relit la Logic App et refuse d'armer si son heure
 n'est pas celle du `schedule` du drill moins 20 min, et dit « apply first ». Un `schedule` changé
-demande donc une PR, un apply du module (DRL1c), puis le réarmement.
+demande donc une PR, un apply du module (DRL1c), puis le réarmement. L'armement refuse aussi un drill
+que l'extinction de 23:00 UTC couperait, et `orodruin-drill-check` dit l'état de la Logic App face à
+l'armement (DRL1e, §16).
 
 **Son état.** Terraform la crée **désactivée**, et ignore ensuite son état
 (`lifecycle { ignore_changes = [enabled] }`). Seuls `orodruin-drill-arm` l'active, et
@@ -771,6 +781,9 @@ demande donc une PR, un apply du module (DRL1c), puis le réarmement.
 - un runbook Azure Automation : plus lourd (un compte, un runbook, un planning, une identité) ;
 - `Microsoft.ComputeSchedule` (les actions planifiées sur des VM) : plus simple s'il existe dans la
   région ; sa disponibilité et son API restent à confirmer.
+
+**Codé par DRL1c** (§14) : un modèle ARM qui porte l'état `Disabled` lui-même, plutôt que
+`azurerm_logic_app_workflow` et `ignore_changes`, que le fournisseur ne tiendrait pas (§14).
 
 Avec (b), le démarrage planifié ne met pas à jour l'image (§3.2) : après une release, Jonathan lance
 `make orodruin-start` ou `make orodruin-update` depuis son poste, comme il le fait déjà (OI3). Sinon,
@@ -833,7 +846,15 @@ attaque. Aucune session n'arme, ne déclenche ni ne réarme le drill. La ligne �
    - la Logic App allume Orodruin, avec le seul droit `start/action` (ou dit qu'il lui faut `read`) ;
    - son identité ne peut rien d'autre : une tentative sur une autre VM échoue ;
    - l'extinction de 23:00 UTC désalloue ;
-   - un `make orodruin-lock` après une désactivation ne la réactive pas.
+   - un `make orodruin-lock` après une désactivation ne la réactive pas ;
+   - (DRL1c, §14) le déploiement garde `timeZone: UTC` avec son `startTime`, son `Z` compris (DRL1f :
+     sans lui, Azure refuse le modèle) ; l'action démarre la VM sans
+     suivre l'opération (`DisableAsyncPattern`) ; un apply qui redéploie le modèle (une heure changée) la
+     remet `Disabled`, et l'identité de la Logic App ne change pas ;
+   - juste après l'apply, un second `make orodruin-plan` ne dit aucun changement : sinon, un écart
+     permanent (sur `template_content`, par exemple) redéploierait la Logic App à chaque `orodruin-lock`,
+     et la désarmerait à chaque fois ;
+   - `orodruin-down` l'emporte (le fournisseur supprime ce que le déploiement a posé).
 3. gondolin démarrée à froid par le drill :
    - le délai jusqu'au premier Heartbeat (le budget de 10 min tient-il ?) ;
    - la ligne Syslog d'une technique jouée juste après, perdue ou non ;
@@ -969,6 +990,8 @@ décision attendue : le dire, ce serait juger le modèle par une attente écrite
 décision reste à Jonathan. Le nom du verdict proposé, et son registre à part des verdicts posés,
 sont à VP1. Le drill lui donne ce qu'il lit, rien de plus.
 
+**Statut : fait (VP1, #615, 18/11)** — ce qui en a été codé, et ses choix, au §12.
+
 ---
 
 ## 9. Le code à venir (proposé)
@@ -977,7 +1000,8 @@ sont à VP1. Le drill lui donne ce qu'il lit, rien de plus.
 |---|---|---|
 | **DRL1a** (Orodruin, cœur) | `schedule` dans le lecteur de drill ; `drills/banc-hebdo.yaml` ; `expectations/banc-hebdo.yaml` et son lecteur exact ; `COPY drills/` dans l'image des injecteurs (jamais `expectations/`), `COPY expectations/` dans celle de Glorfindel, et leur test ; `eregion_core/scheduled_drill.py` (l'armement, les gardes de §2.3, le verrou et son descripteur passé au runner, le registre sous le verrou, le démarrage de la cible et le Heartbeat, la demande, le permis exigé et réécrit sous `If-Match`, `drill.json`, le `launch` du drill par `Popen`, le gestionnaire SIGTERM qui relaie et attend) ; le paramètre `zones` du runner, passé à `exercise_plan.judge` (premier jugement et `_recheck`) ; le permis écrit par `orodruin-drill-arm`, supprimé par `-disarm` et le kill ; la fenêtre d'un fil bornée par son temps restant ; le champ `drill` du statut, optionnel dans son lecteur exact ; les cibles Make `orodruin-drill-check`, `-arm`, `-disarm` ; les unités systemd ; le pas « drill » du kill ; la ligne de `orodruin-down` ; le gestionnaire SIGTERM d'`annatar wire` (dit à la session Annatar) ; le test de CI drill ↔ attentes ↔ catalogue ↔ règles ; l'extension de `test_dagorlad_blind.py` | `eregion_core/`, `drills/`, `expectations/`, `annatar/Dockerfile`, `glorfindel/Dockerfile`, `annatar/cli.py`, `Makefile`, `infra/orodruin/kill.py` |
 | **DRL1b** (Imladris) | le verdict de chaque occurrence, l'alarme d'absence, les alertes par le bot de Glorfindel, la ligne « Weekly drill » de la console, la tuile de la dernière preuve qui dit le drill ; les lecteurs exacts de `drill.json` et du permis, jugé par la liste du canal ; l'alarme d'absence armée seulement sur des empreintes égales à la copie d'Imladris, sinon « réarmement attendu » | `eregion_console/`, `glorfindel/` (le pull, le bot) |
-| **DRL1c** (Terraform) | la Logic App, créée désactivée et son état ignoré, son heure tirée de `drill_autostart_at` ; son identité ; son rôle personnalisé (`start/action` seul, assignable dans le groupe d'Orodruin, attribué à la VM d'Orodruin) ; l'extinction de 23:00 UTC | `infra/orodruin/` |
+| **DRL1c** (Terraform, fait, §14) | la Logic App, créée désactivée et son état ignoré, son heure tirée de `drill_autostart_at` ; son identité ; son rôle personnalisé (`start/action` seul, assignable dans le groupe d'Orodruin, attribué à la VM d'Orodruin) ; l'extinction de 23:00 UTC | `infra/orodruin/` |
+| **DRL1d** (Orodruin, fait, §15) | le service du drill lancé aux options des runs d'Annatar (`ORO_HARDEN` puis `ORO_EXEC_HOME`), la parité avec le `Makefile` tenue par un test | `infra/orodruin/drill_ops.py` |
 | VP1, BRO1 | ce qu'ils lisent du drill et des attentes (§4.3, §8.2) | leurs lots |
 
 **Tests hermétiques** : faux `systemd`, fausse horloge, faux Azure, faux canal. Aucun appel Azure ni
@@ -1068,6 +1092,308 @@ Le code suit les §2.3 et §3.1 dans leur ordre. Ce qui s'en écarte, ou que la 
   `not_placed` ni `not_ready`) ; reçu entre le lancement du fil et sa prise en main, il lui est relayé ;
   un second signal ne lève plus.
 
+## 12. Ce que VP1 a codé (18/11)
+
+- **Où** : `glorfindel/proposed_verdict.py` (`assess`, `refresh`), la passe de la watch chaque minute
+  (`glorfindel/cli.py`, `_propose_verdicts`), après la lecture des fenêtres ; le registre sur la carte
+  (`glorfindel/escalations.py`) ; la console (TO JUDGE, la carte ouverte) et le bot.
+- **Le registre** : trois champs de la carte, à part de `verdict` — `proposed_verdict` (le verdict
+  proposé, `right`, et ce qui a été comparé : le drill, son empreinte, la demande, le rang, le run, la
+  règle, le délai, l'écart au T0), `proposed_why` (la raison quand rien n'est proposé : un code et une
+  phrase, sans identifiant), `proposed_refused`. Une proposition faite reste jusqu'au clic ; refusée,
+  elle ne revient jamais ; seule une carte d'exercice de décision, sans verdict, en reçoit une
+  (`escalations.proposable`, relu sous le verrou à l'écriture). Une carte de plus de 7 jours n'est plus
+  regardée.
+- **Le confirmer** en fait le verdict de l'opérateur (`confirm_proposed`, `verdict_from: proposed`),
+  et acquitte la carte comme tout verdict ; **le refuser** l'efface (`refuse_proposed`).
+- **Le rang** : la demande du drill pose chaque fil du drill sur chaque cible armée, dans cet ordre
+  (`scheduled_drill._place`). L'attente d'un fil de la demande est celle du fil du drill qu'il pose :
+  le rang de la demande ramené à celui du drill, et la même expérience au drill, à l'attente, au
+  rapport et à la fenêtre.
+- **Le T0** : l'heure de l'attaque du rapport du run (`metrics.attack_time`), tenue elle-même dans la
+  fenêtre ; la fenêtre est celle que la watch croit (`exercise.load_windows`), d'une seule cible.
+- **La première carte du fil** : la première carte de décision, par son heure, des runs du fil et de la
+  règle attendue — quoi qu'elle soit devenue (jugée, refusée, sur une autre VM) : une seule carte par
+  fil peut jamais en recevoir une.
+- **Mutants** M5921–M5940 (`scripts/mutants/VP1.py`), dont les deux du §9 (M5921 : le drill lu comme
+  `drill.find` ; M5922 : une autre VM).
+- **Les restes de sa relecture (VP1b, #917, 19/11)** :
+  - un verdict posé à la main (`set_verdict` : la console, le bot, la CLI) retire `verdict_from` : une
+    carte confirmée puis rejugée ne dit plus « proposed » ;
+  - la passe tient carte par carte : une carte qu'elle ne sait pas évaluer est sautée, dite une fois
+    dans le canal de la watch (son identifiant court et le genre de l'erreur, jamais son texte), et les
+    autres sont proposées ; une carte dont l'heure n'a pas de fuseau n'est jamais proposée, son fuseau
+    jamais deviné (`no_tz`, dit sur la carte), et une telle carte dans le fil et la règle attendue fait
+    taire le fil : laquelle vient d'abord n'est pas devinée non plus (`unordered`) ;
+  - le bot n'ajoute l'état de la proposition à la signature d'un message que s'il y en a un : une carte
+    sans proposition garde la signature d'avant VP1, et aucun message n'est réédité pour rien ;
+  - une confirmation dans Discord prend le chemin de tout verdict posé (`bot._judged`) : la carte
+    acquittée, ses boutons grisés, le fil de la VM archivé quand plus rien n'y attend ;
+  - mutants M6336–M6346 (`scripts/mutants/VP1b.py`).
+
+## 13. Ce que DRL1b a codé, et ses écarts avec la conception (18/11)
+
+- **Où** :
+  - le tirage, `exercise_channel.pull_drill`, appelé par le fil de la watch qui tire le canal
+    (`analysis/hosted_report.py`, `tick`), avant les campagnes : une liste à part du préfixe
+    `orodruin/drill`, entière ou en erreur ; ce qu'elle a vu dans `runs/glorfindel/orodruin/drill-seen.json`
+    (listée ou non, depuis quand illisible, le permis présent dans la liste, ce qu'il dit et quand il y
+    était pour la dernière fois, le `Last-Modified` de `drill.json` et sa dernière copie lisible) — **un
+    seul fichier**, écrit d'un coup : le juge ne lit jamais la moitié d'un tirage avec la moitié d'un
+    autre. Aucune copie du permis n'est gardée d'un tirage à l'autre : la liste seule dit qu'il est là ;
+  - le jugement, `glorfindel/drill_watch.py` (`judge`, `refresh`), chaque minute dans la passe de la
+    watch (`glorfindel/cli.py`, `_judge_drill`), après VP1 ; son magasin, `~/.glorfindel/drill_verdicts.json`
+    (le verdict courant et l'état de chaque occurrence, les douze dernières), que lisent le bot et la
+    console ;
+  - le bot, `_post_drill` (`glorfindel/bot.py`) : son fil « drill · <nom> », chaque verdict posté une
+    fois (`~/.glorfindel/bot_drill_posted.json`), jamais un verdict calme ;
+  - la console, `GET /api/dagorlad/drill` et la ligne « Weekly drill » de Dagorlad ; la tuile de la
+    dernière preuve (`/api/indicators`, `last_proof.drill`).
+- **L'état `proof`**, pas `proven` (ci-dessus, §4.2).
+- **Les états calmes**, qui ne disent rien à personne : `disarmed` (jamais armé, désarmé, tué),
+  `waiting` (armé, l'occurrence pas encore due ou pas encore conclue), `off` (pas de canal sur cet hôte).
+- **La preuve** est celle de C1 (`eregion_console.indicators.decision_of`), lue sur les cycles de la
+  watch : une passerelle déclarée (`scripts/component_check.py`, `CROSSINGS`). Sans la console dans
+  l'image, une occurrence détectée reste « non rattachée », puis `unknown`, dite.
+- **Les refus** : sans mention pour `drill_changed` et `no_permit`. Pour `watch` et `busy`, que le
+  tableau ne nomme ni d'un côté ni de l'autre : sans mention la première fois, **avec mention quand
+  l'occurrence d'avant a été refusée par l'un d'eux aussi** (le pouls ne dit pas qui tenait le verrou).
+  Avec mention pour les six du tableau **et pour tout autre code** (`not_eligible`, `over_cap`, ceux du
+  contrat) : le plus prudent. `crashed` (état `failed` du pouls) est `unknown`.
+- **Les délais choisis** : `not_run` 2 h après l'heure ; « Orodruin silent » au-delà de 8 jours, par le
+  `Last-Modified` du canal (l'horloge d'Azure, jamais le mot d'Orodruin) ; une occurrence jouée et pas
+  conclue 3 h après l'heure : `unknown` ; un permis présent dont le pouls n'est pas encore lu (l'armement
+  écrit le permis, puis le pouls) : 1 h de calme, puis `unknown`. Un pouls écrit avant l'heure de
+  l'armement du permis n'est pas son mot.
+- **La grâce du désarmement et du kill** (relecture, tour 1) : tous deux retirent le permis d'abord, et
+  n'écrivent le pouls `disarmed` qu'après (le kill, après avoir fermé les fenêtres : des minutes). Le
+  permis sorti de la liste depuis moins de 30 min (`DISARM_GRACE_S`, par l'heure de sa dernière présence,
+  `permit.last_listed`), le pouls encore `armed` : calme (`waiting disarming`), jamais
+  `rearm_expected` ; au-delà, « réarmement attendu ». Un permis retiré par un autre
+  geste que le désarmement ou le kill (sa rétention, une identité qui le supprime) est donc dit au bout de
+  30 min : `rearm_expected no_permit`, sans mention.
+- **Jamais un calme sans fin** : aucun tirage écrit sur cet hôte, un canal configuré, plus de 15 min
+  (`PULL_STALE_S`) : `channel_unread` (`not_pulled`) ; le dernier tirage plus vieux que 15 min (son fil
+  arrêté) : `channel_unread` (`stale`), jamais son dernier mot. Avec mention au-delà de 8 jours, comme
+  le canal illisible.
+- **Ce qui part dans Discord d'une liste qui a échoué** : le type de l'erreur et son statut HTTP, jamais
+  son texte (il peut nommer le compte de stockage), comme `_error_key`.
+- **Le coût** : les mesures d'une occurrence jouée sont gardées tant que rien de ce sur quoi elles
+  reposent n'a changé (le statut, les rapports, les fichiers de cycles écrits depuis l'heure : leurs
+  versions, lues par `lstat` seul) ; une passe sans changement ne relit aucun fichier de cycles.
+- **Ce qui l'emporte** : canal illisible, puis un pouls ou un permis que cet Imladris refuse (`unknown`,
+  §4.1), puis `self_disarmed`, puis le mot de l'occurrence elle-même (le `last` du pouls, à l'heure
+  prévue par la copie d'Imladris), puis `rearm_expected`, puis l'alarme.
+- **Pas fait** : « Orodruin behind » (le commit de l'image du pouls comparé à la version d'Imladris,
+  §3.2) ; le pouls dit son commit, la ligne de la console le montre, rien ne le compare.
+- **Mutants** M5861–M5880 et M6291–M6300 (`scripts/mutants/DRL1b.py`), dont celui du §9
+  (M5861–M5863 : l'alarme armée sur un drill désarmé, tué, ou sur une empreinte qu'Imladris n'a pas).
+
+**Deux questions, tranchées par Jonathan le 19/11** (les deux partis du code sont gardés) :
+1. **`watch` et `busy` deux semaines de suite**, avec mention ? Le code dit oui : un refus `watch` qui
+   revient chaque semaine dit qu'aucune watch vivante n'est vue à l'heure du drill, et ne doit pas
+   rester calme. L'autre parti : jamais de mention pour eux, comme `drill_changed`. **Tranché le
+   19/11 : avec mention** (le code, inchangé).
+2. **Un pouls `disarmed` de raison `drill_changed`, le permis encore présent.** Le code ne le prend pas
+   pour `self_disarmed` (avec mention) : c'est ce qu'Orodruin écrit de bonne foi quand une release a
+   changé le drill sans réarmement, et le permis reste alors dans le canal. Il dit `refused drill_changed`
+   pour l'occurrence de l'heure, sinon `rearm_expected`, **sans mention**. Ce qu'un Orodruin compromis
+   en fait : en écrivant ce pouls-là au lieu d'un `disarmed operator`, il fait passer l'alerte de « avec
+   mention » à « sans mention » — il ne peut pas la taire (elle est dite, dans le fil et sur la
+   console), et il n'en a pas besoin pour attaquer (§7). Le comportement est gardé : le changer
+   ferait mentionner chaque release qui change le drill, ce que le §4.2 exclut. **Tranché le 19/11 :
+   sans mention** (le code, inchangé) ; le revers face à un Orodruin compromis, ci-dessus, reste vrai.
+
+## 14. Ce que DRL1c a codé, et ses écarts avec la conception (19/11)
+
+- **Où** : `infra/orodruin/drill_autostart.tf` (le déploiement, le rôle, son attribution, l'extinction),
+  `infra/orodruin/drill_autostart.json` (le modèle ARM de la Logic App), la variable `drill_autostart_at`
+  (`variables.tf`, défaut `tue 18:40`), la sortie `drill_autostart_id` (`outputs.tf`). Aucune ressource
+  existante du module n'est retirée ni renommée : un plan d'Orodruin n'en dit que quatre de plus.
+- **Le contrat du §11, tenu tel quel** : la sortie est l'id d'un `Microsoft.Logic/workflows`
+  (`logic-orodruin-drill`, dans `rg-orodruin`) ; son seul déclencheur, `weekly`, une `Recurrence`
+  (`frequency: Week`, `interval: 1`, `timeZone: UTC`, un jour, une heure, une minute) ; créée `Disabled`.
+  Le lecteur de DRL1a (`drill_ops.autostart_at`) lit le modèle rempli comme Terraform le remplit, et
+  trouve le `schedule` du drill livré moins 20 min (`tests/unit/test_drill_autostart.py`).
+- **Écart : un modèle ARM, pas `azurerm_logic_app_workflow` et `ignore_changes = [enabled]`.** Dans
+  azurerm 4.81.0, le déclencheur et l'action d'une Logic App sont des ressources à part, qui se posent en
+  réécrivant tout le workflow par un PUT **sans son état** (`logic_apps.go`,
+  `resourceLogicAppComponentUpdate` ; lu dans la source du fournisseur, pas mesuré). `ignore_changes`
+  sur le workflow ne l'empêche pas : le premier apply, et chaque apply qui change l'heure, laisseraient
+  la Logic App dans l'état qu'ARM donne à un PUT sans état (`Enabled`, à mesurer). Le modèle, lui, porte
+  `state: Disabled` dans le PUT même qui la crée, et Terraform ne suit que le déploiement, jamais l'état
+  de la Logic App : l'armement qui l'active ne fait aucun écart au plan. C'est l'« équivalent » que le
+  §11 admet, fermé de plus : **un apply qui redéploie le modèle** (une heure, une VM, un nom changés) **la
+  remet `Disabled`** (à mesurer, §6.2). Le drill est alors suspendu, jamais réveillé sans armement. Il faut réarmer, ce que
+  le §5.1 demande déjà d'un `schedule` changé. Entre l'apply et le réarmement, une occurrence où Orodruin
+  est éteinte ne joue pas, et Imladris dit `not_run` : l'alarme d'absence le voit. Depuis DRL1e (§16),
+  `make orodruin-drill-check` le dit avant : « armed but scheduled start disabled: re-arm ». Le déploiement est `Incremental` : `Complete` supprimerait tout le reste du
+  groupe d'Orodruin, et un mutant le garde.
+- **Le plan d'une heure changée** : le déploiement est mis à jour sur place, et l'attribution du rôle peut
+  être annoncée à remplacer, parce que son `principal_id` vient de la sortie du déploiement et n'est connu
+  qu'après l'apply. L'identité de la Logic App, elle, ne change pas : un PUT de la même Logic App garde son
+  identité système. Les deux sont à mesurer (§6.2) ; un remplacement de l'attribution dans ce plan-là
+  n'est pas une alarme.
+- **L'action** : un appel HTTP `POST <vm>/start?api-version=2024-07-01`, par l'identité managée de la
+  Logic App (`ManagedServiceIdentity`, l'audience d'ARM), **sans suivre l'opération**
+  (`DisableAsyncPattern`) : la suivre lirait l'opération asynchrone d'ARM, un droit que le rôle ne porte
+  pas. Hypothèse à mesurer (§6.2, point 2) : `start/action` seul suffit alors ; sinon
+  `virtualMachines/read` s'ajoute, à la même portée.
+- **Un `startTime`** (`2026-01-01T00:00:00Z`) accompagne `timeZone: UTC` : la documentation des Logic
+  Apps ne fait valoir le fuseau qu'avec une heure de départ. Le lecteur de DRL1a ne le lit pas.
+  - **Son `Z` est exigé (DRL1f, #963, relevé au banc le 20/11).** DRL1c l'avait écrit sans décalage
+    (`2026-01-01T00:00:00`), et Azure a refusé le modèle à l'apply, `make orodruin-up` et
+    `make orodruin-lock` en échec sur main :
+    > `InvalidWorkflowTriggerRecurrence: … invalid start time '2026-01-01T00:00:00.0000000' zone
+    > designator for time zone 'UTC'. Expected … 'yyyy-MM-ddTHH:mm:ssZ'.`
+
+    C'est la réponse réelle d'Azure, et elle prime sur sa documentation, qui dit parfois l'inverse pour
+    un fuseau nommé (une heure de départ sans décalage). Le format exigé, en `timeZone: UTC` :
+    `yyyy-MM-ddTHH:mm:ssZ`, ni `+00:00`, ni une date seule. Rien d'autre ne change dans le modèle
+    (`state: Disabled`, `timeZone: UTC`, le `schedule`).
+  - **Ce que les fournisseurs simulés ne voient pas** : le `terraform test` de la CI planifie contre un
+    faux azurerm, qui ne déploie rien ; le modèle ARM n'est validé que par Azure, à l'apply. Son format,
+    pas plus que ses autres règles (une action qui n'existe pas, un `schedule` refusé), n'y est donc
+    jamais vu. `tests/unit/test_drill_autostart.py` ne lisait pas le `startTime` ; il le lit désormais
+    (`test_a_trigger_in_utc_starts_at_an_hour_ending_in_z`, sur le modèle rempli comme Terraform le
+    remplit), et le plan simulé vérifie le même format (`tests/drill_autostart.tftest.hcl`), sans
+    l'éprouver plus qu'un test : seul un apply le prouve. Le lecteur de DRL1a lit toujours le modèle,
+    `Z` compris. Mutants M6636–M6640 (`scripts/mutants/DRL1f.py`) : le `Z` retiré, `+00:00`, une date
+    seule, un espace pour le `T`, le `startTime` retiré.
+- **Le rôle** : `eregion-orodruin-autostart`, une action (`Microsoft.Compute/virtualMachines/start/action`),
+  défini et assignable dans `rg-orodruin` seul, attribué à la portée de `vm-orodruin` seule, à l'identité
+  que le déploiement rend (`principalId`, `principal_type = ServicePrincipal`). L'identité d'Orodruin ne
+  gagne rien. Le kill ne révoque pas l'identité de la Logic App : il désactive la Logic App (DRL1a), ce
+  qui suffit, puisqu'elle n'allume qu'Orodruin.
+- **L'extinction** : le planning DevTest de la VM d'Orodruin (`azurerm_dev_test_global_vm_shutdown_schedule`),
+  chaque jour à 23:00 UTC, sans notification, comme le banc. Elle ne se règle pas : elle vaut tous les
+  jours (décision 1). L'armement la garde depuis DRL1e (§16).
+- **Le fournisseur** : rien ne s'ajoute ni ne monte (azurerm 4.81.0, azuread 3.10.0) ;
+  `.terraform.lock.hcl` inchangé.
+- **Mutants** M5881–M5900 (`scripts/mutants/DRL1c.py`), dont celui du §9 : l'apply qui réactive le
+  démarrage planifié (M5882, le modèle sans état ; M5883, un `local-exec` qui l'active). Et : la Logic
+  App créée activée, une action de plus, le rôle assignable ou attribué au-delà de la VM d'Orodruin, ou à
+  l'identité d'Orodruin, l'heure qui n'est pas le `schedule` moins 20 min, le déploiement en `Complete`,
+  l'extinction désactivée ou à une autre heure.
+- **Ce qui reste à Jonathan** (rien n'est appliqué) : `make orodruin-plan`, le plan relu (quatre ressources
+  ajoutées, rien de changé ni de détruit), puis `make orodruin-lock` ; la mesure du §6.2, point 2 ; puis
+  `make orodruin-drill-check`, l'armement et la première occurrence.
+
+## 15. Ce que DRL1d a corrigé : le drill lancé comme les runs d'Annatar (19/11)
+
+- **Le défaut** (relevé à la relecture de R2BZ, le 18/11, antérieur à DRL1d) : l'`ExecStart` du service
+  reprenait `HARDEN`, la copie d'`ORO_HARDEN`, et rien de plus. Les runs d'Annatar sur Orodruin
+  (`ORO_RUN`, `ORO_RUN_REQUEST`, `BENCH_ORO_RUN`) portent en plus `ORO_EXEC_HOME`
+  (`--tmpfs /stratus-home:exec`, R2BZ) : le seul tmpfs exécutable, où l'adaptateur de la bibliothèque du
+  plan de contrôle bâtit le `HOME` du run (`annatar/executors/stratus_host.py`, `EXEC_HOME`), et où
+  Terraform extrait puis exécute ses fournisseurs. Une technique du plan de contrôle jouée par le drill
+  aurait échoué (`fork/exec … permission denied`) là où le même run, lancé à la main, passe.
+- **Ce que les runs d'Annatar reçoivent, lu dans le `Makefile`** : `ORO_HARDEN` (`--read-only`,
+  `--tmpfs /tmp`, `--cap-drop ALL`, `--security-opt no-new-privileges:true`), puis `ORO_EXEC_HOME`
+  (`--tmpfs /stratus-home:exec`). Aucune variable d'environnement : `HOME` n'est pas posé par
+  `docker run`. L'adaptateur trouve le montage et y crée le `HOME` du run (`mkdtemp`, `stratus-home-…`) ;
+  sans lui, il retombe sur `/tmp`, sans exec. `--env-file orodruin.env` et l'image sont ceux
+  d'`ORO_RUN`. Les montages de `~/runs` sont ceux d'une demande (`ORO_RUN_REQUEST`, sans `requests`),
+  plus `~/drill` en lecture seule : `ORO_RUN` ne monte pas `gothmog`. Cet écart est antérieur à DRL1d et
+  reste hors du lot. `--pull never`, `--init` et `--name` sont propres au service (§2.1).
+- **Ce qui change** : l'`ExecStart` porte `RUN_OPTS`, `HARDEN` puis `EXEC_HOME`
+  (`infra/orodruin/drill_ops.py`). Le drill ne joue que des runs d'Annatar (une technique, jamais une
+  panne en v1 : `drill.eligible`) : le service le reçoit toujours. Les lectures du drill (`fingerprint`,
+  `check`, `ORO_DRILL_RUN`) ne jouent aucun run et gardent `ORO_HARDEN` seul, comme le contrat et
+  Gothmog. Le durcissement ne bouge pas : `/tmp` sans exec, aucune capacité, aucun gain de privilège, la
+  racine en lecture seule.
+- **Une seule source** : les copies du script ne peuvent plus diverger du `Makefile`. Un test lit
+  `ORO_HARDEN`, `ORO_EXEC_HOME` et `ORO_RUN`, les développe, et exige que les options du `docker run`
+  du service, hors de ses options de lancement, soient exactement celles d'`ORO_RUN` ; que chaque run
+  d'Annatar porte les mêmes ; que le tmpfs exécutable soit le chemin de l'adaptateur, le seul exécutable ;
+  qu'aucun `HOME` ne soit posé autrement (`tests/unit/test_drill_ops.py`).
+- **Mutants** M5991–M6000 (`scripts/mutants/DRL1d.py`) : le tmpfs exécutable retiré du drill, `/tmp`
+  rendu exécutable, la parité qui perd `ORO_EXEC_HOME`, le `HOME` dirigé ailleurs (le montage à un autre
+  chemin, un `-e HOME=/tmp`), une option de plus, les lectures qui reçoivent le tmpfs exécutable, le
+  `Makefile` qui durcit sans que la copie suive, la racine accessible en écriture, `no-new-privileges`
+  retiré.
+- **Ce qui reste à Jonathan** : rien ne change sur Orodruin avant le prochain armement. Les unités sont
+  posées par `make orodruin-drill-arm` : un drill armé avant DRL1d garde l'ancienne ligne. Le réarmement
+  se fait depuis un poste à jour de `main` (`drill_ops.py` tourne sur le poste), l'image chargée sur
+  Orodruin poussée après R2BZ (son adaptateur crée le `HOME` dans `EXEC_HOME`) :
+  `make orodruin-drill-disarm`, puis `make orodruin-drill-arm DRILL=… TARGETS=…`. Il réécrit
+  `eregion-drill.service`, et `systemctl cat eregion-drill.service` montre alors :
+
+  ```
+  ExecStart=/usr/bin/docker run --rm --pull never --init --name eregion-drill --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /stratus-home:exec --env-file orodruin.env -v /home/<user>/runs/annatar:/app/runs/annatar -v /home/<user>/runs/gothmog:/app/runs/gothmog -v /home/<user>/runs/orodruin:/app/runs/orodruin -v /home/<user>/drill:/app/drill:ro eregion-annatar:orodruin python -m eregion_core.scheduled_drill run
+  ```
+
+  À mesurer à la première occurrence qui joue une technique du plan de contrôle : son préchauffage passe
+  sous le drill comme à la main.
+- **Resserré par DRL1e** (§16) : le test lit chaque définition du `Makefile` jusqu'à `$(ORO_IMAGE)`, et
+  non plus jusqu'à `--env-file`. Une option posée après la configuration ou parmi les montages, dans
+  `ORO_RUN` ou `ORO_DRILL_RUN`, ne passe plus inaperçue.
+
+## 16. Ce que DRL1e a ajouté : l'état du démarrage planifié, la garde des 23:00, des tests resserrés (19/11)
+
+Les suites des relectures de DRL1c et de DRL1d (le 19/11). Tout est dans `infra/orodruin/drill_ops.py`
+et ses tests ; ni `main.tf`, ni `kill.py`, ni le `Makefile` ne changent.
+
+- **`orodruin-drill-check` dit l'état du démarrage planifié face à l'armement.** Le défaut : un apply
+  qui redéploie la Logic App la remet `Disabled` (§14). `~/drill/armed.json` disait armé, le check
+  affichait « ✓ scheduled start », et l'occurrence manquée ne se voyait qu'au `not_run` d'Imladris.
+  Le check lit maintenant `properties.state` dans la **même lecture** que l'heure du déclencheur : le
+  même `GET` de la Logic App (`az rest`, api-version 2019-05-01), par l'`az login` de l'opérateur. Il ne
+  demande donc aucun droit de plus : `Microsoft.Logic/workflows/read`, celui que l'armement demande
+  déjà pour lire l'heure. Face à l'armement sur le disque d'Orodruin :
+
+  | Armé ? | `properties.state` | Le check dit | Sortie |
+  |---|---|---|---|
+  | oui | `Enabled` | ✓ scheduled start enabled | 0 (si le reste passe) |
+  | oui | `Disabled` | ✗ armed but scheduled start disabled: re-arm | 1 |
+  | oui | illisible (le `GET` refusé, l'état absent, ou un autre, `Suspended`) | ✗ armed but the scheduled start's state does not read (…): never taken for enabled | 1 |
+  | oui | pas de Logic App | ✗ armed but no scheduled start: apply first, then re-arm | 1 |
+  | non | `Enabled` | ! scheduled start enabled with nothing armed (Orodruin réveillée pour rien) | inchangée |
+  | non | `Disabled` | · scheduled start disabled (nothing armed) | inchangée |
+
+  Une Logic App illisible ne coupe plus le check : il le dit, puis lit quand même l'armement et le
+  contrôle à blanc. Seul `Enabled` réveille Orodruin : tout autre état est dit, jamais pris pour activé.
+  **La limite** : c'est une lecture à l'instant du check. Un apply fait après le check, et avant
+  l'occurrence, ne se voit qu'au check suivant ou au `not_run` d'Imladris. Que le redéploiement remette
+  bien `Disabled` reste à mesurer (§6.2, point 2).
+- **L'armement garde l'extinction de 23:00 UTC** (`drill_ops.shutdown_guard`). Orodruin s'éteint chaque
+  jour à 23:00 UTC (§14), et un drill coupé au milieu peut laisser une cible sans son nettoyage. Deux
+  fenêtres sont comptées, en UTC, d'un bout à l'autre de la semaine :
+  - **refus**, si une extinction tombe entre le réveil (l'heure du drill moins 20 min) et l'heure du
+    drill plus son `max_run_s`, bornes comprises. C'est le budget que le drill déclare : sa coupure est
+    certaine, ou Orodruin s'éteint avant même l'heure du drill. L'armement dit pourquoi et n'écrit rien ;
+  - **avertissement**, si l'extinction ne tombe qu'avant la borne réelle du service : `RuntimeMaxSec`
+    (3 600 s), puis `TimeoutStopSec` (120 s), la borne que systemd met à tout l'arrêt avant de tuer (les
+    90 s de `docker stop --time` sont dedans), soit 3 720 s après l'heure du drill. Le runner tient, mais
+    une occurrence lente à démarrer (V1, gondolin démarrée à froid, §3.1) peut être coupée. L'armement le
+    dit, puis continue.
+
+  Le check dit la même garde, et un refus le fait échouer. Le drill livré (`tue 19:00`, 1 800 s) finit
+  à 19:30, son service au plus tard à 20:02 : ni refus ni avertissement. L'heure de l'extinction est
+  celle de `drill_autostart.tf` (`daily_recurrence_time = "2300"`), et un test les compare ; la borne
+  est celle de l'unité (`RuntimeMaxSec` plus `TimeoutStopSec`), relue dans son texte par un autre test,
+  qui place l'avertissement à la minute près.
+- **Armé, `Enabled`, mais à une autre heure** : le check dit « ✗ … apply first », et pas la ligne
+  « ✓ scheduled start enabled » à côté. Il sort en 1.
+- **Les deux tests resserrés.** `test_no_apply_enables_the_scheduled_start` cherche une activation dans
+  **chaque `.tf` du module**, et non plus dans `drill_autostart.tf` seul : un appel à `…/enable`, le mot
+  `enable` sur une ligne qui nomme la Logic App (`logic`, `workflow`, `autostart`), un provisionneur qui
+  la nomme, une ressource `azurerm_logic_app`, la Logic App nommée hors d'une `description`. Le mot
+  `enable` seul n'est pas une activation : un `systemctl enable` dans le cloud-init de `main.tf` n'a rien
+  à voir avec la Logic App, et un cas témoin le fige. Le code lu est celui que l'apply exécute : les
+  commentaires HCL (`#`, `//`, `/* … */`) sont retirés, les chaînes et les heredocs gardés entiers
+  (`"Microsoft.Consumption/*"` n'est pas un commentaire). Un test copie le module, ajoute une activation à
+  `main.tf` (ou un autre fichier), et exige que la recherche la trouve. `_run_options` lit le `Makefile` jusqu'à `$(ORO_IMAGE)`. Il écarte
+  `--env-file`, `-v`, `$(call ORO_MOUNT,…)` et `--pull`, et un test y pose une option après
+  `--env-file` et parmi les montages.
+- **Mutants** M6481–M6490 (`scripts/mutants/DRL1e.py`) : le check qui ne lit plus l'état, ou le dit sans
+  l'armement ; un état illisible pris pour activé ; la garde des 23:00 retirée, ou qui oublie
+  `max_run_s` ; la recherche limitée de nouveau à un fichier, ou qui ne cherche plus la Logic App hors de
+  `drill_autostart.tf` ; `_run_options` arrêté à `--env-file` ; une option posée après `--env-file` dans
+  `ORO_RUN` ou dans `ORO_DRILL_RUN`.
+- **Ce qui reste à Jonathan** : rien à appliquer. `make orodruin-drill-check` dit l'état dès le prochain
+  passage, depuis un poste à jour de `main`.
+
 ---
 
 ## Ce que ce document ne décide pas
@@ -1075,7 +1401,7 @@ Le code suit les §2.3 et §3.1 dans leur ordre. Ce qui s'en écarte, ou que la 
 - Rien n'est mesuré : les comportements d'Azure (la Logic App et le droit qu'il lui faut, le
   démarrage à froid, la latence, l'arrêt d'un conteneur sous `--init`, le nettoyage de l'atomic en
   75 s, la rétention du canal) sont des hypothèses, à prouver au banc.
-- Le format du verdict proposé et son registre sont à VP1. L'identité de la session « Banc » et la
+- Le format du verdict proposé et son registre : décidés par VP1 (§12). L'identité de la session « Banc » et la
   façon de la lui donner sont à BRO1.
 - Les drills des instances d'un client (couche `instance`) ne se planifient pas, et n'ont pas
   d'attentes en v1 : seul un drill livré porte `schedule` et des attentes. Un client qui voudrait son

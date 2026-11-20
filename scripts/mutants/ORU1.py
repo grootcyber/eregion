@@ -17,8 +17,8 @@ MUTANTS = [
      "an attack (ORU1)", GUARD, "    if refusal:", "    if False:"),
     ("M6042", "make orodruin-run DRY_RUN=1 would run for real — the --dry-run is dropped (ORU1)",
      MK,
-     "annatar run $(SCENARIO)$(if $(filter 1,$(DRY_RUN)), --dry-run) --yes$(ORO_WITHOUT)",
-     "annatar run $(SCENARIO) --yes$(ORO_WITHOUT)"),
+     "$(ORO_RUN) annatar run $(SCENARIO)$(if $(filter 1,$(DRY_RUN)), --dry-run) --yes$(ORO_WITHOUT)",
+     "$(ORO_RUN) annatar run $(SCENARIO) --yes$(ORO_WITHOUT)"),
 ]
 
 TESTS = {

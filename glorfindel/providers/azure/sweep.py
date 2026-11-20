@@ -5,7 +5,8 @@ The NSG listing the watch's pass shares, and one quarantine NSG read by its id (
 from __future__ import annotations
 
 from glorfindel.providers.azure.narrow import _freed, _narrow_rule, _narrowed
-from glorfindel.providers.azure.nsg import _nic_hash, _nic_owns, _rule_name
+from glorfindel.providers.azure.older_names import older_judge, older_left, recorded_names as _recorded_names
+from glorfindel.providers.azure.nsg import _is_mark, _nic_hash, _nic_mark, _nic_owns, _rule_name
 from glorfindel.providers.azure.turned import (
     _aims_elsewhere, _chain, _governed_by, _held_by_turned, _turned_allows, _turned_behind, _turned_still,
     _turned_text,
@@ -108,6 +109,7 @@ class SweepMixin:
         guard: dict = {}
         own_ips = [a for t0 in targets for a in t0.get("private_ips") or []]
         mates = [t0["nic_id"] for t0 in targets]
+        recorded = _recorded_names(own_state, _load_block_entries(resource_id), resource_id)
         for t in views:
             nsg_key = (t["nsg_rg"].lower(), t["nsg_name"].lower())
             h = hashlib.sha1(t["nic_id"].encode()).hexdigest()[:8]
@@ -139,6 +141,7 @@ class SweepMixin:
                               for n in (b, f"{b}-out")}
                     owned = {f"{prefix}-{x}".lower() for x in (
                         vm_name, f"{vm_name}-{t['nic_short']}", f"{vm_name[:40]}-{h}")}
+                    owned |= set(self._older_rule_bases(prefix, vm_name, t["nic_short"], t["nic_id"]))
                     owned = {n for b in owned for n in (b, f"{b}-out")}
                 else:
                     hashed, owned = {n for b in iso_bases for n in (b, f"{b}-out")}, iso_names
@@ -147,7 +150,19 @@ class SweepMixin:
                 # unless its name carries this NIC's hash (_nic_owns). A rule of the VM's
                 # other NIC waits for that NIC's pass (it used to be marked seen here,
                 # and skipped there).
-                if _nic_owns(r, hashed, owned, t.get("private_ips") or None):
+                older = {n.lower() for b in self._older_rule_bases(
+                    prefix if m else "glorfindel-iso", vm_name, t["nic_short"], t["nic_id"])
+                    for n in (b, f"{b}-out")} - hashed
+                # An earlier version's names (SEC-H): taken only when proven — its state records it
+                # there, at addresses it recorded or the NIC holds now (L26); else left, said.
+                judge = older_judge(t["nsg_rg"], t["nsg_name"], t["nic_id"], t.get("private_ips"), recorded)
+                mine = _nic_owns(r, hashed, owned, t.get("private_ips") or None, older, judge)
+                if not mine and name.lower() in older:
+                    seen.add((nsg_key, name.lower()))
+                    unreadable.append(older_left(t["nsg_rg"], t["nsg_name"], r, t["nic_short"], "reset non vérifié",
+                                                  recorded))
+                    continue
+                if mine:
                     seen.add((nsg_key, name.lower()))
                     if _aims_elsewhere(r, own_ips) and (why := _held_by_turned(
                             self._network, guard, t["nsg_rg"], t["nsg_name"], name, t["nic_id"], mates)):
@@ -158,6 +173,7 @@ class SweepMixin:
                     seen.add((nsg_key, name.lower()))
                     kept.append(f'{t["nsg_rg"]}/{t["nsg_name"]}/{name}')   # perimeter block
         held, gone = self._away_split(vm_name, targets, guard, mates, lambda k, n: (k, n.lower()) in seen,
+                                      recorded=recorded,
                                       blocks=True, unverified="reset non vérifié")   # a bare NIC's (D80)
         unreadable += held
         to_delete += gone
@@ -282,7 +298,7 @@ class SweepMixin:
         for nic in self._network.network_interfaces.list_all():
             nid = nic.id.rstrip("/").lower()
             listed.add(nid)
-            marks |= {_nic_hash(nid, 6), _nic_hash(nid, 8),
+            marks |= {_nic_mark(nid), _nic_hash(nid, 6), _nic_hash(nid, 8),
                       hashlib.sha1(nic.id.rstrip("/").encode()).hexdigest()[:8]}
             vm_id = getattr(getattr(nic, "virtual_machine", None), "id", None) or ""
             live_names |= {ref.rstrip("/").rsplit("/", 1)[-1].rsplit("-", 1)[-1].lower()
@@ -315,7 +331,7 @@ class SweepMixin:
                         or _enum_text(getattr(r, "access", "")) != "deny"):
                     continue
                 mark = (name[:-4] if name.endswith("-out") else name).rsplit("-", 1)[-1]
-                if (len(mark) not in (6, 8) or any(c not in "0123456789abcdef" for c in mark)
+                if (not _is_mark(mark)
                         or mark in marks or mark in live_names):
                     continue
                 if mark in state_nics:
@@ -396,7 +412,7 @@ class SweepMixin:
             for p in entry.get("placements") or []:
                 nid = (p.get("nic_id") or "").rstrip("/")
                 if nid:
-                    for mark in (_nic_hash(nid, 6), _nic_hash(nid, 8)):
+                    for mark in (_nic_mark(nid), _nic_hash(nid, 6), _nic_hash(nid, 8)):
                         out.setdefault(mark, nid)
         return out
 

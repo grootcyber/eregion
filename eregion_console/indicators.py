@@ -32,6 +32,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from eregion_core import run_report
+from eregion_core.experiment import is_ready
 from eregion_core.run_report import CONTAINING as DISRUPTIVE
 from eregion_core.run_report import epoch as _ts
 
@@ -259,7 +260,7 @@ def compute(runs: list[dict], cycles: list[dict], cards: list[dict], catalog: li
             shadow += 1
 
     techniques = [e for e in catalog if e.get("kind") == "technique"]
-    implemented = {e["id"] for e in techniques if e.get("status") == "implemented"}
+    implemented = {e["id"] for e in techniques if is_ready(e.get("status"))}   # proven too (STM1g)
     covered = {r["ttp"] for r in detected}
     faults = [r for r in runs if r["kind"] == "fault"]
     checked = [containment.fault_run(f["run_id"], f.get("experiment", ""), f.get("targets") or [],

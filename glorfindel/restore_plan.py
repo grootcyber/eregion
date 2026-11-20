@@ -20,20 +20,42 @@ from datetime import datetime, timezone
 FUTURE_MARGIN_S = 300
 
 
+# RTZ1 (#923): a time written without its time zone is refused on the whole restore path, never
+# taken for UTC (nor for the host's local time): the moment chooses the point restored, and a zone
+# guessed wrong picks one after the attack began, or hours too early. What the refusal asks for.
+NO_ZONE = ("heure sans fuseau, jamais devinée — donner un instant ISO 8601 avec fuseau "
+           "(ex. 2026-11-19T14:05:00Z)")
+
+
+class NoTimeZone(ValueError):
+    """A moment written without its time zone (RTZ1): refused, never guessed."""
+
+
+def zone_missing(text) -> bool:
+    """Whether `text` reads as an ISO 8601 time, but carries no time zone (RTZ1)."""
+    try:
+        return datetime.fromisoformat(str(text).strip().replace("Z", "+00:00")).tzinfo is None
+    except (TypeError, ValueError):
+        return False
+
+
 def parse_moment(text, now: float | None = None) -> str:
-    """`text` as an ISO 8601 moment in UTC (no offset: UTC). Raises ValueError when it is not
-    one — a year at the edge of the calendar too (`astimezone` overflows) — or when it is
-    ahead of now by more than FUTURE_MARGIN_S: a restore « before » the future is a restore
-    of the newest point, which the moment is there to avoid."""
+    """`text` as an ISO 8601 moment in UTC. Raises ValueError when it is not one — a year at the
+    edge of the calendar too (`astimezone` overflows) — or when it is ahead of now by more than
+    FUTURE_MARGIN_S: a restore « before » the future is a restore of the newest point, which the
+    moment is there to avoid. A time without its zone raises NoTimeZone (RTZ1): never taken for
+    UTC; with one (`Z`, `+00:00`, `+01:00`), it is converted to UTC."""
     import time
     if not isinstance(text, str) or not text.strip():
         raise ValueError("aucun moment donné")
     try:
         dt = datetime.fromisoformat(text.strip().replace("Z", "+00:00"))
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            raise NoTimeZone(f"{text[:60]!r} : {NO_ZONE}")
         dt = dt.astimezone(timezone.utc)
         epoch = dt.timestamp()
+    except NoTimeZone:
+        raise
     except (ValueError, OverflowError, OSError):
         raise ValueError(f"{text[:60]!r} : pas un instant ISO 8601 "
                          "(ex. 2026-05-24T13:44:00+00:00)") from None
@@ -44,8 +66,31 @@ def parse_moment(text, now: float | None = None) -> str:
     return dt.isoformat()
 
 
+def _unzoned_card_why(esc: dict | None, text: str) -> str:
+    """What a card whose time carries no zone is said to carry (RTZ1): by its short id, its text."""
+    short = str((esc or {}).get("id") or "")[:8]
+    return f"la carte {short + ' ' if short else ''}porte {text[:60]!r} : {NO_ZONE}"
+
+
+def card_moment(esc: dict | None) -> tuple[str, str]:
+    """(the card's first detection as an ISO 8601 moment in UTC, "") — the moment a restore's
+    --before starts from, the attack began before it (SEC4c) — or ("", why not). A card whose
+    time carries no zone says what it carries (RTZ1): no moment, never one guessed."""
+    text = str((esc or {}).get("first_seen") or (esc or {}).get("timestamp") or "")
+    try:
+        return parse_moment(text), ""
+    except NoTimeZone:
+        return "", _unzoned_card_why(esc, text)
+    except ValueError as exc:
+        return "", f"l'heure de la carte ne se lit pas ({exc})"
+
+
 def moment_warning(resource_id: str, before: str) -> str:
     """What to say of a moment after the VM's isolation (not refused: said), or ""."""
+    loose = unzoned_isolation(resource_id)
+    if loose:         # RTZ1: neither after nor before, its zone unknown — said, never guessed
+        return (f"l'état d'isolation de la VM porte {loose[:60]!r}, une heure sans fuseau : rien ne "
+                "dit si ce moment la précède")
     isolated_at, text = isolation_time(resource_id)
     try:
         after = isolated_at is not None and datetime.fromisoformat(before).timestamp() > isolated_at
@@ -55,14 +100,28 @@ def moment_warning(resource_id: str, before: str) -> str:
             "avant, un point pris entre les deux l'a peut-être déjà" if after else "")
 
 
-def isolation_time(resource_id: str) -> tuple[float | None, str]:
-    """(epoch, ISO text) of the VM's isolation in the state, or (None, "")."""
+def _isolated_text(resource_id: str) -> str:
+    """The VM's isolation time as its state writes it, or ""."""
     try:
         from glorfindel.actions import _load_isolation_state
         iso = _load_isolation_state(resource_id) or {}
     except Exception:
         iso = {}
-    text = str(iso.get("isolated_at") or "")
+    return str(iso.get("isolated_at") or "")
+
+
+def unzoned_isolation(resource_id: str) -> str:
+    """The VM's isolation time when its state writes it without a time zone (RTZ1), or ""."""
+    text = _isolated_text(resource_id)
+    return text if zone_missing(text) else ""
+
+
+def isolation_time(resource_id: str) -> tuple[float | None, str]:
+    """(epoch, ISO text) of the VM's isolation in the state, or (None, ""). A time without its
+    zone is none (RTZ1): never read as UTC, nor as the host's local time (`unzoned_isolation`)."""
+    text = _isolated_text(resource_id)
+    if zone_missing(text):
+        return None, ""
     try:
         return datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp(), text
     except (TypeError, ValueError, OverflowError):
@@ -98,9 +157,13 @@ def card_run(esc: dict | None) -> str:
 
 
 def _first_seen(esc: dict) -> float:
-    """A card's first detection, as an epoch — +inf when it says none (sorted last)."""
+    """A card's first detection, as an epoch — +inf when it says none (sorted last); -inf when its
+    time carries no zone (RTZ1): sorted first, it may be the earliest — the restore answers it, and
+    asks for the moment rather than guess it, or take a later card's."""
     try:
         return datetime.fromisoformat(parse_moment(str(esc.get("first_seen") or esc.get("timestamp") or ""))).timestamp()
+    except NoTimeZone:
+        return float("-inf")
     except ValueError:
         return float("inf")
 
@@ -128,9 +191,14 @@ def incident_start(resource_id: str) -> tuple[float | None, str]:
     rule of `--before` without runs/: the earlier of the VM's isolation and the first detection
     of its first-detected pending card. (epoch, why), or (None, why) when neither says. An older
     card still pending moves it back: stricter, never past the incident."""
+    loose = unzoned_isolation(resource_id)
+    if loose:
+        return None, f"l'état d'isolation de la VM porte {loose[:60]!r} : {NO_ZONE}"
     isolated_at, isolated = isolation_time(resource_id)
     esc = card_of(resource_id)
     first = _first_seen(esc) if esc else float("inf")
+    if first == float("-inf"):
+        return None, card_moment(esc)[1]
     if first != float("inf") and (isolated_at is None or first < isolated_at):
         return first, (f"première détection de la carte en attente "
                        f"({datetime.fromtimestamp(first, tz=timezone.utc).isoformat()})")
@@ -150,9 +218,23 @@ def proposed_moment(resource_id: str, esc: dict | None = None, runs_dir=None,
     before, go back if needed; "": nothing says when — the operator gives it. A real card never
     reads runs/ (SEC8), and the why says so. `read_runs=False`: runs/ is not read (the bot,
     short of time) — and the why says « non lu », never « no line »."""
+    loose = unzoned_isolation(resource_id)
+    if loose:            # RTZ1: the earliest safe moment can't be told — asked, never guessed
+        return {"before": "", "source": "", "no_zone": loose[:60],
+                "why": f"l'état d'isolation de la VM porte {loose[:60]!r} : {NO_ZONE}"}
+    # RTZ1, review: a pending card of this VM whose time carries no zone — the card clicked, or an
+    # earlier one beside it (`card_of` sorts it first) — may date the attack before all the others:
+    # no moment is proposed from a later card, nor from the isolation, on any face.
+    earliest = card_of(resource_id)
+    if earliest is not None and _first_seen(earliest) == float("-inf"):
+        text = str(earliest.get("first_seen") or earliest.get("timestamp") or "")
+        return {"before": "", "source": "", "no_zone": text[:60], "why": _unzoned_card_why(earliest, text)}
     first = str((esc or {}).get("first_seen") or (esc or {}).get("timestamp") or "")
     try:
         before = parse_moment(first)
+    except NoTimeZone:   # RTZ1: what the card carries, said; no moment proposed
+        return {"before": "", "source": "", "no_zone": first[:60],
+                "why": _unzoned_card_why(esc, first)}
     except ValueError:
         before = ""
     run = card_run(esc)

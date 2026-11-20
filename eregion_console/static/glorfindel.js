@@ -59,6 +59,7 @@ const ESC_LABELS = {
   unattributed_signal: 'not attributed to this VM',
   telemetry_gap:       'telemetry incomplete',
   unstable_decision:   'decision unstable (draws disagree)',
+  floor_proposal:      'isolation proposed by the floor (brute force, then root), never run alone',
   ttl_exceeded:        'TTL exceeded',
   readiness_hold:      'reserves to confirm',
   orphan_rule:         'orphan rule (NIC gone)',
@@ -101,11 +102,26 @@ function _isLocalState(rid) { return /^~\//.test(rid || ''); }
 // is held, and why, with the one-click approve path every held type deserves.
 // Not unattributed_signal: its card is anchored on a VM the detection did not name, and
 // the server refuses to execute it (fourth review, Q4).
-const _HELD_TYPES = new Set(['mode_hold', 'low_confidence', 'uncharacterized_signal', 'release_hold', 'telemetry_gap', 'unstable_decision']);
+const _HELD_TYPES = new Set(['mode_hold', 'low_confidence', 'uncharacterized_signal', 'release_hold', 'telemetry_gap', 'unstable_decision', 'floor_proposal']);
 const _APPROVABLE = new Set(['isolate_vm', 'block_suspicious_ip', 'release_isolation', 'snapshot']);
+// ATT1 (#936): the actions aimed at the card's VM (eregion_core/action_queue.py VM_AIMED_ACTIONS).
+// On a card that says it is unattributed, whatever its type, never an « Approve & execute »: the VM
+// is the one the card is filed on, not one the detection names — the server refuses it too.
+// SEC-Ed (#954): the snapshot too — the human chooses the VM to snapshot, whatever the card's type.
+const _VM_AIMED = new Set(['isolate_vm', 'block_suspicious_ip', 'release_isolation', 'revoke_temp_access', 'snapshot']);
+function _aimsLoose(e) { return !!_unattributed(e) && _VM_AIMED.has(e.action); }
 function _isHeld(e) {
   return _HELD_TYPES.has(e.escalation_type) && _APPROVABLE.has(e.action)
-    && !(e.action === 'snapshot' && e.escalation_type === 'low_confidence');
+    && !(e.action === 'snapshot' && e.escalation_type === 'low_confidence')
+    && !_aimsLoose(e);
+}
+// A held snapshot to take by hand (« 📸 Snapshot ») — never on an unattributed card (ATT1): it would
+// snapshot the VM the card is filed on, which the detection does not name.
+function _looseSnapshot(e) { return e.action === 'snapshot' && !!_unattributed(e); }
+// SEC-Ed (#954): what such a card says — the human chooses the VM (a constant, nothing from outside).
+const _LOOSE_SNAPSHOT_SAID = 'the detection names no VM: choose the VM to snapshot';
+function _isSnapshotPending(e) {
+  return e.action === 'snapshot' && e.escalation_type === 'low_confidence' && !_unattributed(e);
 }
 // JUG1 (#760): a disruptive action Glorfindel took alone, its check held — done, to judge after
 // the fact. Nothing to approve on it: it is undone, if judged wrong, by the usual paths.
@@ -220,13 +236,50 @@ function _targetNote(e, vmName) {
       ? `<div class="esc-context" style="color:var(--dim)" title="What the row, and Azure, could not say">limit: ${_attr(t.limit)}</div>` : '';
     return `<div class="esc-context" title="What the detection is about, read in its row">🎯 about ${kind}${named}${via}${covers}</div>${limit}`;
   }
+  // SLF1 (#929): a detection attributed to no VM — « not attributed », its candidates; never the
+  // name of the VM it is filed on.
+  const loose = _unattributed(e);
+  if (loose) {
+    const choose = _looseSnapshot(e) ? ` · ${_attr(_LOOSE_SNAPSHOT_SAID)}` : '';
+    return `<div class="esc-context" title="${_attr(_LOOSE_TITLE)}">⚓ ${_attr(_unattributedTxt(loose))}${choose}</div>`;
+  }
   if (!_isAnchored(e) || e.escalation_type === 'unattributed_signal') return '';
   // Filed before AL1c: on the first VM online, or on the VM itself (a role on the VM, a signal of
   // `respond`) — the card cannot tell which.
   return `<div class="esc-context" title="${_attr(_FILED_BEFORE)}">⚓ filed on ${_attr(vmName)}, may not be about it</div>`;
 }
 const _FILED_BEFORE = 'Filed before AL1c, without its target: the detection may not be about this VM';
+// SLF1 (#929): what a card on a detection attributed to no VM says in place of its resource
+// (glorfindel/escalations.py `unattributed`): its candidates, or the appliance it came through. A
+// card recorded so (`attribution`), or held by the attribution guard (its candidates not kept);
+// never a card filed on its target (AL1c).
+const _LOOSE_TITLE = 'The detection names no VM, and no watched VM made the call: the card is only filed on this tile. Check which VM it is about before acting.';
+function _unattributed(e) {
+  if (!e || _targetOf(e)) return null;
+  const a = e.attribution;
+  if (a && typeof a === 'object' && a.state === 'unattributed') {
+    return { candidates: Array.isArray(a.candidates) ? a.candidates.filter(c => typeof c === 'string') : [],
+             appliance: typeof a.appliance === 'string' ? a.appliance : '' };
+  }
+  return e.escalation_type === 'unattributed_signal' ? { candidates: [], appliance: '' } : null;
+}
+function _unattributedTxt(u) {
+  if (u.appliance) return `not attributed — the call came from ${u.appliance}, which forwards packets: the source VM is behind it`;
+  if (!u.candidates.length) return 'not attributed — the detection names no VM';
+  const more = u.candidates.length > _VMS_SHOWN ? ` and ${u.candidates.length - _VMS_SHOWN} more` : '';
+  return `not attributed — candidates: ${u.candidates.slice(0, _VMS_SHOWN).join(', ')}${more}`;
+}
+// ATT1 (#936): a card on a detection attributed to no VM holds an action nothing ran — never its
+// past label (« VM isolated from network »): its verb, held, not attributed. Not a card whose action
+// did run (taken alone, a failed check, a write refused or failed).
+const _RAN_TYPES = new Set(['autonomous_action', 'verification_failed', 'write_blocked', 'action_failed']);
+function _looseTitle(e) {
+  if (!_unattributed(e) || !ACTION_LABELS_VERB[e.action] || _RAN_TYPES.has(e.escalation_type)) return '';
+  return `${ACTION_LABELS_VERB[e.action]} — held: not attributed`;
+}
 function escTitle(e) {
+  const loose = _looseTitle(e);
+  if (loose) return loose;
   // Real remediation action → its label; otherwise a readable type title.
   if (e.action && ACTION_LABELS[e.action]) return ACTION_LABELS[e.action];
   return _ESC_TITLES[e.escalation_type] || escLabel(e.escalation_type) || e.action || '?';
@@ -387,8 +440,9 @@ function showCoverageModal(idx) {
   const verb = c.type === 'isolated' ? 'Isolation' : c.type === 'nsg' ? 'NSG' : 'Block';
   const rows = (c.placements || []).map((p, i) => {
     const nsg   = (p.nsg || `${p.nsg_rg || ''}/${p.nsg_name || ''}`).split('/').pop();
-    const scope = p.scope === 'subnet' ? 'subnet NSG (shared)' : 'NIC NSG (this VM)';
-    const scopeCol = p.scope === 'subnet' ? 'var(--orange)' : 'var(--dim)';
+    // A NIC without NSG, nor on its subnet (`scope: "none"`, `nsg: ""`): said so, never « NIC NSG » (IPS2).
+    const scope = p.scope === 'subnet' ? 'subnet NSG (shared)' : p.scope === 'none' ? 'no NSG' : 'NIC NSG (this VM)';
+    const scopeCol = p.scope === 'subnet' ? 'var(--orange)' : p.scope === 'none' ? 'var(--red)' : 'var(--dim)';
     const nic   = p.nic_id ? p.nic_id.split('/').pop() : `NIC ${i + 1}`;
     const ips   = Array.isArray(p.ips) && p.ips.length ? p.ips.join(', ') : '';
     const rules = p.rule_in || p.rule_out
@@ -399,7 +453,7 @@ function showCoverageModal(idx) {
         <span style="color:var(--cyan);font-weight:600;font-size:11px;flex:1">${_attr(nic)}</span>
         <span style="color:${scopeCol};font-size:9px">${scope}</span>
       </div>
-      <div style="color:var(--dim);font-size:10px;margin-top:2px">🛡 ${_attr(nsg)}${ips ? ` · ${_attr(ips)}` : ''}</div>
+      <div style="color:var(--dim);font-size:10px;margin-top:2px">🛡 ${_attr(nsg || '—')}${ips ? ` · ${_attr(ips)}` : ''}</div>
       ${rules ? `<div style="color:var(--dim);font-size:9px;margin-top:1px">rule: ${_attr(rules)}</div>` : ''}
     </div>`;
   }).join('');
@@ -477,10 +531,28 @@ function _vmArg(rid) {
   return '<id: glorfindel list --ids>';
 }
 
+// RTZ1 (#923): a card's time without its zone is no moment to copy — never guessed, the CLI refuses it.
+const _ZONED_TIME = /\d\d:\d\d(:\d\d(\.\d+)?)?(Z|[+-]\d\d(:?\d\d)?)$/;
+function _zonedOr(t, otherwise) {
+  const text = String(t || '').trim();
+  return _ZONED_TIME.test(text) ? text : otherwise;
+}
+
 function cliCommand(esc) {
   const rid = esc.resource_id;
   const id  = esc.id.slice(0, 8);
   // Never a command aimed at the anchor VM (AL1): acknowledge, act from what the card says.
+  // ATT1 (#936): nor on a card that says it is unattributed, whatever its type — it says so, and its
+  // candidates, and sends the judgement to the CLI.
+  const loose = _unattributed(esc);
+  if (loose) {
+    // A name from the store on one line (a newline would start a command of its own).
+    const said = _unattributedTxt(loose).replace(/[\u0000-\u001f\u007f]/g, ' ');
+    // SEC-Ed (#954): a snapshot there — the human chooses the VM, never the one the card is filed on.
+    const choose = _looseSnapshot(esc)
+      ? `# ${_LOOSE_SNAPSHOT_SAID}, then glorfindel snapshot <group>/<name> --yes on that one\n` : '';
+    return `# ${said}\n# judge which VM it is about from the CLI (glorfindel pending, the detection's row), then act on that VM\n${choose}glorfindel ack ${id}`;
+  }
   if (_isAnchored(esc)) return `glorfindel ack ${id}`;
   if (_isHeld(esc)) {
     const vm = _vmArg(rid);
@@ -497,7 +569,7 @@ function cliCommand(esc) {
   if (esc.action === 'restore_from_backup') {
     // The moment is asked (SEC4c): the card's first detection — the attack began before it.
     return `# --before: an instant before the attack began (the card's first detection here — go back if it began earlier)\n`
-      + `glorfindel restore ${_vmArg(rid)} --yes --before ${esc.first_seen || esc.timestamp || '<ISO8601>'}\nglorfindel ack ${id}`;
+      + `glorfindel restore ${_vmArg(rid)} --yes --before ${_zonedOr(esc.first_seen || esc.timestamp, '<ISO8601>')}\nglorfindel ack ${id}`;
   }
   if (esc.escalation_type === 'readiness_hold') {
     return `# Shows the reserves, then asks you to accept them\nglorfindel activate ${_vmArg(rid)}`;
@@ -598,10 +670,10 @@ function openCommandModal(escId) {
   const esc = _escById[escId];
   if (!esc) return;
   const cmd = cliCommand(esc);
-  const isSnapshotPending = esc.action === 'snapshot' && esc.escalation_type === 'low_confidence';
+  const isSnapshotPending = _isSnapshotPending(esc);
   const isCmdModeHold = _isHeld(esc);
   const label = isCmdModeHold ? actionLabelVerb(esc.action) + ' — ' + _heldWord(esc)
-              : isSnapshotPending ? 'Snapshot recommended' : actionLabel(esc.action);
+              : isSnapshotPending ? 'Snapshot recommended' : (_looseTitle(esc) || actionLabel(esc.action));
   document.getElementById('modal-title').textContent = '📋 ' + label;
   document.getElementById('modal-body').textContent = 'CLI command to run for this escalation:';
   const cmdEl = document.getElementById('modal-cmd');
@@ -685,7 +757,7 @@ function _groupEscs(escs) {
 
 function _renderEscGroup(group) {
   const e     = group[0]; // most recent / representative
-  const isSnapshotPending = e.action === 'snapshot' && e.escalation_type === 'low_confidence';
+  const isSnapshotPending = _isSnapshotPending(e);
   const isModeHold        = _isHeld(e);
   const isWriteBlocked    = e.escalation_type === 'write_blocked';
   const isActionFailed    = e.escalation_type === 'action_failed';
@@ -719,6 +791,8 @@ function _renderEscGroup(group) {
     : '';
   // No Restore on an anchored card: it would restore a VM the detection does not name.
   const isRestore = e.action === 'restore_from_backup' && !_isAnchored(e);
+  // ATT1 (#936): nor on a card that says it is unattributed, whatever its type.
+  const restoreOffered = isRestore && !_unattributed(e);
   const isReadinessHold = e.escalation_type === 'readiness_hold';
   const actionBtns = isRule
     ? ruleButtons
@@ -730,7 +804,7 @@ function _renderEscGroup(group) {
     ? `<button class="action primary" ${_on('click', 'doApproveAction', e.id, vmName)} style="font-size:9px;padding:2px 7px">▶ Approve & execute</button>
        <button class="action" ${_on('click', 'doAckAll', ids)} style="font-size:9px;padding:2px 7px">✓ Ack</button>
        <button class="action" ${_on('click', 'openCommandModal', e.id)} style="font-size:9px;padding:2px 7px">📋 Cmd</button>`
-    : isRestore
+    : restoreOffered
     ? `<button class="action primary" ${_on('click', 'confirmRestore', vmName, e.id)} style="font-size:9px;padding:2px 7px">🔄 Restore</button>
        <button class="action" ${_on('click', 'doAckAll', ids)} style="font-size:9px;padding:2px 7px">✓ Ack</button>
        <button class="action" ${_on('click', 'openCommandModal', e.id)} style="font-size:9px;padding:2px 7px">📋 Cmd</button>`
@@ -744,8 +818,13 @@ function _renderEscGroup(group) {
   const isDecision = !isRule && !_NOT_DECISIONS.has(e.escalation_type)
     && !String(e.signal_id || '').startsWith('reassert-');
   // The verdict is given in one place, TO JUDGE (decision of 26/10): the card leads there.
+  // JUG3: a group of several cards to judge opens its window, where they are judged at once.
+  const toJudgeHere = group.filter(x => !x.verdict && _toJudge.some(c => c.id === x.id));
+  // Its window first: the card on top judged (not acknowledged), others of the group still to judge.
   const verdictBtns = isDecision
-    ? (e.verdict
+    ? (toJudgeHere.length > 1
+      ? `<a class="judge-link" ${_on('click', 'openJudgeGroup', toJudgeHere.map(x => x.id).join(','))} title="Its cards to judge, several at once">to judge ×${Number(toJudgeHere.length)} ▸</a>`
+      : e.verdict
       ? `<span style="font-size:9px;color:var(--dim);margin-left:auto">judged: ${_attr(e.verdict)}</span>`
       : `<a class="judge-link" ${_on('click', 'focusJudge', e.id)} title="Give it a verdict in TO JUDGE">to judge ▸</a>`)
     : '';
@@ -895,14 +974,19 @@ async function refreshActionsData() {
 function renderInfra() {
   if (_configMode) return;
   const list           = document.getElementById('incidents-list');
-  // Preserve scroll position across the full innerHTML swap below. The actual scroll
-  // container is #topo-graph (overflow-y:auto), NOT #incidents-list — and topo-graph
-  // is destroyed/recreated by the swap, so save its scrollTop now and reapply it to
-  // the fresh element afterwards. With asset order stable backend-side (99b4882),
-  // this keeps the operator where they were instead of yanking back to the top.
-  const _prevGraph = document.getElementById('topo-graph');
-  const _savedScroll = _prevGraph ? _prevGraph.scrollTop : 0;
-  // Same for the PROTECT NSG list's own inner scroll (recreated by the swap too).
+  // The scroll container (#topo-graph), the edges' layer (#topo-svg) and #topo-body outlive a
+  // refresh: only the content of #topo-body is replaced, never an element of the shell. Replaced
+  // every 5 s with the rest, the container cut a scroll in progress (wheel, momentum, the scrollbar
+  // held) and its position had to be put back by hand (TOPO1 #927). Built once, again only if one
+  // of the three is missing — something else emptied the list (TOPO1b #949: #topo-body checked too).
+  let graph = document.getElementById('topo-graph');
+  let body  = graph && graph.querySelector('#topo-body');
+  if (!graph || !list.contains(graph) || !body || !graph.querySelector('#topo-svg')) {
+    list.innerHTML = `<div class="topo-graph" id="topo-graph"><svg class="topo-svg" id="topo-svg"></svg><div class="topo-body" id="topo-body"></div></div>`;
+    graph = document.getElementById('topo-graph');
+    body  = document.getElementById('topo-body');
+  }
+  // The PROTECT NSG list's own inner scroll is inside #topo-body: recreated, put back.
   const _prevNsg = document.getElementById('nsg-scroll');
   const _savedNsgScroll = _prevNsg ? _prevNsg.scrollTop : 0;
   const rules          = _cfgData?.detection?.rules     || [];
@@ -1019,10 +1103,7 @@ function renderInfra() {
     if (!hasIncident) _collapsedVms.delete(r.vm_name); // allow re-expand on next incident; don't force-collapse user-expanded clean cards
   });
 
-  list.innerHTML = `
-    <div class="topo-graph" id="topo-graph">
-      <svg class="topo-svg" id="topo-svg"></svg>
-
+  body.innerHTML = `
       <!-- Layer 1 — Agent -->
       <div class="topo-layer">
         ${_renderAgentNode(rules, detectBackends, recoverBackends, discovered)}
@@ -1036,6 +1117,8 @@ function renderInfra() {
       </div>
 
       <div class="topo-spacer"></div>
+
+      ${_auditBand()}
 
       <!-- Layer 3 — Assets -->
       <div class="topo-assets" id="topo-assets">
@@ -1082,19 +1165,62 @@ function renderInfra() {
         <span style="font-size:10px"><span style="color:var(--red)">●</span> <span style="color:var(--dim)">isolated</span></span>
         <span style="font-size:10px"><span style="color:var(--blue)">●</span> <span style="color:var(--dim)">restoring</span></span>
         <span style="font-size:10px"><span style="color:var(--purple)">●</span> <span style="color:var(--dim)">escalation</span></span>
-      </div>
-    </div>`;
+      </div>`;
 
-  if (_savedScroll) {
-    const _newGraph = document.getElementById('topo-graph');
-    if (_newGraph) _newGraph.scrollTop = _savedScroll;
-  }
   if (_savedNsgScroll) {
     const _newNsg = document.getElementById('nsg-scroll');
     if (_newNsg) _newNsg.scrollTop = _savedNsgScroll;
   }
-  requestAnimationFrame(_drawTopologyEdges);
+  _watchTopology(graph);
+  _queueTopologyEdges();
   _applyReadOnlyGuards(list);
+}
+
+// The readiness audit not read, said once above the cards (TOPO1b #949, Jonathan 19/11 on a
+// mockup; « ip ? » on every card set aside). Before, the cards lost their checks and their
+// addresses in silence, and only the dot of the GLORFINDEL node went red. The last good audit
+// kept: the band says when it was read. The reason comes from the browser or the server: escaped.
+function _auditBand() {
+  if (_auditStale) {
+    const when = _auditLastRun ? `cards show the read of ${_attr(fmtTime(_auditLastRun))}` : 'cards show the last read';
+    return `<div class="topo-band" role="status">⚠ Readiness audit not read: ${_attr(_auditStale)} <span class="topo-band-dim">· ${when}</span></div>`;
+  }
+  if (_auditData?.error)
+    return `<div class="topo-band" role="status">⚠ Readiness audit not read: ${_attr(_auditData.error)} <span class="topo-band-dim">· checks and addresses unknown on every card · next try within 5 min</span></div>`;
+  return '';
+}
+
+// The edges follow the map: drawn again, once per frame at most, when the map or its cards
+// change size without a render — the window resized, the column beside it, a font loaded.
+// Before, they stayed where the last render had put them (TOPO1 #927).
+let _topoResize = null;
+let _topoDrawQueued = false;
+let _topoSeen = {};                     // the last size the observer saw, of the map and of its row
+function _queueTopologyEdges() {
+  if (_topoDrawQueued) return;
+  _topoDrawQueued = true;
+  requestAnimationFrame(() => { _topoDrawQueued = false; _drawTopologyEdges(); });
+}
+// Each render observes its new row of cards, and an observation starts with a notification: drawn
+// on it, every refresh drew its edges twice (review of TOPO1). A size already seen draws nothing;
+// a size that changed (a resize, a card grown without a render) draws again (TOPO1b #949).
+function _onTopologyResize(entries) {
+  let changed = false;
+  for (const e of entries) {
+    const role = e.target.id === 'topo-graph' ? 'graph' : 'assets';
+    const size = `${Math.round(e.contentRect.width)}x${Math.round(e.contentRect.height)}`;
+    if (_topoSeen[role] !== size) { _topoSeen[role] = size; changed = true; }
+  }
+  if (changed) _queueTopologyEdges();
+}
+// A browser without ResizeObserver: the edges are drawn at each render, not on a resize.
+function _watchTopology(graph) {
+  if (typeof ResizeObserver !== 'function') return;
+  if (!_topoResize) _topoResize = new ResizeObserver(_onTopologyResize);
+  _topoResize.disconnect();             // the cards' row of the last render is gone
+  _topoResize.observe(graph);
+  const assets = document.getElementById('topo-assets');
+  if (assets) _topoResize.observe(assets);
 }
 
 function renderIncidents() { renderInfra(); }
@@ -1170,12 +1296,21 @@ function _renderModules(rules, detectBackends, recoverBackends, resources) {
     // COR1: of them, the root shells whose every SSH session came from an expected origin.
     const exOrigin = r.origin_count > 0 ? `, ${r.origin_count} root shell(s) from an expected origin (COR1, ${_originProofTxt(r)})` : '';
     const ex  = r.expected_count > 0 ? `<span style="color:var(--dim);font-size:9px;flex-shrink:0" title="${_attr(`${r.expected_count} expected sudo set aside, no card (ADM1)${exOrigin} — glorfindel report`)}">${_attr(r.expected_count)} expected</span>` : '';
+    // SLF1 (#929): the watch's own writes in its return channel, set aside — counted, never silent.
+    const own = r.own_channel_count > 0 ? `<span style="color:var(--dim);font-size:9px;flex-shrink:0" title="${_attr(_ownChannelTxt(r))}">${_attr(r.own_channel_count)} own</span>` : '';
+    // MID1 (#981): the certificates Azure puts on the managed identities it creates, set aside —
+    // counted, never silent; an id that is no object id, said on the line.
+    const msi = Number(r.msi_certificate_count) > 0 || r.msi_certificate_config === 'malformed'
+      ? `<span style="color:${r.msi_certificate_config === 'malformed' ? 'var(--orange)' : 'var(--dim)'};font-size:9px;flex-shrink:0" title="${_attr(_msiCertificateTxt(r))}">${r.msi_certificate_config === 'malformed' ? '⚠ MSI id' : `${_attr(Number(r.msi_certificate_count))} MSI`}</span>`
+      : '';
     return `<div class="row rule-item" ${_on('click', 'showRuleByIdx', idx)}
       style="padding:3px 4px;font-size:10px">
       <span style="color:${dc};font-size:9px">●</span>
       <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${_attr(r.name)}">${_attr(r.name)}</span>
       ${r.ttp ? `<span style="color:var(--dim);font-size:9px">${_attr(r.ttp)}</span>` : ''}
       ${ex}
+      ${own}
+      ${msi}
       ${mt}
       <span style="color:var(--dim);font-size:9px">▸</span>
     </div>`;
@@ -1261,6 +1396,7 @@ function _renderModules(rules, detectBackends, recoverBackends, resources) {
   // keys when the inventory hasn't loaded.
   const nsgInv = (_nsgItems && Array.isArray(_nsgItems.nsgs)) ? _nsgItems.nsgs : null;
   (_auditData?.audits || []).forEach(a => (a.checks || []).forEach(c => {
+    if (c.status !== 'ok') return;             // a failed check names no NSG (IPS2)
     if (c.data && c.data.nsg) nsgKeys.add(c.data.nsg);
     (c.data?.nsgs || []).forEach(x => x.nsg && nsgKeys.add(x.nsg));
   }));
@@ -1549,6 +1685,140 @@ function _renderNsgNode(resource, vmEscs, slotIdx = 0) {
 
 // ── Asset nodes ────────────────────────────────────────────────────────────────
 
+// ── A VM's own addresses (IPS1, #931) ──────────────────────────────────────────
+// Read by the NSG audit, NIC by NIC: `ips` (its private addresses) and `public_ips` (IPS1a: each
+// `{address}`, or `{address: null, error}` when its read failed). On the card folded and unfolded
+// (Jonathan, 19/11, option A): Ctrl+F finds the VM of an address without opening a card, and a
+// public address shows a VM the Internet can reach. Never an attacker's address: those are the
+// BLOCKED badges, below. Everything here comes from Azure: escaped, never written raw (#254).
+const _ADDR_FOLDED = 4;   // private addresses on the folded line, then « +N »
+// IPS2 (#950, Jonathan 19/11 on a mockup): a VM without an NSG on its NIC nor on its subnet shows its
+// addresses all the same — IPS2a: its « NSG access » check stays `fail` but carries `data.nsgs`, a NIC
+// without NSG at `nsg_scope: "none"`. A failed check is never read as a good one: its addresses are
+// shown, its checks and buttons stay those of a failure (`failed`, the ✗ of the readiness).
+function _vmNet(auditEntry) {
+  if (!auditEntry) return null;                       // not audited (yet): nothing said
+  const check = (auditEntry.checks || []).find(c => c.name === 'NSG access');
+  const nsgs = Array.isArray(check?.data?.nsgs) ? check.data.nsgs : [];
+  const failed = !check || check.status !== 'ok';
+  if (failed && !nsgs.length) return { unread: (check && check.message) || 'no NSG audit for this VM' };
+  return {
+    at: auditEntry.timestamp,
+    failed: failed ? String(check.message || 'NSG audit failed') : '',
+    nics: nsgs.map(x => ({
+      nic: String(x?.nic_id || '').split('/').pop(),
+      bare: x?.nsg_scope === 'none',                  // nothing filters this NIC (IPS2)
+      ips: (Array.isArray(x?.ips) ? x.ips : []).filter(Boolean).map(String),
+      pubs: (Array.isArray(x?.public_ips) ? x.public_ips : []).filter(p => p && typeof p === 'object'),
+    })),
+  };
+}
+// A NIC without NSG, nor on its subnet: said once on the card, in the row of its mode (IPS2).
+function _bareChip(net) {
+  const bare = (net && net.nics || []).filter(n => n.bare);
+  if (!bare.length) return '';
+  return `<span class="vm-bare" title="${_attr('No NSG on ' + bare.map(n => n.nic || 'a NIC').join(', ') + ' nor on its subnet: nothing filters its traffic')}">NO NSG</span>`;
+}
+function _addrBtn(a, pub) {
+  return `<button type="button" class="vm-ip${pub ? ' pub' : ''}" ${_on('click', 'copyAddr', String(a))} title="${_attr('Copy ' + a)}">${_attr(a)}</button>`;
+}
+// Why a public IP did not read, in the page's language: IPS2a gives a code beside its own words
+// (French, free text, never matched). A code the page does not know: the words as they are.
+const _PUB_REASONS = {
+  forbidden: 'access denied (Reader missing on its resource group?)',
+  not_found: 'not found (deleted?)',
+  not_allocated: 'no address allocated (a dynamic IP on a stopped VM?)',
+  unreadable: 'unreadable',
+};
+function _pubReason(p) {
+  const words = String(p.error || 'unknown');
+  const said = Object.prototype.hasOwnProperty.call(_PUB_REASONS, p.code) ? _PUB_REASONS[p.code] : '';
+  return { said: said || words, words: said ? words : '' };
+}
+// A public IP whose address did not read is said, never left out: the VM is still exposed. On a NIC
+// without NSG (`bare`), the address in red: nothing filters it (IPS2).
+function _pubAddr(p, unfolded, bare) {
+  if (p.address) {
+    const a = String(p.address);
+    if (bare) return `<span class="vm-pub bare" title="${_attr('No NSG on the NIC nor on its subnet: nothing filters ' + a)}">🌐 ${_addrBtn(a, true)}${unfolded ? ' <span class="vm-pubtag">PUBLIC</span>' : ''}</span>`;
+    return `<span class="vm-pub">🌐 ${_addrBtn(a, true)}${unfolded ? ' <span class="vm-pubtag">PUBLIC</span>' : ''}</span>`;
+  }
+  const why = _pubReason(p);
+  return unfolded
+    ? `<span class="vm-pub unread"${why.words ? ` title="${_attr(why.words)}"` : ''}>🌐 public IP not read: ${_attr(why.said)}</span>`
+    : `<span class="vm-pub unread" title="${_attr('Public IP not read: ' + why.said)}">🌐 ?</span>`;
+}
+function _addrLine(net) {
+  if (!net) return '';
+  if (net.unread) return `<div class="vm-addr" title="${_attr('Addresses not read: ' + net.unread)}">ip —</div>`;
+  const priv = [...new Set(net.nics.flatMap(n => n.ips))];
+  const pubs = net.nics.flatMap(n => n.pubs.map(p => [p, n.bare]));
+  if (!priv.length && !pubs.length) return `<div class="vm-addr" title="No address on the VM's NICs">ip —</div>`;
+  const more = priv.length > _ADDR_FOLDED ? `<span title="Unfold the card for every address">+${Number(priv.length - _ADDR_FOLDED)}</span>` : '';
+  return `<div class="vm-addr">${priv.slice(0, _ADDR_FOLDED).map(a => _addrBtn(a, false)).join('')}${more}${pubs.map(([p, bare]) => _pubAddr(p, false, bare)).join('')}</div>`;
+}
+function _netBlock(net) {
+  if (!net) return '';
+  if (net.unread) return `<div class="vm-net"><span class="vm-netfoot">addresses not read — ${_attr(net.unread)}</span></div>`;
+  const nics = net.nics.map(n => `<div class="vm-nic"><span class="vm-nicname">⇄ ${_attr(n.nic || 'NIC')}${n.bare ? ' · <span class="vm-bare-txt">no NSG</span>' : ''}</span>${n.ips.map(a => _addrBtn(a, false)).join('')}${n.pubs.map(p => _pubAddr(p, true, n.bare)).join('')}</div>`).join('');
+  const failed = net.failed ? `<div class="vm-netfoot">NSG audit failed: ${_attr(net.failed)}</div>` : '';
+  return `<div class="vm-net">${nics}${failed}<div class="vm-netfoot">read by the NSG audit ${_attr(_relTime(net.at))}</div></div>`;
+}
+// ── A VM's identity (VMI1, #971, Jonathan 20/11 on a mockup, option A) ─────────────
+// What the page knows of the VM already — its id, where its subscription and its group are read,
+// the backend that discovered it, its last heartbeat — said on hover of its name, and on the
+// unfolded card in a block where each field is copied in one click. The name still unfolds the
+// card. A phone has no hover: there, the block. Everything comes from Azure or the discovery: escaped.
+function _vmIdentity(resource) {
+  const id = String(resource.resource_id || '');
+  const m = /\/subscriptions\/([^/]+)\/resourceGroups\/([^/]+)\//i.exec(id);
+  return {
+    name: String(resource.vm_name || id.split('/').pop() || ''),
+    rg: m ? m[2] : '', sub: m ? m[1] : '',
+    id: id.startsWith('/subscriptions/') ? id : '',   // a discovered name without its id: no id said
+    ws: String(resource.monitoring_backend || ''),
+    seen: resource.last_seen ? _relTime(resource.last_seen) : '',
+  };
+}
+// The name's tooltip, one field a line (the browser's own: no copy from it; the block copies).
+function _identityTip(v) {
+  const detected = v.ws ? `${v.ws}${v.seen ? ' · heartbeat ' + v.seen : ''}` : (v.seen ? 'heartbeat ' + v.seen : '');
+  return [v.name, v.rg && `resource group  ${v.rg}`, v.sub && `subscription    ${v.sub}`,
+          detected && `detected by     ${detected}`, v.id].filter(Boolean).join('\n');
+}
+// The value is the button: a copy outside a secure context selects the button's own text (copyAddr).
+function _idBlock(v) {
+  const row = (k, val, long) => val
+    ? `<span class="vm-id-k">${k}</span><button type="button" class="vm-ip${long ? ' long' : ''}" ${_on('click', 'copyAddr', val)} title="${_attr('Copy the ' + k + (long ? ': ' + val : ''))}">${_attr(val)}</button>`
+    : '';
+  const detected = v.ws ? `${v.ws}${v.seen ? ' · ' + v.seen : ''}` : '';
+  const rows = [row('name', v.name), row('group', v.rg), row('subscription', v.sub), row('resource id', v.id, true),
+                detected ? `<span class="vm-id-k">detected by</span><span>${_attr(detected)}</span>` : ''].join('');
+  return rows ? `<div class="vm-id">${rows}</div>` : '';
+}
+
+// A copy by the clipboard where the page may write it (a secure context: the loopback, the SSH
+// tunnel). Elsewhere (a plain http address of the tailnet), the address selected and copied by the
+// browser at once, during the click: a selection left for Ctrl+C would go with the next refresh,
+// 5 s at most. The address is selectable (`.vm-ip`: user-select, the card being draggable sets
+// none). The toast says what happened, never a copy that did not (review of IPS1b, measured).
+function copyAddr(a) {
+  const el = _target;
+  const text = String(a);
+  // A long value (a resource id, VMI1) shortened in the toast only: its start and its end. The copy is whole.
+  const shown = text.length > 48 ? `${text.slice(0, 18)}…${text.slice(-26)}` : text;
+  const byBrowser = () => {
+    const r = document.createRange(); r.selectNodeContents(el);
+    const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+    let copied = false;
+    try { copied = String(s) === text && document.execCommand('copy'); } catch (e) { copied = false; }
+    s.removeAllRanges();
+    toast(copied ? `✓ ${shown} copied` : `✗ ${shown} not copied — select it and copy it by hand`);
+  };
+  if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(() => toast(`✓ ${shown} copied`), byBrowser);
+  else byBrowser();
+}
+
 function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
   const { resource_id, vm_name, states: _rawStates = [], last_seen, monitoring_backend } = resource;
   // Subnet-wide blocks live on the shared subnet NSG, not on this VM — they're shown
@@ -1648,6 +1918,8 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
   ].filter(Boolean).join('');
 
   const auditEntry = (_auditData?.audits || []).find(a => a.resource_id === resource_id);
+  const net        = _vmNet(auditEntry);              // its addresses (IPS1)
+  const ident      = _vmIdentity(resource);           // its id, group, subscription (VMI1)
   const readiness  = auditEntry
     ? ACTION_GROUPS.map(g => {
         const st = _worstStatus(auditEntry.checks, g.actions);
@@ -1801,7 +2073,9 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
   // Yellow, distinct from Failed (red) — it may still be running, just unverified.
   const snapshotStale      = activeJob?.type === 'snapshot' && activeJob?.status === 'Stale';
   // Escalade snapshot pending : bouton déjà dans la carte d'escalade — ne pas doubler dans BACKUP
-  const hasSnapshotEsc = myEscs.some(e => e.action === 'snapshot' && e.escalation_type === 'low_confidence');
+  // ATT1: nor while an unattributed snapshot's card waits on this tile — the detection does not name
+  // this VM, its card has no Snapshot: the tile's own button would take it back.
+  const hasSnapshotEsc = myEscs.some(e => _isSnapshotPending(e) || _looseSnapshot(e));
   const snapshotBtn = snapshotInProgress
     ? `<button class="action" disabled style="margin-left:auto;font-size:9px;padding:2px 7px;opacity:.5;cursor:default">⏳ Snapshot…</button>`
     : snapshotStale
@@ -1838,7 +2112,9 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
 
   // VM ↔ its NSG (from the audit's structured NSG check) — NIC NSG = this VM only,
   // subnet NSG = shared with the subnet.
-  const _nsgData = ((auditEntry?.checks || []).find(c => c.name === 'NSG access') || {}).data || {};
+  // A failed check carries the NICs of a VM without NSG (IPS2): never an NSG line from it.
+  const _nsgCheck = (auditEntry?.checks || []).find(c => c.name === 'NSG access');
+  const _nsgData = (_nsgCheck && _nsgCheck.status === 'ok' && _nsgCheck.data) || {};
   // Multi-NIC at rest: data.nsgs[] enumerates every NIC's NSG. With >1, show a clickable
   // "N NSGs" chip → same per-NIC modal as the isolation coverage popover. Single NIC keeps
   // the inline one-liner. data.nsg/nsg_scope (primary NIC) is the back-compat fallback.
@@ -1859,7 +2135,9 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
 
   const expandedBody = `
     ${readinessExpanded}
+    ${_idBlock(ident)}
     ${nsgLine}
+    ${_netBlock(net)}
     ${modeSelector}
     ${fallbackRows.length ? `<div style="display:flex;flex-direction:column;gap:5px;margin-top:6px">${fallbackRows.join('')}</div>` : ''}
     ${decisionHtml || ''}
@@ -1905,7 +2183,7 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
     <div class="node-asset-header" ${_on('click', 'toggleAsset', vm_name)}>
       <div style="display:flex;align-items:center;gap:6px">
         ${dot}
-        <span class="node-asset-name" title="${_attr(vm_name)}">${_attr(vm_name)}</span>
+        <span class="node-asset-name" title="${_attr(_identityTip(ident))}">${_attr(vm_name)}</span>
         <span style="color:var(--dim);font-size:9px;margin-left:auto;flex-shrink:0">${isExpanded ? '▾' : '▸'}</span>
       </div>
       ${(offlineBadge || unmonitoredBadge || staleBadge || modeBadge || (readiness && !isExpanded)) ? `
@@ -1914,8 +2192,10 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
         ${unmonitoredBadge}
         ${staleBadge}
         ${modeBadge}
+        ${_bareChip(net)}
         ${readiness && !isExpanded ? `<span style="color:var(--dim);font-size:9px;margin-left:auto">${readiness}</span>` : ''}
       </div>` : ''}
+      ${_addrLine(net)}
       ${_handledLines(resource_id, vm_name)}
     </div>
     ${isExpanded ? expandedBody : compactBody}
@@ -1943,18 +2223,23 @@ function _drawTopologyEdges() {
   const svg   = document.getElementById('topo-svg');
   const graph = document.getElementById('topo-graph');
   if (!svg || !graph) return;
+  // In the content's coordinates, not the screen's: the svg scrolls with the cards, so a point
+  // is where the screen shows it plus how far the map is scrolled. Drawn on the screen's, every
+  // refresh made while scrolled put each edge `scrollTop` pixels above its card (TOPO1 #927).
   const base = graph.getBoundingClientRect();
+  const ox = base.left + graph.clientLeft - graph.scrollLeft;
+  const oy = base.top  + graph.clientTop  - graph.scrollTop;
 
   function pt(el, side) {
     if (!el) return null;
     const r = el.getBoundingClientRect();
-    const x = r.left - base.left + r.width / 2;
+    const x = r.left - ox + r.width / 2;
     return {
       x,
-      top:    r.top    - base.top,
-      bottom: r.bottom - base.top,
-      left:   r.left   - base.left,
-      right:  r.right  - base.left,
+      top:    r.top    - oy,
+      bottom: r.bottom - oy,
+      left:   r.left   - ox,
+      right:  r.right  - ox,
       width:  r.width,
     };
   }
@@ -1975,7 +2260,8 @@ function _drawTopologyEdges() {
   const isBlocked  = resources.some(r => r.states?.some(s => s.type === 'blocked'));
 
   const agent = pt(document.getElementById('node-agent'));
-  if (!agent) return;
+  // The layer outlives a render now: nothing to draw from, the last edges go with it.
+  if (!agent) { svg.innerHTML = ''; return; }
 
   const lines = [`<defs>
     <filter id="glow-r"><feGaussianBlur stdDeviation="2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
@@ -2438,24 +2724,65 @@ function focusJudge(escId) {
 let _toJudge = [];
 
 async function refreshObservation() {
+  const cards = await _toJudgeNow();
+  if (cards) _takeToJudge(cards);
+}
+// The cards to judge as the server says them now, or null: an error, a refusal, an answer without
+// its cards — never the list read before taken for it (JUG3: a batch writes only on a list read again).
+async function _toJudgeNow() {
   try {
-    const q = await fetch('/api/to-judge?since=7d').then(x => x.json());
-    if (q && Array.isArray(q.cards)) {
-      _toJudge = q.cards; renderToJudge(); Console.setJudgeCount(q.cards.length);
-    }
-  } catch (e) {}
+    const r = await fetch('/api/to-judge?since=7d');
+    if (!r.ok) return null;
+    const q = await r.json();
+    return q && Array.isArray(q.cards) ? q.cards : null;
+  } catch (e) { return null; }
+}
+function _takeToJudge(cards) {
+  _toJudge = cards; renderToJudge(); _judgeGroupAgain(); Console.setJudgeCount(cards.length);
+}
+
+// VP1c (#920): the card's time carries no time zone, or cannot be read — kept in the list whatever the
+// period, never dated by a guess (escalations.to_judge, `time_unreadable`).
+const _UNTIMED = 'The card\'s time carries no time zone, or cannot be read: when it fired is not known, and never guessed. It stays here, whatever the period, for you to judge.';
+// JUG3: the list redraws every 30 s (refreshObservation): what is being typed stays, and where.
+// A note to a card keeps its text; the field the operator is in keeps the focus and the caret — on a
+// phone, a field redrawn under the finger closes the keyboard. The batch's note keeps its text by
+// itself (_batch.<where>.note): only its focus is put back, never an old text.
+function _typed(root) {
+  const a = document.activeElement;
+  const into = a instanceof HTMLInputElement && a.type !== 'checkbox' && a.id && root.contains(a)
+    ? [a.id, a.selectionStart, a.selectionEnd] : null;
+  const notes = [...root.querySelectorAll('input[id^="judge-note-"]')].filter(i => i.value).map(i => [i.id, i.value]);
+  return { into, notes };
+}
+function _retype(root, typed) {
+  for (const [id, v] of typed.notes) {
+    const i = document.getElementById(id);
+    if (i && root.contains(i)) i.value = v;
+  }
+  const i = typed.into && document.getElementById(typed.into[0]);
+  if (i && root.contains(i)) {
+    i.focus({ preventScroll: true });
+    try { i.setSelectionRange(typed.into[1], typed.into[2]); } catch (e) {}
+  }
 }
 
 function renderToJudge() {
   const list = document.getElementById('judge-list');
+  const typed = list ? _typed(list) : null;
   const count = document.getElementById('judge-count');
   if (!list) return;
   if (count) count.textContent = _toJudge.length ? `· ${_toJudge.length}` : '';
+  _showMobileTab();                              // the phone's default tab and its badge (MOB4)
   if (!_toJudge.length) {
-    list.innerHTML = '<div class="judge-empty">Nothing to judge — every recommendation of the last 7 days has a verdict.</div>';
+    list.innerHTML = '<div class="judge-empty">Nothing to judge — every recommendation of the last 7 days has a verdict.</div>' + _batchPanel('list');
+    _retype(list, typed);
     return;
   }
-  list.innerHTML = _toJudge.map(c => {
+  // JUG3: a card checked and gone from the list (judged elsewhere, older than 7 days) is let go.
+  for (const id of [..._batch.list.picked]) if (!_toJudge.some(c => c.id === id)) _batch.list.picked.delete(id);
+  const allPicked = _batch.list.picked.size === _toJudge.length;
+  list.innerHTML = `<label class="judge-all" ${_on('click', 'stop')}><input type="checkbox"${allPicked ? ' checked' : ''} ${_on('change', 'pickAllJudge')}> select all</label>` + _toJudge.map(c => {
     const disruptive = ['isolate_vm', 'block_suspicious_ip'].includes(c.action);
     const pct = c.confidence ? ` ${Math.round(c.confidence * 100)}%` : '';
     // Judge on the evidence: the IP a block targets, the rule that fired, and the model's
@@ -2469,21 +2796,28 @@ function renderToJudge() {
     // was anchored on; one from before AL1c keeps its ⚓, and says it may not be about that VM
     // (on the first VM online, or on the VM itself: the card cannot tell which).
     const t = _targetOf(c);
+    // SLF1 (#929): a detection attributed to no VM says so, with its candidates — never the name of
+    // the VM it is filed on.
+    const loose = _unattributed(c);
     const vm = t ? (t.kind === 'control_plane' ? _TARGET_KINDS[t.kind]
       : (t.kind === 'identity' ? (t.identity_type || 'identity') : _TARGET_KINDS[t.kind]) + ' ' + (t.name || '?'))
+      : loose ? _unattributedTxt(loose)
       : (c.resource_id || '').split('/').pop();
-    const anchored = !t && _isAnchored(c);
+    const anchored = !t && (_isAnchored(c) || !!loose);
     const times = c.occurrences > 1 ? ` · ${Number(c.occurrences)}×` : '';
     const id = _attr(c.id);
     // JUG1: the line opens its card (its details, its verdict); its own note and buttons keep the click.
     return `<div class="judge-item${disruptive ? ' disruptive' : ''}${c.id === _focusCard ? ' focus' : ''}" id="judge-${id}" ${_on('click', 'openJudgeCard', c.id)} title="Open the card">
       <div class="judge-head">
+        <label class="judge-pick" ${_on('click', 'stop')} title="Check it, to judge several cards at once"><input type="checkbox" aria-label="Check this card"${_batch.list.picked.has(c.id) ? ' checked' : ''} ${_on('change', 'pickJudge', c.id)}></label>
         <span class="judge-what" style="color:${disruptive ? 'var(--red)' : 'var(--orange)'}">${_attr(what)}</span>
         <span style="flex:1"></span>
-        <span class="judge-ts">${c.first_seen ? _relTime(c.first_seen) : ''}${times}</span>
+        <span class="judge-ts">${c.time_unreadable ? '' : (c.first_seen ? _relTime(c.first_seen) : '')}${times}</span>
       </div>
+      ${c.time_unreadable ? `<div class="judge-why judge-untimed" style="-webkit-line-clamp:1;color:var(--yellow)" title="${_attr(_UNTIMED)}">⚠ time unreadable — judge it all the same</div>` : ''}
       <div class="judge-why" style="-webkit-line-clamp:1;color:var(--text)" title="${anchored ? _attr(_DETECTION_ONLY.has(c.escalation_type) ? _FILED_BEFORE : 'The detection does not name this VM: the card is only filed on it') : _attr((t && t.limit) || c.resource_id || '')}">${anchored ? '⚓ ' : (t ? '🎯 ' : '')}${_attr(vm)}${c.rule_name ? ` · rule ${_attr(c.rule_name)}` : ''}${c.ttp ? ` · ${_attr(c.ttp)}` : ''}${c.severity === 'critical' ? ' · <b style="color:var(--red)">critical</b>' : ''}</div>
       ${c.exercise ? `<div class="judge-why" style="-webkit-line-clamp:1;color:var(--blue)" title="An injector's exercise window covered this VM at that time. A window is the injectors' claim: check the run before trusting it.">⚑ exercise${c.exercise_run ? ` · run <a href="/runs/${encodeURIComponent(c.exercise_run)}" ${_on('click', 'stop')}>${_attr(c.exercise_run)}</a> — check the run ▸` : ' — check the run'}</div>` : ''}
+      ${_proposedLine(c)}
       ${c.recurrence ? `<div class="judge-why" style="-webkit-line-clamp:1;color:var(--yellow)" title="An earlier card on the same IP: in observation nothing is blocked, so a scanner comes back">↻ same IP seen ${_attr(c.recurrence.previous)}× in 7 days — last ${c.recurrence.last_seen ? _relTime(c.recurrence.last_seen) : ''}${c.recurrence.last_verdict ? ', judged ' + _attr(c.recurrence.last_verdict) : ''}</div>` : ''}
       <div class="judge-why" title="${_attr(why)}">${_attr(why)}</div>
       <div class="judge-actions" ${_on('click', 'stop')}>
@@ -2493,11 +2827,246 @@ function renderToJudge() {
         <button class="action" style="color:var(--dim)" title="Can't tell with what is known" ${_on('click', 'judgeCard', c.id, 'unsure')}>? Unsure</button>
       </div>
     </div>`;
-  }).join('');
+  }).join('') + _batchPanel('list');
+  _retype(list, typed);
   // ?card=<id>: scrolled to once, the first time it is in the list.
   if (_focusCard && document.getElementById('judge-' + _focusCard)) {
     document.getElementById('judge-' + _focusCard).scrollIntoView({ block: 'nearest' });
     _focusCard = null;
+  }
+}
+
+// ── Judging several cards at once (JUG3, #980, Jonathan 20/11 on a mockup) ─────────────────
+// Cards checked in TO JUDGE, or in the window of a group (« ×N »), then one verdict and one note for
+// all. Each card gets exactly what its own button gives it — its verdict and the note, then its
+// acknowledgement (16/10) —, one card after the other: its own verdict, so the precision, the rate
+// of wrong isolations and the memory stay true. Never an action: no « Approve & execute », never a
+// verdict proposed (VP1) confirmed in the operator's place. Before anything is written, a summary
+// (the count by rule, the note); a card that fails is said, card by card, and the others go on: it
+// stays checked, to try again (decisions 1 and 4 of 20/11).
+const _VERDICTS = ['right', 'wrong', 'unsure'];
+const _batch = {
+  list:  { picked: new Set(), ask: null, result: null, note: '', running: '' },
+  // The window keeps its cards as they were when opened (cards: an acknowledged card leaves the state)
+  // and the verdict each got in it (given): its lines still say what they were, and how judged.
+  group: { picked: new Set(), ask: null, result: null, note: '', running: '', ids: [], title: '', cards: {}, given: {} },
+};
+// One batch at a time for the page: the list's and the group's window never judge at once (the same
+// cards could be in both).
+function _batchRunning() { return !!(_batch.list.running || _batch.group.running); }
+function _batchCard(id) { return _toJudge.find(c => c.id === id) || _escById[id] || null; }
+function _batchRule(c) { return String((c && (c.rule_name || c.action || c.escalation_type)) || 'no rule'); }
+function _batchLabel(c) {
+  if (!c) return '?';
+  const t = _targetOf(c);
+  const on = t ? (t.name || _TARGET_KINDS[t.kind] || '') : (c.resource_id || '').split('/').pop();
+  // The id's first 8 characters (as `glorfindel pending` shows them): two cards of one action on one VM
+  // told apart in the outcome.
+  return `${c.action ? actionLabelVerb(c.action) : escTitle(c)}${on ? ' — ' + on : ''} · ${String(c.id || '').slice(0, 8)}`;
+}
+// The group's window only while it is the one open: closed during a batch, another window is never written.
+function _batchRender(where) { where === 'group' ? _judgeGroupAgain() : renderToJudge(); }
+function _batchPanel(where) {
+  const B = _batch[where];
+  const parts = [];
+  if (B.result) {
+    const v = B.result.verdict;
+    parts.push(`<div class="judge-batch-result">${B.result.lines.map(l => l.state === 'ok'
+      ? `<div class="r-ok">✓ ${_attr(l.label)}: ${_attr(v)}${l.note ? ' · note kept' : ''} · acknowledged</div>`
+      : l.state === 'unacked'
+      ? `<div class="r-warn">⚠ ${_attr(l.label)}: judged ${_attr(v)}, not acknowledged — ${_attr(l.why)} (Ack it on its tile)</div>`
+      : l.state === 'gone'
+      ? `<div class="r-warn">↷ ${_attr(l.label)}: left as it was — no longer to judge (judged elsewhere since the summary?)</div>`
+      : `<div class="r-bad">✗ ${_attr(l.label)}: not judged — ${_attr(l.why)} (still checked)</div>`).join('')}</div>`);
+  }
+  if (B.running) parts.push(`<div class="judge-bar" ${_on('click', 'stop')}><b>${_attr(B.running)}</b></div>`);
+  else if (B.ask) {
+    const n = B.ask.ids.length, byRule = new Map();             // a Map: any rule's name a key (__proto__ too)
+    B.ask.ids.forEach(id => { const r = _batchRule(_batchCard(id)); byRule.set(r, (byRule.get(r) || 0) + 1); });
+    parts.push(`<div class="judge-confirm" ${_on('click', 'stop')}>
+      <div class="judge-confirm-t">Judge ${Number(n)} card${n > 1 ? 's' : ''} ${_attr(B.ask.verdict)}?</div>
+      <div>${[...byRule.entries()].map(([r, k]) => `${Number(k)} × ${_attr(r)}`).join(' · ')}</div>
+      <div class="judge-confirm-note">${B.ask.note ? 'note: ' + _attr(B.ask.note) : 'no note'}</div>
+      <div class="judge-confirm-row"><button class="action" ${_on('click', 'runBatch', where)}>Judge ${Number(n)} ${_attr(B.ask.verdict)}</button><button class="action" ${_on('click', 'cancelBatch', where)}>Cancel</button></div>
+    </div>`);
+  } else if (B.picked.size) {
+    const rules = new Set([...B.picked].map(id => _batchRule(_batchCard(id))));
+    parts.push(`<div class="judge-bar" ${_on('click', 'stop')}>
+      ${rules.size > 1 ? `<div class="judge-mixed">⚠ ${Number(rules.size)} rules in the selection</div>` : ''}
+      <b>${Number(B.picked.size)} selected</b>
+      <input id="judge-batch-note-${where}" placeholder="one note for all (optional)" maxlength="300" value="${_attr(B.note)}" ${_on('input', 'batchNote', where)}>
+      <button class="action" title="The recommendation was right, for each" ${_on('click', 'askBatch', where, 'right')}>✓ Right</button>
+      <button class="action" style="color:var(--red)" title="False positive, or a disproportionate action, for each" ${_on('click', 'askBatch', where, 'wrong')}>✗ Wrong</button>
+      <button class="action" style="color:var(--dim)" title="Can't tell with what is known, for each" ${_on('click', 'askBatch', where, 'unsure')}>? Unsure</button>
+      <button class="action judge-clear" ${_on('click', 'clearBatch', where)}>clear</button>
+    </div>`);
+  }
+  return parts.join('');
+}
+// One card, as its own button does it (judgeCard): its verdict and the note, then its acknowledgement —
+// each answer read, a refusal said.
+async function _judgeOne(id, verdict, note) {
+  try {
+    const r = await _post(`/api/escalations/${_seg(id)}/verdict`, { verdict, note });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || d.error) return { state: 'fail', why: String(d.error || d.detail || `HTTP ${r.status}`) };
+  } catch (e) { return { state: 'fail', why: String(e.message || e) }; }
+  try {
+    const r = await _post(`/api/action/ack/${_seg(id)}`);
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || d.error) return { state: 'unacked', why: String(d.error || d.detail || `HTTP ${r.status}`) };
+  } catch (e) { return { state: 'unacked', why: String(e.message || e) }; }
+  return { state: 'ok' };
+}
+async function _runBatch(where) {
+  const B = _batch[where];
+  if (!B.ask) return;
+  if (_batchRunning()) { toast('⏳ A batch is being judged: wait for its end'); return; }
+  const { verdict, note, ids } = B.ask;
+  B.ask = null;
+  // The list read again first: a verdict given since the summary (the bot, another tab) is never
+  // written over — the server takes a second verdict, as a card's own button does. Not read again
+  // (an error, a refusal): nothing is written, each card said and left checked.
+  B.running = 'Reading the list again…';
+  _batchRender(where);
+  const fresh = await _toJudgeNow();
+  if (fresh) _takeToJudge(fresh);
+  const lines = [];
+  for (const [k, id] of ids.entries()) {                         // one after the other, never at once
+    B.running = `Judging ${k + 1} of ${ids.length}…`;
+    _batchRender(where);
+    const label = _batchLabel(_batchCard(id));
+    if (!fresh) { lines.push({ id, label, note: !!note, state: 'fail', why: 'the list could not be read again' }); continue; }
+    if (!_toJudge.some(c => c.id === id)) { lines.push({ id, label, note: !!note, state: 'gone' }); continue; }
+    lines.push({ id, label, note: !!note, ...(await _judgeOne(id, verdict, note)) });
+  }
+  B.running = '';
+  B.picked = new Set(lines.filter(l => l.state === 'fail').map(l => l.id));   // the failed ones, to try again
+  // The note goes with this batch only: kept for a retry of the failed ones, never for the next batch.
+  if (!B.picked.size) B.note = '';
+  if (B.given) for (const l of lines) if (l.state === 'ok' || l.state === 'unacked') B.given[l.id] = verdict;
+  B.result = { verdict, lines };
+  const ok = lines.filter(l => l.state === 'ok' || l.state === 'unacked').length;
+  toast(ok === lines.length ? `✓ ${ok} card${ok > 1 ? 's' : ''} judged ${verdict}` : `⚠ ${ok} of ${lines.length} judged ${verdict} — see the list`);
+  _batchRender(where);
+  await refreshState();                 // the verdicts given, on the tiles (and the window's lines)
+  await refreshObservation();           // the list, and the window of the group redrawn on it
+}
+
+// The window of a group (« to judge ×N » on a tile): its cards to judge, ranged by rule, each with its
+// box, « select this rule », « select all » (decision 2 of 20/11); the batch as in the list.
+function openJudgeGroup(idsCsv) {
+  const B = _batch.group;
+  // Its batch running: the window opened again as it is (its group, its progress), never reset under it.
+  if (!B.running) {
+    // The group's ids, as _renderEscGroup gave them (a group of _groupEscs): only cards the page knows.
+    const members = String(idsCsv || '').split(',').filter(id => _escById[id]);
+    if (!members.length) return;
+    Object.assign(B, { picked: new Set(), ask: null, result: null, note: '', ids: members,
+      cards: Object.fromEntries(members.map(id => [id, _batchCard(id)])), given: {} });
+    const e = _escById[members[0]];
+    B.title = `To judge — ${e.action ? actionLabelVerb(e.action) : escTitle(e)} ×${members.length} — ${_ownTile(e) || String(e.resource_id || '').split('/').pop()}`;
+  }
+  document.getElementById('modal-title').textContent = B.title;
+  document.getElementById('modal').dataset.owner = 'judge-group';
+  document.getElementById('modal-cmd').style.display = 'none';
+  document.getElementById('modal-cancel').style.display = 'none';
+  const btn = document.getElementById('modal-confirm');
+  btn.textContent = 'Close';
+  btn.className = 'action';
+  btn.onclick = () => { closeModal(); document.getElementById('modal-cancel').style.display = ''; };
+  _renderJudgeGroup();
+  document.querySelector('.modal').classList.add('wide');
+  document.getElementById('modal').classList.add('open');
+}
+// The window of a group, open: redrawn with the list (a card judged elsewhere loses its box). Only
+// this window — another one opened since says so by its owner and its title.
+function _judgeGroupAgain() {
+  const m = document.getElementById('modal');
+  if (m && m.classList.contains('open') && m.dataset.owner === 'judge-group'
+      && document.getElementById('modal-title').textContent === _batch.group.title) _renderJudgeGroup();
+}
+function _groupJudgeable() { return _batch.group.ids.filter(id => _toJudge.some(c => c.id === id)); }
+function _renderJudgeGroup() {
+  const B = _batch.group, body = document.getElementById('modal-body');
+  if (!body || !B.ids.length) return;
+  const typed = _typed(body);
+  const judgeable = _groupJudgeable();
+  for (const id of [...B.picked]) if (!judgeable.includes(id)) B.picked.delete(id);
+  const byRule = new Map();
+  const card = id => _batchCard(id) || B.cards[id] || null;
+  B.ids.forEach(id => { const r = _batchRule(card(id)); if (!byRule.has(r)) byRule.set(r, []); byRule.get(r).push(id); });
+  const allPicked = judgeable.length > 0 && judgeable.every(id => B.picked.has(id));
+  body.innerHTML = `<div class="judge-group">
+    ${judgeable.length ? `<label class="judge-all" ${_on('click', 'stop')}><input type="checkbox"${allPicked ? ' checked' : ''} ${_on('change', 'pickGroupAll')}> select all ${Number(judgeable.length)}</label>` : ''}
+    ${[...byRule.entries()].map(([rule, ids]) => {
+      const open = ids.filter(id => judgeable.includes(id));
+      const rulePicked = open.length > 0 && open.every(id => B.picked.has(id));
+      return `<div class="judge-rule">${_attr(rule.toUpperCase())} · ${Number(ids.length)}${open.length ? ` <label ${_on('click', 'stop')}><input type="checkbox"${rulePicked ? ' checked' : ''} ${_on('change', 'pickGroupRule', rule)}> select this rule</label>` : ''}</div>
+        ${ids.map(id => {
+          const c = card(id), can = judgeable.includes(id), given = B.given[id] || (c && c.verdict);
+          return `<div class="judge-item judge-group-item${B.picked.has(id) ? ' picked' : ''}">
+            <div class="judge-head">${can ? `<label class="judge-pick" ${_on('click', 'stop')}><input type="checkbox" aria-label="Check this card"${B.picked.has(id) ? ' checked' : ''} ${_on('change', 'pickGroup', id)}></label>` : ''}
+              <span class="judge-vm">${_attr(_batchLabel(c))}</span>
+              <span class="judge-ts">${c && c.first_seen ? _relTime(c.first_seen) : ''}</span></div>
+            <div class="judge-why" style="-webkit-line-clamp:1">${can ? 'rule ' + _attr(_batchRule(c)) : given ? 'judged: ' + _attr(given) : 'not in TO JUDGE'}</div>
+          </div>`;
+        }).join('')}`;
+    }).join('')}
+    ${_batchPanel('group')}
+  </div>`;
+  _retype(body, typed);
+}
+
+// VP1 (#615): the verdict proposed on an exercise card — the detection the drill of the week expected
+// (its rule, on its target, within its delay after T0). Never a verdict given: the card stays to judge
+// until the operator confirms it (it becomes their verdict) or refuses it (gone, never proposed again).
+// An exercise card without one says why. On the detection only: the decision stays to judge.
+// Its Confirm and Refuse sit under the line, never in it: the line is cut at two lines, and a
+// proposal of an ordinary length put them below the cut — hidden in the list, at any width (MOB5).
+function _proposedLine(c, inModal) {
+  if (!c || !c.exercise) return '';
+  const p = c.proposed_verdict;
+  if (p && typeof p === 'object') {
+    const after = Number(p.after_s), within = Number(p.within_s);
+    return `<div class="judge-why" style="-webkit-line-clamp:2;color:var(--green)" title="The drill ${_attr(p.drill)} expected this detection: rule ${_attr(p.rule)}, on its target, within ${within} s of the run's T0. Only the detection is compared: confirm only if the action was proportionate too.">⚖ proposed: <b>${_attr(p.verdict)}</b> — the detection the drill ${_attr(p.drill)} expected (rule ${_attr(p.rule)}, its target, ${after} s after T0 ≤ ${within} s); the decision stays yours</div>
+      <div class="judge-proposed" ${_on('click', 'stop')}><button class="action" style="color:var(--green)" title="It becomes your verdict" ${inModal ? _on('click', 'confirmProposedFromModal', c.id) : _on('click', 'confirmProposed', c.id)}>✓ Confirm ${_attr(p.verdict)}</button>
+      <button class="action" style="color:var(--dim)" title="The proposal is erased, never made again; the card stays to judge" ${inModal ? _on('click', 'refuseProposedFromModal', c.id) : _on('click', 'refuseProposed', c.id)}>✗ Refuse</button></div>`;
+  }
+  if (c.proposed_refused && typeof c.proposed_refused === 'object') {
+    return `<div class="judge-why" style="-webkit-line-clamp:1;color:var(--dim)">⚖ proposed verdict refused — yours to judge</div>`;
+  }
+  const w = c.proposed_why;
+  if (w && typeof w === 'object') {
+    return `<div class="judge-why" style="-webkit-line-clamp:1;color:var(--dim)" title="${_attr(w.code)}">⚖ no proposed verdict: ${_attr(w.said)}</div>`;
+  }
+  return '';
+}
+
+async function confirmProposed(escId, noteId) {
+  const note = (document.getElementById(noteId || 'judge-note-' + escId)?.value || '').trim();
+  try {
+    const r = await _post(`/api/escalations/${_seg(escId)}/proposed/confirm`, { note });
+    const d = await r.json();
+    if (d.error) { toast('✗ ' + d.error); return; }
+    await _post(`/api/action/ack/${_seg(escId)}`);      // as any verdict: one click, the card acknowledged
+    toast(`✓ Proposed verdict confirmed (${d.verdict})`);
+    refreshObservation();
+    refreshState();
+  } catch (e) {
+    toast('✗ ' + e.message);
+  }
+}
+
+async function refuseProposed(escId) {
+  try {
+    const r = await _post(`/api/escalations/${_seg(escId)}/proposed/refuse`, {});
+    const d = await r.json();
+    if (d.error) { toast('✗ ' + d.error); return; }
+    toast('Proposed verdict refused — the card stays to judge');
+    refreshObservation();
+  } catch (e) {
+    toast('✗ ' + e.message);
   }
 }
 
@@ -2719,7 +3288,11 @@ async function setDefaultMode(mode) {
 const _feedDedup = new Map(); // key → {el, count, ts}
 const _FEED_DEDUP_MS = 5000;
 // The gate that held a decision with no action (debug line `held_by`, agent.py).
-const _HELD_BY_WORDS = { control_plane: 'control plane (detection only)', identity: 'identity (detection only)' };
+// CPT1b: a card of incomplete telemetry (CPT1) says so in the feed, never « review ».
+const _HELD_BY_WORDS = { control_plane: 'control plane (detection only)', identity: 'identity (detection only)',
+  // CPT1c: a reply of the journal out of the rule's schema.
+  control_plane_unreadable: 'control plane, unreadable reply (detection only)',
+  control_plane_incomplete: 'control plane, incomplete telemetry (detection only)' };
 
 // CON-D: a line that is not of today, in UTC, says its day — « yesterday », or its date (10/11,
 // and its year when it is not this one); a line of today, its time alone. The day and the time
@@ -3021,6 +3594,31 @@ function toggleConfig() {
   cfgPanel.style.display = _configMode ? 'flex' : 'none';
   document.getElementById('right-col-label').textContent = _configMode ? 'CONFIGURATION' : 'INFRASTRUCTURE';
   if (_configMode) refreshConfig();
+  if (_configMode) _mobileTab = 'infra';   // a phone opens the configuration in the infra's tab (MOB4)
+  _showMobileTab();
+}
+
+// ── On a phone (MOB4, #972, Jonathan 20/11 on a mockup, option A) ──────────────────
+// Under 760 px, one section at a time — To judge, Infra, Feed —, the one body[data-m] names (the CSS
+// shows it). By default To judge when cards wait, else the infra, until the operator picks a tab:
+// then theirs. The configuration opens in the infra's tab, and the other tabs still answer while it
+// is open (review of MOB4: they did not). Above 760 px the attribute changes nothing.
+const _MOBILE_TABS = ['judge', 'infra', 'feed'];
+let _mobileTab = null;                     // the tab the operator picked; null: the default
+function mobileTab(which) {
+  if (!_MOBILE_TABS.includes(which)) return;
+  _mobileTab = which;
+  _showMobileTab();
+}
+function _showMobileTab() {
+  const tab = _mobileTab || (_toJudge.length ? 'judge' : 'infra');
+  document.body.dataset.m = tab;
+  for (const t of _MOBILE_TABS) {
+    const b = document.getElementById('m-tab-' + t);
+    if (b) b.ariaSelected = String(t === tab);
+  }
+  const badge = document.getElementById('m-judge-badge');
+  if (badge) { badge.textContent = _toJudge.length ? String(Number(_toJudge.length)) : ''; badge.hidden = !_toJudge.length; }
 }
 
 // The server sends identifiers masked already (SEC1): its first 8 and last 4 characters.
@@ -3035,9 +3633,14 @@ function ttpStatus(c) {
   return ['— unknown', 'dim'];
 }
 
+// VP1c (#920): a time without a zone is never dated by a guess — a browser would take it for its own
+// local time. Said unreadable, as a time that cannot be read.
+const _ZONED = /(?:Z|[+-]\d{2}:?\d{2})$/i;
 function _relTime(iso) {
   if (!iso) return '—';
-  const age = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  const t = new Date(iso).getTime();
+  if (!_ZONED.test(String(iso).trim()) || Number.isNaN(t)) return 'time unreadable';
+  const age = Math.floor((Date.now() - t) / 1000);
   if (age < 60) return `${age}s ago`;
   if (age < 3600) return `${Math.floor(age / 60)}m ago`;
   return `${Math.floor(age / 3600)}h ago`;
@@ -3051,6 +3654,40 @@ function _originProofTxt(r) {
   if (ok <= 0) return 'origin read in the VM only';
   if (ok >= n) return 'every one confirmed outside the VM, COR2';
   return `${ok} confirmed outside the VM (COR2), ${n - ok} read in the VM only`;
+}
+// SLF1 (#929): the writes of the watch's own return channel a rule set aside — how many, why —, and
+// its identity not read (nothing set aside), said.
+function _ownChannelTxt(r) {
+  const n = Number(r.own_channel_count) || 0;
+  const rows = Number(r.own_channel_rows) || 0;
+  const said = n > 0
+    ? `${n} write(s) of the watch's own return channel set aside (${rows} row(s) left without a card) — its identity, the container of EREGION_WATCH_CHANNEL, the objects it writes there (SLF1)${r.own_channel_last ? ' · last ' + _relTime(r.own_channel_last) : ''}`
+    : '';
+  const unread = r.own_channel_unread
+    ? `return channel configured, the watch's identity not read (${_relTime(r.own_channel_unread)}): none of its writes set aside`
+    : '';
+  // SLF1b (#976): rows whose BlobWriters column could not be read — nothing set aside of them.
+  const bad = Number(r.own_channel_unparsed) || 0;
+  const unparsed = bad > 0
+    ? `${bad} row(s) whose BlobWriters column could not be read: nothing set aside of them (SLF1b)${r.own_channel_unparsed_last ? ' · last ' + _relTime(r.own_channel_unparsed_last) : ''}`
+    : '';
+  return [said, unread, unparsed].filter(Boolean).join(' · ');
+}
+
+// MID1 (#981): the rows of entra-credential-added set aside as the certificate Azure puts on a managed
+// identity it creates — how many, why —, and the id of the tenant's principal unset or no object id
+// (nothing set aside), said.
+function _msiCertificateTxt(r) {
+  const n = Number(r.msi_certificate_count) || 0;
+  const said = n > 0
+    ? `${n} row(s) set aside, no card: the certificate Azure puts on a managed identity it creates — by the tenant's « Managed Service Identity » principal (EREGION_ENTRA_MSI_ACTOR_ID), « Add service principal » on a ServicePrincipal, every credential an AsymmetricX509Cert of usage Verify (MID1)${r.msi_certificate_last ? ' · last ' + _relTime(r.msi_certificate_last) : ''}`
+    : '';
+  const config = r.msi_certificate_config === 'malformed'
+    ? 'EREGION_ENTRA_MSI_ACTOR_ID is no object id: nothing set aside, every row a card (MID1)'
+    : r.msi_certificate_config === 'unset'
+      ? 'EREGION_ENTRA_MSI_ACTOR_ID unset: nothing set aside, every row a card (MID1)'
+      : '';
+  return [said, config].filter(Boolean).join(' · ');
 }
 
 function showRuleDetail(rule) {
@@ -3091,6 +3728,8 @@ function showRuleDetail(rule) {
     <div style="font-size:10px;color:var(--dim);margin-bottom:8px">${_attr(statusTxt)}</div>
     ${expectedTxt ? `<div style="font-size:10px;color:var(--dim);margin-bottom:8px">${_attr(expectedTxt)}</div>` : ''}
     ${corrTxt ? `<div style="font-size:10px;color:var(--dim);margin-bottom:8px">${_attr(corrTxt)}</div>` : ''}
+    ${_ownChannelTxt(rule) ? `<div style="font-size:10px;color:var(--dim);margin-bottom:8px">${_attr(_ownChannelTxt(rule))}</div>` : ''}
+    ${_msiCertificateTxt(rule) ? `<div style="font-size:10px;color:var(--dim);margin-bottom:8px">${_attr(_msiCertificateTxt(rule))}</div>` : ''}
     <div style="font-size:10px;color:var(--dim);margin-bottom:4px;text-transform:uppercase;letter-spacing:1px">Query</div>
     <div class="modal-query">${_attr((rule.query || '').trim())}</div>`;
 
@@ -3295,8 +3934,15 @@ function _cardBody(e, vmName) {
     ${explanation}${_executedDetail(e)}`;
 }
 function _cardSteps(e) {
-  return (e.suggested_steps || [])
+  return _looseSteps(e) + (e.suggested_steps || [])
     .map(st => `<div style="color:var(--dim);font-size:10px;padding:2px 0 2px 8px">• ${_attr(st)}</div>`).join('');
+}
+// ATT1 (#936): the model's steps of an unattributed card may name the VM it is filed on, which the
+// detection does not name — said before them, by the page, never by the model.
+function _looseSteps(e) {
+  const loose = _unattributed(e);
+  if (!loose || !(e.suggested_steps || []).length) return '';
+  return `<div style="color:var(--yellow);font-size:10px;padding:2px 0 2px 8px">⚓ ${_attr(_unattributedTxt(loose))}; judge from the CLI — these steps aim at the VM the card is filed on</div>`;
 }
 
 // JUG1: a line of TO JUDGE opens its card — its details as the store holds them (a card still
@@ -3308,7 +3954,8 @@ function openJudgeCard(escId) {
   const vmName = _ownTile(e) || String(e.resource_id || '').split('/').pop();
   const label = _isExecuted(e) ? `${actionLabel(e.action)} — done alone, to judge`
     : (e.action ? actionLabelVerb(e.action) : escTitle(e));
-  document.getElementById('modal-title').textContent = `To judge — ${label} — ${vmName}`;
+  // SLF1: a detection attributed to no VM is about none — never its anchor's name in the title.
+  document.getElementById('modal-title').textContent = `To judge — ${label} — ${_unattributed(e) ? 'not attributed' : vmName}`;
   document.getElementById('modal-cmd').style.display = 'none';
   document.getElementById('modal-cancel').style.display = 'none';
   const bodyEl = document.getElementById('modal-body');
@@ -3321,6 +3968,7 @@ function openJudgeCard(escId) {
   bodyEl.innerHTML = `<div style="border-left:2px solid var(--purple);padding:10px;background:color-mix(in srgb,var(--purple) 4%,var(--bg1))">
       <div style="color:var(--dim);font-size:10px;margin-bottom:6px">${_escCtx(e, e.confidence ? Math.round(e.confidence * 100) + '%' : '', false)}${e.rule_name ? ` · rule ${_attr(e.rule_name)}` : ''} · ${_attr(e.first_seen ? _relTime(e.first_seen) : '')} · ${_attr(e.status || '')}</div>
       ${_cardBody(e, vmName)}${_cardSteps(e)}
+      ${e.verdict || !listed ? '' : _proposedLine(listed, true)}
       <div class="judge-actions" style="margin-top:8px">${verdicts}</div>
     </div>`;
   const btn = document.getElementById('modal-confirm');
@@ -3354,7 +4002,7 @@ function showEscModal(vmName) {
     const ids   = group.map(g => g.id).join(','); // CSV — one string argument of the button's action (_on)
     const count = Number(group.length);
     const isModeHold        = _isHeld(e);
-    const isSnapshotPending = e.action === 'snapshot' && e.escalation_type === 'low_confidence';
+    const isSnapshotPending = _isSnapshotPending(e);
     const isWriteBlocked    = e.escalation_type === 'write_blocked';
     const isActionFailed    = e.escalation_type === 'action_failed';
     const isRule            = e.action === 'improve_detection' && e.proposal_id;
@@ -3369,7 +4017,7 @@ function showEscModal(vmName) {
     // type already encoded in title for these — keep ctx lean
     const ctx   = _escCtx(e, '', isModeHold || isWriteBlocked || isActionFailed);
     // An identity card with its plan (IR1a) shows the plan — the same steps, structured, with Verify.
-    const steps = e.identity_plan ? _identityPlan(e) : (e.suggested_steps || [])
+    const steps = e.identity_plan ? _identityPlan(e) : _looseSteps(e) + (e.suggested_steps || [])
       .map(s => `<div style="color:var(--dim);font-size:10px;padding:2px 0 2px 8px">• ${_attr(s)}</div>`).join('');
     const query = _cardQuery(e);
     const pid   = e.proposal_id || '';
@@ -3616,7 +4264,13 @@ async function refreshAuditData() {
   const timer = setTimeout(() => ctrl.abort(), 20000);
   try {
     const r = await fetch('/api/audit', { signal: ctrl.signal });
-    _auditData    = await r.json();
+    // An answer that is not an audit is a failure, said as one (TOPO1b #949): before, an HTTP error
+    // with a JSON body (a 404 or a 422 `{detail}`, a proxy's) was read as an audit without VMs, every
+    // card silent. A body that is not JSON (Starlette's 500) already failed at r.json().
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    if (!Array.isArray(d?.audits)) throw new Error('the answer holds no audit');
+    _auditData    = d;
     _auditLastRun = new Date().toISOString();
     _auditStale   = null;
   } catch (e) {
@@ -3689,7 +4343,24 @@ const ACTIONS = {
   filterBlocks, showBlocks,                       // a VM's blocks, in their window (CON-K)
   verifyIdentity,                                 // an identity card's plan, read again on Graph by the watch (IR1a)
   openJudgeCard,                                  // a card's details and its verdict, from TO JUDGE or a tile (JUG1)
+  copyAddr,                                       // a VM's address, copied from its card (IPS1)
+  mobileTab,                                      // a phone's section, picked in its tab bar (MOB4)
+  // JUG3: several cards judged at once — a box read only from the page's own checkbox.
+  pickJudge(id) { if (_target instanceof HTMLInputElement && _target.type === 'checkbox') { _target.checked ? _batch.list.picked.add(id) : _batch.list.picked.delete(id); _batch.list.ask = null; _batch.list.result = null; renderToJudge(); } },
+  pickAllJudge() { if (_target instanceof HTMLInputElement && _target.type === 'checkbox') { _batch.list.picked = new Set(_target.checked ? _toJudge.map(c => c.id) : []); _batch.list.ask = null; _batch.list.result = null; renderToJudge(); } },
+  pickGroup(id) { if (_target instanceof HTMLInputElement && _target.type === 'checkbox') { _target.checked ? _batch.group.picked.add(id) : _batch.group.picked.delete(id); _batch.group.ask = null; _batch.group.result = null; _renderJudgeGroup(); } },
+  pickGroupRule(rule) { if (_target instanceof HTMLInputElement && _target.type === 'checkbox') { const on = _target.checked; _groupJudgeable().filter(id => _batchRule(_batchCard(id)) === rule).forEach(id => on ? _batch.group.picked.add(id) : _batch.group.picked.delete(id)); _batch.group.ask = null; _batch.group.result = null; _renderJudgeGroup(); } },
+  pickGroupAll() { if (_target instanceof HTMLInputElement && _target.type === 'checkbox') { _batch.group.picked = new Set(_target.checked ? _groupJudgeable() : []); _batch.group.ask = null; _batch.group.result = null; _renderJudgeGroup(); } },
+  batchNote(where) { if (Object.hasOwn(_batch, where) && _target instanceof HTMLInputElement) _batch[where].note = _target.value.slice(0, 300); },
+  askBatch(where, verdict) { if (!Object.hasOwn(_batch, where) || !_VERDICTS.includes(verdict)) return; const B = _batch[where]; if (!B.picked.size) return; if (_batchRunning()) { toast('⏳ A batch is being judged: wait for its end'); return; } B.ask = { verdict, note: B.note.trim(), ids: [...B.picked] }; B.result = null; _batchRender(where); },
+  runBatch(where) { if (Object.hasOwn(_batch, where)) _runBatch(where); },
+  cancelBatch(where) { if (Object.hasOwn(_batch, where)) { _batch[where].ask = null; _batchRender(where); } },
+  clearBatch(where) { if (Object.hasOwn(_batch, where)) { Object.assign(_batch[where], { picked: new Set(), ask: null, result: null }); _batchRender(where); } },
+  openJudgeGroup,                                 // a group's cards to judge, in its window (JUG3)
   judgeFromModal(id, verdict) { judgeCard(id, verdict, 'judge-modal-note'); closeModal(); },
+  confirmProposed, refuseProposed,                // VP1: a verdict proposed on an exercise card, confirmed or refused
+  confirmProposedFromModal(id) { confirmProposed(id, 'judge-modal-note'); closeModal(); },
+  refuseProposedFromModal(id) { refuseProposed(id); closeModal(); },
   _glowNsgVms,
   stop() {},                                      // only keeps the click from the element around
   ackAllAndClose(ids) { doAckAll(ids); closeModal(); },
@@ -3752,6 +4423,7 @@ document.getElementById('modal-cancel').onclick = closeModal;
 // ── Init ───────────────────────────────────────────────────────────────────────
 
 (async function init() {
+  _showMobileTab();          // a phone: the infra until the cards to judge are read (MOB4)
   await refreshCfgData();     // detection rules + known resources → renderInfra
   await refreshState();       // active incidents → renderInfra
   if (_IS_CONFIG) toggleConfig();   // /config: this page, opened on its configuration

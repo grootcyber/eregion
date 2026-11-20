@@ -31,7 +31,7 @@ from glorfindel.providers.azure.verify import VerifyMixin
 from glorfindel.providers.azure.verify_block import VerifyBlockMixin
 from glorfindel.providers.interface import CloudConnector
 from glorfindel.response.ids import _subscription_of
-from glorfindel.response.locks import _vm_lock
+from glorfindel.response.locks import _vm_lock, writer_wait_s
 from glorfindel.response.policy import WrongSubscriptionError
 
 
@@ -175,7 +175,7 @@ def _one_writer(method):
             (a for a in args if isinstance(a, str) and a.lower().startswith("/subscriptions/")), "")
         if self.dry_run or not rid:
             return method(self, *args, **kwargs)
-        with _vm_lock(rid.rstrip("/").rsplit("/", 1)[-1]):
+        with _vm_lock(rid.rstrip("/").rsplit("/", 1)[-1], timeout=writer_wait_s()):   # bounded (SEC-H)
             return method(self, *args, **kwargs)
     return wrapper
 
@@ -203,7 +203,7 @@ def _orphan_writer(method):
                           for h in orphan.get("cut") or [] if isinstance(h, dict)} - {""})
         with contextlib.ExitStack() as stack:
             for vm in victims:
-                stack.enter_context(_vm_lock(vm))
+                stack.enter_context(_vm_lock(vm, timeout=writer_wait_s()))
             return method(self, orphan, *args, **kwargs)
     return wrapper
 

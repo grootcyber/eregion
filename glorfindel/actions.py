@@ -5,6 +5,7 @@ The code that lived here (4 394 lines) is split by concern, nothing changed in i
   glorfindel/response/          the provider-neutral core
     policy.py                   which actions run alone, errors, verdicts
     ids.py                      resource ids
+    state_files.py              its files: written atomically, keyed by name and resource id (SEC-H)
     state.py                    local state (~/.glorfindel/isolation, blocks)
     pair_journal.py             Glorfindel's own writes of perimeter pairs (L1W)
     legacy_state.py             an older version's isolation record, kept by a new one (I4E)
@@ -18,14 +19,17 @@ The code that lived here (4 394 lines) is split by concern, nothing changed in i
     narrow.py                   an orphan rule narrowed to the addresses of the VMs held (U1G)
     network.py                  NICs and NSGs: reads, rule writes, names
     quarantine.py               the quarantine NSG
+    quarantine_origin.py        the original NSG its tag keeps, a bare NIC's looked up (SEC-H)
     isolation.py, release.py, verify.py      isolation by quarantine or by rules
     older.py                    an older version's isolation undone by its record (I4E)
     gone.py                     a VM gone: its NICs' rules looked for everywhere (I7S, I5R)
+    older_names.py              an earlier version's name: whose it is, on an NSG the NIC carries or not (SEC-H)
     blocks.py, unblock.py       IP blocks
     perimeter.py                a perimeter block merged with a VM block (RB1)
     backup.py, restore.py       restore points
     restore_rights.py           a restore's rights read first, Azure's refusals said whole (RST1)
     sweep.py, readers.py        reset and orphans; rights, inventory, audit reads
+    public_ips.py               each NIC's public IP address, read for the audit (IPS1a)
     reset_bare.py               the reset's bare NICs, their original put back
     sdk.py                      SDK warm-up, error and enum helpers
     capabilities.py             what the adapter declares (read by the readiness check)
@@ -50,6 +54,7 @@ import types as _types
 _MODULES = tuple(_importlib.import_module(name) for name in (
     "glorfindel.response.policy",
     "glorfindel.response.ids",
+    "glorfindel.response.state_files",
     "glorfindel.response.state",
     "glorfindel.response.pair_journal",
     "glorfindel.response.unread",
@@ -59,14 +64,17 @@ _MODULES = tuple(_importlib.import_module(name) for name in (
     "glorfindel.providers.azure.sdk",
     "glorfindel.providers.azure.capabilities",
     "glorfindel.providers.azure.nsg",
+    "glorfindel.providers.azure.public_ips",
     "glorfindel.providers.azure.turned",
     "glorfindel.providers.azure.narrow",
+    "glorfindel.providers.azure.quarantine_origin",
     "glorfindel.providers.azure.quarantine",
     "glorfindel.providers.azure.network",
     "glorfindel.providers.azure.run_command",
     "glorfindel.providers.azure.noted",
     "glorfindel.providers.azure.isolation",
     "glorfindel.providers.azure.release",
+    "glorfindel.providers.azure.older_names",
     "glorfindel.providers.azure.gone",
     "glorfindel.providers.azure.away",
     "glorfindel.providers.azure.older",

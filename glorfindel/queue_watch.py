@@ -471,9 +471,9 @@ class QueueWatch:
     def _run(self, service: str, req: aq.Request, card, ctx: dict) -> dict:
         """Under the VM's lock, with the watch's own functions; the receipt ``done`` or ``failed``.
         Never raises."""
-        from glorfindel.response.locks import _vm_lock
+        from glorfindel.response.locks import _vm_lock, writer_wait_s
         try:
-            with _vm_lock(_vm(req.resource_id)):
+            with _vm_lock(_vm(req.resource_id), timeout=writer_wait_s()):   # bounded (SEC-H)
                 state, result, verification, reason = getattr(self, f"_do_{req.verb}")(req, card, ctx)
         except Exception as exc:
             state, result, verification = "failed", None, None
@@ -536,6 +536,9 @@ class QueueWatch:
             return "failed", result, None, "released in part: rules still in place — " + "; ".join(
                 str(x) for x in result.get("failed", []))[:600]
         self._settle(card)
+        if result.get("status") == "released":
+            from glorfindel.gestures import released
+            released(req.resource_id)        # SEC-E (#846): B3a's facts forgotten
         return "done", result, self._check(req, card, "release_isolation", {"status": "released"}), ""
 
     def _do_reset(self, req, card, ctx):

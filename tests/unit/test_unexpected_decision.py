@@ -291,8 +291,11 @@ def test_an_exercise_is_given_no_exercise_cycle_nor_one_of_unknown_source(tmp_pa
     assert [c["source"] for c in drill["past_cycles"]] == ["real"]
 
 
-def test_no_cycle_overwrites_another_whatever_its_signal_id(tmp_path):
-    """The memory draws a cycle's identifier: two cycles under one signal id are two."""
+def test_no_cycle_overwrites_another_whatever_its_signal_id(tmp_path, monkeypatch):
+    """The memory draws a cycle's identifier: two cycles under one signal id are two (of one VM
+    unknown: the bound per VM, SEC-I, lifted to see both)."""
+    import glorfindel.memory as memory
+    monkeypatch.setattr(memory, "PER_VM", 3)
     mem = CycleMemory(path=tmp_path / "cycles")
     mem.store(_cycle("real", "the real precedent", signal_id="sig-1"))
     mem.store({**_cycle("real", "another cycle", signal_id="sig-1"), "run_id": "r2"})
@@ -302,9 +305,12 @@ def test_no_cycle_overwrites_another_whatever_its_signal_id(tmp_path):
     assert any("the real precedent" in c["summary"] for c in found) and len(found) == 2
 
 
-def test_a_replayed_cycle_is_retrieved_once(tmp_path):
+def test_a_replayed_cycle_is_retrieved_once(tmp_path, monkeypatch):
     """`respond` replayed on the same file (Annatar's signal ids are fixed) stores its
-    cycles again: one (signal_id, action, run_id) fills one place, never N."""
+    cycles again: one (signal_id, action, run_id) fills one place, never N — whatever the bound
+    per VM (SEC-I: one VM's copies take one place of it; lifted here, the fold still holds)."""
+    import glorfindel.memory as memory
+    monkeypatch.setattr(memory, "PER_VM", 3)
     mem = CycleMemory(path=tmp_path / "cycles")
     for _ in range(4):
         mem.store(_cycle("real", "replayed", signal_id="20261028T100000Z_attack_started"))
@@ -367,16 +373,17 @@ def test_a_row_naming_another_vm_is_never_pinned_to_the_lines():
 
 
 def test_a_row_naming_no_vm_holds_what_is_aimed_at_the_lines():
-    """Aggregated by address: the line's VM is a guess — isolation and block held, the
-    card says why; a snapshot stays autonomous."""
+    """Aggregated by address: the line's VM is a guess — isolation, block and snapshot held
+    (SEC-Ed, #954: the snapshot would capture the VM the row does not name), the card says why,
+    and for a snapshot that the human chooses the VM."""
     out, _ = _resolve(_started(), [{"SourceIP": "203.0.113.7", "FailedAttempts": 40}])
     assert out["context"]["attribution"] == "unattributed"
     assert out["context"]["run_id"] == "20261028T100000Z"
-    for action in ("isolate_vm", "block_suspicious_ip"):
+    for action in ("isolate_vm", "block_suspicious_ip", "snapshot"):
         final = _decide(out, _decision(action=action))
         assert final["escalate"] is True and final["held_by"] == "attribution"
         assert "attack_started" in final["escalation_reason"] and "vm-s4" in final["escalation_reason"]
-    assert _decide(out, _decision(action="snapshot"))["escalate"] is False
+        assert ("Choisir la VM à capturer" in final["escalation_reason"]) is (action == "snapshot")
 
 
 # The storage table, where the caller's address is the storage service's (SEC-A4: a query of

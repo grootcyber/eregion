@@ -16,6 +16,7 @@ Pure functions over what the routes read (eregion_console/api.py): the catalogue
 from __future__ import annotations
 
 from eregion_core.exercise_plan import Experiment, Target, Verdict, plan as judge_plan
+from eregion_core.experiment import is_ready
 
 
 def same_technique(a: str, b: str) -> bool:
@@ -47,7 +48,7 @@ def _response(state: dict) -> dict[str, list[str]]:
 
 def proofs(matrix: dict | None) -> dict[str, dict]:
     """Each entry's row of the coverage matrix (C1, eregion_console/coverage.py), by its id: its
-    state (proven, aging, stale, regressed, unproven, never), the age of its last proof, its last
+    state (fresh, aging, stale, regressed, unproven, never), the age of its last proof, its last
     run. An entry the matrix does not hold was never run here."""
     out: dict[str, dict] = {}
     for r in [*((matrix or {}).get("techniques") or []), *((matrix or {}).get("faults") or [])]:
@@ -65,9 +66,9 @@ def red_cards(catalog: dict[str, Experiment], rules: list[dict], sections: dict,
     active = {s.get("id"): bool(s.get("active")) for s in sections.get("sections") or []}
     proof = proofs(matrix)
     out = []
-    for e in sorted(catalog.values(), key=lambda e: (e.status != "implemented", e.kind != "technique", e.id)):
+    for e in sorted(catalog.values(), key=lambda e: (not is_ready(e.status), e.kind != "technique", e.id)):
         why = ""
-        if e.status != "implemented":
+        if not is_ready(e.status):
             why = f"{e.status or 'not implemented'} in the catalogue"
         elif not active.get(e.injector, False):
             why = f"{e.injector.capitalize()} is not set up here"
@@ -123,7 +124,7 @@ def other_types(catalog: dict[str, Experiment]) -> list[dict]:
         if e.resource_type != "azure_vm":
             t = types.setdefault(e.resource_type, {"type": e.resource_type, "entries": 0, "implemented": 0})
             t["entries"] += 1
-            t["implemented"] += e.status == "implemented"
+            t["implemented"] += is_ready(e.status)
     return sorted(types.values(), key=lambda t: t["type"])
 
 

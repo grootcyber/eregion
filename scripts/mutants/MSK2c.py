@@ -20,9 +20,9 @@ MUTANTS = [
     ("M5223", "the TUI cuts a step before masking it: a subscription's id across the 72nd character is no "
      "longer whole, and its first characters show (MSK2c)", TUI,
      '            step = _shown(str(step), e["resource_id"])\n'
-     '            lines.append(f"    • {step[:72]}\\n", style="dim")\n',
+     '            lines.append(f"    • {_literal(step[:72])}\\n", style="dim")\n',
      '            step = _shown(str(step)[:72], e["resource_id"])\n'
-     '            lines.append(f"    • {step}\\n", style="dim")\n'),
+     '            lines.append(f"    • {_literal(step)}\\n", style="dim")\n'),
     ("M5224", "the restore's screen shows an unreadable vault's error as Azure wrote it: its scope names the "
      "subscription (MSK2c)", TUI,
      "_shown(pending['points_error'], rid)[:200]",

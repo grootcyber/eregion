@@ -78,13 +78,14 @@ COMPONENTS: dict[str, Component] = {
             "test_actions_split.py", "test_agent_nodes.py", "test_audit.py", "test_aws_adapter.py",
             "test_bot.py", "test_bot_masking.py", "test_chat_escaping.py", "test_cli.py", "test_cli_masking.py", "test_config.py", "test_detection_authoring.py",
             "test_detection_rules.py", "test_detectors.py", "test_discovery.py", "test_entries_calls.py",
-            "test_auditd.py", "test_bench_routine.py", "test_canary_exclusion.py", "test_canary_signin.py", "test_correlation.py", "test_decision_queue.py", "test_expected_sudo.py", "test_forged_logs.py",
+            "test_auditd.py", "test_bench_routine.py", "test_canary_exclusion.py", "test_canary_signin.py", "test_correlation.py", "test_decision_queue.py", "test_enquiry_memory.py", "test_expected_sudo.py", "test_forged_logs.py",
             "test_glorfindel.py", "test_identity_cards.py", "test_identity_contract.py", "test_identity_plan.py",
             "test_invariant_regressions.py", "test_invariant_regressions_aws.py", "test_invariants.py",
             "test_invariants_aws.py",
             "test_jobs.py", "test_llm_smoke.py", "test_locks.py", "test_memory_age.py", "test_orphan_sweep.py", "test_posture.py", "test_proposed_rules.py", "test_readiness.py",
-            "test_promotion_guard.py", "test_reassert.py", "test_recovery_watch.py", "test_drain_follow.py", "test_drain_closure.py", "test_judge_card.py", "test_bot_fallback.py", "test_outside_markup.py", "test_webhook_unwaited.py", "test_notify_bounded.py", "test_isolation_ttl.py", "test_reassert_reread.py", "test_reassert_status.py", "test_reassert_verified.py", "test_release_away.py", "test_restore_points.py", "test_restore_console.py", "test_root_floor.py", "test_rule_layers.py", "test_rule_routing.py", "test_rules_check.py", "test_runs_channel.py", "test_tui_actions.py", "test_tui_masking.py", "test_turned_names.py", "test_unexpected_decision.py", "test_unreadable_state.py",
-            "test_door_facts.py", "test_vm_command.py", "test_cli_contain.py",
+            "test_promotion_guard.py", "test_reassert.py", "test_recovery_watch.py", "test_drain_follow.py", "test_drain_closure.py", "test_judge_card.py", "test_proposed_verdict_bot.py", "test_bot_fallback.py", "test_outside_markup.py", "test_webhook_unwaited.py", "test_notify_bounded.py", "test_isolation_ttl.py", "test_reassert_reread.py", "test_reassert_status.py", "test_reassert_verified.py", "test_release_away.py", "test_restore_points.py", "test_restore_console.py", "test_root_floor.py", "test_rule_layers.py", "test_rule_routing.py", "test_rules_check.py", "test_runs_channel.py", "test_tui_actions.py", "test_tui_masking.py", "test_turned_names.py", "test_unexpected_decision.py", "test_unreadable_state.py",
+            "test_door_facts.py", "test_vm_command.py", "test_cli_contain.py", "test_public_ips.py", "test_audit_no_nsg.py",
+            "test_full_id_keys.py", "test_wide_marks.py",
         ),
     ),
     # Annatar — its executors, engines (Atomic Red Team), campaigns, signals.
@@ -98,7 +99,7 @@ COMPONENTS: dict[str, Component] = {
             "test_annatar_run_exit.py", "test_annatar_wire.py", "test_campaign_channel.py", "test_campaign_declared.py",
             "test_campaign_manifest.py",
             "test_campaign_planner.py", "test_campaign_runner.py", "test_campaign_synthesizer.py", "test_campaign_drill.py",
-            "test_engine.py", "test_identity_inscription.py", "test_user_inscription.py", "test_injector_guards.py", "test_inscription.py", "test_orodruin.py", "test_parser.py",
+            "test_engine.py", "test_identity_inscription.py", "test_user_inscription.py", "test_injector_guards.py", "test_inscription.py", "test_orodruin.py", "test_stratus_contract.py", "test_parser.py",
             "test_signals.py",
         ),
     ),
@@ -106,7 +107,7 @@ COMPONENTS: dict[str, Component] = {
     "gothmog": Component(
         own=("gothmog", "eregion_core"),
         absent_deps=GLORFINDEL_ONLY_DEPS + ("litellm",),
-        tests=("test_gothmog.py", "test_gothmog_noise.py"),
+        tests=("test_gothmog.py", "test_gothmog_noise.py", "test_gothmog_readiness.py"),
     ),
 }
 
@@ -114,28 +115,29 @@ COMPONENTS: dict[str, Component] = {
 # runs, the analysis AI over a campaign and Glorfindel's decisions, the gate seen from both
 # sides, the host and the Makefile — and the repository-wide checks. The full suite runs them.
 TOGETHER = (
-    "test_action_proposal.py", "test_action_queue_async.py", "test_action_queue_watch.py", "test_activity_logs.py", "test_activity_operation_read.py", "test_card_target.py", "test_own_run_command.py", "test_run_command_callers.py", "test_agents_discord.py", "test_analysis_rules_parity.py", "test_entra_detection.py", "test_analysis_separation.py",
+    "test_action_proposal.py", "test_action_queue_async.py", "test_action_queue_watch.py", "test_activity_logs.py", "test_activity_operation_read.py", "test_card_target.py", "test_own_run_command.py", "test_run_command_callers.py", "test_agents_discord.py", "test_analysis_rules_parity.py", "test_entra_detection.py", "test_entra_msi.py", "test_analysis_separation.py",
     "test_analysis_triage.py", "test_api.py", "test_campaign_changes.py", "test_campaign_replay.py", "test_campaign_report.py",
-    "test_components.py", "test_proposed_commands.py", "test_console.py", "test_console_dagorlad.py", "test_console_shots.py", "test_docs_home.py", "test_console_dagorlad_request.py", "test_console_dagorlad_drills.py", "test_console_dagorlad_follow.py", "test_console_dagorlad_annatar.py", "test_console_blocks.py", "test_containment.py", "test_drain_containment.py", "test_drain_console.py", "test_judge_console.py", "test_console_escaping.py", "test_console_exercises.py", "test_console_signed_detections.py", "test_console_feed_day.py", "test_console_identity_plan.py", "test_profiles.py",
-    "test_coverage.py",
-    "test_restore_moment.py", "test_credential_expiry.py", "test_pair_rotate.py", "test_bench_preflight.py", "test_bench_report.py",
+    "test_components.py", "test_proposed_commands.py", "test_console.py", "test_console_dagorlad.py", "test_console_shots.py", "test_docs_home.py", "test_console_dagorlad_request.py", "test_console_dagorlad_drills.py", "test_console_dagorlad_follow.py", "test_console_dagorlad_annatar.py", "test_console_blocks.py", "test_containment.py", "test_drain_containment.py", "test_drain_console.py", "test_judge_console.py", "test_own_channel.py", "test_own_channel_sdk.py", "test_attribution_prime.py", "test_console_escaping.py", "test_console_exercises.py", "test_console_signed_detections.py", "test_console_feed_day.py", "test_console_identity_plan.py", "test_console_topology.py", "test_console_ips.py", "test_console_no_nsg.py", "test_console_phone_dagorlad.py", "test_console_phone_verdicts.py", "test_console_judge_batch.py", "test_console_phone.py", "test_console_vm_identity.py", "test_console_audit_band.py", "test_profiles.py",
+    "test_coverage.py", "test_catalog_ready.py", "test_fresh_proven.py",
+    "test_restore_moment.py", "test_restore_time_zone.py", "test_credential_expiry.py", "test_pair_rotate.py", "test_console_rotate.py", "test_bench_preflight.py", "test_bench_report.py",
     "test_bench_run.py", "test_bench_restore.py", "test_bench_snapshot.py", "test_mobile.py",
     "test_door_console.py", "test_bench_lev2.py", "test_banc_retard.py",
     "test_signal_origin.py", "test_arm_urls.py",
+    "test_control_plane_incomplete.py", "test_control_plane_unreadable.py",
     "test_decision_stability.py", "test_dependency_failures.py", "test_dependency_lock.py",
     "test_docs_budget.py", "test_manuel.py", "test_adoption.py", "test_repo_owner.py", "test_exercise.py", "test_exercise_e2e.py", "test_held.py", "test_dagorlad_blind.py", "test_githooks.py", "test_exercise_guard.py", "test_bounded_reads.py", "test_exercise_accumulations.py",
     "test_experiment_schema.py", "test_vm3_pairs.py", "test_vm3b_suites.py", "test_fault_rate.py", "test_glorfindel_host.py", "test_host_console.py",
-    "test_host_cd.py", "test_host_deploy.py", "test_hosted_report.py", "test_indicators.py",
-    "test_makefile_bench.py", "test_makefile_campaign.py", "test_makefile_orodruin_run.py", "test_makefile_exercise.py", "test_makefile_secrets.py", "test_bench_logs.py", "test_bench_auditd.py", "test_bench_identity.py", "test_bench_users.py", "test_bench_reader.py", "test_bench_flow_logs.py",
+    "test_host_cd.py", "test_host_cd_install.py", "test_host_ssh_owned.py", "test_host_deploy.py", "test_hosted_report.py", "test_indicators.py",
+    "test_makefile_bench.py", "test_operator_cidr.py", "test_image_cves.py", "test_makefile_campaign.py", "test_makefile_orodruin_run.py", "test_makefile_exercise.py", "test_makefile_secrets.py", "test_bench_logs.py", "test_bench_auditd.py", "test_bench_identity.py", "test_bench_users.py", "test_bench_reader.py", "test_bench_flow_logs.py", "test_bench_perf_counters.py",
     "test_identity_executor_host.py",
-    "test_notify_discord.py", "test_observation.py", "test_orodruin_kill.py", "test_orodruin_word.py", "test_palantir.py",
-    "test_drill_expectations.py", "test_drill_sigterm.py", "test_drill_ops.py",
+    "test_notify_discord.py", "test_observation.py", "test_proposed_verdict.py", "test_orodruin_kill.py", "test_orodruin_word.py", "test_palantir.py",
+    "test_drill_expectations.py", "test_drill_sigterm.py", "test_drill_ops.py", "test_drill_autostart.py", "test_drill_watch.py",
     "test_pip_audit_issues.py",
     "test_provider_boundary.py", "test_roadmap_discord.py",
     "test_repo_hermetic.py", "test_suite_priority.py", "test_chroma_model.py",
     "test_run_channel.py", "test_runs_mounts.py", "test_red_mounts.py", "test_local_verdicts.py", "test_state_writes.py", "test_watch_channel.py", "test_watch_gate.py", "test_watch_key.py", "test_signed_detections.py", "test_beat_covers.py",
     "test_workflows.py", "test_codeowners.py", "test_readme.py", "test_image_check.py", "test_release.py", "test_published_image.py",
-    "test_host_ssh.py", "test_host_client_rules.py", "test_azure_roles.py", "test_stratus_guardrails.py", "test_identity_map.py", "test_agent_token.py", "test_review_verdict.py",
+    "test_host_ssh.py", "test_host_client_rules.py", "test_azure_roles.py", "test_stratus_guardrails.py", "test_stratus_guard.py", "test_identity_map.py", "test_agent_token.py", "test_review_verdict.py",
     "test_mutant_anchors.py", "test_mutation_shards.py", "test_mutation_night.py", "test_hypothesis_seed.py", "test_doctor.py", "test_doc_anchors.py",
     "test_host_name.py", "test_home_sandbox.py", "test_store_guard.py",
 )
@@ -163,6 +165,13 @@ BRIDGES = {
 CROSSINGS = {
     ("glorfindel/cli.py", "eregion_console"): "`glorfindel war-room`, the former name of "
                                               "`eregion console`",
+    ("glorfindel/drill_watch.py", "eregion_console"): "the proof of an occurrence of the drill of the "
+                                                      "week is C1's (eregion_console.indicators."
+                                                      "decision_of: detected, the watch's decision "
+                                                      "attached), one rule for the tile and the drill "
+                                                      "(DRL1b) — the console is in Imladris's image; "
+                                                      "without it, a detected occurrence stays "
+                                                      "unattached, then unknown, said",
     ("glorfindel/cli.py", "analysis"): "the watch writes the report of the campaigns Orodruin "
                                        "publishes (IA0) — never stops the watch. The report "
                                        "needs Annatar's package (the bridge "

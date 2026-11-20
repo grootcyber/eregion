@@ -365,10 +365,11 @@ def recreate(service: str, env: dict, ctx: Ctx) -> bool:
 
 # ── Imladris ─────────────────────────────────────────────────────────────────────────
 
-def note_on_imladris(pair: str, end: datetime, ctx: Ctx, by: str) -> tuple[bool, list[str]]:
+def note_on_imladris(pair: str, end: datetime, ctx: Ctx, by: str, again: str = "") -> tuple[bool, list[str]]:
     """The end written on Imladris (~/.eregion-cd/expiry/<pair>.json, 0600, by stdin), then what its
-    CD says of its reminders. A date and a pair's name: nothing else leaves the workstation."""
-    again = f"make pair-expiry-note PAIR={pair}"
+    CD says of its reminders. A date and a pair's name: nothing else leaves the workstation. `again`:
+    the command to type when it fails (ROT2: the console's token notes itself under its own name)."""
+    again = again or f"make pair-expiry-note PAIR={pair}"
     if not ctx.ssh:
         return False, [f"⚠ Imladris : injoignable d'ici (pas d'adresse, ou sa clé d'hôte refusée : make "
                        f"imladris-known) — la date n'est pas notée, aucun rappel ; ensuite {again}"]

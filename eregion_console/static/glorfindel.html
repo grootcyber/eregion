@@ -148,6 +148,35 @@
     background: var(--bg2); border: 1px solid var(--border); color: var(--text);
   }
   .judge-actions button { font-size: 9px; padding: 2px 7px; }
+  /* Several cards judged at once (JUG3): a box per card, the bar under the list (its note, the three
+     verdicts), the summary before anything is written, and what each card became. */
+  .judge-pick { display: inline-flex; align-items: center; cursor: pointer; }
+  .judge-pick input, .judge-all input, .judge-rule input { accent-color: var(--blue); cursor: pointer; margin: 0; }
+  .judge-all { display: flex; gap: 6px; align-items: center; font-size: 10px; color: var(--dim); cursor: pointer; padding: 2px 0; }
+  .judge-bar, .judge-confirm, .judge-batch-result { position: sticky; bottom: 0; z-index: 1; display: flex; flex-wrap: wrap; gap: 6px;
+    align-items: center; padding: 6px 8px; border-radius: 4px; font-size: 10px; }
+  .judge-bar { background: color-mix(in srgb, var(--blue) 14%, var(--bg1)); border: 1px solid var(--blue); }
+  .judge-bar b { color: var(--blue); }
+  .judge-bar input { flex: 1 1 140px; min-width: 0; font-size: 10px; padding: 2px 6px; border-radius: 3px;
+    background: var(--bg2); border: 1px solid var(--border); color: var(--text); }
+  .judge-bar button { font-size: 9px; padding: 2px 7px; }
+  .judge-bar .judge-clear { margin-left: auto; color: var(--dim); }
+  .judge-mixed { flex-basis: 100%; color: var(--yellow); }
+  .judge-confirm { flex-direction: column; align-items: stretch; background: color-mix(in srgb, var(--orange) 10%, var(--bg1));
+    border: 1px solid var(--orange); }
+  .judge-confirm-t { color: var(--orange); font-weight: 700; }
+  .judge-confirm-note { color: var(--dim); }
+  .judge-confirm-row { display: flex; gap: 6px; }
+  .judge-batch-result { position: static; flex-direction: column; align-items: stretch; gap: 2px; border: 1px solid var(--border); }
+  .judge-batch-result .r-ok { color: var(--green); } .judge-batch-result .r-warn { color: var(--yellow); }
+  .judge-batch-result .r-bad { color: var(--red); }
+  .judge-group { display: flex; flex-direction: column; gap: 4px; }
+  .judge-rule { font-size: 9px; font-weight: 700; letter-spacing: 1px; color: var(--dim); padding-top: 6px; display: flex; gap: 8px; align-items: center; }
+  .judge-rule label { font-weight: 400; letter-spacing: 0; display: inline-flex; gap: 4px; align-items: center; cursor: pointer; }
+  .judge-group-item.picked, .judge-item.picked { background: color-mix(in srgb, var(--blue) 8%, transparent); }
+  /* The verdict proposed (VP1): its buttons under its line, never cut with it (MOB5). */
+  .judge-proposed { display: flex; gap: 5px; margin-top: 3px; }
+  .judge-proposed button { font-size: 9px; padding: 2px 7px; }
   .judge-why a { color: var(--blue); text-decoration: none; }
   .judge-why a:hover { text-decoration: underline; }
   .judge-item.focus { background: color-mix(in srgb, var(--blue) 10%, transparent); outline: 1px solid var(--blue); }
@@ -314,6 +343,14 @@
     z-index: 0;
     overflow: visible;
   }
+  /* What a refresh replaces, inside the container it keeps: no box of its own, the layers stay
+     the column's (TOPO1 #927). */
+  .topo-body { display: contents; }
+  /* The readiness audit not read, said once above the cards (TOPO1b): above the edges' layer. */
+  .topo-band { position: relative; z-index: 1; margin: 0 0 10px; padding: 6px 10px; border-radius: 6px;
+               font-size: 10px; color: var(--orange); background: color-mix(in srgb, var(--orange) 8%, var(--bg));
+               border: 1px solid color-mix(in srgb, var(--orange) 50%, transparent); }
+  .topo-band-dim { color: var(--dim); }
   .topo-layer {
     position: relative;
     z-index: 1;
@@ -435,6 +472,34 @@
   .node-asset-name   { font-weight: 700; font-size: 12px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .node-asset-states { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
   .node-asset-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  /* A VM's own addresses (IPS1): plain text under its name, the public one in yellow behind 🌐 —
+     never a filled badge, which stays the BLOCKED one of an attacker's address. */
+  .vm-addr  { margin-top: 5px; font-size: 10px; color: var(--dim); display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; cursor: default; }
+  .vm-ip    { font: inherit; font-size: 10px; color: var(--text); background: none; border: 0; padding: 0;
+              border-bottom: 1px dotted var(--border); border-radius: 0; cursor: copy;
+              -webkit-user-select: text; user-select: text; }   /* the card is draggable: none, else */
+  .vm-ip:hover { border-bottom-color: var(--text); background: none; }
+  .vm-ip.pub, .vm-pub { color: var(--yellow); }
+  .vm-pub.unread { cursor: help; }
+  .vm-pubtag { font-size: 8px; font-weight: 700; letter-spacing: .5px; padding: 0 4px; border-radius: 3px;
+               border: 1px solid color-mix(in srgb, var(--yellow) 55%, transparent); }
+  /* A NIC without NSG, nor on its subnet (IPS2): nothing filters it — its public address in red,
+     and the card says it once, in the row of its mode. */
+  .vm-pub.bare, .vm-pub.bare .vm-ip.pub, .vm-bare-txt { color: var(--red); }
+  .vm-bare  { font-size: 8px; font-weight: 700; letter-spacing: .5px; padding: 1px 5px; border-radius: 3px; cursor: help;
+              color: var(--red); border: 1px solid color-mix(in srgb, var(--red) 55%, transparent);
+              background: color-mix(in srgb, var(--red) 12%, transparent); }
+  /* A VM's identity on its unfolded card (VMI1): each value a copy button, the id on two lines at most. */
+  .vm-id    { margin-top: 6px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg);
+              display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 3px 8px; font-size: 10px; align-items: baseline; }
+  .vm-id-k  { color: var(--dim); font-size: 9px; }
+  .vm-id .vm-ip { justify-self: start; text-align: left; overflow-wrap: anywhere; }
+  .vm-id .vm-ip.long { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .vm-net   { margin-top: 6px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg);
+              display: flex; flex-direction: column; gap: 4px; font-size: 10px; }
+  .vm-nic   { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; }
+  .vm-nicname { flex-basis: 100%; color: var(--dim); font-size: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .vm-netfoot { color: var(--dim); font-size: 9px; }
 
   /* Drag-and-drop cards */
   .node-asset { transition: opacity 0.15s; }
@@ -541,6 +606,58 @@
     vertical-align: middle;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── A phone (MOB4, #972, Jonathan 20/11 on a mockup, option A): under 760 px, one section at a
+     time — To judge, Infra, Feed —, the infra's modules stacked, its cards one under the other,
+     without the edges. Nothing of this applies above 760 px. ── */
+  #m-tabs { display: none; }
+  @media (max-width: 759px) {
+    body { height: 100dvh; }                           /* 100vh: the large viewport, under the browser's bar */
+    #m-tabs { display: flex; flex-shrink: 0; background: var(--bg1); border-bottom: 1px solid var(--border); }
+    #m-tabs button { flex: 1; background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0;
+                     color: var(--dim); padding: 9px 0; font-size: 12px; }
+    #m-tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--blue); }
+    .m-badge { font-size: 10px; font-weight: 700; margin-left: 5px; padding: 0 5px; border-radius: 8px;
+               color: var(--bg); background: var(--orange); }
+    main { flex-direction: column; }
+    #feed-col { width: auto; flex: 1; min-height: 0; border-right: 0; }
+    #incidents-col { flex: 1; min-height: 0; }
+    body[data-m="judge"] #incidents-col, body[data-m="feed"] #incidents-col, body[data-m="infra"] #feed-col { display: none; }
+    body[data-m="judge"] #feed-head, body[data-m="judge"] #feed-list,
+    body[data-m="feed"] #judge-head, body[data-m="feed"] #judge-list { display: none; }
+    body[data-m="judge"] #judge-list { max-height: none; flex: 1; border-bottom: 0; }
+    #right-col-header { flex-wrap: wrap; }
+    #posture-panel { margin-left: 0 !important; }
+    .topo-svg { display: none; }                       /* the edges: none on a phone */
+    .topo-graph { padding: 10px; }
+    .topo-spacer { height: 12px; }
+    .topo-modules { flex-direction: column; align-items: stretch; }
+    .topo-module { padding: 10px 0 0; }
+    .topo-module + .topo-module { border-left: 0; border-top: 1px solid var(--border); margin-top: 10px; }
+    .node-asset, .node-asset-empty { flex: 1 1 100%; max-width: none; min-width: 0; }
+    .modal, .modal.wide { min-width: 0; max-width: none; width: calc(100vw - 24px); }   /* the wide ones too */
+    /* Verdicts a finger can hit (MOB5): 44 px high, the three on one row, the note on its own line above
+       them in 16 px (under 16 px, Safari on iOS zooms on the field at each tap). The list, the card of
+       JUG1, and the verdict proposed on an exercise card (VP1). */
+    .judge-actions { flex-wrap: wrap; gap: 8px; }
+    .judge-actions input { flex: 1 1 100%; font-size: 16px; padding: 8px 10px; }
+    .judge-actions button { flex: 1 1 0; min-height: 44px; font-size: 13px; padding: 6px 4px; }
+    .judge-proposed { gap: 8px; margin-top: 6px; }
+    .judge-proposed button { flex: 1 1 0; min-height: 44px; font-size: 13px; padding: 6px 10px; }
+    /* Several at once, by the finger (JUG3, decision 3): a box of 20 px in a hit area of 44 × 44 px (its
+       margins give back the room it takes: the line keeps its height; above the line's next rows, or
+       their bottom would open the card), « select all » and « select this rule » 44 px high, the bar at
+       the screen's foot, its note in 16 px, its verdicts 44 px high. */
+    .judge-pick { padding: 12px 16px 12px 8px; margin: -12px 0 -12px -8px; align-self: center; position: relative; z-index: 1; }
+    .judge-pick input, .judge-all input, .judge-rule input { width: 20px; height: 20px; }
+    .judge-all { font-size: 12px; min-height: 44px; }
+    .judge-rule label { min-height: 44px; font-size: 12px; }
+    .judge-bar input { flex: 1 1 100%; font-size: 16px; padding: 8px 10px; }
+    .judge-bar button, .judge-confirm-row button { flex: 1 1 0; min-height: 44px; font-size: 13px; }
+    .judge-bar, .judge-confirm { font-size: 12px; }
+    /* A tile's « to judge ▸ » and « to judge ×N ▸ »: 44 px high by its padding, given back by its margins. */
+    a.judge-link { position: relative; z-index: 1; padding: 14px 10px; margin: -14px -10px -14px auto; }
+  }
 </style>
 </head>
 <body>
@@ -557,12 +674,20 @@
   Give each card a verdict in <b>TO JUDGE</b>.
 </div>
 
+<!-- On a phone (under 760 px), one section at a time (MOB4, #972): the CSS shows the one body[data-m]
+     names. Above, this bar is not shown and every section is, as before. -->
+<nav id="m-tabs" role="tablist" aria-label="Sections">
+  <button type="button" role="tab" id="m-tab-judge" aria-selected="false" data-on-click="mobileTab" data-click-args='["judge"]'>To judge<span id="m-judge-badge" class="m-badge" hidden></span></button>
+  <button type="button" role="tab" id="m-tab-infra" aria-selected="false" data-on-click="mobileTab" data-click-args='["infra"]'>Infra</button>
+  <button type="button" role="tab" id="m-tab-feed" aria-selected="false" data-on-click="mobileTab" data-click-args='["feed"]'>Feed</button>
+</nav>
+
 <main>
   <!-- Feed LEFT -->
   <div id="feed-col">
-    <div class="col-header">TO JUDGE <span id="judge-count"></span></div>
+    <div class="col-header" id="judge-head">TO JUDGE <span id="judge-count"></span></div>
     <div id="judge-list"><div class="judge-empty">…</div></div>
-    <div class="col-header">LIVE FEED <span id="live-dot" title="The live feed's connection (WebSocket)">●</span> <span id="live-label" style="color:var(--dim);font-size:10px;font-weight:400;letter-spacing:normal">connecting…</span></div>
+    <div class="col-header" id="feed-head">LIVE FEED <span id="live-dot" title="The live feed's connection (WebSocket)">●</span> <span id="live-label" style="color:var(--dim);font-size:10px;font-weight:400;letter-spacing:normal">connecting…</span></div>
     <div id="feed-list"></div>
   </div>
 

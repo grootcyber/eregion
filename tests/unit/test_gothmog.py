@@ -37,6 +37,15 @@ EXPERIMENT = "exp-celebrimbor-gondolin-shutdown"
 T0 = datetime(2026, 10, 19, 10, 0, tzinfo=timezone.utc)
 
 
+# The rights `make orodruin-lock YES=1` gives Orodruin on one experiment, read at its scope: its
+# group's reads and the chaos role (infra/orodruin/main.tf, injector_chaos).
+GRANTED = [{"actions": ["Microsoft.Resources/subscriptions/resourceGroups/read",
+                        "Microsoft.Chaos/experiments/read", "Microsoft.Chaos/experiments/executions/read"],
+            "notActions": []},
+           {"actions": ["Microsoft.Chaos/experiments/start/action",
+                        "Microsoft.Chaos/experiments/cancel/action"], "notActions": []}]
+
+
 def _experiment(targets=(TARGET,), duration="PT5M", abrupt="false", selector="List", name=EXPERIMENT):
     return {"name": name, "properties": {
         "selectors": [{"id": "gondolin", "type": selector,
@@ -81,8 +90,12 @@ class World:
 
     def __init__(self, clock, *, experiment=None, vm_tags=ENROLLED, rg_tags=ENROLLED,
                  running=True, effect=True, comes_back=True, revive_works=True,
-                 heartbeat="ok", never_ends=False, fail=None):
+                 heartbeat="ok", never_ends=False, fail=None, perms=None, agent=None):
         self.clock = clock
+        # Orodruin's own rights on the experiment (G1b), as `make orodruin-lock` grants them.
+        self.perms = GRANTED if perms is None else perms
+        # The Chaos agent's extension, as the VM's instanceView names it (G1b): none by default.
+        self.agent = agent
         self._experiment = experiment or _experiment()
         self.name = self._experiment["name"]
         self.vm_tags, self.rg_tags = vm_tags, rg_tags
@@ -165,15 +178,21 @@ class World:
             else:
                 raise AssertionError(f"unexpected POST {path}")
             return Resp(202)
+        if low.endswith(f"/experiments/{self.name}/providers/microsoft.authorization/permissions"):
+            return Resp(200, {"value": self.perms})
         if low.endswith(f"/experiments/{self.name}"):
             return Resp(200, self._experiment)
         if low.endswith(f"/experiments/{self.name}/executions"):
             return Resp(200, {"value": [self._execution()] if self.started_at else []})
         if low.endswith("/virtualmachines/vm-celebrimbor-gondolin"):
             state = "PowerState/running" if self.running() else "PowerState/stopped"
-            return Resp(200, {"name": "vm-celebrimbor-gondolin", "tags": self.vm_tags, "properties": {"instanceView": {
-                "statuses": [{"code": "ProvisioningState/succeeded"}, {"code": state}],
-                "vmAgent": {"statuses": [{"displayStatus": "Ready" if self.running() else "Not Ready"}]}}}})
+            view = {"statuses": [{"code": "ProvisioningState/succeeded"}, {"code": state}],
+                    "vmAgent": {"statuses": [{"displayStatus": "Ready" if self.running() else "Not Ready"}]}}
+            if self.agent is not None:
+                view["extensions"] = [{"name": "ChaosLinuxAgent", "type": "Microsoft.Azure.Chaos.ChaosLinuxAgent",
+                                       "typeHandlerVersion": "1.0", "statuses": [{"code": self.agent}]}]
+            return Resp(200, {"name": "vm-celebrimbor-gondolin", "tags": self.vm_tags,
+                              "properties": {"instanceView": view}})
         if low.endswith("/resourcegroups/rg-celebrimbor"):
             return Resp(200, {"tags": self.rg_tags})
         raise AssertionError(f"unexpected GET {path}")

@@ -28,7 +28,7 @@
 # (SEC-D #639, SEC-A1 #643, SEC-A2 #645, SEC-A3 #653, SEC-A4 #666): their titles often carry the finding.
 # GitHub numbers issues and pull requests in one sequence: a number names only one of the two. A brick
 # whose issue or one of whose pull requests is listed here is a security brick.
-issues_securite: [630, 631, 632, 633, 634, 635, 636, 638, 642, 644, 654, 660, 639, 643, 645, 653, 666, 845, 847]
+issues_securite: [630, 631, 632, 633, 634, 635, 636, 638, 642, 644, 654, 660, 639, 643, 645, 653, 666, 845, 846, 847, 848, 849, 850]
 
 composants:
   - id: glorfindel
@@ -301,8 +301,8 @@ releases:
   - version: "0.6"
     nom: "identity defended"
     etat: publiee
-    derniere: "0.6.1"
-    date: "2026-11-17"
+    derniere: "0.6.3"
+    date: "2026-11-20"
     resume: "The Activity and Entra ID logs measured on the bench; a public technique against the test identity, seen by Glorfindel; the response to a stolen identity, on the card."
   - version: "0.x"
     nom: "the proof at the customer's"
@@ -404,6 +404,17 @@ briques:
     issue: 867
     doc: docs/glorfindel.md
 
+  - id: g-plan-controle-telemetrie
+    composant: glorfindel
+    poste: g-detecter
+    nom: "A control-plane operation that names neither its caller nor its resource: a card of incomplete telemetry, of lower severity, never approvable, never dropped; the caller named from its token's ids when the log leaves it empty, on every operation of a summary card too; a reply of the journal out of the rule's schema, one card per rule and poll that says it unreadable, counted in the rule's status"
+    etat: livree
+    release: "0.6"
+    version: "0.6.2"
+    lots: [CPT1, CPT1b, CPT1c]
+    issue: 930
+    doc: docs/glorfindel.md
+
   - id: s-sec-a4
     composant: socle
     poste: s-signer
@@ -455,6 +466,49 @@ briques:
     lots: [ING5]
     issue: 758
     doc: docs/banc-retard.md
+
+  - id: g-voie-de-retour
+    composant: glorfindel
+    poste: g-detecter
+    nom: "The watch's own return channel no longer fires the exfiltration rule, set aside by its identity, its container and its objects, and counted; a card attributed to no VM says so, with its candidates"
+    etat: livree
+    release: "0.6"
+    version: "0.6.2"
+    lots: [SLF1]
+    issue: 929
+    doc: docs/glorfindel.md
+
+  - id: g-attribution-prime
+    composant: glorfindel
+    poste: g-decider
+    nom: "A card attributed to no VM is never approvable in one click, whatever gate held it first; its suggested commands never name the VM it is filed on; the return channel set aside under the shipped rule only"
+    etat: livree
+    release: "0.6"
+    version: "0.6.2"
+    lots: [ATT1]
+    issue: 936
+    doc: docs/glorfindel.md
+
+  - id: g-voie-de-retour-texte
+    composant: glorfindel
+    poste: g-detecter
+    nom: "The watch's own return channel set aside when the query's writers arrive as text, as the SDK hands them on; a column unreadable sets nothing aside and is counted"
+    etat: livree
+    release: "0.6"
+    version: "0.6.3"
+    lots: [SLF1b]
+    issue: 976
+    doc: docs/glorfindel.md
+
+  - id: g-entra-identite-managee
+    composant: glorfindel
+    poste: g-detecter
+    nom: "The certificate Azure puts on a managed identity it creates makes no high card: set aside by the tenant's principal's id, never its name, and counted"
+    etat: main
+    release: "0.6"
+    lots: [MID1]
+    issue: 981
+    doc: docs/glorfindel.md
 
   - id: g-charges-ia
     composant: glorfindel
@@ -765,6 +819,17 @@ briques:
     version: "0.5.9"
     lots: [RST1]
     issue: 680
+    doc: docs/azure.md
+
+  - id: g-restore-fuseau
+    composant: glorfindel
+    poste: g-agir
+    nom: "The restore refuses a time without its time zone, never taken for UTC: a moment given, a card or an isolation dated without one"
+    etat: livree
+    release: "0.6"
+    version: "0.6.2"
+    lots: [RTZ1]
+    issue: 923
     doc: docs/azure.md
 
   - id: g-coupure-suivie
@@ -1180,19 +1245,81 @@ briques:
     composant: socle
     poste: s-signer
     nom: "Security hardening"
-    etat: main
+    etat: livree
     release: "0.6"
-    lots: [SEC-K]
+    version: "0.6.2"
+    lots: [SEC-K, CDI1, CDI2]
     issue: 847
+
+  - id: s-sec-ib
+    composant: socle
+    poste: s-signer
+    nom: "Security hardening"
+    etat: livree
+    release: "0.6"
+    version: "0.6.2"
+    lots: [SEC-Ib]
+    issue: 910
 
   - id: s-sec-f
     composant: socle
     poste: s-signer
     nom: "Security hardening"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.2"
     lots: [SEC-F]
     issue: 845
+
+  - id: s-sec-fc
+    composant: socle
+    poste: s-signer
+    nom: "Security hardening"
+    etat: livree
+    release: "0.6"
+    version: "0.6.2"
+    lots: [SEC-Fc, SEC-Fd]
+    issue: 907
+
+  - id: s-sec-g
+    composant: socle
+    poste: s-signer
+    nom: "Security hardening"
+    etat: livree
+    release: "0.6"
+    version: "0.6.2"
+    lots: [SEC-G, SEC-G-workflow, ZLIB1]
+    issue: 848
+
+  - id: s-sec-e
+    composant: socle
+    poste: s-signer
+    nom: "Security hardening"
+    etat: livree
+    release: "0.6"
+    version: "0.6.2"
+    lots: [SEC-E, SEC-Ec, SEC-Ed]
+    issue: 846
+
+  - id: s-sec-h
+    composant: socle
+    poste: s-signer
+    nom: "Security hardening"
+    etat: livree
+    release: "0.6"
+    version: "0.6.2"
+    lots: [SEC-H, SEC-Hb]
+    issue: 849
+
+  - id: s-sec-i
+    composant: socle
+    poste: s-signer
+    nom: "Security hardening"
+    etat: livree
+    release: "0.6"
+    version: "0.6.2"
+    lots: [SEC-I]
+    issue: 850
 
   - id: s-inf-fl
     composant: socle
@@ -1349,6 +1476,26 @@ briques:
     lots: [R2BG]
     issue: 608
 
+  - id: a-stratus-garde-fous-preserves
+    composant: annatar
+    poste: a-attaquer
+    nom: "An Orodruin apply never destroys the Stratus guardrails by omission — always-loaded auto.tfvars and a pre-plan guard"
+    etat: livree
+    release: "0.6"
+    version: "0.6.2"
+    lots: [R2BGb]
+    issue: 897
+
+  - id: a-stratus-role-ferme
+    composant: annatar
+    poste: a-attaquer
+    nom: "Stratus's closed role, Orodruin's read-only authz and the federated credential, as Terraform on the dedicated subscription (G2/G3/G4)"
+    etat: livree
+    release: "0.6"
+    version: "0.6.2"
+    lots: [R2BGc]
+    issue: 608
+
   - id: a-injecteur-stage
     composant: annatar
     poste: a-attaquer
@@ -1389,13 +1536,34 @@ briques:
     lots: [R2BX]
     issue: 608
 
+  - id: a-injecteur-providers-implicites
+    composant: annatar
+    poste: a-attaquer
+    nom: "The offline provider mirror carries the providers the techniques use but do not declare"
+    etat: livree
+    release: "0.6"
+    version: "0.6.2"
+    lots: [R2BY]
+    issue: 608
+
   - id: a-injecteur-host-exec
     composant: annatar
     poste: a-attaquer
     nom: "The hardened execution host lets Terraform providers execute, from a dedicated exec tmpfs, with /tmp still noexec"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.2"
     lots: [R2BZ]
+    issue: 608
+
+  - id: a-injecteur-identite-managee
+    composant: annatar
+    poste: a-attaquer
+    nom: "The control-plane warmup authenticates by the host's managed identity (ARM_USE_MSI), never forced over a service-principal secret"
+    etat: livree
+    release: "0.6"
+    version: "0.6.2"
+    lots: [MSI1]
     issue: 608
 
   - id: a-scenario-bastion
@@ -1412,8 +1580,9 @@ briques:
     composant: annatar
     poste: a-attaquer
     nom: "Playing one scenario on the armed execution host, in one guarded command"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.2"
     lots: [ORU1]
     issue: 608
 
@@ -1480,6 +1649,17 @@ briques:
     issue: 76
     doc: gothmog/README.md
 
+  - id: x-bruit-preflight
+    composant: gothmog
+    poste: x-eprouver
+    nom: "The preflight says whether a fault can run and be seen: Orodruin's rights on its experiment, the Chaos agent, the series its effect reads"
+    etat: livree
+    release: "0.6"
+    version: "0.6.2"
+    lots: [G1b]
+    issue: 76
+    doc: gothmog/README.md
+
   - id: x-bruit-banc
     composant: gothmog
     poste: x-eprouver
@@ -1543,6 +1723,28 @@ briques:
     issue: 522
     doc: infra/orodruin/README.md
 
+  - id: o-kill-stratus
+    composant: orodruin
+    poste: o-armer
+    nom: "The kill cuts the Stratus identity's role too, on its own dedicated subscription — the operator's gesture, tooled"
+    etat: livree
+    release: "0.6"
+    version: "0.6.2"
+    lots: [R2c]
+    issue: 608
+    doc: docs/design/stratus-cible.md
+
+  - id: o-stratus-sidecar
+    composant: orodruin
+    poste: o-armer
+    nom: "The federated Stratus run detonates in the hardened sandbox while the engine keeps the controls on the bridge (sidecar); the sandbox proof is read from a file — proven end to end at the bench"
+    etat: livree
+    release: "0.6"
+    version: "0.6.3"
+    lots: [R2c]
+    issue: 608
+    doc: docs/design/stratus-cible.md
+
   - id: o-kubernetes
     composant: orodruin
     poste: o-armer
@@ -1580,6 +1782,39 @@ briques:
     release: "0.6"
     version: "0.6.1"
     lots: [DRL1a]
+    issue: 613
+    doc: docs/design/drill-banc.md
+
+  - id: o-drill-reveil
+    composant: orodruin
+    poste: o-executer
+    nom: "The weekly drill's scheduled start: a Logic App that wakes Orodruin before the drill, shipped disabled, its identity able only to start Orodruin; Orodruin shut down every day at 23:00 UTC, a drill it would cut refused at the arming; the dry check says the scheduled start's state against the arming; its start time in the form Azure requires in UTC; nothing applied yet"
+    etat: livree
+    release: "0.6"
+    version: "0.6.2"
+    lots: [DRL1c, DRL1e, DRL1f]
+    issue: 613
+    doc: docs/design/drill-banc.md
+
+  - id: o-drill-home-exec
+    composant: orodruin
+    poste: o-executer
+    nom: "The weekly drill's service runs with the options of the injector's runs, its executable run HOME included, /tmp still noexec; the parity with the Makefile held by a test; reaches Orodruin at the next arming"
+    etat: livree
+    release: "0.6"
+    version: "0.6.2"
+    lots: [DRL1d]
+    issue: 613
+    doc: docs/design/drill-banc.md
+
+  - id: k-drill-semaine
+    composant: console
+    poste: k-suivre
+    nom: "The weekly drill on Imladris's side: each occurrence judged by the code, the absence alarm, the bot's thread, the Weekly drill line on the console; nothing armed yet"
+    etat: livree
+    release: "0.6"
+    version: "0.6.2"
+    lots: [DRL1b]
     issue: 613
     doc: docs/design/drill-banc.md
 
@@ -1736,6 +1971,17 @@ briques:
     issue: 737
     doc: docs/operations.md
 
+  - id: c-console-jeton-rotation
+    composant: celebrimbor
+    poste: c-acces
+    nom: "The console token of Imladris turned in one command: its line alone rewritten, pushed, the console alone restarted, the old token refused, and reminded in the deploy channel 90 days later"
+    etat: livree
+    release: "0.6"
+    version: "0.6.3"
+    lots: [ROT2]
+    issue: 968
+    doc: docs/operations.md
+
   - id: c-telephone
     composant: celebrimbor
     poste: c-acces
@@ -1778,6 +2024,16 @@ briques:
     lots: [BRO1]
     issue: 614
     doc: docs/operations.md
+
+  - id: c-compteurs-linux
+    composant: celebrimbor
+    poste: c-construire
+    nom: "The bench's processor and network counters under the names the Linux agent collects, the disk as measured"
+    etat: main
+    release: "0.6"
+    lots: [DCR1]
+    issue: 985
+    doc: docs/azure.md
 
   # ── Console and Dagorlad ────────────────────────────────────────────────────────────
   - id: k-console
@@ -1890,14 +2146,112 @@ briques:
     issue: 760
     doc: docs/design/console.md
 
+  - id: k-proven-compte
+    composant: console
+    poste: k-suivre
+    nom: "A catalogue entry proven on the bench counts as an implemented one, in the coverage, the board, the drills and the rules proposed"
+    etat: livree
+    release: "0.6"
+    version: "0.6.2"
+    lots: [STM1g]
+    issue: 894
+
+  - id: k-fresh-proven
+    composant: console
+    poste: k-suivre
+    nom: "A proof under 21 days is fresh; proven is the catalogue's status only"
+    etat: livree
+    release: "0.6"
+    version: "0.6.2"
+    lots: [FRS1, FRS1b]
+    issue: 904
+
   - id: k-verdict-propose
     composant: console
     poste: k-juger
     nom: "A verdict proposed on an expected exercise card"
-    etat: prevue
-    release: "0.x"
-    lots: [VP1]
+    etat: livree
+    release: "0.6"
+    version: "0.6.2"
+    lots: [VP1, VP1b, VP1c]
     issue: 615
+    doc: docs/design/drill-banc.md
+
+  - id: k-juger-plusieurs
+    composant: console
+    poste: k-juger
+    nom: "Several cards judged at once, in TO JUDGE or a tile's group: a summary first, then each card as its own button does it, a failure said card by card"
+    etat: main
+    release: "0.6"
+    lots: [JUG3]
+    issue: 980
+    doc: docs/design/console.md
+
+  - id: k-carte-scroll
+    composant: console
+    poste: k-voir
+    nom: "The infrastructure map holds while it scrolls, however many cards: each edge on its card"
+    etat: livree
+    release: "0.6"
+    version: "0.6.2"
+    lots: [TOPO1]
+    issue: 927
+    doc: docs/design/console.md
+
+  - id: k-ip-publique
+    composant: console
+    poste: k-voir
+    nom: "A VM's card shows its private and public addresses, folded or not, and copies one in a click; a VM without NSG says nothing filters it; a public IP not read is said in English, the audit holds"
+    etat: livree
+    release: "0.6"
+    version: "0.6.2"
+    lots: [IPS1a, IPS1b, IPS2a, IPS2b]
+    issue: 931
+    doc: docs/design/console.md
+
+  - id: k-audit-illisible
+    composant: console
+    poste: k-voir
+    nom: "A readiness audit that cannot be read is said once above the cards, with the time of the last good one"
+    etat: livree
+    release: "0.6"
+    version: "0.6.2"
+    lots: [TOPO1b]
+    issue: 949
+    doc: docs/design/console.md
+
+  - id: k-identite-vm
+    composant: console
+    poste: k-voir
+    nom: "A VM's name says its group, subscription, detection and id on hover; its unfolded card copies each"
+    etat: livree
+    release: "0.6"
+    version: "0.6.3"
+    lots: [VMI1]
+    issue: 971
+    doc: docs/design/console.md
+
+  - id: k-telephone
+    composant: console
+    poste: k-voir
+    nom: "On a phone, the Glorfindel page shows one section at a time: To judge, Infra, Feed"
+    etat: livree
+    release: "0.6"
+    version: "0.6.3"
+    lots: [MOB4]
+    issue: 972
+    doc: docs/design/console.md
+
+  - id: k-telephone-dagorlad
+    composant: console
+    poste: k-voir
+    nom: "On a phone, Dagorlad's board and its Runs view show one column at a time; a wire is laid by two taps"
+    etat: livree
+    release: "0.6"
+    version: "0.6.3"
+    lots: [MOB5]
+    issue: 975
+    doc: docs/design/console.md
 
   # ── Analysis AI ─────────────────────────────────────────────────────────────────────
   - id: i-separee
@@ -2195,6 +2549,16 @@ briques:
     lots: [FLK1]
     issue: 723
 
+  - id: s-tests-intermittents
+    composant: socle
+    poste: s-prouver
+    nom: "Three intermittent tests steadied without weakening them: each reads its clock and its marker where the code under test does"
+    etat: livree
+    release: "0.6"
+    version: "0.6.2"
+    lots: [FLK3]
+    issue: 900
+
   - id: s-ci-terraform-source
     composant: socle
     poste: s-prouver
@@ -2204,6 +2568,17 @@ briques:
     version: "0.5.11"
     lots: [CI11]
     issue: 728
+
+  - id: s-ci-machine-seule
+    composant: socle
+    poste: s-prouver
+    nom: "The push CI runs Azure's invariant machine alone, after the rest: a stack dump of a running thread no longer kills it"
+    etat: livree
+    release: "0.6"
+    version: "0.6.2"
+    lots: [CI12, CI12-workflow]
+    issue: 899
+    doc: docs/operations.md
 
   - id: s-verrous
     composant: socle
@@ -2285,8 +2660,9 @@ briques:
     composant: socle
     poste: s-signer
     nom: "Security hardening"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.2"
     lots: [SEC-A1b]
     issue: 642
 

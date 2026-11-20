@@ -48,3 +48,12 @@ header.console .hstat { font-size: 11px; color: var(--dim); white-space: nowrap;
 header.console .hstat .dot { font-size: 10px; }
 header.console .sep { color: var(--border); }
 header.console #c-clock { color: var(--dim); font-size: 11px; min-width: 88px; text-align: right; white-space: nowrap; }
+
+/* A phone (MOB4, #972): the header on one or two lines — the version, the separator and the clock
+   left out, the rest wrapped. Nothing of this applies above 760 px. */
+@media (max-width: 759px) {
+  header.console { flex-wrap: wrap; gap: 4px 10px; padding: 6px 10px; }
+  header.console .ver, header.console .sep, header.console .spacer, header.console #c-clock { display: none; }
+  header.console .tab { padding: 3px 7px; font-size: 11px; }
+  header.console .hstat { font-size: 10px; }
+}

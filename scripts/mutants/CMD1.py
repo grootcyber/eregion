@@ -34,7 +34,7 @@ MUTANTS = [
      '    return ip, ""\n'),
     ("M5209", "the CLI's gesture runs without the VM's lock: the watch or the console releases the VM between "
      "its isolation and its check (CMD1)", GESTURES,
-     '    with _vm_lock(resource_id.rstrip("/").rsplit("/", 1)[-1]):\n',
+     '    with _vm_lock(resource_id.rstrip("/").rsplit("/", 1)[-1], timeout=writer_wait_s()):   # bounded (SEC-H)\n',
      '    with __import__("contextlib").nullcontext():\n'),
     ("M5210", "the CLI's gesture is never checked after: a NIC still open said contained, no card (Q11, CMD1)",
      GESTURES,

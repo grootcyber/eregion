@@ -26,6 +26,11 @@ _DAY_S = 86400
 # one (A0), never today's, never a date it carries. With the default bound, kept until about
 # 2027-01-14, then aged out.
 B2_FLOOR = 1792108800          # 2026-10-16T00:00:00Z
+# SEC-I (V-11): at most this many precedents from one VM. A local account on a VM provokes
+# detections at will, and each decided one is stored: a flood of its cycles filled the three
+# places of every detection of the same technique, on any VM. A cycle that names no VM (stored
+# before SEC-I, or of a detection attributed to none) counts as one VM, unknown.
+PER_VM = 1
 
 
 def checked_max_age(days) -> float:
@@ -92,6 +97,15 @@ class CycleMemory:
                 # SEC17 (V-12): when the cycle was stored, by this host's clock — its age at
                 # retrieval. Never taken from the cycle: a log line does not date a precedent.
                 "stored_at": int(self._clock()),
+                # SEC-I (V-11): the VM (lowered: one key whatever the case it came in) and the
+                # rule of the cycle, which the retrieval weighs and bounds — never shown to the
+                # model (its text is the document); and whether its signal was corroborated by
+                # a source the VM does not write. None is before SEC-A3 (#632): every cycle is
+                # stored as not corroborated, and said so; the retrieval does not filter on it
+                # yet — it would leave every decision without a precedent.
+                "resource_id": _vm_key(cycle.get("resource_id")),
+                "rule_name": str(cycle.get("rule_name") or ""),
+                "corroborated": cycle.get("corroborated") is True,
             }],
         )
 
@@ -120,36 +134,84 @@ class CycleMemory:
 
         One cycle per (signal_id, action, run_id), the most similar: a `respond` replayed
         on the same file stores its cycles again (the identifiers are drawn, never the
-        signal's), and the same cycle never fills the N places."""
+        signal's), and the same cycle never fills the N places.
+
+        SEC-I (V-11): the VM and the rule weigh in, and one VM is bounded. A cycle of the same
+        rule comes first, then one of the same VM, then the text's distance (technique, gravity,
+        type, event, provider); and at most ``PER_VM`` cycles of any one VM, the signal's own
+        included — a VM whose local account provokes detections at will no longer fills the
+        places of its neighbours, nor its own. Each search past a VM at its bound reads the
+        others (a flood of one VM's cycles never hides the rest), a bounded number of times.
+        A cycle stored before SEC-I names no VM, and a filter cannot leave out a key a cycle
+        lacks: once the VM unknown is at its bound, the search past it reads the whole memory
+        (its cycles would otherwise fill every place it reads, and hide the other VMs) —
+        nothing stored is rewritten for it."""
         if self._collection.count() == 0:
             return []
         query_text = _signal_to_text(signal)
         size = min(n * _DUPLICATE_SLACK, self._collection.count())
-        cutoff = self._cutoff()
-        results = self._collection.query(
-            query_texts=[query_text], n_results=size, include=["documents", "metadatas", "distances"],
-            where={"$and": [{"source": "real"}, {"stored_at": {"$gte": cutoff}}]},
-        )
-        found = list(zip(results["distances"][0], results["documents"][0], results["metadatas"][0]))
+        vm, rule = _signal_vm(signal), _signal_rule(signal)
+        pool: dict[str, tuple] = {}
+
+        def gather(extra: dict | None, wide: bool = False) -> int:
+            before = len(pool)
+            for cid, row in self._search(query_text, self._collection.count() if wide else size, extra):
+                pool.setdefault(cid, row)
+            return len(pool) - before
+
+        gather(None)
+        if vm:
+            gather({"resource_id": vm})
+        if rule:
+            gather({"rule_name": rule})
+
+        def rank(row: tuple) -> tuple:
+            distance, _doc, meta = row
+            return (not rule or meta.get("rule_name") != rule,
+                    not vm or meta.get("resource_id") != vm, distance)
+
+        cycles, seen, per_vm = [], set(), {}
+        for _ in range(n + 1):
+            for distance, doc, meta in sorted(pool.values(), key=rank):
+                if len(cycles) == n:
+                    break
+                key = (meta.get("signal_id", ""), meta.get("action", ""), meta.get("run_id", ""))
+                owner = _vm_key(meta.get("resource_id"))
+                if key in seen or per_vm.get(owner, 0) >= PER_VM:
+                    continue
+                seen.add(key)
+                per_vm[owner] = per_vm.get(owner, 0) + 1
+                cycles.append((rank((distance, doc, meta)), {"summary": doc, **meta}))
+            full = sorted(v for v, c in per_vm.items() if c >= PER_VM)
+            # The VM unknown at its bound: its cycles (no `resource_id`) pass any `$nin` — read
+            # past them, the whole memory.
+            if len(cycles) == n or not full or not gather({"resource_id": {"$nin": full}}, wide="" in full):
+                break
+        return [c for _r, c in sorted(cycles, key=lambda pair: pair[0])]
+
+    def _search(self, query_text: str, size: int, extra: dict | None) -> list[tuple[str, tuple]]:
+        """The real cycles within the age bound nearest to ``query_text``, narrowed by ``extra``
+        (a metadata filter, or None): (id, (distance, document, metadata)), nearest first."""
+        def where(*terms: dict) -> dict:
+            terms = tuple(t for t in terms if t)
+            return terms[0] if len(terms) == 1 else {"$and": list(terms)}
+
+        include = ["documents", "metadatas", "distances"]
+        res = self._collection.query(
+            query_texts=[query_text], n_results=size, include=include,
+            where=where({"source": "real"}, {"stored_at": {"$gte": self._cutoff()}}, extra))
+        found = [(cid, (d, doc, meta)) for cid, d, doc, meta in
+                 zip(res["ids"][0], res["distances"][0], res["documents"][0], res["metadatas"][0])]
         if self._b2_within():
             # The undated ones (stored before SEC17), dated by the B2 floor — which is within the
             # bound: the filter cannot name a missing field, so they are read among the real ones.
-            real = self._collection.query(query_texts=[query_text], n_results=size, where={"source": "real"},
-                                          include=["documents", "metadatas", "distances"])
-            found += [(d, doc, meta) for d, doc, meta in
-                      zip(real["distances"][0], real["documents"][0], real["metadatas"][0])
+            real = self._collection.query(query_texts=[query_text], n_results=size, include=include,
+                                          where=where({"source": "real"}, extra))
+            found += [(cid, (d, doc, meta)) for cid, d, doc, meta in
+                      zip(real["ids"][0], real["distances"][0], real["documents"][0], real["metadatas"][0])
                       if not _dated(meta)]
-            found.sort(key=lambda row: row[0])
-        cycles, seen = [], set()
-        for _distance, doc, meta in found:
-            key = (meta.get("signal_id", ""), meta.get("action", ""), meta.get("run_id", ""))
-            if key in seen:
-                continue
-            seen.add(key)
-            cycles.append({"summary": doc, **meta})
-            if len(cycles) == n:
-                break
-        return cycles
+            found.sort(key=lambda item: item[1][0])
+        return found
 
     def count(self) -> int:
         return self._collection.count()
@@ -195,6 +257,26 @@ def age_census(path: str | Path | None = None, max_age_days: float | None = None
         return CycleMemory(path=storage_path, max_age_days=days).age_census()
     except Exception as exc:  # chromadb missing, a store it cannot open
         return {"max_age_days": days, "error": f"{type(exc).__name__}: {str(exc).splitlines()[0] if str(exc) else ''}"}
+
+
+def _vm_key(resource_id) -> str:
+    """A VM as the memory keys it (SEC-I): its resource id, lowered, without a trailing slash;
+    "" when there is none (a cycle stored before SEC-I, or one attributed to no VM)."""
+    return resource_id.rstrip("/").lower() if isinstance(resource_id, str) else ""
+
+
+def _signal_vm(signal: dict) -> str:
+    """The VM a signal is about, for the memory (SEC-I): "" when the RulePoller attributed it to
+    none — its resource id is then an anchor, never the VM the detection is about."""
+    if (signal.get("context") or {}).get("attribution") == "unattributed":
+        return ""
+    return _vm_key(signal.get("resource_id"))
+
+
+def _signal_rule(signal: dict) -> str:
+    """The rule that found it (the RulePoller's), "" for any other signal."""
+    rule = (signal.get("context") or {}).get("rule_name")
+    return rule if isinstance(rule, str) else ""
 
 
 def _signal_to_text(signal: dict) -> str:

@@ -16,7 +16,8 @@ import subprocess
 from dataclasses import dataclass
 
 from annatar.console import console, outside
-from annatar.engines.stratus import ResolvedTechnique, airgap_env
+from annatar.engines.stratus import (ResolvedTechnique, airgap_env, azure_provider_env,
+                                      stratus_run_env)
 
 
 GRAPH = "https://graph.microsoft.com"
@@ -103,7 +104,7 @@ class StratusExecutor:
 
     def __init__(self, resolved: ResolvedTechnique, session, *, target: str,
                  dry_run: bool = False, layout: StagedLayout | None = None,
-                 run=None, get=None, arm_get=None):
+                 run=None, get=None, arm_get=None, detonate=None):
         self.resolved = resolved
         self._session = session
         self.target = target          # the control-plane scope this run touches (journaled)
@@ -112,6 +113,10 @@ class StratusExecutor:
         self._run = run or subprocess.run
         self._get = get or _default_graph_get
         self._arm_get = arm_get or _default_arm_get
+        # R2c pièce 4 (sidecar): when set, the raw Stratus subprocess of each phase is delegated
+        # to the detonator in the sandbox (IMDS blocked); the journaling and the probes stay here,
+        # on the bridge, under Orodruin's identity. ``detonate(name) -> (stdout, stderr, rc)``.
+        self._detonate = detonate
         self._run_home_path: str | None = None   # a writable HOME built per run (R2BS)
 
     def resource_group_tags(self, subscription_id: str, resource_group: str) -> dict:
@@ -174,11 +179,17 @@ class StratusExecutor:
         """The process environment: the inherited one (Orodruin's Azure credentials) with the
         offline overrides layered on (annatar/engines/stratus.py::airgap_env) — a writable run
         HOME, the staged Terraform binary (STRATUS_TERRAFORM_BINARY_PATH) and the provider mirror
-        (TF_CLI_CONFIG_FILE)."""
+        (TF_CLI_CONFIG_FILE) — plus the azurerm provider's identity directive (MSI1): on a host
+        carrying only a managed identity (no service-principal secret), ARM_USE_MSI with the
+        subscription and tenant, so the warmup's Terraform authenticates by that identity. R2c
+        pièce 4: when the dedicated Stratus identity is configured (EREGION_STRATUS_SUBSCRIPTION),
+        the run authenticates AS STRATUS by the federated exchange instead (stratus_run_env), on
+        the dedicated subscription — never Orodruin's managed identity nor the bench."""
         overrides = airgap_env(self._ensure_run_home(),
                                terraform_binary=self._staged_terraform(),
                                terraformrc=self.layout.terraformrc)
-        return {**os.environ, **overrides}
+        identity = stratus_run_env(os.environ) or azure_provider_env(os.environ)
+        return {**os.environ, **overrides, **identity}
 
     def _before_call(self, phase: str, detail: str) -> None:
         """The journal precedes the call (O1) — a phase runs only from an armed contract."""
@@ -203,25 +214,35 @@ class StratusExecutor:
             raise RuntimeError(f"the Stratus binary changed since it was pinned this run — "
                                f"{phase.name} not run")
 
+    def run_subprocess(self, name: str) -> tuple[str, str, int]:
+        """The RAW detonation of one phase: re-check the pinned binary (SEC5) and run the Stratus
+        subprocess, returning ``(stdout, stderr, returncode)``. No journaling — in the sidecar this
+        runs in the detonator (the sandbox, IMDS blocked), driven by the engine's ``_detonate``;
+        locally (a test, a developer run) the engine calls it directly. It builds the offline env
+        here, so the azurerm provider's identity (the federated assertion) is resolved where the
+        subprocess runs."""
+        phase = self.resolved.phase(name)
+        self._verify_binary_unchanged(phase)   # re-check the pinned sha256 before every phase
+        completed = self._run(phase.argv, env=self._env(), capture_output=True, text=True,
+                              timeout=PHASE_TIMEOUT_S)
+        return ((getattr(completed, "stdout", "") or ""),
+                (getattr(completed, "stderr", "") or ""),
+                getattr(completed, "returncode", 0))
+
     def run_phase(self, name: str) -> str:
-        """Journal, then run one phase of the Stratus cycle (warmup/detonate/revert/cleanup).
-        In dry_run nothing starts; the argv and the offline environment are shown."""
+        """Journal (the engine, on the bridge), then run one phase of the Stratus cycle. The raw
+        subprocess runs in the detonator when ``_detonate`` is set (sidecar), else here. In dry_run
+        nothing starts; the argv is shown."""
         phase = self.resolved.phase(name)
         if self.dry_run:   # nothing runs, so nothing is journaled against the contract
             console.print(f"  [yellow]DRY RUN[/yellow] stratus {name}: {outside(' '.join(phase.argv))}")
             return ""
-        self._verify_binary_unchanged(phase)   # re-check the pinned sha256 before every phase
-        self._before_call(name, phase.label)
+        self._before_call(name, phase.label)   # journal first (O1), under the armed contract
         console.print(f"  [dim]Stratus → {name} : {self.resolved.technique_id}[/dim]")
-        completed = self._run(phase.argv, env=self._env(), capture_output=True, text=True,
-                              timeout=PHASE_TIMEOUT_S)
-        out = (getattr(completed, "stdout", "") or "")
-        err = (getattr(completed, "stderr", "") or "")
-        if getattr(completed, "returncode", 0) != 0:
+        out, err, rc = self._detonate(name) if self._detonate else self.run_subprocess(name)
+        if rc != 0:
             raise RuntimeError(
-                f"stratus {name} {self.resolved.technique_id} exited "
-                f"{getattr(completed, 'returncode', '?')}: {err.strip()[-300:]}"
-            )
+                f"stratus {name} {self.resolved.technique_id} exited {rc}: {err.strip()[-300:]}")
         console.print(f"  [dim]{outside(out.strip()[-200:])}[/dim]")   # what Stratus answered
         return out
 

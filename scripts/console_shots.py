@@ -42,8 +42,10 @@ import shutil
 import socket
 import struct
 import subprocess
+import signal
 import sys
 import tempfile
+import threading
 import time
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
@@ -58,10 +60,18 @@ CONFIG = "glorfindel-config.yaml"   # Glorfindel's configuration, written there 
 GIT_READS = ("rev-parse", "describe")   # what the sample's console may ask git: its checkout
 ZERO_SUBSCRIPTION = "00000000-0000-0000-0000-000000000000"
 WIDTH, HEIGHT = 1440, 900
-BOARD_HEIGHT = 1100
+BOARD_HEIGHT = 1200                # every wired red card in view, the fault's too
+ANNATAR_HEIGHT = 1100
 LOOP_SCALE = 0.75
 MAX_PNG = 300 * 1024
 MAX_LOOP = 3 * 1024 * 1024
+LEFT_MARK = "__shotsLeft"          # on the page a navigation leaves (Browser.go)
+# FRS1b: every wait is bounded, and a failure says why — never a command that hangs.
+SERVER_START_S = 30                # the console answers within, or its own words are said
+CHROMIUM_START_S = 30              # Chromium says where DevTools listens within, or its words are said
+CHROMIUM_PROBE_S = 15              # `chromium --version`, before anything starts
+PARENT_POLL_S = 1.0                # the server ends when the script that started it is gone
+SERVER_LOG = "server.log"          # the console's output, in the throwaway directory — never the caller's
 
 # ── What may be shown: the identifiers allowed ─────────────────────────────────────────────
 # A subscription or a tenant is a GUID: only the zero one. An address: only the documentation's
@@ -217,12 +227,17 @@ def materialize(doc: dict, work: Path, now: datetime | None = None) -> dict:
         if r.get("window"):
             start = at - timedelta(seconds=20)
             end = at + timedelta(minutes=12)
-            (runs / "exercises" / f"{run_id}.json").write_text(json.dumps({
+            window = runs / "exercises" / f"{run_id}.json"
+            window.write_text(json.dumps({
                 "run_id": run_id, "injector": "gothmog" if fault else "annatar",
                 "kind": "fault" if fault else "technique",
                 "experiment": r["experiment"], "targets": [rid.lower()], "start": _iso(start),
                 "end": _iso(end), "expires": _iso(start + timedelta(hours=2)),
                 **({} if fault else {"destructive": bool(r.get("destructive", False))})}), encoding="utf-8")
+            # Written when it closed, as Orodruin writes it: a window whose file is younger than its
+            # end is antedated, not believed (SEC5, SEC-A1) — the sample's would all be.
+            written = min(end, now).timestamp()
+            os.utime(window, (written, written))
     with open(runs / "watch-sample_debug.jsonl", "w", encoding="utf-8") as f:
         for c in cycles:
             f.write(json.dumps(c) + "\n")
@@ -408,11 +423,28 @@ def confine_config(work: Path) -> None:
     config._DEFAULT_PATHS[:] = [work / "cwd" / CONFIG]
 
 
-def serve(work: Path, port: int) -> int:
+def exit_with_parent(parent: int, poll: float = PARENT_POLL_S, end=os._exit) -> threading.Thread:
+    """The server ends when the script that started it is gone — killed by a ``timeout``, a
+    signal it cannot catch: an orphan console would hold the port, the sample, and the output
+    the caller waits on (FRS1b, the 18/11 run). A thread polls who its parent is — ``parent``
+    given by the script itself, never read here: a script gone before the console reads it would
+    leave the console taking its new parent for the script."""
+    def watch():
+        while os.getppid() == parent:
+            time.sleep(poll)
+        end(0)
+    t = threading.Thread(target=watch, name="console_shots-parent", daemon=True)
+    t.start()
+    return t
+
+
+def serve(work: Path, port: int, parent: int | None = None) -> int:
     reason = serve_refusal(work, os.environ, Path.home(), Path.cwd())
     if reason:
         print(f"console_shots: refused — {reason}", file=sys.stderr)
         return 2
+    if parent is not None:
+        exit_with_parent(parent)
     loopback_only()
     sys.path.insert(0, str(REPO))
     confine_config(work)
@@ -445,22 +477,52 @@ def server_env(work: Path, token: str) -> dict[str, str]:
             "EREGION_BENCH": "celebrimbor", "EREGION_REF": f"v{package_version()}"}
 
 
+def tail(path: Path, lines: int = 6) -> str:
+    """The last lines of a log, on one line — what a failure says of its cause."""
+    try:
+        text = Path(path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return "no output"
+    kept = [x.strip() for x in text.splitlines() if x.strip()][-lines:]
+    return " | ".join(kept) or "no output"
+
+
+def stop(proc: subprocess.Popen | None) -> None:
+    """A process this script started, ended — terminated, then killed if it lingers."""
+    if proc is None or proc.poll() is not None:
+        return
+    proc.terminate()
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait(timeout=10)
+
+
 def start_server(work: Path, token: str) -> tuple[subprocess.Popen, int]:
+    """The console on the sample, answering on a free port of the loopback — or SystemExit that
+    says why, within SERVER_START_S. Its output goes to ``work/server.log``, never to the
+    caller's: a console left behind would otherwise hold the caller's pipe open, and the command
+    would seem to hang long after this script ended (FRS1b)."""
     port = _free_port()
     env = server_env(work, token)
-    proc = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "--serve", str(work), "--port", str(port)],
-                            cwd=str(work / "cwd"), env=env)
-    deadline = time.monotonic() + 30
+    log_path = work / SERVER_LOG
+    with open(log_path, "wb") as log:
+        proc = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "--serve", str(work),
+                                 "--port", str(port), "--parent", str(os.getpid())], cwd=str(work / "cwd"), env=env,
+                                stdin=subprocess.DEVNULL, stdout=log, stderr=log)
+    deadline = time.monotonic() + SERVER_START_S
     while time.monotonic() < deadline:
         if proc.poll() is not None:
-            raise SystemExit(f"console_shots: the console did not start (exit {proc.returncode})")
+            raise SystemExit(f"console_shots: the console did not start (exit {proc.returncode}): "
+                             f"{tail(log_path)}")
         try:
             with socket.create_connection(("127.0.0.1", port), timeout=0.5):
                 return proc, port
         except OSError:
             time.sleep(0.2)
-    proc.kill()
-    raise SystemExit("console_shots: the console did not answer in 30 s")
+    stop(proc)
+    raise SystemExit(f"console_shots: the console did not answer in {SERVER_START_S} s: {tail(log_path)}")
 
 
 # ── The tools of the workstation ───────────────────────────────────────────────────────────
@@ -506,14 +568,38 @@ def missing_tools(chromium: str | None, ffmpeg: str | None, video: bool) -> list
     return out
 
 
+def chromium_refusal(chromium: str, timeout: float = CHROMIUM_PROBE_S) -> str:
+    """Why this Chromium cannot render — "" when ``--version`` answers. Found is not enough: a
+    Chromium from Playwright's cache may lack the system's libraries (libnss3, libnspr4), and
+    then exits at once (FRS1b, the 18/11 run). Its own words are said, and what to install."""
+    try:
+        r = subprocess.run([chromium, "--version"], stdin=subprocess.DEVNULL, capture_output=True,
+                           text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return f"{chromium} --version did not answer in {timeout:.0f} s"
+    except OSError as exc:
+        return f"{chromium} does not start ({exc})"
+    if r.returncode == 0:
+        return ""
+    said = [x.strip().removeprefix(f"{chromium}:").strip()
+            for x in (r.stderr + r.stdout).splitlines() if x.strip()]
+    hint = ("; install its system libraries: `sudo apt install libnss3 libnspr4`, or "
+            "`python -m playwright install-deps chromium` (it asks for sudo)" if "shared libraries" in r.stderr else "")
+    return (f"{chromium} does not run (exit {r.returncode}): "
+            f"{said[-1] if said else 'nothing said'}{hint}")
+
+
 # ── Chromium, by the DevTools protocol ─────────────────────────────────────────────────────
 
 class Browser:
     """A headless Chromium on a throwaway profile, one page, driven by the DevTools protocol.
     It resolves no name but localhost: the page loads nothing from outside anyway (CSP)."""
 
-    def __init__(self, chromium: str, profile: Path):
+    def __init__(self, chromium: str, profile: Path, start_s: float = CHROMIUM_START_S):
         from websockets.sync.client import connect
+        self.proc = None
+        log_path = profile.with_name(profile.name + ".log")   # its output: read, never a pipe left full
+        log = open(log_path, "wb")
         self.proc = subprocess.Popen(
             [chromium, "--headless", "--remote-debugging-port=0", f"--user-data-dir={profile}",
              "--no-first-run", "--no-default-browser-check", "--disable-gpu", "--hide-scrollbars",
@@ -521,30 +607,47 @@ class Browser:
              "--disable-component-update", "--force-color-profile=srgb", "--force-device-scale-factor=1",
              "--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE localhost , EXCLUDE 127.0.0.1",
              f"--window-size={WIDTH},{HEIGHT}", "about:blank"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
-        url, deadline = None, time.monotonic() + 30
-        while time.monotonic() < deadline and url is None:
-            line = self.proc.stderr.readline()
-            if not line and self.proc.poll() is not None:
-                break
-            m = re.search(r"DevTools listening on (ws://\S+)", line)
-            url = m.group(1) if m else None
+            stdin=subprocess.DEVNULL, stdout=log, stderr=log)
+        log.close()
+        url = self._listening(log_path, start_s)
         if url is None:
+            gone = self.proc.poll()
             self.proc.kill()
-            raise SystemExit("console_shots: Chromium did not start (missing libraries? "
-                             "run it alone with --version)")
-        self._conn = connect(url, max_size=None, open_timeout=10)
-        self.ws = self._conn.__enter__()
-        self._id = 0
-        self.errors: list[str] = []
-        self.on_event = None
-        target = self.call("Target.createTarget", url="about:blank")["targetId"]
-        self.session = self.call("Target.attachToTarget", targetId=target, flatten=True)["sessionId"]
-        self.send("Page.enable")
-        self.send("Runtime.enable")
-        self.send("Log.enable")
-        self.viewport(WIDTH, HEIGHT)
-        self.send("Emulation.setEmulatedMedia", features=[{"name": "prefers-color-scheme", "value": "dark"}])
+            self.proc.wait(timeout=10)
+            why = f"exit {gone}" if gone is not None else f"no DevTools in {start_s:.0f} s"
+            raise SystemExit(f"console_shots: Chromium did not start ({why}): {tail(log_path)}")
+        self._conn = None
+        try:
+            self._conn = connect(url, max_size=None, open_timeout=10)
+            self.ws = self._conn.__enter__()
+            self._id = 0
+            self.errors: list[str] = []
+            self.on_event = None
+            target = self.call("Target.createTarget", url="about:blank")["targetId"]
+            self.session = self.call("Target.attachToTarget", targetId=target, flatten=True)["sessionId"]
+            self.send("Page.enable")
+            self.send("Runtime.enable")
+            self.send("Log.enable")
+            self.viewport(WIDTH, HEIGHT)
+            self.send("Emulation.setEmulatedMedia", features=[{"name": "prefers-color-scheme", "value": "dark"}])
+        except BaseException:
+            self.close()                 # Chromium never left behind a failed start
+            raise
+
+    def _listening(self, log_path: Path, start_s: float) -> str | None:
+        """Where DevTools listens, read from Chromium's log — None when Chromium ended first, or
+        said nothing within ``start_s``: a bounded wait, never a read that blocks (FRS1b)."""
+        deadline = time.monotonic() + start_s
+        while True:
+            try:
+                m = re.search(r"DevTools listening on (ws://\S+)", log_path.read_text(errors="replace"))
+            except OSError:
+                m = None
+            if m:
+                return m.group(1)
+            if self.proc.poll() is not None or time.monotonic() >= deadline:
+                return None
+            time.sleep(0.1)
 
     def viewport(self, width: int, height: int) -> None:
         self.size = (width, height)
@@ -589,14 +692,22 @@ class Browser:
             if self.js(f"!!({expression})"):
                 return
             time.sleep(0.1)
-        where = self.js("location.href + ' — ' + (typeof S !== 'undefined' ? JSON.stringify({err: S.err, board: !!S.board})"
-                        " : 'no S') + ' — ' + (document.body ? document.body.innerText.slice(0, 200) : '')")
+        where = self.js("location.href + ' — ' + (typeof S !== 'undefined' ? JSON.stringify({err: S.err,"
+                        " planErr: S.planErr, board: !!S.board, wires: (S.wires || []).length, plan: !!S.plan,"
+                        " note: S.note}) : 'no S') + ' — '"
+                        " + (document.body ? document.body.innerText.slice(0, 200) : '')")
         raise SystemExit(f"console_shots: the page never showed `{expression}` ({where})")
 
     def go(self, url: str) -> None:
+        """The page at ``url``, a new document: the one left carries a mark, and its path may be the
+        same (``/dagorlad?token=…``, then ``/dagorlad``) — waited for without the mark, the old page
+        would pass for the new one, and a gesture made on it would be lost with it (FRS1b)."""
+        left = json.dumps(secrets.token_hex(8))
+        self.js(f"window.{LEFT_MARK} = {left}; true")
         self.send("Page.navigate", url=url)
         path = json.dumps(url.split("?")[0])
-        self.wait(f"(location.origin + location.pathname) === {path} && document.readyState === 'complete'")
+        self.wait(f"window.{LEFT_MARK} !== {left} && (location.origin + location.pathname) === {path}"
+                  " && document.readyState === 'complete'")
 
     def shot(self, fmt: str = "png", quality: int | None = None, scale: float = 1.0) -> bytes:
         params = {"format": fmt, "captureBeyondViewport": False}
@@ -618,7 +729,8 @@ class Browser:
 
     def close(self) -> None:
         try:
-            self._conn.__exit__(None, None, None)
+            if self._conn is not None:
+                self._conn.__exit__(None, None, None)
         finally:
             self.proc.kill()
             self.proc.wait(timeout=10)
@@ -645,7 +757,11 @@ def blue_index(b: Browser, name: str) -> int:
 
 
 def center(b: Browser, selector: str) -> tuple[float, float]:
+    """Where to point at an element, brought into view first: the red list scrolls in its own box,
+    and a card below its fold (the catalogue grows) is under another element — a press there
+    draws nothing (FRS1b)."""
     r = b.js(f"(() => {{ const e = document.querySelector({json.dumps(selector)}); if (!e) return null;"
+             " e.scrollIntoView({block: 'nearest', inline: 'nearest', behavior: 'instant'});"
              " const r = e.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()")
     if r is None:
         raise SystemExit(f"console_shots: nothing at {selector}")
@@ -663,12 +779,29 @@ def open_board(b: Browser, base: str, token: str) -> None:
     b.wait("typeof S !== 'undefined' && S.board && S.board.reds.length > 0 && document.querySelector('#blue-0')")
 
 
+def show_wired(b: Browser) -> None:
+    """The red list, in its own scrolling box, opened on the first wired card that carries a proof
+    (else the first wired): the catalogue grows, its ready entries first, and the wired cards —
+    their proof, « fresh 46h00 » — would fall below the fold, their wires drawn to its edge (FRS1b)."""
+    b.js("(() => { const box = document.getElementById('red-list');"
+         " const ids = new Set(S.wires.map(w => w[0]));"
+         " const proven = S.board.reds.findIndex(r => ids.has(r.id) && r.proof && r.proof.state !== 'never');"
+         " const k = proven >= 0 ? proven : S.board.reds.findIndex(r => ids.has(r.id));"
+         " const card = k < 0 ? null : document.getElementById('red-' + k);"
+         " box.scrollTop = card ? card.offsetTop - box.firstElementChild.offsetTop : 0;"
+         " drawWires(); return true; })()")
+    b.pump(0.3)
+
+
 def draw(b: Browser, pairs) -> None:
     """The wires, as the page draws them on a click: a red card, then a target."""
     for experiment, target in pairs:
         i, j = red_index(b, experiment), blue_index(b, target)
         if i < 0 or j < 0:
             raise SystemExit(f"console_shots: no card for {experiment} → {target}")
+        why = b.js(f"S.board.reds[{i}].available ? '' : (S.board.reds[{i}].why || 'unavailable')")
+        if why:
+            raise SystemExit(f"console_shots: the card {experiment} has no handle on the board ({why})")
         b.js(f"ACTIONS.pick({i}); ACTIONS.aim({j}); S.picked = null; renderBoard(); true")
         b.wait(plan_settled(b.js("S.wires.length")))
     b.pump(0.4)
@@ -714,6 +847,7 @@ def drag_wire(b: Browser, experiment: str, target: str, rec: Recorder | None, ms
     i, j = red_index(b, experiment), blue_index(b, target)
     start = center(b, f"#red-{i} .handle")
     end = center(b, f"#blue-{j}")
+    b.pump(0.15)                          # the wires redrawn after a scroll, before the gesture
     here = b.js("(() => { const c = document.getElementById('shots-cursor');"
                 " return c ? [parseFloat(c.style.left) + 2, parseFloat(c.style.top) + 2] : null; })()")
     glide(b, here or (start[0] - 200, start[1] + 120), start, 6, rec, ms, dwell=dwell)
@@ -778,24 +912,27 @@ RUNS_READY = ("!document.querySelector('#ex-list .empty') && document.getElement
 
 
 def render_shots(b: Browser, base: str, token: str, doc: dict, out: Path) -> dict[str, bytes]:
-    b.viewport(WIDTH, BOARD_HEIGHT)      # every red card in view, the fault's too
+    b.viewport(WIDTH, BOARD_HEIGHT)
     open_board(b, base, token)
     draw(b, doc["board"])
+    show_wired(b)
     board = b.shot("png")
     # DG-d: a shipped drill laid again over the wires drawn (asked first) — its wires waiting for the
     # VMs the operator gives, never one chosen for them.
     b.js("ACTIONS.toggleDrills(); ACTIONS.loadDrill('bl1-reponse'); ACTIONS.loadDrill('bl1-reponse'); true")
     b.wait("S.loaded === 'bl1-reponse' && S.pending.length === 2 && document.querySelector('.pending')"
            " && S.drills && S.drills.length > 0")
-    b.pump(0.6)
+    show_wired(b)
     drills = b.shot("png")
     # DG-e: Annatar's chain asked on the VM the operator chose — a draft on the board, nothing kept.
+    b.viewport(WIDTH, ANNATAR_HEIGHT)    # the drills listed and five wires: the PNG under MAX_PNG
     b.js("ACTIONS.clear(); ACTIONS.askOpen(); true")
     b.wait("document.querySelector('[data-on-click=\"askAnnatar\"]')")
     b.js(f"ACTIONS.askAnnatar({blue_index(b, 'vm-celebrimbor-gondolin')}); true")
     b.wait("S.author === 'annatar' && S.wires.length > 0 && !S.asking")
     b.wait(plan_settled(b.js("S.wires.length")))
-    b.pump(0.6)
+    b.pump(0.3)
+    show_wired(b)
     annatar = b.shot("png")
     b.viewport(WIDTH, HEIGHT)
     b.go(f"{base}/dagorlad?view=runs")
@@ -884,7 +1021,8 @@ def render_video(b: Browser, base: str, token: str, doc: dict, ffmpeg: str, path
                 k += 1
             f.write(frames[k][1])
             t += 1 / fps
-    encoders = subprocess.run([ffmpeg, "-hide_banner", "-encoders"], capture_output=True, text=True).stdout
+    encoders = subprocess.run([ffmpeg, "-hide_banner", "-encoders"], capture_output=True, text=True,
+                              timeout=60).stdout
     if "libx264" in encoders:
         path = path.with_suffix(".mp4")
         codec = ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "24", "-preset", "slow", "-movflags", "+faststart"]
@@ -895,7 +1033,7 @@ def render_video(b: Browser, base: str, token: str, doc: dict, ffmpeg: str, path
     path.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run([ffmpeg, "-y", "-hide_banner", "-loglevel", "error", "-f", "image2pipe", "-framerate", str(fps),
                     "-c:v", "mjpeg", "-i", f"file:{stream}", "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
-                    *codec, str(path)], check=True)
+                    *codec, str(path)], check=True, timeout=1800)
     return path
 
 
@@ -918,9 +1056,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-images", action="store_true", help="the video only")
     ap.add_argument("--serve", type=Path, help=argparse.SUPPRESS)
     ap.add_argument("--port", type=int, default=0, help=argparse.SUPPRESS)
+    ap.add_argument("--parent", type=int, help=argparse.SUPPRESS)
     args = ap.parse_args(argv)
     if args.serve:
-        return serve(args.serve.resolve(), args.port)
+        return serve(args.serve.resolve(), args.port, args.parent)
 
     reason = sample_refusal(args.sample)
     if reason:
@@ -932,26 +1071,48 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     chromium, ffmpeg = find_chromium(args.chromium), find_ffmpeg(args.ffmpeg)
     missing = missing_tools(chromium, ffmpeg, bool(args.video))
+    broken = chromium_refusal(chromium) if chromium else ""
     if args.check:
         print(f"chromium: {chromium or 'missing'}\nffmpeg:   {ffmpeg or 'missing'}")
         for m in missing:
             print(f"missing: {m}")
-        return 3 if missing else 0
-    if missing:
+        if broken:
+            print(f"broken: {broken}")
+        return 3 if missing or broken else 0
+    if missing or broken:
         for m in missing:
             print(f"console_shots: missing — {m}", file=sys.stderr)
+        if broken:
+            print(f"console_shots: broken — {broken}", file=sys.stderr)
         print("console_shots: nothing rendered; the CI never runs this script", file=sys.stderr)
         return 3
 
     doc = json.loads(SAMPLE.read_text(encoding="utf-8"))
     token = secrets.token_urlsafe(24)
+    # A `timeout` sends SIGTERM: ended as an exit, so that the console and Chromium end with it.
+    before = signal.signal(signal.SIGTERM, _terminated)
+    try:
+        return _render(args, doc, token, chromium, ffmpeg)
+    finally:
+        signal.signal(signal.SIGTERM, before)
+
+
+def _terminated(signum, frame):
+    raise SystemExit(f"console_shots: ended by signal {signum}")
+
+
+def _render(args, doc: dict, token: str, chromium: str, ffmpeg: str | None) -> int:
+    """The console and Chromium started, the images and the video rendered — and both ended
+    whatever happens: a Chromium that does not start, a page that never shows, a signal
+    (FRS1b: the 18/11 run left the console behind, holding the caller's output)."""
     with tempfile.TemporaryDirectory(prefix="dagorlad-sample-") as tmp:
         work = Path(tmp)
         materialize(doc, work)
-        server, port = start_server(work, token)
-        base = f"http://127.0.0.1:{port}"
-        browser = Browser(chromium, work / "chrome")
+        server = browser = None
         try:
+            server, port = start_server(work, token)
+            base = f"http://127.0.0.1:{port}"
+            browser = Browser(chromium, work / "chrome")
             if not args.no_images:
                 out = args.out
                 out.mkdir(parents=True, exist_ok=True)
@@ -973,12 +1134,9 @@ def main(argv: list[str] | None = None) -> int:
             for e in browser.errors[:10]:
                 print(f"  {e[:200]}")
         finally:
-            browser.close()
-            server.terminate()
-            try:
-                server.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                server.kill()
+            if browser is not None:
+                browser.close()
+            stop(server)
     return 0
 
 

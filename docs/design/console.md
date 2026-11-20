@@ -27,6 +27,19 @@ tourne.
 | Ce que Glorfindel a fait seul (#248) | **une ligne verte sur la tuile, 24 h** : la note d'une carte qu'il a résolue lui-même (A3 : règle orpheline retirée) | dans le fil en direct ; rien dans la console |
 | Le drill d'une campagne d'Annatar dans Dagorlad (DG-e, 04/11) | **A, le drill écrit à côté du manifeste, puis « Import YAML »** : `annatar campaign plan` (sur Orodruin, qui n'écrit jamais les drills de la console) écrit le drill de la campagne et l'affiche ; Dagorlad le relit par le lecteur exact et le pose sur le tableau, sans rien écrire ; « Save as drill » le garde, auteur annatar. `campaign run` garde son exécution | B : le drill écrit seul, sans import ; C : `campaign run` par le chemin des demandes (un second lot) |
 | Les blocages d'une VM (CON-K, 03/11) | **A, un résumé et une fenêtre** : repliée ou dépliée, la carte dit « BLOCKED ×N IPs · newest … · oldest … » ; dépliée, elle garde la dernière décision (son raisonnement) et « Manage the N blocks ▸ », qui ouvre la fenêtre : tous les blocages, du plus récent au plus ancien, filtrables, chacun avec « Extend to subnet » et « Unblock ». Un seul blocage : montré avec ses boutons, sans fenêtre | B : les trois plus récents et « and N more » ; C : une liste repliable qui défile dans la carte |
+| Une VM sans NSG sur sa carte (IPS2, #950, 19/11, sur une maquette) | **ses adresses, une puce « NO NSG », l'IP publique d'une carte réseau sans NSG en rouge** | les adresses seules, sans signal |
+| La raison d'une IP publique illisible (IPS2, #950, 19/11, sur une maquette) | **un code dans l'audit, un libellé anglais dans la console**, les mots d'origine au survol | garder le français tel quel |
+| Les adresses d'une VM sur sa carte (IPS1, #931, 19/11, sur une maquette) | **A, une ligne sous le nom, repliée comme dépliée** : les IP privées (quatre, puis « +N »), puis la publique derrière 🌐, en jaune ; une adresse se copie d'un clic ; dépliée, le détail par carte réseau et l'âge de la lecture ; « ip — » et pourquoi quand l'audit NSG a échoué. **Un seul lot**, privées et publiques | B, une puce « PUBLIC » seule, les adresses sur la carte dépliée ; C, la carte dépliée seulement ; deux lots (les privées d'abord) |
+| Un audit illisible (TOPO1b, #949, 19/11, sur une maquette) | **une bande au-dessus des cartes** : « Readiness audit not read », sa raison, et l'heure du dernier bon audit quand il est gardé | « ip ? » et « ? ? ? » sur chaque carte |
+| Le clic sur une adresse d'une carte repliée (TOPO1b, #949, 19/11, sur une maquette) | **A, il copie** l'adresse, comme IPS1 l'a fait ; le nom et la rangée du mode déplient | B, tout clic déplie (copier depuis la carte dépliée) ; C, les adresses en bas de la carte |
+| L'identité d'une VM sur sa carte (VMI1, #971, 20/11, sur une maquette) | **A, au survol du nom et dans un bloc de la carte dépliée** : le nom, le groupe, l'abonnement, l'espace de détection, le battement, l'ID ; chaque champ se copie d'un clic sur la carte dépliée ; le nom déplie toujours | B, un ⧉ près du nom qui copie l'ID ; C, un clic sur le nom copie le nom |
+| La page Glorfindel sur un téléphone (MOB4, #972, 20/11, sur une maquette) | **A, un onglet par section sous 760 px** : To judge, Infra, Feed, une section à la fois ; par défaut To judge quand des cartes attendent ; l'infra empilée, sans les fils ; l'en-tête sur une ou deux lignes. **La page Glorfindel et l'en-tête d'abord**, Overview et Dagorlad ensuite | B, tout empilé et replié ; C, l'infra seule, To judge derrière un bouton ; toutes les pages dans le même lot |
+| Le tableau de Dagorlad sur un téléphone (MOB5, #975, 20/11, sur une maquette) | **A, trois onglets sous 760 px** : Red, Targets, Plan ; une carte rouge prise ouvre Targets sous un bandeau, un fil tiré ouvre le plan ; sans les fils dessinés ni la poignée | B, une colonne empilée ; C, le tableau en lecture seule sur un téléphone |
+| La vue Runs sur un téléphone (MOB5, #975, 20/11, sur une maquette) | **trois onglets** : Windows, Campaigns, Coverage ; **les lignes de la matrice repliées** sur deux lignes | les colonnes empilées ; la matrice qui défile de côté |
+| Juger plusieurs cartes, la confirmation (JUG3, #980, 20/11, sur une maquette) | **A, un récapitulatif avant d'écrire** : le nombre de cartes par règle, la note ; rien n'est écrit avant « Judge N … » | B, seulement à partir de 3 cartes ; C, aucune : on applique tout de suite |
+| Un groupe « ×N » qui mêle des règles (JUG3, #980, 20/11, sur une maquette) | **A, sa fenêtre rangée par règle**, « select this rule » et « select all » ; une sélection de plusieurs règles le dit (« ⚠ N rules in the selection ») | B, une seule règle à la fois ; C, aucune différence |
+| Juger plusieurs cartes sur un téléphone (JUG3, #980, 20/11, sur une maquette) | **A, comme sur l'écran, au doigt** : une case de 20 px dans une zone de 44 × 44 px, la barre au pied de la liste, sa note en 16 px, ses verdicts à 44 px | B, une par une sur un téléphone |
+| Une carte qui échoue au milieu d'un lot (JUG3, #980, 20/11, sur une maquette) | **A, continuer, puis dire carte par carte** : jugée et acquittée, jugée mais pas acquittée, pas jugée (restée cochée) | B, s'arrêter à la première erreur ; écartée d'emblée : « tout ou rien » (une route qui juge un lot d'un coup côté serveur, une carte jugée ailleurs ferait échouer les autres) |
 
 **Choisi par défaut, sans objection :**
 - `/atelier` redirige vers `/`.
@@ -257,6 +270,16 @@ cycles de la watch ; les fenêtres ne servent qu'à confronter le T0 (SEC15) : n
 donne aucun temps, et sa preuve est datée par la détection de la watch, ce que dit la tuile. Détail : `docs/glorfindel.md`, « Matrice de
 couverture » ; le run au format commun : `docs/architecture.md`, « Le run, unifié ».
 
+**« fresh », jamais « proven » (FRS1, #904, 18/11).** Un mot, un sens : « proven » est le statut
+d'une entrée du catalogue, mesurée au banc (STM1g, `eregion_core.experiment`), et lui seul.
+L'état d'une ligne dont la dernière preuve a moins de 21 jours est `fresh` : la valeur (`state`,
+la clé du résumé), son libellé dans la matrice, sur la puce de preuve d'une carte rouge de
+Dagorlad et dans `eregion coverage`. Le compteur au-dessus de la matrice dit « N fresh », puis
+« M aging » à part (une preuve de 21 à 30 jours n'est pas fraîche : il les additionnait sous
+« proven »). La valeur a changé avec son libellé parce que seule la console lit la matrice ;
+`tests/unit/test_fresh_proven.py` le vérifie sur tous les fichiers suivis, et tombe si « proven »
+revient pour la fraîcheur ou si « fresh » devient un statut du catalogue (mutants M6261–M6270).
+
 ### Les cartes (#248)
 
 Après I1F, AL1, C2 et A3 (27/10) :
@@ -267,6 +290,17 @@ Après I1F, AL1, C2 et A3 (27/10) :
   `_ANCHORED_TYPES` du bot) porte sur une VM que la détection ne nomme pas. Elle n'a ni « 🔄 Restore »
   ni commande visant cette VM (seulement `glorfindel ack`), et la console dit « ⚓ filed on …, not about
   it » — sauf une carte du plan de contrôle ou d'identité d'avant AL1c, ci-dessous.
+- **Une carte non attribuée, quel que soit son type** (ATT1, #936) : une carte qui porte
+  `attribution: {state: unattributed}` (SLF1) et une action qui vise sa VM (`isolate_vm`,
+  `block_suspicious_ip`, `release_isolation` : `_VM_AIMED`, l'ensemble `VM_AIMED_ACTIONS` du serveur)
+  n'a pas de « ▶ Approve & execute » (`_isHeld`, `_aimsLoose`), et aucune carte non attribuée n'a
+  « 📸 Snapshot » (`_isSnapshotPending`) ni « 🔄 Restore » (la route le refuse, `_restore_refusal`) ;
+  son `📋 Cmd` dit « not attributed », ses candidates, renvoie
+  au jugement depuis la CLI, puis `glorfindel ack`. Appelé directement, le serveur la refuse
+  (`approval_refusal`). Une carte `mode_hold` d'un instantané non attribué reste approuvable pour
+  l'instantané. Son titre dit le verbe, retenu (« Isolate VM — held: not attributed », `_looseTitle`), jamais le
+  libellé au passé ; le « 📸 Snapshot » de la tuile reste caché tant qu'une carte non attribuée d'instantané y
+  attend ; les étapes du modèle sont précédées d'une ligne qui dit qu'elles visent la VM d'ancrage (`_looseSteps`).
 - **Une carte sur ce qu'elle vise** (AL1c, #597) : depuis AL1c, une carte du plan de contrôle ou
   d'identité porte sa cible (`target`, `glorfindel/card_target.py`) et n'est plus ancrée sur une VM.
   La carte dit « 🎯 about NSG nsg-… · règle … · covers vm-a, vm-b » (huit VM nommées au plus, puis
@@ -287,6 +321,32 @@ Après I1F, AL1, C2 et A3 (27/10) :
   control plane » (`held_by` de la ligne de debug).
 - **TO JUDGE laisse de côté** les cartes qui ne sont pas des décisions, comme Glorfindel
   (`escalations._NOT_DECISIONS`, quarantaine modifiée comprise).
+- **La ligne « Weekly drill »** (DRL1b, #613 ; `docs/design/drill-banc.md` §4.2, §13) : sur la page de
+  Dagorlad, entre le tableau et les drills, le drill de la semaine tel que la watch l'a jugé
+  (`GET /api/dagorlad/drill`, lecture seule) — la dernière occurrence, son état (`proof`, `missed`,
+  `not_run`, `rearm_expected`… ; « @ » quand le bot a mentionné le rôle), pourquoi, la prochaine,
+  l'armement tel qu'Imladris le lit, les occurrences d'avant. La tuile LAST PROOF de l'accueil dit
+  « from the weekly drill <nom> » quand la dernière preuve vient d'une occurrence du drill, avec la
+  technique la moins récemment prouvée à côté (le biais du §1.1). Tout échappé, aucun script en ligne.
+- **Un verdict proposé sur la carte d'exercice attendue** (VP1, #615 ; `docs/design/drill-banc.md`
+  §8.2) : la carte qui est la détection que le drill de la semaine attend — sa règle, sur sa cible,
+  dans le délai de son attente après le T0 et dans la fenêtre, la première du fil — porte, sous son
+  « ⚑ exercise », une ligne « ⚖ proposed: right — the detection the drill … expected (rule …, its
+  target, N s after T0 ≤ M s); the decision stays yours », avec **✓ Confirm right** et **✗ Refuse**
+  (dans la ligne et dans la carte ouverte). Confirmer en fait le verdict de l'opérateur
+  (`POST /api/escalations/<id>/proposed/confirm`, `escalations.confirm_proposed` : `verdict_from:
+  proposed`), et acquitte la carte comme tout verdict ; refuser l'efface, et il n'est jamais reproposé
+  (`…/proposed/refuse`) : la carte reste à juger. Une carte d'exercice sans proposition dit pourquoi,
+  en gris (« ⚖ no proposed verdict: … »). Un verdict proposé n'est jamais un verdict : la carte reste
+  dans TO JUDGE et dans son compte, le rapport et les indicateurs ne le comptent pas. Il ne compare que
+  la détection : la décision reste à juger. Aucune autre carte n'en montre (`to_judge` ne le porte que
+  sur une carte d'exercice). Textes échappés (`_attr`), actions dans `ACTIONS` (`confirmProposed`,
+  `refuseProposed` et leurs variantes de la carte ouverte).
+- **Une carte sans fuseau reste dans TO JUDGE** (VP1c, #920 ; `docs/observation.md`) : `/api/to-judge`
+  la garde quelle que soit la période, en tête, `time_unreadable: true` ; la ligne dit « ⚠ time
+  unreadable — judge it all the same » (`_UNTIMED` en titre) et ne la date pas. Tout âge que la page
+  calcule (`_relTime`) refuse une heure sans fuseau ou illisible (« time unreadable ») : un navigateur
+  la prendrait pour son heure locale.
 - **Une ligne de TO JUDGE ouvre sa carte** (JUG1, #760 ; au banc du 12/11, elle ne s'ouvrait pas) :
   `openJudgeCard` montre la carte telle que TO JUDGE la porte (`/api/to-judge` : ses étapes, et ce
   qu'a fait une action prise seule), complétée par la carte en attente de `/api/state` quand elle y
@@ -339,6 +399,304 @@ Après I1F, AL1, C2 et A3 (27/10) :
 - M573 : le fil perd `held_by`.
 - M574 : une résolution reste sur la tuile au-delà de 24 h.
 - M575 : un acquittement passe pour un geste de Glorfindel.
+
+### La carte de l'infra au scroll (TOPO1, #927, 19/11)
+
+La carte de l'infra se redessine toutes les 5 s. Avec beaucoup de cartes, elle sautait au scroll.
+Les causes ont été mesurées dans Chromium sans tête, sur le jeu d'exemple augmenté de 30 VM :
+- **Les fils se décalaient.** Le svg défile avec les cartes, mais les points étaient pris dans le
+  repère de l'écran. Chaque rafraîchissement pendant un scroll posait les fils 400 px trop haut,
+  la distance défilée.
+- **Le scroll était coupé.** Le conteneur de scroll était lui-même remplacé, puis sa position
+  remise à la main.
+- **Le redimensionnement n'était pas suivi.** Après un redimensionnement, 11 fils sur 34 tombaient
+  à côté de leur carte.
+
+Les règles, dans `glorfindel.js` :
+- `#topo-graph` (le conteneur de scroll), `#topo-svg` (les fils) et `#topo-body` restent d'un
+  rendu à l'autre. Seul le contenu de `#topo-body` est remplacé ; `#topo-body` n'a pas de boîte
+  à lui (`display: contents`). La coquille n'est reconstruite que s'il manque l'un des trois
+  (TOPO1b : avant, un `#topo-body` absent levait une erreur).
+- Un point se prend dans le repère du contenu : sa position à l'écran, plus `scrollTop` et
+  `scrollLeft`.
+- Un `ResizeObserver` sur la carte et sa rangée de cartes redessine les fils, au plus une fois par
+  image, et seulement quand une taille a changé. Chaque rendu observe sa nouvelle rangée, et une
+  observation commence par une notification : sans ce contrôle, chaque rafraîchissement dessinait
+  les fils deux fois (TOPO1b, mesuré : 4 tracés pour 2 rafraîchissements, puis 2). Sans
+  `ResizeObserver`, les fils se dessinent à chaque rendu, pas au redimensionnement.
+
+Mesuré après le correctif : un écart sous le pixel, la carte défilée ou non, et le même conteneur
+après le rafraîchissement. Après un redimensionnement, les 34 fils tombent sur leur carte. Un
+rendu de 34 cartes coûte 4 ms : le remplacement du contenu ne fait pas sauter le scroll.
+Tests : `tests/unit/test_console_topology.py` ; mutants M6386–M6390 (`scripts/mutants/TOPO1.py`).
+
+### Les adresses d'une VM sur sa carte (IPS1, #931, 19/11)
+
+Une alerte nomme une adresse (une ligne de flux, une requête KQL) : il faut retrouver sa VM, et
+savoir si Internet peut la joindre. Avant IPS1, la seule IP d'une carte était celle d'un attaquant
+bloqué. Jonathan a choisi l'option A sur une maquette (ligne « Les adresses d'une VM » des
+décisions, plus haut).
+
+**Ce que la carte montre.**
+- **Repliée comme dépliée**, une ligne sous la rangée du mode : les IP privées (quatre au plus,
+  puis « +N »), puis l'IP publique derrière 🌐, en jaune. Ctrl+F retrouve donc la VM d'une
+  adresse sans déplier, jusqu'à quatre adresses ; au-delà, il faut déplier la carte.
+- **Dépliée**, sous la ligne du NSG, le détail par carte réseau (`⇄ <nic>`) et l'âge de la
+  lecture (« read by the NSG audit … », le `timestamp` de l'audit de la VM).
+- **Une adresse se copie d'un clic** (`copyAddr`). Le bouton prend le clic, la carte ne se déplie
+  pas. Dans un contexte sûr (la boucle locale, le tunnel SSH), la page écrit le presse-papiers.
+  Ailleurs (une adresse http du tailnet), il n'y a pas de presse-papiers pour la page : le
+  navigateur copie l'adresse sélectionnée pendant le clic même (`execCommand('copy')`), car une
+  sélection laissée pour Ctrl+C partirait au rafraîchissement suivant. L'adresse doit être
+  sélectionnable : une carte `draggable` reçoit `user-select: none` de Chromium, d'où
+  `user-select: text` sur `.vm-ip`. Le toast dit ce qui s'est passé, « copied » ou « not copied »,
+  d'après la réponse du navigateur, jamais une copie qui n'a pas eu lieu. La première relecture
+  a mesuré le défaut (l'adresse annoncée « selected », rien de sélectionné).
+- **Ce qui ne s'est pas lu est dit.** Un audit NSG en échec donne « ip — », sa raison au survol,
+  et en entier sur la carte dépliée. Une IP publique dont l'adresse ne s'est pas lue donne
+  « 🌐 ? » (la raison au survol) : la VM reste montrée exposée.
+- **Deux sortes d'IP sur une carte.** Les adresses de la VM sont du texte simple ; l'adresse
+  publique est en jaune, jamais un badge plein. Le badge orange plein reste l'adresse d'un
+  attaquant bloqué (« BLOCKED »).
+
+**D'où viennent les adresses.** De l'audit NSG (`check_nsg_access`, chaque entrée de `nsgs[]`) :
+`ips` (déjà là) et `public_ips` (IPS1a : `{address}`, ou `{address: null, error}`). La page les
+relit avec l'audit, toutes les 5 min : une adresse dynamique peut avoir changé depuis, et l'âge
+de la lecture le dit. Tout ce qui vient d'Azure passe par `_attr`. Le bot Discord n'est pas touché.
+
+**Une VM sans NSG (IPS2, #950, 19/11).** Une VM sans NSG ni sur sa carte réseau ni sur son
+sous-réseau faisait échouer l'audit avant la lecture de ses cartes réseau : sa carte disait
+« ip — », alors que c'est la plus exposée. Jonathan a choisi, sur une maquette, de montrer ses
+adresses et de dire que rien ne la filtre (écarté : les adresses seules, sans signal).
+- IPS2a garde le check « NSG access » en `fail`, mais lui fait porter `data.nsgs[]` : une carte
+  réseau sans NSG y est à `nsg_scope: "none"`.
+- La carte montre ses adresses, une puce « NO NSG » dans la rangée du mode (au survol : les cartes
+  réseau sans NSG, « nothing filters its traffic »), et l'IP publique d'une carte réseau sans NSG
+  en rouge (au survol : « nothing filters <adresse> »). Le rouge se pose carte réseau par carte
+  réseau : l'IP publique d'une autre carte, filtrée, reste jaune.
+- Un check en échec n'est jamais lu comme réussi : la coche reste ✗, la carte dépliée dit « NSG
+  audit failed: … », et ni la ligne du NSG ni l'inventaire de repli de PROTECT ne lisent un check
+  en échec (sans cela, « 2 NSGs across NICs » pour une VM qui n'en a aucun).
+
+**La raison en anglais (IPS2).** Un élément de `public_ips` en échec porte un `code`
+(`forbidden`, `not_found`, `not_allocated`, `unreadable`) à côté de ses mots, en français, en
+texte libre. La page affiche un libellé anglais par code (« access denied (Reader missing on its
+resource group?) »…), et les mots d'origine au survol. Un code qu'elle ne connaît pas, ou une clé
+du prototype (`constructor`), donne les mots tels quels : la table ne se lit que par ses propres
+clés. Écarté : garder le français.
+
+Mesuré dans Chromium sans tête, sur la console du jeu d'exemple avec un audit simulé au contrat
+d'IPS2a : une VM sans aucun NSG, une VM dont une carte réseau sur deux n'en a pas (le rouge sur la
+seule IP publique de celle-là), les quatre codes de raison, et un code inconnu dit tel quel, une valeur piégée écrite en texte.
+Tests : `tests/unit/test_console_no_nsg.py` ; mutants M6521–M6530 (`scripts/mutants/IPS2b.py`).
+
+**Mesuré** dans Chromium sans tête sur la console du jeu d'exemple, avec un audit simulé par des
+adresses de documentation (RFC 5737) et une valeur piégée : les quatre cas (IP publique, multi-NIC
+avec « +1 », audit en échec, IP publique illisible) ; la copie (le presse-papiers tient l'adresse,
+la carte reste repliée) ; la valeur piégée écrite en texte, aucun élément créé. Hors contexte
+sûr (la console servie sous `http://console.test`, `isSecureContext` faux, pas de
+`navigator.clipboard`) : un vrai clic copie l'adresse ; une copie refusée (`execCommand` rend
+`false`) ou une adresse non sélectionnable dit « not copied ». Aucune capture de
+la doc ne montre la page Glorfindel : le jeu d'exemple n'a pas d'adresses à porter.
+Tests : `tests/unit/test_console_ips.py` ; mutants M6431–M6442 (`scripts/mutants/IPS1b.py`).
+
+### La bande d'un audit illisible (TOPO1b, #949, 19/11)
+
+L'audit de préparation (`/api/audit` : NSG, sauvegarde, calcul, et les adresses des VM) se relit
+toutes les 5 min. Quand il ne se lisait pas, les cartes perdaient leurs coches et leurs adresses
+sans rien dire, et seul le point du nœud GLORFINDEL passait au rouge. Jonathan a choisi une bande
+sur une maquette (ligne « Un audit illisible » des décisions, plus haut).
+- **Rien n'a été lu** (premier audit en échec) : au-dessus des cartes, « ⚠ Readiness audit not read:
+  <raison> · checks and addresses unknown on every card · next try within 5 min ».
+- **Le dernier bon audit est gardé** (un rafraîchissement en échec après lui) : « ⚠ Readiness audit
+  not read: <raison> · cards show the read of HH:MM:SS UTC ». Les cartes gardent ce qu'il disait.
+- **Une réponse qui n'est pas un audit est un échec** : un code HTTP d'erreur, ou un corps sans
+  `audits`. Avant, une erreur HTTP dont le corps est du JSON (un 404 ou un 422 `{detail}`, celle
+  d'un mandataire) se lisait comme un audit sans VM, et toutes les cartes se taisaient. Un corps qui
+  n'est pas du JSON (la 500 de Starlette) échouait déjà à la lecture.
+- Un audit relu retire la bande. La raison vient du navigateur ou du serveur : elle passe par `_attr`.
+
+Mesuré dans Chromium sans tête, sur la console du jeu d'exemple avec un audit qui échoue à la
+demande : la bande, dans ses deux formes, au-dessus des cartes ; sa disparition au retour de
+l'audit ; la coquille reconstruite sans erreur après le retrait de `#topo-body` ; après un
+redimensionnement de la carte défilée, chaque fil sur sa carte.
+Tests : `tests/unit/test_console_audit_band.py`, `tests/unit/test_console_topology.py` ; mutants
+M6501–M6510 (`scripts/mutants/TOPO1b.py`).
+
+### L'identité d'une VM sur sa carte (VMI1, #971, 20/11)
+
+Le survol du nom d'une VM ne redonnait que son nom. La page connaît pourtant son ID complet, d'où
+se lisent son abonnement et son groupe de ressources, l'espace de détection qui l'a découverte et
+son dernier battement (`resource_id`, `monitoring_backend`, `last_seen`, déjà dans `/api/state`).
+Jonathan a choisi l'option A sur une maquette (ligne « L'identité d'une VM » des décisions).
+- **Au survol du nom**, l'infobulle du navigateur, un champ par ligne : le nom, « resource group »,
+  « subscription », « detected by » (l'espace et l'âge du battement), puis l'ID complet. Elle ne
+  se copie pas, et un téléphone n'a pas de survol : c'est le rôle du bloc.
+- **Sur la carte dépliée**, un bloc sous les coches : le nom, le groupe, l'abonnement et l'ID, chacun
+  copiable d'un clic, puis « detected by », qui se lit seulement. L'ID tient sur deux lignes au plus,
+  entier au survol et à la copie.
+- **La valeur est elle-même le bouton** de copie, comme une adresse (IPS1). La maquette montrait un
+  bouton ⧉ à côté : hors contexte sûr, la copie sélectionne le texte du bouton cliqué, et un ⧉ ne
+  copierait que « ⧉ ».
+- **Le nom déplie toujours la carte**, et la carte repliée ne change pas. L'ID se lit sans casse :
+  ceux de Log Analytics arrivent en minuscules (`resourcegroups`). Une carte rangée sous un nom sans
+  ID (`discovered:<nom>`) ne dit pas d'ID.
+- Le toast d'une copie raccourcit une valeur longue (son début et sa fin) ; la copie reste entière.
+
+Mesuré dans Chromium sans tête, sur la console du jeu d'exemple : l'infobulle et ses cinq champs ; le
+clic sur le nom qui déplie ; le bloc ; l'ID entier (149 caractères) copié d'un vrai clic, en contexte
+sûr comme hors contexte sûr (`http://console.test`), la carte restant dépliée ; une valeur piégée
+écrite en texte.
+Tests : `tests/unit/test_console_vm_identity.py` ; mutants M6673–M6682 (`scripts/mutants/VMI1.py`).
+
+### La page sur un téléphone (MOB4, #972, 20/11)
+
+Mesuré à 390 px de large (émulation mobile, jeu d'exemple) : la page n'avait aucune règle pour un
+petit écran. La colonne de gauche (TO JUDGE et LIVE FEED) a une largeur fixe de 390 px : elle prenait
+tout l'écran, la carte de l'infra avait 0 px, l'en-tête débordait à droite, et le navigateur dézoomait
+la page (930 px de large pour un écran de 390). Jonathan a choisi l'option A sur une maquette (ligne
+« La page Glorfindel sur un téléphone » des décisions).
+- **Sous 760 px**, trois onglets sous l'en-tête (`#m-tabs`) : To judge, Infra, Feed. Une section à la
+  fois, celle que `body[data-m]` nomme, avec son propre défilement ; la liste à juger n'est plus
+  coupée à 45vh. Par défaut, To judge quand des cartes attendent, sinon l'infra, jusqu'à ce que
+  l'opérateur choisisse un onglet ; puis le sien. Un badge dit combien de cartes attendent. La
+  configuration (`/config`) s'ouvre dans l'onglet Infra, et les deux autres onglets répondent pendant
+  qu'elle est ouverte (la relecture l'a trouvé : ils ne répondaient pas). La page prend la hauteur du
+  petit viewport (`100dvh`) : `100vh` est celle du grand, sous la barre du navigateur d'un téléphone.
+- **L'infra sur un téléphone** : ses modules (DETECT, PROTECT, RECOVER) empilés, ses cartes l'une sous
+  l'autre, sur toute la largeur, sans les fils. Les fenêtres tiennent dans l'écran, les larges aussi
+  (`.modal.wide`, plus spécifique, l'emportait : la carte à juger s'ouvrait sur 500 px, de x = −55).
+- **L'en-tête commun** (`console.css`) passe à la ligne, sans la version, le séparateur ni l'heure : une
+  ou deux lignes, sur toutes les pages.
+- **Rien ne change au-delà de 760 px.** Toutes ces règles sont dans un seul bloc `@media (max-width:
+  759px)`, le dernier de la feuille (une media query n'ajoute pas de poids : une règle de base écrite
+  après lui l'emporterait). Hors du bloc, une seule règle : la barre d'onglets cachée.
+- Overview et Dagorlad restent pour grand écran : un lot à part, une fois la page Glorfindel essayée sur
+  un téléphone.
+
+Mesuré dans Chromium sans tête, en émulation mobile (390 × 844, toucher) : la page à 390 px sans dézoom
+ni débordement ; l'en-tête sur deux lignes ; To judge par défaut, ses boutons de verdict dans l'écran ;
+un toucher sur Infra et Feed montre la section ; les cartes sur toute la largeur, les fils cachés. À
+1440 × 900 : la barre cachée, la colonne de gauche à 390 px, l'infra à 1050 px, les fils dessinés ;
+TOPO1 (34 fils sur 34 après le tick, défilé) et TOPO1b (la bande, deux tracés pour deux
+rafraîchissements) tiennent.
+Après la relecture : la carte à juger ouverte depuis TO JUDGE tient de x = 12 à 378, ses boutons
+dans l'écran ; sur `/config`, un toucher sur To judge, puis Feed, montre la section.
+Tests : `tests/unit/test_console_phone.py` ; mutants M6683–M6697 et M6710–M6712 (`scripts/mutants/MOB4.py`).
+
+### Overview et Dagorlad sur un téléphone (MOB5, #975, 20/11)
+
+La suite de MOB4 (la page Glorfindel). Mesuré à 390 × 844, en émulation mobile, sur le jeu d'exemple :
+sur `main`, les trois pages étaient dézoomées à 908 px (l'en-tête débordait). Avec l'en-tête de MOB4,
+Overview tient ; il restait Dagorlad. Son tableau est une grille de 360 px, d'une colonne souple et de
+380 px : le plan et les cibles sortaient de l'écran (jusqu'à 920 px). Sa vue Runs a trois colonnes :
+les fenêtres d'exercice et les campagnes y faisaient 1 px de large, et la matrice (500 px) débordait.
+Jonathan a choisi sur une maquette (lignes « Le tableau de Dagorlad » et « La vue Runs » des décisions).
+- **Le tableau, sous 760 px : trois onglets**, Red, Targets, Plan. Le geste est celui du tableau : un
+  toucher sur une carte rouge (`pick`), puis sur une cible (`aim`). Une carte rouge prise ouvre Targets,
+  sous un bandeau qui la nomme ; un fil tiré ouvre le plan, dont le badge dit le nombre de fils. Les fils
+  dessinés entre les colonnes et la poignée de glisser sont laissés de côté : le plan liste les fils.
+  La demande reste une commande à lancer depuis le poste (`make orodruin-exercise`).
+- **La vue Runs, sous 760 px : trois onglets**, Windows, Campaigns, Coverage ; par défaut les fenêtres,
+  et un lien vers une campagne (`?campaign=`) ouvre la sienne. La vue de Gothmog n'a pas de campagnes :
+  ni leur colonne ni leur onglet (la relecture l'a trouvé : une page vide). Les lignes de la matrice se replient sur
+  deux lignes : l'ID et le nom, puis l'historique et l'état.
+- **Des verdicts au doigt** (Jonathan, 20/11 ; ils faisaient 54 × 16 px) : dans la liste TO JUDGE et la carte
+  de JUG1 (`.judge-actions`), Right, Wrong et Unsure à 44 px de haut sur une ligne, la note sur sa ligne
+  au-dessus en 16 px (sous 16 px, Safari sur iOS zoome sur le champ à chaque toucher) ; Confirm et Refuse
+  d'un verdict proposé à 44 px aussi.
+- **Un défaut de VP1 corrigé à toutes les largeurs**, le seul changement de MOB5 sur grand écran : Confirm et
+  Refuse étaient dans la ligne de la proposition, coupée à deux lignes par son style en ligne ; une
+  proposition de longueur ordinaire les mettait sous la coupe, cachés dans la liste TO JUDGE (mesuré à
+  1440 px : 2 sur 2). Ils sont maintenant sous la ligne, dans un conteneur à eux (`.judge-proposed`).
+- **Overview** : rien à changer. Un test garde sa feuille sans largeur fixe au-delà de 360 px.
+- **Rien d'autre ne change au-delà de 760 px** : un bloc `@media (max-width: 759px)` par page, le dernier
+  de sa feuille, comme MOB4.
+
+Mesuré dans Chromium sans tête. À 390 × 844 (toucher), avec l'en-tête de MOB4 : les trois pages sans
+dézoom ni débordement ; sur le tableau, Red par défaut, un toucher sur T1041 ouvre Targets sous
+« T1041 picked — tap a target », un toucher sur une cible ouvre le plan (badge 1, le fil nommé) ; sur
+Runs, Windows par défaut, puis Campaigns et Coverage, les lignes de la matrice dans l'écran. À 1440 ×
+900, Dagorlad est identique à `main` : les colonnes du tableau (360, 700, 380 px), la poignée, le fil
+dessiné, les trois colonnes de Runs (522, 418, 500 px).
+Les verdicts, mesurés à 390 px : dans la liste, la carte de JUG1 et le verdict proposé, chaque bouton à
+44 px de haut, aucun hors de l'écran ni coupé, la note en 16 px ; à 1440 px, Confirm et Refuse visibles
+dans la liste (0 coupé), le reste identique (verdicts à 16 px, note en 10 px, la carte de JUG1 à sa place).
+Tests : `tests/unit/test_console_phone_dagorlad.py`, `tests/unit/test_console_phone_verdicts.py` ; mutants
+M6698–M6709, M6713, M6714, M6730–M6732 et M6749 (`scripts/mutants/MOB5.py`).
+
+### Juger plusieurs cartes (JUG3, #980, 20/11)
+
+Le 20/11, Jonathan a jugé une à une 35 cartes, dont 11 venues d'un même `terraform apply`. Il a tranché
+sur une maquette, une question à la fois (les quatre lignes « JUG3 » des décisions).
+- **Où** : une case sur chaque ligne de TO JUDGE (« select all » en tête), et la fenêtre d'un groupe : une
+  tuile qui replie au moins deux cartes à juger montre « to judge ×N ▸ », qui ouvre leur fenêtre, rangée
+  par règle, avec « select this rule » et « select all ». La case garde son clic : la ligne, elle, ouvre
+  sa carte (JUG1).
+- **Ce que reçoit chaque carte** : exactement ce que fait son propre bouton, son verdict et la note, puis
+  son acquittement (16/10), une carte après l'autre, chaque réponse lue. Chaque carte garde son propre
+  verdict : la précision, le taux « isoler/bloquer à tort » et la mémoire restent justes. Jamais d'action :
+  ni « Approve & execute », ni un verdict proposé (VP1) confirmé à la place de l'opérateur.
+- **Avant d'écrire** : un récapitulatif, « Judge N cards wrong? », le nombre de cartes par règle et la note.
+  Une sélection de plusieurs règles le dit dès la barre (« ⚠ 2 rules in the selection ») : un Wrong pour
+  onze cartes d'un même apply en marque une vraie alerte fausse, si l'une l'était.
+- **Le bilan, carte par carte** : ✓ jugée et acquittée ; ⚠ jugée mais pas acquittée, avec la raison
+  (« Ack it on its tile ») ; ✗ pas jugée, avec la raison, et restée cochée pour un nouvel essai. Les
+  autres continuent. La note ne part qu'avec son lot : gardée pour réessayer celles qui ont échoué,
+  jamais pour le lot suivant.
+- **Une carte jugée ailleurs entre-temps** (le bot, un autre onglet) : le serveur accepte un second
+  verdict, comme le bouton d'une carte seule (`set_verdict`). La liste est donc relue à la confirmation,
+  et une carte qui n'est plus à juger est laissée telle quelle (« ↷ left as it was »), sans aucun POST.
+  Une liste qui ne se relit pas (une erreur, un refus, une réponse sans ses cartes) n'écrit rien : chaque
+  carte est dite « not judged — the list could not be read again » et reste cochée ; jamais la liste du
+  récapitulatif prise pour la relecture (la relecture l'a trouvé). Reste ouvert : un verdict donné
+  ailleurs pendant le lot lui-même serait réécrit. Le fermer demande une garde côté serveur (un verdict
+  qui refuse une carte déjà jugée), hors de la console ; Driver l'ouvre en suite.
+- **Un seul lot à la fois pour la page** : la liste et la fenêtre d'un groupe peuvent tenir les mêmes
+  cartes. Pendant un lot, un autre est refusé (« ⏳ A batch is being judged: wait for its end »), et la
+  fenêtre du groupe rouverte pendant le sien se montre telle quelle, sa progression comprise, jamais
+  remise à zéro sous lui.
+- **Les lignes du bilan** se distinguent : deux cartes d'une même action sur une même VM portent les 8
+  premiers caractères de leur id, comme `glorfindel pending` les montre.
+- **Le rafraîchissement de 30 s de TO JUDGE** garde ce qui est tapé et où : la note d'une carte, celle du
+  lot, le champ où est l'opérateur, son curseur. Au téléphone, un champ redessiné sous le doigt fermait
+  le clavier. Les notes par carte s'effaçaient déjà avant JUG3 ; corrigé du même coup.
+- **La fenêtre du groupe** garde ses cartes depuis son ouverture (une carte acquittée sort de l'état) et
+  le verdict de chacune ; elle se redessine avec la liste, et n'est écrite que si elle est la fenêtre
+  ouverte : fermée pendant un lot, une autre fenêtre ouverte à sa place reste intacte.
+- **Au téléphone** (le bloc de MOB4) : la case de 20 px dans une zone de 44 × 44 px, dont les marges
+  rendent la place (la ligne garde sa hauteur), posée au-dessus des rangées suivantes de la ligne : sans
+  cela, ses 10 dernières rangées tombaient sur la raison de la carte, qui l'ouvre (81 % de la zone
+  touchable, mesuré par la relecture ; 100 % depuis) ; « select all » et « select this rule » à 44 px ; la
+  note du lot en 16 px ; ses verdicts et la confirmation à 44 px. Le lien « to judge ▸ » ou « ×N ▸ » d'une
+  tuile à 44 px de haut, rendus par ses marges (la rangée garde sa hauteur, rien d'autre de touchable
+  dessous). Toucher le reste de la ligne ouvre la carte, comme avant.
+
+Mesuré dans Chromium sans tête, sur un jeu de sept cartes (trois instantanés sur une VM, de deux
+règles ; le reste sur deux autres), à 1440 × 900 et à 390 × 844 avec le toucher :
+- deux cartes cochées, une note, Wrong : le récapitulatif « Judge 2 cards wrong? », 2 × la règle, la note ;
+  aucun POST avant la confirmation ; puis, dans le magasin, le verdict, la note et l'acquittement de
+  chacune ;
+- un refus au milieu (le verdict de la 2ᵉ, l'acquittement de la 3ᵉ, refusés par un faux `fetch`) : la
+  1ʳᵉ jugée et acquittée, la 2ᵉ dite et restée cochée, la 3ᵉ jugée et dite non acquittée ; rien d'autre que
+  `/verdict` et `/ack` ;
+- une carte jugée par une autre voie entre le récapitulatif et la confirmation : laissée telle quelle,
+  son verdict d'origine gardé, aucun POST pour elle ;
+- la fenêtre « ×3 » rangée en deux règles, « ⚠ 2 rules in the selection », le récapitulatif par règle,
+  puis chaque ligne « judged: unsure », plus aucune case ;
+- la note et le focus gardés après `refreshObservation()`, dans la liste et dans la fenêtre ;
+- la liste qui ne se relit pas (le GET refusé, puis une réponse sans `cards`), une carte jugée ailleurs
+  juste avant : aucun POST, les deux cartes dites et restées cochées, le verdict d'ailleurs gardé ;
+- la fenêtre du groupe fermée pendant son lot : un lot refusé dans la liste (le toast), la fenêtre
+  rouverte sur sa progression, le lot mené à son terme ;
+- au téléphone, la case 20 × 20 px, sa zone 44 × 44 px touchable en entier (484 points sur 484 par
+  `elementFromPoint`) sans toucher la carte du dessus, la barre dans l'écran, ses boutons à 44 px, la note
+  en 16 px ; un toucher sur la case n'ouvre pas la carte ; les liens des tuiles à 90 × 44 et 74 × 44 px,
+  touchables en entier, rien dessous ;
+- aucune erreur JS.
+
+Tests : `tests/unit/test_console_judge_batch.py` ; mutants M6734–M6748, M6765–M6767 et M6780–M6787
+(`scripts/mutants/JUG3.py`).
 
 ### Les blocages d'une VM (CON-K, #498, 04/11)
 
@@ -819,7 +1177,7 @@ EREGION  Overview  Glorfindel 3  [Dagorlad]            ● watch · 12s ago  ●
 EXERCISES  Plan only — this page launches nothing. Glorfindel is never told.
 RED · TECHNIQUES & FAULTS                                              BLUE · ENROLLED TARGETS
 ┌ T1110.001 Brute Force: SSH ────┐                                    ┌ GLORFINDEL ● watching ──────┐
-│ Atomic · proven 6d             ●━━━ detected ~2 min · card ━━━━━━━━━│ 12 rules · never told       │
+│ Atomic · fresh 6d              ●━━━ detected ~2 min · card ━━━━━━━━━│ 12 rules · never told       │
 │ non-destructive · ssh-brute-…  │╲                                   └─────────────────────────────┘
 └────────────────────────────────┘ ╲━━ detected · isolate alone ━━━━●┌ vm-…-bree  BENCH  HUMAN-ONLY ┐
 ┌ T1486 Data Encrypted ──────────┐                                   └──────────────────────────────┘
@@ -842,7 +1200,7 @@ PLAN · 4 wires · 1 refused   ✓ watch live  ? Orodruin unknown here  ✓ enro
 | destructive ou non | le catalogue, seul : jamais le navigateur, jamais une demande |
 | implémentée ou prévue | le catalogue (`status`) : une entrée prévue est grisée, sans poignée |
 | ce qu'on attend : la règle et le délai ; pour une panne, rien de disruptif | voir « Le résultat attendu » |
-| dernière preuve et état de sa ligne (`proven`, `aging`, `stale`, `regressed`, `never`) | la matrice de C1 (`eregion_console/coverage.py`), sur tout ce que l'hôte garde — avec la vue Runs, après la fusion de C1 |
+| dernière preuve et état de sa ligne (`fresh`, `aging`, `stale`, `regressed`, `never`) | la matrice de C1 (`eregion_console/coverage.py`), sur tout ce que l'hôte garde — avec la vue Runs, après la fusion de C1 |
 
 Un injecteur absent laisse ses cartes grisées, avec ce qu'il ajouterait (la page d'installation
 d'aujourd'hui, §3, règle 5).
@@ -887,7 +1245,7 @@ l'emporte :
 | Code | Refusé quand | Règle |
 |---|---|---|
 | `unknown_experiment` | l'identifiant n'est pas au catalogue | E1 |
-| `not_implemented` | l'entrée est `planned` | E1 |
+| `not_implemented` | l'entrée est `planned` (une entrée `proven`, mesurée au banc, joue comme une `implemented` : `is_ready`, STM1g) | E1 |
 | `wrong_target_type` | la cible n'est pas du type de l'entrée | catalogue |
 | `outside_scope` | hors du périmètre du banc (`Scope.check`) | O0 |
 | `not_enrolled` | `eregion-target` absent, vide ou d'un autre banc ; zone absente, ou en désaccord avec le groupe | O0 (`enrollment`) |
@@ -1273,7 +1631,7 @@ Posées une à une. La réponse est reportée ici avec sa date.
   gardée (308, jusqu'à la 1.0) ; `/runs/<id>` mène aux Runs (302). Les vues ont leur bande, Board | Runs.
 - **L'en-tête** : trois onglets, Overview, Glorfindel, Dagorlad. Dagorlad est grisé quand aucun
   injecteur n'est installé ici.
-- **La dernière preuve** sur chaque carte rouge du Board, lue dans la matrice de C1 : son état (proven,
+- **La dernière preuve** sur chaque carte rouge du Board, lue dans la matrice de C1 : son état (fresh,
   aging, stale, REGRESSED, no proof, never run) et l'âge de sa dernière preuve.
 - **Mutants M1995–M1999** : `/annatar` qui ne mène plus aux Runs, la redirection qui perd sa requête, un
   lien de run qui ouvre le Board, une carte rouge sans sa preuve, l'en-tête qui garde l'onglet

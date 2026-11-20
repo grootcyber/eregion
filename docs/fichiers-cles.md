@@ -17,7 +17,10 @@ technique_catalog.yaml          → CONTRAT PARTAGÉ Annatar↔Glorfindel (boucl
                                    (log_source/indicator_columns/expected_latency_s) consommé par
                                    detection_authoring (autoring grounded) ; bloc red (destructive/
                                    safe_target/testdata_marker/params/reference_script) par le synthé
-                                   Annatar. status: implemented | planned. Versionné (≠ config locale) ;
+                                   Annatar. status: implemented | planned (proven, mesurée au banc, viendra
+                                   avec STM1 : un cran au-dessus d'implemented, jamais moins — tout lecteur
+                                   bleu demande eregion_core.experiment.is_ready, jamais le mot seul, STM1g).
+                                   Versionné (≠ config locale) ;
                                    monté en Docker (compose) + COPY Dockerfile (image autonome).
 
 eregion_core/channel_reader.py  → SEC8, SEC16 : le seul lecteur de runs/, pour tous les composants (la watch,
@@ -141,7 +144,7 @@ glorfindel/
                           isolation.py (+ run_command.py : la Run Command attendue une fois, puis son statut relu sur
                           Azure — la coupure `pending`, son poller gardé, DRN1), release.py (+ gone.py : la VM supprimée, I7S), verify.py, blocks.py, verify_block.py, unblock.py, backup.py (+ restore_job_status,
                           lu par jobs.py), restore.py (+ restore_rights.py : ses droits lus avant de toucher la VM, les refus dits sans id, RST1), sweep.py (+ reset_bare.py : ses cartes nues), readers.py (check_permissions, check_nsg_access,
-                          list_nsgs, check_compute_access…), sdk.py (warm-up), capabilities.py, monitor.py
+                          list_nsgs, check_compute_access… ; + public_ips.py : l'IP publique de chaque carte, IPS1a), sdk.py (warm-up), capabilities.py, monitor.py
                           (AzureMonitorDetector, réexporté par detectors.py), activity.py (AzureActivityDetector, AL1 :
                           le journal d'activité, détection seule ; écritures de Glorfindel écartées, ses règles marquées),
                           own_run_command.py (SID1 : son Run Command hors de la coupure des sessions d'une
@@ -192,7 +195,7 @@ glorfindel/
                             (l'asset matching de expand_for_discovered en dépend). start()/expand respectent enabled.
                           RulePoller.expand_for_discovered(registry, glorfindel_cfg) — démarre threads
                           par (règle auto_apply, asset découvert), thread s'arrête si asset évincé
-  audit.py              → « Disk write sampling » (`_check_perf_sampling`, si un workspace est configuré) : cadence réelle du compteur Disk Write Bytes/sec de la VM sur 1 h — ≤ 25 s mode fin, au-delà mode grossier (warn), aucun échantillon = détection ransomware aveugle (warn + correctif DCR) ; « Syslog » (`_check_syslog` : la VM envoie-t-elle du Syslog depuis 1 h, quelles facilities) ; « Detection rules » (`_check_rule_coverage` → `rule_coverage()`, pur : chaque règle qui s'applique à la VM, sa table (`rule_table`, la première que nomme la requête) et son état — `covered`, `blind` (sa table ne reçoit rien de la VM), `unknown`, `error` (dernier poll en échec, `rule_status.json`), `not_vm` (lignes venues d'ailleurs : stockage, identité), `excluded`, `disabled`). Tous trois en action `detection`, seulement avec un workspace (P4). « NSG precedence » est relu après coup comme la préparation le fait (`_align_precedence`, P2) : ok si l'isolation passe par le NSG de quarantaine (`readiness.isolation_by_quarantine`), réserve (warn) sinon et pour un blocage — jamais un échec
+  audit.py              → « Disk write sampling » (`_check_perf_sampling`, si un workspace est configuré) : cadence réelle du compteur Disk Write Bytes/sec de la VM sur 1 h — ≤ 25 s mode fin, au-delà mode grossier (warn), aucun échantillon = détection ransomware aveugle (warn + correctif DCR) ; « Syslog » (`_check_syslog` : la VM envoie-t-elle du Syslog depuis 1 h, quelles facilities) — les deux lisent la VM par son `_ResourceId` seul, jamais par `Computer` ; sans ligne sous son identifiant, elle est absente, et les lignes sous son nom d'hôte sans `_ResourceId` sont comptées et dites (`unattributed`), jamais prises pour les siennes (SEC-Ib) ; « Detection rules » (`_check_rule_coverage` → `rule_coverage()`, pur : chaque règle qui s'applique à la VM, sa table (`rule_table`, la première que nomme la requête) et son état — `covered`, `blind` (sa table ne reçoit rien de la VM), `unknown`, `error` (dernier poll en échec, `rule_status.json`), `not_vm` (lignes venues d'ailleurs : stockage, identité), `excluded`, `disabled`). Tous trois en action `detection`, seulement avec un workspace (P4). « NSG precedence » est relu après coup comme la préparation le fait (`_align_precedence`, P2) : ok si l'isolation passe par le NSG de quarantaine (`readiness.isolation_by_quarantine`), réserve (warn) sinon et pour un blocage — jamais un échec
                           AuditCheck (+ champ `data` structuré : nsg/nsg_scope + nsgs[] multi-NIC, points/protected), AuditResult,
                           run() — NSG/backup/compute readiness checks en parallèle, IAM gap detection
   proposed_rules.py     → record/pending/approve()/reject() — detection rule proposal lifecycle ; approve() écrit
@@ -248,7 +251,24 @@ glorfindel/
   escalations.py        → ~/.glorfindel/escalations.jsonl + labels (proposed_rule, improve_detection ajoutés) ;
                           SEC3 : chaque écriture sous le verrou du magasin, le magasin réécrit entier ; JUG1 : la
                           carte « exécutée » (`autonomous_action`) d'une action prise seule, une par clé
-                          (`executed_key`, `action_keys`) ; `notify_action` l'annonce par `vm_notices.say`
+                          (`executed_key`, `action_keys`) ; `notify_action` l'annonce par `vm_notices.say` ;
+                          VP1 : le verdict proposé, son champ à part (`proposed_verdict`, `proposed_why`,
+                          `proposed_refused`), `note_proposals`, `confirm_proposed`, `refuse_proposed`
+  proposed_verdict.py   → VP1 (#615) : la passe de la watch, chaque minute — la carte d'exercice qui est la
+                          détection attendue par le drill de la semaine (sa copie et ses attentes dans l'image,
+                          le statut de la demande, le rapport du run, la fenêtre) reçoit un verdict proposé ;
+                          les autres, la raison (docs/design/drill-banc.md §8.2)
+  drill_watch.py        → DRL1b (#613) : le drill de la semaine jugé sur Imladris, chaque minute par la watch —
+                          le verdict de la dernière occurrence (proof, missed, unknown, refused, skipped,
+                          stopped, not_run, rearm_expected, self_disarmed, channel_unread ; sa mention du §4.2),
+                          l'alarme d'absence sur ses quatre conditions ; ~/.glorfindel/drill_verdicts.json (le
+                          verdict courant, l'état des douze dernières occurrences), lu par le bot (son fil
+                          « drill · <nom> », ~/.glorfindel/bot_drill_posted.json) et la console (« Weekly drill »).
+                          Ce qu'Imladris garde du drill, tiré par la watch : runs/glorfindel/orodruin/drill-seen.json
+                          (la dernière liste du canal : listée ou non, depuis quand illisible, le permis tel que
+                          la liste le dit et quand il y était pour la dernière fois, le dernier pouls lu), un
+                          seul fichier écrit d'un coup — aucune copie du permis d'un tirage à l'autre
+                          (docs/design/drill-banc.md §13)
   signal_origin.py      → SEC3 (#274) : ce que la watch prend de runs/*_signals.jsonl — les événements qu'un
                           injecteur émet (attack_started → la règle de la watch, detection_missed → une proposition),
                           et d'eux les seuls champs qu'il écrit ; le reste refusé (journal, compteur), jamais décidé. Le recovery_complete : seul celui de `glorfindel restore` (ce
@@ -293,7 +313,7 @@ eregion_console/                → la console d'Eregion (`eregion console`, doc
                           T0 de chaque run confronté comme le rapport de campagne (`t0_confronted`, SEC15) ;
                           `GET /api/indicators`, `GET /api/dagorlad/indicators`
   coverage.py           → C1 : la matrice de couverture — par technique du catalogue et par panne, dernier run,
-                          dernière preuve, état (proven, aging, stale, regressed, unproven, never), évolution sur
+                          dernière preuve, état (fresh, aging, stale, regressed, unproven, never), évolution sur
                           douze semaines ; toute l'histoire des rapports et des cycles ; nourrit la couverture et
                           l'âge de la dernière preuve ; `GET /api/coverage`, `eregion coverage [--json] [--check]`
   follow.py             → DG-c : le suivi en direct d'une demande de Dagorlad — sa phase (écrite, en cours, finie)
@@ -514,13 +534,17 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 démarrage depuis SEC10 (le jeton vit dans ~/.eregion/console/token)
   incidents.jsonl             → incidents actifs ; écrit par la watch et `glorfindel respond` : sous flock
                                 (`incidents.jsonl.lock`), réécrit entier, 0600 (SEC13, V-10 ; `test_locks.py`,
-                                deux vrais processus)
+                                deux vrais processus). Les faits de B3a datés (`confirmed_at`, un TTL absolu) ;
+                                `glorfindel release` et `reset` y oublient ceux de la VM levée (SEC-E)
   isolation/<vm>--<h>.json    → état NSG isolation + TTL. Clé = nom + hash de l'ID de ressource (troisième
                                 passe : deux VMs homonymes partageaient `<vm>.json`) ; un ancien `<vm>.json` n'est
                                 lu que s'il porte cet ID, migré à la première écriture ; par nom seul, un nom
                                 ambigu ne résout rien. Toujours lire via `_load_isolation_state(resource_id)`.
                                 Nom en minuscules ; un fichier est retrouvé par son HASH quelle que soit la casse
-                                (`_hash_variants`) ; à l'écriture, les autres variantes sont supprimées SAUF celle qui
+                                (`_hash_variants`) ; **il n'est celui d'une VM que si le `resource_id` qu'il enregistre
+                                est le sien** (SEC-H, `glorfindel/response/state_files.py`) : le hash de 8 hex (32 bits)
+                                est un nom, jamais une preuve — deux homonymes dont les ids se rencontrent dessus gardent
+                                deux fichiers, le second sous `<vm>--<128 bits du SHA-256 de son id>.json` ; à l'écriture, les autres variantes sont supprimées SAUF celle qui
                                 est la cible (`samefile` — sur macOS/Windows/Docker Desktop `VM-Foo--h` et `vm-foo--h`
                                 sont le même fichier : cinquième passe C1) ; `migrate_state_files()` au démarrage du watch.
                                 CI : job macOS (APFS insensible à la casse) ; `main` protégée, checks requis.
@@ -529,7 +553,9 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 sur place, les disques d'origine, des preuves. Un état sans eux se relit (d'avant LEV2).
                                 `nsg_rules_at_isolation` (Q16) : les règles de chaque NSG client que l'isolement a lues,
                                 par id de NSG ; vide sur le chemin du NSG de quarantaine
-  blocks/<vm>--<h>.json       → IPs bloquées par VM (même clé)
+  blocks/<vm>--<h>.json       → IPs bloquées par VM (même clé). Illisible, il est mis de côté dans `blocks/aside/`
+                                avant un nouveau blocage, comme l'état d'isolation, et lever le blocage d'une adresse
+                                ne le supprime plus avec les entrées des autres (SEC-H)
                                 **Illisible = inconnu (SEC3, SEC4b)** : un fichier d'isolation ou de blocage qui ne se lit
                                 pas (JSON cassé, autre forme — dont des `placements` sans `resource_id` —, `unreadable_states`)
                                 n'est jamais lu « rien ». Un fichier de blocage arrête le balayage des orphelines ; un
@@ -598,7 +624,9 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 `correlation` : queries, origin, card, unknown, compromised, unchecked, confirmed,
                                 unconfirmed, last — COR1, COR2 ; lus par la console ;
                                 `auditd` : events, sensitive, unreadable, at — AUD1, ce que la fenêtre de
-                                `auditd-sensitive-root-command` contient à sa dernière passe, lu par `glorfindel report`)
+                                `auditd-sensitive-root-command` contient à sa dernière passe, lu par `glorfindel report` ;
+                                `own_channel` : writes, rows, last, reason, container, unread — SLF1, les écritures de
+                                la voie de retour de la watch écartées de `data-exfiltration-blob`, lu par la console)
   expected_sudo.jsonl         → ADM1 : chaque sudo d'administrateur attendu écarté par le RulePoller (at, rule,
                                 asset, account, command ≤ 300 car., logged_at ; un shell root écarté par l'origine de
                                 ses sessions SSH : via « origin », origin — COR1 ; proof « bastion » ou « flows »
@@ -609,7 +637,11 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 verdict « prête ») ; un nom seul ambigu ne résout rien → VM retenue : dernier contrôle de préparation + réserves acceptées
                                 (active_since, alerted) — écrit par le watch (tracker) et la console
   discovered_assets.json      → cache assets découverts (AssetRegistry) — survit aux redémarrages
-  active_jobs/<vm>.json       → état persisté du job snapshot/restore en cours (partagé CLI/console)
+  active_jobs/<vm>--<k>.json  → état persisté du job snapshot/restore en cours (partagé CLI/console). Clé = nom +
+                                128 bits du SHA-256 de l'ID de ressource (SEC-H), comme `recovery/<vm>--<k>.json` (le
+                                dernier restore) et la réclamation `active_jobs/<vm>--<k>.restore-claim` ; un ancien
+                                `<vm>.json` n'est lu que s'il porte cet ID, retiré à la prochaine écriture ; par nom
+                                seul, deux homonymes qui ont chacun un enregistrement ne résolvent rien
                                 réconcilié par la boucle watch (`jobs.reconcile_jobs`, cadence TTL ~1min) :
                                 poll Azure (`refresh_job`, source unique CLI+API+watch) → Completed/Failed ;
                                 garde-fou déterministe → `Stale` si InProgress > 24h (job mort, sinon InProgress
@@ -701,6 +733,8 @@ Montages après SEC18 (`tests/unit/test_runs_mounts.py` les tient) :
 | Orodruin `ORO_RUN` | Annatar | `annatar`, `orodruin` | — |
 | Orodruin `ORO_RUN_GOTHMOG` | Gothmog | `gothmog`, `orodruin` | — |
 | Orodruin `ORO_RUN_CONTRACT` | le contrat (`orodruin-check`) | `orodruin` | — |
+| Orodruin `ORO_RUN_DETONATOR` | les sous-processus Stratus (bac à sable, R2c sidecar) | `orodruin/stratus-ipc` | l'assertion fédérée (jamais un montage de run d'Orodruin) |
+| Orodruin `ORO_RUN_ENGINE` | le moteur Stratus (bridge, R2c sidecar) | `annatar`, `orodruin`, `orodruin/stratus-ipc` | l'assertion, la preuve sandbox |
 | Orodruin `ORO_RUN_REQUEST` | le lanceur d'une demande (il lance les deux) | `annatar`, `gothmog`, `orodruin` | — |
 | Orodruin `ORO_MIGRATE` | la migration, une fois, à `orodruin-push` | `~/runs` entier | — |
 | Imladris (`deploy.sh` → compose) | `watch`, `war-room`, `bot` | comme le compose | comme le compose |
@@ -774,6 +808,7 @@ noyau, non mesurée ici (aucun conteneur).
 | Makefile `annatar-shell` | Annatar, un shell | `runs/annatar`, `runs/orodruin`, `~/.annatar/.bash_history` | et l'historique du shell, ce seul fichier, jamais `~/.annatar` ; son `.bashrc`, qu'il lance, en lecture seule |
 | Makefile `annatar-validate`, `annatar-list` | Annatar | rien | — |
 | Orodruin `ORO_RUN`, `ORO_RUN_GOTHMOG`, `ORO_RUN_CONTRACT`, `ORO_RUN_REQUEST` | les injecteurs, le contrat, le lanceur d'une demande | leurs répertoires de `~/runs` (le tableau ci-dessus) | ce que SEC18 dit ; `~/requests`, ce que juge le lanceur, en lecture seule |
+| Orodruin `ORO_RUN_DETONATOR`, `ORO_RUN_ENGINE` (R2c sidecar) | le détonateur (bac à sable), le moteur (bridge) | le détonateur : `~/runs/orodruin/stratus-ipc` seul ; le moteur : `~/runs/annatar`, `~/runs/orodruin`, et l'IPC | le canal IPC (fichiers requête/réponse) ; l'assertion fédérée et la preuve sandbox en lecture seule ; aucun montage de run d'Orodruin dans le détonateur |
 | Orodruin `ORO_MIGRATE` | la migration, une fois | `~/runs` entier | des données seulement, rien qu'on exécute |
 | Orodruin `ORO_CHECK_RUN` (`orodruin-push`, OI2) | l'image reçue, lancée une fois sans réseau avant son tag | rien | — (aucun montage) |
 

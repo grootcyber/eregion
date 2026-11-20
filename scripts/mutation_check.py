@@ -162,7 +162,7 @@ MUTANTS = [
     ("M05", "verify_release ignores a quarantine NSG still attached", VER,
      "                  for t0 in targets if t0.get(\"quarantine\")]",
      "                  for t0 in targets if False]"),
-    ("M06", "state deleted right after it is written (C1's effect)", STA,
+    ("M06", "state deleted right after it is written (C1's effect)", "glorfindel/response/state_files.py",
      "    _atomic_write_text(target, json.dumps(payload))\n",
      "    _atomic_write_text(target, json.dumps(payload))\n    if name != name.lower():\n        target.unlink()\n"),
     ("M07", "release sweeps the NICs only when there is no state", REL,
@@ -199,7 +199,8 @@ MUTANTS = [
      "        altered = [n for n, r, d in zip(names, found, (\"inbound\", \"outbound\")) if not _deny_blocks(r, d, ip, ips)]",
      "        altered = []"),
     ("M17", "per-VM lock inoperative", AZC,
-     "        with _vm_lock(rid.rstrip(\"/\").rsplit(\"/\", 1)[-1]):\n            return method(self, *args, **kwargs)",
+     "        with _vm_lock(rid.rstrip(\"/\").rsplit(\"/\", 1)[-1], timeout=writer_wait_s()):   # bounded (SEC-H)\n"
+     "            return method(self, *args, **kwargs)",
      "        return method(self, *args, **kwargs)"),
     # Found by L26 itself (the world moving): kept so they stay found.
     ("M18", "a NIC's old-IP rule recognised by content only (L26)", NSG,
@@ -241,7 +242,7 @@ MUTANTS = [
      "            wanted = self._quarantine_wanted(with_forensic=False)\n            forensic_known = False",
      "            raise\n            forensic_known = False"),
     ("M28", "orphan rules not reported (L28, U1)", SWP,
-     "                if (len(mark) not in (6, 8) or any(c not in \"0123456789abcdef\" for c in mark)\n"
+     "                if (not _is_mark(mark)\n"
      "                        or mark in marks or mark in live_names):",
      "                if True:"),
     ("M29", "a bare NIC isolated again records 'none' over its original (L28, U2)", QUA,
@@ -265,7 +266,7 @@ MUTANTS = [
     ("M35", "reset --from-azure records no intent (A0)", SWP,
      '            if state:\n                _save_isolation_state(resource_id, {**state, "releasing_at": now})',
      '            if False:\n                _save_isolation_state(resource_id, {**state, "releasing_at": now})'),
-    ("M36", "the old state file removed after the new one is written (A0)", STA,
+    ("M36", "the old state file removed after the new one is written (A0)", "glorfindel/response/state_files.py",
      "    if olds and not target.exists():",
      "    if False:"),
     ("M37", "reassertion alerts keyed by the VM's name (A0, L1)", "glorfindel/reassert.py",
@@ -1800,9 +1801,9 @@ MUTANTS += [
      "                original = _recorded_original(t0[\"nic_id\"])\n",
      "                originals[t0[\"nic_id\"]] = original = _recorded_original(t0[\"nic_id\"])\n"),
     ("M1049", "a bare NIC's original: the first tag found, a 'none' in one group over X in another — two "
-              "hosts, two quarantine groups (I8S, review)", QUA,
-     "            if hit and hit[0]:\n                return hit\n            none = none or hit\n",
-     "            if hit:\n                return hit\n"),
+              "hosts, two quarantine groups (I8S, review; SEC-H: X elsewhere holds the NIC)", "glorfindel/providers/azure/quarantine_origin.py",
+     "        if elsewhere:\n            where, value = elsewhere[0]\n",
+     "        if False:\n            where, value = elsewhere[0]\n"),
 ]
 
 
@@ -1833,8 +1834,8 @@ MUTANTS += [
      "and names_this(value)}\n",
      ""),
     ("M1032", "the local state ignored when the quarantine's tag is lost (I4S)", NET,
-     '        tied |= {self._orig_tag(p["nic_id"]) for iso in active_isolations()',
-     '        tied |= {self._orig_tag(p["nic_id"]) for iso in []'),
+     '        tied |= {k for iso in active_isolations() for p in iso.get("placements") or []',
+     '        tied |= {k for iso in [] for p in iso.get("placements") or []'),
     ("M1033", "an unreadable NSG listing read as no NIC away: the fixed names taken (I4S)", NET,
      "            listing = list(self._network.network_security_groups.list_all())\n"
      "        except Exception:\n            return None\n",
@@ -2701,10 +2702,10 @@ MUTANTS += [
      "                                raise TimeoutError(f\"{path.name} busy (another process is writing)\")\n"
      "                            _time.sleep(0.2)\n",
      "                pass\n"),
-    ("M1226", "state files readable by all again (SEC3, V-27)", STA,
+    ("M1226", "state files readable by all again (SEC3, V-27)", "glorfindel/response/state_files.py",
      "def _atomic_write_text(path: Path, text: str, mode: int = 0o600) -> None:\n",
      "def _atomic_write_text(path: Path, text: str, mode: int = 0o644) -> None:\n"),
-    ("M1227", "state directories created with the default mode (SEC3, V-27)", STA,
+    ("M1227", "state directories created with the default mode (SEC3, V-27)", "glorfindel/response/state_files.py",
      "    path.parent.mkdir(mode=0o755 if mode & 0o044 else 0o700, parents=True, exist_ok=True)\n",
      "    path.parent.mkdir(parents=True, exist_ok=True)\n"),
     ("M1228", "an earlier version's state left readable by all (SEC3, V-27)", STA,
@@ -3148,9 +3149,11 @@ TESTS["M1052"] = "tests/unit/test_host_cd.py"
 MUTANTS += [
     ("M1053", "an older release asks to reinstall the agent from it: deploy.sh without --activate breaks the CD",
      CD, "    if installed == release or not is_ancestor(installed, release):\n", "    if False:\n"),
-    ("M1054", "the installation never notes its commit: no release can tell it is newer than the agent", "Makefile",
-     "'umask 077 && cat > .eregion-cd/discord.env' && \\\n\t git rev-parse HEAD | $(HOST_SSH) 'cat > .eregion-cd/installed-from'\n",
-     "'umask 077 && cat > .eregion-cd/discord.env'\n"),
+    # CDI1 (#918): the recipe moved from the Makefile to the owned script that the target calls.
+    ("M1054", "the installation never notes its commit: no release can tell it is newer than the agent",
+     "infra/glorfindel-host/cd/install_from_workstation.sh",
+     "git rev-parse HEAD | on_imladris 'cat > .eregion-cd/installed-from'\n",
+     ""),
 ]
 TESTS.update({"M1053": "tests/unit/test_host_cd.py", "M1054": "tests/unit/test_host_cd.py"})
 # After its review: the same files say nothing; installed-from is a commit id, never a name.
@@ -3424,8 +3427,9 @@ MUTANTS += [
     ("M1440", "a race thread that never unwound holds web's lock: the teardown waits behind it (U3F)",
      INVARIANTS, '            if getattr(self, "hung", None):\n', "            if False:\n"),
     ("M1441", "the CI's Linux tests hang without saying where (U3F)", ".github/workflows/ci.yml",
-     "        run: python -m pytest tests/ -q -n 4 --dist load -o faulthandler_timeout=480\n",   # CI10b: 4 processes
-     "        run: python -m pytest tests/ -q -n 4 --dist load\n"),
+     # CI10b: 4 processes; CI12: Azure's machine in the next step
+     "        run: python -m pytest tests/ -q -n 4 --dist load --ignore=tests/unit/test_invariants.py -o faulthandler_timeout=480\n",
+     "        run: python -m pytest tests/ -q -n 4 --dist load --ignore=tests/unit/test_invariants.py\n"),
 ]
 TESTS.update({"M1349": "tests/unit/test_invariant_regressions.py -k reverse_order",
               "M1440": "tests/unit/test_invariant_regressions.py -k out_of_sight_holding",
@@ -3635,13 +3639,13 @@ MUTANTS += [
     ("M1245", "the card of an uncontained detection never written (SEC4a, V-11)", AGT,
      "    _record_uncontained(state, source, exercise_run)\n", ""),
     ("M1246", "a signal given exercise cycles: the retrieval does not filter (SEC4a, V-12)", MEM,
-     '            where={"$and": [{"source": "real"}, {"stored_at": {"$gte": cutoff}}]},\n',
-     '            where={"stored_at": {"$gte": cutoff}},\n'),     # re-anchored by SEC17
+     '            where=where({"source": "real"}, {"stored_at": {"$gte": self._cutoff()}}, extra))\n',
+     '            where=where({"stored_at": {"$gte": self._cutoff()}}, extra))\n'),     # re-anchored by SEC17, SEC-I
     ("M1247", "a cycle's id taken from its signal and upserted: a reused id overwrites a real cycle (SEC4a, V-12)",
      MEM, ('cycle_id = f"cycle-{uuid.uuid4().hex}"', "self._collection.add("),
      ("cycle_id = f\"{cycle['signal_id']}_{cycle['action']}\"", "self._collection.upsert(")),
     ("M1248", "a replayed cycle fills every place of the retrieval (SEC4a, V-12)", MEM,
-     "            if key in seen:\n                continue\n", ""),
+     "                if key in seen or per_vm", "                if per_vm"),     # re-anchored by SEC-I
     ("M1249", "an attack_started's row naming no VM pinned to the line's VM, unheld (SEC4a)", AGT,
      "        if data_plane and names_vm(detected_row) is not True:\n", "        if False:\n"),
     ("M1330", "an attack_started's poll takes a row naming another VM (SEC4a)", AGT,
@@ -3753,7 +3757,7 @@ MUTANTS += [
      "            try:\n                original = self._original_away(t0, rg)\n",
      "            original = self._original_away(t0, rg)\n            try:\n                pass\n"),
     ("M1523", "a new state written over the VM's unreadable one (SEC4b, review)", STA,
-     "    if not _isolation_unreadable(vm_ref):\n        return\n    f = _state_file(", "    return\n    f = _state_file("),
+     "    if not _unreadable_in(directory, vm_ref):\n        return\n    f = _state_file(", "    return\n    f = _state_file("),
     ("M1524", "the local state's card makes a VM tile, counted unprotected (SEC4b, review)", JSG,
      "    if (_isLocalState(e.resource_id)) return;\n", ""),
     ("M1525", "a state with placements and no resource id read as readable (SEC4b, review)", STA,
@@ -3769,12 +3773,12 @@ TESTS["M1524"] = "tests/unit/test_console.py -k local_state"
 # isolation, the card's steps for a file set aside and for the tag a release will ask.
 MUTANTS += [
     ("M1527", "a file set aside stays among the states: repaired, it is a second isolation (SEC4b, review 2)",
-     STA, "    n, aside = 1, _ISOLATION_STATE_DIR / ASIDE_DIR / f.name\n",
+     STA, "    n, aside = 1, directory / ASIDE_DIR / f.name\n",
      "    n, aside = 1, f.with_name(f\"{f.stem}.unreadable.json\")\n"),
     ("M1528", "a file set aside, repaired, leaves the unreadable list (SEC4b, review 2)", STA,
      # One loop over the three directories since SEC13 (R-07): the set-aside one taken out.
-     '                                    (_ISOLATION_STATE_DIR / ASIDE_DIR, None, f"{iso}/{ASIDE_DIR}")):\n',
-     "                                    ):\n"),
+     '                                    (_ISOLATION_STATE_DIR / ASIDE_DIR, None, f"{iso}/{ASIDE_DIR}"),\n',
+     ""),
     ("M1529", "an isolation whose original is unknown says nothing until its release (SEC4b, review 2)", ISO,
      "        unknown = original_unknown_nics(merged)\n", "        unknown = []\n"),
     ("M1530", "the card asks to repair a file set aside — repaired, it would not be read (SEC4b, review 2)", RCA,
@@ -4216,7 +4220,7 @@ MUTANTS += [
      "    if not inside.allowed:\n        return v.refuse(\"outside_scope\"",
      "    if False:\n        return v.refuse(\"outside_scope\""),
     ("M1985", "a planned entry of the catalogue allowed (DG-a)", EP,
-     '    if e.status != "implemented":\n', "    if False:\n"),
+     '    if not is_ready(e.status):\n', "    if False:\n"),
     ("M1986", "a fault allowed on a VM its engine does not aim at (DG-a)", EP,
      "        elif target.name.lower() not in {n.lower() for n in aimed}:\n", "        elif False:\n"),
     ("M1987", "a destructive technique without the name to type (DG-a)", EP,
@@ -5174,8 +5178,8 @@ MUTANTS += [
      '            return ""\n'),
     ("M1891", "the unblock takes its placements' rules off by name, unread: the turned allow with them (I4B)", UNB,
      "                err = (_held_by_turned(self._network, guard, p_rg, p_name, nm, nic_id, mates)\n"
-     "                       or self._delete_rule(p_rg, p_name, nm))\n",
-     "                err = self._delete_rule(p_rg, p_name, nm)\n"),
+     "                       or self._delete_rule(p_rg, p_name, nm)) if nm not in said else said[nm]\n",
+     "                err = self._delete_rule(p_rg, p_name, nm) if nm not in said else said[nm]\n"),
     ("M1892", "the unblock's sweep takes off by the NIC's mark whatever the rule became (I4B)", UNB,
      "                        err = (_aims_elsewhere(r, own_ips) and _held_by_turned(\n",
      "                        err = (False and _held_by_turned(\n"),
@@ -5482,9 +5486,10 @@ MUTANTS += [
      """    if printf '%s\\n' "$known" | fingerprints | grep -qxF -- "$want"; then\n""", "    if true; then\n"),
     ("M1419", "the key H0 presents written without its fingerprint checked (SEC7, V-32)", KH,
      """  if [ "$(printf '%s\\n' "$line" | fingerprints)" = "$want" ]; then\n""", "  if true; then\n"),
-    ("M1420", "ssh to H0 accepts a new key beside the pinned file (SEC7, V-32)", MAKE,
-     "-o StrictHostKeyChecking=yes -o UserKnownHostsFile=$(HOST_KNOWN_HOSTS)",
-     "-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$(HOST_KNOWN_HOSTS)"),
+    # Re-anchored (CDI2, #922): HOST_SSH_OPTS is printed by infra/glorfindel-host/ssh_opts.sh now.
+    ("M1420", "ssh to H0 accepts a new key beside the pinned file (SEC7, V-32)", "infra/glorfindel-host/ssh_opts.sh",
+     "-o StrictHostKeyChecking=yes -o UserKnownHostsFile=$known",
+     "-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$known"),
     ("M1421", "the tunnel to H0 opened without the host key checked (SEC7, V-32)", MAKE,
      "imladris-tunnel-go: imladris-known\n", "imladris-tunnel-go:\n"),
     ("M1422", "Gothmog's container writes its image (SEC7, V-34)", "docker-compose.yml",
@@ -5974,12 +5979,12 @@ MUTANTS += [
     ("M1806", "a detection without a decision attached counts as a proof (C1)", COV,
      '    return outcome(run) == "detected" and decision_of(run, cycles) is not None\n',
      '    return outcome(run) == "detected"\n'),
-    ("M1807", "no « aging » between 21 and 30 days: a proof is proven up to 30 (C1)", COV,
-     '        return "proven" if age < AGING_DAYS * DAY else "aging" if age <= STALE_DAYS * DAY else "stale"\n',
-     '        return "proven" if age <= STALE_DAYS * DAY else "stale"\n'),
+    ("M1807", "no « aging » between 21 and 30 days: a proof is fresh up to 30 (C1, FRS1)", COV,
+     '        return "fresh" if age < AGING_DAYS * DAY else "aging" if age <= STALE_DAYS * DAY else "stale"\n',
+     '        return "fresh" if age <= STALE_DAYS * DAY else "stale"\n'),
     ("M1808", "the indicator's last proof stays on 30 days: older, it says « none » (C1)", COV,
      '    indicators["last_proof"] = m["last_proof"]\n', ""),
-    ("M1809", "the non-regression never fires: a technique proven then missed stays proven (C1)", COV,
+    ("M1809", "the non-regression never fires: a technique held then missed stays fresh (C1)", COV,
      '    if not measured or outcome(measured[-1]) != BAD[measured[-1]["kind"]]:\n',
      "    if True:\n"),
     ("M1810", "an unknown detection taken for a miss: a run that measured nothing regresses (C1)", COV,
@@ -6003,7 +6008,7 @@ MUTANTS += [
     ("M1817", "`eregion coverage --check` never fails: the non-regression silent (C1)",
      "eregion_console/cli.py", "    if check and regressed:\n", "    if False:\n"),
     ("M1818", "a planned technique never run counted as a gap of the proof (C1)", COV,
-     '    counted = [r for r in rows if r["status"] == "implemented" or r["runs"]]\n',
+     '    counted = [r for r in rows if is_ready(r["status"]) or r["runs"]]\n',
      "    counted = rows\n"),
     ("M1819", "a run outside the catalog vanishes from the matrix (C1)", COV,
      '    rows = [row(e, by_key.get((e["kind"], e["id"]), []), cycles, now, refusals) for e in entries + outside]\n',
@@ -7141,7 +7146,7 @@ _D80_SEQ = ("tests/unit/test_invariant_regressions.py::test_a_release_after_a_lo
             "tests/unit/test_invariant_regressions.py::test_a_bare_nics_rule_kept_on_its_mates_nsg_is_said")
 MUTANTS += [
     ("M2340", "the release's sweep blind away from a bare NIC: a rule kept on the NSG it carried, `released` (D80)", REL,
-     "        return failed + self._away_rules(vm_name, targets, stuck, guard, mates)   # a bare NIC's (D80)\n",
+     "        return failed + self._away_rules(vm_name, targets, stuck, guard, mates, recorded)   # a bare NIC's (D80)\n",
      "        return failed\n"),
     ("M2341", "a bare NIC's rule found away from it taken off without the guard: the VM behind it cut (D80)", AWY,
      '                why = _held_by_turned(self._network, guard, n_rg, n_name, name, t0["nic_id"], mates)\n',
@@ -7157,6 +7162,7 @@ MUTANTS += [
      '            for b in self._placement_rule_bases("glorfindel-iso", vm_name, t0["nic_short"], t0["nic_id"])[:1]:\n'),
     ("M2345", "`reset --from-azure` blind away from a bare NIC: a rule kept on its mate's NSG unsaid (D80, macOS #391)",
      SWP, ('        held, gone = self._away_split(vm_name, targets, guard, mates, lambda k, n: (k, n.lower()) in seen,\n'
+           '                                      recorded=recorded,\n'
            '                                      blocks=True, unverified="reset non vérifié")   # a bare NIC\'s (D80)\n'),
      "        held, gone = [], []\n"),
     ("M2346", "the reset's search away from a bare NIC blind to its blocks: one left on the NSG it carried (D80)", SWP,
@@ -8528,7 +8534,7 @@ MUTANTS += [
      "    say_refused(path, LINK if stat.S_ISLNK(st.st_mode) else channel_reader._kind(st.st_mode))\n",
      "    os.close(channel_reader.open_regular(path))\n"),
     ("M3143", "a name of runs/ read as markup by the TUI (SEC15)", TUI,
-     "{_esc_markup(path.name)} : {exc} — jamais lu", "{path.name} : {exc} — jamais lu"),
+     "{_outside(path.name)} : {exc} — jamais lu", "{path.name} : {exc} — jamais lu"),
     ("M3144", "a name of runs/ written raw into the console's log (SEC15)", RRD,
      '    print(f"  ⚠ console: {shown(path)} — ', '    print(f"  ⚠ console: {path} — '),
     ("M3145", "the matrix kept 30 s past a window that changes a T0's verdict (SEC15)", CON,
@@ -8717,8 +8723,8 @@ TESTS.update({f"M{n}": "tests/unit/test_config.py" for n in range(3180, 3185)})
 # bounded by the config's age (90 days), what it leaves out counted and said. M3200–M3206.
 MUTANTS += [
     ("M3200", "the search ignores a cycle's age: a year-old precedent weighs as yesterday's (SEC17, V-12)", MEM,
-     '            where={"$and": [{"source": "real"}, {"stored_at": {"$gte": cutoff}}]},\n',
-     '            where={"source": "real"},\n'),
+     '            where=where({"source": "real"}, {"stored_at": {"$gte": self._cutoff()}}, extra))\n',
+     '            where=where({"source": "real"}, extra))\n'),     # re-anchored by SEC-I
     ("M3201", "a cycle dated by what it carries, not by the host: it stays young for ever (SEC17, V-12)", MEM,
      '                "stored_at": int(self._clock()),\n',
      '                "stored_at": int(cycle.get("stored_at") or self._clock()),\n'),
@@ -8896,9 +8902,8 @@ MUTANTS += [
     ("M3197", "`reset --dry-run` says « Reset complete — <vm> is clean » on a preview (I3V)", GCLI,
      "    if dry_run:\n        # An outline, never « clean »", "    if False:\n        # An outline, never « clean »"),
     ("M3198", "another NIC's rule on the quarantine NSG left holds the verification: never verified (I3V)", AWY,
-     "                      for r in self._iso_rules_on(vm_name, view, rules)]\n        return still, unknown\n",
-     "                      for r in rules if _rule_name(r).startswith(\"glorfindel-iso\")]\n"
-     "        return still, unknown\n"),
+     "                      for r in self._iso_rules_on(vm_name, view, rules, placed, unproven)]\n",
+     "                      for r in rules if _rule_name(r).startswith(\"glorfindel-iso\")]\n"),
 ]
 TESTS.update({
     "M3192": (f"{_I3V_SEQ} {_I3V_UNIT}::test_the_verification_of_a_partial_release_looks_on_the_quarantine_nsg_it_left "
@@ -10569,7 +10574,7 @@ MUTANTS += [
     ("M3564", "another resource's technique proposed on a VM (DG-e)", _PROP,
      "              and e.resource_type == resource_type and (available", "              and (available"),
     ("M3565", "a technique nothing runs yet proposed (DG-e)", _PROP,
-     'if e.kind == "technique" and e.status == "implemented" and', 'if e.kind == "technique" and'),
+     'if e.kind == "technique" and is_ready(e.status) and', 'if e.kind == "technique" and'),
     ("M3566", "a campaign's drill authored by the operator, not Annatar (DG-e)", _PROP,
      "return _drill.new(drill_name(campaign_id), list(pairs), author=AUTHOR,",
      'return _drill.new(drill_name(campaign_id), list(pairs), author="operator",'),

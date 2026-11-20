@@ -86,7 +86,7 @@ class BackupMixin:
             raise RuntimeError(f"Snapshot trigger failed — {explain_refusal(r.status_code, r.text)}")
 
         backup_job = self._find_backup_job(
-            backup_client, vault, v_rg, "Backup", vm_name, triggered_at)
+            backup_client, vault, v_rg, "Backup", vm_name, triggered_at, vm_rg=rg)
         if backup_job is None:
             raise RuntimeError(
                 f"Backup job for {vm_name} not found after trigger ({job_search_s('Backup')} s) — un job a pu "
@@ -144,7 +144,7 @@ class BackupMixin:
 
     def _find_backup_job(
         self, client, vault: str, vault_rg: str, operation: str, vm_name: str,
-        triggered_at, attempts: int | None = None, delay_s: float | None = None,
+        triggered_at, attempts: int | None = None, delay_s: float | None = None, vm_rg: str = "",
     ):
         """The job this trigger created, for THIS VM — in progress, or already finished (RST1).
 
@@ -155,6 +155,8 @@ class BackupMixin:
         says for the operation (2 min for a restore, 30 s for a snapshot).
         A job that failed at once is kept too (its errorDetails are said by the caller): only
         InProgress was, and a restore refused by the vault in 4.5 s read « not found ».
+        `vm_rg`: the VM's group — a job whose container names another group's is another VM's,
+        a homonym sharing the vault (SEC-H, as REC1's `_last_restore_job`).
         """
         import time
         from datetime import timedelta
@@ -177,6 +179,10 @@ class BackupMixin:
                 if status not in ("InProgress", *FINISHED_JOB_STATUSES):
                     continue
                 if (getattr(p, "entity_friendly_name", "") or "").lower() != vm_name.lower():
+                    continue
+                container = getattr(p, "container_name", None)
+                if (vm_rg and isinstance(container, str) and container
+                        and not container.lower().endswith(f";{vm_rg.lower()};{vm_name.lower()}")):
                     continue
                 start = getattr(p, "start_time", None)
                 if status != "InProgress" and (start is None or start < finished_not_before):

@@ -26,6 +26,7 @@ const S = {
   note: '',         // what the last gesture did not do (a pair drawn already)
   wires: [],        // [experiment id, target resource id], in the order drawn — this browser only
   picked: null,     // the red card picked (its index), waiting for a target
+  mobileTab: null,  // a phone's column of the board (MOB5): red, blue (targets), plan; null: red
   drag: null,       // {i, x, y}: a red card's handle being dragged
   request: null,    // the request written (phase b), until it is over: its wires are locked
   requestErr: '',
@@ -83,6 +84,26 @@ function addWire(experiment, target, name) {
   refreshPlan();
 }
 
+// ── On a phone (MOB5, #975, Jonathan 20/11 on a mockup, option A) ─────────────────────
+// Under 760 px, one column of the board at a time — Red, Targets, Plan —, the one body[data-m] names.
+// The gesture is the board's own: a tap on a red card (pick), then on a target (aim). A red card picked
+// opens Targets, under a banner that names it; a wire laid opens the plan, its badge the wires' count.
+// Above 760 px the tabs are not shown, the attribute changes nothing, and no tab is followed.
+const _PHONE = window.matchMedia('(max-width: 759px)');
+const _MOBILE_TABS = ['red', 'blue', 'plan'];
+function _showMobileTab() {
+  const tab = _MOBILE_TABS.includes(S.mobileTab) ? S.mobileTab : 'red';
+  document.body.dataset.m = tab;
+  for (const t of _MOBILE_TABS) {
+    const b = $('m-tab-' + t);
+    if (b) b.ariaSelected = String(t === tab);
+  }
+  const n = S.wires.length, badge = $('m-plan-badge');
+  if (badge) { badge.textContent = n ? String(Number(n)) : ''; badge.hidden = !n; }
+  const r = S.board && S.picked !== null ? S.board.reds[S.picked] : null, bar = $('m-picked');
+  if (bar) { bar.textContent = r ? `${r.id} picked — tap a target` : ''; bar.hidden = !(r && tab === 'blue'); }
+}
+
 // ── Actions: each element names its own, the dispatcher calls it from this closed table ──
 function _on(event, action, ...args) {
   return `data-on-${event}="${action}"` + (args.length ? ` data-${event}-args="${esc(JSON.stringify(args))}"` : '');
@@ -93,12 +114,21 @@ const ACTIONS = {
     const r = S.board && S.board.reds[i];
     if (!r || !r.available) return;
     S.picked = S.picked === i ? null : i;
+    if (_PHONE.matches && S.picked !== null) S.mobileTab = 'blue';   // a phone: on to the targets (MOB5)
     renderBoard();
   },
   aim(j) {
     const t = S.board && S.board.targets[j];
     const r = S.board && S.picked !== null ? S.board.reds[S.picked] : null;
-    if (t && r) addWire(r.id, t.resource_id, t.name);
+    if (!t || !r) return;
+    addWire(r.id, t.resource_id, t.name);
+    if (_PHONE.matches) S.mobileTab = 'plan';                         // a phone: on to the plan (MOB5)
+    _showMobileTab();
+  },
+  mobileTab(which) {
+    if (!_MOBILE_TABS.includes(which)) return;
+    S.mobileTab = which;
+    _showMobileTab();
   },
   grab(i) {
     const r = S.board && S.board.reds[i];
@@ -227,8 +257,9 @@ function _dispatch(ev, name) {
 for (const [type, name] of Object.entries(_EVENTS)) document.addEventListener(type, ev => _dispatch(ev, name), true);
 
 // ── Red cards: the catalogue, each with its last proof (the coverage matrix, C1) ───────
+// A proof under 21 days is « fresh » (FRS1, #904): « proven » is the catalogue's status.
 const PROOF = {
-  proven: ['c-ok', 'proven'], aging: ['c-warn', 'aging'], stale: ['c-bad', 'stale'],
+  fresh: ['c-ok', 'fresh'], aging: ['c-warn', 'aging'], stale: ['c-bad', 'stale'],
   regressed: ['c-bad', 'REGRESSED'], unproven: ['c-warn', 'no proof'], never: ['', 'never run'],
   unknown: ['c-warn', 'proof unreadable'],
 };
@@ -307,6 +338,7 @@ function renderBoard() {
     others;
   red.scrollTop = rt; blue.scrollTop = bt;
   drawWires();
+  _showMobileTab();                              // a phone's tabs, badge and banner (MOB5)
 }
 
 // ── Wires ─────────────────────────────────────────────────────────────────────────────
@@ -436,6 +468,7 @@ function renderPlan() {
     ${pendingBox()}
     <div class="checks">${checks}</div>
     <table class="t">${(p.wires || []).map(planRow).join('')}</table>`;
+  _showMobileTab();                              // a phone's tabs, badge and banner (MOB5)
 }
 
 // ── The request followed (phases b, c): the command that carries it, then each wire live ──
@@ -886,6 +919,34 @@ function validPending(w) {
       && (c.last_run_at === null || typeof c.last_run_at === 'number'));
 }
 
+// ── The drill of the week (DRL1b): its last occurrence, its state, the next one, the arming — as the
+// watch judged it (GET /api/dagorlad/drill, read only). Every value escaped.
+const WEEKLY_CLASS = { proof: 'c-ok', missed: 'c-bad', not_run: 'c-bad', self_disarmed: 'c-bad',
+  unknown: 'c-warn', refused: 'c-warn', skipped: 'c-warn', stopped: 'c-warn', rearm_expected: 'c-warn',
+  channel_unread: 'c-warn' };
+function weeklyLine(d) {
+  const v = d && d.verdict;
+  if (!v) return '<b>WEEKLY DRILL</b> <span class="meta">not judged yet on this host (the watch judges it every minute)</span>';
+  const cls = Object.hasOwn(WEEKLY_CLASS, v.state) ? WEEKLY_CLASS[v.state] : '';
+  const when = x => x ? esc(String(x).slice(0, 16).replace('T', ' ')) + ' UTC' : '—';
+  const past = (d.history || []).map(h => `${esc(String(h.occurrence).slice(5, 10))} ${esc(h.state)}`).join(' · ');
+  return `<b>WEEKLY DRILL</b> <span>${esc(v.drill || '—')}</span>
+    <span class="chip ${cls}" title="${esc(v.said)}">${esc(v.state)}${v.code ? ' · ' + esc(v.code) : ''}${v.mention ? ' · @' : ''}</span>
+    <span class="meta">last ${when(v.occurrence)} · next ${when(v.next)} · arming: ${esc(v.armed || 'none')}${v.reason ? ' (' + esc(v.reason) + ')' : ''}</span>
+    <span class="meta">${esc(v.said)}</span>
+    ${past ? `<span class="meta" title="The occurrences before, as judged">before: ${past}</span>` : ''}`;
+}
+async function loadWeekly() {
+  const box = $('weekly');
+  if (!box) return;
+  try {
+    const d = await getJSON('/api/dagorlad/drill');
+    box.innerHTML = weeklyLine(d);
+  } catch (e) {
+    box.innerHTML = `<b>WEEKLY DRILL</b> <span class="r-bad">/api/dagorlad/drill — ${esc(e.message)}</span>`;
+  }
+}
+
 // ── Fetching ──────────────────────────────────────────────────────────────────────────
 async function loadBoard() {
   try {
@@ -936,8 +997,11 @@ async function refreshPlan() {
   // The request followed before the reload: read again — still running, its wires lock again.
   S.last = storedRequest();
   S.lastAt = S.last ? Date.now() : 0;
+  _showMobileTab();          // a phone: the red column until the board is read (MOB5)
   loadBoard().then(refreshPlan).then(refreshFollow);
   loadDrills();
+  loadWeekly();
+  setInterval(loadWeekly, 60000);
   setInterval(() => loadBoard().then(refreshPlan), 30000);
   setInterval(refreshFollow, 10000);
   window.addEventListener('resize', drawWires);

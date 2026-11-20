@@ -120,7 +120,7 @@ seul sur le banc, dans le mode de chaque VM.
 - **Pas une cible.** Hors du groupe du banc, sans tag `eregion-target`, sans DCR vers le
   Log Analytics du banc : la découverte (Heartbeat) ne la voit pas, Glorfindel ne peut pas
   l'isoler. Elle n'est pas non plus sur Orodruin (côté rouge).
-- **Fermée.** Entrée : SSH depuis ton IP seulement (`operator_cidr`, jamais `0.0.0.0/0`).
+- **Fermée.** Entrée : SSH depuis ton IP seulement (`operator_cidr` : une adresse IPv4 publique en `/32`, jamais une plage, une IPv6, une adresse privée ou réservée — SEC-G, vérifiée par le Makefile et par Terraform).
   La console écoute sur `127.0.0.1` de la VM et s'ouvre par un tunnel SSH, jeton en plus.
   Alertes : Discord ou webhook, en sortie.
 - **Sans secret dans Terraform.** La clé du modèle et les jetons sont dans `host.env`
@@ -160,7 +160,7 @@ le disque et l'IP publique.
 ## Déroulé
 
 ```bash
-make imladris-plan                   # lecture seule ; OPERATOR_CIDR=<ip>/32, sinon ton IP du moment
+make imladris-plan                   # lecture seule ; OPERATOR_CIDR=<ton IP>/32, sinon lue sur un service tiers (dit), vérifiée
 make imladris-up                     # crée la VM (confirmation demandée) ; cloud-init installe Docker et clone le dépôt
 make imladris-fingerprint            # le premier contact (SEC-C) : l'empreinte de sa clé d'hôte, lue par Azure ; sa ligne
                                      # export HOST_SSH_FINGERPRINT=… dans .envrc, puis direnv allow (« SSH », plus bas)
@@ -171,7 +171,9 @@ make imladris-start REF=…            # un tag ou un commit (exigé), son image
 make imladris-tunnel-install         # une fois : l'unité du tunnel du poste vers la console (MOB2, docs/demarrer/mobile.md)
 make imladris-tunnel-on              # l'arme pour 12 h au plus (imladris-tunnel-off l'arrête) ; le téléphone y passe par son propre tunnel SSH vers le poste
 make imladris-url                    # l'URL de la console avec son jeton ; une ligne de plus si le tunnel n'est pas armé
-make imladris-tunnel                 # le secours (macOS, ou un coup d'œil sans armer les 12 h) : le tunnel au premier plan, jusqu'à Ctrl+C
+make imladris-console-rotate         # tous les 90 jours (#deploy le rappelle) : un nouveau jeton de la console, poussé, la console seule relancée, l'ancien refusé (ROT2)
+make imladris-tunnel                 # le secours (macOS, ou un coup d'œil sans armer les 12 h) : le tunnel au premier plan, jusqu'à Ctrl+C ;
+                                     # comme celui du poste (SEC-G) : -F none, écoute sur 127.0.0.1, la clé d'hôte épinglée — la clé SSH vient de l'agent ou de HOST_SSH_KEY
 make imladris-logs                   # vérifier « heartbeat → N VM(s) » et l'absence d'erreur d'identité
 make imladris-status                 # tout tourne ? VMs, sauvegardes, services, erreurs 24 h, cartes à juger
 make imladris-report                 # rapport d'observation (SINCE=4w pour la période)
@@ -220,6 +222,20 @@ son onglet est grisé. Les anciennes adresses (`/atelier`, `/api/atelier/*`) red
   `host.env` (`host_env.py --check`) : il dit sous quel nom est le jeton, sans sa valeur, et
   refuse un fichier sans jeton (la console tournerait sans) ou dont le jeton est un commentaire —
   ou sans la clé du fournisseur de son modèle (OL1, plus haut).
+- **Le faire tourner** (ROT2, #968) : `make imladris-console-rotate`, depuis le poste. Un nouveau
+  jeton dans `host.env` — sa seule ligne, sous `EREGION_CONSOLE_TOKEN`, à sa place (une ligne de
+  l'ancien nom, `GLORFINDEL_WARROOM_TOKEN`, remplacée si c'est elle qui le portait, retirée sinon) ;
+  écrit à côté en 0600, vérifié par `host_env.py --check`, puis renommé —, poussé par
+  `make imladris-push` (qui repousse aussi `glorfindel-config.yaml` : vérifier sa config locale
+  avant), la console seule relancée sous le verrou des déploiements (`docker compose up -d --no-deps
+  --force-recreate war-room` : la watch et le bot ne bougent pas ; un déploiement en cours, refusé et
+  dit), puis vérifiée par la sonde d'`imladris-status` :
+  le nouveau jeton répond, l'ancien est refusé, et toutes ses sessions avec lui. Le jeton n'est
+  jamais affiché : `make imladris-url` le relit. Le jour de le refaire (le tirage + 90 jours) est
+  noté sur Imladris sous `console-token`, que le CD rappelle dans `#deploy` (« Les rappels
+  d'échéance », plus bas) ; `make imladris-console-token-note` le note pour le jeton en place, sans le
+  faire tourner. Refusées en session d'agent. Le détail, ses refus et sa reprise :
+  `docs/operations.md`, « Faire tourner le jeton de la console d'Imladris ».
 - **Avant UI-1** : une référence antérieure (`v0.3.0` et avant) ne lit que
   `GLORFINDEL_WARROOM_TOKEN`. Un `host.env` neuf, qui n'a que `EREGION_CONSOLE_TOKEN`, se déploie
   donc avec une référence qui contient UI-1 (`REF=<commit>` ou un tag postérieur) : sinon la War
@@ -249,7 +265,13 @@ Vue d'ensemble, l'onglet Glorfindel ; un ancien favori `/atelier` mène à `/`.
 ## Ce que la VM exécute (M-3, #183)
 
 - **Une référence nommée, jamais une branche.** `make imladris-start REF=v0.3.1` (un tag)
-  ou `REF=<commit>` (7 à 40 chiffres hexadécimaux) ; **sans `REF`, rien n'est déployé** (SEC14,
+  ou `REF=<commit>` (le commit entier, ses 40 chiffres hexadécimaux : un préfixe, qui peut nommer un autre
+  commit du dépôt de la VM, est refusé sur le poste puis par `deploy.sh` — SEC-G, audit du 13/11, V-38) ;
+  un retour arrière du CD (`deploy.sh --activate`) vers une image déployée à la main sous un préfixe, avant
+  SEC-G, passe encore : le préfixe n'est admis là que si l'image sur la VM porte une révision de 40
+  caractères qui commence par lui, et que la VM a ce commit — sinon, `make imladris-start REF=<le commit
+  entier>` la reconstruit sous son nom complet ;
+  **sans `REF`, rien n'est déployé** (SEC14,
   V-22) : ce chemin construit l'image sur Imladris, et ne prend donc
   jamais « le dernier tag » qu'il trouverait — un tag que quiconque peut écrire dans le dépôt
   pousserait. `main`, `origin/main`, `HEAD` sont refusés : une branche bouge, et la VM
@@ -511,6 +533,65 @@ de service, en comptes, jamais en valeurs : `az ad app show --id <appid> --query
 "{secrets: length(passwordCredentials), certs: length(keyCredentials)}"`, puis la même requête par
 `az ad sp show --id <appid>` ; deux zéros attendus de chaque côté. Pour revenir aux cartes de ses connexions : retirer la règle de la couche d'Imladris.
 
+**Le principal Managed Service Identity (MID1)** : quand Azure crée l'identité managée d'une
+ressource (la Logic App du drill, recréée après des applies ratés, le 20/11 : cinq cartes hautes
+`entra-credential-added`, six lignes), il pose un certificat sur son principal de service, sous le
+principal « Managed Service Identity » du tenant. L'adaptateur d'Entra écarte cette ligne, comptée,
+seulement si son `ActorId` est l'object id de ce principal, lu dans l'environnement de la watch
+(`EREGION_ENTRA_MSI_ACTOR_ID`), **jamais par son nom** ; tout le reste fait sa carte
+(`docs/glorfindel.md`, « Le certificat qu'Azure pose sur une identité managée »). Sans la variable,
+rien n'est écarté : les cartes reviennent, et la ligne de la règle le dit dans la console. Le geste
+de Jonathan, **une fois déployée une release qui contient MID1** (la 0.6.4), depuis le poste, en zsh.
+Tout se lit, rien ne s'écrit dans Azure ni dans Entra ID ; l'id est lu par `az` et écrit par le shell,
+jamais recopié de l'écran, et **jamais affiché** : un id, aucun secret, mais il reste hors du dépôt et
+des captures.
+
+```bash
+# 1. L'object id du principal « Managed Service Identity » du tenant (az ad sp list --filter : le
+#    filtre OData exact, quand --display-name prend tout nom qui commence par) — dans host.env
+#    d'Imladris, jamais dans le dépôt. Un seul principal de ce nom attendu ; le nom n'est que le
+#    moyen de le trouver : les contrôles 2 et 3 le prouvent par son propriétaire et par les lignes.
+cd ~/eregion && source .envrc
+F=infra/glorfindel-host/host.env
+grep -c '^EREGION_ENTRA_MSI_ACTOR_ID=' $F    # → 0 (sinon : la retirer d'abord, sed -i '/^EREGION_ENTRA_MSI_ACTOR_ID=/d' $F)
+N=$(wc -l < $F)
+echo "EREGION_ENTRA_MSI_ACTOR_ID=$(az ad sp list --filter "displayName eq 'Managed Service Identity'" --query '[].id' -o tsv)" >> $F
+#    Une seule ligne ajoutée, un seul GUID — sinon (deux principaux de ce nom : l'un est une
+#    inscription du tenant qui l'a pris ; ou aucun), retirer ce qui vient d'être ajouté,
+#    sed -i "$((N+1)),\$d" $F, et s'arrêter :
+echo $(( $(wc -l < $F) - N ))                # → 1
+grep -cE '^EREGION_ENTRA_MSI_ACTOR_ID=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' $F   # → 1
+# 2. Contrôle, sans afficher l'id : le principal est celui de Microsoft, pas une inscription du
+#    tenant (son application appartient à une autre organisation que la tienne) :
+ID=$(sed -n 's/^EREGION_ENTRA_MSI_ACTOR_ID=//p' $F)
+az ad sp show --id "$ID" --query "[displayName, appOwnerOrganizationId == '$(az account show --query tenantId -o tsv)']" -o tsv
+#    → « Managed Service Identity » puis « False » (True : une application du tenant qui porte ce
+#    nom — retirer la ligne, sed -i '/^EREGION_ENTRA_MSI_ACTOR_ID=/d' $F, et s'arrêter).
+# 3. Contrôle croisé, en lecture seule, sur les lignes des cartes jugées du 20/11 : l'ActorId de
+#    leurs « Add service principal » est cet id (Log Analytics Reader suffit ; le customerId du
+#    workspace du banc, comme pour les requêtes de mesure, docs/operations.md) :
+WS_CUSTOMER=<customerId du workspace>
+az monitor log-analytics query -w $WS_CUSTOMER --timespan P30D -o tsv --analytics-query "AuditLogs | where OperationName == 'Add service principal' and tostring(InitiatedBy.app.displayName) == 'Managed Service Identity' | summarize Rows = count(), Same = countif(tostring(InitiatedBy.app.servicePrincipalId) =~ '$ID')"
+#    → deux nombres égaux, au moins 6 (les lignes du 20/11) ; Same plus petit que Rows : un autre
+#    principal porte ce nom dans ces lignes — retirer la ligne et s'arrêter.
+unset ID
+make imladris-push               # host.env → ~/eregion/.env ; --check refuse une valeur qui n'est pas un GUID
+# 4. La watch la reçoit : recréée (un `restart` ne relit pas ~/eregion/.env) :
+make imladris-ssh                # puis, sur Imladris : cd eregion && docker compose up -d watch
+#    Toujours sur Imladris, sans afficher la valeur :
+docker compose exec watch sh -c 'test -n "$EREGION_ENTRA_MSI_ACTOR_ID" && echo posée'   # → posée
+```
+
+**Après coup** : dans la console, le détail de la règle `entra-credential-added` ne dit plus
+« EREGION_ENTRA_MSI_ACTOR_ID unset » dès son passage suivant (2 minutes) ; « is no object id » :
+la valeur poussée n'est pas un GUID (`--check` l'aurait refusée : reprendre l'étape 1). À la
+prochaine identité managée qu'Azure crée (la Logic App du drill, recréée par un apply), **aucune**
+carte « identifiant ajouté (Add service principal) par Managed Service Identity » : la ligne de la
+règle compte « N MSI », et le journal de la watch dit « row(s) set aside, no card ». Une telle
+carte revenue, c'est qu'une condition ne tient pas — l'`ActorId` de sa ligne n'est pas l'id posé
+(étape 3), ou l'identifiant ajouté n'est pas un seul certificat `Verify` : c'est la carte voulue.
+Pour revenir aux cartes : vider la variable (étapes 1 et 4).
+
 **Après une mise à jour de Glorfindel**, si une règle livrée recopiée a changé (n'importe quel
 champ : l'empreinte `base_sha256` est celle de la règle entière), la watch **écarte la copie** et
 charge la règle livrée à sa place — plus de cartes, jamais moins : la carte de la maintenance de
@@ -597,7 +678,7 @@ d'exercice non marqués (B2), qui n'ont rien à faire dans une observation.
 
 **Publier une release, c'est déployer Imladris.** Un timer sur la VM la tire toutes les 5 minutes. Il la vérifie, **tire son image publiée par son digest et en vérifie la signature et la provenance** (CI3 : le CD ne construit jamais sur Imladris ; seul le déploiement à la main, le chemin de secours, construit une référence nommée, `REF` exigée), la préflighte, bascule, et revient en arrière si la santé échoue. Imladris reste fermé : il ne fait que sortir, vers l'API publique de GitHub (sans jeton), vers le registre (`ghcr.io`, ses blobs sur `pkg-containers.githubusercontent.com`, sans jeton), vers la racine de confiance de sigstore (`tuf-repo-cdn.sigstore.dev`) et vers le webhook de `#deploy`. Le Terraform d'Imladris n'a aucune règle sortante : la règle par défaut d'Azure (`AllowInternetOutBound`) laisse tout cela passer, rien n'est à ouvrir (lu dans `main.tf` ; à confirmer sur la VM par `make imladris-cd-check`, qui fait chacun de ces appels).
 
-**Les sessions ne publient jamais une release** : elles la préparent en brouillon (`gh release create --draft`), et Jonathan clique « Publish ». Depuis SEC12, une fois posée par Jonathan, une règle du dépôt le tient : les tags `v*` (création, mise à jour, suppression) sont réservés à l'administrateur, et publier une release crée son tag. Les sessions agissent sous leur propre identité, une GitHub App (`docs/sessions.md`, « L'identité des sessions » et « Les règles du dépôt »).
+**Les sessions ne publient jamais une release** : elles la préparent en brouillon (`gh release create --draft`), et Jonathan clique « Publish ». Depuis SEC12, une fois posée par Jonathan, une règle du dépôt le tient : les tags (création, mise à jour, suppression) sont réservés à l'administrateur — `v*`, puis tous les tags (SEC-G, #848, le geste de Jonathan) —, et publier une release crée son tag. Depuis SEC-G, le CD **refuse** un tag qu'aucune règle active ne réserve, et un tag qui n'est pas de la forme `v<majeur>.<mineur>.<correctif>` : c'est ce refus, avec la règle sur tous les tags, qui ferme la publication par l'App. Le CD ne lit pas l'auteur d'une release (décision de Jonathan du 18/11) : GitHub garde pour auteur l'App, qui a créé le brouillon. Les sessions agissent sous leur propre identité, une GitHub App (`docs/sessions.md`, « L'identité des sessions » et « Les règles du dépôt »).
 
 ### Installer (une fois, Jonathan)
 
@@ -607,6 +688,10 @@ d'exercice non marqués (B2), qui n'ont rien à faire dans une observation.
    - fait télécharger cosign à la VM (`published_image.py install-cosign`, depuis la release de sigstore sur GitHub) dans `~/.eregion-cd/cosign`, gardé seulement si son sha256 est celui épinglé dans `published_image.py` (v3.1.3) ; `install.sh` refuse un agent sans lui ;
    - y écrit `discord.env` en 600, avec le webhook et la mention seulement, passés par stdin. Le jeton du bot Eregion ne va jamais sur Imladris ;
    - installe les unités systemd avec sudo, **timer désactivé**.
+
+   Ces gestes, dans cet ordre, chacun arrêtant l'installation s'il échoue, sont ceux de `infra/glorfindel-host/cd/install_from_workstation.sh` (CDI1, #918), que `.github/CODEOWNERS` possède avec le reste du CD : la cible du `Makefile`, qui ne l'est pas, ne fait que vérifier la clé d'Imladris et l'appeler, avec l'adresse, l'utilisateur, les options SSH et la liste des fichiers. Le script refuse avant tout geste des options SSH qui ne sont pas, mot pour mot, la forme que calcule le `Makefile` (`-o StrictHostKeyChecking=yes -o UserKnownHostsFile=… -o HostKeyAlgorithms=ssh-ed25519`, puis `-i … -o IdentitiesOnly=yes` avec `HOST_SSH_KEY` : `ssh` garde la première valeur d'une option, toute autre forme pourrait défaire l'épinglage), et une liste de fichiers qui n'est pas la sienne (`OWNED_FILES`) : `scp` copie par nom de fichier, une autre liste pourrait poser n'importe quel fichier du checkout sous le nom d'un fichier de l'agent. Un fichier ajouté au CD s'ajoute donc aux deux listes, `HOST_CD_FILES` et `OWNED_FILES`, dans une PR qui attend l'approbation de Jonathan. Le script vérifie l'adresse, l'utilisateur et ces options par `infra/glorfindel-host/ssh_opts.sh check`, possédé lui aussi (CDI2, #922), qui exige en plus que le `known_hosts` nommé soit le fichier dédié d'Imladris : un fichier, non vide, ni `~/.ssh/known_hosts` ni `/etc/ssh/ssh_known_hosts`, qui tient la clé de cette adresse (celle qu'`imladris-known` a vérifiée par son empreinte).
+
+   **Ce qui est possédé, depuis le poste** (CDI2, #922, décision de Jonathan du 19/11) : tout ce qui lance `sudo` sur Imladris ou décide quelle clé d'hôte `ssh` croit. `make imladris-cd-enable`, `-cd-disable` et `-cd-uninstall` (le timer allumé, éteint, le CD retiré, par `sudo` dans un TTY) appellent `infra/glorfindel-host/cd/sudo_from_workstation.sh enable|disable|uninstall`, le même geste chacune, à l'octet ; `make imladris-known` n'est que l'appel de `infra/glorfindel-host/known_host.sh`, possédé, qui refuse aussi un `known_hosts` qui n'est pas un fichier dédié (`/dev/null`, celui du compte) avant de lire la clé ; les options SSH de toutes les cibles vers Imladris (`HOST_SSH_OPTS`) sont imprimées par `infra/glorfindel-host/ssh_opts.sh print`, les mêmes octets qu'avant — s'il n'imprime rien, `make` s'arrête, jamais un `ssh` sans elles (un `HOST_KNOWN_HOSTS` ou un `HOST_SSH_KEY` mal formé arrête donc toutes les cibles qui les lisent, `make pair-rotate` compris). Rien ne change pour toi : les mêmes cibles, les mêmes sorties ; une VM absente se dit désormais aussi pour `-cd-enable`, `-cd-disable` et `-cd-uninstall` (« Pas de VM : make imladris-up d'abord », au lieu de l'erreur de `ssh`). **Ce qui reste, assumé** : un `Makefile` hostile peut ne plus appeler ces scripts, et lancer son propre `ssh` ; les autres recettes vers Imladris (`imladris-push`, `-start`, `-stop`, `-cd-check`, `-cd-status`, `-cd-retry`, `-cd-rollback`…) passent par `HOST_SSH`, leurs commandes écrites dans le `Makefile`, sous l'utilisateur de la VM, membre du groupe `docker` (l'équivalent de root), et qui a probablement aussi un `sudo` sans mot de passe par cloud-init (non mesuré) : aucun `sudo` n'est écrit dans le `Makefile`, mais une commande `docker` peut faire autant. Les options SSH d'Orodruin (`SSH_OPTS`) restent aussi dans le `Makefile`, sans script possédé ; seul `orodruin-known` passe par `known_host.sh`. Assumé pour la même raison : tu lances ces recettes sur ton poste, avec tes droits, et tu lis ce que tu lances (décision du 18/11 ; `docs/design/modele-de-menace.md`, §7).
 3. **`make imladris-cd-check`, à blanc.** La commande vérifie la dernière release, tire son image publiée par son digest, la vérifie et passe le préflight, dont **la config d'Imladris sous la lecture stricte d'A3**. Elle ne bascule pas, et dit le résultat dans le terminal et dans `#deploy`. Si la dernière release tourne déjà (le cas quand Imladris a été redéployé à la main sur elle, ou par l'agent d'avant CI3), elle tire son image publiée à côté (`check-<tag>`, effacée ensuite), la vérifie et la préflighte : le chemin de la release suivante est éprouvé sur le vrai Docker d'Imladris.
 4. **Si c'est vert, `make imladris-cd-enable`.** Le passage suivant déploie.
 
@@ -617,7 +702,7 @@ d'exercice non marqués (B2), qui n'ont rien à faire dans une observation.
    - elle est encore sur la version d'avant, ou absente (coupé avant ou pendant le `compose up`) : Imladris est remis d'aplomb sur la version d'avant, et la bascule est dite « interrompue », pas malade ; elle est retentée au passage suivant. Interrompue une deuxième fois, elle est refusée, avec ta mention ;
    - elle tourne sur autre chose (redéployé à la main entre-temps) : le CD n'y touche pas.
    `make imladris-cd-retry` garde une bascule interrompue.
-1. **La dernière release**, sur l'API publique (les brouillons et les pré-versions n'y figurent pas). Rien à faire si elle tourne déjà sur les trois conteneurs, ou si elle a déjà échoué ou été refusée. Un tag déjà vu sur un autre commit est refusé : un tag publié ne se réécrit pas.
+1. **La dernière release**, sur l'API publique (les brouillons et les pré-versions n'y figurent pas). Rien à faire si elle tourne déjà sur les trois conteneurs, ou si elle a déjà échoué ou été refusée. **Refusée avant tout fetch** (SEC-G, audit du 13/11, V-07), dite avec ta mention, retenue : un tag qui n'est pas de la forme `v<majeur>.<mineur>.<correctif>` (`v0.6.1` ; jamais `0.6.1`, `release-1`, `v0.6.1-rc1`, `v0.06.1`). Son auteur n'est pas lu : celui que GitHub donne est l'App, qui a créé le brouillon que Jonathan publie. Un tag déjà vu sur un autre commit est refusé : un tag publié ne se réécrit pas. **Le commit du tag se lit sur l'API du dépôt** à son nom actuel (SEC-G, V-38 ; un tag annoté suivi jusqu'à son commit) : l'origin d'Imladris qui en dit un autre, ou une API qui n'en nomme aucun, et la release est refusée.
    Si seule une partie des conteneurs tourne sur la release, `#deploy` le dit une fois.
 2. **Vérifier.** Son tag est sur `origin/main`, et jamais plus ancien que ce qui tourne (SEC12) :
    - **plus ancienne par sa version** (`vX.Y.Z`, comparée en nombres) **ou par son commit** (un ancêtre) que ce qui tourne, **ou que le plancher** : **refusée**, dite avec ta mention, le retour arrière nommé. Le plancher est la plus haute version déjà déployée sur ce Imladris, avec son commit (`state.json`, `floor`). Chaque déploiement le monte, ce qui tourne aussi (un déploiement à la main plus récent). Rien ne le baisse, ni un retour arrière, ni `retry` : remettre Imladris à la main sur une version plus ancienne ne rouvre pas la porte aux releases d'avant ;
@@ -628,7 +713,7 @@ d'exercice non marqués (B2), qui n'ont rien à faire dans une observation.
      - **un plancher dont le commit est inconnu du dépôt de la VM** (un tag supprimé, puis la VM reclonée) : `git merge-base` ne sait pas ordonner, et chaque release est refusée, « ne se lit pas ». C'est voulu : jamais une release n'est tenue pour plus récente par défaut de lecture. L'issue est la troisième ci-dessus (la clé `floor` retirée, le CD en pause) ;
    - **jamais par défaut de lecture** : si ce qui tourne ne se lit pas (la watch sans étiquettes, absente), ou si `git merge-base` ne sait pas ordonner deux commits (code 128 : un commit inconnu du dépôt de la VM), la release est **refusée**, pas tenue pour plus récente. Un retour arrière demandé n'y change rien. Une release plus ancienne remise en « latest » ne ramène jamais Imladris en arrière seule. Avant SEC12, le CD passait en silence, et seulement par le commit. Si Imladris a été redéployé à la main sur un commit plus récent que la dernière release, celle-ci est refusée une fois, avec la mention, puis plus rien ;
    - **le retour arrière se demande sur Imladris**, pour un tag : `make imladris-cd-rollback TAG=v0.4.9`. La release doit être publiée : un brouillon répond 404, une pré-version est refusée. Elle passe toutes les vérifications d'une release : sur `main`, checks verts, image signée tirée par son digest, préflight, santé. Le message de début dit « retour arrière demandé sur Imladris ». La release quittée est marquée « rolled back » : le timer ne la reprend pas seul, il faut une nouvelle release ou `make imladris-cd-retry`. Un retour arrière qui change de verrou passe aussi la garde du verrou (point 3) : l'attestation de la release visée porte sur un autre verrou de référence, et elle est le plus souvent refusée. Le chemin de secours reste alors `make imladris-start REF=<tag>`. **Une release d'avant le renommage du compte** (la v0.5.2 et avant, REN1) est toujours refusée : son image est signée par l'ancien nom du dépôt, que ce CD ne reconnaît plus. Même secours ;
-   - **la règle des tags**, lue sans jeton (`/repos/…/rulesets?targets=tag`, puis la règle) : une règle active dont les cibles couvrent `refs/tags/<tag>` et qui interdit création, mise à jour et suppression. Vue, le message de début la nomme (« 🔒 … réservé par la règle … »). Absente, `#deploy` le dit en orange, avec ta mention. Illisible, il le dit en orange, sans mention. Ce n'est **jamais un refus** : GitHub ne dit pas si ces routes répondent sans jeton, c'est une hypothèse à mesurer sur Imladris (`make imladris-cd-check`). `make imladris-cd-status` la dit aussi.
+   - **la règle des tags**, lue sans jeton (`/repos/…/rulesets?targets=tag`, puis la règle) : une règle active dont les cibles couvrent `refs/tags/<tag>` et qui interdit création, mise à jour et suppression. Vue, le message de début la nomme (« 🔒 … réservé par la règle … »). **Absente, la release est refusée** (SEC-G, audit du 13/11, V-07 : un tag qu'aucune règle ne réserve, toute identité qui écrit le dépôt a pu le créer), dite avec ta mention. **Illisible** (une réponse sans jeton qui n'est pas une liste, le réseau), la release **attend** : jamais déployée sans la règle vue, jamais retenue comme refusée, dite une fois en orange avec ta mention ; elle se déploie au passage où la règle se lit. Lue sans jeton le 02/11 et le 18/11. `make imladris-cd-status` la dit aussi.
 
    **Les checks de son commit, en deux groupes** (H1c, #518, décision de Jonathan du 04/11 : une release ne reste jamais bloquée parce que GitHub n'a pas fourni de runner). Le CD lit tous les check-runs du commit, sur toutes leurs pages, et les range par leur nom entier :
    - **Ceux qui bloquent** : les cinq checks requis de `main` (`lint + tests (py3.11)`, `lint + tests (py3.12)`, `terraform test (mock providers)`, `image (annatar)`, `image (glorfindel)`), et celui qui publie l'image que le CD tire (`publish (glorfindel)`, CI3).
@@ -676,6 +761,7 @@ d'exercice non marqués (B2), qui n'ont rien à faire dans une observation.
 
 - **`make imladris-cd-status`** : ce qui tourne, la dernière release, les derniers résultats, et les 15 dernières lignes du journal du jour, les plus récentes en bas (CDJ1, #783). Jusqu'à la 0.5.12, il montrait les 15 premières : le systemd d'Imladris (Ubuntu 22.04, systemd 249) lit vers l'avant depuis `--since` quand `-n` l'accompagne, et le 13/11 l'extrait datait de la veille.
 - **Une release refusée ou revenue en arrière** ne se retente pas d'elle-même. Corriger, puis publier une nouvelle release, ou `make imladris-cd-retry`.
+- **SEC-G change l'agent** (`eregion_cd.py`, `deploy.sh`) : la release qui le porte est déployée par l'agent d'avant, qui ne lit pas le commit du tag sur l'API et ne fait de la règle des tags qu'un message. Puis `#deploy` demande la mise à jour : `make imladris-cd-install`, puis `make imladris-cd-check`. La règle des tags d'aujourd'hui (`v*`) couvre déjà les tags `v<semver>` : l'agent nouveau les déploie ; l'étendre à tous les tags (`docs/sessions.md`, « Les règles du dépôt ») ferme le reste côté dépôt.
 - **SEC12 change l'agent** (`eregion_cd.py`) : la release qui le porte est déployée par l'agent d'avant, qui ne lit ni le plancher, ni la règle des tags, et n'a pas `rollback`. Puis `#deploy` demande la mise à jour : `make imladris-cd-install`, puis `make imladris-cd-check`, puis `make imladris-cd-enable` (l'installation laisse le timer désactivé). Ce qu'Imladris lit de la règle des tags sans jeton se voit dans `make imladris-cd-status` (« 🔒 … réservé par la règle « tags v* » », mesuré le 02/11) : `cd-check` ne la lit pas quand la release tourne déjà. Le plancher part de ce qui tourne au premier passage du nouvel agent.
 - **Revenir à une release plus ancienne** (SEC12) : `make imladris-cd-rollback TAG=vX.Y.Z`, une release publiée. Le CD la vérifie et la déploie comme toute release. Celle qu'il quitte n'est plus reprise seule. C'est le seul chemin vers une version plus ancienne : le timer la refuse. Pas vers une release d'avant REN1 (la v0.5.2 et avant), signée par l'ancien nom du dépôt : refusée, ici comme par `make imladris-start` depuis SEC-C (sa signature n'est plus celle que le poste vérifie). Le retour arrière automatique, après une santé rouge, n'est pas touché : il réétiquette l'image locale, sans rien tirer.
 - **Un nouveau verrou.** `make llm-compare MODELS=<modèle d'Imladris> RUNS=3 ATTEST=1` (appels payants, deux passages, Jonathan) écrit `requirements/harness.json`, puis `make harness-sign` la signe (SEC19) : les deux fichiers à commiter dans la PR du verrou. La référence est le dernier tag `v*` ; si Imladris tourne sur une autre release, `BASE=<tag en service>`.
@@ -717,6 +803,7 @@ d'exercice non marqués (B2), qui n'ont rien à faire dans une observation.
   1. `make imladris-cd-install`, depuis un checkout de `main` à jour (`git switch main && git pull` ; le timer reste comme il était ; les unités ne changent pas) ;
   2. `make imladris-cd-status`, où une ligne dit « rappels : aucune date de fin notée » (l'agent d'avant n'a pas cette ligne) ;
   3. depuis le poste, `make pair-expiry-note PAIR=console` : la date du secret de la console, qui n'a pas été posé par `make pair-rotate`. Elle dit « ✓ Imladris : fin le … notée » et les dates des rappels.
+- **ROT2 change l'agent** (#968 : `eregion_cd.py`, le jeton de la console parmi les rappels, sous `console-token`). Comme ROT1, juste après la fusion, sans attendre la release : `make imladris-cd-install`, depuis un checkout de `main` à jour (le timer reste comme il était). Puis, une fois, depuis le poste : `make imladris-console-rotate` (le jeton en place date de la création d'Imladris), ou `make imladris-console-token-note` pour le garder et seulement poser son rappel. Un agent d'avant ROT2 ne lit que les trois paires : la commande le dit (« une version d'avant ROT2 »), la date notée quand même.
 - **IML1b change l'agent** (#747 : `eregion_cd.py`, `install.sh`, ses unités) : ses messages dans `#deploy` et son journal donnent les commandes sous leur nouveau nom, `make imladris-*` (`make imladris-status`, `make imladris-cd-retry`, `make imladris-cd-install`…), et nomment l'hôte Imladris (« ✅ Imladris tourne sur … », « ⛔ … refusée : Imladris reste sur … »). Rien d'autre ne change : ni les checks requis, ni la vérification, ni le déploiement. La release qui le porte est déployée par l'agent d'avant, qui parle encore sous les anciens noms : `#deploy` demande la mise à jour sous l'ancien nom, `make glorfindel-host-cd-install` (qui marche encore), et la redemande à chaque déploiement tant que l'agent n'est pas réinstallé. On lance `make imladris-cd-install`, depuis un checkout de `main` à jour (le timer reste comme il était). IML1c (#752) change aussi `deploy.sh`, l'un des fichiers de l'agent : son refus pendant un déploiement dit « le CD d'Imladris » ; le même `make imladris-cd-install` le pose. Les anciens noms (`glorfindel-host-*`, `mobile-*`) marchent encore, sans rien dire, jusqu'à IML2 (#689).
 - **SEC-C change l'agent** (#635 : `eregion_cd.py`, `deploy.sh`) : le CD pointe l'origin du dépôt d'Imladris vers le nom actuel avant son `fetch`, et passe ce nom au `deploy.sh` de sa bascule. Rien d'autre ne change dans un passage : ni les checks, ni la vérification, ni `--build-only`, ni `--activate`. L'agent installé avant ne le fait pas : il tire encore par l'ancien nom, que GitHub redirige. `make imladris-cd-install`, depuis un checkout de `main` à jour, le pose (le timer reste comme il était) ; il faut pour cela `HOST_SSH_FINGERPRINT` posée (« Ce que SEC-C change », plus bas). Le `deploy.sh` du chemin à la main part du poste : il vaut dès la fusion.
 - **Le retirer** : `make imladris-cd-uninstall` (les unités ; `~/.eregion-cd/` reste).
@@ -732,6 +819,8 @@ Les secrets des trois paires du poste (la watch, la console, le bot) expirent ; 
 - **un message que Discord refuse** repart au passage suivant, cinq minutes plus tard ;
 - **une date illisible** est dite dans le journal, jamais devinée ; `make imladris-cd-status` dit chaque date notée, ses paliers et ceux déjà envoyés ;
 - **une rotation faite hors de la commande n'est pas vue** : la date reste l'ancienne, jusqu'à `make pair-expiry-note`. `make azure-pairs-expiry` et le préflight du banc restent le filet.
+
+**Le jeton de la console d'Imladris** (ROT2, #968) suit les mêmes règles, sous son propre nom, `console-token` (`~/.eregion-cd/expiry/console-token.json`) : `make imladris-console-rotate` note le jour de le refaire (le tirage + 90 jours), `make imladris-console-token-note` celui du jeton en place. Le rappel dit « 🔑 Le jeton de la console d'Imladris est à faire tourner dans 14 jours, le … », puis `make imladris-console-rotate`. La console accepte encore le jeton après cette date : c'est un rappel, pas une fin. Le CD ne lit jamais le jeton, seulement sa date.
 
 Le webhook est celui de `#deploy`, déjà dans `~/.eregion-cd/discord.env` : aucun secret nouveau, aucun timer nouveau, aucune identité nouvelle.
 
