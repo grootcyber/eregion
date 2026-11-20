@@ -32,6 +32,7 @@ tourne.
 | Les adresses d'une VM sur sa carte (IPS1, #931, 19/11, sur une maquette) | **A, une ligne sous le nom, repliée comme dépliée** : les IP privées (quatre, puis « +N »), puis la publique derrière 🌐, en jaune ; une adresse se copie d'un clic ; dépliée, le détail par carte réseau et l'âge de la lecture ; « ip — » et pourquoi quand l'audit NSG a échoué. **Un seul lot**, privées et publiques | B, une puce « PUBLIC » seule, les adresses sur la carte dépliée ; C, la carte dépliée seulement ; deux lots (les privées d'abord) |
 | Un audit illisible (TOPO1b, #949, 19/11, sur une maquette) | **une bande au-dessus des cartes** : « Readiness audit not read », sa raison, et l'heure du dernier bon audit quand il est gardé | « ip ? » et « ? ? ? » sur chaque carte |
 | Le clic sur une adresse d'une carte repliée (TOPO1b, #949, 19/11, sur une maquette) | **A, il copie** l'adresse, comme IPS1 l'a fait ; le nom et la rangée du mode déplient | B, tout clic déplie (copier depuis la carte dépliée) ; C, les adresses en bas de la carte |
+| La page Glorfindel sur un téléphone (MOB4, #972, 20/11, sur une maquette) | **A, un onglet par section sous 760 px** : To judge, Infra, Feed, une section à la fois ; par défaut To judge quand des cartes attendent ; l'infra empilée, sans les fils ; l'en-tête sur une ou deux lignes. **La page Glorfindel et l'en-tête d'abord**, Overview et Dagorlad ensuite | B, tout empilé et replié ; C, l'infra seule, To judge derrière un bouton ; toutes les pages dans le même lot |
 
 **Choisi par défaut, sans objection :**
 - `/atelier` redirige vers `/`.
@@ -514,6 +515,36 @@ l'audit ; la coquille reconstruite sans erreur après le retrait de `#topo-body`
 redimensionnement de la carte défilée, chaque fil sur sa carte.
 Tests : `tests/unit/test_console_audit_band.py`, `tests/unit/test_console_topology.py` ; mutants
 M6501–M6510 (`scripts/mutants/TOPO1b.py`).
+
+### La page sur un téléphone (MOB4, #972, 20/11)
+
+Mesuré à 390 px de large (émulation mobile, jeu d'exemple) : la page n'avait aucune règle pour un
+petit écran. La colonne de gauche (TO JUDGE et LIVE FEED) a une largeur fixe de 390 px : elle prenait
+tout l'écran, la carte de l'infra avait 0 px, l'en-tête débordait à droite, et le navigateur dézoomait
+la page (930 px de large pour un écran de 390). Jonathan a choisi l'option A sur une maquette (ligne
+« La page Glorfindel sur un téléphone » des décisions).
+- **Sous 760 px**, trois onglets sous l'en-tête (`#m-tabs`) : To judge, Infra, Feed. Une section à la
+  fois, celle que `body[data-m]` nomme, avec son propre défilement ; la liste à juger n'est plus
+  coupée à 45vh. Par défaut, To judge quand des cartes attendent, sinon l'infra, jusqu'à ce que
+  l'opérateur choisisse un onglet ; puis le sien. Un badge dit combien de cartes attendent. La
+  configuration (`/config`) prend la place de l'infra.
+- **L'infra sur un téléphone** : ses modules (DETECT, PROTECT, RECOVER) empilés, ses cartes l'une sous
+  l'autre, sur toute la largeur, sans les fils. Les fenêtres tiennent dans l'écran.
+- **L'en-tête commun** (`console.css`) passe à la ligne, sans la version, le séparateur ni l'heure : une
+  ou deux lignes, sur toutes les pages.
+- **Rien ne change au-delà de 760 px.** Toutes ces règles sont dans un seul bloc `@media (max-width:
+  759px)`, le dernier de la feuille (une media query n'ajoute pas de poids : une règle de base écrite
+  après lui l'emporterait). Hors du bloc, une seule règle : la barre d'onglets cachée.
+- Overview et Dagorlad restent pour grand écran : un lot à part, une fois la page Glorfindel essayée sur
+  un téléphone.
+
+Mesuré dans Chromium sans tête, en émulation mobile (390 × 844, toucher) : la page à 390 px sans dézoom
+ni débordement ; l'en-tête sur deux lignes ; To judge par défaut, ses boutons de verdict dans l'écran ;
+un toucher sur Infra et Feed montre la section ; les cartes sur toute la largeur, les fils cachés. À
+1440 × 900 : la barre cachée, la colonne de gauche à 390 px, l'infra à 1050 px, les fils dessinés ;
+TOPO1 (34 fils sur 34 après le tick, défilé) et TOPO1b (la bande, deux tracés pour deux
+rafraîchissements) tiennent.
+Tests : `tests/unit/test_console_phone.py` ; mutants M6683–M6697 (`scripts/mutants/MOB4.py`).
 
 ### Les blocages d'une VM (CON-K, #498, 04/11)
 

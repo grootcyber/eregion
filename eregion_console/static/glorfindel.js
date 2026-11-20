@@ -2692,6 +2692,7 @@ function renderToJudge() {
   const count = document.getElementById('judge-count');
   if (!list) return;
   if (count) count.textContent = _toJudge.length ? `· ${_toJudge.length}` : '';
+  _showMobileTab();                              // the phone's default tab and its badge (MOB4)
   if (!_toJudge.length) {
     list.innerHTML = '<div class="judge-empty">Nothing to judge — every recommendation of the last 7 days has a verdict.</div>';
     return;
@@ -3322,6 +3323,29 @@ function toggleConfig() {
   cfgPanel.style.display = _configMode ? 'flex' : 'none';
   document.getElementById('right-col-label').textContent = _configMode ? 'CONFIGURATION' : 'INFRASTRUCTURE';
   if (_configMode) refreshConfig();
+  _showMobileTab();                // a phone shows the configuration, in the infra's place (MOB4)
+}
+
+// ── On a phone (MOB4, #972, Jonathan 20/11 on a mockup, option A) ──────────────────
+// Under 760 px, one section at a time — To judge, Infra, Feed —, the one body[data-m] names (the CSS
+// shows it). By default To judge when cards wait, else the infra, until the operator picks a tab:
+// then theirs. The configuration is in the infra's place. Above 760 px the attribute changes nothing.
+const _MOBILE_TABS = ['judge', 'infra', 'feed'];
+let _mobileTab = null;                     // the tab the operator picked; null: the default
+function mobileTab(which) {
+  if (!_MOBILE_TABS.includes(which)) return;
+  _mobileTab = which;
+  _showMobileTab();
+}
+function _showMobileTab() {
+  const tab = _configMode ? 'infra' : (_mobileTab || (_toJudge.length ? 'judge' : 'infra'));
+  document.body.dataset.m = tab;
+  for (const t of _MOBILE_TABS) {
+    const b = document.getElementById('m-tab-' + t);
+    if (b) b.ariaSelected = String(t === tab);
+  }
+  const badge = document.getElementById('m-judge-badge');
+  if (badge) { badge.textContent = _toJudge.length ? String(Number(_toJudge.length)) : ''; badge.hidden = !_toJudge.length; }
 }
 
 // The server sends identifiers masked already (SEC1): its first 8 and last 4 characters.
@@ -4025,6 +4049,7 @@ const ACTIONS = {
   verifyIdentity,                                 // an identity card's plan, read again on Graph by the watch (IR1a)
   openJudgeCard,                                  // a card's details and its verdict, from TO JUDGE or a tile (JUG1)
   copyAddr,                                       // a VM's address, copied from its card (IPS1)
+  mobileTab,                                      // a phone's section, picked in its tab bar (MOB4)
   judgeFromModal(id, verdict) { judgeCard(id, verdict, 'judge-modal-note'); closeModal(); },
   confirmProposed, refuseProposed,                // VP1: a verdict proposed on an exercise card, confirmed or refused
   confirmProposedFromModal(id) { confirmProposed(id, 'judge-modal-note'); closeModal(); },
@@ -4091,6 +4116,7 @@ document.getElementById('modal-cancel').onclick = closeModal;
 // ── Init ───────────────────────────────────────────────────────────────────────
 
 (async function init() {
+  _showMobileTab();          // a phone: the infra until the cards to judge are read (MOB4)
   await refreshCfgData();     // detection rules + known resources → renderInfra
   await refreshState();       // active incidents → renderInfra
   if (_IS_CONFIG) toggleConfig();   // /config: this page, opened on its configuration
