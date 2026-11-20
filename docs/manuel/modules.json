@@ -755,6 +755,19 @@
    "issue": 631
   },
   {
+   "id": "g-plafond-regle",
+   "composant": "glorfindel",
+   "poste": "g-decider",
+   "nom": "A rule carries the ceiling of what its detection may lead to: the disk-write rule, on the write rate alone, at most a snapshot and a card, the isolation a human's gesture",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "RDW1"
+   ],
+   "issue": 994,
+   "doc": "docs/glorfindel.md"
+  },
+  {
    "id": "g-second-modele",
    "composant": "glorfindel",
    "poste": "g-decider",

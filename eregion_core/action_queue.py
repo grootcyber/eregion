@@ -74,6 +74,9 @@ APPROVABLE_TYPES = frozenset({"mode_hold", "low_confidence", "uncharacterized_si
                               "telemetry_gap", "unstable_decision"})
 # SEC-E (#846): the card of B3a's floor — isolate_vm proposed, never run by the floor.
 APPROVABLE_TYPES |= {"floor_proposal"}
+# RDW1 (#994; Jonathan, 20/11): the card of a rule's ceiling — the model's isolation proposed, never run
+# by the ceiling, on the floor's model.
+APPROVABLE_TYPES |= {"ceiling_proposal"}
 UNDO_TYPE = "verification_failed"
 # ATT1 (#936): the actions aimed at the card's VM — its isolation, a block on its NSG, the release of
 # its isolation. On a detection attributed to no VM (the card is filed on a VM the detection does not

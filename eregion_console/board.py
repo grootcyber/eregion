@@ -141,6 +141,10 @@ def glorfindel_card(watch: dict, rules: list[dict], state: dict, watch_refusal: 
     }
 
 
+# What contains a VM or its source (RDW1): a rule whose ceiling allows neither contains nothing alone.
+_CONTAINING = frozenset({"isolate_vm", "block_suspicious_ip"})
+
+
 def expected(e: Experiment, card: dict | None, rules: list[dict], threshold: float | None) -> dict:
     """What to expect from a wire allowed to run — an envelope from the configuration: what
     Glorfindel's guards allow it at most in the target's mode, never a forecast of its decision,
@@ -161,8 +165,15 @@ def expected(e: Experiment, card: dict | None, rules: list[dict], threshold: flo
     seen = f"detected ~{_minutes(latency)}" if latency else "detected"
     mode, hold = card.get("mode") or "human_only", card.get("hold") or ""
     gate = f" (confidence ≥ {round(threshold * 100)} %" if threshold is not None else " ("
+    # RDW1 (#994): every rule of the technique capped below the containment — the snapshot alone, at most.
+    capped = all(r.get("allow") is not None and not set(r["allow"]) & _CONTAINING for r in detecting)
     if card.get("read_only"):
         what, short = "It detects and recommends; nothing is executed (a read-only deployment).", "recommends"
+    elif mode == "non_disruptive" and capped:
+        what = ("At most a snapshot alone, then a card: the rule's ceiling ("
+                + ", ".join(sorted(r["name"] for r in detecting)) + ") leaves the isolation to a human, "
+                "from the card, whatever the model's confidence.")
+        short = "snapshot alone · card"
     elif mode == "non_disruptive":
         what = ("It may isolate or block alone if every guard passes" + gate + ", a characterized "
                 "signal attributed to this VM, telemetry read, draws that agree), then verify on Azure; "
@@ -172,7 +183,8 @@ def expected(e: Experiment, card: dict | None, rules: list[dict], threshold: flo
         what = "A card to judge; a human acts" + (f" — held: {hold}." if hold else ".")
         short = "card"
     if e.destructive is not False:   # destructive, or not declared (A0)
-        what += " A restore is never autonomous: at most an isolation and a snapshot, the restore waits for a human."
+        what += (" A restore is never autonomous: at most "
+                 + ("a snapshot" if capped else "an isolation and a snapshot") + ", the restore waits for a human.")
     return {"summary": f"{seen} · {short}", "rules": sorted(r["name"] for r in detecting),
             "latency_s": latency, "glorfindel": what, "mode": mode}
 

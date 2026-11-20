@@ -28,7 +28,7 @@ from glorfindel.detectors import (  # noqa: E402  (after optional deps)
     is_identity_source,
     plane_of,
 )
-from glorfindel import auditd, card_target, correlation, expected_sudo, own_channel  # noqa: E402
+from glorfindel import auditd, card_target, correlation, expected_sudo, own_channel, rule_ceiling  # noqa: E402
 from eregion_core import rule_routing  # noqa: E402
 
 logger = logging.getLogger("glorfindel.detection_rules")
@@ -152,6 +152,9 @@ class DetectionRule:
     # SEC2: a client rule that took the place of the shipped rule of its name — said at
     # load, in the watch banner and by `glorfindel rules`, never only logged.
     replaces_base: bool = False
+    # RDW1 (#994): what its detection may lead to, at most (glorfindel/rule_ceiling.py) — None: no
+    # ceiling, the behaviour of before.
+    ceiling: "rule_ceiling.Ceiling | None" = None
 
 
 @dataclass
@@ -505,6 +508,11 @@ def _invalid_client_entry(key: str, entry) -> str | None:
                 f"{ENV_GUID_PREFIX}… (majuscules, chiffres, _)")
     if not isinstance(entry.get("enabled", True), bool):
         return "`enabled` n'est ni true ni false"
+    if rule_ceiling.KEY in entry:
+        # RDW1: skipped, the base rule of its name loads instead, its own ceiling with it.
+        why = rule_ceiling.refusal(entry[rule_ceiling.KEY])
+        if why:
+            return why
     for field_, convert in (("interval_s", float), ("expected_latency_s", int)):
         if field_ in entry:
             value = entry[field_]
@@ -799,6 +807,51 @@ def _log_notes(notes: list[str]) -> None:
             logger.warning("detection rules: %s", note)
 
 
+@dataclass
+class RuleLayers:
+    """The shipped base as read, the rules once the client's layer is over it (P1), and what the
+    merge said: the layer of each rule, the notes, the client's file, its stale copies (WL1)."""
+    base: dict
+    merged: dict
+    layer_of: dict[str, str]
+    notes: list[str]
+    client_file: str = ""
+    drifted: list[str] = field(default_factory=list)
+
+
+def rule_layers(path: str | Path, client_layer: str | Path | bool = True, environ=None) -> RuleLayers:
+    """The base at `path`, then the client's layer over it (`client_layer`: as `load_config`). An
+    unreadable client layer: the base alone, said in the notes. Raises when the base cannot be read."""
+    base = _read_layer(Path(path))
+    data = base
+    notes: list[str] = []
+    layer_of: dict[str, str] = {}
+    client_file = ""
+    drifted: list[str] = []
+    if client_layer:
+        cpath = client_rules_path() if client_layer is True else Path(client_layer)
+        try:
+            client = _read_layer(cpath, notes)
+        except Exception as exc:
+            client = {}
+            notes.append(f"couche du client illisible ({cpath}) : {exc} — base seule")
+        if client:
+            client_file = str(cpath)
+            # WL1: a stale copy of a base rule set aside before the merge — the shipped rule loads.
+            base_rules = {r["name"]: r for r in _named(base.get("rules"))}
+            client, drifted, more = _drift(base_rules, client)
+            notes += more
+            # CAN2: a GUID from the watch's environment into the rules that declare it, or the
+            # shipped rule in their place (`environ`: os.environ unless given).
+            import os
+            client, more = _env_guids(base_rules, client, os.environ if environ is None else environ)
+            notes += more
+            data, more, layer_of = merge_layers(base, client)
+            notes += more
+    return RuleLayers(base=base, merged=data, layer_of=layer_of, notes=notes,
+                      client_file=client_file, drifted=drifted)
+
+
 def load_config(path: str | Path, glorfindel_cfg=None, client_layer: str | Path | bool = True,
                 environ=None) -> DetectionConfig:
     """Load detection configuration from YAML: the shipped base at `path`, then the
@@ -819,33 +872,16 @@ def load_config(path: str | Path, glorfindel_cfg=None, client_layer: str | Path 
     """
     if yaml is None:
         raise ImportError("PyYAML is required: pip install pyyaml")
-    data = _read_layer(Path(path))
-    base_names = {r["name"] for r in _named(data.get("rules"))}
-    base_on = {r["name"] for r in _named(data.get("rules")) if r.get("enabled", True)}
-    notes: list[str] = []
-    layer_of: dict[str, str] = {}
-    client_file = ""
-    drifted: list[str] = []
-    if client_layer:
-        cpath = client_rules_path() if client_layer is True else Path(client_layer)
-        try:
-            client = _read_layer(cpath, notes)
-        except Exception as exc:
-            client = {}
-            notes.append(f"couche du client illisible ({cpath}) : {exc} — base seule")
-        if client:
-            client_file = str(cpath)
-            # WL1: a stale copy of a base rule set aside before the merge — the shipped rule loads.
-            base_rules = {r["name"]: r for r in _named(data.get("rules"))}
-            client, drifted, more = _drift(base_rules, client)
-            notes += more
-            # CAN2: a GUID from the watch's environment into the rules that declare it, or the
-            # shipped rule in their place (`environ`: os.environ unless given).
-            import os
-            client, more = _env_guids(base_rules, client, os.environ if environ is None else environ)
-            notes += more
-            data, more, layer_of = merge_layers(data, client)
-            notes += more
+    layers = rule_layers(path, client_layer, environ)
+    base, data, layer_of, notes = layers.base, layers.merged, layers.layer_of, layers.notes
+    client_file, drifted = layers.client_file, layers.drifted
+    base_names = {r["name"] for r in _named(base.get("rules"))}
+    base_on = {r["name"] for r in _named(base.get("rules")) if r.get("enabled", True)}
+    # RDW1 (#994): each rule's ceiling — the shipped one of its name always holds, the client's layer
+    # lowers it, never raises it (glorfindel/rule_ceiling.py).
+    ceilings = rule_ceiling.of_rules(_named(base.get("rules")),
+                                     [r for r in _named(data.get("rules")) if r.get("enabled", True)],
+                                     layer_of, notes)
     if not data:
         _log_notes(notes)
         return DetectionConfig(backends=[], assets=[], rules=[], notes=notes, client_file=client_file)
@@ -1044,6 +1080,7 @@ def load_config(path: str | Path, glorfindel_cfg=None, client_layer: str | Path 
             expected_latency_s=int(item.get("expected_latency_s", 0)),
             layer=layer_of.get(item["name"], "base"),
             replaces_base=replaces_base,
+            ceiling=ceilings.get(item["name"]),
         ))
 
     loaded = {item["name"] for item in data.get("rules", []) if item.get("enabled", True)}
