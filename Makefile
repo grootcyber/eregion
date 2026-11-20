@@ -163,6 +163,7 @@ DOCKER_GLORFINDEL_WATCH = $(WATCH_KEY_DIR) && $(RUNS_DIRS) && $(GLORFINDEL_AZURE
 	imladris-cd-install imladris-cd-check imladris-cd-enable imladris-cd-disable \
 	imladris-cd-status imladris-cd-retry imladris-cd-rollback imladris-cd-uninstall \
 	imladris-env imladris-report imladris-url imladris-status imladris-pull \
+	imladris-console-rotate imladris-console-rotate-go imladris-console-token-note imladris-console-token-note-go \
 	imladris-model imladris-campaign-report imladris-containment imladris-fault-rate imladris-known imladris-fingerprint celebrimbor-workload \
 	orodruin-init orodruin-watch-guard orodruin-watch-principals orodruin-plan orodruin-up orodruin-lock orodruin-push orodruin-push-dev orodruin-check \
 	orodruin-stop orodruin-start orodruin-update orodruin-kill orodruin-down orodruin-ssh orodruin-exercise orodruin-exercise-guard \
@@ -220,6 +221,7 @@ help:
 	@echo "  make console-url                The console's URL with its token (~/.eregion/console/token: never in the logs);"
 	@echo "                                  the workstation's tunnel holding 7007: Imladris's, as make imladris-url (IML1c). Refused in an agent session"
 	@echo "  make console-rotate             A new drawn token: every session of the former one refused at once"
+	@echo "                                  (the console of Imladris: make imladris-console-rotate, ROT2)"
 	@echo "  make azure-pairs-expiry         When the secrets of the three pairs end (az login; warns under 14 days)"
 	@echo "  make pair-rotate PAIR=<watch|console|bot> [DAYS=…]   Turn a pair's secret: added, verified, in .envrc,"
 	@echo "                                  its service restarted, the old one removed, its end noted on Imladris (ROT1)"
@@ -291,6 +293,9 @@ help:
 	@echo "  make imladris-tunnel-remove [DRY_RUN=1]      L'arrête et retire l'unité"
 	@echo "  make imladris-tunnel-check                   Le poste ouvert au téléphone, lu (l'unité, SSH à clé, Tailscale, 127.0.0.1:7007 seul)"
 	@echo "  make imladris-url                            L'URL de la console d'Imladris avec son jeton (et si le tunnel n'est pas armé)"
+	@echo "  make imladris-console-rotate [DAYS=90]       Fait tourner son jeton : host.env (sa seule ligne), poussé, la console seule relancée,"
+	@echo "                                               l'ancien refusé ; rappel dans #deploy au jour noté (ROT2). Jamais affiché : imladris-url"
+	@echo "  make imladris-console-token-note [DAYS=90]   Note le jeton en place (compté tiré aujourd'hui) : son rappel, sans rien faire tourner"
 	@echo "    La console sur le téléphone : son propre tunnel SSH vers 127.0.0.1:7007 du poste, que tient le tunnel du poste."
 	@echo "    Toutes refusent dans une session d'agent, sauf imladris-tunnel-check."
 	@echo "    Secours — un poste sans systemd de l'utilisateur (macOS), ou un coup d'œil sans armer les 12 h :"
@@ -695,7 +700,8 @@ console-url-local:
 
 # SEC10 : un nouveau jeton tiré, dans le fichier propre de la console (la console le relit à la
 # requête suivante, et refuse toute session de l'ancien). Jamais quand le déploiement pose le jeton
-# (EREGION_CONSOLE_TOKEN, Imladris) : on le change là où il est posé.
+# (EREGION_CONSOLE_TOKEN, Imladris) : on le change là où il est posé — sur Imladris, make
+# imladris-console-rotate, depuis le poste (ROT2).
 console-rotate:
 	docker compose exec -T war-room eregion rotate-token
 	@$(MAKE) --no-print-directory console-url
@@ -1261,6 +1267,37 @@ imladris-url:
 	 $(TUNNEL_ACTIVE) || if [ -f "$(MOBILE_UNIT)" ]; then \
 	   echo "  ℹ le tunnel du poste vers Imladris n'est pas armé : make imladris-tunnel-on (12 h au plus ; ou make imladris-tunnel au premier plan)" >&2; \
 	 else echo "  ℹ le tunnel du poste vers Imladris n'est pas armé (pas posé : make imladris-tunnel-install), puis make imladris-tunnel-on (ou make imladris-tunnel au premier plan)" >&2; fi
+
+# ROT2 (#968) : faire tourner le jeton de la console d'Imladris (scripts/console_rotate.py) — un nouveau
+# jeton dans host.env (sa seule ligne : sous EREGION_CONSOLE_TOKEN, à sa place, une ligne de l'ancien nom
+# retirée ; écrit à côté en 0600, vérifié par host_env.py --check, puis renommé), posé par make
+# imladris-push, la console seule relancée (war-room : la watch et le bot ne bougent pas), le nouveau
+# accepté et l'ancien refusé par la sonde de status.sh (curl sur Imladris, le jeton sur son entrée), puis
+# le jour de le refaire (le tirage + DAYS, 90 par défaut) noté sur Imladris sous « console-token », que
+# son CD rappelle dans #deploy (J-14, J-7, J-1, le jour même). Le jeton n'est jamais affiché : make
+# imladris-url le relit. imladris-console-token-note note le jeton en place, compté tiré aujourd'hui, sans
+# rien faire tourner. Refusées en session de code : la garde seule d'abord ; la cible -go la refait, puis
+# lit l'adresse et la clé d'hôte dans le shell (PAIR_SSH, comme pair-rotate). DAYS : jamais développé par
+# make ($(value …)). La pose : make imladris-push, par une variable simple — une ligne de recette qui
+# nomme $(MAKE) tournerait même sous make -n.
+CONSOLE_ROTATE = python3 scripts/console_rotate.py
+CONSOLE_PUSH  := $(MAKE) --no-print-directory imladris-push
+imladris-console-rotate-go imladris-console-token-note-go: export EREGION_CONSOLE_DAYS = $(value DAYS)
+imladris-console-rotate:
+	@$(CONSOLE_ROTATE) guard $@
+	@$(MAKE) --no-print-directory $@-go
+
+imladris-console-rotate-go:
+	@$(CONSOLE_ROTATE) guard imladris-console-rotate
+	@$(PAIR_SSH); EREGION_HOST_SSH="$$ssh_cmd" EREGION_PUSH="$(CONSOLE_PUSH)" $(CONSOLE_ROTATE) rotate --days "$$EREGION_CONSOLE_DAYS"
+
+imladris-console-token-note:
+	@$(CONSOLE_ROTATE) guard $@
+	@$(MAKE) --no-print-directory $@-go
+
+imladris-console-token-note-go:
+	@$(CONSOLE_ROTATE) guard imladris-console-token-note
+	@$(PAIR_SSH); EREGION_HOST_SSH="$$ssh_cmd" $(CONSOLE_ROTATE) note --days "$$EREGION_CONSOLE_DAYS"
 
 # Le secours (IML1b) : un poste sans systemd de l'utilisateur (macOS), ou un coup d'œil sans armer les
 # 12 h. Affiche l'URL avec son jeton, puis tient le tunnel au premier plan (Ctrl+C pour fermer).

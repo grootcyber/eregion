@@ -59,6 +59,8 @@ infra/glorfindel-host/.terraform/
 infra/glorfindel-host/terraform.tfstate*
 infra/glorfindel-host/*.tfplan
 infra/glorfindel-host/host.env
+# ROT2 : le host.env réécrit par make imladris-console-rotate, à côté, avant d'être renommé (il tient tout).
+infra/glorfindel-host/.host.env.console-rotate.tmp
 
 # Orodruin (O1) — état séparé, secrets jamais suivis
 infra/orodruin/.terraform/

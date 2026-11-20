@@ -1753,6 +1753,39 @@ function _netBlock(net) {
   const failed = net.failed ? `<div class="vm-netfoot">NSG audit failed: ${_attr(net.failed)}</div>` : '';
   return `<div class="vm-net">${nics}${failed}<div class="vm-netfoot">read by the NSG audit ${_attr(_relTime(net.at))}</div></div>`;
 }
+// ── A VM's identity (VMI1, #971, Jonathan 20/11 on a mockup, option A) ─────────────
+// What the page knows of the VM already — its id, where its subscription and its group are read,
+// the backend that discovered it, its last heartbeat — said on hover of its name, and on the
+// unfolded card in a block where each field is copied in one click. The name still unfolds the
+// card. A phone has no hover: there, the block. Everything comes from Azure or the discovery: escaped.
+function _vmIdentity(resource) {
+  const id = String(resource.resource_id || '');
+  const m = /\/subscriptions\/([^/]+)\/resourceGroups\/([^/]+)\//i.exec(id);
+  return {
+    name: String(resource.vm_name || id.split('/').pop() || ''),
+    rg: m ? m[2] : '', sub: m ? m[1] : '',
+    id: id.startsWith('/subscriptions/') ? id : '',   // a discovered name without its id: no id said
+    ws: String(resource.monitoring_backend || ''),
+    seen: resource.last_seen ? _relTime(resource.last_seen) : '',
+  };
+}
+// The name's tooltip, one field a line (the browser's own: no copy from it; the block copies).
+function _identityTip(v) {
+  const detected = v.ws ? `${v.ws}${v.seen ? ' · heartbeat ' + v.seen : ''}` : (v.seen ? 'heartbeat ' + v.seen : '');
+  return [v.name, v.rg && `resource group  ${v.rg}`, v.sub && `subscription    ${v.sub}`,
+          detected && `detected by     ${detected}`, v.id].filter(Boolean).join('\n');
+}
+// The value is the button: a copy outside a secure context selects the button's own text (copyAddr).
+function _idBlock(v) {
+  const row = (k, val, long) => val
+    ? `<span class="vm-id-k">${k}</span><button type="button" class="vm-ip${long ? ' long' : ''}" ${_on('click', 'copyAddr', val)} title="${_attr('Copy the ' + k + (long ? ': ' + val : ''))}">${_attr(val)}</button>`
+    : '';
+  const detected = v.ws ? `${v.ws}${v.seen ? ' · ' + v.seen : ''}` : '';
+  const rows = [row('name', v.name), row('group', v.rg), row('subscription', v.sub), row('resource id', v.id, true),
+                detected ? `<span class="vm-id-k">detected by</span><span>${_attr(detected)}</span>` : ''].join('');
+  return rows ? `<div class="vm-id">${rows}</div>` : '';
+}
+
 // A copy by the clipboard where the page may write it (a secure context: the loopback, the SSH
 // tunnel). Elsewhere (a plain http address of the tailnet), the address selected and copied by the
 // browser at once, during the click: a selection left for Ctrl+C would go with the next refresh,
@@ -1761,15 +1794,17 @@ function _netBlock(net) {
 function copyAddr(a) {
   const el = _target;
   const text = String(a);
+  // A long value (a resource id, VMI1) shortened in the toast only: its start and its end. The copy is whole.
+  const shown = text.length > 48 ? `${text.slice(0, 18)}…${text.slice(-26)}` : text;
   const byBrowser = () => {
     const r = document.createRange(); r.selectNodeContents(el);
     const s = getSelection(); s.removeAllRanges(); s.addRange(r);
     let copied = false;
     try { copied = String(s) === text && document.execCommand('copy'); } catch (e) { copied = false; }
     s.removeAllRanges();
-    toast(copied ? `✓ ${text} copied` : `✗ ${text} not copied — select it and copy it by hand`);
+    toast(copied ? `✓ ${shown} copied` : `✗ ${shown} not copied — select it and copy it by hand`);
   };
-  if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(() => toast(`✓ ${text} copied`), byBrowser);
+  if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(() => toast(`✓ ${shown} copied`), byBrowser);
   else byBrowser();
 }
 
@@ -1873,6 +1908,7 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
 
   const auditEntry = (_auditData?.audits || []).find(a => a.resource_id === resource_id);
   const net        = _vmNet(auditEntry);              // its addresses (IPS1)
+  const ident      = _vmIdentity(resource);           // its id, group, subscription (VMI1)
   const readiness  = auditEntry
     ? ACTION_GROUPS.map(g => {
         const st = _worstStatus(auditEntry.checks, g.actions);
@@ -2088,6 +2124,7 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
 
   const expandedBody = `
     ${readinessExpanded}
+    ${_idBlock(ident)}
     ${nsgLine}
     ${_netBlock(net)}
     ${modeSelector}
@@ -2135,7 +2172,7 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
     <div class="node-asset-header" ${_on('click', 'toggleAsset', vm_name)}>
       <div style="display:flex;align-items:center;gap:6px">
         ${dot}
-        <span class="node-asset-name" title="${_attr(vm_name)}">${_attr(vm_name)}</span>
+        <span class="node-asset-name" title="${_attr(_identityTip(ident))}">${_attr(vm_name)}</span>
         <span style="color:var(--dim);font-size:9px;margin-left:auto;flex-shrink:0">${isExpanded ? '▾' : '▸'}</span>
       </div>
       ${(offlineBadge || unmonitoredBadge || staleBadge || modeBadge || (readiness && !isExpanded)) ? `

@@ -180,7 +180,8 @@ def rotate_token() -> None:
     cookie of the former one. Never when the deployment sets the token: it is rotated there.
     RuntimeError then."""
     if console_token():
-        raise RuntimeError(f"{TOKEN_ENV} is set: rotate the token where the deployment sets it")
+        raise RuntimeError(f"{TOKEN_ENV} is set: rotate the token where the deployment sets it "
+                           "(Imladris: make imladris-console-rotate, from the workstation — ROT2)")
     import secrets
     _write_token(secrets.token_urlsafe(32))
 
