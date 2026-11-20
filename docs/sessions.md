@@ -444,11 +444,16 @@ seuls — `tests/unit/test_codeowners.py` les tire des workflows et échoue si l
 `Makefile`** (décision du 18/11) : ses recettes tournent avec les droits de Jonathan. Celle de
 `make imladris-cd-install`, qui pousse `discord.env` sur Imladris et y lance `install.sh` en root, vit
 dans un script possédé avec le reste du CD, `infra/glorfindel-host/cd/install_from_workstation.sh`
-(CDI1, #918) : la cible vérifie la clé d'Imladris, puis ne fait que l'appeler. Ses refus attrapent
-une dérive des options SSH ou des fichiers, pas un `Makefile` hostile, qui peut ne pas l'appeler : les
-options SSH, `imladris-known`, `known_host.sh`, les recettes qui lancent `sudo` sur Imladris
-(`imladris-cd-enable`, `-cd-disable`, `-cd-uninstall`) et toute autre recette restent hors du
-CODEOWNERS (`docs/design/modele-de-menace.md`, §7 ; le suivi : CDI2, #922). Une fois
+(CDI1, #918) : la cible vérifie la clé d'Imladris, puis ne fait que l'appeler. De même, depuis CDI2
+(#922, décision du 19/11), les recettes qui lancent `sudo` sur Imladris (`imladris-cd-enable`,
+`-cd-disable`, `-cd-uninstall` : `infra/glorfindel-host/cd/sudo_from_workstation.sh`), la vérification
+de sa clé d'hôte (`imladris-known` : `infra/glorfindel-host/known_host.sh`) et ses options SSH
+(`HOST_SSH_OPTS` : `infra/glorfindel-host/ssh_opts.sh`, que chaque script possédé revérifie avant tout
+geste). Ces refus attrapent une dérive, pas un `Makefile` hostile, qui peut ne plus les appeler : c'est
+assumé, comme les autres recettes vers Imladris. Elles tournent sous l'utilisateur de la VM, membre du
+groupe `docker` (l'équivalent de root) : aucun `sudo` n'est écrit dans le `Makefile`, mais une commande
+`docker` peut faire autant. Assumé pour la même raison : le mainteneur lance ces recettes sur son poste,
+et lit ce qu'il lance (`docs/design/modele-de-menace.md`, §7). Une fois
 « Require review from Code Owners » posé sur la règle de `main` (le geste de Jonathan, après la fusion
 de SEC-K : « Les règles du dépôt », plus bas), une PR qui en touche un attend son approbation ; les
 autres fusionnent comme avant. **D'ici ce réglage, rien ne l'impose.** La clé de l'App est lisible par les sessions : elles

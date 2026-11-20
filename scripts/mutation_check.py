@@ -5486,9 +5486,10 @@ MUTANTS += [
      """    if printf '%s\\n' "$known" | fingerprints | grep -qxF -- "$want"; then\n""", "    if true; then\n"),
     ("M1419", "the key H0 presents written without its fingerprint checked (SEC7, V-32)", KH,
      """  if [ "$(printf '%s\\n' "$line" | fingerprints)" = "$want" ]; then\n""", "  if true; then\n"),
-    ("M1420", "ssh to H0 accepts a new key beside the pinned file (SEC7, V-32)", MAKE,
-     "-o StrictHostKeyChecking=yes -o UserKnownHostsFile=$(HOST_KNOWN_HOSTS)",
-     "-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$(HOST_KNOWN_HOSTS)"),
+    # Re-anchored (CDI2, #922): HOST_SSH_OPTS is printed by infra/glorfindel-host/ssh_opts.sh now.
+    ("M1420", "ssh to H0 accepts a new key beside the pinned file (SEC7, V-32)", "infra/glorfindel-host/ssh_opts.sh",
+     "-o StrictHostKeyChecking=yes -o UserKnownHostsFile=$known",
+     "-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$known"),
     ("M1421", "the tunnel to H0 opened without the host key checked (SEC7, V-32)", MAKE,
      "imladris-tunnel-go: imladris-known\n", "imladris-tunnel-go:\n"),
     ("M1422", "Gothmog's container writes its image (SEC7, V-34)", "docker-compose.yml",

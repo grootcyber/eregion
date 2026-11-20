@@ -64,11 +64,15 @@ MUTANTS = [
      "            if known.returncode != 0:\n                raise Unverified(f\"l'ordre de",
      "            if False:\n                raise Unverified(f\"l'ordre de"),
     # V-26: Imladris's host key required.
-    ("M5461", "ssh toward Imladris falls back to accept-new without HOST_SSH_FINGERPRINT (SEC-C)", MAKE,
-     "HOST_SSH_OPTS  = -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$(HOST_KNOWN_HOSTS) "
-     "-o HostKeyAlgorithms=ssh-ed25519 $(SSH_KEY_OPTS)\n",
-     "HOST_SSH_OPTS  = $(if $(HOST_SSH_FINGERPRINT),-o StrictHostKeyChecking=yes -o UserKnownHostsFile=$(HOST_KNOWN_HOSTS) "
-     "-o HostKeyAlgorithms=ssh-ed25519,-o StrictHostKeyChecking=accept-new) $(SSH_KEY_OPTS)\n"),
+    # Re-anchored (CDI2, #922): HOST_SSH_OPTS is printed by infra/glorfindel-host/ssh_opts.sh now.
+    ("M5461", "ssh toward Imladris falls back to accept-new without HOST_SSH_FINGERPRINT (SEC-C)",
+     "infra/glorfindel-host/ssh_opts.sh",
+     "    printf '%s\\n' \"-o StrictHostKeyChecking=yes -o UserKnownHostsFile=$known -o HostKeyAlgorithms=ssh-ed25519 "
+     "${key:+-i $key -o IdentitiesOnly=yes}\"\n",
+     "    [ -n \"${HOST_SSH_FINGERPRINT:-}\" ] || { printf '%s\\n' \"-o StrictHostKeyChecking=accept-new "
+     "${key:+-i $key -o IdentitiesOnly=yes}\"; exit 0; }\n"
+     "    printf '%s\\n' \"-o StrictHostKeyChecking=yes -o UserKnownHostsFile=$known -o HostKeyAlgorithms=ssh-ed25519 "
+     "${key:+-i $key -o IdentitiesOnly=yes}\"\n"),
     ("M5462", "known_host.sh lets a command toward Imladris go without its fingerprint (SEC-C)", KH,
      'if [ -z "$want" ]; then\n  case "$var" in\n',
      'if [ -z "$want" ]; then\n  [ "$var" = ORO_SSH_FINGERPRINT ] || exit 0\n  case "$var" in\n'),

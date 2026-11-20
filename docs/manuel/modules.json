@@ -1582,7 +1582,8 @@
    "release": "0.6",
    "lots": [
     "SEC-K",
-    "CDI1"
+    "CDI1",
+    "CDI2"
    ],
    "issue": 847
   },

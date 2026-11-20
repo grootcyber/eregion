@@ -12,9 +12,10 @@
 #   HOST_IP=… HOST_USER=… SSH_OPTS="…" CD_FILES="…" bash infra/glorfindel-host/cd/install_from_workstation.sh
 #
 # From the Makefile, what it computes — nothing recomputed here: HOST_IP (terraform output), HOST_USER,
-# SSH_OPTS (HOST_SSH_OPTS: the pinned key, StrictHostKeyChecking=yes on HOST_KNOWN_HOSTS alone),
-# CD_FILES (HOST_CD_FILES). Two of them checked before any gesture, since the Makefile is not owned:
-# SSH_OPTS must be the form it computes, word for word, CD_FILES the list owned here (OWNED_FILES) —
+# SSH_OPTS (HOST_SSH_OPTS, printed by infra/glorfindel-host/ssh_opts.sh: the pinned key,
+# StrictHostKeyChecking=yes on HOST_KNOWN_HOSTS alone), CD_FILES (HOST_CD_FILES). Checked before any
+# gesture, since the Makefile is not owned: SSH_OPTS by ssh_opts.sh check (the form it prints, word for
+# word, and the dedicated known_hosts it names: CDI2), CD_FILES against the list owned here (OWNED_FILES) —
 # a drift caught, never a hostile Makefile, that may not call this script at all. Run from the root of
 # the checkout, as make runs it: CD_FILES and `git rev-parse HEAD` are read there.
 #
@@ -36,41 +37,19 @@ set -f          # the lists below are split on blanks, never globbed: what the M
 HOST_IP="${HOST_IP:-}"
 [ -n "$HOST_IP" ] || { echo "Pas de VM : make imladris-up d'abord"; exit 1; }
 HOST_USER="${HOST_USER:?HOST_USER manque (make imladris-cd-install le passe)}"
-# The address and the user go into « user@address », ssh's last word before the command: a user
-# « -oProxyCommand=… » arrives as an option (review of CDI1, round 2). Their forms only, in ASCII
-# whatever the locale: an IPv4 address (terraform output, as the Makefile greps it), a Unix user name.
-ip_re='^[[:digit:]]{1,3}(\.[[:digit:]]{1,3}){3}$'
-user_re='^[abcdefghijklmnopqrstuvwxyz_][abcdefghijklmnopqrstuvwxyz0123456789_-]*$'
-[[ $HOST_IP =~ $ip_re ]] || { echo "✗ HOST_IP n'est pas une adresse IPv4 : rien ne part vers Imladris" >&2; exit 1; }
-[[ $HOST_USER =~ $user_re ]] || { echo "✗ HOST_USER n'est pas un nom d'utilisateur Unix : rien ne part vers Imladris" >&2; exit 1; }
 SSH_OPTS="${SSH_OPTS:?SSH_OPTS manque (make imladris-cd-install le passe : la clé épinglée d’Imladris)}"
 CD_FILES="${CD_FILES:?CD_FILES manque (make imladris-cd-install le passe)}"
-# V-32 (SEC-C): SSH_OPTS taken only in the form the Makefile computes (HOST_SSH_OPTS), word for word:
-#   -o StrictHostKeyChecking=yes -o UserKnownHostsFile=<path> -o HostKeyAlgorithms=ssh-ed25519
-#   [-i <path> -o IdentitiesOnly=yes]
-# Anything else refuses, before any gesture: ssh keeps the first value of an option, so a check for
-# « =yes » somewhere let « -o StrictHostKeyChecking=no » before it through (review of CDI1), and so
-# would any other option added (-F, ProxyCommand, ProxyJump, KnownHostsCommand…). What it holds: a
-# drift of the options, visible here. Not a hostile Makefile: it chooses the known_hosts file, it runs
-# the key's check (imladris-known, infra/glorfindel-host/known_host.sh, neither owned), and it may not
-# call this script at all (docs/design/modele-de-menace.md, §7).
-plain_path() { case "$1" in '' | -* | *[!-[:alnum:]_./~@+]*) return 1 ;; esac; }
-pinned_form() {
-  # shellcheck disable=SC2086
-  set -- $SSH_OPTS
-  [ "$#" -eq 6 ] || [ "$#" -eq 10 ] || return 1
-  [ "$1 $2" = "-o StrictHostKeyChecking=yes" ] || return 1
-  [ "$3" = -o ] && case "$4" in UserKnownHostsFile=*) plain_path "${4#UserKnownHostsFile=}" ;; *) false ;; esac || return 1
-  [ "$5 $6" = "-o HostKeyAlgorithms=ssh-ed25519" ] || return 1
-  [ "$#" -eq 6 ] || { [ "$7" = -i ] && plain_path "$8" && [ "$9 ${10}" = "-o IdentitiesOnly=yes" ]; }
-}
-if ! pinned_form; then
-  echo "✗ SSH_OPTS n'est pas la forme que calcule le Makefile (-o StrictHostKeyChecking=yes" \
-       "-o UserKnownHostsFile=… -o HostKeyAlgorithms=ssh-ed25519, puis -i … -o IdentitiesOnly=yes ;" \
-       "un chemin n'y a que lettres, chiffres et -_./~@+, sans accent sous la locale C) :" \
-       "rien ne part vers Imladris" >&2
-  exit 1
-fi
+# V-32 (SEC-C): the address, the user and SSH_OPTS checked by infra/glorfindel-host/ssh_opts.sh, owned
+# too (CDI2, #922), before any gesture — the address an IPv4 address and the user a Unix user name
+# (« user@address » is ssh's last word before the command: a user « -oProxyCommand=… » arrives as an
+# option, review of CDI1, round 2); the options the form it prints for the Makefile, word for word (ssh
+# keeps the first value of an option: a check for « =yes » somewhere let « -o StrictHostKeyChecking=no »
+# before it through, review of CDI1); the known_hosts they name, the dedicated one, a file, not empty,
+# holding Imladris's key (CDI2). What it holds: a drift, visible there. Not a hostile Makefile: it may
+# not call this script at all (docs/design/modele-de-menace.md, §7).
+HERE=$(dirname "$0")
+bash "$HERE/../ssh_opts.sh" check "$HOST_IP" "$HOST_USER" "$SSH_OPTS" || exit 1
+
 # What goes to ~/.eregion-cd/: this list, owned here, the Makefile's HOST_CD_FILES checked against it,
 # never taken as it comes. scp copies by base name: a list from elsewhere could put any file of the
 # checkout under an agent's name, or one that Python imports before the standard library next to
@@ -83,7 +62,6 @@ infra/glorfindel-host/deploy.sh scripts/notify_discord.py glorfindel/chat_text.p
   echo "✗ CD_FILES n'est pas la liste des fichiers du CD ($0, OWNED_FILES) : rien ne part vers Imladris" >&2
   exit 1
 }
-HERE=$(dirname "$0")
 TO="$HOST_USER@$HOST_IP"
 
 # shellcheck disable=SC2086  # SSH_OPTS and CD_FILES: word lists, split as the Makefile split them

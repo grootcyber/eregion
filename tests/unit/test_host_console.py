@@ -49,7 +49,8 @@ CASES = {
 # What the targets that print the console's token read, copied outside any worktree: they refuse in an
 # agent session (MOB2), and the operator's checkout is never one.
 OPERATOR_FILES = ("Makefile", "scripts/mobile.py", "scripts/bench_shared.py",
-                  "infra/poste/eregion-console-tunnel.service", "infra/glorfindel-host/known_host.sh")
+                  "infra/poste/eregion-console-tunnel.service", "infra/glorfindel-host/known_host.sh",
+                  "infra/glorfindel-host/ssh_opts.sh")          # CDI2: HOST_SSH_OPTS, printed by it
 
 
 def operator_checkout(tmp_path) -> Path:
