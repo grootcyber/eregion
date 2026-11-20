@@ -102,12 +102,15 @@ def test_where_the_page_may_not_write_the_clipboard_the_browser_copies_during_th
     a copy refused (execCommand false) or an address not selectable says « not copied »."""
     copy = body("function copyAddr(a) {")
     assert ("if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text)"
-            ".then(() => toast(`✓ ${text} copied`), byBrowser);") in copy
+            ".then(() => toast(`✓ ${shown} copied`), byBrowser);") in copy
     assert "else byBrowser();" in copy
     assert "r.selectNodeContents(el);" in copy and "const el = _target;" in copy
     # Copied by the browser at once, only what was selected — and its answer read, never assumed.
     assert "try { copied = String(s) === text && document.execCommand('copy'); } catch (e) { copied = false; }" in copy
-    assert "toast(copied ? `✓ ${text} copied` : `✗ ${text} not copied — select it and copy it by hand`);" in copy
+    assert "toast(copied ? `✓ ${shown} copied` : `✗ ${shown} not copied — select it and copy it by hand`);" in copy
+    # The toast shortens a long value (VMI1, a resource id); the copy is the whole text.
+    assert "const shown = text.length > 48 ? `${text.slice(0, 18)}…${text.slice(-26)}` : text;" in copy
+    assert "navigator.clipboard.writeText(text)" in copy and "String(s) === text" in copy
     assert copy.count("toast(") == 2 and "selected — Ctrl+C" not in copy
 
 

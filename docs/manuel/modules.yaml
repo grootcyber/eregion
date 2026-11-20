@@ -2167,6 +2167,16 @@ briques:
     issue: 949
     doc: docs/design/console.md
 
+  - id: k-identite-vm
+    composant: console
+    poste: k-voir
+    nom: "A VM's name says its group, subscription, detection and id on hover; its unfolded card copies each"
+    etat: main
+    release: "0.6"
+    lots: [VMI1]
+    issue: 971
+    doc: docs/design/console.md
+
   - id: k-telephone
     composant: console
     poste: k-voir
