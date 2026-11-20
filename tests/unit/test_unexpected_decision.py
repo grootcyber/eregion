@@ -223,8 +223,15 @@ def test_the_floor_holds_whatever_the_mode_of_the_snapshot_and_only_where_it_sho
     # Escalated already (the model, or a gate): it has its card — no second one.
     assert not _decide(det, _decision(action="snapshot", escalate=True))["uncontained"]
     assert not _decide(det, _decision(action="snapshot"), mode="human_only")["uncontained"]
-    # A containment, a timeout, an uncharacterized row: not this floor's.
-    assert not _decide(det, _decision(action="block_suspicious_ip"))["uncontained"]
+    # A containment, a timeout, an uncharacterized row: not this floor's. RDW1 (#994): on the
+    # disk-write rule, capped, a block is brought back to the snapshot — the ceiling's card; a rule
+    # without a ceiling keeps its containment, and no card of this floor.
+    capped = _decide(det, _decision(action="block_suspicious_ip"))
+    assert capped["action"] == "snapshot" and capped["uncontained"].startswith("Plafond de la règle")
+    brute = _detection({"Computer": "vm-s4", "_ResourceId": RID, "SourceIP": "203.0.113.7", "FailedAttempts": 40},
+                       ttp="T1110.001", context={"rule_name": "ssh-brute-force", "attribution": "asset",
+                                                 "run_id": "watch-ssh-brute-force-20261028T100000Z"})
+    assert not _decide(brute, _decision(action="block_suspicious_ip"))["uncontained"]
     assert not _decide(_detection(event="detection_timeout"), _decision(action="snapshot"))["uncontained"]
     assert not _decide(_detection({"Computer": "vm-s4", "Foo": "bar"}),
                        _decision(action="snapshot"))["uncontained"]
@@ -359,7 +366,10 @@ def _resolve(signal: dict, rows, owners: dict | None = None,
 def test_a_row_naming_the_lines_vm_is_its_detection():
     out, _ = _resolve(_started(), [{"Computer": "vm-s4", "_ResourceId": RID.lower(), "MaxWrite": 9e7}])
     assert out["event"] == "detection" and "attribution" not in out["context"]
-    assert _decide(out, _decision())["action"] == "isolate_vm"
+    # RDW1 (#994): attributed, and capped by the rule of its TTP — the snapshot, the isolation proposed
+    # kept on the card (tests/unit/test_rule_ceiling.py).
+    final = _decide(out, _decision())
+    assert final["action"] == "snapshot" and final["ceiling"]["proposed"] == "isolate_vm"
 
 
 def test_a_row_naming_another_vm_is_never_pinned_to_the_lines():
@@ -376,7 +386,8 @@ def test_a_row_naming_no_vm_holds_what_is_aimed_at_the_lines():
     """Aggregated by address: the line's VM is a guess — isolation, block and snapshot held
     (SEC-Ed, #954: the snapshot would capture the VM the row does not name), the card says why,
     and for a snapshot that the human chooses the VM."""
-    out, _ = _resolve(_started(), [{"SourceIP": "203.0.113.7", "FailedAttempts": 40}])
+    # Its own technique (RDW1: a T1486 line takes the disk-write rule's ceiling).
+    out, _ = _resolve({**_started(), "ttp": "T1110.001"}, [{"SourceIP": "203.0.113.7", "FailedAttempts": 40}])
     assert out["context"]["attribution"] == "unattributed"
     assert out["context"]["run_id"] == "20261028T100000Z"
     for action in ("isolate_vm", "block_suspicious_ip", "snapshot"):
@@ -395,7 +406,9 @@ def test_an_exfiltration_row_is_attributed_by_the_private_ip_that_made_the_call(
     """data-exfiltration-blob (T1041) names no VM: its caller's private IP does, as the
     RulePoller reads it — the line's VM made the call, the isolation runs."""
     row = {"CallerIpAddress": "10.0.0.4:52114", "AccountName": "stacct", "PutBlobCount": 40}
-    out, _ = _resolve(_started(), [row], owners={"10.0.0.4": RID, "10.0.0.5": OTHER}, query=STORAGE_Q)
+    # Its own technique (RDW1: a T1486 line takes the disk-write rule's ceiling).
+    started = {**_started(), "ttp": "T1041"}
+    out, _ = _resolve(started, [row], owners={"10.0.0.4": RID, "10.0.0.5": OTHER}, query=STORAGE_Q)
     assert out["event"] == "detection" and "attribution" not in out["context"]
     assert _decide(out, _decision())["action"] == "isolate_vm"
     # Another VM's address: never this VM's row. An address no VM holds: unattributed.

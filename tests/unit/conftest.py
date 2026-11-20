@@ -786,3 +786,13 @@ def fresh_reassertion_memory(monkeypatch):
     monkeypatch.setattr(reassert_cards, "_EPISODE_OPEN", set())
     monkeypatch.setattr(reassert_cards, "_NARROWED", {})          # L1Q: what still holds of a card
     monkeypatch.setattr(reassert_cards, "_UNVERIFIED_OPEN", set())  # SEC13: the checks that raised
+
+
+@pytest.fixture
+def rules_without_ceiling(monkeypatch):
+    """RDW1 (#994): the rules as if none carried a ceiling — for the files that test the isolation's
+    machinery on a T1486 example (the graph, its draws, its dependencies, the card of an action taken
+    alone), not the rule's ceiling, which tests/unit/test_rule_ceiling.py measures: the shipped
+    disk-write rule would bring their isolation back to a snapshot."""
+    from glorfindel import rule_ceiling
+    monkeypatch.setattr(rule_ceiling, "current", lambda: rule_ceiling.RuleCeilings(by_name={}, rules=[]))

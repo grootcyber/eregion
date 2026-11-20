@@ -13,6 +13,14 @@ page a été écrite, le 09/11), et en
 mesure trois temps. Une version d'Imladris qui porte REC1 (#668) change la levée, et seulement elle :
 chaque endroit qui en dépend dit les deux cas (« La levée », plus bas, et l'étape 7).
 
+> **Depuis la 0.6.4 (RDW1, #994), Glorfindel n'isole plus seul sur cette règle.** `ransomware-disk-write`
+> porte un plafond ([`docs/glorfindel.md`](glorfindel.md), « Le plafond par la règle ») : sur le seul
+> débit, qu'une sauvegarde atteint aussi, il prend un instantané (seul en `non_disruptive`) et écrit une
+> carte qui garde la proposition du modèle et sa confiance. L'isolement est le geste d'un humain, depuis
+> la carte (`glorfindel isolate <groupe>/<nom> --yes`) : le confinement mesuré ici commence à ce geste.
+> À l'étape 5, la carte attendue est donc « detection not contained (snapshot only) », qui dit le
+> plafond, et non plus la carte de l'action autonome `isolate_vm`. Les chiffres du 12/11 sont d'avant.
+
 - **la détection** : de T0 à la détection de la watch, puis à sa carte ;
 - **le confinement** : de T0 à l'isolement relu sur Azure ;
 - **le service rendu** : de T0 à la restauration finie, puis à la levée.
