@@ -95,6 +95,8 @@ READERS = {
     "eregion_core/exercise_plan.py": 1,
     "eregion_core/proposal.py": 1,
     "glorfindel/detection_authoring.py": 1,
+    # SEC-A4b (#660): the harness's proposal cases, implemented or proven (merged with STM1g).
+    "scripts/llm_smoke.py": 1,
 }
 
 

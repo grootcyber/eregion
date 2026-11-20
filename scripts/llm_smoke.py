@@ -583,12 +583,14 @@ def proposal_cases() -> list[dict]:
     """Every implemented technique of the catalog whose table is read on the data plane (its rows
     routed to a VM: the key is asked of them), then the reactive case, then the control-plane case
     (the bullet's bound: its grouping per caller kept)."""
+    from eregion_core.experiment import is_ready
     from eregion_core.rule_routing import data_plane
     from glorfindel.detection_authoring import load_catalog
     cases = []
     for ttp, entry in load_catalog().items():
         table = entry.get("log_source") or ""
-        if entry.get("status") != "implemented" or table not in _PROPOSAL_SCHEMAS:
+        # STM1g: implemented or proven, through the one reader (tests/unit/test_catalog_ready.py).
+        if not is_ready(entry.get("status")) or table not in _PROPOSAL_SCHEMAS:
             continue
         if not data_plane("azure_monitor", f"{table} | take 1"):
             continue
