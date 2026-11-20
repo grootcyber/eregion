@@ -365,3 +365,183 @@ def test_two_targets_of_one_name_are_told_apart_by_their_ids():
     reading = [{"name": "disk-write-burst", "ok": True, "seen_at": _iso(T + 30)}]
     by_id = _fault(targets=(VM, twin), effect={VM: reading, twin: reading})
     assert fr.rate(fr.measure([by_id], _watch([])))["measured"] == 1
+
+
+# ── FR1 (#1006): a fault chained with a technique on its target, or a wire of a request ────
+
+def _technique(run_id="r-tech", ttp="T1136.001", at=T - 300, resource=VM):
+    """An Annatar report, as runner/engine.py writes it (C1)."""
+    return read_run({"scenario": ttp, "run_id": run_id, "mitre": ttp, "result": "PASS",
+                     "metrics": {"run_format": 1, "kind": "technique", "injector": "annatar",
+                                 "experiment_id": ttp, "attack_time": _iso(at), "resource_id": resource},
+                     "thresholds": {}, "checks": {}})
+
+
+def _span(start, end, targets=(VM,)):
+    """A technique's exercise window as ``_technique_windows`` gives it: its start, its last
+    moment (its end plus the grace, ``exercise.last_moment``), its targets (lowercase, as
+    ``open_window`` writes them)."""
+    return (start, end + fr.GRACE_AFTER_S, [t.lower() for t in targets])
+
+
+def _other_rule(seen):
+    """The technique's card from another rule: another ``ttp`` than the technique's."""
+    return _line("isolate_vm", seen=seen, at=seen + 30, verified_at=seen + 25, ttp="T1548",
+                 signal_id=f"other-{seen}")
+
+
+def test_a_fault_behind_a_technique_on_its_vm_in_its_window_is_not_measured():
+    """M6900: DG-b's chain — a technique on gondolin, its window closed 5 min before the fault,
+    the fault inside its grace: not measured, said, the technique named; out of the rate."""
+    runs = [_technique(at=T - 600), _fault()]
+    windows = {"r-tech": _span(T - 660, T - 300)}
+    out = fr.rate(fr.measure(runs, _watch([]), exercised=fr.exercised_of(runs, windows)))
+    assert (out["faults"], out["measured"], out["rate"]) == (1, 0, None)
+    assert out["unmeasured"] == [{"run_id": "gothmog-1", "fault": "vm-disk-write",
+                                  "why": f"{fr.BEHIND} (r-tech)"}]
+
+
+def test_a_technique_card_from_another_rule_no_longer_counts_against_the_fault():
+    """The technique's card, seen 20 min after its T0 and by another rule, inside the fault's
+    window: before FR1, a fault taken for an attack; now the fault is not measured, the card
+    counts against nothing."""
+    runs = [_technique(at=T - 600), _fault()]
+    card = [_other_rule(T + 600)]
+    windows = {"r-tech": _span(T - 660, T - 240)}
+    assert fr.rate(fr.measure(runs, _watch(card), exercised=[]))["taken"] == 1      # the bias
+    out = fr.rate(fr.measure(runs, _watch(card), exercised=fr.exercised_of(runs, windows)))
+    assert (out["measured"], out["taken"], out["recommended"], out["taken_runs"]) == (0, 0, 0, [])
+    assert out["unmeasured"][0]["why"].startswith(fr.BEHIND)
+
+
+def test_a_fault_card_bearing_the_techniques_ttp_is_no_longer_hidden():
+    """A card of the fault bearing the technique's ``ttp``, inside BL1's ``[T0, T0 + grace]``:
+    before FR1, hidden as the technique's — « measured, 0 taken »; now the fault is not measured
+    and says why, never « Glorfindel did nothing »."""
+    runs = [_technique(ttp="T1486", at=T - 120), _fault()]
+    card = [_isolate(T + 300)]                                   # ttp T1486, the technique's
+    before = fr.rate(fr.measure(runs, _watch(card), exercised=[]))
+    assert (before["measured"], before["taken"]) == (1, 0)                   # hidden
+    out = fr.rate(fr.measure(runs, _watch(card)))
+    assert (out["measured"], out["rate"]) == (0, None)
+    assert out["unmeasured"][0]["why"].startswith(f"{fr.BEHIND} (r-tech")
+
+
+def test_a_wire_of_a_dagorlad_request_is_not_measured():
+    """M6901: Gothmog writes the request's id in its report (``metrics.request``, DG-b,
+    gothmog/runner/engine.py ``_record``) — a wire of a request, no technique seen here: not
+    measured, the request named."""
+    req = "r-20261120T080000Z-a1b2c3"
+    report = {"scenario": "vm-disk-write", "run_id": "g-req", "mitre": "", "result": "PASS",
+              "metrics": {"run_format": 1, "kind": "fault", "injector": "gothmog",
+                          "experiment_id": "vm-disk-write", "request": req, "fault": "vm-disk-write",
+                          "targets": [VM], "fault_start": _iso(T), "fault_end": _iso(T + 600),
+                          "effect": _effect([VM], T + 120)},
+              "thresholds": {}, "checks": {"fault_effective": "PASS", "watch_after": "PASS"}}
+    out = fr.rate(fr.measure([read_run(report)], _watch([_isolate(T + 300)])))
+    assert (out["measured"], out["taken"], out["rate"]) == (0, 0, None)
+    assert out["unmeasured"][0]["why"] == f"{fr.REQUESTED} ({req})"
+
+
+def test_a_fault_on_another_vm_than_the_technique_is_measured_as_before():
+    """The technique on bree, the fault on gondolin: measured, its isolation counted. Long after
+    the technique's window and grace, on the same VM: measured too."""
+    runs = [_technique(at=T - 600, resource=OTHER), _fault()]
+    windows = {"r-tech": _span(T - 660, T - 300, targets=(OTHER,))}
+    out = fr.rate(fr.measure(runs, _watch([_isolate(T + 300)]), exercised=fr.exercised_of(runs, windows)))
+    assert (out["measured"], out["taken"], out["unmeasured"]) == (1, 1, [])
+    runs = [_technique(at=T - 3 * 3600), _fault()]
+    windows = {"r-tech": _span(T - 3 * 3600 - 60, T - 3 * 3600 + 300)}
+    assert fr.rate(fr.measure(runs, _watch([]), exercised=fr.exercised_of(runs, windows)))["measured"] == 1
+
+
+def test_the_technique_target_is_compared_without_case():
+    """M6902: Annatar writes the VM's id as Azure cases it, the fault its own way: one VM. By its
+    name alone too; and a resource group's scope holds the VMs under it (a Stratus run's)."""
+    for target in (VM.upper(), "VM-Celebrimbor-Gondolin", "/subscriptions/S/resourceGroups/RG-celebrimbor"):
+        runs = [_technique(at=T - 600, resource=target), _fault()]
+        windows = {"r-tech": (T - 660, T - 300 + fr.GRACE_AFTER_S, [])}
+        why = fr.measure(runs, _watch([]), exercised=fr.exercised_of(runs, windows))[0].why
+        assert why.startswith(fr.BEHIND), target
+
+
+def test_the_techniques_grace_is_part_of_its_window():
+    """M6904: its window not held here, the fault 5 min past the longest window after the
+    technique's T0 (2 h): inside the grace, not measured, and said bounded; past the grace too,
+    measured."""
+    runs = [_technique(at=T - fr.MAX_DURATION_S - 300), _fault()]
+    assert fr.measure(runs, _watch([]))[0].why == f"{fr.BEHIND} (r-tech, {fr.UNBOUNDED})"
+    runs = [_technique(at=T - fr.UNKNOWN_SPAN_S - 60), _fault()]
+    assert fr.measure(runs, _watch([]))[0].why == ""
+
+
+def test_a_technique_window_never_narrows_bl1s_bounds():
+    """M6906: a window that would close before its T0 plus the grace — the technique still holds
+    [T0, T0 + grace]: a window can only widen what a run is."""
+    runs = [_technique(at=T - 600), _fault()]
+    windows = {"r-tech": (T - 660, T - 590, [VM.lower()])}
+    assert fr.measure(runs, _watch([]), exercised=fr.exercised_of(runs, windows))[0].why.startswith(fr.BEHIND)
+
+
+def test_the_render_says_why_a_fault_behind_a_technique_is_not_measured():
+    """M6905: the reason reaches the text, as every other one."""
+    runs = [_technique(at=T - 600), _fault()]
+    text = fr.render(fr.rate(fr.measure(runs, _watch([]))))
+    assert f"non mesurée : `gothmog-1` (vm-disk-write) — {fr.BEHIND} (r-tech, {fr.UNBOUNDED})" in text
+
+
+# A session of faults alone, the runs of the tests above: what the rate was before FR1.
+_ALONE = [_fault("g1"), _fault("g2", start=T + 3600, end=T + 4200), _fault("g3", start=T + 7200, end=T + 7800),
+          _fault("disk", start=T + 10800, end=T + 11400),
+          _fault("cpu", fault="vm-cpu-pressure", start=T + 11700, end=T + 12300),
+          _fault("unseen", effective="FAIL", start=T + 14400, end=T + 15000),
+          _fault("without", without=True, start=T + 18000, end=T + 18600)]
+_ALONE_RECORDS = [_recommended(T + 200, "h1"), _recommended(T + 260, "h2"), _isolate(T + 3900),
+                  _isolate(T + 11800), _isolate(T + 14700)]
+
+
+def test_a_session_of_faults_alone_gives_the_same_rate():
+    """FR1 changes nothing without a technique nor a request: the same rate, the same counts, the
+    same reasons, as computed before it (frozen here from the code of origin/main)."""
+    out = fr.rate(fr.measure(_ALONE, _watch(_ALONE_RECORDS)))
+    assert out == fr.rate(fr.measure(_ALONE, _watch(_ALONE_RECORDS), exercised=[]))
+    assert {k: out[k] for k in ("faults", "measured", "taken", "rate", "recommended", "executed")} == {
+        "faults": 7, "measured": 4, "taken": 3, "rate": 0.75, "recommended": 4, "executed": 2}
+    assert [(u["run_id"], u["why"]) for u in out["unmeasured"]] == [
+        ("disk", fr.SHARED), ("unseen", fr.NOT_SEEN),
+        ("without", "sans Glorfindel, par choix : sa réaction n'est pas mesurée")]
+    assert [t["run_id"] for t in out["taken_runs"]] == ["g1", "g2", "cpu"]
+
+
+def test_the_rate_reads_the_techniques_window_from_this_hosts_files(tmp_path, monkeypatch):
+    """M6903, M6907, M6908: end to end on the files — Annatar's report and its exercise window
+    where Annatar writes it (SEC18), closed 10 min before Gothmog's fault on the same VM (its
+    grace runs 15): not measured; a technique started before the period still holds the
+    period's first fault."""
+    monkeypatch.delenv("EREGION_EXERCISES_DIR")     # each injector's own directory, as on a host
+    runs = tmp_path / "runs"
+    for d in ("annatar/exercises", "gothmog", "glorfindel"):
+        (runs / d).mkdir(parents=True)
+    t0 = T - 1500
+    tech = {"scenario": "T1136.001", "run_id": "r-tech", "mitre": "T1136.001", "result": "PASS",
+            "metrics": {"run_format": 1, "kind": "technique", "injector": "annatar",
+                        "experiment_id": "T1136.001", "attack_time": _iso(t0), "resource_id": VM},
+            "thresholds": {}, "checks": {}}
+    (runs / "annatar" / "r-tech.json").write_text(json.dumps(tech))
+    window = {"run_id": "r-tech", "injector": "annatar", "kind": "technique", "experiment": "T1136.001",
+              "targets": [VM.lower()], "start": _iso(t0 - 60), "end": _iso(T - 600),
+              "expires": _iso(t0 - 60 + 7200), "destructive": True}       # as open_window writes it
+    (runs / "annatar" / "exercises" / "r-tech.json").write_text(json.dumps(window))
+    fault = {"scenario": "vm-disk-write", "run_id": "g-1", "mitre": "", "result": "PASS",
+             "metrics": {"run_format": 1, "kind": "fault", "injector": "gothmog",
+                         "experiment_id": "vm-disk-write", "fault": "vm-disk-write", "targets": [VM],
+                         "fault_start": _iso(T), "fault_end": _iso(T + 600), "effect": _effect([VM], T + 120)},
+             "thresholds": {}, "checks": {"fault_effective": "PASS", "watch_after": "PASS"}}
+    (runs / "gothmog" / "g-1.json").write_text(json.dumps(fault))
+    (runs / "glorfindel" / "watch-x_debug.jsonl").write_text(json.dumps(_other_rule(T + 300)) + "\n")
+    s = fr.load(runs, now=T + 3600)
+    assert (s["faults"], s["measured"], s["taken"]) == (1, 0, 0)
+    assert s["unmeasured"][0]["why"] == f"{fr.BEHIND} (r-tech)"
+    # The technique 25 min before a one-day period, the fault 1 min into it: still held.
+    s = fr.load(runs, days=1, now=T + 86400 - 60)
+    assert s["unmeasured"][0]["why"] == f"{fr.BEHIND} (r-tech)"
