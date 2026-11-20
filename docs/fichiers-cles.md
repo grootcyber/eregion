@@ -254,6 +254,9 @@ glorfindel/
                           (`executed_key`, `action_keys`) ; `notify_action` l'annonce par `vm_notices.say` ;
                           VP1 : le verdict proposé, son champ à part (`proposed_verdict`, `proposed_why`,
                           `proposed_refused`), `note_proposals`, `confirm_proposed`, `refuse_proposed`
+  calibration.py        → B4a (#991) : le rapport d'observation par tranche de confiance, par règle × tranche,
+                          au-dessus du seuil de la porte, par provenance (le périmètre du banc lu sur la carte) ;
+                          lu sur les cartes seules (docs/observation.md, « Par confiance et par provenance »)
   proposed_verdict.py   → VP1 (#615) : la passe de la watch, chaque minute — la carte d'exercice qui est la
                           détection attendue par le drill de la semaine (sa copie et ses attentes dans l'image,
                           le statut de la demande, le rapport du run, la fenêtre) reçoit un verdict proposé ;

@@ -606,6 +606,16 @@ briques:
     lots: [B4]
     issue: 75
 
+  - id: g-precision-confiance
+    composant: glorfindel
+    poste: g-decider
+    nom: "The observation report by confidence band and by rule, each cell with its count, too few said; the share judged right above the gate's threshold; the bench's cards told apart"
+    etat: main
+    release: "0.6"
+    lots: [B4a]
+    issue: 991
+    doc: docs/observation.md
+
   - id: g-gardes
     composant: glorfindel
     poste: g-garder
@@ -2599,6 +2609,16 @@ briques:
     lots: [CI12, CI12-workflow]
     issue: 899
     doc: docs/operations.md
+
+  - id: s-nuit-parlante
+    composant: socle
+    poste: s-prouver
+    nom: "A nightly invariant run cut by its bound has said its seed as it began, and before the bound where its machine runs"
+    etat: main
+    release: "0.6"
+    lots: [CI13]
+    issue: 986
+    doc: docs/design/preuves.md
 
   - id: s-verrous
     composant: socle
