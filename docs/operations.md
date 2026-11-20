@@ -583,6 +583,7 @@ EREGION_OPERATOR_OBJECT_ID=...      # NT1 : never_target (eregion_core/never_tar
 EREGION_PROTECTED_IDENTITIES=...    # NT1 : idem ; source : output protected_identities d'Orodruin, plus identity_executor_object_id d'Imladris (« L'exécuteur d'identité », geste 6)
 EREGION_IDENTITY_EXECUTOR_CLIENT_ID=...  # NT1 : idem ; source : terraform -chdir=infra/glorfindel-host output -raw identity_executor_client_id (vide : exécuteur non activé)
 EREGION_RULE_CANARY_APPID=...       # CAN2 : l'appid du principal du canari azurerm (l'inscription eregion-canary, par le filtre exact `displayName eq` d'`az ad app list`, écrite par le shell dans host.env : le geste et ses vérifications, `infra/glorfindel-host/README.md`, « Le canari azurerm (CAN2) »), à la watch et à la console ; recopiée dans host.env ; la copie du banc de nsg-change-outside-glorfindel écarte avec lui les runs du canari dans rg-eregion-canary, celle d'entra-sp-unusual-signin ses connexions OIDC (CAN3) ; vide ou pas un GUID → la règle livrée tourne (dit)
+EREGION_ENTRA_MSI_ACTOR_ID=...      # MID1 : l'object id du principal « Managed Service Identity » du tenant, à la watch seule ; l'adaptateur d'Entra écarte d'entra-credential-added, compté, le certificat qu'Azure pose sur une identité managée qu'il crée (jamais par le nom) ; recopiée dans host.env ; vide → rien n'est écarté, dit ; pas un GUID → host_env.py --check refuse (le geste : « Le principal Managed Service Identity (MID1, #981) »)
 # L'atelier dans Discord (N1, docs/atelier-discord.md) — à part de la défense : jamais sur Imladris, host_env.py ne les recopie pas
 EREGION_DISCORD_WEBHOOK_CI=...              # webhook de #ci (secret GitHub : notify.yml)
 EREGION_DISCORD_WEBHOOK_AGENTS=...          # webhook de #agents (poste de l'opérateur : hooks d'elrond)
@@ -1680,6 +1681,46 @@ porte que les rôles au tenant, jamais un rôle borné à une unité ; le temps 
 possédé, contre le budget de 60 s et le plafond de 20 objets (IR1e). Les identifiants des rôles intégrés
 que le contrat épingle (`DIRECTORY_READERS`, `USER_ADMINISTRATOR`, `ATTRIBUTE_ASSIGNMENT_READER`,
 `REFUSED_ROLES`) sont ceux de « Microsoft Entra built-in roles » (relus le 05/11).
+
+### Le principal Managed Service Identity (MID1, #981)
+
+Quand une ressource reçoit une identité managée affectée par le système, Azure crée son principal de
+service et y pose un certificat. Entra ID l'écrit « Add service principal », sur un `ServicePrincipal`,
+par le principal « Managed Service Identity » du tenant : `InitiatedBy.app.servicePrincipalId`, l'`ActorId`
+de la règle `entra-credential-added`, `ActorAppId` vide ; l'identifiant `KeyType=AsymmetricX509Cert,
+KeyUsage=Verify, DisplayName=CN=<guid>`. Le 20/11, la Logic App du drill, recréée après des applies
+ratés, en a fait cinq cartes hautes sur Imladris (six lignes), chaque fois un autre principal, jugées
+Wrong. L'adaptateur d'Entra écarte désormais une telle ligne, comptée et dite, **seulement** quand son
+`ActorId` est l'object id de ce principal, donné à la watch par `EREGION_ENTRA_MSI_ACTOR_ID`
+(`docs/glorfindel.md`, « Le certificat qu'Azure pose sur une identité managée »). Le nom n'est jamais
+une preuve : il sert à trouver le principal, pas à le reconnaître.
+
+**Le modop de la variable** (une fois déployée une release qui contient MID1, la 0.6.4) :
+
+- **La valeur** : l'object id (`id`, pas l'`appId`) du principal de service « Managed Service
+  Identity » du tenant. Un GUID, aucun secret, jamais dans le dépôt ni affiché.
+- **La commande qui la lit** (en lecture seule, sous ton `az login`) : `az ad sp list --filter
+  "displayName eq 'Managed Service Identity'" --query '[].id' -o tsv` — un seul GUID attendu.
+  `--filter` est le filtre OData exact d'`az ad sp list` ; `--display-name` prend tout nom qui
+  **commence par**.
+- **Où l'écrire** : `infra/glorfindel-host/host.env`, par le shell (`echo "EREGION_ENTRA_MSI_ACTOR_ID=$(…)"
+  >> $F`, jamais recopiée de l'écran), puis `make imladris-push` (qui lance `host_env.py --check`), puis
+  la watch recréée sur Imladris (`docker compose up -d watch` ; un `restart` ne relit pas `.env`).
+  Sur un poste, la même ligne dans `.envrc` : `host_env.py` la recopie dans un `host.env` neuf.
+- **Les contrôles, sans afficher la valeur** : une seule ligne ajoutée et un GUID (`grep -cE`) ;
+  `az ad sp show --id "$ID" --query "[displayName, appOwnerOrganizationId == '<ton tenantId>']"`
+  rend « Managed Service Identity » et `False` (l'application appartient à Microsoft, pas au tenant) ;
+  sur le workspace, l'`ActorId` des « Add service principal » de « Managed Service Identity » des
+  30 derniers jours est cet id (au moins les six lignes du 20/11) ; sur Imladris, `docker compose exec
+  watch sh -c 'test -n "$EREGION_ENTRA_MSI_ACTOR_ID" && echo posée'`. `host_env.py --check` refuse une
+  valeur qui n'est pas un GUID, la variable nommée, jamais la valeur.
+- **Les commandes complètes, dans l'ordre** : `infra/glorfindel-host/README.md`, « Le principal Managed
+  Service Identity (MID1) ».
+- **Sans elle** (vide, ou absente) : rien n'est écarté, les cartes reviennent ; le statut de la règle
+  le dit à chaque passage (`msi_certificate.config` : `unset`), le journal de la watch une fois, et le
+  détail de la règle dans la console. Mal formée (si elle passait sans `--check`) : `malformed`, dit
+  en orange sur la ligne de la règle (« ⚠ MSI id »), rien d'écarté.
+- **Pour revenir aux cartes** : vider la variable, `make imladris-push`, la watch recréée.
 
 ## Le canari azurerm, sans secret (P-04, 30/10)
 
