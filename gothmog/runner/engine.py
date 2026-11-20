@@ -1,6 +1,9 @@
 """Gothmog's run (G0): a declared fault, on enrolled targets, from an armed Orodruin —
 normal checked before, during and after, the return to the initial state verified.
 
+    0a window    no exercise window on a target still running, its grace included (G1d,
+                 gothmog/runner/windows.py): read on this host's disk, before anything else; one
+                 still running refuses and says until when, one that cannot be read refuses too
     0  watch     a live Glorfindel watch (V1, eregion_core/watch_gate.py), its heartbeat read
                  before anything else reaches the cloud; none: refused. ``--without-glorfindel``
                  runs anyway, and the report says so (``metrics.without_glorfindel``)
@@ -28,7 +31,7 @@ normal checked before, during and after, the return to the initial state verifie
                  window closed, and with an exercise channel the report goes to Imladris with it
                  (#193); signals beside it (``gothmog/signals/emitter.py``)
 
-``preflight`` runs 0–3 with no session at all: a write there is refused by construction. Then
+``preflight`` runs 0a–3 with no session at all: a write there is refused by construction. Then
 what the run needs that 0–3 do not read (G1b), each a read, nothing written: Orodruin's own rights
 to start and cancel this experiment (``make orodruin-lock YES=1`` grants them, experiment by
 experiment: without them a start answers 403), the Chaos agent installed on each VM it reaches
@@ -59,6 +62,7 @@ from gothmog.engines.chaos_studio import (
 from gothmog.probes import (
     UNREADABLE, ProbeResult, collected, declared_errors, effect_errors, evaluate, holds, observe)
 from gothmog.runner.report import RunReport
+from gothmog.runner.windows import busy_refusal, vm_ids
 from gothmog.signals.emitter import SignalEmitter
 
 console = Console()
@@ -229,6 +233,20 @@ class Engine:
             return seen, "steady state not verified before the fault — nothing injected"
         return seen, None
 
+    def _window_busy(self, fault: dict) -> str:
+        """G1d: '' when no exercise window on one of the fault's targets still runs (its grace
+        included), else why and until when — read on this host's disk, before the watch (V1) and
+        anything that reaches the cloud. The targets by their full ids, built from the bench's
+        subscription and group: a session-less client only names them, it calls nothing."""
+        names = fault["targets"]["names"]
+        try:
+            bench = self._bench_factory(None)
+            return busy_refusal(vm_ids(names, bench.subscription_id, bench.bench_rg), self._now())
+        except RuntimeError:
+            # No subscription (ChaosStudio): no full id to build — the VM's name alone, which the
+            # comparison holds anyway; the run stops later, at the contract.
+            return busy_refusal(names, self._now())
+
     @staticmethod
     def _no_watch(run_id: str, without_glorfindel: bool) -> RunOutcome | None:
         """Step 0 (V1, #214): the refusal when no live Glorfindel watch stands behind the run,
@@ -247,6 +265,10 @@ class Engine:
         """Steps 0–3 from where the run would start, writing nothing (no session)."""
         fault = load_fault(name_or_path)
         run_id = "preflight-" + self._now().strftime("%Y%m%dT%H%M%SZ")
+        busy = self._window_busy(fault)   # G1d: a local read, before the watch and the contract
+        if busy:
+            console.print(f"[red]Refused:[/red] {escape(busy)}")
+            return RunOutcome(run_id, "REFUSED", error=busy)
         refused = self._no_watch(run_id, without_glorfindel)
         if refused:
             return refused
@@ -318,6 +340,12 @@ class Engine:
                    f"not {target.rstrip('/').rsplit('/', 1)[-1]}")
             console.print(f"[red]Refused:[/red] {why}")
             return RunOutcome(run_id, "REFUSED", error=why)
+        # G1d: an exercise window on a target still running — a local read, before the watch, the
+        # contract and anything that reaches the cloud.
+        busy = self._window_busy(fault)
+        if busy:
+            console.print(f"[red]Refused:[/red] {escape(busy)}")
+            return RunOutcome(run_id, "REFUSED", error=busy)
         console.rule(f"[bold red]Gothmog — {fault['name']}[/bold red]")
         console.print(f"  Engine  : {fault['engine']} / {fault['engine_ref']}")
         console.print(f"  Targets : {', '.join(fault['targets']['names'])}\n")
@@ -381,13 +409,14 @@ class Engine:
         # 4–6, inside an exercise window: what Glorfindel sees on the target meanwhile is
         # labelled ``exercise`` (eregion_core/exercise.py), on the hosted watch too.
         vms = seen["targets"]
+        # On the engine's clock (G1d): the window the next run reads is the one this run kept.
         open_window(run_id, injector="gothmog", kind="fault",
                     experiment=f"{fault.get('id') or fault['name']} {fault['name']}", targets=vms,
-                    request=request)
+                    request=request, now=self._now())
         try:
             return self._inject(fault, run_id, bench, vms, seen, verdict, start)
         finally:
-            close_window(run_id, injector="gothmog")
+            close_window(run_id, injector="gothmog", now=self._now())
             carry_run(run_id, self.runs_dir)  # its report, to Imladris with its window (#193)
 
     def _inject(self, fault, run_id, bench, vms, seen, verdict, run_start) -> RunOutcome:
