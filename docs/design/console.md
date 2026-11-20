@@ -619,7 +619,7 @@ Les verdicts, mesurés à 390 px : dans la liste, la carte de JUG1 et le verdict
 44 px de haut, aucun hors de l'écran ni coupé, la note en 16 px ; à 1440 px, Confirm et Refuse visibles
 dans la liste (0 coupé), le reste identique (verdicts à 16 px, note en 10 px, la carte de JUG1 à sa place).
 Tests : `tests/unit/test_console_phone_dagorlad.py`, `tests/unit/test_console_phone_verdicts.py` ; mutants
-M6698–M6709, M6713, M6714, M6730 et M6731 (`scripts/mutants/MOB5.py`).
+M6698–M6709, M6713, M6714, M6730–M6732 et M6749 (`scripts/mutants/MOB5.py`).
 
 ### Les blocages d'une VM (CON-K, #498, 04/11)
 
