@@ -3,8 +3,9 @@
 # à chaque PR (ci.yml, job terraform-test, CI4) ; à la main :
 #   terraform -chdir=infra/terraform init -backend=false
 #   terraform -chdir=infra/terraform test
-# Deux cas : le bruit éteint (chaos_noise_vms = []), dont le plan ne doit rien changer au banc ; la
-# config du dépôt (chaos.noise_vms: [gondolin], G1c), dont le bruit ne touche que gondolin.
+# Deux cas : le bruit éteint (chaos_noise_vms = []), dont le plan ne planifie rien de G1, ni l'identité
+# d'une VM, ni G0 (sur le banc, où G1 est appliqué, [] le détruirait) ; la config du dépôt
+# (chaos.noise_vms: [gondolin], G1c), dont le bruit ne touche que gondolin.
 # tests/unit/test_gothmog_noise.py tient le même contrat en lisant les fichiers.
 
 mock_provider "azurerm" {}

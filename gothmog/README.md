@@ -135,9 +135,11 @@ n'y sont pas.
 M2419 (`tests/unit/test_fault_rate.py`).
 
 Le plan des deux cas, contre de faux providers :
-- **la config du dépôt** (`noise_vms: []`) ne change rien au banc : aucune ressource de G1, chaque VM
-  en identité système seule, G0 intact ;
-- **le bruit sur gondolin** ne touche qu'elle.
+- **le bruit éteint** (`chaos_noise_vms = []`) : le plan ne planifie rien de G1, ni l'identité d'une
+  VM (chacune en identité système seule), ni G0, qui reste intact. Sur le banc, où G1 est appliqué,
+  `[]` le détruirait ;
+- **la config du dépôt** (`noise_vms: [gondolin]`, G1c) : le bruit ne touche que gondolin, et
+  aucune ressource de G1 ne vise une autre VM.
 
 Les deux cas sont dans `infra/terraform/tests/chaos_noise.tftest.hcl`. On les lance à la main,
 comme le test d'ID1 (`terraform -chdir=infra/terraform test`), et la CI les lance à chaque PR
@@ -175,7 +177,9 @@ expérience. On suppose qu'elle répond à l'identité d'Orodruin comme à la po
 contrat la fait déjà. Si elle répond 403, le préflight dit « unreadable » et refuse : le signaler,
 ne pas le contourner.
 
-**Mutants** : M6586–M6605 et M6616 (`tests/unit/test_gothmog_readiness.py`).
+**Mutants** : M6586–M6605 et M6616 (`tests/unit/test_gothmog_readiness.py`). Pour l'apply ciblé du
+bruit et son garde d'abonnement (G1c) : M6768–M6779, M6831–M6832, M6849–M6850
+(`tests/unit/test_gothmog_noise.py`, `tests/unit/test_bench_perf_counters.py`).
 
 ### Mesuré sur le banc (20/11)
 
@@ -219,7 +223,7 @@ est déclaré dans `config.yaml` (G1c). La séance, dans l'ordre. Chaque geste e
    source .envrc
    export ARM_SUBSCRIPTION_ID=$AZURE_SUBSCRIPTION_ID
    az account set --subscription "$AZURE_SUBSCRIPTION_ID"
-   [ "$(az account show --query id -o tsv)" = "$AZURE_SUBSCRIPTION_ID" ] && echo BANC || echo STOP
+   [ "$(az account show --query id -o tsv | tr A-Z a-z)" = "$(printf '%s' "$AZURE_SUBSCRIPTION_ID" | tr A-Z a-z)" ] && echo BANC || echo STOP
    ```
 
    `BANC`, ou rien d'autre. Puis gondolin allumée (`make celebrimbor-start VM=gondolin`), et

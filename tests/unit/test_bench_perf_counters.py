@@ -197,6 +197,8 @@ def _make(tmp_path, target, *args, active=BENCH_SUB):
     ``account show`` answers ``active``: the subscription guard (G1c) reads it first."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
+    tfvars_dir = tmp_path / "tfvars"   # the guard's, empty: never the operator's terraform.tfvars
+    tfvars_dir.mkdir(exist_ok=True)
     log = tmp_path / "tf.log"
     log.write_text("")
     tf = bin_dir / "terraform"
@@ -207,9 +209,11 @@ def _make(tmp_path, target, *args, active=BENCH_SUB):
     az.chmod(0o755)
     env = {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", "FAKE_TF_LOG": str(log),
            "HOME": str(tmp_path), "AZURE_SUBSCRIPTION_ID": BENCH_SUB, "FAKE_AZ_SUB": active}
-    for var in ("INSTANCE", "YES", "TOPO", "ARM_SUBSCRIPTION_ID"):
+    for var in ("INSTANCE", "YES", "TOPO", "ARM_SUBSCRIPTION_ID", "TF_VAR_subscription_id",
+                "CELEBRIMBOR_TFVARS_DIR"):
         env.pop(var, None)
-    res = subprocess.run(["make", "-s", "--no-print-directory", "-C", str(ROOT), target, *args],
+    res = subprocess.run(["make", "-s", "--no-print-directory", "-C", str(ROOT), target, *args,
+                          f"CELEBRIMBOR_TFVARS_DIR={tfvars_dir}"],
                          env=env, capture_output=True, text=True, timeout=60)
     return res.returncode, res.stdout + res.stderr, [c.split() for c in log.read_text().splitlines()]
 

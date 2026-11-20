@@ -390,8 +390,11 @@ annatar run annatar/scenarios/azure/account-creation-atomic.yaml  # R1 : un test
 # Gothmog (G0) — depuis Orodruin seulement (ailleurs le contrat est passif)
 make gothmog-preflight [FAULT=vm-shutdown]   # watch de Glorfindel, contrat, cibles relues dans l'expérience, état normal, puis droits d'Orodruin sur l'expérience, agent Chaos, séries de l'effet (G1b) — rien d'écrit
 make gothmog-run [FAULT=vm-shutdown]         # la panne, son retour vérifié par sonde (~15 min) ; WITHOUT_GLORFINDEL=1 : sans watch (V1)
-#   G1 : FAULT=vm-disk-write | vm-cpu-pressure | vm-restart, le bruit bénin (planned : chaos.noise_vms
-#   à appliquer avec Jonathan, gothmog/README.md « G1 »)
+#   G1 : FAULT=vm-disk-write | vm-restart (implemented, jouées le 20/11) | vm-cpu-pressure (planned : son
+#   compteur CPU n'est pas encore collecté, DCR1), le bruit bénin ; ≥ 16 min entre deux runs
+#   (gothmog/README.md « G1 »). Le bruit s'applique à lui seul, l'abonnement du banc vérifié d'abord :
+make celebrimbor-noise-plan                  # plan ciblé des 11 ressources de G1 (lecture seule) ; garde d'abonnement (G1c)
+make celebrimbor-noise-up [YES=1]            # l'applique ; jamais celebrimbor-up complet pour G1 (le NSG partagé)
 make imladris-fault-rate [DAYS=30] [JSON=1]          # sur Imladris : les pannes prises pour une attaque, par run (G1)
 make fault-rate [DAYS=30] [JSON=1]                   # le même taux, sur l'hôte de la watch seulement (ses runs/) ;
 #   ailleurs (Orodruin, un poste) chaque panne est « non mesurée » : les décisions n'y sont pas

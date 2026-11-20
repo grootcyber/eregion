@@ -449,12 +449,18 @@ def _noise_targets() -> list[str]:
     return line.split()
 
 
-def _make(tmp_path, target, *args, azure=BENCH_SUB, arm=None, active=BENCH_SUB, az_rc=0):
+def _make(tmp_path, target, *args, azure=BENCH_SUB, arm=None, active=BENCH_SUB, az_rc=0, tf_var=None,
+          tfvars=None):
     """``make target`` with a fake ``az`` (``account show`` answers ``active``, exit ``az_rc``)
     and a fake ``terraform`` that only writes down its arguments. ``arm`` None: not set, the
-    Makefile derives it."""
+    Makefile derives it. ``tf_var``: TF_VAR_subscription_id. ``tfvars``: {file name: text} in the
+    tfvars directory the guard reads — a temporary one, never the operator's terraform.tfvars."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
+    tfvars_dir = tmp_path / "tfvars"
+    tfvars_dir.mkdir(exist_ok=True)
+    for name, text in (tfvars or {}).items():
+        (tfvars_dir / name).write_text(text)
     log = tmp_path / "tf.log"
     log.write_text("")
     tf = bin_dir / "terraform"
@@ -465,11 +471,15 @@ def _make(tmp_path, target, *args, azure=BENCH_SUB, arm=None, active=BENCH_SUB, 
     az.chmod(0o755)
     env = {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", "FAKE_TF_LOG": str(log),
            "FAKE_AZ_SUB": active, "FAKE_AZ_RC": str(az_rc), "AZURE_SUBSCRIPTION_ID": azure}
-    for var in ("INSTANCE", "YES", "TOPO", "ARM_SUBSCRIPTION_ID"):
+    for var in ("INSTANCE", "YES", "TOPO", "ARM_SUBSCRIPTION_ID", "TF_VAR_subscription_id",
+                "CELEBRIMBOR_TFVARS_DIR"):
         env.pop(var, None)
     if arm is not None:
         env["ARM_SUBSCRIPTION_ID"] = arm
-    res = subprocess.run(["make", "-s", "--no-print-directory", "-C", str(ROOT), target, *args],
+    if tf_var is not None:
+        env["TF_VAR_subscription_id"] = tf_var
+    res = subprocess.run(["make", "-s", "--no-print-directory", "-C", str(ROOT), target, *args,
+                          f"CELEBRIMBOR_TFVARS_DIR={tfvars_dir}"],
                          env=env, capture_output=True, text=True, timeout=60)
     return res.returncode, res.stdout + res.stderr, [c.split() for c in log.read_text().splitlines()]
 
@@ -518,6 +528,15 @@ def test_the_subscriptions_are_compared_without_their_case(tmp_path, azure, acti
 
 
 @pytestmark_make
+def test_a_commented_subscription_line_or_the_bench_s_own_tf_var_passes(tmp_path):
+    """The example's commented line (terraform.tfvars.example:7) chooses nothing; a TF_VAR equal to
+    the bench's, whatever its case, neither."""
+    code, out, calls = _make(tmp_path, "celebrimbor-noise-plan", tf_var=BENCH_SUB.upper(),
+                             tfvars={"terraform.tfvars": f'# subscription_id = "{OTHER_SUB}"\nadmin_username = "x"\n'})
+    assert code == 0 and calls, out
+
+
+@pytestmark_make
 @pytest.mark.parametrize("target", ["celebrimbor-noise-plan", "celebrimbor-noise-up"])
 @pytest.mark.parametrize("case, kw, said", [
     ("az on another subscription", {"active": OTHER_SUB}, "L'abonnement actif d'az n'est pas AZURE_SUBSCRIPTION_ID"),
@@ -525,6 +544,12 @@ def test_the_subscriptions_are_compared_without_their_case(tmp_path, azure, acti
     ("ARM on another subscription", {"arm": OTHER_SUB}, "ARM_SUBSCRIPTION_ID est vide ou n'est pas AZURE_SUBSCRIPTION_ID"),
     ("ARM empty", {"arm": ""}, "ARM_SUBSCRIPTION_ID est vide ou n'est pas AZURE_SUBSCRIPTION_ID"),
     ("AZURE empty, az unreadable", {"azure": "", "az_rc": 1}, "AZURE_SUBSCRIPTION_ID est vide"),
+    # Review 1: both providers read var.subscription_id before ARM_SUBSCRIPTION_ID (main.tf).
+    ("TF_VAR on another subscription", {"tf_var": OTHER_SUB}, "TF_VAR_subscription_id n'est pas AZURE_SUBSCRIPTION_ID"),
+    ("a subscription_id line in terraform.tfvars", {"tfvars": {"terraform.tfvars": f'  subscription_id = "{OTHER_SUB}"\n'}},
+     "Une ligne subscription_id dans terraform.tfvars ou un *.auto.tfvars"),
+    ("a subscription_id line in a *.auto.tfvars", {"tfvars": {"bench.auto.tfvars": f'subscription_id="{BENCH_SUB}"\n'}},
+     "Une ligne subscription_id dans terraform.tfvars ou un *.auto.tfvars"),
 ])
 def test_off_the_bench_s_subscription_terraform_is_never_run(tmp_path, target, case, kw, said):
     """The 20/11 apply that went to Stratus's subscription: refused before terraform, the

@@ -978,30 +978,44 @@ celebrimbor-flows-up:
 	@$(TF) workspace select $(INSTANCE)
 	@$(TF) apply$(if $(YES), -auto-approve) $(FLOWS_TARGETS)
 
-# G1c (#76) : l'abonnement du banc, vérifié avant tout appel à terraform. Lancé à la main, terraform
-# prend l'abonnement actif d'az : le 20/11, un apply de G1 est parti ainsi sur l'abonnement de
-# Stratus (ses politiques l'ont refusé, 403), et le plan ne pouvait pas le montrer — une ressource à
-# créer y est « known after apply », une ressource relue l'est par son id complet. Refus, avant
-# terraform : AZURE_SUBSCRIPTION_ID vide ; ARM_SUBSCRIPTION_ID (ce que lisent azurerm et azapi)
-# vide ou autre ; l'abonnement actif d'az illisible ou autre. Comparés sans la casse. Le message
-# nomme la variable, jamais sa valeur. Réutilisable : $(CELEBRIMBOR_SUB_GUARD) en première ligne
-# d'une recette celebrimbor-* (les autres l'adopteront, dans un lot à part).
+# G1c (#76) : l'abonnement du banc, vérifié avant tout appel à terraform. Le 20/11, un apply de G1
+# lancé en terraform direct, sans l'export ARM_SUBSCRIPTION_ID de ce Makefile, est parti sur
+# l'abonnement de Stratus (ses politiques l'ont refusé, 403). Hypothèse, non mesurée fournisseur par
+# fournisseur : sans subscription_id ni ARM_SUBSCRIPTION_ID, azapi (et peut-être azurerm 4.x) prend
+# l'abonnement actif d'az. Le plan ne pouvait pas le montrer : une ressource à créer y est « known
+# after apply », une ressource relue l'est par son id complet. Les deux fournisseurs lisent d'abord
+# var.subscription_id (main.tf), puis ARM_SUBSCRIPTION_ID. Refus, avant terraform :
+# AZURE_SUBSCRIPTION_ID vide ; TF_VAR_subscription_id posé et autre ; une ligne subscription_id non
+# commentée dans terraform.tfvars ou un *.auto.tfvars (AZURE_SUBSCRIPTION_ID décide, jamais un
+# fichier) ; ARM_SUBSCRIPTION_ID vide ou autre ; l'abonnement actif d'az illisible ou autre. Comparés
+# sans la casse. Le message nomme la variable ou le fichier, jamais la valeur. Réutilisable :
+# $(CELEBRIMBOR_SUB_GUARD) en première ligne d'une recette celebrimbor-* (les autres l'adopteront, dans
+# un lot à part). CELEBRIMBOR_TFVARS_DIR : le répertoire de ces fichiers, celui de $(TF) ; un test le
+# remplace, pour ne jamais lire ni écrire le terraform.tfvars de l'opérateur.
+CELEBRIMBOR_TFVARS_DIR ?= infra/terraform
 CELEBRIMBOR_SUB_GUARD = @want=$$(printf '%s' "$$AZURE_SUBSCRIPTION_ID" | tr A-Z a-z); \
+	tfv=$$(printf '%s' "$$TF_VAR_subscription_id" | tr A-Z a-z); \
 	arm=$$(printf '%s' "$$ARM_SUBSCRIPTION_ID" | tr A-Z a-z); \
 	active=$$(az account show --query id -o tsv 2>/dev/null | tr A-Z a-z); \
 	[ -n "$$want" ] || { echo "✗ AZURE_SUBSCRIPTION_ID est vide : terraform n'est pas lancé (source .envrc)." >&2; exit 1; }; \
+	[ -z "$$tfv" ] || [ "$$tfv" = "$$want" ] || { echo "✗ TF_VAR_subscription_id n'est pas AZURE_SUBSCRIPTION_ID : terraform n'est pas lancé (unset TF_VAR_subscription_id)." >&2; exit 1; }; \
+	! grep -Eqs '^[[:space:]]*subscription_id[[:space:]]*=' $(CELEBRIMBOR_TFVARS_DIR)/terraform.tfvars $(CELEBRIMBOR_TFVARS_DIR)/*.auto.tfvars || { echo "✗ Une ligne subscription_id dans terraform.tfvars ou un *.auto.tfvars choisirait l'abonnement de terraform : la retirer, AZURE_SUBSCRIPTION_ID décide. terraform n'est pas lancé." >&2; exit 1; }; \
 	[ "$$arm" = "$$want" ] || { echo "✗ ARM_SUBSCRIPTION_ID est vide ou n'est pas AZURE_SUBSCRIPTION_ID : terraform n'est pas lancé (export ARM_SUBSCRIPTION_ID=\$$AZURE_SUBSCRIPTION_ID)." >&2; exit 1; }; \
 	[ -n "$$active" ] || { echo "✗ L'abonnement actif d'az ne se lit pas (az account show) : terraform n'est pas lancé." >&2; exit 1; }; \
 	[ "$$active" = "$$want" ] || { echo "✗ L'abonnement actif d'az n'est pas AZURE_SUBSCRIPTION_ID : terraform n'est pas lancé (az account set --subscription \"\$$AZURE_SUBSCRIPTION_ID\")." >&2; exit 1; }
 
 # G1c (#76) : le bruit bénin de G1 (chaos.tf, chaos.noise_vms du config.yaml), à lui seul — plan et
 # apply ciblés sur ses ressources : l'identité de l'agent Chaos, sa cible Microsoft-Agent,
-# l'extension, les deux capacités, les trois expériences et leurs trois rôles. La VM qui reçoit le
-# bruit porte l'identité de l'agent (vm.tf) : une dépendance de la cible et de l'extension, elle
-# change avec elles. Jamais `make celebrimbor-up` complet pour G1 : son plan retirerait les règles
-# de Glorfindel du NSG partagé (le plan du 12/11). Le plan attendu, sur le banc : 11 à créer, 1 à
-# changer (l'identité de la VM), 0 à détruire ; toute autre ligne, s'arrêter. Jamais de `-var`
-# d'ici : le bruit s'allume dans config.yaml. Le garde d'abonnement d'abord.
+# l'extension, les deux capacités, les trois expériences et leurs trois rôles. `-target` tire aussi
+# leurs dépendances : toutes les instances d'azurerm_linux_virtual_machine.baseline (bree comprise),
+# leurs NIC et IP publiques, le subnet, le VNet, le groupe, et côté G0 la cible Microsoft-VirtualMachine,
+# la capacité d'arrêt et son rôle. La VM qui reçoit le bruit porte l'identité de l'agent (vm.tf) : elle
+# change avec elles. Une dérive en attente sur l'une de ces dépendances paraîtrait au plan : alors
+# s'arrêter, et la traiter par celebrimbor-plan (comme DCR_TARGETS). Le NSG partagé n'en est pas : ses
+# règles de Glorfindel restent hors du plan, quand un `make celebrimbor-up` complet les retirerait (le
+# plan du 12/11). Le plan attendu, sur le banc : 11 à créer, 1 à changer (l'identité de la VM), 0 à
+# détruire ; toute autre ligne, s'arrêter. Jamais de `-var` d'ici : le bruit s'allume dans
+# config.yaml. Le garde d'abonnement d'abord.
 #   make celebrimbor-noise-plan                # lecture seule
 #   make celebrimbor-noise-up [YES=1]          # YES=1 : sans confirmation, plan relu avant
 NOISE_TARGETS = -target=azurerm_user_assigned_identity.chaos_agent -target=azapi_resource.chaos_agent_target -target=azurerm_virtual_machine_extension.chaos_agent -target=azurerm_chaos_studio_capability.cpu -target=azurerm_chaos_studio_capability.disk -target=azurerm_chaos_studio_experiment.disk -target=azurerm_chaos_studio_experiment.cpu -target=azurerm_chaos_studio_experiment.restart -target=azurerm_role_assignment.chaos_disk_read -target=azurerm_role_assignment.chaos_cpu_read -target=azurerm_role_assignment.chaos_restart
