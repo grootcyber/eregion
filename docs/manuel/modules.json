@@ -778,6 +778,19 @@
    "issue": 75
   },
   {
+   "id": "g-precision-confiance",
+   "composant": "glorfindel",
+   "poste": "g-decider",
+   "nom": "The observation report by confidence band and by rule, each cell with its count, too few said; the share judged right above the gate's threshold; the bench's cards told apart",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "B4a"
+   ],
+   "issue": 991,
+   "doc": "docs/observation.md"
+  },
+  {
    "id": "g-gardes",
    "composant": "glorfindel",
    "poste": "g-garder",
@@ -2147,6 +2160,19 @@
    "version": "0.6.2",
    "lots": [
     "G1b"
+   ],
+   "issue": 76,
+   "doc": "gothmog/README.md"
+  },
+  {
+   "id": "x-bruit-cible",
+   "composant": "gothmog",
+   "poste": "x-eprouver",
+   "nom": "The noise applied alone, by its own Make targets, behind a check of the bench's subscription",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "G1c"
    ],
    "issue": 76,
    "doc": "gothmog/README.md"
@@ -3705,6 +3731,19 @@
    ],
    "issue": 671,
    "doc": "docs/adoption/index.html"
+  },
+  {
+   "id": "s-avis-acceptes",
+   "composant": "socle",
+   "poste": "s-signer",
+   "nom": "The weekly advisory issues say what a human accepted, and an accepted advisory turns the run red no more",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "DEP4"
+   ],
+   "issue": 990,
+   "doc": "docs/operations.md"
   },
   {
    "id": "s-licence",

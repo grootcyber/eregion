@@ -1,0 +1,15 @@
+### Added
+- **The benign noise has its own targeted plan and apply, behind a check of the bench's subscription** (G1c, part of #76; `gothmog/README.md`, « Reste, sur le banc, avec Jonathan »). `make celebrimbor-noise-plan` and `make celebrimbor-noise-up [YES=1]` plan and apply G1's eleven resources alone: the Chaos agent's identity, its Microsoft-Agent target and extension, two capabilities, three experiments and their three roles. The VM that takes the noise carries the agent's identity and changes with them. A full `celebrimbor-up` would take Glorfindel's rules off the shared NSG. Terraform run by hand skips the Makefile's export, and may then take az's active subscription; that is a hypothesis, measured for neither provider on its own.
+  - Before any call to terraform, `CELEBRIMBOR_SUB_GUARD` refuses when `AZURE_SUBSCRIPTION_ID` is empty, or when `ARM_SUBSCRIPTION_ID` or az's active subscription is empty or another. Both providers read `var.subscription_id` before `ARM_SUBSCRIPTION_ID`, so it also refuses a `TF_VAR_subscription_id` set to another subscription, and any uncommented `subscription_id` line in `terraform.tfvars` or a `*.auto.tfvars`. The comparison ignores case, and the message names the variable or the file, never the value.
+  - On 20/11, an apply run as raw terraform went to another subscription, whose policies refused it. A plan cannot show this: a resource to create is « known after apply ». DCR1's `celebrimbor-dcr-plan` and `celebrimbor-dcr-up` take the same guard. It is written to be reused by the other `celebrimbor-*` targets, in a lot of its own.
+- **The noise is declared on gondolin in the tracked config** (`chaos.noise_vms: [gondolin]`). In `infra/terraform/tests/chaos_noise.tftest.hcl`:
+  - the « off » case now sets `chaos_noise_vms = []` itself;
+  - the tracked config's case touches gondolin alone, and one more assertion proves that no resource of G1 aims at another VM.
+  - Tests: `tests/unit/test_gothmog_noise.py` and `tests/unit/test_bench_perf_counters.py`, against a fake `az` and a fake `terraform` (mutants M6768–M6779, M6831–M6832 and M6849–M6850, `scripts/mutants/G1c.py`).
+
+### Changed
+- **`vm-disk-write` and `vm-restart` played on the bench on 20/11, now `implemented`; `vm-shutdown` measured again** (G1c, part of #76; `gothmog/README.md`, « Mesuré sur le banc (20/11) »). All three runs PASS from an armed Orodruin, gondolin in `human_only`. `vm-disk-write` was taken for an attack:
+  - `ransomware-disk-write` fired on about 74 MB/s of benign writes, and `isolate_vm` was recommended at 80 %, held by the mode and never executed. This is the class of bree's wrongful isolations, which `vm-disk-write` now reproduces on demand.
+  - `vm-restart` and `vm-shutdown` left no card of their own.
+
+  The fault rate is not published yet: the runs were too close together, so one card fell into the next fault's window and the tool left two faults unmeasured, as it should. The procedure now asks for 16 minutes between two runs. `vm-cpu-pressure` stays `planned`: the preflight refused it because its counter was declared but never collected (DCR1, #985).
