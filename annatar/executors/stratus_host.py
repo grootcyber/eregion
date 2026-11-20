@@ -196,6 +196,14 @@ class StratusExecutor:
         from eregion_core.orodruin import Passive
         if self._session is None:
             raise Passive(f"stratus {phase} on {self.target}: no armed Orodruin contract")
+        # #1003 (the net under the for_stratus arming): a Stratus phase runs only from a contract
+        # armed WITH the Stratus guarantees — the sandbox that blocks the IMDS and the closed role,
+        # proven at arming. A base-contract session (Gothmog, a VM run, or a Stratus run whose
+        # arming forgot the flag) is refused here, so the scoping cannot fail open.
+        if not getattr(self._session, "for_stratus", False):
+            raise Passive(f"stratus {phase} on {self.target}: the Orodruin contract was not armed "
+                          "with the Stratus guarantees — the sandbox and the closed role are "
+                          "unproven for this run")
         self._session.before_call(f"stratus:{phase}", self.target, detail)
 
     def _verify_binary_unchanged(self, phase) -> None:

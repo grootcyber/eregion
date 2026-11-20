@@ -55,6 +55,64 @@ def test_a_contract_that_cannot_be_read_is_passive(name):
     assert verdict.missing[0]["code"] == f"{name}_unreadable"
 
 
+# ── #1003: the Stratus guarantees gate only an arming FOR Stratus ────────────────
+
+def _readers_stratus_fail():
+    """The current READERS with the four base guarantees holding and the two Stratus guarantees
+    failing — a run with EREGION_STRATUS_SUBSCRIPTION set but no assertion/proof mounted (Gothmog's
+    case, found at the bench, G1)."""
+    return {**HOLDS,
+            "stratus": lambda: [orodruin._miss("stratus_unreadable", "no assertion")],
+            "sandbox": lambda: [orodruin._miss("stratus_sandbox_unreadable", "no proof")]}
+
+
+def test_the_stratus_guarantees_gate_only_an_arming_for_stratus(monkeypatch):
+    """#1003: with the Stratus guarantees failing (the subscription set, no assertion), the default
+    check — Gothmog, an Annatar VM run, the drill, orodruin-check — arms on the base contract; only
+    check(for_stratus=True) judges them."""
+    monkeypatch.setattr(orodruin, "READERS", _readers_stratus_fail())
+    assert orodruin.check().armed                       # the base contract (Gothmog &c.)
+    assert orodruin.check(for_stratus=False).armed      # same, explicit
+    strat = orodruin.check(for_stratus=True)            # a Stratus arming judges them
+    assert strat.verdict == orodruin.PASSIVE
+    assert {m["code"] for m in strat.missing} == {"stratus_unreadable", "stratus_sandbox_unreadable"}
+
+
+def test_the_base_set_is_derived_from_the_current_readers(monkeypatch):
+    """The base set is taken from READERS at check time, not a snapshot — a swap of a base reader
+    reaches the default check, never a stale un-swapped one."""
+    monkeypatch.setattr(orodruin, "READERS",
+                        _readers(identity=lambda: [orodruin._miss("identity_outside_bench", "x")],
+                                 stratus=lambda: [], sandbox=lambda: []))
+    verdict = orodruin.check()
+    assert verdict.verdict == orodruin.PASSIVE
+    assert [m["code"] for m in verdict.missing] == ["identity_outside_bench"]
+
+
+def test_arm_judges_the_stratus_guarantees_only_for_stratus(monkeypatch):
+    """#1003: arm(for_stratus=True) judges the Stratus guarantees (passive when they fail); the
+    default (Gothmog &c.) skips them and arms on the base contract, with for_stratus False."""
+    monkeypatch.setattr(orodruin, "READERS", _readers_stratus_fail())
+    verdict, base = orodruin.arm("r", "gothmog")
+    assert base is not None and base.for_stratus is False
+    verdict, strat = orodruin.arm("r", "annatar", for_stratus=True)
+    assert strat is None and verdict.verdict == orodruin.PASSIVE
+
+
+def test_arm_for_stratus_marks_the_session_when_the_guarantees_hold(monkeypatch):
+    """A Stratus arming whose guarantees hold marks the session for_stratus, so the executor lets
+    the phase run (stratus_host.py)."""
+    monkeypatch.setattr(orodruin, "READERS", _readers(stratus=lambda: [], sandbox=lambda: []))
+    _, session = orodruin.arm("r", "annatar", for_stratus=True)
+    assert session is not None and session.for_stratus is True
+
+
+def test_a_session_built_without_the_flag_is_not_for_stratus():
+    """The Session field defaults to False — a session built without the flag never carries the
+    Stratus guarantees, so the executor refuses its phases (fail closed by omission, #1003)."""
+    assert orodruin.Session("r", "gothmog", 5).for_stratus is False
+
+
 # ── identity: inside the bench, and the rights the injectors need ───────────────
 
 # SEC5 (V-29): the effective rights on the group are reads; the writes come from an assignment

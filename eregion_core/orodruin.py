@@ -856,12 +856,29 @@ def read_sandbox(*, read_proof=None, env=None, now=None) -> list[dict]:
 
 READERS = {"identity": read_identity, "graph": read_graph, "network": read_network,
            "cap": read_cap, "stratus": read_stratus, "sandbox": read_sandbox}
+# The Stratus guarantees (read_stratus, read_sandbox) protect a Stratus run — the dedicated
+# identity's closed role and the sandbox that blocks the IMDS from the sandbox network. They gate
+# ONLY an arming FOR Stratus (``check(for_stratus=True)`` / ``arm(..., for_stratus=True)``): the run
+# that mounts the federated assertion and the sandbox proof. Every other arming — Gothmog, an
+# Annatar VM run, the drill, orodruin-check — arms on the base contract (the current readers minus
+# the two Stratus guarantees) and never requires them, even when EREGION_STRATUS_SUBSCRIPTION is set
+# in orodruin.env (found at the bench, G1, #1003: ORO_RUN_GOTHMOG mounts neither the assertion nor
+# the proof, so they would read unreadable and the run turn passive though Gothmog runs no Stratus).
+# A Stratus phase is refused all the same if its session was not armed with them (stratus_host.py),
+# so forgetting the flag fails closed, never open.
+STRATUS_GUARANTEES = ("stratus", "sandbox")
 
 
-def check(readers: dict | None = None) -> Verdict:
-    """``orodruin-check``: every guarantee read, nothing written. Armed only if all hold;
-    a reader that fails makes its guarantee missing (fail closed)."""
-    readers = readers or READERS
+def check(readers: dict | None = None, *, for_stratus: bool = False) -> Verdict:
+    """The contract's guarantees read, nothing written. Armed only if all hold; a reader that
+    fails makes its guarantee missing (fail closed). ``for_stratus`` adds the Stratus guarantees
+    (the closed role, the sandbox) — only an arming for a Stratus run asks for them; the base
+    contract (orodruin-check, Gothmog, an Annatar VM run, the drill) does not (G1, #1003)."""
+    if readers is None:
+        # Derived from the current READERS (so a test that swaps READERS is honoured), minus the
+        # Stratus guarantees unless this arming is for a Stratus run.
+        readers = READERS if for_stratus else {k: v for k, v in READERS.items()
+                                               if k not in STRATUS_GUARANTEES}
     missing: list[dict] = []
     notes: list[dict] = []
     cap: dict = {}
@@ -981,6 +998,10 @@ class Session:
     # DG-b: the request this run is a wire of — each line says it, and Orodruin counts the
     # request's calls against its cap (eregion_core/exercise_runner.py).
     request: str = ""
+    # R2c/#1003: this run is a Stratus run, armed on the Stratus guarantees (the closed role, the
+    # sandbox). A Stratus phase refuses without it (annatar/executors/stratus_host.py) — the net
+    # that keeps the for_stratus arming from failing open if a path forgets the flag.
+    for_stratus: bool = False
 
     def _journal(self, record: dict) -> None:
         if self.request:
@@ -1017,13 +1038,16 @@ class Session:
 
 
 def arm(run_id: str, injector: str, verdict: Verdict | None = None,
-        request: str = "") -> tuple[Verdict, Session | None]:
+        request: str = "", *, for_stratus: bool = False) -> tuple[Verdict, Session | None]:
     """The gate at the start of a run: a session only when the contract holds. ``request``: the
-    request this run is a wire of (DG-b), written on each line of the journal."""
-    verdict = verdict or check()
+    request this run is a wire of (DG-b), written on each line of the journal. ``for_stratus``: a
+    Stratus run — the contract is also armed on the Stratus guarantees, and the session carries
+    that so a Stratus phase refuses without them (stratus_host.py)."""
+    verdict = verdict or check(for_stratus=for_stratus)
     if not verdict.armed:
         return verdict, None
-    return verdict, Session(run_id, injector, verdict.cap["max_injections"], request=request)
+    return verdict, Session(run_id, injector, verdict.cap["max_injections"], request=request,
+                            for_stratus=for_stratus)
 
 
 # ── Kill — revoke first, then stop ────────────────────────────────────────────────────
