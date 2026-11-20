@@ -31,11 +31,19 @@ fingerprint of its query as the base ships it (``is_shipped``) —, never for a 
 layer that would compute a wider ``Known`` under that name (an override, a copy that changed its
 query): its rows stay cards, the column taken off all the same. A copy of the shipped rule to the
 letter (WL1, ``base_sha256``) computes the same ``Known``: set aside as the shipped one.
+
+SLF1b (#976): the SDK (``azure-monitor-query``) hands a ``dynamic`` column on as the API sent it, its
+JSON text — ``BlobWriters`` arrived as a ``str`` on Imladris (20/11), and nothing was set aside: the
+tests of SLF1 passed a Python list. The column is read in either form (`writers_of`): a list, or a
+JSON text of at most ``WRITERS_MAX`` characters that decodes to one. A text unreadable, longer, or
+that is not a list of objects sets nothing aside, never raises, and is said: ``unparsed``, counted
+beside ``unread`` in the rule's status.
 """
 from __future__ import annotations
 
 import functools
 import hashlib
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -47,6 +55,10 @@ WRITERS = "BlobWriters"
 SHIPPED_RULE = "data-exfiltration-blob"
 REASON = ("the watch's own return channel: its identity, the container of EREGION_WATCH_CHANNEL, "
           "the objects it writes there (SLF1)")
+# SLF1b: the longest BlobWriters text decoded. The query keeps 64 entries at most (`make_list(…, 64)`),
+# each a container, a writer's object id and three counts — a few hundred characters: 64 Ki characters is far
+# above; a text past it is not read (nothing set aside, said).
+WRITERS_MAX = 64 * 1024
 # Azure's container names: 3 to 63 of lowercase letters, digits and single hyphens.
 _CONTAINER = re.compile(r"^(?=.{3,63}$)[a-z0-9]+(?:-[a-z0-9]+)*$")
 
@@ -155,6 +167,22 @@ def _count(value) -> int | None:
     return None
 
 
+def writers_of(value) -> list[dict] | None:
+    """BlobWriters as a list of objects (SLF1b): the list itself, or its JSON text — the SDK hands a
+    ``dynamic`` column on as text. None when it is neither: a text unreadable or longer than
+    ``WRITERS_MAX``, a value that is not a list, a list holding anything but objects. Never raises."""
+    if isinstance(value, str):
+        if len(value) > WRITERS_MAX:
+            return None
+        try:
+            value = json.loads(value)
+        except (ValueError, RecursionError):
+            return None
+    if not isinstance(value, list) or not all(isinstance(e, dict) for e in value):
+        return None
+    return value
+
+
 def _own(entry, channel: Channel) -> tuple[int, int] | None:
     """(writes, bytes) of an entry of BlobWriters that is the watch's own, else None."""
     if not isinstance(entry, dict):
@@ -173,8 +201,10 @@ def settle(rows: list[dict], channel: Channel | None) -> tuple[list[dict], dict]
     """(the rows for the poller, what was set aside). Each row that carries BlobWriters is a copy
     without it; the watch's own writes taken off its counts, and the row left out when nothing else
     is in it. Counts: ``writes`` and ``rows`` set aside, ``unread`` when a row carried the column
-    while a channel is configured and the watch's identity is not read (nothing set aside)."""
-    said = {"writes": 0, "rows": 0, "unread": False}
+    while a channel is configured and the watch's identity is not read (nothing set aside),
+    ``unparsed`` the rows of the channel's account whose column could not be read (`writers_of`:
+    nothing set aside of them, SLF1b)."""
+    said = {"writes": 0, "rows": 0, "unread": False, "unparsed": 0}
     out: list[dict] = []
     for row in rows:
         if not isinstance(row, dict) or WRITERS not in row:
@@ -190,11 +220,15 @@ def settle(rows: list[dict], channel: Channel | None) -> tuple[list[dict], dict]
             out.append(row)
             continue
         total = _count(row.get("PutBlobCount"))
-        if (total is None or not isinstance(writers, list)
-                or str(row.get("AccountName") or "").lower() != channel.account):
+        if total is None or str(row.get("AccountName") or "").lower() != channel.account:
             out.append(row)
             continue
-        own = [o for o in (_own(e, channel) for e in writers) if o is not None]
+        entries = writers_of(writers)
+        if entries is None:
+            said["unparsed"] += 1
+            out.append(row)
+            continue
+        own = [o for o in (_own(e, channel) for e in entries) if o is not None]
         writes = sum(w for w, _ in own)
         if not writes:
             out.append(row)
