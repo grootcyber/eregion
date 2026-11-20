@@ -39,6 +39,12 @@ operator's, and every action of that administrator would read as Glorfindel's st
 credential. Its application's object id, the target of a credential added to its
 registration, is not in its token: add it to GLORFINDEL_OWN_CALLERS.
 
+One set-aside, counted, never silent (MID1, #981; entra_msi.py, `set_aside`, called by the RulePoller
+on the shipped `entra-credential-added` only): the certificate Azure puts on a managed identity it
+creates — « Add service principal » on a ServicePrincipal, by the tenant's « Managed Service Identity »
+principal known by its object id (EREGION_ENTRA_MSI_ACTOR_ID, never by its name), every credential an
+AsymmetricX509Cert of usage Verify. The marks come first: a row marked as Glorfindel's stays a card.
+
 Entra's logs reach the workspace only through a diagnostic setting of the TENANT (not of the
 subscription): AuditLogs, ServicePrincipalSignInLogs — infra/terraform/entra_logs.tf proposes
 it, disabled. Hypotheses to measure on the bench: the tables and columns, the latency (minutes,
@@ -235,6 +241,15 @@ class AzureEntraDetector(AzureActivityDetector):
     plane = "identity"
     backend_type = "azure_monitor"   # same workspace as Perf / Syslog / AzureActivity
     min_lookback_s = MIN_LOOKBACK_S
+
+    @classmethod
+    def set_aside(cls, rule_name: str, rows: list[dict]) -> tuple[list[dict], dict | None]:
+        """MID1 (#981): the certificate Azure puts on a managed identity it creates, set aside from
+        the shipped `entra-credential-added` by the tenant's « Managed Service Identity » principal's
+        object id (EREGION_ENTRA_MSI_ACTOR_ID), never its name — entra_msi.py. The rows come from
+        `run_query`, marked: a row marked as Glorfindel's stays a card."""
+        from glorfindel.providers.azure import entra_msi
+        return entra_msi.set_aside(rule_name, rows)
 
     def run_query(self, query: str, timespan=None) -> list[dict]:
         rows = AzureMonitorDetector.run_query(self, query, timespan=timespan)

@@ -533,6 +533,65 @@ de service, en comptes, jamais en valeurs : `az ad app show --id <appid> --query
 "{secrets: length(passwordCredentials), certs: length(keyCredentials)}"`, puis la même requête par
 `az ad sp show --id <appid>` ; deux zéros attendus de chaque côté. Pour revenir aux cartes de ses connexions : retirer la règle de la couche d'Imladris.
 
+**Le principal Managed Service Identity (MID1)** : quand Azure crée l'identité managée d'une
+ressource (la Logic App du drill, recréée après des applies ratés, le 20/11 : cinq cartes hautes
+`entra-credential-added`, six lignes), il pose un certificat sur son principal de service, sous le
+principal « Managed Service Identity » du tenant. L'adaptateur d'Entra écarte cette ligne, comptée,
+seulement si son `ActorId` est l'object id de ce principal, lu dans l'environnement de la watch
+(`EREGION_ENTRA_MSI_ACTOR_ID`), **jamais par son nom** ; tout le reste fait sa carte
+(`docs/glorfindel.md`, « Le certificat qu'Azure pose sur une identité managée »). Sans la variable,
+rien n'est écarté : les cartes reviennent, et la ligne de la règle le dit dans la console. Le geste
+de Jonathan, **une fois déployée une release qui contient MID1** (la 0.6.4), depuis le poste, en zsh.
+Tout se lit, rien ne s'écrit dans Azure ni dans Entra ID ; l'id est lu par `az` et écrit par le shell,
+jamais recopié de l'écran, et **jamais affiché** : un id, aucun secret, mais il reste hors du dépôt et
+des captures.
+
+```bash
+# 1. L'object id du principal « Managed Service Identity » du tenant (az ad sp list --filter : le
+#    filtre OData exact, quand --display-name prend tout nom qui commence par) — dans host.env
+#    d'Imladris, jamais dans le dépôt. Un seul principal de ce nom attendu ; le nom n'est que le
+#    moyen de le trouver : les contrôles 2 et 3 le prouvent par son propriétaire et par les lignes.
+cd ~/eregion && source .envrc
+F=infra/glorfindel-host/host.env
+grep -c '^EREGION_ENTRA_MSI_ACTOR_ID=' $F    # → 0 (sinon : la retirer d'abord, sed -i '/^EREGION_ENTRA_MSI_ACTOR_ID=/d' $F)
+N=$(wc -l < $F)
+echo "EREGION_ENTRA_MSI_ACTOR_ID=$(az ad sp list --filter "displayName eq 'Managed Service Identity'" --query '[].id' -o tsv)" >> $F
+#    Une seule ligne ajoutée, un seul GUID — sinon (deux principaux de ce nom : l'un est une
+#    inscription du tenant qui l'a pris ; ou aucun), retirer ce qui vient d'être ajouté,
+#    sed -i "$((N+1)),\$d" $F, et s'arrêter :
+echo $(( $(wc -l < $F) - N ))                # → 1
+grep -cE '^EREGION_ENTRA_MSI_ACTOR_ID=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' $F   # → 1
+# 2. Contrôle, sans afficher l'id : le principal est celui de Microsoft, pas une inscription du
+#    tenant (son application appartient à une autre organisation que la tienne) :
+ID=$(sed -n 's/^EREGION_ENTRA_MSI_ACTOR_ID=//p' $F)
+az ad sp show --id "$ID" --query "[displayName, appOwnerOrganizationId == '$(az account show --query tenantId -o tsv)']" -o tsv
+#    → « Managed Service Identity » puis « False » (True : une application du tenant qui porte ce
+#    nom — retirer la ligne, sed -i '/^EREGION_ENTRA_MSI_ACTOR_ID=/d' $F, et s'arrêter).
+# 3. Contrôle croisé, en lecture seule, sur les lignes des cartes jugées du 20/11 : l'ActorId de
+#    leurs « Add service principal » est cet id (Log Analytics Reader suffit ; le customerId du
+#    workspace du banc, comme pour les requêtes de mesure, docs/operations.md) :
+WS_CUSTOMER=<customerId du workspace>
+az monitor log-analytics query -w $WS_CUSTOMER --timespan P30D -o tsv --analytics-query "AuditLogs | where OperationName == 'Add service principal' and tostring(InitiatedBy.app.displayName) == 'Managed Service Identity' | summarize Rows = count(), Same = countif(tostring(InitiatedBy.app.servicePrincipalId) =~ '$ID')"
+#    → deux nombres égaux, au moins 6 (les lignes du 20/11) ; Same plus petit que Rows : un autre
+#    principal porte ce nom dans ces lignes — retirer la ligne et s'arrêter.
+unset ID
+make imladris-push               # host.env → ~/eregion/.env ; --check refuse une valeur qui n'est pas un GUID
+# 4. La watch la reçoit : recréée (un `restart` ne relit pas ~/eregion/.env) :
+make imladris-ssh                # puis, sur Imladris : cd eregion && docker compose up -d watch
+#    Toujours sur Imladris, sans afficher la valeur :
+docker compose exec watch sh -c 'test -n "$EREGION_ENTRA_MSI_ACTOR_ID" && echo posée'   # → posée
+```
+
+**Après coup** : dans la console, le détail de la règle `entra-credential-added` ne dit plus
+« EREGION_ENTRA_MSI_ACTOR_ID unset » dès son passage suivant (2 minutes) ; « is no object id » :
+la valeur poussée n'est pas un GUID (`--check` l'aurait refusée : reprendre l'étape 1). À la
+prochaine identité managée qu'Azure crée (la Logic App du drill, recréée par un apply), **aucune**
+carte « identifiant ajouté (Add service principal) par Managed Service Identity » : la ligne de la
+règle compte « N MSI », et le journal de la watch dit « row(s) set aside, no card ». Une telle
+carte revenue, c'est qu'une condition ne tient pas — l'`ActorId` de sa ligne n'est pas l'id posé
+(étape 3), ou l'identifiant ajouté n'est pas un seul certificat `Verify` : c'est la carte voulue.
+Pour revenir aux cartes : vider la variable (étapes 1 et 4).
+
 **Après une mise à jour de Glorfindel**, si une règle livrée recopiée a changé (n'importe quel
 champ : l'empreinte `base_sha256` est celle de la règle entière), la watch **écarte la copie** et
 charge la règle livrée à sa place — plus de cartes, jamais moins : la carte de la maintenance de

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 import logging
@@ -72,6 +73,20 @@ def own_channel_counts(status: dict) -> dict:
             "own_channel_last": str(oc.get("last") or ""), "own_channel_unread": str(oc.get("unread") or ""),
             "own_channel_unparsed": n("unparsed"),
             "own_channel_unparsed_last": str(oc.get("unparsed_last") or "")}
+
+
+def msi_certificate_counts(status: dict) -> dict:
+    """MID1 (#981): the rows of `entra-credential-added` set aside as the certificate Azure puts on a
+    managed identity it creates (glorfindel/providers/azure/entra_msi.py), as the rule's status holds
+    them — the console and `status_snapshot` read them here. `msi_certificate_config`: the id's problem
+    at the last pass, « unset » or « malformed » (nothing set aside then), "" when configured."""
+    mc = status.get("msi_certificate") if isinstance(status, dict) else None
+    mc = mc if isinstance(mc, dict) else {}
+    rows = mc.get("rows")
+    config = mc.get("config")
+    return {"msi_certificate_count": rows if type(rows) is int and rows >= 0 else 0,
+            "msi_certificate_last": str(mc.get("last") or ""),
+            "msi_certificate_config": config if config in ("unset", "malformed") else ""}
 
 # P1: the client's layer — the rules of THIS deployment (approved, overriding a base rule,
 # disabling one), outside the repository, loaded over the shipped base
@@ -419,6 +434,25 @@ MIN_INTERVAL_S = 30.0
 def shipped_rules_path() -> Path:
     """The base shipped with Glorfindel (glorfindel/rules/azure/detection_rules.yaml)."""
     return Path(__file__).resolve().parent / "rules" / "azure" / "detection_rules.yaml"
+
+
+@functools.lru_cache(maxsize=4)
+def _shipped_query_sha256s(path: str) -> dict[str, str]:
+    """{name: sha256 of its query} of every shipped rule, the base read once per path (MID1 review:
+    one entry per (path, name) was a cache of 16 for 20 rules, never hit)."""
+    return {str(r["name"]): own_channel.query_sha256(r.get("query"))
+            for r in _named(_read_layer(Path(path)).get("rules")) if r.get("query")}
+
+
+def shipped_query(name: str, query) -> bool:
+    """MID1 (#981), ATT1's shape: the rule is the shipped one of that name, its query to the byte (a copy
+    to the letter, WL1, too) — never a rule of the client's layer that changed it. An unreadable base:
+    False. Never raises."""
+    try:
+        sha = _shipped_query_sha256s(str(shipped_rules_path())).get(str(name or ""), "")
+    except Exception:
+        return False
+    return bool(sha) and own_channel.query_sha256(query) == sha
 
 
 def shipped_rule_names(path: str | Path | None = None) -> set[str]:
@@ -1752,6 +1786,7 @@ class RulePoller:
                     "match_count": s.get("match_count", 0),
                     **expected_counts(s),
                     **own_channel_counts(s),
+                    **msi_certificate_counts(s),
                     **unreadable_counts(s),
                     **({"auditd": s["auditd"]} if isinstance(s.get("auditd"), dict) else {}),
                 })
@@ -1902,6 +1937,25 @@ class RulePoller:
             logger.warning("detection rule '%s': %d row(s) of the return channel's account with a %s "
                            "column unreadable — nothing set aside of them (SLF1b)",
                            rule.name, own["unparsed"], own_channel.WRITERS)
+        # MID1 (#981): what the rule's adapter sets aside before any routing — for Entra ID, the
+        # certificate Azure puts on a managed identity it creates, by the tenant's principal's id
+        # (glorfindel/providers/azure/entra_msi.py). The shipped rule only, its query to the byte.
+        msi = None
+        try:
+            cls = detector_class(rule.source)
+            if cls is not None and shipped_query(rule.name, rule.query):
+                rows, msi = cls.set_aside(rule.name, rows)
+        except Exception as exc:  # nothing set aside: every row stays a card
+            msi = None
+            faults.append(f"set_aside: {type(exc).__name__}: {exc}")
+        if msi and msi["rows"]:
+            logger.info("detection rule '%s': %d row(s) set aside, no card — %s",
+                        rule.name, msi["rows"], msi["reason"])
+        if msi and msi["config"] and not self.__dict__.get("_aside_config_said"):
+            self._aside_config_said = True     # said once by this watch; the status says it at each pass
+            log = logger.warning if msi["config"] == "malformed" else logger.info
+            log("detection rule '%s': EREGION_ENTRA_MSI_ACTOR_ID %s — nothing set aside, every row a card "
+                "(MID1)", rule.name, "is no object id" if msi["config"] == "malformed" else "unset")
         # AUD1 (#408): auditd's execs of a human login as root, read before any signal and
         # outside the lock — a command of ADM1's sensitive list stays, the rest is no card.
         policy = getattr(self._cfg, "expected_sudo", None)
@@ -2067,6 +2121,16 @@ class RulePoller:
                     "reason": own_channel.REASON,
                     **({"container": channel.container} if channel is not None else {}),
                     **({"unread": now_iso} if own["unread"] else {}),
+                }
+            if msi is not None:
+                # MID1: the managed identities' certificates set aside, counted across passes where the
+                # console reads the rules; the id's problem said at each pass (nothing set aside then).
+                was = msi_certificate_counts(st)
+                st["msi_certificate"] = {
+                    "rows": was["msi_certificate_count"] + msi["rows"],
+                    "last": now_iso if msi["rows"] else was["msi_certificate_last"],
+                    "reason": msi["reason"],
+                    **({"config": msi["config"]} if msi["config"] else {}),
                 }
             if unreadable:
                 # CPT1c: the reply out of the rule's schema, said where the console reads the rules.
