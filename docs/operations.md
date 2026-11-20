@@ -1381,6 +1381,13 @@ le déploiement pose (SEC10). Avant ROT2, rien ne le faisait donc tourner, et il
 l'historique du navigateur et du terminal, téléphone compris. **Quand** : quand `#deploy` le
 rappelle (tous les 90 jours), ou dès qu'un appareil qui a ouvert la console n'est plus sûr.
 
+**Avant de la lancer, vérifie ta config locale** (`glorfindel-config.yaml`) : la commande pose
+`host.env` par `make imladris-push`, qui repousse aussi cette config sur Imladris (le défaut forcé à
+`human_only`, le mode de chaque VM gardé tel qu'il est sur Imladris, une VM qu'Imladris ne connaît pas
+en `human_only`, la liste destructive vidée ; `infra/glorfindel-host/host_config.py`, et
+`infra/glorfindel-host/README.md`, « Déroulé »). Les backends et les exceptions partent tels qu'ils
+sont dans ta config : une config locale qui a dérivé de celle d'Imladris la remplace.
+
 **Ce que fait la commande**, dans cet ordre :
 1. **Refusée** en session de code (`EREGION_AGENT_SESSION`, un worktree de lot : la règle de
    `scripts/bench_shared.py`), et sans Imladris joignable (pas d'adresse, ou sa clé d'hôte refusée :
@@ -1399,7 +1406,10 @@ rappelle (tous les 90 jours), ou dès qu'un appareil qui a ouvert la console n'e
 4. **La pose**, par le chemin existant : `make imladris-push` (`host.env` → `~/eregion/.env`, et la
    config, les modes d'Imladris gardés).
 5. **La console seule relancée** : `docker compose up -d --no-deps --force-recreate war-room`, pour
-   qu'elle relise son environnement ; la watch et le bot ne bougent pas.
+   qu'elle relise son environnement ; la watch et le bot ne bougent pas. Sous le verrou des
+   déploiements (`~/.eregion-deploy.lock`, que le CD tient pendant son passage, `deploy.sh`) : tenu,
+   la console n'est pas relancée, et c'est dit — le nouveau jeton reste à repousser, comme pour une
+   pose qui échoue (ci-dessous).
 6. **Vérifiée** comme `make imladris-status` sonde la console : curl sur Imladris, le jeton sur son
    entrée, jamais sur une ligne de commande. Le nouveau répond (200, attendu jusqu'à 60 s, le temps
    qu'elle démarre) et l'ancien est refusé (401) : toute session de l'ancien est refusée, son cookie
@@ -1418,7 +1428,7 @@ téléphone se rouvrent avec elle.
 
 **En cas d'échec**, la commande dit ce qui est en place. Refusée avant l'étape 3 : rien n'a bougé.
 Après : `host.env` porte le nouveau jeton, sur le poste, cohérent (`--check` passe). Une pose ou un
-redémarrage qui échoue laisse la console d'Imladris sur l'ancien : relance
+redémarrage qui échoue (un déploiement en cours compris) laisse la console d'Imladris sur l'ancien : relance
 `make imladris-console-rotate` une fois Imladris joignable — un autre jeton, la même pose. Une console
 qui n'accepte pas le nouveau, ou ne refuse pas l'ancien, est dite (`make imladris-status`,
 `make imladris-logs`), et rien n'est noté.
@@ -1433,7 +1443,8 @@ d'avant ROT2 ne lit que les trois paires : la commande le dit (« une version d'
 notée quand même.
 
 > **Pour Jonathan, une fois, après la fusion de ROT2** : `make imladris-cd-install` (depuis `main` à
-> jour), puis `make imladris-console-rotate` — le jeton en place date de la création d'Imladris. Ou,
+> jour), puis, ta config locale vérifiée (elle repart avec `host.env`), `make imladris-console-rotate`
+> — le jeton en place date de la création d'Imladris. Ou,
 > pour le garder et seulement poser son rappel, `make imladris-console-token-note`.
 
 **Retirer l'ancien principal partagé** (`Contributor` sur l'abonnement, l'option A d'avant) :

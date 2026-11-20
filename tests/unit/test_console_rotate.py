@@ -106,7 +106,8 @@ if "up" in args and args[-1] == "war-room" and not os.environ.get("FAKE_STALE"):
     for line in open(".env", encoding="utf-8").read().splitlines():
         if line.strip() and not line.lstrip().startswith("#") and "=" in line:
             k, v = line.split("=", 1)
-            env[k.strip()] = re.sub(r"\s+#.*$", "", v.strip()).strip()
+            v = re.sub(r"\s+#.*$", "", v.strip()).strip()
+            env[k.strip()] = v[1:-1] if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'" else v
     token = env.get("EREGION_CONSOLE_TOKEN") or env.get("GLORFINDEL_WARROOM_TOKEN") or ""
     open(os.path.join(os.environ["HOME"], ".console-running"), "w").write(token)
 '''
@@ -246,6 +247,7 @@ def test_a_rotation_changes_the_token_s_line_alone_restarts_the_console_alone_an
     assert whos[0] == "push" and "docker" in whos and whos.index("docker") < whos.index("curl")
     (up,) = w.calls("docker")
     assert up["argv"] == ["compose", "up", "-d", "--no-deps", "--force-recreate", "war-room"]
+    assert (w.imladris / ".eregion-deploy.lock").exists()        # taken, as deploy.sh takes it
     # The console answers the new one, refuses the old one (read on Imladris, the tokens on stdin).
     assert (w.imladris / ".console-running").read_text() == new
     assert any("accepte le nouveau jeton et refuse l'ancien" in s for s in w.said)
@@ -317,6 +319,44 @@ def test_a_temporary_file_left_by_an_interrupted_run_is_replaced(tmp_path):
     (w.host_env.parent / cr.TMP).write_text("EREGION_CONSOLE_TOKEN=left-over\n")
     assert w.rotate() == 0, w.said
     assert not (w.host_env.parent / cr.TMP).exists()
+
+
+def test_a_quoted_token_is_probed_as_the_console_receives_it(tmp_path):
+    """compose removes one pair of quotes: the old token the probe sends is the one the console runs with,
+    never with its quotes — else « the old one refused » would hold for a value nobody uses."""
+    w = World(tmp_path, host_env=HOST_ENV.replace(f"GLORFINDEL_WARROOM_TOKEN={OLD}",
+                                                  f'EREGION_CONSOLE_TOKEN="{OLD}"'))
+    assert w.rotate() == 0, w.said
+    (probe,) = [c for c in w.calls("ssh") if c["argv"][-1] == cr.PROBE]
+    assert probe["stdin"] == f"{w.token()}\n{OLD}\n"
+
+
+def test_a_deployment_in_progress_refuses_the_restart_and_leaves_the_new_token_to_push_again(tmp_path):
+    """The CD holds ~/.eregion-deploy.lock for its pass (deploy.sh, `lock`): the console is never
+    recreated in the middle of a switch — refused, said, nothing noted."""
+    import fcntl
+    w = World(tmp_path)
+    with open(w.imladris / ".eregion-deploy.lock", "w") as held:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        assert w.rotate() == 1
+    assert "un déploiement est en cours" in w.said[-1] and "make imladris-console-rotate" in w.said[-1]
+    assert w.calls("docker") == [] and w.noted() is None
+    assert w.token() and w.token() != OLD                          # host.env holds the new one, to push again
+
+
+def test_the_temporary_host_env_is_ignored_by_git(tmp_path):
+    """The repository is public: the file written beside host.env holds all of it, until it is renamed —
+    a SIGKILL there leaves it in the checkout. Read in a throwaway repository with the .gitignore of this
+    tree (the mutation harness copies the tree without its .git)."""
+    if shutil.which("git") is None:
+        pytest.skip("git needed")
+    repo = tmp_path / "ignore"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    shutil.copy(ROOT / ".gitignore", repo / ".gitignore")
+    rel = f"infra/glorfindel-host/{cr.TMP}"
+    assert subprocess.run(["git", "check-ignore", "-q", rel], cwd=repo).returncode == 0
+    assert cr.HOST_ENV.parent.as_posix() == "infra/glorfindel-host"
 
 
 # ── what refuses before anything ─────────────────────────────────────────────────────

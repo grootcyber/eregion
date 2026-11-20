@@ -24,7 +24,9 @@ in the browser's history and the terminal's, the phone's included.
      longer in use. Every other line stays to the byte;
   3. pushes it by the existing path, `make imladris-push` (host.env → ~/eregion/.env, and the config);
   4. restarts the console alone (`docker compose up -d --no-deps --force-recreate war-room`), so that
-     it reads its environment again; the watch and the bot do not move;
+     it reads its environment again, under the lock of the deployments (~/.eregion-deploy.lock, held
+     by the CD for its pass): held, refused and said, the new token to push again; the watch and the
+     bot do not move;
   5. checks it as `make imladris-status` probes the console — curl on Imladris, the token on its
      standard input, never on a command line: the new one answers, the old one is refused (401);
   6. notes on Imladris the day to turn it again, the draw + DAYS (90 by default), under its own name,
@@ -73,7 +75,11 @@ DEFAULT_DAYS, MAX_DAYS = 90, 365
 NEVER = "ne fait jamais tourner le jeton de la console ni n'en note la date, l'opérateur les tape"
 # The console of Imladris, behind its loopback (docker-compose.yml: 127.0.0.1:7007), probed as status.sh does.
 PROBE_PATH = "/api/to-judge?since=7d"
-RESTART = "cd eregion && docker compose up -d --no-deps --force-recreate war-room"
+# Under the lock of the deployments (~/.eregion-deploy.lock, deploy.sh `lock`, held by the CD for its
+# pass): never a recreate in the middle of a switch. Held: refused, LOCKED, nothing restarted.
+LOCKED = 75
+RESTART = ("cd eregion && exec 9>\"$HOME/.eregion-deploy.lock\" && { flock -n 9 || exit 75; } && "
+           "docker compose up -d --no-deps --force-recreate war-room")
 # On Imladris: the two tokens read from stdin, never on a line; the new one waited for while the
 # console starts (up to 60 s), then the old one; one line, `new=<code> old=<code>`.
 PROBE = (
@@ -163,7 +169,7 @@ def read_token(path: Path) -> tuple[str, str, str]:
     if not name:
         raise Refused(f"{HOST_ENV} : aucun jeton de la console ({he.TOKEN}, ou son ancien nom {he.LEGACY_TOKEN}) "
                       "— rien à faire tourner ; make imladris-push le refuserait aussi")
-    return text, name, env[name]
+    return text, name, he.unquoted(env[name])      # as compose hands it to the console: quotes removed
 
 
 def rewritten(text: str, name: str, token: str) -> str:
@@ -231,8 +237,12 @@ def push(ctx: Ctx) -> tuple[bool, str]:
 
 
 def restart(ctx: Ctx) -> tuple[bool, str]:
-    """The console alone, recreated: it reads its environment again (the watch and the bot untouched)."""
+    """The console alone, recreated: it reads its environment again (the watch and the bot untouched).
+    A deployment in progress (its lock held): refused, said."""
     res = _run([*shlex.split(ctx.ssh), RESTART], ctx, stdin="")     # never the terminal's input
+    if res.rc == LOCKED:
+        return False, ("un déploiement est en cours sur Imladris (le CD tient ~/.eregion-deploy.lock) : la console "
+                       "n'est pas relancée — make imladris-cd-status")
     return res.ok, (pr._error(res) or f"ssh a rendu {res.rc}")
 
 

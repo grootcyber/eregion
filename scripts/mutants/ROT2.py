@@ -1,7 +1,7 @@
 """ROT2 (#968): the console token of Imladris turned in one command — its line alone rewritten, 0600 and
 atomic, checked as the push checks it, never printed nor on a command line, refused in a code session;
 pushed, the console alone restarted, the old token refused; the day to turn it again noted on Imladris
-and reminded by its CD in #deploy. M6656–M6670, measured by tests/unit/test_console_rotate.py."""
+and reminded by its CD in #deploy. M6656–M6672, measured by tests/unit/test_console_rotate.py."""
 ROTATE = "scripts/console_rotate.py"
 CD = "infra/glorfindel-host/cd/eregion_cd.py"
 _T = "tests/unit/test_console_rotate.py"
@@ -77,3 +77,19 @@ TESTS = {
     "M6669": f"{_T}::test_the_token_s_reminders_leave_at_j14_j7_j1_and_on_the_day_once_each",
     "M6670": f"{_T}::test_the_token_s_reminders_leave_at_j14_j7_j1_and_on_the_day_once_each",
 }
+
+# Review of dfa81a16 (round 1): the temporary host.env ignored by git, the restart under the lock of the
+# deployments. M6671–M6672.
+MUTANTS += [
+    ("M6671", "the temporary host.env not ignored by git: a SIGKILL before its rename leaves the whole file in "
+     "the checkout of a public repository (ROT2, review)", ".gitignore",
+     "infra/glorfindel-host/.host.env.console-rotate.tmp\n", ""),
+    ("M6672", "the console recreated without the lock of the deployments: in the middle of a switch of the CD "
+     "(ROT2, review)", ROTATE,
+     "&& { flock -n 9 || exit 75; } && ",
+     "&& "),
+]
+TESTS.update({
+    "M6671": f"{_T}::test_the_temporary_host_env_is_ignored_by_git",
+    "M6672": f"{_T}::test_a_deployment_in_progress_refuses_the_restart_and_leaves_the_new_token_to_push_again",
+})

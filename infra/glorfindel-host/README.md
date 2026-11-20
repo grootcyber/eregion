@@ -226,8 +226,10 @@ son onglet est grisé. Les anciennes adresses (`/atelier`, `/api/atelier/*`) red
   jeton dans `host.env` — sa seule ligne, sous `EREGION_CONSOLE_TOKEN`, à sa place (une ligne de
   l'ancien nom, `GLORFINDEL_WARROOM_TOKEN`, remplacée si c'est elle qui le portait, retirée sinon) ;
   écrit à côté en 0600, vérifié par `host_env.py --check`, puis renommé —, poussé par
-  `make imladris-push`, la console seule relancée (`docker compose up -d --no-deps --force-recreate
-  war-room` : la watch et le bot ne bougent pas), puis vérifiée par la sonde d'`imladris-status` :
+  `make imladris-push` (qui repousse aussi `glorfindel-config.yaml` : vérifier sa config locale
+  avant), la console seule relancée sous le verrou des déploiements (`docker compose up -d --no-deps
+  --force-recreate war-room` : la watch et le bot ne bougent pas ; un déploiement en cours, refusé et
+  dit), puis vérifiée par la sonde d'`imladris-status` :
   le nouveau jeton répond, l'ancien est refusé, et toutes ses sessions avec lui. Le jeton n'est
   jamais affiché : `make imladris-url` le relit. Le jour de le refaire (le tirage + 90 jours) est
   noté sur Imladris sous `console-token`, que le CD rappelle dans `#deploy` (« Les rappels
