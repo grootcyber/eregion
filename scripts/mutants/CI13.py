@@ -2,7 +2,7 @@
 runs. The seed is said as the run begins (tests/unit/conftest.py); at night only — a seed drawn, or
 more sequences than a push's — a watchdog speaks before each machine's step's bound: the seed, the
 sequences begun, every thread's stack, faulthandler as its backstop (tests/unit/invariant_watchdog.py).
-M6800–M6809.
+M6800–M6809; the review: M6856 (a seed drawn by the xdist controller, known drawn by its workers).
 
 Caught by tests/unit/test_invariant_watchdog.py: the rule, the defaults read against invariants.yml's
 bounds, and its probes in a pytest of their own — a sequence that never ends, killed by SIGKILL as
@@ -55,6 +55,12 @@ MUTANTS = [
      WATCHDOG,
      '            f"{stacks(threading.get_ident())}"\n',
      '            f"{stacks(threading.main_thread().ident)}"\n'),
+    # The review (20/11).
+    ("M6856", "a drawn seed passed to the xdist workers as a number only: each worker reads it given, "
+              "and a night under xdist arms no watchdog below 500 sequences (CI13)",
+     CONFTEST,
+     "    if drew:\n        os.environ[hypothesis_seed.DRAWN_VAR] = str(seed)\n",
+     "    if drew:\n        pass\n"),
 ]
 TESTS = {
     "M6800": f"{_T}test_measured_a_step_cut_by_its_bound_has_said_its_seed_and_the_sequence_that_runs",
@@ -67,4 +73,5 @@ TESTS = {
     "M6807": f"{_T}test_measured_a_machine_that_ends_is_disarmed_and_says_its_longest_sequence",
     "M6808": f"{_T}test_a_run_that_asked_pytest_s_faulthandler_keeps_it",
     "M6809": f"{_T}test_armed_it_counts_the_sequences_speaks_and_puts_everything_back",
+    "M6856": f"{_T}test_measured_under_xdist_a_worker_knows_its_controller_drew_the_seed",
 }

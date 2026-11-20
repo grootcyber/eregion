@@ -59,7 +59,8 @@ def _seed_the_run(config) -> None:
     except ValueError as exc:
         raise pytest.UsageError(str(exc)) from None
     config.stash[_SEED] = seed
-    _watch_the_night(config, drew)
+    # CI13: a worker's seed comes as a number; that its controller drew it comes beside it.
+    _watch_the_night(config, drew or hypothesis_seed.drawn_upstream(os.environ, seed))
     if seed is None:
         return
     # CI13: said as the run begins, before any test — a step cut by its bound has written it.
@@ -67,6 +68,8 @@ def _seed_the_run(config) -> None:
         print(hypothesis_seed.said(seed), flush=True)
     # A process this run starts (an xdist worker, spawned after this) takes the same seed.
     os.environ[hypothesis_seed.VAR] = str(seed)
+    if drew:
+        os.environ[hypothesis_seed.DRAWN_VAR] = str(seed)
     if drew and os.environ.get("PYTEST_XDIST_WORKER", "gw0") == "gw0":
         hypothesis_seed.write_summary(seed)
 

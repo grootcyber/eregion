@@ -30,6 +30,7 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "invariants.yml"
 PROBE = "EREGION_CI13_PROBE"       # the probes run only in the probe's pytest
 HANG = "EREGION_CI13_HANG"         # the probe machine's sequence never ends while it is set
+REACHED = "EREGION_CI13_REACHED"   # the probe machine's rule touches this file once it runs
 SPOKE = "=== CI13 watchdog: the run goes on until its step's bound ==="
 
 
@@ -194,6 +195,8 @@ def test_disarmed_before_its_time_it_never_speaks():
 class _NeverEnds(_Probed):
     @rule()
     def never_ends(self):
+        if os.environ.get(REACHED):
+            Path(os.environ[REACHED]).touch()
         while os.environ.get(HANG):
             time.sleep(0.05)
 
@@ -211,28 +214,56 @@ def test_probe_plain_after():
         time.sleep(float(os.environ[PROBE]))
 
 
-def _run(tmp_path: Path, env: dict, select: str, *, kill_when: str | None, wait: float) -> tuple[str, int]:
-    """The probes in a pytest of their own, as the night runs it (no xdist, `-q`, pytest capturing:
-    the watchdog's words must not need `-s`), its log a file. Killed by SIGKILL once its log holds
-    `kill_when`, or after `wait` seconds — a step cut by its bound: (the log, the exit code)."""
+def _run(tmp_path: Path, env: dict, select: str, *, kill_when: str | None, wait: float,
+         reached: Path | None = None, after: float = 0.0, more: tuple = ("-p", "no:xdist")) -> tuple[str, int]:
+    """The probes in a pytest of their own, as the night runs it (no xdist unless `more` asks it,
+    `-q`, pytest capturing: the watchdog's words must not need `-s`), its log a file. Killed by
+    SIGKILL — a step cut by its bound — once its log holds `kill_when`, or `after` seconds once the
+    probe's rule wrote `reached`, or after `wait` seconds: (the log, the exit code)."""
     log = tmp_path / f"run-{len(list(tmp_path.iterdir()))}.log"
     base = {k: v for k, v in os.environ.items()
-            if not k.startswith(("GITHUB_", "PYTEST_", "HYPOTHESIS", "GLORFINDEL_INVARIANT"))
-            and k not in ("CI", hs.VAR)}
+            if not k.startswith(("GITHUB_", "PYTEST_", "HYPOTHESIS", "GLORFINDEL_INVARIANT", "EREGION_HYPOTHESIS"))
+            and k != "CI"}
+    if reached is not None:
+        env = {**env, REACHED: str(reached)}
     with log.open("wb") as out:
         proc = subprocess.Popen(
             [sys.executable, "-m", "pytest", str(Path(__file__).relative_to(ROOT)), "-k", select, "-q",
-             "-p", "no:cacheprovider", "-p", "no:xdist"],
+             "-p", "no:cacheprovider", *more],
             cwd=ROOT, env={**base, **env}, stdout=out, stderr=subprocess.STDOUT)
         deadline = time.monotonic() + wait
+        seen = None
         while proc.poll() is None and time.monotonic() < deadline:
             if kill_when and kill_when in log.read_text(encoding="utf-8", errors="replace"):
+                break
+            if reached is not None and seen is None and reached.exists():
+                seen = time.monotonic()
+            if seen is not None and time.monotonic() - seen >= after:
                 break
             time.sleep(0.2)
         if proc.poll() is None:
             proc.send_signal(signal.SIGKILL)
         code = proc.wait(timeout=30)
     return log.read_text(encoding="utf-8", errors="replace"), code
+
+
+def _cut_night(log: str) -> str:
+    """What a night cut by its bound must have said: the seed as the run began, then the
+    watchdog's words with that seed, the sequences begun and the main thread's stack down to the
+    rule that runs. Its words."""
+    begun = re.search(rf"Hypothesis seed (\d+) for every property test.*replay: {hs.VAR}=(\d+) ", log)
+    assert begun and begun.group(1) == begun.group(2), log[-3000:]
+    seed = begun.group(1)
+    assert log.index(begun.group(0)) < log.index("=== CI13 watchdog:"), "the seed is said before the watchdog"
+    words = log[log.index("=== CI13 watchdog:"):]
+    assert f"seed {seed} — replay: {hs.VAR}={seed} python -m pytest" in words
+    assert re.search(r"\b(1 sequence|[2-9]\d* sequences|1\d+ sequences) begun, the current one for [\d.]+ s",
+                     words), words[:2000]
+    assert "(the main thread: the sequence)" in words
+    main = words.split("(the main thread: the sequence)", 1)[1].split("\nThread ", 1)[0]
+    assert "in never_ends" in main and "test_invariant_watchdog.py" in main, words[:4000]
+    assert SPOKE in words
+    return words
 
 
 @pytest.mark.skipif(not hasattr(signal, "SIGKILL"), reason="a bound cuts a step by SIGKILL here")
@@ -244,25 +275,37 @@ def test_measured_a_step_cut_by_its_bound_has_said_its_seed_and_the_sequence_tha
     log, code = _run(tmp_path, {PROBE: "0", HANG: "1", hs.VAR: "draw", wd.VAR: "0.05"}, "probe_never_ends",
                      kill_when=SPOKE, wait=60)
     assert code == -signal.SIGKILL, log[-3000:]
-    begun = re.search(rf"Hypothesis seed (\d+) for every property test.*replay: {hs.VAR}=(\d+) ", log)
-    assert begun and begun.group(1) == begun.group(2), log[-3000:]
-    seed = begun.group(1)
-    assert log.index(begun.group(0)) < log.index("=== CI13 watchdog:"), "the seed is said before the watchdog"
-    words = log[log.index("=== CI13 watchdog:"):]
-    assert f"seed {seed} — replay: {hs.VAR}={seed} python -m pytest" in words
-    assert re.search(r"\b[1-9]\d* sequences begun, the current one for [\d.]+ s", words), words[:2000]
-    assert "(the main thread: the sequence)" in words
-    main = words.split("(the main thread: the sequence)", 1)[1].split("\nThread ", 1)[0]
-    assert "in never_ends" in main and "test_invariant_watchdog.py" in main, words[:4000]
-    assert SPOKE in words
+    _cut_night(log)
+
+
+@pytest.mark.skipif(not hasattr(signal, "SIGKILL"), reason="a bound cuts a step by SIGKILL here")
+def test_measured_under_xdist_a_worker_knows_its_controller_drew_the_seed(tmp_path):
+    """`-n 2`, a seed drawn, no budget: the controller draws and says it, each worker gets it as a
+    number — and that it was drawn (DRAWN_VAR). The worker running the machine arms the watchdog,
+    whose words reach the run's log (a worker's stderr is the controller's) with the same seed."""
+    log, code = _run(tmp_path, {PROBE: "0", HANG: "1", hs.VAR: "draw", wd.VAR: "0.1"}, "probe_never_ends",
+                     kill_when=SPOKE, wait=90, more=("-n", "2"))
+    assert code == -signal.SIGKILL, log[-3000:]
+    _cut_night(log)
+
+
+def test_a_seed_drawn_upstream_is_the_very_seed_given():
+    assert hs.drawn_upstream({hs.DRAWN_VAR: "41"}, 41)
+    assert hs.drawn_upstream({hs.DRAWN_VAR: " 41 "}, 41)
+    assert not hs.drawn_upstream({hs.DRAWN_VAR: "41"}, 42), "another run's draw counts for nothing"
+    assert not hs.drawn_upstream({hs.DRAWN_VAR: "41"}, None)
+    assert not hs.drawn_upstream({}, 41), "a seed given (a replay, a round of the harness) was not drawn"
 
 
 @pytest.mark.skipif(not hasattr(signal, "SIGKILL"), reason="a bound cuts a step by SIGKILL here")
 def test_measured_a_push_cut_by_its_bound_says_nothing_more(tmp_path):
-    """A push (500 sequences, no seed): the same sequence that never ends, the same 3 s — the
-    watchdog never armed, nothing said, as before CI13."""
+    """A push (500 sequences, no seed): the same sequence that never ends, killed 6 s after its rule
+    began — twice the watchdog's 3 s — the watchdog never armed, nothing said, as before CI13. The
+    rule must have been reached: a run that never got there proves nothing."""
+    reached = tmp_path / "reached"
     log, code = _run(tmp_path, {PROBE: "0", HANG: "1", wd.EXAMPLES: "500", wd.VAR: "0.05"},
-                     "probe_never_ends", kill_when=None, wait=10)
+                     "probe_never_ends", kill_when=None, wait=90, reached=reached, after=6)
+    assert reached.exists(), f"the probe's rule was never reached:\n{log[-3000:]}"
     assert code == -signal.SIGKILL, log[-3000:]
     assert "CI13 watchdog" not in log and "CI13: " not in log and "Hypothesis seed" not in log, log[-3000:]
 

@@ -34,6 +34,9 @@ import re
 import secrets
 
 VAR = "EREGION_HYPOTHESIS_SEED"
+# CI13 (#986): the seed a process drew, passed to the processes it starts (an xdist worker gets the
+# seed as a number, VAR: without this, it could not tell a drawn seed from one given).
+DRAWN_VAR = "EREGION_HYPOTHESIS_SEED_DRAWN"
 DRAW = "draw"
 PROFILE = "profile"     # asked in words: Hypothesis's own way, even where the run would draw
 # The GitHub events whose runs draw a seed when none is asked: the night's, a run by hand. A pull
@@ -77,6 +80,14 @@ def resolve(env, uid: str | None = None) -> tuple[int | None, bool]:
     if asked == DRAW:
         return drawn(uid), True
     return asked, False
+
+
+def drawn_upstream(env, seed: int | None) -> bool:
+    """Whether the run's seed was drawn by the process that started this one (an xdist worker's
+    controller): DRAWN_VAR holds that very seed. A stale value — another seed, a test's own pytest
+    started with another — counts for nothing."""
+    raw = (env.get(DRAWN_VAR) or "").strip()
+    return seed is not None and raw == str(seed)
 
 
 def is_property_test(fn) -> bool:

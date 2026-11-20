@@ -50,7 +50,8 @@ STARTED = time.monotonic()  # loaded by the conftest, as the run begins
 
 
 def at_night(env, drew: bool) -> bool:
-    """A night, or a run by hand like it: a seed drawn for the run, or more sequences than a
+    """A night, or a run by hand like it: a seed drawn for the run — by this process, or by the
+    xdist controller that started it (`hypothesis_seed.drawn_upstream`) — or more sequences than a
     push's budget."""
     if drew:
         return True
@@ -153,13 +154,14 @@ class Watch:
         """The words before the bound: the seed, the sequences, every thread's stack."""
         now = time.monotonic()
         current = f"the current one for {now - self.current:.1f} s" if self.current else "none yet"
+        begun = f"{self.begun} sequence{'' if self.begun == 1 else 's'} begun"
         longest = (f"the longest before it {self.longest:.1f} s (sequence {self.longest_n})" if self.longest_n
                    else "none ended before it")
         self._write(
             f"\n=== CI13 watchdog: {(now - self.started) / 60:.1f} min since the run began "
             f"({VAR}={self.at_minutes:g}), {self.name} still running ===\n"
             f"{self.replay()}\n"
-            f"{self.begun} sequences begun, {current}; {longest}\n"
+            f"{begun}, {current}; {longest}\n"
             f"{stacks(threading.get_ident())}"
             f"=== CI13 watchdog: the run goes on until its step's bound ===\n")
         if self.backstop_armed:

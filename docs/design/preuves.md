@@ -235,7 +235,8 @@ qui se recopie telle quelle (`EREGION_HYPOTHESIS_SEED=<graine>`). La fin du run,
 résumé de l'étape la disent encore (M6800).
 
 **Avant la borne, ce que fait la machine.** La nuit seulement — une graine tirée pour le run, ou plus
-de séquences que les 500 d'un push (M6801) —, un test qui lance une machine d'invariants a un
+de séquences que les 500 d'un push (M6801) ; sous xdist, le contrôleur qui a tiré la graine le dit à
+ses workers (`EREGION_HYPOTHESIS_SEED_DRAWN`, qui doit porter cette graine même, M6856) —, un test qui lance une machine d'invariants a un
 garde-fou (`tests/unit/invariant_watchdog.py`). À `GLORFINDEL_INVARIANT_WATCHDOG` minutes après le
 début du run (M6806) — par défaut 115 pour la machine d'Azure, sous les 125 de son étape, et 40 pour
 celle d'AWS, sous ses 45 ; `INVARIANT_WATCHDOG_MINUTES` dans chaque fichier, lu face aux bornes
@@ -284,10 +285,22 @@ nuit est perdue, et ses séquences avec. Ce que disent les durées des étapes s
 jobs) penche pour un runner lent. Sur ubuntu, l'étape d'Azure verte a duré de 59 à 112 min selon les
 nuits (09/11 75, 10/11 112, 11/11 111, 12/11 59, 17/11 81, 18/11 90), celle d'AWS de 21 à 42 min.
 Le 20/11, celle d'AWS a duré 39,8 min, contre 5 min pour 3 000 séquences sur le poste : un runner
-environ 2,4 fois plus lent que le poste. À ce rythme, les 10 000 séquences d'Azure (environ 50 min
-sur le poste) font de 115 à 125 min, la borne. Le même jour, sur macOS, la même tête et la même base
-restaurée tiennent en 61 min. La nuit suivante, avec la graine dite au début et le garde-fou, dira le
-reste.
+environ 2,4 fois plus lent que le poste. À ce rythme, les 10 000 séquences d'Azure (environ 50 à
+70 min sur le poste : 14,3 à 21,5 min pour 3 000 dans le tableau) font de 115 à 165 min ce jour-là :
+à la borne ou au-delà. Le même jour, sur macOS, la même tête et la même base restaurée tiennent en
+61 min.
+
+**Ce qui reste à décider, et par qui.** Le geste de Jonathan : lire une ou deux nuits qui disent leur
+graine, avec le garde-fou, avant de décider d'une borne. Pour cette lecture :
+
+- l'étape d'AWS a pris jusqu'à 42 min les nuits vertes, et 39,8 le 20/11. Son garde-fou, à 40 min
+  (`INVARIANT_WATCHDOG_MINUTES` de `tests/unit/test_invariants_aws.py`), parlera donc certaines nuits
+  vertes. Ses piles diront alors où en est une machine lente, pas une séquence bloquée : c'est la ligne
+  des séquences (l'âge de la séquence en cours, la plus longue) qui le dit ;
+- l'étape d'AWS est presque à sa borne de 45 min : elle a été coupée le 19/11. La relever (et la
+  machine d'Azure, sous ses 125 min, de même) serait un geste de Jonathan dans `invariants.yml`, après
+  ces nuits — l'App n'a pas le droit Workflows. Le garde-fou se règle alors par
+  `GLORFINDEL_INVARIANT_WATCHDOG`, ou par la valeur du fichier, que le test lit face à la borne.
 
 ## La mesure par mutation
 
@@ -1432,9 +1445,11 @@ ont parcouru (`GLORFINDEL_INVARIANT_STATS`) :
 Sous xdist (`-n 2`, `schedule`), les deux workers ont tiré la même graine, la conftest chargée ou non par
 le contrôleur, et le résumé du job ne l'a reçue qu'une fois. Sous un push, aucun test n'a de graine.
 **Où la graine est dite** : sous chaque test de propriétés ou machine en échec (pas sous un test simple,
-même rangé dans le fichier d'une machine), dans le résumé du job, et à la fin de pytest quand pytest
+même rangé dans le fichier d'une machine), dans le résumé du job, et au début du run (CI13, #986, avant
+tout test : une étape coupée par sa borne l'a déjà écrite) comme à la fin de pytest, quand pytest
 reçoit des fichiers de `tests/unit/`. Sous `pytest tests/ -n N` (`invariants-rest` de la porte, la suite
-Linux de `ci.yml`), le contrôleur xdist ne charge pas la conftest, et la fin de la sortie ne la dit pas
+Linux de `ci.yml`), le contrôleur xdist ne charge pas la conftest, et ni le début ni la fin de la sortie
+ne la disent
 (relevé par la relecture, mesuré : `GITHUB_EVENT_NAME=schedule pytest tests/ -n 2 -k test_arm_urls`,
 aucune ligne ; une ligne sur `tests/unit/test_arm_urls.py -n 2`). Le résumé du job et chaque échec la
 portent. Une conftest à la racine l'y ferait dire ; ce lot ne l'ajoute pas.
