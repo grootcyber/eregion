@@ -2167,6 +2167,16 @@ briques:
     issue: 615
     doc: docs/design/drill-banc.md
 
+  - id: k-juger-plusieurs
+    composant: console
+    poste: k-juger
+    nom: "Several cards judged at once, in TO JUDGE or a tile's group: a summary first, then each card as its own button does it, a failure said card by card"
+    etat: main
+    release: "0.6"
+    lots: [JUG3]
+    issue: 980
+    doc: docs/design/console.md
+
   - id: k-carte-scroll
     composant: console
     poste: k-voir
