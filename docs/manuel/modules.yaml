@@ -2177,6 +2177,16 @@ briques:
     issue: 971
     doc: docs/design/console.md
 
+  - id: k-telephone-dagorlad
+    composant: console
+    poste: k-voir
+    nom: "On a phone, Dagorlad's board and its Runs view show one column at a time; a wire is laid by two taps"
+    etat: main
+    release: "0.6"
+    lots: [MOB5]
+    issue: 975
+    doc: docs/design/console.md
+
   # ── Analysis AI ─────────────────────────────────────────────────────────────────────
   - id: i-separee
     composant: analyse
