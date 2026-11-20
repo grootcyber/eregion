@@ -35,8 +35,8 @@ one advisory.
 - never a pull request: a bump goes through `make lock`, then the harness
   (`make llm-compare … ATTEST=1`, Jonathan) — docs/operations.md, « Verrou des dépendances ».
 
-Exit 1 when a human has something new to see — an issue opened or reopened, an advisory back —
-or when an audit failed: a red scheduled run is announced in #ci (notify.yml); an issue the
+Exit 1 when a human has something new to see — an issue opened or reopened, an advisory back,
+unless a human accepted it; an acceptance withdrawn (DEP4) — or when an audit failed: a red scheduled run is announced in #ci (notify.yml); an issue the
 workflow's token opens triggers no workflow. Exit 2 on a GitHub error — the other advisories
 and issues still done. Exit 0 otherwise.
 
@@ -53,6 +53,7 @@ import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
+from datetime import date, datetime, timezone
 
 LABEL = "security"
 # The author of every issue the workflow opens (GITHUB_TOKEN). Only its issues are read for a key:
@@ -172,14 +173,29 @@ def key(adv: Advisory, present: bool = True) -> dict:
 
 # DEP4 (#990): the one list of accepted advisories, read by `issues` when no --accepted is given.
 DEFAULT_ACCEPTED = "requirements/audit-accepted.json"
+# An acceptance's reason, at most (load_accepted): GitHub refuses a body past 65 536 characters, and
+# a reason is a sentence or a paragraph, never a document.
+REASON_MAX = 1000
+# What an issue's body carries once the advisory is accepted: its absence after it, a withdrawal.
+ACCEPTED_SAID = "**Accepté le "
+
+
+def _inert(reason: str) -> str:
+    """A reason as an issue says it: one line, no markup — `<` and `>` written as entities, so no
+    HTML comment, no key of an issue, can be carried into the body (parse_key reads the first) —,
+    no mention able to ping anyone."""
+    one_line = " ".join(reason.split())
+    return (one_line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            .replace("@", "&#64;"))
 
 
 def _accepted_said(ok: dict | None) -> str:
     """An acceptance in an issue's body: its date and reason, the maintainer's words (the
-    repository's file, its shape checked by load_accepted), no mention able to ping anyone."""
+    repository's file, its shape checked by load_accepted: a date not to come, a reason of at most
+    REASON_MAX characters), made inert (`_inert`)."""
     if not ok:
         return ""
-    return (f"**Accepté le {ok['since']}** (`{DEFAULT_ACCEPTED}`) : {ok['reason'].replace('@', '&#64;')} "
+    return (f"{ACCEPTED_SAID}{ok['since']}** (`{DEFAULT_ACCEPTED}`) : {_inert(ok['reason'])} "
             "L'avis reste suivi ici ; il ne rend plus le workflow rouge (DEP4).\n\n")
 
 
@@ -317,6 +333,9 @@ def _one(adv: Advisory, audited: set[str], issues: list[Issue], matched: set[int
         gh("issue", "comment", str(issue.number), "--body-file", "-",
            stdin=f"L'avis est de nouveau trouvé, dans {', '.join(f'`{x}`' for x in sorted(adv.locks))} (CI2).")
         new = not ok
+    if not ok and ACCEPTED_SAID in issue.body:      # an acceptance withdrawn: red, said once
+        done.append(f"#{issue.number} : acceptation retirée")
+        new = True
     if not issue.key["locks"] <= audited:          # a lock of its own not read this run:
         if not issue.key["present"]:                # what it says is kept, back said once
             gh("issue", "edit", str(issue.number), "--body-file", "-", stdin=with_present(issue.body, True))
@@ -374,10 +393,21 @@ def load_accepted(path: str) -> list[dict]:
         if not (isinstance(a, dict) and set(a) == {"package", "id", "reason", "since"}
                 and isinstance(a["package"], str) and PACKAGE.match(a["package"])
                 and isinstance(a["id"], str) and ID.match(a["id"])
-                and isinstance(a["reason"], str) and len(a["reason"].strip()) >= 20
-                and isinstance(a["since"], str) and re.match(r"^\d{4}-\d{2}-\d{2}$", a["since"])):
-            raise ValueError(f"{path}: entry {i} is not {{package, id, reason (written), since (YYYY-MM-DD)}}")
+                and isinstance(a["reason"], str) and 20 <= len(a["reason"].strip()) <= REASON_MAX
+                and isinstance(a["since"], str) and re.match(r"^\d{4}-\d{2}-\d{2}$", a["since"])
+                and _past(a["since"])):
+            raise ValueError(f"{path}: entry {i} is not {{package, id, reason (written, {REASON_MAX} characters "
+                             "at most), since (YYYY-MM-DD, a real date, not to come)}}")
     return items
+
+
+def _past(since: str) -> bool:
+    """An acceptance's date: a real one (« 2099-99-99 » is none), and not to come (DEP4). It never
+    expires: an age past which it would is another lot, a risk assumed (docs/operations.md)."""
+    try:
+        return date.fromisoformat(since) <= datetime.now(timezone.utc).date()
+    except ValueError:
+        return False
 
 
 def acceptance(adv: Advisory, accepted: list[dict]) -> dict | None:

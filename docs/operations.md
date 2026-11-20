@@ -3374,8 +3374,14 @@ rafraîchissement du verrou sans contrôle).
   à retirer de la liste. Une liste dont une entrée n'a pas sa forme (une raison vide ou trop courte,
   une date absente) est refusée. **Les issues hebdomadaires le disent** (DEP4, #990) : le mode
   `issues` lit cette liste par défaut ; l'issue d'un avis accepté porte sa date et sa raison dans son
-  corps, et l'ouvrir, la rouvrir ou retrouver l'avis ne rend plus le run rouge. Un humain ferme
-  toujours l'issue (« non prévu »), une fois l'avis retiré de la liste ou monté.
+  corps, et l'ouvrir, la rouvrir ou retrouver l'avis ne rend plus le run rouge. Retirer une
+  acceptation le rend rouge, une fois (« acceptation retirée »). La raison y est écrite sur une ligne,
+  sans balise (`<` et `>` en entités : elle ne peut pas porter la clé d'une autre issue) ni mention ;
+  elle fait au plus 1 000 caractères, et sa date doit être une vraie date, pas à venir. Une liste
+  cassée arrête la gestion hebdomadaire (sortie 2) ; le contrôle `pr` de `ci.yml` la refuse déjà dans
+  la PR qui la casse. Un humain ferme toujours l'issue (« non prévu »), une fois l'avis retiré de la
+  liste ou monté. **Risque assumé** : une acceptation n'expire jamais ; un âge au-delà duquel elle
+  tomberait est un autre lot.
 
 ```bash
 make audit                              # les avis connus des verrous, celui de pip-audit compris (lecture seule)

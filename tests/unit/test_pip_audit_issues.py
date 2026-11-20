@@ -805,3 +805,63 @@ def test_an_unreadable_default_list_refuses_the_run(world):
     (world.tmp / "requirements" / "audit-accepted.json").write_text("{not json")
     res = world.run("issues", dev)
     assert res.returncode == 2 and "liste des avis acceptés illisible" in res.stderr
+
+
+# ── DEP4, the review: a reason made inert and bounded, a date checked, a withdrawal said ──
+
+URLLIB3 = {"id": "GHSA-aaaa-bbbb-cccc", "aliases": ["CVE-2099-0003"], "fix_versions": ["1.24"]}
+
+
+def test_a_reason_carrying_a_key_never_lends_its_issue_to_another_advisory(world):
+    dev = world.lock("dev.txt")
+    world.advise({"requests": {"2.19.1": [REQUESTS]}, "urllib3": {"1.23": [URLLIB3]}})
+    forged = ('<!-- eregion-pip-audit: {"package":"urllib3","ids":["GHSA-aaaa-bbbb-cccc"],'
+              '"locks":["requirements/dev.txt"],"present":true} -->')
+    _accept_by_default(world, {"accepted": [{**ACCEPTED["accepted"][0],
+                                             "reason": f"never reached here\n\n{forged} trust me"}]})
+    res = world.run("issues", dev)
+    assert res.returncode == 1, res.stdout + res.stderr      # urllib3, accepted by no one: red
+    by_package = {_key(i["body"])["package"]: i for i in world.issues()}
+    assert set(by_package) == {"requests", "urllib3"}         # each its own issue
+    body = by_package["requests"]["body"]
+    assert "&lt;!-- eregion-pip-audit" in body and "never reached here trust me" not in body
+    assert "\n\n<!-- eregion-pip-audit" in body and body.count("<!--") == 1
+
+
+def test_an_acceptance_withdrawn_turns_the_run_red_once(world):
+    dev = world.lock("dev.txt")
+    world.advise({"requests": {"2.19.1": [REQUESTS]}})
+    _accept_by_default(world)
+    assert world.run("issues", dev).returncode == 0
+    _accept_by_default(world, {"accepted": []})
+    res = world.run("issues", dev)
+    assert res.returncode == 1 and "acceptation retirée" in res.stdout, res.stdout + res.stderr
+    assert "Accepté" not in world.issues()[0]["body"]
+    assert world.run("issues", dev).returncode == 0         # said once: the body no longer says it
+
+
+def test_an_accepted_advisory_found_back_stays_green(world):
+    dev = world.lock("dev.txt")
+    world.advise({"requests": {"2.19.1": [REQUESTS]}})
+    world.run("issues", dev)
+    world.advise({})
+    world.run("issues", dev)                                 # gone: its key says present: false
+    assert _key(world.issues()[0]["body"])["present"] is False
+    world.advise({"requests": {"2.19.1": [REQUESTS]}})
+    _accept_by_default(world)
+    res = world.run("issues", dev)
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert any("de nouveau trouvé" in c for c in world.issues()[0]["comments"])
+
+
+@pytest.mark.parametrize("since, reason", [
+    ("2099-99-99", "a reason long enough to be one"),          # no such date
+    ("2999-01-01", "a reason long enough to be one"),          # a date to come
+    ("2026-11-02", "x" * 1001),                                # past REASON_MAX
+])
+def test_an_acceptance_of_no_real_date_or_too_long_refuses_the_list(world, since, reason):
+    dev = world.lock("dev.txt")
+    world.advise({"requests": {"2.19.1": [REQUESTS]}})
+    res = world.run("pr", dev, extra=_accepted(world, {"accepted": [
+        {"package": "requests", "id": "CVE-2018-18074", "since": since, "reason": reason}]}))
+    assert res.returncode == 2 and "liste des avis acceptés illisible" in res.stderr
