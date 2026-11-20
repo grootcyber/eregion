@@ -105,7 +105,7 @@ output "chaos_experiments" {
   description = "Map clé hôte → expérience Chaos Studio (engine_ref des pannes de gothmog/experiments/)"
 }
 
-# ── G1 — le bruit bénin (chaos.noise_vms, vide par défaut : rien de créé) ──────────────────────
+# ── G1 — le bruit bénin (chaos.noise_vms : [] ne crée rien ; [gondolin] dans config.yaml, G1c) ──
 #
 # Des pannes qui ne doivent rien déclencher de disruptif chez Glorfindel : des écritures disque
 # au-dessus du seuil de ransomware-disk-write, une charge CPU, un redémarrage. Pour chaque VM de
@@ -122,9 +122,11 @@ output "chaos_experiments" {
 #   - leurs identités : Reader sur CETTE VM pour disk et cpu (ce que Microsoft demande pour une faute à
 #     agent : lire la VM, rien écrire), le rôle sur mesure de G0 pour restart.
 #
-# Pas encore appliqué ni mesuré. À vérifier au premier plan avec Jonathan : stress-ng installé par
-# l'extension, l'agent qui joint Chaos Studio, et le Heartbeat de la VM après l'ajout de l'identité
-# (l'agent Azure Monitor garde l'identité système ; `make gothmog-preflight` le lit).
+# Appliqué sur gondolin le 20/11, à lui seul (`make celebrimbor-noise-plan` / `-up`, G1c ; jamais un
+# celebrimbor-up complet). Mesuré ce jour-là : l'agent joint Chaos Studio et stress-ng écrit
+# (vm-disk-write PASS, son effet vu dans Perf) ; le Heartbeat de la VM tient après l'ajout de
+# l'identité (l'agent Azure Monitor garde l'identité système ; `make gothmog-preflight` le lit). Le
+# compteur CPU que lit vm-cpu-pressure était déclaré, pas collecté (DCR1, #985).
 
 locals {
   # chaos.noise_vms du config.yaml, sauf si la variable le remplace (un plan de test).

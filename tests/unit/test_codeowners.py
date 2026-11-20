@@ -59,6 +59,12 @@ CD = "infra/glorfindel-host/cd/eregion_cd.py"
 # applies, at `terraform apply`, without showing in the plan (infra/terraform/entra_bench_unit.tf,
 # vm.tf).
 DECIDED = ("/.github/", "/infra/canary/", "/infra/glorfindel-host/cd/", "/infra/terraform/")
+# Data owned by decision, each with its reason: read, never run, yet it decides what a credentialed
+# job does — never a datum a job merely reads (DEP4, #990, Jonathan's decision of 20/11).
+DECIDED_DATA = {
+    "/requirements/audit-accepted.json": "read by pip-audit.yml (issues: write) through "
+    "scripts/pip_audit_issues.py: it decides what the job writes on an issue and the run's colour",
+}
 # Read, never run — unless installed (`-r`).
 DATA = {".md", ".txt", ".json", ".yaml", ".yml", ".toml", ".csv", ".hujson"}
 SECRET = re.compile(r"\bsecrets\s*[.\[]|\bgithub\s*\.\s*token\b|\bgithub\s*\[\s*'token'\s*\]")
@@ -306,9 +312,22 @@ def test_every_line_owns_a_file_a_credentialed_job_runs():
     """The list never grows past the decision: a line that owns nothing run with a credential makes
     every pull request that touches it wait for the maintainer."""
     files = sensitive(ROOT)
-    stale = [p for p, _ in owned_lines() if p not in DECIDED and not any(covers(p, rel) for rel in files)]
+    stale = [p for p, _ in owned_lines()
+             if p not in DECIDED and p not in DECIDED_DATA and not any(covers(p, rel) for rel in files)]
     assert stale == [], f"owned, but no credentialed job runs it: {stale}"
-    assert {p for p, _ in owned_lines()} >= set(DECIDED)
+    assert {p for p, _ in owned_lines()} >= set(DECIDED) | set(DECIDED_DATA)
+
+
+def test_a_datum_owned_by_decision_exists_and_a_credentialed_job_reads_it():
+    """DEP4: each datum owned outside the derivation names a file that exists, says why, and is
+    named by a file a credentialed job runs — never a free pass for any line."""
+    files = sensitive(ROOT)
+    for path, why in DECIDED_DATA.items():
+        rel = path.lstrip("/")
+        assert (ROOT / rel).is_file(), path
+        assert len(why) >= 40, path
+        assert any(rel in (ROOT / run).read_text(encoding="utf-8", errors="replace")
+                   for run in files if (ROOT / run).is_file()), path
 
 
 @pytest.mark.parametrize("rule, script", [

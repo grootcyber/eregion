@@ -3954,10 +3954,10 @@ MUTANTS += [
      '        if not isinstance(it, dict) or it.get("pull_request"):\n',
      "        if not isinstance(it, dict):\n"),
     ("M1494", "one GitHub error on an advisory stops every other one (CI2, review)", PAI,
-     "        try:\n            new = _one(adv, audited, issues, matched, done) or new\n"
+     "        try:\n            new = _one(adv, audited, issues, matched, done, accepted) or new\n"
      "        except (RuntimeError, OSError, subprocess.SubprocessError) as e:\n"
      '            errors.append(f"{adv.package} · {adv.primary} : {e}")\n',
-     "        new = _one(adv, audited, issues, matched, done) or new\n"),
+     "        new = _one(adv, audited, issues, matched, done, accepted) or new\n"),
     ("M1495", "a key's locks read back unchecked: an outsider's text in a comment (CI2, review)", PAI,
      '            and all(isinstance(x, str) and LOCK.match(x) for x in k.get("locks", []))\n',
      '            and all(isinstance(x, str) for x in k.get("locks", []))\n'),

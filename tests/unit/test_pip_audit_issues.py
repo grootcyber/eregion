@@ -742,3 +742,126 @@ def test_make_audit_reads_the_accepted_list_and_make_lock_says_what_follows(tmp_
     assert "Les avis connus des verrous écrits (make audit" in res.stdout
     text = (ROOT / "Makefile").read_text(encoding="utf-8")
     assert "--accepted $(AUDIT_ACCEPTED)" in text and "AUDIT_ACCEPTED = requirements/audit-accepted.json" in text
+
+
+# ── DEP4 (#990): the weekly issues say what a human accepted, and it turns the run red no more ──
+
+def _accept_by_default(world, doc=ACCEPTED):
+    (world.tmp / "requirements" / "audit-accepted.json").write_text(json.dumps(doc))
+
+
+def test_an_accepted_advisory_opens_its_issue_saying_so_and_the_run_stays_green(world):
+    dev = world.lock("dev.txt")
+    world.advise({"requests": {"2.19.1": [REQUESTS]}})
+    _accept_by_default(world)                       # the repository's list, read without --accepted
+    res = world.run("issues", dev)
+    assert res.returncode == 0, res.stdout + res.stderr
+    (issue,) = world.issues()
+    assert "**Accepté le 2026-11-02** (`requirements/audit-accepted.json`) : the code path is never reached" \
+        in issue["body"]
+    assert "il ne rend plus le workflow rouge" in issue["body"]
+    assert "(acceptée)" in res.stdout
+
+
+def test_an_open_issue_accepted_since_says_it_without_a_comment(world):
+    dev = world.lock("dev.txt")
+    world.advise({"requests": {"2.19.1": [REQUESTS]}})
+    assert world.run("issues", dev).returncode == 1  # not accepted yet: a new issue, red
+    (issue,) = world.issues()
+    assert "Accepté" not in issue["body"]
+    _accept_by_default(world)
+    world.forget_calls()
+    res = world.run("issues", dev)
+    assert res.returncode == 0, res.stdout + res.stderr
+    (issue,) = world.issues()
+    assert "**Accepté le 2026-11-02**" in issue["body"] and issue["comments"] == []
+    assert len(_made(world.calls(), "issue", "edit")) == 1
+
+
+def test_an_accepted_advisory_found_again_or_reopened_stays_green(world):
+    dev = world.lock("dev.txt")
+    world.advise({"requests": {"2.19.1": [REQUESTS]}})
+    world.run("issues", dev)
+    st = json.loads(world.state.read_text())
+    st["issues"][0].update(state="closed", state_reason="completed")
+    world.state.write_text(json.dumps(st))
+    _accept_by_default(world)
+    res = world.run("issues", dev)
+    assert res.returncode == 0, res.stdout + res.stderr        # reopened, said, never red
+    assert world.issues()[0]["state"] == "open"
+
+
+def test_an_acceptance_never_pings_anyone_from_the_bots_issue(world):
+    dev = world.lock("dev.txt")
+    world.advise({"requests": {"2.19.1": [REQUESTS]}})
+    doc = {"accepted": [{**ACCEPTED["accepted"][0], "reason": "reviewed with @someone, never reached here"}]}
+    _accept_by_default(world, doc)
+    world.run("issues", dev)
+    assert "@someone" not in world.issues()[0]["body"] and "&#64;someone" in world.issues()[0]["body"]
+
+
+def test_an_unreadable_default_list_refuses_the_run(world):
+    dev = world.lock("dev.txt")
+    (world.tmp / "requirements" / "audit-accepted.json").write_text("{not json")
+    res = world.run("issues", dev)
+    assert res.returncode == 2 and "liste des avis acceptés illisible" in res.stderr
+
+
+# ── DEP4, the review: a reason made inert and bounded, a date checked, a withdrawal said ──
+
+URLLIB3 = {"id": "GHSA-aaaa-bbbb-cccc", "aliases": ["CVE-2099-0003"], "fix_versions": ["1.24"]}
+
+
+def test_a_reason_carrying_a_key_never_lends_its_issue_to_another_advisory(world):
+    dev = world.lock("dev.txt")
+    world.advise({"requests": {"2.19.1": [REQUESTS]}, "urllib3": {"1.23": [URLLIB3]}})
+    forged = ('<!-- eregion-pip-audit: {"package":"urllib3","ids":["GHSA-aaaa-bbbb-cccc"],'
+              '"locks":["requirements/dev.txt"],"present":true} -->')
+    _accept_by_default(world, {"accepted": [{**ACCEPTED["accepted"][0],
+                                             "reason": f"never reached here\n\n{forged} trust me"}]})
+    res = world.run("issues", dev)
+    assert res.returncode == 1, res.stdout + res.stderr      # urllib3, accepted by no one: red
+    by_package = {_key(i["body"])["package"]: i for i in world.issues()}
+    assert set(by_package) == {"requests", "urllib3"}         # each its own issue
+    body = by_package["requests"]["body"]
+    assert "&lt;!-- eregion-pip-audit" in body and "never reached here trust me" not in body
+    assert "\n\n<!-- eregion-pip-audit" in body and body.count("<!--") == 1
+
+
+def test_an_acceptance_withdrawn_turns_the_run_red_once(world):
+    dev = world.lock("dev.txt")
+    world.advise({"requests": {"2.19.1": [REQUESTS]}})
+    _accept_by_default(world)
+    assert world.run("issues", dev).returncode == 0
+    _accept_by_default(world, {"accepted": []})
+    res = world.run("issues", dev)
+    assert res.returncode == 1 and "acceptation retirée" in res.stdout, res.stdout + res.stderr
+    assert "Accepté" not in world.issues()[0]["body"]
+    assert world.run("issues", dev).returncode == 0         # said once: the body no longer says it
+
+
+def test_an_accepted_advisory_found_back_stays_green(world):
+    dev = world.lock("dev.txt")
+    world.advise({"requests": {"2.19.1": [REQUESTS]}})
+    world.run("issues", dev)
+    world.advise({})
+    world.run("issues", dev)                                 # gone: its key says present: false
+    assert _key(world.issues()[0]["body"])["present"] is False
+    world.advise({"requests": {"2.19.1": [REQUESTS]}})
+    _accept_by_default(world)
+    res = world.run("issues", dev)
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert any("de nouveau trouvé" in c for c in world.issues()[0]["comments"])
+
+
+@pytest.mark.parametrize("since, reason", [
+    ("2099-99-99", "a reason long enough to be one"),          # no such date
+    ("2999-01-01", "a reason long enough to be one"),          # a date to come
+    ("2026-11-02", "x" * 1001),                                # past REASON_MAX
+])
+def test_an_acceptance_of_no_real_date_or_too_long_refuses_the_list(world, since, reason):
+    dev = world.lock("dev.txt")
+    world.advise({"requests": {"2.19.1": [REQUESTS]}})
+    res = world.run("pr", dev, extra=_accepted(world, {"accepted": [
+        {"package": "requests", "id": "CVE-2018-18074", "since": since, "reason": reason}]}))
+    assert res.returncode == 2 and "liste des avis acceptés illisible" in res.stderr

@@ -57,9 +57,12 @@
 /glorfindel/chat_text.py                @grootcyber
 /.claude/skills/elrond/palantir.py      @grootcyber
 
-# pip-audit.yml: issues: write — the script, and the lock of the pip-audit it installs.
+# pip-audit.yml: issues: write — the script, and the lock of the pip-audit it installs; and the list of
+# accepted advisories the script reads, which decides what it writes on an issue and the run's colour
+# (DEP4, #990: a datum owned by decision, 20/11 — tests/unit/test_codeowners.py, DECIDED_DATA).
 /scripts/pip_audit_issues.py            @grootcyber
 /requirements/audit.txt                 @grootcyber
+/requirements/audit-accepted.json       @grootcyber
 
 # canary-azurerm.yml: the canary's OIDC token (Network Contributor on its group).
 /infra/canary/                          @grootcyber
