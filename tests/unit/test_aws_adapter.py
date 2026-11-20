@@ -235,6 +235,25 @@ def test_an_eni_left_on_default_gets_the_operator_s_group_when_its_own_was_delet
     assert f.enis["eni-web1"]["groups"] == ["sg-solo2"]
 
 
+@pytest.mark.parametrize("state", ["kept", "lost"])
+def test_an_eni_someone_took_onto_default_gets_its_original_back(world, state):
+    """U2 by hand (MUT15): in quarantine, taken out onto `default` by someone, its own group still
+    there — the release puts its original back, by the state or, lost, by the quarantine's tag;
+    never left on `default` and said released. The machine meets it only in some of its draws
+    (M605, one gate round in two at 500)."""
+    f, c, _ = world
+    design = open_flows(f.snapshot(), "i-web1")
+    assert c.isolate_vm(arn("i-web1"))["status"] == "isolated"
+    f.enis["eni-web1"]["groups"] = ["sg-default-vpc-a"]
+    if state == "lost":
+        actions._clear_isolation_state(arn("i-web1"))
+    out = c.release_isolation(arn("i-web1"))
+    assert out["status"] == "released" and out["released"] == ["eni-web1"], out
+    assert f.enis["eni-web1"]["groups"] == ["sg-web"]
+    assert open_flows(f.world(), "i-web1") == design
+    assert c.verify_release(arn("i-web1"))["verified"] is True
+
+
 def test_an_unblock_waits_for_a_block_reusing_its_entries_on_the_same_acl(world, monkeypatch):
     """The ACL's lock: i-db plans to reuse the entries i-web1's block holds; i-web1's
     unblock, started right then, must wait — else it removes them (no other block holds
