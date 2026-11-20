@@ -3837,10 +3837,12 @@ rejouaient les mêmes séquences, et la nuit la même chose chaque soir. Désorm
   le tour r de chaque mutant sur S + r − 1. Deux tours, deux tirages, à la porte comme au lundi.
 
 La graine est dite sous chaque test de propriétés ou machine en échec (la section « Hypothesis seed
-(SEED1) »), dans le résumé du job sur GitHub, et à la fin de pytest (« Hypothesis seed N … ») quand
-pytest reçoit des fichiers de `tests/unit/` (`pytest tests/unit/test_invariants.py`, avec ou sans `-n`).
-Sous `pytest tests/ -n N` (le job `invariants-rest` de la porte, la suite Linux de `ci.yml`), le
-contrôleur xdist ne charge pas `tests/unit/conftest.py` : la fin de la sortie ne la dit pas (mesuré :
+(SEED1) »), dans le résumé du job sur GitHub, et au début du run, avant tout test, comme à la fin de
+pytest (« Hypothesis seed N … ») quand pytest reçoit des fichiers de `tests/unit/`
+(`pytest tests/unit/test_invariants.py`, avec ou sans `-n`) : une étape coupée par sa borne l'a donc
+déjà écrite (CI13, #986). Sous `pytest tests/ -n N` (le job `invariants-rest` de la porte, la suite
+Linux de `ci.yml`), le contrôleur xdist ne charge pas `tests/unit/conftest.py` : ni le début ni la fin
+de la sortie ne la disent (mesuré :
 `GITHUB_EVENT_NAME=schedule pytest tests/ -n 2 -k test_arm_urls`, aucune ligne), elle se lit dans le
 résumé du job et sous chaque échec. Pour la mutation, la graine est dite au début et à la fin de la
 sortie, dans le JSON de chaque tranche (`seed`, `round_seeds`) et dans le total (la graine de chaque
