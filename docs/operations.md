@@ -583,6 +583,7 @@ EREGION_OPERATOR_OBJECT_ID=...      # NT1 : never_target (eregion_core/never_tar
 EREGION_PROTECTED_IDENTITIES=...    # NT1 : idem ; source : output protected_identities d'Orodruin, plus identity_executor_object_id d'Imladris (« L'exécuteur d'identité », geste 6)
 EREGION_IDENTITY_EXECUTOR_CLIENT_ID=...  # NT1 : idem ; source : terraform -chdir=infra/glorfindel-host output -raw identity_executor_client_id (vide : exécuteur non activé)
 EREGION_RULE_CANARY_APPID=...       # CAN2 : l'appid du principal du canari azurerm (l'inscription eregion-canary, par le filtre exact `displayName eq` d'`az ad app list`, écrite par le shell dans host.env : le geste et ses vérifications, `infra/glorfindel-host/README.md`, « Le canari azurerm (CAN2) »), à la watch et à la console ; recopiée dans host.env ; la copie du banc de nsg-change-outside-glorfindel écarte avec lui les runs du canari dans rg-eregion-canary, celle d'entra-sp-unusual-signin ses connexions OIDC (CAN3) ; vide ou pas un GUID → la règle livrée tourne (dit)
+EREGION_ENTRA_MSI_ACTOR_ID=...      # MID1 : l'object id du principal « Managed Service Identity » du tenant, à la watch seule ; l'adaptateur d'Entra écarte d'entra-credential-added, compté, le certificat qu'Azure pose sur une identité managée qu'il crée (jamais par le nom) ; recopiée dans host.env ; vide → rien n'est écarté, dit ; pas un GUID → host_env.py --check refuse (le geste : « Le principal Managed Service Identity (MID1, #981) »)
 # L'atelier dans Discord (N1, docs/atelier-discord.md) — à part de la défense : jamais sur Imladris, host_env.py ne les recopie pas
 EREGION_DISCORD_WEBHOOK_CI=...              # webhook de #ci (secret GitHub : notify.yml)
 EREGION_DISCORD_WEBHOOK_AGENTS=...          # webhook de #agents (poste de l'opérateur : hooks d'elrond)
@@ -1680,6 +1681,46 @@ porte que les rôles au tenant, jamais un rôle borné à une unité ; le temps 
 possédé, contre le budget de 60 s et le plafond de 20 objets (IR1e). Les identifiants des rôles intégrés
 que le contrat épingle (`DIRECTORY_READERS`, `USER_ADMINISTRATOR`, `ATTRIBUTE_ASSIGNMENT_READER`,
 `REFUSED_ROLES`) sont ceux de « Microsoft Entra built-in roles » (relus le 05/11).
+
+### Le principal Managed Service Identity (MID1, #981)
+
+Quand une ressource reçoit une identité managée affectée par le système, Azure crée son principal de
+service et y pose un certificat. Entra ID l'écrit « Add service principal », sur un `ServicePrincipal`,
+par le principal « Managed Service Identity » du tenant : `InitiatedBy.app.servicePrincipalId`, l'`ActorId`
+de la règle `entra-credential-added`, `ActorAppId` vide ; l'identifiant `KeyType=AsymmetricX509Cert,
+KeyUsage=Verify, DisplayName=CN=<guid>`. Le 20/11, la Logic App du drill, recréée après des applies
+ratés, en a fait cinq cartes hautes sur Imladris (six lignes), chaque fois un autre principal, jugées
+Wrong. L'adaptateur d'Entra écarte désormais une telle ligne, comptée et dite, **seulement** quand son
+`ActorId` est l'object id de ce principal, donné à la watch par `EREGION_ENTRA_MSI_ACTOR_ID`
+(`docs/glorfindel.md`, « Le certificat qu'Azure pose sur une identité managée »). Le nom n'est jamais
+une preuve : il sert à trouver le principal, pas à le reconnaître.
+
+**Le modop de la variable** (une fois déployée une release qui contient MID1, la 0.6.4) :
+
+- **La valeur** : l'object id (`id`, pas l'`appId`) du principal de service « Managed Service
+  Identity » du tenant. Un GUID, aucun secret, jamais dans le dépôt ni affiché.
+- **La commande qui la lit** (en lecture seule, sous ton `az login`) : `az ad sp list --filter
+  "displayName eq 'Managed Service Identity'" --query '[].id' -o tsv` — un seul GUID attendu.
+  `--filter` est le filtre OData exact d'`az ad sp list` ; `--display-name` prend tout nom qui
+  **commence par**.
+- **Où l'écrire** : `infra/glorfindel-host/host.env`, par le shell (`echo "EREGION_ENTRA_MSI_ACTOR_ID=$(…)"
+  >> $F`, jamais recopiée de l'écran), puis `make imladris-push` (qui lance `host_env.py --check`), puis
+  la watch recréée sur Imladris (`docker compose up -d watch` ; un `restart` ne relit pas `.env`).
+  Sur un poste, la même ligne dans `.envrc` : `host_env.py` la recopie dans un `host.env` neuf.
+- **Les contrôles, sans afficher la valeur** : une seule ligne ajoutée et un GUID (`grep -cE`) ;
+  `az ad sp show --id "$ID" --query "[displayName, appOwnerOrganizationId == '<ton tenantId>']"`
+  rend « Managed Service Identity » et `False` (l'application appartient à Microsoft, pas au tenant) ;
+  sur le workspace, l'`ActorId` des « Add service principal » de « Managed Service Identity » des
+  30 derniers jours est cet id (au moins les six lignes du 20/11) ; sur Imladris, `docker compose exec
+  watch sh -c 'test -n "$EREGION_ENTRA_MSI_ACTOR_ID" && echo posée'`. `host_env.py --check` refuse une
+  valeur qui n'est pas un GUID, la variable nommée, jamais la valeur.
+- **Les commandes complètes, dans l'ordre** : `infra/glorfindel-host/README.md`, « Le principal Managed
+  Service Identity (MID1) ».
+- **Sans elle** (vide, ou absente) : rien n'est écarté, les cartes reviennent ; le statut de la règle
+  le dit à chaque passage (`msi_certificate.config` : `unset`), le journal de la watch une fois, et le
+  détail de la règle dans la console. Mal formée (si elle passait sans `--check`) : `malformed`, dit
+  en orange sur la ligne de la règle (« ⚠ MSI id »), rien d'écarté.
+- **Pour revenir aux cartes** : vider la variable, `make imladris-push`, la watch recréée.
 
 ## Le canari azurerm, sans secret (P-04, 30/10)
 
@@ -5933,6 +5974,111 @@ des seuls flux d'après la bascule (CF2) ; l'écriture d'essai depuis gondolin r
   se vérifient à l'étape 2. Chez un client, c'est la vérification de Glorfindel au démarrage qui tient
   CR15 : dans `corroboration.md`, §3.5, le statut `unknown` « compte des flux écrit depuis une VM »
   (SEC-A3f).
+
+---
+
+## Les compteurs de performance du banc (DCR1, #985)
+
+Le 20/11, la DCR du banc (`infra/terraform/monitoring.tf`, `performance_counter`) déclarait quatre
+compteurs, mais seul `Logical Disk` arrivait de gondolin (Linux) dans `Perf`. Le processeur et le
+réseau étaient écrits sous leurs noms Windows (`\Processor(_Total)\% Processor Time`,
+`\Network Interface(*)\Bytes Sent/sec`), que l'agent Azure Monitor ne collecte pas sous Linux. La
+cause et sa source : `docs/azure.md`, « Compteurs de performance sous Linux ». La DCR déclare
+désormais :
+
+| Compteur | Pourquoi ce nom |
+|---|---|
+| `\LogicalDisk(*)\Disk Write Bytes/sec`, `\LogicalDisk(*)\Disk Read Bytes/sec` | inchangés : mesurés au banc, ils arrivent sous `Logical Disk` (l'alerte du banc et la règle ransomware les lisent) |
+| `\Processor(*)\% Processor Time` | l'objet Linux `Processor(*)` de Microsoft Learn ; l'instance `_Total` n'est pas dans la liste Linux |
+| `\Network(*)\Total Bytes Transmitted` | l'objet Linux `Network(*)` ; `Network Interface` n'existe que sous Windows |
+
+Aucune règle livrée ne lit le processeur ni le réseau. Seule la panne `vm-cpu-pressure` de Gothmog
+en dépend ; elle se recale sur les noms mesurés, dans un lot à elle. **Rien n'est appliqué** :
+c'est un geste de Jonathan.
+
+### Avant tout : le bon abonnement (lecture seule)
+
+Le `Makefile` exporte `ARM_SUBSCRIPTION_ID ?= $(AZURE_SUBSCRIPTION_ID)` : un `ARM_SUBSCRIPTION_ID`
+déjà posé dans le shell, sur un autre abonnement, passe tel quel à Terraform (le piège de la
+séance G1, le 20/11). `az`, lui, suit son propre compte. Avant toute commande, dans le shell
+(zsh) où `.envrc` est chargé, ces deux lignes ne montrent aucun id ; un message, et l'on s'arrête :
+
+```zsh
+[ -z "${ARM_SUBSCRIPTION_ID:-}" ] || [ "$ARM_SUBSCRIPTION_ID" = "$AZURE_SUBSCRIPTION_ID" ] || echo "ARM_SUBSCRIPTION_ID n'est pas l'abonnement du banc : s'arrêter"
+[ "$(az account show --query id -o tsv)" = "$AZURE_SUBSCRIPTION_ID" ] || echo "az n'est pas sur l'abonnement du banc : s'arrêter"
+```
+
+Les cibles `celebrimbor-dcr-*` ne portent pas encore ce garde elles-mêmes : il viendra de la
+fonction de garde de G1c, branchée sur elles par celui des deux lots qui fusionnera en second.
+
+### Avant tout : la DCR déployée (lecture seule)
+
+Pour écarter une dérive entre la DCR déployée et le Terraform. `az monitor data-collection rule`
+vient de l'extension `monitor-control-service` ; `az resource show`, du cœur de la CLI, rend la
+même chose :
+
+```bash
+az monitor data-collection rule show -g rg-celebrimbor -n dcr-celebrimbor \
+  --query "dataSources.performanceCounters" -o json
+# ou, sans extension :
+az resource show -g rg-celebrimbor -n dcr-celebrimbor \
+  --resource-type Microsoft.Insights/dataCollectionRules \
+  --query "properties.dataSources.performanceCounters" -o json
+```
+
+Attendu avant l'apply : les quatre `counterSpecifiers` de toujours, avec `\Processor(_Total)…` et
+`\Network Interface(*)…`. Si la liste déployée diffère de celle d'`origin/main` avant DCR1, la
+cause est aussi une dérive : le noter, puis appliquer quand même, car le plan la ramène.
+
+### Le plan, puis l'application (gestes de Jonathan)
+
+Depuis le poste, à la racine du dépôt, `.envrc` chargé :
+
+1. **Le plan ciblé** (lecture seule) : `TF_CLI_ARGS_plan=-no-color make celebrimbor-dcr-plan`. Il
+   doit montrer exactement ceci :
+   - `~ azurerm_monitor_data_collection_rule.celebrimbor`, **mise à jour en place** : dans
+     `counter_specifiers`, `\Network Interface(*)\Bytes Sent/sec` devient
+     `\Network(*)\Total Bytes Transmitted` et `\Processor(_Total)\% Processor Time` devient
+     `\Processor(*)\% Processor Time` ; les deux compteurs du disque et les facilités syslog ne
+     bougent pas ;
+   - `Plan: 0 to add, 1 to change, 0 to destroy`, et l'avertissement de Terraform sur `-target`.
+
+   **S'arrêter** si le plan montre un remplacement (`-/+`) de la DCR, ce qui recréerait ses
+   associations et ses attributions, ou un changement sur une VM, le workspace ou le groupe : c'est
+   une dérive à traiter d'abord par `make celebrimbor-plan`. Un changement de `facility_names`
+   (`local6`, `cron`) veut dire que `terraform.tfvars` ne porte pas ce qui est déployé : s'arrêter
+   aussi.
+2. **L'application** : `make celebrimbor-dcr-up YES=1`, une fois le plan relu. Sans `YES=1`,
+   Terraform redemande la confirmation.
+
+### La mesure, après l'apply (en lecture)
+
+L'agent relit sa configuration en quelques minutes. Attendre au moins dix minutes, gondolin allumée
+(`make celebrimbor-start VM=gondolin`), puis :
+
+```bash
+WS=$(terraform -chdir=infra/terraform output -raw law_workspace_id)
+VM_ID=$(az vm show -g rg-celebrimbor -n vm-celebrimbor-gondolin --query id -o tsv)
+az monitor log-analytics query -w "$WS" --analytics-query "
+Perf
+| where TimeGenerated > ago(1h)
+| where _ResourceId =~ '$VM_ID'
+| distinct ObjectName, CounterName, InstanceName
+| order by ObjectName asc, CounterName asc" -o table
+```
+
+**Attendu** : des lignes `Logical Disk` comme avant (`Disk Read Bytes/sec`, `Disk Write Bytes/sec`,
+plusieurs instances), et au moins une ligne `ObjectName = Processor`, `CounterName = % Processor
+Time`. Une ligne `Network`, `Total Bytes Transmitted`, est attendue aussi. Relever les
+`InstanceName` du processeur tels quels : la requête d'effet de `vm-cpu-pressure` les attend (elle
+lit `_Total` aujourd'hui). Le lot est fini quand la ligne `Processor` est là.
+
+**Si aucune ligne `Processor` n'arrive** au bout de trente minutes : relire la DCR déployée (la
+commande ci-dessus), qui doit porter la nouvelle liste. Si elle la porte, c'est une hypothèse de plus
+à mesurer : la barre initiale, que le tableau de Microsoft n'écrit pas, ou le `kind` de la DCR, qui
+n'est pas posé alors que Microsoft conseille de ne collecter de compteurs que dans une DCR qui en a
+un (`docs/azure.md`, « Compteurs de performance sous Linux »). Ne rien changer à chaud : rouvrir
+#985.
 
 ---
 

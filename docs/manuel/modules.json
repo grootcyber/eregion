@@ -640,6 +640,19 @@
    "doc": "docs/glorfindel.md"
   },
   {
+   "id": "g-entra-identite-managee",
+   "composant": "glorfindel",
+   "poste": "g-detecter",
+   "nom": "The certificate Azure puts on a managed identity it creates makes no high card: set aside by the tenant's principal's id, never its name, and counted",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "MID1"
+   ],
+   "issue": 981,
+   "doc": "docs/glorfindel.md"
+  },
+  {
    "id": "g-charges-ia",
    "composant": "glorfindel",
    "poste": "g-detecter",
@@ -2617,6 +2630,19 @@
    "doc": "docs/operations.md"
   },
   {
+   "id": "c-compteurs-linux",
+   "composant": "celebrimbor",
+   "poste": "c-construire",
+   "nom": "The bench's processor and network counters under the names the Linux agent collects, the disk as measured",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "DCR1"
+   ],
+   "issue": 985,
+   "doc": "docs/azure.md"
+  },
+  {
    "id": "k-console",
    "composant": "console",
    "poste": "k-voir",
@@ -2803,6 +2829,19 @@
    ],
    "issue": 615,
    "doc": "docs/design/drill-banc.md"
+  },
+  {
+   "id": "k-juger-plusieurs",
+   "composant": "console",
+   "poste": "k-juger",
+   "nom": "Several cards judged at once, in TO JUDGE or a tile's group: a summary first, then each card as its own button does it, a failure said card by card",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "JUG3"
+   ],
+   "issue": 980,
+   "doc": "docs/design/console.md"
   },
   {
    "id": "k-carte-scroll",

@@ -170,6 +170,11 @@ services:
       # nsg-change-outside-glorfindel. Un id, aucun secret, jamais dans le dépôt ; vide ou pas un GUID,
       # la règle livrée tourne (les cartes du canari reviennent) et la watch le dit.
       EREGION_RULE_CANARY_APPID: ${EREGION_RULE_CANARY_APPID:-}
+      # MID1 (#981) : l'object id du principal « Managed Service Identity » du tenant, que l'adaptateur
+      # d'Entra lit pour écarter d'entra-credential-added le certificat qu'Azure pose sur une identité
+      # managée qu'il crée (glorfindel/providers/azure/entra_msi.py). Un id, aucun secret, jamais dans le
+      # dépôt ; vide, rien n'est écarté (le statut de la règle le dit) ; pas un GUID, --check refuse.
+      EREGION_ENTRA_MSI_ACTOR_ID: ${EREGION_ENTRA_MSI_ACTOR_ID:-}
       # REC1 (#668) : les principaux qui restaurent depuis le poste (object id ou appId) ; leur Run
       # Command, lue dans le journal d'activité, prouve à la watch une neutralisation. Des ids, aucun
       # secret ; vide, aucune neutralisation n'est prouvée : chaque levée lue sur Azure est une carte.

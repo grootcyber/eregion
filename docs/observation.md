@@ -107,6 +107,11 @@ carte : comptées sur la règle `data-exfiltration-blob`.
 Dans la console, **une ligne de TO JUDGE ouvre sa carte** (ses détails, une note, son verdict), et une
 tuile qui replie plusieurs cartes (« ×6 ») les montre toutes dans ses détails, chacune avec sa raison,
 son explication et son chemin vers le verdict.
+**Plusieurs cartes se jugent d'un geste** (JUG3, #980) : cochées dans TO JUDGE ou dans la fenêtre d'un
+groupe (« to judge ×N »), elles reçoivent un même verdict et une même note, après un récapitulatif ;
+chacune comme par son propre bouton, son verdict puis son acquittement, et compte pour elle seule dans
+les indicateurs. Un échec est dit carte par carte ([design/console.md](design/console.md), « Juger
+plusieurs cartes »).
 
 **Un verdict proposé sur la carte d'exercice attendue** (VP1, #615, `docs/design/drill-banc.md` §8.2).
 Le drill de la semaine déclare la détection qu'il attend (sa règle, sur sa cible, dans un délai après
