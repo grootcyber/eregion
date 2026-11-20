@@ -5,17 +5,18 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "eregion"
 version = "0.6.3"
-description = "Active cloud defense platform — Annatar simulates attacks, Glorfindel responds"
+description = "Cloud Detection & Response for teams without a SOC — Glorfindel detects and responds, Annatar and Gothmog prove it"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.11"
-keywords = ["security", "cloud", "azure", "chaos-engineering", "defense", "ai-agent"]
+keywords = ["security", "cloud", "azure", "cdr", "detection-and-response", "chaos-engineering", "defense", "ai-agent"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Intended Audience :: System Administrators",
     "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Security",
     "Topic :: System :: Systems Administration",
 ]
