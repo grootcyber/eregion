@@ -275,10 +275,39 @@ est déclaré dans `config.yaml` (G1c). La séance, dans l'ordre. Chaque geste e
    15 minutes chacune) : `vm-disk-write`, `vm-cpu-pressure`, `vm-restart`, puis `vm-shutdown`.
    **Au moins 16 minutes après le retour du run précédent** : la fenêtre d'une panne court jusqu'à
    sa fin plus 15 minutes de grâce. Une carte qui tombe après le début de la suivante rend la
-   première non mesurée (le 20/11). Avant `vm-shutdown`, rejouer son préflight : le Heartbeat doit
-   être revenu après le redémarrage.
+   première non mesurée (le 20/11). Gothmog le tient lui-même (G1d) : tant que la fenêtre de la
+   panne précédente sur la même VM court, `gothmog-run` et `gothmog-preflight` refusent et disent
+   jusqu'à quand (« runs until … UTC, its grace included »). Avant `vm-shutdown`, rejouer son
+   préflight : le Heartbeat doit être revenu après le redémarrage.
 4. **Le taux.** `make imladris-fault-rate` (sur Imladris). Le taux mesuré va ici ; une panne jouée
    pour la première fois passe `implemented`, par une PR de la session Gothmog.
+
+### Une panne attend la fenêtre de la précédente (G1d)
+
+Une panne ne part pas tant qu'une fenêtre d'exercice sur l'une de ses cibles court encore, grâce
+comprise (`gothmog/runner/windows.py`). C'est la première chose que lisent `gothmog run` et
+`gothmog preflight`, sur le disque de l'hôte, avant la watch (V1), le contrat et tout appel au
+cloud. Le refus dit le run qui tient la cible, et jusqu'à quand, en UTC.
+
+- Les fenêtres lues sont celles de Gothmog sur cet hôte, là où `open_window` les écrit
+  (`runs/gothmog/exercises`), et seulement celles d'une panne : une panne attend la panne
+  précédente, jamais une technique. Une demande Dagorlad enchaîne exprès une technique et une
+  panne sur la même VM (DG-b). Qu'une panne attende aussi la fenêtre d'une technique serait une
+  décision à part : il y faudrait un montage de `runs/annatar` dans le conteneur de Gothmog sur
+  Orodruin (le Makefile).
+- La cible est comparée sans la casse, par son id complet, construit à partir de l'abonnement et
+  du groupe du banc. Sans abonnement, la comparaison se fait par le nom de la VM, ce qui refuse
+  plus, jamais moins.
+- Aucune fenêtre jamais écrite (pas de répertoire) : la panne part. Un répertoire illisible, un
+  chemin qui n'est pas un répertoire, un fichier illisible ou sans fenêtre (ni début, ni
+  expiration, ni cibles) : refus. Ce qui ne se lit pas n'est jamais « aucune fenêtre ». Une pierre
+  tombale (`purged_at`) n'est plus une fenêtre.
+- Un run ferme sa fenêtre en sortant, même sur une erreur. Un run tué sans pouvoir la fermer
+  (Orodruin arrêté en plein run) la laisse courir jusqu'à son expiration (2 h) plus la grâce, et
+  le refus le dit. `make orodruin-kill` ne ferme que les fenêtres du canal, celles qu'Imladris lit,
+  pas celles de cet hôte.
+
+**Mutants** : M6865–M6874 (`tests/unit/test_gothmog.py`).
 
 ## G2 — les pannes des dépendances de Glorfindel
 

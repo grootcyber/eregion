@@ -939,3 +939,170 @@ def test_a_request_during_a_fault_by_hand_is_refused_naming_it(tmp_path, monkeyp
                     "or stop it (make orodruin-kill)"]
     from eregion_core.exercise_runner import lock_path
     assert lock_path().read_text() == ""        # its name gone with it
+
+
+# ── G1d: a fault waits for the previous exercise window on its target ────────────────────
+#
+# On 20/11, three faults on gondolin 5 to 13 min apart: a card of the first fell inside its window
+# and after the next fault started — two faults unmeasured, the third taken for an attack it was
+# not. Mutants M6865–M6874 (scripts/mutants/G1d.py).
+
+def _put_window(run_id="gothmog-prev", *, start=T0 - timedelta(minutes=20), end=T0 - timedelta(minutes=5),
+                targets=(VM,), drop=(), raw=None):
+    """A window as open_window / close_window write it, in Gothmog's own directory — ``drop``:
+    fields left out; ``raw``: the file's object as given (a tombstone)."""
+    from gothmog.runner.windows import windows_dir
+    d = windows_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    window = raw if raw is not None else {
+        "run_id": run_id, "injector": "gothmog", "kind": "fault", "experiment": "vm-shutdown",
+        "targets": [t.lower() for t in targets], "start": start.isoformat(),
+        "end": end.isoformat() if end else None,
+        "expires": (start + timedelta(hours=2)).isoformat(), "destructive": False}
+    (d / f"{run_id}.json").write_text(json.dumps({k: v for k, v in window.items() if k not in drop}))
+    return d
+
+
+def _contract_calls(monkeypatch):
+    calls = []
+    armed = engine_mod.arm
+
+    def recording(*a, **kw):
+        calls.append(a)
+        return armed(*a, **kw)
+    monkeypatch.setattr(engine_mod, "arm", recording)
+    return calls
+
+
+def test_a_fault_waits_for_the_previous_window_on_its_target_and_says_until_when(bench, monkeypatch):
+    """Closed 5 min ago, its grace (15 min) runs until 10:10 UTC: refused before the contract and
+    before anything reaches the cloud, the time said."""
+    _, world, engine = bench
+    w = world()
+    _put_window()
+    contract = _contract_calls(monkeypatch)
+    for out in (engine().run("vm-shutdown", skip_confirm=True), engine().preflight("vm-shutdown")):
+        assert out.result == "REFUSED"
+        assert out.error.startswith("window: the exercise gothmog-prev on this target runs until "
+                                    "2026-10-19 10:10 UTC, its grace included")
+    assert contract == [] and w.calls == [] and w.writes == [] and _audit() == []
+
+
+def test_past_its_grace_or_on_another_vm_a_window_holds_nothing(bench):
+    _, world, engine = bench
+    world()
+    _put_window(end=T0 - timedelta(minutes=16))                     # its last moment: 09:59
+    _put_window("gothmog-other", targets=(OTHER_VM,), end=None)     # open, on bree
+    _put_window("gothmog-gone", raw={"run_id": "gothmog-gone", "purged_at": "2026-10-01T00:00:00+00:00"})
+    assert engine().preflight("vm-shutdown").result == "OK"
+
+
+def test_the_target_is_compared_without_its_case(bench):
+    _, world, engine = bench
+    world()
+    start = T0 - timedelta(minutes=20)
+    _put_window(raw={"run_id": "gothmog-prev", "targets": [VM.upper()], "start": start.isoformat(),
+                     "end": (T0 - timedelta(minutes=5)).isoformat(),
+                     "expires": (start + timedelta(hours=2)).isoformat()})
+    assert engine().preflight("vm-shutdown").result == "REFUSED"
+
+
+def test_without_a_subscription_the_window_is_matched_by_the_vm_s_name(bench, tmp_path):
+    """No full id to build (no subscription): the VM's name is compared, refusing more, never less."""
+    clock, world, _ = bench
+    world()
+    _put_window()
+
+    def no_subscription(session):
+        raise RuntimeError("AZURE_SUBSCRIPTION_ID is not set")
+    out = Engine(bench_factory=no_subscription, runs_dir=tmp_path / "runs" / "gothmog",
+                 sleep=clock.sleep, now=clock.now).preflight("vm-shutdown")
+    assert out.result == "REFUSED" and "gothmog-prev on this target runs until" in out.error
+
+
+def test_the_window_said_is_the_latest_of_those_that_hold_the_target(bench):
+    _, world, engine = bench
+    world()
+    _put_window("gothmog-a", end=T0 - timedelta(minutes=10))        # until 10:05
+    _put_window("gothmog-b", end=T0 - timedelta(minutes=2))         # until 10:13
+    assert "gothmog-b on this target runs until 2026-10-19 10:13 UTC" in engine().preflight("vm-shutdown").error
+
+
+def test_no_window_ever_written_lets_the_fault_go(bench):
+    from gothmog.runner.windows import windows_dir
+    _, world, engine = bench
+    world()
+    assert not windows_dir().exists()
+    assert engine().preflight("vm-shutdown").result == "OK"
+
+
+@pytest.mark.parametrize("case, said", [
+    ("not JSON", "cannot be read (JSONDecodeError)"),
+    ("a list", "holds no window"),
+    ("no expiry", "has no readable start, expiry or targets"),
+    ("no targets", "has no readable start, expiry or targets"),
+    ("a link", "cannot be read"),
+    ("no directory", "the exercise windows' place is no directory"),
+])
+def test_a_window_that_cannot_be_read_refuses(bench, tmp_path, case, said):
+    """What cannot be read is never « no window »: refused, never skipped."""
+    from gothmog.runner.windows import windows_dir
+    _, world, engine = bench
+    w = world()
+    d = windows_dir()
+    if case == "no directory":
+        d.parent.mkdir(parents=True, exist_ok=True)
+        d.write_text("")
+    else:
+        d.mkdir(parents=True, exist_ok=True)
+    if case == "not JSON":
+        (d / "gothmog-x.json").write_text("{not json")
+    elif case == "a list":
+        (d / "gothmog-x.json").write_text("[]")
+    elif case in ("no expiry", "no targets"):
+        _put_window("gothmog-x", drop=("expires",) if case == "no expiry" else ("targets",))
+    elif case == "a link":
+        real = tmp_path / "elsewhere.json"
+        real.write_text("{}")
+        (d / "gothmog-x.json").symlink_to(real)
+    out = engine().preflight("vm-shutdown")
+    assert out.result == "REFUSED" and said in out.error, out.error
+    assert w.calls == []
+
+
+def test_a_run_s_own_window_holds_the_next_one_until_its_grace_ends(bench):
+    """The run's window on the engine's clock: right after it, the next fault on the VM waits;
+    16 min later, it may go."""
+    clock, world, engine = bench
+    world()
+    assert engine().run("vm-shutdown", skip_confirm=True).result == "PASS"
+    world()
+    assert engine().preflight("vm-shutdown").result == "REFUSED"
+    clock.sleep(16 * 60)
+    world()
+    assert engine().preflight("vm-shutdown").result == "OK"
+
+
+def test_the_window_is_read_before_the_watch_and_the_contract(bench, no_watch):
+    """A local read: a window still running refuses before the watch (V1, which may read the
+    channel) and the contract — no watch here, and the refusal is the window's."""
+    _, world, engine = bench
+    w = world()
+    _put_window()
+    out = engine().preflight("vm-shutdown")
+    assert out.result == "REFUSED" and out.error.startswith("window: the exercise gothmog-prev")
+    assert w.calls == []
+
+
+def test_a_technique_s_window_does_not_hold_a_fault(bench):
+    """A fault waits for the previous fault: a Dagorlad request chains a technique and a fault on
+    one VM on purpose (DG-b). A window that does not say its injector counts."""
+    _, world, engine = bench
+    world()
+    start = T0 - timedelta(minutes=20)
+    base = {"targets": [VM.lower()], "start": start.isoformat(), "end": (T0 - timedelta(minutes=5)).isoformat(),
+            "expires": (start + timedelta(hours=2)).isoformat()}
+    _put_window("20261019T093000Z-ab12", raw={"run_id": "20261019T093000Z-ab12", "injector": "annatar", **base})
+    assert engine().preflight("vm-shutdown").result == "OK"
+    _put_window("old-unsaid", raw={"run_id": "old-unsaid", **base})
+    assert engine().preflight("vm-shutdown").result == "REFUSED"

@@ -1670,6 +1670,16 @@ briques:
     issue: 76
     doc: gothmog/README.md
 
+  - id: x-fenetre-close
+    composant: gothmog
+    poste: x-eprouver
+    nom: "A fault waits for the previous exercise window on its target, its grace included, and says until when"
+    etat: main
+    release: "0.6"
+    lots: [G1d]
+    issue: 76
+    doc: gothmog/README.md
+
   - id: x-bruit-banc
     composant: gothmog
     poste: x-eprouver
