@@ -2318,6 +2318,48 @@ def test_the_docs_draw_the_nodes_the_graph_wires():
     block = arch.split("## Le graphe de décision", 1)[1].split("```mermaid", 1)[1].split("```", 1)[0]
     assert set(re.findall(r'\["([a-z_]+)"\]', block)) == wired
     assert "LC -->|\"détection\"| INV" not in block
+    # The edges too (the review of DOC7): the fixed ones, and every name a router returns, read in its
+    # source — LangGraph's get_graph() cannot see a router's targets without a path map.
+    assert _drawn_edges(block) == _wired_edges()
     readme = (root / "README.md").read_text(encoding="utf-8")
     assert f"the {len(wired)} LangGraph nodes" in readme and "8 LangGraph nodes" not in readme
     assert f"## LangGraph — {len(wired)} nodes" in (root / "docs/glorfindel.md").read_text(encoding="utf-8")
+
+
+def _wired_edges() -> set[tuple[str, str]]:
+    import ast
+    import inspect
+    from unittest.mock import MagicMock
+
+    from glorfindel.agent import _build_graph
+
+    builder = _build_graph(MagicMock(), MagicMock(), "claude-test", incidents=MagicMock()).builder
+    edges = {(a, b) for a, b in builder.edges if not a.startswith("__") and not b.startswith("__")}
+    for node, branches in builder.branches.items():
+        for branch in branches.values():
+            fn = getattr(branch.path, "func", branch.path)
+            for ret in (n for n in ast.walk(ast.parse(inspect.getsource(fn))) if isinstance(n, ast.Return)):
+                edges |= {(node, target) for target in _returned(ret.value)}
+    return edges
+
+
+def _returned(expr) -> set[str]:
+    """The node names a router's return gives: a string, or either side of a conditional expression —
+    never a string the condition reads (``state.get("escalate")``)."""
+    import ast
+
+    if isinstance(expr, ast.Constant) and isinstance(expr.value, str):
+        return {expr.value}
+    if isinstance(expr, ast.IfExp):
+        return _returned(expr.body) | _returned(expr.orelse)
+    return set()
+
+
+def _drawn_edges(block: str) -> set[tuple[str, str]]:
+    import re
+
+    alias = dict(re.findall(r'\b([A-Z]+)\["([a-z_]+)"\]', block))
+    edges = set()
+    for a, b in re.findall(r'^\s*([A-Z]+)(?:\["[a-z_]+"\])?\s*-->(?:\|"[^"]*"\|)?\s*([A-Z]+)', block, re.M):
+        edges.add((alias[a], alias[b]))
+    return edges

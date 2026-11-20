@@ -199,9 +199,9 @@ flowchart LR
     DEC -->|"retenue, identité,<br/>approbation, inconnue"| ESC["escalate_to_human"]
     EX -->|"écrite"| VA["verify_action"]
     EX -->|"write_blocked,<br/>action_failed"| ESC
-    VA -->|"vérifiée"| SC["store_cycle"]
+    VA -->|"vérifiée, ou<br/>rien à relire"| SC["store_cycle"]
     VA -->|"non vérifiée"| ESC
-    PDR -->|"proposition"| ESC
+    PDR -->|"proposition,<br/>détection bloquée"| ESC
     PDR -->|"faux négatif écarté"| SC
     ESC --> SC
     classDef blue fill:#2f6fd6,stroke:#1d4a9a,color:#ffffff
