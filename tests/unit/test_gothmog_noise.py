@@ -271,6 +271,7 @@ def test_a_watch_live_after_the_fault_is_said_and_a_dev_run_says_nothing_of_it(n
     world()
     assert engine().run("vm-disk-write", skip_confirm=True).report["checks"]["watch_after"] == "PASS"
     monkeypatch.setitem(gate.READERS, "local", lambda: gate.Beat(gate.LOCAL, None, "no watch"))
+    clock.sleep(16 * 60)   # G1d: the next fault on the VM waits for the first one's window
     world()
     out = engine().run("vm-disk-write", skip_confirm=True, without_glorfindel=True)
     assert "watch_after" not in out.report["checks"] and out.result == "PASS"
