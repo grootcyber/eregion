@@ -59,7 +59,9 @@ def expected_counts(status: dict) -> dict:
 def own_channel_counts(status: dict) -> dict:
     """SLF1 (#929): the writes of the watch's own return channel a rule set aside, as its status
     holds them — the console and `status_snapshot` read them here. `own_channel_unread`: when the
-    channel is configured and the watch's identity could not be read (nothing set aside)."""
+    channel is configured and the watch's identity could not be read (nothing set aside).
+    `own_channel_unparsed` (SLF1b, #976): the rows whose BlobWriters column could not be read — a
+    text unreadable, too long, not a list of objects —, nothing set aside of them."""
     oc = status.get("own_channel") if isinstance(status, dict) else None
     oc = oc if isinstance(oc, dict) else {}
 
@@ -67,7 +69,9 @@ def own_channel_counts(status: dict) -> dict:
         v = oc.get(k)
         return v if type(v) is int and v >= 0 else 0
     return {"own_channel_count": n("writes"), "own_channel_rows": n("rows"),
-            "own_channel_last": str(oc.get("last") or ""), "own_channel_unread": str(oc.get("unread") or "")}
+            "own_channel_last": str(oc.get("last") or ""), "own_channel_unread": str(oc.get("unread") or ""),
+            "own_channel_unparsed": n("unparsed"),
+            "own_channel_unparsed_last": str(oc.get("unparsed_last") or "")}
 
 # P1: the client's layer — the rules of THIS deployment (approved, overriding a base rule,
 # disabling one), outside the repository, loaded over the shipped base
@@ -1876,14 +1880,15 @@ class RulePoller:
         # ATT1 (#936): the shipped rule only, by its name and its query to the byte — never a rule of
         # the client's layer computing a wider `Known` under its name: its rows stay cards.
         channel = None
+        nothing = {"writes": 0, "rows": 0, "unread": False, "unparsed": 0}
         try:
             channel = self._channel()
             if own_channel.is_shipped(rule.query, rule.name):
                 rows, own = own_channel.settle(rows, channel)
             else:
-                rows, own = own_channel.strip(rows), {"writes": 0, "rows": 0, "unread": False}
+                rows, own = own_channel.strip(rows), nothing
         except Exception as exc:  # nothing set aside, the column taken off all the same
-            rows, own = own_channel.strip(rows), {"writes": 0, "rows": 0, "unread": False}
+            rows, own = own_channel.strip(rows), nothing
             faults.append(f"own_channel: {type(exc).__name__}: {exc}")
         if own["writes"]:
             logger.info("detection rule '%s': %d write(s) set aside (%d row(s) left without a card) — %s",
@@ -1892,6 +1897,11 @@ class RulePoller:
             self._own_unread_said = True       # said once by this watch; the status says it at each pass
             logger.warning("detection rule '%s': the return channel is configured but the watch's identity "
                            "could not be read — none of its writes set aside (SLF1)", rule.name)
+        if own["unparsed"]:
+            # SLF1b (#976): a BlobWriters column unreadable — nothing set aside of its rows, said.
+            logger.warning("detection rule '%s': %d row(s) of the return channel's account with a %s "
+                           "column unreadable — nothing set aside of them (SLF1b)",
+                           rule.name, own["unparsed"], own_channel.WRITERS)
         # AUD1 (#408): auditd's execs of a human login as root, read before any signal and
         # outside the lock — a command of ADM1's sensitive list stays, the rest is no card.
         policy = getattr(self._cfg, "expected_sudo", None)
@@ -2041,11 +2051,16 @@ class RulePoller:
                                        "origin_confirmed": expected_counts(st)["origin_confirmed"] + confirmed_n}
             if any(corr.values()):
                 st["correlation"] = correlation.add_counts(st.get("correlation"), corr, now_iso)
-            if own["writes"] or own["unread"]:
+            if own["writes"] or own["unread"] or own["unparsed"]:
                 # SLF1: the watch's own writes set aside, counted where the console reads the rules;
-                # its identity not read, said (nothing set aside).
+                # its identity not read, said (nothing set aside). SLF1b: the rows whose BlobWriters
+                # could not be read, counted beside them — kept across passes, like the writes.
                 was = own_channel_counts(st)
+                unparsed = was["own_channel_unparsed"] + own["unparsed"]
                 st["own_channel"] = {
+                    **({"unparsed": unparsed,
+                        "unparsed_last": now_iso if own["unparsed"] else was["own_channel_unparsed_last"]}
+                       if unparsed else {}),
                     "writes": was["own_channel_count"] + own["writes"],
                     "rows": was["own_channel_rows"] + own["rows"],
                     "last": now_iso if own["writes"] else was["own_channel_last"],

@@ -577,6 +577,37 @@
     vertical-align: middle;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── A phone (MOB4, #972, Jonathan 20/11 on a mockup, option A): under 760 px, one section at a
+     time — To judge, Infra, Feed —, the infra's modules stacked, its cards one under the other,
+     without the edges. Nothing of this applies above 760 px. ── */
+  #m-tabs { display: none; }
+  @media (max-width: 759px) {
+    body { height: 100dvh; }                           /* 100vh: the large viewport, under the browser's bar */
+    #m-tabs { display: flex; flex-shrink: 0; background: var(--bg1); border-bottom: 1px solid var(--border); }
+    #m-tabs button { flex: 1; background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0;
+                     color: var(--dim); padding: 9px 0; font-size: 12px; }
+    #m-tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--blue); }
+    .m-badge { font-size: 10px; font-weight: 700; margin-left: 5px; padding: 0 5px; border-radius: 8px;
+               color: var(--bg); background: var(--orange); }
+    main { flex-direction: column; }
+    #feed-col { width: auto; flex: 1; min-height: 0; border-right: 0; }
+    #incidents-col { flex: 1; min-height: 0; }
+    body[data-m="judge"] #incidents-col, body[data-m="feed"] #incidents-col, body[data-m="infra"] #feed-col { display: none; }
+    body[data-m="judge"] #feed-head, body[data-m="judge"] #feed-list,
+    body[data-m="feed"] #judge-head, body[data-m="feed"] #judge-list { display: none; }
+    body[data-m="judge"] #judge-list { max-height: none; flex: 1; border-bottom: 0; }
+    #right-col-header { flex-wrap: wrap; }
+    #posture-panel { margin-left: 0 !important; }
+    .topo-svg { display: none; }                       /* the edges: none on a phone */
+    .topo-graph { padding: 10px; }
+    .topo-spacer { height: 12px; }
+    .topo-modules { flex-direction: column; align-items: stretch; }
+    .topo-module { padding: 10px 0 0; }
+    .topo-module + .topo-module { border-left: 0; border-top: 1px solid var(--border); margin-top: 10px; }
+    .node-asset, .node-asset-empty { flex: 1 1 100%; max-width: none; min-width: 0; }
+    .modal, .modal.wide { min-width: 0; max-width: none; width: calc(100vw - 24px); }   /* the wide ones too */
+  }
 </style>
 </head>
 <body>
@@ -593,12 +624,20 @@
   Give each card a verdict in <b>TO JUDGE</b>.
 </div>
 
+<!-- On a phone (under 760 px), one section at a time (MOB4, #972): the CSS shows the one body[data-m]
+     names. Above, this bar is not shown and every section is, as before. -->
+<nav id="m-tabs" role="tablist" aria-label="Sections">
+  <button type="button" role="tab" id="m-tab-judge" aria-selected="false" data-on-click="mobileTab" data-click-args='["judge"]'>To judge<span id="m-judge-badge" class="m-badge" hidden></span></button>
+  <button type="button" role="tab" id="m-tab-infra" aria-selected="false" data-on-click="mobileTab" data-click-args='["infra"]'>Infra</button>
+  <button type="button" role="tab" id="m-tab-feed" aria-selected="false" data-on-click="mobileTab" data-click-args='["feed"]'>Feed</button>
+</nav>
+
 <main>
   <!-- Feed LEFT -->
   <div id="feed-col">
-    <div class="col-header">TO JUDGE <span id="judge-count"></span></div>
+    <div class="col-header" id="judge-head">TO JUDGE <span id="judge-count"></span></div>
     <div id="judge-list"><div class="judge-empty">…</div></div>
-    <div class="col-header">LIVE FEED <span id="live-dot" title="The live feed's connection (WebSocket)">●</span> <span id="live-label" style="color:var(--dim);font-size:10px;font-weight:400;letter-spacing:normal">connecting…</span></div>
+    <div class="col-header" id="feed-head">LIVE FEED <span id="live-dot" title="The live feed's connection (WebSocket)">●</span> <span id="live-label" style="color:var(--dim);font-size:10px;font-weight:400;letter-spacing:normal">connecting…</span></div>
     <div id="feed-list"></div>
   </div>
 

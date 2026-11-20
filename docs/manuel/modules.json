@@ -626,6 +626,19 @@
    "doc": "docs/glorfindel.md"
   },
   {
+   "id": "g-voie-de-retour-texte",
+   "composant": "glorfindel",
+   "poste": "g-detecter",
+   "nom": "The watch's own return channel set aside when the query's writers arrive as text, as the SDK hands them on; a column unreadable sets nothing aside and is counted",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "SLF1b"
+   ],
+   "issue": 976,
+   "doc": "docs/glorfindel.md"
+  },
+  {
    "id": "g-charges-ia",
    "composant": "glorfindel",
    "poste": "g-detecter",
@@ -2831,6 +2844,19 @@
     "VMI1"
    ],
    "issue": 971,
+   "doc": "docs/design/console.md"
+  },
+  {
+   "id": "k-telephone",
+   "composant": "console",
+   "poste": "k-voir",
+   "nom": "On a phone, the Glorfindel page shows one section at a time: To judge, Infra, Feed",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "MOB4"
+   ],
+   "issue": 972,
    "doc": "docs/design/console.md"
   },
   {
