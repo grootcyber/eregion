@@ -63,6 +63,10 @@ _ASSERT_AUD = f"{_TAS}::test_the_assertion_is_fetched_for_the_exchange_audience"
 _ASSERT_EMPTY = f"{_TAS}::test_an_empty_assertion_fails_closed"
 _STRATUS_WIRED = f"{_TAS}::test_the_orodruin_stratus_run_is_wired_for_the_federated_exchange"
 
+# Decision A — la garde sandbox lit une preuve en fichier (fraîcheur, pose, montage).
+_SANDBOX_STALE = f"{_TC}::test_read_sandbox_refuses_a_stale_proof"
+_SANDBOX_MOUNTED = f"{_TAS}::test_the_sandbox_proof_is_mounted_into_the_contract_and_the_run"
+
 # The listing spans two lines; built here so the whitespace is exact (32-space continuation).
 _LIST_ALL = '"list", "--all",\n' + " " * 32 + '"--assignee-object-id"'
 _LIST_NOALL = '"list",\n' + " " * 32 + '"--assignee-object-id"'
@@ -191,6 +195,23 @@ MUTANTS = [
      "stratus_run_env sees an incomplete federated identity (R2c, pièce 4B)",
      MAKEFILE, "-e EREGION_STRATUS_ASSERTION_FILE=$(ORO_STRATUS_MOUNT)",
      "-e EREGION_STRATUS_ASSERTION_FILE=/wrong/path"),
+    ("M6611", "the sandbox proof's freshness is no longer checked — a stale proof arms, so a DROP "
+     "rule removed after the last refresh would not be caught (R2c, pièce 3, decision A)",
+     ORODRUIN, "    if now() - mtime > SANDBOX_PROOF_MAX_AGE_S:",
+     "    if now() - mtime > SANDBOX_PROOF_MAX_AGE_S + 10**9:"),
+    ("M6612", "the root service no longer writes the DROP-rule proof — read_sandbox has nothing to "
+     "read from the hardened container, the contract can never arm for Stratus (R2c, pièce 3, dec. A)",
+     MAIN, "iptables -S DOCKER-USER > /run/eregion-sandbox-rules",
+     "iptables -S DOCKER-USER > /dev/null"),
+    ("M6613", "the proof timer is not enabled — the proof is written once and goes stale, so the "
+     "contract stops arming after SANDBOX_PROOF_MAX_AGE_S (R2c, pièce 3, decision A)",
+     MAIN, "systemctl enable --now eregion-stratus-sandbox.timer",
+     "systemctl enable --now eregion-stratus-sandbox.service"),
+    ("M6614", "the proof is no longer mounted into the contract run — read_sandbox cannot read it "
+     "and the contract never arms for Stratus (R2c, pièce 3, decision A)",
+     MAKEFILE,
+     "--env-file orodruin.env -v $(ORO_SANDBOX_PROOF):$(ORO_SANDBOX_PROOF):ro $(call ORO_MOUNT,orodruin) $(ORO_IMAGE)",
+     "--env-file orodruin.env $(call ORO_MOUNT,orodruin) $(ORO_IMAGE)"),
 ]
 
 TESTS = {
@@ -224,4 +245,8 @@ TESTS = {
     "M6608": _ASSERT_EMPTY,
     "M6609": _STRATUS_WIRED,
     "M6610": _STRATUS_WIRED,
+    "M6611": _SANDBOX_STALE,
+    "M6612": _SANDBOX_POSED,
+    "M6613": _SANDBOX_POSED,
+    "M6614": _SANDBOX_MOUNTED,
 }

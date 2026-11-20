@@ -545,6 +545,21 @@ def test_the_orodruin_stratus_run_is_wired_for_the_federated_exchange():
     assert "$(ORO_STRATUS_FETCH) && $(ORO_RUN_STRATUS)" in makefile        # fetch on the host, then run
 
 
+def test_the_sandbox_proof_is_mounted_into_the_contract_and_the_run():
+    """R2c decision A: the DROP-rule proof (written on the host by the root service) is mounted
+    read-only into both the contract run (orodruin-check's read_sandbox reads it — it cannot read
+    live iptables) and the Stratus run (its arming checks it too)."""
+    makefile = (Path(__file__).resolve().parents[2] / "Makefile").read_text(encoding="utf-8")
+
+    def line(prefix):
+        return next(ln for ln in makefile.splitlines() if ln.startswith(prefix))
+
+    mount = "-v $(ORO_SANDBOX_PROOF):$(ORO_SANDBOX_PROOF):ro"
+    assert mount in line("ORO_RUN_CONTRACT ")
+    assert mount in line("ORO_RUN_STRATUS ")
+    assert "ORO_SANDBOX_PROOF = /run/eregion-sandbox-rules" in makefile
+
+
 def test_executor_refuses_when_the_staged_terraform_is_missing(tmp_path):
     """R2BS: no staged Terraform (image not staged) → the run refuses before provisioning."""
     empty = tmp_path / "empty-home"

@@ -771,11 +771,16 @@ def read_stratus(*, orodruin_credential=None, stratus_credential=None, get=None,
 # At Orodruin's startup a dedicated docker network carries Stratus's egress to ARM, but a
 # DOCKER-USER rule drops its traffic to the IMDS (infra/orodruin/main.tf): a Stratus container on
 # it cannot obtain Orodruin's managed-identity token (M4: IMDS 000 measured, bridge witness 200).
-# orodruin-check reads the rule before arming for Stratus — read-only, nothing changed; absent or
-# unreadable, passive. Reading the DOCKER-USER chain needs the privilege to read iptables; without
-# it the read fails and the contract stays passive (fail closed).
+# orodruin-check reads that rule before arming for Stratus. It cannot read iptables itself — the
+# contract runs in a hardened container (ORO_HARDEN: --cap-drop ALL, its own netns) that can neither
+# run iptables nor see the host's DOCKER-USER chain. So the root service that poses the rule also
+# writes `iptables -S DOCKER-USER` to a proof file and re-poses + rewrites it on a timer; read_sandbox
+# reads that mounted file and refuses a stale one (the rule not currently proven) — fail closed. The
+# only privileged actor stays the root poser; the sandbox run never gets NET_ADMIN (R2c, decision A).
 SANDBOX_NET = "172.30.250.0/24"
 IMDS_ADDR = "169.254.169.254"
+SANDBOX_PROOF = "/run/eregion-sandbox-rules"
+SANDBOX_PROOF_MAX_AGE_S = 180   # the timer rewrites it every ~60s; older than this = not proven now
 
 
 def _flag_value(parts: list[str], flag: str) -> str:
@@ -799,24 +804,33 @@ def sandbox_drops_imds(rules: str) -> bool:
     return False
 
 
-def read_sandbox(*, run=None, env=None) -> list[dict]:
-    """The hardened sandbox read (R2c pièce 3): the DOCKER-USER rule that cuts the IMDS from
-    Stratus's network. Inert without EREGION_STRATUS_SUBSCRIPTION. A rule that cannot be read, or
-    is absent, is missing — never armed on an open sandbox (fail closed, see ``check``)."""
+def read_sandbox(*, read_proof=None, env=None, now=None) -> list[dict]:
+    """The hardened sandbox read (R2c pièce 3, decision A): the DOCKER-USER rule that cuts the IMDS
+    from Stratus's network, proven by the FILE the root service writes — the contract cannot read
+    live iptables (it runs with ``--cap-drop ALL`` in its own netns). Inert without
+    EREGION_STRATUS_SUBSCRIPTION. A proof that cannot be read, is stale (the timer has not refreshed
+    it, so the rule is not proven now), or does not drop the sandbox net to the IMDS is missing —
+    never armed on an open sandbox (fail closed, see ``check``). ``read_proof`` and ``now`` are
+    injected in the tests."""
     env = os.environ if env is None else env
     if not stratus_subscription(env):
         return []
-    if run is None:
-        import subprocess
-
-        def run(cmd):
-            return subprocess.run(cmd, capture_output=True, text=True,
-                                  timeout=15, check=True).stdout
+    if read_proof is None:
+        def read_proof():
+            p = Path(SANDBOX_PROOF)
+            return p.read_text(encoding="utf-8"), p.stat().st_mtime
+    if now is None:
+        import time
+        now = time.time
     try:
-        rules = run(["iptables", "-S", "DOCKER-USER"])
+        rules, mtime = read_proof()
     except Exception as e:
         return [_miss("stratus_sandbox_unreadable",
-                      f"cannot read the DOCKER-USER rules: {type(e).__name__}: {e}"[:200])]
+                      f"cannot read the sandbox proof {SANDBOX_PROOF}: {type(e).__name__}: {e}"[:200])]
+    if now() - mtime > SANDBOX_PROOF_MAX_AGE_S:
+        return [_miss("stratus_sandbox_stale",
+                      f"the sandbox proof {SANDBOX_PROOF} is older than {SANDBOX_PROOF_MAX_AGE_S}s — "
+                      "the root service has not refreshed it; the DROP rule is not proven now")]
     if not sandbox_drops_imds(rules):
         return [_miss("stratus_sandbox_open",
                       f"no DOCKER-USER rule drops {SANDBOX_NET} to the IMDS — a Stratus container "

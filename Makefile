@@ -1372,7 +1372,7 @@ ORO_DIRS       = for d in $$HOME/runs/annatar $$HOME/runs/gothmog $$HOME/runs/or
 ORO_MOUNT      = -v $$HOME/runs/$(1):/app/runs/$(1)
 ORO_RUN        = $(ORO_DIRS) docker run --rm $(ORO_HARDEN) $(ORO_EXEC_HOME) --env-file orodruin.env $(call ORO_MOUNT,annatar) $(call ORO_MOUNT,orodruin) $(ORO_IMAGE)
 ORO_RUN_GOTHMOG = $(ORO_DIRS) docker run --rm $(ORO_HARDEN) --env-file orodruin.env $(call ORO_MOUNT,gothmog) $(call ORO_MOUNT,orodruin) $(ORO_IMAGE)
-ORO_RUN_CONTRACT = $(ORO_DIRS) docker run --rm $(ORO_HARDEN) --env-file orodruin.env $(call ORO_MOUNT,orodruin) $(ORO_IMAGE)
+ORO_RUN_CONTRACT = $(ORO_DIRS) docker run --rm $(ORO_HARDEN) --env-file orodruin.env -v $(ORO_SANDBOX_PROOF):$(ORO_SANDBOX_PROOF):ro $(call ORO_MOUNT,orodruin) $(ORO_IMAGE)
 ORO_MIGRATE    = docker run --rm $(ORO_HARDEN) -v $$HOME/runs:/app/runs $(ORO_IMAGE) python -m eregion_core.runs_layout migrate /app/runs --orodruin
 # R2c pièce 4B : un run Stratus sous l'identité dédiée, par l'échange fédéré, DEPUIS LE BAC À SABLE
 # (pièce 3). Deux temps sur l'hôte d'Orodruin (où l'IMDS est joignable) : d'abord ORO_STRATUS_FETCH
@@ -1383,10 +1383,14 @@ ORO_MIGRATE    = docker run --rm $(ORO_HARDEN) -v $$HOME/runs:/app/runs $(ORO_IM
 # la nomme. L'abonnement dédié et le client id de Stratus viennent d'orodruin.env (sorties R2BGc) ;
 # stratus_run_env (annatar/engines/stratus.py) les tourne en ARM_USE_OIDC pour l'échange du provider.
 ORO_SANDBOX_NET = eregion-stratus-sandbox
+# R2c decision A : la preuve de la règle DROP (iptables -S DOCKER-USER), écrite côté hôte par le
+# service root, montée en lecture seule dans le contrat (read_sandbox la lit, il ne peut pas lire
+# iptables lui-même) et dans le run Stratus (son armement la vérifie aussi).
+ORO_SANDBOX_PROOF = /run/eregion-sandbox-rules
 ORO_STRATUS_ASSERTION = $$HOME/runs/orodruin/stratus-assertion.jwt
 ORO_STRATUS_MOUNT = /run/stratus/assertion.jwt
 ORO_STRATUS_FETCH = $(ORO_DIRS) docker run --rm $(ORO_HARDEN) --env-file orodruin.env $(ORO_IMAGE) python -m annatar.executors.stratus_assertion > "$(ORO_STRATUS_ASSERTION)" && test -s "$(ORO_STRATUS_ASSERTION)"
-ORO_RUN_STRATUS = $(ORO_DIRS) docker run --rm $(ORO_HARDEN) $(ORO_EXEC_HOME) --network $(ORO_SANDBOX_NET) --env-file orodruin.env -e EREGION_STRATUS_ASSERTION_FILE=$(ORO_STRATUS_MOUNT) -v $(ORO_STRATUS_ASSERTION):$(ORO_STRATUS_MOUNT):ro $(call ORO_MOUNT,annatar) $(call ORO_MOUNT,orodruin) $(ORO_IMAGE)
+ORO_RUN_STRATUS = $(ORO_DIRS) docker run --rm $(ORO_HARDEN) $(ORO_EXEC_HOME) --network $(ORO_SANDBOX_NET) --env-file orodruin.env -e EREGION_STRATUS_ASSERTION_FILE=$(ORO_STRATUS_MOUNT) -v $(ORO_STRATUS_ASSERTION):$(ORO_STRATUS_MOUNT):ro -v $(ORO_SANDBOX_PROOF):$(ORO_SANDBOX_PROOF):ro $(call ORO_MOUNT,annatar) $(call ORO_MOUNT,orodruin) $(ORO_IMAGE)
 # PRINCIPAL / VM_ID : pour un kill même si l'état Terraform est illisible.
 ORO_PRINCIPAL  = $(or $(PRINCIPAL),$(shell $(ORO_TF) output -no-color -raw principal_id 2>/dev/null))
 ORO_VM_ID      = $(or $(VM_ID),$(shell $(ORO_TF) output -no-color -raw vm_id 2>/dev/null))

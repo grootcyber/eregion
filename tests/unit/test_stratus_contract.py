@@ -226,23 +226,36 @@ def test_read_sandbox_is_inert_without_its_subscription():
     assert orodruin.read_sandbox(env={}) == []
 
 
-def test_read_sandbox_arms_when_the_rule_is_present():
+def test_read_sandbox_arms_when_the_proof_is_fresh_and_the_rule_is_present():
+    # decision A: the root service's proof file (iptables -S DOCKER-USER), fresh, with the DROP rule.
     env = {"EREGION_STRATUS_SUBSCRIPTION": STRATUS_SUB}
-    assert orodruin.read_sandbox(env=env, run=lambda cmd: f"-N DOCKER-USER\n{_DROP}") == []
+    assert orodruin.read_sandbox(
+        env=env, read_proof=lambda: (f"-N DOCKER-USER\n{_DROP}", 1000.0),
+        now=lambda: 1000.0) == []
 
 
 def test_read_sandbox_flags_a_missing_rule():
     env = {"EREGION_STRATUS_SUBSCRIPTION": STRATUS_SUB}
     missing = orodruin.read_sandbox(
-        env=env, run=lambda cmd: "-N DOCKER-USER\n-A DOCKER-USER -j RETURN")
+        env=env, read_proof=lambda: ("-N DOCKER-USER\n-A DOCKER-USER -j RETURN", 1000.0),
+        now=lambda: 1000.0)
     assert [m["code"] for m in missing] == ["stratus_sandbox_open"]
 
 
-def test_read_sandbox_fails_closed_when_the_rules_cannot_be_read():
-    def boom(cmd):
-        raise PermissionError("must be root")
+def test_read_sandbox_refuses_a_stale_proof():
+    # the timer has not refreshed the proof → the rule is not proven now → fail closed.
     env = {"EREGION_STRATUS_SUBSCRIPTION": STRATUS_SUB}
-    missing = orodruin.read_sandbox(env=env, run=boom)
+    missing = orodruin.read_sandbox(
+        env=env, read_proof=lambda: (f"-N DOCKER-USER\n{_DROP}", 1000.0),
+        now=lambda: 1000.0 + orodruin.SANDBOX_PROOF_MAX_AGE_S + 1)
+    assert [m["code"] for m in missing] == ["stratus_sandbox_stale"]
+
+
+def test_read_sandbox_fails_closed_when_the_proof_cannot_be_read():
+    def boom():
+        raise PermissionError("no proof file")
+    env = {"EREGION_STRATUS_SUBSCRIPTION": STRATUS_SUB}
+    missing = orodruin.read_sandbox(env=env, read_proof=boom)
     assert [m["code"] for m in missing] == ["stratus_sandbox_unreadable"]
 
 
