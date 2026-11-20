@@ -22,8 +22,10 @@ What a run asks, by EREGION_HYPOTHESIS_SEED:
   anywhere else, Hypothesis's own way (in CI derandomized, on a workstation at random).
 A drawn seed goes into the environment, so that a process the run starts — an xdist worker — draws
 the same; an xdist worker whose controller did not load this conftest takes it from the run's id
-(`testrunuid`, the same for each worker). It is said at the end of the run, on each failing
-property test, and in the step's summary on GitHub (by the process that drew it).
+(`testrunuid`, the same for each worker). It is said as the run begins, before any test, by the
+process that runs them or their controller (CI13, #986: a step cut by its bound never reaches its
+end, and the night of 20/11 lost its seed so), at the end of the run, on each failing property
+test, and in the step's summary on GitHub (by the process that drew it).
 """
 from __future__ import annotations
 

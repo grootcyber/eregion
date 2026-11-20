@@ -1305,6 +1305,10 @@ class AwsIsolationMachine(RuleBasedStateMachine):
             seen[rid] = f.name
 
 
+# CI13 (#986): the watchdog under this machine's own step, cut at 45 min (invariants.yml).
+INVARIANT_WATCHDOG_MINUTES = 40
+
+
 def test_isolation_invariants_on_aws(monkeypatch):
     invariant_env(monkeypatch)
     db = os.environ.get("GLORFINDEL_INVARIANT_DB")
