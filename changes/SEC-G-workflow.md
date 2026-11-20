@@ -1,3 +1,0 @@
-### Security
-- **The release gate refuses a release whose images carry a High or Critical CVE fixed upstream in their system packages** (SEC-G, #848; `docs/operations.md`, « Les images publiées », « La porte de release »). Its new job, `image CVEs (release gate)`, builds both images from the tree the gate measures, installs grype pinned by its archive's sha256 and fetches its database in a step of its own (both retried), then judges each image with `scripts/image_cves.py`: such a CVE makes the gate red, named in the run's summary; both images are judged, a red one never masked. The gate starts 17 jobs at once, under GitHub's 20.
-  - Tests: `tests/unit/test_workflows.py`, `tests/unit/test_release.py` (mutants M5779–M5780, `scripts/mutants/SEC-G-workflow.py`).

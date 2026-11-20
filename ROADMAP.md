@@ -87,7 +87,7 @@ Tenue par l'Orchestre (RM1, 02/11). Une ligne par release qui se prépare : sa v
 | 0.5.x | — | G1 au banc ; MUT2, MAK2, OI4 | plus tard |
 | 0.6.0 | identity defended | **recentrée (Jonathan, 12/11)** : ID1 allumé et mesuré ; IDI1 appliqué (fait) ; IR1a (le plan et « Vérifier » sur une **vraie carte d'identité**, provoquée par une technique publique sur l'identité de test, côté attaque — c'est **C2**, #199 ; la technique et sa bibliothèque restent à choisir) ; NT1 (le geste `never_target` des identités protégées). **R2 passe en 0.6.1.** À part : les techniques d'Entra de Stratus, dont la FIC, restent `planned`, hors R2b (`docs/design/stratus-cible.md`), et reviendront dans un lot dédié. | publiée (16/11) |
 | 0.6.1 | seen from the control plane | SEC-Fa, SEC-C, SEC-B, DRL1a, L1V, R2BG, L1Nd, TD1, AL3, R2BV, R2BW, R2BX, BSL1, FRN2 (fusionnés sur `main` depuis `v0.6.0`) ; la détection du plan de contrôle par Glorfindel (AL3) dans l'abonnement de test dédié, l'audit du 06/11 (SEC-B, SEC-C, SEC-Fa), le minuteur du drill hebdomadaire (DRL1a). Le reste passe en 0.6.2 (Jonathan, 17/11) | brouillon |
-| 0.6.2 | — | Ce que la 0.6.1 ne portait pas encore (Jonathan, 17/11) : le drill hebdomadaire au complet (DRL1b, DRL1c), SEC-A4b, VP1, P-01, la levée en probation (LEV3, LEV4) ; les preuves au banc de R2, de SEC-A3 et d'ID1 (Entra) ; les constats faibles restants de l'audit | plus tard |
+| 0.6.2 | — | Ce que la 0.6.1 ne portait pas encore (Jonathan, 17/11) : le drill hebdomadaire au complet (DRL1b, DRL1c), SEC-A4b, VP1, P-01, la levée en probation (LEV3, LEV4) ; les preuves au banc de R2, de SEC-A3 et d'ID1 (Entra) ; les constats faibles restants de l'audit | brouillon |
 
 ### Les lots
 
