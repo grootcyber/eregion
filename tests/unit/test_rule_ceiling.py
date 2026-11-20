@@ -300,6 +300,22 @@ def test_the_floor_comes_first_and_names_the_model_s_proposal():
     assert reason.startswith("Plancher déterministe (B3a)")
     assert "Le choix du modèle : 'isolate_vm', ramené à 'snapshot' par le plafond de la règle" in reason
     assert reason.index("Plancher") < reason.index("Plafond de la règle")
+    # No ceiling's card here: the isolation is the floor's card's to approve, and the reason says so.
+    assert "proposé sur la carte du plancher" in reason and "carte du plafond" not in reason
+
+
+def test_a_block_proposed_above_the_ceiling_leaves_nothing_to_approve(graph, watch):
+    """The model blocks (above the ceiling): through the graph to store_cycle, the ceiling's card says
+    it and proposes nothing in one click — never a block passed before never_block, never an
+    isolation the model did not propose."""
+    from eregion_core.action_queue import proposed_verbs
+    [signal] = _detections(_disk_row(74_300_000))
+    final, conn = graph(signal, "non_disruptive", _llm("block_suspicious_ip", 0.9))
+    assert conn.writes() == ["snapshot"] and final["action"] == "snapshot"      # no block written
+    [card] = _of("ceiling_proposal")
+    assert card["action"] == "" and proposed_verbs(card) == frozenset()
+    assert card["ceiling"]["proposed"] == "block_suspicious_ip"
+    assert "'block_suspicious_ip' reste à faire à la main" in " ".join(card["suggested_steps"])
 
 
 @pytest.mark.parametrize("action", ["isolate_vm", "block_suspicious_ip"])

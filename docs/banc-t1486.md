@@ -809,8 +809,8 @@ se lit toujours qu'à la sortie de `make bench-restore`.
 |---|---|---|
 | **T0** | le début de l'étape d'attaque, `record: T0` : la graine de 512 Mo puis le chiffrement (`engine.py:412-425`) | `attack_time` du rapport ; Orodruin, `Run:` |
 | **la détection** | T0 → la première détection de la watch pour ce run, lue sur le canal retour (`annatar/runner/detection.py:67-75`) | `detection_latency_s` ; « ✓ Glorfindel detected the attack N s » ; la chronologie de Dagorlad |
-| **la carte** | T0 → la carte de l'action, dans la console | le cycle `isolate_vm` (son horodatage) ; Discord |
-| **le confinement** | T0 → l'isolement relu sur Azure (`verified_at`), la définition de BL1 (`analysis/containment.py`) | la ligne `isolate_vm … verified=True T0+…` ; Dagorlad, « contained … » ; la page Annatar, « TIME TO CONTAIN · EXERCISES » (une médiane sur la période ; la tuile de l'accueil, « · REAL », exclut les exercices) |
+| **la carte** | T0 → la carte du plafond (`ceiling_proposal`, RDW1), dans la console | son `first_seen` ; Discord |
+| **le confinement** | depuis RDW1, un confinement humain : T0 → l'heure du clic « Approve & execute » sur la carte du plafond, notée à l'étape 5, puis → l'isolement relu sur Azure | `runs/console/manual_actions.jsonl` (l'`isolate_vm` approuvé, sa vérification) ou `glorfindel list` (gondolin `ISOLATED`, vérifiée) ; il n'y a plus de cycle `isolate_vm` de la watch ; Dagorlad, « contained … » ; la page Annatar, « TIME TO CONTAIN · EXERCISES » (une médiane sur la période ; la tuile de l'accueil, « · REAL », exclut les exercices) |
 | **la restauration finie** | la fin de `restore --wait`, et sa durée | `restore_time` et l'heure notée à l'étape 6 |
 | **le service rendu** | T0 → la levée relue sur Azure, les gestes humains compris (deux sans REC1, le restore seul avec) | la ligne `levée … T0+…` ; avec REC1, `levée watch … T0+…` |
 | **au sens du README** | détection + isolement + `restore_time`, sans le temps de décision humaine (`cli.py:1510`) | la somme des trois |
@@ -880,7 +880,7 @@ make imladris-cd-enable            # seulement s'il a été mis en pause à l'é
 | gondolin allumée ~1 h 30 | ~0,15 € | 71 €/mois en continu pour la même taille (bree, `docs/demarrer/banc.md`), soit ~0,10 €/h |
 | Orodruin, le temps de la session | quelques centimes | ~5–9 €/mois désalloué entre les sessions (`docs/demarrer/banc.md`) |
 | Azure Backup | le stockage du point à la demande, incrémental, 30 jours ; la VM est déjà protégée (`backup.tf`) | **non mesuré** |
-| le modèle, sur Imladris | la détection, les tirages avant l'isolement (3 par défaut, `GLORFINDEL_DECISION_DRAWS`), la recommandation de restore : de l'ordre de 0,10 à 0,30 $ | ~0,05–0,10 $ par run (`docs/operations.md`, « Coûts réels ») ; **non mesuré** pour T1486 sur Imladris |
+| le modèle, sur Imladris | la détection (depuis RDW1, plus aucun tirage avant l'isolement sur cette règle : l'instantané n'est pas disruptif, et l'isolement est approuvé), la recommandation de restore : de l'ordre de 0,10 à 0,30 $ | ~0,05–0,10 $ par run (`docs/operations.md`, « Coûts réels ») ; **non mesuré** pour T1486 sur Imladris |
 
 **La durée.** Les étapes 0 et 1 prennent 20 min (le calme compris), le point propre 5 à 20 min, la
 demande et le fil 15 min. Le restore prend 15 à 30 min (`cli.py`, `--wait`), la levée et la mesure
@@ -890,8 +890,10 @@ demande et le fil 15 min. Le restore prend 15 à 30 min (`cli.py`, `--wait`), la
 
 1. **La détection** : le verdict `detected`, `detection_latency_s` ; à comparer aux 55–71 s du
    README.
-2. **Le confinement** : `isolate_vm` exécuté seul, `verified=True`, T0+… ; à comparer à « ~1 min ».
-   Sinon, ce qui l'a retenu.
+2. **Le confinement** (depuis RDW1) : l'instantané pris seul, la carte du plafond
+   (`ceiling_proposal`), l'heure de ton approbation, puis gondolin `ISOLATED`, vérifiée, T0+… .
+   À comparer à « ~1 min », qui était un confinement autonome. Si une autre garde a aussi retenu
+   la décision, la noter.
 3. **La restauration** : le point choisi (celui de l'étape 2), `restore_time`, la neutralisation
    faite.
 4. **La levée** : sans REC1 à la main ; avec REC1 par la watch d'Imladris, ou à la main avec la carte
@@ -996,5 +998,5 @@ EOF
 
 *Vérifié à blanc* sur des fichiers fictifs de même forme (`RunReport.to_dict`,
 `agent.py:2500-2555`, `cli.py:24-54`) : une ligne T0, une ligne détection, une ligne par cycle du
-run (l'isolement : `isolate_vm escalate=False verified=True T0+…`), une ligne de levée. Le rapport
+run (depuis RDW1, l'instantané : `snapshot escalate=False T0+…` ; l'isolement approuvé n'est pas un cycle de la watch), une ligne de levée. Le rapport
 arrive sur Imladris quand le fil a fini ; sur Orodruin, le même est dans `~/runs/annatar/<run_id>.json`.

@@ -2,7 +2,7 @@
 the write rate alone, at most a snapshot and a card; the guard of `decide` after every gate that may
 hold, before the mode, never releasing one; the model's proposal kept and said; the client's layer
 lowering, never raising; the corroboration's hook; the console saying both proposals. One mutant per
-property, M6833–M6847 and M6857–M6864, measured by tests/unit/test_rule_ceiling.py."""
+property, M6833–M6847, M6857–M6864 and M6897–M6898, measured by tests/unit/test_rule_ceiling.py."""
 AGENT = "glorfindel/agent.py"
 CEILING = "glorfindel/rule_ceiling.py"
 JS = "eregion_console/static/glorfindel.js"
@@ -106,6 +106,16 @@ MUTANTS = [
     ("M6864", "the ceiling's card never written: store_cycle forgets it (RDW1, A)", AGENT,
      "    _record_ceiling_card(state, source, exercise_run)\n",
      ""),
+    # Second review.
+    ("M6897", "the ceiling's card proposes the isolation whatever the model proposed: a block above the "
+     "ceiling becomes an isolation approvable in one click (RDW1)", AGENT,
+     "    action = \"isolate_vm\" if proposed == \"isolate_vm\" else \"\"\n",
+     "    action = \"isolate_vm\"\n"),
+    ("M6898", "the floor's card says the isolation is proposed on a ceiling's card that does not exist "
+     "(RDW1)", AGENT,
+     "    said = str(ceiling.get(\"reason\") or \"\").replace(\"proposé sur la carte du plafond\", "
+     "\"proposé sur la carte du plancher\")\n",
+     "    said = str(ceiling.get(\"reason\") or \"\")\n"),
 ]
 TESTS = {
     "M6833": f"{_T}::test_the_vm_disk_write_rows_make_no_isolation_and_the_card_says_so",
@@ -131,4 +141,6 @@ TESTS = {
     "M6862": f"{_T}::test_a_shipped_base_gone_or_empty_is_unreadable_never_no_ceiling",
     "M6863": f"{_T}::test_the_floor_comes_first_and_names_the_model_s_proposal",
     "M6864": f"{_T}::test_the_vm_disk_write_rows_make_no_isolation_and_the_card_says_so",
+    "M6897": f"{_T}::test_a_block_proposed_above_the_ceiling_leaves_nothing_to_approve",
+    "M6898": f"{_T}::test_the_floor_comes_first_and_names_the_model_s_proposal",
 }

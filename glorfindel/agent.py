@@ -2989,7 +2989,9 @@ def _floor_after_ceiling(floor: str, ceiling: dict) -> str:
     lowered, proposed = ceiling.get("lowered") or "snapshot", ceiling.get("proposed") or "?"
     floor = floor.replace(f"Le choix du modèle : '{lowered}' (",
                           f"Le choix du modèle : '{proposed}', ramené à '{lowered}' par le plafond de la règle (", 1)
-    return f"{floor} — {ceiling.get('reason') or ''}".rstrip(" —")
+    # No card of the ceiling beside the floor's (`decide`): the isolation is the floor's card's to approve.
+    said = str(ceiling.get("reason") or "").replace("proposé sur la carte du plafond", "proposé sur la carte du plancher")
+    return f"{floor} — {said}".rstrip(" —")
 
 
 # RDW1 (#994; Jonathan, 20/11): the card of the rule's ceiling — the model's isolation proposed to a
