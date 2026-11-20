@@ -5996,6 +5996,21 @@ Aucune règle livrée ne lit le processeur ni le réseau. Seule la panne `vm-cpu
 en dépend ; elle se recale sur les noms mesurés, dans un lot à elle. **Rien n'est appliqué** :
 c'est un geste de Jonathan.
 
+### Avant tout : le bon abonnement (lecture seule)
+
+Le `Makefile` exporte `ARM_SUBSCRIPTION_ID ?= $(AZURE_SUBSCRIPTION_ID)` : un `ARM_SUBSCRIPTION_ID`
+déjà posé dans le shell, sur un autre abonnement, passe tel quel à Terraform (le piège de la
+séance G1, le 20/11). `az`, lui, suit son propre compte. Avant toute commande, dans le shell
+(zsh) où `.envrc` est chargé, ces deux lignes ne montrent aucun id ; un message, et l'on s'arrête :
+
+```zsh
+[ -z "${ARM_SUBSCRIPTION_ID:-}" ] || [ "$ARM_SUBSCRIPTION_ID" = "$AZURE_SUBSCRIPTION_ID" ] || echo "ARM_SUBSCRIPTION_ID n'est pas l'abonnement du banc : s'arrêter"
+[ "$(az account show --query id -o tsv)" = "$AZURE_SUBSCRIPTION_ID" ] || echo "az n'est pas sur l'abonnement du banc : s'arrêter"
+```
+
+Les cibles `celebrimbor-dcr-*` ne portent pas encore ce garde elles-mêmes : il viendra de la
+fonction de garde de G1c, branchée sur elles par celui des deux lots qui fusionnera en second.
+
 ### Avant tout : la DCR déployée (lecture seule)
 
 Pour écarter une dérive entre la DCR déployée et le Terraform. `az monitor data-collection rule`
@@ -6060,8 +6075,10 @@ lit `_Total` aujourd'hui). Le lot est fini quand la ligne `Processor` est là.
 
 **Si aucune ligne `Processor` n'arrive** au bout de trente minutes : relire la DCR déployée (la
 commande ci-dessus), qui doit porter la nouvelle liste. Si elle la porte, c'est une hypothèse de plus
-à mesurer (la barre initiale, que le tableau de Microsoft n'écrit pas, ou le `kind` de la DCR, qui
-n'est pas posé). Ne rien changer à chaud : rouvrir #985.
+à mesurer : la barre initiale, que le tableau de Microsoft n'écrit pas, ou le `kind` de la DCR, qui
+n'est pas posé alors que Microsoft conseille de ne collecter de compteurs que dans une DCR qui en a
+un (`docs/azure.md`, « Compteurs de performance sous Linux »). Ne rien changer à chaud : rouvrir
+#985.
 
 ---
 

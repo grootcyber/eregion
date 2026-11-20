@@ -7,7 +7,8 @@
 # Network(*) : https://learn.microsoft.com/en-us/azure/azure-monitor/vm/metrics-guest-reference,
 # onglet Linux), le disque sous son nom de toujours, mesuré au banc. Les noms Windows, déclarés jusqu'au
 # 20/11 et jamais collectés, n'y reviennent pas. tests/unit/test_bench_perf_counters.py tient le même
-# contrat en lisant les fichiers, et vérifie que chaque VM associée à cette DCR est une VM Linux.
+# contrat en lisant les fichiers, et vérifie, lui, que chaque VM associée à cette DCR (le banc de base,
+# multinic, sharednsg) est une VM Linux : ce plan ne compte que les associations des VM de base.
 
 mock_provider "azurerm" {}
 mock_provider "azapi" {}
@@ -54,6 +55,6 @@ run "linux_counters_the_disk_kept_the_windows_names_gone" {
   }
   assert {
     condition     = keys(azurerm_monitor_data_collection_rule_association.vm) == keys(azurerm_linux_virtual_machine.baseline)
-    error_message = "la DCR du banc est associée à autre chose que les VM Linux du banc"
+    error_message = "les associations de la DCR du banc (azurerm_monitor_data_collection_rule_association.vm) ne sont plus une par VM de base"
   }
 }

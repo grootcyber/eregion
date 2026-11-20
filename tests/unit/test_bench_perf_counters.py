@@ -160,9 +160,26 @@ def test_the_terraform_test_freezes_the_same_list():
 def test_the_docs_give_the_names_and_their_source():
     azure = (ROOT / "docs/azure.md").read_text()
     assert DOC_URL in azure and r"`\Processor(*)\% Processor Time`" in azure
+    assert "don't specify a platform type" in azure and "`kind`" in azure
     ops = (ROOT / "docs/operations.md").read_text()
     assert "## Les compteurs de performance du banc (DCR1, #985)" in ops
     assert "make celebrimbor-dcr-plan" in ops and "| distinct ObjectName, CounterName, InstanceName" in ops
+
+
+def test_the_subscription_is_checked_before_any_gesture():
+    """`export ARM_SUBSCRIPTION_ID ?=`: one already set in the shell reaches Terraform (G1, 20/11)."""
+    ops = (ROOT / "docs/operations.md").read_text()
+    section = ops[ops.index("## Les compteurs de performance du banc (DCR1, #985)"):]
+    section = section[:section.index("\n## ", 1)]
+    guard = section.index("### Avant tout : le bon abonnement")
+    assert guard < section.index("### Avant tout : la DCR déployée") < section.index("make celebrimbor-dcr-plan")
+    block = section[guard:section.index("### Avant tout : la DCR déployée")]
+    assert '[ -z "${ARM_SUBSCRIPTION_ID:-}" ] || [ "$ARM_SUBSCRIPTION_ID" = "$AZURE_SUBSCRIPTION_ID" ] || echo' in block
+    assert '[ "$(az account show --query id -o tsv)" = "$AZURE_SUBSCRIPTION_ID" ] || echo' in block
+    assert "s'arrêter" in block and "```zsh" in block
+    # Nothing that prints an id.
+    assert "echo $" not in block and 'echo "$' not in block
+    assert "export ARM_SUBSCRIPTION_ID ?= $(AZURE_SUBSCRIPTION_ID)" in (ROOT / "Makefile").read_text()
 
 
 # ── the Make targets, against a fake terraform ───────────────────────────────
