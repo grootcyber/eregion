@@ -125,8 +125,9 @@ En-tête (console.js), le même partout → EREGION + version déployée (tag, s
 - **Pas de framework** : vanilla JS uniquement. Pas de React, Vue, Alpine, etc.
 - **Pas de build step** : l'HTML est servi statique par FastAPI, une seule modification = résultat immédiat.
 - **Responsive** : optimisé pour grand écran (1440px+). Sous 760 px (un téléphone), la page Glorfindel passe en
-  onglets (To judge, Infra, Feed : une section à la fois) et l'en-tête commun se compacte (MOB4, #972). Overview et
-  Dagorlad restent pour grand écran. Les règles d'un téléphone vont dans un seul bloc `@media (max-width: 759px)`,
+  onglets (To judge, Infra, Feed : une section à la fois) et l'en-tête commun se compacte (MOB4, #972) ; le tableau de
+  Dagorlad en onglets Red, Targets, Plan, sa vue Runs en Windows, Campaigns, Coverage, et Overview tient telle quelle
+  (MOB5, #975). Les règles d'un téléphone vont dans un seul bloc `@media (max-width: 759px)`,
   le dernier de la feuille : rien ne change au-delà de 760 px.
 - **Rien du dehors n'est écrit brut** (#254) : un champ de carte, de règle, du fil, une erreur, un
   nombre du serveur (un `.length` compris : `Number(…)`) passe par `_attr` (glorfindel.js) ou `esc`

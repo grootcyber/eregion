@@ -32,7 +32,10 @@ document.getElementById('page-title').innerHTML =
   `<b>DAGORLAD · RUNS</b> <span>— ${esc(ABOUT.title)}. This page never launches a run · times UTC</span>`;
 document.getElementById('cat-title').textContent = ABOUT.catalog;
 document.querySelectorAll('#views [data-filter]').forEach(a => a.classList.toggle('on', a.dataset.filter === INJECTOR));
-if (INJECTOR === 'gothmog') document.getElementById('col-camp').remove();   // campaigns are Annatar's
+if (INJECTOR === 'gothmog') {                // campaigns are Annatar's: the column and its phone's tab (MOB5)
+  document.getElementById('col-camp').remove();
+  document.getElementById('m-tab-camp')?.remove();
+}
 
 // ── State ─────────────────────────────────────────────────────────────────────────────
 const params = new URLSearchParams(location.search);
@@ -557,10 +560,30 @@ async function loadDelivered(runId) {
   renderExercises();
 }
 
+// ── On a phone (MOB5, #975, Jonathan 20/11 on a mockup) ──────────────────────────────
+// Under 760 px, one column at a time — Windows, Campaigns, Coverage —, the one body[data-m] names. By
+// default the windows; a link to a campaign (?campaign=) opens its tab. The tabs are those the page
+// holds: Gothmog's view has no campaigns, no tab for them (review of MOB5: an empty page). Above
+// 760 px the attribute changes nothing.
+const _MOBILE_TABS = ['ex', 'camp', 'side'].filter(t => document.getElementById('m-tab-' + t));
+let _mobileTab = S.focus && S.focus.startsWith('c:') && _MOBILE_TABS.includes('camp') ? 'camp' : 'ex';
+function _showMobileTab() {
+  document.body.dataset.m = _mobileTab;
+  for (const t of _MOBILE_TABS) {
+    const b = $('m-tab-' + t);
+    if (b) b.ariaSelected = String(t === _mobileTab);
+  }
+}
+_showMobileTab();
+
 // ── Events (delegated: no data inside inline handlers) ───────────────────────────────
 document.addEventListener('click', ev => {
-  const t = ev.target.closest('[data-toggle],[data-delivered],[data-report]');
+  const t = ev.target.closest('[data-toggle],[data-delivered],[data-report],[data-mtab]');
   if (!t) return;
+  if (t.dataset.mtab) {                       // a phone's column (MOB5): one of the three, never another
+    if (_MOBILE_TABS.includes(t.dataset.mtab)) { _mobileTab = t.dataset.mtab; _showMobileTab(); }
+    return;
+  }
   if (t.dataset.toggle) {
     const key = t.dataset.toggle;
     S.open.has(key) ? S.open.delete(key) : S.open.add(key);

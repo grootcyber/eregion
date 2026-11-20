@@ -172,6 +172,33 @@
   .lastreq { margin-bottom: 6px; }
   table.chrono td { padding-right: 14px; }
   #plan a.runlink, table.chrono td a { white-space: nowrap; }
+
+  /* ── A phone (MOB5, #975, Jonathan 20/11 on a mockup, option A): under 760 px, one column of the
+     board at a time — Red, Targets, Plan. The gesture is the board's own: a tap on a red card, then
+     on a target; the drag's handle and the wires drawn between the columns are left out, the plan
+     lists the wires. The stylesheet's last block: nothing of this applies above 760 px. ── */
+  #m-tabs, #m-picked { display: none; }
+  @media (max-width: 759px) {
+    body { height: 100dvh; }                           /* 100vh: the large viewport, under the browser's bar */
+    #m-tabs { display: flex; flex-shrink: 0; background: var(--bg1); border-bottom: 1px solid var(--border); }
+    #m-tabs button { flex: 1; background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0;
+                     color: var(--dim); padding: 9px 0; font-size: 12px; cursor: pointer; }
+    #m-tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--blue); }
+    .m-badge { font-size: 10px; font-weight: 700; margin-left: 5px; padding: 0 5px; border-radius: 8px;
+               color: var(--bg); background: var(--orange); }
+    #m-picked:not([hidden]) { display: block; flex-shrink: 0; padding: 6px 16px; font-size: 11px; color: var(--purple);
+                              background: color-mix(in srgb, var(--purple) 14%, var(--bg1)); border-bottom: 1px solid var(--purple); }
+    #page-title, #views { flex-wrap: wrap; padding-left: 12px; padding-right: 12px; }
+    #views .meta { display: none; }
+    #board { display: flex; flex-direction: column; }
+    #col-mid, #wires, #pills, .handle { display: none; }
+    body[data-m="red"] #col-blue, body[data-m="blue"] #col-red, body[data-m="plan"] #board { display: none; }
+    #board .col { flex: 1; min-height: 0; }
+    body[data-m="red"] #weekly, body[data-m="red"] #drills, body[data-m="red"] #plan,
+    body[data-m="blue"] #weekly, body[data-m="blue"] #drills, body[data-m="blue"] #plan { display: none; }
+    body[data-m="plan"] #plan { flex: 1; height: auto; min-height: 0; }
+    #plan, #weekly, #drills { padding-left: 12px; padding-right: 12px; }
+  }
 </style>
 </head>
 <body>
@@ -183,6 +210,15 @@
   <a class="view on" href="/dagorlad">Board</a><a class="view" href="/dagorlad?view=runs">Runs</a>
   <span class="meta">the windows and campaigns of both injectors, and the coverage matrix</span>
 </nav>
+
+<!-- On a phone (under 760 px), one column of the board at a time (MOB5, #975): the CSS shows the one
+     body[data-m] names. Above, this bar is not shown and the board is the same. -->
+<nav id="m-tabs" role="tablist" aria-label="The board's columns">
+  <button type="button" role="tab" id="m-tab-red" aria-selected="false" data-on-click="mobileTab" data-click-args='["red"]'>Red</button>
+  <button type="button" role="tab" id="m-tab-blue" aria-selected="false" data-on-click="mobileTab" data-click-args='["blue"]'>Targets</button>
+  <button type="button" role="tab" id="m-tab-plan" aria-selected="false" data-on-click="mobileTab" data-click-args='["plan"]'>Plan<span id="m-plan-badge" class="m-badge" hidden></span></button>
+</nav>
+<div id="m-picked" hidden></div>
 
 <main id="board">
   <section class="col" id="col-red" aria-label="Red: techniques and faults">
