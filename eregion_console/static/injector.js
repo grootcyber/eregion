@@ -557,10 +557,29 @@ async function loadDelivered(runId) {
   renderExercises();
 }
 
+// ── On a phone (MOB5, #975, Jonathan 20/11 on a mockup) ──────────────────────────────
+// Under 760 px, one column at a time — Windows, Campaigns, Coverage —, the one body[data-m] names. By
+// default the windows; a link to a campaign (?campaign=) opens its tab. Above 760 px the attribute
+// changes nothing.
+const _MOBILE_TABS = ['ex', 'camp', 'side'];
+let _mobileTab = S.focus && S.focus.startsWith('c:') ? 'camp' : 'ex';
+function _showMobileTab() {
+  document.body.dataset.m = _mobileTab;
+  for (const t of _MOBILE_TABS) {
+    const b = $('m-tab-' + t);
+    if (b) b.ariaSelected = String(t === _mobileTab);
+  }
+}
+_showMobileTab();
+
 // ── Events (delegated: no data inside inline handlers) ───────────────────────────────
 document.addEventListener('click', ev => {
-  const t = ev.target.closest('[data-toggle],[data-delivered],[data-report]');
+  const t = ev.target.closest('[data-toggle],[data-delivered],[data-report],[data-mtab]');
   if (!t) return;
+  if (t.dataset.mtab) {                       // a phone's column (MOB5): one of the three, never another
+    if (_MOBILE_TABS.includes(t.dataset.mtab)) { _mobileTab = t.dataset.mtab; _showMobileTab(); }
+    return;
+  }
   if (t.dataset.toggle) {
     const key = t.dataset.toggle;
     S.open.has(key) ? S.open.delete(key) : S.open.add(key);

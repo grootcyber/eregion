@@ -26,6 +26,7 @@ const S = {
   note: '',         // what the last gesture did not do (a pair drawn already)
   wires: [],        // [experiment id, target resource id], in the order drawn — this browser only
   picked: null,     // the red card picked (its index), waiting for a target
+  mobileTab: null,  // a phone's column of the board (MOB5): red, blue (targets), plan; null: red
   drag: null,       // {i, x, y}: a red card's handle being dragged
   request: null,    // the request written (phase b), until it is over: its wires are locked
   requestErr: '',
@@ -83,6 +84,26 @@ function addWire(experiment, target, name) {
   refreshPlan();
 }
 
+// ── On a phone (MOB5, #975, Jonathan 20/11 on a mockup, option A) ─────────────────────
+// Under 760 px, one column of the board at a time — Red, Targets, Plan —, the one body[data-m] names.
+// The gesture is the board's own: a tap on a red card (pick), then on a target (aim). A red card picked
+// opens Targets, under a banner that names it; a wire laid opens the plan, its badge the wires' count.
+// Above 760 px the tabs are not shown, the attribute changes nothing, and no tab is followed.
+const _PHONE = window.matchMedia('(max-width: 759px)');
+const _MOBILE_TABS = ['red', 'blue', 'plan'];
+function _showMobileTab() {
+  const tab = _MOBILE_TABS.includes(S.mobileTab) ? S.mobileTab : 'red';
+  document.body.dataset.m = tab;
+  for (const t of _MOBILE_TABS) {
+    const b = $('m-tab-' + t);
+    if (b) b.ariaSelected = String(t === tab);
+  }
+  const n = S.wires.length, badge = $('m-plan-badge');
+  if (badge) { badge.textContent = n ? String(Number(n)) : ''; badge.hidden = !n; }
+  const r = S.board && S.picked !== null ? S.board.reds[S.picked] : null, bar = $('m-picked');
+  if (bar) { bar.textContent = r ? `${r.id} picked — tap a target` : ''; bar.hidden = !(r && tab === 'blue'); }
+}
+
 // ── Actions: each element names its own, the dispatcher calls it from this closed table ──
 function _on(event, action, ...args) {
   return `data-on-${event}="${action}"` + (args.length ? ` data-${event}-args="${esc(JSON.stringify(args))}"` : '');
@@ -93,12 +114,21 @@ const ACTIONS = {
     const r = S.board && S.board.reds[i];
     if (!r || !r.available) return;
     S.picked = S.picked === i ? null : i;
+    if (_PHONE.matches && S.picked !== null) S.mobileTab = 'blue';   // a phone: on to the targets (MOB5)
     renderBoard();
   },
   aim(j) {
     const t = S.board && S.board.targets[j];
     const r = S.board && S.picked !== null ? S.board.reds[S.picked] : null;
-    if (t && r) addWire(r.id, t.resource_id, t.name);
+    if (!t || !r) return;
+    addWire(r.id, t.resource_id, t.name);
+    if (_PHONE.matches) S.mobileTab = 'plan';                         // a phone: on to the plan (MOB5)
+    _showMobileTab();
+  },
+  mobileTab(which) {
+    if (!_MOBILE_TABS.includes(which)) return;
+    S.mobileTab = which;
+    _showMobileTab();
   },
   grab(i) {
     const r = S.board && S.board.reds[i];
@@ -308,6 +338,7 @@ function renderBoard() {
     others;
   red.scrollTop = rt; blue.scrollTop = bt;
   drawWires();
+  _showMobileTab();                              // a phone's tabs, badge and banner (MOB5)
 }
 
 // ── Wires ─────────────────────────────────────────────────────────────────────────────
@@ -437,6 +468,7 @@ function renderPlan() {
     ${pendingBox()}
     <div class="checks">${checks}</div>
     <table class="t">${(p.wires || []).map(planRow).join('')}</table>`;
+  _showMobileTab();                              // a phone's tabs, badge and banner (MOB5)
 }
 
 // ── The request followed (phases b, c): the command that carries it, then each wire live ──
@@ -965,6 +997,7 @@ async function refreshPlan() {
   // The request followed before the reload: read again — still running, its wires lock again.
   S.last = storedRequest();
   S.lastAt = S.last ? Date.now() : 0;
+  _showMobileTab();          // a phone: the red column until the board is read (MOB5)
   loadBoard().then(refreshPlan).then(refreshFollow);
   loadDrills();
   loadWeekly();
