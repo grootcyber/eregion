@@ -489,6 +489,16 @@ briques:
     issue: 936
     doc: docs/glorfindel.md
 
+  - id: g-voie-de-retour-texte
+    composant: glorfindel
+    poste: g-detecter
+    nom: "The watch's own return channel set aside when the query's writers arrive as text, as the SDK hands them on; a column unreadable sets nothing aside and is counted"
+    etat: main
+    release: "0.6"
+    lots: [SLF1b]
+    issue: 976
+    doc: docs/glorfindel.md
+
   - id: g-charges-ia
     composant: glorfindel
     poste: g-detecter

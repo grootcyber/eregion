@@ -3432,7 +3432,12 @@ function _ownChannelTxt(r) {
   const unread = r.own_channel_unread
     ? `return channel configured, the watch's identity not read (${_relTime(r.own_channel_unread)}): none of its writes set aside`
     : '';
-  return [said, unread].filter(Boolean).join(' · ');
+  // SLF1b (#976): rows whose BlobWriters column could not be read — nothing set aside of them.
+  const bad = Number(r.own_channel_unparsed) || 0;
+  const unparsed = bad > 0
+    ? `${bad} row(s) whose BlobWriters column could not be read: nothing set aside of them (SLF1b)${r.own_channel_unparsed_last ? ' · last ' + _relTime(r.own_channel_unparsed_last) : ''}`
+    : '';
+  return [said, unread, unparsed].filter(Boolean).join(' · ');
 }
 
 function showRuleDetail(rule) {
