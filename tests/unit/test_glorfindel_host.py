@@ -799,6 +799,9 @@ def test_check_refuses_an_msi_principal_that_is_no_object_id_never_its_value(tmp
             host_env.check(str(path))
         said = str(exc.value)
         assert "EREGION_ENTRA_MSI_ACTOR_ID is no object id" in said and value not in said
+        # The way back is the README's step that writes the id by the shell — never a command that prints it.
+        assert "« Le principal Managed Service Identity (MID1) »" in said and "az ad sp list --filter" in said
+        assert "az ad sp show" not in said
     else:
         assert host_env.check(str(path)) == 0
         assert "EREGION_ENTRA_MSI_ACTOR_ID" not in capsys.readouterr().err

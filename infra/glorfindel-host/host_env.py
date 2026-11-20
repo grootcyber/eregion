@@ -246,8 +246,9 @@ def msi_problem(value: str) -> str:
         return ""
     return (f"{MSI_ACTOR} is no object id (a GUID): the watch would set nothing aside of the certificates "
             "Azure puts on the managed identities it creates (entra-credential-added). Its value is not "
-            "printed — read it again, by the principal's ActorId on a card or az ad sp show --id <ActorId> "
-            "--query id -o tsv (docs/operations.md, « Le principal Managed Service Identity »).")
+            "printed — remove its line and write it again by the shell, never copied from the screen: step 1 "
+            "of infra/glorfindel-host/README.md, « Le principal Managed Service Identity (MID1) » "
+            "(echo \"EREGION_ENTRA_MSI_ACTOR_ID=$(az ad sp list --filter …)\" >> host.env), then its checks.")
 
 
 def never_target_read(env: dict) -> dict:

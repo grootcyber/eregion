@@ -436,10 +436,12 @@ def shipped_rules_path() -> Path:
     return Path(__file__).resolve().parent / "rules" / "azure" / "detection_rules.yaml"
 
 
-@functools.lru_cache(maxsize=16)
-def _shipped_query_sha256(path: str, name: str) -> str:
-    rule = next((r for r in _named(_read_layer(Path(path)).get("rules")) if r.get("name") == name), None)
-    return own_channel.query_sha256(rule.get("query")) if isinstance(rule, dict) and rule.get("query") else ""
+@functools.lru_cache(maxsize=4)
+def _shipped_query_sha256s(path: str) -> dict[str, str]:
+    """{name: sha256 of its query} of every shipped rule, the base read once per path (MID1 review:
+    one entry per (path, name) was a cache of 16 for 20 rules, never hit)."""
+    return {str(r["name"]): own_channel.query_sha256(r.get("query"))
+            for r in _named(_read_layer(Path(path)).get("rules")) if r.get("query")}
 
 
 def shipped_query(name: str, query) -> bool:
@@ -447,7 +449,7 @@ def shipped_query(name: str, query) -> bool:
     to the letter, WL1, too) — never a rule of the client's layer that changed it. An unreadable base:
     False. Never raises."""
     try:
-        sha = _shipped_query_sha256(str(shipped_rules_path()), str(name or ""))
+        sha = _shipped_query_sha256s(str(shipped_rules_path())).get(str(name or ""), "")
     except Exception:
         return False
     return bool(sha) and own_channel.query_sha256(query) == sha

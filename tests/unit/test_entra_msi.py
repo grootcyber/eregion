@@ -30,7 +30,7 @@ from glorfindel.providers.azure import entra_msi
 
 from glorfindel.providers.azure.monitor import AzureMonitorDetector
 
-from .test_entra_detection import OWN_OID, ROOT, VM1, _detector, _poller, _row, _shipped
+from .test_entra_detection import OWN_OID, ROOT, VM1, _cfg, _detector, _poller, _row, _shipped
 
 RULE = "entra-credential-added"
 # Placeholders, never real ids: the tenant's « Managed Service Identity » principal, another principal
@@ -248,6 +248,30 @@ def test_only_the_shipped_rule_to_the_byte_sets_aside(law, msi):
         assert len(sent) == 1, rule.name
         assert "msi_certificate" not in p._status.get(rule.name, {})
     assert entra_msi.set_aside("entra-app-consent", [_msi_row(0)]) == ([_msi_row(0)], None)
+
+
+def test_the_shipped_base_is_read_once_over_passes_of_every_rule(law, msi, monkeypatch):
+    """MID1 review: `shipped_query` runs for every rule at every pass — the shipped base is read and
+    parsed once, whatever the number of rules and passes."""
+    import glorfindel.detection_rules as dr
+    from glorfindel.detection_rules import _shipped_query_sha256s, shipped_rules_path
+    rules = [r for r in dr.load_config(dr.shipped_rules_path(), glorfindel_cfg=_cfg(), client_layer=False).rules
+             if r.enabled]
+    assert len(rules) > 16                       # more than a cache of one entry per rule would hold
+    credential = _shipped(RULE)
+    p, _sent = _poller(_detector(), credential, VM1)
+    _shipped_query_sha256s.cache_clear()
+    reads: list[str] = []
+    real = dr._read_layer
+    monkeypatch.setattr(dr, "_read_layer", lambda path, *a, **k: reads.append(str(path)) or real(path, *a, **k))
+    for _ in range(3):
+        for rule in rules:
+            assert shipped_query(rule.name, rule.query), rule.name
+    for corr in ("c-1", "c-2", "c-3"):
+        law["rows"] = [_msi_row(0, corr=corr)]
+        p.poll_once(credential)
+    assert _status(p)["msi_certificate"]["rows"] == 3
+    assert reads.count(str(shipped_rules_path())) == 1
 
 
 def test_a_fault_sets_nothing_aside_and_is_said(law, msi, monkeypatch):
