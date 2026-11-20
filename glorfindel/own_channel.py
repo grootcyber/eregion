@@ -57,7 +57,8 @@ REASON = ("the watch's own return channel: its identity, the container of EREGIO
           "the objects it writes there (SLF1)")
 # SLF1b: the longest BlobWriters text decoded. The query keeps 64 entries at most (`make_list(…, 64)`),
 # each a container, a writer's object id and three counts — a few hundred characters: 64 Ki characters is far
-# above; a text past it is not read (nothing set aside, said).
+# above; a text past it is not read (nothing set aside, said). RID1: the bound of every dynamic text
+# `json_of` reads — a column of an aggregated row past it stays in the row's identity, as before.
 WRITERS_MAX = 64 * 1024
 # Azure's container names: 3 to 63 of lowercase letters, digits and single hyphens.
 _CONTAINER = re.compile(r"^(?=.{3,63}$)[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -167,10 +168,11 @@ def _count(value) -> int | None:
     return None
 
 
-def writers_of(value) -> list[dict] | None:
-    """BlobWriters as a list of objects (SLF1b): the list itself, or its JSON text — the SDK hands a
-    ``dynamic`` column on as text. None when it is neither: a text unreadable or longer than
-    ``WRITERS_MAX``, a value that is not a list, a list holding anything but objects. Never raises."""
+def json_of(value):
+    """What the JSON text of a ``dynamic`` column decodes to, as the SDK hands the column on (SLF1b):
+    None when the value is not a text, is longer than ``WRITERS_MAX`` or does not decode (a JSON
+    ``null`` reads as None too). Bounded, never raises: `writers_of` reads BlobWriters by it, and
+    `detection_rules._row_identity` the other columns of an aggregated row (RID1, #1002)."""
     if isinstance(value, str):
         if len(value) > WRITERS_MAX:
             return None
@@ -178,6 +180,16 @@ def writers_of(value) -> list[dict] | None:
             value = json.loads(value)
         except (ValueError, RecursionError):
             return None
+        return value
+    return None
+
+
+def writers_of(value) -> list[dict] | None:
+    """BlobWriters as a list of objects (SLF1b): the list itself, or its JSON text — the SDK hands a
+    ``dynamic`` column on as text. None when it is neither: a text unreadable or longer than
+    ``WRITERS_MAX``, a value that is not a list, a list holding anything but objects. Never raises."""
+    if isinstance(value, str):
+        value = json_of(value)
     if not isinstance(value, list) or not all(isinstance(e, dict) for e in value):
         return None
     return value
