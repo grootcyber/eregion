@@ -261,5 +261,14 @@ Au démarrage d'Orodruin (cloud-init/systemd, avant tout run Stratus) : un **ré
 - le **M3** (à qui Orodruin fait confiance) se lit **par sujet des deux côtés** (applications + principaux de service) : `$count gt 0` est refusé sur `/servicePrincipals` (mesuré 19/11, `Request_UnsupportedQuery`) ;
 - le masquage du lien Bastion, le timeout de warmup par technique, le catalogue (`resource_prefix` + adresse Terraform par technique), le retrait de la `graph_probe` de la technique FIC (§ 5). Mutants : **nouvelle plage**, à ouvrir avec l'Orchestre.
 
+#### Pièce 4 corrigée — le sidecar (décision avec Jonathan, 20/11)
+
+Le bac à sable coupe l'IMDS (pièce 3) — mais le **run entier ne peut pas y vivre** : tout ce qui est d'Orodruin a besoin de l'IMDS sur le bridge (l'armement du contrat, la garde de watch et sa revérification en cours de run, la fenêtre d'exercice, la sonde Graph en lecture, la garde d'inscription du plan de contrôle, le journal). Un `annatar run` lancé dans le bac à sable les prive tous (le run se refuse, « pas de watch vivante » — mesuré au banc). Le run est donc **scindé** :
+
+- un **détonateur** (`ORO_RUN_DETONATOR`, `annatar.executors.stratus_detonator`) tourne sur le réseau sandbox sous l'assertion fédérée et n'exécute **que** les quatre sous-processus bruts des phases Stratus ;
+- le **moteur** (`ORO_RUN_ENGINE`) reste sur le bridge sous l'identité d'Orodruin, **garde tous les contrôles**, et délègue chaque phase au détonateur par un **répertoire IPC partagé** (fichiers requête/réponse JSON — jamais de réseau entre eux, jamais le socket docker).
+
+Les montages de run d'Orodruin **n'entrent jamais** dans le détonateur : une bibliothèque Stratus compromise ne peut pas lire le jeton d'identité managée d'Orodruin, même par le canal IPC (seul un nom de phase le traverse). `make orodruin-stratus` tire l'assertion sur le bridge, démarre le détonateur, lance le moteur, puis retire le détonateur (démonté même si le run échoue). `StratusExecutor(detonate=…)` prend le délégué ; `run_subprocess` = la phase brute que joue le détonateur (sans journal), `run_phase` journalise sur le moteur puis délègue. Mutants **M6641–M6650** (`scripts/mutants/R2c.py`).
+
 ### Après le code
 **ID1c au banc** (= ID1, #281) : le run réel d'une **écriture**-technique depuis Orodruin armé, vu par Glorfindel (le témoin fédéré, une lecture, n'entre pas dans les Activity Logs). La PR corrige la doc (C1–C6).

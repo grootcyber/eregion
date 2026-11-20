@@ -141,6 +141,15 @@ class ScenarioParser:
                     "a stratus scenario attacks the Azure control plane, not a VM: target.type "
                     "is not 'azure_vm' and it carries no vm_name"
                 )
+            # R2c pièce 4D: the Stratus engine runs control-plane TECHNIQUES only. A fault
+            # (kind: fault) is Gothmog's engine, not an attack — routing one through Stratus is a
+            # misauthoring, refused here at authoring, before any run (the Stratus scope is bound
+            # to techniques on the dedicated subscription). Absent, kind defaults to a technique.
+            if str(data.get("kind") or "technique") == "fault":
+                errors.append(
+                    "a stratus scenario runs a control-plane technique, never a fault "
+                    "(kind: fault is Gothmog's engine)"
+                )
 
         return ValidationResult(valid=len(errors) == 0, errors=errors)
 

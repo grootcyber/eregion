@@ -23,16 +23,15 @@ MUTANTS = [
      ""),
     ("M6394", "the exclusion read on any account: a container of that name on another account set aside "
      "(SLF1)", OWN,
-     "        if (total is None or not isinstance(writers, list)\n"
-     "                or str(row.get(\"AccountName\") or \"\").lower() != channel.account):\n",
-     "        if (total is None or not isinstance(writers, list)):\n"),
+     "        if total is None or str(row.get(\"AccountName\") or \"\").lower() != channel.account:\n",
+     "        if total is None:\n"),
     ("M6395", "the exclusion read on any object: the watch's identity writing anything in its container set "
      "aside (SLF1)", OWN,
      "    if writes is None or writes <= 0 or known != writes:\n",
      "    if writes is None or writes <= 0:\n"),
     ("M6396", "the exclusion no longer said in the rule's status (SLF1)", RULES,
-     "            if own[\"writes\"] or own[\"unread\"]:\n",
-     "            if own[\"unread\"]:\n"),
+     "            if own[\"writes\"] or own[\"unread\"] or own[\"unparsed\"]:\n",
+     "            if own[\"unread\"] or own[\"unparsed\"]:\n"),
     ("M6397", "the exclusion no longer said in the watch's log (SLF1)", RULES,
      "        if own[\"writes\"]:\n            logger.info(",
      "        if False:\n            logger.info("),

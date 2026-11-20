@@ -42,7 +42,9 @@ RED_IMAGE = "eregion-annatar"   # the injectors' image: Annatar and Gothmog, on 
 # on the workstation (the clone's runs/) and on Orodruin (~/runs), and the shell's history: that one
 # file, never ~/.annatar (where the red would leave what the shell runs next).
 WRITABLE = {"runs/annatar", "runs/gothmog", "runs/orodruin", "~/runs/annatar", "~/runs/gothmog",
-            "~/runs/orodruin", "~/.annatar/.bash_history"}
+            "~/runs/orodruin", "~/runs/orodruin/stratus-ipc", "~/.annatar/.bash_history"}
+# R2c pièce 4 (sidecar): the shared IPC directory between the engine (bridge) and the detonator
+# (sandbox) — request/response files, both sides read and write it. Under ~/runs/orodruin.
 # The migration of the former layout, once, at `make orodruin-push` (ORO_MIGRATE): ~/runs whole —
 # data, never run; the one run whose command is the migration.
 MIGRATION = {"~/runs"}
@@ -72,6 +74,11 @@ INVENTORY = {
     "ORO_RUN": {"~/runs/annatar", "~/runs/orodruin"},
     "ORO_RUN_GOTHMOG": {"~/runs/gothmog", "~/runs/orodruin"},
     "ORO_RUN_CONTRACT": {"~/runs/orodruin"},                                # the contract's verdict
+    # R2c pièce 4 (sidecar): the detonator writes only the IPC channel (the Stratus state lives in
+    # its tmpfs HOME, not a bind); the engine keeps the journal (~/runs/orodruin) and run report
+    # (~/runs/annatar) and shares the IPC. Orodruin's run mounts never enter the detonator.
+    "ORO_RUN_DETONATOR": {"~/runs/orodruin/stratus-ipc"},
+    "ORO_RUN_ENGINE": {"~/runs/annatar", "~/runs/orodruin", "~/runs/orodruin/stratus-ipc"},
     "ORO_RUN_REQUEST": {"~/runs/annatar", "~/runs/gothmog", "~/runs/orodruin"},   # it launches both
     "ORO_MIGRATE": {"~/runs"},
     "ORO_CHECK_RUN": set(),   # OI2: the image received, run once without network before its tag; no mount

@@ -598,7 +598,8 @@ Jonathan a choisi sur une maquette (lignes « Le tableau de Dagorlad » et « La
   dessinés entre les colonnes et la poignée de glisser sont laissés de côté : le plan liste les fils.
   La demande reste une commande à lancer depuis le poste (`make orodruin-exercise`).
 - **La vue Runs, sous 760 px : trois onglets**, Windows, Campaigns, Coverage ; par défaut les fenêtres,
-  et un lien vers une campagne (`?campaign=`) ouvre la sienne. Les lignes de la matrice se replient sur
+  et un lien vers une campagne (`?campaign=`) ouvre la sienne. La vue de Gothmog n'a pas de campagnes :
+  ni leur colonne ni leur onglet (la relecture l'a trouvé : une page vide). Les lignes de la matrice se replient sur
   deux lignes : l'ID et le nom, puis l'historique et l'état.
 - **Des verdicts au doigt** (Jonathan, 20/11 ; ils faisaient 54 × 16 px) : dans la liste TO JUDGE et la carte
   de JUG1 (`.judge-actions`), Right, Wrong et Unsure à 44 px de haut sur une ligne, la note sur sa ligne
@@ -622,7 +623,7 @@ Les verdicts, mesurés à 390 px : dans la liste, la carte de JUG1 et le verdict
 44 px de haut, aucun hors de l'écran ni coupé, la note en 16 px ; à 1440 px, Confirm et Refuse visibles
 dans la liste (0 coupé), le reste identique (verdicts à 16 px, note en 10 px, la carte de JUG1 à sa place).
 Tests : `tests/unit/test_console_phone_dagorlad.py`, `tests/unit/test_console_phone_verdicts.py` ; mutants
-M6698–M6709, M6713, M6714, M6730 et M6731 (`scripts/mutants/MOB5.py`).
+M6698–M6709, M6713, M6714, M6730–M6732 et M6749 (`scripts/mutants/MOB5.py`).
 
 ### Juger plusieurs cartes (JUG3, #980, 20/11)
 
