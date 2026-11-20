@@ -67,8 +67,12 @@ def serve(ipc_dir: str | Path, run_one, *, poll: float = POLL_S, sleep=time.slee
         except Exception as e:        # a crash in the detonator is a failed phase, never a hang
             resp = {"id": req.get("id"), "stdout": "",
                     "stderr": f"detonator: {type(e).__name__}: {e}"[:500], "rc": 1}
-        _atomic_write(d / RESP, resp)
+        # Clear the request BEFORE answering: the engine writes the next phase's request as soon
+        # as it sees this response, so unlinking the request after the write could delete that next
+        # request (a cross-process race that would hang the run). A crash between the two, or an
+        # unlink of a request the engine has not yet replaced, still fails closed (a timeout).
         req_path.unlink()
+        _atomic_write(d / RESP, resp)
 
 
 def ipc_detonate(ipc_dir: str | Path, *, timeout: float, poll: float = POLL_S,

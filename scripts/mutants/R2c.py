@@ -79,6 +79,7 @@ _DETO_CRASH = f"{_TAS}::test_the_detonator_reports_a_crashing_phase_as_a_failure
 _DETO_IDPAIR = f"{_TAS}::test_the_delegate_ignores_a_response_for_another_phase"
 _DETO_TIMEOUT = f"{_TAS}::test_the_delegate_raises_when_the_detonator_never_answers"
 _DELEGATE_ENV = f"{_TAS}::test_the_phase_delegate_is_built_only_with_an_ipc_dir"
+_DETO_ORDER = f"{_TAS}::test_the_detonator_clears_the_request_before_it_answers"
 
 # The listing spans two lines; built here so the whitespace is exact (32-space continuation).
 _LIST_ALL = '"list", "--all",\n' + " " * 32 + '"--assignee-object-id"'
@@ -276,6 +277,11 @@ MUTANTS = [
      "sandbox container where the third-party Stratus code runs (R2c, pièce 4)",
      MAKEFILE, "-v $(ORO_IPC_HOST):$(ORO_IPC_MOUNT) $(ORO_IMAGE)",
      "-v $(ORO_IPC_HOST):$(ORO_IPC_MOUNT) $(call ORO_MOUNT,orodruin) $(ORO_IMAGE)"),
+    ("M6733", "the detonator writes the response BEFORE clearing the request — the engine, seeing the "
+     "response, writes the next phase's request, which this trailing unlink then clobbers; the run "
+     "hangs then times out (a cross-process race found in review) (R2c, pièce 4)",
+     STRATUS_DETONATOR, "        req_path.unlink()\n        _atomic_write(d / RESP, resp)",
+     "        _atomic_write(d / RESP, resp)\n        req_path.unlink()"),
 ]
 
 TESTS = {
@@ -324,4 +330,5 @@ TESTS = {
     "M6648": _TARGET,
     "M6649": _TARGET,
     "M6650": _STRATUS_WIRED,
+    "M6733": _DETO_ORDER,
 }

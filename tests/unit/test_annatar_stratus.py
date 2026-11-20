@@ -1260,6 +1260,30 @@ def test_the_detonator_reports_a_crashing_phase_as_a_failure():
         assert resp["id"] == 7 and resp["rc"] == 1 and "boom" in resp["stderr"]
 
 
+def test_the_detonator_clears_the_request_before_it_answers():
+    """R2c pièce 4 (sidecar): serve unlinks the request BEFORE writing the response. The engine
+    writes the next phase's request as soon as it sees a response, so a trailing unlink could
+    otherwise delete that freshly-written next request — a cross-process race that hangs the run."""
+    import annatar.executors.stratus_detonator as det
+    with tempfile.TemporaryDirectory() as d:
+        dp = Path(d)
+        _write_json(dp / "request.json", {"id": 1, "phase": "warmup"})
+        seen = {}
+        real_write = det._atomic_write
+
+        def spy(path, obj):
+            if Path(path).name == "response.json":          # at the moment the answer is written,
+                seen["req_present"] = (dp / "request.json").exists()   # the request must be gone
+            real_write(path, obj)
+
+        det._atomic_write = spy
+        try:
+            det.serve(d, lambda name: ("ok", "", 0), poll=0.0, max_idle_s=0.0)
+        finally:
+            det._atomic_write = real_write
+        assert seen.get("req_present") is False   # unlinked before the response — no next-request clobber
+
+
 def test_the_delegate_ignores_a_response_for_another_phase():
     """R2c pièce 4: the id pairs a response to its request — a stale answer from another phase is
     never taken for this one (it keeps waiting, then times out)."""
