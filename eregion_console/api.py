@@ -1002,6 +1002,7 @@ async def config() -> dict:
                 detection_inert,
                 expected_counts,
                 load_config,
+                msi_certificate_counts,
                 own_channel_counts,
                 unreadable_counts,
             )
@@ -1073,6 +1074,8 @@ async def config() -> dict:
                     **expected_counts(s),
                     # SLF1: the watch's own writes in its return channel, set aside — counted.
                     **own_channel_counts(s),
+                    # MID1: the managed identities' certificates set aside from entra-credential-added.
+                    **msi_certificate_counts(s),
                     # CPT1c: the rows of a reply out of the rule's schema, each poll's one card.
                     **unreadable_counts(s),
                 })

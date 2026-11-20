@@ -500,6 +500,16 @@ briques:
     issue: 976
     doc: docs/glorfindel.md
 
+  - id: g-entra-identite-managee
+    composant: glorfindel
+    poste: g-detecter
+    nom: "The certificate Azure puts on a managed identity it creates makes no high card: set aside by the tenant's principal's id, never its name, and counted"
+    etat: main
+    release: "0.6"
+    lots: [MID1]
+    issue: 981
+    doc: docs/glorfindel.md
+
   - id: g-charges-ia
     composant: glorfindel
     poste: g-detecter
