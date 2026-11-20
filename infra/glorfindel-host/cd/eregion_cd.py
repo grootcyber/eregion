@@ -15,14 +15,18 @@ infra/glorfindel-host/README.md, « Le CD d'Imladris »).
   eregion_cd.py export-discord-env   on the operator's machine: #deploy's webhook and the
                          mention, for make imladris-cd-install (never the bot's token)
   eregion_cd.py reminders   the end dates noted for the pairs' secrets and their reminders, said,
-                         never sent (ROT1: make pair-expiry-note runs it after a note)
+                         never sent (ROT1: make pair-expiry-note runs it after a note), and the
+                         day to turn the console's token (ROT2: make imladris-console-rotate)
 
 The reminders (ROT1, #737): each pass of the timer, before the release, reads the end dates the
 workstation noted in ~/.eregion-cd/expiry/<pair>.json (make pair-rotate, make pair-expiry-note: a
 date, never a secret) and posts in #deploy, with Jonathan's mention, 14, 7 and 1 days before, then
 on the day: the pair, the date, the exact command to type. Once per tier, even after a reboot
 (~/.eregion-cd/reminders.json, a file of its own: `retry` never forgets it); a date noted late
-sends the tier it is in, never the ones it passed; a new date (a rotation) starts over. A post
+sends the tier it is in, never the ones it passed; a new date (a rotation) starts over. The console's
+token of Imladris (ROT2, #968) is reminded the same way, under its own name, « console-token »: the
+day to turn it again, its draw + 90 days, noted by make imladris-console-rotate (or
+make imladris-console-token-note) — a date, never the token; the console still takes it after. A post
 Discord refuses is tried again at the next pass; without #deploy's webhook a tier is never marked
 sent, and status says so. The journal gets a line only when something happens (a post, a refusal,
 no webhook while a tier is due, a date that does not read — its year between 2000 and 2999), never at every pass. No Graph, no identity: a rotation made outside
@@ -318,8 +322,10 @@ def say_once(state: dict, tag: str, kind: str, title: str, text: str = "", **kw)
 
 
 # ── the reminders of the pairs' secrets (ROT1, #737) ─────────────────────────────────
-# The workstation's three pairs (scripts/pair_rotate.py, PAIRS): their names only, never an id.
-REMIND_PAIRS = ("watch", "console", "bot")
+# The workstation's three pairs (scripts/pair_rotate.py, PAIRS): their names only, never an id; and
+# the console's token of Imladris (ROT2, scripts/console_rotate.py, NAME), the day to turn it again.
+CONSOLE_TOKEN = "console-token"
+REMIND_PAIRS = ("watch", "console", "bot", CONSOLE_TOKEN)
 # The tiers, in calendar days (UTC) before the end: 14, 7, 1, then the day itself (or once after it).
 REMIND_TIERS = (14, 7, 1, 0)
 END_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
@@ -377,8 +383,31 @@ def deploy_hook() -> bool:
     return bool(env_value(CD_HOME / "discord.env", "EREGION_DISCORD_WEBHOOK_DEPLOY"))
 
 
+def token_card(end, days_left: int) -> tuple[str, str]:
+    """ROT2: the console's token — the day to turn it, the exact command; it still opens the console after."""
+    day = end.strftime("%Y-%m-%d")
+    if days_left > 1:
+        when = f"est à faire tourner dans {days_left} jours, le {day}"
+    elif days_left == 1:
+        when = f"est à faire tourner demain, le {day}"
+    elif days_left == 0:
+        when = f"est à faire tourner aujourd'hui, le {day}"
+    else:
+        when = f"devait tourner le {day}"
+    title = f"🔑 Le jeton de la console d'Imladris {when}"
+    text = ("Le faire tourner depuis le poste : `make imladris-console-rotate`\n"
+            "La commande tire un nouveau jeton dans host.env, le pousse, relance la console seule, vérifie "
+            "qu'elle refuse l'ancien ; puis `make imladris-url` donne la nouvelle URL (docs/operations.md, "
+            "« Faire tourner le jeton de la console d'Imladris »).\n"
+            "La console l'accepte encore après cette date : c'est un rappel, pas une fin. Un jeton changé hors "
+            "de cette commande n'est pas vu d'ici : `make imladris-console-token-note` note la date en place.")
+    return title, text
+
+
 def reminder_card(pair: str, end, days_left: int) -> tuple[str, str]:
     """The reminder's title and text: the pair, the date, the exact command — nothing else."""
+    if pair == CONSOLE_TOKEN:
+        return token_card(end, days_left)
     day = end.strftime("%Y-%m-%d")
     if days_left > 1:
         when = f"expire dans {days_left} jours, le {day}"
@@ -444,7 +473,7 @@ def reminders(now=None, send: bool = True) -> list[str]:
     lines = [f"  rappels · {pair} : date de fin illisible (~/.eregion-cd/expiry/{pair}.json)" for pair in unread]
     if not ends and not unread:   # the timer's pass says nothing then; status and `reminders` do
         return [] if send else ["  rappels : aucune date de fin notée (make pair-expiry-note PAIR=<paire>, "
-                                "depuis le poste)"]
+                                "make imladris-console-token-note, depuis le poste)"]
     hook = deploy_hook()
     if not send and not hook:
         lines.append("  ⚠ rappels : aucun webhook de #deploy (~/.eregion-cd/discord.env) — aucun rappel ne part "

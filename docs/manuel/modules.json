@@ -2484,6 +2484,19 @@
    "doc": "docs/operations.md"
   },
   {
+   "id": "c-console-jeton-rotation",
+   "composant": "celebrimbor",
+   "poste": "c-acces",
+   "nom": "The console token of Imladris turned in one command: its line alone rewritten, pushed, the console alone restarted, the old token refused, and reminded in the deploy channel 90 days later",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "ROT2"
+   ],
+   "issue": 968,
+   "doc": "docs/operations.md"
+  },
+  {
    "id": "c-telephone",
    "composant": "celebrimbor",
    "poste": "c-acces",

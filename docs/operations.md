@@ -50,7 +50,8 @@ make console-url                             # l'URL de la console avec son jeto
                                              # le tunnel du poste tient 7007 : celle d'Imladris, comme make imladris-url (IML1c)
                                              # refuse si AZURE_SUBSCRIPTION_ID est vide (watch aveugle) ; ALLOW_NO_AZURE=1 pour une démo
 make console-rotate                          # un nouveau jeton tiré : toute session de l'ancien refusée aussitôt, le flux
-                                             # en direct compris (SEC10) ; refusé quand EREGION_CONSOLE_TOKEN est posé (Imladris)
+                                             # en direct compris (SEC10) ; refusé quand EREGION_CONSOLE_TOKEN est posé (Imladris :
+                                             # make imladris-console-rotate, ROT2)
 make glorfindel-logs                         # tail logs des deux services
 make glorfindel-dev                          # auto-reload sur modification de code (docker compose watch)
 make glorfindel-stop                         # arrêt
@@ -101,6 +102,10 @@ make imladris-url                            # l'URL de la console d'Imladris ; 
                                              # EREGION_CONSOLE_TOKEN s'il n'est pas vide, sinon GLORFINDEL_WARROOM_TOKEN
                                              # (l'ancien nom reste valide, rien à renommer) ; le tunnel du poste
                                              # pas armé, une ligne dit make imladris-tunnel-on
+make imladris-console-rotate [DAYS=90]       # ROT2 : un nouveau jeton de la console (sa seule ligne de host.env, 0600), poussé
+                                             # (imladris-push), la console seule relancée, l'ancien refusé ; le rappel dans #deploy
+                                             # (« Faire tourner le jeton de la console d'Imladris », plus bas) ; jamais affiché
+make imladris-console-token-note [DAYS=90]   # ROT2 : le jeton en place noté (compté tiré aujourd'hui) : son rappel, rien ne tourne
 make imladris-tunnel                         # le secours : le tunnel au premier plan (Ctrl+C), et la même URL ;
                                              # -F none, écoute sur 127.0.0.1, la clé d'hôte épinglée (SEC-G) :
                                              # la clé SSH vient de l'agent SSH ou de HOST_SSH_KEY, jamais de ~/.ssh/config
@@ -1367,6 +1372,69 @@ et dit les dates des rappels, sans rien faire tourner. Refusée en session de co
 > (plus tard, il part au moment de la note, avec les jours qui restent). Puis, au rappel,
 > `make pair-rotate PAIR=console`, avant le 08/12 : ce jour-là, le restore depuis le poste
 > s'arrêterait. Après, `make azure-pairs-expiry` : une seule date doit rester pour la console.
+
+**Faire tourner le jeton de la console d'Imladris** (ROT2, #968) : une commande, tapée par toi
+depuis le poste, `make imladris-console-rotate` (`scripts/console_rotate.py`). Sur Imladris, la
+console lit son jeton dans `host.env` (`EREGION_CONSOLE_TOKEN`), tiré une fois par
+`make imladris-env`, qui n'écrase jamais un `host.env` ; `make console-rotate` refuse un jeton que
+le déploiement pose (SEC10). Avant ROT2, rien ne le faisait donc tourner, et il restait dans
+l'historique du navigateur et du terminal, téléphone compris. **Quand** : quand `#deploy` le
+rappelle (tous les 90 jours), ou dès qu'un appareil qui a ouvert la console n'est plus sûr.
+
+**Ce que fait la commande**, dans cet ordre :
+1. **Refusée** en session de code (`EREGION_AGENT_SESSION`, un worktree de lot : la règle de
+   `scripts/bench_shared.py`), et sans Imladris joignable (pas d'adresse, ou sa clé d'hôte refusée :
+   `HOST_SSH_FINGERPRINT`, `make imladris-known`) : rien n'est tiré.
+2. **Elle lit `infra/glorfindel-host/host.env`** : absent, illisible, ou sans jeton de la console
+   (`EREGION_CONSOLE_TOKEN`, ou son ancien nom `GLORFINDEL_WARROOM_TOKEN`, la règle de la console) —
+   refusé, rien n'est écrit.
+3. **Un nouveau jeton, dans `host.env`** (la forme que tire `make imladris-env`). Seule la ligne du
+   jeton change : elle prend le nouveau sous `EREGION_CONSOLE_TOKEN`, à sa place. Une ligne
+   `GLORFINDEL_WARROOM_TOKEN`, l'ancien nom, est ainsi remplacée quand c'est elle qui portait le
+   jeton, et retirée sinon, comme une ligne plus haute de la même clé : elle tenait un jeton qui ne
+   sert plus. Toutes les autres lignes restent à l'octet (commentaires, guillemets, fins de ligne).
+   Le fichier est écrit à côté, en 0600, vérifié comme `make imladris-push` le vérifie
+   (`host_env.py --check`), puis renommé par-dessus l'ancien : jamais un fichier à moitié écrit ;
+   refusé par la vérification, rien n'est remplacé.
+4. **La pose**, par le chemin existant : `make imladris-push` (`host.env` → `~/eregion/.env`, et la
+   config, les modes d'Imladris gardés).
+5. **La console seule relancée** : `docker compose up -d --no-deps --force-recreate war-room`, pour
+   qu'elle relise son environnement ; la watch et le bot ne bougent pas.
+6. **Vérifiée** comme `make imladris-status` sonde la console : curl sur Imladris, le jeton sur son
+   entrée, jamais sur une ligne de commande. Le nouveau répond (200, attendu jusqu'à 60 s, le temps
+   qu'elle démarre) et l'ancien est refusé (401) : toute session de l'ancien est refusée, son cookie
+   étant signé par le HMAC du jeton (SEC1, SEC10).
+7. **Le rappel noté sur Imladris** : le jour de le refaire, le tirage + 90 jours (`DAYS=…`, de 1 à
+   365), sous son propre nom, `console-token`, par le chemin des paires (ROT1) :
+   `~/.eregion-cd/expiry/console-token.json` (0600), un nom et une date. Le CD d'Imladris le rappelle
+   dans `#deploy`, avec ta mention, à **J-14, J-7, J-1 et le jour même**, avec la commande exacte, une
+   fois par palier (les règles des paires, plus haut). La console accepte encore le jeton après cette
+   date : c'est un rappel, pas une fin.
+
+Le jeton n'est jamais affiché, ni à l'écran, ni sur une ligne de commande, ni dans un journal
+(`tests/unit/test_console_rotate.py`, sur un faux `ssh`, un faux `scp`, un faux `docker` et un faux
+`curl`) : `make imladris-url` le relit dans `host.env` et donne la nouvelle URL ; le navigateur et le
+téléphone se rouvrent avec elle.
+
+**En cas d'échec**, la commande dit ce qui est en place. Refusée avant l'étape 3 : rien n'a bougé.
+Après : `host.env` porte le nouveau jeton, sur le poste, cohérent (`--check` passe). Une pose ou un
+redémarrage qui échoue laisse la console d'Imladris sur l'ancien : relance
+`make imladris-console-rotate` une fois Imladris joignable — un autre jeton, la même pose. Une console
+qui n'accepte pas le nouveau, ou ne refuse pas l'ancien, est dite (`make imladris-status`,
+`make imladris-logs`), et rien n'est noté.
+
+**Noter le jeton en place**, sans le faire tourner : `make imladris-console-token-note`. Imladris ne
+sait pas quand le jeton a été tiré : il est compté tiré aujourd'hui, à refaire dans 90 jours
+(`DAYS=…`). Refusée en session de code.
+
+**ROT2 change l'agent du CD** (`eregion_cd.py` : le jeton de la console parmi les rappels) :
+`make imladris-cd-install` depuis un `main` à jour, après la fusion, sans attendre la release. Un agent
+d'avant ROT2 ne lit que les trois paires : la commande le dit (« une version d'avant ROT2 »), la date
+notée quand même.
+
+> **Pour Jonathan, une fois, après la fusion de ROT2** : `make imladris-cd-install` (depuis `main` à
+> jour), puis `make imladris-console-rotate` — le jeton en place date de la création d'Imladris. Ou,
+> pour le garder et seulement poser son rappel, `make imladris-console-token-note`.
 
 **Retirer l'ancien principal partagé** (`Contributor` sur l'abonnement, l'option A d'avant) :
 
