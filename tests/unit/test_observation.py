@@ -3,6 +3,7 @@ measures the false rate of disruptive ones — the number the autonomy decision 
 (docs/observation.md)."""
 from __future__ import annotations
 
+import itertools
 import json
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
@@ -97,6 +98,9 @@ def test_the_api_judges_and_reports(monkeypatch):
         "ok": True, "verdict": "right"}
     assert "error" in client.post(f"/api/escalations/{esc}/verdict", json={"verdict": "?"}).json()
     assert client.get("/api/report?since=all").json()["disruptive"]["right"] == 1
+    # B4a: the same tables by confidence and by provenance as `glorfindel report --json`.
+    assert {"by_confidence", "by_rule_confidence", "above_threshold", "by_provenance"} <= set(
+        client.get("/api/report?since=all").json())
     assert "error" in client.get("/api/report?since=soon").json()
 
 
@@ -259,3 +263,212 @@ def test_pending_shows_a_card_without_a_time_zone_its_age_unknown():
     res = CliRunner().invoke(cli, ["pending"])
     assert res.exit_code == 0, res.output
     assert "illisible" not in res.output and "age unknown" in res.output
+
+
+# ── B4a (#991): the report by confidence, by rule × band, above the gate's threshold, by provenance ─
+# Before B4a the report counted the verdicts by action and by rule, never by confidence: the gate's
+# threshold rested on no measure — what share of the decisions at 0.9 is judged right was not known.
+
+SUB = "00000000-0000-0000-0000-0000000000b4"
+ON_BENCH = f"/subscriptions/{SUB}/resourceGroups/rg-celebrimbor/providers/Microsoft.Compute/virtualMachines/{{}}"
+IN_A_PARK = f"/subscriptions/{SUB}/resourceGroups/rg-shop/providers/Microsoft.Compute/virtualMachines/{{}}"
+_seq = itertools.count()
+
+
+@pytest.fixture
+def gate(monkeypatch):
+    """The gate's threshold and the bench as the tests set them — never the developer's shell."""
+    monkeypatch.delenv("GLORFINDEL_CONFIDENCE_THRESHOLD", raising=False)
+    monkeypatch.delenv("EREGION_BENCH", raising=False)
+    return monkeypatch
+
+
+def _decided(confidence, verdict=None, *, rule="ssh-brute-force", where=VM, **kw) -> str:
+    """A decision card of its own (a VM of its own: never folded into another), judged when `verdict`."""
+    n = next(_seq)
+    esc = escalations.record(signal_id=f"rule-{rule}-{n:08x}", resource_id=where.format(f"vm{n}"),
+                             action="isolate_vm", escalation_type="mode_hold", reason="r", rule_name=rule,
+                             confidence=confidence, **kw)
+    if verdict:
+        escalations.set_verdict(esc, verdict)
+    return esc
+
+
+def _set(esc_id: str, **fields) -> None:
+    """Fields of a card written as an older version, or another writer, would have left them."""
+    out = []
+    for line in escalations._STORE.read_text().splitlines():
+        e = json.loads(line)
+        if e["id"] == esc_id:
+            e.update(fields)
+        out.append(json.dumps(e))
+    escalations._STORE.write_text("\n".join(out) + "\n")
+
+
+def _report_cli(*args):
+    from glorfindel.cli import cli
+    with patch("glorfindel.expected_sudo.summary", return_value={}), \
+            patch("glorfindel.cli._print_expected_sudo"), patch("glorfindel.cli._print_memory"), \
+            patch("glorfindel.cli._print_auditd"), patch("glorfindel.memory.age_census", return_value={}):
+        res = CliRunner().invoke(cli, ["report", "--since", "all", *args], env={"COLUMNS": "200"})
+    assert res.exit_code == 0, res.output
+    return res.output
+
+
+def test_each_band_holds_its_bottom_never_its_top_and_the_last_holds_one(gate):
+    for c in (0.49, 0.5, 0.69, 0.7, 0.79, 0.8, 0.89, 0.9, 1.0):
+        _decided(c, "right")
+    bands = escalations.observation_report()["by_confidence"]
+    assert list(bands) == ["(0, 0.5)", "[0.5, 0.7)", "[0.7, 0.8)", "[0.8, 0.9)", "[0.9, 1]"]
+    assert [b["right"] for b in bands.values()] == [1, 2, 2, 2, 2]
+
+
+def test_a_share_is_said_on_ten_judged_cards_never_under(gate):
+    """Each cell says its count; under ten judged, no share: `too_few`. An unsure verdict is judged,
+    never judged right; a card not judged is in neither."""
+    for verdict in ["right"] * 8 + ["wrong"]:
+        _decided(0.95, verdict)
+    _decided(0.95)
+    cell = escalations.observation_report()["by_confidence"]["[0.9, 1]"]
+    assert (cell["judged"], cell["unjudged"], cell["too_few"], cell["right_share"]) == (9, 1, True, None)
+    _decided(0.95, "unsure")
+    cell = escalations.observation_report()["by_confidence"]["[0.9, 1]"]
+    assert (cell["right"], cell["wrong"], cell["unsure"], cell["unjudged"]) == (8, 1, 1, 1)
+    assert (cell["judged"], cell["too_few"], cell["right_share"]) == (10, False, 0.8)
+
+
+def test_the_band_is_the_confidence_the_card_showed_when_judged_never_its_first(gate):
+    """A re-fire whose confidence moved rewrites the card's reason, explanation and confidence together —
+    the first kept in `first_confidence`, shown by no console, bot or CLI. The verdict given after
+    judges what the card showed."""
+    card = dict(signal_id="rule-ssh-brute-force-0000aaaa", resource_id=VM.format("web"), action="isolate_vm",
+                escalation_type="mode_hold", rule_name="ssh-brute-force")
+    esc = escalations.record(**card, reason="first", confidence=0.6)
+    escalations.record(**card, reason="later", confidence=0.95)
+    e = escalations.card_of(esc)
+    assert (e["first_confidence"], e["confidence"], e["reason"]) == (0.6, 0.95, "later")
+    escalations.set_verdict(esc, "right")
+    r = escalations.observation_report()
+    assert r["by_confidence"]["[0.9, 1]"]["right"] == 1
+    assert r["by_confidence"]["[0.5, 0.7)"]["judged"] == 0 and r["confidence_unknown"]["judged"] == 0
+
+
+def test_a_card_rewritten_after_its_verdict_has_no_confidence_judged(gate):
+    """`glorfindel verdict` leaves the card pending: a re-fire may rewrite it after. The confidence judged
+    is then no longer on the card — out of the bands, counted apart, never guessed. Judged again, it
+    judges what the card shows."""
+    card = dict(signal_id="rule-ssh-brute-force-0000bbbb", resource_id=VM.format("db"), action="isolate_vm",
+                escalation_type="mode_hold", rule_name="ssh-brute-force", reason="r")
+    esc = escalations.record(**card, confidence=0.6)
+    escalations.set_verdict(esc, "right")
+    _set(esc, verdict_at=(datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat())
+    escalations.record(**card, confidence=0.95)
+    r = escalations.observation_report()
+    assert r["confidence_unknown"]["right"] == 1
+    assert sum(b["judged"] for b in r["by_confidence"].values()) == 0
+    _set(esc, verdict_at="yesterday")                       # unreadable: the order is not known
+    assert escalations.observation_report()["confidence_unknown"]["right"] == 1
+    escalations.set_verdict(esc, "right")
+    assert escalations.observation_report()["by_confidence"]["[0.9, 1]"]["right"] == 1
+
+
+def test_a_card_without_a_confidence_of_the_model_is_left_out_of_the_bands_and_counted(gate):
+    """0 is record's default — a failed cycle, a detection without a decision of the model —, which the
+    console and the bot show as no confidence. Nor is a confidence what is no number of (0, 1]."""
+    _decided(0.0, "wrong")
+    escalations.set_verdict(escalations.record(
+        signal_id="rule-ssh-brute-force-0000cccc", resource_id=VM.format("failed"), action="",
+        escalation_type="cycle_failed", reason="the model's call failed", rule_name="ssh-brute-force"), "unsure")
+    for odd in ("0.9", True, float("nan"), 1.5, -0.2, None):
+        _set(_decided(0.9, "right"), confidence=odd)
+    r = escalations.observation_report()
+    assert (r["confidence_unknown"]["judged"], r["confidence_unknown"]["right"]) == (8, 6)
+    assert sum(b["judged"] + b["unjudged"] for b in r["by_confidence"].values()) == 0
+    assert r["by_rule_confidence"] == {} and r["above_threshold"]["judged"] == 0
+    assert r["by_rule"]["ssh-brute-force"]["right"] == 6     # the other tables count them as before
+
+
+def test_above_the_threshold_counts_what_the_gate_would_let_through_at_its_configured_value(gate):
+    gate.setenv("GLORFINDEL_CONFIDENCE_THRESHOLD", "0.85")
+    _decided(0.84, "wrong")
+    _decided(0.85, "right")                         # the gate's own comparison: at the threshold, through
+    _decided(0.9, "right")
+    _decided(0.95)
+    a = escalations.observation_report()["above_threshold"]
+    assert (a["threshold"], a["right"], a["wrong"], a["unjudged"], a["judged"]) == (0.85, 2, 0, 1, 2)
+    assert (a["too_few"], a["right_share"]) == (True, None)
+    gate.delenv("GLORFINDEL_CONFIDENCE_THRESHOLD")
+    a = escalations.observation_report()["above_threshold"]
+    assert (a["threshold"], a["wrong"], a["judged"]) == (0.7, 1, 3)        # unset: the gate's 0.7
+
+
+def test_a_malformed_threshold_lets_nothing_above_it_and_is_said(gate):
+    gate.setenv("GLORFINDEL_CONFIDENCE_THRESHOLD", "O.95")
+    _decided(0.99, "right")
+    r = escalations.observation_report()
+    assert r["above_threshold"]["threshold"] is None
+    assert (r["above_threshold"]["judged"], r["above_threshold"]["unjudged"]) == (0, 0)
+    json.dumps(r, allow_nan=False)                  # no Infinity in the JSON
+    assert "GLORFINDEL_CONFIDENCE_THRESHOLD invalid" in _report_cli()
+
+
+def test_rule_by_band_counts_each_rule_in_its_own_bands(gate):
+    _decided(0.95, "right")
+    _decided(0.95, "wrong")
+    _decided(0.75, "wrong", rule="sudo-privilege-escalation")
+    _decided(0.75, rule="sudo-privilege-escalation")
+    rows = escalations.observation_report()["by_rule_confidence"]
+    assert {rule: list(bands) for rule, bands in rows.items()} == {
+        "ssh-brute-force": ["[0.9, 1]"], "sudo-privilege-escalation": ["[0.7, 0.8)"]}
+    ssh, sudo = rows["ssh-brute-force"]["[0.9, 1]"], rows["sudo-privilege-escalation"]["[0.7, 0.8)"]
+    assert (ssh["right"], ssh["wrong"], ssh["judged"], ssh["too_few"]) == (1, 1, 2, True)
+    assert (sudo["wrong"], sudo["unjudged"], sudo["judged"]) == (1, 1, 1)
+
+
+def test_the_bands_leave_the_exercises_out_as_the_report_does(gate):
+    _decided(0.95, "right", source="exercise", exercise_run="run-1")
+    r = escalations.observation_report()
+    assert r["exercises"] == 1
+    assert sum(b["judged"] for b in r["by_confidence"].values()) == 0
+    assert sum(c["judged"] for c in r["by_provenance"].values()) == 0
+
+
+def test_provenance_the_bench_is_its_perimeter_read_from_the_card_alone(gate):
+    """bree, the VM of the pre-observation, is in the bench's group and enrolled nowhere: its cards are the
+    bench's. A park's, another subscription's, and a card attributed to no VM (filed on a bench VM, about
+    none) are unknown — and no read of Azure is made."""
+    gate.setenv("AZURE_SUBSCRIPTION_ID", SUB)
+
+    def no_call(*a, **k):
+        raise AssertionError("the report reads the cards alone")
+    gate.setattr("requests.get", no_call)
+    gate.setattr("glorfindel.gestures.TAGS_READER", no_call)
+    _decided(0.9, "right", where=ON_BENCH)
+    _decided(0.9, "wrong", where=IN_A_PARK)
+    _decided(0.9, "wrong", where=ON_BENCH.replace(SUB, "00000000-0000-0000-0000-00000000ffff"))
+    _decided(0.9, "unsure", where=ON_BENCH, attribution={"state": "unattributed", "candidates": ["a", "b"]})
+    where = escalations.observation_report()["by_provenance"]
+    assert list(where) == ["bench", "unknown"]
+    assert (where["bench"]["right"], where["bench"]["judged"]) == (1, 1)
+    assert (where["unknown"]["wrong"], where["unknown"]["unsure"], where["unknown"]["judged"]) == (2, 1, 3)
+    gate.delenv("AZURE_SUBSCRIPTION_ID")            # the perimeter names no subscription: none is the bench's
+    assert escalations.observation_report()["by_provenance"]["bench"]["judged"] == 0
+
+
+def test_the_cli_says_each_band_with_its_count_and_too_few_never_a_percentage(gate):
+    for verdict in ["right"] * 9 + ["wrong"]:
+        _decided(0.95, verdict)
+    for _ in range(3):
+        _decided(0.75, "right")
+    _decided(0.0, "wrong")
+    out = _report_cli()
+    lines = out.splitlines()
+    few = next(line for line in lines if "[0.7, 0.8)" in line)        # the first table's row
+    assert "too few" in few and "%" not in few
+    assert "90%" in next(line for line in lines if "[0.9, 1]" in line)
+    assert "Above the gate's threshold (≥ 0.7): 13 judged" in out
+    assert "1 card(s) left out of the bands (1 judged)" in out
+    assert "By detection rule × confidence" in out and "By provenance" in out
+    r = json.loads(_report_cli("--json"))
+    assert r["by_confidence"]["[0.9, 1]"]["right_share"] == 0.9 and r["few_judged"] == 10
+    assert r["above_threshold"]["judged"] == 13 and r["confidence_unknown"]["wrong"] == 1

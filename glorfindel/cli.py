@@ -2415,6 +2415,7 @@ def report(since_text: str, as_json: bool):
         console.print(table)
     if r["cards"] and r["judged"] < r["cards"]:
         console.print(f"[dim]{r['cards'] - r['judged']} card(s) not judged: glorfindel verdict <id> right|wrong|unsure[/dim]")
+    _print_confidence(r)
     b = r.get("blocks") or {}
     if b.get("cards"):
         console.print(f"Block recommendations: {b['cards']} card(s) for {b['distinct_ips']} distinct IP(s)")
@@ -2426,6 +2427,59 @@ def report(since_text: str, as_json: bool):
     _print_expected_sudo(r["expected_sudo"])
     _print_memory(r["memory"])
     _print_auditd()
+
+
+def _share(cell: dict) -> str:
+    """B4a: a share said on enough judged cards only — « too few » under them, never a percentage."""
+    return "too few" if cell["too_few"] else f"{cell['right_share']:.0%}"
+
+
+def _counts(cell: dict) -> list[str]:
+    return [str(cell[k]) for k in ("right", "wrong", "unsure", "unjudged", "judged")] + [_share(cell)]
+
+
+def _cells_table(title: str, heads: tuple[str, ...]) -> Table:
+    table = Table(title=title, title_justify="left")
+    for head in heads:
+        table.add_column(head)
+    for col in ("right", "wrong", "unsure", "not judged", "judged", "judged right"):
+        table.add_column(col, justify="right", no_wrap=True)
+    return table
+
+
+def _print_confidence(r: dict) -> None:
+    """B4a (#991): the verdicts by the confidence they judged, by rule × band, above the gate's
+    threshold, and by provenance — each cell with its count, too few said (docs/observation.md)."""
+    table = _cells_table(f"By confidence (a share on {r['few_judged']} judged or more)", ("band",))
+    for band, cell in r["by_confidence"].items():
+        table.add_row(_esc_markup(band), *_counts(cell))
+    console.print(table)
+    u = r["confidence_unknown"]
+    if u["judged"] or u["unjudged"]:
+        console.print(f"[dim]{u['judged'] + u['unjudged']} card(s) left out of the bands ({u['judged']} judged): no "
+                      "confidence their verdict judged — none given (a failed cycle, no decision of the model), "
+                      "or the card rewritten after its verdict[/dim]")
+    a = r["above_threshold"]
+    if a["threshold"] is None:
+        console.print("[yellow]Above the gate's threshold: GLORFINDEL_CONFIDENCE_THRESHOLD invalid — every "
+                      "autonomous action is held, none above it[/yellow]")
+    else:
+        console.print(f"Above the gate's threshold (≥ {a['threshold']:g}): {a['judged']} judged — {a['right']} right · "
+                      f"{a['wrong']} wrong · {a['unsure']} unsure · {a['unjudged']} not judged — "
+                      f"[bold]judged right: {_share(a)}[/bold]")
+    if r["by_rule_confidence"]:
+        table = _cells_table("By detection rule × confidence", ("rule", "band"))
+        for rule, bands in sorted(r["by_rule_confidence"].items()):
+            for band, cell in bands.items():
+                table.add_row(_outside(rule), _esc_markup(band), *_counts(cell))
+        console.print(table)
+    table = _cells_table("By provenance", ("from",))
+    for where, cell in r["by_provenance"].items():
+        table.add_row(_outside(where), *_counts(cell))
+    console.print(table)
+    console.print("[dim]bench: the bench's perimeter (rg-celebrimbor*), the pre-observation — the criteria before "
+                  "autonomy do not count it; unknown: outside it (the twin, production, any park), or a card "
+                  "attributed to no VM[/dim]")
 
 
 def _print_auditd() -> None:
