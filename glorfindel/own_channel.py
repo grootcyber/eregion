@@ -56,7 +56,7 @@ SHIPPED_RULE = "data-exfiltration-blob"
 REASON = ("the watch's own return channel: its identity, the container of EREGION_WATCH_CHANNEL, "
           "the objects it writes there (SLF1)")
 # SLF1b: the longest BlobWriters text decoded. The query keeps 64 entries at most (`make_list(…, 64)`),
-# each a container, a writer's object id and three counts — a few hundred characters: 64 KiB is far
+# each a container, a writer's object id and three counts — a few hundred characters: 64 Ki characters is far
 # above; a text past it is not read (nothing set aside, said).
 WRITERS_MAX = 64 * 1024
 # Azure's container names: 3 to 63 of lowercase letters, digits and single hyphens.

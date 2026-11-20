@@ -13,7 +13,7 @@ Here the shipped query runs as written over forged writes (tests/unit/kql_subset
 tests/unit/test_own_channel.py), its rows become the body the Log Analytics API sends — a
 ``dynamic`` column as its JSON text, as measured —, parsed by the pinned SDK's own
 ``LogsQueryResult`` (azure-monitor-query 2.0.0), read by the real `AzureMonitorDetector.run_query`,
-then the real RulePoller. Mutants M6715–M6729 (scripts/mutants/SLF1b.py). No Azure, no model; every
+then the real RulePoller. Mutants M6715–M6727 (scripts/mutants/SLF1b.py). No Azure, no model; every
 identifier is made up (repository public).
 """
 from __future__ import annotations
