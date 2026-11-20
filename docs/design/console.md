@@ -554,9 +554,12 @@ la page (930 px de large pour un écran de 390). Jonathan a choisi l'option A su
   fois, celle que `body[data-m]` nomme, avec son propre défilement ; la liste à juger n'est plus
   coupée à 45vh. Par défaut, To judge quand des cartes attendent, sinon l'infra, jusqu'à ce que
   l'opérateur choisisse un onglet ; puis le sien. Un badge dit combien de cartes attendent. La
-  configuration (`/config`) prend la place de l'infra.
+  configuration (`/config`) s'ouvre dans l'onglet Infra, et les deux autres onglets répondent pendant
+  qu'elle est ouverte (la relecture l'a trouvé : ils ne répondaient pas). La page prend la hauteur du
+  petit viewport (`100dvh`) : `100vh` est celle du grand, sous la barre du navigateur d'un téléphone.
 - **L'infra sur un téléphone** : ses modules (DETECT, PROTECT, RECOVER) empilés, ses cartes l'une sous
-  l'autre, sur toute la largeur, sans les fils. Les fenêtres tiennent dans l'écran.
+  l'autre, sur toute la largeur, sans les fils. Les fenêtres tiennent dans l'écran, les larges aussi
+  (`.modal.wide`, plus spécifique, l'emportait : la carte à juger s'ouvrait sur 500 px, de x = −55).
 - **L'en-tête commun** (`console.css`) passe à la ligne, sans la version, le séparateur ni l'heure : une
   ou deux lignes, sur toutes les pages.
 - **Rien ne change au-delà de 760 px.** Toutes ces règles sont dans un seul bloc `@media (max-width:
@@ -571,7 +574,9 @@ un toucher sur Infra et Feed montre la section ; les cartes sur toute la largeur
 1440 × 900 : la barre cachée, la colonne de gauche à 390 px, l'infra à 1050 px, les fils dessinés ;
 TOPO1 (34 fils sur 34 après le tick, défilé) et TOPO1b (la bande, deux tracés pour deux
 rafraîchissements) tiennent.
-Tests : `tests/unit/test_console_phone.py` ; mutants M6683–M6697 (`scripts/mutants/MOB4.py`).
+Après la relecture : la carte à juger ouverte depuis TO JUDGE tient de x = 12 à 378, ses boutons
+dans l'écran ; sur `/config`, un toucher sur To judge, puis Feed, montre la section.
+Tests : `tests/unit/test_console_phone.py` ; mutants M6683–M6697 et M6710–M6712 (`scripts/mutants/MOB4.py`).
 
 ### Les blocages d'une VM (CON-K, #498, 04/11)
 

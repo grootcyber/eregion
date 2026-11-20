@@ -3360,13 +3360,15 @@ function toggleConfig() {
   cfgPanel.style.display = _configMode ? 'flex' : 'none';
   document.getElementById('right-col-label').textContent = _configMode ? 'CONFIGURATION' : 'INFRASTRUCTURE';
   if (_configMode) refreshConfig();
-  _showMobileTab();                // a phone shows the configuration, in the infra's place (MOB4)
+  if (_configMode) _mobileTab = 'infra';   // a phone opens the configuration in the infra's tab (MOB4)
+  _showMobileTab();
 }
 
 // ── On a phone (MOB4, #972, Jonathan 20/11 on a mockup, option A) ──────────────────
 // Under 760 px, one section at a time — To judge, Infra, Feed —, the one body[data-m] names (the CSS
 // shows it). By default To judge when cards wait, else the infra, until the operator picks a tab:
-// then theirs. The configuration is in the infra's place. Above 760 px the attribute changes nothing.
+// then theirs. The configuration opens in the infra's tab, and the other tabs still answer while it
+// is open (review of MOB4: they did not). Above 760 px the attribute changes nothing.
 const _MOBILE_TABS = ['judge', 'infra', 'feed'];
 let _mobileTab = null;                     // the tab the operator picked; null: the default
 function mobileTab(which) {
@@ -3375,7 +3377,7 @@ function mobileTab(which) {
   _showMobileTab();
 }
 function _showMobileTab() {
-  const tab = _configMode ? 'infra' : (_mobileTab || (_toJudge.length ? 'judge' : 'infra'));
+  const tab = _mobileTab || (_toJudge.length ? 'judge' : 'infra');
   document.body.dataset.m = tab;
   for (const t of _MOBILE_TABS) {
     const b = document.getElementById('m-tab-' + t);

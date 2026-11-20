@@ -583,6 +583,7 @@
      without the edges. Nothing of this applies above 760 px. ── */
   #m-tabs { display: none; }
   @media (max-width: 759px) {
+    body { height: 100dvh; }                           /* 100vh: the large viewport, under the browser's bar */
     #m-tabs { display: flex; flex-shrink: 0; background: var(--bg1); border-bottom: 1px solid var(--border); }
     #m-tabs button { flex: 1; background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0;
                      color: var(--dim); padding: 9px 0; font-size: 12px; }
@@ -605,7 +606,7 @@
     .topo-module { padding: 10px 0 0; }
     .topo-module + .topo-module { border-left: 0; border-top: 1px solid var(--border); margin-top: 10px; }
     .node-asset, .node-asset-empty { flex: 1 1 100%; max-width: none; min-width: 0; }
-    .modal { min-width: 0; width: calc(100vw - 24px); }
+    .modal, .modal.wide { min-width: 0; max-width: none; width: calc(100vw - 24px); }   /* the wide ones too */
   }
 </style>
 </head>
