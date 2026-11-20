@@ -3692,6 +3692,19 @@
    ],
    "issue": 671,
    "doc": "docs/adoption/index.html"
+  },
+  {
+   "id": "s-licence",
+   "composant": "socle",
+   "poste": "s-documenter",
+   "nom": "The licence the project declares is the licence it carries: canonical Apache-2.0, to the byte",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "LIC1"
+   ],
+   "issue": 988,
+   "doc": "NOTICE"
   }
  ]
 }
