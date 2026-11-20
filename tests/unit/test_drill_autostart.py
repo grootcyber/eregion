@@ -318,6 +318,40 @@ def test_the_trigger_drill_ops_reads_is_drill_autostart_at(ops, at, want):
     assert ops.autostart_at({"properties": {"definition": definition}}) == want
 
 
+_UTC_START = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+
+
+def _utc_recurrences(definition: dict) -> dict:
+    return {name: t["recurrence"] for name, t in definition["triggers"].items()
+            if t.get("type") == "Recurrence" and (t.get("recurrence") or {}).get("timeZone") == "UTC"}
+
+
+def test_a_trigger_in_utc_starts_at_an_hour_ending_in_z(ops):
+    """DRL1f (#963; docs/design/drill-banc.md §14): a Recurrence whose ``timeZone`` is ``UTC`` carries a
+    ``startTime`` of the form ``yyyy-MM-ddTHH:mm:ssZ``, its ``Z`` included. Without it, Azure refuses the
+    template at the apply (read on the bench on 20/11, `make orodruin-lock`):
+
+        InvalidWorkflowTriggerRecurrence: … invalid start time '2026-01-01T00:00:00.0000000' zone
+        designator for time zone 'UTC'. Expected … 'yyyy-MM-ddTHH:mm:ssZ'.
+
+    Azure's answer, which wins over its documentation where it says the opposite for a named time zone.
+    The fake azurerm of `terraform test` deploys nothing and never sees it; nor did this file before."""
+    for at in ("tue 18:40", "sun 00:05"):
+        definition = _filled(_workflow_resource()["properties"]["definition"], _parameters(at))
+        recurrences = _utc_recurrences(definition)
+        assert list(recurrences) == ["weekly"]
+        for name, rec in recurrences.items():
+            start = rec.get("startTime")
+            assert isinstance(start, str) and _UTC_START.fullmatch(start), (name, start)
+        # drill_ops's reader reads the template with its Z (it does not read startTime).
+        assert ops.autostart_at({"properties": {"definition": definition}})[1] == at.split(" ")[1]
+    # The pattern refuses what Azure refuses, and takes what it asks for.
+    for bad in ("2026-01-01T00:00:00", "2026-01-01T00:00:00+00:00", "2026-01-01", "2026-01-01 00:00:00Z",
+                "2026-01-01T00:00:00.0000000"):
+        assert not _UTC_START.fullmatch(bad), bad
+    assert _UTC_START.fullmatch("2026-01-01T00:00:00Z")
+
+
 def test_the_variable_takes_only_a_day_and_an_hour():
     var = _text("variables.tf").split('variable "drill_autostart_at" {')[1].split("\n}\n")[0]
     m = re.search(r'regex\("(.+)", var\.drill_autostart_at\)', var)
@@ -401,6 +435,8 @@ def test_the_plan_of_the_module_holds_the_same_contract():
                 "a_day_spelled_out_is_refused", "an_hour_without_its_day_is_refused",
                 "its_role_starts_orodruin_and_nothing_else", "orodruin_is_shut_down_every_day_at_23_utc"):
         assert f'run "{run}"' in tftest, run
+    # DRL1f: the plan reads the startTime's format too — the fake azurerm would deploy it anyway.
+    assert "triggers.weekly.recurrence.startTime" in tftest
     assert "command = apply" not in tftest
     # Only example identifiers: the zero subscription.
     assert set(re.findall(r"/subscriptions/([0-9a-f-]{36})", tftest)) == {SUB}
