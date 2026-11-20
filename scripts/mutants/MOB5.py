@@ -6,7 +6,8 @@ targets (M6703), a wire laid not opening the plan (M6704), the banner of the car
 (M6705), a name outside the three taken for a board's tab (M6706), a tap on a Runs tab ignored
 (M6707), the matrix's rows not folded (M6708), the three columns of Runs at once (M6709), the verdicts too small for a finger (M6713), the note
 that makes Safari zoom (M6714), Confirm and Refuse too small (M6730), Confirm and Refuse back in the
-line cut at two lines (M6731, the defect at every width). M6698–M6709, M6713, M6714, M6730 and
+line cut at two lines (M6731, the defect at every width), the campaigns' tab kept on Gothmog's view (M6732),
+the first tab not shown at load (M6749). M6698–M6709, M6713, M6714, M6730 and
 M6731, measured by tests/unit/test_console_phone_dagorlad.py and tests/unit/test_console_phone_verdicts.py.
 
 Form loaded by scripts/mutation_check.py: MUTANTS (id, description, file, old, new) and TESTS (its ids
@@ -50,6 +51,10 @@ MUTANTS = [
     ("M6709", "the three columns of Runs at once on a phone, two of them 1 px wide (MOB5)", RUN_HTML,
      '    body[data-m="ex"] #col-camp, body[data-m="ex"] #col-side, body[data-m="camp"] #col-ex,\n'
      '    body[data-m="camp"] #col-side, body[data-m="side"] #col-ex, body[data-m="side"] #col-camp { display: none; }\n', ""),
+    ("M6732", "Gothmog's Runs view keeps the campaigns' tab: a tap on it, an empty page (MOB5, review)", RUN_JS,
+     "  document.getElementById('m-tab-camp')?.remove();\n", ""),
+    ("M6749", "the first tab not shown at load: the three columns of Runs at once until a tap (MOB5, review)", RUN_JS,
+     "}\n_showMobileTab();\n", "}\n"),
     ("M6713", "the verdicts 16 px high on a phone again: too small for a finger (MOB5)", GF_HTML,
      "    .judge-actions button { flex: 1 1 0; min-height: 44px; font-size: 13px; padding: 6px 4px; }\n", ""),
     ("M6714", "the note under 16 px on a phone: Safari on iOS zooms on it at each tap (MOB5)", GF_HTML,
@@ -76,6 +81,8 @@ TESTS = {
     "M6707": f"{_T}test_a_tap_on_a_runs_tab_one_of_three_never_another",
     "M6708": f"{_T}test_the_runs_view_on_a_phone_one_column_and_the_matrix_folded",
     "M6709": f"{_T}test_the_runs_view_on_a_phone_one_column_and_the_matrix_folded",
+    "M6732": f"{_T}test_a_tap_on_a_runs_tab_one_of_three_never_another",
+    "M6749": f"{_T}test_a_tap_on_a_runs_tab_one_of_three_never_another",
     "M6713": f"{_V}test_on_a_phone_the_verdicts_are_44_px_high_the_note_16_px",
     "M6714": f"{_V}test_on_a_phone_the_verdicts_are_44_px_high_the_note_16_px",
     "M6730": f"{_V}test_on_a_phone_the_verdicts_are_44_px_high_the_note_16_px",

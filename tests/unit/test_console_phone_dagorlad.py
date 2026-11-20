@@ -112,9 +112,15 @@ def test_the_runs_view_on_a_phone_one_column_and_the_matrix_folded():
 
 
 def test_a_tap_on_a_runs_tab_one_of_three_never_another():
-    assert "const _MOBILE_TABS = ['ex', 'camp', 'side'];" in RUN_JS
-    # A link to a campaign opens its tab; else the windows.
-    assert "let _mobileTab = S.focus && S.focus.startsWith('c:') ? 'camp' : 'ex';" in RUN_JS
+    # The tabs the page holds: Gothmog's view has no campaigns, nor their tab (review of MOB5: a tap on
+    # it gave an empty page).
+    assert "const _MOBILE_TABS = ['ex', 'camp', 'side'].filter(t => document.getElementById('m-tab-' + t));" in RUN_JS
+    assert ("if (INJECTOR === 'gothmog') {                // campaigns are Annatar's: the column and its phone's tab (MOB5)\n"
+            "  document.getElementById('col-camp').remove();\n  document.getElementById('m-tab-camp')?.remove();\n}") in RUN_JS
+    # A link to a campaign opens its tab, when the page holds one; else the windows.
+    assert "let _mobileTab = S.focus && S.focus.startsWith('c:') && _MOBILE_TABS.includes('camp') ? 'camp' : 'ex';" in RUN_JS
+    # The first tab shown at load: without it, the three columns at once until a tap.
+    assert "\n}\n_showMobileTab();\n" in RUN_JS.split("function _showMobileTab() {", 1)[1][:600]
     assert "  const t = ev.target.closest('[data-toggle],[data-delivered],[data-report],[data-mtab]');" in RUN_JS
     assert "    if (_MOBILE_TABS.includes(t.dataset.mtab)) { _mobileTab = t.dataset.mtab; _showMobileTab(); }" in RUN_JS
     show = body(RUN_JS, "function _showMobileTab() {")

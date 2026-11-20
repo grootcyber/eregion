@@ -594,7 +594,8 @@ Jonathan a choisi sur une maquette (lignes « Le tableau de Dagorlad » et « La
   dessinés entre les colonnes et la poignée de glisser sont laissés de côté : le plan liste les fils.
   La demande reste une commande à lancer depuis le poste (`make orodruin-exercise`).
 - **La vue Runs, sous 760 px : trois onglets**, Windows, Campaigns, Coverage ; par défaut les fenêtres,
-  et un lien vers une campagne (`?campaign=`) ouvre la sienne. Les lignes de la matrice se replient sur
+  et un lien vers une campagne (`?campaign=`) ouvre la sienne. La vue de Gothmog n'a pas de campagnes :
+  ni leur colonne ni leur onglet (la relecture l'a trouvé : une page vide). Les lignes de la matrice se replient sur
   deux lignes : l'ID et le nom, puis l'historique et l'état.
 - **Des verdicts au doigt** (Jonathan, 20/11 ; ils faisaient 54 × 16 px) : dans la liste TO JUDGE et la carte
   de JUG1 (`.judge-actions`), Right, Wrong et Unsure à 44 px de haut sur une ligne, la note sur sa ligne
