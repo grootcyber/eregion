@@ -19,6 +19,13 @@ request chains a technique and a fault on one VM on purpose (DG-b). Read strictl
   window (no start, expiry or targets): refused — what cannot be read is never « no window »;
 - a tombstone (``purged_at``, a window emptied long after its last moment) is no window.
 
+A target is compared without its case, by its full id and by its VM's name, in union: a VM of
+another topology (``rg-celebrimbor-*``, which the inscription admits) holds the next fault as the
+bench's does — refusing more, never less.
+
+Nothing purges this directory (the watch purges only its own): past MAX_WINDOW_FILES windows,
+every fault refuses — the README says what to do.
+
 ``eregion_core.exercise.load_windows`` is not used here: it skips what it cannot read, and purges
 in the directory it is given.
 """
@@ -46,11 +53,15 @@ def vm_ids(names: list[str], subscription_id: str, resource_group: str) -> list[
             f"/providers/Microsoft.Compute/virtualMachines/{name}" for name in names]
 
 
-def busy_refusal(targets: list[str], now: datetime, directory: Path | None = None, *,
-                 by_name: bool = False) -> str:
-    """'' when no window on one of ``targets`` still runs at ``now``; else why, and until when
-    (UTC). Fail closed on what cannot be read (the module's docstring). ``by_name``: ``targets``
-    are VM names, matched against the last segment of each window's target ids."""
+def _keys(target) -> set[str]:
+    """A target as it is compared: its id and its VM's name (the id's last segment), lower case."""
+    text = str(target).lower().rstrip("/")
+    return {text, text.rsplit("/", 1)[-1]}
+
+
+def busy_refusal(targets: list[str], now: datetime, directory: Path | None = None) -> str:
+    """'' when no window on one of ``targets`` (full ids, or VM names) still runs at ``now``;
+    else why, and until when (UTC). Fail closed on what cannot be read (the module's docstring)."""
     directory = windows_dir() if directory is None else directory
     try:
         st = os.lstat(directory)
@@ -66,7 +77,7 @@ def busy_refusal(targets: list[str], now: datetime, directory: Path | None = Non
         return f"window: the exercise windows cannot be listed ({type(e).__name__}) — not run"
     if len(paths) > MAX_WINDOW_FILES:
         return f"window: more than {MAX_WINDOW_FILES} exercise windows, not all read — not run"
-    keys = {t.lower() for t in targets}
+    keys = set().union(*(_keys(t) for t in targets))
     busy: list[tuple[datetime, str]] = []
     for path in paths:
         try:
@@ -85,9 +96,7 @@ def busy_refusal(targets: list[str], now: datetime, directory: Path | None = Non
         last, aimed = last_moment(window), window.get("targets")
         if last is None or not isinstance(aimed, list):
             return f"window: {path.name} has no readable start, expiry or targets — not run"
-        aimed_keys = {str(t).lower().rstrip("/").rsplit("/", 1)[-1] if by_name else str(t).lower()
-                      for t in aimed}
-        if keys & aimed_keys and last > now:
+        if keys & set().union(*(_keys(t) for t in aimed)) and last > now:
             busy.append((last, str(window.get("run_id") or path.stem)))
     if not busy:
         return ""

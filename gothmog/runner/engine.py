@@ -243,9 +243,9 @@ class Engine:
             bench = self._bench_factory(None)
             return busy_refusal(vm_ids(names, bench.subscription_id, bench.bench_rg), self._now())
         except RuntimeError:
-            # No subscription (ChaosStudio): no full id to build — compared by the VM's name,
-            # which refuses more, never less; the run stops later anyway, at the contract.
-            return busy_refusal(names, self._now(), by_name=True)
+            # No subscription (ChaosStudio): no full id to build — the VM's name alone, which the
+            # comparison holds anyway; the run stops later, at the contract.
+            return busy_refusal(names, self._now())
 
     @staticmethod
     def _no_watch(run_id: str, without_glorfindel: bool) -> RunOutcome | None:

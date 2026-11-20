@@ -1083,15 +1083,65 @@ def test_a_run_s_own_window_holds_the_next_one_until_its_grace_ends(bench):
     assert engine().preflight("vm-shutdown").result == "OK"
 
 
-def test_the_window_is_read_before_the_watch_and_the_contract(bench, no_watch):
+@pytest.mark.parametrize("call", ["run", "preflight"])
+def test_the_window_is_read_before_the_watch_and_the_contract(bench, no_watch, call):
     """A local read: a window still running refuses before the watch (V1, which may read the
-    channel) and the contract — no watch here, and the refusal is the window's."""
+    channel) and the contract — no watch here, and the refusal is the window's, the run's as the
+    preflight's."""
     _, world, engine = bench
     w = world()
     _put_window()
-    out = engine().preflight("vm-shutdown")
+    out = (engine().run("vm-shutdown", skip_confirm=True) if call == "run"
+           else engine().preflight("vm-shutdown"))
     assert out.result == "REFUSED" and out.error.startswith("window: the exercise gothmog-prev")
     assert w.calls == []
+
+
+def test_a_vm_of_another_group_holds_the_next_fault_too(bench):
+    """Review 2: the inscription admits every rg-celebrimbor-*; the id is built with the bench's
+    group. The VM's name, compared too, refuses more, never less."""
+    _, world, engine = bench
+    world()
+    twin = f"/subscriptions/{SUB}/resourceGroups/rg-celebrimbor-twin/providers/Microsoft.Compute/virtualMachines/vm-celebrimbor-gondolin"
+    _put_window(targets=(twin,))
+    assert engine().preflight("vm-shutdown").result == "REFUSED"
+
+
+def test_more_windows_than_the_bound_are_not_all_read_and_refuse(bench, monkeypatch):
+    import gothmog.runner.windows as windows
+    _, world, engine = bench
+    world()
+    monkeypatch.setattr(windows, "MAX_WINDOW_FILES", 2)
+    for i in range(3):
+        _put_window(f"gothmog-old-{i}", end=T0 - timedelta(days=3), start=T0 - timedelta(days=3, minutes=10))
+    out = engine().preflight("vm-shutdown")
+    assert out.result == "REFUSED" and "more than 2 exercise windows, not all read" in out.error
+
+
+def test_windows_that_cannot_be_listed_refuse(bench, monkeypatch):
+    from pathlib import Path as _Path
+    _, world, engine = bench
+    world()
+    d = _put_window()
+
+    def unlistable(self):
+        if self == d:
+            raise PermissionError(13, "Permission denied")
+        return _orig(self)
+    _orig = _Path.iterdir
+    monkeypatch.setattr(_Path, "iterdir", unlistable)
+    out = engine().preflight("vm-shutdown")
+    assert out.result == "REFUSED" and "cannot be listed (PermissionError)" in out.error
+
+
+def test_a_window_past_its_size_bound_is_not_read_and_refuses(bench):
+    from eregion_core.exercise import WINDOW_BYTES
+    _, world, engine = bench
+    world()
+    d = _put_window()
+    (d / "gothmog-big.json").write_text(" " * (WINDOW_BYTES + 1))
+    out = engine().preflight("vm-shutdown")
+    assert out.result == "REFUSED" and "gothmog-big.json cannot be read" in out.error
 
 
 def test_a_technique_s_window_does_not_hold_a_fault(bench):

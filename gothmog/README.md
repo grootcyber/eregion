@@ -291,23 +291,41 @@ cloud. Le refus dit le run qui tient la cible, et jusqu'à quand, en UTC.
 
 - Les fenêtres lues sont celles de Gothmog sur cet hôte, là où `open_window` les écrit
   (`runs/gothmog/exercises`), et seulement celles d'une panne : une panne attend la panne
-  précédente, jamais une technique. Une demande Dagorlad enchaîne exprès une technique et une
-  panne sur la même VM (DG-b). Qu'une panne attende aussi la fenêtre d'une technique serait une
-  décision à part : il y faudrait un montage de `runs/annatar` dans le conteneur de Gothmog sur
-  Orodruin (le Makefile).
-- La cible est comparée sans la casse, par son id complet, construit à partir de l'abonnement et
-  du groupe du banc. Sans abonnement, la comparaison se fait par le nom de la VM, ce qui refuse
-  plus, jamais moins.
+  précédente, jamais une technique. Depuis SEC18, `runs/annatar/exercises` n'est de toute façon
+  pas monté chez Gothmog sur Orodruin : le filtre est une ceinture de plus, il ne change pas le
+  comportement actuel.
+- **Une technique et une panne sur la même VM faussent le taux, dans les deux sens.** Une demande
+  Dagorlad les enchaîne exprès (DG-b). `analysis/fault_rate.py` n'écarte une décision au profit
+  d'une technique que si elle porte le `ttp` de cette technique, sur cette VM, et tombe dans
+  `[T0, T0 + 15 min]` de la technique (`played_of`), pas dans toute sa fenêtre. Le taux cache donc
+  une carte de la panne qui porterait ce `ttp`. Il compte aussi contre la panne une carte de la
+  technique venue d'une autre règle, ou vue plus de 15 min après son T0, dès qu'elle tombe dans la
+  fenêtre de la panne. `make imladris-fault-rate` lit les runs de 30 jours : un essai DG-b du mois
+  y entre. **Le taux se lit sur des séances de pannes seules, ou ces runs sont à écarter.** La
+  correction côté analyse, qui déclarerait « non mesurée » une panne partie dans la fenêtre d'une
+  technique ou issue d'une demande, est un lot à part.
+- La cible est comparée sans la casse, par son id complet et par le nom de sa VM, en union. L'id
+  est construit à partir de l'abonnement et du groupe du banc. Une VM d'une autre topo
+  (`rg-celebrimbor-*`, que l'inscription admet) retient donc la panne suivante comme celle du
+  banc, ce qui refuse plus, jamais moins. Sans abonnement, seul le nom compte.
 - Aucune fenêtre jamais écrite (pas de répertoire) : la panne part. Un répertoire illisible, un
-  chemin qui n'est pas un répertoire, un fichier illisible ou sans fenêtre (ni début, ni
-  expiration, ni cibles) : refus. Ce qui ne se lit pas n'est jamais « aucune fenêtre ». Une pierre
-  tombale (`purged_at`) n'est plus une fenêtre.
-- Un run ferme sa fenêtre en sortant, même sur une erreur. Un run tué sans pouvoir la fermer
-  (Orodruin arrêté en plein run) la laisse courir jusqu'à son expiration (2 h) plus la grâce, et
-  le refus le dit. `make orodruin-kill` ne ferme que les fenêtres du canal, celles qu'Imladris lit,
-  pas celles de cet hôte.
+  chemin qui n'est pas un répertoire, un fichier illisible ou au-delà de 64 Kio, un fichier sans
+  fenêtre (ni début, ni expiration, ni cibles) : refus. Ce qui ne se lit pas n'est jamais « aucune
+  fenêtre ». Une pierre tombale (`purged_at`) n'est plus une fenêtre.
+- **Un run tué sans fermer sa fenêtre.** Un run ferme sa fenêtre en sortant, même sur une erreur.
+  Tué sans pouvoir la fermer (Orodruin arrêté en plein run), il la laisse courir jusqu'à son
+  expiration (2 h) plus la grâce, et le refus le dit. Deux gestes possibles : attendre l'heure
+  dite, ou, sur Orodruin, vérifier qu'aucun run ne tourne (`docker ps`), puis retirer son fichier
+  (`make orodruin-ssh`, puis `rm ~/runs/gothmog/exercises/<run_id>.json`, le `run_id` que dit le
+  refus). `make orodruin-kill` ne ferme que les fenêtres du canal, celles qu'Imladris lit, pas
+  celles de cet hôte.
+- **Plus de 4096 fenêtres.** Rien ne purge `runs/gothmog/exercises` sur Orodruin : la watch ne
+  purge que son propre répertoire. Au-delà de 4096 fichiers (`MAX_WINDOW_FILES`), chaque panne
+  refuse (« not all read »). Le geste : sur Orodruin, retirer les fenêtres des runs finis depuis
+  plus d'un jour, puis rejouer le préflight : `find ~/runs/gothmog/exercises -name '*.json' -mmin
+  +1440 -delete`. La copie qu'Imladris lit est celle du canal, elle n'en dépend pas.
 
-**Mutants** : M6865–M6874 (`tests/unit/test_gothmog.py`).
+**Mutants** : M6865–M6874 et M6893–M6896 (`tests/unit/test_gothmog.py`).
 
 ## G2 — les pannes des dépendances de Glorfindel
 
