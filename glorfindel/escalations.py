@@ -1224,7 +1224,12 @@ def observation_report(since: datetime | None = None) -> dict:
 
     VP1c (#920): a card whose time cannot be placed — without a time zone, or unreadable — is never
     dated by a guess: with a `since`, whether it lies in the window is not known, so it is left out
-    of the counts and said apart, in `undated`."""
+    of the counts and said apart, in `undated`.
+
+    B4a (#991): the same cards by the confidence their verdict judged, by rule × band, above the
+    gate's threshold, and by provenance (glorfindel/calibration.py) — read from the cards alone."""
+    from eregion_core.inscription import Scope
+    from glorfindel import calibration
     since = _aware(since)
 
     def bucket() -> dict:
@@ -1237,6 +1242,7 @@ def observation_report(since: datetime | None = None) -> dict:
     exercises = 0
     undated = 0
     block_ips: list[str] = []
+    counted: list[dict] = []
     for e in all_escalations():
         if not is_decision(e):
             continue
@@ -1251,6 +1257,7 @@ def observation_report(since: datetime | None = None) -> dict:
             exercises += 1
             continue
         cards += 1
+        counted.append(e)
         v = e.get("verdict") if e.get("verdict") in VERDICTS else "unjudged"
         # A card that recommends no action is named by its type when it has a label (COR1).
         key = e.get("action") or (_ESCALATION_LABELS.get(e.get("escalation_type") or "")
@@ -1273,5 +1280,6 @@ def observation_report(since: datetime | None = None) -> dict:
         "by_action": by_action,
         "by_rule": by_rule,
         "disruptive": {**disruptive, "false_rate": (disruptive["wrong"] / judged) if judged else None},
+        **calibration.tables(counted, threshold=calibration.gate_threshold(), scope=Scope.for_bench()),
     }
 
