@@ -36,6 +36,10 @@ tourne.
 | La page Glorfindel sur un téléphone (MOB4, #972, 20/11, sur une maquette) | **A, un onglet par section sous 760 px** : To judge, Infra, Feed, une section à la fois ; par défaut To judge quand des cartes attendent ; l'infra empilée, sans les fils ; l'en-tête sur une ou deux lignes. **La page Glorfindel et l'en-tête d'abord**, Overview et Dagorlad ensuite | B, tout empilé et replié ; C, l'infra seule, To judge derrière un bouton ; toutes les pages dans le même lot |
 | Le tableau de Dagorlad sur un téléphone (MOB5, #975, 20/11, sur une maquette) | **A, trois onglets sous 760 px** : Red, Targets, Plan ; une carte rouge prise ouvre Targets sous un bandeau, un fil tiré ouvre le plan ; sans les fils dessinés ni la poignée | B, une colonne empilée ; C, le tableau en lecture seule sur un téléphone |
 | La vue Runs sur un téléphone (MOB5, #975, 20/11, sur une maquette) | **trois onglets** : Windows, Campaigns, Coverage ; **les lignes de la matrice repliées** sur deux lignes | les colonnes empilées ; la matrice qui défile de côté |
+| Juger plusieurs cartes, la confirmation (JUG3, #980, 20/11, sur une maquette) | **A, un récapitulatif avant d'écrire** : le nombre de cartes par règle, la note ; rien n'est écrit avant « Judge N … » | B, seulement à partir de 3 cartes ; C, aucune : on applique tout de suite |
+| Un groupe « ×N » qui mêle des règles (JUG3, #980, 20/11, sur une maquette) | **A, sa fenêtre rangée par règle**, « select this rule » et « select all » ; une sélection de plusieurs règles le dit (« ⚠ N rules in the selection ») | B, une seule règle à la fois ; C, aucune différence |
+| Juger plusieurs cartes sur un téléphone (JUG3, #980, 20/11, sur une maquette) | **A, comme sur l'écran, au doigt** : une case de 20 px dans une zone de 44 × 44 px, la barre au pied de la liste, sa note en 16 px, ses verdicts à 44 px | B, une par une sur un téléphone |
+| Une carte qui échoue au milieu d'un lot (JUG3, #980, 20/11, sur une maquette) | **A, continuer, puis dire carte par carte** : jugée et acquittée, jugée mais pas acquittée, pas jugée (restée cochée) | B, s'arrêter à la première erreur ; écartée d'emblée : « tout ou rien » (une route qui juge un lot d'un coup côté serveur, une carte jugée ailleurs ferait échouer les autres) |
 
 **Choisi par défaut, sans objection :**
 - `/atelier` redirige vers `/`.
@@ -620,6 +624,79 @@ Les verdicts, mesurés à 390 px : dans la liste, la carte de JUG1 et le verdict
 dans la liste (0 coupé), le reste identique (verdicts à 16 px, note en 10 px, la carte de JUG1 à sa place).
 Tests : `tests/unit/test_console_phone_dagorlad.py`, `tests/unit/test_console_phone_verdicts.py` ; mutants
 M6698–M6709, M6713, M6714, M6730–M6732 et M6749 (`scripts/mutants/MOB5.py`).
+
+### Juger plusieurs cartes (JUG3, #980, 20/11)
+
+Le 20/11, Jonathan a jugé une à une 35 cartes, dont 11 venues d'un même `terraform apply`. Il a tranché
+sur une maquette, une question à la fois (les quatre lignes « JUG3 » des décisions).
+- **Où** : une case sur chaque ligne de TO JUDGE (« select all » en tête), et la fenêtre d'un groupe : une
+  tuile qui replie au moins deux cartes à juger montre « to judge ×N ▸ », qui ouvre leur fenêtre, rangée
+  par règle, avec « select this rule » et « select all ». La case garde son clic : la ligne, elle, ouvre
+  sa carte (JUG1).
+- **Ce que reçoit chaque carte** : exactement ce que fait son propre bouton, son verdict et la note, puis
+  son acquittement (16/10), une carte après l'autre, chaque réponse lue. Chaque carte garde son propre
+  verdict : la précision, le taux « isoler/bloquer à tort » et la mémoire restent justes. Jamais d'action :
+  ni « Approve & execute », ni un verdict proposé (VP1) confirmé à la place de l'opérateur.
+- **Avant d'écrire** : un récapitulatif, « Judge N cards wrong? », le nombre de cartes par règle et la note.
+  Une sélection de plusieurs règles le dit dès la barre (« ⚠ 2 rules in the selection ») : un Wrong pour
+  onze cartes d'un même apply en marque une vraie alerte fausse, si l'une l'était.
+- **Le bilan, carte par carte** : ✓ jugée et acquittée ; ⚠ jugée mais pas acquittée, avec la raison
+  (« Ack it on its tile ») ; ✗ pas jugée, avec la raison, et restée cochée pour un nouvel essai. Les
+  autres continuent. La note ne part qu'avec son lot : gardée pour réessayer celles qui ont échoué,
+  jamais pour le lot suivant.
+- **Une carte jugée ailleurs entre-temps** (le bot, un autre onglet) : le serveur accepte un second
+  verdict, comme le bouton d'une carte seule (`set_verdict`). La liste est donc relue à la confirmation,
+  et une carte qui n'est plus à juger est laissée telle quelle (« ↷ left as it was »), sans aucun POST.
+  Une liste qui ne se relit pas (une erreur, un refus, une réponse sans ses cartes) n'écrit rien : chaque
+  carte est dite « not judged — the list could not be read again » et reste cochée ; jamais la liste du
+  récapitulatif prise pour la relecture (la relecture l'a trouvé). Reste ouvert : un verdict donné
+  ailleurs pendant le lot lui-même serait réécrit. Le fermer demande une garde côté serveur (un verdict
+  qui refuse une carte déjà jugée), hors de la console ; Driver l'ouvre en suite.
+- **Un seul lot à la fois pour la page** : la liste et la fenêtre d'un groupe peuvent tenir les mêmes
+  cartes. Pendant un lot, un autre est refusé (« ⏳ A batch is being judged: wait for its end »), et la
+  fenêtre du groupe rouverte pendant le sien se montre telle quelle, sa progression comprise, jamais
+  remise à zéro sous lui.
+- **Les lignes du bilan** se distinguent : deux cartes d'une même action sur une même VM portent les 8
+  premiers caractères de leur id, comme `glorfindel pending` les montre.
+- **Le rafraîchissement de 30 s de TO JUDGE** garde ce qui est tapé et où : la note d'une carte, celle du
+  lot, le champ où est l'opérateur, son curseur. Au téléphone, un champ redessiné sous le doigt fermait
+  le clavier. Les notes par carte s'effaçaient déjà avant JUG3 ; corrigé du même coup.
+- **La fenêtre du groupe** garde ses cartes depuis son ouverture (une carte acquittée sort de l'état) et
+  le verdict de chacune ; elle se redessine avec la liste, et n'est écrite que si elle est la fenêtre
+  ouverte : fermée pendant un lot, une autre fenêtre ouverte à sa place reste intacte.
+- **Au téléphone** (le bloc de MOB4) : la case de 20 px dans une zone de 44 × 44 px, dont les marges
+  rendent la place (la ligne garde sa hauteur), posée au-dessus des rangées suivantes de la ligne : sans
+  cela, ses 10 dernières rangées tombaient sur la raison de la carte, qui l'ouvre (81 % de la zone
+  touchable, mesuré par la relecture ; 100 % depuis) ; « select all » et « select this rule » à 44 px ; la
+  note du lot en 16 px ; ses verdicts et la confirmation à 44 px. Le lien « to judge ▸ » ou « ×N ▸ » d'une
+  tuile à 44 px de haut, rendus par ses marges (la rangée garde sa hauteur, rien d'autre de touchable
+  dessous). Toucher le reste de la ligne ouvre la carte, comme avant.
+
+Mesuré dans Chromium sans tête, sur un jeu de sept cartes (trois instantanés sur une VM, de deux
+règles ; le reste sur deux autres), à 1440 × 900 et à 390 × 844 avec le toucher :
+- deux cartes cochées, une note, Wrong : le récapitulatif « Judge 2 cards wrong? », 2 × la règle, la note ;
+  aucun POST avant la confirmation ; puis, dans le magasin, le verdict, la note et l'acquittement de
+  chacune ;
+- un refus au milieu (le verdict de la 2ᵉ, l'acquittement de la 3ᵉ, refusés par un faux `fetch`) : la
+  1ʳᵉ jugée et acquittée, la 2ᵉ dite et restée cochée, la 3ᵉ jugée et dite non acquittée ; rien d'autre que
+  `/verdict` et `/ack` ;
+- une carte jugée par une autre voie entre le récapitulatif et la confirmation : laissée telle quelle,
+  son verdict d'origine gardé, aucun POST pour elle ;
+- la fenêtre « ×3 » rangée en deux règles, « ⚠ 2 rules in the selection », le récapitulatif par règle,
+  puis chaque ligne « judged: unsure », plus aucune case ;
+- la note et le focus gardés après `refreshObservation()`, dans la liste et dans la fenêtre ;
+- la liste qui ne se relit pas (le GET refusé, puis une réponse sans `cards`), une carte jugée ailleurs
+  juste avant : aucun POST, les deux cartes dites et restées cochées, le verdict d'ailleurs gardé ;
+- la fenêtre du groupe fermée pendant son lot : un lot refusé dans la liste (le toast), la fenêtre
+  rouverte sur sa progression, le lot mené à son terme ;
+- au téléphone, la case 20 × 20 px, sa zone 44 × 44 px touchable en entier (484 points sur 484 par
+  `elementFromPoint`) sans toucher la carte du dessus, la barre dans l'écran, ses boutons à 44 px, la note
+  en 16 px ; un toucher sur la case n'ouvre pas la carte ; les liens des tuiles à 90 × 44 et 74 × 44 px,
+  touchables en entier, rien dessous ;
+- aucune erreur JS.
+
+Tests : `tests/unit/test_console_judge_batch.py` ; mutants M6734–M6748, M6765–M6767 et M6780–M6787
+(`scripts/mutants/JUG3.py`).
 
 ### Les blocages d'une VM (CON-K, #498, 04/11)
 
