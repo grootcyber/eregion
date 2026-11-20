@@ -177,11 +177,38 @@ ne pas le contourner.
 
 **Mutants** : M6586–M6605 et M6616 (`tests/unit/test_gothmog_readiness.py`).
 
+### Mesuré sur le banc (20/11)
+
+Depuis Orodruin armé, gondolin en `human_only`. L'image d'Orodruin est `bdd03240`, une image de
+développement : son `gothmog/` est identique à la v0.6.2. Glorfindel est mesuré sur Imladris en
+v0.6.3, avec des règles identiques entre les deux versions.
+
+| Panne | Run | Résultat | Glorfindel |
+|---|---|---|---|
+| `vm-disk-write` | `gothmog-20261120T171114Z` | PASS : l'effet vu, la VM sert pendant | **prise pour une attaque** : `ransomware-disk-write` détecte à 17:14, sur environ 74 MB/s soutenus, et `isolate_vm` est recommandé à 80 %, retenu par `human_only`, jamais exécuté (deux cartes) |
+| `vm-restart` | `gothmog-20261120T172413Z` | PASS | aucune carte à son nom |
+| `vm-shutdown` | `gothmog-20261120T172851Z` | PASS : la preuve de G0, rafraîchie | aucune carte à son nom |
+| `vm-cpu-pressure` | — | refusée au préflight : `cpu-load-seen`, `nothing in the last 30 min under these names` | non jouée : la DCR déclarait un compteur CPU que l'agent Linux ne collecte pas (DCR1, #985, pas encore appliquée) |
+
+**Le constat.** Des écritures bénignes soutenues, celles d'une sauvegarde, suffisent à déclencher
+`ransomware-disk-write`, et le modèle recommande d'isoler avec une confiance au-dessus de la porte.
+Seul le mode `human_only` a retenu l'action. C'est la classe des isolations à tort de bree.
+`vm-disk-write` la reproduit désormais à la demande.
+
+**Le taux n'est pas encore publié.** `make imladris-fault-rate` comptait `vm-shutdown` prise
+(1 sur 1), et laissait `vm-disk-write` et `vm-restart` non mesurées. Les runs étaient trop
+rapprochés (17:11, 17:24, 17:28) : la seconde carte de `vm-disk-write` est tombée après le début du
+shutdown, dans la fenêtre de `vm-disk-write`, qui court jusqu'à sa fin plus 15 minutes de grâce
+(`GRACE_AFTER_S`, `eregion_core/exercise.py`). L'outil a fermé : rien n'a été compté comme
+« Glorfindel n'a rien fait ». La lecture des cartes donne le résultat ci-dessus. Le taux, lui, doit
+sortir de l'outil, sur des runs espacés d'au moins 16 minutes après le retour du précédent. Il
+viendra de la séance courte, avec `vm-cpu-pressure` une fois sa DCR appliquée.
+
 ### Reste, sur le banc, avec Jonathan
 
-Les trois pannes restent `planned` au catalogue (Dagorlad les montre sans poignée) jusqu'à leur
-premier run. `chaos.noise_vms: [gondolin]` est déclaré dans `config.yaml` (G1c). La séance, dans
-l'ordre. Chaque geste est celui de Jonathan.
+`vm-disk-write` et `vm-restart` sont `implemented` depuis le 20/11 ; `vm-cpu-pressure` reste
+`planned` (Dagorlad la montre sans poignée) jusqu'à son premier run. `chaos.noise_vms: [gondolin]`
+est déclaré dans `config.yaml` (G1c). La séance, dans l'ordre. Chaque geste est celui de Jonathan.
 
 0. **Le bon abonnement, d'abord.** Plusieurs abonnements vivent sur le poste (le banc, Stratus,
    Imladris), et `az account set` tient d'une séance à l'autre. Le 20/11, un apply lancé en
@@ -241,10 +268,13 @@ l'ordre. Chaque geste est celui de Jonathan.
    | `unreadable` | relancer une fois ; si ça tient, le signaler |
 
 3. **Lancer, une panne à la fois**, chacune jusqu'à son rapport (`make gothmog-run FAULT=…`, environ
-   15 minutes chacune) : `vm-disk-write`, `vm-cpu-pressure`, `vm-restart`, puis `vm-shutdown`. La
-   preuve de G0 date du 31/10 : elle passe les 30 jours le 30/11, et la même séance la rafraîchit.
-4. **Le taux.** `make imladris-fault-rate` (sur Imladris). Le taux mesuré va ici, et les trois
-   pannes passent `implemented`, par une PR de la session Gothmog.
+   15 minutes chacune) : `vm-disk-write`, `vm-cpu-pressure`, `vm-restart`, puis `vm-shutdown`.
+   **Au moins 16 minutes après le retour du run précédent** : la fenêtre d'une panne court jusqu'à
+   sa fin plus 15 minutes de grâce. Une carte qui tombe après le début de la suivante rend la
+   première non mesurée (le 20/11). Avant `vm-shutdown`, rejouer son préflight : le Heartbeat doit
+   être revenu après le redémarrage.
+4. **Le taux.** `make imladris-fault-rate` (sur Imladris). Le taux mesuré va ici ; une panne jouée
+   pour la première fois passe `implemented`, par une PR de la session Gothmog.
 
 ## G2 — les pannes des dépendances de Glorfindel
 

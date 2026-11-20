@@ -331,8 +331,7 @@ def test_each_noise_fault_matches_the_schema_and_the_catalog(fid):
     entry = {f["id"]: f for f in catalog["resource_types"]["azure_vm"]["faults"]}[fid]
     assert (entry["engine"], entry["engine_ref"], entry["destructive"], entry["status"]) == \
         (fault["engine"], fault["engine_ref"], False, fault["status"])
-    # Planned until the bench runs it: Dagorlad shows it without a handle.
-    assert fault["status"] == "planned"
+    # Its status, planned until the bench plays it: test_a_noise_fault_is_implemented_once_played_on_the_bench.
     assert any(r["action"] == "start_vm" for r in fault["revert"])
     during = {p["name"] for p in fault["steady_state"]["probes"] if p.get("during")}
     assert during == ({"vm-running", "guest-agent-ready", "heartbeat"} if fid in NOISE else set())
@@ -473,6 +472,19 @@ def _make(tmp_path, target, *args, azure=BENCH_SUB, arm=None, active=BENCH_SUB, 
     res = subprocess.run(["make", "-s", "--no-print-directory", "-C", str(ROOT), target, *args],
                          env=env, capture_output=True, text=True, timeout=60)
     return res.returncode, res.stdout + res.stderr, [c.split() for c in log.read_text().splitlines()]
+
+
+@pytest.mark.parametrize("fid, status", [
+    ("vm-disk-write", "implemented"), ("vm-restart", "implemented"),   # played on the bench, 20/11
+    ("vm-cpu-pressure", "planned"),   # refused at preflight: its counter not collected (DCR1)
+])
+def test_a_noise_fault_is_implemented_once_played_on_the_bench(fid, status):
+    """The fault's file and the catalog say the same status: a fault played, its effect seen, is
+    implemented — the CPU one stays planned until its counter arrives."""
+    declared = yaml.safe_load((ROOT / "gothmog" / "experiments" / f"{fid}.yaml").read_text())
+    catalog = yaml.safe_load((ROOT / "technique_catalog.yaml").read_text())
+    entries = [e for e in catalog["resource_types"]["azure_vm"]["faults"] if e.get("id") == fid]
+    assert declared["status"] == status and [e["status"] for e in entries] == [status]
 
 
 def test_the_targets_name_every_resource_of_g1_and_nothing_else():

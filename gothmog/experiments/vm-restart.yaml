@@ -15,8 +15,9 @@ description: >
   Studio la redémarre. Ce que Glorfindel doit montrer : rien de disruptif. Une VM qui redémarre
   n'est pas une attaque, et une isolation pendant la fenêtre est une panne prise pour une attaque.
 version: "1.0"
-# Déclarée, pas encore mesurée : implemented après le premier run sur le banc.
-status: planned
+# Jouée sur le banc le 20/11 depuis Orodruin armé : PASS, son effet vu dans la télémétrie de
+# Glorfindel (gothmog/README.md, « Mesuré sur le banc (20/11) »).
+status: implemented
 destructive: false
 
 targets:

@@ -6,3 +6,10 @@
   - the « off » case now sets `chaos_noise_vms = []` itself;
   - the tracked config's case touches gondolin alone, and one more assertion proves that no resource of G1 aims at another VM.
   - Tests: `tests/unit/test_gothmog_noise.py` and `tests/unit/test_bench_perf_counters.py`, against a fake `az` and a fake `terraform` (mutants M6768–M6779 and M6831–M6832, `scripts/mutants/G1c.py`).
+
+### Changed
+- **`vm-disk-write` and `vm-restart` played on the bench on 20/11, now `implemented`; `vm-shutdown` proven again** (G1c, part of #76; `gothmog/README.md`, « Mesuré sur le banc (20/11) »). All three runs PASS from an armed Orodruin, gondolin in `human_only`. `vm-disk-write` was taken for an attack:
+  - `ransomware-disk-write` fired on about 74 MB/s of benign writes, and `isolate_vm` was recommended at 80 %, held by the mode and never executed. This is the class of bree's wrongful isolations, which `vm-disk-write` now reproduces on demand.
+  - `vm-restart` and `vm-shutdown` left no card of their own.
+
+  The fault rate is not published yet: the runs were too close together, so one card fell into the next fault's window and the tool left two faults unmeasured, as it should. The procedure now asks for 16 minutes between two runs. `vm-cpu-pressure` stays `planned`: the preflight refused it because its counter was declared but never collected (DCR1, #985).
