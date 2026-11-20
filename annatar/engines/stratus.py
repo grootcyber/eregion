@@ -366,7 +366,7 @@ def azure_provider_env(environ: Mapping[str, str]) -> dict[str, str]:
 # real run (ID1, #281); both families are set here.
 STRATUS_CLIENT_ID_ENV = "EREGION_STRATUS_CLIENT_ID"
 STRATUS_SUBSCRIPTION_ENV = "EREGION_STRATUS_SUBSCRIPTION"
-STRATUS_TOKEN_FILE_ENV = "EREGION_STRATUS_TOKEN_FILE"
+STRATUS_ASSERTION_FILE_ENV = "EREGION_STRATUS_ASSERTION_FILE"
 
 
 def stratus_run_env(environ: Mapping[str, str]) -> dict[str, str]:
@@ -382,12 +382,12 @@ def stratus_run_env(environ: Mapping[str, str]) -> dict[str, str]:
     if not sub:
         return {}
     client_id = _first_set(environ, (STRATUS_CLIENT_ID_ENV,))
-    token_file = _first_set(environ, (STRATUS_TOKEN_FILE_ENV,))
+    token_file = _first_set(environ, (STRATUS_ASSERTION_FILE_ENV,))
     tenant = _first_set(environ, _TENANT_SRC)
     if not (client_id and token_file and tenant):
         raise RuntimeError(
             "EREGION_STRATUS_SUBSCRIPTION is set but the federated identity is incomplete "
-            "(EREGION_STRATUS_CLIENT_ID, EREGION_STRATUS_TOKEN_FILE, the tenant) — refusing to "
+            "(EREGION_STRATUS_CLIENT_ID, EREGION_STRATUS_ASSERTION_FILE, the tenant) — refusing to "
             "fall back to the managed identity or the bench subscription")
     return {
         "ARM_USE_OIDC": "true",

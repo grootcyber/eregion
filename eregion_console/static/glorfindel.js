@@ -2796,14 +2796,16 @@ function renderToJudge() {
 // (its rule, on its target, within its delay after T0). Never a verdict given: the card stays to judge
 // until the operator confirms it (it becomes their verdict) or refuses it (gone, never proposed again).
 // An exercise card without one says why. On the detection only: the decision stays to judge.
+// Its Confirm and Refuse sit under the line, never in it: the line is cut at two lines, and a
+// proposal of an ordinary length put them below the cut — hidden in the list, at any width (MOB5).
 function _proposedLine(c, inModal) {
   if (!c || !c.exercise) return '';
   const p = c.proposed_verdict;
   if (p && typeof p === 'object') {
     const after = Number(p.after_s), within = Number(p.within_s);
-    return `<div class="judge-why" style="-webkit-line-clamp:2;color:var(--green)" title="The drill ${_attr(p.drill)} expected this detection: rule ${_attr(p.rule)}, on its target, within ${within} s of the run's T0. Only the detection is compared: confirm only if the action was proportionate too.">⚖ proposed: <b>${_attr(p.verdict)}</b> — the detection the drill ${_attr(p.drill)} expected (rule ${_attr(p.rule)}, its target, ${after} s after T0 ≤ ${within} s); the decision stays yours
-      <span ${_on('click', 'stop')}><button class="action" style="color:var(--green)" title="It becomes your verdict" ${inModal ? _on('click', 'confirmProposedFromModal', c.id) : _on('click', 'confirmProposed', c.id)}>✓ Confirm ${_attr(p.verdict)}</button>
-      <button class="action" style="color:var(--dim)" title="The proposal is erased, never made again; the card stays to judge" ${inModal ? _on('click', 'refuseProposedFromModal', c.id) : _on('click', 'refuseProposed', c.id)}>✗ Refuse</button></span></div>`;
+    return `<div class="judge-why" style="-webkit-line-clamp:2;color:var(--green)" title="The drill ${_attr(p.drill)} expected this detection: rule ${_attr(p.rule)}, on its target, within ${within} s of the run's T0. Only the detection is compared: confirm only if the action was proportionate too.">⚖ proposed: <b>${_attr(p.verdict)}</b> — the detection the drill ${_attr(p.drill)} expected (rule ${_attr(p.rule)}, its target, ${after} s after T0 ≤ ${within} s); the decision stays yours</div>
+      <div class="judge-proposed" ${_on('click', 'stop')}><button class="action" style="color:var(--green)" title="It becomes your verdict" ${inModal ? _on('click', 'confirmProposedFromModal', c.id) : _on('click', 'confirmProposed', c.id)}>✓ Confirm ${_attr(p.verdict)}</button>
+      <button class="action" style="color:var(--dim)" title="The proposal is erased, never made again; the card stays to judge" ${inModal ? _on('click', 'refuseProposedFromModal', c.id) : _on('click', 'refuseProposed', c.id)}>✗ Refuse</button></div>`;
   }
   if (c.proposed_refused && typeof c.proposed_refused === 'object') {
     return `<div class="judge-why" style="-webkit-line-clamp:1;color:var(--dim)">⚖ proposed verdict refused — yours to judge</div>`;

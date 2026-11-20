@@ -56,6 +56,20 @@ def scenario_destructive(scenario) -> tuple[bool, str]:
     return destructive, ""
 
 
+def _stratus_detonate_from_env(environ):
+    """R2c pièce 4 (sidecar): the phase delegate when ``EREGION_STRATUS_IPC`` names the directory
+    shared with the detonator in the sandbox (the raw subprocess runs there, IMDS blocked, federated
+    identity), ``None`` otherwise (the subprocess runs locally — a test, a developer run). The engine
+    itself always stays on the bridge with Orodruin's identity for the contract, the watch, the
+    exercise window and the journal."""
+    ipc = environ.get("EREGION_STRATUS_IPC")
+    if not ipc:
+        return None
+    from annatar.executors.stratus_detonator import ipc_detonate
+    from annatar.executors.stratus_host import PHASE_TIMEOUT_S
+    return ipc_detonate(ipc, timeout=PHASE_TIMEOUT_S + 120)
+
+
 @dataclass
 class RunOutcome:
     """Result of a single scenario run — consumed by the campaign runner.
@@ -725,7 +739,8 @@ class Engine:
             return RunOutcome(run_id, "unknown", error=f"safety: {lie}", refused=True)
 
         if executor is None:
-            executor = StratusExecutor(resolved, session, target=rg_scope, dry_run=self.dry_run)
+            executor = StratusExecutor(resolved, session, target=rg_scope, dry_run=self.dry_run,
+                                       detonate=_stratus_detonate_from_env(os.environ))
 
         # Control-plane enrollment guard: the bench group's tags, read through ARM. The group
         # itself is the enrolled target here (there is no VM), so its tags stand for both the

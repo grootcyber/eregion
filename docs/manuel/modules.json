@@ -2246,6 +2246,19 @@
    "doc": "docs/design/stratus-cible.md"
   },
   {
+   "id": "o-stratus-sidecar",
+   "composant": "orodruin",
+   "poste": "o-armer",
+   "nom": "The federated Stratus run detonates in the hardened sandbox while the engine keeps the controls on the bridge (sidecar); the sandbox proof is read from a file — proven end to end at the bench",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "R2c"
+   ],
+   "issue": 608,
+   "doc": "docs/design/stratus-cible.md"
+  },
+  {
    "id": "o-kubernetes",
    "composant": "orodruin",
    "poste": "o-armer",
@@ -2857,6 +2870,19 @@
     "MOB4"
    ],
    "issue": 972,
+   "doc": "docs/design/console.md"
+  },
+  {
+   "id": "k-telephone-dagorlad",
+   "composant": "console",
+   "poste": "k-voir",
+   "nom": "On a phone, Dagorlad's board and its Runs view show one column at a time; a wire is laid by two taps",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "MOB5"
+   ],
+   "issue": 975,
    "doc": "docs/design/console.md"
   },
   {

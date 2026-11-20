@@ -34,6 +34,8 @@ tourne.
 | Le clic sur une adresse d'une carte repliée (TOPO1b, #949, 19/11, sur une maquette) | **A, il copie** l'adresse, comme IPS1 l'a fait ; le nom et la rangée du mode déplient | B, tout clic déplie (copier depuis la carte dépliée) ; C, les adresses en bas de la carte |
 | L'identité d'une VM sur sa carte (VMI1, #971, 20/11, sur une maquette) | **A, au survol du nom et dans un bloc de la carte dépliée** : le nom, le groupe, l'abonnement, l'espace de détection, le battement, l'ID ; chaque champ se copie d'un clic sur la carte dépliée ; le nom déplie toujours | B, un ⧉ près du nom qui copie l'ID ; C, un clic sur le nom copie le nom |
 | La page Glorfindel sur un téléphone (MOB4, #972, 20/11, sur une maquette) | **A, un onglet par section sous 760 px** : To judge, Infra, Feed, une section à la fois ; par défaut To judge quand des cartes attendent ; l'infra empilée, sans les fils ; l'en-tête sur une ou deux lignes. **La page Glorfindel et l'en-tête d'abord**, Overview et Dagorlad ensuite | B, tout empilé et replié ; C, l'infra seule, To judge derrière un bouton ; toutes les pages dans le même lot |
+| Le tableau de Dagorlad sur un téléphone (MOB5, #975, 20/11, sur une maquette) | **A, trois onglets sous 760 px** : Red, Targets, Plan ; une carte rouge prise ouvre Targets sous un bandeau, un fil tiré ouvre le plan ; sans les fils dessinés ni la poignée | B, une colonne empilée ; C, le tableau en lecture seule sur un téléphone |
+| La vue Runs sur un téléphone (MOB5, #975, 20/11, sur une maquette) | **trois onglets** : Windows, Campaigns, Coverage ; **les lignes de la matrice repliées** sur deux lignes | les colonnes empilées ; la matrice qui défile de côté |
 
 **Choisi par défaut, sans objection :**
 - `/atelier` redirige vers `/`.
@@ -577,6 +579,47 @@ rafraîchissements) tiennent.
 Après la relecture : la carte à juger ouverte depuis TO JUDGE tient de x = 12 à 378, ses boutons
 dans l'écran ; sur `/config`, un toucher sur To judge, puis Feed, montre la section.
 Tests : `tests/unit/test_console_phone.py` ; mutants M6683–M6697 et M6710–M6712 (`scripts/mutants/MOB4.py`).
+
+### Overview et Dagorlad sur un téléphone (MOB5, #975, 20/11)
+
+La suite de MOB4 (la page Glorfindel). Mesuré à 390 × 844, en émulation mobile, sur le jeu d'exemple :
+sur `main`, les trois pages étaient dézoomées à 908 px (l'en-tête débordait). Avec l'en-tête de MOB4,
+Overview tient ; il restait Dagorlad. Son tableau est une grille de 360 px, d'une colonne souple et de
+380 px : le plan et les cibles sortaient de l'écran (jusqu'à 920 px). Sa vue Runs a trois colonnes :
+les fenêtres d'exercice et les campagnes y faisaient 1 px de large, et la matrice (500 px) débordait.
+Jonathan a choisi sur une maquette (lignes « Le tableau de Dagorlad » et « La vue Runs » des décisions).
+- **Le tableau, sous 760 px : trois onglets**, Red, Targets, Plan. Le geste est celui du tableau : un
+  toucher sur une carte rouge (`pick`), puis sur une cible (`aim`). Une carte rouge prise ouvre Targets,
+  sous un bandeau qui la nomme ; un fil tiré ouvre le plan, dont le badge dit le nombre de fils. Les fils
+  dessinés entre les colonnes et la poignée de glisser sont laissés de côté : le plan liste les fils.
+  La demande reste une commande à lancer depuis le poste (`make orodruin-exercise`).
+- **La vue Runs, sous 760 px : trois onglets**, Windows, Campaigns, Coverage ; par défaut les fenêtres,
+  et un lien vers une campagne (`?campaign=`) ouvre la sienne. La vue de Gothmog n'a pas de campagnes :
+  ni leur colonne ni leur onglet (la relecture l'a trouvé : une page vide). Les lignes de la matrice se replient sur
+  deux lignes : l'ID et le nom, puis l'historique et l'état.
+- **Des verdicts au doigt** (Jonathan, 20/11 ; ils faisaient 54 × 16 px) : dans la liste TO JUDGE et la carte
+  de JUG1 (`.judge-actions`), Right, Wrong et Unsure à 44 px de haut sur une ligne, la note sur sa ligne
+  au-dessus en 16 px (sous 16 px, Safari sur iOS zoome sur le champ à chaque toucher) ; Confirm et Refuse
+  d'un verdict proposé à 44 px aussi.
+- **Un défaut de VP1 corrigé à toutes les largeurs**, le seul changement de MOB5 sur grand écran : Confirm et
+  Refuse étaient dans la ligne de la proposition, coupée à deux lignes par son style en ligne ; une
+  proposition de longueur ordinaire les mettait sous la coupe, cachés dans la liste TO JUDGE (mesuré à
+  1440 px : 2 sur 2). Ils sont maintenant sous la ligne, dans un conteneur à eux (`.judge-proposed`).
+- **Overview** : rien à changer. Un test garde sa feuille sans largeur fixe au-delà de 360 px.
+- **Rien d'autre ne change au-delà de 760 px** : un bloc `@media (max-width: 759px)` par page, le dernier
+  de sa feuille, comme MOB4.
+
+Mesuré dans Chromium sans tête. À 390 × 844 (toucher), avec l'en-tête de MOB4 : les trois pages sans
+dézoom ni débordement ; sur le tableau, Red par défaut, un toucher sur T1041 ouvre Targets sous
+« T1041 picked — tap a target », un toucher sur une cible ouvre le plan (badge 1, le fil nommé) ; sur
+Runs, Windows par défaut, puis Campaigns et Coverage, les lignes de la matrice dans l'écran. À 1440 ×
+900, Dagorlad est identique à `main` : les colonnes du tableau (360, 700, 380 px), la poignée, le fil
+dessiné, les trois colonnes de Runs (522, 418, 500 px).
+Les verdicts, mesurés à 390 px : dans la liste, la carte de JUG1 et le verdict proposé, chaque bouton à
+44 px de haut, aucun hors de l'écran ni coupé, la note en 16 px ; à 1440 px, Confirm et Refuse visibles
+dans la liste (0 coupé), le reste identique (verdicts à 16 px, note en 10 px, la carte de JUG1 à sa place).
+Tests : `tests/unit/test_console_phone_dagorlad.py`, `tests/unit/test_console_phone_verdicts.py` ; mutants
+M6698–M6709, M6713, M6714, M6730 et M6731 (`scripts/mutants/MOB5.py`).
 
 ### Les blocages d'une VM (CON-K, #498, 04/11)
 
