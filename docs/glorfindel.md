@@ -66,6 +66,22 @@ load_context → poll_detection → confirm_facts → investigate → decide →
                                                             escalate_to_human → store_cycle
 ```
 
+**Un enchaînement, sans reprise ni interruption, et pourquoi** (écrit le 20/11, DOC7 ; dixième passe, question C). Le
+graphe se compile sans point de reprise ni interruption (`graph.compile()`, `glorfindel/agent.py`), et la watch
+l'appelle une fois par signal. LangGraph y sert d'enchaînement : dix nœuds, cinq aiguillages. Ce n'est pas un oubli :
+- **l'humain dans la boucle vit hors du graphe** : la carte du magasin d'escalades, puis l'approbation, avec ses
+  gardes (`approval.py` : `approval_refusal`, `address_refusal`, `scope_refusal`, les `held_*`, `in_perimeter`,
+  `discord_refusal`), et sa vérification après l'action (`verify_approved`). Par défaut, la console ou le bot fait
+  l'appel direct, sous ces gardes (`eregion_console/api.py`, `glorfindel/bot.py`). Derrière `EREGION_ACTION_QUEUE=1`, la file d'actions signée
+  (FS1, `queue_watch.py`, éteinte par défaut) prend le relais : la console ou le bot dépose une demande signée, que la watch
+  seule rejoue, ce qu'une interruption du graphe ne donnerait pas. Dans les deux cas, l'approbation reste hors du
+  graphe ;
+- **ce qui doit survivre à un arrêt de la watch** est dans l'état local (l'isolation, les incidents, les escalades), pas
+  dans un point de reprise du graphe.
+
+À revoir si l'enquête devient un vrai graphe, où le modèle choisit la requête suivante (dixième passe, P10-5) : ce
+serait le premier usage de ce que LangGraph offre au-delà d'un enchaînement.
+
 - `confirm_facts` (B3a, #609) : une fois la détection résolue, ce qu'elle confirme sur sa VM va à l'incident de la VM (`Incident.confirmed`) : `login_after_brute_force` (un brute force T1110.001 que la corrélation a marqué `ssh-login-after-brute-force`), `root_elevation` (une détection T1548.003, le sudo vers root). Jamais un `attack_started`, un `detection_timeout` ni une détection non attribuée. Jamais montré au modèle.
 
 - `poll_detection` : no-op sauf `attack_started` → poll Azure Monitor jusqu'à alerte ou timeout ; `detection_time_s` = temps depuis `attack_time` (T0 de l'attaque), plus depuis la réception du signal
