@@ -1710,6 +1710,16 @@ briques:
     issue: 76
     doc: gothmog/README.md
 
+  - id: x-taux-seul
+    composant: gothmog
+    poste: x-eprouver
+    nom: "The fault rate leaves out, said not measured, a fault started in a technique's window on its target or a wire of a Dagorlad request"
+    etat: main
+    release: "0.6"
+    lots: [FR1]
+    issue: 1006
+    doc: docs/analysis.md
+
   - id: x-bruit-banc
     composant: gothmog
     poste: x-eprouver
