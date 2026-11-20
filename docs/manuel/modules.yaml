@@ -301,7 +301,7 @@ releases:
   - version: "0.6"
     nom: "identity defended"
     etat: publiee
-    derniere: "0.6.2"
+    derniere: "0.6.3"
     date: "2026-11-20"
     resume: "The Activity and Entra ID logs measured on the bench; a public technique against the test identity, seen by Glorfindel; the response to a stolen identity, on the card."
   - version: "0.x"
@@ -493,8 +493,9 @@ briques:
     composant: glorfindel
     poste: g-detecter
     nom: "The watch's own return channel set aside when the query's writers arrive as text, as the SDK hands them on; a column unreadable sets nothing aside and is counted"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.3"
     lots: [SLF1b]
     issue: 976
     doc: docs/glorfindel.md
@@ -1727,8 +1728,9 @@ briques:
     composant: orodruin
     poste: o-armer
     nom: "The federated Stratus run detonates in the hardened sandbox while the engine keeps the controls on the bridge (sidecar); the sandbox proof is read from a file — proven end to end at the bench"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.3"
     lots: [R2c]
     issue: 608
     doc: docs/design/stratus-cible.md
@@ -1963,8 +1965,9 @@ briques:
     composant: celebrimbor
     poste: c-acces
     nom: "The console token of Imladris turned in one command: its line alone rewritten, pushed, the console alone restarted, the old token refused, and reminded in the deploy channel 90 days later"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.3"
     lots: [ROT2]
     issue: 968
     doc: docs/operations.md
@@ -2191,8 +2194,9 @@ briques:
     composant: console
     poste: k-voir
     nom: "A VM's name says its group, subscription, detection and id on hover; its unfolded card copies each"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.3"
     lots: [VMI1]
     issue: 971
     doc: docs/design/console.md
@@ -2201,8 +2205,9 @@ briques:
     composant: console
     poste: k-voir
     nom: "On a phone, the Glorfindel page shows one section at a time: To judge, Infra, Feed"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.3"
     lots: [MOB4]
     issue: 972
     doc: docs/design/console.md
@@ -2211,8 +2216,9 @@ briques:
     composant: console
     poste: k-voir
     nom: "On a phone, Dagorlad's board and its Runs view show one column at a time; a wire is laid by two taps"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.3"
     lots: [MOB5]
     issue: 975
     doc: docs/design/console.md
