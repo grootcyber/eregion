@@ -1202,6 +1202,13 @@ def _looks_numeric(value: str) -> bool:
         return False
 
 
+def _dynamic_text(value: str) -> bool:
+    """The JSON text of a ``dynamic`` column (`make_set`, `make_list`, `pack`…): an array or an object,
+    as the SDK hands the column on (SLF1b). Read by `own_channel.json_of`: bounded, never raises — a
+    text unread, or not JSON, is no such column (ROW1, #1002)."""
+    return isinstance(own_channel.json_of(value), (list, dict))
+
+
 def _row_identity(row: dict) -> str:
     """What makes a match "the same detection" across polls.
 
@@ -1209,6 +1216,19 @@ def _row_identity(row: dict) -> str:
     / SourceIP) has none, and its counts grow while the attack runs: its identity is
     its non-numeric columns (who, where) — the same attacker on the same VM is one
     detection for the length of the query window.
+
+    ROW1 (#1002): what it gathers grows too. A ``dynamic`` column (`make_set(User)`…) arrives as
+    its JSON text (SLF1b): it entered the identity, and each user more made a new card. A text that
+    decodes to an array or an object is left out, as a Python list always was; the grouping keys
+    (`by Computer, SourceIP`…, scalar texts) and every other text stay. The limit: a row is told
+    apart only by its texts that are neither numeric nor JSON. A row grouped by numbers alone
+    (`by EventID`, `by DestinationPort`) that gathers a set is `row:` and nothing more — every group
+    of the rule shares one identity, one card per window —, and a key that is itself a JSON text
+    (`by Props = tostring(pack(…))`, a log line written in JSON, `by Message`) is left out too. No
+    shipped rule has one; the author of a rule that gathers knows its set is the first one sent: a
+    `make_set(ProcessName) by Computer` whose malicious process appears later in the window makes no
+    new card. An identity kept in rule_status.json before the update and still in its window is sent
+    once more (at least once, as ADM1).
     """
     # An identity finding (Entra ID, C2) is its EventId — its CorrelationId and target, or
     # a service principal and an address: a line ingested late is the same one.
@@ -1236,7 +1256,7 @@ def _row_identity(row: dict) -> str:
         return f"ts:{ts}"
     keys = sorted(
         f"{k}={v}" for k, v in row.items()
-        if isinstance(v, str) and v and not _looks_numeric(v)
+        if isinstance(v, str) and v and not _looks_numeric(v) and not _dynamic_text(v)
     )
     return "row:" + "|".join(keys)
 
