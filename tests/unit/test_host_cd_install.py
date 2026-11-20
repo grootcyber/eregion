@@ -173,12 +173,20 @@ def test_without_its_fingerprint_nothing_reaches_imladris(tmp_path):
 
 # ── The script run alone: what it checks of what the Makefile, not owned, passes it ──────────────
 
-PINNED = "-o StrictHostKeyChecking=yes -o UserKnownHostsFile=/dev/null -o HostKeyAlgorithms=ssh-ed25519"
+# The known_hosts of these options, under the HOME of the test (ssh reads « ~ » as it; so does
+# ssh_opts.sh check): CDI2 (#922) refuses one that is not a file, empty, or without Imladris's key.
+PINNED = "-o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.eregion/h0_known_hosts -o HostKeyAlgorithms=ssh-ed25519"
+KNOWN_AT = (".eregion/h0_known_hosts", "op_1/k.h+@")
 
 
 def _script(tmp_path, **given):
-    """The script run alone, as the Makefile calls it, `given` over its values: (the result, the calls)."""
+    """The script run alone, as the Makefile calls it, `given` over its values: (the result, the calls).
+    The known_hosts of KNOWN_AT hold a key for the address, as imladris-known writes it."""
     bin_dir, log = _fakes(tmp_path)
+    line, _ = _key(tmp_path)
+    for rel in KNOWN_AT:
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text(line.replace(IP, given.get("HOST_IP", IP), 1) + "\n")
     discord = tmp_path / "discord.env"
     discord.write_text(f"EREGION_DISCORD_WEBHOOK_DEPLOY={WEBHOOK}\n")
     env = {k: v for k, v in os.environ.items() if not k.startswith(("EREGION_", "HOST_", "FAKE_"))}
@@ -202,7 +210,7 @@ def test_the_script_alone_with_what_the_makefile_passes_goes(tmp_path):
                              f"ssh {PINNED}", f"ssh -t {PINNED}"]
 
 
-KH = "-o UserKnownHostsFile=/home/op/.eregion/h0_known_hosts"
+KH = "-o UserKnownHostsFile=~/.eregion/h0_known_hosts"
 ALGO = "-o HostKeyAlgorithms=ssh-ed25519"
 
 
@@ -241,7 +249,7 @@ def test_the_script_never_goes_without_the_pinned_key(tmp_path, opts):
 @pytest.mark.parametrize("opts", [
     f"-o StrictHostKeyChecking=yes {KH} {ALGO}",
     f"-o StrictHostKeyChecking=yes {KH} {ALGO} -i ~/.ssh/id_imladris -o IdentitiesOnly=yes",
-    f"-o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/op_1/k.h+@ {ALGO} -i /k/id-1 -o IdentitiesOnly=yes",
+    f"-o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/op_1/k.h+@ {ALGO} -i /k/id-1 -o IdentitiesOnly=yes",
 ])
 def test_the_forms_the_makefile_computes_go(tmp_path, opts):
     res, calls = _script(tmp_path, SSH_OPTS=opts)
