@@ -16,10 +16,10 @@ chaque endroit qui en dépend dit les deux cas (« La levée », plus bas, et l'
 > **Depuis la 0.6.4 (RDW1, #994), Glorfindel n'isole plus seul sur cette règle.** `ransomware-disk-write`
 > porte un plafond ([`docs/glorfindel.md`](glorfindel.md), « Le plafond par la règle ») : sur le seul
 > débit, qu'une sauvegarde atteint aussi, il prend un instantané (seul en `non_disruptive`) et écrit une
-> carte qui garde la proposition du modèle et sa confiance. L'isolement est le geste d'un humain, depuis
-> la carte (`glorfindel isolate <groupe>/<nom> --yes`) : le confinement mesuré ici commence à ce geste.
-> À l'étape 5, la carte attendue est donc « detection not contained (snapshot only) », qui dit le
-> plafond, et non plus la carte de l'action autonome `isolate_vm`. Les chiffres du 12/11 sont d'avant.
+> carte qui garde la proposition du modèle et sa confiance, et propose l'isolement, approuvable en un clic.
+> L'isolement est le geste d'un humain : le confinement mesuré ici commence à ce geste.
+> À l'étape 5, l'instantané part seul et la carte du plafond propose l'isolement, approuvable en un
+> clic. Il n'y a plus de carte de l'action autonome `isolate_vm`. Les chiffres du 12/11 sont d'avant.
 
 - **la détection** : de T0 à la détection de la watch, puis à sa carte ;
 - **le confinement** : de T0 à l'isolement relu sur Azure ;
@@ -573,38 +573,59 @@ Le confinement, lui, peut se lire plus tard qu'en 0.5.8 : sous la quarantaine, l
 sessions a pris 302 s le 09/11, et une coupure qui dépasse 300 s est suivie sur Azure, puis dite
 (étape 5, DRN1). Le NSG est posé et vérifié avant.
 
-### 5. Ce qu'on doit voir : la détection, l'isolement, la carte (pendant l'étape 4)
+### 5. Ce qu'on doit voir : la détection, l'instantané, la carte du plafond, ton isolement (pendant l'étape 4)
 
-- **Dagorlad, la chronologie de la demande** : le fil `RUNNING`, puis « ✓ detected +… · contained
-  … ». Les temps portent `≈` jusqu'au rapport du run, puis sont recalculés comme sur l'accueil
-  (`docs/dagorlad.md`, « Suivre une demande »).
-- **Console, page Glorfindel** : la carte de l'action autonome, `isolate_vm` vérifiée ; gondolin
-  `ISOLATED`. Une carte de restauration peut suivre, recommandée et jamais autonome. Elle est
-  marquée exercice. Elle demande un cycle suivant, donc une nouvelle détection de gondolin, qui peut
-  ne pas venir sous la quarantaine : le 09/11, aucune n'a suivi (`docs/glorfindel.md`, « La coupure
-  suivie sur Azure ») ; le 12/11 non plus, et l'isolement vérifié n'a fait aucune carte dans TO JUDGE
-  (`docs/observation.md`, « Juger chaque carte »).
-- **La coupure des sessions (DRN1)** : sous la quarantaine, elle a pris 302 s le 09/11, 304,2 s le
-  12/11 (la notification a dit « coupure en attente », puis le cycle s'est clos vérifié). La watch
-  l'attend 300 s. Finie avant, la carte de l'action autonome est vérifiée. Sinon, la notification
-  dit « coupure en attente », `glorfindel list` dit « session cut pending », et, dans la minute, une
-  carte **« session cut pending »** (`drain_pending`) apparaît, sans rien à approuver. Elle se ferme
-  seule quand la coupure aboutit : sa note dit « isolement vérifié ». Si une carte
-  `verification_failed` la remplace, sa raison dit le cas : « coupure refusée » (le rôle Session
-  Drain manque sur gondolin), « sessions restées ouvertes », ou « coupure jamais aboutie » (toujours
-  en cours 30 min après, ou la watch redémarrée, ou la VM isolée par un autre processus entre-temps). À noter dans l'issue, avec la durée
-  lue au journal d'activité (Started → Succeeded).
-- **Discord** : l'action autonome, par le bot.
+Depuis RDW1 (0.6.4), `ransomware-disk-write` porte un plafond : sur le seul débit, Glorfindel ne
+contient plus seul ([`docs/glorfindel.md`](glorfindel.md), « Le plafond par la règle »). Le
+confinement de cette page est donc celui d'un humain : il commence à ton approbation.
+
+- **Dagorlad, la pastille du fil** : « detected ~… · snapshot alone · card » pour gondolin en
+  `non_disruptive`. Puis la chronologie de la demande : le fil `RUNNING`, puis « ✓ detected +… ». Il
+  n'y a pas de « contained » avant ton approbation. Les temps portent `≈` jusqu'au rapport du run,
+  puis sont recalculés comme sur l'accueil (`docs/dagorlad.md`, « Suivre une demande »).
+- **Console, page Glorfindel, deux choses sur gondolin** :
+  - **l'instantané, pris seul** (`non_disruptive`) : il se lit dans le fil et dans `glorfindel list` ;
+  - **la carte du plafond**, « isolation proposed under the rule's ceiling » (`ceiling_proposal`) :
+    elle dit « ⛔ rule ceiling · ransomware-disk-write — model proposed: Isolate VM (…%) · brought back
+    to: Create forensic snapshot », et le texte de la règle (« elle ne prouve qu'un débit
+    d'écriture soutenu… »). Elle propose `isolate_vm`, approuvable en un clic, jamais exécuté seul.
+    Elle est marquée exercice.
+  - Il n'y a **ni carte de l'action autonome `isolate_vm`, ni gondolin `ISOLATED` à ce stade**.
+- **Ton approbation** : juger la carte (c'est le run d'Annatar, l'attaque est la tienne), puis
+  « Approve & execute » sur la carte du plafond. Noter l'heure du clic : elle borne le
+  confinement humain. L'isolement part alors par le chemin habituel de l'approbation, sous ses
+  gardes (la carte de moins de `GLORFINDEL_APPROVAL_MAX_AGE_H`, aucun restore en cours), puis il est
+  vérifié sur Azure : gondolin `ISOLATED`. Une carte de restauration peut suivre, recommandée et
+  jamais autonome. Elle demande un cycle suivant, donc une nouvelle détection de gondolin, qui peut
+  ne pas venir sous la quarantaine (`docs/glorfindel.md`, « La coupure suivie sur Azure »).
+- **La coupure des sessions (DRN1)**, après ton approbation. Sous la quarantaine, elle a pris 302 s
+  le 09/11 et 304,2 s le 12/11, et la vérification l'attend 300 s :
+  - finie avant, l'isolement est vérifié ;
+  - sinon, une carte **« session cut pending »** (`drain_pending`) apparaît dans la minute, sans
+    rien à approuver. Elle se ferme seule quand la coupure aboutit : sa note dit « isolement
+    vérifié » ;
+  - si une carte `verification_failed` la remplace, sa raison dit le cas : « coupure refusée » (le
+    rôle Session Drain manque sur gondolin), « sessions restées ouvertes », ou « coupure jamais
+    aboutie ».
+  - À noter dans l'issue, avec la durée lue au journal d'activité (Started → Succeeded).
+- **Discord** : la carte du plafond, par le bot.
 - **Sur Imladris** (`make imladris-ssh`, puis `exit`) : `docker exec eregion-watch glorfindel
-  list` montre gondolin `ISOLATED`, vérifiée.
+  list` montre gondolin `ISOLATED`, vérifiée, après ton approbation.
 
-Autres issues, qui sont des mesures et non des échecs du banc :
-- une action retenue (`mode_hold`, la préparation, une confiance sous 0,7, des tirages en désaccord) ;
-- une simple recommandation.
+D'autres issues sont des mesures, pas des échecs du banc. Les noter :
+- une carte du plafond retenue en plus par une autre garde : une confiance sous 0,7 ou la
+  télémétrie, dite dans sa raison ;
+- une simple recommandation ;
+- en `human_only`, une carte `mode_hold` qui propose l'instantané, à côté de la carte du plafond.
+  Approuve les deux : l'instantané d'abord, puis l'isolement.
 
-La noter. Approuver l'isolement dans la console reste possible, mais ce serait un confinement
-humain, et il se mesure comme tel. **Ne pas cliquer 🔄 Restore**, ni dans la console d'Imladris ni dans
-Discord : refusé, ce n'est pas son hôte.
+**Ne pas cliquer 🔄 Restore**, ni dans la console d'Imladris ni dans Discord : refusé, ce n'est pas
+son hôte. Les étapes 6 et 7 suivent ton isolement : le restore part de la VM isolée
+(`--keep-isolated`), et la levée est celle d'Imladris.
+
+**À observer au banc** : en `non_disruptive`, chaque nouvelle détection de la règle sur gondolin
+relance un instantané tant que la VM n'est pas isolée. La carte du plafond, elle, se replie en une
+seule (`occurrences`). Compter les instantanés pris pendant le run.
 
 ### 6. La restauration, depuis le poste (15 à 30 min)
 

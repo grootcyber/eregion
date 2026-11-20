@@ -257,6 +257,7 @@ _ESCALATION_LABELS = {
     "telemetry_gap": "télémétrie incomplète (requêtes d'enquête en échec)",
     "unstable_decision": "décision instable (les tirages ne s'accordent pas)",
     "floor_proposal": "isolation proposée par le plancher (brute force réussi puis root), jamais exécutée seule",
+    "ceiling_proposal": "isolation proposée sous le plafond de la règle (sa preuve seule ne suffit pas), jamais exécutée seule",
     "readiness_hold": "VM retenue en observation (préparation)",
     "queue_tampered": "file d'actions : une demande que son service n'a pas écrite (FS1b)",
     "queue_unavailable": "file d'actions : le registre de la watch illisible (FS1b)",

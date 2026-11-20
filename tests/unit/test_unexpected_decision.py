@@ -224,10 +224,10 @@ def test_the_floor_holds_whatever_the_mode_of_the_snapshot_and_only_where_it_sho
     assert not _decide(det, _decision(action="snapshot", escalate=True))["uncontained"]
     assert not _decide(det, _decision(action="snapshot"), mode="human_only")["uncontained"]
     # A containment, a timeout, an uncharacterized row: not this floor's. RDW1 (#994): on the
-    # disk-write rule, capped, a block is brought back to the snapshot — the ceiling's card; a rule
-    # without a ceiling keeps its containment, and no card of this floor.
+    # disk-write rule, capped, a block is brought back to the snapshot — the ceiling's card, not this
+    # floor's; a rule without a ceiling keeps its containment, and no card of this floor.
     capped = _decide(det, _decision(action="block_suspicious_ip"))
-    assert capped["action"] == "snapshot" and capped["uncontained"].startswith("Plafond de la règle")
+    assert capped["action"] == "snapshot" and capped["ceiling_card"] is True and not capped["uncontained"]
     brute = _detection({"Computer": "vm-s4", "_ResourceId": RID, "SourceIP": "203.0.113.7", "FailedAttempts": 40},
                        ttp="T1110.001", context={"rule_name": "ssh-brute-force", "attribution": "asset",
                                                  "run_id": "watch-ssh-brute-force-20261028T100000Z"})

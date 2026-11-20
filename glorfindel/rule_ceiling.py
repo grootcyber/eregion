@@ -167,7 +167,12 @@ def current() -> RuleCeilings:
     the autonomy is: a ceiling the client lowers takes effect at the next detection). Raises when the
     shipped base cannot be read — `decide` then brings the decision back to the lowest."""
     from glorfindel import detection_rules as dr
-    layers = dr.rule_layers(dr.shipped_rules_path())
+    shipped = dr.shipped_rules_path()
+    layers = dr.rule_layers(shipped)
+    if not dr._named(layers.base.get("rules")):
+        # A base read as « nothing » (`_read_layer` gives {} for a file gone) would cap no rule: the
+        # shipped file absent or without rules is unreadable, never an empty list (fail closed).
+        raise FileNotFoundError(f"base livrée absente ou sans règle : {shipped}")
     rules = [r for r in dr._named(layers.merged.get("rules")) if r.get("enabled", True)]
     by_name = of_rules(dr._named(layers.base.get("rules")), rules, layers.layer_of, [])
     return RuleCeilings(by_name=by_name,

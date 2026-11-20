@@ -5,10 +5,14 @@ The bench of 20/11 (G1, v0.6.3): Gothmog's benign fault `vm-disk-write`, a backu
 (about 74 MB/s for 10 min), fired `ransomware-disk-write` and made two cards; the model proposed
 `isolate_vm` at 80 %, above the threshold of 0.7. Only `human_only` held it: under `non_disruptive`
 (or `full_auto`), gondolin would have been isolated. The rate does not tell a backup from an
-encryption. Now the shipped rule carries `ceiling: {allow: [snapshot]}`, and a guard of `decide`,
-after every gate that may hold and before the mode, brings an autonomous action the rule does not
-allow back to the snapshot — the model's proposal and its confidence kept on the card, the reason said,
-the isolation a human's gesture from the card. A rule without a ceiling behaves as before; the
+encryption. Now the shipped rule carries `ceiling: {allow: [snapshot]}`, and a guard of `decide` —
+after the gates that judge the model's own choice (the confidence, the signal, the telemetry, the
+release), before never_block, the attribution and the mode — brings an autonomous action the rule does
+not allow back to the snapshot: the model's proposal and its confidence kept on the card, the reason
+said. The snapshot goes as the mode allows; the ceiling's own card (`ceiling_proposal`) proposes the
+model's isolation, approvable in one click, never run alone, whatever the mode (Jonathan, 20/11: the
+floor's model), never on a detection that names no VM. The memory keeps the model's proposal. A rule
+without a ceiling behaves as before; the
 client's layer lowers a ceiling, never raises it; a fact of the detection the rule names (`lifted_by`)
 lifts it — none in this lot, the corroboration comes in a lot of its own. Nothing of the prompt
 changes: the ceiling never enters the signal.
@@ -117,6 +121,15 @@ def _detections(*rows) -> list[dict]:
 
 
 @pytest.fixture
+def watch():
+    """The watch's process: its key signs the proposals of the cards it writes (the signed queue)."""
+    from eregion_core import watch_key
+    signer = watch_key.Signer(bytes(range(32)))
+    escalations.sign_proposals(lambda: signer)
+    return signer
+
+
+@pytest.fixture
 def graph(monkeypatch):
     """The production agent on a recording connector (tests/unit/test_dependency_failures.py)."""
     from glorfindel import jobs
@@ -128,11 +141,28 @@ def graph(monkeypatch):
 
     def run(signal, mode, resp=None):
         conn = Recorder()
+        agent_ = _agent(conn, autonomy=AutonomyConfig(default=mode))
         with patch("litellm.completion", return_value=resp or _llm()), \
                 patch("glorfindel.detectors.detector_for", return_value=LogAnalytics(fail=False)):
-            final = _agent(conn, autonomy=AutonomyConfig(default=mode)).respond(signal)
+            final = agent_.respond(signal)
+        run.memory = agent_.memory
         return final, conn
     return run
+
+
+def _of(kind: str) -> list[dict]:
+    return [c for c in escalations.pending() if c["escalation_type"] == kind]
+
+
+def _one_click(card: dict) -> None:
+    """Approvable in one click, as the floor's card: the server, the signed queue, the page."""
+    from eregion_core.action_queue import APPROVABLE_TYPES, proposed_verbs
+    from glorfindel.approval import approval_refusal
+    assert card["escalation_type"] in APPROVABLE_TYPES
+    assert approval_refusal(card, "vm-g1") is None
+    assert proposed_verbs(card) == frozenset({"isolate_vm"})
+    page = re.search(r"const _HELD_TYPES = new Set\(\[([^\]]*)\]\);", JS.read_text())
+    assert page and "'ceiling_proposal'" in page.group(1)
 
 
 def _decide(signal: dict, resp=None, mode: str = "non_disruptive") -> dict:
@@ -163,41 +193,113 @@ def _shipped_entry(name: str = RULE) -> dict:
 # ── Fini quand : les lignes de vm-disk-write ne font plus sortir d'isolement, et la carte le dit ─────
 
 @pytest.mark.parametrize("mode", ["non_disruptive", "full_auto"])
-def test_the_vm_disk_write_rows_make_no_isolation_and_the_card_says_so(graph, mode):
+def test_the_vm_disk_write_rows_make_no_isolation_and_the_card_says_so(graph, watch, mode):
     """The bench of 20/11, through the RulePoller and the graph: the model proposes isolate_vm at 80 %;
-    no isolation leaves the rule — the snapshot runs (the mode allows it), and one card says the rule's
-    ceiling, the model's proposal and its confidence, and how a human isolates from it."""
+    no isolation leaves the rule — the snapshot runs (the mode allows it), and one card, the ceiling's,
+    says the rule's ceiling, the model's proposal and its confidence, and proposes the isolation to a
+    human, approvable in one click."""
     signals = _detections(_disk_row(74_300_000))
     assert len(signals) == 1 and signals[0]["context"]["rule_name"] == RULE
     final, conn = graph(signals[0], mode)
     assert "isolate_vm" not in conn.calls and "snapshot" in conn.calls
     assert final["action"] == "snapshot" and final["escalate"] is False
     assert final["ceiling"]["proposed"] == "isolate_vm" and final["ceiling"]["confidence"] == 0.8
-    [card] = escalations.pending()
-    assert card["escalation_type"] == "uncontained_detection" and card["action"] == ""
+    [card] = escalations.pending()                                  # no card of V-11 beside it
+    assert (card["escalation_type"], card["action"]) == ("ceiling_proposal", "isolate_vm")
     assert card["ceiling"] == {"rule": RULE, "proposed": "isolate_vm", "confidence": 0.8, "lowered": "snapshot",
                                "allow": ["snapshot"], "why": card["ceiling"]["why"]}
-    assert "débit" in card["ceiling"]["why"]
+    assert "débit" in card["ceiling"]["why"] and card["confidence"] == 0.8
     reason = card["reason"]
     assert reason.startswith(f"Plafond de la règle « {RULE} »") and "ne prouve qu'un débit" in reason
     assert "'isolate_vm' (confiance 80%)" in reason and "ramené à 'snapshot'" in reason
-    assert "`glorfindel isolate rg-bench/vm-g1 --yes`" in reason          # the human's gesture, from the card
+    assert "proposé sur la carte du plafond, approuvable en un clic" in reason
+    assert "Instantané pris : snap-1." in reason
+    _one_click(card)
 
 
-def test_in_human_only_the_card_holds_the_snapshot_and_says_the_model_s_proposal(graph):
+def test_in_human_only_the_snapshot_is_held_and_the_isolation_proposed_beside_it(graph, watch):
     """human_only (the bench of 20/11): the mode holds what the rule allows — the snapshot, approvable
-    in one click —, never the isolation; the card says why and keeps the model's proposal."""
+    in one click —; beside it, the ceiling's card proposes the model's isolation, approvable too.
+    Nothing runs."""
     [signal] = _detections(_disk_row(74_300_000))
     final, conn = graph(signal, "human_only")
     assert conn.writes() == [] and "isolate_vm" not in conn.calls
     assert final["action"] == "snapshot" and final["mode_hold"] is True
-    [card] = escalations.pending()
-    assert (card["escalation_type"], card["action"]) == ("mode_hold", "snapshot")
-    assert card["ceiling"]["proposed"] == "isolate_vm" and card["ceiling"]["confidence"] == 0.8
-    assert card["reason"].startswith(f"Plafond de la règle « {RULE} »")
+    [held] = _of("mode_hold")
+    assert held["action"] == "snapshot" and held["ceiling"]["proposed"] == "isolate_vm"
+    assert held["reason"].startswith(f"Plafond de la règle « {RULE} »")
     # The mode judges the snapshot, never the action brought back (the guard before the mode).
-    assert "Mode human_only — action 'snapshot' recommandée" in card["reason"]
-    assert "action 'isolate_vm' recommandée" not in card["reason"]
+    assert "Mode human_only — action 'snapshot' recommandée" in held["reason"]
+    assert "action 'isolate_vm' recommandée" not in held["reason"]
+    [card] = _of("ceiling_proposal")
+    assert card["action"] == "isolate_vm" and "Instantané pris" not in card["reason"]
+    _one_click(card)
+    assert len(escalations.pending()) == 2
+
+
+def test_the_human_isolates_from_the_card_in_one_gesture(graph, watch, monkeypatch):
+    """« The human isolates from the card in one gesture » (Jonathan, 20/11): « Approve & execute » on
+    the ceiling's card runs the isolation — the console's route, the approval's usual guards."""
+    from .console_client import console
+    [signal] = _detections(_disk_row(74_300_000))
+    graph(signal, "non_disruptive")
+    [card] = _of("ceiling_proposal")
+    conn = MagicMock()
+    conn.isolate_vm.return_value = {"status": "isolated", "drain": {"status": "drained"}}
+    conn.verify_isolation.return_value = {"verified": True, "method": "nsg_check"}
+    monkeypatch.setattr("glorfindel.actions.AzureConnector", lambda **k: conn)
+    r = console().post(f"/api/action/approve/{card['id']}", json={}).json()
+    assert r.get("ok") is True and r["action"] == "isolate_vm", r
+    conn.isolate_vm.assert_called_once_with(VM)
+    assert not _of("ceiling_proposal")                                   # resolved by the approval
+
+
+def test_the_memory_keeps_the_model_s_proposal(graph):
+    """Decision B (Jonathan, 20/11): the cycle stored for the retrieval keeps the model's own
+    proposal — what the model reads again does not change; the action brought back stays in the
+    outcome, the ceiling's note and the debug line."""
+    [signal] = _detections(_disk_row(74_300_000))
+    final, _ = graph(signal, "non_disruptive")
+    [cycle] = graph.memory.stored
+    assert cycle["action"] == "isolate_vm" and final["action"] == "snapshot"
+    assert "snapshot" in cycle["outcome"]
+    [line] = (Path("runs") / "glorfindel" / f"{signal['context']['run_id']}_debug.jsonl").read_text().splitlines()
+    debug = json.loads(line)
+    assert debug["action"] == "snapshot" and debug["ceiling"]["proposed"] == "isolate_vm"
+
+
+def test_an_unattributed_detection_has_no_ceiling_card(graph):
+    """ATT1, SEC-Ed prime: a detection that names no VM proposes no isolation approvable."""
+    sig = _signal(attribution="unattributed", candidates=["vm-g1", "vm-g2"])
+    final, conn = graph(sig, "non_disruptive", _llm("isolate_vm", 0.95))
+    assert conn.writes() == [] and not _of("ceiling_proposal")
+    assert [c["escalation_type"] for c in escalations.pending()] == ["unattributed_signal"]
+
+
+def test_a_gate_that_held_before_is_said_on_the_ceiling_s_card(graph, watch):
+    """Under the threshold: the confidence's card holds the snapshot; the ceiling's card proposes the
+    isolation and says the hold before it."""
+    [signal] = _detections(_disk_row(74_300_000))
+    graph(signal, "non_disruptive", _llm("isolate_vm", 0.5))
+    [held] = _of("low_confidence")
+    assert held["action"] == "snapshot"
+    [card] = _of("ceiling_proposal")
+    assert card["action"] == "isolate_vm" and "Low confidence (50%)" in card["reason"]
+
+
+def test_the_floor_comes_first_and_names_the_model_s_proposal():
+    """B3a and the ceiling on one VM: the floor's card, its reason first, naming the model's own
+    proposal (never the snapshot the ceiling left); the ceiling after; no ceiling card beside it."""
+    from .test_root_floor import _incident
+    both = _incident(agent.ROOT_ELEVATION, agent.LOGIN_AFTER_BRUTE_FORCE, rid=VM)
+    state = {"signal": _signal(), "past_cycles": [], "incident": both, "dry_run": True, "telemetry_gaps": []}
+    with patch("litellm.completion", return_value=_llm("isolate_vm", 0.8)):
+        out = agent.decide(state, model="anthropic/claude-test", autonomy=AutonomyConfig(default="human_only"))
+    assert out["held_by"] == "floor" and out["action"] == "isolate_vm" and out["ceiling_card"] is False
+    reason = out["escalation_reason"]
+    assert reason.startswith("Plancher déterministe (B3a)")
+    assert "Le choix du modèle : 'isolate_vm', ramené à 'snapshot' par le plafond de la règle" in reason
+    assert reason.index("Plancher") < reason.index("Plafond de la règle")
 
 
 @pytest.mark.parametrize("action", ["isolate_vm", "block_suspicious_ip"])
@@ -239,6 +341,7 @@ def test_an_unattributed_detection_stays_the_attribution_s_card():
     on named in the ceiling's gesture."""
     out = _decide(_signal(attribution="unattributed", candidates=["vm-g1", "vm-g2"]), _llm("isolate_vm", 0.95))
     assert out["held_by"] == "attribution" and out["escalate"] is True and out["action"] == "snapshot"
+    assert out["ceiling_card"] is False
     assert "glorfindel isolate" not in out["escalation_reason"]
     assert "depuis la CLI, une fois la VM identifiée" in out["escalation_reason"]
 
@@ -381,6 +484,20 @@ def test_rules_that_cannot_be_read_bring_the_decision_back_to_the_lowest(monkeyp
     assert out["action"] == "snapshot" and "illisibles" in out["ceiling"]["why"]
 
 
+@pytest.mark.parametrize("content", [None, "", "rules: []\n"])
+def test_a_shipped_base_gone_or_empty_is_unreadable_never_no_ceiling(monkeypatch, tmp_path, content):
+    """`_read_layer` reads a file gone as {}: the ceilings read then raise — `decide` brings the
+    decision back to the lowest, never to no ceiling at all."""
+    base = tmp_path / "gone.yaml"
+    if content is not None:
+        base.write_text(content)
+    monkeypatch.setattr(detection_rules, "shipped_rules_path", lambda: base)
+    with pytest.raises(FileNotFoundError):
+        rule_ceiling.current()
+    out = _decide(_signal(), _llm("isolate_vm", 0.95))
+    assert out["action"] == "snapshot" and "illisibles" in out["ceiling"]["why"]
+
+
 @pytest.mark.parametrize("value,said", [
     ("snapshot", "dictionnaire"),
     ({"allow": "snapshot"}, "liste d'actions"),
@@ -424,10 +541,15 @@ def test_the_card_s_command_names_the_isolation_left_to_a_human_never_on_a_loose
     cli = re.search(r"function cliCommand\(esc\) \{.*?\n\}", js, re.S).group(0)
     assert cli.index("if (loose)") < cli.index("_ceilingCommand(esc)")
     assert cli.index("_isAnchored(esc)") < cli.index("_ceilingCommand(esc)")
-    # The held snapshot's commands, and the card of the snapshot run alone (its ack), say it first.
+    # The held snapshot's commands, and a card's ack, say it first.
     assert "return ceiling + (actionMap[esc.action]" in cli and "return ceiling + `glorfindel ack ${id}`;" in cli
     cmd = re.search(r"function _ceilingCommand\(e\) \{.*?\n\}", js, re.S).group(0)
-    assert "glorfindel isolate ${_vmArg(e.resource_id)} --yes" in cmd
+    # A comment only: the block is run as a whole — its snapshot must never isolate too.
+    [line] = [ln for ln in cmd.splitlines() if "glorfindel isolate" in ln]
+    said = line.split("return `", 1)[1]
+    assert said.startswith("# rule ceiling:") and "only after judging" in said
+    assert "\\nglorfindel isolate" not in cmd
+    assert "e.action === 'isolate_vm'" in cmd        # the ceiling's own card: its own command
 
 
 # ── Dagorlad : ce qu'on attend d'un fil T1486 ────────────────────────────────────────────────────────

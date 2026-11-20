@@ -152,7 +152,7 @@ Signals from different resources run in parallel threads; signals from the same 
 
 \* T1041: StorageBlobLogs ingestion latency is variable on the Azure side, not the query. Functional SLA, monitored.
 
-**Since 0.6.4, T1486 no longer isolates alone** (RDW1, [docs/glorfindel.md](docs/glorfindel.md), « Le plafond par la règle »). A backup writes as fast as an encryption: on the bench (20 Nov), a benign sustained write fired `ransomware-disk-write` and the model proposed `isolate_vm` at 80 %. The rule now carries a ceiling: on the write rate alone, Glorfindel takes a snapshot (alone in `non_disruptive`, one click in `human_only`) and writes a card that keeps the model's proposal; the isolation is a human's gesture from the card. It comes back alone with a fact that corroborates, measured on the bench in a later lot. The row above is the measure of 12 Nov, before the ceiling.
+**Since 0.6.4, T1486 no longer isolates alone** (RDW1, [docs/glorfindel.md](docs/glorfindel.md), « Le plafond par la règle »). A backup writes as fast as an encryption: on the bench (20 Nov), a benign sustained write fired `ransomware-disk-write` and the model proposed `isolate_vm` at 80 %. The rule now carries a ceiling: on the write rate alone, Glorfindel takes a snapshot (alone in `non_disruptive`, one click in `human_only`) and writes a card that keeps the model's proposal and proposes the isolation, approvable in one click; the isolation is a human's gesture from that card, never run alone. It comes back alone with a fact that corroborates, measured on the bench in a later lot. The row above is the measure of 12 Nov, before the ceiling.
 
 Glorfindel chose the right action on all six by reasoning from raw signal indicators — not from a TTP→action table.
 
