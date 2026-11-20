@@ -301,7 +301,8 @@ cloud. Le refus dit le run qui tient la cible, et jusqu'à quand, en UTC.
   une carte de la panne qui porterait ce `ttp`. Il compte aussi contre la panne une carte de la
   technique venue d'une autre règle, ou vue plus de 15 min après son T0, dès qu'elle tombe dans la
   fenêtre de la panne. `make imladris-fault-rate` lit les runs de 30 jours : un essai DG-b du mois
-  y entre. **Ce biais est fermé côté analyse (FR1, #1006)** : une panne partie dans la fenêtre
+  y entre. **Ce biais est fermé côté analyse pour une panne partie derrière une technique ou issue
+  d'une demande (FR1, #1006) ; l'ordre inverse reste à X1.** Une panne partie dans la fenêtre
   d'exercice d'une technique sur l'une de ses cibles, grâce comprise, ou issue d'une demande, est
   déclarée « non mesurée », avec sa raison, et reste hors du taux (`docs/analysis.md`, « Le taux
   des pannes prises pour une attaque »).

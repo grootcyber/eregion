@@ -490,6 +490,41 @@ def test_the_render_says_why_a_fault_behind_a_technique_is_not_measured():
     assert f"non mesurée : `gothmog-1` (vm-disk-write) — {fr.BEHIND} (r-tech, {fr.UNBOUNDED})" in text
 
 
+def test_a_technique_whose_target_is_not_known_holds_every_vm():
+    """A technique report without its VM, no window here: its target is not known, it may be
+    on any VM — the fault, on gondolin or on bree, is not measured (as ``played_of``)."""
+    for target in (VM, OTHER):
+        runs = [_technique(at=T - 600, resource=""), _fault(targets=(target,))]
+        assert fr.measure(runs, _watch([]))[0].why == f"{fr.BEHIND} (r-tech, {fr.UNBOUNDED})", target
+
+
+def test_the_technique_window_allows_the_clocks_of_two_hosts():
+    """The fault's start and the technique's window are read on two hosts' clocks: 5 s past
+    either end of the window is still inside it (CLOCK_SKEW_S, 10 s), 15 s is not."""
+    runs = [_technique(at=T - 1000)]
+    windows = {"r-tech": (T - 1060, T - 100, [VM.lower()])}         # from T - 1060 to T - 100
+    for start, measured in ((T - 100 + 5, False), (T - 100 + 15, True),
+                            (T - 1060 - 5, False), (T - 1060 - 15, True)):
+        fault = _fault(start=start, end=start + 600)
+        why = fr.measure([*runs, fault], _watch([]), exercised=fr.exercised_of(runs, windows))[0].why
+        assert (why == "") is measured, (start - T, why)
+
+
+def test_a_techniques_targets_are_its_reports_and_its_windows():
+    """The report names one resource, the window another: the technique is on both — a fault on
+    the VM only the window names is not measured, nor one on the VM only the report names."""
+    runs = [_technique(at=T - 600, resource=OTHER)]
+    windows = {"r-tech": _span(T - 660, T - 300, targets=(VM,))}
+    for target in (VM, OTHER):
+        fault = _fault(targets=(target,))
+        why = fr.measure([*runs, fault], _watch([]), exercised=fr.exercised_of(runs, windows))[0].why
+        assert why == f"{fr.BEHIND} (r-tech)", target
+    # And a VM neither names: measured.
+    third = VM.replace("gondolin", "rivendell")
+    fault = _fault(targets=(third,))
+    assert fr.measure([*runs, fault], _watch([]), exercised=fr.exercised_of(runs, windows))[0].why == ""
+
+
 # A session of faults alone, the runs of the tests above: what the rate was before FR1.
 _ALONE = [_fault("g1"), _fault("g2", start=T + 3600, end=T + 4200), _fault("g3", start=T + 7200, end=T + 7800),
           _fault("disk", start=T + 10800, end=T + 11400),

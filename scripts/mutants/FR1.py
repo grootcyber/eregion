@@ -1,7 +1,7 @@
 """FR1 (Ferme #1006): the fault rate declares « not measured », with its reason, a fault started in
 a technique's exercise window on one of its targets, its grace included, or a wire of a Dagorlad
-request — what Glorfindel decides then may answer the technique. M6900–M6909, measured by
-tests/unit/test_fault_rate.py."""
+request — what Glorfindel decides then may answer the technique. M6900–M6909 and M6920–M6922 (the
+review), measured by tests/unit/test_fault_rate.py."""
 FRATE = "analysis/fault_rate.py"
 _T = "tests/unit/test_fault_rate.py"
 _FILES = f"{_T}::test_the_rate_reads_the_techniques_window_from_this_hosts_files"
@@ -43,6 +43,19 @@ MUTANTS = [
     ("M6909", "a technique on a resource group's scope (a Stratus run) holds none of its VMs (FR1)", FRATE,
      '            if f and (f == t or f.rsplit("/", 1)[-1] == t.rsplit("/", 1)[-1] or f.startswith(t + "/")):\n',
      '            if f and (f == t or f.rsplit("/", 1)[-1] == t.rsplit("/", 1)[-1]):\n'),
+    # The review of fb9dd9dc: three guards without a test of their own. M6920–M6922.
+    ("M6920", "a technique whose target is not known holds no VM: the fault behind it measured (FR1, review)",
+     FRATE,
+     "    if not techs:\n        return True\n",
+     "    if not techs:\n        return False\n"),
+    ("M6921", "the technique's window read to the second, without the clocks of two hosts (FR1, review)",
+     FRATE,
+     "        if lo - containment.CLOCK_SKEW_S <= at <= hi + containment.CLOCK_SKEW_S \\\n",
+     "        if lo <= at <= hi \\\n"),
+    ("M6922", "the technique's targets its report's alone: the VM only its window names measured (FR1, review)",
+     FRATE,
+     '        targets = [t for t in [r.get("resource_id") or "", *(w[2] if w is not None else [])] if t]\n',
+     '        targets = [t for t in [r.get("resource_id") or ""] if t]\n'),
 ]
 
 TESTS = {
@@ -56,4 +69,7 @@ TESTS = {
     "M6907": _FILES,
     "M6908": _FILES,
     "M6909": f"{_T}::test_the_technique_target_is_compared_without_case",
+    "M6920": f"{_T}::test_a_technique_whose_target_is_not_known_holds_every_vm",
+    "M6921": f"{_T}::test_the_technique_window_allows_the_clocks_of_two_hosts",
+    "M6922": f"{_T}::test_a_techniques_targets_are_its_reports_and_its_windows",
 }

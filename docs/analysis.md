@@ -856,7 +856,8 @@ Décidé avec Jonathan le 31/10 :
   cachée, une carte de la technique venue d'une autre règle compterait contre la panne. Deux cas,
   chacun avec sa raison :
   - **le fil d'une demande Dagorlad** : son rapport porte la demande (`metrics.request`, DG-b,
-    écrit par Gothmog). Les fils d'une demande s'enchaînent sur les mêmes cibles ;
+    écrit par Gothmog). Les fils d'une demande s'enchaînent sur les mêmes cibles. Même un fil
+    sans technique dans sa demande est non mesuré : la demande seule suffit ;
   - **une panne partie dans la fenêtre d'exercice d'une technique**, grâce comprise, sur l'une de
     ses cibles : la cible comparée sans la casse, par son id complet ou le nom de sa VM ; une
     cible de la technique qui est une portée (un groupe de ressources, celle d'un run Stratus)
@@ -868,9 +869,18 @@ Décidé avec Jonathan le 31/10 :
     (2 h, plus les 15 min de grâce), et la raison le dit. Une technique partie avant la période
     lue compte aussi, si sa fenêtre peut encore tenir la première panne de la période.
 
-  Une séance de pannes seules donne le même taux qu'avant. Une technique jouée **pendant** une
-  panne (X1) garde la règle de BL1 : sa décision sur sa technique, dans `[T0, T0 + 15 min]`, est
-  la sienne.
+  Une séance de pannes seules donne le même taux qu'avant.
+
+  Restent ouverts :
+  - **l'ordre inverse.** Une technique jouée **pendant** une panne, hors d'une demande, garde la
+    règle de BL1 : seule sa décision sur sa technique, dans `[T0, T0 + 15 min]`, lui revient. Une
+    carte de la technique venue d'une autre règle, dans la fenêtre de la panne, compte donc encore
+    contre la panne. Le biais reste dans ce sens-là ; c'est le lot X1 (attaque pendant une panne) ;
+  - **une fenêtre sans son rapport.** Les fenêtres des techniques se lisent par les runs dont cet
+    hôte tient le rapport. Une technique dont la fenêtre est ici, mais pas le rapport, n'est pas
+    vue, et la panne partie dedans reste mesurée. Cela arrive quand le rapport n'est pas encore
+    porté jusqu'ici, quand sa publication a manqué, ou quand le run est mort avant son T0. Lire les
+    fenêtres de technique sans rapport sera un lot à part.
 - **Le taux** compte par run : les pannes prises pour une attaque, sur les pannes mesurées. Si
   aucune n'est mesurée, il vaut `None`, jamais 0.
 - **À côté** : le nombre de recommandations disruptives, le nombre d'actions exécutées (des
