@@ -33,6 +33,7 @@ tourne.
 | Un audit illisible (TOPO1b, #949, 19/11, sur une maquette) | **une bande au-dessus des cartes** : « Readiness audit not read », sa raison, et l'heure du dernier bon audit quand il est gardé | « ip ? » et « ? ? ? » sur chaque carte |
 | Le clic sur une adresse d'une carte repliée (TOPO1b, #949, 19/11, sur une maquette) | **A, il copie** l'adresse, comme IPS1 l'a fait ; le nom et la rangée du mode déplient | B, tout clic déplie (copier depuis la carte dépliée) ; C, les adresses en bas de la carte |
 | L'identité d'une VM sur sa carte (VMI1, #971, 20/11, sur une maquette) | **A, au survol du nom et dans un bloc de la carte dépliée** : le nom, le groupe, l'abonnement, l'espace de détection, le battement, l'ID ; chaque champ se copie d'un clic sur la carte dépliée ; le nom déplie toujours | B, un ⧉ près du nom qui copie l'ID ; C, un clic sur le nom copie le nom |
+| La page Glorfindel sur un téléphone (MOB4, #972, 20/11, sur une maquette) | **A, un onglet par section sous 760 px** : To judge, Infra, Feed, une section à la fois ; par défaut To judge quand des cartes attendent ; l'infra empilée, sans les fils ; l'en-tête sur une ou deux lignes. **La page Glorfindel et l'en-tête d'abord**, Overview et Dagorlad ensuite | B, tout empilé et replié ; C, l'infra seule, To judge derrière un bouton ; toutes les pages dans le même lot |
 | Le tableau de Dagorlad sur un téléphone (MOB5, #975, 20/11, sur une maquette) | **A, trois onglets sous 760 px** : Red, Targets, Plan ; une carte rouge prise ouvre Targets sous un bandeau, un fil tiré ouvre le plan ; sans les fils dessinés ni la poignée | B, une colonne empilée ; C, le tableau en lecture seule sur un téléphone |
 | La vue Runs sur un téléphone (MOB5, #975, 20/11, sur une maquette) | **trois onglets** : Windows, Campaigns, Coverage ; **les lignes de la matrice repliées** sur deux lignes | les colonnes empilées ; la matrice qui défile de côté |
 
@@ -543,6 +544,41 @@ clic sur le nom qui déplie ; le bloc ; l'ID entier (149 caractères) copié d'u
 sûr comme hors contexte sûr (`http://console.test`), la carte restant dépliée ; une valeur piégée
 écrite en texte.
 Tests : `tests/unit/test_console_vm_identity.py` ; mutants M6673–M6682 (`scripts/mutants/VMI1.py`).
+
+### La page sur un téléphone (MOB4, #972, 20/11)
+
+Mesuré à 390 px de large (émulation mobile, jeu d'exemple) : la page n'avait aucune règle pour un
+petit écran. La colonne de gauche (TO JUDGE et LIVE FEED) a une largeur fixe de 390 px : elle prenait
+tout l'écran, la carte de l'infra avait 0 px, l'en-tête débordait à droite, et le navigateur dézoomait
+la page (930 px de large pour un écran de 390). Jonathan a choisi l'option A sur une maquette (ligne
+« La page Glorfindel sur un téléphone » des décisions).
+- **Sous 760 px**, trois onglets sous l'en-tête (`#m-tabs`) : To judge, Infra, Feed. Une section à la
+  fois, celle que `body[data-m]` nomme, avec son propre défilement ; la liste à juger n'est plus
+  coupée à 45vh. Par défaut, To judge quand des cartes attendent, sinon l'infra, jusqu'à ce que
+  l'opérateur choisisse un onglet ; puis le sien. Un badge dit combien de cartes attendent. La
+  configuration (`/config`) s'ouvre dans l'onglet Infra, et les deux autres onglets répondent pendant
+  qu'elle est ouverte (la relecture l'a trouvé : ils ne répondaient pas). La page prend la hauteur du
+  petit viewport (`100dvh`) : `100vh` est celle du grand, sous la barre du navigateur d'un téléphone.
+- **L'infra sur un téléphone** : ses modules (DETECT, PROTECT, RECOVER) empilés, ses cartes l'une sous
+  l'autre, sur toute la largeur, sans les fils. Les fenêtres tiennent dans l'écran, les larges aussi
+  (`.modal.wide`, plus spécifique, l'emportait : la carte à juger s'ouvrait sur 500 px, de x = −55).
+- **L'en-tête commun** (`console.css`) passe à la ligne, sans la version, le séparateur ni l'heure : une
+  ou deux lignes, sur toutes les pages.
+- **Rien ne change au-delà de 760 px.** Toutes ces règles sont dans un seul bloc `@media (max-width:
+  759px)`, le dernier de la feuille (une media query n'ajoute pas de poids : une règle de base écrite
+  après lui l'emporterait). Hors du bloc, une seule règle : la barre d'onglets cachée.
+- Overview et Dagorlad restent pour grand écran : un lot à part, une fois la page Glorfindel essayée sur
+  un téléphone.
+
+Mesuré dans Chromium sans tête, en émulation mobile (390 × 844, toucher) : la page à 390 px sans dézoom
+ni débordement ; l'en-tête sur deux lignes ; To judge par défaut, ses boutons de verdict dans l'écran ;
+un toucher sur Infra et Feed montre la section ; les cartes sur toute la largeur, les fils cachés. À
+1440 × 900 : la barre cachée, la colonne de gauche à 390 px, l'infra à 1050 px, les fils dessinés ;
+TOPO1 (34 fils sur 34 après le tick, défilé) et TOPO1b (la bande, deux tracés pour deux
+rafraîchissements) tiennent.
+Après la relecture : la carte à juger ouverte depuis TO JUDGE tient de x = 12 à 378, ses boutons
+dans l'écran ; sur `/config`, un toucher sur To judge, puis Feed, montre la section.
+Tests : `tests/unit/test_console_phone.py` ; mutants M6683–M6697 et M6710–M6712 (`scripts/mutants/MOB4.py`).
 
 ### Overview et Dagorlad sur un téléphone (MOB5, #975, 20/11)
 
