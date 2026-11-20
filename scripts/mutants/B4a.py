@@ -1,6 +1,6 @@
 """B4a (#991, part of #75): the observation report by confidence band and by rule × band, each cell
 with its count and too few said; the share judged right above the gate's threshold; where the cards
-come from. M6815–M6819, measured by tests/unit/test_observation.py."""
+come from. M6815–M6819, M6855, measured by tests/unit/test_observation.py."""
 CAL = "glorfindel/calibration.py"
 _T = "tests/unit/test_observation.py::"
 
@@ -15,8 +15,11 @@ MUTANTS = [
      "    too_few = judged < FEW_JUDGED\n",
      "    too_few = judged == 0\n"),
     ("M6818", "a card attributed to no VM counted where its anchor VM is: the bench's (B4a)", CAL,
-     '    if isinstance(a, dict) and a.get("state") == UNATTRIBUTED:\n        return UNKNOWN\n',
+     '    if unattributed(e) is not None:\n        return UNKNOWN\n',
      ""),
+    ("M6855", "only the SLF1 shape of a card attributed to no VM is unknown: the older unattributed_signal counted at the bench (B4a, review)", CAL,
+     '    if unattributed(e) is not None:\n',
+     '    if isinstance(e.get("attribution"), dict) and e["attribution"].get("state") == "unattributed":\n'),
     ("M6819", "the band read from the first decision, not the confidence the card showed when judged (B4a)", CAL,
      '    c = e.get("confidence")\n',
      '    c = e.get("first_confidence", e.get("confidence"))\n'),
@@ -28,4 +31,5 @@ TESTS = {
               + _T + "test_the_cli_says_each_band_with_its_count_and_too_few_never_a_percentage"),
     "M6818": _T + "test_provenance_the_bench_is_its_perimeter_read_from_the_card_alone",
     "M6819": _T + "test_the_band_is_the_confidence_the_card_showed_when_judged_never_its_first",
+    "M6855": _T + "test_provenance_a_card_held_by_the_attribution_guard_before_slf1_is_unknown",
 }

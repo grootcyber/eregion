@@ -182,8 +182,9 @@ change (`glorfindel/calibration.py`).
   porte, c'est le côté où se tromper. Le taux de disruptives fausses garde sa définition : les fausses
   parmi les justes et les fausses.
 - **Par règle × tranche** : les mêmes colonnes, une ligne par tranche où la règle a des cartes.
-- **Au-dessus du seuil** : les cartes que la porte laisserait passer, `confiance ≥ seuil`, la
-  comparaison même de la porte (`_apply_confidence_gate`, `glorfindel/agent.py`). Le seuil se résout
+- **Au-dessus du seuil** : les cartes à une confiance ≥ seuil, sans filtre d'action. C'est la
+  comparaison même de la porte (`_apply_confidence_gate`, `glorfindel/agent.py`), mais la porte ne
+  s'applique qu'aux `AUTONOMOUS_ACTIONS` : ce compte ne dit pas ce que la porte a laissé partir. Le seuil se résout
   comme celui de la porte (`glorfindel.config.confidence_threshold`, que lit `_confidence_threshold()`) :
   0,7 sans variable. Une valeur mal formée le rend infini : aucune action ne part seule, rien n'est
   au-dessus, et le rapport le dit (`threshold: null`, « GLORFINDEL_CONFIDENCE_THRESHOLD invalid »). C'est
@@ -191,7 +192,8 @@ change (`glorfindel/calibration.py`).
 
 **Quelle confiance compte.** Celle que la carte montrait quand elle a été jugée, son `confidence`. La
 carte la porte à côté de la raison et de l'explication que l'opérateur a lues. Un nouveau
-déclenchement qui la change d'au moins 0,1 réécrit les trois ensemble et garde la première dans
+déclenchement qui la change d'au moins 0,1, qui monte la sévérité ou qui dit une compromission
+réécrit les trois ensemble et garde la première dans
 `first_confidence`, qu'aucune console, aucun bot, aucune commande n'affiche. Le verdict juge donc ce que
 la carte montrait, jamais la première décision. Deux cas sortent des tranches, comptés à part
 (`confidence_unknown`, « N card(s) left out of the bands ») :
@@ -199,9 +201,12 @@ la carte montrait, jamais la première décision. Deux cas sortent des tranches,
   en échec, une détection sans décision, le geste d'un opérateur dont la vérification échoue) et d'une
   décision dont la confiance ne se lisait pas ; la console et Discord n'en affichent pas. Ce qui n'est
   pas un nombre de ]0 ; 1] non plus ;
-- **une carte réécrite après son verdict** : `glorfindel verdict` laisse la carte en attente, et un
-  nouveau déclenchement peut la réécrire. La confiance jugée n'est alors plus sur la carte : elle n'est
-  pas devinée. Un verdict donné dans la console ou sur Discord acquitte la carte, que plus rien ne
+- **une carte mise à jour après son verdict** : `glorfindel verdict` laisse la carte en attente, et un
+  nouveau déclenchement peut la réécrire. Une carte dont la confiance a déjà été réécrite une fois
+  (`first_confidence`) et qui a connu **toute mise à jour après le verdict** sort des tranches :
+  `updated_at` bouge avec la réécriture de sa confiance, mais aussi avec `refresh()` et
+  `note_identity_check`, et ne les distingue pas. La confiance jugée n'est pas devinée : c'est le côté
+  prudent. Un verdict donné dans la console ou sur Discord acquitte la carte, que plus rien ne
   réécrit. Jugée de nouveau, la carte compte à la confiance qu'elle montre.
 
 **La provenance.** Une carte ne porte pas sa zone. La zone d'inscription (`eregion-zone`,
@@ -211,14 +216,19 @@ une VM d'un parc réel n'est pas inscrite, et bree, la VM de la pré-observation
 lit donc la provenance sur la carte seule, par son `resource_id` :
 - `bench` : la VM est dans le périmètre du banc tel que le dessine la garde des injecteurs
   (`Scope.check` : l'abonnement d'`AZURE_SUBSCRIPTION_ID`, un groupe de ressources de Celebrimbor,
-  `rg-celebrimbor*`), bree comprise. Les critères avant le mode autonome ne comptent pas ces cartes
+  `rg-celebrimbor` ou `rg-celebrimbor-*`), bree comprise. Les critères avant le mode autonome ne comptent pas ces cartes
   (`ROADMAP.md`, « Critères avant le mode autonome ») ;
 - `unknown` : tout le reste. Hors du périmètre, le jumeau, la production et tout autre parc ne se
-  distinguent pas encore. S'y ajoutent les cartes d'un rapport lancé sans abonnement nommé, et une carte
-  non attribuée (SLF1 : sa VM est celle où elle est rangée, pas celle dont elle parle).
+  distinguent pas encore. S'y ajoutent toutes les cartes d'un rapport lancé sans `AZURE_SUBSCRIPTION_ID`, et une
+  carte non attribuée (SLF1 : sa VM est celle où elle est rangée, pas celle dont elle parle), qu'elle
+  porte `attribution` ou l'ancien type `unattributed_signal` (`escalations.unattributed`).
 
 Pour dire `twin` et `production`, il faudrait que l'opérateur déclare la provenance de chaque périmètre
 surveillé (dans `glorfindel-config.yaml`, par exemple), et que la carte l'écrive à sa création.
+
+**Ce qui reste à B4 (#75)** : étiqueter les détections d'une observation réelle, hors du banc ; en tirer
+la précision des règles et des décisions sur du vrai trafic ; verser des cas anonymisés au harnais. Ce
+rapport en est l'instrument, il ne la mesure pas encore.
 
 ## Ce que les chiffres décident
 

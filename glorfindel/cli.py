@@ -2477,9 +2477,9 @@ def _print_confidence(r: dict) -> None:
     for where, cell in r["by_provenance"].items():
         table.add_row(_outside(where), *_counts(cell))
     console.print(table)
-    console.print("[dim]bench: the bench's perimeter (rg-celebrimbor*), the pre-observation — the criteria before "
-                  "autonomy do not count it; unknown: outside it (the twin, production, any park), or a card "
-                  "attributed to no VM[/dim]")
+    console.print("[dim]bench: the bench's perimeter (rg-celebrimbor, rg-celebrimbor-*), the pre-observation — the "
+                  "criteria before autonomy do not count it; unknown: outside it (the twin, production, any park), "
+                  "a card attributed to no VM, or every card without AZURE_SUBSCRIPTION_ID[/dim]")
 
 
 def _print_auditd() -> None:

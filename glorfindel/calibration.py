@@ -21,7 +21,7 @@ from __future__ import annotations
 import math
 from datetime import datetime
 
-from glorfindel.escalations import UNATTRIBUTED, VERDICTS, rule_of
+from glorfindel.escalations import VERDICTS, rule_of, unattributed
 
 # (label, bottom, top): closed at the bottom, open at the top — the last band closed at 1.
 BANDS: tuple[tuple[str, float, float], ...] = (
@@ -68,9 +68,11 @@ def judged_confidence(e: dict) -> float | None:
       model (a failed cycle, a detection without a decision, an operator's gesture whose check
       failed) carries it, and so does a decision whose confidence was unreadable (`_parse_decision`);
       the console and the bot show no confidence there;
-    - judged, then refreshed: a card that a re-fire rewrote (`first_confidence`) after its verdict, or
-      without both times to tell (`verdict_at`, `updated_at`) — the confidence judged is no longer on
-      the card. A verdict given in the console or on Discord acknowledges the card, which no re-fire
+    - judged, then updated: a card whose confidence a re-fire rewrote once (`first_confidence`: a
+      shift of 0.1 or more, a severity that rises, a compromise said) and that saw any update after
+      its verdict (`updated_at` moves with a rewrite of its confidence, but also with `refresh()` and
+      `note_identity_check`: left out all the same, the side to err on), or without both times to tell
+      (`verdict_at`, `updated_at`) — the confidence judged may no longer be on the card. A verdict given in the console or on Discord acknowledges the card, which no re-fire
       rewrites again; `glorfindel verdict` leaves it pending."""
     c = e.get("confidence")
     if isinstance(c, bool) or not isinstance(c, (int, float)) or not 0.0 < c <= 1.0:   # nan fails too
@@ -95,16 +97,16 @@ def provenance(e: dict, scope) -> str:
 
     `bench`: what it is about lies inside the bench's perimeter, as the injectors' guard draws it
     (`eregion_core.inscription.Scope.check`: the subscription AZURE_SUBSCRIPTION_ID names, a resource
-    group of Celebrimbor's, `rg-celebrimbor*`), read from its `resource_id` — bree, the VM of the
+    group of Celebrimbor's, `rg-celebrimbor` or `rg-celebrimbor-*`), read from its `resource_id` — bree, the VM of the
     pre-observation, which is not enrolled, included. The criteria before the autonomous mode do not
     count these cards (ROADMAP.md, « Critères avant le mode autonome »).
 
     `unknown`: everything else — outside the perimeter (the twin, production, any other park: a card
     does not carry its zone, and a VM of a real park is not enrolled, so its tags would not say it
     either), the subscription not named, or a card attributed to no VM (SLF1: its resource is the VM
-    it is filed on, not what it is about)."""
-    a = e.get("attribution")
-    if isinstance(a, dict) and a.get("state") == UNATTRIBUTED:
+    it is filed on, not what it is about) — recorded so (`attribution`) or held by the attribution
+    guard before SLF1 (`unattributed_signal`, no `attribution`): `escalations.unattributed` says both."""
+    if unattributed(e) is not None:
         return UNKNOWN
     return BENCH if scope.check(str(e.get("resource_id") or "")).allowed else UNKNOWN
 

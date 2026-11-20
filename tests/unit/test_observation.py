@@ -472,3 +472,14 @@ def test_the_cli_says_each_band_with_its_count_and_too_few_never_a_percentage(ga
     r = json.loads(_report_cli("--json"))
     assert r["by_confidence"]["[0.9, 1]"]["right_share"] == 0.9 and r["few_judged"] == 10
     assert r["above_threshold"]["judged"] == 13 and r["confidence_unknown"]["wrong"] == 1
+
+
+def test_provenance_a_card_held_by_the_attribution_guard_before_slf1_is_unknown(gate):
+    """B4a, review: the older shape of a card attributed to no VM — `unattributed_signal`, no
+    `attribution` field — is unknown too, filed on a bench VM though it is about none."""
+    gate.setenv("AZURE_SUBSCRIPTION_ID", SUB)
+    old = _decided(0.9, "right", where=ON_BENCH)
+    _set(old, escalation_type="unattributed_signal")
+    _decided(0.9, "right", where=ON_BENCH)
+    where = escalations.observation_report()["by_provenance"]
+    assert (where["bench"]["right"], where["unknown"]["right"]) == (1, 1)
