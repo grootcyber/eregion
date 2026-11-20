@@ -257,6 +257,7 @@ _ESCALATION_LABELS = {
     "telemetry_gap": "télémétrie incomplète (requêtes d'enquête en échec)",
     "unstable_decision": "décision instable (les tirages ne s'accordent pas)",
     "floor_proposal": "isolation proposée par le plancher (brute force réussi puis root), jamais exécutée seule",
+    "ceiling_proposal": "isolation proposée sous le plafond de la règle (sa preuve seule ne suffit pas), jamais exécutée seule",
     "readiness_hold": "VM retenue en observation (préparation)",
     "queue_tampered": "file d'actions : une demande que son service n'a pas écrite (FS1b)",
     "queue_unavailable": "file d'actions : le registre de la watch illisible (FS1b)",
@@ -350,8 +351,13 @@ def record(
     action_key: str = "",
     executed: dict | None = None,
     attribution: dict | None = None,
+    ceiling: dict | None = None,
 ) -> str:
     """Append an escalation and return its id.
+
+    `ceiling` (RDW1, #994): the rule's ceiling brought the decision back — the rule, the model's
+    proposal and its confidence, the action it was brought back to, what the rule allows, why. Kept on
+    the card for the console, which says both proposals; never part of the dedup.
 
     `attribution` (SLF1, #929): on a detection of the data plane attributed to no VM, what the card
     says in place of its resource — ``{"state": "unattributed", "candidates": […]}`` (`unattributed`);
@@ -477,6 +483,8 @@ def record(
                 # decision, its port included, never the card's; the card then says that decision.
                 if _propose(e, _decision(action, resource_id, escalation_type, action_params)):
                     e["action_params"] = dict(action_params or {})
+                if ceiling and (material or "ceiling" not in e):
+                    e["ceiling"] = dict(ceiling)            # RDW1: the latest proposal the rule capped
                 lines[i] = json.dumps(e, default=str)
                 _write_lines(lines)
                 return e["id"]
@@ -527,6 +535,8 @@ def record(
         esc["action_keys"] = [action_key]
     if executed:
         esc["executed"] = executed
+    if ceiling:
+        esc["ceiling"] = dict(ceiling)
     # FS1a: the watch's proposal, when the card holds an action — its own decision (SEC-B).
     _propose(esc, _decision(action, resource_id, escalation_type, action_params))
     # Rewritten whole, as every write of the store: an append seen half-done by a reader
