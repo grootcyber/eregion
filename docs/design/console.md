@@ -596,9 +596,17 @@ Jonathan a choisi sur une maquette (lignes « Le tableau de Dagorlad » et « La
 - **La vue Runs, sous 760 px : trois onglets**, Windows, Campaigns, Coverage ; par défaut les fenêtres,
   et un lien vers une campagne (`?campaign=`) ouvre la sienne. Les lignes de la matrice se replient sur
   deux lignes : l'ID et le nom, puis l'historique et l'état.
+- **Des verdicts au doigt** (Jonathan, 20/11 ; ils faisaient 54 × 16 px) : dans la liste TO JUDGE et la carte
+  de JUG1 (`.judge-actions`), Right, Wrong et Unsure à 44 px de haut sur une ligne, la note sur sa ligne
+  au-dessus en 16 px (sous 16 px, Safari sur iOS zoome sur le champ à chaque toucher) ; Confirm et Refuse
+  d'un verdict proposé à 44 px aussi.
+- **Un défaut de VP1 corrigé à toutes les largeurs**, le seul changement de MOB5 sur grand écran : Confirm et
+  Refuse étaient dans la ligne de la proposition, coupée à deux lignes par son style en ligne ; une
+  proposition de longueur ordinaire les mettait sous la coupe, cachés dans la liste TO JUDGE (mesuré à
+  1440 px : 2 sur 2). Ils sont maintenant sous la ligne, dans un conteneur à eux (`.judge-proposed`).
 - **Overview** : rien à changer. Un test garde sa feuille sans largeur fixe au-delà de 360 px.
-- **Rien ne change au-delà de 760 px** : un bloc `@media (max-width: 759px)` par page, le dernier de sa
-  feuille, comme MOB4.
+- **Rien d'autre ne change au-delà de 760 px** : un bloc `@media (max-width: 759px)` par page, le dernier
+  de sa feuille, comme MOB4.
 
 Mesuré dans Chromium sans tête. À 390 × 844 (toucher), avec l'en-tête de MOB4 : les trois pages sans
 dézoom ni débordement ; sur le tableau, Red par défaut, un toucher sur T1041 ouvre Targets sous
@@ -606,7 +614,11 @@ dézoom ni débordement ; sur le tableau, Red par défaut, un toucher sur T1041 
 Runs, Windows par défaut, puis Campaigns et Coverage, les lignes de la matrice dans l'écran. À 1440 ×
 900, Dagorlad est identique à `main` : les colonnes du tableau (360, 700, 380 px), la poignée, le fil
 dessiné, les trois colonnes de Runs (522, 418, 500 px).
-Tests : `tests/unit/test_console_phone_dagorlad.py` ; mutants M6698–M6709 (`scripts/mutants/MOB5.py`).
+Les verdicts, mesurés à 390 px : dans la liste, la carte de JUG1 et le verdict proposé, chaque bouton à
+44 px de haut, aucun hors de l'écran ni coupé, la note en 16 px ; à 1440 px, Confirm et Refuse visibles
+dans la liste (0 coupé), le reste identique (verdicts à 16 px, note en 10 px, la carte de JUG1 à sa place).
+Tests : `tests/unit/test_console_phone_dagorlad.py`, `tests/unit/test_console_phone_verdicts.py` ; mutants
+M6698–M6709, M6713, M6714, M6730 et M6731 (`scripts/mutants/MOB5.py`).
 
 ### Les blocages d'une VM (CON-K, #498, 04/11)
 

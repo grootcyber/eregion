@@ -1,7 +1,11 @@
+### Fixed
+- **Confirm and Refuse of a verdict proposed are no longer cut off in the list TO JUDGE, at every width** (MOB5, #975; VP1, #615). The one change of MOB5 on a large screen. They sat inside the line of the proposal, cut at two lines by its inline style: a proposal of an ordinary length put them below the cut. Measured at 1440 px: 2 of 2 hidden in the list before, 0 now; in the card of JUG1 they were visible and stay so. They now sit under the line, in a container of their own, sized as the other verdicts; the rest of the large screen is unchanged.
+
 ### Added
 - **Dagorlad on a phone: its board and its Runs view one column at a time, under 760 px** (MOB5, #975; `docs/design/console.md`, « Overview et Dagorlad sur un téléphone »). Jonathan's choices on a mockup (20/11), the follow of MOB4. Measured at 390 px, the board (a grid of 360 px, a flexible column and 380 px) showed its red cards only, and the Runs view its matrix only, the windows and the campaigns 1 px wide.
   - The board: three tabs, Red, Targets, Plan. The gesture is the board's own, a tap on a red card then on a target: a red card picked opens Targets under a banner that names it, a wire laid opens the plan, its badge the wires' count. The drag's handle and the wires drawn between the columns are left out; the plan lists the wires. A request is still a command run from the workstation.
   - The Runs view: three tabs, Windows, Campaigns, Coverage (a link to a campaign opens its tab), the coverage matrix's rows folded on two lines.
+  - Verdicts a finger can hit, on a phone (Jonathan, 20/11): in the list TO JUDGE and the card of JUG1, Right, Wrong and Unsure 44 px high on one row, the note on its own line above them in 16 px (under 16 px, Safari on iOS zooms on the field at each tap); Confirm and Refuse of a verdict proposed 44 px high too. They were 54 × 16 px.
   - Overview needed nothing beyond MOB4's header; a test keeps its stylesheet free of fixed widths beyond a phone's.
   - Nothing changes above 760 px: one media query per page, its stylesheet's last.
-  - Tests: `tests/unit/test_console_phone_dagorlad.py`; mutants M6698–M6709 (`scripts/mutants/MOB5.py`).
+  - Tests: `tests/unit/test_console_phone_dagorlad.py`; `tests/unit/test_console_phone_verdicts.py`; mutants M6698–M6709, M6713, M6714, M6730 and M6731 (`scripts/mutants/MOB5.py`).

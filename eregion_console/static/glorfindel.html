@@ -148,6 +148,9 @@
     background: var(--bg2); border: 1px solid var(--border); color: var(--text);
   }
   .judge-actions button { font-size: 9px; padding: 2px 7px; }
+  /* The verdict proposed (VP1): its buttons under its line, never cut with it (MOB5). */
+  .judge-proposed { display: flex; gap: 5px; margin-top: 3px; }
+  .judge-proposed button { font-size: 9px; padding: 2px 7px; }
   .judge-why a { color: var(--blue); text-decoration: none; }
   .judge-why a:hover { text-decoration: underline; }
   .judge-item.focus { background: color-mix(in srgb, var(--blue) 10%, transparent); outline: 1px solid var(--blue); }
@@ -607,6 +610,14 @@
     .topo-module + .topo-module { border-left: 0; border-top: 1px solid var(--border); margin-top: 10px; }
     .node-asset, .node-asset-empty { flex: 1 1 100%; max-width: none; min-width: 0; }
     .modal, .modal.wide { min-width: 0; max-width: none; width: calc(100vw - 24px); }   /* the wide ones too */
+    /* Verdicts a finger can hit (MOB5): 44 px high, the three on one row, the note on its own line above
+       them in 16 px (under 16 px, Safari on iOS zooms on the field at each tap). The list, the card of
+       JUG1, and the verdict proposed on an exercise card (VP1). */
+    .judge-actions { flex-wrap: wrap; gap: 8px; }
+    .judge-actions input { flex: 1 1 100%; font-size: 16px; padding: 8px 10px; }
+    .judge-actions button { flex: 1 1 0; min-height: 44px; font-size: 13px; padding: 6px 4px; }
+    .judge-proposed { gap: 8px; margin-top: 6px; }
+    .judge-proposed button { flex: 1 1 0; min-height: 44px; font-size: 13px; padding: 6px 10px; }
   }
 </style>
 </head>
