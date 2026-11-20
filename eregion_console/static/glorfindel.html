@@ -645,15 +645,18 @@
     .judge-proposed { gap: 8px; margin-top: 6px; }
     .judge-proposed button { flex: 1 1 0; min-height: 44px; font-size: 13px; padding: 6px 10px; }
     /* Several at once, by the finger (JUG3, decision 3): a box of 20 px in a hit area of 44 × 44 px (its
-       margins give back the room it takes: the line keeps its height), « select all » and « select this
-       rule » 44 px high, the bar at the screen's foot, its note in 16 px, its verdicts 44 px high. */
-    .judge-pick { padding: 12px 16px 12px 8px; margin: -12px 0 -12px -8px; align-self: center; }
+       margins give back the room it takes: the line keeps its height; above the line's next rows, or
+       their bottom would open the card), « select all » and « select this rule » 44 px high, the bar at
+       the screen's foot, its note in 16 px, its verdicts 44 px high. */
+    .judge-pick { padding: 12px 16px 12px 8px; margin: -12px 0 -12px -8px; align-self: center; position: relative; z-index: 1; }
     .judge-pick input, .judge-all input, .judge-rule input { width: 20px; height: 20px; }
     .judge-all { font-size: 12px; min-height: 44px; }
     .judge-rule label { min-height: 44px; font-size: 12px; }
     .judge-bar input { flex: 1 1 100%; font-size: 16px; padding: 8px 10px; }
     .judge-bar button, .judge-confirm-row button { flex: 1 1 0; min-height: 44px; font-size: 13px; }
     .judge-bar, .judge-confirm { font-size: 12px; }
+    /* A tile's « to judge ▸ » and « to judge ×N ▸ »: 44 px high by its padding, given back by its margins. */
+    a.judge-link { position: relative; z-index: 1; padding: 14px 10px; margin: -14px -10px -14px auto; }
   }
 </style>
 </head>

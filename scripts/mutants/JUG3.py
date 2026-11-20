@@ -7,8 +7,11 @@ written over (M6742), a verdict outside the three (M6743), cards of several rule
 (M6744), « to judge ×1 » (M6745), the group's window without its cards once they are acknowledged
 (M6746), another window written by the group's batch (M6747), the 30 s redraw dropping what is typed
 (M6748), the box out of a finger's reach on a phone (M6765), the bar's note that makes Safari zoom
-(M6766), the group's window never redrawn with the list (M6767). M6734–M6748 and M6765–M6767,
-measured by tests/unit/test_console_judge_batch.py.
+(M6766), the group's window never redrawn with the list (M6767); from the review: the list not read again
+letting the batch through (M6780), a list refused taken as read (M6781), two batches at once
+(M6782, M6784), the group's window reset under its batch (M6783), the phone's box under the line's
+next rows (M6785), the outcome's lines alike (M6786), a tile's link too small for a finger (M6787).
+M6734–M6748, M6765–M6767 and M6780–M6787, measured by tests/unit/test_console_judge_batch.py.
 
 Form loaded by scripts/mutation_check.py: MUTANTS (id, description, file, old, new) and TESTS (its ids
 → the test that catches it); paths as plain strings.
@@ -60,13 +63,32 @@ MUTANTS = [
     ("M6748", "the 30 s redraw of TO JUDGE drops a card's note and the focus: the keyboard closes (JUG3)", GF_JS,
      "  _retype(list, typed);\n  // ?card=<id>: scrolled to once", "  // ?card=<id>: scrolled to once"),
     ("M6765", "a card's box out of a finger's reach on a phone: a hit area of 20 px (JUG3, decision 3)", GF_HTML,
-     "    .judge-pick { padding: 12px 16px 12px 8px; margin: -12px 0 -12px -8px; align-self: center; }\n", ""),
+     "    .judge-pick { padding: 12px 16px 12px 8px; margin: -12px 0 -12px -8px; align-self: center; position: relative; z-index: 1; }\n", ""),
     ("M6766", "the batch's note under 16 px on a phone: Safari on iOS zooms on it at each tap (JUG3)", GF_HTML,
      "    .judge-bar input { flex: 1 1 100%; font-size: 16px; padding: 8px 10px; }\n",
      "    .judge-bar input { flex: 1 1 100%; font-size: 10px; padding: 8px 10px; }\n"),
     ("M6767", "the group's window never redrawn with the list: a card judged elsewhere keeps its box (JUG3)", GF_JS,
-     "_toJudge = q.cards; renderToJudge(); _judgeGroupAgain(); Console.setJudgeCount(q.cards.length);",
-     "_toJudge = q.cards; renderToJudge(); Console.setJudgeCount(q.cards.length);"),
+     "_toJudge = cards; renderToJudge(); _judgeGroupAgain(); Console.setJudgeCount(cards.length);",
+     "_toJudge = cards; renderToJudge(); Console.setJudgeCount(cards.length);"),
+    ("M6780", "the list not read again lets the batch through: a card judged elsewhere written over (JUG3, review)", GF_JS,
+     "    if (!fresh) { lines.push({ id, label, note: !!note, state: 'fail', why: 'the list could not be read again' }); continue; }\n", ""),
+    ("M6781", "a list refused by the server taken as read again (JUG3, review)", GF_JS,
+     "    if (!r.ok) return null;\n    const q = await r.json();\n", "    const q = await r.json();\n"),
+    ("M6782", "a batch asked while another runs: the same cards judged twice at once (JUG3, review)", GF_JS,
+     "if (!B.picked.size) return; if (_batchRunning()) { toast('⏳ A batch is being judged: wait for its end'); return; } B.ask =",
+     "if (!B.picked.size) return; B.ask ="),
+    ("M6783", "the group's window reset under its batch when opened again (JUG3, review)", GF_JS,
+     "  // Its batch running: the window opened again as it is (its group, its progress), never reset under it.\n  if (!B.running) {\n",
+     "  // Its batch running: the window opened again as it is (its group, its progress), never reset under it.\n  if (true) {\n"),
+    ("M6784", "a summary confirmed while another batch runs: two batches at once (JUG3, review)", GF_JS,
+     "  if (!B.ask) return;\n  if (_batchRunning()) { toast('⏳ A batch is being judged: wait for its end'); return; }\n",
+     "  if (!B.ask) return;\n"),
+    ("M6785", "the phone's box under the line's next rows: the area's last rows open the card (JUG3, review)", GF_HTML,
+     "align-self: center; position: relative; z-index: 1; }", "align-self: center; }"),
+    ("M6786", "the outcome's lines alike for two cards of one action on one VM (JUG3, review)", GF_JS,
+     "${on ? ' — ' + on : ''} · ${String(c.id || '').slice(0, 8)}`;", "${on ? ' — ' + on : ''}`;"),
+    ("M6787", "a tile's « to judge ▸ » 16 px high on a phone (JUG3, review)", GF_HTML,
+     "    a.judge-link { position: relative; z-index: 1; padding: 14px 10px; margin: -14px -10px -14px auto; }\n", ""),
 ]
 
 TESTS = {
@@ -88,4 +110,12 @@ TESTS = {
     "M6765": f"{_T}test_on_a_phone_a_finger_hits_the_box",
     "M6766": f"{_T}test_on_a_phone_the_bar_takes_a_finger_and_its_note_no_zoom",
     "M6767": f"{_T}test_the_group_window_is_written_only_while_it_is_the_one_open",
+    "M6780": f"{_T}test_a_list_not_read_again_writes_nothing",
+    "M6781": f"{_T}test_a_list_not_read_again_writes_nothing",
+    "M6782": f"{_T}test_one_batch_at_a_time_for_the_page",
+    "M6783": f"{_T}test_one_batch_at_a_time_for_the_page",
+    "M6784": f"{_T}test_one_batch_at_a_time_for_the_page",
+    "M6785": f"{_T}test_on_a_phone_a_finger_hits_the_box",
+    "M6786": f"{_T}test_the_lines_of_the_outcome_are_told_apart",
+    "M6787": f"{_T}test_on_a_phone_a_tile_s_link_to_judge_takes_a_finger",
 }

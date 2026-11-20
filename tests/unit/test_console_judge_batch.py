@@ -81,8 +81,8 @@ def test_nothing_is_written_before_the_summary():
 
 def test_the_summary_counts_by_rule_and_says_the_note():
     panel = _fn("_batchPanel")
-    assert "B.ask.ids.forEach(id => { const r = _batchRule(_batchCard(id)); byRule[r] = (byRule[r] || 0) + 1; });" in panel
-    assert "${Object.entries(byRule).map(([r, k]) => `${Number(k)} × ${_attr(r)}`).join(' · ')}" in panel
+    assert "B.ask.ids.forEach(id => { const r = _batchRule(_batchCard(id)); byRule.set(r, (byRule.get(r) || 0) + 1); });" in panel
+    assert "${[...byRule.entries()].map(([r, k]) => `${Number(k)} × ${_attr(r)}`).join(' · ')}" in panel
     assert "${B.ask.note ? 'note: ' + _attr(B.ask.note) : 'no note'}" in panel
 
 
@@ -127,7 +127,8 @@ def test_a_card_that_fails_is_said_and_stays_checked_the_note_goes_with_its_batc
 def test_a_card_judged_since_the_summary_is_left_as_it_was():
     run = _fn("_runBatch")
     # The list read again before the first card; a card no longer in it is never written.
-    assert run.index("await refreshObservation();") < run.index("for (const [k, id] of ids.entries()) {")
+    assert run.index("const fresh = await _toJudgeNow();") < run.index("for (const [k, id] of ids.entries()) {")
+    assert "if (fresh) _takeToJudge(fresh);" in run
     assert "if (!_toJudge.some(c => c.id === id)) { lines.push({ id, label, note: !!note, state: 'gone' }); continue; }" in run
     assert "left as it was — no longer to judge (judged elsewhere since the summary?)" in _fn("_batchPanel")
 
@@ -162,7 +163,8 @@ def test_the_group_window_is_written_only_while_it_is_the_one_open():
     assert "m.classList.contains('open') && m.dataset.owner === 'judge-group'" in again
     assert "document.getElementById('modal-title').textContent === _batch.group.title) _renderJudgeGroup();" in again
     # Redrawn with the list: a card judged elsewhere loses its box.
-    assert "_toJudge = q.cards; renderToJudge(); _judgeGroupAgain(); Console.setJudgeCount(q.cards.length);" in JS
+    assert "_toJudge = cards; renderToJudge(); _judgeGroupAgain(); Console.setJudgeCount(cards.length);" in _fn("_takeToJudge")
+    assert "if (cards) _takeToJudge(cards);" in _fn("refreshObservation")
 
 
 def test_the_30_s_redraw_keeps_what_is_typed_and_where():
@@ -181,7 +183,10 @@ def test_the_30_s_redraw_keeps_what_is_typed_and_where():
 
 
 def test_on_a_phone_a_finger_hits_the_box():
-    assert "    .judge-pick { padding: 12px 16px 12px 8px; margin: -12px 0 -12px -8px; align-self: center; }" in PHONE
+    # Above the line's next rows: their bottom would take the area's last rows, and open the card
+    # (the review measured 81 % of it; 100 % since).
+    assert ("    .judge-pick { padding: 12px 16px 12px 8px; margin: -12px 0 -12px -8px; align-self: center; "
+            "position: relative; z-index: 1; }") in PHONE
     assert "    .judge-pick input, .judge-all input, .judge-rule input { width: 20px; height: 20px; }" in PHONE
     assert "    .judge-all { font-size: 12px; min-height: 44px; }" in PHONE
     assert "    .judge-rule label { min-height: 44px; font-size: 12px; }" in PHONE
@@ -195,3 +200,46 @@ def test_on_a_phone_the_bar_takes_a_finger_and_its_note_no_zoom():
 def test_the_bar_stays_at_the_foot_of_the_list():
     base = STYLE.split("  @media (max-width: 759px) {\n", 1)[0]
     assert "  .judge-bar, .judge-confirm, .judge-batch-result { position: sticky; bottom: 0" in base
+
+
+def test_a_list_not_read_again_writes_nothing():
+    # The review: the GET refused, the list of the summary kept, a card judged elsewhere written over.
+    now = _fn("_toJudgeNow")
+    assert "if (!r.ok) return null;" in now
+    assert "return q && Array.isArray(q.cards) ? q.cards : null;" in now
+    assert "} catch (e) { return null; }" in now
+    run = _fn("_runBatch")
+    assert ("if (!fresh) { lines.push({ id, label, note: !!note, state: 'fail', why: 'the list could not be read again' }); "
+            "continue; }") in run
+    assert run.index("if (!fresh) {") < run.index("if (!_toJudge.some(c => c.id === id))") < run.index("await _judgeOne(")
+    assert "refreshObservation" not in run.split("_batchRender(where);\n  await refreshState();", 1)[0]
+
+
+def test_one_batch_at_a_time_for_the_page():
+    assert "function _batchRunning() { return !!(_batch.list.running || _batch.group.running); }" in JS
+    ask = _action("askBatch")
+    assert "if (_batchRunning()) { toast('⏳ A batch is being judged: wait for its end'); return; } B.ask =" in ask
+    run = _fn("_runBatch")
+    assert "  if (!B.ask) return;\n  if (_batchRunning()) { toast('⏳ A batch is being judged: wait for its end'); return; }" in run
+    # The group's window opened again during its batch: as it is, never reset under it.
+    opener = _fn("openJudgeGroup")
+    assert "  if (!B.running) {\n" in opener
+    assert "running: ''" not in opener
+
+
+def test_the_lines_of_the_outcome_are_told_apart():
+    # Two cards of one action on one VM: the id's first 8 characters, as `glorfindel pending` shows them.
+    assert "${on ? ' — ' + on : ''} · ${String(c.id || '').slice(0, 8)}`;" in _fn("_batchLabel")
+
+
+def test_the_summary_counts_every_rule_name():
+    # A Map: a rule named __proto__ counted too.
+    panel = _fn("_batchPanel")
+    assert "byRule = new Map();" in panel
+    assert "byRule.set(r, (byRule.get(r) || 0) + 1);" in panel
+    assert "byRule[" not in panel
+
+
+def test_on_a_phone_a_tile_s_link_to_judge_takes_a_finger():
+    assert ("    a.judge-link { position: relative; z-index: 1; padding: 14px 10px; margin: -14px -10px -14px auto; }"
+            in PHONE)

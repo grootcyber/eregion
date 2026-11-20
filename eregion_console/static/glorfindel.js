@@ -2718,12 +2718,21 @@ function focusJudge(escId) {
 let _toJudge = [];
 
 async function refreshObservation() {
+  const cards = await _toJudgeNow();
+  if (cards) _takeToJudge(cards);
+}
+// The cards to judge as the server says them now, or null: an error, a refusal, an answer without
+// its cards — never the list read before taken for it (JUG3: a batch writes only on a list read again).
+async function _toJudgeNow() {
   try {
-    const q = await fetch('/api/to-judge?since=7d').then(x => x.json());
-    if (q && Array.isArray(q.cards)) {
-      _toJudge = q.cards; renderToJudge(); _judgeGroupAgain(); Console.setJudgeCount(q.cards.length);
-    }
-  } catch (e) {}
+    const r = await fetch('/api/to-judge?since=7d');
+    if (!r.ok) return null;
+    const q = await r.json();
+    return q && Array.isArray(q.cards) ? q.cards : null;
+  } catch (e) { return null; }
+}
+function _takeToJudge(cards) {
+  _toJudge = cards; renderToJudge(); _judgeGroupAgain(); Console.setJudgeCount(cards.length);
 }
 
 // VP1c (#920): the card's time carries no time zone, or cannot be read — kept in the list whatever the
@@ -2836,13 +2845,18 @@ const _batch = {
   // and the verdict each got in it (given): its lines still say what they were, and how judged.
   group: { picked: new Set(), ask: null, result: null, note: '', running: '', ids: [], title: '', cards: {}, given: {} },
 };
+// One batch at a time for the page: the list's and the group's window never judge at once (the same
+// cards could be in both).
+function _batchRunning() { return !!(_batch.list.running || _batch.group.running); }
 function _batchCard(id) { return _toJudge.find(c => c.id === id) || _escById[id] || null; }
 function _batchRule(c) { return String((c && (c.rule_name || c.action || c.escalation_type)) || 'no rule'); }
 function _batchLabel(c) {
   if (!c) return '?';
   const t = _targetOf(c);
   const on = t ? (t.name || _TARGET_KINDS[t.kind] || '') : (c.resource_id || '').split('/').pop();
-  return `${c.action ? actionLabelVerb(c.action) : escTitle(c)}${on ? ' — ' + on : ''}`;
+  // The id's first 8 characters (as `glorfindel pending` shows them): two cards of one action on one VM
+  // told apart in the outcome.
+  return `${c.action ? actionLabelVerb(c.action) : escTitle(c)}${on ? ' — ' + on : ''} · ${String(c.id || '').slice(0, 8)}`;
 }
 // The group's window only while it is the one open: closed during a batch, another window is never written.
 function _batchRender(where) { where === 'group' ? _judgeGroupAgain() : renderToJudge(); }
@@ -2861,11 +2875,11 @@ function _batchPanel(where) {
   }
   if (B.running) parts.push(`<div class="judge-bar" ${_on('click', 'stop')}><b>${_attr(B.running)}</b></div>`);
   else if (B.ask) {
-    const n = B.ask.ids.length, byRule = {};
-    B.ask.ids.forEach(id => { const r = _batchRule(_batchCard(id)); byRule[r] = (byRule[r] || 0) + 1; });
+    const n = B.ask.ids.length, byRule = new Map();             // a Map: any rule's name a key (__proto__ too)
+    B.ask.ids.forEach(id => { const r = _batchRule(_batchCard(id)); byRule.set(r, (byRule.get(r) || 0) + 1); });
     parts.push(`<div class="judge-confirm" ${_on('click', 'stop')}>
       <div class="judge-confirm-t">Judge ${Number(n)} card${n > 1 ? 's' : ''} ${_attr(B.ask.verdict)}?</div>
-      <div>${Object.entries(byRule).map(([r, k]) => `${Number(k)} × ${_attr(r)}`).join(' · ')}</div>
+      <div>${[...byRule.entries()].map(([r, k]) => `${Number(k)} × ${_attr(r)}`).join(' · ')}</div>
       <div class="judge-confirm-note">${B.ask.note ? 'note: ' + _attr(B.ask.note) : 'no note'}</div>
       <div class="judge-confirm-row"><button class="action" ${_on('click', 'runBatch', where)}>Judge ${Number(n)} ${_attr(B.ask.verdict)}</button><button class="action" ${_on('click', 'cancelBatch', where)}>Cancel</button></div>
     </div>`);
@@ -2900,19 +2914,23 @@ async function _judgeOne(id, verdict, note) {
 }
 async function _runBatch(where) {
   const B = _batch[where];
-  if (!B.ask || B.running) return;
+  if (!B.ask) return;
+  if (_batchRunning()) { toast('⏳ A batch is being judged: wait for its end'); return; }
   const { verdict, note, ids } = B.ask;
   B.ask = null;
   // The list read again first: a verdict given since the summary (the bot, another tab) is never
-  // written over — the server takes a second verdict, as a card's own button does.
+  // written over — the server takes a second verdict, as a card's own button does. Not read again
+  // (an error, a refusal): nothing is written, each card said and left checked.
   B.running = 'Reading the list again…';
   _batchRender(where);
-  await refreshObservation();
+  const fresh = await _toJudgeNow();
+  if (fresh) _takeToJudge(fresh);
   const lines = [];
   for (const [k, id] of ids.entries()) {                         // one after the other, never at once
     B.running = `Judging ${k + 1} of ${ids.length}…`;
     _batchRender(where);
     const label = _batchLabel(_batchCard(id));
+    if (!fresh) { lines.push({ id, label, note: !!note, state: 'fail', why: 'the list could not be read again' }); continue; }
     if (!_toJudge.some(c => c.id === id)) { lines.push({ id, label, note: !!note, state: 'gone' }); continue; }
     lines.push({ id, label, note: !!note, ...(await _judgeOne(id, verdict, note)) });
   }
@@ -2932,14 +2950,17 @@ async function _runBatch(where) {
 // The window of a group (« to judge ×N » on a tile): its cards to judge, ranged by rule, each with its
 // box, « select this rule », « select all » (decision 2 of 20/11); the batch as in the list.
 function openJudgeGroup(idsCsv) {
-  // The group's ids, as _renderEscGroup gave them (a group of _groupEscs): only cards the page knows.
-  const members = String(idsCsv || '').split(',').filter(id => _escById[id]);
-  if (!members.length) return;
   const B = _batch.group;
-  Object.assign(B, { picked: new Set(), ask: null, result: null, note: '', running: '', ids: members,
-    cards: Object.fromEntries(members.map(id => [id, _batchCard(id)])), given: {} });
-  const e = _escById[members[0]];
-  B.title = `To judge — ${e.action ? actionLabelVerb(e.action) : escTitle(e)} ×${members.length} — ${_ownTile(e) || String(e.resource_id || '').split('/').pop()}`;
+  // Its batch running: the window opened again as it is (its group, its progress), never reset under it.
+  if (!B.running) {
+    // The group's ids, as _renderEscGroup gave them (a group of _groupEscs): only cards the page knows.
+    const members = String(idsCsv || '').split(',').filter(id => _escById[id]);
+    if (!members.length) return;
+    Object.assign(B, { picked: new Set(), ask: null, result: null, note: '', ids: members,
+      cards: Object.fromEntries(members.map(id => [id, _batchCard(id)])), given: {} });
+    const e = _escById[members[0]];
+    B.title = `To judge — ${e.action ? actionLabelVerb(e.action) : escTitle(e)} ×${members.length} — ${_ownTile(e) || String(e.resource_id || '').split('/').pop()}`;
+  }
   document.getElementById('modal-title').textContent = B.title;
   document.getElementById('modal').dataset.owner = 'judge-group';
   document.getElementById('modal-cmd').style.display = 'none';
@@ -4308,7 +4329,7 @@ const ACTIONS = {
   pickGroupRule(rule) { if (_target instanceof HTMLInputElement && _target.type === 'checkbox') { const on = _target.checked; _groupJudgeable().filter(id => _batchRule(_batchCard(id)) === rule).forEach(id => on ? _batch.group.picked.add(id) : _batch.group.picked.delete(id)); _batch.group.ask = null; _batch.group.result = null; _renderJudgeGroup(); } },
   pickGroupAll() { if (_target instanceof HTMLInputElement && _target.type === 'checkbox') { _batch.group.picked = new Set(_target.checked ? _groupJudgeable() : []); _batch.group.ask = null; _batch.group.result = null; _renderJudgeGroup(); } },
   batchNote(where) { if (Object.hasOwn(_batch, where) && _target instanceof HTMLInputElement) _batch[where].note = _target.value.slice(0, 300); },
-  askBatch(where, verdict) { if (!Object.hasOwn(_batch, where) || !_VERDICTS.includes(verdict)) return; const B = _batch[where]; if (!B.picked.size || B.running) return; B.ask = { verdict, note: B.note.trim(), ids: [...B.picked] }; B.result = null; _batchRender(where); },
+  askBatch(where, verdict) { if (!Object.hasOwn(_batch, where) || !_VERDICTS.includes(verdict)) return; const B = _batch[where]; if (!B.picked.size) return; if (_batchRunning()) { toast('⏳ A batch is being judged: wait for its end'); return; } B.ask = { verdict, note: B.note.trim(), ids: [...B.picked] }; B.result = null; _batchRender(where); },
   runBatch(where) { if (Object.hasOwn(_batch, where)) _runBatch(where); },
   cancelBatch(where) { if (Object.hasOwn(_batch, where)) { _batch[where].ask = null; _batchRender(where); } },
   clearBatch(where) { if (Object.hasOwn(_batch, where)) { Object.assign(_batch[where], { picked: new Set(), ask: null, result: null }); _batchRender(where); } },
