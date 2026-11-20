@@ -190,22 +190,24 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    LC["load_context"] -->|"attack_started"| PD["poll_detection"]
-    LC -->|"détection"| INV["investigate"]
+    LC["load_context"] -->|"tout autre<br/>événement"| PD["poll_detection"]
     LC -->|"detection_missed"| PDR["propose_detection_rule"]
-    PD --> INV
+    PD --> CF["confirm_facts"]
+    CF --> INV["investigate"]
     INV --> DEC["decide"]
     DEC -->|"action autonome<br/>autorisée"| EX["execute_action"]
-    EX --> VA["verify_action"]
-    VA -->|"vérifiée"| SC["store_cycle"]
-    VA -->|"non vérifiée,<br/>échec"| ESC["escalate_to_human"]
-    DEC -->|"retenue"| ESC
+    DEC -->|"retenue, identité,<br/>approbation, inconnue"| ESC["escalate_to_human"]
+    EX -->|"écrite"| VA["verify_action"]
+    EX -->|"write_blocked,<br/>action_failed"| ESC
+    VA -->|"vérifiée, ou<br/>rien à relire"| SC["store_cycle"]
+    VA -->|"non vérifiée"| ESC
+    PDR -->|"proposition,<br/>détection bloquée"| ESC
+    PDR -->|"faux négatif écarté"| SC
     ESC --> SC
-    PDR --> SC
     classDef blue fill:#2f6fd6,stroke:#1d4a9a,color:#ffffff
     classDef guard fill:#f2b33d,stroke:#b07a12,color:#2b1d00
     classDef warn fill:#fbe3e3,stroke:#d64545,color:#7a1f1f
-    class LC,PD,INV,DEC,EX,SC,PDR blue
+    class LC,PD,CF,INV,DEC,EX,SC,PDR blue
     class VA guard
     class ESC warn
 ```
