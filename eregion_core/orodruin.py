@@ -547,6 +547,10 @@ def read_cap(env=None) -> tuple[list[dict], dict]:
 # Orodruin's AUTHZ_READ_ONLY token, (b) with Stratus's token, by Orodruin's process outside the
 # sandbox (docs/design/stratus-cible.md § 1, "Le code hermétique de R2c").
 STRATUS_SUB_ENV = "EREGION_STRATUS_SUBSCRIPTION"
+# The Stratus app's client id and the host-fetched assertion mounted into the run (pièce 4B): the
+# contract becomes Stratus by the federated exchange to read (b) the groups and the diagnostic.
+STRATUS_CLIENT_ID_ENV = "EREGION_STRATUS_CLIENT_ID"
+STRATUS_ASSERTION_FILE_ENV = "EREGION_STRATUS_ASSERTION_FILE"
 # Subscriptions Stratus must never be armed on: Orodruin's own (AZURE_SUBSCRIPTION_ID) always,
 # plus any the operator declares here (comma-separated: the bench, the VM, Imladris, when they
 # differ from Orodruin's). EREGION_STRATUS_SUBSCRIPTION equal to one of these is the v1 blocker
@@ -679,11 +683,23 @@ def assess_stratus(*, subscription: str, protected: frozenset[str], assignments:
 def _stratus_credential(env=None):
     """Stratus's credential, obtained by the federated exchange from Orodruin's process OUTSIDE
     the sandbox (the voulu direction, § 1): a WorkloadIdentityCredential whose subject is
-    Orodruin's managed identity (the FIC posed by R2BGc). Pièce 4 (annatar) finalises how the
-    assertion is fed; here it is built from the environment, and a piece missing raises — the
+    Orodruin's managed identity (the FIC posed by R2BGc). Built with explicit arguments from
+    EREGION_STRATUS_CLIENT_ID, the tenant (EREGION_TENANT_ID) and the assertion file the host
+    fetched and mounted into the run (EREGION_STRATUS_ASSERTION_FILE, pièce 4B) — not from the
+    azure.identity default AZURE_* names, which nothing sets here. A piece missing raises: the
     guarantee is then missing, never armed (fail closed)."""
+    env = os.environ if env is None else env
     from azure.identity import WorkloadIdentityCredential
-    return WorkloadIdentityCredential()  # AZURE_CLIENT_ID / AZURE_TENANT_ID / AZURE_FEDERATED_TOKEN_FILE
+    client_id = (env.get(STRATUS_CLIENT_ID_ENV) or "").strip()
+    tenant_id = (env.get(GRAPH_DECLARED_ENV) or env.get("AZURE_TENANT_ID") or "").strip()
+    token_file = (env.get(STRATUS_ASSERTION_FILE_ENV) or "").strip()
+    if not (client_id and tenant_id and token_file):
+        raise RuntimeError(
+            "the Stratus federated credential is incomplete (EREGION_STRATUS_CLIENT_ID, the tenant "
+            "EREGION_TENANT_ID, and EREGION_STRATUS_ASSERTION_FILE — the host-fetched assertion "
+            "mounted into the run, pièce 4B) — not armed")
+    return WorkloadIdentityCredential(
+        client_id=client_id, tenant_id=tenant_id, token_file_path=token_file)
 
 
 def read_stratus(*, orodruin_credential=None, stratus_credential=None, get=None, env=None) -> list[dict]:

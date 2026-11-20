@@ -8,6 +8,8 @@ import re
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+
 import eregion_core.orodruin as orodruin
 
 STRATUS_SUB = "11111111-1111-1111-1111-111111111111"   # the dedicated Stratus subscription
@@ -257,6 +259,28 @@ def test_read_sandbox_fails_closed_when_the_proof_cannot_be_read():
     env = {"EREGION_STRATUS_SUBSCRIPTION": STRATUS_SUB}
     missing = orodruin.read_sandbox(env=env, read_proof=boom)
     assert [m["code"] for m in missing] == ["stratus_sandbox_unreadable"]
+
+
+def test_the_stratus_credential_is_built_from_the_dedicated_env(monkeypatch):
+    """R2c pièce 2/4B: the contract becomes Stratus by the federated exchange with EXPLICIT args
+    from EREGION_STRATUS_* and the host-fetched assertion file mounted into the run — not the
+    azure.identity AZURE_* defaults (nothing sets them here). A piece missing fails closed."""
+    import azure.identity
+    captured: dict = {}
+
+    class FakeWIC:
+        def __init__(self, **kw):
+            captured.update(kw)
+
+    monkeypatch.setattr(azure.identity, "WorkloadIdentityCredential", FakeWIC)
+    env = {"EREGION_STRATUS_CLIENT_ID": "stratus-app", "EREGION_TENANT_ID": "tenant-abc",
+           "EREGION_STRATUS_ASSERTION_FILE": "/run/stratus/assertion.jwt"}
+    orodruin._stratus_credential(env)
+    assert captured == {"client_id": "stratus-app", "tenant_id": "tenant-abc",
+                        "token_file_path": "/run/stratus/assertion.jwt"}
+    for miss in ("EREGION_STRATUS_CLIENT_ID", "EREGION_TENANT_ID", "EREGION_STRATUS_ASSERTION_FILE"):
+        with pytest.raises(RuntimeError, match="incomplete"):
+            orodruin._stratus_credential({k: v for k, v in env.items() if k != miss})
 
 
 # ── the allow-list held EQUAL to the Terraform's closed role (R2BGc) ─────────────────────────

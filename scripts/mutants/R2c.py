@@ -66,6 +66,7 @@ _STRATUS_WIRED = f"{_TAS}::test_the_orodruin_stratus_run_is_wired_for_the_federa
 # Decision A — la garde sandbox lit une preuve en fichier (fraîcheur, pose, montage).
 _SANDBOX_STALE = f"{_TC}::test_read_sandbox_refuses_a_stale_proof"
 _SANDBOX_MOUNTED = f"{_TAS}::test_the_sandbox_proof_is_mounted_into_the_contract_and_the_run"
+_STRATUS_CRED = f"{_TC}::test_the_stratus_credential_is_built_from_the_dedicated_env"
 
 # The listing spans two lines; built here so the whitespace is exact (32-space continuation).
 _LIST_ALL = '"list", "--all",\n' + " " * 32 + '"--assignee-object-id"'
@@ -212,6 +213,11 @@ MUTANTS = [
      MAKEFILE,
      "--env-file orodruin.env -v $(ORO_SANDBOX_PROOF):$(ORO_SANDBOX_PROOF):ro $(call ORO_MOUNT,orodruin) $(ORO_IMAGE)",
      "--env-file orodruin.env $(call ORO_MOUNT,orodruin) $(ORO_IMAGE)"),
+    ("M6615", "the Stratus read credential's fail-closed guard is inverted — an incomplete federated "
+     "identity would be used, or a complete one refused, breaking the contract's read as Stratus "
+     "(R2c, pièce 2/4B)",
+     ORODRUIN, "    if not (client_id and tenant_id and token_file):",
+     "    if (client_id and tenant_id and token_file):"),
 ]
 
 TESTS = {
@@ -249,4 +255,5 @@ TESTS = {
     "M6612": _SANDBOX_POSED,
     "M6613": _SANDBOX_POSED,
     "M6614": _SANDBOX_MOUNTED,
+    "M6615": _STRATUS_CRED,
 }
