@@ -188,21 +188,45 @@ pytestmark_make = pytest.mark.skipif(shutil.which("make") is None, reason="make 
 TARGETS = ["-target=azurerm_monitor_data_collection_rule.celebrimbor"]
 
 
-def _make(tmp_path, target, *args):
+BENCH_SUB = "11111111-aaaa-4bbb-8ccc-000000000001"
+OTHER_SUB = "22222222-aaaa-4bbb-8ccc-000000000002"
+
+
+def _make(tmp_path, target, *args, active=BENCH_SUB):
+    """A fake ``terraform`` that writes down its arguments, and a fake ``az`` whose
+    ``account show`` answers ``active``: the subscription guard (G1c) reads it first."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
+    tfvars_dir = tmp_path / "tfvars"   # the guard's, empty: never the operator's terraform.tfvars
+    tfvars_dir.mkdir(exist_ok=True)
     log = tmp_path / "tf.log"
     log.write_text("")
     tf = bin_dir / "terraform"
     tf.write_text('#!/bin/sh\necho "$*" >> "$FAKE_TF_LOG"\n')
     tf.chmod(0o755)
+    az = bin_dir / "az"
+    az.write_text('#!/bin/sh\nprintf "%s\\n" "$FAKE_AZ_SUB"\n')
+    az.chmod(0o755)
     env = {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", "FAKE_TF_LOG": str(log),
-           "HOME": str(tmp_path)}
-    for var in ("INSTANCE", "YES", "TOPO"):
+           "HOME": str(tmp_path), "AZURE_SUBSCRIPTION_ID": BENCH_SUB, "FAKE_AZ_SUB": active}
+    for var in ("INSTANCE", "YES", "TOPO", "ARM_SUBSCRIPTION_ID", "TF_VAR_subscription_id",
+                "CELEBRIMBOR_TFVARS_DIR"):
         env.pop(var, None)
-    res = subprocess.run(["make", "-s", "--no-print-directory", "-C", str(ROOT), target, *args],
+    res = subprocess.run(["make", "-s", "--no-print-directory", "-C", str(ROOT), target, *args,
+                          f"CELEBRIMBOR_TFVARS_DIR={tfvars_dir}"],
                          env=env, capture_output=True, text=True, timeout=60)
     return res.returncode, res.stdout + res.stderr, [c.split() for c in log.read_text().splitlines()]
+
+
+@pytestmark_make
+@pytest.mark.parametrize("target", ["celebrimbor-dcr-plan", "celebrimbor-dcr-up"])
+def test_dcr_targets_never_run_terraform_off_the_bench_s_subscription(tmp_path, target):
+    """G1c's guard: az on another subscription, terraform is never run — the variable named, never
+    the value (the 20/11 apply that went to another subscription)."""
+    code, out, calls = _make(tmp_path, target, "YES=1", active=OTHER_SUB)
+    assert code != 0 and calls == [], out
+    assert "L'abonnement actif d'az n'est pas AZURE_SUBSCRIPTION_ID" in out
+    assert BENCH_SUB not in out and OTHER_SUB not in out
 
 
 @pytestmark_make

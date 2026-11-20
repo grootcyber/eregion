@@ -82,8 +82,9 @@ chaos:
   # G1 — le bruit bénin (chaos.tf) : [] → rien de créé. [gondolin] → l'agent Chaos sur la VM (une
   # identité sans rôle, l'extension, la cible Microsoft-Agent) et trois expériences, disk, cpu et
   # restart (exp-celebrimbor-<clé>-disk|cpu|restart). Une VM de noise_vms est aussi dans
-  # shutdown_vms. Pas encore appliqué : avec Jonathan, plan montré.
-  noise_vms:         []
+  # shutdown_vms. Appliqué sur gondolin (G1c), par l'apply ciblé `make celebrimbor-noise-up`, jamais
+  # par un celebrimbor-up complet ; [] retirerait au prochain plan ce qui a été créé.
+  noise_vms:         [gondolin]
   noise_duration:    PT10M   # disk et cpu
   restart_duration:  PT1M    # la VM arrêtée, puis redémarrée par le moteur
   cpu_pressure:      95      # % de CPU
