@@ -2025,6 +2025,16 @@ briques:
     issue: 614
     doc: docs/operations.md
 
+  - id: c-compteurs-linux
+    composant: celebrimbor
+    poste: c-construire
+    nom: "The bench's processor and network counters under the names the Linux agent collects, the disk as measured"
+    etat: main
+    release: "0.6"
+    lots: [DCR1]
+    issue: 985
+    doc: docs/azure.md
+
   # ── Console and Dagorlad ────────────────────────────────────────────────────────────
   - id: k-console
     composant: console
