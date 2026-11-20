@@ -1168,7 +1168,7 @@ def _looks_numeric(value: str) -> bool:
 def _dynamic_text(value: str) -> bool:
     """The JSON text of a ``dynamic`` column (`make_set`, `make_list`, `pack`…): an array or an object,
     as the SDK hands the column on (SLF1b). Read by `own_channel.json_of`: bounded, never raises — a
-    text unread, or not JSON, is no such column (RID1, #1002)."""
+    text unread, or not JSON, is no such column (ROW1, #1002)."""
     return isinstance(own_channel.json_of(value), (list, dict))
 
 
@@ -1180,7 +1180,7 @@ def _row_identity(row: dict) -> str:
     its non-numeric columns (who, where) — the same attacker on the same VM is one
     detection for the length of the query window.
 
-    RID1 (#1002): what it gathers grows too. A ``dynamic`` column (`make_set(User)`…) arrives as
+    ROW1 (#1002): what it gathers grows too. A ``dynamic`` column (`make_set(User)`…) arrives as
     its JSON text (SLF1b): it entered the identity, and each user more made a new card. A text that
     decodes to an array or an object is left out, as a Python list always was; the grouping keys
     (`by Computer, SourceIP`…, scalar texts) and every other text stay. A key that is itself such a

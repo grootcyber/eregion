@@ -1,4 +1,4 @@
-"""RID1 (#1002): the identity of an aggregated row leaves out the JSON text of a ``dynamic`` column —
+"""ROW1 (#1002): the identity of an aggregated row leaves out the JSON text of a ``dynamic`` column —
 read here on the SDK's own objects, never on a Python list.
 
 The constat (SDK1a's review, 20/11): a row without `TimeGenerated`, `EventId` or `CorrelationId` took
@@ -12,7 +12,7 @@ the Log Analytics API sends — each column typed, a ``dynamic`` one as its JSON
 pinned SDK's own ``LogsQueryResult``, read by the real `AzureMonitorDetector.run_query`, then the real
 RulePoller (as tests/unit/test_own_channel_sdk.py, SLF1b; tests/unit/sdk_logs.py, SDK1a, was not on
 main when this was written). Each shipped rule's representative row has its identity frozen, before
-RID1 (the function as it was, copied here) and after. Mutants M6910–M6919 (scripts/mutants/RID1.py).
+ROW1 (the function as it was, copied here) and after. Mutants M6910–M6919 (scripts/mutants/ROW1.py).
 No Azure, no model; every identifier is made up (repository public).
 """
 from __future__ import annotations
@@ -118,7 +118,7 @@ def _kql(lines, now=NOW):
     return lambda query: kql_subset.run(query, lines, now=now)
 
 
-# ── the identity before RID1, as it was (glorfindel/detection_rules.py, origin/main 8e5cb1d8) ──
+# ── the identity before ROW1, as it was (glorfindel/detection_rules.py, origin/main 8e5cb1d8) ──
 
 def _looks_numeric(value: str) -> bool:
     try:
@@ -129,7 +129,7 @@ def _looks_numeric(value: str) -> bool:
 
 
 def identity_before_rid1(row: dict) -> str:
-    """`_row_identity` before RID1, to the letter: the "before" every shipped rule is compared with."""
+    """`_row_identity` before ROW1, to the letter: the "before" every shipped rule is compared with."""
     if row.get("EntraOperation") and row.get("EventId"):
         return "entra:" + str(row["EventId"]).lower()
     if row.get("OperationNameValue") and row.get("CorrelationId"):
@@ -185,7 +185,7 @@ def test_the_sdk_hands_the_gathered_users_on_as_text():
 
 def test_an_aggregated_row_whose_set_grows_keeps_its_identity():
     """Fini quand (#1002): the same address on the same VM, one user more in its set — one identity;
-    before RID1, two."""
+    before ROW1, two."""
     [first] = _detector(_kql(_tries("root", "admin", "oracle"))).run_query(GATHERED)
     [grown] = _detector(_kql(_tries("root", "admin", "oracle", "postgres"))).run_query(GATHERED)
     assert first["Users"] != grown["Users"]
@@ -269,7 +269,7 @@ def test_a_plain_text_that_changes_is_still_a_new_identity():
 
 def test_a_text_past_the_bound_or_unreadable_stays_and_never_raises():
     """The reading is `own_channel.json_of`'s (SLF1b): bounded by WRITERS_MAX, never raising. A JSON
-    array past the bound is not read — it stays in the identity, as before RID1; a text nested too deep
+    array past the bound is not read — it stays in the identity, as before ROW1; a text nested too deep
     for the decoder, or broken, stays too, and nothing raises."""
     row = {"SourceIP": PEER, "Computer": "vm-example-01"}
     at_bound = json.dumps(["x" * (own_channel.WRITERS_MAX - 4)])
@@ -417,8 +417,8 @@ _PROJECTED = {
         "_ResourceId": VM, "ResourceGroup": "rg-example", "CorrelationId": "c-1", "WatchedCaller": "glorfindel"}],
 }
 
-# Each shipped rule's representative row, its identity as the poller computes it (frozen by RID1,
-# 20/11): before RID1 and after, the same. `ts:`, `op:` and `entra:` never read the row's other
+# Each shipped rule's representative row, its identity as the poller computes it (frozen by ROW1,
+# 20/11): before ROW1 and after, the same. `ts:`, `op:` and `entra:` never read the row's other
 # columns; the three aggregated rows (`row:`) carry no JSON text — BlobWriters, the one dynamic column
 # of an aggregated shipped row, is taken off before any identity (`own_channel.settle` / `strip`).
 _TS = f"ts:{NOW - timedelta(minutes=2)}"
@@ -475,7 +475,7 @@ def test_every_shipped_rule_has_its_identity_frozen():
 @pytest.mark.parametrize("name", sorted(SHIPPED))
 def test_a_shipped_rule_s_identity_is_unchanged(name, monkeypatch):
     """Fini quand (#1002): each shipped rule's representative row, read through the SDK, has the same
-    identity before RID1 and after — and the one frozen here."""
+    identity before ROW1 and after — and the one frozen here."""
     rows = _representative(name, monkeypatch)
     assert len(rows) == 1, (name, rows)
     [row] = rows
@@ -493,7 +493,7 @@ def test_a_shipped_rule_s_identity_is_unchanged(name, monkeypatch):
 
 def test_the_raw_exfiltration_row_no_longer_depends_on_its_writers():
     """BlobWriters never reaches an identity (taken off before the routing); read raw, it would have
-    made one per writer set before RID1 — after, the row's identity is its address and account alone."""
+    made one per writer set before ROW1 — after, the row's identity is its address and account alone."""
     lines = oc._channel_writes(oid=oc.OTHER_OID) + [oc._write("db.bak", oid=oc.OTHER_OID, size=4096)]
     [raw] = _detector(_kql(lines, oc.NOW)).run_query(SHIPPED["data-exfiltration-blob"]["query"])
     assert isinstance(raw[own_channel.WRITERS], str)
