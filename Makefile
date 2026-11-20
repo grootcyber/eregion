@@ -155,7 +155,7 @@ DOCKER_GLORFINDEL_WATCH = $(WATCH_KEY_DIR) && $(RUNS_DIRS) && $(GLORFINDEL_AZURE
 	annatar-shell glorfindel-shell \
 	venv install lock audit test test-unit lint annatar-simulate annatar-simulate-gap clean release release-draft manuel \
 	canary-jit providers-lock celebrimbor-init celebrimbor-plan celebrimbor-up celebrimbor-down celebrimbor-output celebrimbor-stop celebrimbor-start \
-	celebrimbor-logs-plan celebrimbor-logs-up celebrimbor-auditd-plan celebrimbor-auditd-up celebrimbor-flows-plan celebrimbor-flows-up \
+	celebrimbor-logs-plan celebrimbor-logs-up celebrimbor-auditd-plan celebrimbor-auditd-up celebrimbor-flows-plan celebrimbor-flows-up celebrimbor-dcr-plan celebrimbor-dcr-up \
 	celebrimbor-identity-plan celebrimbor-identity-up celebrimbor-unit-prepare celebrimbor-users-plan celebrimbor-users-up \
 	celebrimbor-reader-key celebrimbor-reader-plan celebrimbor-reader-up celebrimbor-reader-profile \
 	imladris-init imladris-plan imladris-up imladris-down imladris-push imladris-client-rules \
@@ -265,6 +265,8 @@ help:
 	@echo "  make celebrimbor-auditd-up [YES=1]          L'applique (auditd_enabled du tfvars ; false : le retire)"
 	@echo "  make celebrimbor-flows-plan [INSTANCE=]     Plan du compte des flux réseau seul : le compte, sa lecture, le flow log (INF-FL)"
 	@echo "  make celebrimbor-flows-up [YES=1]           L'applique (le flow log change de compte, en place)"
+	@echo "  make celebrimbor-dcr-plan [INSTANCE=]       Plan de la DCR seule : ses compteurs et ses facilités (DCR1)"
+	@echo "  make celebrimbor-dcr-up [YES=1]             L'applique (une mise à jour en place de la DCR)"
 	@echo ""
 	@echo "Imladris — Glorfindel hébergé, état Terraform séparé (infra/glorfindel-host/README.md) :"
 	@echo "  make imladris-plan [OPERATOR_CIDR=]          Plan (lecture seule)"
@@ -928,6 +930,26 @@ celebrimbor-auditd-up:
 	@$(TF) init
 	@$(TF) workspace select $(INSTANCE)
 	@$(TF) apply$(if $(YES), -auto-approve) $(AUDITD_TARGETS)
+
+# DCR1 (#985) : la DCR du banc, à elle seule — plan et apply ciblés sur la règle de collecte (ses
+# compteurs de performance, ses facilités syslog), rien d'autre du banc : ni les associations, ni les
+# VM, ni le workspace (une dérive en attente de l'un d'eux y paraîtrait, une dépendance : alors
+# s'arrêter, et la traiter par celebrimbor-plan). Jamais de `-var` d'ici : auditd_enabled et
+# cron_logs_enabled viennent de terraform.tfvars. Ce que le plan doit montrer, la mesure après
+# l'apply : docs/operations.md, « Les compteurs de performance du banc (DCR1) ».
+#   make celebrimbor-dcr-plan                  # lecture seule
+#   make celebrimbor-dcr-up [YES=1]            # YES=1 : sans confirmation, plan relu avant
+DCR_TARGETS = -target=azurerm_monitor_data_collection_rule.celebrimbor
+
+celebrimbor-dcr-plan:
+	@$(TF) init
+	@$(TF) workspace select $(INSTANCE)
+	@$(TF) plan $(DCR_TARGETS)
+
+celebrimbor-dcr-up:
+	@$(TF) init
+	@$(TF) workspace select $(INSTANCE)
+	@$(TF) apply$(if $(YES), -auto-approve) $(DCR_TARGETS)
 
 # INF-FL (#654) : le compte des flux réseau, à lui seul — plan et apply ciblés sur le compte des flux,
 # la lecture de l'opérateur et le flow log qui change de compte (une mise à jour en place), rien

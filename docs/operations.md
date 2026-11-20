@@ -5977,6 +5977,94 @@ des seuls flux d'après la bascule (CF2) ; l'écriture d'essai depuis gondolin r
 
 ---
 
+## Les compteurs de performance du banc (DCR1, #985)
+
+Le 20/11, la DCR du banc (`infra/terraform/monitoring.tf`, `performance_counter`) déclarait quatre
+compteurs, mais seul `Logical Disk` arrivait de gondolin (Linux) dans `Perf`. Le processeur et le
+réseau étaient écrits sous leurs noms Windows (`\Processor(_Total)\% Processor Time`,
+`\Network Interface(*)\Bytes Sent/sec`), que l'agent Azure Monitor ne collecte pas sous Linux. La
+cause et sa source : `docs/azure.md`, « Compteurs de performance sous Linux ». La DCR déclare
+désormais :
+
+| Compteur | Pourquoi ce nom |
+|---|---|
+| `\LogicalDisk(*)\Disk Write Bytes/sec`, `\LogicalDisk(*)\Disk Read Bytes/sec` | inchangés : mesurés au banc, ils arrivent sous `Logical Disk` (l'alerte du banc et la règle ransomware les lisent) |
+| `\Processor(*)\% Processor Time` | l'objet Linux `Processor(*)` de Microsoft Learn ; l'instance `_Total` n'est pas dans la liste Linux |
+| `\Network(*)\Total Bytes Transmitted` | l'objet Linux `Network(*)` ; `Network Interface` n'existe que sous Windows |
+
+Aucune règle livrée ne lit le processeur ni le réseau. Seule la panne `vm-cpu-pressure` de Gothmog
+en dépend ; elle se recale sur les noms mesurés, dans un lot à elle. **Rien n'est appliqué** :
+c'est un geste de Jonathan.
+
+### Avant tout : la DCR déployée (lecture seule)
+
+Pour écarter une dérive entre la DCR déployée et le Terraform. `az monitor data-collection rule`
+vient de l'extension `monitor-control-service` ; `az resource show`, du cœur de la CLI, rend la
+même chose :
+
+```bash
+az monitor data-collection rule show -g rg-celebrimbor -n dcr-celebrimbor \
+  --query "dataSources.performanceCounters" -o json
+# ou, sans extension :
+az resource show -g rg-celebrimbor -n dcr-celebrimbor \
+  --resource-type Microsoft.Insights/dataCollectionRules \
+  --query "properties.dataSources.performanceCounters" -o json
+```
+
+Attendu avant l'apply : les quatre `counterSpecifiers` de toujours, avec `\Processor(_Total)…` et
+`\Network Interface(*)…`. Si la liste déployée diffère de celle d'`origin/main` avant DCR1, la
+cause est aussi une dérive : le noter, puis appliquer quand même, car le plan la ramène.
+
+### Le plan, puis l'application (gestes de Jonathan)
+
+Depuis le poste, à la racine du dépôt, `.envrc` chargé :
+
+1. **Le plan ciblé** (lecture seule) : `TF_CLI_ARGS_plan=-no-color make celebrimbor-dcr-plan`. Il
+   doit montrer exactement ceci :
+   - `~ azurerm_monitor_data_collection_rule.celebrimbor`, **mise à jour en place** : dans
+     `counter_specifiers`, `\Network Interface(*)\Bytes Sent/sec` devient
+     `\Network(*)\Total Bytes Transmitted` et `\Processor(_Total)\% Processor Time` devient
+     `\Processor(*)\% Processor Time` ; les deux compteurs du disque et les facilités syslog ne
+     bougent pas ;
+   - `Plan: 0 to add, 1 to change, 0 to destroy`, et l'avertissement de Terraform sur `-target`.
+
+   **S'arrêter** si le plan montre un remplacement (`-/+`) de la DCR, ce qui recréerait ses
+   associations et ses attributions, ou un changement sur une VM, le workspace ou le groupe : c'est
+   une dérive à traiter d'abord par `make celebrimbor-plan`. Un changement de `facility_names`
+   (`local6`, `cron`) veut dire que `terraform.tfvars` ne porte pas ce qui est déployé : s'arrêter
+   aussi.
+2. **L'application** : `make celebrimbor-dcr-up YES=1`, une fois le plan relu. Sans `YES=1`,
+   Terraform redemande la confirmation.
+
+### La mesure, après l'apply (en lecture)
+
+L'agent relit sa configuration en quelques minutes. Attendre au moins dix minutes, gondolin allumée
+(`make celebrimbor-start VM=gondolin`), puis :
+
+```bash
+WS=$(terraform -chdir=infra/terraform output -raw law_workspace_id)
+VM_ID=$(az vm show -g rg-celebrimbor -n vm-celebrimbor-gondolin --query id -o tsv)
+az monitor log-analytics query -w "$WS" --analytics-query "
+Perf
+| where TimeGenerated > ago(1h)
+| where _ResourceId =~ '$VM_ID'
+| distinct ObjectName, CounterName, InstanceName
+| order by ObjectName asc, CounterName asc" -o table
+```
+
+**Attendu** : des lignes `Logical Disk` comme avant (`Disk Read Bytes/sec`, `Disk Write Bytes/sec`,
+plusieurs instances), et au moins une ligne `ObjectName = Processor`, `CounterName = % Processor
+Time`. Une ligne `Network`, `Total Bytes Transmitted`, est attendue aussi. Relever les
+`InstanceName` du processeur tels quels : la requête d'effet de `vm-cpu-pressure` les attend (elle
+lit `_Total` aujourd'hui). Le lot est fini quand la ligne `Processor` est là.
+
+**Si aucune ligne `Processor` n'arrive** au bout de trente minutes : relire la DCR déployée (la
+commande ci-dessus), qui doit porter la nouvelle liste. Si elle la porte, c'est une hypothèse de plus
+à mesurer (la barre initiale, que le tableau de Microsoft n'écrit pas, ou le `kind` de la DCR, qui
+n'est pas posé). Ne rien changer à chaud : rouvrir #985.
+
+---
+
 ## Coûts réels (West Europe)
 
 - **Infra existante** : LLM API uniquement (Anthropic défaut), <$2/mois (~$0.05–0.10 par run)
