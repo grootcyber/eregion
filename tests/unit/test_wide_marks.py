@@ -35,9 +35,21 @@ B = f"/subscriptions/s/resourceGroups/{B_RG}/providers/Microsoft.Compute/virtual
 A_NIC, B_NIC = nic_id(A_RG, "web-nic"), nic_id(B_RG, "web-nic")
 
 
+def _v061_base(prefix: str, vm_name: str, nic_short: str, nic_id_: str) -> str:
+    """The base the earlier version wrote, as 0.6.1 wrote it (its `_placement_rule_base`, copied):
+    6 hex of SHA-1 at the end, 8 when the name is cut. Written here, never asked of the code: the rules
+    it left in a subscription are named so, whatever this version reads them as (MUT15)."""
+    mark = hashlib.sha1(nic_id_.rstrip("/").lower().encode()).hexdigest()
+    base = f"{prefix}-{vm_name}-{nic_short}-{mark[:6]}"
+    if len(base) + 4 > 80:
+        room = max(80 - 4 - len(prefix) - 2 - 8, 1)
+        base = f"{prefix}-{vm_name[:room]}-{mark[:8]}"
+    return base.lower()
+
+
 def _older_base(self, prefix: str, vm_name: str, nic_short: str, nic_id_: str) -> str:
     """The base an earlier version wrote (6 or 8 hex of SHA-1): to place what it placed."""
-    return NetworkMixin._older_rule_bases(self, prefix, vm_name, nic_short, nic_id_)[0]
+    return _v061_base(prefix, vm_name, nic_short, nic_id_)
 
 
 @pytest.fixture
@@ -74,6 +86,24 @@ def test_the_two_nics_meet_on_the_older_mark_never_on_ours():
         c._placement_rule_base("glorfindel-iso", "web", "web-nic", B_NIC)
     assert c._older_rule_bases("glorfindel-iso", "web", "web-nic", A_NIC) == \
         c._older_rule_bases("glorfindel-iso", "web", "web-nic", B_NIC)
+
+
+def test_the_older_names_read_are_those_the_earlier_version_wrote():
+    """What 0.6.1 left in a subscription is named as it named it (`_v061_base`): read under another
+    name — its mark dropped, as before L24 —, an isolation it placed is never found, and two homonyms
+    meet on every name, not only on a met hash (MUT15: M01's line since SEC-H). Its second (I4A), by
+    the same mark."""
+    c = AzureConnector()
+    long_vm = "vm-celebrimbor-gondolin-with-a-very-long-name-for-sure"
+    for prefix in ("glorfindel-iso", "glorfindel-block-203-0-113-250"):
+        for vm, nic in (("web", "web-nic"), (long_vm, f"{long_vm}-nic")):
+            first, second = c._older_rule_bases(prefix, vm, nic, A_NIC)
+            assert first == _v061_base(prefix, vm, nic, A_NIC), (prefix, vm)
+            head, mark = first.rsplit("-", 1)
+            assert mark in (_nic_hash(A_NIC, 6), _nic_hash(A_NIC, 8)), first
+            assert second == f"{head[:80 - 4 - 3 - len(mark)]}-b-{mark}", second
+    assert c._older_rule_bases("glorfindel-iso", "web", "web-nic", A_NIC)[0] == \
+        "glorfindel-iso-web-web-nic-" + hashlib.sha1(A_NIC.lower().encode()).hexdigest()[:6]
 
 
 def test_the_release_of_one_never_takes_off_the_others_deny(world):
@@ -113,7 +143,7 @@ def test_an_isolation_under_the_older_names_is_verified_then_lifted(world, monke
     with monkeypatch.context() as m:
         m.setattr(NetworkMixin, "_placement_rule_base", _older_base)
         assert c.isolate_vm(A)["status"] == "isolated"
-    older = c._older_rule_bases("glorfindel-iso", "web", "web-nic", A_NIC)[0]
+    older = _v061_base("glorfindel-iso", "web", "web-nic", A_NIC)
     assert set(_ours(f, s_nsg)) == {older, f"{older}-out"}
     assert c.verify_isolation(A)["verified"] is True       # read under its older name
     assert c.release_isolation(A)["status"] == "released"
@@ -409,7 +439,7 @@ def test_an_older_block_its_address_moved_and_its_state_lost_is_left_and_said(wo
     with monkeypatch.context() as m:
         m.setattr(NetworkMixin, "_placement_rule_base", _older_base)
         assert c.block_suspicious_ip("203.0.113.7", A)["status"] == "blocked"
-    older = c._older_rule_bases(c._block_rule_prefix("203.0.113.7"), "web", "web-nic", A_NIC)[0]
+    older = _v061_base(c._block_rule_prefix("203.0.113.7"), "web", "web-nic", A_NIC)
     f.nsgs[key(s_nsg)]["rules"][older]["access"] = access
     f.nics[key(A_NIC)]["ips"] = ["10.0.0.9"]
     _lose_states()
@@ -468,7 +498,7 @@ def test_an_older_name_left_is_never_read_released(world, monkeypatch):
         c.isolate_vm(A)
     _lose_states()
     v = c.verify_release(A)
-    older = c._older_rule_bases("glorfindel-iso", "web", "web-nic", A_NIC)[0]
+    older = _v061_base("glorfindel-iso", "web", "web-nic", A_NIC)
     assert v["verified"] is not True and older in str(v), v
 
 
