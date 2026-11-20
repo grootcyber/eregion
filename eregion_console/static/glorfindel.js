@@ -818,8 +818,13 @@ function _renderEscGroup(group) {
   const isDecision = !isRule && !_NOT_DECISIONS.has(e.escalation_type)
     && !String(e.signal_id || '').startsWith('reassert-');
   // The verdict is given in one place, TO JUDGE (decision of 26/10): the card leads there.
+  // JUG3: a group of several cards to judge opens its window, where they are judged at once.
+  const toJudgeHere = group.filter(x => !x.verdict && _toJudge.some(c => c.id === x.id));
+  // Its window first: the card on top judged (not acknowledged), others of the group still to judge.
   const verdictBtns = isDecision
-    ? (e.verdict
+    ? (toJudgeHere.length > 1
+      ? `<a class="judge-link" ${_on('click', 'openJudgeGroup', toJudgeHere.map(x => x.id).join(','))} title="Its cards to judge, several at once">to judge ×${Number(toJudgeHere.length)} ▸</a>`
+      : e.verdict
       ? `<span style="font-size:9px;color:var(--dim);margin-left:auto">judged: ${_attr(e.verdict)}</span>`
       : `<a class="judge-link" ${_on('click', 'focusJudge', e.id)} title="Give it a verdict in TO JUDGE">to judge ▸</a>`)
     : '';
@@ -2716,7 +2721,7 @@ async function refreshObservation() {
   try {
     const q = await fetch('/api/to-judge?since=7d').then(x => x.json());
     if (q && Array.isArray(q.cards)) {
-      _toJudge = q.cards; renderToJudge(); Console.setJudgeCount(q.cards.length);
+      _toJudge = q.cards; renderToJudge(); _judgeGroupAgain(); Console.setJudgeCount(q.cards.length);
     }
   } catch (e) {}
 }
@@ -2724,17 +2729,45 @@ async function refreshObservation() {
 // VP1c (#920): the card's time carries no time zone, or cannot be read — kept in the list whatever the
 // period, never dated by a guess (escalations.to_judge, `time_unreadable`).
 const _UNTIMED = 'The card\'s time carries no time zone, or cannot be read: when it fired is not known, and never guessed. It stays here, whatever the period, for you to judge.';
+// JUG3: the list redraws every 30 s (refreshObservation): what is being typed stays, and where.
+// A note to a card keeps its text; the field the operator is in keeps the focus and the caret — on a
+// phone, a field redrawn under the finger closes the keyboard. The batch's note keeps its text by
+// itself (_batch.<where>.note): only its focus is put back, never an old text.
+function _typed(root) {
+  const a = document.activeElement;
+  const into = a instanceof HTMLInputElement && a.type !== 'checkbox' && a.id && root.contains(a)
+    ? [a.id, a.selectionStart, a.selectionEnd] : null;
+  const notes = [...root.querySelectorAll('input[id^="judge-note-"]')].filter(i => i.value).map(i => [i.id, i.value]);
+  return { into, notes };
+}
+function _retype(root, typed) {
+  for (const [id, v] of typed.notes) {
+    const i = document.getElementById(id);
+    if (i && root.contains(i)) i.value = v;
+  }
+  const i = typed.into && document.getElementById(typed.into[0]);
+  if (i && root.contains(i)) {
+    i.focus({ preventScroll: true });
+    try { i.setSelectionRange(typed.into[1], typed.into[2]); } catch (e) {}
+  }
+}
+
 function renderToJudge() {
   const list = document.getElementById('judge-list');
+  const typed = list ? _typed(list) : null;
   const count = document.getElementById('judge-count');
   if (!list) return;
   if (count) count.textContent = _toJudge.length ? `· ${_toJudge.length}` : '';
   _showMobileTab();                              // the phone's default tab and its badge (MOB4)
   if (!_toJudge.length) {
-    list.innerHTML = '<div class="judge-empty">Nothing to judge — every recommendation of the last 7 days has a verdict.</div>';
+    list.innerHTML = '<div class="judge-empty">Nothing to judge — every recommendation of the last 7 days has a verdict.</div>' + _batchPanel('list');
+    _retype(list, typed);
     return;
   }
-  list.innerHTML = _toJudge.map(c => {
+  // JUG3: a card checked and gone from the list (judged elsewhere, older than 7 days) is let go.
+  for (const id of [..._batch.list.picked]) if (!_toJudge.some(c => c.id === id)) _batch.list.picked.delete(id);
+  const allPicked = _batch.list.picked.size === _toJudge.length;
+  list.innerHTML = `<label class="judge-all" ${_on('click', 'stop')}><input type="checkbox"${allPicked ? ' checked' : ''} ${_on('change', 'pickAllJudge')}> select all</label>` + _toJudge.map(c => {
     const disruptive = ['isolate_vm', 'block_suspicious_ip'].includes(c.action);
     const pct = c.confidence ? ` ${Math.round(c.confidence * 100)}%` : '';
     // Judge on the evidence: the IP a block targets, the rule that fired, and the model's
@@ -2761,6 +2794,7 @@ function renderToJudge() {
     // JUG1: the line opens its card (its details, its verdict); its own note and buttons keep the click.
     return `<div class="judge-item${disruptive ? ' disruptive' : ''}${c.id === _focusCard ? ' focus' : ''}" id="judge-${id}" ${_on('click', 'openJudgeCard', c.id)} title="Open the card">
       <div class="judge-head">
+        <label class="judge-pick" ${_on('click', 'stop')} title="Check it, to judge several cards at once"><input type="checkbox" aria-label="Check this card"${_batch.list.picked.has(c.id) ? ' checked' : ''} ${_on('change', 'pickJudge', c.id)}></label>
         <span class="judge-what" style="color:${disruptive ? 'var(--red)' : 'var(--orange)'}">${_attr(what)}</span>
         <span style="flex:1"></span>
         <span class="judge-ts">${c.time_unreadable ? '' : (c.first_seen ? _relTime(c.first_seen) : '')}${times}</span>
@@ -2778,12 +2812,183 @@ function renderToJudge() {
         <button class="action" style="color:var(--dim)" title="Can't tell with what is known" ${_on('click', 'judgeCard', c.id, 'unsure')}>? Unsure</button>
       </div>
     </div>`;
-  }).join('');
+  }).join('') + _batchPanel('list');
+  _retype(list, typed);
   // ?card=<id>: scrolled to once, the first time it is in the list.
   if (_focusCard && document.getElementById('judge-' + _focusCard)) {
     document.getElementById('judge-' + _focusCard).scrollIntoView({ block: 'nearest' });
     _focusCard = null;
   }
+}
+
+// ── Judging several cards at once (JUG3, #980, Jonathan 20/11 on a mockup) ─────────────────
+// Cards checked in TO JUDGE, or in the window of a group (« ×N »), then one verdict and one note for
+// all. Each card gets exactly what its own button gives it — its verdict and the note, then its
+// acknowledgement (16/10) —, one card after the other: its own verdict, so the precision, the rate
+// of wrong isolations and the memory stay true. Never an action: no « Approve & execute », never a
+// verdict proposed (VP1) confirmed in the operator's place. Before anything is written, a summary
+// (the count by rule, the note); a card that fails is said, card by card, and the others go on: it
+// stays checked, to try again (decisions 1 and 4 of 20/11).
+const _VERDICTS = ['right', 'wrong', 'unsure'];
+const _batch = {
+  list:  { picked: new Set(), ask: null, result: null, note: '', running: '' },
+  // The window keeps its cards as they were when opened (cards: an acknowledged card leaves the state)
+  // and the verdict each got in it (given): its lines still say what they were, and how judged.
+  group: { picked: new Set(), ask: null, result: null, note: '', running: '', ids: [], title: '', cards: {}, given: {} },
+};
+function _batchCard(id) { return _toJudge.find(c => c.id === id) || _escById[id] || null; }
+function _batchRule(c) { return String((c && (c.rule_name || c.action || c.escalation_type)) || 'no rule'); }
+function _batchLabel(c) {
+  if (!c) return '?';
+  const t = _targetOf(c);
+  const on = t ? (t.name || _TARGET_KINDS[t.kind] || '') : (c.resource_id || '').split('/').pop();
+  return `${c.action ? actionLabelVerb(c.action) : escTitle(c)}${on ? ' — ' + on : ''}`;
+}
+// The group's window only while it is the one open: closed during a batch, another window is never written.
+function _batchRender(where) { where === 'group' ? _judgeGroupAgain() : renderToJudge(); }
+function _batchPanel(where) {
+  const B = _batch[where];
+  const parts = [];
+  if (B.result) {
+    const v = B.result.verdict;
+    parts.push(`<div class="judge-batch-result">${B.result.lines.map(l => l.state === 'ok'
+      ? `<div class="r-ok">✓ ${_attr(l.label)}: ${_attr(v)}${l.note ? ' · note kept' : ''} · acknowledged</div>`
+      : l.state === 'unacked'
+      ? `<div class="r-warn">⚠ ${_attr(l.label)}: judged ${_attr(v)}, not acknowledged — ${_attr(l.why)} (Ack it on its tile)</div>`
+      : l.state === 'gone'
+      ? `<div class="r-warn">↷ ${_attr(l.label)}: left as it was — no longer to judge (judged elsewhere since the summary?)</div>`
+      : `<div class="r-bad">✗ ${_attr(l.label)}: not judged — ${_attr(l.why)} (still checked)</div>`).join('')}</div>`);
+  }
+  if (B.running) parts.push(`<div class="judge-bar" ${_on('click', 'stop')}><b>${_attr(B.running)}</b></div>`);
+  else if (B.ask) {
+    const n = B.ask.ids.length, byRule = {};
+    B.ask.ids.forEach(id => { const r = _batchRule(_batchCard(id)); byRule[r] = (byRule[r] || 0) + 1; });
+    parts.push(`<div class="judge-confirm" ${_on('click', 'stop')}>
+      <div class="judge-confirm-t">Judge ${Number(n)} card${n > 1 ? 's' : ''} ${_attr(B.ask.verdict)}?</div>
+      <div>${Object.entries(byRule).map(([r, k]) => `${Number(k)} × ${_attr(r)}`).join(' · ')}</div>
+      <div class="judge-confirm-note">${B.ask.note ? 'note: ' + _attr(B.ask.note) : 'no note'}</div>
+      <div class="judge-confirm-row"><button class="action" ${_on('click', 'runBatch', where)}>Judge ${Number(n)} ${_attr(B.ask.verdict)}</button><button class="action" ${_on('click', 'cancelBatch', where)}>Cancel</button></div>
+    </div>`);
+  } else if (B.picked.size) {
+    const rules = new Set([...B.picked].map(id => _batchRule(_batchCard(id))));
+    parts.push(`<div class="judge-bar" ${_on('click', 'stop')}>
+      ${rules.size > 1 ? `<div class="judge-mixed">⚠ ${Number(rules.size)} rules in the selection</div>` : ''}
+      <b>${Number(B.picked.size)} selected</b>
+      <input id="judge-batch-note-${where}" placeholder="one note for all (optional)" maxlength="300" value="${_attr(B.note)}" ${_on('input', 'batchNote', where)}>
+      <button class="action" title="The recommendation was right, for each" ${_on('click', 'askBatch', where, 'right')}>✓ Right</button>
+      <button class="action" style="color:var(--red)" title="False positive, or a disproportionate action, for each" ${_on('click', 'askBatch', where, 'wrong')}>✗ Wrong</button>
+      <button class="action" style="color:var(--dim)" title="Can't tell with what is known, for each" ${_on('click', 'askBatch', where, 'unsure')}>? Unsure</button>
+      <button class="action judge-clear" ${_on('click', 'clearBatch', where)}>clear</button>
+    </div>`);
+  }
+  return parts.join('');
+}
+// One card, as its own button does it (judgeCard): its verdict and the note, then its acknowledgement —
+// each answer read, a refusal said.
+async function _judgeOne(id, verdict, note) {
+  try {
+    const r = await _post(`/api/escalations/${_seg(id)}/verdict`, { verdict, note });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || d.error) return { state: 'fail', why: String(d.error || d.detail || `HTTP ${r.status}`) };
+  } catch (e) { return { state: 'fail', why: String(e.message || e) }; }
+  try {
+    const r = await _post(`/api/action/ack/${_seg(id)}`);
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || d.error) return { state: 'unacked', why: String(d.error || d.detail || `HTTP ${r.status}`) };
+  } catch (e) { return { state: 'unacked', why: String(e.message || e) }; }
+  return { state: 'ok' };
+}
+async function _runBatch(where) {
+  const B = _batch[where];
+  if (!B.ask || B.running) return;
+  const { verdict, note, ids } = B.ask;
+  B.ask = null;
+  // The list read again first: a verdict given since the summary (the bot, another tab) is never
+  // written over — the server takes a second verdict, as a card's own button does.
+  B.running = 'Reading the list again…';
+  _batchRender(where);
+  await refreshObservation();
+  const lines = [];
+  for (const [k, id] of ids.entries()) {                         // one after the other, never at once
+    B.running = `Judging ${k + 1} of ${ids.length}…`;
+    _batchRender(where);
+    const label = _batchLabel(_batchCard(id));
+    if (!_toJudge.some(c => c.id === id)) { lines.push({ id, label, note: !!note, state: 'gone' }); continue; }
+    lines.push({ id, label, note: !!note, ...(await _judgeOne(id, verdict, note)) });
+  }
+  B.running = '';
+  B.picked = new Set(lines.filter(l => l.state === 'fail').map(l => l.id));   // the failed ones, to try again
+  // The note goes with this batch only: kept for a retry of the failed ones, never for the next batch.
+  if (!B.picked.size) B.note = '';
+  if (B.given) for (const l of lines) if (l.state === 'ok' || l.state === 'unacked') B.given[l.id] = verdict;
+  B.result = { verdict, lines };
+  const ok = lines.filter(l => l.state === 'ok' || l.state === 'unacked').length;
+  toast(ok === lines.length ? `✓ ${ok} card${ok > 1 ? 's' : ''} judged ${verdict}` : `⚠ ${ok} of ${lines.length} judged ${verdict} — see the list`);
+  _batchRender(where);
+  await refreshState();                 // the verdicts given, on the tiles (and the window's lines)
+  await refreshObservation();           // the list, and the window of the group redrawn on it
+}
+
+// The window of a group (« to judge ×N » on a tile): its cards to judge, ranged by rule, each with its
+// box, « select this rule », « select all » (decision 2 of 20/11); the batch as in the list.
+function openJudgeGroup(idsCsv) {
+  // The group's ids, as _renderEscGroup gave them (a group of _groupEscs): only cards the page knows.
+  const members = String(idsCsv || '').split(',').filter(id => _escById[id]);
+  if (!members.length) return;
+  const B = _batch.group;
+  Object.assign(B, { picked: new Set(), ask: null, result: null, note: '', running: '', ids: members,
+    cards: Object.fromEntries(members.map(id => [id, _batchCard(id)])), given: {} });
+  const e = _escById[members[0]];
+  B.title = `To judge — ${e.action ? actionLabelVerb(e.action) : escTitle(e)} ×${members.length} — ${_ownTile(e) || String(e.resource_id || '').split('/').pop()}`;
+  document.getElementById('modal-title').textContent = B.title;
+  document.getElementById('modal').dataset.owner = 'judge-group';
+  document.getElementById('modal-cmd').style.display = 'none';
+  document.getElementById('modal-cancel').style.display = 'none';
+  const btn = document.getElementById('modal-confirm');
+  btn.textContent = 'Close';
+  btn.className = 'action';
+  btn.onclick = () => { closeModal(); document.getElementById('modal-cancel').style.display = ''; };
+  _renderJudgeGroup();
+  document.querySelector('.modal').classList.add('wide');
+  document.getElementById('modal').classList.add('open');
+}
+// The window of a group, open: redrawn with the list (a card judged elsewhere loses its box). Only
+// this window — another one opened since says so by its owner and its title.
+function _judgeGroupAgain() {
+  const m = document.getElementById('modal');
+  if (m && m.classList.contains('open') && m.dataset.owner === 'judge-group'
+      && document.getElementById('modal-title').textContent === _batch.group.title) _renderJudgeGroup();
+}
+function _groupJudgeable() { return _batch.group.ids.filter(id => _toJudge.some(c => c.id === id)); }
+function _renderJudgeGroup() {
+  const B = _batch.group, body = document.getElementById('modal-body');
+  if (!body || !B.ids.length) return;
+  const typed = _typed(body);
+  const judgeable = _groupJudgeable();
+  for (const id of [...B.picked]) if (!judgeable.includes(id)) B.picked.delete(id);
+  const byRule = new Map();
+  const card = id => _batchCard(id) || B.cards[id] || null;
+  B.ids.forEach(id => { const r = _batchRule(card(id)); if (!byRule.has(r)) byRule.set(r, []); byRule.get(r).push(id); });
+  const allPicked = judgeable.length > 0 && judgeable.every(id => B.picked.has(id));
+  body.innerHTML = `<div class="judge-group">
+    ${judgeable.length ? `<label class="judge-all" ${_on('click', 'stop')}><input type="checkbox"${allPicked ? ' checked' : ''} ${_on('change', 'pickGroupAll')}> select all ${Number(judgeable.length)}</label>` : ''}
+    ${[...byRule.entries()].map(([rule, ids]) => {
+      const open = ids.filter(id => judgeable.includes(id));
+      const rulePicked = open.length > 0 && open.every(id => B.picked.has(id));
+      return `<div class="judge-rule">${_attr(rule.toUpperCase())} · ${Number(ids.length)}${open.length ? ` <label ${_on('click', 'stop')}><input type="checkbox"${rulePicked ? ' checked' : ''} ${_on('change', 'pickGroupRule', rule)}> select this rule</label>` : ''}</div>
+        ${ids.map(id => {
+          const c = card(id), can = judgeable.includes(id), given = B.given[id] || (c && c.verdict);
+          return `<div class="judge-item judge-group-item${B.picked.has(id) ? ' picked' : ''}">
+            <div class="judge-head">${can ? `<label class="judge-pick" ${_on('click', 'stop')}><input type="checkbox" aria-label="Check this card"${B.picked.has(id) ? ' checked' : ''} ${_on('change', 'pickGroup', id)}></label>` : ''}
+              <span class="judge-vm">${_attr(_batchLabel(c))}</span>
+              <span class="judge-ts">${c && c.first_seen ? _relTime(c.first_seen) : ''}</span></div>
+            <div class="judge-why" style="-webkit-line-clamp:1">${can ? 'rule ' + _attr(_batchRule(c)) : given ? 'judged: ' + _attr(given) : 'not in TO JUDGE'}</div>
+          </div>`;
+        }).join('')}`;
+    }).join('')}
+    ${_batchPanel('group')}
+  </div>`;
+  _retype(body, typed);
 }
 
 // VP1 (#615): the verdict proposed on an exercise card — the detection the drill of the week expected
@@ -4091,6 +4296,18 @@ const ACTIONS = {
   openJudgeCard,                                  // a card's details and its verdict, from TO JUDGE or a tile (JUG1)
   copyAddr,                                       // a VM's address, copied from its card (IPS1)
   mobileTab,                                      // a phone's section, picked in its tab bar (MOB4)
+  // JUG3: several cards judged at once — a box read only from the page's own checkbox.
+  pickJudge(id) { if (_target instanceof HTMLInputElement && _target.type === 'checkbox') { _target.checked ? _batch.list.picked.add(id) : _batch.list.picked.delete(id); _batch.list.ask = null; _batch.list.result = null; renderToJudge(); } },
+  pickAllJudge() { if (_target instanceof HTMLInputElement && _target.type === 'checkbox') { _batch.list.picked = new Set(_target.checked ? _toJudge.map(c => c.id) : []); _batch.list.ask = null; _batch.list.result = null; renderToJudge(); } },
+  pickGroup(id) { if (_target instanceof HTMLInputElement && _target.type === 'checkbox') { _target.checked ? _batch.group.picked.add(id) : _batch.group.picked.delete(id); _batch.group.ask = null; _batch.group.result = null; _renderJudgeGroup(); } },
+  pickGroupRule(rule) { if (_target instanceof HTMLInputElement && _target.type === 'checkbox') { const on = _target.checked; _groupJudgeable().filter(id => _batchRule(_batchCard(id)) === rule).forEach(id => on ? _batch.group.picked.add(id) : _batch.group.picked.delete(id)); _batch.group.ask = null; _batch.group.result = null; _renderJudgeGroup(); } },
+  pickGroupAll() { if (_target instanceof HTMLInputElement && _target.type === 'checkbox') { _batch.group.picked = new Set(_target.checked ? _groupJudgeable() : []); _batch.group.ask = null; _batch.group.result = null; _renderJudgeGroup(); } },
+  batchNote(where) { if (Object.hasOwn(_batch, where) && _target instanceof HTMLInputElement) _batch[where].note = _target.value.slice(0, 300); },
+  askBatch(where, verdict) { if (!Object.hasOwn(_batch, where) || !_VERDICTS.includes(verdict)) return; const B = _batch[where]; if (!B.picked.size || B.running) return; B.ask = { verdict, note: B.note.trim(), ids: [...B.picked] }; B.result = null; _batchRender(where); },
+  runBatch(where) { if (Object.hasOwn(_batch, where)) _runBatch(where); },
+  cancelBatch(where) { if (Object.hasOwn(_batch, where)) { _batch[where].ask = null; _batchRender(where); } },
+  clearBatch(where) { if (Object.hasOwn(_batch, where)) { Object.assign(_batch[where], { picked: new Set(), ask: null, result: null }); _batchRender(where); } },
+  openJudgeGroup,                                 // a group's cards to judge, in its window (JUG3)
   judgeFromModal(id, verdict) { judgeCard(id, verdict, 'judge-modal-note'); closeModal(); },
   confirmProposed, refuseProposed,                // VP1: a verdict proposed on an exercise card, confirmed or refused
   confirmProposedFromModal(id) { confirmProposed(id, 'judge-modal-note'); closeModal(); },

@@ -148,6 +148,32 @@
     background: var(--bg2); border: 1px solid var(--border); color: var(--text);
   }
   .judge-actions button { font-size: 9px; padding: 2px 7px; }
+  /* Several cards judged at once (JUG3): a box per card, the bar under the list (its note, the three
+     verdicts), the summary before anything is written, and what each card became. */
+  .judge-pick { display: inline-flex; align-items: center; cursor: pointer; }
+  .judge-pick input, .judge-all input, .judge-rule input { accent-color: var(--blue); cursor: pointer; margin: 0; }
+  .judge-all { display: flex; gap: 6px; align-items: center; font-size: 10px; color: var(--dim); cursor: pointer; padding: 2px 0; }
+  .judge-bar, .judge-confirm, .judge-batch-result { position: sticky; bottom: 0; z-index: 1; display: flex; flex-wrap: wrap; gap: 6px;
+    align-items: center; padding: 6px 8px; border-radius: 4px; font-size: 10px; }
+  .judge-bar { background: color-mix(in srgb, var(--blue) 14%, var(--bg1)); border: 1px solid var(--blue); }
+  .judge-bar b { color: var(--blue); }
+  .judge-bar input { flex: 1 1 140px; min-width: 0; font-size: 10px; padding: 2px 6px; border-radius: 3px;
+    background: var(--bg2); border: 1px solid var(--border); color: var(--text); }
+  .judge-bar button { font-size: 9px; padding: 2px 7px; }
+  .judge-bar .judge-clear { margin-left: auto; color: var(--dim); }
+  .judge-mixed { flex-basis: 100%; color: var(--yellow); }
+  .judge-confirm { flex-direction: column; align-items: stretch; background: color-mix(in srgb, var(--orange) 10%, var(--bg1));
+    border: 1px solid var(--orange); }
+  .judge-confirm-t { color: var(--orange); font-weight: 700; }
+  .judge-confirm-note { color: var(--dim); }
+  .judge-confirm-row { display: flex; gap: 6px; }
+  .judge-batch-result { position: static; flex-direction: column; align-items: stretch; gap: 2px; border: 1px solid var(--border); }
+  .judge-batch-result .r-ok { color: var(--green); } .judge-batch-result .r-warn { color: var(--yellow); }
+  .judge-batch-result .r-bad { color: var(--red); }
+  .judge-group { display: flex; flex-direction: column; gap: 4px; }
+  .judge-rule { font-size: 9px; font-weight: 700; letter-spacing: 1px; color: var(--dim); padding-top: 6px; display: flex; gap: 8px; align-items: center; }
+  .judge-rule label { font-weight: 400; letter-spacing: 0; display: inline-flex; gap: 4px; align-items: center; cursor: pointer; }
+  .judge-group-item.picked, .judge-item.picked { background: color-mix(in srgb, var(--blue) 8%, transparent); }
   /* The verdict proposed (VP1): its buttons under its line, never cut with it (MOB5). */
   .judge-proposed { display: flex; gap: 5px; margin-top: 3px; }
   .judge-proposed button { font-size: 9px; padding: 2px 7px; }
@@ -618,6 +644,16 @@
     .judge-actions button { flex: 1 1 0; min-height: 44px; font-size: 13px; padding: 6px 4px; }
     .judge-proposed { gap: 8px; margin-top: 6px; }
     .judge-proposed button { flex: 1 1 0; min-height: 44px; font-size: 13px; padding: 6px 10px; }
+    /* Several at once, by the finger (JUG3, decision 3): a box of 20 px in a hit area of 44 × 44 px (its
+       margins give back the room it takes: the line keeps its height), « select all » and « select this
+       rule » 44 px high, the bar at the screen's foot, its note in 16 px, its verdicts 44 px high. */
+    .judge-pick { padding: 12px 16px 12px 8px; margin: -12px 0 -12px -8px; align-self: center; }
+    .judge-pick input, .judge-all input, .judge-rule input { width: 20px; height: 20px; }
+    .judge-all { font-size: 12px; min-height: 44px; }
+    .judge-rule label { min-height: 44px; font-size: 12px; }
+    .judge-bar input { flex: 1 1 100%; font-size: 16px; padding: 8px 10px; }
+    .judge-bar button, .judge-confirm-row button { flex: 1 1 0; min-height: 44px; font-size: 13px; }
+    .judge-bar, .judge-confirm { font-size: 12px; }
   }
 </style>
 </head>
