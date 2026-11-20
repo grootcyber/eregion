@@ -1193,6 +1193,45 @@ séquence figée : elle n'est pas ajoutée, sa séquence reste à écrire.
 tour** (M5377, sans machine ni tirage, un tour). Avec M02, 8 sur 8. Après MUT13, `mutation_night.py --list`
 ne compte plus que 7 `alone` (les sept ci-dessus), 236 `beside`.
 
+### M01 et M605 à la porte de la 0.6.2 (MUT15)
+
+La porte de la PR de version de la 0.6.2 (run 44704078162, job « mutants (every shard, the count) ») est
+rouge sur deux mutants attrapés à un tour sur deux, à 500 séquences : M01 (graine 496383132) et M605
+(graine 158978802). Aucun ne révèle un défaut du code. Aucun oracle n'est relâché, aucun mutant retiré.
+
+**M01, déplacé par SEC-H.** Son texte, `base = f"{prefix}-{vm_name}-{nic_short}-{_nic_hash(nic_id, 6)}"`,
+ne se trouve plus qu'une fois depuis SEC-H (c4972304, #901), comme celui de M2343 (MUT14). Les noms neufs
+finissent par 128 bits (`_nic_mark`). La ligne de M01 est désormais celle de `_older_rule_bases` : les
+noms que la 0.6.1 écrivait, lus et jamais réécrits. Sous M01, ces anciens noms perdent leur marque. Une
+isolation posée par la 0.6.1 n'est plus lue comme telle (`verify_isolation` la dit absente), et deux
+homonymes se rencontrent sur tous les anciens noms. La suite posait ces noms avec le code lui-même
+(`_older_base` de `tests/unit/test_wide_marks.py`, et la règle `an_earlier_version_isolates_or_blocks` de
+la machine). Sous le mutant, elle écrivait ce qu'elle lisait, et rien ne le signalait. Les huit séquences
+figées que MUT13 donnait à M01 passent toutes sous lui (14 paramètres sur 14) : elles visaient les noms de
+leur époque.
+- `test_wide_marks.py` pose désormais les anciens noms comme la 0.6.1 les écrivait (`_v061_base`, son code
+  recopié, jamais demandé à cette version). Sous M01, 27 de ses 45 tests échouent.
+  `test_the_older_names_read_are_those_the_earlier_version_wrote` et
+  `test_an_isolation_under_the_older_names_is_verified_then_lifted` rejoignent sa cible (`TESTS_ALSO`,
+  `scripts/mutants/MUT15.py`).
+- **M6651** remesure la ligne des noms neufs, qu'aucun mutant ne visait depuis SEC-H : sans la marque, des
+  homonymes partagent un nom. Les huit séquences de M01 l'attrapent, chacune par I3 ou I4 dans au moins un
+  de ses paramètres. Elles quittent la cible de M01 dans `MUT13.py` pour la sienne, avec la séquence du
+  banc (V-15) de `test_wide_marks.py`.
+
+**M605, au tirage.** Le mutant : une ENI que quelqu'un a mise sur `default` ne retrouve pas son original.
+Sa cible était la machine AWS seule : MUT13 le rangeait parmi les mutants qu'aucune séquence figée
+n'attrape. Aucun lot de la 0.6.2 n'a touché AWS. La chaîne qui le montre (une isolation, l'ENI mise sur
+`default` par quelqu'un, une levée) n'est tirée que dans certaines séquences. Son cas est maintenant écrit
+à la main, avec l'état puis par le tag seul :
+`test_aws_adapter.py::test_an_eni_someone_took_onto_default_gets_its_original_back` (`TESTS_ALSO`).
+
+**Mesure** : `--only M01,M605,M6651 --examples 500 --rounds 2 --jobs 2`, sur la graine de chaque porte
+(496383132, 158978802) et sur une troisième (727272727). Résultat : **3/3 attrapés à chaque tour, sur les
+trois graines**. M01 2/2 (288 s, 261 s, 291 s) ; M605 2/2 (20 s, 67 s, 34 s) ; M6651 1/1 (2 s : un seul
+tour, aucun tirage ne joue, CI10a). Restent au tirage, parmi les mutants AWS que MUT13 nommait : M603,
+M607, M609, M611 et M616.
+
 ### Trois mutants que la machine ne voyait plus qu'au hasard (MUT4)
 
 La porte de la 0.5.8 (run 42575826306) a rendu trois mutants `FIXED-ONLY`, 0/2 chacun : M19 (un blocage
