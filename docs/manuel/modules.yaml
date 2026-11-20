@@ -2852,3 +2852,13 @@ briques:
     lots: [LIC1]
     issue: 988
     doc: NOTICE
+
+  - id: s-doc-code
+    composant: socle
+    poste: s-documenter
+    nom: "The docs say what the code does: the README's core, the decision graph, and why LangGraph runs as a pipeline"
+    etat: main
+    release: "0.6"
+    lots: [DOC7]
+    issue: 989
+    doc: docs/architecture.md
