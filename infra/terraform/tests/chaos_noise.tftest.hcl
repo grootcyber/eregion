@@ -3,9 +3,9 @@
 # à chaque PR (ci.yml, job terraform-test, CI4) ; à la main :
 #   terraform -chdir=infra/terraform init -backend=false
 #   terraform -chdir=infra/terraform test
-# Deux cas : la config du dépôt (chaos.noise_vms: []), dont le plan ne doit rien changer au banc ;
-# le bruit sur gondolin, qui ne touche qu'elle. tests/unit/test_gothmog_noise.py tient le même
-# contrat en lisant les fichiers.
+# Deux cas : le bruit éteint (chaos_noise_vms = []), dont le plan ne doit rien changer au banc ; la
+# config du dépôt (chaos.noise_vms: [gondolin], G1c), dont le bruit ne touche que gondolin.
+# tests/unit/test_gothmog_noise.py tient le même contrat en lisant les fichiers.
 
 mock_provider "azurerm" {}
 mock_provider "azapi" {}
@@ -24,11 +24,11 @@ variables {
   bench_reader_enabled        = false
 }
 
-run "noise_off_the_bench_plan_is_unchanged" {
+run "noise_off_nothing_of_g1_is_planned" {
   command = plan
 
   variables {
-    chaos_noise_vms = null # la config du dépôt, chaos.noise_vms
+    chaos_noise_vms = [] # le bruit éteint, quelle que soit la config
   }
 
   assert {
@@ -55,7 +55,7 @@ run "noise_on_gondolin_touches_gondolin_only" {
   command = plan
 
   variables {
-    chaos_noise_vms = ["gondolin"]
+    chaos_noise_vms = null # la config du dépôt, chaos.noise_vms : [gondolin] (G1c)
   }
 
   assert {
@@ -70,6 +70,16 @@ run "noise_on_gondolin_touches_gondolin_only" {
   assert {
     condition     = keys(azapi_resource.chaos_agent_target) == ["gondolin"] && azapi_resource.chaos_agent_target["gondolin"].name == "Microsoft-Agent"
     error_message = "la cible Microsoft-Agent n'est pas sur gondolin seule"
+  }
+  assert {
+    condition = (keys(azurerm_user_assigned_identity.chaos_agent) == ["gondolin"]
+      && keys(azurerm_virtual_machine_extension.chaos_agent) == ["gondolin"]
+      && keys(azurerm_chaos_studio_capability.cpu) == ["gondolin"] && keys(azurerm_chaos_studio_capability.disk) == ["gondolin"]
+      && keys(azurerm_chaos_studio_experiment.disk) == ["gondolin"] && keys(azurerm_chaos_studio_experiment.cpu) == ["gondolin"]
+      && keys(azurerm_chaos_studio_experiment.restart) == ["gondolin"]
+      && keys(azurerm_role_assignment.chaos_disk_read) == ["gondolin"] && keys(azurerm_role_assignment.chaos_cpu_read) == ["gondolin"]
+    && keys(azurerm_role_assignment.chaos_restart) == ["gondolin"])
+    error_message = "une ressource de G1 vise une autre VM que gondolin"
   }
   assert {
     condition = (azurerm_chaos_studio_experiment.disk["gondolin"].name == "exp-celebrimbor-gondolin-disk"

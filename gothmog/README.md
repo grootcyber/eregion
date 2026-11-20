@@ -179,16 +179,49 @@ ne pas le contourner.
 
 ### Reste, sur le banc, avec Jonathan
 
-Rien n'est appliqué ni mesuré : les trois pannes sont `planned` au catalogue (Dagorlad les montre
-sans poignée) jusqu'au premier run. La séance, dans l'ordre. Chaque geste est celui de Jonathan.
+Les trois pannes restent `planned` au catalogue (Dagorlad les montre sans poignée) jusqu'à leur
+premier run. `chaos.noise_vms: [gondolin]` est déclaré dans `config.yaml` (G1c). La séance, dans
+l'ordre. Chaque geste est celui de Jonathan.
 
-1. **Appliquer.** `chaos.noise_vms: [gondolin]` dans `config.yaml`, puis `make celebrimbor-plan`.
-   Le plan ajoute l'identité de l'agent (et la modification de gondolin qui la porte), la cible
-   Microsoft-Agent (azapi, un provider de plus, au verrou du module depuis CI4 :
-   `celebrimbor-plan` l'installe), l'extension, deux capacités, trois expériences et leurs trois
-   rôles. Puis `make celebrimbor-up YES=1`, et `make orodruin-lock YES=1` : Orodruin reçoit ses
-   droits de démarrer et d'annuler expérience par expérience, à son propre apply
-   (`infra/orodruin/main.tf`, `experiment_injector`).
+0. **Le bon abonnement, d'abord.** Plusieurs abonnements vivent sur le poste (le banc, Stratus,
+   Imladris), et `az account set` tient d'une séance à l'autre. Le 20/11, un apply lancé en
+   terraform direct est parti sur l'abonnement de Stratus, et `celebrimbor-start` n'a trouvé
+   aucune VM. Dans le shell de la séance :
+
+   ```bash
+   source .envrc
+   export ARM_SUBSCRIPTION_ID=$AZURE_SUBSCRIPTION_ID
+   az account set --subscription "$AZURE_SUBSCRIPTION_ID"
+   [ "$(az account show --query id -o tsv)" = "$AZURE_SUBSCRIPTION_ID" ] && echo BANC || echo STOP
+   ```
+
+   `BANC`, ou rien d'autre. Puis gondolin allumée (`make celebrimbor-start VM=gondolin`), et
+   vérifiée : l'extension de l'agent ne s'installe pas sur une VM arrêtée (409).
+
+   ```bash
+   az vm get-instance-view -g rg-celebrimbor -n vm-celebrimbor-gondolin --query "instanceView.statuses[?starts_with(code,'PowerState/')].code" -o tsv
+   ```
+
+   `PowerState/running`. Puis Orodruin : `make orodruin-start`, `make orodruin-check` (`armed`).
+   Tant que les garants de Stratus jugent tout armement (un lot à venir les limite à celui de
+   Stratus), une ligne `EREGION_STRATUS_SUBSCRIPTION` dans l'`orodruin.env` d'Orodruin rend Gothmog
+   passif : la mettre en commentaire le temps de la séance (`make orodruin-ssh`, puis
+   `sed -i 's/^EREGION_STRATUS_SUBSCRIPTION=/#&/' orodruin.env`), et la remettre à la fin.
+1. **Appliquer le bruit, à lui seul.** Jamais `make celebrimbor-up` complet : son plan retirerait
+   les règles de Glorfindel du NSG partagé (le plan du 12/11). Jamais terraform à la main : les
+   deux cibles vérifient l'abonnement avant de le lancer (`CELEBRIMBOR_SUB_GUARD`).
+
+   ```bash
+   make celebrimbor-noise-plan
+   make celebrimbor-noise-up YES=1
+   ```
+
+   Le plan, lu avant l'apply : 11 à créer (l'identité de l'agent, la cible Microsoft-Agent — azapi,
+   au verrou du module depuis CI4 —, l'extension, deux capacités, trois expériences et leurs trois
+   rôles), 1 à changer (l'identité de gondolin, sur place), 0 à détruire. Toute autre ligne :
+   s'arrêter. Puis les droits d'Orodruin, expérience par expérience, à son propre apply
+   (`infra/orodruin/main.tf`, `experiment_injector`) : `make orodruin-plan`, lu (les droits sur les
+   trois nouvelles expériences, rien d'autre), puis `make orodruin-lock YES=1`.
 2. **Préflighter chaque panne**, gondolin en `human_only` (console) :
 
    ```bash

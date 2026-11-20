@@ -7,8 +7,16 @@ Mutants M2400–M2409 and M2424 (scripts/mutation_check.py) are measured here.
 The bench in memory is G0's (tests/unit/test_gothmog.py), with the Chaos agent's samples in
 Perf: every 10 s (the bench's DCR, ``perf_sampling_frequency``), each shown ``lag_s`` after it
 was taken (ingestion). It answers the disk effect's query as ransomware-disk-write computes its
-``Rate`` — the mode read from the step — which a test keeps equal to the rule's text."""
+``Rate`` — the mode read from the step — which a test keeps equal to the rule's text.
+
+G1c: the noise declared on gondolin in the tracked config, applied by its own targeted Make
+targets (`celebrimbor-noise-plan` / `-up`) behind the bench's subscription guard — against a fake
+`az` and a fake `terraform` first on the PATH, nothing run. Mutants M6768–M6779
+(scripts/mutants/G1c.py)."""
+import os
 import re
+import shutil
+import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -400,9 +408,11 @@ def _block(tf: str, head: str) -> str:
     return tf.split(head)[1].split("\n}\n")[0]
 
 
-def test_the_noise_is_declared_off_and_never_on_an_unenrolled_vm():
+def test_the_noise_is_declared_on_gondolin_and_never_on_an_unenrolled_vm():
     cfg = yaml.safe_load(_tf("config.yaml"))
-    assert cfg["chaos"]["noise_vms"] == []          # not applied: nothing created
+    # G1c: applied on gondolin — [] would take back, at the next plan, what was created.
+    assert cfg["chaos"]["noise_vms"] == ["gondolin"]
+    assert set(cfg["chaos"]["noise_vms"]) <= set(cfg["chaos"]["shutdown_vms"])
     tf = _tf("chaos.tf")
     for head in ('resource "azurerm_user_assigned_identity" "chaos_agent"',
                  'resource "azapi_resource" "chaos_agent_target"'):
@@ -415,8 +425,102 @@ def test_the_noise_is_declared_off_and_never_on_an_unenrolled_vm():
     assert ("var.chaos_noise_vms != null ? var.chaos_noise_vms : try(local.cfg.chaos.noise_vms, [])" in tf)
     # Terraform's own plan of both cases (ci.yml, job terraform-test: CI4).
     tftest = _tf("tests/chaos_noise.tftest.hcl")
-    assert 'run "noise_off_the_bench_plan_is_unchanged"' in tftest and "chaos_noise_vms = null" in tftest
-    assert 'run "noise_on_gondolin_touches_gondolin_only"' in tftest
+    off = _block(tftest, 'run "noise_off_nothing_of_g1_is_planned"')
+    on = _block(tftest, 'run "noise_on_gondolin_touches_gondolin_only"')
+    assert re.search(r"(?m)^\s*chaos_noise_vms = \[\]", off)      # off, whatever the config says
+    assert re.search(r"(?m)^\s*chaos_noise_vms = null", on)       # the tracked config: gondolin
+    assert 'error_message = "une ressource de G1 vise une autre VM que gondolin"' in on
+
+
+# ── G1c: the targeted Make targets, behind the bench's subscription guard ──────────────
+
+BENCH_SUB = "11111111-aaaa-4bbb-8ccc-000000000001"
+OTHER_SUB = "22222222-aaaa-4bbb-8ccc-000000000002"
+pytestmark_make = pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+
+
+def _g1_resources() -> list[str]:
+    """The resources chaos.tf declares for G1, after its banner: what the targets must name."""
+    g1 = _tf("chaos.tf").split("# ── G1 — le bruit bénin", 1)[1]
+    return [f"{t}.{n}" for t, n in re.findall(r'(?m)^resource "([^"]+)" "([^"]+)"', g1)]
+
+
+def _noise_targets() -> list[str]:
+    line = re.search(r"(?m)^NOISE_TARGETS = (.*)$", (ROOT / "Makefile").read_text()).group(1)
+    return line.split()
+
+
+def _make(tmp_path, target, *args, azure=BENCH_SUB, arm=None, active=BENCH_SUB, az_rc=0):
+    """``make target`` with a fake ``az`` (``account show`` answers ``active``, exit ``az_rc``)
+    and a fake ``terraform`` that only writes down its arguments. ``arm`` None: not set, the
+    Makefile derives it."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    log = tmp_path / "tf.log"
+    log.write_text("")
+    tf = bin_dir / "terraform"
+    tf.write_text('#!/bin/sh\necho "$*" >> "$FAKE_TF_LOG"\n')
+    tf.chmod(0o755)
+    az = bin_dir / "az"
+    az.write_text('#!/bin/sh\n[ "$FAKE_AZ_RC" = 0 ] || exit "$FAKE_AZ_RC"\nprintf "%s\\n" "$FAKE_AZ_SUB"\n')
+    az.chmod(0o755)
+    env = {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", "FAKE_TF_LOG": str(log),
+           "FAKE_AZ_SUB": active, "FAKE_AZ_RC": str(az_rc), "AZURE_SUBSCRIPTION_ID": azure}
+    for var in ("INSTANCE", "YES", "TOPO", "ARM_SUBSCRIPTION_ID"):
+        env.pop(var, None)
+    if arm is not None:
+        env["ARM_SUBSCRIPTION_ID"] = arm
+    res = subprocess.run(["make", "-s", "--no-print-directory", "-C", str(ROOT), target, *args],
+                         env=env, capture_output=True, text=True, timeout=60)
+    return res.returncode, res.stdout + res.stderr, [c.split() for c in log.read_text().splitlines()]
+
+
+def test_the_targets_name_every_resource_of_g1_and_nothing_else():
+    assert _noise_targets() == [f"-target={r}" for r in _g1_resources()]
+    assert len(_noise_targets()) == 11
+
+
+@pytestmark_make
+@pytest.mark.parametrize("args,instance", [((), "default"), (("INSTANCE=ci-1234",), "ci-1234")])
+def test_noise_plan_plans_g1_alone_on_the_bench(tmp_path, args, instance):
+    code, out, calls = _make(tmp_path, "celebrimbor-noise-plan", *args)
+    assert code == 0, out
+    chdir = "-chdir=infra/terraform"
+    assert calls == [[chdir, "init"], [chdir, "workspace", "select", instance], [chdir, "plan", *_noise_targets()]]
+
+
+@pytest.mark.parametrize("args,approve", [((), []), (("YES=1",), ["-auto-approve"])])
+@pytestmark_make
+def test_noise_up_applies_g1_alone_confirmed_unless_yes(tmp_path, args, approve):
+    code, out, calls = _make(tmp_path, "celebrimbor-noise-up", *args)
+    assert code == 0, out
+    assert calls[-1] == ["-chdir=infra/terraform", "apply", *approve, *_noise_targets()]
+    assert not any(a.startswith("-var") for c in calls for a in c)
+
+
+@pytestmark_make
+@pytest.mark.parametrize("azure, active", [(BENCH_SUB.upper(), BENCH_SUB), (BENCH_SUB, BENCH_SUB.upper())])
+def test_the_subscriptions_are_compared_without_their_case(tmp_path, azure, active):
+    code, out, calls = _make(tmp_path, "celebrimbor-noise-plan", azure=azure, active=active)
+    assert code == 0 and calls, out
+
+
+@pytestmark_make
+@pytest.mark.parametrize("target", ["celebrimbor-noise-plan", "celebrimbor-noise-up"])
+@pytest.mark.parametrize("case, kw, said", [
+    ("az on another subscription", {"active": OTHER_SUB}, "L'abonnement actif d'az n'est pas AZURE_SUBSCRIPTION_ID"),
+    ("az unreadable", {"az_rc": 1}, "L'abonnement actif d'az ne se lit pas"),
+    ("ARM on another subscription", {"arm": OTHER_SUB}, "ARM_SUBSCRIPTION_ID est vide ou n'est pas AZURE_SUBSCRIPTION_ID"),
+    ("ARM empty", {"arm": ""}, "ARM_SUBSCRIPTION_ID est vide ou n'est pas AZURE_SUBSCRIPTION_ID"),
+    ("AZURE empty, az unreadable", {"azure": "", "az_rc": 1}, "AZURE_SUBSCRIPTION_ID est vide"),
+])
+def test_off_the_bench_s_subscription_terraform_is_never_run(tmp_path, target, case, kw, said):
+    """The 20/11 apply that went to Stratus's subscription: refused before terraform, the
+    variable named, never its value."""
+    code, out, calls = _make(tmp_path, target, "YES=1", **kw)
+    assert code != 0 and calls == [], (case, out)
+    assert said in out, (case, out)
+    assert BENCH_SUB not in out and OTHER_SUB not in out, (case, out)
 
 
 @pytest.mark.parametrize("kind, fid, target", [
