@@ -52,6 +52,20 @@ rules:
     # volume (42.3 total) — detected by the RulePoller at T0+~3.5 min; 45 would have
     # missed it. Benign side still measured on simulated averages only.
     # Output: MaxWrite by Computer, _ResourceId (the row names its VM).
+    # Ceiling (RDW1, #994; Jonathan, 20/11): on the write rate alone, at most a snapshot and a card.
+    # Gothmog's benign fault vm-disk-write (a backup, ~74 MB/s for 10 min, bench of 20/11) fired this
+    # rule, and the model proposed isolate_vm at 80 %: the 60-s averages above (benign up to 23.2,
+    # attacks 26.8 to 91.7 MB/s) put a backup in the attacks' range, and a higher threshold would miss
+    # attacks. The rate does not tell a backup from an encryption: the isolation stays a human's
+    # gesture, from the card (`glorfindel/rule_ceiling.py`, docs/glorfindel.md « Le plafond par la
+    # règle »). It comes back alone with a fact that corroborates (`lifted_by`: a burst of renames,
+    # new extensions… measured on the bench, in a lot of its own) — empty until then. The query does
+    # not change; the fingerprint of the whole rule (`base_sha256`, WL1) does: a client copy of this
+    # rule made before is set aside, the shipped rule runs in its place.
+    ceiling:
+      allow: [snapshot]
+      lifted_by: []
+      why: "elle ne prouve qu'un débit d'écriture soutenu, qu'une sauvegarde atteint aussi"
     query: |
       let samples = Perf
         | where TimeGenerated > ago(10m)

@@ -152,8 +152,13 @@ def _respond(c, signal, action: str, *, mode: str = "non_disruptive", explanatio
     agent = GlorfindelAgent(connector=c, memory_path="unused", incidents_path="incidents.jsonl",
                             model="anthropic/claude-test", dry_run=False, autonomy=AutonomyConfig(default=mode),
                             readiness_gate=lambda vm, rid, configured: (configured, {}))
+    # RDW1 (#994): the shipped disk-write rule caps its detection to a snapshot — this file tests the
+    # card of an action taken alone, not the rule's ceiling (tests/unit/test_rule_ceiling.py): here
+    # the rules carry none, the isolation of the bench of 12/11 runs as it did.
+    from glorfindel import rule_ceiling
     with patch("litellm.completion", return_value=_llm(action, explanation=explanation)), \
-            patch("glorfindel.detectors.detector_for", return_value=LogAnalytics()):
+            patch("glorfindel.detectors.detector_for", return_value=LogAnalytics()), \
+            patch.object(rule_ceiling, "current", lambda: rule_ceiling.RuleCeilings(by_name={}, rules=[])):
         return agent.respond(signal)
 
 

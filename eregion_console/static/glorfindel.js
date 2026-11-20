@@ -60,6 +60,7 @@ const ESC_LABELS = {
   telemetry_gap:       'telemetry incomplete',
   unstable_decision:   'decision unstable (draws disagree)',
   floor_proposal:      'isolation proposed by the floor (brute force, then root), never run alone',
+  ceiling_proposal:    'isolation proposed under the rule\'s ceiling (its evidence alone is not enough), never run alone',
   ttl_exceeded:        'TTL exceeded',
   readiness_hold:      'reserves to confirm',
   orphan_rule:         'orphan rule (NIC gone)',
@@ -102,7 +103,7 @@ function _isLocalState(rid) { return /^~\//.test(rid || ''); }
 // is held, and why, with the one-click approve path every held type deserves.
 // Not unattributed_signal: its card is anchored on a VM the detection did not name, and
 // the server refuses to execute it (fourth review, Q4).
-const _HELD_TYPES = new Set(['mode_hold', 'low_confidence', 'uncharacterized_signal', 'release_hold', 'telemetry_gap', 'unstable_decision', 'floor_proposal']);
+const _HELD_TYPES = new Set(['mode_hold', 'low_confidence', 'uncharacterized_signal', 'release_hold', 'telemetry_gap', 'unstable_decision', 'floor_proposal', 'ceiling_proposal']);
 const _APPROVABLE = new Set(['isolate_vm', 'block_suspicious_ip', 'release_isolation', 'snapshot']);
 // ATT1 (#936): the actions aimed at the card's VM (eregion_core/action_queue.py VM_AIMED_ACTIONS).
 // On a card that says it is unattributed, whatever its type, never an « Approve & execute »: the VM
@@ -554,6 +555,9 @@ function cliCommand(esc) {
     return `# ${said}\n# judge which VM it is about from the CLI (glorfindel pending, the detection's row), then act on that VM\n${choose}glorfindel ack ${id}`;
   }
   if (_isAnchored(esc)) return `glorfindel ack ${id}`;
+  // RDW1: the gesture the rule's ceiling left to a human (the model's isolation), before the card's
+  // own commands — a held snapshot, or the card of the snapshot run alone.
+  const ceiling = _ceilingCommand(esc);
   if (_isHeld(esc)) {
     const vm = _vmArg(rid);
     const ip = esc.ip || (esc.action_params && esc.action_params.ip) || '<ip>';
@@ -564,7 +568,7 @@ function cliCommand(esc) {
       release_isolation:   `glorfindel release ${vm} --yes`,
       revoke_temp_access:  `glorfindel ack ${id}  # revoke_temp_access — manual`,
     };
-    return (actionMap[esc.action] || `glorfindel ack ${id}`) + `\nglorfindel ack ${id}`;
+    return ceiling + (actionMap[esc.action] || `glorfindel ack ${id}`) + `\nglorfindel ack ${id}`;
   }
   if (esc.action === 'restore_from_backup') {
     // The moment is asked (SEC4c): the card's first detection — the attack began before it.
@@ -586,7 +590,7 @@ function cliCommand(esc) {
   }
   // No restore here: a held snapshot never ran — restoring would overwrite the very
   // disk the model wanted preserved (fourth review, Q16).
-  return `glorfindel ack ${id}`;
+  return ceiling + `glorfindel ack ${id}`;
 }
 
 // ── Utilities ──────────────────────────────────────────────────────────────────
@@ -3929,9 +3933,31 @@ function _cardQuery(e) {
 function _cardBody(e, vmName) {
   const explanation = e.explanation && e.explanation !== e.reason
     ? `<div style="color:var(--dim);font-size:10px;line-height:1.5;margin-top:3px">${_attr(e.explanation)}</div>` : '';
-  return `${_targetNote(e, vmName)}
+  return `${_targetNote(e, vmName)}${_ceilingNote(e)}
     <div style="color:var(--text);font-size:11px;line-height:1.6">${_attr(e.reason || '')}</div>
     ${explanation}${_executedDetail(e)}`;
+}
+// RDW1 (#994): the rule's ceiling brought the model's decision back — both said, the one the card holds
+// (or that ran alone) and the model's own, with its confidence and the rule's reason. The isolation stays
+// a human's gesture, from the card (cliCommand). Nothing raw: every field through _attr.
+function _ceilingOf(e) {
+  const c = e && e.ceiling;
+  return c && typeof c === 'object' && c.proposed ? c : null;
+}
+function _ceilingNote(e) {
+  const c = _ceilingOf(e);
+  if (!c) return '';
+  const pct = Number(c.confidence) > 0 ? ` (${Math.round(Number(c.confidence) * 100)}%)` : '';
+  return `<div class="esc-context" style="color:var(--yellow)" title="The rule caps what its detection may lead to, whatever the model's confidence: the model's proposal is kept here, never run alone">⛔ rule ceiling${c.rule ? ` · ${_attr(c.rule)}` : ''} — model proposed: ${_attr(actionLabelVerb(c.proposed))}${pct} · brought back to: ${_attr(actionLabelVerb(c.lowered || 'snapshot'))}${c.why ? ` · ${_attr(c.why)}` : ''}</div>`;
+}
+// The gesture the ceiling leaves to a human (RDW1), on a card that holds another action (the snapshot):
+// the model's isolation, a comment only — the block is run as a whole, and its snapshot must never isolate
+// too. The ceiling's own card proposes it (approvable in one click). Never on a card that names no VM
+// (cliCommand returns before, ATT1).
+function _ceilingCommand(e) {
+  const c = _ceilingOf(e);
+  if (!c || c.proposed !== 'isolate_vm' || e.action === 'isolate_vm') return '';
+  return `# rule ceiling: the model proposed to isolate — its own card proposes it; only after judging: glorfindel isolate ${_vmArg(e.resource_id)} --yes\n`;
 }
 function _cardSteps(e) {
   return _looseSteps(e) + (e.suggested_steps || [])
