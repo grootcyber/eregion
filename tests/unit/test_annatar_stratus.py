@@ -10,6 +10,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import tempfile
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -31,6 +33,7 @@ from annatar.engines.stratus import (
     verify_binary,
 )
 from annatar.executors.stratus_assertion import EXCHANGE_AUDIENCE, fetch_assertion
+from annatar.executors.stratus_detonator import ipc_detonate, serve
 from annatar.executors.stratus_host import StagedLayout, StratusExecutor, staged_layout
 from annatar.runner.engine import Engine
 from annatar.runner.parser import KNOWN_ENGINES, Scenario, ScenarioParser
@@ -392,7 +395,7 @@ def _staged_home(tmp_path) -> Path:
 
 
 def _executor(tmp_path, *, dry_run=False, run=None, get=None, session=None, record=None,
-              layout=None):
+              layout=None, detonate=None):
     binary, digest = _fake_binary(tmp_path)
     r = resolve(TID, binary_path=binary, stratus_dir=_stratus_dir(tmp_path, digest),
                 catalog=_catalog(graph_probe={"name": "absent",
@@ -403,7 +406,7 @@ def _executor(tmp_path, *, dry_run=False, run=None, get=None, session=None, reco
                               terraformrc=str(tmp_path / "terraformrc"))
     return StratusExecutor(r, session if session is not None else _session(tmp_path),
                            target=RG_SCOPE, dry_run=dry_run,
-                           run=run or _ok_run(record), get=get, layout=layout)
+                           run=run or _ok_run(record), get=get, layout=layout, detonate=detonate)
 
 
 def test_executor_journals_each_phase_before_it_runs(tmp_path):
@@ -524,31 +527,58 @@ def test_the_exec_home_is_only_on_the_annatar_runs_not_the_shared_hardening():
 
 
 def test_the_orodruin_stratus_run_is_wired_for_the_federated_exchange():
-    """R2c pièce 4B: orodruin-stratus runs on the sandbox network (the IMDS is DROPped there, pièce
-    3), mounts Orodruin's assertion read-only and names it to the run, and fetches that assertion on
-    the host (default bridge, IMDS reachable) for the exchange audience — so the run authenticates as
-    Stratus by the federated exchange, never by Orodruin's managed identity (unreachable there)."""
+    """R2c pièce 4 (sidecar): the third-party Stratus subprocesses run in the DETONATOR, on the
+    sandbox network (the IMDS is DROPped there, pièce 3), with Orodruin's assertion mounted read-only
+    and named to the run — so they authenticate as Stratus by the federated exchange, never by
+    Orodruin's managed identity (unreachable there), and Orodruin's own run mounts never enter that
+    container. The ENGINE keeps the controls on the bridge (never the sandbox) and delegates each
+    phase through the shared IPC directory. The assertion is fetched on the host (default bridge,
+    IMDS reachable) for the exchange audience."""
     makefile = (Path(__file__).resolve().parents[2] / "Makefile").read_text(encoding="utf-8")
 
     def line(prefix):
         return next(ln for ln in makefile.splitlines() if ln.startswith(prefix))
 
-    run = line("ORO_RUN_STRATUS")
-    assert "--network $(ORO_SANDBOX_NET)" in run                           # the sandbox (IMDS blocked)
-    assert "--network host" not in run                                     # never host (IMDS exposed)
-    assert "-v $(ORO_STRATUS_ASSERTION):$(ORO_STRATUS_MOUNT):ro" in run    # assertion mounted read-only
-    assert "-e EREGION_STRATUS_ASSERTION_FILE=$(ORO_STRATUS_MOUNT)" in run     # named to stratus_run_env
+    deto = line("ORO_RUN_DETONATOR")
+    assert "--network $(ORO_SANDBOX_NET)" in deto                          # the sandbox (IMDS blocked)
+    assert "--network host" not in deto                                    # never host (IMDS exposed)
+    assert "-v $(ORO_STRATUS_ASSERTION):$(ORO_STRATUS_MOUNT):ro" in deto   # assertion mounted read-only
+    assert "-e EREGION_STRATUS_ASSERTION_FILE=$(ORO_STRATUS_MOUNT)" in deto    # named to stratus_run_env
+    assert "-v $(ORO_IPC_HOST):$(ORO_IPC_MOUNT)" in deto                   # the shared IPC directory
+    assert "-d --name eregion-stratus-detonator" in deto                  # detached, a fixed name to stop
+    assert "$(call ORO_MOUNT,orodruin)" not in deto                       # Orodruin's identity never here
+
+    eng = line("ORO_RUN_ENGINE")
+    assert "--network $(ORO_SANDBOX_NET)" not in eng                      # the engine stays on the bridge
+    assert "--network host" not in eng
+    assert "-e EREGION_STRATUS_IPC=$(ORO_IPC_MOUNT)" in eng               # delegates phases to the detonator
+    assert "-v $(ORO_IPC_HOST):$(ORO_IPC_MOUNT)" in eng                   # the same IPC directory
+    assert "$(call ORO_MOUNT,orodruin)" in eng                           # the contract + journal, on the bridge
+
     assert "ORO_SANDBOX_NET = eregion-stratus-sandbox" in makefile         # the pièce 3 network
     fetch = line("ORO_STRATUS_FETCH")
     assert "python -m annatar.executors.stratus_assertion" in fetch        # Orodruin's assertion
     assert "--network" not in fetch                                        # default bridge: IMDS reachable
-    assert "$(ORO_STRATUS_FETCH) && $(ORO_RUN_STRATUS)" in makefile        # fetch on the host, then run
+
+
+def test_the_orodruin_stratus_target_starts_the_detonator_then_the_engine():
+    """R2c pièce 4 (sidecar): orodruin-stratus fetches the assertion (on the bridge), starts the
+    detonator (the Stratus entrypoint) on the sandbox, runs the engine (annatar run) on the bridge,
+    then removes the detonator — so the run is torn down even when the engine fails."""
+    makefile = (Path(__file__).resolve().parents[2] / "Makefile").read_text(encoding="utf-8")
+    recipe = next(ln for ln in makefile.splitlines()
+                  if "$(ORO_STRATUS_FETCH)" in ln and "$(ORO_RUN_ENGINE)" in ln)
+    assert "$(ORO_STRATUS_FETCH) &&" in recipe                             # fetch first (on the bridge)
+    assert "$(ORO_RUN_DETONATOR) python -m annatar.executors.stratus_detonator" in recipe
+    assert "$(ORO_RUN_ENGINE) annatar run $(SCENARIO)" in recipe           # the engine drives the run
+    assert "docker rm -f eregion-stratus-detonator" in recipe             # torn down whatever happens
 
 
 def test_the_sandbox_proof_is_mounted_into_the_contract_and_the_run():
     """R2c decision A: the DROP-rule proof (written on the host by the root service) is mounted
     read-only into both the contract run (orodruin-check's read_sandbox reads it — it cannot read
-    live iptables) and the Stratus run (its arming checks it too)."""
+    live iptables) and the Stratus engine (its arming checks it too), never into the detonator (the
+    sandbox is where the rule bites, not where it is proven)."""
     makefile = (Path(__file__).resolve().parents[2] / "Makefile").read_text(encoding="utf-8")
 
     def line(prefix):
@@ -556,7 +586,8 @@ def test_the_sandbox_proof_is_mounted_into_the_contract_and_the_run():
 
     mount = "-v $(ORO_SANDBOX_PROOF):$(ORO_SANDBOX_PROOF):ro"
     assert mount in line("ORO_RUN_CONTRACT ")
-    assert mount in line("ORO_RUN_STRATUS ")
+    assert mount in line("ORO_RUN_ENGINE")
+    assert mount not in line("ORO_RUN_DETONATOR")
     assert "ORO_SANDBOX_PROOF = /run/eregion-sandbox-rules" in makefile
 
 
@@ -1137,3 +1168,128 @@ def test_stratus_authoring_checks_do_not_touch_other_engines(tmp_path):
         "steps": [{"name": "x", "action": "run_script_on_vm", "script": "scripts/vm/x.sh"}],
     }), encoding="utf-8")
     assert ScenarioParser().validate(path).valid
+
+
+# ── R2c pièce 4 (sidecar) : le moteur délègue la détonation, le détonateur la joue ────
+
+def _write_json(path: Path, obj: dict) -> None:
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(obj), encoding="utf-8")
+    tmp.replace(path)
+
+
+def test_run_phase_delegates_the_subprocess_to_the_detonator_when_set(tmp_path):
+    """R2c pièce 4 (sidecar): with a detonate hook, run_phase delegates the raw subprocess — it is
+    never run on the bridge (where the IMDS is reachable) — while the journal stays on the engine."""
+    seen = []
+
+    def detonate(name):
+        seen.append(name)
+        return ("ok", "", 0)
+
+    def run(*a, **k):        # the local subprocess must NOT run when a detonator is set
+        raise AssertionError("the subprocess must not run on the bridge when a detonator is set")
+
+    session = _session(tmp_path)
+    ex = _executor(tmp_path, session=session, run=run, detonate=detonate)
+    for name in PHASES:
+        ex.run_phase(name)
+    assert seen == list(PHASES)                         # every phase went to the detonator
+    assert session.calls == len(PHASES)                 # and each was still journaled on the engine
+    ex.close()
+
+
+def test_run_phase_raises_when_the_detonator_reports_a_failure(tmp_path):
+    """R2c pièce 4: a non-zero return code from the detonator is a failed phase, never swallowed."""
+    def detonate(name):
+        return ("", "stratus: boom", 2)
+
+    ex = _executor(tmp_path, session=_session(tmp_path), detonate=detonate)
+    with pytest.raises(RuntimeError, match="exited 2"):
+        ex.warmup()
+    ex.close()
+
+
+def test_the_sidecar_protocol_round_trips_each_phase():
+    """R2c pièce 4: the engine's delegate and the detonator's loop exchange one phase at a time
+    through the shared directory — the detonator runs the phase and answers, paired by id."""
+    with tempfile.TemporaryDirectory() as d:
+        calls = []
+
+        def run_one(phase):
+            calls.append(phase)
+            return (f"ran {phase}", "", 0)
+
+        t = threading.Thread(target=serve,
+                             kwargs=dict(ipc_dir=d, run_one=run_one, poll=0.01, max_idle_s=5))
+        t.start()
+        try:
+            detonate = ipc_detonate(d, timeout=5, poll=0.01)
+            assert detonate("warmup") == ("ran warmup", "", 0)
+            assert detonate("detonate") == ("ran detonate", "", 0)
+            assert calls == ["warmup", "detonate"]
+        finally:
+            detonate.stop()
+            t.join(timeout=5)
+        assert not t.is_alive()                          # __stop__ ended the loop
+
+
+def test_the_detonator_stops_only_on_the_stop_sentinel():
+    """R2c pièce 4: the loop ends on __stop__; a real phase is served (its result written), never
+    mistaken for a stop."""
+    with tempfile.TemporaryDirectory() as d:
+        dp = Path(d)
+        _write_json(dp / "request.json", {"id": 3, "phase": "warmup"})
+        serve(d, lambda name: (f"ran {name}", "", 0), poll=0.0, max_idle_s=0.0)
+        resp = json.loads((dp / "response.json").read_text(encoding="utf-8"))
+        assert resp == {"id": 3, "stdout": "ran warmup", "stderr": "", "rc": 0}
+
+
+def test_the_detonator_reports_a_crashing_phase_as_a_failure():
+    """R2c pièce 4: a crash inside the detonator is a failed phase (rc=1 with the reason), never a
+    hang and never a silent success — the engine must see the failure."""
+    with tempfile.TemporaryDirectory() as d:
+        dp = Path(d)
+        _write_json(dp / "request.json", {"id": 7, "phase": "warmup"})
+
+        def run_one(_):
+            raise RuntimeError("boom")
+
+        serve(d, run_one, poll=0.0, max_idle_s=0.0)      # process the one request, then idle-exit
+        resp = json.loads((dp / "response.json").read_text(encoding="utf-8"))
+        assert resp["id"] == 7 and resp["rc"] == 1 and "boom" in resp["stderr"]
+
+
+def test_the_delegate_ignores_a_response_for_another_phase():
+    """R2c pièce 4: the id pairs a response to its request — a stale answer from another phase is
+    never taken for this one (it keeps waiting, then times out)."""
+    with tempfile.TemporaryDirectory() as d:
+        dp = Path(d)
+
+        def sleep(_):                                    # a stale answer keeps reappearing
+            _write_json(dp / "response.json",
+                        {"id": 999, "phase": "x", "stdout": "stale", "stderr": "", "rc": 0})
+
+        detonate = ipc_detonate(d, timeout=0.2, poll=0.01, sleep=sleep)
+        with pytest.raises(RuntimeError, match="did not answer"):
+            detonate("warmup")
+
+
+def test_the_delegate_raises_when_the_detonator_never_answers():
+    """R2c pièce 4: a detonator that never answers is a timeout, never a silent success — a hung
+    phase must not pass for a clean one."""
+    with tempfile.TemporaryDirectory() as d:
+        detonate = ipc_detonate(d, timeout=0.2, poll=0.01)
+        with pytest.raises(RuntimeError, match="did not answer"):
+            detonate("warmup")
+
+
+def test_the_phase_delegate_is_built_only_with_an_ipc_dir():
+    """R2c pièce 4 (sidecar): the engine builds a detonator delegate only when EREGION_STRATUS_IPC
+    names the shared directory (the real run, from the Makefile); without it the subprocess runs
+    locally (a test, a developer run) and there is no delegate."""
+    from annatar.runner.engine import _stratus_detonate_from_env
+    assert _stratus_detonate_from_env({}) is None
+    assert _stratus_detonate_from_env({"EREGION_STRATUS_IPC": ""}) is None
+    delegate = _stratus_detonate_from_env({"EREGION_STRATUS_IPC": "/run/stratus-ipc"})
+    assert callable(delegate) and callable(delegate.stop)
