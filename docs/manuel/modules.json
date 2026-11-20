@@ -2326,6 +2326,19 @@
    "doc": "docs/design/stratus-cible.md"
   },
   {
+   "id": "o-stratus-garants-scope",
+   "composant": "orodruin",
+   "poste": "o-armer",
+   "nom": "The contract's Stratus guarantees gate only an arming for a Stratus run — a bench env file naming the Stratus subscription no longer turns Gothmog, a VM run or the drill passive",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "ORG1"
+   ],
+   "issue": 1003,
+   "doc": "docs/design/orodruin-contract.md"
+  },
+  {
    "id": "o-kubernetes",
    "composant": "orodruin",
    "poste": "o-armer",

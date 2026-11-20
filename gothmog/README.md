@@ -234,10 +234,8 @@ est déclaré dans `config.yaml` (G1c). La séance, dans l'ordre. Chaque geste e
    ```
 
    `PowerState/running`. Puis Orodruin : `make orodruin-start`, `make orodruin-check` (`armed`).
-   Tant que les garants de Stratus jugent tout armement (un lot à venir les limite à celui de
-   Stratus), une ligne `EREGION_STRATUS_SUBSCRIPTION` dans l'`orodruin.env` d'Orodruin rend Gothmog
-   passif : la mettre en commentaire le temps de la séance (`make orodruin-ssh`, puis
-   `sed -i 's/^EREGION_STRATUS_SUBSCRIPTION=/#&/' orodruin.env`), et la remettre à la fin.
+   Une ligne `EREGION_STRATUS_SUBSCRIPTION` dans l'`orodruin.env` ne gêne plus l'armement de
+   Gothmog : les garants de Stratus ne jugent que l'armement pour Stratus (#1003).
 1. **Appliquer le bruit, à lui seul.** Jamais `make celebrimbor-up` complet : son plan retirerait
    les règles de Glorfindel du NSG partagé (le plan du 12/11). Jamais terraform à la main : les
    deux cibles vérifient l'abonnement avant de le lancer (`CELEBRIMBOR_SUB_GUARD`).

@@ -134,7 +134,8 @@ _V1_ANNATAR_GATE = (
     "            if no_watch:\n"
     '                console.print(f"[red]Refused — no live Glorfindel watch:[/red] {outside(no_watch)}")\n'
     '                return RunOutcome(run_id, "unknown", error=f"glorfindel: {no_watch}", refused=True)\n')
-_V1_ANNATAR_ARM = '        verdict, session = arm(run_id, "annatar", request=self.request)\n'
+_V1_ANNATAR_ARM = ('        verdict, session = arm(run_id, "annatar", request=self.request,\n'
+                   '                               for_stratus=scenario.engine == "stratus")\n')
 _V1_GOTHMOG_GATE = (
     "        refused = self._no_watch(run_id, without_glorfindel)\n"
     "        if refused:\n"
