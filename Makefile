@@ -265,7 +265,7 @@ help:
 	@echo "  make celebrimbor-auditd-up [YES=1]          L'applique (auditd_enabled du tfvars ; false : le retire)"
 	@echo "  make celebrimbor-flows-plan [INSTANCE=]     Plan du compte des flux réseau seul : le compte, sa lecture, le flow log (INF-FL)"
 	@echo "  make celebrimbor-flows-up [YES=1]           L'applique (le flow log change de compte, en place)"
-	@echo "  make celebrimbor-dcr-plan [INSTANCE=]       Plan de la DCR seule : ses compteurs et ses facilités (DCR1)"
+	@echo "  make celebrimbor-dcr-plan [INSTANCE=]       Plan de la DCR seule : ses compteurs et ses facilités (DCR1) ; l'abonnement du banc vérifié d'abord"
 	@echo "  make celebrimbor-dcr-up [YES=1]             L'applique (une mise à jour en place de la DCR)"
 	@echo "  make celebrimbor-noise-plan [INSTANCE=]     Plan du bruit bénin seul (G1, chaos.noise_vms) ; l'abonnement du banc vérifié d'abord"
 	@echo "  make celebrimbor-noise-up [YES=1]           L'applique (11 à créer, l'identité de la VM changée, rien de détruit)"
@@ -938,17 +938,21 @@ celebrimbor-auditd-up:
 # VM, ni le workspace (une dérive en attente de l'un d'eux y paraîtrait, une dépendance : alors
 # s'arrêter, et la traiter par celebrimbor-plan). Jamais de `-var` d'ici : auditd_enabled et
 # cron_logs_enabled viennent de terraform.tfvars. Ce que le plan doit montrer, la mesure après
-# l'apply : docs/operations.md, « Les compteurs de performance du banc (DCR1) ».
+# l'apply : docs/operations.md, « Les compteurs de performance du banc (DCR1) ». Le garde d'abonnement
+# d'abord (CELEBRIMBOR_SUB_GUARD, G1c) : l'abonnement actif d'az et ARM_SUBSCRIPTION_ID sont celui du
+# banc, ou terraform n'est pas lancé.
 #   make celebrimbor-dcr-plan                  # lecture seule
 #   make celebrimbor-dcr-up [YES=1]            # YES=1 : sans confirmation, plan relu avant
 DCR_TARGETS = -target=azurerm_monitor_data_collection_rule.celebrimbor
 
 celebrimbor-dcr-plan:
+	$(CELEBRIMBOR_SUB_GUARD)
 	@$(TF) init
 	@$(TF) workspace select $(INSTANCE)
 	@$(TF) plan $(DCR_TARGETS)
 
 celebrimbor-dcr-up:
+	$(CELEBRIMBOR_SUB_GUARD)
 	@$(TF) init
 	@$(TF) workspace select $(INSTANCE)
 	@$(TF) apply$(if $(YES), -auto-approve) $(DCR_TARGETS)

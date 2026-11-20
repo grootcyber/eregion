@@ -6008,8 +6008,10 @@ séance G1, le 20/11). `az`, lui, suit son propre compte. Avant toute commande, 
 [ "$(az account show --query id -o tsv)" = "$AZURE_SUBSCRIPTION_ID" ] || echo "az n'est pas sur l'abonnement du banc : s'arrêter"
 ```
 
-Les cibles `celebrimbor-dcr-*` ne portent pas encore ce garde elles-mêmes : il viendra de la
-fonction de garde de G1c, branchée sur elles par celui des deux lots qui fusionnera en second.
+Les cibles `celebrimbor-dcr-*` portent aussi ce garde elles-mêmes, avant tout appel à terraform
+(`CELEBRIMBOR_SUB_GUARD`, G1c) : un abonnement vide ou autre, dans `ARM_SUBSCRIPTION_ID` ou dans
+`az`, et terraform n'est pas lancé — le message nomme la variable, jamais sa valeur. Les deux lignes
+ci-dessus restent le geste d'avant toute autre commande (`az`, la lecture de la DCR déployée).
 
 ### Avant tout : la DCR déployée (lecture seule)
 

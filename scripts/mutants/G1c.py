@@ -1,10 +1,12 @@
 """G1c (Partie de #76): the benign noise declared on gondolin in the tracked config, applied by its
 own targeted Make targets behind the bench's subscription guard — never terraform by hand, never
-a full celebrimbor-up. M6768–M6779, measured by tests/unit/test_gothmog_noise.py."""
+a full celebrimbor-up. M6768–M6779, measured by tests/unit/test_gothmog_noise.py; M6831–M6832, the
+same guard on DCR1's targets, measured by tests/unit/test_bench_perf_counters.py."""
 MK = "Makefile"
 CFG = "infra/terraform/config.yaml"
 TFTEST = "infra/terraform/tests/chaos_noise.tftest.hcl"
 _T = "tests/unit/test_gothmog_noise.py"
+_DCR = "tests/unit/test_bench_perf_counters.py"
 _REFUSED = f"{_T}::test_off_the_bench_s_subscription_terraform_is_never_run"
 
 MUTANTS = [
@@ -50,6 +52,14 @@ MUTANTS = [
      "(G1c)", CFG,
      "  noise_vms:         [gondolin]\n",
      "  noise_vms:         []\n"),
+    ("M6831", "celebrimbor-dcr-plan without the guard: the DCR's plan read on whatever subscription "
+     "az holds (G1c, DCR1's targets)", MK,
+     "celebrimbor-dcr-plan:\n\t$(CELEBRIMBOR_SUB_GUARD)\n",
+     "celebrimbor-dcr-plan:\n"),
+    ("M6832", "celebrimbor-dcr-up without the guard: the DCR applied on whatever subscription az "
+     "holds (G1c, DCR1's targets)", MK,
+     "celebrimbor-dcr-up:\n\t$(CELEBRIMBOR_SUB_GUARD)\n",
+     "celebrimbor-dcr-up:\n"),
 ]
 
 TESTS = {
@@ -65,4 +75,6 @@ TESTS = {
     "M6777": f"{_T}::test_noise_up_applies_g1_alone_confirmed_unless_yes",
     "M6778": f"{_T}::test_the_noise_is_declared_on_gondolin_and_never_on_an_unenrolled_vm",
     "M6779": f"{_T}::test_the_noise_is_declared_on_gondolin_and_never_on_an_unenrolled_vm",
+    "M6831": f"{_DCR}::test_dcr_targets_never_run_terraform_off_the_bench_s_subscription",
+    "M6832": f"{_DCR}::test_dcr_targets_never_run_terraform_off_the_bench_s_subscription",
 }
