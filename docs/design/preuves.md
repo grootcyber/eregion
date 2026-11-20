@@ -1229,8 +1229,37 @@ n'attrape. Aucun lot de la 0.6.2 n'a touché AWS. La chaîne qui le montre (une 
 **Mesure** : `--only M01,M605,M6651 --examples 500 --rounds 2 --jobs 2`, sur la graine de chaque porte
 (496383132, 158978802) et sur une troisième (727272727). Résultat : **3/3 attrapés à chaque tour, sur les
 trois graines**. M01 2/2 (288 s, 261 s, 291 s) ; M605 2/2 (20 s, 67 s, 34 s) ; M6651 1/1 (2 s : un seul
-tour, aucun tirage ne joue, CI10a). Restent au tirage, parmi les mutants AWS que MUT13 nommait : M603,
-M607, M609, M611 et M616.
+tour, aucun tirage ne joue, CI10a).
+
+**Les autres mutants AWS au tirage** (à la demande de l'Orchestre, avant la relecture). MUT13 laissait
+aussi M603, M607, M609, M611 et M616 au seul tirage de la machine AWS. Chacun reçoit le cas déterministe
+de son défaut dans `tests/unit/test_aws_adapter.py` (`TESTS_ALSO`). Aucun n'a demandé de toucher la
+machine ou un oracle.
+- **M603, M611, M616** : le cas existait déjà, rouge sous chacun, mais hors de leur cible.
+  - M603 (la quarantaine éteinte par la configuration, ignorée) :
+    `test_no_isolation_without_the_quarantine_group_nor_with_an_unreadable_config`.
+  - M611 (une levée en échec qui efface l'état) :
+    `test_an_unknown_original_keeps_the_eni_in_quarantine_and_says_which_tag`, qui vérifie l'état gardé.
+  - M616 (`verify_isolation` qui répond pour une instance d'un autre compte) :
+    `test_another_account_another_region_or_no_arn_is_refused`.
+- **M607** (une ENI déjà en quarantaine : ce qu'elle porte lu comme son original) :
+  `test_an_eni_isolated_again_keeps_the_original_it_had_before_the_quarantine`. L'ENI est isolée de
+  nouveau, seule en quarantaine ou avec un groupe que quelqu'un a mis à côté du nôtre. Sous M607, la
+  levée remet la quarantaine, ou le groupe ajouté, et dit « released ».
+- **M609** (une vérification qui ne lit pas une ENI dit isolé) :
+  `test_a_verification_that_cannot_read_the_quarantine_group_never_says_isolated`. La lecture du groupe
+  de quarantaine est refusée. Sous M609, la vérification dit `True`.
+
+**Mesure** : `--only M603,M607,M609,M611,M616 --examples 500 --rounds 2 --jobs 2` sur 158978802,
+727272727 et 496383132. Résultat : **5/5 attrapés à chaque tour, sur les trois graines** (2/2 chacun,
+entre 4 et 36 s). Après MUT15, aucun mutant AWS de la liste de MUT13 ne dépend plus du seul tirage.
+
+**Ce qui reste ouvert** (hors de ce lot) :
+- La règle `an_earlier_version_isolates_or_blocks` de la machine (`tests/unit/test_invariants.py`) pose
+  toujours les anciens noms avec le code (`NetworkMixin._older_rule_bases`). Elle ne voit donc pas un
+  mutant de ces noms. Les poser comme la 0.6.1 les écrivait ne changerait rien sur le code non muté.
+- `tests/unit/test_release_away.py` (le test de M2343, MUT14) calcule aussi l'ancien nom avec
+  `_older_rule_bases`.
 
 ### Trois mutants que la machine ne voyait plus qu'au hasard (MUT4)
 

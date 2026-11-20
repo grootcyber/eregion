@@ -1,5 +1,6 @@
 """MUT15 (#967, the 0.6.2 release gate, run 44704078162): M01 and M605 each survived one round of two,
-at 500 sequences. Neither is a defect of the code: each was left to the machine's draw.
+at 500 sequences. Neither is a defect of the code: each was left to the machine's draw. So were five
+other AWS mutants (M603, M607, M609, M611, M616): each is given its case too, below.
 
 M01 ("rule name without the NIC hash", scripts/mutation_check.py) matches its text once since SEC-H
 (c4972304, #901), as M2343 did (MUT14): the new names end with 128 bits (`_nic_mark`), and its line,
@@ -26,6 +27,20 @@ the chain that shows it (an isolation, the ENI moved onto `default` by someone, 
 some sequences only. Its case by hand, with its state and with the tag alone, in
 tests/unit/test_aws_adapter.py (TESTS_ALSO); test_an_eni_left_on_default_gets_the_operator_s_group_when
 _its_own_was_deleted caught it on the way, but was not in its target.
+
+Then the other AWS mutants MUT13 left to the machine's draw (the Orchestre's word, before the review):
+each gets the deterministic case of its defect, in tests/unit/test_aws_adapter.py (TESTS_ALSO); none
+needed the machine or an oracle touched.
+- M603 (the quarantine off by the configuration ignored), M611 (a release that failed clears its state),
+  M616 (verify_isolation vouches for another account's instance): their case was written already —
+  test_no_isolation_without_the_quarantine_group_nor_with_an_unreadable_config,
+  test_an_unknown_original_keeps_the_eni_in_quarantine_and_says_which_tag (its state kept, said failed),
+  test_another_account_another_region_or_no_arn_is_refused —, red under each, never in its target.
+- M607 (an ENI already in quarantine: what it carries read as its original): isolated again, alone in
+  the quarantine or with a group someone put next to ours — under M607 the release puts the quarantine
+  back, or the group added, and says released.
+- M609 (a verification that can't read an ENI says isolated): the quarantine group refused at its read
+  — under M609 the verification says True.
 
 Range handed by the Orchestre: M6651–M6655.
 """
@@ -59,4 +74,9 @@ TESTS_ALSO = {
     "M01": f"{_WM}::test_the_older_names_read_are_those_the_earlier_version_wrote "
            f"{_WM}::test_an_isolation_under_the_older_names_is_verified_then_lifted",
     "M605": f"{_AWS}::test_an_eni_someone_took_onto_default_gets_its_original_back",
+    "M603": f"{_AWS}::test_no_isolation_without_the_quarantine_group_nor_with_an_unreadable_config",
+    "M607": f"{_AWS}::test_an_eni_isolated_again_keeps_the_original_it_had_before_the_quarantine",
+    "M609": f"{_AWS}::test_a_verification_that_cannot_read_the_quarantine_group_never_says_isolated",
+    "M611": f"{_AWS}::test_an_unknown_original_keeps_the_eni_in_quarantine_and_says_which_tag",
+    "M616": f"{_AWS}::test_another_account_another_region_or_no_arn_is_refused",
 }
