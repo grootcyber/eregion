@@ -242,7 +242,7 @@ def test_measured_a_step_cut_by_its_bound_has_said_its_seed_and_the_sequence_tha
     any test, copied as is — and the watchdog's words: the same seed, the sequences begun, and the
     stack of the main thread down to the rule that runs."""
     log, code = _run(tmp_path, {PROBE: "0", HANG: "1", hs.VAR: "draw", wd.VAR: "0.05"}, "probe_never_ends",
-                     kill_when=SPOKE, wait=90)
+                     kill_when=SPOKE, wait=60)
     assert code == -signal.SIGKILL, log[-3000:]
     begun = re.search(rf"Hypothesis seed (\d+) for every property test.*replay: {hs.VAR}=(\d+) ", log)
     assert begun and begun.group(1) == begun.group(2), log[-3000:]

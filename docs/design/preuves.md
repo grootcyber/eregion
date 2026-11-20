@@ -265,6 +265,30 @@ runner lent. Le test le prouve sur une sonde : une séquence qui ne finit pas, u
 processus tué par SIGKILL comme une borne coupe une étape ; son journal tient la graine, dite avant le
 garde-fou, et la pile jusqu'à la règle (`tests/unit/test_invariant_watchdog.py`).
 
+**La nuit du 20/11, rejouée sur le poste (CI13, 20/11).** Six passes, un seul processus à la fois,
+3 000 séquences chacune, graines tirées, sur la tête de la nuit (e2c64061) et sur main (20555320,
+qui ne change que la console et Entra) :
+
+| Passe | Graine | Séquences | Durée | La plus longue |
+|---|---|---|---|---|
+| Azure, e2c64061 | 836401501 | 3 110 | 14,3 min | 1,3 s |
+| Azure, e2c64061 | 910307218 | 3 134 | 15,9 min | 1,8 s |
+| Azure, main | 528891083 | 3 115 | 14,6 min | 2,9 s |
+| Azure, main | 758773617 | 3 116 | 21,5 min | 4,4 s |
+| AWS, e2c64061 | 793947918 | 3 126 | 5,1 min | 0,6 s |
+| AWS, main | 87993803 | 3 124 | 5,0 min | 0,7 s |
+
+Aucune séquence qui ne finit pas, aucune de plus de 5 s ; le poste lui-même varie de 14 à 22 min
+pour le même travail. Ce n'est pas une preuve : la graine de la
+nuit est perdue, et ses séquences avec. Ce que disent les durées des étapes sur GitHub (l'API des
+jobs) penche pour un runner lent. Sur ubuntu, l'étape d'Azure verte a duré de 59 à 112 min selon les
+nuits (09/11 75, 10/11 112, 11/11 111, 12/11 59, 17/11 81, 18/11 90), celle d'AWS de 21 à 42 min.
+Le 20/11, celle d'AWS a duré 39,8 min, contre 5 min pour 3 000 séquences sur le poste : un runner
+environ 2,4 fois plus lent que le poste. À ce rythme, les 10 000 séquences d'Azure (environ 50 min
+sur le poste) font de 115 à 125 min, la borne. Le même jour, sur macOS, la même tête et la même base
+restaurée tiennent en 61 min. La nuit suivante, avec la graine dite au début et le garde-fou, dira le
+reste.
+
 ## La mesure par mutation
 
 Un test qui passe ne dit rien de sa force. `scripts/mutation_check.py` réinjecte, un par un,
