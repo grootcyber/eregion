@@ -8,6 +8,11 @@ a High or Critical CVE, fixed upstream, in a package of the operating system ref
 Here: the judgement on grype's reports (written by hand in grype's JSON form — no grype, no network),
 the pinned installer (a local archive), the scan's call, and Dependabot's file against the Dockerfiles.
 The gate's job itself: tests/unit/test_workflows.py (with Jonathan's patch of release-gate.yml).
+
+ZLIB1 (#962): the one exception to « no apt-get upgrade », written and dated in both Dockerfiles —
+zlib1g at its exact fixed version, until a digest of the base carries it. Read from the files, never
+built here; the version in a built image is read only when the operator names the images
+(EREGION_ZLIB1_IMAGES), skipped otherwise.
 """
 import hashlib
 import io
@@ -221,4 +226,123 @@ def test_no_dockerfile_upgrades_its_packages_at_build():
     """The image is what its digest says: no apt-get upgrade (docs/operations.md, « Les images publiées »)."""
     for path in ROOT.glob("*/Dockerfile"):
         code = "\n".join(ln for ln in path.read_text(encoding="utf-8").splitlines() if not ln.lstrip().startswith("#"))
-        assert not re.search(r"apt(-get)?\s+(dist-)?upgrade", code), path
+        assert not re.search(r"apt(-get)?\s+(dist-|full-)?upgrade", code), path
+
+
+# ── ZLIB1 (#962): zlib1g at its fixed version, the one exception, dated ───────────────────────
+
+ZLIB1G = "zlib1g=1:1.3.dfsg+really1.3.1-1+deb13u1"
+ZLIB1_RUN = ("RUN apt-get update && \\\n"
+             f"    apt-get install -y --no-install-recommends {ZLIB1G} && \\\n"
+             "    rm -rf /var/lib/apt/lists/*\n")
+IMAGES = ("glorfindel", "annatar")
+
+
+def _dockerfile(name: str) -> str:
+    return (ROOT / name / "Dockerfile").read_text(encoding="utf-8")
+
+
+def _instructions(text: str) -> list[str]:
+    """A Dockerfile's instructions as docker reads them: comments dropped, a line continued by a backslash
+    joined to the next, the keyword in upper case, the words separated by one space."""
+    out, cur = [], ""
+    for line in text.splitlines():
+        if not cur and line.lstrip().startswith("#"):
+            continue
+        if line.rstrip().endswith("\\"):
+            cur += line.rstrip()[:-1] + " "
+            continue
+        cur += line
+        if cur.split():
+            keyword, _, rest = cur.strip().partition(" ")
+            out.append(f"{keyword.upper()} {' '.join(rest.split())}")
+        cur = ""
+    return out
+
+
+def _exception(text: str) -> str:
+    """The exception as written: its comment, from « # ZLIB1 (#962) », through its RUN."""
+    start = text.index("# ZLIB1 (#962)")
+    return text[start:text.index(ZLIB1_RUN, start) + len(ZLIB1_RUN)]
+
+
+def test_both_dockerfiles_carry_the_same_exception_byte_for_byte_with_the_exact_version():
+    """One decision, one text: an exception edited in one Dockerfile only would leave the other image
+    with the CVE, or with another version than the one decided."""
+    texts = {name: _dockerfile(name) for name in IMAGES}
+    for name, text in texts.items():
+        assert text.count(ZLIB1_RUN) == 1, name
+        assert text.count("# ZLIB1 (#962)") == 1, name
+        assert [i for i in _instructions(text) if "zlib1g" in i] == [
+            f"RUN apt-get update && apt-get install -y --no-install-recommends {ZLIB1G} && rm -rf /var/lib/apt/lists/*"]
+    assert _exception(texts["glorfindel"]) == _exception(texts["annatar"])
+
+
+def test_the_exception_is_the_first_layer_after_from_run_as_root_before_any_user():
+    """apt-get needs root, and the layer must not depend on what the image copies after it."""
+    for name in IMAGES:
+        instructions = _instructions(_dockerfile(name))
+        assert instructions[0].startswith("FROM python:3.12-slim@sha256:"), name
+        assert "zlib1g" in instructions[1], (name, instructions[1])
+        users = [n for n, i in enumerate(instructions) if i.startswith("USER ")]
+        assert users and min(users) > 1, name
+
+
+def test_every_apt_get_install_names_each_package_at_an_exact_version():
+    """Never a free version, never a pattern: the image is what the Dockerfile and its digest say."""
+    for path in sorted(ROOT.glob("*/Dockerfile")):
+        for instruction in _instructions(path.read_text(encoding="utf-8")):
+            for command in re.split(r"&&|;|\|\|", instruction):
+                words = command.split()
+                if "apt-get" not in words and "apt" not in words:
+                    continue
+                verb = [w for w in words if not w.startswith("-") and w not in ("RUN", "apt-get", "apt")]
+                assert not verb or verb[0] in ("update", "install"), (path, command)
+                if verb and verb[0] == "install":
+                    packages = verb[1:]
+                    assert packages, (path, command)
+                    for package in packages:
+                        assert re.fullmatch(r"[a-z0-9][a-z0-9.+-]*=[0-9][A-Za-z0-9.+:~-]*", package), (path, package)
+
+
+def test_the_exception_says_its_reason_its_date_and_when_to_remove_it():
+    """A pin nobody knows when to drop stays forever: the comment carries its own way out."""
+    for name in IMAGES:
+        text = " ".join(_exception(_dockerfile(name)).replace("#", " ").split())
+        for said in ("CVE-2026-85091", "DSA-6613-1", "trixie-security", "Jonathan's decision of 20/11",
+                     "never an apt-get upgrade, never a free version",
+                     "Remove this layer as soon as the base digest carries zlib1g +deb13u1 or newer",
+                     "in the very PR of Dependabot's bump that brings it",
+                     "the build breaks loudly — on purpose"):
+            assert said in text, (name, said)
+
+
+def test_the_header_says_the_exception_once():
+    """« no apt-get upgrade here » stays the rule, and says its one exception, in both Dockerfiles."""
+    for name in IMAGES:
+        header = _dockerfile(name).split("\nFROM ", 1)[0]
+        assert header.count("no apt-get upgrade here") == 1, name
+        assert " ".join(header.replace("#", " ").split()).count(
+            "but for the one exception written and dated below (ZLIB1)") == 1, name
+
+
+def test_the_operations_doc_says_the_exception_and_its_removal():
+    doc = " ".join((ROOT / "docs" / "operations.md").read_text(encoding="utf-8").split())
+    for said in ("ZLIB1", "CVE-2026-85091", "DSA-6613-1", "`+deb13u1`", "retirer la couche dans la même PR"):
+        assert said in doc, said
+
+
+_BUILT = [i.strip() for i in os.environ.get("EREGION_ZLIB1_IMAGES", "").split(",") if i.strip()]
+
+
+@pytest.mark.skipif(not _BUILT, reason="EREGION_ZLIB1_IMAGES names no image built on this workstation")
+@pytest.mark.parametrize("image", _BUILT or ["-"])
+def test_a_built_image_carries_the_fixed_zlib1g(image):
+    """Optional, on the workstation only: images already built (never built here), read without network."""
+    import shutil
+    if not shutil.which("docker"):
+        pytest.skip("no docker")
+    res = subprocess.run(["docker", "run", "--rm", "--network", "none", "--entrypoint", "dpkg-query",
+                          image, "-W", "-f=${Version}", "zlib1g"], capture_output=True, text=True, timeout=120)
+    assert res.returncode == 0, res.stderr
+    assert res.stdout == ZLIB1G.split("=", 1)[1]
