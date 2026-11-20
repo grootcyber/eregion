@@ -1220,9 +1220,15 @@ def _row_identity(row: dict) -> str:
     ROW1 (#1002): what it gathers grows too. A ``dynamic`` column (`make_set(User)`…) arrives as
     its JSON text (SLF1b): it entered the identity, and each user more made a new card. A text that
     decodes to an array or an object is left out, as a Python list always was; the grouping keys
-    (`by Computer, SourceIP`…, scalar texts) and every other text stay. A key that is itself such a
-    text (`by Props = tostring(pack(…))`) is left out too: two groups that differ only by it share
-    one identity — no shipped rule has one.
+    (`by Computer, SourceIP`…, scalar texts) and every other text stay. The limit: a row is told
+    apart only by its texts that are neither numeric nor JSON. A row grouped by numbers alone
+    (`by EventID`, `by DestinationPort`) that gathers a set is `row:` and nothing more — every group
+    of the rule shares one identity, one card per window —, and a key that is itself a JSON text
+    (`by Props = tostring(pack(…))`, a log line written in JSON, `by Message`) is left out too. No
+    shipped rule has one; the author of a rule that gathers knows its set is the first one sent: a
+    `make_set(ProcessName) by Computer` whose malicious process appears later in the window makes no
+    new card. An identity kept in rule_status.json before the update and still in its window is sent
+    once more (at least once, as ADM1).
     """
     # An identity finding (Entra ID, C2) is its EventId — its CorrelationId and target, or
     # a service principal and an address: a line ingested late is the same one.

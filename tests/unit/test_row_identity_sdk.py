@@ -12,7 +12,7 @@ the Log Analytics API sends — each column typed, a ``dynamic`` one as its JSON
 pinned SDK's own ``LogsQueryResult``, read by the real `AzureMonitorDetector.run_query`, then the real
 RulePoller (as tests/unit/test_own_channel_sdk.py, SLF1b; tests/unit/sdk_logs.py, SDK1a, was not on
 main when this was written). Each shipped rule's representative row has its identity frozen, before
-ROW1 (the function as it was, copied here) and after. Mutants M6910–M6919 (scripts/mutants/ROW1.py).
+ROW1 (the function as it was, copied here) and after. Mutants M6910–M6919, M6923 (scripts/mutants/ROW1.py).
 No Azure, no model; every identifier is made up (repository public).
 """
 from __future__ import annotations
@@ -128,7 +128,7 @@ def _looks_numeric(value: str) -> bool:
         return False
 
 
-def identity_before_rid1(row: dict) -> str:
+def identity_before_row1(row: dict) -> str:
     """`_row_identity` before ROW1, to the letter: the "before" every shipped rule is compared with."""
     if row.get("EntraOperation") and row.get("EventId"):
         return "entra:" + str(row["EventId"]).lower()
@@ -191,7 +191,7 @@ def test_an_aggregated_row_whose_set_grows_keeps_its_identity():
     assert first["Users"] != grown["Users"]
     assert _row_identity(first) == _row_identity(grown) == (
         f"row:Computer=vm-example-01|SourceIP={PEER}|_ResourceId={VM}")
-    assert identity_before_rid1(first) != identity_before_rid1(grown)
+    assert identity_before_row1(first) != identity_before_row1(grown)
 
 
 def test_the_identity_is_the_same_whether_the_set_is_a_list_or_its_json_text():
@@ -284,6 +284,31 @@ def test_a_text_past_the_bound_or_unreadable_stays_and_never_raises():
         assert _row_identity({**row, "Users": text}).endswith(f"|Users={text}"), text[:20]
 
 
+# A rule grouped by numbers alone (`by EventID`, `by DestinationPort`): its keys never were in the
+# identity (`_looks_numeric`, or not a text once the SDK typed them), its set was the one text left.
+BY_NUMBER = """Syslog
+| where TimeGenerated > ago(15m)
+| where ProcessName == "sshd" and SyslogMessage has "Failed password"
+| extend Port = toint(extract(@"port (\\d+)", 1, SyslogMessage)),
+         User = extract(@"for (?:invalid user )?(\\S+) from", 1, SyslogMessage)
+| summarize Attempts = count(), Users = make_set(User, 20) by Port
+"""
+
+
+def test_a_row_grouped_by_numbers_alone_loses_its_whole_identity():
+    """The limit, frozen (ROW1, review): a row whose grouping keys are all numeric and that gathers a
+    set is `row:` and nothing more — every group of the rule shares one identity, one card per window.
+    The same as a key that is itself a JSON text, or a key that is a log line written in JSON."""
+    lines = [_failure("root", 9.0), _failure("admin", 8.5)]          # two ports: two groups
+    rows = _detector(_kql(lines)).run_query(BY_NUMBER)
+    assert len(rows) == 2 and {type(r["Port"]) for r in rows} == {int}
+    assert {_row_identity(r) for r in rows} == {"row:"}
+    assert len({identity_before_row1(r) for r in rows}) == 2          # before: told apart by their sets
+    # a key that is a number in a text, or a JSON text, the same
+    for key in ("22", "4625", json.dumps({"msg": "a"}), json.dumps(["x"])):
+        assert _row_identity({"Key": key, "Users": json.dumps(["root"])}) == "row:", key
+
+
 def test_a_row_with_its_instant_is_untouched():
     """A row with `TimeGenerated` is that event (unchanged): its JSON columns never were in it, and a
     row of an identity or of the control plane neither."""
@@ -297,10 +322,10 @@ def test_a_row_with_its_instant_is_untouched():
     ]
     for row in rows:
         [sdk] = through_sdk([row])
-        assert _row_identity(sdk) == identity_before_rid1(sdk), row
+        assert _row_identity(sdk) == identity_before_row1(sdk), row
     [sdk] = through_sdk([rows[0]])
     assert isinstance(sdk["Paths"], str) and isinstance(sdk["TimeGenerated"], datetime)
-    assert _row_identity(sdk) == identity_before_rid1(sdk) == (
+    assert _row_identity(sdk) == identity_before_row1(sdk) == (
         f"ts:{sdk['TimeGenerated']}|{hashlib.sha256(b'x').hexdigest()[:16]}")
 
 
@@ -467,6 +492,27 @@ def _representative(name: str, monkeypatch) -> list[dict]:
     return own_channel.strip(rows)
 
 
+# The queries the rows above were written from (sha256 of the query, as `own_channel.query_sha256`): a
+# query that changes asks for its row to be written anew — its projection, its grouping keys, its
+# identity — before this test passes again.
+WRITTEN_FROM = {
+    "ransomware-disk-write": "95c5b4d0d4ce20317d095fd41c54ff269302cd3f14d6466fe0e716cdd36ecbf0",
+    "entra-credential-added": "abeadfa8c57b0de10593a152a796cbcd49b32ddcd1eab159ab5c808654921744",
+    "entra-app-consent": "2e862a82cc8afe7d58260e0f8c13112831bdf2e44b5d944a39bf634db8b7e01e",
+    "entra-privileged-role-assigned": "0af7e965fec43a508bfe1a0e649a00d14262ea2d35d320cf1bb5d7002a9dd08f",
+    "run-command-by-glorfindel-outside-isolation": "e823942184ec4bbc0dae5ceee36a300dce1bee82870a8e6219332901f071c1bf",
+}
+
+
+def test_a_written_row_is_tied_to_its_query():
+    """The rows written by hand (`_WRITTEN`, `_PROJECTED`) are their rule's query as it ships: one that
+    changed is said here, and its row is to be written again."""
+    assert set(WRITTEN_FROM) == set(_WRITTEN) | set(_PROJECTED)
+    for name, sha in WRITTEN_FROM.items():
+        assert own_channel.query_sha256(SHIPPED[name]["query"]) == sha, (
+            f"{name}: its query changed — write its row in _WRITTEN/_PROJECTED again, then its sha256")
+
+
 def test_every_shipped_rule_has_its_identity_frozen():
     """A shipped rule added later is frozen here too, or this fails."""
     assert set(FROZEN) == set(shipped_rule_names()) == set(SHIPPED)
@@ -479,7 +525,7 @@ def test_a_shipped_rule_s_identity_is_unchanged(name, monkeypatch):
     rows = _representative(name, monkeypatch)
     assert len(rows) == 1, (name, rows)
     [row] = rows
-    after, before = _row_identity(row), identity_before_rid1(row)
+    after, before = _row_identity(row), identity_before_row1(row)
     assert after == before, name
     frozen = FROZEN[name]
     if name == "auditd-sensitive-root-command":
@@ -498,4 +544,4 @@ def test_the_raw_exfiltration_row_no_longer_depends_on_its_writers():
     [raw] = _detector(_kql(lines, oc.NOW)).run_query(SHIPPED["data-exfiltration-blob"]["query"])
     assert isinstance(raw[own_channel.WRITERS], str)
     assert _row_identity(raw) == FROZEN["data-exfiltration-blob"]
-    assert identity_before_rid1(raw) != _row_identity(raw)
+    assert identity_before_row1(raw) != _row_identity(raw)

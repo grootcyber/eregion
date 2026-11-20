@@ -1,7 +1,8 @@
 """ROW1 (#1002): the identity of an aggregated row leaves out the JSON text of a dynamic column — an array
 or an object, read by `own_channel.json_of` (bounded, never raising) —, keeps its grouping keys and every
 other text, and leaves a row with its instant untouched; the shipped rules' identities unchanged.
-M6910–M6919, measured by tests/unit/test_row_identity_sdk.py."""
+M6910–M6919 and M6923 (a row written by hand tied to its rule's query), measured by
+tests/unit/test_row_identity_sdk.py."""
 RULES = "glorfindel/detection_rules.py"
 _T = "tests/unit/test_row_identity_sdk.py::"
 _READ = "    return isinstance(own_channel.json_of(value), (list, dict))\n"
@@ -48,6 +49,11 @@ MUTANTS = [
      "new card (ROW1)", RULES,
      _READ,
      "    decoded = own_channel.json_of(value)\n    return isinstance(decoded, (list, dict)) and bool(decoded)\n"),
+    ("M6923", "a shipped query whose row the test writes by hand changes, its row left as it was: "
+     "ransomware-disk-write grouped by its disk too, its identity frozen on a row its query no longer "
+     "returns (ROW1, review)", "glorfindel/rules/azure/detection_rules.yaml",
+     "| summarize MaxWrite = max(Peak) by Computer, _ResourceId\n",
+     "| summarize MaxWrite = max(Peak) by Computer, _ResourceId, InstanceName\n"),
 ]
 TESTS = {
     "M6910": _T + "test_a_grown_set_makes_no_new_card",
@@ -60,4 +66,5 @@ TESTS = {
     "M6917": _T + "test_the_identity_is_the_same_whether_the_set_is_a_list_or_its_json_text",
     "M6918": _T + "test_a_row_with_its_instant_is_untouched",
     "M6919": _T + "test_the_identity_is_the_same_whether_the_set_is_a_list_or_its_json_text",
+    "M6923": _T + "test_a_written_row_is_tied_to_its_query",
 }
