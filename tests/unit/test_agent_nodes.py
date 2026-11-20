@@ -2298,3 +2298,26 @@ def test_a_release_held_by_an_extension_says_which():
     assert "dernière commande" not in d["escalation_reason"]
     plain = _build_recovery_signal("/subscriptions/s/x", {"run_command_neutralized": True}, 60)
     assert "replay_vectors" not in plain["raw_signal"]
+
+
+# DOC7 (#989; tenth review pass, question C): the docs draw the graph the code wires. Until DOC7,
+# docs/architecture.md drew nine nodes, without confirm_facts, and an edge load_context → investigate
+# that never existed; the README said « 8 LangGraph nodes ».
+def test_the_docs_draw_the_nodes_the_graph_wires():
+    import re
+    from pathlib import Path
+    from unittest.mock import MagicMock
+
+    from glorfindel.agent import _build_graph
+
+    root = Path(__file__).resolve().parents[2]
+    wired = {n for n in _build_graph(MagicMock(), MagicMock(), "claude-test", incidents=MagicMock())
+             .get_graph().nodes if not n.startswith("__")}
+    assert len(wired) == 10
+    arch = (root / "docs/architecture.md").read_text(encoding="utf-8")
+    block = arch.split("## Le graphe de décision", 1)[1].split("```mermaid", 1)[1].split("```", 1)[0]
+    assert set(re.findall(r'\["([a-z_]+)"\]', block)) == wired
+    assert "LC -->|\"détection\"| INV" not in block
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    assert f"the {len(wired)} LangGraph nodes" in readme and "8 LangGraph nodes" not in readme
+    assert f"## LangGraph — {len(wired)} nodes" in (root / "docs/glorfindel.md").read_text(encoding="utf-8")
