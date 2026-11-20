@@ -766,6 +766,56 @@ def test_check_says_a_canary_appid_that_is_no_guid_never_its_value(tmp_path, cap
     assert "fake-" not in err and (not value or value not in err)
 
 
+# ── MID1 (#981) : le principal « Managed Service Identity » du tenant, à la watch seule ──────
+MSI_ACTOR = "00000000-0000-0000-0000-00000000f001"     # placeholder, never a real id
+
+
+def test_the_msi_principal_reaches_the_watch_alone():
+    """Entra's adapter reads it in the watch's environment (entra_msi.actor_id): copied from the
+    operator's environment into host.env like the rest; no other service gets it."""
+    operator = {"AZURE_SUBSCRIPTION_ID": "sub", "ANTHROPIC_API_KEY": "fake-key",
+                "EREGION_ENTRA_MSI_ACTOR_ID": MSI_ACTOR}
+    dotenv = host_env.host_env(operator)
+    assert dotenv["EREGION_ENTRA_MSI_ACTOR_ID"] == MSI_ACTOR
+    rendered = {s: {k: _interpolate(v, dotenv) for k, v in e.items()} for s, e in _compose_env().items()}
+    assert {s for s, e in rendered.items() if MSI_ACTOR in e.values()} == {"watch"}
+    assert "EREGION_ENTRA_MSI_ACTOR_ID=" in (HOST / "host.env.example").read_text()
+
+
+@pytest.mark.parametrize("value, refused", [
+    (MSI_ACTOR, False), (MSI_ACTOR.upper(), False), (f'"{MSI_ACTOR}"', False), ("", False),
+    ("Managed-Service-Identity", True), (MSI_ACTOR + "0", True), (f"{MSI_ACTOR},{OPERATOR_OID}", True),
+])
+def test_check_refuses_an_msi_principal_that_is_no_object_id_never_its_value(tmp_path, capsys, value, refused):
+    """MID1: `--check` (make imladris-push) accepts the variable — a GUID, quoted or not, or empty — and
+    refuses a value that is no object id, the variable named, never the value."""
+    path = tmp_path / "host.env"
+    path.write_text("EREGION_CONSOLE_TOKEN=fake-token\nANTHROPIC_API_KEY=fake-key\n"
+                    f"EREGION_OPERATOR_OBJECT_ID={OPERATOR_OID}\nEREGION_PROTECTED_IDENTITIES={H0_OID}\n"
+                    f"EREGION_IDENTITY_EXECUTOR_CLIENT_ID={EXECUTOR_APP}\n"
+                    f"EREGION_ENTRA_MSI_ACTOR_ID={value}\n", encoding="utf-8")
+    if refused:
+        with pytest.raises(SystemExit) as exc:
+            host_env.check(str(path))
+        said = str(exc.value)
+        assert "EREGION_ENTRA_MSI_ACTOR_ID is no object id" in said and value not in said
+    else:
+        assert host_env.check(str(path)) == 0
+        assert "EREGION_ENTRA_MSI_ACTOR_ID" not in capsys.readouterr().err
+
+
+def test_main_refuses_an_msi_principal_that_is_no_object_id(tmp_path, monkeypatch):
+    for k in list(host_env.COPIED):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("AZURE_SUBSCRIPTION_ID", "sub")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "fake-key")
+    monkeypatch.setenv("EREGION_ENTRA_MSI_ACTOR_ID", "fake-not-an-id")
+    with pytest.raises(SystemExit) as exc:
+        host_env.main(str(tmp_path / "a.env"))
+    assert "EREGION_ENTRA_MSI_ACTOR_ID" in str(exc.value) and "fake-" not in str(exc.value)
+    assert not (tmp_path / "a.env").exists()
+
+
 def test_main_reads_the_list_as_the_watch_receives_it(tmp_path, monkeypatch, capsys):
     """Review 5b: `terraform output` without `-raw` gives the list quoted — what compose unwraps.
     Written unwrapped, it is neither refused nor said as a typo, and the watch reads it whole."""

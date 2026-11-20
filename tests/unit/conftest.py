@@ -115,6 +115,9 @@ def fake_anthropic_key(monkeypatch):
     # never come from the developer's shell — a test sets the one it reads.
     for name in [n for n in os.environ if n.startswith("EREGION_RULE_")]:
         monkeypatch.delenv(name)
+    # MID1: the tenant's « Managed Service Identity » principal, which Entra's adapter reads from the
+    # watch's environment — never the developer's shell; a test sets it itself.
+    monkeypatch.delenv("EREGION_ENTRA_MSI_ACTOR_ID", raising=False)
 
 
 # MSK2 (#762): what would post for real if the developer's shell (direnv) exported it — Glorfindel's

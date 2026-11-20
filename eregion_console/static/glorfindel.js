@@ -1293,6 +1293,11 @@ function _renderModules(rules, detectBackends, recoverBackends, resources) {
     const ex  = r.expected_count > 0 ? `<span style="color:var(--dim);font-size:9px;flex-shrink:0" title="${_attr(`${r.expected_count} expected sudo set aside, no card (ADM1)${exOrigin} — glorfindel report`)}">${_attr(r.expected_count)} expected</span>` : '';
     // SLF1 (#929): the watch's own writes in its return channel, set aside — counted, never silent.
     const own = r.own_channel_count > 0 ? `<span style="color:var(--dim);font-size:9px;flex-shrink:0" title="${_attr(_ownChannelTxt(r))}">${_attr(r.own_channel_count)} own</span>` : '';
+    // MID1 (#981): the certificates Azure puts on the managed identities it creates, set aside —
+    // counted, never silent; an id that is no object id, said on the line.
+    const msi = Number(r.msi_certificate_count) > 0 || r.msi_certificate_config === 'malformed'
+      ? `<span style="color:${r.msi_certificate_config === 'malformed' ? 'var(--orange)' : 'var(--dim)'};font-size:9px;flex-shrink:0" title="${_attr(_msiCertificateTxt(r))}">${r.msi_certificate_config === 'malformed' ? '⚠ MSI id' : `${_attr(Number(r.msi_certificate_count))} MSI`}</span>`
+      : '';
     return `<div class="row rule-item" ${_on('click', 'showRuleByIdx', idx)}
       style="padding:3px 4px;font-size:10px">
       <span style="color:${dc};font-size:9px">●</span>
@@ -1300,6 +1305,7 @@ function _renderModules(rules, detectBackends, recoverBackends, resources) {
       ${r.ttp ? `<span style="color:var(--dim);font-size:9px">${_attr(r.ttp)}</span>` : ''}
       ${ex}
       ${own}
+      ${msi}
       ${mt}
       <span style="color:var(--dim);font-size:9px">▸</span>
     </div>`;
@@ -3440,6 +3446,22 @@ function _ownChannelTxt(r) {
   return [said, unread, unparsed].filter(Boolean).join(' · ');
 }
 
+// MID1 (#981): the rows of entra-credential-added set aside as the certificate Azure puts on a managed
+// identity it creates — how many, why —, and the id of the tenant's principal unset or no object id
+// (nothing set aside), said.
+function _msiCertificateTxt(r) {
+  const n = Number(r.msi_certificate_count) || 0;
+  const said = n > 0
+    ? `${n} row(s) set aside, no card: the certificate Azure puts on a managed identity it creates — by the tenant's « Managed Service Identity » principal (EREGION_ENTRA_MSI_ACTOR_ID), « Add service principal » on a ServicePrincipal, every credential an AsymmetricX509Cert of usage Verify (MID1)${r.msi_certificate_last ? ' · last ' + _relTime(r.msi_certificate_last) : ''}`
+    : '';
+  const config = r.msi_certificate_config === 'malformed'
+    ? 'EREGION_ENTRA_MSI_ACTOR_ID is no object id: nothing set aside, every row a card (MID1)'
+    : r.msi_certificate_config === 'unset'
+      ? 'EREGION_ENTRA_MSI_ACTOR_ID unset: nothing set aside, every row a card (MID1)'
+      : '';
+  return [said, config].filter(Boolean).join(' · ');
+}
+
 function showRuleDetail(rule) {
   const statusTxt = rule.last_error
     ? `⚠ error: ${rule.last_error}`
@@ -3479,6 +3501,7 @@ function showRuleDetail(rule) {
     ${expectedTxt ? `<div style="font-size:10px;color:var(--dim);margin-bottom:8px">${_attr(expectedTxt)}</div>` : ''}
     ${corrTxt ? `<div style="font-size:10px;color:var(--dim);margin-bottom:8px">${_attr(corrTxt)}</div>` : ''}
     ${_ownChannelTxt(rule) ? `<div style="font-size:10px;color:var(--dim);margin-bottom:8px">${_attr(_ownChannelTxt(rule))}</div>` : ''}
+    ${_msiCertificateTxt(rule) ? `<div style="font-size:10px;color:var(--dim);margin-bottom:8px">${_attr(_msiCertificateTxt(rule))}</div>` : ''}
     <div style="font-size:10px;color:var(--dim);margin-bottom:4px;text-transform:uppercase;letter-spacing:1px">Query</div>
     <div class="modal-query">${_attr((rule.query || '').trim())}</div>`;
 
