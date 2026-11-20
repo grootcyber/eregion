@@ -1043,7 +1043,11 @@ def arm(run_id: str, injector: str, verdict: Verdict | None = None,
     request this run is a wire of (DG-b), written on each line of the journal. ``for_stratus``: a
     Stratus run — the contract is also armed on the Stratus guarantees, and the session carries
     that so a Stratus phase refuses without them (stratus_host.py)."""
-    verdict = verdict or check(for_stratus=for_stratus)
+    # A for_stratus arming always judges the guarantees itself (ORG1): a caller's pre-computed
+    # verdict (the drill's) is honoured only for a base arming, so a supplied base verdict can
+    # never mark a Stratus session without the closed role and the sandbox actually proven.
+    if for_stratus or verdict is None:
+        verdict = check(for_stratus=for_stratus)
     if not verdict.armed:
         return verdict, None
     return verdict, Session(run_id, injector, verdict.cap["max_injections"], request=request,

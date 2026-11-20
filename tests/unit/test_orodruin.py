@@ -113,6 +113,17 @@ def test_a_session_built_without_the_flag_is_not_for_stratus():
     assert orodruin.Session("r", "gothmog", 5).for_stratus is False
 
 
+def test_a_supplied_base_verdict_cannot_mark_a_stratus_session(monkeypatch):
+    """#1003: a for_stratus arming judges the guarantees itself — a caller's pre-computed base
+    verdict (the drill passes one) can never mark a Stratus session when the guarantees are
+    unproven; arm recomputes for Stratus rather than trusting the two arguments to agree."""
+    monkeypatch.setattr(orodruin, "READERS", _readers_stratus_fail())
+    base = orodruin.check()                              # an armed base verdict (guarantees unjudged)
+    assert base.armed
+    verdict, session = orodruin.arm("r", "annatar", verdict=base, for_stratus=True)
+    assert session is None and verdict.verdict == orodruin.PASSIVE
+
+
 # ── identity: inside the bench, and the rights the injectors need ───────────────
 
 # SEC5 (V-29): the effective rights on the group are reads; the writes come from an assignment

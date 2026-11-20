@@ -5,7 +5,7 @@ proof, so once EREGION_STRATUS_SUBSCRIPTION was set in orodruin.env, every armin
 guarantees and Gothmog/Annatar-VM/the drill/orodruin-check turned passive though they run no
 Stratus. The fix scopes the guarantees to `for_stratus`, with a net in the executor so the scoping
 cannot fail open: a Stratus phase refuses a session not armed with them. One mutant per property,
-M6875–M6888, measured by tests/unit/test_orodruin.py and tests/unit/test_annatar_stratus.py.
+M6875–M6889, measured by tests/unit/test_orodruin.py and tests/unit/test_annatar_stratus.py.
 
 Forme chargée par scripts/mutation_check.py : MUTANTS (id, description, fichier, old, new) et
 TESTS (ses ids → le test qui l'attrape) ; chemins en chaînes.
@@ -61,6 +61,8 @@ MUTANTS = [
     ("M6888", "the engine's discriminator inverted: VM runs for_stratus, Stratus runs not (ORG1)",
      ENGINE, 'for_stratus=scenario.engine == "stratus")',
      'for_stratus=scenario.engine != "stratus")'),
+    ("M6889", "a Stratus arming trusts a supplied base verdict instead of judging the guarantees (ORG1)",
+     ORODRUIN, "    if for_stratus or verdict is None:", "    if verdict is None:"),
 ]
 
 TESTS = {
@@ -78,4 +80,5 @@ TESTS = {
     "M6886": _MISSING,
     "M6887": _ENGINE,
     "M6888": _ENGINE,
+    "M6889": f"{_TO}::test_a_supplied_base_verdict_cannot_mark_a_stratus_session",
 }
