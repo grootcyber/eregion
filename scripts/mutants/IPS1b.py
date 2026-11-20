@@ -58,8 +58,8 @@ MUTANTS = [
      "              }\n"),
     ("M6442", "the toast says copied without reading the browser's answer: a copy refused passes for done "
               "(IPS1b, review)", JS,
-     "    toast(copied ? `✓ ${text} copied` : `✗ ${text} not copied — select it and copy it by hand`);\n",
-     "    toast(`✓ ${text} copied`);\n"),
+     "    toast(copied ? `✓ ${shown} copied` : `✗ ${shown} not copied — select it and copy it by hand`);\n",
+     "    toast(`✓ ${shown} copied`);\n"),
 ]
 
 TESTS = {

@@ -32,6 +32,7 @@ tourne.
 | Les adresses d'une VM sur sa carte (IPS1, #931, 19/11, sur une maquette) | **A, une ligne sous le nom, repliée comme dépliée** : les IP privées (quatre, puis « +N »), puis la publique derrière 🌐, en jaune ; une adresse se copie d'un clic ; dépliée, le détail par carte réseau et l'âge de la lecture ; « ip — » et pourquoi quand l'audit NSG a échoué. **Un seul lot**, privées et publiques | B, une puce « PUBLIC » seule, les adresses sur la carte dépliée ; C, la carte dépliée seulement ; deux lots (les privées d'abord) |
 | Un audit illisible (TOPO1b, #949, 19/11, sur une maquette) | **une bande au-dessus des cartes** : « Readiness audit not read », sa raison, et l'heure du dernier bon audit quand il est gardé | « ip ? » et « ? ? ? » sur chaque carte |
 | Le clic sur une adresse d'une carte repliée (TOPO1b, #949, 19/11, sur une maquette) | **A, il copie** l'adresse, comme IPS1 l'a fait ; le nom et la rangée du mode déplient | B, tout clic déplie (copier depuis la carte dépliée) ; C, les adresses en bas de la carte |
+| L'identité d'une VM sur sa carte (VMI1, #971, 20/11, sur une maquette) | **A, au survol du nom et dans un bloc de la carte dépliée** : le nom, le groupe, l'abonnement, l'espace de détection, le battement, l'ID ; chaque champ se copie d'un clic sur la carte dépliée ; le nom déplie toujours | B, un ⧉ près du nom qui copie l'ID ; C, un clic sur le nom copie le nom |
 
 **Choisi par défaut, sans objection :**
 - `/atelier` redirige vers `/`.
@@ -514,6 +515,32 @@ l'audit ; la coquille reconstruite sans erreur après le retrait de `#topo-body`
 redimensionnement de la carte défilée, chaque fil sur sa carte.
 Tests : `tests/unit/test_console_audit_band.py`, `tests/unit/test_console_topology.py` ; mutants
 M6501–M6510 (`scripts/mutants/TOPO1b.py`).
+
+### L'identité d'une VM sur sa carte (VMI1, #971, 20/11)
+
+Le survol du nom d'une VM ne redonnait que son nom. La page connaît pourtant son ID complet, d'où
+se lisent son abonnement et son groupe de ressources, l'espace de détection qui l'a découverte et
+son dernier battement (`resource_id`, `monitoring_backend`, `last_seen`, déjà dans `/api/state`).
+Jonathan a choisi l'option A sur une maquette (ligne « L'identité d'une VM » des décisions).
+- **Au survol du nom**, l'infobulle du navigateur, un champ par ligne : le nom, « resource group »,
+  « subscription », « detected by » (l'espace et l'âge du battement), puis l'ID complet. Elle ne
+  se copie pas, et un téléphone n'a pas de survol : c'est le rôle du bloc.
+- **Sur la carte dépliée**, un bloc sous les coches : le nom, le groupe, l'abonnement et l'ID, chacun
+  copiable d'un clic, puis « detected by », qui se lit seulement. L'ID tient sur deux lignes au plus,
+  entier au survol et à la copie.
+- **La valeur est elle-même le bouton** de copie, comme une adresse (IPS1). La maquette montrait un
+  bouton ⧉ à côté : hors contexte sûr, la copie sélectionne le texte du bouton cliqué, et un ⧉ ne
+  copierait que « ⧉ ».
+- **Le nom déplie toujours la carte**, et la carte repliée ne change pas. L'ID se lit sans casse :
+  ceux de Log Analytics arrivent en minuscules (`resourcegroups`). Une carte rangée sous un nom sans
+  ID (`discovered:<nom>`) ne dit pas d'ID.
+- Le toast d'une copie raccourcit une valeur longue (son début et sa fin) ; la copie reste entière.
+
+Mesuré dans Chromium sans tête, sur la console du jeu d'exemple : l'infobulle et ses cinq champs ; le
+clic sur le nom qui déplie ; le bloc ; l'ID entier (149 caractères) copié d'un vrai clic, en contexte
+sûr comme hors contexte sûr (`http://console.test`), la carte restant dépliée ; une valeur piégée
+écrite en texte.
+Tests : `tests/unit/test_console_vm_identity.py` ; mutants M6673–M6682 (`scripts/mutants/VMI1.py`).
 
 ### Les blocages d'une VM (CON-K, #498, 04/11)
 
