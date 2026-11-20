@@ -7,8 +7,8 @@ targets (M6703), a wire laid not opening the plan (M6704), the banner of the car
 (M6707), the matrix's rows not folded (M6708), the three columns of Runs at once (M6709), the verdicts too small for a finger (M6713), the note
 that makes Safari zoom (M6714), Confirm and Refuse too small (M6730), Confirm and Refuse back in the
 line cut at two lines (M6731, the defect at every width), the campaigns' tab kept on Gothmog's view (M6732),
-the first tab not shown at load (M6749). M6698–M6709, M6713, M6714, M6730 and
-M6731, measured by tests/unit/test_console_phone_dagorlad.py and tests/unit/test_console_phone_verdicts.py.
+the first tab not shown at load (M6749). M6698–M6709, M6713, M6714, M6730–M6732
+and M6749, measured by tests/unit/test_console_phone_dagorlad.py and tests/unit/test_console_phone_verdicts.py.
 
 Form loaded by scripts/mutation_check.py: MUTANTS (id, description, file, old, new) and TESTS (its ids
 → the test that catches it); paths as plain strings.
