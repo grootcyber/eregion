@@ -2833,6 +2833,16 @@ briques:
     issue: 671
     doc: docs/adoption/index.html
 
+  - id: s-avis-acceptes
+    composant: socle
+    poste: s-signer
+    nom: "The weekly advisory issues say what a human accepted, and an accepted advisory turns the run red no more"
+    etat: main
+    release: "0.6"
+    lots: [DEP4]
+    issue: 990
+    doc: docs/operations.md
+
   - id: s-licence
     composant: socle
     poste: s-documenter

@@ -3372,8 +3372,10 @@ rafraîchissement du verrou sans contrôle).
   l'en-tête même sans fournisseur), cette raison ne tient plus : monter d'abord. Un avis accepté est
   dit comme tel (`make audit`, la CI), jamais rouge ; un avis accepté qui n'est plus trouvé est dit,
   à retirer de la liste. Une liste dont une entrée n'a pas sa forme (une raison vide ou trop courte,
-  une date absente) est refusée. Les issues hebdomadaires n'en dépendent pas : un humain les ferme
-  (« non prévu »).
+  une date absente) est refusée. **Les issues hebdomadaires le disent** (DEP4, #990) : le mode
+  `issues` lit cette liste par défaut ; l'issue d'un avis accepté porte sa date et sa raison dans son
+  corps, et l'ouvrir, la rouvrir ou retrouver l'avis ne rend plus le run rouge. Un humain ferme
+  toujours l'issue (« non prévu »), une fois l'avis retiré de la liste ou monté.
 
 ```bash
 make audit                              # les avis connus des verrous, celui de pip-audit compris (lecture seule)

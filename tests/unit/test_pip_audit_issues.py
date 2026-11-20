@@ -742,3 +742,66 @@ def test_make_audit_reads_the_accepted_list_and_make_lock_says_what_follows(tmp_
     assert "Les avis connus des verrous écrits (make audit" in res.stdout
     text = (ROOT / "Makefile").read_text(encoding="utf-8")
     assert "--accepted $(AUDIT_ACCEPTED)" in text and "AUDIT_ACCEPTED = requirements/audit-accepted.json" in text
+
+
+# ── DEP4 (#990): the weekly issues say what a human accepted, and it turns the run red no more ──
+
+def _accept_by_default(world, doc=ACCEPTED):
+    (world.tmp / "requirements" / "audit-accepted.json").write_text(json.dumps(doc))
+
+
+def test_an_accepted_advisory_opens_its_issue_saying_so_and_the_run_stays_green(world):
+    dev = world.lock("dev.txt")
+    world.advise({"requests": {"2.19.1": [REQUESTS]}})
+    _accept_by_default(world)                       # the repository's list, read without --accepted
+    res = world.run("issues", dev)
+    assert res.returncode == 0, res.stdout + res.stderr
+    (issue,) = world.issues()
+    assert "**Accepté le 2026-11-02** (`requirements/audit-accepted.json`) : the code path is never reached" \
+        in issue["body"]
+    assert "il ne rend plus le workflow rouge" in issue["body"]
+    assert "(acceptée)" in res.stdout
+
+
+def test_an_open_issue_accepted_since_says_it_without_a_comment(world):
+    dev = world.lock("dev.txt")
+    world.advise({"requests": {"2.19.1": [REQUESTS]}})
+    assert world.run("issues", dev).returncode == 1  # not accepted yet: a new issue, red
+    (issue,) = world.issues()
+    assert "Accepté" not in issue["body"]
+    _accept_by_default(world)
+    world.forget_calls()
+    res = world.run("issues", dev)
+    assert res.returncode == 0, res.stdout + res.stderr
+    (issue,) = world.issues()
+    assert "**Accepté le 2026-11-02**" in issue["body"] and issue["comments"] == []
+    assert len(_made(world.calls(), "issue", "edit")) == 1
+
+
+def test_an_accepted_advisory_found_again_or_reopened_stays_green(world):
+    dev = world.lock("dev.txt")
+    world.advise({"requests": {"2.19.1": [REQUESTS]}})
+    world.run("issues", dev)
+    st = json.loads(world.state.read_text())
+    st["issues"][0].update(state="closed", state_reason="completed")
+    world.state.write_text(json.dumps(st))
+    _accept_by_default(world)
+    res = world.run("issues", dev)
+    assert res.returncode == 0, res.stdout + res.stderr        # reopened, said, never red
+    assert world.issues()[0]["state"] == "open"
+
+
+def test_an_acceptance_never_pings_anyone_from_the_bots_issue(world):
+    dev = world.lock("dev.txt")
+    world.advise({"requests": {"2.19.1": [REQUESTS]}})
+    doc = {"accepted": [{**ACCEPTED["accepted"][0], "reason": "reviewed with @someone, never reached here"}]}
+    _accept_by_default(world, doc)
+    world.run("issues", dev)
+    assert "@someone" not in world.issues()[0]["body"] and "&#64;someone" in world.issues()[0]["body"]
+
+
+def test_an_unreadable_default_list_refuses_the_run(world):
+    dev = world.lock("dev.txt")
+    (world.tmp / "requirements" / "audit-accepted.json").write_text("{not json")
+    res = world.run("issues", dev)
+    assert res.returncode == 2 and "liste des avis acceptés illisible" in res.stderr
