@@ -1292,11 +1292,13 @@ aveugle »).
   | déploiement en lecture seule (Imladris) | il détecte et recommande ; rien n'est exécuté |
   | `human_only`, ou `non_disruptive` retenu par la préparation | une carte à juger ; un humain agit |
   | `non_disruptive`, prête | il isole ou bloque seul si chaque garde passe (confiance, signal caractérisé et attribué, télémétrie lue, tirages d'accord), puis vérifie sur Azure ; sinon une carte qui nomme la garde |
+  | `non_disruptive`, prête, toutes les règles de la technique plafonnées (RDW1 : `ransomware-disk-write`) | un instantané seul au plus, puis une carte : la carte du plafond propose l'isolement, approuvable en un clic, jamais exécuté seul (« snapshot alone · card ») |
   | zone `production` | l'enveloppe de son mode : Glorfindel ne lit pas encore la zone ; J1 y forcera le mode ombre (détection seule) |
 
   Une action destructive (restaurer) n'est jamais autonome, quel que soit le mode. Pour une technique
-  destructive, la ligne le rappelle : T1486 donne au plus une isolation et un instantané, la
-  restauration attend un humain.
+  destructive, la ligne le rappelle : T1486 donne au plus un instantané depuis RDW1 (le plafond de
+  sa règle ; une isolation et un instantané avant, ou pour une règle sans plafond), la restauration
+  attend un humain.
 - **L'historique de la paire**, par la matrice de C1 : l'état de la ligne, les dix derniers résultats,
   le dernier temps pour contenir.
 

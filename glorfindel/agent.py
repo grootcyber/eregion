@@ -93,6 +93,8 @@ class GlorfindelState(TypedDict):
     floor_card: bool            # the model's own action runs alone: the floor's card is apart (SEC-E, store_cycle)
     floor_displaced: str        # the action only a human approves the floor's card set aside (B3a): in its reason
     identity_plan: dict | None  # the plan of an identity card (IR1a, entra_plan): on the card, never to the model
+    ceiling: dict               # the rule's ceiling brought the decision back (RDW1): the model's proposal, why
+    ceiling_card: bool          # the ceiling's own card, which proposes the model's isolation (RDW1, store_cycle)
 
 
 # ── LLM decision tool schema ──────────────────────────────────────────────────
@@ -1757,6 +1759,64 @@ def _apply_release_precondition(d: dict, signal: dict) -> None:
     )
 
 
+def _apply_rule_ceiling(d: dict, signal: dict) -> dict:
+    """RDW1 (#994; Jonathan, 20/11): the rule's ceiling — what its detection may lead to, at most
+    (`glorfindel/rule_ceiling.py`), whatever the model proposed and however sure it was.
+
+    An autonomous action of the model the rule does not allow (`ransomware-disk-write`: snapshot only,
+    the write rate alone, which a backup reaches too) is brought back to the snapshot; the decision
+    stays to the mode, the isolation to a human, from the card. After the gates that judge the
+    model's own choice (the confidence, the signal, the telemetry, the release), before never_block,
+    the attribution and the mode: it never releases a hold — a decision held stays held, its type and
+    its reason kept, its card now proposing the snapshot —, and the gates after it judge the snapshot
+    (the attribution holds it on a detection that names no VM, the mode in human_only), never the
+    action brought back. A fact of the detection the rule names (`lifted_by`) lifts it: none in
+    RDW1, the corroboration comes in a lot of its own. Only on a detection; an action only a human
+    approves (a restore) or an unknown one is untouched: it is a human's already.
+
+    Returns what the card says of it — the rule, the model's proposal and its confidence, what the rule
+    allows, why, the text of the card —, or {} when the ceiling does not play. Never in the signal
+    (`_build_user_message` dumps it): read from the rules on disk, by the rule's name. Unreadable:
+    the lowest ceiling, the snapshot, and said (fail closed)."""
+    from glorfindel import rule_ceiling
+    action = d["action"]
+    if (signal.get("event") != "detection" or action not in AUTONOMOUS_ACTIONS
+            or action == rule_ceiling.LOWERED_TO):
+        return {}
+    unread = ""
+    try:
+        name, ceiling = rule_ceiling.current().for_signal(signal)
+    except Exception as exc:              # the rules unreadable: the lowest ceiling (fail closed)
+        name = str((signal.get("context") or {}).get("rule_name") or "")
+        ceiling, unread = rule_ceiling.LOWEST, _first_line(exc)[:200]
+    if ceiling is None or action in ceiling.allow:
+        return {}
+    if set(ceiling.lifted_by) & set(confirmed_facts(signal)):
+        return {}
+    from glorfindel.vm_command import group_and_name
+    lowered = rule_ceiling.LOWERED_TO
+    why = (f"les règles sont illisibles ({unread}) : le plafond le plus bas tient" if unread
+           else ceiling.why or "sa détection seule ne justifie pas cette action")
+    if (signal.get("context") or {}).get("attribution") == "unattributed":
+        # Never a command on the VM the card is only filed on (ATT1).
+        gesture = "depuis la CLI, une fois la VM identifiée"
+    elif action == "isolate_vm":
+        # The ceiling's card proposes it (`ceiling_proposal`), approvable in one click; the CLI's
+        # command too — the VM by « <groupe>/<nom> », never its full id (MSK3b).
+        gesture = ("proposé sur la carte du plafond, approuvable en un clic "
+                   f"(ou `glorfindel isolate {group_and_name(signal.get('resource_id', ''))} --yes`)")
+    else:
+        gesture = "depuis la carte"
+    text = (f"Plafond de la règle « {name or '?'} » : {why}. Le modèle proposait '{action}' "
+            f"(confiance {d['confidence']:.0%}) ; ramené à '{lowered}' — '{action}' reste un choix "
+            f"humain, {gesture}, jamais un geste autonome sur cette seule preuve.")
+    record = {"rule": name, "proposed": action, "confidence": d["confidence"], "lowered": lowered,
+              "allow": list(ceiling.allow), "why": why, "reason": text}
+    d["action"] = lowered
+    d["reversible"] = True
+    return record
+
+
 def _apply_autonomy_mode(d: dict, mode: str, gate: dict | None = None) -> bool:
     """Autonomy mode policy layer (above the gates — never a bypass).
 
@@ -1970,7 +2030,8 @@ def decide(
 
     Gates, in order (each a pure helper, testable on its own): parsing defaults →
     executable guard → confidence gate → deterministic signal guardrail → attribution
-    guard → telemetry guard → release precondition → autonomy mode → agreement of the
+    guard → telemetry guard → release precondition → the rule's ceiling (RDW1: an autonomous
+    action the rule does not allow brought back to the snapshot) → autonomy mode → agreement of the
     draws (D-1: a disruptive action about to run alone is drawn again, at the model's
     default sampling, and held unless every draw agrees) → the floor of a confirmed
     compromise (B3a: a brute force that succeeded and a sudo to root on this VM — a card
@@ -2067,6 +2128,10 @@ def decide(
     _apply_signal_guardrail(d, signal)
     _apply_telemetry_guard(d, state.get("telemetry_gaps") or [])
     _apply_release_precondition(d, signal)
+    # RDW1 (#994): the rule's ceiling, after the gates that judge the model's own choice (the
+    # confidence, the signal, the telemetry, the release), before never_block, the attribution and
+    # the mode — they judge what the rule allows (a snapshot), never what the model proposed above it.
+    ceiling = _apply_rule_ceiling(d, signal)
     _apply_never_block_guard(d, signal)
     # ATT1 (#936): after every gate that may hold the decision, before the mode — on a detection
     # that names no VM, its card is the attribution's, whatever held it first.
@@ -2092,6 +2157,9 @@ def decide(
     # correlation's facts, never the model's), a card proposes isolate_vm — the floor never
     # runs it; the model's own choice, as every gate above judged it, runs alone or not.
     floor = _root_compromise_floor(d, signal, incident)
+    if floor and ceiling:
+        # RDW1: the floor first, the model's own proposal named in it; the rule's ceiling after.
+        floor = _floor_after_ceiling(floor, ceiling)
     floor_card = bool(floor) and not d["escalate"]
 
     # Last, on the decision as it stands: a characterized detection a snapshot alone
@@ -2106,6 +2174,20 @@ def decide(
         d["escalation_reason"] = f"{floor} — {d.get('escalation_reason') or ''}".rstrip(" —")
     elif floor:
         d["explanation"] = f"{floor} {d['explanation']}".strip()
+
+    # RDW1: the ceiling is said on the cycle's card, whichever it is — the card of the gate or of the
+    # mode that held the snapshot, the floor's (above) —, and the ceiling's own card proposes the
+    # model's isolation to a human, approvable in one click, whatever the mode (Jonathan, 20/11: the
+    # floor's model). Never on a detection that names no VM (ATT1, SEC-Ed: the attribution's card),
+    # never beside the floor's (it proposes the isolation already). Always written: the rule's ceiling
+    # never brings a decision back in silence. It says what the snapshot run alone answered: no card
+    # of the V-11 floor beside it.
+    loose = (signal.get("context") or {}).get("attribution") == "unattributed"
+    ceiling_card = bool(ceiling) and not floor and not loose
+    if ceiling and d["escalate"] and not floor:
+        d["escalation_reason"] = f"{ceiling['reason']} — {d.get('escalation_reason') or ''}".rstrip(" —")
+    if ceiling_card:
+        uncontained = ""
 
     return {
         **state,
@@ -2128,6 +2210,8 @@ def decide(
         "floor": floor,
         "floor_card": floor_card,
         "floor_displaced": d.get("displaced", "") if floor else "",
+        "ceiling": ceiling,
+        "ceiling_card": ceiling_card,
     }
 
 
@@ -2367,6 +2451,16 @@ def compromise_card(state: GlorfindelState) -> GlorfindelState:
     return {**state, "outcome": {**out, "compromise_card": True}}
 
 
+def _card_ceiling(state: GlorfindelState) -> dict | None:
+    """RDW1 (#994): what a card keeps of the rule's ceiling — the rule, the model's proposal and its
+    confidence, the action it was brought back to, what the rule allows and why; its text is the
+    card's reason. None when the ceiling did not play."""
+    ceiling = state.get("ceiling") or {}
+    if not ceiling:
+        return None
+    return {k: ceiling[k] for k in ("rule", "proposed", "confidence", "lowered", "allow", "why") if k in ceiling}
+
+
 def _card_target(signal: dict) -> dict | None:
     """What the RulePoller filed the card on (AL1c, glorfindel/card_target.py): the NSG and the
     VMs it covers, a disk's VM, a role's scope, the group, the control plane, the identity.
@@ -2511,6 +2605,8 @@ def escalate_to_human(state: GlorfindelState) -> GlorfindelState:
             identity_plan=state.get("identity_plan") if escalation_type == "identity_change" else None,
             # SLF1: a detection attributed to no VM says so on its card, never its anchor's name.
             attribution=_card_attribution(signal),
+            # RDW1: the rule's ceiling brought the decision back — the model's proposal kept, said.
+            ceiling=_card_ceiling(state),
             # AL1c: what a card of the control plane or of an identity is filed on — whatever its
             # type (a cycle that failed on one is filed there too).
             target=_card_target(signal),
@@ -2677,7 +2773,10 @@ def store_cycle(state: GlorfindelState, *, memory: CycleMemory) -> GlorfindelSta
         "event": signal.get("event", ""),
         "reasoning": state["reasoning"],
         "confidence": state["confidence"],
-        "action": state["action"],
+        # RDW1 (Jonathan, 20/11): the model's own proposal, as before the ceiling — what the model reads
+        # again does not change; the action brought back stays in the outcome, the ceiling's note and
+        # the debug line.
+        "action": (state.get("ceiling") or {}).get("proposed") or state["action"],
         "escalate": state["escalate"],
         "escalation_reason": state.get("escalation_reason", ""),
         "outcome": str(outcome),
@@ -2742,6 +2841,7 @@ def store_cycle(state: GlorfindelState, *, memory: CycleMemory) -> GlorfindelSta
 
     _record_uncontained(state, source, exercise_run)
     _record_floor_card(state, source, exercise_run)
+    _record_ceiling_card(state, source, exercise_run)
 
     # Debug JSONL — always written, even if ChromaDB or webhook failed
     _write_debug_record(state)
@@ -2877,9 +2977,77 @@ def _record_floor_card(state: GlorfindelState, source: str, exercise_run: str) -
             target=_card_target(signal),
             explanation=state.get("explanation", ""),
             attribution=_card_attribution(signal),
+            ceiling=_card_ceiling(state),
         )
     except Exception as exc:          # said, and the debug line still written
         _console.print(f"[red]store_cycle: carte du plancher (B3a) non écrite — {_outside(exc)}[/red]")
+
+
+def _floor_after_ceiling(floor: str, ceiling: dict) -> str:
+    """B3a's reason when the rule's ceiling brought the decision back (RDW1): the floor first, its
+    « model's choice » the model's own proposal, never the snapshot the ceiling left; the ceiling after."""
+    lowered, proposed = ceiling.get("lowered") or "snapshot", ceiling.get("proposed") or "?"
+    floor = floor.replace(f"Le choix du modèle : '{lowered}' (",
+                          f"Le choix du modèle : '{proposed}', ramené à '{lowered}' par le plafond de la règle (", 1)
+    # No card of the ceiling beside the floor's (`decide`): the isolation is the floor's card's to approve.
+    said = str(ceiling.get("reason") or "").replace("proposé sur la carte du plafond", "proposé sur la carte du plancher")
+    return f"{floor} — {said}".rstrip(" —")
+
+
+# RDW1 (#994; Jonathan, 20/11): the card of the rule's ceiling — the model's isolation proposed to a
+# human, approvable in one click, never run by the ceiling, whatever the mode (B3a's floor's model).
+CEILING_TYPE = "ceiling_proposal"
+
+
+def _record_ceiling_card(state: GlorfindelState, source: str, exercise_run: str) -> None:
+    """RDW1: the card of the rule's ceiling, apart from the decision's — written whatever the mode and
+    the action's outcome: it proposes the model's isolation (`isolate_vm`, approvable in one click under
+    the approval's usual guards), or, the model having proposed another action above the ceiling,
+    nothing to approve (its reason says it). The snapshot ran as the mode allowed, or waits on the
+    decision's card. Never on a detection that names no VM, nor beside the floor's card (`decide`).
+    Never in dry-run."""
+    ceiling = state.get("ceiling") or {}
+    if not state.get("ceiling_card") or not ceiling or state.get("dry_run"):
+        return
+    signal = state["signal"]
+    proposed = str(ceiling.get("proposed") or "")
+    action = "isolate_vm" if proposed == "isolate_vm" else ""
+    outcome = state.get("outcome") or {}
+    snap = outcome.get("snapshot_id") if outcome.get("executed") else ""
+    held = ""
+    if state.get("escalate") and state.get("held_by"):
+        # A gate held the decision before the ceiling (the confidence, the telemetry…): said here too.
+        held = str(state.get("escalation_reason") or "").replace(f"{ceiling.get('reason')} — ", "", 1)
+    reason = (str(ceiling.get("reason") or "") + (f" Instantané pris : {snap}." if snap else "")
+              + (f" — {held}" if held else ""))
+    try:
+        from glorfindel import escalations
+        escalations.record(
+            signal_id=signal.get("signal_id", ""),
+            resource_id=signal.get("resource_id", ""),
+            action=action,
+            escalation_type=CEILING_TYPE,
+            reason=reason,
+            run_id=(signal.get("context") or {}).get("run_id", ""),
+            suggested_steps=[
+                "Juger la VM : la règle ne prouve qu'un débit d'écriture, qu'une sauvegarde atteint aussi "
+                "(les processus qui écrivent, des fichiers renommés, des extensions nouvelles).",
+                ("Approuver l'isolation si la VM chiffre ; sinon, acquitter la carte." if action else
+                 f"'{proposed}' reste à faire à la main si la VM le justifie ; sinon, acquitter la carte."),
+            ],
+            ttp=signal.get("ttp", ""),
+            severity=signal.get("severity", ""),
+            confidence=float(ceiling.get("confidence") or 0.0),
+            rule_name=(signal.get("context") or {}).get("rule_name", ""),
+            source=source,
+            exercise_run=exercise_run,
+            target=_card_target(signal),
+            explanation=state.get("explanation", ""),
+            attribution=_card_attribution(signal),
+            ceiling=_card_ceiling(state),
+        )
+    except Exception as exc:          # said, and the debug line still written
+        _console.print(f"[red]store_cycle: carte du plafond de la règle (RDW1) non écrite — {_outside(exc)}[/red]")
 
 
 def _record_uncontained(state: GlorfindelState, source: str, exercise_run: str) -> None:
@@ -2911,6 +3079,7 @@ def _record_uncontained(state: GlorfindelState, source: str, exercise_run: str) 
             exercise_run=exercise_run,
             explanation=state.get("explanation", ""),
             attribution=_card_attribution(signal),
+            ceiling=_card_ceiling(state),
         )
     except Exception as exc:          # said, and the debug line still written
         _console.print(f"[red]store_cycle: carte de la détection non contenue non écrite — {_outside(exc)}[/red]")
@@ -2961,6 +3130,9 @@ def _write_debug_record(state: GlorfindelState) -> None:
         debug_record["uncontained"] = state["uncontained"]
     if state.get("floor"):
         debug_record["floor"] = state["floor"]
+    if state.get("ceiling"):
+        # RDW1: the model's proposal and what the rule's ceiling made of it — the trail of the guard.
+        debug_record["ceiling"] = state["ceiling"]
     # SEC18: in the watch's own directory, runs/glorfindel/ — no injector writes there.
     from eregion_core import channel_reader, runs_layout
     out = runs_layout.dir_of(runs_layout.GLORFINDEL) / f"{run_id}_debug.jsonl"
