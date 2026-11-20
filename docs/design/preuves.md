@@ -223,6 +223,48 @@ ses cadres sans le GIL, et le processus peut mourir pendant la lecture. Sur Linu
 tourne donc seule, après le reste, loin de ses 8 min (CI12, M6236–M6243 ; `docs/operations.md`, « La
 CI au bon endroit »).
 
+### Une nuit coupée par sa borne dit sa graine et où elle tourne (CI13)
+
+La nuit du 20/11 (run 44730020574, sur e2c64061) : l'étape de la machine d'Azure, sur ubuntu, est
+coupée par ses 125 min. Son journal s'arrête à `collected 1 item` : ni contre-exemple, ni graine, ni
+statistiques. La graine tirée (SEED1) se disait à la fin du run, qu'une étape coupée n'atteint
+jamais ; la nuit ne se rejouait pas par sa graine.
+
+**La graine, dès le début.** Le conftest la dit avant tout test, sur la sortie standard, en une ligne
+qui se recopie telle quelle (`EREGION_HYPOTHESIS_SEED=<graine>`). La fin du run, chaque échec et le
+résumé de l'étape la disent encore (M6800).
+
+**Avant la borne, ce que fait la machine.** La nuit seulement — une graine tirée pour le run, ou plus
+de séquences que les 500 d'un push (M6801) —, un test qui lance une machine d'invariants a un
+garde-fou (`tests/unit/invariant_watchdog.py`). À `GLORFINDEL_INVARIANT_WATCHDOG` minutes après le
+début du run (M6806) — par défaut 115 pour la machine d'Azure, sous les 125 de son étape, et 40 pour
+celle d'AWS, sous ses 45 ; `INVARIANT_WATCHDOG_MINUTES` dans chaque fichier, lu face aux bornes
+d'`invariants.yml` par le test (M6803–M6805) —, il écrit sur le stderr du début du run, que pytest
+ne capture pas :
+
+- la graine et la commande qui la rejoue ;
+- le nombre de séquences commencées (chaque `__init__` d'une machine : génération, rejeu, réduction),
+  depuis quand tourne la séquence en cours, et la plus longue avant elle ;
+- la pile de chaque fil, lue par Python sous le GIL (`sys._current_frames`, M6809). Elle est sûre
+  pendant que les fils de la machine tournent : faulthandler lit leurs cadres sans le GIL, et le
+  processus peut en mourir (CI12).
+
+faulthandler reste le filet : `dump_traceback_later`, armé une minute plus tard, annulé dès que Python
+a parlé, n'écrit les piles que si Python n'a pas pu (un GIL jamais rendu). Un run qui demande le
+sien à pytest (`faulthandler_timeout`, la porte de release) le garde : le filet n'est pas armé
+(M6808). Le run n'est pas arrêté : un runner lent ce jour-là peut encore finir avant sa borne. Quand
+la machine finit, une ligne dit ses séquences et la plus longue — la nuit suivante distingue un
+runner lent d'une séquence qui ne finit pas. Les PR et les pushes ne changent pas : dérandomisés, sans
+garde-fou (M6802, M6807 : jamais armé, ou laissé armé après sa machine).
+
+Ce que lit une nuit coupée, donc : une séquence en cours depuis des dizaines de minutes, sa pile
+jusqu'à la règle qui tourne — une boucle sans borne, à figer dans
+`tests/unit/test_invariant_regressions.py` ; des cadres du `shrinker` de Hypothesis — une réduction
+qui ne tient pas dans le temps ; une séquence de moins d'une seconde et des milliers derrière — un
+runner lent. Le test le prouve sur une sonde : une séquence qui ne finit pas, un garde-fou à 3 s, le
+processus tué par SIGKILL comme une borne coupe une étape ; son journal tient la graine, dite avant le
+garde-fou, et la pile jusqu'à la règle (`tests/unit/test_invariant_watchdog.py`).
+
 ## La mesure par mutation
 
 Un test qui passe ne dit rien de sa force. `scripts/mutation_check.py` réinjecte, un par un,
