@@ -1736,10 +1736,10 @@ briques:
   - id: o-drill-reveil
     composant: orodruin
     poste: o-executer
-    nom: "The weekly drill's scheduled start: a Logic App that wakes Orodruin before the drill, shipped disabled, its identity able only to start Orodruin; Orodruin shut down every day at 23:00 UTC, a drill it would cut refused at the arming; the dry check says the scheduled start's state against the arming; nothing applied yet"
+    nom: "The weekly drill's scheduled start: a Logic App that wakes Orodruin before the drill, shipped disabled, its identity able only to start Orodruin; Orodruin shut down every day at 23:00 UTC, a drill it would cut refused at the arming; the dry check says the scheduled start's state against the arming; its start time in the form Azure requires in UTC; nothing applied yet"
     etat: main
     release: "0.6"
-    lots: [DRL1c, DRL1e]
+    lots: [DRL1c, DRL1e, DRL1f]
     issue: 613
     doc: docs/design/drill-banc.md
 
