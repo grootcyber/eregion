@@ -15,7 +15,7 @@ from glorfindel.providers.aws.connector import AwsConnector, WrongAccountError
 from glorfindel.providers.interface import NETWORK_QUARANTINE, NETWORK_RULES, RESTORE_POINT, SESSION_DRAIN
 from glorfindel.response.policy import PartialActionError, WrongSubscriptionError
 
-from .fake_aws import ACCOUNT, ATTACKER, INTERNET, REGION, FakeAws, acl_entry, arn, open_flows, sg_rule
+from .fake_aws import ACCOUNT, ATTACKER, INTERNET, REGION, ClientError, FakeAws, acl_entry, arn, open_flows, sg_rule
 
 
 @pytest.fixture
@@ -233,6 +233,62 @@ def test_an_eni_left_on_default_gets_the_operator_s_group_when_its_own_was_delet
     q["tags"]["glorfindel-orig-eni-web1"] = "sg-solo2"
     assert c.release_isolation(arn("i-web1"))["status"] == "released"
     assert f.enis["eni-web1"]["groups"] == ["sg-solo2"]
+
+
+@pytest.mark.parametrize("state", ["kept", "lost"])
+def test_an_eni_someone_took_onto_default_gets_its_original_back(world, state):
+    """U2 by hand (MUT15): in quarantine, taken out onto `default` by someone, its own group still
+    there — the release puts its original back, by the state or, lost, by the quarantine's tag;
+    never left on `default` and said released. The machine meets it only in some of its draws
+    (M605, one gate round in two at 500)."""
+    f, c, _ = world
+    design = open_flows(f.snapshot(), "i-web1")
+    assert c.isolate_vm(arn("i-web1"))["status"] == "isolated"
+    f.enis["eni-web1"]["groups"] = ["sg-default-vpc-a"]
+    if state == "lost":
+        actions._clear_isolation_state(arn("i-web1"))
+    out = c.release_isolation(arn("i-web1"))
+    assert out["status"] == "released" and out["released"] == ["eni-web1"], out
+    assert f.enis["eni-web1"]["groups"] == ["sg-web"]
+    assert open_flows(f.world(), "i-web1") == design
+    assert c.verify_release(arn("i-web1"))["verified"] is True
+
+
+@pytest.mark.parametrize("added", [False, True])
+def test_an_eni_isolated_again_keeps_the_original_it_had_before_the_quarantine(world, added):
+    """S1 by hand (MUT15): isolated again while in quarantine — the reassertion, a second host —,
+    alone in it or with a group someone put next to ours: its original stays what the state and the
+    tag say, never what it carries now. The release gives it back its own group, never the quarantine
+    (M607, met by the machine in some of its draws only)."""
+    f, c, _ = world
+    design = open_flows(f.snapshot(), "i-web1")
+    assert c.isolate_vm(arn("i-web1"))["status"] == "isolated"
+    q = next(s for s in f.sgs.values() if s["name"] == "glorfindel-quarantine")
+    if added:
+        f.add_sg("vpc-a", "sg-extra", "extra", ingress=[sg_rule("tcp", 22, "0.0.0.0/0")])
+        f.enis["eni-web1"]["groups"] = [q["id"], "sg-extra"]
+    assert c.isolate_vm(arn("i-web1"))["status"] == "isolated"
+    assert f.enis["eni-web1"]["groups"] == [q["id"]]
+    assert q["tags"].get("glorfindel-orig-eni-web1") == "sg-web"
+    assert c.release_isolation(arn("i-web1"))["status"] == "released"
+    assert f.enis["eni-web1"]["groups"] == ["sg-web"]
+    assert open_flows(f.world(), "i-web1") == design
+
+
+def test_a_verification_that_cannot_read_the_quarantine_group_never_says_isolated(world):
+    """A read that fails gives None, never True (MUT15): the quarantine group of the ENI's VPC
+    refused at its read, the ENIs read whole — the verification can't tell, and says so (M609, met
+    by the machine in some of its draws only)."""
+    f, c, _ = world
+    assert c.isolate_vm(arn("i-web1"))["verified"] is True
+
+    def chaos(op, phase, write):
+        if op == "sg.describe":
+            raise ClientError("UnauthorizedOperation", "You are not authorized to perform this operation.", 403,
+                              "DescribeSecurityGroups")
+    f.chaos = chaos
+    out = c.verify_isolation(arn("i-web1"))
+    assert out["verified"] is None and out["unknown"] == ["eni-web1"], out
 
 
 def test_an_unblock_waits_for_a_block_reusing_its_entries_on_the_same_acl(world, monkeypatch):
