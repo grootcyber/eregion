@@ -668,6 +668,36 @@
    "doc": "docs/glorfindel.md"
   },
   {
+   "id": "g-alertes-hebergeur",
+   "composant": "glorfindel",
+   "poste": "g-detecter",
+   "nom": "Design: the alerts of Defender for Cloud and Sentinel as signals, read through the signal contract, nothing turned on, the bench measure first",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "DEF1"
+   ],
+   "issue": 1020,
+   "doc": "docs/design/alertes-hebergeur.md"
+  },
+  {
+   "id": "g-alertes-hebergeur-code",
+   "composant": "glorfindel",
+   "poste": "g-detecter",
+   "nom": "The host's alerts read as signals, if the bench measure says so: a closed list of alert types, the shipped query alone trusted, a card built by the code, never an autonomous action",
+   "etat": "prevue",
+   "release": "0.x",
+   "lots": [
+    "DEF3",
+    "DEF4",
+    "DEF5",
+    "DEF6",
+    "DEF7"
+   ],
+   "issue": 1020,
+   "doc": "docs/design/alertes-hebergeur.md"
+  },
+  {
    "id": "g-canal-exercices-orodruin",
    "composant": "glorfindel",
    "poste": "g-detecter",
