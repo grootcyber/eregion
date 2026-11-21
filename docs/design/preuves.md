@@ -123,6 +123,8 @@ Les propriétés, vérifiées après chaque étape :
 | L2 | un NSG de quarantaine que quelqu'un a modifié, et qui porte encore des cartes, est reposé ou signalé — l'état de ces cartes perdu compris (I1F) ; signalé, il le reste quand il sort de la liste : rôle retiré sur son groupe, notre tag retiré (I1S) |
 | U1 | une règle laissée par une carte qui n'existe plus, et qui coupe une carte vivante, est signalée, puis retirée par le balayage — sauf si une de nos règles retournée en autorisation se tient derrière elle : gardée et dite (I5Q) ; rien d'autre ne bouge ; en fin de séquence, chaque VM vivante revient à sa conception en entier (A3) |
 
+**La réaffirmation, case par case (RSM1, #1018).** Ce que la réaffirmation repose, dit ou laisse, objet par objet et situation par situation, l'invariant qui tient chaque case et les cases qu'aucun ne tient, et les écarts entre le code et ces oracles (trois des contre-exemples des nuits du 10 au 20/11 en venaient ; un quatrième, L1Nc, se discute et est à re-mesurer) : [`reaffirmation.md`](reaffirmation.md).
+
 **La reprise lue sur Azure a sa propre machine (REC1, #668).** Elle est dans
 `tests/unit/test_recovery_watch.py`, pas dans celle-ci. Elle lit les jobs du coffre, les points,
 l'alimentation, les disques, le journal d'activité et la parole de Run Command, et non le réseau.
