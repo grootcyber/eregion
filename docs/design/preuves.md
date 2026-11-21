@@ -40,7 +40,7 @@ flowchart BT
 | Invariants | des milliers de réseaux et de séquences tirés au hasard, avec pannes, monde qui bouge et deux opérations à la fois | ce que le faux Azure ne modélise pas (deux hôtes, couches au-dessus du NSG) |
 | Mutation | si les invariants attrapent un bug connu | un bug d'une classe jamais vue |
 | Verrous entre processus | l'exclusion mutuelle réelle de `flock` | un verrou entre deux hôtes |
-| Contrats du SDK (SDK1a) | ce que la version épinglée d'`azure-monitor-query` rend d'une réponse de Log Analytics : ses types, son résultat partiel, ses erreurs | ce qu'Azure envoie vraiment, qui reste une mesure du banc reprise dans le corps |
+| Contrats du SDK (SDK1a, SDK1b) | ce que la version épinglée d'`azure-monitor-query` rend d'une réponse de Log Analytics, et celles d'`azure-mgmt-*` des dix opérations ARM les plus lues : leurs types, leurs enums, leurs champs absents, leurs erreurs | ce qu'Azure envoie vraiment, qui reste une mesure du banc reprise dans le corps (pour ARM, encore une hypothèse) |
 | Banc Celebrimbor | le comportement réel d'Azure et de Terraform | la variété des réseaux clients |
 | Rejeu de la mémoire (MEM1) | ce que la mémoire des décisions rendrait, signal par signal, sur une copie réelle de son magasin, hors ligne, par son classement et par d'autres ([`memoire.md`](memoire.md)) | ce que le modèle fait de ces précédents : le harnais et le run de bout en bout |
 | Canary azurerm | qu'un comportement mesuré du provider tient encore | Bicep, ARM, autres outils |
@@ -64,6 +64,8 @@ agrégée (sans `TimeGenerated`) qui portait une colonne `dynamic` changeait d'i
 contenu changeait, et refaisait une carte. Le texte JSON d'une colonne `dynamic` entrait dans
 l'identité de la ligne ; les tests sur des listes ne le voyaient pas. Il en est sorti
 (`tests/unit/test_row_identity_sdk.py`, `docs/glorfindel.md`, « Déduplication »).
+
+Les opérations `azure.mgmt` des adaptateurs (SDK1b, #1017). Les dix plus lues (la liste, la fréquence de chacune et l'inventaire de tous les appels : `tests/unit/test_sdk_mgmt_contracts.py`) passent chacune par le client du SDK épinglé, sur `tests/unit/sdk_mgmt.py` : un ARM en mémoire qui sert des corps par leur chemin, refuse toute écriture et garde chaque requête. Les corps de `tests/unit/sdk_bodies/` sont des **hypothèses** : la forme de l'exemple de la référence REST, valeurs inventées. `scripts/sdk_capture.py` les mesure au banc, en lecture seule, anonymisés avant toute écriture (`tests/unit/test_sdk_capture.py`) ; geste du mainteneur. Ces contrats ont montré un défaut, corrigé (un `dataDisks` absent faisait dire la VM illisible à l'audit), et une limite, dite (une `ipConfiguration` à préfixe, `docs/azure.md`).
 
 ## La machine à invariants
 

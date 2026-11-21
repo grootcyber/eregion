@@ -1,0 +1,77 @@
+{
+  "operation": "backup.recovery_points.list",
+  "source": "hypothesis",
+  "sdk": "azure-mgmt-recoveryservicesbackup==11.2.0",
+  "api_version": "2026-10-01",
+  "reference": "https://learn.microsoft.com/en-us/rest/api/backup/recovery-points/list?view=rest-backup-2026-11-01",
+  "note": "Hypothesis (SDK1b, #1017): the shape of the REST reference's sample response for this operation, its values made up for the bench at rest (one VM behind its NIC's NSG and its subnet's, the quarantine NSG on standby, a vault). To be replaced by the body measured at the bench (scripts/sdk_capture.py, the maintainer's gesture).",
+  "responses": [
+    {
+      "url": "/subscriptions/00000000-0000-4000-8000-000000000001/resourceGroups/rg-example-01/providers/Microsoft.RecoveryServices/vaults/rsv-example-01/backupFabrics/Azure/protectionContainers/IaasVMContainer;iaasvmcontainerv2;rg-example-01;vm-example-01/protectedItems/VM;iaasvmcontainerv2;rg-example-01;vm-example-01/recoveryPoints?api-version=2026-10-01",
+      "status": 200,
+      "body": {
+        "nextLink": null,
+        "value": [
+          {
+            "name": "62395520470099",
+            "type": "Microsoft.RecoveryServices/vaults/backupFabrics/protectionContainers/protectedItems/recoveryPoints",
+            "id": "/subscriptions/00000000-0000-4000-8000-000000000001/resourceGroups/rg-example-01/providers/Microsoft.RecoveryServices/vaults/rsv-example-01/backupFabrics/Azure/protectionContainers/IaasVMContainer;iaasvmcontainerv2;rg-example-01;vm-example-01/protectedItems/VM;iaasvmcontainerv2;rg-example-01;vm-example-01/recoveryPoints/62395520470099",
+            "properties": {
+              "objectType": "IaasVMRecoveryPoint",
+              "isInstantIlrSessionActive": false,
+              "isManagedVirtualMachine": true,
+              "isSourceVMEncrypted": false,
+              "originalStorageAccountOption": false,
+              "osType": "Linux",
+              "recoveryPointAdditionalInfo": "",
+              "recoveryPointTierDetails": [
+                {
+                  "type": "InstantRP",
+                  "status": "Deleted"
+                },
+                {
+                  "type": "HardenedRP",
+                  "status": "Valid"
+                }
+              ],
+              "recoveryPointTime": "2026-11-19T02:30:58.1122334Z",
+              "recoveryPointType": "CrashConsistent",
+              "securityType": "None",
+              "sourceVMStorageType": "NormalStorage",
+              "virtualMachineSize": "Standard_B2s"
+            }
+          },
+          {
+            "name": "62481920470211",
+            "type": "Microsoft.RecoveryServices/vaults/backupFabrics/protectionContainers/protectedItems/recoveryPoints",
+            "id": "/subscriptions/00000000-0000-4000-8000-000000000001/resourceGroups/rg-example-01/providers/Microsoft.RecoveryServices/vaults/rsv-example-01/backupFabrics/Azure/protectionContainers/IaasVMContainer;iaasvmcontainerv2;rg-example-01;vm-example-01/protectedItems/VM;iaasvmcontainerv2;rg-example-01;vm-example-01/recoveryPoints/62481920470211",
+            "properties": {
+              "objectType": "IaasVMRecoveryPoint",
+              "isInstantIlrSessionActive": false,
+              "isManagedVirtualMachine": true,
+              "isSourceVMEncrypted": false,
+              "originalStorageAccountOption": false,
+              "osType": "Linux",
+              "recoveryPointAdditionalInfo": "",
+              "recoveryPointTierDetails": [
+                {
+                  "type": "InstantRP",
+                  "status": "Valid"
+                },
+                {
+                  "type": "HardenedRP",
+                  "status": "Valid"
+                }
+              ],
+              "recoveryPointTime": "2026-11-20T02:31:12.6338947Z",
+              "recoveryPointType": "CrashConsistent",
+              "securityType": "None",
+              "sourceVMStorageType": "NormalStorage",
+              "virtualMachineSize": "Standard_B2s"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

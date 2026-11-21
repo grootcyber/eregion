@@ -1,0 +1,38 @@
+{
+  "operation": "network.subnets.get",
+  "source": "hypothesis",
+  "sdk": "azure-mgmt-network==33.1.0",
+  "api_version": "2026-03-01",
+  "reference": "https://learn.microsoft.com/en-us/rest/api/virtualnetwork/subnets/get?view=rest-virtualnetwork-2026-03-01",
+  "note": "Hypothesis (SDK1b, #1017): the shape of the REST reference's sample response for this operation, its values made up for the bench at rest (one VM behind its NIC's NSG and its subnet's, the quarantine NSG on standby, a vault). To be replaced by the body measured at the bench (scripts/sdk_capture.py, the maintainer's gesture).",
+  "responses": [
+    {
+      "url": "/subscriptions/00000000-0000-4000-8000-000000000001/resourceGroups/rg-example-01/providers/Microsoft.Network/virtualNetworks/vnet-example-01/subnets/snet-example-01?api-version=2026-03-01",
+      "status": 200,
+      "body": {
+        "name": "snet-example-01",
+        "id": "/subscriptions/00000000-0000-4000-8000-000000000001/resourceGroups/rg-example-01/providers/Microsoft.Network/virtualNetworks/vnet-example-01/subnets/snet-example-01",
+        "etag": "W/\"00000000-0000-4000-8000-000000000075\"",
+        "type": "Microsoft.Network/virtualNetworks/subnets",
+        "properties": {
+          "addressPrefix": "10.240.1.0/24",
+          "networkSecurityGroup": {
+            "id": "/subscriptions/00000000-0000-4000-8000-000000000001/resourceGroups/rg-example-01/providers/Microsoft.Network/networkSecurityGroups/nsg-example-02"
+          },
+          "ipConfigurations": [
+            {
+              "id": "/subscriptions/00000000-0000-4000-8000-000000000001/resourceGroups/rg-example-01/providers/Microsoft.Network/networkInterfaces/nic-example-01/ipConfigurations/ipconfig1"
+            },
+            {
+              "id": "/subscriptions/00000000-0000-4000-8000-000000000001/resourceGroups/rg-example-01/providers/Microsoft.Network/networkInterfaces/nic-example-02/ipConfigurations/ipconfig1"
+            }
+          ],
+          "delegations": [],
+          "privateEndpointNetworkPolicies": "Disabled",
+          "privateLinkServiceNetworkPolicies": "Enabled",
+          "provisioningState": "Succeeded"
+        }
+      }
+    }
+  ]
+}

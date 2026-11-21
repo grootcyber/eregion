@@ -1,0 +1,120 @@
+{
+  "operation": "network.network_interfaces.list_all",
+  "source": "hypothesis",
+  "sdk": "azure-mgmt-network==33.1.0",
+  "api_version": "2026-03-01",
+  "reference": "https://learn.microsoft.com/en-us/rest/api/virtualnetwork/network-interfaces/list-all?view=rest-virtualnetwork-2026-03-01",
+  "note": "Hypothesis (SDK1b, #1017): the shape of the REST reference's sample response for this operation, its values made up for the bench at rest (one VM behind its NIC's NSG and its subnet's, the quarantine NSG on standby, a vault). To be replaced by the body measured at the bench (scripts/sdk_capture.py, the maintainer's gesture).",
+  "responses": [
+    {
+      "url": "/subscriptions/00000000-0000-4000-8000-000000000001/providers/Microsoft.Network/networkInterfaces?api-version=2026-03-01",
+      "status": 200,
+      "body": {
+        "value": [
+          {
+            "name": "nic-example-01",
+            "id": "/subscriptions/00000000-0000-4000-8000-000000000001/resourceGroups/rg-example-01/providers/Microsoft.Network/networkInterfaces/nic-example-01",
+            "etag": "W/\"00000000-0000-4000-8000-000000000070\"",
+            "type": "Microsoft.Network/networkInterfaces",
+            "location": "westeurope",
+            "kind": "Regular",
+            "properties": {
+              "provisioningState": "Succeeded",
+              "resourceGuid": "00000000-0000-4000-8000-00000000012d",
+              "ipConfigurations": [
+                {
+                  "name": "ipconfig1",
+                  "id": "/subscriptions/00000000-0000-4000-8000-000000000001/resourceGroups/rg-example-01/providers/Microsoft.Network/networkInterfaces/nic-example-01/ipConfigurations/ipconfig1",
+                  "etag": "W/\"00000000-0000-4000-8000-00000000006f\"",
+                  "type": "Microsoft.Network/networkInterfaces/ipConfigurations",
+                  "properties": {
+                    "primary": true,
+                    "privateIPAddress": "10.240.1.4",
+                    "privateIPAddressVersion": "IPv4",
+                    "privateIPAllocationMethod": "Dynamic",
+                    "provisioningState": "Succeeded",
+                    "subnet": {
+                      "id": "/subscriptions/00000000-0000-4000-8000-000000000001/resourceGroups/rg-example-01/providers/Microsoft.Network/virtualNetworks/vnet-example-01/subnets/snet-example-01"
+                    },
+                    "publicIPAddress": {
+                      "id": "/subscriptions/00000000-0000-4000-8000-000000000001/resourceGroups/rg-example-01/providers/Microsoft.Network/publicIPAddresses/pip-example-01"
+                    }
+                  }
+                }
+              ],
+              "dnsSettings": {
+                "appliedDnsServers": [],
+                "dnsServers": [],
+                "internalDomainNameSuffix": "example.ax.internal.cloudapp.net"
+              },
+              "macAddress": "00-00-5E-00-53-01",
+              "enableAcceleratedNetworking": false,
+              "enableIPForwarding": false,
+              "vnetEncryptionSupported": false,
+              "primary": true,
+              "virtualMachine": {
+                "id": "/subscriptions/00000000-0000-4000-8000-000000000001/resourceGroups/rg-example-01/providers/Microsoft.Compute/virtualMachines/vm-example-01"
+              },
+              "hostedWorkloads": [],
+              "tapConfigurations": [],
+              "nicType": "Standard",
+              "auxiliaryMode": "None",
+              "auxiliarySku": "None",
+              "networkSecurityGroup": {
+                "id": "/subscriptions/00000000-0000-4000-8000-000000000001/resourceGroups/rg-example-01/providers/Microsoft.Network/networkSecurityGroups/nsg-example-01"
+              }
+            }
+          },
+          {
+            "name": "nic-example-02",
+            "id": "/subscriptions/00000000-0000-4000-8000-000000000001/resourceGroups/rg-example-01/providers/Microsoft.Network/networkInterfaces/nic-example-02",
+            "etag": "W/\"00000000-0000-4000-8000-000000000072\"",
+            "type": "Microsoft.Network/networkInterfaces",
+            "location": "westeurope",
+            "kind": "Regular",
+            "properties": {
+              "provisioningState": "Succeeded",
+              "resourceGuid": "00000000-0000-4000-8000-00000000012e",
+              "ipConfigurations": [
+                {
+                  "name": "ipconfig1",
+                  "id": "/subscriptions/00000000-0000-4000-8000-000000000001/resourceGroups/rg-example-01/providers/Microsoft.Network/networkInterfaces/nic-example-02/ipConfigurations/ipconfig1",
+                  "etag": "W/\"00000000-0000-4000-8000-000000000071\"",
+                  "type": "Microsoft.Network/networkInterfaces/ipConfigurations",
+                  "properties": {
+                    "primary": true,
+                    "privateIPAddress": "10.240.1.5",
+                    "privateIPAddressVersion": "IPv4",
+                    "privateIPAllocationMethod": "Dynamic",
+                    "provisioningState": "Succeeded",
+                    "subnet": {
+                      "id": "/subscriptions/00000000-0000-4000-8000-000000000001/resourceGroups/rg-example-01/providers/Microsoft.Network/virtualNetworks/vnet-example-01/subnets/snet-example-01"
+                    }
+                  }
+                }
+              ],
+              "dnsSettings": {
+                "appliedDnsServers": [],
+                "dnsServers": [],
+                "internalDomainNameSuffix": "example.ax.internal.cloudapp.net"
+              },
+              "macAddress": "00-00-5E-00-53-02",
+              "enableAcceleratedNetworking": false,
+              "enableIPForwarding": false,
+              "vnetEncryptionSupported": false,
+              "primary": true,
+              "virtualMachine": {
+                "id": "/subscriptions/00000000-0000-4000-8000-000000000001/resourceGroups/rg-example-01/providers/Microsoft.Compute/virtualMachines/vm-example-02"
+              },
+              "hostedWorkloads": [],
+              "tapConfigurations": [],
+              "nicType": "Standard",
+              "auxiliaryMode": "None",
+              "auxiliarySku": "None"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

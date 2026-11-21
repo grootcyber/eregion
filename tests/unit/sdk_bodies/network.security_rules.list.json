@@ -1,0 +1,35 @@
+{
+  "operation": "network.security_rules.list",
+  "source": "hypothesis",
+  "sdk": "azure-mgmt-network==33.1.0",
+  "api_version": "2026-03-01",
+  "reference": "https://learn.microsoft.com/en-us/rest/api/virtualnetwork/security-rules/list?view=rest-virtualnetwork-2026-03-01",
+  "note": "Hypothesis (SDK1b, #1017): the shape of the REST reference's sample response for this operation, its values made up for the bench at rest (one VM behind its NIC's NSG and its subnet's, the quarantine NSG on standby, a vault). To be replaced by the body measured at the bench (scripts/sdk_capture.py, the maintainer's gesture).",
+  "responses": [
+    {
+      "url": "/subscriptions/00000000-0000-4000-8000-000000000001/resourceGroups/rg-example-01/providers/Microsoft.Network/networkSecurityGroups/nsg-example-01/securityRules?api-version=2026-03-01",
+      "status": 200,
+      "body": {
+        "value": [
+          {
+            "name": "rule-example-01",
+            "id": "/subscriptions/00000000-0000-4000-8000-000000000001/resourceGroups/rg-example-01/providers/Microsoft.Network/networkSecurityGroups/nsg-example-01/securityRules/rule-example-01",
+            "etag": "W/\"00000000-0000-4000-8000-000000000076\"",
+            "type": "Microsoft.Network/networkSecurityGroups/securityRules",
+            "properties": {
+              "provisioningState": "Succeeded",
+              "access": "Allow",
+              "destinationAddressPrefix": "*",
+              "destinationPortRange": "22",
+              "direction": "Inbound",
+              "priority": 100,
+              "sourceAddressPrefix": "*",
+              "sourcePortRange": "*",
+              "protocol": "Tcp"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

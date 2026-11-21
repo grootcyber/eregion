@@ -31,6 +31,7 @@ ADAPTERS = {
     "annatar/collectors/azure_monitor.py": "azure",    # Annatar's detection watcher
     "gothmog/engines/chaos_studio.py": "azure",        # Gothmog's fault engine
     "infra/orodruin/kill.py": "azure",                 # Orodruin's emergency stop
+    "scripts/sdk_capture.py": "azure",                 # the maintainer's read-only capture of ARM's bodies (SDK1b)
 }
 # Not an adapter, and known: each takes an azure.identity credential for a REST call of
 # the shared core. Shrink-only — the test fails when one no longer imports the SDK.
