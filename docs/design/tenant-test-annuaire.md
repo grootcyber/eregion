@@ -132,7 +132,7 @@ Ces gestes iront dans `docs/operations.md` au moment du code (avec la date), pas
 - Les **variables Graph** que lit Stratus (`AZURE_TENANT_ID`/`CLIENT_ID`/`CLIENT_SECRET`) pour viser le tenant dédié, et l'**échec attendu** si on vise le tenant réel.
 - Les **rôles Graph minimaux** pour le `warmup` de la technique (`Application.ReadWrite.OwnedBy` suffit-il, ou `.All` ? `RoleManagement.ReadWrite.Directory` nécessaire pour assigner le rôle d'annuaire ?).
 - Que les **AuditLogs** du tenant dédié arrivent dans son workspace, et leur **latence**.
-- **La délégation Azure Lighthouse** par laquelle la watch (Imladris) lit le workspace du tenant dédié (§ 5, reco) : sa **portée exacte** (un seul workspace, Log Analytics Reader et rien d'autre) et la **latence** des AuditLogs jusqu'à la watch — le point le plus lourd.
+- **La délégation Azure Lighthouse** par laquelle la watch (Imladris, anciennement H0) lit le workspace du tenant dédié (§ 5, reco) : sa **portée exacte** (un seul workspace, Log Analytics Reader et rien d'autre) et la **latence** des AuditLogs jusqu'à la watch — le point le plus lourd.
 - La **procédure de suppression** du tenant (bridée : abonnements / licences à retirer d'abord), pour ne pas rester coincé.
 
 ## Les mutants (au code, plus tard) : M5670–M5699
