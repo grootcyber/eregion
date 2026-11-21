@@ -98,6 +98,8 @@ def _repo(tmp: Path, made: tuple[str, ...], test: str) -> Path:
     shutil.copy(ROOT / "tests" / "unit" / "home_sandbox.py", repo / "tests" / "unit" / "home_sandbox.py")
     # CI13: the night's watchdog, loaded by its path beside it too.
     shutil.copy(ROOT / "tests" / "unit" / "invariant_watchdog.py", repo / "tests" / "unit" / "invariant_watchdog.py")
+    # And the network guard (SDK1b), installed by the conftest beside it.
+    shutil.copy(ROOT / "tests" / "unit" / "network_guard.py", repo / "tests" / "unit" / "network_guard.py")
     (repo / "tests" / "unit" / "test_scenario.py").write_text(textwrap.dedent(test))
     (repo / ".gitignore").write_text("runs/\nbuild/\n__pycache__/\n.pytest_cache/\n")
     for rel in made:

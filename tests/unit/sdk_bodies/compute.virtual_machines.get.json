@@ -1,0 +1,80 @@
+{
+  "operation": "compute.virtual_machines.get",
+  "source": "hypothesis",
+  "sdk": "azure-mgmt-compute==39.0.0",
+  "api_version": "2026-04-01",
+  "reference": "https://learn.microsoft.com/en-us/rest/api/compute/virtual-machines/get?view=rest-compute-2026-04-01",
+  "note": "Hypothesis (SDK1b, #1017): the shape of the REST reference's sample response for this operation, its values made up for the bench at rest (one VM behind its NIC's NSG and its subnet's, the quarantine NSG on standby, a vault). To be replaced by the body measured at the bench (scripts/sdk_capture.py, the maintainer's gesture).",
+  "responses": [
+    {
+      "url": "/subscriptions/00000000-0000-4000-8000-000000000001/resourceGroups/rg-example-01/providers/Microsoft.Compute/virtualMachines/vm-example-01?api-version=2026-04-01",
+      "status": 200,
+      "body": {
+        "name": "vm-example-01",
+        "id": "/subscriptions/00000000-0000-4000-8000-000000000001/resourceGroups/rg-example-01/providers/Microsoft.Compute/virtualMachines/vm-example-01",
+        "type": "Microsoft.Compute/virtualMachines",
+        "location": "westeurope",
+        "tags": {},
+        "etag": "\"3\"",
+        "properties": {
+          "vmId": "00000000-0000-4000-8000-000000000191",
+          "hardwareProfile": {
+            "vmSize": "Standard_B2s"
+          },
+          "storageProfile": {
+            "imageReference": {
+              "publisher": "Canonical",
+              "offer": "ubuntu-24_04-lts",
+              "sku": "server",
+              "version": "latest",
+              "exactVersion": "24.04.202611010"
+            },
+            "osDisk": {
+              "osType": "Linux",
+              "name": "disk-example-01",
+              "createOption": "FromImage",
+              "caching": "ReadWrite",
+              "managedDisk": {
+                "storageAccountType": "Standard_LRS",
+                "id": "/subscriptions/00000000-0000-4000-8000-000000000001/resourceGroups/rg-example-01/providers/Microsoft.Compute/disks/disk-example-01"
+              },
+              "deleteOption": "Detach",
+              "diskSizeGB": 30
+            },
+            "dataDisks": [],
+            "diskControllerType": "SCSI"
+          },
+          "osProfile": {
+            "computerName": "vm-example-01",
+            "adminUsername": "azureuser",
+            "linuxConfiguration": {
+              "disablePasswordAuthentication": true,
+              "provisionVMAgent": true,
+              "patchSettings": {
+                "patchMode": "ImageDefault",
+                "assessmentMode": "ImageDefault"
+              }
+            },
+            "secrets": [],
+            "allowExtensionOperations": true,
+            "requireGuestProvisionSignal": true
+          },
+          "networkProfile": {
+            "networkInterfaces": [
+              {
+                "id": "/subscriptions/00000000-0000-4000-8000-000000000001/resourceGroups/rg-example-01/providers/Microsoft.Network/networkInterfaces/nic-example-01"
+              }
+            ]
+          },
+          "diagnosticsProfile": {
+            "bootDiagnostics": {
+              "enabled": true
+            }
+          },
+          "provisioningState": "Succeeded",
+          "timeCreated": "2026-11-02T08:12:44.1234567+00:00"
+        }
+      }
+    }
+  ]
+}

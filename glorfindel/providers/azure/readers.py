@@ -459,9 +459,10 @@ class ReadersMixin:
             disks = []
             if vm.storage_profile.os_disk.managed_disk:
                 disks.append(vm.storage_profile.os_disk.managed_disk.id.split("/")[-1])
+            # `dataDisks` left out of the body: the SDK gives None, never [] (SDK1b) — no data disk.
             disks += [
                 d.managed_disk.id.split("/")[-1]
-                for d in vm.storage_profile.data_disks
+                for d in (vm.storage_profile.data_disks or [])
                 if d.managed_disk
             ]
             return {"ok": True, "vm": vm_name, "disks": disks}

@@ -283,7 +283,7 @@ def _session(tmp_path, scenario: str, *args) -> tuple[subprocess.CompletedProces
     home.mkdir()
     barrier.mkdir()
     for rel in ("tests/unit/conftest.py", "tests/unit/hypothesis_seed.py", "tests/unit/home_sandbox.py",
-                "tests/unit/invariant_watchdog.py", "scripts/chroma_model.py"):
+                "tests/unit/invariant_watchdog.py", "tests/unit/network_guard.py", "scripts/chroma_model.py"):
         shutil.copy(ROOT / rel, repo / rel)
     (repo / "tests" / "unit" / "test_scenario.py").write_text(scenario)
     (repo / ".gitignore").write_text("__pycache__/\n.pytest_cache/\n")

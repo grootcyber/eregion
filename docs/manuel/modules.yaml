@@ -2777,6 +2777,16 @@ briques:
     issue: 992
     doc: docs/design/preuves.md
 
+  - id: s-contrats-sdk-mgmt
+    composant: socle
+    poste: s-prouver
+    nom: "The ten Azure Resource Manager operations Glorfindel's adapters read most, tested on the pinned SDKs' own objects, enums as enums and absent fields as None, every call inventoried; a read-only, anonymizing capture of their bodies at the bench, the maintainer's gesture"
+    etat: main
+    release: "0.6"
+    lots: [SDK1b]
+    issue: 1017
+    doc: docs/design/preuves.md
+
   - id: s-contrats-sdk-annatar
     composant: socle
     poste: s-prouver

@@ -488,6 +488,11 @@ def _what_the_store_shows() -> tuple[str | None, str | None]:
 # writes at collection is seen too.
 _arm()
 _arm_store()
+# SDK1b's review (#1017): the test process does not leave the machine, a module's import included — a
+# client built on its own transport fails instead of reaching Azure (tests/unit/network_guard.py; a
+# subprocess that does not load this conftest is not held).
+network_guard = _beside("network_guard")
+network_guard.install()
 
 
 @pytest.fixture(scope="session", autouse=True)

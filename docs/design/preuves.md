@@ -40,7 +40,7 @@ flowchart BT
 | Invariants | des milliers de réseaux et de séquences tirés au hasard, avec pannes, monde qui bouge et deux opérations à la fois | ce que le faux Azure ne modélise pas (deux hôtes, couches au-dessus du NSG) |
 | Mutation | si les invariants attrapent un bug connu | un bug d'une classe jamais vue |
 | Verrous entre processus | l'exclusion mutuelle réelle de `flock` | un verrou entre deux hôtes |
-| Contrats du SDK (SDK1a) | ce que la version épinglée d'`azure-monitor-query` rend d'une réponse de Log Analytics : ses types, son résultat partiel, ses erreurs | ce qu'Azure envoie vraiment, qui reste une mesure du banc reprise dans le corps |
+| Contrats du SDK (SDK1a, SDK1b) | ce que la version épinglée d'`azure-monitor-query` rend d'une réponse de Log Analytics, et celles d'`azure-mgmt-*` des dix opérations ARM les plus lues : leurs types, leurs enums, leurs champs absents, leurs erreurs | ce qu'Azure envoie vraiment, qui reste une mesure du banc reprise dans le corps (pour ARM, encore une hypothèse) |
 | Banc Celebrimbor | le comportement réel d'Azure et de Terraform | la variété des réseaux clients |
 | Rejeu de la mémoire (MEM1) | ce que la mémoire des décisions rendrait, signal par signal, sur une copie réelle de son magasin, hors ligne, par son classement et par d'autres ([`memoire.md`](memoire.md)) | ce que le modèle fait de ces précédents : le harnais et le run de bout en bout |
 | Canary azurerm | qu'un comportement mesuré du provider tient encore | Bicep, ARM, autres outils |
@@ -64,6 +64,19 @@ agrégée (sans `TimeGenerated`) qui portait une colonne `dynamic` changeait d'i
 contenu changeait, et refaisait une carte. Le texte JSON d'une colonne `dynamic` entrait dans
 l'identité de la ligne ; les tests sur des listes ne le voyaient pas. Il en est sorti
 (`tests/unit/test_row_identity_sdk.py`, `docs/glorfindel.md`, « Déduplication »).
+
+Les opérations `azure.mgmt` des adaptateurs (SDK1b, #1017). Les dix plus lues (la liste, la fréquence de chacune et l'inventaire de tous les appels : `tests/unit/test_sdk_mgmt_contracts.py`) passent chacune par le client du SDK épinglé, sur `tests/unit/sdk_mgmt.py` : un ARM en mémoire qui sert des corps par leur chemin, refuse toute écriture et garde chaque requête. Les corps de `tests/unit/sdk_bodies/` sont des **hypothèses** : la forme de l'exemple de la référence REST, valeurs inventées. `scripts/sdk_capture.py` les mesure au banc, en lecture seule, anonymisés avant toute écriture (`scripts/sdk_anonymize.py`, `tests/unit/test_sdk_capture.py`) ; geste du mainteneur, depuis `~/eregion` :
+
+```
+az login
+.venv/bin/python scripts/sdk_capture.py capture --subscription "$(az account show --query id -o tsv)" \
+    --vm <groupe>/<vm> --vault <groupe>/<coffre> --out ~/eregion-banc/sdk1b
+.venv/bin/python scripts/sdk_capture.py check ~/eregion-banc/sdk1b --forbid <groupe> --forbid <vm> --forbid <coffre>
+```
+
+L'abonnement se donne sur la ligne, lu à l'instant : un `AZURE_SUBSCRIPTION_ID` exporté à la main peut avoir été remplacé depuis (direnv qui recharge `.envrc`). L'anonymisation remplace GUID, noms, marques, IPv4 et IPv6, MAC, courriels, domaines hors Azure, clés et valeurs de tags, textes libres et secrets ; la vérification refuse d'écrire si un réel rencontré reste ou si une valeur d'une forme connue n'est pas celle d'un remplaçant. **La relecture de chaque fichier par le mainteneur reste le dernier filet** : un mot d'un texte libre qu'aucun id, aucune clé ni aucune forme ne nomme (le nom d'une personne, d'un serveur) ne se distingue pas d'un autre mot. Ces contrats ont montré un défaut, corrigé (un `dataDisks` absent faisait dire la VM illisible à l'audit), et une limite, dite (une `ipConfiguration` à préfixe, `docs/azure.md`). Depuis la relecture de SDK1b, le processus de test ne sort pas de la machine : une garde (`tests/unit/network_guard.py`, le crochet d'audit de Python, posée par la conftest) refuse toute connexion, résolution de nom (directe ou inverse) ou datagramme au-delà du loopback, et dit quoi faire à la place (un ARM en mémoire, `tests/unit/sdk_mgmt.py`, `dry_run=True`, un serveur sur le loopback). **Sa limite** : elle tient le processus de test et ses workers, ceux qui chargent la conftest ; pas un sous-processus qu'un test lance sans elle (`python -c …`, `curl`), ni un relais sur le loopback qui renverrait au-delà.
+
+Les limites connues de l'anonymisation (SDK1b, non bloquantes) : un nom tiré d'une clé (l'utilisateur de la VM, son hôte) et égal à un mot d'une valeur est remplacé partout — `adminUsername: "linux"` fausse `osType` ; le texte libre sous une clé que l'anonymisation ne liste pas reste à la relecture humaine.
 
 ## La machine à invariants
 
