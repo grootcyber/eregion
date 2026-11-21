@@ -1848,10 +1848,10 @@ briques:
   - id: o-stratus-garants-scope
     composant: orodruin
     poste: o-armer
-    nom: "The contract's Stratus guarantees gate only an arming for a Stratus run — a bench env file naming the Stratus subscription no longer turns Gothmog, a VM run or the drill passive"
+    nom: "The contract's Stratus guarantees gate only an arming for a Stratus run — a bench env file naming the Stratus subscription no longer turns Gothmog, a VM run or the drill passive; the phase's no-contract gate is pinned by its own message (ORG1b)"
     etat: main
     release: "0.6"
-    lots: [ORG1]
+    lots: [ORG1, ORG1b]
     issue: 1003
     doc: docs/design/orodruin-contract.md
 
