@@ -644,7 +644,10 @@ def test_executor_passive_without_a_session(tmp_path):
     r = resolve(TID, binary_path=binary, stratus_dir=_stratus_dir(tmp_path, digest),
                 catalog=_catalog())
     ex = StratusExecutor(r, None, target=RG_SCOPE, run=_ok_run())   # no armed contract
-    with pytest.raises(Passive):
+    # The first gate, by its own message: a None session is "no armed Orodruin contract", not the
+    # Stratus-guarantees net below it (ORG1, which also refuses a None session, with another
+    # message). Matching the message keeps M4329 (first gate removed) killed (ORG1b).
+    with pytest.raises(Passive, match="no armed Orodruin contract"):
         ex.warmup()
 
 
