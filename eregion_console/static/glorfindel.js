@@ -3670,7 +3670,7 @@ function _originProofTxt(r) {
 function _ownChannelTxt(r) {
   const n = Number(r.own_channel_count) || 0;
   const rows = Number(r.own_channel_rows) || 0;
-  const ownTxt = n > 0
+  const said = n > 0
     ? `${n} write(s) of the watch's own return channel set aside (${rows} row(s) left without a card) — its identity, the container of EREGION_WATCH_CHANNEL, the objects it writes there (SLF1)${r.own_channel_last ? ' · last ' + _relTime(r.own_channel_last) : ''}`
     : '';
   const unread = r.own_channel_unread
@@ -3681,12 +3681,6 @@ function _ownChannelTxt(r) {
   const unparsed = bad > 0
     ? `${bad} row(s) whose BlobWriters column could not be read: nothing set aside of them (SLF1b)${r.own_channel_unparsed_last ? ' · last ' + _relTime(r.own_channel_unparsed_last) : ''}`
     : '';
-  // SLF2 (#1010): of the writes, those the record of the watch before this one stood in for.
-  const back = Number(r.own_channel_restart) || 0;
-  const restart = back > 0
-    ? `${back} of them by the record of the watch before this one, its identity not read yet — its identity, its container, as many writes as its record holds in the rule's window (SLF2)${r.own_channel_restart_last ? ' · last ' + _relTime(r.own_channel_restart_last) : ''}`
-    : '';
-  const said = [ownTxt, restart].filter(Boolean).join(' · ');
   return [said, unread, unparsed].filter(Boolean).join(' · ');
 }
 
@@ -3701,7 +3695,7 @@ function _exerciseChannelTxt(r) {
   const config = {
     'unset': 'exercise channel configured, EREGION_ORODRUIN_PRINCIPAL_ID unset: none of its writes set aside, every row a card (SLF2)',
     'malformed': 'EREGION_ORODRUIN_PRINCIPAL_ID is no object id: none of its writes set aside, every row a card (SLF2)',
-    'no channel': 'EREGION_ORODRUIN_PRINCIPAL_ID set, EREGION_EXERCISE_CHANNEL unset or refused: none of its writes set aside (SLF2)',
+    'no channel': 'EREGION_EXERCISE_CHANNEL unset or refused (its URL not one container of a storage account): none of Orodruin\'s writes set aside (SLF2)',
   }[r.exercise_channel_config] || '';
   return [said, config].filter(Boolean).join(' · ');
 }

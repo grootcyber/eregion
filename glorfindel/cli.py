@@ -1558,9 +1558,11 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
         console.print("[dim]Canal d'exercices : les écritures d'Orodruin (son identité, son conteneur, son "
                       "compte) écartées de la règle d'exfiltration, comptées sur la règle[/dim]")
     elif _oro_exercise[1]:
-        console.print(f"[yellow]Canal d'exercices : {_outside(_own_channel.ORODRUIN_ENV)} "
-                      f"{_outside({'unset': 'absente', 'malformed': 'pas un object id'}.get(_oro_exercise[1], 'sans canal'))}"
-                      " — aucune écriture d'Orodruin n'est écartée de la règle d'exfiltration[/yellow]")
+        _why = {"unset": f"{_own_channel.ORODRUIN_ENV} absente",
+                "malformed": f"{_own_channel.ORODRUIN_ENV} n'est pas un object id"}.get(
+                    _oro_exercise[1], f"{_own_channel.EXERCISE_ENV} absente ou refusée")
+        console.print(f"[yellow]Canal d'exercices : {_outside(_why)} — aucune écriture d'Orodruin n'est "
+                      "écartée de la règle d'exfiltration[/yellow]")
 
     if _rules_file:
         try:

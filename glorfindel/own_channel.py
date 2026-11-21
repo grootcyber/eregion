@@ -39,24 +39,17 @@ JSON text of at most ``WRITERS_MAX`` characters that decodes to one. A text unre
 that is not a list of objects sets nothing aside, never raises, and is said: ``unparsed``, counted
 beside ``unread`` in the rule's status.
 
-SLF2 (#1010), two more forms seen on the 21/11:
-
-- **Orodruin's exercise channel.** Orodruin publishes its windows and its run reports in the
-  exercise channel (``EREGION_EXERCISE_CHANNEL``, eregion_core/exercise_channel.py) — a PutBlob from
-  its private address, on the account of the watch's channel. An entry of BlobWriters is set aside
-  only when all of it holds: the account is the exercise channel's, the container is its container,
-  and the writer is Orodruin's identity — the object id of its managed identity's principal,
-  ``EREGION_ORODRUIN_PRINCIPAL_ID`` in the watch's environment (Imladris's host.env, never the
-  repository), never an address. Without that id (or the channel), nothing is set aside, and the
-  rule's status says why (``exercise_config``); an id that is no object id, the same.
-- **The watch that restarts.** The watch keeps, in its own state (``~/.glorfindel/own_channel.json``),
-  its identity and when it wrote in its channel over the rule's window (``LOOKBACK_S``). A watch that
-  starts and cannot read its own identity yet reads the record of the one before: the writes of
-  **that** identity, in **that** container of **that** account, are set aside up to the number the
-  record holds in the window (``Channel.budget``) — never more, never another identity's, never once
-  its own identity is read (then the record is not used: an identity changed is another identity).
-  A record absent, unreadable, of another channel or of nothing in the window: nothing stands in,
-  the identity is « unread », as before. Counted (``restart``), said.
+SLF2 (#1010): **Orodruin's exercise channel**, a form seen on the 21/11. Orodruin publishes its
+windows and its run reports in the exercise channel (``EREGION_EXERCISE_CHANNEL``, eregion_core/exercise_channel.py) — a PutBlob from
+its private address, on the account of the watch's channel. An entry of BlobWriters is set aside
+only when all of it holds: the account is the exercise channel's, the container is its container,
+and the writer is Orodruin's identity — the object id of its managed identity's principal,
+``EREGION_ORODRUIN_PRINCIPAL_ID`` in the watch's environment (Imladris's host.env, never the
+repository), never an address. Without that id (or the channel), nothing is set aside, and the
+rule's status says why (``exercise_config``); an id that is no object id, the same. Every object
+Orodruin's identity writes in its container counts — a choice made, its reason in
+docs/design/modele-de-menace.md. The watch that restarts (the other card of the 21/11) is left to a
+measure: its log says « the watch's identity could not be read », as before.
 """
 from __future__ import annotations
 
@@ -65,10 +58,7 @@ import hashlib
 import json
 import os
 import re
-import tempfile
-import threading
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable
 from urllib.parse import urlsplit
@@ -90,33 +80,16 @@ EXERCISE_ENV = "EREGION_EXERCISE_CHANNEL"
 ORODRUIN_ENV = "EREGION_ORODRUIN_PRINCIPAL_ID"
 EXERCISE_REASON = ("Orodruin's exercise channel: its identity (EREGION_ORODRUIN_PRINCIPAL_ID), the container of "
                    "EREGION_EXERCISE_CHANNEL, its account (SLF2)")
-RESTART_REASON = ("the watch before this one: its identity, its container, as many writes as its record holds "
-                  "in the rule's window (SLF2)")
-# SLF2: the watch's record of its own writes, read by the next one at its start.
-_STATE_FILE = Path.home() / ".glorfindel" / "own_channel.json"
-# The rule's window (`ago(5m)`) and a minute of margin: a write older than this is in no row of it.
-LOOKBACK_S = 6 * 60
-# The record holds at most this many writes (a heartbeat a minute, the detections of a window); past
-# it, the oldest leave — fewer stand in, never more. And its file, at most STATE_MAX bytes read.
-MAX_WRITES = 512
-STATE_MAX = 64 * 1024
 _GUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
-
-
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 @dataclass(frozen=True)
 class Channel:
     """The return channel the watch writes: its account, its container, and the object id of the
-    identity it writes with ("" when it could not be read). ``budget`` (SLF2): None when that identity
-    is this watch's own, read; else the number of writes the record of the watch before this one holds
-    in the rule's window — at most that many set aside."""
+    identity it writes with ("" when it could not be read)."""
     account: str
     container: str
     writer: str = ""
-    budget: int | None = None
 
 
 def guid(value) -> str:
@@ -141,143 +114,30 @@ def parse_url(url: str) -> tuple[str, str] | None:
     return account, container
 
 
-@dataclass(frozen=True)
-class Previous:
-    """SLF2: the record a watch kept of its own writes — its identity, and when it wrote."""
-    writer: str
-    writes: tuple[datetime, ...] = ()
-
-    def vouched(self, now: datetime) -> int:
-        """How many of its writes fall in the rule's window at ``now`` (one dated after now: none)."""
-        return sum(1 for w in self.writes if now - timedelta(seconds=LOOKBACK_S) <= w <= now)
-
-
-def _when(value) -> datetime | None:
-    """An ISO date with its offset, else None."""
-    if not isinstance(value, str) or len(value) > 64:
-        return None
-    try:
-        at = datetime.fromisoformat(value)
-    except ValueError:
-        return None
-    return at if at.tzinfo is not None else None
-
-
-def load_previous(account: str, container: str, path: Path | None = None) -> Previous | None:
-    """SLF2: the record of the watch before this one, for this very channel — None when there is none,
-    or it cannot be read whole: bigger than STATE_MAX, no JSON object, another account or container, a
-    writer that is no object id, a list of writes that is not one of dates (or longer than MAX_WRITES).
-    An unreadable record never stands in. Never raises."""
-    path = _STATE_FILE if path is None else path
-    try:
-        with open(path, "rb") as f:
-            data = f.read(STATE_MAX + 1)
-        if len(data) > STATE_MAX:
-            return None
-        raw = json.loads(data)
-    except (OSError, ValueError, RecursionError):
-        return None
-    if not isinstance(raw, dict) or raw.get("account") != account or raw.get("container") != container:
-        return None
-    writer = raw.get("writer")
-    if not isinstance(writer, str) or guid(writer) != writer:
-        return None
-    writes = raw.get("writes")
-    if not isinstance(writes, list) or len(writes) > MAX_WRITES:
-        return None
-    times = [_when(w) for w in writes]
-    if any(t is None for t in times):
-        return None
-    return Previous(writer, tuple(times))
-
-
-class Recorder:
-    """SLF2: this watch's record of its own writes, kept for the next one — written after each write
-    its publisher makes, once its identity is read; the writes past the rule's window leave it."""
-
-    def __init__(self, account: str, container: str, writer: Callable[[], str],
-                 previous: Previous | None = None, path: Path | None = None):
-        self.account, self.container, self._writer = account, container, writer
-        self._path = path
-        self._lock = threading.Lock()
-        self._oid = previous.writer if previous is not None else ""
-        self._writes = list(previous.writes) if previous is not None else []
-
-    def wrote(self, _name: str = "") -> None:
-        """A write acknowledged: kept under this watch's identity. Never raises (the publisher's)."""
-        try:
-            oid = guid(self._writer())
-        except Exception:
-            return
-        if not oid:
-            return
-        now = _now()
-        with self._lock:
-            if oid != self._oid:
-                self._oid, self._writes = oid, []
-            keep = [w for w in self._writes if now - timedelta(seconds=LOOKBACK_S) <= w <= now]
-            self._writes = (keep + [now])[-MAX_WRITES:]
-            doc = {"account": self.account, "container": self.container, "writer": oid,
-                   "writes": [w.isoformat() for w in self._writes]}
-            try:
-                _save_state(doc, self._path)
-            except Exception:
-                pass
-
-
-def _save_state(doc: dict, path: Path | None = None) -> None:
-    """Atomic write (tmp + rename), as the rule's status."""
-    path = _STATE_FILE if path is None else path
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".own_channel.", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(doc, f)
-        os.replace(tmp, path)
-    except BaseException:
-        Path(tmp).unlink(missing_ok=True)
-        raise
-
-
-def of_publisher(publisher, *, previous: Previous | None | bool = True,
-                 now: Callable[[], datetime] = _now) -> Callable[[], Channel | None] | None:
+def of_publisher(publisher) -> Callable[[], Channel | None] | None:
     """What the RulePoller reads at each pass: the channel this publisher writes, with its writer.
-    None for no storage channel (a local channel of verdicts writes no blob). SLF2: the record of the
-    watch before this one read once, here (``previous``: True reads it from the state; a test hands its
-    own); this publisher's writes recorded for the next one."""
+    None for no storage channel (a local channel of verdicts writes no blob)."""
     parsed = parse_url(str(getattr(publisher, "channel", "") or ""))
     writer = getattr(publisher, "writer", None)
     if parsed is None or not callable(writer):
         return None
     account, container = parsed
-    if previous is True:
-        previous = load_previous(account, container)
-    previous = previous if isinstance(previous, Previous) else None
-    try:
-        publisher.on_written = Recorder(account, container, writer, previous).wrote
-    except Exception:
-        pass
 
     def current() -> Channel | None:
         try:
             oid = str(writer() or "")
         except Exception:
             oid = ""
-        if oid or previous is None:
-            return Channel(account, container, oid)
-        # SLF2: this watch's identity not read yet — the one before stands in, its writes only, as
-        # many as its record holds in the window; none in it: unread, as before.
-        n = previous.vouched(now())
-        return Channel(account, container, previous.writer, budget=n) if n > 0 else Channel(account, container, "")
+        return Channel(account, container, oid)
     return current
 
 
 def of_env(env=None) -> tuple[Channel | None, str]:
     """SLF2: Orodruin's exercise channel, as the watch's environment declares it — (the channel and
     Orodruin's identity, "") when both are there; else (None, why): ``unset`` (the channel declared,
-    not the identity), ``malformed`` (an identity that is no object id), ``no channel`` (the identity
-    declared, the channel not, or a URL the channel refuses). Neither declared: (None, "") — no
-    exercise channel on this watch. Never raises."""
+    not the identity), ``malformed`` (an identity that is no object id), ``no channel`` (the channel
+    not declared while the identity is, or a URL the channel refuses — the identity declared or not).
+    Neither declared: (None, "") — no exercise channel on this watch. Never raises."""
     env = os.environ if env is None else env
     url = str(env.get(EXERCISE_ENV) or "").strip()
     raw = str(env.get(ORODRUIN_ENV) or "").strip()
@@ -484,8 +344,7 @@ def settle(rows: list[dict], channel: Channel | None,
     while a channel is configured and the watch's identity is not read (nothing set aside),
     ``unparsed`` the rows of the channel's account whose column could not be read (`writers_of`:
     nothing set aside of them, SLF1b). SLF2: Orodruin's writes in its exercise channel first
-    (`settle_exercise`: ``exercise_writes``, ``exercise_rows``); ``restart`` the writes set aside by
-    the record of the watch before this one (``Channel.budget``) — each of the three only when not 0."""
+    (`settle_exercise`: ``exercise_writes``, ``exercise_rows``, each only when not 0)."""
     said = {"writes": 0, "rows": 0, "unread": False, "unparsed": 0}
     rows = settle_exercise(rows, exercise, channel, said)
     out: list[dict] = []
@@ -513,12 +372,6 @@ def settle(rows: list[dict], channel: Channel | None,
             continue
         own = [o for o in (_own(e, channel) for e in entries) if o is not None]
         writes = sum(w for w, _ in own)
-        if channel.budget is not None:
-            # SLF2: the watch before this one stands in — no more writes than its record holds.
-            if writes > channel.budget:
-                own, writes = [], 0
-            if writes:
-                said["restart"] = said.get("restart", 0) + min(writes, total)
         if not writes:
             out.append(row)
             continue

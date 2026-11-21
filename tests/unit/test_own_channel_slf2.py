@@ -1,13 +1,10 @@
-"""SLF2 (#1010): Orodruin's exercise channel and the watch that restarts no longer make a card
-`data-exfiltration-blob` — two forms seen on the 21/11 (the cards of the session G1, judged Wrong).
-
-1. **Orodruin's exercise channel.** A single PutBlob from Orodruin's private address to the account of
-   the channels (`infra/orodruin/main.tf`, `azurerm_storage_account.channel`), `EgressBytes` 0:
-   Orodruin publishing its run's report in the exercise channel (``EREGION_EXERCISE_CHANNEL``,
-   eregion_core/exercise_channel.py, ``runs/<run_id>.json``). Unattributed, a snapshot at 40 %.
-2. **The watch that restarts.** After the restart of 16:48 UTC (the v0.6.3 deployed), lines of the
-   watch's heartbeat, from Imladris's address, made a card for a window: the watch that starts knew
-   nothing of the writes of the one before.
+"""SLF2 (#1010): Orodruin's exercise channel no longer makes a card `data-exfiltration-blob` — a form
+seen on the 21/11 (a card of the session G1, judged Wrong): a single PutBlob from Orodruin's private
+address to the account of the channels (`infra/orodruin/main.tf`, `azurerm_storage_account.channel`),
+`EgressBytes` 0 — Orodruin publishing its run's report in the exercise channel
+(``EREGION_EXERCISE_CHANNEL``, eregion_core/exercise_channel.py, ``runs/<run_id>.json``). Unattributed, a
+snapshot at 40 %. The other card of the 21/11, the watch that restarts, is left to a measure (Jonathan,
+21/11): docs/glorfindel.md.
 
 Read here on the SDK's own objects (tests/unit/sdk_logs.py, SDK1a): the shipped query run as written
 over forged writes (tests/unit/kql_subset.py), its rows the body the Log Analytics API sends — a
@@ -19,8 +16,6 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import timedelta
-from types import SimpleNamespace
 
 import pytest
 
@@ -28,8 +23,8 @@ from glorfindel import own_channel
 from glorfindel.detection_rules import RulePoller
 
 from .test_own_channel import (
-    ACCOUNT, BREE, CHANNEL, CONTAINER, GONDOLIN, GONDOLIN_IP, JS, NOW, OTHER_OID, URL, WATCH_IP, WATCH_OID,
-    _Credential, _jwt, _Registry, _rule, _write,
+    ACCOUNT, BREE, CHANNEL, CONTAINER, GONDOLIN, GONDOLIN_IP, JS, NOW, OTHER_OID, WATCH_IP, WATCH_OID,
+    _Registry, _rule, _write,
 )
 from . import sdk_logs
 from .test_own_channel_sdk import _detector, _heartbeats
@@ -151,6 +146,11 @@ def test_the_exercise_channel_is_read_from_the_watch_s_environment():
         assert own_channel.of_env({**env, "EREGION_ORODRUIN_PRINCIPAL_ID": bad}) == (None, "malformed")
     assert own_channel.of_env({"EREGION_ORODRUIN_PRINCIPAL_ID": ORODRUIN_OID}) == (None, "no channel")
     assert own_channel.of_env({**env, "EREGION_EXERCISE_CHANNEL": EXERCISE_URL + "/sub"}) == (None, "no channel")
+    # A URL the channel refuses, no identity set: « no channel » too — and said so, never « the id set ».
+    assert own_channel.of_env({"EREGION_EXERCISE_CHANNEL": EXERCISE_URL + "?sv=x"}) == (None, "no channel")
+    said = JS.read_text().split("function _exerciseChannelTxt(r) {", 1)[1].split("\n}\n", 1)[0]
+    line = next(x for x in said.splitlines() if "'no channel'" in x)
+    assert "EREGION_EXERCISE_CHANNEL unset or refused" in line and "PRINCIPAL_ID set" not in line
     assert own_channel.of_env({}) == (None, "")
     assert own_channel.current_exercise() == (None, "")         # nothing registered: nothing
 
@@ -228,163 +228,11 @@ def test_an_attack_started_is_not_answered_by_orodruin_s_report(monkeypatch):
     assert out["raw_signal"]["detected_data"]["CallerIpAddress"] == GONDOLIN_IP
 
 
-# ── 2. the watch that restarts ───────────────────────────────────────────────────────────────────
-
-def _record(writer=WATCH_OID, writes=3, account=ACCOUNT, container=CONTAINER, **over):
-    """The record the watch before this one left: its identity, its writes over the last minutes."""
-    doc = {"account": account, "container": container, "writer": writer,
-           "writes": [(NOW - timedelta(minutes=1 + i)).isoformat() for i in range(writes)]}
-    doc.update(over)
-    own_channel._STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    own_channel._STATE_FILE.write_text(json.dumps(doc), encoding="utf-8")
-    return doc
-
-
-def _starting(oid=""):
-    """The channel as a watch that just started reads it: its identity not read yet (``oid`` "")."""
-    pub = SimpleNamespace(channel=URL, writer=lambda: oid)
-    return own_channel.of_publisher(pub, now=lambda: NOW)
-
-
-def test_the_heartbeats_just_after_a_restart_are_set_aside_and_said(caplog):
-    """Fini quand: the heartbeats of the watch before this one, in the window, its identity in its
-    container, while this one cannot read its own yet — set aside through the SDK, counted (`restart`),
-    said in the log."""
-    caplog.set_level(logging.INFO, logger="glorfindel.detection_rules")
-    _record()
-    channel = _starting()()
-    assert channel == own_channel.Channel(ACCOUNT, CONTAINER, WATCH_OID, budget=3)
-    sent, st, p = _poll(_heartbeats(), channel=channel, exercise=(None, ""))
-    assert sent == []
-    oc = st["own_channel"]
-    assert (oc["writes"], oc["rows"], oc["restart"]) == (3, 1, 3) and oc["restart_last"] and "unread" not in oc
-    snap = next(s for s in p.status_snapshot() if s["name"] == RULE)
-    assert (snap["own_channel_count"], snap["own_channel_restart"]) == (3, 3)
-    assert any("by the record of the watch before this one" in r.getMessage() for r in caplog.records)
-
-
-def test_once_its_identity_is_read_the_record_stands_in_for_nothing():
-    """The watch's own identity read: the record is not used — the same identity sets its writes aside
-    as before (no `restart`); another identity, the record's writes are another identity's: a card."""
-    _record()
-    assert _starting(WATCH_OID)() == CHANNEL
-    sent, st, _ = _poll(_heartbeats(), channel=_starting(WATCH_OID)(), exercise=(None, ""))
-    assert sent == [] and "restart" not in st["own_channel"]
-    sent, _, _ = _poll(_heartbeats(), channel=_starting(OTHER_OID)(), exercise=(None, ""))
-    assert len(sent) == 1
-
-
-def test_another_identity_or_container_at_restart_stays_a_card():
-    """Fini quand: at restart, never another identity's writes, nor the record's identity elsewhere."""
-    _record()
-    channel = _starting()()
-    for lines in (_heartbeats(oid=OTHER_OID), _heartbeats(container="backup"), _heartbeats(account="stattacker")):
-        sent, st, _ = _poll(lines, channel=channel, exercise=(None, ""))
-        assert len(sent) == 1, lines
-        assert not (st.get("own_channel") or {}).get("restart")
-
-
-def test_more_writes_than_the_record_holds_stay_a_card():
-    """No more than the record holds in the window: two recorded, three in the row — a card."""
-    _record(writes=2)
-    sent, st, _ = _poll(_heartbeats(3), channel=_starting()(), exercise=(None, ""))
-    assert len(sent) == 1 and not (st.get("own_channel") or {}).get("writes")
-    _record(writes=3)
-    sent, _, _ = _poll(_heartbeats(3), channel=_starting()(), exercise=(None, ""))
-    assert sent == []
-
-
-def _bad():
-    return {
-        "absent": None,
-        "not json": "{not json",
-        "a list": json.dumps([]),
-        "another account": json.dumps({**_doc(), "account": "stattacker"}),
-        "another container": json.dumps({**_doc(), "container": "backup"}),
-        "a writer that is no object id": json.dumps({**_doc(), "writer": "watch"}),
-        "a writer in upper case": json.dumps({**_doc(), "writer": WATCH_OID.upper()}),
-        "writes that are no list": json.dumps({**_doc(), "writes": 999}),
-        "a write that is no date": json.dumps({**_doc(), "writes": [*_doc()["writes"], "soon"]}),
-        "a date without its offset": json.dumps({**_doc(), "writes": ["2026-11-19T09:59:00"]}),
-        "too many writes": json.dumps({**_doc(), "writes": [_doc()["writes"][0]] * (own_channel.MAX_WRITES + 1)}),
-        "past its bound": json.dumps({**_doc(), "pad": "x" * own_channel.STATE_MAX}),
-        "writes past the window": json.dumps({**_doc(), "writes": [(NOW - timedelta(minutes=7)).isoformat()]}),
-        "writes after now": json.dumps({**_doc(), "writes": [(NOW + timedelta(minutes=1)).isoformat()]}),
-    }
-
-
-def _doc():
-    return {"account": ACCOUNT, "container": CONTAINER, "writer": WATCH_OID,
-            "writes": [(NOW - timedelta(minutes=1 + i)).isoformat() for i in range(3)]}
-
-
-@pytest.mark.parametrize("case", list(_bad()))
-def test_an_unreadable_record_never_stands_in(case, caplog):
-    """Fini quand: a record absent, unreadable, of another channel, or of nothing in the window is never
-    « all known » — the identity is unread, as before: a card, and said."""
-    caplog.set_level(logging.WARNING, logger="glorfindel.detection_rules")
-    text = _bad()[case]
-    if text is not None:
-        own_channel._STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        own_channel._STATE_FILE.write_text(text, encoding="utf-8")
-    channel = _starting()()
-    assert channel == own_channel.Channel(ACCOUNT, CONTAINER, "")
-    sent, st, _ = _poll(_heartbeats(), channel=channel, exercise=(None, ""))
-    assert len(sent) == 1 and st["own_channel"]["unread"] and not st["own_channel"]["writes"]
-    assert any("identity could not be read" in r.getMessage() for r in caplog.records)
-
-
-def test_the_publisher_keeps_the_record_for_the_next_watch():
-    """The real publisher: each write acknowledged recorded under its identity, read by the next watch
-    at its start — the writes past the window leave the record; another identity starts it again."""
-    from eregion_core.watch_channel import Publisher
-    puts = []
-
-    def put(url, **_kw):
-        puts.append(url)
-        return SimpleNamespace(ok=True, status_code=201)
-    pub = Publisher(URL, credential=_Credential(_jwt({"oid": WATCH_OID})), put=put, windows=lambda: [])
-    pub.SIGNS = False
-    own_channel.of_publisher(pub, previous=None)
-    pub.tick()
-    assert puts == [f"{URL}/heartbeat.json"]
-    rec = json.loads(own_channel._STATE_FILE.read_text())
-    assert (rec["account"], rec["container"], rec["writer"], len(rec["writes"])) == (ACCOUNT, CONTAINER, WATCH_OID, 1)
-    prev = own_channel.load_previous(ACCOUNT, CONTAINER)
-    assert prev.writer == WATCH_OID and len(prev.writes) == 1
-    assert own_channel.load_previous(ACCOUNT, "backup") is None
-    # The next watch carries the record on under the same identity, never another one's.
-    nxt = Publisher(URL, credential=_Credential(_jwt({"oid": OTHER_OID})), put=put, windows=lambda: [])
-    nxt.SIGNS = False
-    own_channel.of_publisher(nxt)
-    nxt.tick()
-    rec = json.loads(own_channel._STATE_FILE.read_text())
-    assert rec["writer"] == OTHER_OID and len(rec["writes"]) == 1
-    # A watch whose identity is not read records nothing.
-    blind = Publisher(URL, credential=_Credential(error=RuntimeError("imds")), put=put, windows=lambda: [])
-    blind.SIGNS = False
-    own_channel.of_publisher(blind)
-    blind.on_written("heartbeat.json")
-    assert json.loads(own_channel._STATE_FILE.read_text()) == rec
-
-
-def test_the_record_keeps_the_window_alone():
-    """Writes older than the rule's window leave the record; at most MAX_WRITES are kept."""
-    old = (NOW - timedelta(hours=1)).isoformat()
-    rec = own_channel.Recorder(ACCOUNT, CONTAINER, lambda: WATCH_OID,
-                               own_channel.Previous(WATCH_OID, (own_channel._when(old),)))
-    rec.wrote("heartbeat.json")
-    doc = json.loads(own_channel._STATE_FILE.read_text())
-    assert len(doc["writes"]) == 1 and doc["writes"][0] != old
-
-
 # ── the console: the rule's line and its details, through `_attr` ───────────────────────────────
 
-def test_the_console_says_orodruin_s_writes_and_the_restart_on_the_rule():
+def test_the_console_says_orodruin_s_writes_on_the_rule():
     txt = JS.read_text()
     fn = txt.split("function _exerciseChannelTxt(r) {", 1)[1].split("\n}\n", 1)[0]
     assert "r.exercise_channel_count" in fn and "EREGION_ORODRUIN_PRINCIPAL_ID unset" in fn
     assert "_attr(_exerciseChannelTxt(r))" in txt and "_attr(_exerciseChannelTxt(rule))" in txt
     assert "${oro}" in txt
-    own = txt.split("function _ownChannelTxt(r) {", 1)[1].split("\n}\n", 1)[0]
-    assert "r.own_channel_restart" in own and "the record of the watch before this one" in own

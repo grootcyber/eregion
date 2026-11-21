@@ -682,8 +682,7 @@ def isolated_glorfindel_home(tmp_path, monkeypatch):
     monkeypatch.setattr(run_command, "_SUPERSEDED", {})
     import glorfindel.drill_watch as drill_watch     # DRL1b: the drill of the week's verdicts
     monkeypatch.setattr(drill_watch, "_STORE", home / "drill_verdicts.json")
-    import glorfindel.own_channel as own_channel     # SLF2: the watch's record of its own writes
-    monkeypatch.setattr(own_channel, "_STATE_FILE", home / "own_channel.json")
+    import glorfindel.own_channel as own_channel     # SLF1, SLF2: the channels the watch registers
     monkeypatch.setattr(own_channel, "_SOURCE", None)
     monkeypatch.setattr(own_channel, "_EXERCISE", (None, ""))
     import glorfindel.cli as glorfindel_cli          # the injectors' heartbeat directory (SEC3)

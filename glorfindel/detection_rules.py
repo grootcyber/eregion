@@ -72,10 +72,7 @@ def own_channel_counts(status: dict) -> dict:
     return {"own_channel_count": n("writes"), "own_channel_rows": n("rows"),
             "own_channel_last": str(oc.get("last") or ""), "own_channel_unread": str(oc.get("unread") or ""),
             "own_channel_unparsed": n("unparsed"),
-            "own_channel_unparsed_last": str(oc.get("unparsed_last") or ""),
-            # SLF2: of the writes, those the record of the watch before this one stood in for.
-            "own_channel_restart": n("restart"),
-            "own_channel_restart_last": str(oc.get("restart_last") or "")}
+            "own_channel_unparsed_last": str(oc.get("unparsed_last") or "")}
 
 
 def exercise_channel_counts(status: dict) -> dict:
@@ -2014,9 +2011,6 @@ class RulePoller:
         if own["writes"]:
             logger.info("detection rule '%s': %d write(s) set aside (%d row(s) left without a card) — %s",
                         rule.name, own["writes"], own["rows"], own_channel.REASON)
-        if own.get("restart"):
-            logger.info("detection rule '%s': %d of them by the record of the watch before this one, its "
-                        "identity not read yet — %s", rule.name, own["restart"], own_channel.RESTART_REASON)
         if own.get("exercise_writes"):
             logger.info("detection rule '%s': %d write(s) of Orodruin set aside (%d row(s) left without a "
                         "card) — %s", rule.name, own["exercise_writes"], own.get("exercise_rows", 0),
@@ -2027,7 +2021,7 @@ class RulePoller:
                            "aside, every row a card (SLF2)", rule.name,
                            {"unset": "declared, EREGION_ORODRUIN_PRINCIPAL_ID unset",
                             "malformed": "declared, EREGION_ORODRUIN_PRINCIPAL_ID is no object id",
-                            }.get(exercise_config, "unread: EREGION_EXERCISE_CHANNEL unset or refused"))
+                            }.get(exercise_config, "not read: EREGION_EXERCISE_CHANNEL unset or refused"))
         if own["unread"] and not self.__dict__.get("_own_unread_said"):
             self._own_unread_said = True       # said once by this watch; the status says it at each pass
             logger.warning("detection rule '%s': the return channel is configured but the watch's identity "
@@ -2219,11 +2213,6 @@ class RulePoller:
                     "rows": was["own_channel_rows"] + own["rows"],
                     "last": now_iso if own["writes"] else was["own_channel_last"],
                     "reason": own_channel.REASON,
-                    # SLF2: of them, the writes the record of the watch before this one stood in for.
-                    **({"restart": was["own_channel_restart"] + own.get("restart", 0),
-                        "restart_last": now_iso if own.get("restart") else was["own_channel_restart_last"],
-                        "restart_reason": own_channel.RESTART_REASON}
-                       if own.get("restart") or was["own_channel_restart"] else {}),
                     **({"container": channel.container} if channel is not None else {}),
                     **({"unread": now_iso} if own["unread"] else {}),
                 }
