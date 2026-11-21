@@ -685,8 +685,8 @@ def isolated_glorfindel_home(tmp_path, monkeypatch):
     import glorfindel.own_channel as own_channel     # SLF1, SLF2: the channels the watch registers
     monkeypatch.setattr(own_channel, "_SOURCE", None)
     monkeypatch.setattr(own_channel, "_EXERCISE", (None, ""))
-    import glorfindel.cli as glorfindel_cli          # the injectors' heartbeat directory (SEC3)
-    monkeypatch.setattr(glorfindel_cli, "_INJECTORS_DIR", home / "injectors")
+    import glorfindel.watch.beat as watch_beat       # the injectors' heartbeat directory (SEC3, WCH1)
+    monkeypatch.setattr(watch_beat, "_INJECTORS_DIR", home / "injectors")
     try:
         import eregion_console.api as api
         monkeypatch.setattr(api, "_RESTORE_TRACKING", home / "restore_in_progress.json")
@@ -773,7 +773,7 @@ def no_console_settings(tmp_path, monkeypatch):
 @pytest.fixture(autouse=True)
 def isolated_exercise_windows(tmp_path, monkeypatch):
     """B2: the injectors' exercise windows live under tmp, never the real runs/exercises.
-    H-1: the watch reads each VM's enrollment from its tags at startup (glorfindel/cli.py);
+    H-1: the watch reads each VM's enrollment from its tags at startup (glorfindel/watch/loop.py);
     here every target is enrolled, and no Azure call is made — the tests of the guard pass
     their own check (tests/unit/test_exercise_guard.py)."""
     monkeypatch.setenv("EREGION_EXERCISES_DIR", str(tmp_path / "exercises"))

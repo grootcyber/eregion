@@ -130,7 +130,8 @@ def _watch(tmp_path, monkeypatch, lines, decide, expect, admit_all=False):
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setattr(cli, "_INJECTORS_DIR", home / ".glorfindel" / "injectors")
+    from glorfindel.watch import beat, loop, runs_channel
+    monkeypatch.setattr(beat, "_INJECTORS_DIR", home / ".glorfindel" / "injectors")
     runs = tmp_path / "runs"
     signals = runs / "annatar"
     signals.mkdir(parents=True)
@@ -152,7 +153,7 @@ def _watch(tmp_path, monkeypatch, lines, decide, expect, admit_all=False):
     monkeypatch.setattr(cli, "_find_rules_file", lambda: None)
     monkeypatch.setattr("eregion_core.inscription.TagEnrollment", lambda *a, **k: (lambda rid: True))
     if admit_all:
-        monkeypatch.setattr(cli, "_admit_from_runs", lambda data, source: (
+        monkeypatch.setattr(runs_channel, "_admit_from_runs", lambda console, data, source: (
             data, Signal(**{k: data.get(k, "") for k in Signal.__dataclass_fields__})))
     import atexit
     import signal as signalmod
@@ -178,7 +179,7 @@ def _watch(tmp_path, monkeypatch, lines, decide, expect, admit_all=False):
             raise KeyboardInterrupt
         return real_sleep(0)
 
-    monkeypatch.setattr(cli.time, "sleep", _sleep)
+    monkeypatch.setattr(loop.time, "sleep", _sleep)
     result = CliRunner().invoke(cli.cli, ["watch", str(runs), "--dry-run", "--interval", "0"])
     assert result.exit_code == 0, result.output
     return responded, buf.getvalue()

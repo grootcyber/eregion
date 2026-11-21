@@ -585,7 +585,7 @@ MUTANTS = [
      '    a, b = str(a or "").strip(), str(b or "").strip()\n'),
     ("M130", "Orodruin publishes the runs' debug files with the campaign (#167)", XCH,
      '_RUN_FILES = ("{run_id}.json",)\n', '_RUN_FILES = ("{run_id}.json", "{run_id}_debug.jsonl")\n'),
-    ("M131", "a campaign-report thread that fails to start stops the watch (#167)", GCLI,
+    ("M131", "a campaign-report thread that fails to start stops the watch (#167)", "glorfindel/watch/startup.py",
      "    except Exception as exc:  # the watch goes on without campaign reports\n",
      "    except ImportError as exc:  # the watch goes on without campaign reports\n"),
     ("M132", "a failing pass stops the campaign-report thread (#167)", HREP,
@@ -1246,7 +1246,7 @@ MUTANTS = [
      "docker-compose.yml",
      "  GLORFINDEL_DISCORD_BOT: ${DISCORD_BOT_TOKEN:+1}\n",
      "  GLORFINDEL_DISCORD_BOT: ${DISCORD_BOT_TOKEN:-}\n"),
-    ("M523", "the watch counts a Discord channel alone as alerting: no warning (M-3, review)", GCLI,
+    ("M523", "the watch counts a Discord channel alone as alerting: no warning (M-3, review)", "glorfindel/watch/startup.py",
      "    _has_alerting = alerting_configured()\n",
      '    _has_alerting = bool(os.environ.get("GLORFINDEL_WEBHOOK_URL") '
      'or os.environ.get("DISCORD_CHANNEL_ID"))\n'),
@@ -1701,36 +1701,38 @@ MUTANTS += [
     ("M837", "a quarantine card closed on an NSG read as unknown (I1F, review)", RQ,
      '            return seen[k].get("status") != "unknown" and k not in altered\n',
      "            return k not in altered\n"),
-    ("M835", "the watch's thread hands over only when something is recorded (I1F, review)", GCLI,
-     "        _watch_reassert_pass(ttl_connector, mode_override, _output_lock, _reassert_seen)\n",
+    ("M835", "the watch's thread hands over only when something is recorded (I1F, review)", "glorfindel/watch/housekeeping.py",
+     "        passes._watch_reassert_pass(self.console, self.ttl_connector, self.mode_override, self._output_lock,\n"
+     "                                    self._reassert_seen)\n",                       # re-anchored (WCH1)
      "        from glorfindel.actions import active_blocks, active_isolations\n"
      "        if active_isolations() or active_blocks():\n"
-     "            _watch_reassert_pass(ttl_connector, mode_override, _output_lock, _reassert_seen)\n"),
+     "            passes._watch_reassert_pass(self.console, self.ttl_connector, self.mode_override,\n"
+     "                                        self._output_lock, self._reassert_seen)\n"),
     ("M838", "the quarantine NSGs read in `quarantine_rg` only: one made in another group goes unseen "
              "(I1F, second review)", QUA,
      "            if (not _is_quarantine_nsg(nsg_id)\n",
      "            if (not _is_quarantine_nsg(nsg_id) or (self._quarantine_settings()[1] and "
      "f\"/resourcegroups/{self._quarantine_settings()[1].lower()}/\" not in nsg_id.lower())\n"),
-    ("M839", "the watch's pass stops on an empty local state (I1F, second review)", GCLI,
+    ("M839", "the watch's pass stops on an empty local state (I1F, second review)", "glorfindel/watch/passes.py",
      "    seen = seen if seen is not None else {}\n",
      "    seen = seen if seen is not None else {}\n"
      "    from glorfindel.actions import active_blocks, active_isolations\n"
      "    if not active_isolations() and not active_blocks():\n        return []\n"),
-    ("M895", "the watch's pass raises on an empty local state, the error swallowed (I1F, second review)", GCLI,
+    ("M895", "the watch's pass raises on an empty local state, the error swallowed (I1F, second review)", "glorfindel/watch/passes.py",
      "        report = reassert_pass(connector, autonomy)\n",
      "        from glorfindel.actions import active_blocks, active_isolations\n"
      "        if not active_isolations() and not active_blocks():\n"
      "            raise RuntimeError(\"nothing recorded\")\n"
      "        report = reassert_pass(connector, autonomy)\n"),
-    ("M896", "the watch's timer starts no pass when nothing is recorded (I1F, second review)", GCLI,
-     "        if time.time() - _last_reassert[0] < _reassert_every_s:\n            return\n",
-     "        if time.time() - _last_reassert[0] < _reassert_every_s:\n            return\n"
+    ("M896", "the watch's timer starts no pass when nothing is recorded (I1F, second review)", "glorfindel/watch/housekeeping.py",
+     "        if time.time() - self._last_reassert < self._reassert_every_s:\n            return\n",  # WCH1
+     "        if time.time() - self._last_reassert < self._reassert_every_s:\n            return\n"
      "        from glorfindel.actions import active_blocks, active_isolations\n        if not active_isolations() and not active_blocks():\n"
      "            return\n"),
     ("M897", "a listing that fails reads as empty: every quarantine card closed (I1F, second review)", RQ,
      '        log.warning("reassert: quarantine NSGs not checked (%s)", exc)\n        return\n',
      '        log.warning("reassert: quarantine NSGs not checked (%s)", exc)\n        listing = []\n'),
-    ("M898", "an unreadable configuration said at every pass (I1F, second review)", GCLI,
+    ("M898", "an unreadable configuration said at every pass (I1F, second review)", "glorfindel/watch/passes.py",
      '        if seen.get("config_error") != str(exc):\n', "        if True:\n"),
 ]
 
@@ -2005,7 +2007,7 @@ MUTANTS += [
      "        if not isinstance(value, list):\n            self.bad(f\"{where}.{k}\", f\"une liste est attendue",
      "        if isinstance(value, str):\n            value = list(value)\n"
      "        if not isinstance(value, list):\n            self.bad(f\"{where}.{k}\", f\"une liste est attendue"),
-    ("M773", "the watch starts on a refused config (A3)", GCLI,
+    ("M773", "the watch starts on a refused config (A3)", "glorfindel/watch/startup.py",
      "                      \"sur une configuration mal écrite.\\n\" + _esc_markup(str(exc)))\n        raise SystemExit(2)",
      "                      \"sur une configuration mal écrite.\\n\" + _esc_markup(str(exc)))"),
     ("M774", "the restore's extensions: back to the list of three CustomScript names (A3, L23)", RST,
@@ -2666,8 +2668,8 @@ MUTANTS += [
     ("M1214", "remove_orphan_rule outside the guards of the writes: no lock of the VMs it cuts (SEC3, N-07)",
      AZC, "AzureConnector.remove_orphan_rule = _orphan_writer(AzureConnector.remove_orphan_rule)\n", ""),
     ("M1215", "the watch dispatches every line of runs/ as it is: a forged recovery_complete decided on "
-              "(SEC3, V-05)", GCLI,
-     "                admitted = _admit_from_runs(data, path.name)\n", "                admitted = (data, _sig)\n"),
+              "(SEC3, V-05)", "glorfindel/watch/runs_channel.py",
+     "                admitted = _admit_from_runs(self.console, data, path.name)\n", "                admitted = (data, _sig)\n"),
     ("M1216", "an admitted line keeps its own fields: a query, an IP to block, an attribution (SEC3, V-05)", SO,
      "        clean[part] = {k: given[k] for k in fields[part] if k in given}\n", "        clean[part] = dict(given)\n"),
     ("M1217", "a run id that is a path admitted: the debug file written outside runs/ (SEC3, V-05)", SO,
@@ -2717,7 +2719,8 @@ MUTANTS += [
      "/app/runs/verdicts:ro\n      - ./technique_catalog.yaml:/app/technique_catalog.yaml:ro\n"
      "      - ${HOME}/.glorfindel:/root/.glorfindel:ro\n"),
     ("M1230", "the watch writes no heartbeat where the injectors read it: every run refused (SEC3, N-05)",
-     GCLI, "            _atomic_write_text(_INJECTOR_BEAT, json.dumps(beat_body(at, signer=_signer())), mode=0o644)",  # re-anchored (SEC19)
+     "glorfindel/watch/beat.py", "            _atomic_write_text(self._INJECTOR_BEAT, json.dumps(beat_body(at, signer=self._signer())), "
+     "mode=0o644)",  # re-anchored (SEC19, WCH1)
      "            pass  #"),
     ("M1231", "make glorfindel-start no longer creates ~/.glorfindel/injectors: docker makes it as root "
               "(SEC3)", MAKE,
@@ -2734,13 +2737,14 @@ MUTANTS += [
     ("M1234", "a link in the defender's directory taken for its file: one into runs/ passes (SEC3, V-05)", SO,
      "        return Path(path).resolve().parent == RECOVERY_SIGNALS_DIR.resolve()\n",
      "        return Path(path).parent == RECOVERY_SIGNALS_DIR\n"),
-    ("M1235", "the watch no longer makes the injectors' directory first: docker makes it as root (SEC3)", GCLI,
+    ("M1235", "the watch no longer makes the injectors' directory first: docker makes it as root (SEC3)", "glorfindel/watch/beat.py",
      "        _INJECTORS_DIR.mkdir(mode=0o755, parents=True, exist_ok=True)\n"
      "        os.chmod(_INJECTORS_DIR, 0o755)      # theirs to read, whatever the umask\n",
      "        pass\n"),
-    ("M1236", "the injectors' heartbeat owner-only: an image of another user can't read it (SEC3, N-05)", GCLI,
-     "            _atomic_write_text(_INJECTOR_BEAT, json.dumps(beat_body(at, signer=_signer())), mode=0o644)",  # re-anchored (SEC19)
-     "            _atomic_write_text(_INJECTOR_BEAT, json.dumps(beat_body(at, signer=_signer())))"),
+    ("M1236", "the injectors' heartbeat owner-only: an image of another user can't read it (SEC3, N-05)", "glorfindel/watch/beat.py",
+     "            _atomic_write_text(self._INJECTOR_BEAT, json.dumps(beat_body(at, signer=self._signer())), "
+     "mode=0o644)",  # re-anchored (SEC19, WCH1)
+     "            _atomic_write_text(self._INJECTOR_BEAT, json.dumps(beat_body(at, signer=self._signer())))"),
     ("M1237", "Annatar reads Glorfindel's state again: the blocks watcher back (SEC3, N-05)", ENG,
      "        # Glorfindel no longer writes, and the injectors no longer mount that state.\n"
      "        stop_event = threading.Event()\n",
@@ -2816,7 +2820,7 @@ MUTANTS += [
      "COMPONENT_ABSENT not in line:\n            return line.strip()",
      "COMPONENT_ABSENT not in stdout:\n            return line.strip()"),
     ("M870", "without Annatar, the reports' thread starts and fails every pass, never said at start (D1)",
-     "glorfindel/cli.py", "        from analysis import campaign_report  # noqa: F401\n", ""),
+     "glorfindel/watch/startup.py", "        from analysis import campaign_report  # noqa: F401\n", ""),
 ]
 TESTS.update({f"M{n}": D1_COMPONENTS for n in range(845, 849)})
 # (M849, make profile-detection leaving ~/.annatar to docker, is gone with SEC20: no compose service
@@ -4622,10 +4626,11 @@ MUTANTS += [
      "    if iso.get(\"release_failed\"):\n", "    if False:\n"),
     ("M1387", "the T1136 rule reads « new user » from any writer (SEC4c)", RUL,
      '      | where ProcessName == "useradd"\n', ""),
-    ("M1388", "the watch lists the private IPs again for each attack_started line (SEC4c)", GCLI,
-     "                    resolved = resolve_attack_started(data, ip_owners=_ip_owners)\n",
-     "                    resolved = resolve_attack_started(\n"
-     "                        data, ip_owners=None if dry_run else AzureConnector(dry_run=False).private_ip_owners)\n"),
+    ("M1388", "the watch lists the private IPs again for each attack_started line (SEC4c)", "glorfindel/watch/dispatch.py",
+     "            resolved = resolve_attack_started(data, ip_owners=self._ip_owners)\n",      # re-anchored (WCH1)
+     "            from glorfindel.actions import AzureConnector\n"
+     "            resolved = resolve_attack_started(\n"
+     "                data, ip_owners=None if self.dry_run else AzureConnector(dry_run=False).private_ip_owners)\n"),
     ("M1389", "the private IP map read again at each call (SEC4c)", DRU,
      "            if at and time.time() - at < _IP_OWNERS_TTL_S:\n", "            if False:\n"),
 ]
@@ -7987,18 +7992,19 @@ MUTANTS += [
     ("M2825", "the techniques known are the catalog's only: a rule's technique refused (SEC8)", SIG,
      "                found |= {r.ttp for r in load_rules(candidate, glorfindel_cfg=cfg) if r.ttp}\n",
      "                pass\n"),
-    ("M2826", "the same search started again while it runs: a thread per line (SEC8)", GCLI,
-     "                if search in _channel_polls:\n", "                if False:\n"),
-    ("M2827", "the channel's searches in flight unbounded (SEC8)", GCLI,
-     "                if len(_channel_polls) >= CHANNEL_POLLS:\n", "                if False:\n"),
-    ("M2828", "the channel's lines waiting for one VM unbounded (SEC8)", GCLI,
-     "                if _channel_waiting.get(key, 0) >= CHANNEL_QUEUED_PER_VM:\n", "                if False:\n"),
-    ("M2829", "the VMs the channel names unbounded: a worker per name (SEC8)", GCLI,
-     "            if key not in _channel_vms and key not in _resource_queues and len(_channel_vms) >= CHANNEL_VMS:\n",
+    ("M2826", "the same search started again while it runs: a thread per line (SEC8)", "glorfindel/watch/runs_channel.py",
+     "                if search in self._channel_polls:\n", "                if False:\n"),
+    ("M2827", "the channel's searches in flight unbounded (SEC8)", "glorfindel/watch/runs_channel.py",
+     "                if len(self._channel_polls) >= self.CHANNEL_POLLS:\n", "                if False:\n"),
+    ("M2828", "the channel's lines waiting for one VM unbounded (SEC8)", "glorfindel/watch/runs_channel.py",
+     "                if self._channel_waiting.get(key, 0) >= self.CHANNEL_QUEUED_PER_VM:\n", "                if False:\n"),
+    ("M2829", "the VMs the channel names unbounded: a worker per name (SEC8)", "glorfindel/watch/runs_channel.py",
+     "            if key not in self._channel_vms and key not in self._resource_queues and len(self._channel_vms) "
+     ">= self.CHANNEL_VMS:\n",
      "            if False:\n"),
-    ("M2830", "a line of runs/ dispatched outside the channel's bounds (SEC8)", GCLI,
-     "        if source:\n            refused, search = _channel_room(data)\n",
-     "        if False:\n            refused, search = _channel_room(data)\n"),
+    ("M2830", "a line of runs/ dispatched outside the channel's bounds (SEC8)", "glorfindel/watch/dispatch.py",
+     "        if source:\n            refused, search = self.room._channel_room(data)\n",
+     "        if False:\n            refused, search = self.room._channel_room(data)\n"),
     ("M2831", "a restore's moment taken from another run's line (SEC8)", SIG,
      '            if run_id and adm.signal["context"].get("run_id") != run_id:\n                continue\n', ""),
     ("M2832", "a restore's moment taken after the card's first detection (SEC8)", SIG,
@@ -8775,10 +8781,10 @@ TESTS.update({"M3263": "tests/unit/test_glorfindel.py -k refusal_after", "M3264"
 # SEC17 (#451): the state files another process reads, written at once — never opened in place.
 # M3207–M3210.
 MUTANTS += [
-    ("M3207", "the watch's heartbeat written in place: a reader finds it empty or cut (SEC17)", GCLI,
+    ("M3207", "the watch's heartbeat written in place: a reader finds it empty or cut (SEC17)", "glorfindel/watch/beat.py",
      "    _atomic_write_text(path, at.isoformat(), mode=0o644)\n",
      "    path.parent.mkdir(parents=True, exist_ok=True)\n    path.write_text(at.isoformat())\n"),
-    ("M3208", "the watch's heartbeat 0600: the CD of H0 and the console no longer read it (SEC17)", GCLI,
+    ("M3208", "the watch's heartbeat 0600: the CD of H0 and the console no longer read it (SEC17)", "glorfindel/watch/beat.py",
      "    _atomic_write_text(path, at.isoformat(), mode=0o644)\n",
      "    _atomic_write_text(path, at.isoformat(), mode=0o600)\n"),
     ("M3209", "a run's report written in place in runs/ (SEC17)", "eregion_core/run_report.py",
@@ -8971,7 +8977,7 @@ MUTANTS += [
      '"que Glorfindel défend : session_drain_vms) — "', '"inscrites) — "'),
     ("M3035", "the readiness names no list where the drain is given (SEC11, R-03, review)", "glorfindel/readiness.py",
      '"session_drain_vms sur Imladris —, jamais sur le groupe', '"jamais sur le groupe'),
-    ("M3036", "a container on a workstation said to fall back on the machine's az login (SEC11, V-17, review)", GCLI,
+    ("M3036", "a container on a workstation said to fall back on the machine's az login (SEC11, V-17, review)", "glorfindel/watch/startup.py",
      "    if in_container:\n", "    if False:\n"),
 ]
 TESTS.update({"M3031": "tests/unit/test_glorfindel_host.py", "M3032": "tests/unit/test_glorfindel_host.py",
@@ -9746,11 +9752,11 @@ MUTANTS += [
      "\t-v $(PWD)/runs/verdicts:/app/runs/verdicts:ro \\\n\t$(if $(wildcard",
      "\t-v $(PWD)/runs/verdicts:/app/runs/verdicts:ro \\\n\t-v $(PWD)/runs/glorfindel:/app/runs/glorfindel:ro \\\n"
      "\t$(if $(wildcard"),
-    ("M3225", "the watch reads signals anywhere in runs/, not only from Annatar's directory (SEC18)", GCLI,
-     "    _channel = ChannelReader(_layout.dir_of(_layout.ANNATAR, runs_dir), _say_channel)\n",
-     "    _channel = ChannelReader(runs_dir, _say_channel)\n"),
-    ("M3226", "the watch never says what runs/ holds out of its writers' places (SEC18)", GCLI,
-     '        _layout.say_strays(runs_dir, lambda text: _say_channel(f"Canal runs/ : {text}"))\n', ""),
+    ("M3225", "the watch reads signals anywhere in runs/, not only from Annatar's directory (SEC18)", "glorfindel/watch/runs_channel.py",
+     "        self._channel = ChannelReader(_layout.dir_of(_layout.ANNATAR, runs_dir), self._say_channel)\n",
+     "        self._channel = ChannelReader(runs_dir, self._say_channel)\n"),
+    ("M3226", "the watch never says what runs/ holds out of its writers' places (SEC18)", "glorfindel/watch/housekeeping.py",
+     '        _layout.say_strays(self.runs_dir, lambda text: self._say_channel(f"Canal runs/ : {text}"))\n', ""),
     ("M3227", "the watch writes its cycles flat in runs/, where an injector writes too (SEC18)", "glorfindel/agent.py",
      '    out = runs_layout.dir_of(runs_layout.GLORFINDEL) / f"{run_id}_debug.jsonl"\n',
      '    out = runs_layout.ROOT / f"{run_id}_debug.jsonl"\n'),
@@ -9871,11 +9877,11 @@ TESTS.update({**{f"M{n}": _SEC18_LAYOUT for n in (3330, 3331, 3332, 3336, 3337, 
 # subdirectories, a team's services stopped before its migration. M3340–M3343.
 MUTANTS += [
     ("M3340", "a detection by the poll gives no local verdict: the local heartbeat vouches for a false miss (SEC18)",
-     GCLI, "                    _watch_channel.note_poll(resolved)   # SEC18: the local verdict; never raises\n",
-     "                    pass\n"),
-    ("M3341", "the watch never starts the local channel of verdicts (SEC18)", GCLI,
-     "            _watch_channel = _wc.start_local(_layout.dir_of(_layout.VERDICTS, runs_dir))\n",
-     "            _watch_channel = None\n"),
+     "glorfindel/watch/dispatch.py", "            self.watch_channel.note_poll(resolved)   # SEC18: the local verdict; never raises\n",
+     "            pass\n"),
+    ("M3341", "the watch never starts the local channel of verdicts (SEC18)", "glorfindel/watch/startup.py",
+     "        _watch_channel = _wc.start_local(_layout.dir_of(_layout.VERDICTS, runs_dir))\n",
+     "        _watch_channel = None\n"),
     ("M3342", "a link among the blue's known subdirectories goes unseen (SEC18, review)", LAYOUT,
      "    paths += [dir_of(w, root) / sub for w, subs in BLUE_SUBDIRS.items() for sub in subs]\n", ""),
     ("M3343", "a team's migration runs under its live services (SEC18, review)", MAKE,
@@ -10144,8 +10150,8 @@ MUTANTS += [
     ("M3250", "the hosted watch's channel heartbeat unsigned: Orodruin refuses every run (SEC19)",
      "eregion_core/watch_channel.py",
      "        if not self.SIGNS:\n            return body\n", "        if True:\n            return body\n"),
-    ("M3251", "the watch's copy for the injectors unsigned (SEC19)", GCLI,
-     "json.dumps(beat_body(at, signer=_signer()))", "json.dumps(beat_body(at))"),
+    ("M3251", "the watch's copy for the injectors unsigned (SEC19)", "glorfindel/watch/beat.py",
+     "json.dumps(beat_body(at, signer=self._signer()))", "json.dumps(beat_body(at))"),
     ("M3252", "the console mounts the watch's key (SEC19)", "docker-compose.yml",
      "      - ${HOME}/.eregion/console:/root/.eregion/console\n",
      "      - ${HOME}/.eregion/console:/root/.eregion/console\n"

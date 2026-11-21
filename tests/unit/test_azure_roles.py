@@ -347,15 +347,27 @@ def _audit_checks_failing_on_iam():
     return [x for x in out if x.status == "fail"]
 
 
-def test_a_watch_without_its_own_principal_says_so():
+def test_a_watch_without_its_own_principal_says_so(monkeypatch):
     """SEC11 (V-17): no fallback — the watch started without a service principal says it, and
     which identity it then has; with one, it says nothing."""
-    from glorfindel.cli import identity_note
+    from glorfindel.watch.startup import identity_note
     assert "no service principal" in identity_note({}, in_container=False)
     assert "az login" in identity_note({"AZURE_CLIENT_ID": " "}, in_container=False)
     # In a container on a workstation, the machine's `az login` is not there: no identity, said.
     inside = identity_note({}, in_container=True)
     assert "no identity at all" in inside and "az login" not in inside and "managed identity" in inside
     assert identity_note({"AZURE_CLIENT_ID": "app-id"}) == ""
-    src = (ROOT / "glorfindel" / "cli.py").read_text(encoding="utf-8")
-    assert 'console.print(f"[bold]Identity:[/bold] {_identity}")' in src
+    # And the watch says it at its start (glorfindel/watch/startup.py, WCH1), never in a dry run.
+    import io
+    from types import SimpleNamespace
+
+    from rich.console import Console
+
+    from glorfindel.watch import startup
+    agent = SimpleNamespace(autonomy=SimpleNamespace(default="human_only", assets=[]),
+                            connector=SimpleNamespace(permission_mode=lambda: "read_write"))
+    monkeypatch.delenv("AZURE_CLIENT_ID", raising=False)
+    for dry_run, said in ((False, True), (True, False)):
+        out = io.StringIO()
+        startup._say_credentials(Console(file=out, width=300), agent, dry_run)
+        assert ("Identity: no service principal" in out.getvalue()) is said, out.getvalue()

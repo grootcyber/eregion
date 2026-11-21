@@ -2776,7 +2776,7 @@ aucun état). Une seconde relecture a trouvé le trou que la première consigne 
 dans le seul `quarantine_rg`, les NSG de quarantaine créés dans un autre groupe avant que le
 réglage change n'étaient plus lus (la machine ne l'a trouvé qu'une fois sur 11 à 500) — tout
 l'abonnement est relu, la séquence est figée (M838). La passe de la watch est sortie dans
-`cli._watch_reassert_pass`, testée sur son comportement ; un test structurel ne garde que ce que
+`cli._watch_reassert_pass` (aujourd'hui `glorfindel/watch/passes.py`, WCH1), testée sur son comportement ; un test structurel ne garde que ce que
 le comportement ne voit pas, les deux closures de la watch (M835, M839, M895–M898).
 
 **I8F (27/10, #227) : un inconnu devenu « aucun ».** A3 a fait tomber I8 sur le code non muté

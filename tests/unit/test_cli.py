@@ -121,7 +121,7 @@ def _read(f, offset=0):
     """The watch's read of one file of runs/ (eregion_core/channel_reader.py), each line parsed
     as the watch parses it: ([(data, Signal)], what was said, the new offset)."""
     from eregion_core.channel_reader import read_lines
-    from glorfindel.cli import _parsed_or_said
+    from glorfindel.watch.runs_channel import _parsed_or_said
     got = read_lines(f, offset)
     said: list[str] = []
     signals = [s for line in got.lines if line.strip() for s in _parsed_or_said(f, line, said.append)]
@@ -154,7 +154,7 @@ def test_read_new_signals_leaves_a_half_written_line_for_next_poll(tmp_path):
 
 def test_parse_signal_line_ignores_unknown_fields():
     """A field added by a newer Annatar must not make Signal(**data) raise."""
-    from glorfindel.cli import _parse_signal_line
+    from glorfindel.watch.runs_channel import _parse_signal_line
     data, sig = _parse_signal_line(_sig_line(new_field_from_the_future=1).strip())
     assert sig.signal_id == "r1_attack"
     assert data["new_field_from_the_future"] == 1

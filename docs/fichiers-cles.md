@@ -244,10 +244,18 @@ glorfindel/
                           ce qu'elle écarte compté (age_census, `glorfindel report`), rien d'effacé ; un cycle sans date
                           daté par la borne de B2 (B2_FLOOR, 16/10/2026)
   incidents.py          → IncidentRegistry (TTL, persist ; threads et processus : flock, réécrit entier — SEC13)
-  cli.py                → watch, respond, restore (--wait), release, unblock, reset (revert=alias), list, pending, ack, activate,
+  cli.py                → watch (la commande ; sa boucle est glorfindel/watch/, WCH1), respond, restore (--wait), release,
+                          unblock, reset (revert=alias), list, pending, ack, activate,
                           audit (--all), approve-rule, reject-rule, propose-rules, rules, migrate-rules, check-ttl, jobs,
                           bot, dashboard
                           (war-room : alias caché d'`eregion console`)
+  watch/                → WCH1 (#1019) : la boucle de `glorfindel watch`, sortie de cli.py, son état dans des objets,
+                          chaque partie atteinte seule par un test (tests/unit/test_watch_loop.py) :
+                          loop.py (Watch : le démarrage dans son ordre, un tour, la boucle), startup.py (ce qu'elle dit
+                          et vérifie avant sa boucle), runs_channel.py (runs/ lu, ses bornes SEC8), dispatch.py (la file
+                          d'une VM et son fil), housekeeping.py (les tâches de chaque minute), passes.py (les passes, une
+                          à la fois), beat.py (les battements), rules.py (les règles, la découverte, l'audit) ; aucune
+                          fonction au-delà de 50 lignes (tests/unit/test_file_sizes.py)
   escalations.py        → ~/.glorfindel/escalations.jsonl + labels (proposed_rule, improve_detection ajoutés) ;
                           SEC3 : chaque écriture sous le verrou du magasin, le magasin réécrit entier ; JUG1 : la
                           carte « exécutée » (`autonomous_action`) d'une action prise seule, une par clé
