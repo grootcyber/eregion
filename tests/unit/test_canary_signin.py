@@ -52,7 +52,7 @@ CLIENT = {r["name"]: r for r in yaml.safe_load(BENCH.read_text())["rules"]}
 # The shipped rule's fingerprint when the copy was last made from it (CAN3, then CRD1: the credentials
 # the sign-ins used, kept): a change of the base fails here, in the pull request that makes it (and
 # the watch sets the copy aside, its drift said: WL1).
-BASE_SHA256 = "dc4e7f3b45b60dc12440b29d77d7ca80a62499621b967a833fd744bd39f81989"
+BASE_SHA256 = "0753f48defbcc8b8dea9744ffba7fd7f4bca4bfd79b2a58d55344061e86b2fd2"
 
 # Placeholders, never real ids.
 CANARY_APP = "00000000-0000-0000-0000-00000000ca17"

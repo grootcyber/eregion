@@ -60,13 +60,15 @@ def _no_ambient_identity(monkeypatch):
     monkeypatch.delenv("GLORFINDEL_OWN_CALLERS", raising=False)
 
 
-def _signin(at: datetime, ip: str = NEW_IP, key: str | None = KEY, corr: str = "c-1") -> dict:
+def _signin(at: datetime, ip: str = NEW_IP, key: str | None = KEY, corr: str = "c-1", fic: str = "") -> dict:
     """One line of AADServicePrincipalSignInLogs, as the diagnostic setting writes it: the keyId
-    of the credential used in `ServicePrincipalCredentialKeyId` (measured, 21/11)."""
+    of the credential used in `ServicePrincipalCredentialKeyId` (measured, 21/11); a federated
+    sign-in names its credential in `FederatedCredentialId`, and fills the keyId too (11/11)."""
     line = {"Type": "AADServicePrincipalSignInLogs", "TimeGenerated": at, "ResultType": "0",
             "AppId": APP_ID, "ServicePrincipalId": SP, "ServicePrincipalName": "sp-ci-deploy", "IPAddress": ip,
             "ResourceDisplayName": "Windows Azure Service Management API", "Location": "FR",
-            "CorrelationId": corr, "ClientCredentialType": "clientAssertion", "FederatedCredentialId": ""}
+            "CorrelationId": corr, "ClientCredentialType": "federatedIdentityCredential" if fic else "clientAssertion",
+            "FederatedCredentialId": fic}
     if key is not None:
         line["ServicePrincipalCredentialKeyId"] = key
     return line
@@ -78,10 +80,10 @@ def _history() -> list[dict]:
             for d, ip in zip(range(2, 6), KNOWN_IPS)]
 
 
-def _now(*keys) -> list[dict]:
+def _now(*keys, fic: str = "") -> list[dict]:
     """The sign-ins of the last hour from the new address, one per key given (None: the column
-    absent from the line)."""
-    return [_signin(NOW - timedelta(minutes=10 + i), key=k, corr=f"c-{i}") for i, k in enumerate(keys)]
+    absent from the line); `fic`: each made with that federated identity credential."""
+    return [_signin(NOW - timedelta(minutes=10 + i), key=k, corr=f"c-{i}", fic=fic) for i, k in enumerate(keys)]
 
 
 class _Credential:
@@ -261,20 +263,140 @@ def test_an_illegible_text_proposes_to_disable_the_principal_and_never_raises(te
     json.dumps(["not-a-key"]), json.dumps([KEY + "0"]), json.dumps([KEY[:-1]]),
 ])
 def test_the_reader_never_raises_and_takes_only_a_single_key_id(value):
-    key, why = entra_items.used_credential({entra_items.USED_CREDENTIALS: value})
+    key, why = entra_items.used_credential({entra_items.USED_CREDENTIALS: value, entra_items.FEDERATED_SIGNINS: 0})
     assert key == "" and why
 
 
 @pytest.mark.parametrize("value", [json.dumps([KEY]), json.dumps([KEY.upper()]), [KEY], json.dumps([" " + KEY])])
 def test_the_reader_takes_the_single_key_id_lowercase(value):
-    assert entra_items.used_credential({entra_items.USED_CREDENTIALS: value}) == (KEY, "")
+    row = {entra_items.USED_CREDENTIALS: value, entra_items.FEDERATED_SIGNINS: 0}
+    assert entra_items.used_credential(row) == (KEY, "")
+
+
+@pytest.mark.parametrize("federated", [None, "", "0", 0.0, True, False, 1, 3, -1, [0]])
+def test_the_reader_takes_a_key_only_when_no_sign_in_was_federated(federated):
+    """A sign-in by a federated identity credential names a keyId that is no credential of the
+    application (measured on the canary, 11/11): only a count read as zero lets the key through."""
+    row = {entra_items.USED_CREDENTIALS: json.dumps([KEY])}
+    if federated is not None:
+        row[entra_items.FEDERATED_SIGNINS] = federated
+    key, why = entra_items.used_credential(row)
+    assert key == "" and why
 
 
 def test_the_old_names_are_no_longer_read():
     """One name on both sides (the query projects it, the code reads it): a column of the table
     given to the row by hand is not the rule's."""
-    assert entra_items.used_credential({"ServicePrincipalCredentialKeyId": KEY})[0] == ""
-    assert entra_items.used_credential({"CredentialKeyId": KEY})[0] == ""
+    assert entra_items.used_credential({"ServicePrincipalCredentialKeyId": KEY,
+                                        entra_items.FEDERATED_SIGNINS: 0})[0] == ""
+    assert entra_items.used_credential({"CredentialKeyId": KEY, entra_items.FEDERATED_SIGNINS: 0})[0] == ""
+
+
+def test_five_credentials_are_said_at_least_five():
+    keys = [f"00000000-0000-0000-0000-00000000010{n}" for n in range(5)]
+    row = {entra_items.USED_CREDENTIALS: json.dumps(keys), entra_items.FEDERATED_SIGNINS: 0}
+    assert "au moins 5 identifiants" in entra_items.used_credential(row)[1]
+    row[entra_items.USED_CREDENTIALS] = json.dumps(keys[:3])
+    assert "3 identifiants" in entra_items.used_credential(row)[1]
+
+
+# ── A federated sign-in: the disabling, with or without Graph ───────────────────────────────────
+
+FIC = "00000000-0000-0000-0000-0000000000f9"
+
+
+@pytest.mark.parametrize("graph", ["read", "unread"])
+def test_a_federated_sign_in_proposes_to_disable_the_principal(tenant, graph):
+    """A CI in OIDC: its keyId is filled, constant, no credential of the application — its removal
+    would contain nothing. Before CRD1 its card disabled the principal; it still does, even Graph
+    unread (the review of CRD1)."""
+    from glorfindel.providers.azure.graph import NoGraph
+    [row] = _rows(_history() + _now(KEY, fic=FIC))
+    assert row[entra_items.FEDERATED_SIGNINS] == 1 and json.loads(row[entra_items.USED_CREDENTIALS]) == [KEY]
+    plan = entra_plan.build(row, tenant if graph == "read" else NoGraph("droit absent sur Graph (403)"), now=NOW)
+    assert _disables(plan)
+    assert "identifiant fédéré" in _first(plan)["what"]
+
+
+def test_one_federated_sign_in_among_others_proposes_to_disable(tenant):
+    [row] = _rows(_history() + _now(KEY) + [_signin(NOW - timedelta(minutes=30), corr="c-oidc", fic=FIC)])
+    assert row[entra_items.FEDERATED_SIGNINS] == 1
+    assert _disables(entra_plan.build(row, tenant, now=NOW))
+
+
+@pytest.mark.parametrize("bench", [False, True], ids=["shipped", "bench-copy"])
+def test_the_query_counts_the_federated_sign_ins(bench):
+    query = _rule(bench).query
+    assert f"{entra_items.FEDERATED_SIGNINS} = countif(isnotempty(FederatedCredentialId))" in query
+    assert entra_items.FEDERATED_SIGNINS in query[query.rindex("| project"):]
+    [row] = _rows(_history() + _now(KEY, KEY), bench=bench)
+    assert row[entra_items.FEDERATED_SIGNINS] == 0 and isinstance(row[entra_items.FEDERATED_SIGNINS], int)
+
+
+def test_the_removal_says_the_credential_was_used_never_added(tenant):
+    [row] = _rows(_history() + _now(KEY))
+    what = _first(entra_plan.build(row, tenant, now=NOW))["what"]
+    assert "utilisé par la connexion" in what and "ajouté" not in what
+
+
+# ── never_target on the sign-in's subject (IDI1, IR1f; the review of CRD1) ──────────────────────
+
+OPERATOR = "00000000-0000-0000-0000-0000000000b1"
+
+
+@pytest.mark.parametrize("listed", ["object-id", "client-id"])
+def test_a_listed_principal_s_used_credential_is_never_removed_by_default(tenant, listed):
+    """Removing the one credential a principal signs in with cuts it off as a disabling does (the
+    class of E-1): never_target is asked of the sign-in's subject — its object id, or its
+    application's client id —, never only of the application the removal names."""
+    protected = entra_plan.never_target_protected(
+        {"EREGION_OPERATOR_OBJECT_ID": OPERATOR, "EREGION_PROTECTED_IDENTITIES": SP if listed == "object-id" else APP_ID})
+    [row] = _rows(_history() + _now(KEY))
+    plan = entra_plan.build(row, tenant, now=NOW, protected=protected)
+    assert plan["defense"] == "listed" and plan["protected"]
+    first = _first(plan)
+    assert first["unchecked"] and first["verb"] == "" and "Vérifier avec l'opérateur" in first["what"]
+    remove = next(i for i in plan["items"] if i["verb"] == "entra_remove_credential")
+    assert remove["by"] == "human" and remove["optional"] and remove["what"].startswith("Si ce n'est pas")
+    assert remove["protected"] and "never_target" in remove["why_human"]
+    assert all(i["by"] == "human" for i in plan["items"])
+
+
+def test_an_unlisted_principal_keeps_its_plan(tenant):
+    protected = entra_plan.never_target_protected({"EREGION_OPERATOR_OBJECT_ID": OPERATOR})
+    [row] = _rows(_history() + _now(KEY))
+    plan = entra_plan.build(row, tenant, now=NOW, protected=protected)
+    assert plan["defense"] is False and _removes(plan) and _first(plan)["by"] == "executor"
+
+
+def test_an_unreadable_list_without_graph_every_verb_is_a_human_s():
+    """The list unreadable (no operator named) and Graph unread: the removal's object id is not
+    read — an empty target — and still a human's step, its reason said."""
+    from glorfindel.providers.azure.graph import NoGraph
+    protected = entra_plan.never_target_protected({})
+    [row] = _rows(_history() + _now(KEY))
+    plan = entra_plan.build(row, NoGraph("droit absent sur Graph (403)"), now=NOW, protected=protected)
+    remove = _first(plan)
+    assert remove["verb"] == "entra_remove_credential" and remove["target"].get("id") == ""
+    assert remove["by"] == "human" and "illisible" in remove["why_human"]
+    assert all(i["by"] == "human" for i in plan["items"])
+
+
+def test_an_unreadable_list_an_empty_target_of_another_card_is_a_human_s_too():
+    from glorfindel.providers.azure.graph import NoGraph
+    row = {"EntraKind": "credential", "Result": "success", "TimeGenerated": "2026-11-21T11:00:00Z",
+           "TargetId": "", "TargetType": "Application", "TargetName": "app-x", "ActorId": OPERATOR,
+           "CredentialAdded": f'["[KeyIdentifier={KEY},KeyType=Password]"]'}
+    plan = entra_plan.build(row, NoGraph("x"), now=NOW, protected=entra_plan.never_target_protected({}))
+    assert all(i["by"] == "human" for i in plan["items"] if i["verb"])
+
+
+@pytest.mark.parametrize("mark", ["GlorfindelIdentity", "GlorfindelManaged"])
+def test_glorfindel_s_sign_in_never_removes_its_credential_alone(tenant, mark):
+    [row] = _rows(_history() + _now(KEY))
+    plan = entra_plan.build({**row, mark: True}, tenant, now=NOW)
+    assert not any(i["verb"] in ("entra_remove_credential", "entra_disable_principal") for i in plan["items"])
+    assert "Renouveler les identifiants de Glorfindel" in _first(plan)["what"]
 
 
 # ── The whole path: the RulePoller, the decision, the card's plan ───────────────────────────────

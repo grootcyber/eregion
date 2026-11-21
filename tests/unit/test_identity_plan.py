@@ -270,7 +270,7 @@ def test_an_unusual_signin_removes_the_credential_it_used_else_blocks_the_princi
     # The column as the rule projects it and the SDK hands it on (CRD1): the JSON text of a set. Its
     # path from the shipped query, through the SDK's objects: tests/unit/test_signin_credential.py.
     tenant.apps[APP]["passwordCredentials"] = [{"keyId": KEY}]
-    used = _plan(_row("signin", CredentialKeyIds=json.dumps([KEY])), tenant)
+    used = _plan(_row("signin", CredentialKeyIds=json.dumps([KEY]), FederatedSignIns=0), tenant)
     assert used["items"][0]["command"] == f"az ad app credential delete --id {APP} --key-id {KEY}"
     none = _plan(_row("signin"), tenant)
     assert none["items"][0]["verb"] == "entra_disable_principal"

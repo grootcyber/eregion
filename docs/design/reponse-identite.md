@@ -777,7 +777,8 @@ Jonathan, avant d'être écrite comme un fait.
    le plan proposait toujours `entra_disable_principal`. **CRD1 (#1011)** : la requête garde les
    identifiants des connexions du groupe (`CredentialKeyIds = make_set(ServicePrincipalCredentialKeyId, 5)`),
    le plan lit ce texte JSON (`entra_items.used_credential`) ; un seul `keyId` → son retrait, plusieurs
-   ou aucun → la désactivation (§6, le tableau des verbes).
+   ou aucun, ou une connexion fédérée (`FederatedSignIns`) → la désactivation (§6, le tableau des
+   verbes) ; `never_target` est demandé au sujet de la connexion (le principal, son application).
 8. Les codes d'erreur d'une connexion refusée après chaque action, lisibles dans les journaux.
 9. Les noms d'opération de `AuditLogs` pour chaque écriture de l'exécuteur, et leur latence
    (pour IR1d).

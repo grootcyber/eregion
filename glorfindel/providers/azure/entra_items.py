@@ -250,8 +250,9 @@ def _candidates(obj) -> list[dict]:
 
 
 def _remove_credential(coll: str, oid_p: dict, key_p: dict, ctype: str, name, *, fic_p: dict | None = None,
-                       note: str = "") -> dict:
-    """The verb `entra_remove_credential`, on an application or a service principal."""
+                       note: str = "", used: bool = False) -> dict:
+    """The verb `entra_remove_credential`, on an application or a service principal. `used`: the
+    credential a sign-in used (CRD1), not one added."""
     cli = "app" if coll == "applications" else "sp"
     oid = _v(oid_p)
     label = "l'application" if coll == "applications" else "le principal de service"
@@ -272,7 +273,8 @@ def _remove_credential(coll: str, oid_p: dict, key_p: dict, ctype: str, name, *,
             find=f"az ad app federated-credential list --id {oid}" if not fic["read"] else "")
     cert = ctype == "certificate"
     secret = ctype == "password"
-    what = ("le certificat" if cert else "le secret" if secret else "l'identifiant") + " ajouté"
+    what = (("le certificat" if cert else "le secret" if secret else "l'identifiant")
+            + (" utilisé par la connexion" if used else " ajouté"))
     return _item(
         f"Retirer {what} sur {label} {target['name'] or oid}" + note,
         verb="entra_remove_credential", target=target, params=[oid_p, key_p],
@@ -347,8 +349,13 @@ def _credential_items(row: dict, reads: _Reads) -> list[dict]:
 
 
 # CRD1 (#1011): the credentials a card's sign-ins used, as `entra-sp-unusual-signin` keeps them —
-# `make_set(ServicePrincipalCredentialKeyId, 5)` by principal and address, projected under this name.
+# `make_set(ServicePrincipalCredentialKeyId, 5)` by principal and address, projected under this name —,
+# and how many of them were made with a federated identity credential (`countif(isnotempty(
+# FederatedCredentialId))`): such a sign-in names a keyId that is no credential of the application
+# (measured on the canary, 11/11), whose removal would contain nothing.
 USED_CREDENTIALS = "CredentialKeyIds"
+FEDERATED_SIGNINS = "FederatedSignIns"
+_SET_BOUND = 5
 
 
 def used_credential(row: dict) -> tuple[str, str]:
@@ -360,14 +367,23 @@ def used_credential(row: dict) -> tuple[str, str]:
     A single value, a GUID: that credential, and its removal is proposed. Two or more (one removed,
     the other still signs in — an empty value counts: a sign-in that named none), none, a value
     that is no GUID (a field of the log is never trusted), an illegible text, the column absent:
-    "" — the principal is disabled, as before CRD1."""
+    "" — the principal is disabled, as before CRD1. And a sign-in made with a federated identity
+    credential, or a count of them not read as zero (`FEDERATED_SIGNINS`): its keyId is no credential
+    to remove — the principal is disabled too (review of CRD1)."""
+    federated = row.get(FEDERATED_SIGNINS)
+    if isinstance(federated, bool) or not isinstance(federated, int):
+        return "", "le journal ne dit pas si la connexion était fédérée (colonne absente ou illisible)"
+    if federated != 0:
+        return "", ("une connexion par un identifiant fédéré : son keyId n'est pas un identifiant de "
+                    "l'application, le retirer ne contiendrait rien")
     value = row.get(USED_CREDENTIALS)
     if isinstance(value, str):
         value = json_of(value)
     if not isinstance(value, list):
         return "", "l'identifiant utilisé n'est pas lu (colonne absente ou illisible)"
     if len(value) > 1:
-        return "", f"ces connexions ont utilisé {len(value)} identifiants : en retirer un ne suffirait pas"
+        count = f"au moins {_SET_BOUND}" if len(value) >= _SET_BOUND else str(len(value))
+        return "", f"ces connexions ont utilisé {count} identifiants : en retirer un ne suffirait pas"
     first = value[0] if value else None
     if first is None or not str(first).strip():
         return "", "le journal ne nomme aucun identifiant utilisé"
@@ -394,12 +410,14 @@ def _signin_items(row: dict, reads: _Reads) -> list[dict]:
         key_p = _param("keyId", used, "log", "l'identifiant que la connexion a utilisé")
         if on_app and isinstance(app, dict):
             items.append(_remove_credential("applications", _param("id de l'objet", guid(app.get("id")), "graph"),
-                                            {**key_p, "from": "graph"}, on_app, app.get("displayName") or name))
+                                            {**key_p, "from": "graph"}, on_app, app.get("displayName") or name,
+                                            used=True))
         elif on_sp:
-            items.append(_remove_credential("servicePrincipals", sp_p, {**key_p, "from": "graph"}, on_sp, name))
+            items.append(_remove_credential("servicePrincipals", sp_p, {**key_p, "from": "graph"}, on_sp, name,
+                                            used=True))
         elif app is UNREAD or sp is UNREAD:
             items.append(_remove_credential("applications", _param("id de l'objet", "", "", reads.why or "non lu"),
-                                            key_p, "", name))
+                                            key_p, "", name, used=True))
         else:
             # CRD1: Graph read, the keyId on neither object — a federated sign-in names a keyId that is no
             # credential of the application (measured, 11/11), or it is already removed: nothing to remove
