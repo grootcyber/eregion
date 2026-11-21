@@ -206,12 +206,16 @@ shutdown, dans la fenêtre de `vm-disk-write`, qui court jusqu'à sa fin plus 15
 (`GRACE_AFTER_S`, `eregion_core/exercise.py`). L'outil a fermé : rien n'a été compté comme
 « Glorfindel n'a rien fait ». La lecture des cartes donne le résultat ci-dessus. Le taux, lui, doit
 sortir de l'outil, sur des runs espacés d'au moins 16 minutes après le retour du précédent. Il
-viendra de la séance courte, avec `vm-cpu-pressure` une fois sa DCR appliquée.
+viendra de la séance courte, avec `vm-cpu-pressure`. Depuis le 21/11, sa DCR est appliquée et
+mesurée (DCR1, #985) : sous Linux, le CPU arrive sous l'objet `Processor`, aux instances `total`,
+`cpu0`, `cpu1`. La requête d'effet lit `total`, et non le `_Total` de Windows (G1f, mutants
+M6952–M6953).
 
 ### Reste, sur le banc, avec Jonathan
 
-`vm-disk-write` et `vm-restart` sont `implemented` depuis le 20/11 ; `vm-cpu-pressure` reste
-`planned` (Dagorlad la montre sans poignée) jusqu'à son premier run. `chaos.noise_vms: [gondolin]`
+`vm-disk-write` et `vm-restart` sont `implemented` depuis le 20/11. `vm-cpu-pressure` reste
+`planned` (Dagorlad la montre sans poignée) jusqu'à son premier run mesuré ; son compteur est
+collecté et lu sous l'instance `total` depuis le 21/11 (G1f). `chaos.noise_vms: [gondolin]`
 est déclaré dans `config.yaml` (G1c). La séance, dans l'ordre. Chaque geste est celui de Jonathan.
 
 0. **Le bon abonnement, d'abord.** Plusieurs abonnements vivent sur le poste (le banc, Stratus,
