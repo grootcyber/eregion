@@ -2243,6 +2243,19 @@
    "doc": "docs/analysis.md"
   },
   {
+   "id": "x-cpu-linux",
+   "composant": "gothmog",
+   "poste": "x-eprouver",
+   "nom": "The CPU noise read as the Linux agent names it: Processor, the instance total, measured on the bench",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "G1f"
+   ],
+   "issue": 76,
+   "doc": "gothmog/README.md"
+  },
+  {
    "id": "x-bruit-banc",
    "composant": "gothmog",
    "poste": "x-eprouver",

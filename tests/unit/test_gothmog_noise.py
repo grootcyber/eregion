@@ -277,6 +277,18 @@ def test_a_watch_live_after_the_fault_is_said_and_a_dev_run_says_nothing_of_it(n
     assert "watch_after" not in out.report["checks"] and out.result == "PASS"
 
 
+def test_the_cpu_effect_reads_what_arrives_under_linux():
+    """G1f: measured on gondolin on 21/11, after DCR1's apply — ObjectName Processor, CounterName
+    % Processor Time, the aggregate instance « total » (not Windows' « _Total »). The DCR declares
+    the object under its Linux name, every instance."""
+    fault = yaml.safe_load((ROOT / "gothmog" / "experiments" / "vm-cpu-pressure.yaml").read_text())
+    [probe] = fault["effect"]["probes"]
+    stages = _stages(probe["verify"])
+    assert "where ObjectName == 'Processor' and CounterName == '% Processor Time'" in stages
+    assert "where InstanceName == 'total'" in stages
+    assert '"\\\\Processor(*)\\\\% Processor Time",' in _tf("monitoring.tf")
+
+
 def test_a_cpu_load_runs_as_the_disk_writes_do(noise):
     clock, world, engine = noise
     world(level=97.0, experiment=_noise(name=CPU, urn="urn:csci:microsoft:agent:cpuPressure/1.0"))

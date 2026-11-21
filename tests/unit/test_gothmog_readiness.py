@@ -214,8 +214,9 @@ def test_the_agent_is_asked_on_the_experiment_the_gate_validated(idle):
 
 
 def test_a_series_never_collected_under_the_effect_s_names_is_not_ready(idle):
-    """The CPU object under the Azure Monitor agent, never measured (`Processor`, `_Total`):
-    named otherwise, the query finds nothing — the noise would run ten minutes, unseen."""
+    """A counter not collected under the effect's names (the 20/11 DCR declared the CPU under its
+    Windows name, which the Linux agent never collects): the query finds nothing — the noise would
+    run ten minutes, unseen."""
     _, make, engine = idle
     make(experiment=_noise(name=CPU, urn="urn:csci:microsoft:agent:cpuPressure/1.0"), idle=None)
     out = engine().preflight("vm-cpu-pressure")
@@ -274,3 +275,29 @@ def test_the_names_read_are_those_celebrimbor_and_orodruin_declare():
     oro = (ROOT / "infra/orodruin/main.tf").read_text()
     role = re.search(r'resource "azurerm_role_definition" "injector_chaos" \{(.*?)\n\}', oro, re.S).group(1)
     assert sorted(re.findall(r'"(Microsoft\.Chaos/[^"]+)"', role)) == sorted(EXPERIMENT_WRITES)
+
+
+class LinuxPerf(Idle):
+    """G1f: Perf as the Linux agent fills it on gondolin, measured on 21/11 after DCR1's apply —
+    Processor / % Processor Time under the instances total, cpu0, cpu1. A CPU query reads its
+    samples only if it asks for one of those instances by name, as Log Analytics would."""
+
+    INSTANCES = ("total", "cpu0", "cpu1")
+
+    def _query(self, kql):
+        if "Peak" in kql and "'Processor'" in kql:
+            asked = re.findall(r"InstanceName == '([^']+)'", kql)
+            if not asked or not set(asked) & set(self.INSTANCES):
+                return {"Tables": [{"TableName": "Table_0", "Columns": [{"ColumnName": "Peak"}],
+                                    "Rows": [[None]]}]}
+        return super()._query(kql)
+
+
+def test_the_cpu_load_is_read_under_its_linux_instance_and_the_preflight_lets_it_run(idle):
+    """G1f: on 21/11 the CPU arrived under the instance « total », not the Windows « _Total »: the
+    preflight's series of vm-cpu-pressure is collected, the fault no longer refused for it."""
+    _, make, engine = idle
+    make(cls=LinuxPerf, experiment=_noise(name=CPU, urn="urn:csci:microsoft:agent:cpuPressure/1.0"), idle=3)
+    out = engine().preflight("vm-cpu-pressure")
+    assert out.result == "OK", out.error
+    assert _ready(out)["vm-celebrimbor-gondolin cpu-load-seen"]["observed"] == "collected"

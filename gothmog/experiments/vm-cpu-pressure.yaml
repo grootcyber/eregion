@@ -41,12 +41,12 @@ steady_state:
       expect: fresh 10m
       during: true
 
-# Le compteur que lit l'effet. La DCR du banc déclarait \Processor(_Total)\% Processor Time, un nom
-# Windows jamais collecté sous Linux : mesuré le 20/11 sur gondolin, rien de Processor dans Perf, et le
-# préflight G1b a refusé la panne avant le run. DCR1 (#985) déclare \Processor(*)\% Processor Time
-# (docs/azure.md), pas encore appliqué ni mesuré. L'objet et l'instance ci-dessous (Processor, _Total)
-# restent à mesurer après l'apply de la DCR : un lot de Gothmog recale la requête sur ce qui arrive.
-# D'ici là, l'effet ne peut pas être vu : le préflight refuse, la panne n'est pas jouée.
+# Le compteur que lit l'effet, tel qu'il arrive dans Perf sous l'agent Azure Monitor Linux. La DCR
+# du banc déclarait \Processor(_Total)\% Processor Time, un nom Windows jamais collecté : rien de
+# Processor le 20/11, et le préflight G1b a refusé la panne avant le run. DCR1 (#985) déclare
+# \Processor(*)\% Processor Time ; mesuré sur gondolin le 21/11 après son apply : ObjectName
+# Processor, CounterName % Processor Time, instances total, cpu0, cpu1. L'instance agrégée s'y
+# appelle « total », pas « _Total » (le nom Windows) : c'est elle que lit l'effet (G1f).
 effect:
   probes:
     - name: cpu-load-seen
@@ -54,7 +54,7 @@ effect:
         Perf
         | where _ResourceId =~ '{target}'
         | where ObjectName == 'Processor' and CounterName == '% Processor Time'
-        | where InstanceName == '_Total'
+        | where InstanceName == 'total'
         | where TimeGenerated between (datetime({start}) .. datetime({end}))
         | summarize Peak = max(CounterValue)
       expect: above 80
