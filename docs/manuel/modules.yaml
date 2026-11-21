@@ -523,7 +523,7 @@ briques:
   - id: g-canal-exercices-orodruin
     composant: glorfindel
     poste: g-detecter
-    nom: "Orodruin's writes in its exercise channel set aside by its identity, its container and its account, never its address; a watch that restarts recognizes the writes of the one before, as many as its record holds — counted, and said when unconfigured"
+    nom: "Orodruin's writes in its exercise channel set aside by its identity, its container and its account, never its address — Orodruin's exercise channel makes no card; counted, and said when unconfigured"
     etat: main
     release: "0.6"
     lots: [SLF2]

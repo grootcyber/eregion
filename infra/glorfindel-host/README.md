@@ -599,7 +599,7 @@ carte du 21/11, non attribuée, un instantané à 40 %, jugée Wrong). La watch 
 comptées, seulement si leur compte est celui du canal, leur conteneur le sien, et leur écrivain
 l'identité d'Orodruin, lue dans l'environnement de la watch (`EREGION_ORODRUIN_PRINCIPAL_ID`,
 l'object id du principal de son identité managée), **jamais par l'adresse** ; tout le reste fait sa
-carte (`docs/glorfindel.md`, « Le canal d'exercices d'Orodruin et la watch qui redémarre »). Sans la
+carte (`docs/glorfindel.md`, « Le canal d'exercices d'Orodruin »). Sans la
 variable, rien n'est écarté : la carte revient, et la ligne de la règle le dit dans la console
 (« ⚠ Orodruin id »). C'est la variable que la composition du banc autonome lira aussi (BNC4,
 `docs/design/banc-autonome.md`, § 5.5) : une seule valeur, un seul geste. Le geste de Jonathan, **une

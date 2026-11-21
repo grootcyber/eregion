@@ -1734,8 +1734,7 @@ adresse privée. Le 21/11, une telle écriture (un rapport de run, `EgressBytes`
 `data-exfiltration-blob` non attribuée, un instantané proposé à 40 %, jugée Wrong. La watch écarte
 désormais ces écritures, comptées et dites, **seulement** quand leur compte est celui du canal, leur
 conteneur le sien et leur écrivain l'identité d'Orodruin, donnée à la watch par
-`EREGION_ORODRUIN_PRINCIPAL_ID` (`docs/glorfindel.md`, « Le canal d'exercices d'Orodruin et la watch qui
-redémarre »). L'adresse n'est jamais une preuve. La watch ne connaissait pas cette identité :
+`EREGION_ORODRUIN_PRINCIPAL_ID` (`docs/glorfindel.md`, « Le canal d'exercices d'Orodruin »). L'adresse n'est jamais une preuve. La watch ne connaissait pas cette identité :
 `EREGION_PROTECTED_IDENTITIES` la tient, mais mêlée à celles des watches ; la variable nouvelle est la
 plus étroite, un seul id. C'est celle que la composition du banc autonome lira (BNC4,
 `docs/design/banc-autonome.md`, § 5.5) : un seul geste pour les deux.
@@ -1759,7 +1758,8 @@ plus étroite, un seul id. C'est celle que la composition du banc autonome lira 
 - **Sans elle** (vide, ou absente) avec le canal configuré : rien n'est écarté, la carte revient ; le
   statut de la règle le dit à chaque passage (`exercise_channel.config` : `unset`), le journal de la
   watch une fois, la ligne de la règle dans la console en orange (« ⚠ Orodruin id ») et son détail.
-  Mal formée : `malformed`, de même ; posée sans canal : `no channel`.
+  Mal formée : `malformed`, de même ; un canal absent ou une URL que le canal refuse (l'id posé ou
+  non) : `no channel`.
 - **Orodruin reconstruit** change d'identité : refaire le geste ; d'ici là, ses écritures refont leur
   carte, jamais un autre écart.
 - **Pour revenir aux cartes** : vider la variable, `make imladris-push`, la watch recréée.
