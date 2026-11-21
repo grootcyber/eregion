@@ -22,8 +22,8 @@ dépôt. Le reste est une hypothèse, et le texte le dit.
 
 - **La requête n'est qu'un gabarit.** La mémoire cherche ses précédents par le texte « TTP, gravité,
   type, événement, fournisseur ». La ligne détectée n'y entre jamais. Rejoués, les 479 signaux de la
-  copie ne donnent que **6 textes de requête distincts**. Pour un même gabarit et une même mémoire, la
-  distance rend donc les mêmes précédents, quoi que dise la détection.
+  copie ne donnent que **6 textes de requête distincts**. Pour un même gabarit et une même mémoire, à
+  règle et VM égales, la distance rend donc les mêmes précédents, quoi que dise la détection.
 - **Sur l'ensemble, la distance ne fait pas mieux que la date.** Avec le classement du code (même règle, puis même VM,
   au plus un précédent par VM, trois places), la distance et la date ne rendent le même ensemble que
   **21 fois sur 479**, avec un Jaccard moyen de 0,062. Part des précédents qui portent la technique du
@@ -114,7 +114,8 @@ dépôt. Le reste est une hypothèse, et le texte le dit.
 
 - **La copie** : celle que tire `make imladris-pull` (le tar de `~/.glorfindel` d'Imladris), extraite dans
   un dossier à part. Le script refuse le magasin de l'opérateur, sous le HOME comme sous le home que le
-  système lui donne, et tout dossier qui n'est pas un magasin (l'en-tête de `scripts/memory_replay.py`).
+  système lui donne, une copie dont un fichier ou un dossier y mène par un lien, et tout dossier qui
+  n'est pas un magasin (l'en-tête de `scripts/memory_replay.py`).
 - **Hors ligne** : le client embarqué de Chroma, télémétrie coupée (`ANONYMIZED_TELEMETRY=False`,
   `Settings(anonymized_telemetry=False)`), `HF_HUB_OFFLINE=1`. Le modèle ONNX de Chroma est lu sur le
   disque, et le script refuse s'il manque : il ne le tire jamais. Ni le cloud, ni le modèle de langage.
@@ -182,12 +183,12 @@ distincts.
 | T1548.003 (61) | **0 %** | 30,6 % | 96,8 % | 96,8 % |
 | T1486 (2) | 0 % | 50 % | 50 % | 50 % |
 | T1136.001 (1) | 0 % | 0 % | 0 % | 0 % |
+| aucune (1) | 0 % | 0 % | 0 % | 0 % |
 
 La distance n'est pas toujours la pire : pour T1110.001, elle fait mieux que la date. Mais pour les
 signaux d'élévation par sudo (T1548.003, 61 cycles), elle ne rend **jamais** un précédent de la même
-technique. La date en rend
-30,6 %, une clé TTP 96,8 %. Le cycle T1136.001 est le seul de sa technique : aucun classement ne peut
-lui en rendre un.
+technique. La date en rend 30,6 %, une clé TTP 96,8 %. Le cycle T1136.001 est le seul de sa technique,
+et le cycle sans technique le seul sans : aucun classement ne peut leur en rendre un.
 
 ### 2.5 Ce que la mesure ne dit pas
 
@@ -260,9 +261,14 @@ avant la fusion. SEC-I, SEC4a et SEC17 avaient été notés de même : à rejoue
   verrouillées ») ; l'index de l'IA d'analyse sur la même table d'abord, sinon chromadb reste (§1.4) ;
   les workflows qui tirent le modèle, que seul Jonathan modifie (l'App des sessions n'a pas le droit
   *Workflows*, `docs/sessions.md`, SEC12) ; le sort des cycles déjà rangés sur Imladris (Q3).
-- **Le modèle de menace** ne bouge pas. Un compte local qui provoque des détections sur sa VM tient le
-  cycle le plus récent de cette VM, comme il tient aujourd'hui sa classe « même VM », qui passe avant la
-  distance. La borne d'un précédent par VM tient dans les deux cas.
+- **Le modèle de menace.** Chez sa VM, rien ne change : un compte local qui provoque des détections
+  sur sa VM tient le cycle le plus récent de cette VM, comme il tient aujourd'hui sa classe « même VM »,
+  qui passe avant la distance. **Chez les autres VM, la date le sert** : des détections récentes,
+  provoquées à volonté, donnent à sa VM une place certaine parmi les précédents des signaux de même
+  règle ou de même technique, sur toute autre VM. Sous la distance, cette place dépend de la ressemblance
+  de son cycle au gabarit. Dans les deux cas, il n'en tient qu'une (la borne d'un précédent par VM), mais
+  sous (a) il sait qu'il l'a, avec les 200 caractères d'un raisonnement écrit sur ses lignes. Un filtre
+  sur la corroboration (SEC-A3) la bornerait ; il reste à décider avec SEC-A3, comme sous la distance.
 
 ### (b) Chroma gardé, le TTP ajouté aux clés de rang
 
@@ -341,7 +347,8 @@ décidé à sa place.
 **Q1 — Quelle mémoire pour les précédents ?** (§4, §5)
 1. **(a) Une table par clés et par date (la règle, la VM, la technique, puis la plus récente), chromadb
    sorti ensuite (recommandée).** Le même gain mesuré que (b), et tout ce que coûte Chroma retiré ; une
-   règle de choix qu'on peut dire à un humain.
+   règle de choix qu'on peut dire à un humain. Le prix : un compte local qui provoque des détections
+   récentes est sûr d'avoir la place de sa VM chez les autres VM de même technique (§4, a).
 2. (b) Chroma gardé, le TTP ajouté aux clés de rang. Le plus petit changement de ce que voit le modèle
    (80 signaux sur 479), le même gain mesuré, tous les coûts de Chroma gardés.
 3. Rien ne change : la mesure est notée, la mémoire reste telle quelle.
@@ -356,9 +363,10 @@ décidé à sa place.
 1. **Importés une fois, hors ligne, depuis une copie (recommandée).** La mémoire reste continue, et le
    run de bout en bout compare la même mémoire classée autrement. L'import lit la copie comme le fait
    `scripts/memory_replay.py`. La pousser sur Imladris est un geste de Jonathan.
-2. Repartir vide. C'est plus simple, et le banc la remplit en un jour (480 cycles réels en 36 jours).
-   Mais les premières décisions n'ont aucun précédent, et ce changement-là aussi se voit dans le
-   message.
+2. Repartir vide. C'est plus simple. Au débit du banc (480 cycles réels en 36 jours, environ 13 par
+   jour), des précédents reviennent dès le premier jour ; trois seulement quand trois VM ont des cycles,
+   puisqu'une VM n'en donne qu'un. Mais les premières décisions n'ont aucun précédent, et ce
+   changement-là aussi se voit dans le message.
 
 **Q4 — Quand mesurer au harnais si les précédents changent les décisions (d) ?**
 1. **Avec MEM2, comme sa preuve, avant la fusion (recommandée).** Trois mémoires sur les mêmes cas :

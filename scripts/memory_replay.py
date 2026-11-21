@@ -8,11 +8,13 @@ The copy is one that `make imladris-pull` brought back (its tar of Imladris's ~/
 ~/.eregion/host-backups/), extracted in a folder of its own. Chroma may write in what it opens (its
 sqlite, its log): a copy, never the original.
 
-**Refused** (exit 2, said on stderr, nothing opened): a path in the operator's ~/.glorfindel,
-~/.eregion or ~/.annatar — under the home the system gives him and under HOME, as given and resolved
-(eregion_core/store_guard.py's rule, here in any session: the store of a running watch is never
-opened by this script); a folder that is not a store (no chroma.sqlite3: none is made); a store
-without the `cycles` collection; Chroma's model not on the disk.
+**Refused** (exit 2, said on stderr). Before anything is opened: a path in the operator's
+~/.glorfindel, ~/.eregion or ~/.annatar — under the home the system gives him and under HOME, as given
+and resolved (eregion_core/store_guard.py's rule, here in any session: the store of a running watch is
+never opened by this script); a folder one of whose files or folders leads there through a link (the
+copy's chroma.sqlite3 linked to the original, its segments' folder too: walked, links not followed); a
+folder that is not a store (no chroma.sqlite3: none is made); Chroma's model not on the disk. After the
+copy is opened by Chroma's client: a store without the `cycles` collection.
 
 **Offline**: the embedded Chroma client, its telemetry off (`ANONYMIZED_TELEMETRY=False` and
 `Settings(anonymized_telemetry=False)`), `HF_HUB_OFFLINE=1`, and Chroma's own ONNX model
@@ -24,8 +26,9 @@ model of language.
 dated takes the B2 floor, as `glorfindel/memory.py` dates it, `_stored_at`). For each real cycle, the
 memory holds the real cycles stored before it, within the age bound (90 days, `memory.max_age_days`'s
 default): its signal is the cycle's own — its technique, severity, resource type, event, provider
-« azure » (what the RulePoller writes, glorfindel/detection_rules.py), rule and VM. Three rankings,
-each the code's (`CycleMemory.retrieve_similar`): the same rule first, then the same VM, then
+« azure » (what the RulePoller writes, glorfindel/detection_rules.py), rule and VM. Four rankings,
+each with the code's keys and bounds (`CycleMemory.retrieve_similar`): the same rule first, then the
+same VM, then
 
 - ``distance``: the cosine distance between the signal's text (`memory._signal_to_text`) and the
   cycle's stored embedding — what the code does;
@@ -82,15 +85,30 @@ class Refused(Exception):
     """What this script will not open, said on stderr: exit 2."""
 
 
+def _linked_into(path, roots: tuple[str, ...]) -> str | None:
+    """The operator's folder (``.glorfindel``) a file or a folder of ``path`` leads into through a
+    link, or None — the copy walked, links not followed (a linked folder is checked, never entered)."""
+    for top, folders, files in os.walk(path):
+        for name in files + folders:
+            found = store_guard.located(os.path.join(top, name), roots)
+            if found is not None:
+                return found[1]
+    return None
+
+
 def refusal(path, homes=None) -> str | None:
     """Why ``path`` is not opened, or None: the operator's folders (``homes``: the home the system
-    gives him and HOME), or a folder that is not a copy of a store."""
+    gives him and HOME), a copy one of whose files leads there, or a folder that is not a store."""
     homes = (store_guard.operator_home(), Path.home()) if homes is None else homes
     roots = tuple(dict.fromkeys(root for home in homes for root in store_guard.roots_of(home)))
     found = store_guard.located(path, roots)
     if found is not None:
         return (f"refusé : ce chemin est dans le ~/{found[1]} de l'opérateur. Une copie seulement : "
                 "celle de make imladris-pull, extraite dans un dossier à part (l'en-tête de ce script).")
+    linked = _linked_into(path, roots)
+    if linked is not None:
+        return (f"refusé : un fichier de ce dossier mène par un lien au ~/{linked} de l'opérateur. Une "
+                "copie seulement, sans lien vers l'original.")
     if not (Path(path) / "chroma.sqlite3").is_file():
         return "refusé : ce dossier n'est pas la copie d'un magasin (pas de chroma.sqlite3) ; rien n'est créé."
     return None

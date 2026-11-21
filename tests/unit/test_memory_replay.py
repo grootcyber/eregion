@@ -137,6 +137,43 @@ def test_one_precedent_per_vm_at_most_the_unknown_vm_counting_as_one(tmp_path, m
     assert mr.replay(cycles, _embed, shipped=set())["replay"]["mean_precedents"]["distance"] == 1.6
 
 
+def _toward(ttp: str):
+    """The order by distance to the signal's text of ``ttp``."""
+    return lambda c: 1.0 - float(c["emb"] @ AXES[ttp])
+
+
+def _names(cycles: list[dict], picks: list[int]) -> list[str]:
+    return [cycles[i]["key"][0] for i in picks]
+
+
+def test_a_cycle_of_the_signal_rule_comes_before_a_nearer_one(tmp_path, mr):
+    """M7020: the code's first key. Two cycles of one VM, one place: the cycle of the signal's rule,
+    farther and older, stored after the nearer one, takes it — neither the distance, nor the date,
+    nor the order of the store would."""
+    s = _Store(tmp_path)
+    s.store(_cycle("near", "T1486", vm="vm-x"), B2 + 2 * DAY, AXES["T1486"])
+    s.store(_cycle("far", "T1486", vm="vm-x", rule="ransomware-disk-write"), B2 + 1 * DAY, AXES["T1041"])
+    cycles = mr.load(s.copy())
+    signal_vm = memory._vm_key(VM.format("vm-s"))
+    assert _names(cycles, mr.pick(cycles, "ransomware-disk-write", signal_vm, _toward("T1486"))) == ["far"]
+    # Without the signal's rule, the distance decides.
+    assert _names(cycles, mr.pick(cycles, "", signal_vm, _toward("T1486"))) == ["near"]
+
+
+def test_a_cycle_of_the_signal_vm_comes_before_a_nearer_one(tmp_path, mr):
+    """M7021: the code's second key. A cycle of the signal's VM, farther and older, stored after a
+    nearer one that names no VM, comes first; with one place, it takes it."""
+    s = _Store(tmp_path)
+    s.store(_cycle("near", "T1486"), B2 + 2 * DAY, AXES["T1486"])                  # the VM unknown
+    s.store(_cycle("far", "T1486", vm="vm-a"), B2 + 1 * DAY, AXES["T1041"])
+    cycles = mr.load(s.copy())
+    vm_a = memory._vm_key(VM.format("vm-a"))
+    assert _names(cycles, mr.pick(cycles, "", vm_a, _toward("T1486"))) == ["far", "near"]
+    assert _names(cycles, mr.pick(cycles, "", vm_a, _toward("T1486"), n=1)) == ["far"]
+    # On another VM, the distance decides.
+    assert _names(cycles, mr.pick(cycles, "", memory._vm_key(VM.format("vm-b")), _toward("T1486"))) == ["near", "far"]
+
+
 def test_the_share_of_precedents_bearing_the_signal_technique(tmp_path, mr):
     """M6959: the share is counted per precedent given, never per signal — the measure the note rests
     on (77 % by the distance, 80 % by the date, 93 % by the technique then the date, on Imladris's
@@ -213,6 +250,30 @@ def test_the_operator_store_is_refused_before_anything_is_opened(tmp_path, mr, c
     code, _out, said = _run(mr, capsys, empty)
     assert code == 2 and "pas la copie d'un magasin" in said
     assert list(empty.iterdir()) == []
+
+
+def test_a_copy_linked_to_the_operator_store_is_refused(tmp_path, mr, capsys, monkeypatch):
+    """M7022, M7023: a copy outside the operator's folders whose chroma.sqlite3 is a link to the
+    original, or one of whose folders is (a segment's), is refused before anything is opened; the
+    copy is walked, its links never followed."""
+    operator = tmp_path / "operator"
+    monkeypatch.setattr(store_guard, "operator_home", lambda: operator)
+    original = operator / ".glorfindel" / "cycles"
+    CycleMemory(path=original)
+    sqlite = original / "chroma.sqlite3"
+    before = sqlite.stat().st_mtime_ns
+
+    by_file = tmp_path / "copy-by-file"
+    by_file.mkdir()
+    (by_file / "chroma.sqlite3").symlink_to(sqlite)
+    by_folder = tmp_path / "copy-by-folder"
+    shutil.copytree(original, by_folder)
+    (by_folder / "segment").symlink_to(original, target_is_directory=True)
+    for copy in (by_file, by_folder):
+        code, out, said = _run(mr, capsys, copy)
+        assert code == 2 and out is None
+        assert "mène par un lien au ~/.glorfindel de l'opérateur" in said
+    assert sqlite.stat().st_mtime_ns == before
 
 
 def test_the_model_is_never_fetched_and_the_store_opened_offline(tmp_path, mr, capsys, monkeypatch):
