@@ -4,8 +4,11 @@ machine stays reachable (a test's own server). Only the loopback is touched here
 """
 from __future__ import annotations
 
+import json
 import socket
+import subprocess
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -49,8 +52,9 @@ REFUSED = "the network is refused"
 
 
 def test_a_connection_beyond_this_machine_is_refused_before_it_leaves():
-    """By hand, `connect` and `connect_ex` alike, and a name resolved: refused by the hook, before
-    the system call."""
+    """By hand, `connect` and `connect_ex` alike: refused by the hook, before the system call. A name
+    to resolve: its audit event refused — raised by `sys.audit` itself, which resolves nothing (a
+    guard that let it through, a mutant's, must never send a query)."""
     s = socket.socket()
     try:
         with pytest.raises(ConnectionRefusedError, match=REFUSED):
@@ -60,7 +64,9 @@ def test_a_connection_beyond_this_machine_is_refused_before_it_leaves():
     finally:
         s.close()
     with pytest.raises(ConnectionRefusedError, match=REFUSED):
-        socket.getaddrinfo("example.org", 443)
+        sys.audit("socket.getaddrinfo", "example.org", 443, 0, 0, 0)
+    with pytest.raises(ConnectionRefusedError, match=REFUSED):
+        sys.audit("socket.gethostbyname", "example.org")
 
 
 def test_a_server_of_this_machine_is_reached():
@@ -77,3 +83,73 @@ def test_a_server_of_this_machine_is_reached():
     finally:
         client.close()
         server.close()
+
+
+# ── beside HY2b (eregion_core/store_guard.py): each refuses what it guards, in either order ────────
+
+ROOT = Path(__file__).resolve().parents[2]
+_BOTH = r"""
+import importlib.util, json, socket, sys
+from pathlib import Path
+order, home = sys.argv[1], Path(sys.argv[2])
+
+def load(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+# Each by its path: importing eregion_core would install HY2b on the operator's real home.
+net = load("probe_network_guard", sys.argv[3])
+store = load("probe_store_guard", sys.argv[4])
+guards = {"net": net.install,
+          "store": lambda: store.install(env={store.SESSION_VAR: "1"}, cwd=str(home), home=home)}
+target = home / ".glorfindel" / "notices.jsonl"
+target.parent.mkdir(parents=True, exist_ok=True)      # before the guards: HY2b refuses it too
+for name in order.split(","):
+    guards[name]()
+said = {}
+try:
+    open(target, "w").close()
+    said["store"] = "written"
+except Exception as exc:
+    said["store"] = type(exc).__name__ + ": " + str(exc)[:60]
+said["store_file"] = target.exists()
+s = socket.socket()
+try:
+    s.connect(("203.0.113.9", 443))
+    said["net"] = "connected"
+except Exception as exc:
+    said["net"] = type(exc).__name__ + ": " + str(exc)[:60]
+finally:
+    s.close()
+print(json.dumps(said))
+"""
+
+
+@pytest.mark.parametrize("order", ["net,store", "store,net"])
+def test_beside_hy2b_each_guard_refuses_what_it_guards_in_either_order(tmp_path, order):
+    """The two audit hooks in one interpreter, installed in either order (in the suite, this one
+    first: the conftest installs it on its import, before any collection; HY2b on the first import of
+    eregion_core, at collection): a write in the operator's store stays refused by HY2b, a connection
+    beyond the machine by this guard — their events are apart, neither refusal hides the other."""
+    driver = tmp_path / "both.py"
+    driver.write_text(_BOTH)
+    home = tmp_path / "operator"
+    home.mkdir()
+    proc = subprocess.run([sys.executable, str(driver), order, str(home), str(ROOT / "tests/unit/network_guard.py"),
+                           str(ROOT / "eregion_core/store_guard.py")], capture_output=True, text=True, timeout=60,
+                          cwd=tmp_path)
+    assert proc.returncode == 0, proc.stderr[-2000:]
+    said = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert said["store"].startswith(("Refused", "PermissionError")) and "HY2b" in said["store"], said
+    assert said["store_file"] is False, said
+    assert said["net"].startswith("Refused") and "network is refused" in said["net"], said
+
+
+def test_in_the_suite_this_guard_is_installed_before_eregion_core_is_imported():
+    """The order in the suite: the conftest installs this guard as it is imported, before any test
+    module is collected — eregion_core not imported yet —, so HY2b, when it is installed (an agent
+    session, on eregion_core's first import), runs second, in every process (each xdist worker loads
+    the conftest before it collects) and whatever the collection."""
+    assert sys._eregion_network_guard_after_hy2b is False

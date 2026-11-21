@@ -2,12 +2,17 @@
 objects — an enum read as its text, a field the body leaves out read as if it were there, a
 polymorphic job or point read by its order or its class — and the maintainer's capture of their
 bodies (scripts/sdk_capture.py, its anonymization scripts/sdk_anonymize.py): a write let through, the
-closed list opened, a real GUID or address left in the files. M6962–M6976, measured by tests/unit/test_sdk_mgmt_contracts.py and
-tests/unit/test_sdk_capture.py."""
+closed list opened, a real GUID or address left in the files. M6962–M6976, measured by
+tests/unit/test_sdk_mgmt_contracts.py and tests/unit/test_sdk_capture.py; after the review,
+M7061–M7065: an IPv6 address left, a domain outside Azure's let through by the check, a name resolved
+past the suite's network guard (tests/unit/test_network_guard.py), a retried response kept twice, an
+output under a git checkout accepted (M7066, M7067 kept for the second round)."""
 _T = "tests/unit/test_sdk_mgmt_contracts.py"
 _C = "tests/unit/test_sdk_capture.py"
 _S = "scripts/sdk_capture.py"
 _A = "scripts/sdk_anonymize.py"
+_G = "tests/unit/network_guard.py"
+_N = "tests/unit/test_network_guard.py"
 _AZ = "glorfindel/providers/azure"
 
 MUTANTS = [
@@ -70,6 +75,18 @@ MUTANTS = [
      '        out = _sub_all(out, {k.replace(".", "-"): v.replace(".", "-") for k, v in self.ips.items()},\n'
      '                       r"(?<![0-9])", r"(?![0-9])")\n',
      ""),
+    ("M7061", "the anonymization blind to IPv6: a real address left in the files (SDK1b, review)", _A,
+     "        out = IPV6.sub(lambda m: self.ipv6(m.group(0)), out)\n", ""),
+    ("M7062", "the check blind to a domain outside Azure's: `check` says clean (SDK1b, review)", _A,
+     "             any(_is_domain(m.group(1)) and not _domain_kept(m.group(1).lower()) for m in DOMAIN.finditer(text))),\n",
+     "             False),\n"),
+    ("M7063", "the suite's network guard lets a name be resolved beyond the machine (SDK1b, review)", _G,
+     '"socket.sendmsg": 1, "socket.getaddrinfo": 0,', '"socket.sendmsg": 1,'),
+    ("M7064", "a response the SDK retried kept from its first attempt: the 429, not the 200 (SDK1b, review)", _S,
+     "        if 200 <= p.http_response.status_code < 300:\n            kept[p.http_request.url] = p\n",
+     "        kept.setdefault(p.http_request.url, p)\n"),
+    ("M7065", "the capture writes under a git checkout, this repository's aside (SDK1b, review)", _S,
+     '        if folder == REPO or (folder / ".git").exists():\n', "        if folder == REPO:\n"),
 ]
 TESTS = {
     "M6962": f"{_T}::test_the_nsg_audit_through_the_sdk",
@@ -87,4 +104,10 @@ TESTS = {
     "M6974": f"{_C}::test_the_script_reads_only_from_a_closed_list",
     "M6975": f"{_C}::test_nothing_real_leaves_the_anonymization",
     "M6976": f"{_C}::test_a_rule_of_glorfindel_still_names_its_nic_and_its_attacker",
+    "M7061": f"{_C}::test_a_body_made_to_trap_the_anonymization_comes_out_clean",
+    "M7062": f"{_C}::test_check_refuses_each_form_the_anonymization_must_not_leave",
+    "M7063": f"{_N}::test_the_rule_reaches_this_machine_only "
+             f"{_N}::test_a_connection_beyond_this_machine_is_refused_before_it_leaves",
+    "M7064": f"{_C}::test_a_response_retried_by_the_sdk_is_kept_once",
+    "M7065": f"{_C}::test_the_out_folder_is_under_no_git_checkout",
 }

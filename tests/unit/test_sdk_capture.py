@@ -313,9 +313,12 @@ def test_the_out_folder_is_under_no_git_checkout(sc, tmp_path):
     checkout its worktree belongs to (run from a worktree, `~/eregion/tests/…` was accepted), nor
     into any folder under a `.git` — a directory or a worktree's file."""
     import subprocess
-    common = Path(subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--path-format=absolute", "--git-common-dir"],
-                                 capture_output=True, text=True, check=True).stdout.strip())
-    for inside in (ROOT, ROOT / "tests/unit/sdk_bodies", ROOT / "scripts", common.parent / "tests" / "unit"):
+    proc = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                          capture_output=True, text=True)
+    # The checkout this one belongs to — none in a mutant's copy (no git there): the folders made below
+    # still prove the rule.
+    checkout = [Path(proc.stdout.strip()).parent / "tests" / "unit"] if proc.returncode == 0 else []
+    for inside in (ROOT, ROOT / "tests/unit/sdk_bodies", ROOT / "scripts", *checkout):
         with pytest.raises(SystemExit):
             sc._outside_repo(inside)
     main, worktree = tmp_path / "main", tmp_path / "wt"

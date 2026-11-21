@@ -8,6 +8,7 @@ reachable — 127.0.0.0/8, ::1, `localhost`, a Unix socket: a test's own server.
 The conftest installs it once per interpreter (each xdist worker loads it), never removed; `allowed`
 is the rule, tested alone (tests/unit/test_network_guard.py). Loaded by its path beside the conftest,
 like tests/unit/home_sandbox.py.
+Measured 21/11: installed before HY2b, events apart, each refuses in either order; -n 4 263.6 s vs 252.9 s on main (+4.2 %).
 """
 from __future__ import annotations
 
@@ -63,7 +64,9 @@ def _hook(event: str, args: tuple) -> None:
 
 
 def install() -> None:
-    """The hook, once per interpreter: an audit hook is never removed."""
+    """The hook, once per interpreter: an audit hook is never removed. Whether HY2b's was there before
+    it (`eregion_core.store_guard` imported already) is kept: the order the hooks run in."""
     if not getattr(sys, "_eregion_network_guard", False):
+        sys._eregion_network_guard_after_hy2b = "eregion_core.store_guard" in sys.modules
         sys.addaudithook(_hook)
         sys._eregion_network_guard = True
