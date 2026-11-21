@@ -39,6 +39,7 @@ L'atelier autour : **Celebrimbor** (`infra/terraform/`) construit et inscrit le 
 | La file d'actions signée (FS1, conception) : seule la watch écrit, la console et le bot déposent une demande signée | [docs/design/file-actions-signee.md](docs/design/file-actions-signee.md) |
 | Isolation compatible IaC | [docs/design/module-isolation-iac.md](docs/design/module-isolation-iac.md) |
 | La corrélation, brique du produit : sessions SSH derrière un shell root, brute force qui réussit ; ce qu'elle lit, ses limites | [docs/design/correlation.md](docs/design/correlation.md) |
+| Les alertes de Defender for Cloud et de Sentinel comme signaux (DEF1, conception, rien d'activé) : la voie, l'attribution, les gardes, les droits, la mesure au banc d'abord | [docs/design/alertes-hebergeur.md](docs/design/alertes-hebergeur.md) |
 | Contrat d'Orodruin | [docs/design/orodruin-contract.md](docs/design/orodruin-contract.md) |
 | Console Eregion : sections, Glorfindel toujours présent, plan UI | [docs/design/console.md](docs/design/console.md) |
 | Dagorlad, guide d'utilisation : Board, Runs, verdicts, demande, Stop all ; images rejouables sur le jeu d'exemple | [docs/dagorlad.md](docs/dagorlad.md) |
