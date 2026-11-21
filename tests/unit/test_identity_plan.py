@@ -17,6 +17,7 @@ What is held:
 from __future__ import annotations
 
 import ast
+import json
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -266,12 +267,16 @@ def test_an_eligible_role_is_removed_by_a_schedule_request(tenant):
 
 
 def test_an_unusual_signin_removes_the_credential_it_used_else_blocks_the_principal(tenant):
+    # The column as the rule projects it and the SDK hands it on (CRD1): the JSON text of a set. Its
+    # path from the shipped query, through the SDK's objects: tests/unit/test_signin_credential.py.
     tenant.apps[APP]["passwordCredentials"] = [{"keyId": KEY}]
-    used = _plan(_row("signin", ServicePrincipalCredentialKeyId=KEY), tenant)
+    used = _plan(_row("signin", CredentialKeyIds=json.dumps([KEY]), FederatedSignIns=0), tenant)
     assert used["items"][0]["command"] == f"az ad app credential delete --id {APP} --key-id {KEY}"
     none = _plan(_row("signin"), tenant)
     assert none["items"][0]["verb"] == "entra_disable_principal"
     assert none["items"][0]["command"] == f"az ad sp update --id {SP} --set accountEnabled=false"
+    # E-6 (CRD1): « du principal de service », never « de le ».
+    assert none["items"][0]["what"].startswith("Bloquer la connexion du principal de service sp-ci-deploy,")
 
 
 @pytest.mark.parametrize("mark", ["GlorfindelIdentity", "GlorfindelManaged"])
@@ -338,7 +343,7 @@ def test_a_hostile_field_of_the_log_never_reaches_a_command(tenant, kind):
     hostile = {"TargetId": HOSTILE, "TargetName": HOSTILE, "ActorId": HOSTILE, "ActorName": HOSTILE,
                "ActorAppId": "", "ClientId": HOSTILE, "RoleName": HOSTILE, "TimeGenerated": HOSTILE,
                "CredentialAdded": f"[KeyIdentifier={HOSTILE},KeyType=Password]",
-               "ServicePrincipalCredentialKeyId": HOSTILE, "CorrelationId": HOSTILE}
+               "CredentialKeyIds": json.dumps([HOSTILE]), "CorrelationId": HOSTILE}
     plan = _plan(_row(kind, **hostile), tenant)
     for cmd in _commands(plan):
         assert not re.search(r"evil|curl|whoami|\$\(|`|<img|;\s*echo", cmd), cmd

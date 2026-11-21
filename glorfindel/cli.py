@@ -1550,6 +1550,19 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
     elif getattr(_watch_channel, "channel", ""):
         console.print("[yellow]Voie de retour : URL illisible — aucune de ses écritures n'est écartée "
                       "de la règle d'exfiltration[/yellow]")
+    # SLF2 (#1010): Orodruin's writes in its exercise channel — its identity (EREGION_ORODRUIN_PRINCIPAL_ID),
+    # the container of EREGION_EXERCISE_CHANNEL, its account —, set aside from the same rule, counted.
+    _oro_exercise = _own_channel.of_env() if not dry_run else (None, "")
+    _own_channel.register_exercise(_oro_exercise)
+    if _oro_exercise[0] is not None:
+        console.print("[dim]Canal d'exercices : les écritures d'Orodruin (son identité, son conteneur, son "
+                      "compte) écartées de la règle d'exfiltration, comptées sur la règle[/dim]")
+    elif _oro_exercise[1]:
+        _why = {"unset": f"{_own_channel.ORODRUIN_ENV} absente",
+                "malformed": f"{_own_channel.ORODRUIN_ENV} n'est pas un object id"}.get(
+                    _oro_exercise[1], f"{_own_channel.EXERCISE_ENV} absente ou refusée")
+        console.print(f"[yellow]Canal d'exercices : {_outside(_why)} — aucune écriture d'Orodruin n'est "
+                      "écartée de la règle d'exfiltration[/yellow]")
 
     if _rules_file:
         try:

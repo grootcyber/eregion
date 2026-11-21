@@ -38,12 +38,25 @@ tests of SLF1 passed a Python list. The column is read in either form (`writers_
 JSON text of at most ``WRITERS_MAX`` characters that decodes to one. A text unreadable, longer, or
 that is not a list of objects sets nothing aside, never raises, and is said: ``unparsed``, counted
 beside ``unread`` in the rule's status.
+
+SLF2 (#1010): **Orodruin's exercise channel**, a form seen on the 21/11. Orodruin publishes its
+windows and its run reports in the exercise channel (``EREGION_EXERCISE_CHANNEL``, eregion_core/exercise_channel.py) — a PutBlob from
+its private address, on the account of the watch's channel. An entry of BlobWriters is set aside
+only when all of it holds: the account is the exercise channel's, the container is its container,
+and the writer is Orodruin's identity — the object id of its managed identity's principal,
+``EREGION_ORODRUIN_PRINCIPAL_ID`` in the watch's environment (Imladris's host.env, never the
+repository), never an address. Without that id (or the channel), nothing is set aside, and the
+rule's status says why (``exercise_config``); an id that is no object id, the same. Every object
+Orodruin's identity writes in its container counts — a choice made, its reason in
+docs/design/modele-de-menace.md. The watch that restarts (the other card of the 21/11) is left to a
+measure: its log says « the watch's identity could not be read », as before.
 """
 from __future__ import annotations
 
 import functools
 import hashlib
 import json
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -62,6 +75,12 @@ REASON = ("the watch's own return channel: its identity, the container of EREGIO
 WRITERS_MAX = 64 * 1024
 # Azure's container names: 3 to 63 of lowercase letters, digits and single hyphens.
 _CONTAINER = re.compile(r"^(?=.{3,63}$)[a-z0-9]+(?:-[a-z0-9]+)*$")
+# SLF2: Orodruin's exercise channel — the variable naming the identity that writes there.
+EXERCISE_ENV = "EREGION_EXERCISE_CHANNEL"
+ORODRUIN_ENV = "EREGION_ORODRUIN_PRINCIPAL_ID"
+EXERCISE_REASON = ("Orodruin's exercise channel: its identity (EREGION_ORODRUIN_PRINCIPAL_ID), the container of "
+                   "EREGION_EXERCISE_CHANNEL, its account (SLF2)")
+_GUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
 
 @dataclass(frozen=True)
@@ -71,6 +90,12 @@ class Channel:
     account: str
     container: str
     writer: str = ""
+
+
+def guid(value) -> str:
+    """``value`` in lower case when it is an object id (a GUID), else ""."""
+    v = str(value or "").strip().lower()
+    return v if _GUID.match(v) else ""
 
 
 def parse_url(url: str) -> tuple[str, str] | None:
@@ -105,6 +130,43 @@ def of_publisher(publisher) -> Callable[[], Channel | None] | None:
             oid = ""
         return Channel(account, container, oid)
     return current
+
+
+def of_env(env=None) -> tuple[Channel | None, str]:
+    """SLF2: Orodruin's exercise channel, as the watch's environment declares it — (the channel and
+    Orodruin's identity, "") when both are there; else (None, why): ``unset`` (the channel declared,
+    not the identity), ``malformed`` (an identity that is no object id), ``no channel`` (the channel
+    not declared while the identity is, or a URL the channel refuses — the identity declared or not).
+    Neither declared: (None, "") — no exercise channel on this watch. Never raises."""
+    env = os.environ if env is None else env
+    url = str(env.get(EXERCISE_ENV) or "").strip()
+    raw = str(env.get(ORODRUIN_ENV) or "").strip()
+    if not url and not raw:
+        return None, ""
+    parsed = parse_url(url) if url else None
+    if parsed is None:
+        return None, "no channel"
+    if not raw:
+        return None, "unset"
+    oid = guid(raw)
+    if not oid:
+        return None, "malformed"
+    return Channel(parsed[0], parsed[1], oid), ""
+
+
+_EXERCISE: tuple[Channel | None, str] = (None, "")
+
+
+def register_exercise(exercise: tuple[Channel | None, str]) -> None:
+    """Orodruin's exercise channel, for the RulePoller and the poll of an attack_started (`glorfindel
+    watch`, from its environment at its start)."""
+    global _EXERCISE
+    _EXERCISE = exercise
+
+
+def current_exercise() -> tuple[Channel | None, str]:
+    """The exercise channel registered and its problem; (None, "") when none. Never raises."""
+    return _EXERCISE
 
 
 _SOURCE: Callable[[], Channel | None] | None = None
@@ -209,14 +271,82 @@ def _own(entry, channel: Channel) -> tuple[int, int] | None:
     return writes, _count(entry.get("bytes")) or 0
 
 
-def settle(rows: list[dict], channel: Channel | None) -> tuple[list[dict], dict]:
+def _orodruin(entry, exercise: Channel) -> tuple[int, int] | None:
+    """SLF2: (writes, bytes) of an entry of BlobWriters that is Orodruin's in its exercise channel —
+    its container, its identity —, else None."""
+    if not isinstance(entry, dict):
+        return None
+    writes = _count(entry.get("writes"))
+    if writes is None or writes <= 0:
+        return None
+    if str(entry.get("container") or "") != exercise.container:
+        return None
+    if str(entry.get("writer") or "").lower() != exercise.writer:
+        return None
+    return writes, _count(entry.get("bytes")) or 0
+
+
+def _read_by_own(row: dict, channel: Channel | None) -> bool:
+    """Whether the pass of the watch's own channel reads this row's column (and counts it unparsed)."""
+    return (channel is not None and bool(channel.writer) and _count(row.get("PutBlobCount")) is not None
+            and str(row.get("AccountName") or "").lower() == channel.account)
+
+
+def settle_exercise(rows: list[dict], exercise: Channel | None, channel: Channel | None = None,
+                    said: dict | None = None) -> list[dict]:
+    """SLF2: Orodruin's writes in its exercise channel taken off each row that carries BlobWriters —
+    its entries out of the column (left a list), its writes and bytes off the row's counts, the row
+    left out when nothing else is in it. Counted in ``said``: ``exercise_writes``, ``exercise_rows``,
+    ``unparsed`` (a column unreadable, the row of the exercise channel's account, when the pass of
+    the watch's channel does not count it). Without the channel and Orodruin's identity: nothing."""
+    said = {} if said is None else said
+    out: list[dict] = []
+    for row in rows:
+        if not isinstance(row, dict) or WRITERS not in row:
+            out.append(row)
+            continue
+        account = str(row.get("AccountName") or "").lower()
+        total = _count(row.get("PutBlobCount"))
+        mine = exercise is not None and bool(exercise.writer) and exercise.account == account
+        if total is None or not mine:
+            out.append(row)
+            continue
+        entries = writers_of(row[WRITERS])
+        if entries is None:
+            if not _read_by_own(row, channel):
+                said["unparsed"] = said.get("unparsed", 0) + 1
+            out.append(row)
+            continue
+        oro = [_orodruin(e, exercise) for e in entries]
+        writes = min(total, sum(o[0] for o in oro if o is not None))
+        if not writes:
+            out.append(row)
+            continue
+        said["exercise_writes"] = said.get("exercise_writes", 0) + writes
+        if writes >= total:
+            said["exercise_rows"] = said.get("exercise_rows", 0) + 1
+            continue
+        row = dict(row)
+        row[WRITERS] = [e for e, o in zip(entries, oro) if o is None]
+        row["PutBlobCount"] = total - writes
+        egress = _count(row.get("EgressBytes"))
+        if egress is not None:
+            row["EgressBytes"] = max(0, egress - sum(o[1] for o in oro if o is not None))
+        out.append(row)
+    return out
+
+
+def settle(rows: list[dict], channel: Channel | None,
+           exercise: Channel | None = None) -> tuple[list[dict], dict]:
     """(the rows for the poller, what was set aside). Each row that carries BlobWriters is a copy
     without it; the watch's own writes taken off its counts, and the row left out when nothing else
     is in it. Counts: ``writes`` and ``rows`` set aside, ``unread`` when a row carried the column
     while a channel is configured and the watch's identity is not read (nothing set aside),
     ``unparsed`` the rows of the channel's account whose column could not be read (`writers_of`:
-    nothing set aside of them, SLF1b)."""
+    nothing set aside of them, SLF1b). SLF2: Orodruin's writes in its exercise channel first
+    (`settle_exercise`: ``exercise_writes``, ``exercise_rows``, each only when not 0)."""
     said = {"writes": 0, "rows": 0, "unread": False, "unparsed": 0}
+    rows = settle_exercise(rows, exercise, channel, said)
     out: list[dict] = []
     for row in rows:
         if not isinstance(row, dict) or WRITERS not in row:

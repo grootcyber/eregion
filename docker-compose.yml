@@ -175,6 +175,12 @@ services:
       # managée qu'il crée (glorfindel/providers/azure/entra_msi.py). Un id, aucun secret, jamais dans le
       # dépôt ; vide, rien n'est écarté (le statut de la règle le dit) ; pas un GUID, --check refuse.
       EREGION_ENTRA_MSI_ACTOR_ID: ${EREGION_ENTRA_MSI_ACTOR_ID:-}
+      # SLF2 (#1010) : l'object id du principal de l'identité managée d'Orodruin, que la watch lit pour
+      # écarter de data-exfiltration-blob ses écritures dans le canal d'exercices (son identité, le
+      # conteneur d'EREGION_EXERCISE_CHANNEL, son compte : glorfindel/own_channel.py). Un id, aucun
+      # secret, jamais dans le dépôt ; vide, rien n'est écarté (le statut de la règle le dit) ; pas un
+      # GUID, --check refuse.
+      EREGION_ORODRUIN_PRINCIPAL_ID: ${EREGION_ORODRUIN_PRINCIPAL_ID:-}
       # REC1 (#668) : les principaux qui restaurent depuis le poste (object id ou appId) ; leur Run
       # Command, lue dans le journal d'activité, prouve à la watch une neutralisation. Des ids, aucun
       # secret ; vide, aucune neutralisation n'est prouvée : chaque levée lue sur Azure est une carte.

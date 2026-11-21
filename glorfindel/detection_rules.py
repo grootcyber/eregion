@@ -75,6 +75,23 @@ def own_channel_counts(status: dict) -> dict:
             "own_channel_unparsed_last": str(oc.get("unparsed_last") or "")}
 
 
+def exercise_channel_counts(status: dict) -> dict:
+    """SLF2 (#1010): Orodruin's writes in its exercise channel a rule set aside, as its status holds
+    them — the console and `status_snapshot` read them here. `exercise_channel_config`: why nothing
+    can be set aside, at the last pass — « unset » (EREGION_ORODRUIN_PRINCIPAL_ID), « malformed » (no
+    object id), « no channel » (EREGION_EXERCISE_CHANNEL unset or refused) —, "" when configured."""
+    ec = status.get("exercise_channel") if isinstance(status, dict) else None
+    ec = ec if isinstance(ec, dict) else {}
+
+    def n(k: str) -> int:
+        v = ec.get(k)
+        return v if type(v) is int and v >= 0 else 0
+    config = ec.get("config")
+    return {"exercise_channel_count": n("writes"), "exercise_channel_rows": n("rows"),
+            "exercise_channel_last": str(ec.get("last") or ""),
+            "exercise_channel_config": config if config in ("unset", "malformed", "no channel") else ""}
+
+
 def msi_certificate_counts(status: dict) -> dict:
     """MID1 (#981): the rows of `entra-credential-added` set aside as the certificate Azure puts on a
     managed identity it creates (glorfindel/providers/azure/entra_msi.py), as the rule's status holds
@@ -1744,11 +1761,15 @@ class RulePoller:
         ip_owners: Callable[[], dict] | None = None,
         topology=None,
         channel: Callable[[], "own_channel.Channel | None"] | None = None,
+        exercise: Callable[[], "tuple[own_channel.Channel | None, str]"] | None = None,
     ) -> None:
         RulePoller._live.add(self)
         # SLF1 (#929): the watch's own return channel, set aside from the exfiltration rule —
         # read at each pass (glorfindel/own_channel.py); the one `glorfindel watch` registers.
         self._channel = channel or own_channel.current
+        # SLF2 (#1010): Orodruin's exercise channel and its identity, (channel, problem); the one
+        # `glorfindel watch` registers from its environment.
+        self._exercise = exercise or own_channel.current_exercise
         self._rules = rules
         self._dispatch = dispatch
         self._dry_run = dry_run
@@ -1843,6 +1864,7 @@ class RulePoller:
                     "match_count": s.get("match_count", 0),
                     **expected_counts(s),
                     **own_channel_counts(s),
+                    **exercise_channel_counts(s),
                     **msi_certificate_counts(s),
                     **unreadable_counts(s),
                     **({"auditd": s["auditd"]} if isinstance(s.get("auditd"), dict) else {}),
@@ -1973,10 +1995,14 @@ class RulePoller:
         # the client's layer computing a wider `Known` under its name: its rows stay cards.
         channel = None
         nothing = {"writes": 0, "rows": 0, "unread": False, "unparsed": 0}
+        exercise, exercise_config, shipped = None, "", False
         try:
             channel = self._channel()
             if own_channel.is_shipped(rule.query, rule.name):
-                rows, own = own_channel.settle(rows, channel)
+                # SLF2: Orodruin's exercise channel, by its identity, its container, its account.
+                shipped = True
+                exercise, exercise_config = self._exercise()
+                rows, own = own_channel.settle(rows, channel, exercise)
             else:
                 rows, own = own_channel.strip(rows), nothing
         except Exception as exc:  # nothing set aside, the column taken off all the same
@@ -1985,6 +2011,17 @@ class RulePoller:
         if own["writes"]:
             logger.info("detection rule '%s': %d write(s) set aside (%d row(s) left without a card) — %s",
                         rule.name, own["writes"], own["rows"], own_channel.REASON)
+        if own.get("exercise_writes"):
+            logger.info("detection rule '%s': %d write(s) of Orodruin set aside (%d row(s) left without a "
+                        "card) — %s", rule.name, own["exercise_writes"], own.get("exercise_rows", 0),
+                        own_channel.EXERCISE_REASON)
+        if shipped and exercise_config and not self.__dict__.get("_exercise_config_said"):
+            self._exercise_config_said = True   # said once by this watch; the status says it at each pass
+            logger.warning("detection rule '%s': Orodruin's exercise channel %s — none of its writes set "
+                           "aside, every row a card (SLF2)", rule.name,
+                           {"unset": "declared, EREGION_ORODRUIN_PRINCIPAL_ID unset",
+                            "malformed": "declared, EREGION_ORODRUIN_PRINCIPAL_ID is no object id",
+                            }.get(exercise_config, "not read: EREGION_EXERCISE_CHANNEL unset or refused"))
         if own["unread"] and not self.__dict__.get("_own_unread_said"):
             self._own_unread_said = True       # said once by this watch; the status says it at each pass
             logger.warning("detection rule '%s': the return channel is configured but the watch's identity "
@@ -2178,6 +2215,18 @@ class RulePoller:
                     "reason": own_channel.REASON,
                     **({"container": channel.container} if channel is not None else {}),
                     **({"unread": now_iso} if own["unread"] else {}),
+                }
+            if exercise is not None or exercise_config or own.get("exercise_writes"):
+                # SLF2: Orodruin's writes in its exercise channel set aside, counted across passes where
+                # the console reads the rules; why nothing can be, said at each pass.
+                was = exercise_channel_counts(st)
+                st["exercise_channel"] = {
+                    "writes": was["exercise_channel_count"] + own.get("exercise_writes", 0),
+                    "rows": was["exercise_channel_rows"] + own.get("exercise_rows", 0),
+                    "last": now_iso if own.get("exercise_writes") else was["exercise_channel_last"],
+                    "reason": own_channel.EXERCISE_REASON,
+                    **({"container": exercise.container} if exercise is not None else {}),
+                    **({"config": exercise_config} if exercise_config else {}),
                 }
             if msi is not None:
                 # MID1: the managed identities' certificates set aside, counted across passes where the

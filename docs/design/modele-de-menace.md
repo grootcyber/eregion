@@ -357,6 +357,23 @@ direct (FS1e), et l'état local qu'ils écrivent reste à fermer (FS1f). Le repo
 conception — S, T, E de la ligne de la console, le choix assumé lu « tous les verbes de la file » —
 se fait quand FS1e ferme l'appel direct ([`file-actions-signee.md`](file-actions-signee.md), §3.3).
 
+**Choix assumé — les écritures d'Orodruin dans son canal d'exercices ne font pas de carte
+`data-exfiltration-blob` (SLF2, #1010, 21/11).** La watch écarte de la règle **tout objet** que
+l'identité d'Orodruin (`EREGION_ORODRUIN_PRINCIPAL_ID`) écrit dans le conteneur d'`EREGION_EXERCISE_CHANNEL`,
+sur son compte, quel que soit le nom de l'objet (`glorfindel/own_channel.py`, `settle_exercise` ;
+[`docs/glorfindel.md`](../glorfindel.md), « Le canal d'exercices d'Orodruin »). Ce qui le borne, dans
+`infra/orodruin/main.tf` : le rôle `Storage Blob Data Contributor` d'Orodruin ne porte que sur le
+conteneur `exercises` (`channel_writer`) ; le compte refuse tout par défaut (`network_rules`,
+`default_action = "Deny"`, `bypass = ["None"]`) et n'admet que le sous-réseau d'Orodruin, celui de la
+watch, leurs adresses publiques et l'adresse de l'opérateur ; la clé partagée est coupée
+(`shared_access_key_enabled = false`), donc ni clé ni SAS de compte. Un jeton d'Orodruin volé et rejoué
+d'ailleurs reçoit un 403, et la règle ne garde que les écritures réussies (codes 2xx, SEC-I) : il ne
+fait ni écriture ni carte. Ce qui reste : un attaquant **sur** Orodruin, sur Imladris ou sur le poste de
+l'opérateur, qui écrirait des données dans ce conteneur sous l'identité d'Orodruin — Orodruin lui-même
+compromis, que cette règle ne prétend pas voir (le journal du plan de données du compte, SEC-G, le
+garde). Une autre identité, une écriture sans identité, un autre conteneur ou un autre compte reste une
+carte.
+
 **Ouvert** : le plancher d'Orodruin, propre à chaque poste — planifié ; un journal hors de l'hôte que son identité ne peut pas effacer — planifié ; le canal sans point de terminaison public — planifié  ; l'action approuvée confiée à la watch seule, par une file signée — planifié : #413 ; une identité managée par conteneur sur un même hôte — planifié ; l'identité unique d'Imladris, que partagent watch, console et bot — planifié ; les lectures de Graph d'Imladris, valables pour ses trois conteneurs — planifié : #638 ; la portée d'une technique Stratus, celle de l'identité d'Orodruin — planifié : #608.
 
 ---
