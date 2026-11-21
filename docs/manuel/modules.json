@@ -1609,7 +1609,7 @@
    "composant": "socle",
    "poste": "s-signer",
    "nom": "Security hardening",
-   "etat": "dev",
+   "etat": "main",
    "release": "0.6",
    "lots": [
     "SEC-A4b"
@@ -3486,6 +3486,19 @@
    "release": "0.6",
    "lots": [
     "SDK1a"
+   ],
+   "issue": 992,
+   "doc": "docs/design/preuves.md"
+  },
+  {
+   "id": "s-contrats-sdk-annatar",
+   "composant": "socle",
+   "poste": "s-prouver",
+   "nom": "Annatar's Log Analytics collector tested on the pinned SDK's own objects too, through the shared utility — the heartbeat and the alert polls read a reply as the service sends it, never a hand-made response",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "SDK1r"
    ],
    "issue": 992,
    "doc": "docs/design/preuves.md"

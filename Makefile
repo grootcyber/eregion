@@ -507,8 +507,12 @@ report-eval:
 # of the release in service (the latest v* tag, or BASE=<tag>) in a throwaway venv under
 # ~/.cache/eregion/, then this checkout's .venv (scripts/harness_attest.py, docs/operations.md).
 #   make llm-compare MODELS=<modèle d'Imladris> RUNS=3 ATTEST=1 [BASE=v0.4.5]
+# SEC-A4b: PROPOSALS=1 measures the rule proposals instead of the decision — the share that carries
+# the routing key, without then with the prompt's bullet (scripts/llm_smoke.py --proposals; JSON_OUT=<file>
+# keeps every draw). Never with ATTEST: no attestation.
+#   make llm-compare MODELS=<modèle d'Imladris> RUNS=3 PROPOSALS=1 [JSON_OUT=proposals.json]
 llm-compare:
-	$(if $(ATTEST),$(PYTHON) scripts/harness_attest.py --models $(MODELS) --runs $(or $(RUNS),3)$(if $(BASE), --base $(BASE)) --out requirements/harness.json,$(PYTHON) scripts/llm_smoke.py --models $(MODELS) --runs $(or $(RUNS),3))
+	$(if $(PROPOSALS),$(PYTHON) scripts/llm_smoke.py --proposals --models $(MODELS) --runs $(or $(RUNS),3)$(if $(JSON_OUT), --json $(JSON_OUT))$(if $(ATTEST), --attest refused),$(if $(ATTEST),$(PYTHON) scripts/harness_attest.py --models $(MODELS) --runs $(or $(RUNS),3)$(if $(BASE), --base $(BASE)) --out requirements/harness.json,$(PYTHON) scripts/llm_smoke.py --models $(MODELS) --runs $(or $(RUNS),3)))
 
 # SEC19 (R-13) : l'attestation signée par la clé de son auteur, sans journal public (décision de
 # Jonathan, 03/11) — aucune identité, aucune adresse publiée, ni dans le dépôt ni chez sigstore.
