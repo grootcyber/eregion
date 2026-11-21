@@ -24,6 +24,7 @@ from .test_sdk_mgmt_contracts import TEN
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "sdk_capture.py"
+ANON = ROOT / "scripts" / "sdk_anonymize.py"
 
 # The made-up bench: each stand-in of the bodies given a value that looks real.
 REAL = {"rg-example-01": "rg-acme-paris", "vm-example-01": "web-front-7", "vm-example-02": "db-back-3",
@@ -121,8 +122,9 @@ def _reals(world: dict) -> list[str]:
 
 # ── the guards, read in the code ────────────────────────────────────────────────────────────────
 
-def _tree():
-    return ast.parse(SCRIPT.read_text())
+def _trees():
+    """The script and its anonymization module: what the capture runs."""
+    return [ast.parse(SCRIPT.read_text()), ast.parse(ANON.read_text())]
 
 
 # An operation that changes something, as the SDKs name theirs.
@@ -134,12 +136,15 @@ def test_the_script_reads_only_from_a_closed_list(sc):
     """The closed list is the ten, and the protected item's names the adapters ask for: `get` and
     `list` only. Nowhere in the script an attribute, a name or a text of a write — no `begin_*`, no
     `create`, no `update`, no `delete` —; `getattr` only in `_read`, which checks the list first;
-    no HTTP client of its own (the SDKs' read-only transport only)."""
+    no HTTP client of its own (the SDKs' read-only transport only). Its anonymization module the
+    same, and it imports no SDK at all."""
     assert set(sc.READS) == set(TEN) | {"backup.protected_items.get"}
     assert all(op.rsplit(".", 1)[1] in sc.READ_VERBS for op in sc.READS)
     assert sc.READ_VERBS == {"get", "list", "list_all"}
-    tree = _tree()
-    for node in ast.walk(tree):
+    script, anon = _trees()
+    assert not [n for n in ast.walk(anon) if isinstance(n, (ast.Import, ast.ImportFrom))
+                and any((a.name if isinstance(n, ast.Import) else n.module or "").startswith("azure") for a in n.names)]
+    for node in (n for tree in (script, anon) for n in ast.walk(tree)):
         if isinstance(node, ast.Attribute):
             assert not WRITE_WORDS.match(node.attr), node.attr
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
@@ -148,7 +153,7 @@ def test_the_script_reads_only_from_a_closed_list(sc):
             names = [a.name for a in node.names] + [getattr(node, "module", "") or ""]
             assert not any(n.split(".")[0] in ("requests", "http", "socket", "urllib3") or n == "urllib.request"
                            for n in names), names
-    getattrs = [f.name for f in ast.walk(tree) if isinstance(f, ast.FunctionDef)
+    getattrs = [f.name for tree in (script, anon) for f in ast.walk(tree) if isinstance(f, ast.FunctionDef)
                 for n in ast.walk(f) if isinstance(n, ast.Call) and getattr(n.func, "id", "") == "getattr"]
     assert set(getattrs) == {"_read"}
 
@@ -244,7 +249,7 @@ def test_a_rule_of_glorfindel_still_names_its_nic_and_its_attacker(sc, monkeypat
     assert expected in names
     import ipaddress
     fake = a.ip(ATTACKER)
-    assert any(ipaddress.ip_address(fake) in net for net in sc.DOC_NETS)
+    assert any(ipaddress.ip_address(fake) in net for net in sc.an.DOC_NETS)
     assert f"glorfindel-block-{fake.replace('.', '-')}" in names
 
 
@@ -303,10 +308,22 @@ def test_check_says_a_folder_clean_or_not(sc, monkeypatch, tmp_path, capsys):
     assert "IPv4" in said and "10.42.7.4" not in said
 
 
-def test_the_out_folder_is_outside_the_repository(sc, tmp_path):
-    """The files are read before they are copied: never written into the repository."""
-    for inside in (ROOT, ROOT / "tests/unit/sdk_bodies", ROOT / "scripts"):
+def test_the_out_folder_is_under_no_git_checkout(sc, tmp_path):
+    """The files are read before they are copied: never written into this repository, nor into the
+    checkout its worktree belongs to (run from a worktree, `~/eregion/tests/…` was accepted), nor
+    into any folder under a `.git` — a directory or a worktree's file."""
+    import subprocess
+    common = Path(subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                                 capture_output=True, text=True, check=True).stdout.strip())
+    for inside in (ROOT, ROOT / "tests/unit/sdk_bodies", ROOT / "scripts", common.parent / "tests" / "unit"):
         with pytest.raises(SystemExit):
+            sc._outside_repo(inside)
+    main, worktree = tmp_path / "main", tmp_path / "wt"
+    (main / ".git").mkdir(parents=True)
+    worktree.mkdir()
+    (worktree / ".git").write_text("gitdir: /elsewhere/.git/worktrees/wt\n")
+    for inside in (main / "tests" / "unit" / "sdk_bodies", worktree / "out", main):
+        with pytest.raises(SystemExit, match="git checkout"):
             sc._outside_repo(inside)
     assert sc._outside_repo(tmp_path / "capture") == (tmp_path / "capture").resolve()
 
@@ -315,6 +332,106 @@ def test_the_script_says_how_to_run_it(sc):
     """Its way of use, at its head: `az login`, the subscription, `capture`, `check`, where it
     writes, where the files go after the review."""
     doc = sc.__doc__
-    for said in ("az login", "AZURE_SUBSCRIPTION_ID", "capture --vm", "--vault", "--out", "check",
-                 "tests/unit/sdk_bodies/", "a session never runs it"):
+    for said in ("az login", ".venv/bin/python scripts/sdk_capture.py capture",
+                 '--subscription "$(az account show --query id -o tsv)"', "--vm", "--vault", "--out", "check",
+                 "tests/unit/sdk_bodies/", "a session never runs it", "read each file", "last net"):
         assert said in doc, said
+    assert "last net" in sc.an.__doc__
+
+
+# ── the review of SDK1b: what the anonymization had let through ──────────────────────────────────
+
+TRAP_REALS = ("2a01:4f8:c17:1::1", "2a02:1234::", "fe80::1ff:fe23:4567:890a", "acmecorp.fr", "web01",
+              "acmecorp-cost-center", "Sup3rS3cret!", "c2hhcmVkLWtleS1mb3ItdGhlLXRlc3RzLW9ubHktbWFkZS11cA==",
+              "sv2026sig", "0123456789abcdef0123456789abcdef", "jean", "srv-paris-01")
+JWT = "eyJhbGciOiJub25lIn0.eyJzdWIiOiJtYWRlLXVwIn0.c2ln"
+
+
+def _trap() -> dict:
+    """A body made to trap the anonymization: IPv6 addresses, a domain outside Azure's under its
+    host keys, a tag key, secrets under their keys and in a URL, 32 hex, an error's free text."""
+    base = m.load("network.network_interfaces.get")
+    nic = m.body(base)
+    nic["properties"]["dnsSettings"] |= {"internalFqdn": "web01.acmecorp.fr"}
+    nic["properties"]["ipConfigurations"][0]["properties"]["publicIPAddressV6"] = "2a01:4f8:c17:1::1"
+    nic["tags"] = {"acmecorp-cost-center": "42", "managed-by": "glorfindel"}
+    nic["properties"] |= {
+        "fqdn": "web01.acmecorp.fr", "reverseFqdn": "web01.acmecorp.fr.", "linkLocal": "fe80::1ff:fe23:4567:890a",
+        "sourceAddressPrefix": "2a02:1234::/32", "password": "Sup3rS3cret!",
+        "sharedKey": "c2hhcmVkLWtleS1mb3ItdGhlLXRlc3RzLW9ubHktbWFkZS11cA==", "accessToken": JWT,
+        "blob": "https://stexample01.blob.core.windows.net/c/x?sv=2026&sig=sv2026sig",
+        "checksum": "0123456789abcdef0123456789abcdef",
+        "errorDetails": [{"errorString": "jean could not reach srv-paris-01", "errorCode": 400}]}
+    return base
+
+
+def test_a_body_made_to_trap_the_anonymization_comes_out_clean(sc):
+    """IPv6 (an address, a prefix, a link-local in a field), a domain outside Azure's in `fqdn`,
+    `reverseFqdn`, `internalFqdn`, a tag's key, a password, a shared key, a JWT, a SAS signature, 32 hex,
+    an error's words: none comes out; every form left is a stand-in's."""
+    out, a = sc.anonymize({"trap.json": _trap()})
+    text = json.dumps(out)
+    for real in TRAP_REALS + (JWT,):
+        assert real.lower() not in text.lower(), real
+    nic = m.body(out["trap.json"])
+    assert nic["properties"]["fqdn"].endswith(".example.org")
+    assert nic["properties"]["ipConfigurations"][0]["properties"]["publicIPAddressV6"].startswith("2001:db8::")
+    assert nic["properties"]["sourceAddressPrefix"].startswith("2001:db8::") and nic["properties"][
+        "sourceAddressPrefix"].endswith("/32")
+    assert set(nic["tags"]) == {"tag-example-01", "managed-by"} and nic["tags"]["managed-by"] == "glorfindel"
+    assert sc.structural(out) == []
+
+
+@pytest.mark.parametrize("planted, said", [
+    ("2a01:4f8:c17:1::1", "IPv6"),
+    ("web01.acmecorp.fr", "domain"),
+    (JWT, "JWT"),
+    ("https://stexample01.blob.core.windows.net/c?sv=2026&sig=abcdef0123", "SAS"),
+    ("ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC", "SSH"),
+    ("0123456789abcdef0123456789abcdef", "32 hex"),
+    ("c2hhcmVkLWtleS1mb3ItdGhlLXRlc3RzLW9ubHktbWFkZS11cA==", "base64"),
+], ids=["ipv6", "domain", "jwt", "sas", "ssh", "hex", "base64"])
+def test_check_refuses_each_form_the_anonymization_must_not_leave(sc, planted, said):
+    """`check`'s half of the check: each of these forms, planted in a clean body, is refused — its
+    kind said, never its value."""
+    clean = {"x.json": m.load("network.network_interfaces.get")}
+    assert sc.structural(clean) == []
+    m.body(clean["x.json"])["properties"]["planted"] = planted
+    found = sc.structural(clean)
+    assert found and any(said.lower() in f.lower() for f in found), found
+    assert planted not in " ".join(found)
+
+
+def test_a_secret_left_under_its_key_is_refused(sc):
+    """A key that says key, token, secret, password or SAS holding anything but a stand-in: refused."""
+    for key in ("password", "primaryKey", "accessToken", "clientSecret", "sasUrl"):
+        body = {"x.json": {"properties": {key: "plain-value"}}}
+        assert any("secret" in f for f in sc.structural(body)), key
+    assert sc.structural({"x.json": {"properties": {"password": "stand-in"}}}) == []
+
+
+def test_a_response_retried_by_the_sdk_is_kept_once(sc):
+    """A 429, then a 200: the SDK retries, the hook sees both — the read keeps the 200 alone, and
+    the capture goes on (it raised outside its guard)."""
+    vm_id = m.body(m.load("compute.virtual_machines.get"))["id"]
+    arm = m.Arm(*m.captures()).once(vm_id, {"error": {"code": "TooManyRequests", "message": "later"}}, 429)
+    clients = sc.clients(m._Credential(), m.SUB, session=arm.session())
+    [one] = sc._read(clients, "compute.virtual_machines.get", vm_id.split("/")[4], vm_id.rsplit("/", 1)[1])
+    assert one["status"] == 200 and len(arm.sent("virtualMachines/")) == 2
+    arm.once(vm_id, {"error": {"code": "TooManyRequests", "message": "later"}}, 429)
+    got = sc.capture(clients, [(vm_id.split("/")[4], vm_id.rsplit("/", 1)[1])], say=lambda _line: None)
+    assert len(got["compute.virtual_machines.get"]) == 1
+
+
+def test_a_name_that_is_a_word_of_the_structure_is_refused_never_spread(sc):
+    """A resource group named `network`, a domain whose first label is `api`: replaced as names
+    everywhere, they would break every id (`Microsoft.Network`) and every URL (`api-version`). The
+    domain is replaced whole; the group stays real — and the check refuses the files."""
+    trap = m.load("network.network_interfaces.get")
+    m.body(trap)["properties"]["dnsSettings"]["internalFqdn"] = "api.acmecorp.fr"
+    out, _a = sc.anonymize({"x.json": trap})
+    text = json.dumps(out)
+    assert "Microsoft.Network/networkInterfaces" in text and "api-version=" in text and "acmecorp" not in text
+    grouped = json.loads(json.dumps(m.load("network.network_interfaces.get")).replace(m.RG, "network"))
+    with pytest.raises(sc.Leak, match="ARM id naming something real"):
+        sc.anonymize({"x.json": grouped})

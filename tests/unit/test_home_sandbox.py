@@ -310,7 +310,7 @@ SCENARIOS = {
 def _operator_repo(tmp: Path, store: dict | None, test: str) -> tuple[Path, Path, Path]:
     repo, real, temp = tmp / "repo", tmp / "operator", tmp / "tmp"
     (repo / "tests" / "unit").mkdir(parents=True)
-    for name in ("conftest.py", "hypothesis_seed.py", "home_sandbox.py", "invariant_watchdog.py"):
+    for name in ("conftest.py", "hypothesis_seed.py", "home_sandbox.py", "invariant_watchdog.py", "network_guard.py"):
         shutil.copy(HERE / name, repo / "tests" / "unit" / name)
     (repo / "tests" / "unit" / "test_scenario.py").write_text(textwrap.dedent(test))
     (repo / ".gitignore").write_text("__pycache__/\n.pytest_cache/\n")

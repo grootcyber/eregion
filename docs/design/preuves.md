@@ -65,7 +65,16 @@ contenu changeait, et refaisait une carte. Le texte JSON d'une colonne `dynamic`
 l'identité de la ligne ; les tests sur des listes ne le voyaient pas. Il en est sorti
 (`tests/unit/test_row_identity_sdk.py`, `docs/glorfindel.md`, « Déduplication »).
 
-Les opérations `azure.mgmt` des adaptateurs (SDK1b, #1017). Les dix plus lues (la liste, la fréquence de chacune et l'inventaire de tous les appels : `tests/unit/test_sdk_mgmt_contracts.py`) passent chacune par le client du SDK épinglé, sur `tests/unit/sdk_mgmt.py` : un ARM en mémoire qui sert des corps par leur chemin, refuse toute écriture et garde chaque requête. Les corps de `tests/unit/sdk_bodies/` sont des **hypothèses** : la forme de l'exemple de la référence REST, valeurs inventées. `scripts/sdk_capture.py` les mesure au banc, en lecture seule, anonymisés avant toute écriture (`tests/unit/test_sdk_capture.py`) ; geste du mainteneur. Ces contrats ont montré un défaut, corrigé (un `dataDisks` absent faisait dire la VM illisible à l'audit), et une limite, dite (une `ipConfiguration` à préfixe, `docs/azure.md`).
+Les opérations `azure.mgmt` des adaptateurs (SDK1b, #1017). Les dix plus lues (la liste, la fréquence de chacune et l'inventaire de tous les appels : `tests/unit/test_sdk_mgmt_contracts.py`) passent chacune par le client du SDK épinglé, sur `tests/unit/sdk_mgmt.py` : un ARM en mémoire qui sert des corps par leur chemin, refuse toute écriture et garde chaque requête. Les corps de `tests/unit/sdk_bodies/` sont des **hypothèses** : la forme de l'exemple de la référence REST, valeurs inventées. `scripts/sdk_capture.py` les mesure au banc, en lecture seule, anonymisés avant toute écriture (`scripts/sdk_anonymize.py`, `tests/unit/test_sdk_capture.py`) ; geste du mainteneur, depuis `~/eregion` :
+
+```
+az login
+.venv/bin/python scripts/sdk_capture.py capture --subscription "$(az account show --query id -o tsv)" \
+    --vm <groupe>/<vm> --vault <groupe>/<coffre> --out ~/eregion-banc/sdk1b
+.venv/bin/python scripts/sdk_capture.py check ~/eregion-banc/sdk1b --forbid <groupe> --forbid <vm> --forbid <coffre>
+```
+
+L'abonnement se donne sur la ligne, lu à l'instant : un `AZURE_SUBSCRIPTION_ID` exporté à la main peut avoir été remplacé depuis (direnv qui recharge `.envrc`). L'anonymisation remplace GUID, noms, marques, IPv4 et IPv6, MAC, courriels, domaines hors Azure, clés et valeurs de tags, textes libres et secrets ; la vérification refuse d'écrire si un réel rencontré reste ou si une valeur d'une forme connue n'est pas celle d'un remplaçant. **La relecture de chaque fichier par le mainteneur reste le dernier filet** : un mot d'un texte libre qu'aucun id, aucune clé ni aucune forme ne nomme (le nom d'une personne, d'un serveur) ne se distingue pas d'un autre mot. Ces contrats ont montré un défaut, corrigé (un `dataDisks` absent faisait dire la VM illisible à l'audit), et une limite, dite (une `ipConfiguration` à préfixe, `docs/azure.md`). Depuis la relecture de SDK1b, aucun test de la suite ne sort de la machine : une garde (`tests/unit/network_guard.py`, le crochet d'audit de Python, posée par la conftest) refuse toute connexion, résolution de nom ou datagramme au-delà du loopback.
 
 ## La machine à invariants
 

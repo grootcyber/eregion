@@ -40,6 +40,7 @@ No Azure, no model, no network (`sdk_mgmt.offline`); every identifier is made up
 """
 from __future__ import annotations
 
+import ast
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -170,9 +171,9 @@ def test_the_sdks_read_here_are_the_ones_the_image_locks():
 
 
 def test_each_of_the_ten_has_a_body_that_says_where_it_comes_from(monkeypatch):
-    """Each of the ten has its file: `hypothesis` (with the REST reference it follows) or
-    `measured` (with its day). Its API version is the one the pinned SDK sends for it — a new SDK
-    sending another one asks for a body measured again."""
+    """Each of the ten has its file: `hypothesis` (with the REST reference it follows, for the
+    version the SDK sends, or the gap said) or `measured` (with its day). Its API version is the one
+    the pinned SDK sends for it — a new SDK sending another one asks for a body measured again."""
     arm = m.Arm(*m.captures())
     c = arm.connector(monkeypatch)
     calls = {
@@ -192,6 +193,10 @@ def test_each_of_the_ten_has_a_body_that_says_where_it_comes_from(monkeypatch):
         assert cap["operation"] == op and cap["source"] in ("hypothesis", "measured"), op
         if cap["source"] == "hypothesis":
             assert cap["reference"].startswith("https://learn.microsoft.com/en-us/rest/api/"), op
+            # The reference's view is the version the SDK sends — or the gap is said.
+            view = re.search(r"view=rest-[a-z]+-(\d{4}-\d{2}-\d{2})", cap["reference"]).group(1)
+            assert view == cap["api_version"] or (view in cap.get("reference_note", "")
+                                                  and cap["api_version"] in cap["reference_note"]), op
         else:
             assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", cap["captured"]), op
         arm.requests.clear()
@@ -201,28 +206,100 @@ def test_each_of_the_ten_has_a_body_that_says_where_it_comes_from(monkeypatch):
     assert arm.writes == []
 
 
-def _sdk_groups(monkeypatch) -> dict[str, str]:
-    """Every operation group of the three SDKs' clients → its SDK."""
+# The names the adapters give an SDK's client (`self._network`, `network`, `client`…): an operation
+# group reached on one of them must be called there and then.
+CLIENTS = frozenset({"_network", "_compute", "_backup", "network", "compute", "client", "backup_client", "bc"})
+
+
+def _sdk_groups() -> dict[str, tuple[str, frozenset[str]]]:
+    """Every operation group of the three SDKs' clients → its SDK and its operations."""
     arm = m.Arm()
     out = {}
     for sdk, client in (("network", arm.network()), ("compute", arm.compute()), ("backup", arm.backup())):
-        out |= {name: sdk for name, ops in vars(client).items() if type(ops).__name__.endswith("Operations")}
+        for name, ops in vars(client).items():
+            if type(ops).__name__.endswith("Operations"):
+                out[name] = (sdk, frozenset(n for n in dir(type(ops)) if not n.startswith("_")))
     return out
 
 
-def test_every_azure_mgmt_call_of_the_adapters_is_inventoried(monkeypatch):
-    """Every `<group>.<operation>(` of the adapters on an SDK's operation group is in INVENTORY,
-    and INVENTORY names no call that is gone: a new read is placed among the others, or among
-    the ten."""
-    groups = _sdk_groups(monkeypatch)
-    found = set()
-    for path in (ROOT / "glorfindel/providers/azure").glob("*.py"):
-        for group, op in re.findall(r"\.([a-z_]+)\.([a-z_]+)\(", path.read_text()):
-            if group in groups:
-                found.add(f"{groups[group]}.{group}.{op}")
+def _model_fields() -> frozenset[str]:
+    """Every field name of the three SDKs' models: `vm.network_profile.network_interfaces` is a
+    model's field, not an operation group."""
+    import azure.mgmt.compute.models as cm
+    import azure.mgmt.network.models as nm
+    import azure.mgmt.recoveryservicesbackup.models as bm
+    fields = set()
+    for module in (nm, cm, bm):
+        for cls in vars(module).values():
+            if isinstance(cls, type):
+                fields |= {k for c in cls.__mro__ for k, v in vars(c).items() if type(v).__name__ == "_RestField"}
+    return frozenset(fields)
+
+
+def _client(node) -> bool:
+    return ((isinstance(node, ast.Name) and node.id in CLIENTS)
+            or (isinstance(node, ast.Attribute) and node.attr in CLIENTS))
+
+
+def scan(source: str, groups: dict, fields: frozenset[str]) -> tuple[set[str], list[int]]:
+    """The calls `<…>.<group>.<operation>(` of a source, by its syntax tree (a call written on two
+    lines is one call), and the lines where an operation group is reached otherwise — kept in a
+    name, passed to `getattr`, a client given to `getattr`: an inventory by text would not see what
+    is called there."""
+    tree = ast.parse(source)
+    parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+    found, odd = set(), []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "getattr" and node.args:
+            named = node.args[1].value if len(node.args) > 1 and isinstance(node.args[1], ast.Constant) else None
+            if _client(node.args[0]) or (named in groups and named not in fields):
+                odd.append(node.lineno)
+        if not (isinstance(node, ast.Attribute) and node.attr in groups):
+            continue
+        sdk, ops = groups[node.attr]
+        parent = parents.get(node)
+        if (isinstance(parent, ast.Attribute) and parent.attr in ops
+                and isinstance(parents.get(parent), ast.Call) and parents[parent].func is parent):
+            found.add(f"{sdk}.{node.attr}.{parent.attr}")
+        elif _client(node.value) or node.attr not in fields:
+            odd.append(node.lineno)
+    return found, odd
+
+
+def test_every_azure_mgmt_call_of_the_adapters_is_inventoried():
+    """Every call of an SDK's operation group in the adapters, read by their syntax tree, is in
+    INVENTORY, and INVENTORY names no call that is gone: a new read is placed among the others, or
+    among the ten. A group reached any other way — an alias, `getattr` — fails: it would escape the
+    inventory."""
+    groups, fields = _sdk_groups(), _model_fields()
+    found, odd = set(), []
+    for path in sorted((ROOT / "glorfindel/providers/azure").glob("*.py")):
+        calls, lines = scan(path.read_text(), groups, fields)
+        found |= calls
+        odd += [f"{path.name}:{n}" for n in lines]
+    assert odd == []
     assert found == set(INVENTORY)
     assert set(TEN) <= set(INVENTORY)
     assert all(op.rsplit(".", 1)[1] in ("get", "list", "list_all") for op in TEN)
+
+
+def test_the_scan_sees_a_call_on_two_lines_an_alias_and_a_getattr():
+    """The scan itself: a call written on two lines is found; an alias of a group, a `getattr` of
+    an operation, a `getattr` on a client are said; a model's field is none of them."""
+    groups, fields = _sdk_groups(), _model_fields()
+    two_lines = "def f(self):\n    return self._network.route_tables\\\n        .get('rg', 'rt')\n"
+    assert scan(two_lines, groups, fields) == ({"network.route_tables.get"}, [])
+    alias = "def f(self):\n    rt = self._network.route_tables\n    return rt.get('rg', 'rt')\n"
+    assert scan(alias, groups, fields)[1] == [2]
+    by_name = "def f(self):\n    return getattr(self._network.route_tables, 'get')('rg', 'rt')\n"
+    assert scan(by_name, groups, fields)[1]
+    by_group = "def f(c):\n    return getattr(c, 'route_tables').get('rg', 'rt')\n"
+    assert "route_tables" not in fields and scan(by_group, groups, fields)[1]
+    on_client = "def f(self):\n    return getattr(self._network, 'route_tables').get('rg', 'rt')\n"
+    assert scan(on_client, groups, fields)[1]
+    model = ("def f(vm, nsg):\n    return [n.id for n in vm.network_profile.network_interfaces]"
+             " + list(getattr(nsg, 'security_rules', None) or [])\n")
+    assert scan(model, groups, fields) == (set(), [])
 
 
 def test_a_listing_on_two_pages_is_read_whole(monkeypatch):

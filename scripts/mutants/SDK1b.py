@@ -1,12 +1,13 @@
 """SDK1b (#1017): the ten azure.mgmt operations the adapters read most, read on the pinned SDKs' own
 objects — an enum read as its text, a field the body leaves out read as if it were there, a
 polymorphic job or point read by its order or its class — and the maintainer's capture of their
-bodies (scripts/sdk_capture.py): a write let through, the closed list opened, a real GUID or address
-left in the files. M6962–M6976, measured by tests/unit/test_sdk_mgmt_contracts.py and
+bodies (scripts/sdk_capture.py, its anonymization scripts/sdk_anonymize.py): a write let through, the
+closed list opened, a real GUID or address left in the files. M6962–M6976, measured by tests/unit/test_sdk_mgmt_contracts.py and
 tests/unit/test_sdk_capture.py."""
 _T = "tests/unit/test_sdk_mgmt_contracts.py"
 _C = "tests/unit/test_sdk_capture.py"
 _S = "scripts/sdk_capture.py"
+_A = "scripts/sdk_anonymize.py"
 _AZ = "glorfindel/providers/azure"
 
 MUTANTS = [
@@ -62,10 +63,10 @@ MUTANTS = [
     ("M6974", "the capture's closed list opened to a write (SDK1b)", _S,
      '    "network.subnets.get",\n',
      '    "network.subnets.get",\n    "network.security_rules.begin_delete",\n'),
-    ("M6975", "the anonymization blind to an uppercase GUID: a real one left in the files (SDK1b)", _S,
+    ("M6975", "the anonymization blind to an uppercase GUID: a real one left in the files (SDK1b)", _A,
      'GUID = re.compile(r"(?<![0-9a-fA-F])[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"\n',
      'GUID = re.compile(r"(?<![0-9a-fA-F])[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"\n'),
-    ("M6976", "the anonymization blind to a dashed address: a block's name keeps its real attacker (SDK1b)", _S,
+    ("M6976", "the anonymization blind to a dashed address: a block's name keeps its real attacker (SDK1b)", _A,
      '        out = _sub_all(out, {k.replace(".", "-"): v.replace(".", "-") for k, v in self.ips.items()},\n'
      '                       r"(?<![0-9])", r"(?![0-9])")\n',
      ""),

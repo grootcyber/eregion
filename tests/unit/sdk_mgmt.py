@@ -47,13 +47,17 @@ ARM = "https://management.azure.com"
 
 
 def offline(monkeypatch) -> None:
-    """No socket opens: the in-memory ARM needs none, anything else would be the network."""
+    """No socket opens, no name is resolved: the in-memory ARM needs neither, anything else would
+    be the network — even to this machine. On top of the suite's own guard (tests/unit/network_guard.py:
+    nothing leaves the machine in any test)."""
     import socket
 
     def refuse(*_a, **_kw):
         raise ConnectionRefusedError("tests/unit/sdk_mgmt.py: the network is refused in these tests")
-    monkeypatch.setattr(socket.socket, "connect", refuse)
-    monkeypatch.setattr(socket, "create_connection", refuse)
+    for name in ("connect", "connect_ex"):
+        monkeypatch.setattr(socket.socket, name, refuse)
+    for name in ("create_connection", "getaddrinfo"):
+        monkeypatch.setattr(socket, name, refuse)
 
 
 def captures() -> list[dict]:
@@ -129,6 +133,7 @@ class Arm:
 
     def __init__(self, *captures: dict):
         self.routes: dict[str, tuple[int, dict]] = {}
+        self.first: dict[str, list[tuple[int, dict]]] = {}     # answered once each, before the route
         self.requests: list[dict] = []
         for capture in captures:
             self.add(capture)
@@ -143,11 +148,18 @@ class Arm:
         self.routes[_key(path)] = (status, payload)
         return self
 
+    def once(self, path: str, payload: dict, status: int) -> "Arm":
+        """A response given once at `path`, before what is served there (a 429 the SDK retries)."""
+        self.first.setdefault(_key(path), []).append((status, payload))
+        return self
+
     def answer(self, method: str, url: str) -> tuple[int, dict]:
         if method.upper() != "GET":
             return 405, {"error": {"code": "MethodNotAllowed",
                                    "message": "the in-memory ARM of the tests answers reads only"}}
         key = _key(url)
+        if self.first.get(key):
+            return self.first[key].pop(0)
         if key in self.routes:
             status, payload = self.routes[key]
             return status, copy.deepcopy(payload)

@@ -4,6 +4,7 @@
   "sdk": "azure-mgmt-recoveryservicesbackup==11.2.0",
   "api_version": "2026-10-01",
   "reference": "https://learn.microsoft.com/en-us/rest/api/backup/job-details/get?view=rest-backup-2026-11-01",
+  "reference_note": "The sample was read on the reference's 2026-11-01 view, the one published when it was read; the SDK sends 2026-10-01, whose view was not read again.",
   "note": "Hypothesis (SDK1b, #1017): the shape of the REST reference's sample response for this operation, its values made up for the bench at rest (one VM behind its NIC's NSG and its subnet's, the quarantine NSG on standby, a vault). To be replaced by the body measured at the bench (scripts/sdk_capture.py, the maintainer's gesture).",
   "responses": [
     {
