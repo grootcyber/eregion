@@ -100,7 +100,7 @@ COMPONENTS: dict[str, Component] = {
             "test_campaign_manifest.py",
             "test_campaign_planner.py", "test_campaign_runner.py", "test_campaign_synthesizer.py", "test_campaign_drill.py",
             "test_engine.py", "test_identity_inscription.py", "test_user_inscription.py", "test_injector_guards.py", "test_inscription.py", "test_orodruin.py", "test_stratus_contract.py", "test_parser.py",
-            "test_signals.py",
+            "test_signals.py", "test_annatar_collector_sdk.py",
         ),
     ),
     # Gothmog — declared faults, Chaos Studio first.

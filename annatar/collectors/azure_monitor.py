@@ -10,8 +10,13 @@ from annatar.console import console, outside
 
 
 class AzureMonitorCollector:
-    def __init__(self, target: dict):
+    def __init__(self, target: dict, *, client=None):
         self.workspace_id = target.get("log_analytics_workspace_id")
+        if client is not None:
+            # SDK1r (#992): an injected LogsQueryClient — a test drives the collector through the
+            # pinned SDK's own objects (tests/unit/sdk_logs.py), never a hand-made response.
+            self._client = client
+            return
         self._credential = DefaultAzureCredential()
         self._client = LogsQueryClient(self._credential)
 
