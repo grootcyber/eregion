@@ -7,6 +7,7 @@ import re
 import unicodedata
 from datetime import datetime, timezone
 
+from glorfindel.own_channel import json_of
 from glorfindel.providers.azure.graph import Unreadable
 
 PLAN_VERSION = 1
@@ -345,11 +346,40 @@ def _credential_items(row: dict, reads: _Reads) -> list[dict]:
     return items
 
 
+# CRD1 (#1011): the credentials a card's sign-ins used, as `entra-sp-unusual-signin` keeps them —
+# `make_set(ServicePrincipalCredentialKeyId, 5)` by principal and address, projected under this name.
+USED_CREDENTIALS = "CredentialKeyIds"
+
+
+def used_credential(row: dict) -> tuple[str, str]:
+    """CRD1 (#1011): the one credential the sign-ins of a card used — its keyId — else "" and why.
+
+    The rule keeps the keyIds of the group's sign-ins (`USED_CREDENTIALS`, a set of at most 5): a
+    ``dynamic`` column, which the SDK hands on as its JSON text (SLF1b) — decoded by
+    `own_channel.json_of`, bounded, never raising (a list, as a test may hold it, read as it is).
+    A single value, a GUID: that credential, and its removal is proposed. Two or more (one removed,
+    the other still signs in — an empty value counts: a sign-in that named none), none, a value
+    that is no GUID (a field of the log is never trusted), an illegible text, the column absent:
+    "" — the principal is disabled, as before CRD1."""
+    value = row.get(USED_CREDENTIALS)
+    if isinstance(value, str):
+        value = json_of(value)
+    if not isinstance(value, list):
+        return "", "l'identifiant utilisé n'est pas lu (colonne absente ou illisible)"
+    if len(value) > 1:
+        return "", f"ces connexions ont utilisé {len(value)} identifiants : en retirer un ne suffirait pas"
+    first = value[0] if value else None
+    if first is None or not str(first).strip():
+        return "", "le journal ne nomme aucun identifiant utilisé"
+    key = guid(first) if isinstance(first, str) else ""
+    return (key, "") if key else ("", "le journal donne pour identifiant utilisé ce qui n'est pas un keyId")
+
+
 def _signin_items(row: dict, reads: _Reads) -> list[dict]:
     sp_p = _object_param(row.get("ActorId"), "id du principal de service")
     name = row.get("ActorName")
     app_id = guid(row.get("ActorAppId"))
-    used = guid(row.get("ServicePrincipalCredentialKeyId") or row.get("CredentialKeyId"))
+    used, why_not = used_credential(row)
     items: list[dict] = []
     sp = UNREAD
     if sp_p["read"]:
@@ -367,13 +397,17 @@ def _signin_items(row: dict, reads: _Reads) -> list[dict]:
                                             {**key_p, "from": "graph"}, on_app, app.get("displayName") or name))
         elif on_sp:
             items.append(_remove_credential("servicePrincipals", sp_p, {**key_p, "from": "graph"}, on_sp, name))
+        elif app is UNREAD or sp is UNREAD:
+            items.append(_remove_credential("applications", _param("id de l'objet", "", "", reads.why or "non lu"),
+                                            key_p, "", name))
         else:
-            why = (reads.why or "non lu") if (app is UNREAD or sp is UNREAD) else \
-                "ni l'application ni le principal ne portent ce keyId dans Graph (déjà retiré ?)"
-            items.append(_remove_credential("applications", _param("id de l'objet", "", "", why), key_p, "",
-                                            name))
-    else:
-        items.append(_disable_principal(sp_p, sp, name, "le principal de service"))
+            # CRD1: Graph read, the keyId on neither object — a federated sign-in names a keyId that is no
+            # credential of the application (measured, 11/11), or it is already removed: nothing to remove
+            # by it, the principal disabled as before.
+            used, why_not = "", ("ni l'application ni le principal ne portent dans Graph le keyId que la "
+                                 "connexion a utilisé (un identifiant fédéré, ou déjà retiré)")
+    if not used:
+        items.append(_disable_principal(sp_p, sp, name, "le principal de service", note=f" — {why_not}"))
     items.append(_item(
         "Renouveler ses autres identifiants avec son propriétaire, si l'adresse n'est pas attendue",
         command=f"az ad sp credential list --id {_v(sp_p)}" + (f" ; az ad app credential list --id {app_id}"
@@ -382,13 +416,19 @@ def _signin_items(row: dict, reads: _Reads) -> list[dict]:
     return items
 
 
-def _disable_principal(sp_p: dict, sp, name, label: str) -> dict:
+def _of(label: str) -> str:
+    """« de » before a label, contracted as French writes it (E-6, CRD1): « du principal de service »,
+    « de l'application cliente »."""
+    return "du " + label[3:] if label.startswith("le ") else "de " + label
+
+
+def _disable_principal(sp_p: dict, sp, name, label: str, note: str = "") -> dict:
     enabled = sp.get("accountEnabled") if isinstance(sp, dict) else None
     state = ("il est actif (lu dans Graph)" if enabled is True else
              "il est déjà désactivé (lu dans Graph) : rien à faire" if enabled is False else
              "son état n'est pas lu : ne le réactiver que s'il était actif avant")
     return _item(
-        f"Bloquer la connexion de {label} {str(name or '').strip() or _v(sp_p)}, le temps de l'enquête",
+        f"Bloquer la connexion {_of(label)} {str(name or '').strip() or _v(sp_p)}, le temps de l'enquête" + note,
         verb="entra_disable_principal", target=_target("servicePrincipal", sp_p["value"], name), params=[sp_p],
         command=f"az ad sp update --id {_v(sp_p)} --set accountEnabled=false",
         side_effect=("l'application s'arrête entièrement, pour tous ses utilisateurs et ses charges : "

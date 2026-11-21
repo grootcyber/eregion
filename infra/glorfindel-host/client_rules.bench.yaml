@@ -145,7 +145,9 @@ rules:
       MIN_BASELINE_DAYS jours de la base, sinon un principal nouveau, ou les premiers jours
       après le paramètre de diagnostic, inonderaient) ; échecs écartés ; une carte par
       principal et adresse. Exclusion : les identités managées (autre table, non lue) ; un
-      runner aux adresses tournantes s'exclut dans la couche du client.
+      runner aux adresses tournantes s'exclut dans la couche du client. La carte garde les
+      identifiants que ces connexions ont utilisés (CredentialKeyIds, au plus 5, CRD1) : un
+      seul, son plan propose de le retirer ; plusieurs ou aucun, de désactiver le principal.
       (banc : sans les connexions OIDC du canari azurerm, CAN3)
     enabled: true
     source: azure_entra
@@ -153,7 +155,7 @@ rules:
     assets: [auto]
     interval_s: 300
     expected_latency_s: 1800
-    base_sha256: 777e9b5a7e7d69c0e0c8536cc887b8cd08be6a9cc1643655fbfe0eebd320e785
+    base_sha256: dc4e7f3b45b60dc12440b29d77d7ca80a62499621b967a833fd744bd39f81989
     env_guids: [EREGION_RULE_CANARY_APPID]
     query: |
       let baseline = AADServicePrincipalSignInLogs
@@ -182,11 +184,12 @@ rules:
             and isnotempty(FederatedCredentialId))
       | summarize TimeGenerated = min(TimeGenerated), SignIns = count(), Resources = make_set(ResourceDisplayName, 5),
                   ServicePrincipalName = take_any(ServicePrincipalName), AppId = take_any(AppId),
-                  Location = take_any(Location), CorrelationId = take_any(CorrelationId)
+                  Location = take_any(Location), CorrelationId = take_any(CorrelationId),
+                  CredentialKeyIds = make_set(ServicePrincipalCredentialKeyId, 5)
                   by ServicePrincipalId, IPAddress
       | join kind=inner history on ServicePrincipalId
       | project TimeGenerated, EntraKind = "signin", EntraOperation = "Service principal sign-in",
                 EventId = strcat(ServicePrincipalId, "|", IPAddress), Result = "success",
                 ActorName = ServicePrincipalName, ActorId = ServicePrincipalId, ActorAppId = AppId,
                 ActorIp = IPAddress, Location, TargetName = strcat_array(Resources, ", "),
-                SignIns, BaselineSignIns, BaselineDays, CorrelationId
+                SignIns, BaselineSignIns, BaselineDays, CredentialKeyIds, CorrelationId
