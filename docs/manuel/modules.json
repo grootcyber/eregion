@@ -1601,6 +1601,19 @@
    "note": "An exercise cycle is never recalled as the precedent of a real incident."
   },
   {
+   "id": "g-memoire-mesuree",
+   "composant": "glorfindel",
+   "poste": "g-memoire",
+   "nom": "The memory of decisions measured on a copy of a real store, offline and in aggregate: the distance against the date, signal by signal, and the choice put to the maintainer",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "MEM1"
+   ],
+   "issue": 1016,
+   "doc": "docs/design/memoire.md"
+  },
+  {
    "id": "g-redaction",
    "composant": "glorfindel",
    "poste": "g-rediger",
