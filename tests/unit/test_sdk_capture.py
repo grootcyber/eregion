@@ -438,3 +438,33 @@ def test_a_name_that_is_a_word_of_the_structure_is_refused_never_spread(sc):
     grouped = json.loads(json.dumps(m.load("network.network_interfaces.get")).replace(m.RG, "network"))
     with pytest.raises(sc.Leak, match="ARM id naming something real"):
         sc.anonymize({"x.json": grouped})
+
+
+@pytest.mark.parametrize("domain", ["compute.acmecorp.fr", "network.acmecorp.fr", "microsoft.acmecorp.fr",
+                                    "acmecorp.md", "acmecorp.py"])
+def test_a_domain_shaped_like_an_operation_a_namespace_or_a_file_is_a_domain(sc, domain):
+    """Excluded by their form in the review's second round: an operation's name (`compute.…`), a
+    namespace (`microsoft.…`), a file's ending that is a top-level domain (`.md`, `.py`). Each is a
+    domain: replaced, and `check` refuses it when it is left."""
+    trap = m.load("network.network_interfaces.get")
+    m.body(trap)["properties"]["dnsSettings"]["internalFqdn"] = domain
+    out, _a = sc.anonymize({"x.json": trap})
+    assert domain not in json.dumps(out)
+    clean = {"x.json": m.load("network.network_interfaces.get")}
+    m.body(clean["x.json"])["properties"]["planted"] = domain
+    assert any("domain" in f for f in sc.structural(clean))
+
+
+def test_a_namespace_of_arm_and_the_file_s_operation_are_kept(sc):
+    """What the domains' form must not take: a namespace of ARM, before a `/` or ending its value
+    (`Microsoft.Network/…`, an extension's publisher `Microsoft.Azure.Monitor`), and the operation's
+    name a capture file carries under its key `operation` — kept, and `check` says them clean."""
+    cap = m.load("network.subnets.get")
+    m.body(cap)["properties"]["publisher"] = "Microsoft.Azure.Monitor"
+    out, _a = sc.anonymize({"x.json": cap})
+    assert out["x.json"]["operation"] == "network.subnets.get"
+    assert m.body(out["x.json"])["properties"]["publisher"] == "Microsoft.Azure.Monitor"
+    assert "Microsoft.Network/virtualNetworks" in json.dumps(out)
+    assert sc.structural(out) == []
+    m.body(cap)["properties"]["planted"] = "network.subnets.get"      # not under `operation`: a domain
+    assert any("domain" in f for f in sc.structural({"x.json": cap}))

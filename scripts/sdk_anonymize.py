@@ -71,8 +71,13 @@ AZURE_SUFFIXES = ("core.windows.net", "cloudapp.net", "cloudapp.azure.com", "vau
 KEPT_HOSTS = frozenset({"management.azure.com", "login.microsoftonline.com", "learn.microsoft.com",
                         "schemas.microsoft.com", "github.com"})
 EXAMPLE_SUFFIXES = ("example.org", "example.com", "example.net")
-FILE_ENDINGS = frozenset({"json", "config", "conf", "sh", "py", "ps1", "exe", "log", "txt", "gz", "zip", "tar",
-                          "vhd", "vhdx", "msi", "yaml", "yml", "xml", "js", "dll", "md", "cfg", "ini"})
+# A file's ending that is no top-level domain (`.py`, `.sh`, `.md`, `.zip` are: never here).
+FILE_ENDINGS = frozenset({"json", "config", "conf", "ps1", "exe", "log", "txt", "gz", "tar", "vhd", "vhdx", "msi",
+                          "yaml", "yml", "xml", "js", "dll", "cfg", "ini"})
+# A namespace of ARM (`Microsoft.Network`, `Microsoft.Azure.Monitor`): a domain's form, never one.
+NAMESPACE = re.compile(r"Microsoft(?:\.[A-Z][A-Za-z0-9]*)+")
+# The operation a capture file names, the value of its key `operation` (`network.subnets.get`).
+OPERATION = re.compile(r"(?:network|compute|backup)\.[a-z_]+\.[a-z_]+")
 # Names Azure gives, or that name nothing of anyone: kept.
 KEPT_NAMES = frozenset({
     "azure", "default", "example", "ipconfig", "ipconfig1", "ipconfig2", "allowvnetinbound",
@@ -136,12 +141,20 @@ def _ipv6(text: str):
         return None
 
 
-def _is_domain(token: str) -> bool:
-    """A domain name, not a resource provider's namespace (`Microsoft.Network`), a file's name, nor
-    the name of an operation a capture file carries (`network.subnets.get`)."""
-    low = token.lower()
-    return not (low.startswith("microsoft.") or low.rsplit(".", 1)[-1] in FILE_ENDINGS
-                or re.fullmatch(r"(?:network|compute|backup)\.[a-z_]+\.[a-z_]+", low))
+def _is_domain(text: str, m) -> bool:
+    """`m`, a match of DOMAIN in the value `text`, is a domain name: not a namespace of ARM — its
+    form, followed by `/` or ending the value (`Microsoft.Network/…`, `Microsoft.Azure.Monitor`) —
+    nor a file's name (an ending no domain has). `compute.example.fr`, `microsoft.example.fr`,
+    `example.md` are domains."""
+    token, after = m.group(1), text[m.end(1):m.end(1) + 1]
+    if NAMESPACE.fullmatch(token) and after in ("", "/"):
+        return False
+    return token.rsplit(".", 1)[-1].lower() not in FILE_ENDINGS
+
+
+def _operation(key: str, value: str) -> bool:
+    """The value of a capture file's key `operation`: an operation's name, no domain."""
+    return key.lower() == "operation" and bool(OPERATION.fullmatch(value))
 
 
 def _domain_kept(low: str) -> bool:
@@ -270,8 +283,9 @@ class Anonymizer:
         return self.emails[key]
 
     def domain(self, real: str) -> str:
+        """A domain's stand-in (its caller has judged it a domain, `_is_domain`)."""
         low = real.lower()
-        if not _is_domain(real) or _domain_kept(low):
+        if _domain_kept(low):
             return real
         if low not in self.domains:               # replaced whole: its labels are not names
             self.domains[low] = f"domain-example-{len(self.domains) + 1:02d}.example.org"
@@ -319,8 +333,8 @@ class Anonymizer:
                 self.ip(".".join(m.groups()))
             for m in HOST.finditer(text):
                 self.name("st" if "core.windows.net" in m.group(2).lower() else "host", m.group(1))
-            for m in DOMAIN.finditer(text):
-                if _is_domain(m.group(1)) and not _domain_kept(m.group(1).lower()):
+            for m in ([] if _operation(key, text) else DOMAIN.finditer(text)):
+                if _is_domain(text, m) and not _domain_kept(m.group(1).lower()):
                     self.domain(m.group(1))
             if low in NAMED_BY_KEY:
                 self.name(NAMED_BY_KEY[low], text.split(".")[0] if NAMED_BY_KEY[low] == "host" else text)
@@ -373,6 +387,8 @@ class Anonymizer:
         if not isinstance(value, str):
             return value
         low = key.lower()
+        if _operation(low, value):
+            return value
         if low in STAND_IN_FOR:
             return STAND_IN_FOR[low]
         if _secret_key(low) and not ARM_ID.match(value):
@@ -393,7 +409,7 @@ class Anonymizer:
         out = EMAIL.sub(lambda m: self.email(m.group(0)), out)
         out = IPV4.sub(lambda m: self.ip(m.group(0)), out)
         out = IPV6.sub(lambda m: self.ipv6(m.group(0)), out)
-        out = DOMAIN.sub(lambda m: self.domain(m.group(1)), out)
+        out = DOMAIN.sub(lambda m: self.domain(m.group(1)) if _is_domain(m.string, m) else m.group(1), out)
         out = _sub_all(out, {k.replace(".", "-"): v.replace(".", "-") for k, v in self.ips.items()},
                        r"(?<![0-9])", r"(?![0-9])")
         out = HEX32.sub(lambda m: self.hex32(m.group(0)), out)
@@ -481,7 +497,8 @@ def structural(captures: dict[str, dict], forbid: tuple[str, ...] = ()) -> list[
             ("a host not of the stand-in's form", any(not (m.group(1).lower() in KEPT_NAMES or _stand_in(m.group(1).lower()))
                                                       for m in HOST.finditer(text))),
             ("a domain outside Azure's and the documentation's",
-             any(_is_domain(m.group(1)) and not _domain_kept(m.group(1).lower()) for m in DOMAIN.finditer(text))),
+             any(_is_domain(v, m) and not _domain_kept(m.group(1).lower())
+                 for k, v in _strings(cap) if not _operation(k, v) for m in DOMAIN.finditer(v))),
             ("an ARM id naming something real", any(not _id_of_stand_ins(m.group(0)) for m in ARM_ID.finditer(text))),
             ("32 hex neither a stand-in nor a stand-in NIC's mark",
              any(not (FAKE_HEX32.match(h.lower()) or h.lower() in marks) for h in HEX32.findall(text))),

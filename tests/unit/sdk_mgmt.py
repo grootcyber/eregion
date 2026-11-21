@@ -49,7 +49,7 @@ ARM = "https://management.azure.com"
 def offline(monkeypatch) -> None:
     """No socket opens, no name is resolved: the in-memory ARM needs neither, anything else would
     be the network — even to this machine. On top of the suite's own guard (tests/unit/network_guard.py:
-    nothing leaves the machine in any test)."""
+    the test process does not leave the machine)."""
     import socket
 
     def refuse(*_a, **_kw):

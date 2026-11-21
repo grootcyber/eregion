@@ -7,7 +7,10 @@
   - The maintainer's reading of each file stays the last net: a word of free text that no id, key or form names cannot be told from any other.
   - No session runs the capture.
   - Tests: `tests/unit/test_sdk_mgmt_contracts.py` (the inventory read by the syntax tree of the adapters), `tests/unit/test_sdk_capture.py` (mutants M6962–M6976 and M7061–M7065, `scripts/mutants/SDK1b.py`).
-- **No test of the suite leaves the machine** (SDK1b's review, #1017). A guard installed by the conftest (`tests/unit/network_guard.py`, Python's audit hook) refuses any connection, name resolution or datagram beyond the loopback, whatever library opens it; a test's own server on this machine stays reachable. It runs beside the agent sessions' store guard (HY2b), each refusing what it guards in either order; the suite takes 4 % longer, for 75 more tests. Tests: `tests/unit/test_network_guard.py`.
+- **The test process no longer leaves the machine** (SDK1b's review, #1017). A guard installed by the conftest (`tests/unit/network_guard.py`, Python's audit hook) refuses any connection, name resolution (direct or reverse) or datagram beyond the loopback, whatever library opens it, and says what to do instead: serve Azure in memory (`tests/unit/sdk_mgmt.py`), act with `dry_run=True`, or listen on the loopback. A test's own server on this machine stays reachable. It runs beside the agent sessions' store guard (HY2b), each refusing what it guards in either order; the suite takes 4 % longer, for 75 more tests.
+  - Its limit: it holds the test process and its xdist workers, those that load the conftest. A subprocess a test starts without it (`python -c …`, `curl`) is not held, nor a relay on the loopback that forwards beyond the machine.
+  - Tests: `tests/unit/test_network_guard.py`.
+- **Known limits of the anonymization** (SDK1b, not blocking). A name taken from a key (the VM's user, its host) that equals a word of a value is replaced everywhere: `adminUsername: "linux"` corrupts `osType`. Free text under a key the anonymization does not list is left to the maintainer's reading.
 
 ### Fixed
 - **The audit's compute check no longer reports a VM unreadable when its body leaves out `dataDisks`** (SDK1b, #1017). The SDK hands on `None`, never `[]`, and the check failed with « 'NoneType' object is not iterable ». It now reads such a VM as having no data disk.

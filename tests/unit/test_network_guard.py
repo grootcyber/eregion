@@ -1,6 +1,6 @@
-"""The suite's network guard (tests/unit/network_guard.py, SDK1b's review): nothing leaves the machine
-in a test — a connection, a name resolved, a datagram, by any path the audit hook sees —, while this
-machine stays reachable (a test's own server). Only the loopback is touched here.
+"""The suite's network guard (tests/unit/network_guard.py, SDK1b's review): the test process does not
+leave the machine — a connection, a name resolved, a datagram, by any path the audit hook sees —, while
+this machine stays reachable (a test's own server). Only the loopback is touched here.
 """
 from __future__ import annotations
 
@@ -31,6 +31,9 @@ def test_the_guard_is_installed_in_this_process():
     ("socket.sendto", (TCP, ("198.51.100.4", 53)), False),
     ("socket.getaddrinfo", ("management.azure.com", 443, 0, 0, 0), False),
     ("socket.gethostbyname", ("example.org",), False),
+    ("socket.getnameinfo", (("203.0.113.9", 443), 0), False),
+    ("socket.getnameinfo", (("2001:db8::9", 443, 0, 0), 0), False),
+    ("socket.getnameinfo", (("127.0.0.1", 8080), 0), True),
     ("socket.connect", (TCP, ("127.0.0.1", 8080)), True),
     ("socket.connect", (TCP, ("127.0.0.53", 53)), True),
     ("socket.connect", (TCP6, ("::1", 8080, 0, 0)), True),
@@ -40,7 +43,8 @@ def test_the_guard_is_installed_in_this_process():
     ("socket.sendmsg", (TCP, None), True),
     ("socket.connect", (UNIX, "/run/some.sock"), True),
     ("open", ("/tmp/x", "r", 0), True),
-], ids=["ipv4", "a-name", "ipv6", "udp", "dns", "dns-by-name", "loopback", "loopback-range", "ipv6-loopback",
+], ids=["ipv4", "a-name", "ipv6", "udp", "dns", "dns-by-name", "reverse", "reverse-ipv6", "reverse-loopback",
+        "loopback", "loopback-range", "ipv6-loopback",
         "localhost", "dns-localhost", "dns-none", "connected", "unix", "not-a-socket"])
 def test_the_rule_reaches_this_machine_only(event, args, ok):
     assert guard.allowed(event, args) is ok
@@ -67,6 +71,8 @@ def test_a_connection_beyond_this_machine_is_refused_before_it_leaves():
         sys.audit("socket.getaddrinfo", "example.org", 443, 0, 0, 0)
     with pytest.raises(ConnectionRefusedError, match=REFUSED):
         sys.audit("socket.gethostbyname", "example.org")
+    with pytest.raises(ConnectionRefusedError, match="instead, serve Azure in memory"):
+        sys.audit("socket.getnameinfo", ("203.0.113.9", 443))
 
 
 def test_a_server_of_this_machine_is_reached():

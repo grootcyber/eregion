@@ -6,7 +6,8 @@ closed list opened, a real GUID or address left in the files. M6962–M6976, mea
 tests/unit/test_sdk_mgmt_contracts.py and tests/unit/test_sdk_capture.py; after the review,
 M7061–M7065: an IPv6 address left, a domain outside Azure's let through by the check, a name resolved
 past the suite's network guard (tests/unit/test_network_guard.py), a retried response kept twice, an
-output under a git checkout accepted (M7066, M7067 kept for the second round)."""
+output under a git checkout accepted; after its second round, M7066–M7067: a domain shaped like an
+operation's name taken for one, a reverse resolution past the guard."""
 _T = "tests/unit/test_sdk_mgmt_contracts.py"
 _C = "tests/unit/test_sdk_capture.py"
 _S = "scripts/sdk_capture.py"
@@ -78,7 +79,8 @@ MUTANTS = [
     ("M7061", "the anonymization blind to IPv6: a real address left in the files (SDK1b, review)", _A,
      "        out = IPV6.sub(lambda m: self.ipv6(m.group(0)), out)\n", ""),
     ("M7062", "the check blind to a domain outside Azure's: `check` says clean (SDK1b, review)", _A,
-     "             any(_is_domain(m.group(1)) and not _domain_kept(m.group(1).lower()) for m in DOMAIN.finditer(text))),\n",
+     "             any(_is_domain(v, m) and not _domain_kept(m.group(1).lower())\n"
+     "                 for k, v in _strings(cap) if not _operation(k, v) for m in DOMAIN.finditer(v))),\n",
      "             False),\n"),
     ("M7063", "the suite's network guard lets a name be resolved beyond the machine (SDK1b, review)", _G,
      '"socket.sendmsg": 1, "socket.getaddrinfo": 0,', '"socket.sendmsg": 1,'),
@@ -87,6 +89,13 @@ MUTANTS = [
      "        kept.setdefault(p.http_request.url, p)\n"),
     ("M7065", "the capture writes under a git checkout, this repository's aside (SDK1b, review)", _S,
      '        if folder == REPO or (folder / ".git").exists():\n', "        if folder == REPO:\n"),
+    ("M7066", "the broad exclusion back: `compute.acmecorp.fr` taken for an operation's name, left as it is "
+     "(SDK1b, second round)", _A,
+     '    return token.rsplit(".", 1)[-1].lower() not in FILE_ENDINGS\n',
+     '    return token.rsplit(".", 1)[-1].lower() not in FILE_ENDINGS and not re.fullmatch(\n'
+     '        r"(?:network|compute|backup)\\.[a-z_]+\\.[a-z_]+", token.lower())\n'),
+    ("M7067", "the suite's network guard lets an address be resolved back beyond the machine (SDK1b, second round)",
+     _G, '"socket.gethostbyaddr": 0, "socket.getnameinfo": 2}', '"socket.gethostbyaddr": 0}'),
 ]
 TESTS = {
     "M6962": f"{_T}::test_the_nsg_audit_through_the_sdk",
@@ -110,4 +119,7 @@ TESTS = {
              f"{_N}::test_a_connection_beyond_this_machine_is_refused_before_it_leaves",
     "M7064": f"{_C}::test_a_response_retried_by_the_sdk_is_kept_once",
     "M7065": f"{_C}::test_the_out_folder_is_under_no_git_checkout",
+    "M7066": f"{_C}::test_a_domain_shaped_like_an_operation_a_namespace_or_a_file_is_a_domain",
+    "M7067": f"{_N}::test_the_rule_reaches_this_machine_only "
+             f"{_N}::test_a_connection_beyond_this_machine_is_refused_before_it_leaves",
 }
