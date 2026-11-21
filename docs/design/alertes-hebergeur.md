@@ -128,7 +128,7 @@ remise : S15, S16) :
 - Un plan Defender se facture à l'heure. Son activation ouvre un essai de 30 jours, qu'on ne peut ni
   suspendre ni prolonger (S8, S9).
 - Sentinel a un essai de 31 jours, 10 Go par jour (S14).
-- Pour comparer : Imladris coûte environ 61 € par mois en continu (`docs/proofs.json`, `host_cost`).
+- Pour comparer : Imladris (anciennement H0) coûte environ 61 € par mois en continu (`docs/proofs.json`, `host_cost`).
 
 ### 1.3 Ce que ça veut dire pour Eregion
 
