@@ -20,7 +20,15 @@ Jonathan on 31/10):
     that may hold a line of the fault's window — written since it started — is unreadable or
     cut;
   - no decision on its targets falls both in its own window and after the next fault on one of
-    them started: who it answered is not known.
+    them started: who it answered is not known;
+  - it is not a wire of a Dagorlad request (``metrics.request``, DG-b: its wires are chained on
+    the same targets), and it did not start in a technique run's exercise window, its grace
+    included, on one of its targets (FR1, #1006): what Glorfindel decides then may answer the
+    technique — a card of the fault bearing the technique's ``ttp`` hidden, a card of the
+    technique from another rule counted against the fault. A technique's window is the one this
+    host holds and believes (``exercise.last_moment``); else, its end not known, it runs from
+    its T0 to the longest a window may last after it (MAX_DURATION_S plus the grace): a fault
+    the absence of a technique cannot be proven for is not measured.
   Every other run is **not measured**, and says why: noise Glorfindel never saw, a run where its
   reaction was not measured by choice (``--without-glorfindel``), a watch gone, or decisions not
   read, is never « Glorfindel did nothing ».
@@ -50,6 +58,7 @@ from pathlib import Path
 from analysis import containment
 from analysis.containment import FaultRun
 from eregion_core import channel_reader, run_report, runs_layout
+from eregion_core.exercise import GRACE_AFTER_S, MAX_DURATION_S
 
 NOT_STARTED = "rien n'a été injecté"
 NOT_SEEN = "son effet n'a pas été vu dans la télémétrie de Glorfindel : il ne mesure rien de sa réaction"
@@ -64,6 +73,17 @@ WATCH_GONE = "la watch de Glorfindel n'était plus vivante après la panne : sa 
 WATCH_AFTER_UNSAID = "son rapport ne dit pas si la watch de Glorfindel vivait après la panne"
 WATCH_CUT = "décisions de la watch illisibles en partie"
 SHARED = "une décision sur sa cible tombe aussi dans la panne suivante : à laquelle elle répond n'est pas connu"
+# FR1 (#1006): a fault chained with a technique on its target — what Glorfindel decides then may
+# answer either.
+REQUESTED = ("fil d'une demande Dagorlad : ses fils s'enchaînent sur les mêmes cibles, la réaction "
+             "à la panne seule n'est pas connue")
+BEHIND = ("partie dans la fenêtre d'exercice d'une technique sur sa cible, grâce comprise : ce que "
+          "Glorfindel décide alors peut répondre à la technique")
+UNBOUNDED = "sa fenêtre introuvable ici, bornée par son T0 et la durée maximale d'une fenêtre"
+# A technique's window this host does not hold: the longest it may last after its T0 (a window
+# holds its T0, lasts at most MAX_DURATION_S — eregion_core/exercise.py refuses one longer —,
+# and its grace follows).
+UNKNOWN_SPAN_S = MAX_DURATION_S + GRACE_AFTER_S
 WINDOW_DAYS = 30
 
 
@@ -197,6 +217,60 @@ def played_of(runs) -> list[tuple]:
             for r in runs if r.get("kind") == "technique" and r.get("at") is not None]
 
 
+def _key(rid) -> str:
+    return str(rid or "").strip().rstrip("/").lower()
+
+
+def _on_target(fault_targets, technique_targets) -> bool:
+    """A fault's target is one of a technique's — without case, by full id or by VM name (two
+    VMs of one name in two groups taken as one: the safe side); a technique's target that is a
+    scope (a resource group: a Stratus run's) holds every VM under it. A technique whose target
+    is not known is on every VM (as ``played_of``)."""
+    techs = [k for k in (_key(t) for t in technique_targets or ()) if k]
+    if not techs:
+        return True
+    for f in (_key(t) for t in fault_targets or ()):
+        for t in techs:
+            if f and (f == t or f.rsplit("/", 1)[-1] == t.rsplit("/", 1)[-1] or f.startswith(t + "/")):
+                return True
+    return False
+
+
+def exercised_of(runs, windows: dict | None = None) -> list[tuple]:
+    """``(run_id, targets, from, until, bounded)`` of the technique runs among ``runs``: their
+    exercise window, grace included. ``windows``: run id → ``(start, last moment, targets)`` of
+    those this host holds and believes — never narrower than BL1's ``[T0, T0 + grace]``; the
+    others run from their T0 to UNKNOWN_SPAN_S after it, ``bounded`` False. Their targets: the
+    report's VM and the window's."""
+    out = []
+    for r in runs:
+        if r.get("kind") != "technique" or r.get("at") is None:
+            continue
+        at, w = r["at"], (windows or {}).get(r.get("run_id"))
+        targets = [t for t in [r.get("resource_id") or "", *(w[2] if w is not None else [])] if t]
+        if w is not None and w[0] is not None and w[1] is not None:
+            out.append((r["run_id"], targets, min(w[0], at), max(w[1], at + containment.HOLD_WATCH_S), True))
+        else:
+            out.append((r["run_id"], targets, at, at + UNKNOWN_SPAN_S, False))
+    return out
+
+
+def behind(f: dict, exercised) -> str:
+    """Why a fault is not measured for what ran with it — "" when nothing did: a wire of a
+    Dagorlad request (``request``), or started in a technique's window (``exercised_of``) on
+    one of its targets, to the clocks of two hosts."""
+    if f.get("request"):
+        return f"{REQUESTED} ({str(f['request'])[:40]})"
+    at = f.get("at")
+    if at is None or not f.get("targets"):
+        return ""                                   # said by fault_run: its start or targets unknown
+    for rid, targets, lo, hi, bounded in exercised or ():
+        if lo - containment.CLOCK_SKEW_S <= at <= hi + containment.CLOCK_SKEW_S \
+                and _on_target(f.get("targets"), targets):
+            return f"{BEHIND} ({str(rid)[:64]}" + ("" if bounded else f", {UNBOUNDED}") + ")"
+    return ""
+
+
 def _shares_a_target(a: dict, b: dict) -> bool:
     return any(containment._same(x, y) for x in a.get("targets") or [] for y in b.get("targets") or [])
 
@@ -229,20 +303,26 @@ def _shared(f, faults, windows, records, taken, played) -> bool:
     return bool(tail.mistaken)
 
 
-def measure(runs, watch: Watch, *, taken=frozenset(), played=None, windows=None) -> list[FaultRun]:
+def measure(runs, watch: Watch, *, taken=frozenset(), played=None, windows=None,
+            exercised=None) -> list[FaultRun]:
     """Each fault among ``runs`` (``read_run`` views), checked against the ``watch``'s records —
-    measured only where its decisions are known (``Watch.unknown``). ``played``: the technique
-    runs' windows, else those of ``runs``; ``taken``: the signal ids already attached to an
-    incident; ``windows``: each fault's exercise window, its last moment. A decision goes to
-    the earliest fault it falls in, never to two."""
+    measured only where its decisions are known (``Watch.unknown``), and played alone
+    (``behind``). ``played``: the technique runs' windows, else those of ``runs``; ``taken``:
+    the signal ids already attached to an incident; ``windows``: each fault's exercise window,
+    its last moment; ``exercised``: the technique runs' exercise windows (``exercised_of``),
+    else those of ``runs``, each bounded from its T0. A decision goes to the earliest fault it
+    falls in, never to two."""
     runs = list(runs)
     played = played_of(runs) if played is None else list(played)
+    exercised = exercised_of(runs) if exercised is None else list(exercised)
     faults = sorted((f for f in runs if f.get("kind") == "fault"),
                     key=lambda f: (f.get("at") is None, f.get("at") or 0.0, f["run_id"]))
     taken = set(taken)
     out = []
     for f in faults:
         why = unmeasured(f, own_until(f, windows)) or (watch.unknown(f.get("at")) if f.get("without_glorfindel") is not True else "")
+        if not why and f.get("without_glorfindel") is not True:
+            why = behind(f, exercised)
         if why:
             out.append(FaultRun(f["run_id"], f.get("experiment") or "", list(f.get("targets") or []),
                                 f.get("at"), f.get("ended_at"), why=why))
@@ -289,6 +369,20 @@ def _reports(runs_dir: Path) -> dict[str, Path]:
 def _windows(runs_dir: Path, run_ids) -> dict[str, float]:
     """Each run's exercise window, its last moment, where it is still kept and believed (H-1:
     emptied a week after it ends)."""
+    return {rid: w["last"] for rid, w in _read_windows(runs_dir, run_ids).items()}
+
+
+def _technique_windows(runs_dir: Path, run_ids) -> dict[str, tuple]:
+    """Each technique run's exercise window, ``(start, last moment, targets)``, where it is
+    still kept and believed — what ``exercised_of`` bounds it by."""
+    return {rid: (run_report.epoch(w.get("start")), w["last"],
+                  [t for t in w.get("targets") or [] if isinstance(t, str)])
+            for rid, w in _read_windows(runs_dir, run_ids).items()}
+
+
+def _read_windows(runs_dir: Path, run_ids) -> dict[str, dict]:
+    """Each run's exercise window and its last moment (``last``), where it is still kept and
+    believed."""
     from eregion_core.exercise import last_moment, window_refusal, windows_dirs
     out = {}
     for rid in run_ids:
@@ -303,7 +397,7 @@ def _windows(runs_dir: Path, run_ids) -> dict[str, float]:
             continue
         last = None if not isinstance(window, dict) or window_refusal(window) else last_moment(window)
         if last is not None:
-            out[rid] = last.timestamp()
+            out[rid] = {**window, "last": last.timestamp()}
     return out
 
 
@@ -312,9 +406,15 @@ def load(runs_dir: Path, *, days: int = WINDOW_DAYS, now: float | None = None) -
     windows and the watch's debug files — on the watch's host (elsewhere: not measured, said)."""
     now = time.time() if now is None else now
     since = now - days * 86400
-    runs = [r for r in run_report.read_reports(_reports(Path(runs_dir))) if since <= r["at"] <= now]
+    every = [r for r in run_report.read_reports(_reports(Path(runs_dir))) if r["at"] <= now]
+    runs = [r for r in every if since <= r["at"]]
     windows = _windows(Path(runs_dir), [r["run_id"] for r in runs if r["kind"] == "fault"])
-    return {"days": days, **rate(measure(runs, read_watch(Path(runs_dir), since), windows=windows))}
+    # FR1: a technique started before the period may still hold its first faults in its window.
+    techniques = [r for r in every if r["kind"] == "technique"
+                  and since - UNKNOWN_SPAN_S - containment.CLOCK_SKEW_S <= r["at"]]
+    exercised = exercised_of(techniques, _technique_windows(Path(runs_dir), [r["run_id"] for r in techniques]))
+    return {"days": days, **rate(measure(runs, read_watch(Path(runs_dir), since), windows=windows,
+                                         exercised=exercised))}
 
 
 def render(summary: dict) -> str:

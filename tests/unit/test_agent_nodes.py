@@ -16,6 +16,10 @@ from glorfindel.actions import AzureConnector
 from glorfindel.agent import investigate
 from glorfindel.memory import CycleMemory
 
+# RDW1 (#994): the graph's nodes are tested on a T1486 example that isolates — the shipped disk-write
+# rule's ceiling (tests/unit/test_rule_ceiling.py) would bring it back to a snapshot.
+pytestmark = pytest.mark.usefixtures("rules_without_ceiling")
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 

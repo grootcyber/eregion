@@ -234,10 +234,10 @@ est déclaré dans `config.yaml` (G1c). La séance, dans l'ordre. Chaque geste e
    ```
 
    `PowerState/running`. Puis Orodruin : `make orodruin-start`, `make orodruin-check` (`armed`).
-   Tant que les garants de Stratus jugent tout armement (un lot à venir les limite à celui de
-   Stratus), une ligne `EREGION_STRATUS_SUBSCRIPTION` dans l'`orodruin.env` d'Orodruin rend Gothmog
-   passif : la mettre en commentaire le temps de la séance (`make orodruin-ssh`, puis
-   `sed -i 's/^EREGION_STRATUS_SUBSCRIPTION=/#&/' orodruin.env`), et la remettre à la fin.
+   Une ligne `EREGION_STRATUS_SUBSCRIPTION` dans l'`orodruin.env` ne gêne plus l'armement de
+   Gothmog : les garants de Stratus ne jugent que l'armement pour Stratus (#1003). Côté Gothmog,
+   un test le tient (G1e) : le préflight et le run arment par le vrai contrat, cet abonnement
+   posé, sans assertion ni preuve de bac à sable (mutants M6924–M6925).
 1. **Appliquer le bruit, à lui seul.** Jamais `make celebrimbor-up` complet : son plan retirerait
    les règles de Glorfindel du NSG partagé (le plan du 12/11). Jamais terraform à la main : les
    deux cibles vérifient l'abonnement avant de le lancer (`CELEBRIMBOR_SUB_GUARD`).
@@ -275,10 +275,59 @@ est déclaré dans `config.yaml` (G1c). La séance, dans l'ordre. Chaque geste e
    15 minutes chacune) : `vm-disk-write`, `vm-cpu-pressure`, `vm-restart`, puis `vm-shutdown`.
    **Au moins 16 minutes après le retour du run précédent** : la fenêtre d'une panne court jusqu'à
    sa fin plus 15 minutes de grâce. Une carte qui tombe après le début de la suivante rend la
-   première non mesurée (le 20/11). Avant `vm-shutdown`, rejouer son préflight : le Heartbeat doit
-   être revenu après le redémarrage.
+   première non mesurée (le 20/11). Gothmog le tient lui-même (G1d) : tant que la fenêtre de la
+   panne précédente sur la même VM court, `gothmog-run` et `gothmog-preflight` refusent et disent
+   jusqu'à quand (« runs until … UTC, its grace included »). Avant `vm-shutdown`, rejouer son
+   préflight : le Heartbeat doit être revenu après le redémarrage.
 4. **Le taux.** `make imladris-fault-rate` (sur Imladris). Le taux mesuré va ici ; une panne jouée
    pour la première fois passe `implemented`, par une PR de la session Gothmog.
+
+### Une panne attend la fenêtre de la précédente (G1d)
+
+Une panne ne part pas tant qu'une fenêtre d'exercice sur l'une de ses cibles court encore, grâce
+comprise (`gothmog/runner/windows.py`). C'est la première chose que lisent `gothmog run` et
+`gothmog preflight`, sur le disque de l'hôte, avant la watch (V1), le contrat et tout appel au
+cloud. Le refus dit le run qui tient la cible, et jusqu'à quand, en UTC.
+
+- Les fenêtres lues sont celles de Gothmog sur cet hôte, là où `open_window` les écrit
+  (`runs/gothmog/exercises`), et seulement celles d'une panne : une panne attend la panne
+  précédente, jamais une technique. Depuis SEC18, `runs/annatar/exercises` n'est de toute façon
+  pas monté chez Gothmog sur Orodruin : le filtre est une ceinture de plus, il ne change pas le
+  comportement actuel.
+- **Une technique et une panne sur la même VM faussent le taux, dans les deux sens.** Une demande
+  Dagorlad les enchaîne exprès (DG-b). `analysis/fault_rate.py` n'écarte une décision au profit
+  d'une technique que si elle porte le `ttp` de cette technique, sur cette VM, et tombe dans
+  `[T0, T0 + 15 min]` de la technique (`played_of`), pas dans toute sa fenêtre. Le taux cache donc
+  une carte de la panne qui porterait ce `ttp`. Il compte aussi contre la panne une carte de la
+  technique venue d'une autre règle, ou vue plus de 15 min après son T0, dès qu'elle tombe dans la
+  fenêtre de la panne. `make imladris-fault-rate` lit les runs de 30 jours : un essai DG-b du mois
+  y entre. **Ce biais est fermé côté analyse pour une panne partie derrière une technique ou issue
+  d'une demande (FR1, #1006) ; l'ordre inverse reste à X1.** Une panne partie dans la fenêtre
+  d'exercice d'une technique sur l'une de ses cibles, grâce comprise, ou issue d'une demande, est
+  déclarée « non mesurée », avec sa raison, et reste hors du taux (`docs/analysis.md`, « Le taux
+  des pannes prises pour une attaque »).
+- La cible est comparée sans la casse, par son id complet et par le nom de sa VM, en union. L'id
+  est construit à partir de l'abonnement et du groupe du banc. Une VM d'une autre topo
+  (`rg-celebrimbor-*`, que l'inscription admet) retient donc la panne suivante comme celle du
+  banc, ce qui refuse plus, jamais moins. Sans abonnement, seul le nom compte.
+- Aucune fenêtre jamais écrite (pas de répertoire) : la panne part. Un répertoire illisible, un
+  chemin qui n'est pas un répertoire, un fichier illisible ou au-delà de 64 Kio, un fichier sans
+  fenêtre (ni début, ni expiration, ni cibles) : refus. Ce qui ne se lit pas n'est jamais « aucune
+  fenêtre ». Une pierre tombale (`purged_at`) n'est plus une fenêtre.
+- **Un run tué sans fermer sa fenêtre.** Un run ferme sa fenêtre en sortant, même sur une erreur.
+  Tué sans pouvoir la fermer (Orodruin arrêté en plein run), il la laisse courir jusqu'à son
+  expiration (2 h) plus la grâce, et le refus le dit. Deux gestes possibles : attendre l'heure
+  dite, ou, sur Orodruin, vérifier qu'aucun run ne tourne (`docker ps`), puis retirer son fichier
+  (`make orodruin-ssh`, puis `rm ~/runs/gothmog/exercises/<run_id>.json`, le `run_id` que dit le
+  refus). `make orodruin-kill` ne ferme que les fenêtres du canal, celles qu'Imladris lit, pas
+  celles de cet hôte.
+- **Plus de 4096 fenêtres.** Rien ne purge `runs/gothmog/exercises` sur Orodruin : la watch ne
+  purge que son propre répertoire. Au-delà de 4096 fichiers (`MAX_WINDOW_FILES`), chaque panne
+  refuse (« not all read »). Le geste : sur Orodruin, retirer les fenêtres des runs finis depuis
+  plus d'un jour, puis rejouer le préflight : `find ~/runs/gothmog/exercises -name '*.json' -mmin
+  +1440 -delete`. La copie qu'Imladris lit est celle du canal, elle n'en dépend pas.
+
+**Mutants** : M6865–M6874 et M6893–M6896 (`tests/unit/test_gothmog.py`).
 
 ## G2 — les pannes des dépendances de Glorfindel
 

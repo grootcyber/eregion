@@ -3338,8 +3338,10 @@ def _board_rules() -> list[dict]:
         cfg = load_config(path, glorfindel_cfg=load_glorfindel_config())
     except Exception:
         return []
+    # RDW1: `allow`, the rule's ceiling (None: none) — what its detection may lead to alone, at most.
     return [{"name": r.name, "ttp": r.ttp, "enabled": r.enabled, "backend": r.monitoring_backend_name,
-             "expected_latency_s": r.expected_latency_s, "layer": r.layer} for r in cfg.rules]
+             "expected_latency_s": r.expected_latency_s, "layer": r.layer,
+             "allow": list(r.ceiling.allow) if r.ceiling is not None else None} for r in cfg.rules]
 
 
 def _fault_targets(catalog: dict) -> dict[str, list[str] | None]:

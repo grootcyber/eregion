@@ -30,6 +30,10 @@ from tests.unit.test_dependency_failures import (
 REFUSAL = ('litellm.BadRequestError: AnthropicException - {"type":"error","error":{"type":'
            '"invalid_request_error","message":"`temperature` is deprecated for this model."}}')
 
+# RDW1 (#994): the draws are measured on a T1486 isolation — the shipped disk-write rule's ceiling
+# (tests/unit/test_rule_ceiling.py) would bring it back to a snapshot before any draw.
+pytestmark = pytest.mark.usefixtures("rules_without_ceiling")
+
 
 @pytest.fixture(autouse=True)
 def hermetic(tmp_path, monkeypatch):

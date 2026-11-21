@@ -69,6 +69,12 @@ Rien de ce guide n'a été rejoué de zéro. Les mesures citées sont celles des
 |---|---|---|
 | 2–9 | T1486 sur gondolin par `make bench-run` (ou Dagorlad et `make orodruin-exercise`), `make bench-restore` sous la paire de la console, la levée sur Imladris | ✓ le 12/11 : `detected`, `isolate_vm` seul et relu sur Azure, la restauration et la levée ; les temps datés dans #665 et la page. Reste ouvert : la détection, deux fois plus lente que le 09/11 (141,6 s contre 70,3 s), à mesurer par ING5 (RH1) |
 
+**À rejouer depuis RDW1 (0.6.4, #994).** `ransomware-disk-write` porte un plafond : l'instantané part
+seul, la carte du plafond propose l'isolement, approuvable en un clic, et l'isolement est ton
+approbation ([`banc-t1486.md`](../banc-t1486.md), étape 5). Le « `isolate_vm` seul » du 12/11 ne se
+reproduit plus. Le rapport du banc (`make bench-report`) dit l'absence de cycle `isolate_vm` de la
+watch et nomme le plafond ; il ne date pas encore l'isolement approuvé (suite).
+
 ## Le cas sans Imladris
 
 Depuis WC1 (#523), la watch du poste peut écrire le canal retour d'Orodruin ([banc.md](banc.md#sans-imladris--la-watch-de-ton-poste)). Codé et testé sans Azure ; la mesure au banc reste à faire : un run depuis Orodruin, la watch sur le poste, la garde qui passe avec sa clé épinglée et refuse une autre clé.

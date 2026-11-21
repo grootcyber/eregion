@@ -510,6 +510,16 @@ briques:
     issue: 981
     doc: docs/glorfindel.md
 
+  - id: g-identite-ligne-agregee
+    composant: glorfindel
+    poste: g-detecter
+    nom: "An aggregated row whose gathered set grows, as the SDK hands it on in JSON, keeps its identity and makes no new card; the shipped rules' identities unchanged"
+    etat: main
+    release: "0.6"
+    lots: [ROW1]
+    issue: 1002
+    doc: docs/glorfindel.md
+
   - id: g-charges-ia
     composant: glorfindel
     poste: g-detecter
@@ -578,6 +588,16 @@ briques:
     version: "0.5.8"
     lots: [SEC-A2]
     issue: 631
+
+  - id: g-plafond-regle
+    composant: glorfindel
+    poste: g-decider
+    nom: "A rule carries the ceiling of what its detection may lead to: the disk-write rule, on the write rate alone, at most a snapshot and a card, the isolation a human's gesture"
+    etat: main
+    release: "0.6"
+    lots: [RDW1]
+    issue: 994
+    doc: docs/glorfindel.md
 
   - id: g-second-modele
     composant: glorfindel
@@ -1680,6 +1700,36 @@ briques:
     issue: 76
     doc: gothmog/README.md
 
+  - id: x-fenetre-close
+    composant: gothmog
+    poste: x-eprouver
+    nom: "A fault waits for the previous exercise window on its target, its grace included, and says until when"
+    etat: main
+    release: "0.6"
+    lots: [G1d]
+    issue: 76
+    doc: gothmog/README.md
+
+  - id: x-arme-sans-stratus
+    composant: gothmog
+    poste: x-eprouver
+    nom: "Gothmog arms on the base contract with a Stratus subscription set: held on its side by a test through the real contract"
+    etat: main
+    release: "0.6"
+    lots: [G1e]
+    issue: 76
+    doc: gothmog/README.md
+
+  - id: x-taux-seul
+    composant: gothmog
+    poste: x-eprouver
+    nom: "The fault rate leaves out, said not measured, a fault started in a technique's window on its target or a wire of a Dagorlad request"
+    etat: main
+    release: "0.6"
+    lots: [FR1]
+    issue: 1006
+    doc: docs/analysis.md
+
   - id: x-bruit-banc
     composant: gothmog
     poste: x-eprouver
@@ -1764,6 +1814,16 @@ briques:
     lots: [R2c]
     issue: 608
     doc: docs/design/stratus-cible.md
+
+  - id: o-stratus-garants-scope
+    composant: orodruin
+    poste: o-armer
+    nom: "The contract's Stratus guarantees gate only an arming for a Stratus run — a bench env file naming the Stratus subscription no longer turns Gothmog, a VM run or the drill passive"
+    etat: main
+    release: "0.6"
+    lots: [ORG1]
+    issue: 1003
+    doc: docs/design/orodruin-contract.md
 
   - id: o-kubernetes
     composant: orodruin
@@ -2599,6 +2659,16 @@ briques:
     lots: [CI12, CI12-workflow]
     issue: 899
     doc: docs/operations.md
+
+  - id: s-nuit-parlante
+    composant: socle
+    poste: s-prouver
+    nom: "A nightly invariant run cut by its bound has said its seed as it began, and before the bound where its machine runs"
+    etat: main
+    release: "0.6"
+    lots: [CI13]
+    issue: 986
+    doc: docs/design/preuves.md
 
   - id: s-contrats-sdk
     composant: socle

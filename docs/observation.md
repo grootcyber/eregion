@@ -226,6 +226,12 @@ lit donc la provenance sur la carte seule, par son `resource_id` :
 Pour dire `twin` et `production`, il faudrait que l'opérateur déclare la provenance de chaque périmètre
 surveillé (dans `glorfindel-config.yaml`, par exemple), et que la carte l'écrive à sa création.
 
+**Le plafond d'une règle (RDW1, #994).** Une détection d'une règle plafonnée (`ransomware-disk-write`)
+fait, en `human_only`, deux cartes : `mode_hold`, qui propose l'instantané, et `ceiling_proposal`, qui
+propose l'isolement. Le rapport compte donc deux verdicts pour une seule détection, tous deux à la
+même confiance : celle que le modèle donnait à l'isolement qu'il proposait. En `non_disruptive`,
+l'instantané part seul et seule la carte du plafond est à juger.
+
 **Ce qui reste à B4 (#75)** : étiqueter les détections d'une observation réelle, hors du banc ; en tirer
 la précision des règles et des décisions sur du vrai trafic ; verser des cas anonymisés au harnais. Ce
 rapport en est l'instrument, il ne la mesure pas encore.
