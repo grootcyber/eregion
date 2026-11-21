@@ -1005,6 +1005,19 @@
    "doc": "docs/design/reponse-identite.md"
   },
   {
+   "id": "g-identite-identifiant-utilise",
+   "composant": "glorfindel",
+   "poste": "g-agir",
+   "nom": "An unusual sign-in of a service principal proposes to remove the one credential it used, read from the shipped query through the SDK; several or none, the principal disabled as before",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "CRD1"
+   ],
+   "issue": 1011,
+   "doc": "docs/design/reponse-identite.md"
+  },
+  {
    "id": "g-identite-unique",
    "composant": "glorfindel",
    "poste": "g-agir",

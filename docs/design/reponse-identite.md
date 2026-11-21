@@ -410,7 +410,7 @@ Le plan, par constat :
 | identifiant ajouté | `entra_remove_credential` (l'identifiant ajouté seul) | la rotation des autres identifiants, si l'auteur n'est pas attendu |
 | consentement | `entra_disable_principal` (l'application **cliente**, jamais la ressource) | retirer l'octroi ou l'attribution ; révoquer les sessions de qui a consenti |
 | rôle privilégié | `entra_revoke_sessions` (le membre ajouté, l'auteur s'il n'est pas attendu) ; `entra_disable_user` si l'auteur est un utilisateur de test inscrit | retirer l'attribution |
-| connexion inhabituelle | `entra_remove_credential` (l'identifiant que la connexion a utilisé, s'il est lu), sinon `entra_disable_principal` | la rotation des autres identifiants |
+| connexion inhabituelle | `entra_remove_credential` (l'identifiant que la connexion a utilisé, s'il est lu et seul : CRD1, l'hypothèse 7 mesurée), sinon `entra_disable_principal` | la rotation des autres identifiants |
 | l'identité de Glorfindel, acteur ou cible | aucun | renouveler ses identifiants (§3.5) |
 
 Pour le consentement, s'ajoutent `entra_revoke_sessions` et, le cas échéant, `entra_disable_user`
@@ -770,7 +770,14 @@ Jonathan, avant d'être écrite comme un fait.
    `User.EnableDisableAccount.All` + `User.Read.All`, dans une unité restreinte non.
 6. Après le retrait d'un identifiant ou la désactivation d'un principal, le jeton déjà émis reste
    valable jusqu'à son expiration (60 à 90 minutes) ; le délai réel de l'effet.
-7. `AADServicePrincipalSignInLogs` nomme l'identifiant qu'une connexion a utilisé.
+7. ~~`AADServicePrincipalSignInLogs` nomme l'identifiant qu'une connexion a utilisé.~~ **Mesurée le
+   21/11 (E7 d'ID1, E-5)** : `ServicePrincipalCredentialKeyId` est rempli sur 5 connexions sur 5
+   (`clientAssertion`), et son empreinte est celle du `keyId` du certificat utilisé (comparée à
+   `az ad app credential list`). La règle livrée `entra-sp-unusual-signin` ne gardait pas la colonne :
+   le plan proposait toujours `entra_disable_principal`. **CRD1 (#1011)** : la requête garde les
+   identifiants des connexions du groupe (`CredentialKeyIds = make_set(ServicePrincipalCredentialKeyId, 5)`),
+   le plan lit ce texte JSON (`entra_items.used_credential`) ; un seul `keyId` → son retrait, plusieurs
+   ou aucun → la désactivation (§6, le tableau des verbes).
 8. Les codes d'erreur d'une connexion refusée après chaque action, lisibles dans les journaux.
 9. Les noms d'opération de `AuditLogs` pour chaque écriture de l'exécuteur, et leur latence
    (pour IR1d).
