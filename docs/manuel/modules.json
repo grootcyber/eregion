@@ -381,8 +381,8 @@
    "version": "0.6",
    "nom": "identity defended",
    "etat": "publiee",
-   "derniere": "0.6.3",
-   "date": "2026-11-20",
+   "derniere": "0.6.4",
+   "date": "2026-11-21",
    "resume": "The Activity and Entra ID logs measured on the bench; a public technique against the test identity, seen by Glorfindel; the response to a stolen identity, on the card."
   },
   {
@@ -644,8 +644,9 @@
    "composant": "glorfindel",
    "poste": "g-detecter",
    "nom": "The certificate Azure puts on a managed identity it creates makes no high card: set aside by the tenant's principal's id, never its name, and counted",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.4",
    "lots": [
     "MID1"
    ],
@@ -657,8 +658,9 @@
    "composant": "glorfindel",
    "poste": "g-detecter",
    "nom": "An aggregated row whose gathered set grows, as the SDK hands it on in JSON, keeps its identity and makes no new card; the shipped rules' identities unchanged",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.4",
    "lots": [
     "ROW1"
    ],
@@ -700,8 +702,9 @@
    "composant": "glorfindel",
    "poste": "g-detecter",
    "nom": "Orodruin's writes in its exercise channel set aside by its identity, its container and its account, never its address — Orodruin's exercise channel makes no card; counted, and said when unconfigured",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.4",
    "lots": [
     "SLF2"
    ],
@@ -802,8 +805,9 @@
    "composant": "glorfindel",
    "poste": "g-decider",
    "nom": "A rule carries the ceiling of what its detection may lead to: the disk-write rule, on the write rate alone, at most a snapshot and a card, the isolation a human's gesture",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.4",
    "lots": [
     "RDW1"
    ],
@@ -851,8 +855,9 @@
    "composant": "glorfindel",
    "poste": "g-decider",
    "nom": "The observation report by confidence band and by rule, each cell with its count, too few said; the share judged right above the gate's threshold; the bench's cards told apart",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.4",
    "lots": [
     "B4a"
    ],
@@ -1052,8 +1057,9 @@
    "composant": "glorfindel",
    "poste": "g-agir",
    "nom": "An unusual sign-in of a service principal proposes to remove the one credential it used, read from the shipped query through the SDK; several or none, the principal disabled as before",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.4",
    "lots": [
     "CRD1"
    ],
@@ -1625,6 +1631,19 @@
    "note": "An exercise cycle is never recalled as the precedent of a real incident."
   },
   {
+   "id": "g-memoire-mesuree",
+   "composant": "glorfindel",
+   "poste": "g-memoire",
+   "nom": "The memory of decisions measured on a copy of a real store, offline and in aggregate: the distance against the date, signal by signal, and the choice put to the maintainer",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "MEM1"
+   ],
+   "issue": 1016,
+   "doc": "docs/design/memoire.md"
+  },
+  {
    "id": "g-redaction",
    "composant": "glorfindel",
    "poste": "g-rediger",
@@ -1652,8 +1671,9 @@
    "composant": "socle",
    "poste": "s-signer",
    "nom": "Security hardening",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.4",
    "lots": [
     "SEC-A4b"
    ],
@@ -2251,8 +2271,9 @@
    "composant": "gothmog",
    "poste": "x-eprouver",
    "nom": "The noise applied alone, by its own Make targets, behind a check of the bench's subscription",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.4",
    "lots": [
     "G1c"
    ],
@@ -2264,8 +2285,9 @@
    "composant": "gothmog",
    "poste": "x-eprouver",
    "nom": "A fault waits for the previous exercise window on its target, its grace included, and says until when",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.4",
    "lots": [
     "G1d"
    ],
@@ -2277,8 +2299,9 @@
    "composant": "gothmog",
    "poste": "x-eprouver",
    "nom": "Gothmog arms on the base contract with a Stratus subscription set: held on its side by a test through the real contract",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.4",
    "lots": [
     "G1e"
    ],
@@ -2290,8 +2313,9 @@
    "composant": "gothmog",
    "poste": "x-eprouver",
    "nom": "The fault rate leaves out, said not measured, a fault started in a technique's window on its target or a wire of a Dagorlad request",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.4",
    "lots": [
     "FR1"
    ],
@@ -2303,8 +2327,9 @@
    "composant": "gothmog",
    "poste": "x-eprouver",
    "nom": "The CPU noise read as the Linux agent names it: Processor, the instance total, measured on the bench",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.4",
    "lots": [
     "G1f"
    ],
@@ -2424,11 +2449,13 @@
    "id": "o-stratus-garants-scope",
    "composant": "orodruin",
    "poste": "o-armer",
-   "nom": "The contract's Stratus guarantees gate only an arming for a Stratus run — a bench env file naming the Stratus subscription no longer turns Gothmog, a VM run or the drill passive",
-   "etat": "main",
+   "nom": "The contract's Stratus guarantees gate only an arming for a Stratus run — a bench env file naming the Stratus subscription no longer turns Gothmog, a VM run or the drill passive; the phase's no-contract gate is pinned by its own message (ORG1b)",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.4",
    "lots": [
-    "ORG1"
+    "ORG1",
+    "ORG1b"
    ],
    "issue": 1003,
    "doc": "docs/design/orodruin-contract.md"
@@ -2794,8 +2821,9 @@
    "composant": "celebrimbor",
    "poste": "c-construire",
    "nom": "The bench's processor and network counters under the names the Linux agent collects, the disk as measured",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.4",
    "lots": [
     "DCR1"
    ],
@@ -2995,8 +3023,9 @@
    "composant": "console",
    "poste": "k-juger",
    "nom": "Several cards judged at once, in TO JUDGE or a tile's group: a summary first, then each card as its own button does it, a failure said card by card",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.4",
    "lots": [
     "JUG3"
    ],
@@ -3525,8 +3554,9 @@
    "composant": "socle",
    "poste": "s-prouver",
    "nom": "A nightly invariant run cut by its bound has said its seed as it began, and before the bound where its machine runs",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.4",
    "lots": [
     "CI13"
    ],
@@ -3538,8 +3568,9 @@
    "composant": "socle",
    "poste": "s-prouver",
    "nom": "Glorfindel's readers of Log Analytics tested on the pinned SDK's own objects, a dynamic column as its JSON text and a date as a datetime, never only on lists a test made up; the SDK's floor held to the lock",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.4",
    "lots": [
     "SDK1a"
    ],
@@ -3551,8 +3582,9 @@
    "composant": "socle",
    "poste": "s-prouver",
    "nom": "Annatar's Log Analytics collector tested on the pinned SDK's own objects too, through the shared utility — the heartbeat and the alert polls read a reply as the service sends it, never a hand-made response",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.4",
    "lots": [
     "SDK1r"
    ],
@@ -3910,8 +3942,9 @@
    "composant": "socle",
    "poste": "s-signer",
    "nom": "The weekly advisory issues say what a human accepted, and an accepted advisory turns the run red no more",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.4",
    "lots": [
     "DEP4"
    ],
@@ -3923,8 +3956,9 @@
    "composant": "socle",
    "poste": "s-documenter",
    "nom": "The licence the project declares is the licence it carries: canonical Apache-2.0, to the byte",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.4",
    "lots": [
     "LIC1"
    ],
@@ -3936,8 +3970,9 @@
    "composant": "socle",
    "poste": "s-documenter",
    "nom": "The docs say what the code does: the README's core, the decision graph, and why LangGraph runs as a pipeline",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.4",
    "lots": [
     "DOC7"
    ],
