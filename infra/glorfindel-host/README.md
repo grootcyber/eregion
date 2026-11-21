@@ -592,6 +592,60 @@ carte revenue, c'est qu'une condition ne tient pas — l'`ActorId` de sa ligne n
 (étape 3), ou l'identifiant ajouté n'est pas un seul certificat `Verify` : c'est la carte voulue.
 Pour revenir aux cartes : vider la variable (étapes 1 et 4).
 
+**L'identité d'Orodruin (SLF2)** : Orodruin publie ses fenêtres et le rapport de chaque run dans le
+canal d'exercices (`EREGION_EXERCISE_CHANNEL`), sur le compte de la voie de retour de la watch : un
+`PutBlob` depuis son adresse privée, que `data-exfiltration-blob` prenait pour une exfiltration (la
+carte du 21/11, non attribuée, un instantané à 40 %, jugée Wrong). La watch écarte ces écritures,
+comptées, seulement si leur compte est celui du canal, leur conteneur le sien, et leur écrivain
+l'identité d'Orodruin, lue dans l'environnement de la watch (`EREGION_ORODRUIN_PRINCIPAL_ID`,
+l'object id du principal de son identité managée), **jamais par l'adresse** ; tout le reste fait sa
+carte (`docs/glorfindel.md`, « Le canal d'exercices d'Orodruin et la watch qui redémarre »). Sans la
+variable, rien n'est écarté : la carte revient, et la ligne de la règle le dit dans la console
+(« ⚠ Orodruin id »). C'est la variable que la composition du banc autonome lira aussi (BNC4,
+`docs/design/banc-autonome.md`, § 5.5) : une seule valeur, un seul geste. Le geste de Jonathan, **une
+fois déployée une release qui contient SLF2** (la 0.6.4), depuis le poste, en zsh. Rien ne s'écrit
+dans Azure ; l'id va de `terraform` à une variable du shell, puis au fichier, jamais recopié de
+l'écran, et **jamais affiché**.
+
+```zsh
+# 1. L'object id du principal de l'identité managée d'Orodruin (la sortie principal_id de son module)
+#    — dans host.env d'Imladris, jamais dans le dépôt.
+cd ~/eregion && source .envrc
+F=infra/glorfindel-host/host.env
+grep -c '^EREGION_ORODRUIN_PRINCIPAL_ID=' $F    # → 0 (sinon : la retirer d'abord, sed -i '/^EREGION_ORODRUIN_PRINCIPAL_ID=/d' $F)
+P=$(terraform -chdir=infra/orodruin output -no-color -raw principal_id)
+print -r -- ${#P}                               # → 36, la longueur d'un GUID (0 : l'état d'Orodruin illisible, s'arrêter)
+tail -c1 $F | wc -l                             # → 1 : host.env finit par un saut de ligne (0 : print >> $F d'abord)
+print -r -- "EREGION_ORODRUIN_PRINCIPAL_ID=$P" >> $F
+unset P
+grep -cE '^EREGION_ORODRUIN_PRINCIPAL_ID=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' $F   # → 1, sans l'afficher
+# 2. Contrôle, sans afficher l'id : c'est bien l'identité managée de la VM d'Orodruin (le principal
+#    d'une identité attribuée par le système porte le nom de sa ressource — à confirmer au premier
+#    geste, comme tout ce qui n'est pas encore mesuré) :
+ID=$(sed -n 's/^EREGION_ORODRUIN_PRINCIPAL_ID=//p' $F)
+V=$(terraform -chdir=infra/orodruin output -no-color -raw vm_id)
+az ad sp show --id "$ID" --query "[servicePrincipalType, displayName == '${V##*/}']" -o tsv
+#    → « ManagedIdentity » puis « True » (« Application », ou une erreur : retirer la ligne,
+#    sed -i '/^EREGION_ORODRUIN_PRINCIPAL_ID=/d' $F, et s'arrêter ; « False » seul : comparer
+#    `print -r -- ${V##*/}` au nom que donne `az ad sp show --id "$ID" --query displayName`).
+unset ID V
+make imladris-push               # host.env → ~/eregion/.env ; --check refuse une valeur qui n'est pas un GUID
+# 3. La watch la reçoit : recréée (un `restart` ne relit pas ~/eregion/.env) :
+make imladris-ssh                # puis, sur Imladris : cd eregion && docker compose up -d watch
+#    Toujours sur Imladris, sans afficher la valeur :
+docker compose exec watch sh -c 'test -n "$EREGION_ORODRUIN_PRINCIPAL_ID" && echo posée'   # → posée
+```
+
+**Après coup** : au démarrage, la watch dit « Canal d'exercices : les écritures d'Orodruin (son
+identité, son conteneur, son compte) écartées de la règle d'exfiltration » ; dans la console, le
+détail de `data-exfiltration-blob` ne dit plus « EREGION_ORODRUIN_PRINCIPAL_ID unset » dès son passage
+suivant. Au prochain run lancé depuis Orodruin, **aucune** carte `data-exfiltration-blob` depuis son
+adresse pour son rapport : la ligne de la règle compte « N Orodruin », et le journal de la watch dit
+« write(s) of Orodruin set aside ». Une telle carte revenue, c'est qu'une condition ne tient pas — un
+autre conteneur, une autre identité (une clé, une SAS), un autre compte : c'est la carte voulue.
+**Orodruin reconstruit** (`orodruin-down`, puis `-up`) change d'identité : refaire le geste ; d'ici
+là, ses écritures refont leur carte. Pour revenir aux cartes : vider la variable (étapes 1 et 3).
+
 **Après une mise à jour de Glorfindel**, si une règle livrée recopiée a changé (n'importe quel
 champ : l'empreinte `base_sha256` est celle de la règle entière), la watch **écarte la copie** et
 charge la règle livrée à sa place — plus de cartes, jamais moins : la carte de la maintenance de
