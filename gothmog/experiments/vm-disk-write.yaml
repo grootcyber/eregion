@@ -25,8 +25,9 @@ description: >
   de ce genre est une panne prise pour une attaque, comptée dans le taux de G1
   (analysis/fault_rate.py).
 version: "1.0"
-# Déclarée, pas encore mesurée : implemented après le premier run sur le banc.
-status: planned
+# Jouée sur le banc le 20/11 depuis Orodruin armé : PASS, son effet vu dans la télémétrie de
+# Glorfindel (gothmog/README.md, « Mesuré sur le banc (20/11) »).
+status: implemented
 # Des fichiers temporaires de stress-ng, effacés par l'agent : aucune donnée touchée.
 destructive: false
 

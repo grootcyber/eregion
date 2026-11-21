@@ -223,7 +223,12 @@ def compose(run_id: str, target: str, h0: dict, events: list[dict], jobs: list[d
         if mine:
             chose = ", ".join(sorted({f"`{c.get('action') or 'aucune action'}`" for c in mine}))
             gaps.append(f"aucun cycle `isolate_vm` de ce run sur Imladris (la watch a écrit {chose}) : une action "
-                        "retenue, ou une recommandation")
+                        "retenue, ou une recommandation"
+                        # RDW1 (#994): T1486's rule caps its detection — the isolation is a human's approval,
+                        # never a cycle of the watch.
+                        + (" — le plafond de `ransomware-disk-write` (RDW1) : l'isolement attend l'approbation "
+                           "de la carte du plafond, lue dans `runs/console/manual_actions.jsonl`, jamais un "
+                           "cycle de la watch" if "`snapshot`" in chose else ""))
         elif _detected(run):
             # BNC3a: composed before the watch closed its cycle (12/11: 7 s after the detection) — said so,
             # never taken for an action held back.

@@ -332,11 +332,12 @@ resource_types:
         expected_latency_s: 180
 
       # G1 — bruit bénin : Glorfindel ne doit ni isoler ni bloquer. Pannes déclarées dans
-      # gothmog/experiments/, expériences dans infra/terraform/chaos.tf (chaos.noise_vms), pas
-      # encore appliquées : planned jusqu'au premier run sur le banc.
+      # gothmog/experiments/, expériences dans infra/terraform/chaos.tf (chaos.noise_vms), appliquées
+      # sur gondolin (G1c). vm-disk-write et vm-restart jouées sur le banc le 20/11 (PASS) :
+      # implemented. vm-cpu-pressure reste planned : son compteur n'est pas encore collecté (DCR1).
       - id: vm-disk-write
         name: "Disk writes (benign, 10 min)"
-        status: planned
+        status: implemented
         engine: chaos-studio
         engine_ref: exp-celebrimbor-gondolin-disk
         destructive: false
@@ -356,7 +357,7 @@ resource_types:
 
       - id: vm-restart
         name: "VM restart (graceful, 1 min down)"
-        status: planned
+        status: implemented
         engine: chaos-studio
         engine_ref: exp-celebrimbor-gondolin-restart
         destructive: false

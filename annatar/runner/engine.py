@@ -213,8 +213,11 @@ class Engine:
                 return RunOutcome(run_id, "unknown", error=f"stratus: {e}", refused=True)
 
         # Orodruin (eregion_core/orodruin.py): the contract before the target is even read.
-        # Passive → the run touches nothing and says why.
-        verdict, session = arm(run_id, "annatar", request=self.request)
+        # Passive → the run touches nothing and says why. #1003: a Stratus run arms on the Stratus
+        # guarantees (the closed role, the sandbox); a VM run (or any other) on the base contract.
+        # StratusExecutor refuses a phase without them, so this flag cannot fail open.
+        verdict, session = arm(run_id, "annatar", request=self.request,
+                               for_stratus=scenario.engine == "stratus")
         if session is None:
             console.print(f"[red]Orodruin passive — nothing touched:[/red] {outside(verdict.reasons())}")
             return RunOutcome(run_id, "unknown", error=f"passive: {verdict.reasons()}", refused=True)

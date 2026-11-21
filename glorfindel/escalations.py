@@ -257,6 +257,7 @@ _ESCALATION_LABELS = {
     "telemetry_gap": "télémétrie incomplète (requêtes d'enquête en échec)",
     "unstable_decision": "décision instable (les tirages ne s'accordent pas)",
     "floor_proposal": "isolation proposée par le plancher (brute force réussi puis root), jamais exécutée seule",
+    "ceiling_proposal": "isolation proposée sous le plafond de la règle (sa preuve seule ne suffit pas), jamais exécutée seule",
     "readiness_hold": "VM retenue en observation (préparation)",
     "queue_tampered": "file d'actions : une demande que son service n'a pas écrite (FS1b)",
     "queue_unavailable": "file d'actions : le registre de la watch illisible (FS1b)",
@@ -350,8 +351,13 @@ def record(
     action_key: str = "",
     executed: dict | None = None,
     attribution: dict | None = None,
+    ceiling: dict | None = None,
 ) -> str:
     """Append an escalation and return its id.
+
+    `ceiling` (RDW1, #994): the rule's ceiling brought the decision back — the rule, the model's
+    proposal and its confidence, the action it was brought back to, what the rule allows, why. Kept on
+    the card for the console, which says both proposals; never part of the dedup.
 
     `attribution` (SLF1, #929): on a detection of the data plane attributed to no VM, what the card
     says in place of its resource — ``{"state": "unattributed", "candidates": […]}`` (`unattributed`);
@@ -477,6 +483,8 @@ def record(
                 # decision, its port included, never the card's; the card then says that decision.
                 if _propose(e, _decision(action, resource_id, escalation_type, action_params)):
                     e["action_params"] = dict(action_params or {})
+                if ceiling and (material or "ceiling" not in e):
+                    e["ceiling"] = dict(ceiling)            # RDW1: the latest proposal the rule capped
                 lines[i] = json.dumps(e, default=str)
                 _write_lines(lines)
                 return e["id"]
@@ -527,6 +535,8 @@ def record(
         esc["action_keys"] = [action_key]
     if executed:
         esc["executed"] = executed
+    if ceiling:
+        esc["ceiling"] = dict(ceiling)
     # FS1a: the watch's proposal, when the card holds an action — its own decision (SEC-B).
     _propose(esc, _decision(action, resource_id, escalation_type, action_params))
     # Rewritten whole, as every write of the store: an append seen half-done by a reader
@@ -1224,7 +1234,12 @@ def observation_report(since: datetime | None = None) -> dict:
 
     VP1c (#920): a card whose time cannot be placed — without a time zone, or unreadable — is never
     dated by a guess: with a `since`, whether it lies in the window is not known, so it is left out
-    of the counts and said apart, in `undated`."""
+    of the counts and said apart, in `undated`.
+
+    B4a (#991): the same cards by the confidence their verdict judged, by rule × band, above the
+    gate's threshold, and by provenance (glorfindel/calibration.py) — read from the cards alone."""
+    from eregion_core.inscription import Scope
+    from glorfindel import calibration
     since = _aware(since)
 
     def bucket() -> dict:
@@ -1237,6 +1252,7 @@ def observation_report(since: datetime | None = None) -> dict:
     exercises = 0
     undated = 0
     block_ips: list[str] = []
+    counted: list[dict] = []
     for e in all_escalations():
         if not is_decision(e):
             continue
@@ -1251,6 +1267,7 @@ def observation_report(since: datetime | None = None) -> dict:
             exercises += 1
             continue
         cards += 1
+        counted.append(e)
         v = e.get("verdict") if e.get("verdict") in VERDICTS else "unjudged"
         # A card that recommends no action is named by its type when it has a label (COR1).
         key = e.get("action") or (_ESCALATION_LABELS.get(e.get("escalation_type") or "")
@@ -1273,5 +1290,6 @@ def observation_report(since: datetime | None = None) -> dict:
         "by_action": by_action,
         "by_rule": by_rule,
         "disruptive": {**disruptive, "false_rate": (disruptive["wrong"] / judged) if judged else None},
+        **calibration.tables(counted, threshold=calibration.gate_threshold(), scope=Scope.for_bench()),
     }
 

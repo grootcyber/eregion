@@ -411,7 +411,9 @@ def _run_one(model: str, runs: int, kinds: set[str] | None = None) -> dict:
                               "escalate": True, "held_by": "", "good": False})
                 continue
             lat.append(time.monotonic() - t0)
-            action = (out.get("action") or "").strip()
+            # RDW1 (#994): the harness measures the model — under a rule's ceiling (T1486 by the rule
+            # of its TTP), its own proposal, never the snapshot the ceiling left.
+            action = ((out.get("ceiling") or {}).get("proposed") or out.get("action") or "").strip()
             if not action:
                 drawn.append({"action": "<no-tool-call>", "confidence": None, "escalate": True,
                               "held_by": "", "good": False,

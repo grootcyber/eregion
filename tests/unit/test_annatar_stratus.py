@@ -70,9 +70,12 @@ def _catalog(engine_ref: str = TID, **over) -> dict:
     return {entry["ttp"]: entry}
 
 
-def _session(tmp_path: Path, max_injections: int = 20) -> Session:
+def _session(tmp_path: Path, max_injections: int = 20, *, for_stratus: bool = True) -> Session:
+    # for_stratus=True: a Stratus run's session (armed on the Stratus guarantees) — the executor
+    # refuses a phase without it (#1003). A test of that refusal passes for_stratus=False.
     return Session(run_id="r1", injector="annatar", max_injections=max_injections,
-                   path=tmp_path / "audit.jsonl", offhost=lambda *a, **k: None)
+                   path=tmp_path / "audit.jsonl", offhost=lambda *a, **k: None,
+                   for_stratus=for_stratus)
 
 
 def _journal(session: Session) -> list[dict]:
@@ -419,6 +422,28 @@ def test_executor_journals_each_phase_before_it_runs(tmp_path):
     actions = [r["action"] for r in journal if r.get("outcome") == "about_to_call"]
     assert actions == [f"stratus:{p}" for p in PHASES]
     assert all(r["target"] == RG_SCOPE for r in journal)
+    ex.close()
+
+
+def test_the_executor_refuses_a_phase_from_a_base_contract_session(tmp_path):
+    """#1003 (the net under the for_stratus arming): a Stratus phase refuses a session not armed
+    with the Stratus guarantees — a base contract (Gothmog, a VM run) or a Stratus arming that
+    forgot the flag. So the scoping can never fail open: no phase without the sandbox proven."""
+    ex = _executor(tmp_path, session=_session(tmp_path, for_stratus=False))
+    with pytest.raises(Passive, match="not armed with the Stratus guarantees"):
+        ex.warmup()
+    ex.close()
+
+
+def test_the_executor_refuses_a_session_missing_the_flag(tmp_path):
+    """#1003: the net reads for_stratus with a False default, so a session object that lacks the
+    attribute entirely (a wrong type, never a real Session) is refused, never let through — fail
+    closed by omission, not by a present True."""
+    import types
+    ex = _executor(tmp_path)
+    ex._session = types.SimpleNamespace()   # no for_stratus, no before_call: the net must stop here
+    with pytest.raises(Passive, match="not armed with the Stratus guarantees"):
+        ex.warmup()
     ex.close()
 
 
@@ -1154,6 +1179,26 @@ def test_stratus_scenario_with_kind_fault_is_refused(tmp_path):
     assert not result.valid and any("never a fault" in e for e in result.errors)
     assert ScenarioParser().validate(_stratus_yaml(tmp_path, kind="technique")).valid
     assert ScenarioParser().validate(_stratus_yaml(tmp_path)).valid
+
+
+def test_the_engine_arms_for_stratus_only_for_a_stratus_scenario(tmp_path, monkeypatch):
+    """#1003: the Annatar engine arms for_stratus iff the scenario's engine is stratus — a VM run
+    never asks for the Stratus guarantees, a Stratus run always does. arm is spied; it returns
+    passive so the run stops right after the arming."""
+    import eregion_core.orodruin as orodruin
+    from tests.unit.test_engine import EXFIL_YAML
+    seen = []
+
+    def spy_arm(run_id, injector, *a, for_stratus=False, **k):
+        seen.append(for_stratus)
+        return orodruin.Verdict(orodruin.PASSIVE, [orodruin._miss("net", "stop")], {}, []), None
+
+    monkeypatch.setattr("annatar.runner.engine.arm", spy_arm)
+    monkeypatch.setattr("annatar.engines.stratus.resolve", lambda *a, **k: object())
+    monkeypatch.chdir(tmp_path)
+    Engine().run(_stratus_yaml(tmp_path), skip_confirm=True)
+    Engine().run(EXFIL_YAML, skip_confirm=True)
+    assert seen == [True, False]   # Stratus run asks for the guarantees; a VM run does not
 
 
 def test_stratus_authoring_checks_do_not_touch_other_engines(tmp_path):

@@ -94,8 +94,11 @@ GLORFINDEL_INVARIANT_STATS=1 prints what the sequences went through (run with -s
 GLORFINDEL_INVARIANT_NO_SHRINK=1 reports a failure as found, unshrunk (the mutation
 harness, scripts/mutation_check.py, only needs to know there is one);
 EREGION_HYPOTHESIS_SEED=N draws the sequences of seed N, CI=true included — the night and the
-release gate draw one and say it, a pull request and a push stay derandomized (SEED1,
-tests/unit/hypothesis_seed.py).
+release gate draw one and say it, as the run begins and at its end; a pull request and a push stay
+derandomized (SEED1, CI13, tests/unit/hypothesis_seed.py);
+GLORFINDEL_INVARIANT_WATCHDOG=M: at night (a seed drawn, or more than 500 sequences), the minutes
+after the run began when a watchdog says the seed, the sequences and every thread's stack — by
+default INVARIANT_WATCHDOG_MINUTES, under the step's bound (CI13, tests/unit/invariant_watchdog.py).
 """
 from __future__ import annotations
 
@@ -4388,6 +4391,11 @@ def invariant_env(monkeypatch) -> None:
     # The escalations store's lock (SEC3) too: a thread stopped at its write inside it
     # left the other blocked there, out of the scheduler's sight (I3F, #292).
     monkeypatch.setattr(locks, "_file_lock", _scheduled(locks._file_lock))
+
+
+# CI13 (#986): at night, the watchdog speaks at this many minutes after the run began — its seed, its
+# sequences, every thread's stack — under the step's 125 (invariants.yml; tests/unit/invariant_watchdog.py).
+INVARIANT_WATCHDOG_MINUTES = 115
 
 
 def test_isolation_invariants(monkeypatch):

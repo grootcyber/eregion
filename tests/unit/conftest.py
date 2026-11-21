@@ -27,6 +27,7 @@ if SANDBOX.made:
     atexit.register(home_sandbox.leave, SANDBOX)
 
 hypothesis_seed = _beside("hypothesis_seed")
+invariant_watchdog = _beside("invariant_watchdog")
 
 
 def _present(package: str) -> bool:
@@ -46,6 +47,9 @@ NICENESS = 10
 # SEED1 (#655): the run's Hypothesis seed (tests/unit/hypothesis_seed.py) — drawn for the night and
 # the release gate, given by scripts/mutation_check.py to each round, none on a pull request or a push.
 _SEED = pytest.StashKey()
+# CI13 (#986): a night of the invariant machines (tests/unit/invariant_watchdog.py) — the stderr the
+# run began with, where the watchdog writes before the step's bound; None outside a night.
+_WATCH_FD = pytest.StashKey()
 
 
 def _seed_the_run(config) -> None:
@@ -55,12 +59,50 @@ def _seed_the_run(config) -> None:
     except ValueError as exc:
         raise pytest.UsageError(str(exc)) from None
     config.stash[_SEED] = seed
+    # CI13: a worker's seed comes as a number; that its controller drew it comes beside it.
+    _watch_the_night(config, drew or hypothesis_seed.drawn_upstream(os.environ, seed))
     if seed is None:
         return
+    # CI13: said as the run begins, before any test — a step cut by its bound has written it.
+    if worker is None:
+        print(hypothesis_seed.said(seed), flush=True)
     # A process this run starts (an xdist worker, spawned after this) takes the same seed.
     os.environ[hypothesis_seed.VAR] = str(seed)
+    if drew:
+        os.environ[hypothesis_seed.DRAWN_VAR] = str(seed)
     if drew and os.environ.get("PYTEST_XDIST_WORKER", "gw0") == "gw0":
         hypothesis_seed.write_summary(seed)
+
+
+def _watch_the_night(config, drew: bool) -> None:
+    config.stash[_WATCH_FD] = None
+    try:
+        invariant_watchdog.minutes(os.environ, invariant_watchdog.DEFAULT_MINUTES)
+    except ValueError as exc:
+        raise pytest.UsageError(str(exc)) from None
+    if invariant_watchdog.at_night(os.environ, drew):
+        try:
+            config.stash[_WATCH_FD] = os.dup(2)
+        except OSError:   # never a reason to fail the run
+            pass
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_call(item):
+    """CI13: at night, a test that runs an invariant machine says, before its step's bound, its
+    seed, its sequences and where every thread is (tests/unit/invariant_watchdog.py)."""
+    fd = item.config.stash.get(_WATCH_FD, None)
+    watch = None
+    if fd is not None and invariant_watchdog.runs_machine(item):
+        watch = invariant_watchdog.Watch(
+            fd, item.config.stash.get(_SEED, None),
+            invariant_watchdog.minutes(os.environ, getattr(item.module, invariant_watchdog.MODULE_DEFAULT,
+                                                           invariant_watchdog.DEFAULT_MINUTES)),
+            backstop=invariant_watchdog.backstop_for(item.config), name=item.nodeid)
+        watch.arm()
+    yield
+    if watch is not None:
+        watch.disarm()
 
 
 def pytest_collection_modifyitems(config, items):
@@ -786,3 +828,13 @@ def fresh_reassertion_memory(monkeypatch):
     monkeypatch.setattr(reassert_cards, "_EPISODE_OPEN", set())
     monkeypatch.setattr(reassert_cards, "_NARROWED", {})          # L1Q: what still holds of a card
     monkeypatch.setattr(reassert_cards, "_UNVERIFIED_OPEN", set())  # SEC13: the checks that raised
+
+
+@pytest.fixture
+def rules_without_ceiling(monkeypatch):
+    """RDW1 (#994): the rules as if none carried a ceiling — for the files that test the isolation's
+    machinery on a T1486 example (the graph, its draws, its dependencies, the card of an action taken
+    alone), not the rule's ceiling, which tests/unit/test_rule_ceiling.py measures: the shipped
+    disk-write rule would bring their isolation back to a snapshot."""
+    from glorfindel import rule_ceiling
+    monkeypatch.setattr(rule_ceiling, "current", lambda: rule_ceiling.RuleCeilings(by_name={}, rules=[]))

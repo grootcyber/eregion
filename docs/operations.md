@@ -393,8 +393,11 @@ annatar run annatar/scenarios/azure/account-creation-atomic.yaml  # R1 : un test
 # Gothmog (G0) — depuis Orodruin seulement (ailleurs le contrat est passif)
 make gothmog-preflight [FAULT=vm-shutdown]   # watch de Glorfindel, contrat, cibles relues dans l'expérience, état normal, puis droits d'Orodruin sur l'expérience, agent Chaos, séries de l'effet (G1b) — rien d'écrit
 make gothmog-run [FAULT=vm-shutdown]         # la panne, son retour vérifié par sonde (~15 min) ; WITHOUT_GLORFINDEL=1 : sans watch (V1)
-#   G1 : FAULT=vm-disk-write | vm-cpu-pressure | vm-restart, le bruit bénin (planned : chaos.noise_vms
-#   à appliquer avec Jonathan, gothmog/README.md « G1 »)
+#   G1 : FAULT=vm-disk-write | vm-restart (implemented, jouées le 20/11) | vm-cpu-pressure (planned : son
+#   compteur CPU n'est pas encore collecté, DCR1), le bruit bénin ; ≥ 16 min entre deux runs
+#   (gothmog/README.md « G1 »). Le bruit s'applique à lui seul, l'abonnement du banc vérifié d'abord :
+make celebrimbor-noise-plan                  # plan ciblé des 11 ressources de G1 (lecture seule) ; garde d'abonnement (G1c)
+make celebrimbor-noise-up [YES=1]            # l'applique ; jamais celebrimbor-up complet pour G1 (le NSG partagé)
 make imladris-fault-rate [DAYS=30] [JSON=1]          # sur Imladris : les pannes prises pour une attaque, par run (G1)
 make fault-rate [DAYS=30] [JSON=1]                   # le même taux, sur l'hôte de la watch seulement (ses runs/) ;
 #   ailleurs (Orodruin, un poste) chaque panne est « non mesurée » : les décisions n'y sont pas
@@ -3418,8 +3421,16 @@ rafraîchissement du verrou sans contrôle).
   l'en-tête même sans fournisseur), cette raison ne tient plus : monter d'abord. Un avis accepté est
   dit comme tel (`make audit`, la CI), jamais rouge ; un avis accepté qui n'est plus trouvé est dit,
   à retirer de la liste. Une liste dont une entrée n'a pas sa forme (une raison vide ou trop courte,
-  une date absente) est refusée. Les issues hebdomadaires n'en dépendent pas : un humain les ferme
-  (« non prévu »).
+  une date absente) est refusée. **Les issues hebdomadaires le disent** (DEP4, #990) : le mode
+  `issues` lit cette liste par défaut ; l'issue d'un avis accepté porte sa date et sa raison dans son
+  corps, et l'ouvrir, la rouvrir ou retrouver l'avis ne rend plus le run rouge. Retirer une
+  acceptation le rend rouge, une fois (« acceptation retirée »). La raison y est écrite sur une ligne,
+  sans balise (`<` et `>` en entités : elle ne peut pas porter la clé d'une autre issue) ni mention ;
+  elle fait au plus 1 000 caractères, et sa date doit être une vraie date, pas à venir. Une liste
+  cassée arrête la gestion hebdomadaire (sortie 2) ; le contrôle `pr` de `ci.yml` la refuse déjà dans
+  la PR qui la casse. Un humain ferme toujours l'issue (« non prévu »), une fois l'avis retiré de la
+  liste ou monté. **Risque assumé** : une acceptation n'expire jamais ; un âge au-delà duquel elle
+  tomberait est un autre lot.
 
 ```bash
 make audit                              # les avis connus des verrous, celui de pip-audit compris (lecture seule)
@@ -3872,10 +3883,12 @@ rejouaient les mêmes séquences, et la nuit la même chose chaque soir. Désorm
   le tour r de chaque mutant sur S + r − 1. Deux tours, deux tirages, à la porte comme au lundi.
 
 La graine est dite sous chaque test de propriétés ou machine en échec (la section « Hypothesis seed
-(SEED1) »), dans le résumé du job sur GitHub, et à la fin de pytest (« Hypothesis seed N … ») quand
-pytest reçoit des fichiers de `tests/unit/` (`pytest tests/unit/test_invariants.py`, avec ou sans `-n`).
-Sous `pytest tests/ -n N` (le job `invariants-rest` de la porte, la suite Linux de `ci.yml`), le
-contrôleur xdist ne charge pas `tests/unit/conftest.py` : la fin de la sortie ne la dit pas (mesuré :
+(SEED1) »), dans le résumé du job sur GitHub, et au début du run, avant tout test, comme à la fin de
+pytest (« Hypothesis seed N … ») quand pytest reçoit des fichiers de `tests/unit/`
+(`pytest tests/unit/test_invariants.py`, avec ou sans `-n`) : une étape coupée par sa borne l'a donc
+déjà écrite (CI13, #986). Sous `pytest tests/ -n N` (le job `invariants-rest` de la porte, la suite
+Linux de `ci.yml`), le contrôleur xdist ne charge pas `tests/unit/conftest.py` : ni le début ni la fin
+de la sortie ne la disent (mesuré :
 `GITHUB_EVENT_NAME=schedule pytest tests/ -n 2 -k test_arm_urls`, aucune ligne), elle se lit dans le
 résumé du job et sous chaque échec. Pour la mutation, la graine est dite au début et à la fin de la
 sortie, dans le JSON de chaque tranche (`seed`, `round_seeds`) et dans le total (la graine de chaque
@@ -6054,8 +6067,10 @@ séance G1, le 20/11). `az`, lui, suit son propre compte. Avant toute commande, 
 [ "$(az account show --query id -o tsv)" = "$AZURE_SUBSCRIPTION_ID" ] || echo "az n'est pas sur l'abonnement du banc : s'arrêter"
 ```
 
-Les cibles `celebrimbor-dcr-*` ne portent pas encore ce garde elles-mêmes : il viendra de la
-fonction de garde de G1c, branchée sur elles par celui des deux lots qui fusionnera en second.
+Les cibles `celebrimbor-dcr-*` portent aussi ce garde elles-mêmes, avant tout appel à terraform
+(`CELEBRIMBOR_SUB_GUARD`, G1c) : un abonnement vide ou autre, dans `ARM_SUBSCRIPTION_ID` ou dans
+`az`, et terraform n'est pas lancé — le message nomme la variable, jamais sa valeur. Les deux lignes
+ci-dessus restent le geste d'avant toute autre commande (`az`, la lecture de la DCR déployée).
 
 ### Avant tout : la DCR déployée (lecture seule)
 

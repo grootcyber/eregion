@@ -111,6 +111,11 @@ class LogAnalytics:
         return []
 
 
+# RDW1 (#994): the dependencies are failed under a T1486 isolation — the shipped disk-write rule's
+# ceiling (tests/unit/test_rule_ceiling.py) would bring it back to a snapshot.
+pytestmark = pytest.mark.usefixtures("rules_without_ceiling")
+
+
 @pytest.fixture(autouse=True)
 def hermetic(tmp_path, monkeypatch):
     """No webhook, no bot, no LLM endpoint, no operator switches; runs/ under tmp;

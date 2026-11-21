@@ -40,6 +40,7 @@ flowchart BT
 | Invariants | des milliers de réseaux et de séquences tirés au hasard, avec pannes, monde qui bouge et deux opérations à la fois | ce que le faux Azure ne modélise pas (deux hôtes, couches au-dessus du NSG) |
 | Mutation | si les invariants attrapent un bug connu | un bug d'une classe jamais vue |
 | Verrous entre processus | l'exclusion mutuelle réelle de `flock` | un verrou entre deux hôtes |
+| Contrats du SDK (SDK1a) | ce que la version épinglée d'`azure-monitor-query` rend d'une réponse de Log Analytics : ses types, son résultat partiel, ses erreurs | ce qu'Azure envoie vraiment, qui reste une mesure du banc reprise dans le corps |
 | Banc Celebrimbor | le comportement réel d'Azure et de Terraform | la variété des réseaux clients |
 | Canary azurerm | qu'un comportement mesuré du provider tient encore | Bicep, ARM, autres outils |
 | Runs réels | la boucle complète, de l'attaque à la remise en service | la répétition à grande échelle |
@@ -47,6 +48,21 @@ flowchart BT
 Règle de travail : un comportement d'Azure ou de Terraform n'est affirmé qu'après une mesure
 sur le banc. Le faux Azure reprend ces mesures ; ce qu'il suppose sans mesure est écrit en
 tête de `tests/unit/fake_azure.py`.
+
+Les lecteurs de Log Analytics (SDK1a, #992). Un test qui leur passe des listes ou des dict
+fabriqués (`tests/unit/kql_subset.py`) ne voit pas ce que rend le SDK : une colonne `dynamic` en
+texte JSON, une colonne `datetime` en `datetime`. SLF1 a passé ses tests ainsi et n'a rien fait en
+production. Chaque lecteur de lignes de Glorfindel passe donc au moins une fois par
+`tests/unit/sdk_logs.py`. L'utilitaire écrit le corps d'une réponse comme le service l'envoie, ses
+colonnes typées. Le vrai `LogsQueryClient` de la version épinglée le lit, sur le transport
+d'azure-core : seule la socket est remplacée. Les contrats sont dans
+`tests/unit/test_sdk_contracts.py`, `test_own_channel_sdk.py`, `test_control_plane_unreadable.py`,
+`test_campaign_replay.py` et `test_entra_msi.py` (les lignes du 20/11 écartées par MID1). La borne de `pyproject.toml` est tenue face au verrou par
+`test_dependency_lock.py`. Ce que ces contrats ont montré, puis corrigé par ROW1 (#1002) : une ligne
+agrégée (sans `TimeGenerated`) qui portait une colonne `dynamic` changeait d'identité dès que son
+contenu changeait, et refaisait une carte. Le texte JSON d'une colonne `dynamic` entrait dans
+l'identité de la ligne ; les tests sur des listes ne le voyaient pas. Il en est sorti
+(`tests/unit/test_row_identity_sdk.py`, `docs/glorfindel.md`, « Déduplication »).
 
 ## La machine à invariants
 
@@ -222,6 +238,85 @@ ses fils (M1441). Cette pile est sûre pour un fil bloqué, pas pour un fil qui 
 ses cadres sans le GIL, et le processus peut mourir pendant la lecture. Sur Linux, la machine d'Azure
 tourne donc seule, après le reste, loin de ses 8 min (CI12, M6236–M6243 ; `docs/operations.md`, « La
 CI au bon endroit »).
+
+### Une nuit coupée par sa borne dit sa graine et où elle tourne (CI13)
+
+La nuit du 20/11 (run 44730020574, sur e2c64061) : l'étape de la machine d'Azure, sur ubuntu, est
+coupée par ses 125 min. Son journal s'arrête à `collected 1 item` : ni contre-exemple, ni graine, ni
+statistiques. La graine tirée (SEED1) se disait à la fin du run, qu'une étape coupée n'atteint
+jamais ; la nuit ne se rejouait pas par sa graine.
+
+**La graine, dès le début.** Le conftest la dit avant tout test, sur la sortie standard, en une ligne
+qui se recopie telle quelle (`EREGION_HYPOTHESIS_SEED=<graine>`). La fin du run, chaque échec et le
+résumé de l'étape la disent encore (M6800).
+
+**Avant la borne, ce que fait la machine.** La nuit seulement — une graine tirée pour le run, ou plus
+de séquences que les 500 d'un push (M6801) ; sous xdist, le contrôleur qui a tiré la graine le dit à
+ses workers (`EREGION_HYPOTHESIS_SEED_DRAWN`, qui doit porter cette graine même, M6856) —, un test qui lance une machine d'invariants a un
+garde-fou (`tests/unit/invariant_watchdog.py`). À `GLORFINDEL_INVARIANT_WATCHDOG` minutes après le
+début du run (M6806) — par défaut 115 pour la machine d'Azure, sous les 125 de son étape, et 40 pour
+celle d'AWS, sous ses 45 ; `INVARIANT_WATCHDOG_MINUTES` dans chaque fichier, lu face aux bornes
+d'`invariants.yml` par le test (M6803–M6805) —, il écrit sur le stderr du début du run, que pytest
+ne capture pas :
+
+- la graine et la commande qui la rejoue ;
+- le nombre de séquences commencées (chaque `__init__` d'une machine : génération, rejeu, réduction),
+  depuis quand tourne la séquence en cours, et la plus longue avant elle ;
+- la pile de chaque fil, lue par Python sous le GIL (`sys._current_frames`, M6809). Elle est sûre
+  pendant que les fils de la machine tournent : faulthandler lit leurs cadres sans le GIL, et le
+  processus peut en mourir (CI12).
+
+faulthandler reste le filet : `dump_traceback_later`, armé une minute plus tard, annulé dès que Python
+a parlé, n'écrit les piles que si Python n'a pas pu (un GIL jamais rendu). Un run qui demande le
+sien à pytest (`faulthandler_timeout`, la porte de release) le garde : le filet n'est pas armé
+(M6808). Le run n'est pas arrêté : un runner lent ce jour-là peut encore finir avant sa borne. Quand
+la machine finit, une ligne dit ses séquences et la plus longue — la nuit suivante distingue un
+runner lent d'une séquence qui ne finit pas. Les PR et les pushes ne changent pas : dérandomisés, sans
+garde-fou (M6802, M6807 : jamais armé, ou laissé armé après sa machine).
+
+Ce que lit une nuit coupée, donc : une séquence en cours depuis des dizaines de minutes, sa pile
+jusqu'à la règle qui tourne — une boucle sans borne, à figer dans
+`tests/unit/test_invariant_regressions.py` ; des cadres du `shrinker` de Hypothesis — une réduction
+qui ne tient pas dans le temps ; une séquence de moins d'une seconde et des milliers derrière — un
+runner lent. Le test le prouve sur une sonde : une séquence qui ne finit pas, un garde-fou à 3 s, le
+processus tué par SIGKILL comme une borne coupe une étape ; son journal tient la graine, dite avant le
+garde-fou, et la pile jusqu'à la règle (`tests/unit/test_invariant_watchdog.py`).
+
+**La nuit du 20/11, rejouée sur le poste (CI13, 20/11).** Six passes, un seul processus à la fois,
+3 000 séquences chacune, graines tirées, sur la tête de la nuit (e2c64061) et sur main (20555320,
+qui ne change que la console et Entra) :
+
+| Passe | Graine | Séquences | Durée | La plus longue |
+|---|---|---|---|---|
+| Azure, e2c64061 | 836401501 | 3 110 | 14,3 min | 1,3 s |
+| Azure, e2c64061 | 910307218 | 3 134 | 15,9 min | 1,8 s |
+| Azure, main | 528891083 | 3 115 | 14,6 min | 2,9 s |
+| Azure, main | 758773617 | 3 116 | 21,5 min | 4,4 s |
+| AWS, e2c64061 | 793947918 | 3 126 | 5,1 min | 0,6 s |
+| AWS, main | 87993803 | 3 124 | 5,0 min | 0,7 s |
+
+Aucune séquence qui ne finit pas, aucune de plus de 5 s ; le poste lui-même varie de 14 à 22 min
+pour le même travail. Ce n'est pas une preuve : la graine de la
+nuit est perdue, et ses séquences avec. Ce que disent les durées des étapes sur GitHub (l'API des
+jobs) penche pour un runner lent. Sur ubuntu, l'étape d'Azure verte a duré de 59 à 112 min selon les
+nuits (09/11 75, 10/11 112, 11/11 111, 12/11 59, 17/11 81, 18/11 90), celle d'AWS de 21 à 42 min.
+Le 20/11, celle d'AWS a duré 39,8 min, contre 5 min pour 3 000 séquences sur le poste : un runner
+environ 2,4 fois plus lent que le poste. À ce rythme, les 10 000 séquences d'Azure (environ 50 à
+70 min sur le poste : 14,3 à 21,5 min pour 3 000 dans le tableau) font de 115 à 165 min ce jour-là :
+à la borne ou au-delà. Le même jour, sur macOS, la même tête et la même base restaurée tiennent en
+61 min.
+
+**Ce qui reste à décider, et par qui.** Le geste de Jonathan : lire une ou deux nuits qui disent leur
+graine, avec le garde-fou, avant de décider d'une borne. Pour cette lecture :
+
+- l'étape d'AWS a pris jusqu'à 42 min les nuits vertes, et 39,8 le 20/11. Son garde-fou, à 40 min
+  (`INVARIANT_WATCHDOG_MINUTES` de `tests/unit/test_invariants_aws.py`), parlera donc certaines nuits
+  vertes. Ses piles diront alors où en est une machine lente, pas une séquence bloquée : c'est la ligne
+  des séquences (l'âge de la séquence en cours, la plus longue) qui le dit ;
+- l'étape d'AWS est presque à sa borne de 45 min : elle a été coupée le 19/11. La relever (et la
+  machine d'Azure, sous ses 125 min, de même) serait un geste de Jonathan dans `invariants.yml`, après
+  ces nuits — l'App n'a pas le droit Workflows. Le garde-fou se règle alors par
+  `GLORFINDEL_INVARIANT_WATCHDOG`, ou par la valeur du fichier, que le test lit face à la borne.
 
 ## La mesure par mutation
 
@@ -1366,9 +1461,11 @@ ont parcouru (`GLORFINDEL_INVARIANT_STATS`) :
 Sous xdist (`-n 2`, `schedule`), les deux workers ont tiré la même graine, la conftest chargée ou non par
 le contrôleur, et le résumé du job ne l'a reçue qu'une fois. Sous un push, aucun test n'a de graine.
 **Où la graine est dite** : sous chaque test de propriétés ou machine en échec (pas sous un test simple,
-même rangé dans le fichier d'une machine), dans le résumé du job, et à la fin de pytest quand pytest
+même rangé dans le fichier d'une machine), dans le résumé du job, et au début du run (CI13, #986, avant
+tout test : une étape coupée par sa borne l'a déjà écrite) comme à la fin de pytest, quand pytest
 reçoit des fichiers de `tests/unit/`. Sous `pytest tests/ -n N` (`invariants-rest` de la porte, la suite
-Linux de `ci.yml`), le contrôleur xdist ne charge pas la conftest, et la fin de la sortie ne la dit pas
+Linux de `ci.yml`), le contrôleur xdist ne charge pas la conftest, et ni le début ni la fin de la sortie
+ne la disent
 (relevé par la relecture, mesuré : `GITHUB_EVENT_NAME=schedule pytest tests/ -n 2 -k test_arm_urls`,
 aucune ligne ; une ligne sur `tests/unit/test_arm_urls.py -n 2`). Le résumé du job et chaque échec la
 portent. Une conftest à la racine l'y ferait dire ; ce lot ne l'ajoute pas.

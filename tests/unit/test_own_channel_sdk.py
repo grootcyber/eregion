@@ -11,16 +11,15 @@ which wanted a list, kept the row. The tests of SLF1 passed a Python list.
 
 Here the shipped query runs as written over forged writes (tests/unit/kql_subset.py, as
 tests/unit/test_own_channel.py), its rows become the body the Log Analytics API sends — a
-``dynamic`` column as its JSON text, as measured —, parsed by the pinned SDK's own
-``LogsQueryResult`` (azure-monitor-query 2.0.0), read by the real `AzureMonitorDetector.run_query`,
-then the real RulePoller. Mutants M6715–M6727 (scripts/mutants/SLF1b.py). No Azure, no model; every
+``dynamic`` column as its JSON text, as measured —, read by the pinned SDK's own client
+(azure-monitor-query, tests/unit/sdk_logs.py since SDK1a: its `LogsQueryResult`, over azure-core's
+transport), then by the real `AzureMonitorDetector.run_query` and the real RulePoller. Mutants M6715–M6727 (scripts/mutants/SLF1b.py). No Azure, no model; every
 identifier is made up (repository public).
 """
 from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
 
 import pytest
 
@@ -28,7 +27,7 @@ from glorfindel import auditd, own_channel
 from glorfindel.detection_rules import RulePoller
 from glorfindel.providers.azure.monitor import AzureMonitorDetector
 
-from . import kql_subset
+from . import sdk_logs
 from . import test_auditd as aud
 from .test_own_channel import (
     ACCOUNT, BREE, CHANNEL, CONTAINER, GONDOLIN, GONDOLIN_IP, NOW, OTHER_OID, WATCH_IP, WATCH_OID,
@@ -45,58 +44,11 @@ def _heartbeats(n=3, **kw):
     return [_write("heartbeat.json", minutes=1 + i, **kw) for i in range(n)]
 
 
-def _type(value) -> str:
-    if isinstance(value, bool):
-        return "bool"
-    if isinstance(value, int):
-        return "long"
-    if isinstance(value, float):
-        return "real"
-    if isinstance(value, datetime):
-        return "datetime"
-    if isinstance(value, (list, dict)):
-        return "dynamic"
-    return "string"
-
-
-def _wire(value):
-    """A value as the API's body carries it: a `dynamic` one as its JSON text (measured, 20/11), a
-    date in ISO 8601."""
-    if isinstance(value, (list, dict)):
-        return json.dumps(value)
-    if isinstance(value, datetime):
-        return value.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-    return value
-
-
-def body_of(rows: list[dict]) -> dict:
-    """The body of the API's reply for `rows`: one table, its columns typed, its values on the wire."""
-    columns = list(rows[0]) if rows else []
-    return {"tables": [{"name": "PrimaryResult",
-                        "columns": [{"name": c, "type": _type(rows[0][c])} for c in columns],
-                        "rows": [[_wire(r.get(c)) for c in columns] for r in rows]}]}
-
-
-class _Client:
-    """Log Analytics through the SDK's objects: the query run as written over `lines`, its reply
-    parsed by `LogsQueryResult._from_generated` — the parse of the body the API sends. `mangle`:
-    the body changed before the parse (a value the reply would carry)."""
-
-    def __init__(self, lines, mangle=None):
-        self.lines, self.mangle = lines, mangle
-
-    def query_workspace(self, workspace_id, query, timespan=None):
-        from azure.monitor.query._models import LogsQueryResult
-        body = body_of(kql_subset.run(query, self.lines, now=NOW))
-        if self.mangle is not None:
-            self.mangle(body)
-        return LogsQueryResult._from_generated(json.loads(json.dumps(body)))
-
-
 def _detector(lines, mangle=None) -> AzureMonitorDetector:
-    det = AzureMonitorDetector("ws-test")
-    det._logs_client = lambda: _Client(lines, mangle)
-    return det
+    """Log Analytics through the SDK's objects: the query run as written over `lines`, its reply
+    read by the pinned SDK's client (tests/unit/sdk_logs.py). `mangle`: the body changed before
+    it is sent (a value the reply would carry)."""
+    return sdk_logs.Workspace(sdk_logs.kql(lines, now=NOW, mangle=mangle)).detector()
 
 
 def _poll(lines, channel=CHANNEL, mangle=None):
@@ -194,7 +146,7 @@ def test_an_attack_started_is_not_answered_by_the_watch_s_heartbeat_through_the_
     from glorfindel.agent import resolve_attack_started
     lines = _heartbeats() + [_write("loot.tar", oid=OTHER_OID, ip=GONDOLIN_IP, account="stout",
                                     container="drop")]
-    monkeypatch.setattr(AzureMonitorDetector, "_logs_client", lambda self: _Client(lines))
+    sdk_logs.Workspace(sdk_logs.kql(lines, now=NOW)).serve(monkeypatch)
     monkeypatch.setattr(own_channel, "_SOURCE", lambda: CHANNEL)
     signal = {"event": "attack_started", "ttp": "T1041", "resource_id": GONDOLIN,
               "raw_signal": {"detection_source": "azure_monitor", "detection_query": _rule().query,
@@ -310,9 +262,7 @@ def test_auditd_s_records_through_the_sdk_are_read_as_text():
     the SDK they arrive as text — read (hypothesis A11 of AUD1, now on the SDK's objects), the command
     named, never an « unreadable » card."""
     lines = aud.event(42, "cat", "/etc/shadow")
-    det = AzureMonitorDetector("ws-test")
-    det._logs_client = lambda: _AuditClient(lines)
-    rows = det.run_query(aud.RULE["query"])
+    rows = sdk_logs.Workspace(sdk_logs.kql(lines, now=aud.NOW)).detector().run_query(aud.RULE["query"])
     assert len(rows) == 1
     assert isinstance(rows[0]["Syscall"], str) and isinstance(rows[0]["Execve"], str)
     kept, counts = auditd.settle(auditd.TTP, rows)
@@ -321,9 +271,3 @@ def test_auditd_s_records_through_the_sdk_are_read_as_text():
     assert card["Sensitive"] == "shadow" and card["AuditCommand"] == "cat /etc/shadow"
     assert "AuditRead" not in card
 
-
-class _AuditClient(_Client):
-    def query_workspace(self, workspace_id, query, timespan=None):
-        from azure.monitor.query._models import LogsQueryResult
-        body = body_of(kql_subset.run(query, self.lines, now=aud.NOW))
-        return LogsQueryResult._from_generated(json.loads(json.dumps(body)))
