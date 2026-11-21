@@ -93,6 +93,8 @@ def never_target_protected(env=None):
         return not never.refusal() and bool(guid(object_id)) and never.covers(object_id)
 
     protected.listed = listed
+    # CRD1 (review): the list unreadable, an item whose target's id is not read is a human's too.
+    protected.unreadable = bool(never.refusal())
     return protected
 
 
@@ -102,6 +104,9 @@ def _glorfindels(row: dict) -> bool:
 
 # What cuts an identity off: never a default step on an identity of the defense (IR1f, E-1).
 _CUTS = ("entra_disable_principal", "entra_disable_user", "entra_revoke_sessions")
+# CRD1 (review): on a sign-in, the removal of the one credential it used cuts its subject off as
+# surely as a disabling — its target is the application, an id never_target does not list.
+_SIGNIN_CUTS = _CUTS + ("entra_remove_credential",)
 # The kinds whose actor is an author (an audit log's InitiatedBy); a sign-in's actor is its subject.
 _AUTHORED = ("credential", "consent", "role")
 _IF_NOT_OPERATOR = "Si ce n'est pas le geste de l'opérateur : "
@@ -137,6 +142,20 @@ def _authors(row: dict) -> set[str]:
     return {guid(row.get("ActorId")), guid(row.get("ActorAppId"))} - {""}
 
 
+def _subject(row: dict, kind: str) -> list[str]:
+    """CRD1 (review): a sign-in's subject — the principal's object id, its application's client id —,
+    what every verb of its plan is aimed at, whatever object it names (the removal of a credential
+    names the application)."""
+    return sorted(_authors(row)) if kind == "signin" else []
+
+
+def _cuts(i: dict, kind: str, subject: list[str], listed) -> bool:
+    """An item that cuts off an identity never_target lists: its target, or a sign-in's subject."""
+    if kind == "signin":
+        return i["verb"] in _SIGNIN_CUTS and any(listed(x) for x in [i["target"].get("id", "")] + subject)
+    return i["verb"] in _CUTS and listed(i["target"].get("id", ""))
+
+
 def _defend(row: dict, kind: str, items: list[dict], protected, said: list[str]) -> tuple[list[dict], str | bool]:
     """E-2 then E-1 (IR1f): nothing cuts off an author never_target lists; an identity of the
     defense — Glorfindel's (its marks), or one never_target lists that a step would cut off — is
@@ -155,10 +174,15 @@ def _defend(row: dict, kind: str, items: list[dict], protected, said: list[str])
                     "révocation de ses sessions) ; ce qui lui a été ajouté se retire encore, à la main. Vérifier "
                     "que ce geste est le sien (un opérateur : avec lui) ; sinon, son compte ou ses identifiants "
                     "sont entre d'autres mains — sa réponse revient à un humain de son niveau, hors de ce plan.")
-    cut = [i for i in items if i["verb"] in _CUTS and listed(i["target"].get("id", ""))]
+    subject = _subject(row, kind)
+    cut = [i for i in items if _cuts(i, kind, subject, listed)]
     glorfindel = _glorfindels(row)
     if glorfindel:
-        items = [i for i in items if i["verb"] not in ("entra_disable_principal", "entra_disable_user")]
+        # A sign-in of Glorfindel's: the credential it used is renewed with the others, never removed alone
+        # (the watch would stop with it).
+        dropped = ("entra_disable_principal", "entra_disable_user") + (
+            ("entra_remove_credential",) if kind == "signin" else ())
+        items = [i for i in items if i["verb"] not in dropped]
         for i in items:
             i.update(by="human", why_human=_GLORFINDEL)
     if glorfindel and not (kind == "consent" and row.get("GlorfindelIdentity") is not True):
@@ -169,12 +193,21 @@ def _defend(row: dict, kind: str, items: list[dict], protected, said: list[str])
                     + ("l'acteur." if row.get("GlorfindelIdentity") is True else "la cible."))
     elif glorfindel or cut:
         who = ("l'application cliente est l'identité de Glorfindel, une identité de la défense" if glorfindel else
-               " ; ".join(sorted({i["target"].get("name") or i["target"].get("id") for i in cut}))
+               " ; ".join(sorted({str(i["target"].get("name") or i["target"].get("id")
+                                      or str(row.get("ActorName") or "").strip()[:200] or ", ".join(subject) or "?")
+                                  for i in cut}))
                + f" : {_LISTED}")
         items = [_ask_the_operator(who, _GLORFINDEL if glorfindel else _LISTED, glorfindel=glorfindel)] + \
             [_conditional(i) for i in items]
         said.append(f"{'Identité de la défense' if glorfindel else 'Identité protégée'} — {who}.")
     return items, "glorfindel" if glorfindel else "listed" if cut else False
+
+
+def _hold(i: dict, why: str) -> None:
+    """A human's step, never_target's reason said (as `build` does for an item's own target)."""
+    i.update(by="human", protected=why,
+             why_human=why if i["by"] == "executor" or i["why_human"] in ("", why, _NO_EXECUTOR)
+             else f"{why} ; {i['why_human']}")
 
 
 def _ordered(items: list[dict]) -> list[dict]:
@@ -209,6 +242,16 @@ def build(row: dict, reader=None, *, protected=None, now: datetime | None = None
         note = "constat d'un autre type : aucun plan écrit par le code, vérifier dans les journaux d'Entra ID"
     said: list[str] = []
     items, defense = _defend(row, kind, items, protected, said)
+    subject = _subject(row, kind)
+    for i in items:       # CRD1 (review): what the target's own id does not hold
+        if protected and i["verb"] and not (i["target"].get("id") and protected(i["target"]["id"])):
+            # a sign-in's subject, whatever object the verb names; the list unreadable, a target whose id
+            # is not read is covered too (it names nothing that can be judged)
+            extra = next((w for w in (protected(x) for x in subject) if w), "")
+            if not extra and not i["target"].get("id") and getattr(protected, "unreadable", False):
+                extra = protected("")
+            if extra:
+                _hold(i, extra)
     for i in items:       # every item aimed at an identity (only a verb has a target): the executor's and a human's
         held = protected(i["target"].get("id", "")) if protected and i["target"].get("id") else ""
         if held:          # never a verb of the executor on it: a human's step (§3.5, the first lock), its reason said

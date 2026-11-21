@@ -1051,7 +1051,10 @@ rules:
       MIN_BASELINE_DAYS jours de la base, sinon un principal nouveau, ou les premiers jours
       après le paramètre de diagnostic, inonderaient) ; échecs écartés ; une carte par
       principal et adresse. Exclusion : les identités managées (autre table, non lue) ; un
-      runner aux adresses tournantes s'exclut dans la couche du client.
+      runner aux adresses tournantes s'exclut dans la couche du client. La carte garde les
+      identifiants que ces connexions ont utilisés (CredentialKeyIds, au plus 5, CRD1) : un
+      seul, son plan propose de le retirer ; plusieurs ou aucun, ou une connexion fédérée
+      (FederatedSignIns), de désactiver le principal.
     enabled: true
     source: azure_entra
     ttp: T1078.004
@@ -1071,11 +1074,13 @@ rules:
       | join kind=leftanti known on ServicePrincipalId, IPAddress
       | summarize TimeGenerated = min(TimeGenerated), SignIns = count(), Resources = make_set(ResourceDisplayName, 5),
                   ServicePrincipalName = take_any(ServicePrincipalName), AppId = take_any(AppId),
-                  Location = take_any(Location), CorrelationId = take_any(CorrelationId)
+                  Location = take_any(Location), CorrelationId = take_any(CorrelationId),
+                  CredentialKeyIds = make_set(ServicePrincipalCredentialKeyId, 5),
+                  FederatedSignIns = countif(isnotempty(FederatedCredentialId))
                   by ServicePrincipalId, IPAddress
       | join kind=inner history on ServicePrincipalId
       | project TimeGenerated, EntraKind = "signin", EntraOperation = "Service principal sign-in",
                 EventId = strcat(ServicePrincipalId, "|", IPAddress), Result = "success",
                 ActorName = ServicePrincipalName, ActorId = ServicePrincipalId, ActorAppId = AppId,
                 ActorIp = IPAddress, Location, TargetName = strcat_array(Resources, ", "),
-                SignIns, BaselineSignIns, BaselineDays, CorrelationId
+                SignIns, BaselineSignIns, BaselineDays, CredentialKeyIds, FederatedSignIns, CorrelationId
