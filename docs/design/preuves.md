@@ -42,6 +42,7 @@ flowchart BT
 | Verrous entre processus | l'exclusion mutuelle réelle de `flock` | un verrou entre deux hôtes |
 | Contrats du SDK (SDK1a) | ce que la version épinglée d'`azure-monitor-query` rend d'une réponse de Log Analytics : ses types, son résultat partiel, ses erreurs | ce qu'Azure envoie vraiment, qui reste une mesure du banc reprise dans le corps |
 | Banc Celebrimbor | le comportement réel d'Azure et de Terraform | la variété des réseaux clients |
+| Rejeu de la mémoire (MEM1) | ce que la mémoire des décisions rendrait, signal par signal, sur une copie réelle de son magasin, hors ligne, par son classement et par d'autres ([`memoire.md`](memoire.md)) | ce que le modèle fait de ces précédents : le harnais et le run de bout en bout |
 | Canary azurerm | qu'un comportement mesuré du provider tient encore | Bicep, ARM, autres outils |
 | Runs réels | la boucle complète, de l'attaque à la remise en service | la répétition à grande échelle |
 
