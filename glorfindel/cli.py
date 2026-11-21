@@ -3521,15 +3521,23 @@ def propose_rules(ttps, source, include_planned, model, rules_file, dry_run):
         )
         console.print(f"  {proposal['explanation']}")
 
+        from glorfindel import proposed_rules as _pr
+        # SEC-A4b: judged as soon as it is proposed — never offered when its approval would refuse it.
+        refused = _pr.approval_refusal(proposal.get("source") or source, proposal.get("query") or "")
+        if refused:
+            console.print(f"  [yellow]Non approuvable : {_esc_markup(refused)}[/yellow]")
         if not dry_run:
-            from glorfindel import proposed_rules as _pr
             rk = {k: v for k, v in proposal.items() if k != "grounded_schema"}
             pid = _pr.record(run_id="propose-rules", signal_id="",
                              ttp=ttp, resource_id="", **rk)
-            console.print(
-                f"  [dim]proposal {pid} — apply: "
-                f"glorfindel approve-rule {pid}[/dim]"
-            )
+            if refused:
+                console.print(f"  [dim]proposal {pid} — inscrite non approuvable, "
+                              "hors de glorfindel pending[/dim]")
+            else:
+                console.print(
+                    f"  [dim]proposal {pid} — apply: "
+                    f"glorfindel approve-rule {pid}[/dim]"
+                )
         authored += 1
         console.print()
 

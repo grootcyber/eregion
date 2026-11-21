@@ -45,6 +45,21 @@ def own_name(rule_name: str, shipped: set[str] | None = None) -> str:
         name, n = f"{rule_name}{_PROPOSED_SUFFIX}-{n}", n + 1
     return name
 
+# SEC-A4b: a proposal its approval would refuse — rows that name no VM but by their host name —
+# is recorded under this status, with its reason, and never enters the queue of proposals to
+# approve (`pending`: `glorfindel pending`, the console, the bot).
+UNAPPROVABLE = "unapprovable"
+
+
+def approval_refusal(source: str, query: str) -> str:
+    """Why a rule of this source and query could never be approved ('' when it can): the reader
+    the load and the approval use (`detection_rules.routing_refusal`, SEC-A4), under its own source
+    and under azure_monitor — the rule written may keep it or not (`rule_from_proposal`). Judged as
+    soon as the model proposes it (SEC-A4b)."""
+    from glorfindel.detection_rules import routing_refusal
+    query = str(query or "")
+    return routing_refusal(source or "azure_monitor", query) or routing_refusal("azure_monitor", query)
+
 
 def _min_interval(interval_s) -> float:
     """The proposal's interval, never under the rules' floor (SEC2)."""
@@ -74,7 +89,12 @@ def record(
 
     The model names the rule: a shipped rule's name is suffixed (`own_name`, SEC2) and the
     name it asked for kept (`renamed_from`) — approved, it would have replaced the shipped
-    rule. Its interval is raised to the rules' floor (`MIN_INTERVAL_S`)."""
+    rule. Its interval is raised to the rules' floor (`MIN_INTERVAL_S`).
+
+    Judged as soon as it is proposed (SEC-A4b): a rule its approval would refuse
+    (`approval_refusal`) is recorded `unapprovable`, with its reason (`unapprovable_reason`) —
+    kept for the trail, never in `pending`, never approved."""
+    refused = approval_refusal(source, query)
     name = own_name(rule_name)
     proposal = {
         "id": str(uuid.uuid4()),
@@ -92,7 +112,8 @@ def record(
         "explanation": explanation,
         "confidence": confidence,
         "analysis": analysis,
-        "status": "pending",
+        "status": UNAPPROVABLE if refused else "pending",
+        **({"unapprovable_reason": refused} if refused else {}),
         "approved_at": None,
     }
     with _locked():
@@ -117,8 +138,13 @@ def all_proposals() -> list[dict]:
 
 def pending() -> list[dict]:
     """Return all unapproved proposals, oldest first — each with `replaces` (SEC2): the
-    layer of the rule its approval would replace ("client"), "" when none."""
-    out = [p for p in all_proposals() if p["status"] == "pending"]
+    layer of the rule its approval would replace ("client"), "" when none.
+
+    Only the approvable ones (SEC-A4b): an `unapprovable` proposal never enters it, nor a
+    pending one recorded before the judgment at proposal whose approval would be refused
+    (`approval_refusal`) — `glorfindel pending`, the console and the bot never present it."""
+    out = [p for p in all_proposals() if p["status"] == "pending"
+           and not approval_refusal(p.get("source") or "", p.get("query") or "")]
     if out:
         from glorfindel.detection_rules import shipped_rule_names
         shipped, names = shipped_rule_names(), {r["name"] for r in _client_layer_rules()}
@@ -156,11 +182,18 @@ def _approve(proposal_id: str, rules_yaml_path: str | Path, rule_layers) -> dict
     lines = _lines()
     proposal: dict | None = None
     at = -1
+    unapprovable: dict | None = None
     for i, line in enumerate(lines):
         p = json.loads(line)
         if p["id"] == proposal_id and p["status"] == "pending" and proposal is None:
             proposal, at = p, i
+        elif p["id"] == proposal_id and p["status"] == UNAPPROVABLE:
+            unapprovable = p
 
+    if proposal is None and unapprovable is not None:
+        raise ValueError(f"Règle « {unapprovable.get('rule_name', '?')} » non approuvable : "
+                         f"{unapprovable.get('unapprovable_reason') or 'jugée à sa proposition'}. "
+                         "Jamais approuvée (la reproposer avec `_ResourceId` dans sa projection).")
     if proposal is None:
         raise ValueError(f"Proposal {proposal_id} not found or already approved")
 

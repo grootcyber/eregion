@@ -1596,7 +1596,7 @@
    "composant": "socle",
    "poste": "s-signer",
    "nom": "Security hardening",
-   "etat": "dev",
+   "etat": "main",
    "release": "0.6",
    "lots": [
     "SEC-A4b"

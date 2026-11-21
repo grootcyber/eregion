@@ -219,6 +219,32 @@ RULE_PROPOSAL_TOOL = {
     },
 }
 
+# SEC-A4b: the key each row is routed by, asked of the model. A rule of the data plane whose rows
+# carry neither `_ResourceId` nor `CallerIpAddress` as Azure wrote them is refused at load and at
+# approval (eregion_core/rule_routing.py), and judged unapprovable as soon as it is proposed
+# (proposed_rules.approval_refusal): the model is told, so its proposals carry the key. One
+# bullet of the grounding rules, frozen to the byte by tests/unit/test_detection_authoring.py;
+# scripts/llm_smoke.py --proposals measures the share of proposals that carry it, without then
+# with this bullet (the prompt without it is origin/main's before SEC-A4b, to the byte).
+# Bounded to the data plane, where the routing refusal applies (`rule_routing.data_plane`): a rule
+# of the control plane or of an identity keeps its grouping — a threshold per caller made one per
+# resource would let an attack spread over several resources pass under it. On a storage table the
+# key is the caller's address alone (`data-exfiltration-blob`: `by CallerIpAddress, AccountName`).
+ROUTING_KEY_INSTRUCTION = """\
+- On a data-plane table, one a VM or a storage service writes (Perf, Syslog, the storage logs…), \
+Glorfindel routes each row to its VM by a key, never by `Computer` (the VM writes its own host \
+name): a rule whose rows lose the key is refused. Keep the key in the query's output exactly as \
+the table holds it: name it in the last `project` and in the `by` of every `summarize`, and never \
+write, rename or recompute it (`extend`, `project <key> = …`, `project-rename`). The key is \
+`_ResourceId`, a standard column of every Log Analytics table, even when the table schema \
+provided does not list it; on a storage table (StorageBlobLogs…), it is `CallerIpAddress` as the \
+service wrote it — the address that made the call names the VM, while `_ResourceId` names the \
+storage account there: do not add it to a `by`. \
+This never applies to AzureActivity nor to an Entra ID table (AuditLogs, SigninLogs and the other \
+sign-in logs): keep their grouping as it is, and never add `_ResourceId` to a `by` that groups by \
+caller, identity or address.
+"""
+
 RULE_PROPOSAL_SYSTEM_PROMPT = """\
 You are Glorfindel's detection engineering module.
 
@@ -237,7 +263,7 @@ extract/parse on a message field) rather than assuming it exists.
 - Keep the time window tight to minimise false positives.
 - Include only filters that distinguish malicious from benign activity.
 - If a prior query was close, fix only what was wrong; do not over-engineer.
-
+""" + ROUTING_KEY_INSTRUCTION + """
 You always call the propose_detection_rule tool — never respond in plain text.
 """
 
