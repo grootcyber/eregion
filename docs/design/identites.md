@@ -502,6 +502,7 @@ Une **variable d'identité** : un nom qui dit un principal, un identifiant, un s
 | `env:EREGION_TENANT_ID` | `orodruin-mi` |
 | `env:EREGION_OPERATOR_OBJECT_ID` | `operateur-az` |
 | `env:EREGION_PROTECTED_IDENTITIES` | `orodruin-mi`, `imladris-mi`, `paire-watch`, `executeur-identite` |
+| `env:EREGION_ORODRUIN_PRINCIPAL_ID` | `orodruin-mi` |
 | `env:EREGION_IDENTITY_EXECUTOR_CLIENT_ID` | `executeur-identite` |
 | `env:EREGION_RULE_CANARY_APPID` | `canari` |
 | `env:ANTHROPIC_API_KEY` | `cle-modele` |

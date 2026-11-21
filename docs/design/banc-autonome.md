@@ -737,8 +737,10 @@ porte relue.
 `principal_id` de son module (`infra/orodruin/outputs.tf`). Un identifiant, aucun secret. Le poste
 n'en a pas besoin dans `.envrc` : BNC1 la lit déjà par `terraform output` (`bench_shared.Roles`).
 **Où** : une ligne `EREGION_ORODRUIN_PRINCIPAL_ID=` dans `infra/glorfindel-host/host.env`, jamais
-dans le dépôt. **Qui la lit** : la seule composition (BNC4), que l'unité de l'hôte lance avec cette
-variable et aucune autre de `host.env`.
+dans le dépôt. **Qui la lit** : la composition (BNC4), que l'unité de l'hôte lance avec cette
+variable et aucune autre de `host.env` ; et, depuis SLF2 (#1010), la watch, qui écarte par elle de
+`data-exfiltration-blob` les écritures d'Orodruin dans son canal d'exercices (le geste, le même :
+`infra/glorfindel-host/README.md`, « L'identité d'Orodruin (SLF2) »).
 
 Le geste de Jonathan, une fois BNC4 déployé, depuis le poste, en zsh. La valeur va de `terraform`
 à une variable du shell, puis au fichier, jamais recopiée de l'écran (zsh marque d'un `%` une sortie

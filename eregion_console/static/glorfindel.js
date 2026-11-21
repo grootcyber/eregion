@@ -1302,6 +1302,11 @@ function _renderModules(rules, detectBackends, recoverBackends, resources) {
     const ex  = r.expected_count > 0 ? `<span style="color:var(--dim);font-size:9px;flex-shrink:0" title="${_attr(`${r.expected_count} expected sudo set aside, no card (ADM1)${exOrigin} — glorfindel report`)}">${_attr(r.expected_count)} expected</span>` : '';
     // SLF1 (#929): the watch's own writes in its return channel, set aside — counted, never silent.
     const own = r.own_channel_count > 0 ? `<span style="color:var(--dim);font-size:9px;flex-shrink:0" title="${_attr(_ownChannelTxt(r))}">${_attr(r.own_channel_count)} own</span>` : '';
+    // SLF2 (#1010): Orodruin's writes in its exercise channel, set aside — counted, never silent; its
+    // identity unset or no object id, said on the line.
+    const oro = Number(r.exercise_channel_count) > 0 || r.exercise_channel_config
+      ? `<span style="color:${r.exercise_channel_config ? 'var(--orange)' : 'var(--dim)'};font-size:9px;flex-shrink:0" title="${_attr(_exerciseChannelTxt(r))}">${r.exercise_channel_config ? '⚠ Orodruin id' : `${_attr(Number(r.exercise_channel_count))} Orodruin`}</span>`
+      : '';
     // MID1 (#981): the certificates Azure puts on the managed identities it creates, set aside —
     // counted, never silent; an id that is no object id, said on the line.
     const msi = Number(r.msi_certificate_count) > 0 || r.msi_certificate_config === 'malformed'
@@ -1315,6 +1320,7 @@ function _renderModules(rules, detectBackends, recoverBackends, resources) {
       ${ex}
       ${own}
       ${msi}
+      ${oro}
       ${mt}
       <span style="color:var(--dim);font-size:9px">▸</span>
     </div>`;
@@ -3678,6 +3684,22 @@ function _ownChannelTxt(r) {
   return [said, unread, unparsed].filter(Boolean).join(' · ');
 }
 
+// SLF2 (#1010): Orodruin's writes in its exercise channel a rule set aside — how many, why —, and why
+// nothing can be (its identity unset or no object id, the channel unset), said.
+function _exerciseChannelTxt(r) {
+  const n = Number(r.exercise_channel_count) || 0;
+  const rows = Number(r.exercise_channel_rows) || 0;
+  const said = n > 0
+    ? `${n} write(s) of Orodruin in its exercise channel set aside (${rows} row(s) left without a card) — its identity (EREGION_ORODRUIN_PRINCIPAL_ID), the container of EREGION_EXERCISE_CHANNEL, its account (SLF2)${r.exercise_channel_last ? ' · last ' + _relTime(r.exercise_channel_last) : ''}`
+    : '';
+  const config = {
+    'unset': 'exercise channel configured, EREGION_ORODRUIN_PRINCIPAL_ID unset: none of its writes set aside, every row a card (SLF2)',
+    'malformed': 'EREGION_ORODRUIN_PRINCIPAL_ID is no object id: none of its writes set aside, every row a card (SLF2)',
+    'no channel': 'EREGION_EXERCISE_CHANNEL unset or refused (its URL not one container of a storage account): none of Orodruin\'s writes set aside (SLF2)',
+  }[r.exercise_channel_config] || '';
+  return [said, config].filter(Boolean).join(' · ');
+}
+
 // MID1 (#981): the rows of entra-credential-added set aside as the certificate Azure puts on a managed
 // identity it creates — how many, why —, and the id of the tenant's principal unset or no object id
 // (nothing set aside), said.
@@ -3733,6 +3755,7 @@ function showRuleDetail(rule) {
     ${expectedTxt ? `<div style="font-size:10px;color:var(--dim);margin-bottom:8px">${_attr(expectedTxt)}</div>` : ''}
     ${corrTxt ? `<div style="font-size:10px;color:var(--dim);margin-bottom:8px">${_attr(corrTxt)}</div>` : ''}
     ${_ownChannelTxt(rule) ? `<div style="font-size:10px;color:var(--dim);margin-bottom:8px">${_attr(_ownChannelTxt(rule))}</div>` : ''}
+    ${_exerciseChannelTxt(rule) ? `<div style="font-size:10px;color:var(--dim);margin-bottom:8px">${_attr(_exerciseChannelTxt(rule))}</div>` : ''}
     ${_msiCertificateTxt(rule) ? `<div style="font-size:10px;color:var(--dim);margin-bottom:8px">${_attr(_msiCertificateTxt(rule))}</div>` : ''}
     <div style="font-size:10px;color:var(--dim);margin-bottom:4px;text-transform:uppercase;letter-spacing:1px">Query</div>
     <div class="modal-query">${_attr((rule.query || '').trim())}</div>`;
