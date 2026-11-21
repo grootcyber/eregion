@@ -448,9 +448,11 @@ def resolve_attack_started(signal: dict, ip_owners=None) -> dict:
     # client's layer) sets nothing aside.
     from glorfindel import own_channel
     channel = own_channel.current() if data_plane and own_channel.is_shipped(query) else None
+    # SLF2 (#1010): and Orodruin's writes in its exercise channel — its identity, its container.
+    exercise = own_channel.current_exercise()[0] if data_plane and own_channel.is_shipped(query) else None
 
     def settled(row):
-        kept, _ = own_channel.settle([row], channel)
+        kept, _ = own_channel.settle([row], channel, exercise)
         return kept[0] if kept else None
     if names_vm is not None:
         reader = names_vm

@@ -160,6 +160,8 @@ def fake_anthropic_key(monkeypatch):
     # MID1: the tenant's « Managed Service Identity » principal, which Entra's adapter reads from the
     # watch's environment — never the developer's shell; a test sets it itself.
     monkeypatch.delenv("EREGION_ENTRA_MSI_ACTOR_ID", raising=False)
+    # SLF2: Orodruin's identity, which the watch reads to set its writes in the exercise channel aside.
+    monkeypatch.delenv("EREGION_ORODRUIN_PRINCIPAL_ID", raising=False)
 
 
 # MSK2 (#762): what would post for real if the developer's shell (direnv) exported it — Glorfindel's
@@ -680,6 +682,10 @@ def isolated_glorfindel_home(tmp_path, monkeypatch):
     monkeypatch.setattr(run_command, "_SUPERSEDED", {})
     import glorfindel.drill_watch as drill_watch     # DRL1b: the drill of the week's verdicts
     monkeypatch.setattr(drill_watch, "_STORE", home / "drill_verdicts.json")
+    import glorfindel.own_channel as own_channel     # SLF2: the watch's record of its own writes
+    monkeypatch.setattr(own_channel, "_STATE_FILE", home / "own_channel.json")
+    monkeypatch.setattr(own_channel, "_SOURCE", None)
+    monkeypatch.setattr(own_channel, "_EXERCISE", (None, ""))
     import glorfindel.cli as glorfindel_cli          # the injectors' heartbeat directory (SEC3)
     monkeypatch.setattr(glorfindel_cli, "_INJECTORS_DIR", home / "injectors")
     try:

@@ -155,6 +155,9 @@ class Publisher:
         self._last_beat: datetime | None = None
         self.last_error = ""
         self._writer = ""
+        # SLF2 (#1010): told of each write acknowledged (its blob's name) — the watch keeps the record
+        # of its own writes for the next one (glorfindel/own_channel.py). Never into the tick.
+        self.on_written = None
 
     def writer(self) -> str:
         """SLF1 (#929): the object id of the identity this publisher writes with — the `oid` of the
@@ -310,6 +313,11 @@ class Publisher:
                                         data=json.dumps(body, indent=2).encode(), timeout=15)
         if not r.ok:
             raise RuntimeError(f"HTTP {r.status_code} writing {name}")
+        if self.on_written is not None:
+            try:
+                self.on_written(name)
+            except Exception:
+                pass
 
     def _report(self, error: str) -> None:
         """Say when the channel breaks and when it heals — not every tick."""

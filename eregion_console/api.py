@@ -1000,6 +1000,7 @@ async def config() -> dict:
             from glorfindel.detection_rules import (
                 _load_status,
                 detection_inert,
+                exercise_channel_counts,
                 expected_counts,
                 load_config,
                 msi_certificate_counts,
@@ -1074,6 +1075,8 @@ async def config() -> dict:
                     **expected_counts(s),
                     # SLF1: the watch's own writes in its return channel, set aside — counted.
                     **own_channel_counts(s),
+                    # SLF2: Orodruin's writes in its exercise channel, set aside — counted, or why not.
+                    **exercise_channel_counts(s),
                     # MID1: the managed identities' certificates set aside from entra-credential-added.
                     **msi_certificate_counts(s),
                     # CPT1c: the rows of a reply out of the rule's schema, each poll's one card.
