@@ -9,11 +9,10 @@
    watch's heartbeat, from Imladris's address, made a card for a window: the watch that starts knew
    nothing of the writes of the one before.
 
-Read here on the SDK's own objects, as SLF1b (tests/unit/sdk_logs.py, SDK1a, is not on main: the local
-client of tests/unit/test_own_channel_sdk.py): the shipped query run as written over forged writes
-(tests/unit/kql_subset.py), its rows the body the Log Analytics API sends — a ``dynamic`` column as its
-JSON text —, parsed by the pinned SDK's ``LogsQueryResult``, read by the real
-`AzureMonitorDetector.run_query`, then the real RulePoller. Mutants M6927–M6941 (scripts/mutants/SLF2.py).
+Read here on the SDK's own objects (tests/unit/sdk_logs.py, SDK1a): the shipped query run as written
+over forged writes (tests/unit/kql_subset.py), its rows the body the Log Analytics API sends — a
+``dynamic`` column as its JSON text —, read by the pinned SDK's own ``LogsQueryClient``, then the real
+`AzureMonitorDetector.run_query` and the real RulePoller. Mutants M6927–M6941 (scripts/mutants/SLF2.py).
 No Azure, no model; every identifier is made up (repository public).
 """
 from __future__ import annotations
@@ -32,7 +31,8 @@ from .test_own_channel import (
     ACCOUNT, BREE, CHANNEL, CONTAINER, GONDOLIN, GONDOLIN_IP, JS, NOW, OTHER_OID, URL, WATCH_IP, WATCH_OID,
     _Credential, _jwt, _Registry, _rule, _write,
 )
-from .test_own_channel_sdk import _Client, _detector, _heartbeats
+from . import sdk_logs
+from .test_own_channel_sdk import _detector, _heartbeats
 
 RULE = "data-exfiltration-blob"
 # Placeholders, never real ids: Orodruin's identity (the principal of its managed identity), its address.
@@ -217,9 +217,8 @@ def test_an_attack_started_is_not_answered_by_orodruin_s_report(monkeypatch):
     """`resolve_attack_started` polls through the SDK too: Orodruin's report in its channel is set
     aside — the run's own write is the detection."""
     from glorfindel.agent import resolve_attack_started
-    from glorfindel.providers.azure.monitor import AzureMonitorDetector
     lines = [_orodruin(), _write("loot.tar", oid=OTHER_OID, ip=GONDOLIN_IP, account="stout", container="drop")]
-    monkeypatch.setattr(AzureMonitorDetector, "_logs_client", lambda self: _Client(lines))
+    sdk_logs.Workspace(sdk_logs.kql(lines, now=NOW)).serve(monkeypatch)
     monkeypatch.setattr(own_channel, "_EXERCISE", CONFIGURED)
     signal = {"event": "attack_started", "ttp": "T1041", "resource_id": GONDOLIN,
               "raw_signal": {"detection_source": "azure_monitor", "detection_query": _rule().query,
