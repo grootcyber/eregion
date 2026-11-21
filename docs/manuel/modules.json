@@ -3465,6 +3465,19 @@
    "doc": "docs/design/preuves.md"
   },
   {
+   "id": "s-contrats-sdk",
+   "composant": "socle",
+   "poste": "s-prouver",
+   "nom": "Glorfindel's readers of Log Analytics tested on the pinned SDK's own objects, a dynamic column as its JSON text and a date as a datetime, never only on lists a test made up; the SDK's floor held to the lock",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "SDK1a"
+   ],
+   "issue": 992,
+   "doc": "docs/design/preuves.md"
+  },
+  {
    "id": "s-verrous",
    "composant": "socle",
    "poste": "s-signer",
