@@ -885,6 +885,16 @@ briques:
     lots: [L1G, L1P, L1Qs]
     issue: 461
 
+  - id: g-reaffirmation-semantique
+    composant: glorfindel
+    poste: g-verifier
+    nom: "Design: what the reassertion puts back, says or leaves, written once for each object and each situation, with the invariant that holds it and the gaps between the code and the oracles"
+    etat: main
+    release: "0.6"
+    lots: [RSM1]
+    issue: 1018
+    doc: docs/design/reaffirmation.md
+
   - id: g-reprise-lue
     composant: glorfindel
     poste: g-verifier
