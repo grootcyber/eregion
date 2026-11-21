@@ -11,6 +11,7 @@ from glorfindel.actions import (
 )
 from glorfindel.config import AutonomyConfig
 from glorfindel.reassert import reassert_active
+from glorfindel.watch import passes
 
 _RID = "/subscriptions/s/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm"
 _ACT = AutonomyConfig(default="non_disruptive")
@@ -493,7 +494,7 @@ def test_the_watch_pass_reads_the_quarantines_without_any_state():
     lost is what they are read for (the pass used to stop before any Azure call)."""
     from glorfindel import cli
     c = _quarantines(("altered", _DENY_IN))
-    report = cli._watch_reassert_pass(c, None)
+    report = passes._watch_reassert_pass(cli.console, c, None)
     c.find_altered_quarantines.assert_called_once()
     assert [r["kind"] for r in report] == ["quarantine"]
     (card,) = _cards("pending")
@@ -504,8 +505,8 @@ def test_the_watch_pass_reads_the_quarantines_without_any_state():
 def test_the_watch_pass_closes_the_card_once_the_nsg_is_whole_without_any_isolation():
     from glorfindel import cli
     c = _quarantines(("altered", _DENY_IN), ("ok", []))
-    cli._watch_reassert_pass(c, None)
-    cli._watch_reassert_pass(c, None)
+    passes._watch_reassert_pass(cli.console, c, None)
+    passes._watch_reassert_pass(cli.console, c, None)
     assert not _cards("pending") and len(_cards()) == 1
 
 
@@ -515,19 +516,20 @@ def test_the_watch_pass_reads_the_quarantines_with_isolations_recorded_too():
     c = _quarantines(("altered", _DENY_IN))
     c.verify_isolation.side_effect = None
     c.verify_isolation.return_value = {"verified": True}
-    cli._watch_reassert_pass(c, "non_disruptive")
+    passes._watch_reassert_pass(cli.console, c, "non_disruptive")
     c.verify_isolation.assert_called_once()
     assert len(_cards("pending")) == 1
 
 
 def test_the_watch_reaches_its_pass_with_no_guard_on_the_local_state():
-    """What the behaviour above can't see: the watch's closures. `_reassert` (its timer)
-    and `_reassert_pass` (its thread) hand over to `_watch_reassert_pass` without reading
-    the local state — a guard there left the quarantines unread (I1F, review)."""
+    """What the behaviour above can't see: the watch's own methods (glorfindel/watch/housekeeping.py,
+    WCH1). `_reassert` (its timer) and `_reassert_pass` (its thread) hand over to
+    `_watch_reassert_pass` without reading the local state — a guard there left the quarantines
+    unread (I1F, review). tests/unit/test_watch_loop.py proves it by behaviour too."""
     import ast
     import inspect
-    from glorfindel import cli
-    tree = ast.parse(inspect.getsource(cli))
+    from glorfindel.watch import housekeeping
+    tree = ast.parse(inspect.getsource(housekeeping))
     fns = {n.name: n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)
            and n.name in ("_reassert", "_reassert_pass")}
     assert set(fns) == {"_reassert", "_reassert_pass"}
@@ -535,7 +537,7 @@ def test_the_watch_reaches_its_pass_with_no_guard_on_the_local_state():
         used = {n.id for n in ast.walk(fn) if isinstance(n, ast.Name)} | \
             {n.attr for n in ast.walk(fn) if isinstance(n, ast.Attribute)}
         assert not used & {"active_isolations", "active_blocks", "_load_isolation_state"}, name
-    assert any(isinstance(n, ast.Call) and getattr(n.func, "id", "") == "_watch_reassert_pass"
+    assert any(isinstance(n, ast.Call) and getattr(n.func, "attr", "") == "_watch_reassert_pass"
                for n in ast.walk(fns["_reassert_pass"]))
 
 
@@ -545,8 +547,8 @@ def test_a_listing_that_fails_keeps_the_cards_open(status):
     — nothing read is not "whole again" — and the pass goes on."""
     from glorfindel import cli
     c = _quarantines(("altered", _DENY_IN), _http_error(status))
-    cli._watch_reassert_pass(c, None)
-    assert cli._watch_reassert_pass(c, None) == []
+    passes._watch_reassert_pass(cli.console, c, None)
+    assert passes._watch_reassert_pass(cli.console, c, None) == []
     assert len(_cards("pending")) == 1
 
 
@@ -592,7 +594,7 @@ def test_an_unreadable_configuration_is_said_once_not_every_pass(monkeypatch):
     seen: dict = {}
     c = _quarantines(None, None, None)
     for _ in range(3):
-        cli._watch_reassert_pass(c, None, seen=seen)
+        passes._watch_reassert_pass(cli.console, c, None, seen=seen)
     assert out.getvalue().count("config illisible") == 1
 
 
@@ -873,15 +875,15 @@ def test_a_change_whose_card_could_not_be_written_leaves_the_former_unsilenced(m
     still saying A: said — A's own card, never silenced by the file."""
     from glorfindel import cli
     c = _quarantines(*[("altered", d) for d in (_DENY_IN, _FORENSIC, _DENY_IN)])
-    cli._watch_reassert_pass(c, None)
+    passes._watch_reassert_pass(cli.console, c, None)
     a = _cards("pending")[0]["signal_id"]
     real = escalations.record
     monkeypatch.setattr(escalations, "record", MagicMock(side_effect=OSError(28, "No space left on device")))
-    cli._watch_reassert_pass(c, None)
+    passes._watch_reassert_pass(cli.console, c, None)
     monkeypatch.setattr(escalations, "record", real)
     assert [e["signal_id"] for e in _cards("pending")] == [a]
     assert reassert_quarantine._load_quarantine_alerts() == {_QNSG.lower(): a}
-    cli._watch_reassert_pass(c, None)
+    passes._watch_reassert_pass(cli.console, c, None)
     (card,) = _cards("pending")
     assert card["signal_id"] == a
 
@@ -949,17 +951,17 @@ def test_a_change_brought_back_by_an_unreadable_config_is_said_and_so_is_the_con
     out = io.StringIO()
     monkeypatch.setattr(cli, "console", Console(file=out, width=200))
     seen: dict = {}
-    cli._watch_reassert_pass(c, None, seen=seen)
+    passes._watch_reassert_pass(cli.console, c, None, seen=seen)
     a = _cards("pending")[0]["signal_id"]
     forensic.append("10.9.9.9")
     give_back = _alerts_unwritable(monkeypatch)
-    cli._watch_reassert_pass(c, None, seen=seen)
+    passes._watch_reassert_pass(cli.console, c, None, seen=seen)
     give_back()
     assert "forensic" in _cards("pending")[0]["reason"]
     forensic = None
     monkeypatch.setattr(cfg, "load_glorfindel_config", MagicMock(side_effect=cfg.ConfigError("broken")))
     for _ in range(2):
-        cli._watch_reassert_pass(c, None, seen=seen)
+        passes._watch_reassert_pass(cli.console, c, None, seen=seen)
     (card,) = _cards("pending")
     assert card["signal_id"] == a and card["resource_id"].lower() == q
     assert out.getvalue().count("config illisible") == 1
@@ -1412,7 +1414,7 @@ def test_a_state_refused_on_a_block_is_printed_by_the_watch(monkeypatch):
     out = io.StringIO()
     monkeypatch.setattr(cli, "console", Console(file=out, width=200))
     give_back = _unwritable(monkeypatch, "/blocks/")
-    report = cli._watch_reassert_pass(c, "human_only")
+    report = passes._watch_reassert_pass(cli.console, c, "human_only")
     give_back()
     (failed,) = [r for r in report if r["outcome"] == "failed"]
     assert failed["kind"] == "block" and failed["ip"] == _IP and "non écrit" in failed["detail"]

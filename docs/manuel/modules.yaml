@@ -803,6 +803,16 @@ briques:
     issue: 1011
     doc: docs/design/reponse-identite.md
 
+  - id: g-watch-decoupee
+    composant: glorfindel
+    poste: g-detecter
+    nom: "The watch's loop out of the CLI, its state in objects, each part tested alone; a ceiling on the big files that only goes down"
+    etat: main
+    release: "0.6"
+    lots: [WCH1]
+    issue: 1019
+    doc: docs/glorfindel.md
+
   - id: g-identite-unique
     composant: glorfindel
     poste: g-agir

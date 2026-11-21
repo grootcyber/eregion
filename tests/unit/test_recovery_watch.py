@@ -498,19 +498,20 @@ def test_an_unreadable_vault_is_said_never_a_release():
 
 
 def test_the_watch_pass_says_what_it_did_and_never_raises(capsys):
-    from glorfindel.cli import _watch_recovery_pass
+    from glorfindel.cli import console
+    from glorfindel.watch.passes import _watch_recovery_pass
     f, c, vm = _world()
     _isolated(f, c, vm)
     _points(f, vm)
     _from_the_workstation(f, c, vm, status="Failed")
     out = []
-    _watch_recovery_pass(c, out.append)
+    _watch_recovery_pass(console, c, out.append)
     assert out == [] and "card" in capsys.readouterr().out
 
     def boom(*a, **k):
         raise OSError("disque plein")
     with patch.object(recovery_watch, "recovery_pass", boom):
-        assert _watch_recovery_pass(c, out.append) == []
+        assert _watch_recovery_pass(console, c, out.append) == []
     assert "disque plein" in capsys.readouterr().out
 
 
@@ -1288,13 +1289,28 @@ def test_never_a_release_without_a_recovery_proven_on_azure(monkeypatch):
         deadline=None, suppress_health_check=[HealthCheck.too_slow, HealthCheck.filter_too_much]))
 
 
-def test_the_watch_runs_the_pass_in_its_housekeeping():
-    """The watch starts the pass from its loop, in a thread of its own, off in a dry run or at 0."""
-    import inspect
-    from glorfindel import cli
-    src = inspect.getsource(cli.watch.callback)
-    assert "_recoveries()" in src and 'GLORFINDEL_RECOVERY_INTERVAL_S", "60"' in src
-    assert "if dry_run or _recovery_every_s <= 0:" in src and 'name="recoveries"' in src
+def test_the_watch_runs_the_pass_in_its_housekeeping(monkeypatch):
+    """The watch starts the pass from its loop, in a thread of its own, off in a dry run or at 0
+    (glorfindel/watch/housekeeping.py, WCH1; tests/unit/test_watch_loop.py for each guard)."""
+    from glorfindel.watch import passes
+    from .test_watch_loop import _housekeeping, _join, _ticking
+    w, calls, _ = _ticking()
+    w._ttl_check_counter = 29
+    w.tick()
+    assert calls.count("_recoveries") == 1
+    ran: list = []
+    monkeypatch.setattr(passes, "_watch_recovery_pass", lambda *a: ran.append(a))
+    monkeypatch.delenv("GLORFINDEL_RECOVERY_INTERVAL_S", raising=False)
+    hk, _, _ = _housekeeping(monkeypatch)
+    assert hk._recovery_every_s == 60.0
+    hk._recoveries()
+    assert hk._recovery_thread._thread.name == "recoveries"
+    _join("recoveries")
+    assert len(ran) == 1
+    for dry_run, every in ((True, "60"), (False, "0")):
+        hk, _, _ = _housekeeping(monkeypatch, dry_run=dry_run, GLORFINDEL_RECOVERY_INTERVAL_S=every)
+        hk._recoveries()
+        assert hk._recovery_thread._thread is None
 
 
 # ── LEV2 (#690): the door's facts change no lift, nor what the model reads ────────────────────

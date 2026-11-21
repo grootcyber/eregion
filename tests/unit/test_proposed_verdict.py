@@ -386,10 +386,18 @@ def test_the_reasons_name_no_identifier(bench):
         assert "/subscriptions/" not in said and REQ not in said and RUN not in said, code
 
 
-def test_the_watch_runs_the_pass_every_minute():
-    cli = (Path(__file__).resolve().parents[2] / "glorfindel" / "cli.py").read_text(encoding="utf-8")
-    assert "        proposed_verdict.refresh(runs_dir, say=lambda text: _say_channel(" in cli
-    assert "_propose_verdicts()  # VP1" in cli
+def test_the_watch_runs_the_pass_every_minute(monkeypatch):
+    """One of the watch's minute tasks, after the windows are read (glorfindel/watch/, WCH1)."""
+    from .test_watch_loop import _housekeeping, _ticking
+    w, calls, _ = _ticking()
+    w._ttl_check_counter = 29
+    w.tick()
+    assert calls.index("_observe_windows") < calls.index("_propose_verdicts")
+    hk, _, said = _housekeeping(monkeypatch)
+    seen: list = []
+    monkeypatch.setattr(pv, "refresh", lambda root, say: (seen.append(root), say("x")))
+    hk._propose_verdicts()
+    assert seen == [hk.runs_dir] and said == ["Verdict proposé : x"]
 
 
 def test_the_api_confirms_and_refuses(bench, monkeypatch):

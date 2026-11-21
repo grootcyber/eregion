@@ -7,6 +7,7 @@ never closed); `glorfindel pending` and the TUI. M5701–M5720, measured by
 tests/unit/test_outside_markup.py."""
 TERM = "glorfindel/terminal.py"
 CLI = "glorfindel/cli.py"
+DISPATCH = "glorfindel/watch/dispatch.py"   # WCH1: the decision thread moved there
 ORIGIN = "glorfindel/signal_origin.py"
 BOT = "glorfindel/bot.py"
 TUI = "glorfindel/tui.py"
@@ -28,19 +29,19 @@ MUTANTS = [
      "(SEC-F)", CLI,
      '    console.rule(f"[bold cyan]Signal — {_outside(sig.signal_id)}[/bold cyan]")\n',
      '    console.rule(f"[bold cyan]Signal — {sig.signal_id}[/bold cyan]")\n'),
-    ("M5705", "the decision thread prints a signal's resource type raw (SEC-F)", CLI,
-     '                                          f"Resource: {_outside(_sig.resource_type)}\\n")\n',
-     '                                          f"Resource: {_sig.resource_type}\\n")\n'),
+    ("M5705", "the decision thread prints a signal's resource type raw (SEC-F)", DISPATCH,
+     '                                       f"Resource: {_outside(_sig.resource_type)}\\n")\n',
+     '                                       f"Resource: {_sig.resource_type}\\n")\n'),
     ("M5706", "the display of a signal no longer guarded: a display that fails leaves its detection "
-     "undecided (SEC-F)", CLI,
-     '                                          f"Resource: {_outside(_sig.resource_type)}\\n")\n'
-     "                    except Exception as e:\n",
-     '                                          f"Resource: {_outside(_sig.resource_type)}\\n")\n'
-     "                    except ZeroDivisionError as e:\n"),
+     "undecided (SEC-F)", DISPATCH,
+     '                                       f"Resource: {_outside(_sig.resource_type)}\\n")\n'
+     "            except Exception as e:\n",
+     '                                       f"Resource: {_outside(_sig.resource_type)}\\n")\n'
+     "            except ZeroDivisionError as e:\n"),
     ("M5707", "the decision thread's loop no longer guarded: one detection that raises kills the thread "
-     "of its VM, every later detection undecided (SEC-F, the defect back)", CLI,
-     "                    try:\n                        _one(item)\n                    except Exception as e:\n",
-     "                    try:\n                        _one(item)\n                    except ZeroDivisionError as e:\n"),
+     "of its VM, every later detection undecided (SEC-F, the defect back)", DISPATCH,
+     "            try:\n                self._one(q, key, item)\n            except Exception as e:\n",
+     "            try:\n                self._one(q, key, item)\n            except ZeroDivisionError as e:\n"),
     ("M5708", "the decision is shown with the model's action raw (SEC-F, the defect back)", CLI,
      '    action = _outside(state.get("action", "?"))\n',
      '    action = state.get("action", "?")\n'),

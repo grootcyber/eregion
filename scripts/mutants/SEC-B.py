@@ -80,7 +80,8 @@ MUTANTS = [
     # ── V-09, V-10: the wait list bounded, the watch command refused ───────────────────
     ("M5444", "the wait list unbounded: a request accepted whatever waits already (SEC-B, V-09)", QW,
      "            if not self.inline and self._backlog.qsize() >= BACKLOG:\n", "            if False:\n"),
-    ("M5445", "the watch command runs on beside another watch of the same HOME (SEC-B, V-10)", CLI,
+    ("M5445", "the watch command runs on beside another watch of the same HOME (SEC-B, V-10)",
+     "glorfindel/watch/startup.py",                                      # WCH1: the watch's startup
      "        console.print(f\"[red]Watch refusée :[/red] {_esc_markup(str(exc))}\")\n        sys.exit(1)\n",
      "        console.print(f\"[red]Watch refusée :[/red] {_esc_markup(str(exc))}\")\n"),
 ]

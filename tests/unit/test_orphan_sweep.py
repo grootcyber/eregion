@@ -71,10 +71,11 @@ def _posture_pass(c):
 
 
 def _watch_pass(c, mode="non_disruptive"):
-    """The watch's reassertion pass, as its thread runs it (cli.py), `--mode` pinning
+    """The watch's reassertion pass, as its thread runs it (glorfindel/watch/), `--mode` pinning
     the default mode — the configuration is the default one (conftest)."""
-    from glorfindel.cli import _watch_reassert_pass
-    return _watch_reassert_pass(c, mode_override=mode)
+    from glorfindel.cli import console
+    from glorfindel.watch.passes import _watch_reassert_pass
+    return _watch_reassert_pass(console, c, mode_override=mode)
 
 
 def _orphan_cards():

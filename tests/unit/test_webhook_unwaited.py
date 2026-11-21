@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import threading
 import time
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -273,9 +272,15 @@ def test_outside_the_watch_a_queued_notice_waits_for_its_pass(monkeypatch):
     assert started == []
 
 
-def test_the_watch_serves_the_queue():
-    cli = (Path(__file__).resolve().parents[2] / "glorfindel" / "cli.py").read_text(encoding="utf-8")
-    assert "_served_notices.serve()" in cli
+def test_the_watch_serves_the_queue(monkeypatch):
+    """At its start (glorfindel/watch/loop.py, WCH1), the watch serves the notices' queue."""
+    from glorfindel.watch.loop import Watch
+    served: list = []
+    monkeypatch.setattr(vm_notices, "serve", lambda: served.append(1))
+    monkeypatch.setattr("eregion_core.inscription.TagEnrollment", lambda *a, **k: (lambda rid: True))
+    monkeypatch.setattr("eregion_core.exercise.set_enrollment_check", lambda check: None)
+    Watch._start_services()
+    assert served == [1]
 
 
 # ── what a queued notice says ─────────────────────────────────────────────────────────────────

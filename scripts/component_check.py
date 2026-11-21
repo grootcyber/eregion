@@ -75,7 +75,7 @@ COMPONENTS: dict[str, Component] = {
         own=("glorfindel", "eregion_core"),
         absent_deps=CONSOLE_DEPS,
         tests=(
-            "test_actions_split.py", "test_agent_nodes.py", "test_audit.py", "test_aws_adapter.py",
+            "test_actions_split.py", "test_watch_loop.py", "test_agent_nodes.py", "test_audit.py", "test_aws_adapter.py",
             "test_bot.py", "test_bot_masking.py", "test_chat_escaping.py", "test_cli.py", "test_cli_masking.py", "test_config.py", "test_detection_authoring.py",
             "test_detection_rules.py", "test_detectors.py", "test_discovery.py", "test_entries_calls.py",
             "test_auditd.py", "test_bench_routine.py", "test_canary_exclusion.py", "test_canary_signin.py", "test_correlation.py", "test_decision_queue.py", "test_enquiry_memory.py", "test_expected_sudo.py", "test_forged_logs.py",
@@ -125,7 +125,7 @@ TOGETHER = (
     "test_signal_origin.py", "test_arm_urls.py",
     "test_control_plane_incomplete.py", "test_control_plane_unreadable.py",
     "test_decision_stability.py", "test_dependency_failures.py", "test_dependency_lock.py",
-    "test_docs_budget.py", "test_manuel.py", "test_adoption.py", "test_repo_owner.py", "test_exercise.py", "test_exercise_e2e.py", "test_held.py", "test_dagorlad_blind.py", "test_githooks.py", "test_exercise_guard.py", "test_bounded_reads.py", "test_exercise_accumulations.py",
+    "test_docs_budget.py", "test_file_sizes.py", "test_manuel.py", "test_adoption.py", "test_repo_owner.py", "test_exercise.py", "test_exercise_e2e.py", "test_held.py", "test_dagorlad_blind.py", "test_githooks.py", "test_exercise_guard.py", "test_bounded_reads.py", "test_exercise_accumulations.py",
     "test_experiment_schema.py", "test_vm3_pairs.py", "test_vm3b_suites.py", "test_fault_rate.py", "test_glorfindel_host.py", "test_host_console.py",
     "test_host_cd.py", "test_host_cd_install.py", "test_host_ssh_owned.py", "test_host_deploy.py", "test_hosted_report.py", "test_indicators.py",
     "test_makefile_bench.py", "test_operator_cidr.py", "test_image_cves.py", "test_makefile_campaign.py", "test_makefile_orodruin_run.py", "test_makefile_exercise.py", "test_makefile_secrets.py", "test_bench_logs.py", "test_bench_auditd.py", "test_bench_identity.py", "test_bench_users.py", "test_bench_reader.py", "test_bench_flow_logs.py", "test_bench_perf_counters.py",
@@ -152,7 +152,7 @@ BRIDGES = {
     # Not a component's module, but the watch loads it (IA0): on load, the report reads a
     # run's detections with Annatar's reader (annatar.runner.detection, the format's one
     # source). The report is about an Annatar campaign: without Annatar's package it is not
-    # written, and the watch says so (CROSSINGS, glorfindel/cli.py → analysis).
+    # written, and the watch says so (CROSSINGS, glorfindel/watch/startup.py → analysis).
     "analysis.campaign_report": "the campaign report (IA0) reads a run's detections with "
                                 "Annatar's reader — written where Annatar is installed",
 }
@@ -172,13 +172,13 @@ CROSSINGS = {
                                                       "(DRL1b) — the console is in Imladris's image; "
                                                       "without it, a detected occurrence stays "
                                                       "unattached, then unknown, said",
-    ("glorfindel/cli.py", "analysis"): "the watch writes the report of the campaigns Orodruin "
-                                       "publishes (IA0) — never stops the watch. The report "
-                                       "needs Annatar's package (the bridge "
-                                       "analysis.campaign_report): on a Glorfindel without "
-                                       "Annatar, the watch (which imports it before the "
-                                       "thread) starts with the reports off, and "
-                                       "says so",
+    ("glorfindel/watch/startup.py", "analysis"): "the watch writes the report of the campaigns "
+                                                 "Orodruin publishes (IA0) — never stops the watch. "
+                                                 "The report needs Annatar's package (the bridge "
+                                                 "analysis.campaign_report): on a Glorfindel without "
+                                                 "Annatar, the watch (which imports it before the "
+                                                 "thread) starts with the reports off, and "
+                                                 "says so",
 }
 # The code these rules hold: (directory, its own packages). The analysis AI is no component the
 # CI runs alone, but the watch loads it (IA0): what it reaches of another component is listed

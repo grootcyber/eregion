@@ -859,7 +859,7 @@ def test_the_watch_lists_the_private_ips_once_for_its_attack_lines(tmp_path, mon
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setattr(cli, "_INJECTORS_DIR", home / ".glorfindel" / "injectors")
+    monkeypatch.setattr("glorfindel.watch.beat._INJECTORS_DIR", home / ".glorfindel" / "injectors")
     runs = tmp_path / "runs"
     (runs / "annatar").mkdir(parents=True)   # SEC18: the signals in Annatar's own directory
     # Not this test's: the local channel of verdicts (its thread would outlive the test).
@@ -917,7 +917,7 @@ def test_the_watch_lists_the_private_ips_once_for_its_attack_lines(tmp_path, mon
             raise KeyboardInterrupt
         return real_sleep(0)
 
-    monkeypatch.setattr(cli.time, "sleep", _sleep)
+    monkeypatch.setattr("glorfindel.watch.loop.time.sleep", _sleep)
     result = CliRunner().invoke(cli.cli, ["watch", str(runs), "--interval", "0"])
     assert result.exit_code == 0, result.output
     assert polled == [{"10.0.0.4": VM.lower()}] * 2, result.output
@@ -936,7 +936,7 @@ def test_the_watch_without_a_storage_channel_writes_the_verdict_of_a_polled_dete
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setattr(cli, "_INJECTORS_DIR", home / ".glorfindel" / "injectors")
+    monkeypatch.setattr("glorfindel.watch.beat._INJECTORS_DIR", home / ".glorfindel" / "injectors")
     runs = tmp_path / "runs"
     (runs / "annatar" / "exercises").mkdir(parents=True)
     now = datetime.now(timezone.utc)
@@ -1002,7 +1002,7 @@ def test_the_watch_without_a_storage_channel_writes_the_verdict_of_a_polled_dete
             raise KeyboardInterrupt
         return real_sleep(0)
 
-    monkeypatch.setattr(cli.time, "sleep", _sleep)
+    monkeypatch.setattr("glorfindel.watch.loop.time.sleep", _sleep)
     try:
         result = CliRunner().invoke(cli.cli, ["watch", str(runs), "--interval", "0"])
         assert result.exit_code == 0, result.output

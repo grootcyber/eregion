@@ -60,13 +60,13 @@ def _mode(path) -> int:
 def test_the_heartbeat_is_never_written_in_place(tmp_path):
     """M3207: the heartbeat opened in place — a reader between the truncation and the write
     saw an empty file (the gate: « never », the CD: no health)."""
-    from glorfindel import cli
+    from glorfindel.watch import beat
     hb = tmp_path / ".glorfindel" / "watch_heartbeat"
     first = datetime(2026, 11, 3, 10, 0, tzinfo=timezone.utc)
-    cli._write_watch_heartbeat(hb, first)
+    beat._write_watch_heartbeat(hb, first)
     with _never_opened_for_writing(hb) as seen:
         later = datetime(2026, 11, 3, 10, 1, tzinfo=timezone.utc)
-        cli._write_watch_heartbeat(hb, later)
+        beat._write_watch_heartbeat(hb, later)
     assert seen == []
     assert datetime.fromisoformat(hb.read_text()) == later
     assert [p.name for p in hb.parent.iterdir()] == ["watch_heartbeat"]     # no temp file left
@@ -74,24 +74,24 @@ def test_the_heartbeat_is_never_written_in_place(tmp_path):
 
 def test_the_heartbeat_keeps_the_mode_it_always_had(tmp_path):
     """M3208: the heartbeat 0600 — the CD of H0 and the console no longer read it."""
-    from glorfindel import cli
+    from glorfindel.watch import beat
     hb = tmp_path / ".glorfindel" / "watch_heartbeat"
-    cli._write_watch_heartbeat(hb, datetime.now(timezone.utc))
+    beat._write_watch_heartbeat(hb, datetime.now(timezone.utc))
     assert _mode(hb) == 0o644
 
 
 def test_a_heartbeat_that_fails_to_be_written_leaves_the_last_one_whole(tmp_path, monkeypatch):
-    from glorfindel import cli
     from glorfindel.response import state
+    from glorfindel.watch import beat
     hb = tmp_path / ".glorfindel" / "watch_heartbeat"
     first = datetime(2026, 11, 3, 10, 0, tzinfo=timezone.utc)
-    cli._write_watch_heartbeat(hb, first)
+    beat._write_watch_heartbeat(hb, first)
 
     def full(*a, **k):
         raise OSError(28, "No space left on device")
     monkeypatch.setattr(state.os, "replace", full)
     with pytest.raises(OSError):
-        cli._write_watch_heartbeat(hb, datetime.now(timezone.utc))
+        beat._write_watch_heartbeat(hb, datetime.now(timezone.utc))
     assert datetime.fromisoformat(hb.read_text()) == first
     assert [p.name for p in hb.parent.iterdir()] == ["watch_heartbeat"]
 
@@ -99,9 +99,9 @@ def test_a_heartbeat_that_fails_to_be_written_leaves_the_last_one_whole(tmp_path
 def test_the_gate_reads_the_heartbeat_the_watch_writes(tmp_path, monkeypatch):
     """What the injectors' gate and `glorfindel status` read is what the watch wrote, whole."""
     import eregion_core.watch_gate as gate
-    from glorfindel import cli
+    from glorfindel.watch import beat
     monkeypatch.setenv("HOME", str(tmp_path))
-    cli._write_watch_heartbeat(tmp_path / ".glorfindel" / "watch_heartbeat", datetime.now(timezone.utc))
+    beat._write_watch_heartbeat(tmp_path / ".glorfindel" / "watch_heartbeat", datetime.now(timezone.utc))
     assert gate.fresh(gate.local_beat(), datetime.now(timezone.utc))
 
 

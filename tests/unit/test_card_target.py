@@ -464,7 +464,7 @@ def test_no_model_no_action_no_incident_no_memory_never_merged(tmp_path, monkeyp
 
 
 def test_the_watch_queues_a_card_by_its_plane_never_behind_an_unrelated_vm():
-    from glorfindel.cli import _queue_of
+    from glorfindel.watch.runs_channel import _queue_of
     nsg = _poll("nsg-change-outside-glorfindel", [_activity(NSG_OP, NSG)])[0]
     ident = card_target.identity_target(_entra("credential"))
     assert _queue_of(nsg) == "plane:control"

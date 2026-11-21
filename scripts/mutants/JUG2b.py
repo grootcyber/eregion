@@ -11,15 +11,14 @@ M5061 re-anchored (the answers' classing in their own functions). Measured by
 tests/unit/test_bot_fallback.py."""
 NOTICES = "glorfindel/vm_notices.py"
 BOT = "glorfindel/bot.py"
-CLI = "glorfindel/cli.py"
+HOUSE = "glorfindel/watch/housekeeping.py"   # WCH1: the watch's minute tasks
 _T = "tests/unit/test_bot_fallback.py"
 
 MUTANTS = [
     ("M5005", "the relay pass back in the watch's loop: a webhook that does not answer holds its heartbeat, "
-     "its reassertion, runs/ and « Verify » (JUG2b)", CLI,
-     '        _relay_thread[0] = _thr.Thread(target=_run, daemon=True, name="relay-notices")\n'
-     "        _relay_thread[0].start()\n",
-     "        _run()\n"),
+     "its reassertion, runs/ and « Verify » (JUG2b)", HOUSE,          # re-anchored (WCH1)
+     "        self._relay_thread.start(self._relay_run)\n",
+     "        self._relay_run()\n"),
     ("M5006", "a pass goes on past a webhook that refuses (a 404, deleted): a post per notice due at "
      "every pass, all refused (JUG2b review)", NOTICES,
      '                  "unreachable",\n                  "refused")',

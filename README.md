@@ -693,10 +693,12 @@ glorfindel/
                            no workspace_id, no resource_id, no asset declarations
   incidents.py         → IncidentRegistry: groups signals by resource_id within a TTL window
   memory.py            → CycleMemory: ChromaDB with confidence + past_cycles_used metadata
-  cli.py               → watch, respond, restore, release, unblock, reset, snapshot, jobs, list,
+  cli.py               → watch (its loop: glorfindel/watch/), respond, restore, release, unblock, reset,
+                         snapshot, jobs, list,
                          pending, ack, audit, approve-rule, reject-rule, propose-rules, rules,
                          migrate-rules, check-ttl,
                          bot, dashboard (war-room: hidden alias of `eregion console`)
+  watch/               → the watch's loop, its state in objects, each part tested alone (WCH1)
   escalations.py       → persistent escalation log (~/.glorfindel/escalations.jsonl)
                          types: low_confidence, destructive_action, verification_failed,
                                 proposed_rule, proposed_action, posture_gap,

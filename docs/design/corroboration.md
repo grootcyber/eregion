@@ -169,8 +169,8 @@ continu. Le §5 s'en sert : il mesure la corroboration d'un vrai brute force san
 - **Le code, jamais le modèle.** La preuve est cherchée par une requête ou une lecture écrite dans le
   code, avec des valeurs vérifiées (`kql.literal`, SEC4c ; une adresse par `ipaddress`). Le verdict
   n'entre jamais dans le prompt. `_build_user_message` écrit le signal entier (`json.dumps(signal)`,
-  `glorfindel/agent.py:2993`), et la watch passe ce signal entier au worker (`glorfindel/cli.py:735`,
-  `:803`). Le verdict n'est donc **jamais une clé du signal** : il voyage à côté et se range dans
+  `glorfindel/agent.py:2993`), et la watch passe ce signal entier au worker (`glorfindel/watch/dispatch.py`,
+  `_dispatch`, `_rule_dispatch`). Le verdict n'est donc **jamais une clé du signal** : il voyage à côté et se range dans
   l'état du graphe (§3.3). Ni `_SYSTEM_PROMPT`, ni `_build_user_message()`, ni le few-shot ne
   changent. Un test l'exige : le message utilisateur est identique à l'octet avec et sans verdict.
   Sans ce test, la règle de `CLAUDE.md` imposerait un run T1486 et un autre TTP.
@@ -258,7 +258,7 @@ continu. Le §5 s'en sert : il mesure la corroboration d'un vrai brute force san
 
 Un **verdict**, jamais une clé du signal ni une colonne de la ligne (`first_result_row`). Le
 RulePoller le passe à côté du signal, avec lui dans la file du worker (`_dispatch`,
-`glorfindel/cli.py:735`). Le graphe le range dans un champ de `GlorfindelState`, `corroboration`,
+`glorfindel/watch/dispatch.py`). Le graphe le range dans un champ de `GlorfindelState`, `corroboration`,
 documenté comme `telemetry_gaps` (`glorfindel/agent.py:86`, « never shown to the model »). Ainsi :
 
 - aucune requête, d'une règle du client ou proposée, ne peut le fournir en projetant une colonne ;

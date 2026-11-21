@@ -8,6 +8,8 @@ tests/unit/test_outside_markup.py and tests/unit/test_hosted_report.py."""
 TERM = "glorfindel/terminal.py"
 MON = "glorfindel/providers/azure/monitor.py"
 CLI = "glorfindel/cli.py"
+DISPATCH = "glorfindel/watch/dispatch.py"   # WCH1: the watch moved to glorfindel/watch/
+STARTUP = "glorfindel/watch/startup.py"
 BOT = "glorfindel/bot.py"
 TUI = "glorfindel/tui.py"
 _T = "tests/unit/test_outside_markup.py"
@@ -19,19 +21,19 @@ MUTANTS = [
      '                    _console.print(f"  [dim]Poll error: {outside(e)}[/dim]")\n',
      '                    _console.print(f"  [dim]Poll error: {e}[/dim]")\n'),
     ("M6272", "the display of a decision no longer guarded on its own: its failure said « Error "
-     "processing », a decision taken said unprocessed (SEC-Fc, the defect back)", CLI,
-     "                                _render_decision(state, dry_run)\n"
-     "                            except Exception as e:\n",
-     "                                _render_decision(state, dry_run)\n"
-     "                            except ZeroDivisionError as e:\n"),
-    ("M6273", "a decision's display that fails swallowed in silence (SEC-Fc)", CLI,
-     '                                _say_failure(console, f"Décision prise pour {_sig.signal_id}, "\n'
-     '                                             "son affichage a échoué", e)   # the lock held already\n',
-     "                                pass\n"),
+     "processing », a decision taken said unprocessed (SEC-Fc, the defect back)", DISPATCH,
+     "                self._render_decision(state, self.dry_run)\n"
+     "            except Exception as e:\n",
+     "                self._render_decision(state, self.dry_run)\n"
+     "            except ZeroDivisionError as e:\n"),
+    ("M6273", "a decision's display that fails swallowed in silence (SEC-Fc)", DISPATCH,
+     '                _say_failure(self.console, f"Décision prise pour {_sig.signal_id}, "\n'
+     '                             "son affichage a échoué", e)   # the lock held already\n',
+     "                pass\n"),
     ("M6274", "pending's fallback names the VM unquoted in its `az vm show` (SEC-Fc)", CLI,
      "-n {shlex.quote(_short_name(e['resource_id']))} ",
      "-n {_short_name(e['resource_id'])} "),
-    ("M6275", "the error that keeps the campaign reports off printed raw (SEC-Fc, the defect back)", CLI,
+    ("M6275", "the error that keeps the campaign reports off printed raw (SEC-Fc, the defect back)", STARTUP,
      '        console.print(f"[yellow]Rapports de campagne désactivés — {type(exc).__name__}: "\n'
      '                      f"{_outside(exc)}[/yellow]")\n',
      '        console.print(f"[yellow]Rapports de campagne désactivés — {type(exc).__name__}: "\n'

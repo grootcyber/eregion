@@ -307,12 +307,18 @@ def test_the_watch_writes_down_what_it_saw_in_its_own_state_never_in_runs(tmp_pa
     assert not list(exercise.exercises_dir().rglob("exercise_seen*"))
 
 
-def test_the_watch_reads_its_windows_every_minute():
-    """glorfindel/cli.py's housekeeping holds the observation, beside the heartbeat."""
-    from pathlib import Path
-    cli = (Path(__file__).resolve().parents[2] / "glorfindel" / "cli.py").read_text(encoding="utf-8")
-    assert "for _task in (_check_ttl, _reconcile_jobs, _reassert, _write_heartbeat, _observe_windows):" in cli
-    assert "        _exercise.observe()\n" in cli
+def test_the_watch_reads_its_windows_every_minute(monkeypatch):
+    """The watch's housekeeping (glorfindel/watch/, WCH1) holds the observation, beside the heartbeat."""
+    from .test_watch_loop import _housekeeping, _ticking
+    w, calls, _ = _ticking()
+    w._ttl_check_counter = 29
+    w.tick()
+    assert calls[calls.index("_write_heartbeat") + 1] == "_observe_windows"
+    hk, _, _ = _housekeeping(monkeypatch)
+    observed: list = []
+    monkeypatch.setattr(exercise, "observe", lambda: observed.append(1))
+    hk._observe_windows()
+    assert observed == [1]
 
 
 _WRITER = """
