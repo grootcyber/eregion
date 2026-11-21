@@ -587,6 +587,7 @@ EREGION_PROTECTED_IDENTITIES=...    # NT1 : idem ; source : output protected_ide
 EREGION_IDENTITY_EXECUTOR_CLIENT_ID=...  # NT1 : idem ; source : terraform -chdir=infra/glorfindel-host output -raw identity_executor_client_id (vide : exécuteur non activé)
 EREGION_RULE_CANARY_APPID=...       # CAN2 : l'appid du principal du canari azurerm (l'inscription eregion-canary, par le filtre exact `displayName eq` d'`az ad app list`, écrite par le shell dans host.env : le geste et ses vérifications, `infra/glorfindel-host/README.md`, « Le canari azurerm (CAN2) »), à la watch et à la console ; recopiée dans host.env ; la copie du banc de nsg-change-outside-glorfindel écarte avec lui les runs du canari dans rg-eregion-canary, celle d'entra-sp-unusual-signin ses connexions OIDC (CAN3) ; vide ou pas un GUID → la règle livrée tourne (dit)
 EREGION_ENTRA_MSI_ACTOR_ID=...      # MID1 : l'object id du principal « Managed Service Identity » du tenant, à la watch seule ; l'adaptateur d'Entra écarte d'entra-credential-added, compté, le certificat qu'Azure pose sur une identité managée qu'il crée (jamais par le nom) ; recopiée dans host.env ; vide → rien n'est écarté, dit ; pas un GUID → host_env.py --check refuse (le geste : « Le principal Managed Service Identity (MID1, #981) »)
+EREGION_ORODRUIN_PRINCIPAL_ID=...   # SLF2 : l'object id du principal de l'identité managée d'Orodruin (terraform -chdir=infra/orodruin output -raw principal_id), à la watch seule ; elle écarte de data-exfiltration-blob, comptées, les écritures d'Orodruin dans son canal d'exercices (cette identité, le conteneur d'EREGION_EXERCISE_CHANNEL, son compte ; jamais par l'adresse) ; écrite dans host.env par le shell ; vide → rien n'est écarté, dit ; pas un GUID → host_env.py --check refuse (le geste : « L'identité d'Orodruin (SLF2, #1010) »)
 # L'atelier dans Discord (N1, docs/atelier-discord.md) — à part de la défense : jamais sur Imladris, host_env.py ne les recopie pas
 EREGION_DISCORD_WEBHOOK_CI=...              # webhook de #ci (secret GitHub : notify.yml)
 EREGION_DISCORD_WEBHOOK_AGENTS=...          # webhook de #agents (poste de l'opérateur : hooks d'elrond)
@@ -1723,6 +1724,44 @@ une preuve : il sert à trouver le principal, pas à le reconnaître.
   le dit à chaque passage (`msi_certificate.config` : `unset`), le journal de la watch une fois, et le
   détail de la règle dans la console. Mal formée (si elle passait sans `--check`) : `malformed`, dit
   en orange sur la ligne de la règle (« ⚠ MSI id »), rien d'écarté.
+- **Pour revenir aux cartes** : vider la variable, `make imladris-push`, la watch recréée.
+
+### L'identité d'Orodruin (SLF2, #1010)
+
+Orodruin publie ses fenêtres et le rapport de chaque run dans le canal d'exercices
+(`EREGION_EXERCISE_CHANNEL`), sur le compte de la voie de retour de la watch : un `PutBlob` depuis son
+adresse privée. Le 21/11, une telle écriture (un rapport de run, `EgressBytes` 0) a fait une carte
+`data-exfiltration-blob` non attribuée, un instantané proposé à 40 %, jugée Wrong. La watch écarte
+désormais ces écritures, comptées et dites, **seulement** quand leur compte est celui du canal, leur
+conteneur le sien et leur écrivain l'identité d'Orodruin, donnée à la watch par
+`EREGION_ORODRUIN_PRINCIPAL_ID` (`docs/glorfindel.md`, « Le canal d'exercices d'Orodruin et la watch qui
+redémarre »). L'adresse n'est jamais une preuve. La watch ne connaissait pas cette identité :
+`EREGION_PROTECTED_IDENTITIES` la tient, mais mêlée à celles des watches ; la variable nouvelle est la
+plus étroite, un seul id. C'est celle que la composition du banc autonome lira (BNC4,
+`docs/design/banc-autonome.md`, § 5.5) : un seul geste pour les deux.
+
+**Le modop de la variable** (une fois déployée une release qui contient SLF2, la 0.6.4) :
+
+- **La valeur** : l'object id du principal de l'identité managée de la VM d'Orodruin — ce que Azure
+  Storage écrit en `RequesterObjectId`. Un GUID, aucun secret, jamais dans le dépôt ni affiché.
+- **La commande qui la lit** : `terraform -chdir=infra/orodruin output -no-color -raw principal_id`
+  (l'état d'Orodruin, en lecture seule).
+- **Où l'écrire** : `infra/glorfindel-host/host.env`, par le shell (`print -r -- "EREGION_ORODRUIN_PRINCIPAL_ID=$P"
+  >> $F`, jamais recopiée de l'écran), puis `make imladris-push` (qui lance `host_env.py --check`), puis
+  la watch recréée sur Imladris (`docker compose up -d watch` ; un `restart` ne relit pas `.env`).
+- **Les contrôles, sans afficher la valeur** : une ligne et un GUID (`grep -cE`) ; `az ad sp show --id
+  "$ID" --query "[servicePrincipalType, displayName == '<nom de la VM d'Orodruin>']"` rend
+  `ManagedIdentity` et `True` (le nom tiré de la sortie `vm_id`) ; sur Imladris, `docker compose exec
+  watch sh -c 'test -n "$EREGION_ORODRUIN_PRINCIPAL_ID" && echo posée'`. `host_env.py --check` refuse
+  une valeur qui n'est pas un GUID, la variable nommée, jamais la valeur.
+- **Les commandes complètes, dans l'ordre** : `infra/glorfindel-host/README.md`, « L'identité
+  d'Orodruin (SLF2) ».
+- **Sans elle** (vide, ou absente) avec le canal configuré : rien n'est écarté, la carte revient ; le
+  statut de la règle le dit à chaque passage (`exercise_channel.config` : `unset`), le journal de la
+  watch une fois, la ligne de la règle dans la console en orange (« ⚠ Orodruin id ») et son détail.
+  Mal formée : `malformed`, de même ; posée sans canal : `no channel`.
+- **Orodruin reconstruit** change d'identité : refaire le geste ; d'ici là, ses écritures refont leur
+  carte, jamais un autre écart.
 - **Pour revenir aux cartes** : vider la variable, `make imladris-push`, la watch recréée.
 
 ## Le canari azurerm, sans secret (P-04, 30/10)
