@@ -40,6 +40,7 @@ flowchart BT
 | Invariants | des milliers de réseaux et de séquences tirés au hasard, avec pannes, monde qui bouge et deux opérations à la fois | ce que le faux Azure ne modélise pas (deux hôtes, couches au-dessus du NSG) |
 | Mutation | si les invariants attrapent un bug connu | un bug d'une classe jamais vue |
 | Verrous entre processus | l'exclusion mutuelle réelle de `flock` | un verrou entre deux hôtes |
+| Contrats du SDK (SDK1a) | ce que la version épinglée d'`azure-monitor-query` rend d'une réponse de Log Analytics : ses types, son résultat partiel, ses erreurs | ce qu'Azure envoie vraiment, qui reste une mesure du banc reprise dans le corps |
 | Banc Celebrimbor | le comportement réel d'Azure et de Terraform | la variété des réseaux clients |
 | Canary azurerm | qu'un comportement mesuré du provider tient encore | Bicep, ARM, autres outils |
 | Runs réels | la boucle complète, de l'attaque à la remise en service | la répétition à grande échelle |
@@ -47,6 +48,21 @@ flowchart BT
 Règle de travail : un comportement d'Azure ou de Terraform n'est affirmé qu'après une mesure
 sur le banc. Le faux Azure reprend ces mesures ; ce qu'il suppose sans mesure est écrit en
 tête de `tests/unit/fake_azure.py`.
+
+Les lecteurs de Log Analytics (SDK1a, #992). Un test qui leur passe des listes ou des dict
+fabriqués (`tests/unit/kql_subset.py`) ne voit pas ce que rend le SDK : une colonne `dynamic` en
+texte JSON, une colonne `datetime` en `datetime`. SLF1 a passé ses tests ainsi et n'a rien fait en
+production. Chaque lecteur de lignes de Glorfindel passe donc au moins une fois par
+`tests/unit/sdk_logs.py`. L'utilitaire écrit le corps d'une réponse comme le service l'envoie, ses
+colonnes typées. Le vrai `LogsQueryClient` de la version épinglée le lit, sur le transport
+d'azure-core : seule la socket est remplacée. Les contrats sont dans
+`tests/unit/test_sdk_contracts.py`, `test_own_channel_sdk.py`, `test_control_plane_unreadable.py`,
+`test_campaign_replay.py` et `test_entra_msi.py` (les lignes du 20/11 écartées par MID1). La borne de `pyproject.toml` est tenue face au verrou par
+`test_dependency_lock.py`. Ce que ces contrats ont montré, puis corrigé par ROW1 (#1002) : une ligne
+agrégée (sans `TimeGenerated`) qui portait une colonne `dynamic` changeait d'identité dès que son
+contenu changeait, et refaisait une carte. Le texte JSON d'une colonne `dynamic` entrait dans
+l'identité de la ligne ; les tests sur des listes ne le voyaient pas. Il en est sorti
+(`tests/unit/test_row_identity_sdk.py`, `docs/glorfindel.md`, « Déduplication »).
 
 ## La machine à invariants
 

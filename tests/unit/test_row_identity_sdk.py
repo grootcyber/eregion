@@ -31,7 +31,7 @@ from glorfindel.detection_rules import (
 )
 from glorfindel.providers.azure.monitor import AzureMonitorDetector
 
-from . import kql_subset
+from . import kql_subset, sdk_logs
 from . import test_auditd as aud
 from . import test_own_channel as oc
 from . import test_vm3_pairs as vm3
@@ -49,69 +49,15 @@ OID_CLAIM = "http://schemas.microsoft.com/identity/claims/objectidentifier"
 
 # ── the SDK's objects ────────────────────────────────────────────────────────────────────────────
 
-def _type(values) -> str:
-    """A column's type, as Log Analytics gives it, from the first value that is not None."""
-    for v in values:
-        if v is None:
-            continue
-        if isinstance(v, bool):
-            return "bool"
-        if isinstance(v, int):
-            return "long"
-        if isinstance(v, float):
-            return "real"
-        if isinstance(v, datetime):
-            return "datetime"
-        if isinstance(v, (list, dict)):
-            return "dynamic"
-        return "string"
-    return "string"
-
-
-def _wire(value, ctype: str):
-    """A value as the API's body carries it: a `dynamic` one as its JSON text (measured, 20/11, SLF1b),
-    a date in ISO 8601, UTC."""
-    if value is None:
-        return None
-    if ctype == "dynamic" and not isinstance(value, str):
-        return json.dumps(value)
-    if ctype == "datetime" and isinstance(value, datetime):
-        return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-    return value
-
-
-def body_of(rows: list[dict], types: dict | None = None) -> dict:
-    """The body of the API's reply for `rows`: one table, its columns typed, its values on the wire."""
-    types = types or {}
-    columns = list(dict.fromkeys(c for r in rows for c in r))
-    typed = {c: types.get(c) or _type(r.get(c) for r in rows) for c in columns}
-    return {"tables": [{"name": "PrimaryResult",
-                        "columns": [{"name": c, "type": typed[c]} for c in columns],
-                        "rows": [[_wire(r.get(c), typed[c]) for c in columns] for r in rows]}]}
-
-
-class _Client:
-    """Log Analytics through the SDK's objects: `reply(query)` the rows, the body they make parsed by
-    `LogsQueryResult._from_generated` — the parse of the body the API sends."""
-
-    def __init__(self, reply, types=None):
-        self.reply, self.types = reply, types
-
-    def query_workspace(self, workspace_id, query, timespan=None):
-        from azure.monitor.query._models import LogsQueryResult
-        body = body_of(self.reply(query), self.types)
-        return LogsQueryResult._from_generated(json.loads(json.dumps(body)))
-
-
 def _detector(reply, types=None) -> AzureMonitorDetector:
-    det = AzureMonitorDetector("ws-test")
-    det._logs_client = lambda: _Client(reply, types)
-    return det
+    """The real detector over the pinned SDK's own client (tests/unit/sdk_logs.py, SDK1a): `reply(query)`
+    the rows, their body written as the API sends it and read by the SDK's `LogsQueryClient`."""
+    return sdk_logs.Workspace(lambda query, _timespan: sdk_logs.body_of(reply(query), types)).detector()
 
 
 def through_sdk(rows: list[dict], types: dict | None = None) -> list[dict]:
-    """`rows` as the real `run_query` hands them on, read from the SDK's objects."""
-    return _detector(lambda _q: rows, types).run_query("PrimaryResult")
+    """`rows` as the real `run_query` hands them on, once the SDK has read them."""
+    return sdk_logs.through_sdk(rows, types)
 
 
 def _kql(lines, now=NOW):

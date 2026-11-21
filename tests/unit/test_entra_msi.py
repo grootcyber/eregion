@@ -322,3 +322,21 @@ def test_the_counts_read_from_a_status_are_bounded():
     assert msi_certificate_counts(odd) == {"msi_certificate_count": 0, "msi_certificate_last": "3",
                                            "msi_certificate_config": ""}
     assert msi_certificate_counts({"msi_certificate": {"rows": -1}})["msi_certificate_count"] == 0
+
+
+# SDK1a (#992), the review: the rows of 20/11 as the pinned SDK hands them on, never dicts a test made —
+# `CredentialAdded` the JSON text of `tostring(Added)` (a string column), `TimeGenerated` a datetime.
+def test_the_rows_of_the_20_11_are_set_aside_through_the_pinned_sdk(monkeypatch, msi):
+    from datetime import datetime
+
+    from . import sdk_logs
+    rows = [{**r, "TimeGenerated": datetime.fromisoformat(r["TimeGenerated"].replace("Z", "+00:00"))}
+            for r in _six() + [_row("credential", corr="c-human")]]
+    ws = sdk_logs.Workspace(sdk_logs.constant(sdk_logs.body_of(rows, {"CredentialAdded": "string"})))
+    ws.serve(monkeypatch)
+    rule = _shipped(RULE)
+    p, sent = _poller(_detector(), rule, VM1)
+    p.poll_once(rule)
+    assert ws.requests                                       # the query went through the SDK's client
+    assert [s["raw_signal"]["first_result_row"]["CorrelationId"] for s in sent] == ["c-human"]
+    assert _status(p)["msi_certificate"]["rows"] == 6
