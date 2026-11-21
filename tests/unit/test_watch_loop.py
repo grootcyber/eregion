@@ -780,3 +780,18 @@ def test_the_loop_is_no_longer_in_the_cli():
     from glorfindel import cli
     src = inspect.getsource(cli.watch.callback)
     assert "from glorfindel.watch.loop import run" in src and len(src.splitlines()) < 30
+
+
+def test_an_agent_that_cannot_be_imported_is_said_never_a_search_thread_dead_in_silence(monkeypatch):
+    """The review of WCH1: the search thread imports the agent inside its guarded block. If the
+    agent cannot be imported at all, its escalation cannot be recorded either: the failure is said
+    all the same, and the thread returns instead of dying."""
+    import sys
+    import types
+    d, buf = _dispatcher()
+    monkeypatch.setitem(sys.modules, "glorfindel.agent", types.ModuleType("glorfindel.agent"))
+    data = _line("attack_started", signal_id="r2_attack")
+    d._poll_and_enqueue(data, _sig(data), VM)
+    assert d._resource_queues == {}
+    said = _flat(buf)
+    assert "Détection impossible pour r2_attack, et son escalade non enregistrée (ImportError)" in said

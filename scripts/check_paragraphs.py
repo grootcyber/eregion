@@ -54,11 +54,14 @@ def _corpus(destinations: list[str], code: bool = False) -> str:
 
 
 def missing(old: str, corpus: str, code: bool = False) -> list[tuple[str, list[str]]]:
-    """(first line of the paragraph, its lines not found in the corpus) for each incomplete one."""
+    """(first line of the paragraph, its lines not found in the corpus) for each incomplete one.
+    Prose (the default) is found as a part of the corpus, a paragraph being rewrapped; code
+    (`code`) only as a whole line of it — a short line is never found inside a longer one."""
+    pool = set(corpus.split("\n")) if code else corpus
     out = []
     for para in re.split(r"\n\s*\n", old):
         lines = [_norm(line, code) for line in para.split("\n") if len(_norm(line, code)) >= 3]
-        lost = [line for line in lines if line not in corpus]
+        lost = [line for line in lines if line not in pool]
         if lost:
             out.append((lines[0][:90] if lines else "", lost))
     return out

@@ -108,3 +108,21 @@ def test_a_method_and_a_nested_function_are_held_too(tmp_path):
     assert sorted(s.split(": ")[1].split(",")[0] for s in said) == ["inner", "method", "outer"]
     assert giants(tmp_path, ("pkg",), module_max=100, function_max=7) == []
     assert giants(tmp_path, ("pkg",), module_max=5, function_max=100) == ["pkg/m.py: 13 lines, over 5 — split it by concern"]
+
+
+def test_check_paragraphs_finds_code_by_whole_lines_and_prose_by_parts():
+    """The review of WCH1: in `--code` mode a line moved is found only as a whole line of the new
+    code, never inside a longer one (`x = 1` is not found in `x = 10`); prose, rewrapped, is still
+    found as a part of the corpus."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("check_paragraphs", ROOT / "scripts" / "check_paragraphs.py")
+    cp = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cp)
+
+    def corpus(text: str, code: bool) -> str:
+        return "\n".join(cp._norm(line, code) for line in text.split("\n"))
+
+    old = "def f():\n    total = 1\n"
+    assert [lost for _, lost in cp.missing(old, corpus("def f():\n    total = 10\n", True), True)] == [["total = 1"]]
+    assert cp.missing(old, corpus("def f():\n    total = 1\n", True), True) == []
+    assert cp.missing("the watch reads its rules", corpus("so the watch reads its rules again", False)) == []

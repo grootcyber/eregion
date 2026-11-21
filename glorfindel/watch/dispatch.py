@@ -181,7 +181,6 @@ class Dispatcher:
     def _poll_and_enqueue(self, data: dict, sig: Signal, resource_id: str) -> None:
         """An attack_started line's search, in its own thread: its detection (or its timeout)
         enqueued for its VM's decision."""
-        from glorfindel.agent import resolve_attack_started
         src = data.get("raw_signal", {}).get("detection_source", "azure_monitor")
         try:
             with self._output_lock:
@@ -190,6 +189,9 @@ class Dispatcher:
         except Exception as e:      # SEC-F: never a search left for a display
             _say_failure(self.console, "Affichage du signal en erreur", e, self._output_lock)
         try:
+            # Imported here, in the try: a failure to import is said and escalated as any
+            # failure of the search, never a thread that dies in silence (review of WCH1).
+            from glorfindel.agent import resolve_attack_started
             # The row is read as the RulePoller reads it, the private IPs included
             # (SEC4a), from the listing it reads too (SEC4c).
             resolved = resolve_attack_started(data, ip_owners=self._ip_owners)
@@ -197,8 +199,13 @@ class Dispatcher:
             # A persistent backend failure raises (detectors no longer swallow
             # it). This thread used to die with it: the attack was never
             # enqueued, and nothing said detection had been blind.
-            from glorfindel.agent import record_cycle_failure
-            record_cycle_failure(data, exc, stage="detection", dry_run=self.dry_run)
+            try:
+                from glorfindel.agent import record_cycle_failure
+                record_cycle_failure(data, exc, stage="detection", dry_run=self.dry_run)
+            except Exception as unrecorded:     # the agent itself unloadable: said, never silent
+                _say_failure(self.console, f"Détection impossible pour {sig.signal_id}, et son escalade "
+                             f"non enregistrée ({type(unrecorded).__name__})", exc, self._output_lock)
+                return
             _say_failure(self.console, f"Détection impossible pour {sig.signal_id} "
                          "(escalade cycle_failed enregistrée)", exc, self._output_lock)
             return
